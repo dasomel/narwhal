@@ -60,11 +60,15 @@ provisioner: nfs.csi.k8s.io
 parameters:
   server: ${NFS_SERVER_IP}
   share: ${NFS_SHARE_PATH}
-  subDir: \${pvc.metadata.namespace}-\${pvc.metadata.name}
+  subDir: \${pvc.metadata.namespace}/\${pvc.metadata.name}
 reclaimPolicy: Retain
 volumeBindingMode: Immediate
 mountOptions:
   - nfsvers=4.1
+  - hard
+  - noatime
+  - rsize=65536
+  - wsize=65536
 EOF
 
 #=========================================

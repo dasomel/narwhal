@@ -37,7 +37,7 @@ echo "Installing nfs-quota-agent..."
 helm upgrade --install nfs-quota-agent "${CHART_DIR}" \
   --namespace nfs-quota-agent \
   --set image.repository=ghcr.io/dasomel/nfs-quota-agent \
-  --set image.tag=v0.1.9 \
+  --set image.tag=v0.1.12 \
   --set config.nfsBasePath=/export \
   --set config.nfsServerPath="${NFS_SHARE_PATH}" \
   --set config.provisionerName=nfs.csi.k8s.io \

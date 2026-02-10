@@ -10,7 +10,7 @@ spec:
   source:
     repoURL: https://traefik.github.io/charts
     chart: traefik
-    targetRevision: 34.0.0
+    targetRevision: 39.0.0
     helm:
       valuesObject:
         # Gateway API support

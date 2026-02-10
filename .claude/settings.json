@@ -1,0 +1,101 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(vagrant status)",
+      "Bash(vagrant ssh*)",
+      "Bash(vagrant up*)",
+      "Bash(vagrant halt*)",
+      "Bash(vagrant destroy*)",
+      "Bash(vagrant box*)",
+      "Bash(vagrant provision*)",
+      "Bash(shellcheck*)",
+      "Bash(ruby -c*)",
+      "Bash(yq*)",
+      "Bash(kubectl*)",
+      "Bash(helm*)",
+      "Bash(git status*)",
+      "Bash(git diff*)",
+      "Bash(git log*)",
+      "Bash(git add*)",
+      "Bash(git commit*)",
+      "Bash(ls*)",
+      "Bash(cat*)",
+      "Bash(grep*)",
+      "Bash(find*)",
+      "Bash(chmod +x*)"
+    ],
+    "deny": [
+      "Bash(rm -rf*)",
+      "Bash(git push --force*)",
+      "Bash(git reset --hard*)"
+    ]
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": ".claude/hooks/load-project-context.sh"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": ".claude/hooks/pre-edit-check.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": ".claude/hooks/pre-edit-check.sh"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": ".claude/hooks/check-related-files.sh"
+          },
+          {
+            "type": "command",
+            "command": ".claude/hooks/track-mistakes.sh"
+          },
+          {
+            "type": "command",
+            "command": ".claude/hooks/auto-format.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": ".claude/hooks/check-related-files.sh"
+          },
+          {
+            "type": "command",
+            "command": ".claude/hooks/track-mistakes.sh"
+          },
+          {
+            "type": "command",
+            "command": ".claude/hooks/auto-format.sh"
+          }
+        ]
+      }
+    ]
+  }
+}

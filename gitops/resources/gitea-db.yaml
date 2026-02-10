@@ -1,0 +1,66 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: gitea
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: gitea-db-credentials
+  namespace: gitea
+type: kubernetes.io/basic-auth
+stringData:
+  username: gitea
+  password: gitea-db-password
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: cnpg-s3-credentials
+  namespace: gitea
+type: Opaque
+stringData:
+  ACCESS_KEY_ID: admin
+  ACCESS_SECRET_KEY: admin
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: gitea-db
+  namespace: gitea
+spec:
+  instances: 2
+  imageName: ghcr.io/cloudnative-pg/postgresql:17
+  bootstrap:
+    initdb:
+      database: gitea
+      owner: gitea
+      secret:
+        name: gitea-db-credentials
+  storage:
+    size: 10Gi
+    storageClass: nfs-csi
+  resources:
+    requests:
+      memory: "256Mi"
+      cpu: "100m"
+    limits:
+      memory: "512Mi"
+      cpu: "500m"
+  # Backup enabled after SeaweedFS deployment via GitOps
+  # backup:
+  #   barmanObjectStore:
+  #     destinationPath: s3://cnpg-backup/gitea
+  #     endpointURL: http://seaweedfs-s3.seaweedfs.svc.cluster.local:8333
+  #     s3Credentials:
+  #       accessKeyId:
+  #         name: cnpg-s3-credentials
+  #         key: ACCESS_KEY_ID
+  #       secretAccessKey:
+  #         name: cnpg-s3-credentials
+  #         key: ACCESS_SECRET_KEY
+  #     wal:
+  #       compression: gzip
+  #     data:
+  #       compression: gzip
+  #   retentionPolicy: "14d"

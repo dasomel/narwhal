@@ -1,0 +1,71 @@
+---
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: disallow-privileged-containers
+  annotations:
+    policies.kyverno.io/title: Disallow Privileged Containers
+    policies.kyverno.io/category: Pod Security Standards (Baseline)
+spec:
+  validationFailureAction: Audit
+  background: true
+  rules:
+    - name: privileged-containers
+      match:
+        any:
+        - resources:
+            kinds:
+              - Pod
+      validate:
+        message: "Privileged mode is disallowed."
+        pattern:
+          spec:
+            containers:
+              - securityContext:
+                  privileged: "!true"
+---
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: require-labels
+  annotations:
+    policies.kyverno.io/title: Require Labels
+spec:
+  validationFailureAction: Audit
+  background: true
+  rules:
+    - name: check-for-labels
+      match:
+        any:
+        - resources:
+            kinds:
+              - Pod
+      validate:
+        message: "The label 'app.kubernetes.io/name' is required."
+        pattern:
+          metadata:
+            labels:
+              app.kubernetes.io/name: "?*"
+---
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: disallow-latest-tag
+  annotations:
+    policies.kyverno.io/title: Disallow Latest Tag
+spec:
+  validationFailureAction: Audit
+  background: true
+  rules:
+    - name: validate-image-tag
+      match:
+        any:
+        - resources:
+            kinds:
+              - Pod
+      validate:
+        message: "Using 'latest' tag is not allowed."
+        pattern:
+          spec:
+            containers:
+              - image: "!*:latest"

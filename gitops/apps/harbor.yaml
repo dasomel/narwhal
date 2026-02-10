@@ -1,0 +1,52 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: harbor
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://helm.goharbor.io
+    chart: harbor
+    targetRevision: 1.17.1
+    helm:
+      valuesObject:
+        expose:
+          type: clusterIP
+          tls:
+            enabled: false
+        externalURL: http://harbor.local
+        harborAdminPassword: Harbor12345
+        database:
+          type: external
+          external:
+            host: harbor-db-rw.harbor.svc.cluster.local
+            port: 5432
+            username: harbor
+            password: harbor-db-password
+            coreDatabase: harbor
+        persistence:
+          enabled: true
+          persistentVolumeClaim:
+            registry:
+              storageClass: nfs-csi
+              size: 50Gi
+            jobservice:
+              storageClass: nfs-csi
+            trivy:
+              storageClass: nfs-csi
+        redis:
+          type: internal
+        trivy:
+          enabled: true
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: harbor
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

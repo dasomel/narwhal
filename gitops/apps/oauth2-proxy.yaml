@@ -1,0 +1,55 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: oauth2-proxy
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "5"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://oauth2-proxy.github.io/manifests
+    chart: oauth2-proxy
+    targetRevision: 7.12.13
+    helm:
+      valuesObject:
+        replicaCount: 1
+        config:
+          clientID: oauth2-proxy
+          clientSecret: oauth2-proxy-secret
+          cookieSecret: "CHANGE-ME-GENERATE-RANDOM-32-BYTES"
+          configFile: |-
+            provider = "keycloak-oidc"
+            provider_display_name = "Keycloak"
+            oidc_issuer_url = "http://keycloak-service.keycloak.svc.cluster.local:8080/realms/kubernetes"
+            redirect_url = "http://oauth2-proxy.local.narwhal.io/oauth2/callback"
+            upstreams = ["static://200"]
+            email_domains = ["*"]
+            cookie_secure = false
+            cookie_domains = [".local.narwhal.io"]
+            whitelist_domains = [".local.narwhal.io"]
+            set_xauthrequest = true
+            set_authorization_header = true
+            pass_access_token = true
+            pass_authorization_header = true
+            skip_provider_button = true
+            code_challenge_method = "S256"
+            insecure_oidc_skip_issuer_verification = true
+        extraArgs:
+          - --skip-jwt-bearer-tokens=true
+        service:
+          type: ClusterIP
+          portNumber: 80
+        ingress:
+          enabled: false  # We use Gateway API instead
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: oauth2-proxy
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

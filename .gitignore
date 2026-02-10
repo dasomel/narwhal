@@ -1,0 +1,38 @@
+# Vagrant
+.vagrant/
+*.box
+
+# IDE
+.idea/
+*.iml
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Secrets
+secrets/
+*.pem
+*.key
+kubeconfig
+.env
+
+# Temp
+tmp/
+*.tmp
+*.bak
+
+# Claude Code cache (keep settings and commands)
+.claude/cache/.edit-history
+.claude/cache/mistake-candidates.jsonl
+.claude/cache/ralph-logs/
+
+# Ralph prompt (project-specific, usually gitignored)
+PROMPT.md

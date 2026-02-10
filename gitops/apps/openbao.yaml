@@ -1,0 +1,42 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: openbao
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://openbao.github.io/openbao-helm
+    chart: openbao
+    targetRevision: 0.11.0
+    helm:
+      valuesObject:
+        server:
+          image:
+            tag: "2.2.0"
+          ha:
+            enabled: false
+            replicas: 1
+            raft:
+              enabled: true
+          dataStorage:
+            enabled: true
+            storageClass: nfs-csi
+            size: 10Gi
+          auditStorage:
+            enabled: true
+            storageClass: nfs-csi
+            size: 5Gi
+        ui:
+          enabled: true
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: openbao
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

@@ -223,7 +223,7 @@ helm upgrade --install headlamp headlamp/headlamp \
   --version 0.40.0 \
   --set config.oidc.clientID=headlamp \
   --set config.oidc.clientSecret=headlamp-secret \
-  --set config.oidc.issuerURL=http://keycloak.keycloak.svc.cluster.local/realms/kubernetes \
+  --set config.oidc.issuerURL=http://keycloak-service.keycloak.svc.cluster.local:8080/realms/kubernetes \
   --set config.oidc.scopes="openid,profile,email,groups" \
   --wait
 

@@ -17,7 +17,7 @@ spec:
           type: clusterIP
           tls:
             enabled: false
-        externalURL: http://harbor.local
+        externalURL: http://harbor.local.narwhal.io
         harborAdminPassword: Harbor12345
         database:
           type: external
@@ -41,6 +41,20 @@ spec:
           type: internal
         trivy:
           enabled: true
+        core:
+          configureUserSettings: |-
+            {
+              "auth_mode": "oidc_auth",
+              "oidc_name": "Keycloak",
+              "oidc_endpoint": "http://keycloak-service.keycloak.svc.cluster.local:8080/realms/kubernetes",
+              "oidc_client_id": "harbor",
+              "oidc_client_secret": "harbor-secret",
+              "oidc_groups_claim": "groups",
+              "oidc_admin_group": "cluster-admins",
+              "oidc_scope": "openid,profile,email,groups",
+              "oidc_auto_onboard": "true",
+              "oidc_verify_cert": "false"
+            }
   destination:
     server: https://kubernetes.default.svc
     namespace: harbor

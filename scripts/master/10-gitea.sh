@@ -62,7 +62,7 @@ sleep 10
 kubectl wait --for=condition=Ready cluster/gitea-db -n gitea --timeout=300s || true
 
 # Keycloak OIDC configuration
-KEYCLOAK_URL="${KEYCLOAK_URL:-http://keycloak-service.keycloak}"
+KEYCLOAK_URL="${KEYCLOAK_URL:-http://keycloak-service.keycloak.svc.cluster.local:8080}"
 KEYCLOAK_REALM="${KEYCLOAK_REALM:-kubernetes}"
 
 # Install Gitea with Keycloak OIDC
@@ -108,7 +108,7 @@ kubectl exec -n gitea ${GITEA_POD} -- gitea admin auth add-oauth \
   --provider "openidConnect" \
   --key "gitea" \
   --secret "gitea-secret" \
-  --auto-discover-url "${KEYCLOAK_URL}/realms/${KEYCLOAK_REALM}/.well-known/openid-configuration" \
+  --auto-discover-url "http://keycloak-service.keycloak.svc.cluster.local:8080/realms/${KEYCLOAK_REALM}/.well-known/openid-configuration" \
   --group-claim-name "groups" \
   --admin-group "cluster-admins" || true
 

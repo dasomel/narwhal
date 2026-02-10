@@ -4,7 +4,7 @@ set -euo pipefail
 ARGOCD_VERSION="${ARGOCD_VERSION:-v3.3.0}"
 
 # Keycloak OIDC configuration
-KEYCLOAK_URL="${KEYCLOAK_URL:-http://keycloak.keycloak.svc.cluster.local}"
+KEYCLOAK_URL="${KEYCLOAK_URL:-http://keycloak-service.keycloak.svc.cluster.local:8080}"
 KEYCLOAK_REALM="${KEYCLOAK_REALM:-kubernetes}"
 
 echo "=== Installing ArgoCD ${ARGOCD_VERSION} ==="

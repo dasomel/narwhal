@@ -6,7 +6,7 @@ POD_NETWORK_CIDR="${POD_NETWORK_CIDR:-10.244.0.0/16}"
 SERVICE_CIDR="${SERVICE_CIDR:-10.96.0.0/12}"
 
 # OIDC Configuration (Keycloak)
-OIDC_ISSUER_URL="${OIDC_ISSUER_URL:-http://keycloak.keycloak.svc.cluster.local/realms/kubernetes}"
+OIDC_ISSUER_URL="${OIDC_ISSUER_URL:-http://keycloak-service.keycloak.svc.cluster.local:8080/realms/kubernetes}"
 OIDC_CLIENT_ID="${OIDC_CLIENT_ID:-kubernetes}"
 
 echo "=== Kubernetes Cluster Initialization ==="

@@ -19,7 +19,7 @@ spec:
         config:
           clientID: oauth2-proxy
           clientSecret: oauth2-proxy-secret
-          cookieSecret: "CHANGE-ME-GENERATE-RANDOM-32-BYTES"
+          cookieSecret: "7f3e9d2c4b8a1f6e5d9c3a7b2e4f8c1d"
           configFile: |-
             provider = "keycloak-oidc"
             provider_display_name = "Keycloak"

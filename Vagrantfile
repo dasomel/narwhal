@@ -91,8 +91,6 @@ Vagrant.configure("2") do |config|
     end
 
     # Common provisioning
-    # 00-expand-disk.sh: Expands partition/LVM to use available disk space
-    master.vm.provision "shell", path: "scripts/common/00-expand-disk.sh"
     master.vm.provision "shell", path: "scripts/common/01-prerequisites.sh",
       env: {
         "CLUSTER_NAME" => CLUSTER_NAME,
@@ -176,7 +174,6 @@ Vagrant.configure("2") do |config|
       end
 
       # Common provisioning
-      worker.vm.provision "shell", path: "scripts/common/00-expand-disk.sh"
       worker.vm.provision "shell", path: "scripts/common/01-prerequisites.sh",
         env: {
           "CLUSTER_NAME" => CLUSTER_NAME,

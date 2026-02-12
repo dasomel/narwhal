@@ -323,7 +323,6 @@ PostgreSQL HA (CloudNative-PG)
 ### Phase 1: Base Infrastructure (All Nodes)
 
 ```
-00-expand-disk.sh    → 디스크 파티션/LVM 확장
 01-prerequisites.sh  → 호스트명, /etc/hosts, 커널 모듈
 02-containerd.sh     → containerd 런타임 설치
 03-k8s-install.sh    → kubeadm, kubelet, kubectl 설치

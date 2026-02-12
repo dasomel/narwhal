@@ -32,7 +32,7 @@ vagrant plugin install vagrant-disksize
 ```
 
 > **Note**: VMware Fusion은 `vmx` 설정으로 자동 처리됩니다.
-> 디스크 확장 스크립트(`00-expand-disk.sh`)가 LVM/파티션을 자동 확장합니다.
+> 1TB 씬 프로비전 템플릿을 사용합니다.
 
 ## Quick Start
 

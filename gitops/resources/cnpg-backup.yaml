@@ -1,44 +1,16 @@
 # CNPG Scheduled Backup Configuration
-# Backup storage is configured in each Cluster spec (barmanObjectStore → SeaweedFS S3)
+# Unified narwhal-db cluster backup (replaces individual DB backups)
+# Backup storage is configured in Cluster spec (barmanObjectStore -> SeaweedFS S3)
 ---
-# Keycloak DB Scheduled Backup
 apiVersion: postgresql.cnpg.io/v1
 kind: ScheduledBackup
 metadata:
-  name: keycloak-db-daily
-  namespace: keycloak
+  name: narwhal-db-daily
+  namespace: database
 spec:
   schedule: "0 0 * * *"  # Daily at midnight
   backupOwnerReference: self
   cluster:
-    name: keycloak-db
-  method: barmanObjectStore
-  target: prefer-standby
----
-# Gitea DB Scheduled Backup
-apiVersion: postgresql.cnpg.io/v1
-kind: ScheduledBackup
-metadata:
-  name: gitea-db-daily
-  namespace: gitea
-spec:
-  schedule: "0 0 * * *"
-  backupOwnerReference: self
-  cluster:
-    name: gitea-db
-  method: barmanObjectStore
-  target: prefer-standby
----
-# Harbor DB Scheduled Backup
-apiVersion: postgresql.cnpg.io/v1
-kind: ScheduledBackup
-metadata:
-  name: harbor-db-daily
-  namespace: harbor
-spec:
-  schedule: "0 0 * * *"
-  backupOwnerReference: self
-  cluster:
-    name: harbor-db
+    name: narwhal-db
   method: barmanObjectStore
   target: prefer-standby

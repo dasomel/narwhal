@@ -14,52 +14,10 @@ kubectl create namespace gitea --dry-run=client -o yaml | kubectl apply -f -
 helm repo add gitea-charts https://dl.gitea.com/charts/
 helm repo update
 
-# Install Gitea with PostgreSQL (using CNPG)
-# First create PostgreSQL cluster
-cat <<EOF | kubectl apply -f -
-apiVersion: postgresql.cnpg.io/v1
-kind: Cluster
-metadata:
-  name: gitea-db
-  namespace: gitea
-spec:
-  instances: 2
-  imageName: ghcr.io/cloudnative-pg/postgresql:17
-  bootstrap:
-    initdb:
-      database: gitea
-      owner: gitea
-      secret:
-        name: gitea-db-credentials
-  storage:
-    size: 10Gi
-    storageClass: nfs-csi
-  resources:
-    requests:
-      memory: "256Mi"
-      cpu: "100m"
-    limits:
-      memory: "512Mi"
-      cpu: "500m"
-EOF
-
-# Create database credentials
-cat <<EOF | kubectl apply -f -
-apiVersion: v1
-kind: Secret
-metadata:
-  name: gitea-db-credentials
-  namespace: gitea
-type: kubernetes.io/basic-auth
-stringData:
-  username: gitea
-  password: gitea-db-password
-EOF
-
-# Wait for PostgreSQL
-echo "Waiting for Gitea PostgreSQL cluster..."
-sleep 10
-kubectl wait --for=condition=Ready cluster/gitea-db -n gitea --timeout=300s || true
+# Wait for unified PostgreSQL cluster (narwhal-db) to be ready
+echo "Waiting for PostgreSQL (narwhal-db) to be ready..."
+kubectl wait --for=condition=Ready cluster/narwhal-db -n database --timeout=300s || true
+kubectl wait --for=condition=Ready pod -l cnpg.io/poolerName=narwhal-db-pooler-rw -n database --timeout=120s || true
 
 # Keycloak OIDC configuration
 KEYCLOAK_URL="${KEYCLOAK_URL:-http://keycloak-service.keycloak.svc.cluster.local:8080}"

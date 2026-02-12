@@ -98,20 +98,19 @@ git push origin main || true
 kill ${PF_PID} 2>/dev/null || true
 
 #=========================================
-# Apply base resources (CNPG clusters)
+# Ensure unified PostgreSQL cluster is ready
 #=========================================
-echo "Applying base resources..."
+echo "Ensuring unified PostgreSQL cluster (narwhal-db) is ready..."
 
-# Create Gitea PostgreSQL cluster
-kubectl apply -f /home/vagrant/configs/gitops/resources/gitea-db.yaml 2>/dev/null || true
+# Create database namespace first
+kubectl create namespace database --dry-run=client -o yaml | kubectl apply -f -
 
-# Create Harbor PostgreSQL cluster
-kubectl apply -f /home/vagrant/configs/gitops/resources/harbor-db.yaml 2>/dev/null || true
+# Apply unified narwhal-db resource
+kubectl apply -f /home/vagrant/configs/gitops/resources/narwhal-db.yaml 2>/dev/null || true
 
-# Wait for databases
-echo "Waiting for PostgreSQL clusters..."
-kubectl wait --for=condition=Ready cluster/gitea-db -n gitea --timeout=300s || true
-kubectl wait --for=condition=Ready cluster/harbor-db -n harbor --timeout=300s || true
+# Wait for unified database
+echo "Waiting for narwhal-db cluster..."
+kubectl wait --for=condition=Ready cluster/narwhal-db -n database --timeout=300s || true
 
 #=========================================
 # Create ArgoCD App-of-Apps

@@ -128,6 +128,10 @@ loki:
           period: 24h
   storage:
     type: filesystem
+    bucketNames:
+      chunks: chunks
+      ruler: ruler
+      admin: admin
 singleBinary:
   replicas: 1
   persistence:
@@ -320,10 +324,27 @@ echo "=== Installing Harbor ==="
 helm repo add harbor https://helm.goharbor.io
 helm repo update harbor
 
-# Create Harbor DB if not exists
-kubectl apply -f /home/vagrant/configs/gitops/resources/harbor-db.yaml || true
-echo "Waiting for Harbor DB..."
-kubectl wait --for=condition=Ready cluster/harbor-db -n harbor --timeout=300s || sleep 30
+# Wait for unified PostgreSQL cluster (narwhal-db) to be ready
+echo "Waiting for PostgreSQL (narwhal-db) to be ready..."
+kubectl wait --for=condition=Ready cluster/narwhal-db -n database --timeout=300s || true
+
+# Create namespace first to apply ExternalName service
+kubectl create namespace harbor --dry-run=client -o yaml | kubectl apply -f -
+
+# Apply ExternalName service to connect to narwhal-db from harbor namespace
+cat <<EOF | kubectl apply -f -
+apiVersion: v1
+kind: Service
+metadata:
+  name: harbor-db-rw
+  namespace: harbor
+spec:
+  type: ExternalName
+  externalName: narwhal-db-rw.database.svc.cluster.local
+  ports:
+    - port: 5432
+      targetPort: 5432
+EOF
 
 helm upgrade --install harbor harbor/harbor \
   --namespace harbor \

@@ -80,6 +80,11 @@
 | 2026-02-10 | OAuth2 Proxy cookie_secret 34바이트 에러 | `openssl rand -base64 32`는 44바이트, `openssl rand -hex 16`으로 32바이트 |
 | 2026-02-10 | Velero CRD job kubectl `/bin/sh` 없음 | `registry.k8s.io/kubectl`은 distroless, `docker.io/alpine/k8s` 사용 |
 | 2026-02-10 | VERSIONS.md와 실제 배포 버전 불일치 | 스크립트에 고정된 chart 버전 기준으로 VERSIONS.md 동기화 필수 |
+| 2026-02-11 | CNPG DB 비밀번호 하드코딩 불일치 | CNPG Secret에서 실제 비밀번호 조회 필수 (`harbor-db-credentials`) |
+| 2026-02-11 | Loki 6.52.0 bucketNames 필수 | `loki.storage.bucketNames.{chunks,ruler,admin}` 명시 필요 |
+| 2026-02-11 | Traefik 39.0.0 HTTPS certificateRefs 필수 | Gateway HTTPS 리스너에 TLS 인증서 참조 필수 |
+| 2026-02-11 | Traefik Helm --set 포트 타입 에러 | `--set` 대신 values 파일 사용 (float64 vs int64) |
+| 2026-02-11 | ArgoCD 관리 리소스 Helm 재설치 충돌 | 기존 리소스(SA, IngressClass, GatewayClass) 삭제 후 재설치 |
 
 ### 새 실수 추가하기
 ```markdown
@@ -278,10 +283,171 @@ docs(claude): update verification steps
 
 ---
 
-## Parallel Processing Tips
+## AI Team (Multi-Agent 협업)
 
-여러 Claude 세션을 동시에 실행하여 속도 극대화:
+> Claude Code가 Gemini CLI를 팀원으로 호출하여 협업합니다.
 
+### 팀 구성
+
+| Agent | 역할 | 호출 방법 |
+|-------|------|-----------|
+| **Claude** (주 에이전트) | 코드 작성, 리뷰, GitOps 관리 | 기본 |
+| **Gemini** (보조 에이전트) | 세컨드 오피니언, 문서 검색, 대안 제시 | `gemini -p "..."` |
+
+### Gemini CLI 사용 규칙
+
+1. **Non-interactive 모드만 사용** (`-p` 플래그 필수)
+   ```bash
+   gemini -p "질문 내용" -o text
+   ```
+
+2. **파이프로 컨텍스트 전달 가능**
+   ```bash
+   cat scripts/master/07-keycloak.sh | gemini -p "이 스크립트의 보안 취약점을 분석해줘" -o text
+   ```
+
+3. **타임아웃 주의**: 30초 이내 응답 가능한 질문만 (복잡한 질문은 분할)
+
+### 언제 Gemini를 호출하나요?
+
+| 상황 | 예시 |
+|------|------|
+| **세컨드 오피니언** | "이 Helm values 설정이 적절한지 Gemini에게 확인" |
+| **최신 정보 검색** | "Kubernetes 1.35 deprecation 목록 확인" |
+| **대안 비교** | "Velero vs Kasten 장단점 비교" |
+| **코드 리뷰 보조** | "이 shell script의 잠재적 문제점 분석" |
+| **문서 초안** | "이 컴포넌트의 README 초안 작성" |
+
+### 호출 패턴
+
+```bash
+# 1. 간단한 질문
+gemini -p "Cilium 1.17에서 kube-proxy replacement 기본 설정이 변경되었나?" -o text
+
+# 2. 파일 기반 리뷰
+cat gitops/apps/harbor.yaml | gemini -p "이 ArgoCD Application YAML에 문제가 있는지 리뷰해줘" -o text
+
+# 3. 비교 분석
+gemini -p "Kubernetes에서 Ingress Controller로 Cilium Gateway API vs Nginx 장단점 비교" -o text
+
+# 4. 트러블슈팅 보조
+kubectl get events -n harbor 2>&1 | gemini -p "이 Kubernetes 이벤트에서 문제 원인을 분석해줘" -o text
+```
+
+### 주의사항
+
+- Gemini 응답은 **참고용**으로만 사용, 최종 판단은 Claude가 수행
+- 민감한 정보(시크릿, 토큰)를 Gemini에게 전달하지 않음
+- Gemini 응답이 CLAUDE.md 규칙과 충돌하면 CLAUDE.md 규칙 우선
+- 응답 시간이 길면 스킵하고 Claude가 직접 처리
+- **429 에러 (MODEL_CAPACITY_EXHAUSTED)는 서버 측 용량 부족** — 사용자 할당량 소진이 아님
+  - 10초 대기 후 1회 재시도, 실패 시 Claude가 직접 처리
+  - 재시도 명령: `sleep 10 && gemini -p "..." -o text`
+
+### 토큰 사용량 관리 및 만료 전략
+
+> 어느 한 에이전트의 토큰/할당량이 소진되어도 작업이 중단되지 않도록 합니다.
+
+#### 에이전트별 역할 전환 (Failover)
+
+| 상황 | 전략 |
+|------|------|
+| **Claude 토큰 만료** | Gemini로 전환하여 세션 지속. `gemini -p "..." -o text`로 직접 작업 수행 |
+| **Gemini 토큰 만료** | Claude 단독 작업. Gemini 호출 스킵, WebSearch/Context7 등 내장 도구 활용 |
+| **양쪽 모두 만료** | 작업 중단 전 현재 상태를 `.agent/SESSION_STATE.md`에 기록하여 다음 세션에서 이어가기 |
+
+#### 토큰 절약 원칙
+
+1. **작은 질문은 작은 모델에게**
+   - 단순 사실 확인, 문법 검사 → Gemini (`gemini -p`)
+   - 코드 작성, 복잡한 리팩토링 → Claude
+   - Claude subagent 사용 시 단순 탐색은 `model: "haiku"` 지정
+
+2. **컨텍스트 최소화**
+   - 파일 전체를 파이프하지 말고 관련 부분만 추출 후 전달
+   - `head -50`, `grep -A5` 등으로 필요한 부분만 전달
+   ```bash
+   # Bad: 전체 파일 전달 (토큰 낭비)
+   cat scripts/master/07-keycloak.sh | gemini -p "리뷰해줘" -o text
+   # Good: 관련 부분만 전달
+   sed -n '50,80p' scripts/master/07-keycloak.sh | gemini -p "이 OIDC 설정 부분 리뷰해줘" -o text
+   ```
+
+3. **캐시 활용**
+   - 반복 질문 결과는 `.claude/cache/`에 저장하여 재호출 방지
+   - 동일 세션 내 같은 질문 반복 금지
+
+#### 만료 감지 및 대응 플로우
+
+```
+[작업 시작]
+    │
+    ├─ Claude 응답 가능? ──Yes──→ Claude가 주 에이전트로 작업
+    │       │                         │
+    │      No                    필요 시 Gemini 보조 호출
+    │       │                         │
+    │       ▼                    Gemini 응답 실패?
+    │  Gemini로 전환 ◄──Yes──────────┘
+    │       │
+    │  Gemini 응답 가능? ──Yes──→ Gemini 단독 작업 (코드 생성 포함)
+    │       │
+    │      No
+    │       │
+    │       ▼
+    │  [세션 상태 저장]
+    │  - 현재 작업 내용 → .agent/SESSION_STATE.md
+    │  - 미완료 TODO → TaskList에 기록
+    │  - git stash 또는 WIP 커밋
+    │       │
+    │       ▼
+    │  [사용자에게 알림]
+    │  "토큰 소진. 진행 상황이 저장되었습니다.
+    │   다음 세션에서 이어서 작업합니다."
+    └───────────────────────────────────────┘
+```
+
+#### 세션 상태 저장 형식 (.agent/SESSION_STATE.md)
+
+```markdown
+# Session State - [날짜]
+## 작업 중이던 내용
+- (현재 작업 요약)
+## 완료된 항목
+- [x] (완료 목록)
+## 미완료 항목
+- [ ] (남은 작업)
+## 참고 사항
+- (다음 세션에서 알아야 할 컨텍스트)
+```
+
+---
+
+## AI Team 운영 원칙
+
+### Gemini CLI 활용 (필수)
+- **간단한 작업은 Gemini에게 위임**: 리서치, 버전 확인, breaking changes 조사, 코드 리뷰 등
+- **호출**: `gemini -p "질문" -o text` (non-interactive 필수)
+- **429 에러**: 서버 용량 부족 → 10초 후 1회 재시도, 실패 시 Claude 직접 처리
+- **Gemini = 독립 작업자**: 단순 질문이 아닌 실제 업무 분배 (코드 생성, 검증, 리서치)
+- **Claude 토큰 절약**: 불필요한 반복/장문 출력 금지, Gemini로 오프로드
+
+### 멀티 에이전트 팀 구성
+- **"팀 구성해"** = Task 도구로 서브에이전트 병렬 생성
+- **작업량 많으면 팀 스케일 업**: 에이전트 4~8개 동시 실행
+- **분배 원칙**: Gemini → 리서치/검증/간단한 작업, Claude 서브에이전트 → 실행/설치/복잡한 작업
+- **병렬 최대화**: 독립 작업은 반드시 동시 실행, 순차 의존성 있을 때만 대기
+
+### 서브에이전트 모델 선택 원칙 (필수)
+| 모델 | 용도 | 예시 |
+|------|------|------|
+| **opus** | 설계/판단/아키텍처 의사결정 | DB 통합 설계, 보안 아키텍처, 마이그레이션 전략 |
+| **sonnet** | 코드 실행/구현/설치 | Helm install, 스크립트 작성, 파일 수정, 디버깅 |
+| **gemini** | 리서치/검증/버전확인 | breaking changes 조사, 이미지 태그 확인, 문서 검색 |
+
+- Gemini 모델 로테이션: `gemini-2.5-flash` → `gemini-2.5-pro` → `gemini-3-flash-preview` → `gemini-3-pro-preview`
+- 한 모델 429 에러 → 다음 모델로 자동 전환: `gemini -m gemini-2.5-pro -p "..." -o text`
+
+### Parallel Processing
 1. **터미널 탭 번호 매기기**: 1~5번 탭에서 독립 작업
 2. **각 탭은 별도 git checkout**: `git worktree`로 독립 브랜치
 3. **웹 세션 활용**: claude.ai/code에서 추가 세션

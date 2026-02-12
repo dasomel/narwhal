@@ -9,9 +9,10 @@ echo "=== Installing Keycloak ${KEYCLOAK_VERSION} with Operator ==="
 
 export KUBECONFIG=/home/vagrant/.kube/config
 
-# Wait for PostgreSQL primary to be ready
-echo "Waiting for PostgreSQL primary..."
-kubectl wait --for=condition=Ready pod/keycloak-db-1 -n keycloak --timeout=300s || true
+# Wait for unified PostgreSQL cluster to be ready
+echo "Waiting for PostgreSQL (narwhal-db) to be ready..."
+kubectl wait --for=condition=Ready cluster/narwhal-db -n database --timeout=300s || true
+kubectl wait --for=condition=Ready pod -l cnpg.io/cluster=narwhal-db -n database --timeout=120s || true
 
 #=========================================
 # Install Keycloak Operator
@@ -36,7 +37,7 @@ kubectl create secret generic keycloak-admin-secret -n keycloak \
   --from-literal=password="${KEYCLOAK_ADMIN_PASSWORD}" \
   --dry-run=client -o yaml | kubectl apply -f -
 
-# Create database credentials secret
+# Create database credentials secret (pointing to unified narwhal-db)
 kubectl create secret generic keycloak-db-secret -n keycloak \
   --from-literal=username=keycloak \
   --from-literal=password=keycloak-db-password \
@@ -44,6 +45,7 @@ kubectl create secret generic keycloak-db-secret -n keycloak \
 
 # Deploy Keycloak CR
 # Note: Initial admin credentials are auto-generated and stored in {cr-name}-initial-admin secret
+# DB host uses ExternalName service keycloak-db-rw → narwhal-db-rw.database.svc.cluster.local
 cat <<EOF | kubectl apply -f -
 apiVersion: k8s.keycloak.org/v2alpha1
 kind: Keycloak

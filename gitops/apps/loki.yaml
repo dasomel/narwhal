@@ -19,9 +19,12 @@ spec:
             replication_factor: 1
           storage:
             type: s3
+            bucketNames:
+              chunks: loki
+              ruler: loki
+              admin: loki
             s3:
               endpoint: http://seaweedfs-s3.seaweedfs.svc.cluster.local:8333
-              bucketnames: loki
               accessKeyId: admin
               secretAccessKey: admin
               s3ForcePathStyle: true

@@ -101,7 +101,6 @@ Vagrant.configure("2") do |config|
     master.vm.provision "shell", path: "scripts/common/02-containerd.sh"
     master.vm.provision "shell", path: "scripts/common/03-k8s-install.sh",
       env: { "K8S_VERSION" => K8S_VERSION }
-    master.vm.provision "shell", path: "scripts/common/04-nfs-client.sh"
 
     # Master provisioning
     master.vm.provision "shell", path: "scripts/master/00-nfs-server.sh",
@@ -184,7 +183,6 @@ Vagrant.configure("2") do |config|
       worker.vm.provision "shell", path: "scripts/common/02-containerd.sh"
       worker.vm.provision "shell", path: "scripts/common/03-k8s-install.sh",
         env: { "K8S_VERSION" => K8S_VERSION }
-      worker.vm.provision "shell", path: "scripts/common/04-nfs-client.sh"
 
       # Worker provisioning
       worker.vm.provision "shell", path: "scripts/worker/01-join-cluster.sh",

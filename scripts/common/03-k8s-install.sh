@@ -6,7 +6,6 @@ K8S_VERSION="${K8S_VERSION:-1.31}"
 echo "=== Kubernetes v${K8S_VERSION} Installation ==="
 
 # Add K8s APT repository
-sudo mkdir -p /etc/apt/keyrings
 curl -fsSL "https://pkgs.k8s.io/core:/stable:/v${K8S_VERSION}/deb/Release.key" | \
   sudo gpg --batch --yes --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
 

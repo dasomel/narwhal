@@ -44,7 +44,8 @@ sudo apt-get update
 sudo apt-get install -y \
   bash-completion \
   jq \
-  sshpass
+  sshpass \
+  nfs-common
 
 # Install yq
 YQ_VERSION="v4.50.1"

@@ -102,7 +102,6 @@
 | 사전 설정 | `scripts/common/01-prerequisites.sh` | 호스트명, /etc/hosts 설정 |
 | 컨테이너 런타임 | `scripts/common/02-containerd.sh` | containerd 설치 |
 | K8s 설치 | `scripts/common/03-k8s-install.sh` | kubeadm, kubelet, kubectl |
-| NFS 클라이언트 | `scripts/common/04-nfs-client.sh` | NFS 마운트 설정 |
 
 ### 2. Master 노드 설정 플로우
 

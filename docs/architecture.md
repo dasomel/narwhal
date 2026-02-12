@@ -326,7 +326,6 @@ PostgreSQL HA (CloudNative-PG)
 01-prerequisites.sh  → 호스트명, /etc/hosts, 커널 모듈
 02-containerd.sh     → containerd 런타임 설치
 03-k8s-install.sh    → kubeadm, kubelet, kubectl 설치
-04-nfs-client.sh     → NFS 클라이언트 마운트
 ```
 
 ### Phase 2: Master Node Setup

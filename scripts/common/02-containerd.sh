@@ -4,7 +4,6 @@ set -euo pipefail
 echo "=== containerd Installation ==="
 
 # Install containerd
-sudo apt-get update
 sudo apt-get install -y containerd
 
 # Configure containerd

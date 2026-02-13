@@ -39,12 +39,5 @@ for i in $(seq 1 "$WORKER_COUNT"); do
   echo "${WORKER_IP_BASE}${i}   ${CLUSTER_NAME}-worker-${i}" | sudo tee -a /etc/hosts
 done
 
-# Install yq (not included in base box)
-YQ_VERSION="v4.50.1"
-ARCH=$(uname -m)
-if [ "$ARCH" = "x86_64" ]; then ARCH="amd64"; fi
-if [ "$ARCH" = "aarch64" ]; then ARCH="arm64"; fi
-sudo wget -qO /usr/local/bin/yq "https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/yq_linux_${ARCH}"
-sudo chmod +x /usr/local/bin/yq
 
 echo "=== Prerequisites Done ==="

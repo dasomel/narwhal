@@ -39,15 +39,7 @@ for i in $(seq 1 "$WORKER_COUNT"); do
   echo "${WORKER_IP_BASE}${i}   ${CLUSTER_NAME}-worker-${i}" | sudo tee -a /etc/hosts
 done
 
-# Install essential packages
-sudo apt-get update
-sudo apt-get install -y \
-  bash-completion \
-  jq \
-  sshpass \
-  nfs-common
-
-# Install yq
+# Install yq (not included in base box)
 YQ_VERSION="v4.50.1"
 ARCH=$(uname -m)
 if [ "$ARCH" = "x86_64" ]; then ARCH="amd64"; fi

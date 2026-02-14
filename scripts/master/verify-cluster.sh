@@ -102,7 +102,7 @@ check_ready() {
   local ready
   ready=$(kubectl get "${kind}" -n "${ns}" "${name}" -o jsonpath='{.status.readyReplicas}' 2>/dev/null || echo "0")
   local desired
-  desired=$(kubectl get "${kind}" -n "${ns}" "${name}" -o jsonpath='{.status.replicas}' 2>/dev/null || echo "0")
+  desired=$(kubectl get "${kind}" -n "${ns}" "${name}" -o jsonpath='{.spec.replicas}' 2>/dev/null || echo "0")
   if [ "${ready:-0}" -gt 0 ] && [ "${ready}" = "${desired}" ]; then
     pass "${display}: ${ready}/${desired} Ready"
   else
@@ -177,7 +177,8 @@ if should_run "etcd"; then
   # etcdctl is inside the etcd pod (not installed on host in kubeadm clusters)
   ETCD_POD=$(kubectl get pods -n kube-system -l component=etcd -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
   if [ -n "${ETCD_POD}" ]; then
-    ETCD_MEMBERS=$(kubectl exec -n kube-system "${ETCD_POD}" -- etcdctl member list \
+    ETCD_MEMBERS=$(kubectl exec -n kube-system "${ETCD_POD}" -- \
+      etcdctl member list \
       --endpoints=https://127.0.0.1:2379 \
       --cacert=/etc/kubernetes/pki/etcd/ca.crt \
       --cert=/etc/kubernetes/pki/etcd/server.crt \
@@ -199,7 +200,10 @@ fi
 if should_run "cilium"; then
   echo "--- [4/14] Cilium CNI ---"
   check_pods "kube-system" "k8s-app=cilium" 4 "cilium agents"
-  check_ready "deployment" "kube-system" "cilium-operator" "cilium-operator"
+  CILIUM_OP_NAME=$(kubectl get deployment -n kube-system -l app.kubernetes.io/name=cilium-operator -o jsonpath='{.items[0].metadata.name}' 2>/dev/null \
+    || kubectl get deployment -n kube-system -l name=cilium-operator -o jsonpath='{.items[0].metadata.name}' 2>/dev/null \
+    || echo "cilium-operator")
+  check_ready "deployment" "kube-system" "${CILIUM_OP_NAME}" "cilium-operator"
 
   if ! ${QUICK_MODE}; then
     HUBBLE_RELAY=$(kubectl get pods -n kube-system -l k8s-app=hubble-relay --no-headers 2>/dev/null | grep -c "Running" || echo "0")
@@ -362,7 +366,7 @@ if should_run "dns"; then
 
   # Pod DNS (only if not quick mode)
   if ! ${QUICK_MODE}; then
-    POD_DNS=$(kubectl run verify-dns-$$ --rm -i --restart=Never --image=busybox:1.36 -- nslookup keycloak.local.narwhal.io 2>/dev/null | grep -c "192.168.56.200" || echo "0")
+    POD_DNS=$(kubectl run verify-dns-$$ --rm -i --restart=Never --image=busybox:1.36 -- nslookup keycloak.local.narwhal.io 2>/dev/null | grep -c "192.168.56.200" | tr -d '\n' || echo "0")
     if [ "${POD_DNS}" -gt 0 ]; then
       pass "Pod DNS: keycloak.local.narwhal.io -> 192.168.56.200"
     else
@@ -580,11 +584,12 @@ if should_run "routes"; then
     echo "  --- HTTPS Connectivity ---"
     for host in argocd grafana gitea keycloak; do
       CODE=$(curl -sk -o /dev/null -w '%{http_code}' "https://${host}.local.narwhal.io" 2>/dev/null || echo "000")
-      if [ "${CODE}" != "000" ] && [ "${CODE}" != "502" ] && [ "${CODE}" != "503" ]; then
-        pass "https://${host}.local.narwhal.io: HTTP ${CODE}"
-      else
-        fail "https://${host}.local.narwhal.io: HTTP ${CODE}"
-      fi
+      case "${CODE}" in
+        200|301|302|303|307|308)
+          pass "https://${host}.local.narwhal.io: HTTP ${CODE}" ;;
+        *)
+          fail "https://${host}.local.narwhal.io: HTTP ${CODE}" ;;
+      esac
     done
   fi
   echo ""

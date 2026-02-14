@@ -46,10 +46,12 @@ spec:
               aws_access_key_id = admin
               aws_secret_access_key = admin
         snapshotsEnabled: false
+        # Disable CRD upgrade hook - alpine/k8s musl binaries can't exec in velero glibc container
+        upgradeCRDs: false
         kubectl:
           image:
-            repository: registry.k8s.io/kubectl
-            tag: v1.31.0
+            repository: docker.io/alpine/k8s
+            tag: "1.31.4"
         deployNodeAgent: true
         nodeAgent:
           podVolumePath: /var/lib/kubelet/pods

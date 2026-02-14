@@ -1,11 +1,13 @@
 #!/bin/bash
 set -euo pipefail
 
-K8S_VERSION="${K8S_VERSION:-1.31}"
+K8S_VERSION="${K8S_VERSION:-1.35}"
+# Patch version resolved by APT repo (v1.35 repo provides 1.35.1+)
+K8S_PATCH_VERSION="${K8S_PATCH_VERSION:-1.35.1}"
 
-echo "=== Kubernetes v${K8S_VERSION} Installation ==="
+echo "=== Kubernetes v${K8S_PATCH_VERSION} Installation ==="
 
-# Add K8s APT repository
+# Add K8s APT repository (pinned to v${K8S_VERSION} minor series)
 curl -fsSL "https://pkgs.k8s.io/core:/stable:/v${K8S_VERSION}/deb/Release.key" | \
   sudo gpg --batch --yes --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
 
@@ -13,6 +15,7 @@ echo "deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.
   sudo tee /etc/apt/sources.list.d/kubernetes.list
 
 # Install kubeadm, kubelet, kubectl
+# Version pinned via APT repo (v1.35 repo only provides 1.35.x packages)
 sudo apt-get update
 sudo apt-get install -y kubelet kubeadm kubectl
 sudo apt-mark hold kubelet kubeadm kubectl

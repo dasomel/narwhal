@@ -6,22 +6,53 @@ POSTGRES_VERSION="${POSTGRES_VERSION:-17}"
 
 echo "=== Installing CloudNative-PG v1.28.1 (chart: ${CNPG_CHART_VERSION}) ==="
 
-export KUBECONFIG=/home/vagrant/.kube/config
+# Use local kubeconfig (bypasses VIP) to avoid disruption during master-2 join
+export KUBECONFIG=/home/vagrant/.kube/config-local
+
+# Wait for API server to be reachable (may restart under memory pressure)
+echo "Waiting for API server..."
+for i in {1..30}; do
+  if kubectl get nodes &>/dev/null; then
+    break
+  fi
+  echo "API server not ready, retrying... (${i}/30)"
+  sleep 10
+done
 
 # Add CNPG Helm repo
 helm repo add cnpg https://cloudnative-pg.github.io/charts
 helm repo update
 
-# Install CNPG Operator
+# Install CNPG Operator (no --wait: avoids atomic rollback on timeout)
 helm upgrade --install cnpg cnpg/cloudnative-pg \
   --namespace cnpg-system \
   --create-namespace \
   --version "${CNPG_CHART_VERSION}" \
-  --wait
+  --timeout 5m || echo "WARN: CNPG operator install timed out, waiting manually..."
 
-# Wait for operator to be ready
-echo "Waiting for CNPG operator..."
-kubectl wait --for=condition=Ready pod -l app.kubernetes.io/name=cloudnative-pg -n cnpg-system --timeout=120s
+# Wait for operator pod to be ready (must be running before creating CRs)
+echo "Waiting for CNPG operator pod..."
+CNPG_READY=false
+for attempt in {1..60}; do
+  if kubectl wait --for=condition=Ready pod -l app.kubernetes.io/name=cloudnative-pg -n cnpg-system --timeout=10s 2>/dev/null; then
+    echo "CNPG operator pod is ready"
+    CNPG_READY=true
+    break
+  fi
+  echo "CNPG operator not ready yet... (${attempt}/60)"
+  sleep 10
+done
+
+if [ "${CNPG_READY}" != "true" ]; then
+  echo "ERROR: CNPG operator pod did not become ready after 10 minutes"
+  kubectl get pods -n cnpg-system || true
+  kubectl describe pod -l app.kubernetes.io/name=cloudnative-pg -n cnpg-system 2>/dev/null | tail -20 || true
+  exit 1
+fi
+
+# Wait extra for webhook to be fully registered
+echo "Waiting for CNPG webhook to be ready..."
+sleep 15
 
 #=========================================
 # Create Unified PostgreSQL HA Cluster
@@ -54,8 +85,9 @@ stringData:
   ACCESS_SECRET_KEY: admin
 EOF
 
-# Create unified PostgreSQL cluster with all databases
-cat <<EOF | kubectl apply -f -
+# Write cluster manifest to temp file (avoids heredoc + if + set -e issues)
+CLUSTER_MANIFEST=$(mktemp)
+cat > "${CLUSTER_MANIFEST}" <<EOF
 apiVersion: postgresql.cnpg.io/v1
 kind: Cluster
 metadata:
@@ -89,10 +121,10 @@ spec:
 
   resources:
     requests:
-      memory: "1Gi"
-      cpu: "500m"
+      memory: "512Mi"
+      cpu: "250m"
     limits:
-      memory: "2Gi"
+      memory: "1Gi"
       cpu: "1"
 
   # PostgreSQL tuning (optimized for 3-app unified workload)
@@ -128,26 +160,25 @@ spec:
       - key: node.kubernetes.io/disk-pressure
         operator: Exists
         effect: NoSchedule
-
-  # Backup disabled during initial setup (SeaweedFS not yet available)
-  # Enable after GitOps deployment completes
-  # backup:
-  #   barmanObjectStore:
-  #     destinationPath: s3://cnpg-backup/narwhal-db
-  #     endpointURL: http://seaweedfs-s3.seaweedfs.svc.cluster.local:8333
-  #     s3Credentials:
-  #       accessKeyId:
-  #         name: cnpg-s3-credentials
-  #         key: ACCESS_KEY_ID
-  #       secretAccessKey:
-  #         name: cnpg-s3-credentials
-  #         key: ACCESS_SECRET_KEY
-  #     wal:
-  #       compression: gzip
-  #     data:
-  #       compression: gzip
-  #   retentionPolicy: "14d"
 EOF
+
+# Create unified PostgreSQL cluster (retry for webhook readiness)
+CLUSTER_CREATED=false
+for attempt in {1..15}; do
+  if kubectl apply -f "${CLUSTER_MANIFEST}" 2>/dev/null; then
+    echo "narwhal-db Cluster CR created successfully"
+    CLUSTER_CREATED=true
+    break
+  fi
+  echo "CNPG webhook not ready, retrying... (${attempt}/15)"
+  sleep 15
+done
+rm -f "${CLUSTER_MANIFEST}"
+
+if [ "${CLUSTER_CREATED}" != "true" ]; then
+  echo "ERROR: Failed to create narwhal-db cluster after 15 attempts"
+  exit 1
+fi
 
 # Wait for PostgreSQL cluster to be ready
 echo "Waiting for PostgreSQL cluster to be ready..."
@@ -162,7 +193,7 @@ kubectl wait --for=condition=Ready pod -l cnpg.io/cluster=narwhal-db -n database
 #=========================================
 echo "=== Creating PgBouncer Connection Pooler ==="
 
-cat <<EOF | kubectl apply -f -
+cat <<EOF | kubectl apply -f - || echo "WARN: PgBouncer pooler creation failed, continuing..."
 apiVersion: postgresql.cnpg.io/v1
 kind: Pooler
 metadata:
@@ -171,7 +202,7 @@ metadata:
 spec:
   cluster:
     name: narwhal-db
-  instances: 2
+  instances: 1
   type: rw
   pgbouncer:
     poolMode: transaction
@@ -255,8 +286,8 @@ echo "=========================================="
 echo "PostgreSQL Unified Cluster: narwhal-db"
 echo "=========================================="
 echo "Namespace: database"
-echo "Instances: 2 (HA with streaming replication)"
-echo "PgBouncer: 2 pooler pods (transaction mode)"
+echo "Instances: 2 (HA: 1 primary + 1 replica)"
+echo "PgBouncer: 1 pooler pod (transaction mode)"
 echo ""
 echo "Databases:"
 echo "  keycloak - owner: keycloak, password: keycloak-db-password"

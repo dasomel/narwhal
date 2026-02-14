@@ -7,11 +7,10 @@ NFS_SHARE_PATH="${NFS_SHARE_PATH:-/srv/nfs/k8s}"
 # Component versions
 METRICS_SERVER_VERSION="${METRICS_SERVER_VERSION:-v0.8.1}"
 CSI_DRIVER_NFS_VERSION="${CSI_DRIVER_NFS_VERSION:-v4.12.1}"
-NFS_QUOTA_AGENT_VERSION="${NFS_QUOTA_AGENT_VERSION:-v0.2.1}"
-
 echo "=== Installing Kubernetes Addons ==="
 
-export KUBECONFIG=/home/vagrant/.kube/config
+# Use local kubeconfig (bypasses VIP) to avoid disruption during master-2 join
+export KUBECONFIG=/home/vagrant/.kube/config-local
 
 # Install Helm if not installed
 HELM_VERSION="v4.1.0"
@@ -70,26 +69,6 @@ mountOptions:
   - rsize=65536
   - wsize=65536
 EOF
-
-#=========================================
-# NFS Quota Agent
-#=========================================
-echo "=== Installing NFS Quota Agent ${NFS_QUOTA_AGENT_VERSION} ==="
-
-# Label master node as NFS server
-kubectl label node narwhal-master nfs-server=true --overwrite
-
-# Install via Helm OCI registry
-helm upgrade --install nfs-quota-agent oci://ghcr.io/dasomel/charts/nfs-quota-agent \
-  --namespace kube-system \
-  --version "${NFS_QUOTA_AGENT_VERSION#v}" \
-  --set image.repository=ghcr.io/dasomel/nfs-quota-agent \
-  --set image.tag="${NFS_QUOTA_AGENT_VERSION}" \
-  --set config.nfsBasePath=/export \
-  --set config.nfsServerPath="${NFS_SHARE_PATH}" \
-  --set config.provisionerName=nfs.csi.k8s.io \
-  --set config.syncInterval=30s \
-  --set nfsExport.hostPath="${NFS_SHARE_PATH}"
 
 # Wait for system pods
 echo "Waiting for system pods to be ready..."

@@ -7,7 +7,8 @@ KEYCLOAK_ADMIN_PASSWORD="${KEYCLOAK_ADMIN_PASSWORD:-admin}"
 
 echo "=== Installing Keycloak ${KEYCLOAK_VERSION} with Operator ==="
 
-export KUBECONFIG=/home/vagrant/.kube/config
+# Use local kubeconfig (bypasses VIP) to avoid disruption during master-2 join
+export KUBECONFIG=/home/vagrant/.kube/config-local
 
 # Wait for unified PostgreSQL cluster to be ready
 echo "Waiting for PostgreSQL (narwhal-db) to be ready..."
@@ -68,10 +69,14 @@ spec:
   http:
     httpEnabled: true
   hostname:
-    hostname: keycloak.local
+    hostname: keycloak.local.narwhal.io
     strict: false
   proxy:
     headers: xforwarded
+  additionalOptions:
+    - name: hostname-url
+      # K8s 1.35+ requires HTTPS for OIDC issuer URL
+      value: "https://keycloak.local.narwhal.io"
 EOF
 
 # Wait for Keycloak pods
@@ -315,39 +320,60 @@ EOF
 #=========================================
 echo "=== Configuring API Server for OIDC ==="
 
-MASTER_IP="${MASTER_IP:-192.168.56.10}"
-OIDC_ISSUER_URL="http://${MASTER_IP}:30080/realms/kubernetes"
+# K8s 1.35+ requires HTTPS for --oidc-issuer-url; HTTP causes API server crash
+OIDC_ISSUER_URL="https://keycloak.local.narwhal.io/realms/kubernetes"
 APISERVER_MANIFEST="/etc/kubernetes/manifests/kube-apiserver.yaml"
 
-# Check if OIDC flags already exist
-if ! grep -q "oidc-issuer-url" ${APISERVER_MANIFEST} 2>/dev/null; then
-  # Backup manifest
-  sudo cp ${APISERVER_MANIFEST} ${APISERVER_MANIFEST}.bak
-
-  # Use yq to safely add OIDC flags to the command array
-  sudo yq -i '.spec.containers[0].command += [
-    "--oidc-issuer-url='"${OIDC_ISSUER_URL}"'",
-    "--oidc-client-id=kubernetes",
-    "--oidc-username-claim=preferred_username",
-    "--oidc-groups-claim=groups",
-    "--oidc-username-prefix=oidc:",
-    "--oidc-groups-prefix=oidc:"
-  ]' ${APISERVER_MANIFEST}
-
-  echo "OIDC flags added to API server. Waiting for restart..."
-
-  # Wait for API server to restart
+# Verify HTTPS OIDC endpoint is reachable before activating
+# K8s 1.35+ will crash API server if the HTTPS URL is unreachable
+echo "Verifying OIDC issuer HTTPS endpoint..."
+OIDC_REACHABLE=false
+for attempt in {1..10}; do
+  HTTP_CODE=$(curl -sk -o /dev/null -w '%{http_code}' "${OIDC_ISSUER_URL}/.well-known/openid-configuration" 2>/dev/null || echo "000")
+  if [ "${HTTP_CODE}" = "200" ]; then
+    OIDC_REACHABLE=true
+    echo "OIDC endpoint reachable (HTTP ${HTTP_CODE})"
+    break
+  fi
+  echo "OIDC endpoint not ready (HTTP ${HTTP_CODE}), attempt ${attempt}/10..."
   sleep 10
-  for i in {1..30}; do
-    if kubectl get nodes &>/dev/null; then
-      echo "API server is ready"
-      break
-    fi
-    echo "Waiting for API server... ($i/30)"
-    sleep 5
-  done
+done
+
+if [ "${OIDC_REACHABLE}" = "false" ]; then
+  echo "WARN: OIDC HTTPS endpoint not reachable. Skipping API server OIDC activation."
+  echo "  Possible causes:"
+  echo "    - cert-manager TLS certificate not issued yet"
+  echo "    - Traefik Gateway not routing keycloak.local.narwhal.io"
+  echo "    - DNS not resolving keycloak.local.narwhal.io"
+  echo "  Run scripts in order: 07-platform-apps.sh → 08-dnsmasq.sh → 09-keycloak.sh"
 else
-  echo "OIDC already configured in API server"
+  # Check if OIDC flags already exist
+  if ! grep -q "oidc-issuer-url" ${APISERVER_MANIFEST} 2>/dev/null; then
+    # Use yq to safely add OIDC flags to the command array
+    sudo yq -i '.spec.containers[0].command += [
+      "--oidc-issuer-url='"${OIDC_ISSUER_URL}"'",
+      "--oidc-client-id=kubernetes",
+      "--oidc-username-claim=preferred_username",
+      "--oidc-groups-claim=groups",
+      "--oidc-username-prefix=oidc:",
+      "--oidc-groups-prefix=oidc:"
+    ]' ${APISERVER_MANIFEST}
+
+    echo "OIDC flags added to API server. Waiting for restart..."
+
+    # Wait for API server to restart
+    sleep 10
+    for i in {1..30}; do
+      if kubectl get nodes &>/dev/null; then
+        echo "API server is ready"
+        break
+      fi
+      echo "Waiting for API server... ($i/30)"
+      sleep 5
+    done
+  else
+    echo "OIDC already configured in API server"
+  fi
 fi
 
 echo "=== Keycloak Installation Done ==="
@@ -369,11 +395,11 @@ echo "  k8s-admin / k8s-admin (cluster-admin)"
 echo "  developer / developer (edit)"
 echo ""
 echo "OIDC Configuration:"
-echo "  Issuer: http://${MASTER_IP}:30080/realms/kubernetes"
+echo "  Issuer: https://keycloak.local.narwhal.io/realms/kubernetes"
 echo "  Client ID: kubernetes"
 echo ""
 echo "Test OIDC:"
-echo "  TOKEN=\$(curl -s -X POST 'http://${MASTER_IP}:30080/realms/kubernetes/protocol/openid-connect/token' \\"
+echo "  TOKEN=\$(curl -s -X POST 'https://keycloak.local.narwhal.io/realms/kubernetes/protocol/openid-connect/token' \\"
 echo "    -d 'grant_type=password&client_id=kubernetes&username=k8s-admin&password=k8s-admin' | jq -r '.access_token')"
 echo "  kubectl --token=\$TOKEN get nodes"
 echo ""

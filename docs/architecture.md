@@ -8,31 +8,42 @@ Narwhal은 Vagrant VM 기반의 Kubernetes Internal Developer Platform (IDP) 클
 ## Infrastructure Overview
 
 ```
-┌─────────────────────────────────────────────────────────────────────┐
-│                         Host Machine (macOS)                        │
-│                                                                     │
-│  Vagrant + VMware Desktop / VirtualBox                              │
-│                                                                     │
-│  ┌───────────────────┐  ┌──────────────────┐  ┌──────────────────┐ │
-│  │   narwhal-master   │  │  narwhal-worker-1 │  │  narwhal-worker-2│ │
-│  │   192.168.56.10    │  │  192.168.56.21    │  │  192.168.56.22   │ │
-│  │   control-plane    │  │  worker           │  │  worker          │ │
-│  │   NFS Server       │  │                   │  │                  │ │
-│  │   dnsmasq          │  │                   │  │                  │ │
-│  │   2 CPU / 4GB RAM  │  │  2 CPU / 4GB RAM  │  │  2 CPU / 4GB RAM │ │
-│  └───────────────────┘  └──────────────────┘  └──────────────────┘ │
-│                                                                     │
-│  VIP: 192.168.56.100 (kube-vip)                                     │
-│  LB:  192.168.56.200 (MetalLB → Traefik)                           │
-│  DNS: *.local.narwhal.io → 192.168.56.200                          │
-└─────────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                           Host Machine (macOS)                              │
+│                                                                             │
+│  Vagrant + VMware Desktop / VirtualBox                                      │
+│                                                                             │
+│  ┌─────────────────┐  ┌─────────────────┐                                  │
+│  │ narwhal-master-1 │  │ narwhal-master-2 │                                  │
+│  │ 192.168.56.10    │  │ 192.168.56.11    │                                  │
+│  │ control-plane    │  │ control-plane    │                                  │
+│  │ NFS Server       │  │                  │                                  │
+│  │ dnsmasq          │  │                  │                                  │
+│  │ 2 CPU / 4GB RAM  │  │ 2 CPU / 4GB RAM  │                                  │
+│  └────────┬─────────┘  └────────┬─────────┘                                  │
+│           └──────────┬──────────┘                                            │
+│                      │                                                       │
+│            VIP: 192.168.56.100 (kube-vip, ARP leader election)               │
+│            ⚠ etcd 2-node: quorum=2/2 (dev only)                             │
+│                      │                                                       │
+│  ┌──────────────────┐  ┌──────────────────┐                                  │
+│  │ narwhal-worker-1  │  │ narwhal-worker-2  │                                  │
+│  │ 192.168.56.21     │  │ 192.168.56.22     │                                  │
+│  │ worker            │  │ worker            │                                  │
+│  │ 2 CPU / 4GB RAM   │  │ 2 CPU / 4GB RAM   │                                  │
+│  └──────────────────┘  └──────────────────┘                                  │
+│                                                                             │
+│  LB:  192.168.56.200 (MetalLB → Traefik)                                    │
+│  DNS: *.local.narwhal.io → 192.168.56.200                                   │
+└─────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ### VM Specifications
 
 | Node | IP | Role | CPU | Memory |
 |------|----|------|-----|--------|
-| narwhal-master | 192.168.56.10 | control-plane, NFS Server, dnsmasq | 2 | 4 GiB |
+| narwhal-master-1 | 192.168.56.10 | control-plane, NFS Server, dnsmasq | 2 | 4 GiB |
+| narwhal-master-2 | 192.168.56.11 | control-plane | 2 | 4 GiB |
 | narwhal-worker-1 | 192.168.56.21 | worker | 2 | 4 GiB |
 | narwhal-worker-2 | 192.168.56.22 | worker | 2 | 4 GiB |
 
@@ -224,7 +235,7 @@ PostgreSQL HA (CloudNative-PG)
 ┌──────────────────────────────────────────────────┐
 │          Kubernetes API Server                    │
 │                                                   │
-│  --oidc-issuer-url=http://192.168.56.10:30080/    │
+│  --oidc-issuer-url=http://192.168.56.100:30080/   │
 │          realms/kubernetes                        │
 │  --oidc-client-id=kubernetes                      │
 │  --oidc-username-claim=preferred_username         │
@@ -318,39 +329,49 @@ PostgreSQL HA (CloudNative-PG)
 
 ## Provisioning Flow
 
-클러스터는 Vagrant에 의해 순차적으로 프로비저닝됩니다.
+클러스터는 Vagrant에 의해 순차적으로 프로비저닝됩니다. (2-master HA)
 
 ### Phase 1: Base Infrastructure (All Nodes)
 
 ```
-01-prerequisites.sh  → 호스트명, /etc/hosts, 커널 모듈
+01-prerequisites.sh  → 호스트명, /etc/hosts (VIP + 멀티마스터), 커널 모듈
 02-containerd.sh     → containerd 런타임 설치
 03-k8s-install.sh    → kubeadm, kubelet, kubectl 설치
 ```
 
-### Phase 2: Master Node Setup
+### Phase 2: Master-1 Setup (Full Provisioning)
 
 ```
+01-kube-vip.sh       → Control Plane VIP 정적 Pod (192.168.56.100, super-admin.conf)
 00-nfs-server.sh     → NFS 서버 (XFS prjquota)
-01-kube-vip.sh       → Control Plane VIP (192.168.56.100)
-02-init-cluster.sh   → kubeadm init
-03-cni-install.sh    → Cilium CNI + Hubble
+02-init-cluster.sh   → kubeadm init (--upload-certs, VIP endpoint)
+                       → join-command.sh (worker용)
+                       → join-control-plane.sh (master-2용, --ignore-preflight-errors)
+03-cni-install.sh    → Cilium CNI + Hubble (VIP 기반 API 서버)
 04-addons.sh         → metrics-server, csi-driver-nfs, StorageClass
 05-nfs-quota-agent.sh→ NFS 프로젝트 쿼터 에이전트
 ```
 
-### Phase 3: Platform Services
+### Phase 3: Master-2+ Setup (Control Plane Join)
 
 ```
-06-cnpg.sh           → CloudNative-PG Operator + Keycloak DB (3 inst.)
-07-keycloak.sh       → Keycloak Operator + OIDC 설정 + API Server 연동
-08-platform-apps.sh  → MetalLB, Traefik, cert-manager, Prometheus,
+01-kube-vip.sh           → Control Plane VIP 정적 Pod (admin.conf)
+02-join-control-plane.sh → master-1에서 SCP로 join 명령 가져와 실행
+                           kubeadm join --control-plane (etcd 2-node 쿼럼)
+```
+
+### Phase 4: Platform Services (Master-1 only)
+
+```
+06-cnpg.sh           → CloudNative-PG Operator + narwhal-db
+07-platform-apps.sh  → MetalLB, Traefik, cert-manager, Prometheus,
                        Loki, Promtail, Tempo, Kyverno, Headlamp,
                        OAuth2 Proxy, SeaweedFS, Harbor, OpenBao, Velero
-09-dnsmasq.sh        → 로컬 DNS (*.local.narwhal.io)
+08-dnsmasq.sh        → 로컬 DNS (*.local.narwhal.io) + CoreDNS forward
+09-keycloak.sh       → Keycloak Operator + OIDC 설정 + API Server 연동
 ```
 
-### Phase 4: GitOps Bootstrap
+### Phase 5: GitOps Bootstrap (Master-1 only)
 
 ```
 10-gitea.sh          → Gitea Git 서버 + CNPG DB (2 inst.)
@@ -358,10 +379,10 @@ PostgreSQL HA (CloudNative-PG)
 12-gitops-bootstrap.sh → narwhal-gitops 레포 생성 + App-of-Apps 배포
 ```
 
-### Worker Node
+### Worker Nodes
 
 ```
-01-join-cluster.sh   → kubeadm join (토큰 기반)
+01-join-cluster.sh   → kubeadm join (master-1에서 토큰 가져오기)
 ```
 
 ---
@@ -422,7 +443,7 @@ sudo resolvectl domain eth0 ~local.narwhal.io
 ```bash
 # 토큰 발급
 TOKEN=$(curl -s -X POST \
-  'http://192.168.56.10:30080/realms/kubernetes/protocol/openid-connect/token' \
+  'http://192.168.56.100:30080/realms/kubernetes/protocol/openid-connect/token' \
   -d 'grant_type=password&client_id=kubernetes&username=k8s-admin&password=k8s-admin' \
   | jq -r '.access_token')
 

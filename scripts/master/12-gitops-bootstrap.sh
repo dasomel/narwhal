@@ -3,7 +3,18 @@ set -euo pipefail
 
 echo "=== Bootstrapping GitOps ==="
 
-export KUBECONFIG=/home/vagrant/.kube/config
+# Use local kubeconfig (bypasses VIP) to avoid disruption during master-2 join
+export KUBECONFIG=/home/vagrant/.kube/config-local
+
+# Wait for API server to be reachable (may restart under memory pressure)
+echo "Waiting for API server..."
+for i in {1..30}; do
+  if kubectl get nodes &>/dev/null; then
+    break
+  fi
+  echo "API server not ready, retrying... (${i}/30)"
+  sleep 10
+done
 
 GITEA_URL="http://gitea-http.gitea.svc.cluster.local:3000"
 GITEA_ADMIN_USER="gitea-admin"

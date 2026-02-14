@@ -2,6 +2,7 @@
 set -euo pipefail
 
 NFS_SHARE_PATH="${NFS_SHARE_PATH:-/srv/nfs/k8s}"
+HOST_NETWORK_CIDR="${HOST_NETWORK_CIDR:-192.168.56.0/24}"
 POD_NETWORK_CIDR="${POD_NETWORK_CIDR:-10.244.0.0/16}"
 
 echo "=== NFS Server Installation ==="
@@ -19,7 +20,7 @@ sudo chmod 777 "${NFS_SHARE_PATH}"
 # Configure exports
 cat <<EOF | sudo tee /etc/exports
 # Kubernetes NFS share
-${NFS_SHARE_PATH}  192.168.56.0/24(rw,sync,no_subtree_check,no_root_squash)
+${NFS_SHARE_PATH}  ${HOST_NETWORK_CIDR}(rw,sync,no_subtree_check,no_root_squash)
 ${NFS_SHARE_PATH}  ${POD_NETWORK_CIDR}(rw,sync,no_subtree_check,no_root_squash)
 EOF
 
@@ -45,10 +46,6 @@ if ! mount | grep "${NFS_MOUNT}" | grep -q prjquota; then
     sudo mount -o remount,prjquota "${NFS_MOUNT}" 2>/dev/null || true
   fi
 fi
-
-# Initialize project quota directory
-sudo mkdir -p /etc/projects /etc/projid
-sudo touch /etc/projects /etc/projid
 
 # Enable and start NFS server
 sudo systemctl enable nfs-kernel-server

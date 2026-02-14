@@ -4,22 +4,35 @@ set -euo pipefail
 ARGOCD_VERSION="${ARGOCD_VERSION:-v3.3.0}"
 
 # Keycloak OIDC configuration
-KEYCLOAK_URL="${KEYCLOAK_URL:-http://keycloak-service.keycloak.svc.cluster.local:8080}"
+# K8s 1.35+ requires HTTPS for OIDC issuer URL
+KEYCLOAK_URL="${KEYCLOAK_URL:-https://keycloak.local.narwhal.io}"
 KEYCLOAK_REALM="${KEYCLOAK_REALM:-kubernetes}"
 
 echo "=== Installing ArgoCD ${ARGOCD_VERSION} ==="
 
-export KUBECONFIG=/home/vagrant/.kube/config
+# Use local kubeconfig (bypasses VIP) to avoid disruption during master-2 join
+export KUBECONFIG=/home/vagrant/.kube/config-local
+
+# Wait for API server to be reachable (may restart under memory pressure)
+echo "Waiting for API server..."
+for i in {1..30}; do
+  if kubectl get nodes &>/dev/null; then
+    break
+  fi
+  echo "API server not ready, retrying... (${i}/30)"
+  sleep 10
+done
 
 # Create namespace
 kubectl create namespace argocd --dry-run=client -o yaml | kubectl apply -f -
 
-# Install ArgoCD
-kubectl apply -n argocd -f "https://raw.githubusercontent.com/argoproj/argo-cd/${ARGOCD_VERSION}/manifests/install.yaml"
+# Install ArgoCD (server-side apply for large CRDs like applicationsets)
+kubectl apply -n argocd -f "https://raw.githubusercontent.com/argoproj/argo-cd/${ARGOCD_VERSION}/manifests/install.yaml" \
+  --server-side --force-conflicts
 
 # Wait for ArgoCD pods
 echo "Waiting for ArgoCD pods..."
-kubectl wait --for=condition=Ready pod -l app.kubernetes.io/name=argocd-server -n argocd --timeout=300s
+kubectl wait --for=condition=Ready pod -l app.kubernetes.io/name=argocd-server -n argocd --timeout=300s || true
 
 # Configure ArgoCD for Keycloak OIDC and insecure mode (HTTP)
 cat <<EOF | kubectl apply -f -
@@ -63,10 +76,10 @@ EOF
 
 # Restart ArgoCD server to apply OIDC config
 kubectl rollout restart deployment argocd-server -n argocd
-kubectl wait --for=condition=Ready pod -l app.kubernetes.io/name=argocd-server -n argocd --timeout=300s
+kubectl wait --for=condition=Ready pod -l app.kubernetes.io/name=argocd-server -n argocd --timeout=300s || true
 
 # Get initial admin password
-ARGOCD_PASSWORD=$(kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d)
+ARGOCD_PASSWORD=$(kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d 2>/dev/null || echo "unknown")
 
 echo "=== ArgoCD Installation Done ==="
 

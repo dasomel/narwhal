@@ -52,12 +52,26 @@
 | 2026-01-30 | Keycloak 서비스명 오타 | `keycloak-service` (not `keycloak`), 포트 8080 명시 |
 | 2026-02-04 | sed로 YAML 수정 시 파싱 오류 | `yq`로 YAML 안전하게 수정 (예: API 서버 manifest OIDC 설정) |
 | 2026-02-05 | Helm `--set` nodeSelector boolean 에러 | `--set-string nodeSelector.key=true` 사용 (문자열 강제) |
+| 2026-02-14 | kube-vip `vip_subnet` 값에 `/` 포함 | `"32"` 사용 (NOT `"/32"`), 내부에서 `address + "/" + vip_subnet` 조합 |
+| 2026-02-14 | kube-vip kubeconfig 경로 인식 실패 | `/.kube/config`에 마운트 (distroless 이미지 HOME=/) |
+| 2026-02-14 | kube-vip admin.conf VIP 순환 의존성 | `kube-vip.conf` 별도 생성, 로컬 IP로 서버 주소 변경 |
+| 2026-02-14 | kube-vip static pod init 전 생성 시 chicken-and-egg | master-1은 init 후 manifest 생성, 수동 VIP 바인딩으로 부트스트랩 |
+| 2026-02-14 | kubeadm join VMware NAT 인터페이스 감지 | `--apiserver-advertise-address=192.168.56.x` 명시 필수 |
+| 2026-02-14 | VMware Vagrant private_network IP 미할당 | `01-prerequisites.sh`에서 netplan 직접 생성, `chmod 600` 필수 |
+| 2026-02-14 | Master 4GB RAM에서 API 서버 OOM 재시작 | Master 6GB 최소, CNPG 인스턴스 1개로 축소 |
+| 2026-02-14 | ArgoCD v3.x applicationsets CRD 262KB 초과 | `kubectl apply --server-side --force-conflicts` 사용 |
+| 2026-02-14 | Helm `--wait`로 타임아웃 시 릴리스 롤백 | 비핵심 앱은 `--wait` 제거, `--timeout`만 사용 |
 
 ### GitOps/ArgoCD 실수
 | 날짜 | 실수 | 해결책 |
 |------|------|--------|
 | - | values 파일 경로 오타 | `valueFiles` 경로는 repoURL 기준 상대경로 |
 | - | targetRevision 형식 오류 | 차트 버전은 `"1.0.0"` (문자열), Git ref는 `HEAD` |
+| 2026-02-14 | app-of-apps repoURL `https://` 사용 → Gitea는 HTTP only | `http://gitea-http.gitea.svc.cluster.local:3000/...` 사용 |
+| 2026-02-14 | Harbor gitops YAML에 ARM64 이미지 오버라이드 누락 | `ghcr.io/dasomel/goharbor/*:latest` 전체 컴포넌트 지정 필수 |
+| 2026-02-14 | SeaweedFS chart 버전 4.0.410 → Docker Hub 이미지 4.10 없음 | appVersion=image tag 확인 후 존재하는 버전 사용 (4.0.407→4.07) |
+| 2026-02-14 | ArgoCD repo-server GitHub Pages IPv6 연결 실패 | VM에서 IPv6 미지원, ArgoCD가 IPv6로 시도하면 실패 |
+| 2026-02-14 | ArgoCD 관리 리소스 Helm upgrade 충돌 | `kubectl set image`로 직접 패치, Helm 대신 kubectl 사용 |
 
 ### Vagrant/Infrastructure 실수
 | 날짜 | 실수 | 해결책 |
@@ -103,7 +117,9 @@
 | 컨테이너 런타임 | `scripts/common/02-containerd.sh` | containerd 설치 |
 | K8s 설치 | `scripts/common/03-k8s-install.sh` | kubeadm, kubelet, kubectl |
 
-### 2. Master 노드 설정 플로우
+### 2. Master 노드 설정 플로우 (2-Phase 구조)
+
+**Phase 1: 클러스터 인프라** (master-1 프로비저닝 시 실행)
 
 | 단계 | 파일 | 설명 |
 |------|------|------|
@@ -113,10 +129,18 @@
 | CNI 설치 | `scripts/master/03-cni-install.sh` | Cilium + Hubble |
 | 애드온 | `scripts/master/04-addons.sh` | metrics-server, csi-driver-nfs |
 | NFS 쿼터 | `scripts/master/05-nfs-quota-agent.sh` | NFS 프로젝트 쿼터 |
+
+→ master-2 join → worker-1 join → worker-2 join
+
+**Phase 2: 플랫폼 앱** (마지막 worker join 후 자동 트리거)
+
+| 단계 | 파일 | 설명 |
+|------|------|------|
+| Phase 2 래퍼 | `scripts/master/phase2-platform.sh` | Phase 2 스크립트 실행 |
 | PostgreSQL | `scripts/master/06-cnpg.sh` | CloudNative-PG Operator |
-| Keycloak | `scripts/master/07-keycloak.sh` | IAM/SSO |
-| 플랫폼 앱 | `scripts/master/08-platform-apps.sh` | cert-manager 등 |
-| dnsmasq | `scripts/master/09-dnsmasq.sh` | 로컬 DNS (*.local) |
+| 플랫폼 앱 | `scripts/master/07-platform-apps.sh` | MetalLB, Traefik, cert-manager 등 |
+| dnsmasq | `scripts/master/08-dnsmasq.sh` | 로컬 DNS + CoreDNS forward |
+| Keycloak | `scripts/master/09-keycloak.sh` | IAM/SSO + OIDC |
 | Gitea | `scripts/master/10-gitea.sh` | Git 서버 |
 | ArgoCD | `scripts/master/11-argocd.sh` | GitOps CD |
 | Bootstrap | `scripts/master/12-gitops-bootstrap.sh` | App-of-Apps 배포 |
@@ -142,17 +166,20 @@
 vagrant up --provider=vmware_desktop
 
 # 특정 노드만 생성
-vagrant up master
+vagrant up master-1
 vagrant up worker-1
 
 # SSH 접속
-vagrant ssh master
+vagrant ssh master-1
 
 # kubectl 확인
-vagrant ssh master -c "kubectl get nodes"
+vagrant ssh master-1 -c "kubectl get nodes"
+
+# Phase 2만 수동 실행 (클러스터 구성 후)
+vagrant provision master-1 --provision-with phase2-platform
 
 # 재프로비저닝
-vagrant provision master
+vagrant provision master-1
 
 # 클러스터 중지
 vagrant halt
@@ -302,7 +329,7 @@ docs(claude): update verification steps
 
 2. **파이프로 컨텍스트 전달 가능**
    ```bash
-   cat scripts/master/07-keycloak.sh | gemini -p "이 스크립트의 보안 취약점을 분석해줘" -o text
+   cat scripts/master/09-keycloak.sh | gemini -p "이 스크립트의 보안 취약점을 분석해줘" -o text
    ```
 
 3. **타임아웃 주의**: 30초 이내 응답 가능한 질문만 (복잡한 질문은 분할)
@@ -367,9 +394,9 @@ kubectl get events -n harbor 2>&1 | gemini -p "이 Kubernetes 이벤트에서 �
    - `head -50`, `grep -A5` 등으로 필요한 부분만 전달
    ```bash
    # Bad: 전체 파일 전달 (토큰 낭비)
-   cat scripts/master/07-keycloak.sh | gemini -p "리뷰해줘" -o text
+   cat scripts/master/09-keycloak.sh | gemini -p "리뷰해줘" -o text
    # Good: 관련 부분만 전달
-   sed -n '50,80p' scripts/master/07-keycloak.sh | gemini -p "이 OIDC 설정 부분 리뷰해줘" -o text
+   sed -n '50,80p' scripts/master/09-keycloak.sh | gemini -p "이 OIDC 설정 부분 리뷰해줘" -o text
    ```
 
 3. **캐시 활용**
@@ -451,6 +478,34 @@ kubectl get events -n harbor 2>&1 | gemini -p "이 Kubernetes 이벤트에서 �
 2. **각 탭은 별도 git checkout**: `git worktree`로 독립 브랜치
 3. **웹 세션 활용**: claude.ai/code에서 추가 세션
 4. **--teleport로 세션 이동**: 결과 공유
+
+### 디버깅 시 팀 적극 활용 (필수)
+
+> 디버깅 상황에서는 단독으로 해결하려 하지 말고, 팀(서브에이전트 + Gemini)을 적극 활용하세요.
+
+| 상황 | 팀 활용 방법 |
+|------|-------------|
+| **Pod 실패 디버깅** | Task 에이전트로 로그/이벤트/describe 병렬 수집, Gemini로 에러 메시지 분석 |
+| **Helm 설치 실패** | Gemini로 차트 버전 호환성/breaking changes 확인, 서브에이전트로 values 검증 |
+| **네트워크 문제** | 서브에이전트로 DNS/서비스/엔드포인트 동시 조사 |
+| **이미지 문제** | Gemini로 ARM64 지원 여부/태그 확인, 서브에이전트로 레지스트리 접근 테스트 |
+| **Vagrant 프로비저닝 실패** | 서브에이전트로 VM 로그/스크립트 출력 분석, Gemini로 대안 검색 |
+
+#### 디버깅 팀 워크플로우
+
+```
+[에러 발생]
+    │
+    ├─ 즉시 병렬 수집 (Task 에이전트 2~3개)
+    │   ├─ 에이전트 1: kubectl logs / events
+    │   ├─ 에이전트 2: kubectl describe / get
+    │   └─ 에이전트 3: helm status / values 확인
+    │
+    ├─ 에러 분석 (Gemini)
+    │   └─ 에러 메시지 + 컨텍스트 → 원인 분석
+    │
+    └─ Claude가 종합 판단 → 수정 적용
+```
 
 ---
 

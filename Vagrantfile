@@ -5,14 +5,16 @@
 # Cluster Configuration
 #=========================================
 CLUSTER_NAME = "narwhal"
-K8S_VERSION = "1.35"  # Latest stable version
+K8S_VERSION = "1.35"
+K8S_PATCH_VERSION = "1.35.1"
 POD_NETWORK_CIDR = "10.244.0.0/16"
 SERVICE_CIDR = "10.96.0.0/12"
 
 #=========================================
 # Node Configuration
 #=========================================
-MASTER_IP = "192.168.56.10"
+MASTER_COUNT = 2
+MASTER_IP_BASE = "192.168.56.1"  # master-1: .10, master-2: .11
 WORKER_IP_BASE = "192.168.56.2"  # worker-1: .21, worker-2: .22
 WORKER_COUNT = 2
 
@@ -25,14 +27,14 @@ VIP_INTERFACE = "eth1"          # Private network interface
 #=========================================
 # NFS Configuration
 #=========================================
-NFS_SERVER_IP = MASTER_IP       # NFS server runs on master
-NFS_SHARE_PATH = "/srv/nfs/k8s" # NFS export path
+NFS_SERVER_IP = "#{MASTER_IP_BASE}0"  # NFS server runs on master-1
+NFS_SHARE_PATH = "/srv/nfs/k8s"      # NFS export path
 
 #=========================================
 # Resource Configuration
 #=========================================
 MASTER_CPUS = 2
-MASTER_MEMORY = 4096
+MASTER_MEMORY = 6144
 WORKER_CPUS = 2
 WORKER_MEMORY = 4096
 
@@ -45,7 +47,7 @@ DISK_SIZE_GB = 30  # GB
 Vagrant.configure("2") do |config|
   # Base Box (XFS for project quota support)
   config.vm.box = "dasomel/ubuntu-24.04-xfs"
-  config.vm.box_version = "0.2.0"
+  config.vm.box_version = "0.2.2"
   config.vm.box_check_update = true
 
   # Disk size plugin (VirtualBox only)
@@ -69,84 +71,103 @@ Vagrant.configure("2") do |config|
     owner: "vagrant", group: "vagrant"
 
   #=========================================
-  # Master Node
+  # Master Nodes
   #=========================================
-  config.vm.define "master", primary: true do |master|
-    master.vm.hostname = "#{CLUSTER_NAME}-master"
-    master.vm.network "private_network", ip: MASTER_IP
+  (1..MASTER_COUNT).each do |i|
+    master_ip = "#{MASTER_IP_BASE}#{i - 1}"  # master-1: .10, master-2: .11
 
-    master.vm.provider "virtualbox" do |vb|
-      vb.name = "#{CLUSTER_NAME}-master"
-      vb.cpus = MASTER_CPUS
-      vb.memory = MASTER_MEMORY
-      vb.linked_clone = true
+    config.vm.define "master-#{i}", primary: (i == 1) do |master|
+      master.vm.hostname = "#{CLUSTER_NAME}-master-#{i}"
+      master.vm.network "private_network", ip: master_ip
+
+      master.vm.provider "virtualbox" do |vb|
+        vb.name = "#{CLUSTER_NAME}-master-#{i}"
+        vb.cpus = MASTER_CPUS
+        vb.memory = MASTER_MEMORY
+        vb.linked_clone = true
+      end
+
+      master.vm.provider "vmware_desktop" do |vmware|
+        vmware.vmx["displayName"] = "#{CLUSTER_NAME}-master-#{i}"
+        vmware.vmx["numvcpus"] = MASTER_CPUS
+        vmware.vmx["memsize"] = MASTER_MEMORY
+        vmware.linked_clone = true
+      end
+
+      # Common provisioning (all masters)
+      master.vm.provision "shell", path: "scripts/common/01-prerequisites.sh",
+        env: {
+          "CLUSTER_NAME" => CLUSTER_NAME,
+          "MASTER_COUNT" => MASTER_COUNT,
+          "MASTER_IP_BASE" => MASTER_IP_BASE,
+          "VIP_ADDRESS" => VIP_ADDRESS,
+          "WORKER_COUNT" => WORKER_COUNT,
+          "WORKER_IP_BASE" => WORKER_IP_BASE,
+          "NODE_IP" => master_ip
+        }
+      master.vm.provision "shell", path: "scripts/common/02-containerd.sh"
+      master.vm.provision "shell", path: "scripts/common/03-k8s-install.sh",
+        env: { "K8S_VERSION" => K8S_VERSION, "K8S_PATCH_VERSION" => K8S_PATCH_VERSION }
+
+      # kube-vip (all masters — static pod manifest before kubeadm)
+      master.vm.provision "shell", path: "scripts/master/01-kube-vip.sh",
+        env: {
+          "VIP_ADDRESS" => VIP_ADDRESS,
+          "NODE_INDEX" => i
+        }
+
+      if i == 1
+        #=========================================
+        # Master-1: Phase 1 - Cluster Infrastructure
+        #=========================================
+        master.vm.provision "shell", path: "scripts/master/00-nfs-server.sh",
+          env: {
+            "NFS_SHARE_PATH" => NFS_SHARE_PATH,
+            "POD_NETWORK_CIDR" => POD_NETWORK_CIDR
+          }
+        master.vm.provision "shell", path: "scripts/master/02-init-cluster.sh",
+          env: {
+            "VIP_ADDRESS" => VIP_ADDRESS,
+            "MASTER_COUNT" => MASTER_COUNT,
+            "MASTER_IP_BASE" => MASTER_IP_BASE,
+            "POD_NETWORK_CIDR" => POD_NETWORK_CIDR,
+            "SERVICE_CIDR" => SERVICE_CIDR
+          }
+        master.vm.provision "shell", path: "scripts/master/03-cni-install.sh",
+          env: { "MASTER_IP" => VIP_ADDRESS }
+        master.vm.provision "shell", path: "scripts/master/04-addons.sh",
+          env: {
+            "NFS_SERVER_IP" => NFS_SERVER_IP,
+            "NFS_SHARE_PATH" => NFS_SHARE_PATH
+          }
+        master.vm.provision "shell", path: "scripts/master/05-nfs-quota-agent.sh",
+          env: {
+            "NFS_SHARE_PATH" => NFS_SHARE_PATH,
+            "MASTER_HOSTNAME" => "#{CLUSTER_NAME}-master-1"
+          }
+
+        #=========================================
+        # Phase 2: Platform Apps (triggered after all nodes join)
+        #=========================================
+        master.vm.provision "phase2-platform", type: "shell", run: "never",
+          path: "scripts/master/phase2-platform.sh",
+          env: {
+            "VIP_ADDRESS" => VIP_ADDRESS,
+            "MASTER_IP" => master_ip,
+            "METALLB_IP" => "192.168.56.200",
+            "DOMAIN" => "local.narwhal.io"
+          }
+      else
+        #=========================================
+        # Master-2+: Join control plane only
+        #=========================================
+        master.vm.provision "shell", path: "scripts/master/02-join-control-plane.sh",
+          env: {
+            "MASTER1_IP" => "#{MASTER_IP_BASE}0",
+            "VIP_ADDRESS" => VIP_ADDRESS
+          }
+      end
     end
-
-    master.vm.provider "vmware_desktop" do |vmware|
-      vmware.vmx["displayName"] = "#{CLUSTER_NAME}-master"
-      vmware.vmx["numvcpus"] = MASTER_CPUS
-      vmware.vmx["memsize"] = MASTER_MEMORY
-      # Use linked clone for stability (disk expansion done inside VM)
-      vmware.linked_clone = true
-    end
-
-    # Common provisioning
-    master.vm.provision "shell", path: "scripts/common/01-prerequisites.sh",
-      env: {
-        "CLUSTER_NAME" => CLUSTER_NAME,
-        "MASTER_IP" => MASTER_IP,
-        "WORKER_COUNT" => WORKER_COUNT,
-        "WORKER_IP_BASE" => WORKER_IP_BASE
-      }
-    master.vm.provision "shell", path: "scripts/common/02-containerd.sh"
-    master.vm.provision "shell", path: "scripts/common/03-k8s-install.sh",
-      env: { "K8S_VERSION" => K8S_VERSION }
-
-    # Master provisioning
-    master.vm.provision "shell", path: "scripts/master/00-nfs-server.sh",
-      env: {
-        "NFS_SHARE_PATH" => NFS_SHARE_PATH,
-        "POD_NETWORK_CIDR" => POD_NETWORK_CIDR
-      }
-    master.vm.provision "shell", path: "scripts/master/01-kube-vip.sh",
-      env: {
-        "VIP_ADDRESS" => VIP_ADDRESS,
-        "VIP_INTERFACE" => VIP_INTERFACE
-      }
-    master.vm.provision "shell", path: "scripts/master/02-init-cluster.sh",
-      env: {
-        "MASTER_IP" => MASTER_IP,
-        "POD_NETWORK_CIDR" => POD_NETWORK_CIDR,
-        "SERVICE_CIDR" => SERVICE_CIDR
-      }
-    master.vm.provision "shell", path: "scripts/master/03-cni-install.sh",
-      env: { "MASTER_IP" => MASTER_IP }
-    master.vm.provision "shell", path: "scripts/master/04-addons.sh",
-      env: {
-        "NFS_SERVER_IP" => NFS_SERVER_IP,
-        "NFS_SHARE_PATH" => NFS_SHARE_PATH
-      }
-    master.vm.provision "shell", path: "scripts/master/05-nfs-quota-agent.sh",
-      env: {
-        "NFS_SHARE_PATH" => NFS_SHARE_PATH,
-        "MASTER_HOSTNAME" => "#{CLUSTER_NAME}-master"
-      }
-    master.vm.provision "shell", path: "scripts/master/06-cnpg.sh"
-    master.vm.provision "shell", path: "scripts/master/07-keycloak.sh"
-    master.vm.provision "shell", path: "scripts/master/08-platform-apps.sh"
-    # dnsmasq for local DNS (after MetalLB/Traefik are installed)
-    master.vm.provision "shell", path: "scripts/master/09-dnsmasq.sh",
-      env: {
-        "MASTER_IP" => MASTER_IP,
-        "METALLB_IP" => "192.168.56.200",
-        "DOMAIN" => "local.narwhal.io"
-      }
-    # GitOps (Gitea + ArgoCD) - installed last for optional GitOps management
-    master.vm.provision "shell", path: "scripts/master/10-gitea.sh"
-    master.vm.provision "shell", path: "scripts/master/11-argocd.sh"
-    master.vm.provision "shell", path: "scripts/master/12-gitops-bootstrap.sh"
-    # Platform apps installed via Helm in 06-platform-apps.sh
-    # ArgoCD can adopt existing releases later if needed
   end
 
   #=========================================
@@ -168,7 +189,6 @@ Vagrant.configure("2") do |config|
         vmware.vmx["displayName"] = "#{CLUSTER_NAME}-worker-#{i}"
         vmware.vmx["numvcpus"] = WORKER_CPUS
         vmware.vmx["memsize"] = WORKER_MEMORY
-        # Use linked clone for stability
         vmware.linked_clone = true
       end
 
@@ -176,17 +196,29 @@ Vagrant.configure("2") do |config|
       worker.vm.provision "shell", path: "scripts/common/01-prerequisites.sh",
         env: {
           "CLUSTER_NAME" => CLUSTER_NAME,
-          "MASTER_IP" => MASTER_IP,
+          "MASTER_COUNT" => MASTER_COUNT,
+          "MASTER_IP_BASE" => MASTER_IP_BASE,
+          "VIP_ADDRESS" => VIP_ADDRESS,
           "WORKER_COUNT" => WORKER_COUNT,
-          "WORKER_IP_BASE" => WORKER_IP_BASE
+          "WORKER_IP_BASE" => WORKER_IP_BASE,
+          "NODE_IP" => "#{WORKER_IP_BASE}#{i}"
         }
       worker.vm.provision "shell", path: "scripts/common/02-containerd.sh"
       worker.vm.provision "shell", path: "scripts/common/03-k8s-install.sh",
-        env: { "K8S_VERSION" => K8S_VERSION }
+        env: { "K8S_VERSION" => K8S_VERSION, "K8S_PATCH_VERSION" => K8S_PATCH_VERSION }
 
-      # Worker provisioning
+      # Worker provisioning (join via VIP)
       worker.vm.provision "shell", path: "scripts/worker/01-join-cluster.sh",
-        env: { "MASTER_IP" => MASTER_IP }
+        env: { "MASTER_IP" => "#{MASTER_IP_BASE}0" }
+
+      # After last worker joins, trigger Phase 2 platform apps on master-1
+      if i == WORKER_COUNT
+        worker.trigger.after :up do |trigger|
+          trigger.name = "Phase 2: Platform Apps"
+          trigger.info = "All nodes joined cluster. Installing platform apps on master-1..."
+          trigger.run = {inline: "vagrant provision master-1 --provision-with phase2-platform"}
+        end
+      end
     end
   end
 end

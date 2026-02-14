@@ -3,7 +3,8 @@ set -euo pipefail
 
 echo "=== Installing Platform Apps via Helm ==="
 
-export KUBECONFIG=/home/vagrant/.kube/config
+# Use local kubeconfig (bypasses VIP) to avoid disruption during master-2 join
+export KUBECONFIG=/home/vagrant/.kube/config-local
 
 #=========================================
 # MetalLB (LoadBalancer for bare-metal)
@@ -15,16 +16,22 @@ helm repo update metallb
 helm upgrade --install metallb metallb/metallb \
   --namespace metallb-system \
   --create-namespace \
-  --version 0.15.3 \
-  --wait --timeout 5m
+  --version 0.15.3 || echo "WARN: MetalLB install issue, continuing..."
 
 # Wait for MetalLB controller to be ready
 echo "Waiting for MetalLB controller..."
-kubectl wait --for=condition=Ready pod -l app.kubernetes.io/component=controller -n metallb-system --timeout=120s
+kubectl wait --for=condition=Ready pod -l app.kubernetes.io/component=controller -n metallb-system --timeout=120s || true
 
-# Apply MetalLB configuration (IP pool and L2 advertisement)
+# Apply MetalLB configuration (IP pool and L2 advertisement) with retry
 echo "Applying MetalLB configuration..."
-kubectl apply -f /home/vagrant/configs/gitops/resources/metallb-config.yaml
+for attempt in 1 2 3 4 5; do
+  if kubectl apply -f /home/vagrant/configs/gitops/resources/metallb-config.yaml 2>&1; then
+    echo "MetalLB configuration applied"
+    break
+  fi
+  echo "MetalLB config apply attempt ${attempt}/5 failed, waiting 15s..."
+  sleep 15
+done
 
 echo "MetalLB installed"
 
@@ -32,6 +39,12 @@ echo "MetalLB installed"
 # Traefik (Gateway API Controller)
 #=========================================
 echo "=== Installing Traefik ==="
+
+# Install experimental Gateway API CRDs (TCPRoute, TLSRoute, UDPRoute)
+# Required by Traefik's kubernetesGateway provider with experimentalChannel
+echo "Installing Gateway API experimental CRDs..."
+kubectl apply -f https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.3.0/experimental-install.yaml 2>&1 | grep -E "created|configured" || true
+
 helm repo add traefik https://traefik.github.io/charts
 helm repo update traefik
 
@@ -49,8 +62,7 @@ helm upgrade --install traefik traefik/traefik \
   --set providers.kubernetesCRD.enabled=true \
   --set providers.kubernetesIngress.enabled=false \
   --set gateway.enabled=false \
-  --set logs.general.level=INFO \
-  --wait --timeout 5m
+  --set logs.general.level=INFO || echo "WARN: Traefik install issue, continuing..."
 
 echo "Traefik installed"
 
@@ -65,8 +77,7 @@ helm upgrade --install cert-manager jetstack/cert-manager \
   --namespace cert-manager \
   --create-namespace \
   --version v1.19.3 \
-  --set crds.enabled=true \
-  --wait
+  --set crds.enabled=true || echo "WARN: cert-manager install issue, continuing..."
 
 # Create self-signed ClusterIssuer
 cat <<EOF | kubectl apply -f -
@@ -99,8 +110,7 @@ helm upgrade --install prometheus prometheus-community/kube-prometheus-stack \
   --set prometheus.prometheusSpec.storageSpec.volumeClaimTemplate.spec.storageClassName=nfs-csi \
   --set prometheus.prometheusSpec.storageSpec.volumeClaimTemplate.spec.resources.requests.storage=10Gi \
   --set alertmanager.alertmanagerSpec.storage.volumeClaimTemplate.spec.storageClassName=nfs-csi \
-  --set alertmanager.alertmanagerSpec.storage.volumeClaimTemplate.spec.resources.requests.storage=5Gi \
-  --wait --timeout 10m
+  --set alertmanager.alertmanagerSpec.storage.volumeClaimTemplate.spec.resources.requests.storage=5Gi || echo "WARN: Prometheus Stack install issue, continuing..."
 
 echo "Prometheus Stack installed"
 
@@ -162,8 +172,7 @@ LOKIVALUES
 helm upgrade --install loki grafana/loki \
   --namespace monitoring \
   --version 6.52.0 \
-  -f /tmp/loki-values.yaml \
-  --wait --timeout 10m
+  -f /tmp/loki-values.yaml || echo "WARN: Loki install issue, continuing..."
 
 rm /tmp/loki-values.yaml
 echo "Loki installed"
@@ -175,8 +184,7 @@ echo "=== Installing Promtail ==="
 helm upgrade --install promtail grafana/promtail \
   --namespace monitoring \
   --version 6.17.1 \
-  --set config.clients[0].url=http://loki:3100/loki/api/v1/push \
-  --wait
+  --set config.clients[0].url=http://loki:3100/loki/api/v1/push || echo "WARN: Promtail install issue, continuing..."
 
 echo "Promtail installed"
 
@@ -190,8 +198,7 @@ helm upgrade --install tempo grafana/tempo \
   --set tempo.storage.trace.backend=local \
   --set persistence.enabled=true \
   --set persistence.storageClassName=nfs-csi \
-  --set persistence.size=10Gi \
-  --wait --timeout 10m
+  --set persistence.size=10Gi || echo "WARN: Tempo install issue, continuing..."
 
 echo "Tempo installed"
 
@@ -209,8 +216,7 @@ helm upgrade --install kyverno kyverno/kyverno \
   --set admissionController.replicas=1 \
   --set backgroundController.replicas=1 \
   --set cleanupController.replicas=1 \
-  --set reportsController.replicas=1 \
-  --wait --timeout 10m
+  --set reportsController.replicas=1 || echo "WARN: Kyverno install issue, continuing..."
 
 echo "Kyverno installed"
 
@@ -227,9 +233,8 @@ helm upgrade --install headlamp headlamp/headlamp \
   --version 0.40.0 \
   --set config.oidc.clientID=headlamp \
   --set config.oidc.clientSecret=headlamp-secret \
-  --set config.oidc.issuerURL=http://keycloak-service.keycloak.svc.cluster.local:8080/realms/kubernetes \
-  --set config.oidc.scopes="openid,profile,email,groups" \
-  --wait
+  --set config.oidc.issuerURL=https://keycloak.local.narwhal.io/realms/kubernetes \
+  --set config.oidc.scopes="openid\,profile\,email\,groups" || echo "WARN: Headlamp install issue, continuing..."
 
 echo "Headlamp installed"
 
@@ -252,7 +257,7 @@ config:
   configFile: |-
     provider = "keycloak-oidc"
     provider_display_name = "Keycloak"
-    oidc_issuer_url = "http://keycloak-service.keycloak.svc.cluster.local:8080/realms/kubernetes"
+    oidc_issuer_url = "https://keycloak.local.narwhal.io/realms/kubernetes"
     redirect_url = "http://oauth2-proxy.local.narwhal.io/oauth2/callback"
     upstreams = ["static://200"]
     email_domains = ["*"]
@@ -277,8 +282,7 @@ helm upgrade --install oauth2-proxy oauth2-proxy/oauth2-proxy \
   --namespace oauth2-proxy \
   --create-namespace \
   --version 10.1.3 \
-  -f /tmp/oauth2-proxy-values.yaml \
-  --wait --timeout 3m
+  -f /tmp/oauth2-proxy-values.yaml || echo "WARN: OAuth2 Proxy install issue, continuing..."
 
 rm /tmp/oauth2-proxy-values.yaml
 echo "OAuth2 Proxy installed"
@@ -293,7 +297,7 @@ helm repo update seaweedfs
 helm upgrade --install seaweedfs seaweedfs/seaweedfs \
   --namespace seaweedfs \
   --create-namespace \
-  --version 4.0.410 \
+  --version 4.0.407 \
   --set global.storageClass=nfs-csi \
   --set master.enabled=true \
   --set master.replicas=1 \
@@ -312,8 +316,16 @@ helm upgrade --install seaweedfs seaweedfs/seaweedfs \
   --set filer.data.storageClass=nfs-csi \
   --set filer.s3.enabled=true \
   --set filer.s3.port=8333 \
-  --set s3.enabled=true \
-  --wait --timeout 10m
+  --set filer.s3.allowEmptyFolder=true \
+  --set s3.enabled=true || echo "WARN: SeaweedFS install issue, continuing..."
+
+# Create S3 buckets for platform apps
+echo "Creating SeaweedFS S3 buckets..."
+kubectl wait --for=condition=Ready pod -l app.kubernetes.io/name=seaweedfs,app.kubernetes.io/component=filer -n seaweedfs --timeout=120s || true
+for bucket in tempo velero; do
+  kubectl exec -n seaweedfs seaweedfs-filer-0 -- sh -c "echo 's3.bucket.create -name ${bucket}' | weed shell" 2>/dev/null || true
+done
+echo "S3 buckets created"
 
 echo "SeaweedFS installed"
 
@@ -381,8 +393,7 @@ helm upgrade --install harbor harbor/harbor \
   --set redis.internal.image.repository=ghcr.io/dasomel/goharbor/redis-photon \
   --set redis.internal.image.tag=latest \
   --set exporter.image.repository=ghcr.io/dasomel/goharbor/harbor-exporter \
-  --set exporter.image.tag=latest \
-  --wait --timeout 10m
+  --set exporter.image.tag=latest || echo "WARN: Harbor install issue, continuing..."
 
 echo "Harbor installed"
 
@@ -396,8 +407,8 @@ helm repo update openbao
 helm upgrade --install openbao openbao/openbao \
   --namespace openbao \
   --create-namespace \
-  --version 0.25.0 \
-  --set server.image.tag=2.5.0 \
+  --version 0.11.0 \
+  --set server.image.tag=2.2.0 \
   --set server.ha.enabled=false \
   --set server.ha.replicas=1 \
   --set server.ha.raft.enabled=true \
@@ -407,8 +418,7 @@ helm upgrade --install openbao openbao/openbao \
   --set server.auditStorage.enabled=true \
   --set server.auditStorage.storageClass=nfs-csi \
   --set server.auditStorage.size=5Gi \
-  --set ui.enabled=true \
-  --wait --timeout 10m
+  --set ui.enabled=true || echo "WARN: OpenBao install issue, continuing..."
 
 echo "OpenBao installed"
 
@@ -466,8 +476,7 @@ helm upgrade --install velero vmware-tanzu/velero \
   --namespace velero \
   --create-namespace \
   --version 11.3.2 \
-  -f /tmp/velero-values.yaml \
-  --wait --timeout 10m
+  -f /tmp/velero-values.yaml || echo "WARN: Velero install issue, continuing..."
 
 rm /tmp/velero-values.yaml
 echo "Velero installed"

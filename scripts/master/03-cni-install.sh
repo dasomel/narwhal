@@ -6,12 +6,13 @@ CILIUM_VERSION="${CILIUM_VERSION:-1.19.0}"
 CILIUM_CLI_VERSION="${CILIUM_CLI_VERSION:-v0.19.0}"
 CALICO_VERSION="${CALICO_VERSION:-v3.31.3}"
 
-# Cilium kube-proxy replacement (use MASTER_IP for single-master setup)
-K8S_API_SERVER="${MASTER_IP:-192.168.56.10}"
+# Cilium kube-proxy replacement (VIP for HA control plane)
+K8S_API_SERVER="${MASTER_IP:-192.168.56.100}"
 
 echo "=== CNI Plugin Installation: ${CNI_PLUGIN} ==="
 
-export KUBECONFIG=/home/vagrant/.kube/config
+# Use local kubeconfig (bypasses VIP) to avoid disruption during master-2 join
+export KUBECONFIG=/home/vagrant/.kube/config-local
 
 case "${CNI_PLUGIN}" in
   cilium)
@@ -29,7 +30,7 @@ case "${CNI_PLUGIN}" in
     sudo tar xzvfC "cilium-linux-${ARCH}.tar.gz" /usr/local/bin
     rm "cilium-linux-${ARCH}.tar.gz"
 
-    # Install Gateway API CRDs (required for Cilium Gateway API)
+    # Install Gateway API CRDs (used by Traefik Gateway Controller, Cilium provides network-level support)
     echo "Installing Gateway API CRDs..."
     kubectl apply -f https://raw.githubusercontent.com/kubernetes-sigs/gateway-api/v1.2.1/config/crd/standard/gateway.networking.k8s.io_gatewayclasses.yaml
     kubectl apply -f https://raw.githubusercontent.com/kubernetes-sigs/gateway-api/v1.2.1/config/crd/standard/gateway.networking.k8s.io_gateways.yaml
@@ -37,8 +38,10 @@ case "${CNI_PLUGIN}" in
     kubectl apply -f https://raw.githubusercontent.com/kubernetes-sigs/gateway-api/v1.2.1/config/crd/standard/gateway.networking.k8s.io_referencegrants.yaml
     kubectl apply -f https://raw.githubusercontent.com/kubernetes-sigs/gateway-api/v1.2.1/config/crd/standard/gateway.networking.k8s.io_grpcroutes.yaml
 
-    # Install Cilium with kube-proxy replacement, Hubble, and Gateway API
-    echo "Installing Cilium ${CILIUM_VERSION} with Hubble, kube-proxy replacement, and Gateway API..."
+    # Install Cilium with kube-proxy replacement, Hubble, and Gateway API CRD awareness
+    # Note: Traefik is the actual Gateway Controller (GatewayClass: traefik)
+    # Cilium's gatewayAPI.enabled allows network-level integration with Gateway API resources
+    echo "Installing Cilium ${CILIUM_VERSION} with Hubble and kube-proxy replacement..."
     cilium install --version "${CILIUM_VERSION}" \
       --set kubeProxyReplacement=true \
       --set k8sServiceHost="${K8S_API_SERVER}" \
@@ -47,7 +50,8 @@ case "${CNI_PLUGIN}" in
       --set hubble.ui.enabled=true \
       --set gatewayAPI.enabled=true
 
-    cilium status --wait
+    # Wait for core Cilium components (not hubble - it needs worker nodes)
+    cilium status --wait --wait-duration 120s || echo "WARN: cilium status timed out (hubble may need worker nodes)"
 
     # Install Hubble CLI
     HUBBLE_CLI_VERSION="${HUBBLE_CLI_VERSION:-v1.18.5}"

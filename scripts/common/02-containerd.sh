@@ -1,10 +1,13 @@
 #!/bin/bash
 set -euo pipefail
 
-echo "=== containerd Installation ==="
+CONTAINERD_VERSION="${CONTAINERD_VERSION:-1.7.*}"
 
-# Install containerd
-sudo apt-get install -y containerd
+echo "=== containerd ${CONTAINERD_VERSION} Installation ==="
+
+# Install containerd (apt-get update required for fresh box)
+sudo apt-get update
+sudo apt-get install -y containerd="${CONTAINERD_VERSION}"
 
 # Configure containerd
 sudo mkdir -p /etc/containerd

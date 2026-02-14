@@ -9,7 +9,8 @@ set -euo pipefail
 
 CLUSTER_NAME="${CLUSTER_NAME:-narwhal}"
 MASTER_IP="${MASTER_IP:-192.168.56.10}"
-API_SERVER="https://${MASTER_IP}:6443"
+VIP_ADDRESS="${VIP_ADDRESS:-192.168.56.100}"
+API_SERVER="https://${VIP_ADDRESS}:6443"
 
 # Auth method: "cert" (default) or "oidc"
 AUTH_METHOD="${1:-cert}"
@@ -28,7 +29,7 @@ case "${AUTH_METHOD}" in
     echo "Setting up certificate-based authentication..."
 
     # Get kubeconfig from master node
-    CONFIG=$(vagrant ssh master -c "cat ~/.kube/config" 2>/dev/null)
+    CONFIG=$(vagrant ssh master-1 -c "cat ~/.kube/config" 2>/dev/null)
 
     # Extract certificates
     echo "$CONFIG" | awk '/certificate-authority-data:/ {print $2}' | base64 -d > /tmp/narwhal-ca.crt
@@ -65,13 +66,14 @@ case "${AUTH_METHOD}" in
     echo "Setting up OIDC authentication with Keycloak..."
 
     # OIDC Configuration
-    OIDC_ISSUER_URL="${OIDC_ISSUER_URL:-http://${MASTER_IP}:8080/realms/kubernetes}"
+    # K8s 1.35+ requires HTTPS for OIDC issuer URL
+    OIDC_ISSUER_URL="${OIDC_ISSUER_URL:-https://keycloak.local.narwhal.io/realms/kubernetes}"
     OIDC_CLIENT_ID="${OIDC_CLIENT_ID:-kubernetes}"
     OIDC_USERNAME="${OIDC_USERNAME:-}"
     OIDC_PASSWORD="${OIDC_PASSWORD:-}"
 
     # Get CA certificate from master
-    CONFIG=$(vagrant ssh master -c "cat ~/.kube/config" 2>/dev/null)
+    CONFIG=$(vagrant ssh master-1 -c "cat ~/.kube/config" 2>/dev/null)
     echo "$CONFIG" | awk '/certificate-authority-data:/ {print $2}' | base64 -d > /tmp/narwhal-ca.crt
 
     # Set cluster
@@ -122,7 +124,7 @@ case "${AUTH_METHOD}" in
     echo "Setting up service account token authentication..."
 
     # Get CA certificate from master
-    CONFIG=$(vagrant ssh master -c "cat ~/.kube/config" 2>/dev/null)
+    CONFIG=$(vagrant ssh master-1 -c "cat ~/.kube/config" 2>/dev/null)
     echo "$CONFIG" | awk '/certificate-authority-data:/ {print $2}' | base64 -d > /tmp/narwhal-ca.crt
 
     # Get or create service account token
@@ -130,7 +132,7 @@ case "${AUTH_METHOD}" in
     SA_NAMESPACE="${SA_NAMESPACE:-kube-system}"
 
     # Create service account and get token
-    TOKEN=$(vagrant ssh master -c "
+    TOKEN=$(vagrant ssh master-1 -c "
       kubectl create serviceaccount ${SA_NAME} -n ${SA_NAMESPACE} --dry-run=client -o yaml | kubectl apply -f - > /dev/null 2>&1
       kubectl create clusterrolebinding ${SA_NAME}-binding --clusterrole=cluster-admin --serviceaccount=${SA_NAMESPACE}:${SA_NAME} --dry-run=client -o yaml | kubectl apply -f - > /dev/null 2>&1
       kubectl create token ${SA_NAME} -n ${SA_NAMESPACE} --duration=8760h

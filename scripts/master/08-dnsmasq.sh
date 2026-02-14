@@ -103,6 +103,40 @@ echo ""
 echo "Testing external domain: google.com"
 nslookup google.com 127.0.0.1 || echo "External domain test failed"
 
+#=========================================
+# CoreDNS Forward Rule for Pod-internal DNS
+#=========================================
+# Pods use CoreDNS (10.96.0.10), not dnsmasq, for DNS resolution.
+# Without this rule, Pods cannot resolve *.local.narwhal.io.
+echo "=== Configuring CoreDNS to forward local.narwhal.io to dnsmasq ==="
+
+COREDNS_CM=$(kubectl get configmap coredns -n kube-system -o json 2>/dev/null || echo "")
+if [ -n "${COREDNS_CM}" ]; then
+  # Check if forward rule already exists
+  if echo "${COREDNS_CM}" | grep -q "local.narwhal.io"; then
+    echo "CoreDNS forward rule for local.narwhal.io already exists"
+  else
+    # Add forward rule using kubectl patch
+    COREFILE=$(echo "${COREDNS_CM}" | yq -r '.data.Corefile')
+    NEW_COREFILE="${DOMAIN}:53 {
+    errors
+    cache 30
+    forward . ${MASTER_IP}
+}
+${COREFILE}"
+    kubectl create configmap coredns -n kube-system \
+      --from-literal=Corefile="${NEW_COREFILE}" \
+      --dry-run=client -o yaml | kubectl apply -f -
+
+    # Restart CoreDNS to pick up the change
+    kubectl rollout restart deployment coredns -n kube-system 2>/dev/null || true
+    kubectl wait --for=condition=Ready pod -l k8s-app=kube-dns -n kube-system --timeout=60s || true
+    echo "CoreDNS forward rule added for ${DOMAIN} -> ${MASTER_IP}"
+  fi
+else
+  echo "WARN: CoreDNS configmap not found, skipping forward rule"
+fi
+
 echo ""
 echo "=== dnsmasq Installation Done ==="
 echo ""

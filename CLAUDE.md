@@ -61,6 +61,11 @@
 | 2026-02-14 | Master 4GB RAM에서 API 서버 OOM 재시작 | Master 6GB 최소, CNPG 인스턴스 1개로 축소 |
 | 2026-02-14 | ArgoCD v3.x applicationsets CRD 262KB 초과 | `kubectl apply --server-side --force-conflicts` 사용 |
 | 2026-02-14 | Helm `--wait`로 타임아웃 시 릴리스 롤백 | 비핵심 앱은 `--wait` 제거, `--timeout`만 사용 |
+| 2026-02-15 | Velero CRD hook musl/glibc 비호환 (ARM64) | `upgradeCRDs: false` 설정, alpine/k8s musl→velero glibc 컨테이너에서 실행 불가 |
+| 2026-02-15 | registry.k8s.io/kubectl은 distroless (shell 없음) | `docker.io/alpine/k8s:1.31.4` 사용 (shell+kubectl 포함) |
+| 2026-02-15 | Traefik routes 적용 시 GatewayClass 미생성 | Traefik deployment+GatewayClass 대기 루프 후 routes 적용 |
+| 2026-02-15 | etcd 컨테이너 `sh -c` 실행 불가 | etcd는 distroless, `kubectl exec -- etcdctl ...` 직접 호출 |
+| 2026-02-15 | alpine/k8s 이미지 태그에 `v` prefix 없음 | `"1.31.4"` 사용 (NOT `v1.31.4`), Docker Hub 태그 형식 확인 |
 
 ### GitOps/ArgoCD 실수
 | 날짜 | 실수 | 해결책 |

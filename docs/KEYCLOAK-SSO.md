@@ -2,6 +2,40 @@
 
 Narwhal IDP 플랫폼의 Keycloak SSO 연동 및 권한 관리 가이드
 
+## IMPORTANT: Kubernetes 1.35+ HTTPS Requirement
+
+**K8s 1.35부터 OIDC Issuer URL은 반드시 HTTPS를 사용해야 합니다.**
+
+### 주요 변경사항
+
+- K8s 1.35는 `--oidc-*` 플래그를 내부적으로 `StructuredAuthenticationConfiguration`로 변환
+- **HTTP issuer URL 사용 시 API 서버가 크래시**하며 다음 오류 발생:
+  ```
+  jwt[0].issuer.url: Invalid value: "http://...": URL scheme must be https
+  ```
+- **해결책**: cert-manager TLS가 설치된 후에만 OIDC를 활성화해야 함
+
+### 설치 순서 (필수)
+
+```
+07-platform-apps.sh  → cert-manager + Traefik TLS 설치
+08-dnsmasq.sh        → DNS 설정 (*.local.narwhal.io 해석)
+09-keycloak.sh       → Keycloak + HTTPS OIDC 설정
+```
+
+### 검증 방법
+
+```bash
+# Keycloak HTTPS 엔드포인트 확인 (self-signed cert이므로 -k 플래그 필수)
+curl -k https://keycloak.local.narwhal.io/realms/kubernetes/.well-known/openid-configuration
+
+# API 서버 OIDC 설정 확인
+kubectl -n kube-system get pod kube-apiserver-* -o yaml | grep oidc-issuer-url
+# 출력: --oidc-issuer-url=https://keycloak.local.narwhal.io/realms/kubernetes
+```
+
+---
+
 ## 1. Overview
 
 ```
@@ -21,8 +55,8 @@ Narwhal IDP 플랫폼의 Keycloak SSO 연동 및 권한 관리 가이드
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│                    Applications                                  │
-│  K8s API │ ArgoCD │ Grafana │ Gitea │ Harbor │ Headlamp        │
+│                    Applications                                 │
+│  K8s API │ ArgoCD │ Grafana │ Gitea │ Harbor │ Headlamp         │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -66,41 +100,60 @@ Narwhal IDP 플랫폼의 Keycloak SSO 연동 및 권한 관리 가이드
 | Client ID | Type | Secret | Redirect URIs |
 |-----------|------|--------|---------------|
 | `kubernetes` | Public | - | `*` |
-| `argocd` | Confidential | `argocd-secret` | `https://argocd.local/*`, `http://localhost:8443/*` |
-| `grafana` | Confidential | `grafana-secret` | `http://grafana.local/*`, `http://localhost:3000/*` |
-| `gitea` | Confidential | `gitea-secret` | `http://gitea.local/*`, `http://localhost:3000/*` |
-| `harbor` | Confidential | `harbor-secret` | `http://harbor.local/*`, `http://localhost:8080/*` |
-| `headlamp` | Confidential | `headlamp-secret` | `http://headlamp.local/*`, `http://localhost:8080/*` |
+| `argocd` | Confidential | `argocd-secret` | `https://argocd.local.narwhal.io/*`, `http://localhost:8443/*` |
+| `grafana` | Confidential | `grafana-secret` | `https://grafana.local.narwhal.io/*`, `http://localhost:3000/*` |
+| `gitea` | Confidential | `gitea-secret` | `https://gitea.local.narwhal.io/*`, `http://localhost:3000/*` |
+| `harbor` | Confidential | `harbor-secret` | `https://harbor.local.narwhal.io/*`, `http://localhost:8080/*` |
+| `headlamp` | Confidential | `headlamp-secret` | `https://headlamp.local.narwhal.io/*`, `http://localhost:8080/*` |
+| `oauth2-proxy` | Confidential | `oauth2-proxy-secret` | `https://oauth2.local.narwhal.io/oauth2/callback` |
 
-### 3.2 Protocol Mappers
+### 3.2 Client Scopes (IMPORTANT)
 
-모든 클라이언트에 `groups` claim mapper 설정:
+**`groups` client scope은 반드시 REALM-LEVEL scope으로 생성해야 합니다.**
 
-```json
-{
-  "name": "groups",
-  "protocol": "openid-connect",
-  "protocolMapper": "oidc-group-membership-mapper",
-  "config": {
-    "claim.name": "groups",
-    "full.path": "false",
-    "id.token.claim": "true",
-    "access.token.claim": "true",
-    "userinfo.token.claim": "true"
-  }
-}
-```
+개별 클라이언트의 mapper가 아닌, realm 전체에서 공유되는 client scope로 설정:
+
+1. **Realm-level Client Scope 생성**
+   - Keycloak Admin Console → Client Scopes → Create
+   - Name: `groups`
+   - Protocol: `openid-connect`
+   - Include in token scope: `true`
+
+2. **Mapper 추가**
+   ```json
+   {
+     "name": "oidc-group-membership-mapper",
+     "protocol": "openid-connect",
+     "protocolMapper": "oidc-group-membership-mapper",
+     "config": {
+       "claim.name": "groups",
+       "full.path": "false",
+       "id.token.claim": "true",
+       "access.token.claim": "true",
+       "userinfo.token.claim": "true"
+     }
+   }
+   ```
+
+3. **모든 클라이언트에 Default Scope으로 할당**
+   - 각 클라이언트 → Client Scopes 탭 → Add client scope
+   - `groups` scope을 **Default** 타입으로 추가
+
+**주의**: `groups` scope이 없는 상태에서 요청하면 `invalid_scope` 에러 발생
 
 ### 3.3 OIDC Endpoints
 
 | Endpoint | URL |
 |----------|-----|
-| Issuer | `http://keycloak.keycloak.svc.cluster.local/realms/kubernetes` |
+| Issuer | `https://keycloak.local.narwhal.io/realms/kubernetes` |
 | Authorization | `{issuer}/protocol/openid-connect/auth` |
 | Token | `{issuer}/protocol/openid-connect/token` |
 | UserInfo | `{issuer}/protocol/openid-connect/userinfo` |
 | JWKS | `{issuer}/protocol/openid-connect/certs` |
 | Discovery | `{issuer}/.well-known/openid-configuration` |
+
+**클러스터 내부 통신**: `http://keycloak-service.keycloak.svc.cluster.local:8080/realms/kubernetes`
+**외부/API Server**: `https://keycloak.local.narwhal.io/realms/kubernetes` (HTTPS 필수)
 
 ## 4. Kubernetes OIDC Integration
 
@@ -110,13 +163,15 @@ Narwhal IDP 플랫폼의 Keycloak SSO 연동 및 권한 관리 가이드
 ```yaml
 apiServer:
   extraArgs:
-    oidc-issuer-url: "http://keycloak.keycloak.svc.cluster.local/realms/kubernetes"
+    oidc-issuer-url: "https://keycloak.local.narwhal.io/realms/kubernetes"
     oidc-client-id: "kubernetes"
     oidc-username-claim: "preferred_username"
     oidc-username-prefix: "oidc:"
     oidc-groups-claim: "groups"
     oidc-groups-prefix: "oidc:"
 ```
+
+**중요**: K8s 1.35+에서는 HTTPS issuer URL이 필수입니다. HTTP 사용 시 API 서버가 시작되지 않습니다.
 
 ### 4.2 RBAC Mapping
 
@@ -357,7 +412,7 @@ subjects:
 ```bash
 # kubelogin (oidc-login plugin) 사용
 kubectl oidc-login setup \
-  --oidc-issuer-url=http://keycloak.keycloak.svc.cluster.local/realms/kubernetes \
+  --oidc-issuer-url=https://keycloak.local.narwhal.io/realms/kubernetes \
   --oidc-client-id=kubernetes
 
 # kubeconfig 설정
@@ -366,21 +421,50 @@ kubectl config set-credentials oidc \
   --exec-command=kubectl \
   --exec-arg=oidc-login \
   --exec-arg=get-token \
-  --exec-arg=--oidc-issuer-url=http://keycloak.keycloak.svc.cluster.local/realms/kubernetes \
-  --exec-arg=--oidc-client-id=kubernetes
+  --exec-arg=--oidc-issuer-url=https://keycloak.local.narwhal.io/realms/kubernetes \
+  --exec-arg=--oidc-client-id=kubernetes \
+  --exec-arg=--insecure-skip-tls-verify
 ```
+
+**주의**: Self-signed 인증서 환경에서는 `--insecure-skip-tls-verify` 플래그 필요
 
 ## 8. Security Best Practices
 
 ### 8.1 Production Recommendations
 
-1. **HTTPS 적용**: 모든 OIDC 통신에 TLS 사용
+1. **HTTPS 적용**: 모든 OIDC 통신에 TLS 사용 (K8s 1.35+ 필수)
 2. **Secret 관리**: Client secrets를 Kubernetes Secrets 또는 OpenBao에 저장
 3. **Token Lifetime 단축**: Access Token을 5분 이하로 설정
 4. **MFA 활성화**: Keycloak에서 2FA 설정
 5. **Audit Logging**: Keycloak 및 K8s audit log 활성화
 
-### 8.2 Principle of Least Privilege
+### 8.2 Self-Signed Certificate Trust Chain
+
+Narwhal은 개발 환경에서 자체 서명 인증서를 사용합니다.
+
+**인증서 배포 구조:**
+
+1. **cert-manager**: wildcard `*.local.narwhal.io` 자체 서명 CA 생성
+2. **CA Secret 배포**: 각 앱 namespace에 `narwhal-ca-cert` Secret 복사
+3. **Volume Mount**: CA cert를 `/etc/ssl/certs/narwhal-ca.crt`에 subPath로 마운트
+4. **자동 인식**: Go 런타임이 `/etc/ssl/certs/` 디렉토리를 스캔하여 CA 자동 신뢰
+
+**Per-App TLS Skip 설정 (대안):**
+
+| App | 설정 방법 |
+|-----|----------|
+| ArgoCD | `argocd-cm` → `oidc.tls.insecure.skip.verify: "true"` |
+| Grafana | `auth.generic_oauth.tls_skip_verify_insecure: true` |
+| Harbor | `oidc_verify_cert: "false"` + `oidc_endpoint: https://...` |
+| Headlamp | CA cert mount (v0.40.0에 `-oidc-skip-issuer-tls-verify` 플래그 없음) |
+| OAuth2 Proxy | `ssl_insecure_skip_verify = true` |
+
+**주의사항:**
+- `SSL_CERT_FILE` env var 사용 금지 (시스템 CA 번들 전체가 대체됨)
+- subPath mount는 디렉토리 내 다른 파일에 영향 없음
+- 프로덕션 환경에서는 신뢰된 CA의 인증서 사용 권장
+
+### 8.3 Principle of Least Privilege
 
 ```
 cluster-admins: 플랫폼 관리자만 (최소 인원)
@@ -388,7 +472,7 @@ developers: 개발팀 (필요한 네임스페이스만)
 viewers: 운영 모니터링, 외부 사용자
 ```
 
-### 8.3 Group Management
+### 8.4 Group Management
 
 새 사용자 추가 시:
 1. Keycloak Admin Console 접속
@@ -402,27 +486,41 @@ viewers: 운영 모니터링, 외부 사용자
 
 | Issue | Cause | Solution |
 |-------|-------|----------|
+| API 서버 크래시 (1.35+) | HTTP issuer URL | HTTPS issuer URL로 변경, cert-manager TLS 확인 |
 | OIDC login 실패 | Issuer URL 불일치 | API Server oidc-issuer-url 확인 |
 | 권한 없음 | 그룹 미할당 | Keycloak에서 사용자 그룹 확인 |
 | Token 만료 | Refresh 실패 | kubelogin 재인증 |
-| Groups claim 없음 | Mapper 미설정 | Client protocol mapper 확인 |
+| Groups claim 없음 | Scope 미설정 | Realm-level `groups` client scope 확인 |
+| `invalid_scope` 에러 | `groups` scope 미할당 | 모든 클라이언트에 default scope 할당 확인 |
+| TLS 인증서 에러 | Self-signed CA | CA cert mount 또는 TLS skip 설정 |
 
 ### 9.2 Debugging Commands
 
 ```bash
-# Keycloak 토큰 확인
-curl -X POST \
-  http://keycloak.keycloak.svc.cluster.local/realms/kubernetes/protocol/openid-connect/token \
+# Keycloak OIDC discovery 확인 (HTTPS, self-signed)
+curl -k https://keycloak.local.narwhal.io/realms/kubernetes/.well-known/openid-configuration
+
+# Keycloak 토큰 확인 (HTTPS)
+curl -k -X POST \
+  https://keycloak.local.narwhal.io/realms/kubernetes/protocol/openid-connect/token \
   -d "grant_type=password" \
   -d "client_id=kubernetes" \
   -d "username=k8s-admin" \
   -d "password=k8s-admin"
+
+# 클러스터 내부 통신 테스트 (HTTP, 서비스명)
+kubectl run -it --rm debug --image=curlimages/curl --restart=Never -- \
+  curl -X POST http://keycloak-service.keycloak.svc.cluster.local:8080/realms/kubernetes/protocol/openid-connect/token \
+  -d "grant_type=password" -d "client_id=kubernetes" -d "username=k8s-admin" -d "password=k8s-admin"
 
 # JWT 디코딩 (groups claim 확인)
 echo "<access_token>" | cut -d'.' -f2 | base64 -d | jq
 
 # K8s RBAC 확인
 kubectl auth can-i --list --as=oidc:k8s-admin --as-group=oidc:cluster-admins
+
+# API Server OIDC 설정 확인
+kubectl -n kube-system get pod kube-apiserver-* -o yaml | grep -A5 oidc
 ```
 
 ## 10. References

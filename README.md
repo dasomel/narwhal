@@ -297,7 +297,15 @@ vagrant destroy -f
 ## Documentation
 
 - [VERSIONS.md](VERSIONS.md) - Component versions
+- [docs/architecture.md](docs/architecture.md) - 아키텍처 상세
+- [docs/KEYCLOAK-SSO.md](docs/KEYCLOAK-SSO.md) - Keycloak SSO 상세 설정
 - [docs/keycloak-accounts.md](docs/keycloak-accounts.md) - Keycloak SSO 계정 및 설정 가이드
+- [docs/DNS-ACCESS.md](docs/DNS-ACCESS.md) - DNS 설정 및 서비스 접근
+- [docs/KUBECONFIG.md](docs/KUBECONFIG.md) - kubeconfig 및 OIDC 인증
+- [docs/DATABASE.md](docs/DATABASE.md) - 데이터베이스(CNPG) 관리
+- [docs/OPERATIONS.md](docs/OPERATIONS.md) - 운영 가이드
+- [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) - 트러블슈팅 가이드
+- [docs/SECURITY.md](docs/SECURITY.md) - 보안 정책
 
 ## License
 

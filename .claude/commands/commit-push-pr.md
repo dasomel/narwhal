@@ -1,3 +1,9 @@
+---
+name: commit-push-pr
+description: 변경사항을 커밋, 푸시, PR 생성까지 한 번에 실행
+disable-model-invocation: true
+---
+
 # Commit-Push-PR - 한 번에 커밋, 푸시, PR 생성
 
 변경사항을 커밋하고, 푸시하고, PR을 생성합니다.
@@ -17,7 +23,6 @@ git diff --stat
 
 ### 2. 검증 실행
 ```bash
-# 문법 검사
 ruby -c Vagrantfile 2>/dev/null || true
 shellcheck scripts/**/*.sh 2>/dev/null || true
 ```
@@ -27,9 +32,7 @@ shellcheck scripts/**/*.sh 2>/dev/null || true
 # 변경된 파일 스테이징
 git add -A
 
-# 커밋 메시지 생성 (변경 내용 기반)
-# 형식: type(scope): description
-# 예: feat(keycloak): add OIDC client for Harbor
+# 커밋 메시지 형식: type(scope): description
 ```
 
 ### 4. 푸시
@@ -51,21 +54,3 @@ gh pr create --title "PR 제목" --body "설명"
 | docs | 문서 변경 |
 | refactor | 리팩토링 |
 | chore | 빌드/설정 변경 |
-
-## 예시
-
-```bash
-# 기능 추가
-feat(gitops): add Velero backup application
-
-# 버그 수정
-fix(keycloak): correct OIDC redirect URI
-
-# 문서 업데이트
-docs(claude): add mistake pattern for CRD dependency
-```
-
-## 사용법
-
-변경사항을 분석하여 적절한 커밋 메시지를 생성하고,
-푸시 후 PR 생성 여부를 확인합니다.

@@ -211,7 +211,7 @@ Prometheus로 수집되는 주요 메트릭:
 
 ArgoCD를 통해 배포된 Prometheus Stack에 CNPG 대시보드가 포함되어 있습니다.
 
-접속: `http://prometheus.k8s.local/grafana` → Dashboards → CloudNativePG
+접속: `https://grafana.local.narwhal.io` → Dashboards → CloudNativePG
 
 ## 트러블슈팅
 
@@ -266,7 +266,7 @@ kubectl logs narwhal-db-1 -n database | grep "duration:"
 vagrant up
 
 # 수동 실행
-vagrant ssh master
+vagrant ssh master-1
 sudo /vagrant/scripts/master/06-cnpg.sh
 ```
 
@@ -275,9 +275,9 @@ sudo /vagrant/scripts/master/06-cnpg.sh
 - [CloudNative-PG 공식 문서](https://cloudnative-pg.io/)
 - [PostgreSQL 17 문서](https://www.postgresql.org/docs/17/)
 - [PgBouncer 문서](https://www.pgbouncer.org/)
-- [CNPG Mistakes Log](/Users/m/Documents/IdeaProjects/narwhal/CLAUDE.md#kuberneteshelm-실수)
+- [CNPG Mistakes Log](../CLAUDE.md#kuberneteshelm-실수)
 
 ---
 
-**마지막 업데이트**: 2026-02-14
+**마지막 업데이트**: 2026-02-18
 **작성자**: Claude (Narwhal DevOps Agent)

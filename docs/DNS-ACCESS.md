@@ -91,7 +91,7 @@ nslookup argocd.local.narwhal.io 192.168.56.10
 dig @192.168.56.10 grafana.local.narwhal.io
 
 # curl 테스트 (DNS 설정 완료 후)
-curl -I http://argocd.local.narwhal.io
+curl -k -I https://argocd.local.narwhal.io
 ```
 
 ## 브라우저 접속
@@ -100,14 +100,14 @@ DNS 설정 후 브라우저에서 직접 접속:
 
 ```bash
 # macOS
-open http://argocd.local.narwhal.io
-open http://grafana.local.narwhal.io
+open https://argocd.local.narwhal.io
+open https://grafana.local.narwhal.io
 
 # Linux
-xdg-open http://argocd.local.narwhal.io
+xdg-open https://argocd.local.narwhal.io
 
 # Windows
-start http://argocd.local.narwhal.io
+start https://argocd.local.narwhal.io
 ```
 
 ## 기본 자격 증명
@@ -161,40 +161,48 @@ spec:
 
 ```bash
 # dnsmasq 상태 확인 (Master 노드에서)
-vagrant ssh master -c "sudo systemctl status dnsmasq"
+vagrant ssh master-1 -c "sudo systemctl status dnsmasq"
 
 # dnsmasq 설정 확인
-vagrant ssh master -c "cat /etc/dnsmasq.d/local.conf"
+vagrant ssh master-1 -c "cat /etc/dnsmasq.d/local.conf"
 
 # dnsmasq 재시작
-vagrant ssh master -c "sudo systemctl restart dnsmasq"
+vagrant ssh master-1 -c "sudo systemctl restart dnsmasq"
 ```
 
 ### 연결 거부
 
 ```bash
 # Traefik Pod 상태 확인
-vagrant ssh master -c "kubectl get pods -n traefik"
+vagrant ssh master-1 -c "kubectl get pods -n traefik"
 
 # Traefik 서비스 확인 (LoadBalancer IP: 192.168.56.200)
-vagrant ssh master -c "kubectl get svc traefik -n traefik"
+vagrant ssh master-1 -c "kubectl get svc traefik -n traefik"
 
 # MetalLB 상태 확인
-vagrant ssh master -c "kubectl get ipaddresspool -n metallb-system"
-vagrant ssh master -c "kubectl get pods -n metallb-system"
+vagrant ssh master-1 -c "kubectl get ipaddresspool -n metallb-system"
+vagrant ssh master-1 -c "kubectl get pods -n metallb-system"
 
 # HTTPRoute 상태 확인
-vagrant ssh master -c "kubectl get httproute -A"
+vagrant ssh master-1 -c "kubectl get httproute -A"
 
 # Gateway 상태 확인
-vagrant ssh master -c "kubectl get gateway -n traefik"
+vagrant ssh master-1 -c "kubectl get gateway -n traefik"
 ```
 
 ### TLS 인증서 오류
 
 개발 환경에서는 self-signed 인증서를 사용하므로 브라우저 경고가 표시됩니다.
-HTTP로 접속하면 인증서 경고 없이 사용할 수 있습니다.
 
-HTTPS가 필요한 경우:
-- `https://argocd.local.narwhal.io` 접속 시 브라우저 경고 수락
-- 또는 CA 인증서를 시스템에 등록
+**Self-signed 인증서 신뢰 설정**:
+
+1. **macOS**:
+   - VM에서 CA 인증서 추출: `kubectl get secret narwhal-ca-cert -n cert-manager -o jsonpath='{.data.ca\.crt}' | base64 -d > narwhal-ca.crt`
+   - Keychain Access 앱 열기 → 인증서 가져오기 → 신뢰 설정 "항상 신뢰"로 변경
+
+2. **브라우저 경고 수락**: `https://argocd.local.narwhal.io` 접속 시 "위험 감수 및 계속" 클릭
+
+3. **curl 테스트**: `-k` 플래그로 인증서 검증 스킵
+   ```bash
+   curl -k https://argocd.local.narwhal.io
+   ```

@@ -13,25 +13,25 @@ Narwhal은 Vagrant VM 기반의 Kubernetes Internal Developer Platform (IDP) 클
 │                                                                             │
 │  Vagrant + VMware Desktop / VirtualBox                                      │
 │                                                                             │
-│  ┌─────────────────┐  ┌─────────────────┐                                  │
-│  │ narwhal-master-1 │  │ narwhal-master-2 │                                  │
-│  │ 192.168.56.10    │  │ 192.168.56.11    │                                  │
-│  │ control-plane    │  │ control-plane    │                                  │
-│  │ NFS Server       │  │                  │                                  │
-│  │ dnsmasq          │  │                  │                                  │
-│  │ 2 CPU / 4GB RAM  │  │ 2 CPU / 4GB RAM  │                                  │
-│  └────────┬─────────┘  └────────┬─────────┘                                  │
-│           └──────────┬──────────┘                                            │
-│                      │                                                       │
-│            VIP: 192.168.56.100 (kube-vip, ARP leader election)               │
+│  ┌──────────────────┐  ┌──────────────────┐                                 │
+│  │ narwhal-master-1 │  │ narwhal-master-2 │                                 │
+│  │ 192.168.56.10    │  │ 192.168.56.11    │                                 │
+│  │ control-plane    │  │ control-plane    │                                 │
+│  │ NFS Server       │  │ dnsmasq          │                                 │
+│  │ dnsmasq          │  │                  │                                 │
+│  │ 2 CPU / 6GB RAM  │  │ 2 CPU / 6GB RAM  │                                 │
+│  └────────┬─────────┘  └────────┬─────────┘                                 │
+│           └──────────┬──────────┘                                           │
+│                      │                                                      │
+│            VIP: 192.168.56.100 (kube-vip, ARP leader election)              │
 │            ⚠ etcd 2-node: quorum=2/2 (dev only)                             │
-│                      │                                                       │
-│  ┌──────────────────┐  ┌──────────────────┐                                  │
-│  │ narwhal-worker-1  │  │ narwhal-worker-2  │                                  │
-│  │ 192.168.56.21     │  │ 192.168.56.22     │                                  │
-│  │ worker            │  │ worker            │                                  │
-│  │ 2 CPU / 4GB RAM   │  │ 2 CPU / 4GB RAM   │                                  │
-│  └──────────────────┘  └──────────────────┘                                  │
+│                      │                                                      │
+│  ┌───────────────────┐  ┌───────────────────┐                               │
+│  │ narwhal-worker-1  │  │ narwhal-worker-2  │                               │
+│  │ 192.168.56.21     │  │ 192.168.56.22     │                               │
+│  │ worker            │  │ worker            │                               │
+│  │ 2 CPU / 4GB RAM   │  │ 2 CPU / 4GB RAM   │                               │
+│  └───────────────────┘  └───────────────────┘                               │
 │                                                                             │
 │  LB:  192.168.56.200 (MetalLB → Traefik)                                    │
 │  DNS: *.local.narwhal.io → 192.168.56.200                                   │
@@ -42,8 +42,8 @@ Narwhal은 Vagrant VM 기반의 Kubernetes Internal Developer Platform (IDP) 클
 
 | Node | IP | Role | CPU | Memory |
 |------|----|------|-----|--------|
-| narwhal-master-1 | 192.168.56.10 | control-plane, NFS Server, dnsmasq | 2 | 4 GiB |
-| narwhal-master-2 | 192.168.56.11 | control-plane | 2 | 4 GiB |
+| narwhal-master-1 | 192.168.56.10 | control-plane, NFS Server, dnsmasq | 2 | 6 GiB |
+| narwhal-master-2 | 192.168.56.11 | control-plane, dnsmasq | 2 | 6 GiB |
 | narwhal-worker-1 | 192.168.56.21 | worker | 2 | 4 GiB |
 | narwhal-worker-2 | 192.168.56.22 | worker | 2 | 4 GiB |
 
@@ -65,7 +65,7 @@ Narwhal은 Vagrant VM 기반의 Kubernetes Internal Developer Platform (IDP) 클
 ┌──────────────────────────────────────────────────────────────────────┐
 │                          Client Access                               │
 │                                                                      │
-│   Browser ──→ *.local.narwhal.io ──→ dnsmasq (192.168.56.10:53)     │
+│   Browser ──→ *.local.narwhal.io ──→ dnsmasq (192.168.56.10:53)      │
 │                        │                                             │
 │                        ▼                                             │
 │              MetalLB (192.168.56.200)                                │
@@ -73,16 +73,16 @@ Narwhal은 Vagrant VM 기반의 Kubernetes Internal Developer Platform (IDP) 클
 │                        ▼                                             │
 │              ┌─────────────────┐                                     │
 │              │     Traefik     │  Gateway API Controller             │
-│              │  (LoadBalancer)  │  HTTPRoute-based routing           │
+│              │  (LoadBalancer) │  HTTPRoute-based routing            │
 │              └────────┬────────┘                                     │
 │                       │                                              │
-│         ┌─────────────┼─────────────────────────┐                   │
-│         │             │             │             │                   │
-│         ▼             ▼             ▼             ▼                   │
-│    ┌─────────┐  ┌──────────┐  ┌─────────┐  ┌──────────┐            │
-│    │ Grafana  │  │ Harbor   │  │Keycloak │  │ OpenBao  │            │
-│    │ Hubble   │  │ Headlamp │  │OAuth2   │  │ ArgoCD   │            │
-│    └─────────┘  └──────────┘  └─────────┘  └──────────┘            │
+│         ┌─────────────┼─────────────────────────┐                    │
+│         │             │             │             │                  │
+│         ▼             ▼             ▼             ▼                  │
+│    ┌─────────┐  ┌──────────┐  ┌─────────┐  ┌──────────┐              │
+│    │ Grafana │  │ Harbor   │  │Keycloak │  │ OpenBao  │              │
+│    │ Hubble  │  │ Headlamp │  │OAuth2   │  │ ArgoCD   │              │
+│    └─────────┘  └──────────┘  └─────────┘  └──────────┘              │
 └──────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -97,7 +97,7 @@ Narwhal은 Vagrant VM 기반의 Kubernetes Internal Developer Platform (IDP) 클
 
 | Hostname | Backend Service |
 |----------|----------------|
-| grafana.local.narwhal.io | prometheus-grafana (monitoring) |
+| grafana.local.narwhal.io | prometheus-stack-grafana (monitoring) |
 | harbor.local.narwhal.io | harbor (harbor) |
 | keycloak.local.narwhal.io | keycloak-service (keycloak) |
 | openbao.local.narwhal.io | openbao-ui (openbao) |
@@ -113,49 +113,49 @@ Narwhal은 Vagrant VM 기반의 Kubernetes Internal Developer Platform (IDP) 클
 ```
 ┌──────────────────────────────────────────────────────────────┐
 │                      GitOps Layer                            │
-│  ┌──────────┐  ┌──────────┐  ┌────────────────────────────┐ │
-│  │  ArgoCD   │  │  Gitea   │  │  App-of-Apps (15 apps)     │ │
-│  │  v3.2.6   │  │  v1.25.4 │  │  automated sync + prune   │ │
-│  └──────────┘  └──────────┘  └────────────────────────────┘ │
+│  ┌──────────┐  ┌──────────┐  ┌────────────────────────────┐  │
+│  │  ArgoCD  │  │  Gitea   │  │  App-of-Apps (15 apps)     │  │
+│  │  v3.3.0  │  │  v1.25.4 │  │  automated sync + prune    │  │
+│  └──────────┘  └──────────┘  └────────────────────────────┘  │
 ├──────────────────────────────────────────────────────────────┤
 │                    Application Layer                         │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌────────────┐  │
-│  │ Harbor   │  │ Headlamp │  │ OpenBao  │  │   Velero   │  │
-│  │ Registry │  │ K8s UI   │  │ Secrets  │  │   Backup   │  │
-│  └──────────┘  └──────────┘  └──────────┘  └────────────┘  │
+│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌────────────┐    │
+│  │ Harbor   │  │ Headlamp │  │ OpenBao  │  │   Velero   │    │
+│  │ Registry │  │ K8s UI   │  │ Secrets  │  │   Backup   │    │
+│  └──────────┘  └──────────┘  └──────────┘  └────────────┘    │
 ├──────────────────────────────────────────────────────────────┤
-│                   Observability Layer                         │
-│  ┌────────────┐  ┌────────┐  ┌──────────┐  ┌────────────┐  │
-│  │ Prometheus │  │  Loki   │  │  Tempo   │  │  Promtail  │  │
-│  │ + Grafana  │  │  Logs   │  │  Traces  │  │  Collector │  │
-│  └────────────┘  └────────┘  └──────────┘  └────────────┘  │
+│                   Observability Layer                        │
+│  ┌────────────┐  ┌────────┐  ┌──────────┐  ┌────────────┐    │
+│  │ Prometheus │  │  Loki  │  │  Tempo   │  │  Promtail  │    │
+│  │ + Grafana  │  │  Logs  │  │  Traces  │  │  Collector │    │
+│  └────────────┘  └────────┘  └──────────┘  └────────────┘    │
 ├──────────────────────────────────────────────────────────────┤
-│                 Security & Policy Layer                       │
-│  ┌────────────┐  ┌──────────────┐  ┌────────────────────┐   │
-│  │ Keycloak   │  │ cert-manager │  │     Kyverno        │   │
-│  │ IAM / SSO  │  │ TLS auto     │  │  Policy Engine     │   │
-│  │ OIDC       │  │              │  │                    │   │
-│  └────────────┘  └──────────────┘  └────────────────────┘   │
+│                 Security & Policy Layer                      │
+│  ┌────────────┐  ┌──────────────┐  ┌────────────────────┐    │
+│  │ Keycloak   │  │ cert-manager │  │     Kyverno        │    │
+│  │ IAM / SSO  │  │ TLS auto     │  │  Policy Engine     │    │
+│  │ OIDC       │  │              │  │                    │    │
+│  └────────────┘  └──────────────┘  └────────────────────┘    │
 ├──────────────────────────────────────────────────────────────┤
-│                   Networking Layer                            │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌────────────┐  │
-│  │ Cilium   │  │ Traefik  │  │ MetalLB  │  │  kube-vip  │  │
-│  │ CNI +    │  │ Gateway  │  │ L2 LB    │  │  CP VIP    │  │
-│  │ Hubble   │  │ API      │  │          │  │            │  │
-│  └──────────┘  └──────────┘  └──────────┘  └────────────┘  │
+│                   Networking Layer                           │
+│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌────────────┐    │
+│  │ Cilium   │  │ Traefik  │  │ MetalLB  │  │  kube-vip  │    │
+│  │ CNI +    │  │ Gateway  │  │ L2 LB    │  │  CP VIP    │    │
+│  │ Hubble   │  │ API      │  │          │  │            │    │
+│  └──────────┘  └──────────┘  └──────────┘  └────────────┘    │
 ├──────────────────────────────────────────────────────────────┤
-│                    Storage Layer                              │
-│  ┌──────────────┐  ┌──────────────┐  ┌────────────────────┐ │
-│  │  NFS Server   │  │ csi-driver   │  │  nfs-quota-agent   │ │
-│  │  XFS + prjqt  │  │ nfs          │  │  quota enforcement │ │
-│  ├──────────────┤  ├──────────────┤  ├────────────────────┤ │
-│  │  SeaweedFS    │  │ CloudNative  │  │  PostgreSQL 17     │ │
-│  │  S3 Storage   │  │ PG Operator  │  │  HA Clusters       │ │
-│  └──────────────┘  └──────────────┘  └────────────────────┘ │
+│                    Storage Layer                             │
+│  ┌──────────────┐  ┌──────────────┐  ┌────────────────────┐  │
+│  │  NFS Server  │  │ csi-driver   │  │  nfs-quota-agent   │  │
+│  │  XFS + prjqt │  │ nfs          │  │  quota enforcement │  │
+│  ├──────────────┤  ├──────────────┤  ├────────────────────┤  │
+│  │  SeaweedFS   │  │ CloudNative  │  │  PostgreSQL 17     │  │
+│  │  S3 Storage  │  │ PG Operator  │  │  HA Clusters       │  │
+│  └──────────────┘  └──────────────┘  └────────────────────┘  │
 ├──────────────────────────────────────────────────────────────┤
-│                  Kubernetes v1.35                             │
+│                  Kubernetes v1.35                            │
 │              containerd v1.7 | Ubuntu 24.04 LTS              │
-│             Vagrant VMs (VMware Desktop / VirtualBox)         │
+│             Vagrant VMs (VMware Desktop / VirtualBox)        │
 └──────────────────────────────────────────────────────────────┘
 ```
 
@@ -183,9 +183,10 @@ narwhal-master (/srv/nfs/k8s)
     └── CNPG WAL 아카이빙 (향후)
 
 PostgreSQL HA (CloudNative-PG)
-├── keycloak-db (3 instances) ──→ Keycloak
-├── harbor-db (2 instances)   ──→ Harbor
-└── gitea-db (2 instances)    ──→ Gitea
+└── narwhal-db (1 primary + 1 PgBouncer)
+    ├── keycloak database
+    ├── harbor database
+    └── gitea database
 ```
 
 ### PV/PVC Storage Mapping
@@ -200,54 +201,51 @@ PostgreSQL HA (CloudNative-PG)
 | Harbor Registry | nfs-csi | 20 GiB | Container images |
 | OpenBao | nfs-csi | 10+5 GiB | Secrets + Audit |
 | SeaweedFS | nfs-csi | 1+50+5 GiB | Master + Volume + Filer |
-| PostgreSQL (keycloak) | nfs-csi | 10 GiB x3 | HA DB |
-| PostgreSQL (harbor) | nfs-csi | 10 GiB x2 | HA DB |
-| PostgreSQL (gitea) | nfs-csi | 10 GiB x2 | HA DB |
+| PostgreSQL (narwhal-db) | nfs-csi | 10 GiB | Unified DB cluster |
 
 ---
 
 ## Identity & SSO Architecture
 
 ```
-┌──────────────────────────────────────────────────┐
-│                   Keycloak                        │
-│              Realm: kubernetes                    │
-│                                                   │
-│  Users:                                           │
-│  ├── k8s-admin  → Group: cluster-admins           │
-│  └── developer  → Group: developers               │
-│                                                   │
-│  Clients (OIDC):                                  │
-│  ├── kubernetes   (public)  → K8s API Server      │
-│  ├── argocd       (secret)  → ArgoCD              │
-│  ├── grafana      (secret)  → Grafana             │
-│  ├── gitea        (secret)  → Gitea               │
-│  ├── harbor       (secret)  → Harbor              │
-│  ├── headlamp     (secret)  → Headlamp            │
-│  └── oauth2-proxy (secret)  → Gateway Auth        │
-│                                                   │
-│  Exposed via:                                     │
-│  ├── NodePort 30080 → API Server OIDC             │
-│  └── HTTPRoute     → keycloak.local.narwhal.io    │
-└──────────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────┐
+│                   Keycloak                         │
+│              Realm: kubernetes                     │
+│                                                    │
+│  Users:                                            │
+│  ├── k8s-admin  → Group: cluster-admins            │
+│  └── developer  → Group: developers                │
+│                                                    │
+│  Clients (OIDC):                                   │
+│  ├── kubernetes   (public)  → K8s API Server       │
+│  ├── argocd       (secret)  → ArgoCD               │
+│  ├── grafana      (secret)  → Grafana              │
+│  ├── gitea        (secret)  → Gitea                │
+│  ├── harbor       (secret)  → Harbor               │
+│  ├── headlamp     (secret)  → Headlamp             │
+│  └── oauth2-proxy (secret)  → Gateway Auth         │
+│                                                    │
+│  Exposed via:                                      │
+│  └── HTTPRoute (HTTPS) → keycloak.local.narwhal.io │
+└────────────────────────────────────────────────────┘
          │
          ▼
-┌──────────────────────────────────────────────────┐
-│          Kubernetes API Server                    │
-│                                                   │
-│  --oidc-issuer-url=http://192.168.56.100:30080/   │
-│          realms/kubernetes                        │
-│  --oidc-client-id=kubernetes                      │
-│  --oidc-username-claim=preferred_username         │
-│  --oidc-groups-claim=groups                       │
-│  --oidc-username-prefix=oidc:                     │
-│  --oidc-groups-prefix=oidc:                       │
-│                                                   │
-│  RBAC:                                            │
+┌───────────────────────────────────────────────────────┐
+│          Kubernetes API Server                        │
+│                                                       │
+│  --oidc-issuer-url=https://keycloak.local.narwhal.io/ │
+│          realms/kubernetes                            │
+│  --oidc-client-id=kubernetes                          │
+│  --oidc-username-claim=preferred_username             │
+│  --oidc-groups-claim=groups                           │
+│  --oidc-username-prefix=oidc:                         │
+│  --oidc-groups-prefix=oidc:                           │
+│                                                       │
+│  RBAC:                                                │
 │  ├── oidc:cluster-admins → ClusterRole: cluster-admin │
-│  ├── oidc:developers     → ClusterRole: edit      │
-│  └── oidc:viewers        → ClusterRole: view      │
-└──────────────────────────────────────────────────┘
+│  ├── oidc:developers     → ClusterRole: edit          │
+│  └── oidc:viewers        → ClusterRole: view          │
+└───────────────────────────────────────────────────────┘
 ```
 
 ---
@@ -256,24 +254,24 @@ PostgreSQL HA (CloudNative-PG)
 
 ```
 ┌────────────────────────────────────────────────────────┐
-│                    Grafana Dashboard                     │
-│          grafana.local.narwhal.io (admin/admin)         │
+│                    Grafana Dashboard                   │
+│        https://grafana.local.narwhal.io (admin/admin)  │
 ├──────────┬──────────────┬──────────────────────────────┤
 │          │              │                              │
 │    Metrics         Logs              Traces            │
 │          │              │                              │
-│    ┌─────▼─────┐  ┌────▼────┐  ┌──────▼──────┐       │
-│    │Prometheus  │  │  Loki   │  │   Tempo     │       │
-│    │  7d ret.   │  │ Single  │  │  Local      │       │
-│    │  TSDB      │  │ Binary  │  │  Backend    │       │
-│    └─────▲─────┘  └────▲────┘  └─────────────┘       │
-│          │              │                              │
-│    ┌─────┴─────┐  ┌────┴────┐                         │
+│    ┌─────▼─────┐  ┌────▼────┐  ┌──────▼──────┐         │
+│    │Prometheus │  │  Loki   │  │   Tempo     │         │
+│    │  7d ret.  │  │ Single  │  │  Local      │         │
+│    │  TSDB     │  │ Binary  │  │  Backend    │         │
+│    └─────▲─────┘  └────▲────┘  └─────────────┘         │
+│          │             │                               │
+│    ┌─────┴─────┐  ┌────┴────┐                          │
 │    │node-export│  │Promtail │  (DaemonSet)             │
 │    │kube-state │  │         │                          │
 │    │  metrics  │  │ All     │                          │
 │    │  kubelet  │  │ Nodes   │                          │
-│    └──────────┘  └─────────┘                          │
+│    └───────────┘  └─────────┘                          │
 └────────────────────────────────────────────────────────┘
 ```
 
@@ -282,26 +280,26 @@ PostgreSQL HA (CloudNative-PG)
 ## GitOps Architecture
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│                     ArgoCD (v3.2.6)                      │
+┌──────────────────────────────────────────────────────────┐
+│                     ArgoCD (v3.3.0)                      │
 │                                                          │
 │  App-of-Apps Pattern                                     │
 │  ┌────────────────────────────────────────────────────┐  │
-│  │              idp-apps (App-of-Apps)                 │  │
-│  │              auto sync + prune + self-heal          │  │
+│  │              idp-apps (App-of-Apps)                │  │
+│  │              auto sync + prune + self-heal         │  │
 │  └─────────────────────┬──────────────────────────────┘  │
-│                        │                                  │
+│                        │                                 │
 │    ┌──────────┬────────┼────────┬──────────┬───────┐     │
 │    ▼          ▼        ▼        ▼          ▼       ▼     │
 │  cert-mgr  prometheus loki   traefik   harbor  velero    │
 │  kyverno   promtail   tempo  metallb   openbao headlamp  │
-│  seaweedfs oauth2-proxy                                   │
+│  seaweedfs oauth2-proxy                                  │
 │                                                          │
 │  Source: Gitea (gitea-admin/narwhal-gitops)              │
 │  Target: https://kubernetes.default.svc                  │
-└─────────────────────────────────────────────────────────┘
+└──────────────────────────────────────────────────────────┘
 
-┌─────────────────────────────────────────────────────────┐
+┌──────────────────────────────────────────────────────────┐
 │                     Gitea (v1.25.4)                      │
 │                                                          │
 │  Repository: narwhal-gitops                              │
@@ -320,9 +318,9 @@ PostgreSQL HA (CloudNative-PG)
 │      ├── kyverno-policies.yaml                           │
 │      └── cnpg-backup.yaml                                │
 │                                                          │
-│  Backend: PostgreSQL HA (CNPG gitea-db, 2 instances)     │
+│  Backend: PostgreSQL HA (CNPG narwhal-db, shared)        │
 │  Cache: Valkey (in-cluster)                              │
-└─────────────────────────────────────────────────────────┘
+└──────────────────────────────────────────────────────────┘
 ```
 
 ---
@@ -360,24 +358,32 @@ PostgreSQL HA (CloudNative-PG)
                            kubeadm join --control-plane (etcd 2-node 쿼럼)
 ```
 
-### Phase 4: Platform Services (Master-1 only)
+### Phase 4: Platform Services (Master-1 only, auto-triggered after last worker join)
+
+**Phase 2 Auto-Trigger:**
+- Phase 1 (scripts 00-05) runs during master-1 provisioning
+- Phase 2 (scripts 06-12) auto-triggers after last worker joins via Vagrant trigger
+- Manual execution: `vagrant provision master-1 --provision-with phase2-platform`
+- Executed by: `scripts/master/phase2-platform.sh` wrapper script
+
+**Execution Order:**
 
 ```
-06-cnpg.sh           → CloudNative-PG Operator + narwhal-db
+06-cnpg.sh           → CloudNative-PG Operator + narwhal-db (unified DB)
 07-platform-apps.sh  → MetalLB, Traefik, cert-manager, Prometheus,
                        Loki, Promtail, Tempo, Kyverno, Headlamp,
                        OAuth2 Proxy, SeaweedFS, Harbor, OpenBao, Velero
 08-dnsmasq.sh        → 로컬 DNS (*.local.narwhal.io) + CoreDNS forward
-09-keycloak.sh       → Keycloak Operator + OIDC 설정 + API Server 연동
-```
-
-### Phase 5: GitOps Bootstrap (Master-1 only)
-
-```
-10-gitea.sh          → Gitea Git 서버 + CNPG DB (2 inst.)
+09-keycloak.sh       → Keycloak Operator + OIDC 설정 + API Server 연동 (HTTPS)
+10-gitea.sh          → Gitea Git 서버 (shared narwhal-db)
 11-argocd.sh         → ArgoCD 설치 + Keycloak OIDC 연동
 12-gitops-bootstrap.sh → narwhal-gitops 레포 생성 + App-of-Apps 배포
 ```
+
+**설치 순서의 중요성:**
+- cert-manager와 Traefik TLS는 Keycloak OIDC보다 먼저 설치되어야 함 (K8s 1.35+ HTTPS 필수)
+- dnsmasq는 Keycloak 전에 설정되어 DNS 해석 가능해야 함
+- CNPG는 모든 DB 의존 앱보다 먼저 실행되어야 함
 
 ### Worker Nodes
 
@@ -392,7 +398,7 @@ PostgreSQL HA (CloudNative-PG)
 ```
 kube-system          Cilium, Hubble, CoreDNS, CSI-NFS, metrics-server
 cnpg-system          CloudNative-PG Operator
-keycloak             Keycloak + PostgreSQL HA (3)
+keycloak             Keycloak (uses shared narwhal-db)
 monitoring           Prometheus, Grafana, Alertmanager, Loki, Promtail, Tempo
 cert-manager         cert-manager + ClusterIssuer
 metallb-system       MetalLB Controller + Speakers
@@ -401,10 +407,10 @@ kyverno              Kyverno Policy Engine
 headlamp             Headlamp K8s Dashboard
 oauth2-proxy         OAuth2 Proxy (Gateway Auth)
 seaweedfs            SeaweedFS (Master + Volume + Filer + S3)
-harbor               Harbor Registry + PostgreSQL HA (2)
+harbor               Harbor Registry (uses shared narwhal-db)
 openbao              OpenBao Secret Management
 velero               Velero Backup + Node Agents
-gitea                Gitea + Valkey + PostgreSQL HA (2)
+gitea                Gitea + Valkey (uses shared narwhal-db)
 argocd               ArgoCD (Server, Repo, Controller, Dex, Redis)
 nfs-quota-agent      NFS Quota Agent
 ```
@@ -429,21 +435,21 @@ sudo resolvectl domain eth0 ~local.narwhal.io
 
 | Service | URL | Credentials |
 |---------|-----|-------------|
-| Grafana | http://grafana.local.narwhal.io | admin / admin |
-| Harbor | http://harbor.local.narwhal.io | admin / Harbor12345 |
-| Keycloak | http://keycloak.local.narwhal.io | (auto-generated) |
-| OpenBao | http://openbao.local.narwhal.io | (unseal required) |
-| Hubble | http://hubble.local.narwhal.io | - |
-| ArgoCD | `kubectl port-forward svc/argocd-server -n argocd 8443:443` | admin / (auto) |
-| Gitea | `kubectl port-forward svc/gitea-http -n gitea 3000:3000` | gitea-admin / gitea-admin |
-| Headlamp | `kubectl port-forward svc/headlamp -n headlamp 8080:80` | Keycloak OIDC |
+| Grafana | https://grafana.local.narwhal.io | admin / admin |
+| Harbor | https://harbor.local.narwhal.io | admin / Harbor12345 |
+| Keycloak | https://keycloak.local.narwhal.io | (auto-generated) |
+| OpenBao | https://openbao.local.narwhal.io | (unseal required) |
+| Hubble | https://hubble.local.narwhal.io | - |
+| ArgoCD | https://argocd.local.narwhal.io | admin / (auto) |
+| Gitea | https://gitea.local.narwhal.io | gitea-admin / gitea-admin |
+| Headlamp | https://headlamp.local.narwhal.io | Keycloak OIDC |
 
 ### OIDC Login
 
 ```bash
-# 토큰 발급
-TOKEN=$(curl -s -X POST \
-  'http://192.168.56.100:30080/realms/kubernetes/protocol/openid-connect/token' \
+# 토큰 발급 (HTTPS, self-signed cert)
+TOKEN=$(curl -k -s -X POST \
+  'https://keycloak.local.narwhal.io/realms/kubernetes/protocol/openid-connect/token' \
   -d 'grant_type=password&client_id=kubernetes&username=k8s-admin&password=k8s-admin' \
   | jq -r '.access_token')
 
@@ -474,23 +480,23 @@ CNPG PostgreSQL
 ## Security Boundaries
 
 ```
-┌─ External ──────────────────────────────────────────┐
+┌─ External ───────────────────────────────────────────┐
 │                                                      │
 │  cert-manager   → Self-signed ClusterIssuer          │
 │  Kyverno        → Policy enforcement                 │
 │  OAuth2 Proxy   → Gateway-level OIDC authentication  │
 │  OpenBao        → Secret management (KV, PKI)        │
 │                                                      │
-├─ Identity ──────────────────────────────────────────┤
+├─ Identity ───────────────────────────────────────────┤
 │                                                      │
 │  Keycloak       → Central IdP (OIDC/SAML)            │
 │  K8s OIDC       → API Server authentication          │
-│  RBAC           → Group-based authorization           │
+│  RBAC           → Group-based authorization          │
 │    cluster-admins → cluster-admin                    │
 │    developers     → edit                             │
 │    viewers        → view                             │
 │                                                      │
-├─ Network ───────────────────────────────────────────┤
+├─ Network ────────────────────────────────────────────┤
 │                                                      │
 │  Cilium          → Network policies, encryption      │
 │  ArgoCD          → NetworkPolicy per component       │

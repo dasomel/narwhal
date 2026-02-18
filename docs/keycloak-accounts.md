@@ -64,9 +64,13 @@ Self-signed 인증서(cert-manager) 사용으로 각 앱에 TLS skip-verify 설�
 | ArgoCD | `argocd-cm` → `oidc.tls.insecure.skip.verify: "true"` |
 | OAuth2-Proxy | `--ssl-insecure-skip-verify=true` |
 | Grafana | `tls_skip_verify_insecure = true` |
-| Headlamp | `-oidc-skip-issuer-tls-verify` flag |
+| Headlamp | CA cert를 `/etc/ssl/certs/narwhal-ca.crt`에 subPath 마운트 |
 | Harbor | `oidc_verify_cert: false` |
-| Gitea | `SKIP_LOCAL_2FA = true` |
+| Gitea | CA cert를 `extraVolumes` + `extraContainerVolumeMounts`로 마운트 |
+
+**Headlamp 참고**: v0.40.0에 `-oidc-skip-issuer-tls-verify` 플래그가 없으므로, `narwhal-ca-cert` Secret에서 CA cert를 `/etc/ssl/certs/narwhal-ca.crt`에 subPath로 마운트. Go 런타임이 `/etc/ssl/certs/` 디렉토리를 자동 스캔.
+
+**Gitea 참고**: Gitea Go 런타임이 Keycloak HTTPS 엔드포인트를 검증하므로, Helm values에서 `extraVolumes` + `extraContainerVolumeMounts`로 CA cert 마운트 필요.
 
 ## OIDC Endpoints
 

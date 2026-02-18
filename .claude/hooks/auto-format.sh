@@ -1,30 +1,42 @@
 #!/usr/bin/env bash
-# PostToolUse Hook: 자동 포맷팅
+# PostToolUse Hook: 자동 포맷팅 검사
+# additionalContext로 Claude에게 전달
 set -euo pipefail
 
-MODIFIED_FILE="${CLAUDE_MODIFIED_FILE:-}"
+INPUT=$(cat)
+FILE_PATH=$(echo "${INPUT}" | jq -r '.tool_input.file_path // empty')
 
-if [[ -z "${MODIFIED_FILE}" ]]; then
+if [[ -z "${FILE_PATH}" ]]; then
   exit 0
 fi
 
-# 쉘 스크립트 포맷팅 검사 (shfmt 설치 시)
-if [[ "${MODIFIED_FILE}" == *.sh ]]; then
+CONTEXT=""
+
+# 쉘 스크립트 포맷팅 검사
+if [[ "${FILE_PATH}" == *.sh ]]; then
   if command -v shfmt &>/dev/null; then
-    # 포맷팅 차이만 확인 (자동 수정 안 함)
-    if ! shfmt -d -i 2 "${MODIFIED_FILE}" &>/dev/null; then
-      echo "[Format] 쉘 스크립트 포맷팅 권장: shfmt -w -i 2 ${MODIFIED_FILE}"
+    if ! shfmt -d -i 2 "${FILE_PATH}" &>/dev/null; then
+      CONTEXT="[Format] 쉘 스크립트 포맷팅 차이 감지: shfmt -w -i 2 ${FILE_PATH}"
     fi
   fi
 fi
 
 # YAML 검증
-if [[ "${MODIFIED_FILE}" == *.yaml ]] || [[ "${MODIFIED_FILE}" == *.yml ]]; then
+if [[ "${FILE_PATH}" == *.yaml ]] || [[ "${FILE_PATH}" == *.yml ]]; then
   if command -v yq &>/dev/null; then
-    if ! yq eval '.' "${MODIFIED_FILE}" &>/dev/null; then
-      echo "[Error] YAML 문법 오류: ${MODIFIED_FILE}"
+    if ! yq eval '.' "${FILE_PATH}" &>/dev/null 2>&1; then
+      CONTEXT="[Error] YAML 문법 오류 감지: ${FILE_PATH}"
     fi
   fi
+fi
+
+if [[ -n "${CONTEXT}" ]]; then
+  jq -n --arg ctx "${CONTEXT}" '{
+    hookSpecificOutput: {
+      hookEventName: "PostToolUse",
+      additionalContext: $ctx
+    }
+  }'
 fi
 
 exit 0

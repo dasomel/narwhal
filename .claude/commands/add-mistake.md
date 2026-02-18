@@ -1,35 +1,31 @@
+---
+name: add-mistake
+description: 실수 패턴을 CLAUDE.md Mistakes Log에 기록
+disable-model-invocation: true
+---
+
 # Add Mistake Pattern - 실수 패턴 수동 추가
 
-발견된 실수 패턴을 `.claude/cache/mistake-candidates.jsonl`에 기록합니다.
+발견된 실수 패턴을 CLAUDE.md의 Mistakes Log 테이블에 추가합니다.
 
 ## 입력 정보
 
-다음 정보를 입력받아 기록합니다:
+$ARGUMENTS 에서 다음 정보를 추출하여 기록:
 
-1. **파일 경로**: 실수가 발생한 파일
-2. **실수 유형**:
-   - `repeated_edit`: 반복 수정
-   - `version_mismatch`: 버전 불일치
-   - `missing_sync`: 동기화 누락
-   - `syntax_error`: 문법 오류
-   - `other`: 기타
-3. **설명**: 실수 내용 간략 설명
-4. **해결책**: 어떻게 해결했는지
+1. **날짜**: 오늘 날짜 (YYYY-MM-DD)
+2. **실수 내용**: 무엇이 잘못되었는지
+3. **해결책**: 어떻게 해결/방지하는지
 
-## 기록 형식
+## 기록 위치
 
-```json
-{
-  "timestamp": "2024-01-01T00:00:00Z",
-  "file": "scripts/master/05-keycloak.sh",
-  "type": "version_mismatch",
-  "description": "VERSIONS.md와 스크립트 버전 불일치",
-  "resolution": "스크립트 버전을 VERSIONS.md에 맞춰 수정"
-}
-```
+CLAUDE.md의 해당 카테고리 테이블에 추가:
+- Shell Script 실수
+- Kubernetes/Helm 실수
+- GitOps/ArgoCD 실수
+- Vagrant/Infrastructure 실수
 
-## 사용 예시
+## 형식
 
-```
-/add-mistake scripts/master/05-keycloak.sh version_mismatch "VERSIONS.md와 버전 불일치" "스크립트 수정"
+```markdown
+| YYYY-MM-DD | 실수 내용 | 해결책 |
 ```

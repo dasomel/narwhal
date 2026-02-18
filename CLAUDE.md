@@ -276,13 +276,13 @@ shellcheck scripts/**/*.sh
 
 3. **실제 테스트** (VM 실행 중일 때)
    ```bash
-   vagrant ssh master -c "kubectl get nodes"
-   vagrant ssh master -c "kubectl get pods -A"
+   vagrant ssh master-1 -c "kubectl get nodes"
+   vagrant ssh master-1 -c "kubectl get pods -A"
    ```
 
 4. **ArgoCD 동기화 확인**
    ```bash
-   vagrant ssh master -c "kubectl get applications -n argocd"
+   vagrant ssh master-1 -c "kubectl get applications -n argocd"
    ```
 
 ### 검증 명령어
@@ -395,7 +395,7 @@ kubectl get events -n harbor 2>&1 | gemini -p "이 Kubernetes 이벤트에서 �
 |------|------|
 | **Claude 토큰 만료** | Gemini로 전환하여 세션 지속. `gemini -p "..." -o text`로 직접 작업 수행 |
 | **Gemini 토큰 만료** | Claude 단독 작업. Gemini 호출 스킵, WebSearch/Context7 등 내장 도구 활용 |
-| **양쪽 모두 만료** | 작업 중단 전 현재 상태를 `.agent/SESSION_STATE.md`에 기록하여 다음 세션에서 이어가기 |
+| **양쪽 모두 만료** | 작업 중단 전 현재 상태를 `.claude/cache/SESSION_STATE.md`에 기록하여 다음 세션에서 이어가기 |
 
 #### 토큰 절약 원칙
 
@@ -436,7 +436,7 @@ kubectl get events -n harbor 2>&1 | gemini -p "이 Kubernetes 이벤트에서 �
     │       │
     │       ▼
     │  [세션 상태 저장]
-    │  - 현재 작업 내용 → .agent/SESSION_STATE.md
+    │  - 현재 작업 내용 → .claude/cache/SESSION_STATE.md
     │  - 미완료 TODO → TaskList에 기록
     │  - git stash 또는 WIP 커밋
     │       │
@@ -447,7 +447,7 @@ kubectl get events -n harbor 2>&1 | gemini -p "이 Kubernetes 이벤트에서 �
     └───────────────────────────────────────┘
 ```
 
-#### 세션 상태 저장 형식 (.agent/SESSION_STATE.md)
+#### 세션 상태 저장 형식 (.claude/cache/SESSION_STATE.md)
 
 ```markdown
 # Session State - [날짜]

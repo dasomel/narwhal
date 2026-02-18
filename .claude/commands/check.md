@@ -1,3 +1,8 @@
+---
+name: check
+description: 빠른 문법 검사 - Vagrantfile, 스크립트, YAML 검증
+---
+
 # Quick Check - 프로젝트 상태 검증
 
 프로젝트의 주요 설정과 스크립트를 빠르게 검증합니다.

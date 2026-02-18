@@ -19,8 +19,9 @@ Narwhal IDP 플랫폼의 Keycloak SSO 연동 및 권한 관리 가이드
 
 ```
 07-platform-apps.sh  → cert-manager + Traefik TLS 설치
-08-dnsmasq.sh        → DNS 설정 (*.local.narwhal.io 해석)
-09-keycloak.sh       → Keycloak + HTTPS OIDC 설정
+08-istio-ambient.sh  → Istio ambient mesh (mTLS)
+09-dnsmasq.sh        → DNS 설정 (*.local.narwhal.io 해석)
+10-keycloak.sh       → Keycloak + HTTPS OIDC 설정
 ```
 
 ### 검증 방법

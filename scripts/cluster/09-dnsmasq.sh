@@ -13,6 +13,7 @@ METALLB_IP="${METALLB_IP:-192.168.56.200}"
 DOMAIN="${DOMAIN:-local.narwhal.io}"
 SKIP_COREDNS="${SKIP_COREDNS:-false}"
 MASTER_IP_BASE="${MASTER_IP_BASE:-192.168.56.1}"
+MASTER_COUNT="${MASTER_COUNT:-3}"
 
 echo "=== Installing dnsmasq for local domain resolution ==="
 echo "Master IP: ${MASTER_IP}"
@@ -114,9 +115,13 @@ else
   # Pods use CoreDNS (10.96.0.10), not dnsmasq, for DNS resolution.
   # Without this rule, Pods cannot resolve *.local.narwhal.io.
   # Forward to both master dnsmasq instances for HA.
-  MASTER1_IP="${MASTER_IP_BASE}0"
-  MASTER2_IP="${MASTER_IP_BASE}1"
-  echo "=== Configuring CoreDNS to forward local.narwhal.io to dnsmasq (${MASTER1_IP}, ${MASTER2_IP}) ==="
+  # Build dynamic master DNS list for CoreDNS forward
+  MASTER_DNS_LIST=""
+  for idx in $(seq 0 $((MASTER_COUNT - 1))); do
+    MASTER_DNS_LIST="${MASTER_DNS_LIST}${MASTER_IP_BASE}${idx} "
+  done
+  MASTER_DNS_LIST="${MASTER_DNS_LIST% }"  # trim trailing space
+  echo "=== Configuring CoreDNS to forward local.narwhal.io to dnsmasq (${MASTER_DNS_LIST}) ==="
 
   COREDNS_CM=$(kubectl get configmap coredns -n kube-system -o json 2>/dev/null || echo "")
   if [ -n "${COREDNS_CM}" ]; then
@@ -129,7 +134,7 @@ else
       NEW_COREFILE="${DOMAIN}:53 {
     errors
     cache 30
-    forward . ${MASTER1_IP} ${MASTER2_IP}
+    forward . ${MASTER_DNS_LIST}
 }
 ${COREFILE}"
       kubectl create configmap coredns -n kube-system \
@@ -139,7 +144,7 @@ ${COREFILE}"
       # Restart CoreDNS to pick up the change
       kubectl rollout restart deployment coredns -n kube-system 2>/dev/null || true
       kubectl wait --for=condition=Ready pod -l k8s-app=kube-dns -n kube-system --timeout=60s || true
-      echo "CoreDNS forward rule added for ${DOMAIN} -> ${MASTER1_IP}, ${MASTER2_IP}"
+      echo "CoreDNS forward rule added for ${DOMAIN} -> ${MASTER_DNS_LIST}"
     fi
   else
     echo "WARN: CoreDNS configmap not found, skipping forward rule"
@@ -161,9 +166,14 @@ echo "External domains: forwarded to 8.8.8.8, 8.8.4.4"
 echo ""
 echo "To use on client machines:"
 echo ""
-echo "  macOS (HA - both masters):"
+echo "  macOS (HA - all masters):"
 echo "    sudo mkdir -p /etc/resolver"
-echo "    printf 'nameserver ${MASTER_IP_BASE}0\nnameserver ${MASTER_IP_BASE}1\n' | sudo tee /etc/resolver/${DOMAIN}"
+RESOLVER_CMD="printf '"
+for idx in $(seq 0 $((MASTER_COUNT - 1))); do
+  RESOLVER_CMD="${RESOLVER_CMD}nameserver ${MASTER_IP_BASE}${idx}\n"
+done
+RESOLVER_CMD="${RESOLVER_CMD}'"
+echo "    ${RESOLVER_CMD} | sudo tee /etc/resolver/${DOMAIN}"
 echo ""
 echo "  Linux (systemd-resolved):"
 echo "    sudo resolvectl dns eth0 ${MASTER_IP}"

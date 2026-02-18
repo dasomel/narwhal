@@ -2,7 +2,7 @@
 set -euo pipefail
 
 CNPG_CHART_VERSION="${CNPG_CHART_VERSION:-0.27.1}"  # app: v1.28.1
-POSTGRES_VERSION="${POSTGRES_VERSION:-17}"
+POSTGRES_VERSION="${POSTGRES_VERSION:-18}"
 
 echo "=== Installing CloudNative-PG v1.28.1 (chart: ${CNPG_CHART_VERSION}) ==="
 

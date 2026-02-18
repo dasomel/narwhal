@@ -13,25 +13,26 @@ Narwhal은 Vagrant VM 기반의 Kubernetes Internal Developer Platform (IDP) 클
 │                                                                             │
 │  Vagrant + VMware Desktop / VirtualBox                                      │
 │                                                                             │
-│  ┌──────────────────┐  ┌──────────────────┐                                 │
-│  │ narwhal-master-1 │  │ narwhal-master-2 │                                 │
-│  │ 192.168.56.10    │  │ 192.168.56.11    │                                 │
-│  │ control-plane    │  │ control-plane    │                                 │
-│  │ NFS Server       │  │ dnsmasq          │                                 │
-│  │ dnsmasq          │  │                  │                                 │
-│  │ 2 CPU / 6GB RAM  │  │ 2 CPU / 6GB RAM  │                                 │
-│  └────────┬─────────┘  └────────┬─────────┘                                 │
-│           └──────────┬──────────┘                                           │
-│                      │                                                      │
+│  ┌──────────────────┐  ┌──────────────────┐  ┌──────────────────┐           │
+│  │ narwhal-master-1 │  │ narwhal-master-2 │  │ narwhal-master-3 │           │
+│  │ 192.168.56.10    │  │ 192.168.56.11    │  │ 192.168.56.12    │           │
+│  │ control-plane    │  │ control-plane    │  │ control-plane    │           │
+│  │ NFS Server       │  │ dnsmasq          │  │ dnsmasq          │           │
+│  │ dnsmasq          │  │                  │  │                  │           │
+│  │ 2 CPU / 4GB RAM  │  │ 2 CPU / 4GB RAM  │  │ 2 CPU / 4GB RAM  │           │
+│  └────────┬─────────┘  └────────┬─────────┘  └────────┬─────────┘           │
+│           └──────────────────┬──┘                     │                     │
+│                              └───────────┬────────────┘                     │
+│                                          │                                  │
 │            VIP: 192.168.56.100 (kube-vip, ARP leader election)              │
-│            ⚠ etcd 2-node: quorum=2/2 (dev only)                             │
-│                      │                                                      │
-│  ┌───────────────────┐  ┌───────────────────┐                               │
-│  │ narwhal-worker-1  │  │ narwhal-worker-2  │                               │
-│  │ 192.168.56.21     │  │ 192.168.56.22     │                               │
-│  │ worker            │  │ worker            │                               │
-│  │ 2 CPU / 4GB RAM   │  │ 2 CPU / 4GB RAM   │                               │
-│  └───────────────────┘  └───────────────────┘                               │
+│            etcd 3-node: quorum=2/3 (1 fault tolerance)                      │
+│                                          │                                  │
+│  ┌───────────────────┐  ┌───────────────────┐  ┌───────────────────┐         │
+│  │ narwhal-worker-1  │  │ narwhal-worker-2  │  │ narwhal-worker-3  │         │
+│  │ 192.168.56.21     │  │ 192.168.56.22     │  │ 192.168.56.23     │         │
+│  │ worker            │  │ worker            │  │ worker            │         │
+│  │ 2 CPU / 6GB RAM   │  │ 2 CPU / 6GB RAM   │  │ 2 CPU / 6GB RAM   │         │
+│  └───────────────────┘  └───────────────────┘  └───────────────────┘         │
 │                                                                             │
 │  LB:  192.168.56.200 (MetalLB → Traefik)                                    │
 │  DNS: *.local.narwhal.io → 192.168.56.200                                   │
@@ -42,10 +43,12 @@ Narwhal은 Vagrant VM 기반의 Kubernetes Internal Developer Platform (IDP) 클
 
 | Node | IP | Role | CPU | Memory |
 |------|----|------|-----|--------|
-| narwhal-master-1 | 192.168.56.10 | control-plane, NFS Server, dnsmasq | 2 | 6 GiB |
-| narwhal-master-2 | 192.168.56.11 | control-plane, dnsmasq | 2 | 6 GiB |
-| narwhal-worker-1 | 192.168.56.21 | worker | 2 | 4 GiB |
-| narwhal-worker-2 | 192.168.56.22 | worker | 2 | 4 GiB |
+| narwhal-master-1 | 192.168.56.10 | control-plane (NoSchedule), NFS Server, dnsmasq | 2 | 4 GiB |
+| narwhal-master-2 | 192.168.56.11 | control-plane (NoSchedule), dnsmasq | 2 | 4 GiB |
+| narwhal-master-3 | 192.168.56.12 | control-plane (NoSchedule), dnsmasq | 2 | 4 GiB |
+| narwhal-worker-1 | 192.168.56.21 | worker | 2 | 6 GiB |
+| narwhal-worker-2 | 192.168.56.22 | worker | 2 | 6 GiB |
+| narwhal-worker-3 | 192.168.56.23 | worker | 2 | 6 GiB |
 
 ### Network
 
@@ -114,7 +117,7 @@ Narwhal은 Vagrant VM 기반의 Kubernetes Internal Developer Platform (IDP) 클
 ┌──────────────────────────────────────────────────────────────┐
 │                      GitOps Layer                            │
 │  ┌──────────┐  ┌──────────┐  ┌────────────────────────────┐  │
-│  │  ArgoCD  │  │  Gitea   │  │  App-of-Apps (15 apps)     │  │
+│  │  ArgoCD  │  │  Gitea   │  │  App-of-Apps (18 apps)     │  │
 │  │  v3.3.0  │  │  v1.25.4 │  │  automated sync + prune    │  │
 │  └──────────┘  └──────────┘  └────────────────────────────┘  │
 ├──────────────────────────────────────────────────────────────┤
@@ -137,6 +140,14 @@ Narwhal은 Vagrant VM 기반의 Kubernetes Internal Developer Platform (IDP) 클
 │  │ OIDC       │  │              │  │                    │    │
 │  └────────────┘  └──────────────┘  └────────────────────┘    │
 ├──────────────────────────────────────────────────────────────┤
+│                  Service Mesh Layer                          │
+│  ┌──────────┐  ┌──────────┐  ┌──────────┐                    │
+│  │ istiod   │  │ ztunnel  │  │ istio-cni│                    │
+│  │ control  │  │ node     │  │ ambient  │                    │
+│  │ plane    │  │ proxy    │  │ redirect │                    │
+│  └──────────┘  └──────────┘  └──────────┘                    │
+│  Istio v1.29 ambient mode — mTLS (STRICT), zero sidecars    │
+├──────────────────────────────────────────────────────────────┤
 │                   Networking Layer                           │
 │  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌────────────┐    │
 │  │ Cilium   │  │ Traefik  │  │ MetalLB  │  │  kube-vip  │    │
@@ -149,7 +160,7 @@ Narwhal은 Vagrant VM 기반의 Kubernetes Internal Developer Platform (IDP) 클
 │  │  NFS Server  │  │ csi-driver   │  │  nfs-quota-agent   │  │
 │  │  XFS + prjqt │  │ nfs          │  │  quota enforcement │  │
 │  ├──────────────┤  ├──────────────┤  ├────────────────────┤  │
-│  │  SeaweedFS   │  │ CloudNative  │  │  PostgreSQL 17     │  │
+│  │  SeaweedFS   │  │ CloudNative  │  │  PostgreSQL 18     │  │
 │  │  S3 Storage  │  │ PG Operator  │  │  HA Clusters       │  │
 │  └──────────────┘  └──────────────┘  └────────────────────┘  │
 ├──────────────────────────────────────────────────────────────┤
@@ -293,7 +304,8 @@ PostgreSQL HA (CloudNative-PG)
 │    ▼          ▼        ▼        ▼          ▼       ▼     │
 │  cert-mgr  prometheus loki   traefik   harbor  velero    │
 │  kyverno   promtail   tempo  metallb   openbao headlamp  │
-│  seaweedfs oauth2-proxy                                  │
+│  seaweedfs oauth2-proxy  istio-base  istiod              │
+│  istio-cni ztunnel                                       │
 │                                                          │
 │  Source: Gitea (gitea-admin/narwhal-gitops)              │
 │  Target: https://kubernetes.default.svc                  │
@@ -308,7 +320,7 @@ PostgreSQL HA (CloudNative-PG)
 │  │   ├── cert-manager.yaml                               │
 │  │   ├── prometheus-stack.yaml                           │
 │  │   ├── loki.yaml                                       │
-│  │   ├── ... (15 apps)                                   │
+│  │   ├── ... (18 apps)                                   │
 │  └── resources/         (Shared K8s resources)           │
 │      ├── metallb-config.yaml                             │
 │      ├── traefik-routes.yaml                             │
@@ -327,7 +339,7 @@ PostgreSQL HA (CloudNative-PG)
 
 ## Provisioning Flow
 
-클러스터는 Vagrant에 의해 순차적으로 프로비저닝됩니다. (2-master HA)
+클러스터는 Vagrant에 의해 순차적으로 프로비저닝됩니다. (3-master HA, 1 fault tolerance)
 
 ### Phase 1: Base Infrastructure (All Nodes)
 
@@ -340,8 +352,8 @@ PostgreSQL HA (CloudNative-PG)
 ### Phase 2: Master-1 Setup (Full Provisioning)
 
 ```
-01-kube-vip.sh       → Control Plane VIP 정적 Pod (192.168.56.100, super-admin.conf)
-00-nfs-server.sh     → NFS 서버 (XFS prjquota)
+00-kube-vip.sh       → Control Plane VIP 정적 Pod (192.168.56.100, super-admin.conf)
+01-nfs-server.sh     → NFS 서버 (XFS prjquota)
 02-init-cluster.sh   → kubeadm init (--upload-certs, VIP endpoint)
                        → join-command.sh (worker용)
                        → join-control-plane.sh (master-2용, --ignore-preflight-errors)
@@ -350,21 +362,21 @@ PostgreSQL HA (CloudNative-PG)
 05-nfs-quota-agent.sh→ NFS 프로젝트 쿼터 에이전트
 ```
 
-### Phase 3: Master-2+ Setup (Control Plane Join)
+### Phase 3: Master-2/3 Setup (Control Plane Join)
 
 ```
-01-kube-vip.sh           → Control Plane VIP 정적 Pod (admin.conf)
+00-kube-vip.sh           → Control Plane VIP 정적 Pod (admin.conf)
 02-join-control-plane.sh → master-1에서 SCP로 join 명령 가져와 실행
-                           kubeadm join --control-plane (etcd 2-node 쿼럼)
+                           kubeadm join --control-plane (etcd 3-node 쿼럼, 1 fault tolerance)
 ```
 
 ### Phase 4: Platform Services (Master-1 only, auto-triggered after last worker join)
 
 **Phase 2 Auto-Trigger:**
 - Phase 1 (scripts 00-05) runs during master-1 provisioning
-- Phase 2 (scripts 06-12) auto-triggers after last worker joins via Vagrant trigger
+- Phase 2 (scripts 06-13) auto-triggers after last worker joins via Vagrant trigger
 - Manual execution: `vagrant provision master-1 --provision-with phase2-platform`
-- Executed by: `scripts/master/phase2-platform.sh` wrapper script
+- Executed by: `scripts/cluster/phase2-platform.sh` wrapper script
 
 **Execution Order:**
 
@@ -373,11 +385,12 @@ PostgreSQL HA (CloudNative-PG)
 07-platform-apps.sh  → MetalLB, Traefik, cert-manager, Prometheus,
                        Loki, Promtail, Tempo, Kyverno, Headlamp,
                        OAuth2 Proxy, SeaweedFS, Harbor, OpenBao, Velero
-08-dnsmasq.sh        → 로컬 DNS (*.local.narwhal.io) + CoreDNS forward
-09-keycloak.sh       → Keycloak Operator + OIDC 설정 + API Server 연동 (HTTPS)
-10-gitea.sh          → Gitea Git 서버 (shared narwhal-db)
-11-argocd.sh         → ArgoCD 설치 + Keycloak OIDC 연동
-12-gitops-bootstrap.sh → narwhal-gitops 레포 생성 + App-of-Apps 배포
+08-istio-ambient.sh  → Istio ambient mesh (mTLS, zero sidecars)
+09-dnsmasq.sh        → 로컬 DNS (*.local.narwhal.io) + CoreDNS forward
+10-keycloak.sh       → Keycloak Operator + OIDC 설정 + API Server 연동 (HTTPS)
+11-gitea.sh          → Gitea Git 서버 (shared narwhal-db)
+12-argocd.sh         → ArgoCD 설치 + Keycloak OIDC 연동
+13-gitops-bootstrap.sh → narwhal-gitops 레포 생성 + App-of-Apps 배포
 ```
 
 **설치 순서의 중요성:**
@@ -495,6 +508,12 @@ CNPG PostgreSQL
 │    cluster-admins → cluster-admin                    │
 │    developers     → edit                             │
 │    viewers        → view                             │
+│                                                      │
+├─ Service Mesh ───────────────────────────────────────┤
+│                                                      │
+│  Istio ambient   → mTLS STRICT (East-West)           │
+│  ztunnel         → Node proxy (HBONE, zero sidecar)  │
+│  PeerAuth        → Mesh-wide mutual TLS              │
 │                                                      │
 ├─ Network ────────────────────────────────────────────┤
 │                                                      │

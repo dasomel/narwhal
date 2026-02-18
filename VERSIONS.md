@@ -20,10 +20,18 @@ Components and versions used in this project.
 | Cilium CLI | v0.19.0 | Cilium command-line tool |
 | Traefik | v39.0.0 (chart) / v3.6.7 (app) | Gateway API controller, rate limiting |
 | MetalLB | v0.15.3 (chart) | Bare-metal LoadBalancer |
-| Gateway API CRDs | v1.2.1 | Kubernetes Gateway API standard |
+| Gateway API CRDs | v1.4.0 (experimental) | Kubernetes Gateway API standard |
 | Hubble | v1.19.0 | Cilium observability (UI + Relay) |
 | Hubble CLI | v1.18.5 | Hubble command-line tool |
 | kube-vip | v1.0.4 | Control plane VIP (ARP, leader election) |
+
+## Service Mesh
+
+| Component | Version | Description |
+|-----------|---------|-------------|
+| Istio | v1.29.0 | Service mesh (ambient mode, zero sidecars) |
+| ztunnel | v1.29.0 | Node proxy DaemonSet (HBONE mTLS) |
+| istio-cni | v1.29.0 | CNI node agent (ambient traffic redirect) |
 
 ## Storage
 
@@ -41,7 +49,7 @@ Components and versions used in this project.
 | Component | Version | Description |
 |-----------|---------|-------------|
 | CloudNative-PG | v1.28.1 (chart 0.27.1) | PostgreSQL Operator |
-| PostgreSQL | 17 | Database (HA, unified narwhal-db) |
+| PostgreSQL | 18.2 | Database (HA, unified narwhal-db) |
 
 ## Identity & Access
 

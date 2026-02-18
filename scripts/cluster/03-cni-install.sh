@@ -48,7 +48,9 @@ case "${CNI_PLUGIN}" in
       --set k8sServicePort=6443 \
       --set hubble.relay.enabled=true \
       --set hubble.ui.enabled=true \
-      --set gatewayAPI.enabled=true
+      --set gatewayAPI.enabled=true \
+      --set cni.exclusive=false \
+      --set socketLB.hostNamespaceOnly=true
 
     # Wait for core Cilium components (not hubble - it needs worker nodes)
     cilium status --wait --wait-duration 120s || echo "WARN: cilium status timed out (hubble may need worker nodes)"

@@ -4,10 +4,10 @@ set -euo pipefail
 echo "=== Prerequisites Installation ==="
 
 CLUSTER_NAME="${CLUSTER_NAME:-narwhal}"
-MASTER_COUNT="${MASTER_COUNT:-2}"
+MASTER_COUNT="${MASTER_COUNT:-3}"
 MASTER_IP_BASE="${MASTER_IP_BASE:-192.168.56.1}"
 VIP_ADDRESS="${VIP_ADDRESS:-192.168.56.100}"
-WORKER_COUNT="${WORKER_COUNT:-2}"
+WORKER_COUNT="${WORKER_COUNT:-3}"
 WORKER_IP_BASE="${WORKER_IP_BASE:-192.168.56.2}"
 NODE_IP="${NODE_IP:-}"
 
@@ -78,12 +78,17 @@ echo "Configuring DNS..."
 
 # Add master-1 dnsmasq as primary DNS for *.local.narwhal.io resolution
 # The ~local.narwhal.io routing domain ensures only matching queries go to dnsmasq
-# On master-1, 08-dnsmasq.sh replaces systemd-resolved entirely, so this is a no-op
+# On master-1, 09-dnsmasq.sh replaces systemd-resolved entirely, so this is a no-op
 if systemctl is-active --quiet systemd-resolved; then
   sudo mkdir -p /etc/systemd/resolved.conf.d
+  # Build DNS list dynamically from all master IPs
+  MASTER_DNS=""
+  for idx in $(seq 0 $((MASTER_COUNT - 1))); do
+    MASTER_DNS="${MASTER_DNS}${MASTER_IP_BASE}${idx} "
+  done
   sudo tee /etc/systemd/resolved.conf.d/dns.conf << EOF
 [Resolve]
-DNS=${MASTER_IP_BASE}0 ${MASTER_IP_BASE}1 8.8.8.8 8.8.4.4
+DNS=${MASTER_DNS}8.8.8.8 8.8.4.4
 FallbackDNS=1.1.1.1
 Domains=~local.narwhal.io
 EOF

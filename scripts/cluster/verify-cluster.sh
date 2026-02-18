@@ -9,9 +9,9 @@ set -uo pipefail
 # Exit code: 0 if all pass, 1 if any fail.
 #
 # Usage:
-#   vagrant ssh master-1 -c "bash /home/vagrant/scripts/master/verify-cluster.sh"
-#   vagrant ssh master-1 -c "bash /home/vagrant/scripts/master/verify-cluster.sh --quick"
-#   vagrant ssh master-1 -c "bash /home/vagrant/scripts/master/verify-cluster.sh --section nodes"
+#   vagrant ssh master-1 -c "bash /home/vagrant/scripts/cluster/verify-cluster.sh"
+#   vagrant ssh master-1 -c "bash /home/vagrant/scripts/cluster/verify-cluster.sh --quick"
+#   vagrant ssh master-1 -c "bash /home/vagrant/scripts/cluster/verify-cluster.sh --section nodes"
 
 QUICK_MODE=false
 SECTION_FILTER=""
@@ -61,7 +61,7 @@ warn() {
 # Stage → section mapping
 PHASE1_SECTIONS="nodes kube-vip etcd cilium core"
 PHASE2_INFRA_SECTIONS="nodes network tls dns"
-PHASE2_APPS_SECTIONS="nodes database keycloak monitoring platform gitops routes podhealth"
+PHASE2_APPS_SECTIONS="nodes database keycloak monitoring platform istio gitops routes podhealth"
 
 # Check if a section should run
 should_run() {
@@ -120,15 +120,15 @@ echo ""
 # 1. NODES
 #=========================================
 if should_run "nodes"; then
-  echo "--- [1/16] Nodes ---"
+  echo "--- [1/17] Nodes ---"
   NODE_COUNT=$(kubectl get nodes --no-headers 2>/dev/null | wc -l | tr -d ' ')
   READY_COUNT=$(kubectl get nodes --no-headers 2>/dev/null | grep -c " Ready" || echo "0")
   NOTREADY=$(kubectl get nodes --no-headers 2>/dev/null | grep -v " Ready" || echo "")
 
-  if [ "${NODE_COUNT}" -ge 4 ]; then
+  if [ "${NODE_COUNT}" -ge 6 ]; then
     pass "Node count: ${NODE_COUNT}"
   else
-    fail "Node count: ${NODE_COUNT} (expected >= 4)"
+    fail "Node count: ${NODE_COUNT} (expected >= 6)"
   fi
 
   if [ "${READY_COUNT}" = "${NODE_COUNT}" ]; then
@@ -139,10 +139,25 @@ if should_run "nodes"; then
 
   # Check master nodes have control-plane role
   MASTER_COUNT=$(kubectl get nodes --no-headers 2>/dev/null | grep -c "control-plane" || echo "0")
-  if [ "${MASTER_COUNT}" -ge 2 ]; then
+  if [ "${MASTER_COUNT}" -ge 3 ]; then
     pass "Control plane nodes: ${MASTER_COUNT}"
   else
-    fail "Control plane nodes: ${MASTER_COUNT} (expected >= 2)"
+    fail "Control plane nodes: ${MASTER_COUNT} (expected >= 3)"
+  fi
+
+  # Check control-plane taint (should be NoSchedule after Phase 2)
+  TAINTED_MASTERS=0
+  for node in $(kubectl get nodes -l node-role.kubernetes.io/control-plane --no-headers -o custom-columns=NAME:.metadata.name 2>/dev/null); do
+    if kubectl describe node "${node}" 2>/dev/null | grep -q "node-role.kubernetes.io/control-plane:NoSchedule"; then
+      TAINTED_MASTERS=$((TAINTED_MASTERS + 1))
+    fi
+  done
+  if [ "${TAINTED_MASTERS}" -ge "${MASTER_COUNT}" ]; then
+    pass "Control-plane taint: ${TAINTED_MASTERS}/${MASTER_COUNT} masters tainted"
+  elif [ "${TAINTED_MASTERS}" -ge 1 ]; then
+    warn "Control-plane taint: ${TAINTED_MASTERS}/${MASTER_COUNT} masters tainted"
+  else
+    warn "Control-plane taint: not applied (Phase 1 or taint removed)"
   fi
   echo ""
 fi
@@ -151,12 +166,12 @@ fi
 # 2. KUBE-VIP & VIP
 #=========================================
 if should_run "kube-vip"; then
-  echo "--- [2/16] kube-vip & VIP ---"
+  echo "--- [2/17] kube-vip & VIP ---"
   KVIP_PODS=$(kubectl get pods -n kube-system -l k8s-app=kube-vip --no-headers 2>/dev/null | grep -c "Running" || echo "0")
-  if [ "${KVIP_PODS}" -ge 2 ]; then
+  if [ "${KVIP_PODS}" -ge 3 ]; then
     pass "kube-vip pods: ${KVIP_PODS} Running"
   elif [ "${KVIP_PODS}" -ge 1 ]; then
-    warn "kube-vip pods: ${KVIP_PODS} Running (expected 2 for HA)"
+    warn "kube-vip pods: ${KVIP_PODS} Running (expected 3 for HA)"
   else
     fail "kube-vip pods: ${KVIP_PODS} Running"
   fi
@@ -166,6 +181,13 @@ if should_run "kube-vip"; then
   else
     fail "VIP 192.168.56.100: unreachable"
   fi
+
+  # VIP responds to K8s API
+  if kubectl --kubeconfig=/etc/kubernetes/admin.conf get nodes &>/dev/null 2>&1; then
+    pass "VIP API server: responding"
+  else
+    warn "VIP API server: not responding (using config-local)"
+  fi
   echo ""
 fi
 
@@ -173,7 +195,7 @@ fi
 # 3. ETCD
 #=========================================
 if should_run "etcd"; then
-  echo "--- [3/16] etcd ---"
+  echo "--- [3/17] etcd ---"
   # etcdctl is inside the etcd pod (not installed on host in kubeadm clusters)
   ETCD_POD=$(kubectl get pods -n kube-system -l component=etcd -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
   if [ -n "${ETCD_POD}" ]; then
@@ -186,10 +208,25 @@ if should_run "etcd"; then
   else
     ETCD_MEMBERS=0
   fi
-  if [ "${ETCD_MEMBERS}" -ge 2 ]; then
+  if [ "${ETCD_MEMBERS}" -ge 3 ]; then
     pass "etcd members: ${ETCD_MEMBERS}"
   else
-    fail "etcd members: ${ETCD_MEMBERS} (expected >= 2)"
+    fail "etcd members: ${ETCD_MEMBERS} (expected >= 3)"
+  fi
+
+  # etcd health check
+  if [ -n "${ETCD_POD}" ]; then
+    ETCD_HEALTH=$(kubectl exec -n kube-system "${ETCD_POD}" -- \
+      etcdctl endpoint health \
+      --endpoints=https://127.0.0.1:2379 \
+      --cacert=/etc/kubernetes/pki/etcd/ca.crt \
+      --cert=/etc/kubernetes/pki/etcd/server.crt \
+      --key=/etc/kubernetes/pki/etcd/server.key 2>/dev/null | grep -c "is healthy" || echo "0")
+    if [ "${ETCD_HEALTH}" -ge 1 ]; then
+      pass "etcd health: healthy"
+    else
+      fail "etcd health: unhealthy"
+    fi
   fi
   echo ""
 fi
@@ -198,12 +235,36 @@ fi
 # 4. CNI (Cilium)
 #=========================================
 if should_run "cilium"; then
-  echo "--- [4/16] Cilium CNI ---"
-  check_pods "kube-system" "k8s-app=cilium" 4 "cilium agents"
+  echo "--- [4/17] Cilium CNI ---"
+  check_pods "kube-system" "k8s-app=cilium" 6 "cilium agents"
   CILIUM_OP_NAME=$(kubectl get deployment -n kube-system -l app.kubernetes.io/name=cilium-operator -o jsonpath='{.items[0].metadata.name}' 2>/dev/null \
     || kubectl get deployment -n kube-system -l name=cilium-operator -o jsonpath='{.items[0].metadata.name}' 2>/dev/null \
     || echo "cilium-operator")
   check_ready "deployment" "kube-system" "${CILIUM_OP_NAME}" "cilium-operator"
+
+  # kube-proxy replacement
+  KPR=$(kubectl get cm cilium-config -n kube-system -o jsonpath='{.data.kube-proxy-replacement}' 2>/dev/null || echo "")
+  if [ "${KPR}" = "true" ]; then
+    pass "Cilium kubeProxyReplacement: true"
+  else
+    warn "Cilium kubeProxyReplacement: ${KPR:-not set}"
+  fi
+
+  # Cilium cni.exclusive (must be false for Istio CNI coexistence)
+  CNI_EXCLUSIVE=$(kubectl get cm cilium-config -n kube-system -o jsonpath='{.data.cni-exclusive}' 2>/dev/null || echo "")
+  if [ "${CNI_EXCLUSIVE}" = "false" ]; then
+    pass "Cilium cni.exclusive: false (Istio CNI coexistence)"
+  else
+    fail "Cilium cni.exclusive: ${CNI_EXCLUSIVE:-not set} (must be false for Istio)"
+  fi
+
+  # Cilium socketLB.hostNamespaceOnly (must be true to prevent ztunnel bypass)
+  SOCKET_LB_HOST=$(kubectl get cm cilium-config -n kube-system -o jsonpath='{.data.bpf-lb-sock-hostns-only}' 2>/dev/null || echo "")
+  if [ "${SOCKET_LB_HOST}" = "true" ]; then
+    pass "Cilium socketLB.hostNamespaceOnly: true"
+  else
+    fail "Cilium socketLB.hostNamespaceOnly: ${SOCKET_LB_HOST:-not set} (must be true for Istio)"
+  fi
 
   if ! ${QUICK_MODE}; then
     HUBBLE_RELAY=$(kubectl get pods -n kube-system -l k8s-app=hubble-relay --no-headers 2>/dev/null | grep -c "Running" || echo "0")
@@ -211,6 +272,14 @@ if should_run "cilium"; then
       pass "hubble-relay: Running"
     else
       warn "hubble-relay: not running (optional)"
+    fi
+
+    # Hubble UI
+    HUBBLE_UI=$(kubectl get pods -n kube-system -l k8s-app=hubble-ui --no-headers 2>/dev/null | grep -c "Running" || echo "0")
+    if [ "${HUBBLE_UI}" -ge 1 ]; then
+      pass "hubble-ui: Running"
+    else
+      warn "hubble-ui: not running (optional)"
     fi
   fi
   echo ""
@@ -220,7 +289,7 @@ fi
 # 5. CORE SERVICES (CoreDNS, metrics-server, NFS)
 #=========================================
 if should_run "core"; then
-  echo "--- [5/16] Core Services ---"
+  echo "--- [5/17] Core Services ---"
   check_ready "deployment" "kube-system" "coredns" "CoreDNS"
 
   # CoreDNS forward rule for local.narwhal.io
@@ -242,6 +311,31 @@ if should_run "core"; then
     warn "csi-nfs-node: not running"
   fi
 
+  # StorageClass nfs-csi existence
+  SC_NFS=$(kubectl get storageclass nfs-csi -o jsonpath='{.metadata.name}' 2>/dev/null || echo "")
+  if [ "${SC_NFS}" = "nfs-csi" ]; then
+    pass "StorageClass nfs-csi: exists"
+  else
+    fail "StorageClass nfs-csi: not found"
+  fi
+
+  # NFS server (systemd on master-1)
+  if systemctl is-active --quiet nfs-kernel-server 2>/dev/null; then
+    pass "NFS server: active"
+  elif systemctl is-active --quiet nfs-server 2>/dev/null; then
+    pass "NFS server: active"
+  else
+    fail "NFS server: not active"
+  fi
+
+  # NFS exports
+  NFS_EXPORTS=$(exportfs -s 2>/dev/null | wc -l | tr -d ' ' || echo "0")
+  if [ "${NFS_EXPORTS}" -ge 1 ]; then
+    pass "NFS exports: ${NFS_EXPORTS} active"
+  else
+    fail "NFS exports: none configured"
+  fi
+
   # NFS quota agent (runs in nfs-quota-agent namespace)
   NFS_AGENT=$(kubectl get pods -n nfs-quota-agent --no-headers 2>/dev/null | grep -c "Running" || echo "0")
   if [ "${NFS_AGENT}" -ge 1 ]; then
@@ -256,7 +350,7 @@ fi
 # 6. DATABASE (CNPG)
 #=========================================
 if should_run "database"; then
-  echo "--- [6/16] Database (CNPG) ---"
+  echo "--- [6/17] Database (CNPG) ---"
   CNPG_OP=$(kubectl get pods -n cnpg-system --no-headers 2>/dev/null | grep -c "Running" || echo "0")
   if [ "${CNPG_OP}" -ge 1 ]; then
     pass "CNPG operator: Running"
@@ -280,6 +374,35 @@ if should_run "database"; then
   else
     warn "narwhal-db-pooler-rw: not running"
   fi
+
+  # Individual databases existence (keycloak, harbor, gitea)
+  if ! ${QUICK_MODE}; then
+    DB_PRIMARY=$(kubectl get pods -n database -l cnpg.io/cluster=narwhal-db,role=primary -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
+    if [ -n "${DB_PRIMARY}" ]; then
+      for db_name in keycloak harbor gitea; do
+        DB_EXISTS=$(kubectl exec -n database "${DB_PRIMARY}" -- psql -U postgres -tAc "SELECT 1 FROM pg_database WHERE datname='${db_name}'" 2>/dev/null | tr -d ' \n' || echo "")
+        if [ "${DB_EXISTS}" = "1" ]; then
+          pass "Database '${db_name}': exists"
+        else
+          fail "Database '${db_name}': not found"
+        fi
+      done
+    else
+      warn "Database check: primary pod not found, skipping individual DB checks"
+    fi
+  fi
+
+  # ExternalName services for cross-namespace access
+  for svc_entry in "keycloak-db-rw:keycloak" "harbor-db-rw:harbor" "gitea-db-rw:gitea"; do
+    SVC_NAME="${svc_entry%%:*}"
+    SVC_NS="${svc_entry##*:}"
+    SVC_TYPE=$(kubectl get svc "${SVC_NAME}" -n "${SVC_NS}" -o jsonpath='{.spec.type}' 2>/dev/null || echo "")
+    if [ "${SVC_TYPE}" = "ExternalName" ]; then
+      pass "ExternalName svc ${SVC_NAME} (${SVC_NS}): exists"
+    else
+      fail "ExternalName svc ${SVC_NAME} (${SVC_NS}): ${SVC_TYPE:-not found}"
+    fi
+  done
   echo ""
 fi
 
@@ -287,7 +410,7 @@ fi
 # 7. METALLB & TRAEFIK
 #=========================================
 if should_run "network"; then
-  echo "--- [7/16] MetalLB & Traefik ---"
+  echo "--- [7/17] MetalLB & Traefik ---"
   check_ready "deployment" "metallb-system" "metallb-controller" "MetalLB controller"
 
   METALLB_SPEAKERS=$(kubectl get pods -n metallb-system -l app.kubernetes.io/component=speaker --no-headers 2>/dev/null | grep -c "Running" || echo "0")
@@ -297,14 +420,40 @@ if should_run "network"; then
     fail "MetalLB speakers: not running"
   fi
 
+  # MetalLB IPAddressPool
+  POOL_EXISTS=$(kubectl get ipaddresspool default-pool -n metallb-system -o jsonpath='{.metadata.name}' 2>/dev/null || echo "")
+  if [ "${POOL_EXISTS}" = "default-pool" ]; then
+    pass "MetalLB IPAddressPool: default-pool exists"
+  else
+    fail "MetalLB IPAddressPool: default-pool not found"
+  fi
+
+  # MetalLB L2Advertisement
+  L2_EXISTS=$(kubectl get l2advertisement default -n metallb-system -o jsonpath='{.metadata.name}' 2>/dev/null || echo "")
+  if [ "${L2_EXISTS}" = "default" ]; then
+    pass "MetalLB L2Advertisement: exists"
+  else
+    fail "MetalLB L2Advertisement: not found"
+  fi
+
   check_ready "deployment" "traefik" "traefik" "Traefik"
 
   # Traefik external IP
   TRAEFIK_IP=$(kubectl get svc traefik -n traefik -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || echo "")
-  if [ -n "${TRAEFIK_IP}" ]; then
+  if [ "${TRAEFIK_IP}" = "192.168.56.200" ]; then
     pass "Traefik LoadBalancer IP: ${TRAEFIK_IP}"
+  elif [ -n "${TRAEFIK_IP}" ]; then
+    warn "Traefik LoadBalancer IP: ${TRAEFIK_IP} (expected 192.168.56.200)"
   else
     fail "Traefik LoadBalancer IP: not assigned"
+  fi
+
+  # GatewayClass
+  GC_STATUS=$(kubectl get gatewayclass traefik -o jsonpath='{.status.conditions[?(@.type=="Accepted")].status}' 2>/dev/null || echo "")
+  if [ "${GC_STATUS}" = "True" ]; then
+    pass "GatewayClass traefik: Accepted"
+  else
+    fail "GatewayClass traefik: ${GC_STATUS:-not found}"
   fi
 
   # Traefik Gateway
@@ -321,7 +470,7 @@ fi
 # 8. CERT-MANAGER & TLS
 #=========================================
 if should_run "tls"; then
-  echo "--- [8/16] cert-manager & TLS ---"
+  echo "--- [8/17] cert-manager & TLS ---"
   check_ready "deployment" "cert-manager" "cert-manager" "cert-manager"
   check_ready "deployment" "cert-manager" "cert-manager-webhook" "cert-manager-webhook"
   check_ready "deployment" "cert-manager" "cert-manager-cainjector" "cert-manager-cainjector"
@@ -341,6 +490,31 @@ if should_run "tls"; then
   else
     fail "TLS cert *.local.narwhal.io: ${CERT_READY:-not found}"
   fi
+
+  # Certificate covers wildcard domain
+  CERT_DOMAINS=$(kubectl get certificate traefik-tls -n traefik -o jsonpath='{.spec.dnsNames[*]}' 2>/dev/null || echo "")
+  if echo "${CERT_DOMAINS}" | grep -qF '*.local.narwhal.io'; then
+    pass "TLS cert wildcard: *.local.narwhal.io included"
+  else
+    fail "TLS cert wildcard: *.local.narwhal.io not found in [${CERT_DOMAINS}]"
+  fi
+
+  # CA cert distribution to SSO namespaces
+  CA_DIST_OK=0
+  CA_DIST_FAIL=0
+  for ns in headlamp gitea harbor monitoring oauth2-proxy; do
+    CA_SECRET=$(kubectl get secret narwhal-ca-cert -n "${ns}" -o jsonpath='{.data.ca\.crt}' 2>/dev/null || echo "")
+    if [ -n "${CA_SECRET}" ]; then
+      CA_DIST_OK=$((CA_DIST_OK + 1))
+    else
+      CA_DIST_FAIL=$((CA_DIST_FAIL + 1))
+    fi
+  done
+  if [ "${CA_DIST_FAIL}" -eq 0 ]; then
+    pass "CA cert distribution: ${CA_DIST_OK}/5 SSO namespaces"
+  else
+    fail "CA cert distribution: ${CA_DIST_OK}/5 SSO namespaces (${CA_DIST_FAIL} missing)"
+  fi
   echo ""
 fi
 
@@ -348,7 +522,7 @@ fi
 # 9. DNS
 #=========================================
 if should_run "dns"; then
-  echo "--- [9/16] DNS ---"
+  echo "--- [9/17] DNS ---"
   # dnsmasq service
   if systemctl is-active --quiet dnsmasq 2>/dev/null; then
     pass "dnsmasq: active"
@@ -395,7 +569,7 @@ fi
 # 10. KEYCLOAK & OIDC
 #=========================================
 if should_run "keycloak"; then
-  echo "--- [10/16] Keycloak & OIDC ---"
+  echo "--- [10/17] Keycloak & OIDC ---"
   # Keycloak operator
   check_ready "deployment" "keycloak" "keycloak-operator" "Keycloak operator"
 
@@ -426,6 +600,50 @@ if should_run "keycloak"; then
   else
     warn "API server OIDC: not configured (OIDC HTTPS may not have been reachable during install)"
   fi
+
+  # Kubernetes realm existence (check via OIDC well-known)
+  if [ "${OIDC_CODE}" = "200" ]; then
+    pass "Keycloak realm 'kubernetes': reachable"
+  else
+    fail "Keycloak realm 'kubernetes': not reachable"
+  fi
+
+  # groups client scope (verify via token test if not quick)
+  if ! ${QUICK_MODE}; then
+    TOKEN_RESP=$(curl -sk -X POST "https://keycloak.local.narwhal.io/realms/kubernetes/protocol/openid-connect/token" \
+      -d "grant_type=password" \
+      -d "client_id=kubernetes" \
+      -d "username=k8s-admin" \
+      -d "password=k8s-admin" \
+      -d "scope=openid groups" 2>/dev/null || echo "")
+    if echo "${TOKEN_RESP}" | grep -q "access_token"; then
+      pass "OIDC token grant: success (scope=openid groups)"
+      # Verify groups claim in token
+      ACCESS_TOKEN=$(echo "${TOKEN_RESP}" | python3 -c 'import sys,json; print(json.load(sys.stdin).get("access_token",""))' 2>/dev/null || echo "")
+      if [ -n "${ACCESS_TOKEN}" ]; then
+        GROUPS_CLAIM=$(echo "${ACCESS_TOKEN}" | cut -d. -f2 | base64 -d 2>/dev/null | python3 -c 'import sys,json; g=json.load(sys.stdin).get("groups",[]); print(",".join(g))' 2>/dev/null || echo "")
+        if echo "${GROUPS_CLAIM}" | grep -q "cluster-admins"; then
+          pass "OIDC groups claim: k8s-admin has cluster-admins"
+        else
+          fail "OIDC groups claim: cluster-admins not found in [${GROUPS_CLAIM}]"
+        fi
+      fi
+    elif echo "${TOKEN_RESP}" | grep -q "invalid_scope"; then
+      fail "OIDC token grant: invalid_scope (groups client scope missing?)"
+    else
+      fail "OIDC token grant: failed"
+    fi
+  fi
+
+  # RBAC ClusterRoleBindings for OIDC groups
+  for crb in oidc-cluster-admins oidc-developers oidc-viewers; do
+    CRB_EXISTS=$(kubectl get clusterrolebinding "${crb}" -o jsonpath='{.metadata.name}' 2>/dev/null || echo "")
+    if [ "${CRB_EXISTS}" = "${crb}" ]; then
+      pass "ClusterRoleBinding ${crb}: exists"
+    else
+      fail "ClusterRoleBinding ${crb}: not found"
+    fi
+  done
   echo ""
 fi
 
@@ -433,7 +651,21 @@ fi
 # 11. MONITORING (Prometheus, Grafana, Loki, Tempo)
 #=========================================
 if should_run "monitoring"; then
-  echo "--- [11/16] Monitoring ---"
+  echo "--- [11/17] Monitoring ---"
+  # Prometheus operator
+  PROM_OP=$(kubectl get pods -n monitoring -l app.kubernetes.io/name=prometheus-operator --no-headers 2>/dev/null | grep -c "Running" || echo "0")
+  if [ "${PROM_OP}" -ge 1 ]; then
+    pass "Prometheus operator: Running"
+  else
+    # Some chart versions use different label
+    PROM_OP2=$(kubectl get pods -n monitoring -l app=kube-prometheus-stack-operator --no-headers 2>/dev/null | grep -c "Running" || echo "0")
+    if [ "${PROM_OP2}" -ge 1 ]; then
+      pass "Prometheus operator: Running"
+    else
+      fail "Prometheus operator: not running"
+    fi
+  fi
+
   # Prometheus
   PROM_PODS=$(kubectl get pods -n monitoring -l app.kubernetes.io/name=prometheus --no-headers 2>/dev/null | grep -c "Running" || echo "0")
   if [ "${PROM_PODS}" -ge 1 ]; then
@@ -451,6 +683,24 @@ if should_run "monitoring"; then
     pass "Alertmanager: Running"
   else
     warn "Alertmanager: not running"
+  fi
+
+  # kube-state-metrics
+  KSM_PODS=$(kubectl get pods -n monitoring -l app.kubernetes.io/name=kube-state-metrics --no-headers 2>/dev/null | grep -c "Running" || echo "0")
+  if [ "${KSM_PODS}" -ge 1 ]; then
+    pass "kube-state-metrics: Running"
+  else
+    fail "kube-state-metrics: not running"
+  fi
+
+  # node-exporter DaemonSet
+  NE_PODS=$(kubectl get pods -n monitoring -l app.kubernetes.io/name=node-exporter --no-headers 2>/dev/null | grep -c "Running" || echo "0")
+  if [ "${NE_PODS}" -ge 6 ]; then
+    pass "node-exporter: ${NE_PODS} Running"
+  elif [ "${NE_PODS}" -ge 1 ]; then
+    warn "node-exporter: ${NE_PODS} Running (expected >= 6)"
+  else
+    fail "node-exporter: not running"
   fi
 
   # Loki
@@ -483,10 +733,12 @@ fi
 # 12. PLATFORM APPS
 #=========================================
 if should_run "platform"; then
-  echo "--- [12/16] Platform Apps ---"
+  echo "--- [12/17] Platform Apps ---"
   # Kyverno
   check_ready "deployment" "kyverno" "kyverno-admission-controller" "Kyverno admission"
   check_ready "deployment" "kyverno" "kyverno-background-controller" "Kyverno background"
+  check_ready "deployment" "kyverno" "kyverno-cleanup-controller" "Kyverno cleanup"
+  check_ready "deployment" "kyverno" "kyverno-reports-controller" "Kyverno reports"
 
   # Headlamp
   check_ready "deployment" "headlamp" "headlamp" "Headlamp"
@@ -494,7 +746,7 @@ if should_run "platform"; then
   # OAuth2-Proxy
   check_ready "deployment" "oauth2-proxy" "oauth2-proxy" "OAuth2-Proxy"
 
-  # SeaweedFS
+  # SeaweedFS master
   SWFS_MASTER=$(kubectl get pods -n seaweedfs -l app.kubernetes.io/component=master --no-headers 2>/dev/null | grep -c "Running" || echo "0")
   if [ "${SWFS_MASTER}" -ge 1 ]; then
     pass "SeaweedFS master: Running"
@@ -502,6 +754,15 @@ if should_run "platform"; then
     fail "SeaweedFS master: not running"
   fi
 
+  # SeaweedFS volume
+  SWFS_VOLUME=$(kubectl get pods -n seaweedfs -l app.kubernetes.io/component=volume --no-headers 2>/dev/null | grep -c "Running" || echo "0")
+  if [ "${SWFS_VOLUME}" -ge 1 ]; then
+    pass "SeaweedFS volume: Running"
+  else
+    fail "SeaweedFS volume: not running"
+  fi
+
+  # SeaweedFS filer
   SWFS_FILER=$(kubectl get pods -n seaweedfs -l app.kubernetes.io/component=filer --no-headers 2>/dev/null | grep -c "Running" || echo "0")
   if [ "${SWFS_FILER}" -ge 1 ]; then
     pass "SeaweedFS filer: Running"
@@ -509,12 +770,30 @@ if should_run "platform"; then
     fail "SeaweedFS filer: not running"
   fi
 
-  # Harbor
+  # Harbor core
   HARBOR_CORE=$(kubectl get pods -n harbor -l component=core --no-headers 2>/dev/null | grep -c "Running" || echo "0")
   if [ "${HARBOR_CORE}" -ge 1 ]; then
     pass "Harbor core: Running"
   else
     fail "Harbor core: not running"
+  fi
+
+  # Harbor sub-components
+  for harbor_comp in registry portal jobservice nginx; do
+    HC_PODS=$(kubectl get pods -n harbor -l component="${harbor_comp}" --no-headers 2>/dev/null | grep -c "Running" || echo "0")
+    if [ "${HC_PODS}" -ge 1 ]; then
+      pass "Harbor ${harbor_comp}: Running"
+    else
+      fail "Harbor ${harbor_comp}: not running"
+    fi
+  done
+
+  # Harbor Redis (internal)
+  HARBOR_REDIS=$(kubectl get pods -n harbor -l component=redis --no-headers 2>/dev/null | grep -c "Running" || echo "0")
+  if [ "${HARBOR_REDIS}" -ge 1 ]; then
+    pass "Harbor redis: Running"
+  else
+    fail "Harbor redis: not running"
   fi
 
   # OpenBao
@@ -527,6 +806,24 @@ if should_run "platform"; then
 
   # Velero
   check_ready "deployment" "velero" "velero" "Velero"
+
+  # Velero node-agent DaemonSet
+  VELERO_NA=$(kubectl get pods -n velero -l name=node-agent --no-headers 2>/dev/null | grep -c "Running" || echo "0")
+  if [ "${VELERO_NA}" -ge 6 ]; then
+    pass "Velero node-agent: ${VELERO_NA} Running"
+  elif [ "${VELERO_NA}" -ge 1 ]; then
+    warn "Velero node-agent: ${VELERO_NA} Running (expected >= 6)"
+  else
+    fail "Velero node-agent: not running"
+  fi
+
+  # Velero BackupStorageLocation
+  BSL_PHASE=$(kubectl get backupstoragelocation default -n velero -o jsonpath='{.status.phase}' 2>/dev/null || echo "")
+  if [ "${BSL_PHASE}" = "Available" ]; then
+    pass "Velero BSL default: Available"
+  else
+    fail "Velero BSL default: ${BSL_PHASE:-not found}"
+  fi
   echo ""
 fi
 
@@ -534,13 +831,36 @@ fi
 # 13. GITOPS (Gitea, ArgoCD)
 #=========================================
 if should_run "gitops"; then
-  echo "--- [13/16] GitOps ---"
+  echo "--- [13/17] GitOps ---"
   # Gitea
   GITEA_PODS=$(kubectl get pods -n gitea -l app.kubernetes.io/name=gitea --no-headers 2>/dev/null | grep -c "Running" || echo "0")
   if [ "${GITEA_PODS}" -ge 1 ]; then
     pass "Gitea: Running"
   else
     fail "Gitea: not running"
+  fi
+
+  # Gitea HTTP health check
+  GITEA_HTTP=$(kubectl get svc gitea-http -n gitea -o jsonpath='{.spec.clusterIP}' 2>/dev/null || echo "")
+  if [ -n "${GITEA_HTTP}" ]; then
+    GITEA_CODE=$(curl -sk -o /dev/null -w '%{http_code}' "http://${GITEA_HTTP}:3000/api/v1/version" 2>/dev/null || echo "000")
+    if [ "${GITEA_CODE}" = "200" ]; then
+      pass "Gitea HTTP API: responsive (HTTP ${GITEA_CODE})"
+    else
+      fail "Gitea HTTP API: HTTP ${GITEA_CODE}"
+    fi
+  else
+    fail "Gitea HTTP service: not found"
+  fi
+
+  # Gitea narwhal-gitops repo
+  if [ -n "${GITEA_HTTP}" ]; then
+    REPO_CODE=$(curl -sk -o /dev/null -w '%{http_code}' "http://${GITEA_HTTP}:3000/api/v1/repos/gitea-admin/narwhal-gitops" 2>/dev/null || echo "000")
+    if [ "${REPO_CODE}" = "200" ]; then
+      pass "Gitea narwhal-gitops repo: exists"
+    else
+      warn "Gitea narwhal-gitops repo: HTTP ${REPO_CODE} (created by 13-gitops-bootstrap.sh)"
+    fi
   fi
 
   # ArgoCD
@@ -552,6 +872,14 @@ if should_run "gitops"; then
     pass "ArgoCD app-controller: Running"
   else
     fail "ArgoCD app-controller: not running"
+  fi
+
+  # ArgoCD Redis
+  ARGOCD_REDIS=$(kubectl get pods -n argocd -l app.kubernetes.io/component=redis --no-headers 2>/dev/null | grep -c "Running" || echo "0")
+  if [ "${ARGOCD_REDIS}" -ge 1 ]; then
+    pass "ArgoCD redis: Running"
+  else
+    fail "ArgoCD redis: not running"
   fi
 
   # App-of-Apps
@@ -569,7 +897,7 @@ fi
 # 14. GATEWAY ROUTES (HTTP/HTTPS access)
 #=========================================
 if should_run "routes"; then
-  echo "--- [14/16] Gateway Routes ---"
+  echo "--- [14/17] Gateway Routes ---"
   ROUTES=(
     "argocd:argocd"
     "grafana:monitoring"
@@ -597,7 +925,7 @@ if should_run "routes"; then
   if ! ${QUICK_MODE}; then
     echo ""
     echo "  --- HTTPS Connectivity ---"
-    for host in argocd grafana gitea keycloak; do
+    for host in argocd grafana gitea harbor keycloak headlamp openbao oauth2-proxy hubble; do
       CODE=$(curl -sk -o /dev/null -w '%{http_code}' "https://${host}.local.narwhal.io" 2>/dev/null || echo "000")
       case "${CODE}" in
         200|301|302|303|307|308)
@@ -611,19 +939,66 @@ if should_run "routes"; then
 fi
 
 #=========================================
-# 15. POD HEALTH
+# 15. ISTIO AMBIENT MESH
+#=========================================
+if should_run "istio"; then
+  echo "--- [15/17] Istio Ambient Mesh ---"
+  # istiod
+  check_ready "deployment" "istio-system" "istiod" "istiod"
+
+  # istio-cni DaemonSet
+  ISTIO_CNI=$(kubectl get pods -n istio-system -l k8s-app=istio-cni-node --no-headers 2>/dev/null | grep -c "Running" || echo "0")
+  if [ "${ISTIO_CNI}" -ge 6 ]; then
+    pass "istio-cni: ${ISTIO_CNI} Running"
+  elif [ "${ISTIO_CNI}" -ge 1 ]; then
+    warn "istio-cni: ${ISTIO_CNI} Running (expected >= 6)"
+  else
+    fail "istio-cni: not running"
+  fi
+
+  # ztunnel DaemonSet
+  ZTUNNEL=$(kubectl get pods -n istio-system -l app=ztunnel --no-headers 2>/dev/null | grep -c "Running" || echo "0")
+  if [ "${ZTUNNEL}" -ge 6 ]; then
+    pass "ztunnel: ${ZTUNNEL} Running"
+  elif [ "${ZTUNNEL}" -ge 1 ]; then
+    warn "ztunnel: ${ZTUNNEL} Running (expected >= 6)"
+  else
+    fail "ztunnel: not running"
+  fi
+
+  # PeerAuthentication STRICT
+  PA_MODE=$(kubectl get peerauthentication default -n istio-system -o jsonpath='{.spec.mtls.mode}' 2>/dev/null || echo "")
+  if [ "${PA_MODE}" = "STRICT" ]; then
+    pass "PeerAuthentication: STRICT mTLS"
+  else
+    fail "PeerAuthentication: ${PA_MODE:-not found} (expected STRICT)"
+  fi
+
+  # Ambient NS count
+  AMBIENT_NS=$(kubectl get ns -l istio.io/dataplane-mode=ambient --no-headers 2>/dev/null | wc -l | tr -d ' ')
+  if [ "${AMBIENT_NS}" -ge 10 ]; then
+    pass "Ambient namespaces: ${AMBIENT_NS}"
+  elif [ "${AMBIENT_NS}" -ge 1 ]; then
+    warn "Ambient namespaces: ${AMBIENT_NS} (expected >= 10)"
+  else
+    fail "Ambient namespaces: ${AMBIENT_NS} (expected >= 10)"
+  fi
+
+  # CiliumClusterwideNetworkPolicy for ztunnel health probes
+  CCNP_EXISTS=$(kubectl get ciliumclusterwidenetworkpolicy allow-ztunnel-health-probe -o jsonpath='{.metadata.name}' 2>/dev/null || echo "")
+  if [ "${CCNP_EXISTS}" = "allow-ztunnel-health-probe" ]; then
+    pass "CiliumCWNP allow-ztunnel-health-probe: exists"
+  else
+    fail "CiliumCWNP allow-ztunnel-health-probe: not found"
+  fi
+  echo ""
+fi
+
+#=========================================
+# 16. POD HEALTH
 #=========================================
 if should_run "podhealth"; then
-  echo "--- [15/16] Pod Health ---"
-
-  # Pending pods (excluding expected cases)
-  PENDING_PODS=$(kubectl get pods -A --field-selector=status.phase=Pending --no-headers 2>/dev/null || echo "")
-  if [ -z "${PENDING_PODS}" ]; then
-    pass "No Pending pods"
-  else
-    PENDING_COUNT=$(echo "${PENDING_PODS}" | wc -l | tr -d ' ')
-    fail "${PENDING_COUNT} Pending pods found"
-  fi
+  echo "--- [16/17] Pod Health ---"
 
   # CrashLoopBackOff pods
   CRASHLOOP_PODS=$(kubectl get pods -A --no-headers 2>/dev/null | grep "CrashLoopBackOff" || echo "")
@@ -635,12 +1010,12 @@ if should_run "podhealth"; then
   fi
 
   # Containers not ready (READY column mismatch like 0/1, 1/2)
-  NOTREADY_PODS=$(kubectl get pods -A --no-headers 2>/dev/null | awk '{split($3, a, "/"); if (a[1] != a[2]) print $0}' || echo "")
+  NOTREADY_PODS=$(kubectl get pods -A --no-headers 2>/dev/null | grep "Running" | awk '{split($3, a, "/"); if (a[1] != a[2]) print $0}' || echo "")
   if [ -z "${NOTREADY_PODS}" ]; then
-    pass "All containers ready"
+    pass "All running containers ready"
   else
     NOTREADY_COUNT=$(echo "${NOTREADY_PODS}" | wc -l | tr -d ' ')
-    fail "${NOTREADY_COUNT} pods with containers not ready"
+    fail "${NOTREADY_COUNT} running pods with containers not ready"
   fi
 
   # Failed Helm releases
@@ -685,9 +1060,9 @@ if should_run "podhealth"; then
 fi
 
 #=========================================
-# 16. PROBLEM PODS (global check)
+# 17. PROBLEM PODS (global check)
 #=========================================
-echo "--- Problem Pods ---"
+echo "--- [17/17] Problem Pods ---"
 PROBLEM_PODS=$(kubectl get pods -A --no-headers 2>/dev/null | grep -Ev "Running|Completed" || echo "")
 if [ -z "${PROBLEM_PODS}" ]; then
   pass "No problem pods"
@@ -697,14 +1072,6 @@ else
   echo "${PROBLEM_PODS}" | while read -r line; do
     echo "         ${line}"
   done
-fi
-
-PENDING_PODS=$(kubectl get pods -A --field-selector=status.phase=Pending --no-headers 2>/dev/null || echo "")
-if [ -z "${PENDING_PODS}" ]; then
-  pass "No pending pods"
-else
-  PENDING_COUNT=$(echo "${PENDING_PODS}" | wc -l | tr -d ' ')
-  fail "${PENDING_COUNT} pending pods"
 fi
 echo ""
 

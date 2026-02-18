@@ -58,7 +58,7 @@
 | 2026-02-14 | kube-vip static pod init 전 생성 시 chicken-and-egg | master-1은 init 후 manifest 생성, 수동 VIP 바인딩으로 부트스트랩 |
 | 2026-02-14 | kubeadm join VMware NAT 인터페이스 감지 | `--apiserver-advertise-address=192.168.56.x` 명시 필수 |
 | 2026-02-14 | VMware Vagrant private_network IP 미할당 | `01-prerequisites.sh`에서 netplan 직접 생성, `chmod 600` 필수 |
-| 2026-02-14 | Master 4GB RAM에서 API 서버 OOM 재시작 | Master 6GB 최소, CNPG 인스턴스 1개로 축소 |
+| 2026-02-14 | Master 4GB RAM에서 API 서버 OOM 재시작 (platform apps 설치 시) | 현재 topology: Master는 NoSchedule taint (control-plane only, 4GB OK), Worker 6GB에서 platform apps 실행 |
 | 2026-02-14 | ArgoCD v3.x applicationsets CRD 262KB 초과 | `kubectl apply --server-side --force-conflicts` 사용 |
 | 2026-02-14 | Helm `--wait`로 타임아웃 시 릴리스 롤백 | 비핵심 앱은 `--wait` 제거, `--timeout`만 사용 |
 | 2026-02-15 | Velero CRD hook musl/glibc 비호환 (ARM64) | `upgradeCRDs: false` 설정, alpine/k8s musl→velero glibc 컨테이너에서 실행 불가 |
@@ -72,6 +72,11 @@
 | 2026-02-15 | ArgoCD SSO에서 `x509: certificate signed by unknown authority` | `argocd-cm`에 `oidc.tls.insecure.skip.verify: "true"` 추가 (자체서명 인증서) |
 | 2026-02-15 | Headlamp `extraArgs` root level에 놓으면 무시됨 | `config.extraArgs`에 배치해야 컨테이너 args에 추가됨 |
 | 2026-02-15 | Harbor `configureUserSettings` 변경 시 API 거부 | env 변수로 주입되므로 API로 수정 불가, Helm values 변경 + 재배포 필요 |
+| 2026-02-18 | Cilium + Istio CNI 충돌 (cni.exclusive 기본값 true) | `cni.exclusive=false` 필수, Cilium이 다른 CNI 설정 삭제 방지 |
+| 2026-02-18 | Cilium socket LB가 ztunnel 트래픽 바이패스 | `socketLB.hostNamespaceOnly=true` 필수, 메시 트래픽이 ztunnel 우회 방지 |
+| 2026-02-18 | Istio CRD annotation 262KB 초과 (ArgoCD) | ArgoCD syncOptions에 `ServerSideApply=true` 추가 |
+| 2026-02-18 | Istio 1.28은 K8s 1.35 미지원 | Istio 1.29.x 사용 (K8s 1.31~1.35 지원) |
+| 2026-02-18 | Istio 이미지 docker.io only (대안 없음) | Docker OSS rate limit 면제, `docker.io/istio/*` 사용 불가피 |
 
 ### GitOps/ArgoCD 실수
 | 날짜 | 실수 | 해결책 |
@@ -138,27 +143,28 @@
 
 | 단계 | 파일 | 설명 |
 |------|------|------|
-| NFS 서버 | `scripts/master/00-nfs-server.sh` | NFS 서버 설정 |
-| kube-vip | `scripts/master/01-kube-vip.sh` | Control Plane VIP |
-| 클러스터 초기화 | `scripts/master/02-init-cluster.sh` | kubeadm init |
-| CNI 설치 | `scripts/master/03-cni-install.sh` | Cilium + Hubble |
-| 애드온 | `scripts/master/04-addons.sh` | metrics-server, csi-driver-nfs |
-| NFS 쿼터 | `scripts/master/05-nfs-quota-agent.sh` | NFS 프로젝트 쿼터 |
+| kube-vip | `scripts/cluster/00-kube-vip.sh` | Control Plane VIP |
+| NFS 서버 | `scripts/cluster/01-nfs-server.sh` | NFS 서버 설정 |
+| 클러스터 초기화 | `scripts/cluster/02-init-cluster.sh` | kubeadm init |
+| CNI 설치 | `scripts/cluster/03-cni-install.sh` | Cilium + Hubble |
+| 애드온 | `scripts/cluster/04-addons.sh` | metrics-server, csi-driver-nfs |
+| NFS 쿼터 | `scripts/cluster/05-nfs-quota-agent.sh` | NFS 프로젝트 쿼터 |
 
-→ master-2 join → worker-1 join → worker-2 join
+→ master-2 join → master-3 join → worker-1 join → worker-2 join → worker-3 join
 
 **Phase 2: 플랫폼 앱** (마지막 worker join 후 자동 트리거)
 
 | 단계 | 파일 | 설명 |
 |------|------|------|
-| Phase 2 래퍼 | `scripts/master/phase2-platform.sh` | Phase 2 스크립트 실행 |
-| PostgreSQL | `scripts/master/06-cnpg.sh` | CloudNative-PG Operator |
-| 플랫폼 앱 | `scripts/master/07-platform-apps.sh` | MetalLB, Traefik, cert-manager 등 |
-| dnsmasq | `scripts/master/08-dnsmasq.sh` | 로컬 DNS + CoreDNS forward |
-| Keycloak | `scripts/master/09-keycloak.sh` | IAM/SSO + OIDC |
-| Gitea | `scripts/master/10-gitea.sh` | Git 서버 |
-| ArgoCD | `scripts/master/11-argocd.sh` | GitOps CD |
-| Bootstrap | `scripts/master/12-gitops-bootstrap.sh` | App-of-Apps 배포 |
+| Phase 2 래퍼 | `scripts/cluster/phase2-platform.sh` | Phase 2 스크립트 실행 |
+| PostgreSQL | `scripts/cluster/06-cnpg.sh` | CloudNative-PG Operator |
+| 플랫폼 앱 | `scripts/cluster/07-platform-apps.sh` | MetalLB, Traefik, cert-manager 등 |
+| Istio | `scripts/cluster/08-istio-ambient.sh` | Service Mesh (ambient mode) |
+| dnsmasq | `scripts/cluster/09-dnsmasq.sh` | 로컬 DNS + CoreDNS forward |
+| Keycloak | `scripts/cluster/10-keycloak.sh` | IAM/SSO + OIDC |
+| Gitea | `scripts/cluster/11-gitea.sh` | Git 서버 |
+| ArgoCD | `scripts/cluster/12-argocd.sh` | GitOps CD |
+| Bootstrap | `scripts/cluster/13-gitops-bootstrap.sh` | App-of-Apps 배포 |
 
 ### 3. GitOps 앱 관리
 
@@ -249,8 +255,8 @@ shellcheck scripts/**/*.sh
 
 | 항목 | 값 |
 |------|-----|
-| Master IP | 192.168.56.10 |
-| Worker IPs | 192.168.56.21-22 |
+| Master IPs | 192.168.56.10-12 (master-1, master-2, master-3) |
+| Worker IPs | 192.168.56.21-23 (worker-1, worker-2, worker-3) |
 | VIP | 192.168.56.100 |
 | Pod CIDR | 10.244.0.0/16 |
 | Service CIDR | 10.96.0.0/12 |
@@ -344,7 +350,7 @@ docs(claude): update verification steps
 
 2. **파이프로 컨텍스트 전달 가능**
    ```bash
-   cat scripts/master/09-keycloak.sh | gemini -p "이 스크립트의 보안 취약점을 분석해줘" -o text
+   cat scripts/cluster/10-keycloak.sh | gemini -p "이 스크립트의 보안 취약점을 분석해줘" -o text
    ```
 
 3. **타임아웃 주의**: 30초 이내 응답 가능한 질문만 (복잡한 질문은 분할)
@@ -409,9 +415,9 @@ kubectl get events -n harbor 2>&1 | gemini -p "이 Kubernetes 이벤트에서 �
    - `head -50`, `grep -A5` 등으로 필요한 부분만 전달
    ```bash
    # Bad: 전체 파일 전달 (토큰 낭비)
-   cat scripts/master/09-keycloak.sh | gemini -p "리뷰해줘" -o text
+   cat scripts/cluster/10-keycloak.sh | gemini -p "리뷰해줘" -o text
    # Good: 관련 부분만 전달
-   sed -n '50,80p' scripts/master/09-keycloak.sh | gemini -p "이 OIDC 설정 부분 리뷰해줘" -o text
+   sed -n '50,80p' scripts/cluster/10-keycloak.sh | gemini -p "이 OIDC 설정 부분 리뷰해줘" -o text
    ```
 
 3. **캐시 활용**

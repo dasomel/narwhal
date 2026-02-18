@@ -13,11 +13,11 @@ fi
 CONTEXT=""
 
 case "${FILE_PATH}" in
-  */scripts/master/*.sh)
+  */scripts/cluster/*.sh)
     CONTEXT="[Reminder] VERSIONS.md의 버전과 동기화 확인 필요. Vagrantfile의 환경변수 확인."
     ;;
   */scripts/common/*.sh)
-    CONTEXT="[Reminder] master/worker 모든 노드에 적용되는 공통 스크립트입니다."
+    CONTEXT="[Reminder] 모든 노드에 적용되는 공통 스크립트입니다."
     ;;
   */gitops/apps/*.yaml)
     CONTEXT="[Reminder] gitops/values/ 또는 gitops/resources/ 동기화 확인. ArgoCD가 자동 동기화합니다."

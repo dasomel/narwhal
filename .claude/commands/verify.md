@@ -50,8 +50,8 @@ vagrant ssh master-1 -c "kubectl get applications -n argocd 2>/dev/null" || true
 ```
 === Verification Report ===
 [OK] Vagrantfile syntax
-[OK] scripts/master/01-init-cluster.sh
-[WARN] scripts/master/05-keycloak.sh - shellcheck warnings
+[OK] scripts/cluster/02-init-cluster.sh
+[WARN] scripts/cluster/10-keycloak.sh - shellcheck warnings
 [OK] gitops/apps/cert-manager.yaml
 [FAIL] gitops/apps/harbor.yaml - YAML syntax error
 

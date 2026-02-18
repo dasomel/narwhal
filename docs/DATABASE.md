@@ -14,7 +14,7 @@ Narwhal 프로젝트는 CloudNative-PG Operator를 사용하여 단일 통합 Po
 - **클러스터명**: `narwhal-db`
 - **네임스페이스**: `database`
 - **인스턴스 수**: 2개 (Primary 1개 + Replica 1개)
-- **PostgreSQL 버전**: 17
+- **PostgreSQL 버전**: 18.2
 - **커넥션 풀러**: PgBouncer (transaction mode)
 
 ### HA 구성
@@ -259,7 +259,7 @@ kubectl logs narwhal-db-1 -n database | grep "duration:"
 
 ## 설치 방법
 
-이 클러스터는 `scripts/master/06-cnpg.sh` 스크립트로 자동 설치됩니다.
+이 클러스터는 `scripts/cluster/06-cnpg.sh` 스크립트로 자동 설치됩니다.
 
 ```bash
 # Vagrant 프로비저닝 시 자동 실행
@@ -267,13 +267,13 @@ vagrant up
 
 # 수동 실행
 vagrant ssh master-1
-sudo /vagrant/scripts/master/06-cnpg.sh
+sudo /vagrant/scripts/cluster/06-cnpg.sh
 ```
 
 ## 참고 자료
 
 - [CloudNative-PG 공식 문서](https://cloudnative-pg.io/)
-- [PostgreSQL 17 문서](https://www.postgresql.org/docs/17/)
+- [PostgreSQL 18 문서](https://www.postgresql.org/docs/18/)
 - [PgBouncer 문서](https://www.pgbouncer.org/)
 - [CNPG Mistakes Log](../CLAUDE.md#kuberneteshelm-실수)
 

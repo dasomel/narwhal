@@ -9,7 +9,7 @@ VERSIONS.md의 버전과 실제 스크립트/매니페스트 버전을 비교하
 
 ## 검사 대상
 
-1. **스크립트 파일**: `scripts/master/*.sh` 내 VERSION 변수, Helm 차트 버전
+1. **스크립트 파일**: `scripts/cluster/*.sh` 내 VERSION 변수, Helm 차트 버전
 2. **GitOps 매니페스트**: `gitops/apps/*.yaml` 내 targetRevision
 
 ## 수행 작업
@@ -24,7 +24,7 @@ VERSIONS.md의 버전과 실제 스크립트/매니페스트 버전을 비교하
 ```
 === Version Sync Report ===
 
-[OK] Cilium: v1.19.0 (VERSIONS.md) = v1.19.0 (scripts/master/03-cni-install.sh)
+[OK] Cilium: v1.19.0 (VERSIONS.md) = v1.19.0 (scripts/cluster/03-cni-install.sh)
 [MISMATCH] cert-manager: v1.19.3 (VERSIONS.md) != v1.19.2 (gitops/apps/cert-manager.yaml)
 
 Found 1 mismatch(es). Fix? [y/n]

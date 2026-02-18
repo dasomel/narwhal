@@ -383,7 +383,7 @@ if [ "${OIDC_REACHABLE}" = "false" ]; then
   echo "    - cert-manager TLS certificate not issued yet"
   echo "    - Traefik Gateway not routing keycloak.local.narwhal.io"
   echo "    - DNS not resolving keycloak.local.narwhal.io"
-  echo "  Run scripts in order: 07-platform-apps.sh → 08-dnsmasq.sh → 09-keycloak.sh"
+  echo "  Run scripts in order: 07-platform-apps.sh → 09-dnsmasq.sh → 10-keycloak.sh"
 else
   # Check if OIDC flags already exist
   if ! grep -q "oidc-issuer-url" ${APISERVER_MANIFEST} 2>/dev/null; then

@@ -13,7 +13,7 @@ jwt[0].issuer.url: Invalid value: "http://...": URL scheme must be https
 
 **해결법**:
 - cert-manager + Traefik TLS가 설치된 후에만 OIDC 플래그 활성화
-- 설치 순서: 07-platform-apps (cert-manager/Traefik) → 08-dnsmasq → 09-keycloak (OIDC)
+- 설치 순서: 07-platform-apps (cert-manager/Traefik) → 08-istio-ambient → 09-dnsmasq → 10-keycloak (OIDC)
 - 긴급 복구: `/etc/kubernetes/manifests/kube-apiserver.yaml`에서 `--oidc-*` 플래그 주석 처리
 
 **검증**:
@@ -57,7 +57,7 @@ kubectl logs -n kube-system kube-apiserver-master-1 --tail=50
 
 **증상 2**: master-1 초기화 시 chicken-and-egg 문제
 - init 전에 kube-vip manifest를 생성하면 안 됨
-- 01-kube-vip.sh: 이미지 pull + 설정 저장만
+- 00-kube-vip.sh: 이미지 pull + 설정 저장만
 - 02-init-cluster.sh: 수동 VIP 바인딩 → kubeadm init → manifest 생성
 
 **진단**:
@@ -115,7 +115,7 @@ cat /var/log/phase2-platform.log
 **개별 스크립트 재실행**:
 ```bash
 # 특정 스크립트만 재실행 (vagrant 밖에서)
-vagrant ssh master-1 -c "sudo bash /home/vagrant/scripts/master/07-platform-apps.sh"
+vagrant ssh master-1 -c "sudo bash /home/vagrant/scripts/cluster/07-platform-apps.sh"
 ```
 
 ## 6. Pod 실패 (OOMKill, Disk Pressure)
@@ -139,7 +139,7 @@ crictl rmi --prune
 kubectl delete pods --field-selector=status.phase=Failed -A
 ```
 
-**리소스 조정**: Master 메모리는 최소 6GB, CNPG는 1 인스턴스 + 1 PgBouncer로 운영
+**리소스 조정**: Worker 메모리는 최소 6GB (platform apps 실행), Master는 4GB (control-plane only, NoSchedule taint), CNPG는 1 인스턴스 + 1 PgBouncer로 운영
 
 ## 7. ArgoCD 동기화 실패
 
@@ -213,11 +213,36 @@ resolvectl status | grep -A3 "DNS Servers"
 ```
 
 **일반적 원인**:
-- CoreDNS가 `local.narwhal.io`를 dnsmasq로 forward하지 않음 → `08-dnsmasq.sh` 재실행
+- CoreDNS가 `local.narwhal.io`를 dnsmasq로 forward하지 않음 → `09-dnsmasq.sh` 재실행
 - worker/master-2에서 public DNS로 해석 → systemd-resolved에 `Domains=~local.narwhal.io` 설정 필요
-- dnsmasq HA: 양쪽 master에서 dnsmasq 실행, CoreDNS forward에 둘 다 등록
+- dnsmasq HA: 3개 master 모두 dnsmasq 실행, CoreDNS forward에 3개 모두 등록
 
-## 10. 메모리 압박
+## 10. Istio Ambient Mesh
+
+**증상**: ztunnel/istio-cni Pod 실패, mTLS 미적용
+
+**진단**:
+```bash
+# Istio 컴포넌트 상태
+kubectl get pods -n istio-system
+# ztunnel 로그
+kubectl logs -n istio-system -l app=ztunnel --tail=50
+# PeerAuthentication 확인
+kubectl get peerauthentication -A
+# ambient 네임스페이스 라벨
+kubectl get ns -L istio.io/dataplane-mode
+# Cilium CNI 공존 설정 확인
+kubectl get cm cilium-config -n kube-system -o yaml | grep -E "cni-exclusive|socket-lb-host-ns-only"
+```
+
+**일반적 원인**:
+- Cilium `cni.exclusive=false` 미설정 → Istio CNI 설정이 삭제됨 → `03-cni-install.sh` 재실행
+- Cilium `socketLB.hostNamespaceOnly=true` 미설정 → ztunnel 트래픽 바이패스
+- Istio CRD annotation 262KB 초과 → ArgoCD `ServerSideApply=true` 필요
+- Istio 1.28은 K8s 1.35 미지원 → Istio 1.29.x 사용 필수
+- 네임스페이스에 ambient 라벨 누락 → `kubectl label ns <ns> istio.io/dataplane-mode=ambient`
+
+## 11. 메모리 압박
 
 **증상**: Pod eviction, API 서버 느려짐
 
@@ -232,12 +257,12 @@ kubectl describe node master-1 | grep -A5 Conditions
 ```
 
 **대응**:
-- Master 메모리 6GB 미만이면 Vagrantfile에서 증가
+- Worker 메모리 6GB 미만이면 Vagrantfile에서 증가 (platform apps는 worker에서 실행)
 - CNPG 인스턴스 수 축소 (2 → 1)
 - 불필요한 앱 스케일 다운: `kubectl scale deployment <name> --replicas=0 -n <ns>`
 - 디스크 압력 toleration 추가: `node.kubernetes.io/disk-pressure:NoSchedule`
 
-## 11. Keycloak SSO 문제
+## 12. Keycloak SSO 문제
 
 **`invalid_scope` 에러**:
 - `groups` client scope가 realm-level로 생성되지 않음

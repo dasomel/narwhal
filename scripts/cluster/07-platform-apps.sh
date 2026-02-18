@@ -16,7 +16,10 @@ helm repo update metallb
 helm upgrade --install metallb metallb/metallb \
   --namespace metallb-system \
   --create-namespace \
-  --version 0.15.3 || echo "WARN: MetalLB install issue, continuing..."
+  --version 0.15.3 \
+  --set speaker.tolerations[0].key=node-role.kubernetes.io/control-plane \
+  --set speaker.tolerations[0].operator=Exists \
+  --set speaker.tolerations[0].effect=NoSchedule || echo "WARN: MetalLB install issue, continuing..."
 
 # Wait for MetalLB controller to be ready
 echo "Waiting for MetalLB controller..."
@@ -43,7 +46,7 @@ echo "=== Installing Traefik ==="
 # Install experimental Gateway API CRDs (TCPRoute, TLSRoute, UDPRoute)
 # Required by Traefik's kubernetesGateway provider with experimentalChannel
 echo "Installing Gateway API experimental CRDs..."
-kubectl apply -f https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.3.0/experimental-install.yaml 2>&1 | grep -E "created|configured" || true
+kubectl apply -f https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.4.0/experimental-install.yaml 2>&1 | grep -E "created|configured" || true
 
 helm repo add traefik https://traefik.github.io/charts
 helm repo update traefik
@@ -111,7 +114,10 @@ helm upgrade --install prometheus-stack prometheus-community/kube-prometheus-sta
   --set prometheus.prometheusSpec.storageSpec.volumeClaimTemplate.spec.storageClassName=nfs-csi \
   --set prometheus.prometheusSpec.storageSpec.volumeClaimTemplate.spec.resources.requests.storage=10Gi \
   --set alertmanager.alertmanagerSpec.storage.volumeClaimTemplate.spec.storageClassName=nfs-csi \
-  --set alertmanager.alertmanagerSpec.storage.volumeClaimTemplate.spec.resources.requests.storage=5Gi || echo "WARN: Prometheus Stack install issue, continuing..."
+  --set alertmanager.alertmanagerSpec.storage.volumeClaimTemplate.spec.resources.requests.storage=5Gi \
+  --set prometheus-node-exporter.tolerations[0].key=node-role.kubernetes.io/control-plane \
+  --set prometheus-node-exporter.tolerations[0].operator=Exists \
+  --set prometheus-node-exporter.tolerations[0].effect=NoSchedule || echo "WARN: Prometheus Stack install issue, continuing..."
 
 echo "Prometheus Stack installed"
 
@@ -185,7 +191,10 @@ echo "=== Installing Promtail ==="
 helm upgrade --install promtail grafana/promtail \
   --namespace monitoring \
   --version 6.17.1 \
-  --set config.clients[0].url=http://loki:3100/loki/api/v1/push || echo "WARN: Promtail install issue, continuing..."
+  --set config.clients[0].url=http://loki:3100/loki/api/v1/push \
+  --set tolerations[0].key=node-role.kubernetes.io/control-plane \
+  --set tolerations[0].operator=Exists \
+  --set tolerations[0].effect=NoSchedule || echo "WARN: Promtail install issue, continuing..."
 
 echo "Promtail installed"
 
@@ -516,6 +525,10 @@ deployNodeAgent: true
 nodeAgent:
   podVolumePath: /var/lib/kubelet/pods
   privileged: true
+  tolerations:
+    - key: node-role.kubernetes.io/control-plane
+      operator: Exists
+      effect: NoSchedule
 EOF
 
 helm upgrade --install velero vmware-tanzu/velero \

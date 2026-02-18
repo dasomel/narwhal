@@ -2,7 +2,7 @@
 set -euo pipefail
 
 VIP_ADDRESS="${VIP_ADDRESS:-192.168.56.100}"
-MASTER_COUNT="${MASTER_COUNT:-2}"
+MASTER_COUNT="${MASTER_COUNT:-3}"
 MASTER_IP_BASE="${MASTER_IP_BASE:-192.168.56.1}"
 POD_NETWORK_CIDR="${POD_NETWORK_CIDR:-10.244.0.0/16}"
 SERVICE_CIDR="${SERVICE_CIDR:-10.96.0.0/12}"
@@ -50,7 +50,7 @@ apiServer:
   certSANs:${CERT_SANS}
 # OIDC configuration - DISABLED at init time.
 # K8s 1.35+ requires HTTPS for --oidc-issuer-url. Enable after cert-manager
-# provisions TLS certificates for Keycloak (see 09-keycloak.sh).
+# provisions TLS certificates for Keycloak (see 10-keycloak.sh).
 # extraArgs:
 #   - name: oidc-issuer-url
 #     value: "${OIDC_ISSUER_URL}"
@@ -111,11 +111,11 @@ sudo cp -i /etc/kubernetes/admin.conf /root/.kube/config
 echo "Removing control-plane NoSchedule taint for dev environment..."
 kubectl taint nodes --all node-role.kubernetes.io/control-plane- 2>/dev/null || true
 
-# Create kube-vip manifest (deferred from 01-kube-vip.sh to avoid chicken-and-egg)
+# Create kube-vip manifest (deferred from 00-kube-vip.sh to avoid chicken-and-egg)
 # Now that kubeadm init succeeded, API server is running and admin.conf exists
 echo "Creating kube-vip manifest with full HA mode..."
 
-# Read config saved by 01-kube-vip.sh
+# Read config saved by 00-kube-vip.sh
 # shellcheck source=/dev/null
 source /etc/kube-vip-bootstrap.env
 

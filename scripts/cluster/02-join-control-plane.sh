@@ -55,12 +55,12 @@ sudo mkdir -p /root/.kube
 sudo cp -i /etc/kubernetes/admin.conf /root/.kube/config
 
 #=========================================
-# Create kube-vip manifest (deferred from 01-kube-vip.sh)
+# Create kube-vip manifest (deferred from 00-kube-vip.sh)
 # admin.conf now exists after successful join
 #=========================================
 echo "Creating kube-vip manifest..."
 
-# Read config saved by 01-kube-vip.sh
+# Read config saved by 00-kube-vip.sh
 # shellcheck source=/dev/null
 source /etc/kube-vip-bootstrap.env
 

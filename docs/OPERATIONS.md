@@ -15,7 +15,7 @@ vagrant up master-1
 vagrant up worker-1
 
 # 여러 노드 동시 시작
-vagrant up master-1 master-2 worker-1
+vagrant up master-1 master-2 master-3 worker-1
 ```
 
 ### 클러스터 중지
@@ -25,10 +25,10 @@ vagrant up master-1 master-2 worker-1
 vagrant halt
 
 # 특정 노드만 중지
-vagrant halt worker-2
+vagrant halt worker-3
 
 # 모든 worker만 중지
-vagrant halt worker-1 worker-2
+vagrant halt worker-1 worker-2 worker-3
 ```
 
 ### 클러스터 재시작
@@ -89,30 +89,56 @@ VM 내에서 각 스크립트를 순서대로 실행:
 
 ```bash
 # PostgreSQL Operator
-vagrant ssh master-1 -c "sudo bash /home/vagrant/scripts/master/06-cnpg.sh"
+vagrant ssh master-1 -c "sudo bash /home/vagrant/scripts/cluster/06-cnpg.sh"
 
 # 플랫폼 앱 (cert-manager, Traefik, MetalLB 등)
-vagrant ssh master-1 -c "sudo bash /home/vagrant/scripts/master/07-platform-apps.sh"
+vagrant ssh master-1 -c "sudo bash /home/vagrant/scripts/cluster/07-platform-apps.sh"
+
+# Istio Ambient Mesh
+vagrant ssh master-1 -c "sudo bash /home/vagrant/scripts/cluster/08-istio-ambient.sh"
 
 # dnsmasq (로컬 DNS)
-vagrant ssh master-1 -c "sudo bash /home/vagrant/scripts/master/08-dnsmasq.sh"
+vagrant ssh master-1 -c "sudo bash /home/vagrant/scripts/cluster/09-dnsmasq.sh"
 
 # Keycloak (SSO/OIDC)
-vagrant ssh master-1 -c "sudo bash /home/vagrant/scripts/master/09-keycloak.sh"
+vagrant ssh master-1 -c "sudo bash /home/vagrant/scripts/cluster/10-keycloak.sh"
 
 # Gitea (Git 서버)
-vagrant ssh master-1 -c "sudo bash /home/vagrant/scripts/master/10-gitea.sh"
+vagrant ssh master-1 -c "sudo bash /home/vagrant/scripts/cluster/11-gitea.sh"
 
 # ArgoCD (GitOps)
-vagrant ssh master-1 -c "sudo bash /home/vagrant/scripts/master/11-argocd.sh"
+vagrant ssh master-1 -c "sudo bash /home/vagrant/scripts/cluster/12-argocd.sh"
 
 # GitOps Bootstrap (App-of-Apps)
-vagrant ssh master-1 -c "sudo bash /home/vagrant/scripts/master/12-gitops-bootstrap.sh"
+vagrant ssh master-1 -c "sudo bash /home/vagrant/scripts/cluster/13-gitops-bootstrap.sh"
 ```
 
 **실행 순서 중요**:
-- cert-manager/Traefik (07) → DNS (08) → Keycloak OIDC (09) 순서를 반드시 지켜야 함
+- cert-manager/Traefik (07) → Istio (08) → DNS (09) → Keycloak OIDC (10) 순서를 반드시 지켜야 함
 - HTTPS 인증서가 준비된 후에 OIDC 설정이 활성화됨 (K8s 1.35+)
+
+### Istio Ambient Mesh 운영
+
+```bash
+# Istio 컴포넌트 확인
+vagrant ssh master-1 -c "kubectl get pods -n istio-system"
+
+# mTLS 정책 확인
+vagrant ssh master-1 -c "kubectl get peerauthentication -A"
+
+# ambient 네임스페이스 확인
+vagrant ssh master-1 -c "kubectl get ns -L istio.io/dataplane-mode"
+
+# 네임스페이스에 ambient 라벨 추가/제거
+vagrant ssh master-1 -c "kubectl label ns <namespace> istio.io/dataplane-mode=ambient"
+vagrant ssh master-1 -c "kubectl label ns <namespace> istio.io/dataplane-mode-"
+
+# Cilium-Istio 공존 설정 확인
+vagrant ssh master-1 -c "kubectl get cm cilium-config -n kube-system -o yaml | grep -E 'cni-exclusive|socket-lb-host-ns-only'"
+
+# ztunnel 로그 (mTLS 핸드셰이크 확인)
+vagrant ssh master-1 -c "kubectl logs -n istio-system -l app=ztunnel --tail=50"
+```
 
 **스크립트 수정 후 재실행**:
 ```bash
@@ -423,14 +449,15 @@ vagrant ssh master-1 -c "kubectl get pods -A -o wide | grep worker-3"
 ```
 
 **IP 대역 규칙**:
-- Master: `192.168.56.10` (master-1), `192.168.56.11` (master-2)
+- Master: `192.168.56.10` (master-1), `192.168.56.11` (master-2), `192.168.56.12` (master-3)
 - Worker: `192.168.56.2X` (worker-1: .21, worker-2: .22, worker-3: .23)
 - VIP: `192.168.56.100`
 - MetalLB: `192.168.56.200`
 
 **리소스 할당**:
+- Master CPU: 2 cores, Memory: 4GB (control-plane only, NoSchedule taint)
 - Worker CPU: 2 cores (Vagrantfile에서 조정 가능)
-- Worker Memory: 4GB (Vagrantfile에서 조정 가능)
+- Worker Memory: 6GB (Vagrantfile에서 조정 가능)
 
 ---
 
@@ -710,39 +737,42 @@ vagrant ssh master-1 -c "kubectl exec -n velero deployment/velero -- \
 ### 전체 검증
 
 ```bash
-# 전체 검증 실행 (14개 섹션, 70 checks)
-vagrant ssh master-1 -c "bash /home/vagrant/scripts/master/verify-cluster.sh"
+# 전체 검증 실행 (17개 섹션)
+vagrant ssh master-1 -c "bash /home/vagrant/scripts/cluster/verify-cluster.sh"
 ```
 
 **검증 섹션**:
-1. 노드 상태
-2. kube-vip
-3. CNI (Cilium)
-4. CoreDNS
-5. metrics-server
-6. NFS CSI driver
-7. cert-manager
-8. Traefik
-9. MetalLB
-10. DNS (dnsmasq)
-11. Keycloak
-12. Gitea
-13. ArgoCD
-14. GitOps Applications
+1. Nodes
+2. kube-vip & VIP
+3. etcd
+4. Cilium CNI
+5. Core Services (CoreDNS, metrics-server, NFS)
+6. Database (CNPG)
+7. MetalLB & Traefik
+8. cert-manager & TLS
+9. DNS (dnsmasq)
+10. Keycloak & OIDC
+11. Monitoring (Prometheus, Grafana, Loki, Tempo)
+12. Platform Apps (Kyverno, Headlamp, OAuth2-Proxy, SeaweedFS, Harbor, OpenBao, Velero)
+13. GitOps (Gitea, ArgoCD)
+14. Gateway Routes (HTTPRoutes, HTTPS connectivity)
+15. Istio Ambient Mesh (istiod, istio-cni, ztunnel, PeerAuthentication, ambient NS)
+16. Pod Health (Pending, CrashLoopBackOff, Helm releases, ArgoCD apps)
+17. Problem Pods (global check)
 
 ### 단계별 검증
 
 ```bash
 # Phase 1만 검증 (클러스터 인프라)
-vagrant ssh master-1 -c "bash /home/vagrant/scripts/master/verify-cluster.sh \
+vagrant ssh master-1 -c "bash /home/vagrant/scripts/cluster/verify-cluster.sh \
   --stage=phase1"
 
 # Phase 2 인프라만 검증 (cert-manager, Traefik, DNS)
-vagrant ssh master-1 -c "bash /home/vagrant/scripts/master/verify-cluster.sh \
+vagrant ssh master-1 -c "bash /home/vagrant/scripts/cluster/verify-cluster.sh \
   --stage=phase2-infra"
 
 # Phase 2 앱만 검증 (Keycloak, Gitea, ArgoCD)
-vagrant ssh master-1 -c "bash /home/vagrant/scripts/master/verify-cluster.sh \
+vagrant ssh master-1 -c "bash /home/vagrant/scripts/cluster/verify-cluster.sh \
   --stage=phase2-apps"
 ```
 
@@ -750,7 +780,7 @@ vagrant ssh master-1 -c "bash /home/vagrant/scripts/master/verify-cluster.sh \
 
 ```bash
 # Pod DNS 테스트 스킵 (시간 절약)
-vagrant ssh master-1 -c "bash /home/vagrant/scripts/master/verify-cluster.sh \
+vagrant ssh master-1 -c "bash /home/vagrant/scripts/cluster/verify-cluster.sh \
   --quick"
 ```
 
@@ -797,7 +827,7 @@ vagrant ssh master-1 -c "bash /home/vagrant/scripts/test/test-sso.sh \
 ✓ cert-manager webhook is ready
 ✓ Traefik gateway is ready
 # ...
-✓ ALL 70 CHECKS PASSED
+✓ ALL 120+ CHECKS PASSED
 
 # 실패 예시
 ✗ Keycloak pod is not ready

@@ -8,6 +8,7 @@ Master 노드의 dnsmasq(포트 53)가 `*.local.narwhal.io` 도메인을 `192.16
 |----------|-----|------|
 | Master-1 (DNS) | 192.168.56.10 | dnsmasq DNS 서버 (primary) |
 | Master-2 (DNS) | 192.168.56.11 | dnsmasq DNS 서버 (secondary) |
+| Master-3 (DNS) | 192.168.56.12 | dnsmasq DNS 서버 (tertiary) |
 | MetalLB VIP | 192.168.56.200 | Traefik LoadBalancer IP |
 | Control Plane VIP | 192.168.56.100 | kube-vip (API Server) |
 
@@ -29,9 +30,9 @@ Master 노드의 dnsmasq(포트 53)가 `*.local.narwhal.io` 도메인을 `192.16
 ### macOS
 
 ```bash
-# local.narwhal.io 도메인만 Master DNS 사용 (HA: 양쪽 master)
+# local.narwhal.io 도메인만 Master DNS 사용 (HA: 3개 master)
 sudo mkdir -p /etc/resolver
-printf 'nameserver 192.168.56.10\nnameserver 192.168.56.11\n' | sudo tee /etc/resolver/local.narwhal.io
+printf 'nameserver 192.168.56.10\nnameserver 192.168.56.11\nnameserver 192.168.56.12\n' | sudo tee /etc/resolver/local.narwhal.io
 
 # 설정 확인
 scutil --dns | grep -A3 "local.narwhal.io"
@@ -47,7 +48,7 @@ nslookup argocd.local.narwhal.io 192.168.56.10
 sudo mkdir -p /etc/systemd/resolved.conf.d
 sudo tee /etc/systemd/resolved.conf.d/narwhal.conf << 'EOF'
 [Resolve]
-DNS=192.168.56.10 192.168.56.11
+DNS=192.168.56.10 192.168.56.11 192.168.56.12
 Domains=~local.narwhal.io
 EOF
 

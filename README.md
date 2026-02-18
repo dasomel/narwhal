@@ -10,12 +10,13 @@ Vagrant 기반 Kubernetes Internal Developer Platform (IDP) 클러스터.
 
 ## Features
 
-- **Kubernetes v1.35** - 최신 안정 버전, HA Control Plane (2 masters)
+- **Kubernetes v1.35** - 최신 안정 버전, HA Control Plane (3 masters, 1 fault tolerance)
 - **GitOps** - ArgoCD + Gitea (App-of-Apps 패턴)
 - **SSO** - Keycloak OIDC (6개 앱 연동: ArgoCD, Grafana, Gitea, Harbor, Headlamp, OAuth2-Proxy)
 - **Observability** - Prometheus, Grafana, Loki, Tempo, Hubble
 - **Storage** - NFS (Block) + SeaweedFS (Object/S3) + [nfs-quota-agent](https://github.com/dasomel/nfs-quota-agent)
 - **Backup** - Velero + CNPG barman
+- **Service Mesh** - Istio ambient mode (mTLS, zero sidecars, ztunnel)
 - **Security** - cert-manager (TLS), OpenBao (Secrets), Kyverno (Policy)
 - **Networking** - Cilium (CNI), Traefik (Gateway API), MetalLB (LoadBalancer), kube-vip (VIP HA)
 
@@ -23,7 +24,7 @@ Vagrant 기반 Kubernetes Internal Developer Platform (IDP) 클러스터.
 
 - [Vagrant](https://developer.hashicorp.com/vagrant/install) 2.4+
 - [VirtualBox](https://www.virtualbox.org/wiki/Downloads) 7.1+ 또는 [VMware Fusion](https://www.vmware.com/products/fusion.html) 25H2
-- 16GB+ RAM (권장 24GB+)
+- 32GB+ RAM (권장 40GB+)
 - VM당 30GB+ Disk (IDP 전체 배포 권장)
 
 ### VirtualBox 디스크 확장
@@ -57,18 +58,18 @@ vagrant destroy -f
 ## Architecture
 
 ```
-┌──────────────────────────────────────────────────────────────────────┐
-│                           Vagrant VMs                                │
-├───────────────────┬───────────────────┬──────────────┬───────────────┤
-│  master-1         │  master-2         │  worker-1    │  worker-2     │
-│  192.168.56.10    │  192.168.56.11    │  .21         │  .22          │
-│  2 CPU, 6GB       │  2 CPU, 6GB       │  2CPU, 4GB   │  2CPU, 4GB    │
-│  NFS, dnsmasq     │  dnsmasq          │              │               │
-└───────────────────┴───────────────────┴──────────────┴───────────────┘
-         │                   │                 │              │
-         └───────────────────┼─────────────────┼──────────────┘
-                             │                 │
-              ┌──────────────┴──────────────┐
+┌──────────────────────────────────────────────────────────────────────────────────────┐
+│                                  Vagrant VMs                                         │
+├──────────────────┬──────────────────┬──────────────────┬─────────────┬───────────────┤
+│  master-1        │  master-2        │  master-3        │  worker-1   │  worker-2/3   │
+│  192.168.56.10   │  192.168.56.11   │  192.168.56.12   │  .21        │  .22 / .23    │
+│  2 CPU, 4GB      │  2 CPU, 4GB      │  2 CPU, 4GB      │  2CPU, 6GB  │  2CPU, 6GB    │
+│  NFS, dnsmasq    │  dnsmasq         │  dnsmasq         │             │               │
+└──────────────────┴──────────────────┴──────────────────┴─────────────┴───────────────┘
+         │                   │                   │               │              │
+         └───────────────────┼───────────────────┼───────────────┼──────────────┘
+                             │                   │               │
+              ┌──────────────┴───────────────────┘
               │  VIP: 192.168.56.100        │
               │       (kube-vip API HA)     │
               │  LB:  192.168.56.200        │
@@ -95,6 +96,7 @@ vagrant destroy -f
 | Keycloak | v26.5.3 | IAM / SSO (Operator) |
 | Gitea | v1.25.4 | Git server |
 | ArgoCD | v3.3.0 | GitOps CD |
+| Istio | v1.29.0 | Service mesh (ambient mode) |
 
 ### IDP Apps (ArgoCD GitOps)
 
@@ -194,14 +196,14 @@ kubectl port-forward svc/headlamp -n headlamp 4466:80
 클러스터 상태 검증:
 
 ```bash
-# 전체 검증 (70 checks)
-vagrant ssh master-1 -c "bash /home/vagrant/scripts/master/verify-cluster.sh"
+# 전체 검증 (120+ checks)
+vagrant ssh master-1 -c "bash /home/vagrant/scripts/cluster/verify-cluster.sh"
 
 # Phase 1만 (클러스터 인프라)
-vagrant ssh master-1 -c "bash /home/vagrant/scripts/master/verify-cluster.sh --stage=phase1"
+vagrant ssh master-1 -c "bash /home/vagrant/scripts/cluster/verify-cluster.sh --stage=phase1"
 
 # Phase 2만 (플랫폼 앱)
-vagrant ssh master-1 -c "bash /home/vagrant/scripts/master/verify-cluster.sh --stage=phase2-apps"
+vagrant ssh master-1 -c "bash /home/vagrant/scripts/cluster/verify-cluster.sh --stage=phase2-apps"
 
 # SSO 테스트 (49 checks)
 vagrant ssh master-1 -c "bash /home/vagrant/scripts/test/test-sso.sh"
@@ -227,14 +229,19 @@ gitops/
 │   ├── kyverno.yaml
 │   ├── seaweedfs.yaml
 │   ├── velero.yaml
-│   └── traefik.yaml
+│   ├── traefik.yaml
+│   ├── istio-base.yaml
+│   ├── istiod.yaml
+│   ├── istio-cni.yaml
+│   └── ztunnel.yaml
 └── resources/               # K8s Resources
     ├── gitea-db.yaml
     ├── harbor-db.yaml
     ├── cnpg-backup.yaml
     ├── kyverno-policies.yaml
     ├── metallb-config.yaml
-    └── traefik-routes.yaml   # HTTPRoutes & Gateway
+    ├── traefik-routes.yaml   # HTTPRoutes & Gateway
+    └── istio-ambient-policies.yaml
 ```
 
 ## Backup
@@ -261,10 +268,10 @@ velero backup get
 
 ```ruby
 K8S_VERSION = "1.35"           # Kubernetes version
-MASTER_COUNT = 2               # Master nodes (HA)
-WORKER_COUNT = 2               # Worker nodes
-MASTER_MEMORY = 6144           # Master RAM (MB) - 6GB minimum
-WORKER_MEMORY = 4096           # Worker RAM (MB)
+MASTER_COUNT = 3               # Master nodes (HA, 1 fault tolerance)
+WORKER_COUNT = 3               # Worker nodes
+MASTER_MEMORY = 4096           # Master RAM (MB) - control-plane only (NoSchedule taint)
+WORKER_MEMORY = 6144           # Worker RAM (MB) - platform apps run here
 VIP_ADDRESS = "192.168.56.100" # Control plane VIP
 ```
 

@@ -13,10 +13,10 @@ SERVICE_CIDR = "10.96.0.0/12"
 #=========================================
 # Node Configuration
 #=========================================
-MASTER_COUNT = 2
-MASTER_IP_BASE = "192.168.56.1"  # master-1: .10, master-2: .11
-WORKER_IP_BASE = "192.168.56.2"  # worker-1: .21, worker-2: .22
-WORKER_COUNT = 2
+MASTER_COUNT = 3
+MASTER_IP_BASE = "192.168.56.1"  # master-1: .10, master-2: .11, master-3: .12
+WORKER_IP_BASE = "192.168.56.2"  # worker-1: .21, worker-2: .22, worker-3: .23
+WORKER_COUNT = 3
 
 #=========================================
 # kube-vip Configuration
@@ -34,9 +34,9 @@ NFS_SHARE_PATH = "/srv/nfs/k8s"      # NFS export path
 # Resource Configuration
 #=========================================
 MASTER_CPUS = 2
-MASTER_MEMORY = 6144
+MASTER_MEMORY = 4096    # 4GB - control plane only
 WORKER_CPUS = 2
-WORKER_MEMORY = 4096
+WORKER_MEMORY = 6144    # 6GB - platform apps
 
 #=========================================
 # Disk Configuration
@@ -110,7 +110,7 @@ Vagrant.configure("2") do |config|
         env: { "K8S_VERSION" => K8S_VERSION, "K8S_PATCH_VERSION" => K8S_PATCH_VERSION }
 
       # kube-vip (all masters — static pod manifest before kubeadm)
-      master.vm.provision "shell", path: "scripts/master/01-kube-vip.sh",
+      master.vm.provision "shell", path: "scripts/cluster/00-kube-vip.sh",
         env: {
           "VIP_ADDRESS" => VIP_ADDRESS,
           "NODE_INDEX" => i
@@ -120,12 +120,12 @@ Vagrant.configure("2") do |config|
         #=========================================
         # Master-1: Phase 1 - Cluster Infrastructure
         #=========================================
-        master.vm.provision "shell", path: "scripts/master/00-nfs-server.sh",
+        master.vm.provision "shell", path: "scripts/cluster/01-nfs-server.sh",
           env: {
             "NFS_SHARE_PATH" => NFS_SHARE_PATH,
             "POD_NETWORK_CIDR" => POD_NETWORK_CIDR
           }
-        master.vm.provision "shell", path: "scripts/master/02-init-cluster.sh",
+        master.vm.provision "shell", path: "scripts/cluster/02-init-cluster.sh",
           env: {
             "VIP_ADDRESS" => VIP_ADDRESS,
             "MASTER_COUNT" => MASTER_COUNT,
@@ -133,14 +133,14 @@ Vagrant.configure("2") do |config|
             "POD_NETWORK_CIDR" => POD_NETWORK_CIDR,
             "SERVICE_CIDR" => SERVICE_CIDR
           }
-        master.vm.provision "shell", path: "scripts/master/03-cni-install.sh",
+        master.vm.provision "shell", path: "scripts/cluster/03-cni-install.sh",
           env: { "MASTER_IP" => VIP_ADDRESS }
-        master.vm.provision "shell", path: "scripts/master/04-addons.sh",
+        master.vm.provision "shell", path: "scripts/cluster/04-addons.sh",
           env: {
             "NFS_SERVER_IP" => NFS_SERVER_IP,
             "NFS_SHARE_PATH" => NFS_SHARE_PATH
           }
-        master.vm.provision "shell", path: "scripts/master/05-nfs-quota-agent.sh",
+        master.vm.provision "shell", path: "scripts/cluster/05-nfs-quota-agent.sh",
           env: {
             "NFS_SHARE_PATH" => NFS_SHARE_PATH,
             "MASTER_HOSTNAME" => "#{CLUSTER_NAME}-master-1"
@@ -150,11 +150,12 @@ Vagrant.configure("2") do |config|
         # Phase 2: Platform Apps (triggered after all nodes join)
         #=========================================
         master.vm.provision "phase2-platform", type: "shell", run: "never",
-          path: "scripts/master/phase2-platform.sh",
+          path: "scripts/cluster/phase2-platform.sh",
           env: {
             "VIP_ADDRESS" => VIP_ADDRESS,
             "MASTER_IP" => master_ip,
             "MASTER_IP_BASE" => MASTER_IP_BASE,
+            "MASTER_COUNT" => MASTER_COUNT,
             "METALLB_IP" => "192.168.56.200",
             "DOMAIN" => "local.narwhal.io"
           }
@@ -162,20 +163,21 @@ Vagrant.configure("2") do |config|
         #=========================================
         # Master-2+: Join control plane only
         #=========================================
-        master.vm.provision "shell", path: "scripts/master/02-join-control-plane.sh",
+        master.vm.provision "shell", path: "scripts/cluster/02-join-control-plane.sh",
           env: {
             "MASTER1_IP" => "#{MASTER_IP_BASE}0",
             "VIP_ADDRESS" => VIP_ADDRESS
           }
 
         # Install dnsmasq for DNS HA (skip CoreDNS config — master-1 handles it in phase2)
-        master.vm.provision "shell", path: "scripts/master/08-dnsmasq.sh",
+        master.vm.provision "shell", path: "scripts/cluster/09-dnsmasq.sh",
           env: {
             "MASTER_IP" => master_ip,
             "METALLB_IP" => "192.168.56.200",
             "DOMAIN" => "local.narwhal.io",
             "SKIP_COREDNS" => "true",
-            "MASTER_IP_BASE" => MASTER_IP_BASE
+            "MASTER_IP_BASE" => MASTER_IP_BASE,
+            "MASTER_COUNT" => MASTER_COUNT
           }
       end
     end
@@ -219,7 +221,7 @@ Vagrant.configure("2") do |config|
         env: { "K8S_VERSION" => K8S_VERSION, "K8S_PATCH_VERSION" => K8S_PATCH_VERSION }
 
       # Worker provisioning (join via VIP)
-      worker.vm.provision "shell", path: "scripts/worker/01-join-cluster.sh",
+      worker.vm.provision "shell", path: "scripts/cluster/02-join-worker.sh",
         env: { "MASTER_IP" => "#{MASTER_IP_BASE}0" }
 
       # After last worker joins, trigger Phase 2 platform apps on master-1

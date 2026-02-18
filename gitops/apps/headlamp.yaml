@@ -17,8 +17,17 @@ spec:
           oidc:
             clientID: headlamp
             clientSecret: headlamp-secret
-            issuerURL: http://keycloak-service.keycloak.svc.cluster.local:8080/realms/kubernetes
+            issuerURL: https://keycloak.local.narwhal.io/realms/kubernetes
             scopes: openid,profile,email,groups
+        volumes:
+          - name: narwhal-ca
+            secret:
+              secretName: narwhal-ca-cert
+        volumeMounts:
+          - name: narwhal-ca
+            mountPath: /etc/ssl/certs/narwhal-ca.crt
+            subPath: ca.crt
+            readOnly: true
   destination:
     server: https://kubernetes.default.svc
     namespace: headlamp

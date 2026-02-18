@@ -17,12 +17,12 @@ spec:
           type: clusterIP
           tls:
             enabled: false
-        externalURL: http://harbor.local.narwhal.io
+        externalURL: https://harbor.local.narwhal.io
         harborAdminPassword: Harbor12345
         database:
           type: external
           external:
-            host: harbor-db-rw.harbor.svc.cluster.local
+            host: harbor-db-rw
             port: 5432
             username: harbor
             password: harbor-db-password
@@ -39,14 +39,21 @@ spec:
               storageClass: nfs-csi
         redis:
           type: internal
+          internal:
+            image:
+              repository: ghcr.io/dasomel/goharbor/redis-photon
+              tag: latest
         trivy:
-          enabled: true
+          enabled: false
         core:
+          image:
+            repository: ghcr.io/dasomel/goharbor/harbor-core
+            tag: latest
           configureUserSettings: |-
             {
               "auth_mode": "oidc_auth",
               "oidc_name": "Keycloak",
-              "oidc_endpoint": "http://keycloak-service.keycloak.svc.cluster.local:8080/realms/kubernetes",
+              "oidc_endpoint": "https://keycloak.local.narwhal.io/realms/kubernetes",
               "oidc_client_id": "harbor",
               "oidc_client_secret": "harbor-secret",
               "oidc_groups_claim": "groups",
@@ -55,6 +62,31 @@ spec:
               "oidc_auto_onboard": "true",
               "oidc_verify_cert": "false"
             }
+        jobservice:
+          image:
+            repository: ghcr.io/dasomel/goharbor/harbor-jobservice
+            tag: latest
+        registry:
+          registry:
+            image:
+              repository: ghcr.io/dasomel/goharbor/registry-photon
+              tag: latest
+          controller:
+            image:
+              repository: ghcr.io/dasomel/goharbor/harbor-registryctl
+              tag: latest
+        portal:
+          image:
+            repository: ghcr.io/dasomel/goharbor/harbor-portal
+            tag: latest
+        nginx:
+          image:
+            repository: ghcr.io/dasomel/goharbor/nginx-photon
+            tag: latest
+        exporter:
+          image:
+            repository: ghcr.io/dasomel/goharbor/harbor-exporter
+            tag: latest
   destination:
     server: https://kubernetes.default.svc
     namespace: harbor

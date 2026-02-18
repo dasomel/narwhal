@@ -23,11 +23,12 @@ spec:
           configFile: |-
             provider = "keycloak-oidc"
             provider_display_name = "Keycloak"
-            oidc_issuer_url = "http://keycloak-service.keycloak.svc.cluster.local:8080/realms/kubernetes"
-            redirect_url = "http://oauth2-proxy.local.narwhal.io/oauth2/callback"
+            oidc_issuer_url = "https://keycloak.local.narwhal.io/realms/kubernetes"
+            redirect_url = "https://oauth2-proxy.local.narwhal.io/oauth2/callback"
             upstreams = ["static://200"]
             email_domains = ["*"]
-            cookie_secure = false
+            cookie_secure = true
+            ssl_insecure_skip_verify = true
             cookie_domains = [".local.narwhal.io"]
             whitelist_domains = [".local.narwhal.io"]
             set_xauthrequest = true

@@ -76,13 +76,16 @@ fi
 #=========================================
 echo "Configuring DNS..."
 
-# Add Google DNS as fallback for VMware NAT DNS issues
+# Add master-1 dnsmasq as primary DNS for *.local.narwhal.io resolution
+# The ~local.narwhal.io routing domain ensures only matching queries go to dnsmasq
+# On master-1, 08-dnsmasq.sh replaces systemd-resolved entirely, so this is a no-op
 if systemctl is-active --quiet systemd-resolved; then
   sudo mkdir -p /etc/systemd/resolved.conf.d
-  sudo tee /etc/systemd/resolved.conf.d/dns.conf << 'EOF'
+  sudo tee /etc/systemd/resolved.conf.d/dns.conf << EOF
 [Resolve]
-DNS=8.8.8.8 8.8.4.4
+DNS=${MASTER_IP_BASE}0 ${MASTER_IP_BASE}1 8.8.8.8 8.8.4.4
 FallbackDNS=1.1.1.1
+Domains=~local.narwhal.io
 EOF
   sudo systemctl restart systemd-resolved
 fi

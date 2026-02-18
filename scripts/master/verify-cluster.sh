@@ -61,7 +61,7 @@ warn() {
 # Stage → section mapping
 PHASE1_SECTIONS="nodes kube-vip etcd cilium core"
 PHASE2_INFRA_SECTIONS="nodes network tls dns"
-PHASE2_APPS_SECTIONS="nodes database keycloak monitoring platform gitops routes"
+PHASE2_APPS_SECTIONS="nodes database keycloak monitoring platform gitops routes podhealth"
 
 # Check if a section should run
 should_run() {
@@ -120,7 +120,7 @@ echo ""
 # 1. NODES
 #=========================================
 if should_run "nodes"; then
-  echo "--- [1/14] Nodes ---"
+  echo "--- [1/16] Nodes ---"
   NODE_COUNT=$(kubectl get nodes --no-headers 2>/dev/null | wc -l | tr -d ' ')
   READY_COUNT=$(kubectl get nodes --no-headers 2>/dev/null | grep -c " Ready" || echo "0")
   NOTREADY=$(kubectl get nodes --no-headers 2>/dev/null | grep -v " Ready" || echo "")
@@ -151,7 +151,7 @@ fi
 # 2. KUBE-VIP & VIP
 #=========================================
 if should_run "kube-vip"; then
-  echo "--- [2/14] kube-vip & VIP ---"
+  echo "--- [2/16] kube-vip & VIP ---"
   KVIP_PODS=$(kubectl get pods -n kube-system -l k8s-app=kube-vip --no-headers 2>/dev/null | grep -c "Running" || echo "0")
   if [ "${KVIP_PODS}" -ge 2 ]; then
     pass "kube-vip pods: ${KVIP_PODS} Running"
@@ -173,7 +173,7 @@ fi
 # 3. ETCD
 #=========================================
 if should_run "etcd"; then
-  echo "--- [3/14] etcd ---"
+  echo "--- [3/16] etcd ---"
   # etcdctl is inside the etcd pod (not installed on host in kubeadm clusters)
   ETCD_POD=$(kubectl get pods -n kube-system -l component=etcd -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
   if [ -n "${ETCD_POD}" ]; then
@@ -198,7 +198,7 @@ fi
 # 4. CNI (Cilium)
 #=========================================
 if should_run "cilium"; then
-  echo "--- [4/14] Cilium CNI ---"
+  echo "--- [4/16] Cilium CNI ---"
   check_pods "kube-system" "k8s-app=cilium" 4 "cilium agents"
   CILIUM_OP_NAME=$(kubectl get deployment -n kube-system -l app.kubernetes.io/name=cilium-operator -o jsonpath='{.items[0].metadata.name}' 2>/dev/null \
     || kubectl get deployment -n kube-system -l name=cilium-operator -o jsonpath='{.items[0].metadata.name}' 2>/dev/null \
@@ -220,7 +220,7 @@ fi
 # 5. CORE SERVICES (CoreDNS, metrics-server, NFS)
 #=========================================
 if should_run "core"; then
-  echo "--- [5/14] Core Services ---"
+  echo "--- [5/16] Core Services ---"
   check_ready "deployment" "kube-system" "coredns" "CoreDNS"
 
   # CoreDNS forward rule for local.narwhal.io
@@ -256,7 +256,7 @@ fi
 # 6. DATABASE (CNPG)
 #=========================================
 if should_run "database"; then
-  echo "--- [6/14] Database (CNPG) ---"
+  echo "--- [6/16] Database (CNPG) ---"
   CNPG_OP=$(kubectl get pods -n cnpg-system --no-headers 2>/dev/null | grep -c "Running" || echo "0")
   if [ "${CNPG_OP}" -ge 1 ]; then
     pass "CNPG operator: Running"
@@ -287,7 +287,7 @@ fi
 # 7. METALLB & TRAEFIK
 #=========================================
 if should_run "network"; then
-  echo "--- [7/14] MetalLB & Traefik ---"
+  echo "--- [7/16] MetalLB & Traefik ---"
   check_ready "deployment" "metallb-system" "metallb-controller" "MetalLB controller"
 
   METALLB_SPEAKERS=$(kubectl get pods -n metallb-system -l app.kubernetes.io/component=speaker --no-headers 2>/dev/null | grep -c "Running" || echo "0")
@@ -321,7 +321,7 @@ fi
 # 8. CERT-MANAGER & TLS
 #=========================================
 if should_run "tls"; then
-  echo "--- [8/14] cert-manager & TLS ---"
+  echo "--- [8/16] cert-manager & TLS ---"
   check_ready "deployment" "cert-manager" "cert-manager" "cert-manager"
   check_ready "deployment" "cert-manager" "cert-manager-webhook" "cert-manager-webhook"
   check_ready "deployment" "cert-manager" "cert-manager-cainjector" "cert-manager-cainjector"
@@ -348,7 +348,7 @@ fi
 # 9. DNS
 #=========================================
 if should_run "dns"; then
-  echo "--- [9/14] DNS ---"
+  echo "--- [9/16] DNS ---"
   # dnsmasq service
   if systemctl is-active --quiet dnsmasq 2>/dev/null; then
     pass "dnsmasq: active"
@@ -372,6 +372,21 @@ if should_run "dns"; then
     else
       fail "Pod DNS: keycloak.local.narwhal.io resolution failed (CoreDNS forward rule?)"
     fi
+
+    # Worker node DNS: schedule a Pod on a worker to verify *.local.narwhal.io resolves
+    WORKER_NODE=$(kubectl get nodes -l '!node-role.kubernetes.io/control-plane' -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
+    if [ -n "${WORKER_NODE}" ]; then
+      WORKER_DNS=$(kubectl run verify-worker-dns-$$ --rm -i --restart=Never \
+        --overrides='{"spec":{"nodeName":"'"${WORKER_NODE}"'"}}' \
+        --image=busybox:1.36 -- nslookup keycloak.local.narwhal.io 2>/dev/null | grep -c "192.168.56.200" | tr -d '\n' || echo "0")
+      if [ "${WORKER_DNS}" -gt 0 ]; then
+        pass "Worker DNS (${WORKER_NODE}): keycloak.local.narwhal.io -> 192.168.56.200"
+      else
+        fail "Worker DNS (${WORKER_NODE}): keycloak.local.narwhal.io resolution failed"
+      fi
+    else
+      warn "Worker DNS: no worker node found, skipping"
+    fi
   fi
   echo ""
 fi
@@ -380,7 +395,7 @@ fi
 # 10. KEYCLOAK & OIDC
 #=========================================
 if should_run "keycloak"; then
-  echo "--- [10/14] Keycloak & OIDC ---"
+  echo "--- [10/16] Keycloak & OIDC ---"
   # Keycloak operator
   check_ready "deployment" "keycloak" "keycloak-operator" "Keycloak operator"
 
@@ -418,7 +433,7 @@ fi
 # 11. MONITORING (Prometheus, Grafana, Loki, Tempo)
 #=========================================
 if should_run "monitoring"; then
-  echo "--- [11/14] Monitoring ---"
+  echo "--- [11/16] Monitoring ---"
   # Prometheus
   PROM_PODS=$(kubectl get pods -n monitoring -l app.kubernetes.io/name=prometheus --no-headers 2>/dev/null | grep -c "Running" || echo "0")
   if [ "${PROM_PODS}" -ge 1 ]; then
@@ -428,7 +443,7 @@ if should_run "monitoring"; then
   fi
 
   # Grafana
-  check_ready "deployment" "monitoring" "prometheus-grafana" "Grafana"
+  check_ready "deployment" "monitoring" "prometheus-stack-grafana" "Grafana"
 
   # Alertmanager
   ALERT_PODS=$(kubectl get pods -n monitoring -l app.kubernetes.io/name=alertmanager --no-headers 2>/dev/null | grep -c "Running" || echo "0")
@@ -468,7 +483,7 @@ fi
 # 12. PLATFORM APPS
 #=========================================
 if should_run "platform"; then
-  echo "--- [12/14] Platform Apps ---"
+  echo "--- [12/16] Platform Apps ---"
   # Kyverno
   check_ready "deployment" "kyverno" "kyverno-admission-controller" "Kyverno admission"
   check_ready "deployment" "kyverno" "kyverno-background-controller" "Kyverno background"
@@ -519,7 +534,7 @@ fi
 # 13. GITOPS (Gitea, ArgoCD)
 #=========================================
 if should_run "gitops"; then
-  echo "--- [13/14] GitOps ---"
+  echo "--- [13/16] GitOps ---"
   # Gitea
   GITEA_PODS=$(kubectl get pods -n gitea -l app.kubernetes.io/name=gitea --no-headers 2>/dev/null | grep -c "Running" || echo "0")
   if [ "${GITEA_PODS}" -ge 1 ]; then
@@ -554,7 +569,7 @@ fi
 # 14. GATEWAY ROUTES (HTTP/HTTPS access)
 #=========================================
 if should_run "routes"; then
-  echo "--- [14/14] Gateway Routes ---"
+  echo "--- [14/16] Gateway Routes ---"
   ROUTES=(
     "argocd:argocd"
     "grafana:monitoring"
@@ -596,7 +611,81 @@ if should_run "routes"; then
 fi
 
 #=========================================
-# 15. PROBLEM PODS (global check)
+# 15. POD HEALTH
+#=========================================
+if should_run "podhealth"; then
+  echo "--- [15/16] Pod Health ---"
+
+  # Pending pods (excluding expected cases)
+  PENDING_PODS=$(kubectl get pods -A --field-selector=status.phase=Pending --no-headers 2>/dev/null || echo "")
+  if [ -z "${PENDING_PODS}" ]; then
+    pass "No Pending pods"
+  else
+    PENDING_COUNT=$(echo "${PENDING_PODS}" | wc -l | tr -d ' ')
+    fail "${PENDING_COUNT} Pending pods found"
+  fi
+
+  # CrashLoopBackOff pods
+  CRASHLOOP_PODS=$(kubectl get pods -A --no-headers 2>/dev/null | grep "CrashLoopBackOff" || echo "")
+  if [ -z "${CRASHLOOP_PODS}" ]; then
+    pass "No CrashLoopBackOff pods"
+  else
+    CRASHLOOP_COUNT=$(echo "${CRASHLOOP_PODS}" | wc -l | tr -d ' ')
+    fail "${CRASHLOOP_COUNT} CrashLoopBackOff pods found"
+  fi
+
+  # Containers not ready (READY column mismatch like 0/1, 1/2)
+  NOTREADY_PODS=$(kubectl get pods -A --no-headers 2>/dev/null | awk '{split($3, a, "/"); if (a[1] != a[2]) print $0}' || echo "")
+  if [ -z "${NOTREADY_PODS}" ]; then
+    pass "All containers ready"
+  else
+    NOTREADY_COUNT=$(echo "${NOTREADY_PODS}" | wc -l | tr -d ' ')
+    fail "${NOTREADY_COUNT} pods with containers not ready"
+  fi
+
+  # Failed Helm releases
+  FAILED_HELM=$(helm list -A --failed --no-headers 2>/dev/null || echo "")
+  if [ -z "${FAILED_HELM}" ]; then
+    pass "No failed Helm releases"
+  else
+    FAILED_HELM_COUNT=$(echo "${FAILED_HELM}" | wc -l | tr -d ' ')
+    fail "${FAILED_HELM_COUNT} failed Helm releases found"
+  fi
+
+  # ArgoCD Applications health (if ArgoCD is running)
+  ARGOCD_RUNNING=$(kubectl get pods -n argocd -l app.kubernetes.io/name=argocd-server --no-headers 2>/dev/null | grep -c "Running" || echo "0")
+  if [ "${ARGOCD_RUNNING}" -gt 0 ]; then
+    # Get all applications: Healthy is required, OutOfSync is warn-only (common with script+ArgoCD dual management)
+    ARGOCD_APPS=$(kubectl get applications -n argocd -o json 2>/dev/null | jq -r '.items[] | "\(.metadata.name)|\(.status.sync.status)|\(.status.health.status)"' 2>/dev/null || echo "")
+    if [ -n "${ARGOCD_APPS}" ]; then
+      # Health check: Degraded/Missing is FAIL
+      DEGRADED_APPS=$(echo "${ARGOCD_APPS}" | awk -F'|' '{if ($3 != "Healthy" && $3 != "Progressing" && $3 != "") print $1 " (health=" $3 ")"}' || echo "")
+      # Sync check: OutOfSync/Unknown is WARN only (not FAIL)
+      OUTOFSYNC_APPS=$(echo "${ARGOCD_APPS}" | awk -F'|' '{if ($2 != "Synced" && $2 != "") print $1 " (sync=" $2 ")"}' || echo "")
+
+      APP_COUNT=$(echo "${ARGOCD_APPS}" | wc -l | tr -d ' ')
+      if [ -z "${DEGRADED_APPS}" ] && [ -z "${OUTOFSYNC_APPS}" ]; then
+        pass "All ${APP_COUNT} ArgoCD apps Synced+Healthy"
+      elif [ -z "${DEGRADED_APPS}" ]; then
+        OUTOFSYNC_COUNT=$(echo "${OUTOFSYNC_APPS}" | wc -l | tr -d ' ')
+        warn "${OUTOFSYNC_COUNT}/${APP_COUNT} ArgoCD apps OutOfSync (all Healthy): ${OUTOFSYNC_APPS}"
+      else
+        if [ -n "${DEGRADED_APPS}" ]; then
+          DEGRADED_COUNT=$(echo "${DEGRADED_APPS}" | wc -l | tr -d ' ')
+          fail "${DEGRADED_COUNT} ArgoCD apps not Healthy: ${DEGRADED_APPS}"
+        fi
+      fi
+    else
+      warn "ArgoCD apps: no applications found or jq not available"
+    fi
+  else
+    warn "ArgoCD app health: skipped (ArgoCD not running)"
+  fi
+  echo ""
+fi
+
+#=========================================
+# 16. PROBLEM PODS (global check)
 #=========================================
 echo "--- Problem Pods ---"
 PROBLEM_PODS=$(kubectl get pods -A --no-headers 2>/dev/null | grep -Ev "Running|Completed" || echo "")

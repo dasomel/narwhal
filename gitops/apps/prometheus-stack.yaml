@@ -24,6 +24,7 @@ spec:
                     requests:
                       storage: 10Gi
         grafana:
+          assertNoLeakedSecrets: false
           adminPassword: admin
           persistence:
             enabled: true
@@ -36,7 +37,7 @@ spec:
               enabled: true
           grafana.ini:
             server:
-              root_url: http://grafana.local.narwhal.io
+              root_url: https://grafana.local.narwhal.io
             auth.generic_oauth:
               enabled: true
               name: Keycloak
@@ -44,9 +45,10 @@ spec:
               client_id: grafana
               client_secret: grafana-secret
               scopes: openid profile email groups
-              auth_url: http://keycloak-service.keycloak.svc.cluster.local:8080/realms/kubernetes/protocol/openid-connect/auth
-              token_url: http://keycloak-service.keycloak.svc.cluster.local:8080/realms/kubernetes/protocol/openid-connect/token
-              api_url: http://keycloak-service.keycloak.svc.cluster.local:8080/realms/kubernetes/protocol/openid-connect/userinfo
+              auth_url: https://keycloak.local.narwhal.io/realms/kubernetes/protocol/openid-connect/auth
+              token_url: https://keycloak.local.narwhal.io/realms/kubernetes/protocol/openid-connect/token
+              api_url: https://keycloak.local.narwhal.io/realms/kubernetes/protocol/openid-connect/userinfo
+              tls_skip_verify_insecure: true
               role_attribute_path: contains(groups[*], 'cluster-admins') && 'Admin' || contains(groups[*], 'developers') && 'Editor' || 'Viewer'
         alertmanager:
           alertmanagerSpec:

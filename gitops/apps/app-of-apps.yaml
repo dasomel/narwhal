@@ -8,7 +8,7 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: https://gitea-http.gitea.svc.cluster.local:3000/gitea-admin/narwhal-gitops.git
+    repoURL: http://gitea-http.gitea.svc.cluster.local:3000/gitea-admin/narwhal-gitops.git
     targetRevision: HEAD
     path: apps
   destination:

@@ -66,6 +66,12 @@
 | 2026-02-15 | Traefik routes 적용 시 GatewayClass 미생성 | Traefik deployment+GatewayClass 대기 루프 후 routes 적용 |
 | 2026-02-15 | etcd 컨테이너 `sh -c` 실행 불가 | etcd는 distroless, `kubectl exec -- etcdctl ...` 직접 호출 |
 | 2026-02-15 | alpine/k8s 이미지 태그에 `v` prefix 없음 | `"1.31.4"` 사용 (NOT `v1.31.4`), Docker Hub 태그 형식 확인 |
+| 2026-02-15 | ArgoCD v3.x `server.insecure` 설정 위치 오류 | `argocd-cmd-params-cm`에 설정해야 함 (NOT `argocd-cm`). `argocd-cm`은 legacy |
+| 2026-02-15 | worker/master-2 DNS가 public IP로 해석 | `systemd-resolved`에 `Domains=~local.narwhal.io` + master dnsmasq를 DNS로 설정 |
+| 2026-02-15 | Keycloak `groups` scope 누락 → `invalid_scope` 에러 | realm-level `groups` client scope 생성 + mapper 추가 + 전체 클라이언트에 default scope 할당 |
+| 2026-02-15 | ArgoCD SSO에서 `x509: certificate signed by unknown authority` | `argocd-cm`에 `oidc.tls.insecure.skip.verify: "true"` 추가 (자체서명 인증서) |
+| 2026-02-15 | Headlamp `extraArgs` root level에 놓으면 무시됨 | `config.extraArgs`에 배치해야 컨테이너 args에 추가됨 |
+| 2026-02-15 | Harbor `configureUserSettings` 변경 시 API 거부 | env 변수로 주입되므로 API로 수정 불가, Helm values 변경 + 재배포 필요 |
 
 ### GitOps/ArgoCD 실수
 | 날짜 | 실수 | 해결책 |
@@ -77,6 +83,10 @@
 | 2026-02-14 | SeaweedFS chart 버전 4.0.410 → Docker Hub 이미지 4.10 없음 | appVersion=image tag 확인 후 존재하는 버전 사용 (4.0.407→4.07) |
 | 2026-02-14 | ArgoCD repo-server GitHub Pages IPv6 연결 실패 | VM에서 IPv6 미지원, ArgoCD가 IPv6로 시도하면 실패 |
 | 2026-02-14 | ArgoCD 관리 리소스 Helm upgrade 충돌 | `kubectl set image`로 직접 패치, Helm 대신 kubectl 사용 |
+| 2026-02-15 | Headlamp v0.40.0에 `-oidc-skip-issuer-tls-verify` 플래그 없음 | CA cert를 `/etc/ssl/certs/`에 subPath 마운트, `SSL_CERT_FILE` 사용 금지 |
+| 2026-02-15 | Grafana `assertNoLeakedSecrets` 차트 검증 실패 | `grafana.assertNoLeakedSecrets: false` 설정 필수 |
+| 2026-02-15 | Prometheus Helm 릴리스명 불일치 (`prometheus` vs `prometheus-stack`) | ArgoCD app name과 일치시켜야 HTTPRoute/ConfigMap 정상 작동 |
+| 2026-02-15 | Gitea OIDC 소스 추가 시 self-signed cert 검증 실패 | Gitea 컨테이너에 CA cert 마운트 후 `add-oauth` 실행 |
 
 ### Vagrant/Infrastructure 실수
 | 날짜 | 실수 | 해결책 |

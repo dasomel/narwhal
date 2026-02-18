@@ -51,7 +51,7 @@ helm upgrade --install gitea gitea-charts/gitea \
   --set gitea.config.database.NAME=gitea \
   --set gitea.config.database.USER=gitea \
   --set gitea.config.database.PASSWD=gitea-db-password \
-  --set gitea.config.server.ROOT_URL=http://localhost:3000 \
+  --set gitea.config.server.ROOT_URL=https://gitea.local.narwhal.io \
   --set gitea.config.oauth2_client.ENABLE_AUTO_REGISTRATION=true \
   --set gitea.config.oauth2_client.ACCOUNT_LINKING=auto \
   --set gitea.config.oauth2_client.UPDATE_AVATAR=true \
@@ -63,6 +63,12 @@ helm upgrade --install gitea gitea-charts/gitea \
   --set redis.enabled=false \
   --set valkey-cluster.enabled=false \
   --set valkey.enabled=true \
+  --set "extraVolumes[0].name=narwhal-ca" \
+  --set "extraVolumes[0].secret.secretName=narwhal-ca-cert" \
+  --set "extraContainerVolumeMounts[0].name=narwhal-ca" \
+  --set "extraContainerVolumeMounts[0].mountPath=/etc/ssl/certs/narwhal-ca.crt" \
+  --set "extraContainerVolumeMounts[0].subPath=ca.crt" \
+  --set "extraContainerVolumeMounts[0].readOnly=true" \
   --timeout=600s || echo "WARN: Gitea install timed out, continuing..."
 
 # Configure Keycloak OAuth2 provider via API
@@ -83,7 +89,8 @@ if [ -n "${GITEA_POD}" ]; then
     --secret "gitea-secret" \
     --auto-discover-url "${KEYCLOAK_URL}/realms/${KEYCLOAK_REALM}/.well-known/openid-configuration" \
     --group-claim-name "groups" \
-    --admin-group "cluster-admins" || true
+    --admin-group "cluster-admins" \
+    --skip-local-2fa || true
 else
   echo "WARN: Gitea pod not found, skipping OAuth2 configuration"
 fi

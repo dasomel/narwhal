@@ -11,6 +11,8 @@ set -euo pipefail
 MASTER_IP="${MASTER_IP:-192.168.56.10}"
 METALLB_IP="${METALLB_IP:-192.168.56.200}"
 DOMAIN="${DOMAIN:-local.narwhal.io}"
+SKIP_COREDNS="${SKIP_COREDNS:-false}"
+MASTER_IP_BASE="${MASTER_IP_BASE:-192.168.56.1}"
 
 echo "=== Installing dnsmasq for local domain resolution ==="
 echo "Master IP: ${MASTER_IP}"
@@ -103,38 +105,51 @@ echo ""
 echo "Testing external domain: google.com"
 nslookup google.com 127.0.0.1 || echo "External domain test failed"
 
-#=========================================
-# CoreDNS Forward Rule for Pod-internal DNS
-#=========================================
-# Pods use CoreDNS (10.96.0.10), not dnsmasq, for DNS resolution.
-# Without this rule, Pods cannot resolve *.local.narwhal.io.
-echo "=== Configuring CoreDNS to forward local.narwhal.io to dnsmasq ==="
+if [ "${SKIP_COREDNS}" = "true" ]; then
+  echo "=== Skipping CoreDNS configuration (SKIP_COREDNS=true) ==="
+else
+  #=========================================
+  # CoreDNS Forward Rule for Pod-internal DNS
+  #=========================================
+  # Pods use CoreDNS (10.96.0.10), not dnsmasq, for DNS resolution.
+  # Without this rule, Pods cannot resolve *.local.narwhal.io.
+  # Forward to both master dnsmasq instances for HA.
+  MASTER1_IP="${MASTER_IP_BASE}0"
+  MASTER2_IP="${MASTER_IP_BASE}1"
+  echo "=== Configuring CoreDNS to forward local.narwhal.io to dnsmasq (${MASTER1_IP}, ${MASTER2_IP}) ==="
 
-COREDNS_CM=$(kubectl get configmap coredns -n kube-system -o json 2>/dev/null || echo "")
-if [ -n "${COREDNS_CM}" ]; then
-  # Check if forward rule already exists
-  if echo "${COREDNS_CM}" | grep -q "local.narwhal.io"; then
-    echo "CoreDNS forward rule for local.narwhal.io already exists"
-  else
-    # Add forward rule using kubectl patch
-    COREFILE=$(echo "${COREDNS_CM}" | yq -r '.data.Corefile')
-    NEW_COREFILE="${DOMAIN}:53 {
+  COREDNS_CM=$(kubectl get configmap coredns -n kube-system -o json 2>/dev/null || echo "")
+  if [ -n "${COREDNS_CM}" ]; then
+    # Check if forward rule already exists
+    if echo "${COREDNS_CM}" | grep -q "local.narwhal.io"; then
+      echo "CoreDNS forward rule for local.narwhal.io already exists"
+    else
+      # Add forward rule using kubectl patch
+      COREFILE=$(echo "${COREDNS_CM}" | yq -r '.data.Corefile')
+      NEW_COREFILE="${DOMAIN}:53 {
     errors
     cache 30
-    forward . ${MASTER_IP}
+    forward . ${MASTER1_IP} ${MASTER2_IP}
 }
 ${COREFILE}"
-    kubectl create configmap coredns -n kube-system \
-      --from-literal=Corefile="${NEW_COREFILE}" \
-      --dry-run=client -o yaml | kubectl apply -f -
+      kubectl create configmap coredns -n kube-system \
+        --from-literal=Corefile="${NEW_COREFILE}" \
+        --dry-run=client -o yaml | kubectl apply -f -
 
-    # Restart CoreDNS to pick up the change
-    kubectl rollout restart deployment coredns -n kube-system 2>/dev/null || true
-    kubectl wait --for=condition=Ready pod -l k8s-app=kube-dns -n kube-system --timeout=60s || true
-    echo "CoreDNS forward rule added for ${DOMAIN} -> ${MASTER_IP}"
+      # Restart CoreDNS to pick up the change
+      kubectl rollout restart deployment coredns -n kube-system 2>/dev/null || true
+      kubectl wait --for=condition=Ready pod -l k8s-app=kube-dns -n kube-system --timeout=60s || true
+      echo "CoreDNS forward rule added for ${DOMAIN} -> ${MASTER1_IP}, ${MASTER2_IP}"
+    fi
+  else
+    echo "WARN: CoreDNS configmap not found, skipping forward rule"
   fi
-else
-  echo "WARN: CoreDNS configmap not found, skipping forward rule"
+
+  # Test Pod DNS resolution via CoreDNS (verifies worker nodes can also resolve)
+  echo ""
+  echo "=== Testing Pod DNS resolution via CoreDNS ==="
+  kubectl run dns-pod-test-$$ --rm -i --restart=Never --image=busybox:1.36 \
+    -- nslookup "argocd.${DOMAIN}" 2>/dev/null || echo "Pod DNS test warning (non-fatal)"
 fi
 
 echo ""
@@ -146,9 +161,9 @@ echo "External domains: forwarded to 8.8.8.8, 8.8.4.4"
 echo ""
 echo "To use on client machines:"
 echo ""
-echo "  macOS:"
+echo "  macOS (HA - both masters):"
 echo "    sudo mkdir -p /etc/resolver"
-echo "    echo 'nameserver ${MASTER_IP}' | sudo tee /etc/resolver/${DOMAIN}"
+echo "    printf 'nameserver ${MASTER_IP_BASE}0\nnameserver ${MASTER_IP_BASE}1\n' | sudo tee /etc/resolver/${DOMAIN}"
 echo ""
 echo "  Linux (systemd-resolved):"
 echo "    sudo resolvectl dns eth0 ${MASTER_IP}"

@@ -1,5 +1,7 @@
 # Narwhal
 
+> **Narwhal**(일각고래) - 북극해에 서식하는 고래로, 머리에서 나선형으로 자라는 하나의 긴 엄니(tusk)가 특징입니다. "바다의 유니콘"이라 불리며, 이 프로젝트처럼 단일 클러스터에서 강력한 플랫폼을 제공합니다.
+
 Vagrant 기반 Kubernetes Internal Developer Platform (IDP) 클러스터.
 
 [dasomel/ubuntu-24.04-xfs](https://app.vagrantup.com/dasomel/boxes/ubuntu-24.04-xfs) Box 사용 (XFS 파일시스템, Project Quota 지원).
@@ -8,13 +10,14 @@ Vagrant 기반 Kubernetes Internal Developer Platform (IDP) 클러스터.
 
 ## Features
 
-- **Kubernetes v1.35** - 최신 안정 버전
-- **GitOps** - ArgoCD + Gitea
-- **SSO** - Keycloak OIDC (모든 앱 연동)
-- **Observability** - Prometheus, Grafana, Loki, Tempo
+- **Kubernetes v1.35** - 최신 안정 버전, HA Control Plane (2 masters)
+- **GitOps** - ArgoCD + Gitea (App-of-Apps 패턴)
+- **SSO** - Keycloak OIDC (6개 앱 연동: ArgoCD, Grafana, Gitea, Harbor, Headlamp, OAuth2-Proxy)
+- **Observability** - Prometheus, Grafana, Loki, Tempo, Hubble
 - **Storage** - NFS (Block) + SeaweedFS (Object/S3) + [nfs-quota-agent](https://github.com/dasomel/nfs-quota-agent)
 - **Backup** - Velero + CNPG barman
-- **Security** - cert-manager, OpenBao, Kyverno
+- **Security** - cert-manager (TLS), OpenBao (Secrets), Kyverno (Policy)
+- **Networking** - Cilium (CNI), Traefik (Gateway API), MetalLB (LoadBalancer), kube-vip (VIP HA)
 
 ## Requirements
 
@@ -45,7 +48,7 @@ cd narwhal
 vagrant up --provider=vmware_desktop
 
 # Check status
-vagrant ssh master -c "kubectl get nodes"
+vagrant ssh master-1 -c "kubectl get nodes"
 
 # Destroy
 vagrant destroy -f
@@ -54,20 +57,20 @@ vagrant destroy -f
 ## Architecture
 
 ```
-┌────────────────────────────────────────────────────────────────┐
-│                        Vagrant VMs                             │
-├──────────────────┬──────────────────┬──────────────────────────┤
-│  master          │  worker-1        │  worker-2                │
-│  192.168.56.10   │  192.168.56.21   │  192.168.56.22           │
-│  2 CPU, 4GB      │  2 CPU, 4GB      │  2 CPU, 4GB              │
-│  DNS (dnsmasq)   │                  │                          │
-└──────────────────┴──────────────────┴──────────────────────────┘
-         │                   │                    │
-         └───────────────────┼────────────────────┘
-                             │
+┌──────────────────────────────────────────────────────────────────────┐
+│                           Vagrant VMs                                │
+├───────────────────┬───────────────────┬──────────────┬───────────────┤
+│  master-1         │  master-2         │  worker-1    │  worker-2     │
+│  192.168.56.10    │  192.168.56.11    │  .21         │  .22          │
+│  2 CPU, 6GB       │  2 CPU, 6GB       │  2CPU, 4GB   │  2CPU, 4GB    │
+│  NFS, dnsmasq     │  dnsmasq          │              │               │
+└───────────────────┴───────────────────┴──────────────┴───────────────┘
+         │                   │                 │              │
+         └───────────────────┼─────────────────┼──────────────┘
+                             │                 │
               ┌──────────────┴──────────────┐
               │  VIP: 192.168.56.100        │
-              │       (kube-vip API)        │
+              │       (kube-vip API HA)     │
               │  LB:  192.168.56.200        │
               │       (MetalLB/Traefik)     │
               │  DNS: 192.168.56.10:53      │
@@ -77,36 +80,37 @@ vagrant destroy -f
 
 ## Components
 
-### Base Infrastructure (Script)
+### Base Infrastructure (Script-installed)
 
 | Component | Version | Description |
 |-----------|---------|-------------|
-| Kubernetes | v1.35 | Container orchestration |
-| Cilium | v1.18.6 | CNI + kube-proxy replacement |
-| Traefik | v34.0.0 | Gateway API + Rate Limiting |
-| MetalLB | v0.14.9 | Bare-metal LoadBalancer |
-| Hubble | v1.18.6 | Network observability |
-| kube-vip | v1.0.3 | Control plane HA |
-| CloudNative-PG | v1.26.2 | PostgreSQL Operator |
-| Keycloak | v26.5.2 | IAM / SSO |
+| Kubernetes | v1.35.1 | Container orchestration |
+| Cilium | v1.19.0 | CNI + kube-proxy replacement |
+| Hubble | v1.19.0 | Network observability |
+| kube-vip | v1.0.4 | Control plane VIP HA |
+| MetalLB | v0.15.3 | Bare-metal LoadBalancer |
+| Traefik | v3.6.7 | Gateway API Controller |
+| cert-manager | v1.19.3 | TLS automation |
+| CloudNative-PG | v1.28.1 | PostgreSQL Operator |
+| Keycloak | v26.5.3 | IAM / SSO (Operator) |
 | Gitea | v1.25.4 | Git server |
-| ArgoCD | v3.2.6 | GitOps CD |
+| ArgoCD | v3.3.0 | GitOps CD |
 
 ### IDP Apps (ArgoCD GitOps)
 
-| Component | Version | Description |
-|-----------|---------|-------------|
-| cert-manager | v1.19.2 | TLS automation |
-| Prometheus | v0.88.0 | Metrics |
-| Grafana | v12.3.1 | Dashboard |
-| Loki | v3.6.4 | Logs |
-| Tempo | v2.9.1 | Traces |
-| Harbor | v2.14.2 | Container registry |
-| OpenBao | v2.4.4 | Secrets |
-| Kyverno | v1.16.2 | Policy |
-| Headlamp | v0.39.0 | K8s UI |
-| SeaweedFS | v4.07 | Object storage (S3) |
-| Velero | v1.16 | Backup |
+| Component | Chart Version | App Version | Description |
+|-----------|---------------|-------------|-------------|
+| Prometheus Stack | 81.5.1 | v0.88.1 | Monitoring (Prometheus + Grafana + Alertmanager) |
+| Loki | 6.52.0 | 3.6.4 | Log aggregation |
+| Promtail | 6.17.1 | 3.5.1 | Log collector |
+| Tempo | 1.24.4 | 2.9.0 | Distributed tracing |
+| Harbor | 1.18.2 | 2.14.2 | Container registry (ARM64) |
+| OpenBao | 0.11.0 | v2.2.0 | Secret management |
+| Kyverno | 3.7.0 | v1.17.0 | Policy engine |
+| Headlamp | 0.40.0 | 0.40.0 | Kubernetes UI |
+| OAuth2-Proxy | 10.1.3 | 7.14.2 | SSO Gateway Proxy |
+| SeaweedFS | 4.0.407 | 4.07 | Object storage (S3) |
+| Velero | 11.3.2 | 1.17.1 | Backup & Restore |
 
 See [VERSIONS.md](VERSIONS.md) for full version list.
 
@@ -114,18 +118,23 @@ See [VERSIONS.md](VERSIONS.md) for full version list.
 
 ### DNS 접속 (권장)
 
-Traefik Gateway를 통해 도메인으로 접속합니다. DNS 설정: [docs/DNS-ACCESS.md](docs/DNS-ACCESS.md)
+Traefik Gateway + cert-manager self-signed TLS를 통해 HTTPS 도메인으로 접속합니다.
+
+DNS 설정: 클라이언트 DNS를 `192.168.56.10`으로 지정하거나 `/etc/hosts`에 추가.
 
 | 서비스 | URL | 자격 증명 |
 |--------|-----|-----------|
-| ArgoCD | http://argocd.local.narwhal.io | admin / (시크릿) |
-| Grafana | http://grafana.local.narwhal.io | admin / admin |
-| Gitea | http://gitea.local.narwhal.io | gitea-admin / gitea-admin |
-| Harbor | http://harbor.local.narwhal.io | admin / Harbor12345 |
-| Keycloak | http://keycloak.local.narwhal.io | admin / admin |
-| Headlamp | http://headlamp.local.narwhal.io | Keycloak SSO |
-| OpenBao | http://openbao.local.narwhal.io | root token |
-| Traefik | http://traefik.local.narwhal.io | - |
+| ArgoCD | https://argocd.local.narwhal.io | admin / (자동생성 시크릿) 또는 Keycloak SSO |
+| Grafana | https://grafana.local.narwhal.io | admin / admin 또는 Keycloak SSO |
+| Gitea | https://gitea.local.narwhal.io | gitea-admin / gitea-admin 또는 Keycloak SSO |
+| Harbor | https://harbor.local.narwhal.io | admin / Harbor12345 또는 Keycloak SSO |
+| Keycloak | https://keycloak.local.narwhal.io | temp-admin / (자동생성) |
+| Headlamp | https://headlamp.local.narwhal.io | Keycloak SSO |
+| OAuth2-Proxy | https://oauth2-proxy.local.narwhal.io | Keycloak SSO |
+| OpenBao | https://openbao.local.narwhal.io | root token (`bao operator init`) |
+| Hubble | https://hubble.local.narwhal.io | - |
+
+> **Note**: Self-signed 인증서 사용으로 브라우저에서 보안 경고가 표시됩니다. "고급" → "계속 진행"으로 접속하세요.
 
 ### Port-Forward 접속 (대안)
 
@@ -136,10 +145,10 @@ kubectl port-forward svc/argocd-server -n argocd 8443:443
 
 # Keycloak (IAM)
 kubectl port-forward svc/keycloak-service -n keycloak 8080:8080
-# http://localhost:8080 (admin / admin)
+# http://localhost:8080
 
 # Grafana (Monitoring)
-kubectl port-forward svc/prometheus-grafana -n monitoring 3000:80
+kubectl port-forward svc/prometheus-stack-grafana -n monitoring 3000:80
 # http://localhost:3000 (admin / admin or Keycloak SSO)
 
 # Gitea (Git)
@@ -157,7 +166,16 @@ kubectl port-forward svc/headlamp -n headlamp 4466:80
 
 ## Keycloak SSO
 
-모든 앱이 Keycloak OIDC로 연동됩니다.
+모든 앱이 Keycloak OIDC로 연동됩니다. (HTTPS 필수, K8s 1.35+)
+
+| SSO 연동 앱 | Client ID | 인증 방식 |
+|-------------|-----------|-----------|
+| ArgoCD | `argocd` | OIDC config in argocd-cm |
+| Grafana | `grafana` | grafana.ini auth.generic_oauth |
+| Gitea | `gitea` | OAuth2 auth source (openidConnect) |
+| Harbor | `harbor` | configureUserSettings OIDC |
+| Headlamp | `headlamp` | OIDC config + CA cert mount |
+| OAuth2-Proxy | `oauth2-proxy` | keycloak-oidc provider |
 
 | Group | K8s Role | App Role |
 |-------|----------|----------|
@@ -169,7 +187,28 @@ kubectl port-forward svc/headlamp -n headlamp 4466:80
 - `k8s-admin` / `k8s-admin` (cluster-admins)
 - `developer` / `developer` (developers)
 
-자세한 내용: [docs/KEYCLOAK-SSO.md](docs/KEYCLOAK-SSO.md)
+자세한 내용: [docs/keycloak-accounts.md](docs/keycloak-accounts.md)
+
+## Verification
+
+클러스터 상태 검증:
+
+```bash
+# 전체 검증 (70 checks)
+vagrant ssh master-1 -c "bash /home/vagrant/scripts/master/verify-cluster.sh"
+
+# Phase 1만 (클러스터 인프라)
+vagrant ssh master-1 -c "bash /home/vagrant/scripts/master/verify-cluster.sh --stage=phase1"
+
+# Phase 2만 (플랫폼 앱)
+vagrant ssh master-1 -c "bash /home/vagrant/scripts/master/verify-cluster.sh --stage=phase2-apps"
+
+# SSO 테스트 (49 checks)
+vagrant ssh master-1 -c "bash /home/vagrant/scripts/test/test-sso.sh"
+
+# 빠른 확인
+vagrant ssh master-1 -c "kubectl get nodes && kubectl get pods -A | grep -v Running"
+```
 
 ## GitOps Structure
 
@@ -182,18 +221,20 @@ gitops/
 │   ├── loki.yaml
 │   ├── tempo.yaml
 │   ├── harbor.yaml
+│   ├── headlamp.yaml
+│   ├── oauth2-proxy.yaml
 │   ├── openbao.yaml
 │   ├── kyverno.yaml
-│   ├── headlamp.yaml
 │   ├── seaweedfs.yaml
 │   ├── velero.yaml
-│   └── traefik.yaml         # Gateway API Controller
+│   └── traefik.yaml
 └── resources/               # K8s Resources
     ├── gitea-db.yaml
     ├── harbor-db.yaml
     ├── cnpg-backup.yaml
     ├── kyverno-policies.yaml
-    └── traefik-routes.yaml   # HTTPRoutes & Middlewares
+    ├── metallb-config.yaml
+    └── traefik-routes.yaml   # HTTPRoutes & Gateway
 ```
 
 ## Backup
@@ -219,29 +260,32 @@ velero backup get
 `Vagrantfile` 변수:
 
 ```ruby
-K8S_VERSION = "1.35"       # Kubernetes version
-WORKER_COUNT = 2           # Worker nodes
-MASTER_MEMORY = 4096       # Master RAM (MB)
-WORKER_MEMORY = 4096       # Worker RAM (MB)
-DISK_SIZE_GB = 50          # VM disk size (GB)
-VIP_ADDRESS = "192.168.56.100"  # Control plane VIP
+K8S_VERSION = "1.35"           # Kubernetes version
+MASTER_COUNT = 2               # Master nodes (HA)
+WORKER_COUNT = 2               # Worker nodes
+MASTER_MEMORY = 6144           # Master RAM (MB) - 6GB minimum
+WORKER_MEMORY = 4096           # Worker RAM (MB)
+VIP_ADDRESS = "192.168.56.100" # Control plane VIP
 ```
 
 ## Commands
 
 ```bash
-# Start cluster
-vagrant up
+# Start cluster (Phase 1 + 2 자동 실행)
+vagrant up --provider=vmware_desktop
 
 # Start specific node
-vagrant up master
+vagrant up master-1
 vagrant up worker-1
 
 # SSH access
-vagrant ssh master
+vagrant ssh master-1
+
+# Phase 2만 수동 실행 (클러스터 구성 후)
+vagrant provision master-1 --provision-with phase2-platform
 
 # Reprovision
-vagrant provision master
+vagrant provision master-1
 
 # Halt
 vagrant halt
@@ -253,10 +297,7 @@ vagrant destroy -f
 ## Documentation
 
 - [VERSIONS.md](VERSIONS.md) - Component versions
-- [docs/DNS-ACCESS.md](docs/DNS-ACCESS.md) - DNS 접속 가이드 (Traefik Gateway)
-- [docs/KUBECONFIG.md](docs/KUBECONFIG.md) - Kubeconfig setup guide
-- [docs/KEYCLOAK-SSO.md](docs/KEYCLOAK-SSO.md) - SSO & Authorization guide
-- [.agent/AGENT.md](.agent/AGENT.md) - Project guide for AI assistants
+- [docs/keycloak-accounts.md](docs/keycloak-accounts.md) - Keycloak SSO 계정 및 설정 가이드
 
 ## License
 

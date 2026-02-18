@@ -98,10 +98,11 @@ echo "=== Installing Prometheus Stack ==="
 helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
 helm repo update prometheus-community
 
-helm upgrade --install prometheus prometheus-community/kube-prometheus-stack \
+helm upgrade --install prometheus-stack prometheus-community/kube-prometheus-stack \
   --namespace monitoring \
   --create-namespace \
   --version 81.5.1 \
+  --set grafana.assertNoLeakedSecrets=false \
   --set grafana.adminPassword=admin \
   --set grafana.persistence.enabled=true \
   --set grafana.persistence.storageClassName=nfs-csi \
@@ -234,7 +235,13 @@ helm upgrade --install headlamp headlamp/headlamp \
   --set config.oidc.clientID=headlamp \
   --set config.oidc.clientSecret=headlamp-secret \
   --set config.oidc.issuerURL=https://keycloak.local.narwhal.io/realms/kubernetes \
-  --set config.oidc.scopes="openid\,profile\,email\,groups" || echo "WARN: Headlamp install issue, continuing..."
+  --set config.oidc.scopes="openid\,profile\,email\,groups" \
+  --set "volumes[0].name=narwhal-ca" \
+  --set "volumes[0].secret.secretName=narwhal-ca-cert" \
+  --set "volumeMounts[0].name=narwhal-ca" \
+  --set "volumeMounts[0].mountPath=/etc/ssl/certs/narwhal-ca.crt" \
+  --set "volumeMounts[0].subPath=ca.crt" \
+  --set "volumeMounts[0].readOnly=true" || echo "WARN: Headlamp install issue, continuing..."
 
 echo "Headlamp installed"
 
@@ -420,6 +427,43 @@ helm upgrade --install openbao openbao/openbao \
   --set server.auditStorage.size=5Gi \
   --set ui.enabled=true || echo "WARN: OpenBao install issue, continuing..."
 
+# Auto init + unseal OpenBao
+echo "Waiting for OpenBao pod..."
+kubectl wait --for=condition=Ready=false pod/openbao-0 -n openbao --timeout=120s 2>/dev/null || true
+sleep 5
+
+OPENBAO_INITIALIZED=$(kubectl exec openbao-0 -n openbao -- bao status -format=json 2>/dev/null | python3 -c 'import sys,json; print(json.load(sys.stdin).get("initialized",""))' 2>/dev/null || echo "")
+
+if [ "${OPENBAO_INITIALIZED}" = "True" ]; then
+  echo "OpenBao already initialized, checking unseal key..."
+  UNSEAL_KEY=$(kubectl get secret openbao-init -n openbao -o jsonpath='{.data.unseal_keys_b64}' 2>/dev/null | base64 -d 2>/dev/null || echo "")
+  if [ -n "${UNSEAL_KEY}" ]; then
+    echo "Unsealing OpenBao..."
+    kubectl exec openbao-0 -n openbao -- bao operator unseal "${UNSEAL_KEY}" || true
+  else
+    echo "WARN: OpenBao initialized but unseal key not found in openbao-init secret"
+  fi
+elif [ "${OPENBAO_INITIALIZED}" = "False" ]; then
+  echo "Initializing OpenBao..."
+  INIT_JSON=$(kubectl exec openbao-0 -n openbao -- bao operator init -key-shares=1 -key-threshold=1 -format=json 2>/dev/null || echo "")
+  if [ -n "${INIT_JSON}" ]; then
+    UNSEAL_KEY=$(echo "${INIT_JSON}" | python3 -c 'import sys,json; print(json.load(sys.stdin)["unseal_keys_b64"][0])')
+    ROOT_TOKEN=$(echo "${INIT_JSON}" | python3 -c 'import sys,json; print(json.load(sys.stdin)["root_token"])')
+    echo "Unsealing OpenBao..."
+    kubectl exec openbao-0 -n openbao -- bao operator unseal "${UNSEAL_KEY}" || true
+    echo "Saving credentials to openbao-init secret..."
+    kubectl create secret generic openbao-init -n openbao \
+      --from-literal=unseal_keys_b64="${UNSEAL_KEY}" \
+      --from-literal=root_token="${ROOT_TOKEN}" \
+      --dry-run=client -o yaml | kubectl apply -f -
+    echo "OpenBao initialized and unsealed"
+  else
+    echo "WARN: OpenBao init failed, manual init required"
+  fi
+else
+  echo "WARN: Could not determine OpenBao state, skipping init"
+fi
+
 echo "OpenBao installed"
 
 #=========================================
@@ -522,6 +566,23 @@ for attempt in $(seq 1 10); do
   echo "TLS certificate not ready yet, attempt ${attempt}/10..."
   sleep 10
 done
+
+#=========================================
+# Distribute CA cert to SSO app namespaces
+#=========================================
+echo "=== Distributing CA cert to SSO namespaces ==="
+CA_CERT=$(kubectl get secret traefik-tls -n traefik -o jsonpath='{.data.ca\.crt}' 2>/dev/null || echo "")
+if [ -n "${CA_CERT}" ]; then
+  for ns in headlamp gitea harbor monitoring oauth2-proxy; do
+    kubectl create namespace "${ns}" --dry-run=client -o yaml | kubectl apply -f - 2>/dev/null
+    kubectl create secret generic narwhal-ca-cert \
+      --from-literal=ca.crt="$(echo "${CA_CERT}" | base64 -d)" \
+      -n "${ns}" --dry-run=client -o yaml | kubectl apply -f -
+  done
+  echo "CA cert distributed to SSO namespaces"
+else
+  echo "WARN: traefik-tls CA cert not found, SSO apps may not verify Keycloak TLS"
+fi
 
 echo "=== Platform Apps Installation Complete ==="
 echo ""

@@ -36,3 +36,4 @@ tmp/
 
 # Ralph prompt (project-specific, usually gitignored)
 PROMPT.md
+.agent/

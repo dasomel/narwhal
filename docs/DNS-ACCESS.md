@@ -6,7 +6,8 @@ Master 노드의 dnsmasq(포트 53)가 `*.local.narwhal.io` 도메인을 `192.16
 
 | 구성요소 | IP | 설명 |
 |----------|-----|------|
-| Master Node (DNS) | 192.168.56.10 | dnsmasq DNS 서버 |
+| Master-1 (DNS) | 192.168.56.10 | dnsmasq DNS 서버 (primary) |
+| Master-2 (DNS) | 192.168.56.11 | dnsmasq DNS 서버 (secondary) |
 | MetalLB VIP | 192.168.56.200 | Traefik LoadBalancer IP |
 | Control Plane VIP | 192.168.56.100 | kube-vip (API Server) |
 
@@ -14,23 +15,23 @@ Master 노드의 dnsmasq(포트 53)가 `*.local.narwhal.io` 도메인을 `192.16
 
 | 서비스 | URL | 설명 |
 |--------|-----|------|
-| ArgoCD | http://argocd.local.narwhal.io | GitOps CD |
-| Grafana | http://grafana.local.narwhal.io | 모니터링 대시보드 |
-| Gitea | http://gitea.local.narwhal.io | Git 서버 |
-| Harbor | http://harbor.local.narwhal.io | 컨테이너 레지스트리 |
-| Keycloak | http://keycloak.local.narwhal.io | IAM / SSO |
-| Headlamp | http://headlamp.local.narwhal.io | Kubernetes UI |
-| OpenBao | http://openbao.local.narwhal.io | 시크릿 관리 |
-| Hubble | http://hubble.local.narwhal.io | Cilium 네트워크 관찰 |
+| ArgoCD | https://argocd.local.narwhal.io | GitOps CD |
+| Grafana | https://grafana.local.narwhal.io | 모니터링 대시보드 |
+| Gitea | https://gitea.local.narwhal.io | Git 서버 |
+| Harbor | https://harbor.local.narwhal.io | 컨테이너 레지스트리 |
+| Keycloak | https://keycloak.local.narwhal.io | IAM / SSO |
+| Headlamp | https://headlamp.local.narwhal.io | Kubernetes UI |
+| OpenBao | https://openbao.local.narwhal.io | 시크릿 관리 |
+| Hubble | https://hubble.local.narwhal.io | Cilium 네트워크 관찰 |
 
 ## DNS 설정
 
 ### macOS
 
 ```bash
-# local.narwhal.io 도메인만 Master DNS 사용
+# local.narwhal.io 도메인만 Master DNS 사용 (HA: 양쪽 master)
 sudo mkdir -p /etc/resolver
-echo "nameserver 192.168.56.10" | sudo tee /etc/resolver/local.narwhal.io
+printf 'nameserver 192.168.56.10\nnameserver 192.168.56.11\n' | sudo tee /etc/resolver/local.narwhal.io
 
 # 설정 확인
 scutil --dns | grep -A3 "local.narwhal.io"
@@ -46,7 +47,7 @@ nslookup argocd.local.narwhal.io 192.168.56.10
 sudo mkdir -p /etc/systemd/resolved.conf.d
 sudo tee /etc/systemd/resolved.conf.d/narwhal.conf << 'EOF'
 [Resolve]
-DNS=192.168.56.10
+DNS=192.168.56.10 192.168.56.11
 Domains=~local.narwhal.io
 EOF
 

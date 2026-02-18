@@ -34,7 +34,21 @@ kubectl apply -n argocd -f "https://raw.githubusercontent.com/argoproj/argo-cd/$
 echo "Waiting for ArgoCD pods..."
 kubectl wait --for=condition=Ready pod -l app.kubernetes.io/name=argocd-server -n argocd --timeout=300s || true
 
-# Configure ArgoCD for Keycloak OIDC and insecure mode (HTTP)
+# Configure ArgoCD server params (v3.x reads from cmd-params-cm, not argocd-cm)
+cat <<'EOF' | kubectl apply -f -
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: argocd-cmd-params-cm
+  namespace: argocd
+  labels:
+    app.kubernetes.io/name: argocd-cmd-params-cm
+    app.kubernetes.io/part-of: argocd
+data:
+  server.insecure: "true"
+EOF
+
+# Configure ArgoCD for Keycloak OIDC
 cat <<EOF | kubectl apply -f -
 apiVersion: v1
 kind: ConfigMap
@@ -45,9 +59,9 @@ metadata:
     app.kubernetes.io/name: argocd-cm
     app.kubernetes.io/part-of: argocd
 data:
-  url: http://argocd.local.narwhal.io
-  # Disable HTTPS redirect for HTTP access via Traefik
+  url: https://argocd.local.narwhal.io
   server.insecure: "true"
+  oidc.tls.insecure.skip.verify: "true"
   oidc.config: |
     name: Keycloak
     issuer: ${KEYCLOAK_URL}/realms/${KEYCLOAK_REALM}

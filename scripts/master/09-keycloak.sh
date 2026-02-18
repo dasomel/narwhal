@@ -175,20 +175,25 @@ else
     echo "  -> developer added to developers"
   fi
 
-  # Create OIDC clients
-  echo "Creating OIDC clients..."
+  #=========================================
+  # Create 'groups' client scope (realm-level)
+  #=========================================
+  echo "Creating 'groups' client scope..."
 
-  # kubernetes client (public)
-  kubectl exec -n keycloak ${KEYCLOAK_POD} -- /opt/keycloak/bin/kcadm.sh create clients -r kubernetes \
-    -s clientId=kubernetes -s enabled=true -s publicClient=true \
-    -s directAccessGrantsEnabled=true -s standardFlowEnabled=true \
-    -s 'redirectUris=["*"]' -s 'webOrigins=["*"]' || true
+  # Create the groups client scope
+  kubectl exec -n keycloak ${KEYCLOAK_POD} -- /opt/keycloak/bin/kcadm.sh create client-scopes -r kubernetes \
+    -s name=groups \
+    -s protocol=openid-connect \
+    -s 'attributes."include.in.token.scope"=true' \
+    -s 'attributes."display.on.consent.screen"=true' || true
 
-  # Add groups mapper to kubernetes client
-  K8S_CLIENT_ID=$(kubectl exec -n keycloak ${KEYCLOAK_POD} -- /opt/keycloak/bin/kcadm.sh get clients -r kubernetes \
-    -q clientId=kubernetes --fields id --format csv --noquotes 2>/dev/null | tail -1)
-  if [ -n "$K8S_CLIENT_ID" ]; then
-    kubectl exec -n keycloak ${KEYCLOAK_POD} -- /opt/keycloak/bin/kcadm.sh create clients/${K8S_CLIENT_ID}/protocol-mappers/models \
+  # Get the groups scope ID
+  GROUPS_SCOPE_ID=$(kubectl exec -n keycloak ${KEYCLOAK_POD} -- /opt/keycloak/bin/kcadm.sh get client-scopes -r kubernetes \
+    -q name=groups --fields id --format csv --noquotes 2>/dev/null | tail -1)
+
+  if [ -n "${GROUPS_SCOPE_ID}" ]; then
+    # Add group membership mapper to the groups scope
+    kubectl exec -n keycloak ${KEYCLOAK_POD} -- /opt/keycloak/bin/kcadm.sh create client-scopes/${GROUPS_SCOPE_ID}/protocol-mappers/models \
       -r kubernetes \
       -s name=groups \
       -s protocol=openid-connect \
@@ -198,47 +203,80 @@ else
       -s 'config."access.token.claim"=true' \
       -s 'config."claim.name"=groups' \
       -s 'config."userinfo.token.claim"=true' || true
-    echo "  -> Groups mapper added to kubernetes client"
+    echo "  -> 'groups' client scope created with mapper (ID: ${GROUPS_SCOPE_ID})"
+  else
+    echo "WARN: Could not find groups client scope ID"
   fi
+
+  # Create OIDC clients
+  echo "Creating OIDC clients..."
+
+  # kubernetes client (public)
+  kubectl exec -n keycloak ${KEYCLOAK_POD} -- /opt/keycloak/bin/kcadm.sh create clients -r kubernetes \
+    -s clientId=kubernetes -s enabled=true -s publicClient=true \
+    -s directAccessGrantsEnabled=true -s standardFlowEnabled=true \
+    -s 'redirectUris=["*"]' -s 'webOrigins=["*"]' || true
 
   # argocd client
   kubectl exec -n keycloak ${KEYCLOAK_POD} -- /opt/keycloak/bin/kcadm.sh create clients -r kubernetes \
     -s clientId=argocd -s enabled=true -s publicClient=false \
     -s secret=argocd-secret -s directAccessGrantsEnabled=true -s standardFlowEnabled=true \
-    -s 'redirectUris=["https://argocd.local/*","http://localhost:8443/*"]' -s 'webOrigins=["*"]' || true
+    -s 'redirectUris=["https://argocd.local.narwhal.io/*","http://localhost:8443/*"]' -s 'webOrigins=["*"]' || true
 
   # grafana client
   kubectl exec -n keycloak ${KEYCLOAK_POD} -- /opt/keycloak/bin/kcadm.sh create clients -r kubernetes \
     -s clientId=grafana -s enabled=true -s publicClient=false \
     -s secret=grafana-secret -s directAccessGrantsEnabled=true -s standardFlowEnabled=true \
-    -s 'redirectUris=["http://grafana.local/*","http://localhost:3000/*"]' -s 'webOrigins=["*"]' || true
+    -s 'redirectUris=["https://grafana.local.narwhal.io/*","http://localhost:3000/*"]' -s 'webOrigins=["*"]' || true
 
   # gitea client
   kubectl exec -n keycloak ${KEYCLOAK_POD} -- /opt/keycloak/bin/kcadm.sh create clients -r kubernetes \
     -s clientId=gitea -s enabled=true -s publicClient=false \
     -s secret=gitea-secret -s directAccessGrantsEnabled=true -s standardFlowEnabled=true \
-    -s 'redirectUris=["http://gitea.local/*","http://localhost:3000/*"]' -s 'webOrigins=["*"]' || true
+    -s 'redirectUris=["https://gitea.local.narwhal.io/*","http://localhost:3000/*"]' -s 'webOrigins=["*"]' || true
 
   # harbor client
   kubectl exec -n keycloak ${KEYCLOAK_POD} -- /opt/keycloak/bin/kcadm.sh create clients -r kubernetes \
     -s clientId=harbor -s enabled=true -s publicClient=false \
     -s secret=harbor-secret -s directAccessGrantsEnabled=true -s standardFlowEnabled=true \
-    -s 'redirectUris=["http://harbor.local/*","http://localhost:8080/*"]' -s 'webOrigins=["*"]' || true
+    -s 'redirectUris=["https://harbor.local.narwhal.io/*","http://localhost:8080/*"]' -s 'webOrigins=["*"]' || true
 
   # headlamp client
   kubectl exec -n keycloak ${KEYCLOAK_POD} -- /opt/keycloak/bin/kcadm.sh create clients -r kubernetes \
     -s clientId=headlamp -s enabled=true -s publicClient=false \
     -s secret=headlamp-secret -s directAccessGrantsEnabled=true -s standardFlowEnabled=true \
-    -s 'redirectUris=["http://headlamp.local/*","http://localhost:8080/*"]' -s 'webOrigins=["*"]' || true
+    -s 'redirectUris=["https://headlamp.local.narwhal.io/*","http://localhost:8080/*"]' -s 'webOrigins=["*"]' || true
 
   # oauth2-proxy client (for Gateway API authentication)
   kubectl exec -n keycloak ${KEYCLOAK_POD} -- /opt/keycloak/bin/kcadm.sh create clients -r kubernetes \
     -s clientId=oauth2-proxy -s enabled=true -s publicClient=false \
     -s secret=oauth2-proxy-secret -s directAccessGrantsEnabled=true -s standardFlowEnabled=true \
-    -s 'redirectUris=["http://*.local.narwhal.io/*","http://oauth2-proxy.local.narwhal.io/*"]' \
+    -s 'redirectUris=["https://*.local.narwhal.io/*","https://oauth2-proxy.local.narwhal.io/*"]' \
     -s 'webOrigins=["*"]' || true
 
   echo "OIDC clients created."
+
+  #=========================================
+  # Assign 'groups' scope to ALL clients
+  #=========================================
+  echo "Assigning 'groups' scope to all clients..."
+
+  GROUPS_SCOPE_ID=$(kubectl exec -n keycloak ${KEYCLOAK_POD} -- /opt/keycloak/bin/kcadm.sh get client-scopes -r kubernetes \
+    -q name=groups --fields id --format csv --noquotes 2>/dev/null | tail -1)
+
+  if [ -n "${GROUPS_SCOPE_ID}" ]; then
+    for client_name in kubernetes argocd grafana gitea harbor headlamp oauth2-proxy; do
+      CLIENT_UUID=$(kubectl exec -n keycloak ${KEYCLOAK_POD} -- /opt/keycloak/bin/kcadm.sh get clients -r kubernetes \
+        -q clientId=${client_name} --fields id --format csv --noquotes 2>/dev/null | tail -1)
+      if [ -n "${CLIENT_UUID}" ]; then
+        kubectl exec -n keycloak ${KEYCLOAK_POD} -- /opt/keycloak/bin/kcadm.sh update clients/${CLIENT_UUID}/default-client-scopes/${GROUPS_SCOPE_ID} \
+          -r kubernetes || true
+        echo "  -> groups scope assigned to ${client_name}"
+      fi
+    done
+  else
+    echo "WARN: groups scope ID not found, skipping assignment"
+  fi
 fi
 
 #=========================================

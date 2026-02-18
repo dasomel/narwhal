@@ -76,6 +76,9 @@ echo ""
 echo "Press Ctrl+C to stop"
 echo ""
 
+# Allow nested Claude sessions (Ralph runs from within Claude Code)
+unset CLAUDECODE 2>/dev/null || true
+
 # Build claude command
 CLAUDE_CMD="claude"
 if [[ "${SAFE_MODE}" == "false" ]]; then

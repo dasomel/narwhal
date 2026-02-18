@@ -154,6 +154,7 @@ Vagrant.configure("2") do |config|
           env: {
             "VIP_ADDRESS" => VIP_ADDRESS,
             "MASTER_IP" => master_ip,
+            "MASTER_IP_BASE" => MASTER_IP_BASE,
             "METALLB_IP" => "192.168.56.200",
             "DOMAIN" => "local.narwhal.io"
           }
@@ -165,6 +166,16 @@ Vagrant.configure("2") do |config|
           env: {
             "MASTER1_IP" => "#{MASTER_IP_BASE}0",
             "VIP_ADDRESS" => VIP_ADDRESS
+          }
+
+        # Install dnsmasq for DNS HA (skip CoreDNS config — master-1 handles it in phase2)
+        master.vm.provision "shell", path: "scripts/master/08-dnsmasq.sh",
+          env: {
+            "MASTER_IP" => master_ip,
+            "METALLB_IP" => "192.168.56.200",
+            "DOMAIN" => "local.narwhal.io",
+            "SKIP_COREDNS" => "true",
+            "MASTER_IP_BASE" => MASTER_IP_BASE
           }
       end
     end

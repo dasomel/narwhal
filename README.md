@@ -1,5 +1,8 @@
 # Narwhal
 
+[![GitHub Release](https://img.shields.io/github/v/release/dasomel/narwhal)](https://github.com/dasomel/narwhal/releases/latest)
+[![License](https://img.shields.io/github/license/dasomel/narwhal)](LICENSE)
+
 > **Narwhal**(일각고래) - 북극해에 서식하는 고래로, 머리에서 나선형으로 자라는 하나의 긴 엄니(tusk)가 특징입니다. "바다의 유니콘"이라 불리며, 이 프로젝트처럼 단일 클러스터에서 강력한 플랫폼을 제공합니다.
 
 Vagrant 기반 Kubernetes Internal Developer Platform (IDP) 클러스터.

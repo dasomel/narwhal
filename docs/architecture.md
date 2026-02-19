@@ -374,23 +374,23 @@ PostgreSQL HA (CloudNative-PG)
 
 **Phase 2 Auto-Trigger:**
 - Phase 1 (scripts 00-05) runs during master-1 provisioning
-- Phase 2 (scripts 06-13) auto-triggers after last worker joins via Vagrant trigger
+- Phase 2 (scripts 07-14) auto-triggers after last worker joins via Vagrant trigger
 - Manual execution: `vagrant provision master-1 --provision-with phase2-platform`
-- Executed by: `scripts/cluster/phase2-platform.sh` wrapper script
+- Executed by: `scripts/cluster/06-phase2-start.sh` wrapper script
 
 **Execution Order:**
 
 ```
-06-cnpg.sh           → CloudNative-PG Operator + narwhal-db (unified DB)
-07-platform-apps.sh  → MetalLB, Traefik, cert-manager, Prometheus,
+07-cnpg.sh           → CloudNative-PG Operator + narwhal-db (unified DB)
+08-platform-apps.sh  → MetalLB, Traefik, cert-manager, Prometheus,
                        Loki, Promtail, Tempo, Kyverno, Headlamp,
                        OAuth2 Proxy, SeaweedFS, Harbor, OpenBao, Velero
-08-istio-ambient.sh  → Istio ambient mesh (mTLS, zero sidecars)
-09-dnsmasq.sh        → 로컬 DNS (*.local.narwhal.io) + CoreDNS forward
-10-keycloak.sh       → Keycloak Operator + OIDC 설정 + API Server 연동 (HTTPS)
-11-gitea.sh          → Gitea Git 서버 (shared narwhal-db)
-12-argocd.sh         → ArgoCD 설치 + Keycloak OIDC 연동
-13-gitops-bootstrap.sh → narwhal-gitops 레포 생성 + App-of-Apps 배포
+09-istio-ambient.sh  → Istio ambient mesh (mTLS, zero sidecars)
+10-dnsmasq.sh        → 로컬 DNS (*.local.narwhal.io) + CoreDNS forward
+11-keycloak.sh       → Keycloak Operator + OIDC 설정 + API Server 연동 (HTTPS)
+12-gitea.sh          → Gitea Git 서버 (shared narwhal-db)
+13-argocd.sh         → ArgoCD 설치 + Keycloak OIDC 연동
+14-gitops-bootstrap.sh → narwhal-gitops 레포 생성 + App-of-Apps 배포
 ```
 
 **설치 순서의 중요성:**

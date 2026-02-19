@@ -77,6 +77,11 @@
 | 2026-02-18 | Istio CRD annotation 262KB 초과 (ArgoCD) | ArgoCD syncOptions에 `ServerSideApply=true` 추가 |
 | 2026-02-18 | Istio 1.28은 K8s 1.35 미지원 | Istio 1.29.x 사용 (K8s 1.31~1.35 지원) |
 | 2026-02-18 | Istio 이미지 docker.io only (대안 없음) | Docker OSS rate limit 면제, `docker.io/istio/*` 사용 불가피 |
+| 2026-02-19 | CiliumClusterwideNetworkPolicy `endpointSelector: {}` 전체 트래픽 차단 | 빈 endpointSelector는 모든 포드 선택 → deny-by-default 활성화. CCNP에 빈 selector 사용 금지 |
+| 2026-02-19 | CoreDNS `forward . /etc/resolv.conf` dnsmasq 루프 | Master의 resolv.conf가 127.0.0.1(dnsmasq) → CoreDNS 내부 루프. `forward . 8.8.8.8 8.8.4.4` 명시 |
+| 2026-02-19 | Istio ambient HBONE port 15008 NetworkPolicy 차단 | ambient mesh는 포드간 HBONE(15008) 사용. NetworkPolicy ingress에 15008/TCP 추가 필수 |
+| 2026-02-19 | OAuth2-Proxy `insecure_oidc_skip_issuer_verification` TLS 미검증 아님 | issuer만 스킵, TLS 검증은 별도. `ssl_insecure_skip_verify = true` 추가 필요 |
+| 2026-02-19 | Traefik Gateway API CRD field manager 충돌 | chart CRD 추출 → `--server-side --force-conflicts` 적용 → `helm install --skip-crds` |
 
 ### GitOps/ArgoCD 실수
 | 날짜 | 실수 | 해결책 |
@@ -156,15 +161,15 @@
 
 | 단계 | 파일 | 설명 |
 |------|------|------|
-| Phase 2 래퍼 | `scripts/cluster/phase2-platform.sh` | Phase 2 스크립트 실행 |
-| PostgreSQL | `scripts/cluster/06-cnpg.sh` | CloudNative-PG Operator |
-| 플랫폼 앱 | `scripts/cluster/07-platform-apps.sh` | MetalLB, Traefik, cert-manager 등 |
-| Istio | `scripts/cluster/08-istio-ambient.sh` | Service Mesh (ambient mode) |
-| dnsmasq | `scripts/cluster/09-dnsmasq.sh` | 로컬 DNS + CoreDNS forward |
-| Keycloak | `scripts/cluster/10-keycloak.sh` | IAM/SSO + OIDC |
-| Gitea | `scripts/cluster/11-gitea.sh` | Git 서버 |
-| ArgoCD | `scripts/cluster/12-argocd.sh` | GitOps CD |
-| Bootstrap | `scripts/cluster/13-gitops-bootstrap.sh` | App-of-Apps 배포 |
+| Phase 2 래퍼 | `scripts/cluster/06-phase2-start.sh` | Phase 2 스크립트 실행 |
+| PostgreSQL | `scripts/cluster/07-cnpg.sh` | CloudNative-PG Operator |
+| 플랫폼 앱 | `scripts/cluster/08-platform-apps.sh` | MetalLB, Traefik, cert-manager 등 |
+| Istio | `scripts/cluster/09-istio-ambient.sh` | Service Mesh (ambient mode) |
+| dnsmasq | `scripts/cluster/10-dnsmasq.sh` | 로컬 DNS + CoreDNS forward |
+| Keycloak | `scripts/cluster/11-keycloak.sh` | IAM/SSO + OIDC |
+| Gitea | `scripts/cluster/12-gitea.sh` | Git 서버 |
+| ArgoCD | `scripts/cluster/13-argocd.sh` | GitOps CD |
+| Bootstrap | `scripts/cluster/14-gitops-bootstrap.sh` | App-of-Apps 배포 |
 
 ### 3. GitOps 앱 관리
 
@@ -306,6 +311,7 @@ shellcheck scripts/**/*.sh
 | `/commit-push-pr` | 커밋 → 푸시 → PR 한 번에 |
 | `/sync-versions` | VERSIONS.md 동기화 검사 |
 | `/add-mistake` | 실수 패턴 기록 |
+| `/compact` | 세션 컨텍스트 정리 및 요약 저장 |
 
 ---
 
@@ -350,7 +356,7 @@ docs(claude): update verification steps
 
 2. **파이프로 컨텍스트 전달 가능**
    ```bash
-   cat scripts/cluster/10-keycloak.sh | gemini -p "이 스크립트의 보안 취약점을 분석해줘" -o text
+   cat scripts/cluster/11-keycloak.sh | gemini -p "이 스크립트의 보안 취약점을 분석해줘" -o text
    ```
 
 3. **타임아웃 주의**: 30초 이내 응답 가능한 질문만 (복잡한 질문은 분할)
@@ -415,9 +421,9 @@ kubectl get events -n harbor 2>&1 | gemini -p "이 Kubernetes 이벤트에서 �
    - `head -50`, `grep -A5` 등으로 필요한 부분만 전달
    ```bash
    # Bad: 전체 파일 전달 (토큰 낭비)
-   cat scripts/cluster/10-keycloak.sh | gemini -p "리뷰해줘" -o text
+   cat scripts/cluster/11-keycloak.sh | gemini -p "리뷰해줘" -o text
    # Good: 관련 부분만 전달
-   sed -n '50,80p' scripts/cluster/10-keycloak.sh | gemini -p "이 OIDC 설정 부분 리뷰해줘" -o text
+   sed -n '50,80p' scripts/cluster/11-keycloak.sh | gemini -p "이 OIDC 설정 부분 리뷰해줘" -o text
    ```
 
 3. **캐시 활용**
@@ -562,7 +568,7 @@ Velero 백업 애플리케이션을 GitOps로 추가
 
 ## 작업 목록
 1. gitops/apps/velero.yaml 생성
-2. gitops/values/velero-values.yaml 생성
+2. gitops/apps/velero.yaml에 Helm values inline 추가
 3. VERSIONS.md 업데이트
 4. app-of-apps.yaml에 참조 추가
 
@@ -589,3 +595,55 @@ EOF
 ### Ralph PROMPT.md 템플릿
 
 `.claude/templates/PROMPT.md` 참조
+
+---
+
+## Context Management (컨텍스트 관리)
+
+> 컴팩션 후에도 CLAUDE.md는 항상 재로드됩니다. 이 섹션의 지침은 세션 연속성을 보장합니다.
+
+### 자동 컴팩션 대응
+
+컨텍스트 사용량이 **70% 이상**이라고 판단되면 즉시:
+
+1. 현재 작업을 멈추고 사용자에게 알림
+2. 아래 [세션 요약 포맷]에 따라 요약 생성
+3. `.claude/cache/SESSION_STATE.md`에 저장
+4. `/compact` 실행을 권장
+
+### 세션 요약 포맷
+
+요약 생성 시 반드시 아래 섹션을 포함:
+
+```markdown
+# Session State - [날짜]
+
+## 목표
+- 이 세션의 최종 목표
+
+## 기술 환경
+- 플랫폼, K8s 버전, 핵심 아키텍처 결정
+
+## 완료된 작업
+- [x] 해결된 문제 및 구현된 기능
+- [x] 중요 코드 패턴 (스니펫 포함)
+
+## 변경된 파일
+- 파일 경로: 변경 내용 요약
+
+## 미완료 작업
+- [ ] 남은 작업 (우선순위 순)
+
+## 현재 상태
+- 요약 직전 작업 중이던 내용
+- 즉시 실행할 다음 단계
+```
+
+### 세션 복원
+
+`.claude/cache/SESSION_STATE.md` 파일이 존재하면 세션 시작 시 자동으로 읽고
+사용자에게 "이전 세션 컨텍스트를 복원했습니다." 라고 알린 후 미완료 작업부터 재개.
+
+### `/compact` 슬래시 커맨드
+
+수동으로 정밀 요약이 필요할 때 `/compact` 실행.

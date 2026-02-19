@@ -89,32 +89,32 @@ VM 내에서 각 스크립트를 순서대로 실행:
 
 ```bash
 # PostgreSQL Operator
-vagrant ssh master-1 -c "sudo bash /home/vagrant/scripts/cluster/06-cnpg.sh"
+vagrant ssh master-1 -c "sudo bash /home/vagrant/scripts/cluster/07-cnpg.sh"
 
 # 플랫폼 앱 (cert-manager, Traefik, MetalLB 등)
-vagrant ssh master-1 -c "sudo bash /home/vagrant/scripts/cluster/07-platform-apps.sh"
+vagrant ssh master-1 -c "sudo bash /home/vagrant/scripts/cluster/08-platform-apps.sh"
 
 # Istio Ambient Mesh
-vagrant ssh master-1 -c "sudo bash /home/vagrant/scripts/cluster/08-istio-ambient.sh"
+vagrant ssh master-1 -c "sudo bash /home/vagrant/scripts/cluster/09-istio-ambient.sh"
 
 # dnsmasq (로컬 DNS)
-vagrant ssh master-1 -c "sudo bash /home/vagrant/scripts/cluster/09-dnsmasq.sh"
+vagrant ssh master-1 -c "sudo bash /home/vagrant/scripts/cluster/10-dnsmasq.sh"
 
 # Keycloak (SSO/OIDC)
-vagrant ssh master-1 -c "sudo bash /home/vagrant/scripts/cluster/10-keycloak.sh"
+vagrant ssh master-1 -c "sudo bash /home/vagrant/scripts/cluster/11-keycloak.sh"
 
 # Gitea (Git 서버)
-vagrant ssh master-1 -c "sudo bash /home/vagrant/scripts/cluster/11-gitea.sh"
+vagrant ssh master-1 -c "sudo bash /home/vagrant/scripts/cluster/12-gitea.sh"
 
 # ArgoCD (GitOps)
-vagrant ssh master-1 -c "sudo bash /home/vagrant/scripts/cluster/12-argocd.sh"
+vagrant ssh master-1 -c "sudo bash /home/vagrant/scripts/cluster/13-argocd.sh"
 
 # GitOps Bootstrap (App-of-Apps)
-vagrant ssh master-1 -c "sudo bash /home/vagrant/scripts/cluster/13-gitops-bootstrap.sh"
+vagrant ssh master-1 -c "sudo bash /home/vagrant/scripts/cluster/14-gitops-bootstrap.sh"
 ```
 
 **실행 순서 중요**:
-- cert-manager/Traefik (07) → Istio (08) → DNS (09) → Keycloak OIDC (10) 순서를 반드시 지켜야 함
+- cert-manager/Traefik (08) → Istio (09) → DNS (10) → Keycloak OIDC (11) 순서를 반드시 지켜야 함
 - HTTPS 인증서가 준비된 후에 OIDC 설정이 활성화됨 (K8s 1.35+)
 
 ### Istio Ambient Mesh 운영
@@ -242,9 +242,8 @@ spec:
 EOF
 
 # Helm values 파일 (필요 시)
-cat > gitops/values/my-app-values.yaml << 'EOF'
-# Helm values 내용
-EOF
+## ArgoCD Application spec.source.helm.values에 inline으로 values를 추가하세요.
+## 별도의 values 파일 대신 Application YAML에 직접 포함합니다.
 ```
 
 #### 2. App-of-Apps에 등록
@@ -264,7 +263,7 @@ spec:
 
 ```bash
 vagrant ssh master-1 -c "cd /home/vagrant/narwhal-gitops && \
-  git add gitops/apps/my-app.yaml gitops/values/my-app-values.yaml && \
+  git add gitops/apps/my-app.yaml && \
   git commit -m 'Add my-app application' && \
   git push"
 ```
@@ -469,16 +468,16 @@ CloudNative-PG Operator가 자동으로 failover를 처리하지만, 수동 작�
 
 ```bash
 # CNPG 클러스터 목록
-vagrant ssh master-1 -c "kubectl get cluster -n cnpg"
+vagrant ssh master-1 -c "kubectl get cluster -n database"
 
 # 특정 클러스터 상태 (예: Harbor DB)
 vagrant ssh master-1 -c "kubectl get cluster harbor-db -n harbor -o yaml"
 
 # 인스턴스 Pod 상태
-vagrant ssh master-1 -c "kubectl get pods -n cnpg -l cnpg.io/cluster=narwhal-db"
+vagrant ssh master-1 -c "kubectl get pods -n database -l cnpg.io/cluster=narwhal-db"
 
 # Primary 확인
-vagrant ssh master-1 -c "kubectl get cluster narwhal-db -n cnpg \
+vagrant ssh master-1 -c "kubectl get cluster narwhal-db -n database \
   -o jsonpath='{.status.currentPrimary}'"
 ```
 
@@ -486,13 +485,13 @@ vagrant ssh master-1 -c "kubectl get cluster narwhal-db -n cnpg \
 
 ```bash
 # PgBouncer Pooler 확인
-vagrant ssh master-1 -c "kubectl get pooler -n cnpg"
+vagrant ssh master-1 -c "kubectl get pooler -n database"
 
 # PgBouncer Pod 확인
-vagrant ssh master-1 -c "kubectl get pods -n cnpg -l cnpg.io/poolerName"
+vagrant ssh master-1 -c "kubectl get pods -n database -l cnpg.io/poolerName"
 
 # PgBouncer 로그
-vagrant ssh master-1 -c "kubectl logs -n cnpg \
+vagrant ssh master-1 -c "kubectl logs -n database \
   -l cnpg.io/poolerName=narwhal-db-rw -f"
 ```
 
@@ -500,10 +499,10 @@ vagrant ssh master-1 -c "kubectl logs -n cnpg \
 
 ```bash
 # Primary를 특정 인스턴스로 변경
-vagrant ssh master-1 -c "kubectl cnpg promote narwhal-db narwhal-db-2 -n cnpg"
+vagrant ssh master-1 -c "kubectl cnpg promote narwhal-db narwhal-db-2 -n database"
 
 # Failover 진행 확인
-vagrant ssh master-1 -c "kubectl get cluster narwhal-db -n cnpg -w"
+vagrant ssh master-1 -c "kubectl get cluster narwhal-db -n database -w"
 ```
 
 ### 장애 복구 시나리오
@@ -512,13 +511,13 @@ vagrant ssh master-1 -c "kubectl get cluster narwhal-db -n cnpg -w"
 
 ```bash
 # 문제 있는 PVC 확인
-vagrant ssh master-1 -c "kubectl get pvc -n cnpg"
+vagrant ssh master-1 -c "kubectl get pvc -n database"
 
 # 문제 있는 replica Pod 삭제
-vagrant ssh master-1 -c "kubectl delete pod narwhal-db-2 -n cnpg"
+vagrant ssh master-1 -c "kubectl delete pod narwhal-db-2 -n database"
 
 # PVC 삭제 (주의: 데이터 손실)
-vagrant ssh master-1 -c "kubectl delete pvc narwhal-db-2 -n cnpg"
+vagrant ssh master-1 -c "kubectl delete pvc narwhal-db-2 -n database"
 
 # CNPG가 자동으로 새 PVC 생성 및 WAL replay로 복구
 ```
@@ -527,7 +526,7 @@ vagrant ssh master-1 -c "kubectl delete pvc narwhal-db-2 -n cnpg"
 
 ```bash
 # 클러스터 스펙에서 인스턴스 수 줄이기
-vagrant ssh master-1 -c "kubectl edit cluster narwhal-db -n cnpg"
+vagrant ssh master-1 -c "kubectl edit cluster narwhal-db -n database"
 # spec.instances: 3 → 1로 변경
 
 # 안정화 후 다시 증가
@@ -539,10 +538,10 @@ vagrant ssh master-1 -c "kubectl edit cluster narwhal-db -n cnpg"
 ```bash
 # PgBouncer 재시작
 vagrant ssh master-1 -c "kubectl rollout restart deployment \
-  -n cnpg -l cnpg.io/poolerName=narwhal-db-rw"
+  -n database -l cnpg.io/poolerName=narwhal-db-rw"
 
 # Primary Pod 재시작 (최후 수단)
-vagrant ssh master-1 -c "kubectl delete pod narwhal-db-1 -n cnpg"
+vagrant ssh master-1 -c "kubectl delete pod narwhal-db-1 -n database"
 ```
 
 **주의사항**:
@@ -738,7 +737,7 @@ vagrant ssh master-1 -c "kubectl exec -n velero deployment/velero -- \
 
 ```bash
 # 전체 검증 실행 (17개 섹션)
-vagrant ssh master-1 -c "bash /home/vagrant/scripts/cluster/verify-cluster.sh"
+vagrant ssh master-1 -c "bash /home/vagrant/scripts/test/verify-cluster.sh"
 ```
 
 **검증 섹션**:
@@ -764,15 +763,15 @@ vagrant ssh master-1 -c "bash /home/vagrant/scripts/cluster/verify-cluster.sh"
 
 ```bash
 # Phase 1만 검증 (클러스터 인프라)
-vagrant ssh master-1 -c "bash /home/vagrant/scripts/cluster/verify-cluster.sh \
+vagrant ssh master-1 -c "bash /home/vagrant/scripts/test/verify-cluster.sh \
   --stage=phase1"
 
 # Phase 2 인프라만 검증 (cert-manager, Traefik, DNS)
-vagrant ssh master-1 -c "bash /home/vagrant/scripts/cluster/verify-cluster.sh \
+vagrant ssh master-1 -c "bash /home/vagrant/scripts/test/verify-cluster.sh \
   --stage=phase2-infra"
 
 # Phase 2 앱만 검증 (Keycloak, Gitea, ArgoCD)
-vagrant ssh master-1 -c "bash /home/vagrant/scripts/cluster/verify-cluster.sh \
+vagrant ssh master-1 -c "bash /home/vagrant/scripts/test/verify-cluster.sh \
   --stage=phase2-apps"
 ```
 
@@ -780,7 +779,7 @@ vagrant ssh master-1 -c "bash /home/vagrant/scripts/cluster/verify-cluster.sh \
 
 ```bash
 # Pod DNS 테스트 스킵 (시간 절약)
-vagrant ssh master-1 -c "bash /home/vagrant/scripts/cluster/verify-cluster.sh \
+vagrant ssh master-1 -c "bash /home/vagrant/scripts/test/verify-cluster.sh \
   --quick"
 ```
 
@@ -845,9 +844,9 @@ vagrant ssh master-1 -c "bash /home/vagrant/scripts/test/test-sso.sh \
 ## 관련 문서
 
 - [architecture.md](architecture.md) - 아키텍처 개요
-- [KEYCLOAK-SSO.md](KEYCLOAK-SSO.md) - SSO 상세 설정
-- [DNS-ACCESS.md](DNS-ACCESS.md) - DNS 및 접근 방법
-- [DATABASE.md](DATABASE.md) - 데이터베이스 관리
-- [TROUBLESHOOTING.md](TROUBLESHOOTING.md) - 트러블슈팅 가이드
+- [keycloak-sso.md](keycloak-sso.md) - SSO 상세 설정
+- [dns-access.md](dns-access.md) - DNS 및 접근 방법
+- [database.md](database.md) - 데이터베이스 관리
+- [troubleshooting.md](troubleshooting.md) - 트러블슈팅 가이드
 - [../VERSIONS.md](../VERSIONS.md) - 컴포넌트 버전 관리
 - [../README.md](../README.md) - 프로젝트 개요

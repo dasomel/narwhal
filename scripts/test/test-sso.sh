@@ -41,6 +41,21 @@ should_run() {
   [ -z "${SECTION_FILTER}" ] || [ "${SECTION_FILTER}" = "$1" ]
 }
 
+# Decode JWT payload (base64url → base64 with proper padding)
+decode_jwt_payload() {
+  local token="$1"
+  local payload
+  payload=$(echo "${token}" | cut -d. -f2)
+  # base64url → base64: replace - with +, _ with /
+  payload="${payload//-/+}"
+  payload="${payload//_//}"
+  # Add padding
+  local mod=$((${#payload} % 4))
+  if [ $mod -eq 2 ]; then payload="${payload}=="; fi
+  if [ $mod -eq 3 ]; then payload="${payload}="; fi
+  echo "${payload}" | base64 -d 2>/dev/null
+}
+
 # Get Keycloak admin token
 get_admin_token() {
   local user pass
@@ -267,7 +282,7 @@ if should_run "token"; then
 
   if [ -n "${ACCESS_TOKEN}" ]; then
     pass "kubernetes client: token obtained"
-    CLAIMS=$(echo "${ACCESS_TOKEN}" | cut -d. -f2 | base64 -d 2>/dev/null \
+    CLAIMS=$(decode_jwt_payload "${ACCESS_TOKEN}" \
       | python3 -c '
 import sys,json
 d = json.load(sys.stdin)
@@ -296,7 +311,7 @@ print(f"groups={groups}")
   ARGOCD_TOKEN=$(echo "${ARGOCD_RESP}" | python3 -c 'import sys,json; print(json.load(sys.stdin).get("access_token",""))' 2>/dev/null)
 
   if [ -n "${ARGOCD_TOKEN}" ]; then
-    SCOPE_IN_TOKEN=$(echo "${ARGOCD_TOKEN}" | cut -d. -f2 | base64 -d 2>/dev/null \
+    SCOPE_IN_TOKEN=$(decode_jwt_payload "${ARGOCD_TOKEN}" \
       | python3 -c 'import sys,json; print(json.load(sys.stdin).get("scope",""))' 2>/dev/null)
     if echo "${SCOPE_IN_TOKEN}" | grep -q "groups"; then
       pass "argocd client: groups scope in token (${SCOPE_IN_TOKEN})"
@@ -317,7 +332,7 @@ print(f"groups={groups}")
     | python3 -c 'import sys,json; print(json.load(sys.stdin).get("access_token",""))' 2>/dev/null)
 
   if [ -n "${DEV_TOKEN}" ]; then
-    DEV_GROUPS=$(echo "${DEV_TOKEN}" | cut -d. -f2 | base64 -d 2>/dev/null \
+    DEV_GROUPS=$(decode_jwt_payload "${DEV_TOKEN}" \
       | python3 -c 'import sys,json; print(json.load(sys.stdin).get("groups",[]))' 2>/dev/null)
     if echo "${DEV_GROUPS}" | grep -q "developers"; then
       pass "developer: groups=[developers]"
@@ -383,18 +398,20 @@ else:
     fi
   fi
 
-  # Headlamp: -oidc-skip-issuer-tls-verify in deploy args
-  HEADLAMP_ARGS=$(kubectl get deploy headlamp -n headlamp -o jsonpath='{.spec.template.spec.containers[0].args}' 2>/dev/null)
-  if echo "${HEADLAMP_ARGS}" | grep -q "oidc-skip-issuer-tls-verify"; then
-    pass "Headlamp: -oidc-skip-issuer-tls-verify present"
+  # Headlamp: CA cert mounted (v0.40.0 has no -oidc-skip-issuer-tls-verify flag)
+  HEADLAMP_CA_MOUNT=$(kubectl get deploy headlamp -n headlamp -o jsonpath='{.spec.template.spec.containers[0].volumeMounts[?(@.mountPath=="/etc/ssl/certs/narwhal-ca.crt")].name}' 2>/dev/null)
+  if [ -n "${HEADLAMP_CA_MOUNT}" ]; then
+    pass "Headlamp: CA cert mounted at /etc/ssl/certs/narwhal-ca.crt"
   else
-    fail "Headlamp: -oidc-skip-issuer-tls-verify missing (self-signed cert → SSO will fail)"
+    fail "Headlamp: CA cert not mounted (self-signed cert → SSO will fail)"
   fi
 
   # Harbor: oidc_verify_cert + HTTPS endpoint
-  HARBOR_POD_IP=$(kubectl get pods -n harbor -l app=harbor -l component=core -o jsonpath='{.items[0].status.podIP}' 2>/dev/null)
-  if [ -n "${HARBOR_POD_IP}" ]; then
-    HARBOR_CFG=$(curl -s -u admin:Harbor12345 "http://${HARBOR_POD_IP}:8080/api/v2.0/configurations" 2>/dev/null)
+  # NOTE: Use external HTTPS endpoint instead of pod IP — Istio ambient mesh
+  # blocks direct pod IP access from the host (connection reset by peer)
+  HARBOR_CORE_READY=$(kubectl get pods -n harbor -l app=harbor -l component=core -o jsonpath='{.items[0].status.phase}' 2>/dev/null)
+  if [ "${HARBOR_CORE_READY}" = "Running" ]; then
+    HARBOR_CFG=$(curl -sk -u admin:Harbor12345 "https://harbor.local.narwhal.io/api/v2.0/configurations" 2>/dev/null)
     HARBOR_VERIFY=$(echo "${HARBOR_CFG}" | python3 -c 'import sys,json; print(json.load(sys.stdin).get("oidc_verify_cert",{}).get("value","?"))' 2>/dev/null)
     HARBOR_ENDPOINT=$(echo "${HARBOR_CFG}" | python3 -c 'import sys,json; print(json.load(sys.stdin).get("oidc_endpoint",{}).get("value",""))' 2>/dev/null)
 
@@ -410,7 +427,7 @@ else:
       fail "Harbor: oidc_endpoint='${HARBOR_ENDPOINT}' (should be HTTPS)"
     fi
   else
-    warn "Harbor: core pod not found, skipping TLS check"
+    warn "Harbor: core pod not running, skipping OIDC check"
   fi
 
   # Gitea: check if auth source exists

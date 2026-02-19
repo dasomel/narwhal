@@ -50,7 +50,7 @@ apiServer:
   certSANs:${CERT_SANS}
 # OIDC configuration - DISABLED at init time.
 # K8s 1.35+ requires HTTPS for --oidc-issuer-url. Enable after cert-manager
-# provisions TLS certificates for Keycloak (see 10-keycloak.sh).
+# provisions TLS certificates for Keycloak (see 11-keycloak.sh).
 # extraArgs:
 #   - name: oidc-issuer-url
 #     value: "${OIDC_ISSUER_URL}"

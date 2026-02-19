@@ -9,7 +9,7 @@ echo ""
 # Use local kubeconfig for reliability
 export KUBECONFIG=/home/vagrant/.kube/config-local
 
-# Export MASTER_COUNT for downstream scripts (09-dnsmasq.sh, etc.)
+# Export MASTER_COUNT for downstream scripts (10-dnsmasq.sh, etc.)
 export MASTER_COUNT="${MASTER_COUNT:-3}"
 export MASTER_IP_BASE="${MASTER_IP_BASE:-192.168.56.1}"
 
@@ -38,14 +38,14 @@ echo ""
 SCRIPT_DIR="/home/vagrant/scripts/cluster"
 
 scripts=(
-  "06-cnpg.sh"
-  "07-platform-apps.sh"
-  "08-istio-ambient.sh"
-  "09-dnsmasq.sh"
-  "10-keycloak.sh"
-  "11-gitea.sh"
-  "12-argocd.sh"
-  "13-gitops-bootstrap.sh"
+  "07-cnpg.sh"
+  "08-platform-apps.sh"
+  "09-istio-ambient.sh"
+  "10-dnsmasq.sh"
+  "11-keycloak.sh"
+  "12-gitea.sh"
+  "13-argocd.sh"
+  "14-gitops-bootstrap.sh"
 )
 
 for script in "${scripts[@]}"; do

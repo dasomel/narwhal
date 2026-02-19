@@ -131,6 +131,10 @@ else
     else
       # Add forward rule using kubectl patch
       COREFILE=$(echo "${COREDNS_CM}" | yq -r '.data.Corefile')
+      # Replace /etc/resolv.conf with explicit upstream DNS servers
+      # Master nodes have /etc/resolv.conf pointing to 127.0.0.1 (dnsmasq),
+      # which creates a forwarding loop inside CoreDNS pods
+      COREFILE=$(echo "${COREFILE}" | sed 's|forward \. /etc/resolv.conf|forward . 8.8.8.8 8.8.4.4|g')
       NEW_COREFILE="${DOMAIN}:53 {
     errors
     cache 30

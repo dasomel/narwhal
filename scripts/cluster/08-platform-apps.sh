@@ -43,18 +43,27 @@ echo "MetalLB installed"
 #=========================================
 echo "=== Installing Traefik ==="
 
-# Install experimental Gateway API CRDs (TCPRoute, TLSRoute, UDPRoute)
-# Required by Traefik's kubernetesGateway provider with experimentalChannel
+# Install Gateway API CRDs (standard + experimental) with server-side apply
+# to avoid field manager conflicts when Traefik Helm chart tries to install its own copies
 echo "Installing Gateway API experimental CRDs..."
-kubectl apply -f https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.4.0/experimental-install.yaml 2>&1 | grep -E "created|configured" || true
+kubectl apply --server-side --force-conflicts -f https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.4.0/experimental-install.yaml 2>&1 | grep -E "created|configured|unchanged|applied" || true
 
 helm repo add traefik https://traefik.github.io/charts
 helm repo update traefik
+
+# Extract and apply Traefik CRDs separately with --server-side to avoid conflicts
+echo "Applying Traefik CRDs with server-side apply..."
+helm pull traefik/traefik --version 39.0.0 --untar --untardir /tmp/traefik-chart
+for f in /tmp/traefik-chart/traefik/crds/*.yaml; do
+  kubectl apply --server-side --force-conflicts -f "${f}" 2>&1 | tail -1
+done
+rm -rf /tmp/traefik-chart
 
 helm upgrade --install traefik traefik/traefik \
   --namespace traefik \
   --create-namespace \
   --version 39.0.0 \
+  --skip-crds \
   --set service.type=LoadBalancer \
   --set ports.web.port=8000 \
   --set ports.web.exposedPort=80 \
@@ -287,6 +296,7 @@ config:
     skip_provider_button = true
     code_challenge_method = "S256"
     insecure_oidc_skip_issuer_verification = true
+    ssl_insecure_skip_verify = true
 extraArgs:
   - --skip-jwt-bearer-tokens=true
 service:

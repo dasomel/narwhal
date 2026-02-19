@@ -78,7 +78,7 @@ echo "Configuring DNS..."
 
 # Add master-1 dnsmasq as primary DNS for *.local.narwhal.io resolution
 # The ~local.narwhal.io routing domain ensures only matching queries go to dnsmasq
-# On master-1, 09-dnsmasq.sh replaces systemd-resolved entirely, so this is a no-op
+# On master-1, 10-dnsmasq.sh replaces systemd-resolved entirely, so this is a no-op
 if systemctl is-active --quiet systemd-resolved; then
   sudo mkdir -p /etc/systemd/resolved.conf.d
   # Build DNS list dynamically from all master IPs

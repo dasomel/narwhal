@@ -58,25 +58,25 @@ vagrant destroy -f
 ## Architecture
 
 ```
-┌──────────────────────────────────────────────────────────────────────────────────────┐
-│                                  Vagrant VMs                                         │
-├──────────────────┬──────────────────┬──────────────────┬─────────────┬───────────────┤
-│  master-1        │  master-2        │  master-3        │  worker-1   │  worker-2/3   │
-│  192.168.56.10   │  192.168.56.11   │  192.168.56.12   │  .21        │  .22 / .23    │
-│  2 CPU, 4GB      │  2 CPU, 4GB      │  2 CPU, 4GB      │  2CPU, 6GB  │  2CPU, 6GB    │
-│  NFS, dnsmasq    │  dnsmasq         │  dnsmasq         │             │               │
-└──────────────────┴──────────────────┴──────────────────┴─────────────┴───────────────┘
-         │                   │                   │               │              │
-         └───────────────────┼───────────────────┼───────────────┼──────────────┘
-                             │                   │               │
-              ┌──────────────┴───────────────────┘
-              │  VIP: 192.168.56.100        │
-              │       (kube-vip API HA)     │
-              │  LB:  192.168.56.200        │
-              │       (MetalLB/Traefik)     │
-              │  DNS: 192.168.56.10:53      │
-              │       (*.local.narwhal.io)  │
-              └─────────────────────────────┘
+┌──────────────────────────────────────────────────┐
+│                    Vagrant VMs                   │
+├──────────────────┬─────────────┬─────────────────┤
+│  master-1        │  master-2/3 │ worker-1/2/3    │
+│  192.168.56.10   │  .11 / .12  │ .21 / .22 / .23 │
+│  2 CPU, 4GB      │  2 CPU, 4GB │ 2CPU, 6GB       │
+│  NFS, dnsmasq    │  dnsmasq    │                 │
+└──────────────────┴─────────────┴─────────────────┘
+         │                │            │
+         └────────────────┼────────────┤
+                          │            │
+           ┌──────────────┴────────────┴────┐
+           │  VIP: 192.168.56.100           │
+           │       (kube-vip API HA)        │
+           │  LB:  192.168.56.200           │
+           │       (MetalLB/Traefik)        │
+           │  DNS: 192.168.56.10:53         │
+           │       (*.local.narwhal.io)     │
+           └────────────────────────────────┘
 ```
 
 ## Components
@@ -197,13 +197,13 @@ kubectl port-forward svc/headlamp -n headlamp 4466:80
 
 ```bash
 # 전체 검증 (120+ checks)
-vagrant ssh master-1 -c "bash /home/vagrant/scripts/cluster/verify-cluster.sh"
+vagrant ssh master-1 -c "bash /home/vagrant/scripts/test/verify-cluster.sh"
 
 # Phase 1만 (클러스터 인프라)
-vagrant ssh master-1 -c "bash /home/vagrant/scripts/cluster/verify-cluster.sh --stage=phase1"
+vagrant ssh master-1 -c "bash /home/vagrant/scripts/test/verify-cluster.sh --stage=phase1"
 
 # Phase 2만 (플랫폼 앱)
-vagrant ssh master-1 -c "bash /home/vagrant/scripts/cluster/verify-cluster.sh --stage=phase2-apps"
+vagrant ssh master-1 -c "bash /home/vagrant/scripts/test/verify-cluster.sh --stage=phase2-apps"
 
 # SSO 테스트 (49 checks)
 vagrant ssh master-1 -c "bash /home/vagrant/scripts/test/test-sso.sh"
@@ -305,15 +305,15 @@ vagrant destroy -f
 
 - [VERSIONS.md](VERSIONS.md) - Component versions
 - [docs/architecture.md](docs/architecture.md) - 아키텍처 상세
-- [docs/KEYCLOAK-SSO.md](docs/KEYCLOAK-SSO.md) - Keycloak SSO 상세 설정
+- [docs/keycloak-sso.md](docs/keycloak-sso.md) - Keycloak SSO 상세 설정
 - [docs/keycloak-accounts.md](docs/keycloak-accounts.md) - Keycloak SSO 계정 및 설정 가이드
-- [docs/DNS-ACCESS.md](docs/DNS-ACCESS.md) - DNS 설정 및 서비스 접근
-- [docs/KUBECONFIG.md](docs/KUBECONFIG.md) - kubeconfig 및 OIDC 인증
-- [docs/DATABASE.md](docs/DATABASE.md) - 데이터베이스(CNPG) 관리
-- [docs/OPERATIONS.md](docs/OPERATIONS.md) - 운영 가이드
-- [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) - 트러블슈팅 가이드
-- [docs/SECURITY.md](docs/SECURITY.md) - 보안 정책
+- [docs/dns-access.md](docs/dns-access.md) - DNS 설정 및 서비스 접근
+- [docs/kubeconfig.md](docs/kubeconfig.md) - kubeconfig 및 OIDC 인증
+- [docs/database.md](docs/database.md) - 데이터베이스(CNPG) 관리
+- [docs/operations.md](docs/operations.md) - 운영 가이드
+- [docs/troubleshooting.md](docs/troubleshooting.md) - 트러블슈팅 가이드
+- [docs/security.md](docs/security.md) - 보안 정책
 
 ## License
 
-MIT
+Apache License 2.0 - See [LICENSE](LICENSE) for details.

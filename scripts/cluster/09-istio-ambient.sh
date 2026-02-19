@@ -149,27 +149,7 @@ echo "Waiting for ztunnel DaemonSet..."
 kubectl rollout status daemonset/ztunnel -n istio-system --timeout=180s || true
 
 #=========================================
-# 5) CiliumClusterwideNetworkPolicy for ztunnel health probes
-#=========================================
-echo "Applying Cilium network policy for ztunnel health probes..."
-cat <<'EOF' | kubectl apply -f -
-apiVersion: cilium.io/v2
-kind: CiliumClusterwideNetworkPolicy
-metadata:
-  name: allow-ztunnel-health-probe
-spec:
-  description: "Allow ztunnel SNAT health check traffic (169.254.7.127)"
-  endpointSelector: {}
-  ingress:
-    - fromCIDR:
-        - 169.254.7.127/32
-  egress:
-    - toCIDR:
-        - 169.254.7.127/32
-EOF
-
-#=========================================
-# 6) Label namespaces for ambient mesh
+# 5) Label namespaces for ambient mesh
 #=========================================
 echo "Labeling namespaces for ambient mesh..."
 
@@ -197,7 +177,7 @@ for ns in "${AMBIENT_NAMESPACES[@]}"; do
 done
 
 #=========================================
-# 7) PeerAuthentication STRICT (mesh-wide mTLS)
+# 6) PeerAuthentication STRICT (mesh-wide mTLS)
 #=========================================
 echo "Applying mesh-wide STRICT mTLS..."
 cat <<'EOF' | kubectl apply -f -

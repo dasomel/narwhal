@@ -13,7 +13,7 @@ jwt[0].issuer.url: Invalid value: "http://...": URL scheme must be https
 
 **해결법**:
 - cert-manager + Traefik TLS가 설치된 후에만 OIDC 플래그 활성화
-- 설치 순서: 07-platform-apps (cert-manager/Traefik) → 08-istio-ambient → 09-dnsmasq → 10-keycloak (OIDC)
+- 설치 순서: 08-platform-apps (cert-manager/Traefik) → 09-istio-ambient → 10-dnsmasq → 11-keycloak (OIDC)
 - 긴급 복구: `/etc/kubernetes/manifests/kube-apiserver.yaml`에서 `--oidc-*` 플래그 주석 처리
 
 **검증**:
@@ -115,7 +115,7 @@ cat /var/log/phase2-platform.log
 **개별 스크립트 재실행**:
 ```bash
 # 특정 스크립트만 재실행 (vagrant 밖에서)
-vagrant ssh master-1 -c "sudo bash /home/vagrant/scripts/cluster/07-platform-apps.sh"
+vagrant ssh master-1 -c "sudo bash /home/vagrant/scripts/cluster/08-platform-apps.sh"
 ```
 
 ## 6. Pod 실패 (OOMKill, Disk Pressure)
@@ -213,7 +213,7 @@ resolvectl status | grep -A3 "DNS Servers"
 ```
 
 **일반적 원인**:
-- CoreDNS가 `local.narwhal.io`를 dnsmasq로 forward하지 않음 → `09-dnsmasq.sh` 재실행
+- CoreDNS가 `local.narwhal.io`를 dnsmasq로 forward하지 않음 → `10-dnsmasq.sh` 재실행
 - worker/master-2에서 public DNS로 해석 → systemd-resolved에 `Domains=~local.narwhal.io` 설정 필요
 - dnsmasq HA: 3개 master 모두 dnsmasq 실행, CoreDNS forward에 3개 모두 등록
 
@@ -302,7 +302,7 @@ kubectl describe pod -n keycloak keycloak-0
 ## 관련 문서
 
 - [`architecture.md`](./architecture.md) - 아키텍처 개요
-- [`KEYCLOAK-SSO.md`](./KEYCLOAK-SSO.md) - SSO 상세 설정
-- [`DNS-ACCESS.md`](./DNS-ACCESS.md) - DNS 및 접근 방법
-- [`DATABASE.md`](./DATABASE.md) - 데이터베이스 관리
-- [`OPERATIONS.md`](./OPERATIONS.md) - 운영 가이드
+- [`keycloak-sso.md`](./keycloak-sso.md) - SSO 상세 설정
+- [`dns-access.md`](./dns-access.md) - DNS 및 접근 방법
+- [`database.md`](./database.md) - 데이터베이스 관리
+- [`operations.md`](./operations.md) - 운영 가이드

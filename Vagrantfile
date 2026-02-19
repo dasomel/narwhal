@@ -150,7 +150,7 @@ Vagrant.configure("2") do |config|
         # Phase 2: Platform Apps (triggered after all nodes join)
         #=========================================
         master.vm.provision "phase2-platform", type: "shell", run: "never",
-          path: "scripts/cluster/phase2-platform.sh",
+          path: "scripts/cluster/06-phase2-start.sh",
           env: {
             "VIP_ADDRESS" => VIP_ADDRESS,
             "MASTER_IP" => master_ip,

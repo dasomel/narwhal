@@ -1,19 +1,4 @@
 ---
-# CiliumClusterwideNetworkPolicy: Allow ztunnel SNAT health check traffic
-apiVersion: cilium.io/v2
-kind: CiliumClusterwideNetworkPolicy
-metadata:
-  name: allow-ztunnel-health-probe
-spec:
-  description: "Allow ztunnel SNAT health check traffic (169.254.7.127)"
-  endpointSelector: {}
-  ingress:
-    - fromCIDR:
-        - 169.254.7.127/32
-  egress:
-    - toCIDR:
-        - 169.254.7.127/32
----
 # PeerAuthentication: Mesh-wide STRICT mTLS
 apiVersion: security.istio.io/v1
 kind: PeerAuthentication

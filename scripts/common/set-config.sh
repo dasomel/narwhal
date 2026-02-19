@@ -172,7 +172,12 @@ case "${AUTH_METHOD}" in
 esac
 
 # Activate context
-kubectl config use-context ${CLUSTER_NAME}
+case "${AUTH_METHOD}" in
+  cert)  CONTEXT_NAME="${CLUSTER_NAME}" ;;
+  oidc)  CONTEXT_NAME="${CLUSTER_NAME}-oidc" ;;
+  token) CONTEXT_NAME="${CLUSTER_NAME}-token" ;;
+esac
+kubectl config use-context ${CONTEXT_NAME}
 
 # Flush DNS cache (macOS)
 if [[ "$(uname)" == "Darwin" ]]; then

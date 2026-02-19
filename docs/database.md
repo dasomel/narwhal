@@ -259,7 +259,7 @@ kubectl logs narwhal-db-1 -n database | grep "duration:"
 
 ## 설치 방법
 
-이 클러스터는 `scripts/cluster/06-cnpg.sh` 스크립트로 자동 설치됩니다.
+이 클러스터는 `scripts/cluster/07-cnpg.sh` 스크립트로 자동 설치됩니다.
 
 ```bash
 # Vagrant 프로비저닝 시 자동 실행
@@ -267,7 +267,7 @@ vagrant up
 
 # 수동 실행
 vagrant ssh master-1
-sudo /vagrant/scripts/cluster/06-cnpg.sh
+bash /home/vagrant/scripts/cluster/07-cnpg.sh
 ```
 
 ## 참고 자료
@@ -276,8 +276,3 @@ sudo /vagrant/scripts/cluster/06-cnpg.sh
 - [PostgreSQL 18 문서](https://www.postgresql.org/docs/18/)
 - [PgBouncer 문서](https://www.pgbouncer.org/)
 - [CNPG Mistakes Log](../CLAUDE.md#kuberneteshelm-실수)
-
----
-
-**마지막 업데이트**: 2026-02-18
-**작성자**: Claude (Narwhal DevOps Agent)

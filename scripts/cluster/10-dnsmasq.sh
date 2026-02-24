@@ -154,6 +154,100 @@ ${COREFILE}"
     echo "WARN: CoreDNS configmap not found, skipping forward rule"
   fi
 
+  #=========================================
+  # CoreDNS Hairpin Fix
+  #=========================================
+  # In-cluster pods cannot reach MetalLB external IPs through Cilium (hairpin routing).
+  # Solution: add a hosts zone in CoreDNS that maps *.local.narwhal.io directly to
+  # the Traefik ClusterIP, bypassing the MetalLB external IP entirely.
+  echo ""
+  echo "=== Configuring CoreDNS hairpin fix (*.${DOMAIN} -> Traefik ClusterIP) ==="
+
+  # Wait for Traefik service to be available
+  TRAEFIK_IP=""
+  for attempt in $(seq 1 30); do
+    TRAEFIK_IP=$(kubectl get svc traefik -n platform-system -o jsonpath='{.spec.clusterIP}' 2>/dev/null || true)
+    if [ -n "${TRAEFIK_IP}" ]; then
+      echo "Traefik ClusterIP: ${TRAEFIK_IP}"
+      break
+    fi
+    echo "Waiting for Traefik service (attempt ${attempt}/30)..."
+    sleep 10
+  done
+
+  if [ -z "${TRAEFIK_IP}" ]; then
+    echo "WARN: Traefik service not found in platform-system, skipping hairpin fix"
+  else
+    COREDNS_CM_CURRENT=$(kubectl get configmap coredns -n kube-system -o json 2>/dev/null || echo "")
+    if [ -z "${COREDNS_CM_CURRENT}" ]; then
+      echo "WARN: CoreDNS configmap not found, skipping hairpin fix"
+    elif echo "${COREDNS_CM_CURRENT}" | grep -q "hairpin"; then
+      echo "CoreDNS hairpin fix already applied"
+    else
+      COREFILE_CURRENT=$(echo "${COREDNS_CM_CURRENT}" | yq -r '.data.Corefile')
+
+      # Build master DNS list for hairpin zone fallback
+      HAIRPIN_DNS_LIST=""
+      for idx in $(seq 0 $((MASTER_COUNT - 1))); do
+        HAIRPIN_DNS_LIST="${HAIRPIN_DNS_LIST}${MASTER_IP_BASE}${idx} "
+      done
+      HAIRPIN_DNS_LIST="${HAIRPIN_DNS_LIST% }"
+
+      # Append hairpin zone block to existing Corefile
+      # The hosts plugin maps all known *.local.narwhal.io hostnames to the
+      # Traefik ClusterIP so pods route internally instead of through MetalLB.
+      HAIRPIN_ZONE="${DOMAIN}:53 {
+    # hairpin: in-cluster pods -> Traefik ClusterIP (bypasses MetalLB)
+    errors
+    cache 30
+    hosts {
+        ${TRAEFIK_IP} argocd.${DOMAIN}
+        ${TRAEFIK_IP} grafana.${DOMAIN}
+        ${TRAEFIK_IP} gitea.${DOMAIN}
+        ${TRAEFIK_IP} harbor.${DOMAIN}
+        ${TRAEFIK_IP} keycloak.${DOMAIN}
+        ${TRAEFIK_IP} headlamp.${DOMAIN}
+        ${TRAEFIK_IP} openbao.${DOMAIN}
+        ${TRAEFIK_IP} oauth2-proxy.${DOMAIN}
+        ${TRAEFIK_IP} hubble.${DOMAIN}
+        fallthrough
+    }
+    forward . ${HAIRPIN_DNS_LIST}
+}"
+
+      # The forward-only zone for the domain was added above; replace it with the hairpin zone
+      # which already includes a forward fallback, to avoid duplicate zone blocks.
+      if echo "${COREFILE_CURRENT}" | grep -q "^${DOMAIN}:53"; then
+        # Replace the existing simple forward zone with the hairpin zone
+        COREFILE_UPDATED=$(echo "${COREFILE_CURRENT}" | awk -v zone="${DOMAIN}:53" -v replacement="${HAIRPIN_ZONE}" '
+          BEGIN { skip=0; found=0 }
+          $0 ~ "^"zone {
+            if (!found) {
+              print replacement
+              found=1
+            }
+            skip=1
+            next
+          }
+          skip && /^}/ { skip=0; next }
+          skip { next }
+          { print }
+        ')
+      else
+        COREFILE_UPDATED="${HAIRPIN_ZONE}
+${COREFILE_CURRENT}"
+      fi
+
+      kubectl create configmap coredns -n kube-system \
+        --from-literal=Corefile="${COREFILE_UPDATED}" \
+        --dry-run=client -o yaml | kubectl apply -f -
+
+      kubectl rollout restart deployment coredns -n kube-system 2>/dev/null || true
+      kubectl wait --for=condition=Ready pod -l k8s-app=kube-dns -n kube-system --timeout=60s || true
+      echo "CoreDNS hairpin fix applied: *.${DOMAIN} -> ${TRAEFIK_IP} (Traefik ClusterIP)"
+    fi
+  fi
+
   # Test Pod DNS resolution via CoreDNS (verifies worker nodes can also resolve)
   echo ""
   echo "=== Testing Pod DNS resolution via CoreDNS ==="

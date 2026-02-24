@@ -2,7 +2,7 @@ apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
   name: kyverno
-  namespace: argocd
+  namespace: devtools
   finalizers:
     - resources-finalizer.argocd.argoproj.io
 spec:
@@ -23,7 +23,7 @@ spec:
           replicas: 2
   destination:
     server: https://kubernetes.default.svc
-    namespace: kyverno
+    namespace: platform-system
   syncPolicy:
     automated:
       prune: true

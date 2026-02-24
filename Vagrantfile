@@ -170,7 +170,7 @@ Vagrant.configure("2") do |config|
           }
 
         # Install dnsmasq for DNS HA (skip CoreDNS config — master-1 handles it in phase2)
-        master.vm.provision "shell", path: "scripts/cluster/09-dnsmasq.sh",
+        master.vm.provision "shell", path: "scripts/cluster/10-dnsmasq.sh",
           env: {
             "MASTER_IP" => master_ip,
             "METALLB_IP" => "192.168.56.200",

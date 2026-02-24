@@ -19,7 +19,7 @@ for i in {1..30}; do
 done
 
 # Create namespace
-kubectl create namespace gitea --dry-run=client -o yaml | kubectl apply -f -
+kubectl create namespace devtools --dry-run=client -o yaml | kubectl apply -f -
 
 # Add Gitea Helm repo
 helm repo add gitea-charts https://dl.gitea.com/charts/
@@ -38,7 +38,7 @@ KEYCLOAK_REALM="${KEYCLOAK_REALM:-kubernetes}"
 GITEA_CHART_VERSION="${GITEA_CHART_VERSION:-12.5.0}"
 
 helm upgrade --install gitea gitea-charts/gitea \
-  --namespace gitea \
+  --namespace devtools \
   --version "${GITEA_CHART_VERSION}" \
   --set image.tag="${GITEA_VERSION#v}" \
   --set gitea.admin.username=gitea-admin \
@@ -71,25 +71,32 @@ helm upgrade --install gitea gitea-charts/gitea \
   --set "extraContainerVolumeMounts[0].readOnly=true" \
   --timeout=600s || echo "WARN: Gitea install timed out, continuing..."
 
+# Patch Valkey NetworkPolicy for Istio ambient mesh (HBONE port 15008)
+if kubectl get networkpolicy gitea-valkey -n devtools &>/dev/null; then
+  echo "Patching gitea-valkey NetworkPolicy for Istio ambient mesh (HBONE port 15008)..."
+  kubectl patch networkpolicy gitea-valkey -n devtools --type='json' \
+    -p='[{"op": "add", "path": "/spec/ingress/0/ports/-", "value": {"port": 15008, "protocol": "TCP"}}]' || true
+fi
+
 # Configure Keycloak OAuth2 provider via API
 echo "Configuring Gitea OAuth2 provider..."
 sleep 10
 
 # Wait for Gitea to be ready
-kubectl wait --for=condition=Ready pod -l app.kubernetes.io/name=gitea -n gitea --timeout=300s || true
+kubectl wait --for=condition=Ready pod -l app.kubernetes.io/name=gitea -n devtools --timeout=300s || true
 
 # Create OAuth2 source via Gitea API
-GITEA_POD=$(kubectl get pod -n gitea -l app.kubernetes.io/name=gitea -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
+GITEA_POD=$(kubectl get pod -n devtools -l app.kubernetes.io/name=gitea -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
 
 if [ -n "${GITEA_POD}" ]; then
-  kubectl exec -n gitea "${GITEA_POD}" -- gitea admin auth add-oauth \
+  kubectl exec -n devtools "${GITEA_POD}" -- gitea admin auth add-oauth \
     --name "Keycloak" \
     --provider "openidConnect" \
     --key "gitea" \
     --secret "gitea-secret" \
     --auto-discover-url "${KEYCLOAK_URL}/realms/${KEYCLOAK_REALM}/.well-known/openid-configuration" \
     --group-claim-name "groups" \
-    --admin-group "cluster-admins" \
+    --admin-group "cluster-admin" \
     --skip-local-2fa || true
 else
   echo "WARN: Gitea pod not found, skipping OAuth2 configuration"
@@ -103,8 +110,8 @@ echo "Gitea Ready!"
 echo "=========================================="
 echo ""
 echo "Access:"
-echo "  kubectl port-forward svc/gitea-http -n gitea 3000:3000"
+echo "  kubectl port-forward svc/gitea-http -n devtools 3000:3000"
 echo "  URL: http://localhost:3000"
 echo "  User: gitea-admin / gitea-admin"
 echo ""
-kubectl get pods -n gitea
+kubectl get pods -n devtools

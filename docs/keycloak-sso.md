@@ -46,11 +46,10 @@ kubectl -n kube-system get pod kube-apiserver-* -o yaml | grep oidc-issuer-url
 ├─────────────────────────────────────────────────────────────────┤
 │  Groups          │  Realm Roles      │  OIDC Clients            │
 │  ───────────     │  ───────────      │  ───────────             │
-│  cluster-admins  │  cluster-admin    │  kubernetes (K8s API)    │
-│  developers      │  developer        │  argocd                  │
-│  viewers         │  viewer           │  grafana                 │
-│                  │                   │  gitea                   │
-│                  │                   │  harbor                  │
+│  cluster-admin   │  cluster-admin    │  kubernetes (K8s API)    │
+│  developer       │  developer        │  argocd                  │
+│  viewer          │  viewer           │  gitea                   │
+│  guest           │  -                │  harbor                  │
 │                  │                   │  headlamp                │
 └─────────────────────────────────────────────────────────────────┘
                               │
@@ -75,9 +74,10 @@ kubectl -n kube-system get pod kube-apiserver-* -o yaml | grep oidc-issuer-url
 
 | Group | Description | Realm Roles |
 |-------|-------------|-------------|
-| `cluster-admins` | 클러스터 전체 관리자 | cluster-admin |
-| `developers` | 개발자 (네임스페이스 단위 권한) | developer |
-| `viewers` | 읽기 전용 사용자 | viewer |
+| `cluster-admin` | 클러스터 전체 관리자 | cluster-admin |
+| `developer` | 개발자 (dev NS edit, devtools/monitoring view) | developer |
+| `viewer` | 읽기 전용 (dev/devtools/monitoring view) | viewer |
+| `guest` | 웹 UI 전용 (K8s 접근 없음) | - |
 
 ### 2.3 Realm Roles
 
@@ -91,8 +91,10 @@ kubectl -n kube-system get pod kube-apiserver-* -o yaml | grep oidc-issuer-url
 
 | Username | Password | Email | Group |
 |----------|----------|-------|-------|
-| `k8s-admin` | `k8s-admin` | k8s-admin@local | cluster-admins |
-| `developer` | `developer` | developer@local | developers |
+| `admin` | `admin` | admin@local | cluster-admin |
+| `dev` | `dev` | dev@local | developer |
+| `view` | `view` | view@local | viewer |
+| `guest` | `guest` | guest@local | guest |
 
 ## 3. OIDC Clients
 
@@ -153,7 +155,7 @@ kubectl -n kube-system get pod kube-apiserver-* -o yaml | grep oidc-issuer-url
 | JWKS | `{issuer}/protocol/openid-connect/certs` |
 | Discovery | `{issuer}/.well-known/openid-configuration` |
 
-**클러스터 내부 통신**: `http://keycloak-service.keycloak.svc.cluster.local:8080/realms/kubernetes`
+**클러스터 내부 통신**: `http://keycloak-service.iam.svc.cluster.local:8080/realms/kubernetes`
 **외부/API Server**: `https://keycloak.local.narwhal.io/realms/kubernetes` (HTTPS 필수)
 
 ## 4. Kubernetes OIDC Integration
@@ -178,18 +180,19 @@ apiServer:
 
 | Keycloak Group | K8s Group (prefixed) | ClusterRole | Permissions |
 |----------------|---------------------|-------------|-------------|
-| `cluster-admins` | `oidc:cluster-admins` | `cluster-admin` | 전체 클러스터 관리 |
-| `developers` | `oidc:developers` | `edit` | 리소스 CRUD (RBAC 제외) |
-| `viewers` | `oidc:viewers` | `view` | 리소스 읽기 전용 |
+| `cluster-admin` | `oidc:cluster-admin` | `cluster-admin` | 전체 클러스터 관리 |
+| `developer` | `oidc:developer` | `edit` (dev NS), `view` (devtools, monitoring) | 네임스페이스별 권한 |
+| `viewer` | `oidc:viewer` | `view` (dev, devtools, monitoring) | 리소스 읽기 전용 |
+| `guest` | - | - | K8s 접근 없음 (웹 UI OIDC만) |
 
 ### 4.3 ClusterRoleBindings
 
 ```yaml
-# cluster-admins → cluster-admin
+# cluster-admin → cluster-admin (ClusterRoleBinding, full access)
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: oidc-cluster-admins
+  name: oidc-cluster-admin
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
@@ -197,14 +200,15 @@ roleRef:
 subjects:
 - apiGroup: rbac.authorization.k8s.io
   kind: Group
-  name: oidc:cluster-admins
+  name: oidc:cluster-admin
 
 ---
-# developers → edit
+# developer → edit (RoleBinding, dev NS only)
 apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRoleBinding
+kind: RoleBinding
 metadata:
-  name: oidc-developers
+  name: oidc-developer-edit
+  namespace: dev
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
@@ -212,22 +216,15 @@ roleRef:
 subjects:
 - apiGroup: rbac.authorization.k8s.io
   kind: Group
-  name: oidc:developers
+  name: oidc:developer
 
 ---
-# viewers → view
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRoleBinding
-metadata:
-  name: oidc-viewers
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
-  name: view
-subjects:
-- apiGroup: rbac.authorization.k8s.io
-  kind: Group
-  name: oidc:viewers
+# developer → view (RoleBinding, devtools/monitoring)
+# Applied to: devtools, monitoring namespaces
+
+---
+# viewer → view (RoleBinding, dev/devtools/monitoring)
+# Applied to: dev, devtools, monitoring namespaces
 ```
 
 ### 4.4 K8s Built-in ClusterRoles
@@ -245,15 +242,19 @@ subjects:
 
 **RBAC Policy (`argocd-rbac-cm`):**
 ```csv
-g, cluster-admins, role:admin
-g, developers, role:developer
+p, role:developer, applications, sync, */*, allow
+p, role:developer, applications, get, */*, allow
+p, role:developer, logs, get, */*, allow
+g, cluster-admin, role:admin
+g, developer, role:developer
+g, viewer, role:readonly
 ```
 
 | Keycloak Group | ArgoCD Role | Permissions |
 |----------------|-------------|-------------|
-| `cluster-admins` | `role:admin` | 모든 앱/프로젝트 관리 |
-| `developers` | `role:developer` | 앱 sync, 로그 조회 |
-| (default) | `role:readonly` | 읽기 전용 |
+| `cluster-admin` | `role:admin` | 모든 앱/프로젝트 관리 |
+| `developer` | `role:developer` | 앱 sync/get, 로그 조회 |
+| `viewer` | `role:readonly` | 읽기 전용 |
 
 **ArgoCD Built-in Roles:**
 
@@ -267,16 +268,17 @@ g, developers, role:developer
 
 **Role Mapping (JMESPath):**
 ```
-contains(groups[*], 'cluster-admins') && 'Admin' ||
-contains(groups[*], 'developers') && 'Editor' ||
+contains(groups[*], 'cluster-admin') && 'Admin' ||
+contains(groups[*], 'developer') && 'Editor' ||
 'Viewer'
 ```
 
 | Keycloak Group | Grafana Role | Permissions |
 |----------------|--------------|-------------|
-| `cluster-admins` | `Admin` | 사용자/데이터소스/대시보드 관리 |
-| `developers` | `Editor` | 대시보드 생성/수정 |
-| `viewers` | `Viewer` | 대시보드 조회만 |
+| `cluster-admin` | `Admin` | 사용자/데이터소스/대시보드 관리 |
+| `developer` | `Editor` | 대시보드 생성/수정 |
+| `viewer` | `Viewer` | 대시보드 조회만 |
+| `guest` | `Viewer` | 대시보드 조회만 |
 
 **Grafana Built-in Roles:**
 
@@ -290,14 +292,15 @@ contains(groups[*], 'developers') && 'Editor' ||
 
 **OIDC Configuration:**
 ```
-admin-group: cluster-admins
+admin-group: cluster-admin
 ```
 
 | Keycloak Group | Gitea Role | Permissions |
 |----------------|------------|-------------|
-| `cluster-admins` | Site Admin | 전체 관리자 |
-| `developers` | User | 저장소 생성/관리 |
-| `viewers` | User (제한적) | 공개 저장소 접근 |
+| `cluster-admin` | Site Admin | 전체 관리자 |
+| `developer` | User | 저장소 생성/관리 |
+| `viewer` | User (read-only) | 공개 저장소 접근 |
+| `guest` | - | 접근 불가 |
 
 **Gitea Access Levels:**
 
@@ -314,16 +317,17 @@ admin-group: cluster-admins
 **OIDC Configuration:**
 ```json
 {
-  "oidc_admin_group": "cluster-admins",
+  "oidc_admin_group": "cluster-admin",
   "oidc_groups_claim": "groups"
 }
 ```
 
 | Keycloak Group | Harbor Role | Permissions |
 |----------------|-------------|-------------|
-| `cluster-admins` | Admin | 전체 관리자 |
-| `developers` | Developer | 이미지 Push/Pull |
-| `viewers` | Guest | 이미지 Pull만 |
+| `cluster-admin` | Admin | 전체 관리자 |
+| `developer` | Developer | 이미지 Push/Pull |
+| `viewer` | Guest | 이미지 Pull만 |
+| `guest` | - | 접근 불가 |
 
 **Harbor Project Roles:**
 
@@ -344,9 +348,10 @@ openid, profile, email, groups
 
 | Keycloak Group | Headlamp Access | K8s Permissions |
 |----------------|-----------------|-----------------|
-| `cluster-admins` | Full Access | cluster-admin |
-| `developers` | Namespace Access | edit |
-| `viewers` | Read Only | view |
+| `cluster-admin` | Full Access | cluster-admin |
+| `developer` | Namespace Access | dev NS edit |
+| `viewer` | Read Only | dev NS view |
+| `guest` | - | 접근 불가 |
 
 Headlamp은 K8s RBAC을 직접 사용하므로, Keycloak 그룹 → K8s ClusterRole 매핑을 따릅니다.
 
@@ -356,28 +361,29 @@ Headlamp은 K8s RBAC을 직접 사용하므로, Keycloak 그룹 → K8s ClusterR
 
 | Group | Kubernetes | ArgoCD | Grafana | Gitea | Harbor | Headlamp |
 |-------|------------|--------|---------|-------|--------|----------|
-| **cluster-admins** | cluster-admin | role:admin | Admin | Site Admin | Admin | Full Access |
-| **developers** | edit | role:developer | Editor | User | Developer | Namespace |
-| **viewers** | view | role:readonly | Viewer | Read Only | Guest | Read Only |
+| **cluster-admin** | cluster-admin | role:admin | Admin | Site Admin | Admin | Full Access |
+| **developer** | edit (dev NS) | role:developer | Editor | User | Developer | Namespace |
+| **viewer** | view | role:readonly | Viewer | Read Only | Guest | Read Only |
+| **guest** | - | - | Viewer | - | - | - |
 
 ### 6.2 Detailed Permission Matrix
 
 | Group | Permission | K8s | Argo | Graf | Gitea | Harbor | Head |
 |-------|------------|:---:|:----:|:----:|:-----:|:------:|:----:|
-| **cluster-admins** | 시스템/클러스터 관리 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| **cluster-admin** | 시스템/클러스터 관리 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | | 리소스/앱 생성 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | | 리소스/앱 수정 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | | 리소스/앱 조회 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| **developers** | 시스템/클러스터 관리 | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| **developer** | 시스템/클러스터 관리 | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 | | 리소스/앱 생성 | ✅ | ❌ | ✅ | ✅ | ✅ | ✅ |
 | | 리소스/앱 수정 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | | 리소스/앱 조회 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| **viewers** | 시스템/클러스터 관리 | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| **viewer** | 시스템/클러스터 관리 | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 | | 리소스/앱 생성 | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 | | 리소스/앱 수정 | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 | | 리소스/앱 조회 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 
-### 6.2 Namespace-level Permissions (developers)
+### 6.2 Namespace-level Permissions (developer)
 
 개발자는 특정 네임스페이스에 대해 추가 권한 부여 가능:
 
@@ -394,7 +400,7 @@ roleRef:
 subjects:
 - apiGroup: rbac.authorization.k8s.io
   kind: Group
-  name: oidc:developers
+  name: oidc:developer
 ```
 
 ## 7. Token & Session Management
@@ -468,9 +474,10 @@ Narwhal은 개발 환경에서 자체 서명 인증서를 사용합니다.
 ### 8.3 Principle of Least Privilege
 
 ```
-cluster-admins: 플랫폼 관리자만 (최소 인원)
-developers: 개발팀 (필요한 네임스페이스만)
-viewers: 운영 모니터링, 외부 사용자
+cluster-admin: 플랫폼 관리자만 (최소 인원)
+developer: 개발팀 (dev NS edit, devtools/monitoring view)
+viewer: 운영 모니터링, 외부 사용자
+guest: 웹 UI OIDC만 (K8s 접근 없음)
 ```
 
 ### 8.4 Group Management
@@ -506,19 +513,19 @@ curl -k -X POST \
   https://keycloak.local.narwhal.io/realms/kubernetes/protocol/openid-connect/token \
   -d "grant_type=password" \
   -d "client_id=kubernetes" \
-  -d "username=k8s-admin" \
-  -d "password=k8s-admin"
+  -d "username=admin" \
+  -d "password=admin"
 
 # 클러스터 내부 통신 테스트 (HTTP, 서비스명)
 kubectl run -it --rm debug --image=curlimages/curl --restart=Never -- \
-  curl -X POST http://keycloak-service.keycloak.svc.cluster.local:8080/realms/kubernetes/protocol/openid-connect/token \
-  -d "grant_type=password" -d "client_id=kubernetes" -d "username=k8s-admin" -d "password=k8s-admin"
+  curl -X POST http://keycloak-service.iam.svc.cluster.local:8080/realms/kubernetes/protocol/openid-connect/token \
+  -d "grant_type=password" -d "client_id=kubernetes" -d "username=admin" -d "password=admin"
 
 # JWT 디코딩 (groups claim 확인)
 echo "<access_token>" | cut -d'.' -f2 | base64 -d | jq
 
 # K8s RBAC 확인
-kubectl auth can-i --list --as=oidc:k8s-admin --as-group=oidc:cluster-admins
+kubectl auth can-i --list --as=oidc:admin --as-group=oidc:cluster-admin
 
 # API Server OIDC 설정 확인
 kubectl -n kube-system get pod kube-apiserver-* -o yaml | grep -A5 oidc

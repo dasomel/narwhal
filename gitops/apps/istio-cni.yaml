@@ -2,7 +2,7 @@ apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
   name: istio-cni
-  namespace: argocd
+  namespace: devtools
   annotations:
     argocd.argoproj.io/sync-wave: "0"
   finalizers:

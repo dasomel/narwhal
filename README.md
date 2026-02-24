@@ -184,13 +184,16 @@ kubectl port-forward svc/headlamp -n headlamp 4466:80
 
 | Group | K8s Role | App Role |
 |-------|----------|----------|
-| cluster-admins | cluster-admin | Admin |
-| developers | edit | Editor |
-| viewers | view | Viewer |
+| cluster-admin | cluster-admin | Admin |
+| developer | edit (dev NS) | Editor |
+| viewer | view | Viewer |
+| guest | - | - (웹 UI only) |
 
 **Default Users:**
-- `k8s-admin` / `k8s-admin` (cluster-admins)
-- `developer` / `developer` (developers)
+- `admin` / `admin` (cluster-admin)
+- `dev` / `dev` (developer)
+- `view` / `view` (viewer)
+- `guest` / `guest` (guest)
 
 자세한 내용: [docs/keycloak-accounts.md](docs/keycloak-accounts.md)
 

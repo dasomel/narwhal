@@ -2,7 +2,7 @@ apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
   name: oauth2-proxy
-  namespace: argocd
+  namespace: devtools
   annotations:
     argocd.argoproj.io/sync-wave: "5"
   finalizers:
@@ -47,7 +47,7 @@ spec:
           enabled: false  # We use Gateway API instead
   destination:
     server: https://kubernetes.default.svc
-    namespace: oauth2-proxy
+    namespace: iam
   syncPolicy:
     automated:
       prune: true

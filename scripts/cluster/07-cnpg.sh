@@ -25,7 +25,7 @@ helm repo update
 
 # Install CNPG Operator (no --wait: avoids atomic rollback on timeout)
 helm upgrade --install cnpg cnpg/cloudnative-pg \
-  --namespace cnpg-system \
+  --namespace platform-system \
   --create-namespace \
   --version "${CNPG_CHART_VERSION}" \
   --timeout 5m || echo "WARN: CNPG operator install timed out, waiting manually..."
@@ -34,7 +34,7 @@ helm upgrade --install cnpg cnpg/cloudnative-pg \
 echo "Waiting for CNPG operator pod..."
 CNPG_READY=false
 for attempt in {1..60}; do
-  if kubectl wait --for=condition=Ready pod -l app.kubernetes.io/name=cloudnative-pg -n cnpg-system --timeout=10s 2>/dev/null; then
+  if kubectl wait --for=condition=Ready pod -l app.kubernetes.io/name=cloudnative-pg -n platform-system --timeout=10s 2>/dev/null; then
     echo "CNPG operator pod is ready"
     CNPG_READY=true
     break
@@ -45,8 +45,8 @@ done
 
 if [ "${CNPG_READY}" != "true" ]; then
   echo "ERROR: CNPG operator pod did not become ready after 10 minutes"
-  kubectl get pods -n cnpg-system || true
-  kubectl describe pod -l app.kubernetes.io/name=cloudnative-pg -n cnpg-system 2>/dev/null | tail -20 || true
+  kubectl get pods -n platform-system || true
+  kubectl describe pod -l app.kubernetes.io/name=cloudnative-pg -n platform-system 2>/dev/null | tail -20 || true
   exit 1
 fi
 
@@ -238,13 +238,13 @@ kubectl wait --for=condition=Ready pod -l cnpg.io/poolerName=narwhal-db-pooler-r
 echo "=== Creating cross-namespace service aliases ==="
 
 # ExternalName services so apps can use short names within their namespaces
-kubectl create namespace keycloak --dry-run=client -o yaml | kubectl apply -f -
+kubectl create namespace iam --dry-run=client -o yaml | kubectl apply -f -
 cat <<EOF | kubectl apply -f -
 apiVersion: v1
 kind: Service
 metadata:
   name: keycloak-db-rw
-  namespace: keycloak
+  namespace: iam
 spec:
   type: ExternalName
   externalName: narwhal-db-rw.database.svc.cluster.local
@@ -252,13 +252,13 @@ spec:
     - port: 5432
 EOF
 
-kubectl create namespace harbor --dry-run=client -o yaml | kubectl apply -f -
+kubectl create namespace devtools --dry-run=client -o yaml | kubectl apply -f -
 cat <<EOF | kubectl apply -f -
 apiVersion: v1
 kind: Service
 metadata:
   name: harbor-db-rw
-  namespace: harbor
+  namespace: devtools
 spec:
   type: ExternalName
   externalName: narwhal-db-rw.database.svc.cluster.local
@@ -266,13 +266,12 @@ spec:
     - port: 5432
 EOF
 
-kubectl create namespace gitea --dry-run=client -o yaml | kubectl apply -f -
 cat <<EOF | kubectl apply -f -
 apiVersion: v1
 kind: Service
 metadata:
   name: gitea-db-rw
-  namespace: gitea
+  namespace: devtools
 spec:
   type: ExternalName
   externalName: narwhal-db-rw.database.svc.cluster.local
@@ -303,9 +302,9 @@ echo "  Host: narwhal-db-rw.database.svc.cluster.local"
 echo "  Port: 5432"
 echo ""
 echo "Cross-namespace aliases (ExternalName):"
-echo "  keycloak ns: keycloak-db-rw:5432 -> narwhal-db-rw.database.svc.cluster.local"
-echo "  harbor ns:   harbor-db-rw:5432   -> narwhal-db-rw.database.svc.cluster.local"
-echo "  gitea ns:    gitea-db-rw:5432    -> narwhal-db-rw.database.svc.cluster.local"
+echo "  iam ns:      keycloak-db-rw:5432 -> narwhal-db-rw.database.svc.cluster.local"
+echo "  devtools ns: harbor-db-rw:5432   -> narwhal-db-rw.database.svc.cluster.local"
+echo "  devtools ns: gitea-db-rw:5432    -> narwhal-db-rw.database.svc.cluster.local"
 echo ""
 kubectl get cluster -n database
 kubectl get pooler -n database

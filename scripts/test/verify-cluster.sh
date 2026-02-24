@@ -678,8 +678,8 @@ if should_run "keycloak"; then
     TOKEN_RESP=$(curl -sk -X POST "https://keycloak.local.narwhal.io/realms/kubernetes/protocol/openid-connect/token" \
       -d "grant_type=password" \
       -d "client_id=kubernetes" \
-      -d "username=k8s-admin" \
-      -d "password=k8s-admin" \
+      -d "username=admin" \
+      -d "password=admin" \
       -d "scope=openid groups" 2>/dev/null || echo "")
     if echo "${TOKEN_RESP}" | grep -q "access_token"; then
       pass "OIDC token grant: success (scope=openid groups)"
@@ -687,10 +687,10 @@ if should_run "keycloak"; then
       ACCESS_TOKEN=$(echo "${TOKEN_RESP}" | python3 -c 'import sys,json; print(json.load(sys.stdin).get("access_token",""))' 2>/dev/null || echo "")
       if [ -n "${ACCESS_TOKEN}" ]; then
         GROUPS_CLAIM=$(decode_jwt_payload "${ACCESS_TOKEN}" | python3 -c 'import sys,json; g=json.load(sys.stdin).get("groups",[]); print(",".join(g))' 2>/dev/null || echo "")
-        if echo "${GROUPS_CLAIM}" | grep -q "cluster-admins"; then
-          pass "OIDC groups claim: k8s-admin has cluster-admins"
+        if echo "${GROUPS_CLAIM}" | grep -q "cluster-admin"; then
+          pass "OIDC groups claim: admin has cluster-admin"
         else
-          fail "OIDC groups claim: cluster-admins not found in [${GROUPS_CLAIM}]"
+          fail "OIDC groups claim: cluster-admin not found in [${GROUPS_CLAIM}]"
         fi
       fi
     elif echo "${TOKEN_RESP}" | grep -q "invalid_scope"; then
@@ -701,7 +701,7 @@ if should_run "keycloak"; then
   fi
 
   # RBAC ClusterRoleBindings for OIDC groups
-  for crb in oidc-cluster-admins oidc-developers oidc-viewers; do
+  for crb in oidc-cluster-admin; do
     CRB_EXISTS=$(kubectl get clusterrolebinding "${crb}" -o jsonpath='{.metadata.name}' 2>/dev/null || echo "")
     if [ "${CRB_EXISTS}" = "${crb}" ]; then
       pass "ClusterRoleBinding ${crb}: exists"

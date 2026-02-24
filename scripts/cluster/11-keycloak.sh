@@ -21,11 +21,11 @@ kubectl wait --for=condition=Ready pod -l cnpg.io/cluster=narwhal-db -n database
 echo "Installing Keycloak Operator..."
 kubectl apply -f https://raw.githubusercontent.com/keycloak/keycloak-k8s-resources/${KEYCLOAK_VERSION}/kubernetes/keycloaks.k8s.keycloak.org-v1.yml
 kubectl apply -f https://raw.githubusercontent.com/keycloak/keycloak-k8s-resources/${KEYCLOAK_VERSION}/kubernetes/keycloakrealmimports.k8s.keycloak.org-v1.yml
-kubectl apply -f https://raw.githubusercontent.com/keycloak/keycloak-k8s-resources/${KEYCLOAK_VERSION}/kubernetes/kubernetes.yml -n keycloak
+kubectl apply -f https://raw.githubusercontent.com/keycloak/keycloak-k8s-resources/${KEYCLOAK_VERSION}/kubernetes/kubernetes.yml -n iam
 
 # Wait for operator
 echo "Waiting for Keycloak Operator..."
-kubectl wait --for=condition=Available deployment/keycloak-operator -n keycloak --timeout=300s || sleep 30
+kubectl wait --for=condition=Available deployment/keycloak-operator -n iam --timeout=300s || sleep 30
 
 #=========================================
 # Create Keycloak Instance
@@ -33,13 +33,13 @@ kubectl wait --for=condition=Available deployment/keycloak-operator -n keycloak 
 echo "Creating Keycloak instance..."
 
 # Create admin credentials secret
-kubectl create secret generic keycloak-admin-secret -n keycloak \
+kubectl create secret generic keycloak-admin-secret -n iam \
   --from-literal=username="${KEYCLOAK_ADMIN_USER}" \
   --from-literal=password="${KEYCLOAK_ADMIN_PASSWORD}" \
   --dry-run=client -o yaml | kubectl apply -f -
 
 # Create database credentials secret (pointing to unified narwhal-db)
-kubectl create secret generic keycloak-db-secret -n keycloak \
+kubectl create secret generic keycloak-db-secret -n iam \
   --from-literal=username=keycloak \
   --from-literal=password=keycloak-db-password \
   --dry-run=client -o yaml | kubectl apply -f -
@@ -52,7 +52,7 @@ apiVersion: k8s.keycloak.org/v2alpha1
 kind: Keycloak
 metadata:
   name: keycloak
-  namespace: keycloak
+  namespace: iam
 spec:
   instances: 1
   db:
@@ -82,7 +82,35 @@ EOF
 # Wait for Keycloak pods
 echo "Waiting for Keycloak pods..."
 sleep 30
-kubectl wait --for=condition=Ready pod -l app=keycloak -n keycloak --timeout=600s || true
+kubectl wait --for=condition=Ready pod -l app=keycloak -n iam --timeout=600s || true
+
+#=========================================
+# Patch NetworkPolicy for Istio ambient mesh (HBONE port 15008)
+#=========================================
+# Keycloak Operator manages 'keycloak-network-policy' and may overwrite direct edits.
+# Add a separate NetworkPolicy to allow HBONE (port 15008) used by Istio ambient mesh
+# for mesh-to-mesh mTLS traffic. Without this, iam-namespace pods cannot reach keycloak.
+# See CLAUDE.md Mistakes Log: "Istio ambient HBONE port 15008 NetworkPolicy blocking"
+echo "Adding NetworkPolicy for Istio ambient mesh HBONE port 15008..."
+cat <<NP_EOF | kubectl apply -f -
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: keycloak-allow-hbone
+  namespace: iam
+spec:
+  podSelector:
+    matchLabels:
+      app: keycloak
+      app.kubernetes.io/instance: keycloak
+      app.kubernetes.io/managed-by: keycloak-operator
+  policyTypes:
+  - Ingress
+  ingress:
+  - ports:
+    - port: 15008
+      protocol: TCP
+NP_EOF
 
 #=========================================
 # Configure Keycloak for Kubernetes OIDC
@@ -93,86 +121,122 @@ echo "=== Configuring Keycloak for Kubernetes OIDC ==="
 sleep 30
 
 # Get Keycloak pod
-KEYCLOAK_POD=$(kubectl get pod -n keycloak -l app=keycloak -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
+KEYCLOAK_POD=$(kubectl get pod -n iam -l app=keycloak -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
 
 if [ -z "$KEYCLOAK_POD" ]; then
   echo "Warning: Keycloak pod not found. Skipping OIDC configuration."
 else
   # Get auto-generated admin credentials from secret
-  ADMIN_USER=$(kubectl get secret keycloak-initial-admin -n keycloak -o jsonpath='{.data.username}' | base64 -d)
-  ADMIN_PASS=$(kubectl get secret keycloak-initial-admin -n keycloak -o jsonpath='{.data.password}' | base64 -d)
+  ADMIN_USER=$(kubectl get secret keycloak-initial-admin -n iam -o jsonpath='{.data.username}' | base64 -d)
+  ADMIN_PASS=$(kubectl get secret keycloak-initial-admin -n iam -o jsonpath='{.data.password}' | base64 -d)
 
   echo "Admin credentials: ${ADMIN_USER}"
 
   # Configure kcadm.sh credentials
-  kubectl exec -n keycloak ${KEYCLOAK_POD} -- /opt/keycloak/bin/kcadm.sh config credentials \
+  kubectl exec -n iam ${KEYCLOAK_POD} -- /opt/keycloak/bin/kcadm.sh config credentials \
     --server http://localhost:8080 \
     --realm master \
     --user "${ADMIN_USER}" \
     --password "${ADMIN_PASS}" || true
 
   # Create kubernetes realm
-  kubectl exec -n keycloak ${KEYCLOAK_POD} -- /opt/keycloak/bin/kcadm.sh create realms \
+  kubectl exec -n iam ${KEYCLOAK_POD} -- /opt/keycloak/bin/kcadm.sh create realms \
     -s realm=kubernetes \
     -s enabled=true \
     -s sslRequired=none || true
 
   # Create realm roles
-  kubectl exec -n keycloak ${KEYCLOAK_POD} -- /opt/keycloak/bin/kcadm.sh create roles -r kubernetes \
+  kubectl exec -n iam ${KEYCLOAK_POD} -- /opt/keycloak/bin/kcadm.sh create roles -r kubernetes \
     -s name=cluster-admin -s description="Kubernetes Cluster Admin" || true
-  kubectl exec -n keycloak ${KEYCLOAK_POD} -- /opt/keycloak/bin/kcadm.sh create roles -r kubernetes \
+  kubectl exec -n iam ${KEYCLOAK_POD} -- /opt/keycloak/bin/kcadm.sh create roles -r kubernetes \
     -s name=developer -s description="Kubernetes Developer" || true
-  kubectl exec -n keycloak ${KEYCLOAK_POD} -- /opt/keycloak/bin/kcadm.sh create roles -r kubernetes \
+  kubectl exec -n iam ${KEYCLOAK_POD} -- /opt/keycloak/bin/kcadm.sh create roles -r kubernetes \
     -s name=viewer -s description="Kubernetes Viewer" || true
 
   # Create groups
-  kubectl exec -n keycloak ${KEYCLOAK_POD} -- /opt/keycloak/bin/kcadm.sh create groups -r kubernetes \
-    -s name=cluster-admins || true
-  kubectl exec -n keycloak ${KEYCLOAK_POD} -- /opt/keycloak/bin/kcadm.sh create groups -r kubernetes \
-    -s name=developers || true
-  kubectl exec -n keycloak ${KEYCLOAK_POD} -- /opt/keycloak/bin/kcadm.sh create groups -r kubernetes \
-    -s name=viewers || true
+  kubectl exec -n iam ${KEYCLOAK_POD} -- /opt/keycloak/bin/kcadm.sh create groups -r kubernetes \
+    -s name=cluster-admin || true
+  kubectl exec -n iam ${KEYCLOAK_POD} -- /opt/keycloak/bin/kcadm.sh create groups -r kubernetes \
+    -s name=developer || true
+  kubectl exec -n iam ${KEYCLOAK_POD} -- /opt/keycloak/bin/kcadm.sh create groups -r kubernetes \
+    -s name=viewer || true
+  kubectl exec -n iam ${KEYCLOAK_POD} -- /opt/keycloak/bin/kcadm.sh create groups -r kubernetes \
+    -s name=guest || true
 
   # Create users
-  kubectl exec -n keycloak ${KEYCLOAK_POD} -- /opt/keycloak/bin/kcadm.sh create users -r kubernetes \
-    -s username=k8s-admin -s email=k8s-admin@local -s enabled=true \
-    -s firstName=Kubernetes -s lastName=Admin || true
-  kubectl exec -n keycloak ${KEYCLOAK_POD} -- /opt/keycloak/bin/kcadm.sh set-password -r kubernetes \
-    --username k8s-admin --new-password k8s-admin || true
+  kubectl exec -n iam ${KEYCLOAK_POD} -- /opt/keycloak/bin/kcadm.sh create users -r kubernetes \
+    -s username=admin -s email=admin@local -s enabled=true \
+    -s firstName=Cluster -s lastName=Admin || true
+  kubectl exec -n iam ${KEYCLOAK_POD} -- /opt/keycloak/bin/kcadm.sh set-password -r kubernetes \
+    --username admin --new-password admin || true
 
-  kubectl exec -n keycloak ${KEYCLOAK_POD} -- /opt/keycloak/bin/kcadm.sh create users -r kubernetes \
-    -s username=developer -s email=developer@local -s enabled=true \
+  kubectl exec -n iam ${KEYCLOAK_POD} -- /opt/keycloak/bin/kcadm.sh create users -r kubernetes \
+    -s username=dev -s email=dev@local -s enabled=true \
     -s firstName=Dev -s lastName=User || true
-  kubectl exec -n keycloak ${KEYCLOAK_POD} -- /opt/keycloak/bin/kcadm.sh set-password -r kubernetes \
-    --username developer --new-password developer || true
+  kubectl exec -n iam ${KEYCLOAK_POD} -- /opt/keycloak/bin/kcadm.sh set-password -r kubernetes \
+    --username dev --new-password dev || true
+
+  kubectl exec -n iam ${KEYCLOAK_POD} -- /opt/keycloak/bin/kcadm.sh create users -r kubernetes \
+    -s username=view -s email=view@local -s enabled=true \
+    -s firstName=View -s lastName=User || true
+  kubectl exec -n iam ${KEYCLOAK_POD} -- /opt/keycloak/bin/kcadm.sh set-password -r kubernetes \
+    --username view --new-password view || true
+
+  kubectl exec -n iam ${KEYCLOAK_POD} -- /opt/keycloak/bin/kcadm.sh create users -r kubernetes \
+    -s username=guest -s email=guest@local -s enabled=true \
+    -s firstName=Guest -s lastName=User || true
+  kubectl exec -n iam ${KEYCLOAK_POD} -- /opt/keycloak/bin/kcadm.sh set-password -r kubernetes \
+    --username guest --new-password guest || true
 
   # Assign users to groups
   echo "Assigning users to groups..."
 
   # Get user IDs
-  K8S_ADMIN_ID=$(kubectl exec -n keycloak ${KEYCLOAK_POD} -- /opt/keycloak/bin/kcadm.sh get users -r kubernetes \
-    -q username=k8s-admin --fields id --format csv --noquotes 2>/dev/null | tail -1)
-  DEVELOPER_ID=$(kubectl exec -n keycloak ${KEYCLOAK_POD} -- /opt/keycloak/bin/kcadm.sh get users -r kubernetes \
-    -q username=developer --fields id --format csv --noquotes 2>/dev/null | tail -1)
+  ADMIN_ID=$(kubectl exec -n iam ${KEYCLOAK_POD} -- /opt/keycloak/bin/kcadm.sh get users -r kubernetes \
+    -q username=admin --fields id --format csv --noquotes 2>/dev/null | tail -1)
+  DEV_ID=$(kubectl exec -n iam ${KEYCLOAK_POD} -- /opt/keycloak/bin/kcadm.sh get users -r kubernetes \
+    -q username=dev --fields id --format csv --noquotes 2>/dev/null | tail -1)
+  VIEW_ID=$(kubectl exec -n iam ${KEYCLOAK_POD} -- /opt/keycloak/bin/kcadm.sh get users -r kubernetes \
+    -q username=view --fields id --format csv --noquotes 2>/dev/null | tail -1)
+  GUEST_ID=$(kubectl exec -n iam ${KEYCLOAK_POD} -- /opt/keycloak/bin/kcadm.sh get users -r kubernetes \
+    -q username=guest --fields id --format csv --noquotes 2>/dev/null | tail -1)
 
   # Get group IDs
-  CLUSTER_ADMINS_ID=$(kubectl exec -n keycloak ${KEYCLOAK_POD} -- /opt/keycloak/bin/kcadm.sh get groups -r kubernetes \
-    -q search=cluster-admins --fields id --format csv --noquotes 2>/dev/null | tail -1)
-  DEVELOPERS_ID=$(kubectl exec -n keycloak ${KEYCLOAK_POD} -- /opt/keycloak/bin/kcadm.sh get groups -r kubernetes \
-    -q search=developers --fields id --format csv --noquotes 2>/dev/null | tail -1)
+  CLUSTER_ADMIN_GID=$(kubectl exec -n iam ${KEYCLOAK_POD} -- /opt/keycloak/bin/kcadm.sh get groups -r kubernetes \
+    -q search=cluster-admin --fields id --format csv --noquotes 2>/dev/null | tail -1)
+  DEVELOPER_GID=$(kubectl exec -n iam ${KEYCLOAK_POD} -- /opt/keycloak/bin/kcadm.sh get groups -r kubernetes \
+    -q search=developer --fields id --format csv --noquotes 2>/dev/null | tail -1)
+  VIEWER_GID=$(kubectl exec -n iam ${KEYCLOAK_POD} -- /opt/keycloak/bin/kcadm.sh get groups -r kubernetes \
+    -q search=viewer --fields id --format csv --noquotes 2>/dev/null | tail -1)
+  GUEST_GID=$(kubectl exec -n iam ${KEYCLOAK_POD} -- /opt/keycloak/bin/kcadm.sh get groups -r kubernetes \
+    -q search=guest --fields id --format csv --noquotes 2>/dev/null | tail -1)
 
-  # Add k8s-admin to cluster-admins group
-  if [ -n "$K8S_ADMIN_ID" ] && [ -n "$CLUSTER_ADMINS_ID" ]; then
-    kubectl exec -n keycloak ${KEYCLOAK_POD} -- /opt/keycloak/bin/kcadm.sh update users/${K8S_ADMIN_ID}/groups/${CLUSTER_ADMINS_ID} \
-      -r kubernetes -s realm=kubernetes -s userId=${K8S_ADMIN_ID} -s groupId=${CLUSTER_ADMINS_ID} -n || true
-    echo "  -> k8s-admin added to cluster-admins"
+  # Add admin to cluster-admin group
+  if [ -n "$ADMIN_ID" ] && [ -n "$CLUSTER_ADMIN_GID" ]; then
+    kubectl exec -n iam ${KEYCLOAK_POD} -- /opt/keycloak/bin/kcadm.sh update users/${ADMIN_ID}/groups/${CLUSTER_ADMIN_GID} \
+      -r kubernetes -s realm=kubernetes -s userId=${ADMIN_ID} -s groupId=${CLUSTER_ADMIN_GID} -n || true
+    echo "  -> admin added to cluster-admin"
   fi
 
-  # Add developer to developers group
-  if [ -n "$DEVELOPER_ID" ] && [ -n "$DEVELOPERS_ID" ]; then
-    kubectl exec -n keycloak ${KEYCLOAK_POD} -- /opt/keycloak/bin/kcadm.sh update users/${DEVELOPER_ID}/groups/${DEVELOPERS_ID} \
-      -r kubernetes -s realm=kubernetes -s userId=${DEVELOPER_ID} -s groupId=${DEVELOPERS_ID} -n || true
-    echo "  -> developer added to developers"
+  # Add dev to developer group
+  if [ -n "$DEV_ID" ] && [ -n "$DEVELOPER_GID" ]; then
+    kubectl exec -n iam ${KEYCLOAK_POD} -- /opt/keycloak/bin/kcadm.sh update users/${DEV_ID}/groups/${DEVELOPER_GID} \
+      -r kubernetes -s realm=kubernetes -s userId=${DEV_ID} -s groupId=${DEVELOPER_GID} -n || true
+    echo "  -> dev added to developer"
+  fi
+
+  # Add view to viewer group
+  if [ -n "$VIEW_ID" ] && [ -n "$VIEWER_GID" ]; then
+    kubectl exec -n iam ${KEYCLOAK_POD} -- /opt/keycloak/bin/kcadm.sh update users/${VIEW_ID}/groups/${VIEWER_GID} \
+      -r kubernetes -s realm=kubernetes -s userId=${VIEW_ID} -s groupId=${VIEWER_GID} -n || true
+    echo "  -> view added to viewer"
+  fi
+
+  # Add guest to guest group
+  if [ -n "$GUEST_ID" ] && [ -n "$GUEST_GID" ]; then
+    kubectl exec -n iam ${KEYCLOAK_POD} -- /opt/keycloak/bin/kcadm.sh update users/${GUEST_ID}/groups/${GUEST_GID} \
+      -r kubernetes -s realm=kubernetes -s userId=${GUEST_ID} -s groupId=${GUEST_GID} -n || true
+    echo "  -> guest added to guest"
   fi
 
   #=========================================
@@ -181,19 +245,19 @@ else
   echo "Creating 'groups' client scope..."
 
   # Create the groups client scope
-  kubectl exec -n keycloak ${KEYCLOAK_POD} -- /opt/keycloak/bin/kcadm.sh create client-scopes -r kubernetes \
+  kubectl exec -n iam ${KEYCLOAK_POD} -- /opt/keycloak/bin/kcadm.sh create client-scopes -r kubernetes \
     -s name=groups \
     -s protocol=openid-connect \
     -s 'attributes."include.in.token.scope"=true' \
     -s 'attributes."display.on.consent.screen"=true' || true
 
   # Get the groups scope ID
-  GROUPS_SCOPE_ID=$(kubectl exec -n keycloak ${KEYCLOAK_POD} -- /opt/keycloak/bin/kcadm.sh get client-scopes -r kubernetes \
+  GROUPS_SCOPE_ID=$(kubectl exec -n iam ${KEYCLOAK_POD} -- /opt/keycloak/bin/kcadm.sh get client-scopes -r kubernetes \
     -q name=groups --fields id --format csv --noquotes 2>/dev/null | tail -1)
 
   if [ -n "${GROUPS_SCOPE_ID}" ]; then
     # Add group membership mapper to the groups scope
-    kubectl exec -n keycloak ${KEYCLOAK_POD} -- /opt/keycloak/bin/kcadm.sh create client-scopes/${GROUPS_SCOPE_ID}/protocol-mappers/models \
+    kubectl exec -n iam ${KEYCLOAK_POD} -- /opt/keycloak/bin/kcadm.sh create client-scopes/${GROUPS_SCOPE_ID}/protocol-mappers/models \
       -r kubernetes \
       -s name=groups \
       -s protocol=openid-connect \
@@ -212,43 +276,43 @@ else
   echo "Creating OIDC clients..."
 
   # kubernetes client (public)
-  kubectl exec -n keycloak ${KEYCLOAK_POD} -- /opt/keycloak/bin/kcadm.sh create clients -r kubernetes \
+  kubectl exec -n iam ${KEYCLOAK_POD} -- /opt/keycloak/bin/kcadm.sh create clients -r kubernetes \
     -s clientId=kubernetes -s enabled=true -s publicClient=true \
     -s directAccessGrantsEnabled=true -s standardFlowEnabled=true \
     -s 'redirectUris=["*"]' -s 'webOrigins=["*"]' || true
 
   # argocd client
-  kubectl exec -n keycloak ${KEYCLOAK_POD} -- /opt/keycloak/bin/kcadm.sh create clients -r kubernetes \
+  kubectl exec -n iam ${KEYCLOAK_POD} -- /opt/keycloak/bin/kcadm.sh create clients -r kubernetes \
     -s clientId=argocd -s enabled=true -s publicClient=false \
     -s secret=argocd-secret -s directAccessGrantsEnabled=true -s standardFlowEnabled=true \
     -s 'redirectUris=["https://argocd.local.narwhal.io/*","http://localhost:8443/*"]' -s 'webOrigins=["*"]' || true
 
   # grafana client
-  kubectl exec -n keycloak ${KEYCLOAK_POD} -- /opt/keycloak/bin/kcadm.sh create clients -r kubernetes \
+  kubectl exec -n iam ${KEYCLOAK_POD} -- /opt/keycloak/bin/kcadm.sh create clients -r kubernetes \
     -s clientId=grafana -s enabled=true -s publicClient=false \
     -s secret=grafana-secret -s directAccessGrantsEnabled=true -s standardFlowEnabled=true \
     -s 'redirectUris=["https://grafana.local.narwhal.io/*","http://localhost:3000/*"]' -s 'webOrigins=["*"]' || true
 
   # gitea client
-  kubectl exec -n keycloak ${KEYCLOAK_POD} -- /opt/keycloak/bin/kcadm.sh create clients -r kubernetes \
+  kubectl exec -n iam ${KEYCLOAK_POD} -- /opt/keycloak/bin/kcadm.sh create clients -r kubernetes \
     -s clientId=gitea -s enabled=true -s publicClient=false \
     -s secret=gitea-secret -s directAccessGrantsEnabled=true -s standardFlowEnabled=true \
     -s 'redirectUris=["https://gitea.local.narwhal.io/*","http://localhost:3000/*"]' -s 'webOrigins=["*"]' || true
 
   # harbor client
-  kubectl exec -n keycloak ${KEYCLOAK_POD} -- /opt/keycloak/bin/kcadm.sh create clients -r kubernetes \
+  kubectl exec -n iam ${KEYCLOAK_POD} -- /opt/keycloak/bin/kcadm.sh create clients -r kubernetes \
     -s clientId=harbor -s enabled=true -s publicClient=false \
     -s secret=harbor-secret -s directAccessGrantsEnabled=true -s standardFlowEnabled=true \
     -s 'redirectUris=["https://harbor.local.narwhal.io/*","http://localhost:8080/*"]' -s 'webOrigins=["*"]' || true
 
   # headlamp client
-  kubectl exec -n keycloak ${KEYCLOAK_POD} -- /opt/keycloak/bin/kcadm.sh create clients -r kubernetes \
+  kubectl exec -n iam ${KEYCLOAK_POD} -- /opt/keycloak/bin/kcadm.sh create clients -r kubernetes \
     -s clientId=headlamp -s enabled=true -s publicClient=false \
     -s secret=headlamp-secret -s directAccessGrantsEnabled=true -s standardFlowEnabled=true \
     -s 'redirectUris=["https://headlamp.local.narwhal.io/*","http://localhost:8080/*"]' -s 'webOrigins=["*"]' || true
 
   # oauth2-proxy client (for Gateway API authentication)
-  kubectl exec -n keycloak ${KEYCLOAK_POD} -- /opt/keycloak/bin/kcadm.sh create clients -r kubernetes \
+  kubectl exec -n iam ${KEYCLOAK_POD} -- /opt/keycloak/bin/kcadm.sh create clients -r kubernetes \
     -s clientId=oauth2-proxy -s enabled=true -s publicClient=false \
     -s secret=oauth2-proxy-secret -s directAccessGrantsEnabled=true -s standardFlowEnabled=true \
     -s 'redirectUris=["https://*.local.narwhal.io/*","https://oauth2-proxy.local.narwhal.io/*"]' \
@@ -261,15 +325,15 @@ else
   #=========================================
   echo "Assigning 'groups' scope to all clients..."
 
-  GROUPS_SCOPE_ID=$(kubectl exec -n keycloak ${KEYCLOAK_POD} -- /opt/keycloak/bin/kcadm.sh get client-scopes -r kubernetes \
+  GROUPS_SCOPE_ID=$(kubectl exec -n iam ${KEYCLOAK_POD} -- /opt/keycloak/bin/kcadm.sh get client-scopes -r kubernetes \
     -q name=groups --fields id --format csv --noquotes 2>/dev/null | tail -1)
 
   if [ -n "${GROUPS_SCOPE_ID}" ]; then
     for client_name in kubernetes argocd grafana gitea harbor headlamp oauth2-proxy; do
-      CLIENT_UUID=$(kubectl exec -n keycloak ${KEYCLOAK_POD} -- /opt/keycloak/bin/kcadm.sh get clients -r kubernetes \
+      CLIENT_UUID=$(kubectl exec -n iam ${KEYCLOAK_POD} -- /opt/keycloak/bin/kcadm.sh get clients -r kubernetes \
         -q clientId=${client_name} --fields id --format csv --noquotes 2>/dev/null | tail -1)
       if [ -n "${CLIENT_UUID}" ]; then
-        kubectl exec -n keycloak ${KEYCLOAK_POD} -- /opt/keycloak/bin/kcadm.sh update clients/${CLIENT_UUID}/default-client-scopes/${GROUPS_SCOPE_ID} \
+        kubectl exec -n iam ${KEYCLOAK_POD} -- /opt/keycloak/bin/kcadm.sh update clients/${CLIENT_UUID}/default-client-scopes/${GROUPS_SCOPE_ID} \
           -r kubernetes || true
         echo "  -> groups scope assigned to ${client_name}"
       fi
@@ -284,12 +348,15 @@ fi
 #=========================================
 echo "=== Creating Kubernetes RBAC for OIDC ==="
 
-# ClusterRoleBinding for cluster-admins group
+# Create dev namespace for developer workloads
+kubectl create namespace dev --dry-run=client -o yaml | kubectl apply -f -
+
+# ClusterRoleBinding for cluster-admin group (full cluster access)
 cat <<EOF | kubectl apply -f -
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: oidc-cluster-admins
+  name: oidc-cluster-admin
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
@@ -297,15 +364,16 @@ roleRef:
 subjects:
 - apiGroup: rbac.authorization.k8s.io
   kind: Group
-  name: oidc:cluster-admins
+  name: oidc:cluster-admin
 EOF
 
-# ClusterRoleBinding for developers group
+# RoleBinding: developer group gets edit in dev namespace
 cat <<EOF | kubectl apply -f -
 apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRoleBinding
+kind: RoleBinding
 metadata:
-  name: oidc-developers
+  name: oidc-developer-edit
+  namespace: dev
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
@@ -313,15 +381,17 @@ roleRef:
 subjects:
 - apiGroup: rbac.authorization.k8s.io
   kind: Group
-  name: oidc:developers
+  name: oidc:developer
 EOF
 
-# ClusterRoleBinding for viewers group
-cat <<EOF | kubectl apply -f -
+# RoleBinding: developer group gets view in devtools and monitoring
+for ns in devtools monitoring; do
+  cat <<EOF | kubectl apply -f -
 apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRoleBinding
+kind: RoleBinding
 metadata:
-  name: oidc-viewers
+  name: oidc-developer-view
+  namespace: ${ns}
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
@@ -329,8 +399,30 @@ roleRef:
 subjects:
 - apiGroup: rbac.authorization.k8s.io
   kind: Group
-  name: oidc:viewers
+  name: oidc:developer
 EOF
+done
+
+# RoleBinding: viewer group gets view in dev, devtools, and monitoring
+for ns in dev devtools monitoring; do
+  cat <<EOF | kubectl apply -f -
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: oidc-viewer-view
+  namespace: ${ns}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: view
+subjects:
+- apiGroup: rbac.authorization.k8s.io
+  kind: Group
+  name: oidc:viewer
+EOF
+done
+
+# guest group: no K8s RBAC (web UI OIDC only)
 
 #=========================================
 # Create NodePort Service for API Server OIDC
@@ -342,7 +434,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: keycloak-nodeport
-  namespace: keycloak
+  namespace: iam
 spec:
   type: NodePort
   selector:
@@ -421,16 +513,18 @@ echo ""
 echo "=========================================="
 echo "Keycloak is ready!"
 echo "=========================================="
-echo "Namespace: keycloak"
+echo "Namespace: iam"
 echo ""
 echo "Admin Console:"
-echo "  kubectl port-forward svc/keycloak-service -n keycloak 8080:8080"
+echo "  kubectl port-forward svc/keycloak-service -n iam 8080:8080"
 echo "  URL: http://localhost:8080"
 echo "  User: ${KEYCLOAK_ADMIN_USER} / ${KEYCLOAK_ADMIN_PASSWORD}"
 echo ""
 echo "Kubernetes OIDC Users:"
-echo "  k8s-admin / k8s-admin (cluster-admin)"
-echo "  developer / developer (edit)"
+echo "  admin / admin (cluster-admin)"
+echo "  dev / dev (developer)"
+echo "  view / view (viewer)"
+echo "  guest / guest (guest - web UI only)"
 echo ""
 echo "OIDC Configuration:"
 echo "  Issuer: https://keycloak.local.narwhal.io/realms/kubernetes"
@@ -438,8 +532,8 @@ echo "  Client ID: kubernetes"
 echo ""
 echo "Test OIDC:"
 echo "  TOKEN=\$(curl -s -X POST 'https://keycloak.local.narwhal.io/realms/kubernetes/protocol/openid-connect/token' \\"
-echo "    -d 'grant_type=password&client_id=kubernetes&username=k8s-admin&password=k8s-admin' | jq -r '.access_token')"
+echo "    -d 'grant_type=password&client_id=kubernetes&username=admin&password=admin' | jq -r '.access_token')"
 echo "  kubectl --token=\$TOKEN get nodes"
 echo ""
-kubectl get pods -n keycloak
-kubectl get svc -n keycloak
+kubectl get pods -n iam
+kubectl get svc -n iam

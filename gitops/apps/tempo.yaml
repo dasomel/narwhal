@@ -2,7 +2,7 @@ apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
   name: tempo
-  namespace: argocd
+  namespace: devtools
   finalizers:
     - resources-finalizer.argocd.argoproj.io
 spec:
@@ -18,7 +18,7 @@ spec:
             trace:
               backend: s3
               s3:
-                endpoint: seaweedfs-s3.seaweedfs.svc.cluster.local:8333
+                endpoint: seaweedfs-s3.storage.svc.cluster.local:8333
                 bucket: tempo
                 access_key: admin
                 secret_key: admin

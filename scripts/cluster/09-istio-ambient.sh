@@ -154,17 +154,13 @@ kubectl rollout status daemonset/ztunnel -n istio-system --timeout=180s || true
 echo "Labeling namespaces for ambient mesh..."
 
 AMBIENT_NAMESPACES=(
-  database
-  keycloak
-  gitea
-  harbor
+  platform-system
+  iam
+  devtools
   monitoring
-  headlamp
-  openbao
-  oauth2-proxy
-  velero
-  seaweedfs
-  traefik
+  storage
+  database
+  dev
 )
 
 for ns in "${AMBIENT_NAMESPACES[@]}"; do
@@ -177,9 +173,11 @@ for ns in "${AMBIENT_NAMESPACES[@]}"; do
 done
 
 #=========================================
-# 6) PeerAuthentication STRICT (mesh-wide mTLS)
+# 6) PeerAuthentication PERMISSIVE (mesh-wide mTLS)
 #=========================================
-echo "Applying mesh-wide STRICT mTLS..."
+# PERMISSIVE allows non-mesh traffic (kubelet probes, MetalLB/Traefik external traffic)
+# to reach mesh services. ztunnel still enforces mTLS for mesh-to-mesh communication.
+echo "Applying mesh-wide PERMISSIVE mTLS..."
 cat <<'EOF' | kubectl apply -f -
 apiVersion: security.istio.io/v1
 kind: PeerAuthentication
@@ -188,7 +186,7 @@ metadata:
   namespace: istio-system
 spec:
   mtls:
-    mode: STRICT
+    mode: PERMISSIVE
 EOF
 
 echo ""
@@ -203,5 +201,5 @@ echo ""
 echo "Ambient mesh namespaces (${#AMBIENT_NAMESPACES[@]}):"
 printf '  - %s\n' "${AMBIENT_NAMESPACES[@]}"
 echo ""
-echo "mTLS: STRICT (mesh-wide)"
+echo "mTLS: PERMISSIVE (mesh-wide; ztunnel enforces mTLS for mesh-to-mesh)"
 echo ""

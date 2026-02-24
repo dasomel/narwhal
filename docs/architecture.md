@@ -224,8 +224,10 @@ PostgreSQL HA (CloudNative-PG)
 │              Realm: kubernetes                     │
 │                                                    │
 │  Users:                                            │
-│  ├── k8s-admin  → Group: cluster-admins            │
-│  └── developer  → Group: developers                │
+│  ├── admin   → Group: cluster-admin                 │
+│  ├── dev     → Group: developer                    │
+│  ├── view    → Group: viewer                       │
+│  └── guest   → Group: guest                        │
 │                                                    │
 │  Clients (OIDC):                                   │
 │  ├── kubernetes   (public)  → K8s API Server       │
@@ -253,9 +255,9 @@ PostgreSQL HA (CloudNative-PG)
 │  --oidc-groups-prefix=oidc:                           │
 │                                                       │
 │  RBAC:                                                │
-│  ├── oidc:cluster-admins → ClusterRole: cluster-admin │
-│  ├── oidc:developers     → ClusterRole: edit          │
-│  └── oidc:viewers        → ClusterRole: view          │
+│  ├── oidc:cluster-admin → ClusterRole: cluster-admin  │
+│  ├── oidc:developer    → RoleBinding: edit (dev NS)   │
+│  └── oidc:viewer       → RoleBinding: view            │
 └───────────────────────────────────────────────────────┘
 ```
 
@@ -463,7 +465,7 @@ sudo resolvectl domain eth0 ~local.narwhal.io
 # 토큰 발급 (HTTPS, self-signed cert)
 TOKEN=$(curl -k -s -X POST \
   'https://keycloak.local.narwhal.io/realms/kubernetes/protocol/openid-connect/token' \
-  -d 'grant_type=password&client_id=kubernetes&username=k8s-admin&password=k8s-admin' \
+  -d 'grant_type=password&client_id=kubernetes&username=admin&password=admin' \
   | jq -r '.access_token')
 
 # kubectl 사용
@@ -505,9 +507,9 @@ CNPG PostgreSQL
 │  Keycloak       → Central IdP (OIDC/SAML)            │
 │  K8s OIDC       → API Server authentication          │
 │  RBAC           → Group-based authorization          │
-│    cluster-admins → cluster-admin                    │
-│    developers     → edit                             │
-│    viewers        → view                             │
+│    cluster-admin → cluster-admin                     │
+│    developer     → edit (dev NS)                     │
+│    viewer        → view                              │
 │                                                      │
 ├─ Service Mesh ───────────────────────────────────────┤
 │                                                      │

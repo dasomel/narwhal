@@ -2,18 +2,18 @@ apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
   name: idp-apps
-  namespace: argocd
+  namespace: devtools
   finalizers:
     - resources-finalizer.argocd.argoproj.io
 spec:
   project: default
   source:
-    repoURL: http://gitea-http.gitea.svc.cluster.local:3000/gitea-admin/narwhal-gitops.git
+    repoURL: http://gitea-http.devtools.svc.cluster.local:3000/gitea-admin/narwhal-gitops.git
     targetRevision: HEAD
     path: apps
   destination:
     server: https://kubernetes.default.svc
-    namespace: argocd
+    namespace: devtools
   syncPolicy:
     automated:
       prune: true

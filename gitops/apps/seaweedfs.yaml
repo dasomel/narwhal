@@ -2,7 +2,7 @@ apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
   name: seaweedfs
-  namespace: argocd
+  namespace: devtools
   finalizers:
     - resources-finalizer.argocd.argoproj.io
 spec:
@@ -47,7 +47,7 @@ spec:
           enabled: true
   destination:
     server: https://kubernetes.default.svc
-    namespace: seaweedfs
+    namespace: storage
   syncPolicy:
     automated:
       prune: true

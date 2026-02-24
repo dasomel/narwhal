@@ -248,7 +248,7 @@ else:
       "${KEYCLOAK_URL}/admin/realms/kubernetes/users" 2>/dev/null \
       | python3 -c 'import sys,json; print(len(json.load(sys.stdin)))' 2>/dev/null || echo "0")
     if [ "${USER_COUNT}" -ge 2 ]; then
-      pass "Users: ${USER_COUNT} (k8s-admin, developer)"
+      pass "Users: ${USER_COUNT} (admin, dev, view, guest)"
     else
       fail "Users: ${USER_COUNT} (expected >= 2)"
     fi
@@ -256,10 +256,10 @@ else:
     GROUP_COUNT=$(curl -sk -H "Authorization: Bearer ${ADMIN_TOKEN}" \
       "${KEYCLOAK_URL}/admin/realms/kubernetes/groups" 2>/dev/null \
       | python3 -c 'import sys,json; print(len(json.load(sys.stdin)))' 2>/dev/null || echo "0")
-    if [ "${GROUP_COUNT}" -ge 2 ]; then
-      pass "Groups: ${GROUP_COUNT} (cluster-admins, developers, viewers)"
+    if [ "${GROUP_COUNT}" -ge 4 ]; then
+      pass "Groups: ${GROUP_COUNT} (cluster-admin, developer, viewer, guest)"
     else
-      fail "Groups: ${GROUP_COUNT} (expected >= 2)"
+      fail "Groups: ${GROUP_COUNT} (expected >= 4)"
     fi
   fi
   echo ""
@@ -274,8 +274,8 @@ if should_run "token"; then
   # Test with kubernetes client (public)
   TOKEN_RESP=$(curl -sk -X POST "${KEYCLOAK_URL}/realms/kubernetes/protocol/openid-connect/token" \
     -d "client_id=kubernetes" \
-    -d "username=k8s-admin" \
-    -d "password=k8s-admin" \
+    -d "username=admin" \
+    -d "password=admin" \
     -d "grant_type=password" 2>/dev/null)
 
   ACCESS_TOKEN=$(echo "${TOKEN_RESP}" | python3 -c 'import sys,json; print(json.load(sys.stdin).get("access_token",""))' 2>/dev/null)
@@ -289,8 +289,8 @@ d = json.load(sys.stdin)
 groups = d.get("groups", [])
 print(f"groups={groups}")
 ' 2>/dev/null)
-    if echo "${CLAIMS}" | grep -q "cluster-admins"; then
-      pass "kubernetes client: groups claim includes cluster-admins"
+    if echo "${CLAIMS}" | grep -q "cluster-admin"; then
+      pass "kubernetes client: groups claim includes cluster-admin"
     else
       fail "kubernetes client: groups claim missing — ${CLAIMS}"
     fi
@@ -303,8 +303,8 @@ print(f"groups={groups}")
   ARGOCD_RESP=$(curl -sk -X POST "${KEYCLOAK_URL}/realms/kubernetes/protocol/openid-connect/token" \
     -d "client_id=argocd" \
     -d "client_secret=argocd-secret" \
-    -d "username=k8s-admin" \
-    -d "password=k8s-admin" \
+    -d "username=admin" \
+    -d "password=admin" \
     -d "grant_type=password" \
     -d "scope=openid profile email groups" 2>/dev/null)
 
@@ -326,18 +326,18 @@ print(f"groups={groups}")
   # Test developer user
   DEV_TOKEN=$(curl -sk -X POST "${KEYCLOAK_URL}/realms/kubernetes/protocol/openid-connect/token" \
     -d "client_id=kubernetes" \
-    -d "username=developer" \
-    -d "password=developer" \
+    -d "username=dev" \
+    -d "password=dev" \
     -d "grant_type=password" 2>/dev/null \
     | python3 -c 'import sys,json; print(json.load(sys.stdin).get("access_token",""))' 2>/dev/null)
 
   if [ -n "${DEV_TOKEN}" ]; then
     DEV_GROUPS=$(decode_jwt_payload "${DEV_TOKEN}" \
       | python3 -c 'import sys,json; print(json.load(sys.stdin).get("groups",[]))' 2>/dev/null)
-    if echo "${DEV_GROUPS}" | grep -q "developers"; then
-      pass "developer: groups=[developers]"
+    if echo "${DEV_GROUPS}" | grep -q "developer"; then
+      pass "dev: groups=[developer]"
     else
-      fail "developer: groups missing developers — ${DEV_GROUPS}"
+      fail "dev: groups missing developer — ${DEV_GROUPS}"
     fi
   else
     fail "developer: token failed"

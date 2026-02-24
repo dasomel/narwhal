@@ -2,7 +2,7 @@ apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
   name: traefik
-  namespace: argocd
+  namespace: devtools
   finalizers:
     - resources-finalizer.argocd.argoproj.io
 spec:
@@ -28,7 +28,7 @@ spec:
         gateway:
           enabled: true
           name: traefik-gateway
-          namespace: traefik
+          namespace: platform-system
           listeners:
             http:
               port: 8000
@@ -81,7 +81,7 @@ spec:
             enabled: true
             serviceMonitor:
               enabled: true
-              namespace: traefik
+              namespace: platform-system
 
         # Additional arguments
         additionalArguments:
@@ -99,7 +99,7 @@ spec:
             effect: "NoSchedule"
   destination:
     server: https://kubernetes.default.svc
-    namespace: traefik
+    namespace: platform-system
   syncPolicy:
     automated:
       prune: true

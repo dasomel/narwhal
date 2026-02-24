@@ -14,7 +14,7 @@ helm repo add metallb https://metallb.github.io/metallb
 helm repo update metallb
 
 helm upgrade --install metallb metallb/metallb \
-  --namespace metallb-system \
+  --namespace platform-system \
   --create-namespace \
   --version 0.15.3 \
   --set speaker.tolerations[0].key=node-role.kubernetes.io/control-plane \
@@ -23,7 +23,7 @@ helm upgrade --install metallb metallb/metallb \
 
 # Wait for MetalLB controller to be ready
 echo "Waiting for MetalLB controller..."
-kubectl wait --for=condition=Ready pod -l app.kubernetes.io/component=controller -n metallb-system --timeout=120s || true
+kubectl wait --for=condition=Ready pod -l app.kubernetes.io/component=controller -n platform-system --timeout=120s || true
 
 # Apply MetalLB configuration (IP pool and L2 advertisement) with retry
 echo "Applying MetalLB configuration..."
@@ -60,7 +60,7 @@ done
 rm -rf /tmp/traefik-chart
 
 helm upgrade --install traefik traefik/traefik \
-  --namespace traefik \
+  --namespace platform-system \
   --create-namespace \
   --version 39.0.0 \
   --skip-crds \
@@ -86,7 +86,7 @@ helm repo add jetstack https://charts.jetstack.io
 helm repo update jetstack
 
 helm upgrade --install cert-manager jetstack/cert-manager \
-  --namespace cert-manager \
+  --namespace platform-system \
   --create-namespace \
   --version v1.19.3 \
   --set crds.enabled=true || echo "WARN: cert-manager install issue, continuing..."
@@ -229,7 +229,7 @@ helm repo add kyverno https://kyverno.github.io/kyverno/
 helm repo update kyverno
 
 helm upgrade --install kyverno kyverno/kyverno \
-  --namespace kyverno \
+  --namespace platform-system \
   --create-namespace \
   --version 3.7.0 \
   --set admissionController.replicas=1 \
@@ -247,7 +247,7 @@ helm repo add headlamp https://kubernetes-sigs.github.io/headlamp/
 helm repo update headlamp
 
 helm upgrade --install headlamp headlamp/headlamp \
-  --namespace headlamp \
+  --namespace devtools \
   --create-namespace \
   --version 0.40.0 \
   --set config.oidc.clientID=headlamp \
@@ -305,7 +305,7 @@ service:
 EOF
 
 helm upgrade --install oauth2-proxy oauth2-proxy/oauth2-proxy \
-  --namespace oauth2-proxy \
+  --namespace iam \
   --create-namespace \
   --version 10.1.3 \
   -f /tmp/oauth2-proxy-values.yaml || echo "WARN: OAuth2 Proxy install issue, continuing..."
@@ -321,7 +321,7 @@ helm repo add seaweedfs https://seaweedfs.github.io/seaweedfs/helm
 helm repo update seaweedfs
 
 helm upgrade --install seaweedfs seaweedfs/seaweedfs \
-  --namespace seaweedfs \
+  --namespace storage \
   --create-namespace \
   --version 4.0.407 \
   --set global.storageClass=nfs-csi \
@@ -347,9 +347,9 @@ helm upgrade --install seaweedfs seaweedfs/seaweedfs \
 
 # Create S3 buckets for platform apps
 echo "Creating SeaweedFS S3 buckets..."
-kubectl wait --for=condition=Ready pod -l app.kubernetes.io/name=seaweedfs,app.kubernetes.io/component=filer -n seaweedfs --timeout=120s || true
+kubectl wait --for=condition=Ready pod -l app.kubernetes.io/name=seaweedfs,app.kubernetes.io/component=filer -n storage --timeout=120s || true
 for bucket in tempo velero; do
-  kubectl exec -n seaweedfs seaweedfs-filer-0 -- sh -c "echo 's3.bucket.create -name ${bucket}' | weed shell" 2>/dev/null || true
+  kubectl exec -n storage seaweedfs-filer-0 -- sh -c "echo 's3.bucket.create -name ${bucket}' | weed shell" 2>/dev/null || true
 done
 echo "S3 buckets created"
 
@@ -367,15 +367,15 @@ echo "Waiting for PostgreSQL (narwhal-db) to be ready..."
 kubectl wait --for=condition=Ready cluster/narwhal-db -n database --timeout=300s || true
 
 # Create namespace first to apply ExternalName service
-kubectl create namespace harbor --dry-run=client -o yaml | kubectl apply -f -
+kubectl create namespace devtools --dry-run=client -o yaml | kubectl apply -f -
 
-# Apply ExternalName service to connect to narwhal-db from harbor namespace
+# Apply ExternalName service to connect to narwhal-db from devtools namespace
 cat <<EOF | kubectl apply -f -
 apiVersion: v1
 kind: Service
 metadata:
   name: harbor-db-rw
-  namespace: harbor
+  namespace: devtools
 spec:
   type: ExternalName
   externalName: narwhal-db-rw.database.svc.cluster.local
@@ -385,7 +385,7 @@ spec:
 EOF
 
 helm upgrade --install harbor harbor/harbor \
-  --namespace harbor \
+  --namespace devtools \
   --version 1.18.2 \
   --set expose.type=clusterIP \
   --set expose.tls.enabled=false \
@@ -431,7 +431,7 @@ helm repo add openbao https://openbao.github.io/openbao-helm
 helm repo update openbao
 
 helm upgrade --install openbao openbao/openbao \
-  --namespace openbao \
+  --namespace storage \
   --create-namespace \
   --version 0.11.0 \
   --set server.image.tag=2.2.0 \
@@ -448,30 +448,30 @@ helm upgrade --install openbao openbao/openbao \
 
 # Auto init + unseal OpenBao
 echo "Waiting for OpenBao pod..."
-kubectl wait --for=condition=Ready=false pod/openbao-0 -n openbao --timeout=120s 2>/dev/null || true
+kubectl wait --for=condition=Ready=false pod/openbao-0 -n storage --timeout=120s 2>/dev/null || true
 sleep 5
 
-OPENBAO_INITIALIZED=$(kubectl exec openbao-0 -n openbao -- bao status -format=json 2>/dev/null | python3 -c 'import sys,json; print(json.load(sys.stdin).get("initialized",""))' 2>/dev/null || echo "")
+OPENBAO_INITIALIZED=$(kubectl exec openbao-0 -n storage -- bao status -format=json 2>/dev/null | python3 -c 'import sys,json; print(json.load(sys.stdin).get("initialized",""))' 2>/dev/null || echo "")
 
 if [ "${OPENBAO_INITIALIZED}" = "True" ]; then
   echo "OpenBao already initialized, checking unseal key..."
-  UNSEAL_KEY=$(kubectl get secret openbao-init -n openbao -o jsonpath='{.data.unseal_keys_b64}' 2>/dev/null | base64 -d 2>/dev/null || echo "")
+  UNSEAL_KEY=$(kubectl get secret openbao-init -n storage -o jsonpath='{.data.unseal_keys_b64}' 2>/dev/null | base64 -d 2>/dev/null || echo "")
   if [ -n "${UNSEAL_KEY}" ]; then
     echo "Unsealing OpenBao..."
-    kubectl exec openbao-0 -n openbao -- bao operator unseal "${UNSEAL_KEY}" || true
+    kubectl exec openbao-0 -n storage -- bao operator unseal "${UNSEAL_KEY}" || true
   else
     echo "WARN: OpenBao initialized but unseal key not found in openbao-init secret"
   fi
 elif [ "${OPENBAO_INITIALIZED}" = "False" ]; then
   echo "Initializing OpenBao..."
-  INIT_JSON=$(kubectl exec openbao-0 -n openbao -- bao operator init -key-shares=1 -key-threshold=1 -format=json 2>/dev/null || echo "")
+  INIT_JSON=$(kubectl exec openbao-0 -n storage -- bao operator init -key-shares=1 -key-threshold=1 -format=json 2>/dev/null || echo "")
   if [ -n "${INIT_JSON}" ]; then
     UNSEAL_KEY=$(echo "${INIT_JSON}" | python3 -c 'import sys,json; print(json.load(sys.stdin)["unseal_keys_b64"][0])')
     ROOT_TOKEN=$(echo "${INIT_JSON}" | python3 -c 'import sys,json; print(json.load(sys.stdin)["root_token"])')
     echo "Unsealing OpenBao..."
-    kubectl exec openbao-0 -n openbao -- bao operator unseal "${UNSEAL_KEY}" || true
+    kubectl exec openbao-0 -n storage -- bao operator unseal "${UNSEAL_KEY}" || true
     echo "Saving credentials to openbao-init secret..."
-    kubectl create secret generic openbao-init -n openbao \
+    kubectl create secret generic openbao-init -n storage \
       --from-literal=unseal_keys_b64="${UNSEAL_KEY}" \
       --from-literal=root_token="${ROOT_TOKEN}" \
       --dry-run=client -o yaml | kubectl apply -f -
@@ -507,7 +507,7 @@ configuration:
       config:
         region: us-east-1
         s3ForcePathStyle: "true"
-        s3Url: http://seaweedfs-s3.seaweedfs.svc.cluster.local:8333
+        s3Url: http://seaweedfs-s3.storage.svc.cluster.local:8333
   volumeSnapshotLocation:
     - name: default
       provider: aws
@@ -542,7 +542,7 @@ nodeAgent:
 EOF
 
 helm upgrade --install velero vmware-tanzu/velero \
-  --namespace velero \
+  --namespace storage \
   --create-namespace \
   --version 11.3.2 \
   -f /tmp/velero-values.yaml || echo "WARN: Velero install issue, continuing..."
@@ -558,8 +558,8 @@ echo "=== Applying Traefik Gateway Routes ==="
 # Wait for Traefik to be ready (may take time during initial provisioning)
 echo "Waiting for Traefik deployment..."
 for attempt in $(seq 1 12); do
-  if kubectl get deployment traefik -n traefik >/dev/null 2>&1; then
-    kubectl wait --for=condition=Available deployment/traefik -n traefik --timeout=60s 2>/dev/null && break
+  if kubectl get deployment traefik -n platform-system >/dev/null 2>&1; then
+    kubectl wait --for=condition=Available deployment/traefik -n platform-system --timeout=60s 2>/dev/null && break
   fi
   echo "Traefik not ready yet, attempt ${attempt}/12..."
   sleep 15
@@ -581,7 +581,7 @@ kubectl apply -f /home/vagrant/configs/gitops/resources/traefik-routes.yaml || t
 # Wait for TLS certificate to be ready
 echo "Waiting for TLS certificate..."
 for attempt in $(seq 1 10); do
-  CERT_READY=$(kubectl get certificate traefik-tls -n traefik -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null || echo "")
+  CERT_READY=$(kubectl get certificate traefik-tls -n platform-system -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null || echo "")
   if [ "${CERT_READY}" = "True" ]; then
     echo "TLS certificate ready"
     break
@@ -594,9 +594,9 @@ done
 # Distribute CA cert to SSO app namespaces
 #=========================================
 echo "=== Distributing CA cert to SSO namespaces ==="
-CA_CERT=$(kubectl get secret traefik-tls -n traefik -o jsonpath='{.data.ca\.crt}' 2>/dev/null || echo "")
+CA_CERT=$(kubectl get secret traefik-tls -n platform-system -o jsonpath='{.data.ca\.crt}' 2>/dev/null || echo "")
 if [ -n "${CA_CERT}" ]; then
-  for ns in headlamp gitea harbor monitoring oauth2-proxy; do
+  for ns in devtools iam monitoring storage; do
     kubectl create namespace "${ns}" --dry-run=client -o yaml | kubectl apply -f - 2>/dev/null
     kubectl create secret generic narwhal-ca-cert \
       --from-literal=ca.crt="$(echo "${CA_CERT}" | base64 -d)" \

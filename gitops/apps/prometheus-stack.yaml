@@ -2,7 +2,7 @@ apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
   name: prometheus-stack
-  namespace: argocd
+  namespace: devtools
   finalizers:
     - resources-finalizer.argocd.argoproj.io
 spec:
@@ -49,7 +49,7 @@ spec:
               token_url: https://keycloak.local.narwhal.io/realms/kubernetes/protocol/openid-connect/token
               api_url: https://keycloak.local.narwhal.io/realms/kubernetes/protocol/openid-connect/userinfo
               tls_skip_verify_insecure: true
-              role_attribute_path: contains(groups[*], 'cluster-admins') && 'Admin' || contains(groups[*], 'developers') && 'Editor' || 'Viewer'
+              role_attribute_path: contains(groups[*], 'cluster-admin') && 'Admin' || contains(groups[*], 'developer') && 'Editor' || 'Viewer'
         alertmanager:
           alertmanagerSpec:
             storage:

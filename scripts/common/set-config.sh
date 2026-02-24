@@ -113,8 +113,10 @@ case "${AUTH_METHOD}" in
     echo "Use 'kubectl config use-context ${CLUSTER_NAME}-oidc' to use OIDC auth."
     echo ""
     echo "Available users (Keycloak):"
-    echo "  - k8s-admin / k8s-admin (cluster-admin)"
-    echo "  - developer / developer (edit)"
+    echo "  - admin / admin (cluster-admin)"
+    echo "  - dev / dev (developer)"
+    echo "  - view / view (viewer)"
+    echo "  - guest / guest (guest - web UI only)"
     ;;
 
   token)

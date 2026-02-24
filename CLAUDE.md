@@ -82,6 +82,7 @@
 | 2026-02-19 | Istio ambient HBONE port 15008 NetworkPolicy 차단 | ambient mesh는 포드간 HBONE(15008) 사용. NetworkPolicy ingress에 15008/TCP 추가 필수 |
 | 2026-02-19 | OAuth2-Proxy `insecure_oidc_skip_issuer_verification` TLS 미검증 아님 | issuer만 스킵, TLS 검증은 별도. `ssl_insecure_skip_verify = true` 추가 필요 |
 | 2026-02-19 | Traefik Gateway API CRD field manager 충돌 | chart CRD 추출 → `--server-side --force-conflicts` 적용 → `helm install --skip-crds` |
+| 2026-02-24 | Keycloak Operator 자동생성 NetworkPolicy에 HBONE 15008 누락 | Operator가 `keycloak-network-policy`를 관리하므로 직접 수정 불가. `keycloak-allow-hbone` 별도 NetworkPolicy로 15008/TCP 추가 (`11-keycloak.sh` 패턴 참조) |
 
 ### GitOps/ArgoCD 실수
 | 날짜 | 실수 | 해결책 |
@@ -97,6 +98,8 @@
 | 2026-02-15 | Grafana `assertNoLeakedSecrets` 차트 검증 실패 | `grafana.assertNoLeakedSecrets: false` 설정 필수 |
 | 2026-02-15 | Prometheus Helm 릴리스명 불일치 (`prometheus` vs `prometheus-stack`) | ArgoCD app name과 일치시켜야 HTTPRoute/ConfigMap 정상 작동 |
 | 2026-02-15 | Gitea OIDC 소스 추가 시 self-signed cert 검증 실패 | Gitea 컨테이너에 CA cert 마운트 후 `add-oauth` 실행 |
+| 2026-02-24 | ArgoCD를 비기본 네임스페이스(devtools)에 설치 시 ClusterRoleBinding Subject 불일치 | upstream install.yaml은 항상 Subject namespace를 `argocd`로 설정. 설치 후 `kubectl patch clusterrolebinding argocd-application-controller argocd-applicationset-controller argocd-server`로 namespace를 실제 설치 네임스페이스로 수정 필수 |
+| 2026-02-24 | Istio ambient namespace의 ArgoCD 헬스체크 포트(8082/8084/9001) ztunnel에 의해 차단 | ztunnel은 ambient namespace의 모든 인바운드 트래픽을 가로챔. kubelet probe(plain HTTP)가 mTLS를 기대하는 ztunnel과 충돌 → CrashLoopBackOff. pod template에 `istio.io/dataplane-mode: none` 레이블 추가로 해당 pod를 ambient에서 제외. `traffic.sidecar.istio.io/excludeInboundPorts` 어노테이션은 ambient 모드에서 동작 안 함 |
 
 ### Vagrant/Infrastructure 실수
 | 날짜 | 실수 | 해결책 |

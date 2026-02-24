@@ -16,7 +16,7 @@ for i in {1..30}; do
   sleep 10
 done
 
-GITEA_URL="http://gitea-http.gitea.svc.cluster.local:3000"
+GITEA_URL="http://gitea-http.devtools.svc.cluster.local:3000"
 GITEA_ADMIN_USER="gitea-admin"
 GITEA_ADMIN_PASSWORD="gitea-admin"
 REPO_NAME="narwhal-gitops"
@@ -25,7 +25,7 @@ REPO_NAME="narwhal-gitops"
 # Wait for Gitea to be ready
 #=========================================
 echo "Waiting for Gitea..."
-kubectl wait --for=condition=Ready pod -l app.kubernetes.io/name=gitea -n gitea --timeout=300s || true
+kubectl wait --for=condition=Ready pod -l app.kubernetes.io/name=gitea -n devtools --timeout=300s || true
 sleep 30
 
 #=========================================
@@ -34,7 +34,7 @@ sleep 30
 echo "Creating GitOps repository in Gitea..."
 
 # Port-forward Gitea for API access
-kubectl port-forward svc/gitea-http -n gitea 3000:3000 &
+kubectl port-forward svc/gitea-http -n devtools 3000:3000 &
 PF_PID=$!
 sleep 5
 
@@ -62,7 +62,7 @@ cd /tmp
 rm -rf ${REPO_NAME}
 
 # Clone via port-forward
-kubectl port-forward svc/gitea-http -n gitea 3000:3000 &
+kubectl port-forward svc/gitea-http -n devtools 3000:3000 &
 PF_PID=$!
 sleep 5
 
@@ -82,16 +82,16 @@ apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
   name: idp-apps
-  namespace: argocd
+  namespace: devtools
 spec:
   project: default
   source:
-    repoURL: http://gitea-http.gitea.svc.cluster.local:3000/gitea-admin/narwhal-gitops.git
+    repoURL: http://gitea-http.devtools.svc.cluster.local:3000/gitea-admin/narwhal-gitops.git
     targetRevision: HEAD
     path: apps
   destination:
     server: https://kubernetes.default.svc
-    namespace: argocd
+    namespace: devtools
   syncPolicy:
     automated:
       prune: true
@@ -133,20 +133,20 @@ apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
   name: idp-apps
-  namespace: argocd
+  namespace: devtools
   finalizers:
     - resources-finalizer.argocd.argoproj.io
 spec:
   project: default
   source:
-    repoURL: http://gitea-http.gitea.svc.cluster.local:3000/${GITEA_ADMIN_USER}/${REPO_NAME}.git
+    repoURL: http://gitea-http.devtools.svc.cluster.local:3000/${GITEA_ADMIN_USER}/${REPO_NAME}.git
     targetRevision: HEAD
     path: apps
     directory:
       recurse: true
   destination:
     server: https://kubernetes.default.svc
-    namespace: argocd
+    namespace: devtools
   syncPolicy:
     automated:
       prune: true
@@ -177,5 +177,5 @@ echo "  - kyverno"
 echo "  - headlamp"
 echo ""
 echo "Check ArgoCD UI for sync status:"
-echo "  kubectl port-forward svc/argocd-server -n argocd 8443:443"
+echo "  kubectl port-forward svc/argocd-server -n devtools 8443:443"
 echo ""

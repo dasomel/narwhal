@@ -14,16 +14,32 @@
 
 | 사용자 | 비밀번호 | 이메일 | 그룹 | 역할 |
 |--------|----------|--------|------|------|
-| `k8s-admin` | `k8s-admin` | k8s-admin@local | cluster-admins | cluster-admin |
-| `developer` | `developer` | developer@local | developers | developer |
+| `admin` | `admin` | admin@local | cluster-admin | cluster-admin |
+| `dev` | `dev` | dev@local | developer | developer |
+| `view` | `view` | view@local | viewer | viewer |
+| `guest` | `guest` | guest@local | guest | guest (웹 UI OIDC만) |
 
 ## 그룹
 
-| 그룹 | 설명 |
-|------|------|
-| `cluster-admins` | 클러스터 관리자 (전체 권한) |
-| `developers` | 개발자 (네임스페이스 제한) |
-| `viewers` | 읽기 전용 |
+| 그룹 | 설명 | K8s RBAC |
+|------|------|---------|
+| `cluster-admin` | 클러스터 관리자 (전체 권한) | ClusterRoleBinding → cluster-admin |
+| `developer` | 개발자 (dev NS edit, devtools/monitoring view) | RoleBindings |
+| `viewer` | 읽기 전용 (dev/devtools/monitoring view) | RoleBindings |
+| `guest` | 웹 UI 전용 (K8s 접근 없음) | RBAC 없음 |
+
+## 네임스페이스
+
+| NS | 포함 컴포넌트 |
+|----|-------------|
+| `platform-system` | MetalLB, Traefik, cert-manager, CNPG operator, Kyverno |
+| `iam` | Keycloak, OAuth2-Proxy |
+| `devtools` | ArgoCD, Gitea, Harbor, Headlamp |
+| `monitoring` | Prometheus, Grafana, Loki, Tempo, Promtail |
+| `storage` | SeaweedFS, Velero, OpenBao |
+| `database` | narwhal-db (PostgreSQL) |
+| `istio-system` | Istio |
+| `dev` | developer 워크로드 전용 |
 
 ## OIDC 클라이언트
 
@@ -55,6 +71,17 @@
 | `developer` | 개발 권한 |
 | `viewer` | 읽기 전용 |
 
+## 앱별 권한 매트릭스
+
+| App | cluster-admin | developer | viewer | guest |
+|-----|:---:|:---:|:---:|:---:|
+| K8s API | cluster-admin (전체) | dev NS edit + devtools/monitoring view | dev/devtools/monitoring view | 접근 불가 |
+| ArgoCD | role:admin | role:developer (sync/get) | role:readonly | 접근 불가 |
+| Grafana | Admin | Editor | Viewer | Viewer |
+| Gitea | Site Admin | User | User (read-only) | 접근 불가 |
+| Harbor | Admin | Developer | Guest | 접근 불가 |
+| Headlamp | Full | dev NS edit | dev NS view | 접근 불가 |
+
 ## SSO TLS 설정
 
 Self-signed 인증서(cert-manager) 사용으로 각 앱에 TLS skip-verify 설정 필요:
@@ -67,10 +94,6 @@ Self-signed 인증서(cert-manager) 사용으로 각 앱에 TLS skip-verify 설�
 | Headlamp | CA cert를 `/etc/ssl/certs/narwhal-ca.crt`에 subPath 마운트 |
 | Harbor | `oidc_verify_cert: false` |
 | Gitea | CA cert를 `extraVolumes` + `extraContainerVolumeMounts`로 마운트 |
-
-**Headlamp 참고**: v0.40.0에 `-oidc-skip-issuer-tls-verify` 플래그가 없으므로, `narwhal-ca-cert` Secret에서 CA cert를 `/etc/ssl/certs/narwhal-ca.crt`에 subPath로 마운트. Go 런타임이 `/etc/ssl/certs/` 디렉토리를 자동 스캔.
-
-**Gitea 참고**: Gitea Go 런타임이 Keycloak HTTPS 엔드포인트를 검증하므로, Helm values에서 `extraVolumes` + `extraContainerVolumeMounts`로 CA cert 마운트 필요.
 
 ## OIDC Endpoints
 

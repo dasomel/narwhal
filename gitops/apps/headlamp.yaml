@@ -2,7 +2,7 @@ apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
   name: headlamp
-  namespace: argocd
+  namespace: devtools
   finalizers:
     - resources-finalizer.argocd.argoproj.io
 spec:
@@ -30,7 +30,7 @@ spec:
             readOnly: true
   destination:
     server: https://kubernetes.default.svc
-    namespace: headlamp
+    namespace: devtools
   syncPolicy:
     automated:
       prune: true

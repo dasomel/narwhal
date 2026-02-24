@@ -2,7 +2,7 @@ apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
   name: loki
-  namespace: argocd
+  namespace: devtools
   finalizers:
     - resources-finalizer.argocd.argoproj.io
 spec:
@@ -25,7 +25,7 @@ spec:
               ruler: loki
               admin: loki
             s3:
-              endpoint: http://seaweedfs-s3.seaweedfs.svc.cluster.local:8333
+              endpoint: http://seaweedfs-s3.storage.svc.cluster.local:8333
               accessKeyId: admin
               secretAccessKey: admin
               s3ForcePathStyle: true

@@ -75,7 +75,7 @@ spec:
   # backup:
   #   barmanObjectStore:
   #     destinationPath: s3://cnpg-backup/narwhal-db
-  #     endpointURL: http://seaweedfs-s3.seaweedfs.svc.cluster.local:8333
+  #     endpointURL: http://seaweedfs-s3.storage.svc.cluster.local:8333
   #     s3Credentials:
   #       accessKeyId:
   #         name: cnpg-s3-credentials
@@ -95,7 +95,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: keycloak-db-rw
-  namespace: keycloak
+  namespace: iam
 spec:
   type: ExternalName
   externalName: narwhal-db-rw.database.svc.cluster.local
@@ -106,7 +106,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: harbor-db-rw
-  namespace: harbor
+  namespace: devtools
 spec:
   type: ExternalName
   externalName: narwhal-db-rw.database.svc.cluster.local
@@ -117,7 +117,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: gitea-db-rw
-  namespace: gitea
+  namespace: devtools
 spec:
   type: ExternalName
   externalName: narwhal-db-rw.database.svc.cluster.local

@@ -58,8 +58,10 @@ kubectl config use-context narwhal-oidc
 
 | 사용자 | 비밀번호 | 그룹 | K8s 권한 |
 |--------|----------|------|----------|
-| k8s-admin | k8s-admin | cluster-admins | cluster-admin |
-| developer | developer | developers | edit |
+| admin | admin | cluster-admin | cluster-admin |
+| dev | dev | developer | edit (dev NS) |
+| view | view | viewer | view |
+| guest | guest | guest | - (웹 UI only) |
 
 ### 3. 토큰 기반 (Service Account)
 

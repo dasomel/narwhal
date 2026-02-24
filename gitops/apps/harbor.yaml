@@ -2,7 +2,7 @@ apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
   name: harbor
-  namespace: argocd
+  namespace: devtools
   finalizers:
     - resources-finalizer.argocd.argoproj.io
 spec:
@@ -57,7 +57,7 @@ spec:
               "oidc_client_id": "harbor",
               "oidc_client_secret": "harbor-secret",
               "oidc_groups_claim": "groups",
-              "oidc_admin_group": "cluster-admins",
+              "oidc_admin_group": "cluster-admin",
               "oidc_scope": "openid,profile,email,groups",
               "oidc_auto_onboard": "true",
               "oidc_verify_cert": "false"
@@ -89,7 +89,7 @@ spec:
             tag: latest
   destination:
     server: https://kubernetes.default.svc
-    namespace: harbor
+    namespace: devtools
   syncPolicy:
     automated:
       prune: true

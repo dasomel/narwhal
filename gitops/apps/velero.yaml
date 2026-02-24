@@ -2,7 +2,7 @@ apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
   name: velero
-  namespace: argocd
+  namespace: devtools
   finalizers:
     - resources-finalizer.argocd.argoproj.io
 spec:
@@ -27,7 +27,7 @@ spec:
               config:
                 region: us-east-1
                 s3ForcePathStyle: "true"
-                s3Url: http://seaweedfs-s3.seaweedfs.svc.cluster.local:8333
+                s3Url: http://seaweedfs-s3.storage.svc.cluster.local:8333
           volumeSnapshotLocation:
             - name: default
               provider: aws
@@ -67,7 +67,7 @@ spec:
                 - "*"
               excludedNamespaces:
                 - kube-system
-                - velero
+                - storage
                 - monitoring
               includeClusterResources: true
               storageLocation: default
@@ -79,9 +79,8 @@ spec:
             template:
               ttl: 336h  # 14 days
               includedNamespaces:
-                - keycloak
-                - gitea
-                - harbor
+                - iam
+                - devtools
               labelSelector:
                 matchLabels:
                   cnpg.io/cluster: ""
@@ -95,7 +94,7 @@ spec:
             template:
               ttl: 336h  # 14 days
               includedNamespaces:
-                - gitea
+                - devtools
               includeClusterResources: false
               storageLocation: default
               defaultVolumesToFsBackup: true
@@ -106,7 +105,7 @@ spec:
             template:
               ttl: 168h  # 7 days
               includedNamespaces:
-                - harbor
+                - devtools
               includeClusterResources: false
               storageLocation: default
               defaultVolumesToFsBackup: true
@@ -117,13 +116,13 @@ spec:
             template:
               ttl: 336h  # 14 days
               includedNamespaces:
-                - openbao
+                - storage
               includeClusterResources: false
               storageLocation: default
               defaultVolumesToFsBackup: true
   destination:
     server: https://kubernetes.default.svc
-    namespace: velero
+    namespace: storage
   syncPolicy:
     automated:
       prune: true

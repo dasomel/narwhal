@@ -145,11 +145,11 @@ DNS 설정: 클라이언트 DNS를 `192.168.56.10`으로 지정하거나 `/etc/h
 
 ```bash
 # ArgoCD (GitOps)
-kubectl port-forward svc/argocd-server -n argocd 8443:443
-# https://localhost:8443 (admin / kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d)
+kubectl port-forward svc/argocd-server -n devtools 8443:443
+# https://localhost:8443 (admin / kubectl -n devtools get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d)
 
 # Keycloak (IAM)
-kubectl port-forward svc/keycloak-service -n keycloak 8080:8080
+kubectl port-forward svc/keycloak-service -n iam 8080:8080
 # http://localhost:8080
 
 # Grafana (Monitoring)
@@ -157,15 +157,15 @@ kubectl port-forward svc/prometheus-stack-grafana -n monitoring 3000:80
 # http://localhost:3000 (admin / admin or Keycloak SSO)
 
 # Gitea (Git)
-kubectl port-forward svc/gitea-http -n gitea 3000:3000
+kubectl port-forward svc/gitea-http -n devtools 3000:3000
 # http://localhost:3000 (gitea-admin / gitea-admin)
 
 # Harbor (Registry)
-kubectl port-forward svc/harbor -n harbor 8080:80
+kubectl port-forward svc/harbor-portal -n devtools 8080:80
 # http://localhost:8080 (admin / Harbor12345)
 
 # Headlamp (K8s UI)
-kubectl port-forward svc/headlamp -n headlamp 4466:80
+kubectl port-forward svc/headlamp -n devtools 4466:80
 # http://localhost:4466 (Keycloak SSO)
 ```
 

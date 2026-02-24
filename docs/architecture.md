@@ -98,14 +98,17 @@ Narwhal은 Vagrant VM 기반의 Kubernetes Internal Developer Platform (IDP) 클
 
 ### HTTPRoute Mappings
 
-| Hostname | Backend Service |
-|----------|----------------|
-| grafana.local.narwhal.io | prometheus-stack-grafana (monitoring) |
-| harbor.local.narwhal.io | harbor (harbor) |
-| keycloak.local.narwhal.io | keycloak-service (keycloak) |
-| openbao.local.narwhal.io | openbao-ui (openbao) |
-| hubble.local.narwhal.io | hubble-ui (kube-system) |
-| oauth2-proxy.local.narwhal.io | oauth2-proxy (oauth2-proxy) |
+| Hostname | Backend Service | Namespace |
+|----------|----------------|-----------|
+| argocd.local.narwhal.io | argocd-server | devtools |
+| grafana.local.narwhal.io | prometheus-stack-grafana | monitoring |
+| gitea.local.narwhal.io | gitea-http | devtools |
+| harbor.local.narwhal.io | harbor-portal | devtools |
+| keycloak.local.narwhal.io | keycloak-service | iam |
+| headlamp.local.narwhal.io | headlamp | devtools |
+| openbao.local.narwhal.io | openbao-ui | storage |
+| hubble.local.narwhal.io | hubble-ui | kube-system |
+| oauth2-proxy.local.narwhal.io | oauth2-proxy | iam |
 
 ---
 
@@ -146,7 +149,7 @@ Narwhal은 Vagrant VM 기반의 Kubernetes Internal Developer Platform (IDP) 클
 │  │ control  │  │ node     │  │ ambient  │                    │
 │  │ plane    │  │ proxy    │  │ redirect │                    │
 │  └──────────┘  └──────────┘  └──────────┘                    │
-│  Istio v1.29 ambient mode — mTLS (STRICT), zero sidecars    │
+│  Istio v1.29 ambient mode — mTLS (PERMISSIVE), zero sidecars │
 ├──────────────────────────────────────────────────────────────┤
 │                   Networking Layer                           │
 │  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌────────────┐    │
@@ -411,23 +414,16 @@ PostgreSQL HA (CloudNative-PG)
 ## Namespace Topology
 
 ```
-kube-system          Cilium, Hubble, CoreDNS, CSI-NFS, metrics-server
+kube-system          Cilium, Hubble, CoreDNS, CSI-NFS, metrics-server, nfs-quota-agent
 cnpg-system          CloudNative-PG Operator
-keycloak             Keycloak (uses shared narwhal-db)
+istio-system         Istio control plane (istiod, istio-cni, ztunnel)
+platform-system      MetalLB, Traefik, cert-manager, Kyverno
+iam                  Keycloak, OAuth2-Proxy
+devtools             ArgoCD, Gitea + Valkey, Harbor, Headlamp
 monitoring           Prometheus, Grafana, Alertmanager, Loki, Promtail, Tempo
-cert-manager         cert-manager + ClusterIssuer
-metallb-system       MetalLB Controller + Speakers
-traefik              Traefik Gateway API Controller
-kyverno              Kyverno Policy Engine
-headlamp             Headlamp K8s Dashboard
-oauth2-proxy         OAuth2 Proxy (Gateway Auth)
-seaweedfs            SeaweedFS (Master + Volume + Filer + S3)
-harbor               Harbor Registry (uses shared narwhal-db)
-openbao              OpenBao Secret Management
-velero               Velero Backup + Node Agents
-gitea                Gitea + Valkey (uses shared narwhal-db)
-argocd               ArgoCD (Server, Repo, Controller, Dex, Redis)
-nfs-quota-agent      NFS Quota Agent
+storage              SeaweedFS (S3), OpenBao, Velero
+database             narwhal-db (CNPG PostgreSQL HA)
+dev                  Developer workloads (user namespace)
 ```
 
 ---
@@ -513,7 +509,7 @@ CNPG PostgreSQL
 │                                                      │
 ├─ Service Mesh ───────────────────────────────────────┤
 │                                                      │
-│  Istio ambient   → mTLS STRICT (East-West)           │
+│  Istio ambient   → mTLS PERMISSIVE (East-West)        │
 │  ztunnel         → Node proxy (HBONE, zero sidecar)  │
 │  PeerAuth        → Mesh-wide mutual TLS              │
 │                                                      │

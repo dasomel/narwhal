@@ -170,7 +170,7 @@ vagrant up master-1
 
 1. Keycloak이 실행 중인지 확인:
    ```bash
-   kubectl get pods -n keycloak
+   kubectl get pods -n iam
    ```
 
 2. Keycloak 접근 테스트:

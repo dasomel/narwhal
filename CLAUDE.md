@@ -83,6 +83,9 @@
 | 2026-02-19 | OAuth2-Proxy `insecure_oidc_skip_issuer_verification` TLS 미검증 아님 | issuer만 스킵, TLS 검증은 별도. `ssl_insecure_skip_verify = true` 추가 필요 |
 | 2026-02-19 | Traefik Gateway API CRD field manager 충돌 | chart CRD 추출 → `--server-side --force-conflicts` 적용 → `helm install --skip-crds` |
 | 2026-02-24 | Keycloak Operator 자동생성 NetworkPolicy에 HBONE 15008 누락 | Operator가 `keycloak-network-policy`를 관리하므로 직접 수정 불가. `keycloak-allow-hbone` 별도 NetworkPolicy로 15008/TCP 추가 (`11-keycloak.sh` 패턴 참조) |
+| 2026-02-24 | Keycloak hostname v1/v2 옵션 충돌 | `additionalOptions`에 `hostname-url` (v1 deprecated) 사용 금지. v2: `hostname.hostname` + `hostname.strict: true` + `proxy.headers: xforwarded` |
+| 2026-02-24 | yq로 URL에 셸 따옴표 삽입 → API 서버 크래시 | `yq -i ".spec... += [\"--flag=value\"]"` 사용 (NOT `'...'`). 쉘 변수 확장 시 바깥 따옴표를 `"` 사용 |
+| 2026-02-24 | API 서버 OIDC 플래그 추가 시 HTTPRoute 미존재 | `11-keycloak.sh`에서 OIDC 검증 전에 Keycloak HTTPRoute 먼저 생성 필수. GitOps bootstrap(14)보다 먼저 실행됨 |
 
 ### GitOps/ArgoCD 실수
 | 날짜 | 실수 | 해결책 |

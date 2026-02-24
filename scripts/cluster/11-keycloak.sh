@@ -70,13 +70,12 @@ spec:
     httpEnabled: true
   hostname:
     hostname: keycloak.local.narwhal.io
-    strict: false
+    strict: true
   proxy:
     headers: xforwarded
-  additionalOptions:
-    - name: hostname-url
-      # K8s 1.35+ requires HTTPS for OIDC issuer URL
-      value: "https://keycloak.local.narwhal.io"
+  # NOTE: Do NOT use additionalOptions hostname-url (v1 deprecated in Keycloak 26.x)
+  # hostname v2 with strict: true + proxy.headers: xforwarded ensures HTTPS issuer
+  # when accessed via Traefik (X-Forwarded-Proto: https)
 EOF
 
 # Wait for Keycloak pods
@@ -446,26 +445,58 @@ spec:
 EOF
 
 #=========================================
+# Create Keycloak HTTPRoute for HTTPS access
+#=========================================
+# HTTPRoute must exist BEFORE OIDC verification, otherwise curl to
+# https://keycloak.local.narwhal.io fails (Traefik has no route to Keycloak).
+# This is also deployed via GitOps later, but we need it now for API server OIDC setup.
+echo "=== Creating Keycloak HTTPRoute ==="
+cat <<EOF | kubectl apply -f -
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: keycloak
+  namespace: iam
+spec:
+  parentRefs:
+    - name: traefik-gateway
+      namespace: platform-system
+  hostnames:
+    - "keycloak.local.narwhal.io"
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      backendRefs:
+        - name: keycloak-service
+          port: 8080
+EOF
+
+# Wait for route to become effective
+sleep 5
+
+#=========================================
 # Configure API Server for OIDC
 #=========================================
 echo "=== Configuring API Server for OIDC ==="
 
+DOMAIN="${DOMAIN:-local.narwhal.io}"
 # K8s 1.35+ requires HTTPS for --oidc-issuer-url; HTTP causes API server crash
-OIDC_ISSUER_URL="https://keycloak.local.narwhal.io/realms/kubernetes"
+OIDC_ISSUER_URL="https://keycloak.${DOMAIN}/realms/kubernetes"
 APISERVER_MANIFEST="/etc/kubernetes/manifests/kube-apiserver.yaml"
 
 # Verify HTTPS OIDC endpoint is reachable before activating
-# K8s 1.35+ will crash API server if the HTTPS URL is unreachable
 echo "Verifying OIDC issuer HTTPS endpoint..."
 OIDC_REACHABLE=false
-for attempt in {1..10}; do
+for attempt in {1..15}; do
   HTTP_CODE=$(curl -sk -o /dev/null -w '%{http_code}' "${OIDC_ISSUER_URL}/.well-known/openid-configuration" 2>/dev/null || echo "000")
   if [ "${HTTP_CODE}" = "200" ]; then
     OIDC_REACHABLE=true
     echo "OIDC endpoint reachable (HTTP ${HTTP_CODE})"
     break
   fi
-  echo "OIDC endpoint not ready (HTTP ${HTTP_CODE}), attempt ${attempt}/10..."
+  echo "OIDC endpoint not ready (HTTP ${HTTP_CODE}), attempt ${attempt}/15..."
   sleep 10
 done
 
@@ -473,29 +504,30 @@ if [ "${OIDC_REACHABLE}" = "false" ]; then
   echo "WARN: OIDC HTTPS endpoint not reachable. Skipping API server OIDC activation."
   echo "  Possible causes:"
   echo "    - cert-manager TLS certificate not issued yet"
-  echo "    - Traefik Gateway not routing keycloak.local.narwhal.io"
-  echo "    - DNS not resolving keycloak.local.narwhal.io"
+  echo "    - Traefik Gateway not routing keycloak.${DOMAIN}"
+  echo "    - DNS not resolving keycloak.${DOMAIN}"
   echo "  Run scripts in order: 08-platform-apps.sh → 10-dnsmasq.sh → 11-keycloak.sh"
 else
   # Check if OIDC flags already exist
   if ! grep -q "oidc-issuer-url" ${APISERVER_MANIFEST} 2>/dev/null; then
     # Use yq to safely add OIDC flags to the command array
-    sudo yq -i '.spec.containers[0].command += [
-      "--oidc-issuer-url='"${OIDC_ISSUER_URL}"'",
-      "--oidc-client-id=kubernetes",
-      "--oidc-username-claim=preferred_username",
-      "--oidc-groups-claim=groups",
-      "--oidc-username-prefix=oidc:",
-      "--oidc-groups-prefix=oidc:"
-    ]' ${APISERVER_MANIFEST}
+    # NOTE: Do NOT quote the URL value with shell quotes - yq handles YAML escaping
+    sudo yq -i ".spec.containers[0].command += [
+      \"--oidc-issuer-url=${OIDC_ISSUER_URL}\",
+      \"--oidc-client-id=kubernetes\",
+      \"--oidc-username-claim=preferred_username\",
+      \"--oidc-groups-claim=groups\",
+      \"--oidc-username-prefix=oidc:\",
+      \"--oidc-groups-prefix=oidc:\"
+    ]" ${APISERVER_MANIFEST}
 
     echo "OIDC flags added to API server. Waiting for restart..."
 
-    # Wait for API server to restart
-    sleep 10
+    # Wait for API server to restart (static pod manager detects manifest change)
+    sleep 15
     for i in {1..30}; do
       if kubectl get nodes &>/dev/null; then
-        echo "API server is ready"
+        echo "API server is ready with OIDC"
         break
       fi
       echo "Waiting for API server... ($i/30)"
@@ -504,6 +536,28 @@ else
   else
     echo "OIDC already configured in API server"
   fi
+
+  # Apply OIDC flags to master-2 and master-3 via SSH
+  MASTER_IP_BASE="${MASTER_IP_BASE:-192.168.56.1}"
+  MASTER_COUNT="${MASTER_COUNT:-3}"
+  for i in $(seq 2 "${MASTER_COUNT}"); do
+    MASTER_IP="${MASTER_IP_BASE}$((i - 1))"
+    echo "Applying OIDC flags to master-${i} (${MASTER_IP})..."
+    ssh -o StrictHostKeyChecking=no "vagrant@${MASTER_IP}" \
+      "if ! grep -q 'oidc-issuer-url' /etc/kubernetes/manifests/kube-apiserver.yaml 2>/dev/null; then
+        sudo yq -i '.spec.containers[0].command += [
+          \"--oidc-issuer-url=${OIDC_ISSUER_URL}\",
+          \"--oidc-client-id=kubernetes\",
+          \"--oidc-username-claim=preferred_username\",
+          \"--oidc-groups-claim=groups\",
+          \"--oidc-username-prefix=oidc:\",
+          \"--oidc-groups-prefix=oidc:\"
+        ]' /etc/kubernetes/manifests/kube-apiserver.yaml
+        echo 'OIDC flags added to master-${i}'
+      else
+        echo 'OIDC already configured on master-${i}'
+      fi" 2>/dev/null || echo "WARN: Could not apply OIDC to master-${i}"
+  done
 fi
 
 echo "=== Keycloak Installation Done ==="

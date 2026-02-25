@@ -49,6 +49,8 @@ spec:
           image:
             repository: ghcr.io/dasomel/goharbor/harbor-core
             tag: latest
+          podLabels:
+            istio.io/dataplane-mode: "none"
           configureUserSettings: |-
             {
               "auth_mode": "oidc_auth",
@@ -79,10 +81,14 @@ spec:
           image:
             repository: ghcr.io/dasomel/goharbor/harbor-portal
             tag: latest
+          podLabels:
+            istio.io/dataplane-mode: "none"
         nginx:
           image:
             repository: ghcr.io/dasomel/goharbor/nginx-photon
             tag: latest
+          podLabels:
+            istio.io/dataplane-mode: "none"
         exporter:
           image:
             repository: ghcr.io/dasomel/goharbor/harbor-exporter

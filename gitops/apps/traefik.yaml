@@ -15,6 +15,9 @@ spec:
       valuesObject:
         # Gateway API support
         providers:
+          kubernetesCRD:
+            enabled: true
+            allowExternalNameServices: true
           kubernetesGateway:
             enabled: true
             experimentalChannel: true
@@ -44,8 +47,8 @@ spec:
         service:
           type: LoadBalancer
           annotations:
-            # For MetalLB or kube-vip
-            io.cilium/lb-ipam-ips: "192.168.56.100"
+            # MetalLB: assign specific IP from default-pool (192.168.56.200-220)
+            metallb.universe.tf/loadBalancerIPs: "192.168.56.200"
 
         # Resource limits for 8GB nodes
         resources:

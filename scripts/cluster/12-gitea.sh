@@ -71,6 +71,10 @@ helm upgrade --install gitea gitea-charts/gitea \
   --set "extraContainerVolumeMounts[0].readOnly=true" \
   --timeout=600s || echo "WARN: Gitea install timed out, continuing..."
 
+# Opt Gitea out of Istio ambient mesh (SSO cookie handling)
+kubectl patch deployment gitea -n devtools --type='json' \
+  -p='[{"op": "add", "path": "/spec/template/metadata/labels/istio.io~1dataplane-mode", "value": "none"}]' 2>/dev/null || true
+
 # Patch Valkey NetworkPolicy for Istio ambient mesh (HBONE port 15008)
 if kubectl get networkpolicy gitea-valkey -n devtools &>/dev/null; then
   echo "Patching gitea-valkey NetworkPolicy for Istio ambient mesh (HBONE port 15008)..."
@@ -89,14 +93,35 @@ kubectl wait --for=condition=Ready pod -l app.kubernetes.io/name=gitea -n devtoo
 GITEA_POD=$(kubectl get pod -n devtools -l app.kubernetes.io/name=gitea -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
 
 if [ -n "${GITEA_POD}" ]; then
+  # Create narwhal organization for group→team mapping
+  echo "Creating narwhal organization..."
+  kubectl exec -n devtools "${GITEA_POD}" -- \
+    curl -sf -X POST "http://localhost:3000/api/v1/orgs" \
+      -H "Content-Type: application/json" \
+      -u "gitea-admin:gitea-admin" \
+      -d '{"username":"narwhal","full_name":"Narwhal","visibility":"public"}' 2>/dev/null || true
+
+  # Create teams in narwhal org
+  for team_data in '{"name":"Developers","permission":"write","units":["repo.code","repo.issues","repo.pulls"]}' \
+                   '{"name":"Viewers","permission":"read","units":["repo.code","repo.issues"]}'; do
+    kubectl exec -n devtools "${GITEA_POD}" -- \
+      curl -sf -X POST "http://localhost:3000/api/v1/orgs/narwhal/teams" \
+        -H "Content-Type: application/json" \
+        -u "gitea-admin:gitea-admin" \
+        -d "${team_data}" 2>/dev/null || true
+  done
+
+  # Configure OAuth2 source with group→team mapping
   kubectl exec -n devtools "${GITEA_POD}" -- gitea admin auth add-oauth \
-    --name "Keycloak" \
+    --name "keycloak" \
     --provider "openidConnect" \
     --key "gitea" \
     --secret "gitea-secret" \
     --auto-discover-url "${KEYCLOAK_URL}/realms/${KEYCLOAK_REALM}/.well-known/openid-configuration" \
     --group-claim-name "groups" \
     --admin-group "cluster-admin" \
+    --restricted-group "guest" \
+    --group-team-map '{"developer":{"narwhal":["Developers"]},"viewer":{"narwhal":["Viewers"]}}' \
     --skip-local-2fa || true
 else
   echo "WARN: Gitea pod not found, skipping OAuth2 configuration"

@@ -27,12 +27,12 @@ Narwhal은 Vagrant VM 기반의 Kubernetes Internal Developer Platform (IDP) 클
 │            VIP: 192.168.56.100 (kube-vip, ARP leader election)              │
 │            etcd 3-node: quorum=2/3 (1 fault tolerance)                      │
 │                                          │                                  │
-│  ┌───────────────────┐  ┌───────────────────┐  ┌───────────────────┐         │
-│  │ narwhal-worker-1  │  │ narwhal-worker-2  │  │ narwhal-worker-3  │         │
-│  │ 192.168.56.21     │  │ 192.168.56.22     │  │ 192.168.56.23     │         │
-│  │ worker            │  │ worker            │  │ worker            │         │
-│  │ 2 CPU / 6GB RAM   │  │ 2 CPU / 6GB RAM   │  │ 2 CPU / 6GB RAM   │         │
-│  └───────────────────┘  └───────────────────┘  └───────────────────┘         │
+│  ┌───────────────────┐  ┌───────────────────┐  ┌───────────────────┐        │
+│  │ narwhal-worker-1  │  │ narwhal-worker-2  │  │ narwhal-worker-3  │        │
+│  │ 192.168.56.21     │  │ 192.168.56.22     │  │ 192.168.56.23     │        │
+│  │ worker            │  │ worker            │  │ worker            │        │
+│  │ 2 CPU / 6GB RAM   │  │ 2 CPU / 6GB RAM   │  │ 2 CPU / 6GB RAM   │        │
+│  └───────────────────┘  └───────────────────┘  └───────────────────┘        │
 │                                                                             │
 │  LB:  192.168.56.200 (MetalLB → Traefik)                                    │
 │  DNS: *.local.narwhal.io → 192.168.56.200                                   │
@@ -103,7 +103,7 @@ Narwhal은 Vagrant VM 기반의 Kubernetes Internal Developer Platform (IDP) 클
 | argocd.local.narwhal.io | argocd-server | devtools |
 | grafana.local.narwhal.io | prometheus-stack-grafana | monitoring |
 | gitea.local.narwhal.io | gitea-http | devtools |
-| harbor.local.narwhal.io | harbor-portal | devtools |
+| harbor.local.narwhal.io | harbor | devtools |
 | keycloak.local.narwhal.io | keycloak-service | iam |
 | headlamp.local.narwhal.io | headlamp | devtools |
 | openbao.local.narwhal.io | openbao-ui | storage |
@@ -264,6 +264,114 @@ PostgreSQL HA (CloudNative-PG)
 └───────────────────────────────────────────────────────┘
 ```
 
+### Gateway-Level SSO (Traefik ForwardAuth + OAuth2-Proxy)
+
+모든 웹 앱은 Traefik ForwardAuth 미들웨어를 통해 Gateway 레벨에서 인증을 강제한다.
+미인증 사용자는 URL 자체에 접근할 수 없으며, OAuth2-Proxy의 `allowed_groups`로 그룹 기반 접근 제어를 수행한다.
+
+```
+Browser → argocd.local.narwhal.io
+    │
+    ▼
+┌─────────────────────────────────────────────────┐
+│  Traefik Gateway                                │
+│                                                 │
+│  1. ForwardAuth → OAuth2-Proxy /oauth2/auth     │
+│     ├── 쿠키 있음 → 200 OK → 앱으로 전달       │
+│     └── 쿠키 없음 → 401                        │
+│                                                 │
+│  2. Errors 미들웨어 (401 캐치)                  │
+│     └── auth-redirect (nginx) → JS 리다이렉트   │
+│         └── oauth2-proxy/oauth2/start?rd=<URL>  │
+│                                                 │
+│  3. OAuth2-Proxy → Keycloak 로그인              │
+│     ├── allowed_groups 검사                     │
+│     │   ├── 통과 → 쿠키 설정 → rd URL 리다이렉트│
+│     │   └── 실패 (guest) → 403 Access Denied    │
+│     └── 쿠키 도메인: .local.narwhal.io (전체)   │
+│                                                 │
+│  4. 앱별 SSO 자동 로그인 (Keycloak 세션 공유)   │
+│     └── appRedirects 맵으로 앱 SSO URL 직행     │
+└─────────────────────────────────────────────────┘
+```
+
+**ForwardAuth 적용 현황:**
+
+| 앱 | ForwardAuth | SSO 리다이렉트 경로 | 비고 |
+|---|---|---|---|
+| ArgoCD | ✅ | `/auth/login?return_url=...%2Fapplications` | OIDC → 자동 로그인 |
+| Grafana | ✅ | `/login/generic_oauth` | OAuth → 자동 로그인 |
+| Gitea | ✅ | `/user/oauth2/keycloak` | OAuth → 자동 로그인 |
+| Harbor | ✅ | `/c/oidc/login` | OIDC → 자동 로그인 |
+| Headlamp | ✅ | (SPA, 기본 경로) | 클라이언트사이드 OIDC |
+| OpenBao | ✅ | (SPA, 기본 경로) | 토큰 인증 |
+| Hubble | ✅ | (자체 SSO 없음) | ForwardAuth만 |
+| Keycloak | ❌ | — | IAM 자체 |
+| OAuth2-Proxy | ❌ | — | 인증 서비스 자체 |
+
+**그룹 기반 접근 제어 (OAuth2-Proxy `allowed_groups`):**
+
+| 그룹 | 접근 가능 | 차단 |
+|---|---|---|
+| cluster-admin | 모든 앱 | — |
+| developer | 모든 앱 | — |
+| viewer | 모든 앱 | — |
+| guest | ❌ 403 Access Denied | 모든 앱 |
+
+**핵심 리소스:**
+
+| 리소스 | 네임스페이스 | 설명 |
+|---|---|---|
+| `ConfigMap/auth-redirect-page` | devtools | JS 리다이렉트 페이지 (PKCE 충돌 방지 포함) |
+| `Deployment/auth-redirect` | devtools | nginx (redirect 페이지 서빙) |
+| `Middleware/forwardauth-oauth2` | devtools, monitoring, storage, kube-system | ForwardAuth → OAuth2-Proxy |
+| `Middleware/auth-signin` | devtools, monitoring, storage, kube-system | Errors (401 → 리다이렉트) |
+| `Service/auth-redirect-ext` | monitoring, storage, kube-system | ExternalName → devtools/auth-redirect |
+
+**쿠키 & 세션 관리:**
+
+| 쿠키 | 도메인 | 만료 | 용도 |
+|---|---|---|---|
+| `_oauth2_proxy` | `.local.narwhal.io` | 7일 (기본) | Gateway 인증 (전체 앱 공유) |
+| `argocd.token` | `argocd.local.narwhal.io` | 앱별 | ArgoCD 세션 |
+| `grafana_session` | `grafana.local.narwhal.io` | 앱별 | Grafana 세션 |
+| `i_like_gitea` | `gitea.local.narwhal.io` | 앱별 | Gitea 세션 |
+| `sid` | `harbor.local.narwhal.io` | 앱별 | Harbor 세션 |
+
+**테스트 & 트러블슈팅 가이드:**
+
+```bash
+# 1. 다른 사용자로 테스트 — 프라이빗/시크릿 창 사용
+#    Chrome: Ctrl+Shift+N / macOS: Cmd+Shift+N
+#    Firefox: Ctrl+Shift+P / macOS: Cmd+Shift+P
+#    → 창 닫으면 모든 쿠키 자동 삭제
+
+# 2. 같은 브라우저에서 재로그인 — 쿠키 삭제
+#    Chrome:  개발자도구(F12) → Application → Cookies
+#             → .local.narwhal.io 도메인 우클릭 → Clear
+#    Firefox: 개발자도구(F12) → Storage → Cookies
+#             → .local.narwhal.io 선택 → Delete All
+#    Safari:  환경설정 → 개인정보보호 → 웹사이트 데이터 관리
+#             → local.narwhal.io 검색 → 제거
+
+# 3. CLI로 인증 상태 확인
+#    쿠키 없이 접근 (401/302 예상):
+curl -sk -o /dev/null -w '%{http_code}' https://argocd.local.narwhal.io
+#    OAuth2-Proxy 쿠키로 접근 (200 예상):
+curl -sk -o /dev/null -w '%{http_code}' \
+  -H "Cookie: _oauth2_proxy=<쿠키값>" https://argocd.local.narwhal.io
+
+# 4. OAuth2-Proxy 로그 확인 (인증 실패 디버깅)
+kubectl logs -n iam -l app.kubernetes.io/name=oauth2-proxy --tail=20
+
+# 5. Keycloak 세션 강제 만료 (모든 사용자 로그아웃)
+#    Keycloak Admin Console → Sessions → Sign out all
+#    또는 특정 사용자: Users → 해당 사용자 → Sessions → Logout all
+```
+
+> **팁**: 개발 중에는 프라이빗 창을 사용하면 매번 쿠키를 지울 필요가 없다.
+> 창을 닫으면 깨끗한 상태로 다시 시작할 수 있다.
+
 ---
 
 ## Observability Stack
@@ -406,7 +514,7 @@ PostgreSQL HA (CloudNative-PG)
 ### Worker Nodes
 
 ```
-01-join-cluster.sh   → kubeadm join (master-1에서 토큰 가져오기)
+02-join-worker.sh    → kubeadm join (master-1에서 토큰 가져오기)
 ```
 
 ---
@@ -415,9 +523,8 @@ PostgreSQL HA (CloudNative-PG)
 
 ```
 kube-system          Cilium, Hubble, CoreDNS, CSI-NFS, metrics-server, nfs-quota-agent
-cnpg-system          CloudNative-PG Operator
+platform-system      CloudNative-PG Operator, MetalLB, Traefik, cert-manager, Kyverno
 istio-system         Istio control plane (istiod, istio-cni, ztunnel)
-platform-system      MetalLB, Traefik, cert-manager, Kyverno
 iam                  Keycloak, OAuth2-Proxy
 devtools             ArgoCD, Gitea + Valkey, Harbor, Headlamp
 monitoring           Prometheus, Grafana, Alertmanager, Loki, Promtail, Tempo

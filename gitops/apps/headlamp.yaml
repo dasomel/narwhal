@@ -13,20 +13,34 @@ spec:
     targetRevision: 0.40.0
     helm:
       valuesObject:
+        podLabels:
+          istio.io/dataplane-mode: "none"
         config:
           oidc:
             clientID: headlamp
             clientSecret: headlamp-secret
             issuerURL: https://keycloak.local.narwhal.io/realms/kubernetes
             scopes: openid,profile,email,groups
+        initContainers:
+          - name: ca-bundle
+            image: ghcr.io/headlamp-k8s/headlamp:v0.40.0
+            command: ['sh', '-c', 'cat /etc/ssl/certs/ca-certificates.crt /narwhal-ca/ca.crt > /combined/ca-certificates.crt']
+            volumeMounts:
+              - name: narwhal-ca
+                mountPath: /narwhal-ca
+                readOnly: true
+              - name: combined-certs
+                mountPath: /combined
         volumes:
           - name: narwhal-ca
             secret:
               secretName: narwhal-ca-cert
+          - name: combined-certs
+            emptyDir: {}
         volumeMounts:
-          - name: narwhal-ca
-            mountPath: /etc/ssl/certs/narwhal-ca.crt
-            subPath: ca.crt
+          - name: combined-certs
+            mountPath: /etc/ssl/certs/ca-certificates.crt
+            subPath: ca-certificates.crt
             readOnly: true
   destination:
     server: https://kubernetes.default.svc

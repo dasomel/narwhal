@@ -36,6 +36,7 @@ echo "Creating GitOps repository in Gitea..."
 # Port-forward Gitea for API access
 kubectl port-forward svc/gitea-http -n devtools 3000:3000 &
 PF_PID=$!
+trap 'kill ${PF_PID} 2>/dev/null || true' EXIT
 sleep 5
 
 # Create repository via API
@@ -50,7 +51,8 @@ curl -s -X POST "http://localhost:3000/api/v1/user/repos" \
   }' || true
 
 # Kill port-forward
-kill ${PF_PID} 2>/dev/null || true
+kill "${PF_PID}" 2>/dev/null || true
+trap - EXIT
 
 #=========================================
 # Push GitOps configs to repository
@@ -59,15 +61,16 @@ echo "Pushing GitOps configs..."
 
 # Setup git
 cd /tmp
-rm -rf ${REPO_NAME}
+rm -rf "${REPO_NAME}"
 
 # Clone via port-forward
 kubectl port-forward svc/gitea-http -n devtools 3000:3000 &
 PF_PID=$!
+trap 'kill ${PF_PID} 2>/dev/null || true' EXIT
 sleep 5
 
 git clone "http://${GITEA_ADMIN_USER}:${GITEA_ADMIN_PASSWORD}@localhost:3000/${GITEA_ADMIN_USER}/${REPO_NAME}.git" || true
-cd ${REPO_NAME}
+cd "${REPO_NAME}"
 
 # Copy gitops configs
 cp -r /home/vagrant/configs/gitops/* . 2>/dev/null || true
@@ -106,7 +109,8 @@ git add -A
 git commit -m "Initial GitOps configuration" || true
 git push origin main || true
 
-kill ${PF_PID} 2>/dev/null || true
+kill "${PF_PID}" 2>/dev/null || true
+trap - EXIT
 
 #=========================================
 # Ensure unified PostgreSQL cluster is ready

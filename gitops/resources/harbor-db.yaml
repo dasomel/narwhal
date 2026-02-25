@@ -3,7 +3,7 @@
 # This file is kept for reference only
 #
 # Harbor connects via ExternalName service:
-#   narwhal-db-rw.harbor.svc → narwhal-db-pooler-rw.database.svc.cluster.local
+#   harbor-db-rw.devtools.svc → narwhal-db-rw.database.svc.cluster.local
 ---
 apiVersion: v1
 kind: Namespace

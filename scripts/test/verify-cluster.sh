@@ -9,9 +9,9 @@ set -uo pipefail
 # Exit code: 0 if all pass, 1 if any fail.
 #
 # Usage:
-#   vagrant ssh master-1 -c "bash /home/vagrant/scripts/cluster/verify-cluster.sh"
-#   vagrant ssh master-1 -c "bash /home/vagrant/scripts/cluster/verify-cluster.sh --quick"
-#   vagrant ssh master-1 -c "bash /home/vagrant/scripts/cluster/verify-cluster.sh --section nodes"
+#   vagrant ssh master-1 -c "bash /home/vagrant/scripts/test/verify-cluster.sh"
+#   vagrant ssh master-1 -c "bash /home/vagrant/scripts/test/verify-cluster.sh --quick"
+#   vagrant ssh master-1 -c "bash /home/vagrant/scripts/test/verify-cluster.sh --section nodes"
 
 QUICK_MODE=false
 SECTION_FILTER=""

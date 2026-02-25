@@ -26,6 +26,8 @@ spec:
         grafana:
           assertNoLeakedSecrets: false
           adminPassword: admin
+          podLabels:
+            istio.io/dataplane-mode: "none"
           persistence:
             enabled: true
             storageClassName: nfs-csi

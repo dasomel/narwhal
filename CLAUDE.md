@@ -86,6 +86,19 @@
 | 2026-02-24 | Keycloak hostname v1/v2 옵션 충돌 | `additionalOptions`에 `hostname-url` (v1 deprecated) 사용 금지. v2: `hostname.hostname` + `hostname.strict: true` + `proxy.headers: xforwarded` |
 | 2026-02-24 | yq로 URL에 셸 따옴표 삽입 → API 서버 크래시 | `yq -i ".spec... += [\"--flag=value\"]"` 사용 (NOT `'...'`). 쉘 변수 확장 시 바깥 따옴표를 `"` 사용 |
 | 2026-02-24 | API 서버 OIDC 플래그 추가 시 HTTPRoute 미존재 | `11-keycloak.sh`에서 OIDC 검증 전에 Keycloak HTTPRoute 먼저 생성 필수. GitOps bootstrap(14)보다 먼저 실행됨 |
+| 2026-02-25 | Keycloak OIDC 토큰 `aud` 클레임이 `account`만 포함 (K8s API 서버 Unauthorized) | Keycloak `kubernetes` 클라이언트에 audience mapper 추가 필수: `oidc-audience-mapper`, `included.client.audience=kubernetes`. 설정 없으면 `oidc: expected audience "kubernetes" got ["account"]` 에러 |
+| 2026-02-25 | API 서버 `--oidc-ca-file` 누락 → self-signed 인증서로 JWKS 검증 실패 | Keycloak이 self-signed cert 사용 시 `--oidc-ca-file=/etc/kubernetes/pki/oidc-ca.crt` 필수. 인증서 추출: `openssl s_client -connect ... \| openssl x509 -outform PEM` |
+| 2026-02-25 | `kcadm.sh --format csv --noquotes \| tail -1` 잘못된 ID 반환 | CSV 형식은 결과 순서/필드가 불안정. 대신 `kcadm.sh get ... 2>/dev/null \| jq -r '.[] \| select(.name=="X") \| .id'` 사용 |
+| 2026-02-25 | `kubectl --token=X`가 kubeconfig client-cert를 override 안 함 | X.509 인증이 토큰보다 우선. OIDC 테스트 시 `KUBECONFIG=/dev/null kubectl --server=... --certificate-authority=... --token=...` 사용 필수 |
+| 2026-02-25 | Istio ambient mesh에서 SSO 웹 서버 쿠키 손상 → `http: named cookie not present` | ambient namespace의 웹 서버(ArgoCD, Grafana, Harbor, Gitea, OAuth2-Proxy, Headlamp)는 반드시 `istio.io/dataplane-mode: none` pod label로 opt-out. ztunnel HBONE이 Set-Cookie/Cookie 헤더를 손상시킴 |
+| 2026-02-25 | Gitea OAuth2 소스 이름 대소문자 불일치 → `/user/oauth2/Keycloak` 500 에러 | URL path의 소스 이름이 case-sensitive. `gitea admin auth add-oauth --name "keycloak"` (소문자)로 등록하면 `/user/oauth2/keycloak`으로 접근 |
+| 2026-02-25 | `microprofile-jwt` 스코프에 `groups` 클레임 매퍼 중복 | Keycloak 기본 `microprofile-jwt` 스코프에 realm-role을 `groups`로 매핑하는 mapper 존재. 커스텀 `groups` 스코프 생성 후 다른 스코프의 `groups` 매퍼 삭제 필요 |
+| 2026-02-25 | Keycloak 모든 클라이언트의 `aud` 클레임이 `["account"]`만 포함 | `kubernetes` 클라이언트뿐 아니라 **모든 OIDC 클라이언트**에 audience mapper 추가 필수. ArgoCD 등 토큰을 직접 검증하는 앱에서 `expected audience "argocd" got ["account"]` 에러 발생 |
+| 2026-02-26 | Keycloak 사용자 `emailVerified=false` → OAuth2-Proxy 500 에러 | `kcadm.sh create users`에 `-s emailVerified=true` 필수. 또는 OAuth2-Proxy에 `insecure_oidc_allow_unverified_email = true` 추가 |
+| 2026-02-26 | Traefik Errors 미들웨어가 401 상태코드 보존 → 브라우저 자동 리다이렉트 안 됨 | ExternalName→OAuth2-Proxy 대신 nginx+JS 리다이렉트 페이지 사용. `window.location.href`로 강제 리다이렉트 |
+| 2026-02-26 | Traefik ExternalName 서비스 기본 차단 | `providers.kubernetesCRD.allowExternalNameServices: true` 설정 필수. 없으면 404 `externalName services not allowed` |
+| 2026-02-26 | OAuth2-Proxy PKCE 충돌 (동시 다중 OAuth 플로우) | 여러 보호 앱이 동시 리다이렉트 → code_verifier 충돌. JS에 sessionStorage 5초 디바운스 추가 |
+| 2026-02-26 | Traefik LB 어노테이션 `io.cilium/lb-ipam-ips`는 MetalLB에서 무시됨 | MetalLB용: `metallb.universe.tf/loadBalancerIPs: "IP"` 사용 |
 
 ### GitOps/ArgoCD 실수
 | 날짜 | 실수 | 해결책 |
@@ -103,6 +116,8 @@
 | 2026-02-15 | Gitea OIDC 소스 추가 시 self-signed cert 검증 실패 | Gitea 컨테이너에 CA cert 마운트 후 `add-oauth` 실행 |
 | 2026-02-24 | ArgoCD를 비기본 네임스페이스(devtools)에 설치 시 ClusterRoleBinding Subject 불일치 | upstream install.yaml은 항상 Subject namespace를 `argocd`로 설정. 설치 후 `kubectl patch clusterrolebinding argocd-application-controller argocd-applicationset-controller argocd-server`로 namespace를 실제 설치 네임스페이스로 수정 필수 |
 | 2026-02-24 | Istio ambient namespace의 ArgoCD 헬스체크 포트(8082/8084/9001) ztunnel에 의해 차단 | ztunnel은 ambient namespace의 모든 인바운드 트래픽을 가로챔. kubelet probe(plain HTTP)가 mTLS를 기대하는 ztunnel과 충돌 → CrashLoopBackOff. pod template에 `istio.io/dataplane-mode: none` 레이블 추가로 해당 pod를 ambient에서 제외. `traffic.sidecar.istio.io/excludeInboundPorts` 어노테이션은 ambient 모드에서 동작 안 함 |
+| 2026-02-26 | ArgoCD selfHeal이 kubectl apply 변경사항을 되돌림 | ArgoCD 관리 리소스는 kubectl로 직접 수정해도 selfHeal이 Gitea 상태로 되돌림. 반드시 Gitea 레포에 push해야 영속 |
+| 2026-02-26 | Gitea headless 서비스 (ClusterIP: None) → git clone 실패 | Gitea 서비스가 headless이면 DNS 해석 안 됨. Pod IP 직접 사용: `kubectl get pod -l app.kubernetes.io/name=gitea -o jsonpath='{.items[0].status.podIP}'` |
 
 ### Vagrant/Infrastructure 실수
 | 날짜 | 실수 | 해결책 |

@@ -53,7 +53,11 @@ done
 #   - argocd-repo-server: liveness/readiness on port 8084 (HTTP)
 #   - argocd-notifications-controller: liveness probe on port 9001 (TCP)
 #   - argocd-application-controller: readiness on port 8082 (HTTP)
-echo "Opting ArgoCD health-check pods out of Istio ambient mesh..."
+echo "Opting ArgoCD pods out of Istio ambient mesh..."
+
+# argocd-server: opt out of ambient (SSO cookie flow breaks under ztunnel interception)
+kubectl patch deployment argocd-server -n devtools --type='json' \
+  -p='[{"op": "add", "path": "/spec/template/metadata/labels/istio.io~1dataplane-mode", "value": "none"}]'
 
 # repo-server: opt out of ambient (istio.io/dataplane-mode=none on pod label)
 kubectl patch deployment argocd-repo-server -n devtools --type='json' \
@@ -127,9 +131,11 @@ data:
     p, role:developer, applications, sync, */*, allow
     p, role:developer, applications, get, */*, allow
     p, role:developer, logs, get, */*, allow
+    p, role:none, applications, get, */*, deny
     g, cluster-admin, role:admin
     g, developer, role:developer
     g, viewer, role:readonly
+    g, guest, role:none
   scopes: '[groups]'
 EOF
 

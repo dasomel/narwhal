@@ -161,7 +161,7 @@ kubectl port-forward svc/gitea-http -n devtools 3000:3000
 # http://localhost:3000 (gitea-admin / gitea-admin)
 
 # Harbor (Registry)
-kubectl port-forward svc/harbor-portal -n devtools 8080:80
+kubectl port-forward svc/harbor -n devtools 8080:80
 # http://localhost:8080 (admin / Harbor12345)
 
 # Headlamp (K8s UI)
@@ -230,9 +230,11 @@ gitops/
 │   ├── tempo.yaml
 │   ├── harbor.yaml
 │   ├── headlamp.yaml
+│   ├── metallb.yaml
 │   ├── oauth2-proxy.yaml
 │   ├── openbao.yaml
 │   ├── kyverno.yaml
+│   ├── promtail.yaml
 │   ├── seaweedfs.yaml
 │   ├── velero.yaml
 │   ├── traefik.yaml
@@ -242,10 +244,12 @@ gitops/
 │   └── ztunnel.yaml
 └── resources/               # K8s Resources
     ├── gitea-db.yaml
+    ├── grafana-datasources.yaml
     ├── harbor-db.yaml
     ├── cnpg-backup.yaml
     ├── kyverno-policies.yaml
     ├── metallb-config.yaml
+    ├── narwhal-db.yaml
     ├── traefik-routes.yaml   # HTTPRoutes & Gateway
     └── istio-ambient-policies.yaml
 ```

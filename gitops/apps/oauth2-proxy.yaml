@@ -16,6 +16,8 @@ spec:
     helm:
       valuesObject:
         replicaCount: 1
+        podLabels:
+          istio.io/dataplane-mode: "none"
         config:
           clientID: oauth2-proxy
           clientSecret: oauth2-proxy-secret
@@ -38,6 +40,9 @@ spec:
             skip_provider_button = true
             code_challenge_method = "S256"
             insecure_oidc_skip_issuer_verification = true
+            insecure_oidc_allow_unverified_email = true
+            allowed_groups = ["cluster-admin", "developer", "viewer"]
+            # cookie_expire = "168h"  # default 7 days, browser restart survives
         extraArgs:
           - --skip-jwt-bearer-tokens=true
         service:

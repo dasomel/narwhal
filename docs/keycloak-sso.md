@@ -155,7 +155,7 @@ kubectl -n kube-system get pod kube-apiserver-* -o yaml | grep oidc-issuer-url
 | JWKS | `{issuer}/protocol/openid-connect/certs` |
 | Discovery | `{issuer}/.well-known/openid-configuration` |
 
-**클러스터 내부 통신**: `http://keycloak-service.iam.svc.cluster.local:8080/realms/kubernetes`
+**클러스터 내부 통신**: `http://keycloak-service.iam.svc.cluster.local:8080/realms/kubernetes`   
 **외부/API Server**: `https://keycloak.local.narwhal.io/realms/kubernetes` (HTTPS 필수)
 
 ## 4. Kubernetes OIDC Integration

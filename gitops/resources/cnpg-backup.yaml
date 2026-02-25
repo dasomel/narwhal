@@ -1,16 +1,22 @@
 # CNPG Scheduled Backup Configuration
 # Unified narwhal-db cluster backup (replaces individual DB backups)
 # Backup storage is configured in Cluster spec (barmanObjectStore -> SeaweedFS S3)
----
-apiVersion: postgresql.cnpg.io/v1
-kind: ScheduledBackup
-metadata:
-  name: narwhal-db-daily
-  namespace: database
-spec:
-  schedule: "0 0 * * *"  # Daily at midnight
-  backupOwnerReference: self
-  cluster:
-    name: narwhal-db
-  method: barmanObjectStore
-  target: prefer-standby
+
+# ScheduledBackup - enable after SeaweedFS deployment and narwhal-db backup config
+# Steps to enable:
+#   1. Deploy SeaweedFS and create cnpg-backup bucket
+#   2. Uncomment backup section in narwhal-db.yaml (barmanObjectStore)
+#   3. Uncomment ScheduledBackup below
+# ---
+# apiVersion: postgresql.cnpg.io/v1
+# kind: ScheduledBackup
+# metadata:
+#   name: narwhal-db-daily
+#   namespace: database
+# spec:
+#   schedule: "0 0 * * *"  # Daily at midnight
+#   backupOwnerReference: self
+#   cluster:
+#     name: narwhal-db
+#   method: barmanObjectStore
+#   target: prefer-standby

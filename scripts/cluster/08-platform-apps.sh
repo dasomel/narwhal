@@ -72,6 +72,7 @@ helm upgrade --install traefik traefik/traefik \
   --set ingressRoute.dashboard.enabled=true \
   --set providers.kubernetesGateway.enabled=true \
   --set providers.kubernetesCRD.enabled=true \
+  --set providers.kubernetesCRD.allowExternalNameServices=true \
   --set providers.kubernetesIngress.enabled=false \
   --set gateway.enabled=false \
   --set logs.general.level=INFO || echo "WARN: Traefik install issue, continuing..."
@@ -127,6 +128,10 @@ helm upgrade --install prometheus-stack prometheus-community/kube-prometheus-sta
   --set prometheus-node-exporter.tolerations[0].key=node-role.kubernetes.io/control-plane \
   --set prometheus-node-exporter.tolerations[0].operator=Exists \
   --set prometheus-node-exporter.tolerations[0].effect=NoSchedule || echo "WARN: Prometheus Stack install issue, continuing..."
+
+# Opt Grafana out of Istio ambient mesh (SSO cookie handling)
+kubectl patch deployment prometheus-stack-grafana -n monitoring --type='json' \
+  -p='[{"op": "add", "path": "/spec/template/metadata/labels/istio.io~1dataplane-mode", "value": "none"}]' 2>/dev/null || true
 
 echo "Prometheus Stack installed"
 
@@ -246,20 +251,47 @@ echo "=== Installing Headlamp ==="
 helm repo add headlamp https://kubernetes-sigs.github.io/headlamp/
 helm repo update headlamp
 
+cat > /tmp/headlamp-values.yaml << 'EOF'
+config:
+  oidc:
+    clientID: headlamp
+    clientSecret: headlamp-secret
+    issuerURL: https://keycloak.local.narwhal.io/realms/kubernetes
+    scopes: openid,profile,email,groups
+initContainers:
+  - name: ca-bundle
+    image: ghcr.io/headlamp-k8s/headlamp:v0.40.0
+    command: ['sh', '-c', 'cat /etc/ssl/certs/ca-certificates.crt /narwhal-ca/ca.crt > /combined/ca-certificates.crt']
+    volumeMounts:
+      - name: narwhal-ca
+        mountPath: /narwhal-ca
+        readOnly: true
+      - name: combined-certs
+        mountPath: /combined
+volumes:
+  - name: narwhal-ca
+    secret:
+      secretName: narwhal-ca-cert
+  - name: combined-certs
+    emptyDir: {}
+volumeMounts:
+  - name: combined-certs
+    mountPath: /etc/ssl/certs/ca-certificates.crt
+    subPath: ca-certificates.crt
+    readOnly: true
+EOF
+
 helm upgrade --install headlamp headlamp/headlamp \
   --namespace devtools \
   --create-namespace \
   --version 0.40.0 \
-  --set config.oidc.clientID=headlamp \
-  --set config.oidc.clientSecret=headlamp-secret \
-  --set config.oidc.issuerURL=https://keycloak.local.narwhal.io/realms/kubernetes \
-  --set config.oidc.scopes="openid\,profile\,email\,groups" \
-  --set "volumes[0].name=narwhal-ca" \
-  --set "volumes[0].secret.secretName=narwhal-ca-cert" \
-  --set "volumeMounts[0].name=narwhal-ca" \
-  --set "volumeMounts[0].mountPath=/etc/ssl/certs/narwhal-ca.crt" \
-  --set "volumeMounts[0].subPath=ca.crt" \
-  --set "volumeMounts[0].readOnly=true" || echo "WARN: Headlamp install issue, continuing..."
+  -f /tmp/headlamp-values.yaml || echo "WARN: Headlamp install issue, continuing..."
+
+rm /tmp/headlamp-values.yaml
+
+# Opt Headlamp out of Istio ambient mesh (SSO cookie handling)
+kubectl patch deployment headlamp -n devtools --type='json' \
+  -p='[{"op": "add", "path": "/spec/template/metadata/labels/istio.io~1dataplane-mode", "value": "none"}]' 2>/dev/null || true
 
 echo "Headlamp installed"
 
@@ -297,6 +329,7 @@ config:
     code_challenge_method = "S256"
     insecure_oidc_skip_issuer_verification = true
     ssl_insecure_skip_verify = true
+    allowed_groups = ["cluster-admin", "developer", "viewer"]
 extraArgs:
   - --skip-jwt-bearer-tokens=true
 service:
@@ -311,6 +344,11 @@ helm upgrade --install oauth2-proxy oauth2-proxy/oauth2-proxy \
   -f /tmp/oauth2-proxy-values.yaml || echo "WARN: OAuth2 Proxy install issue, continuing..."
 
 rm /tmp/oauth2-proxy-values.yaml
+
+# Opt OAuth2-Proxy out of Istio ambient mesh (SSO cookie handling)
+kubectl patch deployment oauth2-proxy -n iam --type='json' \
+  -p='[{"op": "add", "path": "/spec/template/metadata/labels/istio.io~1dataplane-mode", "value": "none"}]' 2>/dev/null || true
+
 echo "OAuth2 Proxy installed"
 
 #=========================================
@@ -421,7 +459,52 @@ helm upgrade --install harbor harbor/harbor \
   --set exporter.image.repository=ghcr.io/dasomel/goharbor/harbor-exporter \
   --set exporter.image.tag=latest || echo "WARN: Harbor install issue, continuing..."
 
+# Opt Harbor SSO-facing pods out of Istio ambient mesh (cookie handling)
+for harbor_deploy in harbor-core harbor-nginx harbor-portal; do
+  kubectl patch deployment "${harbor_deploy}" -n devtools --type='json' \
+    -p='[{"op": "add", "path": "/spec/template/metadata/labels/istio.io~1dataplane-mode", "value": "none"}]' 2>/dev/null || true
+done
+
 echo "Harbor installed"
+
+#=========================================
+# Harbor: Project Group Members
+#=========================================
+echo "Configuring Harbor project group members..."
+
+# Wait for Harbor to be ready before API calls
+echo "Waiting for Harbor core pod..."
+kubectl wait --for=condition=Ready pod -l app=harbor,component=core -n devtools --timeout=300s || true
+
+# Wait for Harbor API to respond
+HARBOR_API="https://harbor.local.narwhal.io/api/v2.0"
+for attempt in $(seq 1 15); do
+  HARBOR_HEALTH=$(curl -sk -o /dev/null -w '%{http_code}' "${HARBOR_API}/systeminfo" 2>/dev/null || echo "000")
+  if [ "${HARBOR_HEALTH}" = "200" ]; then
+    echo "Harbor API ready"
+    break
+  fi
+  echo "Harbor API not ready (HTTP ${HARBOR_HEALTH}), attempt ${attempt}/15..."
+  sleep 10
+done
+
+if [ "${HARBOR_HEALTH}" = "200" ]; then
+  # Add developer group → project Developer role (roleId=2)
+  curl -sk -X POST "${HARBOR_API}/projects/1/members" \
+    -H "Content-Type: application/json" \
+    -u "admin:Harbor12345" \
+    -d '{"role_id":2,"member_group":{"group_name":"developer","group_type":3}}' 2>/dev/null || true
+  echo "Harbor: developer group → project Developer"
+
+  # Add viewer group → project Guest role (roleId=3)
+  curl -sk -X POST "${HARBOR_API}/projects/1/members" \
+    -H "Content-Type: application/json" \
+    -u "admin:Harbor12345" \
+    -d '{"role_id":3,"member_group":{"group_name":"viewer","group_type":3}}' 2>/dev/null || true
+  echo "Harbor: viewer group → project Guest"
+else
+  echo "WARN: Harbor API not available, skipping project member setup"
+fi
 
 #=========================================
 # OpenBao (Secret Management)

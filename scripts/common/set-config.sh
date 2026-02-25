@@ -37,21 +37,21 @@ case "${AUTH_METHOD}" in
     echo "$CONFIG" | awk '/client-key-data:/ {print $2}' | base64 -d > /tmp/narwhal-client.key
 
     # Set cluster
-    kubectl config set-cluster ${CLUSTER_NAME} \
+    kubectl config set-cluster "${CLUSTER_NAME}" \
       --server="${API_SERVER}" \
       --certificate-authority=/tmp/narwhal-ca.crt \
       --embed-certs=true
 
     # Set credentials (certificate-based)
-    kubectl config set-credentials ${CLUSTER_NAME}-admin \
+    kubectl config set-credentials "${CLUSTER_NAME}-admin" \
       --client-certificate=/tmp/narwhal-client.crt \
       --client-key=/tmp/narwhal-client.key \
       --embed-certs=true
 
     # Set context
-    kubectl config set-context ${CLUSTER_NAME} \
-      --cluster=${CLUSTER_NAME} \
-      --user=${CLUSTER_NAME}-admin
+    kubectl config set-context "${CLUSTER_NAME}" \
+      --cluster="${CLUSTER_NAME}" \
+      --user="${CLUSTER_NAME}-admin"
 
     # Cleanup temp files
     rm -f /tmp/narwhal-ca.crt /tmp/narwhal-client.crt /tmp/narwhal-client.key
@@ -77,7 +77,7 @@ case "${AUTH_METHOD}" in
     echo "$CONFIG" | awk '/certificate-authority-data:/ {print $2}' | base64 -d > /tmp/narwhal-ca.crt
 
     # Set cluster
-    kubectl config set-cluster ${CLUSTER_NAME} \
+    kubectl config set-cluster "${CLUSTER_NAME}" \
       --server="${API_SERVER}" \
       --certificate-authority=/tmp/narwhal-ca.crt \
       --embed-certs=true
@@ -92,18 +92,18 @@ case "${AUTH_METHOD}" in
     fi
 
     # Set credentials (OIDC)
-    kubectl config set-credentials ${CLUSTER_NAME}-oidc \
+    kubectl config set-credentials "${CLUSTER_NAME}-oidc" \
       --exec-api-version=client.authentication.k8s.io/v1beta1 \
       --exec-command=kubectl \
       --exec-arg=oidc-login \
       --exec-arg=get-token \
-      --exec-arg=--oidc-issuer-url=${OIDC_ISSUER_URL} \
-      --exec-arg=--oidc-client-id=${OIDC_CLIENT_ID}
+      --exec-arg="--oidc-issuer-url=${OIDC_ISSUER_URL}" \
+      --exec-arg="--oidc-client-id=${OIDC_CLIENT_ID}"
 
     # Set context
-    kubectl config set-context ${CLUSTER_NAME}-oidc \
-      --cluster=${CLUSTER_NAME} \
-      --user=${CLUSTER_NAME}-oidc
+    kubectl config set-context "${CLUSTER_NAME}-oidc" \
+      --cluster="${CLUSTER_NAME}" \
+      --user="${CLUSTER_NAME}-oidc"
 
     # Cleanup
     rm -f /tmp/narwhal-ca.crt
@@ -141,19 +141,19 @@ case "${AUTH_METHOD}" in
     " 2>/dev/null)
 
     # Set cluster
-    kubectl config set-cluster ${CLUSTER_NAME} \
+    kubectl config set-cluster "${CLUSTER_NAME}" \
       --server="${API_SERVER}" \
       --certificate-authority=/tmp/narwhal-ca.crt \
       --embed-certs=true
 
     # Set credentials (token-based)
-    kubectl config set-credentials ${CLUSTER_NAME}-token \
+    kubectl config set-credentials "${CLUSTER_NAME}-token" \
       --token="${TOKEN}"
 
     # Set context
-    kubectl config set-context ${CLUSTER_NAME}-token \
-      --cluster=${CLUSTER_NAME} \
-      --user=${CLUSTER_NAME}-token
+    kubectl config set-context "${CLUSTER_NAME}-token" \
+      --cluster="${CLUSTER_NAME}" \
+      --user="${CLUSTER_NAME}-token"
 
     # Cleanup
     rm -f /tmp/narwhal-ca.crt
@@ -179,7 +179,7 @@ case "${AUTH_METHOD}" in
   oidc)  CONTEXT_NAME="${CLUSTER_NAME}-oidc" ;;
   token) CONTEXT_NAME="${CLUSTER_NAME}-token" ;;
 esac
-kubectl config use-context ${CONTEXT_NAME}
+kubectl config use-context "${CONTEXT_NAME}"
 
 # Flush DNS cache (macOS)
 if [[ "$(uname)" == "Darwin" ]]; then

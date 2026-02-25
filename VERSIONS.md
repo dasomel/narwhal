@@ -64,7 +64,7 @@ Components and versions used in this project.
 | Component | Version | Description |
 |-----------|---------|-------------|
 | cert-manager | v1.19.3 (chart) | TLS certificate automation |
-| OpenBao | v2.2.0 (chart 0.11.0) | Secret management (standalone) |
+| OpenBao | v2.2.0 (chart 0.25.0) | Secret management (standalone) |
 | Kyverno | v1.17.0 (chart 3.7.0) | Policy management |
 
 ## Backup

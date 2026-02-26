@@ -18,9 +18,18 @@ spec:
         config:
           oidc:
             clientID: headlamp
-            clientSecret: headlamp-secret
             issuerURL: https://keycloak.local.narwhal.io/realms/kubernetes
             scopes: openid,profile,email,groups
+            # clientSecret loaded from externalSecret (Option 3)
+            # Secret 'headlamp-oidc-secret' is created by scripts/cluster/11-keycloak.sh
+            # The secret must contain the same keys as the default OIDC secret:
+            #   clientID, clientSecret, issuerURL, scopes
+            secret:
+              create: false
+              name: headlamp-oidc-secret
+            externalSecret:
+              enabled: true
+              name: headlamp-oidc-secret
         initContainers:
           - name: ca-bundle
             image: ghcr.io/headlamp-k8s/headlamp:v0.40.0

@@ -47,7 +47,20 @@ if ! mount | grep "${NFS_MOUNT}" | grep -q prjquota; then
   fi
 fi
 
+# Ensure NFS restarts after reboot with network dependency
+sudo mkdir -p /etc/systemd/system/nfs-kernel-server.service.d
+cat <<EOF | sudo tee /etc/systemd/system/nfs-kernel-server.service.d/restart.conf
+[Unit]
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Restart=on-failure
+RestartSec=10
+EOF
+
 # Enable and start NFS server
+sudo systemctl daemon-reload
 sudo systemctl enable nfs-kernel-server
 sudo systemctl restart nfs-kernel-server
 

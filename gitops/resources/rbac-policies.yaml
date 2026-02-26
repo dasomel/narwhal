@@ -1,0 +1,346 @@
+---
+# RBAC Policies - OIDC 그룹 기반 세분화된 접근 제어
+#
+# 이 파일의 ClusterRole들은 scripts/cluster/11-keycloak.sh의
+# ClusterRoleBinding에서 참조됩니다.
+# ClusterRole 수정 시 11-keycloak.sh의 roleRef도 함께 수정하세요:
+#   oidc:cluster-admin → platform-admin  (NOT cluster-admin)
+#   oidc:developer     → developer
+#   oidc:viewer        → platform-viewer
+#
+# 최소 권한 원칙 (Principle of Least Privilege) 적용:
+#   platform-admin : 플랫폼 전체 관리 (노드 조작·RBAC 전체 권한 제외)
+#   developer      : 앱 배포 및 디버깅 (Secrets 쓰기 불가)
+#   platform-viewer: 전체 네임스페이스 읽기 전용
+
+---
+# Platform Admin
+# cluster-admin에서 위험한 권한을 제거한 플랫폼 관리자 역할.
+# 노드 조작(cordon/drain/delete), ClusterRole/ClusterRoleBinding 변경,
+# 클러스터 레벨 스토리지 삭제 등은 허용하지 않음.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: platform-admin
+  labels:
+    app.kubernetes.io/managed-by: narwhal
+    narwhal.io/rbac-tier: admin
+rules:
+  # 노드: 읽기 전용 (cordon/drain 금지)
+  - apiGroups: [""]
+    resources: ["nodes"]
+    verbs: ["get", "list", "watch"]
+  # 코어 리소스: 전체 관리 (네임스페이스 포함)
+  - apiGroups: [""]
+    resources:
+      - pods
+      - pods/log
+      - pods/exec
+      - pods/portforward
+      - pods/attach
+      - services
+      - configmaps
+      - secrets
+      - persistentvolumeclaims
+      - serviceaccounts
+      - events
+      - namespaces
+      - endpoints
+      - resourcequotas
+      - limitranges
+    verbs: ["*"]
+  # 앱 배포 리소스: 전체 관리
+  - apiGroups: ["apps"]
+    resources:
+      - deployments
+      - daemonsets
+      - statefulsets
+      - replicasets
+    verbs: ["*"]
+  # 배치 작업: 전체 관리
+  - apiGroups: ["batch"]
+    resources: ["jobs", "cronjobs"]
+    verbs: ["*"]
+  # 네트워크 정책 및 인그레스: 전체 관리
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["networkpolicies", "ingresses"]
+    verbs: ["*"]
+  # HPA/VPA: 전체 관리
+  - apiGroups: ["autoscaling"]
+    resources: ["horizontalpodautoscalers"]
+    verbs: ["*"]
+  # PodDisruptionBudget: 전체 관리
+  - apiGroups: ["policy"]
+    resources: ["poddisruptionbudgets"]
+    verbs: ["*"]
+  # RBAC: 읽기 전용 (Roles/ClusterRoles 변경 불가)
+  - apiGroups: ["rbac.authorization.k8s.io"]
+    resources:
+      - roles
+      - rolebindings
+      - clusterroles
+      - clusterrolebindings
+    verbs: ["get", "list", "watch"]
+  # Storage: PVC 관리, StorageClass 읽기
+  - apiGroups: ["storage.k8s.io"]
+    resources: ["storageclasses", "persistentvolumes"]
+    verbs: ["get", "list", "watch"]
+  # ArgoCD 앱 및 프로젝트: 전체 관리
+  - apiGroups: ["argoproj.io"]
+    resources:
+      - applications
+      - applicationsets
+      - appprojects
+    verbs: ["*"]
+  # Gateway API: 라우트 및 게이트웨이 관리
+  - apiGroups: ["gateway.networking.k8s.io"]
+    resources:
+      - gateways
+      - httproutes
+      - grpcroutes
+      - tcproutes
+    verbs: ["*"]
+  # Istio: 트래픽 및 보안 정책 읽기
+  - apiGroups: ["networking.istio.io", "security.istio.io"]
+    resources: ["*"]
+    verbs: ["get", "list", "watch"]
+  # Cert-manager: 인증서 관리
+  - apiGroups: ["cert-manager.io"]
+    resources: ["certificates", "certificaterequests", "issuers", "clusterissuers"]
+    verbs: ["get", "list", "watch", "create", "update", "delete"]
+  # CNPG: 데이터베이스 클러스터 읽기
+  - apiGroups: ["postgresql.cnpg.io"]
+    resources: ["clusters", "backups", "scheduledbackups"]
+    verbs: ["get", "list", "watch"]
+  # Metrics: 읽기
+  - apiGroups: ["metrics.k8s.io"]
+    resources: ["nodes", "pods"]
+    verbs: ["get", "list"]
+
+---
+# Developer
+# 애플리케이션 배포 및 디버깅 전담 역할.
+# Secrets 생성/수정 불가 (읽기만 허용), 노드/네임스페이스 접근 없음.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: developer
+  labels:
+    app.kubernetes.io/managed-by: narwhal
+    narwhal.io/rbac-tier: developer
+rules:
+  # 코어 리소스: 앱 운영에 필요한 권한
+  - apiGroups: [""]
+    resources:
+      - pods
+      - pods/log
+      - pods/exec
+      - pods/portforward
+      - pods/attach
+      - services
+      - configmaps
+      - events
+      - endpoints
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  # Secrets: 읽기 전용 (생성/수정 불가)
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "list", "watch"]
+  # PVC: 생성 및 읽기 (삭제 불가)
+  - apiGroups: [""]
+    resources: ["persistentvolumeclaims"]
+    verbs: ["get", "list", "watch", "create"]
+  # ServiceAccount: 읽기 전용
+  - apiGroups: [""]
+    resources: ["serviceaccounts"]
+    verbs: ["get", "list", "watch"]
+  # 앱 배포 리소스: 전체 관리
+  - apiGroups: ["apps"]
+    resources:
+      - deployments
+      - statefulsets
+      - replicasets
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  # DaemonSet: 읽기 전용
+  - apiGroups: ["apps"]
+    resources: ["daemonsets"]
+    verbs: ["get", "list", "watch"]
+  # 배치 작업: 생성 및 삭제
+  - apiGroups: ["batch"]
+    resources: ["jobs", "cronjobs"]
+    verbs: ["get", "list", "watch", "create", "delete"]
+  # HPA: 읽기 및 수정
+  - apiGroups: ["autoscaling"]
+    resources: ["horizontalpodautoscalers"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  # 네트워크: 읽기 전용
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["ingresses", "networkpolicies"]
+    verbs: ["get", "list", "watch"]
+  # ArgoCD 앱: 조회 및 동기화 (앱 생성/삭제 불가)
+  - apiGroups: ["argoproj.io"]
+    resources: ["applications"]
+    verbs: ["get", "list", "watch", "update", "patch"]
+  - apiGroups: ["argoproj.io"]
+    resources: ["applications/sync"]
+    verbs: ["create"]
+  # Metrics: 읽기
+  - apiGroups: ["metrics.k8s.io"]
+    resources: ["pods"]
+    verbs: ["get", "list"]
+  # StorageClass: 읽기 (PVC 생성 시 참조)
+  - apiGroups: ["storage.k8s.io"]
+    resources: ["storageclasses"]
+    verbs: ["get", "list", "watch"]
+
+---
+# Platform Viewer
+# 전체 네임스페이스 읽기 전용. exec/portforward 없음.
+# 기본 view ClusterRole 대비 모니터링/GitOps 리소스 추가.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: platform-viewer
+  labels:
+    app.kubernetes.io/managed-by: narwhal
+    narwhal.io/rbac-tier: viewer
+rules:
+  # 코어 리소스: 읽기 전용 (exec/portforward 제외)
+  - apiGroups: [""]
+    resources:
+      - pods
+      - pods/log
+      - services
+      - configmaps
+      - events
+      - namespaces
+      - persistentvolumeclaims
+      - serviceaccounts
+      - endpoints
+      - resourcequotas
+      - limitranges
+    verbs: ["get", "list", "watch"]
+  # Nodes: 읽기 전용
+  - apiGroups: [""]
+    resources: ["nodes"]
+    verbs: ["get", "list", "watch"]
+  # 앱 배포 리소스: 읽기 전용
+  - apiGroups: ["apps"]
+    resources:
+      - deployments
+      - daemonsets
+      - statefulsets
+      - replicasets
+    verbs: ["get", "list", "watch"]
+  # 배치 작업: 읽기 전용
+  - apiGroups: ["batch"]
+    resources: ["jobs", "cronjobs"]
+    verbs: ["get", "list", "watch"]
+  # 네트워크: 읽기 전용
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["ingresses", "networkpolicies"]
+    verbs: ["get", "list", "watch"]
+  # HPA: 읽기 전용
+  - apiGroups: ["autoscaling"]
+    resources: ["horizontalpodautoscalers"]
+    verbs: ["get", "list", "watch"]
+  # ArgoCD: 읽기 전용
+  - apiGroups: ["argoproj.io"]
+    resources: ["applications", "applicationsets", "appprojects"]
+    verbs: ["get", "list", "watch"]
+  # Gateway API: 읽기 전용
+  - apiGroups: ["gateway.networking.k8s.io"]
+    resources: ["gateways", "httproutes", "grpcroutes"]
+    verbs: ["get", "list", "watch"]
+  # StorageClass/PV: 읽기 전용
+  - apiGroups: ["storage.k8s.io"]
+    resources: ["storageclasses", "persistentvolumes"]
+    verbs: ["get", "list", "watch"]
+  # Metrics: 읽기
+  - apiGroups: ["metrics.k8s.io"]
+    resources: ["nodes", "pods"]
+    verbs: ["get", "list"]
+  # Cert-manager: 읽기 전용
+  - apiGroups: ["cert-manager.io"]
+    resources: ["certificates", "certificaterequests", "issuers", "clusterissuers"]
+    verbs: ["get", "list", "watch"]
+
+---
+# ClusterRoleBinding: platform-admin
+# OIDC 그룹 oidc:cluster-admin → platform-admin 매핑
+# 주의: 원래 cluster-admin이었으나 최소 권한 원칙에 따라 platform-admin으로 변경
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: oidc-cluster-admin
+  labels:
+    app.kubernetes.io/managed-by: narwhal
+    narwhal.io/rbac-group: cluster-admin
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: platform-admin
+subjects:
+  - apiGroup: rbac.authorization.k8s.io
+    kind: Group
+    name: "oidc:cluster-admin"
+
+---
+# ClusterRoleBinding: developer
+# OIDC 그룹 oidc:developer → developer 매핑 (클러스터 전체 범위)
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: oidc-developer
+  labels:
+    app.kubernetes.io/managed-by: narwhal
+    narwhal.io/rbac-group: developer
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: developer
+subjects:
+  - apiGroup: rbac.authorization.k8s.io
+    kind: Group
+    name: "oidc:developer"
+
+---
+# ClusterRoleBinding: platform-viewer
+# OIDC 그룹 oidc:viewer → platform-viewer 매핑
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: oidc-viewer
+  labels:
+    app.kubernetes.io/managed-by: narwhal
+    narwhal.io/rbac-group: viewer
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: platform-viewer
+subjects:
+  - apiGroup: rbac.authorization.k8s.io
+    kind: Group
+    name: "oidc:viewer"
+
+---
+# RoleBinding: developer-full-access (dev 네임스페이스)
+# developer 그룹에게 dev 네임스페이스에서 기본 edit 권한 추가 부여.
+# ClusterRoleBinding의 developer 역할에 더해 dev ns에서 Secrets 쓰기,
+# PVC 삭제 등 개발 편의 권한을 추가로 허용.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: developer-full-access
+  namespace: dev
+  labels:
+    app.kubernetes.io/managed-by: narwhal
+    narwhal.io/rbac-group: developer
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: edit
+subjects:
+  - apiGroup: rbac.authorization.k8s.io
+    kind: Group
+    name: "oidc:developer"

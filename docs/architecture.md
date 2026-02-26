@@ -399,6 +399,22 @@ kubectl logs -n iam -l app.kubernetes.io/name=oauth2-proxy --tail=20
 └────────────────────────────────────────────────────────┘
 ```
 
+### 알림 규칙
+
+PrometheusRule `narwhal-alerts`로 17개 알림 규칙 관리:
+
+| 그룹 | 규칙 수 | 주요 알림 |
+|------|---------|----------|
+| cluster-health | 4 | 노드 NotReady, API 서버/etcd/CoreDNS 다운 |
+| node-health | 4 | 디스크/메모리 압력, CPU 90%+, 디스크 85%+ |
+| platform-apps | 6 | 주요 앱 다운, ArgoCD OutOfSync |
+| database | 3 | CNPG 비정상, 복제 지연, 연결 포화 |
+| certificates | 2 | 인증서 만료 7일전, Ready=False |
+
+AlertmanagerConfig로 severity별 라우팅:
+- **critical**: 1시간 반복, 서비스 장애
+- **warning**: 4시간 반복, 성능/용량 문제
+
 ---
 
 ## GitOps Architecture
@@ -446,6 +462,24 @@ kubectl logs -n iam -l app.kubernetes.io/name=oauth2-proxy --tail=20
 │  Backend: PostgreSQL HA (CNPG narwhal-db, shared)        │
 │  Cache: Valkey (in-cluster)                              │
 └──────────────────────────────────────────────────────────┘
+```
+
+---
+
+## CI/CD 파이프라인
+
+GitHub Actions 워크플로우:
+
+| 워크플로우 | 트리거 | 검사 내용 |
+|-----------|--------|----------|
+| lint.yml | PR/push | shellcheck, YAML 검증, kubeconform |
+| version-check.yml | PR | VERSIONS.md 동기화 검사 |
+| release.yml | v* 태그 | GitHub Release 자동 생성 |
+
+로컬 검증:
+```bash
+make lint      # shellcheck + yamllint
+make validate  # Vagrantfile + yq 검증
 ```
 
 ---
@@ -591,6 +625,38 @@ CNPG PostgreSQL
 ├── WAL Archiving: SeaweedFS S3 (향후 활성화)
 ├── Retention: 14 days
 └── Point-in-Time Recovery: 지원
+```
+
+### 백업 전략
+
+| 컴포넌트 | 방법 | 주기 | 보존 |
+|----------|------|------|------|
+| 전체 클러스터 | Velero | 매일 | 7일 |
+| PostgreSQL | CNPG barman + WAL | 매일 02:00 UTC | 7일 |
+| Git 레포 | Velero (PVC) | 매일 | 7일 |
+
+복구 절차: `docs/disaster-recovery.md` 참조
+검증 스크립트: `scripts/test/verify-backup.sh`
+
+---
+
+## 시크릿 관리
+
+모든 비밀번호와 시크릿은 Kubernetes Secret으로 관리되며, 스크립트에서 동적으로 생성됩니다.
+
+| Secret | 네임스페이스 | 생성 스크립트 | 용도 |
+|--------|-------------|-------------|------|
+| narwhal-db-credentials | database | 07-cnpg.sh | PostgreSQL DB 비밀번호 |
+| oidc-client-secrets | iam | 11-keycloak.sh | OIDC 클라이언트 시크릿 6개 |
+| oauth2-proxy-secrets | iam | 11-keycloak.sh | 쿠키/클라이언트 시크릿 |
+| grafana-secrets | monitoring | 08-platform-apps.sh | Grafana 관리자 비밀번호 |
+| harbor-secrets | devtools | 08-platform-apps.sh | Harbor 관리자 비밀번호 |
+| gitea-admin | devtools | 12-gitea.sh | Gitea 관리자 비밀번호 |
+| velero-s3-credentials | storage | 08-platform-apps.sh | S3 백업 자격증명 |
+
+비밀번호 확인:
+```bash
+kubectl get secret <name> -n <namespace> -o jsonpath='{.data.<key>}' | base64 -d
 ```
 
 ---

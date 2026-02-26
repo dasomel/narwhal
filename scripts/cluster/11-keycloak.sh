@@ -1,9 +1,24 @@
 #!/bin/bash
 set -euo pipefail
 
+#=========================================
+# Helper: generate a random password (24 chars, no special chars)
+#=========================================
+generate_password() {
+  openssl rand -base64 16 | tr -d '=/+' | head -c 24
+}
+
 KEYCLOAK_VERSION="${KEYCLOAK_VERSION:-26.5.3}"
 KEYCLOAK_ADMIN_USER="${KEYCLOAK_ADMIN_USER:-admin}"
-KEYCLOAK_ADMIN_PASSWORD="${KEYCLOAK_ADMIN_PASSWORD:-admin}"
+KEYCLOAK_ADMIN_PASSWORD="${KEYCLOAK_ADMIN_PASSWORD:-$(generate_password)}"
+
+#=========================================
+# User passwords (override via env vars)
+#=========================================
+ADMIN_USER_PASSWORD="${ADMIN_USER_PASSWORD:-$(generate_password)}"
+DEV_USER_PASSWORD="${DEV_USER_PASSWORD:-$(generate_password)}"
+VIEW_USER_PASSWORD="${VIEW_USER_PASSWORD:-$(generate_password)}"
+GUEST_USER_PASSWORD="${GUEST_USER_PASSWORD:-$(generate_password)}"
 
 echo "=== Installing Keycloak ${KEYCLOAK_VERSION} with Operator ==="
 
@@ -31,6 +46,72 @@ kubectl wait --for=condition=Available deployment/keycloak-operator -n iam --tim
 # Create Keycloak Instance
 #=========================================
 echo "Creating Keycloak instance..."
+
+#=========================================
+# OIDC client secrets — create once, reuse on re-runs
+#=========================================
+if ! kubectl get secret oidc-client-secrets -n iam &>/dev/null; then
+  ARGOCD_SECRET="$(generate_password)"
+  GRAFANA_SECRET="$(generate_password)"
+  GITEA_SECRET="$(generate_password)"
+  HARBOR_SECRET="$(generate_password)"
+  HEADLAMP_SECRET="$(generate_password)"
+  OAUTH2_PROXY_SECRET="$(generate_password)"
+  kubectl create secret generic oidc-client-secrets \
+    --from-literal=argocd="${ARGOCD_SECRET}" \
+    --from-literal=grafana="${GRAFANA_SECRET}" \
+    --from-literal=gitea="${GITEA_SECRET}" \
+    --from-literal=harbor="${HARBOR_SECRET}" \
+    --from-literal=headlamp="${HEADLAMP_SECRET}" \
+    --from-literal=oauth2-proxy="${OAUTH2_PROXY_SECRET}" \
+    -n iam
+  echo "OIDC client secrets created (secret: oidc-client-secrets / ns: iam)"
+else
+  ARGOCD_SECRET="$(kubectl get secret oidc-client-secrets -n iam -o jsonpath='{.data.argocd}' | base64 -d)"
+  GRAFANA_SECRET="$(kubectl get secret oidc-client-secrets -n iam -o jsonpath='{.data.grafana}' | base64 -d)"
+  GITEA_SECRET="$(kubectl get secret oidc-client-secrets -n iam -o jsonpath='{.data.gitea}' | base64 -d)"
+  HARBOR_SECRET="$(kubectl get secret oidc-client-secrets -n iam -o jsonpath='{.data.harbor}' | base64 -d)"
+  HEADLAMP_SECRET="$(kubectl get secret oidc-client-secrets -n iam -o jsonpath='{.data.headlamp}' | base64 -d)"
+  OAUTH2_PROXY_SECRET="$(kubectl get secret oidc-client-secrets -n iam -o jsonpath='{.data.oauth2-proxy}' | base64 -d)"
+  echo "OIDC client secrets loaded from existing secret (oidc-client-secrets / ns: iam)"
+fi
+
+#=========================================
+# OAuth2-Proxy cookie secret — create once, reuse on re-runs
+#=========================================
+if ! kubectl get secret oauth2-proxy-secrets -n iam &>/dev/null; then
+  # cookie-secret must be exactly 32 bytes (hex 16 = 32 hex chars)
+  COOKIE_SECRET="$(openssl rand -hex 16)"
+  kubectl create secret generic oauth2-proxy-secrets \
+    --from-literal=cookie-secret="${COOKIE_SECRET}" \
+    --from-literal=client-secret="${OAUTH2_PROXY_SECRET}" \
+    -n iam
+  echo "OAuth2-Proxy secrets created (secret: oauth2-proxy-secrets / ns: iam)"
+fi
+
+#=========================================
+# Grafana OAuth secret — cross-namespace copy for GitOps YAML
+# grafana-oauth-secret in monitoring ns: key 'client_secret'
+# Used by prometheus-stack GitOps via extraSecretMounts + $__file{} provider
+#=========================================
+kubectl create namespace monitoring --dry-run=client -o yaml | kubectl apply -f -
+kubectl create secret generic grafana-oauth-secret -n monitoring \
+  --from-literal=client_secret="${GRAFANA_SECRET}" \
+  --dry-run=client -o yaml | kubectl apply -f -
+echo "Grafana OAuth secret created/updated (grafana-oauth-secret in monitoring)"
+
+#=========================================
+# Headlamp OIDC secret — used by GitOps YAML via config.oidc.externalSecret
+# headlamp-oidc-secret in devtools ns: keys clientID, clientSecret, issuerURL, scopes
+#=========================================
+kubectl create namespace devtools --dry-run=client -o yaml | kubectl apply -f -
+kubectl create secret generic headlamp-oidc-secret -n devtools \
+  --from-literal=clientID=headlamp \
+  --from-literal=clientSecret="${HEADLAMP_SECRET}" \
+  --from-literal=issuerURL=https://keycloak.local.narwhal.io/realms/kubernetes \
+  --from-literal=scopes=openid,profile,email,groups \
+  --dry-run=client -o yaml | kubectl apply -f -
+echo "Headlamp OIDC secret created/updated (headlamp-oidc-secret in devtools)"
 
 # Create admin credentials secret
 kubectl create secret generic keycloak-admin-secret -n iam \
@@ -167,25 +248,25 @@ else
     -s username=admin -s email=admin@local -s enabled=true -s emailVerified=true \
     -s firstName=Cluster -s lastName=Admin || true
   kubectl exec -n iam "${KEYCLOAK_POD}" -- /opt/keycloak/bin/kcadm.sh set-password -r kubernetes \
-    --username admin --new-password admin || true
+    --username admin --new-password "${ADMIN_USER_PASSWORD}" || true
 
   kubectl exec -n iam "${KEYCLOAK_POD}" -- /opt/keycloak/bin/kcadm.sh create users -r kubernetes \
     -s username=dev -s email=dev@local -s enabled=true -s emailVerified=true \
     -s firstName=Dev -s lastName=User || true
   kubectl exec -n iam "${KEYCLOAK_POD}" -- /opt/keycloak/bin/kcadm.sh set-password -r kubernetes \
-    --username dev --new-password dev || true
+    --username dev --new-password "${DEV_USER_PASSWORD}" || true
 
   kubectl exec -n iam "${KEYCLOAK_POD}" -- /opt/keycloak/bin/kcadm.sh create users -r kubernetes \
     -s username=view -s email=view@local -s enabled=true -s emailVerified=true \
     -s firstName=View -s lastName=User || true
   kubectl exec -n iam "${KEYCLOAK_POD}" -- /opt/keycloak/bin/kcadm.sh set-password -r kubernetes \
-    --username view --new-password view || true
+    --username view --new-password "${VIEW_USER_PASSWORD}" || true
 
   kubectl exec -n iam "${KEYCLOAK_POD}" -- /opt/keycloak/bin/kcadm.sh create users -r kubernetes \
     -s username=guest -s email=guest@local -s enabled=true -s emailVerified=true \
     -s firstName=Guest -s lastName=User || true
   kubectl exec -n iam "${KEYCLOAK_POD}" -- /opt/keycloak/bin/kcadm.sh set-password -r kubernetes \
-    --username guest --new-password guest || true
+    --username guest --new-password "${GUEST_USER_PASSWORD}" || true
 
   # Assign users to groups
   echo "Assigning users to groups..."
@@ -302,37 +383,37 @@ else
   # argocd client
   kubectl exec -n iam "${KEYCLOAK_POD}" -- /opt/keycloak/bin/kcadm.sh create clients -r kubernetes \
     -s clientId=argocd -s enabled=true -s publicClient=false \
-    -s secret=argocd-secret -s directAccessGrantsEnabled=true -s standardFlowEnabled=true \
+    -s secret="${ARGOCD_SECRET}" -s directAccessGrantsEnabled=true -s standardFlowEnabled=true \
     -s 'redirectUris=["https://argocd.local.narwhal.io/*","http://localhost:8443/*"]' -s 'webOrigins=["*"]' || true
 
   # grafana client
   kubectl exec -n iam "${KEYCLOAK_POD}" -- /opt/keycloak/bin/kcadm.sh create clients -r kubernetes \
     -s clientId=grafana -s enabled=true -s publicClient=false \
-    -s secret=grafana-secret -s directAccessGrantsEnabled=true -s standardFlowEnabled=true \
+    -s secret="${GRAFANA_SECRET}" -s directAccessGrantsEnabled=true -s standardFlowEnabled=true \
     -s 'redirectUris=["https://grafana.local.narwhal.io/*","http://localhost:3000/*"]' -s 'webOrigins=["*"]' || true
 
   # gitea client
   kubectl exec -n iam "${KEYCLOAK_POD}" -- /opt/keycloak/bin/kcadm.sh create clients -r kubernetes \
     -s clientId=gitea -s enabled=true -s publicClient=false \
-    -s secret=gitea-secret -s directAccessGrantsEnabled=true -s standardFlowEnabled=true \
+    -s secret="${GITEA_SECRET}" -s directAccessGrantsEnabled=true -s standardFlowEnabled=true \
     -s 'redirectUris=["https://gitea.local.narwhal.io/*","http://localhost:3000/*"]' -s 'webOrigins=["*"]' || true
 
   # harbor client
   kubectl exec -n iam "${KEYCLOAK_POD}" -- /opt/keycloak/bin/kcadm.sh create clients -r kubernetes \
     -s clientId=harbor -s enabled=true -s publicClient=false \
-    -s secret=harbor-secret -s directAccessGrantsEnabled=true -s standardFlowEnabled=true \
+    -s secret="${HARBOR_SECRET}" -s directAccessGrantsEnabled=true -s standardFlowEnabled=true \
     -s 'redirectUris=["https://harbor.local.narwhal.io/*","http://localhost:8080/*"]' -s 'webOrigins=["*"]' || true
 
   # headlamp client
   kubectl exec -n iam "${KEYCLOAK_POD}" -- /opt/keycloak/bin/kcadm.sh create clients -r kubernetes \
     -s clientId=headlamp -s enabled=true -s publicClient=false \
-    -s secret=headlamp-secret -s directAccessGrantsEnabled=true -s standardFlowEnabled=true \
+    -s secret="${HEADLAMP_SECRET}" -s directAccessGrantsEnabled=true -s standardFlowEnabled=true \
     -s 'redirectUris=["https://headlamp.local.narwhal.io/*","http://localhost:8080/*"]' -s 'webOrigins=["*"]' || true
 
   # oauth2-proxy client (for Gateway API authentication)
   kubectl exec -n iam "${KEYCLOAK_POD}" -- /opt/keycloak/bin/kcadm.sh create clients -r kubernetes \
     -s clientId=oauth2-proxy -s enabled=true -s publicClient=false \
-    -s secret=oauth2-proxy-secret -s directAccessGrantsEnabled=true -s standardFlowEnabled=true \
+    -s secret="${OAUTH2_PROXY_SECRET}" -s directAccessGrantsEnabled=true -s standardFlowEnabled=true \
     -s 'redirectUris=["https://*.local.narwhal.io/*","https://oauth2-proxy.local.narwhal.io/*"]' \
     -s 'webOrigins=["*"]' || true
 
@@ -634,10 +715,18 @@ echo "  URL: http://localhost:8080"
 echo "  User: ${KEYCLOAK_ADMIN_USER} / ${KEYCLOAK_ADMIN_PASSWORD}"
 echo ""
 echo "Kubernetes OIDC Users:"
-echo "  admin / admin (cluster-admin)"
-echo "  dev / dev (developer)"
-echo "  view / view (viewer)"
-echo "  guest / guest (guest - web UI only)"
+echo "  admin / ${ADMIN_USER_PASSWORD} (cluster-admin)"
+echo "  dev   / ${DEV_USER_PASSWORD} (developer)"
+echo "  view  / ${VIEW_USER_PASSWORD} (viewer)"
+echo "  guest / ${GUEST_USER_PASSWORD} (guest - web UI only)"
+echo ""
+echo "OIDC Client Secrets (stored in secret/oidc-client-secrets -n iam):"
+echo "  argocd      : ${ARGOCD_SECRET}"
+echo "  grafana     : ${GRAFANA_SECRET}"
+echo "  gitea       : ${GITEA_SECRET}"
+echo "  harbor      : ${HARBOR_SECRET}"
+echo "  headlamp    : ${HEADLAMP_SECRET}"
+echo "  oauth2-proxy: ${OAUTH2_PROXY_SECRET}"
 echo ""
 echo "OIDC Configuration:"
 echo "  Issuer: https://keycloak.local.narwhal.io/realms/kubernetes"
@@ -645,7 +734,7 @@ echo "  Client ID: kubernetes"
 echo ""
 echo "Test OIDC:"
 echo "  TOKEN=\$(curl -s -X POST 'https://keycloak.local.narwhal.io/realms/kubernetes/protocol/openid-connect/token' \\"
-echo "    -d 'grant_type=password&client_id=kubernetes&username=admin&password=admin' | jq -r '.access_token')"
+echo "    -d \"grant_type=password&client_id=kubernetes&username=admin&password=${ADMIN_USER_PASSWORD}\" | jq -r '.access_token')"
 echo "  kubectl --token=\$TOKEN get nodes"
 echo ""
 kubectl get pods -n iam

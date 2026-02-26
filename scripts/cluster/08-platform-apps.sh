@@ -6,6 +6,29 @@ echo "=== Installing Platform Apps via Helm ==="
 # Use local kubeconfig (bypasses VIP) to avoid disruption during master-2 join
 export KUBECONFIG=/home/vagrant/.kube/config-local
 
+# Helper: generate a random 24-char alphanumeric password
+generate_password() {
+  openssl rand -base64 16 | tr -d '=/+' | head -c 24
+}
+
+# Helper: ensure a Secret exists with a given key; create with generated value if absent.
+# Usage: ensure_secret_key <secret-name> <namespace> <key>
+# Prints the resolved value on stdout.
+ensure_secret_key() {
+  local secret_name="$1" ns="$2" key="$3"
+  if ! kubectl get secret "${secret_name}" -n "${ns}" &>/dev/null; then
+    local val
+    val=$(generate_password)
+    kubectl create secret generic "${secret_name}" \
+      --from-literal="${key}=${val}" \
+      -n "${ns}"
+    echo "${val}"
+  else
+    kubectl get secret "${secret_name}" -n "${ns}" \
+      -o jsonpath="{.data.${key}}" | base64 -d
+  fi
+}
+
 #=========================================
 # MetalLB (LoadBalancer for bare-metal)
 #=========================================
@@ -111,12 +134,32 @@ echo "=== Installing Prometheus Stack ==="
 helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
 helm repo update prometheus-community
 
+# Grafana admin credentials — create namespace first, then build Secret
+kubectl create namespace monitoring --dry-run=client -o yaml | kubectl apply -f -
+
+# grafana-secrets: admin credentials (used by GitOps YAML via grafana.admin.existingSecret)
+# Keys: admin-user, admin-password
+GRAFANA_ADMIN_PASS=$(generate_password)
+if ! kubectl get secret grafana-secrets -n monitoring &>/dev/null; then
+  kubectl create secret generic grafana-secrets \
+    --from-literal=admin-user=admin \
+    --from-literal=admin-password="${GRAFANA_ADMIN_PASS}" \
+    -n monitoring
+  echo "Grafana admin secret created (grafana-secrets)"
+else
+  GRAFANA_ADMIN_PASS=$(kubectl get secret grafana-secrets -n monitoring \
+    -o jsonpath='{.data.admin-password}' | base64 -d)
+  echo "Grafana admin secret already exists, reusing"
+fi
+
 helm upgrade --install prometheus-stack prometheus-community/kube-prometheus-stack \
   --namespace monitoring \
   --create-namespace \
   --version 81.5.1 \
   --set grafana.assertNoLeakedSecrets=false \
-  --set grafana.adminPassword=admin \
+  --set grafana.admin.existingSecret=grafana-secrets \
+  --set grafana.admin.userKey=admin-user \
+  --set grafana.admin.passwordKey=admin-password \
   --set grafana.persistence.enabled=true \
   --set grafana.persistence.storageClassName=nfs-csi \
   --set grafana.persistence.size=5Gi \
@@ -255,9 +298,15 @@ cat > /tmp/headlamp-values.yaml << 'EOF'
 config:
   oidc:
     clientID: headlamp
-    clientSecret: headlamp-secret
     issuerURL: https://keycloak.local.narwhal.io/realms/kubernetes
     scopes: openid,profile,email,groups
+    # clientSecret loaded from headlamp-oidc-secret (created by 11-keycloak.sh)
+    secret:
+      create: false
+      name: headlamp-oidc-secret
+    externalSecret:
+      enabled: true
+      name: headlamp-oidc-secret
 initContainers:
   - name: ca-bundle
     image: ghcr.io/headlamp-k8s/headlamp:v0.40.0
@@ -302,15 +351,14 @@ echo "=== Installing OAuth2 Proxy ==="
 helm repo add oauth2-proxy https://oauth2-proxy.github.io/manifests
 helm repo update oauth2-proxy
 
-# Generate random cookie secret
-COOKIE_SECRET=$(openssl rand -hex 16)
-
-cat > /tmp/oauth2-proxy-values.yaml << EOF
+# oauth2-proxy-secrets is created by 11-keycloak.sh (cookie-secret + client-secret)
+# Here we only configure non-secret settings; existingSecret handles credentials
+cat > /tmp/oauth2-proxy-values.yaml << 'EOF'
 replicaCount: 1
 config:
   clientID: oauth2-proxy
-  clientSecret: oauth2-proxy-secret
-  cookieSecret: "${COOKIE_SECRET}"
+  # clientSecret and cookieSecret loaded from existingSecret (created by 11-keycloak.sh)
+  existingSecret: oauth2-proxy-secrets
   configFile: |-
     provider = "keycloak-oidc"
     provider_display_name = "Keycloak"
@@ -384,12 +432,25 @@ helm upgrade --install seaweedfs seaweedfs/seaweedfs \
   --set s3.enabled=true || echo "WARN: SeaweedFS install issue, continuing..."
 
 # Create S3 buckets for platform apps
+# All apps using SeaweedFS S3: Tempo, Velero, Loki, CNPG backup
 echo "Creating SeaweedFS S3 buckets..."
 kubectl wait --for=condition=Ready pod -l app.kubernetes.io/name=seaweedfs,app.kubernetes.io/component=filer -n storage --timeout=120s || true
-for bucket in tempo velero; do
+for bucket in tempo velero loki cnpg-backup; do
+  echo "  Creating bucket: ${bucket}"
   kubectl exec -n storage seaweedfs-filer-0 -- sh -c "echo 's3.bucket.create -name ${bucket}' | weed shell" 2>/dev/null || true
 done
-echo "S3 buckets created"
+
+# Verify buckets were created
+echo "Verifying S3 buckets..."
+BUCKET_LIST=$(kubectl exec -n storage seaweedfs-filer-0 -- sh -c "echo 's3.bucket.list' | weed shell" 2>/dev/null || true)
+for bucket in tempo velero loki cnpg-backup; do
+  if echo "${BUCKET_LIST}" | grep -q "${bucket}"; then
+    echo "  ✓ ${bucket}"
+  else
+    echo "  ✗ ${bucket} - WARN: bucket may not exist"
+  fi
+done
+echo "S3 buckets ready"
 
 echo "SeaweedFS installed"
 
@@ -406,6 +467,35 @@ kubectl wait --for=condition=Ready cluster/narwhal-db -n database --timeout=300s
 
 # Create namespace first to apply ExternalName service
 kubectl create namespace devtools --dry-run=client -o yaml | kubectl apply -f -
+
+# Harbor admin credentials — build harbor-secrets (used by GitOps YAML)
+# Key: HARBOR_ADMIN_PASSWORD (required by harbor chart existingSecretAdminPasswordKey)
+HARBOR_ADMIN_PASS=$(generate_password)
+if ! kubectl get secret harbor-secrets -n devtools &>/dev/null; then
+  kubectl create secret generic harbor-secrets \
+    --from-literal=HARBOR_ADMIN_PASSWORD="${HARBOR_ADMIN_PASS}" \
+    -n devtools
+  echo "Harbor admin secret created (harbor-secrets)"
+else
+  HARBOR_ADMIN_PASS=$(kubectl get secret harbor-secrets -n devtools \
+    -o jsonpath='{.data.HARBOR_ADMIN_PASSWORD}' | base64 -d)
+  echo "Harbor admin secret already exists, reusing"
+fi
+
+# Harbor DB password — provided by 07-cnpg.sh via narwhal-db-credentials Secret
+HARBOR_DB_PASS=$(kubectl get secret narwhal-db-credentials -n database \
+  -o jsonpath='{.data.harbor-password}' | base64 -d)
+
+# harbor-db-credentials: cross-namespace copy for harbor chart (devtools ns)
+# Harbor chart external DB existingSecret requires key 'password' in same namespace
+if ! kubectl get secret harbor-db-credentials -n devtools &>/dev/null; then
+  kubectl create secret generic harbor-db-credentials \
+    --from-literal=password="${HARBOR_DB_PASS}" \
+    -n devtools
+  echo "Harbor DB credentials secret created (harbor-db-credentials in devtools)"
+else
+  echo "Harbor DB credentials secret already exists"
+fi
 
 # Apply ExternalName service to connect to narwhal-db from devtools namespace
 cat <<EOF | kubectl apply -f -
@@ -428,12 +518,13 @@ helm upgrade --install harbor harbor/harbor \
   --set expose.type=clusterIP \
   --set expose.tls.enabled=false \
   --set externalURL=http://harbor.local \
-  --set harborAdminPassword=Harbor12345 \
+  --set existingSecretAdminPassword=harbor-secrets \
+  --set existingSecretAdminPasswordKey=HARBOR_ADMIN_PASSWORD \
   --set database.type=external \
   --set database.external.host=harbor-db-rw \
   --set database.external.port=5432 \
   --set database.external.username=harbor \
-  --set database.external.password=harbor-db-password \
+  --set database.external.existingSecret=harbor-db-credentials \
   --set database.external.coreDatabase=harbor \
   --set persistence.enabled=true \
   --set persistence.persistentVolumeClaim.registry.storageClass=nfs-csi \
@@ -492,14 +583,14 @@ if [ "${HARBOR_HEALTH}" = "200" ]; then
   # Add developer group → project Developer role (roleId=2)
   curl -sk -X POST "${HARBOR_API}/projects/1/members" \
     -H "Content-Type: application/json" \
-    -u "admin:Harbor12345" \
+    -u "admin:${HARBOR_ADMIN_PASS}" \
     -d '{"role_id":2,"member_group":{"group_name":"developer","group_type":3}}' 2>/dev/null || true
   echo "Harbor: developer group → project Developer"
 
   # Add viewer group → project Guest role (roleId=3)
   curl -sk -X POST "${HARBOR_API}/projects/1/members" \
     -H "Content-Type: application/json" \
-    -u "admin:Harbor12345" \
+    -u "admin:${HARBOR_ADMIN_PASS}" \
     -d '{"role_id":3,"member_group":{"group_name":"viewer","group_type":3}}' 2>/dev/null || true
   echo "Harbor: viewer group → project Guest"
 else
@@ -575,7 +666,20 @@ echo "=== Installing Velero ==="
 helm repo add vmware-tanzu https://vmware-tanzu.github.io/helm-charts
 helm repo update vmware-tanzu
 
-cat > /tmp/velero-values.yaml << 'EOF'
+# S3 credentials — prefer environment overrides, fall back to Secret or defaults
+S3_ACCESS_KEY="${S3_ACCESS_KEY:-$(kubectl get secret velero-s3-credentials -n storage \
+  -o jsonpath='{.data.access-key}' 2>/dev/null | base64 -d || echo "admin")}"
+S3_SECRET_KEY="${S3_SECRET_KEY:-$(kubectl get secret velero-s3-credentials -n storage \
+  -o jsonpath='{.data.secret-key}' 2>/dev/null | base64 -d || echo "")}"
+
+# Persist S3 credentials into a dedicated Secret (idempotent)
+kubectl create namespace storage --dry-run=client -o yaml | kubectl apply -f -
+kubectl create secret generic velero-s3-credentials \
+  --from-literal=access-key="${S3_ACCESS_KEY}" \
+  --from-literal=secret-key="${S3_SECRET_KEY}" \
+  -n storage --dry-run=client -o yaml | kubectl apply -f -
+
+cat > /tmp/velero-values.yaml << EOF
 initContainers:
   - name: velero-plugin-for-aws
     image: velero/velero-plugin-for-aws:v1.11.1
@@ -604,8 +708,8 @@ credentials:
   secretContents:
     cloud: |
       [default]
-      aws_access_key_id = admin
-      aws_secret_access_key = admin
+      aws_access_key_id = ${S3_ACCESS_KEY}
+      aws_secret_access_key = ${S3_SECRET_KEY}
 snapshotsEnabled: false
 # Disable CRD upgrade hook - alpine/k8s musl binaries can't exec in velero glibc container
 upgradeCRDs: false

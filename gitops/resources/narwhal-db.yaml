@@ -71,23 +71,22 @@ spec:
         operator: Exists
         effect: NoSchedule
 
-  # Backup enabled after SeaweedFS deployment via GitOps
-  # backup:
-  #   barmanObjectStore:
-  #     destinationPath: s3://cnpg-backup/narwhal-db
-  #     endpointURL: http://seaweedfs-s3.storage.svc.cluster.local:8333
-  #     s3Credentials:
-  #       accessKeyId:
-  #         name: cnpg-s3-credentials
-  #         key: ACCESS_KEY_ID
-  #       secretAccessKey:
-  #         name: cnpg-s3-credentials
-  #         key: ACCESS_SECRET_KEY
-  #     wal:
-  #       compression: gzip
-  #     data:
-  #       compression: gzip
-  #   retentionPolicy: "14d"
+  backup:
+    barmanObjectStore:
+      destinationPath: s3://cnpg-backup/narwhal-db
+      endpointURL: http://seaweedfs-s3.storage.svc.cluster.local:8333
+      s3Credentials:
+        accessKeyId:
+          name: cnpg-s3-credentials
+          key: ACCESS_KEY_ID
+        secretAccessKey:
+          name: cnpg-s3-credentials
+          key: ACCESS_SECRET_KEY
+      wal:
+        compression: gzip
+      data:
+        compression: gzip
+    retentionPolicy: "7d"
 ---
 # Cross-namespace ExternalName services
 # Apps reference their original service names for zero-config migration

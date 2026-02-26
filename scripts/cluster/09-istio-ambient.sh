@@ -70,6 +70,9 @@ tolerations:
   - key: node.kubernetes.io/disk-pressure
     operator: Exists
     effect: NoSchedule
+  - key: node.cilium.io/agent-not-ready
+    operator: Exists
+    effect: NoSchedule
 EOF
 
 helm upgrade --install istiod istio/istiod \
@@ -99,6 +102,9 @@ tolerations:
     operator: Exists
     effect: NoSchedule
   - key: node.kubernetes.io/disk-pressure
+    operator: Exists
+    effect: NoSchedule
+  - key: node.cilium.io/agent-not-ready
     operator: Exists
     effect: NoSchedule
 EOF
@@ -132,6 +138,9 @@ tolerations:
     operator: Exists
     effect: NoSchedule
   - key: node.kubernetes.io/disk-pressure
+    operator: Exists
+    effect: NoSchedule
+  - key: node.cilium.io/agent-not-ready
     operator: Exists
     effect: NoSchedule
 EOF

@@ -1,0 +1,110 @@
+---
+# ================================================
+# dev 네임스페이스 - 개발자 워크로드 전용
+# ================================================
+# 이 파일은 개발자가 애플리케이션을 배포하는 dev 네임스페이스의
+# 기본 리소스를 정의합니다. ArgoCD app-of-apps를 통해 배포됩니다.
+#
+# 설계 결정:
+#   - Istio ambient: `none` 으로 opt-out
+#     이유: 개발 앱은 SSO 쿠키를 사용하지 않는 경우가 많고,
+#     ztunnel HBONE이 쿠키 헤더를 손상시킬 수 있음 (CLAUDE.md 참조)
+#     SSO가 필요한 앱은 pod 레이블로 개별 설정 가능
+#   - RBAC: rbac-policies.yaml의 developer-full-access RoleBinding이
+#     이 네임스페이스에서 oidc:developer 그룹에 edit 권한 부여
+#   - ResourceQuota: 워커 노드 6GB 기준 적정 값 설정
+#     (워커 3대 = 총 18GB, dev 할당은 8Gi request / 16Gi limit)
+# ================================================
+
+# -----------------------------------------------
+# 1. Namespace
+# -----------------------------------------------
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: dev
+  labels:
+    # Istio ambient mesh에서 opt-out
+    # 개발 앱의 쿠키/헤더 손상 방지
+    # SSO가 필요한 개별 pod는 pod template에서 재설정 가능:
+    #   podLabels:
+    #     istio.io/dataplane-mode: "ambient"
+    istio.io/dataplane-mode: none
+    # ArgoCD가 이 네임스페이스의 리소스를 관리하도록 허용
+    argocd.argoproj.io/managed-by: devtools
+    app.kubernetes.io/managed-by: narwhal-gitops
+
+---
+# -----------------------------------------------
+# 2. ResourceQuota
+# 네임스페이스 전체 리소스 상한선
+# -----------------------------------------------
+# 워커 노드 스펙: 6GB RAM x 3대 = 18GB 총 가용
+# dev 할당: request 8Gi / limit 16Gi (전체의 ~44% / ~88%)
+# 나머지는 platform apps (monitoring, storage, devtools 등)
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: dev-quota
+  namespace: dev
+  labels:
+    app.kubernetes.io/managed-by: narwhal-gitops
+spec:
+  hard:
+    # CPU: 총 워커 vCPU의 50% 수준 (워커 3대 x 4 vCPU = 12코어)
+    requests.cpu: "4"
+    limits.cpu: "8"
+    # Memory: 총 워커 RAM의 44% 수준
+    requests.memory: 8Gi
+    limits.memory: 16Gi
+    # 스토리지: NFS CSI 동적 프로비저닝 (nfs-csi StorageClass)
+    requests.storage: 50Gi
+    persistentvolumeclaims: "10"
+    # 파드 수 제한 (스케줄링 안정성)
+    pods: "50"
+    # 서비스 및 ConfigMap 제한
+    services: "20"
+    configmaps: "30"
+    secrets: "30"
+
+---
+# -----------------------------------------------
+# 3. LimitRange
+# 컨테이너별 기본 리소스 (미지정 시 자동 적용)
+# -----------------------------------------------
+# 개발자가 resources 블록을 생략해도 기본값 적용
+# ResourceQuota와 함께 사용 필수 (미지정 컨테이너가
+# 무제한으로 quota를 소비하는 것 방지)
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: dev-limits
+  namespace: dev
+  labels:
+    app.kubernetes.io/managed-by: narwhal-gitops
+spec:
+  limits:
+    # Container 기본값
+    - type: Container
+      # 미지정 시 자동으로 적용되는 limit
+      default:
+        cpu: 500m
+        memory: 512Mi
+      # 미지정 시 자동으로 적용되는 request
+      defaultRequest:
+        cpu: 100m
+        memory: 128Mi
+      # 컨테이너당 최대 허용값 (이 값 초과 시 배포 거부)
+      max:
+        cpu: "2"
+        memory: 2Gi
+      # 컨테이너당 최소 요청값
+      min:
+        cpu: 10m
+        memory: 32Mi
+    # PVC 최대 크기 제한
+    - type: PersistentVolumeClaim
+      max:
+        storage: 10Gi
+      min:
+        storage: 100Mi

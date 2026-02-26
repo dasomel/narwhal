@@ -1,0 +1,384 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: narwhal-overview-dashboard
+  namespace: monitoring
+  labels:
+    grafana_dashboard: "1"
+data:
+  narwhal-overview.json: |
+    {
+      "title": "Narwhal IDP Overview",
+      "uid": "narwhal-overview",
+      "schemaVersion": 38,
+      "version": 1,
+      "refresh": "30s",
+      "time": { "from": "now-1h", "to": "now" },
+      "templating": { "list": [] },
+      "annotations": { "list": [] },
+      "panels": [
+        {
+          "id": 1,
+          "type": "stat",
+          "title": "클러스터 노드 상태",
+          "description": "Ready 상태인 노드 수 / 전체 노드 수",
+          "gridPos": { "x": 0, "y": 0, "w": 6, "h": 4 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "options": {
+            "reduceOptions": { "calcs": ["lastNotNull"] },
+            "orientation": "auto",
+            "colorMode": "background",
+            "graphMode": "none",
+            "textMode": "auto"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "red", "value": null },
+                  { "color": "yellow", "value": 4 },
+                  { "color": "green", "value": 6 }
+                ]
+              },
+              "unit": "short",
+              "mappings": []
+            }
+          },
+          "targets": [
+            {
+              "expr": "count(kube_node_status_condition{condition=\"Ready\",status=\"true\"} == 1)",
+              "legendFormat": "Ready 노드",
+              "refId": "A"
+            }
+          ]
+        },
+        {
+          "id": 2,
+          "type": "gauge",
+          "title": "노드 CPU 사용률",
+          "description": "전체 노드 평균 CPU 사용률 (%)",
+          "gridPos": { "x": 6, "y": 0, "w": 6, "h": 4 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "options": {
+            "reduceOptions": { "calcs": ["lastNotNull"] },
+            "orientation": "auto",
+            "showThresholdLabels": false,
+            "showThresholdMarkers": true
+          },
+          "fieldConfig": {
+            "defaults": {
+              "min": 0,
+              "max": 100,
+              "unit": "percent",
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "green", "value": null },
+                  { "color": "yellow", "value": 70 },
+                  { "color": "red", "value": 90 }
+                ]
+              }
+            }
+          },
+          "targets": [
+            {
+              "expr": "100 - (avg(rate(node_cpu_seconds_total{mode=\"idle\"}[5m])) * 100)",
+              "legendFormat": "CPU 사용률",
+              "refId": "A"
+            }
+          ]
+        },
+        {
+          "id": 3,
+          "type": "gauge",
+          "title": "노드 메모리 사용률",
+          "description": "전체 노드 평균 메모리 사용률 (%)",
+          "gridPos": { "x": 12, "y": 0, "w": 6, "h": 4 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "options": {
+            "reduceOptions": { "calcs": ["lastNotNull"] },
+            "orientation": "auto",
+            "showThresholdLabels": false,
+            "showThresholdMarkers": true
+          },
+          "fieldConfig": {
+            "defaults": {
+              "min": 0,
+              "max": 100,
+              "unit": "percent",
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "green", "value": null },
+                  { "color": "yellow", "value": 75 },
+                  { "color": "red", "value": 90 }
+                ]
+              }
+            }
+          },
+          "targets": [
+            {
+              "expr": "100 * (1 - (avg(node_memory_MemAvailable_bytes) / avg(node_memory_MemTotal_bytes)))",
+              "legendFormat": "메모리 사용률",
+              "refId": "A"
+            }
+          ]
+        },
+        {
+          "id": 4,
+          "type": "gauge",
+          "title": "노드 디스크 사용률",
+          "description": "루트 파티션 평균 디스크 사용률 (%)",
+          "gridPos": { "x": 18, "y": 0, "w": 6, "h": 4 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "options": {
+            "reduceOptions": { "calcs": ["lastNotNull"] },
+            "orientation": "auto",
+            "showThresholdLabels": false,
+            "showThresholdMarkers": true
+          },
+          "fieldConfig": {
+            "defaults": {
+              "min": 0,
+              "max": 100,
+              "unit": "percent",
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "green", "value": null },
+                  { "color": "yellow", "value": 70 },
+                  { "color": "red", "value": 85 }
+                ]
+              }
+            }
+          },
+          "targets": [
+            {
+              "expr": "100 * (1 - (avg(node_filesystem_avail_bytes{mountpoint=\"/\",fstype!=\"tmpfs\"}) / avg(node_filesystem_size_bytes{mountpoint=\"/\",fstype!=\"tmpfs\"})))",
+              "legendFormat": "디스크 사용률",
+              "refId": "A"
+            }
+          ]
+        },
+        {
+          "id": 5,
+          "type": "stat",
+          "title": "플랫폼 앱 Pod 상태",
+          "description": "주요 플랫폼 앱의 Ready Pod 수",
+          "gridPos": { "x": 0, "y": 4, "w": 12, "h": 5 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "options": {
+            "reduceOptions": { "calcs": ["lastNotNull"] },
+            "orientation": "horizontal",
+            "colorMode": "background",
+            "graphMode": "none",
+            "textMode": "value_and_name"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "red", "value": null },
+                  { "color": "green", "value": 1 }
+                ]
+              },
+              "unit": "short",
+              "mappings": []
+            }
+          },
+          "targets": [
+            {
+              "expr": "sum(kube_pod_status_ready{namespace=\"monitoring\",condition=\"true\"} == 1)",
+              "legendFormat": "Monitoring",
+              "refId": "A"
+            },
+            {
+              "expr": "sum(kube_pod_status_ready{namespace=\"devtools\",condition=\"true\"} == 1)",
+              "legendFormat": "DevTools",
+              "refId": "B"
+            },
+            {
+              "expr": "sum(kube_pod_status_ready{namespace=\"harbor\",condition=\"true\"} == 1)",
+              "legendFormat": "Harbor",
+              "refId": "C"
+            },
+            {
+              "expr": "sum(kube_pod_status_ready{namespace=\"keycloak\",condition=\"true\"} == 1)",
+              "legendFormat": "Keycloak",
+              "refId": "D"
+            },
+            {
+              "expr": "sum(kube_pod_status_ready{namespace=\"gitea\",condition=\"true\"} == 1)",
+              "legendFormat": "Gitea",
+              "refId": "E"
+            }
+          ]
+        },
+        {
+          "id": 6,
+          "type": "timeseries",
+          "title": "CNPG DB 연결 수 및 트랜잭션",
+          "description": "CloudNative-PG DB 활성 연결 수와 초당 트랜잭션",
+          "gridPos": { "x": 12, "y": 4, "w": 12, "h": 5 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "options": {
+            "tooltip": { "mode": "multi", "sort": "none" },
+            "legend": { "displayMode": "list", "placement": "bottom" }
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": { "mode": "palette-classic" },
+              "custom": {
+                "lineInterpolation": "linear",
+                "lineWidth": 2,
+                "fillOpacity": 10,
+                "spanNulls": false
+              }
+            },
+            "overrides": [
+              {
+                "matcher": { "id": "byName", "options": "트랜잭션/s" },
+                "properties": [
+                  { "id": "custom.axisPlacement", "value": "right" },
+                  { "id": "unit", "value": "reqps" }
+                ]
+              }
+            ]
+          },
+          "targets": [
+            {
+              "expr": "sum(cnpg_backends_total) by (cluster)",
+              "legendFormat": "연결 수 ({{ cluster }})",
+              "refId": "A"
+            },
+            {
+              "expr": "sum(rate(cnpg_pg_stat_database_xact_commit_total[5m]) + rate(cnpg_pg_stat_database_xact_rollback_total[5m])) by (cluster)",
+              "legendFormat": "트랜잭션/s ({{ cluster }})",
+              "refId": "B"
+            }
+          ]
+        },
+        {
+          "id": 7,
+          "type": "stat",
+          "title": "인증서 만료까지 남은 시간",
+          "description": "cert-manager가 관리하는 인증서 만료 잔여 시간",
+          "gridPos": { "x": 0, "y": 9, "w": 8, "h": 4 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "options": {
+            "reduceOptions": { "calcs": ["lastNotNull"] },
+            "orientation": "horizontal",
+            "colorMode": "background",
+            "graphMode": "none",
+            "textMode": "value_and_name"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "dtdurations",
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "red", "value": null },
+                  { "color": "yellow", "value": 604800 },
+                  { "color": "green", "value": 2592000 }
+                ]
+              },
+              "mappings": []
+            }
+          },
+          "targets": [
+            {
+              "expr": "(certmanager_certificate_expiration_timestamp_seconds - time()) > 0",
+              "legendFormat": "{{ name }} ({{ namespace }})",
+              "refId": "A"
+            }
+          ]
+        },
+        {
+          "id": 8,
+          "type": "stat",
+          "title": "ArgoCD 앱 동기화 상태",
+          "description": "ArgoCD Application 동기화 상태 (Synced/OutOfSync/Unknown)",
+          "gridPos": { "x": 8, "y": 9, "w": 8, "h": 4 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "options": {
+            "reduceOptions": { "calcs": ["lastNotNull"] },
+            "orientation": "horizontal",
+            "colorMode": "background",
+            "graphMode": "none",
+            "textMode": "value_and_name"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "red", "value": null },
+                  { "color": "green", "value": 1 }
+                ]
+              }
+            }
+          },
+          "targets": [
+            {
+              "expr": "sum(argocd_app_info{sync_status=\"Synced\"}) or vector(0)",
+              "legendFormat": "Synced",
+              "refId": "A"
+            },
+            {
+              "expr": "sum(argocd_app_info{sync_status=\"OutOfSync\"}) or vector(0)",
+              "legendFormat": "OutOfSync",
+              "refId": "B"
+            },
+            {
+              "expr": "sum(argocd_app_info{sync_status=\"Unknown\"}) or vector(0)",
+              "legendFormat": "Unknown",
+              "refId": "C"
+            }
+          ]
+        },
+        {
+          "id": 9,
+          "type": "timeseries",
+          "title": "Istio Ambient mTLS 요청 지연 (p99)",
+          "description": "Istio ambient mesh를 통한 서비스 간 요청 지연 (99th percentile)",
+          "gridPos": { "x": 16, "y": 9, "w": 8, "h": 4 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "options": {
+            "tooltip": { "mode": "multi", "sort": "desc" },
+            "legend": { "displayMode": "list", "placement": "bottom" }
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "s",
+              "color": { "mode": "palette-classic" },
+              "custom": {
+                "lineInterpolation": "linear",
+                "lineWidth": 2,
+                "fillOpacity": 5,
+                "spanNulls": false
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "green", "value": null },
+                  { "color": "yellow", "value": 0.5 },
+                  { "color": "red", "value": 1 }
+                ]
+              }
+            }
+          },
+          "targets": [
+            {
+              "expr": "histogram_quantile(0.99, sum(rate(istio_request_duration_milliseconds_bucket{reporter=\"destination\"}[5m])) by (le, destination_service_name)) / 1000",
+              "legendFormat": "{{ destination_service_name }}",
+              "refId": "A"
+            }
+          ]
+        }
+      ]
+    }

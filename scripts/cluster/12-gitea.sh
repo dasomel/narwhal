@@ -5,6 +5,11 @@ GITEA_VERSION="${GITEA_VERSION:-v1.25.4}"
 
 echo "=== Installing Gitea ${GITEA_VERSION} ==="
 
+# Helper: generate a random 24-char alphanumeric password
+generate_password() {
+  openssl rand -base64 16 | tr -d '=/+' | head -c 24
+}
+
 # Use local kubeconfig (bypasses VIP) to avoid disruption during master-2 join
 export KUBECONFIG=/home/vagrant/.kube/config-local
 
@@ -34,6 +39,21 @@ kubectl wait --for=condition=Ready pod -l cnpg.io/poolerName=narwhal-db-pooler-r
 KEYCLOAK_URL="${KEYCLOAK_URL:-https://keycloak.local.narwhal.io}"
 KEYCLOAK_REALM="${KEYCLOAK_REALM:-kubernetes}"
 
+# Gitea admin password — create Secret on first run, reuse on re-run
+if ! kubectl get secret gitea-admin -n devtools &>/dev/null; then
+  GITEA_ADMIN_PASS=$(generate_password)
+  kubectl create secret generic gitea-admin \
+    --from-literal=admin-password="${GITEA_ADMIN_PASS}" \
+    -n devtools
+else
+  GITEA_ADMIN_PASS=$(kubectl get secret gitea-admin -n devtools \
+    -o jsonpath='{.data.admin-password}' | base64 -d)
+fi
+
+# DB password — provided by 07-cnpg.sh via narwhal-db-credentials Secret
+GITEA_DB_PASS=$(kubectl get secret narwhal-db-credentials -n database \
+  -o jsonpath='{.data.gitea-password}' | base64 -d)
+
 # Install Gitea with Keycloak OIDC
 GITEA_CHART_VERSION="${GITEA_CHART_VERSION:-12.5.0}"
 
@@ -42,7 +62,7 @@ helm upgrade --install gitea gitea-charts/gitea \
   --version "${GITEA_CHART_VERSION}" \
   --set image.tag="${GITEA_VERSION#v}" \
   --set gitea.admin.username=gitea-admin \
-  --set gitea.admin.password=gitea-admin \
+  --set gitea.admin.password="${GITEA_ADMIN_PASS}" \
   --set gitea.admin.email=admin@local \
   --set postgresql.enabled=false \
   --set postgresql-ha.enabled=false \
@@ -50,7 +70,7 @@ helm upgrade --install gitea gitea-charts/gitea \
   --set gitea.config.database.HOST=gitea-db-rw:5432 \
   --set gitea.config.database.NAME=gitea \
   --set gitea.config.database.USER=gitea \
-  --set gitea.config.database.PASSWD=gitea-db-password \
+  --set gitea.config.database.PASSWD="${GITEA_DB_PASS}" \
   --set gitea.config.server.ROOT_URL=https://gitea.local.narwhal.io \
   --set gitea.config.oauth2_client.ENABLE_AUTO_REGISTRATION=true \
   --set gitea.config.oauth2_client.ACCOUNT_LINKING=auto \
@@ -98,7 +118,7 @@ if [ -n "${GITEA_POD}" ]; then
   kubectl exec -n devtools "${GITEA_POD}" -- \
     curl -sf -X POST "http://localhost:3000/api/v1/orgs" \
       -H "Content-Type: application/json" \
-      -u "gitea-admin:gitea-admin" \
+      -u "gitea-admin:${GITEA_ADMIN_PASS}" \
       -d '{"username":"narwhal","full_name":"Narwhal","visibility":"public"}' 2>/dev/null || true
 
   # Create teams in narwhal org
@@ -107,7 +127,7 @@ if [ -n "${GITEA_POD}" ]; then
     kubectl exec -n devtools "${GITEA_POD}" -- \
       curl -sf -X POST "http://localhost:3000/api/v1/orgs/narwhal/teams" \
         -H "Content-Type: application/json" \
-        -u "gitea-admin:gitea-admin" \
+        -u "gitea-admin:${GITEA_ADMIN_PASS}" \
         -d "${team_data}" 2>/dev/null || true
   done
 
@@ -137,6 +157,6 @@ echo ""
 echo "Access:"
 echo "  kubectl port-forward svc/gitea-http -n devtools 3000:3000"
 echo "  URL: http://localhost:3000"
-echo "  User: gitea-admin / gitea-admin"
+echo "  User: gitea-admin / (see Secret gitea-admin -n devtools)"
 echo ""
 kubectl get pods -n devtools

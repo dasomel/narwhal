@@ -33,10 +33,10 @@ spec:
           name: traefik-gateway
           namespace: platform-system
           listeners:
-            http:
+            web:
               port: 8000
               protocol: HTTP
-            https:
+            websecure:
               port: 8443
               protocol: HTTPS
               certificateRefs:
@@ -109,3 +109,4 @@ spec:
       selfHeal: true
     syncOptions:
       - CreateNamespace=true
+      - ServerSideApply=true

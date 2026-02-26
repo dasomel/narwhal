@@ -1,0 +1,48 @@
+apiVersion: monitoring.coreos.com/v1alpha1
+kind: AlertmanagerConfig
+metadata:
+  name: narwhal-alert-routing
+  namespace: monitoring
+  labels:
+    release: prometheus-stack
+spec:
+  route:
+    groupBy: ['alertname', 'namespace']
+    groupWait: 30s
+    groupInterval: 5m
+    repeatInterval: 4h
+    receiver: default
+    routes:
+      - matchers:
+          - name: severity
+            value: critical
+        receiver: critical
+        repeatInterval: 1h
+      - matchers:
+          - name: severity
+            value: warning
+        receiver: warning
+        repeatInterval: 4h
+  receivers:
+    - name: default
+      # 기본: 알림 저장만 (webhook 미설정)
+    - name: critical
+      # TODO: 프로덕션 환경에서 Slack/Discord/Email webhook 설정
+      # webhookConfigs:
+      #   - url: 'https://hooks.slack.com/services/T.../B.../...'
+      #     sendResolved: true
+      #     title: '[{{ .Status | toUpper }}] {{ .GroupLabels.alertname }}'
+      #     text: '{{ range .Alerts }}{{ .Annotations.description }}\n{{ end }}'
+    - name: warning
+      # TODO: 프로덕션 환경에서 Slack/Discord webhook 설정
+      # webhookConfigs:
+      #   - url: 'https://hooks.slack.com/services/T.../B.../...'
+      #     sendResolved: true
+  inhibitRules:
+    - sourceMatch:
+        - name: severity
+          value: critical
+      targetMatch:
+        - name: severity
+          value: warning
+      equal: ['alertname', 'namespace']

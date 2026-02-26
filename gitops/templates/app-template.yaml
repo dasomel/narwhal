@@ -1,0 +1,111 @@
+# ================================================
+# Narwhal IDP - ArgoCD Application 템플릿 (Helm 차트 소스)
+# ================================================
+# 사용법:
+#   1. 이 파일을 복사하여 gitops/apps/<APP_NAME>.yaml 로 저장
+#   2. <PLACEHOLDER> 값을 실제 값으로 교체
+#   3. Gitea narwhal-gitops 레포에 push
+#   4. ArgoCD app-of-apps가 자동으로 감지하여 배포
+#
+# 필수 교체 항목:
+#   <APP_NAME>       - 앱 이름 (예: my-app, redis, nginx)
+#   <CHART_REPO_URL> - Helm 차트 레포 URL (예: https://charts.bitnami.com/bitnami)
+#                      * 주의: Bitnami 차트 사용 금지. 공식/upstream 차트 우선.
+#   <CHART_VERSION>  - 차트 버전 (예: 1.2.3, 문자열 형식 필수)
+#   <CHART_NAME>     - 차트 이름 (예: redis, nginx-ingress)
+#   <NAMESPACE>      - 대상 네임스페이스 (예: dev, monitoring, storage)
+#
+# 레지스트리 우선순위 (이미지 오버라이드 시):
+#   ghcr.io > registry.k8s.io > quay.io > docker.io
+#
+# 참고:
+#   - ArgoCD namespace: devtools (scripts/cluster/13-argocd.sh 참조)
+#   - ARM64 지원 이미지 필수 확인 (Vagrant VM은 Apple Silicon 기반)
+#   - Istio ambient가 활성화된 네임스페이스는 SSO 웹 서버에
+#     `istio.io/dataplane-mode: none` pod label 필수
+# ================================================
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: <APP_NAME>
+  namespace: devtools
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+  labels:
+    app.kubernetes.io/managed-by: narwhal-gitops
+spec:
+  project: default
+  source:
+    repoURL: <CHART_REPO_URL>
+    targetRevision: "<CHART_VERSION>"
+    chart: <CHART_NAME>
+    helm:
+      valuesObject:
+        # -----------------------------------------------
+        # 기본 레플리카 설정
+        # 프로덕션: replicaCount: 2 이상 권장
+        # 개발/테스트: 1로 시작하여 리소스 절약
+        # -----------------------------------------------
+        replicaCount: 1
+
+        # -----------------------------------------------
+        # ARM64 이미지 오버라이드 (필요 시 활성화)
+        # 공식 이미지가 ARM64를 지원하면 이 블록 삭제
+        # -----------------------------------------------
+        # image:
+        #   repository: ghcr.io/<ORG>/<IMAGE>
+        #   tag: latest
+        #   pullPolicy: IfNotPresent
+
+        # -----------------------------------------------
+        # 리소스 요청/제한
+        # dev 네임스페이스 LimitRange 기본값:
+        #   request: 100m CPU / 128Mi Memory
+        #   limit:   500m CPU / 512Mi Memory
+        # -----------------------------------------------
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
+
+        # -----------------------------------------------
+        # 퍼시스턴스 (필요 시 활성화)
+        # StorageClass: nfs-csi (NFS 기반, 동적 프로비저닝)
+        # -----------------------------------------------
+        # persistence:
+        #   enabled: true
+        #   storageClassName: nfs-csi
+        #   size: 1Gi
+
+        # -----------------------------------------------
+        # 서비스 설정
+        # ClusterIP: 클러스터 내부 접근 전용
+        # LoadBalancer: MetalLB를 통한 외부 IP 할당
+        # -----------------------------------------------
+        service:
+          type: ClusterIP
+          port: 80
+
+        # -----------------------------------------------
+        # Istio ambient mesh 설정
+        # 이 네임스페이스가 ambient 레이블을 가진 경우:
+        #   - SSO 웹 서버(쿠키 사용)는 반드시 none으로 opt-out
+        #   - 일반 백엔드 서비스는 ambient 유지 가능
+        # -----------------------------------------------
+        # podLabels:
+        #   istio.io/dataplane-mode: "none"  # SSO 웹 UI인 경우 필수
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: <NAMESPACE>
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      # CRD가 크거나(>262KB) field manager 충돌 시 활성화
+      # - ServerSideApply=true

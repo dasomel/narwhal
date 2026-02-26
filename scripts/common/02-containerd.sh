@@ -27,6 +27,8 @@ LimitNOFILE=1048576
 LimitNPROC=infinity
 LimitCORE=infinity
 TasksMax=infinity
+Restart=always
+RestartSec=5
 EOF
 
 # Restart service

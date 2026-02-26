@@ -18,14 +18,25 @@ spec:
           tls:
             enabled: false
         externalURL: https://harbor.local.narwhal.io
-        harborAdminPassword: Harbor12345
+        # Admin password loaded from existingSecret
+        # Secret 'harbor-secrets' is created by scripts/cluster/08-platform-apps.sh
+        # Required key: HARBOR_ADMIN_PASSWORD
+        existingSecretAdminPassword: harbor-secrets
+        existingSecretAdminPasswordKey: HARBOR_ADMIN_PASSWORD
         database:
           type: external
           external:
             host: harbor-db-rw
             port: 5432
             username: harbor
-            password: harbor-db-password
+            # DB password loaded from existingSecret
+            # Secret 'narwhal-db-credentials' created by scripts/cluster/07-cnpg.sh (CNPG)
+            # Key must be 'password' per harbor chart requirement — see harbor chart values.yaml:971
+            # Note: 07-cnpg.sh stores harbor DB password under key 'harbor-password' in
+            # narwhal-db-credentials. A cross-namespace secret copy is required, or
+            # scripts/cluster/08-platform-apps.sh must create 'harbor-db-credentials' in devtools ns
+            # with key 'password' copied from narwhal-db-credentials/harbor-password.
+            existingSecret: harbor-db-credentials
             coreDatabase: harbor
         persistence:
           enabled: true
@@ -51,6 +62,12 @@ spec:
             tag: latest
           podLabels:
             istio.io/dataplane-mode: "none"
+          # TODO(production): oidc_client_secret is embedded in configureUserSettings JSON.
+          # Harbor configureUserSettings is injected via env var at startup and cannot be
+          # referenced from a Kubernetes Secret directly via Helm values.
+          # Production solution: integrate with OpenBao (Vault) using Harbor's secret injection
+          # or use External Secrets Operator to sync from Vault to a ConfigMap/Secret
+          # and patch harbor-core deployment with an init container.
           configureUserSettings: |-
             {
               "auth_mode": "oidc_auth",

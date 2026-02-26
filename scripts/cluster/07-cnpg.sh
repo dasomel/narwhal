@@ -4,6 +4,11 @@ set -euo pipefail
 CNPG_CHART_VERSION="${CNPG_CHART_VERSION:-0.27.1}"  # app: v1.28.1
 POSTGRES_VERSION="${POSTGRES_VERSION:-18}"
 
+# Generate a 24-char URL-safe random password
+generate_password() {
+  openssl rand -base64 16 | tr -d '=/+' | head -c 24
+}
+
 echo "=== Installing CloudNative-PG v1.28.1 (chart: ${CNPG_CHART_VERSION}) ==="
 
 # Use local kubeconfig (bypasses VIP) to avoid disruption during master-2 join
@@ -62,18 +67,31 @@ echo "=== Creating Unified PostgreSQL HA Cluster (narwhal-db) ==="
 # Create database namespace
 kubectl create namespace database --dry-run=client -o yaml | kubectl apply -f -
 
-# Create database credentials secrets
+# Create database credentials secrets (idempotent: reuse existing passwords)
+if ! kubectl get secret narwhal-db-credentials -n database &>/dev/null; then
+  KEYCLOAK_DB_PASS=$(generate_password)
+  HARBOR_DB_PASS=$(generate_password)
+  GITEA_DB_PASS=$(generate_password)
+  kubectl create secret generic narwhal-db-credentials \
+    --from-literal=username=keycloak \
+    --from-literal=password="${KEYCLOAK_DB_PASS}" \
+    --from-literal=harbor-password="${HARBOR_DB_PASS}" \
+    --from-literal=gitea-password="${GITEA_DB_PASS}" \
+    -n database
+  echo "DB credentials secret created with generated passwords"
+else
+  KEYCLOAK_DB_PASS=$(kubectl get secret narwhal-db-credentials -n database \
+    -o jsonpath='{.data.password}' | base64 -d)
+  HARBOR_DB_PASS=$(kubectl get secret narwhal-db-credentials -n database \
+    -o jsonpath='{.data.harbor-password}' | base64 -d)
+  GITEA_DB_PASS=$(kubectl get secret narwhal-db-credentials -n database \
+    -o jsonpath='{.data.gitea-password}' | base64 -d)
+  echo "DB credentials secret already exists, reusing existing passwords"
+fi
+
+# CNPG bootstrap uses narwhal-db-credentials directly (username/password fields)
+# S3 credentials for backup (placeholder, adjust if SeaweedFS/MinIO is used)
 cat <<EOF | kubectl apply -f -
-apiVersion: v1
-kind: Secret
-metadata:
-  name: narwhal-db-credentials
-  namespace: database
-type: kubernetes.io/basic-auth
-stringData:
-  username: keycloak
-  password: keycloak-db-password
----
 apiVersion: v1
 kind: Secret
 metadata:
@@ -106,8 +124,8 @@ spec:
         name: narwhal-db-credentials
       postInitSQL:
         # Create additional users
-        - CREATE USER harbor WITH PASSWORD 'harbor-db-password'
-        - CREATE USER gitea WITH PASSWORD 'gitea-db-password'
+        - CREATE USER harbor WITH PASSWORD '${HARBOR_DB_PASS}'
+        - CREATE USER gitea WITH PASSWORD '${GITEA_DB_PASS}'
         # Create additional databases
         - CREATE DATABASE harbor OWNER harbor
         - CREATE DATABASE gitea OWNER gitea
@@ -289,9 +307,9 @@ echo "Instances: 2 (HA: 1 primary + 1 replica)"
 echo "PgBouncer: 1 pooler pod (transaction mode)"
 echo ""
 echo "Databases:"
-echo "  keycloak - owner: keycloak, password: keycloak-db-password"
-echo "  harbor   - owner: harbor, password: harbor-db-password"
-echo "  gitea    - owner: gitea, password: gitea-db-password"
+echo "  keycloak - owner: keycloak (password in secret: narwhal-db-credentials/password)"
+echo "  harbor   - owner: harbor   (password in secret: narwhal-db-credentials/harbor-password)"
+echo "  gitea    - owner: gitea    (password in secret: narwhal-db-credentials/gitea-password)"
 echo ""
 echo "Connection (via PgBouncer):"
 echo "  Host: narwhal-db-pooler-rw.database.svc.cluster.local"

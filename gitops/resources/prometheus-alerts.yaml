@@ -1,0 +1,291 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: narwhal-alerts
+  namespace: monitoring
+  labels:
+    release: prometheus-stack
+spec:
+  groups:
+
+    # -------------------------------------------------------------------------
+    # cluster-health: API 서버, etcd, CoreDNS, 노드 상태
+    # -------------------------------------------------------------------------
+    - name: cluster-health
+      rules:
+        - alert: KubeNodeNotReady
+          expr: kube_node_status_condition{condition="Ready",status="true"} == 0
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "노드 NotReady: {{ $labels.node }}"
+            description: "노드 {{ $labels.node }}가 5분 이상 Ready 상태가 아닙니다."
+
+        - alert: KubeAPIServerDown
+          expr: absent(up{job="apiserver"} == 1)
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "kube-apiserver 타겟 없음"
+            description: "kube-apiserver 스크레이프 타겟이 5분 이상 0개입니다. API 서버가 다운되었을 수 있습니다."
+
+        - alert: EtcdHighCommitDuration
+          expr: histogram_quantile(0.99, rate(etcd_disk_backend_commit_duration_seconds_bucket[5m])) > 0.25
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "etcd 커밋 지연 높음: {{ $labels.instance }}"
+            description: "etcd 인스턴스 {{ $labels.instance }}의 99번째 백분위 커밋 지연이 10분 이상 250ms를 초과합니다. 현재값: {{ $value | humanizeDuration }}"
+
+        - alert: CoreDNSDown
+          expr: absent(up{job="coredns"} == 1)
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "CoreDNS 인스턴스 없음"
+            description: "CoreDNS 스크레이프 타겟이 5분 이상 0개입니다. 클러스터 DNS가 작동하지 않을 수 있습니다."
+
+    # -------------------------------------------------------------------------
+    # node-health: 노드 리소스 압력 및 사용률
+    # -------------------------------------------------------------------------
+    - name: node-health
+      rules:
+        - alert: NodeDiskPressure
+          expr: kube_node_status_condition{condition="DiskPressure",status="true"} == 1
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "노드 디스크 압박: {{ $labels.node }}"
+            description: "노드 {{ $labels.node }}에 5분 이상 DiskPressure 조건이 발생했습니다. 디스크 공간을 확인하세요."
+
+        - alert: NodeMemoryPressure
+          expr: kube_node_status_condition{condition="MemoryPressure",status="true"} == 1
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "노드 메모리 압박: {{ $labels.node }}"
+            description: "노드 {{ $labels.node }}에 5분 이상 MemoryPressure 조건이 발생했습니다. 메모리 사용량을 확인하세요."
+
+        - alert: NodeHighCPU
+          expr: |
+            (
+              1 - avg by (node) (
+                rate(node_cpu_seconds_total{mode="idle"}[5m])
+              )
+            ) * 100 > 90
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "노드 CPU 사용률 높음: {{ $labels.node }}"
+            description: "노드 {{ $labels.node }}의 CPU 사용률이 15분 이상 90%를 초과합니다. 현재값: {{ $value | humanize }}%"
+
+        - alert: NodeHighDiskUsage
+          expr: |
+            (
+              1 - (
+                node_filesystem_avail_bytes{mountpoint="/",fstype!~"tmpfs|overlay"}
+                /
+                node_filesystem_size_bytes{mountpoint="/",fstype!~"tmpfs|overlay"}
+              )
+            ) * 100 > 85
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "노드 루트 디스크 사용률 높음: {{ $labels.instance }}"
+            description: "인스턴스 {{ $labels.instance }}의 루트 파일시스템 사용률이 10분 이상 85%를 초과합니다. 현재값: {{ $value | humanize }}%"
+
+    # -------------------------------------------------------------------------
+    # platform-apps: 핵심 플랫폼 컴포넌트 가용성
+    # -------------------------------------------------------------------------
+    - name: platform-apps
+      rules:
+        - alert: KeycloakDown
+          expr: |
+            sum by (namespace) (
+              kube_pod_status_ready{condition="true",namespace="iam"}
+              * on (namespace, pod) kube_pod_labels{label_app_kubernetes_io_name="keycloak",namespace="iam"}
+            ) == 0
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Keycloak 다운 (namespace: iam)"
+            description: "namespace=iam에서 Ready 상태인 Keycloak pod가 5분 이상 없습니다. SSO 기능이 중단되었습니다."
+
+        - alert: ArgoCDDown
+          expr: |
+            sum by (namespace) (
+              kube_pod_status_ready{condition="true",namespace="devtools"}
+              * on (namespace, pod) kube_pod_labels{label_app_kubernetes_io_name="argocd-server",namespace="devtools"}
+            ) == 0
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "ArgoCD 서버 다운 (namespace: devtools)"
+            description: "namespace=devtools에서 Ready 상태인 argocd-server pod가 5분 이상 없습니다. GitOps 동기화가 중단되었습니다."
+
+        - alert: HarborDown
+          expr: |
+            sum by (namespace) (
+              kube_pod_status_ready{condition="true",namespace="devtools"}
+              * on (namespace, pod) kube_pod_labels{label_app_kubernetes_io_component="core",label_app_kubernetes_io_instance="harbor",namespace="devtools"}
+            ) == 0
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Harbor 코어 다운 (namespace: devtools)"
+            description: "namespace=devtools에서 Ready 상태인 harbor-core pod가 5분 이상 없습니다. 컨테이너 레지스트리를 사용할 수 없습니다."
+
+        - alert: GiteaDown
+          expr: |
+            sum by (namespace) (
+              kube_pod_status_ready{condition="true",namespace="devtools"}
+              * on (namespace, pod) kube_pod_labels{label_app_kubernetes_io_name="gitea",namespace="devtools"}
+            ) == 0
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Gitea 다운 (namespace: devtools)"
+            description: "namespace=devtools에서 Ready 상태인 Gitea pod가 5분 이상 없습니다. Git 저장소에 접근할 수 없습니다."
+
+        - alert: TraefikDown
+          expr: |
+            sum by (namespace) (
+              kube_pod_status_ready{condition="true",namespace="platform-system"}
+              * on (namespace, pod) kube_pod_labels{label_app_kubernetes_io_name="traefik",namespace="platform-system"}
+            ) == 0
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Traefik 다운 (namespace: platform-system)"
+            description: "namespace=platform-system에서 Ready 상태인 Traefik pod가 5분 이상 없습니다. 모든 인그레스 트래픽이 차단되었습니다."
+
+        - alert: ArgoCDAppOutOfSync
+          expr: |
+            argocd_app_info{sync_status="OutOfSync",namespace="devtools"} == 1
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "ArgoCD 앱 OutOfSync: {{ $labels.name }}"
+            description: "ArgoCD 앱 {{ $labels.name }} (프로젝트: {{ $labels.project }})가 10분 이상 OutOfSync 상태입니다. 수동 동기화가 필요할 수 있습니다."
+
+    # -------------------------------------------------------------------------
+    # database: CloudNative-PG 클러스터 상태
+    # -------------------------------------------------------------------------
+    - name: database
+      rules:
+        - alert: CNPGClusterNotHealthy
+          expr: |
+            cnpg_collector_up{namespace="database"} == 0
+            or
+            absent(cnpg_collector_up{namespace="database"})
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "CNPG 클러스터 비정상: {{ $labels.cluster_name }}"
+            description: "namespace=database의 CNPG 클러스터 {{ $labels.cluster_name }}가 5분 이상 Healthy 상태가 아닙니다."
+
+        - alert: CNPGReplicationLag
+          expr: |
+            cnpg_pg_replication_lag{namespace="database"} > 30
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "CNPG 복제 지연 높음: {{ $labels.pod }}"
+            description: "CNPG 파드 {{ $labels.pod }}의 스탠바이 복제 지연이 10분 이상 30초를 초과합니다. 현재값: {{ $value | humanizeDuration }}"
+
+        - alert: CNPGHighConnections
+          expr: |
+            (
+              cnpg_backends_total{namespace="database"}
+              /
+              cnpg_pg_settings_setting{name="max_connections",namespace="database"}
+            ) * 100 > 80
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "CNPG 연결 수 높음: {{ $labels.pod }}"
+            description: "CNPG 파드 {{ $labels.pod }}의 활성 연결이 max_connections의 80%를 5분 이상 초과합니다. 현재값: {{ $value | humanize }}%"
+
+    # -------------------------------------------------------------------------
+    # certificates: cert-manager 인증서 만료 및 상태
+    # -------------------------------------------------------------------------
+    - name: certificates
+      rules:
+        - alert: CertificateExpiringSoon
+          expr: |
+            (
+              certmanager_certificate_expiration_timestamp_seconds
+              - time()
+            ) < (7 * 24 * 3600)
+          for: 0m
+          labels:
+            severity: info
+          annotations:
+            summary: "인증서 만료 임박: {{ $labels.name }} ({{ $labels.namespace }})"
+            description: "namespace={{ $labels.namespace }}의 인증서 {{ $labels.name }}가 7일 이내에 만료됩니다. 만료까지 남은 시간: {{ $value | humanizeDuration }}"
+
+        - alert: CertificateNotReady
+          expr: |
+            certmanager_certificate_ready_status{condition="True"} == 0
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "인증서 Ready 아님: {{ $labels.name }} ({{ $labels.namespace }})"
+            description: "namespace={{ $labels.namespace }}의 인증서 {{ $labels.name }}가 15분 이상 Ready=False 상태입니다. cert-manager 로그를 확인하세요."
+
+    # -------------------------------------------------------------------------
+    # reboot-recovery: VM 리부트 후 복구 감시
+    # -------------------------------------------------------------------------
+    - name: reboot-recovery
+      rules:
+        - alert: CiliumAgentNotReady
+          expr: |
+            kube_node_spec_taint{key="node.cilium.io/agent-not-ready"} == 1
+          for: 3m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Cilium agent-not-ready taint 지속: {{ $labels.node }}"
+            description: "노드 {{ $labels.node }}에 node.cilium.io/agent-not-ready taint가 3분 이상 지속됩니다. Cilium agent 초기화가 지연되고 있습니다."
+
+        - alert: ZtunnelNotReady
+          expr: |
+            kube_daemonset_status_number_ready{daemonset="ztunnel",namespace="istio-system"}
+            <
+            kube_daemonset_status_desired_number_scheduled{daemonset="ztunnel",namespace="istio-system"}
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "ztunnel DaemonSet 미완성"
+            description: "ztunnel DaemonSet의 Ready 파드 수가 5분 이상 원하는 수에 미달합니다. HBONE(15008) 트래픽이 단절되어 전체 서비스 메시에 영향을 줄 수 있습니다."
+
+        - alert: IstioCNINotReady
+          expr: |
+            kube_daemonset_status_number_ready{daemonset="istio-cni-node",namespace="istio-system"}
+            <
+            kube_daemonset_status_desired_number_scheduled{daemonset="istio-cni-node",namespace="istio-system"}
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "istio-cni DaemonSet 미완성"
+            description: "istio-cni-node DaemonSet의 Ready 파드 수가 5분 이상 원하는 수에 미달합니다. 새 파드의 ambient mesh 참여가 차단됩니다."

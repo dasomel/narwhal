@@ -86,7 +86,20 @@ EOF
 # Remove default config if exists
 sudo rm -f /etc/dnsmasq.d/default 2>/dev/null || true
 
+# Ensure dnsmasq restarts reliably after reboot
+sudo mkdir -p /etc/systemd/system/dnsmasq.service.d
+cat <<EOF | sudo tee /etc/systemd/system/dnsmasq.service.d/restart.conf
+[Unit]
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Restart=always
+RestartSec=5
+EOF
+
 # Start dnsmasq
+sudo systemctl daemon-reload
 sudo systemctl start dnsmasq
 sudo systemctl enable dnsmasq
 

@@ -59,6 +59,13 @@ Vagrant.configure("2") do |config|
   # SSH
   config.ssh.insert_key = true
 
+  # Graceful shutdown: drain kubelet before halt to reduce stale containerd refs
+  config.trigger.before :halt do |trigger|
+    trigger.name = "Graceful Kubernetes Shutdown"
+    trigger.info = "Stopping kubelet gracefully before VM halt..."
+    trigger.run_remote = {inline: "systemctl stop kubelet && sleep 3 || true"}
+  end
+
   # Disable default shared folder
   config.vm.synced_folder ".", "/vagrant", disabled: true
 

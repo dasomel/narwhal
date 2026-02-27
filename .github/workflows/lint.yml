@@ -1,0 +1,92 @@
+name: Lint & Validate
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  shellcheck:
+    name: ShellCheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install shellcheck
+        run: sudo apt-get install -y shellcheck
+
+      - name: Run shellcheck on all scripts
+        run: |
+          find scripts/ -name '*.sh' -print0 | xargs -0 shellcheck --severity=warning
+
+  yaml-validate:
+    name: YAML Validate (GitOps)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install yq
+        run: |
+          sudo wget -qO /usr/local/bin/yq \
+            https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
+          sudo chmod +x /usr/local/bin/yq
+
+      - name: Validate GitOps YAML
+        run: |
+          for f in gitops/apps/*.yaml gitops/resources/*.yaml; do
+            echo "Validating $f..."
+            yq eval '.' "$f" > /dev/null
+          done
+
+  kubeconform:
+    name: kubeconform (K8s Resources)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install kubeconform
+        run: |
+          curl -sSL https://github.com/yannh/kubeconform/releases/latest/download/kubeconform-linux-amd64.tar.gz \
+            | tar -xz -C /usr/local/bin kubeconform
+
+      - name: Validate K8s manifests in gitops/resources
+        run: |
+          kubeconform \
+            -strict \
+            -summary \
+            -kubernetes-version 1.31.0 \
+            -schema-location default \
+            -schema-location 'https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json' \
+            -ignore-missing-schemas \
+            gitops/resources/*.yaml
+
+  vagrantfile-syntax:
+    name: Vagrantfile Syntax
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.2'
+
+      - name: Validate Vagrantfile syntax
+        run: ruby -c Vagrantfile
+
+  markdown-lint:
+    name: Markdown Lint (docs)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install markdownlint-cli
+        run: npm install -g markdownlint-cli
+
+      - name: Lint Markdown files
+        run: |
+          markdownlint \
+            --config .markdownlint.json \
+            --ignore node_modules \
+            'docs/**/*.md' 'README.md' 'CHANGELOG.md' \
+            || true

@@ -194,8 +194,8 @@ ${COREFILE}"
     COREDNS_CM_CURRENT=$(kubectl get configmap coredns -n kube-system -o json 2>/dev/null || echo "")
     if [ -z "${COREDNS_CM_CURRENT}" ]; then
       echo "WARN: CoreDNS configmap not found, skipping hairpin fix"
-    elif echo "${COREDNS_CM_CURRENT}" | grep -q "hairpin"; then
-      echo "CoreDNS hairpin fix already applied"
+    elif echo "${COREDNS_CM_CURRENT}" | grep -q "hairpin" && echo "${COREDNS_CM_CURRENT}" | grep -q "${TRAEFIK_IP}"; then
+      echo "CoreDNS hairpin fix already applied with correct IP (${TRAEFIK_IP})"
     else
       COREFILE_CURRENT=$(echo "${COREDNS_CM_CURRENT}" | yq -r '.data.Corefile')
 

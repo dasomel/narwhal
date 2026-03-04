@@ -145,6 +145,8 @@
 | 2026-02-11 | Traefik 39.0.0 HTTPS certificateRefs 필수 | Gateway HTTPS 리스너에 TLS 인증서 참조 필수 |
 | 2026-02-11 | Traefik Helm --set 포트 타입 에러 | `--set` 대신 values 파일 사용 (float64 vs int64) |
 | 2026-02-11 | ArgoCD 관리 리소스 Helm 재설치 충돌 | 기존 리소스(SA, IngressClass, GatewayClass) 삭제 후 재설치 |
+| 2026-02-28 | Keycloak HTTPRoute + Operator Ingress 동시 활성화 → 502 | Keycloak Operator가 Ingress를 자동 관리하므로 HTTPRoute 생성 금지. 동일 Host에 HTTPRoute + Ingress 공존 시 Traefik이 WRR null backend 선택 |
+| 2026-02-28 | Keycloak pod 재시작 시 `istio.io/dataplane-mode: none` 레이블 소실 | Keycloak CR `spec.unsupported.podTemplate.metadata.labels`에 영구 설정 필수. pod label 직접 추가는 재시작 시 소실 |
 
 ### 새 실수 추가하기
 ```markdown
@@ -289,6 +291,15 @@ shellcheck scripts/**/*.sh
 
 ---
 
+## Infrastructure Resource Safety (인프라 리소스 안전)
+
+- **클러스터 병렬 수정은 최대 2~3개**로 제한 — Master 6GB / Worker 4GB 환경에서 동시 작업은 OOM 유발
+- 여러 pod를 동시에 재시작/수정하지 말 것 — 하나 수정 → 안정화 확인 → 다음 수정
+- 클러스터 수정 작업 간에 `kubectl top nodes`로 리소스 여유 확인 후 다음 작업 진행
+- 인프라/클러스터 변경 시 변경 적용 후 **실제 사용자 관점에서 동작 확인** 필수 (예: curl endpoint, kubectl exec 테스트, DNS resolve)
+
+---
+
 ## Verification Loop (검증 루프)
 
 > 클로드에게 자신의 작업을 검증할 방법을 제공하는 것이 품질을 2~3배 높입니다.
@@ -314,7 +325,7 @@ shellcheck scripts/**/*.sh
 
 4. **ArgoCD 동기화 확인**
    ```bash
-   vagrant ssh master-1 -c "kubectl get applications -n argocd"
+   vagrant ssh master-1 -c "kubectl get applications -n devtools"
    ```
 
 ### 검증 명령어

@@ -154,6 +154,12 @@ spec:
     strict: true
   proxy:
     headers: xforwarded
+  # Opt-out from Istio ambient mesh — ztunnel HBONE breaks Traefik→Keycloak connectivity
+  unsupported:
+    podTemplate:
+      metadata:
+        labels:
+          istio.io/dataplane-mode: "none"
   # NOTE: Do NOT use additionalOptions hostname-url (v1 deprecated in Keycloak 26.x)
   # hostname v2 with strict: true + proxy.headers: xforwarded ensures HTTPS issuer
   # when accessed via Traefik (X-Forwarded-Proto: https)
@@ -481,7 +487,7 @@ echo "=== Creating Kubernetes RBAC for OIDC ==="
 # Create dev namespace for developer workloads
 kubectl create namespace dev --dry-run=client -o yaml | kubectl apply -f -
 
-# ClusterRoleBinding for cluster-admin group (full cluster access)
+# ClusterRoleBinding for cluster-admin group → cluster-admin ClusterRole
 cat <<EOF | kubectl apply -f -
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
@@ -642,9 +648,23 @@ else
   # Check if OIDC flags already exist
   if ! grep -q "oidc-issuer-url" "${APISERVER_MANIFEST}" 2>/dev/null; then
     # Extract Keycloak TLS CA certificate for API server OIDC validation
-    echo "Extracting Keycloak TLS CA certificate..."
-    openssl s_client -connect keycloak.local.narwhal.io:443 -showcerts </dev/null 2>/dev/null \
-      | openssl x509 -outform PEM > /etc/kubernetes/pki/oidc-ca.crt
+    # Use narwhal-root-ca-secret (the signing CA) rather than parsing TLS handshake,
+    # which may return only the leaf cert depending on openssl version.
+    echo "Extracting Keycloak TLS CA certificate from narwhal-root-ca-secret..."
+    if kubectl get secret -n platform-system narwhal-root-ca-secret &>/dev/null; then
+      kubectl get secret -n platform-system narwhal-root-ca-secret \
+        -o jsonpath='{.data.tls\.crt}' | base64 -d > /etc/kubernetes/pki/oidc-ca.crt
+      echo "CA cert extracted from narwhal-root-ca-secret"
+    else
+      # Fallback: extract last cert in chain (root CA) from TLS handshake
+      echo "Fallback: extracting CA from TLS handshake..."
+      openssl s_client -connect "keycloak.${DOMAIN}:443" -showcerts </dev/null 2>/dev/null \
+        | awk '/-----BEGIN CERTIFICATE-----/{c=""} {c=c $0 "\n"} /-----END CERTIFICATE-----/{last=c} END{printf "%s", last}' \
+        > /etc/kubernetes/pki/oidc-ca.crt
+    fi
+    # Verify the extracted CA cert is valid
+    openssl x509 -in /etc/kubernetes/pki/oidc-ca.crt -noout -subject 2>/dev/null \
+      && echo "CA cert verified OK" || echo "WARN: CA cert may be invalid"
 
     # Use yq to safely add OIDC flags to the command array
     # NOTE: Do NOT quote the URL value with shell quotes - yq handles YAML escaping
@@ -674,29 +694,38 @@ else
     echo "OIDC already configured in API server"
   fi
 
-  # Apply OIDC flags to master-2 and master-3 via SSH
-  MASTER_IP_BASE="${MASTER_IP_BASE:-192.168.56.1}"
+  # Apply OIDC CA and flags to master-2 and master-3 via SSH
+  # Master IPs: master-2=192.168.56.11, master-3=192.168.56.12
+  MASTER_IPS="${MASTER_IPS:-192.168.56.11 192.168.56.12}"
   MASTER_COUNT="${MASTER_COUNT:-3}"
-  for i in $(seq 2 "${MASTER_COUNT}"); do
-    MASTER_IP="${MASTER_IP_BASE}$((i - 1))"
-    echo "Applying OIDC flags to master-${i} (${MASTER_IP})..."
-    scp -o StrictHostKeyChecking=no /etc/kubernetes/pki/oidc-ca.crt "vagrant@${MASTER_IP}:/tmp/oidc-ca.crt" 2>/dev/null || true
-    ssh -o StrictHostKeyChecking=no "vagrant@${MASTER_IP}" \
-      "sudo mv /tmp/oidc-ca.crt /etc/kubernetes/pki/oidc-ca.crt 2>/dev/null || true
-      if ! grep -q 'oidc-issuer-url' /etc/kubernetes/manifests/kube-apiserver.yaml 2>/dev/null; then
-        sudo yq -i '.spec.containers[0].command += [
-          \"--oidc-issuer-url=${OIDC_ISSUER_URL}\",
-          \"--oidc-client-id=kubernetes\",
-          \"--oidc-username-claim=preferred_username\",
-          \"--oidc-groups-claim=groups\",
-          \"--oidc-username-prefix=oidc:\",
-          \"--oidc-groups-prefix=oidc:\",
-          \"--oidc-ca-file=/etc/kubernetes/pki/oidc-ca.crt\"
-        ]' /etc/kubernetes/manifests/kube-apiserver.yaml
-        echo 'OIDC flags added to master-${i}'
+  IDX=2
+  for MASTER_IP in ${MASTER_IPS}; do
+    if [ "${IDX}" -gt "${MASTER_COUNT}" ]; then break; fi
+    echo "Applying OIDC CA + flags to master-${IDX} (${MASTER_IP})..."
+    scp -o StrictHostKeyChecking=no /etc/kubernetes/pki/oidc-ca.crt \
+      "vagrant@${MASTER_IP}:/tmp/oidc-ca.crt" 2>/dev/null || true
+    ssh -o StrictHostKeyChecking=no "vagrant@${MASTER_IP}" "
+      sudo cp /tmp/oidc-ca.crt /etc/kubernetes/pki/oidc-ca.crt
+      sudo openssl x509 -in /etc/kubernetes/pki/oidc-ca.crt -noout -subject 2>/dev/null \
+        && echo 'CA cert OK on master-${IDX}' || echo 'WARN: CA cert invalid on master-${IDX}'
+      if ! sudo grep -q 'oidc-issuer-url' /etc/kubernetes/manifests/kube-apiserver.yaml 2>/dev/null; then
+        sudo yq -i \".spec.containers[0].command += [
+          \\\"--oidc-issuer-url=${OIDC_ISSUER_URL}\\\",
+          \\\"--oidc-client-id=kubernetes\\\",
+          \\\"--oidc-username-claim=preferred_username\\\",
+          \\\"--oidc-groups-claim=groups\\\",
+          \\\"--oidc-username-prefix=oidc:\\\",
+          \\\"--oidc-groups-prefix=oidc:\\\",
+          \\\"--oidc-ca-file=/etc/kubernetes/pki/oidc-ca.crt\\\"
+        ]\" /etc/kubernetes/manifests/kube-apiserver.yaml
+        echo 'OIDC flags added to master-${IDX}'
       else
-        echo 'OIDC already configured on master-${i}'
-      fi" 2>/dev/null || echo "WARN: Could not apply OIDC to master-${i}"
+        # CA file may have been empty on initial run — restart API server to reload it
+        sudo crictl stop \$(sudo crictl ps -q --name kube-apiserver 2>/dev/null) 2>/dev/null || true
+        echo 'OIDC already configured on master-${IDX}, restarted to reload CA'
+      fi
+    " 2>/dev/null || echo "WARN: Could not apply OIDC to master-${IDX} (${MASTER_IP})"
+    IDX=$((IDX + 1))
   done
 fi
 

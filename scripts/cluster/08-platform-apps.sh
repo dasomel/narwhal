@@ -115,7 +115,7 @@ helm upgrade --install cert-manager jetstack/cert-manager \
   --version v1.19.3 \
   --set crds.enabled=true || echo "WARN: cert-manager install issue, continuing..."
 
-# Create self-signed ClusterIssuer
+# Create self-signed ClusterIssuer (bootstrap only — do not use directly for app certs)
 cat <<EOF | kubectl apply -f -
 apiVersion: cert-manager.io/v1
 kind: ClusterIssuer
@@ -125,7 +125,43 @@ spec:
   selfSigned: {}
 EOF
 
-echo "cert-manager installed"
+# Create Root CA Certificate (self-signed, valid 10 years)
+cat <<EOF | kubectl apply -f -
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: narwhal-root-ca
+  namespace: platform-system
+spec:
+  isCA: true
+  commonName: "Narwhal IDP Root CA"
+  secretName: narwhal-root-ca-secret
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+  issuerRef:
+    name: selfsigned-cluster-issuer
+    kind: ClusterIssuer
+  duration: 87600h
+  renewBefore: 8760h
+EOF
+
+# Wait for CA certificate to be ready
+echo "Waiting for Root CA certificate..."
+kubectl wait --for=condition=Ready certificate/narwhal-root-ca -n platform-system --timeout=60s
+
+# Create CA ClusterIssuer (signs all application certificates)
+cat <<EOF | kubectl apply -f -
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: narwhal-ca-issuer
+spec:
+  ca:
+    secretName: narwhal-root-ca-secret
+EOF
+
+echo "cert-manager installed with CA issuer"
 
 #=========================================
 # Prometheus Stack (Prometheus, Grafana, Alertmanager)
@@ -363,10 +399,10 @@ config:
     provider = "keycloak-oidc"
     provider_display_name = "Keycloak"
     oidc_issuer_url = "https://keycloak.local.narwhal.io/realms/kubernetes"
-    redirect_url = "http://oauth2-proxy.local.narwhal.io/oauth2/callback"
+    redirect_url = "https://oauth2-proxy.local.narwhal.io/oauth2/callback"
     upstreams = ["static://200"]
     email_domains = ["*"]
-    cookie_secure = false
+    cookie_secure = true
     cookie_domains = [".local.narwhal.io"]
     whitelist_domains = [".local.narwhal.io"]
     set_xauthrequest = true

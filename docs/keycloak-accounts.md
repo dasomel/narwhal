@@ -7,17 +7,45 @@
 | URL | https://keycloak.local.narwhal.io |
 | Admin Console | https://keycloak.local.narwhal.io/admin |
 | Admin ID | `temp-admin` |
-| Admin PW | `502fd9d2e7eb4ef09e9449b05ffabcde` |
+| Admin PW | 프로비저닝 시 자동생성 (아래 조회 명령어 참고) |
 | Realm | `kubernetes` |
+
+### Admin 비밀번호 조회
+
+Keycloak Operator가 프로비저닝 시 `keycloak-initial-admin` secret에 자동 생성합니다:
+
+```bash
+kubectl get secret keycloak-initial-admin -n iam \
+  -o jsonpath='{.data.password}' | base64 -d && echo
+```
 
 ## 사용자 계정
 
-| 사용자 | 비밀번호 | 이메일 | 그룹 | 역할 |
-|--------|----------|--------|------|------|
+> **기본 비밀번호는 사용자명과 동일합니다** (로컬 개발 편의). 프로덕션 전환 시
+> 환경변수(`ADMIN_USER_PASSWORD`, `DEV_USER_PASSWORD`, `VIEW_USER_PASSWORD`, `GUEST_USER_PASSWORD`)로 오버라이드하세요.
+
+| 사용자 | 기본 비밀번호 | 이메일       | 그룹          | 역할          |
+|--------|---------------|-------------|---------------|---------------|
 | `admin` | `admin` | admin@local | cluster-admin | cluster-admin |
 | `dev` | `dev` | dev@local | developer | developer |
 | `view` | `view` | view@local | viewer | viewer |
 | `guest` | `guest` | guest@local | guest | guest (웹 UI OIDC만) |
+
+### 비밀번호 재설정 (Keycloak Admin UI)
+
+1. https://keycloak.local.narwhal.io/admin 접속
+2. `kubernetes` realm 선택
+3. Users → 해당 사용자 → Credentials → Reset password
+
+### 고정 비밀번호로 재프로비저닝
+
+```bash
+ADMIN_USER_PASSWORD=admin \
+DEV_USER_PASSWORD=dev \
+VIEW_USER_PASSWORD=view \
+GUEST_USER_PASSWORD=guest \
+vagrant provision master-1 --provision-with phase2-keycloak
+```
 
 ## 그룹
 

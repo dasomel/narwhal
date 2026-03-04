@@ -13,12 +13,14 @@ KEYCLOAK_ADMIN_USER="${KEYCLOAK_ADMIN_USER:-admin}"
 KEYCLOAK_ADMIN_PASSWORD="${KEYCLOAK_ADMIN_PASSWORD:-$(generate_password)}"
 
 #=========================================
-# User passwords (override via env vars)
+# User passwords (override via env vars for production)
+# Defaults are intentionally simple for local dev convenience.
+# Override with env vars for production deployments.
 #=========================================
-ADMIN_USER_PASSWORD="${ADMIN_USER_PASSWORD:-$(generate_password)}"
-DEV_USER_PASSWORD="${DEV_USER_PASSWORD:-$(generate_password)}"
-VIEW_USER_PASSWORD="${VIEW_USER_PASSWORD:-$(generate_password)}"
-GUEST_USER_PASSWORD="${GUEST_USER_PASSWORD:-$(generate_password)}"
+ADMIN_USER_PASSWORD="${ADMIN_USER_PASSWORD:-admin}"
+DEV_USER_PASSWORD="${DEV_USER_PASSWORD:-dev}"
+VIEW_USER_PASSWORD="${VIEW_USER_PASSWORD:-view}"
+GUEST_USER_PASSWORD="${GUEST_USER_PASSWORD:-guest}"
 
 echo "=== Installing Keycloak ${KEYCLOAK_VERSION} with Operator ==="
 

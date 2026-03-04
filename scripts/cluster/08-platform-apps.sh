@@ -709,10 +709,15 @@ S3_SECRET_KEY="${S3_SECRET_KEY:-$(kubectl get secret velero-s3-credentials -n st
   -o jsonpath='{.data.secret-key}' 2>/dev/null | base64 -d || echo "")}"
 
 # Persist S3 credentials into a dedicated Secret (idempotent)
+# 'cloud' key uses AWS credentials file format required by velero-plugin-for-aws
+# (referenced by gitops/apps/velero.yaml as existingSecret: velero-s3-credentials)
 kubectl create namespace storage --dry-run=client -o yaml | kubectl apply -f -
 kubectl create secret generic velero-s3-credentials \
   --from-literal=access-key="${S3_ACCESS_KEY}" \
   --from-literal=secret-key="${S3_SECRET_KEY}" \
+  --from-literal=cloud="[default]
+aws_access_key_id = ${S3_ACCESS_KEY}
+aws_secret_access_key = ${S3_SECRET_KEY}" \
   -n storage --dry-run=client -o yaml | kubectl apply -f -
 
 cat > /tmp/velero-values.yaml << EOF

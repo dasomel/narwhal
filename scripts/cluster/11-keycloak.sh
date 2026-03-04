@@ -120,9 +120,12 @@ kubectl create secret generic keycloak-admin-secret -n iam \
   --dry-run=client -o yaml | kubectl apply -f -
 
 # Create database credentials secret (pointing to unified narwhal-db)
+# Read actual Keycloak DB password from narwhal-db-credentials (created by 07-cnpg.sh)
+KEYCLOAK_DB_PASS=$(kubectl get secret narwhal-db-credentials -n database \
+  -o jsonpath='{.data.password}' 2>/dev/null | base64 -d || echo "")
 kubectl create secret generic keycloak-db-secret -n iam \
   --from-literal=username=keycloak \
-  --from-literal=password=keycloak-db-password \
+  --from-literal=password="${KEYCLOAK_DB_PASS}" \
   --dry-run=client -o yaml | kubectl apply -f -
 
 # Deploy Keycloak CR

@@ -40,11 +40,9 @@ spec:
           defaultVolumesToFsBackup: true
         credentials:
           useSecret: true
-          secretContents:
-            cloud: |
-              [default]
-              aws_access_key_id = admin
-              aws_secret_access_key = admin
+          # Reference secret created by 08-platform-apps.sh (velero-s3-credentials in storage ns)
+          # Secret key 'cloud' contains AWS credentials file format with actual SeaweedFS S3 keys
+          existingSecret: velero-s3-credentials
         snapshotsEnabled: false
         # Disable CRD upgrade hook - alpine/k8s musl binaries can't exec in velero glibc container
         upgradeCRDs: false

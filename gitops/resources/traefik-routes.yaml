@@ -442,6 +442,11 @@ spec:
           extensionRef:
             group: traefik.io
             kind: Middleware
+            name: body-limit-100m
+        - type: ExtensionRef
+          extensionRef:
+            group: traefik.io
+            kind: Middleware
             name: auth-signin
         - type: ExtensionRef
           extensionRef:

@@ -4,8 +4,3 @@
 #
 # Harbor connects via ExternalName service:
 #   harbor-db-rw.devtools.svc → narwhal-db-rw.database.svc.cluster.local
----
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: harbor

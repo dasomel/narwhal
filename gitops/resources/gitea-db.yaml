@@ -4,8 +4,3 @@
 #
 # Gitea connects via ExternalName service:
 #   gitea-db-rw.devtools.svc → narwhal-db-rw.database.svc.cluster.local
----
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: gitea

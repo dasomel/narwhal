@@ -487,7 +487,12 @@ echo "=== Creating Kubernetes RBAC for OIDC ==="
 # Create dev namespace for developer workloads
 kubectl create namespace dev --dry-run=client -o yaml | kubectl apply -f -
 
-# ClusterRoleBinding for cluster-admin group → cluster-admin ClusterRole
+# ClusterRoleBinding for cluster-admin group → platform-admin ClusterRole
+# NOTE: platform-admin ClusterRole is defined in gitops/resources/rbac-policies.yaml
+# and deployed by ArgoCD at step 14. Creating CRB here with platform-admin reference
+# ensures no roleRef conflict when ArgoCD syncs rbac-policies.yaml.
+# roleRef is immutable — delete existing CRB first to handle any prior cluster-admin binding.
+kubectl delete clusterrolebinding oidc-cluster-admin --ignore-not-found
 cat <<EOF | kubectl apply -f -
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
@@ -496,7 +501,7 @@ metadata:
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: cluster-admin
+  name: platform-admin
 subjects:
 - apiGroup: rbac.authorization.k8s.io
   kind: Group

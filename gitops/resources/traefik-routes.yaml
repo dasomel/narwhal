@@ -41,6 +41,7 @@ spec:
                   - monitoring
                   - storage
                   - platform-system
+                  - kube-system
     - name: websecure
       protocol: HTTPS
       port: 8443
@@ -62,6 +63,7 @@ spec:
                   - monitoring
                   - storage
                   - platform-system
+                  - kube-system
 ---
 # Security Headers Middleware (platform-system)
 apiVersion: traefik.io/v1alpha1

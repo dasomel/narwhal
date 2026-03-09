@@ -91,8 +91,13 @@ VM 내에서 각 스크립트를 순서대로 실행:
 # PostgreSQL Operator
 vagrant ssh master-1 -c "sudo bash /home/vagrant/scripts/cluster/07-cnpg.sh"
 
-# 플랫폼 앱 (cert-manager, Traefik, MetalLB 등)
-vagrant ssh master-1 -c "sudo bash /home/vagrant/scripts/cluster/08-platform-apps.sh"
+# 플랫폼 앱 (cert-manager, Traefik, MetalLB 등) - 분해된 스크립트 순차 실행
+vagrant ssh master-1 -c "sudo bash /home/vagrant/scripts/cluster/08-1-networking.sh"
+vagrant ssh master-1 -c "sudo bash /home/vagrant/scripts/cluster/08-2-monitoring.sh"
+vagrant ssh master-1 -c "sudo bash /home/vagrant/scripts/cluster/08-3-security.sh"
+vagrant ssh master-1 -c "sudo bash /home/vagrant/scripts/cluster/08-4-storage.sh"
+vagrant ssh master-1 -c "sudo bash /home/vagrant/scripts/cluster/08-5-registry.sh"
+vagrant ssh master-1 -c "sudo bash /home/vagrant/scripts/cluster/08-6-tls-routes.sh"
 
 # Istio Ambient Mesh
 vagrant ssh master-1 -c "sudo bash /home/vagrant/scripts/cluster/09-istio-ambient.sh"
@@ -100,8 +105,11 @@ vagrant ssh master-1 -c "sudo bash /home/vagrant/scripts/cluster/09-istio-ambien
 # dnsmasq (로컬 DNS)
 vagrant ssh master-1 -c "sudo bash /home/vagrant/scripts/cluster/10-dnsmasq.sh"
 
-# Keycloak (SSO/OIDC)
-vagrant ssh master-1 -c "sudo bash /home/vagrant/scripts/cluster/11-keycloak.sh"
+# Keycloak (SSO/OIDC) - 4단계 순차 실행
+vagrant ssh master-1 -c "sudo bash /home/vagrant/scripts/cluster/11-1-keycloak-operator.sh"
+vagrant ssh master-1 -c "sudo bash /home/vagrant/scripts/cluster/11-2-keycloak-realm.sh"
+vagrant ssh master-1 -c "sudo bash /home/vagrant/scripts/cluster/11-3-keycloak-clients.sh"
+vagrant ssh master-1 -c "sudo bash /home/vagrant/scripts/cluster/11-4-keycloak-apiserver.sh"
 
 # Gitea (Git 서버)
 vagrant ssh master-1 -c "sudo bash /home/vagrant/scripts/cluster/12-gitea.sh"

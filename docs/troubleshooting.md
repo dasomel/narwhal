@@ -13,7 +13,7 @@ jwt[0].issuer.url: Invalid value: "http://...": URL scheme must be https
 
 **해결법**:
 - cert-manager + Traefik TLS가 설치된 후에만 OIDC 플래그 활성화
-- 설치 순서: 08-platform-apps (cert-manager/Traefik) → 09-istio-ambient → 10-dnsmasq → 11-keycloak (OIDC)
+- 설치 순서: 08-1-networking (cert-manager/Traefik) → 09-istio-ambient → 10-dnsmasq → 11-1~11-4-keycloak-* (OIDC)
 - 긴급 복구: `/etc/kubernetes/manifests/kube-apiserver.yaml`에서 `--oidc-*` 플래그 주석 처리
 
 **검증**:
@@ -115,7 +115,7 @@ cat /var/log/phase2-platform.log
 **개별 스크립트 재실행**:
 ```bash
 # 특정 스크립트만 재실행 (vagrant 밖에서)
-vagrant ssh master-1 -c "sudo bash /home/vagrant/scripts/cluster/08-platform-apps.sh"
+vagrant ssh master-1 -c "sudo bash /home/vagrant/scripts/cluster/06-phase2-start.sh"
 ```
 
 ## 6. Pod 실패 (OOMKill, Disk Pressure)

@@ -1,14 +1,11 @@
 #!/bin/bash
 set -euo pipefail
+# shellcheck source=scripts/common/lib.sh
+source /home/vagrant/scripts/common/lib.sh
 
 GITEA_VERSION="${GITEA_VERSION:-v1.25.4}"
 
 echo "=== Installing Gitea ${GITEA_VERSION} ==="
-
-# Helper: generate a random 24-char alphanumeric password
-generate_password() {
-  openssl rand -base64 16 | tr -d '=/+' | head -c 24
-}
 
 # Use local kubeconfig (bypasses VIP) to avoid disruption during master-2 join
 export KUBECONFIG=/home/vagrant/.kube/config-local

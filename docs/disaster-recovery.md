@@ -693,8 +693,8 @@ Velero 복원 후에도 일부 컴포넌트(cert-manager webhook, Traefik Gatewa
 vagrant ssh master-1 -c "kubectl get pods -n platform-system"
 vagrant ssh master-1 -c "kubectl get pods -n traefik"
 
-# 문제 있는 컴포넌트 재설치
-vagrant ssh master-1 -c "sudo bash /home/vagrant/scripts/cluster/08-platform-apps.sh"
+# 문제 있는 컴포넌트 재설치 (전체 Phase 2 재실행)
+vagrant ssh master-1 -c "sudo bash /home/vagrant/scripts/cluster/06-phase2-start.sh"
 ```
 
 **Step 6: DNS/라우팅 확인**
@@ -923,8 +923,11 @@ kubectl wait --for=condition=Available deployment/oauth2-proxy -n devtools --tim
 Realm 설정이 손상된 경우:
 
 ```bash
-# Keycloak 재설치 (기존 DB 유지)
-vagrant ssh master-1 -c "sudo bash /home/vagrant/scripts/cluster/11-keycloak.sh"
+# Keycloak 재설치 (기존 DB 유지) - 4단계 순차 실행
+vagrant ssh master-1 -c "sudo bash /home/vagrant/scripts/cluster/11-1-keycloak-operator.sh"
+vagrant ssh master-1 -c "sudo bash /home/vagrant/scripts/cluster/11-2-keycloak-realm.sh"
+vagrant ssh master-1 -c "sudo bash /home/vagrant/scripts/cluster/11-3-keycloak-clients.sh"
+vagrant ssh master-1 -c "sudo bash /home/vagrant/scripts/cluster/11-4-keycloak-apiserver.sh"
 ```
 
 ### 중요 설정 검증
@@ -1344,8 +1347,11 @@ vagrant provision master-1 --provision-with phase2-platform
 **Step 4: Phase 2 스크립트 재실행 (필요 시)**
 
 ```bash
-# Keycloak SSO, Gitea, ArgoCD 재설정
-vagrant ssh master-1 -c "sudo bash /home/vagrant/scripts/cluster/11-keycloak.sh"
+# Keycloak SSO 재설정 - 4단계 순차 실행
+vagrant ssh master-1 -c "sudo bash /home/vagrant/scripts/cluster/11-1-keycloak-operator.sh"
+vagrant ssh master-1 -c "sudo bash /home/vagrant/scripts/cluster/11-2-keycloak-realm.sh"
+vagrant ssh master-1 -c "sudo bash /home/vagrant/scripts/cluster/11-3-keycloak-clients.sh"
+vagrant ssh master-1 -c "sudo bash /home/vagrant/scripts/cluster/11-4-keycloak-apiserver.sh"
 vagrant ssh master-1 -c "sudo bash /home/vagrant/scripts/cluster/12-gitea.sh"
 vagrant ssh master-1 -c "sudo bash /home/vagrant/scripts/cluster/13-argocd.sh"
 vagrant ssh master-1 -c "sudo bash /home/vagrant/scripts/cluster/14-gitops-bootstrap.sh"

@@ -1,0 +1,48 @@
+# SSO 테스트 진행 기록
+
+## 실행일: 2026-03-04
+
+## 완료된 항목
+
+### US-001: TLS ✅
+- 6개 도메인 모두 issuer=CN=Narwhal IDP Root CA
+- macOS Keychain 등록으로 curl -k 없이 동작
+
+### US-002: ForwardAuth ✅
+- 모든 앱(argocd/grafana/harbor/gitea/headlamp) → HTTP 401
+- Traefik forwardauth-oauth2 + auth-signin 미들웨어 정상 작동
+- Note: Keycloak 자체는 Operator Ingress (ForwardAuth 체인 외부) - 의도된 설계
+
+### US-003: Keycloak ✅
+- keycloak-0 Running 1/1, oauth2-proxy Running
+- OIDC discovery: https://keycloak.local.narwhal.io/realms/kubernetes
+- API 서버: --oidc-issuer-url, --oidc-client-id=kubernetes, --oidc-groups-claim=groups
+
+### US-004: OAuth2-Proxy ✅
+- /oauth2/auth → 401
+- /oauth2/start → 302 → Keycloak with PKCE (code_challenge=S256)
+- 4회 재시작은 Secret 생성 순서 의존성 (08→11 스크립트 순서), 현재 안정
+
+### US-005: 토큰 발급 ✅
+- kubernetes public client (directAccess=True, publicClient=True)
+- JWT 발급: iss/aud/groups 클레임 정상
+- groups: [cluster-admin] → oidc:cluster-admin prefix 결합으로 K8s RBAC 매핑
+
+## 발견된 이슈 (Architect 검증)
+
+### [즉시 수정 권장]
+1. RBAC 불일치: 11-keycloak.sh → cluster-admin, rbac-policies.yaml → platform-admin
+   - 파일: scripts/cluster/11-keycloak.sh:498-504, gitops/resources/rbac-policies.yaml:272-286
+2. OAuth2-Proxy redirect_url HTTP: http://oauth2-proxy.local.narwhal.io/oauth2/callback
+   - 파일: scripts/cluster/08-platform-apps.sh:402
+   - cookie_secure = false → true 권장
+
+### [단기]
+3. kubectl --token=<JWT> get nodes end-to-end 테스트 미완성
+4. Keycloak Admin Console 접근 통제 문서화 필요
+
+## 학습된 패턴
+- kubernetes realm에서 토큰 발급: kubernetes public client (client_secret 불필요)
+- oauth2-proxy/argocd 클라이언트는 confidential (client_secret 필요)
+- 비밀번호는 keycloak-admin-secret에 저장, 초기 provisioning 후 변경 가능
+- kcadm 로그인: config credentials → 이후 명령 실행

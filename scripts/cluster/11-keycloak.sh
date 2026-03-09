@@ -1,4 +1,8 @@
 #!/bin/bash
+# DEPRECATED: This file has been decomposed into 11-1~11-4 scripts.
+# This file is kept for reference only. Do not run directly.
+# Run: 11-1-keycloak-operator.sh, 11-2-keycloak-realm.sh,
+#      11-3-keycloak-clients.sh, 11-4-keycloak-apiserver.sh
 set -euo pipefail
 
 #=========================================

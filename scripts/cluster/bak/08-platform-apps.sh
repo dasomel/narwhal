@@ -1,4 +1,8 @@
 #!/bin/bash
+# DEPRECATED: This file has been decomposed into 08-1~08-6 scripts.
+# This file is kept for reference only. Do not run directly.
+# Run: 08-1-networking.sh, 08-2-monitoring.sh, 08-3-security.sh,
+#      08-4-storage.sh, 08-5-registry.sh, 08-6-tls-routes.sh
 set -euo pipefail
 
 echo "=== Installing Platform Apps via Helm ==="

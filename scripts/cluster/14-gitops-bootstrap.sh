@@ -18,7 +18,7 @@ done
 
 GITEA_URL="http://gitea-http.devtools.svc.cluster.local:3000"
 GITEA_ADMIN_USER="gitea-admin"
-GITEA_ADMIN_PASSWORD="gitea-admin"
+GITEA_ADMIN_PASSWORD="${GITEA_ADMIN_PASSWORD:-$(kubectl get secret gitea-admin -n devtools -o jsonpath='{.data.admin-password}' 2>/dev/null | base64 -d || echo 'gitea-admin')}"
 REPO_NAME="narwhal-gitops"
 
 #=========================================

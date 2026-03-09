@@ -1,13 +1,10 @@
 #!/bin/bash
 set -euo pipefail
+# shellcheck source=scripts/common/lib.sh
+source /home/vagrant/scripts/common/lib.sh
 
 CNPG_CHART_VERSION="${CNPG_CHART_VERSION:-0.27.1}"  # app: v1.28.1
 POSTGRES_VERSION="${POSTGRES_VERSION:-18}"
-
-# Generate a 24-char URL-safe random password
-generate_password() {
-  openssl rand -base64 16 | tr -d '=/+' | head -c 24
-}
 
 echo "=== Installing CloudNative-PG v1.28.1 (chart: ${CNPG_CHART_VERSION}) ==="
 

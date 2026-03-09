@@ -528,13 +528,19 @@ make validate  # Vagrantfile + yq 검증
 **Execution Order:**
 
 ```
-07-cnpg.sh           → CloudNative-PG Operator + narwhal-db (unified DB)
-08-platform-apps.sh  → MetalLB, Traefik, cert-manager, Prometheus,
-                       Loki, Promtail, Tempo, Kyverno, Headlamp,
-                       OAuth2 Proxy, SeaweedFS, Harbor, OpenBao, Velero
-09-istio-ambient.sh  → Istio ambient mesh (mTLS, zero sidecars)
-10-dnsmasq.sh        → 로컬 DNS (*.local.narwhal.io) + CoreDNS forward
-11-keycloak.sh       → Keycloak Operator + OIDC 설정 + API Server 연동 (HTTPS)
+07-cnpg.sh                → CloudNative-PG Operator + narwhal-db (unified DB)
+08-1-networking.sh        → MetalLB, Traefik, cert-manager
+08-2-monitoring.sh        → Prometheus, Loki, Promtail, Tempo
+08-3-security.sh          → Kyverno, Headlamp, OAuth2-Proxy
+08-4-storage.sh           → SeaweedFS, OpenBao, Velero
+08-5-registry.sh          → Harbor
+08-6-tls-routes.sh        → CA cert 배포, Traefik routes
+09-istio-ambient.sh       → Istio ambient mesh (mTLS, zero sidecars)
+10-dnsmasq.sh             → 로컬 DNS (*.local.narwhal.io) + CoreDNS forward
+11-1-keycloak-operator.sh → Keycloak Operator + CR + HTTPRoute
+11-2-keycloak-realm.sh   → Realm + Roles + Groups + Users
+11-3-keycloak-clients.sh → OIDC 클라이언트 7개 + Audience mappers
+11-4-keycloak-apiserver.sh → K8s API Server OIDC 설정 + RBAC
 12-gitea.sh          → Gitea Git 서버 (shared narwhal-db)
 13-argocd.sh         → ArgoCD 설치 + Keycloak OIDC 연동
 14-gitops-bootstrap.sh → narwhal-gitops 레포 생성 + App-of-Apps 배포
@@ -647,12 +653,12 @@ CNPG PostgreSQL
 | Secret | 네임스페이스 | 생성 스크립트 | 용도 |
 |--------|-------------|-------------|------|
 | narwhal-db-credentials | database | 07-cnpg.sh | PostgreSQL DB 비밀번호 |
-| oidc-client-secrets | iam | 11-keycloak.sh | OIDC 클라이언트 시크릿 6개 |
-| oauth2-proxy-secrets | iam | 11-keycloak.sh | 쿠키/클라이언트 시크릿 |
-| grafana-secrets | monitoring | 08-platform-apps.sh | Grafana 관리자 비밀번호 |
-| harbor-secrets | devtools | 08-platform-apps.sh | Harbor 관리자 비밀번호 |
+| oidc-client-secrets | iam | 11-3-keycloak-clients.sh | OIDC 클라이언트 시크릿 6개 |
+| oauth2-proxy-secrets | iam | 11-3-keycloak-clients.sh | 쿠키/클라이언트 시크릿 |
+| grafana-secrets | monitoring | 08-2-monitoring.sh | Grafana 관리자 비밀번호 |
+| harbor-secrets | devtools | 08-5-registry.sh | Harbor 관리자 비밀번호 |
 | gitea-admin | devtools | 12-gitea.sh | Gitea 관리자 비밀번호 |
-| velero-s3-credentials | storage | 08-platform-apps.sh | S3 백업 자격증명 |
+| velero-s3-credentials | storage | 08-4-storage.sh | S3 백업 자격증명 |
 
 비밀번호 확인:
 ```bash

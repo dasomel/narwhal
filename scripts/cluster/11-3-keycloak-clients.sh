@@ -255,4 +255,55 @@ else
   echo "WARN: groups scope ID not found, skipping assignment"
 fi
 
+#=========================================
+# APISIX OIDC Client
+#=========================================
+echo "Creating apisix OIDC client..."
+
+APISIX_CLIENT_SECRET=$(generate_password)
+
+kubectl exec -n iam "${KEYCLOAK_POD}" -- \
+  /opt/keycloak/bin/kcadm.sh create clients \
+  -r kubernetes \
+  -s clientId=apisix \
+  -s enabled=true \
+  -s protocol=openid-connect \
+  -s publicClient=false \
+  -s secret="${APISIX_CLIENT_SECRET}" \
+  -s 'redirectUris=["https://argocd.local.narwhal.io/apisix/callback","https://grafana.local.narwhal.io/apisix/callback","https://gitea.local.narwhal.io/apisix/callback","https://harbor.local.narwhal.io/apisix/callback","https://headlamp.local.narwhal.io/apisix/callback","https://openbao.local.narwhal.io/apisix/callback","https://hubble.local.narwhal.io/apisix/callback","https://apisix-dashboard.local.narwhal.io/apisix/callback"]' \
+  -s 'webOrigins=["https://*.local.narwhal.io"]' \
+  -s standardFlowEnabled=true \
+  -s directAccessGrantsEnabled=false 2>/dev/null || echo "WARN: apisix client may already exist"
+
+# Get apisix client ID for mapper creation
+APISIX_CLIENT_ID=$(kubectl exec -n iam "${KEYCLOAK_POD}" -- \
+  /opt/keycloak/bin/kcadm.sh get clients -r kubernetes 2>/dev/null | \
+  jq -r '.[] | select(.clientId=="apisix") | .id')
+
+# Add audience mapper (required for OIDC token validation)
+if [[ -n "${APISIX_CLIENT_ID}" ]]; then
+  kubectl exec -n iam "${KEYCLOAK_POD}" -- \
+    /opt/keycloak/bin/kcadm.sh create \
+    "clients/${APISIX_CLIENT_ID}/protocol-mappers/models" \
+    -r kubernetes \
+    -s name=apisix-audience \
+    -s protocol=openid-connect \
+    -s protocolMapper=oidc-audience-mapper \
+    -s 'config={"included.client.audience":"apisix","access.token.claim":"true"}' \
+    2>/dev/null || echo "WARN: audience mapper may already exist"
+fi
+
+# Store APISIX OIDC credentials + session secret in K8s Secret
+APISIX_SESSION_SECRET=$(openssl rand -hex 32)
+
+kubectl create namespace platform-system --dry-run=client -o yaml | kubectl apply -f -
+kubectl create secret generic apisix-oidc-config \
+  --namespace platform-system \
+  --from-literal=client_id=apisix \
+  --from-literal=client_secret="${APISIX_CLIENT_SECRET}" \
+  --from-literal=session_secret="${APISIX_SESSION_SECRET}" \
+  --dry-run=client -o yaml | kubectl apply -f -
+
+echo "apisix OIDC client created, secret stored in apisix-oidc-config"
+
 echo "=== [11c-keycloak-clients.sh] 완료 ==="

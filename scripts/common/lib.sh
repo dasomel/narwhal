@@ -1,4 +1,5 @@
 #!/bin/bash
+set -euo pipefail
 # Narwhal common library - shared utilities for cluster scripts
 # Usage: source /home/vagrant/scripts/common/lib.sh
 

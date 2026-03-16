@@ -112,7 +112,7 @@ echo "=== Testing DNS resolution ==="
 
 # Test local domain
 echo "Testing local domain: argocd.${DOMAIN}"
-nslookup argocd.${DOMAIN} 127.0.0.1 || echo "Local domain test failed"
+nslookup "argocd.${DOMAIN}" 127.0.0.1 || echo "Local domain test failed"
 
 # Test external domain (should forward to upstream)
 echo ""

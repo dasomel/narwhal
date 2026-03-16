@@ -5,17 +5,19 @@ set -euo pipefail
 # Phase: kcadm 로그인, Realm 생성/설정, Roles 생성, Groups 생성, Users 생성
 # Depends on: 11a-keycloak-operator.sh (Keycloak pod must be Ready)
 
-#=========================================
-# User passwords (override via env vars for production)
-# Defaults are intentionally simple for local dev convenience.
-# Override with env vars for production deployments.
-#=========================================
-ADMIN_USER_PASSWORD="${ADMIN_USER_PASSWORD:-admin}"
-DEV_USER_PASSWORD="${DEV_USER_PASSWORD:-dev}"
-VIEW_USER_PASSWORD="${VIEW_USER_PASSWORD:-view}"
-GUEST_USER_PASSWORD="${GUEST_USER_PASSWORD:-guest}"
+# shellcheck source=scripts/common/lib.sh
+source "$(dirname "$0")/../common/lib.sh"
 
 export KUBECONFIG=/home/vagrant/.kube/config-local
+
+#=========================================
+# User passwords (override via env vars for production)
+# Defaults are randomly generated for security.
+#=========================================
+ADMIN_USER_PASSWORD="${ADMIN_USER_PASSWORD:-$(generate_password)}"
+DEV_USER_PASSWORD="${DEV_USER_PASSWORD:-$(generate_password)}"
+VIEW_USER_PASSWORD="${VIEW_USER_PASSWORD:-$(generate_password)}"
+GUEST_USER_PASSWORD="${GUEST_USER_PASSWORD:-$(generate_password)}"
 
 echo "=== Configuring Keycloak Realm, Roles, Groups, Users ==="
 
@@ -102,6 +104,19 @@ kubectl exec -n iam "${KEYCLOAK_POD}" -- /opt/keycloak/bin/kcadm.sh create users
   -s firstName=Guest -s lastName=User || true
 kubectl exec -n iam "${KEYCLOAK_POD}" -- /opt/keycloak/bin/kcadm.sh set-password -r kubernetes \
   --username guest --new-password "${GUEST_USER_PASSWORD}" || true
+
+#=========================================
+# Store generated passwords in Kubernetes secret
+#=========================================
+echo "Storing user passwords in keycloak-user-passwords secret..."
+kubectl create secret generic keycloak-user-passwords \
+  --namespace iam \
+  --from-literal=admin-password="${ADMIN_USER_PASSWORD}" \
+  --from-literal=dev-password="${DEV_USER_PASSWORD}" \
+  --from-literal=view-password="${VIEW_USER_PASSWORD}" \
+  --from-literal=guest-password="${GUEST_USER_PASSWORD}" \
+  --dry-run=client -o yaml | kubectl apply -f -
+echo "  -> keycloak-user-passwords secret saved in iam namespace"
 
 #=========================================
 # Assign users to groups

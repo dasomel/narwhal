@@ -43,7 +43,7 @@ spec:
           persistentVolumeClaim:
             registry:
               storageClass: nfs-csi
-              size: 50Gi
+              size: 20Gi
             jobservice:
               storageClass: nfs-csi
             trivy:
@@ -62,19 +62,17 @@ spec:
             tag: latest
           podLabels:
             istio.io/dataplane-mode: "none"
-          # TODO(production): oidc_client_secret is embedded in configureUserSettings JSON.
+          # SECURITY: oidc_client_secret은 08-5-registry.sh에서 kubectl patch로 런타임에 주입됨
+          # 실제 값: kubectl get secret harbor-oidc-config -n devtools -o jsonpath='{.data.oidc_client_secret}' | base64 -d
           # Harbor configureUserSettings is injected via env var at startup and cannot be
           # referenced from a Kubernetes Secret directly via Helm values.
-          # Production solution: integrate with OpenBao (Vault) using Harbor's secret injection
-          # or use External Secrets Operator to sync from Vault to a ConfigMap/Secret
-          # and patch harbor-core deployment with an init container.
           configureUserSettings: |-
             {
               "auth_mode": "oidc_auth",
               "oidc_name": "Keycloak",
               "oidc_endpoint": "https://keycloak.local.narwhal.io/realms/kubernetes",
               "oidc_client_id": "harbor",
-              "oidc_client_secret": "harbor-secret",
+              "oidc_client_secret": "REPLACE_FROM_SECRET",
               "oidc_groups_claim": "groups",
               "oidc_admin_group": "cluster-admin",
               "oidc_scope": "openid,profile,email,groups",

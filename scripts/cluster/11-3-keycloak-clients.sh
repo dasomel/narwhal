@@ -93,11 +93,14 @@ echo "Headlamp OIDC secret created/updated (headlamp-oidc-secret in devtools)"
 ADMIN_USER=$(kubectl get secret keycloak-initial-admin -n iam -o jsonpath='{.data.username}' | base64 -d)
 ADMIN_PASS=$(kubectl get secret keycloak-initial-admin -n iam -o jsonpath='{.data.password}' | base64 -d)
 
-kubectl exec -n iam "${KEYCLOAK_POD}" -- /opt/keycloak/bin/kcadm.sh config credentials \
+if ! kubectl exec -n iam "${KEYCLOAK_POD}" -- /opt/keycloak/bin/kcadm.sh config credentials \
   --server http://localhost:8080 \
   --realm master \
   --user "${ADMIN_USER}" \
-  --password "${ADMIN_PASS}" || true
+  --password "${ADMIN_PASS}"; then
+  echo "ERROR: Failed to authenticate to Keycloak admin CLI"
+  exit 1
+fi
 
 #=========================================
 # Create 'groups' client scope (realm-level)

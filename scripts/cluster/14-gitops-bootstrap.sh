@@ -18,7 +18,11 @@ done
 
 GITEA_URL="http://gitea-http.devtools.svc.cluster.local:3000"
 GITEA_ADMIN_USER="gitea-admin"
-GITEA_ADMIN_PASSWORD="${GITEA_ADMIN_PASSWORD:-$(kubectl get secret gitea-admin -n devtools -o jsonpath='{.data.admin-password}' 2>/dev/null | base64 -d || echo 'gitea-admin')}"
+GITEA_ADMIN_PASSWORD="$(kubectl get secret gitea-admin -n devtools -o jsonpath='{.data.admin-password}' 2>/dev/null | base64 -d)"
+if [[ -z "${GITEA_ADMIN_PASSWORD}" ]]; then
+  echo "ERROR: gitea-admin secret not found in devtools namespace. Ensure 12-gitea.sh ran successfully."
+  exit 1
+fi
 REPO_NAME="narwhal-gitops"
 
 #=========================================
@@ -121,7 +125,11 @@ echo "Ensuring unified PostgreSQL cluster (narwhal-db) is ready..."
 kubectl create namespace database --dry-run=client -o yaml | kubectl apply -f -
 
 # Apply unified narwhal-db resource
-kubectl apply -f /home/vagrant/configs/gitops/resources/narwhal-db.yaml 2>/dev/null || true
+if [[ -f "/home/vagrant/configs/gitops/resources/narwhal-db.yaml" ]]; then
+  kubectl apply -f /home/vagrant/configs/gitops/resources/narwhal-db.yaml
+else
+  echo "WARN: narwhal-db.yaml not found, skipping"
+fi
 
 # Wait for unified database
 echo "Waiting for narwhal-db cluster..."

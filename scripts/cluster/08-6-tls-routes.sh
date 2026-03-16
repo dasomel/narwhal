@@ -35,15 +35,21 @@ kubectl apply -f /home/vagrant/configs/gitops/resources/traefik-routes.yaml || t
 
 # Wait for TLS certificate to be ready
 echo "Waiting for TLS certificate..."
+cert_ready="false"
 for attempt in $(seq 1 10); do
   CERT_READY=$(kubectl get certificate traefik-tls -n platform-system -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null || echo "")
   if [ "${CERT_READY}" = "True" ]; then
     echo "TLS certificate ready"
+    cert_ready="true"
     break
   fi
   echo "TLS certificate not ready yet, attempt ${attempt}/10..."
   sleep 10
 done
+if [[ "${cert_ready}" != "true" ]]; then
+  echo "WARN: TLS certificate not ready after timeout, routes may not work properly"
+  # continue anyway - cert-manager will eventually provision it
+fi
 
 #=========================================
 # Distribute CA cert to SSO app namespaces

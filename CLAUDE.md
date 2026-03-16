@@ -10,19 +10,11 @@
 
 ## Plan Mode Guide (Shift+Tab 2회)
 
-**좋은 계획이 성공의 90%** - 대부분의 세션을 Plan 모드로 시작하세요.
-
-### 언제 Plan Mode를 사용하나요?
+Narwhal에서 Plan 모드가 필요한 시점:
 - 새로운 컴포넌트 추가 시
 - 기존 스크립트 대규모 수정 시
 - GitOps 앱 구조 변경 시
 - 버전 업그레이드 시
-
-### Plan Mode 워크플로우
-1. `shift+tab` 2회로 Plan 모드 진입
-2. 계획에 만족할 때까지 Claude와 논의
-3. 계획 확정 후 자동 수락 모드로 전환
-4. 한 번에 완성
 
 ---
 
@@ -366,12 +358,6 @@ shellcheck scripts/**/*.sh
 2. **새 패턴 발견 시**: Code Style 또는 Permissions에 추가
 3. **코드 리뷰 시**: `@.claude` 태그로 업데이트 요청
 
-### 커밋 메시지 컨벤션
-```
-docs(claude): add mistake pattern for XYZ
-docs(claude): update verification steps
-```
-
 ### 주간 리뷰
 - 매주 팀원들이 CLAUDE.md에 기여
 - 새로 발견된 실수 패턴 공유
@@ -391,43 +377,9 @@ docs(claude): update verification steps
 | **이미지 문제** | Gemini로 ARM64 지원 여부/태그 확인, 서브에이전트로 레지스트리 접근 테스트 |
 | **Vagrant 프로비저닝 실패** | 서브에이전트로 VM 로그/스크립트 출력 분석, Gemini로 대안 검색 |
 
-#### 디버깅 팀 워크플로우
-
-```
-[에러 발생]
-    │
-    ├─ 즉시 병렬 수집 (Task 에이전트 2~3개)
-    │   ├─ 에이전트 1: kubectl logs / events
-    │   ├─ 에이전트 2: kubectl describe / get
-    │   └─ 에이전트 3: helm status / values 확인
-    │
-    ├─ 에러 분석 (Gemini)
-    │   └─ 에러 메시지 + 컨텍스트 → 원인 분석
-    │
-    └─ Claude가 종합 판단 → 수정 적용
-```
-
 ---
 
-## Ralph 기법 (by Geoffrey Huntley)
-
-> "Ralph is a Bash loop" - https://ghuntley.com/ralph/
-
-### 개념
-
-PROMPT.md 파일을 무한 루프로 Claude에게 반복 전달하여 **자율적 개발**을 수행하는 기법.
-
-```bash
-# 기본 Ralph 루프
-while :; do cat PROMPT.md | claude --dangerously-skip-permissions; done
-```
-
-### 언제 사용하나요?
-
-- 대규모 반복 작업 (다수 파일 생성, 마이그레이션)
-- 신규 프로젝트 스캐폴딩
-- 자율적 버그 수정 및 테스트
-- 장시간 무인 작업
+## Ralph 기법
 
 ### 이 프로젝트에서 Ralph 활용
 
@@ -457,13 +409,6 @@ EOF
 # 2. Ralph 실행
 .claude/scripts/ralph.sh
 ```
-
-### 안전 장치
-
-- `--dangerously-skip-permissions` 사용 시 주의
-- PROMPT.md에 명확한 범위 제한 필수
-- 정기적으로 git diff 확인
-- AgentStop hook으로 검증
 
 ### Ralph PROMPT.md 템플릿
 

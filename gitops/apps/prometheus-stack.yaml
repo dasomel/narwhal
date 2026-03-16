@@ -71,6 +71,7 @@ spec:
               auth_url: https://keycloak.local.narwhal.io/realms/kubernetes/protocol/openid-connect/auth
               token_url: https://keycloak.local.narwhal.io/realms/kubernetes/protocol/openid-connect/token
               api_url: https://keycloak.local.narwhal.io/realms/kubernetes/protocol/openid-connect/userinfo
+              # self-signed cert 환경 (narwhal-ca). 실제 CA cert ca_file로 교체 가능
               tls_skip_verify_insecure: true
               role_attribute_path: contains(groups[*], 'cluster-admin') && 'Admin' || contains(groups[*], 'developer') && 'Editor' || 'Viewer'
         alertmanager:

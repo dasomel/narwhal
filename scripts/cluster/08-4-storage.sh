@@ -70,7 +70,7 @@ helm repo update openbao
 helm upgrade --install openbao openbao/openbao \
   --namespace storage \
   --create-namespace \
-  --version 0.11.0 \
+  --version 0.25.0 \
   --set server.image.tag=2.2.0 \
   --set server.ha.enabled=false \
   --set server.ha.replicas=1 \

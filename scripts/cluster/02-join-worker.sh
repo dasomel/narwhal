@@ -12,7 +12,7 @@ RETRY_INTERVAL=10
 # Fetch join command from master
 for i in $(seq 1 $MAX_RETRIES); do
   if sshpass -p "vagrant" scp -o StrictHostKeyChecking=no \
-    vagrant@${MASTER_IP}:/home/vagrant/join-command.sh /tmp/join-command.sh 2>/dev/null; then
+    "vagrant@${MASTER_IP}:/home/vagrant/join-command.sh" /tmp/join-command.sh 2>/dev/null; then
     echo "Join command fetched successfully"
     break
   fi

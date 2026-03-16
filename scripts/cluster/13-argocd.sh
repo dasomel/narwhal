@@ -41,6 +41,13 @@ done
 
 # Patch ArgoCD NetworkPolicies for Istio ambient mesh (HBONE port 15008)
 echo "Patching ArgoCD NetworkPolicies for Istio ambient mesh (HBONE port 15008)..."
+# NetworkPolicy 생성 대기 (최대 30초)
+for i in $(seq 1 30); do
+  if kubectl get networkpolicy -n devtools 2>/dev/null | grep -q argocd; then
+    break
+  fi
+  sleep 1
+done
 for np in $(kubectl get networkpolicy -n devtools -o name 2>/dev/null | grep argocd); do
   kubectl patch "$np" -n devtools --type='json' \
     -p='[{"op": "add", "path": "/spec/ingress/0/ports/-", "value": {"port": 15008, "protocol": "TCP"}}]' 2>/dev/null || true
@@ -111,7 +118,7 @@ data:
     name: Keycloak
     issuer: ${KEYCLOAK_URL}/realms/${KEYCLOAK_REALM}
     clientID: argocd
-    clientSecret: argocd-secret
+    clientSecret: \$oidc.keycloak.clientSecret
     requestedScopes: ["openid", "profile", "email", "groups"]
 EOF
 
@@ -138,6 +145,14 @@ data:
     g, guest, role:none
   scopes: '[groups]'
 EOF
+
+# Inject OIDC client secret into argocd-secret so ArgoCD can resolve $oidc.keycloak.clientSecret
+# oidc-client-secrets (iam ns) is created by 11-3-keycloak-clients.sh
+ARGOCD_CLIENT_SECRET=$(kubectl get secret oidc-client-secrets -n iam \
+  -o jsonpath='{.data.argocd}' | base64 -d)
+kubectl patch secret argocd-secret -n devtools --type=merge \
+  -p "{\"stringData\":{\"oidc.keycloak.clientSecret\":\"${ARGOCD_CLIENT_SECRET}\"}}"
+echo "argocd-secret patched with oidc.keycloak.clientSecret"
 
 # Restart ArgoCD server to apply OIDC config
 kubectl rollout restart deployment argocd-server -n devtools

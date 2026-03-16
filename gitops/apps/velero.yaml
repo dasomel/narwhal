@@ -48,11 +48,14 @@ spec:
         upgradeCRDs: false
         kubectl:
           image:
+            # docker.io: shell 포함 kubectl 이미지, ghcr.io/registry.k8s.io 대안 없음 (distroless)
             repository: docker.io/alpine/k8s
             tag: "1.31.4"
         deployNodeAgent: true
         nodeAgent:
           podVolumePath: /var/lib/kubelet/pods
+          # REQUIRED: kopia/restic이 hostPath volume 백업을 위해 privileged 필요
+          # Kyverno disallow-privileged-containers 정책에서 velero nodeAgent 예외 처리됨
           privileged: true
         schedules:
           # Daily full backup (all namespaces with PVCs)

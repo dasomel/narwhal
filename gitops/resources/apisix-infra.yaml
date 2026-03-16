@@ -31,6 +31,9 @@ spec:
             - --initial-cluster-state=new
             - --auto-compaction-mode=revision
             - --auto-compaction-retention=1000
+          env:
+            - name: ETCDCTL_API
+              value: "3"
           ports:
             - containerPort: 2379
             - containerPort: 2380

@@ -1,0 +1,337 @@
+---
+# ArgoCD
+apiVersion: apisix.apache.org/v2
+kind: ApisixRoute
+metadata:
+  name: argocd
+  namespace: platform-system
+spec:
+  http:
+    - name: argocd
+      match:
+        hosts:
+          - argocd.local.narwhal.io
+        paths:
+          - "/*"
+      backends:
+        - serviceName: argocd-server
+          servicePort: 80
+          serviceNamespace: devtools
+          resolveGranularity: service
+      plugins:
+        - name: openid-connect
+          enable: true
+          config:
+            client_id: "apisix"
+            client_secret: "$secret://kubernetes/k8s-1/apisix-oidc-config/client_secret"
+            discovery: "https://keycloak.local.narwhal.io/realms/kubernetes/.well-known/openid-configuration"
+            redirect_uri: "https://argocd.local.narwhal.io/apisix/callback"
+            scope: "openid email profile groups"
+            bearer_only: false
+            ssl_verify: false
+            logout_path: "/apisix/logout"
+            set_userinfo_header: true
+            set_access_token_header: true
+            access_token_in_authorization_header: true
+            session:
+              secret: "$secret://kubernetes/k8s-1/apisix-oidc-config/session_secret"
+        - name: response-rewrite
+          enable: true
+          config:
+            headers:
+              set:
+                Strict-Transport-Security: "max-age=31536000; includeSubDomains"
+                X-Content-Type-Options: "nosniff"
+                X-Frame-Options: "SAMEORIGIN"
+                X-XSS-Protection: "1; mode=block"
+---
+# Grafana
+apiVersion: apisix.apache.org/v2
+kind: ApisixRoute
+metadata:
+  name: grafana
+  namespace: platform-system
+spec:
+  http:
+    - name: grafana
+      match:
+        hosts:
+          - grafana.local.narwhal.io
+        paths:
+          - "/*"
+      backends:
+        - serviceName: prometheus-stack-grafana
+          servicePort: 80
+          serviceNamespace: monitoring
+          resolveGranularity: service
+      plugins:
+        - name: openid-connect
+          enable: true
+          config:
+            client_id: "apisix"
+            client_secret: "$secret://kubernetes/k8s-1/apisix-oidc-config/client_secret"
+            discovery: "https://keycloak.local.narwhal.io/realms/kubernetes/.well-known/openid-configuration"
+            redirect_uri: "https://grafana.local.narwhal.io/apisix/callback"
+            scope: "openid email profile groups"
+            bearer_only: false
+            ssl_verify: false
+            logout_path: "/apisix/logout"
+            set_userinfo_header: true
+            set_access_token_header: true
+            access_token_in_authorization_header: true
+            session:
+              secret: "$secret://kubernetes/k8s-1/apisix-oidc-config/session_secret"
+        - name: response-rewrite
+          enable: true
+          config:
+            headers:
+              set:
+                Strict-Transport-Security: "max-age=31536000; includeSubDomains"
+                X-Content-Type-Options: "nosniff"
+                X-Frame-Options: "SAMEORIGIN"
+---
+# Gitea
+apiVersion: apisix.apache.org/v2
+kind: ApisixRoute
+metadata:
+  name: gitea
+  namespace: platform-system
+spec:
+  http:
+    - name: gitea
+      match:
+        hosts:
+          - gitea.local.narwhal.io
+        paths:
+          - "/*"
+      backends:
+        - serviceName: gitea-http
+          servicePort: 3000
+          serviceNamespace: devtools
+          resolveGranularity: service
+      plugins:
+        - name: openid-connect
+          enable: true
+          config:
+            client_id: "apisix"
+            client_secret: "$secret://kubernetes/k8s-1/apisix-oidc-config/client_secret"
+            discovery: "https://keycloak.local.narwhal.io/realms/kubernetes/.well-known/openid-configuration"
+            redirect_uri: "https://gitea.local.narwhal.io/apisix/callback"
+            scope: "openid email profile groups"
+            bearer_only: false
+            ssl_verify: false
+            logout_path: "/apisix/logout"
+            set_userinfo_header: true
+            set_access_token_header: true
+            access_token_in_authorization_header: true
+            session:
+              secret: "$secret://kubernetes/k8s-1/apisix-oidc-config/session_secret"
+        - name: response-rewrite
+          enable: true
+          config:
+            headers:
+              set:
+                Strict-Transport-Security: "max-age=31536000; includeSubDomains"
+                X-Content-Type-Options: "nosniff"
+---
+# Harbor (100MB body limit for image push)
+apiVersion: apisix.apache.org/v2
+kind: ApisixRoute
+metadata:
+  name: harbor
+  namespace: platform-system
+spec:
+  http:
+    - name: harbor
+      match:
+        hosts:
+          - harbor.local.narwhal.io
+        paths:
+          - "/*"
+      backends:
+        - serviceName: harbor-nginx
+          servicePort: 80
+          serviceNamespace: devtools
+          resolveGranularity: service
+      plugins:
+        - name: openid-connect
+          enable: true
+          config:
+            client_id: "apisix"
+            client_secret: "$secret://kubernetes/k8s-1/apisix-oidc-config/client_secret"
+            discovery: "https://keycloak.local.narwhal.io/realms/kubernetes/.well-known/openid-configuration"
+            redirect_uri: "https://harbor.local.narwhal.io/apisix/callback"
+            scope: "openid email profile groups"
+            bearer_only: false
+            ssl_verify: false
+            logout_path: "/apisix/logout"
+            set_userinfo_header: true
+            set_access_token_header: true
+            access_token_in_authorization_header: true
+            session:
+              secret: "$secret://kubernetes/k8s-1/apisix-oidc-config/session_secret"
+        - name: client-control
+          enable: true
+          config:
+            max_body_size: 104857600  # 100MB for Docker image push
+        - name: response-rewrite
+          enable: true
+          config:
+            headers:
+              set:
+                Strict-Transport-Security: "max-age=31536000; includeSubDomains"
+                X-Content-Type-Options: "nosniff"
+---
+# Headlamp
+apiVersion: apisix.apache.org/v2
+kind: ApisixRoute
+metadata:
+  name: headlamp
+  namespace: platform-system
+spec:
+  http:
+    - name: headlamp
+      match:
+        hosts:
+          - headlamp.local.narwhal.io
+        paths:
+          - "/*"
+      backends:
+        - serviceName: headlamp
+          servicePort: 80
+          serviceNamespace: devtools
+          resolveGranularity: service
+      plugins:
+        - name: openid-connect
+          enable: true
+          config:
+            client_id: "apisix"
+            client_secret: "$secret://kubernetes/k8s-1/apisix-oidc-config/client_secret"
+            discovery: "https://keycloak.local.narwhal.io/realms/kubernetes/.well-known/openid-configuration"
+            redirect_uri: "https://headlamp.local.narwhal.io/apisix/callback"
+            scope: "openid email profile groups"
+            bearer_only: false
+            ssl_verify: false
+            logout_path: "/apisix/logout"
+            set_userinfo_header: true
+            session:
+              secret: "$secret://kubernetes/k8s-1/apisix-oidc-config/session_secret"
+        - name: response-rewrite
+          enable: true
+          config:
+            headers:
+              set:
+                Strict-Transport-Security: "max-age=31536000; includeSubDomains"
+                X-Content-Type-Options: "nosniff"
+---
+# OpenBao
+apiVersion: apisix.apache.org/v2
+kind: ApisixRoute
+metadata:
+  name: openbao
+  namespace: platform-system
+spec:
+  http:
+    - name: openbao
+      match:
+        hosts:
+          - openbao.local.narwhal.io
+        paths:
+          - "/*"
+      backends:
+        - serviceName: openbao
+          servicePort: 8200
+          serviceNamespace: storage
+          resolveGranularity: service
+      plugins:
+        - name: openid-connect
+          enable: true
+          config:
+            client_id: "apisix"
+            client_secret: "$secret://kubernetes/k8s-1/apisix-oidc-config/client_secret"
+            discovery: "https://keycloak.local.narwhal.io/realms/kubernetes/.well-known/openid-configuration"
+            redirect_uri: "https://openbao.local.narwhal.io/apisix/callback"
+            scope: "openid email profile groups"
+            bearer_only: false
+            ssl_verify: false
+            logout_path: "/apisix/logout"
+            set_userinfo_header: true
+            session:
+              secret: "$secret://kubernetes/k8s-1/apisix-oidc-config/session_secret"
+        - name: response-rewrite
+          enable: true
+          config:
+            headers:
+              set:
+                Strict-Transport-Security: "max-age=31536000; includeSubDomains"
+                X-Content-Type-Options: "nosniff"
+---
+# Hubble UI
+apiVersion: apisix.apache.org/v2
+kind: ApisixRoute
+metadata:
+  name: hubble
+  namespace: platform-system
+spec:
+  http:
+    - name: hubble
+      match:
+        hosts:
+          - hubble.local.narwhal.io
+        paths:
+          - "/*"
+      backends:
+        - serviceName: hubble-ui
+          servicePort: 80
+          serviceNamespace: kube-system
+          resolveGranularity: service
+      plugins:
+        - name: openid-connect
+          enable: true
+          config:
+            client_id: "apisix"
+            client_secret: "$secret://kubernetes/k8s-1/apisix-oidc-config/client_secret"
+            discovery: "https://keycloak.local.narwhal.io/realms/kubernetes/.well-known/openid-configuration"
+            redirect_uri: "https://hubble.local.narwhal.io/apisix/callback"
+            scope: "openid email profile groups"
+            bearer_only: false
+            ssl_verify: false
+            logout_path: "/apisix/logout"
+            set_userinfo_header: true
+            session:
+              secret: "$secret://kubernetes/k8s-1/apisix-oidc-config/session_secret"
+        - name: response-rewrite
+          enable: true
+          config:
+            headers:
+              set:
+                Strict-Transport-Security: "max-age=31536000; includeSubDomains"
+                X-Content-Type-Options: "nosniff"
+---
+# APISIX Dashboard (no OIDC — dashboard has its own auth)
+apiVersion: apisix.apache.org/v2
+kind: ApisixRoute
+metadata:
+  name: apisix-dashboard
+  namespace: platform-system
+spec:
+  http:
+    - name: apisix-dashboard
+      match:
+        hosts:
+          - apisix-dashboard.local.narwhal.io
+        paths:
+          - "/*"
+      backends:
+        - serviceName: apisix-dashboard
+          servicePort: 9000
+          serviceNamespace: platform-system
+          resolveGranularity: service
+      plugins:
+        - name: response-rewrite
+          enable: true
+          config:
+            headers:
+              set:
+                Strict-Transport-Security: "max-age=31536000; includeSubDomains"
+                X-Content-Type-Options: "nosniff"

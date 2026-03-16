@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 
-echo "=== Installing Networking Apps (MetalLB, Traefik, cert-manager) ==="
+echo "=== Installing Networking Apps (MetalLB, APISIX, cert-manager) ==="
 
 export KUBECONFIG=/home/vagrant/.kube/config-local
 
@@ -38,45 +38,108 @@ done
 echo "MetalLB installed"
 
 #=========================================
-# Traefik (Gateway API Controller)
+# APISIX (API Gateway — replaces Traefik + OAuth2-Proxy)
 #=========================================
-echo "=== Installing Traefik ==="
+echo "=== Installing APISIX ==="
 
-# Install Gateway API CRDs (standard + experimental) with server-side apply
-# to avoid field manager conflicts when Traefik Helm chart tries to install its own copies
-echo "Installing Gateway API experimental CRDs..."
-kubectl apply --server-side --force-conflicts -f https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.4.0/experimental-install.yaml 2>&1 | grep -E "created|configured|unchanged|applied" || true
+helm repo add apisix https://charts.apiseven.com
+helm repo update apisix
 
-helm repo add traefik https://traefik.github.io/charts
-helm repo update traefik
-
-# Extract and apply Traefik CRDs separately with --server-side to avoid conflicts
-echo "Applying Traefik CRDs with server-side apply..."
-helm pull traefik/traefik --version 39.0.0 --untar --untardir /tmp/traefik-chart
-for f in /tmp/traefik-chart/traefik/crds/*.yaml; do
+# Install APISIX CRDs with server-side apply to avoid field manager conflicts
+echo "Applying APISIX CRDs..."
+helm pull apisix/apisix --version 2.9.0 --untar --untardir /tmp/apisix-chart
+for f in /tmp/apisix-chart/apisix/crds/*.yaml; do
   kubectl apply --server-side --force-conflicts -f "${f}" 2>&1 | tail -1
 done
-rm -rf /tmp/traefik-chart
+rm -rf /tmp/apisix-chart
 
-helm upgrade --install traefik traefik/traefik \
+# Deploy etcd (uses registry.k8s.io/etcd — no Bitnami)
+# etcd is also managed by apisix-infra GitOps resource; apply directly for bootstrap
+echo "Deploying etcd for APISIX..."
+kubectl apply -f /home/vagrant/configs/gitops/resources/apisix-infra.yaml || true
+
+# Wait for etcd to be ready
+echo "Waiting for etcd..."
+kubectl wait --for=condition=Available deployment/apisix-etcd -n platform-system --timeout=120s || true
+
+# Install APISIX + Ingress Controller (etcd.enabled=false → uses external etcd above)
+cat > /tmp/apisix-values.yaml << 'EOF'
+apisix:
+  enabled: true
+  image:
+    repository: apache/apisix
+    tag: "3.11.0-debian"
+  podLabels:
+    istio.io/dataplane-mode: "none"
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+gateway:
+  type: LoadBalancer
+  annotations:
+    metallb.universe.tf/loadBalancerIPs: "192.168.56.200"
+  http:
+    enabled: true
+    servicePort: 80
+    containerPort: 9080
+  tls:
+    enabled: true
+    servicePort: 443
+    containerPort: 9443
+admin:
+  enabled: true
+  type: ClusterIP
+  port: 9180
+etcd:
+  enabled: false
+  host:
+    - "http://apisix-etcd.platform-system.svc.cluster.local:2379"
+  prefix: "/apisix"
+  timeout: 30
+ingressController:
+  enabled: true
+  image:
+    repository: apache/apisix-ingress-controller
+    tag: "1.8.0"
+  podLabels:
+    istio.io/dataplane-mode: "none"
+  config:
+    apisix:
+      serviceNamespace: platform-system
+      adminAPIVersion: "v3"
+    kubernetes:
+      watchNamespaces: []
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi
+tolerations:
+  - key: "node.kubernetes.io/disk-pressure"
+    operator: "Exists"
+    effect: "NoSchedule"
+EOF
+
+helm upgrade --install apisix apisix/apisix \
   --namespace platform-system \
   --create-namespace \
-  --version 39.0.0 \
+  --version 2.9.0 \
   --skip-crds \
-  --set service.type=LoadBalancer \
-  --set ports.web.port=8000 \
-  --set ports.web.exposedPort=80 \
-  --set ports.websecure.port=8443 \
-  --set ports.websecure.exposedPort=443 \
-  --set ingressRoute.dashboard.enabled=true \
-  --set providers.kubernetesGateway.enabled=true \
-  --set providers.kubernetesCRD.enabled=true \
-  --set providers.kubernetesCRD.allowExternalNameServices=true \
-  --set providers.kubernetesIngress.enabled=false \
-  --set gateway.enabled=false \
-  --set logs.general.level=INFO || echo "WARN: Traefik install issue, continuing..."
+  -f /tmp/apisix-values.yaml || echo "WARN: APISIX install issue, continuing..."
 
-echo "Traefik installed"
+rm /tmp/apisix-values.yaml
+
+# Wait for APISIX gateway to be ready
+echo "Waiting for APISIX gateway..."
+kubectl wait --for=condition=Ready pod -l app.kubernetes.io/name=apisix -n platform-system --timeout=180s || true
+
+echo "APISIX installed"
 
 #=========================================
 # cert-manager

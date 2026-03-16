@@ -23,7 +23,7 @@ kubectl get apisixroute -n platform-system || true
 echo "Waiting for TLS certificate..."
 cert_ready="false"
 for attempt in $(seq 1 10); do
-  CERT_READY=$(kubectl get certificate traefik-tls -n platform-system -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null || echo "")
+  CERT_READY=$(kubectl get certificate narwhal-wildcard-tls -n platform-system -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null || echo "")
   if [ "${CERT_READY}" = "True" ]; then
     echo "TLS certificate ready"
     cert_ready="true"
@@ -41,7 +41,7 @@ fi
 # Distribute CA cert to SSO app namespaces
 #=========================================
 echo "=== Distributing CA cert to SSO namespaces ==="
-CA_CERT=$(kubectl get secret traefik-tls -n platform-system -o jsonpath='{.data.ca\.crt}' 2>/dev/null || echo "")
+CA_CERT=$(kubectl get secret narwhal-wildcard-tls -n platform-system -o jsonpath='{.data.ca\.crt}' 2>/dev/null || echo "")
 if [ -n "${CA_CERT}" ]; then
   for ns in devtools iam monitoring storage; do
     kubectl create namespace "${ns}" --dry-run=client -o yaml | kubectl apply -f - 2>/dev/null
@@ -51,7 +51,7 @@ if [ -n "${CA_CERT}" ]; then
   done
   echo "CA cert distributed to SSO namespaces"
 else
-  echo "WARN: traefik-tls CA cert not found, SSO apps may not verify Keycloak TLS"
+  echo "WARN: narwhal-wildcard-tls CA cert not found, SSO apps may not verify Keycloak TLS"
 fi
 
 echo "=== TLS Routes and APISIX Routes Installation Complete ==="

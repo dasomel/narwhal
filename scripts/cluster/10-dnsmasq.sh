@@ -172,24 +172,24 @@ ${COREFILE}"
   #=========================================
   # In-cluster pods cannot reach MetalLB external IPs through Cilium (hairpin routing).
   # Solution: add a hosts zone in CoreDNS that maps *.local.narwhal.io directly to
-  # the Traefik ClusterIP, bypassing the MetalLB external IP entirely.
+  # the APISIX ClusterIP, bypassing the MetalLB external IP entirely.
   echo ""
-  echo "=== Configuring CoreDNS hairpin fix (*.${DOMAIN} -> Traefik ClusterIP) ==="
+  echo "=== Configuring CoreDNS hairpin fix (*.${DOMAIN} -> APISIX ClusterIP) ==="
 
-  # Wait for Traefik service to be available
+  # Wait for APISIX service to be available
   TRAEFIK_IP=""
   for attempt in $(seq 1 30); do
-    TRAEFIK_IP=$(kubectl get svc traefik -n platform-system -o jsonpath='{.spec.clusterIP}' 2>/dev/null || true)
+    TRAEFIK_IP=$(kubectl get svc apisix -n platform-system -o jsonpath='{.spec.clusterIP}' 2>/dev/null || true)
     if [ -n "${TRAEFIK_IP}" ]; then
-      echo "Traefik ClusterIP: ${TRAEFIK_IP}"
+      echo "APISIX ClusterIP: ${TRAEFIK_IP}"
       break
     fi
-    echo "Waiting for Traefik service (attempt ${attempt}/30)..."
+    echo "Waiting for APISIX service (attempt ${attempt}/30)..."
     sleep 10
   done
 
   if [ -z "${TRAEFIK_IP}" ]; then
-    echo "WARN: Traefik service not found in platform-system, skipping hairpin fix"
+    echo "WARN: APISIX service not found in platform-system, skipping hairpin fix"
   else
     COREDNS_CM_CURRENT=$(kubectl get configmap coredns -n kube-system -o json 2>/dev/null || echo "")
     if [ -z "${COREDNS_CM_CURRENT}" ]; then

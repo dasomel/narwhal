@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 
-echo "=== Installing Security Apps (Kyverno, Headlamp, OAuth2-Proxy) ==="
+echo "=== Installing Security Apps (Kyverno, Headlamp) ==="
 
 export KUBECONFIG=/home/vagrant/.kube/config-local
 
@@ -79,60 +79,5 @@ kubectl patch deployment headlamp -n devtools --type='json' \
   -p='[{"op": "add", "path": "/spec/template/metadata/labels/istio.io~1dataplane-mode", "value": "none"}]' 2>/dev/null || true
 
 echo "Headlamp installed"
-
-#=========================================
-# OAuth2 Proxy (Gateway Authentication)
-#=========================================
-echo "=== Installing OAuth2 Proxy ==="
-helm repo add oauth2-proxy https://oauth2-proxy.github.io/manifests
-helm repo update oauth2-proxy
-
-# oauth2-proxy-secrets is created by 11-keycloak.sh (cookie-secret + client-secret)
-# Here we only configure non-secret settings; existingSecret handles credentials
-cat > /tmp/oauth2-proxy-values.yaml << 'EOF'
-replicaCount: 1
-config:
-  clientID: oauth2-proxy
-  # clientSecret and cookieSecret loaded from existingSecret (created by 11-keycloak.sh)
-  existingSecret: oauth2-proxy-secrets
-  configFile: |-
-    provider = "keycloak-oidc"
-    provider_display_name = "Keycloak"
-    oidc_issuer_url = "https://keycloak.local.narwhal.io/realms/kubernetes"
-    redirect_url = "https://oauth2-proxy.local.narwhal.io/oauth2/callback"
-    upstreams = ["static://200"]
-    email_domains = ["*"]
-    cookie_secure = true
-    cookie_domains = [".local.narwhal.io"]
-    whitelist_domains = [".local.narwhal.io"]
-    set_xauthrequest = true
-    set_authorization_header = true
-    pass_access_token = true
-    pass_authorization_header = true
-    skip_provider_button = true
-    code_challenge_method = "S256"
-    insecure_oidc_skip_issuer_verification = true
-    ssl_insecure_skip_verify = true
-    allowed_groups = ["cluster-admin", "developer", "viewer"]
-extraArgs:
-  - --skip-jwt-bearer-tokens=true
-service:
-  type: ClusterIP
-  portNumber: 80
-EOF
-
-helm upgrade --install oauth2-proxy oauth2-proxy/oauth2-proxy \
-  --namespace iam \
-  --create-namespace \
-  --version 10.1.3 \
-  -f /tmp/oauth2-proxy-values.yaml || echo "WARN: OAuth2 Proxy install issue, continuing..."
-
-rm /tmp/oauth2-proxy-values.yaml
-
-# Opt OAuth2-Proxy out of Istio ambient mesh (SSO cookie handling)
-kubectl patch deployment oauth2-proxy -n iam --type='json' \
-  -p='[{"op": "add", "path": "/spec/template/metadata/labels/istio.io~1dataplane-mode", "value": "none"}]' 2>/dev/null || true
-
-echo "OAuth2 Proxy installed"
 
 echo "=== Security Apps Installation Complete ==="

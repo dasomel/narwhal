@@ -78,6 +78,16 @@ apisix:
     limits:
       cpu: 500m
       memory: 512Mi
+  # Kubernetes Secret Provider for OIDC credentials
+  # Enables: $secret://kubernetes/k8s-1/apisix-oidc-config/<key>
+  config:
+    apisix:
+      secret_providers:
+        - name: kubernetes
+          uid: k8s-1
+          auth_type: serviceaccount
+          apiservers:
+            - https://kubernetes.default.svc
 gateway:
   type: LoadBalancer
   annotations:

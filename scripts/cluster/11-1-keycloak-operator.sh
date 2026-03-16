@@ -145,33 +145,41 @@ spec:
 EOF
 
 #=========================================
-# Create Keycloak HTTPRoute for HTTPS access
+# Create Keycloak ApisixRoute for HTTPS access
 #=========================================
-# HTTPRoute must exist BEFORE OIDC verification, otherwise curl to
-# https://keycloak.local.narwhal.io fails (Traefik has no route to Keycloak).
+# ApisixRoute must exist BEFORE OIDC verification, otherwise curl to
+# https://keycloak.local.narwhal.io fails (APISIX has no route to Keycloak).
 # This is also deployed via GitOps later, but we need it now for API server OIDC setup.
-echo "=== Creating Keycloak HTTPRoute ==="
-cat <<EOF | kubectl apply -f -
-apiVersion: gateway.networking.k8s.io/v1
-kind: HTTPRoute
+# Apply Keycloak ApisixRoute (APISIX replaces Traefik Gateway — no HTTPRoute needed)
+echo "Applying Keycloak ApisixRoute..."
+kubectl apply -f - << 'ROUTE_EOF'
+apiVersion: apisix.apache.org/v2
+kind: ApisixRoute
 metadata:
   name: keycloak
-  namespace: iam
+  namespace: platform-system
 spec:
-  parentRefs:
-    - name: traefik-gateway
-      namespace: platform-system
-  hostnames:
-    - "keycloak.local.narwhal.io"
-  rules:
-    - matches:
-        - path:
-            type: PathPrefix
-            value: /
-      backendRefs:
-        - name: keycloak-service
-          port: 8080
-EOF
+  http:
+    - name: keycloak
+      match:
+        hosts:
+          - keycloak.local.narwhal.io
+        paths:
+          - "/*"
+      backends:
+        - serviceName: keycloak-service
+          servicePort: 8080
+          serviceNamespace: iam
+          resolveGranularity: service
+      plugins:
+        - name: response-rewrite
+          enable: true
+          config:
+            headers:
+              set:
+                Strict-Transport-Security: "max-age=31536000; includeSubDomains"
+                X-Content-Type-Options: "nosniff"
+ROUTE_EOF
 
 # Wait for route to become effective
 sleep 5

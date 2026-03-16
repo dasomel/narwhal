@@ -1,4 +1,32 @@
 ---
+# Keycloak (Identity Provider — no OIDC plugin, Keycloak IS the IdP)
+apiVersion: apisix.apache.org/v2
+kind: ApisixRoute
+metadata:
+  name: keycloak
+  namespace: platform-system
+spec:
+  http:
+    - name: keycloak
+      match:
+        hosts:
+          - keycloak.local.narwhal.io
+        paths:
+          - "/*"
+      backends:
+        - serviceName: keycloak-service
+          servicePort: 8080
+          serviceNamespace: iam
+          resolveGranularity: service
+      plugins:
+        - name: response-rewrite
+          enable: true
+          config:
+            headers:
+              set:
+                Strict-Transport-Security: "max-age=31536000; includeSubDomains"
+                X-Content-Type-Options: "nosniff"
+---
 # ArgoCD
 apiVersion: apisix.apache.org/v2
 kind: ApisixRoute

@@ -32,11 +32,15 @@ spec:
               prefix: "/apisix"
               timeout: 30
             authentication:
-              secret: "apisix-dashboard-secret"  # overridden by provisioning script
+              # WARNING: dev-only defaults. APISIX Dashboard config is rendered from Helm values.
+              # ArgoCD selfHeal will revert manual changes. To change password, update this YAML
+              # and push to Gitea, or set apisix-dashboard Helm release values via:
+              #   helm upgrade apisix-dashboard ... --set config.conf.authentication.users[0].password=NEW
+              secret: "apisix-dashboard-secret"
               expire_time: 3600
               users:
                 - username: admin
-                  password: "admin"  # overridden via provisioning script
+                  password: "admin"  # dev default — change via helm upgrade for production use
         service:
           type: ClusterIP
           port: 9000

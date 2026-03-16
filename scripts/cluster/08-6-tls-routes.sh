@@ -1,37 +1,23 @@
 #!/bin/bash
 set -euo pipefail
 
-echo "=== Applying TLS Routes (CA cert distribution, Traefik Gateway Routes) ==="
+echo "=== Applying TLS Routes (CA cert distribution, APISIX Routes) ==="
 
 export KUBECONFIG=/home/vagrant/.kube/config-local
 
 #=========================================
-# Apply Traefik Gateway Routes
+# Apply APISIX Routes
 #=========================================
-echo "=== Applying Traefik Gateway Routes ==="
+echo "=== Applying APISIX Routes ==="
 
-# Wait for Traefik to be ready (may take time during initial provisioning)
-echo "Waiting for Traefik deployment..."
-for attempt in $(seq 1 12); do
-  if kubectl get deployment traefik -n platform-system >/dev/null 2>&1; then
-    kubectl wait --for=condition=Available deployment/traefik -n platform-system --timeout=60s 2>/dev/null && break
-  fi
-  echo "Traefik not ready yet, attempt ${attempt}/12..."
-  sleep 15
-done
+# Apply APISIX routes (after cert is ready and APISIX is running)
+echo "Applying APISIX routes..."
+kubectl apply -f /home/vagrant/configs/gitops/resources/apisix-routes.yaml || true
 
-# Wait for GatewayClass to be created by Traefik
-echo "Waiting for Traefik GatewayClass..."
-for attempt in $(seq 1 10); do
-  if kubectl get gatewayclass traefik >/dev/null 2>&1; then
-    echo "Traefik GatewayClass ready"
-    break
-  fi
-  echo "GatewayClass not ready, attempt ${attempt}/10..."
-  sleep 10
-done
-
-kubectl apply -f /home/vagrant/configs/gitops/resources/traefik-routes.yaml || true
+# Wait for APISIX Ingress Controller to sync routes
+echo "Waiting for APISIX routes to sync..."
+sleep 10
+kubectl get apisixroute -n platform-system || true
 
 # Wait for TLS certificate to be ready
 echo "Waiting for TLS certificate..."
@@ -68,4 +54,4 @@ else
   echo "WARN: traefik-tls CA cert not found, SSO apps may not verify Keycloak TLS"
 fi
 
-echo "=== TLS Routes Installation Complete ==="
+echo "=== TLS Routes and APISIX Routes Installation Complete ==="

@@ -1,0 +1,62 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: apisix-dashboard
+  namespace: devtools
+  annotations:
+    argocd.argoproj.io/sync-wave: "4"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://charts.apiseven.com
+    chart: apisix-dashboard
+    targetRevision: "0.9.0"
+    helm:
+      valuesObject:
+        image:
+          # docker.io: APISIX Dashboard 공식 이미지, ghcr.io/quay.io 대안 없음
+          repository: apache/apisix-dashboard
+          tag: "3.0.0"
+        podLabels:
+          istio.io/dataplane-mode: "none"
+        config:
+          conf:
+            listen:
+              host: "0.0.0.0"
+              port: 9000
+            etcd:
+              endpoints:
+                - "apisix-etcd.platform-system.svc.cluster.local:2379"
+              prefix: "/apisix"
+              timeout: 30
+            authentication:
+              secret: "apisix-dashboard-secret"  # overridden by provisioning script
+              expire_time: 3600
+              users:
+                - username: admin
+                  password: "admin"  # overridden via provisioning script
+        service:
+          type: ClusterIP
+          port: 9000
+        resources:
+          requests:
+            cpu: 50m
+            memory: 128Mi
+          limits:
+            cpu: 200m
+            memory: 256Mi
+        tolerations:
+          - key: "node.kubernetes.io/disk-pressure"
+            operator: "Exists"
+            effect: "NoSchedule"
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: platform-system
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

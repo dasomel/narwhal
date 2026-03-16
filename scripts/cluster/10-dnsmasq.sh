@@ -221,7 +221,7 @@ ${COREFILE}"
         ${TRAEFIK_IP} keycloak.${DOMAIN}
         ${TRAEFIK_IP} headlamp.${DOMAIN}
         ${TRAEFIK_IP} openbao.${DOMAIN}
-        ${TRAEFIK_IP} oauth2-proxy.${DOMAIN}
+        ${TRAEFIK_IP} apisix-dashboard.${DOMAIN}
         ${TRAEFIK_IP} hubble.${DOMAIN}
         fallthrough
     }

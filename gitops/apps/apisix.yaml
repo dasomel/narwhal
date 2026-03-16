@@ -1,0 +1,111 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: apisix
+  namespace: devtools
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://charts.apiseven.com
+    chart: apisix
+    targetRevision: "2.9.0"
+    helm:
+      valuesObject:
+        apisix:
+          enabled: true
+          image:
+            repository: apache/apisix
+            tag: "3.11.0-debian"
+          podLabels:
+            istio.io/dataplane-mode: "none"
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          # Kubernetes Secret Provider for OIDC credentials
+          # Used by openid-connect plugin: $secret://kubernetes/k8s-1/apisix-oidc-config/<key>
+          config:
+            apisix:
+              secret_providers:
+                - name: kubernetes
+                  uid: k8s-1
+                  auth_type: serviceaccount
+                  apiservers:
+                    - https://kubernetes.default.svc
+
+        # LoadBalancer: same IP as former Traefik
+        gateway:
+          type: LoadBalancer
+          annotations:
+            metallb.universe.tf/loadBalancerIPs: "192.168.56.200"
+          http:
+            enabled: true
+            servicePort: 80
+            containerPort: 9080
+          tls:
+            enabled: true
+            servicePort: 443
+            containerPort: 9443
+
+        # Admin API (internal only)
+        admin:
+          enabled: true
+          type: ClusterIP
+          port: 9180
+
+        # Use external etcd (registry.k8s.io/etcd — no Bitnami)
+        etcd:
+          enabled: false
+          host:
+            - "http://apisix-etcd.platform-system.svc.cluster.local:2379"
+          prefix: "/apisix"
+          timeout: 30
+
+        # APISIX Ingress Controller (watches ApisixRoute CRDs)
+        ingressController:
+          enabled: true
+          image:
+            repository: apache/apisix-ingress-controller
+            tag: "1.8.0"
+          podLabels:
+            istio.io/dataplane-mode: "none"
+          config:
+            apisix:
+              serviceNamespace: platform-system
+              adminAPIVersion: "v3"
+            kubernetes:
+              watchNamespaces: []  # All namespaces
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 200m
+              memory: 256Mi
+
+        # Metrics for Prometheus
+        serviceMonitor:
+          enabled: true
+          namespace: platform-system
+
+        tolerations:
+          - key: "node.kubernetes.io/disk-pressure"
+            operator: "Exists"
+            effect: "NoSchedule"
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: platform-system
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true

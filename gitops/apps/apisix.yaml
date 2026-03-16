@@ -18,6 +18,7 @@ spec:
         apisix:
           enabled: true
           image:
+            # docker.io: APISIX 공식 이미지, ghcr.io/quay.io 대안 없음
             repository: apache/apisix
             tag: "3.11.0-debian"
           podLabels:
@@ -72,6 +73,7 @@ spec:
         ingressController:
           enabled: true
           image:
+            # docker.io: APISIX Ingress Controller 공식 이미지, ghcr.io/quay.io 대안 없음
             repository: apache/apisix-ingress-controller
             tag: "1.8.0"
           podLabels:

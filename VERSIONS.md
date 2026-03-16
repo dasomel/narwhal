@@ -18,7 +18,10 @@ Components and versions used in this project.
 |-----------|---------|-------------|
 | Cilium | v1.19.0 | CNI plugin (default), kube-proxy replacement |
 | Cilium CLI | v0.19.0 | Cilium command-line tool |
-| Traefik | v39.0.0 (chart) / v3.6.7 (app) | Gateway API controller, rate limiting |
+| APISIX | 3.11.0 (app) / 2.9.0 (chart) | API Gateway, OIDC authentication |
+| APISIX Ingress Controller | 1.8.0 | K8s CRD controller for APISIX |
+| APISIX Dashboard | 3.0.0 (app) / 0.9.0 (chart) | APISIX management UI |
+| etcd (APISIX) | 3.5.21 (`registry.k8s.io/etcd:3.5.21-0`) | APISIX configuration store |
 | MetalLB | v0.15.3 (chart) | Bare-metal LoadBalancer |
 | Gateway API CRDs | v1.4.0 (experimental) | Kubernetes Gateway API standard |
 | Hubble | v1.19.0 | Cilium observability (UI + Relay) |
@@ -56,7 +59,6 @@ Components and versions used in this project.
 | Component | Version | Description |
 |-----------|---------|-------------|
 | Keycloak | v26.5.3 | IAM / SSO (1 instance, Operator) |
-| OAuth2 Proxy | v7.14.2 (chart 10.1.3) | Gateway authentication proxy |
 | K8s OIDC | - | API Server OIDC integration |
 
 ## Security

@@ -123,7 +123,7 @@ if [ "${OIDC_REACHABLE}" = "false" ]; then
   echo "WARN: OIDC HTTPS endpoint not reachable. Skipping API server OIDC activation."
   echo "  Possible causes:"
   echo "    - cert-manager TLS certificate not issued yet"
-  echo "    - Traefik Gateway not routing keycloak.${DOMAIN}"
+  echo "    - APISIX Gateway not routing keycloak.${DOMAIN}"
   echo "    - DNS not resolving keycloak.${DOMAIN}"
   echo "  Run scripts in order: 08-platform-apps.sh → 10-dnsmasq.sh → 11a-keycloak-operator.sh"
 else

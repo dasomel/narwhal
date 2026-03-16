@@ -184,7 +184,7 @@ done
 #=========================================
 # 6) PeerAuthentication PERMISSIVE (mesh-wide mTLS)
 #=========================================
-# PERMISSIVE allows non-mesh traffic (kubelet probes, MetalLB/Traefik external traffic)
+# PERMISSIVE allows non-mesh traffic (kubelet probes, MetalLB/APISIX external traffic)
 # to reach mesh services. ztunnel still enforces mTLS for mesh-to-mesh communication.
 echo "Applying mesh-wide PERMISSIVE mTLS..."
 cat <<'EOF' | kubectl apply -f -

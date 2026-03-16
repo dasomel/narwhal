@@ -29,14 +29,12 @@ if ! kubectl get secret oidc-client-secrets -n iam &>/dev/null; then
   GITEA_SECRET="$(generate_password)"
   HARBOR_SECRET="$(generate_password)"
   HEADLAMP_SECRET="$(generate_password)"
-  OAUTH2_PROXY_SECRET="$(generate_password)"
   kubectl create secret generic oidc-client-secrets \
     --from-literal=argocd="${ARGOCD_SECRET}" \
     --from-literal=grafana="${GRAFANA_SECRET}" \
     --from-literal=gitea="${GITEA_SECRET}" \
     --from-literal=harbor="${HARBOR_SECRET}" \
     --from-literal=headlamp="${HEADLAMP_SECRET}" \
-    --from-literal=oauth2-proxy="${OAUTH2_PROXY_SECRET}" \
     -n iam
   echo "OIDC client secrets created (secret: oidc-client-secrets / ns: iam)"
 else
@@ -45,22 +43,7 @@ else
   GITEA_SECRET="$(kubectl get secret oidc-client-secrets -n iam -o jsonpath='{.data.gitea}' | base64 -d)"
   HARBOR_SECRET="$(kubectl get secret oidc-client-secrets -n iam -o jsonpath='{.data.harbor}' | base64 -d)"
   HEADLAMP_SECRET="$(kubectl get secret oidc-client-secrets -n iam -o jsonpath='{.data.headlamp}' | base64 -d)"
-  OAUTH2_PROXY_SECRET="$(kubectl get secret oidc-client-secrets -n iam -o jsonpath='{.data.oauth2-proxy}' | base64 -d)"
   echo "OIDC client secrets loaded from existing secret (oidc-client-secrets / ns: iam)"
-fi
-
-#=========================================
-# OAuth2-Proxy cookie secret — create once, reuse on re-runs
-#=========================================
-if ! kubectl get secret oauth2-proxy-secrets -n iam &>/dev/null; then
-  # cookie-secret must be exactly 32 bytes (hex 16 = 32 hex chars)
-  COOKIE_SECRET="$(openssl rand -hex 16)"
-  kubectl create secret generic oauth2-proxy-secrets \
-    --from-literal=client-id="oauth2-proxy" \
-    --from-literal=cookie-secret="${COOKIE_SECRET}" \
-    --from-literal=client-secret="${OAUTH2_PROXY_SECRET}" \
-    -n iam
-  echo "OAuth2-Proxy secrets created (secret: oauth2-proxy-secrets / ns: iam)"
 fi
 
 #=========================================
@@ -193,13 +176,6 @@ kubectl exec -n iam "${KEYCLOAK_POD}" -- /opt/keycloak/bin/kcadm.sh create clien
   -s secret="${HEADLAMP_SECRET}" -s directAccessGrantsEnabled=true -s standardFlowEnabled=true \
   -s 'redirectUris=["https://headlamp.local.narwhal.io/*","http://localhost:8080/*"]' -s 'webOrigins=["*"]' || true
 
-# oauth2-proxy client (for Gateway API authentication)
-kubectl exec -n iam "${KEYCLOAK_POD}" -- /opt/keycloak/bin/kcadm.sh create clients -r kubernetes \
-  -s clientId=oauth2-proxy -s enabled=true -s publicClient=false \
-  -s secret="${OAUTH2_PROXY_SECRET}" -s directAccessGrantsEnabled=true -s standardFlowEnabled=true \
-  -s 'redirectUris=["https://*.local.narwhal.io/*","https://oauth2-proxy.local.narwhal.io/*"]' \
-  -s 'webOrigins=["*"]' || true
-
 echo "OIDC clients created."
 
 #=========================================
@@ -210,7 +186,7 @@ echo "OIDC clients created."
 #   "expected audience X got [account]"
 echo "Adding audience mappers to all clients..."
 
-for client_name in kubernetes argocd grafana gitea harbor headlamp oauth2-proxy; do
+for client_name in kubernetes argocd grafana gitea harbor headlamp; do
   CLIENT_UUID=$(kubectl exec -n iam "${KEYCLOAK_POD}" -- /opt/keycloak/bin/kcadm.sh get clients -r kubernetes \
     2>/dev/null | jq -r ".[] | select(.clientId==\"${client_name}\") | .id")
   if [ -n "${CLIENT_UUID}" ]; then
@@ -242,7 +218,7 @@ GROUPS_SCOPE_ID=$(kubectl exec -n iam "${KEYCLOAK_POD}" -- /opt/keycloak/bin/kca
   2>/dev/null | jq -r '.[] | select(.name=="groups") | .id')
 
 if [ -n "${GROUPS_SCOPE_ID}" ]; then
-  for client_name in kubernetes argocd grafana gitea harbor headlamp oauth2-proxy; do
+  for client_name in kubernetes argocd grafana gitea harbor headlamp; do
     CLIENT_UUID=$(kubectl exec -n iam "${KEYCLOAK_POD}" -- /opt/keycloak/bin/kcadm.sh get clients -r kubernetes \
       2>/dev/null | jq -r ".[] | select(.clientId==\"${client_name}\") | .id")
     if [ -n "${CLIENT_UUID}" ]; then

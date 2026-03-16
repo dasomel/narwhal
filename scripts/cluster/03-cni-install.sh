@@ -30,7 +30,7 @@ case "${CNI_PLUGIN}" in
     sudo tar xzvfC "cilium-linux-${ARCH}.tar.gz" /usr/local/bin
     rm "cilium-linux-${ARCH}.tar.gz"
 
-    # Install Gateway API CRDs (used by Traefik Gateway Controller, Cilium provides network-level support)
+    # Install Gateway API CRDs (used by APISIX Gateway Controller, Cilium provides network-level support)
     echo "Installing Gateway API CRDs..."
     kubectl apply -f https://raw.githubusercontent.com/kubernetes-sigs/gateway-api/v1.2.1/config/crd/standard/gateway.networking.k8s.io_gatewayclasses.yaml
     kubectl apply -f https://raw.githubusercontent.com/kubernetes-sigs/gateway-api/v1.2.1/config/crd/standard/gateway.networking.k8s.io_gateways.yaml
@@ -39,7 +39,7 @@ case "${CNI_PLUGIN}" in
     kubectl apply -f https://raw.githubusercontent.com/kubernetes-sigs/gateway-api/v1.2.1/config/crd/standard/gateway.networking.k8s.io_grpcroutes.yaml
 
     # Install Cilium with kube-proxy replacement, Hubble, and Gateway API CRD awareness
-    # Note: Traefik is the actual Gateway Controller (GatewayClass: traefik)
+    # Note: APISIX is the actual Gateway Controller (GatewayClass: apisix)
     # Cilium's gatewayAPI.enabled allows network-level integration with Gateway API resources
     echo "Installing Cilium ${CILIUM_VERSION} with Hubble and kube-proxy replacement..."
     cilium install --version "${CILIUM_VERSION}" \

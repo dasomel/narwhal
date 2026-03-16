@@ -177,25 +177,25 @@ ${COREFILE}"
   echo "=== Configuring CoreDNS hairpin fix (*.${DOMAIN} -> APISIX ClusterIP) ==="
 
   # Wait for APISIX service to be available
-  TRAEFIK_IP=""
+  APISIX_IP=""
   for attempt in $(seq 1 30); do
-    TRAEFIK_IP=$(kubectl get svc apisix -n platform-system -o jsonpath='{.spec.clusterIP}' 2>/dev/null || true)
-    if [ -n "${TRAEFIK_IP}" ]; then
-      echo "APISIX ClusterIP: ${TRAEFIK_IP}"
+    APISIX_IP=$(kubectl get svc apisix -n platform-system -o jsonpath='{.spec.clusterIP}' 2>/dev/null || true)
+    if [ -n "${APISIX_IP}" ]; then
+      echo "APISIX ClusterIP: ${APISIX_IP}"
       break
     fi
     echo "Waiting for APISIX service (attempt ${attempt}/30)..."
     sleep 10
   done
 
-  if [ -z "${TRAEFIK_IP}" ]; then
+  if [ -z "${APISIX_IP}" ]; then
     echo "WARN: APISIX service not found in platform-system, skipping hairpin fix"
   else
     COREDNS_CM_CURRENT=$(kubectl get configmap coredns -n kube-system -o json 2>/dev/null || echo "")
     if [ -z "${COREDNS_CM_CURRENT}" ]; then
       echo "WARN: CoreDNS configmap not found, skipping hairpin fix"
-    elif echo "${COREDNS_CM_CURRENT}" | grep -q "hairpin" && echo "${COREDNS_CM_CURRENT}" | grep -q "${TRAEFIK_IP}"; then
-      echo "CoreDNS hairpin fix already applied with correct IP (${TRAEFIK_IP})"
+    elif echo "${COREDNS_CM_CURRENT}" | grep -q "hairpin" && echo "${COREDNS_CM_CURRENT}" | grep -q "${APISIX_IP}"; then
+      echo "CoreDNS hairpin fix already applied with correct IP (${APISIX_IP})"
     else
       COREFILE_CURRENT=$(echo "${COREDNS_CM_CURRENT}" | yq -r '.data.Corefile')
 
@@ -208,21 +208,21 @@ ${COREFILE}"
 
       # Append hairpin zone block to existing Corefile
       # The hosts plugin maps all known *.local.narwhal.io hostnames to the
-      # Traefik ClusterIP so pods route internally instead of through MetalLB.
+      # APISIX ClusterIP so pods route internally instead of through MetalLB.
       HAIRPIN_ZONE="${DOMAIN}:53 {
-    # hairpin: in-cluster pods -> Traefik ClusterIP (bypasses MetalLB)
+    # hairpin: in-cluster pods -> APISIX ClusterIP (bypasses MetalLB)
     errors
     cache 30
     hosts {
-        ${TRAEFIK_IP} argocd.${DOMAIN}
-        ${TRAEFIK_IP} grafana.${DOMAIN}
-        ${TRAEFIK_IP} gitea.${DOMAIN}
-        ${TRAEFIK_IP} harbor.${DOMAIN}
-        ${TRAEFIK_IP} keycloak.${DOMAIN}
-        ${TRAEFIK_IP} headlamp.${DOMAIN}
-        ${TRAEFIK_IP} openbao.${DOMAIN}
-        ${TRAEFIK_IP} apisix-dashboard.${DOMAIN}
-        ${TRAEFIK_IP} hubble.${DOMAIN}
+        ${APISIX_IP} argocd.${DOMAIN}
+        ${APISIX_IP} grafana.${DOMAIN}
+        ${APISIX_IP} gitea.${DOMAIN}
+        ${APISIX_IP} harbor.${DOMAIN}
+        ${APISIX_IP} keycloak.${DOMAIN}
+        ${APISIX_IP} headlamp.${DOMAIN}
+        ${APISIX_IP} openbao.${DOMAIN}
+        ${APISIX_IP} apisix-dashboard.${DOMAIN}
+        ${APISIX_IP} hubble.${DOMAIN}
         fallthrough
     }
     forward . ${HAIRPIN_DNS_LIST}
@@ -257,7 +257,7 @@ ${COREFILE_CURRENT}"
 
       kubectl rollout restart deployment coredns -n kube-system 2>/dev/null || true
       kubectl wait --for=condition=Ready pod -l k8s-app=kube-dns -n kube-system --timeout=60s || true
-      echo "CoreDNS hairpin fix applied: *.${DOMAIN} -> ${TRAEFIK_IP} (Traefik ClusterIP)"
+      echo "CoreDNS hairpin fix applied: *.${DOMAIN} -> ${APISIX_IP} (APISIX ClusterIP)"
     fi
   fi
 

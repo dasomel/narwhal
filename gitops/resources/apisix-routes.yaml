@@ -89,6 +89,7 @@ spec:
                 Strict-Transport-Security: "max-age=31536000; includeSubDomains"
                 X-Content-Type-Options: "nosniff"
                 X-Frame-Options: "SAMEORIGIN"
+                X-XSS-Protection: "1; mode=block"
 ---
 # Gitea
 apiVersion: apisix.apache.org/v2
@@ -133,6 +134,8 @@ spec:
               set:
                 Strict-Transport-Security: "max-age=31536000; includeSubDomains"
                 X-Content-Type-Options: "nosniff"
+                X-Frame-Options: "SAMEORIGIN"
+                X-XSS-Protection: "1; mode=block"
 ---
 # Harbor (100MB body limit for image push)
 apiVersion: apisix.apache.org/v2
@@ -181,6 +184,8 @@ spec:
               set:
                 Strict-Transport-Security: "max-age=31536000; includeSubDomains"
                 X-Content-Type-Options: "nosniff"
+                X-Frame-Options: "SAMEORIGIN"
+                X-XSS-Protection: "1; mode=block"
 ---
 # Headlamp
 apiVersion: apisix.apache.org/v2
@@ -214,6 +219,8 @@ spec:
             ssl_verify: false
             logout_path: "/apisix/logout"
             set_userinfo_header: true
+            set_access_token_header: true
+            access_token_in_authorization_header: true
             session:
               secret: "$secret://kubernetes/k8s-1/apisix-oidc-config/session_secret"
         - name: response-rewrite
@@ -223,6 +230,8 @@ spec:
               set:
                 Strict-Transport-Security: "max-age=31536000; includeSubDomains"
                 X-Content-Type-Options: "nosniff"
+                X-Frame-Options: "SAMEORIGIN"
+                X-XSS-Protection: "1; mode=block"
 ---
 # OpenBao
 apiVersion: apisix.apache.org/v2
@@ -256,6 +265,8 @@ spec:
             ssl_verify: false
             logout_path: "/apisix/logout"
             set_userinfo_header: true
+            set_access_token_header: true
+            access_token_in_authorization_header: true
             session:
               secret: "$secret://kubernetes/k8s-1/apisix-oidc-config/session_secret"
         - name: response-rewrite
@@ -265,6 +276,8 @@ spec:
               set:
                 Strict-Transport-Security: "max-age=31536000; includeSubDomains"
                 X-Content-Type-Options: "nosniff"
+                X-Frame-Options: "SAMEORIGIN"
+                X-XSS-Protection: "1; mode=block"
 ---
 # Hubble UI
 apiVersion: apisix.apache.org/v2
@@ -298,6 +311,8 @@ spec:
             ssl_verify: false
             logout_path: "/apisix/logout"
             set_userinfo_header: true
+            set_access_token_header: true
+            access_token_in_authorization_header: true
             session:
               secret: "$secret://kubernetes/k8s-1/apisix-oidc-config/session_secret"
         - name: response-rewrite
@@ -307,6 +322,8 @@ spec:
               set:
                 Strict-Transport-Security: "max-age=31536000; includeSubDomains"
                 X-Content-Type-Options: "nosniff"
+                X-Frame-Options: "SAMEORIGIN"
+                X-XSS-Protection: "1; mode=block"
 ---
 # APISIX Dashboard (no OIDC — dashboard has its own auth)
 apiVersion: apisix.apache.org/v2

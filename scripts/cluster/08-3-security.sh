@@ -33,10 +33,10 @@ helm repo update headlamp
 cat > /tmp/headlamp-values.yaml << 'EOF'
 config:
   oidc:
-    clientID: headlamp
-    issuerURL: https://keycloak.local.narwhal.io/realms/kubernetes
+    clientID: apisix
+    issuerURL: https://authentik.local.narwhal.io/application/o/apisix/
     scopes: openid,profile,email,groups
-    # clientSecret loaded from headlamp-oidc-secret (created by 11-keycloak.sh)
+    # clientSecret loaded from headlamp-oidc-secret (created by 11-2-authentik-config.sh)
     secret:
       create: false
       name: headlamp-oidc-secret

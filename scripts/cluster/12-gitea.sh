@@ -32,9 +32,8 @@ echo "Waiting for PostgreSQL (narwhal-db) to be ready..."
 kubectl wait --for=condition=Ready cluster/narwhal-db -n database --timeout=300s || true
 kubectl wait --for=condition=Ready pod -l cnpg.io/poolerName=narwhal-db-pooler-rw -n database --timeout=120s || true
 
-# Keycloak OIDC configuration
-KEYCLOAK_URL="${KEYCLOAK_URL:-https://keycloak.local.narwhal.io}"
-KEYCLOAK_REALM="${KEYCLOAK_REALM:-kubernetes}"
+# Authentik OIDC configuration
+AUTHENTIK_URL="${AUTHENTIK_URL:-https://authentik.${DOMAIN:-local.narwhal.io}}"
 
 # Gitea admin password — create Secret on first run, reuse on re-run
 if ! kubectl get secret gitea-admin -n devtools &>/dev/null; then
@@ -51,7 +50,7 @@ fi
 GITEA_DB_PASS=$(kubectl get secret narwhal-db-credentials -n database \
   -o jsonpath='{.data.gitea-password}' | base64 -d)
 
-# Install Gitea with Keycloak OIDC
+# Install Gitea with Authentik OIDC
 GITEA_CHART_VERSION="${GITEA_CHART_VERSION:-12.5.0}"
 
 helm upgrade --install gitea gitea-charts/gitea \
@@ -99,7 +98,7 @@ if kubectl get networkpolicy gitea-valkey -n devtools &>/dev/null; then
     -p='[{"op": "add", "path": "/spec/ingress/0/ports/-", "value": {"port": 15008, "protocol": "TCP"}}]' || true
 fi
 
-# Configure Keycloak OAuth2 provider via API
+# Configure Authentik OAuth2 provider via API
 echo "Configuring Gitea OAuth2 provider..."
 sleep 10
 
@@ -129,12 +128,15 @@ if [ -n "${GITEA_POD}" ]; then
   done
 
   # Configure OAuth2 source with group→team mapping
+  # apisix-oidc-config (platform-system ns) is created by 11-2-authentik-config.sh
+  APISIX_CLIENT_SECRET=$(kubectl get secret apisix-oidc-config -n platform-system \
+    -o jsonpath='{.data.client_secret}' | base64 -d)
   kubectl exec -n devtools "${GITEA_POD}" -- gitea admin auth add-oauth \
-    --name "keycloak" \
+    --name "authentik" \
     --provider "openidConnect" \
-    --key "gitea" \
-    --secret "gitea-secret" \
-    --auto-discover-url "${KEYCLOAK_URL}/realms/${KEYCLOAK_REALM}/.well-known/openid-configuration" \
+    --key "apisix" \
+    --secret "${APISIX_CLIENT_SECRET}" \
+    --auto-discover-url "${AUTHENTIK_URL}/application/o/apisix/.well-known/openid-configuration" \
     --group-claim-name "groups" \
     --admin-group "cluster-admin" \
     --restricted-group "guest" \

@@ -58,7 +58,8 @@ Components and versions used in this project.
 
 | Component | Version | Description |
 |-----------|---------|-------------|
-| Keycloak | v26.5.3 | IAM / SSO (1 instance, Operator) |
+| Authentik | 2025.4.0 | IAM / SSO (Helm, REST API 구성) |
+| Valkey | 8 (8-alpine) | Authentik용 Redis 대체 (docker.io/valkey/valkey:8-alpine) |
 | K8s OIDC | - | API Server OIDC integration |
 
 ## Security

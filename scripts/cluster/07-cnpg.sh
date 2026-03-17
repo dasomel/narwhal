@@ -66,18 +66,18 @@ kubectl create namespace database --dry-run=client -o yaml | kubectl apply -f -
 
 # Create database credentials secrets (idempotent: reuse existing passwords)
 if ! kubectl get secret narwhal-db-credentials -n database &>/dev/null; then
-  KEYCLOAK_DB_PASS=$(generate_password)
+  AUTHENTIK_DB_PASS=$(generate_password)
   HARBOR_DB_PASS=$(generate_password)
   GITEA_DB_PASS=$(generate_password)
   kubectl create secret generic narwhal-db-credentials \
-    --from-literal=username=keycloak \
-    --from-literal=password="${KEYCLOAK_DB_PASS}" \
+    --from-literal=username=authentik \
+    --from-literal=password="${AUTHENTIK_DB_PASS}" \
     --from-literal=harbor-password="${HARBOR_DB_PASS}" \
     --from-literal=gitea-password="${GITEA_DB_PASS}" \
     -n database
   echo "DB credentials secret created with generated passwords"
 else
-  KEYCLOAK_DB_PASS=$(kubectl get secret narwhal-db-credentials -n database \
+  AUTHENTIK_DB_PASS=$(kubectl get secret narwhal-db-credentials -n database \
     -o jsonpath='{.data.password}' | base64 -d)
   HARBOR_DB_PASS=$(kubectl get secret narwhal-db-credentials -n database \
     -o jsonpath='{.data.harbor-password}' | base64 -d)
@@ -114,8 +114,8 @@ spec:
 
   bootstrap:
     initdb:
-      database: keycloak
-      owner: keycloak
+      database: authentik
+      owner: authentik
       dataChecksums: true
       secret:
         name: narwhal-db-credentials
@@ -258,7 +258,7 @@ cat <<EOF | kubectl apply -f -
 apiVersion: v1
 kind: Service
 metadata:
-  name: keycloak-db-rw
+  name: authentik-db-rw
   namespace: iam
 spec:
   type: ExternalName
@@ -304,9 +304,9 @@ echo "Instances: 2 (HA: 1 primary + 1 replica)"
 echo "PgBouncer: 1 pooler pod (transaction mode)"
 echo ""
 echo "Databases:"
-echo "  keycloak - owner: keycloak (password in secret: narwhal-db-credentials/password)"
-echo "  harbor   - owner: harbor   (password in secret: narwhal-db-credentials/harbor-password)"
-echo "  gitea    - owner: gitea    (password in secret: narwhal-db-credentials/gitea-password)"
+echo "  authentik - owner: authentik (password in secret: narwhal-db-credentials/password)"
+echo "  harbor    - owner: harbor    (password in secret: narwhal-db-credentials/harbor-password)"
+echo "  gitea     - owner: gitea     (password in secret: narwhal-db-credentials/gitea-password)"
 echo ""
 echo "Connection (via PgBouncer):"
 echo "  Host: narwhal-db-pooler-rw.database.svc.cluster.local"
@@ -317,7 +317,7 @@ echo "  Host: narwhal-db-rw.database.svc.cluster.local"
 echo "  Port: 5432"
 echo ""
 echo "Cross-namespace aliases (ExternalName):"
-echo "  iam ns:      keycloak-db-rw:5432 -> narwhal-db-rw.database.svc.cluster.local"
+echo "  iam ns:      authentik-db-rw:5432 -> narwhal-db-rw.database.svc.cluster.local"
 echo "  devtools ns: harbor-db-rw:5432   -> narwhal-db-rw.database.svc.cluster.local"
 echo "  devtools ns: gitea-db-rw:5432    -> narwhal-db-rw.database.svc.cluster.local"
 echo ""

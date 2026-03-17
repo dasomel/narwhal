@@ -1,0 +1,117 @@
+# Authentik IAM (Keycloak 대체)
+# Helm chart: https://charts.goauthentik.io
+# 이미지: ghcr.io/goauthentik/* (ARM64 지원 — docker.io 불필요)
+# External PostgreSQL: narwhal-db CNPG (authentik user/db)
+# External Redis: Valkey 8 standalone (iam namespace)
+# Secrets: 11-authentik.sh 스크립트가 ArgoCD sync 이전에 생성
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: authentik
+  namespace: devtools
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  project: default
+  source:
+    repoURL: https://charts.goauthentik.io
+    chart: authentik
+    targetRevision: "2025.4.0"
+    helm:
+      releaseName: authentik
+      values: |
+        global:
+          image:
+            registry: ghcr.io
+
+        authentik:
+          postgresql:
+            host: "authentik-db-rw.iam.svc.cluster.local"
+            name: "authentik"
+            user: "authentik"
+          redis:
+            host: "authentik-valkey.iam.svc.cluster.local"
+            port: 6379
+
+        server:
+          ingress:
+            enabled: false
+          additionalEnv:
+            - name: AUTHENTIK_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: authentik-bootstrap-secret
+                  key: secret_key
+            - name: AUTHENTIK_POSTGRESQL__PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: authentik-db-config
+                  key: password
+            - name: AUTHENTIK_BOOTSTRAP_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: authentik-bootstrap-secret
+                  key: bootstrap_token
+            - name: AUTHENTIK_BOOTSTRAP_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: authentik-bootstrap-secret
+                  key: bootstrap_password
+            - name: AUTHENTIK_BOOTSTRAP_EMAIL
+              value: "admin@local.narwhal.io"
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "200m"
+            limits:
+              memory: "1Gi"
+              cpu: "1"
+
+        worker:
+          additionalEnv:
+            - name: AUTHENTIK_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: authentik-bootstrap-secret
+                  key: secret_key
+            - name: AUTHENTIK_POSTGRESQL__PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: authentik-db-config
+                  key: password
+            - name: AUTHENTIK_BOOTSTRAP_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: authentik-bootstrap-secret
+                  key: bootstrap_token
+            - name: AUTHENTIK_BOOTSTRAP_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: authentik-bootstrap-secret
+                  key: bootstrap_password
+            - name: AUTHENTIK_BOOTSTRAP_EMAIL
+              value: "admin@local.narwhal.io"
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+
+        postgresql:
+          enabled: false
+
+        redis:
+          enabled: false
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: iam
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true

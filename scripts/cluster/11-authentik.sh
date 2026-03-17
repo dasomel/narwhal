@@ -1,0 +1,234 @@
+#!/bin/bash
+set -euo pipefail
+source /home/vagrant/scripts/common/lib.sh
+
+# 11-authentik.sh
+# Phase: Authentik IAM 설치 (Keycloak Operator 대체)
+# - Valkey 8 standalone (Redis 대체, Bitnami 배제)
+# - authentik-bootstrap-secret 생성 (secret_key, bootstrap_token, bootstrap_password)
+# - authentik-db-config 생성 (iam ns에 DB 패스워드 복사 — cross-ns 참조 불가)
+# - Helm install: ghcr.io/goauthentik/* (ARM64 지원)
+# - ApisixRoute bootstrap: authentik.local.narwhal.io → authentik-server:9000
+# Depends on: 07-cnpg.sh (narwhal-db ready), 08-1-networking.sh (APISIX ready)
+
+AUTHENTIK_VERSION="${AUTHENTIK_VERSION:-2025.4.0}"
+DOMAIN="${DOMAIN:-local.narwhal.io}"
+export KUBECONFIG=/home/vagrant/.kube/config-local
+
+echo "=== Installing Authentik ${AUTHENTIK_VERSION} ==="
+
+# Wait for narwhal-db
+echo "Waiting for PostgreSQL (narwhal-db) to be ready..."
+kubectl wait --for=condition=Ready cluster/narwhal-db -n database --timeout=300s || true
+kubectl wait --for=condition=Ready pod -l cnpg.io/cluster=narwhal-db -n database --timeout=120s || true
+
+kubectl create namespace iam --dry-run=client -o yaml | kubectl apply -f -
+
+#=========================================
+# Deploy Valkey 8 (Redis alternative)
+# docker.io/valkey/valkey:8-alpine
+# 사유: Bitnami 사용 금지, Valkey는 Redis 포크 (BSD 라이선스), ghcr.io/quay.io 미제공
+#=========================================
+echo "=== Deploying Valkey 8 (Redis alternative) ==="
+
+cat <<'EOF' | kubectl apply -f -
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: authentik-valkey
+  namespace: iam
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: authentik-valkey
+  template:
+    metadata:
+      labels:
+        app: authentik-valkey
+        istio.io/dataplane-mode: "none"
+    spec:
+      containers:
+        - name: valkey
+          image: docker.io/valkey/valkey:8-alpine
+          ports:
+            - containerPort: 6379
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "50m"
+            limits:
+              memory: "256Mi"
+              cpu: "200m"
+          livenessProbe:
+            exec:
+              command: ["valkey-cli", "ping"]
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          readinessProbe:
+            exec:
+              command: ["valkey-cli", "ping"]
+            initialDelaySeconds: 5
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: authentik-valkey
+  namespace: iam
+spec:
+  selector:
+    app: authentik-valkey
+  ports:
+    - port: 6379
+      targetPort: 6379
+EOF
+
+echo "Waiting for Valkey pod..."
+kubectl wait --for=condition=Ready pod -l app=authentik-valkey -n iam --timeout=120s
+
+#=========================================
+# Create Authentik bootstrap secrets
+# Idempotent: 재실행 시 기존 secret 재사용
+#=========================================
+echo "=== Creating Authentik bootstrap secrets ==="
+
+if ! kubectl get secret authentik-bootstrap-secret -n iam &>/dev/null; then
+  # secret_key: 64자 이상 필요 (두 generate_password 연결)
+  AUTHENTIK_SECRET_KEY="$(generate_password)$(generate_password)"
+  AUTHENTIK_BOOTSTRAP_TOKEN="$(generate_password)"
+  AUTHENTIK_BOOTSTRAP_PASSWORD="$(generate_password)"
+  kubectl create secret generic authentik-bootstrap-secret -n iam \
+    --from-literal=secret_key="${AUTHENTIK_SECRET_KEY}" \
+    --from-literal=bootstrap_token="${AUTHENTIK_BOOTSTRAP_TOKEN}" \
+    --from-literal=bootstrap_password="${AUTHENTIK_BOOTSTRAP_PASSWORD}"
+  echo "Authentik bootstrap secret created (authentik-bootstrap-secret in iam)"
+else
+  AUTHENTIK_BOOTSTRAP_TOKEN="$(kubectl get secret authentik-bootstrap-secret -n iam \
+    -o jsonpath='{.data.bootstrap_token}' | base64 -d)"
+  echo "Authentik bootstrap secret already exists, reusing token"
+fi
+
+#=========================================
+# Copy DB credentials to iam namespace
+# narwhal-db-credentials는 database ns에 있어서
+# Helm/ArgoCD가 iam ns에서 직접 참조 불가 → iam ns에 복사본 생성
+#=========================================
+echo "=== Creating authentik-db-config in iam namespace ==="
+
+AUTHENTIK_DB_PASS="$(kubectl get secret narwhal-db-credentials -n database \
+  -o jsonpath='{.data.password}' | base64 -d)"
+
+kubectl create secret generic authentik-db-config -n iam \
+  --from-literal=password="${AUTHENTIK_DB_PASS}" \
+  --dry-run=client -o yaml | kubectl apply -f -
+echo "DB config secret created (authentik-db-config in iam)"
+
+#=========================================
+# Helm install Authentik
+#=========================================
+echo "=== Installing Authentik via Helm ==="
+
+helm repo add authentik https://charts.goauthentik.io
+helm repo update
+
+helm upgrade --install authentik authentik/authentik \
+  --namespace iam \
+  --version "${AUTHENTIK_VERSION}" \
+  --set "global.image.registry=ghcr.io" \
+  --set "authentik.postgresql.host=authentik-db-rw.iam.svc.cluster.local" \
+  --set "authentik.postgresql.name=authentik" \
+  --set "authentik.postgresql.user=authentik" \
+  --set "authentik.redis.host=authentik-valkey.iam.svc.cluster.local" \
+  --set "authentik.redis.port=6379" \
+  --set "postgresql.enabled=false" \
+  --set "redis.enabled=false" \
+  --set "server.ingress.enabled=false" \
+  --set "server.resources.requests.memory=512Mi" \
+  --set "server.resources.requests.cpu=200m" \
+  --set "server.resources.limits.memory=1Gi" \
+  --set "server.resources.limits.cpu=1" \
+  --set "worker.resources.requests.memory=256Mi" \
+  --set "worker.resources.limits.memory=512Mi" \
+  --set-json 'server.additionalEnv=[
+    {"name":"AUTHENTIK_SECRET_KEY","valueFrom":{"secretKeyRef":{"name":"authentik-bootstrap-secret","key":"secret_key"}}},
+    {"name":"AUTHENTIK_POSTGRESQL__PASSWORD","valueFrom":{"secretKeyRef":{"name":"authentik-db-config","key":"password"}}},
+    {"name":"AUTHENTIK_BOOTSTRAP_TOKEN","valueFrom":{"secretKeyRef":{"name":"authentik-bootstrap-secret","key":"bootstrap_token"}}},
+    {"name":"AUTHENTIK_BOOTSTRAP_PASSWORD","valueFrom":{"secretKeyRef":{"name":"authentik-bootstrap-secret","key":"bootstrap_password"}}},
+    {"name":"AUTHENTIK_BOOTSTRAP_EMAIL","value":"admin@local.narwhal.io"}
+  ]' \
+  --set-json 'worker.additionalEnv=[
+    {"name":"AUTHENTIK_SECRET_KEY","valueFrom":{"secretKeyRef":{"name":"authentik-bootstrap-secret","key":"secret_key"}}},
+    {"name":"AUTHENTIK_POSTGRESQL__PASSWORD","valueFrom":{"secretKeyRef":{"name":"authentik-db-config","key":"password"}}},
+    {"name":"AUTHENTIK_BOOTSTRAP_TOKEN","valueFrom":{"secretKeyRef":{"name":"authentik-bootstrap-secret","key":"bootstrap_token"}}},
+    {"name":"AUTHENTIK_BOOTSTRAP_PASSWORD","valueFrom":{"secretKeyRef":{"name":"authentik-bootstrap-secret","key":"bootstrap_password"}}},
+    {"name":"AUTHENTIK_BOOTSTRAP_EMAIL","value":"admin@local.narwhal.io"}
+  ]' \
+  --timeout 10m \
+  || echo "WARN: Helm install timed out, waiting manually..."
+
+# Wait for Authentik server pod
+echo "Waiting for Authentik server pods..."
+sleep 30
+kubectl wait --for=condition=Ready pod -l app.kubernetes.io/name=authentik \
+  -n iam --timeout=600s || true
+
+#=========================================
+# Create ApisixRoute for Authentik HTTPS access
+# GitOps bootstrap(14) 이전이므로 여기서 직접 apply
+#=========================================
+echo "=== Applying Authentik ApisixRoute ==="
+
+kubectl apply -f - << 'ROUTE_EOF'
+apiVersion: apisix.apache.org/v2
+kind: ApisixRoute
+metadata:
+  name: authentik
+  namespace: platform-system
+spec:
+  http:
+    - name: authentik
+      match:
+        hosts:
+          - authentik.local.narwhal.io
+        paths:
+          - "/*"
+      backends:
+        - serviceName: authentik-server
+          servicePort: 9000
+          serviceNamespace: iam
+          resolveGranularity: service
+      plugins:
+        - name: response-rewrite
+          enable: true
+          config:
+            headers:
+              set:
+                Strict-Transport-Security: "max-age=31536000; includeSubDomains"
+                X-Content-Type-Options: "nosniff"
+ROUTE_EOF
+
+sleep 5
+
+# Verify HTTPS endpoint (Authentik health: GET /-/health/ready/ → 204)
+echo "Verifying Authentik HTTPS endpoint..."
+AUTHENTIK_REACHABLE=false
+for attempt in $(seq 1 20); do
+  HTTP_CODE=$(curl -sk -o /dev/null -w '%{http_code}' \
+    "https://authentik.${DOMAIN}/-/health/ready/" 2>/dev/null || echo "000")
+  if [ "${HTTP_CODE}" = "204" ] || [ "${HTTP_CODE}" = "200" ]; then
+    AUTHENTIK_REACHABLE=true
+    echo "Authentik ready (HTTP ${HTTP_CODE})"
+    break
+  fi
+  echo "Authentik not ready (HTTP ${HTTP_CODE}), attempt ${attempt}/20..."
+  sleep 15
+done
+
+if [ "${AUTHENTIK_REACHABLE}" = "false" ]; then
+  echo "WARN: Authentik HTTPS endpoint not reachable after timeout."
+  echo "  Check: kubectl get pods -n iam"
+  echo "  Check: kubectl logs -n iam -l app.kubernetes.io/name=authentik --tail=50"
+fi
+
+echo "=== [11-authentik.sh] 완료 ==="

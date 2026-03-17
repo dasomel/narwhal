@@ -13,8 +13,8 @@ metadata:
   namespace: database
 type: kubernetes.io/basic-auth
 stringData:
-  username: keycloak
-  password: keycloak-db-password
+  username: authentik
+  password: authentik-db-password
 ---
 apiVersion: v1
 kind: Secret
@@ -37,8 +37,8 @@ spec:
 
   bootstrap:
     initdb:
-      database: keycloak
-      owner: keycloak
+      database: authentik
+      owner: authentik
       dataChecksums: true
       secret:
         name: narwhal-db-credentials
@@ -93,7 +93,7 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: keycloak-db-rw
+  name: authentik-db-rw
   namespace: iam
 spec:
   type: ExternalName

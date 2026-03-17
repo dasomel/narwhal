@@ -10,9 +10,9 @@ SERVICE_CIDR="${SERVICE_CIDR:-10.96.0.0/12}"
 # Compute master-1's real IP
 MASTER1_IP="${MASTER_IP_BASE}0"
 
-# OIDC Configuration (Keycloak)
+# OIDC Configuration (Authentik)
 # K8s 1.35+ requires HTTPS for --oidc-issuer-url; HTTP causes API server crash
-OIDC_ISSUER_URL="${OIDC_ISSUER_URL:-https://keycloak.local.narwhal.io/realms/kubernetes}"
+OIDC_ISSUER_URL="${OIDC_ISSUER_URL:-https://authentik.local.narwhal.io/application/o/kubernetes/}"
 OIDC_CLIENT_ID="${OIDC_CLIENT_ID:-kubernetes}"
 
 echo "=== Kubernetes Cluster Initialization ==="
@@ -50,7 +50,7 @@ apiServer:
   certSANs:${CERT_SANS}
 # OIDC configuration - DISABLED at init time.
 # K8s 1.35+ requires HTTPS for --oidc-issuer-url. Enable after cert-manager
-# provisions TLS certificates for Keycloak (see 11-keycloak.sh).
+# provisions TLS certificates for Authentik (see 11-authentik.sh).
 # extraArgs:
 #   - name: oidc-issuer-url
 #     value: "${OIDC_ISSUER_URL}"

@@ -119,7 +119,7 @@ data:
     requestedScopes: ["openid", "profile", "email", "groups"]
 EOF
 
-# Configure RBAC for Keycloak groups
+# Configure RBAC for Authentik groups
 cat <<EOF | kubectl apply -f -
 apiVersion: v1
 kind: ConfigMap

@@ -3,7 +3,7 @@ set -euo pipefail
 
 # 11d-keycloak-apiserver.sh
 # Phase: K8s API 서버 OIDC 설정, master-2/master-3 SSH 전파, ClusterRoleBindings 생성 (RBAC)
-# Depends on: 11c-keycloak-clients.sh (Keycloak HTTPRoute must exist for OIDC endpoint)
+# Depends on: 11-2-authentik-config.sh (Authentik OIDC endpoint must be ready)
 
 export KUBECONFIG=/home/vagrant/.kube/config-local
 
@@ -102,7 +102,7 @@ echo "=== Configuring API Server for OIDC ==="
 
 DOMAIN="${DOMAIN:-local.narwhal.io}"
 # K8s 1.35+ requires HTTPS for --oidc-issuer-url; HTTP causes API server crash
-OIDC_ISSUER_URL="https://keycloak.${DOMAIN}/realms/kubernetes"
+OIDC_ISSUER_URL="https://authentik.${DOMAIN}/application/o/kubernetes/"
 APISERVER_MANIFEST="/etc/kubernetes/manifests/kube-apiserver.yaml"
 
 # Verify HTTPS OIDC endpoint is reachable before activating
@@ -123,9 +123,9 @@ if [ "${OIDC_REACHABLE}" = "false" ]; then
   echo "WARN: OIDC HTTPS endpoint not reachable. Skipping API server OIDC activation."
   echo "  Possible causes:"
   echo "    - cert-manager TLS certificate not issued yet"
-  echo "    - APISIX Gateway not routing keycloak.${DOMAIN}"
-  echo "    - DNS not resolving keycloak.${DOMAIN}"
-  echo "  Run scripts in order: 08-platform-apps.sh → 10-dnsmasq.sh → 11a-keycloak-operator.sh"
+  echo "    - APISIX Gateway not routing authentik.${DOMAIN}"
+  echo "    - DNS not resolving authentik.${DOMAIN}"
+  echo "  Run scripts in order: 08-platform-apps.sh → 10-dnsmasq.sh → 11-authentik.sh → 11-2-authentik-config.sh"
 else
   # Check if OIDC flags already exist
   if ! grep -q "oidc-issuer-url" "${APISERVER_MANIFEST}" 2>/dev/null; then

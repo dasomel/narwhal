@@ -63,14 +63,15 @@ spec:
               root_url: https://grafana.local.narwhal.io
             auth.generic_oauth:
               enabled: true
-              name: Keycloak
+              name: Authentik
               allow_sign_up: true
-              client_id: grafana
+              client_id: apisix
               client_secret: $__file{/etc/secrets/auth_generic_oauth/client_secret}
-              scopes: openid profile email groups
-              auth_url: https://keycloak.local.narwhal.io/realms/kubernetes/protocol/openid-connect/auth
-              token_url: https://keycloak.local.narwhal.io/realms/kubernetes/protocol/openid-connect/token
-              api_url: https://keycloak.local.narwhal.io/realms/kubernetes/protocol/openid-connect/userinfo
+              scopes: openid email profile groups
+              auth_url: https://authentik.local.narwhal.io/application/o/apisix/authorize/
+              token_url: https://authentik.local.narwhal.io/application/o/token/
+              api_url: https://authentik.local.narwhal.io/application/o/userinfo/
+              groups_attribute_path: groups
               # self-signed cert 환경 (narwhal-ca). 실제 CA cert ca_file로 교체 가능
               tls_skip_verify_insecure: true
               role_attribute_path: contains(groups[*], 'cluster-admin') && 'Admin' || contains(groups[*], 'developer') && 'Editor' || 'Viewer'

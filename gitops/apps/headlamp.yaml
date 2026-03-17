@@ -17,8 +17,8 @@ spec:
           istio.io/dataplane-mode: "none"
         config:
           oidc:
-            clientID: headlamp
-            issuerURL: https://keycloak.local.narwhal.io/realms/kubernetes
+            clientID: apisix
+            issuerURL: https://authentik.local.narwhal.io/application/o/apisix/
             scopes: openid,profile,email,groups
             # clientSecret loaded from externalSecret (Option 3)
             # Secret 'headlamp-oidc-secret' is created by scripts/cluster/11-keycloak.sh

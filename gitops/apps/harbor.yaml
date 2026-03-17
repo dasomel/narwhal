@@ -69,9 +69,9 @@ spec:
           configureUserSettings: |-
             {
               "auth_mode": "oidc_auth",
-              "oidc_name": "Keycloak",
-              "oidc_endpoint": "https://keycloak.local.narwhal.io/realms/kubernetes",
-              "oidc_client_id": "harbor",
+              "oidc_name": "Authentik",
+              "oidc_endpoint": "https://authentik.local.narwhal.io/application/o/apisix/",
+              "oidc_client_id": "apisix",
               "oidc_client_secret": "REPLACE_FROM_SECRET",
               "oidc_groups_claim": "groups",
               "oidc_admin_group": "cluster-admin",

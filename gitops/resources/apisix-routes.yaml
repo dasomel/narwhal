@@ -1,21 +1,21 @@
 ---
-# Keycloak (Identity Provider — no OIDC plugin, Keycloak IS the IdP)
+# Authentik (Identity Provider — no OIDC plugin, Authentik IS the IdP)
 apiVersion: apisix.apache.org/v2
 kind: ApisixRoute
 metadata:
-  name: keycloak
+  name: authentik
   namespace: platform-system
 spec:
   http:
-    - name: keycloak
+    - name: authentik
       match:
         hosts:
-          - keycloak.local.narwhal.io
+          - authentik.local.narwhal.io
         paths:
           - "/*"
       backends:
-        - serviceName: keycloak-service
-          servicePort: 8080
+        - serviceName: authentik-server
+          servicePort: 9000
           serviceNamespace: iam
           resolveGranularity: service
       plugins:
@@ -52,7 +52,7 @@ spec:
           config:
             client_id: "apisix"
             client_secret: "$secret://kubernetes/k8s-1/apisix-oidc-config/client_secret"
-            discovery: "https://keycloak.local.narwhal.io/realms/kubernetes/.well-known/openid-configuration"
+            discovery: "https://authentik.local.narwhal.io/application/o/apisix/.well-known/openid-configuration"
             redirect_uri: "https://argocd.local.narwhal.io/apisix/callback"
             scope: "openid email profile groups"
             bearer_only: false
@@ -98,7 +98,7 @@ spec:
           config:
             client_id: "apisix"
             client_secret: "$secret://kubernetes/k8s-1/apisix-oidc-config/client_secret"
-            discovery: "https://keycloak.local.narwhal.io/realms/kubernetes/.well-known/openid-configuration"
+            discovery: "https://authentik.local.narwhal.io/application/o/apisix/.well-known/openid-configuration"
             redirect_uri: "https://grafana.local.narwhal.io/apisix/callback"
             scope: "openid email profile groups"
             bearer_only: false
@@ -144,7 +144,7 @@ spec:
           config:
             client_id: "apisix"
             client_secret: "$secret://kubernetes/k8s-1/apisix-oidc-config/client_secret"
-            discovery: "https://keycloak.local.narwhal.io/realms/kubernetes/.well-known/openid-configuration"
+            discovery: "https://authentik.local.narwhal.io/application/o/apisix/.well-known/openid-configuration"
             redirect_uri: "https://gitea.local.narwhal.io/apisix/callback"
             scope: "openid email profile groups"
             bearer_only: false
@@ -190,7 +190,7 @@ spec:
           config:
             client_id: "apisix"
             client_secret: "$secret://kubernetes/k8s-1/apisix-oidc-config/client_secret"
-            discovery: "https://keycloak.local.narwhal.io/realms/kubernetes/.well-known/openid-configuration"
+            discovery: "https://authentik.local.narwhal.io/application/o/apisix/.well-known/openid-configuration"
             redirect_uri: "https://harbor.local.narwhal.io/apisix/callback"
             scope: "openid email profile groups"
             bearer_only: false
@@ -240,7 +240,7 @@ spec:
           config:
             client_id: "apisix"
             client_secret: "$secret://kubernetes/k8s-1/apisix-oidc-config/client_secret"
-            discovery: "https://keycloak.local.narwhal.io/realms/kubernetes/.well-known/openid-configuration"
+            discovery: "https://authentik.local.narwhal.io/application/o/apisix/.well-known/openid-configuration"
             redirect_uri: "https://headlamp.local.narwhal.io/apisix/callback"
             scope: "openid email profile groups"
             bearer_only: false
@@ -286,7 +286,7 @@ spec:
           config:
             client_id: "apisix"
             client_secret: "$secret://kubernetes/k8s-1/apisix-oidc-config/client_secret"
-            discovery: "https://keycloak.local.narwhal.io/realms/kubernetes/.well-known/openid-configuration"
+            discovery: "https://authentik.local.narwhal.io/application/o/apisix/.well-known/openid-configuration"
             redirect_uri: "https://openbao.local.narwhal.io/apisix/callback"
             scope: "openid email profile groups"
             bearer_only: false
@@ -332,7 +332,7 @@ spec:
           config:
             client_id: "apisix"
             client_secret: "$secret://kubernetes/k8s-1/apisix-oidc-config/client_secret"
-            discovery: "https://keycloak.local.narwhal.io/realms/kubernetes/.well-known/openid-configuration"
+            discovery: "https://authentik.local.narwhal.io/application/o/apisix/.well-known/openid-configuration"
             redirect_uri: "https://hubble.local.narwhal.io/apisix/callback"
             scope: "openid email profile groups"
             bearer_only: false

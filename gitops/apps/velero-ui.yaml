@@ -1,0 +1,98 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: velero-ui
+  namespace: devtools
+  annotations:
+    argocd.argoproj.io/sync-wave: "5"
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/otwld/velero-ui
+    targetRevision: v0.10.1
+    path: kubernetes/chart
+    helm:
+      releaseName: velero-ui
+      values: |
+        replicaCount: 1
+
+        image:
+          repository: otwld/velero-ui
+          pullPolicy: IfNotPresent
+          tag: "0.10.1"
+
+        configuration:
+          logLevel: "info"
+          general:
+            veleroNamespace: "storage"
+            grafanaUrl: "https://grafana.local.narwhal.io"
+            secretPassPhrase:
+              existingSecret: "velero-ui-oauth"
+              key: "passphrase"
+
+        serviceAccount:
+          create: true
+          automount: true
+
+        rbac:
+          create: true
+          clusterAdministrator: true
+          clusterAdministratorName: cluster-admin
+
+        service:
+          type: ClusterIP
+          port: 3000
+
+        # Generic OAuth via Authentik (apisix provider)
+        # APISIX gateway also provides a second auth layer via openid-connect plugin
+        env:
+          - name: BASIC_AUTH_ENABLED
+            value: "false"
+          - name: OAUTH_AUTH_ENABLED
+            value: "true"
+          - name: OAUTH_NAME
+            value: "Authentik"
+          - name: OAUTH_AUTHORIZATION_URL
+            value: "https://authentik.local.narwhal.io/application/o/apisix/authorize/"
+          - name: OAUTH_TOKEN_URL
+            value: "https://authentik.local.narwhal.io/application/o/token/"
+          - name: OAUTH_USER_INFO_URL
+            value: "https://authentik.local.narwhal.io/application/o/userinfo/"
+          - name: OAUTH_CLIENT_ID
+            value: "apisix"
+          - name: OAUTH_CLIENT_SECRET
+            valueFrom:
+              secretKeyRef:
+                name: velero-ui-oauth
+                key: client_secret
+          - name: OAUTH_OAUTH_SCOPE
+            value: "openid profile email groups"
+          - name: OAUTH_GROUP_CLAIM
+            value: "groups"
+          - name: OAUTH_REDIRECT_URI
+            value: "https://velero-ui.local.narwhal.io/login"
+          - name: BASE_URL
+            value: "https://velero-ui.local.narwhal.io"
+
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "50m"
+          limits:
+            memory: "256Mi"
+            cpu: "200m"
+
+        podLabels:
+          istio.io/dataplane-mode: none
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: storage
+
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true

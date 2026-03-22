@@ -16,7 +16,6 @@ spec:
       backends:
         - serviceName: authentik-server
           servicePort: 9000
-          serviceNamespace: iam
           resolveGranularity: service
       plugins:
         - name: response-rewrite
@@ -44,7 +43,6 @@ spec:
       backends:
         - serviceName: argocd-server
           servicePort: 80
-          serviceNamespace: devtools
           resolveGranularity: service
       plugins:
         - name: openid-connect
@@ -90,7 +88,6 @@ spec:
       backends:
         - serviceName: prometheus-stack-grafana
           servicePort: 80
-          serviceNamespace: monitoring
           resolveGranularity: service
       plugins:
         - name: openid-connect
@@ -136,7 +133,6 @@ spec:
       backends:
         - serviceName: gitea-http
           servicePort: 3000
-          serviceNamespace: devtools
           resolveGranularity: service
       plugins:
         - name: openid-connect
@@ -182,7 +178,6 @@ spec:
       backends:
         - serviceName: harbor-nginx
           servicePort: 80
-          serviceNamespace: devtools
           resolveGranularity: service
       plugins:
         - name: openid-connect
@@ -232,7 +227,6 @@ spec:
       backends:
         - serviceName: headlamp
           servicePort: 80
-          serviceNamespace: devtools
           resolveGranularity: service
       plugins:
         - name: openid-connect
@@ -278,7 +272,6 @@ spec:
       backends:
         - serviceName: openbao
           servicePort: 8200
-          serviceNamespace: storage
           resolveGranularity: service
       plugins:
         - name: openid-connect
@@ -324,7 +317,6 @@ spec:
       backends:
         - serviceName: hubble-ui
           servicePort: 80
-          serviceNamespace: kube-system
           resolveGranularity: service
       plugins:
         - name: openid-connect
@@ -334,6 +326,51 @@ spec:
             client_secret: "$secret://kubernetes/k8s-1/apisix-oidc-config/client_secret"
             discovery: "https://authentik.local.narwhal.io/application/o/apisix/.well-known/openid-configuration"
             redirect_uri: "https://hubble.local.narwhal.io/apisix/callback"
+            scope: "openid email profile groups"
+            bearer_only: false
+            ssl_verify: false
+            logout_path: "/apisix/logout"
+            set_userinfo_header: true
+            set_access_token_header: true
+            access_token_in_authorization_header: true
+            session:
+              secret: "$secret://kubernetes/k8s-1/apisix-oidc-config/session_secret"
+        - name: response-rewrite
+          enable: true
+          config:
+            headers:
+              set:
+                Strict-Transport-Security: "max-age=31536000; includeSubDomains"
+                X-Content-Type-Options: "nosniff"
+                X-Frame-Options: "SAMEORIGIN"
+                X-XSS-Protection: "1; mode=block"
+---
+# Velero UI (backup management)
+apiVersion: apisix.apache.org/v2
+kind: ApisixRoute
+metadata:
+  name: velero-ui
+  namespace: platform-system
+spec:
+  http:
+    - name: velero-ui
+      match:
+        hosts:
+          - velero-ui.local.narwhal.io
+        paths:
+          - "/*"
+      backends:
+        - serviceName: velero-ui
+          servicePort: 3000
+          resolveGranularity: service
+      plugins:
+        - name: openid-connect
+          enable: true
+          config:
+            client_id: "apisix"
+            client_secret: "$secret://kubernetes/k8s-1/apisix-oidc-config/client_secret"
+            discovery: "https://authentik.local.narwhal.io/application/o/apisix/.well-known/openid-configuration"
+            redirect_uri: "https://velero-ui.local.narwhal.io/apisix/callback"
             scope: "openid email profile groups"
             bearer_only: false
             ssl_verify: false
@@ -370,7 +407,6 @@ spec:
       backends:
         - serviceName: apisix-dashboard
           servicePort: 9000
-          serviceNamespace: platform-system
           resolveGranularity: service
       plugins:
         - name: response-rewrite

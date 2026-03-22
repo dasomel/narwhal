@@ -11,7 +11,7 @@ kind: Secret
 metadata:
   name: narwhal-db-credentials
   namespace: database
-type: kubernetes.io/basic-auth
+type: Opaque
 stringData:
   username: authentik
   password: authentik-db-password

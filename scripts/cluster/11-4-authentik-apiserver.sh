@@ -109,7 +109,7 @@ APISERVER_MANIFEST="/etc/kubernetes/manifests/kube-apiserver.yaml"
 echo "Verifying OIDC issuer HTTPS endpoint..."
 OIDC_REACHABLE=false
 for attempt in {1..15}; do
-  HTTP_CODE=$(curl -sk -o /dev/null -w '%{http_code}' "${OIDC_ISSUER_URL}/.well-known/openid-configuration" 2>/dev/null || echo "000")
+  HTTP_CODE=$(curl -sk -o /dev/null -w '%{http_code}' "${OIDC_ISSUER_URL}.well-known/openid-configuration" 2>/dev/null) || HTTP_CODE="000"
   if [ "${HTTP_CODE}" = "200" ]; then
     OIDC_REACHABLE=true
     echo "OIDC endpoint reachable (HTTP ${HTTP_CODE})"

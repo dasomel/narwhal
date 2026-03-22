@@ -17,8 +17,8 @@ source /home/vagrant/scripts/common/lib.sh
 # 재구성 필요 시 Authentik UI에서 해당 provider/application 삭제 후 재실행.
 
 DOMAIN="${DOMAIN:-local.narwhal.io}"
-# in-cluster HTTP: TLS 검증 불필요, 빠름
-AUTHENTIK_URL="http://authentik-server.iam.svc.cluster.local:9000"
+# Use external URL via dnsmasq+APISIX (in-cluster FQDN not resolvable from master node host)
+AUTHENTIK_URL="http://authentik.${DOMAIN}"
 export KUBECONFIG=/home/vagrant/.kube/config-local
 
 echo "=== Configuring Authentik via REST API ==="
@@ -135,7 +135,7 @@ done
 #=========================================
 echo "=== Creating groups scope mapping ==="
 
-GROUPS_SCOPE_ID=$(ak_get_or_create "propertymappings/scope" "scope_name" "groups" \
+GROUPS_SCOPE_ID=$(ak_get_or_create "propertymappings/provider/scope" "scope_name" "groups" \
   "{\"name\":\"groups\",\"scope_name\":\"groups\",\"description\":\"User group membership list\",\"expression\":\"return [group.name for group in request.user.ak_groups.all()]\"}")
 echo "  -> groups scope mapping (ID: ${GROUPS_SCOPE_ID})"
 
@@ -144,9 +144,9 @@ echo "  -> groups scope mapping (ID: ${GROUPS_SCOPE_ID})"
 #=========================================
 echo "=== Gathering built-in scope mappings ==="
 
-SCOPE_OPENID=$(ak_get "propertymappings/scope/?scope_name=openid" | jq -r '.results[0].pk')
-SCOPE_PROFILE=$(ak_get "propertymappings/scope/?scope_name=profile" | jq -r '.results[0].pk')
-SCOPE_EMAIL=$(ak_get "propertymappings/scope/?scope_name=email" | jq -r '.results[0].pk')
+SCOPE_OPENID=$(ak_get "propertymappings/provider/scope/?scope_name=openid" | jq -r '.results[0].pk')
+SCOPE_PROFILE=$(ak_get "propertymappings/provider/scope/?scope_name=profile" | jq -r '.results[0].pk')
+SCOPE_EMAIL=$(ak_get "propertymappings/provider/scope/?scope_name=email" | jq -r '.results[0].pk')
 echo "  -> openid: ${SCOPE_OPENID}, profile: ${SCOPE_PROFILE}, email: ${SCOPE_EMAIL}"
 
 # Get authorization/invalidation flow PKs
@@ -260,6 +260,13 @@ kubectl create secret generic headlamp-oidc-secret -n devtools \
   --from-literal=scopes=openid,profile,email,groups \
   --dry-run=client -o yaml | kubectl apply -f -
 echo "Headlamp OIDC secret updated (headlamp-oidc-secret in devtools)"
+
+kubectl create namespace storage --dry-run=client -o yaml | kubectl apply -f -
+kubectl create secret generic velero-ui-oauth -n storage \
+  --from-literal=client_secret="${APISIX_CLIENT_SECRET_FINAL}" \
+  --from-literal=passphrase="$(openssl rand -hex 32)" \
+  --dry-run=client -o yaml | kubectl apply -f -
+echo "Velero UI OAuth secret created (velero-ui-oauth in storage)"
 
 echo ""
 echo "=== [11-2-authentik-config.sh] 완료 ==="

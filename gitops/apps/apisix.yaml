@@ -73,6 +73,7 @@ spec:
           prefix: "/apisix"
           timeout: 30
         externalEtcd:
+          user: ""  # disable etcd auth (etcd auth is not enabled)
           host:
             - "http://apisix-etcd.platform-system.svc.cluster.local:2379"
 

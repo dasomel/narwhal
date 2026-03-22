@@ -9,16 +9,6 @@ metadata:
 apiVersion: v1
 kind: Secret
 metadata:
-  name: narwhal-db-credentials
-  namespace: database
-type: Opaque
-stringData:
-  username: authentik
-  password: authentik-db-password
----
-apiVersion: v1
-kind: Secret
-metadata:
   name: cnpg-s3-credentials
   namespace: database
 type: Opaque

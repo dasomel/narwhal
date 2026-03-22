@@ -37,6 +37,8 @@ spec:
           # Used by openid-connect plugin: $secret://kubernetes/k8s-1/apisix-oidc-config/<key>
           config:
             apisix:
+              allow_admin:
+                - 0.0.0.0/0
               secret_providers:
                 - name: kubernetes
                   uid: k8s-1

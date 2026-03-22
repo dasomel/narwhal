@@ -30,6 +30,9 @@ spec:
             limits:
               cpu: 500m
               memory: 512Mi
+          ssl:
+            enabled: true
+            containerPort: 9443
           # Kubernetes Secret Provider for OIDC credentials
           # Used by openid-connect plugin: $secret://kubernetes/k8s-1/apisix-oidc-config/<key>
           config:
@@ -42,10 +45,12 @@ spec:
                     - https://kubernetes.default.svc
 
         # LoadBalancer: same IP as former Traefik
-        gateway:
+        # NOTE: chart uses service.type/annotations (not gateway.type)
+        service:
           type: LoadBalancer
           annotations:
             metallb.universe.tf/loadBalancerIPs: "192.168.56.200"
+        gateway:
           http:
             enabled: true
             servicePort: 80
@@ -62,12 +67,14 @@ spec:
           port: 9180
 
         # Use external etcd (registry.k8s.io/etcd — no Bitnami)
+        # NOTE: chart uses externalEtcd.host when etcd.enabled=false
         etcd:
           enabled: false
-          host:
-            - "http://apisix-etcd.platform-system.svc.cluster.local:2379"
           prefix: "/apisix"
           timeout: 30
+        externalEtcd:
+          host:
+            - "http://apisix-etcd.platform-system.svc.cluster.local:2379"
 
         # APISIX Ingress Controller (watches ApisixRoute CRDs)
         ingressController:

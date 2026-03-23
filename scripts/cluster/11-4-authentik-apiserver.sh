@@ -135,14 +135,14 @@ else
     echo "Extracting Keycloak TLS CA certificate from narwhal-root-ca-secret..."
     if kubectl get secret -n platform-system narwhal-root-ca-secret &>/dev/null; then
       kubectl get secret -n platform-system narwhal-root-ca-secret \
-        -o jsonpath='{.data.tls\.crt}' | base64 -d > /etc/kubernetes/pki/oidc-ca.crt
+        -o jsonpath='{.data.tls\.crt}' | base64 -d | sudo tee /etc/kubernetes/pki/oidc-ca.crt > /dev/null
       echo "CA cert extracted from narwhal-root-ca-secret"
     else
       # Fallback: extract last cert in chain (root CA) from TLS handshake
       echo "Fallback: extracting CA from TLS handshake..."
-      openssl s_client -connect "keycloak.${DOMAIN}:443" -showcerts </dev/null 2>/dev/null \
+      openssl s_client -connect "authentik.${DOMAIN}:443" -showcerts </dev/null 2>/dev/null \
         | awk '/-----BEGIN CERTIFICATE-----/{c=""} {c=c $0 "\n"} /-----END CERTIFICATE-----/{last=c} END{printf "%s", last}' \
-        > /etc/kubernetes/pki/oidc-ca.crt
+        | sudo tee /etc/kubernetes/pki/oidc-ca.crt > /dev/null
     fi
     # Verify the extracted CA cert is valid
     openssl x509 -in /etc/kubernetes/pki/oidc-ca.crt -noout -subject 2>/dev/null \

@@ -61,6 +61,8 @@ spec:
           grafana.ini:
             server:
               root_url: https://grafana.local.narwhal.io
+            tracing.opentelemetry.otlp:
+              address: tempo.monitoring.svc.cluster.local:4317
             auth.generic_oauth:
               enabled: true
               name: Authentik

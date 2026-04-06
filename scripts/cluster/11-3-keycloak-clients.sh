@@ -477,6 +477,16 @@ create_apisix_secret "hubble" \
   "https://hubble.${DOMAIN}/apisix/callback" \
   "hubble-oidc-secret"
 
+# hubble client는 nfs-quota 대시보드와 OIDC client 공유
+# → nfs-quota redirect URI 추가
+HUBBLE_KC_ID=$(kc_exec get clients -r "${REALM}" -q "clientId=hubble" 2>/dev/null \
+  | jq -r '.[] | select(.clientId=="hubble") | .id')
+if [ -n "${HUBBLE_KC_ID}" ]; then
+  kc_exec update "clients/${HUBBLE_KC_ID}" -r "${REALM}" \
+    -s "redirectUris=[\"https://hubble.${DOMAIN}/apisix/callback\",\"https://nfs-quota.${DOMAIN}/apisix/callback\"]" 2>/dev/null || true
+  echo "  -> hubble client redirectUris updated (added nfs-quota)"
+fi
+
 # -------------------------------------------------------------------------
 # 8. Prometheus + Alertmanager (shared client)
 # -------------------------------------------------------------------------

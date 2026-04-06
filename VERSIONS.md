@@ -58,9 +58,9 @@ Components and versions used in this project.
 
 | Component | Version | Description |
 |-----------|---------|-------------|
-| Authentik | 2025.4.0 | IAM / SSO (Helm, REST API 구성) |
-| Valkey | 8 (8-alpine) | Authentik용 Redis 대체 (docker.io/valkey/valkey:8-alpine) |
-| K8s OIDC | - | API Server OIDC integration |
+| Keycloak | 26.1.4 | IAM / SSO (Operator, kcadm.sh 구성) |
+| Keycloak Operator | 26.1.4 | Keycloak CR lifecycle management |
+| K8s OIDC | - | API Server OIDC integration (Keycloak issuer) |
 
 ## Security
 
@@ -76,6 +76,7 @@ Components and versions used in this project.
 |-----------|---------|-------------|
 | Velero | v1.17.1 (chart 11.3.2) | Kubernetes backup & restore |
 | velero-plugin-for-aws | v1.11.1 | S3-compatible storage plugin |
+| velero-ui | v0.10.1 (chart 0.14.0) | Velero Web UI (otwld/velero-ui, ARM64 지원) |
 
 ## Observability
 
@@ -99,6 +100,16 @@ Components and versions used in this project.
 | Component | Version | Description |
 |-----------|---------|-------------|
 | Harbor | latest (chart 1.18.2) | Container registry (ARM64: ghcr.io/dasomel/goharbor) |
+
+## IDP Portal
+
+| Component | Version | Description |
+|-----------|---------|-------------|
+| IDP Portal | 0.1.0 | Custom Next.js developer portal (Next.js 16.2.1) |
+| Next.js | 16.2.1 | React framework (App Router, standalone output) |
+| NextAuth.js | 5.0.0-beta.30 | OIDC authentication (Authentik provider) |
+| Valkey (portal) | 8-alpine | Portal-dedicated cache (docker.io/valkey/valkey:8-alpine) |
+| TanStack Query | 5.x | Server state management / polling |
 
 ## Dashboard
 

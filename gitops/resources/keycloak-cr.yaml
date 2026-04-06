@@ -1,0 +1,45 @@
+# Keycloak CR - Keycloak Operator가 관리
+# Operator CRD+RBAC는 11-keycloak.sh에서 설치됨
+# DB secret (keycloak-db-secret)은 11-keycloak.sh에서 생성됨
+apiVersion: k8s.keycloak.org/v2alpha1
+kind: Keycloak
+metadata:
+  name: keycloak
+  namespace: iam
+spec:
+  instances: 1
+  db:
+    vendor: postgres
+    host: narwhal-db-rw.database.svc.cluster.local
+    port: 5432
+    database: keycloak
+    usernameSecret:
+      name: keycloak-db-secret
+      key: username
+    passwordSecret:
+      name: keycloak-db-secret
+      key: password
+  http:
+    httpEnabled: true
+  hostname:
+    hostname: keycloak.local.narwhal.io
+    strict: false
+  proxy:
+    headers: xforwarded
+  ingress:
+    enabled: false
+  unsupported:
+    podTemplate:
+      metadata:
+        labels:
+          istio.io/dataplane-mode: "none"
+      spec:
+        containers:
+          - name: keycloak
+            resources:
+              requests:
+                memory: "512Mi"
+                cpu: "200m"
+              limits:
+                memory: "1Gi"
+                cpu: "1"

@@ -1,0 +1,280 @@
+#!/bin/bash
+set -euo pipefail
+source /home/vagrant/scripts/common/lib.sh
+
+# 11-keycloak.sh
+# Phase: Keycloak IAM 설치 (Authentik 대체)
+# - Keycloak Operator CRD+RBAC 설치 (namespace: iam)
+# - CNPG narwhal-db에 keycloak user/db 생성
+# - keycloak-db-secret 생성 (iam ns)
+# - Keycloak CR 생성 (Operator가 pod 관리)
+# - ExternalName + ApisixRoute bootstrap: keycloak.local.narwhal.io → keycloak-service:8080
+# Depends on: 07-cnpg.sh (narwhal-db ready), 08-1-networking.sh (APISIX ready)
+
+KEYCLOAK_VERSION="${KEYCLOAK_VERSION:-26.1.4}"
+DOMAIN="${DOMAIN:-local.narwhal.io}"
+export KUBECONFIG=/home/vagrant/.kube/config-local
+
+echo "=== Installing Keycloak ${KEYCLOAK_VERSION} ==="
+
+# Wait for narwhal-db
+echo "Waiting for PostgreSQL (narwhal-db) to be ready..."
+kubectl wait --for=condition=Ready cluster/narwhal-db -n database --timeout=300s || true
+kubectl wait --for=condition=Ready pod -l cnpg.io/cluster=narwhal-db -n database --timeout=120s || true
+
+ensure_namespace iam
+
+#=========================================
+# Create keycloak user/database in CNPG narwhal-db
+# Idempotent: CREATE IF NOT EXISTS pattern
+#=========================================
+echo "=== Creating keycloak database and user ==="
+
+CNPG_PRIMARY=$(kubectl get pod -n database \
+  -l cnpg.io/cluster=narwhal-db,role=primary \
+  -o jsonpath='{.items[0].metadata.name}')
+
+if ! kubectl get secret keycloak-db-secret -n iam &>/dev/null; then
+  KEYCLOAK_DB_PASS="$(generate_password)"
+
+  # Create user and database (idempotent with IF NOT EXISTS)
+  kubectl exec -n database "${CNPG_PRIMARY}" -- psql -U postgres -c \
+    "DO \$\$ BEGIN
+      IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = 'keycloak') THEN
+        CREATE USER keycloak WITH PASSWORD '${KEYCLOAK_DB_PASS}';
+      ELSE
+        ALTER USER keycloak WITH PASSWORD '${KEYCLOAK_DB_PASS}';
+      END IF;
+    END \$\$;"
+
+  kubectl exec -n database "${CNPG_PRIMARY}" -- psql -U postgres -c \
+    "SELECT 'exists' FROM pg_database WHERE datname = 'keycloak'" | grep -q exists || \
+    kubectl exec -n database "${CNPG_PRIMARY}" -- psql -U postgres -c \
+      "CREATE DATABASE keycloak OWNER keycloak;"
+
+  kubectl create secret generic keycloak-db-secret -n iam \
+    --from-literal=username=keycloak \
+    --from-literal=password="${KEYCLOAK_DB_PASS}"
+  echo "keycloak-db-secret created in iam namespace"
+else
+  KEYCLOAK_DB_PASS="$(kubectl get secret keycloak-db-secret -n iam \
+    -o jsonpath='{.data.password}' | base64 -d)"
+  echo "keycloak-db-secret already exists, reusing"
+fi
+
+#=========================================
+# Install Keycloak Operator CRD + RBAC
+# kubernetes.yml defaults to 'keycloak' namespace → sed to 'iam'
+#=========================================
+echo "=== Installing Keycloak Operator ${KEYCLOAK_VERSION} ==="
+
+KC_BASE="https://raw.githubusercontent.com/keycloak/keycloak-k8s-resources/refs/tags/${KEYCLOAK_VERSION}/kubernetes"
+
+# 1. CRDs (cluster-scoped, no namespace)
+curl -sSL "${KC_BASE}/keycloaks.k8s.keycloak.org-v1.yml" | kubectl apply -f -
+curl -sSL "${KC_BASE}/keycloakrealmimports.k8s.keycloak.org-v1.yml" | kubectl apply -f -
+
+# 2. Operator RBAC + Deployment (namespaced to iam)
+curl -sSL "${KC_BASE}/kubernetes.yml" | kubectl apply -n iam -f -
+
+echo "Waiting for Keycloak Operator deployment..."
+kubectl rollout status deployment/keycloak-operator -n iam --timeout=180s
+
+#=========================================
+# Create Keycloak CR
+# - hostname v2: hostname.hostname + hostname.strict + proxy.headers
+# - Istio ambient: no opt-out label (runs in ambient mesh)
+# - KC_DB_URL: full JDBC URL with sslmode=disable via podTemplate env
+#   (Istio ambient ztunnel intercepts TCP at L4; operator-set KC_DB_URL_HOST/PORT/DATABASE
+#    default to SSL → ztunnel HBONE causes SSL handshake reset. KC_DB_URL overrides all.)
+# - Ingress disabled: APISIX handles routing
+#=========================================
+echo "=== Creating Keycloak CR ==="
+
+kubectl apply -f - <<'EOF'
+apiVersion: k8s.keycloak.org/v2alpha1
+kind: Keycloak
+metadata:
+  name: keycloak
+  namespace: iam
+spec:
+  instances: 1
+  db:
+    vendor: postgres
+    host: narwhal-db-rw.database.svc.cluster.local
+    port: 5432
+    database: keycloak
+    usernameSecret:
+      name: keycloak-db-secret
+      key: username
+    passwordSecret:
+      name: keycloak-db-secret
+      key: password
+  http:
+    httpEnabled: true
+  hostname:
+    hostname: keycloak.local.narwhal.io
+    strict: false
+  proxy:
+    headers: xforwarded
+  ingress:
+    enabled: false
+  unsupported:
+    podTemplate:
+      spec:
+        containers:
+          - name: keycloak
+            env:
+              - name: KC_DB_URL
+                value: "jdbc:postgresql://narwhal-db-rw.database.svc.cluster.local:5432/keycloak?sslmode=disable"
+            resources:
+              requests:
+                memory: "512Mi"
+                cpu: "200m"
+              limits:
+                memory: "1Gi"
+                cpu: "1"
+EOF
+
+#=========================================
+# Keycloak Operator auto-creates NetworkPolicy that blocks HBONE 15008.
+# Cannot modify operator-managed policy → create separate allow policy.
+#=========================================
+echo "=== Creating keycloak-allow-hbone NetworkPolicy ==="
+
+kubectl apply -f - <<'EOF'
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: keycloak-allow-hbone
+  namespace: iam
+spec:
+  podSelector:
+    matchLabels:
+      app: keycloak
+  ingress:
+    - ports:
+        - protocol: TCP
+          port: 15008
+        - protocol: TCP
+          port: 8080
+  policyTypes:
+    - Ingress
+EOF
+
+#=========================================
+# Wait for Keycloak pod to be ready
+#=========================================
+echo "Waiting for Keycloak pod to be ready..."
+KEYCLOAK_READY=false
+for attempt in $(seq 1 60); do
+  if kubectl get pod -n iam -l app=keycloak --no-headers 2>/dev/null | grep -q "Running" || true; then
+    if kubectl wait --for=condition=Ready pod -l app=keycloak -n iam --timeout=10s 2>/dev/null; then
+      KEYCLOAK_READY=true
+      echo "Keycloak pod is ready"
+      break
+    fi
+  fi
+  echo "Keycloak pod not ready, attempt ${attempt}/60..."
+  sleep 10
+done
+
+if [ "${KEYCLOAK_READY}" = "false" ]; then
+  echo "WARN: Keycloak pod did not become ready within timeout."
+  echo "  Check: kubectl get pods -n iam"
+  echo "  Check: kubectl logs -n iam -l app=keycloak --tail=50"
+fi
+
+#=========================================
+# Create ExternalName Service in platform-system
+# Keycloak Operator creates 'keycloak-service' (NOT 'keycloak')
+#=========================================
+echo "=== Creating ExternalName Service for APISIX routing ==="
+
+kubectl apply -f - <<'EOF'
+apiVersion: v1
+kind: Service
+metadata:
+  name: keycloak-server
+  namespace: platform-system
+spec:
+  type: ExternalName
+  externalName: keycloak-service.iam.svc.cluster.local
+  ports:
+    - port: 8080
+EOF
+
+#=========================================
+# Create ApisixRoute for Keycloak HTTPS access
+# No openid-connect plugin — Keycloak IS the IdP
+#=========================================
+echo "=== Applying Keycloak ApisixRoute ==="
+
+kubectl apply -f - <<'EOF'
+apiVersion: apisix.apache.org/v2
+kind: ApisixRoute
+metadata:
+  name: keycloak
+  namespace: platform-system
+spec:
+  http:
+    - name: keycloak
+      match:
+        hosts:
+          - keycloak.local.narwhal.io
+        paths:
+          - "/*"
+      backends:
+        - serviceName: keycloak-server
+          servicePort: 8080
+          resolveGranularity: service
+      plugins:
+        - name: response-rewrite
+          enable: true
+          config:
+            headers:
+              set:
+                Strict-Transport-Security: "max-age=31536000; includeSubDomains"
+                X-Content-Type-Options: "nosniff"
+EOF
+
+sleep 5
+
+#=========================================
+# Verify HTTPS endpoint
+#=========================================
+echo "Verifying Keycloak HTTPS endpoint..."
+KEYCLOAK_REACHABLE=false
+for attempt in $(seq 1 20); do
+  HTTP_CODE=$(curl -sk --max-time 10 -o /dev/null -w '%{http_code}' \
+    "https://keycloak.${DOMAIN}/health/ready" 2>/dev/null || echo "000")
+  if [ "${HTTP_CODE}" = "200" ]; then
+    KEYCLOAK_REACHABLE=true
+    echo "Keycloak ready (HTTP ${HTTP_CODE})"
+    break
+  fi
+  echo "Keycloak not ready (HTTP ${HTTP_CODE}), attempt ${attempt}/20..."
+  sleep 15
+done
+
+if [ "${KEYCLOAK_REACHABLE}" = "false" ]; then
+  echo "WARN: Keycloak HTTPS endpoint not reachable after timeout."
+  echo "  Check: kubectl get pods -n iam"
+  echo "  Check: kubectl logs -n iam -l app=keycloak --tail=50"
+fi
+
+#=========================================
+# Summary
+#=========================================
+echo ""
+echo "============================================="
+echo "  Keycloak ${KEYCLOAK_VERSION} Installation Complete"
+echo "============================================="
+echo "  Admin URL: https://keycloak.${DOMAIN}"
+echo "  Admin user: admin"
+echo "  Admin password:"
+echo "    kubectl get secret keycloak-initial-admin -n iam -o jsonpath='{.data.password}' | base64 -d"
+echo "  DB: narwhal-db-rw.database.svc.cluster.local / keycloak"
+echo "============================================="
+echo ""
+echo "=== [11-keycloak.sh] 완료 ==="

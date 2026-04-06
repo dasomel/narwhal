@@ -1,291 +1,329 @@
 # Narwhal - Claude Code Guide
 
-> Vagrant 기반 Kubernetes Internal Developer Platform (IDP) 클러스터 자동 구축 프로젝트
+> Vagrant-based Kubernetes Internal Developer Platform (IDP) cluster automated provisioning project
 
 ## Quick Overview
 
-로컬 환경에서 완전한 Kubernetes IDP 스택(GitOps, SSO, Monitoring, Storage, Backup)을 Vagrant VM으로 자동 프로비저닝하는 인프라 프로젝트.
+An infrastructure project that automatically provisions a complete Kubernetes IDP stack (GitOps, SSO, Monitoring, Storage, Backup) using Vagrant VMs in a local environment.
 
 ---
 
-## Plan Mode Guide (Shift+Tab 2회)
+## Plan Mode Guide (Shift+Tab x2)
 
-Narwhal에서 Plan 모드가 필요한 시점:
-- 새로운 컴포넌트 추가 시
-- 기존 스크립트 대규모 수정 시
-- GitOps 앱 구조 변경 시
-- 버전 업그레이드 시
+When Plan mode is needed in Narwhal:
+- Adding a new component
+- Major modifications to existing scripts
+- Changing GitOps app structure
+- Version upgrades
 
 ---
 
 ## Mistakes Log (Compounding Engineering)
 
-> 클로드가 실수할 때마다 여기에 추가하세요. 같은 실수를 반복하지 않습니다.
-> 코드 리뷰 시 `@.claude` 태그로 CLAUDE.md 업데이트 요청하세요.
+> Add entries here whenever Claude makes a mistake. The same mistake will not be repeated.
+> Request CLAUDE.md updates with the `@.claude` tag during code reviews.
 
-### Shell Script 실수
-| 날짜 | 실수 | 해결책 |
-|------|------|--------|
-| 2025-01-27 | `set -e` 없이 스크립트 작성 | 항상 `set -euo pipefail` 첫 줄에 추가 |
-| - | heredoc에서 변수 확장 실수 | `<<'EOF'` (따옴표)로 변수 확장 방지, `<<EOF`로 확장 허용 |
-| - | apt 명령어에 `-y` 누락 | 항상 `apt-get install -y` 사용 |
+### Shell Script Mistakes
+| Date | Mistake | Fix |
+|------|---------|-----|
+| 2025-01-27 | Script written without `set -e` | Always add `set -euo pipefail` as the first line |
+| - | Variable expansion error in heredoc | Use `<<'EOF'` (quoted) to prevent variable expansion, `<<EOF` to allow it |
+| - | Missing `-y` flag in apt commands | Always use `apt-get install -y` |
 
-### Kubernetes/Helm 실수
-| 날짜 | 실수 | 해결책 |
-|------|------|--------|
-| - | namespace 생성 누락 | `--create-namespace` 또는 `CreateNamespace=true` syncOption 사용 |
-| - | CRD 의존성 무시 | Operator 설치 후 CR 생성, ArgoCD sync-wave 활용 |
-| - | PVC 크기 변경 시도 | PVC는 확장만 가능, 축소 불가 |
-| 2026-01-30 | OAuth2 Proxy cookie-secret 빈값 | `cookieSecret: ""`이면 에러, `openssl rand -hex 16` 으로 정확히 32바이트 생성 |
-| 2026-01-30 | OAuth2 Proxy service.port deprecated | `service.portNumber` 사용 (v7.x 차트) |
-| 2026-01-30 | Keycloak issuer URL 불일치 | `insecure_oidc_skip_issuer_verification = true` 또는 Keycloak hostname 설정 일치 |
-| 2026-01-30 | Loki chunks/results cache 실패 | `chunksCache.enabled: false`, `resultsCache.enabled: false` 개발환경 |
-| 2026-01-30 | Headlamp Helm repo URL 변경 | `https://kubernetes-sigs.github.io/headlamp/` 사용 |
-| 2026-01-30 | Keycloak 서비스명 오타 | `keycloak-service` (not `keycloak`), 포트 8080 명시 |
-| 2026-02-04 | sed로 YAML 수정 시 파싱 오류 | `yq`로 YAML 안전하게 수정 (예: API 서버 manifest OIDC 설정) |
-| 2026-02-05 | Helm `--set` nodeSelector boolean 에러 | `--set-string nodeSelector.key=true` 사용 (문자열 강제) |
-| 2026-02-14 | kube-vip `vip_subnet` 값에 `/` 포함 | `"32"` 사용 (NOT `"/32"`), 내부에서 `address + "/" + vip_subnet` 조합 |
-| 2026-02-14 | kube-vip kubeconfig 경로 인식 실패 | `/.kube/config`에 마운트 (distroless 이미지 HOME=/) |
-| 2026-02-14 | kube-vip admin.conf VIP 순환 의존성 | `kube-vip.conf` 별도 생성, 로컬 IP로 서버 주소 변경 |
-| 2026-02-14 | kube-vip static pod init 전 생성 시 chicken-and-egg | master-1은 init 후 manifest 생성, 수동 VIP 바인딩으로 부트스트랩 |
-| 2026-02-14 | kubeadm join VMware NAT 인터페이스 감지 | `--apiserver-advertise-address=192.168.56.x` 명시 필수 |
-| 2026-02-14 | VMware Vagrant private_network IP 미할당 | `01-prerequisites.sh`에서 netplan 직접 생성, `chmod 600` 필수 |
-| 2026-02-14 | Master 4GB RAM에서 API 서버 OOM 재시작 (platform apps 설치 시) | 현재 topology: Master는 NoSchedule taint (control-plane only, 4GB OK), Worker 6GB에서 platform apps 실행 |
-| 2026-02-14 | ArgoCD v3.x applicationsets CRD 262KB 초과 | `kubectl apply --server-side --force-conflicts` 사용 |
-| 2026-02-14 | Helm `--wait`로 타임아웃 시 릴리스 롤백 | 비핵심 앱은 `--wait` 제거, `--timeout`만 사용 |
-| 2026-02-15 | Velero CRD hook musl/glibc 비호환 (ARM64) | `upgradeCRDs: false` 설정, alpine/k8s musl→velero glibc 컨테이너에서 실행 불가 |
-| 2026-02-15 | registry.k8s.io/kubectl은 distroless (shell 없음) | `docker.io/alpine/k8s:1.31.4` 사용 (shell+kubectl 포함) |
-| 2026-02-15 | Traefik routes 적용 시 GatewayClass 미생성 | Traefik deployment+GatewayClass 대기 루프 후 routes 적용 |
-| 2026-02-15 | etcd 컨테이너 `sh -c` 실행 불가 | etcd는 distroless, `kubectl exec -- etcdctl ...` 직접 호출 |
-| 2026-02-15 | alpine/k8s 이미지 태그에 `v` prefix 없음 | `"1.31.4"` 사용 (NOT `v1.31.4`), Docker Hub 태그 형식 확인 |
-| 2026-02-15 | ArgoCD v3.x `server.insecure` 설정 위치 오류 | `argocd-cmd-params-cm`에 설정해야 함 (NOT `argocd-cm`). `argocd-cm`은 legacy |
-| 2026-02-15 | worker/master-2 DNS가 public IP로 해석 | `systemd-resolved`에 `Domains=~local.narwhal.io` + master dnsmasq를 DNS로 설정 |
-| 2026-02-15 | Keycloak `groups` scope 누락 → `invalid_scope` 에러 | realm-level `groups` client scope 생성 + mapper 추가 + 전체 클라이언트에 default scope 할당 |
-| 2026-02-15 | ArgoCD SSO에서 `x509: certificate signed by unknown authority` | `argocd-cm`에 `oidc.tls.insecure.skip.verify: "true"` 추가 (자체서명 인증서) |
-| 2026-02-15 | Headlamp `extraArgs` root level에 놓으면 무시됨 | `config.extraArgs`에 배치해야 컨테이너 args에 추가됨 |
-| 2026-02-15 | Harbor `configureUserSettings` 변경 시 API 거부 | env 변수로 주입되므로 API로 수정 불가, Helm values 변경 + 재배포 필요 |
-| 2026-02-18 | Cilium + Istio CNI 충돌 (cni.exclusive 기본값 true) | `cni.exclusive=false` 필수, Cilium이 다른 CNI 설정 삭제 방지 |
-| 2026-02-18 | Cilium socket LB가 ztunnel 트래픽 바이패스 | `socketLB.hostNamespaceOnly=true` 필수, 메시 트래픽이 ztunnel 우회 방지 |
-| 2026-02-18 | Istio CRD annotation 262KB 초과 (ArgoCD) | ArgoCD syncOptions에 `ServerSideApply=true` 추가 |
-| 2026-02-18 | Istio 1.28은 K8s 1.35 미지원 | Istio 1.29.x 사용 (K8s 1.31~1.35 지원) |
-| 2026-02-18 | Istio 이미지 docker.io only (대안 없음) | Docker OSS rate limit 면제, `docker.io/istio/*` 사용 불가피 |
-| 2026-02-19 | CiliumClusterwideNetworkPolicy `endpointSelector: {}` 전체 트래픽 차단 | 빈 endpointSelector는 모든 포드 선택 → deny-by-default 활성화. CCNP에 빈 selector 사용 금지 |
-| 2026-02-19 | CoreDNS `forward . /etc/resolv.conf` dnsmasq 루프 | Master의 resolv.conf가 127.0.0.1(dnsmasq) → CoreDNS 내부 루프. `forward . 8.8.8.8 8.8.4.4` 명시 |
-| 2026-02-19 | Istio ambient HBONE port 15008 NetworkPolicy 차단 | ambient mesh는 포드간 HBONE(15008) 사용. NetworkPolicy ingress에 15008/TCP 추가 필수 |
-| 2026-02-19 | OAuth2-Proxy `insecure_oidc_skip_issuer_verification` TLS 미검증 아님 | issuer만 스킵, TLS 검증은 별도. `ssl_insecure_skip_verify = true` 추가 필요 |
-| 2026-02-19 | Traefik Gateway API CRD field manager 충돌 | chart CRD 추출 → `--server-side --force-conflicts` 적용 → `helm install --skip-crds` |
-| 2026-02-24 | Keycloak Operator 자동생성 NetworkPolicy에 HBONE 15008 누락 | Operator가 `keycloak-network-policy`를 관리하므로 직접 수정 불가. `keycloak-allow-hbone` 별도 NetworkPolicy로 15008/TCP 추가 (`11-keycloak.sh` 패턴 참조) |
-| 2026-02-24 | Keycloak hostname v1/v2 옵션 충돌 | `additionalOptions`에 `hostname-url` (v1 deprecated) 사용 금지. v2: `hostname.hostname` + `hostname.strict: true` + `proxy.headers: xforwarded` |
-| 2026-02-24 | yq로 URL에 셸 따옴표 삽입 → API 서버 크래시 | `yq -i ".spec... += [\"--flag=value\"]"` 사용 (NOT `'...'`). 쉘 변수 확장 시 바깥 따옴표를 `"` 사용 |
-| 2026-02-24 | API 서버 OIDC 플래그 추가 시 HTTPRoute 미존재 | `11-keycloak.sh`에서 OIDC 검증 전에 Keycloak HTTPRoute 먼저 생성 필수. GitOps bootstrap(14)보다 먼저 실행됨 |
-| 2026-02-25 | Keycloak OIDC 토큰 `aud` 클레임이 `account`만 포함 (K8s API 서버 Unauthorized) | Keycloak `kubernetes` 클라이언트에 audience mapper 추가 필수: `oidc-audience-mapper`, `included.client.audience=kubernetes`. 설정 없으면 `oidc: expected audience "kubernetes" got ["account"]` 에러 |
-| 2026-02-25 | API 서버 `--oidc-ca-file` 누락 → self-signed 인증서로 JWKS 검증 실패 | Keycloak이 self-signed cert 사용 시 `--oidc-ca-file=/etc/kubernetes/pki/oidc-ca.crt` 필수. 인증서 추출: `openssl s_client -connect ... \| openssl x509 -outform PEM` |
-| 2026-02-25 | `kcadm.sh --format csv --noquotes \| tail -1` 잘못된 ID 반환 | CSV 형식은 결과 순서/필드가 불안정. 대신 `kcadm.sh get ... 2>/dev/null \| jq -r '.[] \| select(.name=="X") \| .id'` 사용 |
-| 2026-02-25 | `kubectl --token=X`가 kubeconfig client-cert를 override 안 함 | X.509 인증이 토큰보다 우선. OIDC 테스트 시 `KUBECONFIG=/dev/null kubectl --server=... --certificate-authority=... --token=...` 사용 필수 |
-| 2026-02-25 | Istio ambient mesh에서 SSO 웹 서버 쿠키 손상 → `http: named cookie not present` | ambient namespace의 웹 서버(ArgoCD, Grafana, Harbor, Gitea, OAuth2-Proxy, Headlamp)는 반드시 `istio.io/dataplane-mode: none` pod label로 opt-out. ztunnel HBONE이 Set-Cookie/Cookie 헤더를 손상시킴 |
-| 2026-02-25 | Gitea OAuth2 소스 이름 대소문자 불일치 → `/user/oauth2/Keycloak` 500 에러 | URL path의 소스 이름이 case-sensitive. `gitea admin auth add-oauth --name "keycloak"` (소문자)로 등록하면 `/user/oauth2/keycloak`으로 접근 |
-| 2026-02-25 | `microprofile-jwt` 스코프에 `groups` 클레임 매퍼 중복 | Keycloak 기본 `microprofile-jwt` 스코프에 realm-role을 `groups`로 매핑하는 mapper 존재. 커스텀 `groups` 스코프 생성 후 다른 스코프의 `groups` 매퍼 삭제 필요 |
-| 2026-02-25 | Keycloak 모든 클라이언트의 `aud` 클레임이 `["account"]`만 포함 | `kubernetes` 클라이언트뿐 아니라 **모든 OIDC 클라이언트**에 audience mapper 추가 필수. ArgoCD 등 토큰을 직접 검증하는 앱에서 `expected audience "argocd" got ["account"]` 에러 발생 |
-| 2026-02-26 | Keycloak 사용자 `emailVerified=false` → OAuth2-Proxy 500 에러 | `kcadm.sh create users`에 `-s emailVerified=true` 필수. 또는 OAuth2-Proxy에 `insecure_oidc_allow_unverified_email = true` 추가 |
-| 2026-02-26 | Traefik Errors 미들웨어가 401 상태코드 보존 → 브라우저 자동 리다이렉트 안 됨 | ExternalName→OAuth2-Proxy 대신 nginx+JS 리다이렉트 페이지 사용. `window.location.href`로 강제 리다이렉트 |
-| 2026-02-26 | Traefik ExternalName 서비스 기본 차단 | `providers.kubernetesCRD.allowExternalNameServices: true` 설정 필수. 없으면 404 `externalName services not allowed` |
-| 2026-02-26 | OAuth2-Proxy PKCE 충돌 (동시 다중 OAuth 플로우) | 여러 보호 앱이 동시 리다이렉트 → code_verifier 충돌. JS에 sessionStorage 5초 디바운스 추가 |
-| 2026-02-26 | Traefik LB 어노테이션 `io.cilium/lb-ipam-ips`는 MetalLB에서 무시됨 | MetalLB용: `metallb.universe.tf/loadBalancerIPs: "IP"` 사용 |
+### Kubernetes/Helm Mistakes
+| Date | Mistake | Fix |
+|------|---------|-----|
+| - | Missing namespace creation | Use `--create-namespace` or `CreateNamespace=true` syncOption |
+| - | Ignoring CRD dependencies | Create CR after Operator installation, use ArgoCD sync-wave |
+| - | Attempted to resize PVC | PVC can only be expanded, not shrunk |
+| 2026-01-30 | OAuth2 Proxy cookie-secret empty value | `cookieSecret: ""` causes error, generate exactly 32 bytes with `openssl rand -hex 16` |
+| 2026-01-30 | OAuth2 Proxy service.port deprecated | Use `service.portNumber` (v7.x chart) |
+| 2026-01-30 | Keycloak issuer URL mismatch | `insecure_oidc_skip_issuer_verification = true` or match Keycloak hostname setting |
+| 2026-01-30 | Loki chunks/results cache failure | `chunksCache.enabled: false`, `resultsCache.enabled: false` for dev environment |
+| 2026-01-30 | Headlamp Helm repo URL changed | Use `https://kubernetes-sigs.github.io/headlamp/` |
+| 2026-01-30 | Keycloak service name typo | `keycloak-service` (not `keycloak`), specify port 8080 |
+| 2026-02-04 | YAML parsing error when modifying with sed | Use `yq` for safe YAML modification (e.g., API server manifest OIDC config) |
+| 2026-02-05 | Helm `--set` nodeSelector boolean error | Use `--set-string nodeSelector.key=true` (force string) |
+| 2026-02-14 | kube-vip `vip_subnet` value contains `/` | Use `"32"` (NOT `"/32"`), internally combines `address + "/" + vip_subnet` |
+| 2026-02-14 | kube-vip kubeconfig path not recognized | Mount at `/.kube/config` (distroless image HOME=/) |
+| 2026-02-14 | kube-vip admin.conf VIP circular dependency | Create separate `kube-vip.conf`, change server address to local IP |
+| 2026-02-14 | kube-vip static pod created before init (chicken-and-egg) | master-1 creates manifest after init, bootstrap with manual VIP binding |
+| 2026-02-14 | kubeadm join detects VMware NAT interface | `--apiserver-advertise-address=192.168.56.x` must be specified |
+| 2026-02-14 | VMware Vagrant private_network IP not assigned | Create netplan directly in `01-prerequisites.sh`, `chmod 600` required |
+| 2026-02-14 | API server OOM restart on Master 4GB RAM (during platform apps installation) | Current topology: Master has NoSchedule taint (control-plane only, 4GB OK), Worker 6GB runs platform apps |
+| 2026-02-14 | ArgoCD v3.x applicationsets CRD exceeds 262KB | Use `kubectl apply --server-side --force-conflicts` |
+| 2026-02-14 | Helm `--wait` causes release rollback on timeout | Remove `--wait` for non-critical apps, use `--timeout` only |
+| 2026-02-15 | Velero CRD hook musl/glibc incompatibility (ARM64) | Set `upgradeCRDs: false`, alpine/k8s musl cannot execute in velero glibc container |
+| 2026-02-15 | registry.k8s.io/kubectl is distroless (no shell) | Use `docker.io/alpine/k8s:1.31.4` (includes shell+kubectl) |
+| 2026-02-15 | Traefik routes applied before GatewayClass created | Wait loop for Traefik deployment+GatewayClass before applying routes |
+| 2026-02-15 | etcd container cannot execute `sh -c` | etcd is distroless, call `kubectl exec -- etcdctl ...` directly |
+| 2026-02-15 | alpine/k8s image tag has no `v` prefix | Use `"1.31.4"` (NOT `v1.31.4`), verify Docker Hub tag format |
+| 2026-02-15 | ArgoCD v3.x `server.insecure` wrong location | Must set in `argocd-cmd-params-cm` (NOT `argocd-cm`). `argocd-cm` is legacy |
+| 2026-02-15 | worker/master-2 DNS resolves to public IP | Set `Domains=~local.narwhal.io` in `systemd-resolved` + use master dnsmasq as DNS |
+| 2026-02-15 | Keycloak `groups` scope missing -> `invalid_scope` error | Create realm-level `groups` client scope + add mapper + assign as default scope to all clients |
+| 2026-02-15 | ArgoCD SSO `x509: certificate signed by unknown authority` | Add `oidc.tls.insecure.skip.verify: "true"` to `argocd-cm` (self-signed cert) |
+| 2026-02-15 | Headlamp `extraArgs` ignored at root level | Must place in `config.extraArgs` for container args injection |
+| 2026-02-15 | Harbor `configureUserSettings` change rejected by API | Injected via env vars so cannot modify via API, change Helm values + redeploy |
+| 2026-02-18 | Cilium + Istio CNI conflict (cni.exclusive defaults to true) | `cni.exclusive=false` required, prevents Cilium from deleting other CNI configs |
+| 2026-02-18 | Cilium socket LB bypasses ztunnel traffic | `socketLB.hostNamespaceOnly=true` required, prevents mesh traffic from bypassing ztunnel |
+| 2026-02-18 | Istio CRD annotation exceeds 262KB (ArgoCD) | Add `ServerSideApply=true` to ArgoCD syncOptions |
+| 2026-02-18 | Istio 1.28 does not support K8s 1.35 | Use Istio 1.29.x (supports K8s 1.31~1.35) |
+| 2026-02-18 | Istio images docker.io only (no alternative) | Docker OSS rate limit exempt, `docker.io/istio/*` usage unavoidable |
+| 2026-02-19 | CiliumClusterwideNetworkPolicy `endpointSelector: {}` blocks all traffic | Empty endpointSelector selects all pods -> deny-by-default activated. Never use empty selector in CCNP |
+| 2026-02-19 | CoreDNS `forward . /etc/resolv.conf` dnsmasq loop | Master's resolv.conf is 127.0.0.1 (dnsmasq) -> CoreDNS internal loop. Use `forward . 8.8.8.8 8.8.4.4` explicitly |
+| 2026-02-19 | Istio ambient HBONE port 15008 blocked by NetworkPolicy | Ambient mesh uses HBONE (15008) between pods. Must add 15008/TCP to NetworkPolicy ingress |
+| 2026-02-19 | OAuth2-Proxy `insecure_oidc_skip_issuer_verification` does not skip TLS verification | Only skips issuer, TLS verification is separate. Need to add `ssl_insecure_skip_verify = true` |
+| 2026-02-19 | Traefik Gateway API CRD field manager conflict | Extract chart CRDs -> apply with `--server-side --force-conflicts` -> `helm install --skip-crds` |
+| 2026-02-24 | Keycloak Operator auto-generated NetworkPolicy missing HBONE 15008 | Operator manages `keycloak-network-policy` so cannot modify directly. Create separate `keycloak-allow-hbone` NetworkPolicy for 15008/TCP (see `11-keycloak.sh` pattern) |
+| 2026-02-24 | Keycloak hostname v1/v2 option conflict | Do not use `hostname-url` (v1 deprecated) in `additionalOptions`. v2: `hostname.hostname` + `hostname.strict: true` + `proxy.headers: xforwarded` |
+| 2026-02-24 | yq inserts shell quotes into URL -> API server crash | Use `yq -i ".spec... += [\"--flag=value\"]"` (NOT `'...'`). Use double quotes for outer quoting when shell variable expansion needed |
+| 2026-02-24 | HTTPRoute does not exist when adding API server OIDC flags | Must create Keycloak HTTPRoute before OIDC verification in `11-keycloak.sh`. Runs before GitOps bootstrap (14) |
+| 2026-02-25 | Keycloak OIDC token `aud` claim only contains `account` (K8s API server Unauthorized) | Must add audience mapper to Keycloak `kubernetes` client: `oidc-audience-mapper`, `included.client.audience=kubernetes`. Without it: `oidc: expected audience "kubernetes" got ["account"]` error |
+| 2026-02-25 | API server `--oidc-ca-file` missing -> JWKS verification fails with self-signed cert | `--oidc-ca-file=/etc/kubernetes/pki/oidc-ca.crt` required when Keycloak uses self-signed cert. Extract cert: `openssl s_client -connect ... \| openssl x509 -outform PEM` |
+| 2026-02-25 | `kcadm.sh --format csv --noquotes \| tail -1` returns wrong ID | CSV format has unstable result order/fields. Use `kcadm.sh get ... 2>/dev/null \| jq -r '.[] \| select(.name=="X") \| .id'` instead |
+| 2026-02-25 | `kubectl --token=X` does not override kubeconfig client-cert | X.509 auth takes priority over token. For OIDC testing use `KUBECONFIG=/dev/null kubectl --server=... --certificate-authority=... --token=...` |
+| 2026-02-25 | Istio ambient mesh corrupts SSO web server cookies -> `http: named cookie not present` | Web servers in ambient namespace (ArgoCD, Grafana, Harbor, Gitea, OAuth2-Proxy, Headlamp) must opt-out with `istio.io/dataplane-mode: none` pod label. ztunnel HBONE corrupts Set-Cookie/Cookie headers |
+| 2026-02-25 | Gitea OAuth2 source name case mismatch -> `/user/oauth2/Keycloak` 500 error | URL path source name is case-sensitive. Register with `gitea admin auth add-oauth --name "keycloak"` (lowercase) to access via `/user/oauth2/keycloak` |
+| 2026-02-25 | `microprofile-jwt` scope has duplicate `groups` claim mapper | Default Keycloak `microprofile-jwt` scope already maps realm-role to `groups`. After creating custom `groups` scope, delete the `groups` mapper from other scopes |
+| 2026-02-25 | All Keycloak clients `aud` claim only contains `["account"]` | Must add audience mapper to **all OIDC clients**, not just `kubernetes`. ArgoCD and other apps that verify tokens directly will get `expected audience "argocd" got ["account"]` error |
+| 2026-02-26 | Keycloak user `emailVerified=false` -> OAuth2-Proxy 500 error | Add `-s emailVerified=true` to `kcadm.sh create users`. Or add `insecure_oidc_allow_unverified_email = true` to OAuth2-Proxy |
+| 2026-02-26 | Traefik Errors middleware preserves 401 status code -> browser auto-redirect fails | Use nginx+JS redirect page instead of ExternalName->OAuth2-Proxy. Force redirect with `window.location.href` |
+| 2026-02-26 | Traefik blocks ExternalName services by default | `providers.kubernetesCRD.allowExternalNameServices: true` required. Without it: 404 `externalName services not allowed` |
+| 2026-02-26 | OAuth2-Proxy PKCE conflict (concurrent multiple OAuth flows) | Multiple protected apps redirect simultaneously -> code_verifier conflict. Add sessionStorage 5-second debounce in JS |
+| 2026-02-26 | Traefik LB annotation `io.cilium/lb-ipam-ips` ignored by MetalLB | For MetalLB use: `metallb.universe.tf/loadBalancerIPs: "IP"` |
 
-### GitOps/ArgoCD 실수
-| 날짜 | 실수 | 해결책 |
-|------|------|--------|
-| - | values 파일 경로 오타 | `valueFiles` 경로는 repoURL 기준 상대경로 |
-| - | targetRevision 형식 오류 | 차트 버전은 `"1.0.0"` (문자열), Git ref는 `HEAD` |
-| 2026-02-14 | app-of-apps repoURL `https://` 사용 → Gitea는 HTTP only | `http://gitea-http.gitea.svc.cluster.local:3000/...` 사용 |
-| 2026-02-14 | Harbor gitops YAML에 ARM64 이미지 오버라이드 누락 | `ghcr.io/dasomel/goharbor/*:latest` 전체 컴포넌트 지정 필수 |
-| 2026-02-14 | SeaweedFS chart 버전 4.0.410 → Docker Hub 이미지 4.10 없음 | appVersion=image tag 확인 후 존재하는 버전 사용 (4.0.407→4.07) |
-| 2026-02-14 | ArgoCD repo-server GitHub Pages IPv6 연결 실패 | VM에서 IPv6 미지원, ArgoCD가 IPv6로 시도하면 실패 |
-| 2026-02-14 | ArgoCD 관리 리소스 Helm upgrade 충돌 | `kubectl set image`로 직접 패치, Helm 대신 kubectl 사용 |
-| 2026-02-15 | Headlamp v0.40.0에 `-oidc-skip-issuer-tls-verify` 플래그 없음 | CA cert를 `/etc/ssl/certs/`에 subPath 마운트, `SSL_CERT_FILE` 사용 금지 |
-| 2026-02-15 | Grafana `assertNoLeakedSecrets` 차트 검증 실패 | `grafana.assertNoLeakedSecrets: false` 설정 필수 |
-| 2026-02-15 | Prometheus Helm 릴리스명 불일치 (`prometheus` vs `prometheus-stack`) | ArgoCD app name과 일치시켜야 HTTPRoute/ConfigMap 정상 작동 |
-| 2026-02-15 | Gitea OIDC 소스 추가 시 self-signed cert 검증 실패 | Gitea 컨테이너에 CA cert 마운트 후 `add-oauth` 실행 |
-| 2026-02-24 | ArgoCD를 비기본 네임스페이스(devtools)에 설치 시 ClusterRoleBinding Subject 불일치 | upstream install.yaml은 항상 Subject namespace를 `argocd`로 설정. 설치 후 `kubectl patch clusterrolebinding argocd-application-controller argocd-applicationset-controller argocd-server`로 namespace를 실제 설치 네임스페이스로 수정 필수 |
-| 2026-02-24 | Istio ambient namespace의 ArgoCD 헬스체크 포트(8082/8084/9001) ztunnel에 의해 차단 | ztunnel은 ambient namespace의 모든 인바운드 트래픽을 가로챔. kubelet probe(plain HTTP)가 mTLS를 기대하는 ztunnel과 충돌 → CrashLoopBackOff. pod template에 `istio.io/dataplane-mode: none` 레이블 추가로 해당 pod를 ambient에서 제외. `traffic.sidecar.istio.io/excludeInboundPorts` 어노테이션은 ambient 모드에서 동작 안 함 |
-| 2026-02-26 | ArgoCD selfHeal이 kubectl apply 변경사항을 되돌림 | ArgoCD 관리 리소스는 kubectl로 직접 수정해도 selfHeal이 Gitea 상태로 되돌림. 반드시 Gitea 레포에 push해야 영속 |
-| 2026-02-26 | Gitea headless 서비스 (ClusterIP: None) → git clone 실패 | Gitea 서비스가 headless이면 DNS 해석 안 됨. Pod IP 직접 사용: `kubectl get pod -l app.kubernetes.io/name=gitea -o jsonpath='{.items[0].status.podIP}'` |
+### GitOps/ArgoCD Mistakes
+| Date | Mistake | Fix |
+|------|---------|-----|
+| - | values file path typo | `valueFiles` paths are relative to repoURL |
+| - | targetRevision format error | Chart version is `"1.0.0"` (string), Git ref is `HEAD` |
+| 2026-02-14 | app-of-apps repoURL uses `https://` -> Gitea is HTTP only | Use `http://gitea-http.gitea.svc.cluster.local:3000/...` |
+| 2026-02-14 | Harbor gitops YAML missing ARM64 image overrides | Must specify all components: `ghcr.io/dasomel/goharbor/*:latest` |
+| 2026-02-14 | SeaweedFS chart version 4.0.410 -> Docker Hub image 4.10 doesn't exist | Verify appVersion=image tag exists before using (4.0.407->4.07) |
+| 2026-02-14 | ArgoCD repo-server GitHub Pages IPv6 connection failure | VM does not support IPv6, ArgoCD fails when attempting IPv6 |
+| 2026-02-14 | ArgoCD managed resource Helm upgrade conflict | Patch directly with `kubectl set image`, use kubectl instead of Helm |
+| 2026-02-15 | Headlamp v0.40.0 has no `-oidc-skip-issuer-tls-verify` flag | Mount CA cert to `/etc/ssl/certs/` with subPath, do not use `SSL_CERT_FILE` |
+| 2026-02-15 | Grafana `assertNoLeakedSecrets` chart validation failure | `grafana.assertNoLeakedSecrets: false` required |
+| 2026-02-15 | Prometheus Helm release name mismatch (`prometheus` vs `prometheus-stack`) | Must match ArgoCD app name for HTTPRoute/ConfigMap to work correctly |
+| 2026-02-15 | Gitea OIDC source add fails with self-signed cert verification | Mount CA cert in Gitea container before running `add-oauth` |
+| 2026-02-24 | ArgoCD installed in non-default namespace (devtools) ClusterRoleBinding Subject mismatch | Upstream install.yaml always sets Subject namespace to `argocd`. After installation, `kubectl patch clusterrolebinding argocd-application-controller argocd-applicationset-controller argocd-server` to update namespace to actual installation namespace |
+| 2026-02-24 | Istio ambient namespace ArgoCD health check ports (8082/8084/9001) blocked by ztunnel | ztunnel intercepts all inbound traffic in ambient namespace. kubelet probe (plain HTTP) conflicts with ztunnel expecting mTLS -> CrashLoopBackOff. Add `istio.io/dataplane-mode: none` label to pod template to exclude from ambient. `traffic.sidecar.istio.io/excludeInboundPorts` annotation does not work in ambient mode |
+| 2026-02-26 | ArgoCD selfHeal reverts kubectl apply changes | ArgoCD managed resources revert to Gitea state even when modified with kubectl. Must push to Gitea repo for persistence |
+| 2026-02-26 | Gitea headless service (ClusterIP: None) -> git clone fails | DNS resolution fails with headless Gitea service. Use pod IP directly: `kubectl get pod -l app.kubernetes.io/name=gitea -o jsonpath='{.items[0].status.podIP}'` |
 
-### Vagrant/Infrastructure 실수
-| 날짜 | 실수 | 해결책 |
-|------|------|--------|
-| 2026-01-29 | Vagrant Cloud 401 에러 | HCP 토큰 필요 시 `VAGRANT_CLOUD_TOKEN=$(hcp auth print-access-token)` 사용 |
-| 2026-01-29 | charts.keycloak.org URL 404 | 공식 Keycloak Operator 사용 (`keycloak-k8s-resources` GitHub) |
-| 2026-01-29 | Bitnami 이미지 not found | Bitnami 상용화로 인해 공식 이미지 또는 Operator 사용 필요 |
-| 2026-01-29 | vagrant provision 재실행 시 kubeadm init 실패 | 이미 초기화된 클러스터 확인 로직 추가 또는 개별 스크립트 직접 실행 |
-| 2026-01-29 | Keycloak DB 연결 시 FQDN 사용 실패 | 같은 namespace면 짧은 서비스명 사용 (`keycloak-db-rw` not `keycloak-db-rw.keycloak.svc.cluster.local`) |
-| 2026-01-29 | Gitea Helm chart valkey FQDN 문제 | `gitea-init` secret 내 스크립트가 FQDN 사용, 패치 필요. 스크립트에서 `valkey.enabled=true`, `valkey-cluster.enabled=false` 명시 |
-| 2026-01-29 | Keycloak 2 replicas 리소스 부족 | 테스트 환경에서는 `instances: 1` 사용, 프로덕션에서만 HA 구성 |
-| 2026-01-30 | API 서버에서 클러스터 DNS 접근 불가 | OIDC issuer URL은 NodePort로 노출 (`http://NODE_IP:30080/realms/kubernetes`) |
-| 2026-01-31 | OpenBao v2.4.4 ARM64 이미지 없음 | quay.io/openbao/openbao에 ARM64 없음, tag `2.2.0` 사용 (default registry) |
-| 2026-01-31 | Velero bitnami/kubectl 이미지 없음 | Bitnami 사용 금지, `docker.io/alpine/k8s` 사용 (shell 포함, ARM64 지원) |
-| 2026-01-31 | 디스크 압력으로 Pod 축출 | `tolerations`에 `node.kubernetes.io/disk-pressure:NoSchedule` 추가 |
-| 2026-01-31 | GitHub Actions get-changed-files workflow_dispatch 미지원 | `if: github.event_name != 'workflow_dispatch'` 조건 추가 |
-| 2026-01-31 | CNPG 클러스터 replica WAL 아카이빙 실패 | 문제 있는 replica PVC 삭제 후 자동 재생성 대기, 인스턴스 수 줄여 안정화 |
-| 2026-02-10 | MetalLB Helm upgrade CRD field manager 충돌 | 초기 설치는 정상, re-upgrade 시 CRD caBundle 충돌. Pods는 정상 작동 |
-| 2026-02-10 | Harbor ARM64 `exec format error` | `ghcr.io/dasomel/goharbor/*:latest` 사용, 공식 이미지는 AMD64 only |
-| 2026-02-10 | OAuth2 Proxy cookie_secret 34바이트 에러 | `openssl rand -base64 32`는 44바이트, `openssl rand -hex 16`으로 32바이트 |
-| 2026-02-10 | Velero CRD job kubectl `/bin/sh` 없음 | `registry.k8s.io/kubectl`은 distroless, `docker.io/alpine/k8s` 사용 |
-| 2026-02-10 | VERSIONS.md와 실제 배포 버전 불일치 | 스크립트에 고정된 chart 버전 기준으로 VERSIONS.md 동기화 필수 |
-| 2026-02-11 | CNPG DB 비밀번호 하드코딩 불일치 | CNPG Secret에서 실제 비밀번호 조회 필수 (`harbor-db-credentials`) |
-| 2026-02-11 | Loki 6.52.0 bucketNames 필수 | `loki.storage.bucketNames.{chunks,ruler,admin}` 명시 필요 |
-| 2026-02-11 | Traefik 39.0.0 HTTPS certificateRefs 필수 | Gateway HTTPS 리스너에 TLS 인증서 참조 필수 |
-| 2026-02-11 | Traefik Helm --set 포트 타입 에러 | `--set` 대신 values 파일 사용 (float64 vs int64) |
-| 2026-02-11 | ArgoCD 관리 리소스 Helm 재설치 충돌 | 기존 리소스(SA, IngressClass, GatewayClass) 삭제 후 재설치 |
-| 2026-02-28 | Keycloak HTTPRoute + Operator Ingress 동시 활성화 → 502 | Keycloak Operator가 Ingress를 자동 관리하므로 HTTPRoute 생성 금지. 동일 Host에 HTTPRoute + Ingress 공존 시 Traefik이 WRR null backend 선택 |
-| 2026-02-28 | Keycloak pod 재시작 시 `istio.io/dataplane-mode: none` 레이블 소실 | Keycloak CR `spec.unsupported.podTemplate.metadata.labels`에 영구 설정 필수. pod label 직접 추가는 재시작 시 소실 |
+### Vagrant/Infrastructure Mistakes
+| Date | Mistake | Fix |
+|------|---------|-----|
+| 2026-01-29 | Vagrant Cloud 401 error | Use `VAGRANT_CLOUD_TOKEN=$(hcp auth print-access-token)` when HCP token required |
+| 2026-01-29 | charts.keycloak.org URL 404 | Use official Keycloak Operator (`keycloak-k8s-resources` GitHub) |
+| 2026-01-29 | Bitnami image not found | Use official images or Operators (CloudNative-PG, etc.) due to Bitnami commercialization |
+| 2026-01-29 | kubeadm init fails on vagrant provision re-run | Add logic to check if cluster already initialized, or run individual scripts directly |
+| 2026-01-29 | Keycloak DB connection fails with FQDN | Use short service name in same namespace (`keycloak-db-rw` not `keycloak-db-rw.keycloak.svc.cluster.local`) |
+| 2026-01-29 | Gitea Helm chart valkey FQDN issue | `gitea-init` secret script uses FQDN, needs patching. Set `valkey.enabled=true`, `valkey-cluster.enabled=false` in script |
+| 2026-01-29 | Keycloak 2 replicas resource shortage | Use `instances: 1` in test environment, HA only for production |
+| 2026-01-30 | Cluster DNS not accessible from API server | Expose OIDC issuer URL via NodePort (`http://NODE_IP:30080/realms/kubernetes`) |
+| 2026-01-31 | OpenBao v2.4.4 no ARM64 image | No ARM64 at quay.io/openbao/openbao, use tag `2.2.0` (default registry) |
+| 2026-01-31 | Velero bitnami/kubectl image not found | Bitnami banned, use `docker.io/alpine/k8s` (includes shell, ARM64 support) |
+| 2026-01-31 | Pod eviction due to disk pressure | Add `node.kubernetes.io/disk-pressure:NoSchedule` to `tolerations` |
+| 2026-01-31 | GitHub Actions get-changed-files doesn't support workflow_dispatch | Add `if: github.event_name != 'workflow_dispatch'` condition |
+| 2026-01-31 | CNPG cluster replica WAL archiving failure | Delete problematic replica PVC and wait for auto-recreation, reduce instance count to stabilize |
+| 2026-02-10 | MetalLB Helm upgrade CRD field manager conflict | Initial install is fine, re-upgrade has CRD caBundle conflict. Pods function normally |
+| 2026-02-10 | Harbor ARM64 `exec format error` | Use `ghcr.io/dasomel/goharbor/*:latest`, official images are AMD64 only |
+| 2026-02-10 | OAuth2 Proxy cookie_secret 34-byte error | `openssl rand -base64 32` produces 44 bytes, use `openssl rand -hex 16` for 32 bytes |
+| 2026-02-10 | Velero CRD job kubectl missing `/bin/sh` | `registry.k8s.io/kubectl` is distroless, use `docker.io/alpine/k8s` |
+| 2026-02-10 | VERSIONS.md out of sync with actual deployed versions | Must sync VERSIONS.md based on chart versions pinned in scripts |
+| 2026-02-11 | CNPG DB password hardcoding mismatch | Must query actual password from CNPG Secret (`harbor-db-credentials`) |
+| 2026-02-11 | Loki 6.52.0 bucketNames required | Must specify `loki.storage.bucketNames.{chunks,ruler,admin}` |
+| 2026-02-11 | Traefik 39.0.0 HTTPS certificateRefs required | TLS certificate reference required for Gateway HTTPS listener |
+| 2026-02-11 | Traefik Helm --set port type error | Use values file instead of `--set` (float64 vs int64) |
+| 2026-02-11 | ArgoCD managed resource Helm reinstall conflict | Delete existing resources (SA, IngressClass, GatewayClass) before reinstall |
+| 2026-02-28 | Keycloak HTTPRoute + Operator Ingress both active -> 502 | Keycloak Operator manages Ingress automatically, do not create HTTPRoute. HTTPRoute + Ingress coexisting on same Host causes Traefik WRR null backend selection |
+| 2026-02-28 | Keycloak pod restart loses `istio.io/dataplane-mode: none` label | Must set permanently in Keycloak CR `spec.unsupported.podTemplate.metadata.labels`. Direct pod label addition is lost on restart |
 
-| 2026-03-09 | 14-gitops-bootstrap.sh `GITEA_ADMIN_PASSWORD="gitea-admin"` 하드코딩 → 실제 생성 비밀번호와 불일치 | `kubectl get secret gitea-admin -n devtools -o jsonpath='{.data.admin-password}' \| base64 -d`로 동적 조회 |
-| 2026-03-09 | oauth2-proxy-secrets에 `client-id` 키 누락 → `CreateContainerConfigError` | 11-3-keycloak-clients.sh에서 secret 생성 시 `--from-literal=client-id=oauth2-proxy` 추가 |
+| 2026-03-09 | 14-gitops-bootstrap.sh `GITEA_ADMIN_PASSWORD="gitea-admin"` hardcoded -> mismatch with actual generated password | Dynamically query with `kubectl get secret gitea-admin -n devtools -o jsonpath='{.data.admin-password}' \| base64 -d` |
+| 2026-03-09 | oauth2-proxy-secrets missing `client-id` key -> `CreateContainerConfigError` | Add `--from-literal=client-id=oauth2-proxy` when creating secret in 11-3-keycloak-clients.sh |
 
-### 새 실수 추가하기
+| 2026-03-23 | `set -o pipefail` causes exit 1 when `grep "${NODE_IP}"` has no match -> script terminates immediately | Use `grep ... \| head -1 || true` pattern (grep pipelines always need `|| true` in pipefail environment) |
+| 2026-03-29 | `kubeadm join` without `--node-name` registers worker as `vagrant-ubuntu` (OS default hostname) instead of `narwhal-worker-X` | Always pass `--node-name $(hostname)` to `kubeadm join`. Even if `01-prerequisites.sh` sets hostname, kubeadm may use the OS default. Fix: `02-join-worker.sh` now includes `--node-name`. Recovery: `kubectl drain + delete node`, then `kubeadm reset -f && kubeadm join --node-name narwhal-worker-X` |
+| 2026-04-06 | Keycloak StatefulSet 인데 `kubectl exec -n iam deploy/keycloak` 사용 | Keycloak Operator는 StatefulSet 생성. `kubectl exec -n iam keycloak-0 -c keycloak` 사용 |
+| 2026-04-06 | `kcadm.sh` protocol mapper config 형식 오류 `{"config":{...}}` | 올바른 형식: `-s 'config={"key":"value"}'` (NOT `-s '{"config":{...}}'`) |
+| 2026-04-06 | bash 함수 내 `echo` stdout 캡처 문제 → secret 변수에 로그 메시지 혼입 | 함수 내 모든 로그용 echo에 `>&2` 추가. `$(func)` 캡처 시 stdout만 반환됨 |
+| 2026-04-06 | `KC_HOSTNAME_PORT` 은 Keycloak v1 옵션 (v26에서 무시됨) | Keycloak v2(v26+): `hostname.hostname` + `proxy.headers: xforwarded` 사용. 포트 제거는 X-Forwarded-Port 헤더로 처리 |
+| 2026-04-06 | APISIX IC + ExternalName 서비스: `conflict headless service and backend resolve granularity` | ExternalName 서비스는 IC가 headless로 간주하여 `resolveGranularity: service`와 비호환. IC가 동기화 실패 시 APISIX admin API에 직접 패치로 우회 |
+| 2026-04-06 | APISIX IC route 동기화 실패 시 admin API의 기존 route는 유지됨 | IC 실패 중에는 수동 admin API 패치가 overwrite되지 않음. `curl PATCH /apisix/admin/routes/{id}` 로 plugin 직접 추가 가능 |
+| 2026-04-06 | Keycloak issuer URL에 `:9443` 포트 포함 → OpenBao OIDC discovery 실패 | APISIX `proxy-rewrite` plugin으로 `X-Forwarded-Port: 443` 설정 필요. IC 실패 시 admin API 직접 패치 |
+| 2026-04-06 | API server manifest OIDC 플래그 중복 추가 (yq append 반복 실행 시) | 스크립트 실행 전 `grep -c 'oidc-issuer-url'` 으로 중복 확인. Python으로 중복 제거 후 재실행 |
+| 2026-04-06 | Keycloak Operator-managed NetworkPolicy `keycloak-allow-hbone` blocks service port 8080 | Operator creates NetworkPolicy allowing only HBONE port 15008. When Keycloak is opted-out (`istio.io/dataplane-mode: none`), clients must connect via plain TCP 8080, not HBONE. Must create separate `keycloak-allow-plain` or add 8080 ingress rule to the NetworkPolicy |
+| 2026-04-06 | StatefulSet pod stuck in old revision (ztunnel blocking probe) causes RollingUpdate deadlock | If pod is not Ready (startup probe fails), StatefulSet RollingUpdate cannot proceed even after CR/StatefulSet update. Old revision pod keeps running with wrong config. Fix: `kubectl delete pod keycloak-0 -n iam` to force recreation with new spec |
+| 2026-04-06 | APISIX IC sets `nodes: []` for ExternalName service with `resolveGranularity: service` | IC cannot resolve ClusterIP for ExternalName (no ClusterIP). Remove `resolveGranularity: service` from ApisixRoute backend — IC then follows CNAME and sets FQDN as upstream node (same as ArgoCD pattern) |
+| 2026-04-06 | Keycloak container image has no `curl` or `wget` (UBI9 minimal) | Cannot use `curl`-based exec probes. Use `bash /dev/tcp` or rely on Operator-managed httpGet probes. Operator ignores container probe overrides in `unsupported.podTemplate` |
+
+### Adding New Mistakes
 ```markdown
-| YYYY-MM-DD | 실수 내용 | 해결책 |
+| YYYY-MM-DD | Mistake description | Fix |
 ```
 
 ---
 
 ## Core Flows
 
-### 1. 클러스터 프로비저닝 플로우
+### 1. Cluster Provisioning Flow
 
-| 단계 | 파일 | 설명 |
-|------|------|------|
-| 사전 설정 | `scripts/common/01-prerequisites.sh` | 호스트명, /etc/hosts 설정 |
-| 컨테이너 런타임 | `scripts/common/02-containerd.sh` | containerd 설치 |
-| K8s 설치 | `scripts/common/03-k8s-install.sh` | kubeadm, kubelet, kubectl |
+| Step | File | Description |
+|------|------|-------------|
+| Prerequisites | `scripts/common/01-prerequisites.sh` | Hostname, /etc/hosts, netplan setup |
+| Container Runtime | `scripts/common/02-containerd.sh` | containerd installation |
+| K8s Installation | `scripts/common/03-k8s-install.sh` | kubeadm, kubelet, kubectl |
+| Config | `scripts/common/set-config.sh` | Shared configuration variables |
+| Library | `scripts/common/lib.sh` | Shared utility functions |
 
-### 2. Master 노드 설정 플로우 (2-Phase 구조)
+### 2. Master Node Setup Flow (2-Phase Structure)
 
-**Phase 1: 클러스터 인프라** (master-1 프로비저닝 시 실행)
+**Phase 1: Cluster Infrastructure** (runs during master-1 provisioning)
 
-| 단계 | 파일 | 설명 |
-|------|------|------|
+| Step | File | Description |
+|------|------|-------------|
 | kube-vip | `scripts/cluster/00-kube-vip.sh` | Control Plane VIP |
-| NFS 서버 | `scripts/cluster/01-nfs-server.sh` | NFS 서버 설정 |
-| 클러스터 초기화 | `scripts/cluster/02-init-cluster.sh` | kubeadm init |
-| CNI 설치 | `scripts/cluster/03-cni-install.sh` | Cilium + Hubble |
-| 애드온 | `scripts/cluster/04-addons.sh` | metrics-server, csi-driver-nfs |
-| NFS 쿼터 | `scripts/cluster/05-nfs-quota-agent.sh` | NFS 프로젝트 쿼터 |
+| NFS Server | `scripts/cluster/01-nfs-server.sh` | NFS server setup |
+| Cluster Init | `scripts/cluster/02-init-cluster.sh` | kubeadm init |
+| CNI Install | `scripts/cluster/03-cni-install.sh` | Cilium + Hubble |
+| Addons | `scripts/cluster/04-addons.sh` | metrics-server, csi-driver-nfs |
+| NFS Quota | `scripts/cluster/05-nfs-quota-agent.sh` | NFS project quota |
 
-→ master-2 join → master-3 join → worker-1 join → worker-2 join → worker-3 join
+| Control Plane Join | `scripts/cluster/02-join-control-plane.sh` | master-2, master-3 join |
+| Worker Join | `scripts/cluster/02-join-worker.sh` | worker-1, worker-2, worker-3 join |
 
-**Phase 2: 플랫폼 앱** (마지막 worker join 후 자동 트리거)
+**Phase 2: Platform Apps** (auto-triggered after last worker join)
 
-| 단계 | 파일 | 설명 |
-|------|------|------|
-| Phase 2 래퍼 | `scripts/cluster/06-phase2-start.sh` | Phase 2 스크립트 실행 |
+| Step | File | Description |
+|------|------|-------------|
+| Phase 2 Wrapper | `scripts/cluster/06-phase2-start.sh` | Runs Phase 2 scripts |
 | PostgreSQL | `scripts/cluster/07-cnpg.sh` | CloudNative-PG Operator |
-| 네트워킹 | `scripts/cluster/08-1-networking.sh` | MetalLB, Traefik, cert-manager |
-| 모니터링 | `scripts/cluster/08-2-monitoring.sh` | Prometheus, Loki, Promtail, Tempo |
-| 보안 | `scripts/cluster/08-3-security.sh` | Kyverno, Headlamp, OAuth2-Proxy |
-| 스토리지 | `scripts/cluster/08-4-storage.sh` | SeaweedFS, OpenBao, Velero |
-| 레지스트리 | `scripts/cluster/08-5-registry.sh` | Harbor |
-| TLS/라우트 | `scripts/cluster/08-6-tls-routes.sh` | CA cert 배포, Traefik routes |
+| Networking | `scripts/cluster/08-1-networking.sh` | MetalLB, APISIX, cert-manager |
+| Monitoring | `scripts/cluster/08-2-monitoring.sh` | Prometheus, Loki, Promtail, Tempo |
+| Security | `scripts/cluster/08-3-security.sh` | Kyverno, Headlamp, OAuth2-Proxy |
+| Storage | `scripts/cluster/08-4-storage.sh` | SeaweedFS, OpenBao, Velero |
+| Registry | `scripts/cluster/08-5-registry.sh` | Harbor |
+| TLS/Routes | `scripts/cluster/08-6-tls-routes.sh` | CA cert distribution, APISIX routes |
 | Istio | `scripts/cluster/09-istio-ambient.sh` | Service Mesh (ambient mode) |
-| dnsmasq | `scripts/cluster/10-dnsmasq.sh` | 로컬 DNS + CoreDNS forward |
-| Keycloak Operator | `scripts/cluster/11-1-keycloak-operator.sh` | Operator + CR + HTTPRoute |
-| Keycloak Realm | `scripts/cluster/11-2-keycloak-realm.sh` | Realm, Roles, Groups, Users |
-| Keycloak Clients | `scripts/cluster/11-3-keycloak-clients.sh` | OIDC 클라이언트 7개 + Audience mappers |
-| Keycloak API서버 | `scripts/cluster/11-4-keycloak-apiserver.sh` | K8s OIDC 설정 + RBAC |
-| Gitea | `scripts/cluster/12-gitea.sh` | Git 서버 |
+| dnsmasq | `scripts/cluster/10-dnsmasq.sh` | Local DNS + CoreDNS forward |
+| Authentik | `scripts/cluster/11-authentik.sh` | Authentik SSO + PostgreSQL |
+| Authentik Config | `scripts/cluster/11-2-authentik-config.sh` | Flows, providers, applications, groups |
+| Authentik API Server | `scripts/cluster/11-4-authentik-apiserver.sh` | K8s OIDC config + RBAC |
+| Gitea | `scripts/cluster/12-gitea.sh` | Git server |
 | ArgoCD | `scripts/cluster/13-argocd.sh` | GitOps CD |
-| Bootstrap | `scripts/cluster/14-gitops-bootstrap.sh` | App-of-Apps 배포 |
+| Bootstrap | `scripts/cluster/14-gitops-bootstrap.sh` | App-of-Apps deployment |
+| IDP Portal | `scripts/cluster/15-idp-portal.sh` | Developer portal |
 
-### 3. GitOps 앱 관리
+### 3. GitOps App Management
 
-| 앱 | 파일 | 설명 |
-|-----|------|------|
-| App-of-Apps | `gitops/apps/app-of-apps.yaml` | 모든 앱 관리 |
-| cert-manager | `gitops/apps/cert-manager.yaml` | TLS 자동화 |
-| Prometheus | `gitops/apps/prometheus-stack.yaml` | 모니터링 |
-| Loki | `gitops/apps/loki.yaml` | 로그 수집 |
-| Tempo | `gitops/apps/tempo.yaml` | 분산 추적 |
-| Harbor | `gitops/apps/harbor.yaml` | 컨테이너 레지스트리 |
-| OpenBao | `gitops/apps/openbao.yaml` | 시크릿 관리 |
-| Kyverno | `gitops/apps/kyverno.yaml` | 정책 관리 |
+| App | File | Description |
+|-----|------|-------------|
+| App-of-Apps | `gitops/apps/app-of-apps.yaml` | Manages all apps |
+| **Networking** | | |
+| MetalLB | `gitops/apps/metallb.yaml` | Load balancer |
+| APISIX | `gitops/apps/apisix.yaml` | API gateway |
+| APISIX Infra | `gitops/apps/apisix-infra.yaml` | APISIX infrastructure resources |
+| APISIX Routes | `gitops/apps/apisix-routes.yaml` | APISIX route definitions |
+| APISIX Dashboard | `gitops/apps/apisix-dashboard.yaml` | APISIX management UI |
+| cert-manager | `gitops/apps/cert-manager.yaml` | TLS automation |
+| **Service Mesh** | | |
+| Istio Base | `gitops/apps/istio-base.yaml` | Istio CRDs |
+| Istiod | `gitops/apps/istiod.yaml` | Istio control plane |
+| Istio CNI | `gitops/apps/istio-cni.yaml` | Istio CNI plugin |
+| ztunnel | `gitops/apps/ztunnel.yaml` | Istio ambient ztunnel |
+| **Monitoring** | | |
+| Prometheus | `gitops/apps/prometheus-stack.yaml` | Monitoring + Grafana |
+| Loki | `gitops/apps/loki.yaml` | Log collection |
+| Promtail | `gitops/apps/promtail.yaml` | Log shipping |
+| Tempo | `gitops/apps/tempo.yaml` | Distributed tracing |
+| **Storage/Security** | | |
+| Harbor | `gitops/apps/harbor.yaml` | Container registry |
+| OpenBao | `gitops/apps/openbao.yaml` | Secret management |
+| SeaweedFS | `gitops/apps/seaweedfs.yaml` | Object storage |
+| Velero | `gitops/apps/velero.yaml` | Backup |
+| Velero UI | `gitops/apps/velero-ui.yaml` | Backup management UI |
+| Kyverno | `gitops/apps/kyverno.yaml` | Policy management |
+| **IAM/UI** | | |
+| Authentik | `gitops/apps/authentik.yaml` | SSO/OIDC (IAM) |
 | Headlamp | `gitops/apps/headlamp.yaml` | K8s UI |
+| IDP Portal | `gitops/apps/idp-portal.yaml` | Developer portal |
 
 ## Development Commands
 
 ```bash
-# 클러스터 생성
+# Create cluster
 vagrant up --provider=vmware_desktop
 
-# 특정 노드만 생성
+# Create specific node only
 vagrant up master-1
 vagrant up worker-1
 
-# SSH 접속
+# SSH access
 vagrant ssh master-1
 
-# kubectl 확인
+# kubectl check
 vagrant ssh master-1 -c "kubectl get nodes"
 
-# Phase 2만 수동 실행 (클러스터 구성 후)
+# Run Phase 2 only manually (after cluster setup)
 vagrant provision master-1 --provision-with phase2-platform
 
-# 재프로비저닝
+# Re-provisioning
 vagrant provision master-1
 
-# 클러스터 중지
+# Stop cluster
 vagrant halt
 
-# 클러스터 삭제
+# Destroy cluster
 vagrant destroy -f
 
-# 스크립트 검증 (shellcheck)
+# Script validation (shellcheck)
 shellcheck scripts/**/*.sh
 ```
 
 ## Key Configuration
 
-| 설정 | 파일 | 변수 |
-|------|------|------|
-| K8s 버전 | `Vagrantfile` | `K8S_VERSION` |
-| Worker 수 | `Vagrantfile` | `WORKER_COUNT` |
-| 메모리/CPU | `Vagrantfile` | `MASTER_MEMORY`, `WORKER_CPUS` |
-| VIP 주소 | `Vagrantfile` | `VIP_ADDRESS` |
-| 컴포넌트 버전 | `VERSIONS.md` | 전체 버전 관리 |
+| Setting | File | Variable |
+|---------|------|----------|
+| K8s version | `Vagrantfile` | `K8S_VERSION` |
+| Worker count | `Vagrantfile` | `WORKER_COUNT` |
+| Memory/CPU | `Vagrantfile` | `MASTER_MEMORY`, `WORKER_CPUS` |
+| VIP address | `Vagrantfile` | `VIP_ADDRESS` |
+| Component versions | `VERSIONS.md` | All version management |
 
 ## Permissions
 
-### 허용 작업
-- scripts/ 폴더의 쉘 스크립트 수정
-- gitops/apps/, gitops/resources/ YAML 파일 수정
-- Vagrantfile 설정 변경
-- 문서 (README.md, docs/) 업데이트
+### Allowed Operations
+- Modify shell scripts in scripts/ folder
+- Modify YAML files in gitops/apps/, gitops/resources/
+- Change Vagrantfile settings
+- Update documentation (README.md, docs/)
 
-### 금지 작업
-- .vagrant/ 폴더 직접 수정 금지
-- 민감한 정보 (비밀번호, 토큰) 하드코딩 금지
-- 쉘 스크립트에서 `set -euo pipefail` 제거 금지
-- **Bitnami 이미지/차트 사용 금지** (대체재가 전혀 없는 경우에만 예외 허용)
-  - Bitnami 상용화로 인해 이미지 삭제/접근 불가 리스크 있음
-  - DB: 공식 이미지 또는 Operator (CloudNative-PG 등) 사용
-  - 기타: 업스트림 공식 이미지 우선, Alpine 기반 커뮤니티 이미지 차선
-- **docker.io (Docker Hub) 사용 최소화** (대체재 없을 때만 허용)
-  - Rate limit 이슈 (익명 100pulls/6h, 인증 200pulls/6h)
-  - 레지스트리 우선순위: `ghcr.io` > `registry.k8s.io` > `quay.io` > `docker.io`
-  - 자체 이미지는 `ghcr.io/dasomel/` 사용
-  - 불가피하게 docker.io 사용 시 주석으로 사유 명시
+### Forbidden Operations
+- Do not directly modify .vagrant/ folder
+- Do not hardcode sensitive information (passwords, tokens)
+- Do not remove `set -euo pipefail` from shell scripts
+- **Bitnami images/charts are banned** (exception only when absolutely no alternative exists)
+  - Risk of image deletion/inaccessibility due to Bitnami commercialization
+  - DB: Use official images or Operators (CloudNative-PG, etc.)
+  - Other: Prefer upstream official images, Alpine-based community images as fallback
+- **Minimize docker.io (Docker Hub) usage** (allow only when no alternative exists)
+  - Rate limit issues (anonymous 100pulls/6h, authenticated 200pulls/6h)
+  - Registry priority: `ghcr.io` > `registry.k8s.io` > `quay.io` > `docker.io`
+  - Use `ghcr.io/dasomel/` for custom images
+  - When docker.io usage is unavoidable, add a comment explaining the reason
 
 ## Code Style
 
-- **Shell Script**: `set -euo pipefail` 필수, 2 spaces 들여쓰기
-- **YAML**: 2 spaces 들여쓰기
-- **변수명**: ENV_VAR (환경변수), local_var (로컬)
-- **파일명**: 숫자 prefix로 실행 순서 표시 (00-, 01-, ...)
+- **Shell Script**: `set -euo pipefail` required, 2 spaces indentation
+- **YAML**: 2 spaces indentation
+- **Variable names**: ENV_VAR (environment), local_var (local)
+- **Filenames**: Numeric prefix for execution order (00-, 01-, ...)
 
 ## Network Info
 
-| 항목 | 값 |
-|------|-----|
+| Item | Value |
+|------|-------|
 | Master IPs | 192.168.56.10-12 (master-1, master-2, master-3) |
 | Worker IPs | 192.168.56.21-23 (worker-1, worker-2, worker-3) |
 | VIP | 192.168.56.100 |
@@ -294,123 +332,122 @@ shellcheck scripts/**/*.sh
 
 ---
 
-## Infrastructure Resource Safety (인프라 리소스 안전)
+## Infrastructure Resource Safety
 
-- **클러스터 병렬 수정은 최대 2~3개**로 제한 — Master 6GB / Worker 4GB 환경에서 동시 작업은 OOM 유발
-- 여러 pod를 동시에 재시작/수정하지 말 것 — 하나 수정 → 안정화 확인 → 다음 수정
-- 클러스터 수정 작업 간에 `kubectl top nodes`로 리소스 여유 확인 후 다음 작업 진행
-- 인프라/클러스터 변경 시 변경 적용 후 **실제 사용자 관점에서 동작 확인** 필수 (예: curl endpoint, kubectl exec 테스트, DNS resolve)
+- **Limit parallel cluster modifications to 2-3 max** -- concurrent operations cause OOM in Master 4GB / Worker 6GB environment
+- Do not restart/modify multiple pods simultaneously -- modify one -> verify stability -> next modification
+- Check resource availability with `kubectl top nodes` between cluster modification tasks before proceeding
+- After applying infrastructure/cluster changes, **verify from actual user perspective** (e.g., curl endpoint, kubectl exec test, DNS resolve)
 
 ---
 
-## Verification Loop (검증 루프)
+## Verification Loop
 
-> 클로드에게 자신의 작업을 검증할 방법을 제공하는 것이 품질을 2~3배 높입니다.
+> Providing Claude with ways to verify its own work increases quality 2-3x.
 
-### 이 프로젝트의 검증 방법
+### Verification Methods for This Project
 
-1. **스크립트 검증**
+1. **Script Validation**
    ```bash
    shellcheck scripts/**/*.sh
    ruby -c Vagrantfile
    ```
 
-2. **YAML 검증**
+2. **YAML Validation**
    ```bash
    yq eval '.' gitops/apps/*.yaml > /dev/null
    ```
 
-3. **실제 테스트** (VM 실행 중일 때)
+3. **Live Testing** (when VM is running)
    ```bash
    vagrant ssh master-1 -c "kubectl get nodes"
    vagrant ssh master-1 -c "kubectl get pods -A"
    ```
 
-4. **ArgoCD 동기화 확인**
+4. **ArgoCD Sync Verification**
    ```bash
    vagrant ssh master-1 -c "kubectl get applications -n devtools"
    ```
 
-### 검증 명령어
-- `/verify` - 전체 검증 실행
-- `/check` - 빠른 문법 검사
+### Verification Commands
+- `/verify` - Run full verification loop
+- `/check` - Quick syntax check
 
 ---
 
-## Slash Commands (반복 작업 자동화)
+## Slash Commands (Repetitive Task Automation)
 
-| 명령어 | 설명 |
-|--------|------|
-| `/check` | 빠른 타입/문법 체크 |
-| `/verify` | 전체 검증 루프 실행 |
-| `/commit-push-pr` | 커밋 → 푸시 → PR 한 번에 |
-| `/sync-versions` | VERSIONS.md 동기화 검사 |
-| `/add-mistake` | 실수 패턴 기록 |
-| `/compact` | 세션 컨텍스트 정리 및 요약 저장 |
+| Command | Description |
+|---------|-------------|
+| `/check` | Quick type/syntax check |
+| `/verify` | Run full verification loop |
+| `/commit-push-pr` | Commit -> Push -> PR in one step |
+| `/sync-versions` | VERSIONS.md sync check |
+| `/add-mistake` | Record mistake pattern |
+| `/compact` | Clean session context and save summary |
 
 ---
 
 ## Team Contribution Guide
 
-### CLAUDE.md 업데이트 방법
+### How to Update CLAUDE.md
 
-1. **실수 발견 시**: Mistakes Log 섹션에 추가
-2. **새 패턴 발견 시**: Code Style 또는 Permissions에 추가
-3. **코드 리뷰 시**: `@.claude` 태그로 업데이트 요청
+1. **When a mistake is found**: Add to Mistakes Log section
+2. **When a new pattern is discovered**: Add to Code Style or Permissions
+3. **During code review**: Request update with `@.claude` tag
 
-### 주간 리뷰
-- 매주 팀원들이 CLAUDE.md에 기여
-- 새로 발견된 실수 패턴 공유
-- 검증 루프 개선 논의
-
----
-
-## 디버깅 시 팀 적극 활용 (필수)
-
-> 디버깅 상황에서는 단독으로 해결하려 하지 말고, 팀(서브에이전트 + Gemini)을 적극 활용하세요.
-
-| 상황 | 팀 활용 방법 |
-|------|-------------|
-| **Pod 실패 디버깅** | Task 에이전트로 로그/이벤트/describe 병렬 수집, Gemini로 에러 메시지 분석 |
-| **Helm 설치 실패** | Gemini로 차트 버전 호환성/breaking changes 확인, 서브에이전트로 values 검증 |
-| **네트워크 문제** | 서브에이전트로 DNS/서비스/엔드포인트 동시 조사 |
-| **이미지 문제** | Gemini로 ARM64 지원 여부/태그 확인, 서브에이전트로 레지스트리 접근 테스트 |
-| **Vagrant 프로비저닝 실패** | 서브에이전트로 VM 로그/스크립트 출력 분석, Gemini로 대안 검색 |
+### Weekly Review
+- Team members contribute to CLAUDE.md weekly
+- Share newly discovered mistake patterns
+- Discuss verification loop improvements
 
 ---
 
-## Ralph 기법
+## Leverage the Team for Debugging (Required)
 
-### 이 프로젝트에서 Ralph 활용
+> During debugging, do not try to solve alone -- actively leverage the team (subagents + Gemini).
+
+| Scenario | Team Utilization |
+|----------|-----------------|
+| **Pod failure debugging** | Collect logs/events/describe in parallel with Task agents, analyze error messages with Gemini |
+| **Helm install failure** | Verify chart version compatibility/breaking changes with Gemini, validate values with subagents |
+| **Network issues** | Investigate DNS/services/endpoints simultaneously with subagents |
+| **Image issues** | Check ARM64 support/tags with Gemini, test registry access with subagents |
+| **Vagrant provisioning failure** | Analyze VM logs/script output with subagents, search for alternatives with Gemini |
+
+---
+
+## Ralph Technique
+
+### Using Ralph in This Project
 
 ```bash
-# 1. PROMPT.md 작성
+# 1. Write PROMPT.md
 cat > PROMPT.md << 'EOF'
-# Task: GitOps 앱 추가
+# Task: Add GitOps App
 
-## 목표
-Velero 백업 애플리케이션을 GitOps로 추가
+## Goal
+Add Velero backup application to GitOps
 
-## 작업 목록
-1. gitops/apps/velero.yaml 생성
-2. gitops/apps/velero.yaml에 Helm values inline 추가
-3. VERSIONS.md 업데이트
-4. app-of-apps.yaml에 참조 추가
+## Task List
+1. Create gitops/apps/velero.yaml
+2. Add Helm values inline to gitops/apps/velero.yaml
+3. Update VERSIONS.md
+4. Add reference to app-of-apps.yaml
 
-## 완료 조건
-- 모든 YAML이 문법적으로 유효
-- ArgoCD Application 스펙 준수
-- VERSIONS.md와 버전 일치
+## Completion Criteria
+- All YAML is syntactically valid
+- Follows ArgoCD Application spec
+- Versions match VERSIONS.md
 
-## 검증
-완료 후 `yq eval '.' gitops/apps/velero.yaml` 실행
+## Verification
+After completion, run `yq eval '.' gitops/apps/velero.yaml`
 EOF
 
-# 2. Ralph 실행
+# 2. Run Ralph
 .claude/scripts/ralph.sh
 ```
 
-### Ralph PROMPT.md 템플릿
+### Ralph PROMPT.md Template
 
-`.claude/templates/PROMPT.md` 참조
-
+See `.claude/templates/PROMPT.md`

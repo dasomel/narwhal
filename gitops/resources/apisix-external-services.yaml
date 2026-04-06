@@ -111,3 +111,63 @@ spec:
   externalName: velero-ui.storage.svc.cluster.local
   ports:
     - port: 3000
+---
+# Prometheus (monitoring namespace)
+apiVersion: v1
+kind: Service
+metadata:
+  name: prometheus-server
+  namespace: platform-system
+spec:
+  type: ExternalName
+  externalName: prometheus-stack-kube-prom-prometheus.monitoring.svc.cluster.local
+  ports:
+    - port: 9090
+---
+# Alertmanager (monitoring namespace)
+apiVersion: v1
+kind: Service
+metadata:
+  name: alertmanager-server
+  namespace: platform-system
+spec:
+  type: ExternalName
+  externalName: prometheus-stack-kube-prom-alertmanager.monitoring.svc.cluster.local
+  ports:
+    - port: 9093
+---
+# Keycloak (iam namespace)
+apiVersion: v1
+kind: Service
+metadata:
+  name: keycloak-server
+  namespace: platform-system
+spec:
+  type: ExternalName
+  externalName: keycloak-service.iam.svc.cluster.local
+  ports:
+    - port: 8080
+---
+# IDP Portal (devtools namespace)
+apiVersion: v1
+kind: Service
+metadata:
+  name: idp-portal
+  namespace: platform-system
+spec:
+  type: ExternalName
+  externalName: idp-portal.devtools.svc.cluster.local
+  ports:
+    - port: 3000
+---
+# NFS Quota Agent (nfs-quota-agent namespace)
+apiVersion: v1
+kind: Service
+metadata:
+  name: nfs-quota-agent
+  namespace: platform-system
+spec:
+  type: ExternalName
+  externalName: nfs-quota-agent.nfs-quota-agent.svc.cluster.local
+  ports:
+    - port: 8080

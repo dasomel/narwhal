@@ -62,23 +62,8 @@ spec:
             tag: latest
           podLabels:
             istio.io/dataplane-mode: "none"
-          # SECURITY: oidc_client_secret은 08-5-registry.sh에서 kubectl patch로 런타임에 주입됨
-          # 실제 값: kubectl get secret harbor-oidc-config -n devtools -o jsonpath='{.data.oidc_client_secret}' | base64 -d
-          # Harbor configureUserSettings is injected via env var at startup and cannot be
-          # referenced from a Kubernetes Secret directly via Helm values.
-          configureUserSettings: |-
-            {
-              "auth_mode": "oidc_auth",
-              "oidc_name": "Authentik",
-              "oidc_endpoint": "https://authentik.local.narwhal.io/application/o/apisix/",
-              "oidc_client_id": "apisix",
-              "oidc_client_secret": "REPLACE_FROM_SECRET",
-              "oidc_groups_claim": "groups",
-              "oidc_admin_group": "cluster-admin",
-              "oidc_scope": "openid,profile,email,groups",
-              "oidc_auto_onboard": "true",
-              "oidc_verify_cert": "false"
-            }
+          # OIDC config is set via Harbor API by 11-3-keycloak-clients.sh (stored in Harbor DB)
+          # CONFIG_OVERWRITE_JSON env var is NOT set — API-based config survives restarts via DB
         jobservice:
           image:
             repository: ghcr.io/dasomel/goharbor/harbor-jobservice

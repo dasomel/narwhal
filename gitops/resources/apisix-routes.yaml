@@ -1,23 +1,30 @@
 ---
-# Authentik (Identity Provider — no OIDC plugin, Authentik IS the IdP)
+# Keycloak (Identity Provider — no OIDC plugin, Keycloak IS the IdP)
 apiVersion: apisix.apache.org/v2
 kind: ApisixRoute
 metadata:
-  name: authentik
+  name: keycloak
   namespace: platform-system
 spec:
   http:
-    - name: authentik
+    - name: keycloak
       match:
         hosts:
-          - authentik.local.narwhal.io
+          - keycloak.local.narwhal.io
         paths:
           - "/*"
       backends:
-        - serviceName: authentik-server
-          servicePort: 9000
+        - serviceName: keycloak-server
+          servicePort: 8080
           resolveGranularity: service
       plugins:
+        - name: proxy-rewrite
+          enable: true
+          config:
+            headers:
+              set:
+                X-Forwarded-Port: "443"
+                X-Forwarded-Proto: "https"
         - name: response-rewrite
           enable: true
           config:
@@ -26,7 +33,7 @@ spec:
                 Strict-Transport-Security: "max-age=31536000; includeSubDomains"
                 X-Content-Type-Options: "nosniff"
 ---
-# ArgoCD
+# ArgoCD (native OIDC — argocd-cm handles auth, no APISIX openid-connect)
 apiVersion: apisix.apache.org/v2
 kind: ApisixRoute
 metadata:
@@ -45,22 +52,6 @@ spec:
           servicePort: 80
           resolveGranularity: service
       plugins:
-        - name: openid-connect
-          enable: true
-          config:
-            client_id: "apisix"
-            client_secret: "$secret://kubernetes/k8s-1/apisix-oidc-config/client_secret"
-            discovery: "https://authentik.local.narwhal.io/application/o/apisix/.well-known/openid-configuration"
-            redirect_uri: "https://argocd.local.narwhal.io/apisix/callback"
-            scope: "openid email profile groups"
-            bearer_only: false
-            ssl_verify: false
-            logout_path: "/apisix/logout"
-            set_userinfo_header: true
-            set_access_token_header: true
-            access_token_in_authorization_header: true
-            session:
-              secret: "$secret://kubernetes/k8s-1/apisix-oidc-config/session_secret"
         - name: response-rewrite
           enable: true
           config:
@@ -71,7 +62,7 @@ spec:
                 X-Frame-Options: "SAMEORIGIN"
                 X-XSS-Protection: "1; mode=block"
 ---
-# Grafana
+# Grafana (native generic_oauth — service handles auth)
 apiVersion: apisix.apache.org/v2
 kind: ApisixRoute
 metadata:
@@ -90,22 +81,6 @@ spec:
           servicePort: 80
           resolveGranularity: service
       plugins:
-        - name: openid-connect
-          enable: true
-          config:
-            client_id: "apisix"
-            client_secret: "$secret://kubernetes/k8s-1/apisix-oidc-config/client_secret"
-            discovery: "https://authentik.local.narwhal.io/application/o/apisix/.well-known/openid-configuration"
-            redirect_uri: "https://grafana.local.narwhal.io/apisix/callback"
-            scope: "openid email profile groups"
-            bearer_only: false
-            ssl_verify: false
-            logout_path: "/apisix/logout"
-            set_userinfo_header: true
-            set_access_token_header: true
-            access_token_in_authorization_header: true
-            session:
-              secret: "$secret://kubernetes/k8s-1/apisix-oidc-config/session_secret"
         - name: response-rewrite
           enable: true
           config:
@@ -116,7 +91,7 @@ spec:
                 X-Frame-Options: "SAMEORIGIN"
                 X-XSS-Protection: "1; mode=block"
 ---
-# Gitea
+# Gitea (native OAuth2 source — service handles auth)
 apiVersion: apisix.apache.org/v2
 kind: ApisixRoute
 metadata:
@@ -135,22 +110,6 @@ spec:
           servicePort: 3000
           resolveGranularity: service
       plugins:
-        - name: openid-connect
-          enable: true
-          config:
-            client_id: "apisix"
-            client_secret: "$secret://kubernetes/k8s-1/apisix-oidc-config/client_secret"
-            discovery: "https://authentik.local.narwhal.io/application/o/apisix/.well-known/openid-configuration"
-            redirect_uri: "https://gitea.local.narwhal.io/apisix/callback"
-            scope: "openid email profile groups"
-            bearer_only: false
-            ssl_verify: false
-            logout_path: "/apisix/logout"
-            set_userinfo_header: true
-            set_access_token_header: true
-            access_token_in_authorization_header: true
-            session:
-              secret: "$secret://kubernetes/k8s-1/apisix-oidc-config/session_secret"
         - name: response-rewrite
           enable: true
           config:
@@ -161,7 +120,7 @@ spec:
                 X-Frame-Options: "SAMEORIGIN"
                 X-XSS-Protection: "1; mode=block"
 ---
-# Harbor (100MB body limit for image push)
+# Harbor (native OIDC mode — service handles auth, keep client-control for image push)
 apiVersion: apisix.apache.org/v2
 kind: ApisixRoute
 metadata:
@@ -180,22 +139,6 @@ spec:
           servicePort: 80
           resolveGranularity: service
       plugins:
-        - name: openid-connect
-          enable: true
-          config:
-            client_id: "apisix"
-            client_secret: "$secret://kubernetes/k8s-1/apisix-oidc-config/client_secret"
-            discovery: "https://authentik.local.narwhal.io/application/o/apisix/.well-known/openid-configuration"
-            redirect_uri: "https://harbor.local.narwhal.io/apisix/callback"
-            scope: "openid email profile groups"
-            bearer_only: false
-            ssl_verify: false
-            logout_path: "/apisix/logout"
-            set_userinfo_header: true
-            set_access_token_header: true
-            access_token_in_authorization_header: true
-            session:
-              secret: "$secret://kubernetes/k8s-1/apisix-oidc-config/session_secret"
         - name: client-control
           enable: true
           config:
@@ -210,7 +153,7 @@ spec:
                 X-Frame-Options: "SAMEORIGIN"
                 X-XSS-Protection: "1; mode=block"
 ---
-# Headlamp
+# Headlamp (native OIDC — service handles auth)
 apiVersion: apisix.apache.org/v2
 kind: ApisixRoute
 metadata:
@@ -229,22 +172,6 @@ spec:
           servicePort: 80
           resolveGranularity: service
       plugins:
-        - name: openid-connect
-          enable: true
-          config:
-            client_id: "apisix"
-            client_secret: "$secret://kubernetes/k8s-1/apisix-oidc-config/client_secret"
-            discovery: "https://authentik.local.narwhal.io/application/o/apisix/.well-known/openid-configuration"
-            redirect_uri: "https://headlamp.local.narwhal.io/apisix/callback"
-            scope: "openid email profile groups"
-            bearer_only: false
-            ssl_verify: false
-            logout_path: "/apisix/logout"
-            set_userinfo_header: true
-            set_access_token_header: true
-            access_token_in_authorization_header: true
-            session:
-              secret: "$secret://kubernetes/k8s-1/apisix-oidc-config/session_secret"
         - name: response-rewrite
           enable: true
           config:
@@ -255,7 +182,7 @@ spec:
                 X-Frame-Options: "SAMEORIGIN"
                 X-XSS-Protection: "1; mode=block"
 ---
-# OpenBao
+# OpenBao (native OIDC auth method — service handles auth)
 apiVersion: apisix.apache.org/v2
 kind: ApisixRoute
 metadata:
@@ -274,22 +201,6 @@ spec:
           servicePort: 8200
           resolveGranularity: service
       plugins:
-        - name: openid-connect
-          enable: true
-          config:
-            client_id: "apisix"
-            client_secret: "$secret://kubernetes/k8s-1/apisix-oidc-config/client_secret"
-            discovery: "https://authentik.local.narwhal.io/application/o/apisix/.well-known/openid-configuration"
-            redirect_uri: "https://openbao.local.narwhal.io/apisix/callback"
-            scope: "openid email profile groups"
-            bearer_only: false
-            ssl_verify: false
-            logout_path: "/apisix/logout"
-            set_userinfo_header: true
-            set_access_token_header: true
-            access_token_in_authorization_header: true
-            session:
-              secret: "$secret://kubernetes/k8s-1/apisix-oidc-config/session_secret"
         - name: response-rewrite
           enable: true
           config:
@@ -300,7 +211,7 @@ spec:
                 X-Frame-Options: "SAMEORIGIN"
                 X-XSS-Protection: "1; mode=block"
 ---
-# Hubble UI
+# Hubble UI (APISIX openid-connect — no native SSO support)
 apiVersion: apisix.apache.org/v2
 kind: ApisixRoute
 metadata:
@@ -322,9 +233,9 @@ spec:
         - name: openid-connect
           enable: true
           config:
-            client_id: "apisix"
-            client_secret: "$secret://kubernetes/k8s-1/apisix-oidc-config/client_secret"
-            discovery: "https://authentik.local.narwhal.io/application/o/apisix/.well-known/openid-configuration"
+            client_id: "hubble"
+            client_secret: "$secret://kubernetes/k8s-1/hubble-oidc-secret/client_secret"
+            discovery: "https://keycloak.local.narwhal.io/realms/narwhal/.well-known/openid-configuration"
             redirect_uri: "https://hubble.local.narwhal.io/apisix/callback"
             scope: "openid email profile groups"
             bearer_only: false
@@ -334,7 +245,7 @@ spec:
             set_access_token_header: true
             access_token_in_authorization_header: true
             session:
-              secret: "$secret://kubernetes/k8s-1/apisix-oidc-config/session_secret"
+              secret: "$secret://kubernetes/k8s-1/hubble-oidc-secret/session_secret"
         - name: response-rewrite
           enable: true
           config:
@@ -345,7 +256,97 @@ spec:
                 X-Frame-Options: "SAMEORIGIN"
                 X-XSS-Protection: "1; mode=block"
 ---
-# Velero UI (backup management)
+# Prometheus (APISIX openid-connect — no native SSO support)
+apiVersion: apisix.apache.org/v2
+kind: ApisixRoute
+metadata:
+  name: prometheus
+  namespace: platform-system
+spec:
+  http:
+    - name: prometheus
+      match:
+        hosts:
+          - prometheus.local.narwhal.io
+        paths:
+          - "/*"
+      backends:
+        - serviceName: prometheus-server
+          servicePort: 9090
+          resolveGranularity: service
+      plugins:
+        - name: openid-connect
+          enable: true
+          config:
+            client_id: "prometheus"
+            client_secret: "$secret://kubernetes/k8s-1/prometheus-oidc-secret/client_secret"
+            discovery: "https://keycloak.local.narwhal.io/realms/narwhal/.well-known/openid-configuration"
+            redirect_uri: "https://prometheus.local.narwhal.io/apisix/callback"
+            scope: "openid email profile groups"
+            bearer_only: false
+            ssl_verify: false
+            logout_path: "/apisix/logout"
+            set_userinfo_header: true
+            set_access_token_header: true
+            access_token_in_authorization_header: true
+            session:
+              secret: "$secret://kubernetes/k8s-1/prometheus-oidc-secret/session_secret"
+        - name: response-rewrite
+          enable: true
+          config:
+            headers:
+              set:
+                Strict-Transport-Security: "max-age=31536000; includeSubDomains"
+                X-Content-Type-Options: "nosniff"
+                X-Frame-Options: "SAMEORIGIN"
+                X-XSS-Protection: "1; mode=block"
+---
+# Alertmanager (APISIX openid-connect — shares prometheus client)
+apiVersion: apisix.apache.org/v2
+kind: ApisixRoute
+metadata:
+  name: alertmanager
+  namespace: platform-system
+spec:
+  http:
+    - name: alertmanager
+      match:
+        hosts:
+          - alertmanager.local.narwhal.io
+        paths:
+          - "/*"
+      backends:
+        - serviceName: alertmanager-server
+          servicePort: 9093
+          resolveGranularity: service
+      plugins:
+        - name: openid-connect
+          enable: true
+          config:
+            client_id: "prometheus"
+            client_secret: "$secret://kubernetes/k8s-1/prometheus-oidc-secret/client_secret"
+            discovery: "https://keycloak.local.narwhal.io/realms/narwhal/.well-known/openid-configuration"
+            redirect_uri: "https://alertmanager.local.narwhal.io/apisix/callback"
+            scope: "openid email profile groups"
+            bearer_only: false
+            ssl_verify: false
+            logout_path: "/apisix/logout"
+            set_userinfo_header: true
+            set_access_token_header: true
+            access_token_in_authorization_header: true
+            session:
+              secret: "$secret://kubernetes/k8s-1/prometheus-oidc-secret/session_secret"
+        - name: response-rewrite
+          enable: true
+          config:
+            headers:
+              set:
+                Strict-Transport-Security: "max-age=31536000; includeSubDomains"
+                X-Content-Type-Options: "nosniff"
+                X-Frame-Options: "SAMEORIGIN"
+                X-XSS-Protection: "1; mode=block"
+---
+# Velero UI (APISIX openid-connect — no native SSO support)
 apiVersion: apisix.apache.org/v2
 kind: ApisixRoute
 metadata:
@@ -367,9 +368,9 @@ spec:
         - name: openid-connect
           enable: true
           config:
-            client_id: "apisix"
-            client_secret: "$secret://kubernetes/k8s-1/apisix-oidc-config/client_secret"
-            discovery: "https://authentik.local.narwhal.io/application/o/apisix/.well-known/openid-configuration"
+            client_id: "velero-ui"
+            client_secret: "$secret://kubernetes/k8s-1/velero-ui-oidc-secret/client_secret"
+            discovery: "https://keycloak.local.narwhal.io/realms/narwhal/.well-known/openid-configuration"
             redirect_uri: "https://velero-ui.local.narwhal.io/apisix/callback"
             scope: "openid email profile groups"
             bearer_only: false
@@ -379,7 +380,81 @@ spec:
             set_access_token_header: true
             access_token_in_authorization_header: true
             session:
-              secret: "$secret://kubernetes/k8s-1/apisix-oidc-config/session_secret"
+              secret: "$secret://kubernetes/k8s-1/velero-ui-oidc-secret/session_secret"
+        - name: response-rewrite
+          enable: true
+          config:
+            headers:
+              set:
+                Strict-Transport-Security: "max-age=31536000; includeSubDomains"
+                X-Content-Type-Options: "nosniff"
+                X-Frame-Options: "SAMEORIGIN"
+                X-XSS-Protection: "1; mode=block"
+---
+# IDP Portal (NextAuth.js handles its own SSO — no APISIX openid-connect)
+apiVersion: apisix.apache.org/v2
+kind: ApisixRoute
+metadata:
+  name: idp-portal
+  namespace: platform-system
+spec:
+  http:
+    - name: idp-portal
+      match:
+        hosts:
+          - portal.local.narwhal.io
+        paths:
+          - "/*"
+      backends:
+        - serviceName: idp-portal
+          servicePort: 3000
+          resolveGranularity: service
+      # IDP Portal handles its own SSO via NextAuth.js — no APISIX openid-connect plugin
+      plugins:
+        - name: response-rewrite
+          enable: true
+          config:
+            headers:
+              set:
+                Strict-Transport-Security: "max-age=31536000; includeSubDomains"
+                X-Content-Type-Options: "nosniff"
+                X-Frame-Options: "SAMEORIGIN"
+                X-XSS-Protection: "1; mode=block"
+---
+# NFS Quota Agent (APISIX openid-connect — no native SSO support)
+apiVersion: apisix.apache.org/v2
+kind: ApisixRoute
+metadata:
+  name: nfs-quota-agent
+  namespace: platform-system
+spec:
+  http:
+    - name: nfs-quota-agent
+      match:
+        hosts:
+          - nfs-quota.local.narwhal.io
+        paths:
+          - "/*"
+      backends:
+        - serviceName: nfs-quota-agent
+          servicePort: 8080
+      plugins:
+        - name: openid-connect
+          enable: true
+          config:
+            client_id: "hubble"
+            client_secret: "$secret://kubernetes/k8s-1/hubble-oidc-secret/client_secret"
+            discovery: "https://keycloak.local.narwhal.io/realms/narwhal/.well-known/openid-configuration"
+            redirect_uri: "https://nfs-quota.local.narwhal.io/apisix/callback"
+            scope: "openid email profile groups"
+            bearer_only: false
+            ssl_verify: false
+            logout_path: "/apisix/logout"
+            set_userinfo_header: true
+            set_access_token_header: true
+            access_token_in_authorization_header: true
+            session:
+              secret: "$secret://kubernetes/k8s-1/hubble-oidc-secret/session_secret"
         - name: response-rewrite
           enable: true
           config:

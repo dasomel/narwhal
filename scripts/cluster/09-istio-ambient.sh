@@ -164,13 +164,16 @@ echo "Labeling namespaces for ambient mesh..."
 
 AMBIENT_NAMESPACES=(
   platform-system
-  iam
   devtools
   monitoring
   storage
   database
   dev
 )
+# NOTE: 'iam' excluded — Keycloak/Authentik in iam namespace must be reachable
+# from APISIX (cross-namespace plain HTTP). ztunnel ambient intercept blocks
+# inbound plain HTTP even when pods have istio.io/dataplane-mode=none label,
+# causing upstream timeout from APISIX -> keycloak-service ClusterIP.
 
 for ns in "${AMBIENT_NAMESPACES[@]}"; do
   if kubectl get namespace "${ns}" &>/dev/null; then

@@ -40,3 +40,8 @@ PROMPT.md
 
 # OMC internal state
 .omc/
+
+# Local development directories (separate git repos)
+idp-portal/
+idp/
+csp/

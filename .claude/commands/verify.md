@@ -1,15 +1,15 @@
 ---
 name: verify
-description: 전체 검증 루프 - Vagrantfile, 스크립트, YAML 문법 검사 및 클러스터 상태 확인
+description: Full verification loop - Vagrantfile, scripts, YAML syntax check and cluster state inspection
 ---
 
-# Verify - 전체 검증 루프 실행
+# Verify - Full Verification Loop
 
-작업 결과를 검증하여 품질을 보장합니다.
+Validates work results to ensure quality.
 
-## 검증 단계
+## Verification Steps
 
-### 1. 문법 검증
+### 1. Syntax Validation
 ```bash
 # Vagrantfile
 ruby -c Vagrantfile
@@ -23,35 +23,35 @@ for f in gitops/apps/*.yaml gitops/resources/*.yaml; do
 done
 ```
 
-### 2. Git 상태 확인
+### 2. Git Status Check
 ```bash
 git status --short
 git diff --stat
 ```
 
-### 3. VM 실행 중이면 클러스터 상태 확인
+### 3. Cluster State Check (if VM is running)
 ```bash
-# 노드 상태
+# Node status
 vagrant ssh master-1 -c "kubectl get nodes" 2>/dev/null || echo "VM not running"
 
-# Pod 상태
+# Pod status
 vagrant ssh master-1 -c "kubectl get pods -A --field-selector=status.phase!=Running 2>/dev/null | head -20" || true
 
-# ArgoCD 앱 상태
-vagrant ssh master-1 -c "kubectl get applications -n argocd 2>/dev/null" || true
+# ArgoCD app status
+vagrant ssh master-1 -c "kubectl get applications -n devtools 2>/dev/null" || true
 ```
 
-### 4. 버전 일관성 확인
-- VERSIONS.md와 스크립트 버전 비교
-- gitops/apps/*.yaml의 차트 버전 확인
+### 4. Version Consistency Check
+- Compare VERSIONS.md with script versions
+- Verify chart versions in gitops/apps/*.yaml
 
-## 출력 형식
+## Output Format
 
 ```
 === Verification Report ===
 [OK] Vagrantfile syntax
 [OK] scripts/cluster/02-init-cluster.sh
-[WARN] scripts/cluster/11-keycloak.sh - shellcheck warnings
+[WARN] scripts/cluster/11-authentik.sh - shellcheck warnings
 [OK] gitops/apps/cert-manager.yaml
 [FAIL] gitops/apps/harbor.yaml - YAML syntax error
 
@@ -60,7 +60,7 @@ ArgoCD Apps: 8 Synced, 1 Progressing
 ===========================
 ```
 
-## 사용법
+## Usage
 
-이 명령어 실행 시 위 검증을 순서대로 수행하고 결과를 요약합니다.
-실패 항목이 있으면 수정 방법을 제안합니다.
+Running this command performs all validations in order and summarizes results.
+Suggests fixes for any failures found.

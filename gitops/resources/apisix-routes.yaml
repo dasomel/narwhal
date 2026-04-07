@@ -422,6 +422,10 @@ spec:
                 X-XSS-Protection: "1; mode=block"
 ---
 # NFS Quota Agent (APISIX openid-connect — no native SSO support)
+# NOTE: APISIX IC cannot sync this route because the ExternalName backend
+# (nfs-quota-agent.nfs-quota-agent.svc.cluster.local) has no endpoints.
+# This ApisixRoute is documentation-only. The actual route is applied via
+# APISIX admin API in 11-3-keycloak-clients.sh (includes body_filter fix).
 apiVersion: apisix.apache.org/v2
 kind: ApisixRoute
 metadata:
@@ -455,6 +459,36 @@ spec:
             access_token_in_authorization_header: true
             session:
               secret: "$secret://kubernetes/k8s-1/hubble-oidc-secret/session_secret"
+        - name: serverless-post-function
+          enable: true
+          config:
+            phase: body_filter
+            # Fixes nfs-quota-agent v0.2.1 HTML bug: Go binary embeds
+            # ` + "`" + ` (raw string literal syntax) instead of backtick
+            # chars in JS template literals, causing SyntaxError in browser.
+            # This Lua replaces all 22 occurrences with real backtick chars.
+            functions:
+              - |
+                return function(conf, ctx)
+                  local body = ngx.arg[1]
+                  local eof = ngx.arg[2]
+                  if not ngx.ctx.nqs_buf then ngx.ctx.nqs_buf = {} end
+                  if body and #body > 0 then
+                    table.insert(ngx.ctx.nqs_buf, body)
+                    ngx.arg[1] = ''
+                  end
+                  if eof then
+                    local full = table.concat(ngx.ctx.nqs_buf)
+                    local bt = string.char(96)
+                    local dq = string.char(34)
+                    local sp = string.char(32)
+                    local bs = string.char(92)
+                    local pl = string.char(43)
+                    local pat = bt..sp..bs..pl..sp..dq..bt..dq..sp..bs..pl..sp..bt
+                    full = ngx.re.gsub(full, pat, bt, 'jo')
+                    ngx.arg[1] = full
+                  end
+                end
         - name: response-rewrite
           enable: true
           config:

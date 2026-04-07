@@ -87,7 +87,12 @@ else
 fi
 
 # CNPG bootstrap uses narwhal-db-credentials directly (username/password fields)
-# S3 credentials for backup (placeholder, adjust if SeaweedFS/MinIO is used)
+# S3 credentials - reuse SeaweedFS creds (aligned with Velero pattern in 08-4-storage.sh)
+S3_ACCESS_KEY="${S3_ACCESS_KEY:-$(kubectl get secret velero-s3-credentials -n storage \
+  -o jsonpath='{.data.access-key}' 2>/dev/null | base64 -d || echo "admin")}"
+S3_SECRET_KEY="${S3_SECRET_KEY:-$(kubectl get secret velero-s3-credentials -n storage \
+  -o jsonpath='{.data.secret-key}' 2>/dev/null | base64 -d || echo "")}"
+
 cat <<EOF | kubectl apply -f -
 apiVersion: v1
 kind: Secret
@@ -96,8 +101,8 @@ metadata:
   namespace: database
 type: Opaque
 stringData:
-  ACCESS_KEY_ID: admin
-  ACCESS_SECRET_KEY: admin
+  ACCESS_KEY_ID: ${S3_ACCESS_KEY}
+  ACCESS_SECRET_KEY: ${S3_SECRET_KEY}
 EOF
 
 # Write cluster manifest to temp file (avoids heredoc + if + set -e issues)
@@ -167,7 +172,25 @@ spec:
       log_disconnections: "on"
 
   monitoring:
-    enablePodMonitor: false
+    enablePodMonitor: true
+
+  backup:
+    barmanObjectStore:
+      destinationPath: s3://cnpg-backup/
+      endpointURL: http://seaweedfs-s3.storage.svc.cluster.local:8333
+      s3Credentials:
+        accessKeyId:
+          name: cnpg-s3-credentials
+          key: ACCESS_KEY_ID
+        secretAccessKey:
+          name: cnpg-s3-credentials
+          key: ACCESS_SECRET_KEY
+      wal:
+        compression: gzip
+      data:
+        compression: gzip
+        immediateCheckpoint: false
+    retentionPolicy: "30d"
 
   # Tolerations for disk pressure
   affinity:
@@ -246,6 +269,24 @@ EOF
 echo "Waiting for PgBouncer pooler..."
 sleep 5
 kubectl wait --for=condition=Ready pod -l cnpg.io/poolerName=narwhal-db-pooler-rw -n database --timeout=120s || true
+
+#=========================================
+# Create ScheduledBackup
+#=========================================
+echo "=== Creating ScheduledBackup (daily at 02:00) ==="
+
+cat <<EOF | kubectl apply -f - || echo "WARN: ScheduledBackup creation failed, continuing..."
+apiVersion: postgresql.cnpg.io/v1
+kind: ScheduledBackup
+metadata:
+  name: narwhal-db-backup
+  namespace: database
+spec:
+  schedule: "0 2 * * *"
+  backupOwnerReference: self
+  cluster:
+    name: narwhal-db
+EOF
 
 #=========================================
 # Create cross-namespace service aliases

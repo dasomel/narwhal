@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# PreToolUse Hook: 편집 전 검증
-# JSON 출력으로 hookSpecificOutput.permissionDecision 사용 (공식 프로토콜)
+# PreToolUse Hook: Pre-edit validation
+# Uses JSON output with hookSpecificOutput.permissionDecision (official protocol)
 set -euo pipefail
 
 INPUT=$(cat)
@@ -10,26 +10,26 @@ if [[ -z "${FILE_PATH}" ]]; then
   exit 0
 fi
 
-# .vagrant 폴더 수정 방지
+# Prevent .vagrant folder modification
 if [[ "${FILE_PATH}" == *".vagrant/"* ]]; then
   jq -n '{
     hookSpecificOutput: {
       hookEventName: "PreToolUse",
       permissionDecision: "deny",
-      permissionDecisionReason: ".vagrant/ 폴더는 직접 수정할 수 없습니다."
+      permissionDecisionReason: "Cannot directly modify .vagrant/ folder."
     }
   }'
   exit 0
 fi
 
-# 민감한 파일 경고 (ask로 사용자 확인 요청)
+# Warn on sensitive files (ask for user confirmation)
 case "${FILE_PATH}" in
   *kubeconfig*|*.pem|*.key|*.env)
     jq -n '{
       hookSpecificOutput: {
         hookEventName: "PreToolUse",
         permissionDecision: "ask",
-        permissionDecisionReason: "민감한 파일입니다. 비밀번호/토큰 하드코딩 금지!"
+        permissionDecisionReason: "Sensitive file detected. No hardcoded passwords/tokens!"
       }
     }'
     exit 0

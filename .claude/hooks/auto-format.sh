@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# PostToolUse Hook: 자동 포맷팅 검사
-# additionalContext로 Claude에게 전달
+# PostToolUse Hook: Auto-formatting check
+# Passes context to Claude via additionalContext
 set -euo pipefail
 
 INPUT=$(cat)
@@ -12,20 +12,20 @@ fi
 
 CONTEXT=""
 
-# 쉘 스크립트 포맷팅 검사
+# Shell script formatting check
 if [[ "${FILE_PATH}" == *.sh ]]; then
   if command -v shfmt &>/dev/null; then
     if ! shfmt -d -i 2 "${FILE_PATH}" &>/dev/null; then
-      CONTEXT="[Format] 쉘 스크립트 포맷팅 차이 감지: shfmt -w -i 2 ${FILE_PATH}"
+      CONTEXT="[Format] Shell script formatting diff detected: shfmt -w -i 2 ${FILE_PATH}"
     fi
   fi
 fi
 
-# YAML 검증
+# YAML validation
 if [[ "${FILE_PATH}" == *.yaml ]] || [[ "${FILE_PATH}" == *.yml ]]; then
   if command -v yq &>/dev/null; then
     if ! yq eval '.' "${FILE_PATH}" &>/dev/null 2>&1; then
-      CONTEXT="[Error] YAML 문법 오류 감지: ${FILE_PATH}"
+      CONTEXT="[Error] YAML syntax error detected: ${FILE_PATH}"
     fi
   fi
 fi

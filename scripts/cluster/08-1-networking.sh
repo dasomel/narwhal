@@ -46,12 +46,13 @@ helm repo add apisix https://charts.apiseven.com
 helm repo update apisix
 
 # Install APISIX CRDs with server-side apply to avoid field manager conflicts
-echo "Applying APISIX CRDs..."
-helm pull apisix/apisix --version 2.9.0 --untar --untardir /tmp/apisix-chart
-for f in /tmp/apisix-chart/apisix/crds/*.yaml; do
+echo "Applying APISIX CRDs (from apisix-ingress-controller chart)..."
+rm -rf /tmp/aic-chart
+helm pull apisix/apisix-ingress-controller --version 0.14.1 --untar --untardir /tmp/aic-chart
+for f in /tmp/aic-chart/apisix-ingress-controller/crds/*.yaml; do
   kubectl apply --server-side --force-conflicts -f "${f}" 2>&1 | tail -1
 done
-rm -rf /tmp/apisix-chart
+rm -rf /tmp/aic-chart
 
 # Deploy etcd (uses registry.k8s.io/etcd — no Bitnami)
 # etcd is also managed by apisix-infra GitOps resource; apply directly for bootstrap
@@ -141,15 +142,88 @@ helm upgrade --install apisix apisix/apisix \
   --create-namespace \
   --version 2.9.0 \
   --skip-crds \
+  --force \
   -f /tmp/apisix-values.yaml || echo "WARN: APISIX install issue, continuing..."
 
 rm /tmp/apisix-values.yaml
+
+# Patch gateway service to LoadBalancer (chart v2.9.0 ignores gateway.type value)
+echo "Patching APISIX gateway service to LoadBalancer..."
+kubectl patch svc apisix-gateway -n platform-system \
+  -p '{"spec":{"type":"LoadBalancer"},"metadata":{"annotations":{"metallb.universe.tf/loadBalancerIPs":"192.168.56.200"}}}' || true
+
+# Patch APISIX configmap: fix etcd host and remove auth (chart v2.9.0 uses default etcd.host)
+echo "Patching APISIX configmap (etcd host + remove auth)..."
+APISIX_CFG_TMP=$(mktemp)
+kubectl get configmap apisix -n platform-system -o jsonpath='{.data.config\.yaml}' \
+  | grep -v '    user: ' \
+  | grep -v '    password: ' \
+  | sed 's|"http://etcd.host:2379"|"http://apisix-etcd.platform-system.svc.cluster.local:2379"|g' \
+  | sed 's|- 127.0.0.1/24|- 127.0.0.0/24\n      - 0.0.0.0/0|g' \
+  > "${APISIX_CFG_TMP}"
+# Add Kubernetes Secret Provider (for $secret://kubernetes/k8s-1/... in ApisixRoute plugins)
+if ! grep -q 'secret_providers' "${APISIX_CFG_TMP}"; then
+  cat >> "${APISIX_CFG_TMP}" << 'SECEOF'
+
+# Kubernetes Secret Provider — enables $secret://kubernetes/k8s-1/<secret>/<key> in routes
+secret_providers:
+  - name: kubernetes
+    uid: k8s-1
+    auth_type: serviceaccount
+    apiservers:
+      - https://kubernetes.default.svc
+SECEOF
+fi
+
+kubectl create configmap apisix -n platform-system \
+  --from-file="config.yaml=${APISIX_CFG_TMP}" \
+  --dry-run=client -o yaml | kubectl apply -f - || true
+rm -f "${APISIX_CFG_TMP}"
+
+# Restart APISIX to pick up configmap changes
+kubectl rollout restart deployment/apisix -n platform-system || true
 
 # Wait for APISIX gateway to be ready
 echo "Waiting for APISIX gateway..."
 kubectl wait --for=condition=Ready pod -l app.kubernetes.io/name=apisix -n platform-system --timeout=180s || true
 
 echo "APISIX installed"
+
+#=========================================
+# APISIX Ingress Controller
+# Note: apisix/apisix chart v2.9.0 does NOT render ingressController deployment
+# despite ingressController.enabled=true in values. Install separately.
+#=========================================
+echo "=== Installing APISIX Ingress Controller ==="
+
+# Get APISIX admin key from configmap (default key from chart v2.9.0)
+APISIX_ADMIN_KEY=$(kubectl get configmap apisix -n platform-system \
+  -o jsonpath='{.data.config\.yaml}' 2>/dev/null \
+  | grep -A1 'name: "admin"' | grep 'key:' | awk '{print $2}' | head -1)
+APISIX_ADMIN_KEY="${APISIX_ADMIN_KEY:-edd1c9f034335f136f87ad84b625c8f1}"
+
+helm upgrade --install apisix-ingress-controller apisix/apisix-ingress-controller \
+  --namespace platform-system \
+  --version 0.14.1 \
+  --skip-crds \
+  --set image.repository=apache/apisix-ingress-controller \
+  --set image.tag="1.8.0" \
+  --set "podLabels.istio\\.io/dataplane-mode=none" \
+  --set config.apisix.serviceNamespace=platform-system \
+  --set config.apisix.serviceName=apisix-admin \
+  --set config.apisix.adminKey="${APISIX_ADMIN_KEY}" \
+  --set config.apisix.adminAPIVersion=v3 \
+  --set resources.requests.cpu=50m \
+  --set resources.requests.memory=128Mi \
+  --set resources.limits.cpu=200m \
+  --set resources.limits.memory=256Mi \
+  || echo "WARN: APISIX ingress controller install issue, continuing..."
+
+echo "Waiting for APISIX ingress controller..."
+kubectl wait --for=condition=Ready pod -l app.kubernetes.io/name=apisix-ingress-controller \
+  -n platform-system --timeout=120s || true
+
+echo "APISIX ingress controller installed"
 
 #=========================================
 # cert-manager

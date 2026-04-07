@@ -6,11 +6,11 @@ Components and versions used in this project.
 
 | Component | Version | Description |
 |-----------|---------|-------------|
-| Kubernetes | v1.35.1 | Container orchestration |
+| Kubernetes | v1.35.3 | Container orchestration |
 | containerd | 1.7.28 | Container runtime (Ubuntu apt) |
-| kubeadm | v1.35.1 | Cluster bootstrap tool |
-| kubelet | v1.35.1 | Node agent |
-| kubectl | v1.35.1 | CLI tool |
+| kubeadm | v1.35.3 | Cluster bootstrap tool |
+| kubelet | v1.35.3 | Node agent |
+| kubectl | v1.35.3 | CLI tool |
 
 ## Networking
 
@@ -18,7 +18,7 @@ Components and versions used in this project.
 |-----------|---------|-------------|
 | Cilium | v1.19.0 | CNI plugin (default), kube-proxy replacement |
 | Cilium CLI | v0.19.0 | Cilium command-line tool |
-| APISIX | 3.11.0 (app) / 2.9.0 (chart) | API Gateway, OIDC authentication |
+| APISIX | 3.10.0 (app) / 2.9.0 (chart) | API Gateway, OIDC authentication |
 | APISIX Ingress Controller | 1.8.0 | K8s CRD controller for APISIX |
 | APISIX Dashboard | 3.0.0 (app) / 0.9.0 (chart) | APISIX management UI |
 | etcd (APISIX) | 3.5.21 (`registry.k8s.io/etcd:3.5.21-0`) | APISIX configuration store |
@@ -107,7 +107,7 @@ Components and versions used in this project.
 |-----------|---------|-------------|
 | IDP Portal | 0.1.0 | Custom Next.js developer portal (Next.js 16.2.1) |
 | Next.js | 16.2.1 | React framework (App Router, standalone output) |
-| NextAuth.js | 5.0.0-beta.30 | OIDC authentication (Authentik provider) |
+| NextAuth.js | 5.0.0-beta.30 | OIDC authentication (Keycloak provider) |
 | Valkey (portal) | 8-alpine | Portal-dedicated cache (docker.io/valkey/valkey:8-alpine) |
 | TanStack Query | 5.x | Server state management / polling |
 

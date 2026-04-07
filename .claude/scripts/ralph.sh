@@ -7,10 +7,10 @@
 #   .claude/scripts/ralph.sh [PROMPT_FILE] [OPTIONS]
 #
 # Options:
-#   --max-iterations N   최대 반복 횟수 (기본: 무제한)
-#   --delay N            반복 간 대기 시간 초 (기본: 5)
-#   --safe               권한 스킵 없이 실행
-#   --dry-run            실제 실행 없이 프롬프트만 출력
+#   --max-iterations N   Max iteration count (default: unlimited)
+#   --delay N            Delay between iterations in seconds (default: 5)
+#   --safe               Run without skipping permissions
+#   --dry-run            Print prompt only, do not execute
 #===============================================================================
 set -euo pipefail
 

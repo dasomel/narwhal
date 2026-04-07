@@ -54,6 +54,10 @@ helm upgrade --install nfs-quota-agent "${CHART_DIR}" \
   --set nfsExport.hostPath="${NFS_SHARE_PATH}" \
   --set webUI.enabled=true \
   --set webUI.addr=":8080" \
+  --set audit.enabled=true \
+  --set cleanup.enabled=true \
+  --set history.enabled=true \
+  --set policy.enabled=true \
   --set-string nodeSelector.nfs-server=true \
   --set tolerations[0].key=node-role.kubernetes.io/control-plane \
   --set tolerations[0].operator=Exists \

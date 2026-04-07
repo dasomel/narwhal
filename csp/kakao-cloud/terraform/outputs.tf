@@ -1,0 +1,108 @@
+# Narwhal IDP - Outputs
+
+#####################################################################
+# Network
+#####################################################################
+output "vpc_id" {
+  description = "VPC ID"
+  value       = module.network.vpc_id
+}
+
+output "subnet_id" {
+  description = "Subnet ID"
+  value       = module.network.subnet_id
+}
+
+#####################################################################
+# Security
+#####################################################################
+output "security_group_id" {
+  description = "Security Group ID"
+  value       = module.security.security_group_id
+}
+
+#####################################################################
+# Compute
+#####################################################################
+output "master_instance_ids" {
+  description = "Master instance IDs"
+  value       = module.compute.master_instance_ids
+}
+
+output "master_private_ips" {
+  description = "Master instance private IPs"
+  value       = module.compute.master_private_ips
+}
+
+output "master_public_ips" {
+  description = "Master node public IPs"
+  value       = module.compute.master_public_ips
+}
+
+output "worker_instance_ids" {
+  description = "Worker instance IDs"
+  value       = module.compute.worker_instance_ids
+}
+
+output "worker_private_ips" {
+  description = "Worker instance private IPs"
+  value       = module.compute.worker_private_ips
+}
+
+output "worker_public_ips" {
+  description = "Worker node public IPs"
+  value       = module.compute.worker_public_ips
+}
+
+#####################################################################
+# Load Balancer
+#####################################################################
+output "master_lb_id" {
+  description = "Master Load Balancer ID"
+  value       = module.loadbalancer.master_lb_id
+}
+
+output "master_lb_vip" {
+  description = "Master Load Balancer VIP (K8s API Server endpoint)"
+  value       = module.loadbalancer.master_lb_vip
+}
+
+output "master_lb_public_ip" {
+  description = "Master Load Balancer Public IP (external kubectl access)"
+  value       = module.loadbalancer.master_lb_public_ip
+}
+
+output "worker_lb_id" {
+  description = "Worker Load Balancer ID"
+  value       = module.loadbalancer.worker_lb_id
+}
+
+output "worker_lb_vip" {
+  description = "Worker Load Balancer VIP"
+  value       = module.loadbalancer.worker_lb_vip
+}
+
+output "worker_lb_public_ip" {
+  description = "Worker Load Balancer Public IP"
+  value       = module.loadbalancer.worker_lb_public_ip
+}
+
+#####################################################################
+# Connection Info (for post-provisioning)
+#####################################################################
+output "ssh_connection" {
+  description = "SSH connection commands for each node"
+  value = {
+    master_nodes = [for i, ip in module.compute.master_public_ips : "ssh ubuntu@${coalesce(ip, "N/A")}" if ip != null]
+    worker_nodes = [for i, ip in module.compute.worker_public_ips : "ssh ubuntu@${coalesce(ip, "N/A")}" if ip != null]
+    note         = "If empty, public IPs are not assigned. Use master LB public IP for access."
+  }
+}
+
+output "k8s_api_endpoints" {
+  description = "Kubernetes API Server endpoints (available after K8s installation)"
+  value = {
+    internal = "https://${module.loadbalancer.master_lb_vip}:6443"
+    external = "https://${module.loadbalancer.master_lb_public_ip}:6443"
+  }
+}

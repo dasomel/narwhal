@@ -1,65 +1,65 @@
 ---
 name: compact
-description: 컨텍스트 정리 - 세션 요약 생성 및 저장
+description: Context cleanup - generate and save session summary
 ---
 
-# Compact - 세션 컨텍스트 정리
+# Compact - Session Context Cleanup
 
-현재 세션의 작업 내용을 요약하여 컨텍스트를 정리합니다.
+Summarizes current session work to clean up context.
 
-## 실행 절차
+## Procedure
 
-### 1. 세션 요약 생성
+### 1. Generate Session Summary
 
-아래 포맷으로 현재 세션의 전체 작업 내용을 요약합니다:
+Summarize all session work in the following format:
 
 ```markdown
-# Session State - [오늘 날짜]
+# Session State - [today's date]
 
-## 목표
-- 이 세션의 최종 목표
+## Goal
+- Final goal of this session
 
-## 기술 환경
-- 플랫폼, K8s 버전, 핵심 아키텍처 결정
+## Tech Stack & Environment
+- Platform, K8s version, key architecture decisions
 
-## 완료된 작업
-- [x] 해결된 문제 및 구현된 기능
-- [x] 중요 코드 패턴 (스니펫 포함)
+## Completed Work
+- [x] Resolved issues and implemented features
+- [x] Important code patterns (with snippets)
 
-## 변경된 파일
-- 파일 경로: 변경 내용 요약
+## Changed Files
+- file path: change summary
 
-## 미완료 작업
-- [ ] 남은 작업 (우선순위 순)
+## Remaining Work
+- [ ] Remaining tasks (priority order)
 
-## 현재 상태
-- 요약 직전 작업 중이던 내용
-- 즉시 실행할 다음 단계
+## Current State
+- What was being worked on just before summary
+- Immediate next step
 ```
 
-### 2. 저장
+### 2. Save
 
-요약을 `.claude/cache/SESSION_STATE.md`에 저장합니다.
+Save summary to `.claude/cache/SESSION_STATE.md`.
 
-### 3. Git 변경 확인
+### 3. Check Git Changes
 
 ```bash
 git diff --stat
 git status --short
 ```
 
-### 4. 사용자에게 안내
+### 4. Notify User
 
 ```
 === Context Compact Complete ===
-세션 요약이 .claude/cache/SESSION_STATE.md에 저장되었습니다.
-변경 파일: [N]개, 완료: [N]개, 미완료: [N]개
-다음 세션에서 자동으로 복원됩니다.
+Session summary saved to .claude/cache/SESSION_STATE.md
+Changed files: [N], Completed: [N], Remaining: [N]
+Will be automatically restored in next session.
 ===
 ```
 
-## 주의사항
+## Notes
 
-- 민감 정보(시크릿, 토큰)는 요약에 포함하지 않음
-- 코드 스니펫은 핵심 패턴만 포함 (전체 파일 X)
-- MEMORY.md에 영구 보존할 패턴이 있으면 함께 업데이트
+- Do not include sensitive information (secrets, tokens) in summary
+- Include only key pattern snippets (not full files)
+- If there are patterns worth preserving permanently, update MEMORY.md as well

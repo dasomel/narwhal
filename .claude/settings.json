@@ -22,6 +22,8 @@
       "Bash(git log*)",
       "Bash(git add*)",
       "Bash(git commit*)",
+      "Bash(git push*)",
+      "Bash(gh *)",
       "Bash(chmod +x*)",
       "Bash(gemini*)"
     ],
@@ -42,7 +44,7 @@
           {
             "type": "command",
             "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/session-start.sh",
-            "statusMessage": "프로젝트 컨텍스트 로드 중..."
+            "statusMessage": "Loading project context..."
           }
         ]
       }
@@ -86,17 +88,6 @@
         ]
       }
     ],
-    "Stop": [
-      {
-        "hooks": [
-          {
-            "type": "prompt",
-            "prompt": "You are evaluating whether Claude should stop working. Context: $ARGUMENTS\n\nAnalyze the conversation and check:\n1. Were all user-requested tasks completed?\n2. Are there any errors that need to be addressed?\n3. Did Claude skip any work with rationalizations like 'you can do this later' or 'this is left as an exercise'?\n\nIf stop_hook_active is true, allow stopping to prevent infinite loops.\n\nRespond with JSON: {\"ok\": true} to allow stopping, or {\"ok\": false, \"reason\": \"your explanation in Korean\"} to continue working.",
-            "timeout": 30
-          }
-        ]
-      }
-    ],
     "PostToolUseFailure": [
       {
         "matcher": "Bash",
@@ -114,7 +105,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "osascript -e 'display notification \"Claude Code에서 권한 승인이 필요합니다\" with title \"Claude Code\" sound name \"Ping\"'",
+            "command": "osascript -e 'display notification \"Claude Code needs permission approval\" with title \"Claude Code\" sound name \"Ping\"'",
             "timeout": 5
           }
         ]

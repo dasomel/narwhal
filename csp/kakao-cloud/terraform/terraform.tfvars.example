@@ -1,0 +1,49 @@
+#####################################################################
+# Kakao Cloud Provider Credentials
+#####################################################################
+application_credential_id     = "YOUR_APPLICATION_CREDENTIAL_ID"
+application_credential_secret = "YOUR_APPLICATION_CREDENTIAL_SECRET"
+
+#####################################################################
+# Network Configuration
+#####################################################################
+# NOTE: Kakao Cloud provider v0.3.3 bug requires VPC name, cidr_block,
+# and subnet to be hardcoded in modules/network/main.tf.
+# Edit that file directly if you need different VPC settings.
+
+vpc_name                = "narwhal-vpc"
+vpc_cidr                = "172.16.0.0/16"
+vpc_default_subnet_cidr = "172.16.255.0/24"
+subnet_name             = "narwhal-subnet"
+subnet_cidr             = "172.16.0.0/24"
+availability_zone       = "kr-central-2-a"
+
+#####################################################################
+# Security Configuration
+#####################################################################
+security_group_name = "narwhal-sg"
+key_name            = "YOUR_KEYPAIR_NAME"      # Kakao Cloud keypair name
+ssh_key_path        = "./YOUR_KEYPAIR.pem"      # SSH private key file path
+
+#####################################################################
+# Compute Configuration
+#####################################################################
+# Instance naming
+master_name = "narwhal-master"
+worker_name = "narwhal-worker"
+
+# Instance count
+master_count = 3  # 3 recommended for HA
+worker_count = 3  # Minimum 1
+
+# Instance specification
+image_name    = "Ubuntu 24.04"
+master_flavor = "t1i.large"      # CPU 2core, RAM 4GB (control-plane only)
+worker_flavor = "t1i.xlarge"     # CPU 4core, RAM 8GB (platform apps)
+volume_size   = 200              # Disk size in GB
+
+#####################################################################
+# Load Balancer Configuration
+#####################################################################
+master_lb_name = "narwhal-master-lb"  # K8s API Server LB
+worker_lb_name = "narwhal-worker-lb"  # Ingress traffic LB

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# PostToolUse Hook: 파일 수정 시 연관 파일 알림
-# additionalContext로 Claude에게 전달 (plain echo는 verbose에서만 보임)
+# PostToolUse Hook: Notify about related files when a file is modified
+# Passes context to Claude via additionalContext (plain echo only visible in verbose)
 set -euo pipefail
 
 INPUT=$(cat)
@@ -14,22 +14,22 @@ CONTEXT=""
 
 case "${FILE_PATH}" in
   */scripts/cluster/*.sh)
-    CONTEXT="[Reminder] VERSIONS.md의 버전과 동기화 확인 필요. Vagrantfile의 환경변수 확인."
+    CONTEXT="[Reminder] Check version sync with VERSIONS.md. Verify Vagrantfile environment variables."
     ;;
   */scripts/common/*.sh)
-    CONTEXT="[Reminder] 모든 노드에 적용되는 공통 스크립트입니다."
+    CONTEXT="[Reminder] This is a common script applied to all nodes."
     ;;
   */gitops/apps/*.yaml)
-    CONTEXT="[Reminder] gitops/values/ 또는 gitops/resources/ 동기화 확인. ArgoCD가 자동 동기화합니다."
+    CONTEXT="[Reminder] Check sync with gitops/values/ or gitops/resources/. ArgoCD auto-syncs."
     ;;
   */gitops/resources/*.yaml)
-    CONTEXT="[Reminder] 관련 앱 YAML 확인 필요."
+    CONTEXT="[Reminder] Check related app YAML."
     ;;
   */Vagrantfile)
-    CONTEXT="[Reminder] 스크립트에서 참조하는 환경변수와 VERSIONS.md 동기화 확인."
+    CONTEXT="[Reminder] Check sync with environment variables referenced in scripts and VERSIONS.md."
     ;;
   */VERSIONS.md)
-    CONTEXT="[Reminder] 관련 스크립트의 버전과 gitops/apps/*.yaml의 차트 버전 업데이트 필요."
+    CONTEXT="[Reminder] Update related script versions and gitops/apps/*.yaml chart versions."
     ;;
   *)
     exit 0

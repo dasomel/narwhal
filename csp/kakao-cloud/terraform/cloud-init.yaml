@@ -1,0 +1,13 @@
+#cloud-config
+# Narwhal IDP - Basic VM initialization
+# K8s installation is done separately after VM provisioning
+
+ssh_pwauth: false
+disable_root: true
+
+runcmd:
+  - sed -i 's/^#PubkeyAuthentication yes/PubkeyAuthentication yes/' /etc/ssh/sshd_config
+  - sed -i 's/^PubkeyAuthentication no/PubkeyAuthentication yes/' /etc/ssh/sshd_config
+  - sed -i 's/^PasswordAuthentication yes/PasswordAuthentication no/' /etc/ssh/sshd_config
+  - systemctl restart sshd
+  - echo "cloud-init completed" > /tmp/cloud-init-done

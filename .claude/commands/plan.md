@@ -1,50 +1,50 @@
 ---
 name: plan
-description: Plan 모드 가이드 - 작업 계획 수립 워크플로우
+description: Plan mode guide - task planning workflow
 user-invocable: false
 ---
 
-# Plan - 계획 모드 가이드
+# Plan - Planning Mode Guide
 
-> "좋은 계획이 성공의 90%"
+> "A good plan is 90% of success"
 
-## Plan Mode 진입
+## Entering Plan Mode
 
-**Shift + Tab** 2회 입력으로 Plan 모드 진입
+Press **Shift + Tab** twice to enter Plan mode.
 
-## 언제 사용하나요?
+## When to Use
 
-### 반드시 사용
-- 새로운 IDP 컴포넌트 추가
-- 기존 스크립트 대규모 수정
-- GitOps 앱 구조 변경
-- 버전 업그레이드 (특히 breaking changes)
-- 네트워크/스토리지 구조 변경
+### Always use for:
+- Adding new IDP components
+- Major script modifications
+- GitOps app structure changes
+- Version upgrades (especially with breaking changes)
+- Network/storage architecture changes
 
-### 선택적 사용
-- 단순 버그 수정
-- 문서 업데이트
-- 설정값 변경
+### Optional for:
+- Simple bug fixes
+- Documentation updates
+- Configuration value changes
 
-## 계획 템플릿
+## Plan Template
 
 ```markdown
-## 목표
-[1-2줄로 목표 설명]
+## Goal
+[1-2 line goal description]
 
-## 영향 범위
-- 수정 파일:
-- 의존성:
+## Impact Scope
+- Files to modify:
+- Dependencies:
 
-## 실행 단계
-1. [ ] 단계 1
-2. [ ] 단계 2
-3. [ ] 검증
+## Execution Steps
+1. [ ] Step 1
+2. [ ] Step 2
+3. [ ] Verification
 
-## 검증 방법
-- [ ] 문법 검사
-- [ ] 클러스터 테스트
+## Verification Method
+- [ ] Syntax check
+- [ ] Cluster test
 
-## 롤백 계획
-[문제 발생 시 복구 방법]
+## Rollback Plan
+[Recovery method if issues arise]
 ```

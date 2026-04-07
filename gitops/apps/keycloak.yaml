@@ -13,7 +13,7 @@ spec:
   source:
     repoURL: http://gitea-http.devtools.svc.cluster.local:3000/gitea-admin/narwhal-gitops.git
     targetRevision: HEAD
-    path: gitops/resources
+    path: resources
     directory:
       include: "keycloak-cr.yaml"
   destination:

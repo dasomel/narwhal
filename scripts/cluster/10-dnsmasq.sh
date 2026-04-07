@@ -179,7 +179,7 @@ ${COREFILE}"
   # Wait for APISIX service to be available
   APISIX_IP=""
   for attempt in $(seq 1 30); do
-    APISIX_IP=$(kubectl get svc apisix -n platform-system -o jsonpath='{.spec.clusterIP}' 2>/dev/null || true)
+    APISIX_IP=$(kubectl get svc apisix-gateway -n platform-system -o jsonpath='{.spec.clusterIP}' 2>/dev/null || true)
     if [ -n "${APISIX_IP}" ]; then
       echo "APISIX ClusterIP: ${APISIX_IP}"
       break

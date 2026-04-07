@@ -1,56 +1,56 @@
 ---
 name: commit-push-pr
-description: 변경사항을 커밋, 푸시, PR 생성까지 한 번에 실행
+description: Commit, push, and create PR in one step
 disable-model-invocation: true
 ---
 
-# Commit-Push-PR - 한 번에 커밋, 푸시, PR 생성
+# Commit-Push-PR - One-Step Commit, Push, and PR Creation
 
-변경사항을 커밋하고, 푸시하고, PR을 생성합니다.
+Commits changes, pushes to remote, and creates a PR.
 
-## 사전 조건
+## Prerequisites
 
-- 변경사항이 있어야 함
-- 현재 브랜치가 main/master가 아니어야 함 (PR 생성 시)
+- Changes must exist
+- Current branch should not be main/master (for PR creation)
 
-## 실행 단계
+## Steps
 
-### 1. 변경사항 확인
+### 1. Check Changes
 ```bash
 git status --short
 git diff --stat
 ```
 
-### 2. 검증 실행
+### 2. Run Validation
 ```bash
 ruby -c Vagrantfile 2>/dev/null || true
 shellcheck scripts/**/*.sh 2>/dev/null || true
 ```
 
-### 3. 커밋
+### 3. Commit
 ```bash
-# 변경된 파일 스테이징
+# Stage changed files
 git add -A
 
-# 커밋 메시지 형식: type(scope): description
+# Commit message format: type(scope): description
 ```
 
-### 4. 푸시
+### 4. Push
 ```bash
 git push -u origin HEAD
 ```
 
-### 5. PR 생성 (선택)
+### 5. Create PR (optional)
 ```bash
-gh pr create --title "PR 제목" --body "설명"
+gh pr create --title "PR title" --body "description"
 ```
 
-## 커밋 메시지 컨벤션
+## Commit Message Convention
 
-| Type | 설명 |
-|------|------|
-| feat | 새 기능 |
-| fix | 버그 수정 |
-| docs | 문서 변경 |
-| refactor | 리팩토링 |
-| chore | 빌드/설정 변경 |
+| Type | Description |
+|------|-------------|
+| feat | New feature |
+| fix | Bug fix |
+| docs | Documentation change |
+| refactor | Code refactoring |
+| chore | Build/config change |

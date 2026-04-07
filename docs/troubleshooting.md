@@ -297,12 +297,173 @@ kubectl logs -n keycloak keycloak-0 --tail=50
 kubectl describe pod -n keycloak keycloak-0
 ```
 
+## 13. VM Clock Skew (시간 동기화 불일치)
+
+**증상**: 클러스터 전체에서 `Unauthorized` 에러 폭발, Cilium/metallb-controller/istio-cni가 `0/1 Ready` 상태로 멈춤
+
+**에러 메시지**:
+```
+# cilium 로그
+level=error msg=k8sError error="failed to list *v2.CiliumNode: Unauthorized"
+# kube-apiserver 로그
+"Unable to authenticate the request" err="[invalid bearer token, service account token is not valid yet]"
+# cilium-operator 로그
+"Error retrieving lease lock" err="Unauthorized" lock="kube-system/cilium-operator-resource-lock"
+```
+
+**원인**: Vagrant VM이 `vagrant halt` 후 재부팅될 때 NTP 동기화 전에 시스템 시간이 슬립 전 시간 그대로 유지됨.
+다른 노드에서 발행한 ServiceAccount 토큰의 `nbf` (Not Before) 가 미래 시점으로 인식되어 API 서버가 거부.
+
+**즉시 복구**:
+```bash
+# 모든 노드에서 시간 동기화 재시작
+for node in master-1 master-2 master-3 worker-1 worker-2 worker-3; do
+  vagrant ssh $node -c "sudo systemctl restart systemd-timesyncd"
+done
+
+# 동기화 확인
+for node in master-1 master-2 master-3 worker-1 worker-2 worker-3; do
+  echo -n "$node: "; vagrant ssh $node -c "date"
+done
+
+# 정체된 Cilium pod 재시작
+kubectl rollout restart ds -n kube-system cilium
+```
+
+**진단**:
+```bash
+# 노드별 시간 확인 (skew 감지)
+for node in master-1 master-2 master-3 worker-1 worker-2 worker-3; do
+  echo -n "$node: "; vagrant ssh $node -c "date"
+done
+
+# kube-apiserver 토큰 에러 확인
+vagrant ssh master-1 -c "sudo crictl logs \$(sudo crictl ps --name kube-apiserver -q | head -1) 2>&1 | grep 'not valid yet'"
+
+# cilium 연속 Unauthorized 에러 확인
+kubectl logs -n kube-system -l k8s-app=cilium --tail=10 | grep Unauthorized
+```
+
+**영구 해결**: `reboot-survivability.md`의 NTP 설정 참조. 추가로 `vagrant halt` 시 chrony/timesyncd를 재시작하는 hook 고려.
+
+> ⚠️ **주의**: `vagrant halt && vagrant up` 또는 Mac 절전 모드 후 VM 복귀 시 반드시 발생할 수 있는 패턴임.
+> 클러스터 복구 첫 단계로 시간 동기화 확인을 습관화할 것.
+
+---
+
+## 14. Cilium 장애로 인한 카스케이드 장애 (APISIX → Authentik → kube-apiserver)
+
+**증상**: pod sandbox 생성 실패 (`cilium.sock: no such file or directory`), `kube-apiserver-master-1` CrashLoopBackOff
+
+**에러 메시지** (kubelet):
+```
+Failed to create pod sandbox: plugin type="cilium-cni" failed (add): unable to connect to Cilium agent:
+  Get "http://localhost/v1/config": dial unix /var/run/cilium/cilium.sock: connect: no such file or directory
+```
+
+**카스케이드 장애 구조**:
+```
+Cilium pod (특정 노드) Not Ready
+  → MetalLB controller (해당 노드에 배치) Not Ready
+    → MetalLB L2 라우팅 불안정
+      → 192.168.56.200 (APISIX gateway LoadBalancer IP) 응답 없음
+        → authentik.local.narwhal.io 접근 불가
+          → kube-apiserver OIDC 초기화 실패
+            → kube-apiserver CrashLoopBackOff
+              → 해당 master의 cilium도 Unauthorized → ContainerCreating 정지
+```
+
+**진단 순서**:
+```bash
+# 1. kube-apiserver crash 원인 확인
+vagrant ssh master-1 -c "sudo crictl logs \$(sudo crictl ps -a --name kube-apiserver --state exited -q | head -1) 2>&1 | tail -30"
+# → "oidc authenticator: initializing plugin: ... no route to host" 확인
+
+# 2. APISIX LB IP 연결 테스트
+vagrant ssh master-1 -c "ping -c3 192.168.56.200"
+
+# 3. MetalLB controller 상태 확인
+kubectl get pod -n platform-system -l app.kubernetes.io/name=metallb
+
+# 4. Cilium 상태 확인 (핵심)
+kubectl get pods -n kube-system -l k8s-app=cilium -o wide
+# → 0/1 Running 인 pod와 그 노드 확인
+
+# 5. 문제 cilium pod 로그
+kubectl logs -n kube-system <cilium-pod> --tail=20 | grep -E 'error|warn|panic|Unauthorized|PodCIDR'
+```
+
+**복구 절차**:
+```bash
+# Step 1. 시간 동기화 확인 및 복구 (13번 참조)
+
+# Step 2. master-1 /etc/hosts에 Authentik ClusterIP 직접 등록 (APISIX 우회)
+# → kube-apiserver가 OIDC endpoint에 직접 접근 가능하게 함
+AUTHENTIK_IP=$(kubectl get svc -n iam authentik-server -o jsonpath='{.spec.clusterIP}')
+vagrant ssh master-1 -c "echo '${AUTHENTIK_IP} authentik.local.narwhal.io' | sudo tee -a /etc/hosts"
+
+# Step 3. kube-apiserver 재시작 유도 (static pod manifest touch)
+vagrant ssh master-1 -c "sudo touch /etc/kubernetes/manifests/kube-apiserver.yaml"
+
+# Step 4. Cilium 전체 재시작
+kubectl rollout restart ds -n kube-system cilium
+
+# Step 5. MetalLB controller 재시작
+kubectl delete pod -n platform-system -l app.kubernetes.io/name=metallb,app.kubernetes.io/component=controller --force --grace-period=0
+
+# Step 6. 상태 확인
+kubectl get pods -n kube-system -l k8s-app=cilium
+kubectl get pods -n platform-system -l app.kubernetes.io/name=metallb
+vagrant ssh master-1 -c "ping -c3 192.168.56.200"
+```
+
+**etcd 연결 에러 (`127.0.0.1:2379 operation was canceled`) 구분**:
+- kube-apiserver 로그에 etcd 연결 에러가 보여도 **etcd 자체 문제가 아닐 수 있음**
+- OIDC 초기화가 blocking되면서 etcd connection pool이 timeout되는 것
+- etcd 건강 상태를 먼저 확인:
+```bash
+vagrant ssh master-1 -c "sudo crictl exec \$(sudo crictl ps --name etcd -q) etcdctl \
+  --endpoints=https://192.168.56.10:2379,https://192.168.56.11:2379,https://192.168.56.12:2379 \
+  --cacert=/etc/kubernetes/pki/etcd/ca.crt \
+  --cert=/etc/kubernetes/pki/etcd/peer.crt \
+  --key=/etc/kubernetes/pki/etcd/peer.key \
+  endpoint health"
+```
+
+---
+
+## 15. OpenBao 재부팅 후 Sealed 상태
+
+**증상**: `openbao-0` pod가 `Running` 이지만 `0/1 Ready`, 의존 서비스들이 비밀값을 못 가져옴
+
+**원인**: OpenBao(Vault 호환)는 보안상 이유로 재시작 시 자동 unseal을 하지 않음. Shamir 키를 사용해 수동 unseal 필요.
+
+**즉시 복구**:
+```bash
+# Sealed 상태 확인
+kubectl exec -n storage openbao-0 -- bao status
+# → Sealed: true 이면 복구 필요
+
+# openbao-init 시크릿에서 unseal 키 추출 및 적용
+BAO_UNSEAL_KEY=$(kubectl get secret openbao-init -n storage -o jsonpath='{.data.unseal_keys_b64}' | base64 -d)
+kubectl exec -n storage openbao-0 -- bao operator unseal $BAO_UNSEAL_KEY
+
+# 정상화 확인
+kubectl exec -n storage openbao-0 -- bao status
+# → Sealed: false 확인
+kubectl get pod -n storage openbao-0
+# → 1/1 Running 확인
+```
+
+**자동화 권장**: Vault Auto-Unseal (KMS 또는 Transit) 도입 또는 재부팅 후 unseal을 수행하는 CronJob/operator 검토.
+
 ---
 
 ## 관련 문서
 
 - [`architecture.md`](./architecture.md) - 아키텍처 개요
-- [`keycloak-sso.md`](./keycloak-sso.md) - SSO 상세 설정
+- [`authentik-sso.md`](./authentik-sso.md) - SSO 상세 설정
 - [`dns-access.md`](./dns-access.md) - DNS 및 접근 방법
 - [`database.md`](./database.md) - 데이터베이스 관리
 - [`operations.md`](./operations.md) - 운영 가이드
+- [`reboot-survivability.md`](./reboot-survivability.md) - 리부트 생존성 아키텍처

@@ -119,13 +119,17 @@ echo "Configuring Harbor project group members..."
 echo "Waiting for Harbor core pod..."
 kubectl wait --for=condition=Ready pod -l app=harbor,component=core -n devtools --timeout=300s || true
 
-# Wait for Harbor API to respond
-HARBOR_API="https://harbor.local.narwhal.io/api/v2.0"
+# Wait for Harbor API to respond via internal ClusterIP
+# (harbor.local.narwhal.io DNS is not yet available — dnsmasq runs at step 10)
+HARBOR_CORE_IP=$(kubectl get svc harbor-core -n devtools -o jsonpath='{.spec.clusterIP}' 2>/dev/null || echo "")
 HARBOR_HEALTH="000"
 for attempt in $(seq 1 15); do
-  HARBOR_HEALTH=$(curl -sk -o /dev/null -w '%{http_code}' "${HARBOR_API}/systeminfo" 2>/dev/null || echo "000")
+  if [ -z "${HARBOR_CORE_IP}" ]; then
+    HARBOR_CORE_IP=$(kubectl get svc harbor-core -n devtools -o jsonpath='{.spec.clusterIP}' 2>/dev/null || echo "")
+  fi
+  HARBOR_HEALTH=$(curl -sk --max-time 10 -o /dev/null -w '%{http_code}' "http://${HARBOR_CORE_IP}/api/v2.0/systeminfo" 2>/dev/null || echo "000")
   if [ "${HARBOR_HEALTH}" = "200" ]; then
-    echo "Harbor API ready"
+    echo "Harbor API ready (internal ClusterIP)"
     break
   fi
   echo "Harbor API not ready (HTTP ${HARBOR_HEALTH}), attempt ${attempt}/15..."
@@ -133,6 +137,7 @@ for attempt in $(seq 1 15); do
 done
 
 if [ "${HARBOR_HEALTH}" = "200" ]; then
+  HARBOR_API="http://${HARBOR_CORE_IP}/api/v2.0"
   # Add developer group → project Developer role (roleId=2)
   curl -sk -X POST "${HARBOR_API}/projects/1/members" \
     -H "Content-Type: application/json" \

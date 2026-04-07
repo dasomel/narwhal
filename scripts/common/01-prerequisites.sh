@@ -22,8 +22,8 @@ if [ -n "${NODE_IP}" ]; then
   # Wait for the interface to appear
   PRIV_IFACE=""
   for attempt in {1..30}; do
-    # Look for interface with the IP already assigned
-    PRIV_IFACE=$(ip -o addr show | grep "${NODE_IP}" | awk '{print $2}' | head -1)
+    # Look for interface with the IP already assigned (|| true: grep returns 1 on no match, pipefail would exit)
+    PRIV_IFACE=$(ip -o addr show | grep "${NODE_IP}" | awk '{print $2}' | head -1 || true)
     if [ -n "${PRIV_IFACE}" ]; then
       echo "Private network IP already assigned on ${PRIV_IFACE}"
       break

@@ -1,0 +1,132 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: falco
+  namespace: devtools
+  annotations:
+    argocd.argoproj.io/sync-wave: "4"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://falcosecurity.github.io/charts
+    chart: falco
+    targetRevision: 4.16.0
+    helm:
+      valuesObject:
+        # modern_ebpf: Cilium(eBPF CNI)와 공존 검증된 모드.
+        # CO-RE 기반 — 커널 헤더 의존성 없음, kernel module 빌드 불필요.
+        driver:
+          enabled: true
+          kind: modern_ebpf
+          modernEbpf:
+            leastPrivileged: true
+
+        # Falco DaemonSet (모든 노드)
+        tty: true
+        collectors:
+          enabled: true
+          containerd:
+            enabled: true
+            socket: /run/containerd/containerd.sock
+
+        # Prometheus 메트릭 endpoint
+        metrics:
+          enabled: true
+          interval: 1h
+          outputRule: true
+          rulesCountersEnabled: true
+          resourceUtilizationEnabled: true
+          stateCountersEnabled: true
+          kernelEventCountersEnabled: true
+
+        # ServiceMonitor (Prometheus 자동 수집)
+        serviceMonitor:
+          create: true
+
+        falco:
+          json_output: true
+          json_include_output_property: true
+          log_stderr: true
+          log_syslog: false
+          priority: notice
+          # 기본 룰셋 + Kubernetes 룰
+          rules_files:
+            - /etc/falco/falco_rules.yaml
+            - /etc/falco/falco_rules.local.yaml
+            - /etc/falco/k8s_audit_rules.yaml
+            - /etc/falco/rules.d
+          # gRPC: Falcosidekick이 이걸 통해 이벤트 수신
+          grpc:
+            enabled: true
+            bind_address: "unix:///run/falco/falco.sock"
+          grpc_output:
+            enabled: true
+
+        # 노드 리소스 제약
+        resources:
+          requests:
+            cpu: 100m
+            memory: 200Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
+
+        # privileged DaemonSet — kernel namespace 접근 필수
+        tolerations:
+          - operator: Exists
+            effect: NoSchedule
+
+        podLabels:
+          istio.io/dataplane-mode: "none"
+
+        # ─────────────────────────────────────────
+        # Falcosidekick: Falco 이벤트 → Loki + Alertmanager fanout
+        # ─────────────────────────────────────────
+        falcosidekick:
+          enabled: true
+          replicaCount: 1
+          # Web UI 비활성 (portal에서 자체 UI 제공)
+          webui:
+            enabled: false
+          podLabels:
+            istio.io/dataplane-mode: "none"
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+          serviceMonitor:
+            enabled: true
+          config:
+            debug: false
+            # 모든 priority 이벤트를 Loki에 적재 → portal에서 LogQL로 조회
+            loki:
+              hostport: "http://loki.monitoring.svc.cluster.local:3100"
+              user: ""
+              tenant: ""
+              minimumpriority: "informational"
+              tenantmap: ""
+              # Loki 스트림 라벨: source=falco
+              extralabels: "source,rule,priority,hostname"
+            # critical 이상은 Alertmanager로 알림 발사
+            alertmanager:
+              hostport: "http://prometheus-stack-kube-prom-alertmanager.monitoring.svc.cluster.local:9093"
+              minimumpriority: "critical"
+              # default labels 자동 매핑 (rule, priority, hostname → labels)
+              expirealert: false
+              extralabels: "source:falco"
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: security-system
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true

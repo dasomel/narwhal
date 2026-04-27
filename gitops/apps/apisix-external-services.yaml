@@ -1,10 +1,11 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: idp-portal
+  name: apisix-external-services
   namespace: devtools
   annotations:
-    argocd.argoproj.io/sync-wave: "5"
+    # apisix-routes(sync-wave 5)가 이 ExternalName들을 참조하므로 먼저 생성되어야 함.
+    argocd.argoproj.io/sync-wave: "3"
   finalizers:
     - resources-finalizer.argocd.argoproj.io
 spec:
@@ -14,10 +15,10 @@ spec:
     targetRevision: HEAD
     path: resources
     directory:
-      include: "idp-portal-k8s.yaml"
+      include: "apisix-external-services.yaml"
   destination:
     server: https://kubernetes.default.svc
-    namespace: devtools
+    namespace: platform-system
   syncPolicy:
     automated:
       prune: true
@@ -25,13 +26,3 @@ spec:
     syncOptions:
       - CreateNamespace=true
       - ServerSideApply=true
-  # Skaffold 로컬 개발(dev-{user}-{timestamp} 태그) 이미지 교체를 drift로 간주하지 않음.
-  # 운영 배포는 GitOps 매니페스트의 태그(예: :latest)를 그대로 유지.
-  ignoreDifferences:
-    - group: apps
-      kind: Deployment
-      name: idp-portal
-      namespace: devtools
-      jsonPointers:
-        - /spec/template/spec/containers/0/image
-        - /spec/template/spec/containers/0/env

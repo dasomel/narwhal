@@ -16,7 +16,6 @@ spec:
       backends:
         - serviceName: keycloak-server
           servicePort: 8080
-          resolveGranularity: service
       plugins:
         - name: proxy-rewrite
           enable: true
@@ -50,7 +49,6 @@ spec:
       backends:
         - serviceName: argocd-server
           servicePort: 80
-          resolveGranularity: service
       plugins:
         - name: response-rewrite
           enable: true
@@ -79,7 +77,6 @@ spec:
       backends:
         - serviceName: prometheus-stack-grafana
           servicePort: 80
-          resolveGranularity: service
       plugins:
         - name: response-rewrite
           enable: true
@@ -108,7 +105,6 @@ spec:
       backends:
         - serviceName: gitea-http
           servicePort: 3000
-          resolveGranularity: service
       plugins:
         - name: response-rewrite
           enable: true
@@ -121,6 +117,7 @@ spec:
                 X-XSS-Protection: "1; mode=block"
 ---
 # Harbor (native OIDC mode — service handles auth, keep client-control for image push)
+# resolveGranularity 제거: ExternalName 백엔드는 CNAME 추적 필요 (mistake log 2026-04-06)
 apiVersion: apisix.apache.org/v2
 kind: ApisixRoute
 metadata:
@@ -137,7 +134,6 @@ spec:
       backends:
         - serviceName: harbor-nginx
           servicePort: 80
-          resolveGranularity: service
       plugins:
         - name: client-control
           enable: true
@@ -170,7 +166,6 @@ spec:
       backends:
         - serviceName: headlamp
           servicePort: 80
-          resolveGranularity: service
       plugins:
         - name: response-rewrite
           enable: true
@@ -199,7 +194,6 @@ spec:
       backends:
         - serviceName: openbao
           servicePort: 8200
-          resolveGranularity: service
       plugins:
         - name: response-rewrite
           enable: true
@@ -228,7 +222,6 @@ spec:
       backends:
         - serviceName: hubble-ui
           servicePort: 80
-          resolveGranularity: service
       plugins:
         - name: openid-connect
           enable: true
@@ -273,7 +266,6 @@ spec:
       backends:
         - serviceName: prometheus-server
           servicePort: 9090
-          resolveGranularity: service
       plugins:
         - name: openid-connect
           enable: true
@@ -318,7 +310,6 @@ spec:
       backends:
         - serviceName: alertmanager-server
           servicePort: 9093
-          resolveGranularity: service
       plugins:
         - name: openid-connect
           enable: true
@@ -363,7 +354,6 @@ spec:
       backends:
         - serviceName: velero-ui
           servicePort: 3000
-          resolveGranularity: service
       plugins:
         - name: openid-connect
           enable: true
@@ -408,7 +398,6 @@ spec:
       backends:
         - serviceName: idp-portal
           servicePort: 3000
-          resolveGranularity: service
       # IDP Portal handles its own SSO via NextAuth.js — no APISIX openid-connect plugin
       plugins:
         - name: response-rewrite
@@ -516,7 +505,6 @@ spec:
       backends:
         - serviceName: apisix-dashboard
           servicePort: 9000
-          resolveGranularity: service
       plugins:
         - name: response-rewrite
           enable: true

@@ -52,7 +52,7 @@ spec:
   ports:
     - port: 3000
 ---
-# Harbor (devtools namespace)
+# Harbor (devtools namespace) — 실제 service 이름은 harbor (component=nginx)
 apiVersion: v1
 kind: Service
 metadata:
@@ -60,7 +60,7 @@ metadata:
   namespace: platform-system
 spec:
   type: ExternalName
-  externalName: harbor-nginx.devtools.svc.cluster.local
+  externalName: harbor.devtools.svc.cluster.local
   ports:
     - port: 80
 ---

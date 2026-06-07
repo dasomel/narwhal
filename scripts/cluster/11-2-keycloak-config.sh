@@ -82,6 +82,11 @@ else
   echo "  -> realm '${REALM}' already exists, skipping"
 fi
 
+echo "=== Updating realm loginTheme to 'narwhal' ==="
+kc_exec update "realms/${REALM}" -s "loginTheme=narwhal"
+echo "  -> realm '${REALM}' loginTheme updated to 'narwhal'"
+
+
 #=========================================
 # 3. Custom groups scope 생성
 #=========================================

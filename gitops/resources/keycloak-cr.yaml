@@ -1,6 +1,351 @@
 # Keycloak CR - Keycloak Operator가 관리
 # Operator CRD+RBAC는 11-keycloak.sh에서 설치됨
 # DB secret (keycloak-db-secret)은 11-keycloak.sh에서 생성됨
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: keycloak-theme-narwhal
+  namespace: iam
+  labels:
+    app: keycloak
+    component: theme
+    theme: narwhal
+data:
+  theme.properties: |
+    # Narwhal IDP - Modern monochrome shadcn theme
+    parent=keycloak.v2
+    import=common/keycloak
+
+    # Custom styles
+    styles=css/narwhal.css
+
+    # Supported locales
+    locales=en,ko
+
+  narwhal.css: |
+    /* ==========================================================================
+       NARWHAL IDP - Custom Keycloak Login Theme (monochrome shadcn style)
+       ========================================================================== */
+
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+    :root {
+      /* Monochrome Shadcn Light Theme variables */
+      --background: oklch(1 0 0);           /* white */
+      --foreground: oklch(0.145 0 0);       /* near-black */
+      --primary: oklch(0.205 0 0);          /* near-black button */
+      --primary-hover: oklch(0.3 0 0);      /* slightly lighter black */
+      --primary-foreground: oklch(0.98 0 0); /* near-white text */
+      --muted: oklch(0.556 0 0);            /* muted gray text */
+      --border: oklch(0.922 0 0);           /* light gray border */
+      --radius: 0.625rem;                   /* 10px corner radius */
+      --shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.025);
+      --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.05), 0 4px 6px -2px rgba(0, 0, 0, 0.02);
+    }
+
+    /* Base resets & typography */
+    * {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
+      box-sizing: border-box;
+    }
+
+    body.kcBodyClass {
+      background-color: var(--background) !important;
+      color: var(--foreground) !important;
+      margin: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+    }
+
+    /* Hide PatternFly base layouts & background */
+    #keycloak-bg {
+      background-image: none !important;
+      background-color: var(--background) !important;
+    }
+
+    /* Center layout container */
+    .pf-v5-c-login {
+      background-color: var(--background) !important;
+      background-image: none !important;
+      display: flex !important;
+      align-items: center !important;
+      justify-content: center !important;
+      min-height: 100vh !important;
+      padding: 1.5rem !important;
+    }
+
+    .pf-v5-c-login__container {
+      width: 100% !important;
+      max-width: 28rem !important;
+      margin: 0 !important;
+      display: flex !important;
+      flex-direction: column !important;
+    }
+
+    /* Hide the default outer header logo */
+    #kc-header {
+      display: none !important;
+    }
+
+    /* Centered Card layout */
+    .pf-v5-c-login__main {
+      background-color: var(--background) !important;
+      border: 1px solid var(--border) !important;
+      border-radius: var(--radius) !important;
+      box-shadow: var(--shadow-lg) !important;
+      width: 100% !important;
+      padding: 0 !important;
+      overflow: hidden !important;
+      position: relative !important;
+    }
+
+    /* Card Header - Title & Subtitle */
+    .pf-v5-c-login__main-header {
+      padding: 2.5rem 2rem 1.25rem 2rem !important;
+      text-align: center !important;
+      border-bottom: none !important;
+    }
+
+    /* Hide default page title styling to insert custom markup */
+    .pf-v5-c-login__main-header .pf-v5-c-title {
+      display: flex !important;
+      flex-direction: column !important;
+      align-items: center !important;
+      gap: 0.5rem !important;
+      font-size: 0 !important;
+      margin: 0 !important;
+    }
+
+    /* Dynamic custom Title "Narwhal IDP" */
+    .pf-v5-c-login__main-header .pf-v5-c-title::before {
+      content: "Narwhal IDP" !important;
+      font-size: 1.5rem !important;        /* text-2xl */
+      font-weight: 600 !important;        /* semibold */
+      color: var(--foreground) !important;
+      line-height: 2rem !important;
+      letter-spacing: -0.025em !important;
+    }
+
+    /* Dynamic custom Subtitle */
+    .pf-v5-c-login__main-header .pf-v5-c-title::after {
+      content: "Sign in to your account" !important;
+      font-size: 0.875rem !important;      /* text-sm */
+      font-weight: 400 !important;
+      color: var(--muted) !important;
+      line-height: 1.25rem !important;
+    }
+
+    /* Card Body */
+    .pf-v5-c-login__main-body {
+      padding: 1.25rem 2rem 2.5rem 2rem !important;
+    }
+
+    /* Form inputs & spacing */
+    .pf-v5-c-form__group {
+      margin-bottom: 1.5rem !important;
+    }
+
+    .pf-v5-c-form__label {
+      margin-bottom: 0.375rem !important;
+      padding: 0 !important;
+    }
+
+    .pf-v5-c-form__label-text {
+      font-size: 0.875rem !important;      /* text-sm */
+      font-weight: 500 !important;         /* medium */
+      color: var(--foreground) !important;
+    }
+
+    /* Input Fields wrapping span */
+    .pf-v5-c-form-control {
+      border: 1px solid var(--border) !important;
+      border-radius: var(--radius) !important;
+      background-color: var(--background) !important;
+      padding: 0.5rem 0.75rem !important;
+      height: 2.5rem !important;
+      display: flex !important;
+      align-items: center !important;
+      transition: border-color 0.15s ease, box-shadow 0.15s ease !important;
+      box-shadow: none !important;
+    }
+
+    .pf-v5-c-form-control input {
+      border: none !important;
+      background-color: transparent !important;
+      color: var(--foreground) !important;
+      font-size: 0.875rem !important;      /* text-sm */
+      line-height: 1.25rem !important;
+      outline: none !important;
+      width: 100% !important;
+      padding: 0 !important;
+      margin: 0 !important;
+    }
+
+    .pf-v5-c-form-control:focus-within {
+      border-color: var(--primary) !important;
+      box-shadow: 0 0 0 1px var(--primary) !important;
+    }
+
+    /* Error/invalid input state */
+    .pf-v5-c-form-control[aria-invalid="true"],
+    .pf-v5-c-form-control:has(input[aria-invalid="true"]),
+    .pf-v5-c-input-group:has(input[aria-invalid="true"]) {
+      border-color: oklch(0.637 0.237 25.331) !important; /* red */
+    }
+
+    /* Input Helper Text & Errors */
+    .pf-v5-c-helper-text,
+    #input-error-container-username,
+    #input-error-container-password,
+    .pf-v5-c-form__helper-text {
+      font-size: 0.75rem !important;       /* text-xs */
+      color: oklch(0.637 0.237 25.331) !important;
+      margin-top: 0.25rem !important;
+    }
+
+    /* Input Group for Password Toggle */
+    .pf-v5-c-input-group {
+      display: flex !important;
+      width: 100% !important;
+      border: 1px solid var(--border) !important;
+      border-radius: var(--radius) !important;
+      background-color: var(--background) !important;
+      height: 2.5rem !important;
+      box-shadow: none !important;
+    }
+
+    .pf-v5-c-input-group .pf-v5-c-form-control {
+      border: none !important;
+      border-radius: var(--radius) 0 0 var(--radius) !important;
+      flex: 1 !important;
+    }
+
+    .pf-v5-c-input-group .pf-v5-c-button.pf-m-control {
+      border: none !important;
+      background-color: transparent !important;
+      color: var(--muted) !important;
+      border-radius: 0 var(--radius) var(--radius) 0 !important;
+      padding: 0 0.75rem !important;
+      height: 100% !important;
+      cursor: pointer !important;
+    }
+
+    .pf-v5-c-input-group:focus-within {
+      border-color: var(--primary) !important;
+      box-shadow: 0 0 0 1px var(--primary) !important;
+    }
+
+    /* Primary Sign In Button */
+    .pf-v5-c-button.pf-m-primary {
+      background-color: var(--primary) !important;
+      color: var(--primary-foreground) !important;
+      font-size: 0.875rem !important;      /* text-sm */
+      font-weight: 500 !important;         /* medium */
+      border: none !important;
+      border-radius: var(--radius) !important;
+      padding: 0.625rem 1rem !important;
+      width: 100% !important;
+      height: 2.5rem !important;
+      cursor: pointer !important;
+      transition: background-color 0.15s ease !important;
+      box-shadow: var(--shadow) !important;
+      display: flex !important;
+      align-items: center !important;
+      justify-content: center !important;
+    }
+
+    .pf-v5-c-button.pf-m-primary:hover {
+      background-color: var(--primary-hover) !important;
+    }
+
+    /* Global Alert banner */
+    .pf-v5-c-alert {
+      border-radius: var(--radius) !important;
+      border: 1px solid var(--border) !important;
+      background-color: var(--background) !important;
+      padding: 0.75rem 1rem !important;
+      margin-bottom: 1.25rem !important;
+      box-shadow: var(--shadow) !important;
+    }
+
+    .pf-v5-c-alert.pf-m-danger {
+      border-color: oklch(0.85 0.15 25) !important;
+      background-color: oklch(0.97 0.015 25) !important;
+      color: oklch(0.4 0.18 25) !important;
+    }
+
+    .pf-v5-c-alert__title {
+      font-size: 0.875rem !important;
+      font-weight: 500 !important;
+    }
+
+    .pf-v5-c-alert__description {
+      font-size: 0.75rem !important;
+      color: inherit !important;
+      margin-top: 0.25rem !important;
+    }
+
+    /* Footer / Helper Links */
+    .pf-v5-c-login__main-footer {
+      padding: 0 2rem 2.5rem 2rem !important;
+      background-color: transparent !important;
+      border-top: none !important;
+    }
+
+    /* Remove default footer/band lines */
+    .pf-v5-c-login__main-footer-band {
+      border-top: none !important;
+      padding: 0 !important;
+      margin: 0 !important;
+    }
+
+    /* Style secondary links */
+    .pf-v5-c-button.pf-m-link {
+      color: var(--muted) !important;
+      font-size: 0.875rem !important;
+      text-decoration: underline !important;
+      background: transparent !important;
+      border: none !important;
+      padding: 0 !important;
+      cursor: pointer !important;
+      display: inline-block !important;
+    }
+
+    .pf-v5-c-button.pf-m-link:hover {
+      color: var(--foreground) !important;
+    }
+
+    /* Hide standard layout footer copyright/attribution */
+    .pf-v5-c-login__footer {
+      display: none !important;
+    }
+
+  messages_en.properties: |
+    # Narwhal IDP Theme - English Messages
+    loginAccountTitle=Sign in to your account
+    loginTitle=Narwhal IDP
+    doLogIn=Sign In
+    usernameOrEmail=Username or email
+    password=Password
+    doForgotPassword=Forgot password?
+    rememberMe=Remember me
+    invalidUserMessage=Invalid username or password.
+
+  messages_ko.properties: |
+    # Narwhal IDP Theme - Korean Messages
+    loginAccountTitle=계정에 로그인하세요
+    loginTitle=Narwhal IDP
+    doLogIn=로그인
+    usernameOrEmail=사용자명 또는 이메일
+    password=비밀번호
+    doForgotPassword=비밀번호를 잊으셨나요?
+    rememberMe=로그인 유지
+    invalidUserMessage=잘못된 사용자명 또는 비밀번호입니다.
+
+---
 apiVersion: k8s.keycloak.org/v2alpha1
 kind: Keycloak
 metadata:
@@ -43,3 +388,20 @@ spec:
               limits:
                 memory: "1Gi"
                 cpu: "1"
+            volumeMounts:
+              - name: keycloak-theme-narwhal
+                mountPath: /opt/keycloak/themes/narwhal/login/theme.properties
+                subPath: theme.properties
+              - name: keycloak-theme-narwhal
+                mountPath: /opt/keycloak/themes/narwhal/login/resources/css/narwhal.css
+                subPath: narwhal.css
+              - name: keycloak-theme-narwhal
+                mountPath: /opt/keycloak/themes/narwhal/login/messages/messages_en.properties
+                subPath: messages_en.properties
+              - name: keycloak-theme-narwhal
+                mountPath: /opt/keycloak/themes/narwhal/login/messages/messages_ko.properties
+                subPath: messages_ko.properties
+        volumes:
+          - name: keycloak-theme-narwhal
+            configMap:
+              name: keycloak-theme-narwhal

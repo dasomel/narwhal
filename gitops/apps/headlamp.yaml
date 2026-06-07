@@ -17,13 +17,13 @@ spec:
           istio.io/dataplane-mode: "none"
         config:
           oidc:
-            clientID: apisix
-            issuerURL: https://authentik.local.narwhal.io/application/o/apisix/
+            clientID: headlamp
+            issuerURL: https://keycloak.local.narwhal.io/realms/narwhal
             scopes: openid,profile,email,groups
             # clientSecret loaded from externalSecret (Option 3)
             # Secret 'headlamp-oidc-secret' is created by scripts/cluster/11-keycloak.sh
             # The secret must contain the same keys as the default OIDC secret:
-            #   clientID, clientSecret, issuerURL, scopes
+            #   OIDC_CLIENT_ID, OIDC_CLIENT_SECRET, OIDC_ISSUER_URL, OIDC_SCOPES
             secret:
               create: false
               name: headlamp-oidc-secret

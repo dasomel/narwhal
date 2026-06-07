@@ -60,6 +60,10 @@ rules:
       - infraassessmentreports
       - clustercompliancereports
     verbs: [get, list, watch]
+  # Node/Pod CPU·Memory usage for Architecture page (metrics-server / metrics.k8s.io)
+  - apiGroups: [metrics.k8s.io]
+    resources: [nodes, pods]
+    verbs: [get, list]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding

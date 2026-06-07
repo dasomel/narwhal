@@ -199,6 +199,8 @@ spec:
             access_token_in_authorization_header: true
             session:
               secret: "$secret://kubernetes/k8s-1/gitea-oidc-secret/session_secret"
+              cookie:
+                lifetime: 600
         - name: serverless-post-function
           enable: true
           config:
@@ -396,6 +398,8 @@ spec:
             access_token_in_authorization_header: true
             session:
               secret: "$secret://kubernetes/k8s-1/hubble-oidc-secret/session_secret"
+              cookie:
+                lifetime: 600
         - name: response-rewrite
           enable: true
           config:
@@ -440,6 +444,8 @@ spec:
             access_token_in_authorization_header: true
             session:
               secret: "$secret://kubernetes/k8s-1/prometheus-oidc-secret/session_secret"
+              cookie:
+                lifetime: 600
         - name: response-rewrite
           enable: true
           config:
@@ -484,6 +490,8 @@ spec:
             access_token_in_authorization_header: true
             session:
               secret: "$secret://kubernetes/k8s-1/alertmanager-oidc-secret/session_secret"
+              cookie:
+                lifetime: 600
         - name: response-rewrite
           enable: true
           config:
@@ -495,6 +503,17 @@ spec:
                 X-XSS-Protection: "1; mode=block"
 ---
 # Velero UI (APISIX openid-connect — no native SSO support)
+apiVersion: apisix.apache.org/v2
+kind: ApisixUpstream
+metadata:
+  name: velero-ui
+  namespace: platform-system
+spec:
+  externalNodes:
+    - type: Domain
+      name: velero-ui.storage.svc.cluster.local
+      port: 3000
+---
 apiVersion: apisix.apache.org/v2
 kind: ApisixRoute
 metadata:
@@ -508,9 +527,8 @@ spec:
           - velero-ui.local.narwhal.io
         paths:
           - "/*"
-      backends:
-        - serviceName: velero-ui
-          servicePort: 3000
+      upstreams:
+        - name: velero-ui
       plugins:
         - name: openid-connect
           enable: true
@@ -528,6 +546,8 @@ spec:
             access_token_in_authorization_header: true
             session:
               secret: "$secret://kubernetes/k8s-1/velero-ui-oidc-secret/session_secret"
+              cookie:
+                lifetime: 600
         - name: response-rewrite
           enable: true
           config:
@@ -605,6 +625,8 @@ spec:
             access_token_in_authorization_header: true
             session:
               secret: "$secret://kubernetes/k8s-1/hubble-oidc-secret/session_secret"
+              cookie:
+                lifetime: 600
         - name: serverless-post-function
           enable: true
           config:

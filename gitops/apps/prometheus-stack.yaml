@@ -63,8 +63,11 @@ spec:
               root_url: https://grafana.local.narwhal.io
             tracing.opentelemetry.otlp:
               address: tempo.monitoring.svc.cluster.local:4317
+            auth:
+              disable_login_form: true
             auth.generic_oauth:
               enabled: true
+              auto_login: true
               name: Keycloak
               allow_sign_up: true
               client_id: grafana

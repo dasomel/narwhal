@@ -587,27 +587,22 @@ PYEOF
 fi
 
 # -------------------------------------------------------------------------
-# 8. Prometheus + Alertmanager (shared client)
+# 8. Prometheus
 # -------------------------------------------------------------------------
 echo ""
-echo "=== [8/9] Prometheus + Alertmanager (shared) ==="
+echo "=== [8/9] Prometheus ==="
+create_apisix_secret "prometheus" \
+  "https://prometheus.${DOMAIN}/apisix/callback" \
+  "prometheus-oidc-secret"
 
-PROM_SECRET=$(create_keycloak_client "prometheus" \
-  "[\"https://prometheus.${DOMAIN}/apisix/callback\",\"https://alertmanager.${DOMAIN}/apisix/callback\"]")
-
-PROM_SESSION=$(kubectl get secret prometheus-oidc-secret -n platform-system \
-  -o jsonpath='{.data.session_secret}' 2>/dev/null | base64 -d || echo "")
-if [ -z "${PROM_SESSION}" ]; then
-  PROM_SESSION=$(openssl rand -hex 16)
-fi
-
-kubectl create secret generic prometheus-oidc-secret \
-  --namespace platform-system \
-  --from-literal=client_id=prometheus \
-  --from-literal=client_secret="${PROM_SECRET}" \
-  --from-literal=session_secret="${PROM_SESSION}" \
-  --dry-run=client -o yaml | kubectl apply -f -
-echo "  secret 'prometheus-oidc-secret' created in platform-system"
+# -------------------------------------------------------------------------
+# 8-2. Alertmanager
+# -------------------------------------------------------------------------
+echo ""
+echo "=== [8-2/9] Alertmanager ==="
+create_apisix_secret "alertmanager" \
+  "https://alertmanager.${DOMAIN}/apisix/callback" \
+  "alertmanager-oidc-secret"
 
 # -------------------------------------------------------------------------
 # 9. Velero UI
@@ -709,7 +704,8 @@ echo "  [OK] IDP Portal (idp-portal) → idp-portal-secrets (devtools)"
 echo ""
 echo "Group B - APISIX openid-connect secrets (platform-system):"
 echo "  [OK] hubble-oidc-secret        (client: hubble)"
-echo "  [OK] prometheus-oidc-secret    (client: prometheus, shared with Alertmanager)"
+echo "  [OK] prometheus-oidc-secret    (client: prometheus)"
+echo "  [OK] alertmanager-oidc-secret  (client: alertmanager)"
 echo "  [OK] velero-ui-oidc-secret     (client: velero-ui)"
 echo ""
 echo "Keycloak OIDC discovery: ${DISCOVERY_URL}"

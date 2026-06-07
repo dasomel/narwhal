@@ -1,298 +1,170 @@
 /* ==========================================================================
-   NARWHAL IDP - Custom Keycloak Login Theme (monochrome shadcn style)
+   Narwhal IDP — custom Keycloak login theme (clean monochrome shadcn).
+   Renders against custom template.ftl / login.ftl (no PatternFly).
    ========================================================================== */
-
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
-
 :root {
-  /* Monochrome Shadcn Light Theme variables */
-  --background: oklch(1 0 0);           /* white */
-  --foreground: oklch(0.145 0 0);       /* near-black */
-  --primary: oklch(0.205 0 0);          /* near-black button */
-  --primary-hover: oklch(0.3 0 0);      /* slightly lighter black */
-  --primary-foreground: oklch(0.98 0 0); /* near-white text */
-  --muted: oklch(0.556 0 0);            /* muted gray text */
-  --border: oklch(0.922 0 0);           /* light gray border */
-  --radius: 0.625rem;                   /* 10px corner radius */
-  --shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.025);
-  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.05), 0 4px 6px -2px rgba(0, 0, 0, 0.02);
+  --nw-bg: #f4f4f5;
+  --nw-card: #ffffff;
+  --nw-fg: #0a0a0a;
+  --nw-muted: #71717a;
+  --nw-border: #e4e4e7;
+  --nw-primary: #18181b;
+  --nw-primary-fg: #fafafa;
+  --nw-ring: rgba(24, 24, 27, 0.12);
+  --nw-radius: 10px;
 }
 
-/* Base resets & typography */
-* {
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
-  box-sizing: border-box;
-}
+* { box-sizing: border-box; }
 
-body.kcBodyClass {
-  background-color: var(--background) !important;
-  color: var(--foreground) !important;
+.nw-body {
   margin: 0;
+  min-height: 100vh;
   display: flex;
   align-items: center;
   justify-content: center;
-  min-height: 100vh;
+  padding: 24px;
+  background:
+    radial-gradient(60rem 60rem at 50% -20rem, #ffffff 0%, var(--nw-bg) 60%);
+  color: var(--nw-fg);
+  font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+    Helvetica, Arial, "Apple SD Gothic Neo", "Noto Sans KR", sans-serif;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
-/* Hide PatternFly base layouts & background */
-#keycloak-bg {
-  background-image: none !important;
-  background-color: var(--background) !important;
+.nw-card {
+  width: 100%;
+  max-width: 384px;
+  background: var(--nw-card);
+  border: 1px solid var(--nw-border);
+  border-radius: 16px;
+  padding: 36px 32px 32px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04), 0 12px 32px rgba(0, 0, 0, 0.08);
 }
 
-/* Center layout container */
-.pf-v5-c-login {
-  background-color: var(--background) !important;
-  background-image: none !important;
-  display: flex !important;
-  align-items: center !important;
-  justify-content: center !important;
-  min-height: 100vh !important;
-  padding: 1.5rem !important;
+.nw-head { text-align: center; margin-bottom: 28px; }
+
+.nw-logo {
+  width: 48px;
+  height: 48px;
+  margin: 0 auto 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--nw-primary);
+  color: var(--nw-primary-fg);
+  border-radius: 14px;
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
 }
 
-.pf-v5-c-login__container {
-  width: 100% !important;
-  max-width: 28rem !important;
-  margin: 0 !important;
-  display: flex !important;
-  flex-direction: column !important;
+.nw-title {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 650;
+  letter-spacing: -0.02em;
 }
 
-/* Hide the default outer header logo */
-#kc-header {
-  display: none !important;
+.nw-sub {
+  margin: 6px 0 0;
+  font-size: 14px;
+  color: var(--nw-muted);
 }
 
-/* Centered Card layout */
-.pf-v5-c-login__main {
-  background-color: var(--background) !important;
-  border: 1px solid var(--border) !important;
-  border-radius: var(--radius) !important;
-  box-shadow: var(--shadow-lg) !important;
-  width: 100% !important;
-  padding: 0 !important;
-  overflow: hidden !important;
-  position: relative !important;
+.nw-form { display: flex; flex-direction: column; gap: 18px; }
+
+.nw-field { display: flex; flex-direction: column; gap: 7px; }
+
+.nw-label { font-size: 13px; font-weight: 500; color: var(--nw-fg); }
+
+.nw-input {
+  height: 42px;
+  width: 100%;
+  padding: 0 13px;
+  font-size: 14px;
+  font-family: inherit;
+  color: var(--nw-fg);
+  background: var(--nw-card);
+  border: 1px solid var(--nw-border);
+  border-radius: var(--nw-radius);
+  outline: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
-/* Card Header - Title & Subtitle */
-.pf-v5-c-login__main-header {
-  padding: 2.5rem 2rem 1.25rem 2rem !important;
-  text-align: center !important;
-  border-bottom: none !important;
+.nw-input::placeholder { color: var(--nw-muted); }
+
+.nw-input:focus {
+  border-color: var(--nw-primary);
+  box-shadow: 0 0 0 3px var(--nw-ring);
 }
 
-/* Hide default page title styling to insert custom markup */
-.pf-v5-c-login__main-header .pf-v5-c-title {
-  display: flex !important;
-  flex-direction: column !important;
-  align-items: center !important;
-  gap: 0.5rem !important;
-  font-size: 0 !important;
-  margin: 0 !important;
+.nw-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 13px;
+  color: var(--nw-muted);
+  margin-top: -4px;
 }
 
-/* Dynamic custom Title "Narwhal IDP" */
-.pf-v5-c-login__main-header .pf-v5-c-title::before {
-  content: "Narwhal IDP" !important;
-  font-size: 1.5rem !important;        /* text-2xl */
-  font-weight: 600 !important;        /* semibold */
-  color: var(--foreground) !important;
-  line-height: 2rem !important;
-  letter-spacing: -0.025em !important;
+.nw-check { display: inline-flex; align-items: center; gap: 7px; cursor: pointer; }
+.nw-check input { width: 15px; height: 15px; accent-color: var(--nw-primary); }
+
+.nw-link { color: var(--nw-fg); text-decoration: none; font-weight: 500; }
+.nw-link:hover { text-decoration: underline; }
+
+.nw-btn {
+  height: 42px;
+  width: 100%;
+  margin-top: 2px;
+  border: none;
+  border-radius: var(--nw-radius);
+  cursor: pointer;
+  background: var(--nw-primary);
+  color: var(--nw-primary-fg);
+  font-size: 14px;
+  font-weight: 550;
+  font-family: inherit;
+  transition: opacity 0.15s ease, transform 0.02s ease;
+}
+.nw-btn:hover { opacity: 0.9; }
+.nw-btn:active { transform: translateY(1px); }
+
+.nw-alert {
+  font-size: 13px;
+  line-height: 1.4;
+  padding: 11px 13px;
+  border-radius: var(--nw-radius);
+  margin-bottom: 18px;
+  border: 1px solid transparent;
+}
+.nw-alert-error { background: #fef2f2; border-color: #fecaca; color: #b91c1c; }
+.nw-alert-success { background: #f0fdf4; border-color: #bbf7d0; color: #15803d; }
+.nw-alert-warning { background: #fffbeb; border-color: #fde68a; color: #b45309; }
+.nw-alert-info { background: #eff6ff; border-color: #bfdbfe; color: #1d4ed8; }
+
+.nw-err { font-size: 12px; color: #b91c1c; margin-top: -8px; }
+
+.nw-info {
+  margin-top: 22px;
+  padding-top: 18px;
+  border-top: 1px solid var(--nw-border);
+  text-align: center;
+  font-size: 13px;
+  color: var(--nw-muted);
 }
 
-/* Dynamic custom Subtitle */
-.pf-v5-c-login__main-header .pf-v5-c-title::after {
-  content: "Sign in to your account" !important;
-  font-size: 0.875rem !important;      /* text-sm */
-  font-weight: 400 !important;
-  color: var(--muted) !important;
-  line-height: 1.25rem !important;
-}
-
-/* Card Body */
-.pf-v5-c-login__main-body {
-  padding: 1.25rem 2rem 2.5rem 2rem !important;
-}
-
-/* Form inputs & spacing */
-.pf-v5-c-form__group {
-  margin-bottom: 1.5rem !important;
-}
-
-.pf-v5-c-form__label {
-  margin-bottom: 0.375rem !important;
-  padding: 0 !important;
-}
-
-.pf-v5-c-form__label-text {
-  font-size: 0.875rem !important;      /* text-sm */
-  font-weight: 500 !important;         /* medium */
-  color: var(--foreground) !important;
-}
-
-/* Input Fields wrapping span */
-.pf-v5-c-form-control {
-  border: 1px solid var(--border) !important;
-  border-radius: var(--radius) !important;
-  background-color: var(--background) !important;
-  padding: 0.5rem 0.75rem !important;
-  height: 2.5rem !important;
-  display: flex !important;
-  align-items: center !important;
-  transition: border-color 0.15s ease, box-shadow 0.15s ease !important;
-  box-shadow: none !important;
-}
-
-.pf-v5-c-form-control input {
-  border: none !important;
-  background-color: transparent !important;
-  color: var(--foreground) !important;
-  font-size: 0.875rem !important;      /* text-sm */
-  line-height: 1.25rem !important;
-  outline: none !important;
-  width: 100% !important;
-  padding: 0 !important;
-  margin: 0 !important;
-}
-
-.pf-v5-c-form-control:focus-within {
-  border-color: var(--primary) !important;
-  box-shadow: 0 0 0 1px var(--primary) !important;
-}
-
-/* Error/invalid input state */
-.pf-v5-c-form-control[aria-invalid="true"],
-.pf-v5-c-form-control:has(input[aria-invalid="true"]),
-.pf-v5-c-input-group:has(input[aria-invalid="true"]) {
-  border-color: oklch(0.637 0.237 25.331) !important; /* red */
-}
-
-/* Input Helper Text & Errors */
-.pf-v5-c-helper-text,
-#input-error-container-username,
-#input-error-container-password,
-.pf-v5-c-form__helper-text {
-  font-size: 0.75rem !important;       /* text-xs */
-  color: oklch(0.637 0.237 25.331) !important;
-  margin-top: 0.25rem !important;
-}
-
-/* Input Group for Password Toggle */
-.pf-v5-c-input-group {
-  display: flex !important;
-  width: 100% !important;
-  border: 1px solid var(--border) !important;
-  border-radius: var(--radius) !important;
-  background-color: var(--background) !important;
-  height: 2.5rem !important;
-  box-shadow: none !important;
-}
-
-.pf-v5-c-input-group .pf-v5-c-form-control {
-  border: none !important;
-  border-radius: var(--radius) 0 0 var(--radius) !important;
-  flex: 1 !important;
-}
-
-.pf-v5-c-input-group .pf-v5-c-button.pf-m-control {
-  border: none !important;
-  background-color: transparent !important;
-  color: var(--muted) !important;
-  border-radius: 0 var(--radius) var(--radius) 0 !important;
-  padding: 0 0.75rem !important;
-  height: 100% !important;
-  cursor: pointer !important;
-}
-
-.pf-v5-c-input-group:focus-within {
-  border-color: var(--primary) !important;
-  box-shadow: 0 0 0 1px var(--primary) !important;
-}
-
-/* Primary Sign In Button */
-.pf-v5-c-button.pf-m-primary {
-  background-color: var(--primary) !important;
-  color: var(--primary-foreground) !important;
-  font-size: 0.875rem !important;      /* text-sm */
-  font-weight: 500 !important;         /* medium */
-  border: none !important;
-  border-radius: var(--radius) !important;
-  padding: 0.625rem 1rem !important;
-  width: 100% !important;
-  height: 2.5rem !important;
-  cursor: pointer !important;
-  transition: background-color 0.15s ease !important;
-  box-shadow: var(--shadow) !important;
-  display: flex !important;
-  align-items: center !important;
-  justify-content: center !important;
-}
-
-.pf-v5-c-button.pf-m-primary:hover {
-  background-color: var(--primary-hover) !important;
-}
-
-/* Global Alert banner */
-.pf-v5-c-alert {
-  border-radius: var(--radius) !important;
-  border: 1px solid var(--border) !important;
-  background-color: var(--background) !important;
-  padding: 0.75rem 1rem !important;
-  margin-bottom: 1.25rem !important;
-  box-shadow: var(--shadow) !important;
-}
-
-.pf-v5-c-alert.pf-m-danger {
-  border-color: oklch(0.85 0.15 25) !important;
-  background-color: oklch(0.97 0.015 25) !important;
-  color: oklch(0.4 0.18 25) !important;
-}
-
-.pf-v5-c-alert__title {
-  font-size: 0.875rem !important;
-  font-weight: 500 !important;
-}
-
-.pf-v5-c-alert__description {
-  font-size: 0.75rem !important;
-  color: inherit !important;
-  margin-top: 0.25rem !important;
-}
-
-/* Footer / Helper Links */
-.pf-v5-c-login__main-footer {
-  padding: 0 2rem 2.5rem 2rem !important;
-  background-color: transparent !important;
-  border-top: none !important;
-}
-
-/* Remove default footer/band lines */
-.pf-v5-c-login__main-footer-band {
-  border-top: none !important;
-  padding: 0 !important;
-  margin: 0 !important;
-}
-
-/* Style secondary links */
-.pf-v5-c-button.pf-m-link {
-  color: var(--muted) !important;
-  font-size: 0.875rem !important;
-  text-decoration: underline !important;
-  background: transparent !important;
-  border: none !important;
-  padding: 0 !important;
-  cursor: pointer !important;
-  display: inline-block !important;
-}
-
-.pf-v5-c-button.pf-m-link:hover {
-  color: var(--foreground) !important;
-}
-
-/* Hide standard layout footer copyright/attribution */
-.pf-v5-c-login__footer {
-  display: none !important;
+@media (prefers-color-scheme: dark) {
+  :root {
+    --nw-bg: #09090b;
+    --nw-card: #18181b;
+    --nw-fg: #fafafa;
+    --nw-muted: #a1a1aa;
+    --nw-border: #27272a;
+    --nw-primary: #fafafa;
+    --nw-primary-fg: #18181b;
+    --nw-ring: rgba(250, 250, 250, 0.14);
+  }
+  .nw-body { background: radial-gradient(60rem 60rem at 50% -20rem, #1c1c1f 0%, var(--nw-bg) 60%); }
 }

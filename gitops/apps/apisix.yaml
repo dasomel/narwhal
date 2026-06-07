@@ -12,17 +12,28 @@ spec:
   source:
     repoURL: https://charts.apiseven.com
     chart: apisix
-    targetRevision: "2.9.0"
+    targetRevision: "2.14.0"
     helm:
       valuesObject:
+        extraVolumes:
+          - name: narwhal-root-ca
+            secret:
+              secretName: narwhal-root-ca-secret
+              optional: true
+        extraVolumeMounts:
+          - name: narwhal-root-ca
+            mountPath: /usr/local/apisix/conf/cert/narwhal
+            readOnly: true
         apisix:
           enabled: true
           image:
             # docker.io: APISIX 공식 이미지, ghcr.io/quay.io 대안 없음
             repository: apache/apisix
-            tag: "3.11.0-debian"
+            tag: "3.16.0-debian"
           podLabels:
             istio.io/dataplane-mode: "none"
+          # Mount Narwhal root CA so openid-connect plugin can verify Keycloak TLS
+          # (Vuln 3 — replaces ssl_verify=false in 11-3/11-5 routes).
           resources:
             requests:
               cpu: 100m
@@ -35,16 +46,110 @@ spec:
             containerPort: 9443
           # Kubernetes Secret Provider for OIDC credentials
           # Used by openid-connect plugin: $secret://kubernetes/k8s-1/apisix-oidc-config/<key>
-          config:
-            apisix:
-              allow_admin:
+          fullCustomConfig:
+            enabled: true
+            config:
+              apisix:
+                node_listen:
+                  - 9080
+                enable_heartbeat: true
+                enable_admin: true
+                enable_admin_cors: true
+                enable_debug: false
+                enable_control: true
+                control:
+                  ip: 127.0.0.1
+                  port: 9090
+                enable_dev_mode: false
+                enable_reuseport: true
+                enable_ipv6: true
+                enable_http2: true
+                enable_server_tokens: true
+                proxy_cache:
+                  cache_ttl: 10s
+                  zones:
+                  - name: disk_cache_one
+                    memory_size: 50m
+                    disk_size: 1G
+                    disk_path: "/tmp/disk_cache_one"
+                    cache_levels: "1:2"
+                router:
+                  http: radixtree_host_uri
+                  ssl: 'radixtree_sni'
+                proxy_mode: http
+                dns_resolver_valid: 30
+                resolver_timeout: 5
+                ssl:
+                  enable: true
+                  # Trust the Narwhal Root CA for internal OIDC token exchange (Keycloak TLS)
+                  ssl_trusted_certificate: /usr/local/apisix/conf/cert/narwhal/ca.crt
+                  listen:
+                    - port: 9443
+                      enable_http3: false
+                  ssl_protocols: "TLSv1.2 TLSv1.3"
+                  ssl_ciphers: "ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:DHE-RSA-AES128-GCM-SHA256:DHE-RSA-AES256-GCM-SHA384:DHE-RSA-CHACHA20-POLY1305:ECDHE-ECDSA-AES128-SHA256:ECDHE-RSA-AES128-SHA256:ECDHE-ECDSA-AES128-SHA:ECDHE-RSA-AES128-SHA:ECDHE-ECDSA-AES256-SHA384:ECDHE-RSA-AES256-SHA384:ECDHE-ECDSA-AES256-SHA:ECDHE-RSA-AES256-SHA:DHE-RSA-AES128-SHA256:DHE-RSA-AES256-SHA256:AES128-GCM-SHA256:AES256-GCM-SHA384:AES128-SHA256:AES256-SHA256:AES128-SHA:AES256-SHA:DES-CBC3-SHA"
+                trusted_addresses:
+                  - 127.0.0.1
+                secret_providers:
+                  - name: kubernetes
+                    uid: k8s-1
+                    auth_type: serviceaccount
+                    apiservers:
+                      - https://kubernetes.default.svc
+              nginx_config:
+                error_log: "/dev/stderr"
+                error_log_level: "warn"
+                worker_processes: "auto"
+                enable_cpu_affinity: true
+                worker_rlimit_nofile: 20480
+                event:
+                  worker_connections: 10620
+                http:
+                  enable_access_log: true
+                  access_log: "/dev/stdout"
+                  access_log_format: '$remote_addr - $remote_user [$time_local] $http_host "$request" $status $body_bytes_sent $request_time "$http_referer" "$http_user_agent" $upstream_addr $upstream_status $upstream_response_time "$upstream_scheme://$upstream_host$upstream_uri"'
+                  access_log_format_escape: default
+                  keepalive_timeout: "60s"
+                  client_header_timeout: 60s
+                  client_body_timeout: 60s
+                  send_timeout: 10s
+                  underscores_in_headers: "on"
+                  real_ip_header: "X-Real-IP"
+                  real_ip_from:
+                    - 127.0.0.1
+                    - 'unix:'
+              deployment:
+                role: traditional
+                role_traditional:
+                  config_provider: etcd
+                admin:
+                  allow_admin:
+                    - 0.0.0.0/0
+                  admin_listen:
+                    ip: 0.0.0.0
+                    port: 9180
+                  admin_key:
+                    - name: "admin"
+                      key: '{{ "${{APISIX_ADMIN_KEY}}" }}'
+                      role: admin
+                    - name: "viewer"
+                      key: '{{ "${{APISIX_VIEWER_KEY}}" }}'
+                      role: viewer
+                etcd:
+                  host:
+                    - "http://apisix-etcd.platform-system.svc.cluster.local:2379"
+                  prefix: "/apisix"
+                  timeout: 30
+          # Chart 2.14.0 uses apisix.admin.allow.ipList to generate allow_admin.
+          # Default 127.0.0.1/24 blocks apisix-ingress-controller → sync failures → 403.
+          admin:
+            credentials:
+              secretName: apisix-admin-key
+              secretAdminKey: key
+              secretViewerKey: viewer
+            allow:
+              ipList:
                 - 0.0.0.0/0
-              secret_providers:
-                - name: kubernetes
-                  uid: k8s-1
-                  auth_type: serviceaccount
-                  apiservers:
-                    - https://kubernetes.default.svc
 
         # LoadBalancer: same IP as former Traefik
         # NOTE: chart uses service.type/annotations (not gateway.type)

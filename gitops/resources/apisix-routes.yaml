@@ -200,7 +200,7 @@ spec:
             session:
               secret: "$secret://kubernetes/k8s-1/gitea-oidc-secret/session_secret"
               cookie:
-                lifetime: 600
+                lifetime: 300
         - name: serverless-post-function
           enable: true
           config:
@@ -399,7 +399,7 @@ spec:
             session:
               secret: "$secret://kubernetes/k8s-1/hubble-oidc-secret/session_secret"
               cookie:
-                lifetime: 600
+                lifetime: 300
         - name: response-rewrite
           enable: true
           config:
@@ -445,7 +445,7 @@ spec:
             session:
               secret: "$secret://kubernetes/k8s-1/prometheus-oidc-secret/session_secret"
               cookie:
-                lifetime: 600
+                lifetime: 300
         - name: response-rewrite
           enable: true
           config:
@@ -491,7 +491,7 @@ spec:
             session:
               secret: "$secret://kubernetes/k8s-1/alertmanager-oidc-secret/session_secret"
               cookie:
-                lifetime: 600
+                lifetime: 300
         - name: response-rewrite
           enable: true
           config:
@@ -547,7 +547,7 @@ spec:
             session:
               secret: "$secret://kubernetes/k8s-1/velero-ui-oidc-secret/session_secret"
               cookie:
-                lifetime: 600
+                lifetime: 300
         - name: response-rewrite
           enable: true
           config:
@@ -626,7 +626,7 @@ spec:
             session:
               secret: "$secret://kubernetes/k8s-1/hubble-oidc-secret/session_secret"
               cookie:
-                lifetime: 600
+                lifetime: 300
         - name: serverless-post-function
           enable: true
           config:

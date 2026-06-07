@@ -72,6 +72,10 @@ helm upgrade --install gitea gitea-charts/gitea \
   --set gitea.config.oauth2_client.ACCOUNT_LINKING=auto \
   --set gitea.config.oauth2_client.UPDATE_AVATAR=true \
   --set gitea.config.oauth2_client.OPENID_CONNECT_SCOPES="openid profile email groups" \
+  --set gitea.config.service.ENABLE_REVERSE_PROXY_AUTHENTICATION=true \
+  --set gitea.config.service.ENABLE_REVERSE_PROXY_AUTO_REGISTRATION=true \
+  --set gitea.config.security.REVERSE_PROXY_AUTHENTICATION_USER=X-WEBAUTH-USER \
+  --set gitea.config.security.REVERSE_PROXY_TRUSTED_PROXIES="*" \
   --set persistence.enabled=true \
   --set persistence.storageClass=nfs-csi \
   --set persistence.size=10Gi \

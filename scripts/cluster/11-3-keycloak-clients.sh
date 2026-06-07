@@ -230,7 +230,7 @@ echo ""
 echo "=== [3/6] Gitea ==="
 
 GITEA_SECRET=$(create_keycloak_client "gitea" \
-  "[\"https://gitea.${DOMAIN}/user/oauth2/keycloak/callback\"]")
+  "[\"https://gitea.${DOMAIN}/user/oauth2/keycloak/callback\",\"https://gitea.${DOMAIN}/apisix/callback\"]")
 
 kubectl create secret generic gitea-oidc-secret \
   --namespace devtools \

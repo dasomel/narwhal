@@ -88,7 +88,37 @@ spec:
                 X-Frame-Options: "SAMEORIGIN"
                 X-XSS-Protection: "1; mode=block"
 ---
-# Gitea (native OAuth2 source — service handles auth)
+# Gitea Git Bypass (no OIDC for HTTP git operations and API)
+apiVersion: apisix.apache.org/v2
+kind: ApisixRoute
+metadata:
+  name: gitea-git-bypass
+  namespace: platform-system
+spec:
+  http:
+    - name: gitea-git-bypass
+      priority: 10
+      match:
+        hosts:
+          - gitea.local.narwhal.io
+        paths:
+          - "/*/info/refs"
+          - "/*/git-upload-pack"
+          - "/*/git-receive-pack"
+          - "/api/v1/*"
+      backends:
+        - serviceName: gitea-http
+          servicePort: 3000
+      plugins:
+        - name: response-rewrite
+          enable: true
+          config:
+            headers:
+              set:
+                Strict-Transport-Security: "max-age=31536000; includeSubDomains"
+                X-Content-Type-Options: "nosniff"
+---
+# Gitea (APISIX openid-connect with automatic user headers)
 apiVersion: apisix.apache.org/v2
 kind: ApisixRoute
 metadata:
@@ -97,6 +127,7 @@ metadata:
 spec:
   http:
     - name: gitea
+      priority: 0
       match:
         hosts:
           - gitea.local.narwhal.io
@@ -106,6 +137,42 @@ spec:
         - serviceName: gitea-http
           servicePort: 3000
       plugins:
+        - name: openid-connect
+          enable: true
+          config:
+            client_id: "gitea"
+            client_secret: "$secret://kubernetes/k8s-1/gitea-oidc-secret/client_secret"
+            discovery: "https://keycloak.local.narwhal.io/realms/narwhal/.well-known/openid-configuration"
+            redirect_uri: "https://gitea.local.narwhal.io/apisix/callback"
+            scope: "openid email profile groups"
+            bearer_only: false
+            ssl_verify: false
+            logout_path: "/apisix/logout"
+            set_userinfo_header: true
+            set_access_token_header: true
+            access_token_in_authorization_header: true
+            session:
+              secret: "$secret://kubernetes/k8s-1/gitea-oidc-secret/session_secret"
+        - name: serverless-post-function
+          enable: true
+          config:
+            phase: access
+            functions:
+              - |
+                return function(conf, ctx)
+                  local headers = ngx.req.get_headers()
+                  local userinfo_b64 = headers["X-Userinfo"]
+                  if userinfo_b64 then
+                    local userinfo_json = ngx.decode_base64(userinfo_b64)
+                    if userinfo_json then
+                      local cjson = require("cjson")
+                      local ok, userinfo = pcall(cjson.decode, userinfo_json)
+                      if ok and userinfo and userinfo.preferred_username then
+                        ngx.req.set_header("X-WEBAUTH-USER", userinfo.preferred_username)
+                      end
+                    end
+                  end
+                end
         - name: response-rewrite
           enable: true
           config:

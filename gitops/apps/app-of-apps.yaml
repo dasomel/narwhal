@@ -1,7 +1,7 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: idp-apps
+  name: narwhal-apps
   namespace: devtools
   finalizers:
     - resources-finalizer.argocd.argoproj.io

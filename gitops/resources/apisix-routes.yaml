@@ -538,24 +538,24 @@ spec:
                 X-Frame-Options: "SAMEORIGIN"
                 X-XSS-Protection: "1; mode=block"
 ---
-# IDP Portal (NextAuth.js handles its own SSO — no APISIX openid-connect)
+# Narwhal Portal (NextAuth.js handles its own SSO — no APISIX openid-connect)
 apiVersion: apisix.apache.org/v2
 kind: ApisixRoute
 metadata:
-  name: idp-portal
+  name: narwhal-portal
   namespace: platform-system
 spec:
   http:
-    - name: idp-portal
+    - name: narwhal-portal
       match:
         hosts:
           - portal.local.narwhal.io
         paths:
           - "/*"
       backends:
-        - serviceName: idp-portal
+        - serviceName: narwhal-portal
           servicePort: 3000
-      # IDP Portal handles its own SSO via NextAuth.js — no APISIX openid-connect plugin
+      # Narwhal Portal handles its own SSO via NextAuth.js — no APISIX openid-connect plugin
       plugins:
         - name: response-rewrite
           enable: true

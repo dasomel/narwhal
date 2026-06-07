@@ -1,7 +1,7 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: idp-portal
+  name: narwhal-portal
   namespace: devtools
   annotations:
     argocd.argoproj.io/sync-wave: "5"
@@ -14,7 +14,7 @@ spec:
     targetRevision: HEAD
     path: resources
     directory:
-      include: "idp-portal-k8s.yaml"
+      include: "{narwhal-portal-k8s.yaml,narwhal-portal-policy.yaml}"
   destination:
     server: https://kubernetes.default.svc
     namespace: devtools
@@ -30,8 +30,25 @@ spec:
   ignoreDifferences:
     - group: apps
       kind: Deployment
-      name: idp-portal
+      name: narwhal-portal
       namespace: devtools
       jsonPointers:
         - /spec/template/spec/containers/0/image
         - /spec/template/spec/containers/0/env
+        - /spec/replicas
+    # Kyverno admission webhook injects autogen rules / defaults — suppress drift.
+    - group: kyverno.io
+      kind: ClusterPolicy
+      jqPathExpressions:
+        - .spec.rules[].match
+        - .spec.rules[].exclude
+        - .spec.rules[].validate
+        - .spec.rules[].mutate
+        - .spec.rules[].generate
+        - .spec.background
+        - .spec.admission
+        - .spec.emitWarning
+        - .spec.failurePolicy
+        - .spec.validationFailureAction
+        - .metadata.annotations
+        - .metadata.labels

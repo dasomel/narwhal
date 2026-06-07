@@ -651,39 +651,7 @@ else
   echo "  WARN: APISIX admin not reachable, skipping secret provider config"
 fi
 
-# -------------------------------------------------------------------------
-# 7. IDP Portal — native OIDC (NextAuth provider id: "authentik")
-# -------------------------------------------------------------------------
-echo ""
-echo "=== [7/7] IDP Portal ==="
 
-IDP_PORTAL_SECRET=$(create_keycloak_client "idp-portal" \
-  "[\"https://portal.${DOMAIN}/api/auth/callback/authentik\"]")
-
-kubectl create secret generic idp-portal-secrets \
-  --namespace devtools \
-  --from-literal=AUTHENTIK_ISSUER="${ISSUER_URL}" \
-  --from-literal=AUTHENTIK_CLIENT_ID=idp-portal \
-  --from-literal=AUTHENTIK_CLIENT_SECRET="${IDP_PORTAL_SECRET}" \
-  --from-literal=AUTH_SECRET="$(openssl rand -hex 32)" \
-  --from-literal=PROMETHEUS_URL="http://prometheus-stack-kube-prom-prometheus.monitoring.svc.cluster.local:9090" \
-  --from-literal=ARGOCD_URL="http://argocd-server.devtools.svc.cluster.local" \
-  --from-literal=ARGOCD_TOKEN="${ARGOCD_TOKEN:-changeme}" \
-  --from-literal=ALERTMANAGER_URL="http://prometheus-stack-kube-prom-alertmanager.monitoring.svc.cluster.local:9093" \
-  --from-literal=LOKI_URL="http://loki.monitoring.svc.cluster.local:3100" \
-  --from-literal=AUTHENTIK_URL="https://keycloak.${DOMAIN}" \
-  --from-literal=AUTHENTIK_ADMIN_TOKEN="not-applicable-keycloak" \
-  --from-literal=APISIX_ADMIN_URL="http://apisix-admin.platform-system.svc.cluster.local:9180" \
-  --from-literal=APISIX_API_KEY="${APISIX_API_KEY:-changeme}" \
-  --from-literal=VALKEY_URL="redis://idp-portal-valkey.devtools.svc.cluster.local:6379" \
-  --from-literal=K8S_API_SERVER="https://192.168.56.100:6443" \
-  --from-literal=AUTHENTIK_K8S_CLIENT_ID="kubernetes" \
-  --from-literal=AUTHENTIK_K8S_ISSUER="${ISSUER_URL}" \
-  --from-literal=TEMPO_URL="http://tempo.monitoring.svc.cluster.local:3200" \
-  --from-literal=OPENBAO_ADDR="http://openbao.storage.svc.cluster.local:8200" \
-  --from-literal=OPENBAO_TOKEN="changeme" \
-  --dry-run=client -o yaml | kubectl apply -f -
-echo "IDP Portal OIDC secret configured"
 
 # =============================================================================
 # 요약
@@ -700,7 +668,6 @@ echo "  [OK] Gitea      (gitea)      → gitea admin auth add-oauth (source: key
 echo "  [OK] Harbor     (harbor)     → Harbor API OIDC config"
 echo "  [OK] Headlamp   (headlamp)   → headlamp-oidc-secret + restart"
 echo "  [OK] OpenBao    (openbao)    → bao OIDC auth method"
-echo "  [OK] IDP Portal (idp-portal) → idp-portal-secrets (devtools)"
 echo ""
 echo "Group B - APISIX openid-connect secrets (platform-system):"
 echo "  [OK] hubble-oidc-secret        (client: hubble)"

@@ -148,15 +148,15 @@ spec:
   ports:
     - port: 8080
 ---
-# IDP Portal (devtools namespace)
+# Narwhal Portal (devtools namespace)
 apiVersion: v1
 kind: Service
 metadata:
-  name: idp-portal
+  name: narwhal-portal
   namespace: platform-system
 spec:
   type: ExternalName
-  externalName: idp-portal.devtools.svc.cluster.local
+  externalName: narwhal-portal.devtools.svc.cluster.local
   ports:
     - port: 3000
 ---

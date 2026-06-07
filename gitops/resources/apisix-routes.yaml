@@ -50,6 +50,13 @@ spec:
         - serviceName: argocd-server
           servicePort: 80
       plugins:
+        - name: proxy-rewrite
+          enable: true
+          config:
+            headers:
+              set:
+                X-Forwarded-Port: "443"
+                X-Forwarded-Proto: "https"
         - name: response-rewrite
           enable: true
           config:
@@ -59,6 +66,43 @@ spec:
                 X-Content-Type-Options: "nosniff"
                 X-Frame-Options: "SAMEORIGIN"
                 X-XSS-Protection: "1; mode=block"
+---
+# ArgoCD Redirect for no-click SSO
+apiVersion: apisix.apache.org/v2
+kind: ApisixRoute
+metadata:
+  name: argocd-redirect
+  namespace: platform-system
+spec:
+  http:
+    - name: argocd-redirect
+      priority: 10
+      match:
+        hosts:
+          - argocd.local.narwhal.io
+        paths:
+          - "/*"
+        exprs:
+          - subject:
+              scope: Path
+            op: In
+            set:
+              - "/"
+              - "/login"
+          - subject:
+              scope: Header
+              name: Cookie
+            op: RegexNotMatch
+            value: "argocd.token="
+      backends:
+        - serviceName: argocd-server
+          servicePort: 80
+      plugins:
+        - name: redirect
+          enable: true
+          config:
+            ret_code: 302
+            uri: "/auth/login"
 ---
 # Grafana (native generic_oauth — service handles auth)
 apiVersion: apisix.apache.org/v2
@@ -204,6 +248,13 @@ spec:
         - serviceName: harbor-nginx
           servicePort: 80
       plugins:
+        - name: proxy-rewrite
+          enable: true
+          config:
+            headers:
+              set:
+                X-Forwarded-Port: "443"
+                X-Forwarded-Proto: "https"
         - name: client-control
           enable: true
           config:
@@ -217,6 +268,43 @@ spec:
                 X-Content-Type-Options: "nosniff"
                 X-Frame-Options: "SAMEORIGIN"
                 X-XSS-Protection: "1; mode=block"
+---
+# Harbor Redirect for no-click SSO
+apiVersion: apisix.apache.org/v2
+kind: ApisixRoute
+metadata:
+  name: harbor-redirect
+  namespace: platform-system
+spec:
+  http:
+    - name: harbor-redirect
+      priority: 10
+      match:
+        hosts:
+          - harbor.local.narwhal.io
+        paths:
+          - "/*"
+        exprs:
+          - subject:
+              scope: Path
+            op: In
+            set:
+              - "/"
+              - "/harbor/sign-in"
+          - subject:
+              scope: Header
+              name: Cookie
+            op: RegexNotMatch
+            value: "sid="
+      backends:
+        - serviceName: harbor-nginx
+          servicePort: 80
+      plugins:
+        - name: redirect
+          enable: true
+          config:
+            ret_code: 302
+            uri: "/c/oidc/login"
 ---
 # Headlamp (native OIDC — service handles auth)
 apiVersion: apisix.apache.org/v2

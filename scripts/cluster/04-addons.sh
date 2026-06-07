@@ -30,6 +30,19 @@ kubectl patch deployment metrics-server -n kube-system --type='json' -p='[
   {"op": "add", "path": "/spec/template/spec/containers/0/args/-", "value": "--kubelet-insecure-tls"}
 ]'
 
+# Loosen metrics-server probes: default timeoutSeconds=1/failureThreshold=3 causes
+# liveness flapping under load -> pod restarts -> metrics.k8s.io APIService MissingEndpoints
+# -> kubectl top & portal show 0% CPU/mem. Give it more slack.
+kubectl patch deployment metrics-server -n kube-system --type='json' -p='[
+  {"op": "replace", "path": "/spec/template/spec/containers/0/livenessProbe/timeoutSeconds", "value": 5},
+  {"op": "replace", "path": "/spec/template/spec/containers/0/livenessProbe/failureThreshold", "value": 5},
+  {"op": "add",     "path": "/spec/template/spec/containers/0/livenessProbe/initialDelaySeconds", "value": 20},
+  {"op": "replace", "path": "/spec/template/spec/containers/0/livenessProbe/periodSeconds", "value": 15},
+  {"op": "replace", "path": "/spec/template/spec/containers/0/readinessProbe/timeoutSeconds", "value": 5},
+  {"op": "replace", "path": "/spec/template/spec/containers/0/readinessProbe/failureThreshold", "value": 5},
+  {"op": "replace", "path": "/spec/template/spec/containers/0/readinessProbe/periodSeconds", "value": 15}
+]'
+
 #=========================================
 # CSI Driver NFS
 #=========================================

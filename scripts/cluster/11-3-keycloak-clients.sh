@@ -336,13 +336,17 @@ echo "=== [5/6] Headlamp ==="
 HEADLAMP_SECRET=$(create_keycloak_client "headlamp" \
   "[\"https://headlamp.${DOMAIN}/oidc-callback\"]")
 
-# Headlamp은 issuerURL/scopes 키도 필요
+# Headlamp helm chart consumes this secret via envFrom and the deployment args use
+# $(OIDC_*) — k8s only substitutes $(VAR) from env names that match the secret keys,
+# so the keys MUST be OIDC_CLIENT_ID/OIDC_CLIENT_SECRET/OIDC_ISSUER_URL/OIDC_SCOPES
+# (the chart's expected names). Wrong key names -> $(OIDC_ISSUER_URL) stays literal ->
+# "unsupported protocol scheme" on discovery.
 kubectl create secret generic headlamp-oidc-secret \
   --namespace devtools \
-  --from-literal=clientID=headlamp \
-  --from-literal=clientSecret="${HEADLAMP_SECRET}" \
-  --from-literal=issuerURL="${ISSUER_URL}" \
-  --from-literal=scopes="openid,profile,email,groups" \
+  --from-literal=OIDC_CLIENT_ID=headlamp \
+  --from-literal=OIDC_CLIENT_SECRET="${HEADLAMP_SECRET}" \
+  --from-literal=OIDC_ISSUER_URL="${ISSUER_URL}" \
+  --from-literal=OIDC_SCOPES="openid,profile,email,groups" \
   --dry-run=client -o yaml | kubectl apply -f -
 
 if kubectl get deployment headlamp -n devtools &>/dev/null; then

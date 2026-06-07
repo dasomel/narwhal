@@ -189,7 +189,7 @@ metadata:
   name: narwhal-portal
   namespace: devtools
 spec:
-  replicas: 0
+  replicas: 1
   selector:
     matchLabels:
       app: narwhal-portal

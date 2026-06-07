@@ -97,15 +97,17 @@ metadata:
 spec:
   http:
     - name: gitea-git-bypass
-      priority: 10
+      priority: 100
       match:
         hosts:
           - gitea.local.narwhal.io
         paths:
-          - "/*/info/refs"
-          - "/*/git-upload-pack"
-          - "/*/git-receive-pack"
-          - "/api/v1/*"
+          - "/*"
+        exprs:
+          - subject:
+              scope: Path
+            op: RegexMatch
+            value: "(\\.git(/|$)|/info/refs|/git-upload-pack|/git-receive-pack|^/api/v1/|^/login/oauth/|^/user/login)"
       backends:
         - serviceName: gitea-http
           servicePort: 3000

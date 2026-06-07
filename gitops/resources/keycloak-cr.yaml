@@ -22,7 +22,7 @@ spec:
   http:
     httpEnabled: true
   hostname:
-    hostname: keycloak.local.narwhal.io
+    hostname: https://keycloak.local.narwhal.io
     strict: true
   proxy:
     headers: xforwarded
@@ -36,9 +36,6 @@ spec:
       spec:
         containers:
           - name: keycloak
-            env:
-              - name: KC_HOSTNAME_PORT
-                value: "443"
             resources:
               requests:
                 memory: "512Mi"

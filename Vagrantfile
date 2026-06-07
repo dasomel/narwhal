@@ -34,7 +34,7 @@ NFS_SHARE_PATH = "/srv/nfs/k8s"      # NFS export path
 # Resource Configuration
 #=========================================
 MASTER_CPUS = 2
-MASTER_MEMORY = 4096    # 4GB - control plane only
+MASTER_MEMORY = 6144    # 6GB - control plane + DaemonSets headroom
 WORKER_CPUS = 2
 WORKER_MEMORY = 6144    # 6GB - platform apps
 

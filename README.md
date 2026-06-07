@@ -280,7 +280,7 @@ velero backup get
 K8S_VERSION = "1.35"           # Kubernetes version
 MASTER_COUNT = 3               # Master nodes (HA, 1 fault tolerance)
 WORKER_COUNT = 3               # Worker nodes
-MASTER_MEMORY = 4096           # Master RAM (MB) - control-plane only (NoSchedule taint)
+MASTER_MEMORY = 6144           # Master RAM (MB) - control-plane + DaemonSets headroom
 WORKER_MEMORY = 6144           # Worker RAM (MB) - platform apps run here
 VIP_ADDRESS = "192.168.56.100" # Control plane VIP
 ```

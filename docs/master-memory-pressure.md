@@ -1,8 +1,8 @@
 # Master Node Memory Pressure & NodeNotReady Flapping (diagnosis)
 
-> Status: **diagnosed, not yet fixed** (documentation-only, per decision 2026-06-07).
-> Root constraint: 4GB master nodes are undersized for the current control-plane
-> + mandatory DaemonSet footprint.
+> Status: **fixed** (`MASTER_MEMORY` 4096→6144, 2026-06-07).
+> Root constraint: 4GB master nodes were undersized for the current control-plane
+> + mandatory DaemonSet footprint. Bumped to 6GB.
 
 ## Symptoms
 

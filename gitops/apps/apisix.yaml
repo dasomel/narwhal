@@ -112,6 +112,8 @@ spec:
                   keepalive_timeout: "60s"
                   client_header_timeout: 60s
                   client_body_timeout: 60s
+                  client_max_body_size: 0
+                  client_body_buffer_size: 128k
                   send_timeout: 10s
                   underscores_in_headers: "on"
                   real_ip_header: "X-Real-IP"

@@ -336,6 +336,26 @@ echo "=== [5/6] Headlamp ==="
 HEADLAMP_SECRET=$(create_keycloak_client "headlamp" \
   "[\"https://headlamp.${DOMAIN}/oidc-callback\"]")
 
+# Headlamp passes the user's id_token to the kube-apiserver, which runs with
+# --oidc-client-id=kubernetes and therefore requires the token's aud to contain
+# "kubernetes". The per-client mapper above only adds aud=headlamp, so add a second
+# hardcoded audience -> aud=[headlamp, kubernetes]. Without it the API server rejects
+# headlamp's token (401 Unauthorized) even after apiserver OIDC is enabled (11-4).
+HEADLAMP_ID=$(kc_exec get clients -r "${REALM}" -q clientId=headlamp 2>/dev/null \
+  | jq -r '.[] | select(.clientId=="headlamp") | .id' || echo "")
+if [ -n "${HEADLAMP_ID}" ]; then
+  K8S_AUD_ID=$(kc_exec get "clients/${HEADLAMP_ID}/protocol-mappers/models" -r "${REALM}" 2>/dev/null \
+    | jq -r '.[] | select(.name=="kubernetes-audience") | .id' || echo "")
+  if [ -z "${K8S_AUD_ID}" ]; then
+    kc_exec create "clients/${HEADLAMP_ID}/protocol-mappers/models" -r "${REALM}" \
+      -s "name=kubernetes-audience" \
+      -s "protocol=openid-connect" \
+      -s "protocolMapper=oidc-audience-mapper" \
+      -s "config={\"included.custom.audience\":\"kubernetes\",\"id.token.claim\":\"true\",\"access.token.claim\":\"true\"}" >&2
+    echo "  -> kubernetes audience mapper created for 'headlamp'" >&2
+  fi
+fi
+
 # Headlamp helm chart consumes this secret via envFrom and the deployment args use
 # $(OIDC_*) — k8s only substitutes $(VAR) from env names that match the secret keys,
 # so the keys MUST be OIDC_CLIENT_ID/OIDC_CLIENT_SECRET/OIDC_ISSUER_URL/OIDC_SCOPES

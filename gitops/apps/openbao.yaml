@@ -29,6 +29,43 @@ spec:
             enabled: true
             storageClass: nfs-csi
             size: 5Gi
+          # Enable the web UI on the server (the helm `ui.enabled` below only creates
+          # the Service; the server itself serves /ui/ only when ui=true).
+          extraEnvironmentVars:
+            BAO_UI: "true"
+            # Advertise the API over HTTPS to match the TLS listener below.
+            BAO_API_ADDR: "https://$(POD_IP):8200"
+          # OpenBao was initialized in raft mode behind a TLS listener. The chart's
+          # default standalone config (file storage + tls_disable) does NOT match the
+          # persisted raft.db, so an ArgoCD re-render / pod restart would come up with
+          # an empty file backend ("not initialized"). Pin the exact runtime config so
+          # restarts keep reading the existing raft data over HTTPS.
+          standalone:
+            enabled: true
+            config: |
+              ui = true
+              disable_mlock = true
+
+              listener "tcp" {
+                address = "[::]:8200"
+                cluster_address = "[::]:8201"
+                tls_cert_file = "/openbao/tls/tls.crt"
+                tls_key_file = "/openbao/tls/tls.key"
+                tls_client_ca_file = "/openbao/tls/ca.crt"
+              }
+
+              storage "raft" {
+                path = "/openbao/data"
+              }
+          # Mount the existing server TLS cert (openbao-tls) for the listener above.
+          volumes:
+            - name: userconfig-openbao-tls
+              secret:
+                secretName: openbao-tls
+          volumeMounts:
+            - name: userconfig-openbao-tls
+              mountPath: /openbao/tls
+              readOnly: true
         ui:
           enabled: true
   destination:

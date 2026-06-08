@@ -67,46 +67,125 @@ echo "=== Installing OpenBao ==="
 helm repo add openbao https://openbao.github.io/openbao-helm
 helm repo update openbao
 
+# OpenBao runs a TLS listener (raft storage). The server cert MUST exist before the
+# pod starts, otherwise it crash-loops on missing tls_cert_file. Issue it from the
+# cluster CA (narwhal-ca-issuer, created in 08-1-networking) and wait for the secret.
+kubectl create namespace storage --dry-run=client -o yaml | kubectl apply -f -
+cat <<'EOF' | kubectl apply -f -
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: openbao-tls
+  namespace: storage
+spec:
+  secretName: openbao-tls
+  issuerRef:
+    name: narwhal-ca-issuer
+    kind: ClusterIssuer
+  dnsNames:
+    - openbao.storage.svc.cluster.local
+    - openbao.storage.svc
+    - openbao
+    - openbao-0.openbao-internal
+    - localhost
+  ipAddresses:
+    - 127.0.0.1
+EOF
+echo "Waiting for openbao-tls certificate..."
+kubectl wait --for=condition=Ready certificate/openbao-tls -n storage --timeout=120s 2>/dev/null || true
+
+# Helm values mirror gitops/apps/openbao.yaml so a clean install matches what ArgoCD
+# manages afterward (no config drift / reseal on the first GitOps sync):
+#  - global.tlsDisable=false  -> BAO_ADDR/BAO_API_ADDR + readiness probe use https
+#                                (else pod NotReady -> Service loses endpoints)
+#  - standalone.config        -> raft storage + TLS listener (the chart default is
+#                                file storage + tls_disable, which does NOT match)
+#  - extraLabels dataplane-mode=none -> opt out of the ambient mesh (storage ns is
+#                                ambient; ztunnel otherwise resets plain-TLS clients)
+#  - BAO_UI=true              -> server serves /ui/
+#  - volumes/volumeMounts     -> mount the openbao-tls cert at /openbao/tls
+cat > /tmp/openbao-values.yaml <<'EOF'
+global:
+  tlsDisable: false
+server:
+  image:
+    tag: "2.2.0"
+  extraLabels:
+    istio.io/dataplane-mode: none
+  extraEnvironmentVars:
+    BAO_UI: "true"
+  standalone:
+    enabled: true
+    config: |
+      ui = true
+      disable_mlock = true
+
+      listener "tcp" {
+        address = "[::]:8200"
+        cluster_address = "[::]:8201"
+        tls_cert_file = "/openbao/tls/tls.crt"
+        tls_key_file = "/openbao/tls/tls.key"
+      }
+
+      storage "raft" {
+        path = "/openbao/data"
+      }
+  ha:
+    enabled: false
+    replicas: 1
+    raft:
+      enabled: true
+  dataStorage:
+    enabled: true
+    storageClass: nfs-csi
+    size: 10Gi
+  auditStorage:
+    enabled: true
+    storageClass: nfs-csi
+    size: 5Gi
+  volumes:
+    - name: userconfig-openbao-tls
+      secret:
+        secretName: openbao-tls
+  volumeMounts:
+    - name: userconfig-openbao-tls
+      mountPath: /openbao/tls
+      readOnly: true
+ui:
+  enabled: true
+EOF
+
 helm upgrade --install openbao openbao/openbao \
   --namespace storage \
   --create-namespace \
   --version 0.25.0 \
-  --set server.image.tag=2.2.0 \
-  --set server.ha.enabled=false \
-  --set server.ha.replicas=1 \
-  --set server.ha.raft.enabled=true \
-  --set server.dataStorage.enabled=true \
-  --set server.dataStorage.storageClass=nfs-csi \
-  --set server.dataStorage.size=10Gi \
-  --set server.auditStorage.enabled=true \
-  --set server.auditStorage.storageClass=nfs-csi \
-  --set server.auditStorage.size=5Gi \
-  --set ui.enabled=true || echo "WARN: OpenBao install issue, continuing..."
+  -f /tmp/openbao-values.yaml || echo "WARN: OpenBao install issue, continuing..."
 
-# Auto init + unseal OpenBao
+# Auto init + unseal OpenBao. The listener is HTTPS with the self-signed cluster CA,
+# so every bao CLI call needs -tls-skip-verify (BAO_ADDR is https via tlsDisable=false).
 echo "Waiting for OpenBao pod..."
 kubectl wait --for=condition=Ready=false pod/openbao-0 -n storage --timeout=120s 2>/dev/null || true
 sleep 5
 
-OPENBAO_INITIALIZED=$(kubectl exec openbao-0 -n storage -- bao status -format=json 2>/dev/null | python3 -c 'import sys,json; print(json.load(sys.stdin).get("initialized",""))' 2>/dev/null || echo "")
+OPENBAO_INITIALIZED=$(kubectl exec openbao-0 -n storage -- bao status -tls-skip-verify -format=json 2>/dev/null | python3 -c 'import sys,json; print(json.load(sys.stdin).get("initialized",""))' 2>/dev/null || echo "")
 
 if [ "${OPENBAO_INITIALIZED}" = "True" ]; then
   echo "OpenBao already initialized, checking unseal key..."
   UNSEAL_KEY=$(kubectl get secret openbao-init -n storage -o jsonpath='{.data.unseal_keys_b64}' 2>/dev/null | base64 -d 2>/dev/null || echo "")
   if [ -n "${UNSEAL_KEY}" ]; then
     echo "Unsealing OpenBao..."
-    kubectl exec openbao-0 -n storage -- bao operator unseal "${UNSEAL_KEY}" || true
+    kubectl exec openbao-0 -n storage -- bao operator unseal -tls-skip-verify "${UNSEAL_KEY}" || true
   else
     echo "WARN: OpenBao initialized but unseal key not found in openbao-init secret"
   fi
 elif [ "${OPENBAO_INITIALIZED}" = "False" ]; then
   echo "Initializing OpenBao..."
-  INIT_JSON=$(kubectl exec openbao-0 -n storage -- bao operator init -key-shares=1 -key-threshold=1 -format=json 2>/dev/null || echo "")
+  INIT_JSON=$(kubectl exec openbao-0 -n storage -- bao operator init -tls-skip-verify -key-shares=1 -key-threshold=1 -format=json 2>/dev/null || echo "")
   if [ -n "${INIT_JSON}" ]; then
     UNSEAL_KEY=$(echo "${INIT_JSON}" | python3 -c 'import sys,json; print(json.load(sys.stdin)["unseal_keys_b64"][0])')
     ROOT_TOKEN=$(echo "${INIT_JSON}" | python3 -c 'import sys,json; print(json.load(sys.stdin)["root_token"])')
     echo "Unsealing OpenBao..."
-    kubectl exec openbao-0 -n storage -- bao operator unseal "${UNSEAL_KEY}" || true
+    kubectl exec openbao-0 -n storage -- bao operator unseal -tls-skip-verify "${UNSEAL_KEY}" || true
     echo "Saving credentials to openbao-init secret..."
     kubectl create secret generic openbao-init -n storage \
       --from-literal=unseal_keys_b64="${UNSEAL_KEY}" \
@@ -120,7 +199,12 @@ else
   echo "WARN: Could not determine OpenBao state, skipping init"
 fi
 
+rm -f /tmp/openbao-values.yaml
 echo "OpenBao installed"
+
+# NOTE: an auto-unseal CronJob (gitops/apps/openbao-unseal.yaml + resources/openbao-unseal.yaml)
+# re-unseals OpenBao after any restart (Shamir seal, no KMS). It is deployed by ArgoCD
+# during GitOps bootstrap (step 14), reading the openbao-init secret created above.
 
 #=========================================
 # Velero (Backup & Restore)

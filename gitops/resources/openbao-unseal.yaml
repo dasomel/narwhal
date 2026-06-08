@@ -1,0 +1,92 @@
+# OpenBao auto-unseal CronJob.
+#
+# OpenBao here uses Shamir seal (key-shares=1) and there is no cloud KMS / transit
+# unseal provider available on this on-prem cluster, so every pod restart leaves the
+# server SEALED (the StatefulSet uses updateStrategy: OnDelete precisely so a human
+# controls unseal timing). This job removes that manual step: every 2 minutes it
+# checks the seal status and, if sealed, unseals using the key persisted at provision
+# time in the `openbao-init` secret (scripts/cluster/08-4-storage.sh).
+#
+# Security trade-off: the unseal key lives in a same-namespace Secret and is injected
+# into this job's env. That is the standard "k8s-native auto-unseal" posture for a
+# self-hosted dev/IDP cluster without an external KMS. Lock down RBAC on the
+# `openbao-init` secret accordingly.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: openbao-auto-unseal
+  namespace: storage
+  labels:
+    app.kubernetes.io/name: openbao-auto-unseal
+    app.kubernetes.io/part-of: openbao
+spec:
+  schedule: "*/2 * * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      ttlSecondsAfterFinished: 180
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: openbao-auto-unseal
+            # Keep out of the Istio ambient mesh — ztunnel mTLS would break the
+            # plain TLS call to the OpenBao listener.
+            istio.io/dataplane-mode: none
+        spec:
+          restartPolicy: Never
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 100
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: unseal
+              image: quay.io/openbao/openbao:2.2.0
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: ["ALL"]
+              env:
+                # Use the headless per-pod DNS (publishNotReadyAddresses=true), NOT the
+                # regular Service: a sealed OpenBao fails its readiness probe, so the
+                # Service has no endpoints and could never be reached to unseal it.
+                - name: BAO_ADDR
+                  value: "https://openbao-0.openbao-internal.storage.svc.cluster.local:8200"
+                # Listener uses the internal narwhal CA (openbao-tls); skip verify
+                # rather than ship the CA bundle to this tiny helper.
+                - name: BAO_SKIP_VERIFY
+                  value: "true"
+                - name: UNSEAL_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: openbao-init
+                      key: unseal_keys_b64
+              command:
+                - /bin/sh
+                - -ec
+                - |
+                  # unseal_keys_b64 may be stored bare or as a JSON array (["key"]);
+                  # normalise to the bare key.
+                  KEY=$(printf '%s' "${UNSEAL_KEY}" | tr -d '[]" ' | cut -d, -f1)
+                  if bao status >/dev/null 2>&1; then
+                    echo "openbao already unsealed"
+                  else
+                    echo "openbao sealed -> unsealing"
+                    if bao operator unseal "${KEY}" >/dev/null 2>&1; then
+                      echo "unseal OK"
+                    else
+                      echo "unseal FAILED" >&2
+                      exit 1
+                    fi
+                  fi
+              resources:
+                requests:
+                  cpu: 10m
+                  memory: 32Mi
+                limits:
+                  cpu: 100m
+                  memory: 64Mi

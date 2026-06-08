@@ -1,6 +1,17 @@
 ---
 # Keycloak (Identity Provider — no OIDC plugin, Keycloak IS the IdP)
 apiVersion: apisix.apache.org/v2
+kind: ApisixUpstream
+metadata:
+  name: keycloak-server
+  namespace: platform-system
+spec:
+  externalNodes:
+    - type: Domain
+      name: keycloak-service.iam.svc.cluster.local
+      port: 8080
+---
+apiVersion: apisix.apache.org/v2
 kind: ApisixRoute
 metadata:
   name: keycloak
@@ -13,9 +24,8 @@ spec:
           - keycloak.local.narwhal.io
         paths:
           - "/*"
-      backends:
-        - serviceName: keycloak-server
-          servicePort: 8080
+      upstreams:
+        - name: keycloak-server
       plugins:
         - name: proxy-rewrite
           enable: true
@@ -34,6 +44,17 @@ spec:
 ---
 # ArgoCD (native OIDC — argocd-cm handles auth, no APISIX openid-connect)
 apiVersion: apisix.apache.org/v2
+kind: ApisixUpstream
+metadata:
+  name: argocd-server
+  namespace: platform-system
+spec:
+  externalNodes:
+    - type: Domain
+      name: argocd-server.devtools.svc.cluster.local
+      port: 80
+---
+apiVersion: apisix.apache.org/v2
 kind: ApisixRoute
 metadata:
   name: argocd
@@ -46,9 +67,8 @@ spec:
           - argocd.local.narwhal.io
         paths:
           - "/*"
-      backends:
-        - serviceName: argocd-server
-          servicePort: 80
+      upstreams:
+        - name: argocd-server
       plugins:
         - name: proxy-rewrite
           enable: true
@@ -94,9 +114,8 @@ spec:
               name: Cookie
             op: RegexNotMatch
             value: "argocd.token="
-      backends:
-        - serviceName: argocd-server
-          servicePort: 80
+      upstreams:
+        - name: argocd-server
       plugins:
         - name: redirect
           enable: true
@@ -105,6 +124,17 @@ spec:
             uri: "/auth/login"
 ---
 # Grafana (native generic_oauth — service handles auth)
+apiVersion: apisix.apache.org/v2
+kind: ApisixUpstream
+metadata:
+  name: prometheus-stack-grafana
+  namespace: platform-system
+spec:
+  externalNodes:
+    - type: Domain
+      name: prometheus-stack-grafana.monitoring.svc.cluster.local
+      port: 80
+---
 apiVersion: apisix.apache.org/v2
 kind: ApisixRoute
 metadata:
@@ -118,9 +148,8 @@ spec:
           - grafana.local.narwhal.io
         paths:
           - "/*"
-      backends:
-        - serviceName: prometheus-stack-grafana
-          servicePort: 80
+      upstreams:
+        - name: prometheus-stack-grafana
       plugins:
         - name: response-rewrite
           enable: true
@@ -133,6 +162,17 @@ spec:
                 X-XSS-Protection: "1; mode=block"
 ---
 # Gitea Git Bypass (no OIDC for HTTP git operations and API)
+apiVersion: apisix.apache.org/v2
+kind: ApisixUpstream
+metadata:
+  name: gitea-http
+  namespace: platform-system
+spec:
+  externalNodes:
+    - type: Domain
+      name: gitea-http.devtools.svc.cluster.local
+      port: 3000
+---
 apiVersion: apisix.apache.org/v2
 kind: ApisixRoute
 metadata:
@@ -152,9 +192,8 @@ spec:
               scope: Path
             op: RegexMatch
             value: "(\\.git(/|$)|/info/refs|/git-upload-pack|/git-receive-pack|^/api/v1/|^/login/oauth/|^/user/login)"
-      backends:
-        - serviceName: gitea-http
-          servicePort: 3000
+      upstreams:
+        - name: gitea-http
       plugins:
         - name: response-rewrite
           enable: true
@@ -179,9 +218,8 @@ spec:
           - gitea.local.narwhal.io
         paths:
           - "/*"
-      backends:
-        - serviceName: gitea-http
-          servicePort: 3000
+      upstreams:
+        - name: gitea-http
       plugins:
         - name: openid-connect
           enable: true
@@ -234,6 +272,17 @@ spec:
 # Harbor (native OIDC mode — service handles auth, keep client-control for image push)
 # resolveGranularity 제거: ExternalName 백엔드는 CNAME 추적 필요 (mistake log 2026-04-06)
 apiVersion: apisix.apache.org/v2
+kind: ApisixUpstream
+metadata:
+  name: harbor-nginx
+  namespace: platform-system
+spec:
+  externalNodes:
+    - type: Domain
+      name: harbor.devtools.svc.cluster.local
+      port: 80
+---
+apiVersion: apisix.apache.org/v2
 kind: ApisixRoute
 metadata:
   name: harbor
@@ -246,9 +295,8 @@ spec:
           - harbor.local.narwhal.io
         paths:
           - "/*"
-      backends:
-        - serviceName: harbor-nginx
-          servicePort: 80
+      upstreams:
+        - name: harbor-nginx
       plugins:
         - name: proxy-rewrite
           enable: true
@@ -260,7 +308,7 @@ spec:
         - name: client-control
           enable: true
           config:
-            max_body_size: 104857600  # 100MB for Docker image push
+            max_body_size: 0  # Unlimited body size for Docker image push
         - name: response-rewrite
           enable: true
           config:
@@ -298,9 +346,8 @@ spec:
               name: Cookie
             op: RegexNotMatch
             value: "sid="
-      backends:
-        - serviceName: harbor-nginx
-          servicePort: 80
+      upstreams:
+        - name: harbor-nginx
       plugins:
         - name: redirect
           enable: true
@@ -309,6 +356,17 @@ spec:
             uri: "/c/oidc/login"
 ---
 # Headlamp (native OIDC — service handles auth)
+apiVersion: apisix.apache.org/v2
+kind: ApisixUpstream
+metadata:
+  name: headlamp
+  namespace: platform-system
+spec:
+  externalNodes:
+    - type: Domain
+      name: headlamp.devtools.svc.cluster.local
+      port: 80
+---
 apiVersion: apisix.apache.org/v2
 kind: ApisixRoute
 metadata:
@@ -322,9 +380,8 @@ spec:
           - headlamp.local.narwhal.io
         paths:
           - "/*"
-      backends:
-        - serviceName: headlamp
-          servicePort: 80
+      upstreams:
+        - name: headlamp
       plugins:
         - name: response-rewrite
           enable: true
@@ -338,6 +395,17 @@ spec:
 ---
 # OpenBao (native OIDC auth method — service handles auth)
 apiVersion: apisix.apache.org/v2
+kind: ApisixUpstream
+metadata:
+  name: openbao
+  namespace: platform-system
+spec:
+  externalNodes:
+    - type: Domain
+      name: openbao.storage.svc.cluster.local
+      port: 8200
+---
+apiVersion: apisix.apache.org/v2
 kind: ApisixRoute
 metadata:
   name: openbao
@@ -350,9 +418,8 @@ spec:
           - openbao.local.narwhal.io
         paths:
           - "/*"
-      backends:
-        - serviceName: openbao
-          servicePort: 8200
+      upstreams:
+        - name: openbao
       plugins:
         - name: response-rewrite
           enable: true
@@ -366,6 +433,17 @@ spec:
 ---
 # Hubble UI (APISIX openid-connect — no native SSO support)
 apiVersion: apisix.apache.org/v2
+kind: ApisixUpstream
+metadata:
+  name: hubble-ui
+  namespace: platform-system
+spec:
+  externalNodes:
+    - type: Domain
+      name: hubble-ui.kube-system.svc.cluster.local
+      port: 80
+---
+apiVersion: apisix.apache.org/v2
 kind: ApisixRoute
 metadata:
   name: hubble
@@ -378,9 +456,8 @@ spec:
           - hubble.local.narwhal.io
         paths:
           - "/*"
-      backends:
-        - serviceName: hubble-ui
-          servicePort: 80
+      upstreams:
+        - name: hubble-ui
       plugins:
         - name: openid-connect
           enable: true
@@ -412,6 +489,17 @@ spec:
 ---
 # Prometheus (APISIX openid-connect — no native SSO support)
 apiVersion: apisix.apache.org/v2
+kind: ApisixUpstream
+metadata:
+  name: prometheus-server
+  namespace: platform-system
+spec:
+  externalNodes:
+    - type: Domain
+      name: prometheus-stack-kube-prom-prometheus.monitoring.svc.cluster.local
+      port: 9090
+---
+apiVersion: apisix.apache.org/v2
 kind: ApisixRoute
 metadata:
   name: prometheus
@@ -424,9 +512,8 @@ spec:
           - prometheus.local.narwhal.io
         paths:
           - "/*"
-      backends:
-        - serviceName: prometheus-server
-          servicePort: 9090
+      upstreams:
+        - name: prometheus-server
       plugins:
         - name: openid-connect
           enable: true
@@ -458,6 +545,17 @@ spec:
 ---
 # Alertmanager (APISIX openid-connect — dedicated client)
 apiVersion: apisix.apache.org/v2
+kind: ApisixUpstream
+metadata:
+  name: alertmanager-server
+  namespace: platform-system
+spec:
+  externalNodes:
+    - type: Domain
+      name: prometheus-stack-kube-prom-alertmanager.monitoring.svc.cluster.local
+      port: 9093
+---
+apiVersion: apisix.apache.org/v2
 kind: ApisixRoute
 metadata:
   name: alertmanager
@@ -470,9 +568,8 @@ spec:
           - alertmanager.local.narwhal.io
         paths:
           - "/*"
-      backends:
-        - serviceName: alertmanager-server
-          servicePort: 9093
+      upstreams:
+        - name: alertmanager-server
       plugins:
         - name: openid-connect
           enable: true
@@ -560,6 +657,17 @@ spec:
 ---
 # Narwhal Portal (NextAuth.js handles its own SSO — no APISIX openid-connect)
 apiVersion: apisix.apache.org/v2
+kind: ApisixUpstream
+metadata:
+  name: narwhal-portal
+  namespace: platform-system
+spec:
+  externalNodes:
+    - type: Domain
+      name: narwhal-portal.devtools.svc.cluster.local
+      port: 3000
+---
+apiVersion: apisix.apache.org/v2
 kind: ApisixRoute
 metadata:
   name: narwhal-portal
@@ -572,9 +680,8 @@ spec:
           - portal.local.narwhal.io
         paths:
           - "/*"
-      backends:
-        - serviceName: narwhal-portal
-          servicePort: 3000
+      upstreams:
+        - name: narwhal-portal
       # Narwhal Portal handles its own SSO via NextAuth.js — no APISIX openid-connect plugin
       plugins:
         - name: response-rewrite
@@ -593,6 +700,17 @@ spec:
 # This ApisixRoute is documentation-only. The actual route is applied via
 # APISIX admin API in 11-3-keycloak-clients.sh (includes body_filter fix).
 apiVersion: apisix.apache.org/v2
+kind: ApisixUpstream
+metadata:
+  name: nfs-quota-agent
+  namespace: platform-system
+spec:
+  externalNodes:
+    - type: Domain
+      name: nfs-quota-agent.nfs-quota-agent.svc.cluster.local
+      port: 8080
+---
+apiVersion: apisix.apache.org/v2
 kind: ApisixRoute
 metadata:
   name: nfs-quota-agent
@@ -605,9 +723,8 @@ spec:
           - nfs-quota.local.narwhal.io
         paths:
           - "/*"
-      backends:
-        - serviceName: nfs-quota-agent
-          servicePort: 8080
+      upstreams:
+        - name: nfs-quota-agent
       plugins:
         - name: openid-connect
           enable: true
@@ -669,6 +786,17 @@ spec:
 ---
 # APISIX Dashboard (no OIDC — dashboard has its own auth)
 apiVersion: apisix.apache.org/v2
+kind: ApisixUpstream
+metadata:
+  name: apisix-dashboard
+  namespace: platform-system
+spec:
+  externalNodes:
+    - type: Domain
+      name: apisix-dashboard.platform-system.svc.cluster.local
+      port: 9000
+---
+apiVersion: apisix.apache.org/v2
 kind: ApisixRoute
 metadata:
   name: apisix-dashboard
@@ -681,9 +809,8 @@ spec:
           - apisix-dashboard.local.narwhal.io
         paths:
           - "/*"
-      backends:
-        - serviceName: apisix-dashboard
-          servicePort: 9000
+      upstreams:
+        - name: apisix-dashboard
       plugins:
         - name: response-rewrite
           enable: true

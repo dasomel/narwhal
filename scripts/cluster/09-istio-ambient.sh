@@ -242,7 +242,7 @@ spec:
     matchLabels:
       gateway.networking.k8s.io/gateway-class-name: istio-waypoint
   podMetricsEndpoints:
-    - interval: 30s
+    - interval: 15s
       path: /stats/prometheus
       port: metrics
 EOF

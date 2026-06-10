@@ -48,6 +48,21 @@ data:
     jqPathExpressions:
     - .metadata.finalizers[] | select(. == "pre-delete-finalizer.argocd.argoproj.io" or . == "pre-delete-finalizer.argocd.argoproj.io/cleanup")
     - .metadata.annotations."kubectl.kubernetes.io/last-applied-configuration"
+  # Live dev (skaffold dev) support: skaffold deploys the portal with a dev
+  # image (dev-m-*), raised resources, and skaffold-injected labels. Ignoring
+  # these fields stops selfHeal from instantly reverting the dev deployment
+  # to prod :latest (which silently killed HMR). Scoped to the narwhal-portal
+  # container by jq select; skaffold labels only exist on skaffold-deployed
+  # objects, so the global ignore is inert elsewhere.
+  resource.customizations.ignoreDifferences.apps_Deployment: |
+    jqPathExpressions:
+    - .spec.template.spec.containers[] | select(.name == "narwhal-portal") | .image
+    - .spec.template.spec.containers[] | select(.name == "narwhal-portal") | .resources
+  resource.customizations.ignoreDifferences.all: |
+    jqPathExpressions:
+    - .metadata.labels."skaffold.dev/run-id"
+    - .metadata.labels."app.kubernetes.io/managed-by"
+    - .spec.template.metadata.labels."skaffold.dev/run-id"
   # Self-ignore: these keys were hot-patched into the live argocd-cm before
   # this file reached gitea. The jq paths only match argocd-cm itself (no other
   # ConfigMap carries these keys), keeping argocd-config Synced either way.
@@ -56,6 +71,8 @@ data:
     - .data["resource.customizations.ignoreDifferences.kyverno.io_ClusterPolicy"]
     - .data["resource.customizations.ignoreDifferences.ConfigMap"]
     - .data["resource.customizations.ignoreDifferences.argoproj.io_Application"]
+    - .data["resource.customizations.ignoreDifferences.apps_Deployment"]
+    - .data["resource.customizations.ignoreDifferences.all"]
   resource.customizations.ignoreResourceUpdates.ConfigMap: |
     jqPathExpressions:
       # Ignore the cluster-autoscaler status

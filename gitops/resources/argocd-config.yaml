@@ -31,6 +31,31 @@ data:
       - groups
     insecureSkipVerify: true
   oidc.tls.insecure.skip.verify: "true"
+  # Kyverno admission webhook injects defaulted fields (admission, emitWarning,
+  # per-rule skipBackgroundRequests, validate.allowExistingViolations) into live
+  # ClusterPolicy objects. Without ignoring them ArgoCD marks the owning app
+  # (e.g. narwhal-portal -> narwhal-portal-job-restrictions) permanently OutOfSync.
+  resource.customizations.ignoreDifferences.kyverno.io_ClusterPolicy: |
+    jqPathExpressions:
+    - .spec.admission
+    - .spec.emitWarning
+    - .spec.rules[].skipBackgroundRequests
+    - .spec.rules[].validate.allowExistingViolations
+  # ArgoCD itself adds pre-delete finalizers to child Application objects whose
+  # chart ships PreDelete hooks (e.g. kyverno), making the app-of-apps
+  # (narwhal-apps -> Application/kyverno) flap OutOfSync against gitea.
+  resource.customizations.ignoreDifferences.argoproj.io_Application: |
+    jqPathExpressions:
+    - .metadata.finalizers[] | select(. == "pre-delete-finalizer.argocd.argoproj.io" or . == "pre-delete-finalizer.argocd.argoproj.io/cleanup")
+    - .metadata.annotations."kubectl.kubernetes.io/last-applied-configuration"
+  # Self-ignore: these keys were hot-patched into the live argocd-cm before
+  # this file reached gitea. The jq paths only match argocd-cm itself (no other
+  # ConfigMap carries these keys), keeping argocd-config Synced either way.
+  resource.customizations.ignoreDifferences.ConfigMap: |
+    jqPathExpressions:
+    - .data["resource.customizations.ignoreDifferences.kyverno.io_ClusterPolicy"]
+    - .data["resource.customizations.ignoreDifferences.ConfigMap"]
+    - .data["resource.customizations.ignoreDifferences.argoproj.io_Application"]
   resource.customizations.ignoreResourceUpdates.ConfigMap: |
     jqPathExpressions:
       # Ignore the cluster-autoscaler status

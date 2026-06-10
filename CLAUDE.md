@@ -111,6 +111,7 @@ When Plan mode is needed in Narwhal:
 | 2026-02-24 | Istio ambient namespace ArgoCD health check ports (8082/8084/9001) blocked by ztunnel | ztunnel intercepts all inbound traffic in ambient namespace. kubelet probe (plain HTTP) conflicts with ztunnel expecting mTLS -> CrashLoopBackOff. Add `istio.io/dataplane-mode: none` label to pod template to exclude from ambient. `traffic.sidecar.istio.io/excludeInboundPorts` annotation does not work in ambient mode |
 | 2026-02-26 | ArgoCD selfHeal reverts kubectl apply changes | ArgoCD managed resources revert to Gitea state even when modified with kubectl. Must push to Gitea repo for persistence |
 | 2026-02-26 | Gitea headless service (ClusterIP: None) -> git clone fails | DNS resolution fails with headless Gitea service. Use pod IP directly: `kubectl get pod -l app.kubernetes.io/name=gitea -o jsonpath='{.items[0].status.podIP}'` |
+| 2026-06-11 | APISIX 3.16 has NO `kubernetes` secret manager (only vault/aws/gcp) — `$secret://kubernetes/k8s-1/...` ApisixRoute refs can never resolve and `secret_providers` in config.yaml is not a real APISIX option. IC meanwhile DID sync ExternalName-backed routes, creating broken duplicates that shadowed the working manual admin-API routes → velero-ui (and 5 others) `unauthorized_client` → callback 500 | Inject OIDC secrets via apisix chart `extraEnvVars` (secretKeyRef) + reference `$env://VAR` in ApisixRoute; delete legacy manual duplicate routes from etcd via admin API |
 
 ### Vagrant/Infrastructure Mistakes
 | Date | Mistake | Fix |

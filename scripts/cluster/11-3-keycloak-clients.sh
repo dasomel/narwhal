@@ -441,7 +441,8 @@ fi
 # =============================================================================
 # Group B: APISIX openid-connect services
 # 각 서비스마다 dedicated Keycloak client + K8s Secret in platform-system
-# apisix-routes.yaml의 $secret://kubernetes/k8s-1/<name>/<key> 참조
+# apisix-routes.yaml는 $env://<SVC>_OIDC_{CLIENT,SESSION}_SECRET 참조
+# (apisix.yaml extraEnvVars로 secretKeyRef 주입됨)
 # =============================================================================
 echo ""
 echo "=========================================="
@@ -497,122 +498,8 @@ if [ -n "${HUBBLE_KC_ID}" ]; then
   echo "  -> hubble client redirectUris updated (added nfs-quota)"
 fi
 
-# =============================================================================
-# APISIX admin API patch — nfs-quota-agent route
-# APISIX IC cannot sync this route: ExternalName backend has no endpoints.
-# Apply directly via admin API with:
-#   1. Real OIDC client_secret (APISIX auto-encrypts on write)
-#   2. serverless-post-function body_filter — fixes nfs-quota-agent v0.2.1
-#      HTML bug where Go embeds ` + "`" + ` instead of backtick in JS template literals
-# =============================================================================
-echo ""
-echo "=== Patching APISIX nfs-quota-agent route via admin API ==="
-
-APISIX_ADMIN_IP=$(kubectl get svc apisix-admin -n platform-system \
-  -o jsonpath='{.spec.clusterIP}' 2>/dev/null || echo "")
-APISIX_ADMIN_URL="http://${APISIX_ADMIN_IP}:9180/apisix/admin"
-APISIX_API_KEY="edd1c9f034335f136f87ad84b625c8f1"
-
-HUBBLE_CLIENT_SECRET=$(kubectl get secret hubble-oidc-secret -n platform-system \
-  -o jsonpath='{.data.client_secret}' 2>/dev/null | base64 -d || echo "")
-HUBBLE_SESSION_SECRET=$(kubectl get secret hubble-oidc-secret -n platform-system \
-  -o jsonpath='{.data.session_secret}' 2>/dev/null | base64 -d || echo "")
-
-if [ -z "${APISIX_ADMIN_IP}" ] || [ -z "${HUBBLE_CLIENT_SECRET}" ]; then
-  echo "  WARN: Cannot patch nfs-quota-agent route (APISIX or hubble-oidc-secret not ready)"
-else
-  cat > /tmp/nfs_quota_route_patch.py << 'PYEOF'
-import json, urllib.request, os, sys
-
-ADMIN_URL = os.environ['APISIX_ADMIN_URL']
-API_KEY   = os.environ['APISIX_API_KEY']
-SECRET    = os.environ['HUBBLE_CLIENT_SECRET']
-SESSION   = os.environ['HUBBLE_SESSION_SECRET']
-DOMAIN    = os.environ.get('DOMAIN', 'local.narwhal.io')
-
-lua_code = (
-    'return function(conf, ctx)\n'
-    '  local body = ngx.arg[1]\n'
-    '  local eof = ngx.arg[2]\n'
-    '  if not ngx.ctx.nqs_buf then ngx.ctx.nqs_buf = {} end\n'
-    '  if body and #body > 0 then\n'
-    '    table.insert(ngx.ctx.nqs_buf, body)\n'
-    '    ngx.arg[1] = ""\n'
-    '  end\n'
-    '  if eof then\n'
-    '    local full = table.concat(ngx.ctx.nqs_buf)\n'
-    '    local bt = string.char(96)\n'
-    '    local dq = string.char(34)\n'
-    '    local sp = string.char(32)\n'
-    '    local bs = string.char(92)\n'
-    '    local pl = string.char(43)\n'
-    '    local pat = bt..sp..bs..pl..sp..dq..bt..dq..sp..bs..pl..sp..bt\n'
-    '    full = ngx.re.gsub(full, pat, bt, "jo")\n'
-    '    ngx.arg[1] = full\n'
-    '  end\n'
-    'end\n'
-)
-
-route = {
-    'uri': '/*',
-    'host': f'nfs-quota.{DOMAIN}',
-    'upstream': {
-        'type': 'roundrobin',
-        'nodes': {f'nfs-quota-agent.nfs-quota-agent.svc.cluster.local:8080': 1}
-    },
-    'plugins': {
-        'openid-connect': {
-            'client_id': 'hubble',
-            'client_secret': SECRET,
-            'discovery': f'https://keycloak.{DOMAIN}/realms/narwhal/.well-known/openid-configuration',
-            'redirect_uri': f'https://nfs-quota.{DOMAIN}/apisix/callback',
-            'scope': 'openid email profile groups',
-            'bearer_only': False,
-            'ssl_verify': False,
-            'logout_path': '/apisix/logout',
-            'set_userinfo_header': True,
-            'set_access_token_header': True,
-            'access_token_in_authorization_header': True,
-            'session': {'secret': SESSION}
-        },
-        'response-rewrite': {
-            'headers': {'set': {
-                'Strict-Transport-Security': 'max-age=31536000; includeSubDomains',
-                'X-Content-Type-Options': 'nosniff',
-                'X-Frame-Options': 'SAMEORIGIN',
-                'X-XSS-Protection': '1; mode=block'
-            }}
-        },
-        'serverless-post-function': {
-            'phase': 'body_filter',
-            'functions': [lua_code]
-        }
-    }
-}
-
-data = json.dumps(route).encode()
-req = urllib.request.Request(
-    f'{ADMIN_URL}/routes/nfs-quota-agent', data=data, method='PUT',
-    headers={'X-API-KEY': API_KEY, 'Content-Type': 'application/json'})
-try:
-    with urllib.request.urlopen(req, timeout=10) as r:
-        result = json.load(r)
-        plugins = sorted(result['value']['plugins'].keys())
-        print(f'  -> nfs-quota-agent route PUT OK, plugins: {plugins}')
-except Exception as e:
-    print(f'  -> ERROR: {e}', file=sys.stderr)
-    sys.exit(1)
-PYEOF
-
-  APISIX_ADMIN_URL="${APISIX_ADMIN_URL}" \
-  APISIX_API_KEY="${APISIX_API_KEY}" \
-  HUBBLE_CLIENT_SECRET="${HUBBLE_CLIENT_SECRET}" \
-  HUBBLE_SESSION_SECRET="${HUBBLE_SESSION_SECRET}" \
-  DOMAIN="${DOMAIN}" \
-  python3 /tmp/nfs_quota_route_patch.py \
-    && echo "  -> nfs-quota-agent APISIX route applied" \
-    || echo "  WARN: nfs-quota-agent route patch failed (non-fatal)"
-fi
+# nfs-quota-agent route is now IC-synced from apisix-routes.yaml
+# (includes the serverless-post-function body_filter fix); no admin API patch needed.
 
 # -------------------------------------------------------------------------
 # 8. Prometheus
@@ -641,45 +528,8 @@ create_apisix_secret "velero-ui" \
   "https://velero-ui.${DOMAIN}/apisix/callback" \
   "velero-ui-oidc-secret"
 
-# =============================================================================
-# APISIX Secret Provider 설정
-# apisix-routes.yaml에서 $secret://kubernetes/k8s-1/<name>/<key> 참조
-# NOTE: nfs-quota-agent route는 위에서 admin API로 직접 패치 (plain secret 사용)
-# 다른 IC-managed 라우트($secret:// 참조)를 위해 k8s-1 provider 구성
-# NOTE: APISIX 컨테이너에는 curl이 없으므로 master node에서 직접 호출
-# =============================================================================
-echo ""
-echo "=== Configuring APISIX k8s-1 Secret Provider ==="
-
-# APISIX_ADMIN_IP는 위에서 설정됨 (nfs-quota patch 섹션)
-if [ -z "${APISIX_ADMIN_IP:-}" ]; then
-  APISIX_ADMIN_IP=$(kubectl get svc apisix-admin -n platform-system \
-    -o jsonpath='{.spec.clusterIP}' 2>/dev/null || echo "")
-  APISIX_ADMIN_URL="http://${APISIX_ADMIN_IP}:9180/apisix/admin"
-fi
-
-if [ -n "${APISIX_ADMIN_IP}" ]; then
-  # Check if k8s-1 secret provider already exists
-  KC_STATUS=$(curl -s -o /dev/null -w '%{http_code}' \
-    "${APISIX_ADMIN_URL}/secrets/kubernetes/k8s-1" \
-    -H "X-API-KEY: ${APISIX_API_KEY}" 2>/dev/null || echo "000")
-  if [ "${KC_STATUS}" = "200" ]; then
-    echo "  APISIX k8s-1 secret provider already configured"
-  else
-    echo "  Configuring APISIX k8s-1 secret provider (namespace=platform-system)..."
-    curl -sf -X PUT "${APISIX_ADMIN_URL}/secrets/kubernetes/k8s-1" \
-      -H "X-API-KEY: ${APISIX_API_KEY}" \
-      -H 'Content-Type: application/json' \
-      -d '{"namespace":"platform-system","service_account_token":""}' \
-      2>/dev/null \
-      && echo "  -> k8s-1 secret provider created" \
-      || echo "  WARN: APISIX secret provider config failed (non-fatal)"
-  fi
-else
-  echo "  WARN: APISIX admin not reachable, skipping secret provider config"
-fi
-
-
+# APISIX 3.16 has no kubernetes secret manager; OIDC secrets are injected via
+# extraEnvVars in gitops/apps/apisix.yaml and referenced as $env://VAR in routes.
 
 # =============================================================================
 # 요약

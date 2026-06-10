@@ -24,6 +24,60 @@ spec:
           - name: narwhal-root-ca
             mountPath: /usr/local/apisix/conf/cert/narwhal
             readOnly: true
+        # APISIX 3.16 has NO kubernetes secret manager module, so OIDC secrets
+        # are injected as env vars here and referenced via $env://VAR in
+        # apisix-routes.yaml (chart renders these with valueFrom into the apisix container).
+        extraEnvVars:
+          - name: GITEA_OIDC_CLIENT_SECRET
+            valueFrom:
+              secretKeyRef:
+                name: gitea-oidc-secret
+                key: client_secret
+          - name: GITEA_OIDC_SESSION_SECRET
+            valueFrom:
+              secretKeyRef:
+                name: gitea-oidc-secret
+                key: session_secret
+          - name: HUBBLE_OIDC_CLIENT_SECRET
+            valueFrom:
+              secretKeyRef:
+                name: hubble-oidc-secret
+                key: client_secret
+          - name: HUBBLE_OIDC_SESSION_SECRET
+            valueFrom:
+              secretKeyRef:
+                name: hubble-oidc-secret
+                key: session_secret
+          - name: PROMETHEUS_OIDC_CLIENT_SECRET
+            valueFrom:
+              secretKeyRef:
+                name: prometheus-oidc-secret
+                key: client_secret
+          - name: PROMETHEUS_OIDC_SESSION_SECRET
+            valueFrom:
+              secretKeyRef:
+                name: prometheus-oidc-secret
+                key: session_secret
+          - name: ALERTMANAGER_OIDC_CLIENT_SECRET
+            valueFrom:
+              secretKeyRef:
+                name: alertmanager-oidc-secret
+                key: client_secret
+          - name: ALERTMANAGER_OIDC_SESSION_SECRET
+            valueFrom:
+              secretKeyRef:
+                name: alertmanager-oidc-secret
+                key: session_secret
+          - name: VELERO_UI_OIDC_CLIENT_SECRET
+            valueFrom:
+              secretKeyRef:
+                name: velero-ui-oidc-secret
+                key: client_secret
+          - name: VELERO_UI_OIDC_SESSION_SECRET
+            valueFrom:
+              secretKeyRef:
+                name: velero-ui-oidc-secret
+                key: session_secret
         apisix:
           enabled: true
           image:
@@ -44,8 +98,7 @@ spec:
           ssl:
             enabled: true
             containerPort: 9443
-          # Kubernetes Secret Provider for OIDC credentials
-          # Used by openid-connect plugin: $secret://kubernetes/k8s-1/apisix-oidc-config/<key>
+          # OIDC secrets come from extraEnvVars above; routes reference them via $env:// (see apisix-routes.yaml).
           fullCustomConfig:
             enabled: true
             config:
@@ -90,12 +143,6 @@ spec:
                   ssl_ciphers: "ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:DHE-RSA-AES128-GCM-SHA256:DHE-RSA-AES256-GCM-SHA384:DHE-RSA-CHACHA20-POLY1305:ECDHE-ECDSA-AES128-SHA256:ECDHE-RSA-AES128-SHA256:ECDHE-ECDSA-AES128-SHA:ECDHE-RSA-AES128-SHA:ECDHE-ECDSA-AES256-SHA384:ECDHE-RSA-AES256-SHA384:ECDHE-ECDSA-AES256-SHA:ECDHE-RSA-AES256-SHA:DHE-RSA-AES128-SHA256:DHE-RSA-AES256-SHA256:AES128-GCM-SHA256:AES256-GCM-SHA384:AES128-SHA256:AES256-SHA256:AES128-SHA:AES256-SHA:DES-CBC3-SHA"
                 trusted_addresses:
                   - 127.0.0.1
-                secret_providers:
-                  - name: kubernetes
-                    uid: k8s-1
-                    auth_type: serviceaccount
-                    apiservers:
-                      - https://kubernetes.default.svc
               nginx_config:
                 error_log: "/dev/stderr"
                 error_log_level: "warn"

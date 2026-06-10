@@ -225,7 +225,7 @@ spec:
           enable: true
           config:
             client_id: "gitea"
-            client_secret: "$secret://kubernetes/k8s-1/gitea-oidc-secret/client_secret"
+            client_secret: "$env://GITEA_OIDC_CLIENT_SECRET"
             discovery: "https://keycloak.local.narwhal.io/realms/narwhal/.well-known/openid-configuration"
             redirect_uri: "https://gitea.local.narwhal.io/apisix/callback"
             scope: "openid email profile groups"
@@ -236,7 +236,7 @@ spec:
             set_access_token_header: true
             access_token_in_authorization_header: true
             session:
-              secret: "$secret://kubernetes/k8s-1/gitea-oidc-secret/session_secret"
+              secret: "$env://GITEA_OIDC_SESSION_SECRET"
               cookie:
                 lifetime: 300
         - name: serverless-post-function
@@ -463,7 +463,7 @@ spec:
           enable: true
           config:
             client_id: "hubble"
-            client_secret: "$secret://kubernetes/k8s-1/hubble-oidc-secret/client_secret"
+            client_secret: "$env://HUBBLE_OIDC_CLIENT_SECRET"
             discovery: "https://keycloak.local.narwhal.io/realms/narwhal/.well-known/openid-configuration"
             redirect_uri: "https://hubble.local.narwhal.io/apisix/callback"
             scope: "openid email profile groups"
@@ -474,7 +474,7 @@ spec:
             set_access_token_header: true
             access_token_in_authorization_header: true
             session:
-              secret: "$secret://kubernetes/k8s-1/hubble-oidc-secret/session_secret"
+              secret: "$env://HUBBLE_OIDC_SESSION_SECRET"
               cookie:
                 lifetime: 300
         - name: response-rewrite
@@ -519,7 +519,7 @@ spec:
           enable: true
           config:
             client_id: "prometheus"
-            client_secret: "$secret://kubernetes/k8s-1/prometheus-oidc-secret/client_secret"
+            client_secret: "$env://PROMETHEUS_OIDC_CLIENT_SECRET"
             discovery: "https://keycloak.local.narwhal.io/realms/narwhal/.well-known/openid-configuration"
             redirect_uri: "https://prometheus.local.narwhal.io/apisix/callback"
             scope: "openid email profile groups"
@@ -530,7 +530,7 @@ spec:
             set_access_token_header: true
             access_token_in_authorization_header: true
             session:
-              secret: "$secret://kubernetes/k8s-1/prometheus-oidc-secret/session_secret"
+              secret: "$env://PROMETHEUS_OIDC_SESSION_SECRET"
               cookie:
                 lifetime: 300
         - name: response-rewrite
@@ -575,7 +575,7 @@ spec:
           enable: true
           config:
             client_id: "alertmanager"
-            client_secret: "$secret://kubernetes/k8s-1/alertmanager-oidc-secret/client_secret"
+            client_secret: "$env://ALERTMANAGER_OIDC_CLIENT_SECRET"
             discovery: "https://keycloak.local.narwhal.io/realms/narwhal/.well-known/openid-configuration"
             redirect_uri: "https://alertmanager.local.narwhal.io/apisix/callback"
             scope: "openid email profile groups"
@@ -586,7 +586,7 @@ spec:
             set_access_token_header: true
             access_token_in_authorization_header: true
             session:
-              secret: "$secret://kubernetes/k8s-1/alertmanager-oidc-secret/session_secret"
+              secret: "$env://ALERTMANAGER_OIDC_SESSION_SECRET"
               cookie:
                 lifetime: 300
         - name: response-rewrite
@@ -631,7 +631,7 @@ spec:
           enable: true
           config:
             client_id: "velero-ui"
-            client_secret: "$secret://kubernetes/k8s-1/velero-ui-oidc-secret/client_secret"
+            client_secret: "$env://VELERO_UI_OIDC_CLIENT_SECRET"
             discovery: "https://keycloak.local.narwhal.io/realms/narwhal/.well-known/openid-configuration"
             redirect_uri: "https://velero-ui.local.narwhal.io/apisix/callback"
             scope: "openid email profile groups"
@@ -642,7 +642,7 @@ spec:
             set_access_token_header: true
             access_token_in_authorization_header: true
             session:
-              secret: "$secret://kubernetes/k8s-1/velero-ui-oidc-secret/session_secret"
+              secret: "$env://VELERO_UI_OIDC_SESSION_SECRET"
               cookie:
                 lifetime: 300
         - name: response-rewrite
@@ -702,10 +702,10 @@ spec:
                 X-XSS-Protection: "1; mode=block"
 ---
 # NFS Quota Agent (APISIX openid-connect — no native SSO support)
-# NOTE: APISIX IC cannot sync this route because the ExternalName backend
-# (nfs-quota-agent.nfs-quota-agent.svc.cluster.local) has no endpoints.
-# This ApisixRoute is documentation-only. The actual route is applied via
-# APISIX admin API in 11-3-keycloak-clients.sh (includes body_filter fix).
+# NOTE: APISIX IC now syncs this route (ApisixUpstream externalNodes), so this
+# ApisixRoute IS the canonical, IC-synced source — including the
+# serverless-post-function body_filter fix below. The former manual admin-API
+# route in 11-3-keycloak-clients.sh has been removed.
 apiVersion: apisix.apache.org/v2
 kind: ApisixUpstream
 metadata:
@@ -737,7 +737,7 @@ spec:
           enable: true
           config:
             client_id: "hubble"
-            client_secret: "$secret://kubernetes/k8s-1/hubble-oidc-secret/client_secret"
+            client_secret: "$env://HUBBLE_OIDC_CLIENT_SECRET"
             discovery: "https://keycloak.local.narwhal.io/realms/narwhal/.well-known/openid-configuration"
             redirect_uri: "https://nfs-quota.local.narwhal.io/apisix/callback"
             scope: "openid email profile groups"
@@ -748,7 +748,7 @@ spec:
             set_access_token_header: true
             access_token_in_authorization_header: true
             session:
-              secret: "$secret://kubernetes/k8s-1/hubble-oidc-secret/session_secret"
+              secret: "$env://HUBBLE_OIDC_SESSION_SECRET"
               cookie:
                 lifetime: 300
         - name: serverless-post-function

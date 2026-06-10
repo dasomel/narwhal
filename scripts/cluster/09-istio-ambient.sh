@@ -185,6 +185,70 @@ for ns in "${AMBIENT_NAMESPACES[@]}"; do
 done
 
 #=========================================
+# 5b) Waypoint proxies (L7 telemetry)
+#=========================================
+# Waypoints generate istio_requests_total (req/s, error rate, p95) used by the
+# portal service map. Without them ambient mode only emits L4 TCP bytes.
+# Scope: HTTP-heavy namespaces only —
+#   database excluded (CNPG replication path stays L4 to avoid an Envoy hop),
+#   storage  excluded (OpenBao/SeaweedFS: avoid disturbing unseal/replication),
+#   dev      excluded (no steady traffic).
+WAYPOINT_NAMESPACES=(
+  platform-system
+  devtools
+  monitoring
+)
+
+echo "Deploying waypoint proxies for L7 telemetry..."
+for ns in "${WAYPOINT_NAMESPACES[@]}"; do
+  if kubectl get namespace "${ns}" &>/dev/null; then
+    cat <<EOF | kubectl apply -f -
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: waypoint
+  namespace: ${ns}
+  labels:
+    istio.io/waypoint-for: service
+spec:
+  gatewayClassName: istio-waypoint
+  listeners:
+    - name: mesh
+      port: 15008
+      protocol: HBONE
+EOF
+    kubectl label namespace "${ns}" istio.io/use-waypoint=waypoint --overwrite
+    echo "  Waypoint deployed for ${ns}"
+  else
+    echo "  WARN: namespace ${ns} not found, skipping waypoint"
+  fi
+done
+
+# Prometheus scrape for waypoint pods — the stock istio PodMonitors only cover
+# ztunnel/istiod, so waypoint istio_requests_total is never collected without this.
+# (prometheus-stack requires the release label to pick up monitors.)
+cat <<'EOF' | kubectl apply -f -
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: istio-waypoints
+  namespace: istio-system
+  labels:
+    release: prometheus-stack
+spec:
+  namespaceSelector:
+    any: true
+  selector:
+    matchLabels:
+      gateway.networking.k8s.io/gateway-class-name: istio-waypoint
+  podMetricsEndpoints:
+    - interval: 30s
+      path: /stats/prometheus
+      port: metrics
+EOF
+echo "  Waypoint PodMonitor applied"
+
+#=========================================
 # 6) PeerAuthentication PERMISSIVE (mesh-wide mTLS)
 #=========================================
 # PERMISSIVE allows non-mesh traffic (kubelet probes, MetalLB/APISIX external traffic)

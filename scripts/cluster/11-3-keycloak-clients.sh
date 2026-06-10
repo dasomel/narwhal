@@ -353,7 +353,9 @@ if [ -n "${HEADLAMP_ID}" ]; then
       -s "name=kubernetes-audience" \
       -s "protocol=openid-connect" \
       -s "protocolMapper=oidc-audience-mapper" \
-      -s "config={\"included.custom.audience\":\"kubernetes\",\"id.token.claim\":\"true\",\"access.token.claim\":\"true\"}" >&2
+      -s "config={\"included.client.audience\":\"kubernetes\",\"id.token.claim\":\"true\",\"access.token.claim\":\"true\"}" >&2
+    # NOTE: included.client.audience (kubernetes 클라이언트 참조) 사용 — 2026-06-11
+    # 라이브에서 이 형태로 토큰 aud=[headlamp,kubernetes] + apiserver 인증까지 검증됨.
     echo "  -> kubernetes audience mapper created for 'headlamp'" >&2
   fi
 fi

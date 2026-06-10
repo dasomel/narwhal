@@ -680,6 +680,13 @@ spec:
           - portal.local.narwhal.io
         paths:
           - "/*"
+      # Live dev (skaffold dev) HMR: Next.js dev WebSocket (/_next/webpack-hmr)
+      # needs upgrade support, otherwise the dev client falls back to plain GET
+      # (404) and the portal UI never hydrates. Harmless for prod standalone.
+      # NOTE: IC sync for this route aborts (cross-ns endpoints), so the serving
+      # etcd routes were also patched directly via admin API on 2026-06-10
+      # (enable_websocket=true, route ids: narwhal-portal, 698afbe4).
+      websocket: true
       upstreams:
         - name: narwhal-portal
       # Narwhal Portal handles its own SSO via NextAuth.js — no APISIX openid-connect plugin

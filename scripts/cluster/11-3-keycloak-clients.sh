@@ -312,9 +312,11 @@ if [ -n "${HARBOR_ADMIN_PASS}" ]; then
           \"oidc_client_secret\": \"${HARBOR_SECRET}\",
           \"oidc_scope\": \"openid,profile,email,groups\",
           \"oidc_admin_group\": \"cluster-admin\",
+          \"oidc_groups_claim\": \"groups\",
           \"oidc_verify_cert\": false,
           \"oidc_auto_onboard\": true,
-          \"oidc_user_claim\": \"preferred_username\"
+          \"oidc_user_claim\": \"preferred_username\",
+          \"primary_auth_mode\": true
         }" 2>/dev/null && echo "Harbor OIDC configured" \
         || echo "WARN: Harbor OIDC API call failed"
     else

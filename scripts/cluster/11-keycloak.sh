@@ -129,11 +129,30 @@ spec:
                 value: "jdbc:postgresql://narwhal-db-rw.database.svc.cluster.local:5432/keycloak?sslmode=disable"
             resources:
               requests:
-                memory: "512Mi"
-                cpu: "200m"
+                memory: "768Mi"
+                cpu: "600m"
               limits:
                 memory: "1Gi"
-                cpu: "1"
+                cpu: "2"
+            # CPU request bump + relaxed probes: prevents CPU-starvation liveness kills
+            # (operator's 1s probe timeout) that crash-looped Keycloak and 502'd SSO when
+            # the node was CPU-contended. Operator may overwrite probes it manages; the
+            # CPU request is the always-honored mitigation.
+            livenessProbe:
+              httpGet: { path: /health/live, port: 9000 }
+              timeoutSeconds: 5
+              periodSeconds: 15
+              failureThreshold: 5
+            readinessProbe:
+              httpGet: { path: /health/ready, port: 9000 }
+              timeoutSeconds: 5
+              periodSeconds: 10
+              failureThreshold: 5
+            startupProbe:
+              httpGet: { path: /health/started, port: 9000 }
+              timeoutSeconds: 5
+              periodSeconds: 5
+              failureThreshold: 120
 EOF
 
 #=========================================

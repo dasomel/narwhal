@@ -401,13 +401,42 @@ spec:
       spec:
         containers:
           - name: keycloak
+            # CPU request bumped 200m->600m: the previous 200m left Keycloak CPU-starved
+            # under node contention, so its 9000 health endpoint missed the operator's
+            # 1s probe timeout -> liveness SIGKILL crash loop -> cluster-wide SSO 502
+            # (worker-1 hit 97% CPU). A real request reserves CPU and prioritizes it.
             resources:
               requests:
-                memory: "512Mi"
-                cpu: "200m"
+                memory: "768Mi"
+                cpu: "600m"
               limits:
                 memory: "1Gi"
-                cpu: "1"
+                cpu: "2"
+            # Relaxed health probes (timeoutSeconds 1->5, higher failureThreshold) to
+            # tolerate transient GC/CPU spikes instead of false-positive killing.
+            # NOTE: the Keycloak Operator may overwrite container probes it manages; if so
+            # the CPU request bump above is the primary, always-honored mitigation.
+            livenessProbe:
+              httpGet:
+                path: /health/live
+                port: 9000
+              timeoutSeconds: 5
+              periodSeconds: 15
+              failureThreshold: 5
+            readinessProbe:
+              httpGet:
+                path: /health/ready
+                port: 9000
+              timeoutSeconds: 5
+              periodSeconds: 10
+              failureThreshold: 5
+            startupProbe:
+              httpGet:
+                path: /health/started
+                port: 9000
+              timeoutSeconds: 5
+              periodSeconds: 5
+              failureThreshold: 120
             volumeMounts:
               - name: keycloak-theme-narwhal
                 mountPath: /opt/keycloak/themes/narwhal/login/theme.properties

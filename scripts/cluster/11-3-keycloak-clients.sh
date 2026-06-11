@@ -403,15 +403,21 @@ if [ -n "${OPENBAO_POD}" ]; then
     -o jsonpath='{.data.root_token}' 2>/dev/null | base64 -d || echo "")
 
   if [ -n "${OPENBAO_ROOT_TOKEN}" ]; then
+    # NOTE(2026-06-11): OpenBao 리스너는 TLS다 — http 주소/빈 CA로는 모든 bao 명령이
+    # 조용히 실패해 auth/oidc/config가 영영 비어 있었다("Invalid role"의 원인).
+    # https + SKIP_VERIFY(로컬호스트 self-signed) + Keycloak CA 파일 주입으로 수정.
+    kubectl get secret narwhal-ca-cert -n devtools -o jsonpath='{.data.ca\.crt}' \
+      | base64 -d \
+      | kubectl exec -i -n storage "${OPENBAO_POD}" -- /bin/sh -c 'cat > /tmp/kc-ca.pem'
     kubectl exec -n storage "${OPENBAO_POD}" -- \
-      env VAULT_TOKEN="${OPENBAO_ROOT_TOKEN}" VAULT_ADDR="http://127.0.0.1:8200" \
+      env BAO_TOKEN="${OPENBAO_ROOT_TOKEN}" BAO_ADDR="https://127.0.0.1:8200" BAO_SKIP_VERIFY="true" \
       /bin/sh -c "
         bao auth enable oidc 2>/dev/null || true
         bao write auth/oidc/config \
           oidc_discovery_url='${ISSUER_URL}' \
           oidc_client_id='openbao' \
           oidc_client_secret='${OPENBAO_SECRET}' \
-          oidc_discovery_ca_pem='' \
+          oidc_discovery_ca_pem=@/tmp/kc-ca.pem \
           default_role='default'
         bao write auth/oidc/role/default \
           bound_audiences='openbao' \
@@ -419,17 +425,18 @@ if [ -n "${OPENBAO_POD}" ]; then
           allowed_redirect_uris='http://localhost:8250/oidc/callback' \
           user_claim='preferred_username' \
           groups_claim='groups' \
-          token_policies='default'
-        bao write auth/oidc/role/admin \
-          bound_audiences='openbao' \
-          bound_claims_type='string' \
-          bound_claims='{\"groups\":\"cluster-admin\"}' \
-          allowed_redirect_uris='https://openbao.${DOMAIN}/ui/vault/auth/oidc/oidc/callback' \
-          allowed_redirect_uris='http://localhost:8250/oidc/callback' \
-          user_claim='preferred_username' \
-          groups_claim='groups' \
-          token_policies='default,admin-policy'
-      " 2>/dev/null && echo "OpenBao OIDC configured" \
+          oidc_scopes='openid,profile,email,groups' \
+          token_policies='default' \
+          token_ttl=1h token_max_ttl=8h
+        # cluster-admin 그룹 → 관리자 정책 (identity external group 매핑, 라이브 검증됨)
+        printf 'path \"*\" {\n  capabilities = [\"create\", \"read\", \"update\", \"delete\", \"list\", \"sudo\"]\n}\n' > /tmp/cluster-admin.hcl
+        bao policy write cluster-admin /tmp/cluster-admin.hcl && rm -f /tmp/cluster-admin.hcl
+        ACCESSOR=\$(bao auth list -format=json | sed -n 's/.*\"accessor\": \"\(auth_oidc[^\"]*\)\".*/\1/p' | head -1)
+        bao write identity/group name=cluster-admin type=external policies=cluster-admin 2>/dev/null || true
+        GID=\$(bao read -format=json identity/group/name/cluster-admin | sed -n 's/.*\"id\": \"\([^\"]*\)\".*/\1/p' | head -1)
+        bao write identity/group-alias name=cluster-admin mount_accessor=\$ACCESSOR canonical_id=\$GID 2>/dev/null || true
+        rm -f /tmp/kc-ca.pem
+      " && echo "OpenBao OIDC configured" \
       || echo "WARN: OpenBao OIDC config failed"
   else
     echo "WARN: OpenBao root token not found, skipping"

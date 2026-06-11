@@ -400,6 +400,9 @@ metadata:
   name: openbao
   namespace: platform-system
 spec:
+  # OpenBao 리스너는 TLS(raft+TLS 고정 구성) — scheme 누락 시 기본 http로 프록시되어
+  # "Client sent an HTTP request to an HTTPS server" 발생 (2026-06-11 수정)
+  scheme: https
   externalNodes:
     - type: Domain
       name: openbao.storage.svc.cluster.local

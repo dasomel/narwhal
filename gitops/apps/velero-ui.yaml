@@ -51,15 +51,15 @@ spec:
           - name: OAUTH_AUTH_ENABLED
             value: "true"
           - name: OAUTH_NAME
-            value: "Authentik"
+            value: "Keycloak"
           - name: OAUTH_AUTHORIZATION_URL
-            value: "https://authentik.local.narwhal.io/application/o/apisix/authorize/"
+            value: "https://keycloak.local.narwhal.io/realms/narwhal/protocol/openid-connect/auth"
           - name: OAUTH_TOKEN_URL
-            value: "https://authentik.local.narwhal.io/application/o/token/"
+            value: "https://keycloak.local.narwhal.io/realms/narwhal/protocol/openid-connect/token"
           - name: OAUTH_USER_INFO_URL
-            value: "https://authentik.local.narwhal.io/application/o/userinfo/"
+            value: "https://keycloak.local.narwhal.io/realms/narwhal/protocol/openid-connect/userinfo"
           - name: OAUTH_CLIENT_ID
-            value: "apisix"
+            value: "velero-ui"
           - name: OAUTH_CLIENT_SECRET
             valueFrom:
               secretKeyRef:

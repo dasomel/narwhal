@@ -413,6 +413,8 @@ if [ -n "${OPENBAO_POD}" ]; then
       env BAO_TOKEN="${OPENBAO_ROOT_TOKEN}" BAO_ADDR="https://127.0.0.1:8200" BAO_SKIP_VERIFY="true" \
       /bin/sh -c "
         bao auth enable oidc 2>/dev/null || true
+        # UI 비로그인 화면에 OIDC 탭을 기본 노출 (portal ?with=oidc 딥링크와 함께 1클릭 SSO)
+        bao auth tune -listing-visibility=unauth oidc/
         bao write auth/oidc/config \
           oidc_discovery_url='${ISSUER_URL}' \
           oidc_client_id='openbao' \

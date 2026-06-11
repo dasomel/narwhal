@@ -43,9 +43,20 @@ spec:
           type: ClusterIP
           port: 3000
 
-        # Generic OAuth via Authentik (apisix provider)
-        # APISIX gateway also provides a second auth layer via openid-connect plugin
+        # Native Keycloak OAuth (no APISIX openid-connect layer — see apisix-routes.yaml).
+        # NODE_EXTRA_CA_CERTS: velero-api(Node)가 Keycloak 토큰 엔드포인트(사설 CA TLS)에
+        # server-to-server 호출 시 UNABLE_TO_VERIFY_LEAF_SIGNATURE 방지.
+        volumes:
+          - name: narwhal-ca
+            secret:
+              secretName: narwhal-ca-cert
+        volumeMounts:
+          - name: narwhal-ca
+            mountPath: /etc/narwhal-ca
+            readOnly: true
         env:
+          - name: NODE_EXTRA_CA_CERTS
+            value: "/etc/narwhal-ca/ca.crt"
           - name: BASIC_AUTH_ENABLED
             value: "false"
           - name: OAUTH_AUTH_ENABLED

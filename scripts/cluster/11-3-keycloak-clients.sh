@@ -386,8 +386,9 @@ fi
 echo ""
 echo "=== [6/6] OpenBao ==="
 
+# /sso/callback: APISIX 제로클릭 SSO 부트스트랩 페이지 (apisix-routes.yaml openbao-sso)
 OPENBAO_SECRET=$(create_keycloak_client "openbao" \
-  "[\"https://openbao.${DOMAIN}/ui/vault/auth/oidc/oidc/callback\",\"http://localhost:8250/oidc/callback\"]")
+  "[\"https://openbao.${DOMAIN}/ui/vault/auth/oidc/oidc/callback\",\"https://openbao.${DOMAIN}/sso/callback\",\"http://localhost:8250/oidc/callback\"]")
 
 kubectl create secret generic openbao-oidc-secret \
   --namespace storage \
@@ -424,6 +425,7 @@ if [ -n "${OPENBAO_POD}" ]; then
         bao write auth/oidc/role/default \
           bound_audiences='openbao' \
           allowed_redirect_uris='https://openbao.${DOMAIN}/ui/vault/auth/oidc/oidc/callback' \
+          allowed_redirect_uris='https://openbao.${DOMAIN}/sso/callback' \
           allowed_redirect_uris='http://localhost:8250/oidc/callback' \
           user_claim='preferred_username' \
           groups_claim='groups' \

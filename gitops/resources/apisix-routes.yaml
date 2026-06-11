@@ -485,6 +485,93 @@ metadata:
   namespace: platform-system
 spec:
   http:
+    # 포털 제로클릭 SSO 부트스트랩: OpenBao UI는 페이지 로드시 OIDC 자동 시작을
+    # 지원하지 않으므로(1클릭 상한), 같은 오리진에서 OIDC 플로우를 대행한다.
+    # /sso          -> auth_url API 호출 후 Keycloak으로 이동
+    # /sso/callback -> code/state를 callback API로 교환, client_token을
+    #                  UI 토큰 포맷(localStorage 'vault-token☃1')으로 기록 후 UI 진입
+    # 전제: auth/oidc/role/default allowed_redirect_uris + Keycloak openbao 클라이언트에
+    # https://openbao.local.narwhal.io/sso/callback 등록 (11-3-keycloak-clients.sh)
+    - name: openbao-sso
+      priority: 10
+      match:
+        hosts:
+          - openbao.local.narwhal.io
+        paths:
+          - "/sso"
+          - "/sso/callback"
+      upstreams:
+        - name: openbao
+      plugins:
+        - name: serverless-pre-function
+          enable: true
+          config:
+            phase: rewrite
+            functions:
+              - |
+                return function(conf, ctx)
+                  ngx.header["Content-Type"] = "text/html; charset=utf-8"
+                  ngx.header["Cache-Control"] = "no-store"
+                  if ngx.var.uri == "/sso" then
+                    ngx.say([==[<!doctype html><meta charset="utf-8"><title>OpenBao SSO</title>
+                <script>
+                (async function () {
+                  var nonce = crypto.randomUUID();
+                  sessionStorage.setItem("bao_sso_nonce", nonce);
+                  var r = await fetch("/v1/auth/oidc/oidc/auth_url", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                      role: "default",
+                      redirect_uri: location.origin + "/sso/callback",
+                      client_nonce: nonce
+                    })
+                  });
+                  var j = await r.json();
+                  if (j && j.data && j.data.auth_url) { location.replace(j.data.auth_url); }
+                  else { document.body.textContent = "SSO start failed: " + JSON.stringify(j); }
+                })();
+                </script>]==])
+                  else
+                    ngx.say([==[<!doctype html><meta charset="utf-8"><title>OpenBao SSO</title>
+                <script>
+                (async function () {
+                  var q = new URLSearchParams(location.search);
+                  var nonce = sessionStorage.getItem("bao_sso_nonce") || "";
+                  sessionStorage.removeItem("bao_sso_nonce");
+                  var r = await fetch("/v1/auth/oidc/oidc/callback?code=" +
+                    encodeURIComponent(q.get("code") || "") + "&state=" +
+                    encodeURIComponent(q.get("state") || "") + "&client_nonce=" +
+                    encodeURIComponent(nonce));
+                  var j = await r.json();
+                  var a = j && j.auth;
+                  if (!a || !a.client_token) {
+                    document.body.textContent = "SSO failed: " + JSON.stringify(j);
+                    return;
+                  }
+                  localStorage.setItem("vault-token☃1", JSON.stringify({
+                    userRootNamespace: "",
+                    displayName: (a.metadata && a.metadata.username) || "oidc",
+                    backend: {
+                      type: "token", typeDisplay: "Token",
+                      description: "Token authentication.",
+                      tokenPath: "id", displayNamePath: "display_name",
+                      formAttributes: ["token"]
+                    },
+                    token: a.client_token,
+                    policies: a.token_policies || a.policies || [],
+                    renewable: a.renewable,
+                    entity_id: a.entity_id,
+                    ttl: a.lease_duration,
+                    tokenExpirationEpoch: Date.now() + a.lease_duration * 1000
+                  }));
+                  localStorage.setItem("selectedAuth", "oidc");
+                  location.replace("/ui/vault/secrets");
+                })();
+                </script>]==])
+                  end
+                  return ngx.exit(200)
+                end
     - name: openbao
       match:
         hosts:
@@ -691,6 +778,44 @@ metadata:
   namespace: platform-system
 spec:
   http:
+    # 포털 제로클릭 SSO 부트스트랩: velero-ui SPA는 자신이 localStorage
+    # ('auth.oauth.state')에 심은 state로만 OAuth code 교환을 수행한다
+    # (OauthAuth.vue). 같은 오리진에서 state를 심고 Keycloak으로 보내면
+    # /login?code&state 복귀시 SPA가 자동으로 교환 완료 -> 대시보드 직행.
+    - name: velero-ui-sso
+      priority: 10
+      match:
+        hosts:
+          - velero-ui.local.narwhal.io
+        paths:
+          - "/sso"
+      upstreams:
+        - name: velero-ui
+      plugins:
+        - name: serverless-pre-function
+          enable: true
+          config:
+            phase: rewrite
+            functions:
+              - |
+                return function(conf, ctx)
+                  ngx.header["Content-Type"] = "text/html; charset=utf-8"
+                  ngx.header["Cache-Control"] = "no-store"
+                  ngx.say([==[<!doctype html><meta charset="utf-8"><title>Velero UI SSO</title>
+                <script>
+                (function () {
+                  var s = crypto.randomUUID();
+                  localStorage.setItem("auth.oauth.state", s);
+                  location.replace(
+                    "https://keycloak.local.narwhal.io/realms/narwhal/protocol/openid-connect/auth" +
+                    "?client_id=velero-ui" +
+                    "&redirect_uri=" + encodeURIComponent(location.origin + "/login") +
+                    "&scope=" + encodeURIComponent("openid profile email groups") +
+                    "&response_type=code&state=" + s);
+                })();
+                </script>]==])
+                  return ngx.exit(200)
+                end
     - name: velero-ui
       match:
         hosts:

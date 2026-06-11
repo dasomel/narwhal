@@ -374,6 +374,76 @@ metadata:
   namespace: platform-system
 spec:
   http:
+    # OIDC return path fix: the SPA's /auth?cluster= page only sets
+    # localStorage for the popup flow and never redirects when the OIDC flow
+    # completes in the main tab (kubernetes-sigs/headlamp frontend
+    # components/oidcauth, "@todo: needs cleanup" — still present in v0.42).
+    # Inject a script that finishes the login redirect to / when not inside a
+    # popup; the popup flow (window.opener set) is left to the SPA.
+    - name: headlamp-auth-return
+      match:
+        hosts:
+          - headlamp.local.narwhal.io
+        paths:
+          - "/auth"
+      upstreams:
+        - name: headlamp
+      plugins:
+        - name: proxy-rewrite
+          enable: true
+          config:
+            headers:
+              remove:
+                - Accept-Encoding
+        - name: serverless-pre-function
+          enable: true
+          config:
+            phase: header_filter
+            # body_filter below changes the body length
+            functions:
+              - |
+                return function(conf, ctx)
+                  ngx.header.content_length = nil
+                end
+        - name: serverless-post-function
+          enable: true
+          config:
+            phase: body_filter
+            functions:
+              - |
+                return function(conf, ctx)
+                  local body = ngx.arg[1]
+                  local eof = ngx.arg[2]
+                  if not ngx.ctx.hl_auth_buf then ngx.ctx.hl_auth_buf = {} end
+                  if body and #body > 0 then
+                    table.insert(ngx.ctx.hl_auth_buf, body)
+                    ngx.arg[1] = ''
+                  end
+                  if eof then
+                    local full = table.concat(ngx.ctx.hl_auth_buf)
+                    local snip = '<script>(function(){try{'
+                      .. 'var q=new URLSearchParams(window.location.search);'
+                      .. 'if(q.get("cluster")){'
+                      .. 'localStorage.setItem("auth_status","success");'
+                      .. 'if(!window.opener){'
+                      .. 'setTimeout(function(){window.location.replace("/")},400);'
+                      .. '}}}catch(e){}})();</script>'
+                    local pos = string.find(full, '</body>', 1, true)
+                    if pos then
+                      full = string.sub(full, 1, pos - 1) .. snip .. string.sub(full, pos)
+                    end
+                    ngx.arg[1] = full
+                  end
+                end
+        - name: response-rewrite
+          enable: true
+          config:
+            headers:
+              set:
+                Strict-Transport-Security: "max-age=31536000; includeSubDomains"
+                X-Content-Type-Options: "nosniff"
+                X-Frame-Options: "SAMEORIGIN"
+                X-XSS-Protection: "1; mode=block"
     - name: headlamp
       match:
         hosts:

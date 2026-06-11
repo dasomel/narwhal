@@ -672,7 +672,7 @@ spec:
                 X-Frame-Options: "SAMEORIGIN"
                 X-XSS-Protection: "1; mode=block"
 ---
-# Velero UI (APISIX openid-connect — no native SSO support)
+# Velero UI (app-native Keycloak OAuth + socket.io — no APISIX openid-connect, like narwhal-portal)
 apiVersion: apisix.apache.org/v2
 kind: ApisixUpstream
 metadata:
@@ -697,27 +697,17 @@ spec:
           - velero-ui.local.narwhal.io
         paths:
           - "/*"
+      # velero-ui (NestJS) drives its UI over socket.io and handles its own
+      # Keycloak OAuth (OAUTH_AUTH_ENABLED), same way narwhal-portal uses NextAuth.
+      # WebSocket upgrade MUST be enabled — otherwise socket.io falls back to
+      # HTTP long-polling and the login handshake never completes (UI stuck on
+      # /login). No APISIX openid-connect plugin here: the app is the single SSO
+      # layer; stacking a gateway OIDC layer caused a double login + 300s-session
+      # churn that broke "straight-through" SSO.
+      websocket: true
       upstreams:
         - name: velero-ui
       plugins:
-        - name: openid-connect
-          enable: true
-          config:
-            client_id: "velero-ui"
-            client_secret: "$env://VELERO_UI_OIDC_CLIENT_SECRET"
-            discovery: "https://keycloak.local.narwhal.io/realms/narwhal/.well-known/openid-configuration"
-            redirect_uri: "https://velero-ui.local.narwhal.io/apisix/callback"
-            scope: "openid email profile groups"
-            bearer_only: false
-            ssl_verify: false
-            logout_path: "/apisix/logout"
-            set_userinfo_header: true
-            set_access_token_header: true
-            access_token_in_authorization_header: true
-            session:
-              secret: "$env://VELERO_UI_OIDC_SESSION_SECRET"
-              cookie:
-                lifetime: 300
         - name: response-rewrite
           enable: true
           config:

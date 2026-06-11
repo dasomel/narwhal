@@ -273,6 +273,22 @@ echo "=== [4/6] Harbor ==="
 HARBOR_SECRET=$(create_keycloak_client "harbor" \
   "[\"https://harbor.${DOMAIN}/c/oidc/callback\"]")
 
+# harbor_username 클레임 매퍼: Keycloak 'admin' 사용자가 Harbor 내장 admin과
+# username 충돌("user admin already exists")하므로, 사용자 속성 harbor_username을
+# 전용 클레임으로 내려 Harbor oidc_user_claim이 이를 사용하게 한다.
+# (admin -> narwhal-admin, 나머지 사용자는 자기 username. 속성은 11-2에서 설정)
+HARBOR_CID=$(kc_exec get clients -r "${REALM}" -q "clientId=harbor" 2>/dev/null \
+  | jq -r '.[] | select(.clientId=="harbor") | .id')
+if ! kc_exec get "clients/${HARBOR_CID}/protocol-mappers/models" -r "${REALM}" 2>/dev/null \
+  | jq -e '.[] | select(.name=="harbor-username")' >/dev/null; then
+  kc_exec create "clients/${HARBOR_CID}/protocol-mappers/models" -r "${REALM}" \
+    -s name=harbor-username \
+    -s protocol=openid-connect \
+    -s protocolMapper=oidc-usermodel-attribute-mapper \
+    -s 'config={"user.attribute":"harbor_username","claim.name":"harbor_username","jsonType.label":"String","id.token.claim":"true","access.token.claim":"true","userinfo.token.claim":"true"}'
+  echo "  -> harbor-username protocol mapper created"
+fi
+
 kubectl create secret generic harbor-oidc-secret \
   --namespace devtools \
   --from-literal=client-id=harbor \
@@ -315,7 +331,7 @@ if [ -n "${HARBOR_ADMIN_PASS}" ]; then
           \"oidc_groups_claim\": \"groups\",
           \"oidc_verify_cert\": false,
           \"oidc_auto_onboard\": true,
-          \"oidc_user_claim\": \"preferred_username\",
+          \"oidc_user_claim\": \"harbor_username\",
           \"primary_auth_mode\": true
         }" 2>/dev/null && echo "Harbor OIDC configured" \
         || echo "WARN: Harbor OIDC API call failed"

@@ -86,6 +86,18 @@ echo "=== Updating realm loginTheme to 'narwhal' ==="
 kc_exec update "realms/${REALM}" -s "loginTheme=narwhal"
 echo "  -> realm '${REALM}' loginTheme updated to 'narwhal'"
 
+#=========================================
+# 2-1. User Profile: unmanaged attribute 허용
+#   Keycloak 24+는 선언된 프로필 외 사용자 속성을 기본 차단(조용히 무시)한다.
+#   harbor_username 등 커스텀 속성(protocol mapper로 토큰에 주입)을 쓰려면 필수.
+#=========================================
+echo "=== Enabling unmanaged user attributes on realm '${REALM}' ==="
+kc_exec get "realms/${REALM}/users/profile" 2>/dev/null \
+  | jq '.unmanagedAttributePolicy = "ENABLED"' \
+  | kubectl exec -i -n iam keycloak-0 -c keycloak -- /bin/sh -c 'cat > /tmp/user-profile.json'
+kc_exec update "realms/${REALM}/users/profile" -f /tmp/user-profile.json
+echo "  -> unmanagedAttributePolicy=ENABLED"
+
 
 #=========================================
 # 3. Custom groups scope 생성
@@ -235,6 +247,16 @@ for username in admin dev view guest; do
     -r "${REALM}" -s "realm=${REALM}" -s "userId=${USER_ID}" -s "groupId=${group_id}" \
     -n 2>/dev/null || true
   echo "  -> user '${username}' assigned to group '${group_name}'"
+
+  # harbor_username 속성: Harbor OIDC 온보딩 username 충돌 회피
+  #   Harbor는 내장 로컬 admin을 예약하므로 keycloak 'admin'은 그대로 온보딩 불가
+  #   -> admin은 narwhal-admin으로, 나머지는 자기 username 그대로 매핑
+  #   (11-3에서 harbor 클라이언트 매퍼 + Harbor oidc_user_claim=harbor_username 설정)
+  harbor_username="${username}"
+  [ "${username}" = "admin" ] && harbor_username="narwhal-admin"
+  kc_exec update "users/${USER_ID}" -r "${REALM}" \
+    -s "attributes={\"harbor_username\":[\"${harbor_username}\"]}" 2>/dev/null || true
+  echo "  -> user '${username}' harbor_username=${harbor_username}"
 done
 
 #=========================================

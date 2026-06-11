@@ -15,6 +15,15 @@ spec:
       valuesObject:
         podLabels:
           istio.io/dataplane-mode: "none"
+        # No cpu limit on purpose: throttling makes the (chart-hardcoded) 1s
+        # probe timeout trip under VM load. Probe tuning itself is applied by
+        # the headlamp-probe-tuning Kyverno policy (headlamp-policy.yaml).
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            memory: 512Mi
         config:
           oidc:
             clientID: headlamp
@@ -54,9 +63,20 @@ spec:
   destination:
     server: https://kubernetes.default.svc
     namespace: devtools
+  # Probes are mutated at admission by the headlamp-probe-tuning Kyverno
+  # policy (chart hardcodes them); keep ArgoCD from reverting the mutation.
+  ignoreDifferences:
+    - group: apps
+      kind: Deployment
+      name: headlamp
+      namespace: devtools
+      jqPathExpressions:
+        - '.spec.template.spec.containers[].livenessProbe'
+        - '.spec.template.spec.containers[].readinessProbe'
   syncPolicy:
     automated:
       prune: true
       selfHeal: true
     syncOptions:
       - CreateNamespace=true
+      - RespectIgnoreDifferences=true

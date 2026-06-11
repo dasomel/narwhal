@@ -1,0 +1,44 @@
+---
+# Headlamp probe tuning.
+# The headlamp chart (0.40.0–0.42.0) hardcodes liveness/readiness probes in
+# its deployment template with no values to configure them; the resulting
+# defaults (timeoutSeconds=1, failureThreshold=3) make the pod flap under VM
+# load (probe timeout -> kubelet kill, 10 restarts in 3 days observed).
+# Kyverno mutates the Deployment at admission, so the tuning survives chart
+# re-renders. The headlamp Application pairs this with ignoreDifferences +
+# RespectIgnoreDifferences so ArgoCD does not fight the mutation.
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: headlamp-probe-tuning
+  annotations:
+    policies.kyverno.io/title: Headlamp Probe Tuning
+    policies.kyverno.io/category: Reliability
+spec:
+  background: false
+  rules:
+    - name: relax-probe-timeouts
+      match:
+        any:
+          - resources:
+              kinds:
+                - Deployment
+              namespaces:
+                - devtools
+              names:
+                - headlamp
+      mutate:
+        patchStrategicMerge:
+          spec:
+            template:
+              spec:
+                containers:
+                  - (name): headlamp
+                    livenessProbe:
+                      timeoutSeconds: 5
+                      periodSeconds: 15
+                      failureThreshold: 6
+                    readinessProbe:
+                      timeoutSeconds: 5
+                      periodSeconds: 10
+                      failureThreshold: 6

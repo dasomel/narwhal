@@ -393,6 +393,18 @@ spec:
     headers: xforwarded
   ingress:
     enabled: false
+  # First-class resources — the operator HONORS spec.resources but IGNORES resources set
+  # under unsupported.podTemplate. The old config (podTemplate cpu 200m) was silently
+  # dropped, so Keycloak ran with NO CPU request and got starved under node contention:
+  # its 9000 health endpoint missed the 1s probe timeout -> liveness SIGKILL crash loop
+  # -> keycloak-service endpoints emptied -> APISIX 502 on all SSO. A real CPU request fixes it.
+  resources:
+    requests:
+      cpu: "600m"
+      memory: "1Gi"
+    limits:
+      cpu: "2"
+      memory: "2Gi"
   unsupported:
     podTemplate:
       metadata:
@@ -401,21 +413,10 @@ spec:
       spec:
         containers:
           - name: keycloak
-            # CPU request bumped 200m->600m: the previous 200m left Keycloak CPU-starved
-            # under node contention, so its 9000 health endpoint missed the operator's
-            # 1s probe timeout -> liveness SIGKILL crash loop -> cluster-wide SSO 502
-            # (worker-1 hit 97% CPU). A real request reserves CPU and prioritizes it.
-            resources:
-              requests:
-                memory: "768Mi"
-                cpu: "600m"
-              limits:
-                memory: "1Gi"
-                cpu: "2"
-            # Relaxed health probes (timeoutSeconds 1->5, higher failureThreshold) to
-            # tolerate transient GC/CPU spikes instead of false-positive killing.
-            # NOTE: the Keycloak Operator may overwrite container probes it manages; if so
-            # the CPU request bump above is the primary, always-honored mitigation.
+            # Relaxed health probes (timeoutSeconds 1->5, failureThreshold 3->5) tolerate
+            # transient GC/CPU spikes instead of false-positive killing under contention.
+            # (Operator HONORS these podTemplate probes; CPU/memory go in spec.resources
+            # above because podTemplate resources are ignored by the operator.)
             livenessProbe:
               httpGet:
                 path: /health/live

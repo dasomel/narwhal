@@ -119,6 +119,16 @@ spec:
     headers: xforwarded
   ingress:
     enabled: false
+  # Operator HONORS spec.resources but IGNORES unsupported.podTemplate resources.
+  # Without an effective CPU request Keycloak gets starved under node contention ->
+  # 1s health probes time out -> liveness SIGKILL crash loop -> cluster-wide SSO 502.
+  resources:
+    requests:
+      cpu: "600m"
+      memory: "1Gi"
+    limits:
+      cpu: "2"
+      memory: "2Gi"
   unsupported:
     podTemplate:
       spec:
@@ -127,17 +137,8 @@ spec:
             env:
               - name: KC_DB_URL
                 value: "jdbc:postgresql://narwhal-db-rw.database.svc.cluster.local:5432/keycloak?sslmode=disable"
-            resources:
-              requests:
-                memory: "768Mi"
-                cpu: "600m"
-              limits:
-                memory: "1Gi"
-                cpu: "2"
-            # CPU request bump + relaxed probes: prevents CPU-starvation liveness kills
-            # (operator's 1s probe timeout) that crash-looped Keycloak and 502'd SSO when
-            # the node was CPU-contended. Operator may overwrite probes it manages; the
-            # CPU request is the always-honored mitigation.
+            # Relaxed probes (operator HONORS these) tolerate transient CPU spikes;
+            # CPU/memory are set via spec.resources above (podTemplate resources ignored).
             livenessProbe:
               httpGet: { path: /health/live, port: 9000 }
               timeoutSeconds: 5

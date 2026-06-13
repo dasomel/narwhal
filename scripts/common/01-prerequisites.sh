@@ -119,6 +119,29 @@ echo "${MASTER_IP_BASE}0   ${CLUSTER_NAME}-master" | sudo tee -a /etc/hosts
 for i in $(seq 1 "$WORKER_COUNT"); do
   echo "${WORKER_IP_BASE}${i}   ${CLUSTER_NAME}-worker-${i}" | sudo tee -a /etc/hosts
 done
+#=========================================
+# Configure Clock Synchronization (chrony)
+#=========================================
+echo "Configuring clock synchronization via chrony..."
+if ! command -v chronyc &>/dev/null; then
+  echo "Installing chrony..."
+  sudo apt-get update || echo "WARN: apt-get update issue, continuing..."
+  sudo apt-get install -y chrony || echo "WARN: chrony install issue, continuing..."
+fi
+
+if systemctl list-unit-files | grep -q "^chrony.service"; then
+  echo "Enabling and starting chrony..."
+  sudo systemctl enable chrony
+  sudo systemctl restart chrony
+  # Enable NTP synchronization
+  sudo timedatectl set-ntp true || true
+  # Force clock sync immediately
+  sudo chronyc -a makestep || true
+else
+  echo "WARN: chrony service not found, attempting systemd-timesyncd as fallback..."
+  sudo systemctl enable systemd-timesyncd || true
+  sudo systemctl restart systemd-timesyncd || true
+fi
 
 
 echo "=== Prerequisites Done ==="

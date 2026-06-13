@@ -60,6 +60,7 @@ echo "Installing istiod (ambient profile)..."
 
 cat > /tmp/istiod-values.yaml << 'EOF'
 profile: ambient
+replicaCount: 2
 resources:
   requests:
     cpu: 100m
@@ -73,6 +74,28 @@ tolerations:
   - key: node.cilium.io/agent-not-ready
     operator: Exists
     effect: NoSchedule
+  - key: node-role.kubernetes.io/control-plane
+    operator: Exists
+    effect: NoSchedule
+affinity:
+  nodeAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        preference:
+          matchExpressions:
+            - key: node-role.kubernetes.io/control-plane
+              operator: Exists
+  podAntiAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        podAffinityTerm:
+          labelSelector:
+            matchExpressions:
+              - key: app
+                operator: In
+                values:
+                  - istiod
+          topologyKey: kubernetes.io/hostname
 EOF
 
 helm upgrade --install istiod istio/istiod \
@@ -82,6 +105,9 @@ helm upgrade --install istiod istio/istiod \
   --timeout 180s || echo "WARN: istiod install issue, continuing..."
 
 rm /tmp/istiod-values.yaml
+
+# Apply separate PodDisruptionBudget for extra safety
+kubectl apply -f /home/vagrant/configs/gitops/resources/istiod-pdb.yaml || echo "WARN: istiod PDB apply issue, continuing..."
 
 # Wait for istiod to be ready
 echo "Waiting for istiod..."

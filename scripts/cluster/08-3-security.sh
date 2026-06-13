@@ -12,14 +12,35 @@ echo "=== Installing Kyverno ==="
 helm repo add kyverno https://kyverno.github.io/kyverno/
 helm repo update kyverno
 
+cat > /tmp/kyverno-values.yaml << 'EOF'
+admissionController:
+  replicas: 1
+  webhookTimeout: 5
+backgroundController:
+  replicas: 1
+cleanupController:
+  replicas: 1
+reportsController:
+  replicas: 1
+config:
+  webhooks:
+    - namespaceSelector:
+        matchExpressions:
+          - key: kubernetes.io/metadata.name
+            operator: NotIn
+            values:
+              - kube-system
+              - istio-system
+              - platform-system
+EOF
+
 helm upgrade --install kyverno kyverno/kyverno \
   --namespace platform-system \
   --create-namespace \
   --version 3.7.0 \
-  --set admissionController.replicas=1 \
-  --set backgroundController.replicas=1 \
-  --set cleanupController.replicas=1 \
-  --set reportsController.replicas=1 || echo "WARN: Kyverno install issue, continuing..."
+  -f /tmp/kyverno-values.yaml || echo "WARN: Kyverno install issue, continuing..."
+
+rm /tmp/kyverno-values.yaml
 
 echo "Kyverno installed"
 

@@ -16,6 +16,7 @@ spec:
     helm:
       valuesObject:
         profile: ambient
+        replicaCount: 2
         resources:
           requests:
             cpu: 100m
@@ -29,6 +30,28 @@ spec:
           - key: node.cilium.io/agent-not-ready
             operator: Exists
             effect: NoSchedule
+          - key: node-role.kubernetes.io/control-plane
+            operator: Exists
+            effect: NoSchedule
+        affinity:
+          nodeAffinity:
+            preferredDuringSchedulingIgnoredDuringExecution:
+              - weight: 100
+                preference:
+                  matchExpressions:
+                    - key: node-role.kubernetes.io/control-plane
+                      operator: Exists
+          podAntiAffinity:
+            preferredDuringSchedulingIgnoredDuringExecution:
+              - weight: 100
+                podAffinityTerm:
+                  labelSelector:
+                    matchExpressions:
+                      - key: app
+                        operator: In
+                        values:
+                          - istiod
+                  topologyKey: kubernetes.io/hostname
   destination:
     server: https://kubernetes.default.svc
     namespace: istio-system

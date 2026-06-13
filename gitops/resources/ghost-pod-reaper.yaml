@@ -1,0 +1,167 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: ghost-pod-reaper
+  namespace: kube-system
+  labels:
+    app.kubernetes.io/name: ghost-pod-reaper
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: ghost-pod-reaper
+  labels:
+    app.kubernetes.io/name: ghost-pod-reaper
+rules:
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "watch", "delete"]
+  - apiGroups: [""]
+    resources: ["nodes"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: ghost-pod-reaper
+  labels:
+    app.kubernetes.io/name: ghost-pod-reaper
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: ghost-pod-reaper
+subjects:
+  - kind: ServiceAccount
+    name: ghost-pod-reaper
+    namespace: kube-system
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: ghost-pod-reaper
+  namespace: kube-system
+  labels:
+    app.kubernetes.io/name: ghost-pod-reaper
+spec:
+  schedule: "*/15 * * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: ghost-pod-reaper
+            istio.io/dataplane-mode: none
+        spec:
+          serviceAccountName: ghost-pod-reaper
+          restartPolicy: OnFailure
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            fsGroup: 1000
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: reaper
+              image: docker.io/alpine/k8s:1.31.4
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                runAsNonRoot: true
+                runAsUser: 1000
+                runAsGroup: 1000
+                capabilities:
+                  drop:
+                    - ALL
+              env:
+                - name: HOME
+                  value: /tmp
+                - name: GRACE_MINUTES
+                  value: "15"
+                - name: DRY_RUN
+                  value: "false"
+              command:
+                - /bin/bash
+                - -c
+                - |
+                  set -eu
+                  current_time=$(date +%s)
+                  grace_seconds=$((GRACE_MINUTES * 60))
+                  reaped=0
+
+                  echo "=== Starting Ghost Pod Reaper ==="
+                  echo "Time: $(date -u)"
+                  echo "Config: GRACE_MINUTES=${GRACE_MINUTES}, DRY_RUN=${DRY_RUN}"
+
+                  parse_iso8601_to_epoch() {
+                    local ts="$1"
+                    local date_part="${ts%%T*}"
+                    local time_part="${ts#*T}"
+                    time_part="${time_part%Z}"
+                    local clean_ts="${date_part} ${time_part}"
+                    local epoch
+                    epoch=$(date -u -d "$clean_ts" +%s 2>/dev/null || date -d "$ts" +%s 2>/dev/null || echo "0")
+                    echo "$epoch"
+                  }
+
+                  # Format: deletionTimestamp|namespace|name|phase
+                  pods_list=$(kubectl get pods -A -o jsonpath='{range .items[*]}{.metadata.deletionTimestamp}{"|"}{.metadata.namespace}{"|"}{.metadata.name}{"|"}{.status.phase}{"\n"}{end}' 2>/dev/null || true)
+
+                  if [ -n "$pods_list" ]; then
+                    while IFS='|' read -r del_ts ns name phase; do
+                      if [ -z "$ns" ] || [ -z "$name" ] || [ -z "$phase" ]; then
+                        continue
+                      fi
+
+                      if [ -z "$del_ts" ] || [ "$del_ts" = "null" ]; then
+                        # Pod is not terminating. Skip Running/Succeeded/Pending.
+                        if [ "$phase" = "Running" ] || [ "$phase" = "Succeeded" ] || [ "$phase" = "Pending" ]; then
+                          continue
+                        fi
+                        if [ "$phase" = "Unknown" ]; then
+                          if [ "$DRY_RUN" = "true" ]; then
+                            echo "[DRY-RUN] Would force delete pod ${ns}/${name} (Phase: Unknown)"
+                          else
+                            echo "[DELETE] Force deleting pod ${ns}/${name} (Phase: Unknown)"
+                            kubectl -n "$ns" delete pod "$name" --grace-period=0 --force || true
+                          fi
+                          reaped=$((reaped + 1))
+                        fi
+                      else
+                        # Pod is terminating (deletionTimestamp set)
+                        del_epoch=$(parse_iso8601_to_epoch "$del_ts")
+                        if [ "$del_epoch" -gt 0 ]; then
+                          age=$((current_time - del_epoch))
+                          if [ "$age" -gt "$grace_seconds" ]; then
+                            if [ "$DRY_RUN" = "true" ]; then
+                              echo "[DRY-RUN] Would force delete pod ${ns}/${name} (Phase: ${phase}, Terminating for $((age / 60))m)"
+                            else
+                              echo "[DELETE] Force deleting pod ${ns}/${name} (Phase: ${phase}, Terminating for $((age / 60))m)"
+                              kubectl -n "$ns" delete pod "$name" --grace-period=0 --force || true
+                            fi
+                            reaped=$((reaped + 1))
+                          fi
+                        else
+                          echo "WARNING: Could not parse deletion timestamp '${del_ts}' for pod ${ns}/${name}."
+                        fi
+                      fi
+                    done <<< "$pods_list"
+                  fi
+
+                  echo "=== Ghost Pod Reaper Completed (Reaped count: ${reaped}) ==="
+              resources:
+                requests:
+                  cpu: 10m
+                  memory: 32Mi
+                limits:
+                  cpu: 100m
+                  memory: 64Mi
+              volumeMounts:
+                - name: tmp
+                  mountPath: /tmp
+          volumes:
+            - name: tmp
+              emptyDir: {}

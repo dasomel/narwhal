@@ -17,6 +17,10 @@ spec:
       valuesObject:
         profile: ambient
         replicaCount: 2
+        autoscaleEnabled: false
+        global:
+          defaultPodDisruptionBudget:
+            enabled: false
         resources:
           requests:
             cpu: 100m

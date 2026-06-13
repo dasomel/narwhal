@@ -16,6 +16,9 @@ spec:
         admissionController:
           replicas: 3
           webhookTimeout: 5
+          container:
+            extraArgs:
+              webhookTimeout: 5
         backgroundController:
           replicas: 2
         cleanupController:
@@ -24,14 +27,14 @@ spec:
           replicas: 2
         config:
           webhooks:
-            - namespaceSelector:
-                matchExpressions:
-                  - key: kubernetes.io/metadata.name
-                    operator: NotIn
-                    values:
-                      - kube-system
-                      - istio-system
-                      - platform-system
+            namespaceSelector:
+              matchExpressions:
+                - key: kubernetes.io/metadata.name
+                  operator: NotIn
+                  values:
+                    - kube-system
+                    - istio-system
+                    - platform-system
   destination:
     server: https://kubernetes.default.svc
     namespace: platform-system

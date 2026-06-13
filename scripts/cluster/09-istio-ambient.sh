@@ -61,6 +61,12 @@ echo "Installing istiod (ambient profile)..."
 cat > /tmp/istiod-values.yaml << 'EOF'
 profile: ambient
 replicaCount: 2
+# autoscaleEnabled must be false, else the chart's HPA overrides replicaCount back to 1 (SPOF)
+autoscaleEnabled: false
+# native PDB disabled; an explicit PDB is applied from gitops/resources/istiod-pdb.yaml
+global:
+  defaultPodDisruptionBudget:
+    enabled: false
 resources:
   requests:
     cpu: 100m

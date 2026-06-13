@@ -16,6 +16,10 @@ cat > /tmp/kyverno-values.yaml << 'EOF'
 admissionController:
   replicas: 1
   webhookTimeout: 5
+  # chart 3.7.0 only applies the timeout via the container CLI flag, not the top-level key
+  container:
+    extraArgs:
+      webhookTimeout: 5
 backgroundController:
   replicas: 1
 cleanupController:
@@ -24,14 +28,14 @@ reportsController:
   replicas: 1
 config:
   webhooks:
-    - namespaceSelector:
-        matchExpressions:
-          - key: kubernetes.io/metadata.name
-            operator: NotIn
-            values:
-              - kube-system
-              - istio-system
-              - platform-system
+    namespaceSelector:
+      matchExpressions:
+        - key: kubernetes.io/metadata.name
+          operator: NotIn
+          values:
+            - kube-system
+            - istio-system
+            - platform-system
 EOF
 
 helm upgrade --install kyverno kyverno/kyverno \

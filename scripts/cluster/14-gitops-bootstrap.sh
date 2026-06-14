@@ -79,6 +79,15 @@ cd "${REPO_NAME}"
 # Copy gitops configs
 cp -r /home/vagrant/configs/gitops/* . 2>/dev/null || true
 
+# Ubuntu 26.04 (Resolute, kernel 7.0): falco 0.39.2 modern_ebpf probe fails scap_init
+# (no kernel 7.0 support yet), so exclude falco from the GitOps apps on 26.04 until a
+# falco release supports it. The app-of-apps then never creates the falco Application.
+. /etc/os-release 2>/dev/null || true
+if [ "${VERSION_ID:-}" = "26.04" ]; then
+  echo "Ubuntu ${VERSION_ID} detected — excluding falco (no kernel 7.0 support yet)"
+  rm -f apps/falco.yaml
+fi
+
 # If configs weren't synced, create minimal structure
 if [ ! -d "apps" ]; then
   mkdir -p apps resources

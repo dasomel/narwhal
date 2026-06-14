@@ -21,7 +21,10 @@ spec:
           enabled: true
           kind: modern_ebpf
           modernEbpf:
-            leastPrivileged: true
+            # leastPrivileged:false (full privileged) — on Ubuntu 26.04 (kernel 7.0) the
+            # leastPrivileged probe failed scap_init ("error in an event source") opening
+            # the modern BPF ring buffer. Full privilege restores syscall capture.
+            leastPrivileged: false
 
         # Falco DaemonSet (모든 노드)
         tty: true

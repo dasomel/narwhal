@@ -189,9 +189,20 @@ spec:
       type: File
 EOF
 
-# Wait for kube-vip to start and take over VIP management
+# Wait for kube-vip to start and take over VIP management.
+# kube-vip briefly deletes the bootstrap VIP before re-adding it under its own
+# management; on Ubuntu 26.04 (kernel 7.0) this transition can exceed a fixed sleep,
+# leaving the VIP momentarily unreachable when the following kubeadm token commands
+# (which talk to the VIP via admin.conf) run. Poll the VIP API until it is reachable.
 echo "Waiting for kube-vip to take over VIP..."
-sleep 10
+for i in $(seq 1 30); do
+  if curl -sk --max-time 3 "https://${VIP_ADDRESS}:6443/healthz" >/dev/null 2>&1; then
+    echo "kube-vip VIP API reachable (attempt ${i}/30)"
+    break
+  fi
+  echo "  VIP not ready yet, retrying... (${i}/30)"
+  sleep 5
+done
 
 # Save join command for workers
 kubeadm token create --print-join-command > /home/vagrant/join-command.sh

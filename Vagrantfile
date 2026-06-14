@@ -231,6 +231,14 @@ Vagrant.configure("2") do |config|
       worker.vm.provision "shell", path: "scripts/cluster/02-join-worker.sh",
         env: { "MASTER_IP" => "#{MASTER_IP_BASE}0" }
 
+      # Configure worker systemd-resolved to forward *.local.narwhal.io to master dnsmasq.
+      # Without this, image pulls from harbor.local.narwhal.io fail ("tls: unrecognized name").
+      worker.vm.provision "shell", path: "scripts/cluster/10-worker-dns.sh",
+        env: {
+          "MASTER_IP" => "#{MASTER_IP_BASE}0",
+          "DOMAIN"    => "local.narwhal.io"
+        }
+
       # After last worker joins, trigger Phase 2 platform apps on master-1
       if i == WORKER_COUNT
         worker.trigger.after :up do |trigger|

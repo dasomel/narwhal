@@ -286,4 +286,12 @@ EOF
 
 echo "cert-manager installed with CA issuer"
 
+# Re-apply apisix-infra now that cert-manager CRDs + the CA issuer exist. The earlier
+# etcd-bootstrap apply (line ~60, before cert-manager was installed) silently skipped the
+# bundled narwhal-wildcard-tls Certificate ("no matches for kind Certificate" + || true),
+# which later starved 08-6's CA distribution and left gitea/headlamp stuck on the missing
+# narwhal-ca-cert secret. This second apply creates the Certificate (etcd stays unchanged).
+echo "Re-applying apisix-infra to create cert-manager Certificates..."
+kubectl apply -f /home/vagrant/configs/gitops/resources/apisix-infra.yaml || true
+
 echo "=== Networking Apps Installation Complete ==="

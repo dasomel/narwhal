@@ -163,40 +163,76 @@ helm upgrade --install openbao openbao/openbao \
 
 # Auto init + unseal OpenBao. The listener is HTTPS with the self-signed cluster CA,
 # so every bao CLI call needs -tls-skip-verify (BAO_ADDR is https via tlsDisable=false).
-echo "Waiting for OpenBao pod..."
-kubectl wait --for=condition=Ready=false pod/openbao-0 -n storage --timeout=120s 2>/dev/null || true
-sleep 5
+#
+# Wait for openbao-0 to be Running (not necessarily Ready — a fresh sealed/uninitialised
+# pod fails its readiness probe so it never becomes Ready, which is expected here).
+echo "Waiting for OpenBao pod to be Running..."
+for i in $(seq 1 36); do
+  POD_PHASE=$(kubectl get pod openbao-0 -n storage \
+    -o jsonpath='{.status.phase}' 2>/dev/null || true)
+  if [ "${POD_PHASE}" = "Running" ]; then
+    break
+  fi
+  echo "  [${i}/36] phase=${POD_PHASE}, retrying in 5s..."
+  sleep 5
+done
 
-OPENBAO_INITIALIZED=$(kubectl exec openbao-0 -n storage -- bao status -tls-skip-verify -format=json 2>/dev/null | python3 -c 'import sys,json; print(json.load(sys.stdin).get("initialized",""))' 2>/dev/null || echo "")
+# Query bao status in a pipefail-safe subshell: `bao status` exits 2 when sealed
+# (non-zero), which under set -o pipefail would make the whole pipeline fail and
+# cause `|| echo ""` to swallow the output — leaving OPENBAO_INITIALIZED="" and
+# silently falling into the "could not determine" else branch.  Run the JSON query
+# in a subshell that suppresses pipefail so the python3 parser always gets the JSON.
+BAO_STATUS_JSON=$(set +o pipefail; \
+  kubectl exec openbao-0 -n storage -- \
+    bao status -tls-skip-verify -format=json 2>/dev/null || true)
+OPENBAO_INITIALIZED=$(printf '%s' "${BAO_STATUS_JSON}" \
+  | python3 -c 'import sys,json; d=json.load(sys.stdin); print("True" if d.get("initialized") else "False")' \
+  2>/dev/null || echo "")
 
 if [ "${OPENBAO_INITIALIZED}" = "True" ]; then
-  echo "OpenBao already initialized, checking unseal key..."
-  UNSEAL_KEY=$(kubectl get secret openbao-init -n storage -o jsonpath='{.data.unseal_keys_b64}' 2>/dev/null | base64 -d 2>/dev/null || echo "")
-  if [ -n "${UNSEAL_KEY}" ]; then
-    echo "Unsealing OpenBao..."
-    kubectl exec openbao-0 -n storage -- bao operator unseal -tls-skip-verify "${UNSEAL_KEY}" || true
+  echo "OpenBao already initialized, checking seal status..."
+  OPENBAO_SEALED=$(printf '%s' "${BAO_STATUS_JSON}" \
+    | python3 -c 'import sys,json; print("true" if json.load(sys.stdin).get("sealed") else "false")' \
+    2>/dev/null || echo "true")
+  if [ "${OPENBAO_SEALED}" = "true" ]; then
+    echo "OpenBao is sealed — retrieving unseal key from openbao-init secret..."
+    UNSEAL_KEY=$(kubectl get secret openbao-init -n storage \
+      -o jsonpath='{.data.unseal_keys_b64}' 2>/dev/null \
+      | base64 -d 2>/dev/null || echo "")
+    if [ -n "${UNSEAL_KEY}" ]; then
+      echo "Unsealing OpenBao..."
+      kubectl exec openbao-0 -n storage -- \
+        bao operator unseal -tls-skip-verify "${UNSEAL_KEY}" || true
+    else
+      echo "WARN: OpenBao initialized but unseal key not found in openbao-init secret"
+    fi
   else
-    echo "WARN: OpenBao initialized but unseal key not found in openbao-init secret"
+    echo "OpenBao already unsealed — nothing to do"
   fi
 elif [ "${OPENBAO_INITIALIZED}" = "False" ]; then
-  echo "Initializing OpenBao..."
-  INIT_JSON=$(kubectl exec openbao-0 -n storage -- bao operator init -tls-skip-verify -key-shares=1 -key-threshold=1 -format=json 2>/dev/null || echo "")
+  echo "Initializing OpenBao (key-shares=1 key-threshold=1)..."
+  INIT_JSON=$(kubectl exec openbao-0 -n storage -- \
+    bao operator init -tls-skip-verify \
+    -key-shares=1 -key-threshold=1 -format=json 2>/dev/null || echo "")
   if [ -n "${INIT_JSON}" ]; then
-    UNSEAL_KEY=$(echo "${INIT_JSON}" | python3 -c 'import sys,json; print(json.load(sys.stdin)["unseal_keys_b64"][0])')
-    ROOT_TOKEN=$(echo "${INIT_JSON}" | python3 -c 'import sys,json; print(json.load(sys.stdin)["root_token"])')
+    UNSEAL_KEY=$(printf '%s' "${INIT_JSON}" \
+      | python3 -c 'import sys,json; print(json.load(sys.stdin)["unseal_keys_b64"][0])')
+    ROOT_TOKEN=$(printf '%s' "${INIT_JSON}" \
+      | python3 -c 'import sys,json; print(json.load(sys.stdin)["root_token"])')
     echo "Unsealing OpenBao..."
-    kubectl exec openbao-0 -n storage -- bao operator unseal -tls-skip-verify "${UNSEAL_KEY}" || true
-    echo "Saving credentials to openbao-init secret..."
+    kubectl exec openbao-0 -n storage -- \
+      bao operator unseal -tls-skip-verify "${UNSEAL_KEY}" || true
+    echo "Saving credentials to openbao-init secret (consumed by auto-unseal CronJob)..."
     kubectl create secret generic openbao-init -n storage \
       --from-literal=unseal_keys_b64="${UNSEAL_KEY}" \
       --from-literal=root_token="${ROOT_TOKEN}" \
       --dry-run=client -o yaml | kubectl apply -f -
     echo "OpenBao initialized and unsealed"
   else
-    echo "WARN: OpenBao init failed, manual init required"
+    echo "WARN: OpenBao init failed — manual init required"
   fi
 else
-  echo "WARN: Could not determine OpenBao state, skipping init"
+  echo "WARN: Could not determine OpenBao state (got: '${OPENBAO_INITIALIZED}') — skipping init"
 fi
 
 rm -f /tmp/openbao-values.yaml

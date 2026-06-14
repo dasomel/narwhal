@@ -196,11 +196,27 @@ echo "APISIX installed"
 #=========================================
 echo "=== Installing APISIX Ingress Controller ==="
 
-# Get APISIX admin key from configmap (default key from chart v2.9.0)
+# Get APISIX admin/viewer keys from the live config (chart v2.9.0 bakes them in at install
+# time; the configmap stores the literal key after env-substitution by the APISIX process).
+# The grep target is the plain key line that appears AFTER "name: admin" / "name: viewer".
 APISIX_ADMIN_KEY=$(kubectl get configmap apisix -n platform-system \
   -o jsonpath='{.data.config\.yaml}' 2>/dev/null \
-  | grep -A1 'name: "admin"' | grep 'key:' | awk '{print $2}' | head -1)
+  | grep -A2 'name: "admin"' | grep '^\s*key:' | awk '{print $2}' | head -1 || true)
 APISIX_ADMIN_KEY="${APISIX_ADMIN_KEY:-edd1c9f034335f136f87ad84b625c8f1}"
+
+APISIX_VIEWER_KEY=$(kubectl get configmap apisix -n platform-system \
+  -o jsonpath='{.data.config\.yaml}' 2>/dev/null \
+  | grep -A2 'name: "viewer"' | grep '^\s*key:' | awk '{print $2}' | head -1 || true)
+APISIX_VIEWER_KEY="${APISIX_VIEWER_KEY:-4054f7cf07e344346cd3f287985e76a2}"
+
+# Persist both keys into the Secret that show-credentials.sh and the APISIX deployment
+# env vars (secretKeyRef name: apisix-admin-key) expect.  Idempotent via dry-run|apply.
+echo "Creating apisix-admin-key secret..."
+kubectl create secret generic apisix-admin-key \
+  --namespace platform-system \
+  --from-literal=key="${APISIX_ADMIN_KEY}" \
+  --from-literal=viewer="${APISIX_VIEWER_KEY}" \
+  --dry-run=client -o yaml | kubectl apply -f -
 
 helm upgrade --install apisix-ingress-controller apisix/apisix-ingress-controller \
   --namespace platform-system \

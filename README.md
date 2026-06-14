@@ -7,9 +7,9 @@
 
 Vagrant 기반 Kubernetes Internal Developer Platform (IDP) 클러스터.
 
-[dasomel/ubuntu-24.04-xfs](https://app.vagrantup.com/dasomel/boxes/ubuntu-24.04-xfs) Box 사용 (XFS 파일시스템, Project Quota 지원).
+[dasomel/ubuntu-26.04-xfs](https://app.vagrantup.com/dasomel/boxes/ubuntu-26.04-xfs) Box 사용 (XFS 파일시스템, Project Quota 지원).
 
-> **Base Box Source**: [kube-ready-box](https://github.com/dasomel/kube-ready-box) - Ubuntu 24.04 + K8s prerequisites 사전 설치된 Packer 기반 Box
+> **Base Box Source**: [kube-ready-box](https://github.com/dasomel/kube-ready-box) - Ubuntu 26.04 + K8s prerequisites 사전 설치된 Packer 기반 Box
 
 ## Features
 

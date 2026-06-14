@@ -7,7 +7,7 @@ Components and versions used in this project.
 | Component | Version | Description |
 |-----------|---------|-------------|
 | Kubernetes | v1.35.3 | Container orchestration |
-| containerd | 1.7.28 | Container runtime (Ubuntu apt) |
+| containerd | 1.7.x (24.04) / repo default 2.x (26.04) | Container runtime (Ubuntu apt; 02-containerd.sh pins 1.7.* then falls back to repo default) |
 | kubeadm | v1.35.3 | Cluster bootstrap tool |
 | kubelet | v1.35.3 | Node agent |
 | kubectl | v1.35.3 | CLI tool |
@@ -139,7 +139,7 @@ Components and versions used in this project.
 | Vagrant | 2.4+ | VM management |
 | VirtualBox | 7.1+ | Virtualization provider |
 | VMware Fusion | 25H2 | Virtualization provider (alternative) |
-| Ubuntu | 24.04 LTS | Base OS (dasomel/ubuntu-24.04-xfs v0.2.2) |
+| Ubuntu | 26.04 LTS | Base OS (dasomel/ubuntu-26.04-xfs v0.1.0, Resolute, kernel 7.0) |
 
 ## Version Update Policy
 

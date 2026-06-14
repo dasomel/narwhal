@@ -46,8 +46,8 @@ DISK_SIZE_GB = 30  # GB
 
 Vagrant.configure("2") do |config|
   # Base Box (XFS for project quota support)
-  config.vm.box = "dasomel/ubuntu-24.04-xfs"
-  config.vm.box_version = "0.2.2"
+  config.vm.box = "dasomel/ubuntu-26.04-xfs"
+  config.vm.box_version = "0.1.0"
   config.vm.box_check_update = true
 
   # Disk size plugin (VirtualBox only)

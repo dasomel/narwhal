@@ -6,8 +6,14 @@ CONTAINERD_VERSION="${CONTAINERD_VERSION:-1.7.*}"
 echo "=== containerd ${CONTAINERD_VERSION} Installation ==="
 
 # Install containerd (apt-get update required for fresh box)
+# The kube-ready-box already ships containerd; pin to the requested series when the
+# distro repo offers it (Ubuntu 24.04 -> 1.7.x), otherwise fall back to the repo
+# default (Ubuntu 26.04 ships containerd 2.x). K8s 1.35 supports containerd 1.7+ and 2.x.
 sudo apt-get update
-sudo apt-get install -y containerd="${CONTAINERD_VERSION}"
+if ! sudo apt-get install -y containerd="${CONTAINERD_VERSION}"; then
+  echo "containerd=${CONTAINERD_VERSION} not available in repo; installing distro default containerd..."
+  sudo apt-get install -y containerd
+fi
 
 # Configure containerd
 sudo mkdir -p /etc/containerd

@@ -3,6 +3,14 @@ set -euo pipefail
 
 echo "=== Prerequisites Installation ==="
 
+#=========================================
+# Force apt to use IPv4
+#=========================================
+# These VMs have no working IPv6 route. Mirrors like pkgs.k8s.io resolve to IPv6
+# first, so apt picks the AAAA record and fails with "Network is unreachable"
+# (observed on workers fetching kubeadm/kubelet/kubectl on Ubuntu 26.04). Pin IPv4.
+echo 'Acquire::ForceIPv4 "true";' | sudo tee /etc/apt/apt.conf.d/99force-ipv4 >/dev/null
+
 CLUSTER_NAME="${CLUSTER_NAME:-narwhal}"
 MASTER_COUNT="${MASTER_COUNT:-3}"
 MASTER_IP_BASE="${MASTER_IP_BASE:-192.168.56.1}"

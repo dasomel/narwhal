@@ -129,18 +129,25 @@ if ! command -v chronyc &>/dev/null; then
   sudo apt-get install -y chrony || echo "WARN: chrony install issue, continuing..."
 fi
 
-if systemctl list-unit-files | grep -q "^chrony.service"; then
-  echo "Enabling and starting chrony..."
-  sudo systemctl enable chrony
-  sudo systemctl restart chrony
-  # Enable NTP synchronization
+# Detect the chrony unit name (chrony.service on 24.04; chronyd.service on some releases).
+# Ubuntu 26.04 ships no systemd-timesyncd, so chrony is the single source of truth — no
+# timesyncd fallback (it only produced noisy "Unit not found" errors on 26.04).
+sudo systemctl daemon-reload 2>/dev/null || true
+CHRONY_SVC=""
+for c in chrony chronyd; do
+  if systemctl list-unit-files 2>/dev/null | grep -q "^${c}\.service"; then
+    CHRONY_SVC="$c"
+    break
+  fi
+done
+if [ -n "${CHRONY_SVC}" ]; then
+  echo "Enabling and starting ${CHRONY_SVC}..."
+  sudo systemctl enable "${CHRONY_SVC}" || true
+  sudo systemctl restart "${CHRONY_SVC}" || true
   sudo timedatectl set-ntp true || true
-  # Force clock sync immediately
   sudo chronyc -a makestep || true
 else
-  echo "WARN: chrony service not found, attempting systemd-timesyncd as fallback..."
-  sudo systemctl enable systemd-timesyncd || true
-  sudo systemctl restart systemd-timesyncd || true
+  echo "WARN: chrony service not found after install; clock sync left to the hypervisor"
 fi
 
 

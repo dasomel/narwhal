@@ -3,6 +3,16 @@ set -euo pipefail
 # Narwhal common library - shared utilities for cluster scripts
 # Usage: source /home/vagrant/scripts/common/lib.sh
 
+# Detect the host OS release for version-specific provisioning branches.
+# os_version_id -> "24.04" | "26.04" | "unknown"; os_codename -> "noble" | "resolute" | ...
+# Pattern: ver="$(os_version_id)"; case "$ver" in 24.04) ... ;; 26.04) ... ;; esac
+os_version_id() {
+  ( . /etc/os-release 2>/dev/null && echo "${VERSION_ID:-unknown}" )
+}
+os_codename() {
+  ( . /etc/os-release 2>/dev/null && echo "${VERSION_CODENAME:-unknown}" )
+}
+
 # Generate a 24-char URL-safe random password
 generate_password() {
   openssl rand -base64 16 | tr -d '=/+' | head -c 24

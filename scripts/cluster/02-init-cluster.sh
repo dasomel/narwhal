@@ -204,13 +204,17 @@ for i in $(seq 1 30); do
   sleep 5
 done
 
-# Save join command for workers
-kubeadm token create --print-join-command > /home/vagrant/join-command.sh
+# Save join command for workers.
+# Use the local-IP kubeconfig (not the VIP): on Ubuntu 26.04 the VIP path adds enough
+# latency that kubeadm's client rate limiter hits a context deadline during the heavier
+# upload-certs API calls. The local endpoint is fast and avoids the kube-vip round-trip.
+LOCAL_KUBECONFIG=/home/vagrant/.kube/config-local
+kubeadm token create --print-join-command --kubeconfig "${LOCAL_KUBECONFIG}" > /home/vagrant/join-command.sh
 chmod +x /home/vagrant/join-command.sh
 
 # Generate join command for additional control plane nodes
-CERT_KEY=$(sudo kubeadm init phase upload-certs --upload-certs 2>/dev/null | tail -1)
-JOIN_CMD=$(kubeadm token create --print-join-command)
+CERT_KEY=$(sudo kubeadm init phase upload-certs --upload-certs --kubeconfig "${LOCAL_KUBECONFIG}" | tail -1)
+JOIN_CMD=$(kubeadm token create --print-join-command --kubeconfig "${LOCAL_KUBECONFIG}")
 echo "${JOIN_CMD} --control-plane --certificate-key ${CERT_KEY} --ignore-preflight-errors=all" > /home/vagrant/join-control-plane.sh
 chmod +x /home/vagrant/join-control-plane.sh
 

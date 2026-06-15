@@ -16,7 +16,7 @@ cat > /tmp/kyverno-values.yaml << 'EOF'
 admissionController:
   replicas: 1
   webhookTimeout: 5
-  # chart 3.7.0 only applies the timeout via the container CLI flag, not the top-level key
+  # chart 3.8.1 only applies the timeout via the container CLI flag, not the top-level key
   container:
     extraArgs:
       webhookTimeout: 5
@@ -41,7 +41,7 @@ EOF
 helm upgrade --install kyverno kyverno/kyverno \
   --namespace platform-system \
   --create-namespace \
-  --version 3.7.0 \
+  --version 3.8.1 \
   -f /tmp/kyverno-values.yaml || echo "WARN: Kyverno install issue, continuing..."
 
 rm /tmp/kyverno-values.yaml
@@ -70,7 +70,7 @@ config:
       name: headlamp-oidc-secret
 initContainers:
   - name: ca-bundle
-    image: ghcr.io/headlamp-k8s/headlamp:v0.40.0
+    image: ghcr.io/headlamp-k8s/headlamp:v0.42.0
     command: ['sh', '-c', 'cat /etc/ssl/certs/ca-certificates.crt /narwhal-ca/ca.crt > /combined/ca-certificates.crt']
     volumeMounts:
       - name: narwhal-ca
@@ -94,7 +94,7 @@ EOF
 helm upgrade --install headlamp headlamp/headlamp \
   --namespace devtools \
   --create-namespace \
-  --version 0.40.0 \
+  --version 0.42.0 \
   -f /tmp/headlamp-values.yaml || echo "WARN: Headlamp install issue, continuing..."
 
 rm /tmp/headlamp-values.yaml

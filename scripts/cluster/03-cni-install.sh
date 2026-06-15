@@ -2,8 +2,8 @@
 set -euo pipefail
 
 CNI_PLUGIN="${CNI_PLUGIN:-cilium}"
-CILIUM_VERSION="${CILIUM_VERSION:-1.19.0}"
-CILIUM_CLI_VERSION="${CILIUM_CLI_VERSION:-v0.19.0}"
+CILIUM_VERSION="${CILIUM_VERSION:-1.19.4}"
+CILIUM_CLI_VERSION="${CILIUM_CLI_VERSION:-v0.19.4}"
 CALICO_VERSION="${CALICO_VERSION:-v3.31.3}"
 
 # Cilium kube-proxy replacement (VIP for HA control plane)
@@ -17,7 +17,7 @@ export KUBECONFIG=/home/vagrant/.kube/config-local
 case "${CNI_PLUGIN}" in
   cilium)
     # Install Helm
-    HELM_VERSION="v4.1.0"
+    HELM_VERSION="v4.2.1"
     curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | DESIRED_VERSION="${HELM_VERSION}" bash
 
     # Install Cilium CLI
@@ -32,11 +32,11 @@ case "${CNI_PLUGIN}" in
 
     # Install Gateway API CRDs (used by APISIX Gateway Controller, Cilium provides network-level support)
     echo "Installing Gateway API CRDs..."
-    kubectl apply -f https://raw.githubusercontent.com/kubernetes-sigs/gateway-api/v1.2.1/config/crd/standard/gateway.networking.k8s.io_gatewayclasses.yaml
-    kubectl apply -f https://raw.githubusercontent.com/kubernetes-sigs/gateway-api/v1.2.1/config/crd/standard/gateway.networking.k8s.io_gateways.yaml
-    kubectl apply -f https://raw.githubusercontent.com/kubernetes-sigs/gateway-api/v1.2.1/config/crd/standard/gateway.networking.k8s.io_httproutes.yaml
-    kubectl apply -f https://raw.githubusercontent.com/kubernetes-sigs/gateway-api/v1.2.1/config/crd/standard/gateway.networking.k8s.io_referencegrants.yaml
-    kubectl apply -f https://raw.githubusercontent.com/kubernetes-sigs/gateway-api/v1.2.1/config/crd/standard/gateway.networking.k8s.io_grpcroutes.yaml
+    kubectl apply -f https://raw.githubusercontent.com/kubernetes-sigs/gateway-api/v1.5.1/config/crd/standard/gateway.networking.k8s.io_gatewayclasses.yaml
+    kubectl apply -f https://raw.githubusercontent.com/kubernetes-sigs/gateway-api/v1.5.1/config/crd/standard/gateway.networking.k8s.io_gateways.yaml
+    kubectl apply -f https://raw.githubusercontent.com/kubernetes-sigs/gateway-api/v1.5.1/config/crd/standard/gateway.networking.k8s.io_httproutes.yaml
+    kubectl apply -f https://raw.githubusercontent.com/kubernetes-sigs/gateway-api/v1.5.1/config/crd/standard/gateway.networking.k8s.io_referencegrants.yaml
+    kubectl apply -f https://raw.githubusercontent.com/kubernetes-sigs/gateway-api/v1.5.1/config/crd/standard/gateway.networking.k8s.io_grpcroutes.yaml
 
     # Install Cilium with kube-proxy replacement, Hubble, and Gateway API CRD awareness
     # Note: APISIX is the actual Gateway Controller (GatewayClass: apisix)
@@ -56,7 +56,7 @@ case "${CNI_PLUGIN}" in
     cilium status --wait --wait-duration 120s || echo "WARN: cilium status timed out (hubble may need worker nodes)"
 
     # Install Hubble CLI
-    HUBBLE_CLI_VERSION="${HUBBLE_CLI_VERSION:-v1.18.5}"
+    HUBBLE_CLI_VERSION="${HUBBLE_CLI_VERSION:-v1.19.4}"
     curl -L --fail --remote-name-all \
       "https://github.com/cilium/hubble/releases/download/${HUBBLE_CLI_VERSION}/hubble-linux-${ARCH}.tar.gz"
     sudo tar xzvfC "hubble-linux-${ARCH}.tar.gz" /usr/local/bin

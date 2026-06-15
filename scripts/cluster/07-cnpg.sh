@@ -3,10 +3,10 @@ set -euo pipefail
 # shellcheck source=scripts/common/lib.sh
 source /home/vagrant/scripts/common/lib.sh
 
-CNPG_CHART_VERSION="${CNPG_CHART_VERSION:-0.27.1}"  # app: v1.28.1
+CNPG_CHART_VERSION="${CNPG_CHART_VERSION:-0.28.3}"  # app: v1.29.1
 POSTGRES_VERSION="${POSTGRES_VERSION:-18}"
 
-echo "=== Installing CloudNative-PG v1.28.1 (chart: ${CNPG_CHART_VERSION}) ==="
+echo "=== Installing CloudNative-PG v1.29.1 (chart: ${CNPG_CHART_VERSION}) ==="
 
 # Use local kubeconfig (bypasses VIP) to avoid disruption during master-2 join
 export KUBECONFIG=/home/vagrant/.kube/config-local

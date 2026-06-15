@@ -12,7 +12,7 @@ spec:
   source:
     repoURL: https://charts.apiseven.com
     chart: apisix
-    targetRevision: "2.14.0"
+    targetRevision: "2.13.0"
     helm:
       valuesObject:
         extraVolumes:
@@ -24,7 +24,7 @@ spec:
           - name: narwhal-root-ca
             mountPath: /usr/local/apisix/conf/cert/narwhal
             readOnly: true
-        # APISIX 3.16 has NO kubernetes secret manager module, so OIDC secrets
+        # APISIX 3.15 has NO kubernetes secret manager module, so OIDC secrets
         # are injected as env vars here and referenced via $env://VAR in
         # apisix-routes.yaml (chart renders these with valueFrom into the apisix container).
         extraEnvVars:
@@ -83,7 +83,7 @@ spec:
           image:
             # docker.io: APISIX 공식 이미지, ghcr.io/quay.io 대안 없음
             repository: apache/apisix
-            tag: "3.16.0-debian"
+            tag: "3.15.0-debian"
           podLabels:
             istio.io/dataplane-mode: "none"
           # Mount Narwhal root CA so openid-connect plugin can verify Keycloak TLS
@@ -189,7 +189,7 @@ spec:
                     - "http://apisix-etcd.platform-system.svc.cluster.local:2379"
                   prefix: "/apisix"
                   timeout: 30
-          # Chart 2.14.0 uses apisix.admin.allow.ipList to generate allow_admin.
+          # Chart 2.13.0 uses apisix.admin.allow.ipList to generate allow_admin.
           # Default 127.0.0.1/24 blocks apisix-ingress-controller → sync failures → 403.
           admin:
             credentials:

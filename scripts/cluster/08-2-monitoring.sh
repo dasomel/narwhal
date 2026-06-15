@@ -34,7 +34,7 @@ fi
 helm upgrade --install prometheus-stack prometheus-community/kube-prometheus-stack \
   --namespace monitoring \
   --create-namespace \
-  --version 81.5.1 \
+  --version 86.2.3 \
   --set grafana.assertNoLeakedSecrets=false \
   --set grafana.admin.existingSecret=grafana-secrets \
   --set grafana.admin.userKey=admin-user \

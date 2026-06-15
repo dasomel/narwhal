@@ -11,7 +11,7 @@ source /home/vagrant/scripts/common/lib.sh
 # - ExternalName + ApisixRoute bootstrap: keycloak.local.narwhal.io → keycloak-service:8080
 # Depends on: 07-cnpg.sh (narwhal-db ready), 08-1-networking.sh (APISIX ready)
 
-KEYCLOAK_VERSION="${KEYCLOAK_VERSION:-26.1.4}"
+KEYCLOAK_VERSION="${KEYCLOAK_VERSION:-26.5.7}"
 DOMAIN="${DOMAIN:-local.narwhal.io}"
 export KUBECONFIG=/home/vagrant/.kube/config-local
 

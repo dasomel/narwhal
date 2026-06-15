@@ -15,7 +15,7 @@ helm repo update metallb
 helm upgrade --install metallb metallb/metallb \
   --namespace platform-system \
   --create-namespace \
-  --version 0.15.3 \
+  --version 0.16.1 \
   --set speaker.tolerations[0].key=node-role.kubernetes.io/control-plane \
   --set speaker.tolerations[0].operator=Exists \
   --set speaker.tolerations[0].effect=NoSchedule || echo "WARN: MetalLB install issue, continuing..."
@@ -69,7 +69,7 @@ apisix:
   enabled: true
   image:
     repository: apache/apisix
-    tag: "3.11.0-debian"
+    tag: "3.15.0-debian"
   podLabels:
     istio.io/dataplane-mode: "none"
   resources:
@@ -140,19 +140,19 @@ EOF
 helm upgrade --install apisix apisix/apisix \
   --namespace platform-system \
   --create-namespace \
-  --version 2.9.0 \
+  --version 2.13.0 \
   --skip-crds \
   --force \
   -f /tmp/apisix-values.yaml || echo "WARN: APISIX install issue, continuing..."
 
 rm /tmp/apisix-values.yaml
 
-# Patch gateway service to LoadBalancer (chart v2.9.0 ignores gateway.type value)
+# Patch gateway service to LoadBalancer (chart v2.13.0 ignores gateway.type value)
 echo "Patching APISIX gateway service to LoadBalancer..."
 kubectl patch svc apisix-gateway -n platform-system \
   -p '{"spec":{"type":"LoadBalancer"},"metadata":{"annotations":{"metallb.universe.tf/loadBalancerIPs":"192.168.56.200"}}}' || true
 
-# Patch APISIX configmap: fix etcd host and remove auth (chart v2.9.0 uses default etcd.host)
+# Patch APISIX configmap: fix etcd host and remove auth (chart v2.13.0 uses default etcd.host)
 echo "Patching APISIX configmap (etcd host + remove auth)..."
 APISIX_CFG_TMP=$(mktemp)
 kubectl get configmap apisix -n platform-system -o jsonpath='{.data.config\.yaml}' \
@@ -191,12 +191,12 @@ echo "APISIX installed"
 
 #=========================================
 # APISIX Ingress Controller
-# Note: apisix/apisix chart v2.9.0 does NOT render ingressController deployment
+# Note: apisix/apisix chart v2.13.0 does NOT render ingressController deployment
 # despite ingressController.enabled=true in values. Install separately.
 #=========================================
 echo "=== Installing APISIX Ingress Controller ==="
 
-# Get APISIX admin/viewer keys from the live config (chart v2.9.0 bakes them in at install
+# Get APISIX admin/viewer keys from the live config (chart v2.13.0 bakes them in at install
 # time; the configmap stores the literal key after env-substitution by the APISIX process).
 # The grep target is the plain key line that appears AFTER "name: admin" / "name: viewer".
 APISIX_ADMIN_KEY=$(kubectl get configmap apisix -n platform-system \
@@ -251,7 +251,7 @@ helm repo update jetstack
 helm upgrade --install cert-manager jetstack/cert-manager \
   --namespace platform-system \
   --create-namespace \
-  --version v1.19.3 \
+  --version v1.20.2 \
   --set crds.enabled=true || echo "WARN: cert-manager install issue, continuing..."
 
 # Create self-signed ClusterIssuer (bootstrap only — do not use directly for app certs)

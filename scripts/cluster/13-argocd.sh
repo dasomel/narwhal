@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 
-ARGOCD_VERSION="${ARGOCD_VERSION:-v3.3.0}"
+ARGOCD_VERSION="${ARGOCD_VERSION:-v3.4.3}"
 
 # Authentik OIDC configuration
 AUTHENTIK_URL="${AUTHENTIK_URL:-https://authentik.${DOMAIN:-local.narwhal.io}}"

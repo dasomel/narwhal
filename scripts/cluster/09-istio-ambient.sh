@@ -3,7 +3,7 @@ set -euo pipefail
 
 echo "=== Installing Istio Ambient Mesh ==="
 
-ISTIO_VERSION="${ISTIO_VERSION:-1.29.0}"
+ISTIO_VERSION="${ISTIO_VERSION:-1.30.1}"
 
 # Use local kubeconfig (bypasses VIP) to avoid disruption during master-2 join
 export KUBECONFIG=/home/vagrant/.kube/config-local

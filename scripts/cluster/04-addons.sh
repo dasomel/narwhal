@@ -6,14 +6,14 @@ NFS_SHARE_PATH="${NFS_SHARE_PATH:-/srv/nfs/k8s}"
 
 # Component versions
 METRICS_SERVER_VERSION="${METRICS_SERVER_VERSION:-v0.8.1}"
-CSI_DRIVER_NFS_VERSION="${CSI_DRIVER_NFS_VERSION:-v4.12.1}"
+CSI_DRIVER_NFS_VERSION="${CSI_DRIVER_NFS_VERSION:-4.13.2}"
 echo "=== Installing Kubernetes Addons ==="
 
 # Use local kubeconfig (bypasses VIP) to avoid disruption during master-2 join
 export KUBECONFIG=/home/vagrant/.kube/config-local
 
 # Install Helm if not installed
-HELM_VERSION="v4.1.0"
+HELM_VERSION="v4.2.1"
 if ! command -v helm &> /dev/null; then
   curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | DESIRED_VERSION="${HELM_VERSION}" bash
 fi

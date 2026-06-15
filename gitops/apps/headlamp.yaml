@@ -10,7 +10,7 @@ spec:
   source:
     repoURL: https://kubernetes-sigs.github.io/headlamp/
     chart: headlamp
-    targetRevision: 0.40.0
+    targetRevision: 0.42.0
     helm:
       valuesObject:
         podLabels:
@@ -41,7 +41,7 @@ spec:
               name: headlamp-oidc-secret
         initContainers:
           - name: ca-bundle
-            image: ghcr.io/headlamp-k8s/headlamp:v0.40.0
+            image: ghcr.io/headlamp-k8s/headlamp:v0.42.0
             command: ['sh', '-c', 'cat /etc/ssl/certs/ca-certificates.crt /narwhal-ca/ca.crt > /combined/ca-certificates.crt']
             volumeMounts:
               - name: narwhal-ca

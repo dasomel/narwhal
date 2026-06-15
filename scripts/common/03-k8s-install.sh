@@ -2,8 +2,8 @@
 set -euo pipefail
 
 K8S_VERSION="${K8S_VERSION:-1.35}"
-# Patch version resolved by APT repo (v1.35 repo provides 1.35.1+)
-K8S_PATCH_VERSION="${K8S_PATCH_VERSION:-1.35.1}"
+# Patch version resolved by APT repo (v1.35 repo provides 1.35.5+)
+K8S_PATCH_VERSION="${K8S_PATCH_VERSION:-1.35.5}"
 
 echo "=== Kubernetes v${K8S_PATCH_VERSION} Installation ==="
 

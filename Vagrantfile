@@ -6,7 +6,7 @@
 #=========================================
 CLUSTER_NAME = "narwhal"
 K8S_VERSION = "1.35"
-K8S_PATCH_VERSION = "1.35.1"
+K8S_PATCH_VERSION = "1.35.5"
 POD_NETWORK_CIDR = "10.244.0.0/16"
 SERVICE_CIDR = "10.96.0.0/12"
 

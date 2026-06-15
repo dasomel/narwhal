@@ -15,7 +15,7 @@ helm repo update seaweedfs
 helm upgrade --install seaweedfs seaweedfs/seaweedfs \
   --namespace storage \
   --create-namespace \
-  --version 4.0.407 \
+  --version 4.34.0 \
   --set global.storageClass=nfs-csi \
   --set master.enabled=true \
   --set master.replicas=1 \
@@ -109,7 +109,7 @@ global:
   tlsDisable: false
 server:
   image:
-    tag: "2.2.0"
+    tag: "2.5.4"
   extraLabels:
     istio.io/dataplane-mode: none
   extraEnvironmentVars:
@@ -158,7 +158,7 @@ EOF
 helm upgrade --install openbao openbao/openbao \
   --namespace storage \
   --create-namespace \
-  --version 0.25.0 \
+  --version 0.28.3 \
   -f /tmp/openbao-values.yaml || echo "WARN: OpenBao install issue, continuing..."
 
 # Auto init + unseal OpenBao. The listener is HTTPS with the self-signed cluster CA,
@@ -270,7 +270,7 @@ aws_secret_access_key = ${S3_SECRET_KEY}" \
 cat > /tmp/velero-values.yaml << EOF
 initContainers:
   - name: velero-plugin-for-aws
-    image: velero/velero-plugin-for-aws:v1.11.1
+    image: velero/velero-plugin-for-aws:v1.14.1
     volumeMounts:
       - mountPath: /target
         name: plugins
@@ -319,7 +319,7 @@ EOF
 helm upgrade --install velero vmware-tanzu/velero \
   --namespace storage \
   --create-namespace \
-  --version 11.3.2 \
+  --version 12.0.3 \
   -f /tmp/velero-values.yaml || echo "WARN: Velero install issue, continuing..."
 
 rm /tmp/velero-values.yaml

@@ -19,7 +19,7 @@ spec:
       containers:
         - name: etcd
           # registry.k8s.io: K8s 공식 레지스트리, ARM64 지원, no Bitnami
-          image: registry.k8s.io/etcd:3.5.21-0
+          image: registry.k8s.io/etcd:3.5.31-0
           command:
             - etcd
             - --data-dir=/var/etcd/data

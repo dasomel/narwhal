@@ -44,7 +44,7 @@ spec:
               type: RuntimeDefault
           containers:
             - name: unseal
-              image: quay.io/openbao/openbao:2.2.0
+              image: quay.io/openbao/openbao:2.5.4
               securityContext:
                 allowPrivilegeEscalation: false
                 readOnlyRootFilesystem: true

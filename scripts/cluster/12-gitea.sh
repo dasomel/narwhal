@@ -3,7 +3,7 @@ set -euo pipefail
 # shellcheck source=scripts/common/lib.sh
 source /home/vagrant/scripts/common/lib.sh
 
-GITEA_VERSION="${GITEA_VERSION:-v1.25.4}"
+GITEA_VERSION="${GITEA_VERSION:-v1.26.2}"
 
 echo "=== Installing Gitea ${GITEA_VERSION} ==="
 
@@ -51,7 +51,7 @@ GITEA_DB_PASS=$(kubectl get secret narwhal-db-credentials -n database \
   -o jsonpath='{.data.gitea-password}' | base64 -d)
 
 # Install Gitea with Authentik OIDC
-GITEA_CHART_VERSION="${GITEA_CHART_VERSION:-12.5.0}"
+GITEA_CHART_VERSION="${GITEA_CHART_VERSION:-12.6.0}"
 
 helm upgrade --install gitea gitea-charts/gitea \
   --namespace devtools \

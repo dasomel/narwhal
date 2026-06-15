@@ -10,7 +10,7 @@ spec:
   source:
     repoURL: https://openbao.github.io/openbao-helm
     chart: openbao
-    targetRevision: 0.25.0
+    targetRevision: 0.28.3
     helm:
       valuesObject:
         global:
@@ -23,7 +23,7 @@ spec:
           tlsDisable: false
         server:
           image:
-            tag: "2.2.0"
+            tag: "2.5.4"
           ha:
             enabled: false
             replicas: 1

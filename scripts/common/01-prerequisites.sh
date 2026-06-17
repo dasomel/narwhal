@@ -130,11 +130,14 @@ done
 
 # DNS leak fix: systemd-resolved leaks *.local.narwhal.io to NAT interface (enp2s0),
 # causing harbor.local.narwhal.io to resolve to its public AWS IP → TLS 'unrecognized name'.
-# Pin harbor to the APISIX MetalLB VIP so all nodes resolve it internally.
-HARBOR_HOSTS_ENTRY="${VIP_ADDRESS}   harbor.local.narwhal.io"
+# Pin harbor to the APISIX gateway's MetalLB LB IP so all nodes resolve it
+# internally. NOTE: this is the APISIX LB IP (192.168.56.200), NOT the
+# kube-apiserver VIP (${VIP_ADDRESS}=192.168.56.100) — harbor is served via APISIX.
+APISIX_LB_IP="${APISIX_LB_IP:-192.168.56.200}"
+HARBOR_HOSTS_ENTRY="${APISIX_LB_IP}   harbor.local.narwhal.io"
 if ! grep -q "harbor.local.narwhal.io" /etc/hosts; then
   echo "${HARBOR_HOSTS_ENTRY}" | sudo tee -a /etc/hosts
-  echo "Added harbor.local.narwhal.io -> ${VIP_ADDRESS} to /etc/hosts"
+  echo "Added harbor.local.narwhal.io -> ${APISIX_LB_IP} to /etc/hosts"
 else
   echo "harbor.local.narwhal.io already present in /etc/hosts, skipping"
 fi

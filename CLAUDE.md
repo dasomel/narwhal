@@ -147,6 +147,7 @@ When Plan mode is needed in Narwhal:
 | 2026-02-28 | Keycloak pod restart loses `istio.io/dataplane-mode: none` label | Must set permanently in Keycloak CR `spec.unsupported.podTemplate.metadata.labels`. Direct pod label addition is lost on restart |
 | 2026-06-17 | `up.sh` Phase 2 call used `|| true` + final `echo`-only exit, so clean-install failures (SSH key race, mid-provision disconnect) silently exited 0 | Capture Phase 2 provision exit code; on non-zero, recover master-1 SSH and retry once; exit 1 on failure so the caller sees a real error |
 | 2026-06-17 | `vagrant provision` over VMware SSH key race kills only the 06-phase2 orchestrator via SIGHUP; sub-scripts (08-1 onward) become orphans and Phase 2 stalls mid-way; yet master-1 is k8s-Ready so the main retry loop skips it | `up.sh` now checks `master1_ssh_ok` before Phase 2 and calls `recover_master1_ssh` (`vagrant reload master-1` + 40×15s poll) on failure; 3-master HA keeps the control plane quorate during the single-node reboot; phase2-platform is idempotent so the retry completes safely |
+| 2026-06-17 | Cluster nodes' systemd-resolved leaked `harbor.local.narwhal.io` to the NAT interface (public DNS) → resolved to a public AWS IP → image pull failed with `tls: unrecognized name` | Add `192.168.56.200 harbor.local.narwhal.io` (APISIX LB VIP) to each node's `/etc/hosts` in `01-prerequisites.sh`, and enable containerd `config_path` + a `certs.d/harbor.local.narwhal.io/hosts.toml` with `skip_verify = true` in `02-containerd.sh` (internal registry behind APISIX — no node CA trust needed) |
 
 | 2026-03-09 | 14-gitops-bootstrap.sh `GITEA_ADMIN_PASSWORD="gitea-admin"` hardcoded -> mismatch with actual generated password | Dynamically query with `kubectl get secret gitea-admin -n devtools -o jsonpath='{.data.admin-password}' \| base64 -d` |
 | 2026-03-09 | oauth2-proxy-secrets missing `client-id` key -> `CreateContainerConfigError` | Add `--from-literal=client-id=oauth2-proxy` when creating secret in 11-3-keycloak-clients.sh |
@@ -228,7 +229,7 @@ When Plan mode is needed in Narwhal:
 | Gitea | `scripts/cluster/12-gitea.sh` | Git server |
 | ArgoCD | `scripts/cluster/13-argocd.sh` | GitOps CD |
 | Bootstrap | `scripts/cluster/14-gitops-bootstrap.sh` | App-of-Apps deployment |
-| IDP Portal | `scripts/cluster/15-idp-portal.sh` | Developer portal |
+| IDP Portal | `scripts/cluster/15-narwhal-portal.sh` | Developer portal deploy — image must be built on the host (`cd narwhal-portal && make all`); the VM cannot build it (source lives on the host) |
 
 ### 3. GitOps App Management
 

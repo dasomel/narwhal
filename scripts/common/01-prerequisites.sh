@@ -127,6 +127,17 @@ echo "${MASTER_IP_BASE}0   ${CLUSTER_NAME}-master" | sudo tee -a /etc/hosts
 for i in $(seq 1 "$WORKER_COUNT"); do
   echo "${WORKER_IP_BASE}${i}   ${CLUSTER_NAME}-worker-${i}" | sudo tee -a /etc/hosts
 done
+
+# DNS leak fix: systemd-resolved leaks *.local.narwhal.io to NAT interface (enp2s0),
+# causing harbor.local.narwhal.io to resolve to its public AWS IP → TLS 'unrecognized name'.
+# Pin harbor to the APISIX MetalLB VIP so all nodes resolve it internally.
+HARBOR_HOSTS_ENTRY="${VIP_ADDRESS}   harbor.local.narwhal.io"
+if ! grep -q "harbor.local.narwhal.io" /etc/hosts; then
+  echo "${HARBOR_HOSTS_ENTRY}" | sudo tee -a /etc/hosts
+  echo "Added harbor.local.narwhal.io -> ${VIP_ADDRESS} to /etc/hosts"
+else
+  echo "harbor.local.narwhal.io already present in /etc/hosts, skipping"
+fi
 #=========================================
 # Configure Clock Synchronization (chrony)
 #=========================================

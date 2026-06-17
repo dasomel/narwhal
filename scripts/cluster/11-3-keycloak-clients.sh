@@ -555,6 +555,43 @@ create_apisix_secret "velero-ui" \
   "https://velero-ui.${DOMAIN}/apisix/callback" \
   "velero-ui-oidc-secret"
 
+# velero-ui 배포(storage 네임스페이스)가 native OAuth로 참조하는 별도 secret
+# env: OAUTH_CLIENT_SECRET=velero-ui-oauth/client_secret (storage ns)
+VELERO_UI_CLIENT_ID=$(kc_exec get clients -r "${REALM}" -q "clientId=velero-ui" 2>/dev/null \
+  | jq -r '.[] | select(.clientId=="velero-ui") | .id')
+VELERO_UI_CLIENT_SECRET=$(kc_exec get "clients/${VELERO_UI_CLIENT_ID}/client-secret" -r "${REALM}" 2>/dev/null \
+  | jq -r '.value // empty')
+
+kubectl create secret generic velero-ui-oauth \
+  --namespace storage \
+  --from-literal=client_secret="${VELERO_UI_CLIENT_SECRET}" \
+  --dry-run=client -o yaml | kubectl apply -f -
+echo "  secret 'velero-ui-oauth' created in storage"
+
+# -------------------------------------------------------------------------
+# 10. Gitea (APISIX 용 — platform-system)
+# -------------------------------------------------------------------------
+# apisix 배포가 참조하는 platform-system/gitea-oidc-secret:
+#   GITEA_OIDC_CLIENT_SECRET → client_secret
+#   GITEA_OIDC_SESSION_SECRET → session_secret
+# (Group A의 devtools/gitea-oidc-secret 과는 ns/키 형식이 다른 별개 secret)
+echo ""
+echo "=== [10/10] Gitea (APISIX / platform-system) ==="
+
+GITEA_PS_SESSION_SECRET=$(kubectl get secret gitea-oidc-secret -n platform-system \
+  -o jsonpath='{.data.session_secret}' 2>/dev/null | base64 -d || echo "")
+if [ -z "${GITEA_PS_SESSION_SECRET}" ]; then
+  GITEA_PS_SESSION_SECRET=$(openssl rand -hex 16)
+fi
+
+kubectl create secret generic gitea-oidc-secret \
+  --namespace platform-system \
+  --from-literal=client_id=gitea \
+  --from-literal=client_secret="${GITEA_SECRET}" \
+  --from-literal=session_secret="${GITEA_PS_SESSION_SECRET}" \
+  --dry-run=client -o yaml | kubectl apply -f -
+echo "  secret 'gitea-oidc-secret' created in platform-system"
+
 # APISIX 3.16 has no kubernetes secret manager; OIDC secrets are injected via
 # extraEnvVars in gitops/apps/apisix.yaml and referenced as $env://VAR in routes.
 
@@ -579,6 +616,10 @@ echo "  [OK] hubble-oidc-secret        (client: hubble)"
 echo "  [OK] prometheus-oidc-secret    (client: prometheus)"
 echo "  [OK] alertmanager-oidc-secret  (client: alertmanager)"
 echo "  [OK] velero-ui-oidc-secret     (client: velero-ui)"
+echo "  [OK] gitea-oidc-secret         (client: gitea, platform-system)"
+echo ""
+echo "Native OAuth secrets:"
+echo "  [OK] velero-ui-oauth           (client: velero-ui, storage ns)"
 echo ""
 echo "Keycloak OIDC discovery: ${DISCOVERY_URL}"
 echo ""

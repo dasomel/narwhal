@@ -45,12 +45,15 @@ check_image_exists() {
     HARBOR_ADMIN_PASSWORD="Harbor12345"  # chart default
   fi
 
-  HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+  # Fetch the artifacts list body. A repository can exist with an empty
+  # artifacts array ("[]") after blob loss (e.g. cluster destroy) — HTTP 200
+  # alone is NOT proof an image is pullable, so require a real artifact digest.
+  RESP=$(curl -s \
     -u "admin:${HARBOR_ADMIN_PASSWORD}" \
     "http://${HARBOR_CORE_IP}/api/v2.0/projects/${HARBOR_PROJECT}/repositories/${HARBOR_REPO}/artifacts" \
-    --max-time 10 2>/dev/null || echo "000")
+    --max-time 10 2>/dev/null || echo "")
 
-  if [ "${HTTP_CODE}" = "200" ]; then
+  if echo "${RESP}" | grep -q '"digest"'; then
     return 0
   else
     return 1

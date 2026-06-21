@@ -1,0 +1,6 @@
+{
+  "questions": [
+    {"key": "phase", "q": "What is the final phase of this velero backup/restore? (Completed/PartiallyFailed/Failed)"},
+    {"key": "root_cause", "q": "If not Completed, what is the single root cause? Short phrase."}
+  ]
+}

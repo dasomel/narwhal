@@ -1,0 +1,9 @@
+{
+  "id": "003-plugin-panic",
+  "root_cause": "plugin panic",
+  "critical_evidence": [
+    "panic:"
+  ],
+  "severity": "CRITICAL",
+  "expected_phase": "Failed"
+}

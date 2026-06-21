@@ -1,0 +1,9 @@
+{
+  "id": "002-partially-failed",
+  "root_cause": "volumesnapshot timed out",
+  "critical_evidence": [
+    "level=error.*timed out waiting for volumesnapshot"
+  ],
+  "severity": "CRITICAL",
+  "expected_phase": "PartiallyFailed"
+}

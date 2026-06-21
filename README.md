@@ -337,6 +337,7 @@ narwhal realm 전체 사용자가 접근 가능 (openid-connect 플러그인은 
 - [docs/kubeconfig.md](docs/kubeconfig.md) - kubeconfig 및 OIDC 인증
 - [docs/database.md](docs/database.md) - 데이터베이스(CNPG) 관리
 - [docs/operations.md](docs/operations.md) - 운영 가이드
+- [docs/rtk-token-compression-policy.md](docs/rtk-token-compression-policy.md) - RTK 토큰 압축 정책
 - [docs/troubleshooting.md](docs/troubleshooting.md) - 트러블슈팅 가이드
 - [docs/security.md](docs/security.md) - 보안 정책
 

@@ -24,7 +24,7 @@ fi
 
 # Calculate R (raw evidence marker count)
 # Handle exit code 1 if no matches are found
-R=$(grep -Ec "$EVIDENCE_RE" "$RAW_FILE" || echo 0)
+R=$(grep -Ec "$EVIDENCE_RE" "$RAW_FILE" || true)
 
 # Run compressor and capture output and exit code
 # We use a temp file to preserve formatting and handle trailing newlines accurately
@@ -37,7 +37,7 @@ COMPRESSOR_EXIT=$?
 set -e
 
 # Calculate C (compressed evidence marker count)
-C=$(grep -Ec "$EVIDENCE_RE" "$TEMP_COMPRESSED" || echo 0)
+C=$(grep -Ec "$EVIDENCE_RE" "$TEMP_COMPRESSED" || true)
 
 # Check if compressed output is empty
 IS_EMPTY=0

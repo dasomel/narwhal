@@ -96,7 +96,7 @@ echo "Kubernetes cluster is ready!"
 echo "=========================================="
 kubectl get nodes
 echo ""
-kubectl get pods -A
+kubectl get pods -A -o custom-columns=NAMESPACE:.metadata.namespace,NAME:.metadata.name,STATUS:.status.phase,READY:.status.containerStatuses[*].ready,RESTARTS:.status.containerStatuses[*].restartCount
 echo ""
 echo "=== Storage Classes ==="
 kubectl get storageclass

@@ -1,0 +1,68 @@
+---
+# Vuln 1 defense-in-depth: Kyverno ClusterPolicy denies privileged / hostPID / hostNetwork /
+# hostIPC / hostPath pods created by the narwhal-portal ServiceAccount.
+#
+# Why per-SA instead of namespace-wide?
+#   The devtools namespace also runs Gitea, ArgoCD, Headlamp etc. -- those are managed by
+#   their own controllers (not the portal SA) and may legitimately need to mount paths or
+#   set securityContext. Restricting by request.userInfo.username narrowly targets the
+#   compromised actor identified in the security review.
+#
+# Why ClusterPolicy not Policy?
+#   Pod admission interception happens cluster-wide regardless of namespace; preconditions
+#   filter the SA. Kyverno auto-generates rules for Pod controllers (Job, Deployment, etc.).
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: narwhal-portal-job-restrictions
+  annotations:
+    policies.kyverno.io/title: Restrict narwhal-portal SA Pod Privileges
+    policies.kyverno.io/category: Pod Security Standards (Baseline)
+    policies.kyverno.io/severity: high
+    policies.kyverno.io/description: |
+      Pods created (directly or via Job/Deployment) by the narwhal-portal ServiceAccount
+      may not request privileged mode, host namespaces, host paths, or privilege escalation.
+      Closes the cluster-admin escape path described in the 2026-05 security review (Vuln 1).
+spec:
+  validationFailureAction: Enforce
+  # background: false — required because preconditions use request.userInfo.username
+  # which is only available at admission time, not during background scans.
+  background: false
+  rules:
+    - name: deny-privileged-from-narwhal-portal
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+      preconditions:
+        all:
+          - key: "{{ request.userInfo.username }}"
+            operator: Equals
+            value: "system:serviceaccount:devtools:narwhal-portal"
+      validate:
+        message: "narwhal-portal SA may not create privileged or host-namespaced pods."
+        pattern:
+          spec:
+            =(hostPID): false
+            =(hostNetwork): false
+            =(hostIPC): false
+            containers:
+              - =(securityContext):
+                  =(privileged): false
+                  =(allowPrivilegeEscalation): false
+    - name: deny-hostpath-from-narwhal-portal
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+      preconditions:
+        all:
+          - key: "{{ request.userInfo.username }}"
+            operator: Equals
+            value: "system:serviceaccount:devtools:narwhal-portal"
+      validate:
+        message: "narwhal-portal SA may not mount hostPath volumes."
+        pattern:
+          spec:
+            =(volumes):
+              - X(hostPath): null

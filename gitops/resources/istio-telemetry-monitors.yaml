@@ -1,0 +1,52 @@
+---
+# Istio ambient telemetry scraping for kube-prometheus-stack.
+#
+# Background:
+#   - Prometheus(prometheus-stack) selects monitors with label release=prometheus-stack
+#     (serviceMonitorSelector/podMonitorSelector = matchLabels{release: prometheus-stack}).
+#   - In Istio ambient mode, ztunnel emits L4 telemetry (istio_tcp_*) on port 15020
+#     (container port name: ztunnel-stats) with full source_workload/destination_workload
+#     labels. Without a monitor these series are never scraped -> portal service-graph
+#     shows "Prometheus 미응답 / inbound 0 / outbound 0".
+#   - istiod exposes control-plane metrics on port 15014 (http-monitoring).
+#
+# L7 metrics (istio_requests_total) require waypoint proxies in ambient mode and are
+# intentionally NOT covered here; the portal service-graph builds edges from the L4
+# istio_tcp_connections_opened_total series instead.
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: istio-ztunnel
+  namespace: istio-system
+  labels:
+    release: prometheus-stack
+spec:
+  selector:
+    matchLabels:
+      app: ztunnel
+  namespaceSelector:
+    matchNames:
+      - istio-system
+  podMetricsEndpoints:
+    - port: ztunnel-stats
+      path: /metrics
+      interval: 30s
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: istiod
+  namespace: istio-system
+  labels:
+    release: prometheus-stack
+spec:
+  selector:
+    matchLabels:
+      app: istiod
+  namespaceSelector:
+    matchNames:
+      - istio-system
+  podMetricsEndpoints:
+    - port: http-monitoring
+      path: /metrics
+      interval: 30s

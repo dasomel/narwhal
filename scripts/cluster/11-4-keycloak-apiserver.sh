@@ -202,9 +202,11 @@ else
   for MASTER_IP in ${MASTER_IPS}; do
     if [ "${IDX}" -gt "${MASTER_COUNT}" ]; then break; fi
     echo "Applying OIDC CA + flags to master-${IDX} (${MASTER_IP})..."
-    scp -o StrictHostKeyChecking=no /etc/kubernetes/pki/oidc-ca.crt \
+    # Use sshpass with Vagrant default password (same pattern as 02-join-control-plane.sh:19)
+    # Plain ssh/scp fails because masters have no key trust between them in this Vagrant env
+    sshpass -p "vagrant" scp -o StrictHostKeyChecking=no /etc/kubernetes/pki/oidc-ca.crt \
       "vagrant@${MASTER_IP}:/tmp/oidc-ca.crt" 2>/dev/null || true
-    ssh -o StrictHostKeyChecking=no "vagrant@${MASTER_IP}" "
+    sshpass -p "vagrant" ssh -o StrictHostKeyChecking=no "vagrant@${MASTER_IP}" "
       sudo cp /tmp/oidc-ca.crt /etc/kubernetes/pki/oidc-ca.crt
       sudo openssl x509 -in /etc/kubernetes/pki/oidc-ca.crt -noout -subject 2>/dev/null \
         && echo 'CA cert OK on master-${IDX}' || echo 'WARN: CA cert invalid on master-${IDX}'

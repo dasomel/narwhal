@@ -170,3 +170,4 @@ test-results/
 playwright-report/
 *.webm
 *.trace.zip
+.bkit/

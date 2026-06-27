@@ -691,12 +691,13 @@ if should_run "keycloak"; then
 
   # groups client scope (verify via token test if not quick)
   if ! ${QUICK_MODE}; then
-    TOKEN_RESP=$(curl -sk -X POST "https://keycloak.local.narwhal.io/realms/narwhal/protocol/openid-connect/token" \
-      -d "grant_type=password" \
-      -d "client_id=kubernetes" \
-      -d "username=admin" \
-      -d "password=admin" \
-      -d "scope=openid groups" 2>/dev/null || echo "")
+    ADMIN_PASS=$(kubectl get secret keycloak-user-passwords -n iam -o jsonpath='{.data.admin}' 2>/dev/null | base64 -d || echo "")
+    TOKEN_RESP=""
+    if [ -n "${ADMIN_PASS}" ]; then
+      TOKEN_RESP=$(curl -sk -X POST "https://keycloak.local.narwhal.io/realms/narwhal/protocol/openid-connect/token" \
+        -d "grant_type=password" -d "client_id=kubernetes" -d "username=admin" \
+        -d "password=${ADMIN_PASS}" -d "scope=openid groups" 2>/dev/null || echo "")
+    fi
     if echo "${TOKEN_RESP}" | grep -q "access_token"; then
       pass "OIDC token grant: success (scope=openid groups)"
       # Verify groups claim in token

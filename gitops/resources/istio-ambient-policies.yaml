@@ -14,25 +14,28 @@ spec:
   mtls:
     mode: STRICT
 ---
-# PeerAuthentication 2/2: APISIX ingress gateway — PERMISSIVE exception.
+# PeerAuthentication 2/2: platform-system infra plane — PERMISSIVE exception.
 #
-# WHY THIS EXCEPTION EXISTS:
-#   The APISIX gateway pod runs in namespace platform-system which is labeled
-#   istio.io/dataplane-mode=ambient (mesh-enrolled). External clients reach
-#   APISIX in plaintext (MetalLB LB VIP 192.168.56.200 → host → APISIX).
-#   Under mesh-wide STRICT, ztunnel would reject these non-mTLS inbound
-#   connections, making every *.local.narwhal.io service unreachable from
-#   outside the cluster. PERMISSIVE on this workload only lets ztunnel accept
-#   both mTLS (from inside-mesh callers) and plaintext (from external clients)
-#   while the rest of the mesh stays STRICT.
+# WHY THIS EXCEPTION EXISTS (namespace-wide, not just APISIX):
+#   platform-system holds the infra plane that talks to NON-mesh clients, which
+#   cannot speak Istio mTLS. Under mesh-wide STRICT, ztunnel rejects their
+#   non-mTLS inbound, breaking the cluster. Concretely:
+#     - APISIX gateway: external clients (MetalLB VIP 192.168.56.200 → host →
+#       APISIX) arrive in plaintext → STRICT made all *.local.narwhal.io ingress
+#       unreachable.
+#     - Kyverno / cert-manager admission webhooks: the kube-apiserver (host
+#       network, NOT mesh-enrolled) calls https://kyverno-svc.platform-system.svc
+#       → STRICT rejected it (EOF). Kyverno is fail-closed, so this BLOCKED all
+#       new pod admission cluster-wide.
+#   PERMISSIVE on the whole platform-system namespace lets ztunnel accept both
+#   mTLS (inside-mesh callers) and plaintext (external / apiserver / host) for
+#   the infra plane, while the app plane (devtools, iam, storage, monitoring, …)
+#   stays STRICT. To tighten later, scope per-workload + per-port instead.
 apiVersion: security.istio.io/v1
 kind: PeerAuthentication
 metadata:
-  name: apisix-ingress-permissive
+  name: platform-system-permissive
   namespace: platform-system
 spec:
-  selector:
-    matchLabels:
-      app.kubernetes.io/name: apisix
   mtls:
     mode: PERMISSIVE

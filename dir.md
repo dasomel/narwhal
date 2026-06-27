@@ -3,12 +3,23 @@
 > 작성: 2026-06-26 · 대상: `narwhal/` 레포 (origin `github.com/dasomel/narwhal`)
 > 목적: 구조 이상 진단 + GitHub push 전 정리 판단 근거
 
-## ✅ 적용 현황 (2026-06-26)
+## ✅ 적용 현황 (최종: 2026-06-27)
 
-- **권장 #1 (idp/ history rewrite)**: 완료 — `git filter-repo --path idp/ --invert-paths` 로 전 히스토리(207커밋)에서 `idp/` 제거. 검증: `git log --all -- idp/` = 0커밋. 백업 번들 보관(scratchpad).
-- **권장 #2 (.gitignore)**: 완료 — `test-results/`, `playwright-report/`, `*.webm`, `*.trace.zip` 추가.
-- **권장 #3 (secret 로테이션)**: 미적용 — 운영값 여부 사용자 판단 필요(아래 표 값은 마스킹 처리).
+- **권장 #1 (idp/ history rewrite)**: ✅ 완료 — `git filter-repo --path idp/ --invert-paths` 로 전 히스토리(207커밋)에서 `idp/` 제거. 현재 HEAD `ea0420b`.
+- **권장 #2 (.gitignore)**: ✅ 완료 — `test-results/`, `playwright-report/`, `*.webm`, `*.trace.zip` 추가.
+- **dangling 객체 소거**: ✅ 완료 — `git reflog expire --expire=now --all` + `git gc --prune=now --aggressive` 로 secret 담은 도달불가 옛 커밋 물리 제거.
+- **백업 번들**: ✅ 삭제 — rewrite 전 번들(scratchpad) 제거 → 옛 히스토리 복원 경로 없음(되돌릴 수 없음).
+- **권장 #3 (secret 로테이션)**: ⏳ 미적용 — 운영값 여부 사용자 판단 필요(아래 표 값은 마스킹 처리).
 - 본 문서 내 secret 값은 문서가 secret을 운반하지 않도록 마스킹함.
+
+### 최종 검증 (2026-06-27)
+| 항목 | 결과 |
+|------|------|
+| 히스토리·reflog `idp/` 커밋 | **0** ✅ |
+| 작업트리 `idp/` | **없음** ✅ |
+| secret 4종 (전체 객체 DB, unreachable 포함) | **0 객체** ✅ |
+| dangling commit | **0** ✅ |
+| remote (origin/gitea) | 정상, **push 안 함**(로컬 전용) |
 
 ---
 
@@ -17,6 +28,8 @@
 1. **한 레포 안에 IDP 구현이 둘** — 현행 Vagrant 기반(최상위)과 레거시 OpenTofu/vSphere 기반(`idp/`)이 공존.
 2. **`idp/`(1130 파일)는 `.gitignore`에 있으나 여전히 추적 중** — 무시 등록 *전에* 커밋되어 인덱스에 그대로 박힘. 레포 용량·파일 수의 대부분을 차지.
 3. **모든 하드코딩 자격증명과 33MB 테스트 산출물이 이 레거시 `idp/` 안에 있음** — push 시 public 노출 위험의 진원지.
+
+> 📌 아래 **1~4 절은 진단 시점(2026-06-26) 상태**입니다. 현재는 모두 처리됨 — 상단 "적용 현황" / 하단 "처리 이력" 참조.
 
 ---
 
@@ -87,22 +100,21 @@ Vagrantfile, Makefile, README.md, VERSIONS.md, CHANGELOG.md, CLAUDE.md
 
 ---
 
-## push 전 상태 확정 (검증 결과)
+## 처리 이력 (실행 완료)
 
-- origin/main 에 `idp/` 파일: **0개** (아직 안 올라감). 단독 5개 secret 파일도 origin에 없음.
-- 그러나 `idp/`는 미push 89커밋 중 **딱 1개 커밋 `86a4953`** 에서 통째 유입 → 이 커밋이 secret blob을 운반.
-- ⇒ **`git rm --cached idp/` + 새 커밋만으로는 불충분**: 과거 `86a4953` 이 그대로 push되어 secret이 GitHub 히스토리에 영구 기록됨.
+진단 당시 상태: `idp/`는 미push 커밋 중 **딱 1개 커밋 `86a4953`** 에서 통째 유입돼 secret blob을 운반 → `git rm --cached` 만으로는 불충분(과거 커밋이 push 시 secret 운반)으로 판단, 아래 순서로 처리.
 
-## 권장 정리 (push 전, 우선순위순)
+| 순서 | 작업 | 명령 | 결과 |
+|------|------|------|------|
+| 1 | rewrite 전 백업 | `git bundle create … --all` | 23M 번들(이후 삭제) |
+| 2 | .gitignore 보강 | `test-results/`·`playwright-report/`·`*.webm`·`*.trace.zip` 추가 | ✅ |
+| 3 | 정리 커밋 | `git add -A && git commit` (idp/ 삭제 + idp-portal) | ✅ |
+| 4 | 히스토리 제거 | `git filter-repo --path idp/ --invert-paths --force` | 207커밋 재작성 ✅ |
+| 5 | origin 재등록 | `git remote add origin …/dasomel/narwhal.git` | ✅ |
+| 6 | dir.md secret 마스킹 | 분석 표 값 마스킹 + `git commit --amend` | ✅ |
+| 7 | dangling 소거 | `git reflog expire --expire=now --all && git gc --prune=now --aggressive` | ✅ |
+| 8 | 백업 번들 삭제 | `rm -f …/narwhal-pre-idp-rewrite.bundle` | ✅ |
 
-1. **history rewrite 로 `idp/` 제거** — 아직 origin에 아무것도 안 올라갔으므로 첫 push 전에 깨끗이 제거 가능:
-   ```bash
-   git filter-repo --path idp/ --invert-paths    # 89커밋 전 히스토리에서 idp/ 완전 삭제
-   ```
-   (filter-repo 미설치 시 `86a4953` 단일 커밋이므로 `git rebase -i` 로 해당 커밋 edit 후 `git rm -r --cached idp/` 도 가능 — 단 이후 커밋이 idp/를 다시 안 건드렸을 때만.)
-   → 1130파일·33MB·하드코딩 secret이 push 대상에서 완전히 빠짐.
-2. **테스트 산출물 패턴 무시** — `test-results/`, `*.webm`, `playwright-report/` 를 `.gitignore`에 추가(향후 재유입 방지).
-3. **하드코딩 secret 로테이션** — rewrite로 신규 노출은 막히나, 실제 운영값이면 vCenter/SSH/Keycloak/PowerDNS 자격증명 **교체** 권장(이미 어딘가 노출됐을 가능성 가정).
-4. **rewrite 후 재확인** — `git log origin/main..HEAD -- idp/` 가 비면 OK → push 여부 재판단.
+**남은 작업**: 권장 #3(자격증명 로테이션) — 마스킹된 값들이 실제 운영값이면 vCenter/SSH/Keycloak/PowerDNS 교체. **push 여부는 미결정**(현재까지 로컬 전용, 원격 전송 없음).
 
-> 주의: 본 문서는 **분석/제안만**. 실제 `git rm`·filter-repo·rebase·push 는 사용자 승인 후 진행. history rewrite는 커밋 해시를 바꾸므로 실행 전 백업 브랜치 권장.
+> 주의: history rewrite 로 커밋 해시가 전부 바뀜. 백업 번들 삭제로 이 작업은 **되돌릴 수 없음**.

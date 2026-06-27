@@ -1,23 +1,38 @@
 ---
-# PeerAuthentication: mesh-wide mTLS mode.
+# PeerAuthentication 1/2: mesh-wide mTLS mode — STRICT.
 #
-# NOTE: mode is PERMISSIVE, NOT STRICT.
-# STRICT was attempted (2026-06-27) but BROKE external ingress: the APISIX
-# gateway runs in the `platform-system` namespace which is labeled
-# istio.io/dataplane-mode=ambient and the apisix pod has NO per-pod opt-out,
-# so it is mesh-enrolled. Under mesh-wide STRICT, ztunnel rejects the
-# non-mTLS inbound from external clients (MetalLB LB -> host -> APISIX),
-# making every *.local.narwhal.io service unreachable from outside the mesh.
-#
-# To safely enable STRICT later, FIRST exclude the ingress path from mTLS
-# enforcement — e.g. label the apisix pod/namespace istio.io/dataplane-mode=none,
-# or add a port-level PeerAuthentication exception for the APISIX gateway —
-# THEN flip this to STRICT and verify external ingress still works.
+# Enforces mutual TLS for all workloads in the mesh. External clients that
+# do not speak mTLS cannot directly reach mesh-enrolled services; they must
+# go through an ingress gateway that terminates the external plaintext
+# connection and initiates mTLS toward the backend.
 apiVersion: security.istio.io/v1
 kind: PeerAuthentication
 metadata:
   name: default
   namespace: istio-system
 spec:
+  mtls:
+    mode: STRICT
+---
+# PeerAuthentication 2/2: APISIX ingress gateway — PERMISSIVE exception.
+#
+# WHY THIS EXCEPTION EXISTS:
+#   The APISIX gateway pod runs in namespace platform-system which is labeled
+#   istio.io/dataplane-mode=ambient (mesh-enrolled). External clients reach
+#   APISIX in plaintext (MetalLB LB VIP 192.168.56.200 → host → APISIX).
+#   Under mesh-wide STRICT, ztunnel would reject these non-mTLS inbound
+#   connections, making every *.local.narwhal.io service unreachable from
+#   outside the cluster. PERMISSIVE on this workload only lets ztunnel accept
+#   both mTLS (from inside-mesh callers) and plaintext (from external clients)
+#   while the rest of the mesh stays STRICT.
+apiVersion: security.istio.io/v1
+kind: PeerAuthentication
+metadata:
+  name: apisix-ingress-permissive
+  namespace: platform-system
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: apisix
   mtls:
     mode: PERMISSIVE

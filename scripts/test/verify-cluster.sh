@@ -638,10 +638,10 @@ fi
 if should_run "keycloak"; then
   echo "--- [10/17] Keycloak & OIDC ---"
   # Keycloak operator
-  check_ready "deployment" "keycloak" "keycloak-operator" "Keycloak operator"
+  check_ready "deployment" "iam" "keycloak-operator" "Keycloak operator"
 
-  # Keycloak instance
-  KC_PODS=$(kubectl get pods -n keycloak -l app=keycloak --no-headers 2>/dev/null | grep -c "Running" || true)
+  # Keycloak instance (StatefulSet managed by operator, pod label app=keycloak)
+  KC_PODS=$(kubectl get pods -n iam -l app=keycloak --no-headers 2>/dev/null | grep -c "Running" || true)
   if [ "${KC_PODS}" -ge 1 ]; then
     pass "Keycloak: ${KC_PODS} Running"
   else
@@ -649,7 +649,7 @@ if should_run "keycloak"; then
   fi
 
   # OIDC HTTPS endpoint
-  OIDC_CODE=$(curl -sk -o /dev/null -w '%{http_code}' https://keycloak.local.narwhal.io/realms/kubernetes/.well-known/openid-configuration 2>/dev/null || echo "000")
+  OIDC_CODE=$(curl -sk -o /dev/null -w '%{http_code}' https://keycloak.local.narwhal.io/realms/narwhal/.well-known/openid-configuration 2>/dev/null || echo "000")
   if [ "${OIDC_CODE}" = "200" ]; then
     pass "OIDC HTTPS endpoint: HTTP ${OIDC_CODE}"
   else
@@ -684,14 +684,14 @@ if should_run "keycloak"; then
 
   # Kubernetes realm existence (check via OIDC well-known)
   if [ "${OIDC_CODE}" = "200" ]; then
-    pass "Keycloak realm 'kubernetes': reachable"
+    pass "Keycloak realm 'narwhal': reachable (ns=iam)"
   else
-    fail "Keycloak realm 'kubernetes': not reachable"
+    fail "Keycloak realm 'narwhal': not reachable"
   fi
 
   # groups client scope (verify via token test if not quick)
   if ! ${QUICK_MODE}; then
-    TOKEN_RESP=$(curl -sk -X POST "https://keycloak.local.narwhal.io/realms/kubernetes/protocol/openid-connect/token" \
+    TOKEN_RESP=$(curl -sk -X POST "https://keycloak.local.narwhal.io/realms/narwhal/protocol/openid-connect/token" \
       -d "grant_type=password" \
       -d "client_id=kubernetes" \
       -d "username=admin" \
@@ -815,20 +815,19 @@ fi
 #=========================================
 if should_run "platform"; then
   echo "--- [12/17] Platform Apps ---"
-  # Kyverno
-  check_ready "deployment" "kyverno" "kyverno-admission-controller" "Kyverno admission"
-  check_ready "deployment" "kyverno" "kyverno-background-controller" "Kyverno background"
-  check_ready "deployment" "kyverno" "kyverno-cleanup-controller" "Kyverno cleanup"
-  check_ready "deployment" "kyverno" "kyverno-reports-controller" "Kyverno reports"
+  # Kyverno (namespace: platform-system)
+  check_ready "deployment" "platform-system" "kyverno-admission-controller" "Kyverno admission"
+  check_ready "deployment" "platform-system" "kyverno-background-controller" "Kyverno background"
+  check_ready "deployment" "platform-system" "kyverno-cleanup-controller" "Kyverno cleanup"
+  check_ready "deployment" "platform-system" "kyverno-reports-controller" "Kyverno reports"
 
-  # Headlamp
-  check_ready "deployment" "headlamp" "headlamp" "Headlamp"
+  # Headlamp (namespace: devtools)
+  check_ready "deployment" "devtools" "headlamp" "Headlamp"
 
-  # OAuth2-Proxy
-  check_ready "deployment" "oauth2-proxy" "oauth2-proxy" "OAuth2-Proxy"
+  # OAuth2-Proxy removed — replaced by APISIX openid-connect plugin
 
-  # SeaweedFS master
-  SWFS_MASTER=$(kubectl get pods -n seaweedfs -l app.kubernetes.io/component=master --no-headers 2>/dev/null | grep -c "Running" || true)
+  # SeaweedFS (namespace: storage)
+  SWFS_MASTER=$(kubectl get pods -n storage -l app.kubernetes.io/component=master --no-headers 2>/dev/null | grep -c "Running" || true)
   if [ "${SWFS_MASTER}" -ge 1 ]; then
     pass "SeaweedFS master: Running"
   else
@@ -836,7 +835,7 @@ if should_run "platform"; then
   fi
 
   # SeaweedFS volume
-  SWFS_VOLUME=$(kubectl get pods -n seaweedfs -l app.kubernetes.io/component=volume --no-headers 2>/dev/null | grep -c "Running" || true)
+  SWFS_VOLUME=$(kubectl get pods -n storage -l app.kubernetes.io/component=volume --no-headers 2>/dev/null | grep -c "Running" || true)
   if [ "${SWFS_VOLUME}" -ge 1 ]; then
     pass "SeaweedFS volume: Running"
   else
@@ -844,24 +843,24 @@ if should_run "platform"; then
   fi
 
   # SeaweedFS filer
-  SWFS_FILER=$(kubectl get pods -n seaweedfs -l app.kubernetes.io/component=filer --no-headers 2>/dev/null | grep -c "Running" || true)
+  SWFS_FILER=$(kubectl get pods -n storage -l app.kubernetes.io/component=filer --no-headers 2>/dev/null | grep -c "Running" || true)
   if [ "${SWFS_FILER}" -ge 1 ]; then
     pass "SeaweedFS filer: Running"
   else
     fail "SeaweedFS filer: not running"
   fi
 
-  # Harbor core
-  HARBOR_CORE=$(kubectl get pods -n harbor -l component=core --no-headers 2>/dev/null | grep -c "Running" || true)
+  # Harbor core (namespace: devtools)
+  HARBOR_CORE=$(kubectl get pods -n devtools -l component=core --no-headers 2>/dev/null | grep -c "Running" || true)
   if [ "${HARBOR_CORE}" -ge 1 ]; then
     pass "Harbor core: Running"
   else
     fail "Harbor core: not running"
   fi
 
-  # Harbor sub-components
+  # Harbor sub-components (namespace: devtools)
   for harbor_comp in registry portal jobservice nginx; do
-    HC_PODS=$(kubectl get pods -n harbor -l component="${harbor_comp}" --no-headers 2>/dev/null | grep -c "Running" || true)
+    HC_PODS=$(kubectl get pods -n devtools -l component="${harbor_comp}" --no-headers 2>/dev/null | grep -c "Running" || true)
     if [ "${HC_PODS}" -ge 1 ]; then
       pass "Harbor ${harbor_comp}: Running"
     else
@@ -869,27 +868,27 @@ if should_run "platform"; then
     fi
   done
 
-  # Harbor Redis (internal)
-  HARBOR_REDIS=$(kubectl get pods -n harbor -l component=redis --no-headers 2>/dev/null | grep -c "Running" || true)
+  # Harbor Redis (internal, namespace: devtools, label component=redis)
+  HARBOR_REDIS=$(kubectl get pods -n devtools -l component=redis --no-headers 2>/dev/null | grep -c "Running" || true)
   if [ "${HARBOR_REDIS}" -ge 1 ]; then
     pass "Harbor redis: Running"
   else
     fail "Harbor redis: not running"
   fi
 
-  # OpenBao
-  OPENBAO=$(kubectl get pods -n openbao -l app.kubernetes.io/name=openbao --no-headers 2>/dev/null | grep -c "Running" || true)
+  # OpenBao (namespace: storage — requires manual unseal, Running is expected even when sealed)
+  OPENBAO=$(kubectl get pods -n storage -l app.kubernetes.io/name=openbao --no-headers 2>/dev/null | grep -c "Running" || true)
   if [ "${OPENBAO}" -ge 1 ]; then
     pass "OpenBao: Running"
   else
     warn "OpenBao: not running (requires manual unseal)"
   fi
 
-  # Velero
-  check_ready "deployment" "velero" "velero" "Velero"
+  # Velero (namespace: storage)
+  check_ready "deployment" "storage" "velero" "Velero"
 
-  # Velero node-agent DaemonSet
-  VELERO_NA=$(kubectl get pods -n velero -l name=node-agent --no-headers 2>/dev/null | grep -c "Running" || true)
+  # Velero node-agent DaemonSet (namespace: storage, label name=node-agent)
+  VELERO_NA=$(kubectl get pods -n storage -l name=node-agent --no-headers 2>/dev/null | grep -c "Running" || true)
   if [ "${VELERO_NA}" -ge 6 ]; then
     pass "Velero node-agent: ${VELERO_NA} Running"
   elif [ "${VELERO_NA}" -ge 1 ]; then
@@ -898,12 +897,12 @@ if should_run "platform"; then
     fail "Velero node-agent: not running"
   fi
 
-  # Velero BackupStorageLocation
-  BSL_PHASE=$(kubectl get backupstoragelocation default -n velero -o jsonpath='{.status.phase}' 2>/dev/null || echo "")
+  # Velero BackupStorageLocation (namespace: storage)
+  BSL_PHASE=$(kubectl get backupstoragelocation default -n storage -o jsonpath='{.status.phase}' 2>/dev/null || echo "")
   if [ "${BSL_PHASE}" = "Available" ]; then
     pass "Velero BSL default: Available"
   else
-    fail "Velero BSL default: ${BSL_PHASE:-not found}"
+    warn "Velero BSL default: ${BSL_PHASE:-not found} (BSL may be Unavailable if SeaweedFS S3 is not seeded)"
   fi
   echo ""
 fi
@@ -913,8 +912,8 @@ fi
 #=========================================
 if should_run "gitops"; then
   echo "--- [13/17] GitOps ---"
-  # Gitea
-  GITEA_PODS=$(kubectl get pods -n gitea -l app.kubernetes.io/name=gitea --no-headers 2>/dev/null | grep -c "Running" || true)
+  # Gitea (namespace: devtools)
+  GITEA_PODS=$(kubectl get pods -n devtools -l app.kubernetes.io/name=gitea --no-headers 2>/dev/null | grep -c "Running" || true)
   if [ "${GITEA_PODS}" -ge 1 ]; then
     pass "Gitea: Running"
   else
@@ -937,28 +936,28 @@ if should_run "gitops"; then
     warn "Gitea narwhal-gitops repo: HTTP ${REPO_CODE} (created by 14-gitops-bootstrap.sh)"
   fi
 
-  # ArgoCD
-  check_ready "deployment" "argocd" "argocd-server" "ArgoCD server"
-  check_ready "deployment" "argocd" "argocd-repo-server" "ArgoCD repo-server"
+  # ArgoCD (namespace: devtools)
+  check_ready "deployment" "devtools" "argocd-server" "ArgoCD server"
+  check_ready "deployment" "devtools" "argocd-repo-server" "ArgoCD repo-server"
 
-  ARGOCD_CTRL=$(kubectl get pods -n argocd -l app.kubernetes.io/name=argocd-application-controller --no-headers 2>/dev/null | grep -c "Running" || true)
+  ARGOCD_CTRL=$(kubectl get pods -n devtools -l app.kubernetes.io/name=argocd-application-controller --no-headers 2>/dev/null | grep -c "Running" || true)
   if [ "${ARGOCD_CTRL}" -ge 1 ]; then
     pass "ArgoCD app-controller: Running"
   else
     fail "ArgoCD app-controller: not running"
   fi
 
-  # ArgoCD Redis
-  ARGOCD_REDIS=$(kubectl get pods -n argocd -l app.kubernetes.io/name=argocd-redis --no-headers 2>/dev/null | grep -c "Running" || true)
+  # ArgoCD Redis (namespace: devtools)
+  ARGOCD_REDIS=$(kubectl get pods -n devtools -l app.kubernetes.io/name=argocd-redis --no-headers 2>/dev/null | grep -c "Running" || true)
   if [ "${ARGOCD_REDIS}" -ge 1 ]; then
     pass "ArgoCD redis: Running"
   else
     fail "ArgoCD redis: not running"
   fi
 
-  # App-of-Apps
-  AOA_STATUS=$(kubectl get application idp-apps -n argocd -o jsonpath='{.status.sync.status}' 2>/dev/null || echo "")
-  AOA_HEALTH=$(kubectl get application idp-apps -n argocd -o jsonpath='{.status.health.status}' 2>/dev/null || echo "")
+  # App-of-Apps (namespace: devtools)
+  AOA_STATUS=$(kubectl get application idp-apps -n devtools -o jsonpath='{.status.sync.status}' 2>/dev/null || echo "")
+  AOA_HEALTH=$(kubectl get application idp-apps -n devtools -o jsonpath='{.status.health.status}' 2>/dev/null || echo "")
   if [ -n "${AOA_STATUS}" ]; then
     pass "App-of-Apps: sync=${AOA_STATUS}, health=${AOA_HEALTH}"
   else
@@ -968,30 +967,30 @@ if should_run "gitops"; then
 fi
 
 #=========================================
-# 14. GATEWAY ROUTES (HTTP/HTTPS access)
+# 14. GATEWAY ROUTES (ApisixRoute — all in platform-system)
 #=========================================
 if should_run "routes"; then
   echo "--- [14/17] Gateway Routes ---"
-  ROUTES=(
-    "argocd:argocd"
-    "grafana:monitoring"
-    "gitea:gitea"
-    "harbor:harbor"
-    "keycloak:keycloak"
-    "headlamp:headlamp"
-    "openbao:openbao"
-    "oauth2-proxy:oauth2-proxy"
-    "hubble:kube-system"
+  # HTTPRoutes are gone; cluster uses ApisixRoute CRDs (apisix.apache.org).
+  # All 17 routes live in namespace platform-system.
+  APISIX_ROUTES=(
+    "argocd"
+    "grafana"
+    "gitea"
+    "harbor"
+    "keycloak"
+    "headlamp"
+    "openbao"
+    "hubble"
+    "prometheus"
   )
 
-  for entry in "${ROUTES[@]}"; do
-    ROUTE_NAME="${entry%%:*}"
-    ROUTE_NS="${entry##*:}"
-    ROUTE_EXISTS=$(kubectl get httproute "${ROUTE_NAME}" -n "${ROUTE_NS}" -o jsonpath='{.metadata.name}' 2>/dev/null || echo "")
+  for route_name in "${APISIX_ROUTES[@]}"; do
+    ROUTE_EXISTS=$(kubectl get apisixroute "${route_name}" -n platform-system -o jsonpath='{.metadata.name}' 2>/dev/null || echo "")
     if [ -n "${ROUTE_EXISTS}" ]; then
-      pass "HTTPRoute ${ROUTE_NAME}.local.narwhal.io: exists"
+      pass "ApisixRoute ${route_name}: exists (platform-system)"
     else
-      fail "HTTPRoute ${ROUTE_NAME}: not found in ${ROUTE_NS}"
+      fail "ApisixRoute ${route_name}: not found in platform-system"
     fi
   done
 
@@ -999,7 +998,7 @@ if should_run "routes"; then
   if ! ${QUICK_MODE}; then
     echo ""
     echo "  --- HTTPS Connectivity ---"
-    for host in argocd grafana gitea harbor keycloak headlamp openbao oauth2-proxy hubble; do
+    for host in argocd grafana gitea harbor keycloak headlamp openbao hubble prometheus; do
       CODE=$(curl -sk -o /dev/null -w '%{http_code}' "https://${host}.local.narwhal.io" 2>/dev/null || echo "000")
       case "${CODE}" in
         200|301|302|303|307|308)
@@ -1100,11 +1099,11 @@ if should_run "podhealth"; then
     fail "${FAILED_HELM_COUNT} failed Helm releases found"
   fi
 
-  # ArgoCD Applications health (if ArgoCD is running)
-  ARGOCD_RUNNING=$(kubectl get pods -n argocd -l app.kubernetes.io/name=argocd-server --no-headers 2>/dev/null | grep -c "Running" || true)
+  # ArgoCD Applications health (if ArgoCD is running; namespace: devtools)
+  ARGOCD_RUNNING=$(kubectl get pods -n devtools -l app.kubernetes.io/name=argocd-server --no-headers 2>/dev/null | grep -c "Running" || true)
   if [ "${ARGOCD_RUNNING}" -gt 0 ]; then
     # Get all applications: Healthy is required, OutOfSync is warn-only (common with script+ArgoCD dual management)
-    ARGOCD_APPS=$(kubectl get applications -n argocd -o json 2>/dev/null | jq -r '.items[] | "\(.metadata.name)|\(.status.sync.status)|\(.status.health.status)"' 2>/dev/null || echo "")
+    ARGOCD_APPS=$(kubectl get applications -n devtools -o json 2>/dev/null | jq -r '.items[] | "\(.metadata.name)|\(.status.sync.status)|\(.status.health.status)"' 2>/dev/null || echo "")
     if [ -n "${ARGOCD_APPS}" ]; then
       # Health check: Degraded/Missing is FAIL
       DEGRADED_APPS=$(echo "${ARGOCD_APPS}" | awk -F'|' '{if ($3 != "Healthy" && $3 != "Progressing" && $3 != "") print $1 " (health=" $3 ")"}' || echo "")

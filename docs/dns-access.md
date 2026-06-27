@@ -9,7 +9,7 @@ Master 노드의 dnsmasq(포트 53)가 `*.local.narwhal.io` 도메인을 `192.16
 | Master-1 (DNS) | 192.168.56.10 | dnsmasq DNS 서버 (primary) |
 | Master-2 (DNS) | 192.168.56.11 | dnsmasq DNS 서버 (secondary) |
 | Master-3 (DNS) | 192.168.56.12 | dnsmasq DNS 서버 (tertiary) |
-| MetalLB VIP | 192.168.56.200 | Traefik LoadBalancer IP |
+| MetalLB VIP | 192.168.56.200 | APISIX LoadBalancer IP |
 | Control Plane VIP | 192.168.56.100 | kube-vip (API Server) |
 
 ## 서비스 URL
@@ -123,37 +123,34 @@ start https://argocd.local.narwhal.io
 | Headlamp | - | Keycloak SSO |
 | OpenBao | - | `bao operator init` 후 root token |
 
-## Traefik Gateway
+## APISIX API Gateway
 
-Traefik이 Gateway API 컨트롤러로 동작하며 다음 기능을 제공합니다:
+APISIX가 API 게이트웨이로 동작하며 다음 기능을 제공합니다:
 
-- **Rate Limiting**: 분당 100개 요청, 버스트 50
-- **Body Size 제한**: 10MB (API), 100MB (Harbor)
-- **TLS 종료**: self-signed 인증서 (개발용)
+- **TLS 종료**: self-signed 인증서 (개발용, ApisixTls CRD)
+- **OIDC 인증**: Keycloak `openid-connect` 플러그인 (ApisixRoute에 설정)
+- **라우팅**: ApisixRoute CRD로 hostname → backend 매핑
+- **Namespace**: `platform-system`
 
-### Middleware 적용 예시
-
-HTTPRoute에 Middleware를 적용하려면:
+### ApisixRoute 예시
 
 ```yaml
-apiVersion: gateway.networking.k8s.io/v1
-kind: HTTPRoute
+apiVersion: apisix.apache.org/v2
+kind: ApisixRoute
 metadata:
   name: my-route
   namespace: my-namespace
-  annotations:
-    # Traefik Middleware 참조
-    traefik.io/middleware: "traefik-rate-limit@kubernetescrd"
 spec:
-  parentRefs:
-    - name: traefik-gateway
-      namespace: traefik
-  hostnames:
-    - "my-app.local.narwhal.io"
-  rules:
-    - backendRefs:
-        - name: my-service
-          port: 80
+  http:
+    - name: my-route
+      match:
+        hosts:
+          - "my-app.local.narwhal.io"
+        paths:
+          - "/*"
+      backends:
+        - serviceName: my-service
+          servicePort: 80
 ```
 
 ## 문제 해결
@@ -174,21 +171,21 @@ vagrant ssh master-1 -c "sudo systemctl restart dnsmasq"
 ### 연결 거부
 
 ```bash
-# Traefik Pod 상태 확인
-vagrant ssh master-1 -c "kubectl get pods -n traefik"
+# APISIX Pod 상태 확인
+vagrant ssh master-1 -c "kubectl get pods -n platform-system -l app.kubernetes.io/name=apisix"
 
-# Traefik 서비스 확인 (LoadBalancer IP: 192.168.56.200)
-vagrant ssh master-1 -c "kubectl get svc traefik -n traefik"
+# APISIX 서비스 확인 (LoadBalancer IP: 192.168.56.200)
+vagrant ssh master-1 -c "kubectl get svc -n platform-system | grep apisix"
 
 # MetalLB 상태 확인
 vagrant ssh master-1 -c "kubectl get ipaddresspool -n metallb-system"
 vagrant ssh master-1 -c "kubectl get pods -n metallb-system"
 
-# HTTPRoute 상태 확인
-vagrant ssh master-1 -c "kubectl get httproute -A"
+# ApisixRoute 상태 확인
+vagrant ssh master-1 -c "kubectl get apisixroute -A"
 
-# Gateway 상태 확인
-vagrant ssh master-1 -c "kubectl get gateway -n traefik"
+# ApisixTls 상태 확인
+vagrant ssh master-1 -c "kubectl get apisixtls -A"
 ```
 
 ### TLS 인증서 오류

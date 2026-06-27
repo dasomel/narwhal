@@ -34,7 +34,7 @@ Narwhal은 Vagrant VM 기반의 Kubernetes Internal Developer Platform (IDP) 클
 │  │ 2 CPU / 6GB RAM   │  │ 2 CPU / 6GB RAM   │  │ 2 CPU / 6GB RAM   │        │
 │  └───────────────────┘  └───────────────────┘  └───────────────────┘        │
 │                                                                             │
-│  LB:  192.168.56.200 (MetalLB → Traefik)                                    │
+│  LB:  192.168.56.200 (MetalLB → APISIX)                                     │
 │  DNS: *.local.narwhal.io → 192.168.56.200                                   │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -75,8 +75,8 @@ Narwhal은 Vagrant VM 기반의 Kubernetes Internal Developer Platform (IDP) 클
 │                        │                                             │
 │                        ▼                                             │
 │              ┌─────────────────┐                                     │
-│              │     Traefik     │  Gateway API Controller             │
-│              │  (LoadBalancer) │  HTTPRoute-based routing            │
+│              │     APISIX      │  API Gateway (ApisixRoute/ApisixTls)│
+│              │  (LoadBalancer) │  OIDC via openid-connect plugin     │
 │              └────────┬────────┘                                     │
 │                       │                                              │
 │         ┌─────────────┼─────────────────────────┐                    │
@@ -92,11 +92,11 @@ Narwhal은 Vagrant VM 기반의 Kubernetes Internal Developer Platform (IDP) 클
 ### Traffic Flow
 
 1. **DNS Resolution**: Client → dnsmasq (master node) → `*.local.narwhal.io` → `192.168.56.200`
-2. **Load Balancing**: MetalLB L2 Advertisement → Traefik LoadBalancer Service
-3. **Routing**: Traefik HTTPRoute → Backend Service (by hostname)
-4. **Authentication**: OAuth2 Proxy → Keycloak OIDC (선택적)
+2. **Load Balancing**: MetalLB L2 Advertisement → APISIX LoadBalancer Service
+3. **Routing**: APISIX ApisixRoute → Backend Service (by hostname)
+4. **Authentication**: APISIX openid-connect plugin → Keycloak OIDC
 
-### HTTPRoute Mappings
+### ApisixRoute Mappings
 
 | Hostname | Backend Service | Namespace |
 |----------|----------------|-----------|
@@ -108,7 +108,6 @@ Narwhal은 Vagrant VM 기반의 Kubernetes Internal Developer Platform (IDP) 클
 | headlamp.local.narwhal.io | headlamp | devtools |
 | openbao.local.narwhal.io | openbao-ui | storage |
 | hubble.local.narwhal.io | hubble-ui | kube-system |
-| oauth2-proxy.local.narwhal.io | oauth2-proxy | iam |
 
 ---
 
@@ -153,9 +152,9 @@ Narwhal은 Vagrant VM 기반의 Kubernetes Internal Developer Platform (IDP) 클
 ├──────────────────────────────────────────────────────────────┤
 │                   Networking Layer                           │
 │  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌────────────┐    │
-│  │ Cilium   │  │ Traefik  │  │ MetalLB  │  │  kube-vip  │    │
-│  │ CNI +    │  │ Gateway  │  │ L2 LB    │  │  CP VIP    │    │
-│  │ Hubble   │  │ API      │  │          │  │            │    │
+│  │ Cilium   │  │  APISIX  │  │ MetalLB  │  │  kube-vip  │    │
+│  │ CNI +    │  │ API GW   │  │ L2 LB    │  │  CP VIP    │    │
+│  │ Hubble   │  │ OIDC     │  │          │  │            │    │
 │  └──────────┘  └──────────┘  └──────────┘  └────────────┘    │
 ├──────────────────────────────────────────────────────────────┤
 │                    Storage Layer                             │
@@ -238,8 +237,7 @@ PostgreSQL HA (CloudNative-PG)
 │  ├── grafana      (secret)  → Grafana              │
 │  ├── gitea        (secret)  → Gitea                │
 │  ├── harbor       (secret)  → Harbor               │
-│  ├── headlamp     (secret)  → Headlamp             │
-│  └── oauth2-proxy (secret)  → Gateway Auth         │
+│  └── headlamp     (secret)  → Headlamp             │
 │                                                    │
 │  Exposed via:                                      │
 │  └── HTTPRoute (HTTPS) → keycloak.local.narwhal.io │
@@ -264,40 +262,31 @@ PostgreSQL HA (CloudNative-PG)
 └───────────────────────────────────────────────────────┘
 ```
 
-### Gateway-Level SSO (Traefik ForwardAuth + OAuth2-Proxy)
+### Gateway-Level SSO (APISIX openid-connect plugin)
 
-모든 웹 앱은 Traefik ForwardAuth 미들웨어를 통해 Gateway 레벨에서 인증을 강제한다.
-미인증 사용자는 URL 자체에 접근할 수 없으며, OAuth2-Proxy의 `allowed_groups`로 그룹 기반 접근 제어를 수행한다.
+모든 웹 앱은 APISIX의 `openid-connect` 플러그인을 통해 Gateway 레벨에서 Keycloak OIDC 인증을 강제한다.
 
 ```
 Browser → argocd.local.narwhal.io
     │
     ▼
 ┌─────────────────────────────────────────────────┐
-│  Traefik Gateway                                │
+│  APISIX API Gateway (platform-system)           │
 │                                                 │
-│  1. ForwardAuth → OAuth2-Proxy /oauth2/auth     │
-│     ├── 쿠키 있음 → 200 OK → 앱으로 전달       │
-│     └── 쿠키 없음 → 401                        │
+│  1. openid-connect 플러그인 토큰 검증           │
+│     ├── 유효한 세션 → 앱으로 전달              │
+│     └── 미인증 → Keycloak 로그인으로 리다이렉트 │
 │                                                 │
-│  2. Errors 미들웨어 (401 캐치)                  │
-│     └── auth-redirect (nginx) → JS 리다이렉트   │
-│         └── oauth2-proxy/oauth2/start?rd=<URL>  │
+│  2. Keycloak → OIDC 로그인                     │
+│     └── 인증 성공 → 쿠키 설정 → 앱 리다이렉트  │
 │                                                 │
-│  3. OAuth2-Proxy → Keycloak 로그인              │
-│     ├── allowed_groups 검사                     │
-│     │   ├── 통과 → 쿠키 설정 → rd URL 리다이렉트│
-│     │   └── 실패 (guest) → 403 Access Denied    │
-│     └── 쿠키 도메인: .local.narwhal.io (전체)   │
-│                                                 │
-│  4. 앱별 SSO 자동 로그인 (Keycloak 세션 공유)   │
-│     └── appRedirects 맵으로 앱 SSO URL 직행     │
+│  3. 앱별 SSO 자동 로그인 (Keycloak 세션 공유)   │
 └─────────────────────────────────────────────────┘
 ```
 
-**ForwardAuth 적용 현황:**
+**OIDC 적용 현황:**
 
-| 앱 | ForwardAuth | SSO 리다이렉트 경로 | 비고 |
+| 앱 | OIDC | SSO 리다이렉트 경로 | 비고 |
 |---|---|---|---|
 | ArgoCD | ✅ | `/auth/login?return_url=...%2Fapplications` | OIDC → 자동 로그인 |
 | Grafana | ✅ | `/login/generic_oauth` | OAuth → 자동 로그인 |
@@ -305,34 +294,13 @@ Browser → argocd.local.narwhal.io
 | Harbor | ✅ | `/c/oidc/login` | OIDC → 자동 로그인 |
 | Headlamp | ✅ | (SPA, 기본 경로) | 클라이언트사이드 OIDC |
 | OpenBao | ✅ | (SPA, 기본 경로) | 토큰 인증 |
-| Hubble | ✅ | (자체 SSO 없음) | ForwardAuth만 |
+| Hubble | ✅ | (자체 SSO 없음) | APISIX OIDC만 |
 | Keycloak | ❌ | — | IAM 자체 |
-| OAuth2-Proxy | ❌ | — | 인증 서비스 자체 |
-
-**그룹 기반 접근 제어 (OAuth2-Proxy `allowed_groups`):**
-
-| 그룹 | 접근 가능 | 차단 |
-|---|---|---|
-| cluster-admin | 모든 앱 | — |
-| developer | 모든 앱 | — |
-| viewer | 모든 앱 | — |
-| guest | ❌ 403 Access Denied | 모든 앱 |
-
-**핵심 리소스:**
-
-| 리소스 | 네임스페이스 | 설명 |
-|---|---|---|
-| `ConfigMap/auth-redirect-page` | devtools | JS 리다이렉트 페이지 (PKCE 충돌 방지 포함) |
-| `Deployment/auth-redirect` | devtools | nginx (redirect 페이지 서빙) |
-| `Middleware/forwardauth-oauth2` | devtools, monitoring, storage, kube-system | ForwardAuth → OAuth2-Proxy |
-| `Middleware/auth-signin` | devtools, monitoring, storage, kube-system | Errors (401 → 리다이렉트) |
-| `Service/auth-redirect-ext` | monitoring, storage, kube-system | ExternalName → devtools/auth-redirect |
 
 **쿠키 & 세션 관리:**
 
 | 쿠키 | 도메인 | 만료 | 용도 |
 |---|---|---|---|
-| `_oauth2_proxy` | `.local.narwhal.io` | 7일 (기본) | Gateway 인증 (전체 앱 공유) |
 | `argocd.token` | `argocd.local.narwhal.io` | 앱별 | ArgoCD 세션 |
 | `grafana_session` | `grafana.local.narwhal.io` | 앱별 | Grafana 세션 |
 | `i_like_gitea` | `gitea.local.narwhal.io` | 앱별 | Gitea 세션 |
@@ -346,25 +314,13 @@ Browser → argocd.local.narwhal.io
 #    Firefox: Ctrl+Shift+P / macOS: Cmd+Shift+P
 #    → 창 닫으면 모든 쿠키 자동 삭제
 
-# 2. 같은 브라우저에서 재로그인 — 쿠키 삭제
-#    Chrome:  개발자도구(F12) → Application → Cookies
-#             → .local.narwhal.io 도메인 우클릭 → Clear
-#    Firefox: 개발자도구(F12) → Storage → Cookies
-#             → .local.narwhal.io 선택 → Delete All
-#    Safari:  환경설정 → 개인정보보호 → 웹사이트 데이터 관리
-#             → local.narwhal.io 검색 → 제거
-
-# 3. CLI로 인증 상태 확인
-#    쿠키 없이 접근 (401/302 예상):
+# 2. CLI로 인증 상태 확인 (401/302 예상):
 curl -sk -o /dev/null -w '%{http_code}' https://argocd.local.narwhal.io
-#    OAuth2-Proxy 쿠키로 접근 (200 예상):
-curl -sk -o /dev/null -w '%{http_code}' \
-  -H "Cookie: _oauth2_proxy=<쿠키값>" https://argocd.local.narwhal.io
 
-# 4. OAuth2-Proxy 로그 확인 (인증 실패 디버깅)
-kubectl logs -n iam -l app.kubernetes.io/name=oauth2-proxy --tail=20
+# 3. APISIX 로그 확인 (인증 실패 디버깅)
+kubectl logs -n platform-system -l app.kubernetes.io/name=apisix --tail=20
 
-# 5. Keycloak 세션 강제 만료 (모든 사용자 로그아웃)
+# 4. Keycloak 세션 강제 만료 (모든 사용자 로그아웃)
 #    Keycloak Admin Console → Sessions → Sign out all
 #    또는 특정 사용자: Users → 해당 사용자 → Sessions → Logout all
 ```
@@ -431,9 +387,9 @@ AlertmanagerConfig로 severity별 라우팅:
 │                        │                                 │
 │    ┌──────────┬────────┼────────┬──────────┬───────┐     │
 │    ▼          ▼        ▼        ▼          ▼       ▼     │
-│  cert-mgr  prometheus loki   traefik   harbor  velero    │
+│  cert-mgr  prometheus loki   apisix    harbor  velero    │
 │  kyverno   promtail   tempo  metallb   openbao headlamp  │
-│  seaweedfs oauth2-proxy  istio-base  istiod              │
+│  seaweedfs istio-base  istiod                            │
 │  istio-cni ztunnel                                       │
 │                                                          │
 │  Source: Gitea (gitea-admin/narwhal-gitops)              │
@@ -452,7 +408,7 @@ AlertmanagerConfig로 severity별 라우팅:
 │  │   ├── ... (18 apps)                                   │
 │  └── resources/         (Shared K8s resources)           │
 │      ├── metallb-config.yaml                             │
-│      ├── traefik-routes.yaml                             │
+│      ├── apisix-routes.yaml                             │
 │      ├── harbor-db.yaml                                  │
 │      ├── gitea-db.yaml                                   │
 │      ├── grafana-datasources.yaml                        │
@@ -529,12 +485,12 @@ make validate  # Vagrantfile + yq 검증
 
 ```
 07-cnpg.sh                → CloudNative-PG Operator + narwhal-db (unified DB)
-08-1-networking.sh        → MetalLB, Traefik, cert-manager
+08-1-networking.sh        → MetalLB, APISIX, cert-manager
 08-2-monitoring.sh        → Prometheus, Loki, Promtail, Tempo
 08-3-security.sh          → Kyverno, Headlamp, OAuth2-Proxy
 08-4-storage.sh           → SeaweedFS, OpenBao, Velero
 08-5-registry.sh          → Harbor
-08-6-tls-routes.sh        → CA cert 배포, Traefik routes
+08-6-tls-routes.sh        → CA cert 배포, APISIX routes
 09-istio-ambient.sh       → Istio ambient mesh (mTLS, zero sidecars)
 10-dnsmasq.sh             → 로컬 DNS (*.local.narwhal.io) + CoreDNS forward
 11-1-keycloak-operator.sh → Keycloak Operator + CR + HTTPRoute
@@ -547,7 +503,7 @@ make validate  # Vagrantfile + yq 검증
 ```
 
 **설치 순서의 중요성:**
-- cert-manager와 Traefik TLS는 Keycloak OIDC보다 먼저 설치되어야 함 (K8s 1.35+ HTTPS 필수)
+- cert-manager와 APISIX TLS는 Keycloak OIDC보다 먼저 설치되어야 함 (K8s 1.35+ HTTPS 필수)
 - dnsmasq는 Keycloak 전에 설정되어 DNS 해석 가능해야 함
 - CNPG는 모든 DB 의존 앱보다 먼저 실행되어야 함
 
@@ -563,7 +519,7 @@ make validate  # Vagrantfile + yq 검증
 
 ```
 kube-system          Cilium, Hubble, CoreDNS, CSI-NFS, metrics-server, nfs-quota-agent
-platform-system      CloudNative-PG Operator, MetalLB, Traefik, cert-manager, Kyverno
+platform-system      CloudNative-PG Operator, MetalLB, APISIX, cert-manager, Kyverno
 istio-system         Istio control plane (istiod, istio-cni, ztunnel)
 iam                  Keycloak, OAuth2-Proxy
 devtools             ArgoCD, Gitea + Valkey, Harbor, Headlamp

@@ -91,7 +91,7 @@ VM 내에서 각 스크립트를 순서대로 실행:
 # PostgreSQL Operator
 vagrant ssh master-1 -c "sudo bash /home/vagrant/scripts/cluster/07-cnpg.sh"
 
-# 플랫폼 앱 (cert-manager, Traefik, MetalLB 등) - 분해된 스크립트 순차 실행
+# 플랫폼 앱 (cert-manager, APISIX, MetalLB 등) - 분해된 스크립트 순차 실행
 vagrant ssh master-1 -c "sudo bash /home/vagrant/scripts/cluster/08-1-networking.sh"
 vagrant ssh master-1 -c "sudo bash /home/vagrant/scripts/cluster/08-2-monitoring.sh"
 vagrant ssh master-1 -c "sudo bash /home/vagrant/scripts/cluster/08-3-security.sh"
@@ -122,7 +122,7 @@ vagrant ssh master-1 -c "sudo bash /home/vagrant/scripts/cluster/14-gitops-boots
 ```
 
 **실행 순서 중요**:
-- cert-manager/Traefik (08) → Istio (09) → DNS (10) → Keycloak OIDC (11) 순서를 반드시 지켜야 함
+- cert-manager/APISIX (08) → Istio (09) → DNS (10) → Keycloak OIDC (11) 순서를 반드시 지켜야 함
 - HTTPS 인증서가 준비된 후에 OIDC 설정이 활성화됨 (K8s 1.35+)
 
 ### Istio Ambient Mesh 운영
@@ -755,14 +755,14 @@ vagrant ssh master-1 -c "bash /home/vagrant/scripts/test/verify-cluster.sh"
 4. Cilium CNI
 5. Core Services (CoreDNS, metrics-server, NFS)
 6. Database (CNPG)
-7. MetalLB & Traefik
+7. MetalLB & APISIX
 8. cert-manager & TLS
 9. DNS (dnsmasq)
 10. Keycloak & OIDC
 11. Monitoring (Prometheus, Grafana, Loki, Tempo)
-12. Platform Apps (Kyverno, Headlamp, OAuth2-Proxy, SeaweedFS, Harbor, OpenBao, Velero)
+12. Platform Apps (Kyverno, Headlamp, SeaweedFS, Harbor, OpenBao, Velero)
 13. GitOps (Gitea, ArgoCD)
-14. Gateway Routes (HTTPRoutes, HTTPS connectivity)
+14. Gateway Routes (ApisixRoutes, HTTPS connectivity)
 15. Istio Ambient Mesh (istiod, istio-cni, ztunnel, PeerAuthentication, ambient NS)
 16. Pod Health (Pending, CrashLoopBackOff, Helm releases, ArgoCD apps)
 17. Problem Pods (global check)
@@ -774,7 +774,7 @@ vagrant ssh master-1 -c "bash /home/vagrant/scripts/test/verify-cluster.sh"
 vagrant ssh master-1 -c "bash /home/vagrant/scripts/test/verify-cluster.sh \
   --stage=phase1"
 
-# Phase 2 인프라만 검증 (cert-manager, Traefik, DNS)
+# Phase 2 인프라만 검증 (cert-manager, APISIX, DNS)
 vagrant ssh master-1 -c "bash /home/vagrant/scripts/test/verify-cluster.sh \
   --stage=phase2-infra"
 
@@ -832,7 +832,7 @@ vagrant ssh master-1 -c "bash /home/vagrant/scripts/test/test-sso.sh \
 ✓ VIP 192.168.56.100 is reachable
 ✓ Cilium pods are running
 ✓ cert-manager webhook is ready
-✓ Traefik gateway is ready
+✓ APISIX gateway is ready
 # ...
 ✓ ALL 120+ CHECKS PASSED
 

@@ -12,8 +12,8 @@ jwt[0].issuer.url: Invalid value: "http://...": URL scheme must be https
 **원인**: K8s 1.35는 `--oidc-*` 플래그를 내부적으로 StructuredAuthenticationConfiguration으로 변환하며, HTTPS가 필수
 
 **해결법**:
-- cert-manager + Traefik TLS가 설치된 후에만 OIDC 플래그 활성화
-- 설치 순서: 08-1-networking (cert-manager/Traefik) → 09-istio-ambient → 10-dnsmasq → 11-1~11-4-keycloak-* (OIDC)
+- cert-manager + APISIX TLS가 설치된 후에만 OIDC 플래그 활성화
+- 설치 순서: 08-1-networking (cert-manager/APISIX) → 09-istio-ambient → 10-dnsmasq → 11-1~11-4-keycloak-* (OIDC)
 - 긴급 복구: `/etc/kubernetes/manifests/kube-apiserver.yaml`에서 `--oidc-*` 플래그 주석 처리
 
 **검증**:

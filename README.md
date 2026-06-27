@@ -15,13 +15,13 @@ Vagrant 기반 Kubernetes Internal Developer Platform (IDP) 클러스터.
 
 - **Kubernetes v1.35** - 최신 안정 버전, HA Control Plane (3 masters, 1 fault tolerance)
 - **GitOps** - ArgoCD + Gitea (App-of-Apps 패턴)
-- **SSO** - Keycloak OIDC (6개 앱 연동: ArgoCD, Grafana, Gitea, Harbor, Headlamp, OAuth2-Proxy)
+- **SSO** - Keycloak OIDC (APISIX openid-connect plugin 경유, 앱 연동: ArgoCD, Grafana, Gitea, Harbor, Headlamp)
 - **Observability** - Prometheus, Grafana, Loki, Tempo, Hubble
 - **Storage** - NFS (Block) + SeaweedFS (Object/S3) + [nfs-quota-agent](https://github.com/dasomel/nfs-quota-agent)
 - **Backup** - Velero + CNPG barman
 - **Service Mesh** - Istio ambient mode (mTLS, zero sidecars, ztunnel)
 - **Security** - cert-manager (TLS), OpenBao (Secrets), Kyverno (Policy)
-- **Networking** - Cilium (CNI), Traefik (Gateway API), MetalLB (LoadBalancer), kube-vip (VIP HA)
+- **Networking** - Cilium (CNI), APISIX (API Gateway, OIDC), MetalLB (LoadBalancer), kube-vip (VIP HA)
 
 ## Requirements
 
@@ -76,7 +76,7 @@ vagrant destroy -f
            │  VIP: 192.168.56.100           │
            │       (kube-vip API HA)        │
            │  LB:  192.168.56.200           │
-           │       (MetalLB/Traefik)        │
+           │       (MetalLB/APISIX)         │
            │  DNS: 192.168.56.10:53         │
            │       (*.local.narwhal.io)     │
            └────────────────────────────────┘
@@ -93,7 +93,7 @@ vagrant destroy -f
 | Hubble | v1.19.0 | Network observability |
 | kube-vip | v1.0.4 | Control plane VIP HA |
 | MetalLB | v0.15.3 | Bare-metal LoadBalancer |
-| Traefik | v3.6.7 | Gateway API Controller |
+| APISIX | 3.15.0 | API Gateway (TLS + OIDC via openid-connect plugin) |
 | cert-manager | v1.19.3 | TLS automation |
 | CloudNative-PG | v1.28.1 | PostgreSQL Operator |
 | Keycloak | v26.5.3 | IAM / SSO (Operator) |
@@ -113,7 +113,7 @@ vagrant destroy -f
 | OpenBao | 0.11.0 | v2.2.0 | Secret management |
 | Kyverno | 3.7.0 | v1.17.0 | Policy engine |
 | Headlamp | 0.40.0 | 0.40.0 | Kubernetes UI |
-| OAuth2-Proxy | 10.1.3 | 7.14.2 | SSO Gateway Proxy |
+| APISIX | 2.13.0 | 3.15.0 | API Gateway (TLS + OIDC) |
 | SeaweedFS | 4.0.407 | 4.07 | Object storage (S3) |
 | Velero | 11.3.2 | 1.17.1 | Backup & Restore |
 
@@ -123,7 +123,7 @@ See [VERSIONS.md](VERSIONS.md) for full version list.
 
 ### DNS 접속 (권장)
 
-Traefik Gateway + cert-manager self-signed TLS를 통해 HTTPS 도메인으로 접속합니다.
+APISIX API Gateway + cert-manager self-signed TLS를 통해 HTTPS 도메인으로 접속합니다.
 
 DNS 설정: 클라이언트 DNS를 `192.168.56.10`으로 지정하거나 `/etc/hosts`에 추가.
 
@@ -135,7 +135,6 @@ DNS 설정: 클라이언트 DNS를 `192.168.56.10`으로 지정하거나 `/etc/h
 | Harbor | https://harbor.local.narwhal.io | admin / Harbor12345 또는 Keycloak SSO |
 | Keycloak | https://keycloak.local.narwhal.io | temp-admin / (자동생성) |
 | Headlamp | https://headlamp.local.narwhal.io | Keycloak SSO |
-| OAuth2-Proxy | https://oauth2-proxy.local.narwhal.io | Keycloak SSO |
 | OpenBao | https://openbao.local.narwhal.io | root token (`bao operator init`) |
 | Hubble | https://hubble.local.narwhal.io | - |
 
@@ -180,7 +179,6 @@ kubectl port-forward svc/headlamp -n devtools 4466:80
 | Gitea | `gitea` | OAuth2 auth source (openidConnect) |
 | Harbor | `harbor` | configureUserSettings OIDC |
 | Headlamp | `headlamp` | OIDC config + CA cert mount |
-| OAuth2-Proxy | `oauth2-proxy` | keycloak-oidc provider |
 
 | Group | K8s Role | App Role |
 |-------|----------|----------|
@@ -231,13 +229,13 @@ gitops/
 │   ├── harbor.yaml
 │   ├── headlamp.yaml
 │   ├── metallb.yaml
-│   ├── oauth2-proxy.yaml
+│   ├── apisix.yaml
+│   ├── apisix-routes.yaml
 │   ├── openbao.yaml
 │   ├── kyverno.yaml
 │   ├── promtail.yaml
 │   ├── seaweedfs.yaml
 │   ├── velero.yaml
-│   ├── traefik.yaml
 │   ├── istio-base.yaml
 │   ├── istiod.yaml
 │   ├── istio-cni.yaml
@@ -250,7 +248,7 @@ gitops/
     ├── kyverno-policies.yaml
     ├── metallb-config.yaml
     ├── narwhal-db.yaml
-    ├── traefik-routes.yaml   # HTTPRoutes & Gateway
+    ├── apisix-routes.yaml    # ApisixRoute & ApisixTls
     └── istio-ambient-policies.yaml
 ```
 

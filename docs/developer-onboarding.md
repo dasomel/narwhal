@@ -20,7 +20,7 @@ Narwhal IDP 클러스터에서 개발자로 작업하기 위한 가이드입니�
 
 ### DNS 설정 (로컬 머신)
 
-모든 `*.local.narwhal.io` 도메인은 MetalLB IP `192.168.56.200`(Traefik)으로 라우팅됩니다.
+모든 `*.local.narwhal.io` 도메인은 MetalLB IP `192.168.56.200`(APISIX)으로 라우팅됩니다.
 DNS는 Master 노드의 dnsmasq가 처리합니다.
 
 **macOS:**
@@ -48,7 +48,7 @@ sudo systemctl restart systemd-resolved
 ```
 192.168.56.200 argocd.local.narwhal.io gitea.local.narwhal.io harbor.local.narwhal.io
 192.168.56.200 grafana.local.narwhal.io headlamp.local.narwhal.io keycloak.local.narwhal.io
-192.168.56.200 openbao.local.narwhal.io oauth2-proxy.local.narwhal.io
+192.168.56.200 openbao.local.narwhal.io
 ```
 
 > 자세한 내용: [DNS 접속 가이드](./dns-access.md)
@@ -60,7 +60,7 @@ sudo systemctl restart systemd-resolved
 ### 첫 로그인 절차
 
 1. 위 URL 중 아무 곳이나 브라우저로 접속
-2. OAuth2-Proxy → Keycloak 로그인 페이지로 자동 리다이렉트
+2. APISIX openid-connect 플러그인 → Keycloak 로그인 페이지로 자동 리다이렉트
 3. 관리자가 발급한 사용자명/비밀번호로 로그인
 4. 로그인 후 모든 서비스에서 SSO 세션 공유 (재로그인 불필요)
 
@@ -289,8 +289,8 @@ kubectl logs -n dev deployment/myapp --previous  # 재시작된 컨테이너
 # 2. Keycloak 상태 확인
 vagrant ssh master-1 -c "kubectl get pods -n iam"
 
-# 3. OAuth2-Proxy 상태 확인
-vagrant ssh master-1 -c "kubectl get pods -n iam -l app.kubernetes.io/name=oauth2-proxy"
+# 3. APISIX 상태 확인
+vagrant ssh master-1 -c "kubectl get pods -n platform-system -l app.kubernetes.io/name=apisix"
 
 # 4. Keycloak 접근 테스트
 curl -k https://keycloak.local.narwhal.io/realms/kubernetes/.well-known/openid-configuration
@@ -349,8 +349,8 @@ kubectl get pods -n dev  # 재로그인 프롬프트 표시됨
 | `dev` | 개발자 워크로드 | edit (Secrets 포함) |
 | `devtools` | ArgoCD, Gitea, Harbor, Headlamp | view |
 | `monitoring` | Prometheus, Grafana, Loki, Tempo | view |
-| `platform-system` | MetalLB, Traefik, cert-manager | view |
-| `iam` | Keycloak, OAuth2-Proxy | view |
+| `platform-system` | MetalLB, APISIX, cert-manager | view |
+| `iam` | Keycloak | view |
 | `storage` | OpenBao, Velero | view |
 
 ---

@@ -686,12 +686,11 @@ kubectl get pvc -A | grep -v Bound
 
 **Step 5: Phase 2 스크립트로 미복원 컴포넌트 재설치**
 
-Velero 복원 후에도 일부 컴포넌트(cert-manager webhook, Traefik GatewayClass 등)가 누락될 수 있습니다.
+Velero 복원 후에도 일부 컴포넌트(cert-manager webhook, APISIX 등)가 누락될 수 있습니다.
 
 ```bash
-# cert-manager, Traefik, MetalLB 재확인
+# cert-manager, APISIX, MetalLB 재확인
 vagrant ssh master-1 -c "kubectl get pods -n platform-system"
-vagrant ssh master-1 -c "kubectl get pods -n traefik"
 
 # 문제 있는 컴포넌트 재설치 (전체 Phase 2 재실행)
 vagrant ssh master-1 -c "sudo bash /home/vagrant/scripts/cluster/06-phase2-start.sh"
@@ -701,11 +700,11 @@ vagrant ssh master-1 -c "sudo bash /home/vagrant/scripts/cluster/06-phase2-start
 
 ```bash
 # MetalLB LB IP 확인
-kubectl get svc -n traefik traefik -o jsonpath='{.status.loadBalancer.ingress[0].ip}'
+kubectl get svc -n platform-system apisix-gateway -o jsonpath='{.status.loadBalancer.ingress[0].ip}'
 # 결과: 192.168.56.200 이어야 함
 
-# HTTPRoute 정상화 확인
-kubectl get httproute -A
+# ApisixRoute 정상화 확인
+kubectl get apisixroute -A
 
 # DNS 해석 테스트
 dig @192.168.56.10 grafana.local.narwhal.io +short
@@ -1414,7 +1413,7 @@ for node in master-1 master-2 master-3; do
 done
 
 # MetalLB LB IP 확인
-kubectl get svc -n traefik traefik -o jsonpath='{.status.loadBalancer.ingress[0].ip}'
+kubectl get svc -n platform-system apisix-gateway -o jsonpath='{.status.loadBalancer.ingress[0].ip}'
 
 # dnsmasq DNS 테스트
 vagrant ssh master-1 -c "dig @127.0.0.1 grafana.local.narwhal.io +short"

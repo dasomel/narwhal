@@ -26,7 +26,7 @@ done
 
 # Stage definitions:
 #   phase1: Cluster infrastructure (nodes, kube-vip, etcd, cilium, core services)
-#   phase2-infra: Platform infra (MetalLB, Traefik, cert-manager, TLS, DNS)
+#   phase2-infra: Platform infra (MetalLB, APISIX, cert-manager, TLS, DNS)
 #   phase2-apps: Platform apps (DB, monitoring, Keycloak, OIDC, GitOps)
 #   full: All checks (default)
 
@@ -439,10 +439,10 @@ if should_run "database"; then
 fi
 
 #=========================================
-# 7. METALLB & TRAEFIK
+# 7. METALLB & APISIX
 #=========================================
 if should_run "network"; then
-  echo "--- [7/17] MetalLB & Traefik ---"
+  echo "--- [7/17] MetalLB & APISIX ---"
   check_ready "deployment" "metallb-system" "metallb-controller" "MetalLB controller"
 
   METALLB_SPEAKERS=$(kubectl get pods -n metallb-system -l app.kubernetes.io/component=speaker --no-headers 2>/dev/null | grep -c "Running" || true)
@@ -468,32 +468,46 @@ if should_run "network"; then
     fail "MetalLB L2Advertisement: not found"
   fi
 
-  check_ready "deployment" "traefik" "traefik" "Traefik"
-
-  # Traefik external IP
-  TRAEFIK_IP=$(kubectl get svc traefik -n traefik -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || echo "")
-  if [ "${TRAEFIK_IP}" = "192.168.56.200" ]; then
-    pass "Traefik LoadBalancer IP: ${TRAEFIK_IP}"
-  elif [ -n "${TRAEFIK_IP}" ]; then
-    warn "Traefik LoadBalancer IP: ${TRAEFIK_IP} (expected 192.168.56.200)"
+  # APISIX gateway deployment (label-based, name is helm-rendered)
+  APISIX_GW_READY=$(kubectl get deploy -n platform-system -l app.kubernetes.io/name=apisix \
+    -o jsonpath='{range .items[*]}{.status.readyReplicas}{"\t"}{.spec.replicas}{"\n"}{end}' 2>/dev/null | head -1 || echo "")
+  APISIX_GW_R=$(echo "${APISIX_GW_READY}" | awk '{print $1}')
+  APISIX_GW_D=$(echo "${APISIX_GW_READY}" | awk '{print $2}')
+  if [ "${APISIX_GW_R:-0}" -gt 0 ] && [ "${APISIX_GW_R}" = "${APISIX_GW_D}" ]; then
+    pass "APISIX gateway: ${APISIX_GW_R}/${APISIX_GW_D} Ready"
   else
-    fail "Traefik LoadBalancer IP: not assigned"
+    fail "APISIX gateway: ${APISIX_GW_R:-0}/${APISIX_GW_D:-0} Ready"
   fi
 
-  # GatewayClass
-  GC_STATUS=$(kubectl get gatewayclass traefik -o jsonpath='{.status.conditions[?(@.type=="Accepted")].status}' 2>/dev/null || echo "")
-  if [ "${GC_STATUS}" = "True" ]; then
-    pass "GatewayClass traefik: Accepted"
+  # APISIX Ingress Controller deployment (label-based)
+  APISIX_IC_READY=$(kubectl get deploy -n platform-system -l app.kubernetes.io/name=apisix-ingress-controller \
+    -o jsonpath='{range .items[*]}{.status.readyReplicas}{"\t"}{.spec.replicas}{"\n"}{end}' 2>/dev/null | head -1 || echo "")
+  APISIX_IC_R=$(echo "${APISIX_IC_READY}" | awk '{print $1}')
+  APISIX_IC_D=$(echo "${APISIX_IC_READY}" | awk '{print $2}')
+  if [ "${APISIX_IC_R:-0}" -gt 0 ] && [ "${APISIX_IC_R}" = "${APISIX_IC_D}" ]; then
+    pass "APISIX Ingress Controller: ${APISIX_IC_R}/${APISIX_IC_D} Ready"
   else
-    fail "GatewayClass traefik: ${GC_STATUS:-not found}"
+    fail "APISIX Ingress Controller: ${APISIX_IC_R:-0}/${APISIX_IC_D:-0} Ready"
   fi
 
-  # Traefik Gateway
-  GW_STATUS=$(kubectl get gateway traefik-gateway -n traefik -o jsonpath='{.status.conditions[?(@.type=="Accepted")].status}' 2>/dev/null || echo "")
-  if [ "${GW_STATUS}" = "True" ]; then
-    pass "Traefik Gateway: Accepted"
+  # APISIX gateway LoadBalancer IP (resilient: query by type, no hardcoded svc name)
+  APISIX_LB_IP=$(kubectl get svc -n platform-system \
+    -o jsonpath='{range .items[?(@.spec.type=="LoadBalancer")]}{.status.loadBalancer.ingress[0].ip}{"\n"}{end}' \
+    2>/dev/null | grep -v '^$' | head -1 || echo "")
+  if [ "${APISIX_LB_IP}" = "192.168.56.200" ]; then
+    pass "APISIX LoadBalancer IP: ${APISIX_LB_IP}"
+  elif [ -n "${APISIX_LB_IP}" ]; then
+    warn "APISIX LoadBalancer IP: ${APISIX_LB_IP} (expected 192.168.56.200)"
   else
-    warn "Traefik Gateway: ${GW_STATUS:-not found}"
+    fail "APISIX LoadBalancer IP: not assigned"
+  fi
+
+  # ApisixRoute CRD presence and route count
+  APISIX_ROUTE_COUNT=$(kubectl get apisixroutes.apisix.apache.org -A --no-headers 2>/dev/null | wc -l | tr -d ' ')
+  if [ "${APISIX_ROUTE_COUNT:-0}" -gt 0 ]; then
+    pass "ApisixRoutes: ${APISIX_ROUTE_COUNT} routes defined"
+  else
+    fail "ApisixRoutes: none found (CRD missing or no routes)"
   fi
   echo ""
 fi
@@ -516,7 +530,7 @@ if should_run "tls"; then
   fi
 
   # TLS Certificate for *.local.narwhal.io
-  CERT_READY=$(kubectl get certificate traefik-tls -n traefik -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null || echo "")
+  CERT_READY=$(kubectl get certificate narwhal-wildcard-tls -n platform-system -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null || echo "")
   if [ "${CERT_READY}" = "True" ]; then
     pass "TLS cert *.local.narwhal.io: Ready"
   else
@@ -524,7 +538,7 @@ if should_run "tls"; then
   fi
 
   # Certificate covers wildcard domain
-  CERT_DOMAINS=$(kubectl get certificate traefik-tls -n traefik -o jsonpath='{.spec.dnsNames[*]}' 2>/dev/null || echo "")
+  CERT_DOMAINS=$(kubectl get certificate narwhal-wildcard-tls -n platform-system -o jsonpath='{.spec.dnsNames[*]}' 2>/dev/null || echo "")
   if echo "${CERT_DOMAINS}" | grep -qF '*.local.narwhal.io'; then
     pass "TLS cert wildcard: *.local.narwhal.io included"
   else

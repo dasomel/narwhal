@@ -84,8 +84,8 @@ fi
 #=========================================
 echo "Configuring DNS..."
 
-# Add master-1 dnsmasq as primary DNS for *.local.narwhal.io resolution
-# The ~local.narwhal.io routing domain ensures only matching queries go to dnsmasq
+# Add master-1 dnsmasq as primary DNS for *.local.narwhal.internal resolution
+# The ~local.narwhal.internal routing domain ensures only matching queries go to dnsmasq
 # On master-1, 10-dnsmasq.sh replaces systemd-resolved entirely, so this is a no-op
 if systemctl is-active --quiet systemd-resolved; then
   sudo mkdir -p /etc/systemd/resolved.conf.d
@@ -98,7 +98,7 @@ if systemctl is-active --quiet systemd-resolved; then
 [Resolve]
 DNS=${MASTER_DNS}8.8.8.8 8.8.4.4
 FallbackDNS=1.1.1.1
-Domains=~local.narwhal.io
+Domains=~local.narwhal.internal
 EOF
   sudo systemctl restart systemd-resolved
 fi
@@ -128,18 +128,18 @@ for i in $(seq 1 "$WORKER_COUNT"); do
   echo "${WORKER_IP_BASE}${i}   ${CLUSTER_NAME}-worker-${i}" | sudo tee -a /etc/hosts
 done
 
-# DNS leak fix: systemd-resolved leaks *.local.narwhal.io to NAT interface (enp2s0),
-# causing harbor.local.narwhal.io to resolve to its public AWS IP → TLS 'unrecognized name'.
+# DNS leak fix: systemd-resolved leaks *.local.narwhal.internal to NAT interface (enp2s0),
+# causing harbor.local.narwhal.internal to resolve to its public AWS IP → TLS 'unrecognized name'.
 # Pin harbor to the APISIX gateway's MetalLB LB IP so all nodes resolve it
 # internally. NOTE: this is the APISIX LB IP (192.168.56.200), NOT the
 # kube-apiserver VIP (${VIP_ADDRESS}=192.168.56.100) — harbor is served via APISIX.
 APISIX_LB_IP="${APISIX_LB_IP:-192.168.56.200}"
-HARBOR_HOSTS_ENTRY="${APISIX_LB_IP}   harbor.local.narwhal.io"
-if ! grep -q "harbor.local.narwhal.io" /etc/hosts; then
+HARBOR_HOSTS_ENTRY="${APISIX_LB_IP}   harbor.local.narwhal.internal"
+if ! grep -q "harbor.local.narwhal.internal" /etc/hosts; then
   echo "${HARBOR_HOSTS_ENTRY}" | sudo tee -a /etc/hosts
-  echo "Added harbor.local.narwhal.io -> ${APISIX_LB_IP} to /etc/hosts"
+  echo "Added harbor.local.narwhal.internal -> ${APISIX_LB_IP} to /etc/hosts"
 else
-  echo "harbor.local.narwhal.io already present in /etc/hosts, skipping"
+  echo "harbor.local.narwhal.internal already present in /etc/hosts, skipping"
 fi
 #=========================================
 # Configure Clock Synchronization (chrony)

@@ -88,7 +88,7 @@ spec:
     name: narwhal-ca-issuer
     kind: ClusterIssuer
   dnsNames:
-    - "*.local.narwhal.io"
+    - "*.local.narwhal.internal"
   duration: 8760h
   renewBefore: 720h
 ---
@@ -100,7 +100,7 @@ metadata:
   namespace: platform-system
 spec:
   hosts:
-    - "*.local.narwhal.io"
+    - "*.local.narwhal.internal"
   secret:
     name: narwhal-wildcard-tls
     namespace: platform-system

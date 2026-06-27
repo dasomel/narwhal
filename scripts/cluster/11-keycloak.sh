@@ -8,11 +8,11 @@ source /home/vagrant/scripts/common/lib.sh
 # - CNPG narwhal-db에 keycloak user/db 생성
 # - keycloak-db-secret 생성 (iam ns)
 # - Keycloak CR 생성 (Operator가 pod 관리)
-# - ExternalName + ApisixRoute bootstrap: keycloak.local.narwhal.io → keycloak-service:8080
+# - ExternalName + ApisixRoute bootstrap: keycloak.local.narwhal.internal → keycloak-service:8080
 # Depends on: 07-cnpg.sh (narwhal-db ready), 08-1-networking.sh (APISIX ready)
 
 KEYCLOAK_VERSION="${KEYCLOAK_VERSION:-26.5.7}"
-DOMAIN="${DOMAIN:-local.narwhal.io}"
+DOMAIN="${DOMAIN:-local.narwhal.internal}"
 export KUBECONFIG=/home/vagrant/.kube/config-local
 
 echo "=== Installing Keycloak ${KEYCLOAK_VERSION} ==="
@@ -113,7 +113,7 @@ spec:
   http:
     httpEnabled: true
   hostname:
-    hostname: keycloak.local.narwhal.io
+    hostname: keycloak.local.narwhal.internal
     strict: false
   proxy:
     headers: xforwarded
@@ -241,7 +241,7 @@ spec:
     - name: keycloak
       match:
         hosts:
-          - keycloak.local.narwhal.io
+          - keycloak.local.narwhal.internal
         paths:
           - "/*"
       backends:

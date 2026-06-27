@@ -79,7 +79,7 @@ Realm: narwhal
 
 ### Issuer URL
 ```
-https://keycloak.local.narwhal.io/realms/narwhal
+https://keycloak.local.narwhal.internal/realms/narwhal
 ```
 
 ### SSO 흐름
@@ -112,7 +112,7 @@ kubectl → kubectl-oidc-login → Keycloak (kubernetes client, public)
      - 출처: https://raw.githubusercontent.com/keycloak/keycloak-k8s-resources/refs/tags/26.x.x/kubernetes/kubernetes.yml
      - namespace: iam
 1-4. Keycloak CR 생성
-     - hostname.hostname: keycloak.local.narwhal.io
+     - hostname.hostname: keycloak.local.narwhal.internal
      - hostname.strict: false (내부 서비스에서 IP로 접근 허용)
      - proxy.headers: xforwarded
      - db: keycloak-db-secret 참조
@@ -122,7 +122,7 @@ kubectl → kubectl-oidc-login → Keycloak (kubernetes client, public)
      - Keycloak Operator가 자동으로 Ingress 생성 (HTTPRoute 생성 금지)
 1-6. APISIX ExternalName Service 생성 (platform-system ns)
      - keycloak.iam.svc.cluster.local 참조
-1-7. APISIX route 추가 (keycloak.local.narwhal.io 노출)
+1-7. APISIX route 추가 (keycloak.local.narwhal.internal 노출)
 ```
 
 **주의사항**:
@@ -173,7 +173,7 @@ kubectl → kubectl-oidc-login → Keycloak (kubernetes client, public)
 
 2-7. apisix client (confidential)
      - clientId: apisix, secret: 자동 생성
-     - redirectUris: https://*.local.narwhal.io/apisix/callback
+     - redirectUris: https://*.local.narwhal.internal/apisix/callback
      - scope: openid, profile, email, groups
      - Mappers: username, groups, Audience Mapper (apisix)
      - client secret → apisix-oidc-config secret (platform-system ns)
@@ -199,8 +199,8 @@ kubectl → kubectl-oidc-login → Keycloak (kubernetes client, public)
     1. username → preferred_username (User Property Mapper)
     2. groups → groups (Group Membership Mapper, full path: false)
     3. Audience Mapper: included.client.audience=<client-id>  ← 필수
-- redirectUris: https://<service>.local.narwhal.io/apisix/callback
-- webOrigins: https://<service>.local.narwhal.io
+- redirectUris: https://<service>.local.narwhal.internal/apisix/callback
+- webOrigins: https://<service>.local.narwhal.internal
 ```
 
 **APISIX openid-connect plugin 공통 구조**:
@@ -211,8 +211,8 @@ plugins:
     config:
       client_id: "<service-client-id>"
       client_secret: "$secret://kubernetes/k8s-1/<service>-oidc-secret/client_secret"
-      discovery: "https://keycloak.local.narwhal.io/realms/narwhal/.well-known/openid-configuration"
-      redirect_uri: "https://<service>.local.narwhal.io/apisix/callback"
+      discovery: "https://keycloak.local.narwhal.internal/realms/narwhal/.well-known/openid-configuration"
+      redirect_uri: "https://<service>.local.narwhal.internal/apisix/callback"
       scope: "openid email profile groups"
       bearer_only: false
       ssl_verify: false
@@ -230,10 +230,10 @@ plugins:
 ```
 Keycloak Client:
   clientId: argocd
-  redirectUri: https://argocd.local.narwhal.io/apisix/callback
+  redirectUri: https://argocd.local.narwhal.internal/apisix/callback
   Secret → argocd-oidc-secret (platform-system ns)
 
-APISIX Route: argocd.local.narwhal.io
+APISIX Route: argocd.local.narwhal.internal
   upstream: argocd-server.devtools:80
   plugin: openid-connect (client_id=argocd)
 ```
@@ -242,10 +242,10 @@ APISIX Route: argocd.local.narwhal.io
 ```
 Keycloak Client:
   clientId: grafana
-  redirectUri: https://grafana.local.narwhal.io/apisix/callback
+  redirectUri: https://grafana.local.narwhal.internal/apisix/callback
   Secret → grafana-oidc-secret (platform-system ns)
 
-APISIX Route: grafana.local.narwhal.io
+APISIX Route: grafana.local.narwhal.internal
   upstream: prometheus-stack-grafana.monitoring:80
   plugin: openid-connect (client_id=grafana)
 ```
@@ -254,10 +254,10 @@ APISIX Route: grafana.local.narwhal.io
 ```
 Keycloak Client:
   clientId: gitea
-  redirectUri: https://gitea.local.narwhal.io/apisix/callback
+  redirectUri: https://gitea.local.narwhal.internal/apisix/callback
   Secret → gitea-oidc-secret (platform-system ns)
 
-APISIX Route: gitea.local.narwhal.io
+APISIX Route: gitea.local.narwhal.internal
   upstream: gitea-http.devtools:3000
   plugin: openid-connect (client_id=gitea)
 ```
@@ -266,10 +266,10 @@ APISIX Route: gitea.local.narwhal.io
 ```
 Keycloak Client:
   clientId: harbor
-  redirectUri: https://harbor.local.narwhal.io/apisix/callback
+  redirectUri: https://harbor.local.narwhal.internal/apisix/callback
   Secret → harbor-oidc-secret (platform-system ns)
 
-APISIX Route: harbor.local.narwhal.io
+APISIX Route: harbor.local.narwhal.internal
   upstream: harbor-nginx.devtools:80
   plugin: openid-connect (client_id=harbor)
          + client-control (body_size: 104857600)  ← 이미지 push용
@@ -279,10 +279,10 @@ APISIX Route: harbor.local.narwhal.io
 ```
 Keycloak Client:
   clientId: headlamp
-  redirectUri: https://headlamp.local.narwhal.io/apisix/callback
+  redirectUri: https://headlamp.local.narwhal.internal/apisix/callback
   Secret → headlamp-oidc-secret (platform-system ns)
 
-APISIX Route: headlamp.local.narwhal.io
+APISIX Route: headlamp.local.narwhal.internal
   upstream: headlamp.devtools:80
   plugin: openid-connect (client_id=headlamp)
 ```
@@ -291,10 +291,10 @@ APISIX Route: headlamp.local.narwhal.io
 ```
 Keycloak Client:
   clientId: velero-ui
-  redirectUri: https://velero-ui.local.narwhal.io/apisix/callback
+  redirectUri: https://velero-ui.local.narwhal.internal/apisix/callback
   Secret → velero-ui-oidc-secret (platform-system ns)
 
-APISIX Route: velero-ui.local.narwhal.io
+APISIX Route: velero-ui.local.narwhal.internal
   upstream: velero-ui.storage:3000
   plugin: openid-connect (client_id=velero-ui)
 ```
@@ -303,10 +303,10 @@ APISIX Route: velero-ui.local.narwhal.io
 ```
 Keycloak Client:
   clientId: hubble
-  redirectUri: https://hubble.local.narwhal.io/apisix/callback
+  redirectUri: https://hubble.local.narwhal.internal/apisix/callback
   Secret → hubble-oidc-secret (platform-system ns)
 
-APISIX Route: hubble.local.narwhal.io
+APISIX Route: hubble.local.narwhal.internal
   upstream: hubble-ui.kube-system:80
   plugin: openid-connect (client_id=hubble)
 ```
@@ -315,13 +315,13 @@ APISIX Route: hubble.local.narwhal.io
 ```
 Keycloak Client:
   clientId: prometheus
-  redirectUri: https://prometheus.local.narwhal.io/apisix/callback,
-               https://alertmanager.local.narwhal.io/apisix/callback
+  redirectUri: https://prometheus.local.narwhal.internal/apisix/callback,
+               https://alertmanager.local.narwhal.internal/apisix/callback
   Secret → prometheus-oidc-secret (platform-system ns)
 
 APISIX Routes:
-  prometheus.local.narwhal.io   → prometheus-server:9090
-  alertmanager.local.narwhal.io → alertmanager-server:9093
+  prometheus.local.narwhal.internal   → prometheus-server:9090
+  alertmanager.local.narwhal.internal → alertmanager-server:9093
   (동일 client 공유 가능, redirectUri 2개 등록)
 ```
 
@@ -329,10 +329,10 @@ APISIX Routes:
 ```
 Keycloak Client:
   clientId: openbao
-  redirectUri: https://openbao.local.narwhal.io/apisix/callback
+  redirectUri: https://openbao.local.narwhal.internal/apisix/callback
   Secret → openbao-oidc-secret (platform-system ns)
 
-APISIX Route: openbao.local.narwhal.io
+APISIX Route: openbao.local.narwhal.internal
   upstream: openbao.storage:8200
   plugin: openid-connect (client_id=openbao)
 ```
@@ -349,12 +349,12 @@ APISIX Route: openbao.local.narwhal.io
 
 ```
 4-1. Keycloak TLS 인증서 추출 (self-signed CA)
-     openssl s_client -connect keycloak.local.narwhal.io:443 -showcerts \
+     openssl s_client -connect keycloak.local.narwhal.internal:443 -showcerts \
        2>/dev/null | openssl x509 -outform PEM > /tmp/keycloak-ca.crt
 
 4-2. kube-apiserver static pod manifest 수정 (yq 사용)
      /etc/kubernetes/manifests/kube-apiserver.yaml
-     --oidc-issuer-url=https://keycloak.local.narwhal.io/realms/narwhal
+     --oidc-issuer-url=https://keycloak.local.narwhal.internal/realms/narwhal
      --oidc-client-id=kubernetes
      --oidc-username-claim=preferred_username
      --oidc-username-prefix=oidc:
@@ -383,10 +383,10 @@ APISIX Route: openbao.local.narwhal.io
 
 ```yaml
 # 변경 전
-discovery: "https://authentik.local.narwhal.io/application/o/apisix/.well-known/openid-configuration"
+discovery: "https://authentik.local.narwhal.internal/application/o/apisix/.well-known/openid-configuration"
 
 # 변경 후
-discovery: "https://keycloak.local.narwhal.io/realms/narwhal/.well-known/openid-configuration"
+discovery: "https://keycloak.local.narwhal.internal/realms/narwhal/.well-known/openid-configuration"
 ```
 
 - `redirect_uri` 패턴 유지 (`/apisix/callback`)
@@ -420,16 +420,16 @@ discovery: "https://keycloak.local.narwhal.io/realms/narwhal/.well-known/openid-
 | 서비스 | Keycloak Client ID | Secret 위치 | APISIX Upstream | Callback URL |
 |---|---|---|---|---|
 | kubectl | kubernetes (public) | — | — | localhost:*/callback |
-| ArgoCD | argocd | platform-system/argocd-oidc-secret | argocd-server.devtools:80 | argocd.local.narwhal.io/apisix/callback |
-| Grafana | grafana | platform-system/grafana-oidc-secret | prometheus-stack-grafana.monitoring:80 | grafana.local.narwhal.io/apisix/callback |
-| Gitea | gitea | platform-system/gitea-oidc-secret | gitea-http.devtools:3000 | gitea.local.narwhal.io/apisix/callback |
-| Harbor | harbor | platform-system/harbor-oidc-secret | harbor-nginx.devtools:80 | harbor.local.narwhal.io/apisix/callback |
-| Headlamp | headlamp | platform-system/headlamp-oidc-secret | headlamp.devtools:80 | headlamp.local.narwhal.io/apisix/callback |
-| Velero UI | velero-ui | platform-system/velero-ui-oidc-secret | velero-ui.storage:3000 | velero-ui.local.narwhal.io/apisix/callback |
-| Hubble UI | hubble | platform-system/hubble-oidc-secret | hubble-ui.kube-system:80 | hubble.local.narwhal.io/apisix/callback |
-| Prometheus | prometheus | platform-system/prometheus-oidc-secret | prometheus-server:9090 | prometheus.local.narwhal.io/apisix/callback |
-| Alertmanager | prometheus (공유) | platform-system/prometheus-oidc-secret | alertmanager-server:9093 | alertmanager.local.narwhal.io/apisix/callback |
-| OpenBao | openbao | platform-system/openbao-oidc-secret | openbao.storage:8200 | openbao.local.narwhal.io/apisix/callback |
+| ArgoCD | argocd | platform-system/argocd-oidc-secret | argocd-server.devtools:80 | argocd.local.narwhal.internal/apisix/callback |
+| Grafana | grafana | platform-system/grafana-oidc-secret | prometheus-stack-grafana.monitoring:80 | grafana.local.narwhal.internal/apisix/callback |
+| Gitea | gitea | platform-system/gitea-oidc-secret | gitea-http.devtools:3000 | gitea.local.narwhal.internal/apisix/callback |
+| Harbor | harbor | platform-system/harbor-oidc-secret | harbor-nginx.devtools:80 | harbor.local.narwhal.internal/apisix/callback |
+| Headlamp | headlamp | platform-system/headlamp-oidc-secret | headlamp.devtools:80 | headlamp.local.narwhal.internal/apisix/callback |
+| Velero UI | velero-ui | platform-system/velero-ui-oidc-secret | velero-ui.storage:3000 | velero-ui.local.narwhal.internal/apisix/callback |
+| Hubble UI | hubble | platform-system/hubble-oidc-secret | hubble-ui.kube-system:80 | hubble.local.narwhal.internal/apisix/callback |
+| Prometheus | prometheus | platform-system/prometheus-oidc-secret | prometheus-server:9090 | prometheus.local.narwhal.internal/apisix/callback |
+| Alertmanager | prometheus (공유) | platform-system/prometheus-oidc-secret | alertmanager-server:9093 | alertmanager.local.narwhal.internal/apisix/callback |
+| OpenBao | openbao | platform-system/openbao-oidc-secret | openbao.storage:8200 | openbao.local.narwhal.internal/apisix/callback |
 
 ---
 
@@ -455,7 +455,7 @@ discovery: "https://keycloak.local.narwhal.io/realms/narwhal/.well-known/openid-
 
 ### Keycloak 설치 검증
 - [ ] Keycloak pod Running
-- [ ] `https://keycloak.local.narwhal.io` 접속 가능
+- [ ] `https://keycloak.local.narwhal.internal` 접속 가능
 - [ ] Admin Console 로그인 성공
 - [ ] `.well-known/openid-configuration` 엔드포인트 응답
 

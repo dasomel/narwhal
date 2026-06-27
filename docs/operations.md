@@ -204,7 +204,7 @@ kubectl exec -n openbao openbao-0 -- bao status
 
 ```bash
 # OpenBao UI는 HTTPRoute로 노출됨
-# https://openbao.local.narwhal.io
+# https://openbao.local.narwhal.internal
 # Root Token으로 로그인
 ```
 
@@ -286,7 +286,7 @@ vagrant ssh master-1 -c "kubectl get applications -n argocd"
 vagrant ssh master-1 -c "kubectl get application my-app -n argocd -o yaml"
 
 # ArgoCD UI에서 확인
-# https://argocd.local.narwhal.io
+# https://argocd.local.narwhal.internal
 ```
 
 ### 앱 제거 절차

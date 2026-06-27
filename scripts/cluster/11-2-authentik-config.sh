@@ -16,7 +16,7 @@ source /home/vagrant/scripts/common/lib.sh
 # NOTE: 재실행 시 기존 object는 update되지 않음 (creation-only idempotency).
 # 재구성 필요 시 Authentik UI에서 해당 provider/application 삭제 후 재실행.
 
-DOMAIN="${DOMAIN:-local.narwhal.io}"
+DOMAIN="${DOMAIN:-local.narwhal.internal}"
 # Use external URL via dnsmasq+APISIX (in-cluster FQDN not resolvable from master node host)
 AUTHENTIK_URL="http://authentik.${DOMAIN}"
 export KUBECONFIG=/home/vagrant/.kube/config-local
@@ -109,10 +109,10 @@ fi
 
 # Create users with group assignments
 for row in \
-  "admin:${ADMIN_PASS}:${GROUP_IDS[cluster-admin]}:admin@local.narwhal.io" \
-  "dev:${DEV_PASS}:${GROUP_IDS[developer]}:dev@local.narwhal.io" \
-  "view:${VIEW_PASS}:${GROUP_IDS[viewer]}:view@local.narwhal.io" \
-  "guest:${GUEST_PASS}:${GROUP_IDS[guest]}:guest@local.narwhal.io"; do
+  "admin:${ADMIN_PASS}:${GROUP_IDS[cluster-admin]}:admin@local.narwhal.internal" \
+  "dev:${DEV_PASS}:${GROUP_IDS[developer]}:dev@local.narwhal.internal" \
+  "view:${VIEW_PASS}:${GROUP_IDS[viewer]}:view@local.narwhal.internal" \
+  "guest:${GUEST_PASS}:${GROUP_IDS[guest]}:guest@local.narwhal.internal"; do
 
   IFS=':' read -r username password group_pk email <<< "${row}"
 
@@ -275,7 +275,7 @@ echo "=========================================="
 echo "Authentik Configuration Summary"
 echo "=========================================="
 echo "Admin UI:    https://authentik.${DOMAIN}"
-echo "Admin email: admin@local.narwhal.io"
+echo "Admin email: admin@local.narwhal.internal"
 echo "Admin pass:  kubectl get secret authentik-bootstrap-secret -n iam -o jsonpath='{.data.bootstrap_password}' | base64 -d"
 echo ""
 echo "OIDC Issuers:"

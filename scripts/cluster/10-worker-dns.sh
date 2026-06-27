@@ -4,22 +4,22 @@ set -euo pipefail
 #=========================================
 # Worker Node DNS Resolver Configuration
 #=========================================
-# Configures systemd-resolved on worker nodes to forward *.local.narwhal.io
+# Configures systemd-resolved on worker nodes to forward *.local.narwhal.internal
 # queries to the master-1 dnsmasq instance (192.168.56.10).
-# Without this, workers resolve harbor.local.narwhal.io via public upstream
+# Without this, workers resolve harbor.local.narwhal.internal via public upstream
 # and image pulls fail with "tls: unrecognized name".
 #
 # Idempotent: re-running is safe (tee overwrites the drop-in).
 
 MASTER_IP="${MASTER_IP:-192.168.56.10}"
-DOMAIN="${DOMAIN:-local.narwhal.io}"
+DOMAIN="${DOMAIN:-local.narwhal.internal}"
 IFACE="${IFACE:-eth1}"
 
 echo "=== Configuring worker DNS resolver for ${DOMAIN} ==="
 echo "Master dnsmasq: ${MASTER_IP}"
 echo "Interface: ${IFACE}"
 
-# Drop-in: route *.local.narwhal.io to master dnsmasq only (split-DNS).
+# Drop-in: route *.local.narwhal.internal to master dnsmasq only (split-DNS).
 # DNS=  points the interface-specific resolver at master-1.
 # Domains=~  marks it as a routing-only domain (no search suffix).
 sudo mkdir -p /etc/systemd/resolved.conf.d

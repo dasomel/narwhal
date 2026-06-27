@@ -26,7 +26,7 @@ sudo sed -i 's/SystemdCgroup = false/SystemdCgroup = true/' /etc/containerd/conf
 sudo sed -i 's|sandbox_image = ".*"|sandbox_image = "registry.k8s.io/pause:3.10"|' /etc/containerd/config.toml
 
 # Enable registry config_path so containerd reads per-registry certs.d entries.
-# This is required for Harbor (harbor.local.narwhal.io) to use the narwhal CA without
+# This is required for Harbor (harbor.local.narwhal.internal) to use the narwhal CA without
 # global insecure_registries (which would bypass TLS entirely).
 if grep -q 'config_path\s*=\s*""' /etc/containerd/config.toml; then
   sudo sed -i 's|config_path\s*=\s*""|config_path = "/etc/containerd/certs.d"|' /etc/containerd/config.toml
@@ -39,16 +39,16 @@ else
   echo "containerd: config_path already set, skipping"
 fi
 
-# Create certs.d entry for harbor.local.narwhal.io.
+# Create certs.d entry for harbor.local.narwhal.internal.
 # Internal cluster registry behind APISIX — skip TLS verify (no node CA trust
-# needed; this is the verified pull path for harbor.local.narwhal.io).
-HARBOR_CERTS_DIR="/etc/containerd/certs.d/harbor.local.narwhal.io"
+# needed; this is the verified pull path for harbor.local.narwhal.internal).
+HARBOR_CERTS_DIR="/etc/containerd/certs.d/harbor.local.narwhal.internal"
 sudo mkdir -p "${HARBOR_CERTS_DIR}"
 if [ ! -f "${HARBOR_CERTS_DIR}/hosts.toml" ]; then
   sudo tee "${HARBOR_CERTS_DIR}/hosts.toml" > /dev/null <<'HTOML'
-server = "https://harbor.local.narwhal.io"
+server = "https://harbor.local.narwhal.internal"
 
-[host."https://harbor.local.narwhal.io"]
+[host."https://harbor.local.narwhal.internal"]
   capabilities = ["pull", "resolve"]
   skip_verify = true
 HTOML

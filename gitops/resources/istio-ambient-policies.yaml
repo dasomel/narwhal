@@ -21,7 +21,7 @@ spec:
 #   cannot speak Istio mTLS. Under mesh-wide STRICT, ztunnel rejects their
 #   non-mTLS inbound, breaking the cluster. Concretely:
 #     - APISIX gateway: external clients (MetalLB VIP 192.168.56.200 → host →
-#       APISIX) arrive in plaintext → STRICT made all *.local.narwhal.io ingress
+#       APISIX) arrive in plaintext → STRICT made all *.local.narwhal.internal ingress
 #       unreachable.
 #     - Kyverno / cert-manager admission webhooks: the kube-apiserver (host
 #       network, NOT mesh-enrolled) calls https://kyverno-svc.platform-system.svc

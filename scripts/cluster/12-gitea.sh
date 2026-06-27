@@ -33,7 +33,7 @@ kubectl wait --for=condition=Ready cluster/narwhal-db -n database --timeout=300s
 kubectl wait --for=condition=Ready pod -l cnpg.io/poolerName=narwhal-db-pooler-rw -n database --timeout=120s || true
 
 # Authentik OIDC configuration
-AUTHENTIK_URL="${AUTHENTIK_URL:-https://authentik.${DOMAIN:-local.narwhal.io}}"
+AUTHENTIK_URL="${AUTHENTIK_URL:-https://authentik.${DOMAIN:-local.narwhal.internal}}"
 
 # Gitea admin password — create Secret on first run, reuse on re-run
 if ! kubectl get secret gitea-admin -n devtools &>/dev/null; then
@@ -67,7 +67,7 @@ helm upgrade --install gitea gitea-charts/gitea \
   --set gitea.config.database.NAME=gitea \
   --set gitea.config.database.USER=gitea \
   --set gitea.config.database.PASSWD="${GITEA_DB_PASS}" \
-  --set gitea.config.server.ROOT_URL=https://gitea.local.narwhal.io \
+  --set gitea.config.server.ROOT_URL=https://gitea.local.narwhal.internal \
   --set gitea.config.oauth2_client.ENABLE_AUTO_REGISTRATION=true \
   --set gitea.config.oauth2_client.ACCOUNT_LINKING=auto \
   --set gitea.config.oauth2_client.UPDATE_AVATAR=true \

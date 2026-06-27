@@ -4,13 +4,13 @@ set -euo pipefail
 #=========================================
 # dnsmasq Installation for Local DNS
 #=========================================
-# Resolves *.local.narwhal.io to MetalLB IP (192.168.56.200)
+# Resolves *.local.narwhal.internal to MetalLB IP (192.168.56.200)
 # Listens on master IP (192.168.56.10) port 53
 # Forwards all other queries to upstream DNS (8.8.8.8, 8.8.4.4)
 
 MASTER_IP="${MASTER_IP:-192.168.56.10}"
 METALLB_IP="${METALLB_IP:-192.168.56.200}"
-DOMAIN="${DOMAIN:-local.narwhal.io}"
+DOMAIN="${DOMAIN:-local.narwhal.internal}"
 SKIP_COREDNS="${SKIP_COREDNS:-false}"
 MASTER_IP_BASE="${MASTER_IP_BASE:-192.168.56.1}"
 MASTER_COUNT="${MASTER_COUNT:-3}"
@@ -63,7 +63,7 @@ bind-interfaces
 # Standard DNS port
 port=53
 
-# Resolve all *.local.narwhal.io to MetalLB IP
+# Resolve all *.local.narwhal.internal to MetalLB IP
 address=/${DOMAIN}/${METALLB_IP}
 
 # Upstream DNS servers for all other domains
@@ -126,7 +126,7 @@ else
   # CoreDNS Forward Rule for Pod-internal DNS
   #=========================================
   # Pods use CoreDNS (10.96.0.10), not dnsmasq, for DNS resolution.
-  # Without this rule, Pods cannot resolve *.local.narwhal.io.
+  # Without this rule, Pods cannot resolve *.local.narwhal.internal.
   # Forward to both master dnsmasq instances for HA.
   # Build dynamic master DNS list for CoreDNS forward
   MASTER_DNS_LIST=""
@@ -134,13 +134,13 @@ else
     MASTER_DNS_LIST="${MASTER_DNS_LIST}${MASTER_IP_BASE}${idx} "
   done
   MASTER_DNS_LIST="${MASTER_DNS_LIST% }"  # trim trailing space
-  echo "=== Configuring CoreDNS to forward local.narwhal.io to dnsmasq (${MASTER_DNS_LIST}) ==="
+  echo "=== Configuring CoreDNS to forward local.narwhal.internal to dnsmasq (${MASTER_DNS_LIST}) ==="
 
   COREDNS_CM=$(kubectl get configmap coredns -n kube-system -o json 2>/dev/null || echo "")
   if [ -n "${COREDNS_CM}" ]; then
     # Check if forward rule already exists
-    if echo "${COREDNS_CM}" | grep -q "local.narwhal.io"; then
-      echo "CoreDNS forward rule for local.narwhal.io already exists"
+    if echo "${COREDNS_CM}" | grep -q "local.narwhal.internal"; then
+      echo "CoreDNS forward rule for local.narwhal.internal already exists"
     else
       # Add forward rule using kubectl patch
       COREFILE=$(echo "${COREDNS_CM}" | yq -r '.data.Corefile')
@@ -171,7 +171,7 @@ ${COREFILE}"
   # CoreDNS Hairpin Fix
   #=========================================
   # In-cluster pods cannot reach MetalLB external IPs through Cilium (hairpin routing).
-  # Solution: add a hosts zone in CoreDNS that maps *.local.narwhal.io directly to
+  # Solution: add a hosts zone in CoreDNS that maps *.local.narwhal.internal directly to
   # the APISIX ClusterIP, bypassing the MetalLB external IP entirely.
   echo ""
   echo "=== Configuring CoreDNS hairpin fix (*.${DOMAIN} -> APISIX ClusterIP) ==="
@@ -207,7 +207,7 @@ ${COREFILE}"
       HAIRPIN_DNS_LIST="${HAIRPIN_DNS_LIST% }"
 
       # Append hairpin zone block to existing Corefile
-      # The hosts plugin maps all known *.local.narwhal.io hostnames to the
+      # The hosts plugin maps all known *.local.narwhal.internal hostnames to the
       # APISIX ClusterIP so pods route internally instead of through MetalLB.
       HAIRPIN_ZONE="${DOMAIN}:53 {
     # hairpin: in-cluster pods -> APISIX ClusterIP (bypasses MetalLB)

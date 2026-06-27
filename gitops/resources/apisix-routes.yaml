@@ -21,7 +21,7 @@ spec:
     - name: keycloak
       match:
         hosts:
-          - keycloak.local.narwhal.io
+          - keycloak.local.narwhal.internal
         paths:
           - "/*"
       upstreams:
@@ -64,7 +64,7 @@ spec:
     - name: argocd
       match:
         hosts:
-          - argocd.local.narwhal.io
+          - argocd.local.narwhal.internal
         paths:
           - "/*"
       upstreams:
@@ -99,7 +99,7 @@ spec:
       priority: 10
       match:
         hosts:
-          - argocd.local.narwhal.io
+          - argocd.local.narwhal.internal
         paths:
           - "/*"
         exprs:
@@ -145,7 +145,7 @@ spec:
     - name: grafana
       match:
         hosts:
-          - grafana.local.narwhal.io
+          - grafana.local.narwhal.internal
         paths:
           - "/*"
       upstreams:
@@ -184,7 +184,7 @@ spec:
       priority: 100
       match:
         hosts:
-          - gitea.local.narwhal.io
+          - gitea.local.narwhal.internal
         paths:
           - "/*"
         exprs:
@@ -215,7 +215,7 @@ spec:
       priority: 0
       match:
         hosts:
-          - gitea.local.narwhal.io
+          - gitea.local.narwhal.internal
         paths:
           - "/*"
       upstreams:
@@ -226,8 +226,8 @@ spec:
           config:
             client_id: "gitea"
             client_secret: "$env://GITEA_OIDC_CLIENT_SECRET"
-            discovery: "https://keycloak.local.narwhal.io/realms/narwhal/.well-known/openid-configuration"
-            redirect_uri: "https://gitea.local.narwhal.io/apisix/callback"
+            discovery: "https://keycloak.local.narwhal.internal/realms/narwhal/.well-known/openid-configuration"
+            redirect_uri: "https://gitea.local.narwhal.internal/apisix/callback"
             scope: "openid email profile groups"
             bearer_only: false
             ssl_verify: false
@@ -292,7 +292,7 @@ spec:
     - name: harbor
       match:
         hosts:
-          - harbor.local.narwhal.io
+          - harbor.local.narwhal.internal
         paths:
           - "/*"
       upstreams:
@@ -331,7 +331,7 @@ spec:
       priority: 10
       match:
         hosts:
-          - harbor.local.narwhal.io
+          - harbor.local.narwhal.internal
         paths:
           - "/*"
         exprs:
@@ -383,7 +383,7 @@ spec:
     - name: headlamp-auth-return
       match:
         hosts:
-          - headlamp.local.narwhal.io
+          - headlamp.local.narwhal.internal
         paths:
           - "/auth"
       upstreams:
@@ -447,7 +447,7 @@ spec:
     - name: headlamp
       match:
         hosts:
-          - headlamp.local.narwhal.io
+          - headlamp.local.narwhal.internal
         paths:
           - "/*"
       upstreams:
@@ -491,12 +491,12 @@ spec:
     # /sso/callback -> code/state를 callback API로 교환, client_token을
     #                  UI 토큰 포맷(localStorage 'vault-token☃1')으로 기록 후 UI 진입
     # 전제: auth/oidc/role/default allowed_redirect_uris + Keycloak openbao 클라이언트에
-    # https://openbao.local.narwhal.io/sso/callback 등록 (11-3-keycloak-clients.sh)
+    # https://openbao.local.narwhal.internal/sso/callback 등록 (11-3-keycloak-clients.sh)
     - name: openbao-sso
       priority: 10
       match:
         hosts:
-          - openbao.local.narwhal.io
+          - openbao.local.narwhal.internal
         paths:
           - "/sso"
           - "/sso/callback"
@@ -575,7 +575,7 @@ spec:
     - name: openbao
       match:
         hosts:
-          - openbao.local.narwhal.io
+          - openbao.local.narwhal.internal
         paths:
           - "/*"
       upstreams:
@@ -613,7 +613,7 @@ spec:
     - name: hubble
       match:
         hosts:
-          - hubble.local.narwhal.io
+          - hubble.local.narwhal.internal
         paths:
           - "/*"
       upstreams:
@@ -624,8 +624,8 @@ spec:
           config:
             client_id: "hubble"
             client_secret: "$env://HUBBLE_OIDC_CLIENT_SECRET"
-            discovery: "https://keycloak.local.narwhal.io/realms/narwhal/.well-known/openid-configuration"
-            redirect_uri: "https://hubble.local.narwhal.io/apisix/callback"
+            discovery: "https://keycloak.local.narwhal.internal/realms/narwhal/.well-known/openid-configuration"
+            redirect_uri: "https://hubble.local.narwhal.internal/apisix/callback"
             scope: "openid email profile groups"
             bearer_only: false
             ssl_verify: false
@@ -669,7 +669,7 @@ spec:
     - name: prometheus
       match:
         hosts:
-          - prometheus.local.narwhal.io
+          - prometheus.local.narwhal.internal
         paths:
           - "/*"
       upstreams:
@@ -680,8 +680,8 @@ spec:
           config:
             client_id: "prometheus"
             client_secret: "$env://PROMETHEUS_OIDC_CLIENT_SECRET"
-            discovery: "https://keycloak.local.narwhal.io/realms/narwhal/.well-known/openid-configuration"
-            redirect_uri: "https://prometheus.local.narwhal.io/apisix/callback"
+            discovery: "https://keycloak.local.narwhal.internal/realms/narwhal/.well-known/openid-configuration"
+            redirect_uri: "https://prometheus.local.narwhal.internal/apisix/callback"
             scope: "openid email profile groups"
             bearer_only: false
             ssl_verify: false
@@ -725,7 +725,7 @@ spec:
     - name: alertmanager
       match:
         hosts:
-          - alertmanager.local.narwhal.io
+          - alertmanager.local.narwhal.internal
         paths:
           - "/*"
       upstreams:
@@ -736,8 +736,8 @@ spec:
           config:
             client_id: "alertmanager"
             client_secret: "$env://ALERTMANAGER_OIDC_CLIENT_SECRET"
-            discovery: "https://keycloak.local.narwhal.io/realms/narwhal/.well-known/openid-configuration"
-            redirect_uri: "https://alertmanager.local.narwhal.io/apisix/callback"
+            discovery: "https://keycloak.local.narwhal.internal/realms/narwhal/.well-known/openid-configuration"
+            redirect_uri: "https://alertmanager.local.narwhal.internal/apisix/callback"
             scope: "openid email profile groups"
             bearer_only: false
             ssl_verify: false
@@ -786,7 +786,7 @@ spec:
       priority: 10
       match:
         hosts:
-          - velero-ui.local.narwhal.io
+          - velero-ui.local.narwhal.internal
         paths:
           - "/sso"
       upstreams:
@@ -807,7 +807,7 @@ spec:
                   var s = crypto.randomUUID();
                   localStorage.setItem("auth.oauth.state", s);
                   location.replace(
-                    "https://keycloak.local.narwhal.io/realms/narwhal/protocol/openid-connect/auth" +
+                    "https://keycloak.local.narwhal.internal/realms/narwhal/protocol/openid-connect/auth" +
                     "?client_id=velero-ui" +
                     "&redirect_uri=" + encodeURIComponent(location.origin + "/login") +
                     "&scope=" + encodeURIComponent("openid profile email groups") +
@@ -819,7 +819,7 @@ spec:
     - name: velero-ui
       match:
         hosts:
-          - velero-ui.local.narwhal.io
+          - velero-ui.local.narwhal.internal
         paths:
           - "/*"
       # velero-ui (NestJS) drives its UI over socket.io and handles its own
@@ -865,7 +865,7 @@ spec:
     - name: narwhal-portal
       match:
         hosts:
-          - portal.local.narwhal.io
+          - portal.local.narwhal.internal
         paths:
           - "/*"
       # Live dev (skaffold dev) HMR: Next.js dev WebSocket (/_next/webpack-hmr)
@@ -915,7 +915,7 @@ spec:
     - name: nfs-quota-agent
       match:
         hosts:
-          - nfs-quota.local.narwhal.io
+          - nfs-quota.local.narwhal.internal
         paths:
           - "/*"
       upstreams:
@@ -926,8 +926,8 @@ spec:
           config:
             client_id: "hubble"
             client_secret: "$env://HUBBLE_OIDC_CLIENT_SECRET"
-            discovery: "https://keycloak.local.narwhal.io/realms/narwhal/.well-known/openid-configuration"
-            redirect_uri: "https://nfs-quota.local.narwhal.io/apisix/callback"
+            discovery: "https://keycloak.local.narwhal.internal/realms/narwhal/.well-known/openid-configuration"
+            redirect_uri: "https://nfs-quota.local.narwhal.internal/apisix/callback"
             scope: "openid email profile groups"
             bearer_only: false
             ssl_verify: false
@@ -1001,7 +1001,7 @@ spec:
     - name: apisix-dashboard
       match:
         hosts:
-          - apisix-dashboard.local.narwhal.io
+          - apisix-dashboard.local.narwhal.internal
         paths:
           - "/*"
       upstreams:

@@ -5,7 +5,7 @@
 
 set -u
 
-DOMAIN="${DOMAIN:-local.narwhal.io}"
+DOMAIN="${DOMAIN:-local.narwhal.internal}"
 
 # Colors (falls back to empty when not a TTY)
 if [ -t 1 ]; then

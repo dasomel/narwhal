@@ -20,7 +20,7 @@ source /home/vagrant/scripts/common/lib.sh
 #
 # Depends on: 11-2-keycloak-config.sh (realm/groups/scope/users 존재)
 
-DOMAIN="${DOMAIN:-local.narwhal.io}"
+DOMAIN="${DOMAIN:-local.narwhal.internal}"
 REALM="narwhal"
 export KUBECONFIG=/home/vagrant/.kube/config-local
 

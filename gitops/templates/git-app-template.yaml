@@ -14,7 +14,7 @@
 # 필수 교체 항목:
 #   <APP_NAME>   - 앱 이름 (예: my-webapp, api-service)
 #   <REPO_NAME>  - Gitea 레포 이름 (예: my-webapp)
-#                  레포 URL: http://gitea.local.narwhal.io/<ORG>/<REPO_NAME>
+#                  레포 URL: http://gitea.local.narwhal.internal/<ORG>/<REPO_NAME>
 #   <ORG_NAME>   - Gitea 조직 또는 유저명 (예: narwhal, dev-team)
 #   <MANIFEST_PATH> - 매니페스트 경로 (예: k8s/, deploy/, .)
 #   <NAMESPACE>  - 대상 네임스페이스 (예: dev)
@@ -45,7 +45,7 @@ spec:
   project: default
   source:
     # Gitea 내부 서비스 주소 (클러스터 내부 통신)
-    # 외부 주소(https://gitea.local.narwhal.io) 사용 금지:
+    # 외부 주소(https://gitea.local.narwhal.internal) 사용 금지:
     #   ArgoCD repo-server가 TLS 검증 없이 내부 통신해야 하고
     #   IPv6 DNS 해석 실패 이슈 방지를 위해 내부 주소 사용
     repoURL: http://gitea-http.devtools.svc.cluster.local:3000/<ORG_NAME>/<REPO_NAME>.git

@@ -113,7 +113,7 @@
 | 성능 | 초기 로드 < 3초, 메트릭 갱신 < 1초 |
 | 보안 | APISIX openid-connect 플러그인으로 미인증 접근 차단 |
 | 배포 | ArgoCD GitOps 관리 (`gitops/apps/idp-portal.yaml`) |
-| URL | `https://portal.local.narwhal.io` |
+| URL | `https://portal.local.narwhal.internal` |
 | 언어 | 한국어 기본 |
 
 ---
@@ -197,7 +197,7 @@ K8s API / Prometheus 호출 빈도를 줄이기 위해 **Valkey**를 서버단 �
 ### 3.6 배포 구조
 ```
 [사용자 브라우저]
-    → APISIX (portal.local.narwhal.io)
+    → APISIX (portal.local.narwhal.internal)
         → openid-connect 플러그인 → Authentik 인증
         → Next.js Pod (namespace: devtools)
             ├── OpenBao Agent 사이드카 (시크릿 → /vault/secrets/ 마운트)
@@ -257,7 +257,7 @@ K8s API / Prometheus 호출 빈도를 줄이기 위해 **Valkey**를 서버단 �
 ### M1: 기반 설정
 - [ ] Next.js 15 프로젝트 초기화 (TypeScript + Tailwind + shadcn/ui)
 - [ ] NextAuth.js v5 + Authentik OIDC 연동
-- [ ] APISIX 라우트 추가 (`portal.local.narwhal.io`)
+- [ ] APISIX 라우트 추가 (`portal.local.narwhal.internal`)
 - [ ] K8s Deployment + Service YAML
 - [ ] ArgoCD Application YAML (`gitops/apps/idp-portal.yaml`)
 
@@ -288,7 +288,7 @@ K8s API / Prometheus 호출 빈도를 줄이기 위해 **Valkey**를 서버단 �
 
 ## 6. 완료 조건
 
-- [ ] `https://portal.local.narwhal.io` 접근 시 Authentik 로그인 리다이렉트
+- [ ] `https://portal.local.narwhal.internal` 접근 시 Authentik 로그인 리다이렉트
 - [ ] 로그인 후 역할(그룹)에 따른 메뉴 차등 표시
 - [ ] 홈 대시보드: Prometheus 기반 클러스터 메트릭 표시
 - [ ] 홈 대시보드: ArgoCD 앱 상태 요약 표시

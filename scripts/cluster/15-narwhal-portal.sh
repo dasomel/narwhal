@@ -24,7 +24,7 @@ export KUBECONFIG=/home/vagrant/.kube/config-local
 
 NAMESPACE="devtools"
 DEPLOYMENT="narwhal-portal"
-HARBOR_HOST="harbor.local.narwhal.io"
+HARBOR_HOST="harbor.local.narwhal.internal"
 HARBOR_PROJECT="library"
 HARBOR_REPO="narwhal-portal"
 

@@ -20,7 +20,7 @@
 - 08-5-registry.sh — Harbor registry (ARM64: ghcr.io/dasomel/goharbor)
 - 08-6-tls-routes.sh — APISIX TLS certificate termination
 - 09-istio-ambient.sh — Istio v1.29.0 ambient mode (ztunnel + istio-cni)
-- 10-dnsmasq.sh — DNS HA, hairpin zone for local.narwhal.io
+- 10-dnsmasq.sh — DNS HA, hairpin zone for local.narwhal.internal
 - 11-keycloak.sh — Keycloak Operator + StatefulSet (Keycloak v26.1.4)
 - 11-2-keycloak-config.sh — Bootstrap Keycloak users, create applications/clients
 - 11-3-keycloak-clients.sh — Configure OAuth/OIDC clients (kubernetes, apisix, idp-portal, etc.)
@@ -40,7 +40,7 @@
 - bak/08-platform-apps.sh — Old platform apps provisioner (replaced by 06-phase2-start.sh)
 
 **⚠️ Flag: Authentik References in 11-2-keycloak-config.sh + 08-3-security.sh**
-- Scripts still reference `authentik.local.narwhal.io` DNS + issuer URLs
+- Scripts still reference `authentik.local.narwhal.internal` DNS + issuer URLs
 - Migration incomplete: comment shows old authentik OIDC paths
 - Updated 2026-04-07 per git log (commit 86a4953), but DNS aliases + comments not cleaned
 
@@ -128,7 +128,7 @@
 | MASTER_MEMORY | 6144 MB (6GB) |
 | WORKER_MEMORY | 6144 MB (6GB) |
 | VIP_ADDRESS | 192.168.56.100 |
-| DOMAIN | local.narwhal.io (set in phase2) |
+| DOMAIN | local.narwhal.internal (set in phase2) |
 | METALLB_IP | 192.168.56.200 |
 | POD_NETWORK_CIDR | 10.244.0.0/16 |
 | SERVICE_CIDR | 10.96.0.0/12 |
@@ -170,7 +170,7 @@ Scripts with outdated Authentik references (11 files):
 - 11-3-authentik-clients.sh (active, UNUSED — replaced by 11-3-keycloak-clients.sh)
 - 11-4-authentik-apiserver.sh (active, UNUSED — replaced by 11-4-keycloak-apiserver.sh)
 - 11-authentik.sh (active, UNUSED — replaced by 11-keycloak.sh)
-- 08-3-security.sh → contains comment: `issuerURL: https://authentik.local.narwhal.io/application/o/apisix/` (outdated)
+- 08-3-security.sh → contains comment: `issuerURL: https://authentik.local.narwhal.internal/application/o/apisix/` (outdated)
 - 10-dnsmasq.sh → DNS zone: `${APISIX_IP} authentik.${DOMAIN}` (unused, should be removed)
 - bak/08-platform-apps.sh (stale backup)
 

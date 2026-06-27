@@ -58,7 +58,7 @@ spec:
                   name: authentik-bootstrap-secret
                   key: bootstrap_password
             - name: AUTHENTIK_BOOTSTRAP_EMAIL
-              value: "admin@local.narwhal.io"
+              value: "admin@local.narwhal.internal"
           resources:
             requests:
               memory: "512Mi"
@@ -90,7 +90,7 @@ spec:
                   name: authentik-bootstrap-secret
                   key: bootstrap_password
             - name: AUTHENTIK_BOOTSTRAP_EMAIL
-              value: "admin@local.narwhal.io"
+              value: "admin@local.narwhal.internal"
           resources:
             requests:
               memory: "256Mi"

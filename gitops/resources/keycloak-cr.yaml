@@ -387,7 +387,7 @@ spec:
   http:
     httpEnabled: true
   hostname:
-    hostname: https://keycloak.local.narwhal.io
+    hostname: https://keycloak.local.narwhal.internal
     strict: true
   proxy:
     headers: xforwarded

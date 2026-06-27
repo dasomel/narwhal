@@ -19,7 +19,7 @@ jwt[0].issuer.url: Invalid value: "http://...": URL scheme must be https
 **검증**:
 ```bash
 # HTTPS 엔드포인트 확인
-curl -k https://keycloak.local.narwhal.io/realms/kubernetes/.well-known/openid-configuration
+curl -k https://keycloak.local.narwhal.internal/realms/kubernetes/.well-known/openid-configuration
 # API 서버 로그 확인
 kubectl logs -n kube-system kube-apiserver-master-1 --tail=50
 ```
@@ -195,7 +195,7 @@ helm get values <release-name> -n <namespace>
 
 ## 9. DNS 해석 실패
 
-**증상**: Pod에서 `*.local.narwhal.io` 도메인 해석 불가
+**증상**: Pod에서 `*.local.narwhal.internal` 도메인 해석 불가
 
 **확인 순서**:
 ```bash
@@ -203,18 +203,18 @@ helm get values <release-name> -n <namespace>
 systemctl status dnsmasq
 
 # 2. CoreDNS forward 설정 확인
-kubectl get configmap coredns -n kube-system -o yaml | grep -A5 "local.narwhal.io"
+kubectl get configmap coredns -n kube-system -o yaml | grep -A5 "local.narwhal.internal"
 
 # 3. Pod에서 DNS 테스트
-kubectl run -it --rm dns-test --image=alpine/k8s:1.31.4 --restart=Never -- nslookup keycloak.local.narwhal.io
+kubectl run -it --rm dns-test --image=alpine/k8s:1.31.4 --restart=Never -- nslookup keycloak.local.narwhal.internal
 
 # 4. 노드 DNS 설정 확인
 resolvectl status | grep -A3 "DNS Servers"
 ```
 
 **일반적 원인**:
-- CoreDNS가 `local.narwhal.io`를 dnsmasq로 forward하지 않음 → `10-dnsmasq.sh` 재실행
-- worker/master-2에서 public DNS로 해석 → systemd-resolved에 `Domains=~local.narwhal.io` 설정 필요
+- CoreDNS가 `local.narwhal.internal`를 dnsmasq로 forward하지 않음 → `10-dnsmasq.sh` 재실행
+- worker/master-2에서 public DNS로 해석 → systemd-resolved에 `Domains=~local.narwhal.internal` 설정 필요
 - dnsmasq HA: 3개 master 모두 dnsmasq 실행, CoreDNS forward에 3개 모두 등록
 
 ## 10. Istio Ambient Mesh
@@ -279,7 +279,7 @@ kubectl describe node master-1 | grep -A5 Conditions
 **토큰 발급 테스트**:
 ```bash
 # 비밀번호 grant로 토큰 발급
-curl -k -X POST "https://keycloak.local.narwhal.io/realms/kubernetes/protocol/openid-connect/token" \
+curl -k -X POST "https://keycloak.local.narwhal.internal/realms/kubernetes/protocol/openid-connect/token" \
   -d "grant_type=password" \
   -d "client_id=kubernetes" \
   -d "client_secret=kubernetes-client-secret" \
@@ -367,7 +367,7 @@ Cilium pod (특정 노드) Not Ready
   → MetalLB controller (해당 노드에 배치) Not Ready
     → MetalLB L2 라우팅 불안정
       → 192.168.56.200 (APISIX gateway LoadBalancer IP) 응답 없음
-        → authentik.local.narwhal.io 접근 불가
+        → authentik.local.narwhal.internal 접근 불가
           → kube-apiserver OIDC 초기화 실패
             → kube-apiserver CrashLoopBackOff
               → 해당 master의 cilium도 Unauthorized → ContainerCreating 정지
@@ -400,7 +400,7 @@ kubectl logs -n kube-system <cilium-pod> --tail=20 | grep -E 'error|warn|panic|U
 # Step 2. master-1 /etc/hosts에 Authentik ClusterIP 직접 등록 (APISIX 우회)
 # → kube-apiserver가 OIDC endpoint에 직접 접근 가능하게 함
 AUTHENTIK_IP=$(kubectl get svc -n iam authentik-server -o jsonpath='{.spec.clusterIP}')
-vagrant ssh master-1 -c "echo '${AUTHENTIK_IP} authentik.local.narwhal.io' | sudo tee -a /etc/hosts"
+vagrant ssh master-1 -c "echo '${AUTHENTIK_IP} authentik.local.narwhal.internal' | sudo tee -a /etc/hosts"
 
 # Step 3. kube-apiserver 재시작 유도 (static pod manifest touch)
 vagrant ssh master-1 -c "sudo touch /etc/kubernetes/manifests/kube-apiserver.yaml"

@@ -100,7 +100,7 @@ done
 #=========================================
 echo "=== Configuring API Server for OIDC ==="
 
-DOMAIN="${DOMAIN:-local.narwhal.io}"
+DOMAIN="${DOMAIN:-local.narwhal.internal}"
 # K8s 1.35+ requires HTTPS for --oidc-issuer-url; HTTP causes API server crash
 OIDC_ISSUER_URL="https://authentik.${DOMAIN}/application/o/kubernetes/"
 APISERVER_MANIFEST="/etc/kubernetes/manifests/kube-apiserver.yaml"

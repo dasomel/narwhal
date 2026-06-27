@@ -164,7 +164,7 @@
 - auth-redirect-nginx: nginx server for auth redirect page
 
 **Certificate (1):**
-- traefik-tls: Wildcard cert for *.local.narwhal.io
+- traefik-tls: Wildcard cert for *.local.narwhal.internal
 
 ##### narwhal-db.yaml (7 resources)
 **Purpose:** Consolidated PostgreSQL cluster (CNPG) for all applications
@@ -306,7 +306,7 @@ allowedRoutes:
 
 ### ✓ TLS/Certificate Management
 - **cert-manager Integration:** ✓ Present
-- **Wildcard Certificate:** *.local.narwhal.io
+- **Wildcard Certificate:** *.local.narwhal.internal
 - **Certificate Duration:** 8760h (1 year)
 - **Renewal Buffer:** 720h (30 days)
 

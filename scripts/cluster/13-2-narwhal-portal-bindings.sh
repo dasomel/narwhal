@@ -20,7 +20,7 @@
 #   Keycloak: narwhal-portal + narwhal-portal-admin 클라이언트 (재실행 안전)
 set -euo pipefail
 
-DOMAIN="${DOMAIN:-local.narwhal.io}"
+DOMAIN="${DOMAIN:-local.narwhal.internal}"
 REALM="narwhal"
 export KUBECONFIG=/home/vagrant/.kube/config-local
 

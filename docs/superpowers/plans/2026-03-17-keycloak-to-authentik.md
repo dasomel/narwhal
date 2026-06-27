@@ -248,7 +248,7 @@
                     name: authentik-bootstrap-secret
                     key: bootstrap_password
               - name: AUTHENTIK_BOOTSTRAP_EMAIL
-                value: "admin@local.narwhal.io"
+                value: "admin@local.narwhal.internal"
             resources:
               requests:
                 memory: "512Mi"
@@ -280,7 +280,7 @@
                     name: authentik-bootstrap-secret
                     key: bootstrap_password
               - name: AUTHENTIK_BOOTSTRAP_EMAIL
-                value: "admin@local.narwhal.io"
+                value: "admin@local.narwhal.internal"
             resources:
               requests:
                 memory: "256Mi"
@@ -320,7 +320,7 @@
 **Files:**
 - Create: `scripts/cluster/11-authentik.sh`
 
-**Context:** `11-1-keycloak-operator.sh`를 대체. Valkey 8 standalone 배포, K8s secrets 생성 (`authentik-bootstrap-secret`), Helm install, `authentik.local.narwhal.io` ApisixRoute 생성, 준비 대기. 생성된 bootstrap token은 `11-2-authentik-config.sh`가 REST API 호출에 사용.
+**Context:** `11-1-keycloak-operator.sh`를 대체. Valkey 8 standalone 배포, K8s secrets 생성 (`authentik-bootstrap-secret`), Helm install, `authentik.local.narwhal.internal` ApisixRoute 생성, 준비 대기. 생성된 bootstrap token은 `11-2-authentik-config.sh`가 REST API 호출에 사용.
 
 - [ ] **Step 1: Create scripts/cluster/11-authentik.sh**
 
@@ -334,11 +334,11 @@
   # - Valkey 8 standalone (Redis 대체, Bitnami 배제)
   # - authentik-bootstrap-secret 생성 (secret_key, bootstrap_token, bootstrap_password)
   # - Helm install: ghcr.io/goauthentik/* (ARM64 지원)
-  # - ApisixRoute bootstrap: authentik.local.narwhal.io → authentik-server:9000
+  # - ApisixRoute bootstrap: authentik.local.narwhal.internal → authentik-server:9000
   # Depends on: 07-cnpg.sh (narwhal-db ready), 08-1-networking.sh (APISIX ready)
 
   AUTHENTIK_VERSION="${AUTHENTIK_VERSION:-2025.4.0}"
-  DOMAIN="${DOMAIN:-local.narwhal.io}"
+  DOMAIN="${DOMAIN:-local.narwhal.internal}"
   export KUBECONFIG=/home/vagrant/.kube/config-local
 
   echo "=== Installing Authentik ${AUTHENTIK_VERSION} ==="
@@ -469,14 +469,14 @@
       {"name":"AUTHENTIK_POSTGRESQL__PASSWORD","valueFrom":{"secretKeyRef":{"name":"narwhal-db-credentials","key":"password"}}},
       {"name":"AUTHENTIK_BOOTSTRAP_TOKEN","valueFrom":{"secretKeyRef":{"name":"authentik-bootstrap-secret","key":"bootstrap_token"}}},
       {"name":"AUTHENTIK_BOOTSTRAP_PASSWORD","valueFrom":{"secretKeyRef":{"name":"authentik-bootstrap-secret","key":"bootstrap_password"}}},
-      {"name":"AUTHENTIK_BOOTSTRAP_EMAIL","value":"admin@local.narwhal.io"}
+      {"name":"AUTHENTIK_BOOTSTRAP_EMAIL","value":"admin@local.narwhal.internal"}
     ]' \
     --set-json 'worker.additionalEnv=[
       {"name":"AUTHENTIK_SECRET_KEY","valueFrom":{"secretKeyRef":{"name":"authentik-bootstrap-secret","key":"secret_key"}}},
       {"name":"AUTHENTIK_POSTGRESQL__PASSWORD","valueFrom":{"secretKeyRef":{"name":"narwhal-db-credentials","key":"password"}}},
       {"name":"AUTHENTIK_BOOTSTRAP_TOKEN","valueFrom":{"secretKeyRef":{"name":"authentik-bootstrap-secret","key":"bootstrap_token"}}},
       {"name":"AUTHENTIK_BOOTSTRAP_PASSWORD","valueFrom":{"secretKeyRef":{"name":"authentik-bootstrap-secret","key":"bootstrap_password"}}},
-      {"name":"AUTHENTIK_BOOTSTRAP_EMAIL","value":"admin@local.narwhal.io"}
+      {"name":"AUTHENTIK_BOOTSTRAP_EMAIL","value":"admin@local.narwhal.internal"}
     ]' \
     --timeout 10m \
     || echo "WARN: Helm install timed out, waiting manually..."
@@ -505,7 +505,7 @@
       - name: authentik
         match:
           hosts:
-            - authentik.local.narwhal.io
+            - authentik.local.narwhal.internal
           paths:
             - "/*"
         backends:
@@ -596,7 +596,7 @@
   # - K8s Secrets: apisix-oidc-config, grafana-oauth-secret, headlamp-oidc-secret
   # Depends on: 11-authentik.sh (Authentik pod ready, HTTPS 라우트 존재)
 
-  DOMAIN="${DOMAIN:-local.narwhal.io}"
+  DOMAIN="${DOMAIN:-local.narwhal.internal}"
   # in-cluster HTTP: TLS 검증 불필요, 빠름
   AUTHENTIK_URL="http://authentik-server.iam.svc.cluster.local:9000"
   export KUBECONFIG=/home/vagrant/.kube/config-local
@@ -690,10 +690,10 @@
   # Create users: each user gets one group
   # group assignment: groups array takes group PKs
   for row in \
-    "admin:${ADMIN_PASS}:${GROUP_IDS[cluster-admin]}:admin@local.narwhal.io" \
-    "dev:${DEV_PASS}:${GROUP_IDS[developer]}:dev@local.narwhal.io" \
-    "view:${VIEW_PASS}:${GROUP_IDS[viewer]}:view@local.narwhal.io" \
-    "guest:${GUEST_PASS}:${GROUP_IDS[guest]}:guest@local.narwhal.io"; do
+    "admin:${ADMIN_PASS}:${GROUP_IDS[cluster-admin]}:admin@local.narwhal.internal" \
+    "dev:${DEV_PASS}:${GROUP_IDS[developer]}:dev@local.narwhal.internal" \
+    "view:${VIEW_PASS}:${GROUP_IDS[viewer]}:view@local.narwhal.internal" \
+    "guest:${GUEST_PASS}:${GROUP_IDS[guest]}:guest@local.narwhal.internal"; do
 
     IFS=':' read -r username password group_pk email <<< "${row}"
 
@@ -846,7 +846,7 @@
   echo "Authentik Configuration Summary"
   echo "=========================================="
   echo "Admin UI:    https://authentik.${DOMAIN}"
-  echo "Admin email: admin@local.narwhal.io"
+  echo "Admin email: admin@local.narwhal.internal"
   echo "Admin pass:  kubectl get secret authentik-bootstrap-secret -n iam"
   echo ""
   echo "OIDC Issuers:"
@@ -974,7 +974,7 @@
       - name: authentik
         match:
           hosts:
-            - authentik.local.narwhal.io
+            - authentik.local.narwhal.internal
           paths:
             - "/*"
         backends:
@@ -998,11 +998,11 @@
 
   변경 전:
   ```yaml
-  discovery: "https://keycloak.local.narwhal.io/realms/kubernetes/.well-known/openid-configuration"
+  discovery: "https://keycloak.local.narwhal.internal/realms/kubernetes/.well-known/openid-configuration"
   ```
   변경 후:
   ```yaml
-  discovery: "https://authentik.local.narwhal.io/application/o/apisix/.well-known/openid-configuration"
+  discovery: "https://authentik.local.narwhal.internal/application/o/apisix/.well-known/openid-configuration"
   ```
 
 - [ ] **Step 3: Commit**
@@ -1085,18 +1085,18 @@
 kubectl get pods -n iam
 
 # 2. Authentik 웹 UI 접근 (브라우저)
-# https://authentik.local.narwhal.io
+# https://authentik.local.narwhal.internal
 
 # 3. OIDC discovery 엔드포인트 확인
-curl -sk https://authentik.local.narwhal.io/application/o/kubernetes/.well-known/openid-configuration | jq .issuer
-# expected: "https://authentik.local.narwhal.io/application/o/kubernetes/"
+curl -sk https://authentik.local.narwhal.internal/application/o/kubernetes/.well-known/openid-configuration | jq .issuer
+# expected: "https://authentik.local.narwhal.internal/application/o/kubernetes/"
 
-curl -sk https://authentik.local.narwhal.io/application/o/apisix/.well-known/openid-configuration | jq .issuer
-# expected: "https://authentik.local.narwhal.io/application/o/apisix/"
+curl -sk https://authentik.local.narwhal.internal/application/o/apisix/.well-known/openid-configuration | jq .issuer
+# expected: "https://authentik.local.narwhal.internal/application/o/apisix/"
 
 # 4. K8s API server OIDC 동작 확인 (OIDC token으로 kubectl)
 OIDC_TOKEN=$(curl -sk -X POST \
-  https://authentik.local.narwhal.io/application/o/token/ \
+  https://authentik.local.narwhal.internal/application/o/token/ \
   -d "grant_type=password&client_id=kubernetes&username=admin&password=$(kubectl get secret authentik-user-passwords -n iam -o jsonpath='{.data.admin}' | base64 -d)&scope=openid profile email groups" \
   | jq -r .id_token)
 
@@ -1105,5 +1105,5 @@ KUBECONFIG=/dev/null kubectl --server=https://192.168.56.100:6443 \
   --token="${OIDC_TOKEN}" \
   get nodes
 
-# 5. APISIX 라우트 SSO 동작: 브라우저에서 https://argocd.local.narwhal.io 접근 → Authentik 로그인 페이지로 리다이렉트 확인
+# 5. APISIX 라우트 SSO 동작: 브라우저에서 https://argocd.local.narwhal.internal 접근 → Authentik 로그인 페이지로 리다이렉트 확인
 ```

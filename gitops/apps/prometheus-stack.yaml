@@ -60,7 +60,7 @@ spec:
               readOnly: true
           grafana.ini:
             server:
-              root_url: https://grafana.local.narwhal.io
+              root_url: https://grafana.local.narwhal.internal
             tracing.opentelemetry.otlp:
               address: tempo.monitoring.svc.cluster.local:4317
             auth:
@@ -73,9 +73,9 @@ spec:
               client_id: grafana
               client_secret: $__file{/etc/secrets/auth_generic_oauth/client_secret}
               scopes: openid email profile groups
-              auth_url: https://keycloak.local.narwhal.io/realms/narwhal/protocol/openid-connect/auth
-              token_url: https://keycloak.local.narwhal.io/realms/narwhal/protocol/openid-connect/token
-              api_url: https://keycloak.local.narwhal.io/realms/narwhal/protocol/openid-connect/userinfo
+              auth_url: https://keycloak.local.narwhal.internal/realms/narwhal/protocol/openid-connect/auth
+              token_url: https://keycloak.local.narwhal.internal/realms/narwhal/protocol/openid-connect/token
+              api_url: https://keycloak.local.narwhal.internal/realms/narwhal/protocol/openid-connect/userinfo
               groups_attribute_path: groups
               # self-signed cert 환경 (narwhal-ca). 실제 CA cert ca_file로 교체 가능
               tls_skip_verify_insecure: true

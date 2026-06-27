@@ -27,7 +27,7 @@ source /home/vagrant/scripts/common/lib.sh
 #             08-4-storage.sh (OpenBao exists)
 #             08-5-registry.sh (Harbor exists)
 
-DOMAIN="${DOMAIN:-local.narwhal.io}"
+DOMAIN="${DOMAIN:-local.narwhal.internal}"
 AUTHENTIK_URL="http://authentik.${DOMAIN}"
 export KUBECONFIG=/home/vagrant/.kube/config-local
 

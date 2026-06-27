@@ -10,27 +10,27 @@ Narwhal IDP 클러스터에서 개발자로 작업하기 위한 가이드입니�
 
 | 서비스 | URL | 용도 |
 |--------|-----|------|
-| ArgoCD | https://argocd.local.narwhal.io | GitOps 배포 관리 |
-| Gitea | https://gitea.local.narwhal.io | Git 저장소 |
-| Harbor | https://harbor.local.narwhal.io | 컨테이너 레지스트리 |
-| Grafana | https://grafana.local.narwhal.io | 모니터링 대시보드 |
-| Headlamp | https://headlamp.local.narwhal.io | Kubernetes UI |
-| Keycloak | https://keycloak.local.narwhal.io | SSO 계정 관리 |
-| OpenBao | https://openbao.local.narwhal.io | 시크릿 관리 |
+| ArgoCD | https://argocd.local.narwhal.internal | GitOps 배포 관리 |
+| Gitea | https://gitea.local.narwhal.internal | Git 저장소 |
+| Harbor | https://harbor.local.narwhal.internal | 컨테이너 레지스트리 |
+| Grafana | https://grafana.local.narwhal.internal | 모니터링 대시보드 |
+| Headlamp | https://headlamp.local.narwhal.internal | Kubernetes UI |
+| Keycloak | https://keycloak.local.narwhal.internal | SSO 계정 관리 |
+| OpenBao | https://openbao.local.narwhal.internal | 시크릿 관리 |
 
 ### DNS 설정 (로컬 머신)
 
-모든 `*.local.narwhal.io` 도메인은 MetalLB IP `192.168.56.200`(APISIX)으로 라우팅됩니다.
+모든 `*.local.narwhal.internal` 도메인은 MetalLB IP `192.168.56.200`(APISIX)으로 라우팅됩니다.
 DNS는 Master 노드의 dnsmasq가 처리합니다.
 
 **macOS:**
 ```bash
 sudo mkdir -p /etc/resolver
 printf 'nameserver 192.168.56.10\nnameserver 192.168.56.11\nnameserver 192.168.56.12\n' \
-  | sudo tee /etc/resolver/local.narwhal.io
+  | sudo tee /etc/resolver/local.narwhal.internal
 
 # 설정 확인
-scutil --dns | grep -A3 "local.narwhal.io"
+scutil --dns | grep -A3 "local.narwhal.internal"
 ```
 
 **Linux (systemd-resolved):**
@@ -39,16 +39,16 @@ sudo mkdir -p /etc/systemd/resolved.conf.d
 sudo tee /etc/systemd/resolved.conf.d/narwhal.conf << 'EOF'
 [Resolve]
 DNS=192.168.56.10 192.168.56.11 192.168.56.12
-Domains=~local.narwhal.io
+Domains=~local.narwhal.internal
 EOF
 sudo systemctl restart systemd-resolved
 ```
 
 **간편 대안 — /etc/hosts 직접 추가:**
 ```
-192.168.56.200 argocd.local.narwhal.io gitea.local.narwhal.io harbor.local.narwhal.io
-192.168.56.200 grafana.local.narwhal.io headlamp.local.narwhal.io keycloak.local.narwhal.io
-192.168.56.200 openbao.local.narwhal.io
+192.168.56.200 argocd.local.narwhal.internal gitea.local.narwhal.internal harbor.local.narwhal.internal
+192.168.56.200 grafana.local.narwhal.internal headlamp.local.narwhal.internal keycloak.local.narwhal.internal
+192.168.56.200 openbao.local.narwhal.internal
 ```
 
 > 자세한 내용: [DNS 접속 가이드](./dns-access.md)
@@ -120,7 +120,7 @@ kubectl get pods -n dev
 
 ```bash
 TOKEN=$(curl -sk -X POST \
-  "https://keycloak.local.narwhal.io/realms/kubernetes/protocol/openid-connect/token" \
+  "https://keycloak.local.narwhal.internal/realms/kubernetes/protocol/openid-connect/token" \
   -d "grant_type=password" \
   -d "client_id=kubernetes" \
   -d "username=dev" \
@@ -165,7 +165,7 @@ kubectl apply -f my-app.yaml -n dev
 
 ### GitOps 배포 (권장)
 
-1. **Gitea에서 레포 생성**: https://gitea.local.narwhal.io
+1. **Gitea에서 레포 생성**: https://gitea.local.narwhal.internal
 2. **Kubernetes 매니페스트 작성 후 push**
 3. **ArgoCD Application YAML 작성**:
 
@@ -211,7 +211,7 @@ kubectl rollout status deployment/my-app -n dev
 ### Docker 로그인
 
 ```bash
-docker login harbor.local.narwhal.io -u dev
+docker login harbor.local.narwhal.internal -u dev
 # 비밀번호: Keycloak 계정 비밀번호 (OIDC 연동)
 ```
 
@@ -219,10 +219,10 @@ docker login harbor.local.narwhal.io -u dev
 
 ```bash
 # 이미지 태그
-docker tag myapp:latest harbor.local.narwhal.io/library/myapp:latest
+docker tag myapp:latest harbor.local.narwhal.internal/library/myapp:latest
 
 # Push
-docker push harbor.local.narwhal.io/library/myapp:latest
+docker push harbor.local.narwhal.internal/library/myapp:latest
 ```
 
 > self-signed 인증서로 인해 Docker daemon에 insecure registry 추가가 필요할 수 있습니다.
@@ -230,7 +230,7 @@ docker push harbor.local.narwhal.io/library/myapp:latest
 **`/etc/docker/daemon.json`에 추가:**
 ```json
 {
-  "insecure-registries": ["harbor.local.narwhal.io"]
+  "insecure-registries": ["harbor.local.narwhal.internal"]
 }
 ```
 
@@ -240,7 +240,7 @@ docker push harbor.local.narwhal.io/library/myapp:latest
 spec:
   containers:
     - name: myapp
-      image: harbor.local.narwhal.io/library/myapp:latest
+      image: harbor.local.narwhal.internal/library/myapp:latest
 ```
 
 ---
@@ -249,7 +249,7 @@ spec:
 
 ### Grafana 대시보드
 
-https://grafana.local.narwhal.io 접속 → Keycloak SSO 로그인
+https://grafana.local.narwhal.internal 접속 → Keycloak SSO 로그인
 
 - **Kubernetes / Cluster Overview**: 클러스터 전체 상태
 - **Kubernetes / Pods**: Pod별 CPU/메모리
@@ -284,7 +284,7 @@ kubectl logs -n dev deployment/myapp --previous  # 재시작된 컨테이너
 ### SSO 로그인 실패
 
 ```bash
-# 1. 브라우저 쿠키 삭제 (*.local.narwhal.io)
+# 1. 브라우저 쿠키 삭제 (*.local.narwhal.internal)
 
 # 2. Keycloak 상태 확인
 vagrant ssh master-1 -c "kubectl get pods -n iam"
@@ -293,14 +293,14 @@ vagrant ssh master-1 -c "kubectl get pods -n iam"
 vagrant ssh master-1 -c "kubectl get pods -n platform-system -l app.kubernetes.io/name=apisix"
 
 # 4. Keycloak 접근 테스트
-curl -k https://keycloak.local.narwhal.io/realms/kubernetes/.well-known/openid-configuration
+curl -k https://keycloak.local.narwhal.internal/realms/kubernetes/.well-known/openid-configuration
 ```
 
 ### DNS 해석 실패
 
 ```bash
 # DNS 서버로 직접 질의
-nslookup argocd.local.narwhal.io 192.168.56.10
+nslookup argocd.local.narwhal.internal 192.168.56.10
 
 # dnsmasq 상태 확인 (Master 노드에서)
 vagrant ssh master-1 -c "sudo systemctl status dnsmasq"

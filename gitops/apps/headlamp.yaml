@@ -27,7 +27,7 @@ spec:
         config:
           oidc:
             clientID: headlamp
-            issuerURL: https://keycloak.local.narwhal.io/realms/narwhal
+            issuerURL: https://keycloak.local.narwhal.internal/realms/narwhal
             scopes: openid,profile,email,groups
             # clientSecret loaded from externalSecret (Option 3)
             # Secret 'headlamp-oidc-secret' is created by scripts/cluster/11-keycloak.sh

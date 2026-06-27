@@ -16,7 +16,7 @@ source /home/vagrant/scripts/common/lib.sh
 # NOTE: 재실행 안전 (creation-only idempotency).
 # 재구성 필요 시 Keycloak UI에서 해당 realm 삭제 후 재실행.
 
-DOMAIN="${DOMAIN:-local.narwhal.io}"
+DOMAIN="${DOMAIN:-local.narwhal.internal}"
 REALM="narwhal"
 export KUBECONFIG=/home/vagrant/.kube/config-local
 

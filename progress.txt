@@ -15,7 +15,7 @@
 
 ### US-003: Keycloak ✅
 - keycloak-0 Running 1/1, oauth2-proxy Running
-- OIDC discovery: https://keycloak.local.narwhal.io/realms/kubernetes
+- OIDC discovery: https://keycloak.local.narwhal.internal/realms/kubernetes
 - API 서버: --oidc-issuer-url, --oidc-client-id=kubernetes, --oidc-groups-claim=groups
 
 ### US-004: OAuth2-Proxy ✅
@@ -33,7 +33,7 @@
 ### [즉시 수정 권장]
 1. RBAC 불일치: 11-keycloak.sh → cluster-admin, rbac-policies.yaml → platform-admin
    - 파일: scripts/cluster/11-keycloak.sh:498-504, gitops/resources/rbac-policies.yaml:272-286
-2. OAuth2-Proxy redirect_url HTTP: http://oauth2-proxy.local.narwhal.io/oauth2/callback
+2. OAuth2-Proxy redirect_url HTTP: http://oauth2-proxy.local.narwhal.internal/oauth2/callback
    - 파일: scripts/cluster/08-platform-apps.sh:402
    - cookie_secure = false → true 권장
 

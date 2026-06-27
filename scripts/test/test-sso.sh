@@ -27,8 +27,8 @@ if [ -f /home/vagrant/.kube/config-local ]; then
   export KUBECONFIG=/home/vagrant/.kube/config-local
 fi
 
-KEYCLOAK_URL="https://keycloak.local.narwhal.io"
-DOMAIN="local.narwhal.io"
+KEYCLOAK_URL="https://keycloak.local.narwhal.internal"
+DOMAIN="local.narwhal.internal"
 PASS_COUNT=0
 FAIL_COUNT=0
 WARN_COUNT=0
@@ -422,7 +422,7 @@ else:
   # blocks direct pod IP access from the host (connection reset by peer)
   HARBOR_CORE_READY=$(kubectl get pods -n devtools -l app=harbor -l component=core -o jsonpath='{.items[0].status.phase}' 2>/dev/null)
   if [ "${HARBOR_CORE_READY}" = "Running" ]; then
-    HARBOR_CFG=$(curl -sk -u admin:Harbor12345 "https://harbor.local.narwhal.io/api/v2.0/configurations" 2>/dev/null)
+    HARBOR_CFG=$(curl -sk -u admin:Harbor12345 "https://harbor.local.narwhal.internal/api/v2.0/configurations" 2>/dev/null)
     HARBOR_VERIFY=$(echo "${HARBOR_CFG}" | python3 -c 'import sys,json; print(json.load(sys.stdin).get("oidc_verify_cert",{}).get("value","?"))' 2>/dev/null)
     HARBOR_ENDPOINT=$(echo "${HARBOR_CFG}" | python3 -c 'import sys,json; print(json.load(sys.stdin).get("oidc_endpoint",{}).get("value",""))' 2>/dev/null)
 

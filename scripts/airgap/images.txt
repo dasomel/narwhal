@@ -12,7 +12,7 @@ ghcr.io/dasomel/goharbor/nginx-photon:latest
 ghcr.io/dasomel/goharbor/redis-photon:latest
 ghcr.io/dasomel/goharbor/registry-photon:latest
 ghcr.io/headlamp-k8s/headlamp:v0.42.0
-harbor.local.narwhal.io/library/narwhal-portal:latest
+harbor.local.narwhal.internal/library/narwhal-portal:latest
 otwld/velero-ui:0.10.1
 quay.io/openbao/openbao:2.5.4
 registry.k8s.io/coredns/coredns:v1.12.0

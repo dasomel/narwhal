@@ -12,7 +12,7 @@ MASTER1_IP="${MASTER_IP_BASE}0"
 
 # OIDC Configuration (Authentik)
 # K8s 1.35+ requires HTTPS for --oidc-issuer-url; HTTP causes API server crash
-OIDC_ISSUER_URL="${OIDC_ISSUER_URL:-https://authentik.local.narwhal.io/application/o/kubernetes/}"
+OIDC_ISSUER_URL="${OIDC_ISSUER_URL:-https://authentik.local.narwhal.internal/application/o/kubernetes/}"
 OIDC_CLIENT_ID="${OIDC_CLIENT_ID:-kubernetes}"
 
 echo "=== Kubernetes Cluster Initialization ==="

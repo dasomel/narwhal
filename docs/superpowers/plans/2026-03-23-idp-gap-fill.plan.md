@@ -20,7 +20,7 @@
 |------|------|
 | Problem | idp 운영 중 검증된 패턴이 narwhal에 미반영 → 운영 사각지대 존재 |
 | Solution | Blackbox Exporter + Alertmanager Telegram + PgAdmin + RBAC 검증 + 교훈 동기화 |
-| Function UX Effect | Telegram으로 서비스 다운 즉시 수신, pgadmin.local.narwhal.io 접속, RBAC 자동 검증 |
+| Function UX Effect | Telegram으로 서비스 다운 즉시 수신, pgadmin.local.narwhal.internal 접속, RBAC 자동 검증 |
 | Core Value | 개발 환경이지만 프로덕션 수준의 가시성과 검증 체계 확보 |
 
 ---
@@ -31,7 +31,7 @@
 - **대상 사용자**: narwhal 클러스터 운영자 / 개발자
 - **성공 기준**:
   - 서비스 다운 시 Telegram 알림 수신
-  - PostgreSQL 웹 UI (pgadmin.local.narwhal.io) 접속 가능
+  - PostgreSQL 웹 UI (pgadmin.local.narwhal.internal) 접속 가능
   - K8s RBAC 검증 스크립트로 Authentik 그룹 권한 자동 확인
   - idp의 주요 교훈이 CLAUDE.md Mistakes Log에 반영
 
@@ -127,14 +127,14 @@
 
 **모니터링 대상**:
 ```
-https://authentik.local.narwhal.io/-/health/ready/
-https://argocd.local.narwhal.io/healthz
-https://grafana.local.narwhal.io/api/health
-https://gitea.local.narwhal.io/api/swagger
-https://harbor.local.narwhal.io/api/v2.0/systeminfo
-https://headlamp.local.narwhal.io
-https://openbao.local.narwhal.io/v1/sys/health
-https://hubble.local.narwhal.io
+https://authentik.local.narwhal.internal/-/health/ready/
+https://argocd.local.narwhal.internal/healthz
+https://grafana.local.narwhal.internal/api/health
+https://gitea.local.narwhal.internal/api/swagger
+https://harbor.local.narwhal.internal/api/v2.0/systeminfo
+https://headlamp.local.narwhal.internal
+https://openbao.local.narwhal.internal/v1/sys/health
+https://hubble.local.narwhal.internal
 ```
 
 **PrometheusRule**:
@@ -215,15 +215,15 @@ vagrant ssh master-1 -- bash /home/vagrant/scripts/verify/verify-k8s-rbac.sh
 **Helm 차트**: `runix/pgadmin4`
 **이미지**: `docker.io/dpage/pgadmin4` (대체 없음, 사유 명시 필요)
 **네임스페이스**: `devtools`
-**도메인**: `pgadmin.local.narwhal.io`
+**도메인**: `pgadmin.local.narwhal.internal`
 
 **Authentik 연동**:
 - OAuth2 Provider: `pgadmin` 클라이언트 (`11-2-authentik-config.sh`에 추가)
-- Redirect URI: `https://pgadmin.local.narwhal.io/oauth2/authorize`
+- Redirect URI: `https://pgadmin.local.narwhal.internal/oauth2/authorize`
 
 **ApisixRoute**:
 ```yaml
-# pgadmin.local.narwhal.io → harbor:80
+# pgadmin.local.narwhal.internal → harbor:80
 # openid-connect 플러그인으로 Authentik SSO
 ```
 
@@ -319,14 +319,14 @@ Step 6: RBAC 검증 스크립트      (신규 스크립트 작성)
 ```bash
 # Blackbox Exporter
 kubectl get pods -n monitoring -l app.kubernetes.io/name=prometheus-blackbox-exporter
-curl -s http://$(kubectl get svc -n monitoring -l app=blackbox-exporter -o jsonpath='{.items[0].spec.clusterIP}')/probe?target=https://argocd.local.narwhal.io/healthz&module=http_2xx
+curl -s http://$(kubectl get svc -n monitoring -l app=blackbox-exporter -o jsonpath='{.items[0].spec.clusterIP}')/probe?target=https://argocd.local.narwhal.internal/healthz&module=http_2xx
 
 # Alertmanager Telegram
 kubectl get alertmanagerconfig -n monitoring
 kubectl get prometheusrule narwhal-alerts -n monitoring
 
 # PgAdmin
-curl -sk https://pgadmin.local.narwhal.io/login | grep pgAdmin
+curl -sk https://pgadmin.local.narwhal.internal/login | grep pgAdmin
 
 # RBAC 검증
 bash scripts/verify/verify-k8s-rbac.sh

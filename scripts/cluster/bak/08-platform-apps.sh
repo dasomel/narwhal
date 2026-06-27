@@ -338,7 +338,7 @@ cat > /tmp/headlamp-values.yaml << 'EOF'
 config:
   oidc:
     clientID: headlamp
-    issuerURL: https://keycloak.local.narwhal.io/realms/kubernetes
+    issuerURL: https://keycloak.local.narwhal.internal/realms/kubernetes
     scopes: openid,profile,email,groups
     # clientSecret loaded from headlamp-oidc-secret (created by 11-keycloak.sh)
     secret:
@@ -402,13 +402,13 @@ config:
   configFile: |-
     provider = "keycloak-oidc"
     provider_display_name = "Keycloak"
-    oidc_issuer_url = "https://keycloak.local.narwhal.io/realms/kubernetes"
-    redirect_url = "https://oauth2-proxy.local.narwhal.io/oauth2/callback"
+    oidc_issuer_url = "https://keycloak.local.narwhal.internal/realms/kubernetes"
+    redirect_url = "https://oauth2-proxy.local.narwhal.internal/oauth2/callback"
     upstreams = ["static://200"]
     email_domains = ["*"]
     cookie_secure = true
-    cookie_domains = [".local.narwhal.io"]
-    whitelist_domains = [".local.narwhal.io"]
+    cookie_domains = [".local.narwhal.internal"]
+    whitelist_domains = [".local.narwhal.internal"]
     set_xauthrequest = true
     set_authorization_header = true
     pass_access_token = true
@@ -608,7 +608,7 @@ echo "Waiting for Harbor core pod..."
 kubectl wait --for=condition=Ready pod -l app=harbor,component=core -n devtools --timeout=300s || true
 
 # Wait for Harbor API to respond
-HARBOR_API="https://harbor.local.narwhal.io/api/v2.0"
+HARBOR_API="https://harbor.local.narwhal.internal/api/v2.0"
 for attempt in $(seq 1 15); do
   HARBOR_HEALTH=$(curl -sk -o /dev/null -w '%{http_code}' "${HARBOR_API}/systeminfo" 2>/dev/null || echo "000")
   if [ "${HARBOR_HEALTH}" = "200" ]; then
@@ -858,13 +858,13 @@ echo "  - openbao (Secret management)"
 echo "  - velero (Backup)"
 echo ""
 echo "Access via DNS (configure client DNS to 192.168.56.10):"
-echo "  ArgoCD:   http://argocd.local.narwhal.io"
-echo "  Grafana:  http://grafana.local.narwhal.io"
-echo "  Gitea:    http://gitea.local.narwhal.io"
-echo "  Harbor:   http://harbor.local.narwhal.io"
-echo "  Keycloak: http://keycloak.local.narwhal.io"
-echo "  Headlamp: http://headlamp.local.narwhal.io"
-echo "  OpenBao:  http://openbao.local.narwhal.io"
+echo "  ArgoCD:   http://argocd.local.narwhal.internal"
+echo "  Grafana:  http://grafana.local.narwhal.internal"
+echo "  Gitea:    http://gitea.local.narwhal.internal"
+echo "  Harbor:   http://harbor.local.narwhal.internal"
+echo "  Keycloak: http://keycloak.local.narwhal.internal"
+echo "  Headlamp: http://headlamp.local.narwhal.internal"
+echo "  OpenBao:  http://openbao.local.narwhal.internal"
 echo ""
 echo "MetalLB IP: 192.168.56.200"
 echo "DNS Server: 192.168.56.10 (master node)"

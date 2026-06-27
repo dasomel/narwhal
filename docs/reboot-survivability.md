@@ -204,7 +204,7 @@ RestartSec=5
 **파일**: `scripts/cluster/10-dnsmasq.sh`
 
 모든 master 노드의 dnsmasq가 `Restart=always`로 항상 복구됩니다.
-CoreDNS의 `*.local.narwhal.io` 포워딩이 dnsmasq에 의존하므로 DNS 해석 연속성을 보장합니다.
+CoreDNS의 `*.local.narwhal.internal` 포워딩이 dnsmasq에 의존하므로 DNS 해석 연속성을 보장합니다.
 
 ### P3: 리부트 복구 모니터링
 
@@ -383,7 +383,7 @@ vagrant ssh master-1 -c "kubectl get pods -A | grep -v Running | grep -v Complet
 | istio-cni | 모든 노드에서 Running (2분 이내) |
 | HBONE 트래픽 | 복원 (3분 이내) |
 | 플랫폼 앱 | 전체 Running (5분 이내) |
-| DNS 해석 | `*.local.narwhal.io` 정상 (3분 이내) |
+| DNS 해석 | `*.local.narwhal.internal` 정상 (3분 이내) |
 
 ---
 

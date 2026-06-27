@@ -277,7 +277,7 @@ vagrant ssh master-1 -c "sudo systemctl status dnsmasq"
 vagrant ssh master-1 -c "sudo systemctl restart dnsmasq"
 
 # DNS 해석 테스트
-vagrant ssh master-1 -c "dig @192.168.56.10 keycloak.local.narwhal.io"
+vagrant ssh master-1 -c "dig @192.168.56.10 keycloak.local.narwhal.internal"
 ```
 
 **Step 5: NFS 기반 PVC Pod 복구**
@@ -317,7 +317,7 @@ kubectl --server=https://192.168.56.100:6443 get nodes
 kubectl get pvc -A | grep -v Bound
 
 # dnsmasq DNS 확인
-vagrant ssh master-1 -c "dig @127.0.0.1 grafana.local.narwhal.io +short"
+vagrant ssh master-1 -c "dig @127.0.0.1 grafana.local.narwhal.internal +short"
 ```
 
 ---
@@ -707,7 +707,7 @@ kubectl get svc -n platform-system apisix-gateway -o jsonpath='{.status.loadBala
 kubectl get apisixroute -A
 
 # DNS 해석 테스트
-dig @192.168.56.10 grafana.local.narwhal.io +short
+dig @192.168.56.10 grafana.local.narwhal.internal +short
 # 결과: 192.168.56.200 이어야 함
 ```
 
@@ -745,7 +745,7 @@ vagrant ssh master-1 -c "bash /home/vagrant/scripts/test/test-sso.sh"
 
 ## 7. 인증서 만료 대응
 
-cert-manager가 self-signed CA 기반 wildcard 인증서(`*.local.narwhal.io`)를 자동 관리합니다.
+cert-manager가 self-signed CA 기반 wildcard 인증서(`*.local.narwhal.internal`)를 자동 관리합니다.
 
 ### 인증서 상태 진단
 
@@ -801,8 +801,8 @@ vagrant ssh master-1 -c "sudo journalctl -u kubelet -n 50 | grep oidc"
 kubectl logs -n kube-system kube-apiserver-master-1 --tail=50 | grep oidc
 
 # Keycloak 인증서 재추출
-vagrant ssh master-1 -c "openssl s_client -connect keycloak.local.narwhal.io:443 \
-  -servername keycloak.local.narwhal.io </dev/null 2>/dev/null | \
+vagrant ssh master-1 -c "openssl s_client -connect keycloak.local.narwhal.internal:443 \
+  -servername keycloak.local.narwhal.internal </dev/null 2>/dev/null | \
   openssl x509 -outform PEM > /etc/kubernetes/pki/oidc-ca.crt"
 
 # API 서버 자동 재시작 (manifest 수정 시)
@@ -833,8 +833,8 @@ kubectl get secret narwhal-ca-cert -n cert-manager -o yaml | \
 kubectl get certificates -A | grep -v True
 
 # HTTPS 접근 테스트
-curl -k https://grafana.local.narwhal.io/api/health
-curl -k https://keycloak.local.narwhal.io/health/ready
+curl -k https://grafana.local.narwhal.internal/api/health
+curl -k https://keycloak.local.narwhal.internal/health/ready
 ```
 
 ---
@@ -901,7 +901,7 @@ kubectl get svc keycloak-db-rw -n iam
 kubectl run -it --rm curl-test \
   --image=curlimages/curl:latest \
   --restart=Never \
-  -- curl -k https://keycloak.local.narwhal.io/realms/kubernetes/.well-known/openid-configuration
+  -- curl -k https://keycloak.local.narwhal.internal/realms/kubernetes/.well-known/openid-configuration
 
 # 내부 서비스 경유 테스트
 kubectl run -it --rm curl-test \
@@ -936,7 +936,7 @@ vagrant ssh master-1 -c "sudo bash /home/vagrant/scripts/cluster/11-4-keycloak-a
 vagrant ssh master-1 -c "bash /home/vagrant/scripts/test/test-sso.sh"
 
 # OIDC 토큰 발급 테스트
-KEYCLOAK_URL="https://keycloak.local.narwhal.io"
+KEYCLOAK_URL="https://keycloak.local.narwhal.internal"
 vagrant ssh master-1 -c "curl -k -s -X POST \
   ${KEYCLOAK_URL}/realms/kubernetes/protocol/openid-connect/token \
   -d 'grant_type=password&client_id=kubernetes&username=admin&password=<pass>' \
@@ -1016,7 +1016,7 @@ kubectl patch application harbor \
   -p '{"operation":{"initiatedBy":{"username":"admin"},"sync":{"revision":"HEAD","force":true}}}'
 
 # 전체 앱 동기화 (argocd CLI 사용)
-vagrant ssh master-1 -c "argocd app sync --all --server argocd.local.narwhal.io"
+vagrant ssh master-1 -c "argocd app sync --all --server argocd.local.narwhal.internal"
 ```
 
 **Step 4: App-of-Apps 재bootstrap**
@@ -1416,8 +1416,8 @@ done
 kubectl get svc -n platform-system apisix-gateway -o jsonpath='{.status.loadBalancer.ingress[0].ip}'
 
 # dnsmasq DNS 테스트
-vagrant ssh master-1 -c "dig @127.0.0.1 grafana.local.narwhal.io +short"
-vagrant ssh master-1 -c "dig @127.0.0.1 keycloak.local.narwhal.io +short"
+vagrant ssh master-1 -c "dig @127.0.0.1 grafana.local.narwhal.internal +short"
+vagrant ssh master-1 -c "dig @127.0.0.1 keycloak.local.narwhal.internal +short"
 ```
 
 ### etcd 빠른 진단

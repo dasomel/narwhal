@@ -78,7 +78,7 @@ vagrant destroy -f
            │  LB:  192.168.56.200           │
            │       (MetalLB/APISIX)         │
            │  DNS: 192.168.56.10:53         │
-           │       (*.local.narwhal.io)     │
+           │       (*.local.narwhal.internal)     │
            └────────────────────────────────┘
 ```
 
@@ -129,14 +129,14 @@ DNS 설정: 클라이언트 DNS를 `192.168.56.10`으로 지정하거나 `/etc/h
 
 | 서비스 | URL | 자격 증명 |
 |--------|-----|-----------|
-| ArgoCD | https://argocd.local.narwhal.io | admin / (자동생성 시크릿) 또는 Keycloak SSO |
-| Grafana | https://grafana.local.narwhal.io | admin / admin 또는 Keycloak SSO |
-| Gitea | https://gitea.local.narwhal.io | gitea-admin / gitea-admin 또는 Keycloak SSO |
-| Harbor | https://harbor.local.narwhal.io | admin / Harbor12345 또는 Keycloak SSO |
-| Keycloak | https://keycloak.local.narwhal.io | temp-admin / (자동생성) |
-| Headlamp | https://headlamp.local.narwhal.io | Keycloak SSO |
-| OpenBao | https://openbao.local.narwhal.io | root token (`bao operator init`) |
-| Hubble | https://hubble.local.narwhal.io | - |
+| ArgoCD | https://argocd.local.narwhal.internal | admin / (자동생성 시크릿) 또는 Keycloak SSO |
+| Grafana | https://grafana.local.narwhal.internal | admin / admin 또는 Keycloak SSO |
+| Gitea | https://gitea.local.narwhal.internal | gitea-admin / gitea-admin 또는 Keycloak SSO |
+| Harbor | https://harbor.local.narwhal.internal | admin / Harbor12345 또는 Keycloak SSO |
+| Keycloak | https://keycloak.local.narwhal.internal | temp-admin / (자동생성) |
+| Headlamp | https://headlamp.local.narwhal.internal | Keycloak SSO |
+| OpenBao | https://openbao.local.narwhal.internal | root token (`bao operator init`) |
+| Hubble | https://hubble.local.narwhal.internal | - |
 
 > **Note**: Self-signed 인증서 사용으로 브라우저에서 보안 경고가 표시됩니다. "고급" → "계속 진행"으로 접속하세요.
 

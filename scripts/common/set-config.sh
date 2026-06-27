@@ -67,7 +67,7 @@ case "${AUTH_METHOD}" in
 
     # OIDC Configuration
     # K8s 1.35+ requires HTTPS for OIDC issuer URL
-    OIDC_ISSUER_URL="${OIDC_ISSUER_URL:-https://keycloak.local.narwhal.io/realms/kubernetes}"
+    OIDC_ISSUER_URL="${OIDC_ISSUER_URL:-https://keycloak.local.narwhal.internal/realms/kubernetes}"
     OIDC_CLIENT_ID="${OIDC_CLIENT_ID:-kubernetes}"
     OIDC_USERNAME="${OIDC_USERNAME:-}"
     OIDC_PASSWORD="${OIDC_PASSWORD:-}"

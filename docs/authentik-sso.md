@@ -9,7 +9,7 @@ Narwhal IDP 플랫폼의 Authentik SSO 연동 가이드
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │               Authentik (IAM / SSO)                         │
-│         https://authentik.local.narwhal.io                  │
+│         https://authentik.local.narwhal.internal                  │
 ├─────────────────────────────────────────────────────────────┤
 │  Groups            │  OIDC Providers               │        │
 │  ─────────         │  ────────────                 │        │
@@ -48,8 +48,8 @@ Narwhal IDP 플랫폼의 Authentik SSO 연동 가이드
 
 | Provider | Client Type | Client ID | Issuer URL | 용도 |
 |----------|-------------|-----------|------------|------|
-| `kubernetes` | Public | `kubernetes` | `https://authentik.local.narwhal.io/application/o/kubernetes/` | K8s API Server OIDC, kubectl 로그인 |
-| `apisix` | Confidential | `apisix` | `https://authentik.local.narwhal.io/application/o/apisix/` | APISIX gateway를 통한 웹 앱 SSO 전체 |
+| `kubernetes` | Public | `kubernetes` | `https://authentik.local.narwhal.internal/application/o/kubernetes/` | K8s API Server OIDC, kubectl 로그인 |
+| `apisix` | Confidential | `apisix` | `https://authentik.local.narwhal.internal/application/o/apisix/` | APISIX gateway를 통한 웹 앱 SSO 전체 |
 
 ### 1.2 Applications (Slug)
 
@@ -59,7 +59,7 @@ Narwhal IDP 플랫폼의 Authentik SSO 연동 가이드
 | apisix | `apisix` | apisix provider | `.../application/o/apisix/` |
 
 > **중요**: OIDC issuer URL은 application slug로 결정됩니다.
-> `https://authentik.local.narwhal.io/application/o/{slug}/`
+> `https://authentik.local.narwhal.internal/application/o/{slug}/`
 
 ### 1.3 Property Mapping (Groups Claim)
 
@@ -99,10 +99,10 @@ kubectl get secret authentik-bootstrap-secret -n iam -o jsonpath='{.data.bootstr
 
 | Username | Email | Group |
 |----------|-------|-------|
-| `admin` | admin@local.narwhal.io | cluster-admin |
-| `dev` | dev@local.narwhal.io | developer |
-| `view` | view@local.narwhal.io | viewer |
-| `guest` | guest@local.narwhal.io | guest |
+| `admin` | admin@local.narwhal.internal | cluster-admin |
+| `dev` | dev@local.narwhal.internal | developer |
+| `view` | view@local.narwhal.internal | viewer |
+| `guest` | guest@local.narwhal.internal | guest |
 
 ---
 
@@ -121,24 +121,24 @@ kubectl get secret apisix-oidc-config -n platform-system -o yaml
 |------|----|
 | Client ID | `apisix` |
 | Client Secret | `apisix-oidc-config` Secret의 `client_secret` |
-| Issuer URL | `https://authentik.local.narwhal.io/application/o/apisix/` |
+| Issuer URL | `https://authentik.local.narwhal.internal/application/o/apisix/` |
 | Scopes | `openid profile email groups` |
 | Callback Path | `/apisix/callback` |
-| Redirect URI | `https://{host}.local.narwhal.io/apisix/callback` |
+| Redirect URI | `https://{host}.local.narwhal.internal/apisix/callback` |
 
 **라우트별 SSO 적용 여부**:
 
 | 도메인 | SSO | 비고 |
 |--------|-----|------|
-| `argocd.local.narwhal.io` | ✅ | ArgoCD 자체 OIDC 연동도 별도 구성 |
-| `grafana.local.narwhal.io` | ✅ | Grafana 자체 generic_oauth |
-| `gitea.local.narwhal.io` | ✅ | Gitea 자체 OAuth2 |
-| `harbor.local.narwhal.io` | ✅ | Harbor 자체 OIDC |
-| `headlamp.local.narwhal.io` | ✅ | Headlamp 자체 OIDC |
-| `prometheus.local.narwhal.io` | ✅ | APISIX-only (Prometheus 자체 SSO 없음) |
-| `alertmanager.local.narwhal.io` | ✅ | APISIX-only |
-| `hubble.local.narwhal.io` | ✅ | APISIX-only |
-| `authentik.local.narwhal.io` | ❌ | Authentik 자체 |
+| `argocd.local.narwhal.internal` | ✅ | ArgoCD 자체 OIDC 연동도 별도 구성 |
+| `grafana.local.narwhal.internal` | ✅ | Grafana 자체 generic_oauth |
+| `gitea.local.narwhal.internal` | ✅ | Gitea 자체 OAuth2 |
+| `harbor.local.narwhal.internal` | ✅ | Harbor 자체 OIDC |
+| `headlamp.local.narwhal.internal` | ✅ | Headlamp 자체 OIDC |
+| `prometheus.local.narwhal.internal` | ✅ | APISIX-only (Prometheus 자체 SSO 없음) |
+| `alertmanager.local.narwhal.internal` | ✅ | APISIX-only |
+| `hubble.local.narwhal.internal` | ✅ | APISIX-only |
+| `authentik.local.narwhal.internal` | ❌ | Authentik 자체 |
 
 ---
 
@@ -150,7 +150,7 @@ kubectl get secret apisix-oidc-config -n platform-system -o yaml
 |------|----|
 | Provider | `apisix` (confidential) |
 | Client ID | `apisix` |
-| Issuer URL | `https://authentik.local.narwhal.io/application/o/apisix/` |
+| Issuer URL | `https://authentik.local.narwhal.internal/application/o/apisix/` |
 | Scopes | `openid profile email groups` |
 
 **RBAC 정책** (`argocd-rbac-cm`):
@@ -172,7 +172,7 @@ p, role:developer, logs, get, */*, allow
 
 **Redirect URI 등록** (Authentik `apisix` provider):
 ```
-https://argocd.local.narwhal.io/auth/callback
+https://argocd.local.narwhal.internal/auth/callback
 ```
 
 ---
@@ -186,9 +186,9 @@ https://argocd.local.narwhal.io/auth/callback
 | Provider | `apisix` (confidential) |
 | Client ID | `apisix` |
 | Client Secret | `grafana-oauth-secret` Secret의 `client_secret` |
-| Auth URL | `https://authentik.local.narwhal.io/application/o/apisix/authorize/` |
-| Token URL | `https://authentik.local.narwhal.io/application/o/token/` |
-| API URL | `https://authentik.local.narwhal.io/application/o/userinfo/` |
+| Auth URL | `https://authentik.local.narwhal.internal/application/o/apisix/authorize/` |
+| Token URL | `https://authentik.local.narwhal.internal/application/o/token/` |
+| API URL | `https://authentik.local.narwhal.internal/application/o/userinfo/` |
 | TLS | `tls_skip_verify_insecure: true` (self-signed CA) |
 
 **Role 매핑** (JMESPath):
@@ -217,8 +217,8 @@ kubectl get secret grafana-oauth-secret -n monitoring -o jsonpath='{.data.client
 |------|----|
 | Provider | `apisix` (confidential) |
 | Client ID | `apisix` |
-| Auth URL | `https://authentik.local.narwhal.io/application/o/apisix/authorize/` |
-| Token URL | `https://authentik.local.narwhal.io/application/o/token/` |
+| Auth URL | `https://authentik.local.narwhal.internal/application/o/apisix/authorize/` |
+| Token URL | `https://authentik.local.narwhal.internal/application/o/token/` |
 | Scopes | `openid profile email groups` |
 | Admin Group | `cluster-admin` |
 
@@ -236,7 +236,7 @@ Site Admin → Authentication Sources → Add 인증 소스
 
 **Redirect URI 등록**:
 ```
-https://gitea.local.narwhal.io/user/oauth2/{source-name}/callback
+https://gitea.local.narwhal.internal/user/oauth2/{source-name}/callback
 ```
 
 ---
@@ -249,7 +249,7 @@ https://gitea.local.narwhal.io/user/oauth2/{source-name}/callback
 |------|----|
 | Provider | `apisix` (confidential) |
 | OIDC Name | `Authentik` |
-| OIDC Endpoint | `https://authentik.local.narwhal.io/application/o/apisix/` |
+| OIDC Endpoint | `https://authentik.local.narwhal.internal/application/o/apisix/` |
 | Client ID | `apisix` |
 | Groups Claim | `groups` |
 | Admin Group | `cluster-admin` |
@@ -285,7 +285,7 @@ kubectl patch deployment harbor-core -n devtools --type=json \
 |------|----|
 | Provider | `apisix` (confidential) |
 | Client ID | `apisix` |
-| Issuer URL | `https://authentik.local.narwhal.io/application/o/apisix/` |
+| Issuer URL | `https://authentik.local.narwhal.internal/application/o/apisix/` |
 | Scopes | `openid profile email groups` |
 | TLS | narwhal-ca cert bundle 마운트 (CA 신뢰) |
 
@@ -311,7 +311,7 @@ kubectl get secret headlamp-oidc-secret -n devtools -o yaml
 | 항목 | 값 |
 |------|----|
 | Provider | `kubernetes` (public) |
-| Issuer URL | `https://authentik.local.narwhal.io/application/o/kubernetes/` |
+| Issuer URL | `https://authentik.local.narwhal.internal/application/o/kubernetes/` |
 | Client ID | `kubernetes` |
 | Username Claim | `preferred_username` |
 | Groups Claim | `groups` |
@@ -321,7 +321,7 @@ kubectl get secret headlamp-oidc-secret -n devtools -o yaml
 **kube-apiserver 설정**:
 ```yaml
 # /etc/kubernetes/manifests/kube-apiserver.yaml
-- --oidc-issuer-url=https://authentik.local.narwhal.io/application/o/kubernetes/
+- --oidc-issuer-url=https://authentik.local.narwhal.internal/application/o/kubernetes/
 - --oidc-client-id=kubernetes
 - --oidc-username-claim=preferred_username
 - --oidc-groups-claim=groups
@@ -343,7 +343,7 @@ kubectl config set-credentials oidc \
   --exec-command=kubectl \
   --exec-arg=oidc-login \
   --exec-arg=get-token \
-  --exec-arg=--oidc-issuer-url=https://authentik.local.narwhal.io/application/o/kubernetes/ \
+  --exec-arg=--oidc-issuer-url=https://authentik.local.narwhal.internal/application/o/kubernetes/ \
   --exec-arg=--oidc-client-id=kubernetes \
   --exec-arg=--insecure-skip-tls-verify
 
@@ -435,7 +435,7 @@ subjects:
 
 ### 6.1 새 OAuth2 Provider 등록
 
-1. `https://authentik.local.narwhal.io` 접속 → Admin Interface
+1. `https://authentik.local.narwhal.internal` 접속 → Admin Interface
 2. **Providers** → Create → `OAuth2/OpenID Provider`
 3. 입력 항목:
 
@@ -465,13 +465,13 @@ subjects:
 
 ```
 # {slug} = Application slug
-Issuer URL      : https://authentik.local.narwhal.io/application/o/{slug}/
-Authorization   : https://authentik.local.narwhal.io/application/o/{slug}/authorize/
-Token           : https://authentik.local.narwhal.io/application/o/token/
-UserInfo        : https://authentik.local.narwhal.io/application/o/userinfo/
-JWKS            : https://authentik.local.narwhal.io/application/o/{slug}/jwks/
-End Session     : https://authentik.local.narwhal.io/application/o/{slug}/end-session/
-Discovery (.well-known): https://authentik.local.narwhal.io/application/o/{slug}/.well-known/openid-configuration
+Issuer URL      : https://authentik.local.narwhal.internal/application/o/{slug}/
+Authorization   : https://authentik.local.narwhal.internal/application/o/{slug}/authorize/
+Token           : https://authentik.local.narwhal.internal/application/o/token/
+UserInfo        : https://authentik.local.narwhal.internal/application/o/userinfo/
+JWKS            : https://authentik.local.narwhal.internal/application/o/{slug}/jwks/
+End Session     : https://authentik.local.narwhal.internal/application/o/{slug}/end-session/
+Discovery (.well-known): https://authentik.local.narwhal.internal/application/o/{slug}/.well-known/openid-configuration
 ```
 
 </details>
@@ -500,10 +500,10 @@ return [group.name for group in request.user.ak_groups.all()]
 
 ```bash
 # apisix provider
-curl -sk https://authentik.local.narwhal.io/application/o/apisix/.well-known/openid-configuration | jq
+curl -sk https://authentik.local.narwhal.internal/application/o/apisix/.well-known/openid-configuration | jq
 
 # kubernetes provider
-curl -sk https://authentik.local.narwhal.io/application/o/kubernetes/.well-known/openid-configuration | jq
+curl -sk https://authentik.local.narwhal.internal/application/o/kubernetes/.well-known/openid-configuration | jq
 ```
 
 ### 7.2 토큰 발급 테스트
@@ -514,7 +514,7 @@ APISIX_SECRET=$(kubectl get secret apisix-oidc-config -n platform-system \
   -o jsonpath='{.data.client_secret}' | base64 -d)
 
 curl -sk -X POST \
-  "https://authentik.local.narwhal.io/application/o/token/" \
+  "https://authentik.local.narwhal.internal/application/o/token/" \
   -d "grant_type=password" \
   -d "client_id=apisix" \
   -d "client_secret=${APISIX_SECRET}" \
@@ -523,7 +523,7 @@ curl -sk -X POST \
   -d "scope=openid profile email groups" | jq
 
 # JWT 디코딩 (groups claim 확인)
-TOKEN=$(curl -sk -X POST "https://authentik.local.narwhal.io/application/o/token/" \
+TOKEN=$(curl -sk -X POST "https://authentik.local.narwhal.internal/application/o/token/" \
   -d "grant_type=password&client_id=apisix&client_secret=${APISIX_SECRET}&username=admin&password=$(kubectl get secret authentik-user-passwords -n iam -o jsonpath='{.data.admin}' | base64 -d)&scope=openid profile email groups" \
   | jq -r '.access_token')
 echo $TOKEN | cut -d. -f2 | base64 -d 2>/dev/null | jq '{groups, preferred_username, sub}'

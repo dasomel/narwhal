@@ -35,7 +35,7 @@ Narwhal은 Vagrant VM 기반의 Kubernetes Internal Developer Platform (IDP) 클
 │  └───────────────────┘  └───────────────────┘  └───────────────────┘        │
 │                                                                             │
 │  LB:  192.168.56.200 (MetalLB → APISIX)                                     │
-│  DNS: *.local.narwhal.io → 192.168.56.200                                   │
+│  DNS: *.local.narwhal.internal → 192.168.56.200                                   │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -68,7 +68,7 @@ Narwhal은 Vagrant VM 기반의 Kubernetes Internal Developer Platform (IDP) 클
 ┌──────────────────────────────────────────────────────────────────────┐
 │                          Client Access                               │
 │                                                                      │
-│   Browser ──→ *.local.narwhal.io ──→ dnsmasq (192.168.56.10:53)      │
+│   Browser ──→ *.local.narwhal.internal ──→ dnsmasq (192.168.56.10:53)      │
 │                        │                                             │
 │                        ▼                                             │
 │              MetalLB (192.168.56.200)                                │
@@ -91,7 +91,7 @@ Narwhal은 Vagrant VM 기반의 Kubernetes Internal Developer Platform (IDP) 클
 
 ### Traffic Flow
 
-1. **DNS Resolution**: Client → dnsmasq (master node) → `*.local.narwhal.io` → `192.168.56.200`
+1. **DNS Resolution**: Client → dnsmasq (master node) → `*.local.narwhal.internal` → `192.168.56.200`
 2. **Load Balancing**: MetalLB L2 Advertisement → APISIX LoadBalancer Service
 3. **Routing**: APISIX ApisixRoute → Backend Service (by hostname)
 4. **Authentication**: APISIX openid-connect plugin → Keycloak OIDC
@@ -100,14 +100,14 @@ Narwhal은 Vagrant VM 기반의 Kubernetes Internal Developer Platform (IDP) 클
 
 | Hostname | Backend Service | Namespace |
 |----------|----------------|-----------|
-| argocd.local.narwhal.io | argocd-server | devtools |
-| grafana.local.narwhal.io | prometheus-stack-grafana | monitoring |
-| gitea.local.narwhal.io | gitea-http | devtools |
-| harbor.local.narwhal.io | harbor | devtools |
-| keycloak.local.narwhal.io | keycloak-service | iam |
-| headlamp.local.narwhal.io | headlamp | devtools |
-| openbao.local.narwhal.io | openbao-ui | storage |
-| hubble.local.narwhal.io | hubble-ui | kube-system |
+| argocd.local.narwhal.internal | argocd-server | devtools |
+| grafana.local.narwhal.internal | prometheus-stack-grafana | monitoring |
+| gitea.local.narwhal.internal | gitea-http | devtools |
+| harbor.local.narwhal.internal | harbor | devtools |
+| keycloak.local.narwhal.internal | keycloak-service | iam |
+| headlamp.local.narwhal.internal | headlamp | devtools |
+| openbao.local.narwhal.internal | openbao-ui | storage |
+| hubble.local.narwhal.internal | hubble-ui | kube-system |
 
 ---
 
@@ -240,14 +240,14 @@ PostgreSQL HA (CloudNative-PG)
 │  └── headlamp     (secret)  → Headlamp             │
 │                                                    │
 │  Exposed via:                                      │
-│  └── HTTPRoute (HTTPS) → keycloak.local.narwhal.io │
+│  └── HTTPRoute (HTTPS) → keycloak.local.narwhal.internal │
 └────────────────────────────────────────────────────┘
          │
          ▼
 ┌───────────────────────────────────────────────────────┐
 │          Kubernetes API Server                        │
 │                                                       │
-│  --oidc-issuer-url=https://keycloak.local.narwhal.io/ │
+│  --oidc-issuer-url=https://keycloak.local.narwhal.internal/ │
 │          realms/kubernetes                            │
 │  --oidc-client-id=kubernetes                          │
 │  --oidc-username-claim=preferred_username             │
@@ -267,7 +267,7 @@ PostgreSQL HA (CloudNative-PG)
 모든 웹 앱은 APISIX의 `openid-connect` 플러그인을 통해 Gateway 레벨에서 Keycloak OIDC 인증을 강제한다.
 
 ```
-Browser → argocd.local.narwhal.io
+Browser → argocd.local.narwhal.internal
     │
     ▼
 ┌─────────────────────────────────────────────────┐
@@ -301,10 +301,10 @@ Browser → argocd.local.narwhal.io
 
 | 쿠키 | 도메인 | 만료 | 용도 |
 |---|---|---|---|
-| `argocd.token` | `argocd.local.narwhal.io` | 앱별 | ArgoCD 세션 |
-| `grafana_session` | `grafana.local.narwhal.io` | 앱별 | Grafana 세션 |
-| `i_like_gitea` | `gitea.local.narwhal.io` | 앱별 | Gitea 세션 |
-| `sid` | `harbor.local.narwhal.io` | 앱별 | Harbor 세션 |
+| `argocd.token` | `argocd.local.narwhal.internal` | 앱별 | ArgoCD 세션 |
+| `grafana_session` | `grafana.local.narwhal.internal` | 앱별 | Grafana 세션 |
+| `i_like_gitea` | `gitea.local.narwhal.internal` | 앱별 | Gitea 세션 |
+| `sid` | `harbor.local.narwhal.internal` | 앱별 | Harbor 세션 |
 
 **테스트 & 트러블슈팅 가이드:**
 
@@ -315,7 +315,7 @@ Browser → argocd.local.narwhal.io
 #    → 창 닫으면 모든 쿠키 자동 삭제
 
 # 2. CLI로 인증 상태 확인 (401/302 예상):
-curl -sk -o /dev/null -w '%{http_code}' https://argocd.local.narwhal.io
+curl -sk -o /dev/null -w '%{http_code}' https://argocd.local.narwhal.internal
 
 # 3. APISIX 로그 확인 (인증 실패 디버깅)
 kubectl logs -n platform-system -l app.kubernetes.io/name=apisix --tail=20
@@ -335,7 +335,7 @@ kubectl logs -n platform-system -l app.kubernetes.io/name=apisix --tail=20
 ```
 ┌────────────────────────────────────────────────────────┐
 │                    Grafana Dashboard                   │
-│        https://grafana.local.narwhal.io (admin/admin)  │
+│        https://grafana.local.narwhal.internal (admin/admin)  │
 ├──────────┬──────────────┬──────────────────────────────┤
 │          │              │                              │
 │    Metrics         Logs              Traces            │
@@ -492,7 +492,7 @@ make validate  # Vagrantfile + yq 검증
 08-5-registry.sh          → Harbor
 08-6-tls-routes.sh        → CA cert 배포, APISIX routes
 09-istio-ambient.sh       → Istio ambient mesh (mTLS, zero sidecars)
-10-dnsmasq.sh             → 로컬 DNS (*.local.narwhal.io) + CoreDNS forward
+10-dnsmasq.sh             → 로컬 DNS (*.local.narwhal.internal) + CoreDNS forward
 11-1-keycloak-operator.sh → Keycloak Operator + CR + HTTPRoute
 11-2-keycloak-realm.sh   → Realm + Roles + Groups + Users
 11-3-keycloak-clients.sh → OIDC 클라이언트 7개 + Audience mappers
@@ -538,32 +538,32 @@ dev                  Developer workloads (user namespace)
 ```bash
 # macOS
 sudo mkdir -p /etc/resolver
-echo 'nameserver 192.168.56.10' | sudo tee /etc/resolver/local.narwhal.io
+echo 'nameserver 192.168.56.10' | sudo tee /etc/resolver/local.narwhal.internal
 
 # Linux (systemd-resolved)
 sudo resolvectl dns eth0 192.168.56.10
-sudo resolvectl domain eth0 ~local.narwhal.io
+sudo resolvectl domain eth0 ~local.narwhal.internal
 ```
 
 ### Web UI URLs
 
 | Service | URL | Credentials |
 |---------|-----|-------------|
-| Grafana | https://grafana.local.narwhal.io | admin / admin |
-| Harbor | https://harbor.local.narwhal.io | admin / Harbor12345 |
-| Keycloak | https://keycloak.local.narwhal.io | (auto-generated) |
-| OpenBao | https://openbao.local.narwhal.io | (unseal required) |
-| Hubble | https://hubble.local.narwhal.io | - |
-| ArgoCD | https://argocd.local.narwhal.io | admin / (auto) |
-| Gitea | https://gitea.local.narwhal.io | gitea-admin / gitea-admin |
-| Headlamp | https://headlamp.local.narwhal.io | Keycloak OIDC |
+| Grafana | https://grafana.local.narwhal.internal | admin / admin |
+| Harbor | https://harbor.local.narwhal.internal | admin / Harbor12345 |
+| Keycloak | https://keycloak.local.narwhal.internal | (auto-generated) |
+| OpenBao | https://openbao.local.narwhal.internal | (unseal required) |
+| Hubble | https://hubble.local.narwhal.internal | - |
+| ArgoCD | https://argocd.local.narwhal.internal | admin / (auto) |
+| Gitea | https://gitea.local.narwhal.internal | gitea-admin / gitea-admin |
+| Headlamp | https://headlamp.local.narwhal.internal | Keycloak OIDC |
 
 ### OIDC Login
 
 ```bash
 # 토큰 발급 (HTTPS, self-signed cert)
 TOKEN=$(curl -k -s -X POST \
-  'https://keycloak.local.narwhal.io/realms/kubernetes/protocol/openid-connect/token' \
+  'https://keycloak.local.narwhal.internal/realms/kubernetes/protocol/openid-connect/token' \
   -d 'grant_type=password&client_id=kubernetes&username=admin&password=admin' \
   | jq -r '.access_token')
 

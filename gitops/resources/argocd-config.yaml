@@ -21,7 +21,7 @@ data:
   accounts.narwhal-portal: apiKey,login
   oidc.config: |
     name: Keycloak
-    issuer: https://keycloak.local.narwhal.io/realms/narwhal
+    issuer: https://keycloak.local.narwhal.internal/realms/narwhal
     clientID: argocd
     clientSecret: $oidc.keycloak.clientSecret
     requestedScopes:
@@ -142,7 +142,7 @@ data:
       - ClusterBackgroundScanReport
       - UpdateRequest
   server.insecure: "true"
-  url: https://argocd.local.narwhal.io
+  url: https://argocd.local.narwhal.internal
 ---
 apiVersion: v1
 kind: ConfigMap

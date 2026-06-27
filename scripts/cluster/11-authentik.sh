@@ -8,11 +8,11 @@ source /home/vagrant/scripts/common/lib.sh
 # - authentik-bootstrap-secret 생성 (secret_key, bootstrap_token, bootstrap_password)
 # - authentik-db-config 생성 (iam ns에 DB 패스워드 복사 — cross-ns 참조 불가)
 # - Helm install: ghcr.io/goauthentik/* (ARM64 지원)
-# - ApisixRoute bootstrap: authentik.local.narwhal.io → authentik-server:9000
+# - ApisixRoute bootstrap: authentik.local.narwhal.internal → authentik-server:9000
 # Depends on: 07-cnpg.sh (narwhal-db ready), 08-1-networking.sh (APISIX ready)
 
 AUTHENTIK_VERSION="${AUTHENTIK_VERSION:-2026.2.1}"
-DOMAIN="${DOMAIN:-local.narwhal.io}"
+DOMAIN="${DOMAIN:-local.narwhal.internal}"
 export KUBECONFIG=/home/vagrant/.kube/config-local
 
 echo "=== Installing Authentik ${AUTHENTIK_VERSION} ==="
@@ -155,7 +155,7 @@ helm upgrade --install authentik authentik/authentik \
   --set "authentik.redis.port=6379" \
   --set "authentik.bootstrap.token=${AUTHENTIK_BOOTSTRAP_TOKEN}" \
   --set "authentik.bootstrap.password=${AUTHENTIK_BOOTSTRAP_PASSWORD}" \
-  --set "authentik.bootstrap.email=admin@local.narwhal.io" \
+  --set "authentik.bootstrap.email=admin@local.narwhal.internal" \
   --set "postgresql.enabled=false" \
   --set "redis.enabled=false" \
   --set "server.ingress.enabled=false" \
@@ -206,7 +206,7 @@ spec:
     - name: authentik
       match:
         hosts:
-          - authentik.local.narwhal.io
+          - authentik.local.narwhal.internal
         paths:
           - "/*"
       backends:

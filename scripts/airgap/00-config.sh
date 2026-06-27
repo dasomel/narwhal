@@ -10,7 +10,7 @@
 : "${AIRGAP_ARCH:=linux/arm64}"
 
 # Narwhal domain (used for Harbor endpoint resolution in airgap mode)
-: "${DOMAIN:=local.narwhal.io}"
+: "${DOMAIN:=local.narwhal.internal}"
 
 # Bundle output directory — collected tar/OCI layouts + Helm charts
 : "${AIRGAP_BUNDLE_DIR:=$(pwd)/narwhal-airgap-bundle}"

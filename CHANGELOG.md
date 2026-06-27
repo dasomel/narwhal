@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Domain migration `local.narwhal.io` → `local.narwhal.internal`** (2026-06-28): all 61 source
+  files updated. Reason: `narwhal.io` is a real public domain — its wildcard DNS entry shadowed the
+  internal cluster domain, causing external DNS resolution to win over the local dnsmasq. The
+  `.internal` TLD is ICANN-reserved for private use and is never publicly resolvable, eliminating
+  the shadow. Takes effect on next clean install; existing live clusters still run `.io`.
+
 ### Added
 - OIDC RBAC 테스트 섹션 (`test-sso.sh` 8/8: 15개 체크)
 - Keycloak `kubernetes` 클라이언트 audience mapper (K8s API 서버 `aud` 클레임 검증)
@@ -38,7 +45,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Keycloak HBONE NetworkPolicy (`keycloak-allow-hbone`, 포트 15008)
 - ArgoCD ambient mesh opt-out (`istio.io/dataplane-mode: none`)
 - ArgoCD ClusterRoleBinding namespace 자동 패치 (devtools)
-- CoreDNS hairpin fix (Traefik ClusterIP로 `*.local.narwhal.io` 해석)
+- CoreDNS hairpin fix (Traefik ClusterIP로 `*.local.narwhal.internal` 해석)
 - README에 릴리스/라이선스 배지
 
 ### Changed

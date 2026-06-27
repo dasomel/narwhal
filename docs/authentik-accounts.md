@@ -9,9 +9,9 @@
 
 | 항목 | 값 |
 |------|-----|
-| URL | https://authentik.local.narwhal.io |
-| Admin UI | https://authentik.local.narwhal.io/if/admin/ |
-| Admin Email | `admin@local.narwhal.io` |
+| URL | https://authentik.local.narwhal.internal |
+| Admin UI | https://authentik.local.narwhal.internal/if/admin/ |
+| Admin Email | `admin@local.narwhal.internal` |
 | Admin PW | 프로비저닝 시 자동생성 (아래 조회 명령어 참고) |
 
 ### Admin 비밀번호 조회
@@ -53,12 +53,12 @@ cluster-admin          전체 클러스터 최고 관리자
 
 | 사용자 | 그룹 | 이메일 | 비밀번호 |
 |--------|------|--------|----------|
-| `admin` | `cluster-admin` | admin@local.narwhal.io | 자동생성 (Secret 조회) |
-| `infra` | `infra-admin` | infra@local.narwhal.io | 자동생성 |
-| `platform` | `platform-admin` | platform@local.narwhal.io | 자동생성 |
-| `dev` | `developer` | dev@local.narwhal.io | 자동생성 |
-| `view` | `viewer` | view@local.narwhal.io | 자동생성 |
-| `guest` | `guest` | guest@local.narwhal.io | 자동생성 |
+| `admin` | `cluster-admin` | admin@local.narwhal.internal | 자동생성 (Secret 조회) |
+| `infra` | `infra-admin` | infra@local.narwhal.internal | 자동생성 |
+| `platform` | `platform-admin` | platform@local.narwhal.internal | 자동생성 |
+| `dev` | `developer` | dev@local.narwhal.internal | 자동생성 |
+| `view` | `viewer` | view@local.narwhal.internal | 자동생성 |
+| `guest` | `guest` | guest@local.narwhal.internal | 자동생성 |
 
 > 모든 비밀번호는 `11-2-authentik-config.sh` 실행 시 `generate_password()`로 생성되어
 > `authentik-user-passwords` Secret(iam ns)에 저장됩니다.
@@ -211,14 +211,14 @@ cluster-admin          전체 클러스터 최고 관리자
 
 | Endpoint | URL |
 |----------|-----|
-| Issuer (K8s) | `https://authentik.local.narwhal.io/application/o/kubernetes/` |
-| Issuer (APISIX) | `https://authentik.local.narwhal.io/application/o/apisix/` |
-| Authorization | `https://authentik.local.narwhal.io/application/o/apisix/authorize/` |
-| Token | `https://authentik.local.narwhal.io/application/o/token/` |
-| UserInfo | `https://authentik.local.narwhal.io/application/o/userinfo/` |
-| JWKS | `https://authentik.local.narwhal.io/application/o/apisix/jwks/` |
-| Discovery (K8s) | `https://authentik.local.narwhal.io/application/o/kubernetes/.well-known/openid-configuration` |
-| Discovery (APISIX) | `https://authentik.local.narwhal.io/application/o/apisix/.well-known/openid-configuration` |
+| Issuer (K8s) | `https://authentik.local.narwhal.internal/application/o/kubernetes/` |
+| Issuer (APISIX) | `https://authentik.local.narwhal.internal/application/o/apisix/` |
+| Authorization | `https://authentik.local.narwhal.internal/application/o/apisix/authorize/` |
+| Token | `https://authentik.local.narwhal.internal/application/o/token/` |
+| UserInfo | `https://authentik.local.narwhal.internal/application/o/userinfo/` |
+| JWKS | `https://authentik.local.narwhal.internal/application/o/apisix/jwks/` |
+| Discovery (K8s) | `https://authentik.local.narwhal.internal/application/o/kubernetes/.well-known/openid-configuration` |
+| Discovery (APISIX) | `https://authentik.local.narwhal.internal/application/o/apisix/.well-known/openid-configuration` |
 
 ### Scope Mappings
 
@@ -236,7 +236,7 @@ cluster-admin          전체 클러스터 최고 관리자
 ```bash
 # kubectl-oidc-login 플러그인 필요: kubectl krew install oidc-login
 kubectl oidc-login get-token \
-  --oidc-issuer-url=https://authentik.local.narwhal.io/application/o/kubernetes/ \
+  --oidc-issuer-url=https://authentik.local.narwhal.internal/application/o/kubernetes/ \
   --oidc-client-id=kubernetes \
   --oidc-extra-scope=groups \
   --certificate-authority=/etc/kubernetes/pki/ca.crt
@@ -255,7 +255,7 @@ KUBECONFIG=/dev/null kubectl \
 
 ### Authentik Admin UI에서
 
-1. https://authentik.local.narwhal.io/if/admin/ 접속
+1. https://authentik.local.narwhal.internal/if/admin/ 접속
 2. Directory → Users → 사용자 선택
 3. Set Password 클릭
 

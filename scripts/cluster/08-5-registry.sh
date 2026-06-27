@@ -120,7 +120,7 @@ echo "Waiting for Harbor core pod..."
 kubectl wait --for=condition=Ready pod -l app=harbor,component=core -n devtools --timeout=300s || true
 
 # Wait for Harbor API to respond via internal ClusterIP
-# (harbor.local.narwhal.io DNS is not yet available — dnsmasq runs at step 10)
+# (harbor.local.narwhal.internal DNS is not yet available — dnsmasq runs at step 10)
 HARBOR_CORE_IP=$(kubectl get svc harbor-core -n devtools -o jsonpath='{.spec.clusterIP}' 2>/dev/null || echo "")
 HARBOR_HEALTH="000"
 for attempt in $(seq 1 15); do

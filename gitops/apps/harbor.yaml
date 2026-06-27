@@ -17,7 +17,7 @@ spec:
           type: clusterIP
           tls:
             enabled: false
-        externalURL: https://harbor.local.narwhal.io
+        externalURL: https://harbor.local.narwhal.internal
         # Admin password loaded from existingSecret
         # Secret 'harbor-secrets' is created by scripts/cluster/08-platform-apps.sh
         # Required key: HARBOR_ADMIN_PASSWORD

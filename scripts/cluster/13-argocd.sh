@@ -4,7 +4,7 @@ set -euo pipefail
 ARGOCD_VERSION="${ARGOCD_VERSION:-v3.4.3}"
 
 # Authentik OIDC configuration
-AUTHENTIK_URL="${AUTHENTIK_URL:-https://authentik.${DOMAIN:-local.narwhal.io}}"
+AUTHENTIK_URL="${AUTHENTIK_URL:-https://authentik.${DOMAIN:-local.narwhal.internal}}"
 
 echo "=== Installing ArgoCD ${ARGOCD_VERSION} ==="
 
@@ -109,7 +109,7 @@ metadata:
     app.kubernetes.io/name: argocd-cm
     app.kubernetes.io/part-of: argocd
 data:
-  url: https://argocd.local.narwhal.io
+  url: https://argocd.local.narwhal.internal
   server.insecure: "true"
   oidc.config: |
     name: Authentik

@@ -89,7 +89,7 @@ export CLUSTER_NAME=narwhal      # 클러스터 이름
 export MASTER_IP=192.168.56.10   # 마스터 노드 IP
 
 # OIDC 설정 (oidc 모드에서 사용)
-export OIDC_ISSUER_URL=https://keycloak.local.narwhal.io/realms/kubernetes
+export OIDC_ISSUER_URL=https://keycloak.local.narwhal.internal/realms/kubernetes
 export OIDC_CLIENT_ID=kubernetes
 
 # 토큰 설정 (token 모드에서 사용)
@@ -175,7 +175,7 @@ vagrant up master-1
 
 2. Keycloak 접근 테스트:
    ```bash
-   curl -k https://keycloak.local.narwhal.io/realms/kubernetes/.well-known/openid-configuration
+   curl -k https://keycloak.local.narwhal.internal/realms/kubernetes/.well-known/openid-configuration
    ```
 
 3. kubelogin 캐시 삭제:

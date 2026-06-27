@@ -4,7 +4,7 @@
 
 **Goal:** Replace Traefik (ingress) + OAuth2-Proxy (OIDC auth) with Apache APISIX, using native ApisixRoute CRDs and the built-in `openid-connect` plugin for Keycloak SSO.
 
-**Architecture:** APISIX serves as the single API gateway handling TLS termination, routing, and OIDC authentication via its `openid-connect` plugin. A standalone etcd (using `registry.k8s.io/etcd`, no Bitnami) stores APISIX configuration. The APISIX Ingress Controller watches ApisixRoute/ApisixTls CRDs and syncs them to APISIX via Admin API. APISIX Dashboard provides a management UI at `apisix-dashboard.local.narwhal.io`. Secret values (OIDC client_secret, session_secret) are stored in a K8s Secret and exposed to APISIX via the Kubernetes Secret Provider (`$secret://kubernetes/...`).
+**Architecture:** APISIX serves as the single API gateway handling TLS termination, routing, and OIDC authentication via its `openid-connect` plugin. A standalone etcd (using `registry.k8s.io/etcd`, no Bitnami) stores APISIX configuration. The APISIX Ingress Controller watches ApisixRoute/ApisixTls CRDs and syncs them to APISIX via Admin API. APISIX Dashboard provides a management UI at `apisix-dashboard.local.narwhal.internal`. Secret values (OIDC client_secret, session_secret) are stored in a K8s Secret and exposed to APISIX via the Kubernetes Secret Provider (`$secret://kubernetes/...`).
 
 **Tech Stack:** Apache APISIX 3.11.0, APISIX Ingress Controller 1.8.0, APISIX Dashboard 3.0.0, etcd 3.5.21 (`registry.k8s.io/etcd`), cert-manager wildcard TLS, MetalLB LoadBalancer (192.168.56.200), Keycloak OIDC (`openid-connect` plugin)
 
@@ -418,7 +418,7 @@ spec:
     name: narwhal-ca-issuer
     kind: ClusterIssuer
   dnsNames:
-    - "*.local.narwhal.io"
+    - "*.local.narwhal.internal"
   duration: 8760h
   renewBefore: 720h
 ---
@@ -430,7 +430,7 @@ metadata:
   namespace: platform-system
 spec:
   hosts:
-    - "*.local.narwhal.io"
+    - "*.local.narwhal.internal"
   secret:
     name: narwhal-wildcard-tls
     namespace: platform-system
@@ -509,7 +509,7 @@ spec:
     - name: argocd
       match:
         hosts:
-          - argocd.local.narwhal.io
+          - argocd.local.narwhal.internal
         paths:
           - "/*"
       backends:
@@ -523,8 +523,8 @@ spec:
           config:
             client_id: "apisix"
             client_secret: "$secret://kubernetes/k8s-1/apisix-oidc-config/client_secret"
-            discovery: "https://keycloak.local.narwhal.io/realms/kubernetes/.well-known/openid-configuration"
-            redirect_uri: "https://argocd.local.narwhal.io/apisix/callback"
+            discovery: "https://keycloak.local.narwhal.internal/realms/kubernetes/.well-known/openid-configuration"
+            redirect_uri: "https://argocd.local.narwhal.internal/apisix/callback"
             scope: "openid email profile groups"
             bearer_only: false
             ssl_verify: false
@@ -555,7 +555,7 @@ spec:
     - name: grafana
       match:
         hosts:
-          - grafana.local.narwhal.io
+          - grafana.local.narwhal.internal
         paths:
           - "/*"
       backends:
@@ -569,8 +569,8 @@ spec:
           config:
             client_id: "apisix"
             client_secret: "$secret://kubernetes/k8s-1/apisix-oidc-config/client_secret"
-            discovery: "https://keycloak.local.narwhal.io/realms/kubernetes/.well-known/openid-configuration"
-            redirect_uri: "https://grafana.local.narwhal.io/apisix/callback"
+            discovery: "https://keycloak.local.narwhal.internal/realms/kubernetes/.well-known/openid-configuration"
+            redirect_uri: "https://grafana.local.narwhal.internal/apisix/callback"
             scope: "openid email profile groups"
             bearer_only: false
             ssl_verify: false
@@ -600,7 +600,7 @@ spec:
     - name: gitea
       match:
         hosts:
-          - gitea.local.narwhal.io
+          - gitea.local.narwhal.internal
         paths:
           - "/*"
       backends:
@@ -614,8 +614,8 @@ spec:
           config:
             client_id: "apisix"
             client_secret: "$secret://kubernetes/k8s-1/apisix-oidc-config/client_secret"
-            discovery: "https://keycloak.local.narwhal.io/realms/kubernetes/.well-known/openid-configuration"
-            redirect_uri: "https://gitea.local.narwhal.io/apisix/callback"
+            discovery: "https://keycloak.local.narwhal.internal/realms/kubernetes/.well-known/openid-configuration"
+            redirect_uri: "https://gitea.local.narwhal.internal/apisix/callback"
             scope: "openid email profile groups"
             bearer_only: false
             ssl_verify: false
@@ -644,7 +644,7 @@ spec:
     - name: harbor
       match:
         hosts:
-          - harbor.local.narwhal.io
+          - harbor.local.narwhal.internal
         paths:
           - "/*"
       backends:
@@ -658,8 +658,8 @@ spec:
           config:
             client_id: "apisix"
             client_secret: "$secret://kubernetes/k8s-1/apisix-oidc-config/client_secret"
-            discovery: "https://keycloak.local.narwhal.io/realms/kubernetes/.well-known/openid-configuration"
-            redirect_uri: "https://harbor.local.narwhal.io/apisix/callback"
+            discovery: "https://keycloak.local.narwhal.internal/realms/kubernetes/.well-known/openid-configuration"
+            redirect_uri: "https://harbor.local.narwhal.internal/apisix/callback"
             scope: "openid email profile groups"
             bearer_only: false
             ssl_verify: false
@@ -698,7 +698,7 @@ spec:
     - name: headlamp
       match:
         hosts:
-          - headlamp.local.narwhal.io
+          - headlamp.local.narwhal.internal
         paths:
           - "/*"
       backends:
@@ -712,8 +712,8 @@ spec:
           config:
             client_id: "apisix"
             client_secret: "$secret://kubernetes/k8s-1/apisix-oidc-config/client_secret"
-            discovery: "https://keycloak.local.narwhal.io/realms/kubernetes/.well-known/openid-configuration"
-            redirect_uri: "https://headlamp.local.narwhal.io/apisix/callback"
+            discovery: "https://keycloak.local.narwhal.internal/realms/kubernetes/.well-known/openid-configuration"
+            redirect_uri: "https://headlamp.local.narwhal.internal/apisix/callback"
             scope: "openid email profile groups"
             bearer_only: false
             ssl_verify: false
@@ -740,7 +740,7 @@ spec:
     - name: openbao
       match:
         hosts:
-          - openbao.local.narwhal.io
+          - openbao.local.narwhal.internal
         paths:
           - "/*"
       backends:
@@ -754,8 +754,8 @@ spec:
           config:
             client_id: "apisix"
             client_secret: "$secret://kubernetes/k8s-1/apisix-oidc-config/client_secret"
-            discovery: "https://keycloak.local.narwhal.io/realms/kubernetes/.well-known/openid-configuration"
-            redirect_uri: "https://openbao.local.narwhal.io/apisix/callback"
+            discovery: "https://keycloak.local.narwhal.internal/realms/kubernetes/.well-known/openid-configuration"
+            redirect_uri: "https://openbao.local.narwhal.internal/apisix/callback"
             scope: "openid email profile groups"
             bearer_only: false
             ssl_verify: false
@@ -782,7 +782,7 @@ spec:
     - name: hubble
       match:
         hosts:
-          - hubble.local.narwhal.io
+          - hubble.local.narwhal.internal
         paths:
           - "/*"
       backends:
@@ -796,8 +796,8 @@ spec:
           config:
             client_id: "apisix"
             client_secret: "$secret://kubernetes/k8s-1/apisix-oidc-config/client_secret"
-            discovery: "https://keycloak.local.narwhal.io/realms/kubernetes/.well-known/openid-configuration"
-            redirect_uri: "https://hubble.local.narwhal.io/apisix/callback"
+            discovery: "https://keycloak.local.narwhal.internal/realms/kubernetes/.well-known/openid-configuration"
+            redirect_uri: "https://hubble.local.narwhal.internal/apisix/callback"
             scope: "openid email profile groups"
             bearer_only: false
             ssl_verify: false
@@ -824,7 +824,7 @@ spec:
     - name: apisix-dashboard
       match:
         hosts:
-          - apisix-dashboard.local.narwhal.io
+          - apisix-dashboard.local.narwhal.internal
         paths:
           - "/*"
       backends:
@@ -1111,8 +1111,8 @@ kubectl exec -n iam "${KEYCLOAK_POD}" -- \
   -s protocol=openid-connect \
   -s publicClient=false \
   -s secret="${APISIX_CLIENT_SECRET}" \
-  -s 'redirectUris=["https://argocd.local.narwhal.io/apisix/callback","https://grafana.local.narwhal.io/apisix/callback","https://gitea.local.narwhal.io/apisix/callback","https://harbor.local.narwhal.io/apisix/callback","https://headlamp.local.narwhal.io/apisix/callback","https://openbao.local.narwhal.io/apisix/callback","https://hubble.local.narwhal.io/apisix/callback","https://apisix-dashboard.local.narwhal.io/apisix/callback"]' \
-  -s 'webOrigins=["https://*.local.narwhal.io"]' \
+  -s 'redirectUris=["https://argocd.local.narwhal.internal/apisix/callback","https://grafana.local.narwhal.internal/apisix/callback","https://gitea.local.narwhal.internal/apisix/callback","https://harbor.local.narwhal.internal/apisix/callback","https://headlamp.local.narwhal.internal/apisix/callback","https://openbao.local.narwhal.internal/apisix/callback","https://hubble.local.narwhal.internal/apisix/callback","https://apisix-dashboard.local.narwhal.internal/apisix/callback"]' \
+  -s 'webOrigins=["https://*.local.narwhal.internal"]' \
   -s standardFlowEnabled=true \
   -s directAccessGrantsEnabled=false 2>/dev/null || echo "WARN: apisix client may already exist"
 
@@ -1247,8 +1247,8 @@ grep -n "oauth2-proxy\|traefik" scripts/cluster/10-dnsmasq.sh
 
 - [ ] **Step 2: Replace test domain references**
 
-`oauth2-proxy.local.narwhal.io` → `apisix.local.narwhal.io` 또는 `argocd.local.narwhal.io`
-`traefik.local.narwhal.io` → `apisix-dashboard.local.narwhal.io`
+`oauth2-proxy.local.narwhal.internal` → `apisix.local.narwhal.internal` 또는 `argocd.local.narwhal.internal`
+`traefik.local.narwhal.internal` → `apisix-dashboard.local.narwhal.internal`
 
 - [ ] **Step 3: Commit**
 
@@ -1345,8 +1345,8 @@ vagrant ssh master-1 -c "kubectl get certificate -n platform-system"
 vagrant ssh master-1 -c "kubectl get svc -n platform-system -l app.kubernetes.io/name=apisix"
 
 # 엔드포인트 테스트
-curl -k https://argocd.local.narwhal.io/healthz
-curl -k https://grafana.local.narwhal.io/api/health
+curl -k https://argocd.local.narwhal.internal/healthz
+curl -k https://grafana.local.narwhal.internal/api/health
 ```
 
 ---

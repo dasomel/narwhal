@@ -25,7 +25,7 @@ spec:
           logLevel: "info"
           general:
             veleroNamespace: "storage"
-            grafanaUrl: "https://grafana.local.narwhal.io"
+            grafanaUrl: "https://grafana.local.narwhal.internal"
             secretPassPhrase:
               existingSecret: "velero-ui-oauth"
               key: "passphrase"
@@ -64,11 +64,11 @@ spec:
           - name: OAUTH_NAME
             value: "Keycloak"
           - name: OAUTH_AUTHORIZATION_URL
-            value: "https://keycloak.local.narwhal.io/realms/narwhal/protocol/openid-connect/auth"
+            value: "https://keycloak.local.narwhal.internal/realms/narwhal/protocol/openid-connect/auth"
           - name: OAUTH_TOKEN_URL
-            value: "https://keycloak.local.narwhal.io/realms/narwhal/protocol/openid-connect/token"
+            value: "https://keycloak.local.narwhal.internal/realms/narwhal/protocol/openid-connect/token"
           - name: OAUTH_USER_INFO_URL
-            value: "https://keycloak.local.narwhal.io/realms/narwhal/protocol/openid-connect/userinfo"
+            value: "https://keycloak.local.narwhal.internal/realms/narwhal/protocol/openid-connect/userinfo"
           - name: OAUTH_CLIENT_ID
             value: "velero-ui"
           - name: OAUTH_CLIENT_SECRET
@@ -81,9 +81,9 @@ spec:
           - name: OAUTH_GROUP_CLAIM
             value: "groups"
           - name: OAUTH_REDIRECT_URI
-            value: "https://velero-ui.local.narwhal.io/login"
+            value: "https://velero-ui.local.narwhal.internal/login"
           - name: BASE_URL
-            value: "https://velero-ui.local.narwhal.io"
+            value: "https://velero-ui.local.narwhal.internal"
 
         resources:
           requests:

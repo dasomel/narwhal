@@ -211,7 +211,7 @@ Prometheus로 수집되는 주요 메트릭:
 
 ArgoCD를 통해 배포된 Prometheus Stack에 CNPG 대시보드가 포함되어 있습니다.
 
-접속: `https://grafana.local.narwhal.io` → Dashboards → CloudNativePG
+접속: `https://grafana.local.narwhal.internal` → Dashboards → CloudNativePG
 
 ## 트러블슈팅
 

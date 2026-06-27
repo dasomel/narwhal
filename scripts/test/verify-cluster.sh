@@ -383,7 +383,7 @@ fi
 #=========================================
 if should_run "database"; then
   echo "--- [6/17] Database (CNPG) ---"
-  CNPG_OP=$(kubectl get pods -n cnpg-system --no-headers 2>/dev/null | grep -c "Running" || true)
+  CNPG_OP=$(kubectl get pods -n platform-system -l app.kubernetes.io/name=cloudnative-pg --no-headers 2>/dev/null | grep -c "Running" || true)
   if [ "${CNPG_OP}" -ge 1 ]; then
     pass "CNPG operator: Running"
   else
@@ -425,7 +425,7 @@ if should_run "database"; then
   fi
 
   # ExternalName services for cross-namespace access
-  for svc_entry in "keycloak-db-rw:keycloak" "harbor-db-rw:harbor" "gitea-db-rw:gitea"; do
+  for svc_entry in "harbor-db-rw:devtools" "gitea-db-rw:devtools"; do
     SVC_NAME="${svc_entry%%:*}"
     SVC_NS="${svc_entry##*:}"
     SVC_TYPE=$(kubectl get svc "${SVC_NAME}" -n "${SVC_NS}" -o jsonpath='{.spec.type}' 2>/dev/null || echo "")
@@ -443,9 +443,9 @@ fi
 #=========================================
 if should_run "network"; then
   echo "--- [7/17] MetalLB & APISIX ---"
-  check_ready "deployment" "metallb-system" "metallb-controller" "MetalLB controller"
+  check_ready "deployment" "platform-system" "metallb-controller" "MetalLB controller"
 
-  METALLB_SPEAKERS=$(kubectl get pods -n metallb-system -l app.kubernetes.io/component=speaker --no-headers 2>/dev/null | grep -c "Running" || true)
+  METALLB_SPEAKERS=$(kubectl get pods -n platform-system -l app.kubernetes.io/component=speaker --no-headers 2>/dev/null | grep -c "Running" || true)
   if [ "${METALLB_SPEAKERS}" -ge 1 ]; then
     pass "MetalLB speakers: ${METALLB_SPEAKERS} Running"
   else
@@ -453,7 +453,7 @@ if should_run "network"; then
   fi
 
   # MetalLB IPAddressPool
-  POOL_EXISTS=$(kubectl get ipaddresspool default-pool -n metallb-system -o jsonpath='{.metadata.name}' 2>/dev/null || echo "")
+  POOL_EXISTS=$(kubectl get ipaddresspool default-pool -n platform-system -o jsonpath='{.metadata.name}' 2>/dev/null || echo "")
   if [ "${POOL_EXISTS}" = "default-pool" ]; then
     pass "MetalLB IPAddressPool: default-pool exists"
   else
@@ -461,7 +461,7 @@ if should_run "network"; then
   fi
 
   # MetalLB L2Advertisement
-  L2_EXISTS=$(kubectl get l2advertisement default -n metallb-system -o jsonpath='{.metadata.name}' 2>/dev/null || echo "")
+  L2_EXISTS=$(kubectl get l2advertisement default -n platform-system -o jsonpath='{.metadata.name}' 2>/dev/null || echo "")
   if [ "${L2_EXISTS}" = "default" ]; then
     pass "MetalLB L2Advertisement: exists"
   else
@@ -517,9 +517,9 @@ fi
 #=========================================
 if should_run "tls"; then
   echo "--- [8/17] cert-manager & TLS ---"
-  check_ready "deployment" "cert-manager" "cert-manager" "cert-manager"
-  check_ready "deployment" "cert-manager" "cert-manager-webhook" "cert-manager-webhook"
-  check_ready "deployment" "cert-manager" "cert-manager-cainjector" "cert-manager-cainjector"
+  check_ready "deployment" "platform-system" "cert-manager" "cert-manager"
+  check_ready "deployment" "platform-system" "cert-manager-webhook" "cert-manager-webhook"
+  check_ready "deployment" "platform-system" "cert-manager-cainjector" "cert-manager-cainjector"
 
   # ClusterIssuer
   ISSUER_READY=$(kubectl get clusterissuer selfsigned-cluster-issuer -o jsonpath='{.status.conditions[0].status}' 2>/dev/null || echo "")
@@ -545,10 +545,12 @@ if should_run "tls"; then
     fail "TLS cert wildcard: *.local.narwhal.io not found in [${CERT_DOMAINS}]"
   fi
 
-  # CA cert distribution to SSO namespaces
+  # CA cert distribution to namespaces that must trust the internal CA
+  # (narwhal-ca-cert is synced to these via GitOps; old headlamp/gitea/harbor/
+  #  oauth2-proxy namespaces were consolidated into devtools / removed)
   CA_DIST_OK=0
   CA_DIST_FAIL=0
-  for ns in headlamp gitea harbor monitoring oauth2-proxy; do
+  for ns in devtools iam monitoring storage; do
     CA_SECRET=$(kubectl get secret narwhal-ca-cert -n "${ns}" -o jsonpath='{.data.ca\.crt}' 2>/dev/null || echo "")
     if [ -n "${CA_SECRET}" ]; then
       CA_DIST_OK=$((CA_DIST_OK + 1))
@@ -557,9 +559,9 @@ if should_run "tls"; then
     fi
   done
   if [ "${CA_DIST_FAIL}" -eq 0 ]; then
-    pass "CA cert distribution: ${CA_DIST_OK}/5 SSO namespaces"
+    pass "CA cert distribution: ${CA_DIST_OK}/4 CA-trust namespaces"
   else
-    fail "CA cert distribution: ${CA_DIST_OK}/5 SSO namespaces (${CA_DIST_FAIL} missing)"
+    fail "CA cert distribution: ${CA_DIST_OK}/4 CA-trust namespaces (${CA_DIST_FAIL} missing)"
   fi
   echo ""
 fi

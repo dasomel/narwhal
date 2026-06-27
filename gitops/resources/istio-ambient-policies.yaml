@@ -1,5 +1,18 @@
 ---
-# PeerAuthentication: Mesh-wide STRICT mTLS
+# PeerAuthentication: mesh-wide mTLS mode.
+#
+# NOTE: mode is PERMISSIVE, NOT STRICT.
+# STRICT was attempted (2026-06-27) but BROKE external ingress: the APISIX
+# gateway runs in the `platform-system` namespace which is labeled
+# istio.io/dataplane-mode=ambient and the apisix pod has NO per-pod opt-out,
+# so it is mesh-enrolled. Under mesh-wide STRICT, ztunnel rejects the
+# non-mTLS inbound from external clients (MetalLB LB -> host -> APISIX),
+# making every *.local.narwhal.io service unreachable from outside the mesh.
+#
+# To safely enable STRICT later, FIRST exclude the ingress path from mTLS
+# enforcement — e.g. label the apisix pod/namespace istio.io/dataplane-mode=none,
+# or add a port-level PeerAuthentication exception for the APISIX gateway —
+# THEN flip this to STRICT and verify external ingress still works.
 apiVersion: security.istio.io/v1
 kind: PeerAuthentication
 metadata:
@@ -7,4 +20,4 @@ metadata:
   namespace: istio-system
 spec:
   mtls:
-    mode: STRICT
+    mode: PERMISSIVE

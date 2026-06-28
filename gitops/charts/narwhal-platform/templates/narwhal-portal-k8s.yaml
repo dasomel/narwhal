@@ -214,6 +214,9 @@ spec:
       containers:
         - name: narwhal-portal
           image: harbor.{{ .Values.baseDomain }}/library/narwhal-portal:latest
+          # IfNotPresent: use the in-cluster-built image already present in
+          # containerd/Harbor instead of re-pulling on every restart.
+          imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 3000
           envFrom:

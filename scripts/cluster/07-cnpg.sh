@@ -324,26 +324,20 @@ BEGIN
   END IF;
 END
 \$\$;
-SELECT 'harbor' AS db WHERE NOT EXISTS (SELECT 1 FROM pg_database WHERE datname = 'harbor') \gexec
-CREATE DATABASE harbor OWNER harbor;
-SELECT 'gitea' AS db WHERE NOT EXISTS (SELECT 1 FROM pg_database WHERE datname = 'gitea') \gexec
-CREATE DATABASE gitea OWNER gitea;
-SELECT 'keycloak' AS db WHERE NOT EXISTS (SELECT 1 FROM pg_database WHERE datname = 'keycloak') \gexec
-CREATE DATABASE keycloak OWNER keycloak;
+SELECT format('CREATE DATABASE %I OWNER %I', 'harbor', 'harbor') WHERE NOT EXISTS (SELECT 1 FROM pg_database WHERE datname = 'harbor')\gexec
+SELECT format('CREATE DATABASE %I OWNER %I', 'gitea', 'gitea') WHERE NOT EXISTS (SELECT 1 FROM pg_database WHERE datname = 'gitea')\gexec
+SELECT format('CREATE DATABASE %I OWNER %I', 'keycloak', 'keycloak') WHERE NOT EXISTS (SELECT 1 FROM pg_database WHERE datname = 'keycloak')\gexec
 GRANT ALL PRIVILEGES ON DATABASE harbor TO harbor;
 GRANT ALL PRIVILEGES ON DATABASE gitea TO gitea;
 GRANT ALL PRIVILEGES ON DATABASE keycloak TO keycloak;
 ENDSQL
 )
 
-  # Use a temp file to avoid shell quoting issues when passing multi-line SQL via kubectl exec
-  ENSURE_SQL_FILE=$(mktemp)
-  printf '%s\n' "${ENSURE_SQL}" > "${ENSURE_SQL_FILE}"
-  kubectl cp "${ENSURE_SQL_FILE}" "database/${PRIMARY_POD}:/tmp/ensure-dbs.sql"
-  rm -f "${ENSURE_SQL_FILE}"
-
-  if kubectl exec -n database "${PRIMARY_POD}" -- \
-      psql -U postgres -f /tmp/ensure-dbs.sql; then
+  # Pipe SQL to psql via stdin (kubectl exec -i). The CNPG postgres container
+  # has a READ-ONLY root filesystem, so we must NOT copy a file into the pod
+  # (kubectl cp / tar fails with "Read-only file system").
+  if printf '%s\n' "${ENSURE_SQL}" | kubectl exec -i -n database "${PRIMARY_POD}" -- \
+      psql -U postgres -v ON_ERROR_STOP=1; then
     echo "Ensure-databases step completed successfully"
   else
     echo "WARN: ensure-databases step failed; databases may need manual creation"

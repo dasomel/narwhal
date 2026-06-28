@@ -93,18 +93,68 @@ else
   echo ""
   echo "================================================================"
   echo "  NOTICE: Harbor에 narwhal-portal 이미지가 없습니다."
-  echo ""
-  echo "  포털 이미지는 VM 내부에서 빌드할 수 없습니다 (소스가 호스트에만 있음)."
-  echo "  호스트에서 아래 명령을 실행하여 빌드 + Harbor 푸시 후 재배포하세요:"
-  echo ""
-  echo "    cd /path/to/narwhal-portal"
-  echo "    make all          # docker build + push to ${HARBOR_HOST}/${HARBOR_PROJECT}/${HARBOR_REPO}"
-  echo ""
-  echo "  푸시 후 포털을 재기동하려면:"
-  echo "    kubectl rollout restart deployment/narwhal-portal -n devtools"
+  echo "  in-cluster Kaniko 빌드를 시작합니다..."
   echo "================================================================"
   echo ""
-  echo "15-narwhal-portal.sh: 이미지 없음 — 정상 종료 (non-critical)"
+
+  # ---- in-cluster Kaniko 빌드 트리거 ------------------------------------
+  # kaniko-build.sh 위치: narwhal-portal repo는 /home/vagrant/narwhal-portal 에
+  # 마운트되어 있거나, 호스트에서 실행 시 KANIKO_BUILD_SCRIPT를 오버라이드한다.
+  KANIKO_BUILD_SCRIPT="${KANIKO_BUILD_SCRIPT:-/home/vagrant/narwhal-portal/scripts/kaniko-build.sh}"
+
+  BUILD_SUCCESS="false"
+  if [[ -f "${KANIKO_BUILD_SCRIPT}" ]]; then
+    echo "  빌드 스크립트 실행: ${KANIKO_BUILD_SCRIPT}"
+    # DOMAIN을 export해서 kaniko-build.sh가 같은 도메인을 사용하도록 한다.
+    export DOMAIN
+    if bash "${KANIKO_BUILD_SCRIPT}"; then
+      BUILD_SUCCESS="true"
+    else
+      echo "WARN: Kaniko 빌드 실패 — 빌드 로그를 확인하세요."
+      echo "  kubectl logs -n devtools -l app.kubernetes.io/name=kaniko-build-narwhal-portal"
+    fi
+  else
+    echo "WARN: Kaniko 빌드 스크립트를 찾을 수 없습니다: ${KANIKO_BUILD_SCRIPT}"
+    echo "  KANIKO_BUILD_SCRIPT 환경변수로 경로를 지정하거나,"
+    echo "  narwhal-portal 소스를 VM에 마운트하세요."
+    echo ""
+    echo "  대안 — 호스트에서 직접 빌드:"
+    echo "    cd /path/to/narwhal-portal"
+    echo "    ./scripts/kaniko-build.sh"
+    echo ""
+    echo "  또는 호스트 Docker로 빌드 후 push:"
+    echo "    make all    # docker build + push to ${HARBOR_HOST}/${HARBOR_PROJECT}/${HARBOR_REPO}"
+  fi
+
+  if [[ "${BUILD_SUCCESS}" == "true" ]]; then
+    echo ""
+    echo "  Kaniko 빌드 완료 — narwhal-portal Deployment 재기동 중..."
+    # 이미지 push 직후 Deployment가 아직 생성되지 않았을 수 있으므로 대기
+    deploy_ready="false"
+    for attempt in $(seq 1 18); do
+      if kubectl get deployment "${DEPLOYMENT}" -n "${NAMESPACE}" &>/dev/null; then
+        deploy_ready="true"
+        break
+      fi
+      echo "  narwhal-portal Deployment 대기 중... (${attempt}/18)"
+      sleep 10
+    done
+
+    if [ "${deploy_ready}" = "true" ]; then
+      kubectl rollout restart deployment/"${DEPLOYMENT}" -n "${NAMESPACE}"
+      echo "  rollout restart 완료. 상태 확인:"
+      kubectl rollout status deployment/"${DEPLOYMENT}" -n "${NAMESPACE}" --timeout=120s || \
+        echo "  WARN: rollout 타임아웃 (계속 진행)"
+    else
+      echo "WARN: narwhal-portal Deployment가 아직 생성되지 않음 (ArgoCD sync 지연 가능)"
+      echo "  나중에 수동 확인: kubectl rollout restart deployment/narwhal-portal -n devtools"
+    fi
+  else
+    echo ""
+    echo "15-narwhal-portal.sh: 빌드 미완료 — 정상 종료 (non-critical)"
+    echo "  이미지 빌드 후 아래 명령으로 재기동:"
+    echo "    kubectl rollout restart deployment/narwhal-portal -n devtools"
+  fi
 fi
 
 echo "============================================"

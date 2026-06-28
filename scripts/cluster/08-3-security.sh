@@ -9,8 +9,13 @@ export KUBECONFIG=/home/vagrant/.kube/config-local
 # Kyverno (Policy Management)
 #=========================================
 echo "=== Installing Kyverno ==="
-helm repo add kyverno https://kyverno.github.io/kyverno/
-helm repo update kyverno
+for attempt in 1 2 3 4 5; do
+  if helm repo add kyverno https://kyverno.github.io/kyverno/ && helm repo update kyverno; then
+    break
+  fi
+  echo "Helm repo kyverno attempt ${attempt}/5 failed, waiting 15s..."
+  sleep 15
+done
 
 cat > /tmp/kyverno-values.yaml << 'EOF'
 admissionController:
@@ -38,11 +43,17 @@ config:
             - platform-system
 EOF
 
-helm upgrade --install kyverno kyverno/kyverno \
-  --namespace platform-system \
-  --create-namespace \
-  --version 3.8.1 \
-  -f /tmp/kyverno-values.yaml || echo "WARN: Kyverno install issue, continuing..."
+for attempt in 1 2 3 4 5; do
+  if helm upgrade --install kyverno kyverno/kyverno \
+    --namespace platform-system \
+    --create-namespace \
+    --version 3.8.1 \
+    -f /tmp/kyverno-values.yaml; then
+    break
+  fi
+  echo "Kyverno install attempt ${attempt}/5 failed, waiting 15s..."
+  sleep 15
+done
 
 rm /tmp/kyverno-values.yaml
 
@@ -52,8 +63,13 @@ echo "Kyverno installed"
 # Headlamp (Kubernetes UI)
 #=========================================
 echo "=== Installing Headlamp ==="
-helm repo add headlamp https://kubernetes-sigs.github.io/headlamp/
-helm repo update headlamp
+for attempt in 1 2 3 4 5; do
+  if helm repo add headlamp https://kubernetes-sigs.github.io/headlamp/ && helm repo update headlamp; then
+    break
+  fi
+  echo "Helm repo headlamp attempt ${attempt}/5 failed, waiting 15s..."
+  sleep 15
+done
 
 cat > /tmp/headlamp-values.yaml << 'EOF'
 config:
@@ -91,11 +107,17 @@ volumeMounts:
     readOnly: true
 EOF
 
-helm upgrade --install headlamp headlamp/headlamp \
-  --namespace devtools \
-  --create-namespace \
-  --version 0.42.0 \
-  -f /tmp/headlamp-values.yaml || echo "WARN: Headlamp install issue, continuing..."
+for attempt in 1 2 3 4 5; do
+  if helm upgrade --install headlamp headlamp/headlamp \
+    --namespace devtools \
+    --create-namespace \
+    --version 0.42.0 \
+    -f /tmp/headlamp-values.yaml; then
+    break
+  fi
+  echo "Headlamp install attempt ${attempt}/5 failed, waiting 15s..."
+  sleep 15
+done
 
 rm /tmp/headlamp-values.yaml
 

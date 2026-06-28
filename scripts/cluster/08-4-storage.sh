@@ -9,33 +9,44 @@ export KUBECONFIG=/home/vagrant/.kube/config-local
 # SeaweedFS (S3-compatible Object Storage)
 #=========================================
 echo "=== Installing SeaweedFS ==="
-helm repo add seaweedfs https://seaweedfs.github.io/seaweedfs/helm
-helm repo update seaweedfs
+for attempt in 1 2 3 4 5; do
+  if helm repo add seaweedfs https://seaweedfs.github.io/seaweedfs/helm && helm repo update seaweedfs; then
+    break
+  fi
+  echo "Helm repo seaweedfs attempt ${attempt}/5 failed, waiting 15s..."
+  sleep 15
+done
 
-helm upgrade --install seaweedfs seaweedfs/seaweedfs \
-  --namespace storage \
-  --create-namespace \
-  --version 4.34.0 \
-  --set global.storageClass=nfs-csi \
-  --set master.enabled=true \
-  --set master.replicas=1 \
-  --set master.data.type=persistentVolumeClaim \
-  --set master.data.size=1Gi \
-  --set master.data.storageClass=nfs-csi \
-  --set volume.enabled=true \
-  --set volume.replicas=1 \
-  --set volume.data.type=persistentVolumeClaim \
-  --set volume.data.size=50Gi \
-  --set volume.data.storageClass=nfs-csi \
-  --set filer.enabled=true \
-  --set filer.replicas=1 \
-  --set filer.data.type=persistentVolumeClaim \
-  --set filer.data.size=5Gi \
-  --set filer.data.storageClass=nfs-csi \
-  --set filer.s3.enabled=true \
-  --set filer.s3.port=8333 \
-  --set filer.s3.allowEmptyFolder=true \
-  --set s3.enabled=true || echo "WARN: SeaweedFS install issue, continuing..."
+for attempt in 1 2 3 4 5; do
+  if helm upgrade --install seaweedfs seaweedfs/seaweedfs \
+    --namespace storage \
+    --create-namespace \
+    --version 4.34.0 \
+    --set global.storageClass=nfs-csi \
+    --set master.enabled=true \
+    --set master.replicas=1 \
+    --set master.data.type=persistentVolumeClaim \
+    --set master.data.size=1Gi \
+    --set master.data.storageClass=nfs-csi \
+    --set volume.enabled=true \
+    --set volume.replicas=1 \
+    --set volume.data.type=persistentVolumeClaim \
+    --set volume.data.size=50Gi \
+    --set volume.data.storageClass=nfs-csi \
+    --set filer.enabled=true \
+    --set filer.replicas=1 \
+    --set filer.data.type=persistentVolumeClaim \
+    --set filer.data.size=5Gi \
+    --set filer.data.storageClass=nfs-csi \
+    --set filer.s3.enabled=true \
+    --set filer.s3.port=8333 \
+    --set filer.s3.allowEmptyFolder=true \
+    --set s3.enabled=true; then
+    break
+  fi
+  echo "SeaweedFS install attempt ${attempt}/5 failed, waiting 15s..."
+  sleep 15
+done
 
 # Create S3 buckets for platform apps
 # All apps using SeaweedFS S3: Tempo, Velero, Loki, CNPG backup
@@ -64,8 +75,13 @@ echo "SeaweedFS installed"
 # OpenBao (Secret Management)
 #=========================================
 echo "=== Installing OpenBao ==="
-helm repo add openbao https://openbao.github.io/openbao-helm
-helm repo update openbao
+for attempt in 1 2 3 4 5; do
+  if helm repo add openbao https://openbao.github.io/openbao-helm && helm repo update openbao; then
+    break
+  fi
+  echo "Helm repo openbao attempt ${attempt}/5 failed, waiting 15s..."
+  sleep 15
+done
 
 # OpenBao runs a TLS listener (raft storage). The server cert MUST exist before the
 # pod starts, otherwise it crash-loops on missing tls_cert_file. Issue it from the
@@ -155,11 +171,17 @@ ui:
   enabled: true
 EOF
 
-helm upgrade --install openbao openbao/openbao \
-  --namespace storage \
-  --create-namespace \
-  --version 0.28.3 \
-  -f /tmp/openbao-values.yaml || echo "WARN: OpenBao install issue, continuing..."
+for attempt in 1 2 3 4 5; do
+  if helm upgrade --install openbao openbao/openbao \
+    --namespace storage \
+    --create-namespace \
+    --version 0.28.3 \
+    -f /tmp/openbao-values.yaml; then
+    break
+  fi
+  echo "OpenBao install attempt ${attempt}/5 failed, waiting 15s..."
+  sleep 15
+done
 
 # Auto init + unseal OpenBao. The listener is HTTPS with the self-signed cluster CA,
 # so every bao CLI call needs -tls-skip-verify (BAO_ADDR is https via tlsDisable=false).
@@ -246,8 +268,13 @@ echo "OpenBao installed"
 # Velero (Backup & Restore)
 #=========================================
 echo "=== Installing Velero ==="
-helm repo add vmware-tanzu https://vmware-tanzu.github.io/helm-charts
-helm repo update vmware-tanzu
+for attempt in 1 2 3 4 5; do
+  if helm repo add vmware-tanzu https://vmware-tanzu.github.io/helm-charts && helm repo update vmware-tanzu; then
+    break
+  fi
+  echo "Helm repo vmware-tanzu attempt ${attempt}/5 failed, waiting 15s..."
+  sleep 15
+done
 
 # S3 credentials — prefer environment overrides, fall back to Secret or defaults
 S3_ACCESS_KEY="${S3_ACCESS_KEY:-$(kubectl get secret velero-s3-credentials -n storage \
@@ -316,11 +343,17 @@ nodeAgent:
       effect: NoSchedule
 EOF
 
-helm upgrade --install velero vmware-tanzu/velero \
-  --namespace storage \
-  --create-namespace \
-  --version 12.0.3 \
-  -f /tmp/velero-values.yaml || echo "WARN: Velero install issue, continuing..."
+for attempt in 1 2 3 4 5; do
+  if helm upgrade --install velero vmware-tanzu/velero \
+    --namespace storage \
+    --create-namespace \
+    --version 12.0.3 \
+    -f /tmp/velero-values.yaml; then
+    break
+  fi
+  echo "Velero install attempt ${attempt}/5 failed, waiting 15s..."
+  sleep 15
+done
 
 rm /tmp/velero-values.yaml
 echo "Velero installed"

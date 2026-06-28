@@ -9,16 +9,27 @@ export KUBECONFIG=/home/vagrant/.kube/config-local
 # MetalLB (LoadBalancer for bare-metal)
 #=========================================
 echo "=== Installing MetalLB ==="
-helm repo add metallb https://metallb.github.io/metallb
-helm repo update metallb
+for attempt in 1 2 3 4 5; do
+  if helm repo add metallb https://metallb.github.io/metallb && helm repo update metallb; then
+    break
+  fi
+  echo "Helm repo metallb attempt ${attempt}/5 failed, waiting 15s..."
+  sleep 15
+done
 
-helm upgrade --install metallb metallb/metallb \
-  --namespace platform-system \
-  --create-namespace \
-  --version 0.16.1 \
-  --set speaker.tolerations[0].key=node-role.kubernetes.io/control-plane \
-  --set speaker.tolerations[0].operator=Exists \
-  --set speaker.tolerations[0].effect=NoSchedule || echo "WARN: MetalLB install issue, continuing..."
+for attempt in 1 2 3 4 5; do
+  if helm upgrade --install metallb metallb/metallb \
+    --namespace platform-system \
+    --create-namespace \
+    --version 0.16.1 \
+    --set speaker.tolerations[0].key=node-role.kubernetes.io/control-plane \
+    --set speaker.tolerations[0].operator=Exists \
+    --set speaker.tolerations[0].effect=NoSchedule; then
+    break
+  fi
+  echo "MetalLB install attempt ${attempt}/5 failed, waiting 15s..."
+  sleep 15
+done
 
 # Wait for MetalLB controller to be ready
 echo "Waiting for MetalLB controller..."
@@ -42,8 +53,13 @@ echo "MetalLB installed"
 #=========================================
 echo "=== Installing APISIX ==="
 
-helm repo add apisix https://charts.apiseven.com
-helm repo update apisix
+for attempt in 1 2 3 4 5; do
+  if helm repo add apisix https://charts.apiseven.com && helm repo update apisix; then
+    break
+  fi
+  echo "Helm repo apisix attempt ${attempt}/5 failed, waiting 15s..."
+  sleep 15
+done
 
 # Install APISIX CRDs with server-side apply to avoid field manager conflicts
 echo "Applying APISIX CRDs (from apisix-ingress-controller chart)..."
@@ -137,13 +153,19 @@ tolerations:
     effect: "NoSchedule"
 EOF
 
-helm upgrade --install apisix apisix/apisix \
-  --namespace platform-system \
-  --create-namespace \
-  --version 2.13.0 \
-  --skip-crds \
-  --force \
-  -f /tmp/apisix-values.yaml || echo "WARN: APISIX install issue, continuing..."
+for attempt in 1 2 3 4 5; do
+  if helm upgrade --install apisix apisix/apisix \
+    --namespace platform-system \
+    --create-namespace \
+    --version 2.13.0 \
+    --skip-crds \
+    --force \
+    -f /tmp/apisix-values.yaml; then
+    break
+  fi
+  echo "APISIX install attempt ${attempt}/5 failed, waiting 15s..."
+  sleep 15
+done
 
 rm /tmp/apisix-values.yaml
 
@@ -218,22 +240,27 @@ kubectl create secret generic apisix-admin-key \
   --from-literal=viewer="${APISIX_VIEWER_KEY}" \
   --dry-run=client -o yaml | kubectl apply -f -
 
-helm upgrade --install apisix-ingress-controller apisix/apisix-ingress-controller \
-  --namespace platform-system \
-  --version 0.14.1 \
-  --skip-crds \
-  --set image.repository=apache/apisix-ingress-controller \
-  --set image.tag="1.8.0" \
-  --set "podLabels.istio\\.io/dataplane-mode=none" \
-  --set config.apisix.serviceNamespace=platform-system \
-  --set config.apisix.serviceName=apisix-admin \
-  --set config.apisix.adminKey="${APISIX_ADMIN_KEY}" \
-  --set config.apisix.adminAPIVersion=v3 \
-  --set resources.requests.cpu=50m \
-  --set resources.requests.memory=128Mi \
-  --set resources.limits.cpu=200m \
-  --set resources.limits.memory=256Mi \
-  || echo "WARN: APISIX ingress controller install issue, continuing..."
+for attempt in 1 2 3 4 5; do
+  if helm upgrade --install apisix-ingress-controller apisix/apisix-ingress-controller \
+    --namespace platform-system \
+    --version 0.14.1 \
+    --skip-crds \
+    --set image.repository=apache/apisix-ingress-controller \
+    --set image.tag="1.8.0" \
+    --set "podLabels.istio\\.io/dataplane-mode=none" \
+    --set config.apisix.serviceNamespace=platform-system \
+    --set config.apisix.serviceName=apisix-admin \
+    --set config.apisix.adminKey="${APISIX_ADMIN_KEY}" \
+    --set config.apisix.adminAPIVersion=v3 \
+    --set resources.requests.cpu=50m \
+    --set resources.requests.memory=128Mi \
+    --set resources.limits.cpu=200m \
+    --set resources.limits.memory=256Mi; then
+    break
+  fi
+  echo "APISIX ingress controller install attempt ${attempt}/5 failed, waiting 15s..."
+  sleep 15
+done
 
 echo "Waiting for APISIX ingress controller..."
 kubectl wait --for=condition=Ready pod -l app.kubernetes.io/name=apisix-ingress-controller \
@@ -245,14 +272,34 @@ echo "APISIX ingress controller installed"
 # cert-manager
 #=========================================
 echo "=== Installing cert-manager ==="
-helm repo add jetstack https://charts.jetstack.io
-helm repo update jetstack
+for attempt in 1 2 3 4 5; do
+  if helm repo add jetstack https://charts.jetstack.io && helm repo update jetstack; then
+    break
+  fi
+  echo "Helm repo jetstack attempt ${attempt}/5 failed, waiting 15s..."
+  sleep 15
+done
 
-helm upgrade --install cert-manager jetstack/cert-manager \
-  --namespace platform-system \
-  --create-namespace \
-  --version v1.20.2 \
-  --set crds.enabled=true || echo "WARN: cert-manager install issue, continuing..."
+for attempt in 1 2 3 4 5; do
+  if helm upgrade --install cert-manager jetstack/cert-manager \
+    --namespace platform-system \
+    --create-namespace \
+    --version v1.20.2 \
+    --set crds.enabled=true; then
+    break
+  fi
+  echo "cert-manager install attempt ${attempt}/5 failed, waiting 15s..."
+  sleep 15
+done
+
+# Wait for cert-manager CRDs and webhook to be usable before applying any cert-manager resources.
+# Without this gate the inline ClusterIssuer/Certificate below fail with
+# "no matches for kind Certificate in version cert-manager.io/v1".
+echo "Waiting for cert-manager CRDs to be established..."
+kubectl wait --for=condition=Established crd/certificates.cert-manager.io --timeout=120s
+kubectl wait --for=condition=Established crd/clusterissuers.cert-manager.io --timeout=120s
+echo "Waiting for cert-manager webhook to be ready..."
+kubectl -n platform-system rollout status deploy/cert-manager-webhook --timeout=180s
 
 # Create self-signed ClusterIssuer (bootstrap only — do not use directly for app certs)
 cat <<EOF | kubectl apply -f -

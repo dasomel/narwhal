@@ -52,23 +52,42 @@ master1_ssh_ok() {
   vagrant ssh master-1 -c "echo SSH_OK" 2>/dev/null | grep -q SSH_OK
 }
 
-# recover_master1_ssh: reloads master-1 and polls until SSH recovers (up to
-# ~10 min). Returns 0 on success, 1 on timeout. Safe in a 3-master HA cluster
-# because the control plane remains quorate during a single-master reboot.
+# recover_master1_ssh: two-stage recovery for master-1 SSH.
+#   Stage 1 — light: poll up to ~2 min (8×15s) without reloading; the key-
+#             replacement race sometimes resolves on its own within seconds.
+#   Stage 2 — reload: if still unreachable, run `vagrant reload master-1`
+#             (reboots the VM and re-syncs the key), then poll up to ~10 min
+#             (40×15s). Safe in a 3-master HA cluster because the control plane
+#             remains quorate during a single-master reboot.
+# Returns 0 on success, 1 on timeout.
 recover_master1_ssh() {
-  echo "master-1 SSH unreachable — running vagrant reload master-1 to clear VMware key-race"
-  vagrant reload master-1 || true
+  # Stage 1: light poll — no reboot
+  echo "master-1 SSH unreachable — light recovery: polling up to ~2 min before reload"
   local i=0
-  while [ "${i}" -lt 40 ]; do
+  while [ "${i}" -lt 8 ]; do
     i=$((i + 1))
-    echo "  SSH recovery poll ${i}/40 ..."
+    echo "  SSH light-poll ${i}/8 ..."
     if master1_ssh_ok; then
-      echo "master-1 SSH recovered after ${i} polls."
+      echo "master-1 SSH recovered (light poll, ${i} polls)."
       return 0
     fi
     sleep 15
   done
-  echo "ERROR: master-1 SSH did not recover after ~10 minutes." >&2
+
+  # Stage 2: reload fallback — reboot + re-sync key
+  echo "master-1 SSH still unreachable — running vagrant reload master-1 to clear VMware key-race"
+  vagrant reload master-1 || true
+  i=0
+  while [ "${i}" -lt 40 ]; do
+    i=$((i + 1))
+    echo "  SSH reload-poll ${i}/40 ..."
+    if master1_ssh_ok; then
+      echo "master-1 SSH recovered after reload (${i} polls)."
+      return 0
+    fi
+    sleep 15
+  done
+  echo "ERROR: master-1 SSH did not recover after ~10 minutes post-reload." >&2
   return 1
 }
 
@@ -120,9 +139,24 @@ while [ "${attempt}" -le "${MAX_ATTEMPTS}" ]; do
       fi
     fi
 
-    if ! vagrant ssh master-1 -c \
-      "kubectl get ns platform-system" >/dev/null 2>&1; then
-      echo "Phase 2 not detected (platform-system ns missing) — running phase2-platform"
+    # phase2_complete: returns 0 only when all key namespaces created by Phase 2
+    # scripts 08-x/09/11/12/13 are present, indicating the run reached the end.
+    # Namespaces: platform-system (08-1), monitoring (08-2), security-system (08-3),
+    # storage (08-4), istio-system (09), iam (11), devtools (12/13).
+    phase2_complete() {
+      local ns
+      for ns in platform-system monitoring security-system storage istio-system iam devtools; do
+        if ! vagrant ssh master-1 -c \
+          "kubectl get ns ${ns}" >/dev/null 2>&1; then
+          echo "  Phase 2 incomplete: namespace '${ns}' not found."
+          return 1
+        fi
+      done
+      return 0
+    }
+
+    if ! phase2_complete; then
+      echo "Phase 2 not fully complete — running phase2-platform provision"
       phase2_rc=0
       vagrant provision master-1 --provision-with phase2-platform || phase2_rc=$?
       if [ "${phase2_rc}" -ne 0 ]; then
@@ -138,8 +172,16 @@ while [ "${attempt}" -le "${MAX_ATTEMPTS}" ]; do
           exit 1
         fi
       fi
+      # Verify completion after provision (handles mid-script DNS/transient abort)
+      if ! phase2_complete; then
+        echo "ERROR: Phase 2 did not complete after provision." >&2
+        echo "       Namespaces above were still missing — a critical script likely" >&2
+        echo "       failed mid-run (DNS/transient issues are the usual cause)." >&2
+        echo "       Re-run: vagrant provision master-1 --provision-with phase2-platform" >&2
+        exit 1
+      fi
     else
-      echo "Phase 2 already applied (platform-system ns present)."
+      echo "Phase 2 already fully applied (all key namespaces present)."
     fi
     exit 0
   fi

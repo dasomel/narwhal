@@ -39,3 +39,30 @@ metadata:
 spec:
   mtls:
     mode: PERMISSIVE
+---
+# PeerAuthentication 3/3: database namespace — PERMISSIVE exception.
+#
+# WHY THIS EXCEPTION EXISTS:
+#   The `database` namespace is ambient-enrolled (istio.io/dataplane-mode=ambient
+#   applied by 09-istio-ambient.sh) and narwhal-db (CNPG) runs here. However,
+#   Keycloak lives in the `iam` namespace which is intentionally NOT enrolled in
+#   the ambient mesh (excluded from AMBIENT_NAMESPACES in 09-istio-ambient.sh so
+#   that the Keycloak Operator-managed NetworkPolicy / probe paths are unaffected).
+#   Under mesh-wide STRICT, ztunnel drops plain-TCP Postgres connections arriving
+#   from non-HBONE clients — Keycloak→narwhal-db breaks on every clean install.
+#   A live fix (removing the ambient label from `database`) was applied to the
+#   cluster but was not codified, causing the break to reappear after each rebuild.
+#
+#   PERMISSIVE on `database` lets ztunnel accept both:
+#     - mTLS / HBONE  (mesh-enrolled callers: devtools gitea, harbor, etc.)
+#     - plain TCP     (non-enrolled callers: Keycloak in `iam`)
+#   All other namespaces remain under the mesh-wide STRICT policy (doc 1/3).
+#   To tighten later, scope per-workload (selector on narwhal-db pods) instead.
+apiVersion: security.istio.io/v1
+kind: PeerAuthentication
+metadata:
+  name: database-permissive
+  namespace: database
+spec:
+  mtls:
+    mode: PERMISSIVE

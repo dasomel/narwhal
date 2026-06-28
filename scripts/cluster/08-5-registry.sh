@@ -10,8 +10,13 @@ export KUBECONFIG=/home/vagrant/.kube/config-local
 # Harbor (Container Registry) - ARM64 images
 #=========================================
 echo "=== Installing Harbor ==="
-helm repo add harbor https://helm.goharbor.io
-helm repo update harbor
+for attempt in 1 2 3 4 5; do
+  if helm repo add harbor https://helm.goharbor.io && helm repo update harbor; then
+    break
+  fi
+  echo "Helm repo harbor attempt ${attempt}/5 failed, waiting 15s..."
+  sleep 15
+done
 
 # Wait for unified PostgreSQL cluster (narwhal-db) to be ready
 echo "Waiting for PostgreSQL (narwhal-db) to be ready..."
@@ -64,43 +69,49 @@ spec:
       targetPort: 5432
 EOF
 
-helm upgrade --install harbor harbor/harbor \
-  --namespace devtools \
-  --version 1.18.2 \
-  --set expose.type=clusterIP \
-  --set expose.tls.enabled=false \
-  --set externalURL=http://harbor.local \
-  --set existingSecretAdminPassword=harbor-secrets \
-  --set existingSecretAdminPasswordKey=HARBOR_ADMIN_PASSWORD \
-  --set database.type=external \
-  --set database.external.host=harbor-db-rw \
-  --set database.external.port=5432 \
-  --set database.external.username=harbor \
-  --set database.external.existingSecret=harbor-db-credentials \
-  --set database.external.coreDatabase=harbor \
-  --set persistence.enabled=true \
-  --set persistence.persistentVolumeClaim.registry.storageClass=nfs-csi \
-  --set persistence.persistentVolumeClaim.registry.size=20Gi \
-  --set persistence.persistentVolumeClaim.jobservice.storageClass=nfs-csi \
-  --set persistence.persistentVolumeClaim.trivy.storageClass=nfs-csi \
-  --set redis.type=internal \
-  --set trivy.enabled=false \
-  --set core.image.repository=ghcr.io/dasomel/goharbor/harbor-core \
-  --set core.image.tag=latest \
-  --set jobservice.image.repository=ghcr.io/dasomel/goharbor/harbor-jobservice \
-  --set jobservice.image.tag=latest \
-  --set registry.registry.image.repository=ghcr.io/dasomel/goharbor/registry-photon \
-  --set registry.registry.image.tag=latest \
-  --set registry.controller.image.repository=ghcr.io/dasomel/goharbor/harbor-registryctl \
-  --set registry.controller.image.tag=latest \
-  --set portal.image.repository=ghcr.io/dasomel/goharbor/harbor-portal \
-  --set portal.image.tag=latest \
-  --set nginx.image.repository=ghcr.io/dasomel/goharbor/nginx-photon \
-  --set nginx.image.tag=latest \
-  --set redis.internal.image.repository=ghcr.io/dasomel/goharbor/redis-photon \
-  --set redis.internal.image.tag=latest \
-  --set exporter.image.repository=ghcr.io/dasomel/goharbor/harbor-exporter \
-  --set exporter.image.tag=latest || echo "WARN: Harbor install issue, continuing..."
+for attempt in 1 2 3 4 5; do
+  if helm upgrade --install harbor harbor/harbor \
+    --namespace devtools \
+    --version 1.18.2 \
+    --set expose.type=clusterIP \
+    --set expose.tls.enabled=false \
+    --set externalURL=http://harbor.local \
+    --set existingSecretAdminPassword=harbor-secrets \
+    --set existingSecretAdminPasswordKey=HARBOR_ADMIN_PASSWORD \
+    --set database.type=external \
+    --set database.external.host=harbor-db-rw \
+    --set database.external.port=5432 \
+    --set database.external.username=harbor \
+    --set database.external.existingSecret=harbor-db-credentials \
+    --set database.external.coreDatabase=harbor \
+    --set persistence.enabled=true \
+    --set persistence.persistentVolumeClaim.registry.storageClass=nfs-csi \
+    --set persistence.persistentVolumeClaim.registry.size=20Gi \
+    --set persistence.persistentVolumeClaim.jobservice.storageClass=nfs-csi \
+    --set persistence.persistentVolumeClaim.trivy.storageClass=nfs-csi \
+    --set redis.type=internal \
+    --set trivy.enabled=false \
+    --set core.image.repository=ghcr.io/dasomel/goharbor/harbor-core \
+    --set core.image.tag=latest \
+    --set jobservice.image.repository=ghcr.io/dasomel/goharbor/harbor-jobservice \
+    --set jobservice.image.tag=latest \
+    --set registry.registry.image.repository=ghcr.io/dasomel/goharbor/registry-photon \
+    --set registry.registry.image.tag=latest \
+    --set registry.controller.image.repository=ghcr.io/dasomel/goharbor/harbor-registryctl \
+    --set registry.controller.image.tag=latest \
+    --set portal.image.repository=ghcr.io/dasomel/goharbor/harbor-portal \
+    --set portal.image.tag=latest \
+    --set nginx.image.repository=ghcr.io/dasomel/goharbor/nginx-photon \
+    --set nginx.image.tag=latest \
+    --set redis.internal.image.repository=ghcr.io/dasomel/goharbor/redis-photon \
+    --set redis.internal.image.tag=latest \
+    --set exporter.image.repository=ghcr.io/dasomel/goharbor/harbor-exporter \
+    --set exporter.image.tag=latest; then
+    break
+  fi
+  echo "Harbor install attempt ${attempt}/5 failed, waiting 15s..."
+  sleep 15
+done
 
 # Opt Harbor SSO-facing pods out of Istio ambient mesh (cookie handling)
 for harbor_deploy in harbor-core harbor-nginx harbor-portal; do

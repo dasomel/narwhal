@@ -8,6 +8,20 @@ POSTGRES_VERSION="${POSTGRES_VERSION:-18}"
 
 echo "=== Installing CloudNative-PG v1.29.1 (chart: ${CNPG_CHART_VERSION}) ==="
 
+# Retry wrapper for transient DNS/network failures (mirrors 03-k8s-install.sh pattern)
+retry() {
+  local n=1 max=5
+  until "$@"; do
+    if [ "$n" -ge "$max" ]; then
+      echo "ERROR: command failed after ${max} attempts: $*" >&2
+      return 1
+    fi
+    echo "  attempt ${n}/${max} failed, retrying in 15s..." >&2
+    n=$((n + 1))
+    sleep 15
+  done
+}
+
 # Use local kubeconfig (bypasses VIP) to avoid disruption during master-2 join
 export KUBECONFIG=/home/vagrant/.kube/config-local
 
@@ -21,12 +35,12 @@ for i in {1..30}; do
   sleep 10
 done
 
-# Add CNPG Helm repo
-helm repo add cnpg https://cloudnative-pg.github.io/charts
-helm repo update
+# Add CNPG Helm repo (retry for transient DNS timeouts, e.g. cloudnative-pg.github.io lookup failure)
+retry helm repo add cnpg https://cloudnative-pg.github.io/charts
+retry helm repo update
 
 # Install CNPG Operator (no --wait: avoids atomic rollback on timeout)
-helm upgrade --install cnpg cnpg/cloudnative-pg \
+retry helm upgrade --install cnpg cnpg/cloudnative-pg \
   --namespace platform-system \
   --create-namespace \
   --version "${CNPG_CHART_VERSION}" \
@@ -69,11 +83,13 @@ if ! kubectl get secret narwhal-db-credentials -n database &>/dev/null; then
   AUTHENTIK_DB_PASS=$(generate_password)
   HARBOR_DB_PASS=$(generate_password)
   GITEA_DB_PASS=$(generate_password)
+  KEYCLOAK_DB_PASS=$(generate_password)
   kubectl create secret generic narwhal-db-credentials \
     --from-literal=username=authentik \
     --from-literal=password="${AUTHENTIK_DB_PASS}" \
     --from-literal=harbor-password="${HARBOR_DB_PASS}" \
     --from-literal=gitea-password="${GITEA_DB_PASS}" \
+    --from-literal=keycloak-password="${KEYCLOAK_DB_PASS}" \
     -n database
   echo "DB credentials secret created with generated passwords"
 else
@@ -83,6 +99,18 @@ else
     -o jsonpath='{.data.harbor-password}' | base64 -d)
   GITEA_DB_PASS=$(kubectl get secret narwhal-db-credentials -n database \
     -o jsonpath='{.data.gitea-password}' | base64 -d)
+  # keycloak-password may be absent on clusters provisioned before this fix; add it if missing
+  if kubectl get secret narwhal-db-credentials -n database \
+      -o jsonpath='{.data.keycloak-password}' 2>/dev/null | grep -q .; then
+    KEYCLOAK_DB_PASS=$(kubectl get secret narwhal-db-credentials -n database \
+      -o jsonpath='{.data.keycloak-password}' | base64 -d)
+  else
+    KEYCLOAK_DB_PASS=$(generate_password)
+    kubectl patch secret narwhal-db-credentials -n database \
+      --type='json' \
+      -p="[{\"op\":\"add\",\"path\":\"/data/keycloak-password\",\"value\":\"$(echo -n "${KEYCLOAK_DB_PASS}" | base64 -w0)\"}]"
+    echo "Added missing keycloak-password to existing narwhal-db-credentials secret"
+  fi
   echo "DB credentials secret already exists, reusing existing passwords"
 fi
 
@@ -128,12 +156,15 @@ spec:
         # Create additional users
         - CREATE USER harbor WITH PASSWORD '${HARBOR_DB_PASS}'
         - CREATE USER gitea WITH PASSWORD '${GITEA_DB_PASS}'
+        - CREATE USER keycloak WITH PASSWORD '${KEYCLOAK_DB_PASS}'
         # Create additional databases
         - CREATE DATABASE harbor OWNER harbor
         - CREATE DATABASE gitea OWNER gitea
+        - CREATE DATABASE keycloak OWNER keycloak
         # Grant privileges
         - GRANT ALL PRIVILEGES ON DATABASE harbor TO harbor
         - GRANT ALL PRIVILEGES ON DATABASE gitea TO gitea
+        - GRANT ALL PRIVILEGES ON DATABASE keycloak TO keycloak
 
   storage:
     size: 20Gi
@@ -218,13 +249,109 @@ if [ "${CLUSTER_CREATED}" != "true" ]; then
   exit 1
 fi
 
-# Wait for PostgreSQL cluster to be ready
+# Wait for PostgreSQL cluster to be ready (poll readyInstances == spec.instances with 10m timeout)
 echo "Waiting for PostgreSQL cluster to be ready..."
-kubectl wait --for=condition=Ready cluster/narwhal-db -n database --timeout=300s || true
+CLUSTER_READY=false
+for attempt in {1..60}; do
+  SPEC_INSTANCES=$(kubectl get cluster narwhal-db -n database \
+    -o jsonpath='{.spec.instances}' 2>/dev/null || echo "0")
+  READY_INSTANCES=$(kubectl get cluster narwhal-db -n database \
+    -o jsonpath='{.status.readyInstances}' 2>/dev/null || echo "0")
+  if [ "${SPEC_INSTANCES}" -gt 0 ] && [ "${READY_INSTANCES}" -ge "${SPEC_INSTANCES}" ]; then
+    echo "PostgreSQL cluster ready: ${READY_INSTANCES}/${SPEC_INSTANCES} instances"
+    CLUSTER_READY=true
+    break
+  fi
+  echo "  Cluster not ready yet (${READY_INSTANCES:-0}/${SPEC_INSTANCES:-?}), waiting... (${attempt}/60)"
+  sleep 10
+done
 
-# Wait for primary pod
-sleep 10
-kubectl wait --for=condition=Ready pod -l cnpg.io/cluster=narwhal-db -n database --timeout=300s || true
+if [ "${CLUSTER_READY}" != "true" ]; then
+  echo "ERROR: PostgreSQL cluster did not become ready after 10 minutes"
+  kubectl get cluster narwhal-db -n database || true
+  kubectl get pods -n database || true
+  exit 1
+fi
+
+# Wait for primary pod to be Ready before exec-ing into it
+kubectl wait --for=condition=Ready pod -l "cnpg.io/cluster=narwhal-db,role=primary" \
+  -n database --timeout=120s || true
+
+#=========================================
+# Ensure all required databases exist (idempotent post-bootstrap guarantee)
+# CNPG postInitSQL runs ONCE at cluster creation; if the primary restarts mid-bootstrap
+# those DBs are never created and re-applying the CR won't re-run bootstrap.
+# This step is safe to run on every script execution: each statement is guarded by an
+# existence check and is a no-op when the DB/role already exists.
+#=========================================
+echo "=== Ensuring required databases exist (idempotent) ==="
+
+# Find the primary pod
+PRIMARY_POD=$(kubectl get pod -n database \
+  -l "cnpg.io/cluster=narwhal-db,role=primary" \
+  -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
+
+if [ -z "${PRIMARY_POD}" ]; then
+  echo "WARN: Could not find primary pod for narwhal-db; skipping ensure-databases step"
+else
+  echo "Primary pod: ${PRIMARY_POD}"
+
+  # Build idempotent SQL: create user+db only when absent, set password unconditionally
+  # (password update is safe because the secret already holds the correct value)
+  ENSURE_SQL=$(cat <<ENDSQL
+DO \$\$
+BEGIN
+  -- harbor
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'harbor') THEN
+    EXECUTE format('CREATE USER harbor WITH PASSWORD %L', '${HARBOR_DB_PASS}');
+    RAISE NOTICE 'Created user harbor';
+  ELSE
+    EXECUTE format('ALTER USER harbor WITH PASSWORD %L', '${HARBOR_DB_PASS}');
+  END IF;
+  -- gitea
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'gitea') THEN
+    EXECUTE format('CREATE USER gitea WITH PASSWORD %L', '${GITEA_DB_PASS}');
+    RAISE NOTICE 'Created user gitea';
+  ELSE
+    EXECUTE format('ALTER USER gitea WITH PASSWORD %L', '${GITEA_DB_PASS}');
+  END IF;
+  -- keycloak
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'keycloak') THEN
+    EXECUTE format('CREATE USER keycloak WITH PASSWORD %L', '${KEYCLOAK_DB_PASS}');
+    RAISE NOTICE 'Created user keycloak';
+  ELSE
+    EXECUTE format('ALTER USER keycloak WITH PASSWORD %L', '${KEYCLOAK_DB_PASS}');
+  END IF;
+END
+\$\$;
+SELECT 'harbor' AS db WHERE NOT EXISTS (SELECT 1 FROM pg_database WHERE datname = 'harbor') \gexec
+CREATE DATABASE harbor OWNER harbor;
+SELECT 'gitea' AS db WHERE NOT EXISTS (SELECT 1 FROM pg_database WHERE datname = 'gitea') \gexec
+CREATE DATABASE gitea OWNER gitea;
+SELECT 'keycloak' AS db WHERE NOT EXISTS (SELECT 1 FROM pg_database WHERE datname = 'keycloak') \gexec
+CREATE DATABASE keycloak OWNER keycloak;
+GRANT ALL PRIVILEGES ON DATABASE harbor TO harbor;
+GRANT ALL PRIVILEGES ON DATABASE gitea TO gitea;
+GRANT ALL PRIVILEGES ON DATABASE keycloak TO keycloak;
+ENDSQL
+)
+
+  # Use a temp file to avoid shell quoting issues when passing multi-line SQL via kubectl exec
+  ENSURE_SQL_FILE=$(mktemp)
+  printf '%s\n' "${ENSURE_SQL}" > "${ENSURE_SQL_FILE}"
+  kubectl cp "${ENSURE_SQL_FILE}" "database/${PRIMARY_POD}:/tmp/ensure-dbs.sql"
+  rm -f "${ENSURE_SQL_FILE}"
+
+  if kubectl exec -n database "${PRIMARY_POD}" -- \
+      psql -U postgres -f /tmp/ensure-dbs.sql; then
+    echo "Ensure-databases step completed successfully"
+  else
+    echo "WARN: ensure-databases step failed; databases may need manual creation"
+  fi
+
+  kubectl exec -n database "${PRIMARY_POD}" -- \
+    psql -U postgres -c "\l" 2>/dev/null | grep -E "harbor|gitea|keycloak|authentik" || true
+fi
 
 #=========================================
 # Create PgBouncer Connection Pooler
@@ -348,6 +475,7 @@ echo "Databases:"
 echo "  authentik - owner: authentik (password in secret: narwhal-db-credentials/password)"
 echo "  harbor    - owner: harbor    (password in secret: narwhal-db-credentials/harbor-password)"
 echo "  gitea     - owner: gitea     (password in secret: narwhal-db-credentials/gitea-password)"
+echo "  keycloak  - owner: keycloak  (password in secret: narwhal-db-credentials/keycloak-password)"
 echo ""
 echo "Connection (via PgBouncer):"
 echo "  Host: narwhal-db-pooler-rw.database.svc.cluster.local"

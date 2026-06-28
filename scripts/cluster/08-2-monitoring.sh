@@ -10,8 +10,13 @@ export KUBECONFIG=/home/vagrant/.kube/config-local
 # Prometheus Stack (Prometheus, Grafana, Alertmanager)
 #=========================================
 echo "=== Installing Prometheus Stack ==="
-helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
-helm repo update prometheus-community
+for attempt in 1 2 3 4 5; do
+  if helm repo add prometheus-community https://prometheus-community.github.io/helm-charts && helm repo update prometheus-community; then
+    break
+  fi
+  echo "Helm repo prometheus-community attempt ${attempt}/5 failed, waiting 15s..."
+  sleep 15
+done
 
 # Grafana admin credentials — create namespace first, then build Secret
 kubectl create namespace monitoring --dry-run=client -o yaml | kubectl apply -f -
@@ -31,25 +36,31 @@ else
   echo "Grafana admin secret already exists, reusing"
 fi
 
-helm upgrade --install prometheus-stack prometheus-community/kube-prometheus-stack \
-  --namespace monitoring \
-  --create-namespace \
-  --version 86.2.3 \
-  --set grafana.assertNoLeakedSecrets=false \
-  --set grafana.admin.existingSecret=grafana-secrets \
-  --set grafana.admin.userKey=admin-user \
-  --set grafana.admin.passwordKey=admin-password \
-  --set grafana.persistence.enabled=true \
-  --set grafana.persistence.storageClassName=nfs-csi \
-  --set grafana.persistence.size=5Gi \
-  --set prometheus.prometheusSpec.retention=7d \
-  --set prometheus.prometheusSpec.storageSpec.volumeClaimTemplate.spec.storageClassName=nfs-csi \
-  --set prometheus.prometheusSpec.storageSpec.volumeClaimTemplate.spec.resources.requests.storage=10Gi \
-  --set alertmanager.alertmanagerSpec.storage.volumeClaimTemplate.spec.storageClassName=nfs-csi \
-  --set alertmanager.alertmanagerSpec.storage.volumeClaimTemplate.spec.resources.requests.storage=5Gi \
-  --set prometheus-node-exporter.tolerations[0].key=node-role.kubernetes.io/control-plane \
-  --set prometheus-node-exporter.tolerations[0].operator=Exists \
-  --set prometheus-node-exporter.tolerations[0].effect=NoSchedule || echo "WARN: Prometheus Stack install issue, continuing..."
+for attempt in 1 2 3 4 5; do
+  if helm upgrade --install prometheus-stack prometheus-community/kube-prometheus-stack \
+    --namespace monitoring \
+    --create-namespace \
+    --version 86.2.3 \
+    --set grafana.assertNoLeakedSecrets=false \
+    --set grafana.admin.existingSecret=grafana-secrets \
+    --set grafana.admin.userKey=admin-user \
+    --set grafana.admin.passwordKey=admin-password \
+    --set grafana.persistence.enabled=true \
+    --set grafana.persistence.storageClassName=nfs-csi \
+    --set grafana.persistence.size=5Gi \
+    --set prometheus.prometheusSpec.retention=7d \
+    --set prometheus.prometheusSpec.storageSpec.volumeClaimTemplate.spec.storageClassName=nfs-csi \
+    --set prometheus.prometheusSpec.storageSpec.volumeClaimTemplate.spec.resources.requests.storage=10Gi \
+    --set alertmanager.alertmanagerSpec.storage.volumeClaimTemplate.spec.storageClassName=nfs-csi \
+    --set alertmanager.alertmanagerSpec.storage.volumeClaimTemplate.spec.resources.requests.storage=5Gi \
+    --set prometheus-node-exporter.tolerations[0].key=node-role.kubernetes.io/control-plane \
+    --set prometheus-node-exporter.tolerations[0].operator=Exists \
+    --set prometheus-node-exporter.tolerations[0].effect=NoSchedule; then
+    break
+  fi
+  echo "Prometheus Stack install attempt ${attempt}/5 failed, waiting 15s..."
+  sleep 15
+done
 
 # Opt Grafana out of Istio ambient mesh (SSO cookie handling)
 kubectl patch deployment prometheus-stack-grafana -n monitoring --type='json' \
@@ -61,8 +72,13 @@ echo "Prometheus Stack installed"
 # Loki (Log Aggregation) - Simple deployment
 #=========================================
 echo "=== Installing Loki ==="
-helm repo add grafana https://grafana.github.io/helm-charts
-helm repo update grafana
+for attempt in 1 2 3 4 5; do
+  if helm repo add grafana https://grafana.github.io/helm-charts && helm repo update grafana; then
+    break
+  fi
+  echo "Helm repo grafana attempt ${attempt}/5 failed, waiting 15s..."
+  sleep 15
+done
 
 cat <<'LOKIVALUES' > /tmp/loki-values.yaml
 deploymentMode: SingleBinary
@@ -112,10 +128,16 @@ test:
   enabled: false
 LOKIVALUES
 
-helm upgrade --install loki grafana/loki \
-  --namespace monitoring \
-  --version 6.52.0 \
-  -f /tmp/loki-values.yaml || echo "WARN: Loki install issue, continuing..."
+for attempt in 1 2 3 4 5; do
+  if helm upgrade --install loki grafana/loki \
+    --namespace monitoring \
+    --version 6.52.0 \
+    -f /tmp/loki-values.yaml; then
+    break
+  fi
+  echo "Loki install attempt ${attempt}/5 failed, waiting 15s..."
+  sleep 15
+done
 
 rm /tmp/loki-values.yaml
 echo "Loki installed"
@@ -124,13 +146,19 @@ echo "Loki installed"
 # Promtail (Log Collector)
 #=========================================
 echo "=== Installing Promtail ==="
-helm upgrade --install promtail grafana/promtail \
-  --namespace monitoring \
-  --version 6.17.1 \
-  --set config.clients[0].url=http://loki:3100/loki/api/v1/push \
-  --set tolerations[0].key=node-role.kubernetes.io/control-plane \
-  --set tolerations[0].operator=Exists \
-  --set tolerations[0].effect=NoSchedule || echo "WARN: Promtail install issue, continuing..."
+for attempt in 1 2 3 4 5; do
+  if helm upgrade --install promtail grafana/promtail \
+    --namespace monitoring \
+    --version 6.17.1 \
+    --set config.clients[0].url=http://loki:3100/loki/api/v1/push \
+    --set tolerations[0].key=node-role.kubernetes.io/control-plane \
+    --set tolerations[0].operator=Exists \
+    --set tolerations[0].effect=NoSchedule; then
+    break
+  fi
+  echo "Promtail install attempt ${attempt}/5 failed, waiting 15s..."
+  sleep 15
+done
 
 echo "Promtail installed"
 
@@ -138,13 +166,19 @@ echo "Promtail installed"
 # Tempo (Distributed Tracing)
 #=========================================
 echo "=== Installing Tempo ==="
-helm upgrade --install tempo grafana/tempo \
-  --namespace monitoring \
-  --version 1.24.4 \
-  --set tempo.storage.trace.backend=local \
-  --set persistence.enabled=true \
-  --set persistence.storageClassName=nfs-csi \
-  --set persistence.size=10Gi || echo "WARN: Tempo install issue, continuing..."
+for attempt in 1 2 3 4 5; do
+  if helm upgrade --install tempo grafana/tempo \
+    --namespace monitoring \
+    --version 1.24.4 \
+    --set tempo.storage.trace.backend=local \
+    --set persistence.enabled=true \
+    --set persistence.storageClassName=nfs-csi \
+    --set persistence.size=10Gi; then
+    break
+  fi
+  echo "Tempo install attempt ${attempt}/5 failed, waiting 15s..."
+  sleep 15
+done
 
 echo "Tempo installed"
 

@@ -1,0 +1,55 @@
+# Consolidated Application for all domain-bearing cluster resources.
+# Replaces the individual raw-resource apps (apisix-infra, apisix-routes,
+# argocd-config, istio-ambient-policies, keycloak, narwhal-portal) that
+# previously pointed at path: resources with directory.include filters.
+# The narwhal-platform Helm chart (gitops/charts/narwhal-platform/) templates
+# all six manifests with {{ .Values.baseDomain }}.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: narwhal-platform
+  namespace: devtools
+  annotations:
+    # Wave 5: after APISIX (2), Keycloak (2), Prometheus (no wave), Istio CNI (0), ztunnel (5).
+    # Routes and ambient policies need the mesh + gateway to be present.
+    argocd.argoproj.io/sync-wave: "5"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: {{ .Values.repoURL }}
+    targetRevision: HEAD
+    path: charts/narwhal-platform
+    helm:
+      valuesObject:
+        baseDomain: {{ .Values.baseDomain }}
+  destination:
+    server: https://kubernetes.default.svc
+    # Namespace is a no-op for this chart (each template carries its own namespace).
+    # ArgoCD requires a destination namespace; devtools matches the app namespace.
+    namespace: devtools
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+  # Kyverno injects autogen rules — suppress ArgoCD drift on ClusterPolicy.
+  ignoreDifferences:
+    - group: kyverno.io
+      kind: ClusterPolicy
+      jqPathExpressions:
+        - .spec.rules[].match
+        - .spec.rules[].exclude
+        - .spec.rules[].validate
+        - .spec.rules[].mutate
+        - .spec.rules[].generate
+        - .spec.background
+        - .spec.admission
+        - .spec.emitWarning
+        - .spec.failurePolicy
+        - .spec.validationFailureAction
+        - .metadata.annotations
+        - .metadata.labels

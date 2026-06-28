@@ -1,0 +1,5 @@
+apiVersion: v2
+name: narwhal-apps
+description: ArgoCD Application CRs for the Narwhal IDP platform (app-of-apps layer)
+type: application
+version: 0.1.0

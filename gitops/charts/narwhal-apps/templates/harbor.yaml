@@ -1,0 +1,104 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: harbor
+  namespace: devtools
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://helm.goharbor.io
+    chart: harbor
+    targetRevision: 1.18.2
+    helm:
+      valuesObject:
+        expose:
+          type: clusterIP
+          tls:
+            enabled: false
+        externalURL: https://harbor.{{ .Values.baseDomain }}
+        # Admin password loaded from existingSecret
+        # Secret 'harbor-secrets' is created by scripts/cluster/08-platform-apps.sh
+        # Required key: HARBOR_ADMIN_PASSWORD
+        existingSecretAdminPassword: harbor-secrets
+        existingSecretAdminPasswordKey: HARBOR_ADMIN_PASSWORD
+        database:
+          type: external
+          external:
+            host: harbor-db-rw
+            port: 5432
+            username: harbor
+            # DB password loaded from existingSecret
+            # Secret 'narwhal-db-credentials' created by scripts/cluster/07-cnpg.sh (CNPG)
+            # Key must be 'password' per harbor chart requirement — see harbor chart values.yaml:971
+            # Note: 07-cnpg.sh stores harbor DB password under key 'harbor-password' in
+            # narwhal-db-credentials. A cross-namespace secret copy is required, or
+            # scripts/cluster/08-platform-apps.sh must create 'harbor-db-credentials' in devtools ns
+            # with key 'password' copied from narwhal-db-credentials/harbor-password.
+            existingSecret: harbor-db-credentials
+            coreDatabase: harbor
+        persistence:
+          enabled: true
+          persistentVolumeClaim:
+            registry:
+              storageClass: nfs-csi
+              size: 20Gi
+            jobservice:
+              storageClass: nfs-csi
+            trivy:
+              storageClass: nfs-csi
+        redis:
+          type: internal
+          internal:
+            image:
+              repository: ghcr.io/dasomel/goharbor/redis-photon
+              tag: latest
+        trivy:
+          enabled: false
+        core:
+          image:
+            repository: ghcr.io/dasomel/goharbor/harbor-core
+            tag: latest
+          podLabels:
+            istio.io/dataplane-mode: "none"
+          # OIDC config is set via Harbor API by 11-3-keycloak-clients.sh (stored in Harbor DB)
+          # CONFIG_OVERWRITE_JSON env var is NOT set — API-based config survives restarts via DB
+        jobservice:
+          image:
+            repository: ghcr.io/dasomel/goharbor/harbor-jobservice
+            tag: latest
+        registry:
+          registry:
+            image:
+              repository: ghcr.io/dasomel/goharbor/registry-photon
+              tag: latest
+          controller:
+            image:
+              repository: ghcr.io/dasomel/goharbor/harbor-registryctl
+              tag: latest
+        portal:
+          image:
+            repository: ghcr.io/dasomel/goharbor/harbor-portal
+            tag: latest
+          podLabels:
+            istio.io/dataplane-mode: "none"
+        nginx:
+          image:
+            repository: ghcr.io/dasomel/goharbor/nginx-photon
+            tag: latest
+          podLabels:
+            istio.io/dataplane-mode: "none"
+        exporter:
+          image:
+            repository: ghcr.io/dasomel/goharbor/harbor-exporter
+            tag: latest
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: devtools
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

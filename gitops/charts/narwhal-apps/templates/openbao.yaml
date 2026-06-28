@@ -1,0 +1,101 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: openbao
+  namespace: devtools
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://openbao.github.io/openbao-helm
+    chart: openbao
+    targetRevision: 0.28.3
+    helm:
+      valuesObject:
+        global:
+          # Tell the chart the server speaks HTTPS so it renders BAO_ADDR /
+          # BAO_API_ADDR (and the readiness-probe context) as https. The real TLS
+          # listener is defined in server.standalone.config below; this flag only
+          # fixes the CLIENT-side scheme. Without it the chart defaults to http,
+          # the `bao status` readiness probe fails against the HTTPS listener, the
+          # pod goes NotReady, and the Service loses its endpoints (unreachable).
+          tlsDisable: false
+        server:
+          image:
+            tag: "2.5.4"
+          ha:
+            enabled: false
+            replicas: 1
+            raft:
+              enabled: true
+          dataStorage:
+            enabled: true
+            storageClass: nfs-csi
+            size: 10Gi
+          auditStorage:
+            enabled: true
+            storageClass: nfs-csi
+            size: 5Gi
+          # Enable the web UI on the server (the helm `ui.enabled` below only creates
+          # the Service; the server itself serves /ui/ only when ui=true).
+          # OpenBao lives in the `storage` namespace, which is in the Istio ambient
+          # mesh. A TLS server must opt OUT of the mesh — otherwise ztunnel HBONE
+          # interception resets plain-TLS clients (gateway, agent-injector, the
+          # auto-unseal CronJob), which surfaces as EOF / connection-reset.
+          extraLabels:
+            istio.io/dataplane-mode: none
+          # BAO_ADDR / BAO_API_ADDR are set to https by global.tlsDisable=false above.
+          extraEnvironmentVars:
+            BAO_UI: "true"
+          # OpenBao was initialized in raft mode behind a TLS listener. The chart's
+          # default standalone config (file storage + tls_disable) does NOT match the
+          # persisted raft.db, so an ArgoCD re-render / pod restart would come up with
+          # an empty file backend ("not initialized"). Pin the exact runtime config so
+          # restarts keep reading the existing raft data over HTTPS.
+          standalone:
+            enabled: true
+            config: |
+              ui = true
+              disable_mlock = true
+
+              listener "tcp" {
+                address = "[::]:8200"
+                cluster_address = "[::]:8201"
+                tls_cert_file = "/openbao/tls/tls.crt"
+                tls_key_file = "/openbao/tls/tls.key"
+              }
+
+              storage "raft" {
+                path = "/openbao/data"
+              }
+          # Mount the existing server TLS cert (openbao-tls) for the listener above.
+          volumes:
+            - name: userconfig-openbao-tls
+              secret:
+                secretName: openbao-tls
+          volumeMounts:
+            - name: userconfig-openbao-tls
+              mountPath: /openbao/tls
+              readOnly: true
+        ui:
+          enabled: true
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: storage
+  ignoreDifferences:
+    - group: apps
+      kind: StatefulSet
+      jsonPointers:
+        - /spec/volumeClaimTemplates
+    - group: admissionregistration.k8s.io
+      kind: MutatingWebhookConfiguration
+      jsonPointers:
+        - /webhooks/0/clientConfig/caBundle
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - RespectIgnoreDifferences=true

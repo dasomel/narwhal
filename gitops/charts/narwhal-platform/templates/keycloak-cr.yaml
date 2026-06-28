@@ -1,0 +1,463 @@
+# Keycloak CR - Keycloak Operator가 관리
+# Operator CRD+RBAC는 11-keycloak.sh에서 설치됨
+# DB secret (keycloak-db-secret)은 11-keycloak.sh에서 생성됨
+---
+apiVersion: v1
+data:
+  login.ftl: |
+    <#import "template.ftl" as layout>
+    <@layout.registrationLayout displayMessage=!messagesPerField.existsError('username','password'); section>
+        <#if section = "header">
+            ${msg("loginAccountTitle")}
+        <#elseif section = "form">
+            <#if realm.password>
+            <form id="kc-form-login" class="nw-form" action="${url.loginAction}" method="post">
+                <div class="nw-field">
+                    <label class="nw-label" for="username"><#if !realm.loginWithEmailAllowed>${msg("username")}<#elseif !realm.registrationEmailAsUsername>${msg("usernameOrEmail")}<#else>${msg("email")}</#if></label>
+                    <input id="username" class="nw-input" name="username" type="text" value="${(login.username!'')}" autofocus autocomplete="username"
+                           aria-invalid="<#if messagesPerField.existsError('username','password')>true</#if>"/>
+                </div>
+                <div class="nw-field">
+                    <label class="nw-label" for="password">${msg("password")}</label>
+                    <input id="password" class="nw-input" name="password" type="password" autocomplete="current-password"
+                           aria-invalid="<#if messagesPerField.existsError('username','password')>true</#if>"/>
+                </div>
+                <#if messagesPerField.existsError('username','password')>
+                    <div class="nw-err" aria-live="polite">${kcSanitize(messagesPerField.getFirstError('username','password'))?no_esc}</div>
+                </#if>
+                <#if (realm.rememberMe && !usernameHidden??) || realm.resetPasswordAllowed>
+                <div class="nw-row">
+                    <#if realm.rememberMe && !usernameHidden??>
+                        <label class="nw-check"><input name="rememberMe" type="checkbox" <#if login.rememberMe??>checked</#if>/> ${msg("rememberMe")}</label>
+                    <#else><span></span></#if>
+                    <#if realm.resetPasswordAllowed>
+                        <a class="nw-link" href="${url.loginResetCredentialsUrl}">${msg("doForgotPassword")}</a>
+                    </#if>
+                </div>
+                </#if>
+                <input type="hidden" id="id-hidden-input" name="credentialId" <#if auth.selectedCredential?has_content>value="${auth.selectedCredential}"</#if>/>
+                <button class="nw-btn" name="login" id="kc-login" type="submit">${msg("doLogIn")}</button>
+            </form>
+            </#if>
+        <#elseif section = "info">
+            <#if realm.password && realm.registrationAllowed && !registrationDisabled??>
+                <span>${msg("noAccount")} <a class="nw-link" href="${url.registrationUrl}">${msg("doRegister")}</a></span>
+            </#if>
+        </#if>
+    </@layout.registrationLayout>
+  messages_en.properties: |
+    # Narwhal IDP Theme - English Messages
+    loginAccountTitle=Sign in to your account
+    loginTitle=Narwhal IDP
+    doLogIn=Sign In
+    usernameOrEmail=Username or email
+    password=Password
+    doForgotPassword=Forgot password?
+    rememberMe=Remember me
+    invalidUserMessage=Invalid username or password.
+  messages_ko.properties: |
+    # Narwhal IDP Theme - Korean Messages
+    loginAccountTitle=계정에 로그인하세요
+    loginTitle=Narwhal IDP
+    doLogIn=로그인
+    usernameOrEmail=사용자명 또는 이메일
+    password=비밀번호
+    doForgotPassword=비밀번호를 잊으셨나요?
+    rememberMe=로그인 유지
+    invalidUserMessage=잘못된 사용자명 또는 비밀번호입니다.
+  narwhal.css: |
+    /* ==========================================================================
+       Narwhal IDP — custom Keycloak login theme.
+       Clean shadcn card + narwhal (외뿔고래) branding + arctic ocean motif.
+       Renders against custom template.ftl / login.ftl (no PatternFly).
+       ========================================================================== */
+    :root {
+      --nw-fg: #0f172a;
+      --nw-muted: #64748b;
+      --nw-card: #ffffff;
+      --nw-border: #e2e8f0;
+      --nw-primary: #0f172a;
+      --nw-primary-fg: #f8fafc;
+      --nw-ring: rgba(79, 70, 229, 0.22);
+      --nw-accent-a: #6366f1;
+      --nw-accent-b: #22d3ee;
+      --nw-radius: 11px;
+    }
+
+    * { box-sizing: border-box; }
+
+    .nw-body {
+      margin: 0;
+      min-height: 100vh;
+      position: relative;
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      color: var(--nw-fg);
+      background:
+        radial-gradient(38rem 38rem at 18% -10%, #e0e7ff 0%, rgba(224,231,255,0) 55%),
+        radial-gradient(34rem 34rem at 88% 8%, #cffafe 0%, rgba(207,250,254,0) 50%),
+        linear-gradient(168deg, #f1f5f9 0%, #f8fafc 55%, #ffffff 100%);
+      font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+        Helvetica, Arial, "Apple SD Gothic Neo", "Noto Sans KR", sans-serif;
+      -webkit-font-smoothing: antialiased;
+      text-rendering: optimizeLegibility;
+    }
+
+    /* decorative ocean waves pinned to the bottom */
+    .nw-waves {
+      position: fixed;
+      left: 0; right: 0; bottom: 0;
+      width: 100%;
+      height: 190px;
+      z-index: 0;
+      pointer-events: none;
+    }
+
+    .nw-card {
+      position: relative;
+      z-index: 1;
+      width: 100%;
+      max-width: 390px;
+      background: var(--nw-card);
+      border: 1px solid var(--nw-border);
+      border-radius: 18px;
+      padding: 38px 32px 26px;
+      overflow: hidden;
+      box-shadow:
+        0 1px 2px rgba(15, 23, 42, 0.04),
+        0 18px 48px rgba(15, 23, 42, 0.12);
+    }
+
+    /* gradient accent strip across the top of the card */
+    .nw-card::before {
+      content: "";
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 4px;
+      background: linear-gradient(90deg, var(--nw-accent-a), var(--nw-accent-b));
+    }
+
+    .nw-head { text-align: center; margin-bottom: 26px; }
+
+    .nw-logo {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 64px;
+      height: 64px;
+      margin-bottom: 16px;
+      color: #ffffff;
+      background: linear-gradient(135deg, var(--nw-accent-a) 0%, var(--nw-accent-b) 100%);
+      border-radius: 20px;
+      box-shadow: 0 10px 22px rgba(79, 70, 229, 0.32);
+    }
+    .nw-whale { width: 40px; height: 30px; display: block; }
+
+    .nw-title {
+      margin: 0;
+      font-size: 23px;
+      font-weight: 680;
+      letter-spacing: -0.02em;
+    }
+
+    .nw-sub {
+      margin: 7px 0 0;
+      font-size: 14px;
+      color: var(--nw-muted);
+    }
+
+    .nw-form { display: flex; flex-direction: column; gap: 17px; }
+
+    .nw-field { display: flex; flex-direction: column; gap: 7px; }
+
+    .nw-label { font-size: 13px; font-weight: 550; color: #334155; }
+
+    .nw-input {
+      height: 44px;
+      width: 100%;
+      padding: 0 14px;
+      font-size: 14px;
+      font-family: inherit;
+      color: var(--nw-fg);
+      background: #ffffff;
+      border: 1px solid var(--nw-border);
+      border-radius: var(--nw-radius);
+      outline: none;
+      transition: border-color 0.15s ease, box-shadow 0.15s ease;
+    }
+    .nw-input::placeholder { color: #94a3b8; }
+    .nw-input:focus {
+      border-color: var(--nw-accent-a);
+      box-shadow: 0 0 0 3px var(--nw-ring);
+    }
+
+    .nw-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 13px;
+      color: var(--nw-muted);
+      margin-top: -3px;
+    }
+    .nw-check { display: inline-flex; align-items: center; gap: 7px; cursor: pointer; }
+    .nw-check input { width: 15px; height: 15px; accent-color: var(--nw-accent-a); }
+
+    .nw-link { color: var(--nw-accent-a); text-decoration: none; font-weight: 550; }
+    .nw-link:hover { text-decoration: underline; }
+
+    .nw-btn {
+      height: 44px;
+      width: 100%;
+      margin-top: 4px;
+      border: none;
+      border-radius: var(--nw-radius);
+      cursor: pointer;
+      color: var(--nw-primary-fg);
+      background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+      font-size: 14.5px;
+      font-weight: 600;
+      font-family: inherit;
+      letter-spacing: 0.01em;
+      box-shadow: 0 6px 16px rgba(15, 23, 42, 0.18);
+      transition: transform 0.04s ease, box-shadow 0.15s ease, opacity 0.15s ease;
+    }
+    .nw-btn:hover { box-shadow: 0 8px 20px rgba(15, 23, 42, 0.26); }
+    .nw-btn:active { transform: translateY(1px); }
+
+    .nw-alert {
+      font-size: 13px;
+      line-height: 1.45;
+      padding: 11px 13px;
+      border-radius: var(--nw-radius);
+      margin-bottom: 18px;
+      border: 1px solid transparent;
+    }
+    .nw-alert-error { background: #fef2f2; border-color: #fecaca; color: #b91c1c; }
+    .nw-alert-success { background: #f0fdf4; border-color: #bbf7d0; color: #15803d; }
+    .nw-alert-warning { background: #fffbeb; border-color: #fde68a; color: #b45309; }
+    .nw-alert-info { background: #eff6ff; border-color: #bfdbfe; color: #1d4ed8; }
+
+    .nw-err { font-size: 12px; color: #b91c1c; margin-top: -8px; }
+
+    .nw-info {
+      margin-top: 20px;
+      padding-top: 18px;
+      border-top: 1px solid var(--nw-border);
+      text-align: center;
+      font-size: 13px;
+      color: var(--nw-muted);
+    }
+
+    .nw-foot {
+      margin: 22px 0 0;
+      text-align: center;
+      font-size: 11.5px;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: #94a3b8;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --nw-fg: #f1f5f9;
+        --nw-muted: #94a3b8;
+        --nw-card: #0f172a;
+        --nw-border: #1e293b;
+        --nw-primary: #f8fafc;
+        --nw-primary-fg: #0f172a;
+      }
+      .nw-body {
+        background:
+          radial-gradient(38rem 38rem at 18% -10%, #1e1b4b 0%, rgba(30,27,75,0) 55%),
+          radial-gradient(34rem 34rem at 88% 8%, #083344 0%, rgba(8,51,68,0) 50%),
+          linear-gradient(168deg, #020617 0%, #0b1220 60%, #0f172a 100%);
+      }
+      .nw-label { color: #cbd5e1; }
+      .nw-input { background: #0b1220; }
+      .nw-btn { background: linear-gradient(135deg, #e2e8f0 0%, #f8fafc 100%); color: #0f172a; }
+    }
+  template.ftl: |
+    <#macro registrationLayout bodyClass="" displayInfo=false displayMessage=true displayRequiredFields=false>
+    <!DOCTYPE html>
+    <html lang="${(locale.currentLanguageTag)!'en'}">
+    <head>
+      <meta charset="utf-8"/>
+      <meta name="viewport" content="width=device-width, initial-scale=1"/>
+      <meta name="robots" content="noindex, nofollow"/>
+      <title>Narwhal IDP</title>
+      <#if properties.styles?has_content>
+        <#list properties.styles?split(' ') as style>
+          <link href="${url.resourcesPath}/${style}" rel="stylesheet"/>
+        </#list>
+      </#if>
+    </head>
+    <body class="nw-body">
+      <#-- decorative ocean waves -->
+      <svg class="nw-waves" viewBox="0 0 1440 200" preserveAspectRatio="none" aria-hidden="true" focusable="false">
+        <path fill="#dbeafe" fill-opacity="0.55" d="M0 96 C240 140 480 52 720 84 C960 116 1200 150 1440 92 L1440 200 L0 200 Z"/>
+        <path fill="#bfdbfe" fill-opacity="0.45" d="M0 128 C240 104 480 158 720 124 C960 92 1200 138 1440 124 L1440 200 L0 200 Z"/>
+        <path fill="#93c5fd" fill-opacity="0.35" d="M0 158 C260 138 520 176 760 158 C1000 140 1220 168 1440 156 L1440 200 L0 200 Z"/>
+      </svg>
+
+      <main class="nw-card">
+        <header class="nw-head">
+          <span class="nw-logo" aria-hidden="true">
+            <svg class="nw-whale" viewBox="0 0 64 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <#-- spiral tusk -->
+              <line x1="42" y1="19" x2="62" y2="3" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/>
+              <g stroke="currentColor" stroke-width="1.1" stroke-linecap="round" opacity="0.7">
+                <line x1="45" y1="16.5" x2="47.6" y2="18.4"/>
+                <line x1="49" y1="13.5" x2="51.6" y2="15.4"/>
+                <line x1="53" y1="10.5" x2="55.6" y2="12.4"/>
+                <line x1="57" y1="7.5" x2="59.6" y2="9.4"/>
+              </g>
+              <#-- water spout -->
+              <g stroke="currentColor" stroke-width="1.4" stroke-linecap="round" opacity="0.85">
+                <line x1="13" y1="14" x2="13" y2="9"/>
+                <line x1="10" y1="15" x2="8.5" y2="11"/>
+                <line x1="16" y1="15" x2="17.5" y2="11"/>
+              </g>
+              <#-- body -->
+              <path d="M7 29 C7 19 19 15 31 17 C41 18.6 47 23 46 30 C45.3 35 39 37.6 31 37.2 C21 36.6 13 36.6 9 33.6 C7.6 32.5 7 31 7 29 Z" fill="currentColor"/>
+              <#-- tail fluke -->
+              <path d="M7 29 L0 23 L3.5 29 L0 35 Z" fill="currentColor"/>
+              <#-- pectoral fin -->
+              <path d="M23 36.8 C24 41.6 26 43.6 27 43.6 C27 40.6 27 38.6 28 36.6 Z" fill="currentColor" opacity="0.85"/>
+              <#-- eye -->
+              <circle cx="17" cy="27" r="1.8" fill="#0b1220"/>
+            </svg>
+          </span>
+          <h1 class="nw-title">Narwhal IDP</h1>
+          <p class="nw-sub"><#nested "header"></p>
+        </header>
+
+        <#if displayMessage && message?? && message.summary?has_content>
+          <div class="nw-alert nw-alert-${message.type}">
+            <span>${kcSanitize(message.summary)?no_esc}</span>
+          </div>
+        </#if>
+
+        <#nested "form">
+
+        <#if displayInfo>
+          <div class="nw-info"><#nested "info"></div>
+        </#if>
+
+        <p class="nw-foot">Internal Developer Platform</p>
+      </main>
+    </body>
+    </html>
+    </#macro>
+  theme.properties: |
+    # Narwhal IDP — clean shadcn login theme (custom templates, no PatternFly)
+    parent=keycloak.v2
+    import=common/keycloak
+    styles=css/narwhal.css
+    locales=en,ko
+kind: ConfigMap
+metadata:
+  name: keycloak-theme-narwhal
+  namespace: iam
+  labels:
+    app: keycloak
+    component: theme
+    theme: narwhal
+---
+apiVersion: k8s.keycloak.org/v2alpha1
+kind: Keycloak
+metadata:
+  name: keycloak
+  namespace: iam
+spec:
+  instances: 1
+  db:
+    vendor: postgres
+    host: narwhal-db-rw.database.svc.cluster.local
+    port: 5432
+    database: keycloak
+    usernameSecret:
+      name: keycloak-db-secret
+      key: username
+    passwordSecret:
+      name: keycloak-db-secret
+      key: password
+  http:
+    httpEnabled: true
+  hostname:
+    hostname: https://keycloak.{{ .Values.baseDomain }}
+    strict: true
+  proxy:
+    headers: xforwarded
+  ingress:
+    enabled: false
+  # First-class resources — the operator HONORS spec.resources but IGNORES resources set
+  # under unsupported.podTemplate. The old config (podTemplate cpu 200m) was silently
+  # dropped, so Keycloak ran with NO CPU request and got starved under node contention:
+  # its 9000 health endpoint missed the 1s probe timeout -> liveness SIGKILL crash loop
+  # -> keycloak-service endpoints emptied -> APISIX 502 on all SSO. A real CPU request fixes it.
+  resources:
+    requests:
+      cpu: "600m"
+      memory: "1Gi"
+    limits:
+      cpu: "2"
+      memory: "2Gi"
+  unsupported:
+    podTemplate:
+      metadata:
+        labels:
+          istio.io/dataplane-mode: "none"
+      spec:
+        containers:
+          - name: keycloak
+            # Relaxed health probes (timeoutSeconds 1->5, failureThreshold 3->5) tolerate
+            # transient GC/CPU spikes instead of false-positive killing under contention.
+            # (Operator HONORS these podTemplate probes; CPU/memory go in spec.resources
+            # above because podTemplate resources are ignored by the operator.)
+            livenessProbe:
+              httpGet:
+                path: /health/live
+                port: 9000
+              timeoutSeconds: 5
+              periodSeconds: 15
+              failureThreshold: 5
+            readinessProbe:
+              httpGet:
+                path: /health/ready
+                port: 9000
+              timeoutSeconds: 5
+              periodSeconds: 10
+              failureThreshold: 5
+            startupProbe:
+              httpGet:
+                path: /health/started
+                port: 9000
+              timeoutSeconds: 5
+              periodSeconds: 5
+              failureThreshold: 120
+            volumeMounts:
+              - name: keycloak-theme-narwhal
+                mountPath: /opt/keycloak/themes/narwhal/login/theme.properties
+                subPath: theme.properties
+              - name: keycloak-theme-narwhal
+                mountPath: /opt/keycloak/themes/narwhal/login/template.ftl
+                subPath: template.ftl
+              - name: keycloak-theme-narwhal
+                mountPath: /opt/keycloak/themes/narwhal/login/login.ftl
+                subPath: login.ftl
+              - name: keycloak-theme-narwhal
+                mountPath: /opt/keycloak/themes/narwhal/login/resources/css/narwhal.css
+                subPath: narwhal.css
+              - name: keycloak-theme-narwhal
+                mountPath: /opt/keycloak/themes/narwhal/login/messages/messages_en.properties
+                subPath: messages_en.properties
+              - name: keycloak-theme-narwhal
+                mountPath: /opt/keycloak/themes/narwhal/login/messages/messages_ko.properties
+                subPath: messages_ko.properties
+        volumes:
+          - name: keycloak-theme-narwhal
+            configMap:
+              name: keycloak-theme-narwhal

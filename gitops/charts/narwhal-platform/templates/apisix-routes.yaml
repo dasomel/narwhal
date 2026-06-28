@@ -1,0 +1,1018 @@
+---
+# Keycloak (Identity Provider — no OIDC plugin, Keycloak IS the IdP)
+apiVersion: apisix.apache.org/v2
+kind: ApisixUpstream
+metadata:
+  name: keycloak-server
+  namespace: platform-system
+spec:
+  externalNodes:
+    - type: Domain
+      name: keycloak-service.iam.svc.cluster.local
+      port: 8080
+---
+apiVersion: apisix.apache.org/v2
+kind: ApisixRoute
+metadata:
+  name: keycloak
+  namespace: platform-system
+spec:
+  http:
+    - name: keycloak
+      match:
+        hosts:
+          - keycloak.{{ .Values.baseDomain }}
+        paths:
+          - "/*"
+      upstreams:
+        - name: keycloak-server
+      plugins:
+        - name: proxy-rewrite
+          enable: true
+          config:
+            headers:
+              set:
+                X-Forwarded-Port: "443"
+                X-Forwarded-Proto: "https"
+        - name: response-rewrite
+          enable: true
+          config:
+            headers:
+              set:
+                Strict-Transport-Security: "max-age=31536000; includeSubDomains"
+                X-Content-Type-Options: "nosniff"
+---
+# ArgoCD (native OIDC — argocd-cm handles auth, no APISIX openid-connect)
+apiVersion: apisix.apache.org/v2
+kind: ApisixUpstream
+metadata:
+  name: argocd-server
+  namespace: platform-system
+spec:
+  externalNodes:
+    - type: Domain
+      name: argocd-server.devtools.svc.cluster.local
+      port: 80
+---
+apiVersion: apisix.apache.org/v2
+kind: ApisixRoute
+metadata:
+  name: argocd
+  namespace: platform-system
+spec:
+  http:
+    - name: argocd
+      match:
+        hosts:
+          - argocd.{{ .Values.baseDomain }}
+        paths:
+          - "/*"
+      upstreams:
+        - name: argocd-server
+      plugins:
+        - name: proxy-rewrite
+          enable: true
+          config:
+            headers:
+              set:
+                X-Forwarded-Port: "443"
+                X-Forwarded-Proto: "https"
+        - name: response-rewrite
+          enable: true
+          config:
+            headers:
+              set:
+                Strict-Transport-Security: "max-age=31536000; includeSubDomains"
+                X-Content-Type-Options: "nosniff"
+                X-Frame-Options: "SAMEORIGIN"
+                X-XSS-Protection: "1; mode=block"
+---
+# ArgoCD Redirect for no-click SSO
+apiVersion: apisix.apache.org/v2
+kind: ApisixRoute
+metadata:
+  name: argocd-redirect
+  namespace: platform-system
+spec:
+  http:
+    - name: argocd-redirect
+      priority: 10
+      match:
+        hosts:
+          - argocd.{{ .Values.baseDomain }}
+        paths:
+          - "/*"
+        exprs:
+          - subject:
+              scope: Path
+            op: In
+            set:
+              - "/"
+              - "/login"
+          - subject:
+              scope: Header
+              name: Cookie
+            op: RegexNotMatch
+            value: "argocd.token="
+      upstreams:
+        - name: argocd-server
+      plugins:
+        - name: redirect
+          enable: true
+          config:
+            ret_code: 302
+            uri: "/auth/login"
+---
+# Grafana (native generic_oauth — service handles auth)
+apiVersion: apisix.apache.org/v2
+kind: ApisixUpstream
+metadata:
+  name: prometheus-stack-grafana
+  namespace: platform-system
+spec:
+  externalNodes:
+    - type: Domain
+      name: prometheus-stack-grafana.monitoring.svc.cluster.local
+      port: 80
+---
+apiVersion: apisix.apache.org/v2
+kind: ApisixRoute
+metadata:
+  name: grafana
+  namespace: platform-system
+spec:
+  http:
+    - name: grafana
+      match:
+        hosts:
+          - grafana.{{ .Values.baseDomain }}
+        paths:
+          - "/*"
+      upstreams:
+        - name: prometheus-stack-grafana
+      plugins:
+        - name: response-rewrite
+          enable: true
+          config:
+            headers:
+              set:
+                Strict-Transport-Security: "max-age=31536000; includeSubDomains"
+                X-Content-Type-Options: "nosniff"
+                X-Frame-Options: "SAMEORIGIN"
+                X-XSS-Protection: "1; mode=block"
+---
+# Gitea Git Bypass (no OIDC for HTTP git operations and API)
+apiVersion: apisix.apache.org/v2
+kind: ApisixUpstream
+metadata:
+  name: gitea-http
+  namespace: platform-system
+spec:
+  externalNodes:
+    - type: Domain
+      name: gitea-http.devtools.svc.cluster.local
+      port: 3000
+---
+apiVersion: apisix.apache.org/v2
+kind: ApisixRoute
+metadata:
+  name: gitea-git-bypass
+  namespace: platform-system
+spec:
+  http:
+    - name: gitea-git-bypass
+      priority: 100
+      match:
+        hosts:
+          - gitea.{{ .Values.baseDomain }}
+        paths:
+          - "/*"
+        exprs:
+          - subject:
+              scope: Path
+            op: RegexMatch
+            value: "(\\.git(/|$)|/info/refs|/git-upload-pack|/git-receive-pack|^/api/v1/|^/login/oauth/|^/user/login)"
+      upstreams:
+        - name: gitea-http
+      plugins:
+        - name: response-rewrite
+          enable: true
+          config:
+            headers:
+              set:
+                Strict-Transport-Security: "max-age=31536000; includeSubDomains"
+                X-Content-Type-Options: "nosniff"
+---
+# Gitea (APISIX openid-connect with automatic user headers)
+apiVersion: apisix.apache.org/v2
+kind: ApisixRoute
+metadata:
+  name: gitea
+  namespace: platform-system
+spec:
+  http:
+    - name: gitea
+      priority: 0
+      match:
+        hosts:
+          - gitea.{{ .Values.baseDomain }}
+        paths:
+          - "/*"
+      upstreams:
+        - name: gitea-http
+      plugins:
+        - name: openid-connect
+          enable: true
+          config:
+            client_id: "gitea"
+            client_secret: "$env://GITEA_OIDC_CLIENT_SECRET"
+            discovery: "https://keycloak.{{ .Values.baseDomain }}/realms/narwhal/.well-known/openid-configuration"
+            redirect_uri: "https://gitea.{{ .Values.baseDomain }}/apisix/callback"
+            scope: "openid email profile groups"
+            bearer_only: false
+            ssl_verify: false
+            logout_path: "/apisix/logout"
+            set_userinfo_header: true
+            set_access_token_header: true
+            access_token_in_authorization_header: true
+            session:
+              secret: "$env://GITEA_OIDC_SESSION_SECRET"
+              cookie:
+                lifetime: 300
+        - name: serverless-post-function
+          enable: true
+          config:
+            phase: access
+            functions:
+              - |
+                return function(conf, ctx)
+                  local headers = ngx.req.get_headers()
+                  local userinfo_b64 = headers["X-Userinfo"]
+                  if userinfo_b64 then
+                    local userinfo_json = ngx.decode_base64(userinfo_b64)
+                    if userinfo_json then
+                      local cjson = require("cjson")
+                      local ok, userinfo = pcall(cjson.decode, userinfo_json)
+                      if ok and userinfo and userinfo.preferred_username then
+                        ngx.req.set_header("X-WEBAUTH-USER", userinfo.preferred_username)
+                      end
+                    end
+                  end
+                end
+        - name: response-rewrite
+          enable: true
+          config:
+            headers:
+              set:
+                Strict-Transport-Security: "max-age=31536000; includeSubDomains"
+                X-Content-Type-Options: "nosniff"
+                X-Frame-Options: "SAMEORIGIN"
+                X-XSS-Protection: "1; mode=block"
+---
+# Harbor (native OIDC mode — service handles auth, keep client-control for image push)
+# resolveGranularity 제거: ExternalName 백엔드는 CNAME 추적 필요 (mistake log 2026-04-06)
+apiVersion: apisix.apache.org/v2
+kind: ApisixUpstream
+metadata:
+  name: harbor-nginx
+  namespace: platform-system
+spec:
+  externalNodes:
+    - type: Domain
+      name: harbor.devtools.svc.cluster.local
+      port: 80
+---
+apiVersion: apisix.apache.org/v2
+kind: ApisixRoute
+metadata:
+  name: harbor
+  namespace: platform-system
+spec:
+  http:
+    - name: harbor
+      match:
+        hosts:
+          - harbor.{{ .Values.baseDomain }}
+        paths:
+          - "/*"
+      upstreams:
+        - name: harbor-nginx
+      plugins:
+        - name: proxy-rewrite
+          enable: true
+          config:
+            headers:
+              set:
+                X-Forwarded-Port: "443"
+                X-Forwarded-Proto: "https"
+        - name: client-control
+          enable: true
+          config:
+            max_body_size: 0  # Unlimited body size for Docker image push
+        - name: response-rewrite
+          enable: true
+          config:
+            headers:
+              set:
+                Strict-Transport-Security: "max-age=31536000; includeSubDomains"
+                X-Content-Type-Options: "nosniff"
+                X-Frame-Options: "SAMEORIGIN"
+                X-XSS-Protection: "1; mode=block"
+---
+# Harbor Redirect for no-click SSO
+apiVersion: apisix.apache.org/v2
+kind: ApisixRoute
+metadata:
+  name: harbor-redirect
+  namespace: platform-system
+spec:
+  http:
+    - name: harbor-redirect
+      priority: 10
+      match:
+        hosts:
+          - harbor.{{ .Values.baseDomain }}
+        paths:
+          - "/*"
+        exprs:
+          - subject:
+              scope: Path
+            op: In
+            set:
+              - "/"
+              - "/harbor/sign-in"
+          - subject:
+              scope: Header
+              name: Cookie
+            op: RegexNotMatch
+            value: "sid="
+      upstreams:
+        - name: harbor-nginx
+      plugins:
+        - name: redirect
+          enable: true
+          config:
+            ret_code: 302
+            uri: "/c/oidc/login"
+---
+# Headlamp (native OIDC — service handles auth)
+apiVersion: apisix.apache.org/v2
+kind: ApisixUpstream
+metadata:
+  name: headlamp
+  namespace: platform-system
+spec:
+  externalNodes:
+    - type: Domain
+      name: headlamp.devtools.svc.cluster.local
+      port: 80
+---
+apiVersion: apisix.apache.org/v2
+kind: ApisixRoute
+metadata:
+  name: headlamp
+  namespace: platform-system
+spec:
+  http:
+    # OIDC return path fix: the SPA's /auth?cluster= page only sets
+    # localStorage for the popup flow and never redirects when the OIDC flow
+    # completes in the main tab (kubernetes-sigs/headlamp frontend
+    # components/oidcauth, "@todo: needs cleanup" — still present in v0.42).
+    # Inject a script that finishes the login redirect to / when not inside a
+    # popup; the popup flow (window.opener set) is left to the SPA.
+    - name: headlamp-auth-return
+      match:
+        hosts:
+          - headlamp.{{ .Values.baseDomain }}
+        paths:
+          - "/auth"
+      upstreams:
+        - name: headlamp
+      plugins:
+        - name: proxy-rewrite
+          enable: true
+          config:
+            headers:
+              remove:
+                - Accept-Encoding
+        - name: serverless-pre-function
+          enable: true
+          config:
+            phase: header_filter
+            # body_filter below changes the body length
+            functions:
+              - |
+                return function(conf, ctx)
+                  ngx.header.content_length = nil
+                end
+        - name: serverless-post-function
+          enable: true
+          config:
+            phase: body_filter
+            functions:
+              - |
+                return function(conf, ctx)
+                  local body = ngx.arg[1]
+                  local eof = ngx.arg[2]
+                  if not ngx.ctx.hl_auth_buf then ngx.ctx.hl_auth_buf = {} end
+                  if body and #body > 0 then
+                    table.insert(ngx.ctx.hl_auth_buf, body)
+                    ngx.arg[1] = ''
+                  end
+                  if eof then
+                    local full = table.concat(ngx.ctx.hl_auth_buf)
+                    local snip = '<script>(function(){try{'
+                      .. 'var q=new URLSearchParams(window.location.search);'
+                      .. 'if(q.get("cluster")){'
+                      .. 'localStorage.setItem("auth_status","success");'
+                      .. 'if(!window.opener){'
+                      .. 'setTimeout(function(){window.location.replace("/")},400);'
+                      .. '}}}catch(e){}})();</script>'
+                    local pos = string.find(full, '</body>', 1, true)
+                    if pos then
+                      full = string.sub(full, 1, pos - 1) .. snip .. string.sub(full, pos)
+                    end
+                    ngx.arg[1] = full
+                  end
+                end
+        - name: response-rewrite
+          enable: true
+          config:
+            headers:
+              set:
+                Strict-Transport-Security: "max-age=31536000; includeSubDomains"
+                X-Content-Type-Options: "nosniff"
+                X-Frame-Options: "SAMEORIGIN"
+                X-XSS-Protection: "1; mode=block"
+    - name: headlamp
+      match:
+        hosts:
+          - headlamp.{{ .Values.baseDomain }}
+        paths:
+          - "/*"
+      upstreams:
+        - name: headlamp
+      plugins:
+        - name: response-rewrite
+          enable: true
+          config:
+            headers:
+              set:
+                Strict-Transport-Security: "max-age=31536000; includeSubDomains"
+                X-Content-Type-Options: "nosniff"
+                X-Frame-Options: "SAMEORIGIN"
+                X-XSS-Protection: "1; mode=block"
+---
+# OpenBao (native OIDC auth method — service handles auth)
+apiVersion: apisix.apache.org/v2
+kind: ApisixUpstream
+metadata:
+  name: openbao
+  namespace: platform-system
+spec:
+  # OpenBao 리스너는 TLS(raft+TLS 고정 구성) — scheme 누락 시 기본 http로 프록시되어
+  # "Client sent an HTTP request to an HTTPS server" 발생 (2026-06-11 수정)
+  scheme: https
+  externalNodes:
+    - type: Domain
+      name: openbao.storage.svc.cluster.local
+      port: 8200
+---
+apiVersion: apisix.apache.org/v2
+kind: ApisixRoute
+metadata:
+  name: openbao
+  namespace: platform-system
+spec:
+  http:
+    # 포털 제로클릭 SSO 부트스트랩: OpenBao UI는 페이지 로드시 OIDC 자동 시작을
+    # 지원하지 않으므로(1클릭 상한), 같은 오리진에서 OIDC 플로우를 대행한다.
+    # /sso          -> auth_url API 호출 후 Keycloak으로 이동
+    # /sso/callback -> code/state를 callback API로 교환, client_token을
+    #                  UI 토큰 포맷(localStorage 'vault-token☃1')으로 기록 후 UI 진입
+    # 전제: auth/oidc/role/default allowed_redirect_uris + Keycloak openbao 클라이언트에
+    # https://openbao.{{ .Values.baseDomain }}/sso/callback 등록 (11-3-keycloak-clients.sh)
+    - name: openbao-sso
+      priority: 10
+      match:
+        hosts:
+          - openbao.{{ .Values.baseDomain }}
+        paths:
+          - "/sso"
+          - "/sso/callback"
+      upstreams:
+        - name: openbao
+      plugins:
+        - name: serverless-pre-function
+          enable: true
+          config:
+            phase: rewrite
+            functions:
+              - |
+                return function(conf, ctx)
+                  ngx.header["Content-Type"] = "text/html; charset=utf-8"
+                  ngx.header["Cache-Control"] = "no-store"
+                  if ngx.var.uri == "/sso" then
+                    ngx.say([==[<!doctype html><meta charset="utf-8"><title>OpenBao SSO</title>
+                <script>
+                (async function () {
+                  var nonce = crypto.randomUUID();
+                  sessionStorage.setItem("bao_sso_nonce", nonce);
+                  var r = await fetch("/v1/auth/oidc/oidc/auth_url", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                      role: "default",
+                      redirect_uri: location.origin + "/sso/callback",
+                      client_nonce: nonce
+                    })
+                  });
+                  var j = await r.json();
+                  if (j && j.data && j.data.auth_url) { location.replace(j.data.auth_url); }
+                  else { document.body.textContent = "SSO start failed: " + JSON.stringify(j); }
+                })();
+                </script>]==])
+                  else
+                    ngx.say([==[<!doctype html><meta charset="utf-8"><title>OpenBao SSO</title>
+                <script>
+                (async function () {
+                  var q = new URLSearchParams(location.search);
+                  var nonce = sessionStorage.getItem("bao_sso_nonce") || "";
+                  sessionStorage.removeItem("bao_sso_nonce");
+                  var r = await fetch("/v1/auth/oidc/oidc/callback?code=" +
+                    encodeURIComponent(q.get("code") || "") + "&state=" +
+                    encodeURIComponent(q.get("state") || "") + "&client_nonce=" +
+                    encodeURIComponent(nonce));
+                  var j = await r.json();
+                  var a = j && j.auth;
+                  if (!a || !a.client_token) {
+                    document.body.textContent = "SSO failed: " + JSON.stringify(j);
+                    return;
+                  }
+                  localStorage.setItem("vault-token☃1", JSON.stringify({
+                    userRootNamespace: "",
+                    displayName: (a.metadata && a.metadata.username) || "oidc",
+                    backend: {
+                      type: "token", typeDisplay: "Token",
+                      description: "Token authentication.",
+                      tokenPath: "id", displayNamePath: "display_name",
+                      formAttributes: ["token"]
+                    },
+                    token: a.client_token,
+                    policies: a.token_policies || a.policies || [],
+                    renewable: a.renewable,
+                    entity_id: a.entity_id,
+                    ttl: a.lease_duration,
+                    tokenExpirationEpoch: Date.now() + a.lease_duration * 1000
+                  }));
+                  localStorage.setItem("selectedAuth", "oidc");
+                  location.replace("/ui/vault/secrets");
+                })();
+                </script>]==])
+                  end
+                  return ngx.exit(200)
+                end
+    - name: openbao
+      match:
+        hosts:
+          - openbao.{{ .Values.baseDomain }}
+        paths:
+          - "/*"
+      upstreams:
+        - name: openbao
+      plugins:
+        - name: response-rewrite
+          enable: true
+          config:
+            headers:
+              set:
+                Strict-Transport-Security: "max-age=31536000; includeSubDomains"
+                X-Content-Type-Options: "nosniff"
+                X-Frame-Options: "SAMEORIGIN"
+                X-XSS-Protection: "1; mode=block"
+---
+# Hubble UI (APISIX openid-connect — no native SSO support)
+apiVersion: apisix.apache.org/v2
+kind: ApisixUpstream
+metadata:
+  name: hubble-ui
+  namespace: platform-system
+spec:
+  externalNodes:
+    - type: Domain
+      name: hubble-ui.kube-system.svc.cluster.local
+      port: 80
+---
+apiVersion: apisix.apache.org/v2
+kind: ApisixRoute
+metadata:
+  name: hubble
+  namespace: platform-system
+spec:
+  http:
+    - name: hubble
+      match:
+        hosts:
+          - hubble.{{ .Values.baseDomain }}
+        paths:
+          - "/*"
+      upstreams:
+        - name: hubble-ui
+      plugins:
+        - name: openid-connect
+          enable: true
+          config:
+            client_id: "hubble"
+            client_secret: "$env://HUBBLE_OIDC_CLIENT_SECRET"
+            discovery: "https://keycloak.{{ .Values.baseDomain }}/realms/narwhal/.well-known/openid-configuration"
+            redirect_uri: "https://hubble.{{ .Values.baseDomain }}/apisix/callback"
+            scope: "openid email profile groups"
+            bearer_only: false
+            ssl_verify: false
+            logout_path: "/apisix/logout"
+            set_userinfo_header: true
+            set_access_token_header: true
+            access_token_in_authorization_header: true
+            session:
+              secret: "$env://HUBBLE_OIDC_SESSION_SECRET"
+              cookie:
+                lifetime: 300
+        - name: response-rewrite
+          enable: true
+          config:
+            headers:
+              set:
+                Strict-Transport-Security: "max-age=31536000; includeSubDomains"
+                X-Content-Type-Options: "nosniff"
+                X-Frame-Options: "SAMEORIGIN"
+                X-XSS-Protection: "1; mode=block"
+---
+# Prometheus (APISIX openid-connect — no native SSO support)
+apiVersion: apisix.apache.org/v2
+kind: ApisixUpstream
+metadata:
+  name: prometheus-server
+  namespace: platform-system
+spec:
+  externalNodes:
+    - type: Domain
+      name: prometheus-stack-kube-prom-prometheus.monitoring.svc.cluster.local
+      port: 9090
+---
+apiVersion: apisix.apache.org/v2
+kind: ApisixRoute
+metadata:
+  name: prometheus
+  namespace: platform-system
+spec:
+  http:
+    - name: prometheus
+      match:
+        hosts:
+          - prometheus.{{ .Values.baseDomain }}
+        paths:
+          - "/*"
+      upstreams:
+        - name: prometheus-server
+      plugins:
+        - name: openid-connect
+          enable: true
+          config:
+            client_id: "prometheus"
+            client_secret: "$env://PROMETHEUS_OIDC_CLIENT_SECRET"
+            discovery: "https://keycloak.{{ .Values.baseDomain }}/realms/narwhal/.well-known/openid-configuration"
+            redirect_uri: "https://prometheus.{{ .Values.baseDomain }}/apisix/callback"
+            scope: "openid email profile groups"
+            bearer_only: false
+            ssl_verify: false
+            logout_path: "/apisix/logout"
+            set_userinfo_header: true
+            set_access_token_header: true
+            access_token_in_authorization_header: true
+            session:
+              secret: "$env://PROMETHEUS_OIDC_SESSION_SECRET"
+              cookie:
+                lifetime: 300
+        - name: response-rewrite
+          enable: true
+          config:
+            headers:
+              set:
+                Strict-Transport-Security: "max-age=31536000; includeSubDomains"
+                X-Content-Type-Options: "nosniff"
+                X-Frame-Options: "SAMEORIGIN"
+                X-XSS-Protection: "1; mode=block"
+---
+# Alertmanager (APISIX openid-connect — dedicated client)
+apiVersion: apisix.apache.org/v2
+kind: ApisixUpstream
+metadata:
+  name: alertmanager-server
+  namespace: platform-system
+spec:
+  externalNodes:
+    - type: Domain
+      name: prometheus-stack-kube-prom-alertmanager.monitoring.svc.cluster.local
+      port: 9093
+---
+apiVersion: apisix.apache.org/v2
+kind: ApisixRoute
+metadata:
+  name: alertmanager
+  namespace: platform-system
+spec:
+  http:
+    - name: alertmanager
+      match:
+        hosts:
+          - alertmanager.{{ .Values.baseDomain }}
+        paths:
+          - "/*"
+      upstreams:
+        - name: alertmanager-server
+      plugins:
+        - name: openid-connect
+          enable: true
+          config:
+            client_id: "alertmanager"
+            client_secret: "$env://ALERTMANAGER_OIDC_CLIENT_SECRET"
+            discovery: "https://keycloak.{{ .Values.baseDomain }}/realms/narwhal/.well-known/openid-configuration"
+            redirect_uri: "https://alertmanager.{{ .Values.baseDomain }}/apisix/callback"
+            scope: "openid email profile groups"
+            bearer_only: false
+            ssl_verify: false
+            logout_path: "/apisix/logout"
+            set_userinfo_header: true
+            set_access_token_header: true
+            access_token_in_authorization_header: true
+            session:
+              secret: "$env://ALERTMANAGER_OIDC_SESSION_SECRET"
+              cookie:
+                lifetime: 300
+        - name: response-rewrite
+          enable: true
+          config:
+            headers:
+              set:
+                Strict-Transport-Security: "max-age=31536000; includeSubDomains"
+                X-Content-Type-Options: "nosniff"
+                X-Frame-Options: "SAMEORIGIN"
+                X-XSS-Protection: "1; mode=block"
+---
+# Velero UI (app-native Keycloak OAuth + socket.io — no APISIX openid-connect, like narwhal-portal)
+apiVersion: apisix.apache.org/v2
+kind: ApisixUpstream
+metadata:
+  name: velero-ui
+  namespace: platform-system
+spec:
+  externalNodes:
+    - type: Domain
+      name: velero-ui.storage.svc.cluster.local
+      port: 3000
+---
+apiVersion: apisix.apache.org/v2
+kind: ApisixRoute
+metadata:
+  name: velero-ui
+  namespace: platform-system
+spec:
+  http:
+    # 포털 제로클릭 SSO 부트스트랩: velero-ui SPA는 자신이 localStorage
+    # ('auth.oauth.state')에 심은 state로만 OAuth code 교환을 수행한다
+    # (OauthAuth.vue). 같은 오리진에서 state를 심고 Keycloak으로 보내면
+    # /login?code&state 복귀시 SPA가 자동으로 교환 완료 -> 대시보드 직행.
+    - name: velero-ui-sso
+      priority: 10
+      match:
+        hosts:
+          - velero-ui.{{ .Values.baseDomain }}
+        paths:
+          - "/sso"
+      upstreams:
+        - name: velero-ui
+      plugins:
+        - name: serverless-pre-function
+          enable: true
+          config:
+            phase: rewrite
+            functions:
+              - |
+                return function(conf, ctx)
+                  ngx.header["Content-Type"] = "text/html; charset=utf-8"
+                  ngx.header["Cache-Control"] = "no-store"
+                  ngx.say([==[<!doctype html><meta charset="utf-8"><title>Velero UI SSO</title>
+                <script>
+                (function () {
+                  var s = crypto.randomUUID();
+                  localStorage.setItem("auth.oauth.state", s);
+                  location.replace(
+                    "https://keycloak.{{ .Values.baseDomain }}/realms/narwhal/protocol/openid-connect/auth" +
+                    "?client_id=velero-ui" +
+                    "&redirect_uri=" + encodeURIComponent(location.origin + "/login") +
+                    "&scope=" + encodeURIComponent("openid profile email groups") +
+                    "&response_type=code&state=" + s);
+                })();
+                </script>]==])
+                  return ngx.exit(200)
+                end
+    - name: velero-ui
+      match:
+        hosts:
+          - velero-ui.{{ .Values.baseDomain }}
+        paths:
+          - "/*"
+      # velero-ui (NestJS) drives its UI over socket.io and handles its own
+      # Keycloak OAuth (OAUTH_AUTH_ENABLED), same way narwhal-portal uses NextAuth.
+      # WebSocket upgrade MUST be enabled — otherwise socket.io falls back to
+      # HTTP long-polling and the login handshake never completes (UI stuck on
+      # /login). No APISIX openid-connect plugin here: the app is the single SSO
+      # layer; stacking a gateway OIDC layer caused a double login + 300s-session
+      # churn that broke "straight-through" SSO.
+      websocket: true
+      upstreams:
+        - name: velero-ui
+      plugins:
+        - name: response-rewrite
+          enable: true
+          config:
+            headers:
+              set:
+                Strict-Transport-Security: "max-age=31536000; includeSubDomains"
+                X-Content-Type-Options: "nosniff"
+                X-Frame-Options: "SAMEORIGIN"
+                X-XSS-Protection: "1; mode=block"
+---
+# Narwhal Portal (NextAuth.js handles its own SSO — no APISIX openid-connect)
+apiVersion: apisix.apache.org/v2
+kind: ApisixUpstream
+metadata:
+  name: narwhal-portal
+  namespace: platform-system
+spec:
+  externalNodes:
+    - type: Domain
+      name: narwhal-portal.devtools.svc.cluster.local
+      port: 3000
+---
+apiVersion: apisix.apache.org/v2
+kind: ApisixRoute
+metadata:
+  name: narwhal-portal
+  namespace: platform-system
+spec:
+  http:
+    - name: narwhal-portal
+      match:
+        hosts:
+          - portal.{{ .Values.baseDomain }}
+        paths:
+          - "/*"
+      # Live dev (skaffold dev) HMR: Next.js dev WebSocket (/_next/webpack-hmr)
+      # needs upgrade support, otherwise the dev client falls back to plain GET
+      # (404) and the portal UI never hydrates. Harmless for prod standalone.
+      # NOTE: IC sync for this route aborts (cross-ns endpoints), so the serving
+      # etcd routes were also patched directly via admin API on 2026-06-10
+      # (enable_websocket=true, route ids: narwhal-portal, 698afbe4).
+      websocket: true
+      upstreams:
+        - name: narwhal-portal
+      # Narwhal Portal handles its own SSO via NextAuth.js — no APISIX openid-connect plugin
+      plugins:
+        - name: response-rewrite
+          enable: true
+          config:
+            headers:
+              set:
+                Strict-Transport-Security: "max-age=31536000; includeSubDomains"
+                X-Content-Type-Options: "nosniff"
+                X-Frame-Options: "SAMEORIGIN"
+                X-XSS-Protection: "1; mode=block"
+---
+# NFS Quota Agent (APISIX openid-connect — no native SSO support)
+# NOTE: APISIX IC now syncs this route (ApisixUpstream externalNodes), so this
+# ApisixRoute IS the canonical, IC-synced source — including the
+# serverless-post-function body_filter fix below. The former manual admin-API
+# route in 11-3-keycloak-clients.sh has been removed.
+apiVersion: apisix.apache.org/v2
+kind: ApisixUpstream
+metadata:
+  name: nfs-quota-agent
+  namespace: platform-system
+spec:
+  externalNodes:
+    - type: Domain
+      name: nfs-quota-agent.nfs-quota-agent.svc.cluster.local
+      port: 8080
+---
+apiVersion: apisix.apache.org/v2
+kind: ApisixRoute
+metadata:
+  name: nfs-quota-agent
+  namespace: platform-system
+spec:
+  http:
+    - name: nfs-quota-agent
+      match:
+        hosts:
+          - nfs-quota.{{ .Values.baseDomain }}
+        paths:
+          - "/*"
+      upstreams:
+        - name: nfs-quota-agent
+      plugins:
+        - name: openid-connect
+          enable: true
+          config:
+            client_id: "hubble"
+            client_secret: "$env://HUBBLE_OIDC_CLIENT_SECRET"
+            discovery: "https://keycloak.{{ .Values.baseDomain }}/realms/narwhal/.well-known/openid-configuration"
+            redirect_uri: "https://nfs-quota.{{ .Values.baseDomain }}/apisix/callback"
+            scope: "openid email profile groups"
+            bearer_only: false
+            ssl_verify: false
+            logout_path: "/apisix/logout"
+            set_userinfo_header: true
+            set_access_token_header: true
+            access_token_in_authorization_header: true
+            session:
+              secret: "$env://HUBBLE_OIDC_SESSION_SECRET"
+              cookie:
+                lifetime: 300
+        - name: serverless-post-function
+          enable: true
+          config:
+            phase: body_filter
+            # Fixes nfs-quota-agent v0.2.1 HTML bug: Go binary embeds
+            # ` + "`" + ` (raw string literal syntax) instead of backtick
+            # chars in JS template literals, causing SyntaxError in browser.
+            # This Lua replaces all 22 occurrences with real backtick chars.
+            functions:
+              - |
+                return function(conf, ctx)
+                  local body = ngx.arg[1]
+                  local eof = ngx.arg[2]
+                  if not ngx.ctx.nqs_buf then ngx.ctx.nqs_buf = {} end
+                  if body and #body > 0 then
+                    table.insert(ngx.ctx.nqs_buf, body)
+                    ngx.arg[1] = ''
+                  end
+                  if eof then
+                    local full = table.concat(ngx.ctx.nqs_buf)
+                    local bt = string.char(96)
+                    local dq = string.char(34)
+                    local sp = string.char(32)
+                    local bs = string.char(92)
+                    local pl = string.char(43)
+                    local pat = bt..sp..bs..pl..sp..dq..bt..dq..sp..bs..pl..sp..bt
+                    full = ngx.re.gsub(full, pat, bt, 'jo')
+                    ngx.arg[1] = full
+                  end
+                end
+        - name: response-rewrite
+          enable: true
+          config:
+            headers:
+              set:
+                Strict-Transport-Security: "max-age=31536000; includeSubDomains"
+                X-Content-Type-Options: "nosniff"
+                X-Frame-Options: "SAMEORIGIN"
+                X-XSS-Protection: "1; mode=block"
+---
+# APISIX Dashboard (no OIDC — dashboard has its own auth)
+apiVersion: apisix.apache.org/v2
+kind: ApisixUpstream
+metadata:
+  name: apisix-dashboard
+  namespace: platform-system
+spec:
+  externalNodes:
+    - type: Domain
+      name: apisix-dashboard.platform-system.svc.cluster.local
+      port: 9000
+---
+apiVersion: apisix.apache.org/v2
+kind: ApisixRoute
+metadata:
+  name: apisix-dashboard
+  namespace: platform-system
+spec:
+  http:
+    - name: apisix-dashboard
+      match:
+        hosts:
+          - apisix-dashboard.{{ .Values.baseDomain }}
+        paths:
+          - "/*"
+      upstreams:
+        - name: apisix-dashboard
+      plugins:
+        - name: response-rewrite
+          enable: true
+          config:
+            headers:
+              set:
+                Strict-Transport-Security: "max-age=31536000; includeSubDomains"
+                X-Content-Type-Options: "nosniff"
+                X-Frame-Options: "SAMEORIGIN"
+                X-XSS-Protection: "1; mode=block"

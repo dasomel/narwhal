@@ -1,0 +1,7 @@
+apiVersion: v2
+name: narwhal-platform
+version: 0.1.0
+description: >
+  Domain-bearing cluster resources for the Narwhal IDP platform.
+  Template all resources that contain the cluster base domain so the
+  whole stack can be installed under any domain by setting baseDomain.

@@ -6,13 +6,14 @@ MASTER_COUNT="${MASTER_COUNT:-3}"
 MASTER_IP_BASE="${MASTER_IP_BASE:-192.168.56.1}"
 POD_NETWORK_CIDR="${POD_NETWORK_CIDR:-10.244.0.0/16}"
 SERVICE_CIDR="${SERVICE_CIDR:-10.96.0.0/12}"
+DOMAIN="${DOMAIN:-local.narwhal.internal}"
 
 # Compute master-1's real IP
 MASTER1_IP="${MASTER_IP_BASE}0"
 
 # OIDC Configuration (Authentik)
 # K8s 1.35+ requires HTTPS for --oidc-issuer-url; HTTP causes API server crash
-OIDC_ISSUER_URL="${OIDC_ISSUER_URL:-https://authentik.local.narwhal.internal/application/o/kubernetes/}"
+OIDC_ISSUER_URL="${OIDC_ISSUER_URL:-https://authentik.${DOMAIN}/application/o/kubernetes/}"
 OIDC_CLIENT_ID="${OIDC_CLIENT_ID:-kubernetes}"
 
 echo "=== Kubernetes Cluster Initialization ==="

@@ -155,7 +155,7 @@ helm upgrade --install authentik authentik/authentik \
   --set "authentik.redis.port=6379" \
   --set "authentik.bootstrap.token=${AUTHENTIK_BOOTSTRAP_TOKEN}" \
   --set "authentik.bootstrap.password=${AUTHENTIK_BOOTSTRAP_PASSWORD}" \
-  --set "authentik.bootstrap.email=admin@local.narwhal.internal" \
+  --set "authentik.bootstrap.email=admin@${DOMAIN}" \
   --set "postgresql.enabled=false" \
   --set "redis.enabled=false" \
   --set "server.ingress.enabled=false" \
@@ -195,7 +195,7 @@ spec:
     - port: 9000
 EXTSVC_EOF
 
-kubectl apply -f - << 'ROUTE_EOF'
+kubectl apply -f - << ROUTE_EOF
 apiVersion: apisix.apache.org/v2
 kind: ApisixRoute
 metadata:
@@ -206,7 +206,7 @@ spec:
     - name: authentik
       match:
         hosts:
-          - authentik.local.narwhal.internal
+          - authentik.${DOMAIN}
         paths:
           - "/*"
       backends:

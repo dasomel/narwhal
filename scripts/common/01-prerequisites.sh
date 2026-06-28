@@ -18,6 +18,7 @@ VIP_ADDRESS="${VIP_ADDRESS:-192.168.56.100}"
 WORKER_COUNT="${WORKER_COUNT:-3}"
 WORKER_IP_BASE="${WORKER_IP_BASE:-192.168.56.2}"
 NODE_IP="${NODE_IP:-}"
+DOMAIN="${DOMAIN:-local.narwhal.internal}"
 
 #=========================================
 # Ensure private network IP is assigned
@@ -84,8 +85,8 @@ fi
 #=========================================
 echo "Configuring DNS..."
 
-# Add master-1 dnsmasq as primary DNS for *.local.narwhal.internal resolution
-# The ~local.narwhal.internal routing domain ensures only matching queries go to dnsmasq
+# Add master-1 dnsmasq as primary DNS for *.${DOMAIN} resolution
+# The ~${DOMAIN} routing domain ensures only matching queries go to dnsmasq
 # On master-1, 10-dnsmasq.sh replaces systemd-resolved entirely, so this is a no-op
 if systemctl is-active --quiet systemd-resolved; then
   sudo mkdir -p /etc/systemd/resolved.conf.d
@@ -98,7 +99,7 @@ if systemctl is-active --quiet systemd-resolved; then
 [Resolve]
 DNS=${MASTER_DNS}8.8.8.8 8.8.4.4
 FallbackDNS=1.1.1.1
-Domains=~local.narwhal.internal
+Domains=~${DOMAIN}
 EOF
   sudo systemctl restart systemd-resolved
 fi
@@ -134,12 +135,12 @@ done
 # internally. NOTE: this is the APISIX LB IP (192.168.56.200), NOT the
 # kube-apiserver VIP (${VIP_ADDRESS}=192.168.56.100) — harbor is served via APISIX.
 APISIX_LB_IP="${APISIX_LB_IP:-192.168.56.200}"
-HARBOR_HOSTS_ENTRY="${APISIX_LB_IP}   harbor.local.narwhal.internal"
-if ! grep -q "harbor.local.narwhal.internal" /etc/hosts; then
+HARBOR_HOSTS_ENTRY="${APISIX_LB_IP}   harbor.${DOMAIN}"
+if ! grep -q "harbor.${DOMAIN}" /etc/hosts; then
   echo "${HARBOR_HOSTS_ENTRY}" | sudo tee -a /etc/hosts
-  echo "Added harbor.local.narwhal.internal -> ${APISIX_LB_IP} to /etc/hosts"
+  echo "Added harbor.${DOMAIN} -> ${APISIX_LB_IP} to /etc/hosts"
 else
-  echo "harbor.local.narwhal.internal already present in /etc/hosts, skipping"
+  echo "harbor.${DOMAIN} already present in /etc/hosts, skipping"
 fi
 #=========================================
 # Configure Clock Synchronization (chrony)

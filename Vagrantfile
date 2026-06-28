@@ -2,6 +2,21 @@
 # vi: set ft=ruby :
 
 #=========================================
+# Domain Configuration (from configs/cluster.env)
+#=========================================
+BASE_DOMAIN = begin
+  env_file = File.join(__dir__, "configs", "cluster.env")
+  if File.exist?(env_file)
+    line = File.readlines(env_file).find { |l| l =~ /^\s*BASE_DOMAIN\s*=/ }
+    line ? line.split("=", 2).last.strip : "local.narwhal.internal"
+  else
+    "local.narwhal.internal"
+  end
+rescue
+  "local.narwhal.internal"
+end
+
+#=========================================
 # Cluster Configuration
 #=========================================
 CLUSTER_NAME = "narwhal"
@@ -164,7 +179,7 @@ Vagrant.configure("2") do |config|
             "MASTER_IP_BASE" => MASTER_IP_BASE,
             "MASTER_COUNT" => MASTER_COUNT,
             "METALLB_IP" => "192.168.56.200",
-            "DOMAIN" => "local.narwhal.internal"
+            "DOMAIN" => BASE_DOMAIN
           }
       else
         #=========================================
@@ -181,7 +196,7 @@ Vagrant.configure("2") do |config|
           env: {
             "MASTER_IP" => master_ip,
             "METALLB_IP" => "192.168.56.200",
-            "DOMAIN" => "local.narwhal.internal",
+            "DOMAIN" => BASE_DOMAIN,
             "SKIP_COREDNS" => "true",
             "MASTER_IP_BASE" => MASTER_IP_BASE,
             "MASTER_COUNT" => MASTER_COUNT
@@ -231,12 +246,12 @@ Vagrant.configure("2") do |config|
       worker.vm.provision "shell", path: "scripts/cluster/02-join-worker.sh",
         env: { "MASTER_IP" => "#{MASTER_IP_BASE}0" }
 
-      # Configure worker systemd-resolved to forward *.local.narwhal.internal to master dnsmasq.
-      # Without this, image pulls from harbor.local.narwhal.internal fail ("tls: unrecognized name").
+      # Configure worker systemd-resolved to forward *.${BASE_DOMAIN} to master dnsmasq.
+      # Without this, image pulls from harbor.${BASE_DOMAIN} fail ("tls: unrecognized name").
       worker.vm.provision "shell", path: "scripts/cluster/10-worker-dns.sh",
         env: {
           "MASTER_IP" => "#{MASTER_IP_BASE}0",
-          "DOMAIN"    => "local.narwhal.internal"
+          "DOMAIN"    => BASE_DOMAIN
         }
 
       # After last worker joins, trigger Phase 2 platform apps on master-1

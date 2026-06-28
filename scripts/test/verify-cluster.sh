@@ -30,6 +30,8 @@ done
 #   phase2-apps: Platform apps (DB, monitoring, Keycloak, OIDC, GitOps)
 #   full: All checks (default)
 
+DOMAIN="${DOMAIN:-local.narwhal.internal}"
+
 # Use local kubeconfig if available (bypasses VIP for reliability)
 if [ -f /home/vagrant/.kube/config-local ]; then
   export KUBECONFIG=/home/vagrant/.kube/config-local
@@ -312,12 +314,12 @@ if should_run "core"; then
   echo "--- [5/17] Core Services ---"
   check_ready "deployment" "kube-system" "coredns" "CoreDNS"
 
-  # CoreDNS forward rule for local.narwhal.internal
-  COREDNS_FWD=$(kubectl get configmap coredns -n kube-system -o yaml 2>/dev/null | grep -c "local.narwhal.internal" || true)
+  # CoreDNS forward rule for ${DOMAIN}
+  COREDNS_FWD=$(kubectl get configmap coredns -n kube-system -o yaml 2>/dev/null | grep -c "${DOMAIN}" || true)
   if [ "${COREDNS_FWD}" -gt 0 ]; then
-    pass "CoreDNS forward rule: local.narwhal.internal configured"
+    pass "CoreDNS forward rule: ${DOMAIN} configured"
   else
-    fail "CoreDNS forward rule: local.narwhal.internal MISSING"
+    fail "CoreDNS forward rule: ${DOMAIN} MISSING"
   fi
 
   check_ready "deployment" "kube-system" "metrics-server" "metrics-server"
@@ -529,20 +531,20 @@ if should_run "tls"; then
     fail "ClusterIssuer selfsigned: ${ISSUER_READY:-not found}"
   fi
 
-  # TLS Certificate for *.local.narwhal.internal
+  # TLS Certificate for *.${DOMAIN}
   CERT_READY=$(kubectl get certificate narwhal-wildcard-tls -n platform-system -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null || echo "")
   if [ "${CERT_READY}" = "True" ]; then
-    pass "TLS cert *.local.narwhal.internal: Ready"
+    pass "TLS cert *.${DOMAIN}: Ready"
   else
-    fail "TLS cert *.local.narwhal.internal: ${CERT_READY:-not found}"
+    fail "TLS cert *.${DOMAIN}: ${CERT_READY:-not found}"
   fi
 
   # Certificate covers wildcard domain
   CERT_DOMAINS=$(kubectl get certificate narwhal-wildcard-tls -n platform-system -o jsonpath='{.spec.dnsNames[*]}' 2>/dev/null || echo "")
-  if echo "${CERT_DOMAINS}" | grep -qF '*.local.narwhal.internal'; then
-    pass "TLS cert wildcard: *.local.narwhal.internal included"
+  if echo "${CERT_DOMAINS}" | grep -qF '*.${DOMAIN}'; then
+    pass "TLS cert wildcard: *.${DOMAIN} included"
   else
-    fail "TLS cert wildcard: *.local.narwhal.internal not found in [${CERT_DOMAINS}]"
+    fail "TLS cert wildcard: *.${DOMAIN} not found in [${CERT_DOMAINS}]"
   fi
 
   # CA cert distribution to namespaces that must trust the internal CA
@@ -580,23 +582,23 @@ if should_run "dns"; then
     fi
 
     # Host DNS resolution (local dnsmasq)
-    HOST_DNS=$(nslookup keycloak.local.narwhal.internal 127.0.0.1 2>/dev/null | grep -c "192.168.56.200" || true)
+    HOST_DNS=$(nslookup keycloak.${DOMAIN} 127.0.0.1 2>/dev/null | grep -c "192.168.56.200" || true)
     HOST_DNS=${HOST_DNS:-0}
     if [ "${HOST_DNS}" -gt 0 ]; then
-      pass "Host DNS: keycloak.local.narwhal.internal -> 192.168.56.200"
+      pass "Host DNS: keycloak.${DOMAIN} -> 192.168.56.200"
     else
-      fail "Host DNS: keycloak.local.narwhal.internal resolution failed"
+      fail "Host DNS: keycloak.${DOMAIN} resolution failed"
     fi
   else
     # Remote: check dnsmasq via master node DNS resolution
     MASTER_IP=$(kubectl get nodes -l node-role.kubernetes.io/control-plane -o jsonpath='{.items[0].status.addresses[?(@.type=="InternalIP")].address}' 2>/dev/null || echo "")
     if [ -n "${MASTER_IP}" ]; then
-      REMOTE_DNS=$(nslookup keycloak.local.narwhal.internal "${MASTER_IP}" 2>/dev/null | grep -c "192.168.56.200" || true)
+      REMOTE_DNS=$(nslookup keycloak.${DOMAIN} "${MASTER_IP}" 2>/dev/null | grep -c "192.168.56.200" || true)
       REMOTE_DNS=${REMOTE_DNS:-0}
       if [ "${REMOTE_DNS}" -gt 0 ]; then
         pass "dnsmasq: resolving via master ${MASTER_IP}"
       else
-        fail "dnsmasq: keycloak.local.narwhal.internal not resolving via ${MASTER_IP}"
+        fail "dnsmasq: keycloak.${DOMAIN} not resolving via ${MASTER_IP}"
       fi
     else
       warn "dnsmasq: cannot verify (run on master-1 for systemd checks)"
@@ -605,25 +607,25 @@ if should_run "dns"; then
 
   # Pod DNS (only if not quick mode)
   if ! ${QUICK_MODE}; then
-    POD_DNS=$(kubectl run verify-dns-$$ --rm -i --restart=Never --image=busybox:1.36 -- nslookup keycloak.local.narwhal.internal 2>/dev/null | grep -c "192.168.56.200" | tr -d '\n' || true)
+    POD_DNS=$(kubectl run verify-dns-$$ --rm -i --restart=Never --image=busybox:1.36 -- nslookup keycloak.${DOMAIN} 2>/dev/null | grep -c "192.168.56.200" | tr -d '\n' || true)
     POD_DNS=${POD_DNS:-0}
     if [ "${POD_DNS}" -gt 0 ]; then
-      pass "Pod DNS: keycloak.local.narwhal.internal -> 192.168.56.200"
+      pass "Pod DNS: keycloak.${DOMAIN} -> 192.168.56.200"
     else
-      fail "Pod DNS: keycloak.local.narwhal.internal resolution failed (CoreDNS forward rule?)"
+      fail "Pod DNS: keycloak.${DOMAIN} resolution failed (CoreDNS forward rule?)"
     fi
 
-    # Worker node DNS: schedule a Pod on a worker to verify *.local.narwhal.internal resolves
+    # Worker node DNS: schedule a Pod on a worker to verify *.${DOMAIN} resolves
     WORKER_NODE=$(kubectl get nodes -l '!node-role.kubernetes.io/control-plane' -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
     if [ -n "${WORKER_NODE}" ]; then
       WORKER_DNS=$(kubectl run verify-worker-dns-$$ --rm -i --restart=Never \
         --overrides='{"spec":{"nodeName":"'"${WORKER_NODE}"'"}}' \
-        --image=busybox:1.36 -- nslookup keycloak.local.narwhal.internal 2>/dev/null | grep -c "192.168.56.200" | tr -d '\n' || true)
+        --image=busybox:1.36 -- nslookup keycloak.${DOMAIN} 2>/dev/null | grep -c "192.168.56.200" | tr -d '\n' || true)
       WORKER_DNS=${WORKER_DNS:-0}
       if [ "${WORKER_DNS}" -gt 0 ]; then
-        pass "Worker DNS (${WORKER_NODE}): keycloak.local.narwhal.internal -> 192.168.56.200"
+        pass "Worker DNS (${WORKER_NODE}): keycloak.${DOMAIN} -> 192.168.56.200"
       else
-        fail "Worker DNS (${WORKER_NODE}): keycloak.local.narwhal.internal resolution failed"
+        fail "Worker DNS (${WORKER_NODE}): keycloak.${DOMAIN} resolution failed"
       fi
     else
       warn "Worker DNS: no worker node found, skipping"
@@ -649,7 +651,7 @@ if should_run "keycloak"; then
   fi
 
   # OIDC HTTPS endpoint
-  OIDC_CODE=$(curl -sk -o /dev/null -w '%{http_code}' https://keycloak.local.narwhal.internal/realms/narwhal/.well-known/openid-configuration 2>/dev/null || echo "000")
+  OIDC_CODE=$(curl -sk -o /dev/null -w '%{http_code}' https://keycloak.${DOMAIN}/realms/narwhal/.well-known/openid-configuration 2>/dev/null || echo "000")
   if [ "${OIDC_CODE}" = "200" ]; then
     pass "OIDC HTTPS endpoint: HTTP ${OIDC_CODE}"
   else
@@ -694,7 +696,7 @@ if should_run "keycloak"; then
     ADMIN_PASS=$(kubectl get secret keycloak-user-passwords -n iam -o jsonpath='{.data.admin}' 2>/dev/null | base64 -d || echo "")
     TOKEN_RESP=""
     if [ -n "${ADMIN_PASS}" ]; then
-      TOKEN_RESP=$(curl -sk -X POST "https://keycloak.local.narwhal.internal/realms/narwhal/protocol/openid-connect/token" \
+      TOKEN_RESP=$(curl -sk -X POST "https://keycloak.${DOMAIN}/realms/narwhal/protocol/openid-connect/token" \
         -d "grant_type=password" -d "client_id=kubernetes" -d "username=admin" \
         -d "password=${ADMIN_PASS}" -d "scope=openid groups" 2>/dev/null || echo "")
     fi
@@ -922,7 +924,7 @@ if should_run "gitops"; then
   fi
 
   # Gitea HTTP health check via HTTPS route (headless service, can't curl ClusterIP)
-  GITEA_CODE=$(curl -sk -o /dev/null -w '%{http_code}' "https://gitea.local.narwhal.internal/api/v1/version" --connect-timeout 5 2>/dev/null || echo "000")
+  GITEA_CODE=$(curl -sk -o /dev/null -w '%{http_code}' "https://gitea.${DOMAIN}/api/v1/version" --connect-timeout 5 2>/dev/null || echo "000")
   if [ "${GITEA_CODE}" = "200" ]; then
     pass "Gitea HTTP API: responsive (HTTPS ${GITEA_CODE})"
   else
@@ -930,7 +932,7 @@ if should_run "gitops"; then
   fi
 
   # Gitea narwhal-gitops repo
-  REPO_CODE=$(curl -sk -o /dev/null -w '%{http_code}' "https://gitea.local.narwhal.internal/api/v1/repos/gitea-admin/narwhal-gitops" --connect-timeout 5 2>/dev/null || echo "000")
+  REPO_CODE=$(curl -sk -o /dev/null -w '%{http_code}' "https://gitea.${DOMAIN}/api/v1/repos/gitea-admin/narwhal-gitops" --connect-timeout 5 2>/dev/null || echo "000")
   if [ "${REPO_CODE}" = "200" ]; then
     pass "Gitea narwhal-gitops repo: exists"
   else
@@ -1000,12 +1002,12 @@ if should_run "routes"; then
     echo ""
     echo "  --- HTTPS Connectivity ---"
     for host in argocd grafana gitea harbor keycloak headlamp openbao hubble prometheus; do
-      CODE=$(curl -sk -o /dev/null -w '%{http_code}' "https://${host}.local.narwhal.internal" 2>/dev/null || echo "000")
+      CODE=$(curl -sk -o /dev/null -w '%{http_code}' "https://${host}.${DOMAIN}" 2>/dev/null || echo "000")
       case "${CODE}" in
         200|301|302|303|307|308)
-          pass "https://${host}.local.narwhal.internal: HTTP ${CODE}" ;;
+          pass "https://${host}.${DOMAIN}: HTTP ${CODE}" ;;
         *)
-          fail "https://${host}.local.narwhal.internal: HTTP ${CODE}" ;;
+          fail "https://${host}.${DOMAIN}: HTTP ${CODE}" ;;
       esac
     done
   fi

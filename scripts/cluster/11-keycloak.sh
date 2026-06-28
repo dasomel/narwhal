@@ -91,7 +91,7 @@ kubectl rollout status deployment/keycloak-operator -n iam --timeout=180s
 #=========================================
 echo "=== Creating Keycloak CR ==="
 
-kubectl apply -f - <<'EOF'
+kubectl apply -f - <<EOF
 apiVersion: k8s.keycloak.org/v2alpha1
 kind: Keycloak
 metadata:
@@ -113,7 +113,7 @@ spec:
   http:
     httpEnabled: true
   hostname:
-    hostname: keycloak.local.narwhal.internal
+    hostname: keycloak.${DOMAIN}
     strict: false
   proxy:
     headers: xforwarded
@@ -230,7 +230,7 @@ EOF
 #=========================================
 echo "=== Applying Keycloak ApisixRoute ==="
 
-kubectl apply -f - <<'EOF'
+kubectl apply -f - <<EOF
 apiVersion: apisix.apache.org/v2
 kind: ApisixRoute
 metadata:
@@ -241,7 +241,7 @@ spec:
     - name: keycloak
       match:
         hosts:
-          - keycloak.local.narwhal.internal
+          - keycloak.${DOMAIN}
         paths:
           - "/*"
       backends:

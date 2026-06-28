@@ -134,13 +134,13 @@ else
     MASTER_DNS_LIST="${MASTER_DNS_LIST}${MASTER_IP_BASE}${idx} "
   done
   MASTER_DNS_LIST="${MASTER_DNS_LIST% }"  # trim trailing space
-  echo "=== Configuring CoreDNS to forward local.narwhal.internal to dnsmasq (${MASTER_DNS_LIST}) ==="
+  echo "=== Configuring CoreDNS to forward ${DOMAIN} to dnsmasq (${MASTER_DNS_LIST}) ==="
 
   COREDNS_CM=$(kubectl get configmap coredns -n kube-system -o json 2>/dev/null || echo "")
   if [ -n "${COREDNS_CM}" ]; then
     # Check if forward rule already exists
-    if echo "${COREDNS_CM}" | grep -q "local.narwhal.internal"; then
-      echo "CoreDNS forward rule for local.narwhal.internal already exists"
+    if echo "${COREDNS_CM}" | grep -q "${DOMAIN}"; then
+      echo "CoreDNS forward rule for ${DOMAIN} already exists"
     else
       # Add forward rule using kubectl patch
       COREFILE=$(echo "${COREDNS_CM}" | yq -r '.data.Corefile')

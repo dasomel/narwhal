@@ -39,16 +39,17 @@ else
   echo "containerd: config_path already set, skipping"
 fi
 
-# Create certs.d entry for harbor.local.narwhal.internal.
+# Create certs.d entry for harbor.${DOMAIN}.
 # Internal cluster registry behind APISIX — skip TLS verify (no node CA trust
-# needed; this is the verified pull path for harbor.local.narwhal.internal).
-HARBOR_CERTS_DIR="/etc/containerd/certs.d/harbor.local.narwhal.internal"
+# needed; this is the verified pull path for harbor.${DOMAIN}).
+DOMAIN="${DOMAIN:-local.narwhal.internal}"
+HARBOR_CERTS_DIR="/etc/containerd/certs.d/harbor.${DOMAIN}"
 sudo mkdir -p "${HARBOR_CERTS_DIR}"
 if [ ! -f "${HARBOR_CERTS_DIR}/hosts.toml" ]; then
-  sudo tee "${HARBOR_CERTS_DIR}/hosts.toml" > /dev/null <<'HTOML'
-server = "https://harbor.local.narwhal.internal"
+  sudo tee "${HARBOR_CERTS_DIR}/hosts.toml" > /dev/null <<HTOML
+server = "https://harbor.${DOMAIN}"
 
-[host."https://harbor.local.narwhal.internal"]
+[host."https://harbor.${DOMAIN}"]
   capabilities = ["pull", "resolve"]
   skip_verify = true
 HTOML

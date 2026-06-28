@@ -13,6 +13,17 @@ export KUBECONFIG=/home/vagrant/.kube/config-local
 export MASTER_COUNT="${MASTER_COUNT:-3}"
 export MASTER_IP_BASE="${MASTER_IP_BASE:-192.168.56.1}"
 
+# Source BASE_DOMAIN from cluster.env if DOMAIN is not already set (e.g. non-Vagrant run).
+CLUSTER_ENV="/home/vagrant/configs/cluster.env"
+if [[ -z "${DOMAIN:-}" && -f "${CLUSTER_ENV}" ]]; then
+  BASE_DOMAIN_LINE=$(grep -E '^\s*BASE_DOMAIN\s*=' "${CLUSTER_ENV}" | tail -1 || true)
+  if [[ -n "${BASE_DOMAIN_LINE}" ]]; then
+    export DOMAIN="${BASE_DOMAIN_LINE#*=}"
+    DOMAIN="${DOMAIN%% *}"  # strip trailing spaces/comments
+  fi
+fi
+export DOMAIN="${DOMAIN:-local.narwhal.internal}"
+
 # Wait for all nodes to be Ready
 echo "Waiting for all cluster nodes to be Ready..."
 kubectl wait --for=condition=Ready node --all --timeout=300s

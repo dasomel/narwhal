@@ -3,6 +3,7 @@ set -euo pipefail
 
 echo "=== Installing Security Apps (Kyverno, Headlamp) ==="
 
+DOMAIN="${DOMAIN:-local.narwhal.internal}"
 export KUBECONFIG=/home/vagrant/.kube/config-local
 
 #=========================================
@@ -71,11 +72,11 @@ for attempt in 1 2 3 4 5; do
   sleep 15
 done
 
-cat > /tmp/headlamp-values.yaml << 'EOF'
+cat > /tmp/headlamp-values.yaml << EOF
 config:
   oidc:
     clientID: apisix
-    issuerURL: https://authentik.local.narwhal.internal/application/o/apisix/
+    issuerURL: https://authentik.${DOMAIN}/application/o/apisix/
     scopes: openid,profile,email,groups
     # clientSecret loaded from headlamp-oidc-secret (created by 11-2-authentik-config.sh)
     secret:

@@ -11,6 +11,7 @@ CLUSTER_NAME="${CLUSTER_NAME:-narwhal}"
 MASTER_IP="${MASTER_IP:-192.168.56.10}"
 VIP_ADDRESS="${VIP_ADDRESS:-192.168.56.100}"
 API_SERVER="https://${VIP_ADDRESS}:6443"
+DOMAIN="${DOMAIN:-local.narwhal.internal}"
 
 # Auth method: "cert" (default) or "oidc"
 AUTH_METHOD="${1:-cert}"
@@ -67,7 +68,7 @@ case "${AUTH_METHOD}" in
 
     # OIDC Configuration
     # K8s 1.35+ requires HTTPS for OIDC issuer URL
-    OIDC_ISSUER_URL="${OIDC_ISSUER_URL:-https://keycloak.local.narwhal.internal/realms/kubernetes}"
+    OIDC_ISSUER_URL="${OIDC_ISSUER_URL:-https://keycloak.${DOMAIN}/realms/kubernetes}"
     OIDC_CLIENT_ID="${OIDC_CLIENT_ID:-kubernetes}"
     OIDC_USERNAME="${OIDC_USERNAME:-}"
     OIDC_PASSWORD="${OIDC_PASSWORD:-}"

@@ -10,7 +10,11 @@ spec:
   source:
     repoURL: http://gitea-http.devtools.svc.cluster.local:3000/gitea-admin/narwhal-gitops.git
     targetRevision: HEAD
-    path: apps
+    path: charts/narwhal-apps
+    helm:
+      valuesObject:
+        baseDomain: local.narwhal.internal
+        repoURL: http://gitea-http.devtools.svc.cluster.local:3000/gitea-admin/narwhal-gitops.git
   destination:
     server: https://kubernetes.default.svc
     namespace: devtools
@@ -20,3 +24,4 @@ spec:
       selfHeal: true
     syncOptions:
       - CreateNamespace=true
+      - ServerSideApply=true

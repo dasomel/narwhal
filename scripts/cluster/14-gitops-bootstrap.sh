@@ -1,6 +1,8 @@
 #!/bin/bash
 set -euo pipefail
 
+DOMAIN="${DOMAIN:-local.narwhal.internal}"
+
 echo "=== Bootstrapping GitOps ==="
 
 # Use local kubeconfig (bypasses VIP) to avoid disruption during master-2 join
@@ -85,34 +87,13 @@ cp -r /home/vagrant/configs/gitops/* . 2>/dev/null || true
 . /etc/os-release 2>/dev/null || true
 if [ "${VERSION_ID:-}" = "26.04" ]; then
   echo "Ubuntu ${VERSION_ID} detected — excluding falco (no kernel 7.0 support yet)"
-  rm -f apps/falco.yaml
+  rm -f charts/narwhal-apps/templates/falco.yaml
 fi
 
-# If configs weren't synced, create minimal structure
-if [ ! -d "apps" ]; then
-  mkdir -p apps resources
-
-  # Create app-of-apps
-  cat > apps/app-of-apps.yaml <<'APPOFAPPS'
-apiVersion: argoproj.io/v1alpha1
-kind: Application
-metadata:
-  name: idp-apps
-  namespace: devtools
-spec:
-  project: default
-  source:
-    repoURL: http://gitea-http.devtools.svc.cluster.local:3000/gitea-admin/narwhal-gitops.git
-    targetRevision: HEAD
-    path: apps
-  destination:
-    server: https://kubernetes.default.svc
-    namespace: devtools
-  syncPolicy:
-    automated:
-      prune: true
-      selfHeal: true
-APPOFAPPS
+# If configs weren't synced, warn (chart must be present for ArgoCD to sync)
+if [ ! -d "charts/narwhal-apps" ]; then
+  echo "WARN: charts/narwhal-apps not found in synced gitops — ArgoCD will fail to sync."
+  echo "      Ensure gitops/ is synced from the narwhal repo before bootstrapping."
 fi
 
 # Commit and push
@@ -162,9 +143,11 @@ spec:
   source:
     repoURL: http://gitea-http.devtools.svc.cluster.local:3000/${GITEA_ADMIN_USER}/${REPO_NAME}.git
     targetRevision: HEAD
-    path: apps
-    directory:
-      recurse: true
+    path: charts/narwhal-apps
+    helm:
+      valuesObject:
+        baseDomain: ${DOMAIN}
+        repoURL: http://gitea-http.devtools.svc.cluster.local:3000/${GITEA_ADMIN_USER}/${REPO_NAME}.git
   destination:
     server: https://kubernetes.default.svc
     namespace: devtools
@@ -174,6 +157,7 @@ spec:
       selfHeal: true
     syncOptions:
       - CreateNamespace=true
+      - ServerSideApply=true
 EOF
 
 echo "=== GitOps Bootstrap Done ==="

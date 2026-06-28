@@ -22,9 +22,10 @@ echo "============================================"
 
 export KUBECONFIG=/home/vagrant/.kube/config-local
 
+DOMAIN="${DOMAIN:-local.narwhal.internal}"
 NAMESPACE="devtools"
 DEPLOYMENT="narwhal-portal"
-HARBOR_HOST="harbor.local.narwhal.internal"
+HARBOR_HOST="harbor.${DOMAIN}"
 HARBOR_PROJECT="library"
 HARBOR_REPO="narwhal-portal"
 

@@ -109,10 +109,10 @@ fi
 
 # Create users with group assignments
 for row in \
-  "admin:${ADMIN_PASS}:${GROUP_IDS[cluster-admin]}:admin@local.narwhal.internal" \
-  "dev:${DEV_PASS}:${GROUP_IDS[developer]}:dev@local.narwhal.internal" \
-  "view:${VIEW_PASS}:${GROUP_IDS[viewer]}:view@local.narwhal.internal" \
-  "guest:${GUEST_PASS}:${GROUP_IDS[guest]}:guest@local.narwhal.internal"; do
+  "admin:${ADMIN_PASS}:${GROUP_IDS[cluster-admin]}:admin@${DOMAIN}" \
+  "dev:${DEV_PASS}:${GROUP_IDS[developer]}:dev@${DOMAIN}" \
+  "view:${VIEW_PASS}:${GROUP_IDS[viewer]}:view@${DOMAIN}" \
+  "guest:${GUEST_PASS}:${GROUP_IDS[guest]}:guest@${DOMAIN}"; do
 
   IFS=':' read -r username password group_pk email <<< "${row}"
 
@@ -275,7 +275,7 @@ echo "=========================================="
 echo "Authentik Configuration Summary"
 echo "=========================================="
 echo "Admin UI:    https://authentik.${DOMAIN}"
-echo "Admin email: admin@local.narwhal.internal"
+echo "Admin email: admin@${DOMAIN}"
 echo "Admin pass:  kubectl get secret authentik-bootstrap-secret -n iam -o jsonpath='{.data.bootstrap_password}' | base64 -d"
 echo ""
 echo "OIDC Issuers:"

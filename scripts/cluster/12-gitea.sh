@@ -4,6 +4,7 @@ set -euo pipefail
 source /home/vagrant/scripts/common/lib.sh
 
 GITEA_VERSION="${GITEA_VERSION:-v1.26.2}"
+DOMAIN="${DOMAIN:-local.narwhal.internal}"
 
 echo "=== Installing Gitea ${GITEA_VERSION} ==="
 
@@ -67,7 +68,7 @@ helm upgrade --install gitea gitea-charts/gitea \
   --set gitea.config.database.NAME=gitea \
   --set gitea.config.database.USER=gitea \
   --set gitea.config.database.PASSWD="${GITEA_DB_PASS}" \
-  --set gitea.config.server.ROOT_URL=https://gitea.local.narwhal.internal \
+  --set gitea.config.server.ROOT_URL=https://gitea.${DOMAIN} \
   --set gitea.config.oauth2_client.ENABLE_AUTO_REGISTRATION=true \
   --set gitea.config.oauth2_client.ACCOUNT_LINKING=auto \
   --set gitea.config.oauth2_client.UPDATE_AVATAR=true \

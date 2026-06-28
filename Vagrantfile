@@ -8,7 +8,7 @@ BASE_DOMAIN = begin
   env_file = File.join(__dir__, "configs", "cluster.env")
   if File.exist?(env_file)
     line = File.readlines(env_file).find { |l| l =~ /^\s*BASE_DOMAIN\s*=/ }
-    line ? line.split("=", 2).last.strip : "local.narwhal.internal"
+    line ? line.split("=", 2).last.strip.gsub(/#.*$/, "").strip : "local.narwhal.internal"
   else
     "local.narwhal.internal"
   end
@@ -125,17 +125,20 @@ Vagrant.configure("2") do |config|
           "VIP_ADDRESS" => VIP_ADDRESS,
           "WORKER_COUNT" => WORKER_COUNT,
           "WORKER_IP_BASE" => WORKER_IP_BASE,
-          "NODE_IP" => master_ip
+          "NODE_IP" => master_ip,
+          "DOMAIN" => BASE_DOMAIN
         }
-      master.vm.provision "shell", path: "scripts/common/02-containerd.sh"
+      master.vm.provision "shell", path: "scripts/common/02-containerd.sh",
+        env: { "DOMAIN" => BASE_DOMAIN }
       master.vm.provision "shell", path: "scripts/common/03-k8s-install.sh",
-        env: { "K8S_VERSION" => K8S_VERSION, "K8S_PATCH_VERSION" => K8S_PATCH_VERSION }
+        env: { "K8S_VERSION" => K8S_VERSION, "K8S_PATCH_VERSION" => K8S_PATCH_VERSION, "DOMAIN" => BASE_DOMAIN }
 
       # kube-vip (all masters — static pod manifest before kubeadm)
       master.vm.provision "shell", path: "scripts/cluster/00-kube-vip.sh",
         env: {
           "VIP_ADDRESS" => VIP_ADDRESS,
-          "NODE_INDEX" => i
+          "NODE_INDEX" => i,
+          "DOMAIN" => BASE_DOMAIN
         }
 
       if i == 1
@@ -145,7 +148,8 @@ Vagrant.configure("2") do |config|
         master.vm.provision "shell", path: "scripts/cluster/01-nfs-server.sh",
           env: {
             "NFS_SHARE_PATH" => NFS_SHARE_PATH,
-            "POD_NETWORK_CIDR" => POD_NETWORK_CIDR
+            "POD_NETWORK_CIDR" => POD_NETWORK_CIDR,
+            "DOMAIN" => BASE_DOMAIN
           }
         master.vm.provision "shell", path: "scripts/cluster/02-init-cluster.sh",
           env: {
@@ -153,19 +157,22 @@ Vagrant.configure("2") do |config|
             "MASTER_COUNT" => MASTER_COUNT,
             "MASTER_IP_BASE" => MASTER_IP_BASE,
             "POD_NETWORK_CIDR" => POD_NETWORK_CIDR,
-            "SERVICE_CIDR" => SERVICE_CIDR
+            "SERVICE_CIDR" => SERVICE_CIDR,
+            "DOMAIN" => BASE_DOMAIN
           }
         master.vm.provision "shell", path: "scripts/cluster/03-cni-install.sh",
-          env: { "MASTER_IP" => VIP_ADDRESS }
+          env: { "MASTER_IP" => VIP_ADDRESS, "DOMAIN" => BASE_DOMAIN }
         master.vm.provision "shell", path: "scripts/cluster/04-addons.sh",
           env: {
             "NFS_SERVER_IP" => NFS_SERVER_IP,
-            "NFS_SHARE_PATH" => NFS_SHARE_PATH
+            "NFS_SHARE_PATH" => NFS_SHARE_PATH,
+            "DOMAIN" => BASE_DOMAIN
           }
         master.vm.provision "shell", path: "scripts/cluster/05-nfs-quota-agent.sh",
           env: {
             "NFS_SHARE_PATH" => NFS_SHARE_PATH,
-            "MASTER_HOSTNAME" => "#{CLUSTER_NAME}-master-1"
+            "MASTER_HOSTNAME" => "#{CLUSTER_NAME}-master-1",
+            "DOMAIN" => BASE_DOMAIN
           }
 
         #=========================================
@@ -188,7 +195,8 @@ Vagrant.configure("2") do |config|
         master.vm.provision "shell", path: "scripts/cluster/02-join-control-plane.sh",
           env: {
             "MASTER1_IP" => "#{MASTER_IP_BASE}0",
-            "VIP_ADDRESS" => VIP_ADDRESS
+            "VIP_ADDRESS" => VIP_ADDRESS,
+            "DOMAIN" => BASE_DOMAIN
           }
 
         # Install dnsmasq for DNS HA (skip CoreDNS config — master-1 handles it in phase2)
@@ -236,15 +244,17 @@ Vagrant.configure("2") do |config|
           "VIP_ADDRESS" => VIP_ADDRESS,
           "WORKER_COUNT" => WORKER_COUNT,
           "WORKER_IP_BASE" => WORKER_IP_BASE,
-          "NODE_IP" => "#{WORKER_IP_BASE}#{i}"
+          "NODE_IP" => "#{WORKER_IP_BASE}#{i}",
+          "DOMAIN" => BASE_DOMAIN
         }
-      worker.vm.provision "shell", path: "scripts/common/02-containerd.sh"
+      worker.vm.provision "shell", path: "scripts/common/02-containerd.sh",
+        env: { "DOMAIN" => BASE_DOMAIN }
       worker.vm.provision "shell", path: "scripts/common/03-k8s-install.sh",
-        env: { "K8S_VERSION" => K8S_VERSION, "K8S_PATCH_VERSION" => K8S_PATCH_VERSION }
+        env: { "K8S_VERSION" => K8S_VERSION, "K8S_PATCH_VERSION" => K8S_PATCH_VERSION, "DOMAIN" => BASE_DOMAIN }
 
       # Worker provisioning (join via VIP)
       worker.vm.provision "shell", path: "scripts/cluster/02-join-worker.sh",
-        env: { "MASTER_IP" => "#{MASTER_IP_BASE}0" }
+        env: { "MASTER_IP" => "#{MASTER_IP_BASE}0", "DOMAIN" => BASE_DOMAIN }
 
       # Configure worker systemd-resolved to forward *.${BASE_DOMAIN} to master dnsmasq.
       # Without this, image pulls from harbor.${BASE_DOMAIN} fail ("tls: unrecognized name").

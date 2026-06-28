@@ -66,3 +66,27 @@ metadata:
 spec:
   mtls:
     mode: PERMISSIVE
+---
+# PeerAuthentication 4/4: Harbor — PERMISSIVE exception (workload-scoped).
+#
+# WHY: Harbor has INCONSISTENT mesh enrollment across its own components —
+# harbor-core / harbor-nginx / harbor-portal carry istio.io/dataplane-mode=none
+# (opted OUT, plain TCP), while harbor-redis / harbor-registry / harbor-jobservice
+# inherit the devtools=ambient namespace (mesh-enrolled). Under mesh-wide STRICT,
+# ztunnel rejected the opted-out harbor-core -> enrolled harbor-redis:6379 plain
+# connection ("policy rejection: istio_converted_static_strict"), so harbor-core
+# CrashLoopBackOff'd on "failed to initialize cache: redis ping EOF".
+# Scoping PERMISSIVE to the harbor workloads (selector app=harbor) lets the
+# enrolled harbor components accept plain TCP from the opted-out ones, while
+# the rest of devtools (gitea, argocd, headlamp) stays STRICT.
+apiVersion: security.istio.io/v1
+kind: PeerAuthentication
+metadata:
+  name: harbor-permissive
+  namespace: devtools
+spec:
+  selector:
+    matchLabels:
+      app: harbor
+  mtls:
+    mode: PERMISSIVE

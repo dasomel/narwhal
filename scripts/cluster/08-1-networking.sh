@@ -73,7 +73,7 @@ rm -rf /tmp/aic-chart
 # Deploy etcd (uses registry.k8s.io/etcd — no Bitnami)
 # etcd is also managed by apisix-infra GitOps resource; apply directly for bootstrap
 echo "Deploying etcd for APISIX..."
-kubectl apply -f /home/vagrant/configs/gitops/resources/apisix-infra.yaml || true
+helm template narwhal-platform /home/vagrant/configs/gitops/charts/narwhal-platform --set baseDomain="${DOMAIN}" --show-only templates/apisix-infra.yaml 2>/dev/null | kubectl apply -f - || true
 
 # Wait for etcd to be ready
 echo "Waiting for etcd..."
@@ -355,6 +355,6 @@ echo "cert-manager installed with CA issuer"
 # which later starved 08-6's CA distribution and left gitea/headlamp stuck on the missing
 # narwhal-ca-cert secret. This second apply creates the Certificate (etcd stays unchanged).
 echo "Re-applying apisix-infra to create cert-manager Certificates..."
-kubectl apply -f /home/vagrant/configs/gitops/resources/apisix-infra.yaml || true
+helm template narwhal-platform /home/vagrant/configs/gitops/charts/narwhal-platform --set baseDomain="${DOMAIN}" --show-only templates/apisix-infra.yaml 2>/dev/null | kubectl apply -f - || true
 
 echo "=== Networking Apps Installation Complete ==="

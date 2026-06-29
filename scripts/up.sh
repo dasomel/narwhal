@@ -124,11 +124,12 @@ while [ "${attempt}" -le "${MAX_ATTEMPTS}" ]; do
     echo "All ${EXPECTED_NODES} nodes Ready."
     vagrant ssh master-1 -c "kubectl get nodes" 2>/dev/null || true
 
-    # Phase 2 safety net: the Vagrantfile fires phase2-platform from a
-    # `worker-3 trigger.after :up`. If worker-3 was recovered via
-    # `vagrant provision` (not `up`), that trigger never fired — so ensure
-    # Phase 2 ran by checking for a namespace it creates. 06-phase2-start.sh
-    # and its sub-scripts are idempotent, so an extra run is safe.
+    # D7: up.sh is the single authoritative Phase 2 driver.
+    # The Vagrantfile worker-3 trigger.after :up that previously launched
+    # phase2-platform has been removed because it fired before all nodes were
+    # stably Ready, causing node flapping during 08-1's kubectl operations.
+    # We always run Phase 2 here — 06-phase2-start.sh and its sub-scripts are
+    # idempotent, so re-running after a partial trigger-driven attempt is safe.
 
     # Ensure master-1 SSH is healthy before attempting Phase 2. VMware's key-
     # replacement race can leave a k8s-Ready node with a broken SSH channel.
@@ -155,33 +156,29 @@ while [ "${attempt}" -le "${MAX_ATTEMPTS}" ]; do
       return 0
     }
 
-    if ! phase2_complete; then
-      echo "Phase 2 not fully complete — running phase2-platform provision"
-      phase2_rc=0
-      vagrant provision master-1 --provision-with phase2-platform || phase2_rc=$?
-      if [ "${phase2_rc}" -ne 0 ]; then
-        echo "Phase 2 provision failed (rc=${phase2_rc}) — attempting SSH recovery + one retry"
-        if ! recover_master1_ssh; then
-          echo "ERROR: master-1 SSH recovery failed; Phase 2 cannot be retried." >&2
-          exit 1
-        fi
-        retry_rc=0
-        vagrant provision master-1 --provision-with phase2-platform || retry_rc=$?
-        if [ "${retry_rc}" -ne 0 ]; then
-          echo "ERROR: Phase 2 provision failed on retry (rc=${retry_rc})." >&2
-          exit 1
-        fi
-      fi
-      # Verify completion after provision (handles mid-script DNS/transient abort)
-      if ! phase2_complete; then
-        echo "ERROR: Phase 2 did not complete after provision." >&2
-        echo "       Namespaces above were still missing — a critical script likely" >&2
-        echo "       failed mid-run (DNS/transient issues are the usual cause)." >&2
-        echo "       Re-run: vagrant provision master-1 --provision-with phase2-platform" >&2
+    echo "Running Phase 2 platform provision (up.sh is the sole driver)..."
+    phase2_rc=0
+    vagrant provision master-1 --provision-with phase2-platform || phase2_rc=$?
+    if [ "${phase2_rc}" -ne 0 ]; then
+      echo "Phase 2 provision failed (rc=${phase2_rc}) — attempting SSH recovery + one retry"
+      if ! recover_master1_ssh; then
+        echo "ERROR: master-1 SSH recovery failed; Phase 2 cannot be retried." >&2
         exit 1
       fi
-    else
-      echo "Phase 2 already fully applied (all key namespaces present)."
+      retry_rc=0
+      vagrant provision master-1 --provision-with phase2-platform || retry_rc=$?
+      if [ "${retry_rc}" -ne 0 ]; then
+        echo "ERROR: Phase 2 provision failed on retry (rc=${retry_rc})." >&2
+        exit 1
+      fi
+    fi
+    # Verify completion after provision (handles mid-script DNS/transient abort)
+    if ! phase2_complete; then
+      echo "ERROR: Phase 2 did not complete after provision." >&2
+      echo "       Namespaces above were still missing — a critical script likely" >&2
+      echo "       failed mid-run (DNS/transient issues are the usual cause)." >&2
+      echo "       Re-run: vagrant provision master-1 --provision-with phase2-platform" >&2
+      exit 1
     fi
     exit 0
   fi

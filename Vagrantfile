@@ -274,14 +274,15 @@ Vagrant.configure("2") do |config|
           "DOMAIN"    => BASE_DOMAIN
         }
 
-      # After last worker joins, trigger Phase 2 platform apps on master-1
-      if i == WORKER_COUNT
-        worker.trigger.after :up do |trigger|
-          trigger.name = "Phase 2: Platform Apps"
-          trigger.info = "All nodes joined cluster. Installing platform apps on master-1..."
-          trigger.run = {inline: "vagrant provision master-1 --provision-with phase2-platform"}
-        end
-      end
+      # D7: Phase 2 auto-trigger removed.
+      # Previously this fired `vagrant provision master-1 --provision-with phase2-platform`
+      # when worker-3's `vagrant up` completed, but worker join order and timing are not
+      # guaranteed under up.sh's per-VM resilient bring-up.  In a failed run the trigger
+      # fired while another worker had not yet stably joined, causing node flapping during
+      # Phase 2 and aborting 08-1's kubectl operations.
+      # up.sh is now the single authoritative Phase 2 driver: it polls until ALL
+      # EXPECTED_NODES are Ready, then runs phase2-platform exactly once.
+      # Do NOT re-add this trigger.
     end
   end
 end

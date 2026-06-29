@@ -156,31 +156,55 @@ while [ "${attempt}" -le "${MAX_ATTEMPTS}" ]; do
       return 0
     }
 
-    echo "Running Phase 2 platform provision (up.sh is the sole driver)..."
-    phase2_rc=0
-    vagrant provision master-1 --provision-with phase2-platform || phase2_rc=$?
-    if [ "${phase2_rc}" -ne 0 ]; then
-      echo "Phase 2 provision failed (rc=${phase2_rc}) — attempting SSH recovery + one retry"
-      if ! recover_master1_ssh; then
-        echo "ERROR: master-1 SSH recovery failed; Phase 2 cannot be retried." >&2
-        exit 1
+    # D11: Replace single-retry with a bounded retry loop to handle the VMware
+    # SSH key-replacement race that SIGHUPs the Phase 2 orchestrator mid-run.
+    # phase2-platform (06-phase2-start.sh and sub-scripts) is idempotent, so
+    # re-running after a partial failure safely resumes from where it stalled.
+    PHASE2_MAX_ATTEMPTS="${PHASE2_MAX_ATTEMPTS:-3}"
+    p2_attempt=1
+    while [ "${p2_attempt}" -le "${PHASE2_MAX_ATTEMPTS}" ]; do
+      echo "Running Phase 2 platform provision — attempt ${p2_attempt}/${PHASE2_MAX_ATTEMPTS} (up.sh is the sole driver)..."
+
+      # Ensure SSH is healthy before each attempt; SSH failure is non-fatal
+      # for the loop — recover and continue unless recovery itself gives up.
+      if ! master1_ssh_ok; then
+        echo "Phase 2 attempt ${p2_attempt}: master-1 SSH unreachable, attempting recovery..."
+        if ! recover_master1_ssh; then
+          echo "WARNING: master-1 SSH recovery failed on attempt ${p2_attempt}; continuing to next attempt." >&2
+          p2_attempt=$((p2_attempt + 1))
+          continue
+        fi
       fi
-      retry_rc=0
-      vagrant provision master-1 --provision-with phase2-platform || retry_rc=$?
-      if [ "${retry_rc}" -ne 0 ]; then
-        echo "ERROR: Phase 2 provision failed on retry (rc=${retry_rc})." >&2
-        exit 1
+
+      phase2_rc=0
+      vagrant provision master-1 --provision-with phase2-platform || phase2_rc=$?
+      if [ "${phase2_rc}" -ne 0 ]; then
+        echo "Phase 2 provision failed (rc=${phase2_rc}) on attempt ${p2_attempt}/${PHASE2_MAX_ATTEMPTS}."
       fi
-    fi
-    # Verify completion after provision (handles mid-script DNS/transient abort)
-    if ! phase2_complete; then
-      echo "ERROR: Phase 2 did not complete after provision." >&2
-      echo "       Namespaces above were still missing — a critical script likely" >&2
-      echo "       failed mid-run (DNS/transient issues are the usual cause)." >&2
-      echo "       Re-run: vagrant provision master-1 --provision-with phase2-platform" >&2
-      exit 1
-    fi
-    exit 0
+
+      # phase2_complete is the authoritative gate regardless of provision rc.
+      # A non-zero rc may reflect an SSH SIGHUP mid-run while sub-scripts
+      # continued; always check namespaces.
+      if phase2_complete; then
+        echo "Phase 2 complete (attempt ${p2_attempt})."
+        exit 0
+      fi
+
+      if [ "${p2_attempt}" -lt "${PHASE2_MAX_ATTEMPTS}" ]; then
+        echo "Phase 2 incomplete after attempt ${p2_attempt}/${PHASE2_MAX_ATTEMPTS} — recovering SSH and retrying..."
+        if ! master1_ssh_ok; then
+          recover_master1_ssh || true
+        fi
+      fi
+      p2_attempt=$((p2_attempt + 1))
+    done
+
+    # Exhausted all attempts
+    echo "ERROR: Phase 2 did not complete after ${PHASE2_MAX_ATTEMPTS} attempts." >&2
+    echo "       Namespaces above were still missing — a critical script likely" >&2
+    echo "       failed mid-run (DNS/transient issues are the usual cause)." >&2
+    echo "       Re-run: vagrant provision master-1 --provision-with phase2-platform" >&2
+    exit 1
   fi
 
   echo "  ${ready_count}/${EXPECTED_NODES} nodes Ready — settle ${SETTLE_DELAY}s, then retry"

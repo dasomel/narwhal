@@ -25,15 +25,16 @@ echo "=== Installing Metrics Server ${METRICS_SERVER_VERSION} ==="
 
 kubectl apply -f "https://github.com/kubernetes-sigs/metrics-server/releases/download/${METRICS_SERVER_VERSION}/components.yaml"
 
-# Patch for local environment (insecure TLS)
+# D10: Apply insecure-TLS + probe-loosening in a SINGLE patch so metrics-server rolls
+# out exactly ONE new ReplicaSet (two separate patches created two rollouts, leaving a
+# transient not-ready new pod that Phase-2 `kubectl wait ... pod -l k8s-app=metrics-server`
+# would catch and time out on — the recurring clean-install failure).
+# - insecure TLS: kubelet serving certs are self-signed in this local cluster.
+# - probes: default timeoutSeconds=1/failureThreshold=3 causes liveness flapping under
+#   load -> restarts -> metrics.k8s.io APIService MissingEndpoints -> kubectl top & portal
+#   show 0% CPU/mem. Give it more slack.
 kubectl patch deployment metrics-server -n kube-system --type='json' -p='[
-  {"op": "add", "path": "/spec/template/spec/containers/0/args/-", "value": "--kubelet-insecure-tls"}
-]'
-
-# Loosen metrics-server probes: default timeoutSeconds=1/failureThreshold=3 causes
-# liveness flapping under load -> pod restarts -> metrics.k8s.io APIService MissingEndpoints
-# -> kubectl top & portal show 0% CPU/mem. Give it more slack.
-kubectl patch deployment metrics-server -n kube-system --type='json' -p='[
+  {"op": "add",     "path": "/spec/template/spec/containers/0/args/-", "value": "--kubelet-insecure-tls"},
   {"op": "replace", "path": "/spec/template/spec/containers/0/livenessProbe/timeoutSeconds", "value": 5},
   {"op": "replace", "path": "/spec/template/spec/containers/0/livenessProbe/failureThreshold", "value": 5},
   {"op": "add",     "path": "/spec/template/spec/containers/0/livenessProbe/initialDelaySeconds", "value": 20},
@@ -42,6 +43,13 @@ kubectl patch deployment metrics-server -n kube-system --type='json' -p='[
   {"op": "replace", "path": "/spec/template/spec/containers/0/readinessProbe/failureThreshold", "value": 5},
   {"op": "replace", "path": "/spec/template/spec/containers/0/readinessProbe/periodSeconds", "value": 15}
 ]'
+
+# D10: Wait for the rollout to fully settle (old ReplicaSet gone, new pod Ready) before
+# Phase 1 completes, so downstream Phase-2 readiness waits never match a transient
+# terminating/starting metrics-server pod. Non-fatal: metrics-server is not a hard
+# dependency for the control plane, so a slow rollout shouldn't abort provisioning.
+kubectl rollout status deployment/metrics-server -n kube-system --timeout=180s \
+  || echo "WARN: metrics-server rollout not settled in 180s; continuing (non-critical addon)"
 
 #=========================================
 # CSI Driver NFS

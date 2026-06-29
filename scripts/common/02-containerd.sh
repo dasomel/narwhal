@@ -25,19 +25,41 @@ sudo sed -i 's/SystemdCgroup = false/SystemdCgroup = true/' /etc/containerd/conf
 # Update sandbox_image
 sudo sed -i 's|sandbox_image = ".*"|sandbox_image = "registry.k8s.io/pause:3.10"|' /etc/containerd/config.toml
 
-# Enable registry config_path so containerd reads per-registry certs.d entries.
-# This is required for Harbor (harbor.local.narwhal.internal) to use the narwhal CA without
-# global insecure_registries (which would bypass TLS entirely).
-if grep -q 'config_path\s*=\s*""' /etc/containerd/config.toml; then
-  sudo sed -i 's|config_path\s*=\s*""|config_path = "/etc/containerd/certs.d"|' /etc/containerd/config.toml
-  echo "containerd: config_path set to /etc/containerd/certs.d"
-elif ! grep -q 'config_path\s*=\s*"/etc/containerd/certs.d"' /etc/containerd/config.toml; then
-  # config_path line is absent or has a different value — add it under [plugins."io.containerd.grpc.v1.cri".registry]
-  sudo sed -i '/\[plugins\."io\.containerd\.grpc\.v1\.cri"\.registry\]/a\    config_path = "/etc/containerd/certs.d"' /etc/containerd/config.toml
-  echo "containerd: inserted config_path under registry section"
-else
-  echo "containerd: config_path already set, skipping"
-fi
+# D3: Enable registry config_path so containerd reads per-registry certs.d entries.
+# Required for harbor.${DOMAIN} (behind APISIX, private CA) without global insecure_registries.
+# Root cause: containerd 2.x (Ubuntu 26.04) uses plugin key 'io.containerd.cri.v1.images'
+# and emits config_path = '' (single-quoted), while 1.7 used "io.containerd.grpc.v1.cri"
+# with double-quoted empty string. The old grep/sed matched neither. Fix: use a Python
+# in-place rewrite that handles both quote styles and both plugin namespaces, and covers
+# ALL config_path='' occurrences (line 54 under cri.v1.images.registry and line 245
+# under grpc.v1.cri.registry in the 2.x default config).
+sudo python3 - /etc/containerd/config.toml <<'PYEOF'
+import re, sys
+path = sys.argv[1]
+text = open(path).read()
+# Replace any config_path = '' or config_path = "" (both quote styles, arbitrary whitespace)
+# Only target empty values; leave already-set paths alone.
+new_text = re.sub(
+    r'(config_path\s*=\s*)["\']["\']',
+    r'\1"/etc/containerd/certs.d"',
+    text
+)
+if new_text == text:
+    # config_path line absent entirely — insert under the registry sub-section header
+    # (matches both 1.7 grpc.v1.cri and 2.x cri.v1.images registry headers)
+    new_text = re.sub(
+        r'(\[plugins\.[\'"]io\.containerd\.(grpc\.v1\.cri|cri\.v1\.images)[\'"]\.registry\])',
+        r'\1\n    config_path = "/etc/containerd/certs.d"',
+        new_text
+    )
+    if new_text == text:
+        print("containerd: WARNING — could not locate registry section to set config_path", file=sys.stderr)
+        sys.exit(1)
+    print("containerd: inserted config_path under registry section")
+else:
+    print("containerd: config_path set to /etc/containerd/certs.d")
+open(path, 'w').write(new_text)
+PYEOF
 
 # Create certs.d entry for harbor.${DOMAIN}.
 # Internal cluster registry behind APISIX — skip TLS verify (no node CA trust

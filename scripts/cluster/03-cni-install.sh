@@ -52,6 +52,14 @@ case "${CNI_PLUGIN}" in
       --set cni.exclusive=false \
       --set socketLB.hostNamespaceOnly=true
 
+    # D6: Wait for cilium-operator Ready before declaring Phase-1 CNI done.
+    # The operator hitting Unauthorized on a slow apiserver SA-token issuance is the
+    # known root cause of the Phase-2 Cilium bring-up flake.  A confirmed-healthy
+    # operator here means Phase-2's cilium_health_gate will converge quickly.
+    echo "Waiting for cilium-operator Deployment to become Available..."
+    kubectl rollout status deployment/cilium-operator -n kube-system --timeout=120s \
+      || echo "WARN: cilium-operator rollout status timed out; Phase-2 gate will retry"
+
     # Wait for core Cilium components (not hubble - it needs worker nodes)
     cilium status --wait --wait-duration 120s || echo "WARN: cilium status timed out (hubble may need worker nodes)"
 

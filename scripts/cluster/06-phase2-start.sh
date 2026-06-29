@@ -34,6 +34,86 @@ kubectl get nodes
 echo ""
 
 #=========================================
+# D6: Cilium health-gate + self-healing recovery
+# Root cause: cilium-operator hits transient Unauthorized during bring-up (SA token
+# not yet issued) → "Failed to start hive" → containerd reserves container name →
+# operator stays in CreateContainerError even after apiserver stabilises.
+# Fix: poll for a healthy Cilium before handing off to Phase-2 scripts; if still
+# degraded after half the timeout, delete wedged/Unknown/CrashLoop pods so they
+# reschedule fresh, then re-poll. Exit 1 only if recovery doesn't converge.
+#=========================================
+cilium_health_gate() {
+  local max_wait=300   # seconds total
+  local interval=10
+  local deadline=$(( $(date +%s) + max_wait ))
+  local recovered=false
+
+  echo "=== Cilium health-gate: waiting for all cilium pods Ready (up to ${max_wait}s) ==="
+
+  while true; do
+    local now
+    now=$(date +%s)
+    local elapsed=$(( now - (deadline - max_wait) ))
+
+    # Count expected cilium agent pods (one per node)
+    local total_nodes
+    total_nodes=$(kubectl get nodes --no-headers 2>/dev/null | wc -l | tr -d ' ')
+
+    # Count Ready cilium agents
+    local ready_agents
+    ready_agents=$(kubectl get pods -n kube-system -l k8s-app=cilium \
+      --field-selector status.phase=Running --no-headers 2>/dev/null \
+      | awk '$2=="1/1"' | wc -l | tr -d ' ')
+
+    # Operator ready?
+    local op_ready
+    op_ready=$(kubectl get pods -n kube-system -l io.cilium/app=operator \
+      --no-headers 2>/dev/null | awk '$2=="1/1"' | wc -l | tr -d ' ')
+
+    echo "  [+${elapsed}s] cilium agents Ready: ${ready_agents}/${total_nodes}, operator Ready: ${op_ready}"
+
+    if [[ "${ready_agents}" -ge "${total_nodes}" && "${op_ready}" -ge 1 ]]; then
+      echo "  Cilium fully healthy."
+      return 0
+    fi
+
+    # Mid-point: trigger recovery by evicting wedged pods so they reschedule
+    if [[ "${now}" -ge "$(( deadline - max_wait/2 ))" && "${recovered}" == "false" ]]; then
+      echo "  WARN: Cilium still degraded at mid-point — purging Unknown/CrashLoop/CreateContainerError pods"
+      # Delete wedged cilium-operator pod
+      kubectl delete pods -n kube-system -l io.cilium/app=operator \
+        --field-selector 'status.phase!=Running' --ignore-not-found 2>/dev/null || true
+      # Also catch CreateContainerError (phase=Pending) operator pods
+      kubectl get pods -n kube-system -l io.cilium/app=operator --no-headers 2>/dev/null \
+        | grep -v '1/1' | awk '{print $1}' \
+        | xargs -r kubectl delete pod -n kube-system --ignore-not-found 2>/dev/null || true
+      # Delete Unknown and CrashLoopBackOff cilium agent pods
+      kubectl delete pods -n kube-system -l k8s-app=cilium \
+        --field-selector 'status.phase=Unknown' --ignore-not-found 2>/dev/null || true
+      kubectl get pods -n kube-system -l k8s-app=cilium --no-headers 2>/dev/null \
+        | grep -E 'Unknown|CrashLoopBackOff|CreateContainerError|Error' | awk '{print $1}' \
+        | xargs -r kubectl delete pod -n kube-system --ignore-not-found 2>/dev/null || true
+      # Delete stale not-ready cilium-envoy pods so they reschedule
+      kubectl get pods -n kube-system -l k8s-app=cilium-envoy --no-headers 2>/dev/null \
+        | grep -v '1/1' | awk '{print $1}' \
+        | xargs -r kubectl delete pod -n kube-system --ignore-not-found 2>/dev/null || true
+      recovered=true
+      echo "  Wedged pods purged — waiting for reschedule..."
+    fi
+
+    if [[ "${now}" -ge "${deadline}" ]]; then
+      echo "ERROR: Cilium did not become healthy within ${max_wait}s. Agents Ready: ${ready_agents}/${total_nodes}, Operator: ${op_ready}" >&2
+      echo "  Run: kubectl get pods -n kube-system | grep cilium" >&2
+      return 1
+    fi
+
+    sleep "${interval}"
+  done
+}
+
+cilium_health_gate
+
+#=========================================
 # Apply control-plane NoSchedule taint
 #=========================================
 # During Phase 1, taint was removed so DaemonSets could schedule on master-only cluster.

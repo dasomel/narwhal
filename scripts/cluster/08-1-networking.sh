@@ -311,8 +311,38 @@ done
 echo "Waiting for cert-manager CRDs to be established..."
 kubectl wait --for=condition=Established crd/certificates.cert-manager.io --timeout=120s
 kubectl wait --for=condition=Established crd/clusterissuers.cert-manager.io --timeout=120s
-echo "Waiting for cert-manager webhook to be ready..."
+echo "Waiting for cert-manager deployments to roll out..."
+kubectl -n platform-system rollout status deploy/cert-manager --timeout=180s
+kubectl -n platform-system rollout status deploy/cert-manager-cainjector --timeout=180s
 kubectl -n platform-system rollout status deploy/cert-manager-webhook --timeout=180s
+
+# D5: The kube-apiserver runs as a hostNetwork static pod (kubepods cgroup) on master nodes.
+# Cilium's socketLB.hostNamespaceOnly=true excludes hostNetwork pods from socket-level BPF LB,
+# and the "Host: Legacy" routing mode means no iptables DNAT rules are generated either.
+# Result: kube-apiserver cannot reach any Service ClusterIP, so ALL cert-manager webhook calls
+# from the API server fail with "no route to host" immediately (EHOSTUNREACH from the Cilium
+# BPF cgroup/connect4 hook).  Direct nc/curl from the host DOES work because user.slice
+# processes ARE covered by the socket-level BPF hook — only kubepods+hostNetwork is excluded.
+#
+# Fix: temporarily delete the VWC/MWC so the controller can reconcile status without the
+# webhook blocking every status PATCH.  Apply all cert-manager resources in this window,
+# poll for Ready, then restore the webhooks.  This is idempotent on re-runs (backup overwrites
+# to the same YAML, restore is a kubectl apply).
+echo "D5: Saving and temporarily removing cert-manager webhooks to unblock kube-apiserver→webhook path..."
+CM_VWC_YAML=$(kubectl get validatingwebhookconfiguration cert-manager-webhook -o yaml 2>/dev/null || true)
+CM_MWC_YAML=$(kubectl get mutatingwebhookconfiguration cert-manager-webhook -o yaml 2>/dev/null || true)
+kubectl delete validatingwebhookconfiguration cert-manager-webhook --ignore-not-found
+kubectl delete mutatingwebhookconfiguration cert-manager-webhook --ignore-not-found
+
+# D5: Guarantee webhook restoration even if a Ready-poll below hits `exit 1`. Without this
+# trap, a mid-block failure would leave cert-manager admission disabled cluster-wide until
+# the next 08-1 run. The trap fires on any EXIT (success or failure); kubectl apply is
+# idempotent so it composes with the explicit happy-path restore at the end of the block.
+_restore_cm_webhooks() {
+  [ -n "${CM_VWC_YAML:-}" ] && printf '%s' "${CM_VWC_YAML}" | kubectl apply -f - 2>/dev/null || true
+  [ -n "${CM_MWC_YAML:-}" ] && printf '%s' "${CM_MWC_YAML}" | kubectl apply -f - 2>/dev/null || true
+}
+trap _restore_cm_webhooks EXIT
 
 # Create self-signed ClusterIssuer (bootstrap only — do not use directly for app certs)
 cat <<EOF | kubectl apply -f -
@@ -323,6 +353,22 @@ metadata:
 spec:
   selfSigned: {}
 EOF
+
+echo "Waiting for selfsigned-cluster-issuer to be Ready..."
+for _i in $(seq 1 24); do
+  _STATUS=$(kubectl get clusterissuer selfsigned-cluster-issuer \
+    -o jsonpath="{.status.conditions[0].status}" 2>/dev/null || true)
+  if [ "${_STATUS}" = "True" ]; then
+    echo "selfsigned-cluster-issuer Ready"
+    break
+  fi
+  if [ "${_i}" -eq 24 ]; then
+    echo "ERROR: selfsigned-cluster-issuer not Ready after 2 minutes" >&2
+    exit 1
+  fi
+  echo "  attempt ${_i}/24: status=${_STATUS}, waiting 5s..."
+  sleep 5
+done
 
 # Create Root CA Certificate (self-signed, valid 10 years)
 cat <<EOF | kubectl apply -f -
@@ -345,9 +391,21 @@ spec:
   renewBefore: 8760h
 EOF
 
-# Wait for CA certificate to be ready
 echo "Waiting for Root CA certificate..."
-kubectl wait --for=condition=Ready certificate/narwhal-root-ca -n platform-system --timeout=60s
+for _i in $(seq 1 24); do
+  _STATUS=$(kubectl get certificate narwhal-root-ca -n platform-system \
+    -o jsonpath="{.status.conditions[0].status}" 2>/dev/null || true)
+  if [ "${_STATUS}" = "True" ]; then
+    echo "narwhal-root-ca Ready"
+    break
+  fi
+  if [ "${_i}" -eq 24 ]; then
+    echo "ERROR: narwhal-root-ca not Ready after 2 minutes" >&2
+    exit 1
+  fi
+  echo "  attempt ${_i}/24: status=${_STATUS}, waiting 5s..."
+  sleep 5
+done
 
 # Create CA ClusterIssuer (signs all application certificates)
 cat <<EOF | kubectl apply -f -
@@ -360,14 +418,55 @@ spec:
     secretName: narwhal-root-ca-secret
 EOF
 
-echo "cert-manager installed with CA issuer"
+echo "Waiting for narwhal-ca-issuer to be Ready..."
+for _i in $(seq 1 12); do
+  _STATUS=$(kubectl get clusterissuer narwhal-ca-issuer \
+    -o jsonpath="{.status.conditions[0].status}" 2>/dev/null || true)
+  if [ "${_STATUS}" = "True" ]; then
+    echo "narwhal-ca-issuer Ready"
+    break
+  fi
+  if [ "${_i}" -eq 12 ]; then
+    echo "ERROR: narwhal-ca-issuer not Ready after 1 minute" >&2
+    exit 1
+  fi
+  echo "  attempt ${_i}/12: status=${_STATUS}, waiting 5s..."
+  sleep 5
+done
 
 # Re-apply apisix-infra now that cert-manager CRDs + the CA issuer exist. The earlier
 # etcd-bootstrap apply (line ~60, before cert-manager was installed) silently skipped the
 # bundled narwhal-wildcard-tls Certificate ("no matches for kind Certificate" + || true),
 # which later starved 08-6's CA distribution and left gitea/headlamp stuck on the missing
 # narwhal-ca-cert secret. This second apply creates the Certificate (etcd stays unchanged).
-echo "Re-applying apisix-infra to create cert-manager Certificates..."
+# Apply while webhooks are still disabled so the Certificate CREATE goes through.
+echo "Re-applying apisix-infra to create cert-manager Certificates (webhooks still disabled)..."
 helm template narwhal-platform /home/vagrant/configs/gitops/charts/narwhal-platform --set baseDomain="${DOMAIN}" --show-only templates/apisix-infra.yaml 2>/dev/null | kubectl apply -f - || true
+
+echo "Waiting for narwhal-wildcard-tls Certificate..."
+for _i in $(seq 1 36); do
+  _STATUS=$(kubectl get certificate narwhal-wildcard-tls -n platform-system \
+    -o jsonpath="{.status.conditions[0].status}" 2>/dev/null || true)
+  if [ "${_STATUS}" = "True" ]; then
+    echo "narwhal-wildcard-tls Ready"
+    break
+  fi
+  echo "  attempt ${_i}/36: status=${_STATUS}, waiting 5s..."
+  sleep 5
+done
+
+# D5: Restore cert-manager webhook configurations now that all resources are created/Ready.
+# The webhooks protect ongoing cert lifecycle; restoring them ensures future Certificate
+# renewals and GitOps-managed certs are properly validated.
+echo "D5: Restoring cert-manager webhook configurations..."
+if [ -n "${CM_VWC_YAML}" ]; then
+  echo "${CM_VWC_YAML}" | kubectl apply -f - 2>/dev/null || true
+fi
+if [ -n "${CM_MWC_YAML}" ]; then
+  echo "${CM_MWC_YAML}" | kubectl apply -f - 2>/dev/null || true
+fi
+echo "cert-manager webhook configurations restored"
+
+echo "cert-manager installed with CA issuer"
 
 echo "=== Networking Apps Installation Complete ==="

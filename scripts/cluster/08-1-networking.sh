@@ -95,6 +95,11 @@ apisix:
     limits:
       cpu: 500m
       memory: 512Mi
+  # D2: chart v2.13.0 defaults apisix.ssl.enabled=false; without this the rendered
+  # config.yaml has no ssl block → 443/TLS never listens → Harbor push EOF, OIDC unreachable.
+  ssl:
+    enabled: true
+    containerPort: 9443
   # Kubernetes Secret Provider for OIDC credentials
   # Enables: $secret://kubernetes/k8s-1/apisix-oidc-config/<key>
   config:
@@ -173,6 +178,14 @@ rm /tmp/apisix-values.yaml
 echo "Patching APISIX gateway service to LoadBalancer..."
 kubectl patch svc apisix-gateway -n platform-system \
   -p '{"spec":{"type":"LoadBalancer"},"metadata":{"annotations":{"metallb.universe.tf/loadBalancerIPs":"192.168.56.200"}}}' || true
+# D2: chart v2.13.0 also fails to add the 443→9443 port even when gateway.tls.enabled=true;
+# add it idempotently via JSON merge patch (duplicate ports are rejected by the API server,
+# so the || true is only for the rare case the svc doesn't exist yet on a partial re-run).
+echo "Patching APISIX gateway service to add 443/TLS port (D2: chart v2.13.0 bug)..."
+kubectl get svc apisix-gateway -n platform-system -o jsonpath='{.spec.ports[*].port}' 2>/dev/null \
+  | grep -qw 443 || \
+  kubectl patch svc apisix-gateway -n platform-system --type=json \
+    -p '[{"op":"add","path":"/spec/ports/-","value":{"name":"apisix-gateway-tls","port":443,"protocol":"TCP","targetPort":9443}}]' || true
 
 # Patch APISIX configmap: fix etcd host and remove auth (chart v2.13.0 uses default etcd.host)
 echo "Patching APISIX configmap (etcd host + remove auth)..."

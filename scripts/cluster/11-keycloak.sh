@@ -34,32 +34,59 @@ CNPG_PRIMARY=$(kubectl get pod -n database \
   -l cnpg.io/cluster=narwhal-db,role=primary \
   -o jsonpath='{.items[0].metadata.name}')
 
+# D9: Single-source keycloak credential from narwhal-db-credentials (set by 07-cnpg.sh).
+# Root cause of the credential race: 11-keycloak used to generate its OWN password and
+# ALTER USER keycloak to match it — but 07-cnpg's ensure-databases step ALSO ALTERs the
+# keycloak role (idempotent block, line ~320). Whichever script ran last won; the other
+# script's secret became stale. Fix: 11-keycloak is NOT authoritative for the role password.
+# It reads narwhal-db-credentials/keycloak-password (written once by 07-cnpg) and keeps
+# keycloak-db-secret in sync with it. The DB role is always set by 07-cnpg.
+KEYCLOAK_DB_PASS="$(kubectl get secret narwhal-db-credentials -n database \
+  -o jsonpath='{.data.keycloak-password}' | base64 -d)"
+
+if [ -z "${KEYCLOAK_DB_PASS}" ]; then
+  echo "ERROR: narwhal-db-credentials/keycloak-password is empty. Ensure 07-cnpg.sh ran successfully." >&2
+  exit 1
+fi
+
+# Sync keycloak-db-secret to match the DB role password (idempotent: create or overwrite).
 if ! kubectl get secret keycloak-db-secret -n iam &>/dev/null; then
-  KEYCLOAK_DB_PASS="$(generate_password)"
-
-  # Create user and database (idempotent with IF NOT EXISTS)
-  kubectl exec -n database "${CNPG_PRIMARY}" -- psql -U postgres -c \
-    "DO \$\$ BEGIN
-      IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = 'keycloak') THEN
-        CREATE USER keycloak WITH PASSWORD '${KEYCLOAK_DB_PASS}';
-      ELSE
-        ALTER USER keycloak WITH PASSWORD '${KEYCLOAK_DB_PASS}';
-      END IF;
-    END \$\$;"
-
-  kubectl exec -n database "${CNPG_PRIMARY}" -- psql -U postgres -c \
-    "SELECT 'exists' FROM pg_database WHERE datname = 'keycloak'" | grep -q exists || \
-    kubectl exec -n database "${CNPG_PRIMARY}" -- psql -U postgres -c \
-      "CREATE DATABASE keycloak OWNER keycloak;"
-
   kubectl create secret generic keycloak-db-secret -n iam \
     --from-literal=username=keycloak \
     --from-literal=password="${KEYCLOAK_DB_PASS}"
   echo "keycloak-db-secret created in iam namespace"
 else
-  KEYCLOAK_DB_PASS="$(kubectl get secret keycloak-db-secret -n iam \
-    -o jsonpath='{.data.password}' | base64 -d)"
-  echo "keycloak-db-secret already exists, reusing"
+  # Overwrite password field unconditionally so it always matches the DB role.
+  KEYCLOAK_DB_PASS_B64="$(printf '%s' "${KEYCLOAK_DB_PASS}" | base64 -w0)"
+  kubectl patch secret keycloak-db-secret -n iam \
+    --type='json' \
+    -p="[{\"op\":\"replace\",\"path\":\"/data/password\",\"value\":\"${KEYCLOAK_DB_PASS_B64}\"}]" \
+    2>/dev/null || \
+  kubectl patch secret keycloak-db-secret -n iam \
+    --type='json' \
+    -p="[{\"op\":\"add\",\"path\":\"/data/password\",\"value\":\"${KEYCLOAK_DB_PASS_B64}\"}]"
+  echo "keycloak-db-secret synced to narwhal-db-credentials/keycloak-password"
+fi
+
+# D9: Auth gate — verify the secret password actually authenticates before deploying Keycloak.
+# This catches any residual mismatch (e.g. 07-cnpg re-ran and changed the role password again).
+echo "Verifying DB auth with synced credentials..."
+AUTH_OK=false
+for _attempt in $(seq 1 10); do
+  if kubectl exec -n database "${CNPG_PRIMARY}" -- \
+      env PGPASSWORD="${KEYCLOAK_DB_PASS}" \
+      psql -U keycloak -h narwhal-db-rw.database.svc.cluster.local -d keycloak \
+      -c "SELECT 1" &>/dev/null; then
+    AUTH_OK=true
+    echo "DB auth verified OK"
+    break
+  fi
+  echo "DB auth not ready yet (attempt ${_attempt}/10), retrying in 6s..."
+  sleep 6
+done
+if [ "${AUTH_OK}" != "true" ]; then
+  echo "ERROR: keycloak role cannot authenticate with the password from narwhal-db-credentials. Check 07-cnpg.sh logs." >&2
+  exit 1
 fi
 
 #=========================================

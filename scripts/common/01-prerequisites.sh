@@ -174,6 +174,35 @@ if [ -n "${CHRONY_SVC}" ]; then
   sudo systemctl restart "${CHRONY_SVC}" || true
   sudo timedatectl set-ntp true || true
   sudo chronyc -a makestep || true
+
+  # D-clock: gate kubelet on chrony sync so the clock is correct before static pods
+  # record their startTime. Without this, a post-boot makestep() produces ghost
+  # containers with zero timestamps → 0/1 <invalid> on all static pods after reboot.
+  # waitsync args: max_tries=30 max_offset=0.01s min_sources=1 max_disp=0 (any stratum)
+  sudo tee /etc/systemd/system/narwhal-clock-sync.service >/dev/null <<'UNIT'
+[Unit]
+Description=Wait for chrony clock sync before kubelet
+DefaultDependencies=no
+After=chrony.service
+Wants=chrony.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/bin/chronyc waitsync 30 0.01 1.0 0
+
+[Install]
+WantedBy=kubelet.service
+UNIT
+  sudo mkdir -p /etc/systemd/system/kubelet.service.d
+  sudo tee /etc/systemd/system/kubelet.service.d/10-after-chrony.conf >/dev/null <<'DROP'
+[Unit]
+After=narwhal-clock-sync.service
+Wants=narwhal-clock-sync.service
+DROP
+  sudo systemctl daemon-reload
+  sudo systemctl enable narwhal-clock-sync.service || true
+  echo "Clock-sync gate installed: narwhal-clock-sync.service blocks kubelet until synced"
 else
   echo "WARN: chrony service not found after install; clock sync left to the hypervisor"
 fi

@@ -95,10 +95,15 @@ if systemctl is-active --quiet systemd-resolved; then
   for idx in $(seq 0 $((MASTER_COUNT - 1))); do
     MASTER_DNS="${MASTER_DNS}${MASTER_IP_BASE}${idx} "
   done
+  # Primary DNS = master dnsmasq nodes only; public resolvers go to FallbackDNS.
+  # Cramming masters + 8.8.8.8 + 8.8.4.4 into DNS= exceeds the glibc 3-nameserver
+  # limit ("Nameserver limits were exceeded, some omitted") so the public ones
+  # were silently dropped from /etc/resolv.conf anyway. FallbackDNS is the correct
+  # place for them — systemd-resolved uses it when the primary servers fail.
   sudo tee /etc/systemd/resolved.conf.d/dns.conf << EOF
 [Resolve]
-DNS=${MASTER_DNS}8.8.8.8 8.8.4.4
-FallbackDNS=1.1.1.1
+DNS=${MASTER_DNS}
+FallbackDNS=8.8.8.8 8.8.4.4 1.1.1.1
 Domains=~${DOMAIN}
 EOF
   sudo systemctl restart systemd-resolved

@@ -1,7 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "Bash(grep -rn [가-힣] --include=*.md --include=*.sh --include=*.json .)"
-    ]
-  }
-}

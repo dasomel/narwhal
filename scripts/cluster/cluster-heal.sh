@@ -113,13 +113,17 @@ done
 # Convergence poll: wait up to 5 min for
 # non-running pods <= 3 (excl. scan-vulnerabilityreport)
 #=========================================
-log "=== Polling for convergence (<=3 non-running pods, up to 300s) ==="
+log "=== Polling for convergence (<=3 non-running pods, up to 450s) ==="
+# 45x10s: the pods cluster-heal kicks (Unknown ghosts, CrashLoops) can take
+# several minutes to finish restarting after they reschedule; 300s was
+# observed to expire ~1min before the cluster actually reached 0 non-running,
+# producing a misleading "manual investigation" warning. 450s covers it.
 CONVERGED=false
-for i in $(seq 1 30); do
+for i in $(seq 1 45); do
   NOT_RUNNING=$(kubectl get pods -A --no-headers 2>/dev/null \
     | grep -v "scan-vulnerabilityreport" \
     | awk '$4!="Running" && $4!="Completed" && $4!="Succeeded" { c++ } END { print c+0 }')
-  log "  attempt ${i}/30 — ${NOT_RUNNING} non-running pod(s)"
+  log "  attempt ${i}/45 — ${NOT_RUNNING} non-running pod(s)"
   if [[ "${NOT_RUNNING}" -le 3 ]]; then
     CONVERGED=true
     log "Cluster converged: ${NOT_RUNNING} non-running pods"
@@ -132,7 +136,7 @@ if [[ "${CONVERGED}" == "false" ]]; then
   FINAL=$(kubectl get pods -A --no-headers 2>/dev/null \
     | grep -v "scan-vulnerabilityreport" \
     | awk '$4!="Running" && $4!="Completed" && $4!="Succeeded" { c++ } END { print c+0 }')
-  log "Convergence not reached within 300s; final non-running count: ${FINAL}"
+  log "Convergence not reached within 450s; final non-running count: ${FINAL}"
   log "Manual investigation may be required"
 fi
 

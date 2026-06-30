@@ -33,8 +33,9 @@ echo "Waiting for PostgreSQL (narwhal-db) to be ready..."
 kubectl wait --for=condition=Ready cluster/narwhal-db -n database --timeout=300s || true
 kubectl wait --for=condition=Ready pod -l cnpg.io/poolerName=narwhal-db-pooler-rw -n database --timeout=120s || true
 
-# Authentik OIDC configuration
-AUTHENTIK_URL="${AUTHENTIK_URL:-https://authentik.${DOMAIN:-local.narwhal.internal}}"
+# D-authmig: Keycloak OIDC (Authentik removed)
+KEYCLOAK_URL="https://keycloak.${DOMAIN:-local.narwhal.internal}"
+KEYCLOAK_REALM="narwhal"
 
 # Gitea admin password — create Secret on first run, reuse on re-run
 if ! kubectl get secret gitea-admin -n devtools &>/dev/null; then
@@ -51,7 +52,7 @@ fi
 GITEA_DB_PASS=$(kubectl get secret narwhal-db-credentials -n database \
   -o jsonpath='{.data.gitea-password}' | base64 -d)
 
-# Install Gitea with Authentik OIDC
+# Install Gitea with Keycloak OIDC
 GITEA_CHART_VERSION="${GITEA_CHART_VERSION:-12.6.0}"
 
 helm upgrade --install gitea gitea-charts/gitea \
@@ -103,7 +104,7 @@ if kubectl get networkpolicy gitea-valkey -n devtools &>/dev/null; then
     -p='[{"op": "add", "path": "/spec/ingress/0/ports/-", "value": {"port": 15008, "protocol": "TCP"}}]' || true
 fi
 
-# Configure Authentik OAuth2 provider via API
+# Configure Keycloak OAuth2 provider via API
 echo "Configuring Gitea OAuth2 provider..."
 sleep 10
 
@@ -132,21 +133,34 @@ if [ -n "${GITEA_POD}" ]; then
         -d "${team_data}" 2>/dev/null || true
   done
 
-  # Configure OAuth2 source with group→team mapping
-  # apisix-oidc-config (platform-system ns) is created by 11-2-authentik-config.sh
-  APISIX_CLIENT_SECRET=$(kubectl get secret apisix-oidc-config -n platform-system \
-    -o jsonpath='{.data.client_secret}' | base64 -d)
-  kubectl exec -n devtools "${GITEA_POD}" -- gitea admin auth add-oauth \
-    --name "authentik" \
-    --provider "openidConnect" \
-    --key "apisix" \
-    --secret "${APISIX_CLIENT_SECRET}" \
-    --auto-discover-url "${AUTHENTIK_URL}/application/o/apisix/.well-known/openid-configuration" \
-    --group-claim-name "groups" \
-    --admin-group "cluster-admin" \
-    --restricted-group "guest" \
-    --group-team-map '{"developer":{"narwhal":["Developers"]},"viewer":{"narwhal":["Viewers"]}}' \
-    --skip-local-2fa || true
+  # D-authmig: Configure Keycloak OAuth2 source (replaced Authentik)
+  # gitea-oidc-secret created by 11-3-keycloak-clients.sh (keycloak client: gitea)
+  GITEA_CLIENT_SECRET=$(kubectl get secret gitea-oidc-secret -n devtools \
+    -o jsonpath='{.data.client-secret}' 2>/dev/null | base64 -d || echo "")
+
+  if [ -z "${GITEA_CLIENT_SECRET}" ]; then
+    echo "WARN: gitea-oidc-secret not found in devtools — run 11-3-keycloak-clients.sh first"
+  else
+    # Idempotent: remove existing source before re-adding
+    kubectl exec -n devtools "${GITEA_POD}" -- \
+      /app/gitea/gitea admin auth delete --name keycloak 2>/dev/null || true
+
+    kubectl exec -n devtools "${GITEA_POD}" -- \
+      /app/gitea/gitea admin auth add-oauth \
+        --name keycloak \
+        --provider openidConnect \
+        --key gitea \
+        --secret "${GITEA_CLIENT_SECRET}" \
+        --auto-discover-url "${KEYCLOAK_URL}/realms/${KEYCLOAK_REALM}/.well-known/openid-configuration" \
+        --group-claim-name groups \
+        --admin-group cluster-admin \
+        --restricted-group guest \
+        --group-team-map '{"developer":{"narwhal":["Developers"]},"viewer":{"narwhal":["Viewers"]}}' \
+        --skip-local-2fa \
+        --scopes "openid profile email groups" 2>/dev/null \
+      && echo "Gitea OAuth source 'keycloak' created" \
+      || echo "WARN: Gitea OAuth config failed"
+  fi
 else
   echo "WARN: Gitea pod not found, skipping OAuth2 configuration"
 fi

@@ -218,7 +218,6 @@ ${COREFILE}"
         ${APISIX_IP} grafana.${DOMAIN}
         ${APISIX_IP} gitea.${DOMAIN}
         ${APISIX_IP} harbor.${DOMAIN}
-        ${APISIX_IP} authentik.${DOMAIN}
         ${APISIX_IP} headlamp.${DOMAIN}
         ${APISIX_IP} openbao.${DOMAIN}
         ${APISIX_IP} apisix-dashboard.${DOMAIN}

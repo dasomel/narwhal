@@ -4,8 +4,8 @@ set -euo pipefail
 ARGOCD_VERSION="${ARGOCD_VERSION:-v3.4.3}"
 DOMAIN="${DOMAIN:-local.narwhal.internal}"
 
-# Authentik OIDC configuration
-AUTHENTIK_URL="${AUTHENTIK_URL:-https://authentik.${DOMAIN}}"
+# D-authmig: Keycloak OIDC (Authentik removed)
+KEYCLOAK_ISSUER="https://keycloak.${DOMAIN}/realms/narwhal"
 
 echo "=== Installing ArgoCD ${ARGOCD_VERSION} ==="
 
@@ -99,7 +99,8 @@ data:
   server.insecure: "true"
 EOF
 
-# Configure ArgoCD for Authentik OIDC
+# D-authmig: Configure ArgoCD for Keycloak OIDC
+# argocd-oidc-secret (devtools) created by 11-3-keycloak-clients.sh with keycloak client 'argocd'
 cat <<EOF | kubectl apply -f -
 apiVersion: v1
 kind: ConfigMap
@@ -112,15 +113,21 @@ metadata:
 data:
   url: https://argocd.${DOMAIN}
   server.insecure: "true"
+  oidc.tls.insecure.skip.verify: "true"
   oidc.config: |
-    name: Authentik
-    issuer: ${AUTHENTIK_URL}/application/o/apisix/
-    clientID: apisix
-    clientSecret: \$oidc.authentik.clientSecret
-    requestedScopes: ["openid", "profile", "email", "groups"]
+    name: Keycloak
+    issuer: ${KEYCLOAK_ISSUER}
+    clientID: argocd
+    clientSecret: \$oidc.keycloak.clientSecret
+    requestedScopes:
+      - openid
+      - profile
+      - email
+      - groups
+    insecureSkipVerify: true
 EOF
 
-# Configure RBAC for Authentik groups
+# Configure RBAC for Keycloak groups
 cat <<EOF | kubectl apply -f -
 apiVersion: v1
 kind: ConfigMap
@@ -144,13 +151,17 @@ data:
   scopes: '[groups]'
 EOF
 
-# Inject OIDC client secret into argocd-secret so ArgoCD can resolve $oidc.authentik.clientSecret
-# apisix-oidc-config (platform-system ns) is created by 11-2-authentik-config.sh
-ARGOCD_CLIENT_SECRET=$(kubectl get secret apisix-oidc-config -n platform-system \
-  -o jsonpath='{.data.client_secret}' | base64 -d)
-kubectl patch secret argocd-secret -n devtools --type=merge \
-  -p "{\"stringData\":{\"oidc.authentik.clientSecret\":\"${ARGOCD_CLIENT_SECRET}\"}}"
-echo "argocd-secret patched with oidc.authentik.clientSecret"
+# D-authmig: Inject Keycloak OIDC client secret into argocd-secret
+# argocd-oidc-secret (devtools) is created by 11-3-keycloak-clients.sh with client 'argocd'
+ARGOCD_CLIENT_SECRET=$(kubectl get secret argocd-oidc-secret -n devtools \
+  -o jsonpath='{.data.client-secret}' 2>/dev/null | base64 -d || echo "")
+if [ -n "${ARGOCD_CLIENT_SECRET}" ]; then
+  kubectl patch secret argocd-secret -n devtools --type=merge \
+    -p "{\"stringData\":{\"oidc.keycloak.clientSecret\":\"${ARGOCD_CLIENT_SECRET}\"}}"
+  echo "argocd-secret patched with oidc.keycloak.clientSecret"
+else
+  echo "WARN: argocd-oidc-secret not found in devtools — run 11-3-keycloak-clients.sh first"
+fi
 
 # Restart ArgoCD server to apply OIDC config
 kubectl rollout restart deployment argocd-server -n devtools
@@ -172,6 +183,6 @@ echo "  URL: https://localhost:8443"
 echo "  User: admin"
 echo "  Password: ${ARGOCD_PASSWORD}"
 echo ""
-echo "OIDC Login: Use Authentik credentials"
+echo "OIDC Login: Use Keycloak credentials (realm: narwhal)"
 echo ""
 kubectl get pods -n devtools

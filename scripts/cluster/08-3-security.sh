@@ -75,10 +75,11 @@ done
 cat > /tmp/headlamp-values.yaml << EOF
 config:
   oidc:
-    clientID: apisix
-    issuerURL: https://authentik.${DOMAIN}/application/o/apisix/
+    # D-authmig: Keycloak OIDC (migrated from Authentik)
+    clientID: headlamp
+    issuerURL: https://keycloak.${DOMAIN}/realms/narwhal
     scopes: openid,profile,email,groups
-    # clientSecret loaded from headlamp-oidc-secret (created by 11-2-authentik-config.sh)
+    # clientSecret loaded from headlamp-oidc-secret (created by 11-3-keycloak-clients.sh)
     secret:
       create: false
       name: headlamp-oidc-secret

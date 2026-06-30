@@ -234,9 +234,10 @@ When Plan mode is needed in Narwhal:
 | TLS/Routes | `scripts/cluster/08-6-tls-routes.sh` | CA cert distribution, APISIX routes |
 | Istio | `scripts/cluster/09-istio-ambient.sh` | Service Mesh (ambient mode) |
 | dnsmasq | `scripts/cluster/10-dnsmasq.sh` | Local DNS + CoreDNS forward |
-| Authentik | `scripts/cluster/11-authentik.sh` | Authentik SSO + PostgreSQL |
-| Authentik Config | `scripts/cluster/11-2-authentik-config.sh` | Flows, providers, applications, groups |
-| Authentik API Server | `scripts/cluster/11-4-authentik-apiserver.sh` | K8s OIDC config + RBAC |
+| Keycloak | `scripts/cluster/11-keycloak.sh` | Keycloak SSO + PostgreSQL |
+| Keycloak Config | `scripts/cluster/11-2-keycloak-config.sh` | Realm, users, groups, clients |
+| Keycloak Clients | `scripts/cluster/11-3-keycloak-clients.sh` | Per-service OIDC client setup |
+| Keycloak API Server | `scripts/cluster/11-4-keycloak-apiserver.sh` | K8s OIDC config + RBAC |
 | Gitea | `scripts/cluster/12-gitea.sh` | Git server |
 | ArgoCD | `scripts/cluster/13-argocd.sh` | GitOps CD |
 | Bootstrap | `scripts/cluster/14-gitops-bootstrap.sh` | App-of-Apps deployment |
@@ -272,7 +273,7 @@ When Plan mode is needed in Narwhal:
 | Velero UI | `gitops/apps/velero-ui.yaml` | Backup management UI |
 | Kyverno | `gitops/apps/kyverno.yaml` | Policy management |
 | **IAM/UI** | | |
-| Authentik | `gitops/apps/authentik.yaml` | SSO/OIDC (IAM) |
+| Keycloak | `gitops/apps/keycloak.yaml` | SSO/OIDC (IAM) — managed by Keycloak Operator |
 | Headlamp | `gitops/apps/headlamp.yaml` | K8s UI |
 | IDP Portal | `gitops/apps/idp-portal.yaml` | Developer portal |
 

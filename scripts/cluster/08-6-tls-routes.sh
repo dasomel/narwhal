@@ -51,7 +51,7 @@ if [ -n "${CA_CERT}" ]; then
   done
   echo "CA cert distributed to SSO namespaces"
 else
-  echo "WARN: narwhal-wildcard-tls CA cert not found, SSO apps may not verify Authentik TLS"
+  echo "WARN: narwhal-wildcard-tls CA cert not found, SSO apps may not verify Keycloak TLS"
 fi
 
 echo "=== TLS Routes and APISIX Routes Installation Complete ==="

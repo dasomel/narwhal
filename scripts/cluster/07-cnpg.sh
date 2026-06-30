@@ -79,22 +79,22 @@ echo "=== Creating Unified PostgreSQL HA Cluster (narwhal-db) ==="
 kubectl create namespace database --dry-run=client -o yaml | kubectl apply -f -
 
 # Create database credentials secrets (idempotent: reuse existing passwords)
+# D-authmig: narwhal-db-credentials bootstrap user changed from 'authentik' to 'narwhal'
+# (Authentik SSO removed; 'narwhal' is the neutral CNPG bootstrap owner)
 if ! kubectl get secret narwhal-db-credentials -n database &>/dev/null; then
-  AUTHENTIK_DB_PASS=$(generate_password)
+  NARWHAL_DB_PASS=$(generate_password)
   HARBOR_DB_PASS=$(generate_password)
   GITEA_DB_PASS=$(generate_password)
   KEYCLOAK_DB_PASS=$(generate_password)
   kubectl create secret generic narwhal-db-credentials \
-    --from-literal=username=authentik \
-    --from-literal=password="${AUTHENTIK_DB_PASS}" \
+    --from-literal=username=narwhal \
+    --from-literal=password="${NARWHAL_DB_PASS}" \
     --from-literal=harbor-password="${HARBOR_DB_PASS}" \
     --from-literal=gitea-password="${GITEA_DB_PASS}" \
     --from-literal=keycloak-password="${KEYCLOAK_DB_PASS}" \
     -n database
   echo "DB credentials secret created with generated passwords"
 else
-  AUTHENTIK_DB_PASS=$(kubectl get secret narwhal-db-credentials -n database \
-    -o jsonpath='{.data.password}' | base64 -d)
   HARBOR_DB_PASS=$(kubectl get secret narwhal-db-credentials -n database \
     -o jsonpath='{.data.harbor-password}' | base64 -d)
   GITEA_DB_PASS=$(kubectl get secret narwhal-db-credentials -n database \
@@ -147,8 +147,8 @@ spec:
 
   bootstrap:
     initdb:
-      database: authentik
-      owner: authentik
+      database: narwhal
+      owner: narwhal
       dataChecksums: true
       secret:
         name: narwhal-db-credentials
@@ -344,7 +344,7 @@ ENDSQL
   fi
 
   kubectl exec -n database "${PRIMARY_POD}" -- \
-    psql -U postgres -c "\l" 2>/dev/null | grep -E "harbor|gitea|keycloak|authentik" || true
+    psql -U postgres -c "\l" 2>/dev/null | grep -E "harbor|gitea|keycloak" || true
 fi
 
 #=========================================
@@ -414,21 +414,8 @@ EOF
 #=========================================
 echo "=== Creating cross-namespace service aliases ==="
 
+# D-authmig: authentik-db-rw ExternalName service removed (Authentik SSO removed)
 # ExternalName services so apps can use short names within their namespaces
-kubectl create namespace iam --dry-run=client -o yaml | kubectl apply -f -
-cat <<EOF | kubectl apply -f -
-apiVersion: v1
-kind: Service
-metadata:
-  name: authentik-db-rw
-  namespace: iam
-spec:
-  type: ExternalName
-  externalName: narwhal-db-rw.database.svc.cluster.local
-  ports:
-    - port: 5432
-EOF
-
 kubectl create namespace devtools --dry-run=client -o yaml | kubectl apply -f -
 cat <<EOF | kubectl apply -f -
 apiVersion: v1
@@ -466,7 +453,7 @@ echo "Instances: 2 (HA: 1 primary + 1 replica)"
 echo "PgBouncer: 1 pooler pod (transaction mode)"
 echo ""
 echo "Databases:"
-echo "  authentik - owner: authentik (password in secret: narwhal-db-credentials/password)"
+echo "  narwhal   - owner: narwhal   (bootstrap owner; password in secret: narwhal-db-credentials/password)"
 echo "  harbor    - owner: harbor    (password in secret: narwhal-db-credentials/harbor-password)"
 echo "  gitea     - owner: gitea     (password in secret: narwhal-db-credentials/gitea-password)"
 echo "  keycloak  - owner: keycloak  (password in secret: narwhal-db-credentials/keycloak-password)"
@@ -480,7 +467,6 @@ echo "  Host: narwhal-db-rw.database.svc.cluster.local"
 echo "  Port: 5432"
 echo ""
 echo "Cross-namespace aliases (ExternalName):"
-echo "  iam ns:      authentik-db-rw:5432 -> narwhal-db-rw.database.svc.cluster.local"
 echo "  devtools ns: harbor-db-rw:5432   -> narwhal-db-rw.database.svc.cluster.local"
 echo "  devtools ns: gitea-db-rw:5432    -> narwhal-db-rw.database.svc.cluster.local"
 echo ""

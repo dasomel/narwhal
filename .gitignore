@@ -45,7 +45,6 @@ PROMPT.md
 idp-portal/
 idp/
 csp/
-/.antigravitycli/aa21c37c-2d0b-4a2a-957d-f3bb6ff7e917.json
 /.bkit/audit/2026-04-08.jsonl
 /.bkit/audit/2026-04-09.jsonl
 /.bkit/audit/2026-04-13.jsonl
@@ -79,3 +78,6 @@ playwright-report/
 # graphify output (generated knowledge graph + cache) — do not commit
 /graphify-out/
 .claude/settings.local.json
+
+# Antigravity CLI (agy) local state — do not commit
+/.antigravitycli/

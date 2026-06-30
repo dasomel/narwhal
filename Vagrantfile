@@ -142,6 +142,7 @@ Vagrant.configure("2") do |config|
         env: { "DOMAIN" => BASE_DOMAIN }
       master.vm.provision "shell", path: "scripts/common/03-k8s-install.sh",
         env: { "K8S_VERSION" => K8S_VERSION, "K8S_PATCH_VERSION" => K8S_PATCH_VERSION, "DOMAIN" => BASE_DOMAIN }
+      master.vm.provision "shell", path: "scripts/common/06-boot-heal-install.sh"
 
       # kube-vip (all masters — static pod manifest before kubeadm)
       master.vm.provision "shell", path: "scripts/cluster/00-kube-vip.sh",
@@ -261,6 +262,7 @@ Vagrant.configure("2") do |config|
         env: { "DOMAIN" => BASE_DOMAIN }
       worker.vm.provision "shell", path: "scripts/common/03-k8s-install.sh",
         env: { "K8S_VERSION" => K8S_VERSION, "K8S_PATCH_VERSION" => K8S_PATCH_VERSION, "DOMAIN" => BASE_DOMAIN }
+      worker.vm.provision "shell", path: "scripts/common/06-boot-heal-install.sh"
 
       # Worker provisioning (join via VIP)
       worker.vm.provision "shell", path: "scripts/cluster/02-join-worker.sh",

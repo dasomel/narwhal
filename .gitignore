@@ -65,7 +65,6 @@ csp/
 /.claude/skills/narwhal-ops/_workspace/02_scout_obs.md
 /.claude/skills/narwhal-ops/_workspace/02_scout_sec.md
 /.claude/skills/narwhal-ops/_workspace/03_decision.md
-/.codegraph/.gitignore
 /_workspace/drift_helm.md
 
 # Test/build artifacts (dir.md 권장 — 2026-06-26)
@@ -81,3 +80,6 @@ playwright-report/
 
 # Antigravity CLI (agy) local state — do not commit
 /.antigravitycli/
+
+# codegraph local index — do not commit
+/.codegraph/

@@ -83,3 +83,7 @@ playwright-report/
 
 # codegraph local index — do not commit
 /.codegraph/
+
+# Claude Code local session cache — do not commit
+/.claude/cache/
+.env.local

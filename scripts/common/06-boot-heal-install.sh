@@ -46,6 +46,48 @@ systemctl enable narwhal-boot-heal.service
 echo "narwhal-boot-heal.service enabled"
 
 #=========================================
+# 1b. Install periodic timer layer (ADDITIONAL to the boot-time
+#     oneshot above, not a replacement): re-runs the same wedge
+#     check-and-heal logic every 2 minutes for the life of the node,
+#     so a wedge that appears mid-runtime (e.g. under Phase-2 host
+#     load, long after boot) gets self-healed without waiting for the
+#     next reboot. Detection in boot-heal.sh is conservative (see
+#     comments in that script) so this is a no-op on a healthy node.
+#=========================================
+echo "Installing narwhal-boot-heal.timer (periodic safety net)"
+
+cat > "${SYSTEMD_DIR}/narwhal-boot-heal-periodic.service" <<'EOF'
+[Unit]
+Description=Narwhal per-node periodic wedge healer (timer-triggered)
+Documentation=https://github.com/dasomel/narwhal
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/narwhal-boot-heal.sh --periodic
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=narwhal-boot-heal
+EOF
+
+cat > "${SYSTEMD_DIR}/narwhal-boot-heal.timer" <<'EOF'
+[Unit]
+Description=Periodically re-run the narwhal per-node wedge healer
+Documentation=https://github.com/dasomel/narwhal
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=2min
+Unit=narwhal-boot-heal-periodic.service
+
+[Install]
+WantedBy=timers.target
+EOF
+
+systemctl daemon-reload
+systemctl enable --now narwhal-boot-heal.timer
+echo "narwhal-boot-heal.timer enabled and started"
+
+#=========================================
 # 2. Install cluster-level heal on master-1 only
 #    Detection: hostname == narwhal-master-1
 #=========================================

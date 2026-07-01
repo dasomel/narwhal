@@ -175,13 +175,52 @@ if [ -n "${CHRONY_SVC}" ]; then
   sudo timedatectl set-ntp true || true
   sudo chronyc -a makestep || true
 
-  # D-clock: gate kubelet on chrony sync so the clock is correct before static pods
-  # record their startTime. Without this, a post-boot makestep() produces ghost
-  # containers with zero timestamps → 0/1 <invalid> on all static pods after reboot.
-  # waitsync args: max_tries=30 max_offset=0.01s min_sources=1 max_disp=0 (any stratum)
+  # D12: Ubuntu's default `makestep 1 3` only allows chrony to hard-step the clock
+  # during its first 3 corrections after startup; afterwards it falls back to slow
+  # slewing only. On a host under heavy CPU contention (many VMs/background jobs),
+  # the guest clock can drift again well into the node's uptime, and slew alone
+  # can't catch up (observed: chrony sources stuck ~400ms off an hour after boot),
+  # causing containerd/kubelet timestamp issues (0/1 <invalid>, CreateContainerError)
+  # long after the initial sync. The observed stuck offset (~400ms, persisting for
+  # over an hour) was UNDER Ubuntu's default 1-second makestep threshold, so it was
+  # never stepped at all — chrony was relying solely on its slow default slew rate
+  # (~83ppm), which takes roughly (offset / slew_rate) ≈ 400ms / 0.0000833 ≈ 80
+  # minutes to correct. `makestep 0.1 -1` steps immediately whenever the offset
+  # exceeds 100ms, for the life of the daemon, so drift converges in seconds.
+  CHRONY_CONF="/etc/chrony/chrony.conf"
+  if [ -f "${CHRONY_CONF}" ]; then
+    sudo sed -i -E 's/^makestep\s+[0-9.]+\s+[0-9-]+/makestep 0.1 -1/' "${CHRONY_CONF}"
+    grep -q "^makestep 0.1 -1" "${CHRONY_CONF}" || echo "makestep 0.1 -1" | sudo tee -a "${CHRONY_CONF}" >/dev/null
+    sudo systemctl restart "${CHRONY_SVC}" || true
+  fi
+
+  # D-clock/D12: gate kubelet (via ordering, not a hard block) on chrony sync so the
+  # clock is correct before static pods record their startTime. Without this, a
+  # post-boot makestep() produces ghost containers with zero timestamps → 0/1
+  # <invalid> on all static pods. Loosened from the original single-shot
+  # `chronyc waitsync 30 0.01 1.0 0` (10ms tolerance failed reliably under host
+  # load, and the unit's own hard failure only delayed the log, not kubelet, since
+  # the drop-in uses Wants= not Requires=): poll for up to 2 minutes with a
+  # relaxed 200ms tolerance, and — critically — ALWAYS exit 0 so the unit never
+  # reports "failed"; the ordering (After=) still delays kubelet while polling.
+  sudo tee /usr/local/bin/narwhal-clock-sync.sh >/dev/null <<'SCRIPT'
+#!/bin/bash
+# D12: best-effort clock-sync gate. Never fails — see 01-prerequisites.sh D12 note.
+for _ in $(seq 1 24); do
+  if chronyc waitsync 1 0.2 1.0 0 &>/dev/null; then
+    echo "narwhal-clock-sync: synced within 200ms"
+    exit 0
+  fi
+  sleep 5
+done
+echo "narwhal-clock-sync: WARN did not converge to 200ms within 2min, proceeding anyway"
+exit 0
+SCRIPT
+  sudo chmod 0755 /usr/local/bin/narwhal-clock-sync.sh
+
   sudo tee /etc/systemd/system/narwhal-clock-sync.service >/dev/null <<'UNIT'
 [Unit]
-Description=Wait for chrony clock sync before kubelet
+Description=Wait for chrony clock sync before kubelet (best-effort, never fails)
 DefaultDependencies=no
 After=chrony.service
 Wants=chrony.service
@@ -189,7 +228,7 @@ Wants=chrony.service
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-ExecStart=/usr/bin/chronyc waitsync 30 0.01 1.0 0
+ExecStart=/usr/local/bin/narwhal-clock-sync.sh
 
 [Install]
 WantedBy=kubelet.service

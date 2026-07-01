@@ -232,9 +232,29 @@ ExecStart=/usr/local/bin/narwhal-clock-sync.sh
 
 [Install]
 WantedBy=kubelet.service
+WantedBy=containerd.service
 UNIT
   sudo mkdir -p /etc/systemd/system/kubelet.service.d
   sudo tee /etc/systemd/system/kubelet.service.d/10-after-chrony.conf >/dev/null <<'DROP'
+[Unit]
+After=narwhal-clock-sync.service
+Wants=narwhal-clock-sync.service
+DROP
+  # D14: containerd must ALSO be gated on clock sync, not just kubelet. Root cause
+  # found live: on a cold VM boot the guest clock can start off by hours (observed
+  # a -9h correction); 02-containerd.sh (which installs+starts containerd) runs
+  # AFTER this script, so on a fresh install containerd itself is usually fine —
+  # but on every REBOOT, containerd.service starts from systemd's normal boot
+  # ordering, independent of this script, and can start creating/timestamping
+  # container objects BEFORE chrony corrects a large drift. When chrony later
+  # steps the clock backward, those already-created objects appear to have
+  # CreatedAt timestamps in the "future" relative to the corrected clock, which
+  # corrupts containerd's CRI store bookkeeping and produces the persistent
+  # "failed to reserve container name" wedge (kubelet retries collide with the
+  # stale future-timestamped reservation forever). Gate containerd the same way
+  # kubelet is gated, so it never timestamps anything before the clock is right.
+  sudo mkdir -p /etc/systemd/system/containerd.service.d
+  sudo tee /etc/systemd/system/containerd.service.d/10-after-chrony.conf >/dev/null <<'DROP'
 [Unit]
 After=narwhal-clock-sync.service
 Wants=narwhal-clock-sync.service

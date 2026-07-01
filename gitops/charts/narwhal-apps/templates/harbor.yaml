@@ -56,7 +56,11 @@ spec:
               tag: latest
         trivy:
           enabled: false
+        # Pin shared secrets so Helm upgrades never regenerate divergent values.
+        # A fresh install must supply these via 08-5-registry.sh before ArgoCD syncs harbor.
+        secretKey: "***REMOVED***"
         core:
+          secret: "***REMOVED***"
           image:
             repository: ghcr.io/dasomel/goharbor/harbor-core
             tag: latest
@@ -65,6 +69,7 @@ spec:
           # OIDC config is set via Harbor API by 11-3-keycloak-clients.sh (stored in Harbor DB)
           # CONFIG_OVERWRITE_JSON env var is NOT set — API-based config survives restarts via DB
         jobservice:
+          secret: "***REMOVED***"
           image:
             repository: ghcr.io/dasomel/goharbor/harbor-jobservice
             tag: latest

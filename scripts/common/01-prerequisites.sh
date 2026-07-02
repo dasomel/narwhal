@@ -169,12 +169,6 @@ for c in chrony chronyd; do
   fi
 done
 if [ -n "${CHRONY_SVC}" ]; then
-  echo "Enabling and starting ${CHRONY_SVC}..."
-  sudo systemctl enable "${CHRONY_SVC}" || true
-  sudo systemctl restart "${CHRONY_SVC}" || true
-  sudo timedatectl set-ntp true || true
-  sudo chronyc -a makestep || true
-
   # D12: Ubuntu's default `makestep 1 3` only allows chrony to hard-step the clock
   # during its first 3 corrections after startup; afterwards it falls back to slow
   # slewing only. On a host under heavy CPU contention (many VMs/background jobs),
@@ -187,12 +181,18 @@ if [ -n "${CHRONY_SVC}" ]; then
   # (~83ppm), which takes roughly (offset / slew_rate) ≈ 400ms / 0.0000833 ≈ 80
   # minutes to correct. `makestep 0.1 -1` steps immediately whenever the offset
   # exceeds 100ms, for the life of the daemon, so drift converges in seconds.
+  # Edited before the restart below so chronyd is only bounced once.
   CHRONY_CONF="/etc/chrony/chrony.conf"
   if [ -f "${CHRONY_CONF}" ]; then
     sudo sed -i -E 's/^makestep\s+[0-9.]+\s+[0-9-]+/makestep 0.1 -1/' "${CHRONY_CONF}"
     grep -q "^makestep 0.1 -1" "${CHRONY_CONF}" || echo "makestep 0.1 -1" | sudo tee -a "${CHRONY_CONF}" >/dev/null
-    sudo systemctl restart "${CHRONY_SVC}" || true
   fi
+
+  echo "Enabling and starting ${CHRONY_SVC}..."
+  sudo systemctl enable "${CHRONY_SVC}" || true
+  sudo systemctl restart "${CHRONY_SVC}" || true
+  sudo timedatectl set-ntp true || true
+  sudo chronyc -a makestep || true
 
   # D-clock/D12: gate kubelet (via ordering, not a hard block) on chrony sync so the
   # clock is correct before static pods record their startTime. Without this, a
@@ -234,12 +234,6 @@ ExecStart=/usr/local/bin/narwhal-clock-sync.sh
 WantedBy=kubelet.service
 WantedBy=containerd.service
 UNIT
-  sudo mkdir -p /etc/systemd/system/kubelet.service.d
-  sudo tee /etc/systemd/system/kubelet.service.d/10-after-chrony.conf >/dev/null <<'DROP'
-[Unit]
-After=narwhal-clock-sync.service
-Wants=narwhal-clock-sync.service
-DROP
   # D14: containerd must ALSO be gated on clock sync, not just kubelet. Root cause
   # found live: on a cold VM boot the guest clock can start off by hours (observed
   # a -9h correction); 02-containerd.sh (which installs+starts containerd) runs
@@ -251,14 +245,15 @@ DROP
   # CreatedAt timestamps in the "future" relative to the corrected clock, which
   # corrupts containerd's CRI store bookkeeping and produces the persistent
   # "failed to reserve container name" wedge (kubelet retries collide with the
-  # stale future-timestamped reservation forever). Gate containerd the same way
-  # kubelet is gated, so it never timestamps anything before the clock is right.
-  sudo mkdir -p /etc/systemd/system/containerd.service.d
-  sudo tee /etc/systemd/system/containerd.service.d/10-after-chrony.conf >/dev/null <<'DROP'
+  # stale future-timestamped reservation forever). Same drop-in for both services.
+  for svc in kubelet containerd; do
+    sudo mkdir -p "/etc/systemd/system/${svc}.service.d"
+    sudo tee "/etc/systemd/system/${svc}.service.d/10-after-chrony.conf" >/dev/null <<'DROP'
 [Unit]
 After=narwhal-clock-sync.service
 Wants=narwhal-clock-sync.service
 DROP
+  done
   sudo systemctl daemon-reload
   sudo systemctl enable narwhal-clock-sync.service || true
   echo "Clock-sync gate installed: narwhal-clock-sync.service blocks kubelet until synced"

@@ -35,7 +35,13 @@ log "Node $(hostname) is cluster-joined; starting boot-heal check"
 #=========================================
 if [[ "${MODE}" == "boot" ]]; then
   log "Ensuring clock sync before wedge checks..."
-  chronyc waitsync 10 0.1 1 0 2>/dev/null || true
+  # Reuse the shared best-effort sync gate (installed by 01-prerequisites.sh)
+  # instead of a second hand-rolled waitsync with different tolerances.
+  if [[ -x /usr/local/bin/narwhal-clock-sync.sh ]]; then
+    /usr/local/bin/narwhal-clock-sync.sh || true
+  else
+    chronyc waitsync 10 0.1 1 0 2>/dev/null || true
+  fi
 
   #=========================================
   # Allow containerd + kubelet to settle
@@ -70,7 +76,17 @@ fi
 #      ~10-15s). A healthy node never emits this message, so this signal
 #      has effectively zero false-positive risk.
 #=========================================
+readonly RESERVE_SIGNATURE="failed to reserve container name"
+
+# count_reserve_errors <window-seconds> — occurrences of the wedge signature
+# in the kubelet journal over the last N seconds.
+count_reserve_errors() {
+  journalctl -u kubelet --since "-${1} seconds" --no-pager 2>/dev/null \
+    | grep -c "${RESERVE_SIGNATURE}" || true
+}
+
 WEDGE=false
+RESERVE_WEDGE=false
 WEDGE_REASON=""
 
 if ! systemctl is-active --quiet kubelet; then
@@ -80,11 +96,11 @@ elif ! ctr --namespace k8s.io containers ls &>/dev/null; then
   WEDGE=true
   WEDGE_REASON="ctr containers ls failed — containerd may be wedged/unresponsive"
 else
-  RESERVE_ERRORS=$(journalctl -u kubelet --since "-90 seconds" --no-pager 2>/dev/null \
-    | grep -c "failed to reserve container name" || true)
+  RESERVE_ERRORS=$(count_reserve_errors 90)
   if [[ "${RESERVE_ERRORS}" -ge 2 ]]; then
     WEDGE=true
-    WEDGE_REASON="${RESERVE_ERRORS} repeated 'failed to reserve container name' errors in the last 90s — stale container-name-reservation wedge"
+    RESERVE_WEDGE=true
+    WEDGE_REASON="${RESERVE_ERRORS} repeated '${RESERVE_SIGNATURE}' errors in the last 90s — stale container-name-reservation wedge"
   fi
 fi
 
@@ -105,9 +121,10 @@ deep_recovery() {
     log "WARN: no specific reserved container IDs found in recent kubelet logs; skipping targeted cleanup"
     return
   fi
-  local id pid
+  local tasks id pid
+  tasks=$(ctr -n k8s.io tasks ls 2>/dev/null || true)
   for id in ${ids}; do
-    pid=$(ctr -n k8s.io tasks ls 2>/dev/null | awk -v i="${id}" '$1==i{print $2}')
+    pid=$(awk -v i="${id}" '$1==i{print $2}' <<<"${tasks}")
     if [[ -n "${pid}" ]]; then
       log "Killing task pid ${pid} for stuck container ${id}"
       kill -9 "${pid}" 2>/dev/null || true
@@ -130,11 +147,13 @@ if [[ "${WEDGE}" == "true" ]]; then
   log "Restarting kubelet..."
   systemctl restart kubelet || { log "WARN: kubelet restart failed; continuing"; }
 
-  if [[ "${WEDGE_REASON}" == *"reserve"* ]]; then
+  if [[ "${RESERVE_WEDGE}" == "true" ]]; then
+    # Fixed 30s window (not an early-exit poll): the wedge's retry cadence is
+    # ~10-15s, so a shorter quiet period can't distinguish "cleared" from
+    # "between retries" — 30s is the minimum sound window for the >=2 check.
     log "Waiting 30s to verify the reserve-name wedge cleared..."
     sleep 30
-    RECHECK=$(journalctl -u kubelet --since "-30 seconds" --no-pager 2>/dev/null \
-      | grep -c "failed to reserve container name" || true)
+    RECHECK=$(count_reserve_errors 30)
     if [[ "${RECHECK}" -ge 2 ]]; then
       log "Plain restart did not clear the wedge (${RECHECK} reserve errors still occurring in last 30s); escalating"
       deep_recovery

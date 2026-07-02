@@ -79,16 +79,30 @@ kind: KubeletConfiguration
 cgroupDriver: systemd
 EOF
 
-# Temporarily bind VIP to the interface so kubeadm can use it as controlPlaneEndpoint
-# kube-vip will take over VIP management after init
 VIP_INTERFACE=$(ip -o addr show | grep "192\.168\.56\." | awk '{print $2}' | head -1)
-if ! ip addr show "${VIP_INTERFACE}" | grep -q "${VIP_ADDRESS}"; then
-  echo "Adding VIP ${VIP_ADDRESS} to ${VIP_INTERFACE} for bootstrap..."
-  sudo ip addr add "${VIP_ADDRESS}/32" dev "${VIP_INTERFACE}"
-fi
 
-# Initialize cluster (skip kube-proxy for Cilium replacement, upload certs for HA)
-sudo kubeadm init --config=/tmp/kubeadm-config.yaml --skip-phases=addon/kube-proxy --upload-certs
+# D17: idempotency guard — up.sh's node-readiness loop can call `vagrant
+# provision master-1` again while Cilium/CNI is still converging (kubectl
+# reporting a node NotReady doesn't mean provisioning failed). `kubeadm init`
+# is not idempotent and hard-fails preflight ("Port 6443 is in use", "/etc/
+# kubernetes/manifests/*.yaml already exists", "/var/lib/etcd is not empty")
+# on an already-initialized node. Skip straight to regenerating the join
+# commands (safe/idempotent — new tokens, same cert-key) rather than the
+# init phase, since a fresh reprovision may legitimately want a refreshed
+# join-command.sh even though the cluster itself is already up.
+if [[ -f /etc/kubernetes/admin.conf ]]; then
+  echo "Cluster already initialized (admin.conf present) — skipping kubeadm init"
+else
+  # Temporarily bind VIP to the interface so kubeadm can use it as controlPlaneEndpoint
+  # kube-vip will take over VIP management after init
+  if ! ip addr show "${VIP_INTERFACE}" | grep -q "${VIP_ADDRESS}"; then
+    echo "Adding VIP ${VIP_ADDRESS} to ${VIP_INTERFACE} for bootstrap..."
+    sudo ip addr add "${VIP_ADDRESS}/32" dev "${VIP_INTERFACE}"
+  fi
+
+  # Initialize cluster (skip kube-proxy for Cilium replacement, upload certs for HA)
+  sudo kubeadm init --config=/tmp/kubeadm-config.yaml --skip-phases=addon/kube-proxy --upload-certs
+fi
 
 # Configure kubeconfig for vagrant user
 mkdir -p /home/vagrant/.kube

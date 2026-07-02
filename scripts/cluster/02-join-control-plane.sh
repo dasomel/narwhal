@@ -8,6 +8,18 @@ echo "=== Joining Control Plane ==="
 echo "Master-1 IP: ${MASTER1_IP}"
 echo "VIP Address: ${VIP_ADDRESS}"
 
+# D17: idempotency guard — see 02-join-worker.sh for the full rationale.
+# `kubeadm join --control-plane` is not idempotent and hard-fails
+# ("etcd data-dir not empty", ports in use, pki files already exist) on a
+# node that already joined, which up.sh's node-readiness loop can trigger
+# via a spurious `vagrant provision` while CNI is still converging.
+if [[ -f /etc/kubernetes/kubelet.conf ]]; then
+  echo "Node already joined (kubelet.conf present) — skipping kubeadm join"
+  echo "=== Control Plane Join Done (already joined) ==="
+  kubectl get nodes 2>/dev/null || true
+  exit 0
+fi
+
 MAX_RETRIES=60
 RETRY_INTERVAL=10
 

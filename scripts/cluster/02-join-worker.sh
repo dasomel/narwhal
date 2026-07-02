@@ -6,6 +6,19 @@ MASTER_IP="${MASTER_IP:-192.168.56.10}"
 echo "=== Joining Kubernetes Cluster ==="
 echo "Master IP: ${MASTER_IP}"
 
+# D17: idempotency guard — up.sh's node-readiness loop can call `vagrant
+# provision <vm>` on a worker that already joined (e.g. if a transient
+# SSH/kubectl hiccup makes k8s_ready_nodes momentarily report 0 nodes Ready,
+# even though CNI is simply still converging). `kubeadm join` is not
+# idempotent and hard-fails with "kubelet.conf already exists" on a node
+# that's already a member. Skip straight to done if evidence of a prior
+# successful join is already present.
+if [[ -f /etc/kubernetes/kubelet.conf ]]; then
+  echo "Node already joined (kubelet.conf present) — skipping kubeadm join"
+  echo "=== Cluster Join Done (already joined) ==="
+  exit 0
+fi
+
 MAX_RETRIES=30
 RETRY_INTERVAL=10
 

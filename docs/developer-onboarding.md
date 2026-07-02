@@ -10,6 +10,7 @@ Narwhal IDP 클러스터에서 개발자로 작업하기 위한 가이드입니�
 
 | 서비스 | URL | 용도 |
 |--------|-----|------|
+| **Narwhal Portal** | https://portal.local.narwhal.internal | 클러스터 관리 UI (대시보드, 온보딩, 설정) |
 | ArgoCD | https://argocd.local.narwhal.internal | GitOps 배포 관리 |
 | Gitea | https://gitea.local.narwhal.internal | Git 저장소 |
 | Harbor | https://harbor.local.narwhal.internal | 컨테이너 레지스트리 |
@@ -17,6 +18,9 @@ Narwhal IDP 클러스터에서 개발자로 작업하기 위한 가이드입니�
 | Headlamp | https://headlamp.local.narwhal.internal | Kubernetes UI |
 | Keycloak | https://keycloak.local.narwhal.internal | SSO 계정 관리 |
 | OpenBao | https://openbao.local.narwhal.internal | 시크릿 관리 |
+
+> Narwhal Portal은 별도 저장소(`narwhal-portal`)에서 빌드·배포되며, 다른 서비스와 달리 APISIX
+> openid-connect 플러그인이 아닌 자체 NextAuth.js로 Keycloak OIDC 연동을 처리합니다.
 
 ### DNS 설정 (로컬 머신)
 
@@ -46,7 +50,7 @@ sudo systemctl restart systemd-resolved
 
 **간편 대안 — /etc/hosts 직접 추가:**
 ```
-192.168.56.200 argocd.local.narwhal.internal gitea.local.narwhal.internal harbor.local.narwhal.internal
+192.168.56.200 portal.local.narwhal.internal argocd.local.narwhal.internal gitea.local.narwhal.internal harbor.local.narwhal.internal
 192.168.56.200 grafana.local.narwhal.internal headlamp.local.narwhal.internal keycloak.local.narwhal.internal
 192.168.56.200 openbao.local.narwhal.internal
 ```
@@ -347,7 +351,7 @@ kubectl get pods -n dev  # 재로그인 프롬프트 표시됨
 | 네임스페이스 | 컴포넌트 | 개발자 접근 |
 |-------------|---------|------------|
 | `dev` | 개발자 워크로드 | edit (Secrets 포함) |
-| `devtools` | ArgoCD, Gitea, Harbor, Headlamp | view |
+| `devtools` | ArgoCD, Gitea, Harbor, Headlamp, Narwhal Portal | view |
 | `monitoring` | Prometheus, Grafana, Loki, Tempo | view |
 | `platform-system` | MetalLB, APISIX, cert-manager | view |
 | `iam` | Keycloak | view |

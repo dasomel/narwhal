@@ -103,7 +103,7 @@ Components and versions used in this project.
 
 | Component | Version | Description |
 |-----------|---------|-------------|
-| Harbor | latest (chart 1.19.1, tracks v2.15.2) | Container registry (ARM64: ghcr.io/dasomel/goharbor — confirmed multi-arch (amd64+arm64) across all 8 components as of 2026-07-05) |
+| Harbor | latest (chart 1.19.1, actual app v2.15.0 per live `/api/v2.0/systeminfo`) | Container registry (ARM64: ghcr.io/dasomel/goharbor — confirmed multi-arch (amd64+arm64) across all 8 components as of 2026-07-05; `:latest` had NOT yet been rebuilt from the v2.15.2 source at verification time, only ARM64 support for the 2.15.x line landed) |
 
 ## IDP Portal
 
@@ -165,7 +165,15 @@ covers day-to-day inspection without a UI.
 Harbor bumped to chart 1.19.1 2026-07-05 — verified via `docker manifest inspect` that all 8
 `ghcr.io/dasomel/goharbor/*:latest` component images now carry both amd64 and arm64 manifests
 (the prior freeze reason, ARM64 images missing for the 2.15.x line, no longer applies). Image
-tags stay pinned to `:latest` as before (not version-tagged), now tracking Harbor v2.15.2.
+tags stay pinned to `:latest` as before (not version-tagged). **Correction (2026-07-06):** the
+running app version was assumed to be v2.15.2 (the source release that prompted this work) but
+was NOT independently verified at the time — live check via `/api/v2.0/systeminfo` on the
+deployed cluster shows `harbor_version: v2.15.0-f585d00b`. The `ghcr.io/dasomel/goharbor` custom
+build pipeline had only republished ARM64 manifests for the existing v2.15.0 build, not yet
+rebuilt from the v2.15.2 source — `docker manifest inspect` confirms multi-arch support but says
+nothing about which app version is behind the tag. Chart 1.19.1 is still the correct pin (matches
+the 2.15.x line generally); `:latest` will pick up v2.15.2 automatically once the custom registry
+rebuilds it, no further action needed here.
 
 Loki and Tempo chart source moved to grafana-community 2026-07-05 (both `grafana/loki` and
 `grafana/tempo` are past the GEL-only cutover date, per each chart's own README migration

@@ -109,7 +109,7 @@ vagrant destroy -f
 | Loki | 18.4.0 (grafana-community) | 3.7.3 | Log aggregation |
 | Grafana Alloy (k8s-monitoring) | 4.2.0 | v1.17.0 | Log collector (replaces Promtail, EOL 2026-03-02) |
 | Tempo | 2.2.3 (grafana-community) | 2.9.0 (image.tag pinned pending vParquet2 audit) | Distributed tracing |
-| Harbor | 1.19.1 | 2.15.2 | Container registry (ARM64, ghcr.io/dasomel/goharbor) |
+| Harbor | 1.19.1 | 2.15.0 (per live systeminfo; `:latest` not yet rebuilt from 2.15.2 source) | Container registry (ARM64, ghcr.io/dasomel/goharbor) |
 | OpenBao | 0.11.0 | v2.2.0 | Secret management |
 | Kyverno | 3.7.0 | v1.17.0 | Policy engine |
 | Headlamp | 0.40.0 | 0.40.0 | Kubernetes UI |

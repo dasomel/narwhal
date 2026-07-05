@@ -106,6 +106,7 @@ When Plan mode is needed in Narwhal:
 ### GitOps/ArgoCD Mistakes
 | Date | Mistake | Fix |
 |------|---------|-----|
+| 2026-07-05 | `scripts/gitops/push-to-gitea.sh` uses `cp -r` (mirror or per-path) into a fresh Gitea clone — this only adds/overwrites files, it never deletes a file that no longer exists in the local `gitops/` tree. Renaming/removing a gitops Application file (e.g. `promtail.yaml` -> `k8s-monitoring.yaml` for the Alloy migration) and running the script as-is would leave the stale old file committed in Gitea alongside the new one -> two conflicting ArgoCD Applications | For a rename/delete, do the Gitea clone/push manually with an explicit `git rm` instead of relying on the script's plain `cp -r` |
 | - | values file path typo | `valueFiles` paths are relative to repoURL |
 | - | targetRevision format error | Chart version is `"1.0.0"` (string), Git ref is `HEAD` |
 | 2026-02-14 | app-of-apps repoURL uses `https://` -> Gitea is HTTP only | Use `http://gitea-http.gitea.svc.cluster.local:3000/...` |
@@ -230,7 +231,7 @@ When Plan mode is needed in Narwhal:
 | Phase 2 Wrapper | `scripts/cluster/06-phase2-start.sh` | Runs Phase 2 scripts |
 | PostgreSQL | `scripts/cluster/07-cnpg.sh` | CloudNative-PG Operator |
 | Networking | `scripts/cluster/08-1-networking.sh` | MetalLB, APISIX, cert-manager |
-| Monitoring | `scripts/cluster/08-2-monitoring.sh` | Prometheus, Loki, Promtail, Tempo |
+| Monitoring | `scripts/cluster/08-2-monitoring.sh` | Prometheus, Loki, Grafana Alloy, Tempo |
 | Security | `scripts/cluster/08-3-security.sh` | Kyverno, Headlamp, OAuth2-Proxy |
 | Storage | `scripts/cluster/08-4-storage.sh` | SeaweedFS, OpenBao, Velero |
 | Registry | `scripts/cluster/08-5-registry.sh` | Harbor |
@@ -266,7 +267,7 @@ When Plan mode is needed in Narwhal:
 | **Monitoring** | | |
 | Prometheus | `gitops/apps/prometheus-stack.yaml` | Monitoring + Grafana |
 | Loki | `gitops/apps/loki.yaml` | Log collection |
-| Promtail | `gitops/apps/promtail.yaml` | Log shipping |
+| Grafana Alloy | `gitops/charts/narwhal-apps/templates/k8s-monitoring.yaml` | Log shipping (replaces Promtail, EOL 2026-03-02) |
 | Tempo | `gitops/apps/tempo.yaml` | Distributed tracing |
 | **Storage/Security** | | |
 | Harbor | `gitops/apps/harbor.yaml` | Container registry |

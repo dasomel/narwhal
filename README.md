@@ -107,7 +107,7 @@ vagrant destroy -f
 |-----------|---------------|-------------|-------------|
 | Prometheus Stack | 81.5.1 | v0.88.1 | Monitoring (Prometheus + Grafana + Alertmanager) |
 | Loki | 6.52.0 | 3.6.4 | Log aggregation |
-| Promtail | 6.17.1 | 3.5.1 | Log collector |
+| Grafana Alloy (k8s-monitoring) | 4.2.0 | v1.17.0 | Log collector (replaces Promtail, EOL 2026-03-02) |
 | Tempo | 1.24.4 | 2.9.0 | Distributed tracing |
 | Harbor | 1.18.2 | 2.14.2 | Container registry (ARM64) |
 | OpenBao | 0.11.0 | v2.2.0 | Secret management |
@@ -233,7 +233,7 @@ gitops/
 │   ├── apisix-routes.yaml
 │   ├── openbao.yaml
 │   ├── kyverno.yaml
-│   ├── promtail.yaml
+│   ├── k8s-monitoring.yaml
 │   ├── seaweedfs.yaml
 │   ├── velero.yaml
 │   ├── istio-base.yaml

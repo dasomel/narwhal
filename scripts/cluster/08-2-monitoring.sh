@@ -2,7 +2,7 @@
 set -euo pipefail
 source /home/vagrant/scripts/common/lib.sh
 
-echo "=== Installing Monitoring Apps (Prometheus, Loki, Promtail, Tempo) ==="
+echo "=== Installing Monitoring Apps (Prometheus, Loki, Alloy, Tempo) ==="
 
 export KUBECONFIG=/home/vagrant/.kube/config-local
 
@@ -143,24 +143,44 @@ rm /tmp/loki-values.yaml
 echo "Loki installed"
 
 #=========================================
-# Promtail (Log Collector)
+# Grafana Alloy via k8s-monitoring (Log Collector)
+# Replaces Promtail (EOL 2026-03-02, no functional fixes upstream since).
+# k8s-monitoring is a meta-chart that deploys alloy-operator + an Alloy
+# DaemonSet scoped to pod-log collection only (podLogsViaLoki) — every
+# other feature (clusterMetrics, hostMetrics, clusterEvents, kube-state-
+# metrics, node-exporter) defaults to false, so this does not duplicate
+# anything already provided by the prometheus-stack installed above.
 #=========================================
-echo "=== Installing Promtail ==="
+echo "=== Installing Grafana Alloy (k8s-monitoring) ==="
+cat <<'K8SMONVALUES' > /tmp/k8s-monitoring-values.yaml
+cluster:
+  name: "narwhal"
+destinations:
+  loki:
+    type: loki
+    url: http://loki:3100/loki/api/v1/push
+collectors:
+  alloy-logs:
+    presets: [small, daemonset, filesystem-log-reader]
+podLogsViaLoki:
+  enabled: true
+  collector: alloy-logs
+  destinations: []
+K8SMONVALUES
+
 for attempt in 1 2 3 4 5; do
-  if helm upgrade --install promtail grafana/promtail \
+  if helm upgrade --install k8s-monitoring grafana/k8s-monitoring \
     --namespace monitoring \
-    --version 6.17.1 \
-    --set config.clients[0].url=http://loki:3100/loki/api/v1/push \
-    --set tolerations[0].key=node-role.kubernetes.io/control-plane \
-    --set tolerations[0].operator=Exists \
-    --set tolerations[0].effect=NoSchedule; then
+    --version 4.2.0 \
+    -f /tmp/k8s-monitoring-values.yaml; then
     break
   fi
-  echo "Promtail install attempt ${attempt}/5 failed, waiting 15s..."
+  echo "k8s-monitoring install attempt ${attempt}/5 failed, waiting 15s..."
   sleep 15
 done
 
-echo "Promtail installed"
+rm /tmp/k8s-monitoring-values.yaml
+echo "Grafana Alloy (k8s-monitoring) installed"
 
 #=========================================
 # Tempo (Distributed Tracing)

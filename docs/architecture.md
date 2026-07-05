@@ -131,7 +131,7 @@ Narwhal은 Vagrant VM 기반의 Kubernetes Internal Developer Platform (IDP) 클
 ├──────────────────────────────────────────────────────────────┤
 │                   Observability Layer                        │
 │  ┌────────────┐  ┌────────┐  ┌──────────┐  ┌────────────┐    │
-│  │ Prometheus │  │  Loki  │  │  Tempo   │  │  Promtail  │    │
+│  │ Prometheus │  │  Loki  │  │  Tempo   │  │   Alloy    │    │
 │  │ + Grafana  │  │  Logs  │  │  Traces  │  │  Collector │    │
 │  └────────────┘  └────────┘  └──────────┘  └────────────┘    │
 ├──────────────────────────────────────────────────────────────┤
@@ -347,7 +347,7 @@ kubectl logs -n platform-system -l app.kubernetes.io/name=apisix --tail=20
 │    └─────▲─────┘  └────▲────┘  └─────────────┘         │
 │          │             │                               │
 │    ┌─────┴─────┐  ┌────┴────┐                          │
-│    │node-export│  │Promtail │  (DaemonSet)             │
+│    │node-export│  │ Alloy   │  (DaemonSet)             │
 │    │kube-state │  │         │                          │
 │    │  metrics  │  │ All     │                          │
 │    │  kubelet  │  │ Nodes   │                          │
@@ -388,7 +388,7 @@ AlertmanagerConfig로 severity별 라우팅:
 │    ┌──────────┬────────┼────────┬──────────┬───────┐     │
 │    ▼          ▼        ▼        ▼          ▼       ▼     │
 │  cert-mgr  prometheus loki   apisix    harbor  velero    │
-│  kyverno   promtail   tempo  metallb   openbao headlamp  │
+│  kyverno   alloy      tempo  metallb   openbao headlamp  │
 │  seaweedfs istio-base  istiod                            │
 │  istio-cni ztunnel                                       │
 │                                                          │
@@ -486,7 +486,7 @@ make validate  # Vagrantfile + yq 검증
 ```
 07-cnpg.sh                → CloudNative-PG Operator + narwhal-db (unified DB)
 08-1-networking.sh        → MetalLB, APISIX, cert-manager
-08-2-monitoring.sh        → Prometheus, Loki, Promtail, Tempo
+08-2-monitoring.sh        → Prometheus, Loki, Alloy, Tempo
 08-3-security.sh          → Kyverno, Headlamp, OAuth2-Proxy
 08-4-storage.sh           → SeaweedFS, OpenBao, Velero
 08-5-registry.sh          → Harbor
@@ -523,7 +523,7 @@ platform-system      CloudNative-PG Operator, MetalLB, APISIX, cert-manager, Kyv
 istio-system         Istio control plane (istiod, istio-cni, ztunnel)
 iam                  Keycloak, OAuth2-Proxy
 devtools             ArgoCD, Gitea + Valkey, Harbor, Headlamp
-monitoring           Prometheus, Grafana, Alertmanager, Loki, Promtail, Tempo
+monitoring           Prometheus, Grafana, Alertmanager, Loki, Alloy, Tempo
 storage              SeaweedFS (S3), OpenBao, Velero
 database             narwhal-db (CNPG PostgreSQL HA)
 dev                  Developer workloads (user namespace)

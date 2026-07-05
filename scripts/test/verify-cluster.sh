@@ -795,12 +795,12 @@ if should_run "monitoring"; then
     fail "Loki: not running"
   fi
 
-  # Promtail
-  PROMTAIL_PODS=$(kubectl get pods -n monitoring -l app.kubernetes.io/name=promtail --no-headers 2>/dev/null | grep -c "Running" || true)
-  if [ "${PROMTAIL_PODS}" -ge 1 ]; then
-    pass "Promtail: ${PROMTAIL_PODS} Running"
+  # Grafana Alloy (k8s-monitoring) — replaces Promtail (EOL 2026-03-02)
+  ALLOY_PODS=$(kubectl get pods -n monitoring -l app.kubernetes.io/name=alloy-logs --no-headers 2>/dev/null | grep -c "Running" || true)
+  if [ "${ALLOY_PODS}" -ge 1 ]; then
+    pass "Alloy: ${ALLOY_PODS} Running"
   else
-    fail "Promtail: not running"
+    fail "Alloy: not running"
   fi
 
   # Tempo

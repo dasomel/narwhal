@@ -90,7 +90,7 @@ Components and versions used in this project.
 | Prometheus | chart 86.2.3 | Metrics collection (kube-prometheus-stack); SSA for CRDs |
 | Grafana | 12.x (bundled with prometheus-stack) | Visualization / Dashboard (major bump — review dashboards/auth) |
 | Loki | v3.6.4 (chart 6.52.0) | Log aggregation. **Frozen** — grafana/loki is now GEL-only; OSS moved to grafana-community/loki 17.x (re-install, separate work) |
-| Promtail | v3.5.1 (chart 6.17.1) | Log collector. **Frozen** — EOL 2026-03-02; migrate to Grafana Alloy (separate work) |
+| Grafana Alloy (k8s-monitoring) | chart 4.2.0 / alloy-operator 0.5.11 / Alloy app v1.17.0 | Log collector — replaces Promtail (EOL 2026-03-02). Logs-only (`podLogsViaLoki`); all metrics/events/exporter features left at their default `false` to avoid duplicating prometheus-stack |
 | Tempo | v2.9.0 (chart 1.24.4) | Distributed tracing. **Frozen** — grafana-community migration + vParquet2 removal in 2.10 needs block audit (separate work) |
 
 ## Git / GitOps
@@ -156,7 +156,6 @@ These were intentionally NOT upgraded — each needs dedicated migration work, n
 | APISIX Dashboard | app 3.0.0 / chart 0.9.0 | chart deprecated upstream; assess APISIX built-in console |
 | Loki | app v3.6.4 / chart 6.52.0 | grafana/loki → grafana-community/loki 17.x repo split (re-install) |
 | Tempo | app v2.9.0 / chart 1.24.4 | grafana-community migration + vParquet2 removed in 2.10 (block audit) |
-| Promtail | app v3.5.1 / chart 6.17.1 | EOL 2026-03-02 → migrate to Grafana Alloy |
 | Harbor | latest / chart 1.18.2 | ghcr.io/dasomel/goharbor lacks v2.15.1 ARM64 images |
 | velero-ui | app v0.10.1 / chart 0.14.0 | no newer upstream release (consider seriohub/vui) |
 

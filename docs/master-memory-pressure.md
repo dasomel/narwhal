@@ -38,7 +38,7 @@
 |-----------|-----------|
 | kube-apiserver | ~1.8–2.3 GB |
 | etcd + controller-manager + scheduler + kube-vip | ~0.6 GB |
-| DaemonSets: cilium ~250Mi, **falco ~300Mi**, promtail/node-exporter/istio-cni/ztunnel/metallb-speaker/velero node-agent/ca-installer | ~0.8 GB |
+| DaemonSets: cilium ~250Mi, **falco ~300Mi**, alloy-logs/node-exporter/istio-cni/ztunnel/metallb-speaker/velero node-agent/ca-installer | ~0.8 GB |
 | **Total** | **~3.4 GB** → leaves only ~0.5 GB headroom |
 
 The dominant consumer (apiserver, ~2 GB) is irreducible. DaemonSets add ~0.8 GB

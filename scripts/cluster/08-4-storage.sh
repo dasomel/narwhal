@@ -50,21 +50,37 @@ done
 
 # Create S3 buckets for platform apps
 # All apps using SeaweedFS S3: Tempo, Velero, Loki, CNPG backup
+#
+# D-bucket-race: `kubectl wait --for=condition=Ready` only confirms the filer
+# container passed its own readiness probe, not that the embedded S3 API is
+# actually accepting requests yet. Observed live (2026-07-05): the single
+# fire-and-forget `weed shell` bucket-create below silently no-op'd for
+# tempo/velero/loki (only cnpg-backup happened to land, apparently created
+# later by CNPG's own first write) while the verify loop printed WARNs and
+# the script still exited 0 — Tempo then crashlooped on "bucket does not
+# exist", Loki logged continuous NoSuchBucket errors on every index/ruler
+# sync, and Velero's backup-location went Unavailable. Retry each bucket's
+# create+verify individually and fail loudly (not `|| true`) if one never
+# lands, since a silently-missing bucket breaks three other components
+# worse than a stopped install here would.
 echo "Creating SeaweedFS S3 buckets..."
 kubectl wait --for=condition=Ready pod -l app.kubernetes.io/name=seaweedfs,app.kubernetes.io/component=filer -n storage --timeout=120s || true
 for bucket in tempo velero loki cnpg-backup; do
-  echo "  Creating bucket: ${bucket}"
-  kubectl exec -n storage seaweedfs-filer-0 -- sh -c "echo 's3.bucket.create -name ${bucket}' | weed shell" 2>/dev/null || true
-done
-
-# Verify buckets were created
-echo "Verifying S3 buckets..."
-BUCKET_LIST=$(kubectl exec -n storage seaweedfs-filer-0 -- sh -c "echo 's3.bucket.list' | weed shell" 2>/dev/null || true)
-for bucket in tempo velero loki cnpg-backup; do
-  if echo "${BUCKET_LIST}" | grep -q "${bucket}"; then
-    echo "  + ${bucket}"
-  else
-    echo "  - ${bucket} - WARN: bucket may not exist"
+  bucket_ready="false"
+  for attempt in 1 2 3 4 5; do
+    kubectl exec -n storage seaweedfs-filer-0 -- sh -c "echo 's3.bucket.create -name ${bucket}' | weed shell" >/dev/null 2>&1 || true
+    BUCKET_LIST=$(kubectl exec -n storage seaweedfs-filer-0 -- sh -c "echo 's3.bucket.list' | weed shell" 2>/dev/null || true)
+    if echo "${BUCKET_LIST}" | grep -q "${bucket}"; then
+      echo "  + ${bucket} (attempt ${attempt}/5)"
+      bucket_ready="true"
+      break
+    fi
+    echo "  bucket '${bucket}' not confirmed yet, attempt ${attempt}/5, waiting 10s..."
+    sleep 10
+  done
+  if [[ "${bucket_ready}" != "true" ]]; then
+    echo "ERROR: bucket '${bucket}' could not be confirmed after 5 attempts" >&2
+    exit 1
   fi
 done
 echo "S3 buckets ready"

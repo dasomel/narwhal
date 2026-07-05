@@ -127,6 +127,7 @@ When Plan mode is needed in Narwhal:
 ### Vagrant/Infrastructure Mistakes
 | Date | Mistake | Fix |
 |------|---------|-----|
+| 2026-07-05 | `08-4-storage.sh`'s SeaweedFS S3 bucket creation was fire-and-forget: `kubectl wait --for=condition=Ready pod -l ...=filer` only confirms the container passed its own readiness probe, not that the embedded S3 API is accepting requests yet. Observed live: the single bucket-create pass silently no-op'd for `tempo`/`velero`/`loki` (only `cnpg-backup` landed, apparently created later by CNPG's own first write) while the verify loop printed WARNs and the script still exited 0 (`\|\| true` everywhere) → Tempo crashlooped ("bucket does not exist"), Loki logged continuous `NoSuchBucket` errors on every index/ruler sync, Velero's backup-location went Unavailable | Retry each bucket's create+verify individually (5 attempts, 10s apart) and `exit 1` if one never lands instead of swallowing the failure — a stopped install here is far cheaper than three components silently degrading downstream |
 | 2026-01-29 | Vagrant Cloud 401 error | Use `VAGRANT_CLOUD_TOKEN=$(hcp auth print-access-token)` when HCP token required |
 | 2026-01-29 | charts.keycloak.org URL 404 | Use official Keycloak Operator (`keycloak-k8s-resources` GitHub) |
 | 2026-01-29 | Bitnami image not found | Use official images or Operators (CloudNative-PG, etc.) due to Bitnami commercialization |

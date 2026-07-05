@@ -106,10 +106,10 @@ vagrant destroy -f
 | Component | Chart Version | App Version | Description |
 |-----------|---------------|-------------|-------------|
 | Prometheus Stack | 81.5.1 | v0.88.1 | Monitoring (Prometheus + Grafana + Alertmanager) |
-| Loki | 6.52.0 | 3.6.4 | Log aggregation |
+| Loki | 18.4.0 (grafana-community) | 3.7.3 | Log aggregation |
 | Grafana Alloy (k8s-monitoring) | 4.2.0 | v1.17.0 | Log collector (replaces Promtail, EOL 2026-03-02) |
-| Tempo | 1.24.4 | 2.9.0 | Distributed tracing |
-| Harbor | 1.18.2 | 2.14.2 | Container registry (ARM64) |
+| Tempo | 2.2.3 (grafana-community) | 2.9.0 (image.tag pinned pending vParquet2 audit) | Distributed tracing |
+| Harbor | 1.19.1 | 2.15.2 | Container registry (ARM64, ghcr.io/dasomel/goharbor) |
 | OpenBao | 0.11.0 | v2.2.0 | Secret management |
 | Kyverno | 3.7.0 | v1.17.0 | Policy engine |
 | Headlamp | 0.40.0 | 0.40.0 | Kubernetes UI |

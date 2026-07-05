@@ -80,8 +80,21 @@ for attempt in 1 2 3 4 5; do
   sleep 15
 done
 
+# D-grafana-community: grafana/loki and grafana/tempo went GEL-only; the OSS
+# community fork moved to this separate repo (see VERSIONS.md "Resolved this
+# cycle" note). Kept as a distinct repo alias, not a rename of `grafana`,
+# since other grafana/* charts (promtail's old home, if ever reused) still
+# live at the original repo.
+for attempt in 1 2 3 4 5; do
+  if helm repo add grafana-community https://grafana-community.github.io/helm-charts && helm repo update grafana-community; then
+    break
+  fi
+  echo "Helm repo grafana-community attempt ${attempt}/5 failed, waiting 15s..."
+  sleep 15
+done
+
 cat <<'LOKIVALUES' > /tmp/loki-values.yaml
-deploymentMode: SingleBinary
+deploymentMode: Monolithic
 loki:
   auth_enabled: false
   commonConfig:
@@ -120,8 +133,6 @@ chunksCache:
 resultsCache:
   enabled: false
 monitoring:
-  selfMonitoring:
-    enabled: false
   lokiCanary:
     enabled: false
 test:
@@ -129,9 +140,9 @@ test:
 LOKIVALUES
 
 for attempt in 1 2 3 4 5; do
-  if helm upgrade --install loki grafana/loki \
+  if helm upgrade --install loki grafana-community/loki \
     --namespace monitoring \
-    --version 6.52.0 \
+    --version 18.4.0 \
     -f /tmp/loki-values.yaml; then
     break
   fi
@@ -187,9 +198,14 @@ echo "Grafana Alloy (k8s-monitoring) installed"
 #=========================================
 echo "=== Installing Tempo ==="
 for attempt in 1 2 3 4 5; do
-  if helm upgrade --install tempo grafana/tempo \
+  # D-vparquet2: chart 2.2.3's default appVersion (2.10.7) removes vParquet2
+  # block-encoding support entirely. Pin image.tag=2.9.0 until a live audit
+  # of the SeaweedFS `tempo` bucket confirms no vParquet2-encoded blocks
+  # exist (see VERSIONS.md). Lift this pin once confirmed safe.
+  if helm upgrade --install tempo grafana-community/tempo \
     --namespace monitoring \
-    --version 1.24.4 \
+    --version 2.2.3 \
+    --set tempo.tag=2.9.0 \
     --set tempo.storage.trace.backend=local \
     --set persistence.enabled=true \
     --set persistence.storageClassName=nfs-csi \

@@ -8,12 +8,21 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: https://grafana.github.io/helm-charts
+    repoURL: https://grafana-community.github.io/helm-charts
     chart: tempo
-    targetRevision: 1.24.4
+    targetRevision: 2.2.3
     helm:
       valuesObject:
         tempo:
+          # D-vparquet2: chart 2.2.3's default appVersion (2.10.7) removes
+          # vParquet2 block-encoding support entirely. Pinned until a live
+          # audit of the SeaweedFS `tempo` bucket confirms no vParquet2-
+          # encoded blocks exist (see VERSIONS.md). Lift once confirmed safe.
+          # NOTE: this chart nests the image tag under `tempo.tag`, NOT a
+          # top-level `image.tag` (verified via `helm show values` — a
+          # top-level override is silently accepted but never wired to the
+          # StatefulSet's container image).
+          tag: 2.9.0
           storage:
             trace:
               backend: s3

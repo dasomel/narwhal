@@ -10,7 +10,7 @@ spec:
   source:
     repoURL: https://helm.goharbor.io
     chart: harbor
-    targetRevision: 1.18.2
+    targetRevision: 1.19.1
     helm:
       valuesObject:
         expose:

@@ -72,7 +72,7 @@ EOF
 for attempt in 1 2 3 4 5; do
   if helm upgrade --install harbor harbor/harbor \
     --namespace devtools \
-    --version 1.18.2 \
+    --version 1.19.1 \
     --set expose.type=clusterIP \
     --set expose.tls.enabled=false \
     --set externalURL=http://harbor.local \

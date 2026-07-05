@@ -88,9 +88,9 @@ Components and versions used in this project.
 |-----------|---------|-------------|
 | Prometheus | chart 86.2.3 | Metrics collection (kube-prometheus-stack); SSA for CRDs |
 | Grafana | 12.x (bundled with prometheus-stack) | Visualization / Dashboard (major bump — review dashboards/auth) |
-| Loki | v3.6.4 (chart 6.52.0) | Log aggregation. **Frozen** — grafana/loki is now GEL-only; OSS moved to grafana-community/loki 17.x (re-install, separate work) |
+| Loki | v3.7.3 (chart 18.4.0, grafana-community) | Log aggregation. In-place `helm upgrade` from grafana/loki — no data migration needed, S3/TSDB storage read as-is |
 | Grafana Alloy (k8s-monitoring) | chart 4.2.0 / alloy-operator 0.5.11 / Alloy app v1.17.0 | Log collector — replaces Promtail (EOL 2026-03-02). Logs-only (`podLogsViaLoki`); all metrics/events/exporter features left at their default `false` to avoid duplicating prometheus-stack |
-| Tempo | v2.9.0 (chart 1.24.4) | Distributed tracing. **Frozen** — grafana-community migration + vParquet2 removal in 2.10 needs block audit (separate work) |
+| Tempo | v2.9.0 (chart 2.2.3, grafana-community) | Distributed tracing. Chart source moved; app version pinned at 2.9.0 pending a live vParquet2 block audit before allowing the chart's default 2.10.7 |
 
 ## Git / GitOps
 
@@ -103,7 +103,7 @@ Components and versions used in this project.
 
 | Component | Version | Description |
 |-----------|---------|-------------|
-| Harbor | latest (chart 1.18.2) | Container registry (ARM64: ghcr.io/dasomel/goharbor). **Frozen** — chart 1.19.1 (v2.15.1) ARM64 images not published in ghcr.io/dasomel/goharbor (only `latest` is multi-arch) |
+| Harbor | latest (chart 1.19.1, tracks v2.15.2) | Container registry (ARM64: ghcr.io/dasomel/goharbor — confirmed multi-arch (amd64+arm64) across all 8 components as of 2026-07-05) |
 
 ## IDP Portal
 
@@ -152,9 +152,6 @@ These were intentionally NOT upgraded — each needs dedicated migration work, n
 | Component | Held at | Reason |
 |-----------|---------|--------|
 | APISIX Ingress Controller | 1.8.0 | v2.x major break: etcd-free arch, new CRD schema, annotation overhaul |
-| Loki | app v3.6.4 / chart 6.52.0 | grafana/loki → grafana-community/loki 17.x repo split (re-install) |
-| Tempo | app v2.9.0 / chart 1.24.4 | grafana-community migration + vParquet2 removed in 2.10 (block audit) |
-| Harbor | latest / chart 1.18.2 | ghcr.io/dasomel/goharbor lacks v2.15.1 ARM64 images |
 | velero-ui | app v0.10.1 / chart 0.14.0 | no newer upstream release (consider seriohub/vui) |
 
 **Resolved this cycle:** APISIX Dashboard (standalone chart, app 3.0.0 / chart 0.9.0) removed
@@ -164,6 +161,19 @@ exposed via an external route (would require exposing the Admin API, a separate 
 tradeoff) — access locally via `kubectl port-forward svc/apisix-admin 9180:9180` if ever needed.
 Routes are managed via GitOps `ApisixRoute`/`ApisixUpstream` CRDs, so `kubectl get apisixroute -A`
 covers day-to-day inspection without a UI.
+
+Harbor bumped to chart 1.19.1 2026-07-05 — verified via `docker manifest inspect` that all 8
+`ghcr.io/dasomel/goharbor/*:latest` component images now carry both amd64 and arm64 manifests
+(the prior freeze reason, ARM64 images missing for the 2.15.x line, no longer applies). Image
+tags stay pinned to `:latest` as before (not version-tagged), now tracking Harbor v2.15.2.
+
+Loki and Tempo chart source moved to grafana-community 2026-07-05 (both `grafana/loki` and
+`grafana/tempo` are past the GEL-only cutover date, per each chart's own README migration
+notice). Loki: in-place `helm upgrade` to chart 18.4.0 (app v3.7.3), `deploymentMode` renamed
+`SingleBinary` -> `Monolithic`, no data migration needed (S3/TSDB storage read as-is). Tempo:
+chart 2.2.3, but `image.tag` pinned to 2.9.0 pending a live vParquet2 block audit before allowing
+the chart's default app v2.10.7 (2.10 removes vParquet2 read support entirely, with no
+auto-migration for any block that used it).
 
 ## Version Update Policy
 

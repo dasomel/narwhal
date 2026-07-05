@@ -25,7 +25,6 @@ Components and versions used in this project.
 | Cilium CLI | v0.19.4 | Cilium command-line tool (0.19.3 has no binaries — skip) |
 | APISIX | 3.15.0 (app) / 2.13.0 (chart) | API Gateway, OIDC authentication (NOT 3.16: openid-connect ssl_verify default flip breaks airgap private-CA OIDC) |
 | APISIX Ingress Controller | 1.8.0 | K8s CRD controller for APISIX (**frozen** — v2.x is a major break) |
-| APISIX Dashboard | 3.0.0 (app) / 0.9.0 (chart) | APISIX management UI (**frozen** — chart deprecated upstream) |
 | etcd (APISIX) | 3.5.31 (`registry.k8s.io/etcd:3.5.31-0`) | APISIX configuration store (stay on 3.5.x) |
 | MetalLB | v0.16.1 (chart) | Bare-metal LoadBalancer (L2 mode; default backend FRR→FRR-K8s, no impact on L2) |
 | Gateway API CRDs | v1.5.1 (standard) | Kubernetes Gateway API standard (no TLSRoutes in repo → standard channel safe) |
@@ -153,11 +152,18 @@ These were intentionally NOT upgraded — each needs dedicated migration work, n
 | Component | Held at | Reason |
 |-----------|---------|--------|
 | APISIX Ingress Controller | 1.8.0 | v2.x major break: etcd-free arch, new CRD schema, annotation overhaul |
-| APISIX Dashboard | app 3.0.0 / chart 0.9.0 | chart deprecated upstream; assess APISIX built-in console |
 | Loki | app v3.6.4 / chart 6.52.0 | grafana/loki → grafana-community/loki 17.x repo split (re-install) |
 | Tempo | app v2.9.0 / chart 1.24.4 | grafana-community migration + vParquet2 removed in 2.10 (block audit) |
 | Harbor | latest / chart 1.18.2 | ghcr.io/dasomel/goharbor lacks v2.15.1 ARM64 images |
 | velero-ui | app v0.10.1 / chart 0.14.0 | no newer upstream release (consider seriohub/vui) |
+
+**Resolved this cycle:** APISIX Dashboard (standalone chart, app 3.0.0 / chart 0.9.0) removed
+2026-07-05 — upstream deprecated it in favor of a console built directly into APISIX itself,
+served on the Admin API port (`/ui/`, see apisix.apache.org/docs/apisix/next/dashboard/). Not
+exposed via an external route (would require exposing the Admin API, a separate security
+tradeoff) — access locally via `kubectl port-forward svc/apisix-admin 9180:9180` if ever needed.
+Routes are managed via GitOps `ApisixRoute`/`ApisixUpstream` CRDs, so `kubectl get apisixroute -A`
+covers day-to-day inspection without a UI.
 
 ## Version Update Policy
 

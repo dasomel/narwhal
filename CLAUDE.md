@@ -257,7 +257,6 @@ When Plan mode is needed in Narwhal:
 | APISIX | `gitops/apps/apisix.yaml` | API gateway |
 | APISIX Infra | `gitops/apps/apisix-infra.yaml` | APISIX infrastructure resources |
 | APISIX Routes | `gitops/apps/apisix-routes.yaml` | APISIX route definitions |
-| APISIX Dashboard | `gitops/apps/apisix-dashboard.yaml` | APISIX management UI |
 | cert-manager | `gitops/apps/cert-manager.yaml` | TLS automation |
 | **Service Mesh** | | |
 | Istio Base | `gitops/apps/istio-base.yaml` | Istio CRDs |

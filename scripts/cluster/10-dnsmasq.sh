@@ -220,7 +220,6 @@ ${COREFILE}"
         ${APISIX_IP} harbor.${DOMAIN}
         ${APISIX_IP} headlamp.${DOMAIN}
         ${APISIX_IP} openbao.${DOMAIN}
-        ${APISIX_IP} apisix-dashboard.${DOMAIN}
         ${APISIX_IP} hubble.${DOMAIN}
         fallthrough
     }

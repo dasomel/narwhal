@@ -125,7 +125,7 @@ if [ "${OIDC_REACHABLE}" = "false" ]; then
   echo "    - cert-manager TLS certificate not issued yet"
   echo "    - APISIX Gateway not routing keycloak.${DOMAIN}"
   echo "    - DNS not resolving keycloak.${DOMAIN}"
-  echo "  Run scripts in order: 08-platform-apps.sh → 10-dnsmasq.sh → 11-keycloak.sh → 11-2-keycloak-config.sh"
+  echo "  Run scripts in order: 08-1-networking.sh..08-6-tls-routes.sh → 10-dnsmasq.sh → 11-keycloak.sh → 11-2-keycloak-config.sh"
 else
   # Migrate from Authentik to Keycloak if Authentik OIDC URL is present
   if grep -q "authentik" "${APISERVER_MANIFEST}" 2>/dev/null; then

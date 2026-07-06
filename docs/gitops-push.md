@@ -11,7 +11,8 @@ local working copy:
 
 ```
 repoURL: http://gitea-http.devtools.svc.cluster.local:3000/gitea-admin/narwhal-gitops.git
-path:    resources   (and a second app for path: apps)
+path:    charts/narwhal-apps   (app-of-apps' Helm chart; templates the rest of the apps,
+                                 including the narwhal-platform sub-app at charts/narwhal-platform)
 sync:    automated { prune: true, selfHeal: true }
 ```
 
@@ -31,15 +32,17 @@ Consequences of `selfHeal: true`:
 The Gitea `narwhal-gitops` repo's **root** is the **contents of `gitops/`**:
 
 ```
-narwhal repo            gitea narwhal-gitops repo (ArgoCD root)
----------------------   ---------------------------------------
-gitops/apps/*       ->  apps/*          (app-of-apps, path=apps)
-gitops/resources/*  ->  resources/*     (path=resources)
+narwhal repo                gitea narwhal-gitops repo (ArgoCD root)
+-------------------------   ---------------------------------------
+gitops/apps/*            -> apps/*      (app-of-apps; path=charts/narwhal-apps)
+gitops/charts/*          -> charts/*    (narwhal-apps + narwhal-platform Helm charts)
+gitops/resources/*       -> resources/* (raw manifests not templated by either chart)
 ```
 
-So `gitops/resources/narwhal-portal-k8s.yaml` becomes `resources/narwhal-portal-k8s.yaml`
-in Gitea. **Never** `git push` this whole repo to the `gitea` remote — the
-`gitops/` prefix would not match ArgoCD's `path: resources`.
+So `gitops/charts/narwhal-platform/templates/narwhal-portal-k8s.yaml` becomes
+`charts/narwhal-platform/templates/narwhal-portal-k8s.yaml` in Gitea. **Never**
+`git push` this whole repo to the `gitea` remote — the `gitops/` prefix would
+not match the paths ArgoCD's Applications expect.
 
 ## The procedure (what the script automates)
 
@@ -58,7 +61,7 @@ in Gitea. **Never** `git push` this whole repo to the `gitea` remote — the
 # Push only specific file(s) — recommended (minimal blast radius):
 ARGOCD_APP=narwhal-portal scripts/gitops/push-to-gitea.sh \
   "fix(portal-rbac): grant metrics.k8s.io read" \
-  resources/narwhal-portal-k8s.yaml
+  charts/narwhal-platform/templates/narwhal-portal-k8s.yaml
 
 # Mirror everything under gitops/ (use sparingly):
 scripts/gitops/push-to-gitea.sh "chore: sync all gitops"
@@ -94,6 +97,6 @@ kubectl -n devtools exec deploy/narwhal-portal -- sh -c \
      `scripts/cluster/04-addons.sh` (probe loosened).
   2. ClusterRole `narwhal-portal` lacked `metrics.k8s.io` → portal SA got **403**
      on the metrics API (cluster-admin kubectl worked, but the portal pod uses
-     its own SA). Fixed in `gitops/resources/narwhal-portal-k8s.yaml`.
+     its own SA). Fixed in `gitops/charts/narwhal-platform/templates/narwhal-portal-k8s.yaml`.
 - **Activation:** pushed the RBAC change to Gitea with this script →
   ArgoCD selfHeal applied in ~5s → portal SA `metrics.k8s.io` → **200 OK**.

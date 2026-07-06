@@ -17,7 +17,9 @@ After an unclean shutdown + cold boot, three failure modes pile up:
    containers that have no running task (`{running 0}`), so the kubelet hits
    `CreateContainerError` and can't recreate static pods (kube-apiserver,
    kube-scheduler) or DaemonSet pods (metallb, …). Symptom:
-   `CreateContainerError`, `crictl ps` failing.
+   `CreateContainerError`, repeated `failed to reserve container name` entries
+   in the kubelet journal (note: `crictl` is **not installed** on narwhal
+   nodes — detection uses `systemctl`/`ctr`/`journalctl` instead, see below).
 2. **CNI ghosts** — Cilium / Istio-CNI / ztunnel pods from before the reboot
    stay `Unknown`; new pods can't get a network sandbox and hang in
    `ContainerCreating`.
@@ -35,23 +37,36 @@ was manually restarted on every node and the ghost pods were deleted.
 
 ## The solution
 
-Two oneshot systemd units (`scripts/common/06-boot-heal-install.sh` installs +
-enables them during provisioning; they then fire on every boot):
+Boot-time + periodic systemd units (`scripts/common/06-boot-heal-install.sh`
+installs + enables them during provisioning):
 
-### `narwhal-boot-heal.service` (all nodes)
+### `narwhal-boot-heal.service` (all nodes, boot-time oneshot)
 
 `scripts/common/boot-heal.sh`, ordered `After=containerd.service kubelet.service`.
 
 - **Guard:** exits immediately if `/etc/kubernetes/kubelet.conf` is absent
   (node not yet joined — never interferes with first provisioning).
-- Sleeps 45s to let containerd/kubelet settle.
-- **Wedge detection** (any one → recover):
-  1. `kubelet` not active, or
-  2. `crictl ps` fails (containerd wedged), or
-  3. one or more containers stuck in a non-`Running`/non-`Exited` state
-     (`Unknown`/`Created` — the stale-container hallmark).
-- **Recovery:** `systemctl restart containerd` → `kubelet`. No-op on a healthy
-  node.
+- Sleeps 45s to let containerd/kubelet settle (boot-time mode only).
+- **Wedge detection** (any one → recover). `crictl` is **not installed** on
+  narwhal nodes (containerd 2.x's built-in CRI is used directly by kubelet),
+  so detection relies only on tools confirmed present on every node:
+  1. `systemctl is-active kubelet` reports inactive, or
+  2. `ctr --namespace k8s.io containers ls` fails (containerd
+     unresponsive/wedged), or
+  3. ≥2 occurrences of `failed to reserve container name` in the kubelet
+     journal within the last 90s — the signature of the containerd 2.x
+     stale-container-name-reservation wedge.
+- **Recovery:** `systemctl restart containerd` → `kubelet`; if the
+  reserve-name signal doesn't clear, escalates to a deep recovery that kills
+  the task holding the reserved name and removes its containerd container
+  object. No-op on a healthy node.
+
+### `narwhal-boot-heal.timer` (all nodes, periodic safety net)
+
+Same `boot-heal.sh --periodic` (skips the 45s settle sleep), run every 2
+minutes (`OnBootSec=2min`, `OnUnitActiveSec=2min`) via
+`narwhal-boot-heal-periodic.service` — catches wedges that develop after boot,
+not just at boot time.
 
 ### `narwhal-cluster-heal.service` (master-1 only)
 
@@ -72,8 +87,9 @@ enables them during provisioning; they then fire on every boot):
 
 `vagrant reload` of all 6 VMs, **no manual intervention**:
 
-- `boot-heal` on master-1 logged `Wedge detected: crictl ps failed — containerd
-  may be wedged` and restarted containerd+kubelet.
+- `boot-heal` on master-1 logged a wedge reason (e.g. `ctr containers ls
+  failed — containerd may be wedged/unresponsive`, or repeated `failed to
+  reserve container name` journal entries) and restarted containerd+kubelet.
 - `cluster-heal` drove non-running pods 46 → 41 → 19 → 10 → **0**.
 - Final: ingress `portal.local.narwhal.internal` → **HTTP 307**; 6/6 nodes
   Ready; Cilium/Istio/Keycloak/Harbor/portal all Running.

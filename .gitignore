@@ -65,7 +65,11 @@ csp/
 /.claude/skills/narwhal-ops/_workspace/02_scout_obs.md
 /.claude/skills/narwhal-ops/_workspace/02_scout_sec.md
 /.claude/skills/narwhal-ops/_workspace/03_decision.md
-/_workspace/drift_helm.md
+
+# Root-level scratch workspace (audit/security-review drafts, source-state
+# dumps) — not the .claude/skills/*/_workspace/ dirs above, which are tracked.
+/_workspace/
+/.claude/narwhal_doc_audit.md
 
 # Test/build artifacts (dir.md 권장 — 2026-06-26)
 test-results/

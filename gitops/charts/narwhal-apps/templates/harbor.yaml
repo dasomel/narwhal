@@ -19,7 +19,7 @@ spec:
             enabled: false
         externalURL: https://harbor.{{ .Values.baseDomain }}
         # Admin password loaded from existingSecret
-        # Secret 'harbor-secrets' is created by scripts/cluster/08-platform-apps.sh
+        # Secret 'harbor-secrets' is created by scripts/cluster/08-5-registry.sh
         # Required key: HARBOR_ADMIN_PASSWORD
         existingSecretAdminPassword: harbor-secrets
         existingSecretAdminPasswordKey: HARBOR_ADMIN_PASSWORD
@@ -34,7 +34,7 @@ spec:
             # Key must be 'password' per harbor chart requirement — see harbor chart values.yaml:971
             # Note: 07-cnpg.sh stores harbor DB password under key 'harbor-password' in
             # narwhal-db-credentials. A cross-namespace secret copy is required, or
-            # scripts/cluster/08-platform-apps.sh must create 'harbor-db-credentials' in devtools ns
+            # scripts/cluster/08-5-registry.sh must create 'harbor-db-credentials' in devtools ns
             # with key 'password' copied from narwhal-db-credentials/harbor-password.
             existingSecret: harbor-db-credentials
             coreDatabase: harbor
@@ -58,6 +58,8 @@ spec:
           enabled: false
         # Pin shared secrets so Helm upgrades never regenerate divergent values.
         # A fresh install must supply these via 08-5-registry.sh before ArgoCD syncs harbor.
+        # TODO(security): move these to a K8s Secret via existingSecret refs (same pattern
+        # as admin password) — plaintext-in-git accepted for local dev cluster only.
         secretKey: "***REMOVED***"
         core:
           secret: "***REMOVED***"

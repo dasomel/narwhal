@@ -108,9 +108,9 @@ Cilium이 이미 Ready이므로 taint가 없는 상태에서 Istio가 설치됩�
 |---------|------|------|
 | **P1** | `scripts/common/02-containerd.sh` | `Restart=always`, `RestartSec=5` |
 | **P1** | `scripts/cluster/09-istio-ambient.sh` | 3곳 toleration 추가 |
-| **P1** | `gitops/apps/istiod.yaml` | toleration 추가 (ArgoCD 영속) |
-| **P1** | `gitops/apps/istio-cni.yaml` | toleration 추가 |
-| **P1** | `gitops/apps/ztunnel.yaml` | toleration 추가 |
+| **P1** | `gitops/charts/narwhal-apps/templates/istiod.yaml` | toleration 추가 (ArgoCD 영속) |
+| **P1** | `gitops/charts/narwhal-apps/templates/istio-cni.yaml` | toleration 추가 |
+| **P1** | `gitops/charts/narwhal-apps/templates/ztunnel.yaml` | toleration 추가 |
 | **P2** | `scripts/cluster/01-nfs-server.sh` | systemd drop-in |
 | **P2** | `scripts/cluster/10-dnsmasq.sh` | systemd drop-in |
 | **P3** | `gitops/resources/prometheus-alerts.yaml` | `reboot-recovery` 알림 그룹 |
@@ -160,7 +160,7 @@ tolerations:
 ztunnel은 Cilium이 준비되는 즉시 HBONE 트래픽을 처리할 수 있게 됩니다.
 
 **파일 (스크립트)**: `scripts/cluster/09-istio-ambient.sh` - istiod, istio-cni, ztunnel values
-**파일 (GitOps)**: `gitops/apps/istiod.yaml`, `gitops/apps/istio-cni.yaml`, `gitops/apps/ztunnel.yaml`
+**파일 (GitOps)**: `gitops/charts/narwhal-apps/templates/istiod.yaml`, `gitops/charts/narwhal-apps/templates/istio-cni.yaml`, `gitops/charts/narwhal-apps/templates/ztunnel.yaml`
 
 > **중요**: 스크립트와 GitOps 양쪽 모두 수정해야 합니다.
 > ArgoCD `selfHeal: true`가 활성화되어 있으므로 스크립트만 수정하면
@@ -315,9 +315,9 @@ shellcheck scripts/common/02-containerd.sh \
   scripts/cluster/10-dnsmasq.sh
 
 # YAML 문법
-yq eval '.' gitops/apps/ztunnel.yaml \
-  gitops/apps/istio-cni.yaml \
-  gitops/apps/istiod.yaml \
+yq eval '.' gitops/charts/narwhal-apps/templates/ztunnel.yaml \
+  gitops/charts/narwhal-apps/templates/istio-cni.yaml \
+  gitops/charts/narwhal-apps/templates/istiod.yaml \
   gitops/resources/prometheus-alerts.yaml > /dev/null
 
 # Vagrantfile 문법
@@ -405,11 +405,11 @@ kubectl get ds ztunnel -n istio-system -o jsonpath='{.spec.template.spec.tolerat
 **원인 1: ArgoCD가 toleration을 되돌림**
 
 ArgoCD `selfHeal: true`가 GitOps 상태를 강제합니다.
-GitOps 파일(`gitops/apps/ztunnel.yaml`)에 toleration이 없으면 스크립트 변경이 무효화됩니다.
+GitOps 파일(`gitops/charts/narwhal-apps/templates/ztunnel.yaml`)에 toleration이 없으면 스크립트 변경이 무효화됩니다.
 
 ```bash
 # GitOps 파일 확인
-cat gitops/apps/ztunnel.yaml | grep -A 10 tolerations
+cat gitops/charts/narwhal-apps/templates/ztunnel.yaml | grep -A 10 tolerations
 
 # ArgoCD 동기화 상태 확인
 kubectl get application ztunnel -n devtools -o jsonpath='{.status.sync.status}'

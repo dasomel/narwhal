@@ -255,32 +255,32 @@ When Plan mode is needed in Narwhal:
 |-----|------|-------------|
 | App-of-Apps | `gitops/apps/app-of-apps.yaml` | Manages all apps |
 | **Networking** | | |
-| MetalLB | `gitops/apps/metallb.yaml` | Load balancer |
-| APISIX | `gitops/apps/apisix.yaml` | API gateway |
-| APISIX Infra | `gitops/apps/apisix-infra.yaml` | APISIX infrastructure resources |
-| APISIX Routes | `gitops/apps/apisix-routes.yaml` | APISIX route definitions |
-| cert-manager | `gitops/apps/cert-manager.yaml` | TLS automation |
+| MetalLB | `gitops/charts/narwhal-apps/templates/metallb.yaml` | Load balancer |
+| APISIX | `gitops/charts/narwhal-apps/templates/apisix.yaml` | API gateway |
+| APISIX Infra | `gitops/charts/narwhal-platform/templates/apisix-infra.yaml` | APISIX infrastructure resources |
+| APISIX Routes | `gitops/charts/narwhal-platform/templates/apisix-routes.yaml` | APISIX route definitions |
+| cert-manager | `gitops/charts/narwhal-apps/templates/cert-manager.yaml` | TLS automation |
 | **Service Mesh** | | |
-| Istio Base | `gitops/apps/istio-base.yaml` | Istio CRDs |
-| Istiod | `gitops/apps/istiod.yaml` | Istio control plane |
-| Istio CNI | `gitops/apps/istio-cni.yaml` | Istio CNI plugin |
-| ztunnel | `gitops/apps/ztunnel.yaml` | Istio ambient ztunnel |
+| Istio Base | `gitops/charts/narwhal-apps/templates/istio-base.yaml` | Istio CRDs |
+| Istiod | `gitops/charts/narwhal-apps/templates/istiod.yaml` | Istio control plane |
+| Istio CNI | `gitops/charts/narwhal-apps/templates/istio-cni.yaml` | Istio CNI plugin |
+| ztunnel | `gitops/charts/narwhal-apps/templates/ztunnel.yaml` | Istio ambient ztunnel |
 | **Monitoring** | | |
-| Prometheus | `gitops/apps/prometheus-stack.yaml` | Monitoring + Grafana |
-| Loki | `gitops/apps/loki.yaml` | Log collection |
+| Prometheus | `gitops/charts/narwhal-apps/templates/prometheus-stack.yaml` | Monitoring + Grafana |
+| Loki | `gitops/charts/narwhal-apps/templates/loki.yaml` | Log collection |
 | Grafana Alloy | `gitops/charts/narwhal-apps/templates/k8s-monitoring.yaml` | Log shipping (replaces Promtail, EOL 2026-03-02) |
-| Tempo | `gitops/apps/tempo.yaml` | Distributed tracing |
+| Tempo | `gitops/charts/narwhal-apps/templates/tempo.yaml` | Distributed tracing |
 | **Storage/Security** | | |
-| Harbor | `gitops/apps/harbor.yaml` | Container registry |
-| OpenBao | `gitops/apps/openbao.yaml` | Secret management |
-| SeaweedFS | `gitops/apps/seaweedfs.yaml` | Object storage |
-| Velero | `gitops/apps/velero.yaml` | Backup |
-| Velero UI | `gitops/apps/velero-ui.yaml` | Backup management UI |
-| Kyverno | `gitops/apps/kyverno.yaml` | Policy management |
+| Harbor | `gitops/charts/narwhal-apps/templates/harbor.yaml` | Container registry |
+| OpenBao | `gitops/charts/narwhal-apps/templates/openbao.yaml` | Secret management |
+| SeaweedFS | `gitops/charts/narwhal-apps/templates/seaweedfs.yaml` | Object storage |
+| Velero | `gitops/charts/narwhal-apps/templates/velero.yaml` | Backup |
+| Velero UI | `gitops/charts/narwhal-apps/templates/velero-ui.yaml` | Backup management UI |
+| Kyverno | `gitops/charts/narwhal-apps/templates/kyverno.yaml` | Policy management |
 | **IAM/UI** | | |
-| Keycloak | `gitops/apps/keycloak.yaml` | SSO/OIDC (IAM) — managed by Keycloak Operator |
-| Headlamp | `gitops/apps/headlamp.yaml` | K8s UI |
-| IDP Portal | `gitops/apps/idp-portal.yaml` | Developer portal |
+| Keycloak | `gitops/charts/narwhal-platform/templates/keycloak-cr.yaml` | SSO/OIDC (IAM) — managed by Keycloak Operator |
+| Headlamp | `gitops/charts/narwhal-apps/templates/headlamp.yaml` | K8s UI |
+| IDP Portal | `gitops/charts/narwhal-platform/templates/narwhal-portal-k8s.yaml` | Developer portal |
 
 ## Development Commands
 

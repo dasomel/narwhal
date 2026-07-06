@@ -222,8 +222,8 @@ kubectl exec -n openbao openbao-0 -- bao status
 #### 1. GitOps 파일 생성
 
 ```bash
-# ArgoCD Application 정의
-cat > gitops/apps/my-app.yaml << 'EOF'
+# ArgoCD Application 정의 (narwhal-apps Helm 차트의 템플릿으로 추가)
+cat > gitops/charts/narwhal-apps/templates/my-app.yaml << 'EOF'
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
@@ -254,24 +254,18 @@ EOF
 ## 별도의 values 파일 대신 Application YAML에 직접 포함합니다.
 ```
 
-#### 2. App-of-Apps에 등록
+#### 2. App-of-Apps 자동 인식 확인
 
-```yaml
-# gitops/apps/app-of-apps.yaml에 추가
-spec:
-  sources:
-    - repoURL: http://gitea-http.gitea.svc.cluster.local:3000/gitea-admin/narwhal
-      targetRevision: HEAD
-      path: gitops/apps
-      directory:
-        include: '{cert-manager,my-app}.yaml'  # my-app 추가
-```
+`app-of-apps.yaml`은 `path: charts/narwhal-apps`(Helm 차트)를 가리키므로 `templates/`
+아래 새 파일을 추가하는 것만으로 자동으로 렌더링/적용됩니다. 별도의 include 목록에
+등록하는 절차는 필요 없습니다 (과거 raw-manifest + `directory.include` 방식에서
+Helm 차트 방식으로 전환됨).
 
 #### 3. Gitea 리포지토리에 push
 
 ```bash
 vagrant ssh master-1 -c "cd /home/vagrant/narwhal-gitops && \
-  git add gitops/apps/my-app.yaml && \
+  git add gitops/charts/narwhal-apps/templates/my-app.yaml && \
   git commit -m 'Add my-app application' && \
   git push"
 ```
@@ -296,9 +290,8 @@ vagrant ssh master-1 -c "kubectl get application my-app -n argocd -o yaml"
 vagrant ssh master-1 -c "kubectl delete application my-app -n argocd"
 
 # 방법 2: GitOps에서 제거 후 동기화
-# gitops/apps/my-app.yaml 삭제
-# app-of-apps.yaml에서 참조 제거
-# Gitea에 push
+# gitops/charts/narwhal-apps/templates/my-app.yaml 삭제
+# Gitea에 push (Helm 템플릿이 사라지면 ArgoCD prune이 리소스를 자동 제거)
 ```
 
 **주의사항**:
@@ -343,14 +336,14 @@ GitOps values 파일에서 버전을 변경하고 Gitea에 push하면 ArgoCD가 
 
 ```bash
 # 1. GitOps 파일 수정
-# gitops/apps/my-app.yaml에서 targetRevision 변경
+# gitops/charts/narwhal-apps/templates/my-app.yaml에서 targetRevision 변경
 spec:
   source:
     targetRevision: "2.0.0"  # 버전 업데이트
 
 # 2. Gitea에 push
 vagrant ssh master-1 -c "cd /home/vagrant/narwhal-gitops && \
-  git add gitops/apps/my-app.yaml && \
+  git add gitops/charts/narwhal-apps/templates/my-app.yaml && \
   git commit -m 'Upgrade my-app to 2.0.0' && \
   git push"
 

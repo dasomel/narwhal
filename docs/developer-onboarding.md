@@ -196,7 +196,7 @@ spec:
       - CreateNamespace=false
 ```
 
-4. **App-of-Apps에 등록** (`gitops/apps/` 디렉토리에 YAML 추가 후 Gitea에 push)
+4. **App-of-Apps에 자동 반영** (`gitops/charts/narwhal-apps/templates/`에 YAML 추가 후 Gitea에 push)
 5. ArgoCD가 자동 감지하여 배포
 
 > `selfHeal: true`가 활성화된 경우 ArgoCD 외부에서 직접 수정하면 원복됩니다.

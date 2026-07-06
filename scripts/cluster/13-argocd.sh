@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 
-ARGOCD_VERSION="${ARGOCD_VERSION:-v3.4.3}"
+ARGOCD_VERSION="${ARGOCD_VERSION:-v3.4.4}"
 DOMAIN="${DOMAIN:-local.narwhal.internal}"
 
 # D-authmig: Keycloak OIDC (Authentik removed)

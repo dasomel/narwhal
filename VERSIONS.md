@@ -97,7 +97,7 @@ Components and versions used in this project.
 | Component | Version | Description |
 |-----------|---------|-------------|
 | Gitea | v1.26.2 (chart 12.6.0) | Git server (env_to_ini → config edit-ini) |
-| ArgoCD | v3.4.3 | GitOps CD (manifest install, SSA for CRDs; ApplicationSet ClusterGenerator label format changed) |
+| ArgoCD | v3.4.4 | GitOps CD (manifest install, SSA for CRDs; ApplicationSet ClusterGenerator label format changed). Security note 2026-07-06: the 2026-05 advisories (CVE-2026-42880 ServerSideDiff secret leak Critical, CVE-2026-45737/45738) were all patched at v3.4.2 — v3.4.3+ already safe; v3.4.4 is bugfix-only (RBAC regression, SSD error handling) |
 
 ## Registry
 

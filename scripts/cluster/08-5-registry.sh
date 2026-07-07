@@ -107,6 +107,7 @@ for attempt in 1 2 3 4 5; do
     --set persistence.persistentVolumeClaim.trivy.storageClass=nfs-csi \
     --set redis.type=internal \
     --set trivy.enabled=false \
+    --set metrics.enabled=false \
     --set core.image.repository=ghcr.io/dasomel/goharbor/harbor-core \
     --set core.image.tag=v2.15.1 \
     --set jobservice.image.repository=ghcr.io/dasomel/goharbor/harbor-jobservice \

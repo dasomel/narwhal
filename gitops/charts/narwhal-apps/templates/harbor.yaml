@@ -96,6 +96,14 @@ spec:
             tag: v2.15.1
           podLabels:
             istio.io/dataplane-mode: "none"
+        # Metrics/exporter kept OFF: harbor-exporter has NO clean multi-arch v2.15.x tag in
+        # ghcr.io/dasomel/goharbor (only :latest + :v2.15.0-build.NN). :latest is the stale-amd64
+        # trap that crashlooped every harbor pod on arm64 (exec format error) — see CLAUDE.md
+        # mistakes log 2026-07-07. Disabling metrics means the exporter Deployment is never
+        # created, so the arch issue can't bite. The override below is pinned to the newest
+        # arm64 build purely for hygiene (not pulled while metrics.enabled=false).
+        metrics:
+          enabled: false
         exporter:
           image:
             repository: ghcr.io/dasomel/goharbor/harbor-exporter

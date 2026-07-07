@@ -90,7 +90,29 @@ spec:
       app: harbor
   mtls:
     mode: PERMISSIVE
-# NOTE: a 5th PeerAuthentication (gitea-valkey-permissive) previously lived here
+# NOTE: a PeerAuthentication (gitea-valkey-permissive) previously lived here
 # for Gitea's bundled Bitnami Valkey. Removed 2026-07-07 — Gitea now runs with
 # valkey.enabled=false (single-replica, built-in cache), so there is no valkey
 # workload to except from STRICT mTLS. See scripts/cluster/12-gitea.sh.
+---
+# PeerAuthentication 5/5: monitoring observability plane — PERMISSIVE exception.
+#
+# WHY: narwhal-portal (devtools, istio.io/dataplane-mode=none — opted OUT of the mesh
+# for SSO cookie handling) fetches metrics/alerts/logs/traces DIRECTLY from the
+# observability plane in the `monitoring` namespace (prometheus:9090, alertmanager:9093,
+# loki:3100, tempo). Those workloads inherit monitoring=ambient (mesh-enrolled), so under
+# mesh-wide STRICT ztunnel rejected the portal's plain-TCP calls ("fetch failed") and the
+# dashboard CPU / Memory / trend / alert widgets rendered "데이터 없음". (It worked in the
+# early PERMISSIVE-mesh era and broke once the app plane went STRICT — the monitoring
+# exception was simply missed when platform-system/database/harbor got theirs.)
+# PERMISSIVE on `monitoring` lets ztunnel accept BOTH mTLS (mesh-enrolled callers) and
+# plain TCP (the opted-out portal), consistent with the database/platform-system
+# exceptions above. To tighten later, scope per-workload (prometheus/alertmanager/loki/tempo).
+apiVersion: security.istio.io/v1
+kind: PeerAuthentication
+metadata:
+  name: monitoring-permissive
+  namespace: monitoring
+spec:
+  mtls:
+    mode: PERMISSIVE

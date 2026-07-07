@@ -33,7 +33,9 @@ spec:
               memory: 128Mi
             limits:
               cpu: 300m   # was 500m: cap per-scan CPU so scan Jobs don't starve co-located
-              memory: 512Mi
+              memory: 1Gi   # was 512Mi: large images (harbor/keycloak) OOMKilled the scan Job,
+                            # leaving its VulnerabilityReport missing + ~15min retry churn.
+                            # concurrentLimit=2 → 2Gi peak, fits worker 6GB headroom.
 
         operator:
           # 모든 네임스페이스 스캔 (빈 문자열 = all)

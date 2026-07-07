@@ -23,8 +23,11 @@ Rancher airgap 방식을 Narwhal에 적용한 버전입니다. 외부 인터넷�
 ### Phase A — 인터넷 가능 환경에서 번들 생성
 
 ```bash
-# 1. 이미지 목록 생성 (VERSIONS.md + gitops YAML 기반)
-./scripts/airgap/01-generate-image-list.sh > images.txt
+# 1. 이미지 목록 생성 — 실행 중인 클러스터에서 실제 이미지 세트를 추출 (권장)
+#    정적 소스 스캔(인자 없이 실행)은 Helm 차트 기본 이미지를 못 잡아 ~60개 누락되므로
+#    반드시 --live 를 사용한다. images.txt 는 이미 이 방식으로 커밋되어 있다.
+./scripts/airgap/01-generate-image-list.sh --live scripts/airgap/images.txt
+#    (정적 교차검증용:  ./scripts/airgap/01-generate-image-list.sh > /tmp/static.txt)
 
 # 2. 모든 이미지를 로컬 tar 번들로 저장 (skopeo + oci layout)
 ./scripts/airgap/02-save-images.sh --list images.txt --out ./narwhal-airgap-bundle
@@ -61,7 +64,7 @@ vagrant up --provider=vmware_desktop
 | 스크립트 | 역할 |
 |---------|------|
 | `00-config.sh` | 공통 설정 (registry URL, 아키텍처) |
-| `01-generate-image-list.sh` | VERSIONS.md + gitops YAML에서 이미지 목록 추출 |
+| `01-generate-image-list.sh` | `--live`: 실행 클러스터에서 실제 이미지 세트 추출(권장, 완전). 인자 없음: gitops/스크립트 정적 스캔(불완전, 교차검증용) |
 | `02-save-images.sh` | skopeo copy → OCI layout tar |
 | `03-save-helm-charts.sh` | Helm chart `.tgz` 번들링 |
 | `04-bootstrap-registry.sh` | 부트스트랩 registry:2 배포 (Harbor 설치 전 사용) |

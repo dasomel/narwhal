@@ -1,25 +1,105 @@
+# Airgap image list — narwhal IDP cluster
+#
+# GROUND TRUTH: images actually running in a fully-provisioned cluster (kubectl
+# pod snapshot) UNION the transient job/init images (kaniko executor, alpine/git
+# for the portal build, alpine/k8s for velero/CSI hook jobs, velero-plugin-for-aws).
+# Regenerate with:  scripts/airgap/01-generate-image-list.sh --live images.txt
+# (static source-scan mode cannot see chart-default images and undercounts by ~60).
+#
+# EXCLUDED intentionally:
+#   - harbor.local.narwhal.internal/library/narwhal-portal:latest — built IN-CLUSTER
+#     by Kaniko; produced, not pulled, so it must not be in a pull-based bundle.
+#
+# KNOWN TECH-DEBT (works, but flagged):
+#   - docker.io/bitnamilegacy/valkey — Gitea chart default; repo policy bans Bitnami.
+#     Override to a non-bitnami valkey when the gitea chart values are revisited.
+#   - :latest tags (kaniko, alpine/git, ghcr.io/dasomel/goharbor/*) are
+#     non-reproducible; pin to digests for a hardened bundle.
+#
+# Last regenerated (--live): 2026-07-07 (from live cluster)
+
 apache/apisix-ingress-controller:1.8.0
-apache/apisix:3.15.0-debian
+apache/apisix:3.15.0-ubuntu
+busybox:1.28
+chrislusf/seaweedfs:4.34
+docker.gitea.com/gitea:1.26.2-rootless
+docker.io/alpine/git:latest
 docker.io/alpine/k8s:1.31.4
+docker.io/bitnamilegacy/valkey:8.1.3-debian-12-r3
+docker.io/grafana/alloy:v1.17.0
+docker.io/grafana/grafana:13.0.2
+docker.io/grafana/loki-canary:3.7.3
+docker.io/grafana/loki:3.7.3
+docker.io/grafana/tempo:2.9.0
+docker.io/hashicorp/vault-k8s:1.7.2
+docker.io/kiwigrid/k8s-sidecar:2.8.1
+docker.io/library/busybox:1.38.0
 docker.io/valkey/valkey:8-alpine
+docker.io/velero/velero:v1.18.1
+gcr.io/kaniko-project/executor:latest
+ghcr.io/cloudnative-pg/cloudnative-pg:1.29.1
+ghcr.io/cloudnative-pg/pgbouncer:1.25.1
+ghcr.io/cloudnative-pg/postgresql:18
 ghcr.io/dasomel/goharbor/harbor-core:latest
-ghcr.io/dasomel/goharbor/harbor-exporter:latest
 ghcr.io/dasomel/goharbor/harbor-jobservice:latest
 ghcr.io/dasomel/goharbor/harbor-portal:latest
 ghcr.io/dasomel/goharbor/harbor-registryctl:latest
 ghcr.io/dasomel/goharbor/nginx-photon:latest
 ghcr.io/dasomel/goharbor/redis-photon:latest
 ghcr.io/dasomel/goharbor/registry-photon:latest
+ghcr.io/dasomel/nfs-quota-agent:v0.2.1
+ghcr.io/dexidp/dex:v2.45.0
+ghcr.io/grafana/alloy-operator:1.10.0
 ghcr.io/headlamp-k8s/headlamp:v0.42.0
-harbor.local.narwhal.internal/library/narwhal-portal:latest
+ghcr.io/kube-vip/kube-vip:v1.1.2
+mirror.gcr.io/aquasec/trivy-operator:0.25.0
+mirror.gcr.io/aquasec/trivy:0.60.0
 otwld/velero-ui:0.10.1
+public.ecr.aws/docker/library/redis:8.2.3-alpine
+quay.io/argoproj/argocd:v3.4.4
+quay.io/cilium/cilium-envoy:v1.36.6-1778235340-b87d1e32f522b33bd51701c6476d199326f01496
+quay.io/cilium/cilium:v1.19.4
+quay.io/cilium/hubble-relay:v1.19.4
+quay.io/cilium/hubble-ui-backend:v0.13.5
+quay.io/cilium/hubble-ui:v0.13.5
+quay.io/cilium/operator-generic:v1.19.4
+quay.io/frrouting/frr:10.4.3
+quay.io/jetstack/cert-manager-cainjector:v1.20.2
+quay.io/jetstack/cert-manager-controller:v1.20.2
+quay.io/jetstack/cert-manager-webhook:v1.20.2
+quay.io/keycloak/keycloak-operator:26.5.7
+quay.io/keycloak/keycloak:26.5.7
+quay.io/kiwigrid/k8s-sidecar:2.7.3
+quay.io/metallb/controller:v0.16.1
+quay.io/metallb/frr-k8s:v0.0.25
+quay.io/metallb/speaker:v0.16.1
 quay.io/openbao/openbao:2.5.4
-registry.k8s.io/coredns/coredns:v1.12.0
-registry.k8s.io/etcd:3.5.21-0
+quay.io/prometheus-operator/prometheus-config-reloader:v0.91.0
+quay.io/prometheus-operator/prometheus-operator:v0.91.0
+quay.io/prometheus/alertmanager:v0.33.0
+quay.io/prometheus/node-exporter:v1.11.1-distroless
+quay.io/prometheus/prometheus:v3.12.0-distroless
+reg.kyverno.io/kyverno/background-controller:v1.18.1
+reg.kyverno.io/kyverno/cleanup-controller:v1.18.1
+reg.kyverno.io/kyverno/kyverno:v1.18.1
+reg.kyverno.io/kyverno/kyvernopre:v1.18.1
+reg.kyverno.io/kyverno/reports-controller:v1.18.1
+registry.istio.io/release/install-cni:1.30.1-distroless
+registry.istio.io/release/pilot:1.30.1-distroless
+registry.istio.io/release/proxyv2:1.30.1-distroless
+registry.istio.io/release/ztunnel:1.30.1
+registry.k8s.io/coredns/coredns:v1.13.1
 registry.k8s.io/etcd:3.5.31-0
-registry.k8s.io/kube-apiserver:v1.35.5
-registry.k8s.io/kube-controller-manager:v1.35.5
-registry.k8s.io/kube-proxy:v1.35.5
-registry.k8s.io/kube-scheduler:v1.35.5
-registry.k8s.io/pause:3.10
+registry.k8s.io/etcd:3.6.6-0
+registry.k8s.io/kube-apiserver:v1.35.6
+registry.k8s.io/kube-controller-manager:v1.35.6
+registry.k8s.io/kube-scheduler:v1.35.6
+registry.k8s.io/kube-state-metrics/kube-state-metrics:v2.19.1
+registry.k8s.io/metrics-server/metrics-server:v0.8.1
+registry.k8s.io/sig-storage/csi-node-driver-registrar:v2.15.0
+registry.k8s.io/sig-storage/csi-provisioner:v6.1.0
+registry.k8s.io/sig-storage/csi-resizer:v2.0.0
+registry.k8s.io/sig-storage/csi-snapshotter:v8.4.0
+registry.k8s.io/sig-storage/livenessprobe:v2.17.0
+registry.k8s.io/sig-storage/nfsplugin:v4.13.2
 velero/velero-plugin-for-aws:v1.14.1

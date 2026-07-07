@@ -5,7 +5,9 @@ Components and versions used in this project.
 > **Airgap refresh 2026-06-15:** versions bumped to latest K8s-1.35-compatible / ARM64
 > stable. Components that could not move safely this cycle are listed under
 > **Frozen this cycle** at the bottom with the reason. After changing this file,
-> regenerate the airgap image list: `scripts/airgap/01-generate-image-list.sh images.txt`.
+> regenerate the airgap image list from a running cluster:
+> `scripts/airgap/01-generate-image-list.sh --live scripts/airgap/images.txt`
+> (the `--live` mode is authoritative — static source-scan misses chart-default images).
 
 ## Core Components
 

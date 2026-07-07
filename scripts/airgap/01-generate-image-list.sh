@@ -2,16 +2,32 @@
 set -euo pipefail
 
 # =============================================================================
-# 01-generate-image-list.sh — Scans source to produce images.txt
+# 01-generate-image-list.sh — Produce the airgap image list (images.txt)
 #
-# Sources scanned:
-#   - VERSIONS.md (authoritative version table)
-#   - scripts/**/*.sh (image references in kubectl/helm commands)
-#   - gitops/apps/*.yaml (Helm values image.repository + image.tag)
-#   - gitops/resources/*.yaml (container spec image fields)
-#   - Vagrantfile (K8s/containerd versions → derive kubeadm image list)
+# TWO MODES:
 #
-# Output format: one image reference per line (registry/repo:tag)
+#   --live [OUT]   RECOMMENDED. Extract the ACTUAL image set from a running,
+#                  fully-provisioned cluster (pod snapshot) and union the
+#                  transient job/init images that don't appear in a point-in-time
+#                  snapshot (kaniko, alpine/git, alpine/k8s, velero-plugin). This
+#                  is the only mode that captures Helm CHART-DEFAULT images —
+#                  Cilium, Alloy, Loki, Tempo, Prometheus stack, Istio, Kyverno,
+#                  cert-manager, MetalLB, ArgoCD, Keycloak, CNPG, etc. — which the
+#                  static source-scan below cannot see (they have no explicit
+#                  `image:` ref in our gitops). Static mode undercounts by ~60.
+#
+#   (default)      STATIC source-scan (legacy). Scans gitops/ + scripts/ for
+#                  explicit `image:` refs, Helm repository+tag pairs, kubeadm
+#                  images from the Vagrantfile, and `--set image.*` flags. Kept
+#                  as an offline sanity cross-check ONLY — it is NOT complete;
+#                  never ship its output as the airgap bundle list.
+#
+# Output format: one image reference per line (registry/repo:tag); `#` comments
+# and blank lines are ignored by the consumer scripts (02-save-images.sh).
+#
+# Usage:
+#   scripts/airgap/01-generate-image-list.sh --live images.txt   # regenerate for real
+#   scripts/airgap/01-generate-image-list.sh images.txt          # static cross-check
 # =============================================================================
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -19,8 +35,92 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/00-config.sh"
 
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+
+MODE="static"
+if [[ "${1:-}" == "--live" ]]; then
+  MODE="live"
+  shift
+fi
 OUT_FILE="${1:-/dev/stdout}"
 
+# --- Transient job/init images: run one-off (Jobs, init containers, build) so a
+#     point-in-time pod snapshot may miss them, but a from-scratch airgap install
+#     needs them. Keep this list in sync with the build/hook flows. -------------
+TRANSIENT_IMAGES=$(cat <<'EOF'
+gcr.io/kaniko-project/executor:latest
+docker.io/alpine/git:latest
+docker.io/alpine/k8s:1.31.4
+velero/velero-plugin-for-aws:v1.14.1
+mirror.gcr.io/aquasec/trivy:0.60.0
+EOF
+)
+# NOTE: the trivy scanner (aquasec/trivy) is spawned by trivy-operator as a
+# short-lived VulnerabilityReport scan Job, so it only appears in a live pod
+# snapshot while a scan is running — pinned here so it's captured deterministically.
+# Bump the tag when trivy-operator (which selects it) is upgraded.
+
+# In-cluster-built image: produced by Kaniko from source pushed to Gitea, NOT
+# pulled from any upstream registry — must never be in a pull-based mirror list.
+INCLUSTER_BUILT_RE='harbor\.local\.narwhal\.internal/library/narwhal-portal'
+
+emit_header() {
+  cat <<HEADER
+# Airgap image list — narwhal IDP cluster
+#
+# GROUND TRUTH: images actually running in a fully-provisioned cluster (kubectl
+# pod snapshot) UNION the transient job/init images (kaniko executor, alpine/git
+# for the portal build, alpine/k8s for velero/CSI hook jobs, velero-plugin-for-aws).
+# Regenerate with:  scripts/airgap/01-generate-image-list.sh --live images.txt
+# (static source-scan mode cannot see chart-default images and undercounts by ~60).
+#
+# EXCLUDED intentionally:
+#   - harbor.local.narwhal.internal/library/narwhal-portal:latest — built IN-CLUSTER
+#     by Kaniko; produced, not pulled, so it must not be in a pull-based bundle.
+#
+# KNOWN TECH-DEBT (works, but flagged):
+#   - docker.io/bitnamilegacy/valkey — Gitea chart default; repo policy bans Bitnami.
+#     Override to a non-bitnami valkey when the gitea chart values are revisited.
+#   - :latest tags (kaniko, alpine/git, ghcr.io/dasomel/goharbor/*) are
+#     non-reproducible; pin to digests for a hardened bundle.
+#
+# Last regenerated (--live): ${LIVE_STAMP:-unknown}
+HEADER
+  echo ""
+}
+
+# --- kubectl runner: try host kubectl, fall back to vagrant ssh master-1 --------
+kubectl_live() {
+  if kubectl get nodes >/dev/null 2>&1; then
+    kubectl "$@"
+  else
+    ( cd "${PROJECT_ROOT}" && vagrant ssh master-1 -c "kubectl $*" 2>/dev/null )
+  fi
+}
+
+if [[ "${MODE}" == "live" ]]; then
+  echo "Extracting image set from the running cluster..." >&2
+  live=$(kubectl_live get pods -A -o jsonpath='{range .items[*]}{range .spec.initContainers[*]}{.image}{"\n"}{end}{range .spec.containers[*]}{.image}{"\n"}{end}{end}')
+  if [[ -z "${live}" ]]; then
+    echo "ERROR: could not read images from the cluster (host kubectl and 'vagrant ssh master-1' both failed)." >&2
+    echo "       Run this from the repo root with a reachable cluster." >&2
+    exit 1
+  fi
+  LIVE_STAMP="$(date +%Y-%m-%d) (from live cluster)"
+  {
+    emit_header
+    { printf '%s\n' "${live}"; printf '%s\n' "${TRANSIENT_IMAGES}"; } \
+      | sed -E 's/@sha256:.*//' \
+      | grep -vE "${INCLUSTER_BUILT_RE}" \
+      | grep -vE '^[[:space:]]*$' \
+      | sort -u
+  } > "${OUT_FILE}"
+  count=$(grep -cvE '^#|^[[:space:]]*$' "${OUT_FILE}")
+  echo "Collected ${count} image refs (live + transient)" >&2
+  exit 0
+fi
+
+# =============================== STATIC MODE ==================================
+# (legacy source-scan — incomplete, cross-check only)
 tmp=$(mktemp)
 trap 'rm -f "${tmp}"' EXIT
 
@@ -78,4 +178,4 @@ sort -u "${tmp}" \
   > "${OUT_FILE}"
 
 count=$(wc -l < "${OUT_FILE}")
-echo "Collected ${count} unique image refs" >&2
+echo "Collected ${count} unique image refs (STATIC scan — INCOMPLETE, cross-check only; use --live for the real list)" >&2

@@ -138,11 +138,11 @@ Components and versions used in this project.
 
 ## Base Infrastructure
 
-| Component | Version | Description |
-|-----------|---------|-------------|
-| Vagrant | 2.4+ | VM management |
-| VirtualBox | 7.1+ | Virtualization provider |
-| VMware Fusion | 25H2 | Virtualization provider (alternative) |
+| Component | Version   | Description |
+|-----------|-----------|-------------|
+| Vagrant | 2.4+      | VM management |
+| VirtualBox | 7.1+      | Virtualization provider |
+| VMware Fusion | 26H1      | Virtualization provider (alternative) |
 | Ubuntu | 26.04 LTS | Base OS (dasomel/ubuntu-26.04-xfs v0.1.0, Resolute, kernel 7.0) |
 
 ## Frozen this cycle (airgap refresh 2026-06-15)

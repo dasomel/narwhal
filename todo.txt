@@ -1,4 +1,0 @@
-완료:
-1. [x] 사용자 4명 체계 (admin/dev/view/guest)
-2. [x] 그룹명 단수 변경 + guest 그룹 추가
-3. [x] 네임스페이스 기능별 통합 (platform-system, iam, devtools, storage, dev)

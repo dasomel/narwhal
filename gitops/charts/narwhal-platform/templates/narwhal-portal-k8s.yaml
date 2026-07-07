@@ -187,9 +187,12 @@ spec:
       targetPort: 6379
 ---
 # Narwhal Portal Deployment
-# replicas: 0 by default — image is built/pushed externally via 15-narwhal-portal.sh.
-# 15 scales to 1 after `docker push harbor.{{ .Values.baseDomain }}/library/narwhal-portal:latest`.
-# ArgoCD ignoreDifferences (in gitops/apps/narwhal-portal.yaml) suppresses replicas drift.
+# Image is pulled from GHCR (ghcr.io/dasomel/narwhal-portal, public package) at a
+# PINNED SemVer tag — deterministic, GitOps-detectable upgrades. To upgrade: bump
+# the tag below to the new release (e.g. :1.1.0) and push to Gitea; ArgoCD detects
+# the diff and rolls it out. (Previously built in-cluster via Kaniko → Harbor
+# :latest; that path is now an optional developer self-service tool — see
+# scripts/cluster/15-narwhal-portal.sh and docs/developer-kaniko-builds.md.)
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -213,9 +216,10 @@ spec:
           effect: NoSchedule
       containers:
         - name: narwhal-portal
-          image: harbor.{{ .Values.baseDomain }}/library/narwhal-portal:latest
-          # IfNotPresent: use the in-cluster-built image already present in
-          # containerd/Harbor instead of re-pulling on every restart.
+          image: ghcr.io/dasomel/narwhal-portal:1.0.0
+          # IfNotPresent: the tag is an immutable pinned version, so once pulled
+          # there is no need to re-pull on every restart. Bumping the tag (release
+          # upgrade) changes the ref → Kubernetes pulls the new digest.
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 3000

@@ -106,6 +106,7 @@ When Plan mode is needed in Narwhal:
 ### GitOps/ArgoCD Mistakes
 | Date | Mistake | Fix |
 |------|---------|-----|
+| 2026-07-07 | Portal deployed via a `:latest` image tag in the GitOps manifest — ArgoCD compares the rendered manifest string, so a re-published `:latest` is an IDENTICAL manifest → **no diff detected → no sync → stale image runs** until a manual `rollout restart`; selfHeal never fires either. (D-portal-ghcr) | Pin an immutable SemVer tag in GitOps (`ghcr.io/dasomel/narwhal-portal:1.0.0`). Upgrade = bump the tag → ArgoCD sees the diff → auto-syncs. Reserve `:latest` for non-GitOps flows. Portal now pulls the pinned public GHCR image; in-cluster Kaniko build demoted to optional dev tool (`docs/developer-kaniko-builds.md`) |
 | 2026-07-05 | `scripts/gitops/push-to-gitea.sh` uses `cp -r` (mirror or per-path) into a fresh Gitea clone — this only adds/overwrites files, it never deletes a file that no longer exists in the local `gitops/` tree. Renaming/removing a gitops Application file (e.g. `promtail.yaml` -> `k8s-monitoring.yaml` for the Alloy migration) and running the script as-is would leave the stale old file committed in Gitea alongside the new one -> two conflicting ArgoCD Applications | For a rename/delete, do the Gitea clone/push manually with an explicit `git rm` instead of relying on the script's plain `cp -r` |
 | - | values file path typo | `valueFiles` paths are relative to repoURL |
 | - | targetRevision format error | Chart version is `"1.0.0"` (string), Git ref is `HEAD` |
@@ -247,7 +248,7 @@ When Plan mode is needed in Narwhal:
 | Gitea | `scripts/cluster/12-gitea.sh` | Git server |
 | ArgoCD | `scripts/cluster/13-argocd.sh` | GitOps CD |
 | Bootstrap | `scripts/cluster/14-gitops-bootstrap.sh` | App-of-Apps deployment |
-| IDP Portal | `scripts/cluster/15-narwhal-portal.sh` | Developer portal deploy — image must be built on the host (`cd narwhal-portal && make all`); the VM cannot build it (source lives on the host) |
+| IDP Portal | `scripts/cluster/15-narwhal-portal.sh` | Developer portal **readiness gate** — image is pulled from `ghcr.io/dasomel/narwhal-portal:<pinned>` (public GHCR) by ArgoCD; script only waits for the Deployment to become Ready. In-cluster Kaniko build is now an OPTIONAL dev self-service tool (`narwhal-portal/scripts/kaniko-build.sh`, see `docs/developer-kaniko-builds.md`), no longer on the install path |
 
 ### 3. GitOps App Management
 

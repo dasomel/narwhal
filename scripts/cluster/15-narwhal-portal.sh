@@ -4,14 +4,17 @@
 #
 # 실행 시점: 06-phase2-start.sh 에서 14-gitops-bootstrap.sh 직후.
 # 역할:
-#   - Harbor의 library/narwhal-portal:latest 이미지 존재 여부를 확인한다.
-#   - 이미지가 있으면 narwhal-portal Deployment를 rollout restart하여 최신 이미지를 반영.
-#   - 이미지가 없으면 호스트 빌드 안내 메시지를 출력하고 0으로 정상 종료
-#     (포털 이미지는 VM 내부에서 빌드 불가 — 소스는 호스트에만 있음).
+#   - narwhal-portal 이미지는 ghcr.io/dasomel/narwhal-portal:<pinned> 에서 pull된다
+#     (gitops/charts/narwhal-platform/templates/narwhal-portal-k8s.yaml).
+#     ArgoCD App-of-Apps가 Deployment를 동기화하므로 여기서는 이미지를 빌드하지 않고,
+#     Deployment가 Ready가 될 때까지 대기(readiness gate)만 한다.
+#   - (개발자용) 커스텀 포털 이미지를 in-cluster로 빌드하려면 Kaniko 셀프서비스
+#     도구를 쓴다: narwhal-portal repo의 scripts/kaniko-build.sh 가 소스를 in-cluster
+#     Gitea에 push → Kaniko Job으로 빌드 → Harbor에 push한다. 그 뒤 gitops 이미지
+#     태그를 그 이미지로 바꾸면 ArgoCD가 배포한다. 자세한 내용: docs/developer-kaniko-builds.md
 #
-# 멱등성: rollout restart는 이미 최신 상태여도 무해.
+# 멱등성: 상태 확인만 하므로 재실행 무해.
 # 의존 스크립트:
-#   08-5-registry.sh — Harbor 기동
 #   13-2-narwhal-portal-bindings.sh — narwhal-portal-secrets 생성
 #   14-gitops-bootstrap.sh — ArgoCD App-of-Apps → narwhal-portal.yaml 배포
 set -euo pipefail
@@ -22,140 +25,35 @@ echo "============================================"
 
 export KUBECONFIG=/home/vagrant/.kube/config-local
 
-DOMAIN="${DOMAIN:-local.narwhal.internal}"
 NAMESPACE="devtools"
 DEPLOYMENT="narwhal-portal"
-HARBOR_HOST="harbor.${DOMAIN}"
-HARBOR_PROJECT="library"
-HARBOR_REPO="narwhal-portal"
 
-# Harbor core ClusterIP 조회 (harbor-core Service, devtools namespace)
-HARBOR_CORE_IP=$(kubectl get svc harbor-core -n devtools \
-  -o jsonpath='{.spec.clusterIP}' 2>/dev/null || echo "")
-
-check_image_exists() {
-  if [ -z "${HARBOR_CORE_IP}" ]; then
-    echo "WARN: harbor-core Service not found in devtools namespace; skipping image check"
-    return 1
+# 포털 이미지는 GHCR(ghcr.io/dasomel/narwhal-portal, public)에서 pull되므로
+# in-cluster 빌드가 필요 없다. ArgoCD가 Deployment를 만들 때까지 대기(최대 3분).
+deploy_ready="false"
+for attempt in $(seq 1 18); do
+  if kubectl get deployment "${DEPLOYMENT}" -n "${NAMESPACE}" &>/dev/null; then
+    deploy_ready="true"
+    break
   fi
+  echo "  narwhal-portal Deployment 대기 중 (ArgoCD sync)... (${attempt}/18)"
+  sleep 10
+done
 
-  # Harbor API v2 — artifacts endpoint (admin password: devtools/harbor-secrets)
-  HARBOR_ADMIN_PASSWORD=$(kubectl get secret harbor-secrets -n devtools \
-    -o jsonpath='{.data.HARBOR_ADMIN_PASSWORD}' 2>/dev/null | base64 -d || echo "")
-  if [ -z "${HARBOR_ADMIN_PASSWORD}" ]; then
-    HARBOR_ADMIN_PASSWORD="Harbor12345"  # chart default
-  fi
-
-  # Fetch the artifacts list body. A repository can exist with an empty
-  # artifacts array ("[]") after blob loss (e.g. cluster destroy) — HTTP 200
-  # alone is NOT proof an image is pullable, so require a real artifact digest.
-  RESP=$(curl -s \
-    -u "admin:${HARBOR_ADMIN_PASSWORD}" \
-    "http://${HARBOR_CORE_IP}/api/v2.0/projects/${HARBOR_PROJECT}/repositories/${HARBOR_REPO}/artifacts" \
-    --max-time 10 2>/dev/null || echo "")
-
-  if echo "${RESP}" | grep -q '"digest"'; then
-    return 0
-  else
-    return 1
-  fi
-}
-
-#=========================================
-# 이미지 존재 확인
-#=========================================
-echo "Harbor에서 ${HARBOR_HOST}/${HARBOR_PROJECT}/${HARBOR_REPO}:latest 이미지 확인 중..."
-
-if check_image_exists; then
-  echo "이미지 확인됨 — narwhal-portal Deployment 재기동 중..."
-
-  # Deployment가 아직 없으면 ArgoCD 동기화를 기다린다 (최대 3분)
-  deploy_ready="false"
-  for attempt in $(seq 1 18); do
-    if kubectl get deployment "${DEPLOYMENT}" -n "${NAMESPACE}" &>/dev/null; then
-      deploy_ready="true"
-      break
-    fi
-    echo "  narwhal-portal Deployment 대기 중... (${attempt}/18)"
-    sleep 10
-  done
-
-  if [ "${deploy_ready}" = "true" ]; then
-    kubectl rollout restart deployment/"${DEPLOYMENT}" -n "${NAMESPACE}"
-    echo "  rollout restart 완료. 상태 확인:"
-    kubectl rollout status deployment/"${DEPLOYMENT}" -n "${NAMESPACE}" --timeout=120s || \
-      echo "  WARN: rollout 타임아웃 (계속 진행)"
-  else
-    echo "WARN: narwhal-portal Deployment가 아직 생성되지 않음 (ArgoCD sync 지연 가능)"
-    echo "  나중에 수동 확인: kubectl rollout restart deployment/narwhal-portal -n devtools"
-  fi
+if [ "${deploy_ready}" = "true" ]; then
+  echo "  Deployment 확인 — GHCR 이미지 pull + rollout 상태 확인:"
+  kubectl rollout status deployment/"${DEPLOYMENT}" -n "${NAMESPACE}" --timeout=180s || \
+    echo "  WARN: rollout 타임아웃 (계속 진행 — 이미지 pull 지연 가능, ArgoCD가 재시도)"
 else
-  echo ""
-  echo "================================================================"
-  echo "  NOTICE: Harbor에 narwhal-portal 이미지가 없습니다."
-  echo "  in-cluster Kaniko 빌드를 시작합니다..."
-  echo "================================================================"
-  echo ""
-
-  # ---- in-cluster Kaniko 빌드 트리거 ------------------------------------
-  # kaniko-build.sh 위치: narwhal-portal repo는 /home/vagrant/narwhal-portal 에
-  # 마운트되어 있거나, 호스트에서 실행 시 KANIKO_BUILD_SCRIPT를 오버라이드한다.
-  KANIKO_BUILD_SCRIPT="${KANIKO_BUILD_SCRIPT:-/home/vagrant/narwhal-portal/scripts/kaniko-build.sh}"
-
-  BUILD_SUCCESS="false"
-  if [[ -f "${KANIKO_BUILD_SCRIPT}" ]]; then
-    echo "  빌드 스크립트 실행: ${KANIKO_BUILD_SCRIPT}"
-    # DOMAIN을 export해서 kaniko-build.sh가 같은 도메인을 사용하도록 한다.
-    export DOMAIN
-    if bash "${KANIKO_BUILD_SCRIPT}"; then
-      BUILD_SUCCESS="true"
-    else
-      echo "WARN: Kaniko 빌드 실패 — 빌드 로그를 확인하세요."
-      echo "  kubectl logs -n devtools -l app.kubernetes.io/name=kaniko-build-narwhal-portal"
-    fi
-  else
-    echo "WARN: Kaniko 빌드 스크립트를 찾을 수 없습니다: ${KANIKO_BUILD_SCRIPT}"
-    echo "  KANIKO_BUILD_SCRIPT 환경변수로 경로를 지정하거나,"
-    echo "  narwhal-portal 소스를 VM에 마운트하세요."
-    echo ""
-    echo "  대안 — 호스트에서 직접 빌드:"
-    echo "    cd /path/to/narwhal-portal"
-    echo "    ./scripts/kaniko-build.sh"
-    echo ""
-    echo "  또는 호스트 Docker로 빌드 후 push:"
-    echo "    make all    # docker build + push to ${HARBOR_HOST}/${HARBOR_PROJECT}/${HARBOR_REPO}"
-  fi
-
-  if [[ "${BUILD_SUCCESS}" == "true" ]]; then
-    echo ""
-    echo "  Kaniko 빌드 완료 — narwhal-portal Deployment 재기동 중..."
-    # 이미지 push 직후 Deployment가 아직 생성되지 않았을 수 있으므로 대기
-    deploy_ready="false"
-    for attempt in $(seq 1 18); do
-      if kubectl get deployment "${DEPLOYMENT}" -n "${NAMESPACE}" &>/dev/null; then
-        deploy_ready="true"
-        break
-      fi
-      echo "  narwhal-portal Deployment 대기 중... (${attempt}/18)"
-      sleep 10
-    done
-
-    if [ "${deploy_ready}" = "true" ]; then
-      kubectl rollout restart deployment/"${DEPLOYMENT}" -n "${NAMESPACE}"
-      echo "  rollout restart 완료. 상태 확인:"
-      kubectl rollout status deployment/"${DEPLOYMENT}" -n "${NAMESPACE}" --timeout=120s || \
-        echo "  WARN: rollout 타임아웃 (계속 진행)"
-    else
-      echo "WARN: narwhal-portal Deployment가 아직 생성되지 않음 (ArgoCD sync 지연 가능)"
-      echo "  나중에 수동 확인: kubectl rollout restart deployment/narwhal-portal -n devtools"
-    fi
-  else
-    echo ""
-    echo "15-narwhal-portal.sh: 빌드 미완료 — 정상 종료 (non-critical)"
-    echo "  이미지 빌드 후 아래 명령으로 재기동:"
-    echo "    kubectl rollout restart deployment/narwhal-portal -n devtools"
-  fi
+  echo "WARN: narwhal-portal Deployment가 아직 생성되지 않음 (ArgoCD sync 지연 가능)"
+  echo "  나중에 수동 확인: kubectl get application narwhal-portal -n devtools"
 fi
+
+echo ""
+echo "  (개발자용) 커스텀 포털 이미지를 in-cluster Kaniko로 빌드하려면:"
+echo "    cd narwhal-portal && ./scripts/kaniko-build.sh    # 소스→Gitea→Kaniko→Harbor push"
+echo "    → 이후 gitops 포털 이미지 태그를 그 이미지로 교체하면 ArgoCD가 배포"
+echo "    자세한 내용: docs/developer-kaniko-builds.md"
 
 echo "============================================"
 echo "15: narwhal-portal 확인 완료"

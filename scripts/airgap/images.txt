@@ -1,14 +1,18 @@
 # Airgap image list — narwhal IDP cluster
 #
 # GROUND TRUTH: images actually running in a fully-provisioned cluster (kubectl
-# pod snapshot) UNION the transient job/init images (kaniko executor, alpine/git
-# for the portal build, alpine/k8s for velero/CSI hook jobs, velero-plugin-for-aws).
+# pod snapshot) UNION the transient job/init images (kaniko executor + alpine/git
+# for the OPTIONAL in-cluster Kaniko developer build, alpine/k8s for velero/CSI
+# hook jobs, velero-plugin-for-aws).
 # Regenerate with:  scripts/airgap/01-generate-image-list.sh --live images.txt
 # (static source-scan mode cannot see chart-default images and undercounts by ~60).
 #
 # EXCLUDED intentionally:
-#   - harbor.local.narwhal.internal/library/narwhal-portal:latest — built IN-CLUSTER
-#     by Kaniko; produced, not pulled, so it must not be in a pull-based bundle.
+#   - harbor.local.narwhal.internal/library/narwhal-portal:* — OPTIONAL dev-built
+#     portal image (in-cluster Kaniko self-service, scripts/kaniko-build.sh);
+#     produced, not pulled, so it must not be in a pull-based bundle. The DEFAULT
+#     portal deploy pulls ghcr.io/dasomel/narwhal-portal:<ver> (a normal pulled
+#     image, listed below), so it IS in the bundle.
 #
 # :latest TAGS — deliberate vs. hardening:
 #   - ghcr.io/dasomel/goharbor/* :latest is INTENTIONAL — the custom multi-arch
@@ -48,6 +52,7 @@ ghcr.io/dasomel/goharbor/harbor-registryctl:latest
 ghcr.io/dasomel/goharbor/nginx-photon:latest
 ghcr.io/dasomel/goharbor/redis-photon:latest
 ghcr.io/dasomel/goharbor/registry-photon:latest
+ghcr.io/dasomel/narwhal-portal:1.0.0
 ghcr.io/dasomel/nfs-quota-agent:v0.2.1
 ghcr.io/dexidp/dex:v2.45.0
 ghcr.io/grafana/alloy-operator:1.10.0

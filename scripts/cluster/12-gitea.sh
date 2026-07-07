@@ -53,6 +53,15 @@ GITEA_DB_PASS=$(kubectl get secret narwhal-db-credentials -n database \
   -o jsonpath='{.data.gitea-password}' | base64 -d)
 
 # Install Gitea with Keycloak OIDC
+#
+# Cache/session/queue backend: the gitea chart bundles a Bitnami Valkey subchart
+# (image docker.io/bitnamilegacy/valkey) when valkey.enabled=true, which violates
+# this repo's Bitnami ban AND is unnecessary here — gitea runs as a SINGLE replica,
+# so it has no need for a shared external cache. With valkey disabled the chart
+# leaves gitea on its built-in defaults: memory cache, memory session, and a
+# level (leveldb) queue persisted on the gitea PVC. Trade-off: in-memory sessions
+# drop on a gitea pod restart (users re-login) — acceptable for a dev IDP git
+# server. Re-enable valkey (with a non-Bitnami image) only if gitea goes HA.
 GITEA_CHART_VERSION="${GITEA_CHART_VERSION:-12.6.0}"
 
 helm upgrade --install gitea gitea-charts/gitea \
@@ -84,7 +93,7 @@ helm upgrade --install gitea gitea-charts/gitea \
   --set redis-cluster.enabled=false \
   --set redis.enabled=false \
   --set valkey-cluster.enabled=false \
-  --set valkey.enabled=true \
+  --set valkey.enabled=false \
   --set "extraVolumes[0].name=narwhal-ca" \
   --set "extraVolumes[0].secret.secretName=narwhal-ca-cert" \
   --set "extraContainerVolumeMounts[0].name=narwhal-ca" \
@@ -96,13 +105,6 @@ helm upgrade --install gitea gitea-charts/gitea \
 # Opt Gitea out of Istio ambient mesh (SSO cookie handling)
 kubectl patch deployment gitea -n devtools --type='json' \
   -p='[{"op": "add", "path": "/spec/template/metadata/labels/istio.io~1dataplane-mode", "value": "none"}]' 2>/dev/null || true
-
-# Patch Valkey NetworkPolicy for Istio ambient mesh (HBONE port 15008)
-if kubectl get networkpolicy gitea-valkey -n devtools &>/dev/null; then
-  echo "Patching gitea-valkey NetworkPolicy for Istio ambient mesh (HBONE port 15008)..."
-  kubectl patch networkpolicy gitea-valkey -n devtools --type='json' \
-    -p='[{"op": "add", "path": "/spec/ingress/0/ports/-", "value": {"port": 15008, "protocol": "TCP"}}]' || true
-fi
 
 # Configure Keycloak OAuth2 provider via API
 echo "Configuring Gitea OAuth2 provider..."

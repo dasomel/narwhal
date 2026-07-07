@@ -77,11 +77,13 @@ emit_header() {
 #   - harbor.local.narwhal.internal/library/narwhal-portal:latest — built IN-CLUSTER
 #     by Kaniko; produced, not pulled, so it must not be in a pull-based bundle.
 #
-# KNOWN TECH-DEBT (works, but flagged):
-#   - docker.io/bitnamilegacy/valkey — Gitea chart default; repo policy bans Bitnami.
-#     Override to a non-bitnami valkey when the gitea chart values are revisited.
-#   - :latest tags (kaniko, alpine/git, ghcr.io/dasomel/goharbor/*) are
-#     non-reproducible; pin to digests for a hardened bundle.
+# :latest TAGS — deliberate vs. hardening:
+#   - ghcr.io/dasomel/goharbor/* :latest is INTENTIONAL — the custom multi-arch
+#     Harbor rebuild is republished to :latest, and we want new builds picked up
+#     automatically. Do NOT digest-pin these (it defeats that).
+#   - gcr.io/kaniko-project/executor:latest and docker.io/alpine/git:latest are
+#     third-party build helpers; digest-pin them if you need a fully reproducible
+#     hardened airgap bundle. Left at :latest here to match the deploy manifests.
 #
 # Last regenerated (--live): ${LIVE_STAMP:-unknown}
 HEADER

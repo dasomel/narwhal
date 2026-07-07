@@ -90,29 +90,7 @@ spec:
       app: harbor
   mtls:
     mode: PERMISSIVE
----
-# PeerAuthentication 5/5: gitea-valkey — PERMISSIVE exception (workload-scoped).
-#
-# WHY: Gitea's valkey (Redis-compatible cache) is deployed as a Bitnami Valkey
-# StatefulSet that does NOT carry the istio.io/dataplane-mode=none opt-out label,
-# so ztunnel intercepts its inbound traffic and enforces mTLS. Gitea itself
-# IS opted out of the ambient mesh (cookie-corruption fix), so it connects to
-# valkey:6379 via plain TCP — STRICT rejects that connection. A PERMISSIVE
-# exception scoped to the valkey primary pod (matchLabels from the live runtime
-# resource: app.kubernetes.io/component=primary, instance=gitea, name=valkey)
-# lets ztunnel accept both mTLS and plain TCP for this workload only, while the
-# rest of devtools stays STRICT. Created live during 2026-06-30 recovery;
-# persisted here so ArgoCD selfHeal/prune does not delete it.
-apiVersion: security.istio.io/v1
-kind: PeerAuthentication
-metadata:
-  name: gitea-valkey-permissive
-  namespace: devtools
-spec:
-  selector:
-    matchLabels:
-      app.kubernetes.io/component: primary
-      app.kubernetes.io/instance: gitea
-      app.kubernetes.io/name: valkey
-  mtls:
-    mode: PERMISSIVE
+# NOTE: a 5th PeerAuthentication (gitea-valkey-permissive) previously lived here
+# for Gitea's bundled Bitnami Valkey. Removed 2026-07-07 — Gitea now runs with
+# valkey.enabled=false (single-replica, built-in cache), so there is no valkey
+# workload to except from STRICT mTLS. See scripts/cluster/12-gitea.sh.

@@ -39,6 +39,19 @@ else
   echo "Harbor admin secret already exists, reusing"
 fi
 
+# Harbor internal shared secrets (secretKey/core/jobservice) — externalized (no plaintext in git)
+# Keys read by harbor chart: secretKey (existingSecretSecretKey), secret (core.existingSecret), JOBSERVICE_SECRET (jobservice.existingSecret)
+if ! kubectl get secret harbor-shared-secrets -n devtools &>/dev/null; then
+  kubectl create secret generic harbor-shared-secrets \
+    --from-literal=secretKey="$(openssl rand -hex 8)" \
+    --from-literal=secret="$(openssl rand -hex 8)" \
+    --from-literal=JOBSERVICE_SECRET="$(openssl rand -hex 8)" \
+    -n devtools
+  echo "Harbor shared secrets created (harbor-shared-secrets)"
+else
+  echo "Harbor shared secrets already exist, reusing"
+fi
+
 # Harbor DB password — provided by 07-cnpg.sh via narwhal-db-credentials Secret
 HARBOR_DB_PASS=$(kubectl get secret narwhal-db-credentials -n database \
   -o jsonpath='{.data.harbor-password}' | base64 -d)
@@ -78,6 +91,9 @@ for attempt in 1 2 3 4 5; do
     --set externalURL=http://harbor.local \
     --set existingSecretAdminPassword=harbor-secrets \
     --set existingSecretAdminPasswordKey=HARBOR_ADMIN_PASSWORD \
+    --set existingSecretSecretKey=harbor-shared-secrets \
+    --set core.existingSecret=harbor-shared-secrets \
+    --set jobservice.existingSecret=harbor-shared-secrets \
     --set database.type=external \
     --set database.external.host=harbor-db-rw \
     --set database.external.port=5432 \
@@ -92,21 +108,21 @@ for attempt in 1 2 3 4 5; do
     --set redis.type=internal \
     --set trivy.enabled=false \
     --set core.image.repository=ghcr.io/dasomel/goharbor/harbor-core \
-    --set core.image.tag=latest \
+    --set core.image.tag=v2.15.1 \
     --set jobservice.image.repository=ghcr.io/dasomel/goharbor/harbor-jobservice \
-    --set jobservice.image.tag=latest \
+    --set jobservice.image.tag=v2.15.1 \
     --set registry.registry.image.repository=ghcr.io/dasomel/goharbor/registry-photon \
-    --set registry.registry.image.tag=latest \
+    --set registry.registry.image.tag=v2.15.1 \
     --set registry.controller.image.repository=ghcr.io/dasomel/goharbor/harbor-registryctl \
-    --set registry.controller.image.tag=latest \
+    --set registry.controller.image.tag=v2.15.1 \
     --set portal.image.repository=ghcr.io/dasomel/goharbor/harbor-portal \
-    --set portal.image.tag=latest \
+    --set portal.image.tag=v2.15.1 \
     --set nginx.image.repository=ghcr.io/dasomel/goharbor/nginx-photon \
-    --set nginx.image.tag=latest \
+    --set nginx.image.tag=v2.15.1 \
     --set redis.internal.image.repository=ghcr.io/dasomel/goharbor/redis-photon \
-    --set redis.internal.image.tag=latest \
+    --set redis.internal.image.tag=v2.15.1 \
     --set exporter.image.repository=ghcr.io/dasomel/goharbor/harbor-exporter \
-    --set exporter.image.tag=latest; then
+    --set exporter.image.tag=v2.15.0-build.32; then
     break
   fi
   echo "Harbor install attempt ${attempt}/5 failed, waiting 15s..."

@@ -72,6 +72,12 @@ section "Harbor — https://harbor.${DOMAIN}"
 HB_PASS=$(get_secret devtools harbor-secrets HARBOR_ADMIN_PASSWORD)
 row "Admin user"     "admin"
 row "Admin password" "${HB_PASS}"
+HB_SECRETKEY=$(get_secret devtools harbor-shared-secrets secretKey)
+HB_CORE=$(get_secret devtools harbor-shared-secrets secret)
+HB_JOBSVC=$(get_secret devtools harbor-shared-secrets JOBSERVICE_SECRET)
+row "secretKey"      "${HB_SECRETKEY}"
+row "core secret"    "${HB_CORE}"
+row "jobservice sec" "${HB_JOBSVC}"
 
 # -----------------------------------------------------------------------------
 section "Grafana — https://grafana.${DOMAIN}"

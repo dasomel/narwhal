@@ -53,53 +53,53 @@ spec:
           internal:
             image:
               repository: ghcr.io/dasomel/goharbor/redis-photon
-              tag: latest
+              tag: v2.15.1
         trivy:
           enabled: false
         # Pin shared secrets so Helm upgrades never regenerate divergent values.
         # A fresh install must supply these via 08-5-registry.sh before ArgoCD syncs harbor.
-        # TODO(security): move these to a K8s Secret via existingSecret refs (same pattern
-        # as admin password) — plaintext-in-git accepted for local dev cluster only.
-        secretKey: "***REMOVED***"
+        # These are externalized to the harbor-shared-secrets Secret created by scripts/cluster/08-5-registry.sh
+        # (keys: secretKey/secret/JOBSERVICE_SECRET).
+        existingSecretSecretKey: harbor-shared-secrets
         core:
-          secret: "***REMOVED***"
+          existingSecret: harbor-shared-secrets
           image:
             repository: ghcr.io/dasomel/goharbor/harbor-core
-            tag: latest
+            tag: v2.15.1
           podLabels:
             istio.io/dataplane-mode: "none"
           # OIDC config is set via Harbor API by 11-3-keycloak-clients.sh (stored in Harbor DB)
           # CONFIG_OVERWRITE_JSON env var is NOT set — API-based config survives restarts via DB
         jobservice:
-          secret: "***REMOVED***"
+          existingSecret: harbor-shared-secrets
           image:
             repository: ghcr.io/dasomel/goharbor/harbor-jobservice
-            tag: latest
+            tag: v2.15.1
         registry:
           registry:
             image:
               repository: ghcr.io/dasomel/goharbor/registry-photon
-              tag: latest
+              tag: v2.15.1
           controller:
             image:
               repository: ghcr.io/dasomel/goharbor/harbor-registryctl
-              tag: latest
+              tag: v2.15.1
         portal:
           image:
             repository: ghcr.io/dasomel/goharbor/harbor-portal
-            tag: latest
+            tag: v2.15.1
           podLabels:
             istio.io/dataplane-mode: "none"
         nginx:
           image:
             repository: ghcr.io/dasomel/goharbor/nginx-photon
-            tag: latest
+            tag: v2.15.1
           podLabels:
             istio.io/dataplane-mode: "none"
         exporter:
           image:
             repository: ghcr.io/dasomel/goharbor/harbor-exporter
-            tag: latest
+            tag: v2.15.0-build.32
   destination:
     server: https://kubernetes.default.svc
     namespace: devtools

@@ -42,14 +42,20 @@ fi
 #=========================================
 echo "=== Distributing CA cert to SSO namespaces ==="
 CA_CERT=$(kubectl get secret narwhal-wildcard-tls -n platform-system -o jsonpath='{.data.ca\.crt}' 2>/dev/null || echo "")
+# Also bundle the Kubernetes cluster CA so consumers can verify the kube-apiserver over
+# TLS. narwhal-portal talks to the API server (https://VIP:6443, cert signed by CN=kubernetes)
+# via NODE_EXTRA_CA_CERTS=/etc/ssl/narwhal/ca.crt — the narwhal private CA alone yields
+# UNABLE_TO_VERIFY_LEAF_SIGNATURE and blanks the cluster-infra page. Appending the k8s CA is
+# additive (other consumers still trust the narwhal CA for Keycloak/etc).
+K8S_CA=$(cat /etc/kubernetes/pki/ca.crt 2>/dev/null || echo "")
 if [ -n "${CA_CERT}" ]; then
   for ns in devtools iam monitoring storage; do
     kubectl create namespace "${ns}" --dry-run=client -o yaml | kubectl apply -f - 2>/dev/null
     kubectl create secret generic narwhal-ca-cert \
-      --from-literal=ca.crt="$(echo "${CA_CERT}" | base64 -d)" \
+      --from-literal=ca.crt="$(printf '%s\n%s\n' "$(echo "${CA_CERT}" | base64 -d)" "${K8S_CA}")" \
       -n "${ns}" --dry-run=client -o yaml | kubectl apply -f -
   done
-  echo "CA cert distributed to SSO namespaces"
+  echo "CA cert (narwhal + k8s) distributed to SSO namespaces"
 else
   echo "WARN: narwhal-wildcard-tls CA cert not found, SSO apps may not verify Keycloak TLS"
 fi

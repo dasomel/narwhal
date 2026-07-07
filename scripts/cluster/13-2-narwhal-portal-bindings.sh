@@ -267,13 +267,22 @@ echo "=== [3/4] 나머지 값 수집 ==="
 AUTH_SECRET=$(openssl rand -base64 32)
 LIVE_INGEST_SECRET=$(openssl rand -base64 24)
 
+# narwhal-portal SA (idempotent) — MUST exist before minting its token. The portal Helm
+# chart also defines this SA, but ArgoCD deploys that AFTER this step (13), so at 13-2
+# time the SA doesn't exist yet → `kubectl create token` fails ("SA 없음") → empty
+# K8S_SA_TOKEN → the portal cluster-infra page can't reach the API server. Create it here;
+# ArgoCD adopts the identical SA later.
+kubectl create serviceaccount narwhal-portal -n devtools \
+  --dry-run=client -o yaml | kubectl apply -f - >/dev/null 2>&1 || true
+
 # K8s SA 토큰 (1년)
 K8S_SA_TOKEN=$(kubectl create token narwhal-portal \
   -n devtools --duration=8760h 2>/dev/null || echo "")
 if [ -z "${K8S_SA_TOKEN}" ]; then
-  echo "WARN: narwhal-portal SA 없음 — K8S_SA_TOKEN 비워둠"
+  echo "WARN: narwhal-portal SA 토큰 발급 실패 (K8S_SA_TOKEN 비어 있음)"
+else
+  echo "  K8S_SA_TOKEN 발급 완료 (${#K8S_SA_TOKEN} chars)"
 fi
-echo "  K8S_SA_TOKEN 발급 완료"
 
 # APISIX API key
 APISIX_API_KEY=$(kubectl get secret apisix-admin-key \
@@ -289,24 +298,36 @@ ARGOCD_TOKEN=""
 ARGOCD_ADMIN_PASS=$(kubectl get secret argocd-initial-admin-secret \
   -n devtools -o jsonpath='{.data.password}' 2>/dev/null | base64 -d || echo "")
 if [ -n "${ARGOCD_ADMIN_PASS}" ]; then
-  ARGOCD_JWT=$(curl -sk -X POST \
-    "https://argocd.${DOMAIN}/api/v1/session" \
-    -H "Content-Type: application/json" \
-    -d "{\"username\":\"admin\",\"password\":\"${ARGOCD_ADMIN_PASS}\"}" \
-    | python3 -c "import sys,json; print(json.load(sys.stdin).get('token',''))" 2>/dev/null || echo "")
-  if [ -n "${ARGOCD_JWT}" ]; then
-    # 기존 토큰 삭제 후 재발급 (멱등)
-    curl -sk -X DELETE \
-      "https://argocd.${DOMAIN}/api/v1/account/narwhal-portal/token/portal-main" \
-      -H "Authorization: Bearer ${ARGOCD_JWT}" >/dev/null 2>&1 || true
-    ARGOCD_TOKEN=$(curl -sk -X POST \
-      "https://argocd.${DOMAIN}/api/v1/account/narwhal-portal/token" \
-      -H "Authorization: Bearer ${ARGOCD_JWT}" \
+  # Retry with readiness gate: ArgoCD server + its APISIX ingress route may not be
+  # reachable the instant 13-2 runs (right after 13-argocd). A single-shot issuance
+  # previously left the REPLACE_ME placeholder in narwhal-portal-secrets → the portal
+  # ArgoCD widget got 401 → "0 apps" until the token was manually re-issued. Poll until
+  # the session endpoint answers and the token is issued (12 × 10s).
+  for attempt in $(seq 1 12); do
+    ARGOCD_JWT=$(curl -sk --max-time 10 -X POST \
+      "https://argocd.${DOMAIN}/api/v1/session" \
       -H "Content-Type: application/json" \
-      -d '{"expiresIn":0,"id":"portal-main"}' \
+      -d "{\"username\":\"admin\",\"password\":\"${ARGOCD_ADMIN_PASS}\"}" \
       | python3 -c "import sys,json; print(json.load(sys.stdin).get('token',''))" 2>/dev/null || echo "")
-    echo "  ARGOCD_TOKEN 발급 완료 (${#ARGOCD_TOKEN} chars)"
-  fi
+    if [ -n "${ARGOCD_JWT}" ]; then
+      # 기존 토큰 삭제 후 재발급 (멱등)
+      curl -sk --max-time 10 -X DELETE \
+        "https://argocd.${DOMAIN}/api/v1/account/narwhal-portal/token/portal-main" \
+        -H "Authorization: Bearer ${ARGOCD_JWT}" >/dev/null 2>&1 || true
+      ARGOCD_TOKEN=$(curl -sk --max-time 10 -X POST \
+        "https://argocd.${DOMAIN}/api/v1/account/narwhal-portal/token" \
+        -H "Authorization: Bearer ${ARGOCD_JWT}" \
+        -H "Content-Type: application/json" \
+        -d '{"expiresIn":0,"id":"portal-main"}' \
+        | python3 -c "import sys,json; print(json.load(sys.stdin).get('token',''))" 2>/dev/null || echo "")
+      if [ -n "${ARGOCD_TOKEN}" ]; then
+        echo "  ARGOCD_TOKEN 발급 완료 (${#ARGOCD_TOKEN} chars, attempt ${attempt})"
+        break
+      fi
+    fi
+    echo "  ArgoCD 토큰 발급 대기 (server/ingress 준비 중) attempt ${attempt}/12..."
+    sleep 10
+  done
 fi
 if [ -z "${ARGOCD_TOKEN}" ]; then
   echo "WARN: ArgoCD 토큰 발급 실패 — accounts.narwhal-portal 이 argocd-cm에 있는지 확인"

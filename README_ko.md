@@ -3,21 +3,21 @@
 [![GitHub Release](https://img.shields.io/github/v/release/dasomel/narwhal)](https://github.com/dasomel/narwhal/releases/latest)
 [![License](https://img.shields.io/github/license/dasomel/narwhal)](LICENSE)
 
-English | [한국어](README_ko.md)
+[English](README.md) | 한국어
 
-> **Narwhal** - A whale inhabiting the Arctic Ocean, characterized by a single long spiral tusk growing from its head. Called the "unicorn of the sea," it provides a powerful platform in a single cluster, just like this project.
+> **Narwhal**(일각고래) - 북극해에 서식하는 고래로, 머리에서 나선형으로 자라는 하나의 긴 엄니(tusk)가 특징입니다. "바다의 유니콘"이라 불리며, 이 프로젝트처럼 단일 클러스터에서 강력한 플랫폼을 제공합니다.
 
-Vagrant-based Kubernetes Internal Developer Platform (IDP) cluster.
+Vagrant 기반 Kubernetes Internal Developer Platform (IDP) 클러스터.
 
-Uses the [dasomel/ubuntu-26.04-xfs](https://app.vagrantup.com/dasomel/boxes/ubuntu-26.04-xfs) Box (XFS filesystem, project quota support).
+[dasomel/ubuntu-26.04-xfs](https://app.vagrantup.com/dasomel/boxes/ubuntu-26.04-xfs) Box 사용 (XFS 파일시스템, Project Quota 지원).
 
-> **Base Box Source**: [kube-ready-box](https://github.com/dasomel/kube-ready-box) - Packer-based Box with Ubuntu 26.04 and K8s prerequisites pre-installed
+> **Base Box Source**: [kube-ready-box](https://github.com/dasomel/kube-ready-box) - Ubuntu 26.04 + K8s prerequisites 사전 설치된 Packer 기반 Box
 
 ## Features
 
-- **Kubernetes v1.35** - Latest stable version, HA Control Plane (3 masters, 1 fault tolerance)
-- **GitOps** - ArgoCD + Gitea (App-of-Apps pattern)
-- **SSO** - Keycloak OIDC (via APISIX openid-connect plugin, App integration: ArgoCD, Grafana, Gitea, Harbor, Headlamp)
+- **Kubernetes v1.35** - 최신 안정 버전, HA Control Plane (3 masters, 1 fault tolerance)
+- **GitOps** - ArgoCD + Gitea (App-of-Apps 패턴)
+- **SSO** - Keycloak OIDC (APISIX openid-connect plugin 경유, 앱 연동: ArgoCD, Grafana, Gitea, Harbor, Headlamp)
 - **Observability** - Prometheus, Grafana, Loki, Tempo, Hubble
 - **Storage** - NFS (Block) + SeaweedFS (Object/S3) + [nfs-quota-agent](https://github.com/dasomel/nfs-quota-agent)
 - **Backup** - Velero + CNPG barman
@@ -28,20 +28,20 @@ Uses the [dasomel/ubuntu-26.04-xfs](https://app.vagrantup.com/dasomel/boxes/ubun
 ## Requirements
 
 - [Vagrant](https://developer.hashicorp.com/vagrant/install) 2.4+
-- [VirtualBox](https://www.virtualbox.org/wiki/Downloads) 7.1+ or [VMware Fusion](https://www.vmware.com/products/fusion.html) 26H1
-- 32GB+ RAM (40GB+ recommended)
-- 30GB+ Disk per VM (recommended for full IDP deployment)
+- [VirtualBox](https://www.virtualbox.org/wiki/Downloads) 7.1+ 또는 [VMware Fusion](https://www.vmware.com/products/fusion.html) 26H1
+- 32GB+ RAM (권장 40GB+)
+- VM당 30GB+ Disk (IDP 전체 배포 권장)
 
-### VirtualBox Disk Expansion
+### VirtualBox 디스크 확장
 
-To automatically expand disk size in VirtualBox, install the `vagrant-disksize` plugin:
+VirtualBox에서 디스크 크기를 자동으로 확장하려면 `vagrant-disksize` 플러그인을 설치하세요:
 
 ```bash
 vagrant plugin install vagrant-disksize
 ```
 
-> **Note**: VMware Fusion is automatically handled via `vmx` settings.
-> A 1TB thin-provisioned template is used.
+> **Note**: VMware Fusion은 `vmx` 설정으로 자동 처리됩니다.
+> 1TB 씬 프로비전 템플릿을 사용합니다.
 
 ## Quick Start
 
@@ -123,26 +123,26 @@ See [VERSIONS.md](VERSIONS.md) for full version list.
 
 ## Access Services
 
-### DNS Access (Recommended)
+### DNS 접속 (권장)
 
-Access services via HTTPS domains using APISIX API Gateway and cert-manager self-signed TLS.
+APISIX API Gateway + cert-manager self-signed TLS를 통해 HTTPS 도메인으로 접속합니다.
 
-DNS Configuration: Configure the client's DNS to `192.168.56.10` or add entries to `/etc/hosts`.
+DNS 설정: 클라이언트 DNS를 `192.168.56.10`으로 지정하거나 `/etc/hosts`에 추가.
 
-| Service | URL | Credentials |
+| 서비스 | URL | 자격 증명 |
 |--------|-----|-----------|
-| ArgoCD | https://argocd.local.narwhal.internal | admin / (auto-generated secret) or Keycloak SSO |
-| Grafana | https://grafana.local.narwhal.internal | admin / admin or Keycloak SSO |
-| Gitea | https://gitea.local.narwhal.internal | gitea-admin / gitea-admin or Keycloak SSO |
-| Harbor | https://harbor.local.narwhal.internal | admin / Harbor12345 or Keycloak SSO |
-| Keycloak | https://keycloak.local.narwhal.internal | temp-admin / (auto-generated) |
+| ArgoCD | https://argocd.local.narwhal.internal | admin / (자동생성 시크릿) 또는 Keycloak SSO |
+| Grafana | https://grafana.local.narwhal.internal | admin / admin 또는 Keycloak SSO |
+| Gitea | https://gitea.local.narwhal.internal | gitea-admin / gitea-admin 또는 Keycloak SSO |
+| Harbor | https://harbor.local.narwhal.internal | admin / Harbor12345 또는 Keycloak SSO |
+| Keycloak | https://keycloak.local.narwhal.internal | temp-admin / (자동생성) |
 | Headlamp | https://headlamp.local.narwhal.internal | Keycloak SSO |
 | OpenBao | https://openbao.local.narwhal.internal | root token (`bao operator init`) |
 | Hubble | https://hubble.local.narwhal.internal | - |
 
-> **Note**: Due to the use of self-signed certificates, a security warning will be displayed in your browser. Access the service by clicking "Advanced" → "Proceed".
+> **Note**: Self-signed 인증서 사용으로 브라우저에서 보안 경고가 표시됩니다. "고급" → "계속 진행"으로 접속하세요.
 
-### Port-Forward Access (Alternative)
+### Port-Forward 접속 (대안)
 
 ```bash
 # ArgoCD (GitOps)
@@ -172,9 +172,9 @@ kubectl port-forward svc/headlamp -n devtools 4466:80
 
 ## Keycloak SSO
 
-All apps are integrated with Keycloak OIDC. (HTTPS required, K8s 1.35+)
+모든 앱이 Keycloak OIDC로 연동됩니다. (HTTPS 필수, K8s 1.35+)
 
-| SSO Integrated App | Client ID | Authentication Method |
+| SSO 연동 앱 | Client ID | 인증 방식 |
 |-------------|-----------|-----------|
 | ArgoCD | `argocd` | OIDC config in argocd-cm |
 | Grafana | `grafana` | grafana.ini auth.generic_oauth |
@@ -187,7 +187,7 @@ All apps are integrated with Keycloak OIDC. (HTTPS required, K8s 1.35+)
 | cluster-admin | cluster-admin | Admin |
 | developer | edit (dev NS) | Editor |
 | viewer | view | Viewer |
-| guest | - | - (Web UI only) |
+| guest | - | - (웹 UI only) |
 
 **Default Users:**
 - `admin` / `admin` (cluster-admin)
@@ -195,26 +195,26 @@ All apps are integrated with Keycloak OIDC. (HTTPS required, K8s 1.35+)
 - `view` / `view` (viewer)
 - `guest` / `guest` (guest)
 
-For details, refer to: [docs/keycloak-accounts.md](docs/keycloak-accounts.md)
+자세한 내용: [docs/keycloak-accounts.md](docs/keycloak-accounts.md)
 
 ## Verification
 
-Cluster status verification:
+클러스터 상태 검증:
 
 ```bash
-# Full verification (120+ checks)
+# 전체 검증 (120+ checks)
 vagrant ssh master-1 -c "bash /home/vagrant/scripts/test/verify-cluster.sh"
 
-# Phase 1 only (Cluster infrastructure)
+# Phase 1만 (클러스터 인프라)
 vagrant ssh master-1 -c "bash /home/vagrant/scripts/test/verify-cluster.sh --stage=phase1"
 
-# Phase 2 only (Platform apps)
+# Phase 2만 (플랫폼 앱)
 vagrant ssh master-1 -c "bash /home/vagrant/scripts/test/verify-cluster.sh --stage=phase2-apps"
 
-# SSO tests (49 checks)
+# SSO 테스트 (49 checks)
 vagrant ssh master-1 -c "bash /home/vagrant/scripts/test/test-sso.sh"
 
-# Quick verification
+# 빠른 확인
 vagrant ssh master-1 -c "kubectl get nodes && kubectl get pods -A | grep -v Running"
 ```
 
@@ -274,7 +274,7 @@ velero backup get
 
 ## Configuration
 
-`Vagrantfile` variables:
+`Vagrantfile` 변수:
 
 ```ruby
 K8S_VERSION = "1.35"           # Kubernetes version
@@ -288,7 +288,7 @@ VIP_ADDRESS = "192.168.56.100" # Control plane VIP
 ## Commands
 
 ```bash
-# Start cluster (Phase 1 + 2 run automatically)
+# Start cluster (Phase 1 + 2 자동 실행)
 vagrant up --provider=vmware_desktop
 
 # Start specific node
@@ -298,7 +298,7 @@ vagrant up worker-1
 # SSH access
 vagrant ssh master-1
 
-# Manual execution of Phase 2 only (after cluster creation)
+# Phase 2만 수동 실행 (클러스터 구성 후)
 vagrant provision master-1 --provision-with phase2-platform
 
 # Reprovision
@@ -313,10 +313,10 @@ vagrant destroy -f
 
 ### 
 
-All users in the narwhal realm can access (openid-connect plugin handles authentication only, no group restrictions):
+narwhal realm 전체 사용자가 접근 가능 (openid-connect 플러그인은 인증만, 그룹 제한 없음):
 
 ┌───────┬───────────────┬───────────────────────────────────────────────────────────────────────────────────────────┐
-│ User  │     Group     │                                   Password Verification                                   │
+│ 계정   │     그룹       │                                       비밀번호 확인                                           │
 ├───────┼───────────────┼───────────────────────────────────────────────────────────────────────────────────────────┤
 │ admin │ cluster-admin │ kubectl get secret keycloak-user-passwords -n iam -o jsonpath='{.data.admin}' | base64 -d │
 ├───────┼───────────────┼───────────────────────────────────────────────────────────────────────────────────────────┤
@@ -330,16 +330,16 @@ All users in the narwhal realm can access (openid-connect plugin handles authent
 ## Documentation
 
 - [VERSIONS.md](VERSIONS.md) - Component versions
-- [docs/architecture.md](docs/architecture.md) - Architecture details
-- [docs/keycloak-sso.md](docs/keycloak-sso.md) - Keycloak SSO detailed configuration
-- [docs/keycloak-accounts.md](docs/keycloak-accounts.md) - Keycloak SSO account and configuration guide
-- [docs/dns-access.md](docs/dns-access.md) - DNS settings and service access
-- [docs/kubeconfig.md](docs/kubeconfig.md) - kubeconfig and OIDC authentication
-- [docs/database.md](docs/database.md) - Database (CNPG) management
-- [docs/operations.md](docs/operations.md) - Operations guide
-- [docs/rtk-token-compression-policy.md](docs/rtk-token-compression-policy.md) - RTK token compression policy
-- [docs/troubleshooting.md](docs/troubleshooting.md) - Troubleshooting guide
-- [docs/security.md](docs/security.md) - Security policy
+- [docs/architecture.md](docs/architecture.md) - 아키텍처 상세
+- [docs/keycloak-sso.md](docs/keycloak-sso.md) - Keycloak SSO 상세 설정
+- [docs/keycloak-accounts.md](docs/keycloak-accounts.md) - Keycloak SSO 계정 및 설정 가이드
+- [docs/dns-access.md](docs/dns-access.md) - DNS 설정 및 서비스 접근
+- [docs/kubeconfig.md](docs/kubeconfig.md) - kubeconfig 및 OIDC 인증
+- [docs/database.md](docs/database.md) - 데이터베이스(CNPG) 관리
+- [docs/operations.md](docs/operations.md) - 운영 가이드
+- [docs/rtk-token-compression-policy.md](docs/rtk-token-compression-policy.md) - RTK 토큰 압축 정책
+- [docs/troubleshooting.md](docs/troubleshooting.md) - 트러블슈팅 가이드
+- [docs/security.md](docs/security.md) - 보안 정책
 
 ## License
 

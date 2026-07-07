@@ -105,7 +105,7 @@ Components and versions used in this project.
 
 | Component | Version | Description |
 |-----------|---------|-------------|
-| Harbor | latest (chart 1.19.1, actual app v2.15.0 per live `/api/v2.0/systeminfo`) | Container registry (ARM64: ghcr.io/dasomel/goharbor — confirmed multi-arch (amd64+arm64) across all 8 components as of 2026-07-05; `:latest` had NOT yet been rebuilt from the v2.15.2 source at verification time, only ARM64 support for the 2.15.x line landed) |
+| Harbor | latest (chart 1.19.1) — `:latest` currently resolves to app **v2.15.1** (harbor-core digest match, 2026-07-07); v2.15.2 published but not yet promoted to `:latest` | Container registry (ARM64: ghcr.io/dasomel/goharbor, multi-arch amd64+arm64). Deploys track `:latest` by policy. To move to v2.15.2, the custom rebuild pipeline must promote `:latest`→v2.15.2 for the 6 versioned components (core, jobservice, registry-photon, registryctl, portal, nginx-photon); redis-photon has no v2.15.2 (stays v2.15.1) and harbor-exporter is unversioned (`:latest` only) |
 
 ## IDP Portal
 
@@ -170,12 +170,20 @@ Harbor bumped to chart 1.19.1 2026-07-05 — verified via `docker manifest inspe
 tags stay pinned to `:latest` as before (not version-tagged). **Correction (2026-07-06):** the
 running app version was assumed to be v2.15.2 (the source release that prompted this work) but
 was NOT independently verified at the time — live check via `/api/v2.0/systeminfo` on the
-deployed cluster shows `harbor_version: v2.15.0-f585d00b`. The `ghcr.io/dasomel/goharbor` custom
-build pipeline had only republished ARM64 manifests for the existing v2.15.0 build, not yet
-rebuilt from the v2.15.2 source — `docker manifest inspect` confirms multi-arch support but says
-nothing about which app version is behind the tag. Chart 1.19.1 is still the correct pin (matches
-the 2.15.x line generally); `:latest` will pick up v2.15.2 automatically once the custom registry
-rebuilds it, no further action needed here.
+deployed cluster showed `harbor_version: v2.15.0-f585d00b`. `docker manifest inspect` confirms
+multi-arch support but says nothing about which app version is behind the tag.
+**Update (2026-07-07):** the custom rebuild pipeline has since published explicit **v2.15.2**
+tags (amd64+arm64) for 6 of the 8 components — core, jobservice, registry-photon, registryctl,
+portal, nginx-photon — verified via `crane ls`. `redis-photon` tops out at v2.15.1 (no v2.15.2
+build) and `harbor-exporter` carries no versioned tags (`:latest` only). However `:latest` itself
+has only advanced to **v2.15.1**, NOT v2.15.2 (confirmed by digest match: `harbor-core:latest` ==
+`harbor-core:v2.15.1`, ≠ `v2.15.2`). Per the `:latest`-auto-track policy (decision D-harbor-latest:
+keep `:latest`, do NOT version-pin harbor.yaml — reason: custom rebuild republishes to `:latest`
+for automatic pickup; cost: `:latest` is a moving target; escape hatch: pin explicit version tags
+if reproducibility becomes required), **the action to reach v2.15.2 is on the registry side, not
+this repo**: promote `:latest`→v2.15.2 for the 6 versioned components in the
+`ghcr.io/dasomel/goharbor` rebuild pipeline. Once promoted, the cluster picks it up automatically
+(ArgoCD selfHeal + image pull) — no narwhal repo change. Chart 1.19.1 remains the correct pin.
 
 Loki and Tempo chart source moved to grafana-community 2026-07-05 (both `grafana/loki` and
 `grafana/tempo` are past the GEL-only cutover date, per each chart's own README migration

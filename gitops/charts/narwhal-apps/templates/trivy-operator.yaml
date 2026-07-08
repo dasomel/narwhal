@@ -40,6 +40,16 @@ spec:
                             # leaving its VulnerabilityReport missing + ~15min retry churn.
                             # concurrentLimit=2 → 2Gi peak, fits worker 6GB headroom.
 
+        # Compliance report generation (사용자 결정 2026-07-08).
+        # reportType MUST be "all" (not the chart default "summary"): summary only fills
+        # status.summary.passCount, leaving status.detailReport empty — the portal then
+        # shows every control as "✓0 ✗0" (definitions only, per src/lib/compliance.ts).
+        # "all" populates detailReport.controls so per-control pass/fail renders.
+        compliance:
+          reportType: all
+          failEntriesLimit: 10
+          cron: "0 */6 * * *"
+
         operator:
           # 모든 네임스페이스 스캔 (빈 문자열 = all)
           targetNamespaces: ""
@@ -65,14 +75,16 @@ spec:
           metricsExposedSecretInfo: true
           # 12시간 주기 재스캔 (Vagrant 환경 부하 고려)
           scanJobTTL: 12h
+          # NOTE: chart 0.27.0 does NOT honor `operator.resources` (the operator container
+          # runs with no resource limits — verified live), so this block is inert. Left as
+          # documentation of intent; the operator is lightweight even with all scanners on.
           resources:
             requests:
               cpu: 100m
-              memory: 192Mi   # was 128Mi: 4 extra report controllers (config-audit/rbac/
-                              # infra/compliance) hold more report objects in the informer cache
+              memory: 128Mi
             limits:
               cpu: 500m
-              memory: 512Mi   # was 256Mi: headroom for the added scanners' in-process work
+              memory: 256Mi
 
         # Prometheus 자동 수집 (prometheus-stack 의 ServiceMonitor selector 매칭됨)
         serviceMonitor:

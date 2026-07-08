@@ -20,9 +20,26 @@ spec:
   destination:
     server: https://kubernetes.default.svc
     namespace: platform-system
+  # cert-manager's cainjector injects the webhook caBundle at runtime, so ArgoCD sees the
+  # Mutating/ValidatingWebhookConfiguration caBundle as permanent drift. Ignore that field.
+  ignoreDifferences:
+    - group: admissionregistration.k8s.io
+      kind: MutatingWebhookConfiguration
+      name: cert-manager-webhook
+      jqPathExpressions:
+        - '.webhooks[].clientConfig.caBundle'
+    - group: admissionregistration.k8s.io
+      kind: ValidatingWebhookConfiguration
+      name: cert-manager-webhook
+      jqPathExpressions:
+        - '.webhooks[].clientConfig.caBundle'
   syncPolicy:
     automated:
       prune: true
       selfHeal: true
     syncOptions:
       - CreateNamespace=true
+      # Client-side apply fails to patch the existing webhook configs with
+      # "resourceVersion: Invalid value: 0: must be specified for an update"; server-side
+      # apply patches by field manager and doesn't need resourceVersion.
+      - ServerSideApply=true

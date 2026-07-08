@@ -121,6 +121,17 @@ vagrant destroy -f
 
 See [VERSIONS.md](VERSIONS.md) for full version list.
 
+## Management Portal
+
+클러스터에는 day-2 운영용 **[Narwhal IDP Portal](https://github.com/dasomel/narwhal-portal)** (Next.js 16 + React 19)이 포함됩니다 — 실시간 메트릭·GitOps 상태·보안·비용·셀프서비스. 설치 후 `https://portal.local.narwhal.internal`로 접속.
+
+| 대시보드 | 아키텍처 |
+| :---: | :---: |
+| ![Portal — Dashboard](docs/images/portal-dashboard.png) | ![Portal — Architecture](docs/images/portal-architecture.png) |
+| _실시간 메트릭·ArgoCD 앱·알럿_ | _노드·네임스페이스·서비스 그래프_ |
+
+> 캡쳐를 [`docs/images/`](docs/images/)에 넣으세요 ([상세](docs/images/README.md)). 전체 UI 갤러리: [narwhal-portal](https://github.com/dasomel/narwhal-portal).
+
 ## Access Services
 
 ### DNS 접속 (권장)

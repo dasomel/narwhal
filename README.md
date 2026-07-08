@@ -121,6 +121,17 @@ vagrant destroy -f
 
 See [VERSIONS.md](VERSIONS.md) for full version list.
 
+## Management Portal
+
+The cluster ships with the **[Narwhal IDP Portal](https://github.com/dasomel/narwhal-portal)** (Next.js 16 + React 19) for day-2 operations — real-time metrics, GitOps status, security, cost, and self-service. Reachable at `https://portal.local.narwhal.internal` after install.
+
+| Dashboard | Architecture |
+| :---: | :---: |
+| ![Portal — Dashboard](docs/images/portal-dashboard.png) | ![Portal — Architecture](docs/images/portal-architecture.png) |
+| _Real-time metrics, ArgoCD apps & alerts_ | _Nodes, namespaces & service graph_ |
+
+> Drop captures into [`docs/images/`](docs/images/) ([details](docs/images/README.md)). Full UI gallery: [narwhal-portal](https://github.com/dasomel/narwhal-portal).
+
 ## Access Services
 
 ### DNS Access (Recommended)

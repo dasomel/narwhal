@@ -42,7 +42,9 @@ rules:
     resources: [policyreports, clusterpolicyreports]
     verbs: [get, list]
   - apiGroups: [apps]
-    resources: [deployments, statefulsets]
+    # daemonsets: the node "K8s tuning / CNI" panel reads the Cilium version from the
+    # cilium DaemonSet image tag; without this it 403s and shows version "unknown".
+    resources: [deployments, statefulsets, daemonsets, replicasets]
     verbs: [get, list, watch]
   - apiGroups: [rbac.authorization.k8s.io]
     resources: [clusterrolebindings, rolebindings, clusterroles, roles]

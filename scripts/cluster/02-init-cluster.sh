@@ -65,6 +65,17 @@ apiServer:
 #     value: "groups"
 #   - name: oidc-groups-prefix
 #     value: "oidc:"
+controllerManager:
+  extraArgs:
+    # bind-address 0.0.0.0 so Prometheus (running off the control-plane node) can scrape
+    # /metrics. kubeadm defaults these to 127.0.0.1, which makes them unreachable and fires
+    # KubeControllerManagerInstanceUnreachable / KubeSchedulerInstanceUnreachable + TargetDown.
+    - name: bind-address
+      value: "0.0.0.0"
+scheduler:
+  extraArgs:
+    - name: bind-address
+      value: "0.0.0.0"
 ---
 apiVersion: kubeadm.k8s.io/v1beta4
 kind: InitConfiguration

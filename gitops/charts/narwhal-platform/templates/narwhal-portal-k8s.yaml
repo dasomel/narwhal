@@ -161,12 +161,24 @@ spec:
         app: narwhal-portal-valkey
         istio.io/dataplane-mode: "none"
     spec:
+      # PSS/CIS hardening: valkey runs cache-only (no persistence: --save "" --appendonly no),
+      # so it needs no root and no filesystem writes. Force non-root + drop all caps.
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 999
+        runAsGroup: 999
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: valkey
           # docker.io: Valkey 공식 이미지, ghcr.io 대안 없음
           image: docker.io/valkey/valkey:8-alpine
           ports:
             - containerPort: 6379
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
           resources:
             requests:
               cpu: 50m
@@ -212,6 +224,14 @@ spec:
         istio.io/dataplane-mode: "none"
     spec:
       serviceAccountName: narwhal-portal
+      # PSS/CIS hardening: the image already runs as uid 1001 (nextjs), so enforce
+      # non-root + drop all caps + no privilege escalation. readOnlyRootFilesystem is
+      # NOT set — the Next.js standalone server writes to its cache/tmp at runtime.
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        seccompProfile:
+          type: RuntimeDefault
       tolerations:
         - key: node.kubernetes.io/disk-pressure
           operator: Exists
@@ -223,6 +243,10 @@ spec:
           # there is no need to re-pull on every restart. Bumping the tag (release
           # upgrade) changes the ref → Kubernetes pulls the new digest.
           imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
           ports:
             - containerPort: 3000
           envFrom:

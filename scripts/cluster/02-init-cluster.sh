@@ -49,6 +49,12 @@ networking:
   serviceSubnet: "${SERVICE_CIDR}"
 apiServer:
   certSANs:${CERT_SANS}
+  extraArgs:
+    # CIS 1.2.18 — disable the profiling (pprof) endpoint; not needed in prod, removes a
+    # debug/DoS surface. (Live cluster also patched on all masters.) NOTE: when enabling
+    # the OIDC args below, merge them into THIS extraArgs list (one key only).
+    - name: profiling
+      value: "false"
 # OIDC configuration - DISABLED at init time.
 # K8s 1.35+ requires HTTPS for --oidc-issuer-url. Enable after cert-manager
 # provisions TLS certificates for Keycloak (see 11-keycloak.sh).
@@ -72,10 +78,16 @@ controllerManager:
     # KubeControllerManagerInstanceUnreachable / KubeSchedulerInstanceUnreachable + TargetDown.
     - name: bind-address
       value: "0.0.0.0"
+    # CIS 1.3.2 — disable profiling endpoint.
+    - name: profiling
+      value: "false"
 scheduler:
   extraArgs:
     - name: bind-address
       value: "0.0.0.0"
+    # CIS 1.4.1 — disable profiling endpoint.
+    - name: profiling
+      value: "false"
 ---
 apiVersion: kubeadm.k8s.io/v1beta4
 kind: InitConfiguration

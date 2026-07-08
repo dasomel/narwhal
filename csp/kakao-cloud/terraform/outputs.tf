@@ -102,7 +102,7 @@ output "ssh_connection" {
 output "k8s_api_endpoints" {
   description = "Kubernetes API Server endpoints (available after K8s installation)"
   value = {
-    internal = "https://${module.loadbalancer.master_lb_vip}:6443"
-    external = "https://${module.loadbalancer.master_lb_public_ip}:6443"
+    internal = "https://${coalesce(module.loadbalancer.master_lb_vip, "N/A")}:6443"
+    external = "https://${coalesce(module.loadbalancer.master_lb_public_ip, "N/A")}:6443"
   }
 }

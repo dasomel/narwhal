@@ -28,7 +28,6 @@ resource "kakaocloud_load_balancer_listener" "k8s_api" {
   load_balancer_id = kakaocloud_load_balancer.master_lb.id
   protocol         = "TCP"
   protocol_port    = 6443
-  connection_limit = -1
 }
 
 # etcd Listener (TCP 2379)
@@ -36,7 +35,6 @@ resource "kakaocloud_load_balancer_listener" "etcd" {
   load_balancer_id = kakaocloud_load_balancer.master_lb.id
   protocol         = "TCP"
   protocol_port    = 2379
-  connection_limit = -1
 }
 
 # HTTP Listener on Master LB (Ingress via hostNetwork)
@@ -44,7 +42,6 @@ resource "kakaocloud_load_balancer_listener" "master_http" {
   load_balancer_id = kakaocloud_load_balancer.master_lb.id
   protocol         = "TCP"
   protocol_port    = 80
-  connection_limit = -1
 }
 
 # HTTPS Listener on Master LB (Ingress via hostNetwork)
@@ -52,7 +49,6 @@ resource "kakaocloud_load_balancer_listener" "master_https" {
   load_balancer_id = kakaocloud_load_balancer.master_lb.id
   protocol         = "TCP"
   protocol_port    = 443
-  connection_limit = -1
 }
 
 # Master Target Group for K8s API
@@ -152,7 +148,6 @@ resource "kakaocloud_load_balancer_listener" "http" {
   load_balancer_id = kakaocloud_load_balancer.worker_lb.id
   protocol         = "TCP"
   protocol_port    = 80
-  connection_limit = -1
 }
 
 # HTTPS Listener (TCP 443)
@@ -160,7 +155,6 @@ resource "kakaocloud_load_balancer_listener" "https" {
   load_balancer_id = kakaocloud_load_balancer.worker_lb.id
   protocol         = "TCP"
   protocol_port    = 443
-  connection_limit = -1
 }
 
 # Worker Target Group (HTTP)
@@ -201,4 +195,28 @@ resource "kakaocloud_load_balancer_target_group_member" "worker_https_members" {
   subnet_id       = var.subnet_id
   protocol_port   = 31443
   weight          = 1
+}
+
+#####################################################################
+# Public IPs for Load Balancers (external access / testing)
+#####################################################################
+
+# Master LB Public IP (external K8s API + Ingress)
+resource "kakaocloud_public_ip" "master_lb_public" {
+  description = "Public IP for Narwhal master LB (K8s API 6443 / Ingress)"
+
+  related_resource = {
+    device_id   = kakaocloud_load_balancer.master_lb.id
+    device_type = "load-balancer"
+  }
+}
+
+# Worker LB Public IP (external Ingress)
+resource "kakaocloud_public_ip" "worker_lb_public" {
+  description = "Public IP for Narwhal worker LB (Ingress 80/443)"
+
+  related_resource = {
+    device_id   = kakaocloud_load_balancer.worker_lb.id
+    device_type = "load-balancer"
+  }
 }

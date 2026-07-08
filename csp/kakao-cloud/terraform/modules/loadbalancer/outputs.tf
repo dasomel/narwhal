@@ -13,7 +13,7 @@ output "master_lb_vip" {
 
 output "master_lb_public_ip" {
   description = "Master Load Balancer Public IP (External K8s API Access)"
-  value       = kakaocloud_load_balancer.master_lb.public_vip
+  value       = kakaocloud_public_ip.master_lb_public.public_ip
 }
 
 # Worker Load Balancer
@@ -29,7 +29,7 @@ output "worker_lb_vip" {
 
 output "worker_lb_public_ip" {
   description = "Worker Load Balancer Public IP"
-  value       = kakaocloud_load_balancer.worker_lb.public_vip
+  value       = kakaocloud_public_ip.worker_lb_public.public_ip
 }
 
 # Dependencies for other modules

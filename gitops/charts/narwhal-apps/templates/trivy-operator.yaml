@@ -29,7 +29,10 @@ spec:
           javaDbRepository: aquasecurity/trivy-java-db
           resources:
             requests:
-              cpu: 100m
+              cpu: 50m   # was 100m: a scan Job has 1 container per image in the target
+                         # workload, so a multi-image workload (e.g. 9 × 100m = 900m) could
+                         # not fit the CPU-committed 2-core workers (~600m free) → perpetual
+                         # Pending/timeout churn. Scans still burst to the 300m limit.
               memory: 128Mi
             limits:
               cpu: 300m   # was 500m: cap per-scan CPU so scan Jobs don't starve co-located

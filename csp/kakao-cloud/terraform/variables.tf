@@ -174,3 +174,29 @@ variable "worker_lb_name" {
   type        = string
   default     = "narwhal-worker-lb"
 }
+
+# =============================================
+# Bastion (SSH jump host for private node access)
+# =============================================
+variable "bastion_name" {
+  description = "Bastion host name"
+  type        = string
+  default     = "narwhal-bastion"
+}
+
+variable "bastion_flavor" {
+  description = "Bastion instance flavor (small is enough for an SSH jump host)"
+  type        = string
+  default     = "t1i.small"
+}
+
+variable "bastion_volume_size" {
+  description = "Bastion boot volume size in GB"
+  type        = number
+  default     = 30
+
+  validation {
+    condition     = var.bastion_volume_size >= 20 && var.bastion_volume_size <= 200
+    error_message = "bastion_volume_size must be between 20 and 200 GB"
+  }
+}

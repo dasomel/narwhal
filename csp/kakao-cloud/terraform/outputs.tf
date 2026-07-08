@@ -106,3 +106,25 @@ output "k8s_api_endpoints" {
     external = "https://${coalesce(module.loadbalancer.master_lb_public_ip, "N/A")}:6443"
   }
 }
+
+#####################################################################
+# Bastion (SSH jump host)
+#####################################################################
+output "bastion_public_ip" {
+  description = "Bastion public IP (SSH jump host)"
+  value       = kakaocloud_public_ip.bastion_public.public_ip
+}
+
+output "bastion_private_ip" {
+  description = "Bastion private IP"
+  value       = kakaocloud_instance.bastion.addresses[0].private_ip
+}
+
+output "bastion_ssh" {
+  description = "SSH into the bastion, and ProxyJump commands to reach private nodes"
+  value = {
+    bastion = "ssh -i ${var.ssh_key_path} ubuntu@${kakaocloud_public_ip.bastion_public.public_ip}"
+    masters = [for ip in module.compute.master_private_ips : "ssh -i ${var.ssh_key_path} -J ubuntu@${kakaocloud_public_ip.bastion_public.public_ip} ubuntu@${ip}"]
+    workers = [for ip in module.compute.worker_private_ips : "ssh -i ${var.ssh_key_path} -J ubuntu@${kakaocloud_public_ip.bastion_public.public_ip} ubuntu@${ip}"]
+  }
+}

@@ -56,6 +56,23 @@ variable "subnet_id" {
   type        = string
 }
 
+variable "subnet_cidr" {
+  description = "Subnet CIDR block (used to derive contiguous fixed private IPs)"
+  type        = string
+}
+
+variable "master_ip_offset" {
+  description = "Host offset for master-1's fixed IP in the subnet (master-i = offset + i-1). Matches Vagrant scheme so existing install scripts' MASTER_IP_BASE logic works unchanged."
+  type        = number
+  default     = 10
+}
+
+variable "worker_ip_offset" {
+  description = "Host offset for worker-1's fixed IP in the subnet (worker-i = offset + i-1)."
+  type        = number
+  default     = 21
+}
+
 variable "security_group_name" {
   description = "Security group name to apply"
   type        = string

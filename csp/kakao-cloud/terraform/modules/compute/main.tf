@@ -29,7 +29,9 @@ resource "kakaocloud_instance" "master" {
   image_id    = local.ubuntu24_id
   key_name    = var.key_name
 
-  subnets = [{ id = var.subnet_id }]
+  # Fixed contiguous private IPs (master-1 = offset, master-2 = offset+1, ...)
+  # so the install scripts' ${MASTER_IP_BASE}${idx} derivation works unchanged.
+  subnets = [{ id = var.subnet_id, private_ip = cidrhost(var.subnet_cidr, var.master_ip_offset + count.index) }]
 
   initial_security_groups = [{
     name = var.security_group_name
@@ -50,7 +52,8 @@ resource "kakaocloud_instance" "worker" {
   image_id    = local.ubuntu24_id
   key_name    = var.key_name
 
-  subnets = [{ id = var.subnet_id }]
+  # Fixed contiguous private IPs (worker-1 = offset, worker-2 = offset+1, ...)
+  subnets = [{ id = var.subnet_id, private_ip = cidrhost(var.subnet_cidr, var.worker_ip_offset + count.index) }]
 
   initial_security_groups = [{
     name = var.security_group_name

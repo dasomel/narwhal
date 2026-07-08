@@ -62,6 +62,7 @@ module "compute" {
   volume_size         = var.volume_size
   key_name            = var.key_name
   subnet_id           = module.network.subnet_id
+  subnet_cidr         = var.subnet_cidr
   security_group_name = module.security.security_group_name
   cloud_init_base64   = filebase64("${path.module}/cloud-init.yaml")
   depends_on          = [module.security, kakaocloud_keypair.kpaas_keypair]
@@ -73,12 +74,12 @@ module "compute" {
 module "loadbalancer" {
   source = "./modules/loadbalancer"
 
-  master_lb_name               = var.master_lb_name
-  worker_lb_name               = var.worker_lb_name
-  availability_zone            = var.availability_zone
-  subnet_id                    = module.network.subnet_id
-  master_private_ips           = module.compute.master_private_ips
-  worker_private_ips           = module.compute.worker_private_ips
-  master_instances_dependency  = module.compute.master_instances
-  worker_instances_dependency  = module.compute.worker_instances
+  master_lb_name              = var.master_lb_name
+  worker_lb_name              = var.worker_lb_name
+  availability_zone           = var.availability_zone
+  subnet_id                   = module.network.subnet_id
+  master_private_ips          = module.compute.master_private_ips
+  worker_private_ips          = module.compute.worker_private_ips
+  master_instances_dependency = module.compute.master_instances
+  worker_instances_dependency = module.compute.worker_instances
 }

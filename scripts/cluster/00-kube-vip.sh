@@ -9,6 +9,14 @@ echo "=== kube-vip Installation (${KUBE_VIP_VERSION}) ==="
 echo "VIP Address: ${VIP_ADDRESS}"
 echo "Node Index: ${NODE_INDEX}"
 
+# Cloud (Kakao) provides the control-plane VIP via a real Network LB, so kube-vip
+# (L2/ARP-based, tied to the 192.168.56.x host-only network) is neither needed nor
+# functional. Skip it entirely; VIP_ADDRESS points at the LB VIP instead.
+if [ "${PROVIDER:-vagrant}" = "kakao" ]; then
+  echo "PROVIDER=kakao: skipping kube-vip (Kakao Network LB provides the control-plane VIP)"
+  exit 0
+fi
+
 #=========================================
 # Auto-detect network interface
 #=========================================

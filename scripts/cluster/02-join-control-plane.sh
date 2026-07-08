@@ -26,16 +26,23 @@ RETRY_INTERVAL=10
 #=========================================
 # Fetch join command from master-1
 #=========================================
-echo "Fetching control plane join command from master-1..."
-for i in $(seq 1 $MAX_RETRIES); do
-  if sshpass -p "vagrant" scp -o StrictHostKeyChecking=no \
-    "vagrant@${MASTER1_IP}:/home/vagrant/join-control-plane.sh" /tmp/join-control-plane.sh 2>/dev/null; then
-    echo "Join command fetched successfully"
-    break
-  fi
-  echo "Waiting for master-1 to be ready... (${i}/${MAX_RETRIES})"
-  sleep $RETRY_INTERVAL
-done
+# Vagrant fetches the join command node-to-node via the vagrant account.
+# Cloud has no vagrant user/password; the operator pre-stages
+# /tmp/join-control-plane.sh onto this node (copied off master-1 via the bastion).
+if [ "${PROVIDER:-vagrant}" = "kakao" ]; then
+  echo "PROVIDER=kakao: expecting pre-staged /tmp/join-control-plane.sh (operator-supplied)"
+else
+  echo "Fetching control plane join command from master-1..."
+  for i in $(seq 1 $MAX_RETRIES); do
+    if sshpass -p "vagrant" scp -o StrictHostKeyChecking=no \
+      "vagrant@${MASTER1_IP}:/home/vagrant/join-control-plane.sh" /tmp/join-control-plane.sh 2>/dev/null; then
+      echo "Join command fetched successfully"
+      break
+    fi
+    echo "Waiting for master-1 to be ready... (${i}/${MAX_RETRIES})"
+    sleep $RETRY_INTERVAL
+  done
+fi
 
 if [[ ! -f /tmp/join-control-plane.sh ]]; then
   echo "ERROR: Failed to get join command from master-1"
@@ -46,8 +53,9 @@ fi
 # Join control plane
 #=========================================
 # Detect local IP on the host-only network (192.168.56.x)
-# Without this, kubeadm auto-detects the VMware NAT interface
-LOCAL_IP=$(ip -o addr show | grep "192\.168\.56\." | awk '{print $4}' | cut -d/ -f1 | head -1)
+# Without this, kubeadm auto-detects the VMware NAT interface.
+# Cloud: NODE_IP is supplied explicitly (the node's fixed 172.16.0.x address).
+LOCAL_IP="${NODE_IP:-$(ip -o addr show | grep "192\.168\.56\." | awk '{print $4}' | cut -d/ -f1 | head -1)}"
 echo "Local advertise address: ${LOCAL_IP}"
 
 echo "Executing control plane join..."
@@ -69,7 +77,9 @@ sudo cp -i /etc/kubernetes/admin.conf /root/.kube/config
 #=========================================
 # Create kube-vip manifest (deferred from 00-kube-vip.sh)
 # admin.conf now exists after successful join
+# Cloud: skipped — the Kakao LB provides the control-plane VIP.
 #=========================================
+if [ "${PROVIDER:-vagrant}" != "kakao" ]; then
 echo "Creating kube-vip manifest..."
 
 # Read config saved by 00-kube-vip.sh
@@ -148,6 +158,7 @@ EOF
 
 echo "Waiting for kube-vip to start..."
 sleep 10
+fi  # end kube-vip block (Vagrant only)
 
 echo "=== Control Plane Join Done ==="
 kubectl get nodes

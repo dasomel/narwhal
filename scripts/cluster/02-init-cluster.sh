@@ -90,7 +90,12 @@ kind: KubeletConfiguration
 cgroupDriver: systemd
 EOF
 
-VIP_INTERFACE=$(ip -o addr show | grep "192\.168\.56\." | awk '{print $2}' | head -1)
+# On cloud the Kakao LB owns the VIP (no local L2 interface binding); leave empty.
+if [ "${PROVIDER:-vagrant}" = "kakao" ]; then
+  VIP_INTERFACE=""
+else
+  VIP_INTERFACE=$(ip -o addr show | grep "192\.168\.56\." | awk '{print $2}' | head -1)
+fi
 
 # D17: idempotency guard — up.sh's node-readiness loop can call `vagrant
 # provision master-1` again while Cilium/CNI is still converging (kubectl
@@ -105,10 +110,14 @@ if [[ -f /etc/kubernetes/admin.conf ]]; then
   echo "Cluster already initialized (admin.conf present) — skipping kubeadm init"
 else
   # Temporarily bind VIP to the interface so kubeadm can use it as controlPlaneEndpoint
-  # kube-vip will take over VIP management after init
-  if ! ip addr show "${VIP_INTERFACE}" | grep -q "${VIP_ADDRESS}"; then
-    echo "Adding VIP ${VIP_ADDRESS} to ${VIP_INTERFACE} for bootstrap..."
-    sudo ip addr add "${VIP_ADDRESS}/32" dev "${VIP_INTERFACE}"
+  # kube-vip will take over VIP management after init.
+  # Cloud: the Kakao LB already answers VIP:6443 (routes to this master once the
+  # apiserver is up), so no local bind is needed or allowed.
+  if [ "${PROVIDER:-vagrant}" != "kakao" ]; then
+    if ! ip addr show "${VIP_INTERFACE}" | grep -q "${VIP_ADDRESS}"; then
+      echo "Adding VIP ${VIP_ADDRESS} to ${VIP_INTERFACE} for bootstrap..."
+      sudo ip addr add "${VIP_ADDRESS}/32" dev "${VIP_INTERFACE}"
+    fi
   fi
 
   # Initialize cluster (skip kube-proxy for Cilium replacement, upload certs for HA)
@@ -137,6 +146,9 @@ sudo cp -i /etc/kubernetes/admin.conf /root/.kube/config
 echo "Removing control-plane NoSchedule taint for dev environment..."
 kubectl taint nodes --all node-role.kubernetes.io/control-plane- 2>/dev/null || true
 
+# Cloud uses the Kakao LB as the control-plane VIP; kube-vip (L2/ARP) is skipped.
+# The block below (manifest + VIP-reachability wait) only applies to Vagrant.
+if [ "${PROVIDER:-vagrant}" != "kakao" ]; then
 # Create kube-vip manifest (deferred from 00-kube-vip.sh to avoid chicken-and-egg)
 # Now that kubeadm init succeeded, API server is running and admin.conf exists
 echo "Creating kube-vip manifest with full HA mode..."
@@ -229,6 +241,7 @@ for i in $(seq 1 30); do
   echo "  VIP not ready yet, retrying... (${i}/30)"
   sleep 5
 done
+fi  # end kube-vip block (Vagrant only)
 
 # Save join command for workers.
 # Use the local-IP kubeconfig (not the VIP): on Ubuntu 26.04 the VIP path adds enough

@@ -22,29 +22,38 @@ fi
 MAX_RETRIES=30
 RETRY_INTERVAL=10
 
-# Fetch join command from master
-for i in $(seq 1 $MAX_RETRIES); do
-  if sshpass -p "vagrant" scp -o StrictHostKeyChecking=no \
-    "vagrant@${MASTER_IP}:/home/vagrant/join-command.sh" /tmp/join-command.sh 2>/dev/null; then
-    echo "Join command fetched successfully"
-    break
-  fi
-  echo "Waiting for master node... (${i}/${MAX_RETRIES})"
-  sleep $RETRY_INTERVAL
-done
+# Fetch join command from master.
+# Cloud has no vagrant account; the operator pre-stages /tmp/join-command.sh
+# onto this node (copied off master-1 via the bastion).
+if [ "${PROVIDER:-vagrant}" = "kakao" ]; then
+  echo "PROVIDER=kakao: expecting pre-staged /tmp/join-command.sh (operator-supplied)"
+else
+  for i in $(seq 1 $MAX_RETRIES); do
+    if sshpass -p "vagrant" scp -o StrictHostKeyChecking=no \
+      "vagrant@${MASTER_IP}:/home/vagrant/join-command.sh" /tmp/join-command.sh 2>/dev/null; then
+      echo "Join command fetched successfully"
+      break
+    fi
+    echo "Waiting for master node... (${i}/${MAX_RETRIES})"
+    sleep $RETRY_INTERVAL
+  done
+fi
 
 if [[ ! -f /tmp/join-command.sh ]]; then
   echo "ERROR: Failed to get join command from master"
   exit 1
 fi
 
-# Determine correct node name and IP from hostname/network
-NODE_NAME=$(hostname)
-NODE_IP=$(ip -4 addr show eth1 2>/dev/null | grep -oP '(?<=inet\s)[\d.]+' || \
-          ip -4 addr show | grep '192\.168\.56\.' | grep -oP '(?<=inet\s)[\d.]+' | head -1)
+# Determine correct node name and IP from hostname/network.
+# Cloud: NODE_NAME and NODE_IP are supplied explicitly (fixed instance name + IP),
+# since the Kakao OS hostname is host-<ip> and the network is 172.16.0.x, not
+# 192.168.56.x. On Vagrant these stay auto-detected.
+NODE_NAME="${NODE_NAME:-$(hostname)}"
+NODE_IP="${NODE_IP:-$(ip -4 addr show eth1 2>/dev/null | grep -oP '(?<=inet\s)[\d.]+' || \
+          ip -4 addr show | grep '192\.168\.56\.' | grep -oP '(?<=inet\s)[\d.]+' | head -1)}"
 
 if [[ -z "${NODE_IP}" ]]; then
-  echo "ERROR: Could not detect private network IP (192.168.56.x)"
+  echo "ERROR: Could not detect node private IP (set NODE_IP explicitly on cloud)"
   exit 1
 fi
 

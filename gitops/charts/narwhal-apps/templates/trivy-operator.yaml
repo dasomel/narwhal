@@ -52,11 +52,15 @@ spec:
           builtInTrivyServer: false
           # 자동 스캔 활성
           vulnerabilityScannerEnabled: true
-          configAuditScannerEnabled: false  # CIS/kube-bench는 별도 (사용자 결정)
-          rbacAssessmentScannerEnabled: false
-          infraAssessmentScannerEnabled: false
+          # Compliance scanners ENABLED (사용자 결정 2026-07-08): feed the portal
+          # /governance compliance page (CIS 1.23 / NSA 1.0 / PSS baseline+restricted).
+          # config-audit + rbac run in-operator (no per-workload Job); infra spawns a
+          # short node-collector Job per node (6h cron); compliance aggregates all three.
+          configAuditScannerEnabled: true
+          rbacAssessmentScannerEnabled: true
+          infraAssessmentScannerEnabled: true
           exposedSecretScannerEnabled: true
-          clusterComplianceEnabled: false
+          clusterComplianceEnabled: true
           metricsVulnIdEnabled: true
           metricsExposedSecretInfo: true
           # 12시간 주기 재스캔 (Vagrant 환경 부하 고려)
@@ -64,10 +68,11 @@ spec:
           resources:
             requests:
               cpu: 100m
-              memory: 128Mi
+              memory: 192Mi   # was 128Mi: 4 extra report controllers (config-audit/rbac/
+                              # infra/compliance) hold more report objects in the informer cache
             limits:
               cpu: 500m
-              memory: 256Mi
+              memory: 512Mi   # was 256Mi: headroom for the added scanners' in-process work
 
         # Prometheus 자동 수집 (prometheus-stack 의 ServiceMonitor selector 매칭됨)
         serviceMonitor:

@@ -13,6 +13,16 @@ spec:
     targetRevision: 86.2.3
     helm:
       valuesObject:
+        # Cilium runs in kube-proxy-replacement mode → there is NO kube-proxy to scrape,
+        # so the default KubeProxyDown alert was a permanent false positive. And the kubeadm
+        # etcd metrics endpoint isn't exposed to Prometheus on this cluster, so the etcd scrape
+        # fails and etcdInsufficientMembers fires even though the 3-member etcd is healthy
+        # (apiserver/quorum fine). Disable both component monitors to clear the noise.
+        # (Real etcd monitoring can be re-enabled later with etcd client-cert plumbing.)
+        kubeProxy:
+          enabled: false
+        kubeEtcd:
+          enabled: false
         prometheus:
           prometheusSpec:
             retention: 7d

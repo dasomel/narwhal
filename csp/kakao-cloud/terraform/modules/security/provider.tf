@@ -3,8 +3,8 @@ terraform {
   required_providers {
     # Kakao Cloud Provider 설정
     kakaocloud = {
-      source  = "kakaoenterprise/kakaocloud"
-      version = "0.3.3"
+      source  = "registry.terraform.io/kakaoenterprise/kakaocloud"
+      version = "0.4.4"
     }
     local = {
       source  = "hashicorp/local"

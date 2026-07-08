@@ -1,3 +1,19 @@
+{{- /*
+Falco DISABLED 2026-07-08 — Ubuntu 26.04 kernel 7.0 incompatibility.
+Falco 0.39.2 (chart 4.16.0) modern_ebpf probe fails `scap_init` on kernel 7.0.0
+("An error occurred in an event source, forcing termination" -> "Initialization
+issues during scap_init") -> DaemonSet CrashLoopBackOff on every node. Verified NOT a
+config problem: BTF present (/sys/kernel/btf/vmlinux), pod privileged, driver already
+modern_ebpf. The only lever is a Falco upgrade, but 0.39->0.43 is a BREAKING migration
+(--cri CLI flag removed; container.* fields moved to a separate container plugin so the
+bundled rules fail to compile; falco.yaml/rules schema changed) AND 0.43.x kernel-7.0
+support is still UNVERIFIED. Disabling stops the crashloop; runtime coverage remains via
+trivy-operator (vuln scan), kyverno (policy), NetworkPolicy, and STRICT mTLS.
+Re-enable: flip the guard below to `{{- if true }}` AFTER completing the Falco 0.43+
+migration (args/config/rules/container-plugin) and confirming scap_init passes on kernel 7.0.
+See CLAUDE.md mistakes log 2026-07-08.
+*/}}
+{{- if false }}
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
@@ -133,3 +149,4 @@ spec:
     syncOptions:
       - CreateNamespace=true
       - ServerSideApply=true
+{{- end }}

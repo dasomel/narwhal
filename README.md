@@ -311,21 +311,16 @@ vagrant halt
 vagrant destroy -f
 ```
 
-### 
+### SSO User Accounts
 
-All users in the narwhal realm can access (openid-connect plugin handles authentication only, no group restrictions):
+All users in the narwhal realm can access (the openid-connect plugin handles authentication only — no group restrictions):
 
-┌───────┬───────────────┬───────────────────────────────────────────────────────────────────────────────────────────┐
-│ User  │     Group     │                                   Password Verification                                   │
-├───────┼───────────────┼───────────────────────────────────────────────────────────────────────────────────────────┤
-│ admin │ cluster-admin │ kubectl get secret keycloak-user-passwords -n iam -o jsonpath='{.data.admin}' | base64 -d │
-├───────┼───────────────┼───────────────────────────────────────────────────────────────────────────────────────────┤
-│ dev   │ developer     │ kubectl get secret keycloak-user-passwords -n iam -o jsonpath='{.data.dev}' | base64 -d   │
-├───────┼───────────────┼───────────────────────────────────────────────────────────────────────────────────────────┤
-│ view  │ viewer        │ kubectl get secret keycloak-user-passwords -n iam -o jsonpath='{.data.view}' | base64 -d  │
-├───────┼───────────────┼───────────────────────────────────────────────────────────────────────────────────────────┤
-│ guest │ guest         │ kubectl get secret keycloak-user-passwords -n iam -o jsonpath='{.data.guest}' | base64 -d │
-└───────┴───────────────┴───────────────────────────────────────────────────────────────────────────────────────────┘
+| User | Group | Password Verification |
+|---------|-----------------|------------------------|
+| `admin` | `cluster-admin` | `kubectl get secret keycloak-user-passwords -n iam -o jsonpath='{.data.admin}' \| base64 -d` |
+| `dev` | `developer` | `kubectl get secret keycloak-user-passwords -n iam -o jsonpath='{.data.dev}' \| base64 -d` |
+| `view` | `viewer` | `kubectl get secret keycloak-user-passwords -n iam -o jsonpath='{.data.view}' \| base64 -d` |
+| `guest` | `guest` | `kubectl get secret keycloak-user-passwords -n iam -o jsonpath='{.data.guest}' \| base64 -d` |
 
 ## Documentation
 

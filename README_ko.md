@@ -311,21 +311,16 @@ vagrant halt
 vagrant destroy -f
 ```
 
-### 
+### SSO 사용자 계정
 
 narwhal realm 전체 사용자가 접근 가능 (openid-connect 플러그인은 인증만, 그룹 제한 없음):
 
-┌───────┬───────────────┬───────────────────────────────────────────────────────────────────────────────────────────┐
-│ 계정   │     그룹       │                                       비밀번호 확인                                           │
-├───────┼───────────────┼───────────────────────────────────────────────────────────────────────────────────────────┤
-│ admin │ cluster-admin │ kubectl get secret keycloak-user-passwords -n iam -o jsonpath='{.data.admin}' | base64 -d │
-├───────┼───────────────┼───────────────────────────────────────────────────────────────────────────────────────────┤
-│ dev   │ developer     │ kubectl get secret keycloak-user-passwords -n iam -o jsonpath='{.data.dev}' | base64 -d   │
-├───────┼───────────────┼───────────────────────────────────────────────────────────────────────────────────────────┤
-│ view  │ viewer        │ kubectl get secret keycloak-user-passwords -n iam -o jsonpath='{.data.view}' | base64 -d  │
-├───────┼───────────────┼───────────────────────────────────────────────────────────────────────────────────────────┤
-│ guest │ guest         │ kubectl get secret keycloak-user-passwords -n iam -o jsonpath='{.data.guest}' | base64 -d │
-└───────┴───────────────┴───────────────────────────────────────────────────────────────────────────────────────────┘
+| 계정 | 그룹 | 비밀번호 확인 |
+|---------|-----------------|------------------------|
+| `admin` | `cluster-admin` | `kubectl get secret keycloak-user-passwords -n iam -o jsonpath='{.data.admin}' \| base64 -d` |
+| `dev` | `developer` | `kubectl get secret keycloak-user-passwords -n iam -o jsonpath='{.data.dev}' \| base64 -d` |
+| `view` | `viewer` | `kubectl get secret keycloak-user-passwords -n iam -o jsonpath='{.data.view}' \| base64 -d` |
+| `guest` | `guest` | `kubectl get secret keycloak-user-passwords -n iam -o jsonpath='{.data.guest}' \| base64 -d` |
 
 ## Documentation
 

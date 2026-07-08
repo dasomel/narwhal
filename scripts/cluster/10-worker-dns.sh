@@ -15,6 +15,13 @@ MASTER_IP="${MASTER_IP:-192.168.56.10}"
 DOMAIN="${DOMAIN:-local.narwhal.internal}"
 IFACE="${IFACE:-eth1}"
 
+# Cloud: no master dnsmasq to forward to (dnsmasq is skipped on Kakao Cloud);
+# harbor and friends resolve via /etc/hosts + in-cluster CoreDNS instead.
+if [ "${PROVIDER:-vagrant}" = "kakao" ]; then
+  echo "PROVIDER=kakao: skipping worker dnsmasq forwarder (handled by /etc/hosts + CoreDNS)"
+  exit 0
+fi
+
 echo "=== Configuring worker DNS resolver for ${DOMAIN} ==="
 echo "Master dnsmasq: ${MASTER_IP}"
 echo "Interface: ${IFACE}"

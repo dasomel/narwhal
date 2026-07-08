@@ -15,6 +15,14 @@ SKIP_COREDNS="${SKIP_COREDNS:-false}"
 MASTER_IP_BASE="${MASTER_IP_BASE:-192.168.56.1}"
 MASTER_COUNT="${MASTER_COUNT:-3}"
 
+# Cloud: dnsmasq is L2/host-network-bound (listens on the master's 192.168.56.x IP and
+# advertises the MetalLB IP). On Kakao Cloud there is no MetalLB and DNS is handled by
+# the cloud resolver + /etc/hosts + in-cluster CoreDNS, so skip dnsmasq entirely.
+if [ "${PROVIDER:-vagrant}" = "kakao" ]; then
+  echo "PROVIDER=kakao: skipping dnsmasq (cloud resolver + /etc/hosts + CoreDNS handle DNS)"
+  exit 0
+fi
+
 echo "=== Installing dnsmasq for local domain resolution ==="
 echo "Master IP: ${MASTER_IP}"
 echo "MetalLB IP: ${METALLB_IP}"

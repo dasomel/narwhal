@@ -7,7 +7,12 @@ export KUBECONFIG=/home/vagrant/.kube/config-local
 
 #=========================================
 # MetalLB (LoadBalancer for bare-metal)
+# Cloud: skipped. MetalLB is L2/ARP-based and does not work on Kakao Cloud.
+# Ingress is fronted by the Kakao worker LB -> node NodePort 31080/31443 (APISIX).
 #=========================================
+if [ "${PROVIDER:-vagrant}" = "kakao" ]; then
+  echo "PROVIDER=kakao: skipping MetalLB (Kakao worker LB fronts APISIX via NodePort)"
+else
 echo "=== Installing MetalLB ==="
 for attempt in 1 2 3 4 5; do
   if helm repo add metallb https://metallb.github.io/metallb && helm repo update metallb; then
@@ -47,6 +52,7 @@ for attempt in 1 2 3 4 5; do
 done
 
 echo "MetalLB installed"
+fi  # end MetalLB (Vagrant only)
 
 #=========================================
 # APISIX (API Gateway — replaces Traefik + OAuth2-Proxy)
@@ -174,10 +180,17 @@ done
 
 rm /tmp/apisix-values.yaml
 
-# Patch gateway service to LoadBalancer (chart v2.13.0 ignores gateway.type value)
-echo "Patching APISIX gateway service to LoadBalancer..."
-kubectl patch svc apisix-gateway -n platform-system \
-  -p '{"spec":{"type":"LoadBalancer"},"metadata":{"annotations":{"metallb.universe.tf/loadBalancerIPs":"192.168.56.200"}}}' || true
+# Patch gateway service type (chart v2.13.0 ignores gateway.type value).
+# Vagrant: LoadBalancer via MetalLB. Cloud: NodePort fronted by the Kakao worker LB.
+if [ "${PROVIDER:-vagrant}" = "kakao" ]; then
+  echo "Patching APISIX gateway service to NodePort (Kakao worker LB fronts it)..."
+  kubectl patch svc apisix-gateway -n platform-system \
+    -p '{"spec":{"type":"NodePort"}}' || true
+else
+  echo "Patching APISIX gateway service to LoadBalancer..."
+  kubectl patch svc apisix-gateway -n platform-system \
+    -p '{"spec":{"type":"LoadBalancer"},"metadata":{"annotations":{"metallb.universe.tf/loadBalancerIPs":"192.168.56.200"}}}' || true
+fi
 # D2: chart v2.13.0 also fails to add the 443→9443 port even when gateway.tls.enabled=true;
 # add it idempotently via JSON merge patch (duplicate ports are rejected by the API server,
 # so the || true is only for the rare case the svc doesn't exist yet on a partial re-run).
@@ -186,6 +199,28 @@ kubectl get svc apisix-gateway -n platform-system -o jsonpath='{.spec.ports[*].p
   | grep -qw 443 || \
   kubectl patch svc apisix-gateway -n platform-system --type=json \
     -p '[{"op":"add","path":"/spec/ports/-","value":{"name":"apisix-gateway-tls","port":443,"protocol":"TCP","targetPort":9443}}]' || true
+
+# Cloud: pin the exact nodePorts the Kakao worker LB target groups forward to (80->31080, 443->31443).
+# Matched by port number (index-independent). Verify live that the chart didn't reassign them.
+if [ "${PROVIDER:-vagrant}" = "kakao" ]; then
+  echo "Pinning APISIX gateway nodePorts to 31080/31443 for the Kakao LB..."
+  for attempt in 1 2 3 4 5; do
+    PORTS_JSON=$(kubectl get svc apisix-gateway -n platform-system -o json 2>/dev/null | python3 -c '
+import json,sys
+svc=json.load(sys.stdin)
+want={80:31080,443:31443}
+ports=svc["spec"]["ports"]
+for p in ports:
+    if p.get("port") in want: p["nodePort"]=want[p["port"]]
+print(json.dumps([{"op":"replace","path":"/spec/ports","value":ports}]))
+' 2>/dev/null) || true
+    if [ -n "${PORTS_JSON}" ] && kubectl patch svc apisix-gateway -n platform-system --type=json -p "${PORTS_JSON}" 2>/dev/null; then
+      echo "APISIX nodePorts pinned (80->31080, 443->31443)"
+      break
+    fi
+    echo "  nodePort pin attempt ${attempt}/5 failed, retrying..."; sleep 5
+  done
+fi
 
 # Patch APISIX configmap: fix etcd host and remove auth (chart v2.13.0 uses default etcd.host)
 echo "Patching APISIX configmap (etcd host + remove auth)..."

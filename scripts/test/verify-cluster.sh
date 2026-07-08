@@ -720,6 +720,7 @@ if should_run "keycloak"; then
   fi
 
   # RBAC ClusterRoleBindings for OIDC groups
+  # shellcheck disable=SC2043  # single-item loop kept intentionally for easy extension
   for crb in oidc-cluster-admin; do
     CRB_EXISTS=$(kubectl get clusterrolebinding "${crb}" -o jsonpath='{.metadata.name}' 2>/dev/null || echo "")
     if [ "${CRB_EXISTS}" = "${crb}" ]; then

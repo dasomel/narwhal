@@ -851,6 +851,7 @@ print('YES' if view else 'NO')
   done
 
   # Auth services should remain accessible (not protected by ForwardAuth)
+  # shellcheck disable=SC2043  # single-item loop kept intentionally for easy extension
   for open_app in keycloak; do
     OPEN_CODE=$(curl -sk -o /dev/null -w '%{http_code}' \
       "https://${open_app}.${DOMAIN}/" 2>/dev/null || echo "000")

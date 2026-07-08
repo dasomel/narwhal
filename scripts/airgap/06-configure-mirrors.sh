@@ -24,6 +24,7 @@ source "${SCRIPT_DIR}/00-config.sh"
 REG="${AIRGAP_REGISTRY}"
 REG_SCHEME="${AIRGAP_REGISTRY_SCHEME:-http}"
 
+# shellcheck disable=SC2120  # sudo_cmd is an optional arg with a default; callers may omit it
 configure_node() {
   local sudo_cmd="${1:-sudo}"
 

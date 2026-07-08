@@ -127,8 +127,14 @@ The cluster ships with the **[Narwhal IDP Portal](https://github.com/dasomel/nar
 
 | Dashboard | Architecture |
 | :---: | :---: |
-| ![Portal — Dashboard](docs/images/portal-dashboard.png) | ![Portal — Architecture](docs/images/portal-architecture.png) |
+| ![Dashboard](docs/images/portal-dashboard.png) | ![Architecture](docs/images/portal-architecture.png) |
 | _Real-time metrics, ArgoCD apps & alerts_ | _Nodes, namespaces & service graph_ |
+| **Security** | **Cost** |
+| ![Security](docs/images/portal-security.png) | ![Cost](docs/images/portal-cost.png) |
+| _Trivy vulnerability reports_ | _Namespace cost breakdown_ |
+| **Governance** | **Catalog** |
+| ![Governance](docs/images/portal-governance.png) | ![Catalog](docs/images/portal-catalog.png) |
+| _Scorecard, DORA & distribution_ | _Self-service app catalog_ |
 
 > Drop captures into [`docs/images/`](docs/images/) ([details](docs/images/README.md)). Full UI gallery: [narwhal-portal](https://github.com/dasomel/narwhal-portal).
 

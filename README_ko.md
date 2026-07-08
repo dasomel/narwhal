@@ -127,8 +127,14 @@ See [VERSIONS.md](VERSIONS.md) for full version list.
 
 | 대시보드 | 아키텍처 |
 | :---: | :---: |
-| ![Portal — Dashboard](docs/images/portal-dashboard.png) | ![Portal — Architecture](docs/images/portal-architecture.png) |
+| ![Dashboard](docs/images/portal-dashboard.png) | ![Architecture](docs/images/portal-architecture.png) |
 | _실시간 메트릭·ArgoCD 앱·알럿_ | _노드·네임스페이스·서비스 그래프_ |
+| **보안** | **비용** |
+| ![Security](docs/images/portal-security.png) | ![Cost](docs/images/portal-cost.png) |
+| _Trivy 취약점 리포트_ | _네임스페이스 비용 분석_ |
+| **거버넌스** | **카탈로그** |
+| ![Governance](docs/images/portal-governance.png) | ![Catalog](docs/images/portal-catalog.png) |
+| _스코어카드·DORA·분포_ | _셀프서비스 앱 카탈로그_ |
 
 > 캡쳐를 [`docs/images/`](docs/images/)에 넣으세요 ([상세](docs/images/README.md)). 전체 UI 갤러리: [narwhal-portal](https://github.com/dasomel/narwhal-portal).
 

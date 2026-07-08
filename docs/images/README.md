@@ -1,16 +1,20 @@
 # Screenshots
 
-Drop PNG captures here using the exact filenames below — the repo `README.md` /
-`README_ko.md` "Management Portal" section references them and they render automatically.
+Portal captures referenced by the repo `README.md` / `README_ko.md` "Management Portal"
+section. Overwrite these same-named PNGs with fresh captures to update the READMEs.
 
-| Filename | View | Suggested capture |
-|----------|------|-------------------|
-| `portal-dashboard.png`    | Portal — Dashboard   | Cluster real-time metrics (CPU/Memory/Nodes/Pods), ArgoCD app status, alerts |
-| `portal-architecture.png` | Portal — Architecture | Cluster infra (nodes/namespaces/control plane) or the service dependency graph |
+| Filename | View |
+|----------|------|
+| `portal-dashboard.png`    | Dashboard — real-time metrics, ArgoCD apps, alerts |
+| `portal-architecture.png` | Architecture — nodes, namespaces, control plane, service graph |
+| `portal-security.png`     | Security — Trivy vulnerability reports |
+| `portal-cost.png`         | Cost — namespace cost breakdown |
+| `portal-governance.png`   | Governance — scorecard / DORA / distribution |
+| `portal-catalog.png`      | Catalog — self-service application catalog |
 
-Full portal UI gallery lives in the portal repo: **[narwhal-portal → docs/images](https://github.com/dasomel/narwhal-portal/tree/main/docs/images)**.
+Full portal UI source & gallery: **[narwhal-portal](https://github.com/dasomel/narwhal-portal)**.
 
 ## Capture tips
 
 - Log in to `https://portal.local.narwhal.internal` (SSO) as `admin`.
-- 1440–1600px wide viewport, light theme, crop to the content area. PNG, optimized.
+- 1440px+ wide viewport, light theme, crop to the content area. PNG, optimized.

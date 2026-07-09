@@ -38,6 +38,50 @@ for i in $(seq 1 "${MASTER_COUNT}"); do
     - \"${MASTER_HOSTNAME}\""
 done
 
+# ── CIS 1.2.30 / 1.2.19-22: Secret encryption-at-rest + API audit logging ──
+# Write the EncryptionConfiguration + audit policy BEFORE kubeadm init (the apiServer
+# extraVolumes above hostPath-mount these dirs). The AES-CBC key is generated ONCE and
+# persisted — re-provisions must NOT regenerate it or existing encrypted Secrets become
+# unreadable. The config is staged to /home/vagrant so joining masters fetch the SAME key.
+sudo mkdir -p /etc/kubernetes/enc /etc/kubernetes/audit /var/log/kubernetes/audit
+if [[ ! -f /etc/kubernetes/enc/encryption-config.yaml ]]; then
+  ENC_KEY=$(head -c 32 /dev/urandom | base64)
+  cat <<ENCEOF | sudo tee /etc/kubernetes/enc/encryption-config.yaml >/dev/null
+apiVersion: apiserver.config.k8s.io/v1
+kind: EncryptionConfiguration
+resources:
+  - resources: [secrets]
+    providers:
+      - aescbc:
+          keys:
+            - name: key1
+              secret: ${ENC_KEY}
+      - identity: {}
+ENCEOF
+  sudo chmod 600 /etc/kubernetes/enc/encryption-config.yaml
+fi
+cat <<'AUDEOF' | sudo tee /etc/kubernetes/audit/audit-policy.yaml >/dev/null
+apiVersion: audit.k8s.io/v1
+kind: Policy
+omitStages: [RequestReceived]
+rules:
+  - level: None
+    nonResourceURLs: ["/healthz*", "/livez*", "/readyz*", "/version", "/metrics", "/openapi*"]
+  - level: Metadata
+    resources:
+      - group: ""
+        resources: ["secrets", "configmaps", "serviceaccounts"]
+      - group: "rbac.authorization.k8s.io"
+        resources: ["roles", "rolebindings", "clusterroles", "clusterrolebindings"]
+  - level: None
+    verbs: ["get", "list", "watch"]
+  - level: Metadata
+AUDEOF
+# Stage the encryption config so joining control-plane nodes fetch the SAME key.
+sudo cp /etc/kubernetes/enc/encryption-config.yaml /home/vagrant/encryption-config.yaml
+sudo chown vagrant:vagrant /home/vagrant/encryption-config.yaml
+sudo chmod 600 /home/vagrant/encryption-config.yaml
+
 # Generate kubeadm config for HA setup
 cat <<EOF > /tmp/kubeadm-config.yaml
 apiVersion: kubeadm.k8s.io/v1beta4
@@ -55,6 +99,36 @@ apiServer:
     # the OIDC args below, merge them into THIS extraArgs list (one key only).
     - name: profiling
       value: "false"
+    # CIS 1.2.30 — encrypt Secrets at rest; CIS 1.2.19-22 — API audit logging.
+    # Referenced files are written below on master-1 and fetched by joining masters
+    # (02-join-control-plane.sh) so all apiservers share the SAME encryption key.
+    - name: encryption-provider-config
+      value: /etc/kubernetes/enc/encryption-config.yaml
+    - name: audit-policy-file
+      value: /etc/kubernetes/audit/audit-policy.yaml
+    - name: audit-log-path
+      value: /var/log/kubernetes/audit/audit.log
+    - name: audit-log-maxage
+      value: "30"
+    - name: audit-log-maxbackup
+      value: "10"
+    - name: audit-log-maxsize
+      value: "100"
+  extraVolumes:
+    - name: enc
+      hostPath: /etc/kubernetes/enc
+      mountPath: /etc/kubernetes/enc
+      readOnly: true
+      pathType: DirectoryOrCreate
+    - name: audit-policy
+      hostPath: /etc/kubernetes/audit
+      mountPath: /etc/kubernetes/audit
+      readOnly: true
+      pathType: DirectoryOrCreate
+    - name: audit-log
+      hostPath: /var/log/kubernetes/audit
+      mountPath: /var/log/kubernetes/audit
+      pathType: DirectoryOrCreate
 # OIDC configuration - DISABLED at init time.
 # K8s 1.35+ requires HTTPS for --oidc-issuer-url. Enable after cert-manager
 # provisions TLS certificates for Keycloak (see 11-keycloak.sh).

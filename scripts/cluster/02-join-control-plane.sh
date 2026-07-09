@@ -50,6 +50,53 @@ if [[ ! -f /tmp/join-control-plane.sh ]]; then
 fi
 
 #=========================================
+# CIS 1.2.30 / 1.2.19-22: stage encryption + audit config BEFORE join.
+# The apiserver manifest kubeadm renders from the shared ClusterConfiguration
+# hostPath-mounts /etc/kubernetes/enc + /etc/kubernetes/audit; if the files are
+# absent this node's apiserver crashloops after join. Fetch the SAME AES key
+# that master-1 generated (encryption must be identical across all apiservers).
+#=========================================
+sudo mkdir -p /etc/kubernetes/enc /etc/kubernetes/audit /var/log/kubernetes/audit
+if [ "${PROVIDER:-vagrant}" = "kakao" ]; then
+  echo "PROVIDER=kakao: expecting pre-staged /tmp/encryption-config.yaml (operator-supplied)"
+  [[ -f /tmp/encryption-config.yaml ]] && sudo cp /tmp/encryption-config.yaml /etc/kubernetes/enc/encryption-config.yaml
+else
+  echo "Fetching encryption-config.yaml from master-1 (same AES key)..."
+  for i in $(seq 1 $MAX_RETRIES); do
+    if sshpass -p "vagrant" scp -o StrictHostKeyChecking=no \
+      "vagrant@${MASTER1_IP}:/home/vagrant/encryption-config.yaml" /tmp/encryption-config.yaml 2>/dev/null; then
+      sudo cp /tmp/encryption-config.yaml /etc/kubernetes/enc/encryption-config.yaml
+      echo "encryption-config fetched"
+      break
+    fi
+    echo "Waiting for master-1 encryption-config... (${i}/${MAX_RETRIES})"
+    sleep $RETRY_INTERVAL
+  done
+fi
+if [[ ! -f /etc/kubernetes/enc/encryption-config.yaml ]]; then
+  echo "ERROR: encryption-config.yaml not available — apiserver would crashloop after join"
+  exit 1
+fi
+sudo chmod 600 /etc/kubernetes/enc/encryption-config.yaml
+cat <<'AUDEOF' | sudo tee /etc/kubernetes/audit/audit-policy.yaml >/dev/null
+apiVersion: audit.k8s.io/v1
+kind: Policy
+omitStages: [RequestReceived]
+rules:
+  - level: None
+    nonResourceURLs: ["/healthz*", "/livez*", "/readyz*", "/version", "/metrics", "/openapi*"]
+  - level: Metadata
+    resources:
+      - group: ""
+        resources: ["secrets", "configmaps", "serviceaccounts"]
+      - group: "rbac.authorization.k8s.io"
+        resources: ["roles", "rolebindings", "clusterroles", "clusterrolebindings"]
+  - level: None
+    verbs: ["get", "list", "watch"]
+  - level: Metadata
+AUDEOF
+
+#=========================================
 # Join control plane
 #=========================================
 # Detect local IP on the host-only network (192.168.56.x)

@@ -11,8 +11,22 @@ undo a deliberate design choice) vs. **deferred** (safe but not yet done).
 |------|--------|----------------|
 | Control-plane profiling | `--profiling=false` on apiserver / controller-manager / scheduler (kubeadm `extraArgs` in `scripts/cluster/02-init-cluster.sh` + live static-pod patch on all 3 masters) | CIS 1.2.18, 1.4.1 (verified PASS) |
 | Portal / Valkey workloads | `securityContext`: `runAsNonRoot`, drop ALL caps, `allowPrivilegeEscalation:false`, `seccompProfile:RuntimeDefault` (`gitops/charts/narwhal-platform/templates/narwhal-portal-k8s.yaml`) | Removed all critical/high config-audit findings for these two workloads (PSS 5.2.x / 5.7.2 contributions) |
+| Secret encryption at rest | `--encryption-provider-config` (aescbc) on all 3 apiservers; all 105 existing Secrets rewritten/encrypted; key generated once, shared across masters. Source: `02-init-cluster.sh` (generate+write on master-1) + `02-join-control-plane.sh` (fetch same key). | CIS 1.2.30 (verified PASS; etcd raw shows `k8s:enc:aescbc:v1:key1:`) |
+| API audit logging | `--audit-policy-file` + `--audit-log-path/maxage=30/maxbackup=10/maxsize=100` on all 3 apiservers; balanced policy (secrets/rbac at Metadata, health/reads dropped). | CIS 1.2.19/1.2.20/1.2.21/1.2.22 (verified PASS; audit.log writing) |
 
-Result: CIS 72% → 84% (33 → 19 failing controls), NSA 44% → 59%.
+Result: CIS 72% → 84%+, NSA 44% → 59%+. Control-plane flag controls (profiling, audit, encryption) all PASS.
+
+> **Gotcha (learned):** kubelet watches EVERY file in the static-pod dir
+> (`/etc/kubernetes/manifests/`), not just `*.yaml`. A backup/temp file left there
+> that defines the same pod (e.g. `kube-apiserver.yaml.bak`) SHADOWS the real
+> manifest — the apiserver silently runs the stale spec. Always write manifest
+> backups/temp files OUTSIDE that directory.
+
+> **Live rollout note:** applied master-by-master via the manifest edit; the initial
+> secret-encryption is only consistent once ALL apiservers share the key, after which
+> `kubectl get secrets -A -o json | kubectl replace -f -` rewrites every Secret encrypted.
+> **The source changes above are NOT yet clean-install validated** — verify enc/audit come
+> up on a from-scratch `vagrant up` (all 3 masters) before relying on the provisioning path.
 
 ## Risk-accepted exceptions (do NOT "fix")
 
@@ -42,10 +56,6 @@ restarts on all 3 masters:
 - **Node file permissions/ownership** (CIS 1.1.9 CNI, 1.1.12 etcd dir, 4.1.1 kubelet
   service, 4.1.7 CA files, 4.1.9 kubelet config) — `chmod`/`chown` on nodes via a
   provisioning step.
-- **Secrets encryption at rest** (`--encryption-provider-config`) — real security win;
-  needs an encryption config + key management + apiserver restart.
-- **API audit logging** (`--audit-log-path` + policy file) — needs an audit policy
-  mounted into the apiserver static pod.
 - **`--anonymous-auth=false`**, `EventRateLimit`, `--kubelet-certificate-authority` —
   apiserver hardening (test probes first).
 - Portal/Valkey `readOnlyRootFilesystem` (CIS 5.7.3 / KSV014) — Next.js writes cache/tmp

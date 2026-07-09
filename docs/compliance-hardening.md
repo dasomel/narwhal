@@ -13,6 +13,7 @@ undo a deliberate design choice) vs. **deferred** (safe but not yet done).
 | Portal / Valkey workloads | `securityContext`: `runAsNonRoot`, drop ALL caps, `allowPrivilegeEscalation:false`, `seccompProfile:RuntimeDefault` (`gitops/charts/narwhal-platform/templates/narwhal-portal-k8s.yaml`) | Removed all critical/high config-audit findings for these two workloads (PSS 5.2.x / 5.7.2 contributions) |
 | Secret encryption at rest | `--encryption-provider-config` (aescbc) on all 3 apiservers; all 105 existing Secrets rewritten/encrypted; key generated once, shared across masters. Source: `02-init-cluster.sh` (generate+write on master-1) + `02-join-control-plane.sh` (fetch same key). | CIS 1.2.30 (verified PASS; etcd raw shows `k8s:enc:aescbc:v1:key1:`) |
 | API audit logging | `--audit-policy-file` + `--audit-log-path/maxage=30/maxbackup=10/maxsize=100` on all 3 apiservers; balanced policy (secrets/rbac at Metadata, health/reads dropped). | CIS 1.2.19/1.2.20/1.2.21/1.2.22 (verified PASS; audit.log writing) |
+| Node file permissions | `chmod 600` kubelet service unit + config.yaml + k8s CA + static-pod manifests on all nodes (`scripts/cluster/harden-node-files.sh`). | CIS 4.1.1, 4.1.7, 4.1.9 (verified PASS) |
 
 Result: CIS 72% → 84%+, NSA 44% → 59%+. Control-plane flag controls (profiling, audit, encryption) all PASS.
 
@@ -53,9 +54,15 @@ functionality or reverses an intentional trade-off.
 Worthwhile but out of the "quick safe win" scope; each needs care and control-plane
 restarts on all 3 masters:
 
-- **Node file permissions/ownership** (CIS 1.1.9 CNI, 1.1.12 etcd dir, 4.1.1 kubelet
-  service, 4.1.7 CA files, 4.1.9 kubelet config) — `chmod`/`chown` on nodes via a
-  provisioning step.
+- **Persist node file perms across reinstall**: `harden-node-files.sh` is applied live
+  but kubeadm/kubelet recreate these files at default perms on a fresh install. Wire the
+  script into the provisioning path (post-join, per node) after clean-install validation,
+  or run it manually post-install.
+- **CIS 1.1.9 (CNI file perms) & 1.1.12 (etcd dir ownership)**: on-disk state is already
+  correct (CNI files are 600; `/var/lib/etcd` is `etcd:etcd` recursively) but the trivy
+  **node-collector can't verify them** from its container context (can't map the host
+  `etcd` user; CNI dir 0700 not traversable by the scanner) — a scanner limitation, not a
+  real gap. Treated as risk-accepted.
 - **`--anonymous-auth=false`**, `EventRateLimit`, `--kubelet-certificate-authority` —
   apiserver hardening (test probes first).
 - Portal/Valkey `readOnlyRootFilesystem` (CIS 5.7.3 / KSV014) — Next.js writes cache/tmp

@@ -238,7 +238,7 @@ spec:
           effect: NoSchedule
       containers:
         - name: narwhal-portal
-          image: ghcr.io/dasomel/narwhal-portal:1.0.1
+          image: ghcr.io/dasomel/narwhal-portal:1.0.2
           # IfNotPresent: the tag is an immutable pinned version, so once pulled
           # there is no need to re-pull on every restart. Bumping the tag (release
           # upgrade) changes the ref → Kubernetes pulls the new digest.

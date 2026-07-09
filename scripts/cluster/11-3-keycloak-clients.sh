@@ -438,6 +438,10 @@ if [ -n "${OPENBAO_POD}" ]; then
           oidc_client_secret='${OPENBAO_SECRET}' \
           oidc_discovery_ca_pem=@/tmp/kc-ca.pem \
           default_role='default'
+        # Verify the config actually persisted. Without this the write could fail silently
+        # (no set -e in this block) and later steps still succeed, leaving auth/oidc/config
+        # empty → /sso fails with 'could not load configuration'. Fail loudly instead.
+        bao read auth/oidc/config >/dev/null 2>&1 || { echo 'FATAL: auth/oidc/config not persisted'; exit 1; }
         bao write auth/oidc/role/default \
           bound_audiences='openbao' \
           allowed_redirect_uris='https://openbao.${DOMAIN}/ui/vault/auth/oidc/oidc/callback' \
@@ -561,6 +565,13 @@ VELERO_UI_CLIENT_ID=$(kc_exec get clients -r "${REALM}" -q "clientId=velero-ui" 
   | jq -r '.[] | select(.clientId=="velero-ui") | .id')
 VELERO_UI_CLIENT_SECRET=$(kc_exec get "clients/${VELERO_UI_CLIENT_ID}/client-secret" -r "${REALM}" 2>/dev/null \
   | jq -r '.value // empty')
+
+# velero-ui's native SPA OAuth flow redirects to Keycloak with redirect_uri=.../login
+# (in addition to the APISIX zero-click /apisix/callback). Register BOTH, otherwise the
+# native "Login with SSO" button fails with "Invalid parameter: redirect_uri".
+kc_exec update "clients/${VELERO_UI_CLIENT_ID}" -r "${REALM}" \
+  -s "redirectUris=[\"https://velero-ui.${DOMAIN}/apisix/callback\",\"https://velero-ui.${DOMAIN}/login\"]" 2>/dev/null \
+  && echo "  velero-ui redirectUris: /apisix/callback + /login"
 
 kubectl create secret generic velero-ui-oauth \
   --namespace storage \

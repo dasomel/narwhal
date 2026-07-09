@@ -238,11 +238,8 @@ spec:
           effect: NoSchedule
       containers:
         - name: narwhal-portal
-          image: ghcr.io/dasomel/narwhal-portal:1.0.3
-          # IfNotPresent: the tag is an immutable pinned version, so once pulled
-          # there is no need to re-pull on every restart. Bumping the tag (release
-          # upgrade) changes the ref → Kubernetes pulls the new digest.
-          imagePullPolicy: IfNotPresent
+          image: harbor.local.narwhal.internal/library/narwhal-portal:latest
+          imagePullPolicy: Always
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:

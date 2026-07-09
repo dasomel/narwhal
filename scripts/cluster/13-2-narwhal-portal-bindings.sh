@@ -373,6 +373,7 @@ kubectl create secret generic narwhal-portal-secrets \
   --from-literal=TEMPO_URL="http://tempo.monitoring.svc.cluster.local:3200" \
   --from-literal=VALKEY_URL="redis://narwhal-portal-valkey.devtools.svc.cluster.local:6379" \
   --from-literal=VALKEY_TLS="false" \
+  --from-literal=VALKEY_INSECURE_PRODUCTION="true" \
   --from-literal=VALKEY_PASSWORD="" \
   --from-literal=OPENBAO_ADDR="https://openbao.storage.svc.cluster.local:8200" \
   --from-literal=OPENBAO_TOKEN="${OPENBAO_PORTAL_TOKEN}" \

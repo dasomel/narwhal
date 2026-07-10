@@ -167,6 +167,26 @@ fi
 kubectl rollout restart deployment argocd-server -n devtools
 kubectl wait --for=condition=Ready pod -l app.kubernetes.io/name=argocd-server -n devtools --timeout=300s || true
 
+# argocd-redis에 PING liveness/readiness probe 추가 (업스트림 manifest에는 probe 없음).
+# 호스트 과부하 시 redis가 TCP는 살아 있지만 EOF를 뱉는 웨지 상태가 되면
+# repo-server 캐시가 전부 실패해 모든 앱 SYNC=Unknown이 된다(2026-07-10 3회 재발).
+# 실제 Redis 프로토콜(PING)로 점검해야 웨지를 감지하고 자동 재시작된다.
+# shellcheck disable=SC2016  # $REDIS_PASSWORD/$(...)는 컨테이너 내부 sh에서 확장 (의도적 single quote)
+kubectl patch deployment argocd-redis -n devtools --type strategic -p '{
+  "spec": {"template": {"spec": {"containers": [{
+    "name": "redis",
+    "livenessProbe": {
+      "exec": {"command": ["sh", "-c", "response=$(redis-cli -a \"$REDIS_PASSWORD\" --no-auth-warning ping) && [ \"$response\" = \"PONG\" ]"]},
+      "initialDelaySeconds": 10, "periodSeconds": 15, "timeoutSeconds": 5, "failureThreshold": 3
+    },
+    "readinessProbe": {
+      "exec": {"command": ["sh", "-c", "response=$(redis-cli -a \"$REDIS_PASSWORD\" --no-auth-warning ping) && [ \"$response\" = \"PONG\" ]"]},
+      "initialDelaySeconds": 5, "periodSeconds": 10, "timeoutSeconds": 5, "failureThreshold": 2
+    }
+  }]}}}
+}' || true
+kubectl rollout status deployment argocd-redis -n devtools --timeout=180s || true
+
 # Get initial admin password
 ARGOCD_PASSWORD=$(kubectl -n devtools get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d 2>/dev/null || echo "unknown")
 

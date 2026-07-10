@@ -129,4 +129,20 @@ kubectl patch deployment headlamp -n devtools --type='json' \
 
 echo "Headlamp installed"
 
+echo "=== Applying Pod Security Admission labels (KISA-POD-01) ==="
+# audit/warn 모드만 사용 — enforce는 기존 워크로드 차단 위험이 있어 의도적으로 제외.
+# 이후 생성되는 네임스페이스는 여기 없으므로, 새 ns 추가 시 이 목록도 갱신할 것.
+for ns in iam devtools monitoring database dev default cilium-secrets; do
+  kubectl get ns "${ns}" >/dev/null 2>&1 && kubectl label ns "${ns}" \
+    pod-security.kubernetes.io/audit=baseline \
+    pod-security.kubernetes.io/warn=baseline --overwrite || true
+done
+# 호스트 리소스 접근이 필요한 네임스페이스는 privileged로 명시 (라벨 부재보다 명시가 낫다)
+for ns in kube-system istio-system platform-system storage security-system nfs-quota-agent; do
+  kubectl get ns "${ns}" >/dev/null 2>&1 && kubectl label ns "${ns}" \
+    pod-security.kubernetes.io/audit=privileged \
+    pod-security.kubernetes.io/warn=privileged --overwrite || true
+done
+echo "PSA labels applied"
+
 echo "=== Security Apps Installation Complete ==="

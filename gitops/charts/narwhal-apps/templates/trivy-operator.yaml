@@ -15,6 +15,12 @@ spec:
     targetRevision: 0.27.0
     helm:
       valuesObject:
+        # 차트 0.27.0에서 targetNamespaces/excludeNamespaces는 최상위 키다.
+        # operator: 아래에 두면 조용히 무시되어 kube-system까지 스캔된다(2026-07-10 발견 —
+        # config audit 실패 1219건 중 479건이 시스템 ns). kyverno 제외·PSA privileged와
+        # 동일한 스코핑 원칙으로 istio-system도 제외.
+        targetNamespaces: ""
+        excludeNamespaces: "kube-system,kube-public,kube-node-lease,trivy-system,istio-system"
         trivyOperator:
           scanJobPodTemplatePodSecurityContext:
             runAsNonRoot: true
@@ -70,9 +76,6 @@ spec:
           cron: "0 */6 * * *"
 
         operator:
-          # 모든 네임스페이스 스캔 (빈 문자열 = all)
-          targetNamespaces: ""
-          excludeNamespaces: "kube-system,kube-public,kube-node-lease,trivy-system"
           scanJobsConcurrentLimit: 2   # was 3: fewer concurrent scan Jobs => lower peak
                                        # node CPU (combined with 300m scan cap = ~600m peak
                                        # vs 1500m before) to protect co-located workloads

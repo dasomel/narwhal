@@ -133,7 +133,9 @@ rules:
 ---
 # Developer
 # 애플리케이션 배포 및 디버깅 전담 역할.
-# Secrets 생성/수정 불가 (읽기만 허용), 노드/네임스페이스 접근 없음.
+# Secrets 접근 없음 — dev 네임스페이스에서만 developer-full-access(edit)가
+# secrets 읽기/쓰기를 제공한다. 클러스터 전역 secrets 읽기는 iam/platform의
+# DB 비밀번호·OIDC 시크릿까지 열람 가능해 2026-07-10 제거. 노드/네임스페이스 접근 없음.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
@@ -155,10 +157,6 @@ rules:
       - events
       - endpoints
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
-  # Secrets: 읽기 전용 (생성/수정 불가)
-  - apiGroups: [""]
-    resources: ["secrets"]
-    verbs: ["get", "list", "watch"]
   # PVC: 생성 및 읽기 (삭제 불가)
   - apiGroups: [""]
     resources: ["persistentvolumeclaims"]

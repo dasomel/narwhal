@@ -17,7 +17,9 @@ spec:
         replicaCount: 1
 
         image:
-          repository: otwld/velero-ui
+          # kyverno restrict-image-registries는 명시적 레지스트리 접두어를 요구.
+          # docker.io 사용 사유: otwld/velero-ui는 Docker Hub에만 게시됨 (ghcr 미제공).
+          repository: docker.io/otwld/velero-ui
           pullPolicy: IfNotPresent
           tag: "0.10.1"
 
@@ -30,13 +32,13 @@ spec:
               existingSecret: "velero-ui-oauth"
               key: "passphrase"
 
-        # kyverno restrict-image-registries는 명시적 레지스트리 접두어를 요구.
-        # docker.io 사용 사유: otwld/velero-ui는 Docker Hub에만 게시됨 (ghcr 미제공).
-        image:
-          repository: docker.io/otwld/velero-ui
-        # kyverno disallow-privileged-containers 패턴은 privileged 필드 명시를 요구.
+        # privileged 명시 + kyverno add-default-securitycontext가 주입하는
+        # runAsNonRoot: true에 대응해 숫자 UID 명시 (이미지 USER가 'node'라
+        # 비숫자 유저는 kubelet이 non-root 검증 불가 → CreateContainerConfigError).
         securityContext:
           privileged: false
+          runAsNonRoot: true
+          runAsUser: 1000
 
         serviceAccount:
           create: true

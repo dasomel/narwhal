@@ -26,11 +26,19 @@ spec:
                 - devtools
       validate:
         message: "Privileged mode is disallowed."
+        # =() 옵셔널 앵커 필수: 앵커 없이 쓰면 privileged 필드가 없는 파드
+        # (사실상 대부분)가 Enforce에서 전부 admission 거부되어 재기동 불능이 된다.
         pattern:
           spec:
+            =(ephemeralContainers):
+              - =(securityContext):
+                  =(privileged): "false"
+            =(initContainers):
+              - =(securityContext):
+                  =(privileged): "false"
             containers:
-              - securityContext:
-                  privileged: "!true"
+              - =(securityContext):
+                  =(privileged): "false"
 ---
 apiVersion: kyverno.io/v1
 kind: ClusterPolicy

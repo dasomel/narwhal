@@ -45,11 +45,8 @@ spec:
           automount: true
 
         rbac:
-          create: true
-          # velero.io CRUD는 rbac.create의 storage ns Role이 담당.
-          # 클러스터 범위는 읽기 전용 velero-ui-readonly(resources/rbac-policies.yaml)로 제한.
-          clusterAdministrator: true
-          clusterAdministratorName: velero-ui-readonly
+          create: false
+          clusterAdministrator: false
 
         service:
           type: ClusterIP

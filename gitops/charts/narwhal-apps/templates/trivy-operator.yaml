@@ -15,6 +15,25 @@ spec:
     targetRevision: 0.27.0
     helm:
       valuesObject:
+        trivyOperator:
+          scanJobPodTemplatePodSecurityContext:
+            runAsNonRoot: true
+            runAsUser: 10000
+            runAsGroup: 10000
+            fsGroup: 10000
+            seccompProfile:
+              type: RuntimeDefault
+          scanJobPodTemplateContainerSecurityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            privileged: false
+            readOnlyRootFilesystem: true
+            runAsUser: 10000
+            runAsGroup: 10000
+            runAsNonRoot: true
+
         # Standalone mode — Trivy CLI runs inside scan Job pods, no shared server.
         # 자원 제약 환경(Worker 6GB)에서 Server 모드보다 가볍고 격리도 높음.
         trivy:

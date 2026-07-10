@@ -48,7 +48,7 @@ rules:
       - endpoints
       - resourcequotas
       - limitranges
-    verbs: ["*"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
   # 앱 배포 리소스: 전체 관리
   - apiGroups: ["apps"]
     resources:
@@ -56,23 +56,23 @@ rules:
       - daemonsets
       - statefulsets
       - replicasets
-    verbs: ["*"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
   # 배치 작업: 전체 관리
   - apiGroups: ["batch"]
     resources: ["jobs", "cronjobs"]
-    verbs: ["*"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
   # 네트워크 정책 및 인그레스: 전체 관리
   - apiGroups: ["networking.k8s.io"]
     resources: ["networkpolicies", "ingresses"]
-    verbs: ["*"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
   # HPA/VPA: 전체 관리
   - apiGroups: ["autoscaling"]
     resources: ["horizontalpodautoscalers"]
-    verbs: ["*"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
   # PodDisruptionBudget: 전체 관리
   - apiGroups: ["policy"]
     resources: ["poddisruptionbudgets"]
-    verbs: ["*"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
   # RBAC: 읽기 전용 (Roles/ClusterRoles 변경 불가)
   - apiGroups: ["rbac.authorization.k8s.io"]
     resources:
@@ -91,7 +91,7 @@ rules:
       - applications
       - applicationsets
       - appprojects
-    verbs: ["*"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
   # Gateway API: 라우트 및 게이트웨이 관리
   - apiGroups: ["gateway.networking.k8s.io"]
     resources:
@@ -99,10 +99,23 @@ rules:
       - httproutes
       - grpcroutes
       - tcproutes
-    verbs: ["*"]
-  # Istio: 트래픽 및 보안 정책 읽기
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  # Istio: 트래픽 및 보안 정책 읽기 (와일드카드 리소스 제거)
   - apiGroups: ["networking.istio.io", "security.istio.io"]
-    resources: ["*"]
+    resources:
+      - virtualservices
+      - destinationrules
+      - gateways
+      - serviceentries
+      - sidecars
+      - envoyfilters
+      - telemetries
+      - wasmplugins
+      - peerauthentications
+      - requestauthentications
+      - authorizationpolicies
+      - workloadentries
+      - workloadgroups
     verbs: ["get", "list", "watch"]
   # Cert-manager: 인증서 관리
   - apiGroups: ["cert-manager.io"]
@@ -376,3 +389,75 @@ rules:
       - volumesnapshots
       - volumesnapshotcontents
     verbs: ["get", "list", "watch"]
+
+---
+# Role: velero-ui-custom-role
+# 기존 차트의 velero-ui-permissions 및 velero-ui-velero-permissions 통합 대체.
+# 와일드카드 (*) 제거 및 verbs/resources 명시.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: velero-ui-custom-role
+  namespace: storage
+  labels:
+    app.kubernetes.io/managed-by: narwhal
+rules:
+  # Pods, Secrets, ConfigMaps 읽기 전용 (UI 표시용)
+  - apiGroups: [""]
+    resources:
+      - pods
+      - pods/log
+      - pods/status
+      - secrets
+      - configmaps
+    verbs: ["get", "list", "watch"]
+  # Velero 백업/복원 관련 CRUD 권한 (와일드카드 제거)
+  - apiGroups: ["velero.io"]
+    resources:
+      - backups
+      - restores
+      - schedules
+      - backupstoragelocations
+      - volumesnapshotlocations
+      - downloadrequests
+      - deletebackuprequests
+      - podvolumebackups
+      - podvolumerestores
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+
+---
+# RoleBinding: velero-ui-custom-binding
+# velero-ui 서비스 어카운트에 커스텀 Role 바인딩
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: velero-ui-custom-binding
+  namespace: storage
+  labels:
+    app.kubernetes.io/managed-by: narwhal
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: velero-ui-custom-role
+subjects:
+  - kind: ServiceAccount
+    name: velero-ui
+    namespace: storage
+
+---
+# ClusterRoleBinding: velero-ui-readonly-binding
+# velero-ui SA가 클러스터 범위의 읽기 권한을 갖도록 바인딩
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: velero-ui-readonly-binding
+  labels:
+    app.kubernetes.io/managed-by: narwhal
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: velero-ui-readonly
+subjects:
+  - kind: ServiceAccount
+    name: velero-ui
+    namespace: storage

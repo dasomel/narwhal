@@ -30,6 +30,14 @@ spec:
               existingSecret: "velero-ui-oauth"
               key: "passphrase"
 
+        # kyverno restrict-image-registries는 명시적 레지스트리 접두어를 요구.
+        # docker.io 사용 사유: otwld/velero-ui는 Docker Hub에만 게시됨 (ghcr 미제공).
+        image:
+          repository: docker.io/otwld/velero-ui
+        # kyverno disallow-privileged-containers 패턴은 privileged 필드 명시를 요구.
+        securityContext:
+          privileged: false
+
         serviceAccount:
           create: true
           automount: true

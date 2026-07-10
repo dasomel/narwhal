@@ -38,22 +38,8 @@ subjects:
   name: oidc:cluster-admin
 EOF
 
-# RoleBinding: developer group gets edit in dev namespace
-cat <<EOF | kubectl apply -f -
-apiVersion: rbac.authorization.k8s.io/v1
-kind: RoleBinding
-metadata:
-  name: oidc-developer-edit
-  namespace: dev
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
-  name: edit
-subjects:
-- apiGroup: rbac.authorization.k8s.io
-  kind: Group
-  name: oidc:developer
-EOF
+# NOTE: dev ns의 edit 바인딩은 gitops/resources/rbac-policies.yaml의
+# developer-full-access(RoleBinding)가 소유한다 — 여기서 중복 생성하지 않음.
 
 # RoleBinding: developer group gets view in devtools and monitoring
 for ns in devtools monitoring; do

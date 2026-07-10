@@ -344,3 +344,35 @@ subjects:
   - apiGroup: rbac.authorization.k8s.io
     kind: Group
     name: "oidc:developer"
+
+---
+# ClusterRole: velero-ui-readonly
+# velero-ui SA용 최소 클러스터 권한. 기존에는 cluster-admin 바인딩이었으나
+# velero.io CRUD는 storage ns의 Role(velero-ui-*-permissions)이 이미 담당하므로,
+# 클러스터 범위는 백업 대상 선택 UI에 필요한 읽기 전용으로 축소.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: velero-ui-readonly
+  labels:
+    app.kubernetes.io/managed-by: narwhal
+rules:
+  - apiGroups: [""]
+    resources:
+      - namespaces
+      - nodes
+      - persistentvolumes
+      - persistentvolumeclaims
+      - events
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["storage.k8s.io"]
+    resources:
+      - storageclasses
+      - volumesnapshotclasses
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["snapshot.storage.k8s.io"]
+    resources:
+      - volumesnapshotclasses
+      - volumesnapshots
+      - volumesnapshotcontents
+    verbs: ["get", "list", "watch"]

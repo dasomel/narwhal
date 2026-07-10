@@ -15,6 +15,10 @@ spec:
       valuesObject:
         podLabels:
           istio.io/dataplane-mode: "none"
+        # OIDC 모드: 사용자 요청은 사용자 토큰의 RBAC로 수행되므로
+        # SA에는 chart 기본값 cluster-admin 대신 읽기 전용 view만 부여.
+        clusterRoleBinding:
+          clusterRoleName: view
         # No cpu limit on purpose: throttling makes the (chart-hardcoded) 1s
         # probe timeout trip under VM load. Probe tuning itself is applied by
         # the headlamp-probe-tuning Kyverno policy (headlamp-policy.yaml).

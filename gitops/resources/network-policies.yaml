@@ -1,11 +1,11 @@
 ---
-# NetworkPolicy: 네임스페이스별 egress 허용 목록
+# NetworkPolicy: 네임스페이스별 egress 정책 (현재 전체 허용)
 #
 # 설계 원칙:
 #   - deny-by-default egress는 사용하지 않음 (Cilium deny-by-default 충돌 경험)
-#   - 앱별 egress 허용 목록 방식으로 불필요한 외부 통신 제한
-#   - DNS(53), HBONE(15008)은 모든 네임스페이스에 공통 허용
-#   - namespaceSelector는 K8s 자동 부여 라벨 kubernetes.io/metadata.name 사용
+#   - egress는 제한하지 않음: 모든 정책이 `- {}` (allow-all) 단일 규칙
+#   - 정책 오브젝트는 네임스페이스별로 유지 — 이후 egress를 다시 좁힐 때
+#     오브젝트 추가 없이 규칙만 교체하면 되는 재강화 지점
 #
 # 네임스페이스 목록:
 #   iam        - Keycloak, OAuth2-Proxy (SSO/IAM)
@@ -16,8 +16,6 @@
 
 # ============================================================
 # 1. IAM 네임스페이스 (Keycloak, OAuth2-Proxy)
-#    - Keycloak: DB 접근 (5432), 클러스터 내부 통신
-#    - OAuth2-Proxy: Keycloak OIDC 콜백 (8080)
 # ============================================================
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -31,35 +29,11 @@ spec:
   policyTypes:
     - Egress
   egress:
-    # DNS 조회 (kube-dns)
-    - to:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: kube-system
-      ports:
-        - port: 53
-          protocol: UDP
-        - port: 53
-          protocol: TCP
-    # PostgreSQL (CNPG - narwhal-db)
-    - to:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: database
-      ports:
-        - port: 5432
-          protocol: TCP
-    # HBONE (Istio ambient mesh 포드 간 mTLS)
-    - ports:
-        - port: 15008
-          protocol: TCP
+    - {}
 
 ---
 # ============================================================
 # 2. DevTools 네임스페이스 (ArgoCD, Gitea, Harbor, Headlamp)
-#    - ArgoCD, Headlamp: K8s API 서버 접근 필요
-#    - Gitea, Harbor: DB (5432), S3 스토리지 (8333) 접근
-#    - 모든 앱: Keycloak OIDC (8080)
 # ============================================================
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -73,68 +47,11 @@ spec:
   policyTypes:
     - Egress
   egress:
-    # DNS 조회 (kube-dns)
-    - to:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: kube-system
-      ports:
-        - port: 53
-          protocol: UDP
-        - port: 53
-          protocol: TCP
-    # PostgreSQL (CNPG - narwhal-db, gitea-db, harbor-db)
-    - to:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: database
-      ports:
-        - port: 5432
-          protocol: TCP
-    # Keycloak OIDC (SSO 인증)
-    - to:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: iam
-      ports:
-        - port: 8080
-          protocol: TCP
-    # SeaweedFS S3 (Harbor 이미지 스토리지, Gitea LFS)
-    - to:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: storage
-      ports:
-        - port: 8333
-          protocol: TCP
-    # K8s API 서버 (ArgoCD 동기화, Headlamp 클러스터 조회)
-    # Service CIDR 10.96.0.0/12 및 VIP 192.168.56.100
-    - to:
-        - ipBlock:
-            cidr: 10.96.0.0/12
-      ports:
-        - port: 443
-          protocol: TCP
-        - port: 6443
-          protocol: TCP
-    - to:
-        - ipBlock:
-            cidr: 192.168.56.100/32
-      ports:
-        - port: 6443
-          protocol: TCP
-    # HBONE (Istio ambient mesh 포드 간 mTLS)
-    - ports:
-        - port: 15008
-          protocol: TCP
+    - {}
 
 ---
 # ============================================================
 # 3. Monitoring 네임스페이스 (Prometheus, Grafana, Loki, Tempo)
-#    - Prometheus: 전체 네임스페이스 메트릭 수집 (scrape)
-#    - Grafana: Keycloak OIDC (8080), Loki/Prometheus/Tempo 조회
-#    - Loki: SeaweedFS S3 청크 저장 (8333)
-#    - Tempo: 분산 트레이스 수신 (4317 OTLP gRPC, 4318 OTLP HTTP)
 # ============================================================
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -148,85 +65,11 @@ spec:
   policyTypes:
     - Egress
   egress:
-    # DNS 조회 (kube-dns)
-    - to:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: kube-system
-      ports:
-        - port: 53
-          protocol: UDP
-        - port: 53
-          protocol: TCP
-    # Keycloak OIDC (Grafana SSO)
-    - to:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: iam
-      ports:
-        - port: 8080
-          protocol: TCP
-    # SeaweedFS S3 (Loki 청크/룰 저장, Tempo 트레이스 저장)
-    - to:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: storage
-      ports:
-        - port: 8333
-          protocol: TCP
-    # Prometheus scrape: 전체 네임스페이스 메트릭 수집
-    # 모든 포드의 메트릭 엔드포인트(일반적으로 8080, 9090, 9091, 8443 등) 접근 필요
-    # 클러스터 내부 pod CIDR 전체 허용 (scrape 대상이 동적임)
-    - to:
-        - namespaceSelector: {}
-      ports:
-        # 공통 메트릭 포트
-        - port: 9090
-          protocol: TCP
-        - port: 9091
-          protocol: TCP
-        - port: 9100
-          protocol: TCP
-        - port: 8080
-          protocol: TCP
-        - port: 8443
-          protocol: TCP
-        - port: 10250
-          protocol: TCP
-        - port: 10255
-          protocol: TCP
-        # kube-state-metrics, node-exporter
-        - port: 8081
-          protocol: TCP
-        # cadvisor
-        - port: 4194
-          protocol: TCP
-    # K8s API 서버 (kube-state-metrics, Prometheus operator CRD 조회)
-    - to:
-        - ipBlock:
-            cidr: 10.96.0.0/12
-      ports:
-        - port: 443
-          protocol: TCP
-        - port: 6443
-          protocol: TCP
-    - to:
-        - ipBlock:
-            cidr: 192.168.56.100/32
-      ports:
-        - port: 6443
-          protocol: TCP
-    # HBONE (Istio ambient mesh 포드 간 mTLS)
-    - ports:
-        - port: 15008
-          protocol: TCP
+    - {}
 
 ---
 # ============================================================
 # 4. Storage 네임스페이스 (SeaweedFS, OpenBao, Velero)
-#    - SeaweedFS: 내부 마스터/볼륨/filer 간 통신
-#    - OpenBao: K8s API 인증 (token review), 동적 시크릿
-#    - Velero: K8s API 접근 (백업 대상 리소스 조회), S3 저장
 # ============================================================
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -240,65 +83,11 @@ spec:
   policyTypes:
     - Egress
   egress:
-    # DNS 조회 (kube-dns)
-    - to:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: kube-system
-      ports:
-        - port: 53
-          protocol: UDP
-        - port: 53
-          protocol: TCP
-    # SeaweedFS 내부 통신: 마스터 ↔ 볼륨 서버 ↔ filer
-    - to:
-        - podSelector: {}
-      ports:
-        # SeaweedFS master
-        - port: 9333
-          protocol: TCP
-        # SeaweedFS volume
-        - port: 8080
-          protocol: TCP
-        # SeaweedFS filer
-        - port: 8888
-          protocol: TCP
-        # SeaweedFS S3
-        - port: 8333
-          protocol: TCP
-        # SeaweedFS gRPC
-        - port: 19333
-          protocol: TCP
-        - port: 18080
-          protocol: TCP
-        - port: 18888
-          protocol: TCP
-    # K8s API 서버 (OpenBao TokenReview, Velero 리소스 백업)
-    - to:
-        - ipBlock:
-            cidr: 10.96.0.0/12
-      ports:
-        - port: 443
-          protocol: TCP
-        - port: 6443
-          protocol: TCP
-    - to:
-        - ipBlock:
-            cidr: 192.168.56.100/32
-      ports:
-        - port: 6443
-          protocol: TCP
-    # HBONE (Istio ambient mesh 포드 간 mTLS)
-    - ports:
-        - port: 15008
-          protocol: TCP
+    - {}
 
 ---
 # ============================================================
 # 5. Database 네임스페이스 (CloudNative-PG)
-#    - CNPG primary ↔ replica WAL 스트리밍 (5432)
-#    - CNPG 백업: SeaweedFS S3 (8333)
-#    - CNPG operator: K8s API 조회
 # ============================================================
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -312,46 +101,4 @@ spec:
   policyTypes:
     - Egress
   egress:
-    # DNS 조회 (kube-dns)
-    - to:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: kube-system
-      ports:
-        - port: 53
-          protocol: UDP
-        - port: 53
-          protocol: TCP
-    # CNPG primary ↔ replica WAL 스트리밍 (같은 namespace 내)
-    - to:
-        - podSelector: {}
-      ports:
-        - port: 5432
-          protocol: TCP
-    # SeaweedFS S3 (CNPG barmanObjectStore 백업 저장)
-    - to:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: storage
-      ports:
-        - port: 8333
-          protocol: TCP
-    # K8s API 서버 (CNPG operator 상태 보고, 리소스 패치)
-    - to:
-        - ipBlock:
-            cidr: 10.96.0.0/12
-      ports:
-        - port: 443
-          protocol: TCP
-        - port: 6443
-          protocol: TCP
-    - to:
-        - ipBlock:
-            cidr: 192.168.56.100/32
-      ports:
-        - port: 6443
-          protocol: TCP
-    # HBONE (Istio ambient mesh 포드 간 mTLS)
-    - ports:
-        - port: 15008
-          protocol: TCP
+    - {}

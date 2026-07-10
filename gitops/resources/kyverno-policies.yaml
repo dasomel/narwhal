@@ -23,6 +23,7 @@ spec:
                 - kube-system
                 - istio-system
                 - platform-system
+                - devtools
       validate:
         message: "Privileged mode is disallowed."
         pattern:
@@ -55,6 +56,7 @@ spec:
                 - kube-system
                 - istio-system
                 - platform-system
+                - devtools
       validate:
         message: "Sharing the host namespace (hostNetwork, hostPID, hostIPC) is disallowed."
         pattern:
@@ -87,6 +89,7 @@ spec:
                 - kube-system
                 - istio-system
                 - platform-system
+                - devtools
       validate:
         message: "Use of host ports is disallowed."
         pattern:
@@ -118,6 +121,7 @@ spec:
                 - kube-system
                 - istio-system
                 - platform-system
+                - devtools
       validate:
         message: "The label 'app.kubernetes.io/name' is required."
         pattern:
@@ -148,6 +152,7 @@ spec:
                 - kube-system
                 - istio-system
                 - platform-system
+                - devtools
       validate:
         message: "Using 'latest' tag is not allowed."
         pattern:
@@ -179,6 +184,7 @@ spec:
                 - kube-system
                 - istio-system
                 - platform-system
+                - devtools
       validate:
         message: "Images must be from approved registries: ghcr.io, registry.k8s.io, quay.io, docker.io"
         pattern:
@@ -209,6 +215,7 @@ spec:
                 - kube-system
                 - istio-system
                 - platform-system
+                - devtools
       mutate:
         patchStrategicMerge:
           spec:

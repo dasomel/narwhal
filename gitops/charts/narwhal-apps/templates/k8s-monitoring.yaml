@@ -22,10 +22,45 @@ spec:
         collectors:
           alloy-logs:
             presets: [small, daemonset, filesystem-log-reader]
+            # Trivy KSV001/003/012/030/104 on the config-reloader sidecar (verified
+            # path + container placement via `helm template` against the rendered
+            # Alloy CR: spec.alloy.configReloader.securityContext). Safe to force
+            # runAsNonRoot here -- live-verified uid=65534 (nobody). The main `alloy`
+            # container is intentionally left alone: it already has
+            # allowPrivilegeEscalation/capabilities/seccomp live, but runs as uid=0
+            # root by design (needs host log/container access) so KSV012 there is
+            # not fixable without breaking log collection.
+            alloy:
+              configReloader:
+                securityContext:
+                  allowPrivilegeEscalation: false
+                  runAsNonRoot: true
+                  runAsUser: 65534
+                  capabilities:
+                    drop:
+                      - ALL
+                  seccompProfile:
+                    type: RuntimeDefault
         podLogsViaLoki:
           enabled: true
           collector: alloy-logs
           destinations: []
+        # Trivy KSV030/104 on alloy-operator (verified container-level via helm
+        # template). Explicit full block (not just seccomp) since this chart's
+        # documented defaults have not reliably matched live pod state elsewhere in
+        # this pass -- being explicit avoids relying on merge behavior.
+        alloy-operator:
+          alloy:
+            securityContext:
+              allowPrivilegeEscalation: false
+              capabilities:
+                drop:
+                  - ALL
+              readOnlyRootFilesystem: true
+              runAsNonRoot: true
+              runAsUser: 4242
+              seccompProfile:
+                type: RuntimeDefault
   destination:
     server: https://kubernetes.default.svc
     namespace: monitoring

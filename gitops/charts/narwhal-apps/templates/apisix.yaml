@@ -78,6 +78,22 @@ spec:
               secretKeyRef:
                 name: velero-ui-oidc-secret
                 key: session_secret
+        # Trivy KSV001/003/012/030/104 on the apisix container. NOTE: this chart's
+        # deployment.yaml template reads `.Values.securityContext` (TOP-LEVEL, sibling
+        # of `apisix:` below), NOT `apisix.securityContext` — verified by pulling the
+        # chart source and reading templates/deployment.yaml directly (the nested
+        # `apisix.image.*` keys below are similarly not read by this template; the
+        # live image tag match is coincidental/unexplained chart-version behavior,
+        # left untouched since it already matches production). runAsNonRoot: true is
+        # safe — live pod verified uid=636 (apisix), already non-root.
+        securityContext:
+          allowPrivilegeEscalation: false
+          runAsNonRoot: true
+          capabilities:
+            drop:
+              - ALL
+          seccompProfile:
+            type: RuntimeDefault
         apisix:
           enabled: true
           image:

@@ -24,9 +24,26 @@ spec:
         # (out of this chart's scope).
         podSecurityContext:
           runAsNonRoot: false
+        # Trivy KSV001/003 (verified container-level via helm template, retried now
+        # that the kyverno runAsNonRoot auto-injection is gone -- see the incident
+        # workaround above). No seccompProfile here: kyverno's add-default-seccomp
+        # mutate now injects it cluster-wide for the storage namespace (not
+        # excluded), so setting it here would just duplicate. Not forcing
+        # runAsNonRoot (KSV012): image USER is 'cnb' (non-numeric), still unverifiable.
+        containerSecurityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+              - ALL
         initContainers:
           - name: velero-plugin-for-aws
             image: velero/velero-plugin-for-aws:v1.14.1
+            # Trivy also flags this initContainer (KSV001/003) separately.
+            securityContext:
+              allowPrivilegeEscalation: false
+              capabilities:
+                drop:
+                  - ALL
             volumeMounts:
               - mountPath: /target
                 name: plugins

@@ -23,6 +23,12 @@ spec:
             - key: "node.kubernetes.io/disk-pressure"
               operator: "Exists"
               effect: "NoSchedule"
+          # Trivy KSV030/104 (pod-level, verified via helm template; deep-merges with
+          # chart default runAsNonRoot/runAsUser/fsGroup). speaker/frr-k8s
+          # intentionally left untouched (need NET_ADMIN/NET_RAW + hostNetwork).
+          securityContext:
+            seccompProfile:
+              type: RuntimeDefault
   destination:
     server: https://kubernetes.default.svc
     namespace: platform-system

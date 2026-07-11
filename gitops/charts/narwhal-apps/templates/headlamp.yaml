@@ -43,10 +43,31 @@ spec:
             externalSecret:
               enabled: true
               name: headlamp-oidc-secret
+        # Trivy KSV001/003/012/030/104: allowPrivilegeEscalation false, drop ALL caps,
+        # seccomp RuntimeDefault. Deep-merges with chart default (runAsNonRoot: true,
+        # privileged: false), which already satisfies KSV012 for the main container.
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+              - ALL
+          seccompProfile:
+            type: RuntimeDefault
         initContainers:
           - name: ca-bundle
             image: ghcr.io/headlamp-k8s/headlamp:v0.42.0
             command: ['sh', '-c', 'cat /etc/ssl/certs/ca-certificates.crt /narwhal-ca/ca.crt > /combined/ca-certificates.crt']
+            # Same image as the main container (verified uid=100 non-root live) — safe to
+            # force runAsNonRoot here too (Trivy flagged this initContainer separately).
+            securityContext:
+              allowPrivilegeEscalation: false
+              runAsNonRoot: true
+              runAsUser: 100
+              capabilities:
+                drop:
+                  - ALL
+              seccompProfile:
+                type: RuntimeDefault
             volumeMounts:
               - name: narwhal-ca
                 mountPath: /narwhal-ca

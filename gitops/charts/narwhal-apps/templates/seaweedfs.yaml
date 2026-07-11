@@ -15,6 +15,12 @@ spec:
       valuesObject:
         global:
           storageClass: nfs-csi
+        # Trivy KSV001/003/030/104 on all 4 components (verified container-level via
+        # helm template; requires `enabled: true` INSIDE containerSecurityContext
+        # itself — the chart gates the whole block on that flag, "enabled" is omitted
+        # from final render). Not forcing runAsNonRoot (KSV012): all 4 containers
+        # verified running as root (uid=0) live — SeaweedFS needs it, forcing non-root
+        # would break the pods.
         master:
           enabled: true
           replicas: 1
@@ -23,6 +29,14 @@ spec:
             type: persistentVolumeClaim
             size: 1Gi
             storageClass: nfs-csi
+          containerSecurityContext:
+            enabled: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault
         volume:
           enabled: true
           replicas: 1
@@ -31,6 +45,14 @@ spec:
             type: persistentVolumeClaim
             size: 50Gi
             storageClass: nfs-csi
+          containerSecurityContext:
+            enabled: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault
         filer:
           enabled: true
           replicas: 1
@@ -43,8 +65,24 @@ spec:
             enabled: true
             port: 8333
             allowEmptyFolder: true
+          containerSecurityContext:
+            enabled: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault
         s3:
           enabled: true
+          containerSecurityContext:
+            enabled: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault
   destination:
     server: https://kubernetes.default.svc
     namespace: storage

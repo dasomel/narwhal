@@ -78,6 +78,19 @@ spec:
             - name: userconfig-openbao-tls
               mountPath: /openbao/tls
               readOnly: true
+          statefulSet:
+            # Trivy KSV003 (verified container-level via helm template). Only touching
+            # .container, not .pod — leaving .pod unset preserves the chart's own
+            # non-root default (already verified live: uid=100 openbao, numeric, no
+            # kyverno non-root-injection risk).
+            securityContext:
+              container:
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop:
+                    - ALL
+                seccompProfile:
+                  type: RuntimeDefault
         ui:
           enabled: true
   destination:

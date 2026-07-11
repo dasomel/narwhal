@@ -100,6 +100,9 @@ helm upgrade --install gitea gitea-charts/gitea \
   --set "extraContainerVolumeMounts[0].mountPath=/etc/ssl/certs/narwhal-ca.crt" \
   --set "extraContainerVolumeMounts[0].subPath=ca.crt" \
   --set "extraContainerVolumeMounts[0].readOnly=true" \
+  --set containerSecurityContext.allowPrivilegeEscalation=false \
+  --set containerSecurityContext.capabilities.drop[0]=ALL \
+  --set containerSecurityContext.seccompProfile.type=RuntimeDefault \
   --timeout=600s || echo "WARN: Gitea install timed out, continuing..."
 
 # Opt Gitea out of Istio ambient mesh (SSO cookie handling)

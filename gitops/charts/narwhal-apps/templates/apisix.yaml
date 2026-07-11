@@ -96,19 +96,13 @@ spec:
               - ALL
           seccompProfile:
             type: RuntimeDefault
-        # KNOWN ISSUE (unrelated to this hardening pass, found while investigating the
-        # above): apisix.image.tag below appears to NOT be wired to the actual
-        # Deployment template in chart 2.13.0 -- the live pod runs whatever the
-        # chart's top-level `image:` default resolves to (currently
-        # apache/apisix:3.15.0-ubuntu, NOT "-debian" as set here), and has been for
-        # over 2 days without issue. Left as-is; needs separate investigation before
-        # anyone relies on this override.
+        # apisix.image.tag override removed: chart 2.13.0's Deployment template does NOT
+        # wire this key -- the live pod always runs the chart's top-level `image:`
+        # default (apache/apisix:3.15.0-ubuntu). A "-debian" override here was dead
+        # config that misrepresented what actually runs; removed for honesty, not
+        # changed to apply (that would restart apisix onto a different image).
         apisix:
           enabled: true
-          image:
-            # docker.io: APISIX 공식 이미지, ghcr.io/quay.io 대안 없음
-            repository: apache/apisix
-            tag: "3.15.0-debian"
           podLabels:
             istio.io/dataplane-mode: "none"
           # Mount Narwhal root CA so openid-connect plugin can verify Keycloak TLS

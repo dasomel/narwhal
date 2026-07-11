@@ -216,7 +216,7 @@ metadata:
 spec:
   background: false
   rules:
-    - name: add-run-as-non-root
+    - name: add-default-seccomp
       match:
         any:
           - resources:
@@ -234,7 +234,11 @@ spec:
       mutate:
         patchStrategicMerge:
           spec:
+            # runAsNonRoot: true는 의도적으로 주입하지 않는다 — uid를 지정하지 않는
+            # 약한 통제인데, USER가 비숫자(cnb/node 등)인 업스트림 이미지는 kubelet이
+            # non-root 검증을 못 해 CreateContainerConfigError로 파드가 못 뜬다
+            # (2026-07-10 velero-ui·velero 2건 발생). 실제 non-root 강제가 필요한
+            # 워크로드는 차트에서 runAsUser를 명시한다. seccomp 기본값만 주입.
             securityContext:
-              +(runAsNonRoot): true
               +(seccompProfile):
                 type: RuntimeDefault

@@ -303,7 +303,10 @@ for attempt in 1 2 3 4 5; do
     --set resources.requests.cpu=50m \
     --set resources.requests.memory=128Mi \
     --set resources.limits.cpu=200m \
-    --set resources.limits.memory=256Mi; then
+    --set resources.limits.memory=256Mi \
+    --set securityContext.allowPrivilegeEscalation=false \
+    --set 'securityContext.capabilities.drop[0]=ALL' \
+    --set securityContext.seccompProfile.type=RuntimeDefault; then
     break
   fi
   echo "APISIX ingress controller install attempt ${attempt}/5 failed, waiting 15s..."

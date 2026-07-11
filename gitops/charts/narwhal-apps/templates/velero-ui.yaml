@@ -35,10 +35,16 @@ spec:
         # privileged 명시 + kyverno add-default-securitycontext가 주입하는
         # runAsNonRoot: true에 대응해 숫자 UID 명시 (이미지 USER가 'node'라
         # 비숫자 유저는 kubelet이 non-root 검증 불가 → CreateContainerConfigError).
+        # Trivy KSV001/003 added to the existing block above (allowPrivilegeEscalation,
+        # capabilities.drop) -- verified container-level via helm template.
         securityContext:
           privileged: false
           runAsNonRoot: true
           runAsUser: 1000
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+              - ALL
 
         serviceAccount:
           create: true

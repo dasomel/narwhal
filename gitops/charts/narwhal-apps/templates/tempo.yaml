@@ -34,6 +34,16 @@ spec:
                 insecure: true
         persistence:
           enabled: false
+        # Trivy KSV001/003/030/104 (top-level key, sibling of `tempo:` — verified via
+        # `helm show values`). Deep-merges with chart default container securityContext
+        # (runAsUser/runAsGroup/fsGroup 10001, runAsNonRoot: true).
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+              - ALL
+          seccompProfile:
+            type: RuntimeDefault
   destination:
     server: https://kubernetes.default.svc
     namespace: monitoring

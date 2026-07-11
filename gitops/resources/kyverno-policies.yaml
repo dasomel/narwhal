@@ -109,6 +109,13 @@ spec:
                 - platform-system
                 - devtools
                 - security-system
+          # node-exporter는 hostPort 9100으로 노드 메트릭을 노출한다 (hostNetwork와
+          # 함께 필수). host-namespaces와 동일하게 이 워크로드만 예외 처리.
+          - resources:
+              namespaces:
+                - monitoring
+              names:
+                - "prometheus-stack-prometheus-node-exporter*"
       validate:
         message: "Use of host ports is disallowed."
         pattern:

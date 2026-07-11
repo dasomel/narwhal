@@ -78,6 +78,31 @@ spec:
               secretKeyRef:
                 name: velero-ui-oidc-secret
                 key: session_secret
+        # Trivy KSV001/003/104 on the apisix container. NOTE: this chart's
+        # deployment.yaml template reads `.Values.securityContext` (TOP-LEVEL, sibling
+        # of `apisix:` below), NOT `apisix.securityContext` -- verified by reading the
+        # chart source. No runAsNonRoot here (KSV012 left unfixed): the live image
+        # config USER is the non-numeric string "apisix" (resolves to numeric uid 636
+        # at runtime via NSS, confirmed functionally non-root, but kubelet's static
+        # admission check can't verify a non-numeric USER and rejects
+        # runAsNonRoot:true -- this broke the gateway on the first hardening attempt,
+        # reverted). seccompProfile is explicit here (not covered by kyverno's
+        # add-default-seccomp mutate -- platform-system is in that policy's exclude
+        # list).
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+              - ALL
+          seccompProfile:
+            type: RuntimeDefault
+        # KNOWN ISSUE (unrelated to this hardening pass, found while investigating the
+        # above): apisix.image.tag below appears to NOT be wired to the actual
+        # Deployment template in chart 2.13.0 -- the live pod runs whatever the
+        # chart's top-level `image:` default resolves to (currently
+        # apache/apisix:3.15.0-ubuntu, NOT "-debian" as set here), and has been for
+        # over 2 days without issue. Left as-is; needs separate investigation before
+        # anyone relies on this override.
         apisix:
           enabled: true
           image:

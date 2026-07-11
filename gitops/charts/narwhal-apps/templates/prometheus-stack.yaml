@@ -91,6 +91,20 @@ spec:
               tls_skip_verify_insecure: true
               allow_assign_grafana_admin: true
               role_attribute_path: contains(groups[*], 'cluster-admin') && 'Admin' || contains(groups[*], 'developer') && 'Editor' || 'Viewer'
+        # Trivy KSV001/003/030/104 on node-exporter (verified container-level via
+        # helm template). Not forcing runAsNonRoot: already non-root by chart default
+        # (uid 65534, live-verified), so KSV012 isn't flagged. grafana's only
+        # remaining finding (KSV001 on the init-chown-data initContainer) has no
+        # values path in the grafana chart -- left as-is.
+        prometheus-node-exporter:
+          containerSecurityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault
         alertmanager:
           alertmanagerSpec:
             storage:

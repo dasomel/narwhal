@@ -73,6 +73,14 @@ kubectl patch deployment argocd-repo-server -n devtools --type='json' \
 kubectl patch deployment argocd-notifications-controller -n devtools --type='json' \
   -p='[{"op": "add", "path": "/spec/template/metadata/labels/istio.io~1dataplane-mode", "value": "none"}]'
 
+# redis: opt out of ambient. All its CLIENTS (server/repo-server/controller) are
+# opted out above, so with redis mesh-enrolled their plaintext connections hit
+# ztunnel expecting mTLS under STRICT → dropped with EOF. Symptom: repo-server
+# "failed to list refs: EOF" / "retrieve git references from cache: EOF", apps
+# stuck Unknown, gitops pin bumps never sync (recurring "redis EOF wedge").
+kubectl patch deployment argocd-redis -n devtools --type='json' \
+  -p='[{"op": "add", "path": "/spec/template/metadata/labels/istio.io~1dataplane-mode", "value": "none"}]'
+
 # application-controller (StatefulSet): opt out of ambient
 kubectl patch statefulset argocd-application-controller -n devtools --type='json' \
   -p='[{"op": "add", "path": "/spec/template/metadata/labels/istio.io~1dataplane-mode", "value": "none"}]'

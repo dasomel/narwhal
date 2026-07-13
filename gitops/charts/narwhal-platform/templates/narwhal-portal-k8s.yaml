@@ -240,7 +240,7 @@ spec:
         - name: narwhal-portal
           # 불변 태그 고정 — :latest는 매니페스트 diff가 없어 ArgoCD가 재배포하지
           # 않는다(2026-07-07 실수 로그). 업그레이드 = 태그 범프.
-          image: harbor.local.narwhal.internal/library/narwhal-portal:1.0.11
+          image: harbor.local.narwhal.internal/library/narwhal-portal:1.0.12
           imagePullPolicy: IfNotPresent
           securityContext:
             allowPrivilegeEscalation: false

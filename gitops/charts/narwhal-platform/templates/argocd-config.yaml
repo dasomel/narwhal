@@ -51,13 +51,16 @@ data:
   # Live dev (skaffold dev) support: skaffold deploys the portal with a dev
   # image (dev-m-*), raised resources, and skaffold-injected labels. Ignoring
   # these fields stops selfHeal from instantly reverting the dev deployment
-  # to prod :latest (which silently killed HMR). Scoped to the narwhal-portal
-  # container by jq select; skaffold labels only exist on skaffold-deployed
-  # objects, so the global ignore is inert elsewhere.
+  # (which silently killed HMR). CONDITIONAL on the live image being a :dev-*
+  # tag: the original unconditional image ignore made every GitOps SemVer pin
+  # bump invisible (app stayed Synced on a stale image; bumps only landed by
+  # piggybacking on unrelated syncs — see CLAUDE.md 2026-07-13). With the
+  # select() guard the paths only exist while a dev image is actually running,
+  # so prod pin bumps diff normally and dev sessions stay protected.
   resource.customizations.ignoreDifferences.apps_Deployment: |
     jqPathExpressions:
-    - .spec.template.spec.containers[] | select(.name == "narwhal-portal") | .image
-    - .spec.template.spec.containers[] | select(.name == "narwhal-portal") | .resources
+    - .spec.template.spec.containers[] | select(.name == "narwhal-portal") | select(.image | test(":dev-")) | .image
+    - .spec.template.spec.containers[] | select(.name == "narwhal-portal") | select(.image | test(":dev-")) | .resources
   resource.customizations.ignoreDifferences.all: |
     jqPathExpressions:
     - .metadata.labels."skaffold.dev/run-id"

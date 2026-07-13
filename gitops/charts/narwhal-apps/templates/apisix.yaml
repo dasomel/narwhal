@@ -170,6 +170,14 @@ spec:
                 worker_rlimit_nofile: 20480
                 event:
                   worker_connections: 10620
+                # NextAuth session cookies (portal ≥1.0.11 stores Keycloak access+refresh
+                # tokens in the JWE) push /api/auth/callback/keycloak response headers past
+                # nginx's 4k default proxy buffer → "upstream sent too big header" → 502 on
+                # every portal login. http-context directives inherit into all routes.
+                http_configuration_snippet: |
+                  proxy_buffer_size 16k;
+                  proxy_buffers 8 16k;
+                  proxy_busy_buffers_size 32k;
                 http:
                   enable_access_log: true
                   access_log: "/dev/stdout"

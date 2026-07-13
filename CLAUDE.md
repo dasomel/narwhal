@@ -103,6 +103,7 @@ When Plan mode is needed in Narwhal:
 | 2026-06-30 | metrics-server applied then patched TWICE (insecure-tls, then probes) → two ReplicaSet rollouts; a Phase-2 `kubectl wait ... pod -l k8s-app=metrics-server` matched the transient new pod and timed out → recurring clean-install abort (D10) | Merge both patches into ONE `kubectl patch`, then `kubectl rollout status deployment/metrics-server` (non-fatal) so Phase 1 only finishes once it settles to a single Ready pod. (d54d3c8) |
 | 2026-06-30 | keycloak-0 flaky crashloop "FATAL: password authentication failed for user keycloak": the keycloak DB role password was set by BOTH `07-cnpg` (`narwhal-db-credentials/keycloak-password`) and `11-keycloak` (its own generated value) → last-writer-wins divergence vs the secret Keycloak uses (D9) | Make `07-cnpg` the single source: `11-keycloak` no longer generates a password or CREATE/ALTERs the role/db; it reads `narwhal-db-credentials/keycloak-password`, syncs `keycloak-db-secret`, and gates on a real psql auth check (10 retries) before deploying. (442985a) |
 | 2026-07-10 | Kyverno Enforce validate pattern WITHOUT `=()` optional anchors (`securityContext: privileged: "!true"`) requires the field to EXIST → every pod lacking an explicit `privileged` field (i.e. most pods) was denied at admission in non-excluded namespaces; surfaced as velero-ui ReplicaSet `FailedCreate`, and would have blocked ALL rollouts/reschedules (reboot = cluster-wide outage) | In Kyverno patterns, always wrap optional fields in `=()` anchors: `=(securityContext): =(privileged): "false"` (upstream-standard form, also cover `=(initContainers)`/`=(ephemeralContainers)`). Verify both directions with `kubectl run --dry-run=server`: plain pod admitted AND privileged pod denied. (e898f59) |
+| 2026-07-13 | Portal login → 502 on `/api/auth/callback/keycloak`: portal 1.0.11 started storing Keycloak access+refresh tokens in the NextAuth JWE → session cookie chunked into 2+ ~4KB `Set-Cookie` headers → response headers exceeded nginx's default `proxy_buffer_size 4k` → APISIX "upstream sent too big header" → 502; the browser retry then hit `invalid_grant: Code not valid` (code already consumed). Initially misdiagnosed as a Keycloak-restart blip — the APISIX **error** log (not access log) had the real cause | Raise proxy buffers in apisix `fullCustomConfig` → `nginx_config.http_configuration_snippet`: `proxy_buffer_size 16k; proxy_buffers 8 16k; proxy_busy_buffers_size 32k;`. For any gateway 502 on an auth callback, check APISIX error log for "too big header" FIRST. Verify with a scripted curl login (csrf→signin→Keycloak form→callback) expecting 302 + chunked session cookies |
 | 2026-07-10 | Added a SECOND `image:` block to an ArgoCD Application inline `values:` string (helm values YAML) — duplicate map key silently resolved last-wins → the original block's `tag: "0.10.1"` was dropped, image fell back to chart appVersion (0.10.0 rollback). Also: kyverno `add-default-securitycontext` mutate injects `runAsNonRoot: true`; images with a non-numeric USER (e.g. `node`) then fail kubelet verification (`CreateContainerConfigError`) — fix by setting numeric `runAsUser` in values | Before adding a key to a Helm values block, grep the block for an existing key and MERGE into it; validate rendered output (`helm template` + check the final image tag), not just YAML syntax. For mutate-injected `runAsNonRoot`, pair it with explicit `runAsUser: <uid>` when the image USER is non-numeric. (f1d7333) |
 
 ### GitOps/ArgoCD Mistakes
@@ -206,129 +207,19 @@ When Plan mode is needed in Narwhal:
 
 ## Core Flows
 
-### 1. Cluster Provisioning Flow
-
-| Step | File | Description |
-|------|------|-------------|
-| Prerequisites | `scripts/common/01-prerequisites.sh` | Hostname, /etc/hosts, netplan setup |
-| Container Runtime | `scripts/common/02-containerd.sh` | containerd installation |
-| K8s Installation | `scripts/common/03-k8s-install.sh` | kubeadm, kubelet, kubectl |
-| Config | `scripts/common/set-config.sh` | Shared configuration variables |
-| Library | `scripts/common/lib.sh` | Shared utility functions |
-
-### 2. Master Node Setup Flow (2-Phase Structure)
-
-**Phase 1: Cluster Infrastructure** (runs during master-1 provisioning)
-
-| Step | File | Description |
-|------|------|-------------|
-| kube-vip | `scripts/cluster/00-kube-vip.sh` | Control Plane VIP |
-| NFS Server | `scripts/cluster/01-nfs-server.sh` | NFS server setup |
-| Cluster Init | `scripts/cluster/02-init-cluster.sh` | kubeadm init |
-| CNI Install | `scripts/cluster/03-cni-install.sh` | Cilium + Hubble |
-| Addons | `scripts/cluster/04-addons.sh` | metrics-server, csi-driver-nfs |
-| NFS Quota | `scripts/cluster/05-nfs-quota-agent.sh` | NFS project quota |
-
-| Control Plane Join | `scripts/cluster/02-join-control-plane.sh` | master-2, master-3 join |
-| Worker Join | `scripts/cluster/02-join-worker.sh` | worker-1, worker-2, worker-3 join |
-
-**Phase 2: Platform Apps** (auto-triggered after last worker join)
-
-| Step | File | Description |
-|------|------|-------------|
-| Phase 2 Wrapper | `scripts/cluster/06-phase2-start.sh` | Runs Phase 2 scripts |
-| PostgreSQL | `scripts/cluster/07-cnpg.sh` | CloudNative-PG Operator |
-| Networking | `scripts/cluster/08-1-networking.sh` | MetalLB, APISIX, cert-manager |
-| Monitoring | `scripts/cluster/08-2-monitoring.sh` | Prometheus, Loki, Grafana Alloy, Tempo |
-| Security | `scripts/cluster/08-3-security.sh` | Kyverno, Headlamp, OAuth2-Proxy |
-| Storage | `scripts/cluster/08-4-storage.sh` | SeaweedFS, OpenBao, Velero |
-| Registry | `scripts/cluster/08-5-registry.sh` | Harbor |
-| TLS/Routes | `scripts/cluster/08-6-tls-routes.sh` | CA cert distribution, APISIX routes |
-| Istio | `scripts/cluster/09-istio-ambient.sh` | Service Mesh (ambient mode) |
-| dnsmasq | `scripts/cluster/10-dnsmasq.sh` | Local DNS + CoreDNS forward |
-| Keycloak | `scripts/cluster/11-keycloak.sh` | Keycloak SSO + PostgreSQL |
-| Keycloak Config | `scripts/cluster/11-2-keycloak-config.sh` | Realm, users, groups, clients |
-| Keycloak Clients | `scripts/cluster/11-3-keycloak-clients.sh` | Per-service OIDC client setup |
-| Keycloak API Server | `scripts/cluster/11-4-keycloak-apiserver.sh` | K8s OIDC config + RBAC |
-| Gitea | `scripts/cluster/12-gitea.sh` | Git server |
-| ArgoCD | `scripts/cluster/13-argocd.sh` | GitOps CD |
-| Bootstrap | `scripts/cluster/14-gitops-bootstrap.sh` | App-of-Apps deployment |
-| IDP Portal | `scripts/cluster/15-narwhal-portal.sh` | Developer portal **readiness gate** — image is pulled from `ghcr.io/dasomel/narwhal-portal:<pinned>` (public GHCR) by ArgoCD; script only waits for the Deployment to become Ready. In-cluster Kaniko build is now an OPTIONAL dev self-service tool (`narwhal-portal/scripts/kaniko-build.sh`, see `docs/developer-kaniko-builds.md`), no longer on the install path |
-
-### 3. GitOps App Management
-
-| App | File | Description |
-|-----|------|-------------|
-| App-of-Apps | `gitops/apps/app-of-apps.yaml` | Manages all apps |
-| **Networking** | | |
-| MetalLB | `gitops/charts/narwhal-apps/templates/metallb.yaml` | Load balancer |
-| APISIX | `gitops/charts/narwhal-apps/templates/apisix.yaml` | API gateway |
-| APISIX Infra | `gitops/charts/narwhal-platform/templates/apisix-infra.yaml` | APISIX infrastructure resources |
-| APISIX Routes | `gitops/charts/narwhal-platform/templates/apisix-routes.yaml` | APISIX route definitions |
-| cert-manager | `gitops/charts/narwhal-apps/templates/cert-manager.yaml` | TLS automation |
-| **Service Mesh** | | |
-| Istio Base | `gitops/charts/narwhal-apps/templates/istio-base.yaml` | Istio CRDs |
-| Istiod | `gitops/charts/narwhal-apps/templates/istiod.yaml` | Istio control plane |
-| Istio CNI | `gitops/charts/narwhal-apps/templates/istio-cni.yaml` | Istio CNI plugin |
-| ztunnel | `gitops/charts/narwhal-apps/templates/ztunnel.yaml` | Istio ambient ztunnel |
-| **Monitoring** | | |
-| Prometheus | `gitops/charts/narwhal-apps/templates/prometheus-stack.yaml` | Monitoring + Grafana |
-| Loki | `gitops/charts/narwhal-apps/templates/loki.yaml` | Log collection |
-| Grafana Alloy | `gitops/charts/narwhal-apps/templates/k8s-monitoring.yaml` | Log shipping (replaces Promtail, EOL 2026-03-02) |
-| Tempo | `gitops/charts/narwhal-apps/templates/tempo.yaml` | Distributed tracing |
-| **Storage/Security** | | |
-| Harbor | `gitops/charts/narwhal-apps/templates/harbor.yaml` | Container registry |
-| OpenBao | `gitops/charts/narwhal-apps/templates/openbao.yaml` | Secret management |
-| SeaweedFS | `gitops/charts/narwhal-apps/templates/seaweedfs.yaml` | Object storage |
-| Velero | `gitops/charts/narwhal-apps/templates/velero.yaml` | Backup |
-| Velero UI | `gitops/charts/narwhal-apps/templates/velero-ui.yaml` | Backup management UI |
-| Kyverno | `gitops/charts/narwhal-apps/templates/kyverno.yaml` | Policy management |
-| **IAM/UI** | | |
-| Keycloak | `gitops/charts/narwhal-platform/templates/keycloak-cr.yaml` | SSO/OIDC (IAM) — managed by Keycloak Operator |
-| Headlamp | `gitops/charts/narwhal-apps/templates/headlamp.yaml` | K8s UI |
-| IDP Portal | `gitops/charts/narwhal-platform/templates/narwhal-portal-k8s.yaml` | Developer portal |
+- Provisioning order is encoded in filename prefixes: `scripts/common/0*.sh` then `scripts/cluster/00-15*.sh` (Phase 1 = cluster infra, Phase 2 = platform apps; `scripts/up.sh` is the SOLE Phase 2 driver — bare `vagrant up` does not auto-run Phase 2).
+- GitOps apps: `gitops/charts/narwhal-apps/templates/` (+ `gitops/charts/narwhal-platform/` for domain-bearing resources); raw manifests in `gitops/resources/`; app-of-apps root at `gitops/apps/app-of-apps.yaml`.
 
 ## Development Commands
 
+Standard `vagrant` workflow (`up/halt/destroy/ssh`); non-obvious bits only:
+
 ```bash
-# Create cluster
-vagrant up --provider=vmware_desktop
-
-# Create specific node only
-vagrant up master-1
-vagrant up worker-1
-
-# SSH access
-vagrant ssh master-1
-
-# kubectl check
-vagrant ssh master-1 -c "kubectl get nodes"
-
-# Run Phase 2 only manually (after cluster setup)
+# Run Phase 2 (platform apps) manually — bare `vagrant up` does NOT auto-run it
 vagrant provision master-1 --provision-with phase2-platform
-
-# Re-provisioning
-vagrant provision master-1
-
-# Stop cluster
-vagrant halt
-
-# Destroy cluster
-vagrant destroy -f
-
-# Script validation (shellcheck)
-shellcheck scripts/**/*.sh
 ```
 
-## Key Configuration
-
-| Setting | File | Variable |
-|---------|------|----------|
-| K8s version | `Vagrantfile` | `K8S_VERSION` |
-| Worker count | `Vagrantfile` | `WORKER_COUNT` |
-| Memory/CPU | `Vagrantfile` | `MASTER_MEMORY`, `WORKER_CPUS` |
-| VIP address | `Vagrantfile` | `VIP_ADDRESS` |
-| Component versions | `VERSIONS.md` | All version management |
+Ralph loop: `/ralph` (OMC) with `.claude/templates/PROMPT.md`. Project slash commands live in `.claude/commands/`.
 
 ## Permissions
 
@@ -359,18 +250,6 @@ shellcheck scripts/**/*.sh
 - **Variable names**: ENV_VAR (environment), local_var (local)
 - **Filenames**: Numeric prefix for execution order (00-, 01-, ...)
 
-## Network Info
-
-| Item | Value |
-|------|-------|
-| Master IPs | 192.168.56.10-12 (master-1, master-2, master-3) |
-| Worker IPs | 192.168.56.21-23 (worker-1, worker-2, worker-3) |
-| VIP | 192.168.56.100 |
-| Pod CIDR | 10.244.0.0/16 |
-| Service CIDR | 10.96.0.0/12 |
-
----
-
 ## Infrastructure Resource Safety
 
 - **Limit parallel cluster modifications to 2-3 max** -- concurrent operations cause OOM in Master 4GB / Worker 6GB environment
@@ -379,114 +258,3 @@ shellcheck scripts/**/*.sh
 - After applying infrastructure/cluster changes, **verify from actual user perspective** (e.g., curl endpoint, kubectl exec test, DNS resolve)
 
 ---
-
-## Verification Loop
-
-> Providing Claude with ways to verify its own work increases quality 2-3x.
-
-### Verification Methods for This Project
-
-1. **Script Validation**
-   ```bash
-   shellcheck scripts/**/*.sh
-   ruby -c Vagrantfile
-   ```
-
-2. **YAML Validation**
-   ```bash
-   yq eval '.' gitops/apps/*.yaml > /dev/null
-   ```
-
-3. **Live Testing** (when VM is running)
-   ```bash
-   vagrant ssh master-1 -c "kubectl get nodes"
-   vagrant ssh master-1 -c "kubectl get pods -A"
-   ```
-
-4. **ArgoCD Sync Verification**
-   ```bash
-   vagrant ssh master-1 -c "kubectl get applications -n devtools"
-   ```
-
-### Verification Commands
-- `/verify` - Run full verification loop
-- `/check` - Quick syntax check
-
----
-
-## Slash Commands (Repetitive Task Automation)
-
-| Command | Description |
-|---------|-------------|
-| `/check` | Quick type/syntax check |
-| `/verify` | Run full verification loop |
-| `/commit-push-pr` | Commit -> Push -> PR in one step |
-| `/sync-versions` | VERSIONS.md sync check |
-| `/add-mistake` | Record mistake pattern |
-| `/compact` | Clean session context and save summary |
-
----
-
-## Team Contribution Guide
-
-### How to Update CLAUDE.md
-
-1. **When a mistake is found**: Add to Mistakes Log section
-2. **When a new pattern is discovered**: Add to Code Style or Permissions
-3. **During code review**: Request update with `@.claude` tag
-
-### Weekly Review
-- Team members contribute to CLAUDE.md weekly
-- Share newly discovered mistake patterns
-- Discuss verification loop improvements
-
----
-
-## Leverage the Team for Debugging (Required)
-
-> During debugging, do not try to solve alone -- actively leverage the team (subagents + Gemini).
-
-| Scenario | Team Utilization |
-|----------|-----------------|
-| **Pod failure debugging** | Collect logs/events/describe in parallel with Task agents, analyze error messages with Gemini |
-| **Helm install failure** | Verify chart version compatibility/breaking changes with Gemini, validate values with subagents |
-| **Network issues** | Investigate DNS/services/endpoints simultaneously with subagents |
-| **Image issues** | Check ARM64 support/tags with Gemini, test registry access with subagents |
-| **Vagrant provisioning failure** | Analyze VM logs/script output with subagents, search for alternatives with Gemini |
-
----
-
-## Ralph Technique
-
-### Using Ralph in This Project
-
-```bash
-# 1. Write PROMPT.md
-cat > PROMPT.md << 'EOF'
-# Task: Add GitOps App
-
-## Goal
-Add Velero backup application to GitOps
-
-## Task List
-1. Create gitops/apps/velero.yaml
-2. Add Helm values inline to gitops/apps/velero.yaml
-3. Update VERSIONS.md
-4. Add reference to app-of-apps.yaml
-
-## Completion Criteria
-- All YAML is syntactically valid
-- Follows ArgoCD Application spec
-- Versions match VERSIONS.md
-
-## Verification
-After completion, run `yq eval '.' gitops/apps/velero.yaml`
-EOF
-
-# 2. Run Ralph
-.claude/scripts/ralph.sh
-```
-
-### Ralph PROMPT.md Template
-
-See `.claude/templates/PROMPT.md`

@@ -607,6 +607,87 @@ echo "  secret 'gitea-oidc-secret' created in platform-system"
 # extraEnvVars in gitops/apps/apisix.yaml and referenced as $env://VAR in routes.
 
 # =============================================================================
+# Group C: Browser PKCE (public client — 시크릿 없음)
+# =============================================================================
+# Kubernetes Dashboard 3.x 는 자체 OIDC 로그인이 없다 (Bearer 토큰 입력만 지원).
+# 제로클릭 SSO 는 APISIX serverless-pre-function 이 서빙하는 같은 오리진 부트스트랩
+# 페이지(/sso, /sso/callback, apisix-routes.yaml)의 브라우저 JS 가 직접 code 교환을
+# 수행한다. 따라서 confidential 이 아닌 PUBLIC + PKCE(S256) 클라이언트를 쓴다:
+#   - 브라우저에서 code 를 교환하므로 client_secret 을 쓸 수 없다 (노출됨).
+#   - 부트스트랩 페이지는 GitOps 차트 템플릿에 커밋되어 Gitea 에 평문 저장되므로
+#     시크릿을 넣을 곳 자체가 안전하지 않다.
+#   - PKCE S256 이 브라우저 앱(OAuth 2.1) 의 표준 대체 수단이다.
+# create_keycloak_client() 는 publicClient=false 고정이라 재사용하지 않고 별도 작성.
+# -------------------------------------------------------------------------
+# 11. Kubernetes Dashboard (public + PKCE)
+# -------------------------------------------------------------------------
+echo ""
+echo "=== [11/11] Kubernetes Dashboard (public + PKCE) ==="
+
+K8S_DASH_CLIENT="kubernetes-dashboard"
+K8S_DASH_REDIRECT="https://dashboard.${DOMAIN}/sso/callback"
+
+K8S_DASH_ID=$(kc_exec get clients -r "${REALM}" -q "clientId=${K8S_DASH_CLIENT}" 2>/dev/null \
+  | jq -r ".[] | select(.clientId==\"${K8S_DASH_CLIENT}\") | .id" || echo "")
+
+if [ -z "${K8S_DASH_ID}" ]; then
+  kc_exec create clients -r "${REALM}" \
+    -s "clientId=${K8S_DASH_CLIENT}" \
+    -s "name=${K8S_DASH_CLIENT}" \
+    -s "enabled=true" \
+    -s "publicClient=true" \
+    -s "standardFlowEnabled=true" \
+    -s "directAccessGrantsEnabled=false" \
+    -s "protocol=openid-connect" \
+    -s "redirectUris=[\"${K8S_DASH_REDIRECT}\"]" \
+    -s "webOrigins=[\"https://dashboard.${DOMAIN}\"]" \
+    -s 'attributes={"pkce.code.challenge.method":"S256"}'
+  K8S_DASH_ID=$(kc_exec get clients -r "${REALM}" -q "clientId=${K8S_DASH_CLIENT}" 2>/dev/null \
+    | jq -r ".[] | select(.clientId==\"${K8S_DASH_CLIENT}\") | .id")
+  echo "  -> client '${K8S_DASH_CLIENT}' created (ID: ${K8S_DASH_ID})"
+else
+  # 재실행 안전: 기존 클라이언트에도 PKCE/redirect/webOrigins 를 강제 동기화
+  kc_exec update "clients/${K8S_DASH_ID}" -r "${REALM}" \
+    -s "publicClient=true" \
+    -s "standardFlowEnabled=true" \
+    -s "redirectUris=[\"${K8S_DASH_REDIRECT}\"]" \
+    -s "webOrigins=[\"https://dashboard.${DOMAIN}\"]" \
+    -s 'attributes={"pkce.code.challenge.method":"S256"}'
+  echo "  -> client '${K8S_DASH_CLIENT}' already exists (ID: ${K8S_DASH_ID}), config synced"
+fi
+
+# groups scope 할당 (RBAC 가 oidc groups -> ClusterRole 매핑)
+kc_exec update "clients/${K8S_DASH_ID}/default-client-scopes/${GROUPS_SCOPE_ID}" \
+  -r "${REALM}" 2>/dev/null || true
+
+# Groups mapper (client-level) — 다른 클라이언트와 동일
+K8S_DASH_GRP_ID=$(kc_exec get "clients/${K8S_DASH_ID}/protocol-mappers/models" -r "${REALM}" 2>/dev/null \
+  | jq -r ".[] | select(.name==\"${K8S_DASH_CLIENT}-groups\") | .id" || echo "")
+if [ -z "${K8S_DASH_GRP_ID}" ]; then
+  kc_exec create "clients/${K8S_DASH_ID}/protocol-mappers/models" -r "${REALM}" \
+    -s "name=${K8S_DASH_CLIENT}-groups" \
+    -s "protocol=openid-connect" \
+    -s "protocolMapper=oidc-group-membership-mapper" \
+    -s 'config={"full.path":"false","id.token.claim":"true","access.token.claim":"true","claim.name":"groups","userinfo.token.claim":"true"}'
+  echo "  -> groups mapper created for '${K8S_DASH_CLIENT}'"
+fi
+
+# kubernetes audience mapper — 필수.
+# Dashboard 의 api 모듈은 사용자의 id_token 을 kube-apiserver 로 그대로 전달한다.
+# apiserver 는 --oidc-client-id=kubernetes 로 기동되므로 aud 에 "kubernetes" 가 없으면
+# `oidc: expected audience "kubernetes"` 로 거부된다 (headlamp 와 동일한 이유).
+K8S_DASH_AUD_ID=$(kc_exec get "clients/${K8S_DASH_ID}/protocol-mappers/models" -r "${REALM}" 2>/dev/null \
+  | jq -r '.[] | select(.name=="kubernetes-audience") | .id' || echo "")
+if [ -z "${K8S_DASH_AUD_ID}" ]; then
+  kc_exec create "clients/${K8S_DASH_ID}/protocol-mappers/models" -r "${REALM}" \
+    -s "name=kubernetes-audience" \
+    -s "protocol=openid-connect" \
+    -s "protocolMapper=oidc-audience-mapper" \
+    -s "config={\"included.client.audience\":\"kubernetes\",\"id.token.claim\":\"true\",\"access.token.claim\":\"true\"}"
+  echo "  -> kubernetes audience mapper created for '${K8S_DASH_CLIENT}'"
+fi
+
+# =============================================================================
 # 요약
 # =============================================================================
 echo ""
@@ -628,6 +709,9 @@ echo "  [OK] prometheus-oidc-secret    (client: prometheus)"
 echo "  [OK] alertmanager-oidc-secret  (client: alertmanager)"
 echo "  [OK] velero-ui-oidc-secret     (client: velero-ui)"
 echo "  [OK] gitea-oidc-secret         (client: gitea, platform-system)"
+echo ""
+echo "Group C - Browser PKCE (public, no secret):"
+echo "  [OK] kubernetes-dashboard      → APISIX /sso 부트스트랩 + aud=kubernetes mapper"
 echo ""
 echo "Native OAuth secrets:"
 echo "  [OK] velero-ui-oauth           (client: velero-ui, storage ns)"

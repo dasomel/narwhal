@@ -978,3 +978,164 @@ spec:
                 X-Content-Type-Options: "nosniff"
                 X-Frame-Options: "SAMEORIGIN"
                 X-XSS-Protection: "1; mode=block"
+---
+# Kubernetes Dashboard 3.x (자체 OIDC 로그인 없음 — Bearer 토큰 입력만 지원)
+apiVersion: apisix.apache.org/v2
+kind: ApisixUpstream
+metadata:
+  name: kubernetes-dashboard
+  namespace: platform-system
+spec:
+  # Kong proxy 는 443 HTTPS 만 리슨하며(평문 80 없음) 자체 self-signed 인증서를 쓴다.
+  # scheme 누락 시 http 로 프록시되어 400 "plain HTTP request was sent to HTTPS port".
+  # APISIX 는 업스트림 인증서를 기본 검증하지 않으므로(openbao 와 동일) 별도 설정 불필요.
+  scheme: https
+  externalNodes:
+    - type: Domain
+      name: kubernetes-dashboard-kong-proxy.devtools.svc.cluster.local
+      port: 443
+---
+apiVersion: apisix.apache.org/v2
+kind: ApisixRoute
+metadata:
+  name: kubernetes-dashboard
+  namespace: platform-system
+spec:
+  http:
+    # 제로클릭 SSO 부트스트랩: Dashboard 는 OIDC 를 직접 지원하지 않고 Bearer 토큰만
+    # 받으므로, 같은 오리진 페이지가 Keycloak PKCE 플로우를 대행한 뒤 Dashboard 자체
+    # 로그인 API 로 토큰을 교환해 세션 쿠키를 심는다.
+    #   /sso          -> PKCE verifier/state 생성 후 Keycloak authorize 로 이동
+    #   /sso/callback -> code+verifier 를 token 엔드포인트에서 id_token 으로 교환
+    #                    -> GET /api/v1/csrftoken/login -> POST /api/v1/login {token: id_token}
+    #                    -> 응답 JWE 를 쿠키 `token` 에 기록(SPA 의 authTokenCookieName 기본값)
+    # 전제: Keycloak `kubernetes-dashboard` 클라이언트가 public+PKCE(S256) 이고
+    #       aud 에 "kubernetes" 를 넣는 audience mapper 보유 (11-3-keycloak-clients.sh).
+    #       apiserver 가 --oidc-client-id=kubernetes 이므로 없으면 Dashboard api 모듈이
+    #       토큰을 apiserver 로 넘길 때 `oidc: expected audience "kubernetes"` 로 거부됨.
+    - name: kubernetes-dashboard-sso
+      priority: 10
+      match:
+        hosts:
+          - dashboard.{{ .Values.baseDomain }}
+        paths:
+          - "/sso"
+          - "/sso/callback"
+      upstreams:
+        - name: kubernetes-dashboard
+      plugins:
+        - name: serverless-pre-function
+          enable: true
+          config:
+            phase: rewrite
+            functions:
+              - |
+                return function(conf, ctx)
+                  ngx.header["Content-Type"] = "text/html; charset=utf-8"
+                  ngx.header["Cache-Control"] = "no-store"
+                  if ngx.var.uri == "/sso" then
+                    ngx.say([==[<!doctype html><meta charset="utf-8"><title>Dashboard SSO</title>
+                <script>
+                var ISSUER = "https://keycloak.{{ .Values.baseDomain }}/realms/narwhal";
+                var CLIENT = "kubernetes-dashboard";
+                function b64url(bytes) {
+                  return btoa(String.fromCharCode.apply(null, bytes))
+                    .replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+                }
+                function rnd(n) {
+                  var a = new Uint8Array(n);
+                  crypto.getRandomValues(a);
+                  return b64url(a);
+                }
+                (async function () {
+                  var verifier = rnd(32);
+                  var state = rnd(16);
+                  var digest = await crypto.subtle.digest(
+                    "SHA-256", new TextEncoder().encode(verifier));
+                  var challenge = b64url(new Uint8Array(digest));
+                  sessionStorage.setItem("kd_sso_verifier", verifier);
+                  sessionStorage.setItem("kd_sso_state", state);
+                  var p = new URLSearchParams({
+                    client_id: CLIENT,
+                    redirect_uri: location.origin + "/sso/callback",
+                    response_type: "code",
+                    scope: "openid profile email groups",
+                    state: state,
+                    code_challenge: challenge,
+                    code_challenge_method: "S256"
+                  });
+                  location.replace(
+                    ISSUER + "/protocol/openid-connect/auth?" + p.toString());
+                })();
+                </script>]==])
+                  else
+                    ngx.say([==[<!doctype html><meta charset="utf-8"><title>Dashboard SSO</title>
+                <script>
+                var ISSUER = "https://keycloak.{{ .Values.baseDomain }}/realms/narwhal";
+                var CLIENT = "kubernetes-dashboard";
+                (async function () {
+                  var fail = function (m) { document.body.textContent = "SSO failed: " + m; };
+                  var q = new URLSearchParams(location.search);
+                  var code = q.get("code") || "";
+                  var state = q.get("state") || "";
+                  var verifier = sessionStorage.getItem("kd_sso_verifier") || "";
+                  var expected = sessionStorage.getItem("kd_sso_state") || "";
+                  sessionStorage.removeItem("kd_sso_verifier");
+                  sessionStorage.removeItem("kd_sso_state");
+                  if (!code || !verifier || state !== expected) {
+                    fail("missing code or state mismatch (retry from /sso)");
+                    return;
+                  }
+                  var form = new URLSearchParams({
+                    grant_type: "authorization_code",
+                    client_id: CLIENT,
+                    code: code,
+                    redirect_uri: location.origin + "/sso/callback",
+                    code_verifier: verifier
+                  });
+                  var tr = await fetch(ISSUER + "/protocol/openid-connect/token", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+                    body: form.toString()
+                  });
+                  var tj = await tr.json();
+                  if (!tj.id_token) { fail("token exchange — " + JSON.stringify(tj)); return; }
+                  var cr = await fetch("/api/v1/csrftoken/login", { credentials: "same-origin" });
+                  var cj = await cr.json();
+                  if (!cj.token) { fail("csrf — " + JSON.stringify(cj)); return; }
+                  var lr = await fetch("/api/v1/login", {
+                    method: "POST",
+                    credentials: "same-origin",
+                    headers: {
+                      "Content-Type": "application/json",
+                      "X-CSRF-TOKEN": cj.token
+                    },
+                    body: JSON.stringify({ token: tj.id_token })
+                  });
+                  var lj = await lr.json();
+                  if (!lj.token) { fail("dashboard login — " + JSON.stringify(lj)); return; }
+                  document.cookie = "token=" + lj.token + "; path=/; secure; samesite=lax";
+                  location.replace("/");
+                })();
+                </script>]==])
+                  end
+                  return ngx.exit(200)
+                end
+    - name: kubernetes-dashboard
+      match:
+        hosts:
+          - dashboard.{{ .Values.baseDomain }}
+        paths:
+          - "/*"
+      upstreams:
+        - name: kubernetes-dashboard
+      plugins:
+        - name: response-rewrite
+          enable: true
+          config:
+            headers:
+              set:
+                Strict-Transport-Security: "max-age=31536000; includeSubDomains"
+                X-Content-Type-Options: "nosniff"
+                X-Frame-Options: "SAMEORIGIN"
+                X-XSS-Protection: "1; mode=block"

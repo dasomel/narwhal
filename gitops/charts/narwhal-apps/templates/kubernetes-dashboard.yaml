@@ -1,0 +1,104 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: kubernetes-dashboard
+  namespace: devtools
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    # Upstream README documents this as the canonical repo (confirmed by reading
+    # charts/kubernetes-dashboard/{Chart.yaml,values.yaml} in kubernetes/dashboard@master,
+    # which is the 7.14.0 release). `helm repo add` / index.yaml 404'd at authoring time
+    # (transient GitHub Pages issue) — ArgoCD's repo-server resolves it independently at sync.
+    repoURL: https://kubernetes.github.io/dashboard/
+    chart: kubernetes-dashboard
+    targetRevision: 7.14.0
+    helm:
+      valuesObject:
+        # Istio ambient opt-out (mandatory for web UIs here, see headlamp.yaml).
+        # `<component>.labels` is rendered onto BOTH the Deployment and the pod
+        # template (verified in templates/deployments/api.yaml) — one key, no
+        # duplicate-key risk. Kong is a separate subchart with its own `podLabels` key.
+        auth:
+          labels:
+            istio.io/dataplane-mode: "none"
+        api:
+          labels:
+            istio.io/dataplane-mode: "none"
+        web:
+          labels:
+            istio.io/dataplane-mode: "none"
+        metricsScraper:
+          labels:
+            istio.io/dataplane-mode: "none"
+        kong:
+          podLabels:
+            istio.io/dataplane-mode: "none"
+          # Kong은 Dashboard의 *내부* 프록시일 뿐이다 (auth/api/web/metricsScraper 사이
+          # 라우팅). 엣지 게이트웨이는 APISIX가 소유하므로 Kong이 ingress/LB 역할을
+          # 하지 않도록 격리한다. 아래 3개는 차트 7.14.0 기본값과 동일하지만, 차트
+          # 버전 업 시 조용히 뒤집히면 MetalLB IP 탈취(LoadBalancer)나 Ingress 감시
+          # 충돌이 발생하므로 드리프트 방지로 명시한다.
+          ingressController:
+            enabled: false   # Ingress/Kong CRD 감시 금지 — ingress는 APISIX 소유
+          proxy:
+            type: ClusterIP  # LoadBalancer 금지 — MetalLB IP를 뺏지 않는다
+          manager:
+            enabled: false   # Kong admin UI 불필요
+          # Phase 2 APISIX upstream target (verified via kong chart's own _helpers.tpl,
+          # not asserted): Service name = kong.fullname + "-proxy" where kong.fullname =
+          # "{{ .Release.Name }}-kong" and Release.Name defaults to this Application's
+          # metadata.name ("kubernetes-dashboard") since no helm.releaseName is set below.
+          # => Service `kubernetes-dashboard-kong-proxy` in namespace `devtools`, port 443
+          # only (http.enabled:false above means no plaintext 80 listener/port at all —
+          # TLS-only). Kong terminates TLS with its own bundled/self-signed cert here (no
+          # cert-manager wiring in this file), so the ApisixRoute upstream will likely need
+          # scheme https + TLS verify disabled, same as the internal Harbor route pattern.
+          # NOT overriding kong.securityContext/containerSecurityContext: chart 2.52.0
+          # defaults are already Kyverno-compliant (allowPrivilegeEscalation:false,
+          # capabilities.drop:[ALL], seccompProfile:RuntimeDefault, runAsUser:1000
+          # non-root numeric). kong.postgresql.enabled stays false (chart default) —
+          # dashboard runs Kong DBless via dblessConfig, so the banned Bitnami
+          # postgresql dependency is never rendered. Do not enable it.
+
+        # app.security.securityContext (pod) and app.security.containerSecurityContext
+        # (containers, shared by auth/api/web/metricsScraper) already default to
+        # allowPrivilegeEscalation:false, capabilities.drop:[ALL], seccompProfile:
+        # RuntimeDefault, runAsNonRoot:true, runAsUser:1001/runAsGroup:2001 — all
+        # numeric, all Kyverno-compliant out of the box. Intentionally not restated
+        # here to avoid the duplicate-key merge risk from the 2026-07-10 lesson.
+
+        # Cluster already provides cert-manager, the APISIX gateway, and metrics-server.
+        # All three default to false in this chart already; set explicitly so a future
+        # chart bump can't silently flip one on. Safe: app.ingress.enabled is ALSO
+        # false by default (no built-in Ingress resource rendered), so nginx/cert-manager
+        # being off does not break any cert bootstrap path. Kong terminates TLS for the
+        # internal proxy itself, independent of cert-manager.
+        cert-manager:
+          enabled: false
+        nginx:
+          enabled: false
+        metrics-server:
+          enabled: false
+
+        # Auth / skip-login: chart 7.14.0 (Dashboard 3.x) REMOVED the old v2.x
+        # `--enable-skip-login` flag — confirmed absent from docs/common/arguments.md
+        # for all of api/auth/web modules. There is no Helm-exposed bypass. The new
+        # `auth` module handles login (paste bearer token or kubeconfig) and issues
+        # its own signed session token routed through Kong to api/web. Nothing here
+        # hard-blocks header/token auth — it just isn't a raw pass-through anymore.
+        # Phase 2 zero-click SSO must drive the auth module's login flow from a
+        # same-origin bootstrap page (same pattern as openbao/velero-ui `/sso` pages,
+        # see gitops apisix-routes.yaml), not inject a header directly. No args changed
+        # here on purpose — do not add a fabricated `--enable-skip-login`.
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: devtools
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

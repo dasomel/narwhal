@@ -107,7 +107,6 @@ data:
       --nw-border: rgba(13, 38, 76, 0.10);
       --nw-border-strong: rgba(13, 38, 76, 0.18);
       --nw-teal: #0d9488;
-      --nw-cyan: #0891b2;
       --nw-emerald: #059669;
       --nw-violet: #7c3aed;
       --nw-ring: rgba(13, 148, 136, 0.25);
@@ -175,7 +174,6 @@ data:
       --nw-border: rgba(148, 176, 214, 0.16);
       --nw-border-strong: rgba(148, 176, 214, 0.28);
       --nw-teal: #2dd4bf;
-      --nw-cyan: #22d3ee;
       --nw-emerald: #34d399;
       --nw-violet: #a78bfa;
       --nw-ring: rgba(45, 212, 191, 0.30);
@@ -623,9 +621,7 @@ data:
          template stays domain-agnostic. Other info pages (required actions, email
          verification, …) keep their links and are never auto-redirected. -->
     <#assign isLogoutSuccess = message?? && message.summary?has_content
-      && (message.summary == msg("successLogout")
-          || message.summary?contains("로그아웃")
-          || message.summary?lower_case?contains("logged out"))>
+      && message.summary == msg("successLogout")>
     <@layout.registrationLayout displayMessage=false; section>
         <#if section = "header">
             <#if messageHeader??>${kcSanitize(messageHeader)?no_esc}<#elseif message??>${kcSanitize(message.summary)?no_esc}</#if>

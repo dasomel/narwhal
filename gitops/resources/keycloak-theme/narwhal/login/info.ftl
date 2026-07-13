@@ -6,9 +6,7 @@
      template stays domain-agnostic. Other info pages (required actions, email
      verification, …) keep their links and are never auto-redirected. -->
 <#assign isLogoutSuccess = message?? && message.summary?has_content
-  && (message.summary == msg("successLogout")
-      || message.summary?contains("로그아웃")
-      || message.summary?lower_case?contains("logged out"))>
+  && message.summary == msg("successLogout")>
 <@layout.registrationLayout displayMessage=false; section>
     <#if section = "header">
         <#if messageHeader??>${kcSanitize(messageHeader)?no_esc}<#elseif message??>${kcSanitize(message.summary)?no_esc}</#if>

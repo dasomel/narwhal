@@ -111,9 +111,53 @@ spec:
   destination:
     server: https://kubernetes.default.svc
     namespace: devtools
+  # Harbor renders NON-DETERMINISTIC Secrets every reconcile:
+  #  - harbor-core: token-signing cert (tls.crt/tls.key, genSignedCert) + CSRF_KEY
+  #    (randAlphaNum) — NOT covered by the pinned existingSecret (harbor-shared-secrets
+  #    holds only secretKey/secret/JOBSERVICE_SECRET).
+  #  - harbor-registry / harbor-registry-htpasswd: registry HTTP secret + basic-auth
+  #    htpasswd, also regenerated per render.
+  # Each render mutates the checksum/* annotations the Deployments embed:
+  #  - harbor-core Deployment      → checksum/secret
+  #  - harbor-registry Deployment  → checksum/secret + checksum/secret-core
+  #  - harbor-jobservice Deployment→ checksum/secret-core (core hash propagates here)
+  # → new pod templates → endless ~5min rollout (fresh ReplicaSets every reconcile) and
+  # permanent OutOfSync. Excluding the churning annotations + the auto-generated Secret
+  # data from diff/sync freezes them at their live values (core cert/CSRF and the
+  # registry credential stay mutually consistent — safer than the churn), stopping the loop.
+  ignoreDifferences:
+    - group: apps
+      kind: Deployment
+      name: harbor-core
+      jqPathExpressions:
+        - '.spec.template.metadata.annotations."checksum/secret"'
+    - group: apps
+      kind: Deployment
+      name: harbor-registry
+      jqPathExpressions:
+        - '.spec.template.metadata.annotations."checksum/secret"'
+        - '.spec.template.metadata.annotations."checksum/secret-core"'
+    - group: apps
+      kind: Deployment
+      name: harbor-jobservice
+      jqPathExpressions:
+        - '.spec.template.metadata.annotations."checksum/secret-core"'
+    - kind: Secret
+      name: harbor-core
+      jsonPointers:
+        - /data
+    - kind: Secret
+      name: harbor-registry
+      jsonPointers:
+        - /data
+    - kind: Secret
+      name: harbor-registry-htpasswd
+      jsonPointers:
+        - /data
   syncPolicy:
     automated:
       prune: true
       selfHeal: true
     syncOptions:
       - CreateNamespace=true
+      - RespectIgnoreDifferences=true

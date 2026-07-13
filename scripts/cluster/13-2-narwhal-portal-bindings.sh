@@ -193,6 +193,18 @@ PORTAL_CLIENT_SECRET=$(ensure_keycloak_client \
   "false")
 echo "narwhal-portal client secret: 획득 완료 (${#PORTAL_CLIENT_SECRET} chars)"
 
+# post_logout_redirect_uri 등록: 포털 로그아웃은 SSO 단일 로그아웃(SLO) 체인을
+# 구동한다 (federated-logout 라우트 → Keycloak end_session → SLO_CHAIN_START =
+# gitea/apisix/logout → 각 게이트웨이 앱 세션 정리 → 연쇄). Keycloak은
+# post_logout_redirect_uri를 클라이언트의 post.logout.redirect.uris와 대조하므로,
+# 이게 비어 있으면 로그아웃이 "Invalid redirect uri"로 막힌다(2026-07-13 발생).
+# 키에 점이 있어 -s는 반드시 따옴표로 감싼다("...").
+PORTAL_CID=$(kc_exec get clients -r "${REALM}" -q clientId=narwhal-portal \
+  --fields id --format csv --noquotes 2>/dev/null | head -1)
+kc_exec update "clients/${PORTAL_CID}" -r "${REALM}" \
+  -s "attributes.\"post.logout.redirect.uris\"=https://gitea.${DOMAIN}/apisix/logout##https://portal.${DOMAIN}/login##https://portal.${DOMAIN}/*" >&2 \
+  && echo "narwhal-portal post.logout.redirect.uris 등록 완료" >&2
+
 echo "--- narwhal-portal-admin (Service Account) ---"
 ADMIN_CLIENT_SECRET=$(ensure_keycloak_client \
   "narwhal-portal-admin" \

@@ -8,13 +8,16 @@ metadata:
 spec:
   project: default
   source:
-    # Upstream README documents this as the canonical repo (confirmed by reading
-    # charts/kubernetes-dashboard/{Chart.yaml,values.yaml} in kubernetes/dashboard@master,
-    # which is the 7.14.0 release). `helm repo add` / index.yaml 404'd at authoring time
-    # (transient GitHub Pages issue) — ArgoCD's repo-server resolves it independently at sync.
-    repoURL: https://kubernetes.github.io/dashboard/
-    chart: kubernetes-dashboard
-    targetRevision: 7.14.0
+    # VENDORED chart, not a helm-repo reference. The upstream helm index
+    # (https://kubernetes.github.io/dashboard/index.yaml) returns 404 — verified from
+    # BOTH this workstation and the in-cluster argocd-repo-server, so it is the repo
+    # that is broken, not local egress. The chart is still published as a GitHub
+    # release asset, so 7.14.0 (with its kong subchart bundled) is vendored into
+    # gitops/charts/kubernetes-dashboard/ and served from Gitea like narwhal-platform.
+    # Upgrade = drop a newer release tarball in and bump nothing else.
+    repoURL: {{ .Values.repoURL }}
+    targetRevision: HEAD
+    path: charts/kubernetes-dashboard
     helm:
       valuesObject:
         # Istio ambient opt-out (mandatory for web UIs here, see headlamp.yaml).

@@ -31,6 +31,27 @@
             <input type="hidden" id="id-hidden-input" name="credentialId" <#if auth.selectedCredential?has_content>value="${auth.selectedCredential}"</#if>/>
             <button class="nw-btn" name="login" id="kc-login" type="submit">${msg("doLogIn")}</button>
         </form>
+        <script>
+          // Explicit Enter handling. Implicit form submission exists, but the
+          // first Enter is routinely swallowed by password-manager overlays and
+          // by IME composition (isComposing / legacy keyCode 229 on Korean
+          // input) — so wire it up deterministically: Enter on username moves
+          // to password; Enter on password clicks the submit button (a real
+          // click, so the button's name=login pair is included like a tap).
+          (function () {
+            var u = document.getElementById("username");
+            var p = document.getElementById("password");
+            var b = document.getElementById("kc-login");
+            if (!u || !p || !b) return;
+            function onEnter(e, act) {
+              if (e.key !== "Enter" || e.isComposing || e.keyCode === 229) return;
+              e.preventDefault();
+              act();
+            }
+            u.addEventListener("keydown", function (e) { onEnter(e, function () { p.focus(); }); });
+            p.addEventListener("keydown", function (e) { onEnter(e, function () { b.click(); }); });
+          })();
+        </script>
         </#if>
     <#elseif section = "info">
         <#if realm.password && realm.registrationAllowed && !registrationDisabled??>

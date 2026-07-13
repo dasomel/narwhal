@@ -13,11 +13,11 @@
   </#if>
 </head>
 <body class="nw-body">
-  <#-- decorative ocean waves -->
+  <#-- deep arctic-ocean horizon under the aurora -->
   <svg class="nw-waves" viewBox="0 0 1440 200" preserveAspectRatio="none" aria-hidden="true" focusable="false">
-    <path fill="#dbeafe" fill-opacity="0.55" d="M0 96 C240 140 480 52 720 84 C960 116 1200 150 1440 92 L1440 200 L0 200 Z"/>
-    <path fill="#bfdbfe" fill-opacity="0.45" d="M0 128 C240 104 480 158 720 124 C960 92 1200 138 1440 124 L1440 200 L0 200 Z"/>
-    <path fill="#93c5fd" fill-opacity="0.35" d="M0 158 C260 138 520 176 760 158 C1000 140 1220 168 1440 156 L1440 200 L0 200 Z"/>
+    <path fill="#0e7490" fill-opacity="0.28" d="M0 96 C240 140 480 52 720 84 C960 116 1200 150 1440 92 L1440 200 L0 200 Z"/>
+    <path fill="#155e75" fill-opacity="0.34" d="M0 128 C240 104 480 158 720 124 C960 92 1200 138 1440 124 L1440 200 L0 200 Z"/>
+    <path fill="#083344" fill-opacity="0.5" d="M0 158 C260 138 520 176 760 158 C1000 140 1220 168 1440 156 L1440 200 L0 200 Z"/>
   </svg>
 
   <main class="nw-card">

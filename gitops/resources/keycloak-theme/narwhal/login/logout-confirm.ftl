@@ -4,7 +4,7 @@
         ${msg("logoutConfirmTitle")}
     <#elseif section = "form">
         <div id="kc-logout-confirm" class="nw-form">
-            <p style="text-align:center;margin:0 0 6px;font-size:15px;color:var(--nw-fg);">${msg("logoutConfirmHeader")}</p>
+            <p class="nw-note">${msg("logoutConfirmHeader")}</p>
             <form class="nw-form" action="${url.logoutConfirmAction}" method="POST">
                 <input type="hidden" name="session_code" value="${logoutConfirm.code}"/>
                 <div class="nw-actions">

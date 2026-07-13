@@ -1,11 +1,85 @@
 /* ==========================================================================
-   Narwhal IDP — "Aurora Glacial" Keycloak login theme.
-   Deep arctic-night backdrop + aurora borealis ribbons (teal→emerald→violet)
-   + frosted-glass card + narwhal (외뿔고래) branding.
-   Renders against custom template.ftl / login.ftl / logout-confirm.ftl
-   (no PatternFly). Airgap/CSP-safe: system font stacks only, no external assets.
+   Narwhal IDP — "Aurora Glacial" Keycloak login theme, dual-mode.
+   Theme follows the portal: template.ftl reads the shared `narwhal-theme`
+   cookie (domain=.local.narwhal.internal) and sets html.nw-dark; no cookie →
+   light, matching the portal default.
+     :root        = Glacial Day  (pale ice sky, pastel aurora, white frost card)
+     html.nw-dark = Aurora Glacial (arctic night, luminous aurora, dark frost)
+   Every color lives in a custom property — templates use .nw-* hooks only.
+   Renders against custom template.ftl / login.ftl / logout-confirm.ftl /
+   info.ftl (no PatternFly). Airgap/CSP-safe: system fonts, no external assets.
    ========================================================================== */
 :root {
+  /* Glacial Day */
+  --nw-bg: #eef3fa;
+  --nw-fg: #10233f;
+  --nw-muted: #5b6c87;
+  --nw-faint: #8598b5;
+  --nw-border: rgba(13, 38, 76, 0.10);
+  --nw-border-strong: rgba(13, 38, 76, 0.18);
+  --nw-teal: #0d9488;
+  --nw-cyan: #0891b2;
+  --nw-emerald: #059669;
+  --nw-violet: #7c3aed;
+  --nw-ring: rgba(13, 148, 136, 0.25);
+  --nw-radius: 12px;
+  --nw-sans: ui-sans-serif, system-ui, -apple-system, "SF Pro Display",
+    "Segoe UI", Roboto, "Apple SD Gothic Neo", "Noto Sans KR", sans-serif;
+  --nw-mono: ui-monospace, "SF Mono", "JetBrains Mono", "Menlo", "Cascadia Code",
+    "Roboto Mono", monospace;
+
+  --nw-aurora-1: rgba(13, 148, 136, 0.16);
+  --nw-aurora-2: rgba(5, 150, 105, 0.12);
+  --nw-aurora-3: rgba(124, 58, 237, 0.12);
+  --nw-ocean-glow: rgba(186, 215, 247, 0.85);
+  --nw-ocean-fade: rgba(238, 243, 250, 0);
+  --nw-ocean-deep: #e3ecf8;
+
+  --nw-card-bg-top: rgba(255, 255, 255, 0.82);
+  --nw-card-bg-bot: rgba(250, 253, 255, 0.72);
+  --nw-card-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.85) inset,
+    0 30px 70px -25px rgba(30, 64, 120, 0.35),
+    0 0 60px -30px rgba(13, 148, 136, 0.25);
+
+  --nw-title: #0b1c33;
+  --nw-label: #47607f;
+  --nw-logo-fg: #04121a;
+  --nw-logo-eye: #eef3fa;
+  --nw-btn-grad-a: #14b8a6;
+  --nw-btn-grad-b: #06b6d4;
+  --nw-btn-fg: #04121a;
+  --nw-btn-shadow: rgba(8, 145, 178, 0.45);
+  --nw-input-bg: rgba(13, 38, 76, 0.03);
+  --nw-input-bg-focus: rgba(13, 148, 136, 0.05);
+  --nw-input-border-hover: rgba(13, 38, 76, 0.30);
+  --nw-placeholder: #93a5be;
+  --nw-ghost-bg: rgba(13, 38, 76, 0.04);
+  --nw-ghost-bg-hover: rgba(13, 38, 76, 0.08);
+
+  --nw-err: #be123c;
+  --nw-alert-bg: rgba(13, 38, 76, 0.03);
+  --nw-alert-error-bg: rgba(225, 29, 72, 0.08);
+  --nw-alert-error-bd: rgba(225, 29, 72, 0.35);
+  --nw-alert-error-fg: #be123c;
+  --nw-alert-success-bg: rgba(5, 150, 105, 0.10);
+  --nw-alert-success-bd: rgba(5, 150, 105, 0.35);
+  --nw-alert-success-fg: #047857;
+  --nw-alert-warning-bg: rgba(217, 119, 6, 0.10);
+  --nw-alert-warning-bd: rgba(217, 119, 6, 0.35);
+  --nw-alert-warning-fg: #b45309;
+  --nw-alert-info-bg: rgba(13, 148, 136, 0.08);
+  --nw-alert-info-bd: rgba(13, 148, 136, 0.35);
+  --nw-alert-info-fg: #0f766e;
+
+  --nw-wave-1: #93c5fd;
+  --nw-wave-2: #bfdbfe;
+  --nw-wave-3: #dbeafe;
+}
+
+html.nw-dark {
+  /* Aurora Glacial */
+  --nw-bg: #060a14;
   --nw-fg: #eaf1fb;
   --nw-muted: #8ea2be;
   --nw-faint: #5f739a;
@@ -16,11 +90,54 @@
   --nw-emerald: #34d399;
   --nw-violet: #a78bfa;
   --nw-ring: rgba(45, 212, 191, 0.30);
-  --nw-radius: 12px;
-  --nw-sans: ui-sans-serif, system-ui, -apple-system, "SF Pro Display",
-    "Segoe UI", Roboto, "Apple SD Gothic Neo", "Noto Sans KR", sans-serif;
-  --nw-mono: ui-monospace, "SF Mono", "JetBrains Mono", "Menlo", "Cascadia Code",
-    "Roboto Mono", monospace;
+
+  --nw-aurora-1: rgba(45, 212, 191, 0.26);
+  --nw-aurora-2: rgba(52, 211, 153, 0.22);
+  --nw-aurora-3: rgba(167, 139, 250, 0.24);
+  --nw-ocean-glow: rgba(8, 47, 73, 0.9);
+  --nw-ocean-fade: rgba(6, 10, 20, 0);
+  --nw-ocean-deep: #05080f;
+
+  --nw-card-bg-top: rgba(18, 27, 45, 0.72);
+  --nw-card-bg-bot: rgba(11, 18, 32, 0.78);
+  --nw-card-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.06) inset,
+    0 30px 70px -20px rgba(2, 6, 16, 0.85),
+    0 0 60px -30px rgba(45, 212, 191, 0.35);
+
+  --nw-title: #f4f8ff;
+  --nw-label: #a7bad6;
+  --nw-logo-fg: #04121a;
+  --nw-logo-eye: #0b1220;
+  --nw-btn-grad-a: #2dd4bf;
+  --nw-btn-grad-b: #22d3ee;
+  --nw-btn-fg: #04121a;
+  --nw-btn-shadow: rgba(34, 211, 238, 0.6);
+  --nw-input-bg: rgba(255, 255, 255, 0.035);
+  --nw-input-bg-focus: rgba(45, 212, 191, 0.05);
+  --nw-input-border-hover: rgba(148, 176, 214, 0.4);
+  --nw-placeholder: #566b8c;
+  --nw-ghost-bg: rgba(255, 255, 255, 0.04);
+  --nw-ghost-bg-hover: rgba(255, 255, 255, 0.07);
+
+  --nw-err: #fda4af;
+  --nw-alert-bg: rgba(255, 255, 255, 0.03);
+  --nw-alert-error-bg: rgba(244, 63, 94, 0.12);
+  --nw-alert-error-bd: rgba(244, 63, 94, 0.4);
+  --nw-alert-error-fg: #fda4af;
+  --nw-alert-success-bg: rgba(52, 211, 153, 0.12);
+  --nw-alert-success-bd: rgba(52, 211, 153, 0.4);
+  --nw-alert-success-fg: #6ee7b7;
+  --nw-alert-warning-bg: rgba(251, 191, 36, 0.12);
+  --nw-alert-warning-bd: rgba(251, 191, 36, 0.4);
+  --nw-alert-warning-fg: #fcd34d;
+  --nw-alert-info-bg: rgba(45, 212, 191, 0.12);
+  --nw-alert-info-bd: rgba(45, 212, 191, 0.4);
+  --nw-alert-info-fg: #5eead4;
+
+  --nw-wave-1: #0e7490;
+  --nw-wave-2: #155e75;
+  --nw-wave-3: #083344;
 }
 
 * { box-sizing: border-box; }
@@ -35,13 +152,13 @@
   justify-content: center;
   padding: 24px;
   color: var(--nw-fg);
-  background: #060a14;
+  background: var(--nw-bg);
   font-family: var(--nw-sans);
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
 }
 
-/* Aurora field: drifting luminous ribbons across the arctic night sky. */
+/* Aurora field: drifting luminous ribbons across the sky. */
 .nw-body::before {
   content: "";
   position: fixed;
@@ -50,14 +167,14 @@
   z-index: 0;
   pointer-events: none;
   background:
-    radial-gradient(46rem 30rem at 22% 0%, rgba(45, 212, 191, 0.26) 0%, rgba(45, 212, 191, 0) 60%),
-    radial-gradient(40rem 28rem at 70% 6%, rgba(52, 211, 153, 0.22) 0%, rgba(52, 211, 153, 0) 58%),
-    radial-gradient(52rem 34rem at 92% 0%, rgba(167, 139, 250, 0.24) 0%, rgba(167, 139, 250, 0) 62%);
+    radial-gradient(46rem 30rem at 22% 0%, var(--nw-aurora-1) 0%, transparent 60%),
+    radial-gradient(40rem 28rem at 70% 6%, var(--nw-aurora-2) 0%, transparent 58%),
+    radial-gradient(52rem 34rem at 92% 0%, var(--nw-aurora-3) 0%, transparent 62%);
   filter: blur(6px) saturate(115%);
   animation: nw-aurora 22s ease-in-out infinite alternate;
 }
 
-/* Deep-ocean glow anchoring the composition at the bottom. */
+/* Ocean glow anchoring the composition at the bottom. */
 .nw-body::after {
   content: "";
   position: fixed;
@@ -66,8 +183,8 @@
   z-index: 0;
   pointer-events: none;
   background:
-    radial-gradient(60rem 26rem at 50% 100%, rgba(8, 47, 73, 0.9) 0%, rgba(8, 47, 73, 0) 70%),
-    linear-gradient(180deg, rgba(6, 10, 20, 0) 0%, #05080f 92%);
+    radial-gradient(60rem 26rem at 50% 100%, var(--nw-ocean-glow) 0%, transparent 70%),
+    linear-gradient(180deg, var(--nw-ocean-fade) 0%, var(--nw-ocean-deep) 92%);
 }
 
 @keyframes nw-aurora {
@@ -79,7 +196,7 @@
   .nw-body::before { animation: none; }
 }
 
-/* faint far-north ice shelf near the bottom (SVG in template.ftl) */
+/* far-north ice shelf near the bottom (SVG in template.ftl, fills below) */
 .nw-waves {
   position: fixed;
   left: 0; right: 0; bottom: 0;
@@ -89,6 +206,9 @@
   opacity: 0.5;
   pointer-events: none;
 }
+.nw-wave-1 { fill: var(--nw-wave-1); fill-opacity: 0.28; }
+.nw-wave-2 { fill: var(--nw-wave-2); fill-opacity: 0.34; }
+.nw-wave-3 { fill: var(--nw-wave-3); fill-opacity: 0.5; }
 
 .nw-card {
   position: relative;
@@ -98,14 +218,11 @@
   padding: 40px 34px 26px;
   border-radius: 22px;
   overflow: hidden;
-  background: linear-gradient(180deg, rgba(18, 27, 45, 0.72) 0%, rgba(11, 18, 32, 0.78) 100%);
+  background: linear-gradient(180deg, var(--nw-card-bg-top) 0%, var(--nw-card-bg-bot) 100%);
   border: 1px solid var(--nw-border);
   -webkit-backdrop-filter: blur(22px) saturate(130%);
   backdrop-filter: blur(22px) saturate(130%);
-  box-shadow:
-    0 1px 0 rgba(255, 255, 255, 0.06) inset,
-    0 30px 70px -20px rgba(2, 6, 16, 0.85),
-    0 0 60px -30px rgba(45, 212, 191, 0.35);
+  box-shadow: var(--nw-card-shadow);
   animation: nw-rise 0.6s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 @keyframes nw-rise {
@@ -133,21 +250,22 @@
   width: 66px;
   height: 66px;
   margin-bottom: 18px;
-  color: #04121a;
-  background: linear-gradient(135deg, var(--nw-teal) 0%, var(--nw-cyan) 55%, var(--nw-emerald) 100%);
+  color: var(--nw-logo-fg);
+  background: linear-gradient(135deg, var(--nw-btn-grad-a) 0%, var(--nw-btn-grad-b) 55%, var(--nw-emerald) 100%);
   border-radius: 21px;
   box-shadow:
     0 0 0 1px rgba(255, 255, 255, 0.12) inset,
-    0 12px 30px -8px rgba(45, 212, 191, 0.55);
+    0 12px 30px -8px var(--nw-btn-shadow);
 }
 .nw-whale { width: 42px; height: 31px; display: block; }
+.nw-whale .nw-eye { fill: var(--nw-logo-eye); }
 
 .nw-title {
   margin: 0;
   font-size: 25px;
   font-weight: 700;
   letter-spacing: -0.025em;
-  color: #f4f8ff;
+  color: var(--nw-title);
 }
 
 .nw-sub {
@@ -165,7 +283,7 @@
   font-weight: 600;
   letter-spacing: 0.05em;
   text-transform: uppercase;
-  color: #a7bad6;
+  color: var(--nw-label);
   font-family: var(--nw-mono);
 }
 
@@ -176,17 +294,17 @@
   font-size: 14.5px;
   font-family: inherit;
   color: var(--nw-fg);
-  background: rgba(255, 255, 255, 0.035);
+  background: var(--nw-input-bg);
   border: 1px solid var(--nw-border-strong);
   border-radius: var(--nw-radius);
   outline: none;
   transition: border-color 0.16s ease, box-shadow 0.16s ease, background 0.16s ease;
 }
-.nw-input::placeholder { color: #566b8c; }
-.nw-input:hover { border-color: rgba(148, 176, 214, 0.4); }
+.nw-input::placeholder { color: var(--nw-placeholder); }
+.nw-input:hover { border-color: var(--nw-input-border-hover); }
 .nw-input:focus {
   border-color: var(--nw-teal);
-  background: rgba(45, 212, 191, 0.05);
+  background: var(--nw-input-bg-focus);
   box-shadow: 0 0 0 3px var(--nw-ring);
 }
 
@@ -216,16 +334,16 @@
   border: none;
   border-radius: var(--nw-radius);
   cursor: pointer;
-  color: #04121a;
-  background: linear-gradient(135deg, var(--nw-teal) 0%, var(--nw-cyan) 100%);
+  color: var(--nw-btn-fg);
+  background: linear-gradient(135deg, var(--nw-btn-grad-a) 0%, var(--nw-btn-grad-b) 100%);
   font-size: 14.5px;
   font-weight: 700;
   font-family: inherit;
   letter-spacing: 0.01em;
-  box-shadow: 0 10px 26px -10px rgba(34, 211, 238, 0.6);
+  box-shadow: 0 10px 26px -10px var(--nw-btn-shadow);
   transition: transform 0.05s ease, box-shadow 0.18s ease, filter 0.18s ease;
 }
-.nw-btn:hover { filter: brightness(1.06); box-shadow: 0 14px 32px -10px rgba(34, 211, 238, 0.78); }
+.nw-btn:hover { filter: brightness(1.06); box-shadow: 0 14px 32px -8px var(--nw-btn-shadow); }
 .nw-btn:active { transform: translateY(1px); }
 .nw-btn:focus-visible { outline: 2px solid var(--nw-emerald); outline-offset: 2px; }
 
@@ -240,14 +358,14 @@
   cursor: pointer;
   color: var(--nw-fg);
   text-decoration: none;
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--nw-ghost-bg);
   border: 1px solid var(--nw-border-strong);
   font-size: 14px;
   font-weight: 600;
   font-family: inherit;
   transition: border-color 0.16s ease, background 0.16s ease;
 }
-.nw-btn-ghost:hover { border-color: rgba(148, 176, 214, 0.45); background: rgba(255, 255, 255, 0.07); }
+.nw-btn-ghost:hover { border-color: var(--nw-input-border-hover); background: var(--nw-ghost-bg-hover); }
 
 .nw-actions { display: flex; flex-direction: column; gap: 10px; margin-top: 6px; }
 
@@ -258,14 +376,14 @@
   border-radius: var(--nw-radius);
   margin-bottom: 18px;
   border: 1px solid transparent;
-  background: rgba(255, 255, 255, 0.03);
+  background: var(--nw-alert-bg);
 }
-.nw-alert-error   { background: rgba(244, 63, 94, 0.12);  border-color: rgba(244, 63, 94, 0.4);  color: #fda4af; }
-.nw-alert-success { background: rgba(52, 211, 153, 0.12); border-color: rgba(52, 211, 153, 0.4); color: #6ee7b7; }
-.nw-alert-warning { background: rgba(251, 191, 36, 0.12); border-color: rgba(251, 191, 36, 0.4); color: #fcd34d; }
-.nw-alert-info    { background: rgba(45, 212, 191, 0.12); border-color: rgba(45, 212, 191, 0.4); color: #5eead4; }
+.nw-alert-error   { background: var(--nw-alert-error-bg);   border-color: var(--nw-alert-error-bd);   color: var(--nw-alert-error-fg); }
+.nw-alert-success { background: var(--nw-alert-success-bg); border-color: var(--nw-alert-success-bd); color: var(--nw-alert-success-fg); }
+.nw-alert-warning { background: var(--nw-alert-warning-bg); border-color: var(--nw-alert-warning-bd); color: var(--nw-alert-warning-fg); }
+.nw-alert-info    { background: var(--nw-alert-info-bg);    border-color: var(--nw-alert-info-bd);    color: var(--nw-alert-info-fg); }
 
-.nw-err { font-size: 12px; color: #fda4af; margin-top: -8px; }
+.nw-err { font-size: 12px; color: var(--nw-err); margin-top: -8px; }
 
 .nw-info {
   margin-top: 22px;
@@ -273,6 +391,21 @@
   border-top: 1px solid var(--nw-border);
   text-align: center;
   font-size: 13px;
+  color: var(--nw-muted);
+}
+
+/* Centered body copy on info/logout pages. */
+.nw-note {
+  margin: 0 0 6px;
+  text-align: center;
+  font-size: 15px;
+  line-height: 1.5;
+  color: var(--nw-fg);
+}
+.nw-note-sub {
+  margin: 2px 0 10px;
+  text-align: center;
+  font-size: 12.5px;
   color: var(--nw-muted);
 }
 

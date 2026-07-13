@@ -6,6 +6,15 @@
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <meta name="robots" content="noindex, nofollow"/>
   <title>Narwhal IDP</title>
+  <script>
+    // Follow the portal's theme: the portal writes `narwhal-theme` on the shared
+    // parent domain (.local.narwhal.internal). No cookie -> light (portal default).
+    // Runs synchronously before first paint, so there is no theme flash.
+    (function () {
+      var m = document.cookie.match(/(?:^|;\s*)narwhal-theme=(dark|light)/);
+      if (m && m[1] === "dark") document.documentElement.classList.add("nw-dark");
+    })();
+  </script>
   <#if properties.styles?has_content>
     <#list properties.styles?split(' ') as style>
       <link href="${url.resourcesPath}/${style}" rel="stylesheet"/>
@@ -13,11 +22,11 @@
   </#if>
 </head>
 <body class="nw-body">
-  <#-- deep arctic-ocean horizon under the aurora -->
+  <#-- arctic-ocean horizon under the aurora; fills are themed via CSS classes -->
   <svg class="nw-waves" viewBox="0 0 1440 200" preserveAspectRatio="none" aria-hidden="true" focusable="false">
-    <path fill="#0e7490" fill-opacity="0.28" d="M0 96 C240 140 480 52 720 84 C960 116 1200 150 1440 92 L1440 200 L0 200 Z"/>
-    <path fill="#155e75" fill-opacity="0.34" d="M0 128 C240 104 480 158 720 124 C960 92 1200 138 1440 124 L1440 200 L0 200 Z"/>
-    <path fill="#083344" fill-opacity="0.5" d="M0 158 C260 138 520 176 760 158 C1000 140 1220 168 1440 156 L1440 200 L0 200 Z"/>
+    <path class="nw-wave-1" d="M0 96 C240 140 480 52 720 84 C960 116 1200 150 1440 92 L1440 200 L0 200 Z"/>
+    <path class="nw-wave-2" d="M0 128 C240 104 480 158 720 124 C960 92 1200 138 1440 124 L1440 200 L0 200 Z"/>
+    <path class="nw-wave-3" d="M0 158 C260 138 520 176 760 158 C1000 140 1220 168 1440 156 L1440 200 L0 200 Z"/>
   </svg>
 
   <main class="nw-card">
@@ -44,8 +53,8 @@
           <path d="M7 29 L0 23 L3.5 29 L0 35 Z" fill="currentColor"/>
           <#-- pectoral fin -->
           <path d="M23 36.8 C24 41.6 26 43.6 27 43.6 C27 40.6 27 38.6 28 36.6 Z" fill="currentColor" opacity="0.85"/>
-          <#-- eye -->
-          <circle cx="17" cy="27" r="1.8" fill="#0b1220"/>
+          <#-- eye (fill themed via CSS) -->
+          <circle class="nw-eye" cx="17" cy="27" r="1.8"/>
         </svg>
       </span>
       <h1 class="nw-title">Narwhal IDP</h1>

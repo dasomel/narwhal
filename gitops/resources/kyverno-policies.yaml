@@ -25,6 +25,11 @@ spec:
                 - platform-system
                 - devtools
                 - security-system
+          # chaos-daemon requires privileged: true (chart default) to inject
+          # faults into other pods' network/IO namespaces.
+          - resources:
+              namespaces:
+                - chaos-testing
       validate:
         message: "Privileged mode is disallowed."
         # =() 옵셔널 앵커 필수: 앵커 없이 쓰면 privileged 필드가 없는 파드
@@ -75,6 +80,11 @@ spec:
                 - monitoring
               names:
                 - "prometheus-stack-prometheus-node-exporter*"
+          # chaos-daemon hardcodes hostPID: true (chaos-daemon-daemonset.yaml,
+          # not a values toggle) to reach other pods' process namespaces.
+          - resources:
+              namespaces:
+                - chaos-testing
       validate:
         message: "Sharing the host namespace (hostNetwork, hostPID, hostIPC) is disallowed."
         pattern:

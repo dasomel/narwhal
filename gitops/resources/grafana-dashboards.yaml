@@ -382,3 +382,204 @@ data:
         }
       ]
     }
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: k6-load-test-dashboard
+  namespace: monitoring
+  labels:
+    grafana_dashboard: "1"
+data:
+  k6-load-test.json: |
+    {
+      "title": "k6 Load Test",
+      "uid": "k6-load-test",
+      "schemaVersion": 38,
+      "version": 1,
+      "refresh": "10s",
+      "time": { "from": "now-15m", "to": "now" },
+      "templating": { "list": [] },
+      "annotations": { "list": [] },
+      "panels": [
+        {
+          "id": 1,
+          "type": "stat",
+          "title": "Virtual Users",
+          "description": "현재 활성 VU 수",
+          "gridPos": { "x": 0, "y": 0, "w": 6, "h": 5 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "options": {
+            "reduceOptions": { "calcs": ["lastNotNull"] },
+            "orientation": "auto",
+            "colorMode": "background",
+            "graphMode": "none",
+            "textMode": "auto"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "green", "value": null }
+                ]
+              }
+            }
+          },
+          "targets": [
+            {
+              "expr": "sum(k6_vus)",
+              "legendFormat": "VUs",
+              "refId": "A"
+            }
+          ]
+        },
+        {
+          "id": 2,
+          "type": "stat",
+          "title": "Active Test IDs",
+          "description": "testid별 활성 VU 수",
+          "gridPos": { "x": 6, "y": 0, "w": 6, "h": 5 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "options": {
+            "reduceOptions": { "calcs": ["lastNotNull"] },
+            "orientation": "horizontal",
+            "colorMode": "background",
+            "graphMode": "none",
+            "textMode": "value_and_name"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "blue", "value": null }
+                ]
+              }
+            }
+          },
+          "targets": [
+            {
+              "expr": "count by (testid) (k6_vus)",
+              "legendFormat": "{{ testid }}",
+              "refId": "A"
+            }
+          ]
+        },
+        {
+          "id": 3,
+          "type": "timeseries",
+          "title": "Request Rate",
+          "description": "초당 HTTP 요청 수",
+          "gridPos": { "x": 12, "y": 0, "w": 12, "h": 5 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "options": {
+            "tooltip": { "mode": "multi", "sort": "desc" },
+            "legend": { "displayMode": "list", "placement": "bottom" }
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "reqps",
+              "color": { "mode": "palette-classic" },
+              "custom": {
+                "lineInterpolation": "linear",
+                "lineWidth": 2,
+                "fillOpacity": 10,
+                "spanNulls": false
+              }
+            }
+          },
+          "targets": [
+            {
+              "expr": "rate(k6_http_reqs_total[1m])",
+              "legendFormat": "{{ testid }}",
+              "refId": "A"
+            }
+          ]
+        },
+        {
+          "id": 4,
+          "type": "timeseries",
+          "title": "p95 Request Duration",
+          "description": "요청 소요시간 95th percentile",
+          "gridPos": { "x": 0, "y": 5, "w": 12, "h": 6 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "options": {
+            "tooltip": { "mode": "multi", "sort": "desc" },
+            "legend": { "displayMode": "list", "placement": "bottom" }
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "ms",
+              "color": { "mode": "palette-classic" },
+              "custom": {
+                "lineInterpolation": "linear",
+                "lineWidth": 2,
+                "fillOpacity": 10,
+                "spanNulls": false
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "green", "value": null },
+                  { "color": "yellow", "value": 500 },
+                  { "color": "red", "value": 1000 }
+                ]
+              }
+            }
+          },
+          "targets": [
+            {
+              "expr": "k6_http_req_duration_p95",
+              "legendFormat": "{{ testid }}",
+              "refId": "A"
+            }
+          ]
+        },
+        {
+          "id": 5,
+          "type": "timeseries",
+          "title": "Error Rate",
+          "description": "실패한 HTTP 요청 비율",
+          "gridPos": { "x": 12, "y": 5, "w": 12, "h": 6 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "options": {
+            "tooltip": { "mode": "multi", "sort": "desc" },
+            "legend": { "displayMode": "list", "placement": "bottom" }
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percentunit",
+              "min": 0,
+              "max": 1,
+              "color": { "mode": "palette-classic" },
+              "custom": {
+                "lineInterpolation": "linear",
+                "lineWidth": 2,
+                "fillOpacity": 10,
+                "spanNulls": false
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "green", "value": null },
+                  { "color": "yellow", "value": 0.01 },
+                  { "color": "red", "value": 0.05 }
+                ]
+              }
+            }
+          },
+          "targets": [
+            {
+              "expr": "k6_http_req_failed_rate",
+              "legendFormat": "{{ testid }}",
+              "refId": "A"
+            }
+          ]
+        }
+      ]
+    }

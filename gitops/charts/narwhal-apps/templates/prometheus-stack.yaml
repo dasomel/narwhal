@@ -26,6 +26,9 @@ spec:
         prometheus:
           prometheusSpec:
             retention: 7d
+            # k6 load-test results are pushed via Prometheus remote write
+            # (tests/k6/run-k6.sh, -o experimental-prometheus-rw).
+            enableRemoteWriteReceiver: true
             # Discover all PrometheusRules regardless of release label
             ruleSelector: {}
             ruleNamespaceSelector: {}

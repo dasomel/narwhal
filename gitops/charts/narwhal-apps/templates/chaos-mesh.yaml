@@ -1,0 +1,104 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: chaos-mesh
+  namespace: devtools
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://charts.chaos-mesh.org
+    chart: chaos-mesh
+    targetRevision: 2.8.3
+    helm:
+      valuesObject:
+        chaosDaemon:
+          # chaos-daemon needs privileged + hostPID (hardcoded in the chart's
+          # DaemonSet, not a values toggle) to inject faults into other pods'
+          # network/IO namespaces. Excluded from Kyverno disallow-privileged-
+          # containers / disallow-host-namespaces for the chaos-testing
+          # namespace only (see gitops/resources/kyverno-policies.yaml).
+          runtime: containerd
+          socketPath: /run/containerd/containerd.sock
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              memory: 256Mi
+        controllerManager:
+          # Chart default replicaCount is 3 -- nodes are 2vCPU/6GB, so pin to 1.
+          replicaCount: 1
+          # Blast-radius guard: only namespaces explicitly annotated
+          # chaos-mesh.org/inject=enabled can be targeted by experiments.
+          enableFilterNamespace: true
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              memory: 256Mi
+        dashboard:
+          create: false
+        dnsServer:
+          create: false
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: chaos-testing
+  # The controller injects webhook caBundle at runtime; ArgoCD must not
+  # fight it (same pattern as cert-manager-injected bundles).
+  # The chart also regenerates self-signed certs (genSignedCert) and a random
+  # `rollme` pod annotation on EVERY render — without ignoring those, selfHeal
+  # re-rolls controller/daemon on every sync forever (same trap as harbor's
+  # checksum/secret churn).
+  ignoreDifferences:
+    - group: admissionregistration.k8s.io
+      kind: MutatingWebhookConfiguration
+      jqPathExpressions:
+        - '.webhooks[].clientConfig.caBundle'
+    - group: admissionregistration.k8s.io
+      kind: ValidatingWebhookConfiguration
+      jqPathExpressions:
+        - '.webhooks[].clientConfig.caBundle'
+    - kind: Secret
+      name: chaos-mesh-webhook-certs
+      namespace: chaos-testing
+      jsonPointers:
+        - /data
+    - kind: Secret
+      name: chaos-mesh-daemon-certs
+      namespace: chaos-testing
+      jsonPointers:
+        - /data
+    - kind: Secret
+      name: chaos-mesh-daemon-client-certs
+      namespace: chaos-testing
+      jsonPointers:
+        - /data
+    - kind: Secret
+      name: chaos-mesh-chaosd-client-certs
+      namespace: chaos-testing
+      jsonPointers:
+        - /data
+    - group: apps
+      kind: Deployment
+      name: chaos-controller-manager
+      namespace: chaos-testing
+      jqPathExpressions:
+        - '.spec.template.metadata.annotations.rollme'
+    - group: apps
+      kind: DaemonSet
+      name: chaos-daemon
+      namespace: chaos-testing
+      jqPathExpressions:
+        - '.spec.template.metadata.annotations.rollme'
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      # Large chaos-mesh CRDs exceed the last-applied annotation limit
+      - ServerSideApply=true
+      - RespectIgnoreDifferences=true

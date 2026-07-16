@@ -1,0 +1,16 @@
+# Smoke experiment: lowest-risk target (stateless UI, single replica, instant
+# redeploy). Run this first after any Chaos Mesh install/upgrade to prove the
+# controller can kill and the cluster recovers, before running real experiments.
+apiVersion: chaos-mesh.org/v1alpha1
+kind: PodChaos
+metadata:
+  name: headlamp-kill
+  namespace: chaos-testing
+spec:
+  action: pod-kill
+  mode: one
+  selector:
+    namespaces:
+      - devtools
+    labelSelectors:
+      app.kubernetes.io/name: headlamp

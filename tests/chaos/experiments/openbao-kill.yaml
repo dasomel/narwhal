@@ -1,0 +1,15 @@
+# Note: openbao reseals on restart; an openbao-unseal automation exists - experiment validates it.
+apiVersion: chaos-mesh.org/v1alpha1
+kind: PodChaos
+metadata:
+  name: openbao-kill
+  namespace: chaos-testing
+spec:
+  action: pod-kill
+  mode: one
+  selector:
+    namespaces:
+      - storage
+    labelSelectors:
+      app.kubernetes.io/name: openbao
+      component: server

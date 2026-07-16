@@ -1,0 +1,23 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: chaos-stress-target
+  namespace: chaos-testing
+  labels:
+    chaos-target: stress
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      chaos-target: stress
+  template:
+    metadata:
+      labels:
+        chaos-target: stress
+    spec:
+      nodeSelector:
+        kubernetes.io/hostname: narwhal-worker-3
+      containers:
+        - name: pause
+          image: registry.k8s.io/pause:3.10
+          resources: {}

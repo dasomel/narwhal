@@ -1,0 +1,16 @@
+apiVersion: chaos-mesh.org/v1alpha1
+kind: NetworkChaos
+metadata:
+  name: coredns-latency
+  namespace: chaos-testing
+spec:
+  action: delay
+  mode: one
+  selector:
+    namespaces:
+      - kube-system
+    labelSelectors:
+      k8s-app: kube-dns
+  delay:
+    latency: '500ms'
+  duration: '60s'

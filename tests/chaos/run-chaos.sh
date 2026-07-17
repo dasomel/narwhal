@@ -32,9 +32,11 @@ if [ ! -f "$YAML_FILE" ]; then
   exit 1
 fi
 
-# G1 Safety Rule 검증
-if grep -q -E "platform-system|apisix|etcd" "$YAML_FILE"; then
-  echo "오류 (G1 안전 규칙 위반): 실험 파일에 허용되지 않는 대상(platform-system, apisix, etcd)이 포함되어 있습니다. 실행을 중단합니다."
+# G1 Safety Rule 검증 — deny-list is env-overridable (matches PREFLIGHT_* convention);
+# apisix-etcd emptyDir is P0 (killing it wipes all ingress routes).
+CHAOS_DENY_PATTERN="${CHAOS_DENY_PATTERN:-platform-system|apisix|etcd}"
+if grep -q -E "$CHAOS_DENY_PATTERN" "$YAML_FILE"; then
+  echo "오류 (G1 안전 규칙 위반): 실험 파일에 금지 대상(${CHAOS_DENY_PATTERN})이 포함되어 있습니다. 실행을 중단합니다."
   exit 1
 fi
 
@@ -47,10 +49,31 @@ get_non_running_completed_count() {
   kubectl get pods -A --no-headers 2>/dev/null | awk '$4 !~ /^(Running|Completed|Succeeded)$/' | wc -l | tr -d ' ' || echo 999
 }
 
-BASELINE_COUNT=$(get_non_running_completed_count)
-echo "베이스라인 비정상 파드 수: ${BASELINE_COUNT}"
+# Portal /login is the blast-radius canary — one place for the URL/flags.
+portal_login_status() {
+  curl -sk -o /dev/null -w "%{http_code}" https://portal.local.narwhal.internal/login || echo 000
+}
 
-HTTP_STATUS=$(curl -sk -o /dev/null -w "%{http_code}" https://portal.local.narwhal.internal/login || echo 000)
+# Recovery is judged on the TARGET namespace(s), not a global pod count: an
+# unrelated pod rolling during the window (e.g. prometheus WAL replay taking
+# minutes) must not fail an experiment whose target recovered cleanly. The
+# global count is still printed as blast-radius context.
+target_ns_not_ready() {
+  local total=0 ns
+  for ns in $TARGET_NAMESPACES; do
+    [ -z "$ns" ] || [ "$ns" = "null" ] && continue
+    local n
+    n=$(kubectl get pods -n "$ns" --no-headers 2>/dev/null \
+      | awk '{ split($2,a,"/"); if (a[1] != a[2] && $4 != "Completed" && $4 != "Succeeded") c++ } END { print c+0 }' || echo 999)
+    total=$((total + n))
+  done
+  echo "$total"
+}
+
+BASELINE_COUNT=$(get_non_running_completed_count)
+echo "베이스라인 비정상 파드 수(전역): ${BASELINE_COUNT}"
+
+HTTP_STATUS=$(portal_login_status)
 if [ "$HTTP_STATUS" -ne 200 ]; then
   echo "오류: Steady-state 사전 검증 실패 (Portal /login 응답 코드: ${HTTP_STATUS}, 200 기대함)"
   exit 1
@@ -114,17 +137,22 @@ echo "실험 완료 후 시스템 복구 상태 검증 중..."
 RECOVERY_SUCCESS=false
 
 for i in {1..12}; do
-  CURRENT_COUNT=$(get_non_running_completed_count)
-  HTTP_STATUS=$(curl -sk -o /dev/null -w "%{http_code}" https://portal.local.narwhal.internal/login || echo 000)
-  
-  echo "복구 점검 [${i}/12]: 비정상 파드 수 = ${CURRENT_COUNT} (베이스라인: ${BASELINE_COUNT}), Portal /login = ${HTTP_STATUS}"
-  
-  if [ "$CURRENT_COUNT" -le "$BASELINE_COUNT" ] && [ "$HTTP_STATUS" -eq 200 ]; then
+  TARGET_NOT_READY=$(target_ns_not_ready)
+  HTTP_STATUS=$(portal_login_status)
+
+  echo "복구 점검 [${i}/12]: 타겟 미준비 파드 = ${TARGET_NOT_READY}, Portal /login = ${HTTP_STATUS}"
+
+  # PASS = the fault's target recovered AND the portal (blast-radius canary) is up.
+  # (Global pod count is only for the final blast-radius line — a cluster-wide
+  # scan every 15s just to log it would be 12 redundant full-cluster queries.)
+  if [ "$TARGET_NOT_READY" -eq 0 ] && [ "$HTTP_STATUS" -eq 200 ]; then
     RECOVERY_SUCCESS=true
     break
   fi
   sleep 15
 done
+
+echo "종료 시 전역 비정상 파드 수: $(get_non_running_completed_count) (베이스라인: ${BASELINE_COUNT})"
 
 if [ "$RECOVERY_SUCCESS" = true ]; then
   echo "======================================"

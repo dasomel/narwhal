@@ -1,5 +1,6 @@
 import http from 'k6/http';
 import { check, sleep } from 'k6';
+import { keycloakLogin } from './lib/auth.js';
 
 export const options = {
   insecureSkipTLSVerify: true,
@@ -20,10 +21,9 @@ export const options = {
 };
 
 const BASE = __ENV.K6_BASE_URL || 'https://portal.local.narwhal.internal';
+const KEYCLOAK = BASE.replace('portal.', 'keycloak.');
 const USERNAME = __ENV.K6_USERNAME;
 const PASSWORD = __ENV.K6_PASSWORD;
-
-const KEYCLOAK = BASE.replace('portal.', 'keycloak.');
 
 export default function () {
   // Fresh session every iteration: the per-VU cookie jar keeps both the portal
@@ -33,31 +33,10 @@ export default function () {
   jar.clear(BASE);
   jar.clear(KEYCLOAK);
 
-  // 1. GET CSRF Token
-  const csrfRes = http.get(`${BASE}/api/auth/csrf`);
-  const csrfToken = csrfRes.json('csrfToken');
-
-  // 2. POST to AuthJS Keycloak signin
-  const signinRes = http.post(`${BASE}/api/auth/signin/keycloak`, {
-    csrfToken: csrfToken,
-    callbackUrl: '/',
-  });
-
-  // Extract Keycloak login action URL
-  const actionMatch = signinRes.body.match(/action="([^"]+)"/);
+  const actionMatch = keycloakLogin(BASE, USERNAME, PASSWORD);
   check(actionMatch, { 'keycloak login form found': (m) => m !== null });
-  if (actionMatch && actionMatch[1]) {
-    let actionUrl = actionMatch[1].replace(/&amp;/g, '&');
 
-    // 3. POST to Keycloak login
-    http.post(actionUrl, {
-      username: USERNAME,
-      password: PASSWORD,
-      credentialId: '',
-    });
-  }
-
-  // 4. Verify login by accessing portal root and session
+  // Verify login by accessing portal root and session
   const rootRes = http.get(`${BASE}/`);
   check(rootRes, {
     'root is 200': (r) => r.status === 200,

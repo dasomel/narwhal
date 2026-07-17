@@ -1,5 +1,6 @@
 import http from 'k6/http';
 import { check, sleep } from 'k6';
+import { keycloakLogin } from './lib/auth.js';
 
 export const options = {
   insecureSkipTLSVerify: true,
@@ -29,24 +30,7 @@ const PASSWORD = __ENV.K6_PASSWORD;
 
 export function setup() {
   const jar = http.cookieJar();
-  
-  const csrfRes = http.get(`${BASE}/api/auth/csrf`);
-  const csrfToken = csrfRes.json('csrfToken');
-
-  const signinRes = http.post(`${BASE}/api/auth/signin/keycloak`, {
-    csrfToken: csrfToken,
-    callbackUrl: '/',
-  });
-
-  const actionMatch = signinRes.body.match(/action="([^"]+)"/);
-  if (actionMatch && actionMatch[1]) {
-    let actionUrl = actionMatch[1].replace(/&amp;/g, '&');
-    http.post(actionUrl, {
-      username: USERNAME,
-      password: PASSWORD,
-      credentialId: '',
-    });
-  }
+  keycloakLogin(BASE, USERNAME, PASSWORD);
 
   const cookies = jar.cookiesForURL(BASE);
   const sessionCookies = {};

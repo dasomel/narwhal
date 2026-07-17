@@ -25,7 +25,7 @@ check_steady_state() {
   local phase="$1"
   echo "Checking steady-state ($phase)..."
   local not_running
-  not_running=$(kubectl get pods --all-namespaces --no-headers 2>/dev/null | awk '$4!="Running" && $4!="Completed" {print $0}' | wc -l | tr -d ' ' || echo "0")
+  not_running=$(kubectl get pods --all-namespaces --no-headers 2>/dev/null | awk '$4!="Running" && $4!="Completed" && $4!="Succeeded" {print $0}' | wc -l | tr -d ' ' || echo "0")
   if [ "$not_running" -gt 0 ]; then
     echo "[WARN] Found $not_running pods not in Running/Completed state."
   fi

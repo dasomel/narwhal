@@ -20,12 +20,13 @@ export const options = {
   },
 };
 
+const DOMAIN = __ENV.K6_DOMAIN || 'local.narwhal.internal';
 const URLS = [
-  'https://grafana.local.narwhal.internal/',
-  'https://harbor.local.narwhal.internal/',
-  'https://gitea.local.narwhal.internal/',
-  'https://argocd.local.narwhal.internal/',
-  'https://keycloak.local.narwhal.internal/realms/narwhal/.well-known/openid-configuration',
+  `https://grafana.${DOMAIN}/`,
+  `https://harbor.${DOMAIN}/`,
+  `https://gitea.${DOMAIN}/`,
+  `https://argocd.${DOMAIN}/`,
+  `https://keycloak.${DOMAIN}/realms/narwhal/.well-known/openid-configuration`,
 ];
 
 export default function () {

@@ -61,23 +61,11 @@ spec:
       kind: ValidatingWebhookConfiguration
       jqPathExpressions:
         - '.webhooks[].clientConfig.caBundle'
+    # chaos-testing is a single-tenant namespace and every Secret in it is a
+    # chart-regenerated self-signed cert (genSignedCert on each render) — ignore
+    # /data on all of them with one rule so a chart bump adding/renaming a cert
+    # secret can't restart the selfHeal re-roll churn.
     - kind: Secret
-      name: chaos-mesh-webhook-certs
-      namespace: chaos-testing
-      jsonPointers:
-        - /data
-    - kind: Secret
-      name: chaos-mesh-daemon-certs
-      namespace: chaos-testing
-      jsonPointers:
-        - /data
-    - kind: Secret
-      name: chaos-mesh-daemon-client-certs
-      namespace: chaos-testing
-      jsonPointers:
-        - /data
-    - kind: Secret
-      name: chaos-mesh-chaosd-client-certs
       namespace: chaos-testing
       jsonPointers:
         - /data

@@ -29,6 +29,18 @@ spec:
             # k6 load-test results are pushed via Prometheus remote write
             # (tests/k6/run-k6.sh, -o experimental-prometheus-rw).
             enableRemoteWriteReceiver: true
+            # No limit made prometheus the node OOM killer's first victim under
+            # memory pressure (observed: 96 OOMKills in 10h on worker-1 @ 86%
+            # mem). Requests lower its oom_score; the limit caps TSDB growth.
+            # Steady-state usage is ~1-1.5Gi at 7d retention on this cluster.
+            # No cpu limit on purpose (throttling trips probe timeouts on VM
+            # load — same rationale as headlamp).
+            resources:
+              requests:
+                cpu: 200m
+                memory: 1Gi
+              limits:
+                memory: 2Gi
             # Discover all PrometheusRules regardless of release label
             ruleSelector: {}
             ruleNamespaceSelector: {}

@@ -81,20 +81,33 @@ run_k6() {
   fi
 
   echo "Running $script_name..."
-  # Use eval to handle extra_args expansion properly
-  k6 run $extra_args --summary-export "$REPO_ROOT/tests/k6/results/${script_name}-${ts}.json" "$script_path"
+  # k6 exits non-zero when a threshold is crossed — that is a RESULT, not a
+  # harness failure. Record it and keep running the remaining scenarios.
+  local rc=0
+  k6 run $extra_args --summary-export "$REPO_ROOT/tests/k6/results/${script_name}-${ts}.json" "$script_path" || rc=$?
+  if [ "$rc" -ne 0 ]; then
+    echo "[WARN] ${script_name}: k6 exit ${rc} (임계치 초과 또는 오류) — 계속 진행합니다."
+    FAILED_SCRIPTS+=("$script_name")
+  fi
 }
 
 PROM_PID=""
+FAILED_SCRIPTS=()
 if [ "$PROM" = true ]; then
-  echo "Starting prometheus port-forward..."
-  kubectl -n monitoring port-forward svc/prometheus-stack-kube-prom-prometheus 9090:9090 > /dev/null 2>&1 &
+  echo "Starting prometheus port-forward (keepalive)..."
+  # A single port-forward silently dies during long runs; keep restarting it.
+  (
+    while true; do
+      kubectl -n monitoring port-forward svc/prometheus-stack-kube-prom-prometheus 9090:9090 > /dev/null 2>&1 || true
+      sleep 2
+    done
+  ) &
   PROM_PID=$!
-  trap 'kill $PROM_PID 2>/dev/null || true' EXIT
-  
+  trap 'kill $PROM_PID 2>/dev/null || true; pkill -f "port-forward svc/prometheus-stack-kube-prom-prometheus" 2>/dev/null || true' EXIT
+
   export K6_PROMETHEUS_RW_SERVER_URL=http://127.0.0.1:9090/api/v1/write
   export K6_PROMETHEUS_RW_TREND_STATS='p(95),p(99),avg,max'
-  
+
   # wait for port-forward
   sleep 3
 fi
@@ -108,3 +121,9 @@ else
 fi
 
 check_steady_state "after"
+
+if [ "${#FAILED_SCRIPTS[@]}" -gt 0 ]; then
+  echo "[RESULT] 임계치 초과/실패 시나리오: ${FAILED_SCRIPTS[*]}"
+  exit 1
+fi
+echo "[RESULT] 모든 시나리오 임계치 통과"

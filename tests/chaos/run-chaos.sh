@@ -54,16 +54,19 @@ portal_login_status() {
   curl -sk -o /dev/null -w "%{http_code}" https://portal.local.narwhal.internal/login || echo 000
 }
 
-# Recovery is judged on the TARGET namespace(s), not a global pod count: an
-# unrelated pod rolling during the window (e.g. prometheus WAL replay taking
-# minutes) must not fail an experiment whose target recovered cleanly. The
-# global count is still printed as blast-radius context.
-target_ns_not_ready() {
+# Recovery is judged on the fault's DECLARED target (the experiment's own
+# labelSelectors), not a namespace-wide or global pod count. Anything else —
+# an unrelated pod rolling (prometheus WAL replay), a CronJob pod transiently
+# 0/1 Running (openbao auto-unseal every 2m) — is noise that would false-FAIL
+# an experiment whose actual target recovered. The global count is printed
+# only as blast-radius context.
+target_not_ready() {
   local total=0 ns
+  [ -z "$TARGET_SELECTOR" ] && { echo 0; return; }
   for ns in $TARGET_NAMESPACES; do
     [ -z "$ns" ] || [ "$ns" = "null" ] && continue
     local n
-    n=$(kubectl get pods -n "$ns" --no-headers 2>/dev/null \
+    n=$(kubectl get pods -n "$ns" -l "$TARGET_SELECTOR" --no-headers 2>/dev/null \
       | awk '{ split($2,a,"/"); if (a[1] != a[2] && $4 != "Completed" && $4 != "Succeeded") c++ } END { print c+0 }' || echo 999)
     total=$((total + n))
   done
@@ -80,8 +83,11 @@ if [ "$HTTP_STATUS" -ne 200 ]; then
 fi
 echo "Portal 로그인 페이지 정상 상태 확인 (HTTP 200)"
 
-# 타겟 네임스페이스 추출 및 어노테이션 추가
+# 타겟 네임스페이스 + label selector 추출 (selector는 복구 판정에 사용)
 TARGET_NAMESPACES=$(yq eval '.spec.selector.namespaces[]' "$YAML_FILE" 2>/dev/null || true)
+TARGET_SELECTOR=$(yq eval '.spec.selector.labelSelectors | to_entries | map(.key + "=" + .value) | join(",")' "$YAML_FILE" 2>/dev/null || true)
+[ "$TARGET_SELECTOR" = "null" ] && TARGET_SELECTOR=""
+echo "복구 판정 대상 selector: ${TARGET_SELECTOR:-<없음>}"
 if [ -z "$TARGET_NAMESPACES" ]; then
   echo "경고: 실험 파일에서 타겟 네임스페이스를 추출하지 못했습니다."
 else
@@ -137,7 +143,7 @@ echo "실험 완료 후 시스템 복구 상태 검증 중..."
 RECOVERY_SUCCESS=false
 
 for i in {1..12}; do
-  TARGET_NOT_READY=$(target_ns_not_ready)
+  TARGET_NOT_READY=$(target_not_ready)
   HTTP_STATUS=$(portal_login_status)
 
   echo "복구 점검 [${i}/12]: 타겟 미준비 파드 = ${TARGET_NOT_READY}, Portal /login = ${HTTP_STATUS}"

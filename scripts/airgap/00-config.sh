@@ -5,6 +5,11 @@
 # Target private registry URL (hostname:port) — where mirrored images land
 : "${AIRGAP_REGISTRY:=registry.airgap.local:5000}"
 
+# Bootstrap registry image. Chicken-and-egg: 04 stands up this registry to HOST
+# all other images, so it can't be pulled from the mirror — it is side-loaded
+# from a docker-archive tar saved into the bundle by 02 and loaded by 04.
+: "${AIRGAP_BOOTSTRAP_REGISTRY_IMAGE:=docker.io/library/registry:2}"
+
 # Architecture(s) to mirror. Narwhal default is ARM64 (Apple Silicon host).
 # Multiple archs: "linux/arm64,linux/amd64"
 : "${AIRGAP_ARCH:=linux/arm64}"
@@ -29,4 +34,4 @@ AIRGAP_SOURCE_REGISTRIES=(
   "charts.bitnami.com"    # listed only so we can *warn* — Bitnami is banned
 )
 
-export AIRGAP_REGISTRY AIRGAP_ARCH DOMAIN AIRGAP_BUNDLE_DIR AIRGAP_SKOPEO_DEST_TLS_VERIFY AIRGAP_SOURCE_REGISTRIES
+export AIRGAP_REGISTRY AIRGAP_BOOTSTRAP_REGISTRY_IMAGE AIRGAP_ARCH DOMAIN AIRGAP_BUNDLE_DIR AIRGAP_SKOPEO_DEST_TLS_VERIFY AIRGAP_SOURCE_REGISTRIES

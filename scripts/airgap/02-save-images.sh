@@ -57,6 +57,22 @@ while IFS= read -r img; do
   fi
 done < "${LIST_FILE}"
 
+# Bootstrap registry image — saved as a docker-archive (not OCI layout) so 04
+# can `docker/nerdctl load` it WITHOUT a running registry (chicken-and-egg).
+BOOT_IMG="${AIRGAP_BOOTSTRAP_REGISTRY_IMAGE}"
+BOOT_TAR="${OUT_DIR}/bootstrap/registry.tar"
+mkdir -p "${OUT_DIR}/bootstrap"
+echo "[save] bootstrap registry ${BOOT_IMG} → docker-archive"
+# docker-archive dest ref keeps the short tag docker/nerdctl expect on load.
+if skopeo copy --override-arch "${AIRGAP_ARCH##*/}" --override-os linux \
+     --retry-times 3 --quiet \
+     "docker://${BOOT_IMG}" "docker-archive:${BOOT_TAR}:${BOOT_IMG#docker.io/library/}" 2>&1 | tail -3; then
+  echo "[ok] bootstrap registry saved: ${BOOT_TAR}"
+else
+  echo "[FAIL] bootstrap registry ${BOOT_IMG}" >&2
+  fail=$((fail+1))
+fi
+
 echo ""
 echo "Saved: ${ok} | Failed: ${fail}"
 echo "Bundle: ${OUT_DIR}"

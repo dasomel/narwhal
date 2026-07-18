@@ -1,18 +1,14 @@
 # Airgap image list — narwhal IDP cluster
 #
 # GROUND TRUTH: images actually running in a fully-provisioned cluster (kubectl
-# pod snapshot) UNION the transient job/init images (kaniko executor + alpine/git
-# for the OPTIONAL in-cluster Kaniko developer build, alpine/k8s for velero/CSI
-# hook jobs, velero-plugin-for-aws).
+# pod snapshot) UNION the transient job/init images (kaniko executor, alpine/git
+# for the portal build, alpine/k8s for velero/CSI hook jobs, velero-plugin-for-aws).
 # Regenerate with:  scripts/airgap/01-generate-image-list.sh --live images.txt
 # (static source-scan mode cannot see chart-default images and undercounts by ~60).
 #
 # EXCLUDED intentionally:
-#   - harbor.local.narwhal.internal/library/narwhal-portal:* — OPTIONAL dev-built
-#     portal image (in-cluster Kaniko self-service, scripts/kaniko-build.sh);
-#     produced, not pulled, so it must not be in a pull-based bundle. The DEFAULT
-#     portal deploy pulls ghcr.io/dasomel/narwhal-portal:<ver> (a normal pulled
-#     image, listed below), so it IS in the bundle.
+#   - harbor.local.narwhal.internal/library/narwhal-portal:latest — built IN-CLUSTER
+#     by Kaniko; produced, not pulled, so it must not be in a pull-based bundle.
 #
 # :latest TAGS — deliberate vs. hardening:
 #   - ghcr.io/dasomel/goharbor/* :latest is INTENTIONAL — the custom multi-arch
@@ -22,7 +18,7 @@
 #     third-party build helpers; digest-pin them if you need a fully reproducible
 #     hardened airgap bundle. Left at :latest here to match the deploy manifests.
 #
-# Last regenerated (--live): 2026-07-07 (from live cluster)
+# Last regenerated (--live): 2026-07-18 (from live cluster)
 
 apache/apisix-ingress-controller:1.8.0
 apache/apisix:3.15.0-ubuntu
@@ -38,29 +34,36 @@ docker.io/grafana/loki:3.7.3
 docker.io/grafana/tempo:2.9.0
 docker.io/hashicorp/vault-k8s:1.7.2
 docker.io/kiwigrid/k8s-sidecar:2.8.1
+docker.io/kubernetesui/dashboard-api:1.14.0
+docker.io/kubernetesui/dashboard-auth:1.4.0
+docker.io/kubernetesui/dashboard-metrics-scraper:1.2.2
+docker.io/kubernetesui/dashboard-web:1.7.0
 docker.io/library/busybox:1.38.0
+docker.io/otwld/velero-ui:0.10.1
 docker.io/valkey/valkey:8-alpine
 docker.io/velero/velero:v1.18.1
 gcr.io/kaniko-project/executor:latest
+ghcr.io/chaos-mesh/chaos-daemon:v2.8.3
+ghcr.io/chaos-mesh/chaos-mesh:v2.8.3
 ghcr.io/cloudnative-pg/cloudnative-pg:1.29.1
 ghcr.io/cloudnative-pg/pgbouncer:1.25.1
 ghcr.io/cloudnative-pg/postgresql:18
-ghcr.io/dasomel/goharbor/harbor-core:latest
-ghcr.io/dasomel/goharbor/harbor-jobservice:latest
-ghcr.io/dasomel/goharbor/harbor-portal:latest
-ghcr.io/dasomel/goharbor/harbor-registryctl:latest
-ghcr.io/dasomel/goharbor/nginx-photon:latest
-ghcr.io/dasomel/goharbor/redis-photon:latest
-ghcr.io/dasomel/goharbor/registry-photon:latest
-ghcr.io/dasomel/narwhal-portal:1.0.0
+ghcr.io/dasomel/goharbor/harbor-core:v2.15.1
+ghcr.io/dasomel/goharbor/harbor-jobservice:v2.15.1
+ghcr.io/dasomel/goharbor/harbor-portal:v2.15.1
+ghcr.io/dasomel/goharbor/harbor-registryctl:v2.15.1
+ghcr.io/dasomel/goharbor/nginx-photon:v2.15.1
+ghcr.io/dasomel/goharbor/redis-photon:v2.15.1
+ghcr.io/dasomel/goharbor/registry-photon:v2.15.1
+ghcr.io/dasomel/narwhal-portal:1.0.15
 ghcr.io/dasomel/nfs-quota-agent:v0.2.1
 ghcr.io/dexidp/dex:v2.45.0
 ghcr.io/grafana/alloy-operator:1.10.0
 ghcr.io/headlamp-k8s/headlamp:v0.42.0
 ghcr.io/kube-vip/kube-vip:v1.1.2
+kong:3.9
 mirror.gcr.io/aquasec/trivy-operator:0.25.0
 mirror.gcr.io/aquasec/trivy:0.60.0
-otwld/velero-ui:0.10.1
 public.ecr.aws/docker/library/redis:8.2.3-alpine
 quay.io/argoproj/argocd:v3.4.4
 quay.io/cilium/cilium-envoy:v1.36.6-1778235340-b87d1e32f522b33bd51701c6476d199326f01496

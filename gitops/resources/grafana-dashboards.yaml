@@ -583,3 +583,177 @@ data:
         }
       ]
     }
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: resource-rightsizing-dashboard
+  namespace: monitoring
+  labels:
+    grafana_dashboard: "1"
+data:
+  resource-rightsizing.json: |
+    {
+      "title": "Resource Rightsizing (Dr.Pym)",
+      "uid": "resource-rightsizing",
+      "description": "CPU/메모리 요청 대비 7일 사용량 기반 권장값 (KakaoPay Dr.Pym 방식). CPU는 request만 권장(limit 미권장 - throttling이 probe를 끊음), 메모리는 max*1.2를 request=limit로 권장.",
+      "schemaVersion": 38,
+      "version": 1,
+      "refresh": "5m",
+      "time": { "from": "now-7d", "to": "now" },
+      "templating": { "list": [] },
+      "annotations": { "list": [] },
+      "panels": [
+        {
+          "id": 1,
+          "type": "table",
+          "title": "네임스페이스/파드별 현재값 vs 권장값",
+          "description": "현재 request/limit과 7일 p99(CPU)/max*1.2(메모리) 기반 권장값 비교. '메모리 Limit(현재)'가 비어있으면 limit 미설정(OOM 위험).",
+          "gridPos": { "x": 0, "y": 0, "w": 24, "h": 10 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "options": {
+            "showHeader": true,
+            "cellHeight": "sm",
+            "footer": { "show": false }
+          },
+          "fieldConfig": {
+            "defaults": {
+              "custom": { "align": "auto", "cellOptions": { "type": "auto" } },
+              "mappings": []
+            },
+            "overrides": [
+              { "matcher": { "id": "byName", "options": "CPU 요청(현재)" }, "properties": [ { "id": "unit", "value": "short" } ] },
+              { "matcher": { "id": "byName", "options": "CPU 요청(권장 p99 7d)" }, "properties": [ { "id": "unit", "value": "short" } ] },
+              { "matcher": { "id": "byName", "options": "메모리 요청(현재)" }, "properties": [ { "id": "unit", "value": "bytes" } ] },
+              {
+                "matcher": { "id": "byName", "options": "메모리 Limit(현재)" },
+                "properties": [
+                  { "id": "unit", "value": "bytes" },
+                  {
+                    "id": "mappings",
+                    "value": [
+                      { "type": "special", "options": { "match": "null", "result": { "text": "LIMIT 없음", "color": "red", "index": 0 } } }
+                    ]
+                  },
+                  { "id": "custom.cellOptions", "value": { "type": "color-background" } },
+                  { "id": "thresholds", "value": { "mode": "absolute", "steps": [ { "color": "red", "value": null }, { "color": "transparent", "value": 1 } ] } }
+                ]
+              },
+              { "matcher": { "id": "byName", "options": "메모리 요청(권장 max*1.2 7d)" }, "properties": [ { "id": "unit", "value": "bytes" } ] },
+              {
+                "matcher": { "id": "byName", "options": "CPU 갭(권장-현재)" },
+                "properties": [
+                  { "id": "unit", "value": "short" },
+                  { "id": "custom.cellOptions", "value": { "type": "color-background" } },
+                  {
+                    "id": "thresholds",
+                    "value": {
+                      "mode": "absolute",
+                      "steps": [
+                        { "color": "transparent", "value": null },
+                        { "color": "yellow", "value": 0.2 },
+                        { "color": "red", "value": 0.5 }
+                      ]
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          "transformations": [
+            { "id": "merge", "options": {} },
+            {
+              "id": "organize",
+              "options": {
+                "excludeByName": { "Time": true },
+                "renameByName": {
+                  "namespace": "네임스페이스",
+                  "pod": "파드",
+                  "Value #A": "CPU 요청(현재)",
+                  "Value #B": "CPU 요청(권장 p99 7d)",
+                  "Value #C": "메모리 요청(현재)",
+                  "Value #D": "메모리 Limit(현재)",
+                  "Value #E": "메모리 요청(권장 max*1.2 7d)",
+                  "Value #F": "CPU 갭(권장-현재)"
+                }
+              }
+            }
+          ],
+          "targets": [
+            { "expr": "namespace_workload_pod:current_cpu_request:kube_state", "format": "table", "instant": true, "refId": "A" },
+            { "expr": "namespace_workload_pod:recommended_cpu_request:quantile99_7d", "format": "table", "instant": true, "refId": "B" },
+            { "expr": "namespace_workload_pod:current_memory_request:kube_state", "format": "table", "instant": true, "refId": "C" },
+            { "expr": "namespace_workload_pod:current_memory_limit:kube_state", "format": "table", "instant": true, "refId": "D" },
+            { "expr": "namespace_workload_pod:recommended_memory_bytes:max20pct_7d", "format": "table", "instant": true, "refId": "E" },
+            { "expr": "namespace_workload_pod:cpu_request_gap:recommended_minus_current", "format": "table", "instant": true, "refId": "F" }
+          ]
+        },
+        {
+          "id": 2,
+          "type": "stat",
+          "title": "메모리 Limit 미설정 파드 수",
+          "description": "메모리 request는 있으나 limit이 없는 파드 (OOM/노드 메모리 압박 위험 - narwhal의 prometheus OOM 원인과 동일 패턴)",
+          "gridPos": { "x": 0, "y": 10, "w": 6, "h": 6 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "options": {
+            "reduceOptions": { "calcs": ["lastNotNull"] },
+            "orientation": "auto",
+            "colorMode": "background",
+            "graphMode": "none",
+            "textMode": "auto"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "green", "value": null },
+                  { "color": "yellow", "value": 1 },
+                  { "color": "red", "value": 10 }
+                ]
+              }
+            }
+          },
+          "targets": [
+            {
+              "expr": "count(namespace_workload_pod:current_cpu_request:kube_state unless on (namespace, pod) namespace_workload_pod:current_memory_limit:kube_state)",
+              "legendFormat": "Limit 없음",
+              "refId": "A"
+            }
+          ]
+        },
+        {
+          "id": 3,
+          "type": "timeseries",
+          "title": "CPU 갭 상위 5 (권장 - 현재)",
+          "description": "권장 CPU request와 현재 request의 차이가 가장 큰 상위 5개 파드",
+          "gridPos": { "x": 6, "y": 10, "w": 18, "h": 6 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "options": {
+            "tooltip": { "mode": "multi", "sort": "desc" },
+            "legend": { "displayMode": "list", "placement": "bottom" }
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "color": { "mode": "palette-classic" },
+              "custom": {
+                "lineInterpolation": "linear",
+                "lineWidth": 2,
+                "fillOpacity": 10,
+                "spanNulls": false
+              }
+            }
+          },
+          "targets": [
+            {
+              "expr": "topk(5, namespace_workload_pod:cpu_request_gap:recommended_minus_current)",
+              "legendFormat": "{{ namespace }}/{{ pod }}",
+              "refId": "A"
+            }
+          ]
+        }
+      ]
+    }

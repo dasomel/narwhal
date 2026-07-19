@@ -1,0 +1,76 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: narwhal-rightsizing-rules
+  namespace: monitoring
+  labels:
+    release: prometheus-stack
+spec:
+  groups:
+    # -------------------------------------------------------------------------
+    # resource-rightsizing: Dr.Pym-style recommended vs current requests/limits
+    # Window is 7d (NOT 2 weeks) to match this cluster's Prometheus retention.
+    #
+    # CPU: recommend REQUEST only = p99 usage over 7d. Deliberately NO cpu
+    # limit recommendation — cpu limit throttling trips liveness probes
+    # (see narwhal CLAUDE.md 2026-06-11 Keycloak CPU-starvation OOM lesson).
+    # JVM-based workloads (Keycloak) additionally need cpu request >= ~1 core
+    # or an explicit ActiveProcessorCount, because JVM availableProcessors()
+    # reads the NODE's CPU count, not the container cgroup quota, when the
+    # request is fractional/low — a low cpu request alone does not bound
+    # thread-pool sizing the way a JVM-aware container runtime would
+    # (KakaoPay Dr.Pym lesson, matches narwhal's own Keycloak history).
+    #
+    # Memory: recommend REQUEST=LIMIT = p100 (max) usage over 7d * 1.2 margin.
+    # Memory is NOT compressible like CPU, so unlike cpu we DO recommend a
+    # limit, sized with headroom instead of throttled.
+    # -------------------------------------------------------------------------
+    - name: resource-rightsizing
+      # interval MUST stay below Prometheus query.lookback-delta (default 5m):
+      # a recording rule produces one sample per eval, and an instant query more
+      # than lookback-delta after the last sample sees the series as stale. A
+      # 15m interval therefore left the recorded metrics unqueryable for ~10 of
+      # every 15 min (dashboard blank). The 7d:5m subquery is cheap in practice
+      # — the whole group evaluates in ~4s — so 2m gives continuous
+      # queryability at ~3% duty cycle, nowhere near pressuring Prometheus.
+      interval: 2m
+      rules:
+        - record: namespace_workload_pod:recommended_cpu_request:quantile99_7d
+          expr: |
+            quantile_over_time(0.99,
+              sum by (namespace, pod) (
+                rate(container_cpu_usage_seconds_total{container!="",container!="POD"}[5m])
+              )[7d:5m]
+            )
+
+        - record: namespace_workload_pod:recommended_memory_bytes:max20pct_7d
+          expr: |
+            max_over_time(
+              sum by (namespace, pod) (
+                container_memory_working_set_bytes{container!="",container!="POD"}
+              )[7d:5m]
+            ) * 1.2
+
+        - record: namespace_workload_pod:current_cpu_request:kube_state
+          expr: |
+            sum by (namespace, pod) (
+              kube_pod_container_resource_requests{resource="cpu"}
+            )
+
+        - record: namespace_workload_pod:current_memory_request:kube_state
+          expr: |
+            sum by (namespace, pod) (
+              kube_pod_container_resource_requests{resource="memory"}
+            )
+
+        - record: namespace_workload_pod:current_memory_limit:kube_state
+          expr: |
+            sum by (namespace, pod) (
+              kube_pod_container_resource_limits{resource="memory"}
+            )
+
+        - record: namespace_workload_pod:cpu_request_gap:recommended_minus_current
+          expr: |
+            namespace_workload_pod:recommended_cpu_request:quantile99_7d
+            - on (namespace, pod)
+            namespace_workload_pod:current_cpu_request:kube_state

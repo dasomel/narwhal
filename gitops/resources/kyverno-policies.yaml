@@ -30,6 +30,13 @@ spec:
           - resources:
               namespaces:
                 - chaos-testing
+          # nfs-quota-agent runs privileged to manage XFS project quotas on the
+          # host NFS export path. The v0.2.1 pod predates this Enforce policy
+          # (grandfathered); the v0.3.0 rollout was blocked with FailedCreate
+          # until this exclusion was added (2026-07-19).
+          - resources:
+              namespaces:
+                - nfs-quota-agent
       validate:
         message: "Privileged mode is disallowed."
         # =() 옵셔널 앵커 필수: 앵커 없이 쓰면 privileged 필드가 없는 파드
@@ -85,6 +92,12 @@ spec:
           - resources:
               namespaces:
                 - chaos-testing
+          # nfs-quota-agent sets hostPID: true (both v0.2.1 and v0.3.0) alongside
+          # privileged + hostPath(/dev,/srv/nfs/k8s) to manage XFS project quotas
+          # on the host. The running v0.2.1 pod was grandfathered before Enforce.
+          - resources:
+              namespaces:
+                - nfs-quota-agent
       validate:
         message: "Sharing the host namespace (hostNetwork, hostPID, hostIPC) is disallowed."
         pattern:

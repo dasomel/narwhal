@@ -56,7 +56,7 @@ ghcr.io/dasomel/goharbor/nginx-photon:v2.15.1
 ghcr.io/dasomel/goharbor/redis-photon:v2.15.1
 ghcr.io/dasomel/goharbor/registry-photon:v2.15.1
 ghcr.io/dasomel/narwhal-portal:1.0.15
-ghcr.io/dasomel/nfs-quota-agent:v0.2.1
+ghcr.io/dasomel/nfs-quota-agent:v0.3.0
 ghcr.io/dexidp/dex:v2.45.0
 ghcr.io/grafana/alloy-operator:1.10.0
 ghcr.io/headlamp-k8s/headlamp:v0.42.0

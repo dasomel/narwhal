@@ -890,10 +890,13 @@ spec:
                 X-XSS-Protection: "1; mode=block"
 ---
 # NFS Quota Agent (APISIX openid-connect — no native SSO support)
-# NOTE: APISIX IC now syncs this route (ApisixUpstream externalNodes), so this
-# ApisixRoute IS the canonical, IC-synced source — including the
-# serverless-post-function body_filter fix below. The former manual admin-API
+# NOTE: APISIX IC syncs this route (ApisixUpstream externalNodes), so this
+# ApisixRoute IS the canonical, IC-synced source. The former manual admin-API
 # route in 11-3-keycloak-clients.sh has been removed.
+# The serverless-post-function body_filter that patched the v0.2.1 raw-string
+# backtick HTML bug was removed 2026-07-19: v0.3.0 emits correct backticks
+# (verified 0 bug patterns / 6 real template literals in the live pod HTML),
+# so the buffering filter was dead weight.
 apiVersion: apisix.apache.org/v2
 kind: ApisixUpstream
 metadata:
@@ -939,36 +942,6 @@ spec:
               secret: "$env://HUBBLE_OIDC_SESSION_SECRET"
               cookie:
                 lifetime: 300
-        - name: serverless-post-function
-          enable: true
-          config:
-            phase: body_filter
-            # Fixes nfs-quota-agent v0.2.1 HTML bug: Go binary embeds
-            # ` + "`" + ` (raw string literal syntax) instead of backtick
-            # chars in JS template literals, causing SyntaxError in browser.
-            # This Lua replaces all 22 occurrences with real backtick chars.
-            functions:
-              - |
-                return function(conf, ctx)
-                  local body = ngx.arg[1]
-                  local eof = ngx.arg[2]
-                  if not ngx.ctx.nqs_buf then ngx.ctx.nqs_buf = {} end
-                  if body and #body > 0 then
-                    table.insert(ngx.ctx.nqs_buf, body)
-                    ngx.arg[1] = ''
-                  end
-                  if eof then
-                    local full = table.concat(ngx.ctx.nqs_buf)
-                    local bt = string.char(96)
-                    local dq = string.char(34)
-                    local sp = string.char(32)
-                    local bs = string.char(92)
-                    local pl = string.char(43)
-                    local pat = bt..sp..bs..pl..sp..dq..bt..dq..sp..bs..pl..sp..bt
-                    full = ngx.re.gsub(full, pat, bt, 'jo')
-                    ngx.arg[1] = full
-                  end
-                end
         - name: response-rewrite
           enable: true
           config:

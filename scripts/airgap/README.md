@@ -18,6 +18,23 @@ Rancher airgap 방식을 Narwhal에 적용한 버전입니다. 외부 인터넷�
                                    └──────────────────────────┘
 ```
 
+## 아키텍처별 번들 (arm64 / amd64)
+
+한 번들 = 한 아키텍처다(skopeo `--override-arch`가 멀티아치 매니페스트에서 단일
+아치를 골라 저장). `AIRGAP_ARCH`로 선택하며, 번들 디렉토리는 아치 접미사가 붙어
+서로 덮어쓰지 않는다:
+
+| 대상 | `AIRGAP_ARCH` | 번들 디렉토리(기본) |
+|------|---------------|---------------------|
+| 로컬 Apple-Silicon Vagrant 클러스터 | `linux/arm64` (기본) | `narwhal-airgap-bundle-arm64` |
+| **Kakao Cloud 등 x86_64** | `linux/amd64` | `narwhal-airgap-bundle-amd64` |
+
+`images.txt`(이미지 목록)는 아키텍처와 무관하게 공용이다 — 같은 목록으로 두 아치
+번들을 만든다. 저장되는 바이트(OCI 레이어)와 부트스트랩 `registry.tar`만 아치별로
+다르다. **Kakao Cloud용 amd64 번들**은 Phase A를 `AIRGAP_ARCH=linux/amd64`로 한 번
+더 돌리면 된다(아래 각 명령 앞에 `AIRGAP_ARCH=linux/amd64` prefix). amd64 변형이
+없는 이미지가 있으면 `02-save-images.sh`가 그 이미지에서 실패하므로 조기에 드러난다.
+
 ## 워크플로우
 
 ### Phase A — 인터넷 가능 환경에서 번들 생성
@@ -25,17 +42,22 @@ Rancher airgap 방식을 Narwhal에 적용한 버전입니다. 외부 인터넷�
 ```bash
 # 1. 이미지 목록 생성 — 실행 중인 클러스터에서 실제 이미지 세트를 추출 (권장)
 #    정적 소스 스캔(인자 없이 실행)은 Helm 차트 기본 이미지를 못 잡아 ~60개 누락되므로
-#    반드시 --live 를 사용한다. images.txt 는 이미 이 방식으로 커밋되어 있다.
+#    반드시 --live 를 사용한다. images.txt 는 이미 이 방식으로 커밋되어 있다. (아치 공용)
 ./scripts/airgap/01-generate-image-list.sh --live scripts/airgap/images.txt
 #    (정적 교차검증용:  ./scripts/airgap/01-generate-image-list.sh > /tmp/static.txt)
 
 # 2. 모든 이미지를 로컬 tar 번들로 저장 (skopeo + oci layout)
-./scripts/airgap/02-save-images.sh --list images.txt --out ./narwhal-airgap-bundle
+#    --out 을 생략하면 AIRGAP_BUNDLE_DIR(아치 접미사 자동) 로 저장된다.
+./scripts/airgap/02-save-images.sh --list scripts/airgap/images.txt
+#    Kakao Cloud(amd64):
+#    AIRGAP_ARCH=linux/amd64 ./scripts/airgap/02-save-images.sh --list scripts/airgap/images.txt
 
-# 3. Helm chart 다운로드
-./scripts/airgap/03-save-helm-charts.sh --out ./narwhal-airgap-bundle/charts
+# 3. Helm chart 다운로드 (아치 공용 — .tgz 는 아치 무관)
+./scripts/airgap/03-save-helm-charts.sh
+#    AIRGAP_ARCH=linux/amd64 ./scripts/airgap/03-save-helm-charts.sh   # amd64 번들에도 채우려면
 
-# 결과: narwhal-airgap-bundle/ 폴더를 USB/NAS로 전송
+# 결과: narwhal-airgap-bundle-<arch>/ 폴더를 USB/NAS로 전송
+#       (Kakao Cloud 로는 narwhal-airgap-bundle-amd64/ 를 가져간다)
 ```
 
 ### Phase B — 에어갭 내부에서 레지스트리 준비

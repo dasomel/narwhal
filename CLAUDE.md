@@ -116,7 +116,8 @@ Ralph loop: `/ralph` (OMC) with `.claude/templates/PROMPT.md`. Project slash com
 
 ## Code Style
 
-- **Shell Script**: `set -euo pipefail` required, 2 spaces indentation
+- **Shell Script**: `set -euo pipefail` required, 2 spaces indentation (CI blocks both:
+  shellcheck + the indent check in `.github/workflows/lint.yml`)
 - **YAML**: 2 spaces indentation
 - **Variable names**: ENV_VAR (environment), local_var (local)
 - **Filenames**: Numeric prefix for execution order (00-, 01-, ...)

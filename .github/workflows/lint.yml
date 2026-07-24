@@ -20,6 +20,21 @@ jobs:
         run: |
           find scripts/ -name '*.sh' -print0 | xargs -0 shellcheck --severity=warning
 
+      # CLAUDE.md documents 2-space indentation for shell. All 52 scripts already
+      # comply, so this blocks rather than warns. shellcheck does not cover it.
+      - name: Check 2-space indentation
+        run: |
+          set -euo pipefail
+          bad=0
+          while IFS= read -r f; do
+            width=$(grep -o '^ \+' "$f" | awk '{print length}' | sort -n | head -1)
+            if [ -n "$width" ] && [ "$width" -ne 2 ]; then
+              echo "$f: smallest indent is $width spaces, expected 2"
+              bad=1
+            fi
+          done < <(find scripts/ -name '*.sh')
+          exit "$bad"
+
   yaml-validate:
     name: YAML Validate (GitOps)
     runs-on: ubuntu-latest

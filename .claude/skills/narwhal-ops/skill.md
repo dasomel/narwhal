@@ -13,10 +13,17 @@ Orchestrates all infrastructure tasks for the Narwhal IDP cluster. Combines 4 sp
 
 | Agent | subagent_type | Role | Model |
 |-------|--------------|------|-------|
-| infra-engineer | infra-engineer | Script/YAML implementation | opus |
+| infra-engineer | infra-engineer | Script/YAML implementation | sonnet |
 | infra-scout | infra-scout | Version/compatibility research | sonnet |
 | infra-validator | infra-validator | Validation & security review | sonnet |
 | cluster-ops | cluster-ops | Cluster operations/debugging | sonnet |
+
+Model names are **aliases** (`haiku`/`sonnet`/`opus`), never pinned ids — they track the newest
+generation. Escalate a lane to `opus` only on an explicit trigger, not by default:
+- a sonnet lane already produced a demonstrably wrong result on this run, or
+- the pass is a **final security/approval gate on a high-risk change** (RBAC, secrets, admission
+  policy, API-server flags, anything that can take the cluster down) — then run Workflow 4 Phase 1
+  a second time with `infra-validator` on `opus`, in a separate context from whoever authored it.
 
 ## Workflow Routing
 
@@ -58,7 +65,7 @@ Agent(subagent_type: "Explore", model: "haiku", run_in_background: true,
 Pass research results to infra-engineer:
 
 ```
-Agent(subagent_type: "infra-engineer", model: "opus",
+Agent(subagent_type: "infra-engineer", model: "sonnet",
   prompt: "[component] implementation. Research: _workspace/02_scout_research.md.
            Patterns: _workspace/02_patterns.md.
            Provision patterns ref: .claude/skills/narwhal-ops/references/provision-patterns.md.
@@ -107,7 +114,7 @@ Agent(subagent_type: "infra-scout", model: "sonnet",
 ### Phase 3: Implementation
 
 ```
-Agent(subagent_type: "infra-engineer", model: "opus",
+Agent(subagent_type: "infra-engineer", model: "sonnet",
   prompt: "[component] version upgrade. Research: _workspace/02_upgrade_research.md.
            Modify: [related file list]. Include VERSIONS.md update.")
 ```

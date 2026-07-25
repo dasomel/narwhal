@@ -2,21 +2,8 @@
 
 > Vagrant-based Kubernetes Internal Developer Platform (IDP) cluster automated provisioning project
 
-## Quick Overview
-
-An infrastructure project that automatically provisions a complete Kubernetes IDP stack (GitOps, SSO, Monitoring, Storage, Backup) using Vagrant VMs in a local environment.
-
-> **Working procedure:** follow the global `<procedural_completion>` doctrine (`~/.claude/CLAUDE.md`) on substantive tasks — goal → decompose → execute → verify → risk (five principles + completion gate + escalation). Trivial one-shots answer directly.
-
----
-
-## Plan Mode Guide (Shift+Tab x2)
-
-When Plan mode is needed in Narwhal:
-- Adding a new component
-- Major modifications to existing scripts
-- Changing GitOps app structure
-- Version upgrades
+Provisions a full Kubernetes IDP stack (GitOps, SSO, monitoring, storage, backup) onto Vagrant
+VMs. Substantive work follows the global `<procedural_completion>` doctrine.
 
 ---
 
@@ -94,39 +81,23 @@ Ralph loop: `/ralph` (OMC) with `.claude/templates/PROMPT.md`. Project slash com
 
 ## Permissions
 
-### Allowed Operations
-- Modify shell scripts in scripts/ folder
-- Modify YAML files in gitops/apps/, gitops/resources/
-- Change Vagrantfile settings
-- Update documentation (README.md, docs/)
-
-### Forbidden Operations
-- Do not directly modify .vagrant/ folder
-- Do not hardcode sensitive information (passwords, tokens)
-- Do not remove `set -euo pipefail` from shell scripts
-- **Bitnami images/charts are banned** (exception only when absolutely no alternative exists)
-  - Risk of image deletion/inaccessibility due to Bitnami commercialization
-  - DB: Use official images or Operators (CloudNative-PG, etc.)
-  - Other: Prefer upstream official images, Alpine-based community images as fallback
-- **Minimize docker.io (Docker Hub) usage** (allow only when no alternative exists)
-  - Rate limit issues (anonymous 100pulls/6h, authenticated 200pulls/6h)
-  - Registry priority: `ghcr.io` > `registry.k8s.io` > `quay.io` > `docker.io`
-  - Use `ghcr.io/dasomel/` for custom images
-  - When docker.io usage is unavoidable, add a comment explaining the reason
-
-## Code Style
-
-- **Shell Script**: `set -euo pipefail` required, 2 spaces indentation (CI blocks both:
-  shellcheck + the indent check in `.github/workflows/lint.yml`)
-- **YAML**: 2 spaces indentation
-- **Variable names**: ENV_VAR (environment), local_var (local)
-- **Filenames**: Numeric prefix for execution order (00-, 01-, ...)
+- `.vagrant/` is generated — never edit it by hand.
+- Every script keeps `set -euo pipefail`. CI runs shellcheck and an indent check, but neither
+  catches a missing `set` line, so removing one fails silently.
+- **Bitnami images and charts are banned.** Bitnami's commercialization means a tag can vanish
+  from under a running cluster. Reach for the upstream official image or an Operator (CNPG for
+  Postgres, etc.); an Alpine-based community image is the next fallback. Only when genuinely no
+  alternative exists is Bitnami acceptable.
+- **Registry preference: `ghcr.io` > `registry.k8s.io` > `quay.io` > `docker.io`.** Docker Hub
+  rate-limits anonymous pulls at 100/6h, which is enough to break a full provision run. Custom
+  images go to `ghcr.io/dasomel/`. When docker.io is unavoidable, leave a comment saying why.
 
 ## Infrastructure Resource Safety
 
-- **Limit parallel cluster modifications to 2-3 max** -- concurrent operations cause OOM in Master 4GB / Worker 6GB environment
-- Do not restart/modify multiple pods simultaneously -- modify one -> verify stability -> next modification
-- Check resource availability with `kubectl top nodes` between cluster modification tasks before proceeding
-- After applying infrastructure/cluster changes, **verify from actual user perspective** (e.g., curl endpoint, kubectl exec test, DNS resolve)
+The VMs (sizes in the Vagrantfile) are tight enough that concurrency is the main way to take this
+cluster down. Change one thing, confirm it settled — `kubectl top nodes` between steps — then
+change the next; 2-3 parallel cluster modifications is the practical ceiling, and simultaneous pod
+restarts will OOM a node. Confirm from the user's side (curl the endpoint, resolve the name)
+rather than trusting that the apply succeeded.
 
 ---

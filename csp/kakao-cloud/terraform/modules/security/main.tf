@@ -145,6 +145,18 @@ resource "kakaocloud_security_group" "security_group" {
       remote_ip_prefix = "0.0.0.0/0"
       description      = "ICMP (Ping)"
     },
+    # Forward proxy on the bastion. Nodes sit on a private subnet with no NAT
+    # (provider 0.4.4 has no NAT gateway resource), so apt, GitHub releases and
+    # Helm repos are reached through squid on the bastion instead of giving every
+    # node a public IP. VPC-internal only — the proxy is never exposed publicly.
+    {
+      direction        = "ingress"
+      protocol         = "TCP"
+      port_range_min   = 3128
+      port_range_max   = 3128
+      remote_ip_prefix = var.vpc_cidr
+      description      = "Bastion forward proxy (squid), internal only"
+    },
     # All Egress
     {
       direction        = "egress"

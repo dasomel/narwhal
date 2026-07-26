@@ -64,3 +64,37 @@ resource "kakaocloud_instance" "worker" {
   user_data = var.cloud_init_base64
 }
 
+
+
+#####################################################################
+# Node egress
+#
+# Nodes reach apt, GitHub releases and Helm repos through the squid forward
+# proxy on the bastion (scripts/cloud/setup-bastion-proxy.sh) — provider 0.4.4
+# exposes no NAT gateway resource, and a public IP per node would expose the
+# SSH and 6443 rules that this security group opens to 0.0.0.0/0.
+#
+# These stay here as an escape hatch: flip assign_node_public_ips to true and
+# the nodes get direct egress without the proxy. Off by default.
+#####################################################################
+resource "kakaocloud_public_ip" "master" {
+  count       = var.assign_node_public_ips ? var.master_count : 0
+  description = "Egress for ${var.master_name}-${count.index + 1}"
+
+  related_resource = {
+    device_id   = kakaocloud_instance.master[count.index].id
+    device_type = "instance"
+    id          = kakaocloud_instance.master[count.index].addresses[0].network_interface_id
+  }
+}
+
+resource "kakaocloud_public_ip" "worker" {
+  count       = var.assign_node_public_ips ? var.worker_count : 0
+  description = "Egress for ${var.worker_name}-${count.index + 1}"
+
+  related_resource = {
+    device_id   = kakaocloud_instance.worker[count.index].id
+    device_type = "instance"
+    id          = kakaocloud_instance.worker[count.index].addresses[0].network_interface_id
+  }
+}

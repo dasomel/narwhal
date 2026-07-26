@@ -128,3 +128,13 @@ output "bastion_ssh" {
     workers = [for ip in module.compute.worker_private_ips : "ssh -i ${var.ssh_key_path} -J ubuntu@${kakaocloud_public_ip.bastion_public.public_ip} ubuntu@${ip}"]
   }
 }
+
+output "vpc_cidr" {
+  description = "VPC CIDR block (used by the cloud helper scripts for proxy ACLs and NO_PROXY)"
+  value       = module.network.vpc_cidr
+}
+
+output "ssh_key_path" {
+  description = "Absolute path to the generated private key. Absolute on purpose: var.ssh_key_path is relative to this directory, and the helper scripts run from the repo root."
+  value       = abspath(var.ssh_key_path)
+}

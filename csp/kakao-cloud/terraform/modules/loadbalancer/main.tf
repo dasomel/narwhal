@@ -1,15 +1,11 @@
 # LoadBalancer Module - Master and Worker Load Balancers
 # This module manages Load Balancers for K8s API Server and Worker nodes
 
-# Data source for LB flavors
-data "kakaocloud_load_balancer_flavors" "load_balancer_flavors_all" {}
-
-locals {
-  lb_flavor_nlb_id = [
-    for lb_flavor in data.kakaocloud_load_balancer_flavors.load_balancer_flavors_all.flavors : lb_flavor.id
-    if lb_flavor.name == "NLB"
-  ][0]
-}
+# The NLB flavor is looked up in the ROOT module and injected. Keeping the data
+# source here would put it behind this module's depends_on, so any pending change
+# in module.compute would defer it to apply time, make flavor_id unknown and force
+# both load balancers to be replaced — which changes the API server VIP under a
+# running cluster. See the depends_on comment in ../../main.tf.
 
 #####################################################################
 # Master Load Balancer (K8s API Server + Ingress)
@@ -20,7 +16,7 @@ resource "kakaocloud_load_balancer" "master_lb" {
   description       = "Load Balancer for K8s API Server"
   availability_zone = var.availability_zone
   subnet_id         = var.subnet_id
-  flavor_id         = local.lb_flavor_nlb_id
+  flavor_id         = var.lb_flavor_id
 }
 
 # K8s API Server Listener (TCP 6443)
@@ -140,7 +136,7 @@ resource "kakaocloud_load_balancer" "worker_lb" {
   description       = "Load Balancer for K8s worker nodes"
   availability_zone = var.availability_zone
   subnet_id         = var.subnet_id
-  flavor_id         = local.lb_flavor_nlb_id
+  flavor_id         = var.lb_flavor_id
 }
 
 # HTTP Listener (TCP 80)

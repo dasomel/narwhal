@@ -82,3 +82,9 @@ variable "cloud_init_base64" {
   description = "Base64 encoded cloud-init user data"
   type        = string
 }
+
+variable "assign_node_public_ips" {
+  description = "Attach a public IP to every master/worker instead of using the bastion forward proxy. Default off — nodes stay private."
+  type        = bool
+  default     = false
+}

@@ -12,8 +12,8 @@ output "master_private_ips" {
 }
 
 output "master_public_ips" {
-  description = "Master node public IPs (null if no public IP assigned)"
-  value       = [for instance in kakaocloud_instance.master : try(instance.addresses[0].public_ip, "")]
+  description = "Master node public IPs (empty when assign_node_public_ips is false)"
+  value       = kakaocloud_public_ip.master[*].public_ip
 }
 
 output "master_instances" {
@@ -35,8 +35,8 @@ output "worker_private_ips" {
 }
 
 output "worker_public_ips" {
-  description = "Worker node public IPs (null if no public IP assigned)"
-  value       = [for instance in kakaocloud_instance.worker : try(instance.addresses[0].public_ip, "")]
+  description = "Worker node public IPs (empty when assign_node_public_ips is false)"
+  value       = kakaocloud_public_ip.worker[*].public_ip
 }
 
 output "worker_instances" {

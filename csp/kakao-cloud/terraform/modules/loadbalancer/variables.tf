@@ -34,16 +34,9 @@ variable "worker_private_ips" {
 }
 
 # Dependencies
-variable "master_instances_dependency" {
-  description = "Master instances dependency"
-  type        = any
-  default     = null
+
+
+variable "lb_flavor_id" {
+  description = "NLB flavor id, resolved by the root module so this module's depends_on cannot defer it"
+  type        = string
 }
-
-
-variable "worker_instances_dependency" {
-  description = "Worker instances dependency"
-  type        = any
-  default     = null
-}
-

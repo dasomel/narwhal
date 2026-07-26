@@ -200,3 +200,9 @@ variable "bastion_volume_size" {
     error_message = "bastion_volume_size must be between 20 and 200 GB"
   }
 }
+
+variable "assign_node_public_ips" {
+  description = "Attach a public IP to every master/worker instead of routing their egress through the bastion proxy. Off by default: the squid proxy on the bastion keeps the nodes private, whereas a public IP per node would expose the SSH and 6443 rules that are open to 0.0.0.0/0. Escape hatch for when the proxy is not an option."
+  type        = bool
+  default     = false
+}

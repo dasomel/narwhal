@@ -7,6 +7,13 @@ VMs. Substantive work follows the global `<procedural_completion>` doctrine.
 
 ---
 
+## Plan Mode Guide (Shift+Tab x2)
+
+Use Plan mode for: adding a new component, major modifications to existing scripts, changing the
+GitOps app structure, and version upgrades.
+
+---
+
 ## Recurring Rules
 
 > Dated incident history lives in [`docs/lessons-log.md`](docs/lessons-log.md). Only rules that
@@ -81,6 +88,8 @@ Ralph loop: `/ralph` (OMC) with `.claude/templates/PROMPT.md`. Project slash com
 
 ## Guardrails
 
+- Freely editable: shell scripts under `scripts/`, YAML under `gitops/apps/` and
+  `gitops/resources/`, `Vagrantfile` settings, and docs (`README.md`, `docs/`).
 - `.vagrant/` is generated — never edit it by hand.
 - Never hardcode a password, token, or kubeconfig credential into a script or manifest. Nothing
   in CI catches one.

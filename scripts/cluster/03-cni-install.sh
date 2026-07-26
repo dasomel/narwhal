@@ -52,6 +52,12 @@ case "${CNI_PLUGIN}" in
     # answered 200, while manifests/sha256:2eb679... — the ref the chart actually
     # requested — was 404, and squid logged 37 quay.io CONNECTs.
     # Tags become authoritative here; the images.txt refs are already version-pinned.
+    # operator.resources: the chart leaves the operator with no resources block, which puts
+    # it in the BestEffort QoS class -> highest oom_score_adj -> the kernel kills it first
+    # under node memory pressure. Observed on master-2: OOMKilled (exit 137) 14x in 9h while
+    # the node sat at 89% real memory but only 14% requests, so the scheduler still read it
+    # as empty. No CPU limit on purpose - throttling the CNI control plane during a reconcile
+    # storm trades an OOM for a hang.
     cilium install --version "${CILIUM_VERSION}" \
       --set kubeProxyReplacement=true \
       --set k8sServiceHost="${K8S_API_SERVER}" \
@@ -61,6 +67,9 @@ case "${CNI_PLUGIN}" in
       --set gatewayAPI.enabled=true \
       --set cni.exclusive=false \
       --set socketLB.hostNamespaceOnly=true \
+      --set operator.resources.requests.cpu=50m \
+      --set operator.resources.requests.memory=128Mi \
+      --set operator.resources.limits.memory=512Mi \
       --set image.useDigest=false \
       --set operator.image.useDigest=false \
       --set envoy.image.useDigest=false \

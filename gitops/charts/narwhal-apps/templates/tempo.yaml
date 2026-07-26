@@ -23,6 +23,18 @@ spec:
           # top-level override is silently accepted but never wired to the
           # StatefulSet's container image).
           tag: 2.9.0
+          # The chart ships `tempo.resources: {}`, which leaves the pod BestEffort — the
+          # highest oom_score_adj on the node, so the kernel kills it first. tempo was the
+          # last workload still OOM-looping (94 restarts) once the apiserver heap bound
+          # relieved node-wide pressure and every other crashloop froze. Measured steady
+          # state is ~827Mi, so the request covers the floor and the limit leaves room for
+          # compaction spikes without letting it crowd out the node again.
+          resources:
+            requests:
+              cpu: 100m
+              memory: 512Mi
+            limits:
+              memory: 1536Mi
           storage:
             trace:
               backend: s3

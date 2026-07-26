@@ -34,8 +34,26 @@ case "${SSH_KEY}" in /*) ;; *) SSH_KEY="${TF_DIR}/${SSH_KEY#./}" ;; esac
 VPC_CIDR=$(cd "${TF_DIR}" && tofu output -raw vpc_cidr 2>/dev/null || echo "172.16.0.0/16")
 
 PROXY_URL="http://${BASTION_PRIVATE_IP}:${PROXY_PORT}"
+
+# The CIDRs are for Go-based clients (containerd, helm, kubectl) — they parse them.
+# curl does NOT: it only matches exact hosts and domain suffixes, so a VPC CIDR
+# alone still sends in-VPC requests to the proxy, which then cannot reach them.
+# Every in-VPC address a script actually curls is therefore listed literally too.
 # 10.244.0.0/16 = podSubnet, 10.96.0.0/12 = serviceSubnet (scripts/cluster/02-init-cluster.sh).
-NO_PROXY_LIST="localhost,127.0.0.1,::1,${VPC_CIDR},10.244.0.0/16,10.96.0.0/12,169.254.169.254,${AIRGAP_REGISTRY%%:*},.svc,.svc.cluster.local,.cluster.local,.local.narwhal.internal"
+_literal_hosts="${BASTION_PRIVATE_IP}"
+_node_json=$(cd "${TF_DIR}" && tofu output -json master_private_ips && tofu output -json worker_private_ips)
+while IFS= read -r _n; do
+  [ -n "${_n}" ] && _literal_hosts="${_literal_hosts},${_n}"
+done < <(printf '%s\n' "${_node_json}" | python3 -c '
+import json, sys
+for line in sys.stdin:
+    line = line.strip()
+    if line:
+        for ip in json.loads(line):
+            print(ip)
+')
+
+NO_PROXY_LIST="localhost,127.0.0.1,::1,${_literal_hosts},${VPC_CIDR},10.244.0.0/16,10.96.0.0/12,169.254.169.254,${AIRGAP_REGISTRY%%:*},.svc,.svc.cluster.local,.cluster.local,.local.narwhal.internal"
 
 if [ $# -gt 0 ]; then
   NODES=("$@")
@@ -72,9 +90,16 @@ for ip in "${NODES[@]}"; do
   echo ""
   echo "=== ${ip} ==="
 
+  # Retries matter more here than on a normal host: every package on every node
+  # funnels through one squid on one bastion, and apt defaults to zero retries.
+  # A 31-second proxy restart on 2026-07-26 failed 02-containerd.sh on all six
+  # nodes at once — a transient blip should cost seconds, not a provisioning run.
   ssh_node "${ip}" "sudo tee /etc/apt/apt.conf.d/01narwhal-proxy >/dev/null" <<EOF
 Acquire::http::Proxy "${PROXY_URL}";
 Acquire::https::Proxy "${PROXY_URL}";
+Acquire::Retries "5";
+Acquire::http::Timeout "30";
+Acquire::https::Timeout "30";
 EOF
 
   # Appended, not overwritten: /etc/environment already carries PATH on Ubuntu.

@@ -157,6 +157,17 @@ resource "kakaocloud_security_group" "security_group" {
       remote_ip_prefix = var.vpc_cidr
       description      = "Bastion forward proxy (squid), internal only"
     },
+    # Airgap bootstrap registry (registry:2 on the bastion). Hosts every mirrored
+    # image until Harbor is up, so containerd on every node pulls from it.
+    # VPC-internal only.
+    {
+      direction        = "ingress"
+      protocol         = "TCP"
+      port_range_min   = 5000
+      port_range_max   = 5000
+      remote_ip_prefix = var.vpc_cidr
+      description      = "Airgap bootstrap registry, internal only"
+    },
     # All Egress
     {
       direction        = "egress"

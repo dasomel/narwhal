@@ -77,9 +77,32 @@ push_dir() {
     | ssh_node "${ip}" "tar xzf - -C '$(dirname "${dest}")'"
 }
 
+# Ubuntu cloud images ship unattended-upgrades enabled and apt-daily-upgrade.timer
+# fires within ~20 minutes of first boot. The provisioning scripts assume exclusive
+# dpkg access, so on 2026-07-26 it held /var/lib/dpkg/lock-frontend and killed
+# 02-containerd.sh on two nodes; on the bastion the same run upgraded squid and
+# restarted it, which is what made apt fail with "Connection refused" on all six.
+# The pre-baked Vagrant box never hits either, which is why nothing guarded it.
+quiesce_apt() {
+  local ip="$1"
+  ssh_node "${ip}" "
+    sudo systemctl disable --now unattended-upgrades.service 2>/dev/null || true
+    sudo systemctl disable --now apt-daily.timer apt-daily-upgrade.timer 2>/dev/null || true
+    sudo systemctl stop apt-daily.service apt-daily-upgrade.service 2>/dev/null || true
+    # Whatever is mid-transaction still has to finish before we can install.
+    for _ in \$(seq 1 60); do
+      sudo fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1 || break
+      sleep 5
+    done
+    sudo dpkg --configure -a 2>/dev/null || true
+    echo \"    apt quiesced (unattended-upgrades: \$(systemctl is-enabled unattended-upgrades.service 2>/dev/null || echo removed))\"
+  "
+}
+
 for ip in "${NODES[@]}"; do
   echo ""
   echo "=== Staging ${ip} ==="
+  quiesce_apt "${ip}"
   ssh_node "${ip}" "sudo mkdir -p '${STAGE_DIR}' && sudo chown ${SSH_USER}:${SSH_USER} '${STAGE_DIR}'"
 
   # Mirrors the Vagrantfile synced_folder contract exactly:

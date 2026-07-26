@@ -210,6 +210,11 @@ else
   sudo kubeadm init --config=/tmp/kubeadm-config.yaml --skip-phases=addon/kube-proxy --upload-certs
 fi
 
+# Bound the apiserver's heap before anything else lands on this node. kubeadm gives it no
+# memory request and no ceiling, so it grows until the node is out and the kernel starts
+# culling BestEffort pods instead. See the script for the measurements.
+"$(dirname "${BASH_SOURCE[0]}")/patch-apiserver-memory.sh"
+
 # Configure kubeconfig for vagrant user
 mkdir -p /home/vagrant/.kube
 sudo cp -i /etc/kubernetes/admin.conf /home/vagrant/.kube/config
@@ -297,6 +302,17 @@ spec:
       value: "${VIP_ADDRESS}"
     - name: prometheus_server
       value: :2112
+    # Without a resources block kube-vip lands in the BestEffort QoS class, which gives it
+    # the highest oom_score_adj on the node — so the kernel kills the thing holding the
+    # control-plane VIP first whenever a master runs short. Measured steady state is
+    # 19-48Mi; the limit is deliberately far above that because losing kube-vip costs the
+    # API endpoint, while a little unused headroom costs nothing.
+    resources:
+      requests:
+        cpu: 25m
+        memory: 64Mi
+      limits:
+        memory: 256Mi
     securityContext:
       capabilities:
         add:

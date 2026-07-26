@@ -109,6 +109,10 @@ echo "Executing control plane join..."
 # Append --apiserver-advertise-address to use correct network interface
 sudo bash -c "$(cat /tmp/join-control-plane.sh) --apiserver-advertise-address=${LOCAL_IP}"
 
+# Same heap bound master-1 applies in 02-init-cluster.sh: this node renders its apiserver
+# from the shared ClusterConfiguration, which carries no memory request or ceiling.
+"$(dirname "${BASH_SOURCE[0]}")/patch-apiserver-memory.sh"
+
 #=========================================
 # Configure kubeconfig for vagrant user
 #=========================================
@@ -187,6 +191,14 @@ spec:
       value: "${VIP_ADDRESS}"
     - name: prometheus_server
       value: :2112
+    # Keep in sync with the same block in 02-init-cluster.sh. Without resources kube-vip is
+    # BestEffort and the kernel OOM-kills the holder of the control-plane VIP first.
+    resources:
+      requests:
+        cpu: 25m
+        memory: 64Mi
+      limits:
+        memory: 256Mi
     securityContext:
       capabilities:
         add:

@@ -52,6 +52,33 @@ for np in $(kubectl get networkpolicy -n devtools -o name 2>/dev/null | grep arg
     -p='[{"op": "add", "path": "/spec/ingress/0/ports/-", "value": {"port": 15008, "protocol": "TCP"}}]' 2>/dev/null || true
 done
 
+# Give every ArgoCD workload resource requests/limits.
+# Upstream install.yaml ships NO resources block, so all 7 components land in the
+# BestEffort QoS class -> highest oom_score_adj -> the kernel picks them first when
+# a node hits memory pressure. Symptom: application-controller OOMKilled (exit 137)
+# seconds after start, CrashLoopBackOff, GitOps reconciliation silently frozen while
+# every Application still reports its last-known Synced/Healthy status.
+# Requests also keep the scheduler from stacking these onto an already-saturated node,
+# which is how the controller ended up on a worker at 93% memory requests.
+echo "Setting resource requests/limits on ArgoCD workloads..."
+patch_resources() {
+  local kind="$1" name="$2" cpu_req="$3" mem_req="$4" cpu_lim="$5" mem_lim="$6"
+  kubectl patch "$kind" "$name" -n devtools --type='json' \
+    -p="[{\"op\": \"add\", \"path\": \"/spec/template/spec/containers/0/resources\", \"value\": {\"requests\": {\"cpu\": \"${cpu_req}\", \"memory\": \"${mem_req}\"}, \"limits\": {\"cpu\": \"${cpu_lim}\", \"memory\": \"${mem_lim}\"}}}]"
+}
+
+# application-controller carries the reconcile loop for every Application - by far the
+# largest consumer, and the one that was actually being OOM-killed.
+patch_resources statefulset argocd-application-controller 250m 512Mi 1000m 2Gi
+patch_resources deployment  argocd-repo-server            100m 256Mi 1000m 1Gi
+patch_resources deployment  argocd-server                  50m 128Mi  500m 512Mi
+patch_resources deployment  argocd-applicationset-controller 50m 128Mi 500m 512Mi
+# redis: an OOM kill here reproduces the recurring "redis EOF wedge" (repo-server
+# loses its cache, apps go Unknown), so it gets a floor too.
+patch_resources deployment  argocd-redis                   50m  64Mi  200m 256Mi
+patch_resources deployment  argocd-notifications-controller 25m 64Mi  200m 256Mi
+patch_resources deployment  argocd-dex-server              25m  64Mi  100m 128Mi
+
 # Fix Istio ambient mesh + kubelet health probe conflict
 # In ambient mode, ztunnel intercepts ALL inbound pod traffic including kubelet probes.
 # Kubelet sends plain HTTP probes; ztunnel expects mTLS -> probe times out -> CrashLoopBackOff.

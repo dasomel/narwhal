@@ -61,7 +61,15 @@ TOMLEOF
   ${sudo_cmd} systemctl restart containerd
 }
 
-# If we're on master-1 (has kubectl + vagrant keys), propagate to all nodes
+# Login user on the other nodes. Vagrant boxes use vagrant; cloud images use the
+# distro default (ubuntu on Kakao Cloud), so PROVIDER picks it unless overridden.
+if [ "${PROVIDER:-vagrant}" = "kakao" ]; then
+  NODE_SSH_USER="${NODE_SSH_USER:-ubuntu}"
+else
+  NODE_SSH_USER="${NODE_SSH_USER:-vagrant}"
+fi
+
+# If we're on master-1 (has kubectl + node SSH keys), propagate to all nodes
 if command -v kubectl >/dev/null 2>&1 && kubectl get nodes >/dev/null 2>&1; then
   echo "Configuring all cluster nodes..."
   NODES=$(kubectl get nodes -o jsonpath='{range .items[*]}{.status.addresses[?(@.type=="InternalIP")].address}{"\n"}{end}')
@@ -78,7 +86,7 @@ REG_SCHEME="${REG_SCHEME}"
 configure_node sudo
 EOF
     ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
-      "vagrant@${ip}" "bash -s" < "${tmpfile}" || echo "  WARN: failed on ${ip}"
+      "${NODE_SSH_USER}@${ip}" "bash -s" < "${tmpfile}" || echo "  WARN: failed on ${ip}"
     rm -f "${tmpfile}"
   done
 else

@@ -138,3 +138,8 @@ output "ssh_key_path" {
   description = "Absolute path to the generated private key. Absolute on purpose: var.ssh_key_path is relative to this directory, and the helper scripts run from the repo root."
   value       = abspath(var.ssh_key_path)
 }
+
+output "subnet_cidr" {
+  description = "Node subnet CIDR. The provisioning scripts need it for HOST_NETWORK_CIDR — the NFS export ACL is built from it, and a Vagrant-shaped default (192.168.56.0/24) makes every CSI mount fail."
+  value       = module.network.subnet_cidr
+}

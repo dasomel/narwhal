@@ -257,6 +257,13 @@ for attempt in {1..60}; do
     -o jsonpath='{.spec.instances}' 2>/dev/null || echo "0")
   READY_INSTANCES=$(kubectl get cluster narwhal-db -n database \
     -o jsonpath='{.status.readyInstances}' 2>/dev/null || echo "0")
+  # jsonpath prints an empty string when the field is absent, and `||` never fires
+  # because kubectl exited 0 — so the default is not applied and the numeric test
+  # below aborts the loop body with "[: : integer expression expected" every tick.
+  # status.readyInstances is absent for the whole "Setting up primary" phase, which
+  # is exactly when this loop is supposed to be waiting.
+  [ -n "${SPEC_INSTANCES//[!0-9]/}" ] || SPEC_INSTANCES=0
+  [ -n "${READY_INSTANCES//[!0-9]/}" ] || READY_INSTANCES=0
   if [ "${SPEC_INSTANCES}" -gt 0 ] && [ "${READY_INSTANCES}" -ge "${SPEC_INSTANCES}" ]; then
     echo "PostgreSQL cluster ready: ${READY_INSTANCES}/${SPEC_INSTANCES} instances"
     CLUSTER_READY=true

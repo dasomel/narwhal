@@ -11,6 +11,7 @@
 #   mirror  06-configure-mirrors --local-only (all nodes)
 #   init    01-nfs-server, 02-init-cluster, 03-cni-install (master-1)
 #   join    distribute artifacts, then control-planes serially, then workers
+#   nfs     01-nfs-server (master-1) — re-export without re-running kubeadm init
 #   phase1  04-addons, 05-nfs-quota-agent (master-1)
 #   phase2  06-phase2-start (master-1) — runs the 18 platform scripts itself
 #
@@ -32,13 +33,14 @@ DOMAIN="${DOMAIN:-local.narwhal.internal}"
 
 cd "$(dirname "$0")/../.."
 
-[ $# -gt 0 ] || { echo "usage: $0 <base|mirror|init|join|phase1|phase2|all>..." >&2; exit 1; }
+[ $# -gt 0 ] || { echo "usage: $0 <base|mirror|init|join|nfs|phase1|phase2|all>..." >&2; exit 1; }
 
 # ── OpenTofu state is the single source of truth for every address ───────────────
 BASTION_IP=$(cd "${TF_DIR}" && tofu output -raw bastion_public_ip)
 VIP=$(cd "${TF_DIR}" && tofu output -raw master_lb_vip)
 APISIX_LB_IP=$(cd "${TF_DIR}" && tofu output -raw worker_lb_vip)
 BASTION_PRIVATE_IP=$(cd "${TF_DIR}" && tofu output -raw bastion_private_ip)
+SUBNET_CIDR=$(cd "${TF_DIR}" && tofu output -raw subnet_cidr)
 # The bootstrap registry runs on the bastion (04-bootstrap-registry.sh needs a
 # container runtime, and a cluster node has only ctr).
 AIRGAP_REGISTRY="${AIRGAP_REGISTRY:-${BASTION_PRIVATE_IP}:5000}"
@@ -91,6 +93,8 @@ WORKER_IP_BASE=${WORKER_IP_BASE} \
 MASTER_COUNT=${#MASTERS[@]} \
 MASTER_IPS='${MASTER_IPS}' \
 MASTER_HOSTNAME=${MASTER_HOSTNAME} \
+NFS_SERVER_IP=${MASTER1} \
+HOST_NETWORK_CIDR=${SUBNET_CIDR} \
 AIRGAP_REGISTRY=${AIRGAP_REGISTRY} \
 KUBECONFIG=${STAGE_DIR}/.kube/config-local"
 }
@@ -183,6 +187,14 @@ stage_join() {
   done
 }
 
+# Separate from `init` on purpose: re-exporting NFS must not mean re-running
+# kubeadm init. 01-nfs-server.sh is idempotent, so this is safe to repeat.
+stage_nfs() {
+  log "nfs: re-export /srv/nfs/k8s for ${SUBNET_CIDR} on master-1"
+  ssh_node "${MASTER1}" "sudo env $(node_env) ${STAGE_DIR}/scripts/cluster/01-nfs-server.sh >/tmp/nfs.log 2>&1"
+  note "exports: $(ssh_node "${MASTER1}" "sudo exportfs -s" | tr -d '\r' | tr '\n' ' ')"
+}
+
 stage_phase1() {
   log "phase1: addons, nfs-quota-agent (MASTER_HOSTNAME=${MASTER_HOSTNAME})"
   if stage_done "${MASTER1}" phase1; then note "skip (done)"; return 0; fi
@@ -211,12 +223,13 @@ echo "masters=${MASTERS[*]}  workers=${WORKERS[*]}"
 for arg in "$@"; do
   case "${arg}" in
     base)   stage_base ;;
+    nfs)    stage_nfs ;;
     mirror) stage_mirror ;;
     init)   stage_init ;;
     join)   stage_join ;;
     phase1) stage_phase1 ;;
     phase2) stage_phase2 ;;
-    all)    stage_base && stage_mirror && stage_init && stage_join && stage_phase1 && stage_phase2 ;;
+    all)    stage_base && stage_mirror && stage_init && stage_join && stage_nfs && stage_phase1 && stage_phase2 ;;
     *) echo "unknown stage: ${arg}" >&2; exit 1 ;;
   esac
 done

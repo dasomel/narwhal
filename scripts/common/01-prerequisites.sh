@@ -265,4 +265,37 @@ else
 fi
 
 
+# ──────────────────────────────────────────────
+# Kernel prerequisites for kubeadm
+#
+# Nothing in this repo used to establish these — the pre-baked box already ships
+# /etc/sysctl.d/k8s-network.conf and /etc/modules-load.d/k8s.conf, so the dependency
+# was invisible until a plain cloud image was used. There kubeadm init dies at
+# preflight with
+#   [ERROR FileContent--proc-sys-net-ipv4-ip_forward]: contents are not set to 1
+# Idempotent, so it is a no-op on the box.
+#
+# br_netfilter must be loaded BEFORE the bridge sysctls are applied: the
+# net.bridge.* keys do not exist until the module is in, and sysctl silently skips
+# missing keys.
+# ──────────────────────────────────────────────
+echo "Ensuring kubeadm kernel prerequisites (modules + sysctl)..."
+sudo tee /etc/modules-load.d/k8s.conf >/dev/null <<'MODEOF'
+overlay
+br_netfilter
+MODEOF
+for mod in overlay br_netfilter; do
+  sudo modprobe "${mod}" 2>/dev/null || echo "  WARN: modprobe ${mod} failed"
+done
+
+sudo tee /etc/sysctl.d/k8s-network.conf >/dev/null <<'SYSEOF'
+net.bridge.bridge-nf-call-iptables  = 1
+net.bridge.bridge-nf-call-ip6tables = 1
+net.ipv4.ip_forward                 = 1
+SYSEOF
+sudo sysctl --system >/dev/null 2>&1 || true
+
+echo "  ip_forward=$(cat /proc/sys/net/ipv4/ip_forward)" \
+     "bridge-nf-call-iptables=$(cat /proc/sys/net/bridge/bridge-nf-call-iptables 2>/dev/null || echo NA)"
+
 echo "=== Prerequisites Done ==="

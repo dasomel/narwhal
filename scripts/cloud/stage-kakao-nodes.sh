@@ -99,10 +99,31 @@ quiesce_apt() {
   "
 }
 
+# The provisioning scripts assume a vagrant user exists, not just the /home/vagrant
+# path: 02-init-cluster.sh chowns the kubeconfig to vagrant:vagrant and dies with
+# "chown: invalid user: 'vagrant:vagrant'" on a cloud image. Creating the account is
+# the same call as reproducing the path — it satisfies every such assumption at once,
+# including any not found by grep, and leaves the Vagrant path untouched.
+#
+# ubuntu joins the group and the tree stays group-writable so staging, which runs as
+# ubuntu over ssh, keeps working after the directory changes owner.
+ensure_vagrant_user() {
+  local ip="$1"
+  ssh_node "${ip}" "
+    id vagrant >/dev/null 2>&1 || sudo useradd --home-dir '${STAGE_DIR}' --shell /bin/bash vagrant
+    sudo usermod -aG vagrant ${SSH_USER}
+    sudo mkdir -p '${STAGE_DIR}'
+    sudo chown -R vagrant:vagrant '${STAGE_DIR}'
+    sudo chmod -R g+w '${STAGE_DIR}'
+    echo \"    vagrant user: uid=\$(id -u vagrant) home=\$(getent passwd vagrant | cut -d: -f6)\"
+  "
+}
+
 for ip in "${NODES[@]}"; do
   echo ""
   echo "=== Staging ${ip} ==="
   quiesce_apt "${ip}"
+  ensure_vagrant_user "${ip}"
   ssh_node "${ip}" "sudo mkdir -p '${STAGE_DIR}' && sudo chown ${SSH_USER}:${SSH_USER} '${STAGE_DIR}'"
 
   # Mirrors the Vagrantfile synced_folder contract exactly:

@@ -42,6 +42,16 @@ case "${CNI_PLUGIN}" in
     # Note: APISIX is the actual Gateway Controller (GatewayClass: apisix)
     # Cilium's gatewayAPI.enabled allows network-level integration with Gateway API resources
     echo "Installing Cilium ${CILIUM_VERSION} with Hubble and kube-proxy replacement..."
+    # useDigest=false on every Cilium image: the chart pins images by digest, and a
+    # digest can never resolve from the airgap mirror. 02-save-images.sh saves one
+    # architecture (--override-arch), so what lands in the bundle is the per-arch
+    # manifest, whose digest differs from the multi-arch index digest the chart pins.
+    # containerd gets a 404 for the digest and falls back to `server = https://quay.io`,
+    # which in a real airgap means the CNI never installs. Verified 2026-07-26 on
+    # Kakao Cloud: quay.io/cilium/cilium tags/list had v1.19.4 and manifests/v1.19.4
+    # answered 200, while manifests/sha256:2eb679... — the ref the chart actually
+    # requested — was 404, and squid logged 37 quay.io CONNECTs.
+    # Tags become authoritative here; the images.txt refs are already version-pinned.
     cilium install --version "${CILIUM_VERSION}" \
       --set kubeProxyReplacement=true \
       --set k8sServiceHost="${K8S_API_SERVER}" \
@@ -50,7 +60,15 @@ case "${CNI_PLUGIN}" in
       --set hubble.ui.enabled=true \
       --set gatewayAPI.enabled=true \
       --set cni.exclusive=false \
-      --set socketLB.hostNamespaceOnly=true
+      --set socketLB.hostNamespaceOnly=true \
+      --set image.useDigest=false \
+      --set operator.image.useDigest=false \
+      --set envoy.image.useDigest=false \
+      --set hubble.relay.image.useDigest=false \
+      --set hubble.ui.backend.image.useDigest=false \
+      --set hubble.ui.frontend.image.useDigest=false \
+      --set preflight.image.useDigest=false \
+      --set clustermesh.apiserver.image.useDigest=false
 
     # D6: Wait for cilium-operator Ready before declaring Phase-1 CNI done.
     # The operator hitting Unauthorized on a slow apiserver SA-token issuance is the

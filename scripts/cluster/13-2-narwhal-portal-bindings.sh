@@ -322,10 +322,19 @@ if [ -n "${ARGOCD_ADMIN_PASS}" ]; then
       -d "{\"username\":\"admin\",\"password\":\"${ARGOCD_ADMIN_PASS}\"}" \
       | python3 -c "import sys,json; print(json.load(sys.stdin).get('token',''))" 2>/dev/null || echo "")
     if [ -n "${ARGOCD_JWT}" ]; then
-      # 기존 토큰 삭제 후 재발급 (멱등)
-      curl -sk --max-time 10 -X DELETE \
+      # 기존 토큰 삭제 후 재발급. Content-Type 은 DELETE 에도 필수다 — 없으면 ArgoCD 가
+      # 415 "Invalid content type" 를 돌려주고, `|| true` 가 그것을 삼킨다. 그러면 다음
+      # POST 가 "account already has token with id 'portal-main'" 로 500 이 되어 토큰이
+      # 한 번 생긴 뒤에는 재발급이 영구 실패하고, secret 에 REPLACE_ME 가 남는다.
+      # 토큰 값은 발급 시점에만 반환되므로 삭제 없이는 복구할 수 없다.
+      del_code=$(curl -sk --max-time 10 -o /dev/null -w '%{http_code}' -X DELETE \
         "https://argocd.${DOMAIN}/api/v1/account/narwhal-portal/token/portal-main" \
-        -H "Authorization: Bearer ${ARGOCD_JWT}" >/dev/null 2>&1 || true
+        -H "Authorization: Bearer ${ARGOCD_JWT}" \
+        -H "Content-Type: application/json" || echo "000")
+      case "${del_code}" in
+        200|404) : ;;  # 삭제됨 / 애초에 없음 — 둘 다 정상
+        *) echo "  WARN: 기존 토큰 삭제 실패 (HTTP ${del_code}) — 재발급이 실패할 수 있음" ;;
+      esac
       ARGOCD_TOKEN=$(curl -sk --max-time 10 -X POST \
         "https://argocd.${DOMAIN}/api/v1/account/narwhal-portal/token" \
         -H "Authorization: Bearer ${ARGOCD_JWT}" \

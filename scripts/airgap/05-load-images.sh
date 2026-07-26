@@ -47,7 +47,20 @@ while IFS= read -r img; do
 
   # Rewrite the image path: keep the full original path as subdirectory under the mirror
   # Example: registry.k8s.io/pause:3.10 → ${REG}/registry.k8s.io/pause:3.10
-  dst="${REG}/${img}"
+  # Normalize to the fully-qualified form containerd will actually ask for.
+  # images.txt records refs as the cluster reports them, so Docker Hub images arrive
+  # bare (busybox:1.28, apache/apisix:3.15.0-ubuntu). containerd resolves those to
+  # docker.io/library/busybox and docker.io/apache/apisix before consulting the
+  # mirror, so storing them under the bare name leaves them unreachable — 6 of 92
+  # images, including APISIX, its ingress controller, SeaweedFS and the velero AWS
+  # plugin, silently fell back to the internet.
+  case "${img}" in
+    *.*/*|*:*/*|localhost/*) qualified="${img}" ;;             # already has a registry host
+    */*)                     qualified="docker.io/${img}" ;;   # org image: docker.io/<org>/<name>
+    *)                       qualified="docker.io/library/${img}" ;;
+  esac
+
+  dst="${REG}/${qualified}"
 
   echo "[load] ${img} → ${dst}"
   if skopeo copy ${TLS_OPT} --retry-times 3 --quiet \

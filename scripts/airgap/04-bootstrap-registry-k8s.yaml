@@ -1,0 +1,63 @@
+# Airgap bootstrap registry for the local Vagrant cluster.
+#
+# Runs as a k8s workload rather than via 04-bootstrap-registry.sh: that script needs
+# nerdctl or docker, and the box has only ctr. The image is side-loaded into
+# containerd (ctr -n k8s.io images import) so imagePullPolicy: Never works before any
+# mirror exists.
+#
+# hostPort, not NodePort: containerd pulls images from below the Service layer, so it
+# must reach the registry without kube-proxy. platform-system is in the
+# disallow-host-ports policy's exclude list (kube-system, istio-system,
+# platform-system, devtools, security-system) — that policy is Enforce.
+#
+# Pinned to master-1: the OCI bundle and the side-loaded image live only there.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: airgap-registry
+  namespace: platform-system
+  labels:
+    app.kubernetes.io/name: airgap-registry
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: airgap-registry
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: airgap-registry
+        # Plain HTTP served to a host process (containerd); keep ztunnel out of it.
+        istio.io/dataplane-mode: "none"
+    spec:
+      nodeSelector:
+        kubernetes.io/hostname: narwhal-master-1
+      tolerations:
+        - key: node-role.kubernetes.io/control-plane
+          operator: Exists
+          effect: NoSchedule
+      containers:
+        - name: registry
+          image: docker.io/library/registry:2
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 5000
+              hostPort: 5000
+          env:
+            - name: REGISTRY_STORAGE_DELETE_ENABLED
+              value: "true"
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/registry
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+      volumes:
+        - name: data
+          hostPath:
+            path: /srv/airgap-registry
+            type: DirectoryOrCreate

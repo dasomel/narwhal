@@ -1,19 +1,40 @@
 #!/bin/bash
 set -euo pipefail
 
-CONTAINERD_VERSION="${CONTAINERD_VERSION:-1.7.*}"
+# Repo default, NOT a 1.7.* pin. containerd 1.7.12 ships an AppArmor profile that
+# predates runc 1.3, and on Ubuntu 24.04 (runc 1.3.4) the kernel then denies runc the
+# right to signal its own container init:
+#
+#   apparmor="DENIED" operation="signal" profile="cri-containerd.apparmor.d"
+#     comm="runc" requested_mask="receive" signal=kill peer="runc"
+#
+# Containers cannot be killed, so pods wedge in Terminating and a database that is
+# asked to stop never does. On 2026-07-26 this took out the CNPG cluster mid-Liquibase
+# and blocked Phase 2 at 11-2-keycloak-config. It never showed on Vagrant because the
+# 26.04 box has no 1.7.x candidate and always landed on containerd 2.x.
+#
+# 24.04 offers 2.2.1 and 26.04 offers 2.x, so the default is right on both. Set
+# CONTAINERD_VERSION explicitly only to reproduce an old environment.
+CONTAINERD_VERSION="${CONTAINERD_VERSION:-}"
 
-echo "=== containerd ${CONTAINERD_VERSION} Installation ==="
+echo "=== containerd ${CONTAINERD_VERSION:-<repo default>} Installation ==="
 
-# Install containerd (apt-get update required for fresh box)
-# The kube-ready-box already ships containerd; pin to the requested series when the
-# distro repo offers it (Ubuntu 24.04 -> 1.7.x), otherwise fall back to the repo
-# default (Ubuntu 26.04 ships containerd 2.x). K8s 1.35 supports containerd 1.7+ and 2.x.
 sudo apt-get update
-if ! sudo apt-get install -y containerd="${CONTAINERD_VERSION}"; then
-  echo "containerd=${CONTAINERD_VERSION} not available in repo; installing distro default containerd..."
+if [ -n "${CONTAINERD_VERSION}" ]; then
+  if ! sudo apt-get install -y containerd="${CONTAINERD_VERSION}"; then
+    echo "containerd=${CONTAINERD_VERSION} not available in repo; installing distro default containerd..."
+    sudo apt-get install -y containerd
+  fi
+else
   sudo apt-get install -y containerd
 fi
+
+installed_ctr="$(dpkg-query -W -f='${Version}' containerd 2>/dev/null || echo unknown)"
+echo "containerd installed: ${installed_ctr}"
+case "${installed_ctr}" in
+  1.7.*) echo "WARN: containerd 1.7.x + runc 1.3 denies signal delivery under AppArmor;" \
+              "pods will wedge in Terminating. Upgrade to 2.x." >&2 ;;
+esac
 
 # Configure containerd
 sudo mkdir -p /etc/containerd

@@ -279,6 +279,16 @@ fi
 # net.bridge.* keys do not exist until the module is in, and sysctl silently skips
 # missing keys.
 # ──────────────────────────────────────────────
+# NFS client. No script installed it — the box ships nfs-common, so on a cloud image
+# every csi-driver-nfs mount fails with
+#   mount: bad option; ... you might need a /sbin/mount.<type> helper program
+# which surfaces to the pod as a 110s mount timeout, not as a missing package.
+# Needed on every node, not just the server: the CSI node plugin mounts on whichever
+# node the pod lands.
+echo "Ensuring NFS client (nfs-common)..."
+dpkg -s nfs-common >/dev/null 2>&1 || sudo apt-get install -y nfs-common
+echo "  mount.nfs: $(command -v mount.nfs || echo MISSING)"
+
 echo "Ensuring kubeadm kernel prerequisites (modules + sysctl)..."
 sudo tee /etc/modules-load.d/k8s.conf >/dev/null <<'MODEOF'
 overlay

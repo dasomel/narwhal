@@ -8,6 +8,7 @@
 #
 # Stages, in dependency order:
 #   base    01-prerequisites, 02-containerd, 03-k8s-install, 06-boot-heal-install (all nodes)
+#   runtime 02-containerd + mirror (all nodes) — upgrade without redoing base
 #   mirror  06-configure-mirrors --local-only (all nodes)
 #   init    01-nfs-server, 02-init-cluster, 03-cni-install (master-1)
 #   join    distribute artifacts, then control-planes serially, then workers
@@ -33,7 +34,7 @@ DOMAIN="${DOMAIN:-local.narwhal.internal}"
 
 cd "$(dirname "$0")/../.."
 
-[ $# -gt 0 ] || { echo "usage: $0 <base|mirror|init|join|nfs|phase1|phase2|all>..." >&2; exit 1; }
+[ $# -gt 0 ] || { echo "usage: $0 <base|runtime|mirror|init|join|nfs|phase1|phase2|all>..." >&2; exit 1; }
 
 # ── OpenTofu state is the single source of truth for every address ───────────────
 BASTION_IP=$(cd "${TF_DIR}" && tofu output -raw bastion_public_ip)
@@ -187,6 +188,18 @@ stage_join() {
   done
 }
 
+# containerd only, without the rest of `base`. Re-running 02-containerd.sh rewrites
+# config.toml from `containerd config default`, so the mirror stage has to follow it
+# or /etc/containerd/certs.d stops being consulted.
+stage_runtime() {
+  log "runtime: containerd upgrade on ${#ALL_NODES[@]} nodes"
+  for ip in "${ALL_NODES[@]}"; do
+    ssh_node "${ip}" "sudo env $(node_env) ${STAGE_DIR}/scripts/common/02-containerd.sh >/tmp/containerd.log 2>&1"
+    note "${ip} $(ssh_node "${ip}" "dpkg-query -W -f='\${Version}' containerd 2>/dev/null" | tr -d '\r')"
+  done
+  stage_mirror
+}
+
 # Separate from `init` on purpose: re-exporting NFS must not mean re-running
 # kubeadm init. 01-nfs-server.sh is idempotent, so this is safe to repeat.
 stage_nfs() {
@@ -224,6 +237,7 @@ for arg in "$@"; do
   case "${arg}" in
     base)   stage_base ;;
     nfs)    stage_nfs ;;
+    runtime) stage_runtime ;;
     mirror) stage_mirror ;;
     init)   stage_init ;;
     join)   stage_join ;;

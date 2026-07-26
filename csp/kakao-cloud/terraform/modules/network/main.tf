@@ -1,15 +1,15 @@
 # Network Module - VPC and Subnet
-# NOTE: Kakao Cloud provider v0.3.3 has a validation bug that prevents using
-# variables for name, cidr_block, and subnet attributes in kakaocloud_vpc.
-# These must be hardcoded. Edit values below if you need different settings.
+# The v0.3.3 hardcoding workaround was dropped at provider 0.4.4: variables for
+# name/cidr_block/subnet now pass provider validation (verified with `tofu validate`
+# against 0.4.4 — a literal bad CIDR is still rejected, so the validator does run).
 
 resource "kakaocloud_vpc" "vpc" {
-  name       = "narwhal-vpc"
-  cidr_block = "172.16.0.0/16"
+  name       = var.vpc_name
+  cidr_block = var.vpc_cidr
 
   subnet = {
-    cidr_block        = "172.16.255.0/24"
-    availability_zone = "kr-central-2-a"
+    cidr_block        = var.vpc_default_subnet_cidr
+    availability_zone = var.availability_zone
   }
 }
 

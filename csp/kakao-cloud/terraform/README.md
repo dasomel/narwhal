@@ -39,7 +39,7 @@ Terraform project that provisions VM infrastructure on Kakao Cloud for the Narwh
 
 ## Prerequisites
 
-- **Terraform** >= 1.13.5
+- **OpenTofu** >= 1.6.0 (`tofu`; Terraform CLI also works)
 - **Kakao Cloud Account** with Application Credential (ID + Secret)
 - **SSH KeyPair** registered in Kakao Cloud
 - **Quotas**: 6 instances, 24 vCPU, 48GB+ RAM, 1.2TB volume, 8 public IPs, 2 LBs
@@ -54,12 +54,12 @@ cp terraform.tfvars.example terraform.tfvars
 # Edit terraform.tfvars with your credentials
 
 # Deploy
-terraform init
-terraform plan
-terraform apply
+tofu init
+tofu plan
+tofu apply
 
 # For slow API environments
-terraform apply -parallelism=3
+tofu apply -parallelism=3
 ```
 
 ## After Deployment
@@ -68,10 +68,10 @@ VMs are created with Ubuntu 24.04 and SSH key access. Install K8s and Narwhal pl
 
 ```bash
 # Get connection info
-terraform output
+tofu output
 
 # SSH to master-1
-ssh -i <your-key.pem> ubuntu@$(terraform output -json master_public_ips | jq -r '.[0]')
+ssh -i <your-key.pem> ubuntu@$(tofu output -json master_public_ips | jq -r '.[0]')
 ```
 
 ## Directory Structure
@@ -81,7 +81,7 @@ terraform/
   main.tf              # Root: network -> security -> compute -> loadbalancer
   variables.tf         # Variable definitions
   outputs.tf           # VM IPs, LB endpoints, SSH commands
-  provider.tf          # kakaocloud provider v0.3.3
+  provider.tf          # kakaocloud provider v0.4.4
   cloud-init.yaml      # Basic VM init (SSH pubkey only)
   terraform.tfvars.example
   modules/
@@ -117,17 +117,16 @@ Key settings in `terraform.tfvars`:
 ## Cleanup
 
 ```bash
-terraform destroy
+tofu destroy
 ```
 
 ## Known Issues
 
-### Kakao Cloud Provider v0.3.3 VPC Bug
-
-The provider has a validation bug that prevents using variables for `name`, `cidr_block`, and `subnet` in `kakaocloud_vpc`. These are hardcoded in `modules/network/main.tf`. Edit that file directly if you need different VPC settings.
+None open. The v0.3.3 `kakaocloud_vpc` bug that forced hardcoded VPC values was fixed in
+v0.4.4 — see `modules/network/README.md` for the verification.
 
 ## Version Info
 
-- **Terraform**: >= 1.13.5
-- **Provider**: kakaocloud v0.3.3
+- **OpenTofu**: >= 1.6.0
+- **Provider**: kakaocloud v0.4.4
 - **OS**: Ubuntu 24.04 LTS

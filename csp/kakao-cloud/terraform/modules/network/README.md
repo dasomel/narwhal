@@ -41,8 +41,13 @@ module "network" {
 | subnet_cidr | Subnet CIDR block |
 | availability_zone | Availability zone |
 
-## Known Issue: Provider v0.3.3 VPC Bug
+## Resolved: Provider v0.3.3 VPC Bug
 
-Kakao Cloud provider v0.3.3 has a validation bug where `kakaocloud_vpc` rejects Terraform variables for `name`, `cidr_block`, and `subnet` attributes. These are hardcoded in `main.tf`. Edit that file directly if you need different values.
+On provider v0.3.3 `kakaocloud_vpc` rejected variables for `name`, `cidr_block`, and `subnet`,
+so those three were hardcoded in `main.tf`. **Fixed in v0.4.4** — all VPC attributes are
+variable-driven again, so change them through `terraform.tfvars`, not by editing `main.tf`.
 
-Affected: `kakaocloud_vpc` resource only. `kakaocloud_subnet` works with variables normally.
+Verified offline against the pinned 0.4.4 provider: `tofu validate` passes with variables (both
+with and without defaults), while a literal malformed CIDR is still rejected with
+`Invalid IP CIDR String Value` — proving the provider validator runs and no longer trips on
+variables.

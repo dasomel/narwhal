@@ -39,7 +39,7 @@ Kakao Cloud에 Narwhal IDP 클러스터용 VM 인프라를 Terraform으로 프�
 
 ## 사전 요구사항
 
-- **Terraform** >= 1.13.5
+- **OpenTofu** >= 1.6.0 (`tofu`; Terraform CLI도 동작)
 - **Kakao Cloud 계정** + Application Credential (ID + Secret)
 - **SSH KeyPair** (Kakao Cloud에 등록)
 - **할당량**: 인스턴스 6, vCPU 24, RAM 48GB+, 볼륨 1.2TB, Public IP 8, LB 2
@@ -54,12 +54,12 @@ cp terraform.tfvars.example terraform.tfvars
 # terraform.tfvars에 자격증명 입력
 
 # 배포
-terraform init
-terraform plan
-terraform apply
+tofu init
+tofu plan
+tofu apply
 
 # API 응답이 느린 환경
-terraform apply -parallelism=3
+tofu apply -parallelism=3
 ```
 
 ## 배포 후
@@ -68,10 +68,10 @@ VM은 Ubuntu 24.04 + SSH 키 접근으로 생성됩니다. K8s와 Narwhal 플랫
 
 ```bash
 # 접속 정보 확인
-terraform output
+tofu output
 
 # master-1 SSH 접속
-ssh -i <your-key.pem> ubuntu@$(terraform output -json master_public_ips | jq -r '.[0]')
+ssh -i <your-key.pem> ubuntu@$(tofu output -json master_public_ips | jq -r '.[0]')
 ```
 
 ## 디렉토리 구조
@@ -81,7 +81,7 @@ terraform/
   main.tf              # Root: network -> security -> compute -> loadbalancer
   variables.tf         # 변수 정의
   outputs.tf           # VM IP, LB 엔드포인트, SSH 명령어
-  provider.tf          # kakaocloud provider v0.3.3
+  provider.tf          # kakaocloud provider v0.4.4
   cloud-init.yaml      # 기본 VM 초기화 (SSH pubkey only)
   terraform.tfvars.example
   modules/
@@ -117,17 +117,16 @@ terraform/
 ## 리소스 정리
 
 ```bash
-terraform destroy
+tofu destroy
 ```
 
 ## 알려진 이슈
 
-### Kakao Cloud Provider v0.3.3 VPC 버그
-
-`kakaocloud_vpc`에서 `name`, `cidr_block`, `subnet` 속성에 변수를 사용하면 검증 오류가 발생합니다. `modules/network/main.tf`에 하드코딩되어 있으므로, 다른 VPC 설정이 필요하면 해당 파일을 직접 수정하세요.
+없음. 하드코딩을 강제하던 v0.3.3의 `kakaocloud_vpc` 버그는 v0.4.4에서 해결됐다 —
+검증 근거는 `modules/network/README.md` 참고. VPC 값은 `terraform.tfvars`로 바꾼다.
 
 ## 버전 정보
 
-- **Terraform**: >= 1.13.5
-- **Provider**: kakaocloud v0.3.3
+- **OpenTofu**: >= 1.6.0
+- **Provider**: kakaocloud v0.4.4
 - **OS**: Ubuntu 24.04 LTS

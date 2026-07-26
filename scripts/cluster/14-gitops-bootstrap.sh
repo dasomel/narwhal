@@ -148,6 +148,10 @@ spec:
       valuesObject:
         baseDomain: ${DOMAIN}
         repoURL: http://gitea-http.devtools.svc.cluster.local:3000/${GITEA_ADMIN_USER}/${REPO_NAME}.git
+        # Hands the provisioning-time PROVIDER to ArgoCD. Without it the chart falls back
+        # to vagrant and selfHeal undoes the cloud wiring 08-1-networking.sh applied:
+        # MetalLB gets re-created and the APISIX gateway flips back to LoadBalancer.
+        provider: ${PROVIDER:-vagrant}
   destination:
     server: https://kubernetes.default.svc
     namespace: devtools

@@ -1,4 +1,18 @@
 baseDomain: local.narwhal.internal
 
+# Where the cluster runs. Same vocabulary as the shell scripts' ${PROVIDER:-vagrant},
+# so one value drives both Phase-1/2 provisioning and what ArgoCD renders here.
+#   vagrant — bare metal / VMware: MetalLB hands APISIX an L2 VIP.
+#   kakao   — Kakao Cloud: no L2, so MetalLB is not deployed and the Kakao worker
+#             LB fronts APISIX through the node ports pinned below.
+provider: vagrant
+
+# NodePorts the Kakao worker LB target groups forward to (80->31080, 443->31443).
+# Ignored unless provider is kakao. Changing these means changing the LB target
+# groups in csp/kakao-cloud/terraform to match.
+apisixNodePorts:
+  http: 31080
+  tls: 31443
+
 # repoURL is the Gitea internal URL for apps that source from the GitOps repo
 repoURL: http://gitea-http.devtools.svc.cluster.local:3000/gitea-admin/narwhal-gitops.git

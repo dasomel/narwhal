@@ -233,6 +233,23 @@ spec:
             allow:
               ipList:
                 - 0.0.0.0/0
+        {{- /*
+        Kakao Cloud has no L2 for MetalLB, so the worker LB forwards to fixed node
+        ports. They are declared here rather than patched in by 08-1-networking.sh,
+        or ArgoCD selfHeal reverts the patch to whatever this chart renders. Chart
+        2.13.0 service-gateway.yaml honors service.{http,tls}.nodePort only while
+        service.type is NodePort. Kept as a Helm comment, not a YAML one, so the
+        vagrant branch renders byte-identical to before this became provider-aware.
+        */}}
+        {{- if eq .Values.provider "kakao" }}
+
+        service:
+          type: NodePort
+          http:
+            nodePort: {{ .Values.apisixNodePorts.http }}
+          tls:
+            nodePort: {{ .Values.apisixNodePorts.tls }}
+        {{- else }}
 
         # LoadBalancer: same IP as former Traefik
         # NOTE: chart uses service.type/annotations (not gateway.type)
@@ -240,6 +257,7 @@ spec:
           type: LoadBalancer
           annotations:
             metallb.universe.tf/loadBalancerIPs: "192.168.56.200"
+        {{- end }}
         gateway:
           http:
             enabled: true

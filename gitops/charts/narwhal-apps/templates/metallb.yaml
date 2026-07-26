@@ -1,3 +1,9 @@
+{{- if ne .Values.provider "kakao" }}
+{{- /*
+MetalLB is L2/ARP-based, which Kakao Cloud's network does not carry — the worker
+LB fronts APISIX via NodePort there instead (see apisix.yaml). Rendering nothing
+is what keeps ArgoCD from re-creating the app that 08-1-networking.sh skips.
+*/}}
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
@@ -38,3 +44,4 @@ spec:
       selfHeal: true
     syncOptions:
       - CreateNamespace=true
+{{- end }}

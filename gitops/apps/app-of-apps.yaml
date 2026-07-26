@@ -15,6 +15,9 @@ spec:
       valuesObject:
         baseDomain: local.narwhal.internal
         repoURL: http://gitea-http.devtools.svc.cluster.local:3000/gitea-admin/narwhal-gitops.git
+        # vagrant (MetalLB VIP) or kakao (worker LB -> APISIX NodePort). Must match the
+        # PROVIDER the provisioning scripts ran with, or ArgoCD reverts what they set up.
+        provider: vagrant
   destination:
     server: https://kubernetes.default.svc
     namespace: devtools

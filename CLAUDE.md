@@ -79,11 +79,15 @@ vagrant provision master-1 --provision-with phase2-platform
 
 Ralph loop: `/ralph` (OMC) with `.claude/templates/PROMPT.md`. Project slash commands live in `.claude/commands/`.
 
-## Permissions
+## Guardrails
 
 - `.vagrant/` is generated — never edit it by hand.
+- Never hardcode a password, token, or kubeconfig credential into a script or manifest. Nothing
+  in CI catches one.
 - Every script keeps `set -euo pipefail`. CI runs shellcheck and an indent check, but neither
   catches a missing `set` line, so removing one fails silently.
+- Shell and YAML both indent 2 spaces (CI blocks the shell case). `ENV_VAR` for environment
+  names, `local_var` for locals.
 - **Bitnami images and charts are banned.** Bitnami's commercialization means a tag can vanish
   from under a running cluster. Reach for the upstream official image or an Operator (CNPG for
   Postgres, etc.); an Alpine-based community image is the next fallback. Only when genuinely no
@@ -99,5 +103,3 @@ cluster down. Change one thing, confirm it settled — `kubectl top nodes` betwe
 change the next; 2-3 parallel cluster modifications is the practical ceiling, and simultaneous pod
 restarts will OOM a node. Confirm from the user's side (curl the endpoint, resolve the name)
 rather than trusting that the apply succeeded.
-
----

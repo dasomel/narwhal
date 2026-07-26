@@ -56,18 +56,39 @@ Rancher airgap 방식을 Narwhal에 적용한 버전입니다. 외부 인터넷�
 ./scripts/airgap/03-save-helm-charts.sh
 #    AIRGAP_ARCH=linux/amd64 ./scripts/airgap/03-save-helm-charts.sh   # amd64 번들에도 채우려면
 
-# 결과: narwhal-airgap-bundle-<arch>/ 폴더를 USB/NAS로 전송
-#       (Kakao Cloud 로는 narwhal-airgap-bundle-amd64/ 를 가져간다)
+# 결과: narwhal-airgap-bundle-<arch>/ 폴더를 대상 클러스터로 전송
+```
+
+**번들 전송 (Kakao Cloud):** amd64 번들을 `scp -r` 로 master-1 에 복사한 뒤 그 노드에서
+Phase B/C 를 실행한다. 노드는 프라이빗 서브넷이므로 bastion 을 ProxyJump 로 경유한다
+(`tofu output bastion_ssh` 가 명령을 그대로 뱉는다). 번들은 약 5.7G 라 전송이 길다.
+
+```bash
+cd csp/kakao-cloud/terraform
+BASTION=$(tofu output -raw bastion_public_ip)
+MASTER1=$(tofu output -json master_private_ips | jq -r '.[0]')
+cd -
+
+# 전송 전 무결성 기준값 (전송 후 대상에서 같은 명령으로 대조)
+find narwhal-airgap-bundle-amd64 -type f -not -name .DS_Store | sort | \
+  xargs shasum -a 256 | shasum -a 256
+
+scp -r -o ProxyJump=ubuntu@"${BASTION}" \
+  narwhal-airgap-bundle-amd64 ubuntu@"${MASTER1}":~/
 ```
 
 ### Phase B — 에어갭 내부에서 레지스트리 준비
+
+Kakao Cloud 에서는 번들을 복사해 둔 **master-1 에서 실행**한다(bastion 경유 SSH).
 
 ```bash
 # 4. 임시 부트스트랩 레지스트리 (Harbor 설치 전에 필요한 이미지 호스팅용)
 ./scripts/airgap/04-bootstrap-registry.sh --addr registry.airgap.local:5000
 
 # 5. 번들 이미지를 레지스트리로 로드
-./scripts/airgap/05-load-images.sh --bundle ./narwhal-airgap-bundle --registry registry.airgap.local:5000
+#    --bundle 은 아치 접미사가 붙은 실제 디렉토리를 가리켜야 한다(생략하면
+#    AIRGAP_BUNDLE_DIR 기본값이 AIRGAP_ARCH 를 따라간다).
+./scripts/airgap/05-load-images.sh --bundle ./narwhal-airgap-bundle-amd64 --registry registry.airgap.local:5000
 ```
 
 ### Phase C — 에어갭 내부에서 Narwhal 클러스터 부팅
@@ -78,7 +99,17 @@ AIRGAP_REGISTRY=registry.airgap.local:5000 ./scripts/airgap/06-configure-mirrors
 
 # 7. 일반 Narwhal 부팅 (VERSIONS 변경 없이 containerd 레벨에서 재작성)
 export AIRGAP_REGISTRY=registry.airgap.local:5000
+
+#    로컬 Vagrant:
 vagrant up --provider=vmware_desktop
+
+#    Kakao Cloud: vagrant 가 없으므로 각 노드에서 프로비저닝 스크립트를 직접 돌린다.
+#    PROVIDER=kakao 가 kube-vip / MetalLB / dnsmasq 등 Vagrant 전용 경로를 건너뛰고
+#    Kakao LB + 클라우드 리졸버를 쓰게 만든다 (scripts/up.sh 는 Vagrant 전용이라 사용하지 않음).
+export PROVIDER=kakao
+sudo -E ./scripts/common/01-prerequisites.sh     # 전 노드
+sudo -E ./scripts/cluster/02-init-cluster.sh     # master-1
+#    이후 join/Phase 2 순서는 파일명 접두사 순서를 따른다 (CLAUDE.md "Core Flows").
 ```
 
 ## 구성 요소
@@ -106,6 +137,6 @@ containerd `config_path = "/etc/containerd/certs.d"`를 이용하므로 이미�
 ## 주의사항
 
 - **Private CA**: Harbor/레지스트리가 자체 서명 인증서를 사용하면 `hosts.toml`에 `skip_verify = true` 추가 또는 CA를 `/usr/local/share/ca-certificates/`에 설치 (`08-6-tls-routes.sh`의 DaemonSet 패턴 참고).
-- **Multi-arch**: skopeo는 `--all` 플래그로 multi-arch manifest 처리. Narwhal은 현재 ARM64 기준, 다른 아키텍처 필요 시 `00-config.sh`에서 설정.
+- **Multi-arch**: 한 번들 = 한 아치다. `AIRGAP_ARCH` 로 고르며(위 per-arch 섹션 참고) 로컬 Vagrant 는 `linux/arm64`, Kakao Cloud 는 `linux/amd64`. 기본값만 `00-config.sh` 에 있다.
 - **Helm 차트 의존성**: `helm pull --untar`로 서브차트까지 포함해 번들링.
 - **Bitnami 금지**: Bitnami 이미지는 번들링 대상에서 제외 (프로젝트 정책, CLAUDE.md 참고).

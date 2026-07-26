@@ -246,7 +246,7 @@ Keycloak은 플랫폼의 SSO/OIDC 아이덴티티 제공자입니다 — SSO가 
 #### Narwhal Portal
 | 매니페스트 | 이미지 | 네임스페이스 |
 |---|---|---|
-| `narwhal-portal-k8s.yaml` (Deployment/Service/RBAC/Valkey) | `ghcr.io/dasomel/narwhal-portal:1.0.1` (공개 GHCR, SemVer 고정) | `devtools` |
+| `narwhal-portal-k8s.yaml` (Deployment/Service/RBAC/Valkey) | `ghcr.io/dasomel/narwhal-portal:1.0.16` (공개 GHCR, SemVer 고정) | `devtools` |
 
 Narwhal 관리 포털(Next.js)은 이 IDP 전체를 위한 개발자 대상 UI입니다 — 클러스터 아키텍처 뷰, ArgoCD 앱 상태, 보안/취약점 리포트, 노드 메트릭, 로그/트레이스, 백업 상태, 그리고 컴포넌트 "스코어카드"(ArgoCD 동기화 상태, 이미지 출처, PDB/NetworkPolicy 존재 여부 점검)를 제공합니다. 최소 권한 `ServiceAccount`(클러스터 전역 읽기 전용 RBAC + 자체 셀프서비스 Job을 위한 네임스페이스 한정 Role), 전용 Valkey 캐시 Deployment와 함께 배포되며, 내부 루트 CA가 `NODE_EXTRA_CA_CERTS`로 마운트되어 Keycloak/ArgoCD/OpenBao/K8s API로의 서버측 호출이 클러스터 TLS를 신뢰하도록 되어 있습니다. 이미지 태그는 불변 SemVer 고정 값(`:latest` 아님)이라 ArgoCD가 업그레이드를 실제 매니페스트 diff로 감지할 수 있습니다.
 

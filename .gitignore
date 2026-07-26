@@ -44,7 +44,15 @@ PROMPT.md
 # Local development directories (separate git repos)
 idp-portal/
 idp/
-csp/
+
+# Cloud provider IaC (csp/) — the code IS tracked. A blanket `csp/` ignore hid
+# bastion.tf and .terraform.lock.hcl from every commit while grandfathered files
+# stayed tracked, so only credential/state/plan artifacts are excluded here.
+csp/**/.terraform/
+csp/**/terraform.tfstate*
+csp/**/*.tfvars
+csp/**/*.tfplan
+csp/**/*.pem
 /.bkit/audit/2026-04-08.jsonl
 /.bkit/audit/2026-04-09.jsonl
 /.bkit/audit/2026-04-13.jsonl

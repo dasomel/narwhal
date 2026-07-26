@@ -1,9 +1,11 @@
-# Terraform
+# OpenTofu / Terraform
+# .terraform.lock.hcl is deliberately NOT ignored — the provider hash pin has to
+# be committed for a reproducible `tofu init`.
 .terraform/
 *.tfstate
 *.tfstate.*
 *.tfvars
-.terraform.lock.hcl
+*.tfplan
 crash.log
 crash.*.log
 

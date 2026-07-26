@@ -1,0 +1,275 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  labels:
+    app: seaweedfs
+  name: seaweedfs-s3-credentials
+  namespace: kubemetal
+stringData:
+  access-key-id: kubemetal
+  secret-access-key: REDACTED-SEE-GIT-HISTORY-SCRUB
+type: Opaque
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mac-gpu-service
+  namespace: kubemetal
+spec:
+  ports:
+  - name: host-8080
+    port: 8080
+    protocol: TCP
+    targetPort: 8080
+  - name: host-8081
+    port: 8081
+    protocol: TCP
+    targetPort: 8081
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mlflow
+  namespace: kubemetal
+spec:
+  ports:
+  - port: 5000
+    protocol: TCP
+    targetPort: 5000
+  selector:
+    app: mlflow
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: prefect
+  namespace: kubemetal
+spec:
+  ports:
+  - port: 4200
+    protocol: TCP
+    targetPort: 4200
+  selector:
+    app: prefect
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: seaweedfs
+  namespace: kubemetal
+spec:
+  ports:
+  - name: s3
+    port: 8333
+    protocol: TCP
+    targetPort: 8333
+  - name: filer
+    port: 8888
+    protocol: TCP
+    targetPort: 8888
+  selector:
+    app: seaweedfs
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: prefect-data
+  namespace: kubemetal
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+  storageClassName: nfs-csi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: mlflow
+  name: mlflow
+  namespace: kubemetal
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mlflow
+  template:
+    metadata:
+      labels:
+        app: mlflow
+        app.kubernetes.io/name: mlflow
+    spec:
+      containers:
+      - command:
+        - sh
+        - -c
+        - |
+          pip install --quiet boto3 && \
+          exec mlflow server \
+            --backend-store-uri sqlite:////tmp/mlflow.db \
+            --default-artifact-root s3://mlflow/ \
+            --host 0.0.0.0 \
+            --port 5000
+        env:
+        - name: MLFLOW_S3_ENDPOINT_URL
+          value: http://seaweedfs:8333
+        - name: AWS_ACCESS_KEY_ID
+          valueFrom:
+            secretKeyRef:
+              key: access-key-id
+              name: seaweedfs-s3-credentials
+        - name: AWS_SECRET_ACCESS_KEY
+          valueFrom:
+            secretKeyRef:
+              key: secret-access-key
+              name: seaweedfs-s3-credentials
+        image: ghcr.io/mlflow/mlflow:v3.14.0
+        name: mlflow
+        ports:
+        - containerPort: 5000
+        resources:
+          limits:
+            memory: 3072Mi
+          requests:
+            memory: 2048Mi
+        volumeMounts:
+        - mountPath: /tmp
+          name: mlflow-data
+      initContainers:
+      - command:
+        - sh
+        - -c
+        - |
+          until curl -sf http://seaweedfs:8333/ -o /dev/null; do
+            echo "waiting for seaweedfs s3..."
+            sleep 2
+          done
+          code=$(curl -s -o /dev/null -w '%{http_code}' -X PUT http://seaweedfs:8333/mlflow)
+          # 200 = created, 409 = already exists (both are success states for "ensure").
+          if [ "$code" = "200" ] || [ "$code" = "409" ]; then
+            echo "bucket mlflow ensured (http $code)"
+          else
+            echo "bucket creation failed (http $code)" >&2
+            exit 1
+          fi
+        image: mirror.gcr.io/curlimages/curl:8.21.0
+        name: ensure-artifact-bucket
+      volumes:
+      - emptyDir: {}
+        name: mlflow-data
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: prefect
+  name: prefect
+  namespace: kubemetal
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: prefect
+  template:
+    metadata:
+      labels:
+        app: prefect
+        app.kubernetes.io/name: prefect
+    spec:
+      containers:
+      - command:
+        - prefect
+        - server
+        - start
+        - --host
+        - 0.0.0.0
+        env:
+        - name: PREFECT_HOME
+          value: /data
+        image: mirror.gcr.io/prefecthq/prefect:3.7.8-python3.12
+        name: prefect
+        ports:
+        - containerPort: 4200
+        readinessProbe:
+          httpGet:
+            path: /api/health
+            port: 4200
+          initialDelaySeconds: 5
+          periodSeconds: 5
+        resources:
+          limits:
+            memory: 1Gi
+          requests:
+            memory: 256Mi
+        volumeMounts:
+        - mountPath: /data
+          name: prefect-data
+      volumes:
+      - name: prefect-data
+        persistentVolumeClaim:
+          claimName: prefect-data
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: seaweedfs
+  name: seaweedfs
+  namespace: kubemetal
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: seaweedfs
+  template:
+    metadata:
+      labels:
+        app: seaweedfs
+        app.kubernetes.io/name: seaweedfs
+    spec:
+      containers:
+      - args:
+        - server
+        - -dir=/data
+        - -s3
+        - -filer
+        image: mirror.gcr.io/chrislusf/seaweedfs:4.40
+        name: seaweedfs
+        ports:
+        - containerPort: 8333
+        - containerPort: 8888
+        - containerPort: 9333
+        resources:
+          limits:
+            memory: 512Mi
+          requests:
+            memory: 128Mi
+        volumeMounts:
+        - mountPath: /data
+          name: seaweedfs-data
+      volumes:
+      - emptyDir: {}
+        name: seaweedfs-data
+---
+addressType: IPv4
+apiVersion: discovery.k8s.io/v1
+endpoints:
+- addresses:
+  - 192.168.56.1
+  conditions:
+    ready: true
+kind: EndpointSlice
+metadata:
+  labels:
+    kubernetes.io/service-name: mac-gpu-service
+  name: mac-gpu-service-host
+  namespace: kubemetal
+ports:
+- name: host-8080
+  port: 8080
+  protocol: TCP
+- name: host-8081
+  port: 8081
+  protocol: TCP

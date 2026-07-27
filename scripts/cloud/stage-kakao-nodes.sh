@@ -15,6 +15,13 @@
 #   ./scripts/cloud/stage-kakao-nodes.sh 172.16.0.10  # one node
 set -euo pipefail
 
+# macOS bsdtar writes an AppleDouble sidecar (._<name>) for every file carrying
+# extended attributes, and those are binary. A vendored chart shipped that way gives
+# ArgoCD charts/kong/templates/.__helpers.tpl next to _helpers.tpl, and helm template
+# dies with "error converting YAML to JSON: yaml: control characters are not allowed"
+# — the app never renders. Vagrant never hits this because it mounts, not tars.
+export COPYFILE_DISABLE=1
+
 TF_DIR="${TF_DIR:-csp/kakao-cloud/terraform}"
 SSH_USER="${NODE_SSH_USER:-ubuntu}"
 # Where the scripts think they live. Deliberately /home/vagrant even though the login
@@ -135,6 +142,9 @@ for ip in "${NODES[@]}"; do
   # gitops/ nests inside configs/ on the node, matching the third synced_folder.
   tar czf - -C . gitops | ssh_node "${ip}" "tar xzf - -C '${STAGE_DIR}/configs'"
 
+  # Belt and braces: COPYFILE_DISABLE covers bsdtar, this covers anything already
+  # there from an earlier run.
+  ssh_node "${ip}" "find '${STAGE_DIR}/scripts' '${STAGE_DIR}/configs' -name '._*' -delete 2>/dev/null || true"
   ssh_node "${ip}" "chmod -R +x '${STAGE_DIR}/scripts' 2>/dev/null || true; ls -d ${STAGE_DIR}/scripts ${STAGE_DIR}/configs ${STAGE_DIR}/configs/gitops"
 done
 

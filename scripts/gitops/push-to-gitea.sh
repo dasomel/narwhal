@@ -35,7 +35,16 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-GITOPS_DIR="${REPO_ROOT}/gitops"
+# Overridable because the source tree is not always beside this script. It is on the
+# operator host (repo root), but on a node the Vagrant layout puts gitops/ under
+# configs/ — so a cloud run, which has to execute where the kubeconfig lives, passes
+# GITOPS_DIR=/home/vagrant/configs/gitops explicitly.
+GITOPS_DIR="${GITOPS_DIR:-${REPO_ROOT}/gitops}"
+[ -d "${GITOPS_DIR}" ] || {
+  echo "ERROR: gitops source not found at ${GITOPS_DIR}" >&2
+  echo "       Set GITOPS_DIR to the gitops/ tree you want mirrored." >&2
+  exit 1
+}
 
 GITEA_NS="devtools"
 GITEA_SVC="gitea-http"

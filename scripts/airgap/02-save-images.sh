@@ -62,6 +62,11 @@ done < "${LIST_FILE}"
 BOOT_IMG="${AIRGAP_BOOTSTRAP_REGISTRY_IMAGE}"
 BOOT_TAR="${OUT_DIR}/bootstrap/registry.tar"
 mkdir -p "${OUT_DIR}/bootstrap"
+# docker-archive refuses to write into an existing tar ("doesn't support modifying
+# existing images"), so a re-run always failed here and silently kept the old copy —
+# the bootstrap image would stay pinned to whenever the bundle was first built while
+# every other image refreshed. Remove it first to make the step idempotent.
+rm -f "${BOOT_TAR}"
 echo "[save] bootstrap registry ${BOOT_IMG} → docker-archive"
 # docker-archive dest ref keeps the short tag docker/nerdctl expect on load.
 if skopeo copy --override-arch "${AIRGAP_ARCH##*/}" --override-os linux \

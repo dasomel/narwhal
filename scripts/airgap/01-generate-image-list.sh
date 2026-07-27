@@ -9,7 +9,10 @@ set -euo pipefail
 #   --live [OUT]   RECOMMENDED. Extract the ACTUAL image set from a running,
 #                  fully-provisioned cluster (pod snapshot) and union the
 #                  transient job/init images that don't appear in a point-in-time
-#                  snapshot (kaniko, alpine/git, alpine/k8s, velero-plugin). This
+#                  snapshot (kaniko, alpine/git, alpine/k8s, velero-plugin), plus
+#                  `kubeadm config images list` — pause and kube-proxy are invisible
+#                  to a pod snapshot and the control-plane tags must match the
+#                  kubeadm the nodes actually run. This
 #                  is the only mode that captures Helm CHART-DEFAULT images —
 #                  Cilium, Alloy, Loki, Tempo, Prometheus stack, Istio, Kyverno,
 #                  cert-manager, MetalLB, ArgoCD, Keycloak, CNPG, etc. — which the
@@ -99,6 +102,21 @@ kubectl_live() {
   fi
 }
 
+# The control-plane image set, straight from the tool that pulls it. A pod snapshot
+# cannot produce this: pause is the sandbox image and never appears as a pod
+# container, and kube-proxy never runs at all because Cilium replaces it. Both were
+# absent from the bundle, and the three apiserver/controller-manager/scheduler refs
+# it did contain were a patch release behind whatever kubeadm the nodes installed —
+# so on Kakao Cloud 5 of the 7 refs kubeadm wanted were missing and a real airgap
+# install would have died at kubeadm init.
+kubeadm_live() {
+  if kubeadm config images list >/dev/null 2>&1; then
+    kubeadm config images list 2>/dev/null
+  else
+    ( cd "${PROJECT_ROOT}" && vagrant ssh master-1 -c "kubeadm config images list" 2>/dev/null | tr -d '\r' )
+  fi
+}
+
 if [[ "${MODE}" == "live" ]]; then
   echo "Extracting image set from the running cluster..." >&2
   live=$(kubectl_live get pods -A -o jsonpath='{range .items[*]}{range .spec.initContainers[*]}{.image}{"\n"}{end}{range .spec.containers[*]}{.image}{"\n"}{end}{end}')
@@ -107,10 +125,19 @@ if [[ "${MODE}" == "live" ]]; then
     echo "       Run this from the repo root with a reachable cluster." >&2
     exit 1
   fi
+  kubeadm_imgs=$(kubeadm_live | grep -E '^[a-z0-9.-]+/' || true)
+  if [[ -z "${kubeadm_imgs}" ]]; then
+    echo "ERROR: could not read 'kubeadm config images list'." >&2
+    echo "       Without it the bundle silently omits pause and kube-proxy and pins the" >&2
+    echo "       control plane to whatever was running, not what kubeadm will ask for." >&2
+    exit 1
+  fi
+  echo "  kubeadm control-plane images: $(printf '%s\n' "${kubeadm_imgs}" | wc -l | tr -d ' ')" >&2
+
   LIVE_STAMP="$(date +%Y-%m-%d) (from live cluster)"
   {
     emit_header
-    { printf '%s\n' "${live}"; printf '%s\n' "${TRANSIENT_IMAGES}"; } \
+    { printf '%s\n' "${live}"; printf '%s\n' "${TRANSIENT_IMAGES}"; printf '%s\n' "${kubeadm_imgs}"; } \
       | sed -E 's/@sha256:.*//' \
       | grep -vE "${INCLUSTER_BUILT_RE}" \
       | grep -vE '^[[:space:]]*$' \

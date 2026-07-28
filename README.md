@@ -343,6 +343,7 @@ All users in the narwhal realm can access (the openid-connect plugin handles aut
 
 - [VERSIONS.md](VERSIONS.md) - Component versions
 - [docs/architecture.md](docs/architecture.md) - Architecture details
+- [docs/cloud-deployment.md](docs/cloud-deployment.md) - Kakao Cloud deployment (topology, egress, airgap, provider-aware GitOps)
 - [docs/keycloak-sso.md](docs/keycloak-sso.md) - Keycloak SSO detailed configuration
 - [docs/keycloak-accounts.md](docs/keycloak-accounts.md) - Keycloak SSO account and configuration guide
 - [docs/dns-access.md](docs/dns-access.md) - DNS settings and service access

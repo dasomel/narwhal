@@ -3,6 +3,10 @@
 Narwhal은 Vagrant VM 기반의 Kubernetes Internal Developer Platform (IDP) 클러스터 자동 구축 프로젝트입니다.
 로컬 환경에서 프로덕션 수준의 IDP 스택을 원클릭으로 프로비저닝합니다.
 
+> 이 문서의 인프라 계층(노드 IP, kube-vip, MetalLB)은 **Vagrant 기준**입니다. 플랫폼 계층
+> (APISIX, Keycloak, ArgoCD, 스토리지 등)은 배포 대상과 무관하게 동일합니다.
+> 퍼블릭 클라우드 배포에서 무엇이 달라지는지는 [`cloud-deployment.md`](./cloud-deployment.md) 참고.
+
 ---
 
 ## Infrastructure Overview

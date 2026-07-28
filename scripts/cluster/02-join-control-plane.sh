@@ -111,7 +111,12 @@ sudo bash -c "$(cat /tmp/join-control-plane.sh) --apiserver-advertise-address=${
 
 # Same heap bound master-1 applies in 02-init-cluster.sh: this node renders its apiserver
 # from the shared ClusterConfiguration, which carries no memory request or ceiling.
-"$(dirname "${BASH_SOURCE[0]}")/patch-apiserver-memory.sh"
+# Absolute path, like every other cross-script reference here (see the lib.sh
+# sources). Vagrant copies a provisioner script to /tmp/vagrant-shell and runs it
+# from there, so BASH_SOURCE resolves to /tmp and the sibling is not beside it:
+# clean installs died with "/tmp/patch-apiserver-memory.sh: No such file or
+# directory" right after kubeadm init, leaving no kubeconfig and no join files.
+/home/vagrant/scripts/cluster/patch-apiserver-memory.sh
 
 #=========================================
 # Configure kubeconfig for vagrant user

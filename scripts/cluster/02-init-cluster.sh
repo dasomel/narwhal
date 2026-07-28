@@ -213,7 +213,12 @@ fi
 # Bound the apiserver's heap before anything else lands on this node. kubeadm gives it no
 # memory request and no ceiling, so it grows until the node is out and the kernel starts
 # culling BestEffort pods instead. See the script for the measurements.
-"$(dirname "${BASH_SOURCE[0]}")/patch-apiserver-memory.sh"
+# Absolute path, like every other cross-script reference here (see the lib.sh
+# sources). Vagrant copies a provisioner script to /tmp/vagrant-shell and runs it
+# from there, so BASH_SOURCE resolves to /tmp and the sibling is not beside it:
+# clean installs died with "/tmp/patch-apiserver-memory.sh: No such file or
+# directory" right after kubeadm init, leaving no kubeconfig and no join files.
+/home/vagrant/scripts/cluster/patch-apiserver-memory.sh
 
 # Configure kubeconfig for vagrant user
 mkdir -p /home/vagrant/.kube

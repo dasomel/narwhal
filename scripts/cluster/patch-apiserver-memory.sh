@@ -63,4 +63,27 @@ sudo chmod 600 "${STAGE}"
 sudo mv "${STAGE}" "${MANIFEST}"
 rm -f "${WORK}"
 
-echo "Patched. kubelet will restart kube-apiserver on this node shortly."
+echo "Patched. Waiting for kubelet to restart kube-apiserver..."
+
+# Rewriting the static pod manifest makes kubelet tear the apiserver down and bring it
+# back, and callers run straight into that gap: on a clean install 03-cni-install.sh
+# is next, and it died on the very first kubectl with
+#   dial tcp 192.168.56.10:6443: connect: connection refused
+# leaving the cluster with no CNI and all six nodes NotReady. Whoever causes the
+# outage waits it out.
+#
+# Sleep first: /livez answers until kubelet actually stops the old container, so
+# polling immediately would match the process we are about to kill.
+APISERVER_ENDPOINT="${APISERVER_ENDPOINT:-https://127.0.0.1:6443/livez}"
+sleep 5
+for attempt in $(seq 1 60); do
+  if curl -sk --max-time 5 -o /dev/null "${APISERVER_ENDPOINT}"; then
+    echo "kube-apiserver is back after ${attempt} check(s)."
+    exit 0
+  fi
+  sleep 5
+done
+
+echo "ERROR: kube-apiserver did not come back within 5 minutes of the memory patch." >&2
+echo "       Check: sudo crictl ps -a | grep apiserver; sudo journalctl -u kubelet -n 50" >&2
+exit 1

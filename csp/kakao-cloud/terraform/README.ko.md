@@ -102,6 +102,74 @@ ssh -i "$(tofu output -raw ssh_key_path)" \
 `assign_node_public_ips`를 켜지 않는 한 `master_public_ips`·`worker_public_ips`는 **빈 배열**이다 —
 실패가 아니라 정상이다.
 
+## 클러스터 접근
+
+### 로컬에서 kubectl
+
+apiserver 인증서의 SAN에는 `localhost`, `127.0.0.1`, 마스터 사설 IP, 사설 VIP가 들어 있고
+**LB 공인 IP는 없다.** 공인 엔드포인트로 바로 붙으면 TLS 검증에 실패하므로, 인증서가 이미
+포함하는 이름으로 터널을 판다:
+
+```bash
+KEY=$(tofu output -raw ssh_key_path)
+BASTION=$(tofu output -raw bastion_public_ip)
+MASTER1=$(tofu output -json master_private_ips | jq -r '.[0]')
+
+# 1) master-1 에서 kubeconfig 가져오기 (root 소유라 sudo cat)
+ssh -i "$KEY" -J ubuntu@"$BASTION" ubuntu@"$MASTER1" \
+  'sudo cat /etc/kubernetes/admin.conf' > ~/.kube/kakao.conf
+sed -i '' 's#server: https://.*#server: https://127.0.0.1:6443#' ~/.kube/kakao.conf   # GNU sed 는 -i
+
+# 2) 터널을 열고 사용
+ssh -f -N -i "$KEY" -L 6443:127.0.0.1:6443 -J ubuntu@"$BASTION" ubuntu@"$MASTER1"
+KUBECONFIG=~/.kube/kakao.conf kubectl get nodes
+```
+
+2026-07-28 검증: 운영 호스트에서 노드 6대와 ArgoCD 앱 33개 조회 확인.
+터널 종료는 `pkill -f '6443:127.0.0.1:6443'`.
+
+공인 주소로 직접 붙고 싶다면 `02-init-cluster.sh`의 `certSANs`에 LB 공인 IP를 넣고 apiserver
+인증서를 재발급한다 — TLS 검증을 끄지 말 것.
+
+### 노드에서 kubectl
+
+```bash
+ssh -i "$KEY" -J ubuntu@"$BASTION" ubuntu@"$MASTER1"
+sudo -E env KUBECONFIG=/home/vagrant/.kube/config-local kubectl get nodes
+```
+
+이 이미지에서 `sudo -E`만으로는 환경변수가 넘어가지 않으므로(`docs/cloud-deployment.md`의
+관련 항목 참고) 위처럼 `KUBECONFIG`를 명시해 넘긴다.
+
+### 서비스 계정과 비밀번호
+
+플랫폼이 생성한 자격증명은 스크립트 하나로 전부 출력된다:
+
+```bash
+ssh -i "$KEY" -J ubuntu@"$BASTION" ubuntu@"$MASTER1" \
+  'sudo env KUBECONFIG=/home/vagrant/.kube/config-local DOMAIN=local.narwhal.internal \
+     bash /home/vagrant/scripts/test/show-credentials.sh'
+```
+
+Keycloak(관리자 + 사전 생성된 `admin`/`dev`/`view`/`guest` realm 사용자), ArgoCD, Gitea,
+Harbor, Grafana, OpenBao 루트·언실 키, APISIX admin API 키, PostgreSQL 서비스 계정,
+OIDC 클라이언트 시크릿을 포함한다. 마지막 "SSH / Node access" 블록은 아직 Vagrant 주소를
+출력하므로, 이 배포의 주소는 `tofu output`으로 확인한다.
+
+값 하나만 필요하면:
+
+```bash
+kubectl get secret <name> -n <ns> -o jsonpath='{.data.<key>}' | base64 -d
+```
+
+웹 UI는 `https://<서비스>.local.narwhal.internal`에서 Keycloak SSO를 거치며 worker LB로
+들어간다. `--resolve`나 `/etc/hosts`로 호스트명을 LB에 연결한다:
+
+```bash
+LB=$(tofu output -raw worker_lb_public_ip)
+curl -sk --resolve "argocd.local.narwhal.internal:443:$LB" https://argocd.local.narwhal.internal/
+```
+
 ## 디렉토리 구조
 
 ```

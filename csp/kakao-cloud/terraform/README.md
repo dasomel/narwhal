@@ -104,6 +104,75 @@ ssh -i "$(tofu output -raw ssh_key_path)" \
 `master_public_ips` and `worker_public_ips` are empty arrays unless
 `assign_node_public_ips` is on — that is expected, not a failure.
 
+## Cluster Access
+
+### kubectl from your machine
+
+The apiserver certificate carries `localhost`, `127.0.0.1`, the master private IPs and the
+private VIP — **not the LB's public IP**. Connecting straight to the public endpoint fails
+TLS verification, so tunnel to a name the certificate already covers:
+
+```bash
+KEY=$(tofu output -raw ssh_key_path)
+BASTION=$(tofu output -raw bastion_public_ip)
+MASTER1=$(tofu output -json master_private_ips | jq -r '.[0]')
+
+# 1) kubeconfig off master-1 (owned by root, so cat it under sudo)
+ssh -i "$KEY" -J ubuntu@"$BASTION" ubuntu@"$MASTER1" \
+  'sudo cat /etc/kubernetes/admin.conf' > ~/.kube/kakao.conf
+sed -i '' 's#server: https://.*#server: https://127.0.0.1:6443#' ~/.kube/kakao.conf   # GNU sed: -i
+
+# 2) tunnel, then use it
+ssh -f -N -i "$KEY" -L 6443:127.0.0.1:6443 -J ubuntu@"$BASTION" ubuntu@"$MASTER1"
+KUBECONFIG=~/.kube/kakao.conf kubectl get nodes
+```
+
+Verified 2026-07-28: six nodes and 33 ArgoCD applications listed from the operator host.
+Close the tunnel with `pkill -f '6443:127.0.0.1:6443'`.
+
+To reach the API by its public address instead, add the LB's public IP to `certSANs` in
+`02-init-cluster.sh` and regenerate the apiserver certificate — do not disable TLS
+verification.
+
+### kubectl on a node
+
+```bash
+ssh -i "$KEY" -J ubuntu@"$BASTION" ubuntu@"$MASTER1"
+sudo -E env KUBECONFIG=/home/vagrant/.kube/config-local kubectl get nodes
+```
+
+`sudo -E` alone does not carry your environment on these images (§ Known Issues in
+`docs/cloud-deployment.md`), so pass `KUBECONFIG` explicitly as shown.
+
+### Service accounts and passwords
+
+Every credential the platform generates is printed by one script:
+
+```bash
+ssh -i "$KEY" -J ubuntu@"$BASTION" ubuntu@"$MASTER1" \
+  'sudo env KUBECONFIG=/home/vagrant/.kube/config-local DOMAIN=local.narwhal.internal \
+     bash /home/vagrant/scripts/test/show-credentials.sh'
+```
+
+It covers Keycloak (admin plus the pre-seeded `admin`/`dev`/`view`/`guest` realm users),
+ArgoCD, Gitea, Harbor, Grafana, OpenBao root and unseal keys, the APISIX admin API key,
+PostgreSQL service credentials and the OIDC client secrets. Its closing "SSH / Node access"
+block still prints Vagrant addresses — use `tofu output` for this deployment's.
+
+For a single value:
+
+```bash
+kubectl get secret <name> -n <ns> -o jsonpath='{.data.<key>}' | base64 -d
+```
+
+Web UIs are behind Keycloak SSO at `https://<service>.local.narwhal.internal`, reached
+through the worker LB. Point the hostname at it with `--resolve` or an `/etc/hosts` entry:
+
+```bash
+LB=$(tofu output -raw worker_lb_public_ip)
+curl -sk --resolve "argocd.local.narwhal.internal:443:$LB" https://argocd.local.narwhal.internal/
+```
+
 ## Directory Structure
 
 ```

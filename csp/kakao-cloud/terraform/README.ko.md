@@ -160,6 +160,18 @@ sudo -E env KUBECONFIG=/home/vagrant/.kube/config-local kubectl get nodes
 이 이미지에서 `sudo -E`만으로는 환경변수가 넘어가지 않으므로(`docs/cloud-deployment.md`의
 관련 항목 참고) 위처럼 `KUBECONFIG`를 명시해 넘긴다.
 
+### 웹 UI
+
+`*.local.narwhal.internal`은 공개 DNS가 없고 worker LB가 이름을 서빙한다. 한 번 매핑해 둔다:
+
+```bash
+scripts/cloud/setup-hosts-kakao.sh --apply
+```
+
+호스트 목록은 클러스터의 ApisixRoute에서 읽고 `# BEGIN narwhal-kakao` 마커 사이에 기록되며
+`--remove`로 되돌린다. 같은 명령이 플랫폼 CA를 내보내고 신뢰 추가 방법을 출력한다 —
+인증서 발급자가 `CN=Narwhal IDP Root CA`라 신뢰 전까지 브라우저가 경고한다.
+
 ### 서비스 계정과 비밀번호
 
 플랫폼이 생성한 자격증명은 스크립트 하나로 전부 출력된다:

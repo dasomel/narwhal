@@ -255,7 +255,40 @@ Helm 주석으로 둔 이유). 기존 클러스터에 드리프트가 생기지 
 
 ---
 
-## 8. 검증 방법
+## 8. 도메인 접근
+
+`*.local.narwhal.internal`은 공개 DNS가 없다. Vagrant는 master 노드의 dnsmasq가 해석해 주지만
+(`dns-access.md`), 클라우드에서는 그 경로가 없다 — `PROVIDER=kakao`가 dnsmasq를 건너뛰고,
+노드는 프라이빗이라 리졸버로 지정할 수도 없다. 이름을 서빙하는 것은 **worker LB의 공인 IP**이므로
+`/etc/hosts`로 연결한다.
+
+```bash
+scripts/cloud/setup-hosts-kakao.sh           # 무엇이 추가될지 확인만
+scripts/cloud/setup-hosts-kakao.sh --apply   # /etc/hosts 에 기록, sudo 필요
+scripts/cloud/setup-hosts-kakao.sh --remove  # 되돌리기
+```
+
+호스트 목록은 클러스터의 ApisixRoute에서 읽으므로 라우트가 늘어도 그대로 맞는다(2026-07-29 기준
+14개). 기록은 `# BEGIN narwhal-kakao` ~ `# END narwhal-kakao` 마커 사이에만 들어가고, `--remove`는
+그 구간만 지운다 — LB 주소로 grep해서 지우면 무관한 항목까지 날아간다.
+
+### TLS 신뢰
+
+플랫폼이 자체 CA(`CN=Narwhal IDP Root CA`)로 인증서를 발급하므로 브라우저가 경고한다.
+`--apply`가 CA를 `./narwhal-ca.crt`로 내보내고 신뢰 추가 명령을 출력한다. 시스템 신뢰 저장소를
+바꾸는 일이라 설치 자체는 자동으로 하지 않는다.
+
+```bash
+sudo security add-trusted-cert -d -r trustRoot \
+  -k /Library/Keychains/System.keychain ./narwhal-ca.crt
+```
+
+이 CA를 신뢰하면 `curl -k` 없이 검증이 통과한다(확인: `--cacert narwhal-ca.crt`로 argocd 302,
+portal 307, grafana 302).
+
+---
+
+## 9. 검증 방법
 
 배포가 끝났다고 종료 코드를 믿지 않는다. `up.sh`가 Phase 2 실패를 `rc=0`으로 보고한 전례가 있다.
 

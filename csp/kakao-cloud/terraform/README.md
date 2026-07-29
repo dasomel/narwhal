@@ -166,6 +166,20 @@ sudo -E env KUBECONFIG=/home/vagrant/.kube/config-local kubectl get nodes
 `sudo -E` alone does not carry your environment on these images (§ Known Issues in
 `docs/cloud-deployment.md`), so pass `KUBECONFIG` explicitly as shown.
 
+### Web UIs
+
+`*.local.narwhal.internal` has no public DNS; the names are served by the worker LB.
+Map them once:
+
+```bash
+scripts/cloud/setup-hosts-kakao.sh --apply
+```
+
+Hostnames are read from the cluster's ApisixRoutes, written between
+`# BEGIN narwhal-kakao` markers, and removable with `--remove`. The command also exports
+the platform CA and prints how to trust it — certificates are issued by
+`CN=Narwhal IDP Root CA`, so browsers warn until you do.
+
 ### Service accounts and passwords
 
 Every credential the platform generates is printed by one script:

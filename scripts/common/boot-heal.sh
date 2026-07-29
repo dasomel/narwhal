@@ -51,6 +51,44 @@ if [[ "${MODE}" == "boot" ]]; then
 fi
 
 #=========================================
+# D-lokiwal: drop zero-length Loki WAL segments left by an unclean stop.
+#
+# Loki's tsdb-shipper creates a WAL segment before writing to it. Halt the VMs
+# with that window open and the file survives at 0 bytes on the NFS export;
+# Loki then hits EOF initialising the store module and CrashLoopBackOffs
+# forever, with no self-recovery (observed 2026-07-29: loki-0 at 12 restarts,
+# "unexpected EOF / error initialising module: store").
+#
+# A 0-byte segment carries no log data by definition, so removing it is lossless
+# — chunks live in SeaweedFS and under chunks/. Scoped to the loki PVC on the
+# node that actually exports the share; every other node has no such path and
+# the loop is a no-op.
+#
+# The boot-time cutoff is load-bearing, not belt-and-braces. Loki creates each
+# WAL segment empty and fills it later, so a HEALTHY running loki always has a
+# 0-byte segment open (confirmed on master-1 seconds after a restart). This runs
+# 45s into boot, by which time loki may already be up — matching on size alone
+# would delete the live segment and cause the exact corruption this guards
+# against. Anything written after this boot belongs to the current loki;
+# anything older is by definition a leftover from before the halt. A fixed age
+# window would misjudge both a fast halt/boot cycle and a slow-starting loki,
+# so compare against `uptime -s` rather than a duration. Runs after the clock
+# gate above, so the timestamps are trustworthy.
+#=========================================
+if [[ "${MODE}" == "boot" ]]; then
+  loki_wal_removed=0
+  while IFS= read -r -d '' stale_seg; do
+    rm -f "${stale_seg}"
+    loki_wal_removed=$((loki_wal_removed + 1))
+    log "Removed zero-length Loki WAL segment: ${stale_seg}"
+  done < <(find /srv/nfs/k8s/monitoring/storage-loki-*/tsdb-shipper-active/wal \
+             -type f -size 0 ! -newermt "$(uptime -s)" -print0 2>/dev/null)
+  [[ "${loki_wal_removed}" -gt 0 ]] \
+    && log "Cleared ${loki_wal_removed} truncated Loki WAL segment(s)" \
+    || true
+fi
+
+#=========================================
 # Wedge detection
 #
 # NOTE: `crictl` is NOT installed on narwhal nodes (containerd 2.x's

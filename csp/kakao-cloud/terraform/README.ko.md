@@ -15,9 +15,9 @@ Kubernetes와 플랫폼 앱은 이후
 | VPC | 1 | 172.16.0.0/16 |
 | Subnet | 1 | 172.16.0.0/24 |
 | Security Group | 1 | K8s + Cilium + NFS + 프록시/레지스트리 포트 |
-| Master VM | 3 | 컨트롤플레인 (t1i.large, 2 vCPU / 4GB), 고정 IP .10 .11 .12 |
-| Worker VM | 3 | 데이터플레인 (t1i.xlarge, 4 vCPU / 8GB), 고정 IP .21 .22 .23 |
-| Bastion VM | 1 | SSH 점프 호스트, 포워드 프록시, airgap 레지스트리 |
+| Master VM | 3 | 컨트롤플레인 (t1i.large, 2 vCPU / 4GB), 고정 **사설** IP .10 .11 .12 |
+| Worker VM | 3 | 데이터플레인 (t1i.xlarge, 4 vCPU / 8GB), 고정 **사설** IP .21 .22 .23 |
+| Bastion VM | 1 | SSH 점프 호스트, 포워드 프록시, airgap 레지스트리 (공인 + 사설 .207) |
 | Master LB | 1 | K8s API (6443) + etcd (2379) |
 | Worker LB | 1 | Ingress HTTP (80) + HTTPS (443) → NodePort 31080/31443 |
 | Public IP | 3 | bastion + LB 2개. **클러스터 노드에는 없다** |
@@ -35,19 +35,23 @@ Kubernetes와 플랫폼 앱은 이후
         +-----------------------+-----------------------+
         |                       |                       |
     Bastion                 Master LB               Worker LB
-   (공인 IP)              (공인 :6443)          (공인 :80/443)
+  공인 IP  (+사설 .207)    공인 IP :6443          공인 IP :80/443
   ssh · squid:3128            |                       |
   registry:5000               |                       |
         |                     |                       |
-        |  ProxyJump          |  VIP .236             |  VIP .110
-        |  (운영 접근)         |                       |  → NodePort 31080/31443
+        |  ProxyJump          | 사설 VIP .236          | 사설 VIP .110
+        |  (운영 접근)         |                       | → NodePort 31080/31443
         v                     v                       v
    +---------------------------------------------------------+
-   |  Master-1 .10   Master-2 .11   Master-3 .12              |
-   |  Worker-1 .21   Worker-2 .22   Worker-3 .23              |
-   |  (공인 IP 없음, egress 는 bastion squid 경유)             |
+   |  ▸ 노드는 사설 IP만 보유 — 공인 IP 없음                    |
+   |                                                          |
+   |  master-1 .10   master-2 .11   master-3 .12              |
+   |  worker-1 .21   worker-2 .22   worker-3 .23              |
+   |                                                          |
+   |  egress → bastion squid:3128                             |
    +---------------------------------------------------------+
                     VPC 172.16.0.0/16 · Subnet 172.16.0.0/24
+       (위 .xx 표기는 모두 172.16.0.xx 사설 주소)
 ```
 
 ## 사전 요구사항

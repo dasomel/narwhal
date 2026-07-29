@@ -16,9 +16,9 @@ services reachable through the worker LB.
 | VPC | 1 | 172.16.0.0/16 |
 | Subnet | 1 | 172.16.0.0/24 |
 | Security Group | 1 | K8s + Cilium + NFS + proxy/registry ports |
-| Master VMs | 3 | Control-plane (t1i.large, 2 vCPU / 4GB), fixed IPs .10 .11 .12 |
-| Worker VMs | 3 | Data-plane (t1i.xlarge, 4 vCPU / 8GB), fixed IPs .21 .22 .23 |
-| Bastion VM | 1 | SSH jump host, forward proxy, airgap registry |
+| Master VMs | 3 | Control-plane (t1i.large, 2 vCPU / 4GB), fixed **private** IPs .10 .11 .12 |
+| Worker VMs | 3 | Data-plane (t1i.xlarge, 4 vCPU / 8GB), fixed **private** IPs .21 .22 .23 |
+| Bastion VM | 1 | SSH jump host, forward proxy, airgap registry (public + private .207) |
 | Master LB | 1 | K8s API (6443) + etcd (2379) |
 | Worker LB | 1 | Ingress HTTP (80) + HTTPS (443) -> NodePort 31080/31443 |
 | Public IPs | 3 | Bastion + 2 LBs. **Cluster nodes have none** |
@@ -37,19 +37,23 @@ is the escape hatch if you need direct egress instead.
         +-----------------------+-----------------------+
         |                       |                       |
     Bastion                 Master LB               Worker LB
-  (public IP)            (public :6443)         (public :80/443)
+  public IP (+priv .207)   public IP :6443       public IP :80/443
   ssh · squid:3128            |                       |
   registry:5000               |                       |
         |                     |                       |
-        |  ProxyJump          |  VIP .236             |  VIP .110
-        |  (admin access)     |                       |  -> NodePort 31080/31443
+        |  ProxyJump          | private VIP .236      | private VIP .110
+        |  (admin access)     |                       | -> NodePort 31080/31443
         v                     v                       v
    +---------------------------------------------------------+
-   |  Master-1 .10   Master-2 .11   Master-3 .12              |
-   |  Worker-1 .21   Worker-2 .22   Worker-3 .23              |
-   |  (no public IP; egress via bastion squid)                |
+   |  > Nodes hold private addresses only - no public IP      |
+   |                                                          |
+   |  master-1 .10   master-2 .11   master-3 .12              |
+   |  worker-1 .21   worker-2 .22   worker-3 .23              |
+   |                                                          |
+   |  egress -> bastion squid:3128                            |
    +---------------------------------------------------------+
                     VPC 172.16.0.0/16 · Subnet 172.16.0.0/24
+        (every .xx above is a 172.16.0.xx private address)
 ```
 
 ## Prerequisites

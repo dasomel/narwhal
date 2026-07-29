@@ -17,8 +17,8 @@ IaC와 운영 명령은 [`csp/kakao-cloud/terraform/README.md`](../csp/kakao-clo
 |---|---|---|
 | OS | Ubuntu 26.04 (`dasomel/ubuntu-26.04-xfs`) | Ubuntu 24.04 (26.04 이미지 없음) |
 | 노드 네트워크 | 192.168.56.0/24 | 172.16.0.0/24 |
-| 컨트롤플레인 VIP | kube-vip (192.168.56.100) | Kakao NLB (VIP .236) |
-| Ingress 외부 노출 | MetalLB LoadBalancer (.200) | worker NLB → NodePort 31080/31443 |
+| 컨트롤플레인 VIP | kube-vip (192.168.56.100) | Kakao NLB (사설 VIP 172.16.0.236) |
+| Ingress 외부 노출 | MetalLB LoadBalancer (192.168.56.200) | worker NLB(공인) → NodePort 31080/31443 |
 | 노드 공인 IP | 없음 (호스트 전용 네트워크) | 없음 (bastion 경유) |
 | 노드 egress | 호스트 NAT | **bastion squid 프록시** |
 | 파일 배포 | `synced_folder` 마운트 | tar over ssh (`stage-kakao-nodes.sh`) |
@@ -39,22 +39,25 @@ IaC와 운영 명령은 [`csp/kakao-cloud/terraform/README.md`](../csp/kakao-clo
         +-----------------------+-----------------------+
         |                       |                       |
     Bastion                 Master LB               Worker LB
-   (공인 IP)              (공인 :6443)          (공인 :80/443)
+  공인 IP + 사설 .207      공인 IP :6443          공인 IP :80/443
         |                       |                       |
-  ┌─────┴──────┐                |                       |
-  │ sshd       │  ProxyJump     | VIP .236              | VIP .110
-  │ squid:3128 │  운영 접근      | K8s API               | → NodePort 31080/31443
-  │ registry   │  ←── 노드 egress                        |    (APISIX)
+  ┌─────┴──────┐            사설 VIP .236           사설 VIP .110
+  │ sshd       │  ProxyJump     | K8s API               | → NodePort 31080/31443
+  │ squid:3128 │  운영 접근      |                       |    (APISIX)
+  │ registry   │  ←── 노드 egress                        |
   │   :5000    │  ←── 이미지 pull                        |
   └─────┬──────┘                |                       |
         v                       v                       v
    +---------------------------------------------------------+
+   |  ▸ 노드는 사설 IP만 보유 — 공인 IP 없음                    |
+   |                                                          |
    |  master-1 .10   master-2 .11   master-3 .12              |
    |  worker-1 .21   worker-2 .22   worker-3 .23              |
    |                                                          |
    |  NFS 서버: master-1 (/srv/nfs/k8s, export = 172.16.0.0/24)|
    +---------------------------------------------------------+
               VPC 172.16.0.0/16 · Subnet 172.16.0.0/24
+       (위 .xx 표기는 모두 172.16.0.xx 사설 주소)
 ```
 
 bastion은 세 가지 역할을 겸한다. 하나의 VM에 몰아둔 것은 노드를 프라이빗으로 유지하면서

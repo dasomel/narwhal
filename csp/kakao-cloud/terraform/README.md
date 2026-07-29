@@ -112,20 +112,26 @@ The apiserver certificate carries `localhost`, `127.0.0.1`, the master private I
 private VIP — **not the LB's public IP**. Connecting straight to the public endpoint fails
 TLS verification, so tunnel to a name the certificate already covers:
 
+Run from `csp/kakao-cloud/terraform`. Paste-safe: no inline comments, because an
+interactive zsh with `interactive_comments` off treats `#` as a normal word and a `)`
+inside the comment then fails with `parse error near ')'`.
+
 ```bash
 KEY=$(tofu output -raw ssh_key_path)
 BASTION=$(tofu output -raw bastion_public_ip)
 MASTER1=$(tofu output -json master_private_ips | jq -r '.[0]')
 
-# 1) kubeconfig off master-1 (owned by root, so cat it under sudo)
-ssh -i "$KEY" -J ubuntu@"$BASTION" ubuntu@"$MASTER1" \
-  'sudo cat /etc/kubernetes/admin.conf' > ~/.kube/kakao.conf
-sed -i '' 's#server: https://.*#server: https://127.0.0.1:6443#' ~/.kube/kakao.conf   # GNU sed: -i
+mkdir -p ~/.kube
+ssh -i "$KEY" -J ubuntu@"$BASTION" ubuntu@"$MASTER1" 'sudo cat /etc/kubernetes/admin.conf' > ~/.kube/kakao.conf
+sed -i '' 's#server: https://.*#server: https://127.0.0.1:6443#' ~/.kube/kakao.conf
 
-# 2) tunnel, then use it
 ssh -f -N -i "$KEY" -L 6443:127.0.0.1:6443 -J ubuntu@"$BASTION" ubuntu@"$MASTER1"
 KUBECONFIG=~/.kube/kakao.conf kubectl get nodes
 ```
+
+Step by step: `admin.conf` is root-owned on master-1, hence `sudo cat` rather than scp;
+`sed` rewrites the server to the tunnel endpoint (`sed -i ''` is macOS — GNU sed wants
+plain `-i`); the third command opens the forward in the background.
 
 Verified 2026-07-28: six nodes and 33 ArgoCD applications listed from the operator host.
 Close the tunnel with `pkill -f '6443:127.0.0.1:6443'`.

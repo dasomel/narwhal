@@ -259,22 +259,31 @@ Helm 주석으로 둔 이유). 기존 클러스터에 드리프트가 생기지 
 
 배포가 끝났다고 종료 코드를 믿지 않는다. `up.sh`가 Phase 2 실패를 `rc=0`으로 보고한 전례가 있다.
 
+인라인 주석을 넣지 않았다 — `interactive_comments`가 꺼진 인터랙티브 zsh는 `#`를 일반 단어로
+보므로, 주석 안의 `(`나 `)`가 `parse error`를 낸다. 기대값은 아래 표에 있다.
+
 ```bash
-# 클러스터 실물
-kubectl get nodes --no-headers | grep -c " Ready "                    # 6
-kubectl get pods -A --no-headers | awk '$4!="Running" && $4!="Completed"' | wc -l   # 0
-kubectl get applications -n devtools --no-headers | awk '$2"/"$3' | sort | uniq -c  # 전부 Synced/Healthy
+kubectl get nodes --no-headers | grep -c " Ready "
+kubectl get pods -A --no-headers | awk '$4!="Running" && $4!="Completed"' | wc -l
+kubectl get applications -n devtools --no-headers | awk '{print $2"/"$3}' | sort | uniq -c
 
-# provider 반영
 kubectl get application idp-apps -n devtools -o jsonpath='{.spec.source.helm.valuesObject.provider}'
-kubectl get application metallb -n devtools 2>/dev/null | wc -l       # kakao 면 0
-kubectl get svc apisix-gateway -n platform-system                     # NodePort 31080/31443
+kubectl get application metallb -n devtools 2>/dev/null | wc -l
+kubectl get svc apisix-gateway -n platform-system
 
-# 외부 접근 (worker LB 공인 IP 경유)
 LB=$(cd csp/kakao-cloud/terraform && tofu output -raw worker_lb_public_ip)
-curl -sk -o /dev/null -w '%{http_code}\n' --resolve "portal.local.narwhal.internal:443:$LB" \
-  https://portal.local.narwhal.internal/          # 307 (SSO 리다이렉트) = 정상
+curl -sk -o /dev/null -w '%{http_code}\n' --resolve "portal.local.narwhal.internal:443:$LB" https://portal.local.narwhal.internal/
 ```
+
+| 확인 항목 | 기대값 |
+|---|---|
+| Ready 노드 수 | 6 |
+| 비정상 파드 수 | 0 |
+| ArgoCD 앱 상태 집계 | 전부 `Synced/Healthy` |
+| app-of-apps `provider` | `kakao` |
+| metallb Application 수 | 0 |
+| apisix-gateway | `NodePort  80:31080, 443:31443` |
+| portal HTTP 코드 | 307 — SSO 리다이렉트이므로 정상 |
 
 ---
 

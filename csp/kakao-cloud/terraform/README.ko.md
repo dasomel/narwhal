@@ -110,20 +110,26 @@ apiserver 인증서의 SAN에는 `localhost`, `127.0.0.1`, 마스터 사설 IP, 
 **LB 공인 IP는 없다.** 공인 엔드포인트로 바로 붙으면 TLS 검증에 실패하므로, 인증서가 이미
 포함하는 이름으로 터널을 판다:
 
+`csp/kakao-cloud/terraform`에서 실행한다. 붙여넣기 안전하도록 인라인 주석을 넣지 않았다 —
+`interactive_comments`가 꺼진 인터랙티브 zsh는 `#`를 일반 단어로 보기 때문에, 주석 안의 `)`가
+`parse error near ')'`를 일으킨다.
+
 ```bash
 KEY=$(tofu output -raw ssh_key_path)
 BASTION=$(tofu output -raw bastion_public_ip)
 MASTER1=$(tofu output -json master_private_ips | jq -r '.[0]')
 
-# 1) master-1 에서 kubeconfig 가져오기 (root 소유라 sudo cat)
-ssh -i "$KEY" -J ubuntu@"$BASTION" ubuntu@"$MASTER1" \
-  'sudo cat /etc/kubernetes/admin.conf' > ~/.kube/kakao.conf
-sed -i '' 's#server: https://.*#server: https://127.0.0.1:6443#' ~/.kube/kakao.conf   # GNU sed 는 -i
+mkdir -p ~/.kube
+ssh -i "$KEY" -J ubuntu@"$BASTION" ubuntu@"$MASTER1" 'sudo cat /etc/kubernetes/admin.conf' > ~/.kube/kakao.conf
+sed -i '' 's#server: https://.*#server: https://127.0.0.1:6443#' ~/.kube/kakao.conf
 
-# 2) 터널을 열고 사용
 ssh -f -N -i "$KEY" -L 6443:127.0.0.1:6443 -J ubuntu@"$BASTION" ubuntu@"$MASTER1"
 KUBECONFIG=~/.kube/kakao.conf kubectl get nodes
 ```
+
+각 줄의 의미: `admin.conf`는 master-1에서 root 소유라 scp 대신 `sudo cat`으로 읽는다.
+`sed`는 server 를 터널 엔드포인트로 바꾼다(`sed -i ''`는 macOS용 — GNU sed는 `-i`만 쓴다).
+세 번째 명령이 백그라운드로 포워딩을 연다.
 
 2026-07-28 검증: 운영 호스트에서 노드 6대와 ArgoCD 앱 33개 조회 확인.
 터널 종료는 `pkill -f '6443:127.0.0.1:6443'`.

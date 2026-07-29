@@ -114,6 +114,22 @@ config above, or name the key for both hops with `ProxyCommand` —
 
 ### kubectl from your machine
 
+`scripts/cloud/set-config-kakao.sh` does all of the below in one step — opens the
+tunnel, pulls the CA and client certs, and registers a `narwhal-kakao` context:
+
+```bash
+scripts/cloud/set-config-kakao.sh          # cert, the default
+scripts/cloud/set-config-kakao.sh token    # service account token, 1 year
+scripts/cloud/set-config-kakao.sh oidc     # Keycloak, needs kubelogin + /etc/hosts
+```
+
+It reuses an existing tunnel, and `PORT=7443 ...` moves it if 6443 is taken. The
+contexts are `narwhal-kakao`, `narwhal-kakao-token`, `narwhal-kakao-oidc` — named so
+they never collide with a local Vagrant one. This is the cloud counterpart of
+`scripts/common/set-config.sh`.
+
+The manual equivalent, and why a tunnel is needed at all:
+
 The apiserver certificate carries `localhost`, `127.0.0.1`, the master private IPs and the
 private VIP — **not the LB's public IP**. Connecting straight to the public endpoint fails
 TLS verification, so tunnel to a name the certificate already covers.

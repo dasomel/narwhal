@@ -110,6 +110,21 @@ ssh narwhal-master-1
 
 ### 로컬에서 kubectl
 
+`scripts/cloud/set-config-kakao.sh`가 아래 과정을 한 번에 처리한다 — 터널을 열고 CA·클라이언트
+인증서를 받아 `narwhal-kakao` context를 등록한다:
+
+```bash
+scripts/cloud/set-config-kakao.sh          # cert, 기본값
+scripts/cloud/set-config-kakao.sh token    # 서비스 어카운트 토큰, 1년
+scripts/cloud/set-config-kakao.sh oidc     # Keycloak, kubelogin + /etc/hosts 필요
+```
+
+이미 열린 터널은 재사용하며, 6443이 점유돼 있으면 `PORT=7443 ...`으로 옮긴다. context 이름은
+`narwhal-kakao`, `narwhal-kakao-token`, `narwhal-kakao-oidc`로 로컬 Vagrant 것과 충돌하지 않는다.
+`scripts/common/set-config.sh`의 클라우드 대응물이다.
+
+수동으로 하는 방법과, 애초에 터널이 필요한 이유:
+
 apiserver 인증서의 SAN에는 `localhost`, `127.0.0.1`, 마스터 사설 IP, 사설 VIP가 들어 있고
 **LB 공인 IP는 없다.** 공인 엔드포인트로 바로 붙으면 TLS 검증에 실패하므로, 인증서가 이미
 포함하는 이름으로 터널을 판다.

@@ -286,12 +286,41 @@ Cluster provisioning after that is roughly another hour, plus the airgap bundle 
 tofu destroy
 ```
 
-Teardown is as slow as creation. 52 of the 53 resources go in ~15 minutes, but **the VPC
-alone takes over an hour** (measured 2026-07-29: 62+ minutes after everything else had
-finished). Same cause as the `~30 min` on the create side — the API is slow in that
-stretch. It looks hung; as long as `Still destroying...` keeps ticking it is not. Do not
-interrupt it, or state is left holding just the VPC and the next `apply` fails on a name
-collision.
+52 of the 53 resources go in ~15 minutes. **VPC deletion alone can stretch into hours.**
+
+Measured 2026-07-29: with everything else already gone, the VPC delete printed
+`Still destroying...` for **1h54m** before being interrupted. A later `tofu refresh` still
+keeps the VPC in state, but its real condition is this:
+
+```bash
+tofu state show module.network.kakaocloud_vpc.vpc | grep provisioning_status
+#   provisioning_status = "PENDING_DELETE"
+```
+
+`PENDING_DELETE` means neither alive nor gone, and the distinction matters because a VPC
+in that state cannot be reused. Leaving it in place and running `tofu apply` dies here:
+
+```
+Error: create resource: kakaocloud_subnet
+VPC status is 'PENDING_DELETE'.
+```
+
+`tofu plan` looks perfectly healthy first — `47 to add, 0 to destroy` — so do not judge
+from the plan. **Always check `provisioning_status`.**
+
+Waiting is the only move. Once the delete lands and the VPC drops out of state, `tofu
+apply` recreates all 48 resources including the VPC. Poll for it:
+
+```bash
+until ! tofu state list | grep -q kakaocloud_vpc.vpc; do
+  tofu refresh -input=false >/dev/null 2>&1
+  sleep 300
+done
+tofu apply
+```
+
+Interrupting costs no data — the delete keeps running server-side, and re-running
+`tofu destroy` gets you nothing that waiting does not.
 
 ## Known Issues
 

@@ -276,10 +276,41 @@ terraform/
 tofu destroy
 ```
 
-파괴도 생성만큼 느리다. 리소스 52개는 ~15분에 사라지지만 **VPC 하나가 1시간 이상** 걸린다
-(2026-07-29 실측: 나머지 전부 끝난 뒤 VPC만 62분 이상). 생성 쪽 `~30분`과 같은 원인 —
-이 구간 API가 느리다. 멈춘 것처럼 보여도 `Still destroying...`이 계속 갱신되면 진행 중이니
-중단하지 않는다. 중단하면 state에 VPC만 남아 다음 `apply`가 이름 충돌로 실패한다.
+리소스 52개는 ~15분에 사라진다. **VPC 삭제만 몇 시간 단위로 늘어질 수 있다.**
+
+2026-07-29 실측: 나머지가 전부 지워진 뒤 VPC 삭제가 **1시간 54분** 동안 `Still destroying...`을
+찍었고, 거기서 중단했다. 이후 `tofu refresh`는 VPC를 여전히 state에 남겨 두는데, 실제 상태를
+보면 이렇다:
+
+```bash
+tofu state show module.network.kakaocloud_vpc.vpc | grep provisioning_status
+#   provisioning_status = "PENDING_DELETE"
+```
+
+`PENDING_DELETE`는 **살아있지도 없어지지도 않은 상태**다. 이 구분이 중요한 이유는 이 상태의
+VPC를 재사용할 수 없기 때문이다 — 남겨둔 채 `tofu apply`를 하면 다음에서 죽는다:
+
+```
+Error: create resource: kakaocloud_subnet
+VPC status is 'PENDING_DELETE'.
+```
+
+`tofu plan`은 `47 to add, 0 to destroy`로 멀쩡해 보이므로 계획만 보고 판단하면 안 된다.
+**항상 `provisioning_status`를 확인한다.**
+
+대응은 기다리는 것뿐이다. 삭제가 끝나 VPC가 state에서 사라지면 `tofu apply`가 VPC까지
+48개를 새로 만든다. 진행 여부는 refresh를 반복해 확인한다:
+
+```bash
+until ! tofu state list | grep -q kakaocloud_vpc.vpc; do
+  tofu refresh -input=false >/dev/null 2>&1
+  sleep 300
+done
+tofu apply
+```
+
+중단해도 데이터 손실은 없다. 삭제는 서버 쪽에서 계속 진행되며, `tofu destroy`를 다시 돌리는
+것과 그냥 기다리는 것의 차이도 없다.
 
 ## 알려진 이슈
 

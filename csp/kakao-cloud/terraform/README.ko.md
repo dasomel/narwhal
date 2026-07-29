@@ -80,7 +80,7 @@ tofu apply
 
 ```bash
 ./scripts/cloud/stage-kakao-nodes.sh     # 리포 → 노드, 스크립트가 기대하는 레이아웃으로
-./scripts/cloud/provision-kakao.sh all   # base → mirror → init → join → nfs → phase1 → phase2
+./scripts/cloud/provision-kakao.sh all   # proxy → base → mirror → init → join → nfs → phase1 → phase2
 ```
 
 `provision-kakao.sh`는 모든 주소를 OpenTofu state에서 읽으므로 같은 값을 두 번 적지 않는다.

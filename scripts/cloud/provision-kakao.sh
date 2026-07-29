@@ -7,6 +7,11 @@
 # no public IP and never talk to each other.
 #
 # Stages, in dependency order:
+#   proxy   squid on the bastion + apt/shell/containerd proxy config (all nodes).
+#           Not optional: the nodes have no public IP and there is no NAT gateway,
+#           so base's first apt-get has nowhere to go until this runs.
+#   registry airgap bundle -> registry:2 on the bastion. Also not optional: the mirror
+#           stage points containerd at this registry, so something has to fill it.
 #   base    01-prerequisites, 02-containerd, 03-k8s-install, 06-boot-heal-install (all nodes)
 #   runtime 02-containerd + mirror (all nodes) — upgrade without redoing base
 #   mirror  06-configure-mirrors --local-only (all nodes)
@@ -37,7 +42,7 @@ DOMAIN="${DOMAIN:-kakao.narwhal.internal}"
 
 cd "$(dirname "$0")/../.."
 
-[ $# -gt 0 ] || { echo "usage: $0 <base|runtime|mirror|init|join|nfs|phase1|phase2|all>..." >&2; exit 1; }
+[ $# -gt 0 ] || { echo "usage: $0 <proxy|registry|base|runtime|mirror|init|join|nfs|phase1|phase2|all>..." >&2; exit 1; }
 
 # ── OpenTofu state is the single source of truth for every address ───────────────
 BASTION_IP=$(cd "${TF_DIR}" && tofu output -raw bastion_public_ip)
@@ -135,6 +140,95 @@ tail_log() {
 }
 
 # ── stages ──────────────────────────────────────────────────────────────────────
+stage_proxy() {
+  log "proxy: squid on the bastion, then point every node at it"
+  # This has to come before `base`, and it is not optional: the nodes have no public
+  # IP and provider 0.4.4 has no NAT gateway, so 01-prerequisites' first apt-get has
+  # nowhere to go without it. It used to be two commands you were expected to know
+  # about — the quick-start listed stage + provision and nothing else, which is a
+  # clean install that cannot work.
+  #
+  # No sentinel: both scripts are cheap and idempotent, and squid is exactly the kind
+  # of thing an unattended-upgrades run restarts out from under us, so re-asserting it
+  # on every run is worth more than skipping it.
+  if ! ./scripts/cloud/setup-bastion-proxy.sh; then
+    note "bastion proxy FAILED"; return 1
+  fi
+  if ! ./scripts/cloud/configure-node-proxy.sh; then
+    note "node proxy config FAILED"; return 1
+  fi
+  note "ok"
+}
+
+ssh_bastion() {
+  ssh -i "${SSH_KEY}" \
+    -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR \
+    -o ConnectTimeout=25 -o ServerAliveInterval=30 \
+    "${SSH_USER}@${BASTION_IP}" "$@"
+}
+
+stage_registry() {
+  log "registry: airgap bundle -> registry:2 on the bastion (${AIRGAP_REGISTRY})"
+  # The mirror stage points containerd at this registry; something has to have put the
+  # images in it first. That was a manual sequence nobody wrote down — install docker,
+  # copy 6.7 GB, bootstrap, load — so the documented quick-start could not actually
+  # produce a working cluster from scratch.
+  #
+  # The bastion, not a node: 04-bootstrap-registry.sh needs docker or nerdctl and the
+  # nodes have only ctr, and the bastion is the one host with public egress to install
+  # docker from.
+  # The bundle is arch-specific and the bastion is the machine that will serve it, so
+  # ask the bastion rather than assuming the operator's laptop matches.
+  local arch bundle remote_home
+  arch=$(ssh_bastion "dpkg --print-architecture" | tr -d '\r')
+  bundle="${AIRGAP_BUNDLE_DIR:-narwhal-airgap-bundle-${arch}}"
+  remote_home="/home/${SSH_USER}"
+  if [ ! -d "${bundle}/oci" ]; then
+    note "no ${arch} bundle at ${bundle} — run scripts/airgap/01..03 first"; return 1
+  fi
+
+  if [ "${FORCE:-0}" != "1" ] \
+    && ssh_bastion "curl -sf -o /dev/null http://127.0.0.1:5000/v2/" >/dev/null 2>&1; then
+    note "registry already serving; skipping (FORCE=1 to redo)"
+    return 0
+  fi
+
+  note "installing docker on the bastion"
+  ssh_bastion "command -v docker >/dev/null 2>&1 || {
+    sudo apt-get update -qq &&
+    sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq docker.io >/dev/null
+  }" || { note "docker install FAILED"; return 1; }
+
+  local rsh="ssh -i ${SSH_KEY} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR"
+
+  # rsync rather than tar-over-ssh: several GB, and a re-run after an interrupted copy
+  # should move only what is missing. COPYFILE_DISABLE stops macOS emitting ._* sidecars
+  # — the same ones that corrupted the vendored charts in Gitea on 2026-07-27.
+  note "syncing ${arch} bundle from ${bundle} (several GB)"
+  COPYFILE_DISABLE=1 rsync -a -e "${rsh}" \
+    "${bundle}/" "${SSH_USER}@${BASTION_IP}:${remote_home}/airgap-bundle/" \
+    || { note "bundle sync FAILED"; return 1; }
+
+  note "syncing airgap scripts"
+  COPYFILE_DISABLE=1 rsync -a -e "${rsh}" \
+    scripts/airgap/ "${SSH_USER}@${BASTION_IP}:${remote_home}/scripts/airgap/" \
+    || { note "script sync FAILED"; return 1; }
+
+  note "bootstrapping registry:2"
+  ssh_bastion "sudo env AIRGAP_REGISTRY=${AIRGAP_REGISTRY} \
+    bash ${remote_home}/scripts/airgap/04-bootstrap-registry.sh \
+    --addr ${AIRGAP_REGISTRY} --bundle ${remote_home}/airgap-bundle >/tmp/registry-boot.log 2>&1" \
+    || { note "bootstrap FAILED"; ssh_bastion "tail -20 /tmp/registry-boot.log" | sed 's/^/     /'; return 1; }
+
+  note "loading images"
+  ssh_bastion "sudo env AIRGAP_REGISTRY=${AIRGAP_REGISTRY} \
+    bash ${remote_home}/scripts/airgap/05-load-images.sh \
+    --bundle ${remote_home}/airgap-bundle --registry ${AIRGAP_REGISTRY} >/tmp/registry-load.log 2>&1" \
+    || { note "load FAILED"; ssh_bastion "tail -20 /tmp/registry-load.log" | sed 's/^/     /'; return 1; }
+
+  note "ok — $(ssh_bastion "curl -s http://127.0.0.1:5000/v2/_catalog" | head -c 120)"
+}
+
 stage_base() {
   log "base: kernel prerequisites, containerd, kubeadm, boot-heal (${#ALL_NODES[@]} nodes)"
   for ip in "${ALL_NODES[@]}"; do
@@ -238,6 +332,8 @@ echo "masters=${MASTERS[*]}  workers=${WORKERS[*]}"
 
 for arg in "$@"; do
   case "${arg}" in
+    proxy)  stage_proxy ;;
+    registry) stage_registry ;;
     base)   stage_base ;;
     nfs)    stage_nfs ;;
     runtime) stage_runtime ;;
@@ -246,7 +342,7 @@ for arg in "$@"; do
     join)   stage_join ;;
     phase1) stage_phase1 ;;
     phase2) stage_phase2 ;;
-    all)    stage_base && stage_mirror && stage_init && stage_join && stage_nfs && stage_phase1 && stage_phase2 ;;
+    all)    stage_proxy && stage_registry && stage_base && stage_mirror && stage_init && stage_join && stage_nfs && stage_phase1 && stage_phase2 ;;
     *) echo "unknown stage: ${arg}" >&2; exit 1 ;;
   esac
 done

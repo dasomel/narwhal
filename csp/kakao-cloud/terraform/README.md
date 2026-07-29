@@ -82,7 +82,7 @@ Then, from the repo root, bring up the cluster:
 
 ```bash
 ./scripts/cloud/stage-kakao-nodes.sh     # repo -> nodes, in the layout the scripts expect
-./scripts/cloud/provision-kakao.sh all   # base -> mirror -> init -> join -> nfs -> phase1 -> phase2
+./scripts/cloud/provision-kakao.sh all   # proxy -> base -> mirror -> init -> join -> nfs -> phase1 -> phase2
 ```
 
 `provision-kakao.sh` reads every address from OpenTofu state, so nothing is typed twice.

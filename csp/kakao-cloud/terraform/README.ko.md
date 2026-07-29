@@ -88,16 +88,20 @@ tofu apply
 
 ## 배포 후
 
-노드에 공인 IP가 없으므로 접근은 모두 bastion 경유다:
+노드에 공인 IP가 없으므로 모든 접속이 bastion을 경유한다. `~/.ssh/config`에 한 번 등록해 둔다:
 
 ```bash
-tofu output bastion_ssh          # 바로 쓸 수 있는 ssh / ProxyJump 명령
-tofu output -raw bastion_public_ip
-
-ssh -i "$(tofu output -raw ssh_key_path)" \
-    -J ubuntu@"$(tofu output -raw bastion_public_ip)" \
-    ubuntu@"$(tofu output -json master_private_ips | jq -r '.[0]')"
+tofu output -raw ssh_config >> ~/.ssh/config
+ssh narwhal-master-1
 ```
+
+`narwhal-bastion`과 `narwhal-master-1..3` / `narwhal-worker-1..3` 항목이 생성되며, 각각 키와
+`ProxyJump narwhal-bastion`을 갖는다.
+
+명령줄 `-J`는 **동작하지 않는다.** 점프 호스트용 ssh 프로세스가 따로 뜨는데 명령줄의 `-i`가
+전달되지 않아 bastion 홉에서 `Permission denied (publickey)`로 끊긴다. `-o IdentityFile`도
+마찬가지다. 위 config를 쓰거나, `ProxyCommand`로 양쪽 홉에 키를 명시해야 한다 —
+`tofu output -json bastion_ssh`가 그 형태의 실행 가능한 명령을 출력한다.
 
 `assign_node_public_ips`를 켜지 않는 한 `master_public_ips`·`worker_public_ips`는 **빈 배열**이다 —
 실패가 아니라 정상이다.
@@ -108,30 +112,24 @@ ssh -i "$(tofu output -raw ssh_key_path)" \
 
 apiserver 인증서의 SAN에는 `localhost`, `127.0.0.1`, 마스터 사설 IP, 사설 VIP가 들어 있고
 **LB 공인 IP는 없다.** 공인 엔드포인트로 바로 붙으면 TLS 검증에 실패하므로, 인증서가 이미
-포함하는 이름으로 터널을 판다:
+포함하는 이름으로 터널을 판다.
 
-`csp/kakao-cloud/terraform`에서 실행한다. 붙여넣기 안전하도록 인라인 주석을 넣지 않았다 —
-`interactive_comments`가 꺼진 인터랙티브 zsh는 `#`를 일반 단어로 보기 때문에, 주석 안의 `)`가
-`parse error near ')'`를 일으킨다.
+위 `~/.ssh/config` 항목이 등록돼 있다고 가정한다. 붙여넣기 안전하도록 인라인 주석을 넣지
+않았다 — `interactive_comments`가 꺼진 인터랙티브 zsh는 `#`를 일반 단어로 보기 때문이다.
 
 ```bash
-KEY=$(tofu output -raw ssh_key_path)
-BASTION=$(tofu output -raw bastion_public_ip)
-MASTER1=$(tofu output -json master_private_ips | jq -r '.[0]')
-
 mkdir -p ~/.kube
-ssh -i "$KEY" -J ubuntu@"$BASTION" ubuntu@"$MASTER1" 'sudo cat /etc/kubernetes/admin.conf' > ~/.kube/kakao.conf
+ssh narwhal-master-1 'sudo cat /etc/kubernetes/admin.conf' > ~/.kube/kakao.conf
 sed -i '' 's#server: https://.*#server: https://127.0.0.1:6443#' ~/.kube/kakao.conf
 
-ssh -f -N -i "$KEY" -L 6443:127.0.0.1:6443 -J ubuntu@"$BASTION" ubuntu@"$MASTER1"
+ssh -f -N -L 6443:127.0.0.1:6443 narwhal-master-1
 KUBECONFIG=~/.kube/kakao.conf kubectl get nodes
 ```
 
-각 줄의 의미: `admin.conf`는 master-1에서 root 소유라 scp 대신 `sudo cat`으로 읽는다.
-`sed`는 server 를 터널 엔드포인트로 바꾼다(`sed -i ''`는 macOS용 — GNU sed는 `-i`만 쓴다).
-세 번째 명령이 백그라운드로 포워딩을 연다.
+`admin.conf`는 master-1에서 root 소유라 scp 대신 `sudo cat`으로 읽는다. `sed -i ''`는 macOS용이며
+GNU sed는 `-i`만 쓴다. 세 번째 명령이 백그라운드로 포워딩을 연다.
 
-2026-07-28 검증: 운영 호스트에서 노드 6대와 ArgoCD 앱 33개 조회 확인.
+2026-07-29 검증: 운영 호스트에서 노드 6대와 ArgoCD 앱 33개 조회 확인.
 터널 종료는 `pkill -f '6443:127.0.0.1:6443'`.
 
 공인 주소로 직접 붙고 싶다면 `02-init-cluster.sh`의 `certSANs`에 LB 공인 IP를 넣고 apiserver
@@ -140,7 +138,7 @@ KUBECONFIG=~/.kube/kakao.conf kubectl get nodes
 ### 노드에서 kubectl
 
 ```bash
-ssh -i "$KEY" -J ubuntu@"$BASTION" ubuntu@"$MASTER1"
+ssh narwhal-master-1
 sudo -E env KUBECONFIG=/home/vagrant/.kube/config-local kubectl get nodes
 ```
 
@@ -152,9 +150,7 @@ sudo -E env KUBECONFIG=/home/vagrant/.kube/config-local kubectl get nodes
 플랫폼이 생성한 자격증명은 스크립트 하나로 전부 출력된다:
 
 ```bash
-ssh -i "$KEY" -J ubuntu@"$BASTION" ubuntu@"$MASTER1" \
-  'sudo env KUBECONFIG=/home/vagrant/.kube/config-local DOMAIN=local.narwhal.internal \
-     bash /home/vagrant/scripts/test/show-credentials.sh'
+ssh narwhal-master-1 'sudo env KUBECONFIG=/home/vagrant/.kube/config-local DOMAIN=local.narwhal.internal bash /home/vagrant/scripts/test/show-credentials.sh'
 ```
 
 Keycloak(관리자 + 사전 생성된 `admin`/`dev`/`view`/`guest` realm 사용자), ArgoCD, Gitea,

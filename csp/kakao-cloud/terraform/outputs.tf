@@ -120,13 +120,59 @@ output "bastion_private_ip" {
   value       = kakaocloud_instance.bastion.addresses[0].private_ip
 }
 
+# `ssh -i KEY -J user@bastion user@node` does NOT work: -J starts a separate ssh
+# process for the jump host and the command line's -i is not passed to it, so the
+# bastion hop fails with "Permission denied (publickey)". Neither does -o IdentityFile.
+# The key has to be named for BOTH hops, which is what ProxyCommand below does — and
+# what an ssh_config entry does more readably (see the ssh_config output).
+# Paths are absolute because var.ssh_key_path is relative to this directory.
 output "bastion_ssh" {
-  description = "SSH into the bastion, and ProxyJump commands to reach private nodes"
+  description = "Ready-to-run ssh commands. ProxyCommand, not -J: the jump hop needs the key named explicitly."
   value = {
-    bastion = "ssh -i ${var.ssh_key_path} ubuntu@${kakaocloud_public_ip.bastion_public.public_ip}"
-    masters = [for ip in module.compute.master_private_ips : "ssh -i ${var.ssh_key_path} -J ubuntu@${kakaocloud_public_ip.bastion_public.public_ip} ubuntu@${ip}"]
-    workers = [for ip in module.compute.worker_private_ips : "ssh -i ${var.ssh_key_path} -J ubuntu@${kakaocloud_public_ip.bastion_public.public_ip} ubuntu@${ip}"]
+    bastion = "ssh -i ${abspath(var.ssh_key_path)} ubuntu@${kakaocloud_public_ip.bastion_public.public_ip}"
+    masters = [for ip in module.compute.master_private_ips :
+    "ssh -i ${abspath(var.ssh_key_path)} -o ProxyCommand='ssh -i ${abspath(var.ssh_key_path)} -W %h:%p ubuntu@${kakaocloud_public_ip.bastion_public.public_ip}' ubuntu@${ip}"]
+    workers = [for ip in module.compute.worker_private_ips :
+    "ssh -i ${abspath(var.ssh_key_path)} -o ProxyCommand='ssh -i ${abspath(var.ssh_key_path)} -W %h:%p ubuntu@${kakaocloud_public_ip.bastion_public.public_ip}' ubuntu@${ip}"]
   }
+}
+
+# Append to ~/.ssh/config and every hop gets the key and the jump host by name:
+#   tofu output -raw ssh_config >> ~/.ssh/config
+#   ssh narwhal-master-1
+#   ssh -f -N -L 6443:127.0.0.1:6443 narwhal-master-1
+# ProxyJump works here because ssh_config applies IdentityFile to the bastion entry
+# too — the limitation is command-line -J only.
+output "ssh_config" {
+  description = "ssh_config block for the bastion and every node. Append to ~/.ssh/config."
+  value = join("\n", concat(
+    [
+      "Host narwhal-bastion",
+      "  HostName ${kakaocloud_public_ip.bastion_public.public_ip}",
+      "  User ubuntu",
+      "  IdentityFile ${abspath(var.ssh_key_path)}",
+      "  StrictHostKeyChecking accept-new",
+      "",
+    ],
+    flatten([for idx, ip in module.compute.master_private_ips : [
+      "Host narwhal-master-${idx + 1}",
+      "  HostName ${ip}",
+      "  User ubuntu",
+      "  IdentityFile ${abspath(var.ssh_key_path)}",
+      "  ProxyJump narwhal-bastion",
+      "  StrictHostKeyChecking accept-new",
+      "",
+    ]]),
+    flatten([for idx, ip in module.compute.worker_private_ips : [
+      "Host narwhal-worker-${idx + 1}",
+      "  HostName ${ip}",
+      "  User ubuntu",
+      "  IdentityFile ${abspath(var.ssh_key_path)}",
+      "  ProxyJump narwhal-bastion",
+      "  StrictHostKeyChecking accept-new",
+      "",
+    ]])
+  ))
 }
 
 output "vpc_cidr" {

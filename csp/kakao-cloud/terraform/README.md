@@ -90,16 +90,22 @@ Stages are idempotent (sentinels under `/home/vagrant/.narwhal-stage/`); `FORCE=
 
 ## After Deployment
 
-Nodes have no public IP, so all access is through the bastion:
+Nodes have no public IP, so every hop goes through the bastion. Register both in
+`~/.ssh/config` once:
 
 ```bash
-tofu output bastion_ssh          # ready-made ssh / ProxyJump commands
-tofu output -raw bastion_public_ip
-
-ssh -i "$(tofu output -raw ssh_key_path)" \
-    -J ubuntu@"$(tofu output -raw bastion_public_ip)" \
-    ubuntu@"$(tofu output -json master_private_ips | jq -r '.[0]')"
+tofu output -raw ssh_config >> ~/.ssh/config
+ssh narwhal-master-1
 ```
+
+That writes `narwhal-bastion` plus `narwhal-master-1..3` / `narwhal-worker-1..3`, each
+carrying the key and `ProxyJump narwhal-bastion`.
+
+Command-line `-J` does **not** work here: it starts a separate ssh process for the jump
+host and does not pass the command line's `-i`, so the bastion hop fails with
+`Permission denied (publickey)`. `-o IdentityFile` does not reach it either. Use the
+config above, or name the key for both hops with `ProxyCommand` —
+`tofu output -json bastion_ssh` prints ready-to-run commands in that form.
 
 `master_public_ips` and `worker_public_ips` are empty arrays unless
 `assign_node_public_ips` is on — that is expected, not a failure.
@@ -110,30 +116,24 @@ ssh -i "$(tofu output -raw ssh_key_path)" \
 
 The apiserver certificate carries `localhost`, `127.0.0.1`, the master private IPs and the
 private VIP — **not the LB's public IP**. Connecting straight to the public endpoint fails
-TLS verification, so tunnel to a name the certificate already covers:
+TLS verification, so tunnel to a name the certificate already covers.
 
-Run from `csp/kakao-cloud/terraform`. Paste-safe: no inline comments, because an
-interactive zsh with `interactive_comments` off treats `#` as a normal word and a `)`
-inside the comment then fails with `parse error near ')'`.
+Assumes the `~/.ssh/config` entries above. Paste-safe: no inline comments, because an
+interactive zsh with `interactive_comments` off treats `#` as a normal word.
 
 ```bash
-KEY=$(tofu output -raw ssh_key_path)
-BASTION=$(tofu output -raw bastion_public_ip)
-MASTER1=$(tofu output -json master_private_ips | jq -r '.[0]')
-
 mkdir -p ~/.kube
-ssh -i "$KEY" -J ubuntu@"$BASTION" ubuntu@"$MASTER1" 'sudo cat /etc/kubernetes/admin.conf' > ~/.kube/kakao.conf
+ssh narwhal-master-1 'sudo cat /etc/kubernetes/admin.conf' > ~/.kube/kakao.conf
 sed -i '' 's#server: https://.*#server: https://127.0.0.1:6443#' ~/.kube/kakao.conf
 
-ssh -f -N -i "$KEY" -L 6443:127.0.0.1:6443 -J ubuntu@"$BASTION" ubuntu@"$MASTER1"
+ssh -f -N -L 6443:127.0.0.1:6443 narwhal-master-1
 KUBECONFIG=~/.kube/kakao.conf kubectl get nodes
 ```
 
-Step by step: `admin.conf` is root-owned on master-1, hence `sudo cat` rather than scp;
-`sed` rewrites the server to the tunnel endpoint (`sed -i ''` is macOS — GNU sed wants
-plain `-i`); the third command opens the forward in the background.
+`admin.conf` is root-owned on master-1, hence `sudo cat` rather than scp. `sed -i ''` is
+macOS — GNU sed wants plain `-i`. The third command opens the forward in the background.
 
-Verified 2026-07-28: six nodes and 33 ArgoCD applications listed from the operator host.
+Verified 2026-07-29: six nodes and 33 ArgoCD applications listed from the operator host.
 Close the tunnel with `pkill -f '6443:127.0.0.1:6443'`.
 
 To reach the API by its public address instead, add the LB's public IP to `certSANs` in
@@ -143,7 +143,7 @@ verification.
 ### kubectl on a node
 
 ```bash
-ssh -i "$KEY" -J ubuntu@"$BASTION" ubuntu@"$MASTER1"
+ssh narwhal-master-1
 sudo -E env KUBECONFIG=/home/vagrant/.kube/config-local kubectl get nodes
 ```
 
@@ -155,9 +155,7 @@ sudo -E env KUBECONFIG=/home/vagrant/.kube/config-local kubectl get nodes
 Every credential the platform generates is printed by one script:
 
 ```bash
-ssh -i "$KEY" -J ubuntu@"$BASTION" ubuntu@"$MASTER1" \
-  'sudo env KUBECONFIG=/home/vagrant/.kube/config-local DOMAIN=local.narwhal.internal \
-     bash /home/vagrant/scripts/test/show-credentials.sh'
+ssh narwhal-master-1 'sudo env KUBECONFIG=/home/vagrant/.kube/config-local DOMAIN=local.narwhal.internal bash /home/vagrant/scripts/test/show-credentials.sh'
 ```
 
 It covers Keycloak (admin plus the pre-seeded `admin`/`dev`/`view`/`guest` realm users),

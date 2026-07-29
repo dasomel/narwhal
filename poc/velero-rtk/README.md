@@ -1,6 +1,6 @@
 # Velero Logs RTK Evaluation PoC Harness
 
-본 디렉토리는 Velero logs에 RTK(Run-Time token-compression: 터미널 출력 정규식/필터 압축) 방식을 도입하는 것이 타당한지 정량 판정하기 위한 평가 하네스(Harness)입니다. 정책 문서 [rtk-token-compression-policy.md](../../docs/rtk-token-compression-policy.md) §4 Escape Hatch에서 규정하는 4대 게이트(G1~G4)를 평가하여 최종 도입 여부(`ADOPT`/`REJECT`)를 결정합니다.
+본 디렉토리는 Velero logs에 RTK(Run-Time token-compression: 터미널 출력 정규식/필터 압축) 방식을 도입하는 것이 타당한지 정량 판정하기 위한 평가 하네스(Harness)입니다. 정책 문서 [rtk-token-compression-policy.md](../../docs/common/rtk-token-compression-policy.md) §4 Escape Hatch에서 규정하는 4대 게이트(G1~G4)를 평가하여 최종 도입 여부(`ADOPT`/`REJECT`)를 결정합니다.
 
 ## 디렉토리 구조 (Directory Structure)
 

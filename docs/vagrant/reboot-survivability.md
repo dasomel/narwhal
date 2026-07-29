@@ -1,5 +1,8 @@
 # VM 리부트 생존성 아키텍처
 
+> **이 문서는 Vagrant 기준이다.** 호스트가 꺼졌다 켜지는 로컬 VM 특유의 문제를 다룬다 —
+> Kakao Cloud 인스턴스는 그렇게 정지하지 않으므로 절차가 그대로 적용되지 않는다.
+
 > Narwhal IDP 클러스터의 VM 리부트 시 자동 복구를 보장하는 아키텍처 설계 문서
 
 ---
@@ -461,6 +464,6 @@ kubectl port-forward -n monitoring svc/prometheus-stack-kube-prom-prometheus 909
 ## 관련 문서
 
 - [disaster-recovery.md](disaster-recovery.md) - 장애 복구 런북
-- [troubleshooting.md](troubleshooting.md) - 일반 트러블슈팅
-- [architecture.md](architecture.md) - 아키텍처 개요
+- [troubleshooting.md](../common/troubleshooting.md) - 일반 트러블슈팅
+- [architecture.md](../common/architecture.md) - 아키텍처 개요
 - [operations.md](operations.md) - 일상 운영 가이드

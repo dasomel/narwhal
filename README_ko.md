@@ -212,7 +212,7 @@ kubectl port-forward svc/headlamp -n devtools 4466:80
 - `view` / `view` (viewer)
 - `guest` / `guest` (guest)
 
-자세한 내용: [docs/keycloak-accounts.md](docs/keycloak-accounts.md)
+자세한 내용: `scripts/test/show-credentials.sh` — 비밀번호는 클러스터가 생성하므로 문서에 적지 않는다.
 
 ## Verification
 
@@ -341,17 +341,30 @@ narwhal realm 전체 사용자가 접근 가능 (openid-connect 플러그인은 
 
 ## Documentation
 
+문서는 **배포 대상**으로 나뉜다 — 플랫폼 계층은 같지만 노드·로드밸런서·DNS·이미지 반입
+경로가 전혀 다르다. 인덱스부터 본다: **[docs/README.md](docs/README.md)**.
+
 - [VERSIONS.md](VERSIONS.md) - Component versions
-- [docs/architecture.md](docs/architecture.md) - 아키텍처 상세
-- [docs/keycloak-sso.md](docs/keycloak-sso.md) - Keycloak SSO 상세 설정
-- [docs/keycloak-accounts.md](docs/keycloak-accounts.md) - Keycloak SSO 계정 및 설정 가이드
-- [docs/dns-access.md](docs/dns-access.md) - DNS 설정 및 서비스 접근
-- [docs/kubeconfig.md](docs/kubeconfig.md) - kubeconfig 및 OIDC 인증
-- [docs/database.md](docs/database.md) - 데이터베이스(CNPG) 관리
-- [docs/operations.md](docs/operations.md) - 운영 가이드
-- [docs/rtk-token-compression-policy.md](docs/rtk-token-compression-policy.md) - RTK 토큰 압축 정책
-- [docs/troubleshooting.md](docs/troubleshooting.md) - 트러블슈팅 가이드
-- [docs/security.md](docs/security.md) - 보안 정책
+
+**배포 대상 무관** — [`docs/common/`](docs/common/)
+- [architecture.md](docs/common/architecture.md) - 아키텍처 (인프라 절은 Vagrant 기준)
+- [kubeconfig.md](docs/common/kubeconfig.md) - kubectl 인증 (cert / token / OIDC)
+- [developer-onboarding.md](docs/common/developer-onboarding.md) - 개발자 온보딩
+- [database.md](docs/common/database.md) - 데이터베이스(CNPG) 관리
+- [gitops-push.md](docs/common/gitops-push.md) - GitOps로 변경 반영
+- [troubleshooting.md](docs/common/troubleshooting.md) - 트러블슈팅
+- [security.md](docs/common/security.md) - 보안 정책
+- [lessons-log.md](docs/common/lessons-log.md) - 사건 기록
+
+**Vagrant (로컬)** — [`docs/vagrant/`](docs/vagrant/)
+- [dns-access.md](docs/vagrant/dns-access.md) - `*.local.narwhal.internal` DNS 및 서비스 접근
+- [operations.md](docs/vagrant/operations.md) - 운영 가이드
+- [disaster-recovery.md](docs/vagrant/disaster-recovery.md) - 장애 복구 런북
+
+**Kakao Cloud** — [`docs/kakao/`](docs/kakao/)
+- [cloud-deployment.md](docs/kakao/cloud-deployment.md) - 토폴로지, egress 프록시, airgap 레지스트리
+- [service-domains.md](docs/kakao/service-domains.md) - `*.kakao.narwhal.internal` 서비스별 도메인, SSO 방식, 접속
+- [csp/kakao-cloud/terraform/README.ko.md](csp/kakao-cloud/terraform/README.ko.md) - Terraform 사용법
 
 ## License
 

@@ -1,5 +1,9 @@
 # Master Node Memory Pressure & NodeNotReady Flapping (diagnosis)
 
+> **Scope:** the control-plane memory budget applies to any deployment target. The knob
+> named here (`MASTER_MEMORY`) is the Vagrantfile's; on Kakao Cloud the equivalent is the
+> master instance flavor in `csp/kakao-cloud/terraform`.
+
 > Status: **fixed** (`MASTER_MEMORY` 4096→6144, 2026-06-07).
 > Root constraint: 4GB master nodes were undersized for the current control-plane
 > + mandatory DaemonSet footprint. Bumped to 6GB.
@@ -59,6 +63,6 @@ that masters cannot avoid (they tolerate all taints by design).
 
 ## Related
 
-- `docs/gitops-push.md` — how to push GitOps changes so ArgoCD applies them.
+- `docs/common/gitops-push.md` — how to push GitOps changes so ArgoCD applies them.
 - `scripts/cluster/04-addons.sh` — metrics-server probe loosening (already applied).
 - CLAUDE.md Mistakes Log: "API server OOM restart on Master 4GB RAM" (2026-02-14).

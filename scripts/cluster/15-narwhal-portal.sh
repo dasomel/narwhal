@@ -11,7 +11,7 @@
 #   - (개발자용) 커스텀 포털 이미지를 in-cluster로 빌드하려면 Kaniko 셀프서비스
 #     도구를 쓴다: narwhal-portal repo의 scripts/kaniko-build.sh 가 소스를 in-cluster
 #     Gitea에 push → Kaniko Job으로 빌드 → Harbor에 push한다. 그 뒤 gitops 이미지
-#     태그를 그 이미지로 바꾸면 ArgoCD가 배포한다. 자세한 내용: docs/developer-kaniko-builds.md
+#     태그를 그 이미지로 바꾸면 ArgoCD가 배포한다. 자세한 내용: docs/common/developer-kaniko-builds.md
 #
 # 멱등성: 상태 확인만 하므로 재실행 무해.
 # 의존 스크립트:
@@ -53,7 +53,7 @@ echo ""
 echo "  (개발자용) 커스텀 포털 이미지를 in-cluster Kaniko로 빌드하려면:"
 echo "    cd narwhal-portal && ./scripts/kaniko-build.sh    # 소스→Gitea→Kaniko→Harbor push"
 echo "    → 이후 gitops 포털 이미지 태그를 그 이미지로 교체하면 ArgoCD가 배포"
-echo "    자세한 내용: docs/developer-kaniko-builds.md"
+echo "    자세한 내용: docs/common/developer-kaniko-builds.md"
 
 echo "============================================"
 echo "15: narwhal-portal 확인 완료"

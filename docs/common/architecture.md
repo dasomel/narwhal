@@ -5,7 +5,7 @@ Narwhal은 Vagrant VM 기반의 Kubernetes Internal Developer Platform (IDP) 클
 
 > 이 문서의 인프라 계층(노드 IP, kube-vip, MetalLB)은 **Vagrant 기준**입니다. 플랫폼 계층
 > (APISIX, Keycloak, ArgoCD, 스토리지 등)은 배포 대상과 무관하게 동일합니다.
-> 퍼블릭 클라우드 배포에서 무엇이 달라지는지는 [`cloud-deployment.md`](./cloud-deployment.md) 참고.
+> 퍼블릭 클라우드 배포에서 무엇이 달라지는지는 [`cloud-deployment.md`](../kakao/cloud-deployment.md) 참고.
 
 ---
 
@@ -601,7 +601,7 @@ CNPG PostgreSQL
 | PostgreSQL | CNPG barman + WAL | 매일 02:00 UTC | 7일 |
 | Git 레포 | Velero (PVC) | 매일 | 7일 |
 
-복구 절차: `docs/disaster-recovery.md` 참조
+복구 절차: `docs/vagrant/disaster-recovery.md` 참조
 검증 스크립트: `scripts/test/verify-backup.sh`
 
 ---

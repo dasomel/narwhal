@@ -16,7 +16,7 @@ GitOps app structure, and version upgrades.
 
 ## Recurring Rules
 
-> Dated incident history lives in [`docs/lessons-log.md`](docs/lessons-log.md). Only rules that
+> Dated incident history lives in [`docs/common/lessons-log.md`](docs/common/lessons-log.md). Only rules that
 > generalize past a single incident belong here — when a new incident yields one, add the rule
 > here and the narrative there.
 

@@ -164,7 +164,7 @@ sudo -E env KUBECONFIG=/home/vagrant/.kube/config-local kubectl get nodes
 ```
 
 `sudo -E` alone does not carry your environment on these images (§ Known Issues in
-`docs/cloud-deployment.md`), so pass `KUBECONFIG` explicitly as shown.
+`docs/kakao/cloud-deployment.md`), so pass `KUBECONFIG` explicitly as shown.
 
 ### Web UIs
 
@@ -301,7 +301,7 @@ None open in this project. Two behaviours worth knowing before you debug somethi
   those lists as narrow as the real dependency.
 
 Provisioning-side issues (the container runtime, unattended-upgrades, NFS) are documented
-in [`docs/lessons-log.md`](../../../docs/lessons-log.md).
+in [`docs/common/lessons-log.md`](../../../docs/common/lessons-log.md).
 
 ## Version Info
 

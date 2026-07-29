@@ -1,9 +1,9 @@
 # Kakao Cloud 서비스 도메인 접속 가이드
 
 > **이 문서는 Kakao Cloud 배포 전용이다.** Vagrant 클러스터는
-> [`dns-access.md`](./dns-access.md)를 본다. 인프라 프로비저닝은
+> [`dns-access.md`](../vagrant/dns-access.md)를 본다. 인프라 프로비저닝은
 > [`cloud-deployment.md`](./cloud-deployment.md), Terraform 사용법은
-> [`../csp/kakao-cloud/terraform/README.ko.md`](../csp/kakao-cloud/terraform/README.ko.md).
+> [`../csp/kakao-cloud/terraform/README.ko.md`](../../csp/kakao-cloud/terraform/README.ko.md).
 
 ## 1. 왜 `kakao.*`이고, 왜 `/etc/hosts`인가
 
@@ -85,7 +85,7 @@ kubectl -n kube-system get cm coredns -o jsonpath='{.data.Corefile}' | head -10
 ## 2. 서비스 도메인 일람
 
 모두 `https://<이름>.kakao.narwhal.internal`. 라우트 정의는
-[`gitops/charts/narwhal-platform/templates/apisix-routes.yaml`](../gitops/charts/narwhal-platform/templates/apisix-routes.yaml)가
+[`gitops/charts/narwhal-platform/templates/apisix-routes.yaml`](../../gitops/charts/narwhal-platform/templates/apisix-routes.yaml)가
 단일 출처이며, `baseDomain` 값 하나로 전체 도메인이 결정된다.
 
 | 서비스 | 도메인 | 용도 | 백엔드 (ns/service) | 인증 |
@@ -143,7 +143,7 @@ cd /Users/m/Documents/IdeaProjects/20.dasomel/idp/narwhal
 ```
 
 master LB로 SSH 터널을 열고 `narwhal-kakao` 컨텍스트를 만든다. 자세한 내용은
-[`kubeconfig.md`](./kubeconfig.md).
+[`kubeconfig.md`](../common/kubeconfig.md).
 
 ### 2) `/etc/hosts` 등록
 
@@ -338,7 +338,7 @@ kubectl -n platform-system delete pod probe
 ```
 
 `404 {"message":"Key not found"}`가 돌아오면 SSL 문제가 아니라 etcd 빈-prefix 교착이다 —
-[`apisix-etcd-recovery.md`](./apisix-etcd-recovery.md)를 따른다.
+[`apisix-etcd-recovery.md`](../common/apisix-etcd-recovery.md)를 따른다.
 
 ### 게이트웨이 OIDC 서비스만 500이다
 
@@ -374,7 +374,7 @@ kubectl -n devtools get applications
 ```
 
 `baseDomain`은 app-of-apps 파라미터로 내려가므로, 값을 바꿨다면 Gitea에 푸시돼 있어야 한다
-([`gitops-push.md`](./gitops-push.md)) — `kubectl apply`는 selfHeal이 되돌린다.
+([`gitops-push.md`](../common/gitops-push.md)) — `kubectl apply`는 selfHeal이 되돌린다.
 
 ### 로그인 후 무한 리다이렉트 / `Invalid parameter: redirect_uri`
 
@@ -414,7 +414,7 @@ kubectl -n platform-system get certificate
 ## 참고
 
 - [`cloud-deployment.md`](./cloud-deployment.md) — 클라우드 토폴로지, 프록시, airgap 레지스트리
-- [`../csp/kakao-cloud/terraform/README.ko.md`](../csp/kakao-cloud/terraform/README.ko.md) — Terraform 사용법
-- [`kubeconfig.md`](./kubeconfig.md) — kubectl 인증 방식(cert / token / OIDC)
-- [`dns-access.md`](./dns-access.md) — Vagrant 클러스터의 DNS 접속
-- [`gitops-push.md`](./gitops-push.md) — GitOps 변경 반영 절차
+- [`../csp/kakao-cloud/terraform/README.ko.md`](../../csp/kakao-cloud/terraform/README.ko.md) — Terraform 사용법
+- [`kubeconfig.md`](../common/kubeconfig.md) — kubectl 인증 방식(cert / token / OIDC)
+- [`dns-access.md`](../vagrant/dns-access.md) — Vagrant 클러스터의 DNS 접속
+- [`gitops-push.md`](../common/gitops-push.md) — GitOps 변경 반영 절차

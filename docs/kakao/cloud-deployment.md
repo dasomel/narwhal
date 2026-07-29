@@ -2,12 +2,12 @@
 
 Narwhal은 원래 Vagrant VM 위에서 자라난 프로젝트다. 이 문서는 **같은 스크립트로 퍼블릭 클라우드에
 배포할 때 무엇이 달라지는가**를 다룬다. 플랫폼 자체의 구조(APISIX, Keycloak, ArgoCD, 스토리지 등)는
-[`architecture.md`](./architecture.md)에 있고 배포 대상과 무관하다.
+[`architecture.md`](../common/architecture.md)에 있고 배포 대상과 무관하다.
 
 현재 지원 대상은 Kakao Cloud이며, 2026-07-27 전 구간 검증을 마쳤다 — 노드 6/6 Ready,
 ArgoCD 33개 앱 Synced/Healthy, worker LB 경유 외부 접근 정상.
 
-IaC와 운영 명령은 [`csp/kakao-cloud/terraform/README.md`](../csp/kakao-cloud/terraform/README.md)에 있다.
+IaC와 운영 명령은 [`csp/kakao-cloud/terraform/README.md`](../../csp/kakao-cloud/terraform/README.md)에 있다.
 
 ---
 
@@ -323,7 +323,7 @@ curl -sk -o /dev/null -w '%{http_code}\n' --resolve "portal.kakao.narwhal.intern
 
 ## 참고
 
-- [`csp/kakao-cloud/terraform/README.md`](../csp/kakao-cloud/terraform/README.md) — IaC, 리소스, 소요 시간
-- [`scripts/airgap/README.md`](../scripts/airgap/README.md) — 번들 생성·전송·로드
-- [`architecture.md`](./architecture.md) — 플랫폼 구조 (배포 대상 무관)
-- [`lessons-log.md`](./lessons-log.md) — 사건별 상세 기록
+- [`csp/kakao-cloud/terraform/README.md`](../../csp/kakao-cloud/terraform/README.md) — IaC, 리소스, 소요 시간
+- [`scripts/airgap/README.md`](../../scripts/airgap/README.md) — 번들 생성·전송·로드
+- [`architecture.md`](../common/architecture.md) — 플랫폼 구조 (배포 대상 무관)
+- [`lessons-log.md`](../common/lessons-log.md) — 사건별 상세 기록

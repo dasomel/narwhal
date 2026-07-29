@@ -5,7 +5,7 @@ set -euo pipefail
 # Narwhal on Kakao Cloud — browser access to *.local.narwhal.internal
 #=========================================
 # On Vagrant, master-1 runs dnsmasq and the docs tell you to point the resolver at it
-# (docs/dns-access.md). None of that applies here: PROVIDER=kakao skips dnsmasq, and the
+# (docs/vagrant/dns-access.md). None of that applies here: PROVIDER=kakao skips dnsmasq, and the
 # nodes are on a private subnet your machine cannot reach anyway. The names are served
 # by the worker LB's public IP and have no public DNS, so /etc/hosts is the way in.
 #

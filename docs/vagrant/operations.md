@@ -844,10 +844,10 @@ vagrant ssh master-1 -c "bash /home/vagrant/scripts/test/test-sso.sh \
 
 ## 관련 문서
 
-- [architecture.md](architecture.md) - 아키텍처 개요
-- [keycloak-sso.md](keycloak-sso.md) - SSO 상세 설정
+- [architecture.md](../common/architecture.md) - 아키텍처 개요
+- [dns-access.md](dns-access.md) - 서비스 URL, SSO 로그인, 기본 자격 증명
 - [dns-access.md](dns-access.md) - DNS 및 접근 방법
-- [database.md](database.md) - 데이터베이스 관리
-- [troubleshooting.md](troubleshooting.md) - 트러블슈팅 가이드
-- [../VERSIONS.md](../VERSIONS.md) - 컴포넌트 버전 관리
-- [../README.md](../README.md) - 프로젝트 개요
+- [database.md](../common/database.md) - 데이터베이스 관리
+- [troubleshooting.md](../common/troubleshooting.md) - 트러블슈팅 가이드
+- [../VERSIONS.md](../../VERSIONS.md) - 컴포넌트 버전 관리
+- [../README.md](../../README.md) - 프로젝트 개요

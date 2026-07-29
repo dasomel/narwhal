@@ -275,4 +275,4 @@ bash /home/vagrant/scripts/cluster/07-cnpg.sh
 - [CloudNative-PG 공식 문서](https://cloudnative-pg.io/)
 - [PostgreSQL 18 문서](https://www.postgresql.org/docs/18/)
 - [PgBouncer 문서](https://www.pgbouncer.org/)
-- [CNPG Mistakes Log](../CLAUDE.md#kuberneteshelm-실수)
+- [CNPG Mistakes Log](../../CLAUDE.md#kuberneteshelm-실수)

@@ -157,7 +157,7 @@ ssh narwhal-master-1
 sudo -E env KUBECONFIG=/home/vagrant/.kube/config-local kubectl get nodes
 ```
 
-이 이미지에서 `sudo -E`만으로는 환경변수가 넘어가지 않으므로(`docs/cloud-deployment.md`의
+이 이미지에서 `sudo -E`만으로는 환경변수가 넘어가지 않으므로(`docs/kakao/cloud-deployment.md`의
 관련 항목 참고) 위처럼 `KUBECONFIG`를 명시해 넘긴다.
 
 ### 웹 UI
@@ -290,7 +290,7 @@ tofu destroy
   의존성 목록은 실제 의존만큼만 좁게 유지할 것.
 
 프로비저닝 쪽 이슈(컨테이너 런타임, unattended-upgrades, NFS)는
-[`docs/lessons-log.md`](../../../docs/lessons-log.md)에 있다.
+[`docs/common/lessons-log.md`](../../../docs/common/lessons-log.md)에 있다.
 
 ## 버전 정보
 

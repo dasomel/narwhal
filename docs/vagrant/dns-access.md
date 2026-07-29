@@ -5,7 +5,7 @@ Master 노드의 dnsmasq(포트 53)가 `*.local.narwhal.internal` 도메인을 `
 > **이 문서는 Vagrant 기준이다.** Kakao Cloud에는 해당하지 않는다 — `PROVIDER=kakao`는 dnsmasq를
 > 건너뛰고, 노드는 프라이빗 서브넷에 있어 리졸버로 지정할 수도 없다. 이름은 worker LB의 공인 IP가
 > 서빙하고 공개 DNS가 없으므로 `/etc/hosts`가 유일한 경로다:
-> `scripts/cloud/setup-hosts-kakao.sh --apply` — 자세한 내용은 [`cloud-deployment.md`](./cloud-deployment.md).
+> `scripts/cloud/setup-hosts-kakao.sh --apply` — 자세한 내용은 [`cloud-deployment.md`](../kakao/cloud-deployment.md).
 
 ## 네트워크 구성
 

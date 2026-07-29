@@ -55,7 +55,7 @@ sudo systemctl restart systemd-resolved
 192.168.56.200 openbao.local.narwhal.internal
 ```
 
-> 자세한 내용: [DNS 접속 가이드](./dns-access.md)
+> 자세한 내용: [DNS 접속 가이드](../vagrant/dns-access.md)
 
 ---
 
@@ -363,9 +363,9 @@ kubectl get pods -n dev  # 재로그인 프롬프트 표시됨
 
 | 문서 | 설명 |
 |------|------|
-| [DNS 접속 가이드](./dns-access.md) | DNS 설정 상세 및 문제 해결 |
+| [DNS 접속 가이드](../vagrant/dns-access.md) | DNS 설정 상세 및 문제 해결 |
 | [Kubeconfig 설정](./kubeconfig.md) | kubectl 인증 설정 |
-| [Keycloak SSO 계정](./keycloak-accounts.md) | 계정, 그룹, OIDC 클라이언트 |
-| [Keycloak SSO 가이드](./keycloak-sso.md) | SSO 연동 방법 |
+| `scripts/test/show-credentials.sh` | 계정과 비밀번호 — 클러스터가 생성하므로 문서에 값이 없다 |
+| [dns-access.md](../vagrant/dns-access.md) · [service-domains.md](../kakao/service-domains.md) | 서비스 도메인과 SSO 연동 방식 (배포 대상별) |
 | [아키텍처 문서](./architecture.md) | 전체 시스템 구조 |
 | [트러블슈팅](./troubleshooting.md) | 공통 문제 해결 |

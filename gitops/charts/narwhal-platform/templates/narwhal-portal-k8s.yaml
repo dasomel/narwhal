@@ -206,7 +206,7 @@ spec:
 # the tag below to the new release (e.g. :1.1.0) and push to Gitea; ArgoCD detects
 # the diff and rolls it out. (Previously built in-cluster via Kaniko → Harbor
 # :latest; that path is now an optional developer self-service tool — see
-# scripts/cluster/15-narwhal-portal.sh and docs/developer-kaniko-builds.md.)
+# scripts/cluster/15-narwhal-portal.sh and docs/common/developer-kaniko-builds.md.)
 apiVersion: apps/v1
 kind: Deployment
 metadata:

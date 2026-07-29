@@ -1463,8 +1463,8 @@ vagrant ssh master-1 -c "sudo journalctl -u kubelet -n 100 --no-pager"
 
 - [reboot-survivability.md](reboot-survivability.md) - VM 리부트 생존성 아키텍처
 - [operations.md](operations.md) - 일상 운영 가이드
-- [troubleshooting.md](troubleshooting.md) - 트러블슈팅 가이드
-- [architecture.md](architecture.md) - 아키텍처 개요
-- [database.md](database.md) - 데이터베이스 관리
-- [keycloak-sso.md](keycloak-sso.md) - SSO 상세 설정
+- [troubleshooting.md](../common/troubleshooting.md) - 트러블슈팅 가이드
+- [architecture.md](../common/architecture.md) - 아키텍처 개요
+- [database.md](../common/database.md) - 데이터베이스 관리
+- [dns-access.md](dns-access.md) - 서비스 URL, SSO 로그인, 기본 자격 증명
 - [dns-access.md](dns-access.md) - DNS 및 접근 방법

@@ -1,5 +1,10 @@
 # Narwhal 트러블슈팅 가이드
 
+> **범위:** 대부분은 배포 대상과 무관한 플랫폼 계층이다. **3(kube-vip)·4(VMware
+> 네트워킹)·5(Phase 2 프로비저닝)·13(VM Clock Skew)절은 Vagrant 전용**이며 Kakao Cloud에는
+> 해당하지 않는다. 클라우드 쪽 증상은 [`../kakao/cloud-deployment.md`](../kakao/cloud-deployment.md)와
+> [`../kakao/service-domains.md`](../kakao/service-domains.md)의 문제 해결 절을 본다.
+
 ## 1. K8s 1.35 OIDC HTTPS 요구사항
 
 **증상**: API 서버가 시작 직후 crash, `kube-apiserver` Pod가 CrashLoopBackOff
@@ -462,8 +467,8 @@ kubectl get pod -n storage openbao-0
 ## 관련 문서
 
 - [`architecture.md`](./architecture.md) - 아키텍처 개요
-- [`authentik-sso.md`](./authentik-sso.md) - SSO 상세 설정
-- [`dns-access.md`](./dns-access.md) - DNS 및 접근 방법
+- [`../vagrant/dns-access.md`](../vagrant/dns-access.md) · [`../kakao/service-domains.md`](../kakao/service-domains.md) - 서비스 도메인과 SSO 연동 방식
+- [`dns-access.md`](../vagrant/dns-access.md) - DNS 및 접근 방법
 - [`database.md`](./database.md) - 데이터베이스 관리
-- [`operations.md`](./operations.md) - 운영 가이드
-- [`reboot-survivability.md`](./reboot-survivability.md) - 리부트 생존성 아키텍처
+- [`operations.md`](../vagrant/operations.md) - 운영 가이드
+- [`reboot-survivability.md`](../vagrant/reboot-survivability.md) - 리부트 생존성 아키텍처

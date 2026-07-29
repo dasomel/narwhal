@@ -198,4 +198,4 @@ kubectl auth can-i --list
 
 - [Kubernetes Authentication](https://kubernetes.io/docs/reference/access-authn-authz/authentication/)
 - [kubelogin](https://github.com/int128/kubelogin)
-- [Keycloak SSO 가이드](./keycloak-sso.md)
+- [Keycloak SSO 연동 방식](../kakao/service-domains.md#인증-방식-4종류) — 서비스별 인증 경로

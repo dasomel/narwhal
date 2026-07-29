@@ -2,7 +2,7 @@
 
 > [!IMPORTANT]
 > **이 PoC 미통과 시 정책 D1대로 RTK 비활성화 유지**
-> (As per [rtk-token-compression-policy.md](../../docs/rtk-token-compression-policy.md), RTK remains disabled by default unless all Gates G1-G4 pass.)
+> (As per [rtk-token-compression-policy.md](../../docs/common/rtk-token-compression-policy.md), RTK remains disabled by default unless all Gates G1-G4 pass.)
 
 ## 1. 데이터셋 메타데이터 (Dataset Metadata)
 

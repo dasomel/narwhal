@@ -135,7 +135,7 @@ Collect symptoms/error messages from user. Identify target namespace, pod.
 ```
 Agent(subagent_type: "cluster-ops", model: "sonnet", run_in_background: true,
   prompt: "[symptom description]. Collect logs/events/status via kubectl.
-           Search CLAUDE.md Mistakes Log for similar patterns.
+           Search docs/common/lessons-log.md Mistakes Log for similar patterns.
            Save results to _workspace/02_cluster_state.md")
 
 Agent(subagent_type: "infra-validator", model: "sonnet", run_in_background: true,
@@ -145,7 +145,7 @@ Agent(subagent_type: "infra-validator", model: "sonnet", run_in_background: true
 
 ### Phase 3: Analysis and Resolution
 1. Synthesize collected results
-2. Final check against CLAUDE.md Mistakes Log
+2. Final check against docs/common/lessons-log.md Mistakes Log
 3. Present root cause + fix
 
 Additional agent calls if needed:
@@ -168,7 +168,7 @@ Agent(subagent_type: "infra-validator", model: "sonnet",
            2. yq validate gitops/apps/*.yaml, gitops/resources/*.yaml
            3. Full VERSIONS.md consistency check
            4. Security review (secrets, RBAC, image sources)
-           5. CLAUDE.md Mistakes Log cross-reference
+           5. docs/common/lessons-log.md Mistakes Log cross-reference
            Validation checklist ref: .claude/skills/narwhal-ops/references/validation-checklist.md")
 ```
 

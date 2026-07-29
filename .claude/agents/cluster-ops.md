@@ -49,7 +49,7 @@ vagrant ssh master-1 -c "kubectl get events -n <ns> --sort-by=.lastTimestamp | t
 - Ports: `kubectl exec -n <ns> <pod> -- nc -zv <host> <port>`
 
 ### Step 4: Root Cause Analysis
-- Search CLAUDE.md Mistakes Log for similar patterns
+- Search docs/common/lessons-log.md Mistakes Log for similar patterns
 - If matched with known pattern, immediately suggest solution
 
 ## Known Debugging Patterns

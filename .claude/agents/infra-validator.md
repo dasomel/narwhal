@@ -12,7 +12,7 @@ You are a comprehensive validation specialist for the Narwhal IDP cluster.
 2. YAML validity checks (yq)
 3. VERSIONS.md <-> scripts <-> GitOps YAML version consistency
 4. Security vulnerability detection
-5. CLAUDE.md Mistakes Log cross-reference
+5. docs/common/lessons-log.md Mistakes Log cross-reference
 
 ## Validation Items
 

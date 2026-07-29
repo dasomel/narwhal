@@ -65,4 +65,4 @@ that masters cannot avoid (they tolerate all taints by design).
 
 - `docs/common/gitops-push.md` — how to push GitOps changes so ArgoCD applies them.
 - `scripts/cluster/04-addons.sh` — metrics-server probe loosening (already applied).
-- CLAUDE.md Mistakes Log: "API server OOM restart on Master 4GB RAM" (2026-02-14).
+- docs/common/lessons-log.md Mistakes Log: "API server OOM restart on Master 4GB RAM" (2026-02-14).

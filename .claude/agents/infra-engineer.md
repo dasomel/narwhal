@@ -46,7 +46,7 @@ You are an infrastructure implementation specialist for the Narwhal IDP cluster.
 - New components go in Phase 2
 
 ## Pre-Work Requirements
-- Read CLAUDE.md Mistakes Log (avoid known pitfalls)
+- Read docs/common/lessons-log.md Mistakes Log (avoid known pitfalls)
 - Read `scripts/common/lib.sh` (discover available shared functions)
 - Read existing similar scripts (maintain pattern consistency)
 - Reference `.claude/skills/narwhal-ops/references/provision-patterns.md` (templates)

@@ -20,6 +20,21 @@ GitOps app structure, and version upgrades.
 > generalize past a single incident belong here — when a new incident yields one, add the rule
 > here and the narrative there.
 
+**Recording incidents (not optional)**
+- Every debugging session that ends in a fix writes a row to
+  [`docs/common/lessons-log.md`](docs/common/lessons-log.md), in the section that matches the
+  cause (Shell / Kubernetes-Helm / GitOps-ArgoCD / Vagrant-Infrastructure / Cloud), newest first.
+  A fix nobody wrote down gets rediscovered from scratch — that is what this file exists to stop.
+- **Grep the file for the symptom before adding a row.** If a near-match exists, sharpen that row
+  instead of appending a second one; parallel entries for one failure are worse than none, because
+  the next reader trusts whichever they hit first.
+- Record the **discriminator, not the conclusion**. "Loki CrashLoopBackOff → deleted the WAL" is
+  useless; what earns its place is how to tell this cause from the ones it resembles, and which
+  obvious fix is wrong (a healthy Loki also holds a 0-byte WAL segment, so deleting on size alone
+  causes the corruption it was meant to prevent).
+- A rule only graduates into the Recurring Rules above once it has bitten across more than one
+  incident. One-off narratives stay in the log.
+
 **Images & registries**
 - Never trust a mutable tag on the pre-baked Vagrant box: `:latest` layers are baked into the
   box's content store and are never re-fetched, so an arm64 node silently runs amd64 binaries.

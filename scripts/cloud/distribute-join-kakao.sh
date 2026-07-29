@@ -86,6 +86,8 @@ done
 
 echo ""
 echo "=== Distributed to $(( ${#MASTERS[@]} - 1 )) control-plane + ${#WORKERS[@]} worker node(s) ==="
-echo "Next, on each node with PROVIDER=kakao:"
-echo "  control-plane: sudo -E PROVIDER=kakao ... scripts/cluster/02-join-control-plane.sh"
-echo "  worker:        sudo -E PROVIDER=kakao ... scripts/cluster/02-join-worker.sh"
+# sudo -E is refused on these images ("preserving the entire environment is not
+# supported"), so the variable has to ride on `sudo env` or it never arrives.
+echo "Next, on each node:"
+echo "  control-plane: sudo env PROVIDER=kakao bash scripts/cluster/02-join-control-plane.sh"
+echo "  worker:        sudo env PROVIDER=kakao bash scripts/cluster/02-join-worker.sh"

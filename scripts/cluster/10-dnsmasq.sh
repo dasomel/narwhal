@@ -47,12 +47,6 @@ if [ "${PROVIDER:-vagrant}" = "kakao" ]; then
     exit 0
   fi
 
-  if printf '%s' "${COREFILE}" | grep -q "^${DOMAIN}:53" \
-    && printf '%s' "${COREFILE}" | grep -q "${APISIX_IP}"; then
-    echo "CoreDNS hairpin zone already present for ${DOMAIN} -> ${APISIX_IP}"
-    exit 0
-  fi
-
   # Drop any existing zone block for this domain before appending, so a re-run after an
   # APISIX ClusterIP change replaces the stale IP instead of defining the zone twice.
   COREFILE_BASE=$(printf '%s\n' "${COREFILE}" | awk -v zone="^${DOMAIN}:53" '
@@ -70,11 +64,28 @@ if [ "${PROVIDER:-vagrant}" = "kakao" ]; then
     template IN A {
         answer \"{{ .Name }} 30 IN A ${APISIX_IP}\"
     }
+    # Answer AAAA with NODATA (NOERROR, no records) rather than letting it fall off the
+    # end of the zone as SERVFAIL. Stub resolvers ask for A and AAAA together, and a
+    # SERVFAIL on half the pair makes them retry and stall — the name is v4-only, which
+    # is exactly what NODATA means.
+    template IN AAAA {
+        rcode NOERROR
+    }
 }"
 
+  COREFILE_NEW="${HAIRPIN_ZONE}
+${COREFILE_BASE}"
+
+  # Compare the rendered result, not just the zone header and the IP. An earlier version
+  # of this guard matched on those two alone, so editing the zone body (adding the AAAA
+  # template) was reported as "already present" and silently never applied.
+  if [ "${COREFILE_NEW}" = "${COREFILE}" ]; then
+    echo "CoreDNS hairpin zone already current for ${DOMAIN} -> ${APISIX_IP}"
+    exit 0
+  fi
+
   kubectl create configmap coredns -n kube-system \
-    --from-literal=Corefile="${HAIRPIN_ZONE}
-${COREFILE_BASE}" \
+    --from-literal=Corefile="${COREFILE_NEW}" \
     --dry-run=client -o yaml | kubectl apply -f -
 
   kubectl rollout restart deployment coredns -n kube-system

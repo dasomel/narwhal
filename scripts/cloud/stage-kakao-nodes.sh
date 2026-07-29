@@ -150,6 +150,7 @@ done
 
 echo ""
 echo "=== Staged $((${#NODES[@]})) node(s) ==="
-echo "Next: run the provisioning scripts on each node with PROVIDER=kakao, e.g."
+# sudo -E is refused on these images, so PROVIDER must ride on `sudo env`.
+echo "Next: run the provisioning scripts on each node, e.g."
 echo "  ssh -i ${SSH_KEY} -J ${SSH_USER}@${BASTION_IP} ${SSH_USER}@${NODES[0]}"
-echo "  sudo -E PROVIDER=kakao ${STAGE_DIR}/scripts/common/01-prerequisites.sh"
+echo "  sudo env PROVIDER=kakao bash ${STAGE_DIR}/scripts/common/01-prerequisites.sh"

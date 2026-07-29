@@ -16,6 +16,7 @@ IaC와 운영 명령은 [`csp/kakao-cloud/terraform/README.md`](../csp/kakao-clo
 | | Vagrant (로컬) | Kakao Cloud |
 |---|---|---|
 | OS | Ubuntu 26.04 (`dasomel/ubuntu-26.04-xfs`) | Ubuntu 24.04 (26.04 이미지 없음) |
+| 서비스 도메인 | `*.local.narwhal.internal` | `*.kakao.narwhal.internal` |
 | 노드 네트워크 | 192.168.56.0/24 | 172.16.0.0/24 |
 | 컨트롤플레인 VIP | kube-vip (192.168.56.100) | Kakao NLB (사설 VIP 172.16.0.236) |
 | Ingress 외부 노출 | MetalLB LoadBalancer (192.168.56.200) | worker NLB(공인) → NodePort 31080/31443 |
@@ -104,7 +105,7 @@ VPC CIDR + 내부 IP 리터럴 7개,          ← curl 은 CIDR 을 파싱하지
 10.244.0.0/16 (podSubnet),
 10.96.0.0/12 (serviceSubnet),
 169.254.169.254 (메타데이터),
-registry 주소, .svc, .svc.cluster.local, .cluster.local, .local.narwhal.internal
+registry 주소, .svc, .svc.cluster.local, .cluster.local, .kakao.narwhal.internal
 ```
 
 CIDR은 Go 계열 클라이언트(containerd, helm, kubectl)를 위해 남기고, **curl은 정확한 호스트와
@@ -257,7 +258,7 @@ Helm 주석으로 둔 이유). 기존 클러스터에 드리프트가 생기지 
 
 ## 8. 도메인 접근
 
-`*.local.narwhal.internal`은 공개 DNS가 없다. Vagrant는 master 노드의 dnsmasq가 해석해 주지만
+`*.kakao.narwhal.internal`은 공개 DNS가 없다. Vagrant는 master 노드의 dnsmasq가 해석해 주지만
 (`dns-access.md`), 클라우드에서는 그 경로가 없다 — `PROVIDER=kakao`가 dnsmasq를 건너뛰고,
 노드는 프라이빗이라 리졸버로 지정할 수도 없다. 이름을 서빙하는 것은 **worker LB의 공인 IP**이므로
 `/etc/hosts`로 연결한다.
@@ -305,7 +306,7 @@ kubectl get application metallb -n devtools 2>/dev/null | wc -l
 kubectl get svc apisix-gateway -n platform-system
 
 LB=$(cd csp/kakao-cloud/terraform && tofu output -raw worker_lb_public_ip)
-curl -sk -o /dev/null -w '%{http_code}\n' --resolve "portal.local.narwhal.internal:443:$LB" https://portal.local.narwhal.internal/
+curl -sk -o /dev/null -w '%{http_code}\n' --resolve "portal.kakao.narwhal.internal:443:$LB" https://portal.kakao.narwhal.internal/
 ```
 
 | 확인 항목 | 기대값 |

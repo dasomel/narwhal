@@ -30,7 +30,10 @@ SSH_USER="${NODE_SSH_USER:-ubuntu}"
 STAGE_DIR="${STAGE_DIR:-/home/vagrant}"
 SENTINELS="${STAGE_DIR}/.narwhal-stage"
 FORCE="${FORCE:-0}"
-DOMAIN="${DOMAIN:-local.narwhal.internal}"
+# kakao.*, not local.*: the Vagrant cluster serves the same service names, and both
+# resolve only through /etc/hosts on the operator machine. Sharing one domain means the
+# two clusters overwrite each other's entries and you silently browse the wrong one.
+DOMAIN="${DOMAIN:-kakao.narwhal.internal}"
 
 cd "$(dirname "$0")/../.."
 

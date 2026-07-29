@@ -30,7 +30,7 @@ set -euo pipefail
 TF_DIR="${TF_DIR:-csp/kakao-cloud/terraform}"
 SSH_USER="${NODE_SSH_USER:-ubuntu}"
 CLUSTER_NAME="${CLUSTER_NAME:-narwhal-kakao}"
-DOMAIN="${DOMAIN:-local.narwhal.internal}"
+DOMAIN="${DOMAIN:-kakao.narwhal.internal}"
 PORT="${PORT:-6443}"
 AUTH_METHOD="${1:-cert}"
 

@@ -162,7 +162,11 @@ sudo -E env KUBECONFIG=/home/vagrant/.kube/config-local kubectl get nodes
 
 ### 웹 UI
 
-`*.local.narwhal.internal`은 공개 DNS가 없고 worker LB가 이름을 서빙한다. 한 번 매핑해 둔다:
+`*.kakao.narwhal.internal`은 공개 DNS가 없고 worker LB가 이름을 서빙한다. Vagrant의
+`local.narwhal.internal`과 도메인을 다르게 둔 것은 의도적이다 — 두 클러스터가 같은 서비스 이름을
+서빙하고 둘 다 로컬 `/etc/hosts`로만 해석되므로, 도메인이 같으면 서로의 항목을 덮어쓴다.
+
+한 번 매핑해 둔다:
 
 ```bash
 scripts/cloud/setup-hosts-kakao.sh --apply
@@ -177,7 +181,7 @@ scripts/cloud/setup-hosts-kakao.sh --apply
 플랫폼이 생성한 자격증명은 스크립트 하나로 전부 출력된다:
 
 ```bash
-ssh narwhal-master-1 'sudo env KUBECONFIG=/home/vagrant/.kube/config-local DOMAIN=local.narwhal.internal bash /home/vagrant/scripts/test/show-credentials.sh'
+ssh narwhal-master-1 'sudo env KUBECONFIG=/home/vagrant/.kube/config-local DOMAIN=kakao.narwhal.internal bash /home/vagrant/scripts/test/show-credentials.sh'
 ```
 
 Keycloak(관리자 + 사전 생성된 `admin`/`dev`/`view`/`guest` realm 사용자), ArgoCD, Gitea,
@@ -191,12 +195,12 @@ OIDC 클라이언트 시크릿을 포함한다. 마지막 "SSH / Node access" �
 kubectl get secret <name> -n <ns> -o jsonpath='{.data.<key>}' | base64 -d
 ```
 
-웹 UI는 `https://<서비스>.local.narwhal.internal`에서 Keycloak SSO를 거치며 worker LB로
+웹 UI는 `https://<서비스>.kakao.narwhal.internal`에서 Keycloak SSO를 거치며 worker LB로
 들어간다. `--resolve`나 `/etc/hosts`로 호스트명을 LB에 연결한다:
 
 ```bash
 LB=$(tofu output -raw worker_lb_public_ip)
-curl -sk --resolve "argocd.local.narwhal.internal:443:$LB" https://argocd.local.narwhal.internal/
+curl -sk --resolve "argocd.kakao.narwhal.internal:443:$LB" https://argocd.kakao.narwhal.internal/
 ```
 
 ## 디렉토리 구조

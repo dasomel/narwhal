@@ -168,7 +168,11 @@ sudo -E env KUBECONFIG=/home/vagrant/.kube/config-local kubectl get nodes
 
 ### Web UIs
 
-`*.local.narwhal.internal` has no public DNS; the names are served by the worker LB.
+`*.kakao.narwhal.internal` has no public DNS; the names are served by the worker LB.
+The domain differs from Vagrant's `local.narwhal.internal` on purpose — both clusters
+serve the same service names and both resolve only through `/etc/hosts` on your machine,
+so a shared domain would have them overwrite each other's entries.
+
 Map them once:
 
 ```bash
@@ -185,7 +189,7 @@ the platform CA and prints how to trust it — certificates are issued by
 Every credential the platform generates is printed by one script:
 
 ```bash
-ssh narwhal-master-1 'sudo env KUBECONFIG=/home/vagrant/.kube/config-local DOMAIN=local.narwhal.internal bash /home/vagrant/scripts/test/show-credentials.sh'
+ssh narwhal-master-1 'sudo env KUBECONFIG=/home/vagrant/.kube/config-local DOMAIN=kakao.narwhal.internal bash /home/vagrant/scripts/test/show-credentials.sh'
 ```
 
 It covers Keycloak (admin plus the pre-seeded `admin`/`dev`/`view`/`guest` realm users),
@@ -199,12 +203,12 @@ For a single value:
 kubectl get secret <name> -n <ns> -o jsonpath='{.data.<key>}' | base64 -d
 ```
 
-Web UIs are behind Keycloak SSO at `https://<service>.local.narwhal.internal`, reached
+Web UIs are behind Keycloak SSO at `https://<service>.kakao.narwhal.internal`, reached
 through the worker LB. Point the hostname at it with `--resolve` or an `/etc/hosts` entry:
 
 ```bash
 LB=$(tofu output -raw worker_lb_public_ip)
-curl -sk --resolve "argocd.local.narwhal.internal:443:$LB" https://argocd.local.narwhal.internal/
+curl -sk --resolve "argocd.kakao.narwhal.internal:443:$LB" https://argocd.kakao.narwhal.internal/
 ```
 
 ## Directory Structure

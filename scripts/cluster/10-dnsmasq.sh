@@ -16,10 +16,71 @@ MASTER_IP_BASE="${MASTER_IP_BASE:-192.168.56.1}"
 MASTER_COUNT="${MASTER_COUNT:-3}"
 
 # Cloud: dnsmasq is L2/host-network-bound (listens on the master's 192.168.56.x IP and
-# advertises the MetalLB IP). On Kakao Cloud there is no MetalLB and DNS is handled by
-# the cloud resolver + /etc/hosts + in-cluster CoreDNS, so skip dnsmasq entirely.
+# advertises the MetalLB IP). On Kakao Cloud there is no MetalLB, so dnsmasq is skipped —
+# but the in-cluster half of DNS still has to exist. Without it *.${DOMAIN} is NXDOMAIN
+# inside the cluster and every APISIX openid-connect route 500s, because the plugin
+# resolves the Keycloak discovery URL by name from inside the gateway pod.
+#
+# The Vagrant path solves this with a CoreDNS "hairpin" zone whose hosts block lists
+# each name and falls through to master dnsmasq. On Kakao there is nothing to fall
+# through to, so a per-name list would silently omit whatever it forgot. A wildcard
+# template answers the whole zone instead and needs no maintenance as routes are added.
 if [ "${PROVIDER:-vagrant}" = "kakao" ]; then
-  echo "PROVIDER=kakao: skipping dnsmasq (cloud resolver + /etc/hosts + CoreDNS handle DNS)"
+  echo "PROVIDER=kakao: skipping dnsmasq; wiring the in-cluster CoreDNS hairpin zone instead"
+
+  if [ "${SKIP_COREDNS}" = "true" ]; then
+    echo "SKIP_COREDNS=true: leaving CoreDNS untouched"
+    exit 0
+  fi
+
+  APISIX_IP=$(kubectl get svc apisix-gateway -n platform-system \
+    -o jsonpath='{.spec.clusterIP}' 2>/dev/null || echo "")
+  if [ -z "${APISIX_IP}" ]; then
+    echo "WARN: apisix-gateway service not found in platform-system; skipping hairpin zone" >&2
+    echo "      Re-run this script after APISIX is installed, or gateway OIDC routes will 500." >&2
+    exit 0
+  fi
+
+  COREFILE=$(kubectl get configmap coredns -n kube-system -o jsonpath='{.data.Corefile}' 2>/dev/null || echo "")
+  if [ -z "${COREFILE}" ]; then
+    echo "WARN: CoreDNS configmap not found; skipping hairpin zone" >&2
+    exit 0
+  fi
+
+  if printf '%s' "${COREFILE}" | grep -q "^${DOMAIN}:53" \
+    && printf '%s' "${COREFILE}" | grep -q "${APISIX_IP}"; then
+    echo "CoreDNS hairpin zone already present for ${DOMAIN} -> ${APISIX_IP}"
+    exit 0
+  fi
+
+  # Drop any existing zone block for this domain before appending, so a re-run after an
+  # APISIX ClusterIP change replaces the stale IP instead of defining the zone twice.
+  COREFILE_BASE=$(printf '%s\n' "${COREFILE}" | awk -v zone="^${DOMAIN}:53" '
+    $0 ~ zone { skip=1; next }
+    skip && /^}/ { skip=0; next }
+    skip { next }
+    { print }
+  ')
+
+  HAIRPIN_ZONE="${DOMAIN}:53 {
+    # hairpin: in-cluster clients -> APISIX ClusterIP. Wildcard, because there is no
+    # upstream resolver for this zone on Kakao Cloud — an unlisted name has nowhere to go.
+    errors
+    cache 30
+    template IN A {
+        answer \"{{ .Name }} 30 IN A ${APISIX_IP}\"
+    }
+}"
+
+  kubectl create configmap coredns -n kube-system \
+    --from-literal=Corefile="${HAIRPIN_ZONE}
+${COREFILE_BASE}" \
+    --dry-run=client -o yaml | kubectl apply -f -
+
+  kubectl rollout restart deployment coredns -n kube-system
+  kubectl rollout status deployment coredns -n kube-system --timeout=120s
+
+  echo "CoreDNS hairpin zone applied: *.${DOMAIN} -> ${APISIX_IP} (apisix-gateway ClusterIP)"
   exit 0
 fi
 

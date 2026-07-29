@@ -21,7 +21,7 @@ set -euo pipefail
 # first.
 
 TF_DIR="${TF_DIR:-csp/kakao-cloud/terraform}"
-DOMAIN="${DOMAIN:-local.narwhal.internal}"
+DOMAIN="${DOMAIN:-kakao.narwhal.internal}"
 MARK_BEGIN="# BEGIN narwhal-kakao"
 MARK_END="# END narwhal-kakao"
 HOSTS_FILE="${HOSTS_FILE:-/etc/hosts}"

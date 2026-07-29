@@ -16,6 +16,80 @@ DOMAIN="${DOMAIN:-local.narwhal.internal}"
 # Auth method: "cert" (default) or "oidc"
 AUTH_METHOD="${1:-cert}"
 
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+
+die() { echo "ERROR: $*" >&2; exit 1; }
+
+#=========================================
+# Run a command on master-1 and print its stdout.
+#
+# Ordered on purpose. Plain ssh to MASTER_IP rides the SAME host-only network
+# kubectl will use, so a successful fetch proves the context this script writes
+# is actually reachable. `vagrant ssh` instead rides the VMware NAT network,
+# which has handed two guests the same DHCP lease (2026-07-29: master-1 and
+# worker-2 both held 172.16.221.133) — it then authenticates against the wrong
+# guest and fails, or succeeds while kubectl still cannot reach the API server.
+# Keep it only as a fallback.
+#
+# stderr is captured separately, never merged: `vagrant ssh -c` writes
+# "Connection to ... closed." to stderr, and folding that into the output would
+# corrupt the kubeconfig this returns.
+#=========================================
+master_exec() {
+  local remote_cmd="$1" key out err
+  err=$(mktemp)
+
+  key=$(ls "${REPO_ROOT}"/.vagrant/machines/master-1/*/private_key 2>/dev/null | head -1 || true)
+  if [[ -n "${key}" ]]; then
+    if out=$(ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+               -o ConnectTimeout=10 -o BatchMode=yes -o LogLevel=ERROR \
+               -i "${key}" "vagrant@${MASTER_IP}" "${remote_cmd}" 2>"${err}"); then
+      rm -f "${err}"
+      printf '%s\n' "${out}"
+      return 0
+    fi
+    echo "WARN: ssh to ${MASTER_IP} failed: $(tr '\n' ' ' <"${err}")" >&2
+    echo "WARN: falling back to 'vagrant ssh'" >&2
+  fi
+
+  if out=$(cd "${REPO_ROOT}" && vagrant ssh master-1 -c "${remote_cmd}" </dev/null 2>"${err}"); then
+    rm -f "${err}"
+    printf '%s\n' "${out}"
+    return 0
+  fi
+
+  local reason; reason=$(tr '\n' ' ' <"${err}"); rm -f "${err}"
+  die "could not run '${remote_cmd}' on master-1: ${reason}"
+}
+
+#=========================================
+# Refuse to write a context that cannot work.
+#
+# Both failure modes below used to surface as this script printing its banner
+# and exiting silently: the `vagrant ssh` call was suppressed with 2>/dev/null,
+# and `set -e` killed the script before it reached `kubectl config use-context`,
+# so a stale context stayed active and the run looked like it had succeeded.
+#=========================================
+preflight() {
+  local state
+  state=$(cd "${REPO_ROOT}" && vagrant status master-1 2>/dev/null | awk '$1=="master-1"{print $2}')
+  [[ "${state}" == "running" ]] \
+    || die "master-1 is '${state:-unknown}', not running. Start the cluster first: (cd ${REPO_ROOT} && vagrant up)"
+
+  # kubectl reaches the API server over the host-only network, so verify that
+  # path from THIS machine. curl returns 0 on any HTTP response; we only care
+  # that TCP + TLS complete.
+  if ! curl -sk --max-time 5 -o /dev/null "${API_SERVER}/livez"; then
+    echo "ERROR: ${API_SERVER} is unreachable from this machine, but master-1 is running." >&2
+    echo "       On macOS this is usually Local Network Privacy blocking the terminal app:" >&2
+    echo "       System Settings > Privacy & Security > Local Network — enable the app running" >&2
+    echo "       this script, then retry. Confirm with: ping ${MASTER_IP}" >&2
+    exit 1
+  fi
+}
+
+preflight
+
 echo "=== Narwhal Cluster kubeconfig Setup ==="
 echo "Cluster: ${CLUSTER_NAME}"
 echo "API Server: ${API_SERVER}"
@@ -30,7 +104,7 @@ case "${AUTH_METHOD}" in
     echo "Setting up certificate-based authentication..."
 
     # Get kubeconfig from master node
-    CONFIG=$(vagrant ssh master-1 -c "cat ~/.kube/config" 2>/dev/null)
+    CONFIG=$(master_exec "cat ~/.kube/config")
 
     # Extract certificates
     echo "$CONFIG" | awk '/certificate-authority-data:/ {print $2}' | base64 -d > /tmp/narwhal-ca.crt
@@ -74,7 +148,7 @@ case "${AUTH_METHOD}" in
     OIDC_PASSWORD="${OIDC_PASSWORD:-}"
 
     # Get CA certificate from master
-    CONFIG=$(vagrant ssh master-1 -c "cat ~/.kube/config" 2>/dev/null)
+    CONFIG=$(master_exec "cat ~/.kube/config")
     echo "$CONFIG" | awk '/certificate-authority-data:/ {print $2}' | base64 -d > /tmp/narwhal-ca.crt
 
     # Set cluster
@@ -127,7 +201,7 @@ case "${AUTH_METHOD}" in
     echo "Setting up service account token authentication..."
 
     # Get CA certificate from master
-    CONFIG=$(vagrant ssh master-1 -c "cat ~/.kube/config" 2>/dev/null)
+    CONFIG=$(master_exec "cat ~/.kube/config")
     echo "$CONFIG" | awk '/certificate-authority-data:/ {print $2}' | base64 -d > /tmp/narwhal-ca.crt
 
     # Get or create service account token
@@ -135,11 +209,11 @@ case "${AUTH_METHOD}" in
     SA_NAMESPACE="${SA_NAMESPACE:-kube-system}"
 
     # Create service account and get token
-    TOKEN=$(vagrant ssh master-1 -c "
+    TOKEN=$(master_exec "
       kubectl create serviceaccount ${SA_NAME} -n ${SA_NAMESPACE} --dry-run=client -o yaml | kubectl apply -f - > /dev/null 2>&1
       kubectl create clusterrolebinding ${SA_NAME}-binding --clusterrole=cluster-admin --serviceaccount=${SA_NAMESPACE}:${SA_NAME} --dry-run=client -o yaml | kubectl apply -f - > /dev/null 2>&1
       kubectl create token ${SA_NAME} -n ${SA_NAMESPACE} --duration=8760h
-    " 2>/dev/null)
+    ")
 
     # Set cluster
     kubectl config set-cluster "${CLUSTER_NAME}" \

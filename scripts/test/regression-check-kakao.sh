@@ -159,6 +159,38 @@ run_static() {
   # bastion.tf must be tracked — a blanket csp/ gitignore once hid it from fresh clones.
   check R18 "bastion.tf is tracked by git" \
     git ls-files --error-unmatch "${TF_DIR}/bastion.tf"
+
+  # "The bundle is still incomplete" has been the finding three separate times, each
+  # from a different cause (live-only image list, docker-archive refusing to overwrite,
+  # bare refs). Check the shape rather than any one of those: the three counts must
+  # agree, and the bootstrap tar must not predate the images around it.
+  local arch bundle
+  arch=$(uname -m); [ "${arch}" = "x86_64" ] && arch=amd64
+  [ "${arch}" = "aarch64" ] && arch=arm64
+  bundle="${AIRGAP_BUNDLE_DIR:-narwhal-airgap-bundle-${arch}}"
+  if [ ! -d "${bundle}/oci" ]; then
+    warn R19 "no bundle at ${bundle}; airgap checks skipped"
+  else
+    local want have layouts stale
+    want=$(grep -cvE '^\s*(#|$)' scripts/airgap/images.txt)
+    have=$(grep -cvE '^\s*$' "${bundle}/manifest.txt")
+    layouts=$(find "${bundle}/oci" -maxdepth 4 -name index.json | wc -l | tr -d ' ')
+    if [ "${want}" = "${have}" ] && [ "${want}" = "${layouts}" ]; then
+      ok R19 "bundle complete: ${want} images in list, manifest and oci"
+    else
+      bad R19 "bundle counts disagree — list=${want} manifest=${have} oci=${layouts}"
+    fi
+
+    # 2026-07-28: docker-archive refuses an existing file, so the tar silently froze at
+    # the bundle's creation date while every other image refreshed.
+    if [ -f "${bundle}/bootstrap/registry.tar" ]; then
+      stale=$(find "${bundle}/oci" -name index.json -newer "${bundle}/bootstrap/registry.tar" | wc -l | tr -d ' ')
+      [ "${stale}" = "0" ] && ok R20 "bootstrap registry.tar not stale (2026-07-28)" \
+        || bad R20 "registry.tar older than ${stale} image layouts (2026-07-28)"
+    else
+      bad R20 "bundle has no bootstrap/registry.tar"
+    fi
+  fi
 }
 
 #=========================================

@@ -286,6 +286,13 @@ Cluster provisioning after that is roughly another hour, plus the airgap bundle 
 tofu destroy
 ```
 
+Teardown is as slow as creation. 52 of the 53 resources go in ~15 minutes, but **the VPC
+alone takes over an hour** (measured 2026-07-29: 62+ minutes after everything else had
+finished). Same cause as the `~30 min` on the create side — the API is slow in that
+stretch. It looks hung; as long as `Still destroying...` keeps ticking it is not. Do not
+interrupt it, or state is left holding just the VPC and the next `apply` fails on a name
+collision.
+
 ## Known Issues
 
 None open in this project. Two behaviours worth knowing before you debug something else:

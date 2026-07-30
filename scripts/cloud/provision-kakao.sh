@@ -209,7 +209,12 @@ stage_registry() {
     "${bundle}/" "${SSH_USER}@${BASTION_IP}:${remote_home}/airgap-bundle/" \
     || { note "bundle sync FAILED"; return 1; }
 
+  # rsync creates only the LAST component of the destination path, so scripts/airgap
+  # fails with "No such file or directory" while airgap-bundle/ succeeds — the parent
+  # has to exist first.
   note "syncing airgap scripts"
+  ssh_bastion "mkdir -p ${remote_home}/scripts" \
+    || { note "could not create ${remote_home}/scripts"; return 1; }
   COPYFILE_DISABLE=1 rsync -a -e "${rsh}" \
     scripts/airgap/ "${SSH_USER}@${BASTION_IP}:${remote_home}/scripts/airgap/" \
     || { note "script sync FAILED"; return 1; }
@@ -330,19 +335,32 @@ echo "bastion=${BASTION_IP}  master-1=${MASTER1} (${MASTER_HOSTNAME})"
 echo "VIP=${VIP}  apisix-lb=${APISIX_LB_IP}  registry=${AIRGAP_REGISTRY}"
 echo "masters=${MASTERS[*]}  workers=${WORKERS[*]}"
 
+# A failing stage has to make the whole run fail. The `&&` chain below is the last
+# command in its case branch, so without this the for-loop simply moves on and the final
+# `log "done"` exits 0 — the same silent-success bug `up.sh` shipped on 2026-06-17, where
+# a clean-install failure reported rc=0 and nobody noticed until the cluster was probed.
+run_stage() {
+  if ! "$@"; then
+    printf '\n\033[1;31m== FAILED: %s\033[0m\n' "${1#stage_}" >&2
+    exit 1
+  fi
+}
+
 for arg in "$@"; do
   case "${arg}" in
-    proxy)  stage_proxy ;;
-    registry) stage_registry ;;
-    base)   stage_base ;;
-    nfs)    stage_nfs ;;
-    runtime) stage_runtime ;;
-    mirror) stage_mirror ;;
-    init)   stage_init ;;
-    join)   stage_join ;;
-    phase1) stage_phase1 ;;
-    phase2) stage_phase2 ;;
-    all)    stage_proxy && stage_registry && stage_base && stage_mirror && stage_init && stage_join && stage_nfs && stage_phase1 && stage_phase2 ;;
+    proxy)  run_stage stage_proxy ;;
+    registry) run_stage stage_registry ;;
+    base)   run_stage stage_base ;;
+    nfs)    run_stage stage_nfs ;;
+    runtime) run_stage stage_runtime ;;
+    mirror) run_stage stage_mirror ;;
+    init)   run_stage stage_init ;;
+    join)   run_stage stage_join ;;
+    phase1) run_stage stage_phase1 ;;
+    phase2) run_stage stage_phase2 ;;
+    all)    for s in proxy registry base mirror init join nfs phase1 phase2; do
+              run_stage "stage_${s}"
+            done ;;
     *) echo "unknown stage: ${arg}" >&2; exit 1 ;;
   esac
 done

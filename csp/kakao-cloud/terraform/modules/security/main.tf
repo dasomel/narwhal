@@ -168,6 +168,28 @@ resource "kakaocloud_security_group" "security_group" {
       remote_ip_prefix = var.vpc_cidr
       description      = "Airgap bootstrap registry, internal only"
     },
+    # Split DNS for *.<DOMAIN>, served by dnsmasq on the bastion. Vagrant points every
+    # node's systemd-resolved at master-1's dnsmasq for this zone; the cloud had no
+    # equivalent, so the nodes could not resolve a service name at all and Phase 2 scripts
+    # that curl one failed with HTTP 000. The bastion plays master-1's role here: it is up
+    # before the cluster and squid on the same host then resolves these names too.
+    # UDP carries almost every query; TCP is needed for responses over 512 bytes.
+    {
+      direction        = "ingress"
+      protocol         = "UDP"
+      port_range_min   = 53
+      port_range_max   = 53
+      remote_ip_prefix = var.vpc_cidr
+      description      = "Bastion split DNS (dnsmasq), internal only"
+    },
+    {
+      direction        = "ingress"
+      protocol         = "TCP"
+      port_range_min   = 53
+      port_range_max   = 53
+      remote_ip_prefix = var.vpc_cidr
+      description      = "Bastion split DNS (dnsmasq) TCP, internal only"
+    },
     # All Egress
     {
       direction        = "egress"

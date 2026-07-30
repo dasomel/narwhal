@@ -91,7 +91,24 @@ echo "Configuring DNS..."
 # Cloud: dnsmasq is skipped (L2-bound), so do NOT repoint DNS at the master nodes
 # (that would break resolution). Keep the default cloud resolver; *.${DOMAIN} is
 # covered by /etc/hosts entries below + in-cluster CoreDNS.
-if [ "${PROVIDER:-vagrant}" != "kakao" ] && systemctl is-active --quiet systemd-resolved; then
+# Cloud: dnsmasq runs on the BASTION (setup-bastion-proxy.sh) rather than on master-1,
+# because it has to answer before the cluster exists and squid on the same host then
+# resolves these names for proxied requests too. DNS_SERVER is the bastion's private IP.
+if [ "${PROVIDER:-vagrant}" = "kakao" ] && [ -n "${DNS_SERVER:-}" ] \
+  && systemctl is-active --quiet systemd-resolved; then
+  echo "Routing *.${DOMAIN} to ${DNS_SERVER} (bastion dnsmasq)..."
+  sudo mkdir -p /etc/systemd/resolved.conf.d
+  # Domains=~ makes this a routing-only domain: only *.${DOMAIN} goes to the bastion, and
+  # everything else keeps using the cloud resolver. Without the ~ this would become a
+  # search suffix and hijack unqualified lookups.
+  sudo tee /etc/systemd/resolved.conf.d/narwhal-dns.conf << EOF
+[Resolve]
+DNS=${DNS_SERVER}
+Domains=~${DOMAIN}
+EOF
+  sudo systemctl restart systemd-resolved
+  resolvectl query "keycloak.${DOMAIN}" 2>&1 | head -2 || echo "  WARN: ${DOMAIN} not resolving yet"
+elif [ "${PROVIDER:-vagrant}" != "kakao" ] && systemctl is-active --quiet systemd-resolved; then
   sudo mkdir -p /etc/systemd/resolved.conf.d
   # Build DNS list dynamically from all master IPs
   MASTER_DNS=""
@@ -144,30 +161,22 @@ done
 # kube-apiserver VIP (${VIP_ADDRESS}=192.168.56.100) — harbor is served via APISIX.
 APISIX_LB_IP="${APISIX_LB_IP:-192.168.56.200}"
 
-# Every service name, not just harbor. The provisioning scripts curl these from the NODE,
-# not from a pod, so the CoreDNS hairpin zone does not help them: 11-4-keycloak-apiserver.sh
-# probes https://keycloak.${DOMAIN}/.well-known/openid-configuration fifteen times, gets
-# HTTP 000 because the node cannot resolve the name, and then WARNs and silently skips
-# apiserver OIDC activation — a cluster that comes up "successfully" without OIDC login.
+# Vagrant only. systemd-resolved leaks *.${DOMAIN} to the NAT interface, so harbor
+# resolves to a public address and image pulls fail with TLS 'unrecognized name'. Pin it.
 #
-# /etc/hosts cannot wildcard, so the list is explicit and must track the hostnames in
-# gitops/charts/narwhal-platform/templates/apisix-routes.yaml. Written between markers so
-# a re-run replaces the block instead of appending duplicates (the old harbor-only version
-# grep'd for one name, which meant adding a second name never took effect).
-NARWHAL_SERVICES="alertmanager argocd dashboard gitea grafana harbor headlamp hubble
-keycloak nfs-quota openbao portal prometheus velero-ui"
-HOSTS_BEGIN="# BEGIN narwhal-services"
-HOSTS_END="# END narwhal-services"
-
-sudo sed -i "/^${HOSTS_BEGIN}\$/,/^${HOSTS_END}\$/d" /etc/hosts
-{
-  echo "${HOSTS_BEGIN}"
-  for svc in ${NARWHAL_SERVICES}; do
-    echo "${APISIX_LB_IP}   ${svc}.${DOMAIN}"
-  done
-  echo "${HOSTS_END}"
-} | sudo tee -a /etc/hosts >/dev/null
-echo "Mapped $(echo ${NARWHAL_SERVICES} | wc -w) service names -> ${APISIX_LB_IP} in /etc/hosts"
+# The cloud path deliberately has no equivalent. Enumerating service names here was tried
+# and is the wrong shape: the list has to track every route that gets added, a presence
+# check keyed on one name means a second never applies, and none of it helps squid, which
+# resolves on behalf of every proxied request. The bastion's dnsmasq answers the whole
+# wildcard zone for both the nodes and squid.
+if [ "${PROVIDER:-vagrant}" != "kakao" ]; then
+  if ! grep -q "harbor.${DOMAIN}" /etc/hosts; then
+    echo "${APISIX_LB_IP}   harbor.${DOMAIN}" | sudo tee -a /etc/hosts
+    echo "Added harbor.${DOMAIN} -> ${APISIX_LB_IP} to /etc/hosts"
+  else
+    echo "harbor.${DOMAIN} already present in /etc/hosts, skipping"
+  fi
+fi
 #=========================================
 # Configure Clock Synchronization (chrony)
 #=========================================

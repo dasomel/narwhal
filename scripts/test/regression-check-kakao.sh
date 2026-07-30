@@ -146,6 +146,21 @@ run_static() {
   check_not R14 "no hardcoded 192.168.56 in cloud scripts (2026-07-26)" \
     grep -rqE '^[^#]*192\.168\.56' scripts/cloud/
 
+  # 2026-07-30: nothing served *.DOMAIN to the NODES. Vagrant routes the zone to master-1's
+  # dnsmasq via systemd-resolved; the kakao branch skipped that block entirely, so Phase 2
+  # scripts that curl a service URL from the host got HTTP 000. Enumerating names in
+  # /etc/hosts was the first attempt and does not cover squid.
+  check R24 "bastion serves split DNS for the zone (2026-07-30)" \
+    grep -q 'dnsmasq' scripts/cloud/setup-bastion-proxy.sh
+
+  check R25 "01-prerequisites points the node resolver at DNS_SERVER (2026-07-30)" \
+    grep -q 'DNS_SERVER' scripts/common/01-prerequisites.sh
+
+  # The list-of-hostnames approach must not creep back: it has to track every new route,
+  # and it leaves squid unable to resolve anything it proxies.
+  check_not R26 "no /etc/hosts service-name enumeration (2026-07-30)" \
+    grep -q 'BEGIN narwhal-services' scripts/common/01-prerequisites.sh
+
   # 2026-07-30: NO_PROXY ended in a literal `.local.narwhal.internal`, so on Kakao every
   # request to a service name went out through squid, which cannot resolve a name that
   # exists only in the nodes' /etc/hosts. Same shape as R14 — a Vagrant-specific constant

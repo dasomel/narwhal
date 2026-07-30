@@ -30,6 +30,10 @@ SSH_KEY=$(cd "${TF_DIR}" && tofu output -raw ssh_key_path 2>/dev/null || true)
 case "${SSH_KEY}" in /*) ;; *) SSH_KEY="${TF_DIR}/${SSH_KEY#./}" ;; esac
 [ -f "${SSH_KEY}" ] || { echo "ERROR: private key not found at ${SSH_KEY} - has tofu apply finished?" >&2; exit 1; }
 VPC_CIDR=$(cd "${TF_DIR}" && tofu output -raw vpc_cidr 2>/dev/null || echo "172.16.0.0/16")
+DOMAIN="${DOMAIN:-kakao.narwhal.internal}"
+# Service names resolve to the worker LB's PRIVATE vip: in-VPC clients must not hairpin
+# out to the public address to reach a service in their own subnet.
+APISIX_LB_IP=$(cd "${TF_DIR}" && tofu output -raw worker_lb_vip)
 
 echo "=== Bastion proxy ==="
 echo "  bastion     : ${BASTION_IP} (private ${BASTION_PRIVATE_IP})"
@@ -77,6 +81,49 @@ echo "=== Verifying from the bastion itself ==="
 ssh_bastion "curl -sS -o /dev/null -w 'via proxy: HTTP %{http_code}\n' \
   --max-time 20 -x http://127.0.0.1:${PROXY_PORT} https://archive.ubuntu.com/ubuntu/dists/noble/Release"
 
+#=========================================
+# Split DNS for *.${DOMAIN}
+#=========================================
+# The other half of what the bastion replaces. On Vagrant, master-1 runs dnsmasq and every
+# node's systemd-resolved routes this zone to it (01-prerequisites.sh). PROVIDER=kakao
+# skipped that entirely, so nothing answered *.${DOMAIN} for a NODE — only the in-cluster
+# CoreDNS hairpin zone existed, which pods use and the host namespace does not. Phase 2
+# curls service URLs from the node, so 11-4-keycloak-apiserver.sh probed the OIDC endpoint
+# fifteen times, got HTTP 000, and silently skipped apiserver OIDC activation.
+#
+# Enumerating names in /etc/hosts was the first attempt and is the wrong shape: it has to
+# track every route that gets added, and it does nothing for squid, which resolves on
+# behalf of any proxied request. A wildcard zone here answers both.
+echo ""
+echo "=== Installing dnsmasq for *.${DOMAIN} ==="
+ssh_bastion "sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq dnsmasq >/dev/null"
+
+# bind-interfaces + listen-address: dnsmasq must not squat :53 on the public interface.
+# The security group only opens 53 to the VPC, but defence in depth is free here.
+ssh_bastion "sudo tee /etc/dnsmasq.d/narwhal.conf >/dev/null <<EOF
+address=/${DOMAIN}/${APISIX_LB_IP}
+listen-address=127.0.0.1,${BASTION_PRIVATE_IP}
+bind-interfaces
+domain-needed
+bogus-priv
+EOF"
+
+# systemd-resolved on the bastion owns 127.0.0.53:53, not 53 on the private IP, so the two
+# coexist — but dnsmasq must resolve everything else through the real upstream rather than
+# through resolved's stub, or it answers its own queries.
+ssh_bastion "sudo sed -i 's/^#\?DNSStubListener=.*/DNSStubListener=yes/' /etc/systemd/resolved.conf 2>/dev/null || true
+  sudo grep -q '^resolv-file=' /etc/dnsmasq.conf || echo 'resolv-file=/run/systemd/resolve/resolv.conf' | sudo tee -a /etc/dnsmasq.conf >/dev/null"
+
+ssh_bastion "sudo systemctl enable --now dnsmasq && sudo systemctl restart dnsmasq && sleep 2 && systemctl is-active dnsmasq"
+
+echo ""
+echo "=== Verifying the zone ==="
+ssh_bastion "dig +short +time=3 keycloak.${DOMAIN} @${BASTION_PRIVATE_IP} 2>/dev/null \
+  || nslookup keycloak.${DOMAIN} ${BASTION_PRIVATE_IP} 2>/dev/null | tail -2"
+# A name outside the zone must still resolve, or the nodes lose the internet.
+ssh_bastion "dig +short +time=3 archive.ubuntu.com @${BASTION_PRIVATE_IP} 2>/dev/null | head -1"
+
 echo ""
 echo "Proxy endpoint for the nodes: http://${BASTION_PRIVATE_IP}:${PROXY_PORT}"
+echo "DNS endpoint for the nodes:   ${BASTION_PRIVATE_IP}:53  (*.${DOMAIN} -> ${APISIX_LB_IP})"
 echo "Next: ./scripts/cloud/configure-node-proxy.sh"

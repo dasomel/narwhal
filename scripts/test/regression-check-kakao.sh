@@ -146,6 +146,13 @@ run_static() {
   check_not R14 "no hardcoded 192.168.56 in cloud scripts (2026-07-26)" \
     grep -rqE '^[^#]*192\.168\.56' scripts/cloud/
 
+  # 2026-07-30: NO_PROXY ended in a literal `.local.narwhal.internal`, so on Kakao every
+  # request to a service name went out through squid, which cannot resolve a name that
+  # exists only in the nodes' /etc/hosts. Same shape as R14 — a Vagrant-specific constant
+  # that survived the domain split — so it gets the same treatment.
+  check_not R23 "no hardcoded local.narwhal.internal in cloud scripts (2026-07-30)" \
+    grep -rqE '^[^#]*local\.narwhal\.internal' scripts/cloud/
+
   # Every script keeps its error handling — CI does not catch a missing set line.
   # 00-config.sh is exempt by design: it is sourced, so `set -e` there would impose
   # itself on whatever sourced it rather than on a process of its own.

@@ -20,6 +20,12 @@ TF_DIR="${TF_DIR:-csp/kakao-cloud/terraform}"
 SSH_USER="${NODE_SSH_USER:-ubuntu}"
 PROXY_PORT="${PROXY_PORT:-3128}"
 AIRGAP_REGISTRY="${AIRGAP_REGISTRY:-registry.airgap.local:5000}"
+# Must match the domain the cluster actually serves. This list used to end in a
+# hardcoded `.local.narwhal.internal`, which is the Vagrant domain — so on Kakao every
+# request to a service name went through squid, and squid cannot resolve a name that
+# exists only in the nodes' /etc/hosts. It failed as ERR_DNS_FAIL behind an HTTP 000,
+# which looks like the service being down rather than the proxy being asked at all.
+DOMAIN="${DOMAIN:-kakao.narwhal.internal}"
 
 cd "$(dirname "$0")/../.."
 
@@ -53,7 +59,7 @@ for line in sys.stdin:
             print(ip)
 ')
 
-NO_PROXY_LIST="localhost,127.0.0.1,::1,${_literal_hosts},${VPC_CIDR},10.244.0.0/16,10.96.0.0/12,169.254.169.254,${AIRGAP_REGISTRY%%:*},.svc,.svc.cluster.local,.cluster.local,.local.narwhal.internal"
+NO_PROXY_LIST="localhost,127.0.0.1,::1,${_literal_hosts},${VPC_CIDR},10.244.0.0/16,10.96.0.0/12,169.254.169.254,${AIRGAP_REGISTRY%%:*},.svc,.svc.cluster.local,.cluster.local,.${DOMAIN}"
 
 if [ $# -gt 0 ]; then
   NODES=("$@")

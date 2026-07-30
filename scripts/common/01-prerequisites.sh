@@ -143,13 +143,31 @@ done
 # internally. NOTE: this is the APISIX LB IP (192.168.56.200), NOT the
 # kube-apiserver VIP (${VIP_ADDRESS}=192.168.56.100) — harbor is served via APISIX.
 APISIX_LB_IP="${APISIX_LB_IP:-192.168.56.200}"
-HARBOR_HOSTS_ENTRY="${APISIX_LB_IP}   harbor.${DOMAIN}"
-if ! grep -q "harbor.${DOMAIN}" /etc/hosts; then
-  echo "${HARBOR_HOSTS_ENTRY}" | sudo tee -a /etc/hosts
-  echo "Added harbor.${DOMAIN} -> ${APISIX_LB_IP} to /etc/hosts"
-else
-  echo "harbor.${DOMAIN} already present in /etc/hosts, skipping"
-fi
+
+# Every service name, not just harbor. The provisioning scripts curl these from the NODE,
+# not from a pod, so the CoreDNS hairpin zone does not help them: 11-4-keycloak-apiserver.sh
+# probes https://keycloak.${DOMAIN}/.well-known/openid-configuration fifteen times, gets
+# HTTP 000 because the node cannot resolve the name, and then WARNs and silently skips
+# apiserver OIDC activation — a cluster that comes up "successfully" without OIDC login.
+#
+# /etc/hosts cannot wildcard, so the list is explicit and must track the hostnames in
+# gitops/charts/narwhal-platform/templates/apisix-routes.yaml. Written between markers so
+# a re-run replaces the block instead of appending duplicates (the old harbor-only version
+# grep'd for one name, which meant adding a second name never took effect).
+NARWHAL_SERVICES="alertmanager argocd dashboard gitea grafana harbor headlamp hubble
+keycloak nfs-quota openbao portal prometheus velero-ui"
+HOSTS_BEGIN="# BEGIN narwhal-services"
+HOSTS_END="# END narwhal-services"
+
+sudo sed -i "/^${HOSTS_BEGIN}\$/,/^${HOSTS_END}\$/d" /etc/hosts
+{
+  echo "${HOSTS_BEGIN}"
+  for svc in ${NARWHAL_SERVICES}; do
+    echo "${APISIX_LB_IP}   ${svc}.${DOMAIN}"
+  done
+  echo "${HOSTS_END}"
+} | sudo tee -a /etc/hosts >/dev/null
+echo "Mapped $(echo ${NARWHAL_SERVICES} | wc -w) service names -> ${APISIX_LB_IP} in /etc/hosts"
 #=========================================
 # Configure Clock Synchronization (chrony)
 #=========================================

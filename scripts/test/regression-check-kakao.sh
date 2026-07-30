@@ -76,6 +76,28 @@ run_static() {
   check R03 "01-prerequisites sets ip_forward + br_netfilter (2026-07-26)" \
     grep -q 'br_netfilter' scripts/common/01-prerequisites.sh
 
+  # 2026-07-30: nothing installed yq, which three scripts edit manifests with. The
+  # Vagrant box ships it, so the gap only appears on a plain cloud image — and it
+  # appears AFTER a successful kubeadm init, which reads as a cluster-level failure.
+  check R21 "01-prerequisites installs yq (2026-07-30)" \
+    grep -q 'mikefarah/yq' scripts/common/01-prerequisites.sh
+
+  # Every tool the scripts drive manifests with has to be installed by something in
+  # scripts/, not inherited from a pre-baked box. This catches the NEXT one, not just yq.
+  local tool missing_tools=""
+  for tool in yq jq kubectl helm; do
+    grep -rqlE "(^|[^-])\b${tool} " scripts/cluster/ scripts/common/ 2>/dev/null || continue
+    # Search all of scripts/, not just common/: helm is fetched on demand by
+    # 03-cni-install.sh and 04-addons.sh, which is a legitimate place to install it.
+    grep -rqE "install.*${tool}|${tool}_linux|${tool}/releases/download|get-${tool}" \
+      scripts/ 2>/dev/null || missing_tools="${missing_tools}${tool} "
+  done
+  if [ -z "${missing_tools}" ]; then
+    ok R22 "every manifest tool the scripts use is installed by scripts/common"
+  else
+    warn R22 "used but never installed: ${missing_tools}(inherited from the Vagrant box?)"
+  fi
+
   # 2026-07-26: sudo -E is refused on these images, so env never reached the script.
   check_not R04 "no 'sudo -E' in cloud scripts (2026-07-26)" \
     grep -rqE '^[^#]*sudo -E ' scripts/cloud/

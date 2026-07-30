@@ -289,6 +289,37 @@ echo "Ensuring NFS client (nfs-common)..."
 dpkg -s nfs-common >/dev/null 2>&1 || sudo apt-get install -y nfs-common
 echo "  mount.nfs: $(command -v mount.nfs || echo MISSING)"
 
+# jq. Present on both images today, but only as a transitive dependency — nothing in the
+# repo ever asked for it, while 11-3-keycloak-clients.sh drives Keycloak entirely through
+# it. One base image that stops pulling it in breaks Phase 2, so make the need explicit.
+echo "Ensuring jq..."
+dpkg -s jq >/dev/null 2>&1 || sudo apt-get install -y jq
+echo "  jq: $(jq --version 2>/dev/null || echo MISSING)"
+
+# yq. The pre-baked Vagrant box ships it, so nothing here had ever had to install it —
+# on a plain cloud image patch-apiserver-memory.sh dies with `yq: command not found`
+# straight after a successful `kubeadm init`, and 11-4-keycloak-apiserver.sh would have
+# hit the same wall later in Phase 2.
+#
+# It must be mikefarah/yq (Go), NOT the `yq` in apt, which is a Python wrapper around jq
+# with different semantics — `yq -i "(.spec.containers[] | select(...)).env += [...]"`
+# is v4 syntax and the wrapper cannot do in-place edits at all.
+YQ_VERSION="${YQ_VERSION:-v4.44.6}"
+if ! command -v yq >/dev/null 2>&1; then
+  echo "Installing yq ${YQ_VERSION} (mikefarah/yq)..."
+  yq_arch=$(dpkg --print-architecture)
+  sudo curl -fsSL -o /usr/local/bin/yq \
+    "https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/yq_linux_${yq_arch}"
+  sudo chmod +x /usr/local/bin/yq
+fi
+# Fail loudly rather than letting a jq-wrapper masquerade as yq until the first -i edit.
+if ! yq --version 2>&1 | grep -q 'mikefarah'; then
+  echo "ERROR: yq is not mikefarah/yq — got: $(yq --version 2>&1)" >&2
+  echo "       Remove the apt 'yq' package and re-run; the manifest edits need v4." >&2
+  exit 1
+fi
+echo "  yq: $(yq --version)"
+
 echo "Ensuring kubeadm kernel prerequisites (modules + sysctl)..."
 sudo tee /etc/modules-load.d/k8s.conf >/dev/null <<'MODEOF'
 overlay

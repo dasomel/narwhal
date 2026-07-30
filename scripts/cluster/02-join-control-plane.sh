@@ -102,7 +102,17 @@ AUDEOF
 # Detect local IP on the host-only network (192.168.56.x)
 # Without this, kubeadm auto-detects the VMware NAT interface.
 # Cloud: NODE_IP is supplied explicitly (the node's fixed 172.16.0.x address).
-LOCAL_IP="${NODE_IP:-$(ip -o addr show | grep "192\.168\.56\." | awk '{print $4}' | cut -d/ -f1 | head -1)}"
+# `|| true` is load-bearing: under pipefail a non-matching grep aborts the script, and on
+# a cloud node there is no 192.168.56.x address to match. That killed the join here with
+# no message at all — the log simply stopped after the previous echo, which reads as a
+# hang rather than a failure. Fail on an empty result instead, and say why.
+LOCAL_IP="${NODE_IP:-$(ip -o addr show | grep "192\.168\.56\." | awk '{print $4}' | cut -d/ -f1 | head -1 || true)}"
+if [ -z "${LOCAL_IP}" ]; then
+  echo "ERROR: could not determine this node's advertise address." >&2
+  echo "       Set NODE_IP explicitly — there is no 192.168.56.x interface to fall back to." >&2
+  ip -o addr show >&2
+  exit 1
+fi
 echo "Local advertise address: ${LOCAL_IP}"
 
 echo "Executing control plane join..."

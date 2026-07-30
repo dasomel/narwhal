@@ -216,3 +216,53 @@ resource "kakaocloud_public_ip" "worker_lb_public" {
     device_type = "load-balancer"
   }
 }
+
+#=========================================
+# Health monitors
+#=========================================
+# Without these the NLB round-robins to every member regardless of whether anything is
+# listening. During bring-up only master-1 has an apiserver, so ~2 of every 3 connections
+# to the control-plane VIP were refused — and `kubeadm join` on master-2 goes through that
+# VIP. It presented as an unreachable VIP rather than a partially-populated target group,
+# which is a much harder thing to see.
+#
+# TCP rather than HTTP: the apiserver serves HTTPS with a cert the LB has no reason to
+# trust, and a completed TCP handshake on 6443 is exactly the condition that matters —
+# something is accepting connections on this node.
+resource "kakaocloud_load_balancer_health_monitor" "masters" {
+  target_group_id  = kakaocloud_load_balancer_target_group.masters.id
+  type             = "TCP"
+  delay            = 5
+  timeout          = 3
+  max_retries      = 2
+  max_retries_down = 3
+}
+
+resource "kakaocloud_load_balancer_health_monitor" "etcd" {
+  target_group_id  = kakaocloud_load_balancer_target_group.etcd.id
+  type             = "TCP"
+  delay            = 5
+  timeout          = 3
+  max_retries      = 2
+  max_retries_down = 3
+}
+
+# The worker groups front APISIX NodePorts (31080/31443). A node whose APISIX pod has not
+# started yet must not receive traffic — with one replica that is most of the fleet.
+resource "kakaocloud_load_balancer_health_monitor" "workers_http" {
+  target_group_id  = kakaocloud_load_balancer_target_group.workers_http.id
+  type             = "TCP"
+  delay            = 5
+  timeout          = 3
+  max_retries      = 2
+  max_retries_down = 3
+}
+
+resource "kakaocloud_load_balancer_health_monitor" "workers_https" {
+  target_group_id  = kakaocloud_load_balancer_target_group.workers_https.id
+  type             = "TCP"
+  delay            = 5
+  timeout          = 3
+  max_retries      = 2
+  max_retries_down = 3
+}

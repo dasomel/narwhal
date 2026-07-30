@@ -49,8 +49,11 @@ fi
 # since the Kakao OS hostname is host-<ip> and the network is 172.16.0.x, not
 # 192.168.56.x. On Vagrant these stay auto-detected.
 NODE_NAME="${NODE_NAME:-$(hostname)}"
+# `|| true` so a non-matching grep does not abort under pipefail. Without it the
+# script died inside this assignment on a cloud node — before reaching the emptiness
+# check three lines down, which is what the author clearly intended to handle it.
 NODE_IP="${NODE_IP:-$(ip -4 addr show eth1 2>/dev/null | grep -oP '(?<=inet\s)[\d.]+' || \
-          ip -4 addr show | grep '192\.168\.56\.' | grep -oP '(?<=inet\s)[\d.]+' | head -1)}"
+          ip -4 addr show | grep '192\.168\.56\.' | grep -oP '(?<=inet\s)[\d.]+' | head -1 || true)}"
 
 if [[ -z "${NODE_IP}" ]]; then
   echo "ERROR: Could not detect node private IP (set NODE_IP explicitly on cloud)"

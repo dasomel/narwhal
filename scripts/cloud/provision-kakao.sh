@@ -91,8 +91,15 @@ MASTER_HOSTNAME="$(ssh_node "${MASTER1}" hostname | tr -d '\r')"
 
 # sudo -E is ignored on these images ("preserving the entire environment is not
 # supported"), so every variable is passed as an explicit `sudo env VAR=...`.
+#
+# Takes the node's own address: NODE_IP is per-node, and 02-join-control-plane.sh falls
+# back to `ip addr | grep 192.168.56.` when it is unset. On a cloud node that grep matches
+# nothing, and under pipefail a non-matching grep aborts the script — silently, before its
+# next echo, so the log just stops. The script's own comment says "Cloud: NODE_IP is
+# supplied explicitly"; this is what finally supplies it.
 node_env() {
   printf '%s' "PROVIDER=kakao \
+NODE_IP=${1:-} \
 DOMAIN=${DOMAIN} \
 VIP_ADDRESS=${VIP} \
 MASTER_IP=${VIP} \
@@ -124,7 +131,7 @@ run_scripts() {
   local ip="$1" stage="$2"; shift 2
   local list="$*"
   ssh_node "${ip}" "sudo mkdir -p '${SENTINELS}'
-    sudo env $(node_env) sh -c '
+    sudo env $(node_env "${ip}") sh -c '
       set -e
       for s in ${list}; do
         echo \"### \$s\"
@@ -303,7 +310,7 @@ stage_join() {
 stage_runtime() {
   log "runtime: containerd upgrade on ${#ALL_NODES[@]} nodes"
   for ip in "${ALL_NODES[@]}"; do
-    ssh_node "${ip}" "sudo env $(node_env) ${STAGE_DIR}/scripts/common/02-containerd.sh >/tmp/containerd.log 2>&1"
+    ssh_node "${ip}" "sudo env $(node_env "${ip}") ${STAGE_DIR}/scripts/common/02-containerd.sh >/tmp/containerd.log 2>&1"
     note "${ip} $(ssh_node "${ip}" "dpkg-query -W -f='\${Version}' containerd 2>/dev/null" | tr -d '\r')"
   done
   stage_mirror
@@ -313,7 +320,7 @@ stage_runtime() {
 # kubeadm init. 01-nfs-server.sh is idempotent, so this is safe to repeat.
 stage_nfs() {
   log "nfs: re-export /srv/nfs/k8s for ${SUBNET_CIDR} on master-1"
-  ssh_node "${MASTER1}" "sudo env $(node_env) ${STAGE_DIR}/scripts/cluster/01-nfs-server.sh >/tmp/nfs.log 2>&1"
+  ssh_node "${MASTER1}" "sudo env $(node_env "${MASTER1}") ${STAGE_DIR}/scripts/cluster/01-nfs-server.sh >/tmp/nfs.log 2>&1"
   note "exports: $(ssh_node "${MASTER1}" "sudo exportfs -s" | tr -d '\r' | tr '\n' ' ')"
 }
 

@@ -240,4 +240,5 @@ echo "  Password: ${ARGOCD_PASSWORD}"
 echo ""
 echo "OIDC Login: Use Keycloak credentials (realm: narwhal)"
 echo ""
-kubectl get pods -n devtools
+# Informational listing — must not decide the script's exit status.
+kubectl get pods -n devtools || true

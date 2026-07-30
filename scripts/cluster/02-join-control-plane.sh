@@ -235,4 +235,11 @@ sleep 10
 fi  # end kube-vip block (Vagrant only)
 
 echo "=== Control Plane Join Done ==="
-kubectl get nodes
+# Informational only, so it must not decide the exit status — the already-joined branch
+# above gets this right with `|| true` and this one did not. It reported failure on a node
+# that had genuinely joined, patched its apiserver and written its kubeconfig.
+#
+# Explicit --kubeconfig rather than the inherited KUBECONFIG: the driver exports
+# ~/.kube/config-local, which only master-1 has, so kubectl here fell back to
+# localhost:8080 and "connection refused" looked like a broken control plane.
+kubectl --kubeconfig=/etc/kubernetes/admin.conf get nodes || true

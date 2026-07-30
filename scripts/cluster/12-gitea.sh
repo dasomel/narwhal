@@ -182,4 +182,5 @@ echo "  kubectl port-forward svc/gitea-http -n devtools 3000:3000"
 echo "  URL: http://localhost:3000"
 echo "  User: gitea-admin / (see Secret gitea-admin -n devtools)"
 echo ""
-kubectl get pods -n devtools
+# Informational listing — must not decide the script's exit status.
+kubectl get pods -n devtools || true

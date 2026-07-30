@@ -479,4 +479,5 @@ echo "  devtools ns: gitea-db-rw:5432    -> narwhal-db-rw.database.svc.cluster.l
 echo ""
 kubectl get cluster -n database
 kubectl get pooler -n database
-kubectl get pods -n database
+# Informational listing — must not decide the script's exit status.
+kubectl get pods -n database || true

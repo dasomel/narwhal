@@ -107,4 +107,5 @@ echo ""
 kubectl get pods -A
 echo ""
 echo "=== Storage Classes ==="
-kubectl get storageclass
+# Informational listing — must not decide the script's exit status.
+kubectl get storageclass || true

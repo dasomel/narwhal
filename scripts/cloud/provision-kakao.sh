@@ -193,11 +193,18 @@ stage_registry() {
     return 0
   fi
 
-  note "installing docker on the bastion"
-  ssh_bastion "command -v docker >/dev/null 2>&1 || {
-    sudo apt-get update -qq &&
-    sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq docker.io >/dev/null
-  }" || { note "docker install FAILED"; return 1; }
+  # Two different tools, two different scripts: 04-bootstrap-registry.sh drives a
+  # container runtime (docker), 05-load-images.sh pushes OCI layouts with skopeo.
+  # Installing only docker gets you as far as a running registry that stays empty.
+  note "installing docker + skopeo on the bastion"
+  ssh_bastion "set -e
+    need=''
+    command -v docker >/dev/null 2>&1 || need=\"\${need} docker.io\"
+    command -v skopeo >/dev/null 2>&1 || need=\"\${need} skopeo\"
+    if [ -n \"\${need}\" ]; then
+      sudo apt-get update -qq
+      sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \${need} >/dev/null
+    fi" || { note "docker/skopeo install FAILED"; return 1; }
 
   local rsh="ssh -i ${SSH_KEY} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR"
 

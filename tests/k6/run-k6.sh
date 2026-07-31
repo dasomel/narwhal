@@ -24,10 +24,17 @@ bash "$REPO_ROOT/scripts/test/preflight-host.sh" || exit 1
 check_steady_state() {
   local phase="$1"
   echo "Checking steady-state ($phase)..."
-  local not_running
-  not_running=$(kubectl get pods --all-namespaces --no-headers 2>/dev/null | awk '$4!="Running" && $4!="Completed" && $4!="Succeeded" {print $0}' | wc -l | tr -d ' ' || echo "0")
-  if [ "$not_running" -gt 0 ]; then
-    echo "[WARN] Found $not_running pods not in Running/Completed state."
+  # Columns for `-A --no-headers`: $1=NS $2=NAME $3=READY $4=STATUS.
+  # STATUS alone is not health: a pod stuck at 0/1 or 1/2 still reads "Running",
+  # which is how seaweedfs-volume-0 went an hour unnoticed while its readiness
+  # probe failed and the data path was down (2026-07-29). A pod is healthy only
+  # when its READY ratio is complete AND its STATUS is Running.
+  local unhealthy
+  unhealthy=$(kubectl get pods --all-namespaces --no-headers 2>/dev/null \
+    | awk '$4!="Completed" && $4!="Succeeded" { split($3,r,"/"); if (r[1]!=r[2] || $4!="Running") print $1"/"$2" "$3" "$4 }')
+  if [ -n "$unhealthy" ]; then
+    echo "[WARN] Found $(printf '%s\n' "$unhealthy" | wc -l | tr -d ' ') pod(s) not Running+Ready:"
+    printf '%s\n' "$unhealthy" | sed 's/^/  /'
   fi
 
   if ! curl -sk https://portal.local.narwhal.internal/login -o /dev/null -w "%{http_code}" | grep -q 200; then

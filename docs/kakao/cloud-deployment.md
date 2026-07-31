@@ -298,7 +298,7 @@ portal 307, grafana 302).
 
 ```bash
 kubectl get nodes --no-headers | grep -c " Ready "
-kubectl get pods -A --no-headers | awk '$4!="Running" && $4!="Completed"' | wc -l
+kubectl get pods -A --no-headers | awk '$4!="Completed" && $4!="Succeeded" { split($3,r,"/"); if (r[1]!=r[2] || $4!="Running") c++ } END { print c+0 }'
 kubectl get applications -n devtools --no-headers | awk '{print $2"/"$3}' | sort | uniq -c
 
 kubectl get application idp-apps -n devtools -o jsonpath='{.spec.source.helm.valuesObject.provider}'

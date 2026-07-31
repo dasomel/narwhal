@@ -57,8 +57,16 @@ fi
 #=========================================
 log "=== Cilium healing ==="
 for label in "k8s-app=cilium" "io.cilium/app=operator"; do
+  # Columns for a single-namespace `--no-headers` query: $1=NAME $2=READY
+  # $3=STATUS $4=RESTARTS. The previous filter used the `-A` layout ($3=READY,
+  # $4=STATUS) against this one, so it compared STATUS to "1/1" and RESTARTS to
+  # "Running" — both always true. Every run force-deleted the entire Cilium
+  # DaemonSet and the operator, healthy or not: a whole-cluster CNI outage
+  # caused by the healer itself (verified 2026-07-31: matched 6/6 healthy pods).
+  # Ready ratios are also read, not enumerated — the old "1/1 or 2/2" allowlist
+  # would have called any 3/3 pod unhealthy.
   kubectl get pods -n kube-system -l "${label}" --no-headers 2>/dev/null \
-    | awk '$3!="1/1" && $3!="2/2" || $4!="Running" { print $1 }' \
+    | awk '{ split($2,r,"/"); if (r[1]!=r[2] || $3!="Running") print $1 }' \
     | while read -r pod; do
         log "Deleting unhealthy Cilium pod: ${pod}"
         kubectl delete pod "${pod}" -n kube-system --ignore-not-found \
@@ -119,10 +127,17 @@ log "=== Polling for convergence (<=3 non-running pods, up to 450s) ==="
 # observed to expire ~1min before the cluster actually reached 0 non-running,
 # producing a misleading "manual investigation" warning. 450s covers it.
 CONVERGED=false
-for i in $(seq 1 45); do
-  NOT_RUNNING=$(kubectl get pods -A --no-headers 2>/dev/null \
+# Convergence means Running AND Ready. Counting STATUS alone lets a pod that is
+# Running at 0/1 pass as converged — the seaweedfs-volume-0 case (2026-07-29),
+# where the cluster read as healed while its object store was refusing writes.
+# Columns here are the `-A` layout: $3=READY, $4=STATUS.
+count_unready() {
+  kubectl get pods -A --no-headers 2>/dev/null \
     | grep -v "scan-vulnerabilityreport" \
-    | awk '$4!="Running" && $4!="Completed" && $4!="Succeeded" { c++ } END { print c+0 }')
+    | awk '$4!="Completed" && $4!="Succeeded" { split($3,r,"/"); if (r[1]!=r[2] || $4!="Running") c++ } END { print c+0 }'
+}
+for i in $(seq 1 45); do
+  NOT_RUNNING=$(count_unready)
   log "  attempt ${i}/45 — ${NOT_RUNNING} non-running pod(s)"
   if [[ "${NOT_RUNNING}" -le 3 ]]; then
     CONVERGED=true
@@ -133,10 +148,8 @@ for i in $(seq 1 45); do
 done
 
 if [[ "${CONVERGED}" == "false" ]]; then
-  FINAL=$(kubectl get pods -A --no-headers 2>/dev/null \
-    | grep -v "scan-vulnerabilityreport" \
-    | awk '$4!="Running" && $4!="Completed" && $4!="Succeeded" { c++ } END { print c+0 }')
-  log "Convergence not reached within 450s; final non-running count: ${FINAL}"
+  FINAL=$(count_unready)
+  log "Convergence not reached within 450s; final not-Ready count: ${FINAL}"
   log "Manual investigation may be required"
 fi
 

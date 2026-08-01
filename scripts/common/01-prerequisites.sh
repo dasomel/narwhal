@@ -316,6 +316,24 @@ echo "Ensuring NFS client (nfs-common)..."
 dpkg -s nfs-common >/dev/null 2>&1 || sudo apt-get install -y nfs-common
 echo "  mount.nfs: $(command -v mount.nfs || echo MISSING)"
 
+# NFSv3 lock callbacks come FROM the server TO this node, on statd's port. Left dynamic
+# they land on whatever the portmapper picked, which a default-deny security group drops —
+# and a dropped callback hangs rather than fails. Pin them so the group can name them;
+# the server pins the matching ports in 01-nfs-server.sh.
+sudo tee /etc/default/nfs-common >/dev/null <<'NFSCEOF'
+NEED_STATD=yes
+STATDOPTS="--port 4047 --outgoing-port 4048"
+NEED_IDMAPD=yes
+NEED_GSSD=no
+NFSCEOF
+sudo tee /etc/sysctl.d/90-nfs-lockd.conf >/dev/null <<'LOCKDEOF'
+fs.nfs.nlm_tcpport = 4045
+fs.nfs.nlm_udpport = 4045
+LOCKDEOF
+sudo sysctl -p /etc/sysctl.d/90-nfs-lockd.conf >/dev/null 2>&1 || true
+sudo systemctl restart rpc-statd 2>/dev/null || true
+echo "  statd pinned to 4047/4048, lockd to 4045"
+
 # jq. Present on both images today, but only as a transitive dependency — nothing in the
 # repo ever asked for it, while 11-3-keycloak-clients.sh drives Keycloak entirely through
 # it. One base image that stops pulling it in breaks Phase 2, so make the need explicit.

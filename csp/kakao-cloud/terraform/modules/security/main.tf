@@ -190,6 +190,79 @@ resource "kakaocloud_security_group" "security_group" {
       remote_ip_prefix = var.vpc_cidr
       description      = "Bastion split DNS (dnsmasq) TCP, internal only"
     },
+    # NFSv3 helper ports. v4.1 deadlocked (nfsd4_destroy_session waiting on the callback
+    # workqueue while the client waits in nfs4_destroy_clientid for the reply), so the
+    # storage class moved to v3 — which is stateless but does its locking over NLM, and NLM
+    # grants travel FROM the server TO the client. Every one of these is both directions
+    # between nodes, so they are opened on all of them rather than just the server.
+    #
+    # This has to be explicit because the group drops unlisted ports instead of refusing
+    # them: a lock callback to a closed port fails immediately, but to a dropped port it
+    # hangs, which is the failure mode that cost this cluster a day.
+    {
+      direction        = "ingress"
+      protocol         = "TCP"
+      port_range_min   = 20048
+      port_range_max   = 20048
+      remote_ip_prefix = var.vpc_cidr
+      description      = "NFSv3 mountd TCP, internal only"
+    },
+    {
+      direction        = "ingress"
+      protocol         = "UDP"
+      port_range_min   = 20048
+      port_range_max   = 20048
+      remote_ip_prefix = var.vpc_cidr
+      description      = "NFSv3 mountd UDP, internal only"
+    },
+    {
+      direction        = "ingress"
+      protocol         = "TCP"
+      port_range_min   = 4045
+      port_range_max   = 4045
+      remote_ip_prefix = var.vpc_cidr
+      description      = "NFSv3 lockd (NLM) TCP, internal only"
+    },
+    {
+      direction        = "ingress"
+      protocol         = "UDP"
+      port_range_min   = 4045
+      port_range_max   = 4045
+      remote_ip_prefix = var.vpc_cidr
+      description      = "NFSv3 lockd (NLM) UDP, internal only"
+    },
+    {
+      direction        = "ingress"
+      protocol         = "TCP"
+      port_range_min   = 4047
+      port_range_max   = 4047
+      remote_ip_prefix = var.vpc_cidr
+      description      = "NFSv3 statd TCP, internal only"
+    },
+    {
+      direction        = "ingress"
+      protocol         = "UDP"
+      port_range_min   = 4047
+      port_range_max   = 4047
+      remote_ip_prefix = var.vpc_cidr
+      description      = "NFSv3 statd UDP, internal only"
+    },
+    {
+      direction        = "ingress"
+      protocol         = "TCP"
+      port_range_min   = 4048
+      port_range_max   = 4048
+      remote_ip_prefix = var.vpc_cidr
+      description      = "NFSv3 statd outgoing TCP, internal only"
+    },
+    {
+      direction        = "ingress"
+      protocol         = "UDP"
+      port_range_min   = 4048
+      port_range_max   = 4048
+      remote_ip_prefix = var.vpc_cidr
+      description      = "NFSv3 statd outgoing UDP, internal only"
+    },
     # All Egress
     {
       direction        = "egress"

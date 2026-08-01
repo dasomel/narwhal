@@ -60,9 +60,41 @@ RestartSec=10
 EOF
 
 # Enable and start NFS server
+#=========================================
+# Pin the NFSv3 helper ports
+#=========================================
+# mountd, statd and lockd otherwise bind whatever the portmapper hands them. On a cloud
+# with a default-deny security group that is fatal in a specific way: an unlisted port is
+# DROPPED, not refused, so a lock-grant callback from the server to a client does not fail
+# — it hangs until TCP gives up. Pinning them lets the security group name them.
+#
+# Ports are chosen outside 30000-32767: that range is the NodePort range and is open to
+# 0.0.0.0/0, which is the last place these belong.
+sudo tee /etc/default/nfs-kernel-server >/dev/null <<'NFSDEOF'
+RPCNFSDCOUNT=8
+RPCMOUNTDOPTS="--manage-gids --port 20048"
+NFSDOPTS=""
+NFSDOPTS="$NFSDOPTS --nfs-version 3,4"
+NFSDEOF
+
+sudo tee /etc/default/nfs-common >/dev/null <<'NFSCEOF'
+NEED_STATD=yes
+STATDOPTS="--port 4047 --outgoing-port 4048"
+NEED_IDMAPD=yes
+NEED_GSSD=no
+NFSCEOF
+
+# lockd has no options file; it takes sysctls.
+sudo tee /etc/sysctl.d/90-nfs-lockd.conf >/dev/null <<'LOCKDEOF'
+fs.nfs.nlm_tcpport = 4045
+fs.nfs.nlm_udpport = 4045
+LOCKDEOF
+sudo sysctl -p /etc/sysctl.d/90-nfs-lockd.conf >/dev/null 2>&1 || true
+
 sudo systemctl daemon-reload
 sudo systemctl enable nfs-kernel-server
 sudo systemctl restart nfs-kernel-server
+sudo systemctl restart rpc-statd 2>/dev/null || true
 
 # Verify exports
 echo "=== NFS Exports ==="

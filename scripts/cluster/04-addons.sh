@@ -83,8 +83,20 @@ parameters:
   subDir: \${pvc.metadata.namespace}/\${pvc.metadata.name}
 reclaimPolicy: Retain
 volumeBindingMode: Immediate
+# NFSv3, not v4.1. v4.1 deadlocks this exact topology: the server's session teardown
+# (nfsd4_destroy_session -> nfsd4_probe_callback_sync -> flush_workqueue) waits for the
+# shared callback workqueue to drain, and the work item in it is an RPC to the very client
+# that is itself blocked in nfs4_destroy_clientid waiting for the server's reply. Each side
+# holds what the other needs, so nfsd wedges in D state and every NFS mount on every node
+# queues behind it. Rebooting either side alone re-forms it within minutes.
+#
+# v3 is stateless: no clientid, no sessions, no callback workqueue, so the cycle cannot
+# form. Its locking (NLM) does call back to clients on a separate connection, which is why
+# the lockd/statd ports are pinned in 01-nfs-server.sh and opened in the security group —
+# on this cloud an unlisted port is DROPPED, and a dropped callback is an indefinite hang
+# rather than a fast failure.
 mountOptions:
-  - nfsvers=4.1
+  - nfsvers=3
   - hard
   - noatime
   - rsize=65536

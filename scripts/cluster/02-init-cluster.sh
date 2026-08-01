@@ -222,7 +222,11 @@ fi
 
 # Configure kubeconfig for vagrant user
 mkdir -p /home/vagrant/.kube
-sudo cp -i /etc/kubernetes/admin.conf /home/vagrant/.kube/config
+# -f, not -i: these scripts run with no tty, so `cp -i` on an existing kubeconfig
+# asks a question nobody can answer and the script dies. Both of these are
+# re-runnable by design (the init guard above skips kubeadm and falls straight
+# through to here), so overwriting from admin.conf is exactly what is wanted.
+sudo cp -f /etc/kubernetes/admin.conf /home/vagrant/.kube/config
 sudo chown vagrant:vagrant /home/vagrant/.kube/config
 
 # Create local kubeconfig for provisioning (uses local IP, not VIP)
@@ -234,7 +238,7 @@ sudo chown vagrant:vagrant /home/vagrant/.kube/config-local
 
 # Configure kubeconfig for root
 sudo mkdir -p /root/.kube
-sudo cp -i /etc/kubernetes/admin.conf /root/.kube/config
+sudo cp -f /etc/kubernetes/admin.conf /root/.kube/config
 
 # Remove control-plane NoSchedule taint so platform apps can run on master
 # During initial provisioning, no workers exist yet. All pods must schedule on master.

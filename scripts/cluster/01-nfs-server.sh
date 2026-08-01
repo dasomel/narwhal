@@ -70,21 +70,33 @@ EOF
 #
 # Ports are chosen outside 30000-32767: that range is the NodePort range and is open to
 # 0.0.0.0/0, which is the last place these belong.
-sudo tee /etc/default/nfs-kernel-server >/dev/null <<'NFSDEOF'
-RPCNFSDCOUNT=8
-RPCMOUNTDOPTS="--manage-gids --port 20048"
-NFSDOPTS=""
-NFSDOPTS="$NFSDOPTS --nfs-version 3,4"
-NFSDEOF
+# /etc/nfs.conf, not /etc/default/nfs-kernel-server. The defaults file is the sysv-era
+# path; the systemd units that actually start these daemons read nfs.conf, so
+# RPCMOUNTDOPTS there is silently ignored — mountd kept landing on random high ports
+# (rpcinfo showed 49793, 53677, ...) while lockd, pinned by sysctl, sat correctly on 4045.
+# The v3 mount then timed out: the client asks rpcbind for mountd's port and gets one the
+# security group drops.
+sudo tee /etc/nfs.conf.d/narwhal.conf >/dev/null <<'NFSCONFEOF'
+[mountd]
+port = 20048
+manage-gids = y
 
-sudo tee /etc/default/nfs-common >/dev/null <<'NFSCEOF'
-NEED_STATD=yes
-STATDOPTS="--port 4047 --outgoing-port 4048"
-NEED_IDMAPD=yes
-NEED_GSSD=no
-NFSCEOF
+[statd]
+port = 4047
+outgoing-port = 4048
 
-# lockd has no options file; it takes sysctls.
+[lockd]
+port = 4045
+udp-port = 4045
+
+[nfsd]
+threads = 8
+vers3 = y
+vers4 = y
+NFSCONFEOF
+
+# Belt and braces for lockd: the sysctls apply to the running kernel module immediately,
+# where the nfs.conf value only takes effect when lockd next starts.
 sudo tee /etc/sysctl.d/90-nfs-lockd.conf >/dev/null <<'LOCKDEOF'
 fs.nfs.nlm_tcpport = 4045
 fs.nfs.nlm_udpport = 4045
@@ -94,7 +106,19 @@ sudo sysctl -p /etc/sysctl.d/90-nfs-lockd.conf >/dev/null 2>&1 || true
 sudo systemctl daemon-reload
 sudo systemctl enable nfs-kernel-server
 sudo systemctl restart nfs-kernel-server
+sudo systemctl restart nfs-mountd 2>/dev/null || true
 sudo systemctl restart rpc-statd 2>/dev/null || true
+
+# Assert the pinning took. mountd on a random port is exactly the state that made the v3
+# mount time out, and it is invisible unless asked for.
+MOUNTD_PORT=$(rpcinfo -p 2>/dev/null | awk '$5=="mountd" && $3=="tcp" {print $4; exit}')
+if [ "${MOUNTD_PORT}" != "20048" ]; then
+  echo "ERROR: mountd is on port ${MOUNTD_PORT:-unknown}, expected 20048." >&2
+  echo "       The security group only opens 20048, so v3 mounts will time out." >&2
+  rpcinfo -p >&2 || true
+  exit 1
+fi
+echo "mountd pinned to ${MOUNTD_PORT}, lockd $(rpcinfo -p 2>/dev/null | awk '$5=="nlockmgr" && $3=="tcp" {print $4; exit}')"
 
 # Verify exports
 echo "=== NFS Exports ==="

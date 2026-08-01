@@ -320,11 +320,18 @@ echo "  mount.nfs: $(command -v mount.nfs || echo MISSING)"
 # they land on whatever the portmapper picked, which a default-deny security group drops —
 # and a dropped callback hangs rather than fails. Pin them so the group can name them;
 # the server pins the matching ports in 01-nfs-server.sh.
-sudo tee /etc/default/nfs-common >/dev/null <<'NFSCEOF'
-NEED_STATD=yes
-STATDOPTS="--port 4047 --outgoing-port 4048"
-NEED_IDMAPD=yes
-NEED_GSSD=no
+# /etc/nfs.conf, not /etc/default/nfs-common: the systemd units read the former, so
+# STATDOPTS in the defaults file is silently ignored (the server hit exactly this with
+# mountd, which kept binding random high ports the security group drops).
+sudo mkdir -p /etc/nfs.conf.d
+sudo tee /etc/nfs.conf.d/narwhal.conf >/dev/null <<'NFSCEOF'
+[statd]
+port = 4047
+outgoing-port = 4048
+
+[lockd]
+port = 4045
+udp-port = 4045
 NFSCEOF
 sudo tee /etc/sysctl.d/90-nfs-lockd.conf >/dev/null <<'LOCKDEOF'
 fs.nfs.nlm_tcpport = 4045

@@ -137,14 +137,17 @@ mark_done() {
 run_scripts() {
   local ip="$1" stage="$2"; shift 2
   local list="$*"
+  # Clear last attempt's marker first: it is evidence about THIS run, and inheriting a
+  # stale one would make the fallback below vouch for work that never happened.
+  ssh_node "${ip}" "sudo rm -f '${SENTINELS}/${stage}.ok'" 2>/dev/null || true
   if ssh_node "${ip}" "sudo mkdir -p '${SENTINELS}'
     sudo env $(node_env "${ip}") sh -c '
       set -e
       for s in ${list}; do
         echo \"### \$s\"
         ${STAGE_DIR}/scripts/\$s || { echo \"FAILED: \$s\"; exit 1; }
-      done' > ${STAGE_DIR}/${stage}.log 2>&1
-    sudo touch '${SENTINELS}/${stage}.ok'"; then
+      done' > ${STAGE_DIR}/${stage}.log 2>&1 \\
+      && sudo touch '${SENTINELS}/${stage}.ok'"; then
     return 0
   fi
   # Second opinion from the node itself, over a fresh connection.

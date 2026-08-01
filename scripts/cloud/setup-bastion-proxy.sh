@@ -71,6 +71,14 @@ http_access deny all
 
 # Cache is pointless here (large one-shot downloads) and would just fill the disk.
 cache deny all
+
+# Resolve through the local dnsmasq, which strips AAAA. The VPC has no IPv6 route, and
+# squid tries the first address it is given rather than falling back the way curl does:
+# get.helm.sh answers with an IPv6 address first, so CONNECT died with "503 tunnel failed"
+# while a direct curl from the same host returned 200. Squid 6 dropped dns_v4_first, so
+# the filtering has to happen in the resolver.
+# Same root cause as the Acquire::ForceIPv4 that 01-prerequisites.sh sets for apt.
+dns_nameservers 127.0.0.1
 EOF
 
 echo "=== Restarting squid ==="
@@ -102,6 +110,9 @@ ssh_bastion "sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq dnsmasq 
 # The security group only opens 53 to the VPC, but defence in depth is free here.
 ssh_bastion "sudo tee /etc/dnsmasq.d/narwhal.conf >/dev/null <<EOF
 address=/${DOMAIN}/${APISIX_LB_IP}
+# The VPC is IPv4-only. Answering AAAA sends squid (and anything else here) at an address
+# with no route, which fails as a timeout rather than a clean fallback.
+filter-AAAA
 listen-address=127.0.0.1,${BASTION_PRIVATE_IP}
 bind-interfaces
 domain-needed

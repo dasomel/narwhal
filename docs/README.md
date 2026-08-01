@@ -51,6 +51,7 @@ DNS, 이미지 반입 경로)은 완전히 다르다. 섞어두면 어느 절차
 |------|------|
 | [cloud-deployment.md](./kakao/cloud-deployment.md) | 토폴로지, egress 프록시, airgap 레지스트리, provider-aware GitOps |
 | [service-domains.md](./kakao/service-domains.md) | `*.kakao.narwhal.internal` 서비스별 도메인, SSO 방식, 접속·검증 |
+| [clean-install-rca.md](./kakao/clean-install-rca.md) | 2026-08 클린 설치 RCA — 결함 19건의 원인 분류와 탐지 공백 |
 
 Terraform 사용법은 문서 디렉토리가 아니라 코드 옆에 있다:
 [`csp/kakao-cloud/terraform/README.ko.md`](../csp/kakao-cloud/terraform/README.ko.md)

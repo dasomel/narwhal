@@ -12,6 +12,13 @@ The log used to live in `CLAUDE.md` and this command still pointed there long af
 moved — so confirm the target section exists before writing, rather than trusting this
 file's paths.
 
+## Scope
+
+Cluster incidents and **mistakes made while fixing them** both belong here. The second kind is
+easy to skip and usually more valuable: a success marker written unconditionally, a setting put
+in a file nothing reads, a workaround documented before it was run. Each of those hid the very
+failure it was added to surface.
+
 ## Input
 
 Extract the following from $ARGUMENTS:

@@ -21,10 +21,15 @@ GitOps app structure, and version upgrades.
 > here and the narrative there.
 
 **Recording incidents (not optional)**
-- Every debugging session that ends in a fix writes a row to
-  [`docs/common/lessons-log.md`](docs/common/lessons-log.md), in the section that matches the
-  cause (Shell / Kubernetes-Helm / GitOps-ArgoCD / Vagrant-Infrastructure / Cloud), newest first.
-  A fix nobody wrote down gets rediscovered from scratch — that is what this file exists to stop.
+- Every fix writes a row to [`docs/common/lessons-log.md`](docs/common/lessons-log.md), in the
+  section that matches the cause (Shell / Kubernetes-Helm / GitOps-ArgoCD / Vagrant-Infrastructure
+  / Cloud), newest first. A fix nobody wrote down gets rediscovered from scratch — that is what
+  this file exists to stop.
+- **Mistakes made while fixing count too**, and are often the most useful rows: a guard that
+  reported success unconditionally, a config written to a path nothing reads, a remedy documented
+  before it was run. Three of the nineteen defects in the 2026-08 clean install were introduced by
+  the repair work itself, and each hid the failure it was meant to surface. Record them in the same
+  detail as the incident that prompted them — omitting them is how the same trap gets rebuilt.
 - **Grep the file for the symptom before adding a row.** If a near-match exists, sharpen that row
   instead of appending a second one; parallel entries for one failure are worse than none, because
   the next reader trusts whichever they hit first.

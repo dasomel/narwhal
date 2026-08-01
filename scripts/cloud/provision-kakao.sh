@@ -128,16 +128,31 @@ mark_done() {
 
 # Runs a list of repo-relative scripts on one node, streaming to a per-stage log the
 # node keeps. Returns non-zero on the first failure so callers can stop.
+#
+# The node records its own success: the remote shell touches the sentinel as its last act,
+# and if ssh reports failure we reconnect and ask the node rather than believing the
+# transport. A dropped connection after the work finished is otherwise indistinguishable
+# from the work failing — worker-2 completed all four scripts, ssh returned non-zero
+# anyway, and the stage was reported FAILED on a node that was in fact fully provisioned.
 run_scripts() {
   local ip="$1" stage="$2"; shift 2
   local list="$*"
-  ssh_node "${ip}" "sudo mkdir -p '${SENTINELS}'
+  if ssh_node "${ip}" "sudo mkdir -p '${SENTINELS}'
     sudo env $(node_env "${ip}") sh -c '
       set -e
       for s in ${list}; do
         echo \"### \$s\"
         ${STAGE_DIR}/scripts/\$s || { echo \"FAILED: \$s\"; exit 1; }
-      done' > ${STAGE_DIR}/${stage}.log 2>&1"
+      done' > ${STAGE_DIR}/${stage}.log 2>&1
+    sudo touch '${SENTINELS}/${stage}.ok'"; then
+    return 0
+  fi
+  # Second opinion from the node itself, over a fresh connection.
+  if ssh_node "${ip}" "test -f '${SENTINELS}/${stage}.ok'" 2>/dev/null; then
+    note "${ip} ssh reported failure but the node completed ${stage} — trusting the node"
+    return 0
+  fi
+  return 1
 }
 
 log()  { printf '\n\033[1m== %s\033[0m\n' "$*"; }

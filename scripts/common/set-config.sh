@@ -248,13 +248,50 @@ case "${AUTH_METHOD}" in
     ;;
 esac
 
-# Activate context
+# Activate context.
+#
+# This rewrites current-context in the shared ~/.kube/config, so it redirects
+# every OTHER shell on this machine too — including sessions working a different
+# cluster. Both this script and scripts/cloud/set-config-kakao.sh write the same
+# file, and the narwhal / narwhal-kakao contexts differ only in a suffix, so the
+# redirect is easy to miss: on 2026-08-02 a `kubectl get nodes` returned the
+# Kakao cluster's nodes to someone who believed they were reading the local one,
+# because another session had run the kakao script hours earlier.
+#
+# Printing only the destination (which is all this used to do) cannot surface
+# that — you have to already know where you were. So name both ends, and say so
+# loudly when the move crosses clusters rather than auth methods.
 case "${AUTH_METHOD}" in
   cert)  CONTEXT_NAME="${CLUSTER_NAME}" ;;
   oidc)  CONTEXT_NAME="${CLUSTER_NAME}-oidc" ;;
   token) CONTEXT_NAME="${CLUSTER_NAME}-token" ;;
 esac
+# Compare the SERVER each context points at, not the context names. Name
+# prefixes cannot tell these apart: `narwhal-kakao` starts with `narwhal`, so a
+# prefix test reads the one move that actually matters — local Vagrant to Kakao
+# Cloud — as a routine change of auth method on the same cluster.
+context_server() {
+  local ctx="$1" cluster
+  cluster=$(kubectl config view -o jsonpath="{.contexts[?(@.name==\"${ctx}\")].context.cluster}" 2>/dev/null || true)
+  [[ -z "${cluster}" ]] && return 0
+  kubectl config view -o jsonpath="{.clusters[?(@.name==\"${cluster}\")].cluster.server}" 2>/dev/null || true
+}
+PREV_CONTEXT="$(kubectl config current-context 2>/dev/null || true)"
+PREV_SERVER="$(context_server "${PREV_CONTEXT}")"
 kubectl config use-context "${CONTEXT_NAME}"
+if [[ -n "${PREV_CONTEXT}" && "${PREV_CONTEXT}" != "${CONTEXT_NAME}" ]]; then
+  echo "Context switched: ${PREV_CONTEXT} -> ${CONTEXT_NAME}"
+  # Same server, different auth (narwhal -> narwhal-token) is routine. A move to
+  # a different API server is the one worth stopping at.
+  if [[ -n "${PREV_SERVER}" && "${PREV_SERVER}" != "${API_SERVER}" ]]; then
+    echo "  NOTE: '${PREV_CONTEXT}' points at a DIFFERENT cluster (${PREV_SERVER}),"
+    echo "        and this changed current-context for every shell using ~/.kube/config —"
+    echo "        not just this one. If another session or terminal was working"
+    echo "        '${PREV_CONTEXT}', its kubectl now points here instead."
+    echo "        Pass --context explicitly to stop depending on this shared setting:"
+    echo "          kubectl --context ${PREV_CONTEXT} get nodes"
+  fi
+fi
 
 # Flush DNS cache (macOS)
 if [[ "$(uname)" == "Darwin" ]]; then

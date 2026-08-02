@@ -81,6 +81,22 @@ if nc -z 127.0.0.1 "${PORT}" 2>/dev/null; then
   fi
 else
   echo "Opening tunnel localhost:${PORT} -> ${MASTER1}:6443 via bastion..."
+
+  # Replacing the instances gives every node a new host key, and `accept-new` takes a NEW
+  # key but refuses a CHANGED one. Combined with `ssh -f ... >/dev/null 2>&1` below and
+  # `set -e`, that produced a bare exit 255 with the warning swallowed — the one failure
+  # here that is guaranteed to happen after a rebuild left no evidence at all.
+  # The nodes are reachable only through the bastion on a private subnet, so dropping the
+  # stale entries is the correct response rather than a shortcut.
+  for _h in "${MASTER1}" "${BASTION_IP}"; do
+    if ssh-keygen -F "${_h}" >/dev/null 2>&1; then
+      if ! ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=10 \
+           -i "${SSH_KEY}" "${SSH_USER}@${BASTION_IP}" true >/dev/null 2>&1 \
+         || [ "${_h}" = "${MASTER1}" ]; then
+        ssh-keygen -R "${_h}" >/dev/null 2>&1 || true
+      fi
+    fi
+  done
   # >/dev/null 2>&1 is not cosmetic: `ssh -f` backgrounds itself but keeps whatever fds
   # it inherited, so with the script's output piped anywhere the reader never sees EOF
   # and the whole invocation appears to hang long after the work is done.
@@ -88,7 +104,11 @@ else
     -o StrictHostKeyChecking=accept-new -o ExitOnForwardFailure=yes \
     -L "${TUNNEL_PATTERN}" \
     -o ProxyCommand="ssh -i ${SSH_KEY} -o StrictHostKeyChecking=accept-new -W %h:%p ${SSH_USER}@${BASTION_IP}" \
-    "${SSH_USER}@${MASTER1}" >/dev/null 2>&1
+    "${SSH_USER}@${MASTER1}" >/dev/null 2>"${TUNNEL_ERR:=/tmp/narwhal-tunnel.err}" || {
+    echo "ERROR: could not open the tunnel. ssh said:" >&2
+    sed 's/^/  /' "${TUNNEL_ERR}" >&2
+    exit 1
+  }
   for _ in $(seq 1 20); do
     nc -z 127.0.0.1 "${PORT}" 2>/dev/null && break
     sleep 1
@@ -228,12 +248,40 @@ case "${AUTH_METHOD}" in
     ;;
 esac
 
+# Keep in sync with the same block in scripts/common/set-config.sh — both write
+# current-context into the shared ~/.kube/config, so either one silently
+# redirects kubectl for every other shell on this machine. The two clusters'
+# contexts differ only by a suffix (narwhal vs narwhal-kakao), which is how a
+# `kubectl get nodes` on 2026-08-02 returned this cluster's nodes to someone
+# reading them as the local Vagrant cluster's. Name both ends of the move.
 case "${AUTH_METHOD}" in
   cert)  CONTEXT_NAME="${CLUSTER_NAME}" ;;
   oidc)  CONTEXT_NAME="${CLUSTER_NAME}-oidc" ;;
   token) CONTEXT_NAME="${CLUSTER_NAME}-token" ;;
 esac
+# Compare SERVERS, not context names: `narwhal-kakao` starts with `narwhal`, so
+# a name-prefix test reads the one move that matters — local Vagrant to Kakao —
+# as a routine change of auth method on the same cluster.
+context_server() {
+  local ctx="$1" cluster
+  cluster=$(kubectl config view -o jsonpath="{.contexts[?(@.name==\"${ctx}\")].context.cluster}" 2>/dev/null || true)
+  [[ -z "${cluster}" ]] && return 0
+  kubectl config view -o jsonpath="{.clusters[?(@.name==\"${cluster}\")].cluster.server}" 2>/dev/null || true
+}
+PREV_CONTEXT="$(kubectl config current-context 2>/dev/null || true)"
+PREV_SERVER="$(context_server "${PREV_CONTEXT}")"
 kubectl config use-context "${CONTEXT_NAME}"
+if [[ -n "${PREV_CONTEXT}" && "${PREV_CONTEXT}" != "${CONTEXT_NAME}" ]]; then
+  echo "Context switched: ${PREV_CONTEXT} -> ${CONTEXT_NAME}"
+  if [[ -n "${PREV_SERVER}" && "${PREV_SERVER}" != "${API_SERVER}" ]]; then
+    echo "  NOTE: '${PREV_CONTEXT}' points at a DIFFERENT cluster (${PREV_SERVER}),"
+    echo "        and this changed current-context for every shell using ~/.kube/config —"
+    echo "        not just this one. If another session or terminal was working"
+    echo "        '${PREV_CONTEXT}', its kubectl now points here instead."
+    echo "        Pass --context explicitly to stop depending on this shared setting:"
+    echo "          kubectl --context ${PREV_CONTEXT} get nodes"
+  fi
+fi
 
 echo ""
 echo "=== Configuration Complete ==="

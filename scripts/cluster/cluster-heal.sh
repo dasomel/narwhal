@@ -11,6 +11,40 @@ export KUBECONFIG=/etc/kubernetes/admin.conf
 log() { echo "${LOG_PREFIX} $*"; }
 
 #=========================================
+# Blast-radius guard.
+#
+# Every deletion below is driven by an awk predicate, and on 2026-07-31 one of
+# those predicates evaluated true for every pod it examined (wrong field indices
+# — see the Cilium block). The healer then force-deleted the entire Cilium
+# DaemonSet on every boot, taking the CNI out cluster-wide, and its own
+# convergence check reported success afterwards.
+#
+# The invariant that would have caught it: a filter selecting 100% of the
+# population it examined is describing a broken filter, not a broken cluster.
+# Deleting every pod of a DaemonSet is also useless as a remedy — the controller
+# recreates the same set, so the only guaranteed effect is the outage in between.
+#
+# Deliberately triggers on "all", not on a fraction: a genuine node loss can
+# legitimately strand a large share of pods in Unknown, and refusing to clean
+# those up would break the healer's actual job. Only "everything, with nothing
+# left healthy" is unambiguously a bug in the caller.
+#=========================================
+selection_is_sane() {
+  local scope="$1" selected="$2" total="$3"
+  if [[ "${selected}" -eq 0 ]]; then
+    return 1
+  fi
+  if [[ "${total}" -gt 1 && "${selected}" -eq "${total}" ]]; then
+    log "REFUSING to heal ${scope}: the filter selected all ${total} pod(s)."
+    log "  A predicate that matches its entire population is broken; deleting them"
+    log "  would only cause an outage the controller then has to recover from."
+    log "  Nothing deleted. Investigate ${scope} by hand."
+    return 1
+  fi
+  return 0
+}
+
+#=========================================
 # GUARD: wait for API server (up to 5 min)
 #=========================================
 log "Waiting for kube-apiserver (up to 300s)..."
@@ -65,13 +99,16 @@ for label in "k8s-app=cilium" "io.cilium/app=operator"; do
   # caused by the healer itself (verified 2026-07-31: matched 6/6 healthy pods).
   # Ready ratios are also read, not enumerated — the old "1/1 or 2/2" allowlist
   # would have called any 3/3 pod unhealthy.
-  kubectl get pods -n kube-system -l "${label}" --no-headers 2>/dev/null \
-    | awk '{ split($2,r,"/"); if (r[1]!=r[2] || $3!="Running") print $1 }' \
-    | while read -r pod; do
-        log "Deleting unhealthy Cilium pod: ${pod}"
-        kubectl delete pod "${pod}" -n kube-system --ignore-not-found \
-          --force --grace-period=0 || true
-      done
+  all_pods=$(kubectl get pods -n kube-system -l "${label}" --no-headers 2>/dev/null || true)
+  [[ -z "${all_pods}" ]] && continue
+  unhealthy=$(awk '{ split($2,r,"/"); if (r[1]!=r[2] || $3!="Running") print $1 }' <<<"${all_pods}")
+  selection_is_sane "cilium (${label})" \
+    "$(grep -c . <<<"${unhealthy}" || true)" "$(grep -c . <<<"${all_pods}" || true)" || continue
+  while read -r pod; do
+    log "Deleting unhealthy Cilium pod: ${pod}"
+    kubectl delete pod "${pod}" -n kube-system --ignore-not-found \
+      --force --grace-period=0 || true
+  done <<<"${unhealthy}"
 done
 
 #=========================================

@@ -81,14 +81,6 @@ cache deny all
 dns_nameservers 127.0.0.1
 EOF
 
-echo "=== Restarting squid ==="
-ssh_bastion "sudo systemctl enable --now squid && sudo systemctl restart squid && sleep 2 && systemctl is-active squid"
-
-echo ""
-echo "=== Verifying from the bastion itself ==="
-ssh_bastion "curl -sS -o /dev/null -w 'via proxy: HTTP %{http_code}\n' \
-  --max-time 20 -x http://127.0.0.1:${PROXY_PORT} https://archive.ubuntu.com/ubuntu/dists/noble/Release"
-
 #=========================================
 # Split DNS for *.${DOMAIN}
 #=========================================
@@ -133,6 +125,18 @@ ssh_bastion "dig +short +time=3 keycloak.${DOMAIN} @${BASTION_PRIVATE_IP} 2>/dev
   || nslookup keycloak.${DOMAIN} ${BASTION_PRIVATE_IP} 2>/dev/null | tail -2"
 # A name outside the zone must still resolve, or the nodes lose the internet.
 ssh_bastion "dig +short +time=3 archive.ubuntu.com @${BASTION_PRIVATE_IP} 2>/dev/null | head -1"
+
+# dnsmasq first, squid second. squid resolves through `dns_nameservers 127.0.0.1`, so
+# starting it before that resolver exists leaves a window where lookups fail — and squid
+# caches the result. A clean run then died on `curl: (56) CONNECT tunnel failed, response
+# 503` for get.helm.sh while the very same proxy answered 200 minutes later.
+echo "=== Restarting squid ==="
+ssh_bastion "sudo systemctl enable --now squid && sudo systemctl restart squid && sleep 2 && systemctl is-active squid"
+
+echo ""
+echo "=== Verifying from the bastion itself ==="
+ssh_bastion "curl -sS -o /dev/null -w 'via proxy: HTTP %{http_code}\n' \
+  --max-time 20 -x http://127.0.0.1:${PROXY_PORT} https://archive.ubuntu.com/ubuntu/dists/noble/Release"
 
 echo ""
 echo "Proxy endpoint for the nodes: http://${BASTION_PRIVATE_IP}:${PROXY_PORT}"

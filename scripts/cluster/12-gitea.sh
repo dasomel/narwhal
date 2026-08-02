@@ -106,8 +106,18 @@ helm upgrade --install gitea gitea-charts/gitea \
   --timeout=600s || echo "WARN: Gitea install timed out, continuing..."
 
 # Opt Gitea out of Istio ambient mesh (SSO cookie handling)
+# Recreate, not RollingUpdate. Gitea's data volume is RWO and its LevelDB queue takes an
+# exclusive lock on /data/queues, so two pods can never both run — but the chart ships
+# RollingUpdate with maxSurge=100%, which asks for exactly that during any update. The
+# label patch below IS such an update, so without this the old pod stays alongside the new
+# one, crashlooping on `unable to lock level db ... resource temporarily unavailable`
+# (36 restarts observed). The Service keeps both endpoints, so roughly half of ArgoCD's git
+# requests get a connection reset and 14 applications sit at Unknown sync forever.
+#
+# Same patch call as the label so only one rollout is triggered.
 kubectl patch deployment gitea -n devtools --type='json' \
-  -p='[{"op": "add", "path": "/spec/template/metadata/labels/istio.io~1dataplane-mode", "value": "none"}]' 2>/dev/null || true
+  -p='[{"op": "replace", "path": "/spec/strategy", "value": {"type": "Recreate"}},
+       {"op": "add", "path": "/spec/template/metadata/labels/istio.io~1dataplane-mode", "value": "none"}]' 2>/dev/null || true
 
 # Configure Keycloak OAuth2 provider via API
 echo "Configuring Gitea OAuth2 provider..."

@@ -112,30 +112,30 @@ for label in "k8s-app=cilium" "io.cilium/app=operator"; do
 done
 
 #=========================================
-# Heal Istio CNI pods in istio-system
-# (istiod, istio-cni, ztunnel — delete Unknown)
-#=========================================
-log "=== Istio healing (istio-system Unknown pods) ==="
-kubectl get pods -n istio-system --no-headers 2>/dev/null \
-  | awk '$4=="Unknown" { print $1 }' \
-  | while read -r pod; do
-      log "Deleting Unknown Istio pod: ${pod}"
-      kubectl delete pod "${pod}" -n istio-system --ignore-not-found \
-        --force --grace-period=0 || true
-    done
-
-#=========================================
 # Delete ALL Unknown pods cluster-wide
 # (controllers recreate; Unknown = node lost contact)
+#
+# This covers istio-system too. A separate istio-system block used to sit above
+# this one, matching `$4=="Unknown"` against a single-namespace listing where $4
+# is RESTARTS — so it never fired once, and the "Deleting Unknown Istio pod"
+# lines people saw in the journal always came from here. Removed rather than
+# repaired: fixing the index would only have force-deleted the same pods a few
+# lines earlier. Don't re-add a per-namespace pass for this.
+#
+# Columns here are the `-A` layout: $1=NS $2=NAME $3=READY $4=STATUS. This was
+# the one pod filter in the file whose indices were correct.
 #=========================================
 log "=== Deleting all cluster-wide Unknown pods ==="
-kubectl get pods -A --no-headers 2>/dev/null \
-  | awk '$4=="Unknown" { print $1, $2 }' \
-  | while read -r ns pod; do
-      log "Deleting Unknown pod ${ns}/${pod}"
-      kubectl delete pod "${pod}" -n "${ns}" --ignore-not-found \
-        --force --grace-period=0 || true
-    done
+all_pods=$(kubectl get pods -A --no-headers 2>/dev/null || true)
+unknown=$(awk '$4=="Unknown" { print $1, $2 }' <<<"${all_pods}")
+if selection_is_sane "cluster-wide Unknown pods" \
+     "$(grep -c . <<<"${unknown}" || true)" "$(grep -c . <<<"${all_pods}" || true)"; then
+  while read -r ns pod; do
+    log "Deleting Unknown pod ${ns}/${pod}"
+    kubectl delete pod "${pod}" -n "${ns}" --ignore-not-found \
+      --force --grace-period=0 || true
+  done <<<"${unknown}"
+fi
 
 #=========================================
 # Delete CrashLoopBackOff / CreateContainerError
@@ -146,19 +146,35 @@ kubectl get pods -A --no-headers 2>/dev/null \
 PLATFORM_NS="platform-system devtools monitoring storage security-system"
 log "=== Deleting CrashLoop/CreateContainerError pods in platform namespaces ==="
 for ns in ${PLATFORM_NS}; do
-  kubectl get pods -n "${ns}" --no-headers 2>/dev/null \
-    | awk '$4=="CrashLoopBackOff" || $4=="CreateContainerError" { print $1 }' \
-    | while read -r pod; do
-        log "Deleting ${ns}/${pod} (${pod} status reset)"
-        kubectl delete pod "${pod}" -n "${ns}" --ignore-not-found || true
-      done
+  # $3 is STATUS in a single-namespace listing. This read $4 (RESTARTS) until
+  # 2026-08-02, so the block never deleted anything in its entire life — the
+  # same field-index mistake as the Cilium block, failing closed instead of
+  # open. Activating it is a real behaviour change: CrashLooping platform pods
+  # now actually get reset at boot, which is what the block was always for.
+  # Deletion here is graceful (no --force) and stays that way.
+  ns_pods=$(kubectl get pods -n "${ns}" --no-headers 2>/dev/null || true)
+  [[ -z "${ns_pods}" ]] && continue
+  crashed=$(awk '$3=="CrashLoopBackOff" || $3=="CreateContainerError" { print $1 }' <<<"${ns_pods}")
+  selection_is_sane "${ns} CrashLoop/CreateContainerError" \
+    "$(grep -c . <<<"${crashed}" || true)" "$(grep -c . <<<"${ns_pods}" || true)" || continue
+  while read -r pod; do
+    log "Deleting ${ns}/${pod} (status reset)"
+    kubectl delete pod "${pod}" -n "${ns}" --ignore-not-found || true
+  done <<<"${crashed}"
 done
 
 #=========================================
 # Convergence poll: wait up to 5 min for
 # non-running pods <= 3 (excl. scan-vulnerabilityreport)
 #=========================================
-log "=== Polling for convergence (<=3 non-running pods, up to 450s) ==="
+# Converged means zero not-Ready pods, not "few enough". The old threshold was
+# `<=3` with no recorded basis, and it is what let the 2026-07-29 boot report
+# success while seaweedfs-volume-0 sat unready and its object store refused
+# writes. A tolerance that nobody can justify is a tolerance that hides exactly
+# the pod you needed to see; if the cluster genuinely settles with stragglers,
+# the log below names them and the service still exits 0 (best-effort).
+CONVERGE_MAX=0
+log "=== Polling for convergence (<=${CONVERGE_MAX} not-Ready pods, up to 450s) ==="
 # 45x10s: the pods cluster-heal kicks (Unknown ghosts, CrashLoops) can take
 # several minutes to finish restarting after they reschedule; 300s was
 # observed to expire ~1min before the cluster actually reached 0 non-running,
@@ -175,10 +191,10 @@ count_unready() {
 }
 for i in $(seq 1 45); do
   NOT_RUNNING=$(count_unready)
-  log "  attempt ${i}/45 — ${NOT_RUNNING} non-running pod(s)"
-  if [[ "${NOT_RUNNING}" -le 3 ]]; then
+  log "  attempt ${i}/45 — ${NOT_RUNNING} not-Ready pod(s)"
+  if [[ "${NOT_RUNNING}" -le "${CONVERGE_MAX}" ]]; then
     CONVERGED=true
-    log "Cluster converged: ${NOT_RUNNING} non-running pods"
+    log "Cluster converged: ${NOT_RUNNING} not-Ready pods"
     break
   fi
   sleep 10
@@ -187,6 +203,12 @@ done
 if [[ "${CONVERGED}" == "false" ]]; then
   FINAL=$(count_unready)
   log "Convergence not reached within 450s; final not-Ready count: ${FINAL}"
+  # Name them. "3 pods not ready" is where the previous investigation stalled —
+  # the count was visible for an hour and the pod behind it was not.
+  kubectl get pods -A --no-headers 2>/dev/null \
+    | grep -v "scan-vulnerabilityreport" \
+    | awk '$4!="Completed" && $4!="Succeeded" { split($3,r,"/"); if (r[1]!=r[2] || $4!="Running") printf "  %s/%s %s %s\n", $1, $2, $3, $4 }' \
+    | while read -r line; do log "${line}"; done
   log "Manual investigation may be required"
 fi
 

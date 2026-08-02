@@ -129,6 +129,12 @@ mark_done() {
 # Runs a list of repo-relative scripts on one node, streaming to a per-stage log the
 # node keeps. Returns non-zero on the first failure so callers can stop.
 #
+# Serialised per node with flock. Killing the local driver does NOT kill the remote shell —
+# it keeps running to completion — so a resumed run can start the same stage on a node that
+# is still working through the previous one. Two concurrent `base` runs then fight over the
+# apt lock and the loser reports a failure on a node that was fine. flock takes its command
+# as argv, so this adds no quoting layer to a line that is already delicate.
+#
 # The node records its own success: the remote shell touches the sentinel as its last act,
 # and if ssh reports failure we reconnect and ask the node rather than believing the
 # transport. A dropped connection after the work finished is otherwise indistinguishable
@@ -141,7 +147,7 @@ run_scripts() {
   # stale one would make the fallback below vouch for work that never happened.
   ssh_node "${ip}" "sudo rm -f '${SENTINELS}/${stage}.ok'" 2>/dev/null || true
   if ssh_node "${ip}" "sudo mkdir -p '${SENTINELS}'
-    sudo env $(node_env "${ip}") sh -c '
+    sudo flock -w 7200 /var/lock/narwhal-stage.lock env $(node_env "${ip}") sh -c '
       set -e
       for s in ${list}; do
         echo \"### \$s\"

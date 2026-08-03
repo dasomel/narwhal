@@ -195,8 +195,26 @@ v4.1 백채널은 기존 연결을 재사용한다. SG 드롭은 실재하는 �
 | 항목 | 상태 |
 |------|------|
 | 고착된 VPC `4a3493e1-...` | Kakao 지원 티켓 필요. 초안: `.omc/artifacts/kakao-support-ticket.md` |
-| 클린 설치 CI 자동화 | 미착수. 이 RCA의 1번 원인을 실제로 없애는 유일한 방법 |
+| 회귀 검사 CI (static) | **완료** — `Lint & Validate` 워크플로의 `regression-static` 잡, 매 push/PR |
+| 전체 클린 설치 CI | 원격 state 백엔드가 선행 조건 (아래) |
 | Vagrant 경로의 NFSv4.1 | 같은 지뢰가 남아 있다. 밟히지 않았을 뿐 |
+
+#### 전체 클린 설치를 CI에서 돌리려면
+
+static 회귀 검사는 이미 CI에 있다. 남은 것은 **실제로 클러스터를 세우는** 절반이고,
+이것은 코드가 아니라 인프라 결정 세 가지에 막혀 있다.
+
+1. **원격 state 백엔드** — `csp/kakao-cloud/terraform`에 `backend` 블록이 없어 state가
+   로컬 파일(374 KB)이다. GitHub 러너에는 그 파일이 없으므로 `tofu apply`가 인프라를
+   인식하지 못한다. **이것이 유일한 진짜 차단 요소다** — 나머지 둘은 정책 문제다.
+2. **자격 증명** — `application_credential_id`/`secret`을 리포지토리 시크릿으로. SSH 키는
+   terraform이 생성하므로(`local_sensitive_file`) 별도 관리가 필요 없다.
+3. **비용과 시간** — 1회 약 2시간과 실제 클라우드 과금. 매 push가 아니라
+   `workflow_dispatch` + 주기 실행이 현실적이다.
+
+3회차가 무개입 완주를 보였으므로 절차 자체는 CI에 넣을 수 있는 상태다. 백엔드만 정해지면
+`stage-kakao-nodes.sh` → `provision-kakao.sh all` → `regression-check-kakao.sh --all`을
+그대로 잡 세 단계로 옮기면 된다.
 
 ## 7. 최종 상태 (2026-08-02 검증)
 

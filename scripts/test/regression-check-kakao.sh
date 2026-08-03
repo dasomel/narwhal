@@ -70,17 +70,20 @@ run_static() {
 
   # 2026-07-26: no script installed the NFS *client*; csi-driver-nfs mounts hung.
   check R02 "01-prerequisites installs nfs-common (2026-07-26)" \
-    grep -q 'nfs-common' scripts/common/01-prerequisites.sh
+    grep -qE '^[^#]*nfs-common' scripts/common/01-prerequisites.sh
 
   # 2026-07-26: cloud image ships neither ip_forward nor br_netfilter; kubeadm preflight failed.
   check R03 "01-prerequisites sets ip_forward + br_netfilter (2026-07-26)" \
-    grep -q 'br_netfilter' scripts/common/01-prerequisites.sh
+    grep -qE '^[^#]*br_netfilter' scripts/common/01-prerequisites.sh
 
   # 2026-07-30: nothing installed yq, which three scripts edit manifests with. The
   # Vagrant box ships it, so the gap only appears on a plain cloud image — and it
   # appears AFTER a successful kubeadm init, which reads as a cluster-level failure.
+  # Matches the download line, not any mention: `mikefarah/yq` also appears in this file's
+  # comments and error strings, so a looser grep passed even with the install code deleted.
+  # A check satisfied by a comment about the fix is not checking the fix.
   check R21 "01-prerequisites installs yq (2026-07-30)" \
-    grep -q 'mikefarah/yq' scripts/common/01-prerequisites.sh
+    grep -qE '^[^#]*mikefarah/yq/releases/download' scripts/common/01-prerequisites.sh
 
   # Every tool the scripts drive manifests with has to be installed by something in
   # scripts/, not inherited from a pre-baked box. This catches the NEXT one, not just yq.
@@ -105,15 +108,15 @@ run_static() {
   # 2026-07-26: mirror host written as /<upstream> instead of /v2/<upstream>; the
   # registry 404'd HTML and the airgap mirror had never served a single pull.
   check R05 "mirror host path is /v2/<upstream> (2026-07-26)" \
-    grep -q 'v2/' scripts/airgap/06-configure-mirrors.sh
+    grep -qE '^[^#]*v2/' scripts/airgap/06-configure-mirrors.sh
 
   # 2026-07-26: bare refs pushed verbatim; containerd resolves them to docker.io/library/*.
   check R06 "05-load-images normalizes bare refs (2026-07-26)" \
-    grep -q 'docker.io/library' scripts/airgap/05-load-images.sh
+    grep -qE '^[^#]*docker.io/library' scripts/airgap/05-load-images.sh
 
   # 2026-07-28: --live cannot see pause or kube-proxy; 5 of 7 kubeadm images were missing.
   check R07 "01-generate-image-list unions kubeadm list (2026-07-28)" \
-    grep -q 'kubeadm config images list' scripts/airgap/01-generate-image-list.sh
+    grep -qE '^[^#]*kubeadm config images list' scripts/airgap/01-generate-image-list.sh
 
   # 2026-07-28: docker-archive refuses an existing file; the bootstrap registry tar froze.
   check R08 "02-save-images removes tar before write (2026-07-28)" \
@@ -121,7 +124,7 @@ run_static() {
 
   # 2026-07-27: macOS bsdtar AppleDouble sidecars broke helm template in Gitea.
   check R09 "stage-kakao-nodes sets COPYFILE_DISABLE (2026-07-27)" \
-    grep -q 'COPYFILE_DISABLE' scripts/cloud/stage-kakao-nodes.sh
+    grep -qE '^[^#]*COPYFILE_DISABLE' scripts/cloud/stage-kakao-nodes.sh
 
   # 2026-07-28: BASH_SOURCE resolved to /tmp under Vagrant, so the sibling was not found.
   check R10 "callers use absolute path to patch-apiserver-memory (2026-07-28)" \
@@ -129,7 +132,7 @@ run_static() {
 
   # 2026-07-28: the script returned before the apiserver came back; CNI install died.
   check R11 "patch-apiserver-memory polls /livez (2026-07-28)" \
-    grep -q 'livez' scripts/cluster/patch-apiserver-memory.sh
+    grep -qE '^[^#]*livez' scripts/cluster/patch-apiserver-memory.sh
 
   # 2026-07-29: the kakao branch skipped dnsmasq without ever writing the CoreDNS half,
   # so *.DOMAIN was NXDOMAIN in-cluster and every gateway-OIDC route 500'd.
@@ -151,10 +154,10 @@ run_static() {
   # scripts that curl a service URL from the host got HTTP 000. Enumerating names in
   # /etc/hosts was the first attempt and does not cover squid.
   check R24 "bastion serves split DNS for the zone (2026-07-30)" \
-    grep -q 'dnsmasq' scripts/cloud/setup-bastion-proxy.sh
+    grep -qE '^[^#]*dnsmasq' scripts/cloud/setup-bastion-proxy.sh
 
   check R25 "01-prerequisites points the node resolver at DNS_SERVER (2026-07-30)" \
-    grep -q 'DNS_SERVER' scripts/common/01-prerequisites.sh
+    grep -qE '^[^#]*DNS_SERVER' scripts/common/01-prerequisites.sh
 
   # The list-of-hostnames approach must not creep back: it has to track every new route,
   # and it leaves squid unable to resolve anything it proxies.

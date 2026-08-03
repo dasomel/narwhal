@@ -35,6 +35,49 @@ jobs:
           done < <(find scripts/ -name '*.sh')
           exit "$bad"
 
+  # The clean-install regression checks, static half. Each one corresponds to a dated row
+  # in docs/common/lessons-log.md, so a failure here names the bug that came back rather
+  # than just "something broke". Three clean installs of the Kakao cluster produced 24
+  # defects; this is what stops them being reintroduced silently.
+  #
+  # Static only: the runtime half needs a live cluster. See docs/kakao/clean-install-rca.md
+  # for what a full clean install in CI would additionally require.
+  regression-static:
+    name: Clean-install regression (static)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run static regression checks
+        run: ./scripts/test/regression-check-kakao.sh --static
+
+  # The Mistakes Log is a set of 3-column tables. An unescaped `|` inside a cell silently
+  # adds a column and the row stops rendering — three rows had drifted that way unnoticed
+  # before this check existed. Cheap to verify, invisible to catch by eye.
+  lessons-log-format:
+    name: Mistakes Log format
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Every row parses as three columns
+        run: |
+          python3 - <<'EOF'
+          import re, sys
+          bad = 0
+          for n, line in enumerate(open("docs/common/lessons-log.md"), 1):
+              line = line.rstrip("\n")
+              if not line.startswith("| ") or line.startswith("|---") or line.startswith("| Date"):
+                  continue
+              cells = re.split(r"(?<!\\)\|", line)
+              if len(cells) != 5:
+                  print(f"lessons-log.md:{n}: {len(cells)-2} columns, expected 3")
+                  print(f"  {line[:100]}")
+                  print("  escape any literal | inside a cell as \\|")
+                  bad += 1
+          sys.exit(1 if bad else 0)
+          EOF
+
   yaml-validate:
     name: YAML Validate (GitOps)
     runs-on: ubuntu-latest

@@ -21,7 +21,11 @@ end
 #=========================================
 CLUSTER_NAME = "narwhal"
 K8S_VERSION = "1.35"
-K8S_PATCH_VERSION = "1.35.5"
+# The patch release every node is pinned to, and the value
+# scripts/airgap/01-generate-image-list.sh reads to build the offline bundle. Was 1.35.5
+# while clusters actually ran 1.35.7, because 03-k8s-install.sh only printed it and let
+# apt choose; both now agree. Bump only alongside a verified clean install.
+K8S_PATCH_VERSION = "1.35.7"
 POD_NETWORK_CIDR = "10.244.0.0/16"
 SERVICE_CIDR = "10.96.0.0/12"
 

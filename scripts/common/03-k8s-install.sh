@@ -2,8 +2,14 @@
 set -euo pipefail
 
 K8S_VERSION="${K8S_VERSION:-1.35}"
-# Patch version resolved by APT repo (v1.35 repo provides 1.35.5+)
-K8S_PATCH_VERSION="${K8S_PATCH_VERSION:-1.35.5}"
+# The exact patch release to install. This used to be decorative: it appeared only in
+# the banner below while apt installed whatever the v1.35 repo currently served, so on
+# 2026-08-04 the banner announced 1.35.5 while every node came up on 1.35.7. Two things
+# went wrong with that. A clean install today and one next month silently produce
+# different clusters, which makes "clean install works" unfalsifiable; and
+# scripts/airgap/01-generate-image-list.sh parses this same value out of the Vagrantfile
+# to build the offline bundle, so the bundle was assembled for a version nothing runs.
+K8S_PATCH_VERSION="${K8S_PATCH_VERSION:-1.35.7}"
 
 echo "=== Kubernetes v${K8S_PATCH_VERSION} Installation ==="
 
@@ -33,9 +39,24 @@ echo "deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.
   sudo tee /etc/apt/sources.list.d/kubernetes.list
 
 # Install kubeadm, kubelet, kubectl (retried — pkgs.k8s.io CDN can be flaky mid-provision)
-# Version pinned via APT repo (v1.35 repo only provides 1.35.x packages)
+#
+# Pinned to the exact patch release. The apt version string carries a packaging suffix
+# (1.35.7-1.1), so match on the prefix rather than hard-coding it — the suffix changes
+# without the Kubernetes version changing. `--allow-downgrades` matters on re-provision:
+# without it, a node that already picked up a newer patch refuses to move back to the
+# pinned one and the fleet ends up mixed.
 retry sudo apt-get update
-retry sudo apt-get install -y kubelet kubeadm kubectl
+K8S_APT_VERSION="$(apt-cache madison kubelet | awk -v v="${K8S_PATCH_VERSION}-" '$3 ~ "^"v {print $3; exit}')"
+if [ -z "${K8S_APT_VERSION}" ]; then
+  echo "ERROR: kubelet ${K8S_PATCH_VERSION} not offered by the v${K8S_VERSION} APT repo." >&2
+  echo "       Available:" >&2
+  apt-cache madison kubelet | awk '{print "         "$3}' | head -5 >&2
+  echo "       Update K8S_PATCH_VERSION in Vagrantfile to one of the above." >&2
+  exit 1
+fi
+echo "Pinning kubelet/kubeadm/kubectl to ${K8S_APT_VERSION}"
+retry sudo apt-get install -y --allow-downgrades \
+  "kubelet=${K8S_APT_VERSION}" "kubeadm=${K8S_APT_VERSION}" "kubectl=${K8S_APT_VERSION}"
 sudo apt-mark hold kubelet kubeadm kubectl
 
 # Enable kubelet

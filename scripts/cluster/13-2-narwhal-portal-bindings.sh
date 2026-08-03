@@ -310,12 +310,19 @@ ARGOCD_TOKEN=""
 ARGOCD_ADMIN_PASS=$(kubectl get secret argocd-initial-admin-secret \
   -n devtools -o jsonpath='{.data.password}' 2>/dev/null | base64 -d || echo "")
 if [ -n "${ARGOCD_ADMIN_PASS}" ]; then
-  # Retry with readiness gate: ArgoCD server + its APISIX ingress route may not be
-  # reachable the instant 13-2 runs (right after 13-argocd). A single-shot issuance
-  # previously left the REPLACE_ME placeholder in narwhal-portal-secrets → the portal
-  # ArgoCD widget got 401 → "0 apps" until the token was manually re-issued. Poll until
-  # the session endpoint answers and the token is issued (12 × 10s).
-  for attempt in $(seq 1 12); do
+  # Wait for the server itself before polling its HTTP endpoint. The retry loop below
+  # used to be the only gate, and on a clean install it burned all 12 attempts before
+  # argocd-server had finished rolling out — reproduced 2026-08-04, where every attempt
+  # failed and the placeholder shipped. Waiting on the Deployment first spends the
+  # retry budget on the ingress route rather than on the pod.
+  echo "  argocd-server 롤아웃 대기 (최대 300s)..."
+  kubectl -n devtools rollout status deploy/argocd-server --timeout=300s || \
+    echo "  WARN: argocd-server 롤아웃 확인 실패 — 그래도 발급을 시도한다"
+
+  # 30 × 10s (5분). The old 12 × 10s was measured too short on a clean install: the
+  # APISIX route for argocd.${DOMAIN} needs the gateway, its TLS cert and the ingress
+  # reconcile, none of which are done when 13-argocd returns.
+  for attempt in $(seq 1 30); do
     ARGOCD_JWT=$(curl -sk --max-time 10 -X POST \
       "https://argocd.${DOMAIN}/api/v1/session" \
       -H "Content-Type: application/json" \
@@ -342,17 +349,41 @@ if [ -n "${ARGOCD_ADMIN_PASS}" ]; then
         -d '{"expiresIn":0,"id":"portal-main"}' \
         | python3 -c "import sys,json; print(json.load(sys.stdin).get('token',''))" 2>/dev/null || echo "")
       if [ -n "${ARGOCD_TOKEN}" ]; then
-        echo "  ARGOCD_TOKEN 발급 완료 (${#ARGOCD_TOKEN} chars, attempt ${attempt})"
-        break
+        # Prove the token works before trusting it. Issuance returning a string is not
+        # the same as that string authenticating — and a token that does not is exactly
+        # as useless as the placeholder this used to write.
+        tok_code=$(curl -sk --max-time 10 -o /dev/null -w '%{http_code}' \
+          -H "Authorization: Bearer ${ARGOCD_TOKEN}" \
+          "https://argocd.${DOMAIN}/api/v1/applications" || echo "000")
+        if [ "${tok_code}" = "200" ]; then
+          echo "  ARGOCD_TOKEN 발급·검증 완료 (${#ARGOCD_TOKEN} chars, attempt ${attempt})"
+          break
+        fi
+        echo "  발급된 토큰이 인증되지 않음 (HTTP ${tok_code}) — 재시도"
+        ARGOCD_TOKEN=""
       fi
     fi
-    echo "  ArgoCD 토큰 발급 대기 (server/ingress 준비 중) attempt ${attempt}/12..."
+    echo "  ArgoCD 토큰 발급 대기 (server/ingress 준비 중) attempt ${attempt}/30..."
     sleep 10
   done
 fi
+
+# No placeholder. Writing REPLACE_ME__argocd_token here is what shipped a fake
+# credential on 2026-08-04: the portal caught the resulting 401, logged
+# "Connection failed, returning empty" and rendered an empty widget, so the cluster
+# looked healthy and the failure surfaced only when someone asked why the portal was
+# blank. An absent key is honest — the portal fails the same way, but the secret no
+# longer claims to hold a credential, and this script says so and exits non-zero.
+# 13-2 is non-critical in 06-phase2-start.sh, so a non-zero exit warns without
+# aborting Phase 2.
+ARGOCD_TOKEN_OK=true
 if [ -z "${ARGOCD_TOKEN}" ]; then
-  echo "WARN: ArgoCD 토큰 발급 실패 — accounts.narwhal-portal 이 argocd-cm에 있는지 확인"
-  ARGOCD_TOKEN="REPLACE_ME__argocd_token"
+  ARGOCD_TOKEN_OK=false
+  echo "ERROR: ArgoCD 토큰 발급 실패 — narwhal-portal-secrets 에 ARGOCD_TOKEN 을 넣지 않는다." >&2
+  echo "       확인: accounts.narwhal-portal 이 argocd-cm 에 있는지, argocd.${DOMAIN} 이 응답하는지." >&2
+  echo "       수동 재발급 후 파드 재시작:" >&2
+  echo "         ${BASH_SOURCE[0]}   # 이 스크립트는 멱등이라 그냥 다시 실행하면 된다" >&2
+  echo "         kubectl -n devtools rollout restart deploy/narwhal-portal" >&2
 fi
 
 # ──────────────────────────────────────────────
@@ -361,8 +392,17 @@ fi
 echo ""
 echo "=== [4/4] narwhal-portal-secrets 생성 ==="
 
+# ARGOCD_TOKEN is passed only when one was issued AND verified. Omitting the key beats
+# writing a placeholder: envFrom simply leaves it unset, the portal fails the same way,
+# and nothing in the secret pretends to be a credential.
+ARGOCD_TOKEN_ARG=()
+if [ "${ARGOCD_TOKEN_OK}" = "true" ]; then
+  ARGOCD_TOKEN_ARG=(--from-literal=ARGOCD_TOKEN="${ARGOCD_TOKEN}")
+fi
+
 kubectl create secret generic narwhal-portal-secrets \
   --namespace devtools \
+  "${ARGOCD_TOKEN_ARG[@]}" \
   --from-literal=AUTH_SECRET="${AUTH_SECRET}" \
   --from-literal=AUTH_URL="https://portal.${DOMAIN}" \
   --from-literal=AUTH_TRUST_HOST="true" \
@@ -382,7 +422,6 @@ kubectl create secret generic narwhal-portal-secrets \
   --from-literal=K8S_SA_TOKEN="${K8S_SA_TOKEN}" \
   --from-literal=CLUSTER_NAME="narwhal" \
   --from-literal=ARGOCD_URL="http://argocd-server.devtools.svc.cluster.local" \
-  --from-literal=ARGOCD_TOKEN="${ARGOCD_TOKEN}" \
   --from-literal=ARGOCD_DEVELOPER_PROJECTS="" \
   --from-literal=APISIX_ADMIN_URL="http://apisix-admin.platform-system.svc.cluster.local:9180" \
   --from-literal=APISIX_API_KEY="${APISIX_API_KEY}" \
@@ -435,3 +474,12 @@ echo "  프로덕션에서는 TLS+AUTH 활성화 필요 (docs/common/security.md
 echo ""
 echo "NOTE: TUNING_JOB_IMAGE는 digest pin 없이 :latest 태그."
 echo "  프로덕션에서는 @sha256:<64hex> digest로 교체 필요."
+
+# Exit non-zero when the ArgoCD token never landed, so the Phase 2 log carries a
+# failure rather than a success. 13-2 is non-critical, so this warns and Phase 2
+# continues — the portal is simply missing its ArgoCD integration until re-run.
+if [ "${ARGOCD_TOKEN_OK}" != "true" ]; then
+  echo ""
+  echo "RESULT: ARGOCD_TOKEN 없이 완료 — 포털의 ArgoCD 위젯은 동작하지 않는다." >&2
+  exit 1
+fi

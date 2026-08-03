@@ -144,11 +144,23 @@ while [ "${attempt}" -le "${MAX_ATTEMPTS}" ]; do
     # scripts 08-x/09/11/12/13 are present, indicating the run reached the end.
     # Namespaces: platform-system (08-1), monitoring (08-2), security-system (08-3),
     # storage (08-4), istio-system (09), iam (11), devtools (12/13).
+    # Ask master-1 for the namespace list ONCE, then decide locally.
+    #
+    # The previous version ran `vagrant ssh -c "kubectl get ns X"` per namespace and read
+    # only the exit code, so an unreachable master-1 — the normal state right after the
+    # VMware SSH race that killed the attempt — was reported as "namespace 'X' not found".
+    # On 2026-08-04 that message named platform-system twice while the namespace demonstrably
+    # existed, and it is the first thing anyone reads when diagnosing a failed Phase 2.
+    # "Could not ask" and "the answer is no" now say different things.
     phase2_complete() {
-      local ns
+      local have ns
+      if ! have=$(vagrant ssh master-1 -c \
+            "kubectl get ns -o name" 2>/dev/null); then
+        echo "  Phase 2 status unknown: master-1 unreachable (SSH or kubectl failed)."
+        return 1
+      fi
       for ns in platform-system monitoring security-system storage istio-system iam devtools; do
-        if ! vagrant ssh master-1 -c \
-          "kubectl get ns ${ns}" >/dev/null 2>&1; then
+        if ! grep -qx "namespace/${ns}" <<<"${have}"; then
           echo "  Phase 2 incomplete: namespace '${ns}' not found."
           return 1
         fi

@@ -44,17 +44,23 @@ config:
             - platform-system
 EOF
 
+KYVERNO_OK=false
 for attempt in 1 2 3 4 5; do
   if helm upgrade --install kyverno kyverno/kyverno \
+    --force-conflicts \
     --namespace platform-system \
     --create-namespace \
     --version 3.8.1 \
     -f /tmp/kyverno-values.yaml; then
-    break
+    KYVERNO_OK=true; break
   fi
   echo "Kyverno install attempt ${attempt}/5 failed, waiting 15s..."
   sleep 15
 done
+if [ "${KYVERNO_OK}" != true ]; then
+  echo "ERROR: Kyverno install failed after 5 attempts." >&2
+  exit 1
+fi
 
 rm /tmp/kyverno-values.yaml
 
@@ -109,17 +115,23 @@ volumeMounts:
     readOnly: true
 EOF
 
+HEADLAMP_OK=false
 for attempt in 1 2 3 4 5; do
   if helm upgrade --install headlamp headlamp/headlamp \
+    --force-conflicts \
     --namespace devtools \
     --create-namespace \
     --version 0.42.0 \
     -f /tmp/headlamp-values.yaml; then
-    break
+    HEADLAMP_OK=true; break
   fi
   echo "Headlamp install attempt ${attempt}/5 failed, waiting 15s..."
   sleep 15
 done
+if [ "${HEADLAMP_OK}" != true ]; then
+  echo "ERROR: Headlamp install failed after 5 attempts." >&2
+  exit 1
+fi
 
 rm /tmp/headlamp-values.yaml
 

@@ -22,19 +22,25 @@ for attempt in 1 2 3 4 5; do
   sleep 15
 done
 
+METALLB_OK=false
 for attempt in 1 2 3 4 5; do
   if helm upgrade --install metallb metallb/metallb \
+    --force-conflicts \
     --namespace platform-system \
     --create-namespace \
     --version 0.16.1 \
     --set speaker.tolerations[0].key=node-role.kubernetes.io/control-plane \
     --set speaker.tolerations[0].operator=Exists \
     --set speaker.tolerations[0].effect=NoSchedule; then
-    break
+    METALLB_OK=true; break
   fi
   echo "MetalLB install attempt ${attempt}/5 failed, waiting 15s..."
   sleep 15
 done
+if [ "${METALLB_OK}" != true ]; then
+  echo "ERROR: MetalLB install failed after 5 attempts." >&2
+  exit 1
+fi
 
 # Wait for MetalLB controller to be ready
 echo "Waiting for MetalLB controller..."
@@ -42,14 +48,24 @@ kubectl wait --for=condition=Ready pod -l app.kubernetes.io/component=controller
 
 # Apply MetalLB configuration (IP pool and L2 advertisement) with retry
 echo "Applying MetalLB configuration..."
+METALLB_CFG_OK=false
 for attempt in 1 2 3 4 5; do
   if kubectl apply -f /home/vagrant/configs/gitops/resources/metallb-config.yaml 2>&1; then
     echo "MetalLB configuration applied"
-    break
+    METALLB_CFG_OK=true; break
   fi
   echo "MetalLB config apply attempt ${attempt}/5 failed, waiting 15s..."
   sleep 15
 done
+# Exhausting this silently leaves the cluster with MetalLB running and no IPAddressPool,
+# so every LoadBalancer Service stays <pending> — including the APISIX gateway that
+# everything else is reached through. Observed 2026-08-04: the first attempt fails while
+# the validating webhook is still coming up, which is why the retries exist; what was
+# missing is the failure when they run out.
+if [ "${METALLB_CFG_OK}" != true ]; then
+  echo "ERROR: MetalLB config (IPAddressPool/L2Advertisement) not applied after 5 attempts." >&2
+  exit 1
+fi
 
 echo "MetalLB installed"
 fi  # end MetalLB (Vagrant only)
@@ -164,19 +180,24 @@ tolerations:
     effect: "NoSchedule"
 EOF
 
+APISIX_OK=false
 for attempt in 1 2 3 4 5; do
   if helm upgrade --install apisix apisix/apisix \
+    --force-conflicts \
     --namespace platform-system \
     --create-namespace \
     --version 2.13.0 \
     --skip-crds \
-    --force \
     -f /tmp/apisix-values.yaml; then
-    break
+    APISIX_OK=true; break
   fi
   echo "APISIX install attempt ${attempt}/5 failed, waiting 15s..."
   sleep 15
 done
+if [ "${APISIX_OK}" != true ]; then
+  echo "ERROR: APISIX install failed after 5 attempts." >&2
+  exit 1
+fi
 
 rm /tmp/apisix-values.yaml
 
@@ -288,8 +309,10 @@ kubectl create secret generic apisix-admin-key \
   --from-literal=viewer="${APISIX_VIEWER_KEY}" \
   --dry-run=client -o yaml | kubectl apply -f -
 
+APISIX_INGRESS_CONTROLLER_OK=false
 for attempt in 1 2 3 4 5; do
   if helm upgrade --install apisix-ingress-controller apisix/apisix-ingress-controller \
+    --force-conflicts \
     --namespace platform-system \
     --version 0.14.1 \
     --skip-crds \
@@ -307,11 +330,15 @@ for attempt in 1 2 3 4 5; do
     --set securityContext.allowPrivilegeEscalation=false \
     --set 'securityContext.capabilities.drop[0]=ALL' \
     --set securityContext.seccompProfile.type=RuntimeDefault; then
-    break
+    APISIX_INGRESS_CONTROLLER_OK=true; break
   fi
   echo "APISIX ingress controller install attempt ${attempt}/5 failed, waiting 15s..."
   sleep 15
 done
+if [ "${APISIX_INGRESS_CONTROLLER_OK}" != true ]; then
+  echo "ERROR: APISIX ingress controller install failed after 5 attempts." >&2
+  exit 1
+fi
 
 echo "Waiting for APISIX ingress controller..."
 kubectl wait --for=condition=Ready pod -l app.kubernetes.io/name=apisix-ingress-controller \
@@ -331,17 +358,23 @@ for attempt in 1 2 3 4 5; do
   sleep 15
 done
 
+CERT_MANAGER_OK=false
 for attempt in 1 2 3 4 5; do
   if helm upgrade --install cert-manager jetstack/cert-manager \
+    --force-conflicts \
     --namespace platform-system \
     --create-namespace \
     --version v1.20.2 \
     --set crds.enabled=true; then
-    break
+    CERT_MANAGER_OK=true; break
   fi
   echo "cert-manager install attempt ${attempt}/5 failed, waiting 15s..."
   sleep 15
 done
+if [ "${CERT_MANAGER_OK}" != true ]; then
+  echo "ERROR: cert-manager install failed after 5 attempts." >&2
+  exit 1
+fi
 
 # Wait for cert-manager CRDs and webhook to be usable before applying any cert-manager resources.
 # Without this gate the inline ClusterIssuer/Certificate below fail with

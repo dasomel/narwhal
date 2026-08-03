@@ -17,8 +17,10 @@ for attempt in 1 2 3 4 5; do
   sleep 15
 done
 
+SEAWEEDFS_OK=false
 for attempt in 1 2 3 4 5; do
   if helm upgrade --install seaweedfs seaweedfs/seaweedfs \
+    --force-conflicts \
     --namespace storage \
     --create-namespace \
     --version 4.34.0 \
@@ -42,11 +44,15 @@ for attempt in 1 2 3 4 5; do
     --set filer.s3.port=8333 \
     --set filer.s3.allowEmptyFolder=true \
     --set s3.enabled=true; then
-    break
+    SEAWEEDFS_OK=true; break
   fi
   echo "SeaweedFS install attempt ${attempt}/5 failed, waiting 15s..."
   sleep 15
 done
+if [ "${SEAWEEDFS_OK}" != true ]; then
+  echo "ERROR: SeaweedFS install failed after 5 attempts." >&2
+  exit 1
+fi
 
 # Create S3 buckets for platform apps
 # All apps using SeaweedFS S3: Tempo, Velero, Loki, CNPG backup
@@ -187,17 +193,23 @@ ui:
   enabled: true
 EOF
 
+OPENBAO_OK=false
 for attempt in 1 2 3 4 5; do
   if helm upgrade --install openbao openbao/openbao \
+    --force-conflicts \
     --namespace storage \
     --create-namespace \
     --version 0.28.3 \
     -f /tmp/openbao-values.yaml; then
-    break
+    OPENBAO_OK=true; break
   fi
   echo "OpenBao install attempt ${attempt}/5 failed, waiting 15s..."
   sleep 15
 done
+if [ "${OPENBAO_OK}" != true ]; then
+  echo "ERROR: OpenBao install failed after 5 attempts." >&2
+  exit 1
+fi
 
 # Auto init + unseal OpenBao. The listener is HTTPS with the self-signed cluster CA,
 # so every bao CLI call needs -tls-skip-verify (BAO_ADDR is https via tlsDisable=false).
@@ -363,17 +375,23 @@ nodeAgent:
       effect: NoSchedule
 EOF
 
+VELERO_OK=false
 for attempt in 1 2 3 4 5; do
   if helm upgrade --install velero vmware-tanzu/velero \
+    --force-conflicts \
     --namespace storage \
     --create-namespace \
     --version 12.0.3 \
     -f /tmp/velero-values.yaml; then
-    break
+    VELERO_OK=true; break
   fi
   echo "Velero install attempt ${attempt}/5 failed, waiting 15s..."
   sleep 15
 done
+if [ "${VELERO_OK}" != true ]; then
+  echo "ERROR: Velero install failed after 5 attempts." >&2
+  exit 1
+fi
 
 rm /tmp/velero-values.yaml
 echo "Velero installed"

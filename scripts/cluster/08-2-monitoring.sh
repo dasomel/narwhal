@@ -36,8 +36,10 @@ else
   echo "Grafana admin secret already exists, reusing"
 fi
 
+PROMETHEUS_STACK_OK=false
 for attempt in 1 2 3 4 5; do
   if helm upgrade --install prometheus-stack prometheus-community/kube-prometheus-stack \
+    --force-conflicts \
     --namespace monitoring \
     --create-namespace \
     --version 86.2.3 \
@@ -56,11 +58,15 @@ for attempt in 1 2 3 4 5; do
     --set prometheus-node-exporter.tolerations[0].key=node-role.kubernetes.io/control-plane \
     --set prometheus-node-exporter.tolerations[0].operator=Exists \
     --set prometheus-node-exporter.tolerations[0].effect=NoSchedule; then
-    break
+    PROMETHEUS_STACK_OK=true; break
   fi
   echo "Prometheus Stack install attempt ${attempt}/5 failed, waiting 15s..."
   sleep 15
 done
+if [ "${PROMETHEUS_STACK_OK}" != true ]; then
+  echo "ERROR: Prometheus Stack install failed after 5 attempts." >&2
+  exit 1
+fi
 
 # Opt Grafana out of Istio ambient mesh (SSO cookie handling)
 kubectl patch deployment prometheus-stack-grafana -n monitoring --type='json' \
@@ -139,16 +145,22 @@ test:
   enabled: false
 LOKIVALUES
 
+LOKI_OK=false
 for attempt in 1 2 3 4 5; do
   if helm upgrade --install loki grafana-community/loki \
+    --force-conflicts \
     --namespace monitoring \
     --version 18.4.0 \
     -f /tmp/loki-values.yaml; then
-    break
+    LOKI_OK=true; break
   fi
   echo "Loki install attempt ${attempt}/5 failed, waiting 15s..."
   sleep 15
 done
+if [ "${LOKI_OK}" != true ]; then
+  echo "ERROR: Loki install failed after 5 attempts." >&2
+  exit 1
+fi
 
 rm /tmp/loki-values.yaml
 echo "Loki installed"
@@ -179,16 +191,22 @@ podLogsViaLoki:
   destinations: []
 K8SMONVALUES
 
+K8S_MONITORING_OK=false
 for attempt in 1 2 3 4 5; do
   if helm upgrade --install k8s-monitoring grafana/k8s-monitoring \
+    --force-conflicts \
     --namespace monitoring \
     --version 4.2.0 \
     -f /tmp/k8s-monitoring-values.yaml; then
-    break
+    K8S_MONITORING_OK=true; break
   fi
   echo "k8s-monitoring install attempt ${attempt}/5 failed, waiting 15s..."
   sleep 15
 done
+if [ "${K8S_MONITORING_OK}" != true ]; then
+  echo "ERROR: k8s-monitoring install failed after 5 attempts." >&2
+  exit 1
+fi
 
 rm /tmp/k8s-monitoring-values.yaml
 echo "Grafana Alloy (k8s-monitoring) installed"
@@ -197,12 +215,14 @@ echo "Grafana Alloy (k8s-monitoring) installed"
 # Tempo (Distributed Tracing)
 #=========================================
 echo "=== Installing Tempo ==="
+TEMPO_OK=false
 for attempt in 1 2 3 4 5; do
   # D-vparquet2: chart 2.2.3's default appVersion (2.10.7) removes vParquet2
   # block-encoding support entirely. Pin image.tag=2.9.0 until a live audit
   # of the SeaweedFS `tempo` bucket confirms no vParquet2-encoded blocks
   # exist (see VERSIONS.md). Lift this pin once confirmed safe.
   if helm upgrade --install tempo grafana-community/tempo \
+    --force-conflicts \
     --namespace monitoring \
     --version 2.2.3 \
     --set tempo.tag=2.9.0 \
@@ -210,11 +230,15 @@ for attempt in 1 2 3 4 5; do
     --set persistence.enabled=true \
     --set persistence.storageClassName=nfs-csi \
     --set persistence.size=10Gi; then
-    break
+    TEMPO_OK=true; break
   fi
   echo "Tempo install attempt ${attempt}/5 failed, waiting 15s..."
   sleep 15
 done
+if [ "${TEMPO_OK}" != true ]; then
+  echo "ERROR: Tempo install failed after 5 attempts." >&2
+  exit 1
+fi
 
 echo "Tempo installed"
 

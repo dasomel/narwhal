@@ -82,8 +82,10 @@ spec:
       targetPort: 5432
 EOF
 
+HARBOR_OK=false
 for attempt in 1 2 3 4 5; do
   if helm upgrade --install harbor harbor/harbor \
+    --force-conflicts \
     --namespace devtools \
     --version 1.19.1 \
     --set expose.type=clusterIP \
@@ -124,11 +126,15 @@ for attempt in 1 2 3 4 5; do
     --set redis.internal.image.tag=v2.15.1 \
     --set exporter.image.repository=ghcr.io/dasomel/goharbor/harbor-exporter \
     --set exporter.image.tag=v2.15.0-build.32; then
-    break
+    HARBOR_OK=true; break
   fi
   echo "Harbor install attempt ${attempt}/5 failed, waiting 15s..."
   sleep 15
 done
+if [ "${HARBOR_OK}" != true ]; then
+  echo "ERROR: Harbor install failed after 5 attempts." >&2
+  exit 1
+fi
 
 # Opt Harbor SSO-facing pods out of Istio ambient mesh (cookie handling)
 for harbor_deploy in harbor-core harbor-nginx harbor-portal; do

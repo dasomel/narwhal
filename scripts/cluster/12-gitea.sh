@@ -65,6 +65,7 @@ GITEA_DB_PASS=$(kubectl get secret narwhal-db-credentials -n database \
 GITEA_CHART_VERSION="${GITEA_CHART_VERSION:-12.6.0}"
 
 helm upgrade --install gitea gitea-charts/gitea \
+  --force-conflicts \
   --namespace devtools \
   --version "${GITEA_CHART_VERSION}" \
   --set image.tag="${GITEA_VERSION#v}" \

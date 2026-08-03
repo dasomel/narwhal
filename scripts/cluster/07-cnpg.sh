@@ -41,6 +41,7 @@ retry helm repo update
 
 # Install CNPG Operator (no --wait: avoids atomic rollback on timeout)
 retry helm upgrade --install cnpg cnpg/cloudnative-pg \
+  --force-conflicts \
   --namespace platform-system \
   --create-namespace \
   --version "${CNPG_CHART_VERSION}" \

@@ -37,6 +37,7 @@ helm repo update istio
 #=========================================
 echo "Installing istio-base (CRDs)..."
 helm upgrade --install istio-base istio/base \
+  --force-conflicts \
   --namespace istio-system \
   --version "${ISTIO_VERSION}" \
   --timeout 120s || echo "WARN: istio-base install issue, continuing..."
@@ -105,6 +106,7 @@ affinity:
 EOF
 
 helm upgrade --install istiod istio/istiod \
+  --force-conflicts \
   --namespace istio-system \
   --version "${ISTIO_VERSION}" \
   -f /tmp/istiod-values.yaml \
@@ -142,6 +144,7 @@ tolerations:
 EOF
 
 helm upgrade --install istio-cni istio/cni \
+  --force-conflicts \
   --namespace istio-system \
   --version "${ISTIO_VERSION}" \
   -f /tmp/istio-cni-values.yaml \
@@ -178,6 +181,7 @@ tolerations:
 EOF
 
 helm upgrade --install ztunnel istio/ztunnel \
+  --force-conflicts \
   --namespace istio-system \
   --version "${ISTIO_VERSION}" \
   -f /tmp/ztunnel-values.yaml \

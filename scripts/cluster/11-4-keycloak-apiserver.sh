@@ -10,6 +10,37 @@ export KUBECONFIG=/home/vagrant/.kube/config-local
 echo "=== Configuring Kubernetes API Server for OIDC and RBAC ==="
 
 #=========================================
+# Gate on the API server before the first kubectl.
+#
+# 2026-08-04: this script died on its very first command —
+#   kubectl create namespace dev ... | kubectl apply -f -
+#   error validating "STDIN": failed to download openapi:
+#     dial tcp 192.168.56.10:6443: connect: connection refused
+# and being `critical` it took the whole of Phase 2 down with it. The API server was
+# unavailable because kubelet had just (re)started at 19:39:20 and was still bringing the
+# static pods back; boot-heal was NOT responsible (it logged "No wedge detected" through
+# the entire window) and no `vagrant reload master-1` appears in the run log, so what
+# triggered that restart is still unidentified — vagrant's output carries no timestamps to
+# correlate against.
+#
+# The gate is worth having regardless of the trigger: an unavailable API server during
+# Phase 2 is a wait, not a failure, and 07-cnpg.sh already opens with the same loop.
+# Without it, any control-plane blip in this window aborts the install.
+#=========================================
+echo "Waiting for API server..."
+for i in {1..30}; do
+  if kubectl get --raw /readyz &>/dev/null; then
+    break
+  fi
+  echo "API server not ready, retrying... (${i}/30)"
+  sleep 10
+done
+kubectl get --raw /readyz >/dev/null || {
+  echo "ERROR: API server still unreachable after 5 minutes; not touching its manifest." >&2
+  exit 1
+}
+
+#=========================================
 # Create Kubernetes RBAC for OIDC groups
 #=========================================
 echo "=== Creating Kubernetes RBAC for OIDC ==="

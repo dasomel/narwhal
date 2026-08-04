@@ -1,5 +1,9 @@
 #!/bin/bash
 set -euo pipefail
+
+# Charts come from the airgap bundle, never a public repository.
+# shellcheck source=/dev/null
+source /home/vagrant/scripts/common/lib-charts.sh
 source /home/vagrant/scripts/common/lib.sh
 
 echo "=== Installing Monitoring Apps (Prometheus, Loki, Alloy, Tempo) ==="
@@ -10,13 +14,6 @@ export KUBECONFIG=/home/vagrant/.kube/config-local
 # Prometheus Stack (Prometheus, Grafana, Alertmanager)
 #=========================================
 echo "=== Installing Prometheus Stack ==="
-for attempt in 1 2 3 4 5; do
-  if helm repo add prometheus-community https://prometheus-community.github.io/helm-charts && helm repo update prometheus-community; then
-    break
-  fi
-  echo "Helm repo prometheus-community attempt ${attempt}/5 failed, waiting 15s..."
-  sleep 15
-done
 
 # Grafana admin credentials — create namespace first, then build Secret
 kubectl create namespace monitoring --dry-run=client -o yaml | kubectl apply -f -
@@ -38,7 +35,7 @@ fi
 
 PROMETHEUS_STACK_OK=false
 for attempt in 1 2 3 4 5; do
-  if helm upgrade --install prometheus-stack prometheus-community/kube-prometheus-stack \
+  if helm upgrade --install prometheus-stack "$(chart kube-prometheus-stack)" \
     --force-conflicts \
     --namespace monitoring \
     --create-namespace \
@@ -78,26 +75,12 @@ echo "Prometheus Stack installed"
 # Loki (Log Aggregation) - Simple deployment
 #=========================================
 echo "=== Installing Loki ==="
-for attempt in 1 2 3 4 5; do
-  if helm repo add grafana https://grafana.github.io/helm-charts && helm repo update grafana; then
-    break
-  fi
-  echo "Helm repo grafana attempt ${attempt}/5 failed, waiting 15s..."
-  sleep 15
-done
 
 # D-grafana-community: grafana/loki and grafana/tempo went GEL-only; the OSS
 # community fork moved to this separate repo (see VERSIONS.md "Resolved this
 # cycle" note). Kept as a distinct repo alias, not a rename of `grafana`,
 # since other grafana/* charts (promtail's old home, if ever reused) still
 # live at the original repo.
-for attempt in 1 2 3 4 5; do
-  if helm repo add grafana-community https://grafana-community.github.io/helm-charts && helm repo update grafana-community; then
-    break
-  fi
-  echo "Helm repo grafana-community attempt ${attempt}/5 failed, waiting 15s..."
-  sleep 15
-done
 
 cat <<'LOKIVALUES' > /tmp/loki-values.yaml
 deploymentMode: Monolithic
@@ -147,7 +130,7 @@ LOKIVALUES
 
 LOKI_OK=false
 for attempt in 1 2 3 4 5; do
-  if helm upgrade --install loki grafana-community/loki \
+  if helm upgrade --install loki "$(chart loki)" \
     --force-conflicts \
     --namespace monitoring \
     --version 18.4.0 \
@@ -193,7 +176,7 @@ K8SMONVALUES
 
 K8S_MONITORING_OK=false
 for attempt in 1 2 3 4 5; do
-  if helm upgrade --install k8s-monitoring grafana/k8s-monitoring \
+  if helm upgrade --install k8s-monitoring "$(chart k8s-monitoring)" \
     --force-conflicts \
     --namespace monitoring \
     --version 4.2.0 \
@@ -221,7 +204,7 @@ for attempt in 1 2 3 4 5; do
   # block-encoding support entirely. Pin image.tag=2.9.0 until a live audit
   # of the SeaweedFS `tempo` bucket confirms no vParquet2-encoded blocks
   # exist (see VERSIONS.md). Lift this pin once confirmed safe.
-  if helm upgrade --install tempo grafana-community/tempo \
+  if helm upgrade --install tempo "$(chart tempo)" \
     --force-conflicts \
     --namespace monitoring \
     --version 2.2.3 \

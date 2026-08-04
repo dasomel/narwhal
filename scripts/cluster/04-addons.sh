@@ -1,6 +1,10 @@
 #!/bin/bash
 set -euo pipefail
 
+# Charts come from the airgap bundle, never a public repository.
+# shellcheck source=/dev/null
+source /home/vagrant/scripts/common/lib-charts.sh
+
 # Same retry() as 03-k8s-install.sh and 03-cni-install.sh. These downloads cross the
 # bastion proxy to a public CDN and fail transiently; without a retry one flaky fetch
 # fails the whole stage.
@@ -77,10 +81,8 @@ kubectl rollout status deployment/metrics-server -n kube-system --timeout=180s \
 #=========================================
 echo "=== Installing CSI Driver NFS ${CSI_DRIVER_NFS_VERSION} ==="
 
-helm repo add csi-driver-nfs https://raw.githubusercontent.com/kubernetes-csi/csi-driver-nfs/master/charts
-helm repo update
 
-helm upgrade --install csi-driver-nfs csi-driver-nfs/csi-driver-nfs \
+helm upgrade --install csi-driver-nfs "$(chart csi-driver-nfs)" \
   --namespace kube-system \
   --version "${CSI_DRIVER_NFS_VERSION}" \
   --set controller.replicas=1

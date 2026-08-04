@@ -1,5 +1,9 @@
 #!/bin/bash
 set -euo pipefail
+
+# Charts come from the airgap bundle, never a public repository.
+# shellcheck source=/dev/null
+source /home/vagrant/scripts/common/lib-charts.sh
 # shellcheck source=scripts/common/lib.sh
 source /home/vagrant/scripts/common/lib.sh
 
@@ -36,11 +40,9 @@ for i in {1..30}; do
 done
 
 # Add CNPG Helm repo (retry for transient DNS timeouts, e.g. cloudnative-pg.github.io lookup failure)
-retry helm repo add cnpg https://cloudnative-pg.github.io/charts
-retry helm repo update
 
 # Install CNPG Operator (no --wait: avoids atomic rollback on timeout)
-retry helm upgrade --install cnpg cnpg/cloudnative-pg \
+retry helm upgrade --install cnpg "$(chart cloudnative-pg)" \
   --force-conflicts \
   --namespace platform-system \
   --create-namespace \

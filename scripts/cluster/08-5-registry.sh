@@ -1,5 +1,9 @@
 #!/bin/bash
 set -euo pipefail
+
+# Charts come from the airgap bundle, never a public repository.
+# shellcheck source=/dev/null
+source /home/vagrant/scripts/common/lib-charts.sh
 source /home/vagrant/scripts/common/lib.sh
 
 echo "=== Installing Registry Apps (Harbor) ==="
@@ -10,13 +14,6 @@ export KUBECONFIG=/home/vagrant/.kube/config-local
 # Harbor (Container Registry) - ARM64 images
 #=========================================
 echo "=== Installing Harbor ==="
-for attempt in 1 2 3 4 5; do
-  if helm repo add harbor https://helm.goharbor.io && helm repo update harbor; then
-    break
-  fi
-  echo "Helm repo harbor attempt ${attempt}/5 failed, waiting 15s..."
-  sleep 15
-done
 
 # Wait for unified PostgreSQL cluster (narwhal-db) to be ready
 echo "Waiting for PostgreSQL (narwhal-db) to be ready..."
@@ -84,7 +81,7 @@ EOF
 
 HARBOR_OK=false
 for attempt in 1 2 3 4 5; do
-  if helm upgrade --install harbor harbor/harbor \
+  if helm upgrade --install harbor "$(chart harbor)" \
     --force-conflicts \
     --namespace devtools \
     --version 1.19.1 \

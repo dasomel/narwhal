@@ -1,6 +1,10 @@
 #!/bin/bash
 set -euo pipefail
 
+# Charts come from the airgap bundle, never a public repository.
+# shellcheck source=/dev/null
+source /home/vagrant/scripts/common/lib-charts.sh
+
 echo "=== Installing Storage Apps (SeaweedFS, OpenBao, Velero) ==="
 
 export KUBECONFIG=/home/vagrant/.kube/config-local
@@ -9,17 +13,10 @@ export KUBECONFIG=/home/vagrant/.kube/config-local
 # SeaweedFS (S3-compatible Object Storage)
 #=========================================
 echo "=== Installing SeaweedFS ==="
-for attempt in 1 2 3 4 5; do
-  if helm repo add seaweedfs https://seaweedfs.github.io/seaweedfs/helm && helm repo update seaweedfs; then
-    break
-  fi
-  echo "Helm repo seaweedfs attempt ${attempt}/5 failed, waiting 15s..."
-  sleep 15
-done
 
 SEAWEEDFS_OK=false
 for attempt in 1 2 3 4 5; do
-  if helm upgrade --install seaweedfs seaweedfs/seaweedfs \
+  if helm upgrade --install seaweedfs "$(chart seaweedfs)" \
     --force-conflicts \
     --namespace storage \
     --create-namespace \
@@ -97,13 +94,6 @@ echo "SeaweedFS installed"
 # OpenBao (Secret Management)
 #=========================================
 echo "=== Installing OpenBao ==="
-for attempt in 1 2 3 4 5; do
-  if helm repo add openbao https://openbao.github.io/openbao-helm && helm repo update openbao; then
-    break
-  fi
-  echo "Helm repo openbao attempt ${attempt}/5 failed, waiting 15s..."
-  sleep 15
-done
 
 # OpenBao runs a TLS listener (raft storage). The server cert MUST exist before the
 # pod starts, otherwise it crash-loops on missing tls_cert_file. Issue it from the
@@ -195,7 +185,7 @@ EOF
 
 OPENBAO_OK=false
 for attempt in 1 2 3 4 5; do
-  if helm upgrade --install openbao openbao/openbao \
+  if helm upgrade --install openbao "$(chart openbao)" \
     --force-conflicts \
     --namespace storage \
     --create-namespace \
@@ -296,13 +286,6 @@ echo "OpenBao installed"
 # Velero (Backup & Restore)
 #=========================================
 echo "=== Installing Velero ==="
-for attempt in 1 2 3 4 5; do
-  if helm repo add vmware-tanzu https://vmware-tanzu.github.io/helm-charts && helm repo update vmware-tanzu; then
-    break
-  fi
-  echo "Helm repo vmware-tanzu attempt ${attempt}/5 failed, waiting 15s..."
-  sleep 15
-done
 
 # S3 credentials — prefer environment overrides, fall back to Secret or defaults
 S3_ACCESS_KEY="${S3_ACCESS_KEY:-$(kubectl get secret velero-s3-credentials -n storage \
@@ -377,7 +360,7 @@ EOF
 
 VELERO_OK=false
 for attempt in 1 2 3 4 5; do
-  if helm upgrade --install velero vmware-tanzu/velero \
+  if helm upgrade --install velero "$(chart velero)" \
     --force-conflicts \
     --namespace storage \
     --create-namespace \

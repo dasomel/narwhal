@@ -1,5 +1,9 @@
 #!/bin/bash
 set -euo pipefail
+
+# Charts come from the airgap bundle, never a public repository.
+# shellcheck source=/dev/null
+source /home/vagrant/scripts/common/lib-charts.sh
 # shellcheck source=scripts/common/lib.sh
 source /home/vagrant/scripts/common/lib.sh
 
@@ -25,8 +29,6 @@ done
 kubectl create namespace devtools --dry-run=client -o yaml | kubectl apply -f -
 
 # Add Gitea Helm repo
-helm repo add gitea-charts https://dl.gitea.com/charts/
-helm repo update
 
 # Wait for unified PostgreSQL cluster (narwhal-db) to be ready
 echo "Waiting for PostgreSQL (narwhal-db) to be ready..."
@@ -64,7 +66,7 @@ GITEA_DB_PASS=$(kubectl get secret narwhal-db-credentials -n database \
 # server. Re-enable valkey (with a non-Bitnami image) only if gitea goes HA.
 GITEA_CHART_VERSION="${GITEA_CHART_VERSION:-12.6.0}"
 
-helm upgrade --install gitea gitea-charts/gitea \
+helm upgrade --install gitea "$(chart gitea)" \
   --force-conflicts \
   --namespace devtools \
   --version "${GITEA_CHART_VERSION}" \

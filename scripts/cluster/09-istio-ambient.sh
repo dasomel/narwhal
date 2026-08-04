@@ -1,6 +1,10 @@
 #!/bin/bash
 set -euo pipefail
 
+# Charts come from the airgap bundle, never a public repository.
+# shellcheck source=/dev/null
+source /home/vagrant/scripts/common/lib-charts.sh
+
 echo "=== Installing Istio Ambient Mesh ==="
 
 ISTIO_VERSION="${ISTIO_VERSION:-1.30.1}"
@@ -29,14 +33,12 @@ kubectl create namespace istio-system --dry-run=client -o yaml | kubectl apply -
 #=========================================
 # Add Istio Helm repo
 #=========================================
-helm repo add istio https://istio-release.storage.googleapis.com/charts
-helm repo update istio
 
 #=========================================
 # 1) istio-base (CRDs)
 #=========================================
 echo "Installing istio-base (CRDs)..."
-helm upgrade --install istio-base istio/base \
+helm upgrade --install istio-base "$(chart base)" \
   --force-conflicts \
   --namespace istio-system \
   --version "${ISTIO_VERSION}" \
@@ -105,7 +107,7 @@ affinity:
           topologyKey: kubernetes.io/hostname
 EOF
 
-helm upgrade --install istiod istio/istiod \
+helm upgrade --install istiod "$(chart istiod)" \
   --force-conflicts \
   --namespace istio-system \
   --version "${ISTIO_VERSION}" \
@@ -143,7 +145,7 @@ tolerations:
     effect: NoSchedule
 EOF
 
-helm upgrade --install istio-cni istio/cni \
+helm upgrade --install istio-cni "$(chart cni)" \
   --force-conflicts \
   --namespace istio-system \
   --version "${ISTIO_VERSION}" \
@@ -180,7 +182,7 @@ tolerations:
     effect: NoSchedule
 EOF
 
-helm upgrade --install ztunnel istio/ztunnel \
+helm upgrade --install ztunnel "$(chart ztunnel)" \
   --force-conflicts \
   --namespace istio-system \
   --version "${ISTIO_VERSION}" \

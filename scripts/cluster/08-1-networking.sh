@@ -1,6 +1,10 @@
 #!/bin/bash
 set -euo pipefail
 
+# Charts come from the airgap bundle, never a public repository.
+# shellcheck source=/dev/null
+source /home/vagrant/scripts/common/lib-charts.sh
+
 echo "=== Installing Networking Apps (MetalLB, APISIX, cert-manager) ==="
 
 export KUBECONFIG=/home/vagrant/.kube/config-local
@@ -14,17 +18,10 @@ if [ "${PROVIDER:-vagrant}" = "kakao" ]; then
   echo "PROVIDER=kakao: skipping MetalLB (Kakao worker LB fronts APISIX via NodePort)"
 else
 echo "=== Installing MetalLB ==="
-for attempt in 1 2 3 4 5; do
-  if helm repo add metallb https://metallb.github.io/metallb && helm repo update metallb; then
-    break
-  fi
-  echo "Helm repo metallb attempt ${attempt}/5 failed, waiting 15s..."
-  sleep 15
-done
 
 METALLB_OK=false
 for attempt in 1 2 3 4 5; do
-  if helm upgrade --install metallb metallb/metallb \
+  if helm upgrade --install metallb "$(chart metallb)" \
     --force-conflicts \
     --namespace platform-system \
     --create-namespace \
@@ -75,13 +72,6 @@ fi  # end MetalLB (Vagrant only)
 #=========================================
 echo "=== Installing APISIX ==="
 
-for attempt in 1 2 3 4 5; do
-  if helm repo add apisix https://charts.apiseven.com && helm repo update apisix; then
-    break
-  fi
-  echo "Helm repo apisix attempt ${attempt}/5 failed, waiting 15s..."
-  sleep 15
-done
 
 # Install APISIX CRDs with server-side apply to avoid field manager conflicts
 echo "Applying APISIX CRDs (from apisix-ingress-controller chart)..."
@@ -182,7 +172,7 @@ EOF
 
 APISIX_OK=false
 for attempt in 1 2 3 4 5; do
-  if helm upgrade --install apisix apisix/apisix \
+  if helm upgrade --install apisix "$(chart apisix)" \
     --force-conflicts \
     --namespace platform-system \
     --create-namespace \
@@ -311,7 +301,7 @@ kubectl create secret generic apisix-admin-key \
 
 APISIX_INGRESS_CONTROLLER_OK=false
 for attempt in 1 2 3 4 5; do
-  if helm upgrade --install apisix-ingress-controller apisix/apisix-ingress-controller \
+  if helm upgrade --install apisix-ingress-controller "$(chart apisix-ingress-controller)" \
     --force-conflicts \
     --namespace platform-system \
     --version 0.14.1 \
@@ -350,17 +340,10 @@ echo "APISIX ingress controller installed"
 # cert-manager
 #=========================================
 echo "=== Installing cert-manager ==="
-for attempt in 1 2 3 4 5; do
-  if helm repo add jetstack https://charts.jetstack.io && helm repo update jetstack; then
-    break
-  fi
-  echo "Helm repo jetstack attempt ${attempt}/5 failed, waiting 15s..."
-  sleep 15
-done
 
 CERT_MANAGER_OK=false
 for attempt in 1 2 3 4 5; do
-  if helm upgrade --install cert-manager jetstack/cert-manager \
+  if helm upgrade --install cert-manager "$(chart cert-manager)" \
     --force-conflicts \
     --namespace platform-system \
     --create-namespace \

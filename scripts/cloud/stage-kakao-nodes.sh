@@ -22,6 +22,10 @@ set -euo pipefail
 # — the app never renders. Vagrant never hits this because it mounts, not tars.
 export COPYFILE_DISABLE=1
 
+# Chart tarballs from the airgap bundle, picked per node architecture like the images are.
+BUNDLE_ARCH="${BUNDLE_ARCH:-amd64}"
+CHART_SRC="${CHART_SRC:-narwhal-airgap-bundle-${BUNDLE_ARCH}/charts}"
+
 TF_DIR="${TF_DIR:-csp/kakao-cloud/terraform}"
 SSH_USER="${NODE_SSH_USER:-ubuntu}"
 # Where the scripts think they live. Deliberately /home/vagrant even though the login
@@ -141,6 +145,19 @@ for ip in "${NODES[@]}"; do
   push_dir "${ip}" "configs" "${STAGE_DIR}/configs"
   # gitops/ nests inside configs/ on the node, matching the third synced_folder.
   tar czf - -C . gitops | ssh_node "${ip}" "tar xzf - -C '${STAGE_DIR}/configs'"
+
+  # Helm charts from the airgap bundle. Only 4.2 MB, so every node gets them rather than
+  # just master-1 — a stage that runs elsewhere later then needs no special case.
+  #
+  # Until now the bundle carried these and nothing read them: every script did
+  # `helm repo add <public url>`, so an "airgap" install still needed the internet for
+  # every chart. scripts/common/lib-charts.sh resolves them from here instead.
+  if [ -d "${CHART_SRC}" ]; then
+    tar czf - -C "$(dirname "${CHART_SRC}")" "$(basename "${CHART_SRC}")" \
+      | ssh_node "${ip}" "rm -rf '${STAGE_DIR}/charts' && tar xzf - -C '${STAGE_DIR}' && ls '${STAGE_DIR}/charts' | wc -l | xargs echo '  charts staged:'"
+  else
+    echo "  WARN: ${CHART_SRC} not found — charts NOT staged, helm installs will fail" >&2
+  fi
 
   # Belt and braces: COPYFILE_DISABLE covers bsdtar, this covers anything already
   # there from an earlier run.

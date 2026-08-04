@@ -1,6 +1,10 @@
 #!/bin/bash
 set -euo pipefail
 
+# Charts come from the airgap bundle, never a public repository.
+# shellcheck source=/dev/null
+source /home/vagrant/scripts/common/lib-charts.sh
+
 CNI_PLUGIN="${CNI_PLUGIN:-cilium}"
 CILIUM_VERSION="${CILIUM_VERSION:-1.19.4}"
 CILIUM_CLI_VERSION="${CILIUM_CLI_VERSION:-v0.19.4}"
@@ -87,7 +91,14 @@ case "${CNI_PLUGIN}" in
         echo "  Cilium DaemonSet already present — skipping install"
         return 0
       fi
+      # --chart-directory, not the default --repository https://helm.cilium.io. The bundle
+      # has carried cilium-${CILIUM_VERSION}.tgz all along and the CLI was fetching over
+      # the internet anyway; on a real airgap that is not slow, it is impossible.
+      local_chart=$(chart cilium) || return 1
+      rm -rf /tmp/cilium-chart && mkdir -p /tmp/cilium-chart
+      tar xzf "${local_chart}" -C /tmp/cilium-chart
       cilium install --version "${CILIUM_VERSION}" \
+      --chart-directory /tmp/cilium-chart/cilium \
       --set kubeProxyReplacement=true \
       --set k8sServiceHost="${K8S_API_SERVER}" \
       --set k8sServicePort=6443 \

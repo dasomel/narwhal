@@ -1,6 +1,10 @@
 #!/bin/bash
 set -euo pipefail
 
+# Charts come from the airgap bundle, never a public repository.
+# shellcheck source=/dev/null
+source /home/vagrant/scripts/common/lib-charts.sh
+
 echo "=== Installing Security Apps (Kyverno, Headlamp) ==="
 
 DOMAIN="${DOMAIN:-local.narwhal.internal}"
@@ -10,13 +14,6 @@ export KUBECONFIG=/home/vagrant/.kube/config-local
 # Kyverno (Policy Management)
 #=========================================
 echo "=== Installing Kyverno ==="
-for attempt in 1 2 3 4 5; do
-  if helm repo add kyverno https://kyverno.github.io/kyverno/ && helm repo update kyverno; then
-    break
-  fi
-  echo "Helm repo kyverno attempt ${attempt}/5 failed, waiting 15s..."
-  sleep 15
-done
 
 cat > /tmp/kyverno-values.yaml << 'EOF'
 admissionController:
@@ -46,7 +43,7 @@ EOF
 
 KYVERNO_OK=false
 for attempt in 1 2 3 4 5; do
-  if helm upgrade --install kyverno kyverno/kyverno \
+  if helm upgrade --install kyverno "$(chart kyverno)" \
     --force-conflicts \
     --namespace platform-system \
     --create-namespace \
@@ -70,13 +67,6 @@ echo "Kyverno installed"
 # Headlamp (Kubernetes UI)
 #=========================================
 echo "=== Installing Headlamp ==="
-for attempt in 1 2 3 4 5; do
-  if helm repo add headlamp https://kubernetes-sigs.github.io/headlamp/ && helm repo update headlamp; then
-    break
-  fi
-  echo "Helm repo headlamp attempt ${attempt}/5 failed, waiting 15s..."
-  sleep 15
-done
 
 cat > /tmp/headlamp-values.yaml << EOF
 config:
@@ -117,7 +107,7 @@ EOF
 
 HEADLAMP_OK=false
 for attempt in 1 2 3 4 5; do
-  if helm upgrade --install headlamp headlamp/headlamp \
+  if helm upgrade --install headlamp "$(chart headlamp)" \
     --force-conflicts \
     --namespace devtools \
     --create-namespace \

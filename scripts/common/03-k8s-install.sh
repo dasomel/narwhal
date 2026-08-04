@@ -46,7 +46,12 @@ echo "deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.
 # without it, a node that already picked up a newer patch refuses to move back to the
 # pinned one and the fleet ends up mixed.
 retry sudo apt-get update
-K8S_APT_VERSION="$(apt-cache madison kubelet | awk -v v="${K8S_PATCH_VERSION}-" '$3 ~ "^"v {print $3; exit}')"
+# No `exit` inside the awk and no `head` after it: either closes the pipe while
+# apt-cache is still writing, apt-cache takes SIGPIPE, and `set -o pipefail` turns that
+# into a script-killing failure before any of the error handling below can run. The
+# first version of this line did exactly that and every node died here with no message
+# at all — see the CLAUDE.md rule about pipefail and early-closing pipes.
+K8S_APT_VERSION="$(apt-cache madison kubelet 2>/dev/null | awk -v v="${K8S_PATCH_VERSION}-" '$3 ~ "^"v && !seen {print $3; seen=1}')"
 if [ -z "${K8S_APT_VERSION}" ]; then
   echo "ERROR: kubelet ${K8S_PATCH_VERSION} not offered by the v${K8S_VERSION} APT repo." >&2
   echo "       Available:" >&2

@@ -1,5 +1,9 @@
 #!/bin/bash
 set -euo pipefail
+
+# Manifests come from the airgap bundle.
+# shellcheck source=/dev/null
+source /home/vagrant/scripts/common/lib-charts.sh
 source /home/vagrant/scripts/common/lib.sh
 
 # 11-keycloak.sh
@@ -95,14 +99,13 @@ fi
 #=========================================
 echo "=== Installing Keycloak Operator ${KEYCLOAK_VERSION} ==="
 
-KC_BASE="https://raw.githubusercontent.com/keycloak/keycloak-k8s-resources/refs/tags/${KEYCLOAK_VERSION}/kubernetes"
 
 # 1. CRDs (cluster-scoped, no namespace)
-curl -sSL "${KC_BASE}/keycloaks.k8s.keycloak.org-v1.yml" | kubectl apply -f -
-curl -sSL "${KC_BASE}/keycloakrealmimports.k8s.keycloak.org-v1.yml" | kubectl apply -f -
+kubectl apply -f "$(manifest keycloak-keycloaks.k8s.keycloak.org-v1.yml)"
+kubectl apply -f "$(manifest keycloak-keycloakrealmimports.k8s.keycloak.org-v1.yml)"
 
 # 2. Operator RBAC + Deployment (namespaced to iam)
-curl -sSL "${KC_BASE}/kubernetes.yml" | kubectl apply -n iam -f -
+kubectl apply -n iam -f "$(manifest keycloak-kubernetes.yml)"
 
 echo "Waiting for Keycloak Operator deployment..."
 kubectl rollout status deployment/keycloak-operator -n iam --timeout=180s

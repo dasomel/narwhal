@@ -185,7 +185,7 @@ Vagrant.configure("2") do |config|
           "AIRGAP_REGISTRY" => AIRGAP_REGISTRY
         }
       master.vm.provision "shell", path: "scripts/common/02-containerd.sh",
-        env: { "DOMAIN" => BASE_DOMAIN, "AIRGAP" => AIRGAP }
+        env: { "DOMAIN" => BASE_DOMAIN, "AIRGAP" => AIRGAP, "AIRGAP_REGISTRY" => AIRGAP_REGISTRY }
       master.vm.provision "shell", path: "scripts/common/03-k8s-install.sh",
         env: { "K8S_VERSION" => K8S_VERSION, "K8S_PATCH_VERSION" => K8S_PATCH_VERSION, "DOMAIN" => BASE_DOMAIN, "AIRGAP" => AIRGAP }
       master.vm.provision "shell", path: "scripts/common/06-boot-heal-install.sh"
@@ -307,7 +307,7 @@ Vagrant.configure("2") do |config|
           "AIRGAP_REGISTRY" => AIRGAP_REGISTRY
         }
       worker.vm.provision "shell", path: "scripts/common/02-containerd.sh",
-        env: { "DOMAIN" => BASE_DOMAIN, "AIRGAP" => AIRGAP }
+        env: { "DOMAIN" => BASE_DOMAIN, "AIRGAP" => AIRGAP, "AIRGAP_REGISTRY" => AIRGAP_REGISTRY }
       worker.vm.provision "shell", path: "scripts/common/03-k8s-install.sh",
         env: { "K8S_VERSION" => K8S_VERSION, "K8S_PATCH_VERSION" => K8S_PATCH_VERSION, "DOMAIN" => BASE_DOMAIN, "AIRGAP" => AIRGAP }
       worker.vm.provision "shell", path: "scripts/common/06-boot-heal-install.sh"

@@ -1,6 +1,10 @@
 #!/bin/bash
 set -euo pipefail
 
+# Charts come from the airgap bundle.
+# shellcheck source=/dev/null
+source /home/vagrant/scripts/common/lib-charts.sh
+
 # Same retry() as 03-k8s-install.sh and 03-cni-install.sh. These downloads cross the
 # bastion proxy to a public CDN and fail transiently; without a retry one flaky fetch
 # fails the whole stage.
@@ -42,10 +46,9 @@ CHART_DIR="/tmp/nfs-quota-agent-chart"
 rm -rf "${CHART_DIR}"
 
 echo "Downloading Helm chart..."
-retry curl -sL https://github.com/dasomel/nfs-quota-agent/archive/refs/heads/main.tar.gz | \
-  tar -xz -C /tmp
-mv /tmp/nfs-quota-agent-main/charts/nfs-quota-agent "${CHART_DIR}"
-rm -rf /tmp/nfs-quota-agent-main
+rm -rf "${CHART_DIR}"
+mkdir -p "$(dirname "${CHART_DIR}")"
+tar xzf "$(chart nfs-quota-agent)" -C "$(dirname "${CHART_DIR}")"
 
 # Create namespace
 kubectl create namespace nfs-quota-agent --dry-run=client -o yaml | kubectl apply -f -

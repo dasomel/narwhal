@@ -118,4 +118,23 @@ sudo systemctl daemon-reload
 sudo systemctl restart containerd
 sudo systemctl enable containerd
 
+#=========================================
+# AIRGAP: point containerd at the mirror registry.
+#
+# Here, and not later, because the first thing that pulls an image is `kubeadm init` in
+# 02-init-cluster.sh — by then the mirror has to already exist or the pull goes upstream
+# and an isolated node just fails. --local-only configures the node this runs on, which is
+# what makes it work as a provisioner step: every node does itself as it comes up, with no
+# node-to-node SSH and no ordering between them.
+#
+# 06 rewrites the config.toml path and drops a hosts.toml per upstream registry, so the
+# image references in manifests and charts stay untouched — the redirect is at the
+# containerd level, which is why no chart or tag had to be rewritten for airgap.
+#=========================================
+if [ "${AIRGAP:-0}" = "1" ]; then
+  echo "=== AIRGAP: configuring containerd mirrors ==="
+  AIRGAP_REGISTRY="${AIRGAP_REGISTRY:-192.168.56.1:5001}" \
+    bash /home/vagrant/scripts/airgap/06-configure-mirrors.sh --local-only
+fi
+
 echo "=== containerd Done ==="

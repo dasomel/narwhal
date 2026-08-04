@@ -152,6 +152,18 @@ for ip in "${NODES[@]}"; do
   # Until now the bundle carried these and nothing read them: every script did
   # `helm repo add <public url>`, so an "airgap" install still needed the internet for
   # every chart. scripts/common/lib-charts.sh resolves them from here instead.
+  # Binaries and manifests ride along with the charts: helm, cilium, hubble and yq, plus
+  # the ten YAML files the scripts used to apply straight off raw.githubusercontent.com.
+  for extra in bin manifests; do
+    src="$(dirname "${CHART_SRC}")/${extra}"
+    if [ -d "${src}" ]; then
+      tar czf - -C "$(dirname "${src}")" "${extra}" \
+        | ssh_node "${ip}" "rm -rf '${STAGE_DIR}/${extra}' && tar xzf - -C '${STAGE_DIR}' && ls '${STAGE_DIR}/${extra}' | wc -l | xargs echo '  ${extra} staged:'"
+    else
+      echo "  WARN: ${src} not found — run scripts/airgap/07-save-binaries.sh" >&2
+    fi
+  done
+
   if [ -d "${CHART_SRC}" ]; then
     tar czf - -C "$(dirname "${CHART_SRC}")" "$(basename "${CHART_SRC}")" \
       | ssh_node "${ip}" "rm -rf '${STAGE_DIR}/charts' && tar xzf - -C '${STAGE_DIR}' && ls '${STAGE_DIR}/charts' | wc -l | xargs echo '  charts staged:'"

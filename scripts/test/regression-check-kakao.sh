@@ -79,11 +79,12 @@ run_static() {
   # 2026-07-30: nothing installed yq, which three scripts edit manifests with. The
   # Vagrant box ships it, so the gap only appears on a plain cloud image — and it
   # appears AFTER a successful kubeadm init, which reads as a cluster-level failure.
-  # Matches the download line, not any mention: `mikefarah/yq` also appears in this file's
-  # comments and error strings, so a looser grep passed even with the install code deleted.
-  # A check satisfied by a comment about the fix is not checking the fix.
+  # yq now comes from the airgap bundle rather than a GitHub download, so this matches the
+  # install call rather than the URL. Matches an executable line, not a mention: the
+  # earlier version grepped for `mikefarah/yq`, which also appears in this file's comments,
+  # and passed even with the install code deleted.
   check R21 "01-prerequisites installs yq (2026-07-30)" \
-    grep -qE '^[^#]*mikefarah/yq/releases/download' scripts/common/01-prerequisites.sh
+    grep -qE '^[^#]*install_bin yq' scripts/common/01-prerequisites.sh
 
   # Every tool the scripts drive manifests with has to be installed by something in
   # scripts/, not inherited from a pre-baked box. This catches the NEXT one, not just yq.
@@ -228,6 +229,18 @@ run_static() {
   else
     warn R27 "fetches from a public host with no retry(): ${unguarded}"
   fi
+
+  # 2026-08-04: the whole point of the airgap work. If any of these reappear the install
+  # silently needs the internet again, which only shows up as flakiness until the day the
+  # network is genuinely closed.
+  check_not R28 "no public helm repos in the install path (2026-08-04)" \
+    grep -rqE '^[^#]*helm repo add' scripts/cluster/
+
+  check_not R29 "no internet fetches in the default install path (2026-08-04)" \
+    grep -rqE '^[^#]*(curl|wget|kubectl apply -f)[^#]*https://(get\.helm\.sh|raw\.githubusercontent\.com|github\.com/(cilium|kubernetes-sigs|argoproj|keycloak|mikefarah|dasomel))' \
+      scripts/cluster/03-cni-install.sh scripts/cluster/04-addons.sh \
+      scripts/cluster/05-nfs-quota-agent.sh scripts/cluster/11-keycloak.sh \
+      scripts/cluster/13-argocd.sh scripts/common/01-prerequisites.sh
 
   # bastion.tf must be tracked — a blanket csp/ gitignore once hid it from fresh clones.
   check R18 "bastion.tf is tracked by git" \

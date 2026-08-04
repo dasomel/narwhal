@@ -40,29 +40,22 @@ case "${CNI_PLUGIN}" in
   cilium)
     # Install Helm
     HELM_VERSION="v4.2.1"
-    install_helm() {
-      curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 \
-        | DESIRED_VERSION="${HELM_VERSION}" bash
-    }
-    retry install_helm
+    install_bin helm
 
     # Install Cilium CLI
     ARCH=$(uname -m)
     if [ "$ARCH" = "x86_64" ]; then ARCH="amd64"; fi
     if [ "$ARCH" = "aarch64" ]; then ARCH="arm64"; fi
 
-    retry curl -L --fail --remote-name-all \
-      "https://github.com/cilium/cilium-cli/releases/download/${CILIUM_CLI_VERSION}/cilium-linux-${ARCH}.tar.gz"
-    sudo tar xzvfC "cilium-linux-${ARCH}.tar.gz" /usr/local/bin
-    rm "cilium-linux-${ARCH}.tar.gz"
+    install_bin cilium
 
     # Install Gateway API CRDs (used by APISIX Gateway Controller, Cilium provides network-level support)
     echo "Installing Gateway API CRDs..."
-    retry kubectl apply -f https://raw.githubusercontent.com/kubernetes-sigs/gateway-api/v1.5.1/config/crd/standard/gateway.networking.k8s.io_gatewayclasses.yaml
-    retry kubectl apply -f https://raw.githubusercontent.com/kubernetes-sigs/gateway-api/v1.5.1/config/crd/standard/gateway.networking.k8s.io_gateways.yaml
-    retry kubectl apply -f https://raw.githubusercontent.com/kubernetes-sigs/gateway-api/v1.5.1/config/crd/standard/gateway.networking.k8s.io_httproutes.yaml
-    retry kubectl apply -f https://raw.githubusercontent.com/kubernetes-sigs/gateway-api/v1.5.1/config/crd/standard/gateway.networking.k8s.io_referencegrants.yaml
-    retry kubectl apply -f https://raw.githubusercontent.com/kubernetes-sigs/gateway-api/v1.5.1/config/crd/standard/gateway.networking.k8s.io_grpcroutes.yaml
+    kubectl apply -f "$(manifest gateway-api-gatewayclasses.yaml)"
+    kubectl apply -f "$(manifest gateway-api-gateways.yaml)"
+    kubectl apply -f "$(manifest gateway-api-httproutes.yaml)"
+    kubectl apply -f "$(manifest gateway-api-referencegrants.yaml)"
+    kubectl apply -f "$(manifest gateway-api-grpcroutes.yaml)"
 
     # Install Cilium with kube-proxy replacement, Hubble, and Gateway API CRD awareness
     # Note: APISIX is the actual Gateway Controller (GatewayClass: apisix)
@@ -137,22 +130,20 @@ case "${CNI_PLUGIN}" in
 
     # Install Hubble CLI
     HUBBLE_CLI_VERSION="${HUBBLE_CLI_VERSION:-v1.19.4}"
-    curl -L --fail --remote-name-all \
-      "https://github.com/cilium/hubble/releases/download/${HUBBLE_CLI_VERSION}/hubble-linux-${ARCH}.tar.gz"
-    sudo tar xzvfC "hubble-linux-${ARCH}.tar.gz" /usr/local/bin
-    rm "hubble-linux-${ARCH}.tar.gz"
+    install_bin hubble
 
     echo "Hubble CLI installed: ${HUBBLE_CLI_VERSION}"
     ;;
 
-  calico)
-    echo "Installing Calico ${CALICO_VERSION}..."
-    kubectl apply -f "https://raw.githubusercontent.com/projectcalico/calico/${CALICO_VERSION}/manifests/calico.yaml"
-    ;;
-
-  flannel)
-    echo "Installing Flannel..."
-    kubectl apply -f https://github.com/flannel-io/flannel/releases/latest/download/kube-flannel.yml
+  calico|flannel)
+    # Nothing sets CNI_PLUGIN to either of these, and the airgap bundle carries only the
+    # Cilium chart and images. Both branches applied a manifest straight off the internet,
+    # which on a closed network fails after the cluster is already half-built. Refusing up
+    # front is the honest behaviour; supporting them means bundling their artefacts too.
+    echo "ERROR: CNI_PLUGIN=${CNI_PLUGIN} is not available in an airgap install." >&2
+    echo "       Only cilium is bundled (chart, images and CLI). Supporting ${CNI_PLUGIN}" >&2
+    echo "       means adding its chart/manifests to scripts/airgap/ first." >&2
+    exit 1
     ;;
 
   *)

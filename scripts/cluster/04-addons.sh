@@ -36,11 +36,7 @@ export KUBECONFIG=/home/vagrant/.kube/config-local
 # Install Helm if not installed
 HELM_VERSION="v4.2.1"
 if ! command -v helm &> /dev/null; then
-  install_helm() {
-    curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 \
-      | DESIRED_VERSION="${HELM_VERSION}" bash
-  }
-  retry install_helm
+  install_bin helm
 fi
 
 #=========================================
@@ -48,7 +44,7 @@ fi
 #=========================================
 echo "=== Installing Metrics Server ${METRICS_SERVER_VERSION} ==="
 
-kubectl apply -f "https://github.com/kubernetes-sigs/metrics-server/releases/download/${METRICS_SERVER_VERSION}/components.yaml"
+kubectl apply -f "$(manifest metrics-server.yaml)"
 
 # D10: Apply insecure-TLS + probe-loosening in a SINGLE patch so metrics-server rolls
 # out exactly ONE new ReplicaSet (two separate patches created two rollouts, leaving a

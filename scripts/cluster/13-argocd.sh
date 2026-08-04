@@ -1,6 +1,10 @@
 #!/bin/bash
 set -euo pipefail
 
+# Manifests come from the airgap bundle.
+# shellcheck source=/dev/null
+source /home/vagrant/scripts/common/lib-charts.sh
+
 ARGOCD_VERSION="${ARGOCD_VERSION:-v3.4.4}"
 DOMAIN="${DOMAIN:-local.narwhal.internal}"
 
@@ -27,7 +31,7 @@ kubectl create namespace devtools --dry-run=client -o yaml | kubectl apply -f -
 kubectl label namespace devtools istio.io/dataplane-mode=ambient --overwrite
 
 # Install ArgoCD (server-side apply for large CRDs like applicationsets)
-kubectl apply -n devtools -f "https://raw.githubusercontent.com/argoproj/argo-cd/${ARGOCD_VERSION}/manifests/install.yaml" \
+kubectl apply -n devtools -f "$(manifest argocd-install.yaml)" \
   --server-side --force-conflicts
 
 # Fix ClusterRoleBindings: ArgoCD is installed in devtools, not argocd namespace

@@ -49,3 +49,32 @@ chart() {
 
   printf '%s' "${match}"
 }
+
+# ── Binaries and manifests from the same bundle ────────────────────────────────
+# Same rule as charts: resolve locally, fail loudly, never fall back to the internet.
+
+NARWHAL_BIN_DIR="${NARWHAL_BIN_DIR:-/home/vagrant/bin}"
+NARWHAL_MANIFEST_DIR="${NARWHAL_MANIFEST_DIR:-/home/vagrant/manifests}"
+
+# install_bin <name> [dest] — put a bundled binary on PATH.
+install_bin() {
+  local name="$1" dest="${2:-/usr/local/bin/$1}"
+  if [ ! -x "${NARWHAL_BIN_DIR}/${name}" ]; then
+    echo "ERROR: '${name}' is not in ${NARWHAL_BIN_DIR}" >&2
+    echo "       This install does not download binaries — run" >&2
+    echo "       scripts/airgap/07-save-binaries.sh and re-stage." >&2
+    return 1
+  fi
+  sudo install -m 0755 "${NARWHAL_BIN_DIR}/${name}" "${dest}"
+}
+
+# manifest <name> — print the path of a bundled manifest, or fail loudly.
+manifest() {
+  local name="$1"
+  if [ ! -f "${NARWHAL_MANIFEST_DIR}/${name}" ]; then
+    echo "ERROR: manifest '${name}' is not in ${NARWHAL_MANIFEST_DIR}" >&2
+    echo "       Run scripts/airgap/07-save-binaries.sh and re-stage." >&2
+    return 1
+  fi
+  printf '%s' "${NARWHAL_MANIFEST_DIR}/${name}"
+}

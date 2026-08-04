@@ -146,6 +146,17 @@ metadata:
     app.kubernetes.io/name: argocd-cm
     app.kubernetes.io/part-of: argocd
 data:
+  # 13-2-narwhal-portal-bindings.sh issues the portal's API token against this local
+  # account, and its header comment has always claimed this script creates it — it did
+  # not. The only declaration lived in the GitOps chart
+  # (gitops/charts/narwhal-platform/templates/argocd-config.yaml), which ArgoCD does not
+  # apply until 14-gitops-bootstrap.sh, one step LATER than the script that needs it. So
+  # on every clean install the token endpoint answered
+  # "account 'narwhal-portal' does not exist" and 13-2 fell back to a placeholder. It only
+  # ever worked when someone re-ran 13-2 by hand after GitOps had caught up, which is why
+  # it looked like a timing problem and got "fixed" twice by waiting longer.
+  # Value must stay identical to the chart's, so the later GitOps sync is a no-op.
+  accounts.narwhal-portal: apiKey,login
   url: https://argocd.${DOMAIN}
   server.insecure: "true"
   oidc.tls.insecure.skip.verify: "true"

@@ -92,7 +92,11 @@ run_static() {
     grep -rqlE "(^|[^-])\b${tool} " scripts/cluster/ scripts/common/ 2>/dev/null || continue
     # Search all of scripts/, not just common/: helm is fetched on demand by
     # 03-cni-install.sh and 04-addons.sh, which is a legitimate place to install it.
-    grep -rqE "install.*${tool}|${tool}_linux|${tool}/releases/download|get-${tool}" \
+    # `${tool}=` catches the version-pinned apt form, and `apt-mark hold` catches a tool
+    # the scripts deliberately freeze. Matching only `install.*${tool}` made this cry wolf
+    # the moment 03-k8s-install.sh switched to pinning kubectl — and a warning that is
+    # wrong once gets ignored the next time it is right.
+    grep -rqE "install.*${tool}|${tool}=|apt-mark hold.*${tool}|${tool}_linux|${tool}/releases/download|get-${tool}" \
       scripts/ 2>/dev/null || missing_tools="${missing_tools}${tool} "
   done
   if [ -z "${missing_tools}" ]; then

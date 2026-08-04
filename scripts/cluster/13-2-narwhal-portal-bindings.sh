@@ -319,9 +319,14 @@ if [ -n "${ARGOCD_ADMIN_PASS}" ]; then
   kubectl -n devtools rollout status deploy/argocd-server --timeout=300s || \
     echo "  WARN: argocd-server 롤아웃 확인 실패 — 그래도 발급을 시도한다"
 
-  # 30 × 10s (5분). The old 12 × 10s was measured too short on a clean install: the
-  # APISIX route for argocd.${DOMAIN} needs the gateway, its TLS cert and the ingress
-  # reconcile, none of which are done when 13-argocd returns.
+  # 30 × 10s is defensive headroom, NOT the fix — an earlier version of this comment
+  # claimed the window had been "measured too short", which was wrong twice over. The
+  # real failure was deterministic: `accounts.narwhal-portal` did not exist, because its
+  # only declaration lived in a GitOps chart applied at step 14, one step after this
+  # script. The token endpoint answered "account 'narwhal-portal' does not exist" and no
+  # amount of waiting would have changed that. 13-argocd.sh now creates the account, and
+  # this loop is back to covering what a retry loop can actually cover — the ingress
+  # route and TLS cert settling after 13-argocd returns.
   for attempt in $(seq 1 30); do
     ARGOCD_JWT=$(curl -sk --max-time 10 -X POST \
       "https://argocd.${DOMAIN}/api/v1/session" \

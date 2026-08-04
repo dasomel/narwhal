@@ -9,6 +9,24 @@ CALICO_VERSION="${CALICO_VERSION:-v3.31.3}"
 # Cilium kube-proxy replacement (VIP for HA control plane)
 K8S_API_SERVER="${MASTER_IP:-192.168.56.100}"
 
+# Same shape as 03-k8s-install.sh's retry(). Every download below crosses the bastion
+# proxy to a public CDN, and those fail transiently: a clean run died here on
+# `curl: (35) SSL_ERROR_SYSCALL` fetching helm, and probing the same URL five times
+# immediately afterwards gave 1 failure and 4 successes. One flaky fetch was taking the
+# whole init stage — and with it kubeadm's work — down with it.
+retry() {
+  local n=1 max=5
+  until "$@"; do
+    if [ "$n" -ge "$max" ]; then
+      echo "ERROR: command failed after ${max} attempts: $*" >&2
+      return 1
+    fi
+    echo "  attempt ${n}/${max} failed, retrying in 15s..." >&2
+    n=$((n + 1))
+    sleep 15
+  done
+}
+
 echo "=== CNI Plugin Installation: ${CNI_PLUGIN} ==="
 
 # Use local kubeconfig (bypasses VIP) to avoid disruption during master-2 join
@@ -18,14 +36,18 @@ case "${CNI_PLUGIN}" in
   cilium)
     # Install Helm
     HELM_VERSION="v4.2.1"
-    curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | DESIRED_VERSION="${HELM_VERSION}" bash
+    install_helm() {
+      curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 \
+        | DESIRED_VERSION="${HELM_VERSION}" bash
+    }
+    retry install_helm
 
     # Install Cilium CLI
     ARCH=$(uname -m)
     if [ "$ARCH" = "x86_64" ]; then ARCH="amd64"; fi
     if [ "$ARCH" = "aarch64" ]; then ARCH="arm64"; fi
 
-    curl -L --fail --remote-name-all \
+    retry curl -L --fail --remote-name-all \
       "https://github.com/cilium/cilium-cli/releases/download/${CILIUM_CLI_VERSION}/cilium-linux-${ARCH}.tar.gz"
     sudo tar xzvfC "cilium-linux-${ARCH}.tar.gz" /usr/local/bin
     rm "cilium-linux-${ARCH}.tar.gz"

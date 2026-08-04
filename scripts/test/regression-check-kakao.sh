@@ -207,6 +207,28 @@ run_static() {
   check R17 "metallb template gated on provider" \
     grep -q 'ne .Values.provider "kakao"' gitops/charts/narwhal-apps/templates/metallb.yaml
 
+  # 2026-08-04: every download in the provisioning path crosses the bastion proxy to a
+  # public CDN, and those fail transiently — a clean run died on `curl: (35)
+  # SSL_ERROR_SYSCALL` fetching helm, and the same URL then answered 4 times out of 5.
+  # One flaky fetch was failing the whole init stage, discarding a successful kubeadm init.
+  #
+  # Deliberately coarse: "this file fetches from a public host AND defines no retry".
+  # A line-level check flagged files whose curl sits inside a function called via retry —
+  # the third time in this suite that a clever grep produced a false alarm. A check nobody
+  # trusts is worse than a blunt one they do.
+  local unguarded=""
+  local f
+  for f in scripts/cluster/*.sh scripts/common/*.sh; do
+    [ -f "$f" ] || continue
+    grep -qE "^\s*(sudo )?(curl|wget)\s.*https://(get\.|raw\.|github\.com)" "$f" 2>/dev/null || continue
+    grep -q "^retry()" "$f" 2>/dev/null || unguarded="${unguarded}$(basename "$f") "
+  done
+  if [ -z "${unguarded}" ]; then
+    ok R27 "public downloads in the provisioning path are retried (2026-08-04)"
+  else
+    warn R27 "fetches from a public host with no retry(): ${unguarded}"
+  fi
+
   # bastion.tf must be tracked — a blanket csp/ gitignore once hid it from fresh clones.
   check R18 "bastion.tf is tracked by git" \
     git ls-files --error-unmatch "${TF_DIR}/bastion.tf"

@@ -1,6 +1,23 @@
 #!/bin/bash
 set -euo pipefail
 
+# Same retry() as 03-k8s-install.sh and 03-cni-install.sh. These downloads cross the
+# bastion proxy to a public CDN and fail transiently; without a retry one flaky fetch
+# fails the whole stage.
+retry() {
+  local n=1 max=5
+  until "$@"; do
+    if [ "$n" -ge "$max" ]; then
+      echo "ERROR: command failed after ${max} attempts: $*" >&2
+      return 1
+    fi
+    echo "  attempt ${n}/${max} failed, retrying in 15s..." >&2
+    n=$((n + 1))
+    sleep 15
+  done
+}
+
+
 NFS_SHARE_PATH="${NFS_SHARE_PATH:-/srv/nfs/k8s}"
 MASTER_HOSTNAME="${MASTER_HOSTNAME:-narwhal-master}"
 NFS_QUOTA_AGENT_VERSION="${NFS_QUOTA_AGENT_VERSION:-v0.3.0}"
@@ -25,7 +42,7 @@ CHART_DIR="/tmp/nfs-quota-agent-chart"
 rm -rf "${CHART_DIR}"
 
 echo "Downloading Helm chart..."
-curl -sL https://github.com/dasomel/nfs-quota-agent/archive/refs/heads/main.tar.gz | \
+retry curl -sL https://github.com/dasomel/nfs-quota-agent/archive/refs/heads/main.tar.gz | \
   tar -xz -C /tmp
 mv /tmp/nfs-quota-agent-main/charts/nfs-quota-agent "${CHART_DIR}"
 rm -rf /tmp/nfs-quota-agent-main

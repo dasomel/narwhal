@@ -1,6 +1,23 @@
 #!/bin/bash
 set -euo pipefail
 
+# Same retry() as 03-k8s-install.sh and 03-cni-install.sh. These downloads cross the
+# bastion proxy to a public CDN and fail transiently; without a retry one flaky fetch
+# fails the whole stage.
+retry() {
+  local n=1 max=5
+  until "$@"; do
+    if [ "$n" -ge "$max" ]; then
+      echo "ERROR: command failed after ${max} attempts: $*" >&2
+      return 1
+    fi
+    echo "  attempt ${n}/${max} failed, retrying in 15s..." >&2
+    n=$((n + 1))
+    sleep 15
+  done
+}
+
+
 NFS_SERVER_IP="${NFS_SERVER_IP:-192.168.56.10}"
 NFS_SHARE_PATH="${NFS_SHARE_PATH:-/srv/nfs/k8s}"
 
@@ -15,7 +32,11 @@ export KUBECONFIG=/home/vagrant/.kube/config-local
 # Install Helm if not installed
 HELM_VERSION="v4.2.1"
 if ! command -v helm &> /dev/null; then
-  curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | DESIRED_VERSION="${HELM_VERSION}" bash
+  install_helm() {
+    curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 \
+      | DESIRED_VERSION="${HELM_VERSION}" bash
+  }
+  retry install_helm
 fi
 
 #=========================================

@@ -7,6 +7,12 @@ MASTER_IP_BASE="${MASTER_IP_BASE:-192.168.56.1}"
 POD_NETWORK_CIDR="${POD_NETWORK_CIDR:-10.244.0.0/16}"
 SERVICE_CIDR="${SERVICE_CIDR:-10.96.0.0/12}"
 DOMAIN="${DOMAIN:-local.narwhal.internal}"
+# `kubernetesVersion: stable` made kubeadm resolve the version over the internet
+# (dl.k8s.io/release/stable.txt). It fails safe — falls back to the kubeadm binary's own
+# version — so offline it only printed a warning, but it meant the control plane version
+# was decided by a network lookup that nothing pinned. Same value 03-k8s-install.sh pins
+# the packages to, so config and binaries cannot disagree.
+K8S_PATCH_VERSION="${K8S_PATCH_VERSION:-1.35.7}"
 
 # Compute master-1's real IP
 MASTER1_IP="${MASTER_IP_BASE}0"
@@ -86,7 +92,7 @@ sudo chmod 600 /home/vagrant/encryption-config.yaml
 cat <<EOF > /tmp/kubeadm-config.yaml
 apiVersion: kubeadm.k8s.io/v1beta4
 kind: ClusterConfiguration
-kubernetesVersion: stable
+kubernetesVersion: v${K8S_PATCH_VERSION}
 controlPlaneEndpoint: "${VIP_ADDRESS}:6443"
 networking:
   podSubnet: "${POD_NETWORK_CIDR}"
@@ -362,8 +368,18 @@ LOCAL_KUBECONFIG=/home/vagrant/.kube/config-local
 kubeadm token create --print-join-command --kubeconfig "${LOCAL_KUBECONFIG}" > /home/vagrant/join-command.sh
 chmod +x /home/vagrant/join-command.sh
 
-# Generate join command for additional control plane nodes
-CERT_KEY=$(sudo kubeadm init phase upload-certs --upload-certs --kubeconfig "${LOCAL_KUBECONFIG}" | tail -1)
+# Generate join command for additional control plane nodes.
+#
+# --config is not optional. Without it kubeadm builds a default InitConfiguration whose
+# advertiseAddress is empty and infers one from the default route; on an airgapped node
+# there is no default route, so it settles on 0.0.0.0 and then rejects its own choice:
+#   WARNING: could not obtain a bind address for the API Server: no default routes found
+#   error: cannot use "0.0.0.0" as the bind address for the API Server
+# Online this never surfaced because the inference quietly picked the NAT interface — a
+# different address than the one `kubeadm init` was given, and nothing said so. Reading the
+# same config the cluster was initialized with makes the phase deterministic either way.
+CERT_KEY=$(sudo kubeadm init phase upload-certs --upload-certs \
+  --config=/tmp/kubeadm-config.yaml --kubeconfig "${LOCAL_KUBECONFIG}" | tail -1)
 JOIN_CMD=$(kubeadm token create --print-join-command --kubeconfig "${LOCAL_KUBECONFIG}")
 echo "${JOIN_CMD} --control-plane --certificate-key ${CERT_KEY} --ignore-preflight-errors=all" > /home/vagrant/join-control-plane.sh
 chmod +x /home/vagrant/join-control-plane.sh

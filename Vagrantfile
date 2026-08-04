@@ -222,7 +222,8 @@ Vagrant.configure("2") do |config|
             "MASTER_IP_BASE" => MASTER_IP_BASE,
             "POD_NETWORK_CIDR" => POD_NETWORK_CIDR,
             "SERVICE_CIDR" => SERVICE_CIDR,
-            "DOMAIN" => BASE_DOMAIN
+            "DOMAIN" => BASE_DOMAIN,
+            "K8S_PATCH_VERSION" => K8S_PATCH_VERSION
           }
         master.vm.provision "shell", path: "scripts/cluster/03-cni-install.sh",
           env: { "MASTER_IP" => VIP_ADDRESS, "DOMAIN" => BASE_DOMAIN }

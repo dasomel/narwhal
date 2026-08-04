@@ -242,6 +242,14 @@ run_static() {
       scripts/cluster/05-nfs-quota-agent.sh scripts/cluster/11-keycloak.sh \
       scripts/cluster/13-argocd.sh scripts/common/01-prerequisites.sh
 
+  # 2026-08-05: R28/R29 cover charts and curl, but the leak that actually broke the first
+  # offline install was an image pull. `ctr` resolves images itself instead of going
+  # through containerd's CRI plugin, so it ignores /etc/containerd/certs.d and reaches
+  # upstream even on a node whose every other pull is mirrored. Flag any `ctr ... pull`
+  # that does not say where the host config lives.
+  check_not R30 "every ctr image pull passes --hosts-dir (2026-08-05)" \
+    bash -c "grep -rhE '^[^#]*ctr .*pull' scripts/cluster/ scripts/common/ | grep -qv -- '--hosts-dir'"
+
   # bastion.tf must be tracked — a blanket csp/ gitignore once hid it from fresh clones.
   check R18 "bastion.tf is tracked by git" \
     git ls-files --error-unmatch "${TF_DIR}/bastion.tf"

@@ -55,8 +55,44 @@ if [ -z "${K8S_PATCH}" ]; then
 fi
 [ -n "${K8S_PATCH}" ] || { echo "ERROR: could not determine K8S_PATCH_VERSION." >&2; exit 1; }
 
+# Every package the provisioning path installs, minus kubelet/kubeadm/kubectl (fetched
+# below at a pinned version). The first bundle listed only what 01-prerequisites.sh
+# installs, because that is the script the airgap work started from — dnsmasq (04-addons),
+# nfs-kernel-server/quota/quotatool (05-nfs-quota-agent) were all missing, and each one
+# would have surfaced a full run later as `has no installation candidate`. The coverage
+# check below is what makes this list stay honest.
+AIRGAP_APT_PACKAGES="containerd chrony nfs-common jq dnsmasq nfs-kernel-server quota quotatool"
+
+# Fail here rather than 25 minutes into an offline install: scan the provisioning scripts
+# for what they actually apt-get, and refuse to build a bundle that does not cover it.
+# Three things this scan has to survive, each of which silently dropped a package when it
+# did not: `apt-get install` guarded by `dpkg -s x || ...` (so it is not at line start),
+# arguments continued across a backslash newline, and hyphenated names — stripping flags
+# with a `-[a-z]+` regex turns nfs-common into nfs. Match anywhere on non-comment lines,
+# join continuations first, and drop flags by leading `-` rather than by pattern.
+missing=""
+for pkg in $(cat "${SCRIPT_DIR}/../cluster"/*.sh "${SCRIPT_DIR}/../common"/*.sh 2>/dev/null \
+             | grep -v '^[[:space:]]*#' \
+             | sed -e ':a' -e '/\\$/N; s/\\\n/ /; ta' \
+             | grep -hoE 'apt-get install[^|&;]*' \
+             | sed -E 's/.*apt-get install//' | tr -s ' ' '\n' \
+             | grep -vE '^-|[$"={}\\]|^$' \
+             | grep -E '^[a-z][a-z0-9.+-]*$' | sort -u); do
+  case " ${AIRGAP_APT_PACKAGES} kubelet kubeadm kubectl dpkg-dev " in
+    *" ${pkg} "*) ;;
+    *) missing="${missing}${pkg} " ;;
+  esac
+done
+if [ -n "${missing}" ]; then
+  echo "ERROR: the provisioning scripts install packages the bundle would not carry:" >&2
+  echo "         ${missing}" >&2
+  echo "       Add them to AIRGAP_APT_PACKAGES in this script, then rebuild." >&2
+  exit 1
+fi
+
 echo "=== Saving APT packages for the airgap bundle ==="
 echo "  Kubernetes: ${K8S_PATCH}"
+echo "  Packages:   ${AIRGAP_APT_PACKAGES}"
 echo "  Output:     ${OUT}"
 
 mkdir -p "${OUT}"
@@ -81,7 +117,7 @@ command -v dpkg-scanpackages >/dev/null 2>&1 || sudo apt-get install -y -qq dpkg
 sudo apt-get clean
 sudo apt-get install -y --download-only --reinstall \
   "kubelet=\${K8S_APT_VERSION}" "kubeadm=\${K8S_APT_VERSION}" "kubectl=\${K8S_APT_VERSION}" \
-  containerd chrony nfs-common jq
+  ${AIRGAP_APT_PACKAGES}
 
 # --reinstall does not pull dependencies that are already satisfied, and on a provisioned
 # node they all are. Fetch the closure explicitly so an install onto a *fresh* box still
@@ -89,7 +125,7 @@ sudo apt-get install -y --download-only --reinstall \
 # which defeats the point.
 DEPS=\$(apt-cache depends --recurse --no-recommends --no-suggests --no-conflicts \
         --no-breaks --no-replaces --no-enhances \
-        kubelet kubeadm kubectl containerd chrony nfs-common jq 2>/dev/null \
+        kubelet kubeadm kubectl ${AIRGAP_APT_PACKAGES} 2>/dev/null \
         | grep -E '^[a-z0-9]' | sort -u)
 for p in \${DEPS}; do
   sudo apt-get install -y --download-only --reinstall "\$p" >/dev/null 2>&1 || true

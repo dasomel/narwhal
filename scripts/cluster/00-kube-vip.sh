@@ -42,7 +42,14 @@ fi
 #=========================================
 KUBE_VIP_IMAGE="ghcr.io/kube-vip/kube-vip:${KUBE_VIP_VERSION}"
 echo "Pulling kube-vip image: ${KUBE_VIP_IMAGE}"
-sudo ctr image pull "${KUBE_VIP_IMAGE}"
+# --hosts-dir is not optional here. /etc/containerd/certs.d is read by containerd's CRI
+# plugin, so kubelet and crictl pick up the airgap mirror automatically — but `ctr` is a
+# direct client of the content store and resolves images itself, ignoring certs.d unless
+# it is pointed at it. This is the one image pull in the provisioning path that does not
+# go through CRI, so it was also the one that still reached the internet: on an isolated
+# node it failed with `dial tcp 20.200.245.241:443: network is unreachable` while every
+# other pull was already being served from the mirror.
+sudo ctr image pull --hosts-dir /etc/containerd/certs.d "${KUBE_VIP_IMAGE}"
 
 #=========================================
 # Create static Pod manifest

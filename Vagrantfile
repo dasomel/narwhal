@@ -125,8 +125,15 @@ Vagrant.configure("2") do |config|
   # present: a synced_folder pointing at a missing directory is a hard Vagrant error, not
   # a warning.
   airgap_bundle = File.join(__dir__, "narwhal-airgap-bundle-#{AIRGAP_ARCH_SUFFIX}")
+  # /srv, not /home/vagrant: apt drops privileges to the `_apt` user before fetching, and
+  # /home/vagrant is 0750 vagrant:vagrant, so `_apt` cannot traverse into it. apt reports
+  # that as "File not found - /home/vagrant/apt/./Packages" rather than a permission error,
+  # which reads like a missing index and sends you looking for the wrong bug — the index
+  # (Packages.gz) is there and 0644, the parent directory is what blocks it. /srv is 0755
+  # root:root. (/mnt/vagrant-mounts, where Vagrant keeps its own copy of the mount, is 0700
+  # and blocks it too.) charts/ stays under /home/vagrant because helm runs as root.
   if Dir.exist?(File.join(airgap_bundle, "apt"))
-    config.vm.synced_folder File.join(airgap_bundle, "apt"), "/home/vagrant/apt",
+    config.vm.synced_folder File.join(airgap_bundle, "apt"), "/srv/airgap/apt",
       owner: "vagrant", group: "vagrant"
   end
   if Dir.exist?(File.join(airgap_bundle, "charts"))

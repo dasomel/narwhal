@@ -17,7 +17,7 @@ set -euo pipefail
 # against any spare VM of the same box.
 #
 # Output: ${AIRGAP_BUNDLE_DIR}/apt/  — flat .deb dir plus a Packages.gz index, consumable
-# as `deb [trusted=yes] file:///home/vagrant/apt ./` with no HTTP server involved.
+# as `deb [trusted=yes] file:///srv/airgap/apt ./` with no HTTP server involved.
 #
 # Usage:
 #   ./scripts/airgap/07-save-apt-packages.sh --ssh "ssh -i KEY vagrant@1.2.3.4"

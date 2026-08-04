@@ -23,9 +23,11 @@ echo 'Acquire::ForceIPv4 "true";' | sudo tee /etc/apt/apt.conf.d/99force-ipv4 >/
 # it an "airgap" install still reached pkgs.k8s.io and the Ubuntu archive — the mirrored
 # images and bundled charts were never the part that failed first.
 #
-# file:// rather than a local HTTP server: the bundle is already mounted at /home/vagrant/apt
+# file:// rather than a local HTTP server: the bundle is already mounted at /srv/airgap/apt
 # by the Vagrantfile, so there is no service to start, nothing to keep alive, and no order
-# dependency between the registry and the first apt-get.
+# dependency between the registry and the first apt-get. The mount is under /srv and not
+# under /home/vagrant because apt fetches as the unprivileged `_apt` user — see the
+# Vagrantfile comment on that synced_folder.
 #
 # [trusted=yes] because the bundle is unsigned. It is built by scripts/airgap/07 from the
 # same official sources this would otherwise fetch, and it never leaves the host.
@@ -47,9 +49,20 @@ if [ "${AIRGAP:-0}" = "1" ]; then
   fi
 
   echo "=== AIRGAP: switching APT to the bundle ==="
-  if [ ! -f /home/vagrant/apt/Packages.gz ]; then
-    echo "ERROR: AIRGAP=1 but /home/vagrant/apt/Packages.gz is missing." >&2
+  AIRGAP_APT_DIR="${AIRGAP_APT_DIR:-/srv/airgap/apt}"
+  if [ ! -f "${AIRGAP_APT_DIR}/Packages.gz" ]; then
+    echo "ERROR: AIRGAP=1 but ${AIRGAP_APT_DIR}/Packages.gz is missing." >&2
     echo "       Build it with scripts/airgap/07-save-apt-packages.sh, then re-run." >&2
+    exit 1
+  fi
+
+  # Check readability as the user apt will actually fetch as. root can read the index while
+  # `_apt` cannot, and apt renders that as "File not found - .../Packages" — a message that
+  # sends you hunting for a missing index instead of a directory it cannot traverse.
+  if ! sudo -u _apt test -r "${AIRGAP_APT_DIR}/Packages.gz"; then
+    echo "ERROR: ${AIRGAP_APT_DIR}/Packages.gz is not readable by the _apt user." >&2
+    echo "       Every directory on the path needs o+x (apt drops privileges to _apt)." >&2
+    namei -m "${AIRGAP_APT_DIR}/Packages.gz" >&2 || true
     exit 1
   fi
 
@@ -61,7 +74,7 @@ if [ "${AIRGAP:-0}" = "1" ]; then
     sudo mv "$f" "$f.disabled"
   done
 
-  echo "deb [trusted=yes] file:///home/vagrant/apt ./" \
+  echo "deb [trusted=yes] file://${AIRGAP_APT_DIR} ./" \
     | sudo tee /etc/apt/sources.list.d/narwhal-airgap.list >/dev/null
   sudo apt-get update -qq
   echo "  APT now serves $(apt-cache stats 2>/dev/null | awk '/Total package names/{print $4}') package names from the bundle"

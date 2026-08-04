@@ -30,6 +30,24 @@ POD_NETWORK_CIDR = "10.244.0.0/16"
 SERVICE_CIDR = "10.96.0.0/12"
 
 #=========================================
+# Airgap
+#=========================================
+# AIRGAP=1 makes the provisioners install from the bundle instead of the internet:
+# OS packages from a file:// APT repo, Helm charts from the mounted tarballs, container
+# images from the mirror registry configured by scripts/airgap/06-configure-mirrors.sh.
+# Off by default — a plain `vagrant up` is still an ordinary online install.
+AIRGAP = ENV.fetch("AIRGAP", "0")
+# Which bundle to mount. Apple Silicon hosts build arm64; override for an amd64 box.
+AIRGAP_ARCH_SUFFIX = ENV.fetch("AIRGAP_ARCH_SUFFIX", "arm64")
+# Where the guests reach the mirror registry. The host-only address is the host itself,
+# so a registry served from the Mac needs no VM of its own and exists before any node boots.
+#
+# 5001, not the registry default 5000: macOS ControlCenter (AirPlay Receiver) listens on
+# 5000 on every recent release and answers 403, which looks like a broken registry rather
+# than the wrong service. Verified with lsof on 2026-08-04.
+AIRGAP_REGISTRY = ENV.fetch("AIRGAP_REGISTRY", "192.168.56.1:5001")
+
+#=========================================
 # Node Configuration
 #=========================================
 MASTER_COUNT = 3
@@ -96,6 +114,28 @@ Vagrant.configure("2") do |config|
   config.vm.synced_folder "gitops/", "/home/vagrant/configs/gitops",
     owner: "vagrant", group: "vagrant"
 
+  # Airgap bundle: OS packages and Helm charts, mounted rather than copied.
+  #
+  # AIRGAP=1 switches the provisioning scripts onto these instead of pkgs.k8s.io, the
+  # Ubuntu archive and public chart repositories. Mounting keeps the 6.4 GB of images out
+  # of the guests — only apt/ (148 MB) and charts/ (4.2 MB) are needed there; images go to
+  # the registry via scripts/airgap/04+05 and are pulled by containerd.
+  #
+  # Guarded on existence so a normal online `vagrant up` still works with no bundle
+  # present: a synced_folder pointing at a missing directory is a hard Vagrant error, not
+  # a warning.
+  airgap_bundle = File.join(__dir__, "narwhal-airgap-bundle-#{AIRGAP_ARCH_SUFFIX}")
+  if Dir.exist?(File.join(airgap_bundle, "apt"))
+    config.vm.synced_folder File.join(airgap_bundle, "apt"), "/home/vagrant/apt",
+      owner: "vagrant", group: "vagrant"
+  end
+  if Dir.exist?(File.join(airgap_bundle, "charts"))
+    # lib-charts.sh resolves NARWHAL_CHART_DIR here; the Kakao path stages the same
+    # tarballs to the same place with scripts/cloud/stage-kakao-nodes.sh.
+    config.vm.synced_folder File.join(airgap_bundle, "charts"), "/home/vagrant/charts",
+      owner: "vagrant", group: "vagrant"
+  end
+
   # Sync the sibling narwhal-portal repo so the in-cluster Kaniko build
   # (15-narwhal-portal.sh -> kaniko-build.sh) has the portal source on the VM.
   # rsync excludes build junk so this stays small (a few MB, not the 1.5G repo).
@@ -140,12 +180,14 @@ Vagrant.configure("2") do |config|
           "WORKER_COUNT" => WORKER_COUNT,
           "WORKER_IP_BASE" => WORKER_IP_BASE,
           "NODE_IP" => master_ip,
-          "DOMAIN" => BASE_DOMAIN
+          "DOMAIN" => BASE_DOMAIN,
+          "AIRGAP" => AIRGAP,
+          "AIRGAP_REGISTRY" => AIRGAP_REGISTRY
         }
       master.vm.provision "shell", path: "scripts/common/02-containerd.sh",
-        env: { "DOMAIN" => BASE_DOMAIN }
+        env: { "DOMAIN" => BASE_DOMAIN, "AIRGAP" => AIRGAP }
       master.vm.provision "shell", path: "scripts/common/03-k8s-install.sh",
-        env: { "K8S_VERSION" => K8S_VERSION, "K8S_PATCH_VERSION" => K8S_PATCH_VERSION, "DOMAIN" => BASE_DOMAIN }
+        env: { "K8S_VERSION" => K8S_VERSION, "K8S_PATCH_VERSION" => K8S_PATCH_VERSION, "DOMAIN" => BASE_DOMAIN, "AIRGAP" => AIRGAP }
       master.vm.provision "shell", path: "scripts/common/06-boot-heal-install.sh"
 
       # kube-vip (all masters — static pod manifest before kubeadm)
@@ -260,12 +302,14 @@ Vagrant.configure("2") do |config|
           "WORKER_COUNT" => WORKER_COUNT,
           "WORKER_IP_BASE" => WORKER_IP_BASE,
           "NODE_IP" => "#{WORKER_IP_BASE}#{i}",
-          "DOMAIN" => BASE_DOMAIN
+          "DOMAIN" => BASE_DOMAIN,
+          "AIRGAP" => AIRGAP,
+          "AIRGAP_REGISTRY" => AIRGAP_REGISTRY
         }
       worker.vm.provision "shell", path: "scripts/common/02-containerd.sh",
-        env: { "DOMAIN" => BASE_DOMAIN }
+        env: { "DOMAIN" => BASE_DOMAIN, "AIRGAP" => AIRGAP }
       worker.vm.provision "shell", path: "scripts/common/03-k8s-install.sh",
-        env: { "K8S_VERSION" => K8S_VERSION, "K8S_PATCH_VERSION" => K8S_PATCH_VERSION, "DOMAIN" => BASE_DOMAIN }
+        env: { "K8S_VERSION" => K8S_VERSION, "K8S_PATCH_VERSION" => K8S_PATCH_VERSION, "DOMAIN" => BASE_DOMAIN, "AIRGAP" => AIRGAP }
       worker.vm.provision "shell", path: "scripts/common/06-boot-heal-install.sh"
 
       # Worker provisioning (join via VIP)

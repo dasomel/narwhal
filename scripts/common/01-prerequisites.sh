@@ -1,6 +1,10 @@
 #!/bin/bash
 set -euo pipefail
 
+# Binaries come from the airgap bundle, never a download.
+# shellcheck source=/dev/null
+source /home/vagrant/scripts/common/lib-charts.sh
+
 echo "=== Prerequisites Installation ==="
 
 #=========================================
@@ -10,6 +14,43 @@ echo "=== Prerequisites Installation ==="
 # first, so apt picks the AAAA record and fails with "Network is unreachable"
 # (observed on workers fetching kubeadm/kubelet/kubectl on Ubuntu 26.04). Pin IPv4.
 echo 'Acquire::ForceIPv4 "true";' | sudo tee /etc/apt/apt.conf.d/99force-ipv4 >/dev/null
+
+#=========================================
+# AIRGAP: serve every .deb from the bundle instead of the network.
+#
+# This runs before anything else installs a package, so switching the sources here covers
+# chrony/nfs-common/jq below, containerd in 02, and kubelet/kubeadm/kubectl in 03. Without
+# it an "airgap" install still reached pkgs.k8s.io and the Ubuntu archive — the mirrored
+# images and bundled charts were never the part that failed first.
+#
+# file:// rather than a local HTTP server: the bundle is already mounted at /home/vagrant/apt
+# by the Vagrantfile, so there is no service to start, nothing to keep alive, and no order
+# dependency between the registry and the first apt-get.
+#
+# [trusted=yes] because the bundle is unsigned. It is built by scripts/airgap/07 from the
+# same official sources this would otherwise fetch, and it never leaves the host.
+#=========================================
+if [ "${AIRGAP:-0}" = "1" ]; then
+  echo "=== AIRGAP: switching APT to the bundle ==="
+  if [ ! -f /home/vagrant/apt/Packages.gz ]; then
+    echo "ERROR: AIRGAP=1 but /home/vagrant/apt/Packages.gz is missing." >&2
+    echo "       Build it with scripts/airgap/07-save-apt-packages.sh, then re-run." >&2
+    exit 1
+  fi
+
+  # Move the online sources aside rather than deleting them, so a node can be put back
+  # online by reversing this. .disabled is not a suffix apt reads.
+  for f in /etc/apt/sources.list /etc/apt/sources.list.d/*.sources /etc/apt/sources.list.d/*.list; do
+    [ -e "$f" ] || continue
+    case "$f" in *.disabled) continue ;; esac
+    sudo mv "$f" "$f.disabled"
+  done
+
+  echo "deb [trusted=yes] file:///home/vagrant/apt ./" \
+    | sudo tee /etc/apt/sources.list.d/narwhal-airgap.list >/dev/null
+  sudo apt-get update -qq
+  echo "  APT now serves $(apt-cache stats 2>/dev/null | awk '/Total package names/{print $4}') package names from the bundle"
+fi
 
 CLUSTER_NAME="${CLUSTER_NAME:-narwhal}"
 MASTER_COUNT="${MASTER_COUNT:-3}"
@@ -358,11 +399,8 @@ echo "  jq: $(jq --version 2>/dev/null || echo MISSING)"
 # is v4 syntax and the wrapper cannot do in-place edits at all.
 YQ_VERSION="${YQ_VERSION:-v4.44.6}"
 if ! command -v yq >/dev/null 2>&1; then
-  echo "Installing yq ${YQ_VERSION} (mikefarah/yq)..."
-  yq_arch=$(dpkg --print-architecture)
-  sudo curl -fsSL -o /usr/local/bin/yq \
-    "https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/yq_linux_${yq_arch}"
-  sudo chmod +x /usr/local/bin/yq
+  echo "Installing yq ${YQ_VERSION} from the airgap bundle..."
+  install_bin yq
 fi
 # Fail loudly rather than letting a jq-wrapper masquerade as yq until the first -i edit.
 if ! yq --version 2>&1 | grep -q 'mikefarah'; then

@@ -29,6 +29,14 @@ retry() {
   done
 }
 
+# AIRGAP: the bundle already carries kubelet/kubeadm/kubectl and 01-prerequisites.sh has
+# pointed APT at it, so adding pkgs.k8s.io here would both fail (no route) and undo that.
+# The version resolution and pinned install below are unchanged — they read whatever APT
+# is serving, which is exactly the point of doing the switch upstream of this script.
+if [ "${AIRGAP:-0}" = "1" ]; then
+  echo "AIRGAP=1: using the bundle's APT repo, not pkgs.k8s.io"
+else
+
 # Add K8s APT repository (pinned to v${K8S_VERSION} minor series)
 sudo mkdir -p /etc/apt/keyrings
 retry curl -fsSL "https://pkgs.k8s.io/core:/stable:/v${K8S_VERSION}/deb/Release.key" -o /tmp/k8s-release.key
@@ -37,6 +45,8 @@ rm -f /tmp/k8s-release.key
 
 echo "deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v${K8S_VERSION}/deb/ /" | \
   sudo tee /etc/apt/sources.list.d/kubernetes.list
+
+fi  # end online-only APT source setup
 
 # Install kubeadm, kubelet, kubectl (retried — pkgs.k8s.io CDN can be flaky mid-provision)
 #

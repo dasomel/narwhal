@@ -31,6 +31,21 @@ echo 'Acquire::ForceIPv4 "true";' | sudo tee /etc/apt/apt.conf.d/99force-ipv4 >/
 # same official sources this would otherwise fetch, and it never leaves the host.
 #=========================================
 if [ "${AIRGAP:-0}" = "1" ]; then
+  # Enforce the isolation instead of assuming it. In a real airgap there is no default
+  # route, so dropping it is a no-op; on this Vagrant setup there IS one, and leaving it
+  # means any missed offline path silently succeeds over the internet and the gap is only
+  # discovered on a customer's isolated network. That is exactly how the Helm charts sat in
+  # the bundle unread for months — an "airgap" install fetched every chart from a public
+  # repo and nobody noticed, because it worked.
+  #
+  # Host-only (192.168.56.0/24) and the NAT subnet stay reachable: they are directly
+  # connected, so `vagrant ssh` and node-to-node traffic do not need the default route.
+  if ip route show default 2>/dev/null | grep -q .; then
+    echo "=== AIRGAP: dropping the default route to enforce isolation ==="
+    ip route show default | sed 's/^/  removing: /'
+    sudo ip route del default || true
+  fi
+
   echo "=== AIRGAP: switching APT to the bundle ==="
   if [ ! -f /home/vagrant/apt/Packages.gz ]; then
     echo "ERROR: AIRGAP=1 but /home/vagrant/apt/Packages.gz is missing." >&2

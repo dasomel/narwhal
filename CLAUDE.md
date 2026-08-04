@@ -78,7 +78,13 @@ GitOps app structure, and version upgrades.
 - `--set` on a boolean needs `--set-string`.
 
 **Shell**
-- Under `set -o pipefail` a non-matching `grep` aborts the script — use `... | head -1 || true`.
+- Under `set -o pipefail` a pipeline aborts the script two ways, and `|| true` only covers
+  one. A non-matching `grep` exits 1 — end the substitution with `|| true`. But a command
+  that closes the pipe early *after succeeding* (`head -1`, `awk '{print; exit}'`) makes the
+  still-writing upstream take SIGPIPE, which pipefail reports as failure (rc=141): `head -1`
+  is a cause here, not a cure. Select the first match without exiting —
+  `awk '$3 ~ v && !seen {print $3; seen=1}'` — or wrap the whole thing in `|| true`.
+  Signature: the script dies with no message at all, immediately after a pipeline.
 - Send function logs to `>&2`; `$(func)` captures stdout and will otherwise absorb log lines
   into secret variables.
 

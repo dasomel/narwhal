@@ -54,11 +54,11 @@ case "${CNI_PLUGIN}" in
 
     # Install Gateway API CRDs (used by APISIX Gateway Controller, Cilium provides network-level support)
     echo "Installing Gateway API CRDs..."
-    kubectl apply -f https://raw.githubusercontent.com/kubernetes-sigs/gateway-api/v1.5.1/config/crd/standard/gateway.networking.k8s.io_gatewayclasses.yaml
-    kubectl apply -f https://raw.githubusercontent.com/kubernetes-sigs/gateway-api/v1.5.1/config/crd/standard/gateway.networking.k8s.io_gateways.yaml
-    kubectl apply -f https://raw.githubusercontent.com/kubernetes-sigs/gateway-api/v1.5.1/config/crd/standard/gateway.networking.k8s.io_httproutes.yaml
-    kubectl apply -f https://raw.githubusercontent.com/kubernetes-sigs/gateway-api/v1.5.1/config/crd/standard/gateway.networking.k8s.io_referencegrants.yaml
-    kubectl apply -f https://raw.githubusercontent.com/kubernetes-sigs/gateway-api/v1.5.1/config/crd/standard/gateway.networking.k8s.io_grpcroutes.yaml
+    retry kubectl apply -f https://raw.githubusercontent.com/kubernetes-sigs/gateway-api/v1.5.1/config/crd/standard/gateway.networking.k8s.io_gatewayclasses.yaml
+    retry kubectl apply -f https://raw.githubusercontent.com/kubernetes-sigs/gateway-api/v1.5.1/config/crd/standard/gateway.networking.k8s.io_gateways.yaml
+    retry kubectl apply -f https://raw.githubusercontent.com/kubernetes-sigs/gateway-api/v1.5.1/config/crd/standard/gateway.networking.k8s.io_httproutes.yaml
+    retry kubectl apply -f https://raw.githubusercontent.com/kubernetes-sigs/gateway-api/v1.5.1/config/crd/standard/gateway.networking.k8s.io_referencegrants.yaml
+    retry kubectl apply -f https://raw.githubusercontent.com/kubernetes-sigs/gateway-api/v1.5.1/config/crd/standard/gateway.networking.k8s.io_grpcroutes.yaml
 
     # Install Cilium with kube-proxy replacement, Hubble, and Gateway API CRD awareness
     # Note: APISIX is the actual Gateway Controller (GatewayClass: apisix)
@@ -80,7 +80,14 @@ case "${CNI_PLUGIN}" in
     # the node sat at 89% real memory but only 14% requests, so the scheduler still read it
     # as empty. No CPU limit on purpose - throttling the CNI control plane during a reconcile
     # storm trades an OOM for a hang.
-    cilium install --version "${CILIUM_VERSION}" \
+    install_cilium() {
+      # Already installed means a previous attempt got past the fetch; re-running would
+      # fail on "already exists" and turn a recoverable retry into a hard failure.
+      if kubectl -n kube-system get daemonset cilium >/dev/null 2>&1; then
+        echo "  Cilium DaemonSet already present — skipping install"
+        return 0
+      fi
+      cilium install --version "${CILIUM_VERSION}" \
       --set kubeProxyReplacement=true \
       --set k8sServiceHost="${K8S_API_SERVER}" \
       --set k8sServicePort=6443 \
@@ -100,6 +107,11 @@ case "${CNI_PLUGIN}" in
       --set hubble.ui.frontend.image.useDigest=false \
       --set preflight.image.useDigest=false \
       --set clustermesh.apiserver.image.useDigest=false
+    }
+    # `cilium install` reaches helm.cilium.io for the chart, and that fetch failed with
+    # `context deadline exceeded` on a clean run while curl to the same host answered 200
+    # five times a minute later.
+    retry install_cilium
 
     # D6: Wait for cilium-operator Ready before declaring Phase-1 CNI done.
     # The operator hitting Unauthorized on a slow apiserver SA-token issuance is the

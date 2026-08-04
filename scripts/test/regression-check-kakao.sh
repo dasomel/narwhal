@@ -269,6 +269,24 @@ run_static() {
 
     # 2026-07-28: docker-archive refuses an existing file, so the tar silently froze at
     # the bundle's creation date while every other image refreshed.
+    # Both bundles must be complete, not just the one this host happens to match. The
+    # arm64 (Vagrant) bundle sat with bin=0 manifests=0 while amd64 (Kakao) had 4 and 10,
+    # because 07-save-binaries.sh had only been run for one arch — a Vagrant install would
+    # have died at the first `install_bin helm`.
+    local a incomplete=""
+    for a in amd64 arm64; do
+      local d="narwhal-airgap-bundle-${a}"
+      [ -d "${d}" ] || continue
+      [ "$(ls "${d}/bin" 2>/dev/null | wc -l | tr -d ' ')" -ge 4 ] \
+        && [ "$(ls "${d}/manifests" 2>/dev/null | wc -l | tr -d ' ')" -ge 10 ] \
+        || incomplete="${incomplete}${a} "
+    done
+    if [ -z "${incomplete}" ]; then
+      ok R30 "both bundles carry binaries and manifests (2026-08-05)"
+    else
+      warn R30 "bundle missing bin/manifests: ${incomplete}(run 07-save-binaries.sh)"
+    fi
+
     if [ -f "${bundle}/bootstrap/registry.tar" ]; then
       stale=$(find "${bundle}/oci" -name index.json -newer "${bundle}/bootstrap/registry.tar" | wc -l | tr -d ' ')
       [ "${stale}" = "0" ] && ok R20 "bootstrap registry.tar not stale (2026-07-28)" \

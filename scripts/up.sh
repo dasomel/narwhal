@@ -23,6 +23,13 @@
 set -euo pipefail
 
 PROVIDER="${PROVIDER:-vmware_desktop}"
+
+# Timestamped progress line. vagrant's own output carries no clock, which is what made the
+# 2026-08-04 SSH drop uncorrelatable against the guests' journals — the drop was visible in
+# this log and invisible in time. Milestones this script prints go through say() so the next
+# occurrence can be lined up with `journalctl --since/--until` on the VM.
+say() { echo "[$(date '+%Y-%m-%dT%H:%M:%S%z')] $*"; }
+
 MAX_ATTEMPTS="${MAX_ATTEMPTS:-6}"
 EXPECTED_NODES="${EXPECTED_NODES:-6}"
 ALL_VMS="master-1 master-2 master-3 worker-1 worker-2 worker-3"
@@ -60,9 +67,19 @@ master1_ssh_ok() {
 #             (40×15s). Safe in a 3-master HA cluster because the control plane
 #             remains quorate during a single-master reboot.
 # Returns 0 on success, 1 on timeout.
+# The SSH drop this recovers from is NOT root-caused. What was checked and cleared on
+# 2026-08-04, so nobody repeats it: sshd never killed the session (clientaliveinterval is 0,
+# and its disconnect records are all this script's own probes closing client-side); no OOM on
+# the node; the host never suspended (`pmset -g log` shows no sleep since 2026-07-28); and the
+# NAT DHCP lease renews every 15 min WITHOUT changing the address, so it is not an IP change.
+# The drop lands at a different step each time — ztunnel's DaemonSet rollout in one run,
+# cert-manager's install in another, and not at all in two others — so it is not attributable
+# to any one script, and blaming the step it happened to interrupt would be overfitting.
+# Correlating further needs timestamps that vagrant's output does not emit; see the timestamped
+# log lines this script now writes.
 recover_master1_ssh() {
   # Stage 1: light poll — no reboot
-  echo "master-1 SSH unreachable — light recovery: polling up to ~2 min before reload"
+  say "master-1 SSH unreachable — light recovery: polling up to ~2 min before reload"
   local i=0
   while [ "${i}" -lt 8 ]; do
     i=$((i + 1))
@@ -93,7 +110,7 @@ recover_master1_ssh() {
 
 attempt=1
 while [ "${attempt}" -le "${MAX_ATTEMPTS}" ]; do
-  echo "=== attempt ${attempt}/${MAX_ATTEMPTS} ==="
+  say "=== attempt ${attempt}/${MAX_ATTEMPTS} ==="
   ready_nodes=$(k8s_ready_nodes)
 
   for vm in ${ALL_VMS}; do
@@ -172,10 +189,17 @@ while [ "${attempt}" -le "${MAX_ATTEMPTS}" ]; do
     # SSH key-replacement race that SIGHUPs the Phase 2 orchestrator mid-run.
     # phase2-platform (06-phase2-start.sh and sub-scripts) is idempotent, so
     # re-running after a partial failure safely resumes from where it stalled.
-    PHASE2_MAX_ATTEMPTS="${PHASE2_MAX_ATTEMPTS:-3}"
+    # 5, not 3. On 2026-08-04 a clean install used all three and still needed a manual
+    # `vagrant provision master-1 --provision-with phase2-platform` to finish, purely
+    # because the SSH drop below is unfixed and each drop costs an attempt. Raising the
+    # budget is cheap and honest here: every attempt genuinely resumes now that the
+    # re-install path works (verified — attempt 2 carried on past where attempt 1 died),
+    # so a spent attempt is lost wall-clock, not lost work. It does NOT make the drop
+    # acceptable; see the SSH note in recover_master1_ssh.
+    PHASE2_MAX_ATTEMPTS="${PHASE2_MAX_ATTEMPTS:-5}"
     p2_attempt=1
     while [ "${p2_attempt}" -le "${PHASE2_MAX_ATTEMPTS}" ]; do
-      echo "Running Phase 2 platform provision — attempt ${p2_attempt}/${PHASE2_MAX_ATTEMPTS} (up.sh is the sole driver)..."
+      say "Running Phase 2 platform provision — attempt ${p2_attempt}/${PHASE2_MAX_ATTEMPTS} (up.sh is the sole driver)..."
 
       # Ensure SSH is healthy before each attempt; SSH failure is non-fatal
       # for the loop — recover and continue unless recovery itself gives up.
@@ -191,7 +215,7 @@ while [ "${attempt}" -le "${MAX_ATTEMPTS}" ]; do
       phase2_rc=0
       vagrant provision master-1 --provision-with phase2-platform || phase2_rc=$?
       if [ "${phase2_rc}" -ne 0 ]; then
-        echo "Phase 2 provision failed (rc=${phase2_rc}) on attempt ${p2_attempt}/${PHASE2_MAX_ATTEMPTS}."
+        say "Phase 2 provision failed (rc=${phase2_rc}) on attempt ${p2_attempt}/${PHASE2_MAX_ATTEMPTS}."
       fi
 
       # phase2_complete is the authoritative gate regardless of provision rc.
@@ -203,7 +227,7 @@ while [ "${attempt}" -le "${MAX_ATTEMPTS}" ]; do
       fi
 
       if [ "${p2_attempt}" -lt "${PHASE2_MAX_ATTEMPTS}" ]; then
-        echo "Phase 2 incomplete after attempt ${p2_attempt}/${PHASE2_MAX_ATTEMPTS} — recovering SSH and retrying..."
+        say "Phase 2 incomplete after attempt ${p2_attempt}/${PHASE2_MAX_ATTEMPTS} — recovering SSH and retrying..."
         if ! master1_ssh_ok; then
           recover_master1_ssh || true
         fi
@@ -219,7 +243,7 @@ while [ "${attempt}" -le "${MAX_ATTEMPTS}" ]; do
     exit 1
   fi
 
-  echo "  ${ready_count}/${EXPECTED_NODES} nodes Ready — settle ${SETTLE_DELAY}s, then retry"
+  say "  ${ready_count}/${EXPECTED_NODES} nodes Ready — settle ${SETTLE_DELAY}s, then retry"
   sleep "${SETTLE_DELAY}"
   attempt=$((attempt + 1))
 done

@@ -142,6 +142,20 @@ Vagrant.configure("2") do |config|
     config.vm.synced_folder File.join(airgap_bundle, "charts"), "/home/vagrant/charts",
       owner: "vagrant", group: "vagrant"
   end
+  # bin/ and manifests/ are the other two directories lib-charts.sh resolves against
+  # (NARWHAL_BIN_DIR, NARWHAL_MANIFEST_DIR). They were bundled and staged for the Kakao
+  # path but never mounted here, so an offline Vagrant install got as far as the CNI step
+  # and stopped at `ERROR: 'helm' is not in /home/vagrant/bin` — the binary was in the
+  # bundle the whole time. All three mounts belong together; adding one without the others
+  # is what produced that gap.
+  if Dir.exist?(File.join(airgap_bundle, "bin"))
+    config.vm.synced_folder File.join(airgap_bundle, "bin"), "/home/vagrant/bin",
+      owner: "vagrant", group: "vagrant"
+  end
+  if Dir.exist?(File.join(airgap_bundle, "manifests"))
+    config.vm.synced_folder File.join(airgap_bundle, "manifests"), "/home/vagrant/manifests",
+      owner: "vagrant", group: "vagrant"
+  end
 
   # Sync the sibling narwhal-portal repo so the in-cluster Kaniko build
   # (15-narwhal-portal.sh -> kaniko-build.sh) has the portal source on the VM.

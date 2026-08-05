@@ -261,8 +261,16 @@ fi
 # timesyncd fallback (it only produced noisy "Unit not found" errors on 26.04).
 sudo systemctl daemon-reload 2>/dev/null || true
 CHRONY_SVC=""
+# `systemctl cat`, not `systemctl list-unit-files | grep -q`. grep -q exits the moment it
+# matches, which closes the pipe while systemctl is still writing its (long) unit table;
+# systemctl dies of SIGPIPE and `set -o pipefail` turns rc=141 into a false "not found".
+# Measured on a node where chrony.service was installed and enabled: 37 of 40 runs reported
+# NOT FOUND, `systemctl cat` 0 of 40. The failure was silent and expensive — everything
+# below is inside `if [ -n "${CHRONY_SVC}" ]`, so a false negative skipped the makestep
+# 0.1 -1 fix (D12) and the kubelet clock-sync gate entirely, and the only trace was one
+# WARN line claiming clock sync had been left to the hypervisor.
 for c in chrony chronyd; do
-  if systemctl list-unit-files 2>/dev/null | grep -q "^${c}\.service"; then
+  if systemctl cat "${c}.service" >/dev/null 2>&1; then
     CHRONY_SVC="$c"
     break
   fi

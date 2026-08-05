@@ -80,11 +80,18 @@ GitOps app structure, and version upgrades.
 **Shell**
 - Under `set -o pipefail` a pipeline aborts the script two ways, and `|| true` only covers
   one. A non-matching `grep` exits 1 — end the substitution with `|| true`. But a command
-  that closes the pipe early *after succeeding* (`head -1`, `awk '{print; exit}'`) makes the
-  still-writing upstream take SIGPIPE, which pipefail reports as failure (rc=141): `head -1`
-  is a cause here, not a cure. Select the first match without exiting —
-  `awk '$3 ~ v && !seen {print $3; seen=1}'` — or wrap the whole thing in `|| true`.
-  Signature: the script dies with no message at all, immediately after a pipeline.
+  that closes the pipe early *after succeeding* (`head -1`, `awk '{print; exit}'`,
+  **`grep -q`**) makes the still-writing upstream take SIGPIPE, which pipefail reports as
+  failure (rc=141): `head -1` is a cause here, not a cure. Select the first match without
+  exiting — `awk '$3 ~ v && !seen {print $3; seen=1}'` — or wrap the whole thing in
+  `|| true`. Two signatures, and the second is the dangerous one: at statement level the
+  script dies with no message at all immediately after a pipeline; **inside `if`, nothing
+  dies — the condition just reads false**, so a match becomes "not found" and the whole
+  branch is silently skipped. `cmd | grep -q P` as a test is the common shape; prefer a
+  form with no pipe (`systemctl cat X`, `grep -q P <<<"$var"`) or capture first, and never
+  trust it against a large or slow producer. Measured: `systemctl list-unit-files |
+  grep -q '^chrony\.service'` reported NOT FOUND in 37 of 40 runs on a node where the unit
+  was installed and enabled.
 - Send function logs to `>&2`; `$(func)` captures stdout and will otherwise absorb log lines
   into secret variables.
 

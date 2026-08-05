@@ -272,6 +272,22 @@ run_static() {
   check R32 "stage-kakao-nodes.sh stages the apt bundle to /srv/airgap (2026-08-05)" \
     grep -qE '^[^#]*/srv/airgap' scripts/cloud/stage-kakao-nodes.sh
 
+  # 2026-08-05: the install went fully offline while the GitOps layer did not. ArgoCD
+  # Applications still name public chart repos as their source, so every refresh, resync and
+  # selfHeal needs the internet — proven by forcing a hard refresh on an isolated cluster:
+  # harbor, kyverno, metallb, openbao and velero-ui all went Unknown with
+  # `failed to list refs: ... lookup github.com`. It read as Synced only because the sync had
+  # happened while a default route was still present. Count them so the number cannot grow
+  # silently while the airgap work is migrating them.
+  local ext_repos
+  ext_repos=$(grep -rhoE 'repoURL: *https?://[^ ]+' gitops/ --include='*.yaml' 2>/dev/null \
+              | grep -v 'svc.cluster.local' | sort -u | wc -l | tr -d ' ')
+  if [ "${ext_repos}" = "0" ]; then
+    ok R31 "no public repoURL in the GitOps layer (2026-08-05)"
+  else
+    warn R31 "${ext_repos} ArgoCD sources are public repos — GitOps cannot sync offline (2026-08-05)"
+  fi
+
   # bastion.tf must be tracked — a blanket csp/ gitignore once hid it from fresh clones.
   check R18 "bastion.tf is tracked by git" \
     git ls-files --error-unmatch "${TF_DIR}/bastion.tf"
@@ -280,22 +296,36 @@ run_static() {
   # from a different cause (live-only image list, docker-archive refusing to overwrite,
   # bare refs). Check the shape rather than any one of those: the three counts must
   # agree, and the bootstrap tar must not predate the images around it.
-  local arch bundle
-  arch=$(uname -m); [ "${arch}" = "x86_64" ] && arch=amd64
-  [ "${arch}" = "aarch64" ] && arch=arm64
-  bundle="${AIRGAP_BUNDLE_DIR:-narwhal-airgap-bundle-${arch}}"
-  if [ ! -d "${bundle}/oci" ]; then
-    warn R19 "no bundle at ${bundle}; airgap checks skipped"
+  # Check every bundle present, not the one matching this host. Keying off `uname -m`
+  # meant a Mac checking the arm64 (Vagrant) bundle while the Kakao work was all amd64 —
+  # so amd64 could drift arbitrarily far from images.txt and this still reported on the
+  # wrong one. AIRGAP_BUNDLE_DIR still pins a single bundle when you want that.
+  local bundle bundles=() want have layouts stale bad19=""
+  if [ -n "${AIRGAP_BUNDLE_DIR:-}" ]; then
+    bundles=("${AIRGAP_BUNDLE_DIR}")
   else
-    local want have layouts stale
+    for bundle in narwhal-airgap-bundle-amd64 narwhal-airgap-bundle-arm64; do
+      [ -d "${bundle}/oci" ] && bundles+=("${bundle}")
+    done
+  fi
+  if [ "${#bundles[@]}" = 0 ]; then
+    warn R19 "no bundle found; airgap checks skipped"
+  else
     want=$(grep -cvE '^\s*(#|$)' scripts/airgap/images.txt)
-    have=$(grep -cvE '^\s*$' "${bundle}/manifest.txt")
-    layouts=$(find "${bundle}/oci" -maxdepth 4 -name index.json | wc -l | tr -d ' ')
-    if [ "${want}" = "${have}" ] && [ "${want}" = "${layouts}" ]; then
-      ok R19 "bundle complete: ${want} images in list, manifest and oci"
+    for bundle in "${bundles[@]}"; do
+      have=$(grep -cvE '^\s*$' "${bundle}/manifest.txt" 2>/dev/null || echo 0)
+      layouts=$(find "${bundle}/oci" -maxdepth 4 -name index.json | wc -l | tr -d ' ')
+      [ "${want}" = "${have}" ] && [ "${want}" = "${layouts}" ] \
+        || bad19="${bad19}${bundle##*-}(manifest=${have} oci=${layouts}) "
+    done
+    if [ -z "${bad19}" ]; then
+      ok R19 "bundle complete: ${want} images in list, manifest and oci (${#bundles[@]} bundle(s))"
     else
-      bad R19 "bundle counts disagree — list=${want} manifest=${have} oci=${layouts}"
+      bad R19 "bundle counts disagree with images.txt=${want}: ${bad19}"
     fi
+
+    # R20 below inspects one bundle's bootstrap tar; the first is enough.
+    bundle="${bundles[0]}"
 
     # 2026-07-28: docker-archive refuses an existing file, so the tar silently froze at
     # the bundle's creation date while every other image refreshed.

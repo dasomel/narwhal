@@ -409,11 +409,22 @@ run_runtime() {
   fi
 
   # Every ArgoCD application must be Synced+Healthy.
-  local unhealthy
+  # Count first. "Every app is healthy" is vacuously true of no apps at all, and that is
+  # exactly what happened on 2026-08-05: the GitOps bootstrap failed against a Gitea that
+  # was still ImagePullBackOff, so the cluster carried zero Applications and this reported
+  # PASS while four services 503'd with nothing behind them. 14-gitops-bootstrap.sh hands
+  # ArgoCD ten apps, so anything below that is a failure, not a pass.
+  local unhealthy napps
+  napps=$(kubectl get applications -n devtools --no-headers 2>/dev/null | grep -c . || true)
   unhealthy=$(kubectl get applications -n devtools --no-headers 2>/dev/null \
     | awk '$2!="Synced" || $3!="Healthy" {print $1}' | tr '\n' ' ')
-  [ -z "${unhealthy}" ] && ok T03 "all ArgoCD apps Synced+Healthy" \
-    || bad T03 "not converged: ${unhealthy}"
+  if [ "${napps:-0}" -lt 10 ]; then
+    bad T03 "only ${napps:-0} ArgoCD applications; the GitOps bootstrap did not land (2026-08-05)"
+  elif [ -z "${unhealthy}" ]; then
+    ok T03 "all ${napps} ArgoCD apps Synced+Healthy"
+  else
+    bad T03 "not converged: ${unhealthy}"
+  fi
 
   # A pod STUCK Terminating is the AppArmor/NFS wedge signature. A pod merely
   # terminating is a rollout doing its job — judging on state alone made this fail

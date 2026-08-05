@@ -135,6 +135,15 @@ CRITICAL_SCRIPTS=(
   "11-keycloak.sh"
   "11-2-keycloak-config.sh"
   "11-4-keycloak-apiserver.sh"
+  # 12 stands up the Gitea that 14 pushes to, and 14 hands ten platform apps to ArgoCD:
+  # cert-manager, prometheus-stack, loki, tempo, alloy, gitea, harbor, openbao, kyverno,
+  # headlamp. Both were non-critical, so when Gitea was still ImagePullBackOff the push
+  # failed, 14 warned, and Phase 2 printed "Complete" over a cluster with zero ArgoCD
+  # applications — grafana, the dashboard, the portal and velero-ui all 503 with nothing
+  # behind them. A step whose failure silently removes most of the platform is not
+  # non-critical.
+  "12-gitea.sh"
+  "14-gitops-bootstrap.sh"
 )
 
 # Run all scripts in order (07→08-1~08-6→09→10→11-keycloak,11-2,11-3,11-4→12→13→14)

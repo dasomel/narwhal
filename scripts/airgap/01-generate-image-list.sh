@@ -117,6 +117,52 @@ kubeadm_live() {
   fi
 }
 
+# Helm hook / Job images are invisible to a live pod snapshot BY CONSTRUCTION: a
+# post-install hook Job exists only while `helm install` runs and is deleted before any
+# scan can see it. That is not a sampling problem more scanning would fix. On 2026-08-05 it
+# cost a full offline install — cert-manager-startupapicheck (blocked 08-1 networking) and
+# kube-prometheus-stack's kube-webhook-certgen were both absent while every *other* image
+# of those same charts was present, which is what makes the gap look impossible.
+#
+# So render the bundled charts and take images only from resources that are Jobs or carry a
+# helm.sh/hook annotation. Rendering everything and taking every image would over-collect
+# badly (chart defaults for components this cluster does not enable); this filter targets
+# exactly the blind spot — on cert-manager it yields the one missing ref and none of the
+# three the live scan already has.
+CHARTS_LOCAL="${AIRGAP_BUNDLE_DIR}/charts"
+hook_images_from_charts() {
+  local render
+  if command -v helm >/dev/null 2>&1 && [[ -d "${CHARTS_LOCAL}" ]]; then
+    render=$(for t in "${CHARTS_LOCAL}"/*.tgz; do
+               [[ -e "${t}" ]] || continue
+               helm template x "${t}" 2>/dev/null
+               echo "---"
+             done)
+  else
+    # Same fallback the kubectl/kubeadm collectors use: the node has helm and the charts.
+    render=$( cd "${PROJECT_ROOT}" && vagrant ssh master-1 -c '
+      for t in /home/vagrant/charts/*.tgz; do
+        [ -e "$t" ] || continue
+        helm template x "$t" 2>/dev/null
+        echo "---"
+      done' 2>/dev/null | tr -d '\r' )
+  fi
+  [[ -n "${render}" ]] || return 1
+  # `:latest` is dropped, not kept. Those are chart defaults the install always overrides
+  # with a pinned tag, and a mutable tag is worthless in a pull-based mirror anyway — the
+  # project rule about never trusting `:latest` applies with full force here. Keeping them
+  # would also drag in images this cluster never runs (a Bitnami etcd default among them,
+  # which is banned outright).
+  printf '%s' "${render}" | python3 -c '
+import sys, re
+imgs = set()
+for doc in sys.stdin.read().split("\n---"):
+    if "helm.sh/hook" in doc or re.search(r"^kind:\s*Job\s*$", doc, re.M):
+        imgs |= set(re.findall(r"^\s*-?\s*image:\s*\"?([^\"\s]+)\"?\s*$", doc, re.M))
+print("\n".join(sorted(i for i in imgs if not i.endswith(":latest"))))
+'
+}
+
 if [[ "${MODE}" == "live" ]]; then
   echo "Extracting image set from the running cluster..." >&2
   live=$(kubectl_live get pods -A -o jsonpath='{range .items[*]}{range .spec.initContainers[*]}{.image}{"\n"}{end}{range .spec.containers[*]}{.image}{"\n"}{end}{end}')
@@ -134,10 +180,23 @@ if [[ "${MODE}" == "live" ]]; then
   fi
   echo "  kubeadm control-plane images: $(printf '%s\n' "${kubeadm_imgs}" | wc -l | tr -d ' ')" >&2
 
+  # Not fatal — a bundle without hook images still installs *most* of the way, and failing
+  # here would block regenerating the list on a machine with no charts staged. But say so
+  # loudly: silence is exactly what let the gap through the first time.
+  hook_imgs=$(hook_images_from_charts || true)
+  if [[ -n "${hook_imgs}" ]]; then
+    echo "  helm hook/Job images from bundled charts: $(printf '%s\n' "${hook_imgs}" | wc -l | tr -d ' ')" >&2
+  else
+    echo "WARN: could not render the bundled charts, so Helm hook/Job images are NOT in this" >&2
+    echo "      list. They are invisible to the live scan, so the bundle will be short by" >&2
+    echo "      however many there are. Stage ${CHARTS_LOCAL} or run with a reachable master-1." >&2
+  fi
+
   LIVE_STAMP="$(date +%Y-%m-%d) (from live cluster)"
   {
     emit_header
-    { printf '%s\n' "${live}"; printf '%s\n' "${TRANSIENT_IMAGES}"; printf '%s\n' "${kubeadm_imgs}"; } \
+    { printf '%s\n' "${live}"; printf '%s\n' "${TRANSIENT_IMAGES}"; printf '%s\n' "${kubeadm_imgs}"; \
+      printf '%s\n' "${hook_imgs}"; } \
       | sed -E 's/@sha256:.*//' \
       | grep -vE "${INCLUSTER_BUILT_RE}" \
       | grep -vE '^[[:space:]]*$' \

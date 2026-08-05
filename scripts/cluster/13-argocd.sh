@@ -46,7 +46,10 @@ done
 echo "Patching ArgoCD NetworkPolicies for Istio ambient mesh (HBONE port 15008)..."
 # NetworkPolicy 생성 대기 (최대 30초)
 for i in $(seq 1 30); do
-  if kubectl get networkpolicy -n devtools 2>/dev/null | grep -q argocd; then
+  # No `| grep -q`: grep -q closes the pipe on its first match and pipefail turns kubectl's
+  # SIGPIPE into a false "not found" (measured 2/40 on a comparable list). A false negative
+  # here only wastes the 30s wait, but the no-pipe form costs nothing.
+  if [ -n "$(kubectl get networkpolicy -n devtools -o name 2>/dev/null | grep argocd || true)" ]; then
     break
   fi
   sleep 1

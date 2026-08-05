@@ -96,8 +96,10 @@ quay.io/prometheus-operator/prometheus-operator:v0.91.0
 quay.io/prometheus/alertmanager:v0.33.0
 quay.io/prometheus/node-exporter:v1.11.1-distroless
 quay.io/prometheus/prometheus:v3.12.0-distroless
+ghcr.io/kyverno/readiness-checker:v1.18.1
 reg.kyverno.io/kyverno/background-controller:v1.18.1
 reg.kyverno.io/kyverno/cleanup-controller:v1.18.1
+reg.kyverno.io/kyverno/kyverno-cli:v1.18.1
 reg.kyverno.io/kyverno/kyverno:v1.18.1
 reg.kyverno.io/kyverno/kyvernopre:v1.18.1
 reg.kyverno.io/kyverno/reports-controller:v1.18.1

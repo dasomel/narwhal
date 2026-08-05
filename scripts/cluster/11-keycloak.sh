@@ -218,12 +218,17 @@ EOF
 echo "Waiting for Keycloak pod to be ready..."
 KEYCLOAK_READY=false
 for attempt in $(seq 1 60); do
-  if kubectl get pod -n iam -l app=keycloak --no-headers 2>/dev/null | grep -q "Running" || true; then
-    if kubectl wait --for=condition=Ready pod -l app=keycloak -n iam --timeout=10s 2>/dev/null; then
-      KEYCLOAK_READY=true
-      echo "Keycloak pod is ready"
-      break
-    fi
+  # No `grep -q "Running"` gate here. It used to be one, written as
+  #   if kubectl get pod ... | grep -q "Running" || true; then
+  # where the `|| true` — added to dodge pipefail — made the condition ALWAYS true, so the
+  # test it looked like it was doing never happened. `kubectl wait` is the real gate and
+  # needs no precondition: it returns non-zero on its own timeout, which is exactly what
+  # the loop wants. Deleting the dead check is the fix; making it a working check would
+  # only duplicate what wait already does.
+  if kubectl wait --for=condition=Ready pod -l app=keycloak -n iam --timeout=10s 2>/dev/null; then
+    KEYCLOAK_READY=true
+    echo "Keycloak pod is ready"
+    break
   fi
   echo "Keycloak pod not ready, attempt ${attempt}/60..."
   sleep 10

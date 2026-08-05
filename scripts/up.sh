@@ -46,17 +46,76 @@ vm_state() {
     | awk -v n="$1" '$1 == n {print $2}'
 }
 
+# master1_exec: run a command on master-1 over the HOST-ONLY address, falling back to
+# `vagrant ssh`.
+#
+# `vagrant ssh` is not a reliable way to reach a specific VM here. The VMware provider
+# derives each machine's forwarded SSH port from its NAT address, and VMware's NAT DHCP
+# hands the same address to two different MACs often enough to matter — measured 2026-08-05
+# on a live fleet: master-2 and worker-3 both on 172.16.221.135, both forwarded from host
+# port 2204; master-1 and worker-2 both on .133 / port 2203. Whichever VM wins the ARP race
+# answers, so a connection meant for one lands on the other, whose key does not match. That
+# is the `SSH authentication failed` that has been interrupting one machine per run.
+#
+# The readiness probe below is the expensive victim: it reported 0 Ready nodes for a cluster
+# with 5 Ready nodes, and this script duly "recovered" a healthy master-1 with a reload.
+# 192.168.56.10 is static, unique per VM and never shared, so none of that applies.
+MASTER1_IP="${MASTER1_IP:-192.168.56.10}"
+MASTER1_KEY=".vagrant/machines/master-1/vmware_desktop/private_key"
+master1_exec() {
+  local out=""
+  if [ -r "${MASTER1_KEY}" ]; then
+    out=$(ssh -n -i "${MASTER1_KEY}" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+            -o LogLevel=ERROR -o ConnectTimeout=10 "vagrant@${MASTER1_IP}" "$1" 2>/dev/null || true)
+    if [ -n "${out}" ]; then printf '%s\n' "${out}" | tr -d '\r'; return 0; fi
+  fi
+  vagrant ssh master-1 -c "$1" 2>/dev/null | tr -d '\r' || true
+}
+
 # k8s_ready_nodes: prints Ready node short-names (narwhal- prefix stripped),
 # one per line. Empty if the API is unreachable.
 k8s_ready_nodes() {
-  vagrant ssh master-1 -c \
-    "kubectl get nodes --no-headers 2>/dev/null | awk '\$2==\"Ready\"{print \$1}'" 2>/dev/null \
-    | sed 's/narwhal-//' | tr -d '\r' || true
+  master1_exec "kubectl get nodes --no-headers 2>/dev/null | awk '\$2==\"Ready\"{print \$1}'" \
+    | sed 's/narwhal-//' || true
 }
 
 # master1_ssh_ok: returns 0 if master-1 responds to SSH, 1 otherwise.
+# No `| grep -q`: it closes the pipe early and pipefail turns the upstream's SIGPIPE into a
+# false negative (see the CLAUDE.md shell rule).
 master1_ssh_ok() {
-  vagrant ssh master-1 -c "echo SSH_OK" 2>/dev/null | grep -q SSH_OK
+  case "$(master1_exec 'echo SSH_OK')" in *SSH_OK*) return 0 ;; *) return 1 ;; esac
+}
+
+# nat_ip_duplicates: prints "<ip>: vm vm" for every NAT address held by more than one VM.
+# Read from vmrun rather than `vagrant ssh-config`, which reports the forwarded port and so
+# inherits the very confusion being detected.
+nat_ip_duplicates() {
+  local vm vmx ip
+  for vm in ${ALL_VMS}; do
+    vmx=$(find ".vagrant/machines/${vm}" -name '*.vmx' 2>/dev/null | awk '!seen {print; seen=1}')
+    [ -n "${vmx}" ] || continue
+    ip=$(vmrun getGuestIPAddress "${vmx}" 2>/dev/null || true)
+    case "${ip}" in [0-9]*) echo "${ip} ${vm}" ;; esac
+  done | awk '{a[$1]=a[$1]" "$2; n[$1]++} END {for (k in a) if (n[k]>1) print k ":" a[k]}'
+}
+
+# repair_nat_duplicates: reboot one VM out of each colliding pair so DHCP gives it a fresh
+# address. A reload is what actually moves it — an in-guest `networkctl renew` does not, the
+# server just re-offers the same lease to the same MAC (measured). Reboot the worker where
+# there is one, so a quorate control plane is left alone.
+repair_nat_duplicates() {
+  local line ip vms victim
+  while IFS= read -r line; do
+    [ -n "${line}" ] || continue
+    ip="${line%%:*}"; vms="${line#*:}"
+    victim=""
+    for v in ${vms}; do case "${v}" in worker-*) victim="${v}" ;; esac; done
+    [ -n "${victim}" ] || victim=$(printf '%s\n' ${vms} | awk '!seen {print; seen=1}')
+    say "  duplicate NAT address ${ip} held by${vms} — reloading ${victim} to force a new lease"
+    vagrant reload "${victim}" --no-provision || true
+  done <<EOF
+$(nat_ip_duplicates)
+EOF
 }
 
 # recover_master1_ssh: two-stage recovery for master-1 SSH.
@@ -67,16 +126,22 @@ master1_ssh_ok() {
 #             (40×15s). Safe in a 3-master HA cluster because the control plane
 #             remains quorate during a single-master reboot.
 # Returns 0 on success, 1 on timeout.
-# The SSH drop this recovers from is NOT root-caused. What was checked and cleared on
-# 2026-08-04, so nobody repeats it: sshd never killed the session (clientaliveinterval is 0,
-# and its disconnect records are all this script's own probes closing client-side); no OOM on
-# the node; the host never suspended (`pmset -g log` shows no sleep since 2026-07-28); and the
-# NAT DHCP lease renews every 15 min WITHOUT changing the address, so it is not an IP change.
-# The drop lands at a different step each time — ztunnel's DaemonSet rollout in one run,
-# cert-manager's install in another, and not at all in two others — so it is not attributable
-# to any one script, and blaming the step it happened to interrupt would be overfitting.
-# Correlating further needs timestamps that vagrant's output does not emit; see the timestamped
-# log lines this script now writes.
+# ROOT CAUSE (2026-08-05): the "SSH drop" was never a drop. VMware's NAT DHCP gives the same
+# address to two different MACs, and the VMware provider derives the forwarded SSH port from
+# that address — so two machines end up sharing both, and `vagrant ssh <a>` reaches <b>,
+# whose key does not match. Measured on a live fleet with distinct MACs: master-2 + worker-3
+# on 172.16.221.135 / port 2204, master-1 + worker-2 on .133 / port 2203.
+#
+# That explains every earlier dead end, all of which correctly cleared their suspect on
+# 2026-08-04: sshd never killed the session; no OOM; the host never suspended; and the lease
+# renews without changing the address — true, and beside the point, because the failure is
+# two VMs sharing one address, not one VM's address changing. It landed at a different step
+# each run because it depends on which machine boots into the collision, not on what the
+# provisioner was doing.
+#
+# nat_ip_duplicates()/repair_nat_duplicates() above now detect and clear it at the top of
+# each attempt, and master1_exec() routes around it entirely for the readiness probe. This
+# recovery path is kept for genuine boot-time key races.
 recover_master1_ssh() {
   # Stage 1: light poll — no reboot
   say "master-1 SSH unreachable — light recovery: polling up to ~2 min before reload"
@@ -111,6 +176,17 @@ recover_master1_ssh() {
 attempt=1
 while [ "${attempt}" -le "${MAX_ATTEMPTS}" ]; do
   say "=== attempt ${attempt}/${MAX_ATTEMPTS} ==="
+
+  # Before touching any VM: if two of them share a NAT address, every `vagrant ssh` and
+  # `vagrant provision` below is a coin flip on which machine it reaches. Fix that first,
+  # otherwise the loop "repairs" whichever VM happened to answer.
+  dups=$(nat_ip_duplicates || true)
+  if [ -n "${dups}" ]; then
+    say "duplicate NAT addresses detected — vagrant would reach the wrong VM:"
+    printf '  %s\n' ${dups}
+    repair_nat_duplicates
+  fi
+
   ready_nodes=$(k8s_ready_nodes)
 
   for vm in ${ALL_VMS}; do

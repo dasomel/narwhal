@@ -164,6 +164,25 @@ for ip in "${NODES[@]}"; do
     fi
   done
 
+  # The apt bundle does NOT go under ${STAGE_DIR}. apt drops privileges to the `_apt` user
+  # before fetching, and /home/vagrant is 0750, so a bundle staged there is reported as a
+  # missing uncompressed Packages index — which sends you hunting for a bundle-generation
+  # bug instead of a directory apt cannot traverse. /srv/airgap is 0755 root:root the whole
+  # way down, matching the path the Vagrantfile mounts.
+  #
+  # No `z`: .deb files are already compressed, so gzip costs time and saves nothing on
+  # 150 MB per node.
+  APT_SRC="$(dirname "${CHART_SRC}")/apt"
+  if [ -d "${APT_SRC}" ]; then
+    ssh_node "${ip}" "sudo rm -rf /srv/airgap/apt && sudo mkdir -p /srv/airgap && sudo chown ${SSH_USER}:${SSH_USER} /srv/airgap"
+    tar cf - -C "$(dirname "${APT_SRC}")" apt \
+      | ssh_node "${ip}" "tar xf - -C /srv/airgap \
+          && sudo chown -R root:root /srv/airgap && sudo chmod -R a+rX /srv/airgap \
+          && ls /srv/airgap/apt/*.deb | wc -l | xargs echo '  apt staged:'"
+  else
+    echo "  WARN: ${APT_SRC} not found — an AIRGAP=1 run will fail at the first apt-get" >&2
+  fi
+
   if [ -d "${CHART_SRC}" ]; then
     tar czf - -C "$(dirname "${CHART_SRC}")" "$(basename "${CHART_SRC}")" \
       | ssh_node "${ip}" "rm -rf '${STAGE_DIR}/charts' && tar xzf - -C '${STAGE_DIR}' && ls '${STAGE_DIR}/charts' | wc -l | xargs echo '  charts staged:'"

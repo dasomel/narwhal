@@ -53,6 +53,12 @@ SUBNET_CIDR=$(cd "${TF_DIR}" && tofu output -raw subnet_cidr)
 # The bootstrap registry runs on the bastion (04-bootstrap-registry.sh needs a
 # container runtime, and a cluster node has only ctr).
 AIRGAP_REGISTRY="${AIRGAP_REGISTRY:-${BASTION_PRIVATE_IP}:5000}"
+# AIRGAP=1 is what the Vagrantfile passes to the same provisioners: APT switches to the
+# bundle at /srv/airgap/apt and 01-prerequisites.sh drops the default route to enforce the
+# isolation. Off by default because the proxy path is what the first clean installs used;
+# turning it on is the real closed-network run, and it needs stage-kakao-nodes.sh to have
+# staged the apt bundle.
+AIRGAP="${AIRGAP:-0}"
 SSH_KEY=$(cd "${TF_DIR}" && tofu output -raw ssh_key_path 2>/dev/null || true)
 [ -n "${SSH_KEY}" ] || SSH_KEY="${TF_DIR}/KPAAS_KEYPAIR.pem"
 case "${SSH_KEY}" in /*) ;; *) SSH_KEY="${TF_DIR}/${SSH_KEY#./}" ;; esac
@@ -111,6 +117,7 @@ MASTER_IPS='${MASTER_IPS}' \
 MASTER_HOSTNAME=${MASTER_HOSTNAME} \
 NFS_SERVER_IP=${MASTER1} \
 HOST_NETWORK_CIDR=${SUBNET_CIDR} \
+AIRGAP=${AIRGAP} \
 AIRGAP_REGISTRY=${AIRGAP_REGISTRY} \
 DNS_SERVER=${BASTION_PRIVATE_IP} \
 KUBECONFIG=${STAGE_DIR}/.kube/config-local"
@@ -397,7 +404,13 @@ for arg in "$@"; do
     join)   run_stage stage_join ;;
     phase1) run_stage stage_phase1 ;;
     phase2) run_stage stage_phase2 ;;
-    all)    for s in proxy registry base mirror init join nfs phase1 phase2; do
+    # The proxy exists so apt and helm can reach the internet from nodes with no public
+    # IP. Under AIRGAP=1 every one of those comes from the bundle instead, and standing
+    # squid up would quietly restore the egress the run is meant to prove it does not
+    # need — the same way a live proxy hid the missing chart mirror for months.
+    all)    stages="proxy registry base mirror init join nfs phase1 phase2"
+            [ "${AIRGAP}" = "1" ] && stages="${stages#proxy }"
+            for s in ${stages}; do
               run_stage "stage_${s}"
             done ;;
     *) echo "unknown stage: ${arg}" >&2; exit 1 ;;

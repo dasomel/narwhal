@@ -283,9 +283,9 @@ run_static() {
   ext_repos=$(grep -rhoE 'repoURL: *https?://[^ ]+' gitops/ --include='*.yaml' 2>/dev/null \
               | grep -v 'svc.cluster.local' | sort -u | wc -l | tr -d ' ')
   if [ "${ext_repos}" = "0" ]; then
-    ok R31 "no public repoURL in the GitOps layer (2026-08-05)"
+    ok R34 "no public repoURL in the GitOps layer (2026-08-05)"
   else
-    warn R31 "${ext_repos} ArgoCD sources are public repos — GitOps cannot sync offline (2026-08-05)"
+    warn R34 "${ext_repos} ArgoCD sources are public repos — GitOps cannot sync offline (2026-08-05)"
   fi
 
   # bastion.tf must be tracked — a blanket csp/ gitignore once hid it from fresh clones.

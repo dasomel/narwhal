@@ -236,6 +236,14 @@ run_static() {
   check_not R28 "no public helm repos in the install path (2026-08-04)" \
     grep -rqE '^[^#]*helm repo add' scripts/cluster/
 
+  # 2026-08-05: R28 matched `helm repo add` and nothing else, so `helm pull apisix/...`
+  # sailed through — it assumes a repo someone else registered, which on an airgapped node
+  # is nobody, and phase2 died on "repo apisix not found" after 40 minutes of install.
+  # Checking for pull/fetch rather than for repo-qualified refs keeps this free of false
+  # positives: `--show-only templates/x.yaml` also looks like <word>/<word>.
+  check_not R28b "no helm pull/fetch — charts come from the bundle (2026-08-05)" \
+    grep -rqE '^[^#]*helm[[:space:]]+(pull|fetch)[[:space:]]' scripts/cluster/ scripts/common/
+
   check_not R29 "no internet fetches in the default install path (2026-08-04)" \
     grep -rqE '^[^#]*(curl|wget|kubectl apply -f)[^#]*https://(get\.helm\.sh|raw\.githubusercontent\.com|github\.com/(cilium|kubernetes-sigs|argoproj|keycloak|mikefarah|dasomel))' \
       scripts/cluster/03-cni-install.sh scripts/cluster/04-addons.sh \
@@ -247,8 +255,22 @@ run_static() {
   # through containerd's CRI plugin, so it ignores /etc/containerd/certs.d and reaches
   # upstream even on a node whose every other pull is mirrored. Flag any `ctr ... pull`
   # that does not say where the host config lives.
+  # No pipe into `grep -q`: it exits on the first match and the still-writing `grep -r`
+  # takes SIGPIPE, which pipefail turns into a false rc — and inside a condition that
+  # reads as "no match", so a real leak would report as clean. Capture, then test.
   check_not R30 "every ctr image pull passes --hosts-dir (2026-08-05)" \
-    bash -c "grep -rhE '^[^#]*ctr .*pull' scripts/cluster/ scripts/common/ | grep -qv -- '--hosts-dir'"
+    bash -c 'p=$(grep -rhE "^[^#]*ctr .*pull" scripts/cluster/ scripts/common/ || true); [ -n "$p" ] && grep -qv -- "--hosts-dir" <<<"$p"'
+
+  # 2026-08-05: the apt bundle and the AIRGAP=1 switch were built and wired into the
+  # Vagrantfile only. On Kakao the same scripts ran with AIRGAP unset and no bundle staged,
+  # so an "airgap" install still fetched every .deb from the Ubuntu archive — and passed,
+  # because the VPC has its own egress. A capability that exists on one provider and not
+  # the other is indistinguishable from a capability that does not exist.
+  check R31 "provision-kakao.sh passes AIRGAP to the nodes (2026-08-05)" \
+    grep -qE '^[^#]*AIRGAP=\$\{AIRGAP\}' scripts/cloud/provision-kakao.sh
+
+  check R32 "stage-kakao-nodes.sh stages the apt bundle to /srv/airgap (2026-08-05)" \
+    grep -qE '^[^#]*/srv/airgap' scripts/cloud/stage-kakao-nodes.sh
 
   # bastion.tf must be tracked — a blanket csp/ gitignore once hid it from fresh clones.
   check R18 "bastion.tf is tracked by git" \
@@ -287,12 +309,14 @@ run_static() {
       [ -d "${d}" ] || continue
       [ "$(ls "${d}/bin" 2>/dev/null | wc -l | tr -d ' ')" -ge 4 ] \
         && [ "$(ls "${d}/manifests" 2>/dev/null | wc -l | tr -d ' ')" -ge 10 ] \
+        && [ -f "${d}/apt/Packages.gz" ] \
+        && [ "$(ls "${d}/apt"/*.deb 2>/dev/null | wc -l | tr -d ' ')" -ge 100 ] \
         || incomplete="${incomplete}${a} "
     done
     if [ -z "${incomplete}" ]; then
-      ok R30 "both bundles carry binaries and manifests (2026-08-05)"
+      ok R33 "both bundles carry binaries, manifests and .debs (2026-08-05)"
     else
-      warn R30 "bundle missing bin/manifests: ${incomplete}(run 07-save-binaries.sh)"
+      warn R33 "bundle incomplete: ${incomplete}(run 07-save-binaries.sh / 07-save-apt-packages.sh)"
     fi
 
     if [ -f "${bundle}/bootstrap/registry.tar" ]; then
@@ -316,8 +340,32 @@ need_cluster() {
   }
 }
 
+# Two checks need to look at a node's filesystem and the bastion's registry log, which
+# kubectl cannot reach. Addresses come from OpenTofu state like everywhere else; if that
+# or the key is unavailable these return non-zero and the callers warn rather than fail.
+SSH_READY=0
+setup_ssh() {
+  BASTION_IP=$(cd "${TF_DIR}" && tofu output -raw bastion_public_ip 2>/dev/null) || return 1
+  MASTER1=$(cd "${TF_DIR}" && tofu output -json master_private_ips 2>/dev/null \
+    | python3 -c 'import json,sys; print(json.load(sys.stdin)[0])' 2>/dev/null) || return 1
+  SSH_KEY=$(cd "${TF_DIR}" && tofu output -raw ssh_key_path 2>/dev/null || true)
+  [ -n "${SSH_KEY}" ] || SSH_KEY="${TF_DIR}/KPAAS_KEYPAIR.pem"
+  case "${SSH_KEY}" in /*) ;; *) SSH_KEY="${TF_DIR}/${SSH_KEY#./}" ;; esac
+  [ -f "${SSH_KEY}" ] || return 1
+  SSH_OPTS="-i ${SSH_KEY} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -o ConnectTimeout=10"
+  SSH_READY=1
+}
+
+ssh_bastion() { [ "${SSH_READY}" = 1 ] || return 1; ssh ${SSH_OPTS} "ubuntu@${BASTION_IP}" "$@"; }
+ssh_node() {
+  [ "${SSH_READY}" = 1 ] || return 1
+  local ip="$1"; shift
+  ssh ${SSH_OPTS} -o ProxyCommand="ssh ${SSH_OPTS} -W %h:%p ubuntu@${BASTION_IP}" "ubuntu@${ip}" "$@"
+}
+
 run_runtime() {
   need_cluster
+  setup_ssh || true
   section "RUNTIME — symptoms absent on the live cluster"
 
   local n
@@ -331,6 +379,34 @@ run_runtime() {
     *containerd://1.7*) bad T02 "containerd 1.7.x running: ${cr} (2026-07-26)" ;;
     *) ok T02 "containerd not 1.7.x: ${cr}" ;;
   esac
+
+  # 2026-08-05: the mirror had never served a pull. hosts.toml was right, the images were
+  # there, and containerd ignored all of it because config_path held Ubuntu's default
+  # colon-separated pair instead of a single directory. Nothing failed while upstream was
+  # reachable, so no health check could see it. Two independent probes, because either one
+  # alone was passing while the mirror sat unused:
+  #   T14 — the config containerd actually loaded holds one directory, not a list
+  #   T15 — the registry has genuinely served containerd (the 2026-07-26 discriminator)
+  local colon
+  colon=$(ssh_node "${MASTER1:-172.17.0.10}" "sudo containerd config dump 2>/dev/null | grep -m1 '[^_]config_path'" 2>/dev/null || true)
+  case "${colon}" in
+    *:*certs.d*|*certs.d:*) bad T14 "containerd config_path is a colon list: ${colon# } (2026-08-05)" ;;
+    *certs.d*)              ok  T14 "containerd config_path is a single directory (2026-08-05)" ;;
+    *)                      warn T14 "could not read config_path from the node" ;;
+  esac
+
+  # "0 requests" and "could not ask" are different answers; only the first is a failure.
+  local hits
+  if [ "${SSH_READY}" != 1 ]; then
+    warn T15 "no ssh to the bastion; mirror-usage check skipped"
+  else
+    hits=$(ssh_bastion "sudo docker logs airgap-registry 2>&1 | grep -c containerd" 2>/dev/null || echo "")
+    case "${hits}" in
+      ''|*[!0-9]*) warn T15 "could not read the registry log" ;;
+      0)           bad  T15 "airgap registry served 0 containerd requests — mirror unused (2026-08-05)" ;;
+      *)           ok   T15 "airgap registry has served containerd (${hits} requests) (2026-08-05)" ;;
+    esac
+  fi
 
   # Every ArgoCD application must be Synced+Healthy.
   local unhealthy

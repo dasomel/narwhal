@@ -289,3 +289,74 @@ set-config-kakao.sh                노드 교체 후에도 정상 (2회차에는
 
 가장 값진 수정 하나를 꼽으면 **드라이버가 실패를 실패로 보고하게 만든 것**이다. 그것이
 없었다면 나머지 대부분이 조용히 지나가 훨씬 비싼 지점에서 터졌을 것이다.
+
+---
+
+# 부록 — 완전 폐쇄망 실행 (2026-08-05)
+
+앞의 4회는 전부 squid 프록시나 VPC 자체 egress가 뒤를 받쳐준 상태였다. 이번에 처음으로
+**인터넷 경로 없이** 돌렸다: `01-prerequisites.sh`가 기본 라우트를 제거하고, apt 소스는
+`file:///srv/airgap/apt` 하나만 남는다.
+
+결과: 6노드 클러스터 + 플랫폼이 기동했고, **인터넷이 가려주던 결함 5건**이 드러났다.
+
+## 왜 그동안 안 보였나
+
+같은 구조가 반복된다 — 폴백이 존재하는 한, 미러가 비어 있어도 설치는 성공한다.
+
+| # | 결함 | 폴백이 가린 방식 |
+|---|------|------------------|
+| 1 | `config_path`가 콜론 목록이라 containerd가 **모든 `hosts.toml`을 무시** | upstream이 늘 닿음 |
+| 2 | 미러 대상 레지스트리가 11개 중 5개만 하드코딩 | 나머지 6개는 조용히 upstream |
+| 3 | `helm pull apisix/...`가 등록되지 않은 repo 참조 | 프록시가 받아줌 |
+| 4 | apt 번들·`AIRGAP=1` 배선이 Vagrant에만 존재 | VPC egress로 Ubuntu archive 도달 |
+| 5 | ArgoCD Application 18개가 공개 helm repo 참조 | 동기화가 라우트 있을 때 끝나 있었음 |
+
+**1번이 가장 크다.** 2026-07-26에 `hosts.toml` 경로를 고쳤지만, containerd를 그 파일들로
+안내하는 설정이 내내 깨져 있어 **미러는 한 번도 쓰인 적이 없었다.** Ubuntu의 containerd
+2.2.1이 `config_path`를 이미 채워 보내는데(`certs.d:/etc/docker/certs.d`), 스크립트는 *빈
+값만* 덮어쓰도록 되어 있어 손대지 않았다. containerd는 그 자리에 디렉터리 **하나**만 받는다.
+
+한 노드에서 양방향 측정:
+
+| config_path | `kubeadm config images pull` | 레지스트리 containerd 요청 |
+|---|---|---|
+| 콜론 목록 | `network is unreachable` | 0건 |
+| 단일 경로 | 6개 이미지 전부 성공 | 132건 |
+
+## 하류 영향의 사슬
+
+2번(미러 커버리지)이 어디까지 번졌는지가 이번의 교훈이다.
+
+```
+미러에 없는 레지스트리 → gitea ImagePullBackOff
+  → 14-gitops-bootstrap.sh의 푸시 실패
+    → WARN 후 계속 → ArgoCD 앱 0개로 "Phase 2 Complete"
+      → grafana·dashboard·portal·velero-ui 503
+        → 회귀 검사는 PASS ("모든 앱이 Healthy"가 앱 0개에서 공허참)
+```
+
+한 건의 미러 공백이 플랫폼 대부분을 조용히 제거했고, 검사 두 개가 그것을 통과시켰다.
+
+## 판별법 (다음 번을 위해)
+
+- **미러가 실제로 쓰이는가**: 레지스트리 로그에서 `useragent="containerd"` grep. 0건이면
+  이미지가 있든 없든 미러는 무용지물이다. 2026-07-26에 적어둔 이 한 줄이 1번을 찾아냈다.
+- **미러 커버리지**: `ls /etc/containerd/certs.d`를 레지스트리 `_catalog`의 최상위와 대조.
+  catalog에 있는데 certs.d에 없는 이름은 전부 조용한 upstream pull이다.
+- **폐쇄망 여부**: 프록시를 끄는 것으로는 부족하다. Kakao VPC는 자체 egress가 있어
+  squid 정지 후에도 `get.helm.sh`에 닿는다. `curl --noproxy '*'`로 확인할 것 —
+  프록시의 부재는 경로의 부재가 아니다.
+
+## 상태
+
+| 항목 | 결과 |
+|------|------|
+| 정적 회귀 | 34/34 (실패 0) |
+| 파드 | 99/99 Running |
+| 미러 서빙 | containerd 요청 2714건 |
+| 번들 | amd64·arm64 양쪽 107/107 |
+| 미해결 | ArgoCD Application 18개가 공개 helm repo 참조 (R34, 별도 진행) |
+
+마지막 항목이 남는 한 GitOps 계층은 폐쇄망에서 재동기화되지 않는다. 차트는 이미 번들에
+전부 있으므로(18개 중 18개, 버전까지 일치) 남은 일은 참조를 내부로 돌리는 것뿐이다.

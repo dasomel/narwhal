@@ -8,7 +8,7 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: https://seaweedfs.github.io/seaweedfs/helm
+    repoURL: http://gitea-http.devtools.svc.cluster.local:3000/api/packages/gitea-admin/helm
     chart: seaweedfs
     targetRevision: 4.34.0
     helm:

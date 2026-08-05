@@ -14,7 +14,7 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: https://metallb.github.io/metallb
+    repoURL: http://gitea-http.devtools.svc.cluster.local:3000/api/packages/gitea-admin/helm
     chart: metallb
     targetRevision: 0.16.1
     helm:

@@ -183,6 +183,47 @@ else
   echo "WARN: Gitea pod not found, skipping OAuth2 configuration"
 fi
 
+#=========================================
+# Publish the bundled Helm charts into Gitea's chart registry.
+#
+# This is what makes the GitOps layer work offline. Every ArgoCD Application used to name a
+# public chart repo (charts.jetstack.io, metallb.github.io, …), so the install could be
+# fully airgapped while refresh/resync/selfHeal still needed the internet — and it read as
+# `34/34 Synced` because those syncs had happened while a route to the internet still
+# existed. Applications now point at this registry, so it has to be populated before
+# 14-gitops-bootstrap.sh brings the app-of-apps up.
+#
+# Over the ingress rather than the service: gitea-http is headless (no ClusterIP), so there
+# is nothing for the node to curl. /api/packages/ bypasses the OIDC plugin — see the
+# gitea-git-bypass ApisixRoute, which lists it for the same reason it lists the git paths.
+# -k because the node does not trust the narwhal CA; the ROUTE is what matters here, and the
+# ArgoCD side verifies properly via argocd-tls-certs-cm.
+#=========================================
+echo "=== Publishing bundled Helm charts to the Gitea registry ==="
+CHART_DIR="${NARWHAL_CHART_DIR:-/home/vagrant/charts}"
+if [ -d "${CHART_DIR}" ]; then
+  chart_ok=0; chart_fail=0
+  for tgz in "${CHART_DIR}"/*.tgz; do
+    [ -e "${tgz}" ] || continue
+    code=$(curl -sk -o /dev/null -w '%{http_code}' --max-time 120 \
+      -u "gitea-admin:${GITEA_ADMIN_PASS}" -X POST --upload-file "${tgz}" \
+      "https://gitea.${DOMAIN}/api/packages/gitea-admin/helm/api/charts" || echo "000")
+    # 409 = this exact chart version is already published, which is success on a re-run.
+    case "${code}" in
+      200|201|409) chart_ok=$((chart_ok + 1)) ;;
+      *) chart_fail=$((chart_fail + 1)); echo "  WARN: ${code} $(basename "${tgz}")" >&2 ;;
+    esac
+  done
+  echo "  charts published: ${chart_ok}, failed: ${chart_fail}"
+  if [ "${chart_fail}" -gt 0 ]; then
+    echo "WARN: ${chart_fail} chart(s) did not publish — the Applications that need them" >&2
+    echo "      will sit Unknown with 'error fetching chart' until this is re-run." >&2
+  fi
+else
+  echo "WARN: ${CHART_DIR} not found — no charts published, so every ArgoCD Application" >&2
+  echo "      sourcing from the in-cluster registry will fail to resolve its chart." >&2
+fi
+
 echo "=== Gitea Installation Done ==="
 
 echo ""

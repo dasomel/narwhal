@@ -8,7 +8,7 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: https://openbao.github.io/openbao-helm
+    repoURL: http://gitea-http.devtools.svc.cluster.local:3000/api/packages/gitea-admin/helm
     chart: openbao
     targetRevision: 0.28.3
     helm:

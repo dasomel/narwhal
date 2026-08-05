@@ -8,7 +8,7 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: https://kyverno.github.io/kyverno/
+    repoURL: http://gitea-http.devtools.svc.cluster.local:3000/api/packages/gitea-admin/helm
     chart: kyverno
     targetRevision: 3.8.1
     helm:

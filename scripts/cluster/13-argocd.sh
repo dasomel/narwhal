@@ -180,6 +180,63 @@ data:
     insecureSkipVerify: true
 EOF
 
+#=========================================
+# Trust the cluster's private CA for repository access.
+#
+# Needed because every Application's chart now comes from the in-cluster Gitea Helm
+# registry instead of a public chart repo. Gitea publishes index.yaml with ABSOLUTE
+# download URLs derived from ROOT_URL, so even when ArgoCD is pointed at the in-cluster
+# service it is sent out to https://gitea.${DOMAIN}/api/packages/... — served by APISIX
+# with a narwhal-CA certificate that ArgoCD does not otherwise trust. Symptom without
+# this: every migrated app goes Unknown with
+#   error fetching chart: ... tls: failed to verify certificate: x509: signed by unknown authority
+# while the chart is sitting in the registry.
+#
+# argocd-tls-certs-cm is keyed by hostname and read by repo-server; the ArgoCD install
+# manifest already mounts it, so populating the key is the whole change. `|| true` because
+# a cluster whose wildcard cert has not been issued yet must not fail the install here —
+# 08-6 re-runs and this step is idempotent.
+#=========================================
+echo "=== Trusting the narwhal CA for ArgoCD repository access ==="
+ARGOCD_CA=$(kubectl get secret narwhal-wildcard-tls -n platform-system \
+  -o jsonpath='{.data.ca\.crt}' 2>/dev/null | base64 -d 2>/dev/null || true)
+if [ -n "${ARGOCD_CA}" ]; then
+  # Both hostnames. The Application names the in-cluster service, but Gitea's index.yaml
+  # redirects the actual download to the external host, and the cert is looked up by the
+  # host ArgoCD was configured with — one key alone leaves the other leg unverifiable.
+  kubectl create configmap argocd-tls-certs-cm -n devtools \
+    --from-literal="gitea.${DOMAIN}=${ARGOCD_CA}" \
+    --from-literal="gitea-http.devtools.svc.cluster.local=${ARGOCD_CA}" \
+    --dry-run=client -o yaml | kubectl apply -f -
+  kubectl label configmap argocd-tls-certs-cm -n devtools \
+    app.kubernetes.io/name=argocd-tls-certs-cm app.kubernetes.io/part-of=argocd --overwrite >/dev/null
+
+  # Declaring the repository is not optional, and this is the part that is easy to miss:
+  # populating argocd-tls-certs-cm alone changes nothing, because repo-server only passes
+  # `--ca-file` to the `helm pull` subprocess for repositories it knows about. Without this
+  # Secret the pull runs against the container's system trust store and every app stays
+  # Unknown with `x509: certificate signed by unknown authority` — with the CA sitting in
+  # the ConfigMap, unused.
+  kubectl apply -f - <<REPOEOF
+apiVersion: v1
+kind: Secret
+metadata:
+  name: narwhal-charts-repo
+  namespace: devtools
+  labels:
+    argocd.argoproj.io/secret-type: repository
+stringData:
+  name: narwhal-charts
+  type: helm
+  url: http://gitea-http.devtools.svc.cluster.local:3000/api/packages/gitea-admin/helm
+  enableOCI: "false"
+REPOEOF
+  echo "  narwhal CA + narwhal-charts helm repo registered with ArgoCD"
+else
+  echo "WARN: narwhal-wildcard-tls has no ca.crt yet — ArgoCD cannot verify" >&2
+  echo "      gitea.${DOMAIN}, so Helm chart fetches will fail until 08-6 has run." >&2
+fi
+
 # Configure RBAC for Keycloak groups
 cat <<EOF | kubectl apply -f -
 apiVersion: v1

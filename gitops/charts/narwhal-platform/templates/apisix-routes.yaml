@@ -191,7 +191,16 @@ spec:
           - subject:
               scope: Path
             op: RegexMatch
-            value: "(\\.git(/|$)|/info/refs|/git-upload-pack|/git-receive-pack|^/api/v1/|^/login/oauth/|^/user/login)"
+            # ^/api/packages/ joins the git paths for the same reason they are here: these
+            # are machine endpoints, and a machine cannot complete an interactive OIDC
+            # browser flow. Gitea's Helm registry publishes index.yaml with ABSOLUTE
+            # download URLs built from ROOT_URL — so ArgoCD, told to fetch a chart from the
+            # in-cluster service, is redirected out to https://gitea.<domain>/api/packages/…
+            # and there met by a Keycloak redirect. That turned every migrated Application
+            # Unknown with `error fetching chart` even though the chart was sitting in the
+            # registry. Reads are anonymous-safe here (public packages); writes still need
+            # the token that push-to-gitea.sh and the chart publisher supply.
+            value: "(\\.git(/|$)|/info/refs|/git-upload-pack|/git-receive-pack|^/api/v1/|^/api/packages/|^/login/oauth/|^/user/login)"
       upstreams:
         - name: gitea-http
       plugins:

@@ -8,9 +8,13 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: https://github.com/otwld/velero-ui
-    targetRevision: v0.10.1
-    path: kubernetes/chart
+    # The only source here that was a *git* repo rather than a chart repo, so it needed more
+    # than a URL swap: `path` goes away, `chart` appears, and targetRevision becomes the
+    # chart's own version (0.14.0) instead of the git tag (v0.10.1) that used to select it.
+    # Same artifact — `helm package kubernetes/chart` at tag v0.10.1 produces 0.14.0.
+    repoURL: http://gitea-http.devtools.svc.cluster.local:3000/api/packages/gitea-admin/helm
+    chart: velero-ui
+    targetRevision: 0.14.0
     helm:
       releaseName: velero-ui
       values: |

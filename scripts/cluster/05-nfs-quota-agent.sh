@@ -41,14 +41,18 @@ done
 echo "Labeling master node as NFS server..."
 kubectl label node "${MASTER_HOSTNAME}" nfs-server=true --overwrite
 
-# Download Helm chart from GitHub
+# Unpack the Helm chart from the airgap bundle.
+#
+# --strip-components=1 rather than extracting into /tmp: the tarball's top-level directory
+# is `nfs-quota-agent/`, not `nfs-quota-agent-chart/`, so extracting alongside CHART_DIR
+# left helm with `path "/tmp/nfs-quota-agent-chart" not found` right after a "successful"
+# extraction. The name only matched while the chart came from a GitHub tarball; swapping
+# the source without re-checking the layout is what broke it.
 CHART_DIR="/tmp/nfs-quota-agent-chart"
+echo "Unpacking Helm chart from the bundle..."
 rm -rf "${CHART_DIR}"
-
-echo "Downloading Helm chart..."
-rm -rf "${CHART_DIR}"
-mkdir -p "$(dirname "${CHART_DIR}")"
-tar xzf "$(chart nfs-quota-agent)" -C "$(dirname "${CHART_DIR}")"
+mkdir -p "${CHART_DIR}"
+tar xzf "$(chart nfs-quota-agent)" -C "${CHART_DIR}" --strip-components=1
 
 # Create namespace
 kubectl create namespace nfs-quota-agent --dry-run=client -o yaml | kubectl apply -f -

@@ -45,16 +45,53 @@ done
 
 REG="${AIRGAP_REGISTRY}"
 REG_SCHEME="${AIRGAP_REGISTRY_SCHEME:-http}"
+IMAGES_TXT="${IMAGES_TXT:-${SCRIPT_DIR}/images.txt}"
+
+# Which upstreams get a hosts.toml, derived from the image list instead of hardcoded.
+#
+# The literal five here covered registry.k8s.io, quay.io, ghcr.io, docker.io and
+# cr.fluentbit.io, while the bundle also carried registry.istio.io, docker.gitea.com,
+# public.ecr.aws, gcr.io, mirror.gcr.io and reg.kyverno.io. Those six had no mirror entry,
+# so every pull from them went upstream — invisible until the network was genuinely
+# closed, where it surfaced as istiod, istio-cni, gitea and argocd-redis all sitting in
+# ImagePullBackOff with the images present in the registry the whole time.
+#
+# Only refs with a slash can name a registry, and only a first segment containing a dot
+# is one: `busybox:1.28` has a dot but no slash, and `apache/apisix` has a slash but no
+# dot — both are Docker Hub short forms containerd resolves to docker.io. The five stay
+# in the union because cr.fluentbit.io is referenced by a chart, not by images.txt.
+mirror_upstreams() {
+  {
+    if [ -f "${IMAGES_TXT}" ]; then
+      grep -E '^[^[:space:]#]+/' "${IMAGES_TXT}" \
+        | sed -E 's|^([^/]+)/.*|\1|' \
+        | grep -E '^[^:]*\.'
+    else
+      echo "WARNING: ${IMAGES_TXT} not found — mirroring only the built-in registries" >&2
+    fi
+    printf '%s\n' registry.k8s.io quay.io ghcr.io docker.io registry-1.docker.io cr.fluentbit.io
+  } | sort -u
+}
 
 # shellcheck disable=SC2120  # sudo_cmd is an optional arg with a default; callers may omit it
 configure_node() {
   local sudo_cmd="${1:-sudo}"
 
-  # Ensure containerd has config_path enabled
-  ${sudo_cmd} grep -q '^\s*config_path = "/etc/containerd/certs.d"' /etc/containerd/config.toml 2>/dev/null || \
-    ${sudo_cmd} sed -i 's|config_path = ""|config_path = "/etc/containerd/certs.d"|' /etc/containerd/config.toml
+  # Ensure containerd has config_path enabled. Normalise ANY value, not just an empty
+  # one: Ubuntu's containerd 2.2.1 ships a colon-separated pair there, containerd takes a
+  # single directory, and the mismatch makes it ignore every hosts.toml — see the same
+  # rewrite in scripts/common/02-containerd.sh for the measurements.
+  ${sudo_cmd} python3 -c '
+import re, sys
+p = "/etc/containerd/config.toml"
+t = open(p).read()
+n = re.sub(r"(?<![\w])(config_path\s*=\s*)([\"\x27])[^\"\x27]*\2",
+           "\\1\"/etc/containerd/certs.d\"", t)
+if n != t:
+    open(p, "w").write(n)
+'
 
-  for upstream in registry.k8s.io quay.io ghcr.io docker.io cr.fluentbit.io; do
+  for upstream in $(mirror_upstreams); do
     dir="/etc/containerd/certs.d/${upstream}"
     ${sudo_cmd} mkdir -p "${dir}"
     ${sudo_cmd} tee "${dir}/hosts.toml" > /dev/null <<TOMLEOF

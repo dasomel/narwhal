@@ -54,14 +54,25 @@ sudo sed -i 's|sandbox_image = ".*"|sandbox_image = "registry.k8s.io/pause:3.10"
 # in-place rewrite that handles both quote styles and both plugin namespaces, and covers
 # ALL config_path='' occurrences (line 54 under cri.v1.images.registry and line 245
 # under grpc.v1.cri.registry in the 2.x default config).
+#
+# "Leave already-set paths alone" was wrong, and cost the whole airgap story: Ubuntu's
+# containerd 2.2.1 ships config_path = '/etc/containerd/certs.d:/etc/docker/certs.d'
+# already populated, so the empty-value rewrite below never fired. containerd takes a
+# SINGLE directory there — the colon form is Docker's syntax — so it looked for a
+# directory literally named "certs.d:/etc/docker/certs.d", found nothing, and ignored
+# every hosts.toml. The mirror served zero requests while every pull went upstream, which
+# passed for a year because the internet was always reachable. Measured 2026-08-05: with
+# the colon form `kubeadm config images pull` fails with "network is unreachable"; with a
+# single path the same command pulls all six images from the mirror.
+#
+# So: normalise any value, not just an empty one. The lookbehind keeps this off
+# `plugin_config_path` (NRI), which is a different setting that must keep its own value.
 sudo python3 - /etc/containerd/config.toml <<'PYEOF'
 import re, sys
 path = sys.argv[1]
 text = open(path).read()
-# Replace any config_path = '' or config_path = "" (both quote styles, arbitrary whitespace)
-# Only target empty values; leave already-set paths alone.
 new_text = re.sub(
-    r'(config_path\s*=\s*)["\']["\']',
+    r'(?<![\w])(config_path\s*=\s*)(["\'])[^"\']*\2',
     r'\1"/etc/containerd/certs.d"',
     text
 )

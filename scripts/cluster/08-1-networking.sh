@@ -75,8 +75,12 @@ echo "=== Installing APISIX ==="
 
 # Install APISIX CRDs with server-side apply to avoid field manager conflicts
 echo "Applying APISIX CRDs (from apisix-ingress-controller chart)..."
-rm -rf /tmp/aic-chart
-helm pull apisix/apisix-ingress-controller --version 0.14.1 --untar --untardir /tmp/aic-chart
+# From the bundle, not `helm pull apisix/...`: a repo-qualified pull needs `helm repo add`
+# to have run, and it never does on an airgapped node — the first offline run died here
+# with "repo apisix not found". The bundle has carried this exact chart all along, and
+# unpacking it locally also pins the version the way --version used to.
+rm -rf /tmp/aic-chart && mkdir -p /tmp/aic-chart
+tar xzf "$(chart apisix-ingress-controller)" -C /tmp/aic-chart
 for f in /tmp/aic-chart/apisix-ingress-controller/crds/*.yaml; do
   kubectl apply --server-side --force-conflicts -f "${f}" 2>&1 | tail -1
 done

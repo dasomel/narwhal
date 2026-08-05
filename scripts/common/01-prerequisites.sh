@@ -42,10 +42,45 @@ if [ "${AIRGAP:-0}" = "1" ]; then
   #
   # Host-only (192.168.56.0/24) and the NAT subnet stay reachable: they are directly
   # connected, so `vagrant ssh` and node-to-node traffic do not need the default route.
-  if ip route show default 2>/dev/null | grep -q .; then
+  #
+  # `ip route del default` alone does not hold. It survives only until the DHCP lease is
+  # renewed, at which point systemd-networkd installs the gateway again — measured on a
+  # finished cluster where every one of the six nodes had its default route back while the
+  # install log showed the route had been removed on each. Provisioning still ran isolated
+  # (that is when the leaks surfaced), but the cluster does not STAY isolated, so a later
+  # "it works offline" check would be testing nothing. The networkd drop-in below makes it
+  # durable: the NAT link keeps its address and its on-link subnet, and simply stops
+  # accepting a gateway from DHCP.
+  # No `awk ... exit` and no `grep -q` on these pipelines — both close the pipe early and
+  # pipefail turns the upstream's SIGPIPE into a failure. See the CLAUDE.md shell rule.
+  AIRGAP_NAT_IF="$(ip -o route show default 2>/dev/null | awk '!seen {print $5; seen=1}')"
+  if [ -n "${AIRGAP_NAT_IF}" ]; then
     echo "=== AIRGAP: dropping the default route to enforce isolation ==="
     ip route show default | sed 's/^/  removing: /'
-    sudo ip route del default || true
+    # Ask networkd which .network file manages the link rather than globbing for one named
+    # after the interface: netplan names the rendered file after the *netplan id*, which on
+    # this box is `10-netplan-main_if.network` for enp2s0. The first version globbed on the
+    # interface name, matched nothing, created no drop-in, and reported success — the route
+    # came straight back on the next renew.
+    AIRGAP_NW_FILE="$(networkctl status "${AIRGAP_NAT_IF}" 2>/dev/null \
+      | awk '!seen && /Network File:/ {sub(/.*Network File: */,""); print; seen=1}')"
+    if [ -n "${AIRGAP_NW_FILE}" ]; then
+      # netplan renders into /run/systemd/network; networkd merges drop-ins from /etc over it.
+      AIRGAP_NW_DROPIN="/etc/systemd/network/$(basename "${AIRGAP_NW_FILE}").d"
+      sudo mkdir -p "${AIRGAP_NW_DROPIN}"
+      printf '[DHCPv4]\nUseGateway=false\nUseRoutes=false\n' \
+        | sudo tee "${AIRGAP_NW_DROPIN}/airgap.conf" >/dev/null
+      echo "  no-gateway drop-in: ${AIRGAP_NW_DROPIN}/airgap.conf"
+    else
+      echo "WARN: could not determine the .network file for ${AIRGAP_NAT_IF};" \
+           "the route will return on the next DHCP renew" >&2
+    fi
+    sudo networkctl reload 2>/dev/null || sudo systemctl reload systemd-networkd 2>/dev/null || true
+    sudo ip route del default 2>/dev/null || true
+    if [ -n "$(ip -o route show default 2>/dev/null)" ]; then
+      echo "WARN: a default route is still present after the drop-in; isolation is NOT enforced" >&2
+      ip route show default | sed 's/^/  still: /' >&2
+    fi
   fi
 
   echo "=== AIRGAP: switching APT to the bundle ==="

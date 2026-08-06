@@ -280,8 +280,13 @@ run_static() {
   # happened while a default route was still present. Count them so the number cannot grow
   # silently while the airgap work is migrating them.
   local ext_repos
+  # `|| true` is load-bearing: the moment the migration succeeds and no public repoURL
+  # remains, `grep -v` emits nothing and exits 1, and pipefail kills the whole suite at
+  # its own success case — measured 2026-08-06, right after cd64ff4 landed. The count
+  # still comes through because wc runs regardless.
   ext_repos=$(grep -rhoE 'repoURL: *https?://[^ ]+' gitops/ --include='*.yaml' 2>/dev/null \
-              | grep -v 'svc.cluster.local' | sort -u | wc -l | tr -d ' ')
+              | grep -v 'svc.cluster.local' | sort -u | wc -l | tr -d ' ' || true)
+  [ -n "${ext_repos}" ] || ext_repos=0
   if [ "${ext_repos}" = "0" ]; then
     ok R34 "no public repoURL in the GitOps layer (2026-08-05)"
   else

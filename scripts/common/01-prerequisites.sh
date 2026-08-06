@@ -68,7 +68,13 @@ if [ "${AIRGAP:-0}" = "1" ]; then
       # netplan renders into /run/systemd/network; networkd merges drop-ins from /etc over it.
       AIRGAP_NW_DROPIN="/etc/systemd/network/$(basename "${AIRGAP_NW_FILE}").d"
       sudo mkdir -p "${AIRGAP_NW_DROPIN}"
-      printf '[DHCPv4]\nUseGateway=false\nUseRoutes=false\n' \
+      # UseGateway=false only — NOT UseRoutes=false. On Kakao the DHCP lease also carries
+      # the metadata and NTP endpoints as classless routes (169.254.169.254 via a VPC
+      # helper, .123/.253 via the gateway), and UseRoutes=false discards those with the
+      # default route, breaking cloud-init on the next boot. UseGateway=false removes
+      # exactly the route this block is about. (On the Vagrant NAT link the lease carries
+      # only the gateway, so dropping UseRoutes there never did anything anyway.)
+      printf '[DHCPv4]\nUseGateway=false\n' \
         | sudo tee "${AIRGAP_NW_DROPIN}/airgap.conf" >/dev/null
       echo "  no-gateway drop-in: ${AIRGAP_NW_DROPIN}/airgap.conf"
     else

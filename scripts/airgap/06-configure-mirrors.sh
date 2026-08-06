@@ -94,9 +94,16 @@ if n != t:
   for upstream in $(mirror_upstreams); do
     dir="/etc/containerd/certs.d/${upstream}"
     ${sudo_cmd} mkdir -p "${dir}"
+    # The server line is the fallback when the mirror misses, and for docker.io the
+    # hostname is NOT the registry: https://docker.io/v2/ answers 302 to a website,
+    # so a miss surfaced as NotFound instead of falling through — measured with
+    # postgres:18.3-alpine on an un-isolated node. The API host is registry-1.docker.io
+    # (401, a real auth challenge). Every other upstream serves /v2/ on its own name.
+    fallback="${upstream}"
+    [ "${upstream}" = "docker.io" ] && fallback="registry-1.docker.io"
     ${sudo_cmd} tee "${dir}/hosts.toml" > /dev/null <<TOMLEOF
 # Airgap mirror for ${upstream}
-server = "https://${upstream}"
+server = "https://${fallback}"
 
 [host."${REG_SCHEME}://${REG}/v2/${upstream}"]
   capabilities = ["pull", "resolve"]

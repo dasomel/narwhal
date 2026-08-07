@@ -297,6 +297,25 @@ run_static() {
   check R18 "bastion.tf is tracked by git" \
     git ls-files --error-unmatch "${TF_DIR}/bastion.tf"
 
+  # 2026-08-07: `.airgap-registry-data/` (6.8 GB of registry blobs) sat tracked in the
+  # history of a public repo while .gitignore listed it — the entry was added after the
+  # commit, and gitignore does not apply to already-tracked paths. It grew the repo to
+  # 5.79 GiB and would have made the push fail on GitHub's 100 MB file limit.
+  #
+  # Tracked-AND-ignored is the exact signature, and it is cheap to ask. A plain size
+  # check would not do: the offending files are individually unremarkable, and it is the
+  # intent recorded in .gitignore that says they do not belong.
+  # --no-index is the whole trick: without it `git check-ignore` reports nothing, because
+  # git's rule is that a tracked path is never "ignored". Its man page names this exact
+  # case — "debug why a path became tracked ... and was not ignored as expected".
+  local tracked_ignored
+  tracked_ignored=$(git ls-files -z 2>/dev/null | xargs -0 git check-ignore --no-index 2>/dev/null | head -5 | tr '\n' ' ' || true)
+  if [ -z "${tracked_ignored}" ]; then
+    ok R35 "no tracked file matches .gitignore (2026-08-07)"
+  else
+    bad R35 "tracked but gitignored — will not stop growing: ${tracked_ignored}(2026-08-07)"
+  fi
+
   # "The bundle is still incomplete" has been the finding three separate times, each
   # from a different cause (live-only image list, docker-archive refusing to overwrite,
   # bare refs). Check the shape rather than any one of those: the three counts must

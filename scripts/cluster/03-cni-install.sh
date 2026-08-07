@@ -38,8 +38,7 @@ export KUBECONFIG=/home/vagrant/.kube/config-local
 
 case "${CNI_PLUGIN}" in
   cilium)
-    # Install Helm
-    HELM_VERSION="v4.2.1"
+    # Install Helm — version pinned in scripts/airgap/07-save-binaries.sh, not here.
     install_bin helm
 
     # Install Cilium CLI

@@ -33,8 +33,8 @@ echo "=== Installing Kubernetes Addons ==="
 # Use local kubeconfig (bypasses VIP) to avoid disruption during master-2 join
 export KUBECONFIG=/home/vagrant/.kube/config-local
 
-# Install Helm if not installed
-HELM_VERSION="v4.2.1"
+# Install Helm if not installed. The version is pinned where the binary is produced
+# (scripts/airgap/07-save-binaries.sh); a second literal here would only drift.
 if ! command -v helm &> /dev/null; then
   install_bin helm
 fi

@@ -1,8 +1,10 @@
 # The seaweedfs-s3-credentials Secret is deliberately NOT in this file.
 #
-# It used to carry `access-key-id: kubemetal` / `secret-access-key: REDACTED-SEE-GIT-HISTORY-SCRUB`
-# as literals, which put a working credential in a public repository — the one thing
-# CLAUDE.md's guardrails say nothing in CI will catch. Every other credential in this
+# It used to carry its access key and secret as literals, which put a working
+# credential in a public repository — the one thing CLAUDE.md's guardrails say
+# nothing in CI will catch. (The old value is not repeated here: quoting a removed
+# secret in the comment that removes it leaves it exactly where it was.) Every
+# other credential in this
 # tree (harbor, cnpg, apisix admin) is generated at install time instead; this now
 # matches. The Deployment below still reads it via secretKeyRef, so create it before
 # enabling the kubemetal app:

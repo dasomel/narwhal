@@ -210,8 +210,9 @@ fi
 # add it idempotently via JSON merge patch (duplicate ports are rejected by the API server,
 # so the || true is only for the rare case the svc doesn't exist yet on a partial re-run).
 echo "Patching APISIX gateway service to add 443/TLS port (D2: chart v2.13.0 bug)..."
-kubectl get svc apisix-gateway -n platform-system -o jsonpath='{.spec.ports[*].port}' 2>/dev/null \
-  | grep -qw 443 || \
+# Capture, then test: grep -q on a kubectl pipe can SIGPIPE the producer under pipefail.
+gw_ports=$(kubectl get svc apisix-gateway -n platform-system -o jsonpath='{.spec.ports[*].port}' 2>/dev/null || true)
+grep -qw 443 <<<"${gw_ports}" || \
   kubectl patch svc apisix-gateway -n platform-system --type=json \
     -p '[{"op":"add","path":"/spec/ports/-","value":{"name":"apisix-gateway-tls","port":443,"protocol":"TCP","targetPort":9443}}]' || true
 

@@ -206,7 +206,8 @@ else
   # Cloud: the Kakao LB already answers VIP:6443 (routes to this master once the
   # apiserver is up), so no local bind is needed or allowed.
   if [ "${PROVIDER:-vagrant}" != "kakao" ]; then
-    if ! ip addr show "${VIP_INTERFACE}" | grep -q "${VIP_ADDRESS}"; then
+    vip_if_addrs=$(ip addr show "${VIP_INTERFACE}" 2>/dev/null || true)
+    if ! grep -q "${VIP_ADDRESS}" <<<"${vip_if_addrs}"; then
       echo "Adding VIP ${VIP_ADDRESS} to ${VIP_INTERFACE} for bootstrap..."
       sudo ip addr add "${VIP_ADDRESS}/32" dev "${VIP_INTERFACE}"
     fi

@@ -31,8 +31,10 @@ if [ ! -f "${MANIFEST}" ]; then
   exit 1
 fi
 
-if sudo yq '.spec.containers[] | select(.name=="kube-apiserver") | .env[]? | select(.name=="GOMEMLIMIT")' \
-     "${MANIFEST}" 2>/dev/null | grep -q GOMEMLIMIT; then
+# Capture, then test — no grep -q on a live pipe (SIGPIPE + pipefail reads as "absent").
+apiserver_env=$(sudo yq '.spec.containers[] | select(.name=="kube-apiserver") | .env[]? | select(.name=="GOMEMLIMIT")' \
+     "${MANIFEST}" 2>/dev/null || true)
+if grep -q GOMEMLIMIT <<<"${apiserver_env}"; then
   echo "kube-apiserver already has GOMEMLIMIT — nothing to do"
   exit 0
 fi

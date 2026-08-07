@@ -36,7 +36,9 @@ echo "NFS Device: ${NFS_DEVICE}"
 echo "NFS Mount: ${NFS_MOUNT}"
 
 # Check if already mounted with prjquota
-if ! mount | grep "${NFS_MOUNT}" | grep -q prjquota; then
+# Capture, then test: two greps chained on `mount` can SIGPIPE it under pipefail.
+mount_entry=$(mount | grep "${NFS_MOUNT}" || true)
+if ! grep -q prjquota <<<"${mount_entry}"; then
   echo "Enabling project quota on ${NFS_MOUNT}..."
 
   # For ext4, enable quota feature

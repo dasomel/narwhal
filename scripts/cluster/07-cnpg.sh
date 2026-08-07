@@ -103,8 +103,9 @@ else
   GITEA_DB_PASS=$(kubectl get secret narwhal-db-credentials -n database \
     -o jsonpath='{.data.gitea-password}' | base64 -d)
   # keycloak-password may be absent on clusters provisioned before this fix; add it if missing
-  if kubectl get secret narwhal-db-credentials -n database \
-      -o jsonpath='{.data.keycloak-password}' 2>/dev/null | grep -q .; then
+  kc_pass_b64=$(kubectl get secret narwhal-db-credentials -n database \
+      -o jsonpath='{.data.keycloak-password}' 2>/dev/null || true)
+  if [ -n "${kc_pass_b64}" ]; then
     KEYCLOAK_DB_PASS=$(kubectl get secret narwhal-db-credentials -n database \
       -o jsonpath='{.data.keycloak-password}' | base64 -d)
   else

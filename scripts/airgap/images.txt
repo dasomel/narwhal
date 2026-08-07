@@ -63,13 +63,11 @@ ghcr.io/dexidp/dex:v2.45.0
 ghcr.io/grafana/alloy-operator:1.10.0
 ghcr.io/headlamp-k8s/headlamp:v0.42.0
 ghcr.io/kube-vip/kube-vip:v1.1.2
-ghcr.io/mlflow/mlflow:v3.14.0
 kong:3.9
 mirror.gcr.io/aquasec/trivy-operator:0.25.0
 mirror.gcr.io/aquasec/trivy:0.60.0
 mirror.gcr.io/chrislusf/seaweedfs:4.40
 mirror.gcr.io/curlimages/curl:8.21.0
-mirror.gcr.io/prefecthq/prefect:3.7.8-python3.12
 public.ecr.aws/docker/library/redis:8.2.3-alpine
 quay.io/argoproj/argocd:v3.4.4
 quay.io/cilium/cilium-envoy:v1.36.6-1778235340-b87d1e32f522b33bd51701c6476d199326f01496

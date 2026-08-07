@@ -17,14 +17,3 @@ apisixNodePorts:
 # repoURL is the Gitea internal URL for apps that source from the GitOps repo
 repoURL: http://gitea-http.devtools.svc.cluster.local:3000/gitea-admin/narwhal-gitops.git
 
-# KubeMetal MLOps stack (MLflow + SeaweedFS + Prefect) in its own `kubemetal` namespace.
-# Off by default: the manifests come from the kubemetal repo (`make export-gitops`), so
-# turning this on without a matching resources/kubemetal.yaml gives ArgoCD an empty app.
-#
-# Enabling this makes ArgoCD the owner of the namespace — kubemetal's own direct
-# `kubectl apply` path is then reverted by selfHeal. Use one or the other, not both.
-#
-# Do NOT label the kubemetal namespace `istio.io/dataplane-mode: ambient`: ztunnel HBONE
-# breaks the plain-HTTP kubelet probes that mlflow and prefect rely on.
-kubemetal:
-  enabled: false

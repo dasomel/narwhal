@@ -29,7 +29,7 @@ Kakao에서는 그 방식이 성립하지 않는다:
 브라우저 (오퍼레이터 PC)
   │  https://argocd.kakao.narwhal.internal
   │
-  ├─ /etc/hosts 가 이름 → 210.109.82.157 로 해석
+  ├─ /etc/hosts 가 이름 → <worker LB 공인 IP> 로 해석
   ↓
 worker LB (공인, TCP 443 → NodePort 31443)
   ↓
@@ -158,7 +158,7 @@ master LB로 SSH 터널을 열고 `narwhal-kakao` 컨텍스트를 만든다. 자
 
 ```
 # BEGIN narwhal-kakao
-210.109.82.157 alertmanager.kakao.narwhal.internal argocd.kakao.narwhal.internal ...
+<worker LB 공인 IP> alertmanager.kakao.narwhal.internal argocd.kakao.narwhal.internal ...
 # END narwhal-kakao
 ```
 

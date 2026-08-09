@@ -7,6 +7,82 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-08-08
+
+Airgap goes from "images only" to an install that genuinely completes with no route to
+the internet, on both Vagrant (arm64) and Kakao Cloud (amd64).
+
+### Added
+- **A closed-network install that is actually closed.** The bundle now carries Helm charts,
+  binaries (helm/cilium/hubble/yq), remote manifests and OS packages — previously only
+  container images were bundled and everything else came from the public internet, hidden
+  behind the egress proxy. `AIRGAP=1` switches APT to `file:///srv/airgap/apt` and drops the
+  default route so the isolation is enforced rather than assumed.
+- **Kakao Cloud as a first-class provider**: OpenTofu bring-up, bastion proxy/registry
+  stages, `kakao.narwhal.internal` service zone served from bastion dnsmasq, per-arch
+  bundles, and `set-config-kakao.sh` / `setup-hosts-kakao.sh` for access.
+- **Isolation tooling**: `scripts/test/verify-isolation.sh` checks route, networkd drop-in,
+  direct egress, mirror reachability and APT sources per node; `airgap-isolate-kakao.sh`
+  isolates already-provisioned nodes. Documented in `docs/common/airgap-isolation-testing.md`.
+- **Chaos Mesh 2.8.3 + k6 load-test suite** with Grafana dashboards and a Prometheus
+  remote-write receiver; Dr. Pym rightsizing recommendations.
+- **Clean-install regression suite** (`regression-check-kakao.sh`, 36 static + runtime
+  checks, each mapped to a dated lessons-log row) wired into CI on every push.
+
+### Fixed
+- **The airgap mirror had never served a single pull.** Ubuntu's containerd 2.2.1 ships
+  `config_path` as a colon-separated pair, which containerd does not accept — it looked for
+  a directory of that literal name and ignored every `hosts.toml`. Measured both ways on one
+  node: colon form → `network is unreachable`; single path → all images pull from the mirror,
+  registry log 0 → 132 containerd requests.
+- **Mirror coverage**: only 5 of 11 registries in the image list had a `hosts.toml`, so
+  istiod, istio-cni, gitea and argocd-redis pulled upstream. The list is now derived from
+  `images.txt`.
+- **GitOps could not sync offline** — every ArgoCD Application named a public chart repo.
+  Charts now come from the in-cluster Gitea Helm registry.
+- **Isolation did not survive DHCP renewal**: `ip route del default` is undone on the next
+  lease, so a networkd drop-in (`UseGateway=false`) makes it durable. On Kakao only the
+  gateway is dropped — the lease also carries the metadata/NTP routes.
+- **Phase 2 could report success with zero platform apps**: the Gitea and GitOps bootstrap
+  steps warned and continued, leaving four services 503 with nothing behind them. Both are
+  now critical.
+- NFS moved to v3 with pinned NLM helper ports (the v4.1 client/server deadlock stalled
+  storage for ~24h), kube-apiserver heap bounded, and resource requests/limits set across
+  ArgoCD, Cilium operator, Tempo and Prometheus.
+
+### Security
+- Removed a hardcoded S3 credential and a stale public IP from the repo, and scrubbed a
+  6.8 GB accidentally-committed registry blob store from history (5.79 GiB → 3.86 MiB).
+- New check R35 fails the build on any file that is tracked *and* gitignored — the
+  combination that let that blob store in, since `.gitignore` never applies retroactively.
+
+### Removed
+- The KubeMetal MLOps integration (MLflow/SeaweedFS/Prefect). kubemetal installs only its
+  agent now, via Helm OCI charts into its own namespace, so the gitops export had no caller.
+  Takes the mlflow and prefect images out of both bundles with it.
+
+## [1.1.0] - 2026-07-13
+
+Released without a CHANGELOG entry at the time; reconstructed here from the 83 commits in
+`v1.0.0..v1.1.0` so the history is continuous.
+
+### Added
+- Kubernetes Dashboard 3.0 (chart 7.14.0, vendored — the upstream Helm index 404s) with
+  zero-click Keycloak SSO.
+- Dual-mode (light/dark) Keycloak login theme synced with the portal, plus logout
+  auto-redirect.
+- PSA audit/warn labels on all namespaces (KISA-POD-01); Trivy compliance scanners for the
+  governance page.
+- Policy, alert and RBAC resources managed as ArgoCD Applications.
+- First `PROVIDER=kakao` groundwork: guards to skip kube-vip and Vagrant-only paths,
+  MetalLB→NodePort ingress, bastion host, LB public IPs and pinned contiguous private IPs.
+
+### Fixed
+- argocd-redis opted out of the ambient mesh — root cause of the recurring EOF wedge.
+- APISIX proxy buffers raised; the portal login callback 502'd on a too-big `Set-Cookie`.
+- Harbor's non-deterministic chart secrets caused an endless ~5 min rollout.
+- Post-logout redirect URIs registered for the SLO chain.
+
 ## [1.0.0] - 2026-07-08
 
 First stable release — validated by consecutive zero-fix, from-scratch clean installs
@@ -106,6 +182,9 @@ First stable release — validated by consecutive zero-fix, from-scratch clean i
 - 토폴로지: 단일 노드 → 3m+3w (Master NoSchedule, Worker에서 플랫폼 앱 실행)
 - NFS StorageClass: 계층적 subDir + 최적화된 mountOptions
 
-[Unreleased]: https://github.com/dasomel/narwhal/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/dasomel/narwhal/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/dasomel/narwhal/compare/v1.1.0...v1.2.0
+[1.1.0]: https://github.com/dasomel/narwhal/compare/v1.0.0...v1.1.0
+[1.0.0]: https://github.com/dasomel/narwhal/compare/v0.2.0...v1.0.0
 [0.2.0]: https://github.com/dasomel/narwhal/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/dasomel/narwhal/releases/tag/v0.1.0

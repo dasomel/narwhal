@@ -55,7 +55,6 @@ rules:
       - vulnerabilityreports
       - clustervulnerabilityreports
       - exposedsecretreports
-      - clusterexposedsecretreports
       - configauditreports
       - clusterconfigauditreports
       - rbacassessmentreports

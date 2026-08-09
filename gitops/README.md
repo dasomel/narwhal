@@ -246,7 +246,7 @@ A web-based Kubernetes dashboard/UI for cluster operators, authenticated via Key
 #### Narwhal Portal
 | Manifest | Image | Namespace |
 |---|---|---|
-| `narwhal-portal-k8s.yaml` (Deployment/Service/RBAC/Valkey) | `ghcr.io/dasomel/narwhal-portal:1.0.16` (public GHCR, SemVer-pinned) | `devtools` |
+| `narwhal-portal-k8s.yaml` (Deployment/Service/RBAC/Valkey) | `ghcr.io/dasomel/narwhal-portal:1.0.17` (public GHCR, SemVer-pinned) | `devtools` |
 
 The Narwhal management portal (Next.js) — the developer-facing UI for this entire IDP: cluster architecture view, ArgoCD app status, security/vulnerability reports, node metrics, logs/traces, backup status, and a component "scorecard" (checks ArgoCD sync health, image provenance, PDB/NetworkPolicy presence). Deployed with a least-privilege `ServiceAccount` (cluster-wide read-only RBAC plus a namespace-scoped Role for its own self-service Jobs), a dedicated Valkey cache Deployment, and the internal root CA mounted via `NODE_EXTRA_CA_CERTS` so its server-side calls to Keycloak/ArgoCD/OpenBao/K8s API trust the cluster's TLS. The image tag is an immutable SemVer pin (not `:latest`) so ArgoCD can actually detect upgrades as a manifest diff.
 

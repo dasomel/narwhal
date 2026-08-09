@@ -426,6 +426,7 @@ kubectl create secret generic narwhal-portal-secrets \
   --from-literal=K8S_API_SERVER="https://${VIP_ADDRESS:-192.168.56.100}:6443" \
   --from-literal=K8S_SA_TOKEN="${K8S_SA_TOKEN}" \
   --from-literal=CLUSTER_NAME="narwhal" \
+  --from-literal=CLUSTER_BASE_DOMAIN="${DOMAIN}" \
   --from-literal=ARGOCD_URL="http://argocd-server.devtools.svc.cluster.local" \
   --from-literal=ARGOCD_DEVELOPER_PROJECTS="" \
   --from-literal=APISIX_ADMIN_URL="http://apisix-admin.platform-system.svc.cluster.local:9180" \

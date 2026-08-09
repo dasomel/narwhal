@@ -55,11 +55,14 @@ rules:
       - vulnerabilityreports
       - clustervulnerabilityreports
       - exposedsecretreports
+      - clusterexposedsecretreports
       - configauditreports
       - clusterconfigauditreports
       - rbacassessmentreports
       - clusterrbacassessmentreports
       - infraassessmentreports
+      - clusterinfraassessmentreports
+      - compliancereports
       - clustercompliancereports
     verbs: [get, list, watch]
   # Node/Pod CPU·Memory usage for Architecture page (metrics-server / metrics.k8s.io)

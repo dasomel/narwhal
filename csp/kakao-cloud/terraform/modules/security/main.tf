@@ -42,6 +42,13 @@ resource "kakaocloud_security_group" "security_group" {
       description      = "Kubelet API (internal)"
     },
     # K8s Scheduler & Controller Manager
+    # 10251/10252 are the pre-1.17 insecure metric ports and match nothing on this
+    # cluster; kept only because removing a live SG rule is riskier than carrying it.
+    # The components actually serve HTTPS metrics on 10257/10259 (both run with
+    # --bind-address=0.0.0.0), and Prometheus scrapes them across nodes — without
+    # these two rules the SG silently DROPS the scrape (Kakao SGs drop, not reject),
+    # which surfaces as `context deadline exceeded` on every node except the one
+    # Prometheus itself runs on.
     {
       direction        = "ingress"
       protocol         = "TCP"
@@ -49,6 +56,31 @@ resource "kakaocloud_security_group" "security_group" {
       port_range_max   = 10252
       remote_ip_prefix = var.vpc_cidr
       description      = "K8s Scheduler and Controller Manager (internal)"
+    },
+    {
+      direction        = "ingress"
+      protocol         = "TCP"
+      port_range_min   = 10257
+      port_range_max   = 10257
+      remote_ip_prefix = var.vpc_cidr
+      description      = "kube-controller-manager metrics (internal)"
+    },
+    {
+      direction        = "ingress"
+      protocol         = "TCP"
+      port_range_min   = 10259
+      port_range_max   = 10259
+      remote_ip_prefix = var.vpc_cidr
+      description      = "kube-scheduler metrics (internal)"
+    },
+    # node-exporter — hostNetwork :9100, scraped by Prometheus across nodes
+    {
+      direction        = "ingress"
+      protocol         = "TCP"
+      port_range_min   = 9100
+      port_range_max   = 9100
+      remote_ip_prefix = var.vpc_cidr
+      description      = "Prometheus node-exporter metrics (internal)"
     },
     # NodePort Services
     {

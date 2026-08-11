@@ -1,0 +1,24 @@
+version: 2
+
+# Only github-actions is watched here. This repository ships shell and YAML — there is no
+# package manifest for a language ecosystem to track, and the component versions that do
+# matter (Kubernetes, Istio, Harbor and the rest) are pinned in VERSIONS.md and rolled
+# deliberately, not automatically: a chart bump has to be re-verified against the other 34
+# components and re-bundled for the air-gapped install, which is not something a bot can judge.
+#
+# Actions are different. They are pinned to commit SHAs so a moved tag cannot change what runs
+# in CI, and a SHA pin only stays current if something updates it — that is exactly the job
+# below. Pinning without Dependabot would freeze CI on old actions; Dependabot without pinning
+# would have nothing to pin. The two only make sense together.
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: ci
+      include: scope
+    labels:
+      - dependencies
+      - github-actions

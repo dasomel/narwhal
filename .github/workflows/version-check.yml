@@ -8,12 +8,17 @@ on:
       - 'gitops/**'
       - 'Vagrantfile'
 
+# Least privilege: these jobs only read the checkout. GitHub's default token is broader,
+# and a workflow that never needs write should not carry it.
+permissions:
+  contents: read
+
 jobs:
   version-sync:
     name: Version Consistency Check
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Check version consistency
         run: |

@@ -103,3 +103,4 @@ narwhal-airgap-bundle*/
 
 # Local airgap mirror registry data (6.4G of blobs, rebuildable from the bundle)
 .airgap-registry-data/
+__pycache__/

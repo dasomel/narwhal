@@ -73,6 +73,12 @@ Stated so a reporter can tell a gap from a deliberate choice:
   ```
   The `unknown/unknown` entries are the attestation manifests, carrying an SPDX document and a
   `slsa.dev/provenance/v1` predicate per architecture.
+- **The air-gapped bundle ships a CycloneDX SBOM.** `scripts/airgap/08-generate-sbom.sh` writes
+  `<bundle>/sbom.cdx.json` listing every image (digest read from its OCI layout), Helm chart,
+  `.deb`, binary and remote manifest with a SHA-256. It is bundle-level, not a package-level SBOM
+  of each image's filesystem, and it says so in its own metadata. It carries no timestamp, so
+  regenerating it for an unchanged bundle produces an identical file and any diff means the bundle
+  changed.
 - **Every fix is written down.** [`docs/common/lessons-log.md`](docs/common/lessons-log.md) records
   each incident with the discriminator that separates it from causes it resembles — including
   security-relevant ones, such as the 2026-08 finding that a security group silently dropped

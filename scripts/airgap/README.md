@@ -56,8 +56,25 @@ Rancher airgap 방식을 Narwhal에 적용한 버전입니다. 외부 인터넷�
 ./scripts/airgap/03-save-helm-charts.sh
 #    AIRGAP_ARCH=linux/amd64 ./scripts/airgap/03-save-helm-charts.sh   # amd64 번들에도 채우려면
 
+# 4. 바이너리 · OS 패키지
+./scripts/airgap/07-save-binaries.sh
+./scripts/airgap/07-save-apt-packages.sh
+
+# 5. SBOM 생성 — 번들 조립이 끝난 뒤 마지막에 실행 (내용물을 읽어 목록을 만든다)
+./scripts/airgap/08-generate-sbom.sh --bundle ./narwhal-airgap-bundle-amd64
+
 # 결과: narwhal-airgap-bundle-<arch>/ 폴더를 대상 클러스터로 전송
 ```
+
+**SBOM (`<bundle>/sbom.cdx.json`)**: CycloneDX 1.5 형식으로 번들 내용물 전체를 나열한다 —
+컨테이너 이미지(OCI layout에서 읽은 digest), Helm 차트, .deb, 바이너리, 원격 매니페스트가
+각각 sha256과 함께 들어간다. 폐쇄망 반입 시 "무엇을 설치했는가"에 기계적으로 답하기 위한
+것이고, 규제 환경에서 요구되는 자료가 대개 이것이다.
+
+두 가지를 알고 써야 한다. **번들 수준 목록이지 이미지 내부 패키지 SBOM이 아니다** —
+"apisix 안의 libc 버전" 같은 질문에 답하려면 `oci/` 아래 레이아웃을 대상으로 syft를 돌려
+중첩 BOM으로 붙여야 한다. 그리고 **타임스탬프를 넣지 않아 재현 가능하다** — 같은 번들이면
+몇 번을 생성해도 파일이 동일하므로, diff가 나면 번들이 바뀐 것이다.
 
 **번들 전송 (Kakao Cloud):** amd64 번들을 `scp -r` 로 master-1 에 복사한 뒤 그 노드에서
 Phase B/C 를 실행한다. 노드는 프라이빗 서브넷이므로 bastion 을 ProxyJump 로 경유한다

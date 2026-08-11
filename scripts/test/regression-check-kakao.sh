@@ -28,6 +28,26 @@ TF_DIR="${TF_DIR:-csp/kakao-cloud/terraform}"
 
 cd "$(dirname "$0")/../.."
 
+# The runtime checks use whatever kubectl context happens to be current. That is a trap:
+# run this with an unrelated cluster selected and it reports THAT cluster's state under
+# narwhal's check ids — measured 2026-08-12, when a `beluga` context produced
+# "T01 only 4/6 nodes Ready" and T12 probing *.local.beluga.internal, which reads exactly
+# like a narwhal regression. Name the context and require it to look like narwhal, so a
+# wrong-cluster run stops instead of lying. KUBE_CONTEXT= (empty) opts out deliberately.
+KUBE_CONTEXT="${KUBE_CONTEXT-narwhal}"
+if [ "${MODE}" != "--static" ] && [ -n "${KUBE_CONTEXT}" ]; then
+  _ctx="$(kubectl config current-context 2>/dev/null || true)"
+  case "${_ctx}" in
+    *"${KUBE_CONTEXT}"*) ;;
+    "") echo "ERROR: no kubectl context selected; runtime checks need one" >&2; exit 2 ;;
+    *)  echo "ERROR: current kubectl context is '${_ctx}', which does not match '${KUBE_CONTEXT}'." >&2
+        echo "       Runtime checks would report that cluster's state under narwhal's check ids." >&2
+        echo "       Select the right context, or set KUBE_CONTEXT to the expected substring" >&2
+        echo "       (KUBE_CONTEXT= disables this guard)." >&2
+        exit 2 ;;
+  esac
+fi
+
 if [ -t 1 ]; then
   BOLD=$'\e[1m'; RED=$'\e[31m'; GREEN=$'\e[32m'; YELLOW=$'\e[33m'; RESET=$'\e[0m'
 else

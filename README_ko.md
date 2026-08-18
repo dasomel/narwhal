@@ -539,4 +539,27 @@ AI 보조 유지보수를 계획 중인 영역:
 
 ## License
 
-Apache License 2.0 - See [LICENSE](LICENSE) for details.
+Apache License 2.0 — [LICENSE](LICENSE) 참고.
+
+Narwhal은 많은 서드파티 오픈소스를 조합하며, 적용되는 조건은 **전달 방식**에 따라 달라집니다.
+일반 설치는 업스트림 이미지를 **참조**할 뿐 각 레지스트리에서 직접 받아오므로 재배포가 아닙니다.
+반면 **에어갭 번들은 전부를 재배포합니다** — 이미지 약 105개를 하나의 산출물로 넘기므로, 의무는
+여기에 붙습니다.
+
+[`NOTICE`](NOTICE)가 두 경우를 모두 다루며, 단순 Apache-2.0이 아닌 조건들을 명시합니다:
+**AGPL-3.0**(Grafana·Loki·Tempo — 네트워크 이용이 소스 제공 의무를 발생시킴), **Redis 8의
+RSALv2/SSPLv1/AGPLv3 삼중 라이선스**(source-available이며 OSI 오픈소스가 아님), **MPL-2.0**(OpenBao),
+**GPL-2.0**(BusyBox·FRR). 빌드 도구는 별개입니다 — Vagrant와 Packer는 **BUSL-1.1**이고, 이는 어떤
+라이선스 스캐너도 분류하지 못합니다.
+
+이미지별 라이선스는
+[`scripts/airgap/lib/component-licenses.tsv`](scripts/airgap/lib/component-licenses.tsv)에 있습니다.
+모든 행은 추정이 아니라 업스트림 프로젝트의 라이선스에서 직접 확인했으며,
+`08-generate-sbom.sh`가 이를 번들의 CycloneDX SBOM에 실어 보냅니다. 재확인:
+
+```bash
+scripts/airgap/lib/refresh-component-licenses.sh --check   # 업스트림이 라이선스를 바꿨으면 exit 1
+```
+
+이 검사가 필요한 이유는 프로젝트가 실제로 라이선스를 바꾸기 때문입니다 — Grafana는 AGPL로,
+Redis는 삼중 라이선스로 갔습니다. SBOM에 낡은 SPDX id가 남으면 그것이 사실로 하류에 복제됩니다.

@@ -28,9 +28,51 @@ def sha256_file(path: pathlib.Path) -> str:
     return h.hexdigest()
 
 
+LICENSE_MAP = pathlib.Path(__file__).with_name("component-licenses.tsv")
+
+
+def load_license_map() -> dict:
+    """image repository -> (spdx, note), from the checked-in TSV.
+
+    The map is data, not inference: every row was resolved from the upstream
+    project's own license. A repository missing from it is reported as unmapped
+    rather than defaulted to Apache-2.0 — an SBOM that guesses is worse than one
+    that admits a gap, because the guess gets quoted downstream as fact.
+    """
+    out = {}
+    if not LICENSE_MAP.is_file():
+        return out
+    for line in LICENSE_MAP.read_text().splitlines():
+        if not line.strip() or line.startswith("#"):
+            continue
+        parts = line.split("\t")
+        if len(parts) < 3:
+            continue
+        repo, _upstream, spdx = parts[0], parts[1], parts[2]
+        note = parts[3] if len(parts) > 3 else ""
+        out[repo] = (spdx, note)
+    return out
+
+
+def licenses_for(spdx: str) -> list:
+    """CycloneDX licenses[] for one SPDX string.
+
+    A compound expression ("A OR B") is not an id, so it goes in `expression`;
+    a bare id goes in `license.id`. Putting an expression in `id` produces a
+    document that fails schema validation in whatever consumes it next.
+    """
+    if not spdx or spdx == "NOASSERTION":
+        return []
+    if any(op in spdx for op in (" OR ", " AND ", " WITH ")):
+        return [{"expression": spdx}]
+    return [{"license": {"id": spdx}}]
+
+
 def image_components(bundle: pathlib.Path) -> list:
     """One component per image ref in manifest.txt, digest from its OCI layout."""
     out = []
+    license_map = load_license_map()
+    unmapped = []
     manifest = bundle / "manifest.txt"
     for line in manifest.read_text().splitlines():
         ref = line.strip()
@@ -65,7 +107,25 @@ def image_components(bundle: pathlib.Path) -> list:
         else:
             # Say so rather than emitting a component that looks verified but is not.
             comp["description"] = "digest unavailable: OCI layout missing or unreadable in bundle"
+
+        spdx, note = license_map.get(name, ("", ""))
+        entries = licenses_for(spdx)
+        if entries:
+            comp["licenses"] = entries
+            if note:
+                comp.setdefault("properties", []).append(
+                    {"name": "narwhal:license-note", "value": note}
+                )
+        else:
+            unmapped.append(name)
         out.append(comp)
+
+    if unmapped:
+        print(
+            f"  WARN: {len(unmapped)} image(s) have no license mapping; add them to "
+            f"{LICENSE_MAP.name}: {', '.join(sorted(set(unmapped))[:5])}",
+            file=sys.stderr,
+        )
     return out
 
 
@@ -176,6 +236,18 @@ def main() -> int:
     for c in components:
         kinds[c["type"]] = kinds.get(c["type"], 0) + 1
     print("  components: " + ", ".join(f"{v} {k}" for k, v in sorted(kinds.items())))
+    licensed = sum(1 for c in components if c.get("licenses"))
+    print(f"  licenses: {licensed}/{len(components)} components carry an SPDX license")
+    copyleft = sorted(
+        {
+            lic.get("expression") or lic.get("license", {}).get("id", "")
+            for c in components
+            for lic in c.get("licenses", [])
+            if any(k in (lic.get("expression") or lic.get("license", {}).get("id", "")) for k in ("GPL", "MPL", "SSPL", "RSAL"))
+        }
+    )
+    if copyleft:
+        print("  non-permissive terms present: " + ", ".join(copyleft))
     missing = sum(1 for c in components if "hashes" not in c)
     if missing:
         print(f"  WARN: {missing} component(s) have no digest", file=sys.stderr)

@@ -23,6 +23,13 @@
 #   attach those as nested BOMs. Stating this in the document itself matters more than
 #   the omission does — an SBOM that quietly under-reports is worse than none.
 #
+#   Image components carry an SPDX license from lib/component-licenses.tsv. Those are
+#   the license of the software each image packages, resolved from that project's own
+#   repository — not the license of every file in the image filesystem, which is the
+#   same package-level gap as above. 83 of 100 are Apache-2.0; the rest include AGPL-3.0
+#   (Grafana, Loki, Tempo) and Redis 8's RSALv2/SSPLv1/AGPLv3 tri-license, which is why
+#   the map exists instead of a blanket assumption. See NOTICE at the repository root.
+#
 # USAGE:
 #   scripts/airgap/08-generate-sbom.sh [--bundle ./narwhal-airgap-bundle-amd64]
 #                                      [--output <path>]   # default: <bundle>/sbom.cdx.json

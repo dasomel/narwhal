@@ -1,0 +1,131 @@
+# Image repository -> upstream source -> SPDX license, for the airgap bundle SBOM.
+#
+# WHY THIS FILE EXISTS: the bundle redistributes ~100 container images. A normal
+# install pulls them from their own registries, which is not redistribution; the
+# bundle hands them over as one tarball, which is. That flips the licensing
+# question from "what do we depend on" to "what are we distributing, and under
+# what terms" — and the answer is not uniformly Apache-2.0.
+#
+# NOT GUESSED. Every row was resolved from the upstream repository's own license
+# via `gh api repos/<owner>/<repo>/license`; the handful GitHub cannot classify
+# were read out of the upstream LICENSE/COPYING file and carry a note. Guessing a
+# license here would be worse than leaving it blank, because a wrong SPDX id in an
+# SBOM is repeated downstream as fact.
+#
+# Refresh with: scripts/airgap/lib/refresh-component-licenses.sh
+# (re-resolves every row from upstream; overrides below are preserved by hand)
+#
+# TERMS THAT ARE NOT "just Apache-2.0" — the reason to read this file:
+#   AGPL-3.0    grafana, loki, loki-canary, tempo. Network use counts as
+#               distribution: users interacting over a network must be offered
+#               the source. Redistributing the bundle makes that your obligation.
+#   RSAL-2.0 OR SSPL-1.0 OR AGPL-3.0-only
+#               redis 8.x. RSALv2 and SSPLv1 are source-available, NOT OSI open
+#               source, and RSALv2 forbids offering the software as a managed
+#               service to third parties. Only relevant here because Harbor's
+#               chart default pulls upstream redis; harbor's own redis-photon is
+#               Apache-2.0 (goharbor/harbor).
+#   MPL-2.0     openbao, vault-k8s. File-level copyleft: modified files stay MPL.
+#   GPL-2.0     busybox, frr. Source-offer obligation on distribution.
+#
+# image repository	upstream source	SPDX license	note
+apache/apisix	apache/apisix	Apache-2.0	
+apache/apisix-ingress-controller	apache/apisix-ingress-controller	Apache-2.0	
+busybox	busybox/busybox	GPL-2.0-only	upstream is git.busybox.net, not GitHub
+chrislusf/seaweedfs	seaweedfs/seaweedfs	Apache-2.0	
+docker.gitea.com/gitea	go-gitea/gitea	MIT	
+docker.io/alpine/git	alpinelinux/docker-alpine	MIT	
+docker.io/alpine/k8s	alpinelinux/docker-alpine	MIT	
+docker.io/grafana/alloy	grafana/alloy	Apache-2.0	
+docker.io/grafana/grafana	grafana/grafana	AGPL-3.0	
+docker.io/grafana/loki	grafana/loki	AGPL-3.0	
+docker.io/grafana/loki-canary	grafana/loki	AGPL-3.0	
+docker.io/grafana/tempo	grafana/tempo	AGPL-3.0	
+docker.io/hashicorp/vault-k8s	hashicorp/vault-k8s	MPL-2.0	
+docker.io/kiwigrid/k8s-sidecar	kiwigrid/k8s-sidecar	MIT	
+docker.io/kubernetesui/dashboard-api	kubernetes/dashboard	Apache-2.0	
+docker.io/kubernetesui/dashboard-auth	kubernetes/dashboard	Apache-2.0	
+docker.io/kubernetesui/dashboard-metrics-scraper	kubernetes/dashboard	Apache-2.0	
+docker.io/kubernetesui/dashboard-web	kubernetes/dashboard	Apache-2.0	
+docker.io/library/busybox	busybox/busybox	GPL-2.0-only	upstream is git.busybox.net, not GitHub
+docker.io/library/registry	distribution/distribution	Apache-2.0	
+docker.io/otwld/velero-ui	otwld/velero-ui	Apache-2.0	
+docker.io/valkey/valkey	valkey-io/valkey	BSD-3-Clause	
+docker.io/velero/velero	vmware-tanzu/velero	Apache-2.0	
+gcr.io/kaniko-project/executor	GoogleContainerTools/kaniko	Apache-2.0	
+ghcr.io/chaos-mesh/chaos-daemon	chaos-mesh/chaos-mesh	Apache-2.0	
+ghcr.io/chaos-mesh/chaos-mesh	chaos-mesh/chaos-mesh	Apache-2.0	
+ghcr.io/cloudnative-pg/cloudnative-pg	cloudnative-pg/cloudnative-pg	Apache-2.0	
+ghcr.io/cloudnative-pg/pgbouncer	cloudnative-pg/pgbouncer-containers	Apache-2.0	
+ghcr.io/cloudnative-pg/postgresql	cloudnative-pg/postgres-containers	Apache-2.0	
+ghcr.io/dasomel/goharbor/harbor-core	goharbor/harbor	Apache-2.0	
+ghcr.io/dasomel/goharbor/harbor-jobservice	goharbor/harbor	Apache-2.0	
+ghcr.io/dasomel/goharbor/harbor-portal	goharbor/harbor	Apache-2.0	
+ghcr.io/dasomel/goharbor/harbor-registryctl	goharbor/harbor	Apache-2.0	
+ghcr.io/dasomel/goharbor/nginx-photon	goharbor/harbor	Apache-2.0	
+ghcr.io/dasomel/goharbor/redis-photon	goharbor/harbor	Apache-2.0	
+ghcr.io/dasomel/goharbor/registry-photon	goharbor/harbor	Apache-2.0	
+ghcr.io/dasomel/narwhal-portal	dasomel/narwhal-portal	Apache-2.0	this project's portal
+ghcr.io/dasomel/nfs-quota-agent	dasomel/narwhal	Apache-2.0	
+ghcr.io/dexidp/dex	dexidp/dex	Apache-2.0	
+ghcr.io/grafana/alloy-operator	grafana/alloy-operator	Apache-2.0	
+ghcr.io/headlamp-k8s/headlamp	kubernetes-sigs/headlamp	Apache-2.0	
+ghcr.io/jkroepke/kube-webhook-certgen	jkroepke/kube-webhook-certgen	Apache-2.0	
+ghcr.io/kube-vip/kube-vip	kube-vip/kube-vip	Apache-2.0	
+ghcr.io/kyverno/readiness-checker	kyverno/kyverno	Apache-2.0	
+kong	Kong/kong	Apache-2.0	
+mirror.gcr.io/aquasec/trivy	aquasecurity/trivy	Apache-2.0	
+mirror.gcr.io/aquasec/trivy-operator	aquasecurity/trivy-operator	Apache-2.0	
+mirror.gcr.io/chrislusf/seaweedfs	seaweedfs/seaweedfs	Apache-2.0	
+mirror.gcr.io/curlimages/curl	curl/curl	curl	curl license (MIT-like); GitHub reports NOASSERTION
+public.ecr.aws/docker/library/redis	redis/redis	RSAL-2.0 OR SSPL-1.0 OR AGPL-3.0-only	Redis 8.x tri-license; RSALv2 and SSPLv1 are source-available, NOT OSI open source
+quay.io/argoproj/argocd	argoproj/argo-cd	Apache-2.0	
+quay.io/cilium/cilium	cilium/cilium	Apache-2.0	
+quay.io/cilium/cilium-envoy	cilium/proxy	Apache-2.0	
+quay.io/cilium/hubble-relay	cilium/cilium	Apache-2.0	
+quay.io/cilium/hubble-ui	cilium/hubble-ui	Apache-2.0	
+quay.io/cilium/hubble-ui-backend	cilium/hubble-ui	Apache-2.0	
+quay.io/cilium/operator-generic	cilium/cilium	Apache-2.0	
+quay.io/frrouting/frr	FRRouting/frr	GPL-2.0-or-later	per-file SPDX; predominantly GPL-2.0-or-later, some LGPL/BSD
+quay.io/jetstack/cert-manager-cainjector	cert-manager/cert-manager	Apache-2.0	
+quay.io/jetstack/cert-manager-controller	cert-manager/cert-manager	Apache-2.0	
+quay.io/jetstack/cert-manager-startupapicheck	cert-manager/cert-manager	Apache-2.0	
+quay.io/jetstack/cert-manager-webhook	cert-manager/cert-manager	Apache-2.0	
+quay.io/keycloak/keycloak	keycloak/keycloak	Apache-2.0	
+quay.io/keycloak/keycloak-operator	keycloak/keycloak	Apache-2.0	
+quay.io/kiwigrid/k8s-sidecar	kiwigrid/k8s-sidecar	MIT	
+quay.io/metallb/controller	metallb/metallb	Apache-2.0	
+quay.io/metallb/frr-k8s	metallb/frr-k8s	Apache-2.0	
+quay.io/metallb/speaker	metallb/metallb	Apache-2.0	
+quay.io/openbao/openbao	openbao/openbao	MPL-2.0	
+quay.io/prometheus-operator/prometheus-config-reloader	prometheus-operator/prometheus-operator	Apache-2.0	
+quay.io/prometheus-operator/prometheus-operator	prometheus-operator/prometheus-operator	Apache-2.0	
+quay.io/prometheus/alertmanager	prometheus/alertmanager	Apache-2.0	
+quay.io/prometheus/node-exporter	prometheus/node_exporter	Apache-2.0	
+quay.io/prometheus/prometheus	prometheus/prometheus	Apache-2.0	
+reg.kyverno.io/kyverno/background-controller	kyverno/kyverno	Apache-2.0	
+reg.kyverno.io/kyverno/cleanup-controller	kyverno/kyverno	Apache-2.0	
+reg.kyverno.io/kyverno/kyverno	kyverno/kyverno	Apache-2.0	
+reg.kyverno.io/kyverno/kyverno-cli	kyverno/kyverno	Apache-2.0	
+reg.kyverno.io/kyverno/kyvernopre	kyverno/kyverno	Apache-2.0	
+reg.kyverno.io/kyverno/reports-controller	kyverno/kyverno	Apache-2.0	
+registry.istio.io/release/install-cni	istio/istio	Apache-2.0	
+registry.istio.io/release/pilot	istio/istio	Apache-2.0	
+registry.istio.io/release/proxyv2	istio/istio	Apache-2.0	
+registry.istio.io/release/ztunnel	istio/ztunnel	Apache-2.0	
+registry.k8s.io/coredns/coredns	coredns/coredns	Apache-2.0	
+registry.k8s.io/etcd	etcd-io/etcd	Apache-2.0	
+registry.k8s.io/kube-apiserver	kubernetes/kubernetes	Apache-2.0	
+registry.k8s.io/kube-controller-manager	kubernetes/kubernetes	Apache-2.0	
+registry.k8s.io/kube-proxy	kubernetes/kubernetes	Apache-2.0	
+registry.k8s.io/kube-scheduler	kubernetes/kubernetes	Apache-2.0	
+registry.k8s.io/kube-state-metrics/kube-state-metrics	kubernetes/kube-state-metrics	Apache-2.0	
+registry.k8s.io/metrics-server/metrics-server	kubernetes-sigs/metrics-server	Apache-2.0	
+registry.k8s.io/pause	kubernetes/kubernetes	Apache-2.0	
+registry.k8s.io/sig-storage/csi-node-driver-registrar	kubernetes-csi/node-driver-registrar	Apache-2.0	
+registry.k8s.io/sig-storage/csi-provisioner	kubernetes-csi/external-provisioner	Apache-2.0	
+registry.k8s.io/sig-storage/csi-resizer	kubernetes-csi/external-resizer	Apache-2.0	
+registry.k8s.io/sig-storage/csi-snapshotter	kubernetes-csi/external-snapshotter	Apache-2.0	
+registry.k8s.io/sig-storage/livenessprobe	kubernetes-csi/livenessprobe	Apache-2.0	
+registry.k8s.io/sig-storage/nfsplugin	kubernetes-csi/csi-driver-nfs	Apache-2.0	
+velero/velero-plugin-for-aws	vmware-tanzu/velero-plugin-for-aws	Apache-2.0	

@@ -1,0 +1,165 @@
+Narwhal — Kubernetes Internal Developer Platform
+Copyright 2025 dasomel
+
+Source: https://github.com/dasomel/narwhal
+
+This product is licensed under the Apache License, Version 2.0 (see LICENSE) and
+builds on a large amount of third-party open source software.
+
+================================================================================
+What is redistributed, and what is not
+================================================================================
+
+The distinction matters more here than the component list does, because narwhal
+has two very different delivery modes and only one of them redistributes.
+
+  A NORMAL INSTALL redistributes almost nothing. scripts/cluster/ and the GitOps
+  charts reference upstream images and charts by name and version; the cluster
+  pulls them from ghcr.io, registry.k8s.io, quay.io and docker.io at install
+  time, directly from their publishers. Referencing software is not distributing
+  it, so those components arrive under their own terms with no obligation
+  passing through this repository.
+
+  THE AIR-GAP BUNDLE redistributes all of it. scripts/airgap/ assembles ~105
+  container images, ~27 Helm charts, OS packages and binaries into a single
+  directory that is carried across the gap and handed over as one artifact. That
+  is distribution, and every component's license applies to whoever hands over
+  the bundle.
+
+  THIS REPOSITORY vendors one upstream chart, under
+  gitops/charts/kubernetes-dashboard/, which therefore travels with every clone.
+  Its attribution is in that directory's own NOTICE.
+
+================================================================================
+Air-gap bundle: terms that are not "just Apache-2.0"
+================================================================================
+
+The bundle's per-component licenses are recorded in
+scripts/airgap/lib/component-licenses.tsv and emitted into the CycloneDX SBOM
+that 08-generate-sbom.sh writes to <bundle>/sbom.cdx.json. Each row was resolved
+from the upstream project's own license, not inferred.
+
+83 of 100 image repositories are Apache-2.0. The rest are the reason to read the
+file rather than assume:
+
+  AGPL-3.0
+    grafana, loki, loki-canary, tempo
+    Network interaction counts as distribution under AGPL: users who reach these
+    services over a network must be offered the corresponding source. Shipping
+    them inside a bundle makes that the distributor's obligation, not Grafana's.
+
+  RSAL-2.0 OR SSPL-1.0 OR AGPL-3.0-only
+    redis (8.x, upstream image)
+    Redis 8 is tri-licensed and RSALv2/SSPLv1 are source-available, NOT OSI open
+    source; RSALv2 forbids offering the software as a managed service to third
+    parties.
+    This is not a component narwhal chooses. Argo CD's upstream install
+    manifest deploys `argocd-redis` from public.ecr.aws/docker/library/redis,
+    and the bundle picks it up from the running cluster. It is the only
+    upstream Redis in the bundle — Harbor's cache is redis-photon
+    (goharbor/harbor, Apache-2.0) and is unaffected. Anyone who cannot accept
+    RSALv2/SSPLv1 terms should repoint argocd-redis at Valkey (BSD-3-Clause),
+    which is already in the bundle for other uses.
+
+  MPL-2.0
+    openbao, vault-k8s
+    File-level copyleft: modified files stay MPL, the rest of the work does not.
+
+  GPL-2.0
+    busybox, frr
+    Distribution carries a source-offer obligation. FRR is per-file SPDX and is
+    predominantly GPL-2.0-or-later with LGPL and BSD parts.
+
+Anyone redistributing a bundle is responsible for these, and the SBOM exists so
+that responsibility is discoverable rather than a surprise found later.
+
+Two limits on what that map can tell you, stated here because an inventory that
+quietly under-reports is worse than one that admits its edges:
+
+  IMAGE-LEVEL, NOT PACKAGE-LEVEL. Each row is the license of the software the
+  image packages, taken from that project's own repository. It is not the
+  license of everything inside the image filesystem. An Alpine-based image also
+  contains musl (MIT), busybox (GPL-2.0) and other OS packages;
+  ghcr.io/cloudnative-pg/postgresql contains PostgreSQL itself (PostgreSQL
+  License). For per-file resolution, run syft against the OCI layouts under
+  <bundle>/oci/ and attach the results as nested BOMs — 08-generate-sbom.sh
+  makes the same point about digests.
+
+  THE IMAGE LIST IS A SNAPSHOT. scripts/airgap/images.txt is regenerated from a
+  live cluster, so a component that was not running at that moment is missing
+  from it, and therefore from the bundle and its SBOM. Falco is the current
+  example: its chart is saved, its images are not listed. Treat a missing
+  component as an incomplete inventory, not as evidence it is absent.
+
+================================================================================
+Principal upstream projects
+================================================================================
+
+Narwhal composes these; it does not fork or modify them. Full per-image detail,
+including the upstream repository each license was read from, is in
+scripts/airgap/lib/component-licenses.tsv.
+
+  Kubernetes, CoreDNS, etcd, kube-state-metrics, metrics-server, the CSI sidecars
+    The Kubernetes Authors — Apache-2.0
+  Cilium, Hubble, Istio, MetalLB, kube-vip, FRR
+    networking and mesh — Apache-2.0 except FRR (GPL-2.0-or-later)
+  Argo CD, Kyverno, cert-manager, Trivy Operator, Chaos Mesh, Falco
+    delivery, policy and security — Apache-2.0
+    (Falco's chart is in the bundle but its images are not in
+    scripts/airgap/images.txt — see the scope caveat below.)
+  Prometheus, Alertmanager, node-exporter, prometheus-operator, Grafana Alloy
+    metrics — Apache-2.0
+  Grafana, Loki, Tempo
+    dashboards and logs/traces — AGPL-3.0 (see above)
+  Keycloak, OpenBao, Dex
+    identity and secrets — Apache-2.0, MPL-2.0, Apache-2.0
+  Harbor, Gitea, SeaweedFS, CloudNativePG, Velero, APISIX, Valkey
+    registry, git, storage, database, backup, gateway, cache — Apache-2.0
+    except Gitea (MIT) and Valkey (BSD-3-Clause)
+
+The Narwhal IDP Portal (ghcr.io/dasomel/narwhal-portal) is this project's own
+work and is Apache-2.0; its dependency attribution lives in that repository.
+
+================================================================================
+Build and provisioning tooling
+================================================================================
+
+These are not redistributed — they are tools the operator runs — but their terms
+are worth knowing because two of them are not open source at all.
+
+  Vagrant, Packer                       BUSL-1.1 (HashiCorp)
+    Business Source License, not an OSI license. Free for internal use; the
+    grant excludes offering a competing product. GitHub cannot classify BUSL, so
+    an automated scan reports these as unknown rather than flagging them — worth
+    knowing before trusting such a report. Vagrant drives the local multi-VM
+    cluster (Vagrantfile); nothing in a deployed cluster needs it.
+
+  OpenTofu                              MPL-2.0
+    Used for Kakao Cloud provisioning under csp/kakao-cloud/terraform/. The
+    Terraform CLI also works there, but Terraform is BUSL-1.1 like the tools
+    above; OpenTofu is the fork that stayed open source and is what the
+    documented workflow uses.
+
+  Vagrant box dasomel/ubuntu-26.04-xfs   MIT
+    Built by the sibling project https://github.com/dasomel/kube-ready-box,
+    whose own NOTICE covers the Ubuntu base and the packages inside it.
+
+================================================================================
+Trademarks
+================================================================================
+
+Kubernetes is a registered trademark of The Linux Foundation. Grafana, Loki and
+Tempo are trademarks of Raintank Inc. dba Grafana Labs. Redis is a trademark of
+Redis Ltd. Ubuntu is a registered trademark of Canonical Ltd. Vagrant is a
+trademark of HashiCorp, Inc. Argo, Cilium, Istio, Harbor, Keycloak, Prometheus
+and the other CNCF and Linux Foundation projects named here are trademarks of
+their respective owners. All are used for identification only, and this project
+is not affiliated with or endorsed by any of them.
+
+================================================================================
+Reporting a licensing problem
+================================================================================
+
+Open an issue at https://github.com/dasomel/narwhal/issues. A wrong SPDX id in
+the component map is a defect: it is repeated downstream in every SBOM the
+bundle produces, so it is worth reporting even when it looks pedantic.

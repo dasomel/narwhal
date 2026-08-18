@@ -552,4 +552,27 @@ the documentation index.
 
 ## License
 
-Apache License 2.0 - See [LICENSE](LICENSE) for details.
+Apache License 2.0 — see [LICENSE](LICENSE).
+
+Narwhal composes a large amount of third-party open source software, and the terms that apply
+depend on how it reaches you. A normal install **references** upstream images and pulls them from
+their own registries, which is not redistribution. The **air-gap bundle redistributes all of it** —
+~105 images handed over as one artifact — and that is where the obligations attach.
+
+[`NOTICE`](NOTICE) covers both cases and calls out the terms that are not plain Apache-2.0:
+**AGPL-3.0** (Grafana, Loki, Tempo — network use triggers the source offer), **Redis 8's
+RSALv2/SSPLv1/AGPLv3 tri-license** (source-available, not OSI open source), **MPL-2.0** (OpenBao),
+and **GPL-2.0** (BusyBox, FRR). Build tooling has its own answer: Vagrant and Packer are
+**BUSL-1.1**, which no license scanner classifies.
+
+Per-image licenses live in
+[`scripts/airgap/lib/component-licenses.tsv`](scripts/airgap/lib/component-licenses.tsv). Every row
+was resolved from the upstream project's own license rather than inferred, and
+`08-generate-sbom.sh` emits them into the bundle's CycloneDX SBOM. Re-resolve them with:
+
+```bash
+scripts/airgap/lib/refresh-component-licenses.sh --check   # exits 1 if upstream relicensed
+```
+
+That check exists because projects do relicense — Grafana went AGPL, Redis went tri-license — and
+a stale SPDX id in an SBOM is repeated downstream as fact.

@@ -1,0 +1,49 @@
+Vendored Helm chart — kubernetes-dashboard 7.14.0
+=================================================
+
+This directory is NOT this project's work. It is an upstream Helm chart and its
+four subcharts, copied into the repository verbatim, and it is redistributed
+with every clone of narwhal.
+
+Why it is vendored
+------------------
+The upstream chart repository serves a 404 for its index.yaml, so `helm repo add`
+cannot resolve the chart and an install that depends on it is not reproducible.
+Vendoring makes the chart part of the tree that GitOps already tracks. See the
+dashboard SSO notes in docs/ for the login contract this chart implements.
+
+Components and their licenses
+-----------------------------
+Every entry was read from the upstream project's own license, not inferred.
+
+  kubernetes-dashboard 7.14.0     Apache-2.0   https://github.com/kubernetes/dashboard
+  ingress-nginx        4.13.3     Apache-2.0   https://github.com/kubernetes/ingress-nginx
+  cert-manager         v1.19.1    Apache-2.0   https://github.com/cert-manager/cert-manager
+  metrics-server       3.13.0     Apache-2.0   https://github.com/kubernetes-sigs/metrics-server
+  kong                 2.52.0     Apache-2.0   https://github.com/Kong/charts
+
+Copyright is held by the respective projects and their contributors — The
+Kubernetes Authors, the cert-manager Authors, and Kong Inc.
+
+Apache-2.0 §4 obligations
+-------------------------
+Redistribution of these files requires a copy of the license, retention of the
+existing notices, and a statement of any changes. The license copy is this
+repository's root LICENSE, which is the same Apache-2.0 text.
+
+Helm chart archives do not carry LICENSE files, which is why there is none in
+this directory to retain — that is an upstream packaging fact, not an omission
+here, and it is the reason this file exists in its place.
+
+Modifications
+-------------
+Values are supplied at install time rather than by editing the chart. The files
+here were added by a single commit — f65f4b4, "fix(dashboard): vendor chart
+7.14.0 — upstream helm index is 404" — and no commit has touched them since;
+`git log -- gitops/charts/kubernetes-dashboard/` is the check.
+
+That establishes no modification after import, which is not quite the same as
+proving the import was byte-identical upstream. Stating the weaker claim is
+deliberate: "we did not modify it" is something the Apache license makes
+load-bearing, so it should not be asserted more strongly than it was verified.
+If the chart is ever edited in place, record the change here.

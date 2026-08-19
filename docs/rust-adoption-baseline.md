@@ -1,0 +1,1 @@
+Rust adoption baseline: no wholesale rewrite. Target offline artifact verification, security policy validation, and evidence parsing. Keep Kubernetes orchestration and Helm/Kustomize in existing stack unless measured benefits justify a move.

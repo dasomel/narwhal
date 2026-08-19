@@ -61,7 +61,7 @@ count — is how this project is maintained.
 | Verification | 51-check regression suite runs in CI on every push, plus cluster, SSO, backup and network-isolation test scripts |
 | Integration knowledge | [263 documented incidents](docs/common/lessons-log.md), newest first, each with a discriminator |
 | Deployment targets | Vagrant (ARM64) · Kakao Cloud (AMD64) · fully air-gapped |
-| Offline install | 105 container images, 27 Helm charts, binaries, remote manifests and OS packages, bundled per architecture |
+| Offline install | 104 container images, 27 Helm charts, binaries, remote manifests and OS packages, bundled per architecture |
 | Integrated components | 35 GitOps-managed applications |
 
 Built on the [dasomel/ubuntu-26.04-xfs](https://app.vagrantup.com/dasomel/boxes/ubuntu-26.04-xfs)
@@ -334,7 +334,7 @@ scripts/test/verify-isolation.sh local
 
 | | |
 |---|---|
-| Container images | 105, per architecture |
+| Container images | 104, per architecture |
 | Helm charts | 27, served from the in-cluster Gitea package registry |
 | Also bundled | helm/cilium/hubble/yq binaries, remote manifests, 149 OS packages |
 | Isolation | networkd `UseGateway=false` drop-in — survives DHCP renewal, unlike `ip route del` |
@@ -557,12 +557,13 @@ Apache License 2.0 — see [LICENSE](LICENSE).
 Narwhal composes a large amount of third-party open source software, and the terms that apply
 depend on how it reaches you. A normal install **references** upstream images and pulls them from
 their own registries, which is not redistribution. The **air-gap bundle redistributes all of it** —
-~105 images handed over as one artifact — and that is where the obligations attach.
+~104 images handed over as one artifact — and that is where the obligations attach.
 
 [`NOTICE`](NOTICE) covers both cases and calls out the terms that are not plain Apache-2.0:
-**AGPL-3.0** (Grafana, Loki, Tempo — network use triggers the source offer), **Redis 8's
-RSALv2/SSPLv1/AGPLv3 tri-license** (source-available, not OSI open source), **MPL-2.0** (OpenBao),
-and **GPL-2.0** (BusyBox, FRR). Build tooling has its own answer: Vagrant and Packer are
+**AGPL-3.0** (Grafana, Loki, Tempo — network use triggers the source offer), **MPL-2.0**
+(OpenBao) and **GPL-2.0** (BusyBox, FRR). Everything shipped is OSI open source: Argo CD's
+upstream manifest pins Redis 8, whose RSALv2/SSPLv1 halves are source-available rather than
+open source, so `13-argocd.sh` repoints `argocd-redis` at **Valkey** (BSD-3-Clause) instead. Build tooling has its own answer: Vagrant and Packer are
 **BUSL-1.1**, which no license scanner classifies.
 
 Per-image licenses live in

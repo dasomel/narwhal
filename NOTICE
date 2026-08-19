@@ -20,7 +20,7 @@ has two very different delivery modes and only one of them redistributes.
   it, so those components arrive under their own terms with no obligation
   passing through this repository.
 
-  THE AIR-GAP BUNDLE redistributes all of it. scripts/airgap/ assembles ~105
+  THE AIR-GAP BUNDLE redistributes all of it. scripts/airgap/ assembles ~104
   container images, ~27 Helm charts, OS packages and binaries into a single
   directory that is carried across the gap and handed over as one artifact. That
   is distribution, and every component's license applies to whoever hands over
@@ -48,18 +48,25 @@ file rather than assume:
     services over a network must be offered the corresponding source. Shipping
     them inside a bundle makes that the distributor's obligation, not Grafana's.
 
-  RSAL-2.0 OR SSPL-1.0 OR AGPL-3.0-only
-    redis (8.x, upstream image)
-    Redis 8 is tri-licensed and RSALv2/SSPLv1 are source-available, NOT OSI open
-    source; RSALv2 forbids offering the software as a managed service to third
-    parties.
-    This is not a component narwhal chooses. Argo CD's upstream install
-    manifest deploys `argocd-redis` from public.ecr.aws/docker/library/redis,
-    and the bundle picks it up from the running cluster. It is the only
-    upstream Redis in the bundle — Harbor's cache is redis-photon
-    (goharbor/harbor, Apache-2.0) and is unaffected. Anyone who cannot accept
-    RSALv2/SSPLv1 terms should repoint argocd-redis at Valkey (BSD-3-Clause),
-    which is already in the bundle for other uses.
+  RSAL-2.0 OR SSPL-1.0 OR AGPL-3.0-only — REMOVED, recorded so it stays removed
+    Argo CD's upstream install.yaml pins redis 8.x, which is tri-licensed. RSALv2
+    and SSPLv1 are source-available, NOT OSI open source, and RSALv2 forbids
+    offering the software as a managed service to third parties. It would have
+    been the only non-OSI runtime component in the bundle, and it arrived by
+    inheritance rather than by choice.
+
+    scripts/cluster/13-argocd.sh repoints argocd-redis at Valkey
+    (docker.io/valkey/valkey:8-alpine, BSD-3-Clause) after applying the upstream
+    manifest. Valkey is the fork of Redis 7.2 that stayed open source, the
+    portal's cache already runs the same image, and the upstream args are
+    unchanged valkey-server flags — so the swap costs one `kubectl set image`
+    and no extra pull.
+
+    If public.ecr.aws/docker/library/redis reappears in images.txt or in
+    component-licenses.tsv, the swap regressed. Fix the swap; do not re-add the
+    row. A --live regeneration of images.txt against a cluster built before the
+    change will reintroduce it silently.
+
 
   MPL-2.0
     openbao, vault-k8s

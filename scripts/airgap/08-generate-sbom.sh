@@ -26,9 +26,11 @@
 #   Image components carry an SPDX license from lib/component-licenses.tsv. Those are
 #   the license of the software each image packages, resolved from that project's own
 #   repository — not the license of every file in the image filesystem, which is the
-#   same package-level gap as above. 83 of 100 are Apache-2.0; the rest include AGPL-3.0
-#   (Grafana, Loki, Tempo) and Redis 8's RSALv2/SSPLv1/AGPLv3 tri-license, which is why
-#   the map exists instead of a blanket assumption. See NOTICE at the repository root.
+#   same package-level gap as above. 83 of 99 are Apache-2.0; the rest are AGPL-3.0
+#   (Grafana, Loki, Tempo), MPL-2.0 (OpenBao) and GPL-2.0 (BusyBox, FRR) — which is why
+#   the map exists instead of a blanket assumption. Everything in the bundle is OSI open
+#   source: the one component that was not, Redis 8 under its RSALv2/SSPLv1/AGPLv3
+#   tri-license, is replaced by Valkey in 13-argocd.sh. See NOTICE at the repository root.
 #
 # USAGE:
 #   scripts/airgap/08-generate-sbom.sh [--bundle ./narwhal-airgap-bundle-amd64]

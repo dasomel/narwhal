@@ -19,12 +19,14 @@
 #   AGPL-3.0    grafana, loki, loki-canary, tempo. Network use counts as
 #               distribution: users interacting over a network must be offered
 #               the source. Redistributing the bundle makes that your obligation.
-#   RSAL-2.0 OR SSPL-1.0 OR AGPL-3.0-only
-#               redis 8.x. RSALv2 and SSPLv1 are source-available, NOT OSI open
-#               source, and RSALv2 forbids offering the software as a managed
-#               service to third parties. Only relevant here because Harbor's
-#               chart default pulls upstream redis; harbor's own redis-photon is
-#               Apache-2.0 (goharbor/harbor).
+#   (RSALv2/SSPLv1 — REMOVED, kept here as a decision record)
+#               ArgoCD's upstream install.yaml pins redis 8.x, which is tri-licensed
+#               RSALv2 / SSPLv1 / AGPLv3; the first two are source-available, NOT OSI
+#               open source, and RSALv2 forbids offering the software as a managed
+#               service to third parties. 13-argocd.sh now repoints argocd-redis at
+#               valkey (BSD-3-Clause), so no such image reaches the bundle. If a row
+#               for public.ecr.aws/docker/library/redis reappears here, that swap
+#               regressed — fix the swap, do not add the row.
 #   MPL-2.0     openbao, vault-k8s. File-level copyleft: modified files stay MPL.
 #   GPL-2.0     busybox, frr. Source-offer obligation on distribution.
 #
@@ -78,7 +80,6 @@ mirror.gcr.io/aquasec/trivy	aquasecurity/trivy	Apache-2.0
 mirror.gcr.io/aquasec/trivy-operator	aquasecurity/trivy-operator	Apache-2.0	
 mirror.gcr.io/chrislusf/seaweedfs	seaweedfs/seaweedfs	Apache-2.0	
 mirror.gcr.io/curlimages/curl	curl/curl	curl	curl license (MIT-like); GitHub reports NOASSERTION
-public.ecr.aws/docker/library/redis	redis/redis	RSAL-2.0 OR SSPL-1.0 OR AGPL-3.0-only	Redis 8.x tri-license; RSALv2 and SSPLv1 are source-available, NOT OSI open source
 quay.io/argoproj/argocd	argoproj/argo-cd	Apache-2.0	
 quay.io/cilium/cilium	cilium/cilium	Apache-2.0	
 quay.io/cilium/cilium-envoy	cilium/proxy	Apache-2.0	

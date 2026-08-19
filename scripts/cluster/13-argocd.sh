@@ -42,6 +42,34 @@ for crb in argocd-application-controller argocd-applicationset-controller argocd
     -p='[{"op": "replace", "path": "/subjects/0/namespace", "value": "devtools"}]' 2>/dev/null || true
 done
 
+# argocd-redis -> Valkey. LICENSE, not performance.
+#
+# Upstream install.yaml pins public.ecr.aws/docker/library/redis:8.2.3-alpine, and
+# Redis 8 is tri-licensed RSALv2 / SSPLv1 / AGPLv3. RSALv2 and SSPLv1 are
+# source-available, NOT OSI open source, and RSALv2 forbids offering the software
+# as a managed service to third parties. That is the only non-OSI runtime component
+# narwhal would otherwise ship, and the airgap bundle REDISTRIBUTES it (see NOTICE).
+# Valkey is the BSD-3-Clause fork of Redis 7.2 and is already in the bundle — the
+# portal's cache runs the same image, so this adds no pull.
+#
+# Why the swap is safe, checked rather than assumed:
+#   - The container sets `args` but no `command`, so the image ENTRYPOINT runs.
+#     Valkey's docker-entrypoint.sh prepends `valkey-server` when the first arg
+#     starts with `-` (same rule as the Redis image), so the upstream args
+#     `--save '' --appendonly no --requirepass $(REDIS_PASSWORD)` are unchanged
+#     valkey-server flags and keep working verbatim.
+#   - The pod runs runAsUser 999; the Valkey alpine image's `valkey` user is also
+#     uid 999, matching the `redis` user it replaces.
+#   - readOnlyRootFilesystem stays satisfiable: `--save ''` plus `--appendonly no`
+#     means no disk writes.
+#   - THE ONE REAL INCOMPATIBILITY is the CLI. The Valkey image ships valkey-cli
+#     and NO redis-cli — its only redis reference is a comment. The PING probe
+#     added further down therefore resolves the binary at runtime instead of
+#     hardcoding either name.
+echo "Repointing argocd-redis at Valkey (BSD-3-Clause) instead of Redis 8..."
+kubectl set image deployment/argocd-redis redis=docker.io/valkey/valkey:8-alpine -n devtools
+
+
 # Patch ArgoCD NetworkPolicies for Istio ambient mesh (HBONE port 15008)
 echo "Patching ArgoCD NetworkPolicies for Istio ambient mesh (HBONE port 15008)..."
 # NetworkPolicy 생성 대기 (최대 30초)
@@ -281,16 +309,20 @@ kubectl wait --for=condition=Ready pod -l app.kubernetes.io/name=argocd-server -
 # 호스트 과부하 시 redis가 TCP는 살아 있지만 EOF를 뱉는 웨지 상태가 되면
 # repo-server 캐시가 전부 실패해 모든 앱 SYNC=Unknown이 된다(2026-07-10 3회 재발).
 # 실제 Redis 프로토콜(PING)로 점검해야 웨지를 감지하고 자동 재시작된다.
+# CLI 이름을 박아두지 않는다: 이미지가 Valkey로 바뀌면서 redis-cli가 사라졌다
+# (Valkey 이미지에는 valkey-cli만 있다). 둘 중 있는 것을 런타임에 고르므로 이미지를
+# 되돌려도 probe가 그대로 동작한다 — 하드코딩했다면 probe 실패로 파드가 영영 Ready가
+# 되지 않고, 원인은 '레디스가 죽었다'로 보였을 것이다.
 # shellcheck disable=SC2016  # $REDIS_PASSWORD/$(...)는 컨테이너 내부 sh에서 확장 (의도적 single quote)
 kubectl patch deployment argocd-redis -n devtools --type strategic -p '{
   "spec": {"template": {"spec": {"containers": [{
     "name": "redis",
     "livenessProbe": {
-      "exec": {"command": ["sh", "-c", "response=$(redis-cli -a \"$REDIS_PASSWORD\" --no-auth-warning ping) && [ \"$response\" = \"PONG\" ]"]},
+      "exec": {"command": ["sh", "-c", "CLI=$(command -v valkey-cli || command -v redis-cli); response=$($CLI -a \"$REDIS_PASSWORD\" --no-auth-warning ping) && [ \"$response\" = \"PONG\" ]"]},
       "initialDelaySeconds": 10, "periodSeconds": 15, "timeoutSeconds": 5, "failureThreshold": 3
     },
     "readinessProbe": {
-      "exec": {"command": ["sh", "-c", "response=$(redis-cli -a \"$REDIS_PASSWORD\" --no-auth-warning ping) && [ \"$response\" = \"PONG\" ]"]},
+      "exec": {"command": ["sh", "-c", "CLI=$(command -v valkey-cli || command -v redis-cli); response=$($CLI -a \"$REDIS_PASSWORD\" --no-auth-warning ping) && [ \"$response\" = \"PONG\" ]"]},
       "initialDelaySeconds": 5, "periodSeconds": 10, "timeoutSeconds": 5, "failureThreshold": 2
     }
   }]}}}

@@ -9,6 +9,11 @@
 # EXCLUDED intentionally:
 #   - harbor.local.narwhal.internal/library/narwhal-portal:latest — built IN-CLUSTER
 #     by Kaniko; produced, not pulled, so it must not be in a pull-based bundle.
+#   - public.ecr.aws/docker/library/redis:8.2.3-alpine — ArgoCD's upstream install.yaml
+#     pins it, but 13-argocd.sh repoints argocd-redis at docker.io/valkey/valkey:8-alpine.
+#     Redis 8 is tri-licensed RSALv2/SSPLv1/AGPLv3 — source-available, NOT OSI open
+#     source — and this bundle redistributes what it contains (see NOTICE). A --live
+#     regeneration against a cluster built before that change will put it back; drop it.
 #
 # :latest TAGS — deliberate vs. hardening:
 #   - ghcr.io/dasomel/goharbor/* :latest is INTENTIONAL — the custom multi-arch
@@ -68,7 +73,7 @@ mirror.gcr.io/aquasec/trivy-operator:0.25.0
 mirror.gcr.io/aquasec/trivy:0.60.0
 mirror.gcr.io/chrislusf/seaweedfs:4.40
 mirror.gcr.io/curlimages/curl:8.21.0
-public.ecr.aws/docker/library/redis:8.2.3-alpine
+# (public.ecr.aws/docker/library/redis intentionally absent — see EXCLUDED at the top)
 quay.io/argoproj/argocd:v3.4.4
 quay.io/cilium/cilium-envoy:v1.36.6-1778235340-b87d1e32f522b33bd51701c6476d199326f01496
 quay.io/cilium/cilium:v1.19.4

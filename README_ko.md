@@ -59,7 +59,7 @@ Narwhal은 통합 과정에서 발생한 실패를 폐기하지 않습니다. �
 | 검증 | 푸시마다 CI에서 51개 회귀 검사 실행, 그 외 클러스터·SSO·백업·격리 테스트 스크립트 |
 | 통합 지식 | [263개 사건 기록](docs/common/lessons-log.md), 최신순, 각 행에 판별자 포함 |
 | 배포 대상 | Vagrant (ARM64) · Kakao Cloud (AMD64) · 완전 폐쇄망 |
-| 오프라인 설치 | 컨테이너 이미지 105개, Helm 차트 27개, 바이너리·원격 매니페스트·OS 패키지를 아키텍처별 번들로 제공 |
+| 오프라인 설치 | 컨테이너 이미지 104개, Helm 차트 27개, 바이너리·원격 매니페스트·OS 패키지를 아키텍처별 번들로 제공 |
 | 통합 컴포넌트 | GitOps로 관리되는 애플리케이션 35개 |
 
 [dasomel/ubuntu-26.04-xfs](https://app.vagrantup.com/dasomel/boxes/ubuntu-26.04-xfs) Box 기반(XFS
@@ -330,7 +330,7 @@ scripts/test/verify-isolation.sh local
 
 | | |
 |---|---|
-| 컨테이너 이미지 | 아키텍처별 105개 |
+| 컨테이너 이미지 | 아키텍처별 104개 |
 | Helm 차트 | 27개, 클러스터 내 Gitea 패키지 레지스트리에서 제공 |
 | 함께 번들되는 것 | helm/cilium/hubble/yq 바이너리, 원격 매니페스트, OS 패키지 149개 |
 | 격리 방식 | networkd `UseGateway=false` 드롭인 — `ip route del`과 달리 DHCP 갱신에도 유지 |
@@ -543,13 +543,14 @@ Apache License 2.0 — [LICENSE](LICENSE) 참고.
 
 Narwhal은 많은 서드파티 오픈소스를 조합하며, 적용되는 조건은 **전달 방식**에 따라 달라집니다.
 일반 설치는 업스트림 이미지를 **참조**할 뿐 각 레지스트리에서 직접 받아오므로 재배포가 아닙니다.
-반면 **에어갭 번들은 전부를 재배포합니다** — 이미지 약 105개를 하나의 산출물로 넘기므로, 의무는
+반면 **에어갭 번들은 전부를 재배포합니다** — 이미지 약 104개를 하나의 산출물로 넘기므로, 의무는
 여기에 붙습니다.
 
 [`NOTICE`](NOTICE)가 두 경우를 모두 다루며, 단순 Apache-2.0이 아닌 조건들을 명시합니다:
-**AGPL-3.0**(Grafana·Loki·Tempo — 네트워크 이용이 소스 제공 의무를 발생시킴), **Redis 8의
-RSALv2/SSPLv1/AGPLv3 삼중 라이선스**(source-available이며 OSI 오픈소스가 아님), **MPL-2.0**(OpenBao),
-**GPL-2.0**(BusyBox·FRR). 빌드 도구는 별개입니다 — Vagrant와 Packer는 **BUSL-1.1**이고, 이는 어떤
+**AGPL-3.0**(Grafana·Loki·Tempo — 네트워크 이용이 소스 제공 의무를 발생시킴), **MPL-2.0**(OpenBao),
+**GPL-2.0**(BusyBox·FRR). 배포되는 것은 전부 OSI 오픈소스입니다 — ArgoCD 업스트림 매니페스트가
+고정한 Redis 8은 RSALv2/SSPLv1이 source-available일 뿐 오픈소스가 아니어서, `13-argocd.sh`가
+`argocd-redis`를 **Valkey**(BSD-3-Clause)로 바꿉니다. 빌드 도구는 별개입니다 — Vagrant와 Packer는 **BUSL-1.1**이고, 이는 어떤
 라이선스 스캐너도 분류하지 못합니다.
 
 이미지별 라이선스는

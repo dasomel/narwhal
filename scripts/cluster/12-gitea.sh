@@ -10,6 +10,21 @@ source /home/vagrant/scripts/common/lib.sh
 GITEA_VERSION="${GITEA_VERSION:-v1.26.2}"
 DOMAIN="${DOMAIN:-local.narwhal.internal}"
 
+# Which peers Gitea will believe when they claim a user in X-WEBAUTH-USER.
+#
+# This was "*", which means every source — Gitea authenticates as whoever the header
+# names, so a wildcard makes the header itself the credential. The gateway now strips
+# the header on both gitea routes (apisix-routes.yaml), and this is the second layer:
+# it keeps anything outside the pod network from being believed even if a route is
+# ever added without that strip.
+#
+# It is NOT a complete boundary on its own — every pod shares this CIDR, so any
+# workload in the cluster still falls inside it. Narrowing further needs an ingress
+# NetworkPolicy on gitea-http, which is not trivial here: ArgoCD, the portal and the
+# Kaniko build jobs all talk to gitea-http directly rather than through APISIX, so
+# the allowlist has to enumerate them. Tracked in issue #160.
+POD_NETWORK_CIDR="${POD_NETWORK_CIDR:-10.244.0.0/16}"
+
 echo "=== Installing Gitea ${GITEA_VERSION} ==="
 
 # Use local kubeconfig (bypasses VIP) to avoid disruption during master-2 join
@@ -89,7 +104,7 @@ helm upgrade --install gitea "$(chart gitea)" \
   --set gitea.config.service.ENABLE_REVERSE_PROXY_AUTHENTICATION=true \
   --set gitea.config.service.ENABLE_REVERSE_PROXY_AUTO_REGISTRATION=true \
   --set gitea.config.security.REVERSE_PROXY_AUTHENTICATION_USER=X-WEBAUTH-USER \
-  --set gitea.config.security.REVERSE_PROXY_TRUSTED_PROXIES="*" \
+  --set gitea.config.security.REVERSE_PROXY_TRUSTED_PROXIES="${POD_NETWORK_CIDR}" \
   --set persistence.enabled=true \
   --set persistence.storageClass=nfs-csi \
   --set persistence.size=10Gi \

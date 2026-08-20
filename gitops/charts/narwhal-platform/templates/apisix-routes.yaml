@@ -204,6 +204,25 @@ spec:
       upstreams:
         - name: gitea-http
       plugins:
+        # STRIP THE AUTH HEADER BEFORE PROXYING. Gitea runs with
+        # ENABLE_REVERSE_PROXY_AUTHENTICATION=true and REVERSE_PROXY_AUTHENTICATION_USER
+        # =X-WEBAUTH-USER, so whatever arrives in that header IS the authenticated user.
+        # This route deliberately carries no OIDC plugin — machines cannot complete a
+        # browser flow — which also means nothing here was normalising the header. A
+        # request to https://gitea.<domain>/api/v1/... carrying `X-WEBAUTH-USER:
+        # gitea-admin` was therefore authenticated as that user, from anywhere that can
+        # reach the public host. Auto-registration made it worse: an unknown name became
+        # a new account rather than a rejection.
+        #
+        # X-Userinfo is removed with it because the sibling route derives the username
+        # from it; leaving it settable here would just move the forgery one hop.
+        - name: proxy-rewrite
+          enable: true
+          config:
+            headers:
+              remove:
+                - "X-WEBAUTH-USER"
+                - "X-Userinfo"
         - name: response-rewrite
           enable: true
           config:
@@ -256,6 +275,12 @@ spec:
               - |
                 return function(conf, ctx)
                   local headers = ngx.req.get_headers()
+                  -- Clear first, set second. The original only ever SET the header when
+                  -- userinfo was present, so on any path where it was absent a
+                  -- client-supplied X-WEBAUTH-USER passed through and Gitea trusted it.
+                  -- Clearing unconditionally means the header downstream is always one
+                  -- this function produced, never one the caller sent.
+                  ngx.req.clear_header("X-WEBAUTH-USER")
                   local userinfo_b64 = headers["X-Userinfo"]
                   if userinfo_b64 then
                     local userinfo_json = ngx.decode_base64(userinfo_b64)

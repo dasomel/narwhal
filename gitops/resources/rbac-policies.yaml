@@ -131,11 +131,28 @@ rules:
     verbs: ["get", "list"]
 
 ---
-# Developer
-# 애플리케이션 배포 및 디버깅 전담 역할.
-# Secrets 접근 없음 — dev 네임스페이스에서만 developer-full-access(edit)가
-# secrets 읽기/쓰기를 제공한다. 클러스터 전역 secrets 읽기는 iam/platform의
-# DB 비밀번호·OIDC 시크릿까지 열람 가능해 2026-07-10 제거. 노드/네임스페이스 접근 없음.
+# Developer — READ-ONLY at cluster scope
+#
+# 2026-08-20: 이 역할은 cluster-wide 변경 권한을 가지고 있었다. `oidc-developer`
+# ClusterRoleBinding이 이것을 oidc:developer 그룹에 클러스터 전역으로 묶으므로,
+# 개발자는 `iam`의 Keycloak 파드, `database`의 CNPG Postgres, `platform-system`의
+# 게이트웨이에 **exec 할 수 있었고** 그곳의 워크로드를 수정·삭제할 수 있었다.
+# pods/exec + 워크로드 변경 + 전역 범위는 단일 조합으로 가장 위험한 축에 든다.
+#
+# 이제 역할은 get/list/watch만 가진다. 변경 권한은 아래
+# `developer-workload-admin`으로 분리했고, 그것은 **ClusterRoleBinding이 없다** —
+# 네임스페이스 RoleBinding으로만 부여된다.
+#
+# 클러스터 전역 READ는 의도적으로 남긴다. 개발자의 kubectl 가시성이 여기서만
+# 나오고, 읽기만으로는 다른 팀 워크로드를 바꿀 수 없다. Secrets는 여전히 없다 —
+# 2026-07-10에 iam/platform의 DB 비밀번호·OIDC 시크릿 열람 때문에 제거했다.
+#
+# 무엇이 바뀌는가(직접 kubectl 사용 한정 — 포털은 자체 ServiceAccount를 쓴다):
+#   dev 네임스페이스        변화 없음. developer-full-access(edit) + 아래 RoleBinding
+#   devtools, monitoring    변화 없음. oidc-developer-view(view)
+#   그 외 모든 네임스페이스   읽기만 가능. exec·변경·Job 생성 불가
+#   Application patch/sync  kubectl로는 불가. 포털과 argocd CLI는 각자의 인가를 쓴다.
+#                           kubectl 경로 복원은 AppProject 범위 설계에 달려 있다(#157)
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
@@ -144,50 +161,81 @@ metadata:
     app.kubernetes.io/managed-by: narwhal
     narwhal.io/rbac-tier: developer
 rules:
-  # 코어 리소스: 앱 운영에 필요한 권한
   - apiGroups: [""]
     resources:
       - pods
       - pods/log
+      - services
+      - configmaps
+      - events
+      - endpoints
+      - persistentvolumeclaims
+      - serviceaccounts
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["apps"]
+    resources: ["deployments", "statefulsets", "replicasets", "daemonsets"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["batch"]
+    resources: ["jobs", "cronjobs"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["autoscaling"]
+    resources: ["horizontalpodautoscalers"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["ingresses", "networkpolicies"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["argoproj.io"]
+    resources: ["applications"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["metrics.k8s.io"]
+    resources: ["pods"]
+    verbs: ["get", "list"]
+  - apiGroups: ["storage.k8s.io"]
+    resources: ["storageclasses"]
+    verbs: ["get", "list", "watch"]
+
+---
+# Developer workload admin — NAMESPACE-SCOPED ONLY
+#
+# 위 `developer`에서 떼어낸 변경 권한이다. **이 역할에 ClusterRoleBinding을 만들지
+# 말 것.** 그것이 이 분리의 요점이며, 그렇게 하는 순간 2026-08-20 이전 상태로
+# 정확히 되돌아간다. 부여는 네임스페이스 RoleBinding으로만 한다.
+#
+# 새 개발자 네임스페이스(포털의 `dev-*` 셀프서비스 포함)는 생성 시 이것을 묶는
+# RoleBinding이 필요하다. 현재 포털의 createNamespace는 만들지 않는다 — #146의
+# "onboarding/offboarding이 바인딩을 결정론적으로 갱신" 항목에 해당한다.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: developer-workload-admin
+  labels:
+    app.kubernetes.io/managed-by: narwhal
+    narwhal.io/rbac-tier: developer
+rules:
+  # exec/portforward/attach는 여기 있다 — 전역으로 주면 안 되는 이유 그 자체다.
+  - apiGroups: [""]
+    resources:
+      - pods
       - pods/exec
       - pods/portforward
       - pods/attach
       - services
       - configmaps
-      - events
       - endpoints
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
-  # PVC: 생성 및 읽기 (삭제 불가)
+  # PVC: 생성 및 읽기 (삭제 불가 — 기존 동작 유지)
   - apiGroups: [""]
     resources: ["persistentvolumeclaims"]
     verbs: ["get", "list", "watch", "create"]
-  # ServiceAccount: 읽기 전용
-  - apiGroups: [""]
-    resources: ["serviceaccounts"]
-    verbs: ["get", "list", "watch"]
-  # 앱 배포 리소스: 전체 관리
   - apiGroups: ["apps"]
-    resources:
-      - deployments
-      - statefulsets
-      - replicasets
+    resources: ["deployments", "statefulsets", "replicasets"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
-  # DaemonSet: 읽기 전용
-  - apiGroups: ["apps"]
-    resources: ["daemonsets"]
-    verbs: ["get", "list", "watch"]
-  # 배치 작업: 생성 및 삭제
   - apiGroups: ["batch"]
     resources: ["jobs", "cronjobs"]
     verbs: ["get", "list", "watch", "create", "delete"]
-  # HPA: 읽기 및 수정
   - apiGroups: ["autoscaling"]
     resources: ["horizontalpodautoscalers"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
-  # 네트워크: 읽기 전용
-  - apiGroups: ["networking.k8s.io"]
-    resources: ["ingresses", "networkpolicies"]
-    verbs: ["get", "list", "watch"]
   # ArgoCD 앱: 조회 및 동기화 (앱 생성/삭제 불가)
   - apiGroups: ["argoproj.io"]
     resources: ["applications"]
@@ -195,14 +243,6 @@ rules:
   - apiGroups: ["argoproj.io"]
     resources: ["applications/sync"]
     verbs: ["create"]
-  # Metrics: 읽기
-  - apiGroups: ["metrics.k8s.io"]
-    resources: ["pods"]
-    verbs: ["get", "list"]
-  # StorageClass: 읽기 (PVC 생성 시 참조)
-  - apiGroups: ["storage.k8s.io"]
-    resources: ["storageclasses"]
-    verbs: ["get", "list", "watch"]
 
 ---
 # Platform Viewer
@@ -298,7 +338,11 @@ subjects:
 
 ---
 # ClusterRoleBinding: developer
-# OIDC 그룹 oidc:developer → developer 매핑 (클러스터 전체 범위)
+# OIDC 그룹 oidc:developer → developer 매핑.
+#
+# 클러스터 전역이지만 이제 READ-ONLY다 — `developer` ClusterRole에서 변경 권한을
+# `developer-workload-admin`으로 분리했기 때문이다. 그 역할을 여기에 묶지 말 것;
+# 그러면 분리가 무의미해진다.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
@@ -351,6 +395,34 @@ roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
   name: edit
+subjects:
+  - apiGroup: rbac.authorization.k8s.io
+    kind: Group
+    name: "oidc:developer"
+
+---
+# RoleBinding: developer-workload-admin (dev 네임스페이스)
+#
+# `developer-workload-admin`의 유일한 바인딩이며, 이것이 이 설계의 형태다:
+# 변경 권한은 승인된 네임스페이스마다 명시적으로 부여하지, 클러스터 전역으로
+# 한 번에 주지 않는다.
+#
+# 바로 위의 developer-full-access(edit)와 겹치는 부분이 있다. 의도한 것이다 —
+# edit은 k8s 내장 역할이라 argoproj.io를 모르고, 이쪽은 narwhal 고유 권한을
+# 담는다. 그리고 새 `dev-*` 네임스페이스가 복제해야 할 템플릿은 edit이 아니라
+# 이 RoleBinding이다.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: developer-workload-admin
+  namespace: dev
+  labels:
+    app.kubernetes.io/managed-by: narwhal
+    narwhal.io/rbac-group: developer
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: developer-workload-admin
 subjects:
   - apiGroup: rbac.authorization.k8s.io
     kind: Group

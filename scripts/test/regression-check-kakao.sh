@@ -196,6 +196,30 @@ run_static() {
   check_not R23 "no hardcoded local.narwhal.internal in cloud scripts (2026-07-30)" \
     grep -rqE '^[^#]*local\.narwhal\.internal' scripts/cloud/
 
+  # 2026-08-20: the `developer` ClusterRole carried pods/exec plus create/update/delete,
+  # and `oidc-developer` binds it CLUSTER-WIDE — so a developer could exec into
+  # Keycloak in `iam` or the CNPG Postgres in `database`. The mutating half moved to
+  # `developer-workload-admin`, which is granted per namespace. Both halves are checked
+  # because either one alone silently restores the old reach.
+  # check_not runs its argument list directly, so a pipeline has to be wrapped —
+  # otherwise `|` reaches awk as a literal argument and the check silently passes.
+  check_not R37 "cluster-wide developer role has no exec/portforward/attach (2026-08-20)" \
+    bash -c "awk '/^  name: developer\$/,/^---/' gitops/resources/rbac-policies.yaml | grep -qE 'pods/(exec|portforward|attach)'"
+
+  # The whole point of the split. A ClusterRoleBinding to the write role puts the
+  # cluster back exactly where it was, and would look like a routine addition.
+  check_not R38 "no ClusterRoleBinding grants developer-workload-admin (2026-08-20)" \
+    bash -c "awk '/^kind: ClusterRoleBinding\$/,/^---/' gitops/resources/rbac-policies.yaml | grep -q 'developer-workload-admin'"
+
+  # 2026-08-20: Gitea authenticates as whoever X-WEBAUTH-USER names, and the APISIX
+  # bypass route (git + /api/v1/ + /api/packages/, deliberately no OIDC) did not strip
+  # it — so the header was the credential, from anywhere that reaches the public host.
+  check R39 "APISIX strips X-WEBAUTH-USER on the gitea bypass route (2026-08-20)" \
+    grep -q 'X-WEBAUTH-USER' gitops/charts/narwhal-platform/templates/apisix-routes.yaml
+
+  check_not R40 "gitea does not trust every reverse proxy (2026-08-20)" \
+    grep -qE 'REVERSE_PROXY_TRUSTED_PROXIES="\*"' scripts/cluster/12-gitea.sh
+
   # Every script keeps its error handling — CI does not catch a missing set line.
   # 00-config.sh is exempt by design: it is sourced, so `set -e` there would impose
   # itself on whatever sourced it rather than on a process of its own.

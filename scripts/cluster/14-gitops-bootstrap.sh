@@ -45,16 +45,43 @@ PF_PID=$!
 trap 'kill ${PF_PID} 2>/dev/null || true' EXIT
 sleep 5
 
-# Create repository via API
-curl -s -X POST "http://localhost:3000/api/v1/user/repos" \
+# Create repository via API.
+#
+# PRIVATE. It was `"private": false`, which meant anyone who could reach Gitea —
+# including anonymous readers — could clone the repository that describes the entire
+# cluster: every manifest, every image reference, every namespace and policy. Verified
+# on a scratch Gitea 1.26.2: with private=false an anonymous `git clone` succeeds and
+# `GET /api/v1/repos/...` returns 200; with private=true the clone fails and the API
+# returns 404.
+#
+# Flipping this ALONE breaks ArgoCD, which reads the repo with no credentials at all
+# and only worked because it was public. The read-only account and the ArgoCD
+# repository Secret further down are what make the flip survivable — do not separate
+# them.
+#
+# The 201 is checked rather than `|| true`-ed: a swallowed failure here produces a
+# cluster with no GitOps source, which then shows up much later as "ArgoCD syncs
+# nothing" with no trace of the cause.
+create_code=$(curl -s -o /tmp/repo-create.json -w '%{http_code}' -X POST "http://localhost:3000/api/v1/user/repos" \
   -H "Content-Type: application/json" \
   -u "${GITEA_ADMIN_USER}:${GITEA_ADMIN_PASSWORD}" \
   -d '{
     "name": "'${REPO_NAME}'",
     "description": "Narwhal IDP GitOps configurations",
-    "private": false,
+    "private": true,
     "auto_init": true
-  }' || true
+  }')
+case "${create_code}" in
+  201) echo "  repository created (private)" ;;
+  409) echo "  repository already exists — reasserting visibility"
+       curl -sf -X PATCH "http://localhost:3000/api/v1/repos/${GITEA_ADMIN_USER}/${REPO_NAME}" \
+         -H "Content-Type: application/json" \
+         -u "${GITEA_ADMIN_USER}:${GITEA_ADMIN_PASSWORD}" \
+         -d '{"private": true}' >/dev/null \
+         || { echo "ERROR: could not set ${REPO_NAME} private" >&2; exit 1; } ;;
+  *)   echo "ERROR: repository creation failed (HTTP ${create_code})" >&2
+       cat /tmp/repo-create.json >&2; exit 1 ;;
+esac
 
 # Kill port-forward
 kill "${PF_PID}" 2>/dev/null || true
@@ -103,8 +130,90 @@ git add -A
 git commit -m "Initial GitOps configuration" || true
 git push origin main || true
 
+#=========================================
+# ArgoCD read-only access to the now-private repository
+#=========================================
+# The repository is private, so ArgoCD can no longer read it anonymously — which is
+# how it read it before, with no Secret of any kind. This gives it its own identity
+# instead of handing it the admin credential:
+#
+#   user `argocd`  ->  read collaborator on the repo  ->  read:repository token
+#
+# Verified on a scratch Gitea 1.26.2: that token clones the private repo and is
+# REJECTED on push, so a leak of it cannot rewrite the cluster's desired state.
+echo "Provisioning ArgoCD read-only access to ${REPO_NAME}..."
+ARGOCD_GIT_USER="argocd"
+ARGOCD_GIT_PASSWORD="$(openssl rand -base64 24)"
+
+# 201 = created, 422 = already exists (password is then reset below so the token
+# request below authenticates either way).
+curl -s -o /dev/null -X POST "http://localhost:3000/api/v1/admin/users" \
+  -H "Content-Type: application/json" \
+  -u "${GITEA_ADMIN_USER}:${GITEA_ADMIN_PASSWORD}" \
+  -d "{\"username\":\"${ARGOCD_GIT_USER}\",\"email\":\"argocd@${DOMAIN}\",\"password\":\"${ARGOCD_GIT_PASSWORD}\",\"must_change_password\":false}"
+curl -s -o /dev/null -X PATCH "http://localhost:3000/api/v1/admin/users/${ARGOCD_GIT_USER}" \
+  -H "Content-Type: application/json" \
+  -u "${GITEA_ADMIN_USER}:${GITEA_ADMIN_PASSWORD}" \
+  -d "{\"login_name\":\"${ARGOCD_GIT_USER}\",\"source_id\":0,\"password\":\"${ARGOCD_GIT_PASSWORD}\",\"must_change_password\":false}"
+
+curl -sf -o /dev/null -X PUT \
+  "http://localhost:3000/api/v1/repos/${GITEA_ADMIN_USER}/${REPO_NAME}/collaborators/${ARGOCD_GIT_USER}" \
+  -H "Content-Type: application/json" \
+  -u "${GITEA_ADMIN_USER}:${GITEA_ADMIN_PASSWORD}" \
+  -d '{"permission":"read"}' \
+  || { echo "ERROR: could not grant ${ARGOCD_GIT_USER} read on ${REPO_NAME}" >&2; exit 1; }
+
+# Tokens are scoped. read:repository is the whole permission set ArgoCD needs.
+ARGOCD_GIT_TOKEN="$(curl -s -X POST "http://localhost:3000/api/v1/users/${ARGOCD_GIT_USER}/tokens" \
+  -H "Content-Type: application/json" \
+  -u "${ARGOCD_GIT_USER}:${ARGOCD_GIT_PASSWORD}" \
+  -d '{"name":"argocd-gitops-read","scopes":["read:repository"]}' \
+  | grep -o '"sha1":"[^"]*"' | cut -d'"' -f4)"
+if [ -z "${ARGOCD_GIT_TOKEN}" ]; then
+  echo "ERROR: could not mint a read:repository token for ${ARGOCD_GIT_USER}" >&2
+  exit 1
+fi
+
+#=========================================
+# Protect main
+#=========================================
+# AFTER the initial push, not before: the bootstrap itself is the first writer, and
+# a rule applied earlier would reject it.
+#
+# enable_push stays TRUE with a whitelist rather than false. push-to-gitea.sh is the
+# only durable way to change this cluster — ArgoCD runs selfHeal, so kubectl edits are
+# reverted — and a hard `enable_push:false` would brick that path. Verified on a
+# scratch Gitea: with the whitelist, gitea-admin pushes successfully while a
+# collaborator holding WRITE is still rejected with "protected branch main". So the
+# operator path survives and everyone else goes through a reviewed pull request.
+echo "Protecting the ${REPO_NAME} main branch..."
+curl -sf -o /dev/null -X POST \
+  "http://localhost:3000/api/v1/repos/${GITEA_ADMIN_USER}/${REPO_NAME}/branch_protections" \
+  -H "Content-Type: application/json" \
+  -u "${GITEA_ADMIN_USER}:${GITEA_ADMIN_PASSWORD}" \
+  -d '{"rule_name":"main","enable_push":true,"enable_push_whitelist":true,"push_whitelist_usernames":["'"${GITEA_ADMIN_USER}"'"],"required_approvals":1,"block_on_rejected_reviews":true,"block_on_outdated_branch":true}' \
+  || echo "  main protection already present (or unchanged)"
+
 kill "${PF_PID}" 2>/dev/null || true
 trap - EXIT
+
+#=========================================
+# Register the private repo with ArgoCD
+#=========================================
+# Without this Secret ArgoCD reports "authentication required" on every Application
+# the moment the repository stops being public. The URL must match app-of-apps.yaml
+# exactly — ArgoCD matches credentials to repositories by URL prefix, and a trailing
+# `.git` mismatch silently yields no credentials rather than an error.
+kubectl create secret generic narwhal-gitops-repo -n devtools \
+  --from-literal=name=narwhal-gitops \
+  --from-literal=type=git \
+  --from-literal=url="${GITEA_URL}/${GITEA_ADMIN_USER}/${REPO_NAME}.git" \
+  --from-literal=username="${ARGOCD_GIT_USER}" \
+  --from-literal=password="${ARGOCD_GIT_TOKEN}" \
+  --dry-run=client -o yaml \
+  | kubectl label --local -f - argocd.argoproj.io/secret-type=repository -o yaml \
+  | kubectl apply -f -
+echo "  ArgoCD repository credentials registered for ${REPO_NAME}"
 
 #=========================================
 # Ensure unified PostgreSQL cluster is ready

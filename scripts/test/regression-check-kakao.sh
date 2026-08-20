@@ -220,6 +220,24 @@ run_static() {
   check_not R40 "gitea does not trust every reverse proxy (2026-08-20)" \
     grep -qE 'REVERSE_PROXY_TRUSTED_PROXIES="\*"' scripts/cluster/12-gitea.sh
 
+  # 2026-08-20: the GitOps repo was created with "private": false, so anyone able to
+  # reach Gitea — anonymously — could clone the description of the entire cluster.
+  # Confirmed against a scratch Gitea 1.26.2 before fixing.
+  check_not R41 "narwhal-gitops is not created public (2026-08-20)" \
+    grep -qE '^[^#]*"private":[[:space:]]*false' scripts/cluster/14-gitops-bootstrap.sh
+
+  # Making it private without this breaks every Application at once: ArgoCD read the
+  # repo with no credentials and only worked because it was public. The two changes
+  # are one change.
+  check R42 "bootstrap registers ArgoCD repo credentials (2026-08-20)" \
+    grep -q 'narwhal-gitops-repo' scripts/cluster/14-gitops-bootstrap.sh
+
+  # Whitelist, not enable_push:false — push-to-gitea.sh is the only durable way to
+  # change this cluster (selfHeal reverts kubectl), so a hard block would brick
+  # operations. Verified: gitea-admin pushes, a WRITE collaborator is rejected.
+  check R43 "main branch protection is applied to narwhal-gitops (2026-08-20)" \
+    grep -q 'branch_protections' scripts/cluster/14-gitops-bootstrap.sh
+
   # Every script keeps its error handling — CI does not catch a missing set line.
   # 00-config.sh is exempt by design: it is sourced, so `set -e` there would impose
   # itself on whatever sourced it rather than on a process of its own.

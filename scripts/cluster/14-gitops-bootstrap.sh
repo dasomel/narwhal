@@ -175,6 +175,49 @@ if [ -z "${ARGOCD_GIT_TOKEN}" ]; then
 fi
 
 #=========================================
+# Portal self-service identity
+#=========================================
+# The portal requests namespaces by opening a PULL REQUEST here, not by calling the
+# Kubernetes API. Its ServiceAccount has `namespaces: [get, list, watch]` and keeps
+# it that way — a namespace is a tenancy decision, and the approval on the pull
+# request is where that decision gets made and recorded.
+#
+# This account is deliberately ABSENT from the push whitelist below. Write
+# collaborator lets it push a BRANCH; the protection rule stops it reaching main.
+# Verified on a scratch Gitea 1.26.2: branch push succeeds, `git push origin main`
+# is rejected with "protected branch main", and merging its own PR returns 405
+# "Does not have enough approvals". The review gate is therefore not advisory.
+echo "Provisioning the portal self-service identity..."
+PORTAL_GIT_USER="portal-gitops"
+PORTAL_GIT_PASSWORD="$(openssl rand -base64 24)"
+
+curl -s -o /dev/null -X POST "http://localhost:3000/api/v1/admin/users" \
+  -H "Content-Type: application/json" \
+  -u "${GITEA_ADMIN_USER}:${GITEA_ADMIN_PASSWORD}" \
+  -d "{\"username\":\"${PORTAL_GIT_USER}\",\"email\":\"portal-gitops@${DOMAIN}\",\"password\":\"${PORTAL_GIT_PASSWORD}\",\"must_change_password\":false}"
+curl -s -o /dev/null -X PATCH "http://localhost:3000/api/v1/admin/users/${PORTAL_GIT_USER}" \
+  -H "Content-Type: application/json" \
+  -u "${GITEA_ADMIN_USER}:${GITEA_ADMIN_PASSWORD}" \
+  -d "{\"login_name\":\"${PORTAL_GIT_USER}\",\"source_id\":0,\"password\":\"${PORTAL_GIT_PASSWORD}\",\"must_change_password\":false}"
+
+curl -sf -o /dev/null -X PUT \
+  "http://localhost:3000/api/v1/repos/${GITEA_ADMIN_USER}/${REPO_NAME}/collaborators/${PORTAL_GIT_USER}" \
+  -H "Content-Type: application/json" \
+  -u "${GITEA_ADMIN_USER}:${GITEA_ADMIN_PASSWORD}" \
+  -d '{"permission":"write"}' \
+  || { echo "ERROR: could not grant ${PORTAL_GIT_USER} write on ${REPO_NAME}" >&2; exit 1; }
+
+PORTAL_GIT_TOKEN="$(curl -s -X POST "http://localhost:3000/api/v1/users/${PORTAL_GIT_USER}/tokens" \
+  -H "Content-Type: application/json" \
+  -u "${PORTAL_GIT_USER}:${PORTAL_GIT_PASSWORD}" \
+  -d '{"name":"portal-selfservice","scopes":["write:repository"]}' \
+  | grep -o '"sha1":"[^"]*"' | cut -d'"' -f4)"
+if [ -z "${PORTAL_GIT_TOKEN}" ]; then
+  echo "ERROR: could not mint a write:repository token for ${PORTAL_GIT_USER}" >&2
+  exit 1
+fi
+
+#=========================================
 # Protect main
 #=========================================
 # AFTER the initial push, not before: the bootstrap itself is the first writer, and
@@ -214,6 +257,25 @@ kubectl create secret generic narwhal-gitops-repo -n devtools \
   | kubectl label --local -f - argocd.argoproj.io/secret-type=repository -o yaml \
   | kubectl apply -f -
 echo "  ArgoCD repository credentials registered for ${REPO_NAME}"
+
+# The portal reads these to open its pull requests. narwhal-portal-secrets is created
+# by 13-2-narwhal-portal-bindings.sh, which runs first, so this adds keys to it rather
+# than creating it — a `create --dry-run | apply` here would drop every other key.
+if kubectl get secret narwhal-portal-secrets -n devtools >/dev/null 2>&1; then
+  kubectl patch secret narwhal-portal-secrets -n devtools --type merge -p "$(cat <<PATCHEOF
+{"stringData":{
+  "GITEA_URL": "${GITEA_URL}",
+  "GITEA_OWNER": "${GITEA_ADMIN_USER}",
+  "GITEA_REPO": "${REPO_NAME}",
+  "GITEA_TOKEN": "${PORTAL_GIT_TOKEN}"
+}}
+PATCHEOF
+)" >/dev/null
+  echo "  portal self-service credentials added to narwhal-portal-secrets"
+else
+  echo "WARN: narwhal-portal-secrets not found — run 13-2-narwhal-portal-bindings.sh," >&2
+  echo "      then re-run this script, or the portal cannot open namespace requests." >&2
+fi
 
 #=========================================
 # Ensure unified PostgreSQL cluster is ready

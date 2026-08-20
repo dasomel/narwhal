@@ -1,0 +1,47 @@
+# Tenant namespaces requested through the portal.
+#
+# The portal cannot create a namespace directly — its ServiceAccount has
+# `namespaces: [get, list, watch]` and nothing more, deliberately. It opens a pull
+# request against resources/tenants/ instead, a human approves it, and ArgoCD
+# applies what was merged. The approval is the authorization step, and it leaves a
+# reviewable record of who asked for what.
+#
+# recurse is on because the layout is resources/tenants/<team>/<namespace>.yaml —
+# one directory per team, so a team's namespaces are reviewable as a unit.
+#
+# prune stays on. Deleting a tenant file therefore deletes the namespace and its
+# contents, which is the offboarding path #146 asks to be deterministic. What makes
+# that safe enough to automate is the branch protection on main: the destructive
+# step cannot reach the cluster without a reviewed pull request.
+#
+# sync-wave 3: after rbac-policies (which defines developer-workload-admin) has been
+# applied, since every tenant file binds that role.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: tenants
+  namespace: devtools
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: {{ .Values.repoURL }}
+    targetRevision: HEAD
+    path: resources/tenants
+    directory:
+      recurse: true
+  destination:
+    server: https://kubernetes.default.svc
+    # Namespaces are cluster-scoped; this is only the default for anything in a
+    # tenant file that is namespaced and does not say otherwise.
+    namespace: devtools
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=false
+      - ServerSideApply=true

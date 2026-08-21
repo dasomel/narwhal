@@ -255,6 +255,24 @@ run_static() {
   check R46 "every Application fits its AppProject policy (2026-08-21)" \
     python3 scripts/test/lib/check-appproject-fit.py
 
+  # 2026-08-21: clone, the config copy, commit and push were all `|| true`, so a clean
+  # install could report success with an empty or stale GitOps source and the symptom
+  # — ArgoCD reconciling nothing — appeared days from the cause.
+  check_not R47 "no swallowed failures on the critical gitops git operations (2026-08-21)" \
+    bash -c "grep -nE '^[^#]*(git clone|git push|cp -r /home/vagrant/configs/gitops).*\|\| true' scripts/cluster/14-gitops-bootstrap.sh | grep -q ."
+
+  # idp-apps is what makes the repository the cluster's desired state. Creating it
+  # before the source is verified is what turns a failed bootstrap into a silent one.
+  check R48 "idp-apps is gated on source validation (2026-08-21)" \
+    grep -q 'GITOPS_SOURCE_VALIDATED' scripts/cluster/14-gitops-bootstrap.sh
+
+  # 2026-08-21, twice in two days: an unquoted heredoc EXECUTES backticks, including on
+  # comment lines — `#` is a comment to the document, not to the shell. Once the
+  # substitution would have landed inside a Casbin policy. shellcheck calls it SC2006
+  # "style", which is the wrong severity to stop anyone.
+  check R49 "no backticks inside unquoted heredocs (2026-08-21)" \
+    python3 scripts/test/lib/check-heredoc-backticks.py
+
   # Every script keeps its error handling — CI does not catch a missing set line.
   # 00-config.sh is exempt by design: it is sourced, so `set -e` there would impose
   # itself on whatever sourced it rather than on a process of its own.

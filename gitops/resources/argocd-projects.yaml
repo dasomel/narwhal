@@ -1,0 +1,129 @@
+---
+# ArgoCD AppProjects — the deployment boundary.
+#
+# Everything ran in the `default` project, which has sourceRepos `*`, destinations
+# `*` and no resource restrictions. An Application accepted into the repo could
+# therefore deploy anything, from anywhere, into any namespace — including `iam` and
+# `database` — regardless of what Kubernetes RBAC or the portal said about ownership.
+# The boundary existed in two layers and not in the third.
+#
+# These are applied by 13-argocd.sh immediately after ArgoCD installs, BEFORE any
+# Application references them: an Application naming a project that does not exist is
+# rejected, so the ordering is not a preference. They are also synced from GitOps so
+# drift is corrected, and that Application is itself in `platform`.
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: platform
+  namespace: devtools
+  labels:
+    app.kubernetes.io/managed-by: narwhal
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  description: Platform components. Privileged; not for tenant workloads.
+
+  # Both entries are in-cluster Gitea. Charts are mirrored into its package registry
+  # by scripts/airgap/03-save-helm-charts.sh rather than pulled from upstream, so an
+  # Application pointing at charts.jetstack.io or any other external repo is a
+  # mistake and is now rejected instead of silently fetched.
+  sourceRepos:
+    - http://gitea-http.devtools.svc.cluster.local:3000/gitea-admin/narwhal-gitops.git
+    - http://gitea-http.devtools.svc.cluster.local:3000/api/packages/gitea-admin/helm
+
+  # Derived from the rendered chart, not guessed: these are the destination
+  # namespaces the 35 platform Applications actually use. dev and dev-* are here
+  # because the tenants Application provisions the RoleBinding and ResourceQuota
+  # INSIDE each tenant namespace; the tenant workloads themselves belong to the
+  # `tenants` project below.
+  destinations:
+    - server: https://kubernetes.default.svc
+      namespace: chaos-testing
+    - server: https://kubernetes.default.svc
+      namespace: devtools
+    - server: https://kubernetes.default.svc
+      namespace: istio-system
+    - server: https://kubernetes.default.svc
+      namespace: kube-system
+    - server: https://kubernetes.default.svc
+      namespace: monitoring
+    - server: https://kubernetes.default.svc
+      namespace: platform-system
+    - server: https://kubernetes.default.svc
+      namespace: security-system
+    - server: https://kubernetes.default.svc
+      namespace: storage
+    - server: https://kubernetes.default.svc
+      namespace: dev
+    - server: https://kubernetes.default.svc
+      namespace: dev-*
+
+  # Platform genuinely needs cluster scope: CRDs, ClusterRoles, the Namespace objects
+  # the tenants Application creates, MutatingWebhookConfigurations. Narrowing this to
+  # a list would be a list that has to be updated with every component.
+  clusterResourceWhitelist:
+    - group: "*"
+      kind: "*"
+
+  namespaceResourceWhitelist:
+    - group: "*"
+      kind: "*"
+
+---
+# Tenant workloads. Everything a team deploys into its own namespace.
+#
+# Deliberately empty of cluster scope: a tenant Application that tries to create a
+# ClusterRole, a CRD or a Namespace is rejected by ArgoCD before anything reaches the
+# API server. That is the property `default` could not express.
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: tenants
+  namespace: devtools
+  labels:
+    app.kubernetes.io/managed-by: narwhal
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  description: Team workloads in team-owned namespaces. No cluster-scoped resources.
+
+  sourceRepos:
+    - http://gitea-http.devtools.svc.cluster.local:3000/gitea-admin/narwhal-gitops.git
+    - http://gitea-http.devtools.svc.cluster.local:3000/api/packages/gitea-admin/helm
+
+  # dev-* is the shape the portal enforces on a namespace request, so the ArgoCD
+  # boundary and the portal's validation describe the same set.
+  destinations:
+    - server: https://kubernetes.default.svc
+      namespace: dev
+    - server: https://kubernetes.default.svc
+      namespace: dev-*
+
+  # Empty on purpose. An empty whitelist denies every cluster-scoped resource.
+  clusterResourceWhitelist: []
+
+  namespaceResourceWhitelist:
+    - group: "*"
+      kind: "*"
+
+  # A tenant must not rewrite the limits it was given. The quota and LimitRange in a
+  # tenant file are applied by the platform project's tenants Application, which is
+  # not subject to this list.
+  namespaceResourceBlacklist:
+    - group: ""
+      kind: ResourceQuota
+    - group: ""
+      kind: LimitRange
+    - group: rbac.authorization.k8s.io
+      kind: RoleBinding
+    - group: rbac.authorization.k8s.io
+      kind: Role
+
+  roles:
+    - name: deploy
+      description: Sync and read applications in this project.
+      policies:
+        - p, proj:tenants:deploy, applications, get, tenants/*, allow
+        - p, proj:tenants:deploy, applications, sync, tenants/*, allow
+      groups:
+        - developer

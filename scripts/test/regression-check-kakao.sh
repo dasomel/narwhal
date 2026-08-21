@@ -238,6 +238,23 @@ run_static() {
   check R43 "main branch protection is applied to narwhal-gitops (2026-08-20)" \
     grep -q 'branch_protections' scripts/cluster/14-gitops-bootstrap.sh
 
+  # 2026-08-21: every Application ran in the `default` AppProject, which has
+  # sourceRepos *, destinations * and no resource restrictions — so an Application
+  # accepted into the repo could deploy anything, from anywhere, into any namespace.
+  check_not R44 "no Application uses the default AppProject (2026-08-21)" \
+    bash -c "grep -rn 'project: default' gitops/ scripts/ 2>/dev/null | grep -v kubernetes-dashboard | grep -q ."
+
+  # A sync is a deploy. */* let any developer sync argocd, keycloak or kyverno.
+  check_not R45 "developer sync is not cluster-wide (2026-08-21)" \
+    grep -qE '^[^#]*role:developer, applications, sync, \*/\*' scripts/cluster/13-argocd.sh
+
+  # The check that actually earns its place: an Application added later with a
+  # destination namespace or a source repo the project does not list is REJECTED by
+  # ArgoCD at sync time, which surfaces as "the app never syncs" long after the
+  # commit. This catches it at commit time instead.
+  check R46 "every Application fits its AppProject policy (2026-08-21)" \
+    python3 scripts/test/lib/check-appproject-fit.py
+
   # Every script keeps its error handling — CI does not catch a missing set line.
   # 00-config.sh is exempt by design: it is sourced, so `set -e` there would impose
   # itself on whatever sourced it rather than on a process of its own.

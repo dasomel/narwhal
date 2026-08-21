@@ -6,7 +6,7 @@ metadata:
   finalizers:
     - resources-finalizer.argocd.argoproj.io
 spec:
-  project: default
+  project: platform
   source:
     # VENDORED chart, not a helm-repo reference. The upstream helm index
     # (https://kubernetes.github.io/dashboard/index.yaml) returns 404 — verified from

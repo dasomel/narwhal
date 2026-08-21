@@ -1,0 +1,35 @@
+# Keeps the AppProjects in sync with git after 13-argocd.sh creates them.
+#
+# sync-wave -1: the projects have to reconcile before anything that references them.
+# This Application is itself in `platform`, which is one of the projects it manages —
+# that is fine because 13-argocd.sh applied them directly first; it is not fine to
+# rely on this Application to CREATE them, which is why it does not.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: argocd-projects
+  namespace: devtools
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: platform
+  source:
+    repoURL: {{ .Values.repoURL }}
+    targetRevision: HEAD
+    path: resources
+    directory:
+      include: "argocd-projects.yaml"
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: devtools
+  syncPolicy:
+    automated:
+      # prune is OFF. Pruning here would delete an AppProject, and deleting a project
+      # orphans every Application in it — a far larger blast radius than the drift
+      # pruning is meant to correct.
+      prune: false
+      selfHeal: true
+    syncOptions:
+      - ServerSideApply=true

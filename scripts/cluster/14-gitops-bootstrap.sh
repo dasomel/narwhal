@@ -310,7 +310,12 @@ metadata:
   finalizers:
     - resources-finalizer.argocd.argoproj.io
 spec:
-  project: default
+  # `platform`, not `default`. The default project has sourceRepos *, destinations *
+  # and no resource restrictions, so an Application accepted into the repo could
+  # deploy anything from anywhere into any namespace — iam and database included.
+  # 13-argocd.sh creates this project before we get here; an Application naming a
+  # project that does not exist is rejected, so the ordering is load-bearing.
+  project: platform
   source:
     repoURL: http://gitea-http.devtools.svc.cluster.local:3000/${GITEA_ADMIN_USER}/${REPO_NAME}.git
     targetRevision: HEAD

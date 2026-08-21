@@ -42,7 +42,7 @@ metadata:
   labels:
     app.kubernetes.io/managed-by: narwhal-gitops
 spec:
-  project: default
+  project: tenants
   source:
     # Gitea 내부 서비스 주소 (클러스터 내부 통신)
     # 외부 주소(https://gitea.local.narwhal.internal) 사용 금지:

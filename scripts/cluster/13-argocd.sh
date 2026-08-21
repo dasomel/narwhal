@@ -70,6 +70,28 @@ echo "Repointing argocd-redis at Valkey (BSD-3-Clause) instead of Redis 8..."
 kubectl set image deployment/argocd-redis redis=docker.io/valkey/valkey:8-alpine -n devtools
 
 
+# AppProjects — the deployment boundary, created BEFORE any Application exists.
+#
+# An Application whose `project` does not exist is rejected by ArgoCD, so this cannot
+# be deferred to the GitOps layer that defines the Applications themselves. The same
+# file is also synced from git afterwards, so drift is corrected; this apply is what
+# makes the first sync possible.
+#
+# Everything ran in `default`, which has sourceRepos *, destinations * and no
+# resource restrictions. See gitops/resources/argocd-projects.yaml for what each
+# project narrows and why.
+echo "Creating AppProjects (platform, tenants)..."
+# The path is the Vagrantfile's synced_folder for gitops/ — the same one
+# 08-1-networking.sh and 08-6-tls-routes.sh use. Not manifest(), which resolves
+# remote manifests fetched into the airgap bundle; this file lives in the repo.
+#
+# Fail closed. Without these projects every Application below is rejected, and that
+# surfaces as "app-of-apps never syncs" with no indication why.
+if ! kubectl apply -n devtools -f /home/vagrant/configs/gitops/resources/argocd-projects.yaml; then
+  echo "ERROR: could not create the AppProjects; every Application would be rejected" >&2
+  exit 1
+fi
+
 # Patch ArgoCD NetworkPolicies for Istio ambient mesh (HBONE port 15008)
 echo "Patching ArgoCD NetworkPolicies for Istio ambient mesh (HBONE port 15008)..."
 # NetworkPolicy 생성 대기 (최대 30초)
@@ -265,7 +287,18 @@ else
   echo "      gitea.${DOMAIN}, so Helm chart fetches will fail until 08-6 has run." >&2
 fi
 
-# Configure RBAC for Keycloak groups
+# Configure RBAC for Keycloak groups.
+#
+# developer sync is scoped to the tenants project. It was `*/*`, which let any
+# developer sync any platform Application — argocd, keycloak, kyverno included — and a
+# sync is a deploy. The `get` rule stays broad deliberately: seeing that a platform
+# component is unhealthy is what makes the portal's dashboards useful, and reading
+# cannot change anything.
+#
+# The explanation lives HERE and not inside policy.csv. Two reasons: the heredoc below
+# is unquoted so it can interpolate ${DOMAIN}, which means backticks in it would be
+# executed by the shell and their output substituted into the policy; and prose inside
+# a Casbin policy value is parser input, not documentation.
 cat <<EOF | kubectl apply -f -
 apiVersion: v1
 kind: ConfigMap
@@ -278,7 +311,7 @@ metadata:
 data:
   policy.default: role:readonly
   policy.csv: |
-    p, role:developer, applications, sync, */*, allow
+    p, role:developer, applications, sync, tenants/*, allow
     p, role:developer, applications, get, */*, allow
     p, role:developer, logs, get, */*, allow
     p, role:none, applications, get, */*, deny

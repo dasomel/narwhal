@@ -34,7 +34,7 @@ metadata:
   labels:
     app.kubernetes.io/managed-by: narwhal-gitops
 spec:
-  project: default
+  project: tenants
   source:
     repoURL: <CHART_REPO_URL>
     targetRevision: "<CHART_VERSION>"

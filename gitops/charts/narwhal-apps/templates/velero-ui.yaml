@@ -6,7 +6,7 @@ metadata:
   annotations:
     argocd.argoproj.io/sync-wave: "5"
 spec:
-  project: default
+  project: platform
   source:
     # The only source here that was a *git* repo rather than a chart repo, so it needed more
     # than a URL swap: `path` goes away, `chart` appears, and targetRevision becomes the

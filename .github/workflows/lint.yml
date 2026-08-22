@@ -89,11 +89,22 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      # `releases/latest/download` is a mutable reference: it resolved to whatever
+      # upstream published most recently, and nothing checked what arrived. A pinned
+      # version alone is not enough either — a tag can be moved. The digest is the part
+      # that makes the download immutable, so bump the two together or the check fails.
+      # v4.53.3 rather than the newest (v4.53.6, published 2026-08-20): the cooling
+      # window in docs/common/supply-chain-policy.md is seven days.
       - name: Install yq
+        env:
+          YQ_VERSION: v4.53.3
+          YQ_SHA256: fa52a4e758c63d38299163fbdd1edfb4c4963247918bf9c1c5d31d84789eded4
         run: |
-          sudo wget -qO /usr/local/bin/yq \
-            https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
-          sudo chmod +x /usr/local/bin/yq
+          set -euo pipefail
+          curl -fsSL -o /tmp/yq \
+            "https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/yq_linux_amd64"
+          echo "${YQ_SHA256}  /tmp/yq" | sha256sum -c -
+          sudo install -m 0755 /tmp/yq /usr/local/bin/yq
 
       - name: Validate GitOps YAML
         run: |
@@ -108,10 +119,19 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      # Same mutable reference as yq, plus a second problem the pipe created: `curl | tar`
+      # unpacks the archive as it arrives, so there is no point at which the bytes exist
+      # to be checked. Download first, verify, then extract.
       - name: Install kubeconform
+        env:
+          KUBECONFORM_VERSION: v0.8.0
+          KUBECONFORM_SHA256: 9bc2bffbf71f261128533edaf912153948b7ff238f9a531ae6d34466ec287883
         run: |
-          curl -sSL https://github.com/yannh/kubeconform/releases/latest/download/kubeconform-linux-amd64.tar.gz \
-            | tar -xz -C /usr/local/bin kubeconform
+          set -euo pipefail
+          curl -fsSL -o /tmp/kubeconform.tar.gz \
+            "https://github.com/yannh/kubeconform/releases/download/${KUBECONFORM_VERSION}/kubeconform-linux-amd64.tar.gz"
+          echo "${KUBECONFORM_SHA256}  /tmp/kubeconform.tar.gz" | sha256sum -c -
+          sudo tar -xzf /tmp/kubeconform.tar.gz -C /usr/local/bin kubeconform
 
       - name: Validate K8s manifests in gitops/resources
         run: |
@@ -143,8 +163,12 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      # Pinned for the same reason as the two above. No digest: npm resolves a package to
+      # a tarball whose integrity hash lives in a lockfile, and there is no lockfile for a
+      # global install — asserting a digest here would mean inventing one. The version pin
+      # is the whole control, so it has to be a version and never a range.
       - name: Install markdownlint-cli
-        run: npm install -g markdownlint-cli
+        run: npm install -g markdownlint-cli@0.49.1
 
       - name: Lint Markdown files
         run: |

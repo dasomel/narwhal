@@ -1,0 +1,38 @@
+# Artifact name -> architecture -> version -> SHA-256 digest -> source URL.
+#
+# WHY THIS FILE EXISTS: the air-gap bundle downloads CLI binaries, Kubernetes
+# manifests, and source tarballs from public internet URLs at build time.
+# Verifying SHA-256 digests against this committed table prevents tampered or
+# corrupted downloads from entering the air-gapped installation payload.
+#
+# NOT GUESSED. Every digest was computed from the actual upstream release file
+# fetched at the specified URL and reviewed before commit.
+#
+# ONE ROW IS NOT LIKE THE OTHERS: nfs-quota-agent is a GitHub source archive, and
+# GitHub generates those tarballs on demand — the digest has changed upstream before
+# when git's compression defaults moved, with the same commit inside. A mismatch there
+# is therefore not automatically an attack; re-run the refresh and check that the diff
+# is only that one digest and the commit pin is unchanged.
+#
+# Refresh with: scripts/airgap/lib/refresh-binary-checksums.sh
+#
+# name	arch	version	sha256	url
+argocd-install.yaml	-	v3.4.4	b0f9119821f2e19b852c842b9cb235eb9c3ef1549554fbda6aa5904e8d440eae	https://raw.githubusercontent.com/argoproj/argo-cd/v3.4.4/manifests/install.yaml
+cilium	amd64	v0.19.4	98ecd554591a592b0ee32f5d73871133bcee06639619f1c032bcba339340dc26	https://github.com/cilium/cilium-cli/releases/download/v0.19.4/cilium-linux-amd64.tar.gz
+cilium	arm64	v0.19.4	866c86683aa63c943a94ca2af5dc2b0db3483d1c3ed8c72baeeabd13061a7e42	https://github.com/cilium/cilium-cli/releases/download/v0.19.4/cilium-linux-arm64.tar.gz
+gateway-api-gatewayclasses.yaml	-	v1.5.1	234ad4b2757ee1b3596a4187bb98df071c5bbdd9e1806f692f2dbf8387e6bef4	https://raw.githubusercontent.com/kubernetes-sigs/gateway-api/v1.5.1/config/crd/standard/gateway.networking.k8s.io_gatewayclasses.yaml
+gateway-api-gateways.yaml	-	v1.5.1	7416e8300eb4d8c0a71a23445609075bbacbe8bc80104584b019cfe1ebe77c31	https://raw.githubusercontent.com/kubernetes-sigs/gateway-api/v1.5.1/config/crd/standard/gateway.networking.k8s.io_gateways.yaml
+gateway-api-grpcroutes.yaml	-	v1.5.1	979f4125d44d3df24659ba00d1d04ff8e76c45423193e8aae82dd5810d7827df	https://raw.githubusercontent.com/kubernetes-sigs/gateway-api/v1.5.1/config/crd/standard/gateway.networking.k8s.io_grpcroutes.yaml
+gateway-api-httproutes.yaml	-	v1.5.1	682203b109baecb18d38073a578f7bc2c17d22fe9b0c27bf030850abe014c370	https://raw.githubusercontent.com/kubernetes-sigs/gateway-api/v1.5.1/config/crd/standard/gateway.networking.k8s.io_httproutes.yaml
+gateway-api-referencegrants.yaml	-	v1.5.1	a8902c486eed0b7339f5bb8a476ccaba0918eb038048402bdc01cbb69b0fbb51	https://raw.githubusercontent.com/kubernetes-sigs/gateway-api/v1.5.1/config/crd/standard/gateway.networking.k8s.io_referencegrants.yaml
+helm	amd64	v4.2.1	479dca836e5b45e8bd222400c5591b0e3a647378f03ff96597180db97c17fdae	https://get.helm.sh/helm-v4.2.1-linux-amd64.tar.gz
+helm	arm64	v4.2.1	596b9a73d366c1e72ce67d595c22805480e30914593aafbc9f547694e72814db	https://get.helm.sh/helm-v4.2.1-linux-arm64.tar.gz
+hubble	amd64	v1.19.4	c7c37a5f27ed2ae2d5495c6ddbecc61cebbb841508e77af3c131e96f005ed247	https://github.com/cilium/hubble/releases/download/v1.19.4/hubble-linux-amd64.tar.gz
+hubble	arm64	v1.19.4	ba7f521458147de327cdb0f4bf73abea5bb6c29c1fb8a1e0e16d9bfb50951b31	https://github.com/cilium/hubble/releases/download/v1.19.4/hubble-linux-arm64.tar.gz
+keycloak-keycloakrealmimports.k8s.keycloak.org-v1.yml	-	26.5.7	32529b67b32cb7f70a54a0e868bf096f7525d77b667072222b46d258b94b6836	https://raw.githubusercontent.com/keycloak/keycloak-k8s-resources/refs/tags/26.5.7/kubernetes/keycloakrealmimports.k8s.keycloak.org-v1.yml
+keycloak-keycloaks.k8s.keycloak.org-v1.yml	-	26.5.7	8566794a421a23b643ac7a053e00e913c227a0519edc43f01097f37983bb915f	https://raw.githubusercontent.com/keycloak/keycloak-k8s-resources/refs/tags/26.5.7/kubernetes/keycloaks.k8s.keycloak.org-v1.yml
+keycloak-kubernetes.yml	-	26.5.7	8bd1236cb813e9040aa3dd341746699d9b17bef4d0b21fb715782964af7086d8	https://raw.githubusercontent.com/keycloak/keycloak-k8s-resources/refs/tags/26.5.7/kubernetes/kubernetes.yml
+metrics-server.yaml	-	v0.8.1	4a672c4891902573a3ff753cece5de1bf1f55dd053403dfec39df9d1636b7ff1	https://github.com/kubernetes-sigs/metrics-server/releases/download/v0.8.1/components.yaml
+nfs-quota-agent	-	387b057eec6aab7ebf7e26757e47dbb93a944307	3b71dc3b854b34470777eefacb5e283fd0f1b9337ebfe45f805f79093dfe7416	https://github.com/dasomel/nfs-quota-agent/archive/387b057eec6aab7ebf7e26757e47dbb93a944307.tar.gz
+yq	amd64	v4.44.6	0c2b24e645b57d8e7c0566d18643a6d4f5580feeea3878127354a46f2a1e4598	https://github.com/mikefarah/yq/releases/download/v4.44.6/yq_linux_amd64
+yq	arm64	v4.44.6	9477ac3cc447b6c083986129e35af8122eb2b938fe55c9c3e40436fb966e5813	https://github.com/mikefarah/yq/releases/download/v4.44.6/yq_linux_arm64

@@ -273,6 +273,40 @@ run_static() {
   check R49 "no backticks inside unquoted heredocs (2026-08-21)" \
     python3 scripts/test/lib/check-heredoc-backticks.py
 
+  # 2026-08-23 (#164): CI installed yq and kubeconform from `releases/latest/download`,
+  # so what ran was whatever upstream published most recently and nothing verified it.
+  # The scan set is the paths that actually consume tools — scripts/test/ is excluded
+  # deliberately, otherwise this check's own pattern would match itself.
+  # `^[^#]*` because the comment above quotes the old URL, and an unanchored pattern
+  # matches its own explanation — R41 learned this three days earlier.
+  check_not R50 "no mutable 'latest' download in the build path (2026-08-23)" \
+    grep -rqE '^[^#]*(releases/latest/download|/latest/download/)' \
+      .github/workflows/ scripts/cloud/ scripts/airgap/ scripts/cluster/ scripts/common/
+
+  # Same day, same issue one layer down: the nfs-quota-agent chart came from
+  # archive/refs/heads/main.tar.gz — a branch, so the bundle's content changed whenever
+  # someone pushed. Pinned to a commit SHA; a branch or tag ref means it drifted back.
+  check_not R51 "no mutable git ref tarball in the build path (2026-08-23)" \
+    grep -rqE '^[^#]*archive/refs/(heads|tags)/' \
+      .github/workflows/ scripts/cloud/ scripts/airgap/ scripts/cluster/ scripts/common/
+
+  # `npm install -g markdownlint-cli` took the newest release on every run. npm has no
+  # digest to assert for a global install, so the version pin IS the control and an
+  # unpinned name is the whole failure.
+  check_not R52 "no unpinned global npm install (2026-08-23)" \
+    bash -c "grep -rnE '^[^#]*npm (install|i) -g' .github/workflows/ scripts/ | grep -vE '@[0-9]+\\.[0-9]+\\.[0-9]+' | grep -q ."
+
+  # The air-gap bundle downloaded 19 artifacts and verified none of them. Verification
+  # lives in fetch(), which every artifact goes through; a copy-pasted curl beside it
+  # would silently opt that artifact out, so check the helper is still what is used.
+  check R53 "air-gap downloads are checksum-verified (2026-08-23)" \
+    bash -c "grep -q 'checksum mismatch' scripts/airgap/07-save-binaries.sh && [ -s scripts/airgap/lib/binary-checksums.tsv ]"
+
+  # A missing row must be a failure, not a skip — otherwise adding an artifact opts it
+  # out of verification and the bundle grows an unchecked entry nobody notices.
+  check R54 "a missing checksum row fails the air-gap fetch (2026-08-23)" \
+    grep -q 'checksum missing from binary-checksums.tsv' scripts/airgap/07-save-binaries.sh
+
   # Every script keeps its error handling — CI does not catch a missing set line.
   # 00-config.sh is exempt by design: it is sourced, so `set -e` there would impose
   # itself on whatever sourced it rather than on a process of its own.

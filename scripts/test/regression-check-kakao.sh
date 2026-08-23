@@ -372,6 +372,80 @@ PYEOF
     python3 scripts/test/lib/check-gitea-ingress-policy.py "${gitea_np_drift_tmp}/gitea-ingress-policy.yaml"
   rm -rf "${gitea_np_drift_tmp}"
 
+  # narwhal-portal#55: the tuning Job pod (hostPID+hostNetwork, privileged, nsenters
+  # into the host to run allowlisted node-tuning commands) has no legitimate in-cluster
+  # caller and calls nothing in-cluster itself — unlike gitea-ingress-policy.yaml, its
+  # correct posture is deny-all in both directions, not an allowlist. check-tuning-job-
+  # network-policy.py checks structure: any non-empty ingress/egress rule is a
+  # regression. The negative case runs against a mutated temp copy with a rule added
+  # back, never the real file.
+  check R61 "narwhal-tuning Job NetworkPolicy denies all ingress+egress (2026-08-23)" \
+    python3 scripts/test/lib/check-tuning-job-network-policy.py
+
+  local tuning_np_drift_tmp
+  tuning_np_drift_tmp="$(mktemp -d)"
+  python3 - "${tuning_np_drift_tmp}" <<'PYEOF'
+import sys, yaml
+tmp = sys.argv[1]
+with open("gitops/resources/tuning-job-network-policy.yaml") as f:
+    docs = list(yaml.safe_load_all(f))
+for d in docs:
+    if d and d.get("kind") == "NetworkPolicy":
+        d["spec"]["egress"] = [{"to": [{"namespaceSelector": {}}]}]
+with open(f"{tmp}/tuning-job-network-policy.yaml", "w") as f:
+    yaml.safe_dump_all(docs, f)
+PYEOF
+  check_not R62 "check-tuning-job-network-policy.py catches a reintroduced egress rule (2026-08-23)" \
+    python3 scripts/test/lib/check-tuning-job-network-policy.py "${tuning_np_drift_tmp}/tuning-job-network-policy.yaml"
+  rm -rf "${tuning_np_drift_tmp}"
+
+  # narwhal#51: 01-generate-image-list.sh --live used to treat a failed chart render
+  # (how Helm hook/Job images — cert-manager's startupapicheck, kube-prometheus-stack's
+  # kube-webhook-certgen — get collected) as "Not fatal": WARN and keep going, silently
+  # shipping a bundle that installs most of the way and dies on whichever hook was
+  # missing. check-airgap-hardfail.py checks structure, not just "exit 1" appearing
+  # somewhere in the file: the hook_imgs branch must be an if/elif(AIRGAP_ALLOW_INCOMPLETE)
+  # /else where the default (no env var) else exits 1. The negative case runs against a
+  # mutated temp copy — the old unconditional WARN-and-continue block restored — never the
+  # real file, and proves the check actually fails when the soft-continue gap reopens.
+  check R58 "01-generate-image-list.sh hard-fails by default on incomplete hook images (2026-08-23)" \
+    python3 scripts/test/lib/check-airgap-hardfail.py
+
+  local airgap_hardfail_drift_tmp
+  airgap_hardfail_drift_tmp="$(mktemp -d)"
+  python3 - "${airgap_hardfail_drift_tmp}" <<'PYEOF'
+import re, sys
+tmp = sys.argv[1]
+with open("scripts/airgap/01-generate-image-list.sh") as f:
+    text = f.read()
+
+old_block = '''  hook_imgs=$(hook_images_from_charts || true)
+  if [[ -n "${hook_imgs}" ]]; then
+    echo "  helm hook/Job images from bundled charts: $(printf '%s\\n' "${hook_imgs}" | wc -l | tr -d ' ')" >&2
+  else
+    echo "WARN: could not render the bundled charts, so Helm hook/Job images are NOT in this" >&2
+    echo "      list. They are invisible to the live scan, so the bundle will be short by" >&2
+    echo "      however many there are. Stage ${CHARTS_LOCAL} or run with a reachable master-1." >&2
+  fi
+'''
+
+block_re = re.compile(r'  hook_imgs=\$\(hook_images_from_charts.*?\n  fi\n', re.DOTALL)
+mutated, n = block_re.subn(old_block, text)
+assert n == 1, f"expected 1 substitution, got {n}"
+with open(f"{tmp}/01-generate-image-list.sh", "w") as f:
+    f.write(mutated)
+PYEOF
+  check_not R59 "check-airgap-hardfail.py catches the reintroduced soft-continue anti-pattern (2026-08-23)" \
+    python3 scripts/test/lib/check-airgap-hardfail.py "${airgap_hardfail_drift_tmp}/01-generate-image-list.sh"
+  rm -rf "${airgap_hardfail_drift_tmp}"
+
+  # narwhal#51: 02-save-images.sh only fails on a skopeo copy error — nothing afterward
+  # re-checked images.txt, manifest.txt and the oci/ layout still agree, so a resumed
+  # or partial run could leave them silently out of sync. 09-verify-bundle-completeness.sh
+  # is the 1:1 release gate for that.
+  check R60 "09-verify-bundle-completeness.sh exists as the bundle 1:1 release gate (2026-08-23)" \
+    test -x scripts/airgap/09-verify-bundle-completeness.sh
+
   # Every script keeps its error handling — CI does not catch a missing set line.
   # 00-config.sh is exempt by design: it is sourced, so `set -e` there would impose
   # itself on whatever sourced it rather than on a process of its own.

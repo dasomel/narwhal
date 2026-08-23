@@ -531,3 +531,26 @@ subjects:
   - kind: ServiceAccount
     name: velero-ui
     namespace: storage
+
+---
+# ServiceAccount: narwhal-tuning-job
+# Dedicated identity for narwhal-portal#55's node-tuning Job pod
+# (narwhal-portal/src/lib/k8s-job-runner.ts runHostJob, TUNING_JOB_SERVICE_ACCOUNT).
+# Previously the Job ran with no serviceAccountName set — i.e. the devtools `default`
+# SA, a broad reuse pattern shared with anything else that also omits the field.
+#
+# Deliberately carries NO Role/RoleBinding/ClusterRoleBinding: the Job pod only
+# nsenters into the host to run allowlisted tuning commands (see
+# narwhal-portal/src/lib/tuning-commands.ts) — it never calls the K8s API from inside
+# the pod, so it needs zero RBAC grants. k8s-job-runner.ts additionally sets
+# automountServiceAccountToken: false on the pod spec, so this SA's own token is never
+# projected into it either — this object exists purely so the pod has an identity
+# distinct from `default`, not to grant anything.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: narwhal-tuning-job
+  namespace: devtools
+  labels:
+    app.kubernetes.io/managed-by: narwhal
+automountServiceAccountToken: false

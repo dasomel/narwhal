@@ -1,0 +1,40 @@
+---
+# NetworkPolicy: deny-all ingress+egress for the narwhal-tuning Job pod (devtools).
+#
+# Part of narwhal-portal#55's hardening of the privileged node-tuning execution
+# boundary. The Job pod (narwhal-portal/src/lib/k8s-job-runner.ts runHostJob) is
+# privileged, hostPID + hostNetwork, and nsenters into the node's namespaces to run
+# allowlisted tuning commands directly against the host (see
+# narwhal-portal/src/lib/tuning-commands.ts) — it manipulates the host, it does not
+# call out to anything else in-cluster, and nothing else in-cluster calls it. Unlike
+# gitea-ingress-policy.yaml (issue #160), which enumerates legitimate callers, this
+# pod's correct network posture is deny-all in both directions: no ingress rule and
+# no egress rule at all, which under NetworkPolicy semantics means nothing is
+# permitted (podSelector-matched pods default-deny on any policyType they're not
+# explicitly allowed for).
+#
+# Caveat (hostNetwork limitation, documented rather than silently assumed fixed):
+# the Job pod sets hostNetwork: true, so its network traffic does not necessarily
+# traverse the CNI's per-pod enforcement path the way a normal pod's does — plain
+# NetworkPolicy enforcement on hostNetwork pods is CNI-dependent and, on several CNIs
+# (including plain Cilium without host-firewall policies), not fully effective. This
+# policy is still added as defense-in-depth and to make the intended posture explicit
+# in GitOps, but the node-level host-firewall/CNI configuration is the layer that
+# would need to be verified/extended for airtight enforcement — out of scope for this
+# pass (see narwhal-portal#55 report).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: tuning-job-network-policy
+  namespace: devtools
+  labels:
+    app.kubernetes.io/managed-by: narwhal-gitops
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: narwhal-tuning
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress: []
+  egress: []

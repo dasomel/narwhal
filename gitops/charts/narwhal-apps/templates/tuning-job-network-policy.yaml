@@ -1,0 +1,30 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: tuning-job-network-policy
+  namespace: devtools
+  annotations:
+    # devtools namespace + the narwhal-tuning-job ServiceAccount (rbac-policies.yaml,
+    # sync-wave "1") should exist first, but this policy only targets Job pods by
+    # label — it has no hard ordering dependency on either. Matches
+    # gitea-ingress-policy's wave.
+    argocd.argoproj.io/sync-wave: "2"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: platform
+  source:
+    repoURL: {{ .Values.repoURL }}
+    targetRevision: HEAD
+    path: resources
+    directory:
+      include: "tuning-job-network-policy.yaml"
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: devtools
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - ServerSideApply=true

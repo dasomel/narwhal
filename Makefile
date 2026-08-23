@@ -11,7 +11,7 @@ help:
 	@echo "  validate  Vagrantfile syntax + GitOps YAML parse (same as CI)"
 	@echo "  test      static regression suite; prints the live-cluster commands"
 	@echo "  security  lightweight hardcoded-password/private-key grep (see Makefile for scope)"
-	@echo "  license   re-resolve scripts/airgap/lib/component-licenses.tsv against upstream"
+	@echo "  license   re-resolve component-licenses.tsv against upstream + enforce license policy"
 	@echo "  sbom      generate the CycloneDX SBOM for an assembled airgap bundle"
 	@echo "  package   assemble the air-gapped install bundle (see scripts/airgap/README.md)"
 	@echo "  e2e       full (non-static) regression suite — needs a live cluster"
@@ -62,6 +62,7 @@ security:
 
 license:
 	./scripts/airgap/lib/refresh-component-licenses.sh --check
+	python3 scripts/airgap/lib/check-license-policy.py
 
 # 08-generate-sbom.sh describes an already-assembled bundle directory — there is no
 # default bundle in a plain checkout, so this only works after 'make package' (or the

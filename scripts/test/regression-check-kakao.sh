@@ -399,6 +399,23 @@ PYEOF
     python3 scripts/test/lib/check-tuning-job-network-policy.py "${tuning_np_drift_tmp}/tuning-job-network-policy.yaml"
   rm -rf "${tuning_np_drift_tmp}"
 
+  # narwhal#53: component-licenses.tsv already carried a resolved SPDX id for every
+  # bundle image, but nothing enforced it on a PR — a forbidden or blank license
+  # reappearing was only caught by a human reading the file's own comments (the
+  # RSALv2/SSPLv1 redis note: "regressed — fix the swap, do not add the row").
+  # check-license-policy.py is that CI gate. The negative case runs against a
+  # mutated temp copy with a forbidden-license row appended, never the real file.
+  check R63 "component-licenses.tsv has no forbidden/blank license rows (2026-08-24)" \
+    python3 scripts/airgap/lib/check-license-policy.py
+
+  local license_policy_drift_tmp
+  license_policy_drift_tmp="$(mktemp -d)"
+  cp scripts/airgap/lib/component-licenses.tsv "${license_policy_drift_tmp}/component-licenses.tsv"
+  printf 'docker.io/library/redis\tredis/redis\tRSALv2\t\n' >> "${license_policy_drift_tmp}/component-licenses.tsv"
+  check_not R64 "check-license-policy.py catches a reintroduced forbidden license (2026-08-24)" \
+    python3 scripts/airgap/lib/check-license-policy.py "${license_policy_drift_tmp}/component-licenses.tsv"
+  rm -rf "${license_policy_drift_tmp}"
+
   # narwhal#51: 01-generate-image-list.sh --live used to treat a failed chart render
   # (how Helm hook/Job images — cert-manager's startupapicheck, kube-prometheus-stack's
   # kube-webhook-certgen — get collected) as "Not fatal": WARN and keep going, silently

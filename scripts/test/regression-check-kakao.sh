@@ -416,6 +416,32 @@ PYEOF
     python3 scripts/airgap/lib/check-license-policy.py "${license_policy_drift_tmp}/component-licenses.tsv"
   rm -rf "${license_policy_drift_tmp}"
 
+  # narwhal#52: the Kyverno disallow-latest-tag policy (kyverno-policies.yaml) is
+  # Audit-mode and excludes most system namespaces, so it observes a mutable tag
+  # reaching the cluster — it does not stop a PR from introducing one. This is the
+  # pre-merge half: renders every gitops/charts/ chart with helm template (same
+  # defaults ArgoCD/a plain install use) plus the raw gitops/resources/*.yaml, and
+  # fails on any image with no tag or an explicit :latest. The negative case runs
+  # against a mutated temp copy of the gitops/ tree, never the real one.
+  if command -v helm >/dev/null 2>&1; then
+    check R65 "no mutable (:latest / untagged) image reference in gitops/ (2026-08-24)" \
+      python3 scripts/gitops/check-no-mutable-tags.py
+
+    local mutable_tag_drift_tmp
+    mutable_tag_drift_tmp="$(mktemp -d)"
+    mkdir -p "${mutable_tag_drift_tmp}/gitops/charts" "${mutable_tag_drift_tmp}/gitops/resources"
+    cp -r gitops/charts/* "${mutable_tag_drift_tmp}/gitops/charts/"
+    cp gitops/resources/*.yaml "${mutable_tag_drift_tmp}/gitops/resources/"
+    sed -i.bak 's#docker.io/alpine/k8s:1.31.4#docker.io/alpine/k8s:latest#' \
+      "${mutable_tag_drift_tmp}/gitops/resources/ghost-pod-reaper.yaml"
+    rm -f "${mutable_tag_drift_tmp}/gitops/resources/ghost-pod-reaper.yaml.bak"
+    check_not R66 "check-no-mutable-tags.py catches a reintroduced :latest tag (2026-08-24)" \
+      python3 scripts/gitops/check-no-mutable-tags.py "${mutable_tag_drift_tmp}"
+    rm -rf "${mutable_tag_drift_tmp}"
+  else
+    warn R65 "helm not installed locally — R65/R66 (mutable image tag gate) skipped"
+  fi
+
   # narwhal#51: 01-generate-image-list.sh --live used to treat a failed chart render
   # (how Helm hook/Job images — cert-manager's startupapicheck, kube-prometheus-stack's
   # kube-webhook-certgen — get collected) as "Not fatal": WARN and keep going, silently

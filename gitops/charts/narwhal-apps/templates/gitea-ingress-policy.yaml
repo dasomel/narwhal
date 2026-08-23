@@ -1,0 +1,29 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: gitea-ingress-policy
+  namespace: devtools
+  annotations:
+    # Gitea itself is installed out-of-band by 12-gitea.sh, not by this chart — the
+    # namespace and pods already exist by the time ArgoCD reconciles this Application,
+    # so there is no ordering dependency on another Application here.
+    argocd.argoproj.io/sync-wave: "2"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: platform
+  source:
+    repoURL: {{ .Values.repoURL }}
+    targetRevision: HEAD
+    path: resources
+    directory:
+      include: "gitea-ingress-policy.yaml"
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: devtools
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - ServerSideApply=true

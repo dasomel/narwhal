@@ -336,6 +336,42 @@ run_static() {
     warn R55 "narwhal-portal sibling checkout not found; contract check skipped"
   fi
 
+  # 2026-08-23 (#160): 492e65a's own commit message left this open — the pod-network CIDR
+  # trusted_proxies narrowing is a second layer, not a boundary, since every pod shares it.
+  # The actual boundary is an ingress NetworkPolicy on gitea-http naming its real direct
+  # callers (APISIX, ArgoCD repo-server/application-controller, the portal, Kaniko),
+  # verified against this repo rather than guessed (12-gitea.sh, 13-argocd.sh,
+  # 08-1-networking.sh, narwhal-portal-k8s.yaml, narwhal-portal's deploy/kaniko-build-job.yaml).
+  # check-gitea-ingress-policy.py checks structure, not just presence: a policy that names
+  # gitea but still carries a bare allow-all `from` rule reads as fixed and is not. The
+  # negative case runs against a mutated temp copy — one with the APISIX rule stripped —
+  # never the real file, and proves the check actually fails when the gap reopens.
+  check R56 "gitea-http NetworkPolicy allows only its real direct callers (2026-08-23)" \
+    python3 scripts/test/lib/check-gitea-ingress-policy.py
+
+  local gitea_np_drift_tmp
+  gitea_np_drift_tmp="$(mktemp -d)"
+  python3 - "${gitea_np_drift_tmp}" <<'PYEOF'
+import sys, yaml
+tmp = sys.argv[1]
+with open("gitops/resources/gitea-ingress-policy.yaml") as f:
+    docs = list(yaml.safe_load_all(f))
+for d in docs:
+    if d and d.get("kind") == "NetworkPolicy":
+        d["spec"]["ingress"] = [
+            r for r in d["spec"]["ingress"]
+            if not any(
+                (e.get("podSelector") or {}).get("matchLabels", {}).get("app.kubernetes.io/name") == "apisix"
+                for e in r.get("from") or []
+            )
+        ]
+with open(f"{tmp}/gitea-ingress-policy.yaml", "w") as f:
+    yaml.safe_dump_all(docs, f)
+PYEOF
+  check_not R57 "check-gitea-ingress-policy.py catches a removed APISIX rule (2026-08-23)" \
+    python3 scripts/test/lib/check-gitea-ingress-policy.py "${gitea_np_drift_tmp}/gitea-ingress-policy.yaml"
+  rm -rf "${gitea_np_drift_tmp}"
+
   # Every script keeps its error handling — CI does not catch a missing set line.
   # 00-config.sh is exempt by design: it is sourced, so `set -e` there would impose
   # itself on whatever sourced it rather than on a process of its own.

@@ -1,0 +1,94 @@
+---
+# NetworkPolicy: restrict ingress to gitea-http (devtools) to its known direct callers.
+#
+# Closes the residual gap left open by 492e65a (issue #160): that fix stopped Gitea from
+# trusting a client-supplied X-WEBAUTH-USER at the gateway and narrowed
+# REVERSE_PROXY_TRUSTED_PROXIES from "*" to POD_NETWORK_CIDR — but the CIDR is a second
+# layer, not a boundary, since every pod in the cluster shares it. This is the boundary:
+# only the four workloads that are documented to reach gitea-http directly (bypassing
+# APISIX) may open a connection to it at all.
+#
+# Sources, each verified against this repo rather than assumed:
+#   1. APISIX gateway      - platform-system, app.kubernetes.io/name=apisix
+#                             (scripts/cluster/08-1-networking.sh:274, apisix-routes.yaml
+#                             ApisixUpstream externalNodes -> gitea-http:3000) — the
+#                             normal path (git-bypass + OIDC routes).
+#   2. ArgoCD repo-server   - devtools, app.kubernetes.io/name=argocd-repo-server
+#                             (scripts/cluster/13-argocd.sh:177) — reads the GitOps repo
+#                             directly as the read-only `argocd` identity (52dbb8d).
+#   3. ArgoCD app-controller - devtools, app.kubernetes.io/name=argocd-application-controller
+#                             (scripts/test/verify-cluster.sh:947) — same read path as
+#                             repo-server for live-manifest diffing.
+#   4. narwhal-portal        - devtools, app=narwhal-portal
+#                             (gitops/charts/narwhal-platform/templates/narwhal-portal-k8s.yaml
+#                             Deployment selector) — calls the Gitea API directly
+#                             (narwhal-portal/src/lib/gitea.ts, GITEA_URL defaults to
+#                             gitea-http.devtools.svc.cluster.local:3000) for the
+#                             tenant-namespace-by-PR flow (ed06e82).
+#   5. Kaniko build job      - devtools, app.kubernetes.io/name=kaniko-build-narwhal-portal
+#                             (narwhal-portal/deploy/kaniko-build-job.yaml git-clone
+#                             initContainer) — clones the source repo to build the image.
+#
+# Only port 3000/TCP (HTTP git/API) is opened — every caller above and every route in
+# apisix-routes.yaml addresses gitea-http on 3000; Gitea's SSH listener is not enabled by
+# 12-gitea.sh, so there is no second port to allow.
+#
+# Same-namespace pod-to-pod traffic still needs an explicit rule under a default-deny
+# ingress policy — NetworkPolicy grants nothing implicitly, "same namespace" included.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: gitea-ingress-policy
+  namespace: devtools
+  labels:
+    app.kubernetes.io/managed-by: narwhal-gitops
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: gitea
+  policyTypes:
+    - Ingress
+  ingress:
+    # 1. APISIX gateway (platform-system) — the normal path.
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: platform-system
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: apisix
+      ports:
+        - protocol: TCP
+          port: 3000
+    # 2. ArgoCD repo-server (same namespace) — direct repo reads.
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: argocd-repo-server
+      ports:
+        - protocol: TCP
+          port: 3000
+    # 3. ArgoCD application-controller (same namespace) — live-manifest diffing.
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: argocd-application-controller
+      ports:
+        - protocol: TCP
+          port: 3000
+    # 4. narwhal-portal backend (same namespace) — tenant-namespace-by-PR flow.
+    - from:
+        - podSelector:
+            matchLabels:
+              app: narwhal-portal
+      ports:
+        - protocol: TCP
+          port: 3000
+    # 5. Kaniko build job (same namespace) — clones the source repo to build.
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: kaniko-build-narwhal-portal
+      ports:
+        - protocol: TCP
+          port: 3000

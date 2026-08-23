@@ -9,6 +9,7 @@ DNS, 이미지 반입 경로)은 완전히 다르다. 섞어두면 어느 절차
 | [`common/`](./common/) | 배포 대상과 무관한 플랫폼 계층 | 대부분의 경우 |
 | [`vagrant/`](./vagrant/) | Vagrant VM 전용 (`192.168.56.x`, MetalLB, dnsmasq) | 로컬 클러스터 작업 |
 | [`kakao/`](./kakao/) | Kakao Cloud 전용 (프라이빗 서브넷, LB, bastion, airgap) | 클라우드 클러스터 작업 |
+| [`evaluation/`](./evaluation/) | 단계별 검증 가이드 (정적 검사 → E2E → 스모크 → 부하 → 카오스) | 커밋/배포 전, 클러스터 검증 시 |
 
 > **판단 기준:** 노드 주소·로드밸런서·DNS·이미지 반입처럼 **인프라가 답을 바꾸는** 내용은
 > `vagrant/` 또는 `kakao/`로, 나머지는 `common/`으로 간다. 두 계층이 한 문서에 섞여 있으면
@@ -56,6 +57,13 @@ DNS, 이미지 반입 경로)은 완전히 다르다. 섞어두면 어느 절차
 Terraform 사용법은 문서 디렉토리가 아니라 코드 옆에 있다:
 [`csp/kakao-cloud/terraform/README.ko.md`](../csp/kakao-cloud/terraform/README.ko.md)
 ([EN](../csp/kakao-cloud/terraform/README.md)).
+
+## evaluation/ — 단계별 검증
+
+| 문서 | 내용 |
+|------|------|
+| [README.md](./evaluation/README.md) | 검증 로드맵 — 0단계(정적)부터 4단계(카오스)까지 |
+| [00-static-validation.md](./evaluation/00-static-validation.md) | 0단계 정적 검증 가이드 (VM 불필요, CI와 동일 검사) |
 
 ---
 

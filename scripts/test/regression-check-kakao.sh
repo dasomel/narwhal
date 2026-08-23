@@ -307,6 +307,35 @@ run_static() {
   check R54 "a missing checksum row fails the air-gap fetch (2026-08-23)" \
     grep -q 'checksum missing from binary-checksums.tsv' scripts/airgap/07-save-binaries.sh
 
+  # 2026-08-23: the seam between this repo's RBAC bindings and narwhal-portal's login
+  # allowlist has no compiler to catch drift — a group renamed or removed on either side
+  # just silently breaks login or grants a role nobody can ever present a token for.
+  # Proves both directions: the contract holds against the real sibling checkout, AND a
+  # deliberately removed group actually fails the check rather than passing quietly.
+  # The mutation runs against a temp copy of portal's auth.ts, never the real checkout.
+  if [ -d ../narwhal-portal ]; then
+    local contract_ok=1
+    scripts/test/check-oidc-rbac-portal-contract.sh >/dev/null 2>&1 || contract_ok=0
+
+    local drift_tmp drift_detected=0
+    drift_tmp="$(mktemp -d)"
+    mkdir -p "${drift_tmp}/src/lib"
+    sed '/"viewer",/d' ../narwhal-portal/src/lib/auth.ts > "${drift_tmp}/src/lib/auth.ts"
+    PORTAL_DIR="${drift_tmp}" scripts/test/check-oidc-rbac-portal-contract.sh >/dev/null 2>&1 \
+      || drift_detected=1
+    rm -rf "${drift_tmp}"
+
+    if [ "${contract_ok}" -eq 1 ] && [ "${drift_detected}" -eq 1 ]; then
+      ok R55 "OIDC RBAC groups match portal ALLOWED_GROUPS, and drift is caught (2026-08-23)"
+    elif [ "${contract_ok}" -eq 0 ]; then
+      bad R55 "OIDC RBAC <-> portal ALLOWED_GROUPS contract is currently drifted (2026-08-23)"
+    else
+      bad R55 "check-oidc-rbac-portal-contract.sh fails to detect a removed portal group (2026-08-23)"
+    fi
+  else
+    warn R55 "narwhal-portal sibling checkout not found; contract check skipped"
+  fi
+
   # Every script keeps its error handling — CI does not catch a missing set line.
   # 00-config.sh is exempt by design: it is sourced, so `set -e` there would impose
   # itself on whatever sourced it rather than on a process of its own.

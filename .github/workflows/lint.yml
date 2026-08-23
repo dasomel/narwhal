@@ -53,6 +53,23 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      # R65/R66 (narwhal#52's mutable-image-tag gate) render gitops/charts/ with
+      # `helm template` and WARN-skip (not fail) when helm is absent — install it so
+      # the gate actually runs here rather than only locally. Same version this
+      # cluster's own provisioning already pins (scripts/airgap/lib/binary-checksums.tsv),
+      # not merely "some recent helm", so CI renders charts exactly as a real install would.
+      - name: Install helm
+        env:
+          HELM_VERSION: v4.2.1
+          HELM_SHA256: 479dca836e5b45e8bd222400c5591b0e3a647378f03ff96597180db97c17fdae
+        run: |
+          set -euo pipefail
+          curl -fsSL -o /tmp/helm.tar.gz \
+            "https://get.helm.sh/helm-${HELM_VERSION}-linux-amd64.tar.gz"
+          echo "${HELM_SHA256}  /tmp/helm.tar.gz" | sha256sum -c -
+          tar -xzf /tmp/helm.tar.gz -C /tmp "linux-amd64/helm"
+          sudo install -m 0755 /tmp/linux-amd64/helm /usr/local/bin/helm
+
       - name: Run static regression checks
         run: ./scripts/test/regression-check-kakao.sh --static
 

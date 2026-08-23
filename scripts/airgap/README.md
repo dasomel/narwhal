@@ -63,6 +63,11 @@ Rancher airgap 방식을 Narwhal에 적용한 버전입니다. 외부 인터넷�
 # 5. SBOM 생성 — 번들 조립이 끝난 뒤 마지막에 실행 (내용물을 읽어 목록을 만든다)
 ./scripts/airgap/08-generate-sbom.sh --bundle ./narwhal-airgap-bundle-amd64
 
+# 6. 완전성 게이트 — release 아티팩트로 취급하기 전 반드시 통과해야 한다 (narwhal#51).
+#    images.txt의 이미지 전부가 manifest.txt에 기록되고 oci/ 아래 실제 layout(index.json)이
+#    있는지 1:1로 대조한다. 하나라도 빠지면 exit 1 — CI/release에서는 이 결과를 게이트로 써야 한다.
+./scripts/airgap/09-verify-bundle-completeness.sh --bundle ./narwhal-airgap-bundle-amd64
+
 # 결과: narwhal-airgap-bundle-<arch>/ 폴더를 대상 클러스터로 전송
 ```
 

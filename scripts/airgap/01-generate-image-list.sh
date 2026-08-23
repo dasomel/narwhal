@@ -31,6 +31,11 @@ set -euo pipefail
 # Usage:
 #   scripts/airgap/01-generate-image-list.sh --live images.txt   # regenerate for real
 #   scripts/airgap/01-generate-image-list.sh images.txt          # static cross-check
+#
+# --live hard-fails (narwhal#51) if it cannot render the bundled charts to collect
+# Helm hook/Job images — that gap is what silently produced an incomplete airgap bundle
+# before. AIRGAP_ALLOW_INCOMPLETE=1 opts into the old soft-continue behavior for local
+# iterative use ONLY; CI and any release bundle must run with it unset.
 # =============================================================================
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -180,16 +185,30 @@ if [[ "${MODE}" == "live" ]]; then
   fi
   echo "  kubeadm control-plane images: $(printf '%s\n' "${kubeadm_imgs}" | wc -l | tr -d ' ')" >&2
 
-  # Not fatal — a bundle without hook images still installs *most* of the way, and failing
-  # here would block regenerating the list on a machine with no charts staged. But say so
-  # loudly: silence is exactly what let the gap through the first time.
+  # Hard-fail by default (narwhal#51): a bundle without hook images installs *most* of
+  # the way and then dies mid-install on whatever hook was missing (cert-manager's
+  # startupapicheck, kube-prometheus-stack's kube-webhook-certgen — see 2026-08-05
+  # lessons-log) — exactly the silent gap this check exists to close. CI/release must
+  # always hit this branch. AIRGAP_ALLOW_INCOMPLETE=1 is the explicit, opt-in escape
+  # hatch for local iterative use on a machine with no charts staged; it must never be
+  # set in CI or when regenerating the list that ships in a release bundle.
   hook_imgs=$(hook_images_from_charts || true)
   if [[ -n "${hook_imgs}" ]]; then
     echo "  helm hook/Job images from bundled charts: $(printf '%s\n' "${hook_imgs}" | wc -l | tr -d ' ')" >&2
-  else
+  elif [[ "${AIRGAP_ALLOW_INCOMPLETE:-0}" == "1" ]]; then
     echo "WARN: could not render the bundled charts, so Helm hook/Job images are NOT in this" >&2
     echo "      list. They are invisible to the live scan, so the bundle will be short by" >&2
     echo "      however many there are. Stage ${CHARTS_LOCAL} or run with a reachable master-1." >&2
+    echo "      Continuing ONLY because AIRGAP_ALLOW_INCOMPLETE=1 — this list must not be used" >&2
+    echo "      to build a release bundle." >&2
+  else
+    echo "ERROR: could not render the bundled charts (${CHARTS_LOCAL} not staged and" >&2
+    echo "       'vagrant ssh master-1' unreachable), so Helm hook/Job images would be silently" >&2
+    echo "       missing from this list. Stage ${CHARTS_LOCAL} (scripts/airgap/03-save-helm-charts.sh)" >&2
+    echo "       or run with a reachable master-1, then regenerate." >&2
+    echo "       Set AIRGAP_ALLOW_INCOMPLETE=1 to proceed anyway for local iterative use only —" >&2
+    echo "       never for CI or a release bundle." >&2
+    exit 1
   fi
 
   LIVE_STAMP="$(date +%Y-%m-%d) (from live cluster)"

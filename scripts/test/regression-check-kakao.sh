@@ -987,6 +987,22 @@ PYEOF
   check_not R87b "R87's check catches dropped narwhal:commit_sha property propagation in build_sbom.py (2026-08-25)" \
     grep -q 'narwhal:commit_sha' "${sbom_builder_drift_tmp}/build_sbom.py"
   rm -rf "${sbom_builder_drift_tmp}"
+
+  # narwhal#50 T2 pilot: this is an offline desired-state contract, not a claim
+  # that the Keycloak Operator or a cluster has run.
+  check R88 "T2 Keycloak offline desired-state contract validates the real platform chart (2026-08-26)" \
+    scripts/test/t2-component.sh keycloak --mode render
+
+  # Copy the full chart so Helm retains Chart.yaml, then delete only the CPU request
+  # with yq. The negative case never changes the real GitOps manifest.
+  local keycloak_t2_drift_tmp
+  keycloak_t2_drift_tmp="$(mktemp -d)"
+  cp -R gitops/charts/narwhal-platform "${keycloak_t2_drift_tmp}/narwhal-platform"
+  yq -i 'del(.spec.resources.requests.cpu)' \
+    "${keycloak_t2_drift_tmp}/narwhal-platform/templates/keycloak-cr.yaml"
+  check_not R89 "T2 Keycloak contract catches a deleted first-class CPU request (2026-08-26)" \
+    scripts/test/t2-component.sh keycloak --mode render --template "${keycloak_t2_drift_tmp}/narwhal-platform"
+  rm -rf "${keycloak_t2_drift_tmp}"
 }
 
 #=========================================

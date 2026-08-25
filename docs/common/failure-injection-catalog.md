@@ -31,6 +31,15 @@
 | `worker-cpu-stress` | chaos-testing/chaos-stress-target(단일 워커) | 스트레스 타겟만 영향받고 시스템 파드는 probe-kill 안 됨 | 2026-07-17 | PASS(2026-07-14 사건이 단일 노드가 아니라 호스트 전체 과다구독이었음을 역으로 입증) | node resource exhaustion(부분 — 실제 노드 다운은 아님) |
 | `cnpg-primary-kill` | database/narwhal-db(primary) | CNPG가 8초 내 자동 failover | 2026-07-17 | PASS | storage/database failure |
 
+Keycloak T2 파일럿(`scripts/test/t2-component.sh keycloak --mode render`)은 이 실험을
+실행하지 않는다. 대신 실제 rendered Keycloak CR의 `namespace: iam` 및 이 파일의
+`keycloak-kill` selector `namespaces: [iam]`, `app: keycloak`을 함께 확인해, T2 desired-state
+대상과 T5 catalog 대상이 drift하지 않게 한다. Chaos Mesh 실행/복구 검증은 여전히 라이브
+클러스터가 있어야 한다. 이 연결은 machine-consumed contract다: adapter는 위 Markdown 표에서
+정확히 `` `keycloak-kill` | iam/keycloak-0 `` 행 하나를 파싱해 namespace와 component identity를
+도출하고, malformed/duplicate/absent row는 실패한다. 표의 첫 두 data column 형식을 바꾸면
+adapter도 함께 바꿔야 한다.
+
 ## 2. 이슈 "핵심 검증 시나리오" 5개와의 대응
 
 이슈 본문의 `핵심 검증 시나리오`는 실행 가능한 테스트 스크립트가 아니라 **설계

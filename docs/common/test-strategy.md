@@ -19,7 +19,7 @@
 | 계층 | 정의 | 이 저장소에서의 의미 |
 |------|------|----------------------|
 | **T1** Unit/Contract | parser, manifest, policy, API schema, version/compat rules, artifact metadata, webhook/event schema | 파일 하나(또는 두 파일의 정적 diff)를 라이브 컴포넌트 없이 검사 |
-| **T2** Component/Integration | K8s API, ArgoCD, Harbor/Registry, Storage, Observability, Keycloak/OpenBao/Kyverno/Cilium 등 개별 컴포넌트를 단독 기동해 검증 | **이 저장소에 없음** — §3.2 참조 |
+| **T2** Component/Integration | K8s API, ArgoCD, Harbor/Registry, Storage, Observability, Keycloak/OpenBao/Kyverno/Cilium 등 개별 컴포넌트를 단독 기동해 검증 | Keycloak 파일럿 구현됨 — offline desired-state 계약 + 로컬 컨테이너 OIDC 계약, §3.2 참조 |
 | **T3** Platform E2E | cluster bootstrap → validation → GitOps → workload → monitoring → backup, 전체 스택 라이브 검증 | 라이브 클러스터 필수 |
 | **T4** Offline E2E | 외부 연결 차단 상태에서 artifact/DB 반입, image/Helm/OCI/package import, 모든 runtime egress 차단 검증 | 정적 절반(번들 완전성)은 커버, 라이브 절반(실제 격리)은 별도 도구 존재하나 실행 필요 |
 | **T5** Failure/Chaos | node/pod/control-plane/component 장애, network/DNS/LB/registry 아웃티지, storage 장애, backup/restore 실패, upgrade 실패/rollback, alert storm/notification 실패 | Chaos Mesh 실험 6+1종 존재(2026-07-17 실행), 다수 하위 시나리오 미구현 |
@@ -31,7 +31,7 @@
 | 계층 | 상태 | 근거 |
 |------|------|------|
 | T1 | **양호** — 62개 정적 체크 자동화, CI 게이트(`lint.yml` → `regression-static`) | §3.1 |
-| T2 | **커버리지 0** | §3.2 |
+| T2 | **파일럿 구현됨** — Keycloak render 계약은 정적 CI 게이트, 로컬 컨테이너 runtime은 이미지가 사전 적재된 호스트에서 실행 | §3.2 |
 | T3 | **설계·구현됨, 실행 차단** — 클러스터 destroy 이후 미실행 | §3.3 |
 | T4 | **절반**: 정적/오프라인-반입 검증은 T1 체크로 이미 존재, 라이브 격리 검증(`verify-isolation.sh`)은 실행 차단 | §3.4 |
 | T5 | **부분** — 6~7개 chaos 실험 존재·과거 실행됨(재검증 차단), catalog 절반 이상은 미구현 시나리오 | `docs/common/failure-injection-catalog.md` |
@@ -47,6 +47,10 @@ T1의 정의("parser, manifest, policy, ... artifact metadata validation")와 �
 
 같은 이유로 `.github/workflows/lint.yml`의 `yaml-validate`(kubeconform), `markdown-lint`
 행 형식 검사, `version-check.yml`의 5개 버전 비교도 T1이다.
+
+R88/R89도 예외가 아니다. T2 adapter의 `--mode render`를 호출하지만 Helm output과
+catalog/YAML 파일을 검사하는 **T1 static preflight**다. R88은 실제 chart, R89는 yq-mutated
+temp copy를 검증한다; 살아 있는 Keycloak process를 기동하는 `--mode runtime`만 T2 behavior다.
 
 **전체 R-체크 매핑** (2026-08-25 기준, `regression-check-kakao.sh` 945줄):
 
@@ -127,25 +131,33 @@ R36은 스크립트에 존재하지 않는다 — 번호가 R35 다음 R37로 �
 git blame/PR 이력을 확인하지 않았으므로 추측으로 채우지 않는다; 재사용 가능한
 번호이므로 다음 신규 체크가 R36을 쓰면 안 된다는 점만 기록해 둔다.
 
-**요약**: R01-R66 전부 T1. 이 저장소의 정적 회귀 스위트는 이미 T1을 잘 하고 있다 —
+**요약**: R01-R89 정적 체크는 전부 T1. 이 저장소의 정적 회귀 스위트는 이미 T1을 잘 하고 있다 —
 문제는 T1 다음이 통째로 비어 있다는 것.
 
-### 3.2 T2 — 커버리지 0
+### 3.2 T2 — Keycloak 파일럿 구현됨 (라이브 클러스터 대체 아님)
 
-이 저장소에는 "컴포넌트 하나만 단독으로 띄워서 그 컴포넌트의 API/CLI 계약을 검증하는"
-테스트가 없다. 예: Keycloak 컨테이너 하나만 docker-compose로 띄워 OIDC 토큰 발급을
-검증한다거나, ArgoCD를 단독 기동해 Application CRD 처리 동작을 검증하는 것.
+재사용 가능한 진입점은 `scripts/test/t2-component.sh <component> --mode render|runtime|all`이고,
+컴포넌트별 어댑터는 `scripts/test/t2/`에 등록한다. 첫 어댑터
+`scripts/test/t2/keycloak.sh`는 두 경계를 분리한다.
 
-`regression-check-kakao.sh --static`의 R-체크들은 이런 컴포넌트를 "언급"하지만
-전부 정적 파일 검사이지 그 컴포넌트를 기동하지 않는다(T1). `--runtime`의 T0x 체크와
-`verify-cluster.sh`/`test-sso.sh`는 전체 클러스터가 이미 떠 있어야 하므로 T3다.
-이 저장소는 **T1에서 곧바로 T3로 점프**하고, 그 사이(단일 컴포넌트 통합 테스트)가
-비어 있다 — 통합 버그는 전체 클러스터 부트스트랩(수십 분~수 시간) 이후에나
-발견되거나, 아예 수동 QA로만 잡힌다는 뜻이다.
+- `keycloak --mode render`는 실제 `gitops/charts/narwhal-platform`을 Helm으로 렌더하고,
+  Keycloak v2alpha1 CR의 `iam` namespace, hostname, DB Secret 참조, first-class CPU request,
+  probe, Istio ambient opt-out 및 theme mount를 검증한다. 또한
+  `tests/chaos/experiments/keycloak-kill.yaml`의 `iam` + `app: keycloak` selector와
+  `failure-injection-catalog.md`의 Keycloak T2 링크를 확인한다. 이는 **T1 static preflight**이며,
+  R88은 실제 chart PASS, R89는 temp-copy에서 CPU request를 `yq`로 제거해 반드시 FAIL하는지
+  확인한다.
+- `keycloak --mode runtime`은 pull하지 않고 로컬에 사전 적재된
+  `quay.io/keycloak/keycloak:26.5.7`만 사용해 `start-dev` 컨테이너를 기동한다. 매 실행마다
+  ephemeral realm/client/user/password를 만들고 groups 및 audience mapper를 설정한 뒤,
+  password grant access token의 bare `groups`와 client `aud`를 검증한다.
 
-**이번 패스에서 만들지 않은 이유**: T2 하네스(예: 개별 컴포넌트를 kind/docker-compose로
-단독 기동)는 새 CI 인프라와 최소 하루 이상의 설계가 필요한 별도 작업이고, 라이브
-클러스터 제약과 무관하게 독립적으로 진행 가능한 항목이다. 다음 세션의 후보로 남긴다.
+실행 예: `scripts/test/t2-component.sh keycloak --mode render`; 적재된 이미지가 있는
+호스트에서는 `scripts/test/t2-component.sh keycloak --mode runtime`. render는 **T1 offline
+desired-state preflight**이며 CRD apply, Operator/PostgreSQL/Kubernetes/Istio 기동 또는 Chaos
+Mesh 실행을 증명하지 않는다. runtime이 Docker default bridge에서 Keycloak API/token을 실제로
+기동하는 T2 behavior이며, 네트워크 격리·Operator·CNPG·live cluster를 검증하지 않는다. 즉
+전체 플랫폼 T3와 동등하지 않고, 다른 컴포넌트와 live-cluster 통합은 여전히 남아 있다.
 
 ### 3.3 T3 — 설계·구현됨, 실행 차단
 
@@ -397,9 +409,9 @@ $ echo $?
 
 우선순위 제안(다음 세션 또는 담당자용, 순서는 의존성 기준이지 중요도 기준이 아님):
 
-1. **T2 하네스 착수** — 가장 큰 구조적 공백. 컴포넌트 하나(Keycloak이 좋은 시작점 —
-   이미 OIDC 계약 문서가 있다, `docs/common/oidc-rbac-contract.md`)를 kind/docker-compose로
-   단독 기동해 API 계약을 검증하는 첫 T2 테스트.
+1. **T2 확장** — Keycloak 파일럿(`scripts/test/t2-component.sh`,
+   `scripts/test/t2/keycloak.sh`) 다음으로 다른 component adapter 및 live-cluster 연동을
+   추가한다. 현재 Keycloak render/runtime은 T3 대체가 아니다.
 2. **trivy-db 오프라인 반입 경로 설계** — AC 7의 근본 원인. `scripts/airgap/`에
    DB 이미지/번들을 추가하고 `dbRepository`를 미러 경유로 바꿔야 한다.
 3. **클러스터 재기동 후**: T3/T4 런타임 절반, T5 chaos 재검증(6개 실험 재실행 +

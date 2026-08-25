@@ -896,41 +896,60 @@ PYEOF
     scripts/cluster/preflight-cert-manager-upgrade.sh "${cert_manager_upgrade_drift_tmp}/cert-manager.yaml"
   rm -rf "${cert_manager_upgrade_drift_tmp}"
 
+  # narwhal#45: offline upgrade bundle manifest schema, verification, and dry-run diff
+  check R81 "air-gap upgrade bundle schema and dry-run diff tool validate static manifests (2026-08-25)" \
+    python3 scripts/airgap/lib/verify-upgrade-bundle.py --manifest scripts/airgap/lib/upgrade-bundle-v1.1.0.json
+
+  local upgrade_bundle_drift_tmp
+  upgrade_bundle_drift_tmp="$(mktemp -d)"
+  python3 - "${upgrade_bundle_drift_tmp}/invalid-bundle.json" <<'PYEOF'
+import json, sys
+path = sys.argv[1]
+with open("scripts/airgap/lib/upgrade-bundle-v1.1.0.json", encoding="utf-8") as f:
+    doc = json.load(f)
+doc["artifacts"][0]["license"] = "SSPLv1"
+with open(path, "w", encoding="utf-8") as f:
+    json.dump(doc, f)
+PYEOF
+  check_not R82 "upgrade bundle validator rejects forbidden licenses and schema violations (2026-08-25)" \
+    python3 scripts/airgap/lib/verify-upgrade-bundle.py --manifest "${upgrade_bundle_drift_tmp}/invalid-bundle.json"
+  rm -rf "${upgrade_bundle_drift_tmp}"
+
   # narwhal#6: an exported member-cluster credential must retain a stable ID while
   # reusing the existing Portal reader RBAC; a second broad reader role would drift.
-  # Structural presence checks alone never prove they can fail, so each of R81/R82/R83
+  # Structural presence checks alone never prove they can fail, so each of R83/R84/R85
   # below runs against a mutated temp copy too -- never the real file -- with the
   # relevant line stripped, proving the check actually catches the gap reopening.
-  check R81 "multi-cluster credential exporter preserves Portal RBAC and restrictive output permissions (2026-08-25)" \
+  check R83 "multi-cluster credential exporter preserves Portal RBAC and restrictive output permissions (2026-08-25)" \
     bash -c "grep -q 'CLUSTER_ROLE_BINDING=\"narwhal-portal\"' scripts/cluster/13-3-export-narwhal-portal-cluster-credentials.sh && grep -q 'umask 077' scripts/cluster/13-3-export-narwhal-portal-cluster-credentials.sh && grep -q 'credentialRef' scripts/cluster/13-3-export-narwhal-portal-cluster-credentials.sh"
 
   local cred_exporter_drift_tmp
   cred_exporter_drift_tmp="$(mktemp -d)"
   grep -v '^umask 077$' scripts/cluster/13-3-export-narwhal-portal-cluster-credentials.sh \
     > "${cred_exporter_drift_tmp}/13-3-export-narwhal-portal-cluster-credentials.sh"
-  check_not R81b "R81's check catches a removed 'umask 077' restrictive-output guard (2026-08-25)" \
+  check_not R83b "R83's check catches a removed 'umask 077' restrictive-output guard (2026-08-25)" \
     bash -c "grep -q 'CLUSTER_ROLE_BINDING=\"narwhal-portal\"' '${cred_exporter_drift_tmp}/13-3-export-narwhal-portal-cluster-credentials.sh' && grep -q 'umask 077' '${cred_exporter_drift_tmp}/13-3-export-narwhal-portal-cluster-credentials.sh' && grep -q 'credentialRef' '${cred_exporter_drift_tmp}/13-3-export-narwhal-portal-cluster-credentials.sh'"
   rm -rf "${cred_exporter_drift_tmp}"
 
-  check R82 "multi-cluster design keeps registration credential references distinct from secret delivery (2026-08-25)" \
+  check R84 "multi-cluster design keeps registration credential references distinct from secret delivery (2026-08-25)" \
     grep -q 'credentialRef.apiServerEnvVar' docs/common/multicluster-control-plane.md
 
   local mc_design_drift_tmp
   mc_design_drift_tmp="$(mktemp -d)"
   grep -v 'credentialRef.apiServerEnvVar' docs/common/multicluster-control-plane.md \
     > "${mc_design_drift_tmp}/multicluster-control-plane.md"
-  check_not R82b "R82's check catches a removed credentialRef.apiServerEnvVar reference (2026-08-25)" \
+  check_not R84b "R84's check catches a removed credentialRef.apiServerEnvVar reference (2026-08-25)" \
     grep -q 'credentialRef.apiServerEnvVar' "${mc_design_drift_tmp}/multicluster-control-plane.md"
   rm -rf "${mc_design_drift_tmp}"
 
-  check R83 "multi-cluster exporter supports embedded and file-backed CA kubeconfigs (2026-08-25)" \
+  check R85 "multi-cluster exporter supports embedded and file-backed CA kubeconfigs (2026-08-25)" \
     bash -c "grep -q 'certificate-authority-data' scripts/cluster/13-3-export-narwhal-portal-cluster-credentials.sh && grep -q 'certificate-authority}' scripts/cluster/13-3-export-narwhal-portal-cluster-credentials.sh && grep -q 'requires a non-empty value' scripts/cluster/13-3-export-narwhal-portal-cluster-credentials.sh"
 
   local cred_exporter_ca_drift_tmp
   cred_exporter_ca_drift_tmp="$(mktemp -d)"
   grep -v 'certificate-authority-data' scripts/cluster/13-3-export-narwhal-portal-cluster-credentials.sh \
     > "${cred_exporter_ca_drift_tmp}/13-3-export-narwhal-portal-cluster-credentials.sh"
-  check_not R83b "R83's check catches a dropped embedded-CA (certificate-authority-data) path (2026-08-25)" \
+  check_not R85b "R85's check catches a dropped embedded-CA (certificate-authority-data) path (2026-08-25)" \
     bash -c "grep -q 'certificate-authority-data' '${cred_exporter_ca_drift_tmp}/13-3-export-narwhal-portal-cluster-credentials.sh' && grep -q 'certificate-authority}' '${cred_exporter_ca_drift_tmp}/13-3-export-narwhal-portal-cluster-credentials.sh' && grep -q 'requires a non-empty value' '${cred_exporter_ca_drift_tmp}/13-3-export-narwhal-portal-cluster-credentials.sh'"
   rm -rf "${cred_exporter_ca_drift_tmp}"
 }

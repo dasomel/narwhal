@@ -895,6 +895,17 @@ PYEOF
   check_not R80 "cert-manager preflight catches a removed webhook PDB declaration (2026-08-25)" \
     scripts/cluster/preflight-cert-manager-upgrade.sh "${cert_manager_upgrade_drift_tmp}/cert-manager.yaml"
   rm -rf "${cert_manager_upgrade_drift_tmp}"
+
+  # narwhal#6: an exported member-cluster credential must retain a stable ID while
+  # reusing the existing Portal reader RBAC; a second broad reader role would drift.
+  check R81 "multi-cluster credential exporter preserves Portal RBAC and restrictive output permissions (2026-08-25)" \
+    bash -c "grep -q 'CLUSTER_ROLE_BINDING=\"narwhal-portal\"' scripts/cluster/13-3-export-narwhal-portal-cluster-credentials.sh && grep -q 'umask 077' scripts/cluster/13-3-export-narwhal-portal-cluster-credentials.sh && grep -q 'credentialRef' scripts/cluster/13-3-export-narwhal-portal-cluster-credentials.sh"
+
+  check R82 "multi-cluster design keeps registration credential references distinct from secret delivery (2026-08-25)" \
+    grep -q 'credentialRef.apiServerEnvVar' docs/common/multicluster-control-plane.md
+
+  check R83 "multi-cluster exporter supports embedded and file-backed CA kubeconfigs (2026-08-25)" \
+    bash -c "grep -q 'certificate-authority-data' scripts/cluster/13-3-export-narwhal-portal-cluster-credentials.sh && grep -q 'certificate-authority}' scripts/cluster/13-3-export-narwhal-portal-cluster-credentials.sh && grep -q 'requires a non-empty value' scripts/cluster/13-3-export-narwhal-portal-cluster-credentials.sh"
 }
 
 #=========================================

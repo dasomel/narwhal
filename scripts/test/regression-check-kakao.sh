@@ -952,6 +952,41 @@ PYEOF
   check_not R85b "R85's check catches a dropped embedded-CA (certificate-authority-data) path (2026-08-25)" \
     bash -c "grep -q 'certificate-authority-data' '${cred_exporter_ca_drift_tmp}/13-3-export-narwhal-portal-cluster-credentials.sh' && grep -q 'certificate-authority}' '${cred_exporter_ca_drift_tmp}/13-3-export-narwhal-portal-cluster-credentials.sh' && grep -q 'requires a non-empty value' '${cred_exporter_ca_drift_tmp}/13-3-export-narwhal-portal-cluster-credentials.sh'"
   rm -rf "${cred_exporter_ca_drift_tmp}"
+
+  # narwhal#53: SBOM component to vulnerability finding correlation and schema validation
+  check R86 "SBOM component to vulnerability correlation manifest validates against schema (2026-08-25)" \
+    python3 scripts/airgap/lib/correlate-sbom-vulnerabilities.py \
+      --sbom scripts/airgap/lib/sample-sbom.cdx.json \
+      --trivy-report scripts/airgap/lib/sample-trivy-report.json \
+      --schema schemas/sbom-correlation-1.0.schema.json \
+      --commit a1b2c3d4e5f60718293a4b5c6d7e8f9012345678 \
+      --workflow-run-id 123456789
+
+  local sbom_corr_drift_tmp
+  sbom_corr_drift_tmp="$(mktemp -d)"
+  python3 - <<PYEOF
+import json
+with open("scripts/airgap/lib/sample-sbom-correlation.json", "r", encoding="utf-8") as f:
+    doc = json.load(f)
+del doc["source_commit_sha"]
+with open("${sbom_corr_drift_tmp}/invalid-correlation.json", "w", encoding="utf-8") as f:
+    json.dump(doc, f)
+PYEOF
+  check_not R86b "R86's check catches a correlation manifest missing required source_commit_sha (2026-08-25)" \
+    python3 -c "import json, sys; doc=json.load(open('${sbom_corr_drift_tmp}/invalid-correlation.json')); sys.exit(0 if 'source_commit_sha' in doc else 1)"
+  rm -rf "${sbom_corr_drift_tmp}"
+
+  # narwhal#53: build_sbom.py and 08-generate-sbom.sh commit/workflow ID propagation
+  check R87 "build_sbom.py propagates commit SHA and workflow run ID into SBOM metadata properties (2026-08-25)" \
+    bash -c "grep -q 'narwhal:commit_sha' scripts/airgap/lib/build_sbom.py && grep -q 'narwhal:workflow_run_id' scripts/airgap/lib/build_sbom.py && grep -q -e '--commit' scripts/airgap/08-generate-sbom.sh"
+
+  local sbom_builder_drift_tmp
+  sbom_builder_drift_tmp="$(mktemp -d)"
+  grep -v 'narwhal:commit_sha' scripts/airgap/lib/build_sbom.py \
+    > "${sbom_builder_drift_tmp}/build_sbom.py"
+  check_not R87b "R87's check catches dropped narwhal:commit_sha property propagation in build_sbom.py (2026-08-25)" \
+    grep -q 'narwhal:commit_sha' "${sbom_builder_drift_tmp}/build_sbom.py"
+  rm -rf "${sbom_builder_drift_tmp}"
 }
 
 #=========================================

@@ -17,7 +17,28 @@ import pathlib
 import re
 import sys
 
+import os
+import subprocess
+
 CDX_VERSION = "1.5"
+
+
+def get_git_commit(bundle: pathlib.Path) -> str:
+    """Best-effort lookup of git commit SHA from environment or git command."""
+    try:
+        res = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=bundle if bundle.is_dir() else bundle.parent,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        if res.returncode == 0 and res.stdout.strip():
+            return res.stdout.strip()
+    except Exception:
+        pass
+    return "unknown"
+
 
 
 def sha256_file(path: pathlib.Path) -> str:
@@ -195,9 +216,24 @@ def main() -> int:
     ap.add_argument("--bundle", required=True)
     ap.add_argument("--arch", required=True)
     ap.add_argument("--output", required=True)
+    ap.add_argument("--commit", help="Source commit SHA for correlation provenance")
+    ap.add_argument("--workflow-run-id", help="CI workflow run ID for correlation provenance")
     args = ap.parse_args()
 
     bundle = pathlib.Path(args.bundle)
+    commit_sha = (
+        args.commit
+        or os.environ.get("SOURCE_COMMIT")
+        or os.environ.get("GITHUB_SHA")
+        or get_git_commit(bundle)
+    )
+    workflow_run_id = (
+        args.workflow_run_id
+        or os.environ.get("WORKFLOW_RUN_ID")
+        or os.environ.get("GITHUB_RUN_ID")
+        or ""
+    )
+
     components = (
         image_components(bundle)
         + chart_components(bundle)
@@ -205,6 +241,19 @@ def main() -> int:
         + file_components(bundle, "bin", "application")
         + file_components(bundle, "manifests", "file")
     )
+
+    for c in components:
+        props = c.setdefault("properties", [])
+        props.append({"name": "narwhal:commit_sha", "value": commit_sha})
+        if workflow_run_id:
+            props.append({"name": "narwhal:workflow_run_id", "value": workflow_run_id})
+
+    meta_props = [
+        {"name": "narwhal:architecture", "value": args.arch},
+        {"name": "narwhal:commit_sha", "value": commit_sha},
+    ]
+    if workflow_run_id:
+        meta_props.append({"name": "narwhal:workflow_run_id", "value": workflow_run_id})
 
     # No timestamp: the document must be reproducible, so that regenerating it for an
     # unchanged bundle produces an identical file and a diff means the bundle changed.
@@ -224,7 +273,7 @@ def main() -> int:
                     "layouts under oci/ for that."
                 ),
             },
-            "properties": [{"name": "narwhal:architecture", "value": args.arch}],
+            "properties": meta_props,
         },
         "components": components,
     }

@@ -1,0 +1,57 @@
+{
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.5",
+  "version": 1,
+  "metadata": {
+    "component": {
+      "type": "application",
+      "name": "narwhal-airgap-bundle-amd64",
+      "description": "Offline installation bundle for Narwhal IDP"
+    },
+    "properties": [
+      {
+        "name": "narwhal:architecture",
+        "value": "amd64"
+      },
+      {
+        "name": "narwhal:commit_sha",
+        "value": "a1b2c3d4e5f60718293a4b5c6d7e8f9012345678"
+      },
+      {
+        "name": "narwhal:workflow_run_id",
+        "value": "123456789"
+      }
+    ]
+  },
+  "components": [
+    {
+      "type": "container",
+      "name": "docker.io/library/nginx",
+      "version": "1.25.3",
+      "purl": "pkg:oci/nginx?repository_url=docker.io/library/nginx&tag=1.25.3&digest=sha256:7f8d6262ad0086c07a3c3e80004d8058223ec7b25bf35b7e28b8a531d0fa4476",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "7f8d6262ad0086c07a3c3e80004d8058223ec7b25bf35b7e28b8a531d0fa4476"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "narwhal:commit_sha",
+          "value": "a1b2c3d4e5f60718293a4b5c6d7e8f9012345678"
+        },
+        {
+          "name": "narwhal:workflow_run_id",
+          "value": "123456789"
+        }
+      ]
+    }
+  ]
+}

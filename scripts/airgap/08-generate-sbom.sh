@@ -35,17 +35,23 @@
 # USAGE:
 #   scripts/airgap/08-generate-sbom.sh [--bundle ./narwhal-airgap-bundle-amd64]
 #                                      [--output <path>]   # default: <bundle>/sbom.cdx.json
+#                                      [--commit <sha>]
+#                                      [--workflow-run-id <id>]
 #=========================================================================
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 BUNDLE=""
 OUTPUT=""
+COMMIT=""
+WORKFLOW_RUN_ID=""
 
 while [ $# -gt 0 ]; do
   case "$1" in
     --bundle) BUNDLE="${2:-}"; shift 2 ;;
     --output) OUTPUT="${2:-}"; shift 2 ;;
+    --commit) COMMIT="${2:-}"; shift 2 ;;
+    --workflow-run-id) WORKFLOW_RUN_ID="${2:-}"; shift 2 ;;
     -h|--help) sed -n '2,28p' "${BASH_SOURCE[0]}"; exit 0 ;;
     *) echo "unknown argument: $1" >&2; exit 2 ;;
   esac
@@ -74,8 +80,22 @@ echo "=== Generating CycloneDX SBOM ==="
 echo "  bundle: ${BUNDLE}"
 echo "  arch:   ${ARCH}"
 
-python3 "${REPO_ROOT}/scripts/airgap/lib/build_sbom.py" \
-  --bundle "${BUNDLE}" --arch "${ARCH}" --output "${OUTPUT}"
+CMD=(
+  python3 "${REPO_ROOT}/scripts/airgap/lib/build_sbom.py"
+  --bundle "${BUNDLE}"
+  --arch "${ARCH}"
+  --output "${OUTPUT}"
+)
+
+if [ -n "${COMMIT}" ]; then
+  CMD+=(--commit "${COMMIT}")
+fi
+
+if [ -n "${WORKFLOW_RUN_ID}" ]; then
+  CMD+=(--workflow-run-id "${WORKFLOW_RUN_ID}")
+fi
+
+"${CMD[@]}"
 
 echo "  wrote:  ${OUTPUT}"
 echo ""

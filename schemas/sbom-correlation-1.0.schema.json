@@ -1,0 +1,129 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dasomel.github.io/narwhal/schemas/sbom-correlation-1.0.schema.json",
+  "title": "Narwhal SBOM component, artifact digest, commit, workflow, and vulnerability correlation manifest",
+  "description": "Canonical schema for correlating air-gap bundle SBOM components, OCI/artifact digests, source commits, CI workflow runs, and vulnerability findings.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "correlation_id",
+    "generated_at",
+    "source_commit_sha",
+    "components"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "1.0"
+    },
+    "correlation_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "generated_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "source_commit_sha": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Git commit SHA corresponding to the source tree used to generate artifacts"
+    },
+    "workflow_run_id": {
+      "type": ["string", "null"],
+      "description": "CI workflow run ID (e.g. GitHub Actions GITHUB_RUN_ID) populated by CI build steps"
+    },
+    "bundle_arch": {
+      "type": ["string", "null"],
+      "description": "Architecture of the air-gap bundle (e.g. amd64, arm64)"
+    },
+    "sbom_ref": {
+      "type": ["string", "null"],
+      "description": "Reference path or URI to the underlying CycloneDX SBOM document"
+    },
+    "components": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": [
+          "name",
+          "version",
+          "purl",
+          "artifact_digest",
+          "vulnerabilities"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "version": {
+            "type": "string",
+            "minLength": 1
+          },
+          "component_type": {
+            "type": ["string", "null"]
+          },
+          "purl": {
+            "type": "string",
+            "minLength": 1
+          },
+          "artifact_digest": {
+            "type": ["string", "null"],
+            "pattern": "^(sha256|sha512):[a-fA-F0-9]{64,128}$"
+          },
+          "source_commit_sha": {
+            "type": ["string", "null"]
+          },
+          "workflow_run_id": {
+            "type": ["string", "null"]
+          },
+          "license": {
+            "type": ["string", "null"]
+          },
+          "vulnerabilities": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "vulnerability_id",
+                "severity",
+                "pkg_name"
+              ],
+              "properties": {
+                "vulnerability_id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "CVE ID or advisory identifier (e.g., CVE-2023-12345)"
+                },
+                "severity": {
+                  "type": "string",
+                  "enum": ["CRITICAL", "HIGH", "MEDIUM", "LOW", "UNKNOWN"]
+                },
+                "pkg_name": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "installed_version": {
+                  "type": ["string", "null"]
+                },
+                "fixed_version": {
+                  "type": ["string", "null"]
+                },
+                "primary_url": {
+                  "type": ["string", "null"]
+                },
+                "title": {
+                  "type": ["string", "null"]
+                }
+              },
+              "additionalProperties": true
+            }
+          }
+        },
+        "additionalProperties": true
+      }
+    }
+  },
+  "additionalProperties": true
+}

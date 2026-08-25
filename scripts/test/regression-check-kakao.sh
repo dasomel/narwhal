@@ -877,6 +877,24 @@ PYEOF
   check_not R78 "narwhalctl rejects a mutated unsupported envelope schema version (2026-08-25)" \
     python3 scripts/narwhalctl.py events emit --file "${event_contract_drift_tmp}/invalid-event.json"
   rm -rf "${event_contract_drift_tmp}"
+
+  # narwhal#46 pilot: a version pin alone does not make cert-manager safe to roll.
+  # The real Application must carry the HA/PDB/topology declarations that the static
+  # preflight requires. A temporary copy has just the webhook PDB removed through yq;
+  # the negative case proves the preflight rejects the reopened gap without touching
+  # the real GitOps manifest.
+  check R79 "cert-manager static upgrade preflight validates the real GitOps HA contract (2026-08-25)" \
+    scripts/cluster/preflight-cert-manager-upgrade.sh
+
+  local cert_manager_upgrade_drift_tmp
+  cert_manager_upgrade_drift_tmp="$(mktemp -d)"
+  cp gitops/charts/narwhal-apps/templates/cert-manager.yaml \
+    "${cert_manager_upgrade_drift_tmp}/cert-manager.yaml"
+  yq -i 'del(.spec.source.helm.valuesObject.webhook.podDisruptionBudget)' \
+    "${cert_manager_upgrade_drift_tmp}/cert-manager.yaml"
+  check_not R80 "cert-manager preflight catches a removed webhook PDB declaration (2026-08-25)" \
+    scripts/cluster/preflight-cert-manager-upgrade.sh "${cert_manager_upgrade_drift_tmp}/cert-manager.yaml"
+  rm -rf "${cert_manager_upgrade_drift_tmp}"
 }
 
 #=========================================

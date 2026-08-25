@@ -18,6 +18,7 @@
 | narwhal 외부 컴포넌트 커밋 고정 | `nfs-quota-agent` 커밋 SHA 고정 | `scripts/airgap/07-save-binaries.sh` (커밋 `387b057eec6aab7ebf7e26757e47dbb93a944307` 고정) |
 | narwhal 정적 정밀 검사 | 동적/가변 다운로드 및 미고정 설치 금지 | `scripts/test/regression-check-kakao.sh --static` (CI `regression-static` 작업에서 `R50`~`R54` 검사) |
 | narwhal 컨테이너 이미지 태그 | admission 차원에서 `*:latest` 태그 사용 금지 | `gitops/resources/kyverno-policies.yaml` (`disallow-latest-tag` 정책) |
+| narwhal 컨테이너 이미지 서명/attestation | admission 시점 Cosign 이미지 서명 및 CycloneDX SBOM attestation 검증 | `gitops/resources/kyverno-policies.yaml` (`verify-image-signatures` Audit 정책) 및 `scripts/airgap/10-verify-image-signatures.sh` |
 | narwhal-portal npm 쿨링 기간 | 신규 도입 패키지 배포 후 7일 미만 경과 시 CI 실패 | `../narwhal-portal/scripts/check-lockfile-cooling.mjs` (`pnpm-lock.yaml`과 베이스 커밋 비교, npm registry API 조회, `COOLING_EXCEPTIONS` 사유 필수, CI `.github/workflows/license-and-sbom.yml`의 `cooling` 작업) |
 | narwhal-portal 설치 스크립트 실행 | 어떤 의존성도 install script를 실행할 수 없음 | `../narwhal-portal/pnpm-workspace.yaml` (`onlyBuiltDependencies: []` — 빈 허용 목록을 명시해, 예외 추가가 리뷰에 보이는 diff가 되게 함) |
 | narwhal-portal 잠금 파일 고정 | CI와 이미지의 모든 install이 잠긴 그래프만 설치 | `../narwhal-portal/scripts/check-supply-chain-policy.mjs` — 워크플로와 Dockerfile의 install 줄마다 `--frozen-lockfile`(bun은 `--ignore-scripts`까지)을 요구. **설정이 아니라 명령줄을 검사한다** (3절 3항 참고) |
@@ -30,6 +31,9 @@
 - `R52`: 버전을 명시하지 않은 글로벌 `npm install` 사용 금지
 - `R53`: 에어갭 다운로드의 체크섬 검증 수행
 - `R54`: 체크섬 행 누락 시 스킵하지 않고 즉시 실패 처리
+- `R74`: Kyverno `verify-image-signatures` ClusterPolicy 존재 및 구조 검증
+- `R75`: Kyverno 이미지 서명 정책 제거/변조 시 정적 검사 실패 검증
+- `R76`: `scripts/airgap/10-verify-image-signatures.sh` 에어갭 서명 게이트 스크립트 실행 권한 검증
 
 ## 3. 의도적으로 사용하지 않는 기능 (Deliberately Not Used)
 
@@ -73,3 +77,24 @@ Dependabot의 `cooldown:` 설정은 pnpm 적용 시 내부적으로 `--config.mi
 1. `.github/workflows/lint.yml`에서 해당 도구의 버전 변수와 `SHA256` 해시를 함께 수정한다.
 2. `scripts/airgap/lib/refresh-binary-checksums.sh` 스크립트를 실행하여 `scripts/airgap/lib/binary-checksums.tsv` 테이블을 재생성한다.
 3. 수정된 `git diff` 내용(버전 bump, SHA256 변경, tsv 갱신)을 리뷰 아티팩트로 제출한다.
+
+## 6. Cosign 이미지 서명 및 Attestation 검증 아키텍처 설계 (narwhal#35)
+
+### 1) Keyless vs Public Key (Key-based) 검증 방식 선택 근거
+
+Sigstore Cosign은 Keyless(Fulcio OIDC + Rekor 투명성 로그) 및 Static Public Key/X.509 CA 방식을 모두 지원한다.
+
+- **Keyless 방식의 한계 (Air-gapped 환경)**: Keyless 검증은 pod admission 또는 image verification 시점에 Rekor 투명성 로그(`rekor.sigstore.dev`) 및 Fulcio CA 조회가 기본 필요하다. 외부 인터넷이 차단된 공공/금융 에어갭 환경에서는 별도의 내부 Rekor/Fulcio 스택을 구축하여 운영하지 않는 한 Keyless 검증이 차단된다.
+- **채택안 (Static Public Key / Trusted Authority)**: 에어갭 및 오프라인 검증이 필수인 Narwhal 클러스터 특성에 맞추어, **고정 공개키(Static Public Key) / 신뢰 x509 CA 기반 검증 모델**을 기본으로 채택한다.
+- **Admission 정책 (Kyverno Audit Mode)**: `gitops/resources/kyverno-policies.yaml`에 `verify-image-signatures` ClusterPolicy를 도입하여, admission 시점 Cosign 이미지 서명 및 CycloneDX SBOM attestation 존재 여부를 `Audit` 모드로 기록한다.
+
+### 2) Promotion & Verification Pipeline
+
+```
+[Build & Scan Stage] -> [Cosign Sign & Attest] -> [Harbor Internal Registry] -> [GitOps & Kyverno Admission Audit]
+```
+1. **Build & Scan**: 이미지 빌드 후 Trivy 취약점/라이선스 검사 수행.
+2. **Cosign Sign & Attest**: `cosign sign`으로 서명 생성 및 `cosign attest --type cyclonedx`로 SBOM 증명 첨부.
+3. **Harbor Internal Registry**: 검증된 이미지를 Harbor 레지스트리로 promote.
+4. **GitOps & Kyverno Admission**: ArgoCD 배포 시 Kyverno `verify-image-signatures` 정책 및 에어갭 사전 검사 `10-verify-image-signatures.sh`로 서명/증명 무결성 확인.
+

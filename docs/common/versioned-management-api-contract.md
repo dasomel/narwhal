@@ -101,7 +101,7 @@ will accept this JSON Schema envelope and apply these required boundary rules:
 
 Run `scripts/test/check-event-envelope-contract.sh` to validate the committed sample and prove
 that a temporary unsupported-version mutation fails. `scripts/test/regression-check-kakao.sh
---static` includes the same positive/negative contract checks as R74/R75.
+--static` includes the same positive/negative contract checks as R77/R78.
 
 Met by this baseline: `/api/v1` policy; common envelope JSON Schema; audit/correlation/
 idempotency semantics; async operation and webhook policy; a no-network CLI validator; and

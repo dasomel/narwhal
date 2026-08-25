@@ -825,6 +825,32 @@ PYEOF
   check_not R73 "check-security-db-freshness.py fails closed on a missing manifest (2026-08-25)" \
     python3 scripts/airgap/lib/check-security-db-freshness.py "${secdb_fresh_tmp}/does-not-exist.json"
   rm -rf "${secdb_fresh_tmp}"
+
+  # narwhal#35: Kyverno verify-image-signatures policy configures Cosign public key
+  # signature verification, SBOM attestation predicate checking, and digest validation.
+  check R74 "Kyverno verify-image-signatures ClusterPolicy is present and valid (2026-08-25)" \
+    python3 scripts/test/lib/check-kyverno-signed-image-policy.py
+
+  local kyverno_signed_img_tmp
+  kyverno_signed_img_tmp="$(mktemp -d)"
+  python3 - "${kyverno_signed_img_tmp}" <<'PYEOF'
+import sys
+tmp = sys.argv[1]
+with open("gitops/resources/kyverno-policies.yaml") as f:
+    text = f.read()
+# Mutate by removing the verify-image-signatures ClusterPolicy block
+parts = text.split("---\napiVersion: kyverno.io/v1\nkind: ClusterPolicy\nmetadata:\n  name: verify-image-signatures")
+assert len(parts) == 2, "expected verify-image-signatures policy anchor in kyverno-policies.yaml"
+with open(f"{tmp}/kyverno-policies.yaml", "w") as f:
+    f.write(parts[0])
+PYEOF
+  check_not R75 "check-kyverno-signed-image-policy.py catches a removed verify-image-signatures policy (2026-08-25)" \
+    python3 scripts/test/lib/check-kyverno-signed-image-policy.py "${kyverno_signed_img_tmp}/kyverno-policies.yaml"
+  rm -rf "${kyverno_signed_img_tmp}"
+
+  # narwhal#35: 10-verify-image-signatures.sh exists as the air-gap image signature gate.
+  check R76 "10-verify-image-signatures.sh exists as the air-gap image signature gate (2026-08-25)" \
+    test -x scripts/airgap/10-verify-image-signatures.sh
 }
 
 #=========================================

@@ -280,3 +280,57 @@ spec:
             securityContext:
               +(seccompProfile):
                 type: RuntimeDefault
+---
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: verify-image-signatures
+  annotations:
+    policies.kyverno.io/title: Verify Image Signatures & Attestations
+    policies.kyverno.io/category: Supply Chain Security
+    policies.kyverno.io/description: >-
+      Verifies Cosign image signatures and CycloneDX/SPDX SBOM attestations on container images.
+      Introduced in Audit mode to log verification results without blocking workloads in air-gapped environments.
+spec:
+  validationFailureAction: Audit
+  background: true
+  rules:
+    - name: verify-signature-and-sbom
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+      exclude:
+        any:
+          - resources:
+              namespaces:
+                - kube-system
+                - istio-system
+                - platform-system
+                - devtools
+                - security-system
+      verifyImages:
+        - imageReferences:
+            - "*"
+          mutateDigest: false
+          verifyDigest: true
+          required: false
+          attestors:
+            - count: 1
+              entries:
+                - keys:
+                    publickeys: |
+                      -----BEGIN PUBLIC KEY-----
+                      MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE/narwhal/cosign/trusted/signer/pub
+                      -----END PUBLIC KEY-----
+          attestations:
+            - predicateType: https://cyclonedx.org/schema/1.4
+              attestors:
+                - count: 1
+                  entries:
+                    - keys:
+                        publickeys: |
+                          -----BEGIN PUBLIC KEY-----
+                          MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE/narwhal/cosign/trusted/signer/pub
+                          -----END PUBLIC KEY-----

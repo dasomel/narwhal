@@ -1,0 +1,35 @@
+{
+  "event_id": "0f4c7299-8281-4a9c-ae91-c0b0b03bd2e0",
+  "event_type": "operation.started",
+  "event_version": "1.0",
+  "schema_version": "1.0",
+  "occurred_at": "2026-08-25T09:00:00Z",
+  "received_at": "2026-08-25T09:00:01Z",
+  "correlation_id": "op-9b03fa8b",
+  "causation_id": null,
+  "request_id": "req-a4e76eb9",
+  "operation_id": "op-9b03fa8b",
+  "incident_id": null,
+  "evidence_id": null,
+  "trace_id": null,
+  "span_id": null,
+  "source": "narwhalctl",
+  "source_version": "0.1.0",
+  "actor": {
+    "id": "operator@example.invalid",
+    "type": "user",
+    "displayName": "Narwhal Operator"
+  },
+  "resource": {
+    "cluster": "kakao-prod",
+    "namespace": "platform-system",
+    "kind": "Cluster",
+    "name": "kakao-prod"
+  },
+  "idempotency_key": "narwhalctl:op-9b03fa8b:operation.started",
+  "source_event_id": null,
+  "data": {
+    "operation_type": "cluster.status.read",
+    "message": "Read-only control-plane operation accepted for local validation."
+  }
+}

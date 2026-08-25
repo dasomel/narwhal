@@ -825,6 +825,32 @@ PYEOF
   check_not R73 "check-security-db-freshness.py fails closed on a missing manifest (2026-08-25)" \
     python3 scripts/airgap/lib/check-security-db-freshness.py "${secdb_fresh_tmp}/does-not-exist.json"
   rm -rf "${secdb_fresh_tmp}"
+
+  # narwhal#42: a versioned control-plane event contract must exercise both sides
+  # of validation. R74 validates the committed, portal-compatible operation event;
+  # R75 changes only its fixed schema version in a temporary copy and proves the
+  # CLI rejects it. A real sample alone cannot expose a validator that accepts
+  # every input, so this mirrors the real-file + mutation pattern above.
+  check R74 "canonical event envelope sample validates through narwhalctl (2026-08-25)" \
+    scripts/test/check-event-envelope-contract.sh
+
+  local event_contract_drift_tmp
+  event_contract_drift_tmp="$(mktemp -d)"
+  cp examples/event-envelope.operation.started.json "${event_contract_drift_tmp}/invalid-event.json"
+  python3 - "${event_contract_drift_tmp}/invalid-event.json" <<'PYEOF'
+import json
+import sys
+
+path = sys.argv[1]
+with open(path, encoding="utf-8") as f:
+    event = json.load(f)
+event["schema_version"] = "9.9"
+with open(path, "w", encoding="utf-8") as f:
+    json.dump(event, f)
+PYEOF
+  check_not R75 "narwhalctl rejects a mutated unsupported envelope schema version (2026-08-25)" \
+    python3 scripts/narwhalctl.py events emit --file "${event_contract_drift_tmp}/invalid-event.json"
+  rm -rf "${event_contract_drift_tmp}"
 }
 
 #=========================================

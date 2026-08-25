@@ -182,6 +182,23 @@ if [ "${HARBOR_HEALTH}" = "200" ]; then
     -u "admin:${HARBOR_ADMIN_PASS}" \
     -d '{"role_id":3,"member_group":{"group_name":"viewer","group_type":3}}' 2>/dev/null || true
   echo "Harbor: viewer group → project Guest"
+
+  # trivy-db project (narwhal#48): scripts/airgap/lib/push-security-db.sh lands the
+  # offline-fetched Trivy DB/Java DB/checks bundle here, and
+  # gitops/resources/trivy-operator.yaml points dbRegistry/javaDbRegistry/
+  # policiesBundle.registry at harbor.devtools.svc.cluster.local/trivy-db/... instead
+  # of ghcr.io — that is the actual fix for #48's "scan Job pulls the DB live from the
+  # internet" gap. Public (no auth) so pulling it needs no credential in gitops/ — the
+  # trivy-operator chart has no existingSecret option for dbRepository credentials,
+  # only plaintext value fields, which CLAUDE.md forbids putting in git. Public is an
+  # acceptable trade here: this project is airgapped from the real internet in the
+  # first place, so an unauthenticated pull is only reachable from inside the cluster
+  # network. Idempotent: Harbor 400s on an existing project name, which is fine here.
+  curl -sk -X POST "${HARBOR_API}/projects" \
+    -H "Content-Type: application/json" \
+    -u "admin:${HARBOR_ADMIN_PASS}" \
+    -d '{"project_name":"trivy-db","metadata":{"public":"true"}}' 2>/dev/null || true
+  echo "Harbor: trivy-db project ensured (public, for narwhal#48 offline vulnerability DB)"
 else
   echo "WARN: Harbor API not available, skipping project member setup"
 fi

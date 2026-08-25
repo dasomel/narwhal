@@ -738,6 +738,93 @@ PYEOF
       bad R20 "bundle has no bootstrap/registry.tar"
     fi
   fi
+
+  # narwhal#48: trivy-operator.yaml deployed Trivy in Standalone mode with
+  # dbRegistry=ghcr.io — an ONLINE DB pull, the opposite of what an air-gapped
+  # cluster needs, and a scan Job with no egress would fail to fetch a DB. Fixing it
+  # surfaced two MORE independent online-pull paths trivy-operator.yaml also has
+  # (javaDbRegistry, policiesBundle.registry for the compliance/config-audit rego
+  # bundle) that neither the original triage nor the narwhal#50 test-strategy pass
+  # had identified — none of the three go through containerd, so the existing
+  # airgap image mirror (06-configure-mirrors.sh) cannot fix any of them; only
+  # pointing Trivy itself at the internal Harbor registry does.
+  check R67 "Trivy DB/Java DB/checks bundle point at the internal registry, not ghcr.io (2026-08-25)" \
+    python3 scripts/test/lib/check-trivy-db-internal-registry.py
+
+  local trivy_db_drift_tmp
+  trivy_db_drift_tmp="$(mktemp -d)"
+  python3 - "${trivy_db_drift_tmp}" <<'PYEOF'
+import sys
+import yaml
+tmp = sys.argv[1]
+with open("gitops/charts/narwhal-apps/templates/trivy-operator.yaml") as f:
+    doc = yaml.safe_load(f)
+doc["spec"]["source"]["helm"]["valuesObject"]["trivy"]["dbRegistry"] = "ghcr.io"
+with open(f"{tmp}/trivy-operator.yaml", "w") as f:
+    yaml.safe_dump(doc, f)
+PYEOF
+  check_not R68 "check-trivy-db-internal-registry.py catches a reintroduced ghcr.io dbRegistry (2026-08-25)" \
+    python3 scripts/test/lib/check-trivy-db-internal-registry.py "${trivy_db_drift_tmp}/trivy-operator.yaml"
+  rm -rf "${trivy_db_drift_tmp}"
+
+  # narwhal#48: security-db artifacts (trivy-db etc.) are legitimately re-published
+  # under the same tag, so unlike binary-checksums.tsv there is no pinned golden
+  # digest to check future fetches against — the only integrity check available is
+  # "does the local copy's digest match what the registry reported right before the
+  # copy", and it has to actually fail the run on a mismatch, not just log one.
+  check R69 "fetch-security-db.sh fails closed on a digest mismatch (2026-08-25)" \
+    python3 scripts/test/lib/check-security-db-fetch-integrity.py
+
+  local secdb_integrity_drift_tmp
+  secdb_integrity_drift_tmp="$(mktemp -d)"
+  python3 - "${secdb_integrity_drift_tmp}" <<'PYEOF'
+import sys
+tmp = sys.argv[1]
+with open("scripts/airgap/lib/fetch-security-db.sh") as f:
+    text = f.read()
+old_block = '''  post_digest="$(skopeo inspect --raw "oci:${dest}:${tag}" 2>/dev/null | shasum -a 256 | cut -d' ' -f1 || true)"
+  if [[ "${post_digest}" != "${pre_digest}" ]]; then
+    echo "[FAIL] ${name}: local copy digest (${post_digest}) != registry digest (${pre_digest}) at fetch time" >&2
+    fail=$((fail + 1))
+    continue
+  fi
+'''
+assert old_block in text, "anchor block not found — fetch-security-db.sh changed shape"
+mutated = text.replace(old_block, '  post_digest="$(skopeo inspect --raw "oci:${dest}:${tag}" 2>/dev/null | shasum -a 256 | cut -d\' \' -f1 || true)"\n  # digest check removed (regression fixture)\n')
+with open(f"{tmp}/fetch-security-db.sh", "w") as f:
+    f.write(mutated)
+PYEOF
+  check_not R70 "check-security-db-fetch-integrity.py catches a removed digest-mismatch guard (2026-08-25)" \
+    python3 scripts/test/lib/check-security-db-fetch-integrity.py "${secdb_integrity_drift_tmp}/fetch-security-db.sh"
+  rm -rf "${secdb_integrity_drift_tmp}"
+
+  # narwhal#48 AC: "오프라인 환경에서 DB 부재/만료 시 명확한 FAIL 또는 WARNING
+  # 정책" — check-security-db-freshness.py is that policy. Real case: a manifest
+  # fetched "now" must pass a 7-day SLO. Negative case: a manifest fetched 24 days
+  # ago (fixture, not a mutated real file — there is no committed real manifest,
+  # since fetch-security-db.sh's output is a live artifact, never checked in) must
+  # fail, and a MISSING manifest must also fail (never silently pass).
+  local secdb_fresh_tmp
+  secdb_fresh_tmp="$(mktemp -d)"
+  python3 - "${secdb_fresh_tmp}" <<'PYEOF'
+import datetime, json, sys
+tmp = sys.argv[1]
+now = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+fresh = {"artifacts": [{"name": "trivy-db", "digest": "sha256:" + "0" * 64, "fetched_at": now}]}
+with open(f"{tmp}/fresh-manifest.json", "w") as f:
+    json.dump(fresh, f)
+old = (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=24)).strftime("%Y-%m-%dT%H:%M:%SZ")
+stale = {"artifacts": [{"name": "trivy-db", "digest": "sha256:" + "0" * 64, "fetched_at": old}]}
+with open(f"{tmp}/stale-manifest.json", "w") as f:
+    json.dump(stale, f)
+PYEOF
+  check R71 "check-security-db-freshness.py passes a freshly-fetched manifest (2026-08-25)" \
+    python3 scripts/airgap/lib/check-security-db-freshness.py "${secdb_fresh_tmp}/fresh-manifest.json"
+  check_not R72 "check-security-db-freshness.py fails a 24-day-old manifest (2026-08-25)" \
+    python3 scripts/airgap/lib/check-security-db-freshness.py "${secdb_fresh_tmp}/stale-manifest.json"
+  check_not R73 "check-security-db-freshness.py fails closed on a missing manifest (2026-08-25)" \
+    python3 scripts/airgap/lib/check-security-db-freshness.py "${secdb_fresh_tmp}/does-not-exist.json"
+  rm -rf "${secdb_fresh_tmp}"
 }
 
 #=========================================

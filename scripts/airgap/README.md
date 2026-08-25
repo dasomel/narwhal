@@ -156,6 +156,37 @@ sudo -E ./scripts/cluster/02-init-cluster.sh     # master-1
 
 containerd `config_path = "/etc/containerd/certs.d"`를 이용하므로 이미지 참조는 **변경하지 않아도** 자동으로 미러로 라우팅됩니다.
 
+## 취약점 DB (Trivy 등) — 위 미러와 별개 파이프라인 (narwhal#48)
+
+**위 hosts.toml 미러는 여기 적용되지 않는다.** Trivy는 Standalone 모드로 배포되고, scan Job pod
+안의 Trivy 바이너리가 vulnerability DB / Java DB / checks(정책) 번들을 **자기 OCI 레지스트리
+클라이언트로 직접** 가져온다 — containerd/kubelet을 거치지 않으므로 `06-configure-mirrors.sh`가
+아무리 잘 설정돼도 이 pull은 미러로 리다이렉트되지 않는다. 대상 클러스터가 폐쇄망이면 이 pull은
+그냥 실패한다. 고치는 방법은 미러가 아니라 **Trivy 설정 자체를 내부 레지스트리로 바꾸는 것**
+(`gitops/charts/narwhal-apps/templates/trivy-operator.yaml`의 `trivy.dbRegistry` /
+`trivy.javaDbRegistry` / `policiesBundle.registry`를 `harbor.devtools.svc.cluster.local`로).
+
+```bash
+# 1. 인터넷 가능 환경에서 fetch (skopeo copy, fetch 시점 digest 검증 — 콘텐츠가 같은 태그
+#    아래서도 계속 갱신되므로 binary-checksums.tsv처럼 커밋된 golden digest는 쓰지 않는다)
+./scripts/airgap/lib/fetch-security-db.sh --bundle ./narwhal-airgap-bundle-amd64
+
+# 2. dev(staged/) -> verified(promoted/) 승인 기록. --rollback으로 이전 promoted 복원.
+./scripts/airgap/lib/promote-security-db.sh --bundle ./narwhal-airgap-bundle-amd64 \
+  --approved-by "<name>"
+
+# 3. 에어갭 내부에서, Harbor가 뜬 뒤 (harbor.devtools.svc.cluster.local 도달 가능한 곳에서)
+./scripts/airgap/lib/push-security-db.sh --bundle ./narwhal-airgap-bundle-amd64
+
+# freshness/staleness 확인 (SLO 7일 — 근거는 스크립트 헤더 주석)
+python3 scripts/airgap/lib/check-security-db-freshness.py \
+  ./narwhal-airgap-bundle-amd64/security-db/promoted/manifest.json
+```
+
+대상 목록은 `scripts/airgap/security-db.txt` (images.txt와 별도 파일 — 이유는 그 파일 헤더 참고).
+Harbor `trivy-db` 프로젝트(public, 무인증 pull) 부트스트랩은 `scripts/cluster/08-5-registry.sh`가
+Harbor 설치의 일부로 수행한다.
+
 ## 주의사항
 
 - **Private CA**: Harbor/레지스트리가 자체 서명 인증서를 사용하면 `hosts.toml`에 `skip_verify = true` 추가 또는 CA를 `/usr/local/share/ca-certificates/`에 설치 (`08-6-tls-routes.sh`의 DaemonSet 패턴 참고).

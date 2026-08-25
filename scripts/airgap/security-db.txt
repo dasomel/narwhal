@@ -1,0 +1,26 @@
+# Vulnerability/security database OCI artifacts consumed by narwhal#48.
+#
+# Same shape as images.txt (one ref per line, `#` comments allowed) but a SEPARATE
+# list on purpose: these are not container images kubelet ever pulls — they are OCI
+# *artifacts* the Trivy binary fetches itself, over its own HTTP registry client,
+# from INSIDE the scan Job pod at runtime. That pull bypasses containerd entirely, so
+# the containerd hosts.toml mirror (06-configure-mirrors.sh) cannot redirect it — the
+# only fix is changing where Trivy itself is told to look
+# (gitops/charts/narwhal-apps/templates/trivy-operator.yaml dbRegistry/javaDbRegistry/
+# policiesBundle.registry), which is why this list and images.txt are never merged.
+#
+# Format: <name>\t<registry>/<repository>:<tag>
+# name is used as the OCI layout directory name under <bundle>/security-db/staged/.
+#
+# trivy-java-db is ~950MB (measured via `skopeo inspect --raw`, 2026-08-25) — the
+# other two are 100-200MB combined. Budget bandwidth/disk accordingly when running
+# fetch-security-db.sh; the java DB is only needed if Java/JAR scanning is in scope.
+#
+# trivy-checks is the compliance/config-audit rego policy bundle. It is a THIRD
+# online-pull path this repo had not previously identified: trivy-operator.yaml sets
+# compliance.reportType=all and configAuditScannerEnabled=true, both of which make
+# the operator fetch policiesBundle at scan/reconcile time — same live-pull problem
+# as the vulnerability DB, just for policies instead of CVEs.
+trivy-db	ghcr.io/aquasecurity/trivy-db:2
+trivy-java-db	ghcr.io/aquasecurity/trivy-java-db:1
+trivy-checks	ghcr.io/aquasecurity/trivy-checks:1

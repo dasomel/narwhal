@@ -6,6 +6,10 @@ Narwhal 클러스터를 **단계적으로 검증**하는 가이드 모음이다.
 
 > 배포 대상(Vagrant / Kakao)과 무관한 검증은 이 디렉토리에, 인프라가 답을 바꾸는
 > 세부 절차는 [`../vagrant/`](../vagrant/) 또는 [`../kakao/`](../kakao/)를 참조한다.
+>
+> 아래 0-4단계는 narwhal#50이 정의한 T1-T7 테스트 계층 중 일부를 실행 순서로 엮은
+> 것이다. 계층별 커버리지 총괄(무엇이 비어 있는지 포함)은
+> [`../common/test-strategy.md`](../common/test-strategy.md)를 본다.
 
 ## 검증 로드맵
 

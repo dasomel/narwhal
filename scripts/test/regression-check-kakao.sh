@@ -17,16 +17,52 @@ set -euo pipefail
 #
 # Exit code is the number of failures, capped at 125. Warnings do not fail the run.
 #
+# --json-report <path> / --md-report <path> (narwhal#50, T1-T7 test strategy): write a
+# machine-readable report alongside the normal stdout output. Order-independent, combine
+# freely with --static/--runtime/--all. Fields are limited to what a --static run can
+# know for certain — check id, description, PASS/FAIL/WARN, timestamp, the run id, and
+# the repo's own git commit as a config/input hash. No cluster/artifact-digest fields are
+# emitted even in --runtime mode; this repo does not yet capture those anywhere, and a
+# field that is always empty is worse than a field that does not exist — see
+# docs/common/test-strategy.md for what's still missing before those can be added.
+#
 # Usage:
 #   scripts/test/regression-check-kakao.sh --static
 #   scripts/test/regression-check-kakao.sh --runtime
+#   scripts/test/regression-check-kakao.sh --static --json-report /tmp/report.json
 #   DOMAIN=kakao.narwhal.internal scripts/test/regression-check-kakao.sh
 
-MODE="${1:---all}"
+ORIG_PWD="${PWD}"
+MODE="--all"
+JSON_REPORT=""
+MD_REPORT=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --static|--runtime|--all) MODE="$1"; shift ;;
+    --json-report) JSON_REPORT="${2:?--json-report requires a path}"; shift 2 ;;
+    --md-report)   MD_REPORT="${2:?--md-report requires a path}"; shift 2 ;;
+    *) echo "usage: $0 [--static|--runtime|--all] [--json-report <path>] [--md-report <path>]" >&2
+       exit 2 ;;
+  esac
+done
+# Report paths are relative to where the user ran the command, not to the repo root the
+# checks themselves cd into below — otherwise a relative --json-report path silently
+# lands inside the repo instead of where the caller expected it.
+case "${JSON_REPORT}" in ""|/*) ;; *) JSON_REPORT="${ORIG_PWD}/${JSON_REPORT}" ;; esac
+case "${MD_REPORT}"   in ""|/*) ;; *) MD_REPORT="${ORIG_PWD}/${MD_REPORT}" ;; esac
+
 DOMAIN="${DOMAIN:-kakao.narwhal.internal}"
 TF_DIR="${TF_DIR:-csp/kakao-cloud/terraform}"
 
 cd "$(dirname "$0")/../.."
+
+RUN_ID="$(date -u +%Y%m%dT%H%M%SZ)-$$"
+RUN_STARTED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+CHECK_LOG=""
+if [ -n "${JSON_REPORT}" ] || [ -n "${MD_REPORT}" ]; then
+  CHECK_LOG="$(mktemp)"
+  trap 'rm -f "${CHECK_LOG}"' EXIT
+fi
 
 # The runtime checks use whatever kubectl context happens to be current. That is a trap:
 # run this with an unrelated cluster selected and it reports THAT cluster's state under
@@ -57,10 +93,18 @@ fi
 PASS=0; FAIL=0; WARN=0
 FAILED_IDS=""
 
+# record <id> <status> <description> — appends one row to CHECK_LOG for the report
+# exporters. Tab-separated; description is the last field so an incidental tab in it
+# does not shift the columns the exporter actually keys on (id/status/timestamp).
+record() {
+  [ -n "${CHECK_LOG}" ] || return 0
+  printf '%s\t%s\t%s\t%s\n' "$1" "$2" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$3" >> "${CHECK_LOG}"
+}
+
 # ok <id> <description> — the check passed
-ok()   { PASS=$((PASS + 1)); printf '  %sPASS%s  %-14s %s\n' "${GREEN}" "${RESET}" "$1" "$2"; }
-bad()  { FAIL=$((FAIL + 1)); FAILED_IDS="${FAILED_IDS}$1 "; printf '  %sFAIL%s  %-14s %s\n' "${RED}" "${RESET}" "$1" "$2"; }
-warn() { WARN=$((WARN + 1)); printf '  %sWARN%s  %-14s %s\n' "${YELLOW}" "${RESET}" "$1" "$2"; }
+ok()   { PASS=$((PASS + 1)); printf '  %sPASS%s  %-14s %s\n' "${GREEN}" "${RESET}" "$1" "$2"; record "$1" PASS "$2"; }
+bad()  { FAIL=$((FAIL + 1)); FAILED_IDS="${FAILED_IDS}$1 "; printf '  %sFAIL%s  %-14s %s\n' "${RED}" "${RESET}" "$1" "$2"; record "$1" FAIL "$2"; }
+warn() { WARN=$((WARN + 1)); printf '  %sWARN%s  %-14s %s\n' "${YELLOW}" "${RESET}" "$1" "$2"; record "$1" WARN "$2"; }
 
 section() { printf '\n%s== %s%s\n' "${BOLD}" "$1" "${RESET}"; }
 
@@ -939,7 +983,112 @@ printf '  passed %s   failed %s   warnings %s\n' "${PASS}" "${FAIL}" "${WARN}"
 if [ "${FAIL}" -gt 0 ]; then
   printf '  %sregressions: %s%s\n' "${RED}" "${FAILED_IDS}" "${RESET}"
   printf '  each id maps to a dated entry in docs/common/lessons-log.md\n'
-  [ "${FAIL}" -gt 125 ] && exit 125
-  exit "${FAIL}"
+else
+  printf '  %sno known bug reappeared%s\n' "${GREEN}" "${RESET}"
 fi
-printf '  %sno known bug reappeared%s\n' "${GREEN}" "${RESET}"
+
+EXIT_CODE=0
+if [ "${FAIL}" -gt 125 ]; then
+  EXIT_CODE=125
+elif [ "${FAIL}" -gt 0 ]; then
+  EXIT_CODE="${FAIL}"
+fi
+
+# narwhal#50 (T1-T7 test strategy): export the same PASS/FAIL/WARN data the terminal
+# just saw as JSON and/or Markdown, so a CI job or a future dashboard can consume it
+# without scraping colored stdout. GIT_COMMIT/GIT_DIRTY stand in for the "input/config
+# hash" evidence field the issue asks for — the closest thing this repo can state
+# truthfully without a live cluster to fingerprint.
+if [ -n "${CHECK_LOG}" ]; then
+  GIT_COMMIT="$(git rev-parse HEAD 2>/dev/null || echo unknown)"
+  GIT_DIRTY="false"
+  git diff --quiet 2>/dev/null || GIT_DIRTY="true"
+  git diff --cached --quiet 2>/dev/null || GIT_DIRTY="true"
+  RUN_ENDED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+  if [ -n "${JSON_REPORT}" ]; then
+    python3 - "${CHECK_LOG}" "${JSON_REPORT}" "${RUN_ID}" "${MODE}" "${GIT_COMMIT}" \
+      "${GIT_DIRTY}" "${RUN_STARTED_AT}" "${RUN_ENDED_AT}" "${PASS}" "${FAIL}" "${WARN}" <<'PYEOF'
+import json, sys
+
+log_path, out_path, run_id, mode, git_commit, git_dirty, started_at, ended_at, npass, nfail, nwarn = sys.argv[1:12]
+
+checks = []
+with open(log_path, encoding="utf-8") as f:
+    for line in f:
+        line = line.rstrip("\n")
+        if not line:
+            continue
+        check_id, status, ts, desc = line.split("\t", 3)
+        checks.append({
+            "id": check_id,
+            "status": status,
+            "timestamp": ts,
+            "description": desc,
+        })
+
+report = {
+    "test_run_id": run_id,
+    "script": "scripts/test/regression-check-kakao.sh",
+    "mode": mode,
+    "started_at": started_at,
+    "ended_at": ended_at,
+    "git_commit": git_commit,
+    "git_dirty": git_dirty == "true",
+    "summary": {
+        "pass": int(npass),
+        "fail": int(nfail),
+        "warn": int(nwarn),
+        "total": len(checks),
+    },
+    "checks": checks,
+}
+
+with open(out_path, "w", encoding="utf-8") as f:
+    json.dump(report, f, indent=2, ensure_ascii=False)
+    f.write("\n")
+PYEOF
+    echo "  JSON report: ${JSON_REPORT}"
+  fi
+
+  if [ -n "${MD_REPORT}" ]; then
+    python3 - "${CHECK_LOG}" "${MD_REPORT}" "${RUN_ID}" "${MODE}" "${GIT_COMMIT}" \
+      "${GIT_DIRTY}" "${RUN_STARTED_AT}" "${RUN_ENDED_AT}" "${PASS}" "${FAIL}" "${WARN}" <<'PYEOF'
+import sys
+
+log_path, out_path, run_id, mode, git_commit, git_dirty, started_at, ended_at, npass, nfail, nwarn = sys.argv[1:12]
+
+rows = []
+with open(log_path, encoding="utf-8") as f:
+    for line in f:
+        line = line.rstrip("\n")
+        if not line:
+            continue
+        check_id, status, ts, desc = line.split("\t", 3)
+        rows.append((check_id, status, ts, desc))
+
+lines = []
+lines.append("# Regression check report")
+lines.append("")
+lines.append(f"- test run id: `{run_id}`")
+lines.append("- script: `scripts/test/regression-check-kakao.sh`")
+lines.append(f"- mode: `{mode}`")
+lines.append(f"- started: {started_at}  ended: {ended_at}")
+lines.append(f"- git commit: `{git_commit}`{' (dirty tree)' if git_dirty == 'true' else ''}")
+lines.append(f"- summary: **{npass} pass / {nfail} fail / {nwarn} warn** ({len(rows)} checks)")
+lines.append("")
+lines.append("| ID | Status | Timestamp | Description |")
+lines.append("|----|--------|-----------|--------------|")
+for check_id, status, ts, desc in rows:
+    desc_escaped = desc.replace("|", "\\|")
+    lines.append(f"| {check_id} | {status} | {ts} | {desc_escaped} |")
+lines.append("")
+
+with open(out_path, "w", encoding="utf-8") as f:
+    f.write("\n".join(lines))
+PYEOF
+    echo "  Markdown report: ${MD_REPORT}"
+  fi
+fi
+
+exit "${EXIT_CODE}"

@@ -895,6 +895,25 @@ PYEOF
   check_not R80 "cert-manager preflight catches a removed webhook PDB declaration (2026-08-25)" \
     scripts/cluster/preflight-cert-manager-upgrade.sh "${cert_manager_upgrade_drift_tmp}/cert-manager.yaml"
   rm -rf "${cert_manager_upgrade_drift_tmp}"
+
+  # narwhal#45: offline upgrade bundle manifest schema, verification, and dry-run diff
+  check R81 "air-gap upgrade bundle schema and dry-run diff tool validate static manifests (2026-08-25)" \
+    python3 scripts/airgap/lib/verify-upgrade-bundle.py --manifest scripts/airgap/lib/upgrade-bundle-v1.1.0.json
+
+  local upgrade_bundle_drift_tmp
+  upgrade_bundle_drift_tmp="$(mktemp -d)"
+  python3 - "${upgrade_bundle_drift_tmp}/invalid-bundle.json" <<'PYEOF'
+import json, sys
+path = sys.argv[1]
+with open("scripts/airgap/lib/upgrade-bundle-v1.1.0.json", encoding="utf-8") as f:
+    doc = json.load(f)
+doc["artifacts"][0]["license"] = "SSPLv1"
+with open(path, "w", encoding="utf-8") as f:
+    json.dump(doc, f)
+PYEOF
+  check_not R82 "upgrade bundle validator rejects forbidden licenses and schema violations (2026-08-25)" \
+    python3 scripts/airgap/lib/verify-upgrade-bundle.py --manifest "${upgrade_bundle_drift_tmp}/invalid-bundle.json"
+  rm -rf "${upgrade_bundle_drift_tmp}"
 }
 
 #=========================================

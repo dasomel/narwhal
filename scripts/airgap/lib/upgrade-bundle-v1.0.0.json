@@ -1,0 +1,42 @@
+{
+  "schema_version": "1.0",
+  "bundle_id": "narwhal-bundle-v1.0.0",
+  "target_version": "v1.0.0",
+  "created_at": "2026-08-01T00:00:00Z",
+  "promotion_stage": "production",
+  "compatibility_matrix_ref": "docs/common/compatibility-matrix.json#v1.0.0",
+  "provenance": {
+    "author": "dasomel/narwhal-release",
+    "source_repo": "https://github.com/dasomel/narwhal",
+    "signature": "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+  },
+  "artifacts": [
+    {
+      "name": "cert-manager-controller",
+      "version": "v1.16.2",
+      "artifact_type": "container_image",
+      "digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+      "source_ref": "quay.io/jetstack/cert-manager-controller:v1.16.2",
+      "license": "Apache-2.0",
+      "size_bytes": 45000000
+    },
+    {
+      "name": "cert-manager-chart",
+      "version": "v1.16.2",
+      "artifact_type": "helm_chart",
+      "digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+      "source_ref": "https://charts.jetstack.io/charts/cert-manager-v1.16.2.tgz",
+      "license": "Apache-2.0",
+      "size_bytes": 120000
+    },
+    {
+      "name": "trivy-db",
+      "version": "20260801",
+      "artifact_type": "operator_package",
+      "digest": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+      "source_ref": "ghcr.io/aquasecurity/trivy-db:2",
+      "license": "Apache-2.0",
+      "size_bytes": 120000000
+    }
+  ]
+}

@@ -1041,6 +1041,52 @@ PYEOF
   check_not R91 "chart source gate catches a Gitea-mirror regression (2026-08-26)" \
     python3 scripts/airgap/lib/check-chart-upstream-sources.py "${chart_source_drift_tmp}/chart-upstream-sources.tsv"
   rm -rf "${chart_source_drift_tmp}"
+
+  # 2026-08-27: nfs-quota-agent's chart ships inside a GitHub source tarball, not a
+  # chart repo, so 07-save-binaries.sh re-packs it with the system `tar czf` rather than
+  # `helm package` (Go's archive/tar, which never hits this). Every file macOS pulls off
+  # the network — curl or git, confirmed both — carries com.apple.provenance, and bsdtar
+  # writes a binary ._<name> AppleDouble sidecar for each one, invisible in bsdtar's own
+  # `tar tzf` listing. GNU tar on the cluster nodes extracts ._quota.nfs.io_quotapolicies.yaml
+  # as a literal file and helm's YAML parse dies on its binary content. Different bug from
+  # R09 (stage-kakao-nodes.sh, transfer-time tar-over-ssh): this is packaging-time
+  # corruption of the tgz this script writes into the bundle. Same fix, same guard shape.
+  check R94 "07-save-binaries sets COPYFILE_DISABLE before packing nfs-quota-agent (2026-08-27)" \
+    grep -qE '^[^#]*COPYFILE_DISABLE' scripts/airgap/07-save-binaries.sh
+
+  # R94 only proves the export line is present, not that the checker it exists to satisfy
+  # actually distinguishes clean from corrupted archives. Prove check-no-appledouble.py
+  # itself: PASS on a synthetic clean tarball, FAIL on one carrying a synthesized ._foo
+  # AppleDouble entry. Built entirely with Python's tarfile module — no macOS xattr, no
+  # network — so this half of the guard runs identically on any CI runner.
+  local appledouble_fixture_tmp
+  appledouble_fixture_tmp="$(mktemp -d)"
+  python3 - "${appledouble_fixture_tmp}" <<'PYEOF'
+import io
+import sys
+import tarfile
+from pathlib import Path
+
+out = Path(sys.argv[1])
+
+
+def make_tar(path, names):
+    with tarfile.open(path, "w:gz") as tf:
+        for name in names:
+            data = b"placeholder\n"
+            info = tarfile.TarInfo(name=name)
+            info.size = len(data)
+            tf.addfile(info, io.BytesIO(data))
+
+
+make_tar(out / "clean.tgz", ["nfs-quota-agent/Chart.yaml", "nfs-quota-agent/crds/quota.nfs.io_quotapolicies.yaml"])
+make_tar(out / "bad.tgz", ["nfs-quota-agent/Chart.yaml", "nfs-quota-agent/crds/._quota.nfs.io_quotapolicies.yaml"])
+PYEOF
+  check R95a "check-no-appledouble.py passes a clean synthetic archive (2026-08-27)" \
+    python3 scripts/airgap/lib/check-no-appledouble.py "${appledouble_fixture_tmp}/clean.tgz"
+  check_not R95b "check-no-appledouble.py catches a synthetic AppleDouble entry (2026-08-27)" \
+    python3 scripts/airgap/lib/check-no-appledouble.py "${appledouble_fixture_tmp}/bad.tgz"
+  rm -rf "${appledouble_fixture_tmp}"
 }
 
 #=========================================

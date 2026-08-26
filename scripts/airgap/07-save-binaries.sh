@@ -26,6 +26,19 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=00-config.sh
 source "${SCRIPT_DIR}/00-config.sh"
 
+# macOS attaches com.apple.provenance to files pulled off the network — the nfs-quota-agent
+# source tarball below included — regardless of how they were fetched (curl or git both carry
+# it; verified empirically, not download-specific). macOS's system tar (bsdtar) then writes an
+# AppleDouble sidecar (._<name>) for every xattr-bearing file when re-packing them, and bsdtar's
+# own `tar tzf` hides those sidecars from a plain listing, so the corruption is invisible on the
+# machine that built the bundle. GNU tar on the Linux cluster nodes extracts them as literal
+# files; `._quota.nfs.io_quotapolicies.yaml` then fails helm's YAML parse with "control
+# characters are not allowed". This is packaging-time corruption of the tarball this script
+# writes — a different bug from stage-kakao-nodes.sh's COPYFILE_DISABLE (transfer-time, its own
+# tar-over-ssh) — but the same fix. `helm package` elsewhere in the airgap scripts is unaffected:
+# it uses Go's archive/tar, which does not consult xattrs the way bsdtar does.
+export COPYFILE_DISABLE=1
+
 # Versions must track the scripts that consume them. Kept here rather than sourced from
 # those scripts because they are spread across four files and several are literals.
 HELM_VERSION="${HELM_VERSION:-v4.2.1}"

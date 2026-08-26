@@ -33,6 +33,21 @@ set -euo pipefail
 TF_DIR="${TF_DIR:-csp/kakao-cloud/terraform}"
 SSH_USER="${NODE_SSH_USER:-ubuntu}"
 STAGE_DIR="${STAGE_DIR:-/home/vagrant}"
+# run_scripts() splices STAGE_DIR unquoted into a root-elevated `sh -c` string sent
+# over ssh (the log-redirect must be opened by root, not the SSH user — see its
+# comment). An overridden value containing shell metacharacters would be parsed by
+# that root shell, so fail closed on anything but a plain absolute path here rather
+# than quoting it defensively at each of the half-dozen interpolation sites below.
+case "${STAGE_DIR}" in
+  /*) : ;;
+  *) echo "ERROR: STAGE_DIR must be an absolute path: ${STAGE_DIR}" >&2; exit 1 ;;
+esac
+case "${STAGE_DIR}" in
+  *[!A-Za-z0-9_/.-]*)
+    echo "ERROR: STAGE_DIR contains characters outside [A-Za-z0-9_/.-]: ${STAGE_DIR}" >&2
+    exit 1
+    ;;
+esac
 SENTINELS="${STAGE_DIR}/.narwhal-stage"
 FORCE="${FORCE:-0}"
 # kakao.*, not local.*: the Vagrant cluster serves the same service names, and both

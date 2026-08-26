@@ -153,13 +153,21 @@ run_scripts() {
   # Clear last attempt's marker first: it is evidence about THIS run, and inheriting a
   # stale one would make the fallback below vouch for work that never happened.
   ssh_node "${ip}" "sudo rm -f '${SENTINELS}/${stage}.ok'" 2>/dev/null || true
+  # The log redirect runs inside the sudo'd sh -c (via exec), not as the outer
+  # `>` on the ssh_node command line — that outer form opens the file as the
+  # unprivileged SSH_USER, and STAGE_DIR (/home/vagrant) is only guaranteed
+  # writable by the *vagrant* account that stage-kakao-nodes.sh creates, not by
+  # whichever SSH_USER connected. `exec`ing the redirect as the first line of
+  # the root-elevated script makes root open the file, which always succeeds
+  # regardless of who staged the node or what owns the directory.
   if ssh_node "${ip}" "sudo mkdir -p '${SENTINELS}'
     sudo flock -w 7200 /var/lock/narwhal-stage.lock env $(node_env "${ip}") sh -c '
+      exec > ${STAGE_DIR}/${stage}.log 2>&1
       set -e
       for s in ${list}; do
         echo \"### \$s\"
         ${STAGE_DIR}/scripts/\$s || { echo \"FAILED: \$s\"; exit 1; }
-      done' > ${STAGE_DIR}/${stage}.log 2>&1 \\
+      done' \\
       && sudo touch '${SENTINELS}/${stage}.ok'"; then
     return 0
   fi

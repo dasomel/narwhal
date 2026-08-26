@@ -629,6 +629,18 @@ PYEOF
   check R32 "stage-kakao-nodes.sh stages the apt bundle to /srv/airgap (2026-08-05)" \
     grep -qE '^[^#]*/srv/airgap' scripts/cloud/stage-kakao-nodes.sh
 
+  # 2026-08-26: run_scripts()'s stage log was opened by the outer `>` on the ssh_node
+  # command line — the unprivileged SSH_USER's own shell, before sudo — so it died with
+  # "Permission denied" the moment STAGE_DIR (/home/vagrant) was not writable by that
+  # user (true on every Kakao node until stage-kakao-nodes.sh's ensure_vagrant_user()
+  # has run and succeeded). Moving the redirect inside the sudo'd sh -c via `exec` makes
+  # root open the file, which needs no directory ownership assumption at all.
+  check R92 "run_scripts() opens the stage log as root, not the outer SSH user (2026-08-26)" \
+    grep -qE "exec > \\\$\{STAGE_DIR\}/\\\$\{stage\}\.log" scripts/cloud/provision-kakao.sh
+
+  check_not R93 "the stage log redirect is not back outside the sudo'd sh -c (2026-08-26)" \
+    grep -qE "done'\s*>\s*\\\$\{STAGE_DIR\}" scripts/cloud/provision-kakao.sh
+
   # 2026-08-05: the install went fully offline while the GitOps layer did not. ArgoCD
   # Applications still name public chart repos as their source, so every refresh, resync and
   # selfHeal needs the internet — proven by forcing a hard refresh on an isolated cluster:

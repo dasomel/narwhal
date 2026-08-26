@@ -1003,6 +1003,32 @@ PYEOF
   check_not R89 "T2 Keycloak contract catches a deleted first-class CPU request (2026-08-26)" \
     scripts/test/t2-component.sh keycloak --mode render --template "${keycloak_t2_drift_tmp}/narwhal-platform"
   rm -rf "${keycloak_t2_drift_tmp}"
+
+  # 2026-08-26: Application repoURLs deliberately name the in-cluster Gitea Helm
+  # registry for runtime offline reconciliation, but 03-save-helm-charts.sh runs
+  # before Gitea exists. Its source map must therefore cover every enabled GitOps
+  # chart and must not point back to the internal registry. A broken row is enough
+  # to recreate the original one-success/twenty-fail bundle build, so prove the
+  # checker rejects a temporary map with apisix pointed at Gitea.
+  check R90 "GitOps bundle sources are complete and separate from Gitea (2026-08-26)" \
+    python3 scripts/airgap/lib/check-chart-upstream-sources.py
+
+  local chart_source_drift_tmp
+  chart_source_drift_tmp="$(mktemp -d)"
+  python3 - "${chart_source_drift_tmp}/chart-upstream-sources.tsv" <<'PYEOF'
+import sys
+from pathlib import Path
+
+target = Path(sys.argv[1])
+source = Path("scripts/airgap/lib/chart-upstream-sources.tsv").read_text()
+old = "apisix\thelm-repo\thttps://charts.apiseven.com"
+new = "apisix\thelm-repo\thttp://gitea-http.devtools.svc.cluster.local:3000/api/packages/gitea-admin/helm"
+assert source.count(old) == 1, "expected one apisix source-map row"
+target.write_text(source.replace(old, new))
+PYEOF
+  check_not R91 "chart source gate catches a Gitea-mirror regression (2026-08-26)" \
+    python3 scripts/airgap/lib/check-chart-upstream-sources.py "${chart_source_drift_tmp}/chart-upstream-sources.tsv"
+  rm -rf "${chart_source_drift_tmp}"
 }
 
 #=========================================

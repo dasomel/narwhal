@@ -1,0 +1,36 @@
+# GitOps chart name -> public source used to build the pre-bootstrap bundle.
+#
+# Application repoURLs deliberately point to the in-cluster Gitea Helm registry so
+# ArgoCD refresh/resync/selfHeal remain offline after bootstrap. That registry does
+# not exist while this script builds the bundle, so never derive its public source
+# from an Application's repoURL. Add or update the source here instead.
+#
+# NOT GUESSED. Every helm-repo row was verified with `helm repo add` plus `helm
+# search repo <alias>/<chart> --versions`; the git row was verified by checking out
+# the pinned tag, confirming its commit, and packaging its chart path with Helm.
+#
+# Format:
+#   chart<TAB>source-type<TAB>source [<TAB>tag<TAB>chart-path<TAB>expected-commit]
+# source-type is helm-repo or git. A git row requires all three trailing fields;
+# expected-commit makes a moved upstream tag fail closed rather than changing the
+# airgap payload silently.
+apisix	helm-repo	https://charts.apiseven.com
+base	helm-repo	https://istio-release.storage.googleapis.com/charts
+cert-manager	helm-repo	https://charts.jetstack.io
+chaos-mesh	helm-repo	https://charts.chaos-mesh.org
+cni	helm-repo	https://istio-release.storage.googleapis.com/charts
+harbor	helm-repo	https://helm.goharbor.io
+headlamp	helm-repo	https://kubernetes-sigs.github.io/headlamp/
+istiod	helm-repo	https://istio-release.storage.googleapis.com/charts
+k8s-monitoring	helm-repo	https://grafana.github.io/helm-charts
+kube-prometheus-stack	helm-repo	https://prometheus-community.github.io/helm-charts
+kyverno	helm-repo	https://kyverno.github.io/kyverno/
+loki	helm-repo	https://grafana-community.github.io/helm-charts
+metallb	helm-repo	https://metallb.github.io/metallb
+openbao	helm-repo	https://openbao.github.io/openbao-helm
+seaweedfs	helm-repo	https://seaweedfs.github.io/seaweedfs/helm
+tempo	helm-repo	https://grafana-community.github.io/helm-charts
+trivy-operator	helm-repo	https://aquasecurity.github.io/helm-charts/
+velero	helm-repo	https://vmware-tanzu.github.io/helm-charts
+velero-ui	git	https://github.com/otwld/velero-ui.git	v0.10.1	kubernetes/chart	15ca554f569c7dfa9609afa7fe3a75053f3dbc2d
+ztunnel	helm-repo	https://istio-release.storage.googleapis.com/charts

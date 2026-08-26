@@ -1087,6 +1087,16 @@ PYEOF
   check_not R95b "check-no-appledouble.py catches a synthetic AppleDouble entry (2026-08-27)" \
     python3 scripts/airgap/lib/check-no-appledouble.py "${appledouble_fixture_tmp}/bad.tgz"
   rm -rf "${appledouble_fixture_tmp}"
+
+  # 2026-08-27: 14-gitops-bootstrap.sh token minting returned HTTP 400 on re-runs when a token
+  # of the same name already existed, causing `curl | grep | cut` under `set -o pipefail` to
+  # die silently at statement level with zero error output. Tokens are now explicitly deleted
+  # before POSTing (idempotency) and token responses captured before grep/cut.
+  check R96 "14-gitops-bootstrap.sh deletes pre-existing Gitea tokens before minting (2026-08-27)" \
+    bash -c "grep -q 'tokens/argocd-gitops-read' scripts/cluster/14-gitops-bootstrap.sh && grep -q 'tokens/portal-selfservice' scripts/cluster/14-gitops-bootstrap.sh && grep -q '\-X DELETE' scripts/cluster/14-gitops-bootstrap.sh"
+
+  check_not R97 "token minting in 14-gitops-bootstrap.sh has no bare pipefail assignment (2026-08-27)" \
+    bash -c "grep -nE '^[^#]*_GIT_TOKEN=\"\$\(curl.*\| grep' scripts/cluster/14-gitops-bootstrap.sh | grep -q ."
 }
 
 #=========================================

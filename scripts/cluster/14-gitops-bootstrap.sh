@@ -207,14 +207,20 @@ curl -sf -o /dev/null -X PUT \
   -d '{"permission":"read"}' \
   || { echo "ERROR: could not grant ${ARGOCD_GIT_USER} read on ${REPO_NAME}" >&2; exit 1; }
 
+# Delete existing token if present to ensure token minting is idempotent across re-runs.
+curl -s -o /dev/null -X DELETE \
+  "http://localhost:3000/api/v1/users/${ARGOCD_GIT_USER}/tokens/argocd-gitops-read" \
+  -u "${ARGOCD_GIT_USER}:${ARGOCD_GIT_PASSWORD}" || true
+
 # Tokens are scoped. read:repository is the whole permission set ArgoCD needs.
-ARGOCD_GIT_TOKEN="$(curl -s -X POST "http://localhost:3000/api/v1/users/${ARGOCD_GIT_USER}/tokens" \
+argocd_token_resp="$(curl -s -X POST "http://localhost:3000/api/v1/users/${ARGOCD_GIT_USER}/tokens" \
   -H "Content-Type: application/json" \
   -u "${ARGOCD_GIT_USER}:${ARGOCD_GIT_PASSWORD}" \
-  -d '{"name":"argocd-gitops-read","scopes":["read:repository"]}' \
-  | grep -o '"sha1":"[^"]*"' | cut -d'"' -f4)"
+  -d '{"name":"argocd-gitops-read","scopes":["read:repository"]}')"
+ARGOCD_GIT_TOKEN="$(printf '%s' "${argocd_token_resp}" | grep -o '"sha1":"[^"]*"' | cut -d'"' -f4 || true)"
 if [ -z "${ARGOCD_GIT_TOKEN}" ]; then
   echo "ERROR: could not mint a read:repository token for ${ARGOCD_GIT_USER}" >&2
+  echo "       Gitea response: ${argocd_token_resp}" >&2
   exit 1
 fi
 
@@ -251,13 +257,19 @@ curl -sf -o /dev/null -X PUT \
   -d '{"permission":"write"}' \
   || { echo "ERROR: could not grant ${PORTAL_GIT_USER} write on ${REPO_NAME}" >&2; exit 1; }
 
-PORTAL_GIT_TOKEN="$(curl -s -X POST "http://localhost:3000/api/v1/users/${PORTAL_GIT_USER}/tokens" \
+# Delete existing token if present to ensure token minting is idempotent across re-runs.
+curl -s -o /dev/null -X DELETE \
+  "http://localhost:3000/api/v1/users/${PORTAL_GIT_USER}/tokens/portal-selfservice" \
+  -u "${PORTAL_GIT_USER}:${PORTAL_GIT_PASSWORD}" || true
+
+portal_token_resp="$(curl -s -X POST "http://localhost:3000/api/v1/users/${PORTAL_GIT_USER}/tokens" \
   -H "Content-Type: application/json" \
   -u "${PORTAL_GIT_USER}:${PORTAL_GIT_PASSWORD}" \
-  -d '{"name":"portal-selfservice","scopes":["write:repository"]}' \
-  | grep -o '"sha1":"[^"]*"' | cut -d'"' -f4)"
+  -d '{"name":"portal-selfservice","scopes":["write:repository"]}')"
+PORTAL_GIT_TOKEN="$(printf '%s' "${portal_token_resp}" | grep -o '"sha1":"[^"]*"' | cut -d'"' -f4 || true)"
 if [ -z "${PORTAL_GIT_TOKEN}" ]; then
   echo "ERROR: could not mint a write:repository token for ${PORTAL_GIT_USER}" >&2
+  echo "       Gitea response: ${portal_token_resp}" >&2
   exit 1
 fi
 
@@ -300,7 +312,7 @@ repo_json="$(curl -sf -u "${GITEA_ADMIN_USER}:${GITEA_ADMIN_PASSWORD}" "${REPO_A
   exit 1
 }
 
-default_branch="$(printf '%s' "${repo_json}" | grep -o '"default_branch":"[^"]*"' | cut -d'"' -f4)"
+default_branch="$(printf '%s' "${repo_json}" | grep -o '"default_branch":"[^"]*"' | cut -d'"' -f4 || true)"
 if [ "${default_branch}" != "main" ]; then
   echo "ERROR: default branch is '${default_branch}', expected 'main'." >&2
   echo "       app-of-apps tracks HEAD, so a different default branch means ArgoCD" >&2
@@ -308,8 +320,11 @@ if [ "${default_branch}" != "main" ]; then
   exit 1
 fi
 
-remote_commit="$(curl -sf -u "${GITEA_ADMIN_USER}:${GITEA_ADMIN_PASSWORD}" \
-  "${REPO_API}/branches/main" | grep -o '"id":"[a-f0-9]\{40\}"' | head -1 | cut -d'"' -f4)"
+branch_json="$(curl -sf -u "${GITEA_ADMIN_USER}:${GITEA_ADMIN_PASSWORD}" "${REPO_API}/branches/main")" || {
+  echo "ERROR: could not read main branch info from ${REPO_API}/branches/main" >&2
+  exit 1
+}
+remote_commit="$(printf '%s' "${branch_json}" | grep -o '"id":"[a-f0-9]\{40\}"' | awk -F'"' 'NR==1 {print $4}')"
 if [ "${remote_commit}" != "${GITOPS_COMMIT}" ]; then
   echo "ERROR: main is at ${remote_commit:-<unknown>}, but we pushed ${GITOPS_COMMIT}." >&2
   echo "       Something else wrote to the branch, or the push did not land." >&2

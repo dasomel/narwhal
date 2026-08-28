@@ -1,14 +1,14 @@
 {
-  "schema": "openforge-agent-trace/v1",
+  "schemaVersion": "openforge-agent-trace/v1",
   "traceId": "narwhal-reference-change",
-  "repository": "dasomel/narwhal",
-  "taskType": "bug-fix",
+  "task": "Fix a Kubernetes behavior regression with scoped cluster evidence",
   "events": [
-    {"id":"1","type":"scope","approved":true,"detail":"Limit change to requested Kubernetes behavior"},
-    {"id":"2","type":"reproduction","success":true,"evidence":["failing regression evidence captured"]},
-    {"id":"3","type":"change","scope":"approved","detail":"Minimal implementation change"},
-    {"id":"4","type":"verification","success":true,"class":"regression","evidence":["same regression evidence passes"]},
-    {"id":"5","type":"verification","success":true,"class":"runtime","evidence":["cluster-dependent behavior verified in representative runtime"]},
-    {"id":"6","type":"completion","state":"A","evidenceRefs":["4","5"]}
+    {"id":"e1","type":"scope_check","summary":"Limit change to requested Kubernetes behavior"},
+    {"id":"e2","type":"reproduction","summary":"Reproduced reported regression","evidence":["test:failure-before-fix"]},
+    {"id":"e3","type":"bug_fix","summary":"Applied minimal implementation change"},
+    {"id":"e4","type":"regression_verification","summary":"Regression evidence passes","evidence":["test:regression-pass"]},
+    {"id":"e5","type":"verification","summary":"Representative cluster-dependent behavior verified","scope":"targeted regression plus representative Kubernetes runtime","evidence":["test:regression-pass","runtime:cluster-pass"]},
+    {"id":"e6","type":"completion_claim","summary":"Task complete within verified Kubernetes scope"},
+    {"id":"e7","type":"task_outcome","state":"A","summary":"Complete and verified"}
   ]
 }

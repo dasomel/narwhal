@@ -82,6 +82,10 @@ config:
     externalSecret:
       enabled: true
       name: headlamp-oidc-secret
+# OIDC requests use the authenticated user's RBAC. Keep this aligned with the
+# GitOps Application instead of accepting the chart's cluster-admin default.
+clusterRoleBinding:
+  clusterRoleName: view
 initContainers:
   - name: ca-bundle
     image: ghcr.io/headlamp-k8s/headlamp:v0.42.0
@@ -104,6 +108,18 @@ volumeMounts:
     subPath: ca-certificates.crt
     readOnly: true
 EOF
+
+# ClusterRoleBinding.roleRef is immutable. Earlier Phase 2 runs used the chart
+# default (cluster-admin), whereas GitOps deliberately requires view. Recreate
+# only this chart-owned binding when its roleRef drifts so the Helm upgrade can
+# converge; a matching binding is left untouched on normal re-runs.
+HEADLAMP_ROLE_REF="$(kubectl get clusterrolebinding headlamp-admin \
+  -o jsonpath='{.roleRef.apiGroup}:{.roleRef.kind}:{.roleRef.name}' 2>/dev/null || true)"
+if [ -n "${HEADLAMP_ROLE_REF}" ] \
+  && [ "${HEADLAMP_ROLE_REF}" != "rbac.authorization.k8s.io:ClusterRole:view" ]; then
+  echo "Recreating headlamp-admin ClusterRoleBinding with roleRef ClusterRole/view"
+  kubectl delete clusterrolebinding headlamp-admin
+fi
 
 HEADLAMP_OK=false
 for attempt in 1 2 3 4 5; do

@@ -5,6 +5,7 @@
   "tracePathPrefix": ".agents/evals/traces/",
   "rules": [
     {"risk": "high", "pattern": ".github/workflows/**", "reason": "CI and release behavior"},
+    {"risk": "high", "pattern": "scripts/ci/**", "reason": "CI governance and enforcement logic"},
     {"risk": "high", "pattern": "scripts/airgap/**", "reason": "air-gap supply-chain and install inputs"},
     {"risk": "high", "pattern": "scripts/install/**", "reason": "cluster mutation and bootstrap"},
     {"risk": "high", "pattern": "scripts/security/**", "reason": "security enforcement"},

@@ -1,0 +1,15 @@
+{
+  "schemaVersion": "openforge-agent-risk-policy/v1",
+  "defaultRisk": "low",
+  "traceRequiredAt": ["high"],
+  "tracePathPrefix": ".agents/evals/traces/",
+  "rules": [
+    {"risk": "high", "pattern": ".github/workflows/**", "reason": "CI and release behavior"},
+    {"risk": "high", "pattern": "scripts/airgap/**", "reason": "air-gap supply-chain and install inputs"},
+    {"risk": "high", "pattern": "scripts/install/**", "reason": "cluster mutation and bootstrap"},
+    {"risk": "high", "pattern": "scripts/security/**", "reason": "security enforcement"},
+    {"risk": "high", "pattern": "gitops/**", "reason": "desired-state deployment contract"},
+    {"risk": "high", "pattern": "VERSIONS*", "reason": "platform version source of truth"},
+    {"risk": "high", "pattern": ".agents/**", "reason": "agent policy or evidence contract"}
+  ]
+}

@@ -31,18 +31,22 @@ spec:
     - http://gitea-http.devtools.svc.cluster.local:3000/gitea-admin/narwhal-gitops.git
     - http://gitea-http.devtools.svc.cluster.local:3000/api/packages/gitea-admin/helm
 
-  # Derived from the rendered chart, not guessed: these are the destination
-  # namespaces the 35 platform Applications actually use. dev and dev-* are here
-  # because the tenants Application provisions the RoleBinding and ResourceQuota
-  # INSIDE each tenant namespace; the tenant workloads themselves belong to the
-  # `tenants` project below.
+  # Derived from the rendered Applications AND the manifests they render, not
+  # guessed: the AppProject checks every managed resource's namespace, not only an
+  # Application's spec.destination. dev and dev-* are here because the tenants
+  # Application provisions the RoleBinding and ResourceQuota INSIDE each tenant
+  # namespace; the tenant workloads themselves belong to the `tenants` project below.
   destinations:
     - server: https://kubernetes.default.svc
       namespace: chaos-testing
     - server: https://kubernetes.default.svc
+      namespace: database
+    - server: https://kubernetes.default.svc
       namespace: devtools
     - server: https://kubernetes.default.svc
       namespace: istio-system
+    - server: https://kubernetes.default.svc
+      namespace: iam
     - server: https://kubernetes.default.svc
       namespace: kube-system
     - server: https://kubernetes.default.svc

@@ -44,8 +44,10 @@ spec:
         - .spec.rules[].match
         - .spec.rules[].exclude
         - .spec.rules[].validate
+        - .spec.rules[].verifyImages
         - .spec.rules[].mutate
         - .spec.rules[].generate
+        - .spec.rules[].skipBackgroundRequests
         - .spec.background
         - .spec.admission
         - .spec.emitWarning

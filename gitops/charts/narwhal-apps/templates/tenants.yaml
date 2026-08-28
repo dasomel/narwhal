@@ -40,6 +40,9 @@ spec:
     namespace: devtools
   syncPolicy:
     automated:
+      # The directory starts empty; tenant manifests arrive through approved PRs.
+      # Make that intentional state explicit instead of treating it as an uninspected source.
+      allowEmpty: true
       prune: true
       selfHeal: true
     syncOptions:

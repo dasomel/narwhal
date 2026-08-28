@@ -1,0 +1,25 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "traceId": "narwhal-version-consistency-natural-regression-2026-08",
+  "task": "Align Narwhal version source-of-truth with the pinned Kubernetes runtime version and block completion while consistency evidence fails",
+  "consistencyMode": "strict",
+  "changeContext": {
+    "paths": [
+      "VERSIONS.md",
+      "Vagrantfile",
+      ".github/workflows/version-check.yml",
+      ".github/workflows/agent-behavior.yml",
+      "scripts/ci/**",
+      ".agents/**"
+    ]
+  },
+  "events": [
+    {"id":"e1","type":"scope_check","summary":"Scoped the repair to the existing Narwhal version-consistency failure and shared verification path"},
+    {"id":"e2","type":"reproduction","summary":"Version Check reproduced Kubernetes drift: VERSIONS.md=1.35.5 while Vagrantfile=1.35.7","evidence":["ci:version-check-run-33154421994","policy:version-source-drift"]},
+    {"id":"e3","type":"bug_fix","summary":"Use one reusable version-consistency check for both dedicated Version Check CI and Agent Behavior evidence"},
+    {"id":"e4","type":"regression_verification","status":"pending","summary":"Run the shared consistency check after the source-of-truth repair","scope":"Kubernetes and pinned component version consistency","evidence":["ci:version-consistency"]},
+    {"id":"e5","type":"verification","status":"pending","summary":"Bind the live shared consistency result into this strict trace before evaluating completion","scope":"Narwhal version source-of-truth and pinned runtime inputs","evidence":["ci:version-consistency","ci:agent-behavior"]},
+    {"id":"e6","type":"completion_claim","summary":"Version consistency repair is complete only when the live shared check passes"},
+    {"id":"e7","type":"task_outcome","state":"A","summary":"Complete only when hydrated verification evidence is passed"}
+  ]
+}

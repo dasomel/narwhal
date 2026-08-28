@@ -13,11 +13,11 @@ Components and versions used in this project.
 
 | Component | Version | Description |
 |-----------|---------|-------------|
-| Kubernetes | v1.35.5 | Container orchestration. **Not the newest minor** — 1.36 is current upstream (1.36.2, 2026-06-09). 1.35 stays on a supported branch until 2027-02-28; the platform deliberately trails one minor so the 35 integrated components have released compatible versions. Branch latest is 1.35.6 |
+| Kubernetes | v1.35.7 | Container orchestration. **Not the newest minor** — 1.36 is current upstream. 1.35 stays on a supported branch until 2027-02-28; the platform deliberately trails one minor so the integrated components remain compatible. Repository runtime pin is 1.35.7; bump only alongside a verified clean install. |
 | containerd | 1.7.x (24.04) / repo default 2.x (26.04, 2.3.x LTS available) | Container runtime (Ubuntu apt; 02-containerd.sh pins 1.7.* then falls back to repo default) |
-| kubeadm | v1.35.5 | Cluster bootstrap tool |
-| kubelet | v1.35.5 | Node agent |
-| kubectl | v1.35.5 | CLI tool |
+| kubeadm | v1.35.7 | Cluster bootstrap tool |
+| kubelet | v1.35.7 | Node agent |
+| kubectl | v1.35.7 | CLI tool |
 
 ## Networking
 
@@ -92,7 +92,7 @@ Components and versions used in this project.
 | Grafana | 12.x (bundled with prometheus-stack) | Visualization / Dashboard (major bump — review dashboards/auth) |
 | Loki | v3.7.3 (chart 18.4.0, grafana-community) | Log aggregation. In-place `helm upgrade` from grafana/loki — no data migration needed, S3/TSDB storage read as-is |
 | Grafana Alloy (k8s-monitoring) | chart 4.2.0 / alloy-operator 0.5.11 / Alloy app v1.17.0 | Log collector — replaces Promtail (EOL 2026-03-02). Logs-only (`podLogsViaLoki`); all metrics/events/exporter features left at their default `false` to avoid duplicating prometheus-stack |
-| Tempo | v2.9.0 (chart 2.2.3, grafana-community) | Distributed tracing. Chart source moved; app version pinned at 2.9.0 pending a live vParquet2 block audit before allowing the chart's default 2.10.7 |
+| Tempo | v2.9.0 (chart 2.2.3, grafana-community) | Distributed tracing. Chart source moved; app version pinned at 2.9.0 pending a live vParquet2 block audit before allowing the chart's default app v2.10.7 |
 
 ## Git / GitOps
 

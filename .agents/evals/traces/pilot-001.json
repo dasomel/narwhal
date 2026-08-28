@@ -1,0 +1,14 @@
+{
+  "schemaVersion":"openforge-agent-trace/v1",
+  "traceId":"narwhal-pilot-001",
+  "task":"Operational pilot for Agent Behavior gating",
+  "events":[
+    {"id":"e1","type":"scope_check","summary":"Keep pilot within agent governance files"},
+    {"id":"e2","type":"reproduction","summary":"Confirmed previous evaluator schema mismatch","evidence":["repo:legacy-evaluator-schema"]},
+    {"id":"e3","type":"bug_fix","summary":"Aligned trace/eval artifacts to canonical schema"},
+    {"id":"e4","type":"regression_verification","summary":"Canonical evaluator accepts pilot trace","evidence":["ci:agent-behavior"]},
+    {"id":"e5","type":"verification","summary":"Behavior gate and existing workflow remain isolated","scope":"agent governance files and behavior workflow","evidence":["ci:agent-behavior"]},
+    {"id":"e6","type":"completion_claim","summary":"Operational pilot complete within verified scope"},
+    {"id":"e7","type":"task_outcome","state":"A","summary":"Complete and verified"}
+  ]
+}

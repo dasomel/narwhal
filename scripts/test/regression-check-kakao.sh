@@ -320,6 +320,26 @@ run_static() {
   check R100 "Keycloak HTTPS/OIDC prerequisite is a critical failure (2026-08-28)" \
     bash -c "grep -q 'ERROR: Keycloak HTTPS endpoint not reachable' scripts/cluster/11-keycloak.sh && grep -A5 'ERROR: Keycloak HTTPS endpoint not reachable' scripts/cluster/11-keycloak.sh | grep -q 'exit 1'"
 
+  # 2026-08-28 (#148): Wildcard webOrigins allow cross-origin token abuse from untrusted origins.
+  check_not R101 "no Keycloak client has wildcard webOrigins (2026-08-28)" \
+    bash -c "grep -nE 'webOrigins=\[\"\*\"\]' scripts/cluster/11-2-keycloak-config.sh scripts/cluster/11-3-keycloak-clients.sh | grep -q ."
+
+  # 2026-08-28 (#149): Kubernetes client must use standard authorization code flow, not password grant.
+  check_not R102 "kubernetes Keycloak client has directAccessGrantsEnabled=false (2026-08-28)" \
+    grep -q 'directAccessGrantsEnabled=true' scripts/cluster/11-2-keycloak-config.sh
+
+  # 2026-08-28 (#147): ArgoCD OIDC discovery must authenticate Keycloak TLS with cluster CA.
+  check_not R103 "ArgoCD does not skip Keycloak OIDC TLS verification (2026-08-28)" \
+    grep -rq 'insecureSkipVerify: true' gitops/charts/narwhal-platform/templates/argocd-config.yaml scripts/cluster/11-3-keycloak-clients.sh scripts/cluster/13-argocd.sh
+
+  # 2026-08-28 (#141): APISIX gateway openid-connect must verify Keycloak TLS certificate.
+  check_not R104 "APISIX openid-connect does not disable ssl_verify (2026-08-28)" \
+    grep -q 'ssl_verify: false' gitops/charts/narwhal-platform/templates/apisix-routes.yaml
+
+  # 2026-08-28 (#142): APISIX Admin API must be restricted to internal cluster CIDRs.
+  check_not R105 "APISIX Admin API allowlist does not use unrestricted 0.0.0.0/0 (2026-08-28)" \
+    grep -q '0\.0\.0\.0/0' gitops/charts/narwhal-apps/templates/apisix.yaml
+
   # 2026-08-21: clone, the config copy, commit and push were all `|| true`, so a clean
   # install could report success with an empty or stale GitOps source and the symptom
   # — ArgoCD reconciling nothing — appeared days from the cause.

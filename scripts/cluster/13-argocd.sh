@@ -227,7 +227,6 @@ data:
       - profile
       - email
       - groups
-    insecureSkipVerify: true
 EOF
 
 #=========================================

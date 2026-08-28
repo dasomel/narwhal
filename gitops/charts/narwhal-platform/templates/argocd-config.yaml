@@ -29,8 +29,6 @@ data:
       - profile
       - email
       - groups
-    insecureSkipVerify: true
-  oidc.tls.insecure.skip.verify: "true"
   # Kyverno admission webhook injects defaulted fields (admission, emitWarning,
   # per-rule skipBackgroundRequests, validate.allowExistingViolations) into live
   # ClusterPolicy objects. Without ignoring them ArgoCD marks the owning app

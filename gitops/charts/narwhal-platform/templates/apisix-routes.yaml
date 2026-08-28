@@ -258,7 +258,6 @@ spec:
             redirect_uri: "https://gitea.{{ .Values.baseDomain }}/apisix/callback"
             scope: "openid email profile groups"
             bearer_only: false
-            ssl_verify: false
             logout_path: "/apisix/logout"
             set_userinfo_header: true
             set_access_token_header: true
@@ -662,7 +661,6 @@ spec:
             redirect_uri: "https://hubble.{{ .Values.baseDomain }}/apisix/callback"
             scope: "openid email profile groups"
             bearer_only: false
-            ssl_verify: false
             logout_path: "/apisix/logout"
             set_userinfo_header: true
             set_access_token_header: true
@@ -718,7 +716,6 @@ spec:
             redirect_uri: "https://prometheus.{{ .Values.baseDomain }}/apisix/callback"
             scope: "openid email profile groups"
             bearer_only: false
-            ssl_verify: false
             logout_path: "/apisix/logout"
             set_userinfo_header: true
             set_access_token_header: true
@@ -774,7 +771,6 @@ spec:
             redirect_uri: "https://alertmanager.{{ .Values.baseDomain }}/apisix/callback"
             scope: "openid email profile groups"
             bearer_only: false
-            ssl_verify: false
             logout_path: "/apisix/logout"
             set_userinfo_header: true
             set_access_token_header: true
@@ -967,7 +963,6 @@ spec:
             redirect_uri: "https://nfs-quota.{{ .Values.baseDomain }}/apisix/callback"
             scope: "openid email profile groups"
             bearer_only: false
-            ssl_verify: false
             logout_path: "/apisix/logout"
             set_userinfo_header: true
             set_access_token_header: true

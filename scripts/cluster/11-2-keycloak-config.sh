@@ -267,14 +267,14 @@ echo "=== Creating 'kubernetes' client (public) ==="
 K8S_CLIENT_ID=$(kc_exec get clients -r "${REALM}" -q "clientId=kubernetes" 2>/dev/null \
   | jq -r '.[] | select(.clientId=="kubernetes") | .id' || echo "")
 
-if [ -z "${K8S_CLIENT_ID}" ]; then
+  if [ -z "${K8S_CLIENT_ID}" ]; then
   kc_exec create clients -r "${REALM}" \
     -s "clientId=kubernetes" \
     -s "name=kubernetes" \
     -s "enabled=true" \
     -s "publicClient=true" \
     -s "standardFlowEnabled=true" \
-    -s "directAccessGrantsEnabled=true" \
+    -s "directAccessGrantsEnabled=false" \
     -s 'redirectUris=["http://localhost:*"]' \
     -s 'webOrigins=["http://localhost"]' \
     -s "protocol=openid-connect"
@@ -282,7 +282,11 @@ if [ -z "${K8S_CLIENT_ID}" ]; then
     | jq -r '.[] | select(.clientId=="kubernetes") | .id')
   echo "  -> kubernetes client created (ID: ${K8S_CLIENT_ID})"
 else
-  echo "  -> kubernetes client already exists (ID: ${K8S_CLIENT_ID})"
+  kc_exec update "clients/${K8S_CLIENT_ID}" -r "${REALM}" \
+    -s "directAccessGrantsEnabled=false" \
+    -s 'redirectUris=["http://localhost:*"]' \
+    -s 'webOrigins=["http://localhost"]' 2>/dev/null || true
+  echo "  -> kubernetes client already exists (ID: ${K8S_CLIENT_ID}), directAccessGrants disabled"
 fi
 
 # groups scope를 kubernetes client에 할당

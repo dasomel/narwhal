@@ -243,8 +243,13 @@ else
         BAO_SKIP_VERIFY=true \
     /bin/sh -c '
 cat > /tmp/portal.hcl << '"'"'POLICY_EOF'"'"'
+# Least privilege: narwhal-portal only ever GETs (list via metadata, read via
+# data) — src/lib/openbao.ts:listSecrets() and src/app/api/secrets/route.ts
+# (GET-only) are the sole HTTP consumers of this token, and neither writes or
+# deletes. Previously granted create/update/delete on secret/data/* with no
+# code path using them.
 path "secret/data/narwhal-portal/*" {
-  capabilities = ["create","read","update","delete","list"]
+  capabilities = ["read","list"]
 }
 path "secret/metadata/narwhal-portal/*" {
   capabilities = ["read","list"]

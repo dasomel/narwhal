@@ -269,8 +269,12 @@ spec:
               cpu: 500m
               memory: 512Mi
           readinessProbe:
+            # Portal 자체 readiness contract 사용 (Issue #63/#60): config 유효성 +
+            # Valkey 핑을 검사해 준비 안 되면 503을 반환한다. /api/auth/session은
+            # NextAuth 세션 조회일 뿐 앱 준비 상태와 무관하고 항상 200을 반환해
+            # readiness 신호로 부적합했다.
             httpGet:
-              path: /api/auth/session
+              path: /api/health/ready
               port: 3000
             initialDelaySeconds: 10
             periodSeconds: 10

@@ -330,7 +330,7 @@ run_static() {
 
   # 2026-08-28 (#147): ArgoCD OIDC discovery must authenticate Keycloak TLS with cluster CA.
   check_not R103 "ArgoCD does not skip Keycloak OIDC TLS verification (2026-08-28)" \
-    grep -rq 'insecureSkipVerify: true' gitops/charts/narwhal-platform/templates/argocd-config.yaml scripts/cluster/11-3-keycloak-clients.sh scripts/cluster/13-argocd.sh
+    grep -rqE "(insecureSkipVerify|oidc\\.tls\\.insecure\\.skip\\.verify)[[:space:]]*[:=][[:space:]]*['\\\"]?true['\\\"]?" gitops/charts/narwhal-platform/templates/argocd-config.yaml scripts/cluster/11-3-keycloak-clients.sh scripts/cluster/13-argocd.sh
 
   # 2026-08-28 (#141): APISIX gateway openid-connect must verify Keycloak TLS certificate.
   check_not R104 "APISIX openid-connect does not disable ssl_verify (2026-08-28)" \

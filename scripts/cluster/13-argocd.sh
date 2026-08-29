@@ -216,7 +216,6 @@ data:
   accounts.narwhal-portal: apiKey,login
   url: https://argocd.${DOMAIN}
   server.insecure: "true"
-  oidc.tls.insecure.skip.verify: "true"
   oidc.config: |
     name: Keycloak
     issuer: ${KEYCLOAK_ISSUER}

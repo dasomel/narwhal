@@ -89,6 +89,12 @@ DISCOVERY_URL="${ISSUER_URL}/.well-known/openid-configuration"
 create_keycloak_client() {
   local client_id="$1"
   local redirect_uris_json="$2"  # JSON array string e.g. '["https://..."]'
+  local web_origins_json="${3:-}"
+
+  if [ -z "${web_origins_json}" ]; then
+    # Extract unique scheme://host from redirect URIs, excluding path
+    web_origins_json=$(echo "${redirect_uris_json}" | jq -c '[.[] | capture("^(?<origin>https?://[^/*]+)") | .origin] | unique')
+  fi
 
   echo "--- Creating Keycloak client: ${client_id} ---" >&2
 
@@ -106,12 +112,16 @@ create_keycloak_client() {
       -s "directAccessGrantsEnabled=false" \
       -s "protocol=openid-connect" \
       -s "redirectUris=${redirect_uris_json}" \
-      -s 'webOrigins=["*"]' >&2
+      -s "webOrigins=${web_origins_json}" >&2
     existing_id=$(kc_exec get clients -r "${REALM}" -q "clientId=${client_id}" 2>/dev/null \
       | jq -r ".[] | select(.clientId==\"${client_id}\") | .id")
     echo "  -> client '${client_id}' created (ID: ${existing_id})" >&2
   else
-    echo "  -> client '${client_id}' already exists (ID: ${existing_id})" >&2
+    kc_exec update "clients/${existing_id}" -r "${REALM}" \
+      -s "redirectUris=${redirect_uris_json}" \
+      -s "webOrigins=${web_origins_json}" \
+      -s "directAccessGrantsEnabled=false" 2>/dev/null || true
+    echo "  -> client '${client_id}' already exists (ID: ${existing_id}), origins synced" >&2
   fi
 
   # groups scope 할당
@@ -179,7 +189,7 @@ if kubectl get configmap argocd-cm -n devtools &>/dev/null; then
   kubectl patch configmap argocd-cm -n devtools --type merge -p "{
     \"data\": {
       \"url\": \"https://argocd.${DOMAIN}\",
-      \"oidc.config\": \"name: Keycloak\nissuer: ${ISSUER_URL}\nclientID: argocd\nclientSecret: \$oidc.keycloak.clientSecret\nrequestedScopes:\n  - openid\n  - profile\n  - email\n  - groups\ninsecureSkipVerify: true\n\"
+      \"oidc.config\": \"name: Keycloak\nissuer: ${ISSUER_URL}\nclientID: argocd\nclientSecret: \$oidc.keycloak.clientSecret\nrequestedScopes:\n  - openid\n  - profile\n  - email\n  - groups\n\"
     }
   }" 2>/dev/null || echo "WARN: argocd-cm patch failed"
 

@@ -299,6 +299,47 @@ run_static() {
   check R46 "every Application fits its AppProject policy (2026-08-21)" \
     python3 scripts/test/lib/check-appproject-fit.py
 
+  # 2026-08-28: 08-6 renders the canonical GitOps Keycloak ApisixUpstream/Route
+  # before 11-keycloak runs. A second inline route used an ExternalName backend and
+  # resolveGranularity=service, overwriting that route with an incompatible shape.
+  check_not R98 "11-keycloak does not overwrite the GitOps Keycloak APISIX route (2026-08-28)" \
+    grep -qE '^[[:space:]]*(kind: ApisixRoute|type: ExternalName|name: keycloak-server)' scripts/cluster/11-keycloak.sh
+
+  # 2026-08-28: 08-6 used to mask a canonical route-render/apply failure with `|| true`.
+  # Phase 2 keeps 08-6 non-critical, so 11-keycloak is the explicit critical gate: a
+  # failure injected before kubectl receives a manifest must stop 08-6, and a missing
+  # HTTPS endpoint must stop 11 rather than print a misleading completion banner.
+  local route_apply_fail_tmp
+  route_apply_fail_tmp="$(mktemp -d)"
+  printf '#!/bin/sh\nexit 42\n' > "${route_apply_fail_tmp}/helm"
+  printf '#!/bin/sh\ncat >/dev/null\n' > "${route_apply_fail_tmp}/kubectl"
+  chmod +x "${route_apply_fail_tmp}/helm" "${route_apply_fail_tmp}/kubectl"
+  check_not R99 "08-6 fails when canonical APISIX route rendering fails (2026-08-28)" \
+    env PATH="${route_apply_fail_tmp}:${PATH}" DOMAIN=test.invalid bash scripts/cluster/08-6-tls-routes.sh
+  rm -rf "${route_apply_fail_tmp}"
+  check R100 "Keycloak HTTPS/OIDC prerequisite is a critical failure (2026-08-28)" \
+    bash -c "grep -q 'ERROR: Keycloak HTTPS endpoint not reachable' scripts/cluster/11-keycloak.sh && grep -A5 'ERROR: Keycloak HTTPS endpoint not reachable' scripts/cluster/11-keycloak.sh | grep -q 'exit 1'"
+
+  # 2026-08-28 (#148): Wildcard webOrigins allow cross-origin token abuse from untrusted origins.
+  check_not R101 "no Keycloak client has wildcard webOrigins (2026-08-28)" \
+    bash -c "grep -nE 'webOrigins=\[\"\*\"\]' scripts/cluster/11-2-keycloak-config.sh scripts/cluster/11-3-keycloak-clients.sh | grep -q ."
+
+  # 2026-08-28 (#149): Kubernetes client must use standard authorization code flow, not password grant.
+  check_not R102 "kubernetes Keycloak client has directAccessGrantsEnabled=false (2026-08-28)" \
+    grep -q 'directAccessGrantsEnabled=true' scripts/cluster/11-2-keycloak-config.sh
+
+  # 2026-08-28 (#147): ArgoCD OIDC discovery must authenticate Keycloak TLS with cluster CA.
+  check_not R103 "ArgoCD does not skip Keycloak OIDC TLS verification (2026-08-28)" \
+    grep -rqE "(insecureSkipVerify|oidc\\.tls\\.insecure\\.skip\\.verify)[[:space:]]*[:=][[:space:]]*['\\\"]?true['\\\"]?" gitops/charts/narwhal-platform/templates/argocd-config.yaml scripts/cluster/11-3-keycloak-clients.sh scripts/cluster/13-argocd.sh
+
+  # 2026-08-28 (#141): APISIX gateway openid-connect must verify Keycloak TLS certificate.
+  check_not R104 "APISIX openid-connect does not disable ssl_verify (2026-08-28)" \
+    grep -q 'ssl_verify: false' gitops/charts/narwhal-platform/templates/apisix-routes.yaml
+
+  # 2026-08-28 (#142): APISIX Admin API must be restricted to internal cluster CIDRs.
+  check_not R105 "APISIX Admin API allowlist does not use unrestricted 0.0.0.0/0 (2026-08-28)" \
+    grep -q '0\.0\.0\.0/0' gitops/charts/narwhal-apps/templates/apisix.yaml
+
   # 2026-08-21: clone, the config copy, commit and push were all `|| true`, so a clean
   # install could report success with an empty or stale GitOps source and the symptom
   # — ArgoCD reconciling nothing — appeared days from the cause.
@@ -855,9 +896,13 @@ parts = text.split("---\napiVersion: kyverno.io/v1\nkind: ClusterPolicy\nmetadat
 assert len(parts) == 2, "expected verify-image-signatures policy anchor in kyverno-policies.yaml"
 with open(f"{tmp}/kyverno-policies.yaml", "w") as f:
     f.write(parts[0])
+with open(f"{tmp}/kyverno-policies-invalid-key.yaml", "w") as f:
+    f.write(text.replace("publicKeys:", "publickeys:"))
 PYEOF
   check_not R75 "check-kyverno-signed-image-policy.py catches a removed verify-image-signatures policy (2026-08-25)" \
     python3 scripts/test/lib/check-kyverno-signed-image-policy.py "${kyverno_signed_img_tmp}/kyverno-policies.yaml"
+  check_not R75b "check-kyverno-signed-image-policy.py catches a mis-cased Kyverno publicKeys field (2026-08-28)" \
+    python3 scripts/test/lib/check-kyverno-signed-image-policy.py "${kyverno_signed_img_tmp}/kyverno-policies-invalid-key.yaml"
   rm -rf "${kyverno_signed_img_tmp}"
 
   # narwhal#35: 10-verify-image-signatures.sh exists as the air-gap image signature gate.

@@ -320,7 +320,7 @@ spec:
             - count: 1
               entries:
                 - keys:
-                    publickeys: |
+                    publicKeys: |
                       -----BEGIN PUBLIC KEY-----
                       MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE/narwhal/cosign/trusted/signer/pub
                       -----END PUBLIC KEY-----
@@ -330,7 +330,7 @@ spec:
                 - count: 1
                   entries:
                     - keys:
-                        publickeys: |
+                        publicKeys: |
                           -----BEGIN PUBLIC KEY-----
                           MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE/narwhal/cosign/trusted/signer/pub
                           -----END PUBLIC KEY-----

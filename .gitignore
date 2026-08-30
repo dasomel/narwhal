@@ -19,6 +19,10 @@ logs/
 
 # Secrets
 secrets/
+# The vendored dashboard chart contains a generated-at-install CSRF Secret manifest;
+# it is chart source, not a credential committed by the platform.
+!gitops/charts/kubernetes-dashboard/templates/secrets/
+!gitops/charts/kubernetes-dashboard/templates/secrets/csrf.yaml
 *.pem
 *.key
 kubeconfig

@@ -12,7 +12,12 @@ echo "=== Applying APISIX Routes ==="
 
 # Apply APISIX routes (after cert is ready and APISIX is running)
 echo "Applying APISIX routes..."
-helm template narwhal-platform /home/vagrant/configs/gitops/charts/narwhal-platform --set baseDomain="${DOMAIN}" --show-only templates/apisix-routes.yaml 2>/dev/null | kubectl apply -f - || true
+if ! helm template narwhal-platform /home/vagrant/configs/gitops/charts/narwhal-platform \
+  --set baseDomain="${DOMAIN}" --show-only templates/apisix-routes.yaml | kubectl apply -f -; then
+  echo "ERROR: could not apply the canonical APISIX routes." >&2
+  echo "       11-keycloak.sh is the later critical HTTPS/OIDC gate; do not continue by applying a second route." >&2
+  exit 1
+fi
 
 # Wait for APISIX Ingress Controller to sync routes
 echo "Waiting for APISIX routes to sync..."

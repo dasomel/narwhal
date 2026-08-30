@@ -12,8 +12,9 @@ source /home/vagrant/scripts/common/lib.sh
 # - CNPG narwhal-db에 keycloak user/db 생성
 # - keycloak-db-secret 생성 (iam ns)
 # - Keycloak CR 생성 (Operator가 pod 관리)
-# - ExternalName + ApisixRoute bootstrap: keycloak.local.narwhal.internal → keycloak-service:8080
-# Depends on: 07-cnpg.sh (narwhal-db ready), 08-1-networking.sh (APISIX ready)
+# - Keycloak HTTPS route is installed by 08-6-tls-routes.sh from the canonical
+#   GitOps ApisixUpstream/ApisixRoute template.
+# Depends on: 07-cnpg.sh (narwhal-db ready), 08-6-tls-routes.sh (APISIX route ready)
 
 KEYCLOAK_VERSION="${KEYCLOAK_VERSION:-26.5.7}"
 DOMAIN="${DOMAIN:-local.narwhal.internal}"
@@ -241,61 +242,6 @@ if [ "${KEYCLOAK_READY}" = "false" ]; then
 fi
 
 #=========================================
-# Create ExternalName Service in platform-system
-# Keycloak Operator creates 'keycloak-service' (NOT 'keycloak')
-#=========================================
-echo "=== Creating ExternalName Service for APISIX routing ==="
-
-kubectl apply -f - <<'EOF'
-apiVersion: v1
-kind: Service
-metadata:
-  name: keycloak-server
-  namespace: platform-system
-spec:
-  type: ExternalName
-  externalName: keycloak-service.iam.svc.cluster.local
-  ports:
-    - port: 8080
-EOF
-
-#=========================================
-# Create ApisixRoute for Keycloak HTTPS access
-# No openid-connect plugin — Keycloak IS the IdP
-#=========================================
-echo "=== Applying Keycloak ApisixRoute ==="
-
-kubectl apply -f - <<EOF
-apiVersion: apisix.apache.org/v2
-kind: ApisixRoute
-metadata:
-  name: keycloak
-  namespace: platform-system
-spec:
-  http:
-    - name: keycloak
-      match:
-        hosts:
-          - keycloak.${DOMAIN}
-        paths:
-          - "/*"
-      backends:
-        - serviceName: keycloak-server
-          servicePort: 8080
-          resolveGranularity: service
-      plugins:
-        - name: response-rewrite
-          enable: true
-          config:
-            headers:
-              set:
-                Strict-Transport-Security: "max-age=31536000; includeSubDomains"
-                X-Content-Type-Options: "nosniff"
-EOF
-
-sleep 5
-
-#=========================================
 # Verify HTTPS endpoint
 #=========================================
 echo "Verifying Keycloak HTTPS endpoint..."
@@ -313,9 +259,11 @@ for attempt in $(seq 1 20); do
 done
 
 if [ "${KEYCLOAK_REACHABLE}" = "false" ]; then
-  echo "WARN: Keycloak HTTPS endpoint not reachable after timeout."
+  echo "ERROR: Keycloak HTTPS endpoint not reachable after timeout." >&2
   echo "  Check: kubectl get pods -n iam"
   echo "  Check: kubectl logs -n iam -l app=keycloak --tail=50"
+  echo "  Check: canonical route from 08-6-tls-routes.sh was applied successfully" >&2
+  exit 1
 fi
 
 #=========================================

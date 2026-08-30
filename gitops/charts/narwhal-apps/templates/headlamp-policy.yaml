@@ -25,3 +25,22 @@ spec:
       selfHeal: true
     syncOptions:
       - ServerSideApply=true
+  # Kyverno injects autogen rules — suppress ArgoCD drift on ClusterPolicy.
+  ignoreDifferences:
+    - group: kyverno.io
+      kind: ClusterPolicy
+      jqPathExpressions:
+        - .spec.rules[].match
+        - .spec.rules[].exclude
+        - .spec.rules[].validate
+        - .spec.rules[].verifyImages
+        - .spec.rules[].mutate
+        - .spec.rules[].generate
+        - .spec.rules[].skipBackgroundRequests
+        - .spec.background
+        - .spec.admission
+        - .spec.emitWarning
+        - .spec.failurePolicy
+        - .spec.validationFailureAction
+        - .metadata.annotations
+        - .metadata.labels

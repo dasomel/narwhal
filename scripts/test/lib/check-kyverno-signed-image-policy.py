@@ -64,6 +64,15 @@ def main() -> int:
         print(f"VIOLATION: attestations (SBOM predicate verification) missing in verifyImages configuration", file=sys.stderr)
         return 1
 
+    attestors = [
+        *cfg["attestors"],
+        *(attestor for attestation in cfg["attestations"] for attestor in attestation.get("attestors", [])),
+    ]
+    entries = [entry for attestor in attestors for entry in attestor.get("entries", [])]
+    if not entries or any(not entry.get("keys", {}).get("publicKeys") for entry in entries):
+        print("VIOLATION: every signature and attestation attestor must use keys.publicKeys", file=sys.stderr)
+        return 1
+
     print(f"OK: verify-image-signatures policy in {path} is valid (mode: {mode})", file=sys.stderr)
     return 0
 

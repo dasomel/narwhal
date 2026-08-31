@@ -67,6 +67,19 @@ ensure_keycloak_client() {
   local client_id="$1"
   local redirect_uris_json="$2"     # JSON array 문자열, e.g. '["https://..."]'
   local service_accounts="${3:-false}"
+  local web_origins_json
+  web_origins_json=$(echo "${redirect_uris_json}" | python3 -c '
+import json
+import re
+import sys
+
+origins = {
+    match.group("origin")
+    for uri in json.load(sys.stdin)
+    if (match := re.match(r"^(?P<origin>https?://[^/*]+)", uri))
+}
+print(json.dumps(sorted(origins), separators=(",", ":")))
+')
 
   local existing_id
   existing_id=$(kc_exec get clients -r "${REALM}" \
@@ -91,7 +104,7 @@ for c in clients:
       -s "serviceAccountsEnabled=${service_accounts}" \
       -s "protocol=openid-connect" \
       -s "redirectUris=${redirect_uris_json}" \
-      -s 'webOrigins=["*"]' >&2
+      -s "webOrigins=${web_origins_json}" >&2
 
     existing_id=$(kc_exec get clients -r "${REALM}" \
       -q "clientId=${client_id}" 2>/dev/null \
@@ -105,7 +118,10 @@ for c in clients:
 ")
     echo "  -> '${client_id}' 생성 완료 (ID: ${existing_id})" >&2
   else
-    echo "  -> '${client_id}' 이미 존재 (ID: ${existing_id})" >&2
+    kc_exec update "clients/${existing_id}" -r "${REALM}" \
+      -s "redirectUris=${redirect_uris_json}" \
+      -s "webOrigins=${web_origins_json}" >&2
+    echo "  -> '${client_id}' 이미 존재 (ID: ${existing_id}), origins synced" >&2
   fi
 
   # groups scope 할당 (OIDC 로그인 클라이언트에만)

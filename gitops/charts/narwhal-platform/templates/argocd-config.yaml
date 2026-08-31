@@ -24,6 +24,7 @@ data:
     issuer: https://keycloak.{{ .Values.baseDomain }}/realms/narwhal
     clientID: argocd
     clientSecret: $oidc.keycloak.clientSecret
+    rootCA: $oidc.keycloak.rootCA
     requestedScopes:
       - openid
       - profile

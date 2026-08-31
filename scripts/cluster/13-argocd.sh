@@ -193,6 +193,41 @@ EOF
 
 # D-authmig: Configure ArgoCD for Keycloak OIDC
 # argocd-oidc-secret (devtools) created by 11-3-keycloak-clients.sh with keycloak client 'argocd'
+# 08-6-tls-routes.sh tolerates cert-manager's initial issuance race after the same
+# bounded wait. Keep bootstrap resilient too: the non-OIDC ArgoCD setup below must
+# not be held hostage by a certificate that cert-manager will eventually provide.
+ARGOCD_OIDC_CA=""
+for attempt in $(seq 1 10); do
+  ARGOCD_OIDC_CA=$(kubectl get secret narwhal-wildcard-tls -n platform-system \
+    -o jsonpath='{.data.ca\.crt}' 2>/dev/null | base64 -d 2>/dev/null || true)
+  if [ -n "${ARGOCD_OIDC_CA}" ]; then
+    echo "ArgoCD OIDC CA ready"
+    break
+  fi
+  echo "ArgoCD OIDC CA not ready yet, attempt ${attempt}/10..."
+  sleep 10
+done
+
+ARGOCD_OIDC_CONFIG=""
+if [ -n "${ARGOCD_OIDC_CA}" ]; then
+  ARGOCD_OIDC_CONFIG=$(cat <<EOF
+  oidc.config: |
+    name: Keycloak
+    issuer: ${KEYCLOAK_ISSUER}
+    clientID: argocd
+    clientSecret: \$oidc.keycloak.clientSecret
+    rootCA: \$oidc.keycloak.rootCA
+    requestedScopes:
+      - openid
+      - profile
+      - email
+      - groups
+EOF
+)
+else
+  echo "WARN: narwhal-wildcard-tls has no ca.crt after 10 attempts; skipping verified Keycloak OIDC setup" >&2
+fi
+
 cat <<EOF | kubectl apply -f -
 apiVersion: v1
 kind: ConfigMap
@@ -216,16 +251,7 @@ data:
   accounts.narwhal-portal: apiKey,login
   url: https://argocd.${DOMAIN}
   server.insecure: "true"
-  oidc.config: |
-    name: Keycloak
-    issuer: ${KEYCLOAK_ISSUER}
-    clientID: argocd
-    clientSecret: \$oidc.keycloak.clientSecret
-    requestedScopes:
-      - openid
-      - profile
-      - email
-      - groups
+${ARGOCD_OIDC_CONFIG}
 EOF
 
 #=========================================
@@ -241,20 +267,16 @@ EOF
 # while the chart is sitting in the registry.
 #
 # argocd-tls-certs-cm is keyed by hostname and read by repo-server; the ArgoCD install
-# manifest already mounts it, so populating the key is the whole change. `|| true` because
-# a cluster whose wildcard cert has not been issued yet must not fail the install here —
-# 08-6 re-runs and this step is idempotent.
+# manifest already mounts it, so populating the key is the whole change.
 #=========================================
 echo "=== Trusting the narwhal CA for ArgoCD repository access ==="
-ARGOCD_CA=$(kubectl get secret narwhal-wildcard-tls -n platform-system \
-  -o jsonpath='{.data.ca\.crt}' 2>/dev/null | base64 -d 2>/dev/null || true)
-if [ -n "${ARGOCD_CA}" ]; then
+if [ -n "${ARGOCD_OIDC_CA}" ]; then
   # Both hostnames. The Application names the in-cluster service, but Gitea's index.yaml
   # redirects the actual download to the external host, and the cert is looked up by the
   # host ArgoCD was configured with — one key alone leaves the other leg unverifiable.
   kubectl create configmap argocd-tls-certs-cm -n devtools \
-    --from-literal="gitea.${DOMAIN}=${ARGOCD_CA}" \
-    --from-literal="gitea-http.devtools.svc.cluster.local=${ARGOCD_CA}" \
+    --from-literal="gitea.${DOMAIN}=${ARGOCD_OIDC_CA}" \
+    --from-literal="gitea-http.devtools.svc.cluster.local=${ARGOCD_OIDC_CA}" \
     --dry-run=client -o yaml | kubectl apply -f -
   kubectl label configmap argocd-tls-certs-cm -n devtools \
     app.kubernetes.io/name=argocd-tls-certs-cm app.kubernetes.io/part-of=argocd --overwrite >/dev/null
@@ -325,9 +347,15 @@ EOF
 ARGOCD_CLIENT_SECRET=$(kubectl get secret argocd-oidc-secret -n devtools \
   -o jsonpath='{.data.client-secret}' 2>/dev/null | base64 -d || echo "")
 if [ -n "${ARGOCD_CLIENT_SECRET}" ]; then
-  kubectl patch secret argocd-secret -n devtools --type=merge \
-    -p "{\"stringData\":{\"oidc.keycloak.clientSecret\":\"${ARGOCD_CLIENT_SECRET}\"}}"
-  echo "argocd-secret patched with oidc.keycloak.clientSecret"
+  if [ -n "${ARGOCD_OIDC_CA}" ]; then
+    kubectl patch secret argocd-secret -n devtools --type=merge \
+      -p "{\"stringData\":{\"oidc.keycloak.clientSecret\":\"${ARGOCD_CLIENT_SECRET}\",\"oidc.keycloak.rootCA\":\"${ARGOCD_OIDC_CA//$'\n'/\\n}\"}}"
+    echo "argocd-secret patched with Keycloak OIDC client secret and CA"
+  else
+    kubectl patch secret argocd-secret -n devtools --type=merge \
+      -p "{\"stringData\":{\"oidc.keycloak.clientSecret\":\"${ARGOCD_CLIENT_SECRET}\"}}"
+    echo "argocd-secret patched with Keycloak OIDC client secret; CA-dependent OIDC is deferred" >&2
+  fi
 else
   echo "WARN: argocd-oidc-secret not found in devtools — run 11-3-keycloak-clients.sh first"
 fi

@@ -331,14 +331,39 @@ run_static() {
   # 2026-08-28 (#147): ArgoCD OIDC discovery must authenticate Keycloak TLS with cluster CA.
   check_not R103 "ArgoCD does not skip Keycloak OIDC TLS verification (2026-08-28)" \
     grep -rqE "(insecureSkipVerify|oidc\\.tls\\.insecure\\.skip\\.verify)[[:space:]]*[:=][[:space:]]*['\\\"]?true['\\\"]?" gitops/charts/narwhal-platform/templates/argocd-config.yaml scripts/cluster/11-3-keycloak-clients.sh scripts/cluster/13-argocd.sh
+  check R103b "GitOps ArgoCD OIDC references its CA secret value (2026-08-31)" \
+    grep -Fq 'rootCA: $oidc.keycloak.rootCA' gitops/charts/narwhal-platform/templates/argocd-config.yaml
+  check R103c "ArgoCD bootstrap retries CA then defers only CA-dependent OIDC (2026-08-31)" \
+    bash -c "grep -Fq 'for attempt in \$(seq 1 10); do' scripts/cluster/13-argocd.sh && grep -Fq 'sleep 10' scripts/cluster/13-argocd.sh && grep -Fq 'skipping verified Keycloak OIDC setup' scripts/cluster/13-argocd.sh && grep -Fq 'CA-dependent OIDC is deferred' scripts/cluster/13-argocd.sh && grep -Fq 'rootCA: \\\$oidc.keycloak.rootCA' scripts/cluster/13-argocd.sh && awk '/ARGOCD_OIDC_CONFIG=\"\"/,/^cat <<EOF \\| kubectl apply -f -/ { if (/exit 1/) failed=1 } END { exit failed }' scripts/cluster/13-argocd.sh"
 
   # 2026-08-28 (#141): APISIX gateway openid-connect must verify Keycloak TLS certificate.
   check_not R104 "APISIX openid-connect does not disable ssl_verify (2026-08-28)" \
     grep -q 'ssl_verify: false' gitops/charts/narwhal-platform/templates/apisix-routes.yaml
+  check R104b "APISIX trusts the self-signed root from tls.crt (2026-08-31)" \
+    grep -q 'ssl_trusted_certificate: /usr/local/apisix/conf/cert/narwhal/tls.crt' gitops/charts/narwhal-apps/templates/apisix.yaml
 
   # 2026-08-28 (#142): APISIX Admin API must be restricted to internal cluster CIDRs.
   check_not R105 "APISIX Admin API allowlist does not use unrestricted 0.0.0.0/0 (2026-08-28)" \
     grep -q '0\.0\.0\.0/0' gitops/charts/narwhal-apps/templates/apisix.yaml
+  check R105b "APISIX Admin NetworkPolicy allows only controller and portal (2026-08-31)" \
+    python3 scripts/test/lib/check-apisix-admin-ingress-policy.py
+
+  local apisix_admin_np_drift_tmp
+  apisix_admin_np_drift_tmp="$(mktemp -d)"
+  python3 - "${apisix_admin_np_drift_tmp}" <<'PYEOF'
+import sys, yaml
+tmp = sys.argv[1]
+with open("gitops/resources/apisix-admin-ingress-policy.yaml") as f:
+    docs = list(yaml.safe_load_all(f))
+for doc in docs:
+    if doc and doc.get("kind") == "NetworkPolicy":
+        doc["spec"]["ingress"] = [{"from": [{"ipBlock": {"cidr": "10.0.0.0/8"}}]}]
+with open(f"{tmp}/apisix-admin-ingress-policy.yaml", "w") as f:
+    yaml.safe_dump_all(docs, f)
+PYEOF
+  check_not R105c "APISIX Admin policy checker catches a broad CIDR regression (2026-08-31)" \
+    python3 scripts/test/lib/check-apisix-admin-ingress-policy.py "${apisix_admin_np_drift_tmp}/apisix-admin-ingress-policy.yaml"
+  rm -rf "${apisix_admin_np_drift_tmp}"
 
   # 2026-08-21: clone, the config copy, commit and push were all `|| true`, so a clean
   # install could report success with an empty or stale GitOps source and the symptom
@@ -1292,6 +1317,7 @@ print(" ".join(out))
   # In-cluster resolution is what the gateway-OIDC plugin actually depends on.
   local probe="regression-probe-$$"
   if kubectl -n platform-system run "${probe}" --image=curlimages/curl:8.11.0 --restart=Never \
+      --labels=app.kubernetes.io/name=apisix-ingress-controller \
       --command -- sleep 120 >/dev/null 2>&1 \
     && kubectl -n platform-system wait --for=condition=Ready "pod/${probe}" --timeout=90s >/dev/null 2>&1; then
 

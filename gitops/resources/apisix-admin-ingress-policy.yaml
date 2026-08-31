@@ -1,0 +1,35 @@
+---
+# APISIX Admin stays ClusterIP and API-key authenticated, but those are not a pod-level
+# boundary: its RFC1918 allowlists admit every workload sharing the cluster networks.
+# Only the ingress controller and Narwhal portal use this API in this repository.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: apisix-admin-ingress-policy
+  namespace: platform-system
+  labels:
+    app.kubernetes.io/managed-by: narwhal-gitops
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: apisix
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: apisix-ingress-controller
+      ports:
+        - protocol: TCP
+          port: 9180
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: devtools
+          podSelector:
+            matchLabels:
+              app: narwhal-portal
+      ports:
+        - protocol: TCP
+          port: 9180

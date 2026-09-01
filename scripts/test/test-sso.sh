@@ -271,7 +271,8 @@ fi
 if should_run "token"; then
   echo "--- [4/9] Token Flows (Password Grant) ---"
 
-  # Test with kubernetes client (public)
+  # The kubernetes client is public but directAccessGrantsEnabled=false, so a
+  # password grant must be REJECTED rather than minting a token.
   TOKEN_RESP=$(curl -sk -X POST "${KEYCLOAK_URL}/realms/kubernetes/protocol/openid-connect/token" \
     -d "client_id=kubernetes" \
     -d "username=admin" \
@@ -279,34 +280,20 @@ if should_run "token"; then
     -d "grant_type=password" 2>/dev/null)
 
   ACCESS_TOKEN=$(echo "${TOKEN_RESP}" | python3 -c 'import sys,json; print(json.load(sys.stdin).get("access_token",""))' 2>/dev/null)
+  ERROR_CODE=$(echo "${TOKEN_RESP}" | python3 -c 'import sys,json; print(json.load(sys.stdin).get("error","unknown"))' 2>/dev/null)
+  ERROR_DESC=$(echo "${TOKEN_RESP}" | python3 -c 'import sys,json; print(json.load(sys.stdin).get("error_description",""))' 2>/dev/null)
 
   if [ -n "${ACCESS_TOKEN}" ]; then
-    pass "kubernetes client: token obtained"
-    TOKEN_PAYLOAD=$(decode_jwt_payload "${ACCESS_TOKEN}")
-    CLAIMS=$(echo "${TOKEN_PAYLOAD}" \
-      | python3 -c '
-import sys,json
-d = json.load(sys.stdin)
-groups = d.get("groups", [])
-print(f"groups={groups}")
-' 2>/dev/null)
-    if echo "${CLAIMS}" | grep -q "cluster-admin"; then
-      pass "kubernetes client: groups claim includes cluster-admin"
-    else
-      fail "kubernetes client: groups claim missing — ${CLAIMS}"
-    fi
-
-    # Audience mapper 검증 (CLAUDE.md 실수 패턴: ALL OIDC clients need oidc-audience-mapper)
-    # Without mapper: JWT aud = ["account"] → K8s API rejects with expected audience "kubernetes"
-    TOKEN_AUD=$(echo "${TOKEN_PAYLOAD}" | python3 -c 'import sys,json; d=json.load(sys.stdin); aud=d.get("aud",[]); print(aud if isinstance(aud,str) else " ".join(aud))' 2>/dev/null)
-    if echo "${TOKEN_AUD}" | grep -q "kubernetes"; then
-      pass "kubernetes client: token audience includes 'kubernetes' (audience mapper OK)"
-    else
-      fail "kubernetes client: token audience missing 'kubernetes' — aud=[${TOKEN_AUD}] (add oidc-audience-mapper to client)"
-    fi
+    fail "kubernetes client: password grant unexpectedly succeeded"
   else
-    ERROR=$(echo "${TOKEN_RESP}" | python3 -c 'import sys,json; d=json.load(sys.stdin); print(d.get("error_description",d.get("error","unknown")))' 2>/dev/null)
-    fail "kubernetes client: ${ERROR}"
+    case "${ERROR_CODE}" in
+      unauthorized_client|unsupported_grant_type)
+        pass "kubernetes client: password grant rejected (${ERROR_CODE})"
+        ;;
+      *)
+        fail "kubernetes client: unexpected password-grant response (${ERROR_CODE}: ${ERROR_DESC})"
+        ;;
+    esac
   fi
 
   # Test with argocd client (confidential, with explicit groups scope)

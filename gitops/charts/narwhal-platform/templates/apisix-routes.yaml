@@ -161,7 +161,7 @@ spec:
                 X-Frame-Options: "SAMEORIGIN"
                 X-XSS-Protection: "1; mode=block"
 ---
-# Gitea Git Bypass (no OIDC for HTTP git operations and API)
+# Gitea Git Bypass (no OIDC for HTTP git operations and specific machine endpoints)
 apiVersion: apisix.apache.org/v2
 kind: ApisixUpstream
 metadata:
@@ -200,7 +200,13 @@ spec:
             # Unknown with `error fetching chart` even though the chart was sitting in the
             # registry. Reads are anonymous-safe here (public packages); writes still need
             # the token that push-to-gitea.sh and the chart publisher supply.
-            value: "(\\.git(/|$)|/info/refs|/git-upload-pack|/git-receive-pack|^/api/v1/|^/api/packages/|^/login/oauth/|^/user/login)"
+            #
+            # The only repo-verified public REST callers are verify-cluster.sh's read-only
+            # HTTPS probes for /api/v1/version and the GitOps repo metadata; everything else
+            # in this repo and narwhal-portal reaches Gitea via localhost or gitea-http.
+            # No live cluster was available to confirm traffic from external clients, so this
+            # list is intentionally limited to those source-verified paths.
+            value: "(\\.git(/|$)|/info/refs|/git-upload-pack|/git-receive-pack|^/api/v1/version$|^/api/v1/repos/gitea-admin/narwhal-gitops$|^/api/packages/|^/login/oauth/|^/user/login)"
       upstreams:
         - name: gitea-http
       plugins:

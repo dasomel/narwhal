@@ -278,6 +278,15 @@ spec:
               port: 3000
             initialDelaySeconds: 10
             periodSeconds: 10
+          livenessProbe:
+            # Issue #63: /api/health/live exists but was never wired — process/event-loop
+            # liveness only, no external dependency checks (Valkey/K8s API down must not
+            # restart the pod; that is readinessProbe's job above).
+            httpGet:
+              path: /api/health/live
+              port: 3000
+            initialDelaySeconds: 15
+            periodSeconds: 15
       volumes:
         # narwhal-ca-cert (key ca.crt) is distributed to devtools by 08-6-tls-routes.sh.
         - name: narwhal-ca

@@ -289,6 +289,19 @@ else
   echo "  -> kubernetes client already exists (ID: ${K8S_CLIENT_ID}), directAccessGrants disabled"
 fi
 
+# Post-creation preflight: ensure kubernetes client adheres to security contract (#148, #149)
+K8S_ROPC=$(kc_exec get "clients/${K8S_CLIENT_ID}" -r "${REALM}" 2>/dev/null | jq -r '.directAccessGrantsEnabled // false')
+K8S_ORIGINS=$(kc_exec get "clients/${K8S_CLIENT_ID}" -r "${REALM}" 2>/dev/null | jq -r '.webOrigins[]? // empty')
+if [ "${K8S_ROPC}" = "true" ]; then
+  echo "ERROR: kubernetes client has ROPC enabled (directAccessGrants must be disabled)" >&2
+  exit 1
+fi
+if echo "${K8S_ORIGINS}" | grep -qE '[*+]'; then
+  echo "ERROR: kubernetes client has wildcard or relative webOrigins" >&2
+  exit 1
+fi
+echo "  -> kubernetes client security verified (directAccessGrantsEnabled=false, webOrigins=[\"http://localhost\"])"
+
 # groups scope를 kubernetes client에 할당
 kc_exec update "clients/${K8S_CLIENT_ID}/default-client-scopes/${GROUPS_SCOPE_ID}" \
   -r "${REALM}" 2>/dev/null || true

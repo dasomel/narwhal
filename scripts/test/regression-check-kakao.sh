@@ -328,6 +328,111 @@ run_static() {
   check_not R102 "kubernetes Keycloak client has directAccessGrantsEnabled=false (2026-08-28)" \
     grep -q 'directAccessGrantsEnabled=true' scripts/cluster/11-2-keycloak-config.sh
 
+  # Narwhal#148 (2026-09-07): Wildcard webOrigins allow cross-origin token theft and CSRF.
+  # Client provisioning scripts must never emit wildcard (*) or relative (+) webOrigins.
+  check R118 "Keycloak client provisioning scripts have zero wildcard webOrigins (Narwhal#148, 2026-09-07)" \
+    python3 -c '
+import sys, re
+files = ["scripts/cluster/11-2-keycloak-config.sh", "scripts/cluster/11-3-keycloak-clients.sh", "scripts/cluster/13-2-narwhal-portal-bindings.sh"]
+found = []
+for fpath in files:
+    with open(fpath, "r", encoding="utf-8") as f:
+        for idx, line in enumerate(f, 1):
+            s = line.strip()
+            if s.startswith("#"):
+                continue
+            if "webOrigins" in line and re.search(r"webOrigins=.*[*+]", line):
+                found.append(f"{fpath}:{idx}: {s}")
+if found:
+    print("\n".join(found), file=sys.stderr)
+    sys.exit(1)
+'
+
+  local kc_wildcard_origin_drift_tmp
+  kc_wildcard_origin_drift_tmp="$(mktemp -d)"
+  cp scripts/cluster/11-3-keycloak-clients.sh "${kc_wildcard_origin_drift_tmp}/11-3-keycloak-clients.sh"
+  sed -i.bak 's/webOrigins=\${web_origins_json}/webOrigins=\["\*"\]/' \
+    "${kc_wildcard_origin_drift_tmp}/11-3-keycloak-clients.sh"
+  rm -f "${kc_wildcard_origin_drift_tmp}/11-3-keycloak-clients.sh.bak"
+  check_not R118b "R118 catches a reintroduced wildcard webOrigins in client scripts (Narwhal#148, 2026-09-07)" \
+    python3 -c '
+import sys, re
+with open(sys.argv[1], "r", encoding="utf-8") as f:
+    for idx, line in enumerate(f, 1):
+        s = line.strip()
+        if s.startswith("#"):
+            continue
+        if "webOrigins" in line and re.search(r"webOrigins=.*[*+]", line):
+            sys.exit(1)
+' "${kc_wildcard_origin_drift_tmp}/11-3-keycloak-clients.sh"
+  rm -rf "${kc_wildcard_origin_drift_tmp}"
+
+  # Narwhal#148 (2026-09-07): Bootstrap-time validation fails on unexpected wildcard origins.
+  check R119 "bootstrap validator passes clean production client inventory (Narwhal#148, 2026-09-07)" \
+    bash scripts/cluster/validate-keycloak-clients.sh --input scripts/test/fixtures/keycloak-clients.json narwhal
+
+  local kc_validator_origin_drift_tmp
+  kc_validator_origin_drift_tmp="$(mktemp -d)"
+  cp scripts/test/fixtures/keycloak-clients.json "${kc_validator_origin_drift_tmp}/clients.json"
+  sed -i.bak 's#"webOrigins": \["https://argocd.local.narwhal.internal"\]#"webOrigins": \["\*"\]#' \
+    "${kc_validator_origin_drift_tmp}/clients.json"
+  rm -f "${kc_validator_origin_drift_tmp}/clients.json.bak"
+  check_not R119b "bootstrap validator catches an unexpected wildcard webOrigin (Narwhal#148, 2026-09-07)" \
+    bash scripts/cluster/validate-keycloak-clients.sh --input "${kc_validator_origin_drift_tmp}/clients.json" narwhal
+  rm -rf "${kc_validator_origin_drift_tmp}"
+
+  # Narwhal#149 (2026-09-07): Kubernetes client and service clients must disable Direct Access Grants (ROPC).
+  check R120 "all Keycloak clients explicitly disable directAccessGrants (Narwhal#149, 2026-09-07)" \
+    python3 -c '
+import sys
+files = ["scripts/cluster/11-2-keycloak-config.sh", "scripts/cluster/11-3-keycloak-clients.sh", "scripts/cluster/13-2-narwhal-portal-bindings.sh"]
+found_true = []
+for fpath in files:
+    with open(fpath, "r", encoding="utf-8") as f:
+        for idx, line in enumerate(f, 1):
+            s = line.strip()
+            if s.startswith("#"):
+                continue
+            if "directAccessGrantsEnabled=true" in line:
+                found_true.append(f"{fpath}:{idx}: {s}")
+if found_true:
+    print("\n".join(found_true), file=sys.stderr)
+    sys.exit(1)
+'
+
+  local kc_ropc_drift_tmp
+  kc_ropc_drift_tmp="$(mktemp -d)"
+  cp scripts/cluster/11-2-keycloak-config.sh "${kc_ropc_drift_tmp}/11-2-keycloak-config.sh"
+  sed -i.bak 's/directAccessGrantsEnabled=false/directAccessGrantsEnabled=true/' \
+    "${kc_ropc_drift_tmp}/11-2-keycloak-config.sh"
+  rm -f "${kc_ropc_drift_tmp}/11-2-keycloak-config.sh.bak"
+  check_not R120b "R120 catches a reintroduced directAccessGrantsEnabled=true (Narwhal#149, 2026-09-07)" \
+    python3 -c '
+import sys
+with open(sys.argv[1], "r", encoding="utf-8") as f:
+    for idx, line in enumerate(f, 1):
+        s = line.strip()
+        if s.startswith("#"):
+            continue
+        if "directAccessGrantsEnabled=true" in line:
+            sys.exit(1)
+' "${kc_ropc_drift_tmp}/11-2-keycloak-config.sh"
+  rm -rf "${kc_ropc_drift_tmp}"
+
+  # Narwhal#149 (2026-09-07): Client inventory reports zero unexpected ROPC-enabled clients.
+  check R121 "client inventory reports zero unexpected ROPC-enabled clients (Narwhal#149, 2026-09-07)" \
+    bash -c 'output="$(bash scripts/cluster/validate-keycloak-clients.sh --input scripts/test/fixtures/keycloak-clients.json narwhal)" && echo "${output}" | grep -q "zero unexpected ROPC clients" && echo "${output}" | grep -E "kubernetes\s+\[public\s+\] ROPC: disabled"'
+
+  local kc_validator_ropc_drift_tmp
+  kc_validator_ropc_drift_tmp="$(mktemp -d)"
+  cp scripts/test/fixtures/keycloak-clients.json "${kc_validator_ropc_drift_tmp}/clients.json"
+  sed -i.bak '/"clientId": "kubernetes"/,/directAccessGrantsEnabled/ s/"directAccessGrantsEnabled": false/"directAccessGrantsEnabled": true/' \
+    "${kc_validator_ropc_drift_tmp}/clients.json"
+  rm -f "${kc_validator_ropc_drift_tmp}/clients.json.bak"
+  check_not R121b "bootstrap validator catches an unexpected ROPC-enabled client (Narwhal#149, 2026-09-07)" \
+    bash scripts/cluster/validate-keycloak-clients.sh --input "${kc_validator_ropc_drift_tmp}/clients.json" narwhal
+  rm -rf "${kc_validator_ropc_drift_tmp}"
+
   # 2026-08-28 (#147): ArgoCD OIDC discovery must authenticate Keycloak TLS with cluster CA.
   check_not R103 "ArgoCD does not skip Keycloak OIDC TLS verification (2026-08-28)" \
     grep -rqE "(insecureSkipVerify|oidc\\.tls\\.insecure\\.skip\\.verify)[[:space:]]*[:=][[:space:]]*['\\\"]?true['\\\"]?" gitops/charts/narwhal-platform/templates/argocd-config.yaml scripts/cluster/11-3-keycloak-clients.sh scripts/cluster/13-argocd.sh

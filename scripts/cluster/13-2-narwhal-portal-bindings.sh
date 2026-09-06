@@ -120,7 +120,8 @@ for c in clients:
   else
     kc_exec update "clients/${existing_id}" -r "${REALM}" \
       -s "redirectUris=${redirect_uris_json}" \
-      -s "webOrigins=${web_origins_json}" >&2
+      -s "webOrigins=${web_origins_json}" \
+      -s "directAccessGrantsEnabled=false" >&2
     echo "  -> '${client_id}' 이미 존재 (ID: ${existing_id}), origins synced" >&2
   fi
 
@@ -227,6 +228,19 @@ ADMIN_CLIENT_SECRET=$(ensure_keycloak_client \
   "[]" \
   "true")
 echo "narwhal-portal-admin client secret: 획득 완료 (${#ADMIN_CLIENT_SECRET} chars)"
+
+# Keycloak client security preflight validation (#148, #149)
+echo "Keycloak 클라이언트 보안 검증..."
+VALIDATE_SCRIPT=""
+if [ -f "/home/vagrant/scripts/cluster/validate-keycloak-clients.sh" ]; then
+  VALIDATE_SCRIPT="/home/vagrant/scripts/cluster/validate-keycloak-clients.sh"
+elif [ -f "$(dirname "$0")/validate-keycloak-clients.sh" ]; then
+  VALIDATE_SCRIPT="$(dirname "$0")/validate-keycloak-clients.sh"
+fi
+
+if [ -n "${VALIDATE_SCRIPT}" ]; then
+  bash "${VALIDATE_SCRIPT}" "${REALM}"
+fi
 
 # ──────────────────────────────────────────────
 # STEP 2: OpenBao — KV mount + 정책 + 포털 토큰

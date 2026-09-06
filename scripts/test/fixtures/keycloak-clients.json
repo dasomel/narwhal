@@ -1,0 +1,192 @@
+[
+  {
+    "clientId": "account",
+    "name": "${client_account}",
+    "enabled": true,
+    "publicClient": true,
+    "directAccessGrantsEnabled": false,
+    "webOrigins": []
+  },
+  {
+    "clientId": "account-console",
+    "name": "${client_account-console}",
+    "enabled": true,
+    "publicClient": true,
+    "directAccessGrantsEnabled": false,
+    "webOrigins": ["+"]
+  },
+  {
+    "clientId": "admin-cli",
+    "name": "${client_admin-cli}",
+    "enabled": true,
+    "publicClient": true,
+    "directAccessGrantsEnabled": true,
+    "webOrigins": []
+  },
+  {
+    "clientId": "alertmanager",
+    "name": "alertmanager",
+    "enabled": true,
+    "publicClient": false,
+    "directAccessGrantsEnabled": false,
+    "redirectUris": ["https://alertmanager.local.narwhal.internal/apisix/callback"],
+    "webOrigins": ["https://alertmanager.local.narwhal.internal"]
+  },
+  {
+    "clientId": "argocd",
+    "name": "argocd",
+    "enabled": true,
+    "publicClient": false,
+    "directAccessGrantsEnabled": false,
+    "redirectUris": ["https://argocd.local.narwhal.internal/auth/callback"],
+    "webOrigins": ["https://argocd.local.narwhal.internal"]
+  },
+  {
+    "clientId": "broker",
+    "name": "${client_broker}",
+    "enabled": true,
+    "bearerOnly": true,
+    "directAccessGrantsEnabled": false,
+    "webOrigins": []
+  },
+  {
+    "clientId": "gitea",
+    "name": "gitea",
+    "enabled": true,
+    "publicClient": false,
+    "directAccessGrantsEnabled": false,
+    "redirectUris": [
+      "https://gitea.local.narwhal.internal/user/oauth2/keycloak/callback",
+      "https://gitea.local.narwhal.internal/apisix/callback"
+    ],
+    "webOrigins": ["https://gitea.local.narwhal.internal"]
+  },
+  {
+    "clientId": "grafana",
+    "name": "grafana",
+    "enabled": true,
+    "publicClient": false,
+    "directAccessGrantsEnabled": false,
+    "redirectUris": ["https://grafana.local.narwhal.internal/login/generic_oauth"],
+    "webOrigins": ["https://grafana.local.narwhal.internal"]
+  },
+  {
+    "clientId": "harbor",
+    "name": "harbor",
+    "enabled": true,
+    "publicClient": false,
+    "directAccessGrantsEnabled": false,
+    "redirectUris": ["https://harbor.local.narwhal.internal/c/oidc/callback"],
+    "webOrigins": ["https://harbor.local.narwhal.internal"]
+  },
+  {
+    "clientId": "headlamp",
+    "name": "headlamp",
+    "enabled": true,
+    "publicClient": false,
+    "directAccessGrantsEnabled": false,
+    "redirectUris": ["https://headlamp.local.narwhal.internal/oidc-callback"],
+    "webOrigins": ["https://headlamp.local.narwhal.internal"]
+  },
+  {
+    "clientId": "hubble",
+    "name": "hubble",
+    "enabled": true,
+    "publicClient": false,
+    "directAccessGrantsEnabled": false,
+    "redirectUris": [
+      "https://hubble.local.narwhal.internal/apisix/callback",
+      "https://nfs-quota.local.narwhal.internal/apisix/callback"
+    ],
+    "webOrigins": [
+      "https://hubble.local.narwhal.internal",
+      "https://nfs-quota.local.narwhal.internal"
+    ]
+  },
+  {
+    "clientId": "kubernetes",
+    "name": "kubernetes",
+    "enabled": true,
+    "publicClient": true,
+    "standardFlowEnabled": true,
+    "directAccessGrantsEnabled": false,
+    "redirectUris": ["http://localhost:*"],
+    "webOrigins": ["http://localhost"]
+  },
+  {
+    "clientId": "kubernetes-dashboard",
+    "name": "kubernetes-dashboard",
+    "enabled": true,
+    "publicClient": true,
+    "standardFlowEnabled": true,
+    "directAccessGrantsEnabled": false,
+    "redirectUris": ["https://dashboard.local.narwhal.internal/sso/callback"],
+    "webOrigins": ["https://dashboard.local.narwhal.internal"]
+  },
+  {
+    "clientId": "narwhal-portal",
+    "name": "narwhal-portal",
+    "enabled": true,
+    "publicClient": false,
+    "standardFlowEnabled": true,
+    "directAccessGrantsEnabled": false,
+    "redirectUris": ["https://portal.local.narwhal.internal/api/auth/callback/keycloak"],
+    "webOrigins": ["https://portal.local.narwhal.internal"]
+  },
+  {
+    "clientId": "narwhal-portal-admin",
+    "name": "narwhal-portal-admin",
+    "enabled": true,
+    "publicClient": false,
+    "serviceAccountsEnabled": true,
+    "standardFlowEnabled": false,
+    "directAccessGrantsEnabled": false,
+    "redirectUris": [],
+    "webOrigins": []
+  },
+  {
+    "clientId": "openbao",
+    "name": "openbao",
+    "enabled": true,
+    "publicClient": false,
+    "directAccessGrantsEnabled": false,
+    "redirectUris": [
+      "https://openbao.local.narwhal.internal/ui/vault/auth/oidc/oidc/callback",
+      "https://openbao.local.narwhal.internal/sso/callback",
+      "http://localhost:8250/oidc/callback"
+    ],
+    "webOrigins": [
+      "http://localhost:8250",
+      "https://openbao.local.narwhal.internal"
+    ]
+  },
+  {
+    "clientId": "prometheus",
+    "name": "prometheus",
+    "enabled": true,
+    "publicClient": false,
+    "directAccessGrantsEnabled": false,
+    "redirectUris": ["https://prometheus.local.narwhal.internal/apisix/callback"],
+    "webOrigins": ["https://prometheus.local.narwhal.internal"]
+  },
+  {
+    "clientId": "realm-management",
+    "name": "${client_realm-management}",
+    "enabled": true,
+    "bearerOnly": true,
+    "directAccessGrantsEnabled": false,
+    "webOrigins": []
+  },
+  {
+    "clientId": "velero-ui",
+    "name": "velero-ui",
+    "enabled": true,
+    "publicClient": false,
+    "directAccessGrantsEnabled": false,
+    "redirectUris": [
+      "https://velero-ui.local.narwhal.internal/apisix/callback",
+      "https://velero-ui.local.narwhal.internal/login"
+    ],
+    "webOrigins": ["https://velero-ui.local.narwhal.internal"]
+  }
+]

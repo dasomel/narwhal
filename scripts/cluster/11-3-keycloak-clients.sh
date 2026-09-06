@@ -548,8 +548,10 @@ HUBBLE_KC_ID=$(kc_exec get clients -r "${REALM}" -q "clientId=hubble" 2>/dev/nul
   | jq -r '.[] | select(.clientId=="hubble") | .id')
 if [ -n "${HUBBLE_KC_ID}" ]; then
   kc_exec update "clients/${HUBBLE_KC_ID}" -r "${REALM}" \
-    -s "redirectUris=[\"https://hubble.${DOMAIN}/apisix/callback\",\"https://nfs-quota.${DOMAIN}/apisix/callback\"]" 2>/dev/null || true
-  echo "  -> hubble client redirectUris updated (added nfs-quota)"
+    -s "redirectUris=[\"https://hubble.${DOMAIN}/apisix/callback\",\"https://nfs-quota.${DOMAIN}/apisix/callback\"]" \
+    -s "webOrigins=[\"https://hubble.${DOMAIN}\",\"https://nfs-quota.${DOMAIN}\"]" \
+    -s "directAccessGrantsEnabled=false" 2>/dev/null || true
+  echo "  -> hubble client redirectUris and webOrigins updated (added nfs-quota)"
 fi
 
 # nfs-quota-agent route is now IC-synced from apisix-routes.yaml
@@ -669,10 +671,11 @@ if [ -z "${K8S_DASH_ID}" ]; then
     | jq -r ".[] | select(.clientId==\"${K8S_DASH_CLIENT}\") | .id")
   echo "  -> client '${K8S_DASH_CLIENT}' created (ID: ${K8S_DASH_ID})"
 else
-  # 재실행 안전: 기존 클라이언트에도 PKCE/redirect/webOrigins 를 강제 동기화
+  # 재실행 안전: 기존 클라이언트에도 PKCE/redirect/webOrigins/ROPC 를 강제 동기화
   kc_exec update "clients/${K8S_DASH_ID}" -r "${REALM}" \
     -s "publicClient=true" \
     -s "standardFlowEnabled=true" \
+    -s "directAccessGrantsEnabled=false" \
     -s "redirectUris=[\"${K8S_DASH_REDIRECT}\"]" \
     -s "webOrigins=[\"https://dashboard.${DOMAIN}\"]" \
     -s 'attributes={"pkce.code.challenge.method":"S256"}'
@@ -744,4 +747,22 @@ echo ""
 echo "WARNING: Grafana/ArgoCD env patches may be reverted by ArgoCD selfHeal."
 echo "  Push changes to Gitea for persistence."
 echo ""
+# =============================================================================
+# Keycloak Client Security Preflight (#148, #149)
+# =============================================================================
+echo ""
+echo "=== Validating Keycloak client security posture ==="
+VALIDATE_SCRIPT=""
+if [ -f "/home/vagrant/scripts/cluster/validate-keycloak-clients.sh" ]; then
+  VALIDATE_SCRIPT="/home/vagrant/scripts/cluster/validate-keycloak-clients.sh"
+elif [ -f "$(dirname "$0")/validate-keycloak-clients.sh" ]; then
+  VALIDATE_SCRIPT="$(dirname "$0")/validate-keycloak-clients.sh"
+fi
+
+if [ -n "${VALIDATE_SCRIPT}" ]; then
+  bash "${VALIDATE_SCRIPT}" "${REALM}"
+else
+  echo "WARN: validate-keycloak-clients.sh not found, skipping validation"
+fi
+
 echo "=== [11-3-keycloak-clients.sh] 완료 ==="

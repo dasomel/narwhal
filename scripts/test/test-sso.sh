@@ -343,25 +343,41 @@ if should_run "token"; then
 fi
 
 #=========================================
-# 5. TLS SKIP-VERIFY (self-signed certs)
+# 5. TLS VERIFICATION & CA TRUST (Keycloak SSO)
 #=========================================
 if should_run "tls"; then
-  echo "--- [5/9] TLS Skip-Verify Settings ---"
+  echo "--- [5/9] TLS Verification & CA Trust Settings ---"
 
-  # ArgoCD: oidc.tls.insecure.skip.verify in argocd-cm
-  ARGOCD_TLS=$(kubectl get configmap argocd-cm -n devtools -o jsonpath='{.data.oidc\.tls\.insecure\.skip\.verify}' 2>/dev/null)
-  if [ "${ARGOCD_TLS}" = "true" ]; then
-    pass "ArgoCD: oidc.tls.insecure.skip.verify=true"
+  # ArgoCD: Keycloak TLS verification enforced with internal CA trust (Narwhal #147)
+  ARGOCD_TLS_SKIP=$(kubectl get configmap argocd-cm -n devtools -o jsonpath='{.data.oidc\.tls\.insecure\.skip\.verify}' 2>/dev/null || echo "")
+  ARGOCD_OIDC_CFG=$(kubectl get configmap argocd-cm -n devtools -o jsonpath='{.data.oidc\.config}' 2>/dev/null || echo "")
+  if [ "${ARGOCD_TLS_SKIP}" = "true" ] || echo "${ARGOCD_OIDC_CFG}" | grep -qE 'insecureSkipVerify:[[:space:]]*true'; then
+    fail "ArgoCD: Keycloak TLS verification bypassed (insecureSkipVerify=true)"
   else
-    fail "ArgoCD: oidc.tls.insecure.skip.verify='${ARGOCD_TLS}' (self-signed cert → need true)"
+    pass "ArgoCD: Keycloak TLS verification enforced (no insecureSkipVerify)"
   fi
 
-  # OAuth2-Proxy: ssl_insecure_skip_verify in config
-  O2P_CFG=$(kubectl get configmap oauth2-proxy -n iam -o jsonpath='{.data.oauth2_proxy\.cfg}' 2>/dev/null)
-  if echo "${O2P_CFG}" | grep -q "ssl_insecure_skip_verify = true"; then
-    pass "OAuth2-Proxy: ssl_insecure_skip_verify=true"
+  if echo "${ARGOCD_OIDC_CFG}" | grep -q 'rootCA:.*oidc\.keycloak\.rootCA'; then
+    pass "ArgoCD: oidc.config references rootCA"
   else
-    fail "OAuth2-Proxy: ssl_insecure_skip_verify not set"
+    fail "ArgoCD: oidc.config missing rootCA reference"
+  fi
+
+  # APISIX: Gitea OIDC route enforces Keycloak TLS verification (Narwhal #141)
+  APISIX_GITEA_ROUTE=$(kubectl get apisixroute gitea -n platform-system -o yaml 2>/dev/null || echo "")
+  if [ -n "${APISIX_GITEA_ROUTE}" ]; then
+    if echo "${APISIX_GITEA_ROUTE}" | grep -q 'ssl_verify:[[:space:]]*false'; then
+      fail "APISIX: gitea route has ssl_verify=false"
+    else
+      pass "APISIX: gitea route enforces Keycloak TLS verification"
+    fi
+  else
+    # Fallback to static manifest if live route not queryable
+    if grep -q 'ssl_verify: false' gitops/charts/narwhal-platform/templates/apisix-routes.yaml; then
+      fail "APISIX: apisix-routes.yaml has ssl_verify: false"
+    else
+      pass "APISIX: routes enforce Keycloak TLS verification (static manifest)"
+    fi
   fi
 
   # Grafana: tls_skip_verify_insecure in grafana.ini

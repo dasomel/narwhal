@@ -186,25 +186,38 @@ kubectl create secret generic argocd-oidc-secret \
 
 # argocd-cm patch (Keycloak OIDC)
 if kubectl get configmap argocd-cm -n devtools &>/dev/null; then
+  ARGOCD_OIDC_CA=$(kubectl get secret narwhal-wildcard-tls -n platform-system \
+    -o jsonpath='{.data.ca\.crt}' 2>/dev/null | base64 -d 2>/dev/null || true)
+  if [ -z "${ARGOCD_OIDC_CA}" ]; then
+    ARGOCD_OIDC_CA=$(kubectl get secret narwhal-ca-cert -n devtools \
+      -o jsonpath='{.data.ca\.crt}' 2>/dev/null | base64 -d 2>/dev/null || true)
+  fi
+
   kubectl patch configmap argocd-cm -n devtools --type merge -p "{
     \"data\": {
       \"url\": \"https://argocd.${DOMAIN}\",
-      \"oidc.config\": \"name: Keycloak\nissuer: ${ISSUER_URL}\nclientID: argocd\nclientSecret: \$oidc.keycloak.clientSecret\nrequestedScopes:\n  - openid\n  - profile\n  - email\n  - groups\n\"
+      \"oidc.config\": \"name: Keycloak\nissuer: ${ISSUER_URL}\nclientID: argocd\nclientSecret: \$oidc.keycloak.clientSecret\nrootCA: \$oidc.keycloak.rootCA\nrequestedScopes:\n  - openid\n  - profile\n  - email\n  - groups\n\"
     }
   }" 2>/dev/null || echo "WARN: argocd-cm patch failed"
 
-  # argocd-secret에 clientSecret 키 저장 (argocd-cm의 $oidc.keycloak.clientSecret 참조)
-  ARGOCD_SECRET_CURRENT=$(kubectl get secret argocd-secret -n devtools \
-    -o jsonpath='{.data}' 2>/dev/null | jq -r '."oidc.keycloak.clientSecret" // empty' | base64 -d || echo "")
-  if [ "${ARGOCD_SECRET_CURRENT}" != "${ARGOCD_SECRET}" ]; then
-    kubectl patch secret argocd-secret -n devtools \
-      --type='json' \
-      -p="[{\"op\":\"add\",\"path\":\"/data/oidc.keycloak.clientSecret\",\"value\":\"$(echo -n "${ARGOCD_SECRET}" | base64)\"}]" \
-      2>/dev/null || kubectl create secret generic argocd-secret \
-        --namespace devtools \
-        --from-literal=oidc.keycloak.clientSecret="${ARGOCD_SECRET}" \
-        --dry-run=client -o yaml | kubectl apply -f -
-    echo "  argocd-secret updated with OIDC client secret"
+  if [ -n "${ARGOCD_OIDC_CA}" ]; then
+    kubectl patch secret argocd-secret -n devtools --type=merge \
+      -p "{\"stringData\":{\"oidc.keycloak.clientSecret\":\"${ARGOCD_SECRET}\",\"oidc.keycloak.rootCA\":\"${ARGOCD_OIDC_CA//$'\n'/\\n}\"}}" 2>/dev/null || true
+    echo "  argocd-secret updated with OIDC client secret and rootCA"
+  else
+    # argocd-secret에 clientSecret 키 저장 (argocd-cm의 $oidc.keycloak.clientSecret 참조)
+    ARGOCD_SECRET_CURRENT=$(kubectl get secret argocd-secret -n devtools \
+      -o jsonpath='{.data}' 2>/dev/null | jq -r '."oidc.keycloak.clientSecret" // empty' | base64 -d || echo "")
+    if [ "${ARGOCD_SECRET_CURRENT}" != "${ARGOCD_SECRET}" ]; then
+      kubectl patch secret argocd-secret -n devtools \
+        --type='json' \
+        -p="[{\"op\":\"add\",\"path\":\"/data/oidc.keycloak.clientSecret\",\"value\":\"$(echo -n "${ARGOCD_SECRET}" | base64)\"}]" \
+        2>/dev/null || kubectl create secret generic argocd-secret \
+          --namespace devtools \
+          --from-literal=oidc.keycloak.clientSecret="${ARGOCD_SECRET}" \
+          --dry-run=client -o yaml | kubectl apply -f -
+      echo "  argocd-secret updated with OIDC client secret"
+    fi
   fi
 
   # ArgoCD server restart to apply config

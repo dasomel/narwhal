@@ -1371,6 +1371,64 @@ PYEOF
 
   check_not R97 "token minting in 14-gitops-bootstrap.sh has no bare pipefail assignment (2026-08-27)" \
     bash -c "grep -nE '^[^#]*_GIT_TOKEN=\"\$\(curl.*\| grep' scripts/cluster/14-gitops-bootstrap.sh | grep -q ."
+
+  # Narwhal #141 / #147 (2026-09-07): Keycloak OIDC TLS verification and CA trust chain enforcement.
+  # 1) R122 / R122b: Deployment preflight verifies GitOps desired state and bootstrap scripts
+  #    enforce positive TLS verification with internal CA trust without insecureSkipVerify.
+  check R122 "Keycloak OIDC TLS verification preflight validates GitOps and bootstrap trust contracts (2026-09-07)" \
+    scripts/cluster/preflight-keycloak-oidc-tls.sh
+
+  local argocd_tls_drift_tmp
+  argocd_tls_drift_tmp="$(mktemp -d)"
+  cp gitops/charts/narwhal-platform/templates/argocd-config.yaml "${argocd_tls_drift_tmp}/argocd-config.yaml"
+  sed -i.bak 's/rootCA: \$oidc\.keycloak\.rootCA/insecureSkipVerify: true/' \
+    "${argocd_tls_drift_tmp}/argocd-config.yaml"
+  rm -f "${argocd_tls_drift_tmp}/argocd-config.yaml.bak"
+  check_not R122b "Keycloak OIDC TLS preflight catches a reintroduced insecureSkipVerify or missing rootCA (2026-09-07)" \
+    scripts/cluster/preflight-keycloak-oidc-tls.sh --argocd-manifest "${argocd_tls_drift_tmp}/argocd-config.yaml"
+  rm -rf "${argocd_tls_drift_tmp}"
+
+  # 2) R123 / R123b: APISIX OIDC routes and gateway manifests enforce Keycloak TLS verification
+  #    and mount the internal Narwhal Root CA.
+  check R123 "APISIX OIDC routes and gateway enforce positive Keycloak TLS verification and internal CA trust (2026-09-07)" \
+    bash -c "grep -q 'ssl_trusted_certificate: /usr/local/apisix/conf/cert/narwhal/tls.crt' gitops/charts/narwhal-apps/templates/apisix.yaml && grep -q 'name: narwhal-root-ca' gitops/charts/narwhal-apps/templates/apisix.yaml && ! grep -q 'ssl_verify: false' gitops/charts/narwhal-platform/templates/apisix-routes.yaml"
+
+  local apisix_route_drift_tmp
+  apisix_route_drift_tmp="$(mktemp -d)"
+  cp gitops/charts/narwhal-platform/templates/apisix-routes.yaml "${apisix_route_drift_tmp}/apisix-routes.yaml"
+  sed -i.bak '/client_secret: "\$env:\/\/GITEA_OIDC_CLIENT_SECRET"/a\
+            ssl_verify: false' "${apisix_route_drift_tmp}/apisix-routes.yaml"
+  rm -f "${apisix_route_drift_tmp}/apisix-routes.yaml.bak"
+  check_not R123b "APISIX OIDC route check catches a reintroduced ssl_verify: false bypass (2026-09-07)" \
+    bash -c "! grep -q 'ssl_verify: false' '${apisix_route_drift_tmp}/apisix-routes.yaml'"
+  rm -rf "${apisix_route_drift_tmp}"
+
+  # 3) R124 / R124b: 11-3-keycloak-clients.sh preserves ArgoCD rootCA in argocd-cm and does not drop CA-backed verification.
+  check R124 "11-3-keycloak-clients.sh preserves ArgoCD rootCA and does not drop CA-backed verification (2026-09-07)" \
+    bash -c "grep -Fq 'rootCA: \\\$oidc.keycloak.rootCA' scripts/cluster/11-3-keycloak-clients.sh && grep -Fq 'oidc.keycloak.rootCA' scripts/cluster/11-3-keycloak-clients.sh && ! grep -rqE '(insecureSkipVerify|oidc\.tls\.insecure\.skip\.verify)[[:space:]]*[:=][[:space:]]*[\"\x27]?true' scripts/cluster/11-3-keycloak-clients.sh"
+
+  local keycloak_client_drift_tmp
+  keycloak_client_drift_tmp="$(mktemp -d)"
+  cp scripts/cluster/11-3-keycloak-clients.sh "${keycloak_client_drift_tmp}/11-3-keycloak-clients.sh"
+  sed -i.bak '/rootCA: \\\$oidc\.keycloak\.rootCA/d' "${keycloak_client_drift_tmp}/11-3-keycloak-clients.sh"
+  rm -f "${keycloak_client_drift_tmp}/11-3-keycloak-clients.sh.bak"
+  check_not R124b "11-3-keycloak-clients.sh check catches a stripped rootCA in argocd-cm patch (2026-09-07)" \
+    bash -c "grep -Fq 'rootCA: \\\$oidc.keycloak.rootCA' '${keycloak_client_drift_tmp}/11-3-keycloak-clients.sh'"
+  rm -rf "${keycloak_client_drift_tmp}"
+
+  # 4) R125 / R125b: test-sso.sh enforces positive TLS verification and CA trust rather than expecting insecure skip-verify.
+  check R125 "test-sso.sh enforces positive TLS verification and CA trust rather than expecting insecure skip-verify (2026-09-07)" \
+    bash -c "! grep -qE 'fail \"ArgoCD: oidc\.tls\.insecure\.skip\.verify' scripts/test/test-sso.sh && grep -q 'Keycloak TLS verification enforced (no insecureSkipVerify)' scripts/test/test-sso.sh && grep -q 'oidc.config references rootCA' scripts/test/test-sso.sh && grep -q 'gitea route enforces Keycloak TLS verification' scripts/test/test-sso.sh"
+
+  local test_sso_drift_tmp
+  test_sso_drift_tmp="$(mktemp -d)"
+  cp scripts/test/test-sso.sh "${test_sso_drift_tmp}/test-sso.sh"
+  sed -i.bak 's/Keycloak TLS verification enforced (no insecureSkipVerify)/fail "ArgoCD: oidc.tls.insecure.skip.verify=\x27false\x27 (self-signed cert → need true)"/' \
+    "${test_sso_drift_tmp}/test-sso.sh"
+  rm -f "${test_sso_drift_tmp}/test-sso.sh.bak"
+  check_not R125b "test-sso.sh TLS check catches a regression expecting insecure skip-verify (2026-09-07)" \
+    bash -c "! grep -qE 'fail \"ArgoCD: oidc\.tls\.insecure\.skip\.verify' '${test_sso_drift_tmp}/test-sso.sh'"
+  rm -rf "${test_sso_drift_tmp}"
 }
 
 #=========================================

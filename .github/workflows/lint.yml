@@ -157,8 +157,7 @@ jobs:
             -summary \
             -kubernetes-version 1.31.0 \
             -schema-location default \
-            -schema-location 'https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json' \
-            -ignore-missing-schemas \
+            -schema-location 'schemas/crds/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json' \
             gitops/resources/*.yaml
 
   vagrantfile-syntax:

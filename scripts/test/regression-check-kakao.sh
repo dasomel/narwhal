@@ -514,6 +514,26 @@ git push origin main || true' \
     grep -rqE '^[^#]*archive/refs/(heads|tags)/' \
       .github/workflows/ scripts/cloud/ scripts/airgap/ scripts/cluster/ scripts/common/
 
+  # #164: kubeconform's CRD schema-location pointed at CRDs-catalog's mutable `main`
+  # branch AND carried `-ignore-missing-schemas`, so a fetch failure (or an absent
+  # schema) silently skipped CRD validation and the job still passed — a validator
+  # that can skip is not a validator. Schemas are now vendored under schemas/crds/
+  # (pinned commit, see schemas/crds/SOURCE.md) and the flag is gone, so a missing
+  # schema is a hard failure. One grep, alternation of both regressions, same shape
+  # as R50/R51 — either one alone reopens #164.
+  check_not R112 "no mutable-URL CRD schema-location or -ignore-missing-schemas in workflows (2026-09-06)" \
+    grep -rqE '^[^#]*(raw\.githubusercontent\.com|-ignore-missing-schemas)' .github/workflows/
+
+  local kubeconform_schema_drift_tmp
+  kubeconform_schema_drift_tmp="$(mktemp -d)"
+  cp .github/workflows/lint.yml "${kubeconform_schema_drift_tmp}/lint.yml"
+  sed -i.bak "s#-schema-location 'schemas/crds/{{\.Group}}/{{\.ResourceKind}}_{{\.ResourceAPIVersion}}\.json'#-schema-location 'https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json'#" \
+    "${kubeconform_schema_drift_tmp}/lint.yml"
+  rm -f "${kubeconform_schema_drift_tmp}/lint.yml.bak"
+  check R112b "R112's check catches a reintroduced mutable-main CRD schema-location (2026-09-06)" \
+    grep -rqE '^[^#]*(raw\.githubusercontent\.com|-ignore-missing-schemas)' "${kubeconform_schema_drift_tmp}"
+  rm -rf "${kubeconform_schema_drift_tmp}"
+
   # `npm install -g markdownlint-cli` took the newest release on every run. npm has no
   # digest to assert for a global install, so the version pin IS the control and an
   # unpinned name is the whole failure.

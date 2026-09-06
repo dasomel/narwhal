@@ -315,8 +315,12 @@ scripts/gitops/push-to-gitea.sh --tag v1.2.3
 
 # 2. 특정 릴리스로 롤백 — 태그의 tree를 main 위에 새 forward commit으로 발행
 scripts/gitops/push-to-gitea.sh --rollback v1.2.3
-# 이 저장소의 gitops/ 워킹 트리에 커밋되지 않은 변경이 있으면 즉시 거부됩니다
+# 이 스크립트가 실제 git 체크아웃(REPO_ROOT)에서 실행 중이고 GITOPS_DIR이 그 체크아웃
+# 안에 있을 때만: gitops/ 워킹 트리에 커밋되지 않은 변경이 있으면 즉시 거부됩니다
 # (kubectl/네트워크 호출 이전에, 롤백 도중 로컬 편집이 섞여 들어가는 것을 막기 위함).
+# 노드처럼 scripts/만 rsync된 checkout-less 환경(Vagrantfile의 scripts/ 동기화, 예:
+# disaster-recovery.md 5번)에서는 이 로컬 검사를 건너뛴다는 로그 한 줄만 남기고 계속
+# 진행합니다 — 롤백은 원격 태그만 있으면 되고, 로컬 트리 상태는 필요 없기 때문입니다.
 ```
 
 두 모드 모두 실행 끝에 한 줄짜리 JSON evidence를 stdout에 출력합니다
@@ -329,6 +333,14 @@ scripts/gitops/push-to-gitea.sh --rollback v1.2.3
 kubectl -n devtools get application idp-apps -o jsonpath='{.status.sync.revision}'
 # 위 값이 push-to-gitea.sh가 출력한 main_sha와 일치해야 함
 ```
+
+`idp-apps`는 `HEAD`를 추적하는 app-of-apps 루트(`scripts/cluster/14-gitops-bootstrap.sh`)이고,
+`push-to-gitea.sh`는 `ARGOCD_APP`(기본 `narwhal-portal`)뿐 아니라 `idp-apps`에도 hard-refresh
+annotation을 요청하므로 보통 즉시 수렴합니다. 그 refresh가 아직 처리되지 않았거나 스크립트를
+거치지 않고 확인하는 경우에는 ArgoCD의 폴링 주기(기본 3분) 이내에 수렴하며, 즉시 강제하려면
+`argocd app get idp-apps --refresh`를 사용하세요. `idp-apps` 아래의 하위 App들은 각자 `HEAD`를
+독립적으로 resolve하므로, 특정 하위 앱의 반영 여부가 궁금하면 그 앱의
+`.status.sync.revision`도 별도로 확인해야 합니다.
 
 **로컬 클러스터 없이 스크립트를 검증**하려면 `GITEA_REMOTE_URL` 환경변수로 임시
 bare 저장소를 가리켜서 kubectl/port-forward 없이 clone/push 경로만 exercise할 수

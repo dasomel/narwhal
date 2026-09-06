@@ -70,6 +70,18 @@ scripts/gitops/push-to-gitea.sh "chore: sync all gitops"
 Env overrides: `ARGOCD_APP` (Application to refresh, default `narwhal-portal`),
 `GITEA_LOCAL_PORT` (default `13000`).
 
+## Ingress & Gateway Authentication Boundaries (#139)
+
+Why does `push-to-gitea.sh` use `kubectl port-forward` to `localhost:13000` rather than pushing to `https://gitea.<domain>` directly?
+
+1. **Direct Cluster Transport**: Port-forwarding directly accesses `gitea-http.devtools.svc.cluster.local:3000` using cluster admin credentials. It bypasses APISIX ingress entirely, avoiding external gateway dependencies.
+2. **Narrow External Ingress Allowlist**: The external gateway route (`gitea-git-bypass`, priority 100) only exposes the minimal machine endpoint allowlist:
+   - Git smart HTTP (`\.git(/|$)`, `/info/refs`, `/git-upload-pack`, `/git-receive-pack`)
+   - Package registry (`^/api/packages/` for Helm chart reads/writes)
+   - Cluster verification probes (`^/api/v1/version$`, `^/api/v1/repos/gitea-admin/narwhal-gitops$`)
+   - OAuth/login (`^/login/oauth/`, `^/user/login`)
+3. **Protected REST APIs**: All other Gitea REST APIs (`/api/v1/users`, `/api/v1/admin/*`, etc.) require browser OIDC authentication via Keycloak (priority 0 route). Machine operations requiring Gitea administrative API calls (`14-gitops-bootstrap.sh`, `narwhal-portal`) strictly talk directly to the in-cluster service or use authenticated internal tokens.
+
 ## Verify it actually applied
 
 ```bash

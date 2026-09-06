@@ -59,6 +59,27 @@ spec:
   policyTypes: [Ingress, Egress]
 ```
 
+### Gateway Ingress & Machine Bypass Surface (Narwhal #139, #101, #42)
+
+Machine clients (Git CLI, ArgoCD Helm chart fetchers, cluster verification probes) cannot complete interactive browser-based OIDC flows. APISIX defines a high-priority bypass route (`gitea-git-bypass`, priority 100) with least-privilege scoping:
+
+1. **Allowed Bypass Paths**:
+   - **Git Smart HTTP**: `\.git(/|$)`, `/info/refs`, `/git-upload-pack`, `/git-receive-pack`
+   - **Package Registry**: `^/api/packages/` (ArgoCD Helm index/tarball reads and chart publishing)
+   - **Verification Probes**: `^/api/v1/version$`, `^/api/v1/repos/gitea-admin/narwhal-gitops$` (`scripts/test/verify-cluster.sh` readiness checks)
+   - **OAuth / Login**: `^/login/oauth/`, `^/user/login`
+
+2. **Protected API Endpoints**:
+   - All other `/api/v1/*` REST endpoints (such as `/api/v1/users`, `/api/v1/admin/*`, `/api/v1/orgs`, and arbitrary repo endpoints) fall through to the default route (`gitea`, priority 0) and MUST authenticate via Keycloak OIDC (302 redirect for unauthenticated browser clients).
+   - Machine scripts performing administrative actions (`scripts/cluster/14-gitops-bootstrap.sh`, `scripts/gitops/push-to-gitea.sh`, `narwhal-portal`) connect directly via in-cluster service DNS (`http://gitea-http.devtools.svc.cluster.local:3000`) or localhost port-forwarding with explicit tokens, never traversing the external bypass route.
+
+3. **Package Registry Authentication Policy**:
+   - **Reads (Anonymous)**: ArgoCD fetches published Helm charts and index metadata anonymously over HTTPS without browser redirect.
+   - **Writes (Authenticated)**: Chart publishing (`scripts/cluster/12-gitea.sh`) requires machine credentials (`gitea-admin` basic auth or personal access token).
+
+4. **Header Stripping & Anti-Spoofing**:
+   - Both bypass and OIDC routes strip incoming `X-WEBAUTH-USER` and `X-Userinfo` via `proxy-rewrite` headers removal to prevent reverse proxy authentication spoofing (#160).
+
 ## OS Kernel Hardening (CIS Benchmark)
 
 Applied in dasomel/ubuntu-24.04 Box:

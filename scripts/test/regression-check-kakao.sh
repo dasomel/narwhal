@@ -539,6 +539,83 @@ PYEOF
   check_not R129b "R129's check catches missing controller label in recovery runbook (Narwhal#142, 2026-09-07)" \
     grep -q 'app.kubernetes.io/name=apisix-ingress-controller' "${apisix_breakglass_drift_tmp}/apisix-etcd-recovery.md"
   rm -rf "${apisix_breakglass_drift_tmp}"
+  # 2026-09-07 (#139): Gitea machine-client bypass surface narrowing on APISIX.
+  # The bypass route (gitea-git-bypass, priority 100) must only expose the minimal
+  # machine allowlist (Git transport, Helm/package registry, verify-cluster probes,
+  # login/OAuth), and never broad ^/api/v1/ prefixes that leak administrative REST APIs.
+
+  # 1) Blanket bypass check: route regex must not contain bare ^/api/v1/ prefix.
+  check R130 "gitea-git-bypass ApisixRoute has no blanket ^/api/v1/ bypass (Narwhal#139, 2026-09-07)" \
+    bash -c "! awk '/name: gitea-git-bypass/,/upstreams:/' gitops/charts/narwhal-platform/templates/apisix-routes.yaml | grep 'value:' | grep -qE '\^/api/v1/(\||$)|\^/api/v1/\"'"
+
+  local gitea_bypass_drift_tmp
+  gitea_bypass_drift_tmp="$(mktemp -d)"
+  cp gitops/charts/narwhal-platform/templates/apisix-routes.yaml "${gitea_bypass_drift_tmp}/apisix-routes.yaml"
+  sed -i.bak 's|\^/api/v1/version\$|\^/api/v1/|' "${gitea_bypass_drift_tmp}/apisix-routes.yaml"
+  rm -f "${gitea_bypass_drift_tmp}/apisix-routes.yaml.bak"
+  check_not R130b "R130 catches a reintroduced blanket ^/api/v1/ bypass (Narwhal#139, 2026-09-07)" \
+    bash -c "! awk '/name: gitea-git-bypass/,/upstreams:/' '${gitea_bypass_drift_tmp}/apisix-routes.yaml' | grep 'value:' | grep -qE '\^/api/v1/(\||$)|\^/api/v1/\"'"
+  rm -rf "${gitea_bypass_drift_tmp}"
+
+  # 2) Repository script caller check: every Gitea /api/v1 path used by repo scripts
+  # must be explicitly matched by the allowlist regex.
+  check R131 "all Gitea /api/v1 paths used by repo scripts match bypass regex (Narwhal#139, 2026-09-07)" \
+    bash -c "regex=\$(awk '/name: gitea-git-bypass/,/upstreams:/' gitops/charts/narwhal-platform/templates/apisix-routes.yaml | grep 'value:' | sed -E 's/.*value: \"(.*)\"/\1/'); \
+paths=\$(grep -rhoE 'https://gitea\.\\\$\{DOMAIN\}/api/v1/[a-zA-Z0-9_/-]+' scripts/ | sed 's|https://gitea.\${DOMAIN}||' | sort -u); \
+[ -n \"\${paths}\" ] || exit 1; \
+for p in \${paths}; do echo \"\${p}\" | grep -qE \"\${regex}\" || exit 1; done"
+
+  local gitea_script_paths_drift_tmp
+  gitea_script_paths_drift_tmp="$(mktemp -d)"
+  cp gitops/charts/narwhal-platform/templates/apisix-routes.yaml "${gitea_script_paths_drift_tmp}/apisix-routes.yaml"
+  sed -i.bak 's|\^/api/v1/version\$|\^/api/v1/other\$|' "${gitea_script_paths_drift_tmp}/apisix-routes.yaml"
+  rm -f "${gitea_script_paths_drift_tmp}/apisix-routes.yaml.bak"
+  check_not R131b "R131 catches a dropped script-required API path from bypass regex (Narwhal#139, 2026-09-07)" \
+    bash -c "regex=\$(awk '/name: gitea-git-bypass/,/upstreams:/' '${gitea_script_paths_drift_tmp}/apisix-routes.yaml' | grep 'value:' | sed -E 's/.*value: \"(.*)\"/\1/'); \
+paths=\$(grep -rhoE 'https://gitea\.\\\$\{DOMAIN\}/api/v1/[a-zA-Z0-9_/-]+' scripts/ | sed 's|https://gitea.\${DOMAIN}||' | sort -u); \
+[ -n \"\${paths}\" ] || exit 1; \
+for p in \${paths}; do echo \"\${p}\" | grep -qE \"\${regex}\" || exit 1; done"
+  rm -rf "${gitea_script_paths_drift_tmp}"
+
+  # 3) Unauthenticated API protection check: representative sensitive REST endpoints
+  # must NOT match the bypass regex and must remain protected by OIDC.
+  check R132 "representative Gitea REST endpoints remain protected behind OIDC (Narwhal#139, 2026-09-07)" \
+    bash -c "regex=\$(awk '/name: gitea-git-bypass/,/upstreams:/' gitops/charts/narwhal-platform/templates/apisix-routes.yaml | grep 'value:' | sed -E 's/.*value: \"(.*)\"/\1/'); \
+for p in /api/v1/users /api/v1/admin/users /api/v1/repos/search /api/v1/orgs /api/v1/users/admin/tokens /api/v1/repos/gitea-admin/other-repo; do \
+  if echo \"\${p}\" | grep -qE \"\${regex}\"; then exit 1; fi; \
+done"
+
+  local gitea_protected_drift_tmp
+  gitea_protected_drift_tmp="$(mktemp -d)"
+  cp gitops/charts/narwhal-platform/templates/apisix-routes.yaml "${gitea_protected_drift_tmp}/apisix-routes.yaml"
+  sed -i.bak 's|\^/api/v1/version\$|\^/api/v1/|' "${gitea_protected_drift_tmp}/apisix-routes.yaml"
+  rm -f "${gitea_protected_drift_tmp}/apisix-routes.yaml.bak"
+  check_not R132b "R132 catches a leak of protected REST endpoints into the bypass route (Narwhal#139, 2026-09-07)" \
+    bash -c "regex=\$(awk '/name: gitea-git-bypass/,/upstreams:/' '${gitea_protected_drift_tmp}/apisix-routes.yaml' | grep 'value:' | sed -E 's/.*value: \"(.*)\"/\1/'); \
+for p in /api/v1/users /api/v1/admin/users /api/v1/repos/search /api/v1/orgs /api/v1/users/admin/tokens /api/v1/repos/gitea-admin/other-repo; do \
+  if echo \"\${p}\" | grep -qE \"\${regex}\"; then exit 1; fi; \
+done"
+  rm -rf "${gitea_protected_drift_tmp}"
+
+  # 4) Required Git and package flow preservation: Git smart HTTP, Helm registry,
+  # and login/OAuth routes must match the bypass regex.
+  check R133 "required Git and package registry machine flows match bypass regex (Narwhal#139, 2026-09-07)" \
+    bash -c "regex=\$(awk '/name: gitea-git-bypass/,/upstreams:/' gitops/charts/narwhal-platform/templates/apisix-routes.yaml | grep 'value:' | sed -E 's/.*value: \"(.*)\"/\1/'); \
+for p in /gitea-admin/narwhal-gitops.git/info/refs /gitea-admin/narwhal-gitops.git/git-upload-pack /gitea-admin/narwhal-gitops.git/git-receive-pack /api/packages/gitea-admin/helm/index.yaml /api/packages/gitea-admin/helm/charts/cilium-1.19.4.tgz /api/packages/gitea-admin/helm/api/charts /login/oauth/authorize /user/login; do \
+  if ! echo \"\${p}\" | grep -qE \"\${regex}\"; then exit 1; fi; \
+done"
+
+  local gitea_required_drift_tmp
+  gitea_required_drift_tmp="$(mktemp -d)"
+  cp gitops/charts/narwhal-platform/templates/apisix-routes.yaml "${gitea_required_drift_tmp}/apisix-routes.yaml"
+  sed -i.bak 's|\^/api/packages/|\^/api/packages_disabled/|' "${gitea_required_drift_tmp}/apisix-routes.yaml"
+  rm -f "${gitea_required_drift_tmp}/apisix-routes.yaml.bak"
+  check_not R133b "R133 catches dropped package registry or Git paths from bypass regex (Narwhal#139, 2026-09-07)" \
+    bash -c "regex=\$(awk '/name: gitea-git-bypass/,/upstreams:/' '${gitea_required_drift_tmp}/apisix-routes.yaml' | grep 'value:' | sed -E 's/.*value: \"(.*)\"/\1/'); \
+for p in /gitea-admin/narwhal-gitops.git/info/refs /gitea-admin/narwhal-gitops.git/git-upload-pack /gitea-admin/narwhal-gitops.git/git-receive-pack /api/packages/gitea-admin/helm/index.yaml /api/packages/gitea-admin/helm/charts/cilium-1.19.4.tgz /api/packages/gitea-admin/helm/api/charts /login/oauth/authorize /user/login; do \
+  if ! echo \"\${p}\" | grep -qE \"\${regex}\"; then exit 1; fi; \
+done"
+  rm -rf "${gitea_required_drift_tmp}"
 
   # 2026-08-21: clone, the config copy, commit and push were all `|| true`, so a clean
   # install could report success with an empty or stale GitOps source and the symptom

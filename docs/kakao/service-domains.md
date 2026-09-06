@@ -124,8 +124,10 @@ kubectl get apisixroute -A -o jsonpath='{range .items[*].spec.http[*]}{.match.ho
 
 두 개의 예외 라우트가 있다:
 
-- `gitea-git-bypass` (priority 100) — `git clone`/`push`, `/api/v1/`, OAuth 콜백 경로는 OIDC를
-  **우회**한다. 브라우저가 아닌 git CLI는 리다이렉트를 따라갈 수 없기 때문이다.
+- `gitea-git-bypass` (priority 100) — Git 전송(`git clone`/`push`), 패키지 레지스트리(`/api/packages/`),
+  클러스터 검증 API(`/api/v1/version`, `/api/v1/repos/gitea-admin/narwhal-gitops`), OAuth 콜백 경로는 OIDC를
+  **우회**한다. 브라우저가 아닌 git/Helm CLI 및 자동화 프로브는 대화형 OIDC 리다이렉트를 수행할 수 없기 때문이다.
+  그 외 모든 Gitea REST API는 OIDC 보호 하에 유지된다(#139).
 - `argocd-redirect` / `harbor-redirect` — 세션 쿠키가 없는 첫 방문을 SSO 로그인 경로로 302
   시켜 "로그인 버튼 클릭" 한 단계를 없앤다.
 

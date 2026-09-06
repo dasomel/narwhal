@@ -149,7 +149,17 @@ fi
 # that echoes the remote (all three have bitten this repo before, see the
 # 2026-07-10 lessons-log row). Use an HTTP Authorization header instead: it is
 # never printed by git's own error paths and never shows in `git remote -v`.
-GIT_AUTH_ARGS=()
+#
+# The header itself must never reach a `.git/config` file either: `git clone -c
+# http.extraHeader=...` writes that `-c` straight into the new clone's own config
+# (`extraheader = ...` under `[http]`), so anything reading that file (or the
+# fixed `git clone ... -c ...` argv, ps-visible for the process lifetime) sees
+# the credential. Pass it instead as GIT_CONFIG_COUNT/KEY/VALUE env vars scoped
+# to each individual git invocation via gitr() below — nothing lands in any
+# .git/config, only in that one short-lived process's own environment (still
+# readable there via e.g. /proc/<pid>/environ by root or the same uid — that is
+# the residual this leaves, not "never appears" anywhere).
+AUTH_HEADER=""
 PF_PID=""
 if [[ -n "${GITEA_REMOTE_URL}" ]]; then
   CLONE_URL="${GITEA_REMOTE_URL}"
@@ -170,9 +180,20 @@ else
   done
 
   CLONE_URL="http://localhost:${LOCAL_PORT}/${GITEA_USER}/${GITEA_REPO}.git"
-  AUTH_HEADER="AUTHORIZATION: basic $(printf '%s:%s' "${GITEA_USER}" "${GITEA_PW}" | base64 | tr -d '\n')"
-  GIT_AUTH_ARGS=(-c "http.extraHeader=${AUTH_HEADER}")
+  AUTH_HEADER="Authorization: Basic $(printf '%s:%s' "${GITEA_USER}" "${GITEA_PW}" | base64 | tr -d '\n')"
 fi
+
+# gitr: run a git subcommand that talks to the Gitea remote, with the auth header
+# (if any) injected only into that one process's environment — never written to
+# a config file, never passed on argv. Local-only commands (checkout, read-tree,
+# add, commit, rev-parse, config user.*) should use plain `git`, not this.
+gitr() {
+  if [[ -n "${AUTH_HEADER}" ]]; then
+    GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0="http.extraHeader" GIT_CONFIG_VALUE_0="${AUTH_HEADER}" git "$@"
+  else
+    git "$@"
+  fi
+}
 
 #--- cleanup: kill the port-forward (if any) and the temp clone on exit ---
 WORK=""
@@ -186,20 +207,28 @@ trap cleanup EXIT
 #--- clone the gitea repo fresh --------------------------------------------
 WORK="$(mktemp -d)"
 log "cloning ${GITEA_REPO} ..."
-git clone -q "${GIT_AUTH_ARGS[@]+"${GIT_AUTH_ARGS[@]}"}" "${CLONE_URL}" "${WORK}/repo"
+gitr clone -q "${CLONE_URL}" "${WORK}/repo"
 cd "${WORK}/repo"
-# `-c` values passed to `git clone` are written into the new repo's own config, so
-# every subsequent fetch/push/ls-remote in this clone reuses the same auth header
-# without it ever touching the URL. Ensure we are on `main` regardless of the
-# remote's default branch (also correct on a brand-new/empty bare repo).
+# Ensure we are on `main` regardless of the remote's default branch (also correct
+# on a brand-new/empty bare repo).
 git checkout -q -B main
+
+if [[ "${MODE}" == "tag" ]]; then
+  #--- verify the tag does NOT already exist, before publishing anything ----
+  # Must run before any commit/push: checking after the publish step let an
+  # already-existing tag both create a new `main` commit AND then exit 1.
+  log "checking whether ${RELEASE_TAG} already exists on the remote ..."
+  if gitr ls-remote --exit-code --tags origin "refs/tags/${RELEASE_TAG}" >/dev/null; then
+    die "tag ${RELEASE_TAG} already exists on the remote — tags are immutable, refusing to move it"
+  fi
+fi
 
 if [[ "${MODE}" == "rollback" ]]; then
   #--- verify the tag exists on the remote, then reproduce its tree ---------
   log "verifying tag ${RELEASE_TAG} exists on the remote ..."
-  git ls-remote --exit-code --tags origin "refs/tags/${RELEASE_TAG}" >/dev/null \
+  gitr ls-remote --exit-code --tags origin "refs/tags/${RELEASE_TAG}" >/dev/null \
     || die "tag ${RELEASE_TAG} not found on the remote — cannot roll back to a tag that was never published"
-  git fetch -q origin "refs/tags/${RELEASE_TAG}:refs/tags/${RELEASE_TAG}"
+  gitr fetch -q origin "refs/tags/${RELEASE_TAG}:refs/tags/${RELEASE_TAG}"
 
   TAG_SHA="$(git rev-parse "refs/tags/${RELEASE_TAG}^{commit}")"
   log "reproducing tree of ${RELEASE_TAG} (${TAG_SHA}) as a new commit on main"
@@ -208,7 +237,7 @@ if [[ "${MODE}" == "rollback" ]]; then
   # the commit that follows is a normal forward commit, never a reset/rewrite.
   git read-tree -u --reset "refs/tags/${RELEASE_TAG}^{tree}"
   git add -A
-  COMMIT_MSG="rollback to ${RELEASE_TAG}"
+  COMMIT_MSG="chore(gitops): roll back to ${RELEASE_TAG}"
 else
   #--- copy changed file(s) from gitops/ into the gitea repo root ------------
   if [[ ${#PATHS[@]} -eq 0 ]]; then
@@ -234,21 +263,18 @@ if git diff --cached --quiet; then
 else
   git commit -q -m "${COMMIT_MSG}"
   log "pushing to gitea ..."
-  git push -q origin HEAD:main
+  gitr push -q origin HEAD:main
   log "pushed: ${COMMIT_MSG}"
 fi
 MAIN_SHA="$(git rev-parse HEAD)"
 
 #--- --tag: create the immutable release tag on the just-published commit -
+# Existence was already checked above, before this commit/push happened.
 TAG_SHA_OUT=""
 if [[ "${MODE}" == "tag" ]]; then
-  log "checking whether ${RELEASE_TAG} already exists on the remote ..."
-  if git ls-remote --exit-code --tags origin "refs/tags/${RELEASE_TAG}" >/dev/null; then
-    die "tag ${RELEASE_TAG} already exists on the remote — tags are immutable, refusing to move it"
-  fi
   log "tagging ${MAIN_SHA} as ${RELEASE_TAG}"
   git tag -a "${RELEASE_TAG}" -m "release ${RELEASE_TAG}" "${MAIN_SHA}"
-  git push -q origin "refs/tags/${RELEASE_TAG}"
+  gitr push -q origin "refs/tags/${RELEASE_TAG}"
   TAG_SHA_OUT="$(git rev-parse "refs/tags/${RELEASE_TAG}^{commit}")"
   log "pushed tag ${RELEASE_TAG} -> ${TAG_SHA_OUT}"
 elif [[ "${MODE}" == "rollback" ]]; then

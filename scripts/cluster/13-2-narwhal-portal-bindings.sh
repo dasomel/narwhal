@@ -16,7 +16,7 @@
 #   Secret narwhal-portal-secrets  (namespace: devtools)
 #     -- Auth/OIDC, Keycloak admin, K8s SA, ArgoCD, APISIX, observability,
 #        Valkey, OpenBao, misc 키 전체 포함
-#   OpenBao: secret/ KV-v2 mount + narwhal-portal 정책 + 포털 전용 토큰
+#   OpenBao: secret/ KV-v2 mount + narwhal-portal 정책 + k8s auth role (Workload Identity)
 #   Keycloak: narwhal-portal + narwhal-portal-admin 클라이언트 (재실행 안전)
 set -euo pipefail
 
@@ -243,7 +243,7 @@ if [ -n "${VALIDATE_SCRIPT}" ]; then
 fi
 
 # ──────────────────────────────────────────────
-# STEP 2: OpenBao — KV mount + 정책 + 포털 토큰
+# STEP 2: OpenBao — KV mount + 정책 + Kubernetes Workload Identity
 # ──────────────────────────────────────────────
 echo ""
 echo "=== [2/4] OpenBao 설정 ==="
@@ -254,9 +254,15 @@ OPENBAO_POD=$(kubectl get pod -n storage \
   -l app.kubernetes.io/name=openbao \
   -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
 
+OPENBAO_K8S_AUTH_AUDIENCE="${OPENBAO_K8S_AUTH_AUDIENCE:-vault}"
+OPENBAO_K8S_ROLE="narwhal-portal"
+OPENBAO_K8S_AUTH_MOUNT="kubernetes"
+OPENBAO_K8S_TOKEN_PATH="/var/run/secrets/openbao/token"
+ENABLE_LEGACY_OPENBAO_TOKEN="${ENABLE_LEGACY_OPENBAO_TOKEN:-false}"
+OPENBAO_PORTAL_TOKEN=""
+
 if [ -z "${OPENBAO_POD}" ]; then
-  echo "WARN: OpenBao pod 없음 — OPENBAO_TOKEN은 placeholder로 설정됨"
-  OPENBAO_PORTAL_TOKEN="REPLACE_ME__openbao_token"
+  echo "WARN: OpenBao pod 없음 — OpenBao Kubernetes auth role 설정 생략"
 else
   # KV v2 mount 활성화 (멱등)
   kubectl exec -n storage "${OPENBAO_POD}" -- \
@@ -266,7 +272,8 @@ else
     bao secrets enable -version=2 -path=secret kv 2>/dev/null \
     || echo "  secret/ mount 이미 존재 (정상)"
 
-  # 정책 작성
+  # 정책 작성: Least privilege — metadata(목록/버전 조회)와 data(값 조회) 권한 분리
+  # narwhal-portal은 GET-only(read/list) 소비자이므로 쓰기(create/update/delete) 권한을 부여하지 않음
   kubectl exec -n storage "${OPENBAO_POD}" -- \
     env BAO_TOKEN="${OPENBAO_ROOT_TOKEN}" \
         BAO_ADDR="https://127.0.0.1:8200" \
@@ -279,7 +286,7 @@ cat > /tmp/portal.hcl << '"'"'POLICY_EOF'"'"'
 # deletes. Previously granted create/update/delete on secret/data/* with no
 # code path using them.
 path "secret/data/narwhal-portal/*" {
-  capabilities = ["read","list"]
+  capabilities = ["read"]
 }
 path "secret/metadata/narwhal-portal/*" {
   capabilities = ["read","list"]
@@ -290,18 +297,93 @@ rm -f /tmp/portal.hcl
 echo "  narwhal-portal policy written"
 '
 
-  # 포털 전용 토큰 발급 (1년, renewable)
-  OPENBAO_PORTAL_TOKEN=$(kubectl exec -n storage "${OPENBAO_POD}" -- \
+  # OpenBao TokenReviewer 권한 보장 (Kubernetes auth method 토큰 검증에 필수)
+  kubectl create clusterrolebinding openbao-auth-delegator \
+    --clusterrole=system:auth-delegator \
+    --serviceaccount=storage:openbao \
+    --dry-run=client -o yaml | kubectl apply -f - >/dev/null 2>&1 || true
+
+  # Kubernetes auth method 활성화 (멱등)
+  kubectl exec -n storage "${OPENBAO_POD}" -- \
     env BAO_TOKEN="${OPENBAO_ROOT_TOKEN}" \
         BAO_ADDR="https://127.0.0.1:8200" \
         BAO_SKIP_VERIFY=true \
-    bao token create \
-      -policy=narwhal-portal \
-      -display-name=narwhal-portal \
-      -ttl=8760h \
-      -renewable=true 2>/dev/null \
-    | awk '/^token /{print $2}')
-  echo "  OPENBAO_TOKEN 발급 완료 (${#OPENBAO_PORTAL_TOKEN} chars)"
+    bao auth enable kubernetes 2>/dev/null \
+    || echo "  auth/kubernetes 이미 활성화됨 (정상)"
+
+  # Kubernetes auth config 설정 (클러스터 내부 API 서버 주소 지정)
+  kubectl exec -n storage "${OPENBAO_POD}" -- \
+    env BAO_TOKEN="${OPENBAO_ROOT_TOKEN}" \
+        BAO_ADDR="https://127.0.0.1:8200" \
+        BAO_SKIP_VERIFY=true \
+    bao write auth/kubernetes/config \
+      kubernetes_host="https://kubernetes.default.svc"
+
+  # narwhal-portal 전용 Kubernetes auth role 생성 (단기 토큰: TTL 1h, Max TTL 4h, audience 검증)
+  kubectl exec -n storage "${OPENBAO_POD}" -- \
+    env BAO_TOKEN="${OPENBAO_ROOT_TOKEN}" \
+        BAO_ADDR="https://127.0.0.1:8200" \
+        BAO_SKIP_VERIFY=true \
+    bao write auth/kubernetes/role/narwhal-portal \
+      bound_service_account_names="narwhal-portal" \
+      bound_service_account_namespaces="devtools" \
+      policies="narwhal-portal" \
+      audience="${OPENBAO_K8S_AUTH_AUDIENCE}" \
+      token_ttl="1h" \
+      token_max_ttl="4h"
+
+  # Role 영속화 검증 (실패 시 즉시 fail-closed)
+  kubectl exec -n storage "${OPENBAO_POD}" -- \
+    env BAO_TOKEN="${OPENBAO_ROOT_TOKEN}" \
+        BAO_ADDR="https://127.0.0.1:8200" \
+        BAO_SKIP_VERIFY=true \
+    bao read auth/kubernetes/role/narwhal-portal >/dev/null 2>&1 || {
+      echo "ERROR: auth/kubernetes/role/narwhal-portal 영속화 확인 실패" >&2
+      exit 1
+    }
+  echo "  OpenBao Kubernetes auth role 'narwhal-portal' 설정 및 검증 완료"
+
+  # Narwhal #156: 8760h 장기 bearer 토큰은 기본적으로 발급하지 않음.
+  # 레거시 호환이 절대적으로 필요한 경우에만 ENABLE_LEGACY_OPENBAO_TOKEN=true 플래그로 게이트.
+  if [ "${ENABLE_LEGACY_OPENBAO_TOKEN}" = "true" ]; then
+    echo "WARN: ENABLE_LEGACY_OPENBAO_TOKEN=true 감지 — 8760h 장기 bearer 토큰을 발급합니다 (DEPRECATED: 보안상 비권장)." >&2
+    OPENBAO_PORTAL_TOKEN=$(kubectl exec -n storage "${OPENBAO_POD}" -- \
+      env BAO_TOKEN="${OPENBAO_ROOT_TOKEN}" \
+          BAO_ADDR="https://127.0.0.1:8200" \
+          BAO_SKIP_VERIFY=true \
+      bao token create \
+        -policy=narwhal-portal \
+        -display-name=narwhal-portal \
+        -ttl=8760h \
+        -renewable=true 2>/dev/null \
+      | awk '/^token /{print $2}')
+    echo "  [LEGACY] OPENBAO_TOKEN 발급 완료 (${#OPENBAO_PORTAL_TOKEN} chars)"
+  else
+    echo "  OpenBao Workload Identity 사용: 8760h 장기 bearer 토큰 발급 생략 (보안 강화)"
+  fi
+
+  # 머신 판독 가능 증적 기록 (evidence JSON)
+  mkdir -p /home/vagrant/.narwhal
+  cat > /home/vagrant/.narwhal/openbao-portal-auth.json <<JSONEOF
+{
+  "auth_method": "kubernetes",
+  "k8s_mount": "${OPENBAO_K8S_AUTH_MOUNT}",
+  "role": "${OPENBAO_K8S_ROLE}",
+  "bound_service_account_names": ["narwhal-portal"],
+  "bound_service_account_namespaces": ["devtools"],
+  "audience": "${OPENBAO_K8S_AUTH_AUDIENCE}",
+  "token_ttl": "1h",
+  "token_max_ttl": "4h",
+  "policy": "narwhal-portal",
+  "policy_capabilities": {
+    "secret/data/narwhal-portal/*": ["read"],
+    "secret/metadata/narwhal-portal/*": ["read", "list"]
+  },
+  "legacy_token_enabled": ${ENABLE_LEGACY_OPENBAO_TOKEN},
+  "configured_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+}
+JSONEOF
+  echo "  evidence written to /home/vagrant/.narwhal/openbao-portal-auth.json"
 fi
 
 # ──────────────────────────────────────────────
@@ -440,9 +522,27 @@ if [ "${ARGOCD_TOKEN_OK}" = "true" ]; then
   ARGOCD_TOKEN_ARG=(--from-literal=ARGOCD_TOKEN="${ARGOCD_TOKEN}")
 fi
 
+# Narwhal #156: OPENBAO_TOKEN is passed ONLY when legacy token generation was explicitly enabled.
+# Workload identity uses OPENBAO_AUTH_METHOD=kubernetes and rotated k8s SA tokens.
+OPENBAO_TOKEN_ARG=()
+if [ -n "${OPENBAO_PORTAL_TOKEN:-}" ]; then
+  OPENBAO_TOKEN_ARG=(--from-literal=OPENBAO_TOKEN="${OPENBAO_PORTAL_TOKEN}")
+fi
+
+# Narwhal #156 (review fix): OPENBAO_AUTH_METHOD must track which credential was actually
+# minted above — the portal's getOpenBaoToken() (narwhal-portal src/lib/openbao.ts) branches
+# on this value and only reads OPENBAO_TOKEN when it is "token". Hardcoding "kubernetes" here
+# meant ENABLE_LEGACY_OPENBAO_TOKEN=true minted a token the portal never looked at, silently
+# falling through to kubernetes auth despite the operator explicitly requesting legacy mode.
+OPENBAO_AUTH_METHOD_VALUE="kubernetes"
+if [ "${ENABLE_LEGACY_OPENBAO_TOKEN}" = "true" ]; then
+  OPENBAO_AUTH_METHOD_VALUE="token"
+fi
+
 kubectl create secret generic narwhal-portal-secrets \
   --namespace devtools \
   "${ARGOCD_TOKEN_ARG[@]}" \
+  "${OPENBAO_TOKEN_ARG[@]}" \
   --from-literal=AUTH_SECRET="${AUTH_SECRET}" \
   --from-literal=AUTH_URL="https://portal.${DOMAIN}" \
   --from-literal=AUTH_TRUST_HOST="true" \
@@ -477,7 +577,11 @@ kubectl create secret generic narwhal-portal-secrets \
   --from-literal=VALKEY_INSECURE_PRODUCTION="true" \
   --from-literal=VALKEY_PASSWORD="" \
   --from-literal=OPENBAO_ADDR="https://openbao.storage.svc.cluster.local:8200" \
-  --from-literal=OPENBAO_TOKEN="${OPENBAO_PORTAL_TOKEN}" \
+  --from-literal=OPENBAO_AUTH_METHOD="${OPENBAO_AUTH_METHOD_VALUE}" \
+  --from-literal=OPENBAO_K8S_ROLE="${OPENBAO_K8S_ROLE}" \
+  --from-literal=OPENBAO_K8S_AUTH_MOUNT="${OPENBAO_K8S_AUTH_MOUNT}" \
+  --from-literal=OPENBAO_K8S_TOKEN_PATH="${OPENBAO_K8S_TOKEN_PATH}" \
+  --from-literal=OPENBAO_K8S_AUTH_AUDIENCE="${OPENBAO_K8S_AUTH_AUDIENCE}" \
   --from-literal=TUNING_JOB_IMAGE="harbor.${DOMAIN}/library/tuning-job:latest" \
   --from-literal=TUNING_JOB_NAMESPACE="devtools" \
   --from-literal=LIVE_INGEST_SECRET="${LIVE_INGEST_SECRET}" \
@@ -504,7 +608,7 @@ echo ""
 echo "생성/갱신 내역:"
 echo "  Keycloak client:  narwhal-portal (OIDC 로그인)"
 echo "  Keycloak client:  narwhal-portal-admin (Service Account)"
-echo "  OpenBao:          policy=narwhal-portal, token 발급"
+echo "  OpenBao:          policy=narwhal-portal, k8s-auth role=narwhal-portal (short-lived 1h)"
 echo "  K8s SA token:     narwhal-portal@devtools (8760h)"
 echo "  ArgoCD token:     account=narwhal-portal"
 echo "  Secret:           narwhal-portal-secrets (devtools)"

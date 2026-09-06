@@ -8,6 +8,7 @@ source /home/vagrant/scripts/common/lib-charts.sh
 echo "=== Installing Networking Apps (MetalLB, APISIX, cert-manager) ==="
 
 export KUBECONFIG=/home/vagrant/.kube/config-local
+POD_NETWORK_CIDR="${POD_NETWORK_CIDR:-10.244.0.0/16}"
 
 #=========================================
 # MetalLB (LoadBalancer for bare-metal)
@@ -142,6 +143,10 @@ admin:
   enabled: true
   type: ClusterIP
   port: 9180
+  allow:
+    ipList:
+      - 127.0.0.1/32
+      - "${POD_NETWORK_CIDR}"
 etcd:
   enabled: false
   host:
@@ -245,7 +250,7 @@ kubectl get configmap apisix -n platform-system -o jsonpath='{.data.config\.yaml
   | grep -v '    user: ' \
   | grep -v '    password: ' \
   | sed 's|"http://etcd.host:2379"|"http://apisix-etcd.platform-system.svc.cluster.local:2379"|g' \
-  | sed 's|- 127.0.0.1/24|- 127.0.0.0/24\n      - 0.0.0.0/0|g' \
+  | sed "s|- 127.0.0.1/24|- 127.0.0.1/32\n      - ${POD_NETWORK_CIDR}|g" \
   > "${APISIX_CFG_TMP}"
 # Add Kubernetes Secret Provider (for $secret://kubernetes/k8s-1/... in ApisixRoute plugins)
 if ! grep -q 'secret_providers' "${APISIX_CFG_TMP}"; then
@@ -340,6 +345,11 @@ kubectl wait --for=condition=Ready pod -l app.kubernetes.io/name=apisix-ingress-
   -n platform-system --timeout=120s || true
 
 echo "APISIX ingress controller installed"
+
+if [ -f "/home/vagrant/configs/gitops/resources/apisix-admin-ingress-policy.yaml" ]; then
+  echo "Applying APISIX Admin API ingress NetworkPolicy..."
+  kubectl apply -f /home/vagrant/configs/gitops/resources/apisix-admin-ingress-policy.yaml || true
+fi
 
 #=========================================
 # cert-manager

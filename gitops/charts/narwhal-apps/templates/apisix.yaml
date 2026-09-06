@@ -201,8 +201,7 @@ spec:
                 admin:
                   allow_admin:
                     - 127.0.0.1/32
-                    - 10.0.0.0/8
-                    - 172.16.0.0/12
+                    - 10.244.0.0/16
                   admin_listen:
                     ip: 0.0.0.0
                     port: 9180
@@ -226,7 +225,7 @@ spec:
                   prefix: "/apisix"
                   timeout: 30
           # Chart 2.13.0 uses apisix.admin.allow.ipList to generate allow_admin.
-          # Restrict to cluster-internal CIDRs (pod + service + node networks).
+          # Restrict to cluster pod CIDR (10.244.0.0/16) and localhost loopback.
           admin:
             credentials:
               secretName: apisix-admin-key
@@ -235,8 +234,7 @@ spec:
             allow:
               ipList:
                 - 127.0.0.1/32
-                - 10.0.0.0/8
-                - 172.16.0.0/12
+                - 10.244.0.0/16
         {{- /*
         Kakao Cloud has no L2 for MetalLB, so the worker LB forwards to fixed node
         ports. They are declared here rather than patched in by 08-1-networking.sh,

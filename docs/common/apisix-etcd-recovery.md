@@ -45,10 +45,15 @@ BASE="http://apisix-admin.platform-system.svc.cluster.local:9180/apisix/admin"
 ```
 
 Seed every collection the controller's startup sync touches, from a throwaway pod
-inside the cluster (the apisix/etcd containers have no shell/curl):
+inside the cluster (the apisix/etcd containers have no shell/curl).
+Note: `apisix-admin-ingress-policy` restricts ingress on port 9180 to the ingress
+controller (`app.kubernetes.io/name: apisix-ingress-controller`) and portal. Break-glass
+recovery pods must carry this label to reach the Admin API:
 
 ```bash
-kubectl -n platform-system run seed-batch --image=curlimages/curl:8.11.0 --restart=Never --command -- sleep 180
+kubectl -n platform-system run seed-batch --image=curlimages/curl:8.11.0 --restart=Never \
+  --labels=app.kubernetes.io/name=apisix-ingress-controller \
+  --command -- sleep 180
 kubectl -n platform-system wait --for=condition=Ready pod/seed-batch --timeout=30s
 
 kubectl -n platform-system exec seed-batch -- curl -s -X PUT -H "X-API-KEY: ${ADMIN_KEY}" -H "Content-Type: application/json" \

@@ -365,6 +365,76 @@ PYEOF
     python3 scripts/test/lib/check-apisix-admin-ingress-policy.py "${apisix_admin_np_drift_tmp}/apisix-admin-ingress-policy.yaml"
   rm -rf "${apisix_admin_np_drift_tmp}"
 
+  # Narwhal#142 (2026-09-07): APISIX Admin API allowlist must enforce least-privilege pod CIDR
+  # (10.244.0.0/16) and localhost (127.0.0.1/32); broad supernets (10.0.0.0/8, 172.16.0.0/12)
+  # or wildcard (0.0.0.0/0) must not appear in gitops manifests or bootstrap scripts.
+  check_not R126 "APISIX Admin allowlists contain no broad CIDRs (0.0.0.0/0, 10.0.0.0/8, 172.16.0.0/12) (Narwhal#142, 2026-09-07)" \
+    grep -E '0\.0\.0\.0/0|10\.0\.0\.0/8|172\.16\.0\.0/12' gitops/charts/narwhal-apps/templates/apisix.yaml scripts/cluster/08-1-networking.sh
+
+  local apisix_allowlist_drift_tmp
+  apisix_allowlist_drift_tmp="$(mktemp -d)"
+  cp gitops/charts/narwhal-apps/templates/apisix.yaml "${apisix_allowlist_drift_tmp}/apisix.yaml"
+  sed -i.bak 's|- 10.244.0.0/16|- 10.0.0.0/8|g' "${apisix_allowlist_drift_tmp}/apisix.yaml"
+  rm -f "${apisix_allowlist_drift_tmp}/apisix.yaml.bak"
+  check R126b "R126's check catches a reintroduced broad CIDR in apisix.yaml (Narwhal#142, 2026-09-07)" \
+    grep -qE '0\.0\.0\.0/0|10\.0\.0\.0/8|172\.16\.0\.0/12' "${apisix_allowlist_drift_tmp}/apisix.yaml"
+  rm -rf "${apisix_allowlist_drift_tmp}"
+
+  # NetworkPolicy isolation: check-apisix-admin-ingress-policy validates authorized callers
+  # and rejects any unauthorized cross-namespace ingress rule.
+  check R127 "APISIX Admin NetworkPolicy validates against unauthorized callers (Narwhal#142, 2026-09-07)" \
+    python3 scripts/test/lib/check-apisix-admin-ingress-policy.py gitops/resources/apisix-admin-ingress-policy.yaml
+
+  local apisix_admin_ns_drift_tmp
+  apisix_admin_ns_drift_tmp="$(mktemp -d)"
+  python3 - "${apisix_admin_ns_drift_tmp}" <<'PYEOF'
+import sys, yaml
+tmp = sys.argv[1]
+with open("gitops/resources/apisix-admin-ingress-policy.yaml") as f:
+    docs = list(yaml.safe_load_all(f))
+for doc in docs:
+    if doc and doc.get("kind") == "NetworkPolicy":
+        doc["spec"]["ingress"].append({
+            "from": [{
+                "namespaceSelector": {"matchLabels": {"kubernetes.io/metadata.name": "monitoring"}},
+                "podSelector": {"matchLabels": {"app": "prometheus"}}
+            }],
+            "ports": [{"protocol": "TCP", "port": 9180}]
+        })
+with open(f"{tmp}/apisix-admin-ingress-policy.yaml", "w") as f:
+    yaml.safe_dump_all(docs, f)
+PYEOF
+  check_not R127b "APISIX Admin policy checker rejects an unauthorized namespace caller (Narwhal#142, 2026-09-07)" \
+    python3 scripts/test/lib/check-apisix-admin-ingress-policy.py "${apisix_admin_ns_drift_tmp}/apisix-admin-ingress-policy.yaml"
+  rm -rf "${apisix_admin_ns_drift_tmp}"
+
+  # Admin API publication boundary: ClusterIP only, never LoadBalancer/NodePort, no ApisixRoute.
+  check R128 "APISIX Admin API service is ClusterIP and unpublished externally (Narwhal#142, 2026-09-07)" \
+    bash -c "grep -A3 'admin:' gitops/charts/narwhal-apps/templates/apisix.yaml | grep -q 'type: ClusterIP' && ! grep -q 'apisix-admin' gitops/charts/narwhal-platform/templates/apisix-routes.yaml"
+
+  local apisix_admin_svc_drift_tmp
+  apisix_admin_svc_drift_tmp="$(mktemp -d)"
+  cp gitops/charts/narwhal-apps/templates/apisix.yaml "${apisix_admin_svc_drift_tmp}/apisix.yaml"
+  sed -i.bak 's/type: ClusterIP/type: LoadBalancer/g' "${apisix_admin_svc_drift_tmp}/apisix.yaml"
+  rm -f "${apisix_admin_svc_drift_tmp}/apisix.yaml.bak"
+  check_not R128b "R128's check catches an externally exposed Admin API service type (Narwhal#142, 2026-09-07)" \
+    bash -c "grep -A3 'admin:' '${apisix_admin_svc_drift_tmp}/apisix.yaml' | grep -q 'type: ClusterIP'"
+  rm -rf "${apisix_admin_svc_drift_tmp}"
+
+  # Break-glass and emergency recovery documentation: recovery runbook carries required controller
+  # label and dedicated access guide exists.
+  check R129 "APISIX break-glass recovery specifies authorized controller label (Narwhal#142, 2026-09-07)" \
+    bash -c "grep -q 'app.kubernetes.io/name=apisix-ingress-controller' docs/common/apisix-etcd-recovery.md && [ -s docs/common/apisix-admin-api.md ]"
+
+  local apisix_breakglass_drift_tmp
+  apisix_breakglass_drift_tmp="$(mktemp -d)"
+  cp docs/common/apisix-etcd-recovery.md "${apisix_breakglass_drift_tmp}/apisix-etcd-recovery.md"
+  sed -i.bak '/app\.kubernetes\.io\/name=apisix-ingress-controller/d' "${apisix_breakglass_drift_tmp}/apisix-etcd-recovery.md"
+  rm -f "${apisix_breakglass_drift_tmp}/apisix-etcd-recovery.md.bak"
+  check_not R129b "R129's check catches missing controller label in recovery runbook (Narwhal#142, 2026-09-07)" \
+    grep -q 'app.kubernetes.io/name=apisix-ingress-controller' "${apisix_breakglass_drift_tmp}/apisix-etcd-recovery.md"
+  rm -rf "${apisix_breakglass_drift_tmp}"
+
   # 2026-08-21: clone, the config copy, commit and push were all `|| true`, so a clean
   # install could report success with an empty or stale GitOps source and the symptom
   # — ArgoCD reconciling nothing — appeared days from the cause.

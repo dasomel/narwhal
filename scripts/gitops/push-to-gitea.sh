@@ -283,11 +283,19 @@ elif [[ "${MODE}" == "rollback" ]]; then
 fi
 
 #--- trigger ArgoCD sync (refresh + let automated sync pick it up) ---------
-# Soft refresh annotation forces ArgoCD to re-read Gitea immediately.
+# Soft refresh annotation forces ArgoCD to re-read Gitea immediately. `idp-apps` is
+# the app-of-apps root that tracks HEAD and fans out into every child app
+# (scripts/cluster/14-gitops-bootstrap.sh) — refresh it too, not just ARGOCD_APP,
+# so a rollback/tag doesn't sit waiting for the next poll interval on the root
+# (docs/vagrant/operations.md §릴리스 태깅 & 롤백).
 kubectl -n "${ARGOCD_NS}" annotate application "${ARGOCD_APP}" \
   argocd.argoproj.io/refresh=hard --overwrite >/dev/null 2>&1 || true
-log "requested ArgoCD refresh for app/${ARGOCD_APP} (automated sync will apply)"
-log "verify:  kubectl -n ${ARGOCD_NS} get application ${ARGOCD_APP} -o jsonpath='{.status.sync.status}'"
+if [[ "${ARGOCD_APP}" != "idp-apps" ]]; then
+  kubectl -n "${ARGOCD_NS}" annotate application idp-apps \
+    argocd.argoproj.io/refresh=hard --overwrite >/dev/null 2>&1 || true
+fi
+log "requested ArgoCD refresh for app/${ARGOCD_APP} and app/idp-apps (automated sync will apply)"
+log "verify:  kubectl -n ${ARGOCD_NS} get application idp-apps -o jsonpath='{.status.sync.revision}'"
 
 #--- machine-readable evidence for --tag / --rollback ----------------------
 if [[ "${MODE}" != "publish" ]]; then

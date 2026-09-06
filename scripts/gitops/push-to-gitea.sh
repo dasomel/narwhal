@@ -76,17 +76,25 @@ log() { echo "[push-to-gitea] $*"; }
 die() { echo "ERROR: $*" >&2; exit 1; }
 
 #--- mode parsing (default publish, or --tag / --rollback) ----------------
+# vMAJOR.MINOR.PATCH, optionally with a -prerelease or +build suffix (SemVer-ish).
+RELEASE_TAG_RE='^v[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.]+)?$'
+validate_tag() {
+  [[ "$1" =~ ${RELEASE_TAG_RE} ]] || die "invalid release tag '$1': expected vMAJOR.MINOR.PATCH, e.g. v1.2.3 (optionally -prerelease or +build)"
+}
+
 MODE="publish"
 RELEASE_TAG=""
 case "${1:-}" in
   --tag)
     [[ -n "${2:-}" ]] || die "--tag requires a version, e.g. --tag v1.2.3"
+    validate_tag "$2"
     MODE="tag"
     RELEASE_TAG="$2"
     shift 2
     ;;
   --rollback)
     [[ -n "${2:-}" ]] || die "--rollback requires a version, e.g. --rollback v1.2.3"
+    validate_tag "$2"
     MODE="rollback"
     RELEASE_TAG="$2"
     shift 2
@@ -106,11 +114,32 @@ fi
 # A rollback publishes the TAG's tree (from Gitea), not local gitops/ — but a dirty
 # local tree sitting around during a rollback is a sign the operator meant to do
 # something else first. Fail fast, before any kubectl/network call.
+#
+# This guard only applies when REPO_ROOT is actually a git checkout with GITOPS_DIR
+# inside it. On a node, Vagrantfile rsyncs scripts/ alone to /home/vagrant/scripts
+# (no .git there at all) — REPO_ROOT then resolves to /home/vagrant, `git -C
+# "${REPO_ROOT}" ...` exits 128, and a guard that didn't account for that used to
+# turn into a hard failure on precisely the disaster-recovery path
+# (docs/vagrant/disaster-recovery.md step 5) that needs --rollback to work. A
+# rollback only needs the remote tag, never the local tree, so when there is no
+# checkout we just say so and continue.
 if [[ "${MODE}" == "rollback" ]]; then
-  if ! git -C "${REPO_ROOT}" diff --quiet -- gitops || \
-     ! git -C "${REPO_ROOT}" diff --cached --quiet -- gitops || \
-     [[ -n "$(git -C "${REPO_ROOT}" status --porcelain -- gitops)" ]]; then
-    die "gitops/ has uncommitted changes; refusing to roll back with a dirty tree"
+  GITOPS_IN_REPO=0
+  REPO_TOPLEVEL="$(git -C "${REPO_ROOT}" rev-parse --show-toplevel 2>/dev/null || true)"
+  if [[ -n "${REPO_TOPLEVEL}" ]]; then
+    # `git rev-parse --show-toplevel` resolves symlinks in the path; compare against
+    # GITOPS_DIR's own resolved physical path too (`pwd -P`, no extra binary needed)
+    # so e.g. macOS's /tmp -> /private/tmp doesn't produce a false "outside the repo".
+    GITOPS_DIR_REAL="$(cd "${GITOPS_DIR}" 2>/dev/null && pwd -P || true)"
+    case "${GITOPS_DIR_REAL:-${GITOPS_DIR}}/" in
+      "${REPO_TOPLEVEL}/"*) GITOPS_IN_REPO=1 ;;
+    esac
+  fi
+  if [[ "${GITOPS_IN_REPO}" -eq 1 ]]; then
+    [[ -z "$(git -C "${REPO_ROOT}" status --porcelain -- "${GITOPS_DIR}")" ]] \
+      || die "gitops/ has uncommitted changes; refusing to roll back with a dirty tree"
+  else
+    log "skipping local-dirty guard: ${REPO_ROOT} is not a git checkout containing ${GITOPS_DIR} (source is an rsync copy, e.g. Vagrant's scripts/ sync) — rollback only needs the remote tag"
   fi
 fi
 

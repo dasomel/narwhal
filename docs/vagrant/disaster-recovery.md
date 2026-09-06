@@ -1025,6 +1025,18 @@ vagrant ssh master-1 -c "argocd app sync --all --server argocd.local.narwhal.int
 vagrant ssh master-1 -c "sudo bash /home/vagrant/scripts/cluster/14-gitops-bootstrap.sh"
 ```
 
+**Step 5: 알려진 정상 릴리스로 롤백 (issue #52, D4-A)**
+
+App-of-Apps 재bootstrap으로도 복구되지 않거나, 최근 발행된 커밋 자체가 원인으로
+의심되는 경우 마지막으로 태깅된 릴리스로 롤백합니다. 자세한 사용법은
+[`operations.md` §릴리스 태깅 & 롤백](operations.md#릴리스-태깅--롤백-issue-52-d4-a)
+참고 — `main`을 되돌려 쓰는 게 아니라 태그의 tree를 재현하는 새 forward commit이라
+branch protection/selfHeal과 충돌하지 않습니다:
+
+```bash
+scripts/gitops/push-to-gitea.sh --rollback <마지막으로 알려진 정상 태그, 예: v1.2.3>
+```
+
 ### ClusterRoleBinding namespace 불일치 수정
 
 ArgoCD를 `devtools` 네임스페이스에 설치 시 발생할 수 있는 권한 문제:

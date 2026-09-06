@@ -299,6 +299,50 @@ vagrant ssh master-1 -c "kubectl delete application my-app -n argocd"
 - 리소스만 보존하려면 Application에서 `finalizers` 제거 후 삭제
 - GitOps 파일 삭제만으로는 ArgoCD에서 자동 제거되지 않음
 
+### 릴리스 태깅 & 롤백 (issue #52, D4-A)
+
+`scripts/gitops/push-to-gitea.sh`는 일반 sync 외에 **불변(immutable) 릴리스 태그**를
+생성하고 그 태그로 **롤백**하는 두 가지 모드를 제공합니다. 롤백은 `main`을 되돌리는
+`reset`/force-push가 **아니라**, 태그 시점의 tree를 재현하는 새 forward commit입니다
+— `main`은 selfHeal 대상이자 branch-protected(화이트리스트 `gitea-admin`만 push
+가능)이므로 히스토리를 되돌려 쓰는 방식 자체가 불가능하고, 감사 가능성(auditability)
+측면에서도 forward-commit 방식이 맞습니다.
+
+```bash
+# 1. 현재 gitops/ 트리를 발행한 뒤 그 커밋에 불변 태그를 생성
+scripts/gitops/push-to-gitea.sh --tag v1.2.3
+# 이미 존재하는 태그를 다시 --tag하면 거부됩니다 (태그는 절대 이동시키지 않음).
+
+# 2. 특정 릴리스로 롤백 — 태그의 tree를 main 위에 새 forward commit으로 발행
+scripts/gitops/push-to-gitea.sh --rollback v1.2.3
+# 이 저장소의 gitops/ 워킹 트리에 커밋되지 않은 변경이 있으면 즉시 거부됩니다
+# (kubectl/네트워크 호출 이전에, 롤백 도중 로컬 편집이 섞여 들어가는 것을 막기 위함).
+```
+
+두 모드 모두 실행 끝에 한 줄짜리 JSON evidence를 stdout에 출력합니다
+(`{"mode":...,"tag":...,"tag_sha":...,"main_sha":...,"timestamp":...}`,
+`~/.narwhal/`가 존재하면 `~/.narwhal/gitops-release.json`에도 기록). 이 JSON의
+`main_sha`를 ArgoCD가 실제로 수렴했는지 확인하는 데 사용하세요:
+
+```bash
+# ArgoCD가 방금 발행/롤백한 커밋을 실제로 반영했는지 확인
+kubectl -n devtools get application idp-apps -o jsonpath='{.status.sync.revision}'
+# 위 값이 push-to-gitea.sh가 출력한 main_sha와 일치해야 함
+```
+
+**로컬 클러스터 없이 스크립트를 검증**하려면 `GITEA_REMOTE_URL` 환경변수로 임시
+bare 저장소를 가리켜서 kubectl/port-forward 없이 clone/push 경로만 exercise할 수
+있습니다(운영 기본 동작은 이 변수가 비어 있을 때와 동일하게 유지됨):
+
+```bash
+git init --bare /tmp/fake-gitea.git
+GITEA_REMOTE_URL=/tmp/fake-gitea.git GITOPS_DIR=./gitops \
+  scripts/gitops/push-to-gitea.sh "chore: test publish"
+```
+
+장애 시나리오(ArgoCD가 롤백 커밋을 못 읽는 등)는
+[`disaster-recovery.md` §9 ArgoCD GitOps 장애](disaster-recovery.md#9-argocd-gitops-장애)를 참고하세요.
+
 ---
 
 ## 5. 컴포넌트 업그레이드

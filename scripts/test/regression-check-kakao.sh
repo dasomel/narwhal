@@ -1301,6 +1301,26 @@ PYEOF
 
   check_not R97 "token minting in 14-gitops-bootstrap.sh has no bare pipefail assignment (2026-08-27)" \
     bash -c "grep -nE '^[^#]*_GIT_TOKEN=\"\$\(curl.*\| grep' scripts/cluster/14-gitops-bootstrap.sh | grep -q ."
+
+  # Narwhal#52 (D4-A): push-to-gitea.sh's --tag/--rollback are the sanctioned path to an
+  # immutable release and its rollback. A swallowed failure on any git network/write step
+  # (`|| true` on push/fetch/clone/tag/commit) would let a half-published tag or rollback
+  # look successful, and a forced push would rewrite `main`'s history — exactly what a
+  # forward-commit rollback exists to avoid (main is also branch-protected against it, but
+  # the script should never even attempt it). Discriminator: the pattern below, not "does
+  # the script run" — a swallowed failure and a force-push both still exit 0.
+  check_not R113 "push-to-gitea.sh has no swallowed git push/fetch/clone/tag/commit failure and no forced push (Narwhal#52, 2026-09-06)" \
+    grep -qE '^[^#]*git[^#]*(push|fetch|clone|tag|commit)[^#]*\|\|[[:space:]]*true|^[^#]*git[^#]*push[^#]*(--force|[[:space:]]-f([[:space:]]|$))' scripts/gitops/push-to-gitea.sh
+
+  local push_to_gitea_drift_tmp
+  push_to_gitea_drift_tmp="$(mktemp -d)"
+  cp scripts/gitops/push-to-gitea.sh "${push_to_gitea_drift_tmp}/push-to-gitea.sh"
+  sed -i.bak 's/^  git push -q origin HEAD:main$/  git push -q origin HEAD:main || true/' \
+    "${push_to_gitea_drift_tmp}/push-to-gitea.sh"
+  rm -f "${push_to_gitea_drift_tmp}/push-to-gitea.sh.bak"
+  check R113b "R113's check catches a reintroduced swallowed git push failure (Narwhal#52, 2026-09-06)" \
+    grep -qE '^[^#]*git[^#]*(push|fetch|clone|tag|commit)[^#]*\|\|[[:space:]]*true|^[^#]*git[^#]*push[^#]*(--force|[[:space:]]-f([[:space:]]|$))' "${push_to_gitea_drift_tmp}/push-to-gitea.sh"
+  rm -rf "${push_to_gitea_drift_tmp}"
 }
 
 #=========================================

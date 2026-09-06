@@ -37,10 +37,8 @@ if [ ! -f "${IMAGES_LIST}" ]; then
   exit 1
 fi
 
-# Kept in sync BY HAND with 01-generate-image-list.sh's INCLUSTER_BUILT_RE — the one
-# image images.txt lists that is built in-cluster by Kaniko and never pulled from any
-# registry, so it has no upstream digest to resolve.
-INCLUSTER_BUILT_RE='harbor\.local\.narwhal\.internal/library/narwhal-portal'
+# shellcheck source=image-classes.sh
+source "${HERE}/image-classes.sh"
 
 resolve_digest() {
   # Metadata-only manifest HEAD, not a blob pull — cheap enough to run per image, but
@@ -115,10 +113,14 @@ cat << 'EOF' > "${TMP_OUT}"
 # can byte-compare against the local OCI layout — see that script's own comments for
 # what it checks instead.
 #
-# UNRESOLVED rows: images.txt's in-cluster-built image (matches
-# 01-generate-image-list.sh's INCLUSTER_BUILT_RE) is never pulled from any registry,
-# so it has no upstream digest to resolve; the source column carries the reason
-# instead of a digest.
+# UNRESOLVED rows: if images.txt ever lists an image matching
+# 01-generate-image-list.sh's INCLUSTER_BUILT_RE (built in-cluster by Kaniko, never
+# pulled from any registry), this script writes UNRESOLVED here instead of a digest,
+# with the reason in the source column. As of this table, that image is excluded
+# from images.txt outright (see images.txt's own EXCLUDED comment) rather than
+# listed with an UNRESOLVED row, so no row below is currently UNRESOLVED — this
+# branch defends a future images.txt that lists it for tracking without ever having
+# an upstream digest to resolve.
 #
 # Refresh with:      scripts/airgap/lib/refresh-image-digests.sh
 # Check for drift with: scripts/airgap/lib/refresh-image-digests.sh --check

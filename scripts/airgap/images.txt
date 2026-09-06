@@ -16,9 +16,11 @@
 #     regeneration against a cluster built before that change will put it back; drop it.
 #
 # :latest TAGS — deliberate vs. pinned:
-#   - ghcr.io/dasomel/goharbor/* :latest is INTENTIONAL — the custom multi-arch
-#     Harbor rebuild is republished to :latest, and we want new builds picked up
-#     automatically. Do NOT digest-pin these (it defeats that).
+#   - ghcr.io/dasomel/goharbor/* used to be an intentional :latest exception here;
+#     the custom multi-arch Harbor rebuild is now republished to immutable v2.15.1
+#     tags for all 7 components (see below), so there is no goharbor :latest
+#     reference left to exempt. Re-add this bullet only if goharbor genuinely goes
+#     back to tracking :latest — do not carry it forward as boilerplate.
 #   - gcr.io/kaniko-project/executor and docker.io/alpine/git are PINNED (narwhal#52
 #     D3-A) to immutable version tags, not :latest — they are coupled to
 #     narwhal-portal's deploy/kaniko-build-job.yaml, which pins the SAME tags, because

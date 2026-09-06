@@ -43,11 +43,8 @@ LIST_FILE="${SCRIPT_DIR}/images.txt"
 BUNDLE_DIR="${AIRGAP_BUNDLE_DIR}"
 DIGESTS_FILE="${SCRIPT_DIR}/lib/image-digests.tsv"
 
-# Kept in sync BY HAND with 01-generate-image-list.sh's INCLUSTER_BUILT_RE (also
-# duplicated in refresh-image-digests.sh) — the one image images.txt could list that
-# is built in-cluster by Kaniko and never pulled from any registry, so it is the only
-# image allowed to carry an UNRESOLVED digest row instead of a real sha256.
-INCLUSTER_BUILT_RE='harbor\.local\.narwhal\.internal/library/narwhal-portal'
+# shellcheck source=lib/image-classes.sh
+source "${SCRIPT_DIR}/lib/image-classes.sh"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in

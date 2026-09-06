@@ -6,15 +6,19 @@ alpine/git) that images.txt and 01-generate-image-list.sh's TRANSIENT_IMAGES
 heredoc used to leave at `:latest` "to match the deploy manifests" — a comment is a
 coupling, not a fix, and the pair had already drifted from narwhal-portal's
 deploy/kaniko-build-job.yaml once. This checks the pin actually holds: neither list
-may carry a bare `:latest` reference except the two documented, deliberate
-exceptions — the custom multi-arch `ghcr.io/dasomel/goharbor/*` rebuild (republished
-to `:latest` on purpose so new builds are picked up automatically) and the
-in-cluster-built image that 01-generate-image-list.sh's INCLUSTER_BUILT_RE already
-excludes from every generated list.
+may carry a bare `:latest` reference except the one documented, deliberate
+exception — the in-cluster-built image that 01-generate-image-list.sh's
+INCLUSTER_BUILT_RE already excludes from every generated list.
 
 Checks structure (every offending reference), not just presence, so a NEW
 undocumented `:latest` sneaking into either file is caught the same way the old
 kaniko/alpine-git pair would have been.
+
+`ghcr.io/dasomel/goharbor/*` used to carry a second documented exception here (the
+custom multi-arch Harbor rebuild republished to `:latest` on purpose); it now ships
+pinned to immutable v2.15.1 tags for all 7 components, so that exception was removed
+(2026-09-07) rather than left as a rule nothing exercises. Re-add it only if goharbor
+genuinely goes back to tracking `:latest`.
 """
 import re
 import sys
@@ -23,7 +27,7 @@ DEFAULT_IMAGES_TXT = "scripts/airgap/images.txt"
 DEFAULT_GENERATOR = "scripts/airgap/01-generate-image-list.sh"
 
 ALLOWED_LATEST_RE = re.compile(
-    r"^(ghcr\.io/dasomel/goharbor/|harbor\.local\.narwhal\.internal/library/narwhal-portal)"
+    r"^harbor\.local\.narwhal\.internal/library/narwhal-portal"
 )
 
 

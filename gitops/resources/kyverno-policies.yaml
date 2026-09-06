@@ -212,9 +212,16 @@ spec:
                 - security-system
       validate:
         message: "Using 'latest' tag is not allowed."
+        # =() 옵셔널 앵커 필수 (위 disallow-privileged-containers와 동일 이유): 대부분의
+        # 파드는 initContainers/ephemeralContainers가 없으므로, 앵커 없이 쓰면 전부
+        # Enforce에서 admission 거부된다.
         pattern:
           spec:
             containers:
+              - image: "!*:latest"
+            =(initContainers):
+              - image: "!*:latest"
+            =(ephemeralContainers):
               - image: "!*:latest"
 ---
 apiVersion: kyverno.io/v1

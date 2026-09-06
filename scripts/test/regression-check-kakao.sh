@@ -1308,19 +1308,33 @@ PYEOF
   # look successful, and a forced push would rewrite `main`'s history — exactly what a
   # forward-commit rollback exists to avoid (main is also branch-protected against it, but
   # the script should never even attempt it). Discriminator: the pattern below, not "does
-  # the script run" — a swallowed failure and a force-push both still exit 0.
+  # the script run" — a swallowed failure and a force-push both still exit 0. Forced
+  # refspecs (`git push origin +HEAD:main`) rewrite history just like `--force`/`-f` but
+  # don't use either flag, so the push-line alternative also matches a leading `+` on the
+  # refspec side of the space before it (`[[:space:]]\+[^[:space:]]*:`).
+  local push_to_gitea_re='^[^#]*git[^#]*(push|fetch|clone|tag|commit)[^#]*\|\|[[:space:]]*true|^[^#]*git[^#]*push[^#]*(--force|[[:space:]]-f([[:space:]]|$)|[[:space:]]\+[^[:space:]]*:)'
   check_not R113 "push-to-gitea.sh has no swallowed git push/fetch/clone/tag/commit failure and no forced push (Narwhal#52, 2026-09-06)" \
-    grep -qE '^[^#]*git[^#]*(push|fetch|clone|tag|commit)[^#]*\|\|[[:space:]]*true|^[^#]*git[^#]*push[^#]*(--force|[[:space:]]-f([[:space:]]|$))' scripts/gitops/push-to-gitea.sh
+    grep -qE "${push_to_gitea_re}" scripts/gitops/push-to-gitea.sh
 
   local push_to_gitea_drift_tmp
   push_to_gitea_drift_tmp="$(mktemp -d)"
   cp scripts/gitops/push-to-gitea.sh "${push_to_gitea_drift_tmp}/push-to-gitea.sh"
-  sed -i.bak 's/^  git push -q origin HEAD:main$/  git push -q origin HEAD:main || true/' \
+  sed -i.bak 's/^  gitr push -q origin HEAD:main$/  gitr push -q origin HEAD:main || true/' \
     "${push_to_gitea_drift_tmp}/push-to-gitea.sh"
   rm -f "${push_to_gitea_drift_tmp}/push-to-gitea.sh.bak"
   check R113b "R113's check catches a reintroduced swallowed git push failure (Narwhal#52, 2026-09-06)" \
-    grep -qE '^[^#]*git[^#]*(push|fetch|clone|tag|commit)[^#]*\|\|[[:space:]]*true|^[^#]*git[^#]*push[^#]*(--force|[[:space:]]-f([[:space:]]|$))' "${push_to_gitea_drift_tmp}/push-to-gitea.sh"
+    grep -qE "${push_to_gitea_re}" "${push_to_gitea_drift_tmp}/push-to-gitea.sh"
   rm -rf "${push_to_gitea_drift_tmp}"
+
+  local push_to_gitea_force_tmp
+  push_to_gitea_force_tmp="$(mktemp -d)"
+  cp scripts/gitops/push-to-gitea.sh "${push_to_gitea_force_tmp}/push-to-gitea.sh"
+  sed -i.bak 's/^  gitr push -q origin HEAD:main$/  gitr push -q origin +HEAD:main/' \
+    "${push_to_gitea_force_tmp}/push-to-gitea.sh"
+  rm -f "${push_to_gitea_force_tmp}/push-to-gitea.sh.bak"
+  check R113c "R113's check catches a reintroduced forced-refspec push (Narwhal#52, 2026-09-06)" \
+    grep -qE "${push_to_gitea_re}" "${push_to_gitea_force_tmp}/push-to-gitea.sh"
+  rm -rf "${push_to_gitea_force_tmp}"
 }
 
 #=========================================

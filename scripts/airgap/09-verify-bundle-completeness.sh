@@ -14,10 +14,25 @@ set -euo pipefail
 # oci/<name>/index.json, or the run fails closed. Run this as the last step before a
 # bundle is treated as a release artifact — after 02/03/07/08, right before transfer.
 #
-# Usage:
-#   scripts/airgap/09-verify-bundle-completeness.sh [--list images.txt] [--bundle DIR]
+# DIGEST CHECK (narwhal#52 D1-A): every image must also have a resolved-digest row in
+# lib/image-digests.tsv, fail closed on a missing row or a malformed digest. This is
+# a COMPLETENESS check, not a byte-comparison against the on-disk OCI layout: 02
+# calls `skopeo copy --override-arch ... oci:...`, which re-serializes the selected
+# manifest (and its config blob) from Docker schema2 into OCI media types, producing
+# a digest that matches neither image-digests.tsv's index_digest NOR the source's raw
+# per-arch manifest digest even with zero tampering — verified empirically while
+# building image-digests.tsv (see that file's header). Byte-comparing against it here
+# would fail every non-OCI-native image unconditionally, which is worse than not
+# checking at all. What this DOES catch: an image added to images.txt without ever
+# running refresh-image-digests.sh (missing row), or a hand-edited/corrupted table
+# (a digest that isn't a well-formed sha256, for an image that isn't the one
+# documented in-cluster-built exception).
 #
-# Defaults: --list scripts/airgap/images.txt, --bundle "${AIRGAP_BUNDLE_DIR}" (arch-suffixed).
+# Usage:
+#   scripts/airgap/09-verify-bundle-completeness.sh [--list images.txt] [--bundle DIR] [--digests image-digests.tsv]
+#
+# Defaults: --list scripts/airgap/images.txt, --bundle "${AIRGAP_BUNDLE_DIR}" (arch-suffixed),
+#           --digests scripts/airgap/lib/image-digests.tsv.
 # =============================================================================
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -26,12 +41,17 @@ source "${SCRIPT_DIR}/00-config.sh"
 
 LIST_FILE="${SCRIPT_DIR}/images.txt"
 BUNDLE_DIR="${AIRGAP_BUNDLE_DIR}"
+DIGESTS_FILE="${SCRIPT_DIR}/lib/image-digests.tsv"
+
+# shellcheck source=lib/image-classes.sh
+source "${SCRIPT_DIR}/lib/image-classes.sh"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --list)   LIST_FILE="$2"; shift 2 ;;
-    --bundle) BUNDLE_DIR="$2"; shift 2 ;;
-    *)        echo "Unknown arg: $1" >&2; exit 1 ;;
+    --list)     LIST_FILE="$2"; shift 2 ;;
+    --bundle)   BUNDLE_DIR="$2"; shift 2 ;;
+    --digests)  DIGESTS_FILE="$2"; shift 2 ;;
+    *)          echo "Unknown arg: $1" >&2; exit 1 ;;
   esac
 done
 
@@ -45,6 +65,10 @@ if [[ ! -f "${BUNDLE_DIR}/manifest.txt" ]]; then
 fi
 if [[ ! -d "${BUNDLE_DIR}/oci" ]]; then
   echo "ERROR: ${BUNDLE_DIR}/oci missing. Run 02-save-images.sh --list ${LIST_FILE} first." >&2
+  exit 1
+fi
+if [[ ! -f "${DIGESTS_FILE}" ]]; then
+  echo "ERROR: ${DIGESTS_FILE} missing. Run scripts/airgap/lib/refresh-image-digests.sh first." >&2
   exit 1
 fi
 
@@ -74,6 +98,35 @@ while IFS= read -r img; do
 "
 done < "${wanted_sorted}"
 
+# Every wanted image must have a resolved-digest row in image-digests.tsv (join on
+# image_ref, tab-delimited column 1) — a missing row means an image was added to
+# images.txt without ever running refresh-image-digests.sh. Only the documented
+# in-cluster-built exception may carry UNRESOLVED; every other image's index_digest
+# must look like a real sha256, or the table has drifted from what it actually pins.
+digests_sorted=$(mktemp)
+trap 'rm -f "${wanted_sorted}" "${saved_sorted}" "${digests_sorted}"' EXIT
+grep -vE '^[[:space:]]*(#|$)' "${DIGESTS_FILE}" | sort -t $'\t' -k1,1 > "${digests_sorted}"
+
+missing_digest_row=""
+malformed_digest=""
+while IFS= read -r img; do
+  [[ -z "${img}" ]] && continue
+  row=$(awk -F'\t' -v ref="${img}" '$1 == ref { print; exit }' "${digests_sorted}")
+  if [[ -z "${row}" ]]; then
+    missing_digest_row="${missing_digest_row}${img}
+"
+    continue
+  fi
+  digest=$(printf '%s' "${row}" | awk -F'\t' '{ print $2 }')
+  if [[ "${img}" =~ ${INCLUSTER_BUILT_RE} ]]; then
+    continue
+  fi
+  if [[ ! "${digest}" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+    malformed_digest="${malformed_digest}${img} (index_digest='${digest}')
+"
+  fi
+done < "${wanted_sorted}"
+
 fail=0
 
 if [[ -n "${missing_from_manifest}" ]]; then
@@ -85,6 +138,18 @@ fi
 if [[ -n "${missing_oci_layout}" ]]; then
   echo "ERROR: listed in images.txt but no OCI layout (oci/<name>/index.json) on disk:" >&2
   printf '%s' "${missing_oci_layout}" | sed 's/^/  /' >&2
+  fail=1
+fi
+
+if [[ -n "${missing_digest_row}" ]]; then
+  echo "ERROR: listed in images.txt but no row in ${DIGESTS_FILE}:" >&2
+  printf '%s' "${missing_digest_row}" | sed 's/^/  /' >&2
+  fail=1
+fi
+
+if [[ -n "${malformed_digest}" ]]; then
+  echo "ERROR: ${DIGESTS_FILE} row is not a resolved sha256 digest (and is not the documented in-cluster-built exception):" >&2
+  printf '%s' "${malformed_digest}" | sed 's/^/  /' >&2
   fail=1
 fi
 
@@ -101,5 +166,5 @@ if [[ ${fail} -ne 0 ]]; then
   exit 1
 fi
 
-echo "Bundle complete: ${want_count} images in images.txt, all present in manifest.txt and oci/ layout (${BUNDLE_DIR})." >&2
+echo "Bundle complete: ${want_count} images in images.txt, all present in manifest.txt, oci/ layout, and ${DIGESTS_FILE} (${BUNDLE_DIR})." >&2
 exit 0

@@ -55,8 +55,8 @@ OUT_FILE="${1:-/dev/stdout}"
 #     point-in-time pod snapshot may miss them, but a from-scratch airgap install
 #     needs them. Keep this list in sync with the build/hook flows. -------------
 TRANSIENT_IMAGES=$(cat <<'EOF'
-gcr.io/kaniko-project/executor:latest
-docker.io/alpine/git:latest
+gcr.io/kaniko-project/executor:v1.24.0
+docker.io/alpine/git:v2.54.0
 docker.io/alpine/k8s:1.31.4
 velero/velero-plugin-for-aws:v1.14.1
 mirror.gcr.io/aquasec/trivy:0.60.0
@@ -67,9 +67,8 @@ EOF
 # snapshot while a scan is running — pinned here so it's captured deterministically.
 # Bump the tag when trivy-operator (which selects it) is upgraded.
 
-# In-cluster-built image: produced by Kaniko from source pushed to Gitea, NOT
-# pulled from any upstream registry — must never be in a pull-based mirror list.
-INCLUSTER_BUILT_RE='harbor\.local\.narwhal\.internal/library/narwhal-portal'
+# shellcheck source=lib/image-classes.sh
+source "${SCRIPT_DIR}/lib/image-classes.sh"
 
 emit_header() {
   cat <<HEADER
@@ -85,13 +84,16 @@ emit_header() {
 #   - harbor.local.narwhal.internal/library/narwhal-portal:latest — built IN-CLUSTER
 #     by Kaniko; produced, not pulled, so it must not be in a pull-based bundle.
 #
-# :latest TAGS — deliberate vs. hardening:
-#   - ghcr.io/dasomel/goharbor/* :latest is INTENTIONAL — the custom multi-arch
-#     Harbor rebuild is republished to :latest, and we want new builds picked up
-#     automatically. Do NOT digest-pin these (it defeats that).
-#   - gcr.io/kaniko-project/executor:latest and docker.io/alpine/git:latest are
-#     third-party build helpers; digest-pin them if you need a fully reproducible
-#     hardened airgap bundle. Left at :latest here to match the deploy manifests.
+# :latest TAGS — deliberate vs. pinned:
+#   - ghcr.io/dasomel/goharbor/* used to be an intentional :latest exception here;
+#     the custom multi-arch Harbor rebuild is now republished to immutable v2.15.1
+#     tags for all 7 components, so there is no goharbor :latest reference left to
+#     exempt. Re-add this bullet only if goharbor genuinely goes back to tracking
+#     :latest — do not carry it forward as boilerplate.
+#   - gcr.io/kaniko-project/executor and docker.io/alpine/git are PINNED (narwhal#52
+#     D3-A) to immutable version tags, coupled to narwhal-portal's
+#     deploy/kaniko-build-job.yaml, which pins the SAME tags — bump both together or
+#     the bundle and the deploy job disagree on which build-helper image runs.
 #
 # Last regenerated (--live): ${LIVE_STAMP:-unknown}
 HEADER

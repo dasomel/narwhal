@@ -1,0 +1,139 @@
+# image_ref -> upstream index digest -> resolution timestamp -> source.
+#
+# WHY THIS FILE EXISTS: a container tag is a mutable pointer — the registry lets
+# `v1.2.3` be re-pushed to point at different bytes with no visible change in
+# images.txt. This table pins the digest each tag resolved to when last reviewed, so
+# a re-push is a diff here (caught by `refresh-image-digests.sh --check`) instead of
+# a silent change in what the next airgap bundle ships.
+#
+# index_digest is what the registry returns for `<image_ref>` with NO arch override
+# (`crane digest <ref>`, equivalently `skopeo inspect --raw docker://<ref> | sha256sum`)
+# — for a multi-arch image this is the manifest-list/index digest, and it is the
+# value that changes on a tag re-push. IT IS NOT the digest that ends up on disk in
+# an airgap bundle: 02-save-images.sh runs `skopeo copy --override-arch ... oci:...`,
+# which selects one platform's manifest AND re-serializes it (and its config blob)
+# from Docker schema2 media types into OCI media types — a real re-encoding that
+# changes the digest even with zero tampering (verified while building this table:
+# copying a plain docker.io/library/busybox:1.28 produced a local digest matching
+# NEITHER the source index digest NOR the source per-arch manifest digest). So this
+# column is the upstream drift detector, not a value 09-verify-bundle-completeness.sh
+# can byte-compare against the local OCI layout — see that script's own comments for
+# what it checks instead.
+#
+# UNRESOLVED rows: if images.txt ever lists an image matching
+# 01-generate-image-list.sh's INCLUSTER_BUILT_RE (built in-cluster by Kaniko, never
+# pulled from any registry), this script writes UNRESOLVED here instead of a digest,
+# with the reason in the source column. As of this table, that image is excluded
+# from images.txt outright (see images.txt's own EXCLUDED comment) rather than
+# listed with an UNRESOLVED row, so no row below is currently UNRESOLVED — this
+# branch defends a future images.txt that lists it for tracking without ever having
+# an upstream digest to resolve.
+#
+# Refresh with:      scripts/airgap/lib/refresh-image-digests.sh
+# Check for drift with: scripts/airgap/lib/refresh-image-digests.sh --check
+#
+# image_ref	index_digest	resolved_at	source
+apache/apisix-ingress-controller:1.8.0	sha256:57d581ba7d69c85e61af642b352b1c62cefeeef5cae7951281ccbf621fb8c943	2026-09-06T12:35:06Z	crane digest
+apache/apisix:3.15.0-ubuntu	sha256:142dde6b11d7dd2a4e1440906910595aad04f05d6d39a6591b5845ac4707bc6e	2026-09-06T12:35:06Z	crane digest
+busybox:1.28	sha256:141c253bc4c3fd0a201d32dc1f493bcf3fff003b6df416dea4f41046e0f37d47	2026-09-06T12:35:06Z	crane digest
+chrislusf/seaweedfs:4.34	sha256:6620371e8af8282056685c652d4637265698c9e2c2d59f9594e6ac333ad6c634	2026-09-06T12:35:06Z	crane digest
+docker.gitea.com/gitea:1.26.2-rootless	sha256:c5c21a7705a16f2b2369384a3b7d67c5ed761a818bbb0a55187b5cf98cdc2e68	2026-09-06T12:35:06Z	crane digest
+docker.io/alpine/git:v2.54.0	sha256:6f3b5029566da8e90b24945933dcd806be866b64b1e706f51828bf84faccf21b	2026-09-06T12:35:06Z	crane digest
+docker.io/alpine/k8s:1.31.4	sha256:9c4976d47656d78cf53a92b0203fc54ac45eae18a2b45001ac221c27da4c8036	2026-09-06T12:35:06Z	crane digest
+docker.io/grafana/alloy:v1.17.0	sha256:41c41849989b7e054ccbadc17938ee1e5592fe26bfbc56ef3ffc109c0b0b2739	2026-09-06T12:35:06Z	crane digest
+docker.io/grafana/grafana:13.0.2	sha256:5dad0df181cb644a14e13617b913b261a54f7d4fd4510721dba420929f35bea2	2026-09-06T12:35:06Z	crane digest
+docker.io/grafana/loki-canary:3.7.3	sha256:8073c4a5cb70191f4ebf5481704b3a665a92c764de3f03e7f42578aa3b8c2e6a	2026-09-06T12:35:06Z	crane digest
+docker.io/grafana/loki:3.7.3	sha256:70b9f699fc9bb868b62f1cfd4f787dfa50242f1fd92e6089787d5d7daea75fe8	2026-09-06T12:35:06Z	crane digest
+docker.io/grafana/tempo:2.9.0	sha256:65a5789759435f1ef696f1953258b9bbdb18eb571d5ce711ff812d2e128288a4	2026-09-06T12:35:06Z	crane digest
+docker.io/hashicorp/vault-k8s:1.7.2	sha256:ae3d307658b72a1cf35dab9bdf92c995d45cdc7183af0516857714b5bd0ba84d	2026-09-06T12:35:06Z	crane digest
+docker.io/kiwigrid/k8s-sidecar:2.8.1	sha256:abb55b2165c60e8f97e473862c7a3123df6f67d44f592949577c29b8fb2df9d6	2026-09-06T12:35:06Z	crane digest
+docker.io/kubernetesui/dashboard-api:1.14.0	sha256:96a702cfd3399d9eba23b3d37b09f798a4f51fcd8c8dfa8552c7829ade9c4aff	2026-09-06T12:35:06Z	crane digest
+docker.io/kubernetesui/dashboard-auth:1.4.0	sha256:53e9917898bf98ff2de91f7f9bdedd3545780eb3ac72158889ae031136e9eeff	2026-09-06T12:35:06Z	crane digest
+docker.io/kubernetesui/dashboard-metrics-scraper:1.2.2	sha256:5154b68252bd601cf85092b6413cb9db224af1ef89cb53009d2070dfccd30775	2026-09-06T12:35:06Z	crane digest
+docker.io/kubernetesui/dashboard-web:1.7.0	sha256:cc7c31bd2d8470e3590dcb20fe980769b43054b31a5c5c0da606e9add898d85d	2026-09-06T12:35:06Z	crane digest
+docker.io/library/busybox:1.36	sha256:73aaf090f3d85aa34ee199857f03fa3a95c8ede2ffd4cc2cdb5b94e566b11662	2026-09-06T12:35:06Z	crane digest
+docker.io/library/busybox:1.38.0	sha256:dc2d74b28e4cf8984fa52af1f39bc7c3d9c73760b41a74d629f5d11b1ab28616	2026-09-06T12:35:06Z	crane digest
+docker.io/library/registry:2	sha256:a3d8aaa63ed8681a604f1dea0aa03f100d5895b6a58ace528858a7b332415373	2026-09-06T12:35:06Z	crane digest
+docker.io/otwld/velero-ui:0.10.1	sha256:d52893e4a4976ccc7e4c6830cf8b1d4e5125a1bdcac38f7c1f65f201479bffc3	2026-09-06T12:35:06Z	crane digest
+docker.io/valkey/valkey:8-alpine	sha256:cfb2aa4c8352930130fd45eb231a57310ac326d7323edae12b384b9270c46dda	2026-09-06T12:35:06Z	crane digest
+docker.io/velero/velero:v1.18.1	sha256:11459094b1b21ec7c817b08f8067d9e89380835547915cac9c4132ff05b55b90	2026-09-06T12:35:06Z	crane digest
+gcr.io/kaniko-project/executor:v1.24.0	sha256:4e7a52dd1f14872430652bb3b027405b8dfd17c4538751c620ac005741ef9698	2026-09-06T12:35:06Z	crane digest
+ghcr.io/chaos-mesh/chaos-daemon:v2.8.3	sha256:69b1d3c09cfa58df94f5be7e498591f88f5007f6d22ebeeeda1731cb37acd377	2026-09-06T12:35:06Z	crane digest
+ghcr.io/chaos-mesh/chaos-mesh:v2.8.3	sha256:bdb31f3121a2979361c2a12cfb2a7845b7e66dc7589dcde5f9457473b50c707f	2026-09-06T12:35:06Z	crane digest
+ghcr.io/cloudnative-pg/cloudnative-pg:1.29.1	sha256:0dfff19ba7b52ca25851a1010028b6940fff2e233290465af1cfb08a5f3f4661	2026-09-06T12:35:06Z	crane digest
+ghcr.io/cloudnative-pg/pgbouncer:1.25.1	sha256:e6ddfe22d845e603825e235dd8334b21ecd125abea2a2172478f556b8dee2bb8	2026-09-06T12:35:06Z	crane digest
+ghcr.io/cloudnative-pg/postgresql:18	sha256:899d3ed526b659d77935dde0e6bf2d69dbbf17d3d8c6486ca8cfd04bd3c18533	2026-09-06T12:35:06Z	crane digest
+ghcr.io/dasomel/goharbor/harbor-core:v2.15.1	sha256:6ebd8d5414882f6ed124e660ab254da0ee8a925bf54a8f21ae8c609ed11867ad	2026-09-06T12:35:06Z	crane digest
+ghcr.io/dasomel/goharbor/harbor-jobservice:v2.15.1	sha256:168e2f6d4446c804096d478348f2fc80c78b93c4d0e575a8c6e8bdfaf62fd9f9	2026-09-06T12:35:06Z	crane digest
+ghcr.io/dasomel/goharbor/harbor-portal:v2.15.1	sha256:afff28bf9cc371eea270fcb79df283e90fab93a2d31c67fa9505da88abfec20f	2026-09-06T12:35:06Z	crane digest
+ghcr.io/dasomel/goharbor/harbor-registryctl:v2.15.1	sha256:1fdf3a1de4b1683da05aa63d4e6f4a5b57bebed522add76d146ecabc0e6039f6	2026-09-06T12:35:06Z	crane digest
+ghcr.io/dasomel/goharbor/nginx-photon:v2.15.1	sha256:1060a7ef51152c061415cde866c9657f1f74e758d374b08bc9871735096eb7ef	2026-09-06T12:35:06Z	crane digest
+ghcr.io/dasomel/goharbor/redis-photon:v2.15.1	sha256:4e9f77d2c5c0e6f8ae70acc45f8db7c719710333952ffcaecf6883de4fbb0e25	2026-09-06T12:35:06Z	crane digest
+ghcr.io/dasomel/goharbor/registry-photon:v2.15.1	sha256:baedda128bb9e7eb9df72fa904e4d17d162004b0a2bb12090c682161b4d7e348	2026-09-06T12:35:06Z	crane digest
+ghcr.io/dasomel/narwhal-portal:1.0.16	sha256:006781920e05afc99527207ba89b4a3f33e29feb6f8adb610b88ab4294cd0dad	2026-09-06T12:35:06Z	crane digest
+ghcr.io/dasomel/nfs-quota-agent:v0.3.0	sha256:c92658bdf68b9492afd2b28dff94dc51f8f8600a2a5c46df4cfb3185706eb57e	2026-09-06T12:35:06Z	crane digest
+ghcr.io/dexidp/dex:v2.45.0	sha256:b8469881d3cb3a73001506f0d3aaefecb9c45d2311c1e0f405d8ac538316c59d	2026-09-06T12:35:06Z	crane digest
+ghcr.io/grafana/alloy-operator:1.10.0	sha256:6ee05ccf3b25850aed95392b4d12e8ae80dd76e235d31fd525639a3356ad8b13	2026-09-06T12:35:06Z	crane digest
+ghcr.io/headlamp-k8s/headlamp:v0.42.0	sha256:c9754bae1d799220da0547e51ceee234f6e66ebadc138518ca73e33ecd331e59	2026-09-06T12:35:06Z	crane digest
+ghcr.io/jkroepke/kube-webhook-certgen:1.8.3	sha256:8ce13c365c8e9ced0aad5ef350a53c50b7ca5817f99d856b9eec895db1056728	2026-09-06T12:35:06Z	crane digest
+ghcr.io/kube-vip/kube-vip:v1.1.2	sha256:840305b94ef2a89abb3b7fd2b09edfbde690d90052020da4dff90679fe892da2	2026-09-06T12:35:06Z	crane digest
+ghcr.io/kyverno/readiness-checker:v1.18.1	sha256:455400758235cf448dd9be3374ecb9e8bf543ee0c39adc880d25ed28cc7eb69d	2026-09-06T12:35:06Z	crane digest
+kong:3.9	sha256:2a8cf3b110cdaba1cb00adc665b8635ed1fc75c907f7a4298613c68e4976de0a	2026-09-06T12:35:06Z	crane digest
+mirror.gcr.io/aquasec/trivy-operator:0.25.0	sha256:886761b8b4c0f431407257ab614516a08b88c887619400c9606134f504844a52	2026-09-06T12:35:06Z	crane digest
+mirror.gcr.io/aquasec/trivy:0.60.0	sha256:91c3a842834563a6860dbaec5af7c1949df5caf988f9632ef5cbb0a5cd59d8f8	2026-09-06T12:35:06Z	crane digest
+mirror.gcr.io/chrislusf/seaweedfs:4.40	sha256:52194fba4fecd0083c842158b3a902ba6e04a63619b2b0efcd08007bdb6a4602	2026-09-06T12:35:06Z	crane digest
+mirror.gcr.io/curlimages/curl:8.21.0	sha256:7c12af72ceb38b7432ab85e1a265cff6ae58e06f95539d539b654f2cfa64bb13	2026-09-06T12:35:06Z	crane digest
+quay.io/argoproj/argocd:v3.4.4	sha256:2fb3efa9eaa42382acb39c9a1485eaac7a1ad7a09e8aa7da7143ca256fa6da09	2026-09-06T12:35:06Z	crane digest
+quay.io/cilium/cilium-envoy:v1.36.6-1778235340-b87d1e32f522b33bd51701c6476d199326f01496	sha256:71d4fa0ec45e8d546dbd5604e169dc77fe92be63b799313bff031d00d89762e3	2026-09-06T12:35:06Z	crane digest
+quay.io/cilium/cilium:v1.19.4	sha256:2eb67991eaa9368ba199c2fac2c573cb0ffdeb79184533344f42fc9a7ff6af3c	2026-09-06T12:35:06Z	crane digest
+quay.io/cilium/hubble-relay:v1.19.4	sha256:59af8c0d561e560c2a042e7600a3496bc0367df8fbf868aa68d5834c8ec1a431	2026-09-06T12:35:06Z	crane digest
+quay.io/cilium/hubble-ui-backend:v0.13.5	sha256:fac0c300ae119274edca11fd89b1ad23c788792d8bc4ea2ba631c709e8d3c688	2026-09-06T12:35:06Z	crane digest
+quay.io/cilium/hubble-ui:v0.13.5	sha256:f7d514fc54d784ed6df9d58cf0e97648b143f92b766dd1780ed3fc845bd4c516	2026-09-06T12:35:06Z	crane digest
+quay.io/cilium/operator-generic:v1.19.4	sha256:1aa2b62735e7d8ab49ee840ae59c346932024c88901579121395c1271b435f71	2026-09-06T12:35:06Z	crane digest
+quay.io/frrouting/frr:10.4.3	sha256:8745af1f9bbbc26ab11d99ccdf35e07aa3427a199749bef0cd6bb5132bb130df	2026-09-06T12:35:06Z	crane digest
+quay.io/jetstack/cert-manager-cainjector:v1.20.2	sha256:6f5a644135887b2aa7d5cc145072fa56421560e3586ff1f184358022d490f4e1	2026-09-06T12:35:06Z	crane digest
+quay.io/jetstack/cert-manager-controller:v1.20.2	sha256:fe0623d7d04a382c888f03343a3a2da716e0d96ad3d5d790c0ebcbcb2a4329a5	2026-09-06T12:35:06Z	crane digest
+quay.io/jetstack/cert-manager-startupapicheck:v1.20.2	sha256:4e2a69b4a0cc9627905bbeecf720f95d5153ca39cacdab923d2748e73556792b	2026-09-06T12:35:06Z	crane digest
+quay.io/jetstack/cert-manager-webhook:v1.20.2	sha256:baf651128b9f05c426cbd5e60e2036bf382c99ca270f49d0757d6f7d2452f4e5	2026-09-06T12:35:06Z	crane digest
+quay.io/keycloak/keycloak-operator:26.5.7	sha256:4aaa52610f9427ef0eebbf120b24bb22cf99b7197f125b140887e2add407edce	2026-09-06T12:35:06Z	crane digest
+quay.io/keycloak/keycloak:26.5.7	sha256:45ae20191531eb608ddb0b775d012b40d3e4f942697f3214694887dd7c108d13	2026-09-06T12:35:06Z	crane digest
+quay.io/kiwigrid/k8s-sidecar:2.7.3	sha256:694950d736c8b532eba4006527ccbdac98fefc9f30b3346ba2de50b6cad91c94	2026-09-06T12:35:06Z	crane digest
+quay.io/metallb/controller:v0.16.1	sha256:f51ab515de9ccd20dc3dccb093e48df8adddac019326c456f449e55ba91b6420	2026-09-06T12:35:06Z	crane digest
+quay.io/metallb/frr-k8s:v0.0.25	sha256:1cb06fb2d5538c9f9b20d3adf00da8d1e6cb0166bc15df8add0d9efe578641a4	2026-09-06T12:35:06Z	crane digest
+quay.io/metallb/speaker:v0.16.1	sha256:16561e96531e1852d5c229ad7fae6e994dcfa983ff7f4de6b6208b34a4e2ddbc	2026-09-06T12:35:06Z	crane digest
+quay.io/openbao/openbao:2.5.4	sha256:436eaf9778cad75507ff70ea26ace30dcbe15606e619ac3823495663d7f7c115	2026-09-06T12:35:06Z	crane digest
+quay.io/prometheus-operator/prometheus-config-reloader:v0.91.0	sha256:7d9e4eea5f1139e602508871f422b0116c60e87c662f3dcd234d5ab60cd0d8c1	2026-09-06T12:35:06Z	crane digest
+quay.io/prometheus-operator/prometheus-operator:v0.91.0	sha256:9e53e13139218aca79ee000172de73355e9174ef2904585bfad9497fc71aae2d	2026-09-06T12:35:06Z	crane digest
+quay.io/prometheus/alertmanager:v0.33.0	sha256:af26fbe4dd1886ac0efd7bd55cd9027da262e105b137a376522b7c14c3626e4a	2026-09-06T12:35:06Z	crane digest
+quay.io/prometheus/node-exporter:v1.11.1-distroless	sha256:6112664fd761bb964d8a2d3d0119d6c8402618a89edbb3a43c8f7b4090fb53c9	2026-09-06T12:35:06Z	crane digest
+quay.io/prometheus/prometheus:v3.12.0-distroless	sha256:f39df5334dee301b885f77e0ff1159f5d8a43bf9db518f885544594799a1e3c2	2026-09-06T12:35:06Z	crane digest
+reg.kyverno.io/kyverno/background-controller:v1.18.1	sha256:33a19d2ae18ee0b8e650172f65985f35acd8909d6eeca4032465cca1ba022831	2026-09-06T12:35:06Z	crane digest
+reg.kyverno.io/kyverno/cleanup-controller:v1.18.1	sha256:e9b3342264c82ae35f4fe3abd0e563e613bb54eae6ca493134f0fd4cbacfc0d1	2026-09-06T12:35:06Z	crane digest
+reg.kyverno.io/kyverno/kyverno-cli:v1.18.1	sha256:b7e272572d244ddec0b83469f7200ba883555bf69de4b294cee52a197c8c6590	2026-09-06T12:35:06Z	crane digest
+reg.kyverno.io/kyverno/kyverno:v1.18.1	sha256:dcd8cf6de2158cd8334fc728f9c4eb521e2c006320a59d69a9b91af87ac8f41c	2026-09-06T12:35:06Z	crane digest
+reg.kyverno.io/kyverno/kyvernopre:v1.18.1	sha256:e72b2309cde1d77de494c17e519dfe1dff9c1ee4d64327e80298a018bb612628	2026-09-06T12:35:06Z	crane digest
+reg.kyverno.io/kyverno/reports-controller:v1.18.1	sha256:4972c80bccbafecc65406ec938abf029f0a428c56ea86f4e5cd11f63d951aad9	2026-09-06T12:35:06Z	crane digest
+registry.istio.io/release/install-cni:1.30.1-distroless	sha256:77e5a27b2da2e17e5846d8ce604aaa2cf189e0e1932e6fd2292ad7826fd1761a	2026-09-06T12:35:06Z	crane digest
+registry.istio.io/release/pilot:1.30.1-distroless	sha256:cfa22e95f3943a1be95bf06d6e2cecf2ce9a3bc34a1570acabaa175ece4f501d	2026-09-06T12:35:06Z	crane digest
+registry.istio.io/release/proxyv2:1.30.1-distroless	sha256:a784f99d59902316df49c20844b231524ef4c4775176021e361ebb9e21b0890a	2026-09-06T12:35:06Z	crane digest
+registry.istio.io/release/ztunnel:1.30.1	sha256:e908d25223d866ecbe336fafbb62cdb468431784565a5cc0790d1a1c9565f6f6	2026-09-06T12:35:06Z	crane digest
+registry.k8s.io/coredns/coredns:v1.13.1	sha256:9b9128672209474da07c91439bf15ed704ae05ad918dd6454e5b6ae14e35fee6	2026-09-06T12:35:06Z	crane digest
+registry.k8s.io/etcd:3.5.31-0	sha256:5c3df58a647f0eec0451ca6c8a285a5179f1a64f4d5a79dd65b696f95d152a39	2026-09-06T12:35:06Z	crane digest
+registry.k8s.io/etcd:3.6.6-0	sha256:60a30b5d81b2217555e2cfb9537f655b7ba97220b99c39ee2e162a7127225890	2026-09-06T12:35:06Z	crane digest
+registry.k8s.io/kube-apiserver:v1.35.6	sha256:5bb9700f458af4d1cea5f7bbd080f2c66140fb000d9840a436569f16978489d8	2026-09-06T12:35:06Z	crane digest
+registry.k8s.io/kube-apiserver:v1.35.7	sha256:ff4a56901bb9a71c450e2adfb1a439d3543a76aa4877225039330479ac596146	2026-09-06T12:35:06Z	crane digest
+registry.k8s.io/kube-controller-manager:v1.35.6	sha256:7277ab445774ad6fa62e7859151f819a8deb749e1203cbd6ddf7ac8dce5c0e1e	2026-09-06T12:35:06Z	crane digest
+registry.k8s.io/kube-controller-manager:v1.35.7	sha256:e7b2efd17ceeabf5e2ee570ee2620cdae2ab6e01ca4b6909fb2381f0cdd36ce9	2026-09-06T12:35:06Z	crane digest
+registry.k8s.io/kube-proxy:v1.35.7	sha256:9c095bdbaa0ccdfd6484e5bec68e57a1cb18908aee418603e51577286a37616e	2026-09-06T12:35:06Z	crane digest
+registry.k8s.io/kube-scheduler:v1.35.6	sha256:51a32afb3c6966c974cd3b351042b1cb1b15af0619cb25e006c409d91367ea2e	2026-09-06T12:35:06Z	crane digest
+registry.k8s.io/kube-scheduler:v1.35.7	sha256:e3ad7e716accdcaed277e825df70b162478adc40cc0dd482046c9edb219ff3ec	2026-09-06T12:35:06Z	crane digest
+registry.k8s.io/kube-state-metrics/kube-state-metrics:v2.19.1	sha256:85108987d044b18a098126732f98602df408888c0f7d456241f5abefb9744bc1	2026-09-06T12:35:06Z	crane digest
+registry.k8s.io/metrics-server/metrics-server:v0.8.1	sha256:b2d2efaf5ac3b366ed0f839d2412a2c4279d4fc2a2a733f12c52133faed36c41	2026-09-06T12:35:06Z	crane digest
+registry.k8s.io/pause:3.10.1	sha256:278fb9dbcca9518083ad1e11276933a2e96f23de604a3a08cc3c80002767d24c	2026-09-06T12:35:06Z	crane digest
+registry.k8s.io/sig-storage/csi-node-driver-registrar:v2.15.0	sha256:11f199f6bec47403b03cb49c79a41f445884b213b382582a60710b8c6fdc316a	2026-09-06T12:35:06Z	crane digest
+registry.k8s.io/sig-storage/csi-provisioner:v6.1.0	sha256:e5900dc98b0d02f317ea9572f3824983c47a2fb5d5fe2b160aedf1b99c14c9e4	2026-09-06T12:35:06Z	crane digest
+registry.k8s.io/sig-storage/csi-resizer:v2.0.0	sha256:4a95d94e57ad82f6977cd8d4fdcfcfc0b83f02d990e4e7715b688c20970a906d	2026-09-06T12:35:06Z	crane digest
+registry.k8s.io/sig-storage/csi-snapshotter:v8.4.0	sha256:c7e0a3718832b6197ce8b29fefb3fed3d84f4fbcdf08f4606140dbec2566501d	2026-09-06T12:35:06Z	crane digest
+registry.k8s.io/sig-storage/livenessprobe:v2.17.0	sha256:9b75b9ade162136291d5e8f13a1dfc3dec71ee61419b1bfc112e0796ff8a6aa9	2026-09-06T12:35:06Z	crane digest
+registry.k8s.io/sig-storage/nfsplugin:v4.13.2	sha256:4d36099293d06ede941876e6166573830eac41d6d23cd6f86d21257fb29cdb98	2026-09-06T12:35:06Z	crane digest
+velero/velero-plugin-for-aws:v1.14.1	sha256:1493a0039cd5cb31004cfbb52f8a1990bc0ed81497ce72516bc76fa9e21506c1	2026-09-06T12:35:06Z	crane digest

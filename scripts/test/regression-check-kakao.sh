@@ -376,6 +376,120 @@ PYEOF
   check R48 "idp-apps is gated on source validation (2026-08-21)" \
     grep -q 'GITOPS_SOURCE_VALIDATED' scripts/cluster/14-gitops-bootstrap.sh
 
+  # Narwhal#159 (2026-09-06): the remaining AC item — failure injection coverage for the
+  # six fail-closed gates 14-gitops-bootstrap.sh already carries. No live cluster exists
+  # to inject against, so this follows docs/common/test-strategy.md 5 (T1 mutated temp
+  # copy): assert the gate against the real file, then prove the SAME assertion flips
+  # when a copy is mutated back to the swallowed-failure shape the issue fixed. The real
+  # file is never touched.
+
+  # 1) Gitea unavailable: the readiness wait must fail closed, not degrade to a hang or
+  # a silent continue against a Gitea that never came up. Discriminator: an `if ! kubectl
+  # wait ...; then ... exit 1; fi` gate within the wait line's next 6 lines. Every window
+  # below is -A6 rather than the minimum: a gate that grows an explanatory echo must not
+  # turn the check red (fails safe, but a false FAIL still costs a triage).
+  check R106 "gitea readiness wait fails closed on timeout (Narwhal#159, 2026-09-06)" \
+    bash -c "grep -A6 -E 'if ! kubectl wait --for=condition=Ready pod -l app\\.kubernetes\\.io/name=gitea' scripts/cluster/14-gitops-bootstrap.sh | grep -q 'exit 1'"
+
+  local gitea_wait_drift_tmp
+  gitea_wait_drift_tmp="$(mktemp -d)"
+  cp scripts/cluster/14-gitops-bootstrap.sh "${gitea_wait_drift_tmp}/14-gitops-bootstrap.sh"
+  sed -i.bak '/^if ! kubectl wait --for=condition=Ready pod -l app\.kubernetes\.io\/name=gitea -n devtools --timeout=300s; then$/,/^fi$/c\
+kubectl wait --for=condition=Ready pod -l app.kubernetes.io/name=gitea -n devtools --timeout=300s || true' \
+    "${gitea_wait_drift_tmp}/14-gitops-bootstrap.sh"
+  rm -f "${gitea_wait_drift_tmp}/14-gitops-bootstrap.sh.bak"
+  check_not R106b "gitea wait gate check catches a swallowed \`|| true\` regression (Narwhal#159, 2026-09-06)" \
+    bash -c "grep -A6 -E 'if ! kubectl wait --for=condition=Ready pod -l app\\.kubernetes\\.io/name=gitea' '${gitea_wait_drift_tmp}/14-gitops-bootstrap.sh' | grep -q 'exit 1'"
+  rm -rf "${gitea_wait_drift_tmp}"
+
+  # 2) Repository create failure: an unexpected HTTP code (neither 201 created nor 409
+  # already-exists) must exit 1, not just log and fall through into a script that
+  # assumes the repository exists. Discriminator: the `*)` default `case` branch ends in
+  # `exit 1`, not a bare log.
+  check R107 "repository create failure (unexpected HTTP code) exits 1 (Narwhal#159, 2026-09-06)" \
+    bash -c "grep -A6 -F '*)   echo \"ERROR: repository creation failed' scripts/cluster/14-gitops-bootstrap.sh | grep -q 'exit 1'"
+
+  local repo_create_drift_tmp
+  repo_create_drift_tmp="$(mktemp -d)"
+  cp scripts/cluster/14-gitops-bootstrap.sh "${repo_create_drift_tmp}/14-gitops-bootstrap.sh"
+  sed -i.bak 's/cat \/tmp\/repo-create.json >&2; exit 1 ;;/cat \/tmp\/repo-create.json >\&2 ;;/' \
+    "${repo_create_drift_tmp}/14-gitops-bootstrap.sh"
+  rm -f "${repo_create_drift_tmp}/14-gitops-bootstrap.sh.bak"
+  check_not R107b "repo-create check catches a dropped exit 1 on the default case (Narwhal#159, 2026-09-06)" \
+    bash -c "grep -A6 -F '*)   echo \"ERROR: repository creation failed' '${repo_create_drift_tmp}/14-gitops-bootstrap.sh' | grep -q 'exit 1'"
+  rm -rf "${repo_create_drift_tmp}"
+
+  # 3) Clone failure: a failed `git clone` must exit 1 rather than fall through to a
+  # `cd` into a directory that was never created. Discriminator: the `if ! git clone
+  # ...; then ... exit 1; fi` gate, not a bare `|| true`.
+  check R108 "gitops repo clone failure exits 1 (Narwhal#159, 2026-09-06)" \
+    bash -c "grep -A6 -F 'if ! git clone \"http://\${GITEA_ADMIN_USER}:\${GITEA_ADMIN_PASSWORD}@localhost:3000/\${GITEA_ADMIN_USER}/\${REPO_NAME}.git\"; then' scripts/cluster/14-gitops-bootstrap.sh | grep -q 'exit 1'"
+
+  local clone_drift_tmp
+  clone_drift_tmp="$(mktemp -d)"
+  cp scripts/cluster/14-gitops-bootstrap.sh "${clone_drift_tmp}/14-gitops-bootstrap.sh"
+  sed -i.bak '/^if ! git clone "http:\/\/\${GITEA_ADMIN_USER}:\${GITEA_ADMIN_PASSWORD}@localhost:3000\/\${GITEA_ADMIN_USER}\/\${REPO_NAME}\.git"; then$/,/^fi$/c\
+git clone "http://${GITEA_ADMIN_USER}:${GITEA_ADMIN_PASSWORD}@localhost:3000/${GITEA_ADMIN_USER}/${REPO_NAME}.git" || true' \
+    "${clone_drift_tmp}/14-gitops-bootstrap.sh"
+  rm -f "${clone_drift_tmp}/14-gitops-bootstrap.sh.bak"
+  check_not R108b "clone gate check catches a swallowed \`|| true\` regression (Narwhal#159, 2026-09-06)" \
+    bash -c "grep -A6 -F 'if ! git clone \"http://\${GITEA_ADMIN_USER}:\${GITEA_ADMIN_PASSWORD}@localhost:3000/\${GITEA_ADMIN_USER}/\${REPO_NAME}.git\"; then' '${clone_drift_tmp}/14-gitops-bootstrap.sh' | grep -q 'exit 1'"
+  rm -rf "${clone_drift_tmp}"
+
+  # 4) Push failure: a failed `git push origin main` must exit 1, not silently leave
+  # GITOPS_COMMIT pointing at a commit that never reached the server. Discriminator: the
+  # `if ! git push origin main; then ... exit 1; fi` gate, not a bare `|| true`.
+  check R109 "gitops repo push failure exits 1 (Narwhal#159, 2026-09-06)" \
+    bash -c "grep -A6 -F 'if ! git push origin main; then' scripts/cluster/14-gitops-bootstrap.sh | grep -q 'exit 1'"
+
+  local push_drift_tmp
+  push_drift_tmp="$(mktemp -d)"
+  cp scripts/cluster/14-gitops-bootstrap.sh "${push_drift_tmp}/14-gitops-bootstrap.sh"
+  sed -i.bak '/^if ! git push origin main; then$/,/^fi$/c\
+git push origin main || true' \
+    "${push_drift_tmp}/14-gitops-bootstrap.sh"
+  rm -f "${push_drift_tmp}/14-gitops-bootstrap.sh.bak"
+  check_not R109b "push gate check catches a swallowed \`|| true\` regression (Narwhal#159, 2026-09-06)" \
+    bash -c "grep -A6 -F 'if ! git push origin main; then' '${push_drift_tmp}/14-gitops-bootstrap.sh' | grep -q 'exit 1'"
+  rm -rf "${push_drift_tmp}"
+
+  # 5) Missing chart tree: the PRE-COMMIT loop over charts/narwhal-apps/Chart.yaml,
+  # apps/app-of-apps.yaml and resources/argocd-projects.yaml must exit 1 if any is
+  # missing from the staged tree, before it is ever committed or pushed. Targeted by its
+  # unique message ("is missing from the staged gitops tree") so this does not match the
+  # second, similarly-shaped loop later in the file that re-checks the same paths against
+  # the Gitea API after push.
+  check R110 "staged gitops tree is verified complete before commit (Narwhal#159, 2026-09-06)" \
+    bash -c "grep -A6 -F 'is missing from the staged gitops tree' scripts/cluster/14-gitops-bootstrap.sh | grep -q 'exit 1'"
+
+  local chart_tree_drift_tmp
+  chart_tree_drift_tmp="$(mktemp -d)"
+  cp scripts/cluster/14-gitops-bootstrap.sh "${chart_tree_drift_tmp}/14-gitops-bootstrap.sh"
+  sed -i.bak '/is missing from the staged gitops tree/,/^  fi$/ s/^    exit 1$//' \
+    "${chart_tree_drift_tmp}/14-gitops-bootstrap.sh"
+  rm -f "${chart_tree_drift_tmp}/14-gitops-bootstrap.sh.bak"
+  check_not R110b "staged-tree check catches a dropped exit 1 (Narwhal#159, 2026-09-06)" \
+    bash -c "grep -A6 -F 'is missing from the staged gitops tree' '${chart_tree_drift_tmp}/14-gitops-bootstrap.sh' | grep -q 'exit 1'"
+  rm -rf "${chart_tree_drift_tmp}"
+
+  # 6) Stale revision: after push, the branch's HEAD on the SERVER must match the commit
+  # we just pushed, or exit 1 — otherwise a concurrent writer or a push that silently
+  # landed elsewhere goes unnoticed and ArgoCD is pointed at the wrong revision.
+  # Discriminator: the post-push `if [ "${remote_commit}" != "${GITOPS_COMMIT}" ]; then
+  # ... exit 1; fi` gate, not just a log.
+  check R111 "stale/mismatched remote revision after push exits 1 (Narwhal#159, 2026-09-06)" \
+    bash -c "grep -A6 -F 'if [ \"\${remote_commit}\" != \"\${GITOPS_COMMIT}\" ]; then' scripts/cluster/14-gitops-bootstrap.sh | grep -q 'exit 1'"
+
+  local stale_rev_drift_tmp
+  stale_rev_drift_tmp="$(mktemp -d)"
+  cp scripts/cluster/14-gitops-bootstrap.sh "${stale_rev_drift_tmp}/14-gitops-bootstrap.sh"
+  sed -i.bak '/if \[ "\${remote_commit}" != "\${GITOPS_COMMIT}" \]; then/,/^fi$/ s/^  exit 1$//' \
+    "${stale_rev_drift_tmp}/14-gitops-bootstrap.sh"
+  rm -f "${stale_rev_drift_tmp}/14-gitops-bootstrap.sh.bak"
+  check_not R111b "stale-revision check catches a dropped exit 1 (Narwhal#159, 2026-09-06)" \
+    bash -c "grep -A6 -F 'if [ \"\${remote_commit}\" != \"\${GITOPS_COMMIT}\" ]; then' '${stale_rev_drift_tmp}/14-gitops-bootstrap.sh' | grep -q 'exit 1'"
+  rm -rf "${stale_rev_drift_tmp}"
+
   # 2026-08-21, twice in two days: an unquoted heredoc EXECUTES backticks, including on
   # comment lines — `#` is a comment to the document, not to the shell. Once the
   # substitution would have landed inside a Casbin policy. shellcheck calls it SC2006

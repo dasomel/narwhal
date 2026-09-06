@@ -55,8 +55,8 @@ OUT_FILE="${1:-/dev/stdout}"
 #     point-in-time pod snapshot may miss them, but a from-scratch airgap install
 #     needs them. Keep this list in sync with the build/hook flows. -------------
 TRANSIENT_IMAGES=$(cat <<'EOF'
-gcr.io/kaniko-project/executor:latest
-docker.io/alpine/git:latest
+gcr.io/kaniko-project/executor:v1.24.0
+docker.io/alpine/git:v2.54.0
 docker.io/alpine/k8s:1.31.4
 velero/velero-plugin-for-aws:v1.14.1
 mirror.gcr.io/aquasec/trivy:0.60.0
@@ -85,13 +85,14 @@ emit_header() {
 #   - harbor.local.narwhal.internal/library/narwhal-portal:latest — built IN-CLUSTER
 #     by Kaniko; produced, not pulled, so it must not be in a pull-based bundle.
 #
-# :latest TAGS — deliberate vs. hardening:
+# :latest TAGS — deliberate vs. pinned:
 #   - ghcr.io/dasomel/goharbor/* :latest is INTENTIONAL — the custom multi-arch
 #     Harbor rebuild is republished to :latest, and we want new builds picked up
 #     automatically. Do NOT digest-pin these (it defeats that).
-#   - gcr.io/kaniko-project/executor:latest and docker.io/alpine/git:latest are
-#     third-party build helpers; digest-pin them if you need a fully reproducible
-#     hardened airgap bundle. Left at :latest here to match the deploy manifests.
+#   - gcr.io/kaniko-project/executor and docker.io/alpine/git are PINNED (narwhal#52
+#     D3-A) to immutable version tags, coupled to narwhal-portal's
+#     deploy/kaniko-build-job.yaml, which pins the SAME tags — bump both together or
+#     the bundle and the deploy job disagree on which build-helper image runs.
 #
 # Last regenerated (--live): ${LIVE_STAMP:-unknown}
 HEADER

@@ -70,7 +70,22 @@ jobs:
           tar -xzf /tmp/helm.tar.gz -C /tmp "linux-amd64/helm"
           sudo install -m 0755 /tmp/linux-amd64/helm /usr/local/bin/helm
 
+      # R117/R117b (narwhal#52 D3-A) compare this repo's images.txt against the portal's
+      # deploy/kaniko-build-job.yaml. Without a sibling checkout the script only warns and
+      # skips both checks -- which is exactly how the two drifted to :latest unnoticed in the
+      # first place. Check out the public repo read-only (this job's permissions are
+      # contents: read; no token needed for a public repo) and set NARWHAL_PORTAL_REQUIRED
+      # below so a missing/failed checkout here fails the job instead of silently skipping.
+      - name: Checkout narwhal-portal for cross-repo kaniko tag contract check
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: dasomel/narwhal-portal
+          ref: main
+          path: ../narwhal-portal
+
       - name: Run static regression checks
+        env:
+          NARWHAL_PORTAL_REQUIRED: "1"
         run: ./scripts/test/regression-check-kakao.sh --static
 
   # The Mistakes Log is a set of 3-column tables. An unescaped `|` inside a cell silently

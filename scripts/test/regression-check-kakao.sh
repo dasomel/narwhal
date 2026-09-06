@@ -615,6 +615,14 @@ PYEOF
     check_not R117b "R117's check catches a mutated portal kaniko tag (Narwhal#52, 2026-09-06)" \
       env PORTAL_DIR="${kaniko_tag_drift_tmp}" scripts/test/check-kaniko-tag-portal-contract.sh
     rm -rf "${kaniko_tag_drift_tmp}"
+  elif [ "${NARWHAL_PORTAL_REQUIRED:-0}" = "1" ]; then
+    # CI sets NARWHAL_PORTAL_REQUIRED=1 once it checks out the sibling repo (see
+    # .github/workflows/lint.yml) specifically so this pair can never again silently
+    # regress to the warn-and-skip path that let the kaniko/alpine-git tags drift to
+    # :latest in the first place (#52 triage, 2026-09-06) -- a missing checkout there
+    # is a CI misconfiguration, not an expected local-dev absence, so it fails loud.
+    bad R117 "NARWHAL_PORTAL_REQUIRED=1 but narwhal-portal sibling checkout not found; kaniko/alpine-git tag contract check cannot run"
+    bad R117b "NARWHAL_PORTAL_REQUIRED=1 but narwhal-portal sibling checkout not found; kaniko/alpine-git tag drift-detection check cannot run"
   else
     warn R117 "narwhal-portal sibling checkout not found; kaniko/alpine-git tag contract check skipped"
     warn R117b "narwhal-portal sibling checkout not found; kaniko/alpine-git tag drift-detection check skipped"
@@ -1387,6 +1395,55 @@ PYEOF
 
   check_not R97 "token minting in 14-gitops-bootstrap.sh has no bare pipefail assignment (2026-08-27)" \
     bash -c "grep -nE '^[^#]*_GIT_TOKEN=\"\$\(curl.*\| grep' scripts/cluster/14-gitops-bootstrap.sh | grep -q ."
+
+  # narwhal#52 review (2026-09-07): INCLUSTER_BUILT_RE used to be hand-copied into
+  # 01-generate-image-list.sh, 09-verify-bundle-completeness.sh and
+  # refresh-image-digests.sh, each with a comment asking the next editor to keep the
+  # three in sync BY HAND -- exactly the failure mode a shared lib/image-classes.sh
+  # (sourced by all three) exists to remove. This asserts no script reintroduces its
+  # own copy outside that one file.
+  check_not R138 "no airgap script defines its own INCLUSTER_BUILT_RE= outside lib/image-classes.sh (Narwhal#52 review, 2026-09-07)" \
+    bash -c "grep -rn '^[^#]*INCLUSTER_BUILT_RE=' scripts/airgap/ | grep -v '^scripts/airgap/lib/image-classes.sh:' | grep -q ."
+
+  local inclusterre_drift_tmp
+  inclusterre_drift_tmp="$(mktemp -d)"
+  mkdir -p "${inclusterre_drift_tmp}/lib"
+  cp scripts/airgap/09-verify-bundle-completeness.sh "${inclusterre_drift_tmp}/"
+  cp scripts/airgap/lib/image-classes.sh "${inclusterre_drift_tmp}/lib/"
+  printf '\nINCLUSTER_BUILT_RE="narwhal52-drift-test"\n' >> "${inclusterre_drift_tmp}/09-verify-bundle-completeness.sh"
+  check R138b "R138's check catches a script re-defining its own INCLUSTER_BUILT_RE (Narwhal#52 review, 2026-09-07)" \
+    bash -c "grep -rn '^[^#]*INCLUSTER_BUILT_RE=' '${inclusterre_drift_tmp}' | grep -v '${inclusterre_drift_tmp}/lib/image-classes.sh:' | grep -q ."
+  rm -rf "${inclusterre_drift_tmp}"
+
+  # narwhal#52 review (2026-09-07): disallow-latest-tag's pattern only covered
+  # spec.containers -- a pod smuggling a :latest image in initContainers or
+  # ephemeralContainers passed admission untouched even under Enforce. Both are
+  # wrapped in the same =() optional anchor as containers already uses elsewhere in
+  # this file (disallow-privileged-containers), since most pods have neither field.
+  check R139 "disallow-latest-tag pattern also covers initContainers and ephemeralContainers, not just containers (Narwhal#52 review, 2026-09-07)" \
+    bash -c "yq 'select(.metadata.name == \"disallow-latest-tag\") | .spec.rules[0].validate.pattern.spec | keys | .[]' gitops/resources/kyverno-policies.yaml | grep -q '^=(initContainers)\$' && yq 'select(.metadata.name == \"disallow-latest-tag\") | .spec.rules[0].validate.pattern.spec | keys | .[]' gitops/resources/kyverno-policies.yaml | grep -q '^=(ephemeralContainers)\$'"
+
+  local latest_tag_pattern_drift_tmp
+  latest_tag_pattern_drift_tmp="$(mktemp -d)"
+  python3 - "${latest_tag_pattern_drift_tmp}" <<'PYEOF'
+import sys
+from pathlib import Path
+
+tmp = sys.argv[1]
+text = Path("gitops/resources/kyverno-policies.yaml").read_text()
+mutated = text.replace(
+    '            =(initContainers):\n'
+    '              - image: "!*:latest"\n'
+    '            =(ephemeralContainers):\n'
+    '              - image: "!*:latest"\n',
+    ""
+)
+assert mutated != text, "expected initContainers/ephemeralContainers pattern block not found -- update this fixture"
+Path(tmp, "kyverno-policies.yaml").write_text(mutated)
+PYEOF
+  check_not R139b "R139's check catches disallow-latest-tag pattern reverted to containers-only (Narwhal#52 review, 2026-09-07)" \
+    bash -c "yq 'select(.metadata.name == \"disallow-latest-tag\") | .spec.rules[0].validate.pattern.spec | keys | .[]' '${latest_tag_pattern_drift_tmp}/kyverno-policies.yaml' | grep -q '^=(initContainers)\$'"
+  rm -rf "${latest_tag_pattern_drift_tmp}"
 }
 
 #=========================================

@@ -186,7 +186,13 @@ metadata:
   annotations:
     policies.kyverno.io/title: Disallow Latest Tag
 spec:
-  validationFailureAction: Audit
+  # narwhal#52 D2-A: Audit -> Enforce. The pre-merge CI gate
+  # (scripts/gitops/check-no-mutable-tags.py, R65/R66) already blocks the same
+  # `:latest`/untagged shape before it reaches gitops/, and no in-scope namespace
+  # (kaniko build runs in devtools, already excluded below) currently runs one — see
+  # docs/common/supply-chain-policy.md and narwhal#52 for the verification that led
+  # here. `verify-image-signatures` stays Audit (pending narwhal#35).
+  validationFailureAction: Enforce
   background: true
   rules:
     - name: validate-image-tag

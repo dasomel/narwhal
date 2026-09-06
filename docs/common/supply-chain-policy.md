@@ -17,8 +17,10 @@
 | narwhal 에어갭 바이너리 무결성 | 에어갭 번들에 포함된 19개 아티팩트의 SHA-256 검증 | `scripts/airgap/lib/binary-checksums.tsv` 및 `scripts/airgap/07-save-binaries.sh` (`fetch()` 시 검증, 누락 시 즉시 실패), `scripts/airgap/lib/refresh-binary-checksums.sh`로 갱신 |
 | narwhal 외부 컴포넌트 커밋 고정 | `nfs-quota-agent` 커밋 SHA 고정 | `scripts/airgap/07-save-binaries.sh` (커밋 `387b057eec6aab7ebf7e26757e47dbb93a944307` 고정) |
 | narwhal 정적 정밀 검사 | 동적/가변 다운로드 및 미고정 설치 금지 | `scripts/test/regression-check-kakao.sh --static` (CI `regression-static` 작업에서 `R50`~`R54` 검사) |
-| narwhal 컨테이너 이미지 태그 | admission 차원에서 `*:latest` 태그 사용 금지 | `gitops/resources/kyverno-policies.yaml` (`disallow-latest-tag` 정책) |
-| narwhal 컨테이너 이미지 서명/attestation | admission 시점 Cosign 이미지 서명 및 CycloneDX SBOM attestation 검증 | `gitops/resources/kyverno-policies.yaml` (`verify-image-signatures` Audit 정책) 및 `scripts/airgap/10-verify-image-signatures.sh` |
+| narwhal 컨테이너 이미지 태그 | admission 차원에서 `*:latest` 태그 사용 금지 (narwhal#52 D2-A: 2026-09-06부터 `Enforce`) | `gitops/resources/kyverno-policies.yaml` (`disallow-latest-tag` 정책, `validationFailureAction: Enforce`); 머지 전 단계는 `scripts/gitops/check-no-mutable-tags.py` (R65/R66)가 이미 담당 |
+| narwhal 컨테이너 이미지 서명/attestation | admission 시점 Cosign 이미지 서명 및 CycloneDX SBOM attestation 검증 | `gitops/resources/kyverno-policies.yaml` (`verify-image-signatures` Audit 정책, narwhal#35 선행 전까지 유지) 및 `scripts/airgap/10-verify-image-signatures.sh` |
+| narwhal 에어갭 이미지 resolved-digest 아티팩트 | 태그가 아니라 이미지가 실제로 가리키는 다이제스트를 커밋해, 레지스트리 쪽에서 태그가 재푸시되어도(태그 이동) 감지 | `scripts/airgap/lib/image-digests.tsv` (images.txt의 모든 라인에 대해 `crane digest`로 resolve한 upstream index digest 1행씩; in-cluster 빌드 이미지만 `UNRESOLVED` + 사유), `scripts/airgap/lib/refresh-image-digests.sh --check`로 드리프트 감지, `scripts/airgap/09-verify-bundle-completeness.sh`가 번들 완전성 게이트에 조인 검사로 통합 |
+| narwhal 에어갭 빌드-헬퍼 이미지 고정 | kaniko executor·alpine/git은 narwhal-portal의 `deploy/kaniko-build-job.yaml`과 같은 이미지를 같은 태그로 고정해야 함(둘 중 하나만 바뀌면 번들과 배포가 서로 다른 빌더를 씀) | `scripts/airgap/images.txt` + `scripts/airgap/01-generate-image-list.sh`(TRANSIENT_IMAGES) 고정 태그, `scripts/test/check-kaniko-tag-portal-contract.sh` + `regression-check-kakao.sh`의 `R114`~`R117b` |
 | narwhal-portal npm 쿨링 기간 | 신규 도입 패키지 배포 후 7일 미만 경과 시 CI 실패 | `../narwhal-portal/scripts/check-lockfile-cooling.mjs` (`pnpm-lock.yaml`과 베이스 커밋 비교, npm registry API 조회, `COOLING_EXCEPTIONS` 사유 필수, CI `.github/workflows/license-and-sbom.yml`의 `cooling` 작업) |
 | narwhal-portal 설치 스크립트 실행 | 어떤 의존성도 install script를 실행할 수 없음 | `../narwhal-portal/pnpm-workspace.yaml` (`onlyBuiltDependencies: []` — 빈 허용 목록을 명시해, 예외 추가가 리뷰에 보이는 diff가 되게 함) |
 | narwhal-portal 잠금 파일 고정 | CI와 이미지의 모든 install이 잠긴 그래프만 설치 | `../narwhal-portal/scripts/check-supply-chain-policy.mjs` — 워크플로와 Dockerfile의 install 줄마다 `--frozen-lockfile`(bun은 `--ignore-scripts`까지)을 요구. **설정이 아니라 명령줄을 검사한다** (3절 3항 참고) |
@@ -34,6 +36,10 @@
 - `R74`: Kyverno `verify-image-signatures` ClusterPolicy 존재 및 구조 검증
 - `R75`: Kyverno 이미지 서명 정책 제거/변조 시 정적 검사 실패 검증
 - `R76`: `scripts/airgap/10-verify-image-signatures.sh` 에어갭 서명 게이트 스크립트 실행 권한 검증
+- `R114`/`R114b`: `images.txt`/`TRANSIENT_IMAGES`에 문서화되지 않은 `:latest` 태그가 없는지, 재도입 시 검출되는지 검증 (narwhal#52)
+- `R115`/`R115b`: Kyverno `disallow-latest-tag`가 `Enforce`인지, `Audit`로 되돌려질 시 검출되는지 검증 (narwhal#52)
+- `R116`/`R116b`: `image-digests.tsv`가 `images.txt`의 모든 이미지에 대해 행을 갖는지, 신규 이미지 추가 시 누락이 검출되는지 검증 (narwhal#52)
+- `R117`/`R117b`: `images.txt`와 narwhal-portal `deploy/kaniko-build-job.yaml`의 kaniko/alpine-git 태그가 일치하는지, 드리프트 시 검출되는지 검증 (narwhal#52; sibling checkout 없으면 스킵)
 
 ## 3. 의도적으로 사용하지 않는 기능 (Deliberately Not Used)
 

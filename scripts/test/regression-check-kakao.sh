@@ -534,6 +534,92 @@ git push origin main || true' \
     grep -rqE '^[^#]*(raw\.githubusercontent\.com|-ignore-missing-schemas)' "${kubeconform_schema_drift_tmp}"
   rm -rf "${kubeconform_schema_drift_tmp}"
 
+  # narwhal#52 (D3-A): images.txt and TRANSIENT_IMAGES used to leave the kaniko
+  # executor and alpine/git build helpers at `:latest` "to match the deploy
+  # manifests" -- a comment saying a mutable tag is deliberate is a coupling, not a
+  # fix. Both are now pinned to immutable version tags; the only undocumented
+  # `:latest` allowed anywhere in either list is the custom goharbor rebuild
+  # (republished to :latest on purpose) or the in-cluster-built image.
+  check R114 "images.txt and TRANSIENT_IMAGES carry no undocumented :latest tag (Narwhal#52, 2026-09-06)" \
+    python3 scripts/test/lib/check-no-mutable-transient-images.py
+
+  local latest_drift_tmp
+  latest_drift_tmp="$(mktemp -d)"
+  cp scripts/airgap/images.txt "${latest_drift_tmp}/images.txt"
+  sed -i.bak 's#gcr\.io/kaniko-project/executor:v1\.24\.0#gcr.io/kaniko-project/executor:latest#' \
+    "${latest_drift_tmp}/images.txt"
+  rm -f "${latest_drift_tmp}/images.txt.bak"
+  check_not R114b "R114's check catches a reintroduced :latest on a pinned build helper (Narwhal#52, 2026-09-06)" \
+    python3 scripts/test/lib/check-no-mutable-transient-images.py "${latest_drift_tmp}/images.txt" scripts/airgap/01-generate-image-list.sh
+  rm -rf "${latest_drift_tmp}"
+
+  # narwhal#52 (D2-A): the pre-merge CI gate (check-no-mutable-tags.py, R65/R66) and
+  # runtime admission are two different layers -- admission stayed in Audit mode,
+  # which observes a mutable tag reaching the cluster but never blocks it. Targeted
+  # yq lookup by policy name, not a bare grep, because the file holds several
+  # ClusterPolicies and a plain grep for "Enforce" can't say which one it belongs to.
+  check R115 "Kyverno disallow-latest-tag is Enforce, not Audit (Narwhal#52, 2026-09-06)" \
+    bash -c 'test "$(yq "select(.metadata.name == \"disallow-latest-tag\") | .spec.validationFailureAction" gitops/resources/kyverno-policies.yaml)" = "Enforce"'
+
+  local kyverno_enforce_drift_tmp
+  kyverno_enforce_drift_tmp="$(mktemp -d)"
+  cp gitops/resources/kyverno-policies.yaml "${kyverno_enforce_drift_tmp}/kyverno-policies.yaml"
+  python3 - "${kyverno_enforce_drift_tmp}/kyverno-policies.yaml" <<'PYEOF'
+import sys
+import yaml
+
+path = sys.argv[1]
+with open(path) as f:
+    docs = list(yaml.safe_load_all(f))
+for d in docs:
+    if d and d.get("metadata", {}).get("name") == "disallow-latest-tag":
+        d["spec"]["validationFailureAction"] = "Audit"
+with open(path, "w") as f:
+    yaml.safe_dump_all(docs, f)
+PYEOF
+  check_not R115b "R115's check catches disallow-latest-tag flipped back to Audit (Narwhal#52, 2026-09-06)" \
+    bash -c "test \"\$(yq 'select(.metadata.name == \"disallow-latest-tag\") | .spec.validationFailureAction' '${kyverno_enforce_drift_tmp}/kyverno-policies.yaml')\" = 'Enforce'"
+  rm -rf "${kyverno_enforce_drift_tmp}"
+
+  # narwhal#52 (D1-A): image-digests.tsv is a join target for 09-verify-bundle-
+  # completeness.sh -- an image added to images.txt without ever running
+  # refresh-image-digests.sh would silently ship with no pinned digest to catch a
+  # later tag re-push. Joined on image_ref (TSV column 1), not counted rows, so
+  # reordering either file cannot hide a missing entry.
+  check_not R116 "image-digests.tsv has a row for every image in images.txt (Narwhal#52, 2026-09-06)" \
+    bash -c "comm -23 <(grep -vE '^[[:space:]]*(#|\$)' scripts/airgap/images.txt | sort -u) <(cut -f1 scripts/airgap/lib/image-digests.tsv | grep -vE '^#' | sort -u) | grep -q ."
+
+  local digest_join_drift_tmp
+  digest_join_drift_tmp="$(mktemp -d)"
+  cp scripts/airgap/images.txt "${digest_join_drift_tmp}/images.txt"
+  echo "example.com/narwhal52-drift-test:v1" >> "${digest_join_drift_tmp}/images.txt"
+  check R116b "R116's check catches an image added without a resolved-digest row (Narwhal#52, 2026-09-06)" \
+    bash -c "comm -23 <(grep -vE '^[[:space:]]*(#|\$)' '${digest_join_drift_tmp}/images.txt' | sort -u) <(cut -f1 scripts/airgap/lib/image-digests.tsv | grep -vE '^#' | sort -u) | grep -q ."
+  rm -rf "${digest_join_drift_tmp}"
+
+  # narwhal#52 (D3-A): the seam between this repo's images.txt and narwhal-portal's
+  # deploy/kaniko-build-job.yaml has no compiler to catch drift -- a tag bumped on
+  # one side and not the other silently ships a bundle that doesn't match what the
+  # deploy job actually runs. check-kaniko-tag-portal-contract.sh compares the
+  # tags; the mutation runs against a temp copy of the portal manifest, never the
+  # real sibling checkout.
+  if [ -d ../narwhal-portal ]; then
+    check R117 "images.txt and portal deploy/kaniko-build-job.yaml pin the same kaniko/alpine-git tags (Narwhal#52, 2026-09-06)" \
+      scripts/test/check-kaniko-tag-portal-contract.sh
+
+    local kaniko_tag_drift_tmp
+    kaniko_tag_drift_tmp="$(mktemp -d)"
+    mkdir -p "${kaniko_tag_drift_tmp}/deploy"
+    sed -E "s#(kaniko-project/executor:)[^\"'[:space:]]+#\\1v0.0.0-drift-test#" \
+      ../narwhal-portal/deploy/kaniko-build-job.yaml > "${kaniko_tag_drift_tmp}/deploy/kaniko-build-job.yaml"
+    check_not R117b "R117's check catches a mutated portal kaniko tag (Narwhal#52, 2026-09-06)" \
+      env PORTAL_DIR="${kaniko_tag_drift_tmp}" scripts/test/check-kaniko-tag-portal-contract.sh
+    rm -rf "${kaniko_tag_drift_tmp}"
+  else
+    warn R117 "narwhal-portal sibling checkout not found; kaniko/alpine-git tag contract check skipped"
+    warn R117b "narwhal-portal sibling checkout not found; kaniko/alpine-git tag drift-detection check skipped"
+  fi
+
   # `npm install -g markdownlint-cli` took the newest release on every run. npm has no
   # digest to assert for a global install, so the version pin IS the control and an
   # unpinned name is the whole failure.

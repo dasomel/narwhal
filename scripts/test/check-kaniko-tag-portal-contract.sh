@@ -25,6 +25,13 @@ KANIKO_JOB_FILE="${PORTAL_DIR}/deploy/kaniko-build-job.yaml"
 # as an `if` block, not `[ -d ... ] && ...`: under `set -e` the latter aborts the
 # whole script the instant the directory is absent, never reaching the skip message.
 if [ ! -d "${PORTAL_DIR}" ]; then
+  # A missing checkout is a skip locally but a hard failure when the caller says the
+  # portal is required (CI): a silent exit 0 here once let R117 report PASS from a
+  # git worktree whose ../narwhal-portal did not exist.
+  if [ "${NARWHAL_PORTAL_REQUIRED:-0}" = "1" ]; then
+    echo "FAIL: NARWHAL_PORTAL_REQUIRED=1 but narwhal-portal checkout not found at ${PORTAL_DIR}" >&2
+    exit 1
+  fi
   echo "SKIP: narwhal-portal sibling checkout not found at ${PORTAL_DIR} -- nothing to compare"
   exit 0
 fi

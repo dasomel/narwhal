@@ -603,15 +603,18 @@ PYEOF
   # deploy job actually runs. check-kaniko-tag-portal-contract.sh compares the
   # tags; the mutation runs against a temp copy of the portal manifest, never the
   # real sibling checkout.
-  if [ -d ../narwhal-portal ]; then
+  # NARWHAL_PORTAL_DIR lets CI point at an in-workspace checkout (actions/checkout
+  # cannot write outside GITHUB_WORKSPACE); locally the sibling directory is the default.
+  local portal_dir="${NARWHAL_PORTAL_DIR:-../narwhal-portal}"
+  if [ -d "${portal_dir}" ]; then
     check R117 "images.txt and portal deploy/kaniko-build-job.yaml pin the same kaniko/alpine-git tags (Narwhal#52, 2026-09-06)" \
-      scripts/test/check-kaniko-tag-portal-contract.sh
+      env PORTAL_DIR="${portal_dir}" scripts/test/check-kaniko-tag-portal-contract.sh
 
     local kaniko_tag_drift_tmp
     kaniko_tag_drift_tmp="$(mktemp -d)"
     mkdir -p "${kaniko_tag_drift_tmp}/deploy"
     sed -E "s#(kaniko-project/executor:)[^\"'[:space:]]+#\\1v0.0.0-drift-test#" \
-      ../narwhal-portal/deploy/kaniko-build-job.yaml > "${kaniko_tag_drift_tmp}/deploy/kaniko-build-job.yaml"
+      "${portal_dir}/deploy/kaniko-build-job.yaml" > "${kaniko_tag_drift_tmp}/deploy/kaniko-build-job.yaml"
     check_not R117b "R117's check catches a mutated portal kaniko tag (Narwhal#52, 2026-09-06)" \
       env PORTAL_DIR="${kaniko_tag_drift_tmp}" scripts/test/check-kaniko-tag-portal-contract.sh
     rm -rf "${kaniko_tag_drift_tmp}"

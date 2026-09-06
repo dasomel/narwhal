@@ -81,11 +81,14 @@ jobs:
         with:
           repository: dasomel/narwhal-portal
           ref: main
-          path: ../narwhal-portal
+          # actions/checkout refuses paths outside GITHUB_WORKSPACE, so it lands inside
+          # the workspace and the script is pointed at it via NARWHAL_PORTAL_DIR.
+          path: .narwhal-portal-ci
 
       - name: Run static regression checks
         env:
           NARWHAL_PORTAL_REQUIRED: "1"
+          NARWHAL_PORTAL_DIR: .narwhal-portal-ci
         run: ./scripts/test/regression-check-kakao.sh --static
 
   # The Mistakes Log is a set of 3-column tables. An unescaped `|` inside a cell silently

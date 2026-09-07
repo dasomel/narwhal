@@ -25,110 +25,52 @@ jobs:
           set -euo pipefail
           FAIL=0
 
+          # First version token of a VERSIONS.md row: `| Name | v1.2.3 ...` or `| Name | 1.2.3 (app) / 2.0.0 (chart)`.
+          # Portable (no grep -P) so the same step runs on macOS for local checks.
+          versions_md() {  # $1 = row name (exact), $2 = which version token (1-based, default 1)
+            local row
+            row=$(grep -E "^\| $1 \|" VERSIONS.md | head -1 | cut -d'|' -f3) || true
+            echo "${row}" | grep -oE 'v?[0-9]+\.[0-9]+(\.[0-9]+)?' | sed -n "${2:-1}p" | sed 's/^v//'
+          }
+          # Shell default pin: NAME="${NAME:-v1.2.3}" or NAME=v1.2.3 / NAME="1.2.3"
+          script_pin() {  # $1 = file, $2 = variable name
+            grep -E "^${2}=" "$1" | head -1 | grep -oE '[0-9]+\.[0-9]+(\.[0-9]+)?' | head -1
+          }
+          compare() {  # $1 = label, $2 = VERSIONS.md value, $3 = source label, $4 = source value
+            echo "[$1]"
+            echo "  VERSIONS.md : ${2:-not found}"
+            echo "  $3 : ${4:-not found}"
+            if [ -z "$2" ] || [ -z "$4" ]; then
+              echo "  ERROR: version not found (the check must never silently skip)"
+              FAIL=1
+            elif [ "$2" != "$4" ]; then
+              echo "  ERROR: mismatch"
+              FAIL=1
+            else
+              echo "  OK"
+            fi
+            echo ""
+          }
+
           echo "=== Version Sync Check ==="
           echo ""
+          compare "Kubernetes" "$(versions_md Kubernetes)" "Vagrantfile K8S_PATCH_VERSION" \
+            "$(grep -E '^K8S_PATCH_VERSION' Vagrantfile | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)"
+          compare "Cilium" "$(versions_md Cilium)" "03-cni-install.sh CILIUM_VERSION" \
+            "$(script_pin scripts/cluster/03-cni-install.sh CILIUM_VERSION)"
+          compare "Cilium CLI" "$(versions_md 'Cilium CLI')" "03-cni-install.sh CILIUM_CLI_VERSION" \
+            "$(script_pin scripts/cluster/03-cni-install.sh CILIUM_CLI_VERSION)"
+          compare "ArgoCD" "$(versions_md ArgoCD)" "13-argocd.sh ARGOCD_VERSION" \
+            "$(script_pin scripts/cluster/13-argocd.sh ARGOCD_VERSION)"
+          compare "Keycloak" "$(versions_md Keycloak)" "11-keycloak.sh KEYCLOAK_VERSION" \
+            "$(script_pin scripts/cluster/11-keycloak.sh KEYCLOAK_VERSION)"
+          compare "APISIX chart" "$(versions_md APISIX 2)" "narwhal-apps apisix.yaml targetRevision" \
+            "$(grep -E '^\s*targetRevision:' gitops/charts/narwhal-apps/templates/apisix.yaml | head -1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')"
 
-          # -------------------------------------------------------
-          # Kubernetes: VERSIONS.md vs Vagrantfile
-          # -------------------------------------------------------
-          VERSIONS_K8S=$(grep -oP 'Kubernetes\s*\|\s*v\K[0-9.]+' VERSIONS.md | head -1 || echo "not found")
-          VAGRANTFILE_K8S=$(grep -oP "K8S_PATCH_VERSION\s*=\s*['\"]?\K[0-9.]+" Vagrantfile | head -1 || echo "not found")
-
-          echo "[Kubernetes]"
-          echo "  VERSIONS.md  : ${VERSIONS_K8S}"
-          echo "  Vagrantfile  : ${VAGRANTFILE_K8S}"
-          if [ "${VERSIONS_K8S}" != "${VAGRANTFILE_K8S}" ]; then
-            echo "  ERROR: mismatch"
-            FAIL=1
-          else
-            echo "  OK"
-          fi
-          echo ""
-
-          # -------------------------------------------------------
-          # Cilium: VERSIONS.md vs scripts/cluster/03-cni-install.sh
-          # -------------------------------------------------------
-          VERSIONS_CILIUM=$(grep -oP 'Cilium\s*\|\s*v\K[0-9.]+' VERSIONS.md | head -1 || echo "not found")
-          SCRIPT_CILIUM=$(grep -oP 'CILIUM_VERSION[=:]\s*["\x27]?v?\K[0-9.]+' scripts/cluster/03-cni-install.sh 2>/dev/null | head -1 || echo "not found")
-
-          echo "[Cilium]"
-          echo "  VERSIONS.md          : ${VERSIONS_CILIUM}"
-          echo "  03-cni-install.sh    : ${SCRIPT_CILIUM}"
-          if [ "${SCRIPT_CILIUM}" != "not found" ] && [ "${VERSIONS_CILIUM}" != "${SCRIPT_CILIUM}" ]; then
-            echo "  ERROR: mismatch"
-            FAIL=1
-          elif [ "${SCRIPT_CILIUM}" = "not found" ]; then
-            echo "  SKIP: version not pinned in script (check manually)"
-          else
-            echo "  OK"
-          fi
-          echo ""
-
-          # -------------------------------------------------------
-          # ArgoCD: VERSIONS.md vs scripts/cluster/13-argocd.sh
-          # -------------------------------------------------------
-          VERSIONS_ARGOCD=$(grep -oP 'ArgoCD\s*\|\s*v\K[0-9.]+' VERSIONS.md | head -1 || echo "not found")
-          SCRIPT_ARGOCD=$(grep -oP 'ARGOCD_VERSION[=:]\s*["\x27]?v?\K[0-9.]+' scripts/cluster/13-argocd.sh 2>/dev/null | head -1 || echo "not found")
-
-          echo "[ArgoCD]"
-          echo "  VERSIONS.md       : ${VERSIONS_ARGOCD}"
-          echo "  13-argocd.sh      : ${SCRIPT_ARGOCD}"
-          if [ "${SCRIPT_ARGOCD}" != "not found" ] && [ "${VERSIONS_ARGOCD}" != "${SCRIPT_ARGOCD}" ]; then
-            echo "  ERROR: mismatch"
-            FAIL=1
-          elif [ "${SCRIPT_ARGOCD}" = "not found" ]; then
-            echo "  SKIP: version not pinned in script (check manually)"
-          else
-            echo "  OK"
-          fi
-          echo ""
-
-          # -------------------------------------------------------
-          # Keycloak: VERSIONS.md vs scripts/cluster/11-keycloak.sh
-          # -------------------------------------------------------
-          VERSIONS_KEYCLOAK=$(grep -oP 'Keycloak\s*\|\s*v\K[0-9.]+' VERSIONS.md | head -1 || echo "not found")
-          SCRIPT_KEYCLOAK=$(grep -oP 'KEYCLOAK_VERSION[=:]\s*["\x27]?v?\K[0-9.]+' scripts/cluster/11-keycloak.sh 2>/dev/null | head -1 || echo "not found")
-
-          echo "[Keycloak]"
-          echo "  VERSIONS.md       : ${VERSIONS_KEYCLOAK}"
-          echo "  11-keycloak.sh    : ${SCRIPT_KEYCLOAK}"
-          if [ "${SCRIPT_KEYCLOAK}" != "not found" ] && [ "${VERSIONS_KEYCLOAK}" != "${SCRIPT_KEYCLOAK}" ]; then
-            echo "  ERROR: mismatch"
-            FAIL=1
-          elif [ "${SCRIPT_KEYCLOAK}" = "not found" ]; then
-            echo "  SKIP: version not pinned in script (check manually)"
-          else
-            echo "  OK"
-          fi
-          echo ""
-
-          # -------------------------------------------------------
-          # Traefik chart: VERSIONS.md vs gitops/apps/
-          # -------------------------------------------------------
-          VERSIONS_TRAEFIK_CHART=$(grep -oP 'Traefik\s*\|\s*v\K[0-9.]+' VERSIONS.md | head -1 || echo "not found")
-          GITOPS_TRAEFIK_CHART=$(grep -oP 'targetRevision:\s*\K[0-9.]+' gitops/apps/traefik.yaml 2>/dev/null | head -1 || echo "not found")
-
-          echo "[Traefik chart]"
-          echo "  VERSIONS.md       : ${VERSIONS_TRAEFIK_CHART}"
-          echo "  gitops/apps/traefik.yaml targetRevision: ${GITOPS_TRAEFIK_CHART}"
-          if [ "${GITOPS_TRAEFIK_CHART}" != "not found" ] && [ "${VERSIONS_TRAEFIK_CHART}" != "${GITOPS_TRAEFIK_CHART}" ]; then
-            echo "  ERROR: mismatch"
-            FAIL=1
-          elif [ "${GITOPS_TRAEFIK_CHART}" = "not found" ]; then
-            echo "  SKIP: traefik.yaml not found or no targetRevision"
-          else
-            echo "  OK"
-          fi
-          echo ""
-
-          # -------------------------------------------------------
-          # Summary
-          # -------------------------------------------------------
           echo "=== Summary ==="
           if [ "${FAIL}" -eq 1 ]; then
             echo "One or more version mismatches detected."
-            echo "Please update VERSIONS.md to match the pinned versions in scripts/gitops."
+            echo "Update VERSIONS.md (or the pin) so both sides agree."
             exit 1
-          else
-            echo "All checked versions are consistent."
           fi
+          echo "All checked versions are consistent."

@@ -15,13 +15,21 @@
 #     source — and this bundle redistributes what it contains (see NOTICE). A --live
 #     regeneration against a cluster built before that change will put it back; drop it.
 #
-# :latest TAGS — deliberate vs. hardening:
-#   - ghcr.io/dasomel/goharbor/* :latest is INTENTIONAL — the custom multi-arch
-#     Harbor rebuild is republished to :latest, and we want new builds picked up
-#     automatically. Do NOT digest-pin these (it defeats that).
-#   - gcr.io/kaniko-project/executor:latest and docker.io/alpine/git:latest are
-#     third-party build helpers; digest-pin them if you need a fully reproducible
-#     hardened airgap bundle. Left at :latest here to match the deploy manifests.
+# :latest TAGS — deliberate vs. pinned:
+#   - ghcr.io/dasomel/goharbor/* used to be an intentional :latest exception here;
+#     the custom multi-arch Harbor rebuild is now republished to immutable v2.15.1
+#     tags for all 7 components (see below), so there is no goharbor :latest
+#     reference left to exempt. Re-add this bullet only if goharbor genuinely goes
+#     back to tracking :latest — do not carry it forward as boilerplate.
+#   - gcr.io/kaniko-project/executor and docker.io/alpine/git are PINNED (narwhal#52
+#     D3-A) to immutable version tags, not :latest — they are coupled to
+#     narwhal-portal's deploy/kaniko-build-job.yaml, which pins the SAME tags, because
+#     the bundle and the deploy manifest must ship identical build-helper images or the
+#     bundle silently omits what the deploy job actually pulls. A comment saying "keep
+#     these in sync" is not enough (that's how #52 found this pair drifted in the first
+#     place) — R117/R117b in regression-check-kakao.sh cross-checks both files. Bump
+#     both in the SAME commit; see docs/common/supply-chain-policy.md for the cooling
+#     window each new tag must clear before it can be picked.
 #
 # Last regenerated (--live): 2026-07-28 (from live cluster)
 
@@ -30,7 +38,7 @@ apache/apisix:3.15.0-ubuntu
 busybox:1.28
 chrislusf/seaweedfs:4.34
 docker.gitea.com/gitea:1.26.2-rootless
-docker.io/alpine/git:latest
+docker.io/alpine/git:v2.54.0
 docker.io/alpine/k8s:1.31.4
 docker.io/grafana/alloy:v1.17.0
 docker.io/grafana/grafana:13.0.2
@@ -49,7 +57,7 @@ docker.io/library/registry:2
 docker.io/otwld/velero-ui:0.10.1
 docker.io/valkey/valkey:8-alpine
 docker.io/velero/velero:v1.18.1
-gcr.io/kaniko-project/executor:latest
+gcr.io/kaniko-project/executor:v1.24.0
 ghcr.io/chaos-mesh/chaos-daemon:v2.8.3
 ghcr.io/chaos-mesh/chaos-mesh:v2.8.3
 ghcr.io/cloudnative-pg/cloudnative-pg:1.29.1

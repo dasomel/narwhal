@@ -46,6 +46,13 @@ Rancher airgap 방식을 Narwhal에 적용한 버전입니다. 외부 인터넷�
 ./scripts/airgap/01-generate-image-list.sh --live scripts/airgap/images.txt
 #    (정적 교차검증용:  ./scripts/airgap/01-generate-image-list.sh > /tmp/static.txt)
 
+# 1b. resolved-digest 테이블 갱신 (narwhal#52 D1-A) — images.txt가 바뀔 때마다 실행.
+#     각 태그가 지금 가리키는 다이제스트를 커밋해, 나중에 태그가 레지스트리에서
+#     재푸시되면 --check가 그 드리프트를 잡는다. 09-verify-bundle-completeness.sh가
+#     이 테이블을 완전성 게이트의 일부로 요구한다.
+./scripts/airgap/lib/refresh-image-digests.sh
+#    CI/드리프트 감지용:  ./scripts/airgap/lib/refresh-image-digests.sh --check
+
 # 2. 모든 이미지를 로컬 tar 번들로 저장 (skopeo + oci layout)
 #    --out 을 생략하면 AIRGAP_BUNDLE_DIR(아치 접미사 자동) 로 저장된다.
 ./scripts/airgap/02-save-images.sh --list scripts/airgap/images.txt
@@ -63,9 +70,10 @@ Rancher airgap 방식을 Narwhal에 적용한 버전입니다. 외부 인터넷�
 # 5. SBOM 생성 — 번들 조립이 끝난 뒤 마지막에 실행 (내용물을 읽어 목록을 만든다)
 ./scripts/airgap/08-generate-sbom.sh --bundle ./narwhal-airgap-bundle-amd64
 
-# 6. 완전성 게이트 — release 아티팩트로 취급하기 전 반드시 통과해야 한다 (narwhal#51).
+# 6. 완전성 게이트 — release 아티팩트로 취급하기 전 반드시 통과해야 한다 (narwhal#51, #52).
 #    images.txt의 이미지 전부가 manifest.txt에 기록되고 oci/ 아래 실제 layout(index.json)이
-#    있는지 1:1로 대조한다. 하나라도 빠지면 exit 1 — CI/release에서는 이 결과를 게이트로 써야 한다.
+#    있는지, 그리고 lib/image-digests.tsv에 resolved digest 행이 있는지 1:1로 대조한다.
+#    하나라도 빠지면 exit 1 — CI/release에서는 이 결과를 게이트로 써야 한다.
 ./scripts/airgap/09-verify-bundle-completeness.sh --bundle ./narwhal-airgap-bundle-amd64
 
 # 결과: narwhal-airgap-bundle-<arch>/ 폴더를 대상 클러스터로 전송

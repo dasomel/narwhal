@@ -186,7 +186,13 @@ metadata:
   annotations:
     policies.kyverno.io/title: Disallow Latest Tag
 spec:
-  validationFailureAction: Audit
+  # narwhal#52 D2-A: Audit -> Enforce. The pre-merge CI gate
+  # (scripts/gitops/check-no-mutable-tags.py, R65/R66) already blocks the same
+  # `:latest`/untagged shape before it reaches gitops/, and no in-scope namespace
+  # (kaniko build runs in devtools, already excluded below) currently runs one — see
+  # docs/common/supply-chain-policy.md and narwhal#52 for the verification that led
+  # here. `verify-image-signatures` stays Audit (pending narwhal#35).
+  validationFailureAction: Enforce
   background: true
   rules:
     - name: validate-image-tag
@@ -206,9 +212,16 @@ spec:
                 - security-system
       validate:
         message: "Using 'latest' tag is not allowed."
+        # =() 옵셔널 앵커 필수 (위 disallow-privileged-containers와 동일 이유): 대부분의
+        # 파드는 initContainers/ephemeralContainers가 없으므로, 앵커 없이 쓰면 전부
+        # Enforce에서 admission 거부된다.
         pattern:
           spec:
             containers:
+              - image: "!*:latest"
+            =(initContainers):
+              - image: "!*:latest"
+            =(ephemeralContainers):
               - image: "!*:latest"
 ---
 apiVersion: kyverno.io/v1

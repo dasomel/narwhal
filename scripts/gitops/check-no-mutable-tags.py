@@ -15,7 +15,14 @@ Reuses the same extraction regex 01-generate-image-list.sh's hook_images_from_ch
 uses for the identical problem (image refs embedded in rendered YAML text), rather
 than a full structural YAML walk — this repo's established pattern for this class of
 check.
+
+A chart whose `helm template` fails is a hard failure by default (narwhal#52 review,
+2026-09-08): Kyverno's disallow-latest-tag policy is Enforce now, so a chart this gate
+silently skips is a chart nothing else vets pre-merge either. For a local run without
+every chart's dependencies available (e.g. missing subchart repos), set
+NO_MUTABLE_TAGS_ALLOW_RENDER_FAIL=1 to fall back to the old warn-and-skip behavior.
 """
+import os
 import re
 import subprocess
 import sys
@@ -24,6 +31,17 @@ from pathlib import Path
 DEFAULT_ROOT = Path(__file__).resolve().parent.parent.parent
 
 IMAGE_RE = re.compile(r'^\s*-?\s*image:\s*"?([^"\s]+)"?\s*$', re.M)
+
+ALLOW_RENDER_FAIL_ENV = "NO_MUTABLE_TAGS_ALLOW_RENDER_FAIL"
+
+
+class ChartRenderError(RuntimeError):
+    """`helm template` failed for one chart; carries what main() reports to the caller."""
+
+    def __init__(self, chart_name: str, stderr: str):
+        self.chart_name = chart_name
+        self.stderr = stderr
+        super().__init__(f"helm template failed for chart {chart_name!r}")
 
 
 def render_chart(chart_dir: Path, cwd: Path) -> str:
@@ -34,8 +52,14 @@ def render_chart(chart_dir: Path, cwd: Path) -> str:
         cwd=cwd,
     )
     if result.returncode != 0:
-        print(f"warning: 'helm template {chart_dir.name}' failed, skipping: {result.stderr.strip()[:200]}", file=sys.stderr)
-        return ""
+        if os.environ.get(ALLOW_RENDER_FAIL_ENV) == "1":
+            print(
+                f"warning: 'helm template {chart_dir.name}' failed, skipping "
+                f"({ALLOW_RENDER_FAIL_ENV}=1): {result.stderr.strip()[:200]}",
+                file=sys.stderr,
+            )
+            return ""
+        raise ChartRenderError(chart_dir.name, result.stderr)
     return result.stdout
 
 
@@ -76,7 +100,17 @@ def main() -> int:
     else:
         chart_images = set()
         for chart_dir in sorted(p for p in charts_dir.iterdir() if (p / "Chart.yaml").exists()):
-            chart_images |= extract_images(render_chart(chart_dir, root))
+            try:
+                chart_images |= extract_images(render_chart(chart_dir, root))
+            except ChartRenderError as exc:
+                print(
+                    f"ERROR: 'helm template {exc.chart_name}' failed — refusing to silently "
+                    f"skip a chart while Kyverno disallow-latest-tag is Enforce (narwhal#52). "
+                    f"Set {ALLOW_RENDER_FAIL_ENV}=1 to skip charts with unmet local deps.",
+                    file=sys.stderr,
+                )
+                print(exc.stderr.strip(), file=sys.stderr)
+                return 1
 
     resource_images: set[str] = set()
     for f in sorted(resources_dir.glob("*.yaml")):

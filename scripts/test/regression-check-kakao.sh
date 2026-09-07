@@ -2180,6 +2180,41 @@ PYEOF
   check_not R139b "R139's check catches disallow-latest-tag pattern reverted to containers-only (Narwhal#52 review, 2026-09-07)" \
     bash -c "yq 'select(.metadata.name == \"disallow-latest-tag\") | .spec.rules[0].validate.pattern.spec | keys | .[]' '${latest_tag_pattern_drift_tmp}/kyverno-policies.yaml' | grep -q '^=(initContainers)\$'"
   rm -rf "${latest_tag_pattern_drift_tmp}"
+
+  # narwhal#52 review, PR #177 follow-up (2026-09-08): check-no-mutable-tags.py used to
+  # WARN-and-skip a chart whose `helm template` failed, leaving it entirely unscanned --
+  # now that Kyverno disallow-latest-tag is Enforce, a chart this gate cannot render is a
+  # chart nothing else vets pre-merge either. A stub `helm` on PATH forces every chart to
+  # fail to render; the fix must exit non-zero and name the chart + helm's stderr unless
+  # the documented opt-out (NO_MUTABLE_TAGS_ALLOW_RENDER_FAIL=1) is set.
+  check R150 "check-no-mutable-tags.py hard-fails on a helm template render failure (2026-09-08)" \
+    bash -c '
+      stub="$(mktemp -d)"
+      trap "rm -rf \"${stub}\"" EXIT
+      printf "#!/bin/sh\necho \"Error: forced render failure for regression test\" >&2\nexit 1\n" > "${stub}/helm"
+      chmod +x "${stub}/helm"
+      out="$(PATH="${stub}:${PATH}" python3 scripts/gitops/check-no-mutable-tags.py 2>&1)"
+      rc=$?
+      [ "${rc}" -ne 0 ] && echo "${out}" | grep -q "helm template" && echo "${out}" | grep -qi "forced render failure"
+    '
+
+  local render_fail_drift_tmp
+  render_fail_drift_tmp="$(mktemp -d)"
+  cp scripts/gitops/check-no-mutable-tags.py "${render_fail_drift_tmp}/check-no-mutable-tags.py"
+  sed -i.bak 's/raise ChartRenderError(chart_dir.name, result.stderr)/return ""  # R150-drift-test: reverted to the old warn-and-skip shape/' \
+    "${render_fail_drift_tmp}/check-no-mutable-tags.py"
+  rm -f "${render_fail_drift_tmp}/check-no-mutable-tags.py.bak"
+  check_not R150b "R150's check catches a reverted warn-and-skip on helm template failure (2026-09-08)" \
+    bash -c '
+      stub="$(mktemp -d)"
+      trap "rm -rf \"${stub}\"" EXIT
+      printf "#!/bin/sh\necho \"Error: forced render failure for regression test\" >&2\nexit 1\n" > "${stub}/helm"
+      chmod +x "${stub}/helm"
+      out="$(PATH="${stub}:${PATH}" python3 '"${render_fail_drift_tmp}"'/check-no-mutable-tags.py 2>&1)"
+      rc=$?
+      [ "${rc}" -ne 0 ] && echo "${out}" | grep -q "helm template" && echo "${out}" | grep -qi "forced render failure"
+    '
+  rm -rf "${render_fail_drift_tmp}"
 }
 
 #=========================================

@@ -1782,6 +1782,157 @@ grep -A6 -F "ERROR: no CA found in narwhal-wildcard-tls" "$f" | grep -Fq "exit 1
   check_not R125b "test-sso.sh TLS check catches a regression expecting insecure skip-verify (2026-09-07)" \
     bash -c "! grep -qE 'fail \"ArgoCD: oidc\.tls\.insecure\.skip\.verify' '${test_sso_drift_tmp}/test-sso.sh'"
   rm -rf "${test_sso_drift_tmp}"
+  # 2026-09-07 (Narwhal #156): scripts/cluster/13-2-narwhal-portal-bindings.sh must not mint
+  # an ungated 8760h token. Any 8760h token creation must be gated on ENABLE_LEGACY_OPENBAO_TOKEN.
+  check R134 "13-2-narwhal-portal-bindings.sh has no ungated 8760h OpenBao token (2026-09-07)" \
+    python3 -c '
+content = open("scripts/cluster/13-2-narwhal-portal-bindings.sh").read()
+assert "ENABLE_LEGACY_OPENBAO_TOKEN" in content
+lines = content.splitlines()
+in_legacy_block = False
+for line in lines:
+    if "ENABLE_LEGACY_OPENBAO_TOKEN" in line and "if [" in line:
+        in_legacy_block = True
+    elif line.strip() == "fi":
+        in_legacy_block = False
+    if "8760h" in line and "bao token create" in line:
+        assert in_legacy_block, "ungated 8760h bao token create found outside ENABLE_LEGACY_OPENBAO_TOKEN guard"
+'
+
+  local r134_drift_tmp
+  r134_drift_tmp="$(mktemp -d)"
+  cp scripts/cluster/13-2-narwhal-portal-bindings.sh "${r134_drift_tmp}/13-2-narwhal-portal-bindings.sh"
+  sed -i.bak '/# KV v2 mount 활성화/i\
+  bao token create -policy=narwhal-portal -ttl=8760h' "${r134_drift_tmp}/13-2-narwhal-portal-bindings.sh"
+  rm -f "${r134_drift_tmp}/13-2-narwhal-portal-bindings.sh.bak"
+  check_not R134b "R134 check catches an ungated 8760h OpenBao token creation (2026-09-07)" \
+    python3 -c "
+content = open('${r134_drift_tmp}/13-2-narwhal-portal-bindings.sh').read()
+assert 'ENABLE_LEGACY_OPENBAO_TOKEN' in content
+lines = content.splitlines()
+in_legacy_block = False
+for line in lines:
+    if 'ENABLE_LEGACY_OPENBAO_TOKEN' in line and 'if [' in line:
+        in_legacy_block = True
+    elif line.strip() == 'fi':
+        in_legacy_block = False
+    if '8760h' in line and 'bao token create' in line:
+        assert in_legacy_block, 'ungated 8760h bao token create found outside ENABLE_LEGACY_OPENBAO_TOKEN guard'
+"
+  rm -rf "${r134_drift_tmp}"
+
+  # 2026-09-07 (Narwhal #156): OpenBao Kubernetes auth method and role narwhal-portal are
+  # configured with bound_service_account_names=narwhal-portal, devtools namespace, audience,
+  # and bounded short token_ttl (1h).
+  check R135 "OpenBao Kubernetes auth role is configured with short TTL and SA binding (2026-09-07)" \
+    python3 -c '
+content = open("scripts/cluster/13-2-narwhal-portal-bindings.sh").read()
+assert "bao auth enable kubernetes" in content
+assert "auth/kubernetes/config" in content
+assert "auth/kubernetes/role/narwhal-portal" in content
+assert "bound_service_account_names=\"narwhal-portal\"" in content
+assert "bound_service_account_namespaces=\"devtools\"" in content
+assert "token_ttl=\"1h\"" in content
+assert "audience=" in content
+'
+
+  local r135_drift_tmp
+  r135_drift_tmp="$(mktemp -d)"
+  cp scripts/cluster/13-2-narwhal-portal-bindings.sh "${r135_drift_tmp}/13-2-narwhal-portal-bindings.sh"
+  sed -i.bak '/auth\/kubernetes\/role\/narwhal-portal/,/token_max_ttl="4h"/d' "${r135_drift_tmp}/13-2-narwhal-portal-bindings.sh"
+  rm -f "${r135_drift_tmp}/13-2-narwhal-portal-bindings.sh.bak"
+  check_not R135b "R135 check catches a missing or removed Kubernetes auth role (2026-09-07)" \
+    python3 -c "
+content = open('${r135_drift_tmp}/13-2-narwhal-portal-bindings.sh').read()
+assert 'bao auth enable kubernetes' in content
+assert 'auth/kubernetes/config' in content
+assert 'auth/kubernetes/role/narwhal-portal' in content
+assert 'bound_service_account_names=\"narwhal-portal\"' in content
+assert 'bound_service_account_namespaces=\"devtools\"' in content
+assert 'token_ttl=\"1h\"' in content
+assert 'audience=' in content
+"
+  rm -rf "${r135_drift_tmp}"
+
+  # 2026-09-07 (Narwhal #156): narwhal-portal-secrets must not unconditionally persist a
+  # static OPENBAO_TOKEN bearer token, and must configure workload identity parameters.
+  check R136 "narwhal-portal-secrets configures workload identity without static OPENBAO_TOKEN (2026-09-07)" \
+    python3 -c '
+content = open("scripts/cluster/13-2-narwhal-portal-bindings.sh").read()
+assert "OPENBAO_TOKEN_ARG=()" in content
+assert "--from-literal=OPENBAO_AUTH_METHOD=\"${OPENBAO_AUTH_METHOD_VALUE}\"" in content
+assert "--from-literal=OPENBAO_K8S_ROLE=" in content
+secret_call = content[content.find("kubectl create secret generic narwhal-portal-secrets"):content.find("kubectl apply -f -", content.find("kubectl create secret generic narwhal-portal-secrets"))]
+assert "--from-literal=OPENBAO_TOKEN=" not in secret_call, "unconditional OPENBAO_TOKEN in secret create"
+assert "\"${OPENBAO_TOKEN_ARG[@]}\"" in secret_call
+'
+
+  local r136_drift_tmp
+  r136_drift_tmp="$(mktemp -d)"
+  cp scripts/cluster/13-2-narwhal-portal-bindings.sh "${r136_drift_tmp}/13-2-narwhal-portal-bindings.sh"
+  sed -i.bak 's/"${OPENBAO_TOKEN_ARG\[@\]}"/--from-literal=OPENBAO_TOKEN="REPLACE_ME__openbao_token"/' "${r136_drift_tmp}/13-2-narwhal-portal-bindings.sh"
+  rm -f "${r136_drift_tmp}/13-2-narwhal-portal-bindings.sh.bak"
+  check_not R136b "R136 check catches an unconditional OPENBAO_TOKEN in narwhal-portal-secrets (2026-09-07)" \
+    python3 -c "
+content = open('${r136_drift_tmp}/13-2-narwhal-portal-bindings.sh').read()
+secret_call = content[content.find('kubectl create secret generic narwhal-portal-secrets'):content.find('kubectl apply -f -', content.find('kubectl create secret generic narwhal-portal-secrets'))]
+assert '--from-literal=OPENBAO_TOKEN=' not in secret_call, 'unconditional OPENBAO_TOKEN in secret create'
+"
+  rm -rf "${r136_drift_tmp}"
+
+  # 2026-09-07 (Narwhal #156, review fix): OPENBAO_AUTH_METHOD must track how the credential
+  # was actually minted — "token" when ENABLE_LEGACY_OPENBAO_TOKEN=true minted a static
+  # OPENBAO_TOKEN, "kubernetes" otherwise. A hardcoded "kubernetes" literal meant the portal's
+  # getOpenBaoToken() (narwhal-portal src/lib/openbao.ts) never read the legacy token: it
+  # always attempted kubernetes auth regardless of what the operator explicitly enabled.
+  check R146 "OPENBAO_AUTH_METHOD tracks ENABLE_LEGACY_OPENBAO_TOKEN via OPENBAO_AUTH_METHOD_VALUE (2026-09-07)" \
+    python3 -c '
+content = open("scripts/cluster/13-2-narwhal-portal-bindings.sh").read()
+assert "OPENBAO_AUTH_METHOD_VALUE=\"kubernetes\"" in content
+assert "OPENBAO_AUTH_METHOD_VALUE=\"token\"" in content
+assert "--from-literal=OPENBAO_AUTH_METHOD=\"${OPENBAO_AUTH_METHOD_VALUE}\"" in content
+assert "--from-literal=OPENBAO_AUTH_METHOD=\"kubernetes\"" not in content, "hardcoded kubernetes literal reintroduced"
+'
+
+  local r146_drift_tmp
+  r146_drift_tmp="$(mktemp -d)"
+  cp scripts/cluster/13-2-narwhal-portal-bindings.sh "${r146_drift_tmp}/13-2-narwhal-portal-bindings.sh"
+  sed -i.bak 's/--from-literal=OPENBAO_AUTH_METHOD="\${OPENBAO_AUTH_METHOD_VALUE}"/--from-literal=OPENBAO_AUTH_METHOD="kubernetes"/' "${r146_drift_tmp}/13-2-narwhal-portal-bindings.sh"
+  rm -f "${r146_drift_tmp}/13-2-narwhal-portal-bindings.sh.bak"
+  check_not R146b "R146 check catches a hardcoded OPENBAO_AUTH_METHOD that ignores the legacy flag (2026-09-07)" \
+    python3 -c "
+content = open('${r146_drift_tmp}/13-2-narwhal-portal-bindings.sh').read()
+assert '--from-literal=OPENBAO_AUTH_METHOD=\"kubernetes\"' not in content, 'hardcoded kubernetes literal reintroduced'
+"
+  rm -rf "${r146_drift_tmp}"
+
+  # 2026-09-07 (Narwhal #156): OpenBao narwhal-portal policy enforces least privilege by
+  # separating secret data access (read-only) from metadata access (read/list), with no
+  # create/update/delete capabilities.
+  check R137 "OpenBao portal policy separates metadata from data access with least privilege (2026-09-07)" \
+    python3 -c '
+content = open("scripts/cluster/13-2-narwhal-portal-bindings.sh").read()
+assert "path \"secret/data/narwhal-portal/*\"" in content
+assert "path \"secret/metadata/narwhal-portal/*\"" in content
+data_block = content[content.find("path \"secret/data/narwhal-portal/*\""):content.find("path \"secret/metadata/narwhal-portal/*\"")]
+assert "capabilities = [\"read\"]" in data_block
+for forbidden in ["create", "update", "delete"]:
+    assert forbidden not in data_block
+'
+
+  local r137_drift_tmp
+  r137_drift_tmp="$(mktemp -d)"
+  cp scripts/cluster/13-2-narwhal-portal-bindings.sh "${r137_drift_tmp}/13-2-narwhal-portal-bindings.sh"
+  sed -i.bak 's/capabilities = \["read"\]/capabilities = \["create","read","update","delete"\]/' "${r137_drift_tmp}/13-2-narwhal-portal-bindings.sh"
+  rm -f "${r137_drift_tmp}/13-2-narwhal-portal-bindings.sh.bak"
+  check_not R137b "R137 check catches broad write capabilities in portal policy (2026-09-07)" \
+    python3 -c "
+content = open('${r137_drift_tmp}/13-2-narwhal-portal-bindings.sh').read()
+data_block = content[content.find('path \"secret/data/narwhal-portal/*\"'):content.find('path \"secret/metadata/narwhal-portal/*\"')]
+for forbidden in ['create', 'update', 'delete']:
+    assert forbidden not in data_block
+"
+  rm -rf "${r137_drift_tmp}"
 }
 
 #=========================================

@@ -1,0 +1,104 @@
+name: Image Digest Drift
+
+# scripts/airgap/lib/refresh-image-digests.sh --check is the upstream tag-move detector
+# for scripts/airgap/lib/image-digests.tsv (narwhal#52 D1-A, PR #177 follow-up) — a
+# registry lets an immutable-looking version tag be re-pushed to point at different
+# bytes, and nothing else in CI ever ran this check. Weekly cadence: image tags move
+# rarely enough that daily would be noise, and workflow_dispatch covers "check now".
+on:
+  schedule:
+    - cron: '17 4 * * 1' # Monday 04:17 UTC — off the hour, avoids the shared GH Actions cron spike
+  workflow_dispatch: {}
+
+# Least privilege at the workflow level: the drift check itself only reads the checkout
+# and the network (registries, not GitHub). issues: write is scoped to the one job step
+# that actually needs it, not granted here.
+permissions:
+  contents: read
+
+jobs:
+  check-digests:
+    name: Check image digest drift
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # Pinned version + sha256, same pattern as yq/kubeconform in lint.yml. v0.22.1
+      # (published 2026-09-04) is inside this repo's 7-day cooling window
+      # (docs/common/supply-chain-policy.md); v0.22.0 (2026-08-25) is not.
+      - name: Install crane
+        env:
+          CRANE_VERSION: v0.22.0
+          CRANE_SHA256: edb74d53fad9a596860f59d1c5d04a43dfb5f441dc71f57060dd0bf39483c833
+        run: |
+          set -euo pipefail
+          curl -fsSL -o /tmp/crane.tar.gz \
+            "https://github.com/google/go-containerregistry/releases/download/${CRANE_VERSION}/go-containerregistry_Linux_x86_64.tar.gz"
+          echo "${CRANE_SHA256}  /tmp/crane.tar.gz" | sha256sum -c -
+          tar -xzf /tmp/crane.tar.gz -C /tmp crane
+          sudo install -m 0755 /tmp/crane /usr/local/bin/crane
+
+      # Captures --check's stdout+stderr (the diff, or the "current" line) regardless of
+      # exit code, and records the exit code separately so the drift-handling step below
+      # doesn't have to re-run the network resolution to know what happened.
+      - name: Run refresh-image-digests.sh --check
+        id: check
+        run: |
+          set +e
+          scripts/airgap/lib/refresh-image-digests.sh --check > /tmp/digest-check.log 2>&1
+          echo "exit_code=$?" >> "${GITHUB_OUTPUT}"
+
+      - name: Write summary
+        if: always()
+        run: |
+          {
+            echo "### Image digest drift check"
+            echo
+            echo '```'
+            cat /tmp/digest-check.log
+            echo '```'
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+      # Drift (or a resolution failure — expired tag, registry outage, etc; --check does
+      # not distinguish the two, see refresh-image-digests.sh's own comments) both count
+      # as "needs a human look": open an issue if the failure is new, or add a comment
+      # with today's diff if one is already open, rather than filing a duplicate every
+      # Monday. Searched by title text, not a label, so this needs no repo-side label
+      # setup to keep working.
+      - name: Open or refresh drift issue
+        if: steps.check.outputs.exit_code != '0'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE_TITLE: "image-digests.tsv drift: upstream tag moved or failed to resolve"
+        run: |
+          set -euo pipefail
+          {
+            echo "\`scripts/airgap/lib/refresh-image-digests.sh --check\` failed on the"
+            echo "scheduled run: <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}>."
+            echo
+            echo "This means an image in \`scripts/airgap/images.txt\` no longer resolves"
+            echo "to the digest committed in \`scripts/airgap/lib/image-digests.tsv\` — either"
+            echo "an upstream tag moved (the thing this check exists to catch) or a digest"
+            echo "could not be resolved at all (expired tag, registry outage)."
+            echo
+            echo '```'
+            cat /tmp/digest-check.log
+            echo '```'
+            echo
+            echo "Run \`scripts/airgap/lib/refresh-image-digests.sh\` (no \`--check\`) locally,"
+            echo "review the diff, and commit the refreshed table if the move is expected."
+          } > /tmp/issue-body.md
+
+          existing="$(gh issue list --state open --search "${ISSUE_TITLE} in:title" --json number --jq '.[0].number // empty')"
+          if [ -n "${existing}" ]; then
+            gh issue comment "${existing}" --body-file /tmp/issue-body.md
+          else
+            gh issue create --title "${ISSUE_TITLE}" --body-file /tmp/issue-body.md
+          fi
+
+      - name: Fail the run if drift was found
+        if: steps.check.outputs.exit_code != '0'
+        run: exit 1

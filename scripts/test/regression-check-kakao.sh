@@ -433,6 +433,57 @@ with open(sys.argv[1], "r", encoding="utf-8") as f:
     bash scripts/cluster/validate-keycloak-clients.sh --input "${kc_validator_ropc_drift_tmp}/clients.json" narwhal
   rm -rf "${kc_validator_ropc_drift_tmp}"
 
+  # 2026-09-07 (batch review): a single transient `kubectl exec ... kcadm.sh get clients`
+  # failure used to fall straight through to the empty-JSON fail-closed check, aborting
+  # phase-2 under the callers' `set -euo pipefail`. Assert the live-cluster path retries
+  # before failing, and that --input mode (used by every fixture-based check above) is
+  # untouched.
+  check R143 "validate-keycloak-clients.sh retries kcadm.sh before failing closed (2026-09-07)" \
+    bash -c "grep -Fq 'for attempt in 1 2 3 4 5; do' scripts/cluster/validate-keycloak-clients.sh && \
+grep -Fq 'sleep 5' scripts/cluster/validate-keycloak-clients.sh && \
+grep -Fq 'ERROR: kcadm.sh get clients returned no data after 5 attempts' scripts/cluster/validate-keycloak-clients.sh && \
+grep -Fq 'INPUT_FILE' scripts/cluster/validate-keycloak-clients.sh"
+
+  local kc_validator_retry_drift_tmp
+  kc_validator_retry_drift_tmp="$(mktemp -d)"
+  cp scripts/cluster/validate-keycloak-clients.sh "${kc_validator_retry_drift_tmp}/validate-keycloak-clients.sh"
+  python3 - "${kc_validator_retry_drift_tmp}/validate-keycloak-clients.sh" <<'PYEOF'
+import sys
+path = sys.argv[1]
+with open(path) as f:
+    text = f.read()
+retry_block = '''  # A single transient `kubectl exec` failure used to fall straight through to the
+  # empty-JSON fail-closed check below, aborting phase-2 under the callers' set -e.
+  # Retry a few times before treating it as a real failure.
+  CLIENTS_JSON=""
+  for attempt in 1 2 3 4 5; do
+    CLIENTS_JSON="$(kubectl exec -n iam keycloak-0 -c keycloak -- \\
+      /opt/keycloak/bin/kcadm.sh get clients -r "${REALM}" 2>/dev/null || true)"
+    if [[ -n "${CLIENTS_JSON}" ]]; then
+      break
+    fi
+    echo "WARN: kcadm.sh get clients returned no data (attempt ${attempt}/5), retrying in 5s..." >&2
+    sleep 5
+  done
+  if [[ -z "${CLIENTS_JSON}" ]]; then
+    echo "ERROR: kcadm.sh get clients returned no data after 5 attempts for realm '${REALM}'." >&2
+    exit 1
+  fi
+'''
+assert retry_block in text, "retry block not found — has it moved?"
+single_shot = '''  CLIENTS_JSON="$(kubectl exec -n iam keycloak-0 -c keycloak -- \\
+    /opt/keycloak/bin/kcadm.sh get clients -r "${REALM}" 2>/dev/null || true)"
+'''
+text = text.replace(retry_block, single_shot, 1)
+with open(path, "w") as f:
+    f.write(text)
+PYEOF
+  check_not R143b "R143 catches a regressed single-shot kcadm.sh fetch (dropped retry loop) (2026-09-07)" \
+    bash -c "grep -Fq 'for attempt in 1 2 3 4 5; do' '${kc_validator_retry_drift_tmp}/validate-keycloak-clients.sh' && \
+grep -Fq 'sleep 5' '${kc_validator_retry_drift_tmp}/validate-keycloak-clients.sh' && \
+grep -Fq 'ERROR: kcadm.sh get clients returned no data after 5 attempts' '${kc_validator_retry_drift_tmp}/validate-keycloak-clients.sh'"
+  rm -rf "${kc_validator_retry_drift_tmp}"
+
   # 2026-08-28 (#147): ArgoCD OIDC discovery must authenticate Keycloak TLS with cluster CA.
   check_not R103 "ArgoCD does not skip Keycloak OIDC TLS verification (2026-08-28)" \
     grep -rqE "(insecureSkipVerify|oidc\\.tls\\.insecure\\.skip\\.verify)[[:space:]]*[:=][[:space:]]*['\\\"]?true['\\\"]?" gitops/charts/narwhal-platform/templates/argocd-config.yaml scripts/cluster/11-3-keycloak-clients.sh scripts/cluster/13-argocd.sh
@@ -512,6 +563,69 @@ PYEOF
   check_not R127b "APISIX Admin policy checker rejects an unauthorized namespace caller (Narwhal#142, 2026-09-07)" \
     python3 scripts/test/lib/check-apisix-admin-ingress-policy.py "${apisix_admin_ns_drift_tmp}/apisix-admin-ingress-policy.yaml"
   rm -rf "${apisix_admin_ns_drift_tmp}"
+
+  # 2026-09-07 (batch review): the podSelector on apisix-admin-ingress-policy.yaml also
+  # matches the APISIX *gateway* pods, so without an unrestricted rule for 9080/9443 the
+  # policy blocks all cluster ingress traffic once 08-1-networking.sh applies it.
+  check R140 "APISIX NetworkPolicy leaves gateway ports 9080/9443 reachable from any source (2026-09-07)" \
+    python3 scripts/test/lib/check-apisix-admin-ingress-policy.py gitops/resources/apisix-admin-ingress-policy.yaml
+
+  local apisix_gateway_np_drift_tmp
+  apisix_gateway_np_drift_tmp="$(mktemp -d)"
+  python3 - "${apisix_gateway_np_drift_tmp}" <<'PYEOF'
+import sys, yaml
+tmp = sys.argv[1]
+with open("gitops/resources/apisix-admin-ingress-policy.yaml") as f:
+    docs = list(yaml.safe_load_all(f))
+for doc in docs:
+    if doc and doc.get("kind") == "NetworkPolicy":
+        # Drop the unrestricted gateway-ports rule (must be the first rule).
+        doc["spec"]["ingress"] = [
+            rule for rule in doc["spec"]["ingress"] if rule.get("from")
+        ]
+with open(f"{tmp}/apisix-admin-ingress-policy.yaml", "w") as f:
+    yaml.safe_dump_all(docs, f)
+PYEOF
+  check_not R140b "R140 catches a dropped gateway-ports rule that would take ingress dark (2026-09-07)" \
+    python3 scripts/test/lib/check-apisix-admin-ingress-policy.py "${apisix_gateway_np_drift_tmp}/apisix-admin-ingress-policy.yaml"
+  rm -rf "${apisix_gateway_np_drift_tmp}"
+
+  # 2026-09-07 (batch review): chart v2.13.0 has no top-level `admin:` values key — Helm
+  # silently drops it, so the Admin API allowlist must be nested under `apisix.admin`.
+  check R141 "APISIX bootstrap values nest the Admin allowlist under apisix.admin (2026-09-07)" \
+    python3 scripts/test/lib/check-apisix-admin-values-nesting.py scripts/cluster/08-1-networking.sh
+
+  local apisix_values_nesting_drift_tmp
+  apisix_values_nesting_drift_tmp="$(mktemp -d)"
+  python3 - "${apisix_values_nesting_drift_tmp}" <<'PYEOF'
+import sys
+tmp = sys.argv[1]
+with open("scripts/cluster/08-1-networking.sh") as f:
+    text = f.read()
+old = """  admin:
+    enabled: true
+    type: ClusterIP
+    port: 9180
+    allow:
+      ipList:
+        - 127.0.0.1/32
+        - "${POD_NETWORK_CIDR}"
+"""
+assert old in text, "apisix.admin block not found — has the heredoc moved?"
+text = text.replace(old, "", 1)
+text = text.replace(
+    '  tls:\n    enabled: true\n    servicePort: 443\n    containerPort: 9443\n',
+    '  tls:\n    enabled: true\n    servicePort: 443\n    containerPort: 9443\n'
+    'admin:\n  enabled: true\n  type: ClusterIP\n  port: 9180\n  allow:\n'
+    '    ipList:\n      - 127.0.0.1/32\n      - "${POD_NETWORK_CIDR}"\n',
+    1,
+)
+with open(f"{tmp}/08-1-networking.sh", "w") as f:
+    f.write(text)
+PYEOF
+  check_not R141b "R141 catches the Admin allowlist regressing to a dropped top-level admin: key (2026-09-07)" \
+    python3 scripts/test/lib/check-apisix-admin-values-nesting.py "${apisix_values_nesting_drift_tmp}/08-1-networking.sh"
+  rm -rf "${apisix_values_nesting_drift_tmp}"
 
   # Admin API publication boundary: ClusterIP only, never LoadBalancer/NodePort, no ApisixRoute.
   check R128 "APISIX Admin API service is ClusterIP and unpublished externally (Narwhal#142, 2026-09-07)" \
@@ -1597,6 +1711,63 @@ PYEOF
   check_not R124b "11-3-keycloak-clients.sh check catches a stripped rootCA in argocd-cm patch (2026-09-07)" \
     bash -c "grep -Fq 'rootCA: \\\$oidc.keycloak.rootCA' '${keycloak_client_drift_tmp}/11-3-keycloak-clients.sh'"
   rm -rf "${keycloak_client_drift_tmp}"
+
+  # 2026-09-07 (batch review): argocd-cm always references $oidc.keycloak.rootCA, but
+  # when neither narwhal-wildcard-tls nor narwhal-ca-cert yields a CA, the old else-branch
+  # wrote argocd-secret WITHOUT that key and the CA patch was `|| true` — OIDC discovery
+  # broke silently instead of the bootstrap failing loudly. Assert the fail-closed guard
+  # and the unguarded (non-`|| true`) argocd-secret patch are both present. Positional
+  # args (`bash -c '...' _ "$f"`) sidestep nested-quoting breakage across `$`/backtick/`"`.
+  check R142 "11-3-keycloak-clients.sh fails closed on an empty ArgoCD OIDC CA (2026-09-07)" \
+    bash -c 'f="$1"
+grep -Fq "ERROR: no CA found in narwhal-wildcard-tls" "$f" &&
+grep -A6 -F "ERROR: no CA found in narwhal-wildcard-tls" "$f" | grep -Fq "exit 1" &&
+! grep -A1 -F "kubectl patch secret argocd-secret -n devtools --type=merge" "$f" | grep -q "|| true"' \
+    _ scripts/cluster/11-3-keycloak-clients.sh
+
+  local keycloak_ca_failclosed_drift_tmp
+  keycloak_ca_failclosed_drift_tmp="$(mktemp -d)"
+  cp scripts/cluster/11-3-keycloak-clients.sh "${keycloak_ca_failclosed_drift_tmp}/11-3-keycloak-clients.sh"
+  # Reintroduce the swallowed failure: strip the fail-closed guard and re-add `|| true`
+  # to the argocd-secret patch, mimicking the pre-fix behavior.
+  python3 - "${keycloak_ca_failclosed_drift_tmp}/11-3-keycloak-clients.sh" <<'PYEOF'
+import sys
+path = sys.argv[1]
+with open(path) as f:
+    text = f.read()
+guard = """  # Fail closed: argocd-cm below always writes `rootCA: $oidc.keycloak.rootCA` into
+  # oidc.config, so if neither secret yields a CA, ArgoCD's OIDC discovery would
+  # reference a rootCA key that argocd-secret never gets — silent broken OIDC, not a
+  # visible failure. 08-1-networking.sh waits for narwhal-wildcard-tls to go Ready
+  # before this script runs (phase order 08 < 11), so an empty CA here is a real fault,
+  # not a timing race — do not `|| true` past it.
+  if [ -z "${ARGOCD_OIDC_CA}" ]; then
+    echo "ERROR: no CA found in narwhal-wildcard-tls (platform-system) or narwhal-ca-cert (devtools)." >&2
+    echo "       argocd-cm's oidc.config references \\$oidc.keycloak.rootCA; without a CA," >&2
+    echo "       ArgoCD OIDC discovery would break silently. Fix cert-manager/08-1-networking.sh" >&2
+    echo "       first, then re-run this script." >&2
+    exit 1
+  fi
+
+"""
+assert guard in text, "fail-closed guard not found — has it moved?"
+text = text.replace(guard, "", 1)
+old_patch = ('  kubectl patch secret argocd-secret -n devtools --type=merge \\\n'
+    '    -p "{\\"stringData\\":{\\"oidc.keycloak.clientSecret\\":\\"${ARGOCD_SECRET}\\",'
+    '\\"oidc.keycloak.rootCA\\":\\"${ARGOCD_OIDC_CA//$\'\\n\'/\\\\n}\\"}}"\n')
+assert old_patch in text, "argocd-secret patch not found"
+new_patch = old_patch.rstrip("\n") + ' || true\n'
+text = text.replace(old_patch, new_patch, 1)
+with open(path, "w") as f:
+    f.write(text)
+PYEOF
+  check_not R142b "R142 catches a regressed swallowed-CA-failure (dropped guard or reintroduced || true) (2026-09-07)" \
+    bash -c 'f="$1"
+grep -Fq "ERROR: no CA found in narwhal-wildcard-tls" "$f" &&
+grep -A6 -F "ERROR: no CA found in narwhal-wildcard-tls" "$f" | grep -Fq "exit 1" &&
+! grep -A1 -F "kubectl patch secret argocd-secret -n devtools --type=merge" "$f" | grep -q "|| true"' \
+    _ "${keycloak_ca_failclosed_drift_tmp}/11-3-keycloak-clients.sh"
+  rm -rf "${keycloak_ca_failclosed_drift_tmp}"
 
   # 4) R125 / R125b: test-sso.sh enforces positive TLS verification and CA trust rather than expecting insecure skip-verify.
   check R125 "test-sso.sh enforces positive TLS verification and CA trust rather than expecting insecure skip-verify (2026-09-07)" \

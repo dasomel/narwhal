@@ -193,6 +193,20 @@ if kubectl get configmap argocd-cm -n devtools &>/dev/null; then
       -o jsonpath='{.data.ca\.crt}' 2>/dev/null | base64 -d 2>/dev/null || true)
   fi
 
+  # Fail closed: argocd-cm below always writes `rootCA: $oidc.keycloak.rootCA` into
+  # oidc.config, so if neither secret yields a CA, ArgoCD's OIDC discovery would
+  # reference a rootCA key that argocd-secret never gets — silent broken OIDC, not a
+  # visible failure. 08-1-networking.sh waits for narwhal-wildcard-tls to go Ready
+  # before this script runs (phase order 08 < 11), so an empty CA here is a real fault,
+  # not a timing race — do not `|| true` past it.
+  if [ -z "${ARGOCD_OIDC_CA}" ]; then
+    echo "ERROR: no CA found in narwhal-wildcard-tls (platform-system) or narwhal-ca-cert (devtools)." >&2
+    echo "       argocd-cm's oidc.config references \$oidc.keycloak.rootCA; without a CA," >&2
+    echo "       ArgoCD OIDC discovery would break silently. Fix cert-manager/08-1-networking.sh" >&2
+    echo "       first, then re-run this script." >&2
+    exit 1
+  fi
+
   kubectl patch configmap argocd-cm -n devtools --type merge -p "{
     \"data\": {
       \"url\": \"https://argocd.${DOMAIN}\",
@@ -200,25 +214,9 @@ if kubectl get configmap argocd-cm -n devtools &>/dev/null; then
     }
   }" 2>/dev/null || echo "WARN: argocd-cm patch failed"
 
-  if [ -n "${ARGOCD_OIDC_CA}" ]; then
-    kubectl patch secret argocd-secret -n devtools --type=merge \
-      -p "{\"stringData\":{\"oidc.keycloak.clientSecret\":\"${ARGOCD_SECRET}\",\"oidc.keycloak.rootCA\":\"${ARGOCD_OIDC_CA//$'\n'/\\n}\"}}" 2>/dev/null || true
-    echo "  argocd-secret updated with OIDC client secret and rootCA"
-  else
-    # argocd-secret에 clientSecret 키 저장 (argocd-cm의 $oidc.keycloak.clientSecret 참조)
-    ARGOCD_SECRET_CURRENT=$(kubectl get secret argocd-secret -n devtools \
-      -o jsonpath='{.data}' 2>/dev/null | jq -r '."oidc.keycloak.clientSecret" // empty' | base64 -d || echo "")
-    if [ "${ARGOCD_SECRET_CURRENT}" != "${ARGOCD_SECRET}" ]; then
-      kubectl patch secret argocd-secret -n devtools \
-        --type='json' \
-        -p="[{\"op\":\"add\",\"path\":\"/data/oidc.keycloak.clientSecret\",\"value\":\"$(echo -n "${ARGOCD_SECRET}" | base64)\"}]" \
-        2>/dev/null || kubectl create secret generic argocd-secret \
-          --namespace devtools \
-          --from-literal=oidc.keycloak.clientSecret="${ARGOCD_SECRET}" \
-          --dry-run=client -o yaml | kubectl apply -f -
-      echo "  argocd-secret updated with OIDC client secret"
-    fi
-  fi
+  kubectl patch secret argocd-secret -n devtools --type=merge \
+    -p "{\"stringData\":{\"oidc.keycloak.clientSecret\":\"${ARGOCD_SECRET}\",\"oidc.keycloak.rootCA\":\"${ARGOCD_OIDC_CA//$'\n'/\\n}\"}}"
+  echo "  argocd-secret updated with OIDC client secret and rootCA"
 
   # ArgoCD server restart to apply config
   kubectl rollout restart deployment argocd-server -n devtools 2>/dev/null || true

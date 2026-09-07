@@ -42,8 +42,23 @@ if [[ -n "${INPUT_FILE}" ]]; then
   CLIENTS_JSON="$(cat "${INPUT_FILE}")"
 else
   export KUBECONFIG="${KUBECONFIG:-/home/vagrant/.kube/config-local}"
-  CLIENTS_JSON="$(kubectl exec -n iam keycloak-0 -c keycloak -- \
-    /opt/keycloak/bin/kcadm.sh get clients -r "${REALM}" 2>/dev/null || true)"
+  # A single transient `kubectl exec` failure used to fall straight through to the
+  # empty-JSON fail-closed check below, aborting phase-2 under the callers' set -e.
+  # Retry a few times before treating it as a real failure.
+  CLIENTS_JSON=""
+  for attempt in 1 2 3 4 5; do
+    CLIENTS_JSON="$(kubectl exec -n iam keycloak-0 -c keycloak -- \
+      /opt/keycloak/bin/kcadm.sh get clients -r "${REALM}" 2>/dev/null || true)"
+    if [[ -n "${CLIENTS_JSON}" ]]; then
+      break
+    fi
+    echo "WARN: kcadm.sh get clients returned no data (attempt ${attempt}/5), retrying in 5s..." >&2
+    sleep 5
+  done
+  if [[ -z "${CLIENTS_JSON}" ]]; then
+    echo "ERROR: kcadm.sh get clients returned no data after 5 attempts for realm '${REALM}'." >&2
+    exit 1
+  fi
 fi
 
 python3 - "${REALM}" "${CLIENTS_JSON}" <<'PYEOF'

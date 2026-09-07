@@ -396,21 +396,31 @@ echo "=== [3/4] 나머지 값 수집 ==="
 AUTH_SECRET=$(openssl rand -base64 32)
 LIVE_INGEST_SECRET=$(openssl rand -base64 24)
 
-# narwhal-portal SA (idempotent) — MUST exist before minting its token. The portal Helm
-# chart also defines this SA, but ArgoCD deploys that AFTER this step (13), so at 13-2
-# time the SA doesn't exist yet → `kubectl create token` fails ("SA 없음") → empty
-# K8S_SA_TOKEN → the portal cluster-infra page can't reach the API server. Create it here;
-# ArgoCD adopts the identical SA later.
+# narwhal-portal SA (idempotent) — kept unconditional: the RBAC bindings above target
+# this SA regardless of legacy-token mode, and (when ENABLE_LEGACY_K8S_SA_TOKEN=true)
+# `kubectl create token` below still needs it to exist before ArgoCD's chart apply lands
+# the identical SA (this script runs at step 13-2, chart apply is step 13 but ArgoCD sync
+# lands after — see original note this replaced).
 kubectl create serviceaccount narwhal-portal -n devtools \
   --dry-run=client -o yaml | kubectl apply -f - >/dev/null 2>&1 || true
 
-# K8s SA 토큰 (1년)
-K8S_SA_TOKEN=$(kubectl create token narwhal-portal \
-  -n devtools --duration=8760h 2>/dev/null || echo "")
-if [ -z "${K8S_SA_TOKEN}" ]; then
-  echo "WARN: narwhal-portal SA 토큰 발급 실패 (K8S_SA_TOKEN 비어 있음)"
-else
-  echo "  K8S_SA_TOKEN 발급 완료 (${#K8S_SA_TOKEN} chars)"
+# Narwhal-portal#20: a static 1-year K8S_SA_TOKEN bearer token is legacy/deprecated — the
+# portal now reads a kubelet-rotated projected serviceAccountToken volume by default (see
+# gitops/charts/narwhal-platform/templates/narwhal-portal-k8s.yaml, k8s-api-token volume +
+# K8S_SA_TOKEN_FILE/K8S_TOKEN_AUDIENCE env). Only mint/inject the long-lived token when an
+# operator explicitly opts into the legacy path, same gating pattern as
+# ENABLE_LEGACY_OPENBAO_TOKEN above.
+ENABLE_LEGACY_K8S_SA_TOKEN="${ENABLE_LEGACY_K8S_SA_TOKEN:-false}"
+K8S_SA_TOKEN=""
+if [ "${ENABLE_LEGACY_K8S_SA_TOKEN}" = "true" ]; then
+  echo "WARN: ENABLE_LEGACY_K8S_SA_TOKEN=true 감지 — 8760h 장기 bearer 토큰을 발급합니다 (DEPRECATED: 보안상 비권장, 대신 projected SA 토큰 볼륨 사용)." >&2
+  K8S_SA_TOKEN=$(kubectl create token narwhal-portal \
+    -n devtools --duration=8760h 2>/dev/null || echo "")
+  if [ -z "${K8S_SA_TOKEN}" ]; then
+    echo "WARN: narwhal-portal SA 토큰 발급 실패 (K8S_SA_TOKEN 비어 있음)"
+  else
+    echo "  K8S_SA_TOKEN 발급 완료 (${#K8S_SA_TOKEN} chars)"
+  fi
 fi
 
 # APISIX API key
@@ -529,6 +539,15 @@ if [ -n "${OPENBAO_PORTAL_TOKEN:-}" ]; then
   OPENBAO_TOKEN_ARG=(--from-literal=OPENBAO_TOKEN="${OPENBAO_PORTAL_TOKEN}")
 fi
 
+# Narwhal-portal#20: K8S_SA_TOKEN is passed ONLY when ENABLE_LEGACY_K8S_SA_TOKEN=true
+# actually minted one above. Default path uses the projected serviceAccountToken volume
+# (k8s-api-token) mounted by the gitops chart instead — no static long-lived credential
+# in the secret at all.
+K8S_SA_TOKEN_ARG=()
+if [ -n "${K8S_SA_TOKEN:-}" ]; then
+  K8S_SA_TOKEN_ARG=(--from-literal=K8S_SA_TOKEN="${K8S_SA_TOKEN}")
+fi
+
 # Narwhal #156 (review fix): OPENBAO_AUTH_METHOD must track which credential was actually
 # minted above — the portal's getOpenBaoToken() (narwhal-portal src/lib/openbao.ts) branches
 # on this value and only reads OPENBAO_TOKEN when it is "token". Hardcoding "kubernetes" here
@@ -559,7 +578,7 @@ kubectl create secret generic narwhal-portal-secrets \
   --from-literal=KEYCLOAK_ADMIN_CLIENT_SECRET="${ADMIN_CLIENT_SECRET}" \
   --from-literal=KEYCLOAK_INTERNAL_URL="http://keycloak-service.iam.svc.cluster.local:8080" \
   --from-literal=K8S_API_SERVER="https://${VIP_ADDRESS:-192.168.56.100}:6443" \
-  --from-literal=K8S_SA_TOKEN="${K8S_SA_TOKEN}" \
+  "${K8S_SA_TOKEN_ARG[@]}" \
   --from-literal=CLUSTER_NAME="narwhal" \
   --from-literal=CLUSTER_BASE_DOMAIN="${DOMAIN}" \
   --from-literal=ARGOCD_URL="http://argocd-server.devtools.svc.cluster.local" \

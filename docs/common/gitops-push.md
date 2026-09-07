@@ -93,8 +93,12 @@ kubectl get clusterrole narwhal-portal \
   -o jsonpath='{range .rules[?(@.apiGroups[0]=="metrics.k8s.io")]}{.resources} {.verbs}{"\n"}{end}'
 
 # End-to-end from the consuming pod's own SA token
+# (Narwhal-portal#20: default path reads the projected, kubelet-rotated token from the
+# k8s-api-token volume — NOT the deprecated K8S_SA_TOKEN env var, which is only present
+# when an operator explicitly set ENABLE_LEGACY_K8S_SA_TOKEN=true in
+# scripts/cluster/13-2-narwhal-portal-bindings.sh.)
 kubectl -n devtools exec deploy/narwhal-portal -- sh -c \
-  'wget -q -O /dev/null -S --header="Authorization: Bearer $K8S_SA_TOKEN" \
+  'wget -q -O /dev/null -S --header="Authorization: Bearer $(cat /var/run/secrets/kubernetes.io/serviceaccount-k8s-api/token)" \
    --no-check-certificate "$K8S_API_SERVER/apis/metrics.k8s.io/v1beta1/nodes" 2>&1 \
    | grep "HTTP/" | tail -1'   # expect: HTTP/1.1 200 OK
 ```

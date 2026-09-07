@@ -253,6 +253,19 @@ spec:
           envFrom:
             - secretRef:
                 name: narwhal-portal-secrets
+          # Narwhal-portal#20: short-lived, audience-bound K8s API token (mirrors the
+          # openbao-token pattern from #156). Mounted at a DEDICATED path rather than the
+          # default /var/run/secrets/kubernetes.io/serviceaccount — that path is already
+          # populated by the pod's own automountServiceAccountToken (default true, not
+          # disabled here), and a second volumeMount at the same path would conflict with
+          # it. K8S_SA_TOKEN_FILE/K8S_TOKEN_AUDIENCE point src/lib/k8s-token.ts at this
+          # volume instead of the default automount, whose audience is not guaranteed to
+          # stay pinned to the API server's actual issuer.
+          env:
+            - name: K8S_SA_TOKEN_FILE
+              value: /var/run/secrets/kubernetes.io/serviceaccount-k8s-api/token
+            - name: K8S_TOKEN_AUDIENCE
+              value: https://kubernetes.default.svc.cluster.local
           # D04: mount the cluster CA bundle so Node trusts in-cluster TLS
           # (Keycloak / ArgoCD / K8s API / OpenBao) via NODE_EXTRA_CA_CERTS instead of
           # NODE_TLS_REJECT_UNAUTHORIZED=0. NODE_EXTRA_CA_CERTS=/etc/ssl/narwhal/ca.crt is
@@ -263,6 +276,9 @@ spec:
               readOnly: true
             - name: openbao-token
               mountPath: /var/run/secrets/openbao
+              readOnly: true
+            - name: k8s-api-token
+              mountPath: /var/run/secrets/kubernetes.io/serviceaccount-k8s-api
               readOnly: true
           resources:
             requests:
@@ -307,6 +323,21 @@ spec:
                   path: token
                   expirationSeconds: 3600
                   audience: vault
+        # Narwhal-portal#20: Projected short-lived SA token volume for the Kubernetes API
+        # itself (metrics.k8s.io / RBAC-scoped reads the portal makes as its own SA).
+        # Audience is the API server's default issuer — kubeadm v1beta4 config in
+        # scripts/cluster/02-init-cluster.sh sets no --service-account-issuer/
+        # --api-audiences override, so kubeadm's built-in default
+        # (https://kubernetes.default.svc.cluster.local) is what the API server actually
+        # validates. If that default is ever overridden in 02-init-cluster.sh, this
+        # audience (and the matching K8S_TOKEN_AUDIENCE env above) must move with it.
+        - name: k8s-api-token
+          projected:
+            sources:
+              - serviceAccountToken:
+                  path: token
+                  expirationSeconds: 3600
+                  audience: https://kubernetes.default.svc.cluster.local
 ---
 apiVersion: v1
 kind: Service

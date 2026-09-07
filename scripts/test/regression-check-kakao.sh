@@ -2037,6 +2037,73 @@ assert '--from-literal=OPENBAO_AUTH_METHOD=\"kubernetes\"' not in content, 'hard
 "
   rm -rf "${r146_drift_tmp}"
 
+  # 2026-09-08 (Narwhal-portal#20): the portal's src/lib/k8s-token.ts reads a projected SA
+  # token at /var/run/secrets/kubernetes.io/serviceaccount/token or K8S_SA_TOKEN_FILE, and
+  # validates aud only when K8S_TOKEN_AUDIENCE is set — a production pod without either must
+  # fail fast rather than silently skip audience validation. The Deployment must actually
+  # mount a projected, audience-pinned token volume (same pattern as #156's openbao-token)
+  # for that contract to hold, at a dedicated path so it doesn't collide with the pod's own
+  # default automountServiceAccountToken mount at the standard serviceaccount path.
+  check R147 "narwhal-portal Deployment mounts a projected K8s-API SA token volume with pinned audience (Narwhal-portal#20, 2026-09-08)" \
+    python3 -c '
+content = open("gitops/charts/narwhal-platform/templates/narwhal-portal-k8s.yaml").read()
+assert "name: k8s-api-token" in content
+assert "mountPath: /var/run/secrets/kubernetes.io/serviceaccount-k8s-api" in content
+assert "name: K8S_TOKEN_AUDIENCE" in content
+assert "name: K8S_SA_TOKEN_FILE" in content
+assert "audience: https://kubernetes.default.svc.cluster.local" in content
+'
+
+  local r147_drift_tmp
+  r147_drift_tmp="$(mktemp -d)"
+  cp gitops/charts/narwhal-platform/templates/narwhal-portal-k8s.yaml "${r147_drift_tmp}/narwhal-portal-k8s.yaml"
+  python3 -c "
+path = '${r147_drift_tmp}/narwhal-portal-k8s.yaml'
+content = open(path).read()
+block = '''            - name: k8s-api-token
+              mountPath: /var/run/secrets/kubernetes.io/serviceaccount-k8s-api
+              readOnly: true
+'''
+assert block in content, 'fixture drifted — k8s-api-token volumeMount block text not found verbatim'
+open(path, 'w').write(content.replace(block, ''))
+"
+  check_not R147b "R147 check catches a dropped k8s-api-token volumeMount (declared volume, never actually mounted) (Narwhal-portal#20, 2026-09-08)" \
+    python3 -c "
+content = open('${r147_drift_tmp}/narwhal-portal-k8s.yaml').read()
+assert 'name: k8s-api-token' in content
+assert 'mountPath: /var/run/secrets/kubernetes.io/serviceaccount-k8s-api' in content
+assert 'name: K8S_TOKEN_AUDIENCE' in content
+assert 'name: K8S_SA_TOKEN_FILE' in content
+assert 'audience: https://kubernetes.default.svc.cluster.local' in content
+"
+  rm -rf "${r147_drift_tmp}"
+
+  # 2026-09-08 (Narwhal-portal#20): the long-lived (8760h) K8S_SA_TOKEN bearer token must
+  # stay gated behind an explicit ENABLE_LEGACY_K8S_SA_TOKEN=true opt-in (default false),
+  # same pattern as ENABLE_LEGACY_OPENBAO_TOKEN (R146) — never injected unconditionally.
+  check R148 "K8S_SA_TOKEN injection into narwhal-portal-secrets is gated behind ENABLE_LEGACY_K8S_SA_TOKEN (Narwhal-portal#20, 2026-09-08)" \
+    python3 -c '
+content = open("scripts/cluster/13-2-narwhal-portal-bindings.sh").read()
+assert "ENABLE_LEGACY_K8S_SA_TOKEN" in content
+assert "K8S_SA_TOKEN_ARG=()" in content
+assert "\"${K8S_SA_TOKEN_ARG[@]}\"" in content
+secret_call = content[content.find("kubectl create secret generic narwhal-portal-secrets"):content.find("kubectl apply -f -", content.find("kubectl create secret generic narwhal-portal-secrets"))]
+assert "--from-literal=K8S_SA_TOKEN=" not in secret_call, "unconditional K8S_SA_TOKEN injection in secret create"
+'
+
+  local r148_drift_tmp
+  r148_drift_tmp="$(mktemp -d)"
+  cp scripts/cluster/13-2-narwhal-portal-bindings.sh "${r148_drift_tmp}/13-2-narwhal-portal-bindings.sh"
+  sed -i.bak 's/"\${K8S_SA_TOKEN_ARG\[@\]}" \\/--from-literal=K8S_SA_TOKEN="${K8S_SA_TOKEN}" \\/' \
+    "${r148_drift_tmp}/13-2-narwhal-portal-bindings.sh"
+  rm -f "${r148_drift_tmp}/13-2-narwhal-portal-bindings.sh.bak"
+  check_not R148b "R148 check catches an unconditional K8S_SA_TOKEN injection reintroduced into narwhal-portal-secrets (Narwhal-portal#20, 2026-09-08)" \
+    python3 -c "
+content = open('${r148_drift_tmp}/13-2-narwhal-portal-bindings.sh').read()
+assert '--from-literal=K8S_SA_TOKEN=' not in content, 'unconditional K8S_SA_TOKEN injection reintroduced'
+"
+  rm -rf "${r148_drift_tmp}"
+
   # 2026-09-07 (Narwhal #156): OpenBao narwhal-portal policy enforces least privilege by
   # separating secret data access (read-only) from metadata access (read/list), with no
   # create/update/delete capabilities.

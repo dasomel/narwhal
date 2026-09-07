@@ -127,6 +127,23 @@ apisix:
           auth_type: serviceaccount
           apiservers:
             - https://kubernetes.default.svc
+  # D3: chart v2.13.0 has no top-level `admin:` key — Helm silently drops unknown keys,
+  # so a sibling `admin:` block (as this file had) never reaches the chart at all; the
+  # schema is `apisix.admin.{enabled,type,port,allow.ipList}` (verified via
+  # `helm template apisix/apisix --version 2.13.0`, which renders the default
+  # 127.0.0.1/24 allowlist unless nested here). `enabled`/`type`/`port` were previously
+  # inert duplicates of the chart's own defaults (ClusterIP/9180) so moving them here
+  # changes nothing functionally; `allow.ipList` is the operative fix — it was the only
+  # field silently discarded that actually diverged from the chart default. The sed
+  # patch on the live configmap below is now a belt-and-braces no-op, kept as-is.
+  admin:
+    enabled: true
+    type: ClusterIP
+    port: 9180
+    allow:
+      ipList:
+        - 127.0.0.1/32
+        - "${POD_NETWORK_CIDR}"
 gateway:
   type: LoadBalancer
   annotations:
@@ -139,14 +156,6 @@ gateway:
     enabled: true
     servicePort: 443
     containerPort: 9443
-admin:
-  enabled: true
-  type: ClusterIP
-  port: 9180
-  allow:
-    ipList:
-      - 127.0.0.1/32
-      - "${POD_NETWORK_CIDR}"
 etcd:
   enabled: false
   host:
@@ -346,10 +355,15 @@ kubectl wait --for=condition=Ready pod -l app.kubernetes.io/name=apisix-ingress-
 
 echo "APISIX ingress controller installed"
 
-if [ -f "/home/vagrant/configs/gitops/resources/apisix-admin-ingress-policy.yaml" ]; then
-  echo "Applying APISIX Admin API ingress NetworkPolicy..."
-  kubectl apply -f /home/vagrant/configs/gitops/resources/apisix-admin-ingress-policy.yaml || true
+# Load-bearing: this policy also governs the gateway's data-plane ports (9080/9443, see
+# the file's own header comment) — an `|| true` here used to let a bad apply pass silently
+# and take every cluster ingress route dark. Fail loudly instead.
+if [ ! -f "/home/vagrant/configs/gitops/resources/apisix-admin-ingress-policy.yaml" ]; then
+  echo "ERROR: apisix-admin-ingress-policy.yaml is missing from the staged configs." >&2
+  exit 1
 fi
+echo "Applying APISIX Admin API ingress NetworkPolicy..."
+kubectl apply -f /home/vagrant/configs/gitops/resources/apisix-admin-ingress-policy.yaml
 
 #=========================================
 # cert-manager

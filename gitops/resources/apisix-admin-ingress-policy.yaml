@@ -2,6 +2,19 @@
 # APISIX Admin stays ClusterIP and API-key authenticated, but those are not a pod-level
 # boundary: its RFC1918 allowlists admit every workload sharing the cluster networks.
 # Only the ingress controller and Narwhal portal use this API in this repository.
+#
+# This podSelector (app.kubernetes.io/name: apisix) also matches the APISIX *gateway*
+# pods, not just the Admin API — the apisix/apisix chart labels both the same way, and
+# 08-1-networking.sh applies this policy at bootstrap. Kubernetes NetworkPolicy denies
+# everything not explicitly allowed once any policy selects a pod, so without an
+# unrestricted rule for the gateway's data-plane ports every cluster ingress route goes
+# dark on the next clean install. Ports 9080 (HTTP) and 9443 (HTTPS) are opened to any
+# source below; 9180 (Admin API) stays restricted to the two documented callers. Port
+# 9090 (control API) and 9091 (Prometheus metrics) are left closed: neither is consumed
+# anywhere in this repo (grepped), and 9091 isn't even a declared containerPort on this
+# chart — its default plugin_attr.prometheus.export_addr binds to 127.0.0.1 inside the
+# pod, so opening it at the NetworkPolicy layer would be a no-op. Re-open only alongside
+# an explicit scrape config or control-API consumer.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -16,6 +29,11 @@ spec:
   policyTypes:
     - Ingress
   ingress:
+    - ports:
+        - protocol: TCP
+          port: 9080
+        - protocol: TCP
+          port: 9443
     - from:
         - podSelector:
             matchLabels:

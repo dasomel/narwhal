@@ -1,0 +1,52 @@
+#!/usr/bin/env bash
+set -euo pipefail
+FAIL=0
+
+versions_md() {  # $1 = row name (exact), $2 = which version token (1-based, default 1)
+  local row
+  row=$(grep -E "^\| $1 \|" VERSIONS.md | head -1 | cut -d'|' -f3) || true
+  echo "${row}" | grep -oE 'v?[0-9]+\.[0-9]+(\.[0-9]+)?' | sed -n "${2:-1}p" | sed 's/^v//'
+}
+
+script_pin() {  # $1 = file, $2 = variable name
+  grep -E "^${2}=" "$1" | head -1 | grep -oE '[0-9]+\.[0-9]+(\.[0-9]+)?' | head -1
+}
+
+compare() {  # $1 = label, $2 = VERSIONS.md value, $3 = source label, $4 = source value
+  echo "[$1]"
+  echo "  VERSIONS.md : ${2:-not found}"
+  echo "  $3 : ${4:-not found}"
+  if [ -z "$2" ] || [ -z "$4" ]; then
+    echo "  ERROR: version not found (the check must never silently skip)"
+    FAIL=1
+  elif [ "$2" != "$4" ]; then
+    echo "  ERROR: mismatch"
+    FAIL=1
+  else
+    echo "  OK"
+  fi
+  echo ""
+}
+
+echo "=== Version Sync Check ==="
+echo ""
+compare "Kubernetes" "$(versions_md Kubernetes)" "Vagrantfile K8S_PATCH_VERSION" \
+  "$(grep -E '^K8S_PATCH_VERSION' Vagrantfile | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)"
+compare "Cilium" "$(versions_md Cilium)" "03-cni-install.sh CILIUM_VERSION" \
+  "$(script_pin scripts/cluster/03-cni-install.sh CILIUM_VERSION)"
+compare "Cilium CLI" "$(versions_md 'Cilium CLI')" "03-cni-install.sh CILIUM_CLI_VERSION" \
+  "$(script_pin scripts/cluster/03-cni-install.sh CILIUM_CLI_VERSION)"
+compare "ArgoCD" "$(versions_md ArgoCD)" "13-argocd.sh ARGOCD_VERSION" \
+  "$(script_pin scripts/cluster/13-argocd.sh ARGOCD_VERSION)"
+compare "Keycloak" "$(versions_md Keycloak)" "11-keycloak.sh KEYCLOAK_VERSION" \
+  "$(script_pin scripts/cluster/11-keycloak.sh KEYCLOAK_VERSION)"
+compare "APISIX chart" "$(versions_md APISIX 2)" "narwhal-apps apisix.yaml targetRevision" \
+  "$(grep -E '^\s*targetRevision:' gitops/charts/narwhal-apps/templates/apisix.yaml | head -1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')"
+
+echo "=== Summary ==="
+if [ "${FAIL}" -eq 1 ]; then
+  echo "One or more version mismatches detected."
+  echo "Update VERSIONS.md (or the pin) so both sides agree."
+  exit 1
+fi
+echo "All checked versions are consistent."

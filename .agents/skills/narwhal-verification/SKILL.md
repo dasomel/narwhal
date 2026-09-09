@@ -6,7 +6,7 @@ compatibility: Requires repository validation tools; real runtime verification a
 metadata:
   openforge-scope: project
   openforge-owner: dasomel/narwhal
-  openforge-maturity: verified
+  openforge-maturity: draft
   openforge-version: "1"
 ---
 

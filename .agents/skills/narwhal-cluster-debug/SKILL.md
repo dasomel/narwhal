@@ -6,7 +6,7 @@ compatibility: Requires the Narwhal checkout and, for live evidence, access to t
 metadata:
   openforge-scope: project
   openforge-owner: dasomel/narwhal
-  openforge-maturity: verified
+  openforge-maturity: draft
   openforge-version: "1"
 ---
 

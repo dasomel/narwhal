@@ -6,7 +6,7 @@ compatibility: Requires the Narwhal repository and its documented shell, Helm, y
 metadata:
   openforge-scope: project
   openforge-owner: dasomel/narwhal
-  openforge-maturity: verified
+  openforge-maturity: draft
   openforge-version: "1"
 ---
 

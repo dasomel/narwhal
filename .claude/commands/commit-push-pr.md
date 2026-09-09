@@ -12,6 +12,7 @@ Commits changes, pushes to remote, and creates a PR.
 
 - Changes must exist
 - Current branch should not be main/master (for PR creation)
+- Follow `AGENTS.md` and the matching canonical project skill before choosing validation scope
 
 ## Steps
 
@@ -22,10 +23,17 @@ git diff --stat
 ```
 
 ### 2. Run Validation
+
+Use repository-owned checks and fail closed. Do not append `|| true` to validators.
+
+For changes touching the Vagrantfile or shell provisioning/scripts, the minimum checks are:
+
 ```bash
-ruby -c Vagrantfile 2>/dev/null || true
-shellcheck scripts/**/*.sh 2>/dev/null || true
+ruby -c Vagrantfile
+find scripts/ -name '*.sh' -print0 | xargs -0 shellcheck --severity=warning
 ```
+
+For broader platform/GitOps changes, follow `.agents/skills/narwhal-verification/SKILL.md` and run the relevant deterministic CI-equivalent checks. If a required validator fails, stop before commit/push and report the failure instead of claiming validation succeeded.
 
 ### 3. Commit
 ```bash

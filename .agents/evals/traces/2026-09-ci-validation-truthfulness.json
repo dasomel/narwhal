@@ -1,0 +1,68 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "traceId": "narwhal-ci-validation-truthfulness-2026-09",
+  "task": "Replace misleading validation success paths with fail-closed evidence while preserving visibility of legacy Markdown debt",
+  "consistencyMode": "strict",
+  "changeContext": {
+    "paths": [
+      ".github/workflows/markdown-changed.yml",
+      "scripts/ci/markdownlint-changed.py",
+      ".claude/commands/commit-push-pr.md"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Scoped the change to Markdown CI truthfulness and agent-facing pre-PR validation without reformatting historical documentation debt"
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "Confirmed the full-tree Markdown job reports real violations while masking markdownlint failure with an unconditional success path, and the Claude commit command similarly masked Ruby and ShellCheck failures",
+      "evidence": [
+        "issue:narwhal-187",
+        "artifact:.github/workflows/lint.yml",
+        "artifact:.claude/commands/commit-push-pr.md"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "Added a changed-line Markdown gate that blocks new or modified active-document violations while excluding historical archive evidence, and removed unconditional validator swallowing from the Claude pre-PR command"
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "summary": "The new changed-line Markdown gate completed successfully on the remediation PR while the existing repository Lint & Validate workflow also remained green",
+      "scope": "Markdown changed-line classification plus existing Narwhal lint/validation compatibility",
+      "evidence": [
+        "ci:markdown-changed-line-gate-run-34306921224",
+        "ci:lint-and-validate-run-34306921153"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "verification",
+      "status": "passed",
+      "summary": "The gate treats markdownlint exit 1 as lint findings to classify, fails closed on execution errors, and returns non-zero when a finding intersects an added or modified active-document line",
+      "scope": "scripts/ci/markdownlint-changed.py and .github/workflows/markdown-changed.yml",
+      "evidence": [
+        "artifact:scripts/ci/markdownlint-changed.py",
+        "artifact:.github/workflows/markdown-changed.yml"
+      ]
+    },
+    {
+      "id": "e6",
+      "type": "completion_claim",
+      "summary": "A truthful blocking Markdown gate and fail-closed agent pre-PR validation are implemented; legacy full-tree Markdown debt remains visible for separate cleanup"
+    },
+    {
+      "id": "e7",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "CI validation truthfulness is restored for new Markdown changes and agent-facing validators without converting pre-existing documentation debt into a permanent main-branch failure"
+    }
+  ]
+}

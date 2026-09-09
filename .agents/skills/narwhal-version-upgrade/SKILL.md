@@ -6,7 +6,7 @@ compatibility: Requires repository checkout plus the documented Helm, yq, shell,
 metadata:
   openforge-scope: project
   openforge-owner: dasomel/narwhal
-  openforge-maturity: verified
+  openforge-maturity: draft
   openforge-version: "1"
 ---
 

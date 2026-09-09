@@ -1,0 +1,64 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "traceId": "narwhal-agent-skill-layering-2026-09",
+  "task": "Split the broad Narwhal Claude operations skill into project-scoped workflows while preserving repository operational rules and evidence boundaries",
+  "consistencyMode": "strict",
+  "changeContext": {
+    "paths": [
+      ".agents/**"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Scoped the refactor to agent instructions, project skills, Claude compatibility routing, and retained operational documentation"
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "Confirmed one narwhal-ops skill owned component addition, version upgrade, live debugging, validation, and model/subagent routing, while CLAUDE.md duplicated stable operational knowledge",
+      "evidence": [
+        "policy:openforge-agent-skill-layering",
+        "artifact:legacy-narwhal-ops-and-claude-guide"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "Separated component lifecycle, upgrade, debug, and verification workflows into project-prefixed skills; retained narwhal-ops as a deprecated compatibility router and moved stable operational rules out of CLAUDE.md"
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "summary": "Repository lint and validation remained green after the instruction-only refactor",
+      "scope": "Narwhal repository syntax, lint, and deterministic validation unaffected by agent-instruction restructuring",
+      "evidence": [
+        "ci:lint-and-validate-run-34296334868"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "verification",
+      "status": "passed",
+      "summary": "Canonical project skills use distinct task ownership, project-prefixed names, draft maturity, and explicit separation between offline and live-cluster evidence",
+      "scope": "Agent policy and evidence contract under .agents plus Claude compatibility routing",
+      "evidence": [
+        "policy:openforge-agent-skills-standard",
+        "artifact:pr-183-skill-layering-review"
+      ]
+    },
+    {
+      "id": "e6",
+      "type": "completion_claim",
+      "summary": "Instruction-layer refactor is complete for the reviewed repository scope; individual skills remain draft until fresh-session workflow replay"
+    },
+    {
+      "id": "e7",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Agent instruction restructuring is complete and policy evidence is recorded; skill maturity promotion remains a separate follow-up"
+    }
+  ]
+}

@@ -1,0 +1,53 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "traceId": "narwhal-branch-hygiene-2026-09",
+  "task": "Adopt conservative automatic cleanup for same-repository branches after pull requests are merged",
+  "consistencyMode": "strict",
+  "changeContext": {
+    "paths": [
+      ".github/workflows/cleanup-merged-branch.yml"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Scoped cleanup to the exact head branch of a merged same-repository pull request; default, fork, open, and closed-unmerged branches are excluded"
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "Portfolio branch audit found merged and generated feature branches retained after PR completion, creating avoidable branch inventory noise"
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "Added a pull_request closed workflow with an explicit merged-state, same-repository, and non-default-branch guard before deleting the exact encoded head ref"
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "summary": "Workflow guard is fail-closed: deletion job is ineligible unless merged is true, the head repository equals the current repository, and the head ref differs from the default branch",
+      "scope": ".github/workflows/cleanup-merged-branch.yml"
+    },
+    {
+      "id": "e5",
+      "type": "verification",
+      "status": "passed",
+      "summary": "The workflow uses only contents write permission and deletes only the exact URL-encoded merged pull-request head ref; it contains no branch-age or wildcard deletion path",
+      "scope": ".github/workflows/cleanup-merged-branch.yml"
+    },
+    {
+      "id": "e6",
+      "type": "completion_claim",
+      "summary": "Future same-repository merged PR branches are eligible for exact-ref cleanup while unpublished or unmerged work remains preserved"
+    },
+    {
+      "id": "e7",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Branch hygiene is automated with conservative merged-PR proof rather than branch age or ancestry heuristics"
+    }
+  ]
+}

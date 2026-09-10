@@ -1,0 +1,16 @@
+{
+  "schemaVersion":"openforge-agent-trace/v1",
+  "traceId":"narwhal-branch-hygiene-sweep-2026-09",
+  "task":"Sweep stale branches only when current tip exactly matches a merged same-repository PR head",
+  "consistencyMode":"strict",
+  "changeContext":{"paths":[".github/workflows/cleanup-merged-branch.yml"]},
+  "events":[
+    {"id":"e1","type":"scope_check","summary":"Exclude default, protected, release, open-PR, reused, and unpublished branches"},
+    {"id":"e2","type":"reproduction","summary":"Historical merged branches remain after normal PR completion","evidence":["artifact:.github/workflows/cleanup-merged-branch.yml"]},
+    {"id":"e3","type":"bug_fix","summary":"Require current branch SHA to equal a merged same-repository PR head SHA before exact-ref deletion"},
+    {"id":"e4","type":"regression_verification","status":"passed","summary":"Open PRs and branches without exact merged-head proof remain retained","scope":"branch sweep predicates","evidence":["policy:exact-merged-head-sha-required","policy:open-pr-retained"]},
+    {"id":"e5","type":"verification","status":"passed","summary":"Deletion remains exact-ref only and release/protected/default branches are explicitly excluded","scope":".github/workflows/cleanup-merged-branch.yml","evidence":["artifact:.github/workflows/cleanup-merged-branch.yml","policy:no-age-or-ancestry-deletion"]},
+    {"id":"e6","type":"completion_claim","summary":"The sweep can remove only branches with explicit merged-PR tip identity evidence","evidence":["e4","e5"]},
+    {"id":"e7","type":"task_outcome","state":"A","summary":"Stale merged branches can be cleaned without treating age or ancestry as deletion authority"}
+  ]
+}

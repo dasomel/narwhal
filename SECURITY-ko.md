@@ -2,7 +2,7 @@
 
 [English](SECURITY.md) | 한국어
 
-본 문서는 **Narwhal 자체의 보안 취약점 보고 절차**를 다룹니다. 배포된 클러스터의 보안 강화 설정(파드 보안, 커널 파라미터, SSH, mTLS 등)은 [`docs/common/security-ko.md`](docs/common/security-ko.md)를 참고하십시오.
+본 문서는 **Narwhal 자체의 보안 취약점 보고 절차**를 다룹니다. 배포된 클러스터의 보안 강화 설정(파드 보안, 커널 파라미터, SSH, mTLS 등)은 [`docs/common/security.md`](docs/common/security.md)를 참고하십시오.
 
 ## 취약점 보고 절차 (Reporting a Vulnerability)
 

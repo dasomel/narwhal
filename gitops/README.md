@@ -1,6 +1,6 @@
 # Narwhal GitOps
 
-> 🇰🇷 한국어: [README_ko.md](./README_ko.md)
+> 🇰🇷 한국어: [README-ko.md](./README-ko.md)
 
 This repository is the GitOps source of truth for the **Narwhal Kubernetes Internal Developer Platform (IDP)**. Every platform component running on the cluster — networking, service mesh, observability, storage, security, identity, and the developer portal itself — is declared here as Kubernetes/Helm manifests and reconciled continuously by ArgoCD using an app-of-apps pattern. Nothing is meant to be applied by hand: if it isn't in this repo, it doesn't run on the cluster (and if you `kubectl apply` a change directly, ArgoCD's `selfHeal` will revert it).
 

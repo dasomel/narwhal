@@ -5,16 +5,16 @@
 ## 디렉토리 구조 (Directory Structure)
 
 * **`compressor/`**: 압축 메커니즘을 정의하는 블랙박스 스크립트 모음.
-  * [`rtk-wrap.sh`](file:///Users/m/Documents/IdeaProjects/20.dasomel/idp/narwhal/poc/velero-rtk/compressor/rtk-wrap.sh): 압축 후 증거 누락 시 원본 복구를 수행하는 폴백 계약 래퍼.
-  * [`dummy-filter.sh`](file:///Users/m/Documents/IdeaProjects/20.dasomel/idp/narwhal/poc/velero-rtk/compressor/dummy-filter.sh): 플레이스홀더 더미 압축기 (INFO/DEBUG 로그만 라인 단위로 필터링).
+  * [`rtk-wrap.sh`](compressor/rtk-wrap.sh): 압축 후 증거 누락 시 원본 복구를 수행하는 폴백 계약 래퍼.
+  * [`dummy-filter.sh`](compressor/dummy-filter.sh): 플레이스홀더 더미 압축기 (INFO/DEBUG 로그만 라인 단위로 필터링).
 * **`corpus/`**: 실제 환경과 유사하게 재구성한 백업/복구 로그 샘플 및 그에 따른 질문의 기대 정답 라벨.
   * `001-success.log` / `001-success.label.json`
   * `002-partially-failed.log` / `002-partially-failed.label.json`
   * `003-plugin-panic.log` / `003-plugin-panic.label.json`
-* **[`questions.json`](file:///Users/m/Documents/IdeaProjects/20.dasomel/idp/narwhal/poc/velero-rtk/questions.json)**: LLM 에이전트에게 물어볼 구조화된 질문 셋.
-* **[`run-arm.sh`](file:///Users/m/Documents/IdeaProjects/20.dasomel/idp/narwhal/poc/velero-rtk/run-arm.sh)**: 개별 평가 암(raw 또는 rtk)을 실행하여 모델 입력/출력 및 토큰 수를 기록하는 하네스 실행기.
-* **[`score.py`](file:///Users/m/Documents/IdeaProjects/20.dasomel/idp/narwhal/poc/velero-rtk/score.py)**: 출력 결과를 바탕으로 G1~G4 게이트를 평가하여 최종 판정(DECISION)을 내리는 채점 스크립트.
-* **[`REPORT.md`](file:///Users/m/Documents/IdeaProjects/20.dasomel/idp/narwhal/poc/velero-rtk/REPORT.md)**: 게이트 평가 기준 및 최종 결과 기록 문서.
+* **[`questions.json`](questions.json)**: LLM 에이전트에게 물어볼 구조화된 질문 셋.
+* **[`run-arm.sh`](run-arm.sh)**: 개별 평가 암(raw 또는 rtk)을 실행하여 모델 입력/출력 및 토큰 수를 기록하는 하네스 실행기.
+* **[`score.py`](score.py)**: 출력 결과를 바탕으로 G1~G4 게이트를 평가하여 최종 판정(DECISION)을 내리는 채점 스크립트.
+* **[`REPORT.md`](REPORT.md)**: 게이트 평가 기준 및 최종 결과 기록 문서.
 
 ---
 

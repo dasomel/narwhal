@@ -1,0 +1,32 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: database-ingress-policy
+  namespace: devtools
+  annotations:
+    # narwhal#190: unlike this chart's other per-resource Applications, this one is
+    # deliberately NOT proven against a live cluster yet (see
+    # gitops/resources/database-ingress-policy.yaml's header for the exact caveat -
+    # kubelet-sourced CNPG probe traffic on port 8000 is the open question). Verify CNPG
+    # instance health and caller connectivity in a real cluster before trusting selfHeal
+    # to keep re-applying this unattended; roll back per that file's instructions if not.
+    narwhal.io/verification-status: "static-only-pending-live-cluster-check"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: platform
+  source:
+    repoURL: {{ .Values.repoURL }}
+    targetRevision: HEAD
+    path: resources
+    directory:
+      include: "database-ingress-policy.yaml"
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: database
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - ServerSideApply=true

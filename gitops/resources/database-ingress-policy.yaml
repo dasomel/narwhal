@@ -1,0 +1,118 @@
+# NetworkPolicy: default-deny ingress for the `database` namespace (CloudNative-PG),
+# with an explicit allow-list for every verified caller.
+#
+# Part of narwhal#190 (OpenForge Zero Trust Baseline, dasomel/openforge#77): the
+# baseline's own checklist calls for "namespace/workload default-deny ingress and
+# egress with explicit DNS/service/dependency allows". `database` is the highest-value
+# first target — it holds every platform app's PostgreSQL data (authentik/keycloak,
+# harbor, gitea) — and, unlike `iam`/`devtools`/`monitoring`/`storage`
+# (network-policies.yaml), it had NO NetworkPolicy at all before this change: any pod
+# anywhere in the cluster could open a TCP connection to narwhal-db. This closes that
+# gap for ingress; egress is intentionally left alone (see network-policies.yaml's own
+# header: default-deny egress previously conflicted with Cilium in this cluster, so
+# re-tightening egress is tracked as separate, later work, not bundled in here).
+#
+# Callers, each verified against this repo rather than assumed (git grep for
+# `narwhal-db` / `database.svc` / `narwhal-db-rw`):
+#   1. CNPG instances (same namespace) - `narwhal-db` Cluster (gitops/resources/narwhal-db.yaml,
+#      scripts/cluster/07-cnpg.sh) - 2-instance HA cluster; streaming replication (5432)
+#      and the CNPG instance manager's status/leader-election API (8000) both run
+#      pod-to-pod within this namespace.
+#   2. CNPG operator - platform-system, app.kubernetes.io/name=cloudnative-pg
+#      (scripts/cluster/07-cnpg.sh helm install --namespace platform-system) - the
+#      operator calls each instance's instance-manager REST API (8000) directly for
+#      reconciliation/status/promotion, separately from the kube-apiserver watch path.
+#   3. Keycloak - iam namespace, via the `authentik-db-rw` ExternalName Service
+#      (narwhal-db.yaml) which resolves to narwhal-db-rw.database.svc; the actual pod
+#      selector is the CNPG-operator-managed Keycloak StatefulSet
+#      (app.kubernetes.io/instance=keycloak) (scripts/cluster/11-keycloak.sh).
+#   4. Harbor DB - devtools namespace, via `harbor-db-rw` ExternalName Service
+#      (narwhal-db.yaml, scripts/cluster/08-5-registry.sh) - matches Harbor's core/jobservice
+#      pods (app=harbor).
+#   5. Gitea - devtools namespace, via `gitea-db-rw` ExternalName Service
+#      (narwhal-db.yaml, scripts/cluster/12-gitea.sh) - matches
+#      app.kubernetes.io/name=gitea (same selector gitea-ingress-policy.yaml already uses).
+#
+# NOT allowed here (checked, not assumed): narwhal-portal does not talk to Postgres
+# directly (no narwhal-db/DATABASE_URL reference in gitops/charts/narwhal-platform's
+# portal manifest); CNPG monitoring is off (`monitoring.enablePodMonitor: false` in
+# narwhal-db.yaml), so no Prometheus ingress rule is needed today - add one if that
+# flag ever flips to true. Backups go outward over the barman S3 endpoint (egress,
+# not covered here), so no ingress rule from `storage` is needed either.
+#
+# Caveat, documented rather than silently assumed away (see tuning-job-network-policy.yaml
+# for the same discipline): this has only been validated statically (`make validate`,
+# `make lint`) in a repo with no live cluster attached to this session. CNPG's own
+# liveness/readiness probes hit the instance manager on port 8000 from the kubelet, and
+# kubelet-sourced traffic is not matched by any podSelector/namespaceSelector `from`
+# entry below - on some CNI/kube-proxy configurations that traffic bypasses per-pod
+# NetworkPolicy enforcement entirely (kubelet talks to the pod's actual IP, not through
+# a Service), on others it does not. Before this Application is allowed to auto-sync
+# against a real cluster, verify CNPG instance health (`kubectl get cluster narwhal-db
+# -n database`) and Hubble/connectivity evidence for callers 1-5 above; roll back by
+# deleting this NetworkPolicy object (`kubectl delete -n database networkpolicy
+# database-default-deny-ingress`) if instances go NotReady or a caller starts failing.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: database-default-deny-ingress
+  namespace: database
+  labels:
+    app.kubernetes.io/managed-by: narwhal-gitops
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+  ingress:
+    # 1. Same-namespace CNPG instance-to-instance traffic (replication + instance manager).
+    - from:
+        - podSelector: {}
+      ports:
+        - protocol: TCP
+          port: 5432
+        - protocol: TCP
+          port: 8000
+    # 2. CNPG operator (platform-system) - instance manager status/reconciliation API.
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: platform-system
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: cloudnative-pg
+      ports:
+        - protocol: TCP
+          port: 8000
+    # 3. Keycloak (iam) - authentik-db-rw -> narwhal-db-rw.
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: iam
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/instance: keycloak
+      ports:
+        - protocol: TCP
+          port: 5432
+    # 4. Harbor (devtools) - harbor-db-rw -> narwhal-db-rw.
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: devtools
+          podSelector:
+            matchLabels:
+              app: harbor
+      ports:
+        - protocol: TCP
+          port: 5432
+    # 5. Gitea (devtools) - gitea-db-rw -> narwhal-db-rw.
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: devtools
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: gitea
+      ports:
+        - protocol: TCP
+          port: 5432

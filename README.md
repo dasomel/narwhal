@@ -24,8 +24,11 @@ English | [한국어](README-ko.md)
 
 Narwhal adds GitOps, IAM/SSO, service mesh, observability, registry, storage, backup, policy, an
 API gateway and a management portal on top of Kubernetes, and delivers them as **one platform that
-installs, verifies and operates as a single unit** — on a laptop, in a cloud, on-premises, or in a
-fully air-gapped network.
+installs as a single unit, with integration failures captured as regression tests re-run on every
+change** — on a laptop, in a cloud, on-premises, or in a fully air-gapped network. Upgrade/rollback
+and live end-to-end verification are still partly manual; see
+[`docs/common/test-strategy.md`](docs/common/test-strategy.md) for exactly what's covered by CI
+today versus what requires a live cluster.
 
 > **Narwhal is not a Kubernetes installer.**
 > Installing Kubernetes is the easy part. The hard part is making independently developed projects

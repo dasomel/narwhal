@@ -1,0 +1,16 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-issue-193-image-digest-refresh",
+  "task": "Refresh scripts/airgap/lib/image-digests.tsv after scheduled Image Digest Drift detector auto-filed issue #193",
+  "changeContext": {"paths": ["scripts/airgap/lib/image-digests.tsv"]},
+  "events": [
+    {"id": "e1", "type": "scope_check", "summary": "Scoped to the digest table only; no image list, script logic, or unrelated entries touched"},
+    {"id": "e2", "type": "reproduction", "summary": "Reproduced the reported drift: docker.io/alpine/git:v2.54.0 resolved to a different digest than committed", "evidence": ["issue:193", "ci:image-digest-drift"]},
+    {"id": "e3", "type": "bug_fix", "summary": "Ran scripts/airgap/lib/refresh-image-digests.sh (no --check) to regenerate the table; diff confirmed limited to alpine/git, valkey/valkey, and kong digest moves plus timestamp"},
+    {"id": "e4", "type": "regression_verification", "status": "passed", "summary": "Re-ran refresh-image-digests.sh --check", "scope": "air-gap image digest currency", "evidence": ["exit:0"]},
+    {"id": "e5", "type": "verification", "status": "passed", "summary": "make validate and make security ran clean on the updated table", "scope": "GitOps/Vagrantfile syntax and hardcoded-credential checks", "evidence": ["ci:lint-validate", "ci:security"]},
+    {"id": "e6", "type": "completion_claim", "summary": "Digest table now current with upstream; scheduled drift detector should pass on next run"},
+    {"id": "e7", "type": "task_outcome", "state": "A", "summary": "Complete and verified locally; closes #193 on merge"}
+  ]
+}

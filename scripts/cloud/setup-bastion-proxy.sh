@@ -29,6 +29,9 @@ SSH_KEY=$(cd "${TF_DIR}" && tofu output -raw ssh_key_path 2>/dev/null || true)
 [ -n "${SSH_KEY}" ] || SSH_KEY="${TF_DIR}/KPAAS_KEYPAIR.pem"
 case "${SSH_KEY}" in /*) ;; *) SSH_KEY="${TF_DIR}/${SSH_KEY#./}" ;; esac
 [ -f "${SSH_KEY}" ] || { echo "ERROR: private key not found at ${SSH_KEY} - has tofu apply finished?" >&2; exit 1; }
+
+# shellcheck source=scripts/cloud/lib-ssh.sh
+source scripts/cloud/lib-ssh.sh
 VPC_CIDR=$(cd "${TF_DIR}" && tofu output -raw vpc_cidr 2>/dev/null || echo "172.16.0.0/16")
 DOMAIN="${DOMAIN:-kakao.narwhal.internal}"
 # Service names resolve to the worker LB's PRIVATE vip: in-VPC clients must not hairpin
@@ -42,7 +45,7 @@ echo "  listen port : ${PROXY_PORT}"
 
 ssh_bastion() {
   ssh -i "${SSH_KEY}" \
-    -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR \
+    "${KAKAO_SSH_OPTS[@]}" \
     "${SSH_USER}@${BASTION_IP}" "$@"
 }
 

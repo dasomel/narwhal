@@ -57,6 +57,9 @@ csp/**/terraform.tfstate*
 csp/**/*.tfvars
 csp/**/*.tfplan
 csp/**/*.pem
+# accept-new host-key pins for the Kakao Cloud SSH scripts (scripts/cloud/lib-ssh.sh)
+# — per-cluster and regenerated per build, not shared history.
+csp/**/kakao_known_hosts
 /.bkit/audit/2026-04-08.jsonl
 /.bkit/audit/2026-04-09.jsonl
 /.bkit/audit/2026-04-13.jsonl

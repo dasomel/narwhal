@@ -1,5 +1,18 @@
 # Narwhal
 
+Narwhal is a reproducible Kubernetes Internal Developer Platform.
+It integrates GitOps, IAM, networking, observability, security, and storage/backup into one
+installable unit.
+Integration failures are converted into regression tests and continuously revalidated across
+upgrades.
+It runs on ARM64/AMD64, in the cloud or on-premises, and fully air-gapped.
+
+**Verified against this repo right now:** 582 commits (`git log --oneline | wc -l`), 4 tags
+(`git tag | wc -l`), 318 dated integration incidents in
+[`lessons-log.md`](docs/common/lessons-log.md) (rows matching `| YYYY-MM-DD |`), and 192 regression
+checks in [`scripts/test/regression-check-kakao.sh`](scripts/test/regression-check-kakao.sh)
+(`check`/`check_not` call sites).
+
 [![GitHub Release](https://img.shields.io/github/v/release/dasomel/narwhal)](https://github.com/dasomel/narwhal/releases/latest)
 [![License](https://img.shields.io/github/license/dasomel/narwhal)](LICENSE)
 

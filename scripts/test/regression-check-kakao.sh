@@ -2215,6 +2215,15 @@ PYEOF
       [ "${rc}" -ne 0 ] && echo "${out}" | grep -q "helm template" && echo "${out}" | grep -qi "forced render failure"
     '
   rm -rf "${render_fail_drift_tmp}"
+
+  # narwhal#186: the NFS share root was mode 0777 (world-writable) and both export lines
+  # carried no_root_squash (any root-capable client on the CIDR kept real root identity
+  # on the server). Neither is required by anything in this repo -- csi-driver-nfs only
+  # needs owner rights on a root it already owns as nobody.
+  check_not R151 "NFS share root is not created mode 0777 (narwhal#186)" \
+    grep -qE '^[^#]*chmod +777 +"\$\{NFS_SHARE_PATH\}"' scripts/cluster/01-nfs-server.sh
+  check_not R151b "NFS exports do not default to no_root_squash (narwhal#186)" \
+    grep -qE '^[^#]*\(rw,sync,no_subtree_check,no_root_squash\)' scripts/cluster/01-nfs-server.sh
 }
 
 #=========================================

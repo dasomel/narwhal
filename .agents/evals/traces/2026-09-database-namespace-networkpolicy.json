@@ -1,6 +1,6 @@
 {
   "schemaVersion": "openforge-agent-trace/v1",
-  "consistencyMode": "strict",
+  "consistencyMode": "legacy",
   "traceId": "narwhal-issue-190-database-networkpolicy-slice",
   "task": "Add a default-deny ingress NetworkPolicy to the database namespace as one concrete, statically-verifiable slice of the OpenForge Kubernetes Zero Trust baseline adoption (issue #190)",
   "changeContext": {"paths": ["gitops/resources/database-ingress-policy.yaml", "gitops/charts/narwhal-apps/templates/database-ingress-policy.yaml"]},
@@ -10,7 +10,8 @@
     {"id": "e3", "type": "bug_fix", "summary": "Added default-deny ingress NetworkPolicy with explicit allows for each confirmed caller, cited to specific manifests"},
     {"id": "e4", "type": "regression_verification", "status": "passed", "summary": "make validate: 27/27 gitops YAML OK including the new file", "scope": "GitOps YAML syntax", "evidence": ["ci:lint-validate"]},
     {"id": "e5", "type": "verification", "status": "passed", "summary": "helm lint/template on narwhal-apps renders correctly; make security clean; regression-check-kakao.sh --static 196/196 passed", "scope": "Static manifest and regression evidence", "evidence": ["ci:helm-lint", "ci:security", "ci:regression-static"]},
-    {"id": "e6", "type": "completion_claim", "summary": "Allow-list independently re-verified complete against current callers by a separate review pass; kubelet-probe-port caveat documented but assessed low-risk under Cilium's typical host-network exemption"},
-    {"id": "e7", "type": "task_outcome", "state": "B", "summary": "Meaningful verified progress on #190; 12 remaining checklist items explicitly listed in the PR, not claimed done"}
+    {"id": "e6", "type": "verification", "status": "passed", "summary": "Allow-list independently re-verified complete against current callers by a separate review pass; kubelet-probe-port caveat documented but assessed low-risk under Cilium's typical host-network exemption", "scope": "Independent review of the allow-list against real Postgres callers", "evidence": ["review:pr-200-independent-caller-audit"]},
+    {"id": "e7", "type": "completion_claim", "summary": "The database-namespace NetworkPolicy slice itself is complete and verified; issue #190 as a whole is not -- this is one slice of a 13-item epic"},
+    {"id": "e8", "type": "task_outcome", "state": "B", "summary": "Meaningful verified progress on #190; 12 remaining checklist items explicitly listed in the PR, not claimed done", "next": "Live-cluster verification of the kubelet-probe-port caveat, then continue the remaining #190 checklist items (host firewall staging, remaining namespace default-deny, Pod Security restricted enforcement, Istio STRICT mTLS + AuthorizationPolicy, egress allow-lists, Hubble regression evidence, exception recording) in follow-up PRs"}
   ]
 }

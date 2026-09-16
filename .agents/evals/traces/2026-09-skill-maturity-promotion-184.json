@@ -1,0 +1,16 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-issue-184-skill-verified-promotion",
+  "task": "Promote narwhal-version-upgrade and narwhal-component-lifecycle Agent Skills from draft to verified per openforge#54 fresh-session replay evidence, and add the openforge-agent-skill-verification/v1 evidence files the tightened policy (openforge#56) now requires",
+  "changeContext": {"paths": [".agents/skills/narwhal-version-upgrade/SKILL.md", ".agents/skills/narwhal-component-lifecycle/SKILL.md", ".agents/skill-evals/narwhal-version-upgrade.json", ".agents/skill-evals/narwhal-component-lifecycle.json"]},
+  "events": [
+    {"id": "e1", "type": "scope_check", "summary": "Scoped to only the two skills whose openforge#54 replay verdict was verified-recommended; left narwhal-verification and narwhal-cluster-debug at draft (their verdict was qualified-partial)"},
+    {"id": "e2", "type": "reproduction", "summary": "Re-derived the real replay evidence for both skills from the earlier session pass: version-consistency check baseline/injected-mismatch/restore cycle for narwhal-version-upgrade; digest-refresh --check baseline/corrupted/restore cycle for narwhal-component-lifecycle"},
+    {"id": "e3", "type": "bug_fix", "summary": "Flipped openforge-maturity: draft -> verified in both SKILL.md files' frontmatter"},
+    {"id": "e4", "type": "regression_verification", "status": "passed", "summary": "Authored .agents/skill-evals/*.json per openforge-agent-skill-verification/v1 schema and validated against openforge's own audit-agent-skills.py --strict", "scope": "skill maturity evidence contract", "evidence": ["ci:agent-skills-audit"]},
+    {"id": "e5", "type": "verification", "status": "passed", "summary": "python3 audit-agent-skills.py . --strict against this repo reports 0 findings across all 5 skills", "scope": "openforge cross-repo skill audit", "evidence": ["ci:agent-skills-audit-strict"]},
+    {"id": "e6", "type": "completion_claim", "summary": "Maturity promotion applied in the owning repository with schema-valid evidence, per openforge#54's own instruction that OpenForge only recommends and the project must apply it"},
+    {"id": "e7", "type": "task_outcome", "state": "A", "summary": "Complete and verified for the two promoted skills; the other two skills intentionally left unpromoted"}
+  ]
+}

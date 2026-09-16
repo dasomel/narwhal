@@ -1,0 +1,37 @@
+{
+  "schemaVersion": "openforge-agent-skill-verification/v1",
+  "skill": "narwhal-component-lifecycle",
+  "skillVersion": "1",
+  "freshSession": true,
+  "agentRuntime": "claude-sonnet-5",
+  "happyPath": {
+    "status": "pass",
+    "summary": "Traced Cilium through all 4 sources of truth the skill's workflow requires (VERSIONS.md, image-digest table, provisioning script references, GitOps ownership) and confirmed consistency.",
+    "evidence": [
+      "scripts/airgap/lib/image-digests.tsv: 6 Cilium entries all digest-pinned",
+      "make validate -> OK (Vagrantfile + all GitOps YAML)"
+    ]
+  },
+  "edgeCase": {
+    "status": "pass",
+    "summary": "Corrupted the Cilium entry in scripts/airgap/lib/image-digests.tsv to a fake digest and confirmed the refresh script's --check mode detects and reports the drift with a real nonzero exit, then restored and reconfirmed a clean pass.",
+    "evidence": [
+      "bash scripts/airgap/lib/refresh-image-digests.sh --check -> unified diff shown, 'image-digests.tsv is stale or an upstream tag moved', exit 1",
+      "bash scripts/airgap/lib/refresh-image-digests.sh --check (after restore) -> exit 0"
+    ]
+  },
+  "deterministicChecks": [
+    {
+      "command": "make validate",
+      "status": "pass"
+    },
+    {
+      "command": "bash scripts/airgap/lib/refresh-image-digests.sh --check",
+      "status": "pass"
+    }
+  ],
+  "unverified": [
+    "Live-cluster GitOps rollout/ArgoCD sync behavior of a lifecycle change -- no cluster available in the replay environment."
+  ],
+  "verifiedAt": "2026-09-16"
+}

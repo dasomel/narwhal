@@ -29,6 +29,9 @@ chmod 600 "${KAKAO_KNOWN_HOSTS}" 2>/dev/null || true
 if [ "${KAKAO_RESET_KNOWN_HOSTS:-}" = "1" ]; then
   : > "${KAKAO_KNOWN_HOSTS}"
   echo "[lib-ssh] KAKAO_RESET_KNOWN_HOSTS=1: cleared ${KAKAO_KNOWN_HOSTS} -- every host will be re-pinned on next connect." >&2
+  # This is a one-source operation. Do not let a child script sourced in the same
+  # provisioning run clear the pins again before it connects.
+  unset KAKAO_RESET_KNOWN_HOSTS
 fi
 
 # shellcheck disable=SC2034  # consumed by the scripts that source this file
@@ -55,18 +58,19 @@ _kakao_run_with_recovery_hint() {
   if out=$("${cmd}" "${KAKAO_SSH_OPTS[@]}" "$@" 2>&1); then
     printf '%s\n' "${out}"
     return 0
+  else
+    local rc=$?
+    printf '%s\n' "${out}" >&2
+    if printf '%s' "${out}" | grep -q "REMOTE HOST IDENTIFICATION HAS CHANGED\|WARNING: POSSIBLE DNS SPOOFING"; then
+      echo "[lib-ssh] Host key changed -- this is EXPECTED after a legitimate node/bastion" >&2
+      echo "[lib-ssh] rebuild, and REFUSED rather than silently trusted (2026-08-02 lesson)." >&2
+      echo "[lib-ssh] If this rebuild was intentional, run:" >&2
+      echo "[lib-ssh]   bash -c 'source scripts/cloud/lib-ssh.sh; kakao_forget_host <host-or-ip>'" >&2
+      echo "[lib-ssh] then re-run this script. If you did NOT rebuild this host, STOP --" >&2
+      echo "[lib-ssh] this may be a real man-in-the-middle attempt." >&2
+    fi
+    return "${rc}"
   fi
-  local rc=$?
-  printf '%s\n' "${out}" >&2
-  if printf '%s' "${out}" | grep -q "REMOTE HOST IDENTIFICATION HAS CHANGED\|WARNING: POSSIBLE DNS SPOOFING"; then
-    echo "[lib-ssh] Host key changed -- this is EXPECTED after a legitimate node/bastion" >&2
-    echo "[lib-ssh] rebuild, and REFUSED rather than silently trusted (2026-08-02 lesson)." >&2
-    echo "[lib-ssh] If this rebuild was intentional, run:" >&2
-    echo "[lib-ssh]   bash -c 'source scripts/cloud/lib-ssh.sh; kakao_forget_host <host-or-ip>'" >&2
-    echo "[lib-ssh] then re-run this script. If you did NOT rebuild this host, STOP --" >&2
-    echo "[lib-ssh] this may be a real man-in-the-middle attempt." >&2
-  fi
-  return "${rc}"
 }
 
 kakao_ssh() { _kakao_run_with_recovery_hint ssh "$@"; }

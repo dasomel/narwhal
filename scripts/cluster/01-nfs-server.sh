@@ -13,15 +13,31 @@ sudo apt-get update
 sudo apt-get install -y nfs-kernel-server quota quotatool
 
 # Create NFS share directory
+#
+# Least-privilege default (narwhal#186): the share root used to be mode 0777, world
+# writable to any client on the export ACL regardless of squash. Owner-only rwx is
+# enough — the only writer is the nfs.csi.k8s.io provisioner (05-nfs-quota-agent.sh),
+# which creates PV subdirectories as the client's root, squashed below to nobody, the
+# same identity that owns this directory. Nothing else needs write access to the root.
 sudo mkdir -p "${NFS_SHARE_PATH}"
 sudo chown nobody:nogroup "${NFS_SHARE_PATH}"
-sudo chmod 777 "${NFS_SHARE_PATH}"
+sudo chmod 750 "${NFS_SHARE_PATH}"
 
 # Configure exports
+#
+# Least-privilege default (narwhal#186): no_root_squash used to be the default for both
+# the host and pod networks, so any root-capable client on either CIDR retained real root
+# identity on the export. No component in this repo has been found to require that —
+# csi-driver-nfs's provisioner only needs to create/chown subdirectories under a root it
+# already owns as nobody, which root_squash (the default when root_squash/no_root_squash
+# is omitted) already allows since the share root above is owned nobody:nogroup. If a
+# future component needs real root identity on the export, add it as its own scoped
+# export line here with root_squash left off, and document the owner/scope/reason next
+# to it plus a regression check below — do not remove root_squash from these two lines.
 cat <<EOF | sudo tee /etc/exports
 # Kubernetes NFS share
-${NFS_SHARE_PATH}  ${HOST_NETWORK_CIDR}(rw,sync,no_subtree_check,no_root_squash)
-${NFS_SHARE_PATH}  ${POD_NETWORK_CIDR}(rw,sync,no_subtree_check,no_root_squash)
+${NFS_SHARE_PATH}  ${HOST_NETWORK_CIDR}(rw,sync,no_subtree_check,root_squash)
+${NFS_SHARE_PATH}  ${POD_NETWORK_CIDR}(rw,sync,no_subtree_check,root_squash)
 EOF
 
 # Apply exports

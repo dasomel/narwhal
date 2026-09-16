@@ -8,7 +8,7 @@ upgrades.
 It runs on ARM64/AMD64, in the cloud or on-premises, and fully air-gapped.
 
 **Verified against this repo right now:** 582 commits (`git log --oneline | wc -l`), 4 tags
-(`git tag | wc -l`), 316 dated integration incidents in
+(`git tag | wc -l`), 318 dated integration incidents in
 [`lessons-log.md`](docs/common/lessons-log.md) (rows matching `| YYYY-MM-DD |`), and 192 regression
 checks in [`scripts/test/regression-check-kakao.sh`](scripts/test/regression-check-kakao.sh)
 (`check`/`check_not` call sites).

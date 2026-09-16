@@ -25,6 +25,10 @@ security_group_name = "narwhal-sg"
 key_name            = "YOUR_KEYPAIR_NAME"      # Kakao Cloud keypair name
 ssh_key_path        = "./YOUR_KEYPAIR.pem"      # SSH private key file path
 
+# Required (issue #188): CIDRs allowed to SSH into the public bastion.
+# Must NOT be 0.0.0.0/0 - set this to your operator IP(s)/office CIDR.
+bastion_ssh_allowed_cidrs = ["203.0.113.4/32"]
+
 #####################################################################
 # Compute Configuration
 #####################################################################

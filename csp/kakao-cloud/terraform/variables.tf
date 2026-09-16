@@ -202,7 +202,30 @@ variable "bastion_volume_size" {
 }
 
 variable "assign_node_public_ips" {
-  description = "Attach a public IP to every master/worker instead of routing their egress through the bastion proxy. Off by default: the squid proxy on the bastion keeps the nodes private, whereas a public IP per node would expose the SSH and 6443 rules that are open to 0.0.0.0/0. Escape hatch for when the proxy is not an option."
+  description = "Attach a public IP to every master/worker instead of routing their egress through the bastion proxy. Off by default: the squid proxy on the bastion keeps the nodes private, whereas a public IP per node would expose the SSH and 6443 rules that are open to 0.0.0.0/0. Escape hatch for when the proxy is not an option. WARNING: nodes still carry the shared narwhal-sg (module.security), which opens 6443/NodePort/80/443 to 0.0.0.0/0 for the LB target groups - a public IP on a node exposes those same rules directly, not just through the LB. There is no separate public-node SG profile; if you flip this on, narrow the shared SG's public ranges (or add a node-specific profile) before doing so, and prefer the bastion_ssh_allowed_cidrs pattern for any rule you add."
   type        = bool
   default     = false
+}
+
+# =============================================
+# Bastion Security Group (issue #188)
+# =============================================
+variable "bastion_ssh_allowed_cidrs" {
+  description = "CIDR blocks allowed to SSH into the bastion. Required and must NOT include 0.0.0.0/0 - the bastion has a public IP, so unrestricted SSH there was the original finding in #188. Set to your operator IP(s)/office CIDR, e.g. [\"203.0.113.4/32\"]."
+  type        = list(string)
+
+  validation {
+    condition     = length(var.bastion_ssh_allowed_cidrs) > 0
+    error_message = "bastion_ssh_allowed_cidrs must contain at least one CIDR - the bastion SG no longer defaults to public SSH."
+  }
+
+  validation {
+    condition     = alltrue([for cidr in var.bastion_ssh_allowed_cidrs : cidr != "0.0.0.0/0"])
+    error_message = "bastion_ssh_allowed_cidrs must not include 0.0.0.0/0 - restrict to explicit operator CIDR(s) per issue #188."
+  }
+
+  validation {
+    condition     = alltrue([for cidr in var.bastion_ssh_allowed_cidrs : can(cidrhost(cidr, 0))])
+    error_message = "each entry in bastion_ssh_allowed_cidrs must be a valid CIDR block (e.g., 203.0.113.4/32)"
+  }
 }

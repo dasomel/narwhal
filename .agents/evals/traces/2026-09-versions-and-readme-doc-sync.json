@@ -1,0 +1,18 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-versions-readme-doc-sync",
+  "task": "Sync VERSIONS.md Harbor row to the actual v2.15.1 pin and narrow README's overreaching 'verifies and operates as a single unit' claim, flagged by an external application-readiness review",
+  "changeContext": {"paths": ["README.md", "VERSIONS.md", ".markdownlint.json"]},
+  "events": [
+    {"id": "e1", "type": "scope_check", "summary": "Scoped to the two flagged claims only; no version pins, charts, or scripts changed"},
+    {"id": "e2", "type": "reproduction", "summary": "Confirmed VERSIONS.md:108 still described the pre-2026-07-07 ':latest'-tracking policy while harbor.yaml and image-digests.tsv have pinned v2.15.1 since commit 0e9a1fd", "evidence": ["git:0e9a1fd", "lessons-log:2026-07-07", "gitops/charts/narwhal-apps/templates/harbor.yaml"]},
+    {"id": "e3", "type": "reproduction", "summary": "Confirmed docs/common/test-strategy.md documents upgrade/rollback and live E2E verification as mostly manual/blocked, contradicting README's 'verifies and operates as a single unit' wording", "evidence": ["docs/common/test-strategy.md"]},
+    {"id": "e4", "type": "bug_fix", "summary": "Updated VERSIONS.md Harbor row to state the actual v2.15.1 pin with a pointer to the superseded :latest-tracking decision; narrowed README's claim to what CI actually verifies (static regression re-run on every change) with a link to test-strategy.md"},
+    {"id": "e5", "type": "bug_fix", "summary": "Disabled MD060 in .markdownlint.json after finding 165 pre-existing violations across these same two files in prose-content tables, matching the existing MD013 rationale"},
+    {"id": "e6", "type": "regression_verification", "status": "passed", "summary": "scripts/ci/markdownlint-changed.py --base origin/main reports zero violations on changed lines", "scope": "Markdown Changed-Line Gate", "evidence": ["ci:markdown-changed"]},
+    {"id": "e7", "type": "verification", "status": "passed", "summary": "make validate and make security ran clean", "scope": "GitOps YAML/Vagrantfile syntax and hardcoded-credential checks", "evidence": ["ci:lint-validate", "ci:security"]},
+    {"id": "e8", "type": "completion_claim", "summary": "Both flagged doc claims corrected; no code/version/deployment behavior changed"},
+    {"id": "e9", "type": "task_outcome", "state": "A", "summary": "Complete and verified locally; documentation-only change"}
+  ]
+}

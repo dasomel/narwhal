@@ -1,0 +1,32 @@
+{
+  "schemaVersion": "openforge-agent-skill-verification/v1",
+  "skill": "narwhal-version-upgrade",
+  "skillVersion": "1",
+  "freshSession": true,
+  "agentRuntime": "claude-sonnet-5",
+  "happyPath": {
+    "status": "pass",
+    "summary": "Traced the Cilium CLI version-pin chain (VERSIONS.md -> scripts/cluster/03-cni-install.sh -> scripts/airgap/lib/image-digests.tsv) end to end and ran the repository's own version-consistency check against it.",
+    "evidence": [
+      "bash scripts/ci/check-version-consistency.sh -> all checked components OK, exit 0"
+    ]
+  },
+  "edgeCase": {
+    "status": "pass",
+    "summary": "Injected a real version mismatch (CILIUM_CLI_VERSION v0.19.4 -> v0.19.3 in 03-cni-install.sh, VERSIONS.md left untouched) and confirmed the check fails non-zero, then restored and confirmed it passes again.",
+    "evidence": [
+      "bash scripts/ci/check-version-consistency.sh -> [Cilium CLI] ERROR: mismatch, exit 1",
+      "bash scripts/ci/check-version-consistency.sh (after restore) -> exit 0"
+    ]
+  },
+  "deterministicChecks": [
+    {
+      "command": "bash scripts/ci/check-version-consistency.sh",
+      "status": "pass"
+    }
+  ],
+  "unverified": [
+    "Live-cluster confirmation of the application-reported running version (skill step 6) -- no cluster available in the replay environment; skill's own workflow already gates this behind 'if a cluster is available'."
+  ],
+  "verifiedAt": "2026-09-16"
+}

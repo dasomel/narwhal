@@ -77,10 +77,16 @@ else
 fi
 
 # --- Check 2: squashed identity cannot write into a root-only-owned directory ---
-TENANT_DIR="${MOUNT_POINT}/${TEST_SUBDIR}/other-tenant-root-only"
-sudo mkdir -p "${TENANT_DIR}"
-sudo chown root:root "${TENANT_DIR}"
-sudo chmod 700 "${TENANT_DIR}"
+# The stand-in "other tenant's root-owned dir" MUST be created on the SERVER, as real
+# root on the export's local filesystem -- NOT through this squashed NFS mount. Once
+# mounted here, every write from this client is already squashed to the anonymous
+# UID/GID, so a `chown root:root` issued through the mount would itself be denied
+# (chown-to-arbitrary-owner requires real root/CAP_CHOWN, which the squashed identity
+# does not have) and abort the script under `set -e` before the real assertion runs.
+TENANT_SUBDIR="${TEST_SUBDIR}/other-tenant-root-only"
+ssh -o StrictHostKeyChecking=accept-new -o BatchMode=yes "root@${NFS_SERVER}" \
+  "mkdir -p '${NFS_SHARE_PATH}/${TENANT_SUBDIR}' && chown root:root '${NFS_SHARE_PATH}/${TENANT_SUBDIR}' && chmod 700 '${NFS_SHARE_PATH}/${TENANT_SUBDIR}'"
+TENANT_DIR="${MOUNT_POINT}/${TENANT_SUBDIR}"
 
 # Attempt the write as root FROM THE CLIENT — on the wire this is squashed to nobody,
 # which must NOT have permission to write into a 0700 root:root directory.

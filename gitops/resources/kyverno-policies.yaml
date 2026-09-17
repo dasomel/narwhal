@@ -409,6 +409,33 @@ spec:
             =(ephemeralContainers):
               - =(securityContext):
                   =(privileged): "false"
+---
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: tuning-job-control-plane-node-guard
+  annotations:
+    policies.kyverno.io/title: Block Node-Tuning Job From Targeting Control-Plane Nodes
+    policies.kyverno.io/category: Pod Security Standards (Custom)
+    policies.kyverno.io/description: >-
+      Defense-in-depth companion to restrict-tuning-job-admission above (see
+      narwhal-portal#55): denies the narwhal-tuning-job ServiceAccount's pods
+      from setting spec.nodeName to a control-plane node. Kept as a SEPARATE
+      policy in Audit mode: the live context.apiCall Node lookup below has not
+      been exercised against a running cluster in any agent session to date
+      (no cluster was available). Kyverno's failurePolicy defaults to Fail on
+      an apiCall error, so shipping this rule straight to Enforce risks a
+      total outage of the one feature it protects if the apiCall doesn't
+      resolve as expected (RBAC gap, API server hiccup, malformed jmesPath).
+      Flip validationFailureAction to Enforce only after a live cluster run
+      confirms: (a) the apiCall actually resolves node role labels, and (b) a
+      deliberate control-plane nodeName is denied while a worker nodeName is
+      allowed. Record that result in docs/common/lessons-log.md before
+      flipping.
+spec:
+  validationFailureAction: Audit
+  background: false
+  rules:
     - name: tuning-sa-may-not-target-control-plane-nodes
       match:
         any:

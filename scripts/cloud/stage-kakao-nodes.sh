@@ -48,6 +48,9 @@ SSH_KEY=$(cd "${TF_DIR}" && tofu output -raw ssh_key_path 2>/dev/null || true)
 case "${SSH_KEY}" in /*) ;; *) SSH_KEY="${TF_DIR}/${SSH_KEY#./}" ;; esac
 [ -f "${SSH_KEY}" ] || { echo "ERROR: private key not found at ${SSH_KEY} - has tofu apply finished?" >&2; exit 1; }
 
+# shellcheck source=scripts/cloud/lib-ssh.sh
+source scripts/cloud/lib-ssh.sh
+
 if [ $# -gt 0 ]; then
   NODES=("$@")
 else
@@ -74,8 +77,8 @@ echo "  nodes   : ${NODES[*]}"
 ssh_node() {
   local ip="$1"; shift
   ssh -i "${SSH_KEY}" \
-    -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR \
-    -o ProxyCommand="ssh -i ${SSH_KEY} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -W %h:%p ${SSH_USER}@${BASTION_IP}" \
+    "${KAKAO_SSH_OPTS[@]}" \
+    -o ProxyCommand="ssh -i ${SSH_KEY} ${KAKAO_SSH_OPTS[*]} -W %h:%p ${SSH_USER}@${BASTION_IP}" \
     "${SSH_USER}@${ip}" "$@"
 }
 

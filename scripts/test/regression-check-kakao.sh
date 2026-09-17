@@ -1197,13 +1197,13 @@ PYEOF
     test -x scripts/airgap/09-verify-bundle-completeness.sh
 
   # Every script keeps its error handling — CI does not catch a missing set line.
-  # 00-config.sh is exempt by design: it is sourced, so `set -e` there would impose
-  # itself on whatever sourced it rather than on a process of its own.
+  # 00-config.sh and lib-ssh.sh are exempt by design: both are sourced, so `set -e`
+  # there would impose itself on whatever sourced it rather than on a process of its own.
   local missing=""
   local f
   for f in scripts/cloud/*.sh scripts/airgap/*.sh; do
     [ -f "$f" ] || continue
-    [ "$(basename "$f")" = "00-config.sh" ] && continue
+    case "$(basename "$f")" in 00-config.sh|lib-ssh.sh) continue ;; esac
     grep -q 'set -euo pipefail' "$f" || missing="${missing}$(basename "$f") "
   done
   if [ -z "${missing}" ]; then
@@ -2216,6 +2216,58 @@ PYEOF
     '
   rm -rf "${render_fail_drift_tmp}"
 
+  # 2026-09-17 (Narwhal#185): cloud/bastion SSH must fail closed on an unexpected host
+  # key, never silently accept one. StrictHostKeyChecking=no combined with
+  # UserKnownHostsFile=/dev/null is the insecure pair — no on-path attacker needs to
+  # forge anything, they just need to be reachable when the script connects. This
+  # scans every scripts/cloud/*.sh for that combination reappearing, and also checks
+  # that lib-ssh.sh's accept-new policy is intact (not reverted to =no) and that every
+  # cloud script that talks to the bastion/nodes actually sources it.
+  check R152 "cloud/bastion SSH scripts use accept-new + a real known_hosts file, not StrictHostKeyChecking=no + UserKnownHostsFile=/dev/null (Narwhal#185, 2026-09-17)" \
+    python3 -c '
+import re, sys, pathlib
+
+cloud_dir = pathlib.Path("scripts/cloud")
+insecure_pair = re.compile(r"StrictHostKeyChecking=no\b.*UserKnownHostsFile=/dev/null|UserKnownHostsFile=/dev/null.*StrictHostKeyChecking=no\b")
+
+def code_lines(text):
+    # Drop full-line comments so explanatory prose about the old insecure pattern
+    # (which necessarily quotes it) is not mistaken for the pattern itself.
+    return "\n".join(l for l in text.splitlines() if not l.strip().startswith("#"))
+
+lib = cloud_dir / "lib-ssh.sh"
+assert lib.exists(), "scripts/cloud/lib-ssh.sh is missing"
+lib_code = code_lines(lib.read_text())
+assert "StrictHostKeyChecking=accept-new" in lib_code, "lib-ssh.sh no longer pins accept-new"
+assert "UserKnownHostsFile=/dev/null" not in lib_code, "lib-ssh.sh discards known_hosts state"
+
+failures = []
+for path in sorted(cloud_dir.glob("*.sh")):
+    if path.name == "lib-ssh.sh":
+        continue
+    content = code_lines(path.read_text())
+    if insecure_pair.search(content):
+        failures.append(f"{path}: insecure StrictHostKeyChecking=no + UserKnownHostsFile=/dev/null pair")
+    if ("ssh -i" in content or "ssh_bastion" in content or "ssh_node" in content) and "source scripts/cloud/lib-ssh.sh" not in content and "StrictHostKeyChecking=accept-new" not in content:
+        failures.append(f"{path}: builds ssh/scp calls but does not source lib-ssh.sh and has no accept-new policy of its own")
+
+assert not failures, "; ".join(failures)
+'
+
+  local r151_drift_tmp
+  r151_drift_tmp="$(mktemp -d)"
+  cp scripts/cloud/provision-kakao.sh "${r151_drift_tmp}/provision-kakao.sh"
+  sed -i.bak 's/"\${KAKAO_SSH_OPTS\[@\]}" \\/-o StrictHostKeyChecking=no -o UserKnownHostsFile=\/dev\/null \\/' \
+    "${r151_drift_tmp}/provision-kakao.sh"
+  rm -f "${r151_drift_tmp}/provision-kakao.sh.bak"
+  check_not R152b "R152's check catches a reintroduced StrictHostKeyChecking=no + UserKnownHostsFile=/dev/null pair (Narwhal#185, 2026-09-17)" \
+    python3 -c "
+content = open('${r151_drift_tmp}/provision-kakao.sh').read()
+import re
+assert not re.search(r'StrictHostKeyChecking=no\b.*UserKnownHostsFile=/dev/null|UserKnownHostsFile=/dev/null.*StrictHostKeyChecking=no\b', content), 'insecure pair reintroduced but not caught'
+"
+  rm -rf "${r151_drift_tmp}"
+
   # narwhal#186: the NFS share root was mode 0777 (world-writable) and both export lines
   # carried no_root_squash (any root-capable client on the CIDR kept real root identity
   # on the server). Neither is required by anything in this repo -- csi-driver-nfs only
@@ -2224,6 +2276,18 @@ PYEOF
     grep -qE '^[^#]*chmod +777 +"\$\{NFS_SHARE_PATH\}"' scripts/cluster/01-nfs-server.sh
   check_not R151b "NFS exports do not default to no_root_squash (narwhal#186)" \
     grep -qE '^[^#]*\(rw,sync,no_subtree_check,no_root_squash\)' scripts/cluster/01-nfs-server.sh
+
+  # R152c proves the wrapper preserves a real SSH failure. The old implementation
+  # read $? after an if statement and could turn a host-key refusal into success.
+  local ssh_wrapper_tmp
+  ssh_wrapper_tmp="$(mktemp -d)"
+  printf '#!/usr/bin/env bash\necho "REMOTE HOST IDENTIFICATION HAS CHANGED" >&2\nexit 255\n' \
+    > "${ssh_wrapper_tmp}/ssh"
+  chmod +x "${ssh_wrapper_tmp}/ssh"
+  check_not R152c "SSH wrapper preserves host-key refusal exit status (Narwhal#185, 2026-09-17)" \
+    env PATH="${ssh_wrapper_tmp}:${PATH}" TF_DIR="${ssh_wrapper_tmp}" KAKAO_KNOWN_HOSTS="${ssh_wrapper_tmp}/known_hosts" \
+    bash -c 'source scripts/cloud/lib-ssh.sh; kakao_ssh ubuntu@example.invalid'
+  rm -rf "${ssh_wrapper_tmp}"
 }
 
 #=========================================

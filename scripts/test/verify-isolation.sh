@@ -45,6 +45,8 @@ case "${PROVIDER}" in
     SSH_KEY=$(cd "${TF_DIR}" && tofu output -raw ssh_key_path 2>/dev/null || true)
     [ -n "${SSH_KEY}" ] || SSH_KEY="${TF_DIR}/KPAAS_KEYPAIR.pem"
     case "${SSH_KEY}" in /*) ;; *) SSH_KEY="${TF_DIR}/${SSH_KEY#./}" ;; esac
+    # shellcheck source=scripts/cloud/lib-ssh.sh
+    source scripts/cloud/lib-ssh.sh
     node_json=$(cd "${TF_DIR}" && tofu output -json master_private_ips && tofu output -json worker_private_ips)
     NODES=$(printf '%s\n' "${node_json}" | python3 -c '
 import json, sys
@@ -84,9 +86,8 @@ run_on() {
   case "${PROVIDER}" in
     kakao)
       ssh -i "${SSH_KEY}" \
-        -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
-        -o LogLevel=ERROR -o ConnectTimeout=10 \
-        -o ProxyCommand="ssh -i ${SSH_KEY} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -W %h:%p ubuntu@${BASTION_IP}" \
+        "${KAKAO_SSH_OPTS[@]}" -o ConnectTimeout=10 \
+        -o ProxyCommand="ssh -i ${SSH_KEY} ${KAKAO_SSH_OPTS[*]} -W %h:%p ubuntu@${BASTION_IP}" \
         "ubuntu@${node}" 'bash -s' ;;
     local)
       vagrant ssh "${node}" -c 'bash -s' 2>/dev/null | tr -d '\r' ;;

@@ -40,8 +40,17 @@ master_exec() {
   err=$(mktemp)
 
   key=$(ls "${REPO_ROOT}"/.vagrant/machines/master-1/*/private_key 2>/dev/null | head -1 || true)
+  # accept-new pins the host key in a known_hosts file scoped to this repo's Vagrant
+  # state, so a later CHANGED key (a rebuilt box, not just a fresh IP re-lease) fails
+  # closed instead of being silently trusted -- StrictHostKeyChecking=no combined with
+  # UserKnownHostsFile=/dev/null accepted any host claiming to be master-1 (Narwhal#185).
+  # `vagrant destroy && vagrant up` legitimately rotates the key; drop the stale pin
+  # with `ssh-keygen -R ${MASTER_IP} -f ${REPO_ROOT}/.vagrant/known_hosts` when that
+  # happens rather than reaching back for StrictHostKeyChecking=no.
+  local known_hosts="${REPO_ROOT}/.vagrant/known_hosts"
+  touch "${known_hosts}" 2>/dev/null || true
   if [[ -n "${key}" ]]; then
-    if out=$(ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+    if out=$(ssh -o StrictHostKeyChecking=accept-new -o "UserKnownHostsFile=${known_hosts}" \
                -o ConnectTimeout=10 -o BatchMode=yes -o LogLevel=ERROR \
                -i "${key}" "vagrant@${MASTER_IP}" "${remote_cmd}" 2>"${err}"); then
       rm -f "${err}"

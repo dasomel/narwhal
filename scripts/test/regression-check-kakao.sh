@@ -2268,6 +2268,71 @@ assert not re.search(r'StrictHostKeyChecking=no\b.*UserKnownHostsFile=/dev/null|
 "
   rm -rf "${r151_drift_tmp}"
 
+  # 2026-09-17 (Narwhal#185 follow-up): the same insecure pair R152 catches in
+  # scripts/cloud/*.sh also existed outside that directory -- test/airgap/common
+  # scripts that open their own SSH connections instead of going through
+  # lib-ssh.sh. Three of these (verify-isolation.sh, airgap-isolate-kakao.sh,
+  # regression-check-kakao.sh's own live-check setup_ssh()) now source
+  # lib-ssh.sh directly like the cloud scripts. The other two don't fit that
+  # mold -- 06-configure-mirrors.sh runs node-to-node with no TF_DIR/terraform
+  # state to pin a shared known_hosts file against, and set-config.sh targets
+  # the local Vagrant cluster, not Kakao -- so they pin accept-new against their
+  # own known_hosts file instead. Either way, StrictHostKeyChecking=no +
+  # UserKnownHostsFile=/dev/null must not reappear in any of them.
+  check R153 "test/airgap/common SSH scripts do not reintroduce StrictHostKeyChecking=no + UserKnownHostsFile=/dev/null (Narwhal#185 follow-up, 2026-09-17)" \
+    python3 -c '
+import re, pathlib
+
+files = [
+    "scripts/test/verify-isolation.sh",
+    "scripts/test/airgap-isolate-kakao.sh",
+    "scripts/airgap/06-configure-mirrors.sh",
+    "scripts/common/set-config.sh",
+]
+insecure_pair = re.compile(r"StrictHostKeyChecking=no\b.*UserKnownHostsFile=/dev/null|UserKnownHostsFile=/dev/null.*StrictHostKeyChecking=no\b")
+
+def code_lines(text):
+    return "\n".join(l for l in text.splitlines() if not l.strip().startswith("#"))
+
+failures = []
+for f in files:
+    p = pathlib.Path(f)
+    assert p.exists(), f"{f} is missing"
+    content = code_lines(p.read_text())
+    if insecure_pair.search(content):
+        failures.append(f"{f}: insecure StrictHostKeyChecking=no + UserKnownHostsFile=/dev/null pair")
+
+# regression-check-kakao.sh itself is checked separately, below: its own file is
+# excluded from the loop above because it legitimately CONTAINS this literal pattern
+# as fixture text in the R152b/R153b drift tests (sed replacement strings), which
+# would otherwise false-positive against a whole-file scan the way R152 avoids by
+# exempting lib-ssh.sh. setup_ssh() -- its one real SSH_OPTS builder -- is extracted
+# and checked on its own instead.
+self_path = pathlib.Path("scripts/test/regression-check-kakao.sh")
+self_text = self_path.read_text()
+m = re.search(r"^setup_ssh\(\) \{.*?\n\}\n", self_text, re.MULTILINE | re.DOTALL)
+assert m, "setup_ssh() function not found in regression-check-kakao.sh"
+setup_ssh_code = code_lines(m.group(0))
+if insecure_pair.search(setup_ssh_code):
+    failures.append("scripts/test/regression-check-kakao.sh: setup_ssh() has an insecure StrictHostKeyChecking=no + UserKnownHostsFile=/dev/null pair")
+
+assert not failures, "; ".join(failures)
+'
+
+  local r153_drift_tmp
+  r153_drift_tmp="$(mktemp -d)"
+  cp scripts/test/verify-isolation.sh "${r153_drift_tmp}/verify-isolation.sh"
+  sed -i.bak 's/"\${KAKAO_SSH_OPTS\[@\]}" -o ConnectTimeout=10 \\/-o StrictHostKeyChecking=no -o UserKnownHostsFile=\/dev\/null \\/' \
+    "${r153_drift_tmp}/verify-isolation.sh"
+  rm -f "${r153_drift_tmp}/verify-isolation.sh.bak"
+  check_not R153b "R153's check catches a reintroduced StrictHostKeyChecking=no + UserKnownHostsFile=/dev/null pair (Narwhal#185 follow-up, 2026-09-17)" \
+    python3 -c "
+content = open('${r153_drift_tmp}/verify-isolation.sh').read()
+import re
+assert not re.search(r'StrictHostKeyChecking=no\b.*UserKnownHostsFile=/dev/null|UserKnownHostsFile=/dev/null.*StrictHostKeyChecking=no\b', content), 'insecure pair reintroduced but not caught'
+"
+  rm -rf "${r153_drift_tmp}"
+
   # narwhal#186: the NFS share root was mode 0777 (world-writable) and both export lines
   # carried no_root_squash (any root-capable client on the CIDR kept real root identity
   # on the server). Neither is required by anything in this repo -- csi-driver-nfs only
@@ -2313,7 +2378,9 @@ setup_ssh() {
   [ -n "${SSH_KEY}" ] || SSH_KEY="${TF_DIR}/KPAAS_KEYPAIR.pem"
   case "${SSH_KEY}" in /*) ;; *) SSH_KEY="${TF_DIR}/${SSH_KEY#./}" ;; esac
   [ -f "${SSH_KEY}" ] || return 1
-  SSH_OPTS="-i ${SSH_KEY} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -o ConnectTimeout=10"
+  # shellcheck source=scripts/cloud/lib-ssh.sh
+  source scripts/cloud/lib-ssh.sh
+  SSH_OPTS="-i ${SSH_KEY} ${KAKAO_SSH_OPTS[*]} -o ConnectTimeout=10"
   SSH_READY=1
 }
 

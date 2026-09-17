@@ -347,3 +347,100 @@ spec:
                           -----BEGIN PUBLIC KEY-----
                           MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE/narwhal/cosign/trusted/signer/pub
                           -----END PUBLIC KEY-----
+---
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: restrict-tuning-job-admission
+  annotations:
+    policies.kyverno.io/title: Restrict Privileged Node-Tuning Job Admission
+    policies.kyverno.io/category: Pod Security Standards (Custom)
+    policies.kyverno.io/description: >-
+      narwhal-portal#55's node-tuning Job (k8s-job-runner.ts runHostJob) is
+      privileged + hostPID + hostNetwork by design and runs in the devtools
+      namespace, which the baseline disallow-privileged-containers /
+      disallow-host-namespaces policies above exclude wholesale (devtools also
+      hosts ArgoCD, Gitea, Harbor, Headlamp -- none of those need host access).
+      That exclusion means, today, ANY pod in devtools -- not just the tuning
+      Job -- could set privileged/hostPID/hostNetwork and admission would not
+      stop it; and the tuning Job's own nodeName is only checked in the portal
+      route handler (application code), never at the cluster layer. This
+      policy is the narwhal-side completion of #55: it narrows "privileged +
+      host namespaces in devtools" to the dedicated narwhal-tuning-job
+      ServiceAccount only (gitops/resources/rbac-policies.yaml), and separately
+      forbids that ServiceAccount's pods from targeting a control-plane node,
+      so an authorization bypass or app-layer bug in the portal can no longer
+      reach a master node's host namespace even if it reaches this namespace.
+spec:
+  validationFailureAction: Enforce
+  background: false
+  rules:
+    - name: only-tuning-sa-may-use-host-namespaces
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+              namespaces:
+                - devtools
+      # A pod using ANY of privileged/hostPID/hostNetwork in devtools must run as
+      # the dedicated tuning-job identity. Pods that use none of the three are
+      # untouched by this rule regardless of ServiceAccount.
+      preconditions:
+        all:
+          - key: "{{ request.object.spec.serviceAccountName || 'default' }}"
+            operator: NotEquals
+            value: narwhal-tuning-job
+      validate:
+        message: >-
+          Only the narwhal-tuning-job ServiceAccount may run pods with
+          hostPID, hostNetwork, or a privileged container in the devtools
+          namespace (see narwhal-portal#55).
+        pattern:
+          spec:
+            =(hostPID): "false"
+            =(hostNetwork): "false"
+            containers:
+              - =(securityContext):
+                  =(privileged): "false"
+            =(initContainers):
+              - =(securityContext):
+                  =(privileged): "false"
+            =(ephemeralContainers):
+              - =(securityContext):
+                  =(privileged): "false"
+    - name: tuning-sa-may-not-target-control-plane-nodes
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+              namespaces:
+                - devtools
+              names:
+                - "*"
+      preconditions:
+        all:
+          - key: "{{ request.object.spec.serviceAccountName || 'default' }}"
+            operator: Equals
+            value: narwhal-tuning-job
+          - key: "{{ request.object.spec.nodeName || '' }}"
+            operator: NotEquals
+            value: ""
+      context:
+        - name: targetNodeRole
+          apiCall:
+            urlPath: "/api/v1/nodes/{{ request.object.spec.nodeName }}"
+            jmesPath: "metadata.labels.\"node-role.kubernetes.io/control-plane\" || 'not-control-plane'"
+      validate:
+        message: >-
+          The narwhal-tuning-job ServiceAccount may not target a
+          control-plane node (node-role.kubernetes.io/control-plane) via
+          spec.nodeName (see narwhal-portal#55). This is defense-in-depth for
+          the equivalent check already enforced in the portal route handler.
+        deny:
+          conditions:
+            all:
+              - key: "{{ targetNodeRole }}"
+                operator: NotEquals
+                value: not-control-plane

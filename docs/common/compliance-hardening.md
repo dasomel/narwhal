@@ -29,6 +29,117 @@ Result: CIS 72% → 84%+, NSA 44% → 59%+. Control-plane flag controls (profili
 > **The source changes above are NOT yet clean-install validated** — verify enc/audit come
 > up on a from-scratch `vagrant up` (all 3 masters) before relying on the provisioning path.
 
+## NFS export least-privilege migration (narwhal#186, 2026-09-17)
+
+`scripts/cluster/01-nfs-server.sh` changed the NFS share root from mode `0777`
+(world-writable) + `no_root_squash` on both exports to mode `750` + `root_squash`
+(R151/R151b in `scripts/test/regression-check-kakao.sh`). This is a **fresh-install**
+default; it does not run against an already-provisioned share. This section is the
+operator runbook for bringing an existing cluster's on-disk NFS state in line.
+
+### What actually changed on disk
+
+- **Share root** (`${NFS_SHARE_PATH}`, default `/srv/nfs/k8s`): owner was and remains
+  `nobody:nogroup`; only the mode changed, `0777` → `750`. `chmod` is idempotent and
+  affects only the root directory itself, not its contents recursively.
+- **Exports** (`/etc/exports`): `no_root_squash` → `root_squash` on both the host and
+  pod CIDR lines. `root_squash` is an NFS **server-side mapping rule applied per RPC
+  request at mount/access time** — it changes how a future request's root UID (0) is
+  remapped to the anonymous UID/GID (`nobody:nogroup`, 65534:65534 by default). It does
+  **not** touch any byte or inode already on disk. Existing files keep whatever
+  owner/mode they already had until something writes to them again.
+
+### Is existing data affected?
+
+**Only indirectly, and only for files/directories that were created *as real root* under
+the old `no_root_squash` export.** Under the old config, any root-capable client on the
+host or pod CIDR could write to the share as UID 0, and the server honored that — so
+some on-disk paths may actually be owned by `root:root` (or another UID a squash would
+normally remap) instead of `nobody:nogroup`. The `nfs.csi.k8s.io` provisioner
+(`scripts/cluster/05-nfs-quota-agent.sh`) itself mostly creates PV subdirectories that
+end up owned by the mounting pod's identity, not necessarily `nobody`.
+
+The risk after switching to `root_squash`: a future write from a client acting as root
+now arrives on the server as `nobody:nogroup` (65534:65534), not `root:root`. If a
+directory in the tree is owned `root:root` with no group/other write bit (a plausible
+leftover from a `no_root_squash` write), that squashed `nobody` identity can no longer
+write into it — a previously-working path silently starts failing with `EACCES`/
+`Permission denied` after the upgrade.
+
+**If every path in the tree was already owned `nobody:nogroup` (the common case, since
+the CSI provisioner and quota agent both operate as `nobody` in practice), existing data
+is unaffected — `root_squash` changes nothing for a client that was never sending real
+root UID 0 in the first place.** The migration is conditional: audit first, fix only if
+the audit finds a mismatch.
+
+### Verify an existing cluster's on-disk state
+
+Run on the NFS server node (`master-1` by default), as a user who can `sudo`:
+
+```bash
+NFS_SHARE_PATH="${NFS_SHARE_PATH:-/srv/nfs/k8s}"
+
+# 1. Confirm the share root itself matches the new default.
+stat -c '%U:%G %a %n' "${NFS_SHARE_PATH}"
+# expected: nobody:nogroup 750 /srv/nfs/k8s
+
+# 2. Find anything NOT owned nobody:nogroup under the share — these are the
+#    candidates that may have been written as real root under no_root_squash.
+sudo find "${NFS_SHARE_PATH}" \( ! -user nobody -o ! -group nogroup \) -print
+
+# 3. Specifically flag anything owned by real root (uid 0) — the highest-risk case,
+#    since that is exactly the identity no_root_squash used to preserve.
+sudo find "${NFS_SHARE_PATH}" -uid 0 -print
+
+# 4. Confirm the live export table matches /etc/exports (root_squash on both lines).
+sudo exportfs -v
+```
+
+An empty result from steps 2 and 3 means existing data needs no changes — the
+`root_squash` export change is safe to apply as-is.
+
+### Fix an existing cluster's on-disk state (only if step 2/3 above found matches)
+
+```bash
+NFS_SHARE_PATH="${NFS_SHARE_PATH:-/srv/nfs/k8s}"
+
+# Re-own every mismatched path to the identity root_squash now maps requests to.
+# Review the step-2 output first — this is a recursive chown, scope it to the
+# specific subpaths the audit flagged rather than blindly running it over the
+# whole share if any subtree legitimately expects a different owner.
+sudo find "${NFS_SHARE_PATH}" \( ! -user nobody -o ! -group nogroup \) -print0 \
+  | sudo xargs -0 chown nobody:nogroup
+
+# Re-apply exports if /etc/exports was hand-edited out of band.
+sudo exportfs -ra
+```
+
+### Confirm success
+
+```bash
+# Re-run the audit — both should now be empty.
+sudo find "${NFS_SHARE_PATH}" \( ! -user nobody -o ! -group nogroup \) -print
+sudo find "${NFS_SHARE_PATH}" -uid 0 -print
+
+# Confirm dynamic provisioning still works: create a test PVC using the nfs.csi.k8s.io
+# storage class and verify it binds and is writable from a pod, then delete it.
+
+# Static regression checks still pass (see scripts/test/regression-check-kakao.sh):
+./scripts/test/regression-check-kakao.sh --static
+```
+
+### Known gap: no live-cluster negative test yet
+
+The acceptance criteria for narwhal#186 also call for a **root-client / cross-tenant
+negative test** — proof that an unprivileged or foreign client cannot create/modify data
+outside its intended area post-migration. That test needs a live cluster/host to mount
+the NFS export and attempt privileged writes against it; no cluster has been available in
+any agent session that has touched this issue so far, so it has **not** been executed,
+and this migration guidance does not claim it has been. A ready-to-run script for that
+test is at `scripts/test/verify-nfs-root-squash.sh` (see its header comment for exactly
+what it checks and how to run it against a live server) — a future session with cluster
+access should run it and record the result here.
+
 ## Risk-accepted exceptions (do NOT "fix")
 
 These failing controls are expected for this IDP platform. Changing them breaks

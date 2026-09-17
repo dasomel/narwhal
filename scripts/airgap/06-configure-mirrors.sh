@@ -152,7 +152,12 @@ REG="${REG}"
 REG_SCHEME="${REG_SCHEME}"
 configure_node sudo
 EOF
-    ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+    # This runs node-to-node, on a cluster node itself -- there is no TF_DIR/terraform
+    # state here to pin a shared known_hosts file against (that only exists on the
+    # operator machine), so accept-new against the node's own default known_hosts is
+    # the minimal fix: still fails closed on a later CHANGED key, unlike the old
+    # StrictHostKeyChecking=no + UserKnownHostsFile=/dev/null pair (Narwhal#185).
+    ssh -o StrictHostKeyChecking=accept-new -o LogLevel=ERROR \
       "${NODE_SSH_USER}@${ip}" "bash -s" < "${tmpfile}" || { echo "  ERROR: failed on ${ip}"; failed=$((failed + 1)); }
     rm -f "${tmpfile}"
   done

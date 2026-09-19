@@ -19,6 +19,15 @@ When feasible: reproduce -> failing regression test/evidence -> minimal fix -> s
 
 Do not substitute mocked/unit evidence for real cluster/runtime verification when the defect depends on Kubernetes, networking, storage, GitOps, identity, or external services.
 
+## Risk-scaled change workflow
+
+- Class A documentation-only changes use the Issue/PR as the change record.
+- Class B internal behavior changes require explicit acceptance criteria; use a Change Package when the work is complex, cross-component, or operationally risky.
+- Class C dependency/runtime/toolchain/build-contract changes and Class D release/deployment/security-boundary changes require an accepted Change Package before broad implementation.
+- For Class C/D or complex Class B work, load `.agents/skills/change-package-workflow/SKILL.md` and use `templates/change/CHANGE.md` plus `templates/change/TASKS.md` when a versioned working artifact is useful.
+- Keep requirement → acceptance scenario → task → evidence traceability. Material scope changes require package update and re-review.
+- At completion, synchronize durable truth into code/tests, normative docs, ADRs, evidence, and portfolio/status records; do not maintain a duplicate long-lived specification tree.
+
 ## Verification
 
 Do not claim completion without relevant executable evidence. State exactly which checks ran and their scope. Choose verification proportional to task risk and user impact; for user-facing, installation, configuration, upgrade, integration, or high-risk changes, exercise the relevant public journey from a clean environment when practical.

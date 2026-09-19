@@ -1,5 +1,7 @@
 @AGENTS.md
 
+> Claude agents, commands, hooks, rules, and compatibility routing under `.claude/` make this adapter intentionally retained; native `AGENTS.md` fallback does not replace those runtime integrations.
+
 # Narwhal Claude adapter
 
 Narwhal repository-wide rules live in `AGENTS.md`. Durable project-specific operational knowledge lives in `docs/common/agent-operational-rules.md`; dated failure history lives in `docs/common/lessons-log.md`. Do not duplicate those rules here.

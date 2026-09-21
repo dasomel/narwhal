@@ -163,6 +163,8 @@ data:
     p, role:portal-reader, applications, get, */*, allow
     p, role:portal-reader, applications, list, */*, allow
     p, role:portal-reader, logs, get, */*, allow
+    p, role:portal-reader, applications, sync, */*, allow
+    p, role:portal-reader, applications, action/*, */*, allow
     g, narwhal-portal, role:portal-reader
     g, cluster-admin, role:admin
     g, developer, role:developer

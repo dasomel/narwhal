@@ -2104,31 +2104,31 @@ assert '--from-literal=K8S_SA_TOKEN=' not in content, 'unconditional K8S_SA_TOKE
 "
   rm -rf "${r148_drift_tmp}"
 
-  # 2026-09-07 (Narwhal #156): OpenBao narwhal-portal policy enforces least privilege by
-  # separating secret data access (read-only) from metadata access (read/list), with no
-  # create/update/delete capabilities.
-  check R137 "OpenBao portal policy separates metadata from data access with least privilege (2026-09-07)" \
+  # 2026-09-21 (Narwhal #209 follow-up): the portal's secret inventory uses KV-v2
+  # metadata only; granting data/read would expose values without a consumer.
+  check R137 "OpenBao portal policy grants metadata only, never secret values (2026-09-21)" \
     python3 -c '
 content = open("scripts/cluster/13-2-narwhal-portal-bindings.sh").read()
-assert "path \"secret/data/narwhal-portal/*\"" in content
 assert "path \"secret/metadata/narwhal-portal/*\"" in content
-data_block = content[content.find("path \"secret/data/narwhal-portal/*\""):content.find("path \"secret/metadata/narwhal-portal/*\"")]
-assert "capabilities = [\"read\"]" in data_block
-for forbidden in ["create", "update", "delete"]:
-    assert forbidden not in data_block
+assert "path \"secret/data/narwhal-portal/*\"" not in content
 '
 
   local r137_drift_tmp
   r137_drift_tmp="$(mktemp -d)"
   cp scripts/cluster/13-2-narwhal-portal-bindings.sh "${r137_drift_tmp}/13-2-narwhal-portal-bindings.sh"
-  sed -i.bak 's/capabilities = \["read"\]/capabilities = \["create","read","update","delete"\]/' "${r137_drift_tmp}/13-2-narwhal-portal-bindings.sh"
+  R137_FILE="${r137_drift_tmp}/13-2-narwhal-portal-bindings.sh" python3 -c '
+import os
+path = os.environ["R137_FILE"]
+content = open(path).read()
+marker = "path \"secret/metadata/narwhal-portal/*\" {"
+assert marker in content
+open(path, "w").write(content.replace(marker, "path \"secret/data/narwhal-portal/*\" {\\n  capabilities = [\"read\"]\\n}\\n" + marker, 1))
+'
   rm -f "${r137_drift_tmp}/13-2-narwhal-portal-bindings.sh.bak"
-  check_not R137b "R137 check catches broad write capabilities in portal policy (2026-09-07)" \
+  check_not R137b "R137 check catches a reintroduced portal data-read grant (2026-09-21)" \
     python3 -c "
 content = open('${r137_drift_tmp}/13-2-narwhal-portal-bindings.sh').read()
-data_block = content[content.find('path \"secret/data/narwhal-portal/*\"'):content.find('path \"secret/metadata/narwhal-portal/*\"')]
-for forbidden in ['create', 'update', 'delete']:
-    assert forbidden not in data_block
+assert 'path \"secret/data/narwhal-portal/*\"' not in content
 "
   rm -rf "${r137_drift_tmp}"
 

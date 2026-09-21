@@ -272,22 +272,16 @@ else
     bao secrets enable -version=2 -path=secret kv 2>/dev/null \
     || echo "  secret/ mount 이미 존재 (정상)"
 
-  # 정책 작성: Least privilege — metadata(목록/버전 조회)와 data(값 조회) 권한 분리
-  # narwhal-portal은 GET-only(read/list) 소비자이므로 쓰기(create/update/delete) 권한을 부여하지 않음
+  # 정책 작성: Least privilege — portal secret inventory uses metadata only.
+  # Do not grant secret/data access: the portal must never read secret values.
   kubectl exec -n storage "${OPENBAO_POD}" -- \
     env BAO_TOKEN="${OPENBAO_ROOT_TOKEN}" \
         BAO_ADDR="https://127.0.0.1:8200" \
         BAO_SKIP_VERIFY=true \
     /bin/sh -c '
 cat > /tmp/portal.hcl << '"'"'POLICY_EOF'"'"'
-# Least privilege: narwhal-portal only ever GETs (list via metadata, read via
-# data) — src/lib/openbao.ts:listSecrets() and src/app/api/secrets/route.ts
-# (GET-only) are the sole HTTP consumers of this token, and neither writes or
-# deletes. Previously granted create/update/delete on secret/data/* with no
-# code path using them.
-path "secret/data/narwhal-portal/*" {
-  capabilities = ["read"]
-}
+# Least privilege: secret inventory uses only KV-v2 metadata list/read.
+# Secret values are intentionally inaccessible to the portal identity.
 path "secret/metadata/narwhal-portal/*" {
   capabilities = ["read","list"]
 }

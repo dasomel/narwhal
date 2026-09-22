@@ -370,7 +370,6 @@ echo "  narwhal-portal policy written"
   "token_max_ttl": "4h",
   "policy": "narwhal-portal",
   "policy_capabilities": {
-    "secret/data/narwhal-portal/*": ["read"],
     "secret/metadata/narwhal-portal/*": ["read", "list"]
   },
   "legacy_token_enabled": ${ENABLE_LEGACY_OPENBAO_TOKEN},

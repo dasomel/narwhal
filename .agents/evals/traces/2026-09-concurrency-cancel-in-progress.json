@@ -1,0 +1,14 @@
+{
+  "schemaVersion":"openforge-agent-trace/v1",
+  "traceId":"narwhal-concurrency-cancel-in-progress",
+  "task":"Add concurrency guards to GitHub Actions workflows so a rapid push does not leave duplicate/overlapping CI runs on the same ref",
+  "events":[
+    {"id":"e1","type":"scope_check","summary":"Workflow-file edits only; no scripts/ci, scripts/airgap, scripts/install, scripts/security, gitops, or VERSIONS changes made"},
+    {"id":"e2","type":"reproduction","summary":"Confirmed which of the six affected workflows already had a concurrency block (none did) via grep across .github/workflows","evidence":["repo:.github/workflows"]},
+    {"id":"e3","type":"bug_fix","summary":"Added concurrency: {group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}, cancel-in-progress: <bool>} to agent-behavior.yml, cleanup-merged-branch.yml, lint.yml, markdown-changed.yml, release.yml, version-check.yml, matching the dasomel/openforge house convention"},
+    {"id":"e4","type":"verification","summary":"cancel-in-progress: true for read-only validation workflows (agent-behavior, lint, markdown-changed, version-check); false (group added, no cancel) for cleanup-merged-branch (deletes a branch ref) and release (publishes a GitHub Release via softprops/action-gh-release)","scope":".github/workflows/*.yml only","evidence":["ci:pyyaml-parse-all-edited-files"]},
+    {"id":"e5","type":"regression_verification","summary":"All edited YAML files parsed cleanly with python3 yaml.safe_load before commit; PR CI triggered the edited workflows themselves (ShellCheck, YAML Validate, Markdown Lint, Version Consistency Check all passed), confirming GitHub Actions parses them without error","evidence":["pr:211"]},
+    {"id":"e6","type":"completion_claim","summary":"Concurrency guards added to 6 workflows; image-digest-drift.yml and publish-openforge-status.yml (schedule/workflow_dispatch-only, no push/pull_request trigger) left untouched. Local main had an unrelated in-progress uncommitted AGENTS.md/CLAUDE.md migration; this change was branched and worked entirely off origin/main via a separate git worktree to avoid touching it"},
+    {"id":"e7","type":"task_outcome","state":"A","summary":"Complete and verified"}
+  ]
+}

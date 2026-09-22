@@ -22,6 +22,12 @@ set -euo pipefail
 
 DOMAIN="${DOMAIN:-local.narwhal.internal}"
 REALM="narwhal"
+# PROVIDER convention from scripts/common/01-prerequisites.sh: "vagrant" (default) is the
+# local dev box, "kakao" (or any other value) is a real deployment.
+VALKEY_INSECURE_PRODUCTION_VALUE="false"
+if [ "${PROVIDER:-vagrant}" = "vagrant" ]; then
+  VALKEY_INSECURE_PRODUCTION_VALUE="true"
+fi
 export KUBECONFIG=/home/vagrant/.kube/config-local
 
 echo "=========================================="
@@ -587,7 +593,7 @@ kubectl create secret generic narwhal-portal-secrets \
   --from-literal=HUBBLE_RELAY_ADDR="hubble-relay.kube-system.svc.cluster.local:80" \
   --from-literal=VALKEY_URL="redis://narwhal-portal-valkey.devtools.svc.cluster.local:6379" \
   --from-literal=VALKEY_TLS="false" \
-  --from-literal=VALKEY_INSECURE_PRODUCTION="true" \
+  --from-literal=VALKEY_INSECURE_PRODUCTION="${VALKEY_INSECURE_PRODUCTION_VALUE}" \
   --from-literal=VALKEY_PASSWORD="" \
   --from-literal=OPENBAO_ADDR="https://openbao.storage.svc.cluster.local:8200" \
   --from-literal=OPENBAO_AUTH_METHOD="${OPENBAO_AUTH_METHOD_VALUE}" \

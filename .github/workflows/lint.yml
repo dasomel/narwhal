@@ -6,6 +6,10 @@ on:
   pull_request:
     branches: [main]
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 # Least privilege: these jobs only read the checkout. GitHub's default token is broader,
 # and a workflow that never needs write should not carry it.
 permissions:

@@ -22,12 +22,14 @@ set -euo pipefail
 
 DOMAIN="${DOMAIN:-local.narwhal.internal}"
 REALM="narwhal"
-# PROVIDER convention from scripts/common/01-prerequisites.sh: "vagrant" (default) is the
-# local dev box, "kakao" (or any other value) is a real deployment.
-VALKEY_INSECURE_PRODUCTION_VALUE="false"
-if [ "${PROVIDER:-vagrant}" = "vagrant" ]; then
-  VALKEY_INSECURE_PRODUCTION_VALUE="true"
-fi
+# Valkey itself has no TLS/AUTH configured in this cluster yet (narwhal-portal-valkey
+# Deployment runs plain valkey-server, VALKEY_PASSWORD="" below) — so
+# VALKEY_INSECURE_PRODUCTION must stay "true" on every provider until Valkey actually gets
+# TLS + a password wired up (tracked as follow-up infra work, not done in this pass).
+# Flipping this to "false" without that infra makes the portal's own production guard
+# (src/lib/valkey.ts assertProductionSecurity) throw and readiness go 503 on every
+# non-vagrant deploy — caught by Codex review before landing (see lessons-log).
+VALKEY_INSECURE_PRODUCTION_VALUE="true"
 export KUBECONFIG=/home/vagrant/.kube/config-local
 
 echo "=========================================="
@@ -222,10 +224,15 @@ echo "narwhal-portal client secret: 획득 완료 (${#PORTAL_CLIENT_SECRET} char
 # post_logout_redirect_uri를 클라이언트의 post.logout.redirect.uris와 대조하므로,
 # 이게 비어 있으면 로그아웃이 "Invalid redirect uri"로 막힌다(2026-07-13 발생).
 # 키에 점이 있어 -s는 반드시 따옴표로 감싼다("...").
+# `portal.${DOMAIN}/*` 와일드카드는 장식이 아니다 — narwhal-portal의
+# federated-logout 라우트(isAllowedRedirectUrl)가 portal 호스트 아래 임의 경로를
+# 로그아웃 후 리다이렉트로 허용하므로(/login 외에도 /dashboard 등), 두 개 명시
+# URL만 등록하면 그 외 경로 요청이 Keycloak에서 "Invalid redirect uri"로 거부된다
+# (seam-drift S08 정리 시 제거했다가 Codex 리뷰로 회귀 발견, 원복).
 PORTAL_CID=$(kc_exec get clients -r "${REALM}" -q clientId=narwhal-portal \
   --fields id --format csv --noquotes 2>/dev/null | head -1)
 kc_exec update "clients/${PORTAL_CID}" -r "${REALM}" \
-  -s "attributes.\"post.logout.redirect.uris\"=https://gitea.${DOMAIN}/apisix/logout##https://portal.${DOMAIN}/login" >&2 \
+  -s "attributes.\"post.logout.redirect.uris\"=https://gitea.${DOMAIN}/apisix/logout##https://portal.${DOMAIN}/login##https://portal.${DOMAIN}/*" >&2 \
   && echo "narwhal-portal post.logout.redirect.uris 등록 완료" >&2
 
 echo "--- narwhal-portal-admin (Service Account) ---"

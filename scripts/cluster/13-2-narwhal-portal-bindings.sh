@@ -225,7 +225,7 @@ echo "narwhal-portal client secret: 획득 완료 (${#PORTAL_CLIENT_SECRET} char
 PORTAL_CID=$(kc_exec get clients -r "${REALM}" -q clientId=narwhal-portal \
   --fields id --format csv --noquotes 2>/dev/null | head -1)
 kc_exec update "clients/${PORTAL_CID}" -r "${REALM}" \
-  -s "attributes.\"post.logout.redirect.uris\"=https://gitea.${DOMAIN}/apisix/logout##https://portal.${DOMAIN}/login##https://portal.${DOMAIN}/*" >&2 \
+  -s "attributes.\"post.logout.redirect.uris\"=https://gitea.${DOMAIN}/apisix/logout##https://portal.${DOMAIN}/login" >&2 \
   && echo "narwhal-portal post.logout.redirect.uris 등록 완료" >&2
 
 echo "--- narwhal-portal-admin (Service Account) ---"
@@ -569,7 +569,6 @@ kubectl create secret generic narwhal-portal-secrets \
   --from-literal=KEYCLOAK_ISSUER="https://keycloak.${DOMAIN}/realms/${REALM}" \
   --from-literal=KEYCLOAK_CLIENT_ID="narwhal-portal" \
   --from-literal=KEYCLOAK_CLIENT_SECRET="${PORTAL_CLIENT_SECRET}" \
-  --from-literal=OIDC_CLIENT_ID="narwhal-portal" \
   --from-literal=KEYCLOAK_URL="https://keycloak.${DOMAIN}" \
   --from-literal=KEYCLOAK_REALM="${REALM}" \
   --from-literal=KEYCLOAK_ADMIN_REALM="${REALM}" \
@@ -603,6 +602,7 @@ kubectl create secret generic narwhal-portal-secrets \
   --from-literal=OPENBAO_K8S_AUTH_AUDIENCE="${OPENBAO_K8S_AUTH_AUDIENCE}" \
   --from-literal=TUNING_JOB_IMAGE="harbor.${DOMAIN}/library/tuning-job:latest" \
   --from-literal=TUNING_JOB_NAMESPACE="devtools" \
+  --from-literal=TUNING_JOB_SERVICE_ACCOUNT="narwhal-tuning-job" \
   --from-literal=TRIVY_DB_REGISTRY="harbor.${DOMAIN}/library/trivy-db" \
   --from-literal=LIVE_INGEST_SECRET="${LIVE_INGEST_SECRET}" \
   --from-literal=LIVE_INGEST_LINK_HOSTS="" \

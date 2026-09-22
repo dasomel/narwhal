@@ -307,7 +307,10 @@ APISIX_ADMIN_KEY="${APISIX_ADMIN_KEY:-edd1c9f034335f136f87ad84b625c8f1}"
 APISIX_VIEWER_KEY=$(kubectl get configmap apisix -n platform-system \
   -o jsonpath='{.data.config\.yaml}' 2>/dev/null \
   | grep -A2 'name: "viewer"' | grep '^\s*key:' | awk '{print $2}' | head -1 || true)
-APISIX_VIEWER_KEY="${APISIX_VIEWER_KEY:-4054f7cf07e344346cd3f287985e76a2}"
+if [ -z "${APISIX_VIEWER_KEY}" ]; then
+  echo "ERROR: failed to extract APISIX viewer key from configmap/apisix (empty result) -- refusing to store an empty/default key into apisix-admin-key secret (consumed as APISIX_API_KEY_READONLY downstream)" >&2
+  exit 1
+fi
 
 # Persist both keys into the Secret that show-credentials.sh and the APISIX deployment
 # env vars (secretKeyRef name: apisix-admin-key) expect.  Idempotent via dry-run|apply.

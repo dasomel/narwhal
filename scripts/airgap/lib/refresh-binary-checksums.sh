@@ -31,7 +31,7 @@ METRICS_SERVER_VERSION="${METRICS_SERVER_VERSION:-v0.8.1}"
 GATEWAY_API_VERSION="${GATEWAY_API_VERSION:-v1.5.1}"
 ARGOCD_VERSION="${ARGOCD_VERSION:-v3.4.4}"
 KEYCLOAK_VERSION="${KEYCLOAK_VERSION:-26.5.7}"
-NFS_QUOTA_AGENT_COMMIT="${NFS_QUOTA_AGENT_COMMIT:-387b057eec6aab7ebf7e26757e47dbb93a944307}"
+NFS_QUOTA_AGENT_COMMIT="${NFS_QUOTA_AGENT_COMMIT:-386ac455d5f9e609d39e8e42c295db6a362917cc}"
 
 calc_sha256() {
   local file="$1"
@@ -106,6 +106,12 @@ cat << 'EOF' > "${TMP_OUT}"
 #
 # NOT GUESSED. Every digest was computed from the actual upstream release file
 # fetched at the specified URL and reviewed before commit.
+#
+# ONE ROW IS NOT LIKE THE OTHERS: nfs-quota-agent is a GitHub source archive, and
+# GitHub generates those tarballs on demand — the digest has changed upstream before
+# when git's compression defaults moved, with the same commit inside. A mismatch there
+# is therefore not automatically an attack; re-run the refresh and check that the diff
+# is only that one digest and the commit pin is unchanged.
 #
 # Refresh with: scripts/airgap/lib/refresh-binary-checksums.sh
 #

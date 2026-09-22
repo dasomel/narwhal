@@ -71,7 +71,7 @@ ghcr.io/dasomel/goharbor/nginx-photon:v2.15.1	sha256:1060a7ef51152c061415cde866c
 ghcr.io/dasomel/goharbor/redis-photon:v2.15.1	sha256:4e9f77d2c5c0e6f8ae70acc45f8db7c719710333952ffcaecf6883de4fbb0e25	2026-09-16T14:13:16Z	crane digest
 ghcr.io/dasomel/goharbor/registry-photon:v2.15.1	sha256:baedda128bb9e7eb9df72fa904e4d17d162004b0a2bb12090c682161b4d7e348	2026-09-16T14:13:16Z	crane digest
 ghcr.io/dasomel/narwhal-portal:1.0.16	sha256:006781920e05afc99527207ba89b4a3f33e29feb6f8adb610b88ab4294cd0dad	2026-09-16T14:13:16Z	crane digest
-ghcr.io/dasomel/nfs-quota-agent:v0.3.0	sha256:c92658bdf68b9492afd2b28dff94dc51f8f8600a2a5c46df4cfb3185706eb57e	2026-09-16T14:13:16Z	crane digest
+ghcr.io/dasomel/nfs-quota-agent:v0.5.0	sha256:090901b68cfe6842816783eefd29f19397151c27a12292b262571ade4a6d34de	2026-09-22T14:10:32Z	crane digest
 ghcr.io/dexidp/dex:v2.45.0	sha256:b8469881d3cb3a73001506f0d3aaefecb9c45d2311c1e0f405d8ac538316c59d	2026-09-16T14:13:16Z	crane digest
 ghcr.io/grafana/alloy-operator:1.10.0	sha256:6ee05ccf3b25850aed95392b4d12e8ae80dd76e235d31fd525639a3356ad8b13	2026-09-16T14:13:16Z	crane digest
 ghcr.io/headlamp-k8s/headlamp:v0.42.0	sha256:c9754bae1d799220da0547e51ceee234f6e66ebadc138518ca73e33ecd331e59	2026-09-16T14:13:16Z	crane digest

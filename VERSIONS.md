@@ -50,7 +50,7 @@ Components and versions used in this project.
 | NFS Client | apt package | nfs-common (pre-installed in box) |
 | quota tools | apt package | quota, quotatool |
 | csi-driver-nfs | 4.13.2 (chart) | CSI driver for NFS (SECURITY: CVE-2026-3864 path traversal fixed; chart drops `v` prefix) |
-| nfs-quota-agent | v0.2.1 | NFS project quota enforcement |
+| nfs-quota-agent | v0.5.0 | NFS project quota enforcement |
 | SeaweedFS | v4.34 (chart 4.34.0) | S3-compatible object storage (Apache 2.0); image tag scheme = chart appVersion ("4.34"); ARM64 needs nodeSelector override |
 
 ## Database

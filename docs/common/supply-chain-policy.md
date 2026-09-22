@@ -15,7 +15,7 @@
 | narwhal 린트 도구 버전 및 무결성 | `yq` `v4.53.3`, `kubeconform` `v0.8.0` 해시 검증 및 `markdownlint-cli@0.49.1` 고정 | `.github/workflows/lint.yml` (`sha256sum -c`로 `yq`, `kubeconform` 무결성 검증, `markdownlint-cli`는 무결성 해시가 없는 npm 특성상 버전 고정만 수행) |
 | narwhal GitHub Actions Action 고정 | `.github/workflows/` 내 모든 `uses:` 지시자 커밋 SHA 고정 | `.github/workflows/` 내 모든 워크플로우 (40자리 hex commit SHA + `# vX.Y.Z` 주석) |
 | narwhal 에어갭 바이너리 무결성 | 에어갭 번들에 포함된 19개 아티팩트의 SHA-256 검증 | `scripts/airgap/lib/binary-checksums.tsv` 및 `scripts/airgap/07-save-binaries.sh` (`fetch()` 시 검증, 누락 시 즉시 실패), `scripts/airgap/lib/refresh-binary-checksums.sh`로 갱신 |
-| narwhal 외부 컴포넌트 커밋 고정 | `nfs-quota-agent` 커밋 SHA 고정 | `scripts/airgap/07-save-binaries.sh` (커밋 `387b057eec6aab7ebf7e26757e47dbb93a944307` 고정) |
+| narwhal 외부 컴포넌트 커밋 고정 | `nfs-quota-agent` 커밋 SHA 고정 | `scripts/airgap/07-save-binaries.sh` (커밋 `386ac455d5f9e609d39e8e42c295db6a362917cc` 고정) |
 | narwhal 정적 정밀 검사 | 동적/가변 다운로드 및 미고정 설치 금지 | `scripts/test/regression-check-kakao.sh --static` (CI `regression-static` 작업에서 `R50`~`R54` 검사) |
 | narwhal 컨테이너 이미지 태그 | admission 차원에서 `*:latest` 태그 사용 금지 (narwhal#52 D2-A: 2026-09-06부터 `Enforce`) | `gitops/resources/kyverno-policies.yaml` (`disallow-latest-tag` 정책, `validationFailureAction: Enforce`); 머지 전 단계는 `scripts/gitops/check-no-mutable-tags.py` (R65/R66)가 이미 담당 |
 | narwhal 컨테이너 이미지 서명/attestation | admission 시점 Cosign 이미지 서명 및 CycloneDX SBOM attestation 검증 | `gitops/resources/kyverno-policies.yaml` (`verify-image-signatures` Audit 정책, narwhal#35 선행 전까지 유지) 및 `scripts/airgap/10-verify-image-signatures.sh` |

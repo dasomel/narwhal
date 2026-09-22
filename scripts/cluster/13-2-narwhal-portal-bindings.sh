@@ -585,6 +585,7 @@ kubectl create secret generic narwhal-portal-secrets \
   --from-literal=ALERT_SILENCE_MAX_HOURS="24" \
   --from-literal=LOKI_URL="http://loki.monitoring.svc.cluster.local:3100" \
   --from-literal=TEMPO_URL="http://tempo.monitoring.svc.cluster.local:3200" \
+  --from-literal=HUBBLE_RELAY_ADDR="hubble-relay.kube-system.svc.cluster.local:80" \
   --from-literal=VALKEY_URL="redis://narwhal-portal-valkey.devtools.svc.cluster.local:6379" \
   --from-literal=VALKEY_TLS="false" \
   --from-literal=VALKEY_INSECURE_PRODUCTION="true" \

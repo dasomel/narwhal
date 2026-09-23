@@ -42,7 +42,7 @@ kubectl get nodes
 
 ### 복구 절차
 
-**Step 1: 장애 원인 파악**
+#### Step 1: 장애 원인 파악
 
 ```bash
 # 호스트에서 VM 상태 확인
@@ -53,7 +53,7 @@ kubectl describe node worker-1 | grep -A 10 "Conditions:"
 kubectl describe node worker-1 | grep -A 20 "Events:"
 ```
 
-**Step 2: VM 재시작**
+#### Step 2: VM 재시작
 
 ```bash
 # 호스트 머신에서
@@ -65,7 +65,7 @@ vagrant ssh worker-1 -c "sudo systemctl status kubelet"
 vagrant ssh worker-1 -c "sudo journalctl -u kubelet -n 50"
 ```
 
-**Step 3: 노드 상태 확인**
+#### Step 3: 노드 상태 확인
 
 ```bash
 # Ready 상태 복귀 확인 (최대 2-3분 대기)
@@ -75,7 +75,7 @@ kubectl get nodes -w
 kubectl get pods -A -o wide | grep worker-1
 ```
 
-**Step 4: 노드가 자동 복귀하지 않을 경우**
+#### Step 4: 노드가 자동 복귀하지 않을 경우
 
 ```bash
 # kubelet 재시작
@@ -90,7 +90,7 @@ kubectl drain worker-1 --ignore-daemonsets --delete-emptydir-data
 kubectl uncordon worker-1
 ```
 
-**Step 5: 디스크 압력 (DiskPressure) 발생 시**
+#### Step 5: 디스크 압력 (DiskPressure) 발생 시
 
 ```bash
 # 디스크 사용량 확인
@@ -132,7 +132,7 @@ kubectl get nodes
 
 ### 복구 절차
 
-**Step 1: VM 재시작**
+#### Step 1: VM 재시작
 
 ```bash
 # 호스트에서
@@ -144,7 +144,7 @@ vagrant ssh master-2 -c "sudo systemctl status kubelet"
 vagrant ssh master-2 -c "sudo systemctl status containerd"
 ```
 
-**Step 2: etcd 멤버 상태 확인**
+#### Step 2: etcd 멤버 상태 확인
 
 ```bash
 # master-1에서 etcd 멤버 목록 확인 (etcd는 distroless, etcdctl 직접 호출)
@@ -156,7 +156,7 @@ vagrant ssh master-1 -c "kubectl exec -n kube-system etcd-master-1 -- \
   --key=/etc/kubernetes/pki/etcd/server.key"
 ```
 
-**Step 3: etcd 멤버가 `unstarted` 상태인 경우**
+#### Step 3: etcd 멤버가 `unstarted` 상태인 경우
 
 ```bash
 # 문제 있는 멤버 ID 확인
@@ -183,7 +183,7 @@ vagrant ssh master-2 -c "sudo rm -rf /var/lib/etcd/member"
 vagrant ssh master-2 -c "sudo systemctl restart kubelet"
 ```
 
-**Step 4: kube-vip 상태 확인**
+#### Step 4: kube-vip 상태 확인
 
 ```bash
 # master-2의 kube-vip Static Pod 확인
@@ -229,7 +229,7 @@ done
 
 ### 복구 절차
 
-**Step 1: VIP 페일오버 확인**
+#### Step 1: VIP 페일오버 확인
 
 ```bash
 # API 서버 접근 테스트
@@ -240,7 +240,7 @@ vagrant ssh master-2 -c "ip addr show | grep 192.168.56.100"
 vagrant ssh master-3 -c "ip addr show | grep 192.168.56.100"
 ```
 
-**Step 2: master-1 VM 재시작**
+#### Step 2: master-1 VM 재시작
 
 ```bash
 vagrant halt master-1
@@ -251,7 +251,7 @@ vagrant ssh master-1 -c "sudo systemctl status kubelet"
 vagrant ssh master-1 -c "sudo crictl ps | grep -E 'etcd|apiserver|controller|scheduler'"
 ```
 
-**Step 3: NFS 서버 복구**
+#### Step 3: NFS 서버 복구
 
 ```bash
 # NFS 서비스 상태 확인
@@ -267,7 +267,7 @@ vagrant ssh master-1 -c "sudo exportfs -ra"
 vagrant ssh worker-1 -c "df -h | grep nfs || showmount -e 192.168.56.10"
 ```
 
-**Step 4: dnsmasq 서비스 확인**
+#### Step 4: dnsmasq 서비스 확인
 
 ```bash
 # dnsmasq 상태 확인
@@ -280,7 +280,7 @@ vagrant ssh master-1 -c "sudo systemctl restart dnsmasq"
 vagrant ssh master-1 -c "dig @192.168.56.10 keycloak.local.narwhal.internal"
 ```
 
-**Step 5: NFS 기반 PVC Pod 복구**
+#### Step 5: NFS 기반 PVC Pod 복구
 
 ```bash
 # NFS 관련 PVC 상태 확인
@@ -291,7 +291,7 @@ kubectl get pods -A --field-selector=status.phase=Unknown
 kubectl delete pod <pod-name> -n <namespace> --force --grace-period=0
 ```
 
-**Step 6: kube-vip 재확인 (master-1 복귀 후)**
+#### Step 6: kube-vip 재확인 (master-1 복귀 후)
 
 ```bash
 # master-1이 복귀하면 VIP가 다시 master-1으로 돌아올 수 있음
@@ -355,7 +355,7 @@ etcd가 2개 이상 정상이면 클러스터 자동 복구됩니다.
 
 ### 시나리오 2: 1/3 멤버만 정상 (쿼럼 손실)
 
-**Step 1: 단일 멤버로 etcd 강제 복구**
+#### Step 1: 단일 멤버로 etcd 강제 복구
 
 ```bash
 # 정상인 master (예: master-1)에 SSH 접속
@@ -376,7 +376,7 @@ sleep 30
 kubectl get pods -n kube-system | grep etcd
 ```
 
-**Step 2: etcd 멤버 재추가 (master-2, master-3)**
+#### Step 2: etcd 멤버 재추가 (master-2, master-3)
 
 ```bash
 # master-1의 etcd에서 기존 멤버 제거
@@ -402,7 +402,7 @@ vagrant ssh master-2 -c "sudo rm -rf /var/lib/etcd/member && sudo systemctl rest
 
 ### 시나리오 3: etcd Snapshot에서 복구
 
-**Step 1: 스냅샷 백업 생성 (정기 실행 권장)**
+#### Step 1: 스냅샷 백업 생성 (정기 실행 권장)
 
 ```bash
 vagrant ssh master-1
@@ -419,7 +419,7 @@ kubectl exec -n kube-system etcd-master-1 -- \
 vagrant scp master-1:/var/lib/etcd/backup-*.db ./etcd-backup/
 ```
 
-**Step 2: 스냅샷에서 복원**
+#### Step 2: 스냅샷에서 복원
 
 ```bash
 vagrant ssh master-1
@@ -634,7 +634,7 @@ kubectl exec -n storage deployment/velero -- \
 
 ### 전체 클러스터 복원 절차
 
-**Step 1: 최신 백업 확인**
+#### Step 1: 최신 백업 확인
 
 ```bash
 LATEST_BACKUP=$(kubectl exec -n storage deployment/velero -- \
@@ -644,7 +644,7 @@ LATEST_BACKUP=$(kubectl exec -n storage deployment/velero -- \
 echo "최신 백업: ${LATEST_BACKUP}"
 ```
 
-**Step 2: 복원 실행**
+#### Step 2: 복원 실행
 
 ```bash
 # 전체 클러스터 복원
@@ -659,7 +659,7 @@ kubectl exec -n storage deployment/velero -- \
   velero restore describe full-restore-$(date +%Y%m%d) --details
 ```
 
-**Step 3: 복원 상태 확인**
+#### Step 3: 복원 상태 확인
 
 ```bash
 # 복원 완료 대기
@@ -671,7 +671,7 @@ kubectl exec -n storage deployment/velero -- \
   velero restore logs full-restore-$(date +%Y%m%d) | grep -i error | head -20
 ```
 
-**Step 4: 네임스페이스별 리소스 확인**
+#### Step 4: 네임스페이스별 리소스 확인
 
 ```bash
 # 주요 네임스페이스 리소스 복원 확인
@@ -684,7 +684,7 @@ done
 kubectl get pvc -A | grep -v Bound
 ```
 
-**Step 5: Phase 2 스크립트로 미복원 컴포넌트 재설치**
+#### Step 5: Phase 2 스크립트로 미복원 컴포넌트 재설치
 
 Velero 복원 후에도 일부 컴포넌트(cert-manager webhook, APISIX 등)가 누락될 수 있습니다.
 
@@ -696,7 +696,7 @@ vagrant ssh master-1 -c "kubectl get pods -n platform-system"
 vagrant ssh master-1 -c "sudo bash /home/vagrant/scripts/cluster/06-phase2-start.sh"
 ```
 
-**Step 6: DNS/라우팅 확인**
+#### Step 6: DNS/라우팅 확인
 
 ```bash
 # MetalLB LB IP 확인
@@ -870,7 +870,7 @@ kubectl get pods -n database -l cnpg.io/cluster=narwhal-db
 
 ### 복구 절차
 
-**Step 1: Keycloak Pod 재시작**
+#### Step 1: Keycloak Pod 재시작
 
 ```bash
 kubectl rollout restart deployment keycloak-operator -n iam
@@ -881,7 +881,7 @@ kubectl get deployment,statefulset -n iam
 kubectl rollout restart statefulset keycloak -n iam
 ```
 
-**Step 2: DB 연결 확인**
+#### Step 2: DB 연결 확인
 
 ```bash
 # CNPG 클러스터 상태
@@ -894,7 +894,7 @@ kubectl get secret narwhal-db-credentials -n database -o jsonpath='{.data.passwo
 kubectl get svc keycloak-db-rw -n iam
 ```
 
-**Step 3: OIDC 엔드포인트 접근 테스트**
+#### Step 3: OIDC 엔드포인트 접근 테스트
 
 ```bash
 # Keycloak HTTPS 엔드포인트 테스트
@@ -910,14 +910,14 @@ kubectl run -it --rm curl-test \
   -- curl http://keycloak-service.iam.svc.cluster.local:8080/realms/kubernetes/.well-known/openid-configuration
 ```
 
-**Step 4: OAuth2-Proxy 재시작**
+#### Step 4: OAuth2-Proxy 재시작
 
 ```bash
 kubectl rollout restart deployment oauth2-proxy -n devtools
 kubectl wait --for=condition=Available deployment/oauth2-proxy -n devtools --timeout=60s
 ```
 
-**Step 5: Keycloak 재설정 (최후 수단)**
+#### Step 5: Keycloak 재설정 (최후 수단)
 
 Realm 설정이 손상된 경우:
 
@@ -984,7 +984,7 @@ kubectl logs -n devtools deployment/argocd-repo-server --tail=50
 
 ### 복구 절차
 
-**Step 1: ArgoCD Pod 재시작**
+#### Step 1: ArgoCD Pod 재시작
 
 ```bash
 kubectl rollout restart deployment \
@@ -995,7 +995,7 @@ kubectl wait --for=condition=Available deployment/argocd-server \
   -n devtools --timeout=120s
 ```
 
-**Step 2: Gitea 연결 확인**
+#### Step 2: Gitea 연결 확인
 
 ```bash
 # Gitea 서비스 확인
@@ -1006,7 +1006,7 @@ kubectl exec -n devtools deployment/argocd-repo-server -- \
   curl -s http://gitea-http.gitea.svc.cluster.local:3000/gitea-admin/narwhal.git/info/refs?service=git-upload-pack | head -5
 ```
 
-**Step 3: Application 강제 동기화**
+#### Step 3: Application 강제 동기화
 
 ```bash
 # 특정 앱 강제 동기화
@@ -1019,13 +1019,13 @@ kubectl patch application harbor \
 vagrant ssh master-1 -c "argocd app sync --all --server argocd.local.narwhal.internal"
 ```
 
-**Step 4: App-of-Apps 재bootstrap**
+#### Step 4: App-of-Apps 재bootstrap
 
 ```bash
 vagrant ssh master-1 -c "sudo bash /home/vagrant/scripts/cluster/14-gitops-bootstrap.sh"
 ```
 
-**Step 5: 알려진 정상 릴리스로 롤백 (issue #52, D4-A)**
+#### Step 5: 알려진 정상 릴리스로 롤백 (issue #52, D4-A)
 
 App-of-Apps 재bootstrap으로도 복구되지 않거나, 최근 발행된 커밋 자체가 원인으로
 의심되는 경우 마지막으로 태깅된 릴리스로 롤백합니다. 자세한 사용법은
@@ -1074,7 +1074,7 @@ kubectl describe pod <pod-name> -n <namespace> | grep -A 5 "Warning"
 
 ### 복구 절차
 
-**Step 1: NFS 서버 상태 확인**
+#### Step 1: NFS 서버 상태 확인
 
 ```bash
 # NFS 서비스 상태
@@ -1086,7 +1086,7 @@ vagrant ssh master-1 -c "ls -la /srv/nfs/k8s/"
 vagrant ssh master-1 -c "df -h /srv/nfs/k8s"
 ```
 
-**Step 2: NFS 서비스 재시작**
+#### Step 2: NFS 서비스 재시작
 
 ```bash
 vagrant ssh master-1 -c "sudo systemctl restart nfs-kernel-server"
@@ -1097,7 +1097,7 @@ vagrant ssh worker-1 -c "sudo mount -t nfs 192.168.56.10:/srv/nfs/k8s /tmp/nfs-t
   ls /tmp/nfs-test && sudo umount /tmp/nfs-test"
 ```
 
-**Step 3: csi-driver-nfs 재시작**
+#### Step 3: csi-driver-nfs 재시작
 
 ```bash
 kubectl rollout restart daemonset csi-nfs-node -n kube-system
@@ -1107,7 +1107,7 @@ kubectl rollout restart deployment csi-nfs-controller -n kube-system
 kubectl get pods -n kube-system -l app=csi-nfs-node
 ```
 
-**Step 4: PVC 재생성 필요 시**
+#### Step 4: PVC 재생성 필요 시
 
 ```bash
 # 문제 PVC의 PV 확인
@@ -1118,7 +1118,7 @@ kubectl delete pvc <pvc-name> -n <namespace>
 # ArgoCD가 자동으로 PVC를 재생성하거나 앱 Helm values에서 재생성
 ```
 
-**Step 5: 디스크 공간 부족 시**
+#### Step 5: 디스크 공간 부족 시
 
 ```bash
 # NFS 서버 디스크 사용량
@@ -1171,21 +1171,21 @@ kubectl get peerauthentication -A
 
 ### 복구 절차
 
-**Step 1: ztunnel DaemonSet 재시작**
+#### Step 1: ztunnel DaemonSet 재시작
 
 ```bash
 kubectl rollout restart daemonset ztunnel -n istio-system
 kubectl wait --for=condition=Ready pod -l app=ztunnel -n istio-system --timeout=120s
 ```
 
-**Step 2: istiod 재시작**
+#### Step 2: istiod 재시작
 
 ```bash
 kubectl rollout restart deployment istiod -n istio-system
 kubectl wait --for=condition=Available deployment/istiod -n istio-system --timeout=120s
 ```
 
-**Step 3: CrashLoopBackOff Pod 진단 (probe 차단)**
+#### Step 3: CrashLoopBackOff Pod 진단 (probe 차단)
 
 ```bash
 # 영향 받는 Pod 확인
@@ -1199,7 +1199,7 @@ kubectl get pod <pod-name> -n <namespace> -o jsonpath='{.metadata.labels.istio\.
 kubectl label pod <pod-name> -n <namespace> istio.io/dataplane-mode=none
 ```
 
-**Step 4: Cilium + Istio 공존 설정 확인**
+#### Step 4: Cilium + Istio 공존 설정 확인
 
 ```bash
 # Cilium ConfigMap 확인 (cni.exclusive=false, socketLB.hostNamespaceOnly=true)
@@ -1215,7 +1215,7 @@ kubectl patch cm cilium-config -n kube-system \
 kubectl rollout restart daemonset cilium -n kube-system
 ```
 
-**Step 5: NetworkPolicy HBONE 포트 (15008) 누락**
+#### Step 5: NetworkPolicy HBONE 포트 (15008) 누락
 
 ```bash
 # Ambient 네임스페이스의 NetworkPolicy에 15008 포트 누락 여부 확인
@@ -1258,7 +1258,7 @@ kubectl exec -n storage openbao-0 -- bao status
 
 ### 복구 절차
 
-**Unseal 실행**
+#### Unseal 실행
 
 ```bash
 # Unseal Key는 최초 초기화 시 안전하게 보관해야 함
@@ -1320,7 +1320,7 @@ kubectl exec -n storage deployment/velero -- \
 
 ### 절차
 
-**Step 1: 사전 백업 확인**
+#### Step 1: 사전 백업 확인
 
 ```bash
 # 최신 Velero 백업 확인
@@ -1338,7 +1338,7 @@ vagrant ssh master-1 -c "kubectl exec -n kube-system etcd-master-1 -- \
 vagrant scp master-1:/tmp/etcd-backup-$(date +%Y%m%d).db ./
 ```
 
-**Step 2: 클러스터 삭제 및 재생성**
+#### Step 2: 클러스터 삭제 및 재생성
 
 ```bash
 # 전체 VM 삭제
@@ -1351,11 +1351,11 @@ vagrant up --provider=vmware_desktop
 vagrant provision master-1 --provision-with phase2-platform
 ```
 
-**Step 3: Velero 복원**
+#### Step 3: Velero 복원
 
 [6번 항목: Velero 전체 클러스터 복원](#6-velero-전체-클러스터-복원) 절차를 따르세요.
 
-**Step 4: Phase 2 스크립트 재실행 (필요 시)**
+#### Step 4: Phase 2 스크립트 재실행 (필요 시)
 
 ```bash
 # Keycloak SSO 재설정 - 4단계 순차 실행
@@ -1368,7 +1368,7 @@ vagrant ssh master-1 -c "sudo bash /home/vagrant/scripts/cluster/13-argocd.sh"
 vagrant ssh master-1 -c "sudo bash /home/vagrant/scripts/cluster/14-gitops-bootstrap.sh"
 ```
 
-**Step 5: OpenBao Unseal**
+#### Step 5: OpenBao Unseal
 
 [12번 항목: OpenBao Unseal](#12-openbao-장애-및-unseal) 절차를 따르세요.
 

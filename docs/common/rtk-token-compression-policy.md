@@ -7,9 +7,11 @@ This document defines the operational guidelines and policies for applying Run-T
 ## 1. Core Decisions
 
 ### [결정 D1] narwhal 클러스터 출력에 RTK 기본 비활성화
+
 `narwhal` 클러스터 환경에서는 Run-Time token-compression(RTK) 필터링 및 압축 메커니즘을 **기본 비활성화(Default Disabled)** 한다.
 
 #### 근거 (Rationale)
+
 1. **소스 단계의 무손실 추출 기적용**:
    `narwhal` 명령의 대다수는 이미 소스 수준에서 무손실 추출 방식(예: `-o jsonpath`, `-o custom-columns`, `--no-headers | grep -c`, `--field-selector`, `-format=json`)을 사용하고 있어, 후처리 성격의 RTK 압축을 도입하더라도 추가적인 토큰 절감 효과가 무익하다.
 2. **Silent Failure 위험**:
@@ -18,6 +20,7 @@ This document defines the operational guidelines and policies for applying Run-T
    비정상 상황이나 장애 상황 시 상세 로그가 압축/필터링되어 유실되면 진단이 불가능해지며, 이는 2차 장애로 이어지는 캐스케이드 악화 위험을 초래한다.
 
 ### [결정 D2] 장애 복구 모드 내 RTK 전면 차단
+
 장애 복구 및 재해 복구(DR) 모드, 서비스 메시 캐스케이드(mesh cascade), OpenBao 밀봉 해제/밀봉(unseal/reseal) 등 시스템 안정성과 직접 직결되는 비상/복구 운영 단계에서는 **RTK의 사용을 전면 차단**한다. 진단을 위한 완벽하고 원래의(raw) 로그 출력이 보존되어야 한다.
 
 ---
@@ -33,10 +36,13 @@ This document defines the operational guidelines and policies for applying Run-T
 ---
 
 ## 3. 권장 대안: 소스 단계 무손실 추출 (Lossless-Extraction Alternative)
+
 출력 토큰을 줄이기 위해 사후 정규식 압축(RTK)을 사용하는 대신, CLI 자체의 기능(`-o jsonpath`, `--field-selector`, `-o custom-columns` 등)을 이용해 필요한 데이터만을 소스 단계에서 무손실 추출하는 방식을 권장하고 점진적으로 확장한다.
 
 ---
 
 ## 4. Escape Hatch (탈출 조건)
+
 조건부 가능 범주에 속하는 4가지 유형의 명령(`velero logs`, `kubectl logs`, `helm get values`/`search`, `kubectl get events`)일지라도 **"정답당 비용 + 진단 성공률"에 대한 정량적 측정 및 검증 없이는 실제 RTK를 적용하는 것을 금지**한다.
+
 * 예외적으로 `velero backup/restore logs`와 같이 비정형 데이터라 `jsonpath` 적용이 불가능한 경우에도, 에러/panic 라인이 완벽히 보존되고 원본 로그 폴백(raw fallback) 경로가 확보된 상태에서만 신중하게 검토하여 도입할 수 있다.

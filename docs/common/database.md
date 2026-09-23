@@ -10,6 +10,7 @@ Narwhal 프로젝트는 CloudNative-PG Operator를 사용하여 단일 통합 Po
 ## 아키텍처
 
 ### 클러스터 정보
+
 - **Operator**: CloudNative-PG v1.28.1 (Helm chart 0.27.1)
 - **클러스터명**: `narwhal-db`
 - **네임스페이스**: `database`
@@ -18,6 +19,7 @@ Narwhal 프로젝트는 CloudNative-PG Operator를 사용하여 단일 통합 Po
 - **커넥션 풀러**: PgBouncer (transaction mode)
 
 ### HA 구성
+
 - Primary/Replica 구조로 고가용성 확보
 - Primary 장애 시 Replica가 자동으로 Primary로 승격
 - CNPG Operator가 etcd 스타일 리더 선출 관리
@@ -34,7 +36,8 @@ Narwhal 프로젝트는 CloudNative-PG Operator를 사용하여 단일 통합 Po
 ## 접속 방법
 
 ### PgBouncer를 통한 접속 (권장)
-```
+
+```text
 Host: narwhal-db-pooler-rw.database.svc.cluster.local
 Port: 5432
 ```
@@ -42,7 +45,8 @@ Port: 5432
 커넥션 풀링으로 성능과 안정성 향상.
 
 ### 직접 접속
-```
+
+```text
 Host: narwhal-db-rw.database.svc.cluster.local
 Port: 5432
 ```
@@ -60,7 +64,8 @@ Port: 5432
 | gitea | gitea-db-rw:5432 | narwhal-db-pooler-rw.database |
 
 **예시 연결 문자열**:
-```
+
+```text
 # Keycloak namespace 내부에서
 jdbc:postgresql://keycloak-db-rw:5432/keycloak
 ```
@@ -104,12 +109,14 @@ jdbc:postgresql://keycloak-db-rw:5432/keycloak
 ## 백업 전략
 
 ### CNPG Barman (S3 백업)
+
 - **주기**: 매일 00:00
 - **대상**: SeaweedFS S3
 - **자격증명**: admin/admin
 - **방식**: WAL 아카이빙 + Full Backup
 
 ### Velero (PVC 백업)
+
 - **주기**: 매일 02:00
 - **대상**: 전체 PVC 스냅샷
 - **용도**: 재해복구 (Disaster Recovery)
@@ -117,6 +124,7 @@ jdbc:postgresql://keycloak-db-rw:5432/keycloak
 ## 운영 명령어
 
 ### 클러스터 상태 확인
+
 ```bash
 # 클러스터 정보
 kubectl get cluster -n database
@@ -129,6 +137,7 @@ kubectl describe cluster narwhal-db -n database
 ```
 
 ### 데이터베이스 접속
+
 ```bash
 # psql 접속
 kubectl exec -it narwhal-db-1 -n database -- psql -U postgres
@@ -138,6 +147,7 @@ kubectl exec -it narwhal-db-1 -n database -- psql -U keycloak -d keycloak
 ```
 
 ### 복제 상태 확인
+
 ```bash
 # 복제 상태 조회
 kubectl exec narwhal-db-1 -n database -- psql -U postgres -c "SELECT * FROM pg_stat_replication;"
@@ -147,6 +157,7 @@ kubectl exec narwhal-db-1 -n database -- psql -U postgres -c "SELECT client_addr
 ```
 
 ### 데이터베이스 목록 확인
+
 ```bash
 # 모든 데이터베이스 목록
 kubectl exec narwhal-db-1 -n database -- psql -U postgres -c "\l"
@@ -156,6 +167,7 @@ kubectl exec narwhal-db-1 -n database -- psql -U postgres -c "SELECT datname, pg
 ```
 
 ### 커넥션 모니터링
+
 ```bash
 # 데이터베이스별 연결 수
 kubectl exec narwhal-db-1 -n database -- psql -U postgres -c "SELECT datname, numbackends FROM pg_stat_database WHERE datname NOT LIKE 'template%';"
@@ -165,6 +177,7 @@ kubectl exec narwhal-db-1 -n database -- psql -U postgres -c "SELECT pid, usenam
 ```
 
 ### 수동 Failover
+
 ```bash
 # Replica를 Primary로 승격
 kubectl cnpg promote narwhal-db narwhal-db-2 -n database
@@ -174,6 +187,7 @@ kubectl get cluster narwhal-db -n database -o jsonpath='{.status.currentPrimary}
 ```
 
 ### 백업 관리
+
 ```bash
 # 백업 목록 확인
 kubectl cnpg backup list narwhal-db -n database
@@ -186,6 +200,7 @@ kubectl get backups -n database
 ```
 
 ### 복구 (Restore)
+
 ```bash
 # 특정 시점 복구 (PITR)
 kubectl cnpg recovery narwhal-db -n database --target-time "2026-02-14 12:00:00"
@@ -216,6 +231,7 @@ ArgoCD를 통해 배포된 Prometheus Stack에 CNPG 대시보드가 포함되어
 ## 트러블슈팅
 
 ### Pod가 시작하지 않을 때
+
 ```bash
 # 로그 확인
 kubectl logs narwhal-db-1 -n database
@@ -228,6 +244,7 @@ kubectl get pvc -n database
 ```
 
 ### 복제가 중단되었을 때
+
 ```bash
 # Replica PVC 삭제 (CNPG가 자동 재생성)
 kubectl delete pvc narwhal-db-2 -n database
@@ -240,6 +257,7 @@ kubectl exec narwhal-db-1 -n database -- psql -U postgres -c "SELECT * FROM pg_s
 ```
 
 ### 연결 수 초과
+
 ```bash
 # 현재 연결 수 확인
 kubectl exec narwhal-db-1 -n database -- psql -U postgres -c "SELECT count(*) FROM pg_stat_activity;"
@@ -249,6 +267,7 @@ kubectl exec narwhal-db-1 -n database -- psql -U postgres -c "SELECT pg_terminat
 ```
 
 ### 느린 쿼리 분석
+
 ```bash
 # 1초 이상 실행된 쿼리 확인
 kubectl exec narwhal-db-1 -n database -- psql -U postgres -c "SELECT pid, now() - pg_stat_activity.query_start AS duration, query FROM pg_stat_activity WHERE state = 'active' AND now() - pg_stat_activity.query_start > interval '1 second';"

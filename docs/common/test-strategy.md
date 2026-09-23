@@ -1,6 +1,6 @@
 # Narwhal Platform Test Strategy (T1-T7)
 
-> narwhal#50 "[P0][Quality][Testing] Platform Test Strategy / Offline E2E / Failure
+> narwhal#50 "\[P0\]\[Quality\]\[Testing\] Platform Test Strategy / Offline E2E / Failure
 > Injection / Upgrade Validation"의 1차 구현. 흩어진 테스트 자산
 > (`scripts/test/regression-check-kakao.sh`, `tests/chaos/`, `tests/k6/`,
 > `docs/common/airgap-isolation-testing.md`, `docs/evaluation/`)을 이슈가 정의한
@@ -281,6 +281,7 @@ Mesh, Storage, Database, (그리고 그 아래 더 있음 — Observability/Secu
    때 다시 mktemp되므로 상태가 누적되지 않는다).
 
 구체적 예시(코드 위치 인용):
+
 - `scripts/test/regression-check-kakao.sh:316-337`(R55) — `sed`로 portal의
   `auth.ts` 사본에서 그룹 하나를 지운 뒤, 계약 체크가 그 drift를 잡아내는지 확인.
 - 같은 파일 `:352-373`(R57) — python으로 NetworkPolicy YAML 사본에서 APISIX
@@ -358,7 +359,7 @@ scripts/test/regression-check-kakao.sh --static \
 
 **검증 절차와 결과** (2026-08-25, 이 worktree에서 실행):
 
-```
+```console
 $ ./scripts/test/regression-check-kakao.sh --static \
     --json-report /tmp/report.json --md-report /tmp/report.md
 ...

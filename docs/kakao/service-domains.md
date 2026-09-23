@@ -25,7 +25,7 @@ Kakao에서는 그 방식이 성립하지 않는다:
 
 ### 요청이 흐르는 경로
 
-```
+```text
 브라우저 (오퍼레이터 PC)
   │  https://argocd.kakao.narwhal.internal
   │
@@ -51,7 +51,7 @@ ApisixUpstream → <service>.<namespace>.svc.cluster.local
 `/etc/hosts`는 브라우저 쪽 절반일 뿐이다. 나머지 절반은 **클러스터 내부**에 있다 — 게이트웨이
 OIDC 라우트는 APISIX가 Keycloak의 discovery URL을 **이름으로** 조회하기 때문이다:
 
-```
+```text
 APISIX 파드 → https://keycloak.kakao.narwhal.internal/realms/narwhal/.well-known/openid-configuration
 ```
 
@@ -59,7 +59,7 @@ APISIX 파드 → https://keycloak.kakao.narwhal.internal/realms/narwhal/.well-k
 master의 dnsmasq가 받아주지만 Kakao에는 그런 것이 없으므로, `10-dnsmasq.sh`의
 `PROVIDER=kakao` 분기가 CoreDNS에 hairpin 존을 넣는다:
 
-```
+```text
 kakao.narwhal.internal:53 {
     errors
     cache 30
@@ -158,7 +158,7 @@ master LB로 SSH 터널을 열고 `narwhal-kakao` 컨텍스트를 만든다. 자
 호스트명을 하드코딩하지 않고 **클러스터의 ApisixRoute에서 읽는다** — 라우트가 추가되면
 다시 실행하는 것만으로 따라간다. 기록은 마커 사이에만 들어가므로 제거가 정확하다:
 
-```
+```text
 # BEGIN narwhal-kakao
 <worker LB 공인 IP> alertmanager.kakao.narwhal.internal argocd.kakao.narwhal.internal ...
 # END narwhal-kakao

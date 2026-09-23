@@ -29,6 +29,7 @@ kubectl get nodes
 ```
 
 **특징:**
+
 - 클러스터 전체 관리 권한 (cluster-admin)
 - 인증서 만료 시 재설정 필요 (기본 1년)
 - 개발/테스트 환경에 적합
@@ -49,6 +50,7 @@ kubectl config use-context narwhal-oidc
 ```
 
 **특징:**
+
 - 사용자별 권한 관리 (RBAC)
 - 그룹 기반 권한 부여
 - 브라우저 기반 로그인
@@ -75,6 +77,7 @@ kubectl config use-context narwhal-token
 ```
 
 **특징:**
+
 - 서비스 계정 토큰 사용
 - 기본 유효 기간: 1년
 - 자동화/CI에 적합
@@ -169,16 +172,19 @@ vagrant up master-1
 ### OIDC 로그인 실패
 
 1. Keycloak이 실행 중인지 확인:
+
    ```bash
    kubectl get pods -n iam
    ```
 
 2. Keycloak 접근 테스트:
+
    ```bash
    curl -k https://keycloak.local.narwhal.internal/realms/kubernetes/.well-known/openid-configuration
    ```
 
 3. kubelogin 캐시 삭제:
+
    ```bash
    rm -rf ~/.kube/cache/oidc-login
    ```
@@ -186,6 +192,7 @@ vagrant up master-1
 ### 권한 부족 (Forbidden)
 
 OIDC 사용자의 권한 확인:
+
 ```bash
 # 현재 사용자 확인
 kubectl auth whoami

@@ -44,6 +44,7 @@ cd narwhal-portal
 Result: `harbor.local.narwhal.internal/library/narwhal-portal:latest` in Harbor.
 
 Build notes (learned the hard way):
+
 - Kaniko runs with `--compressed-caching=false` at a 4Gi limit — the Next.js
   standalone build OOMKills at 4Gi with compressed caching on.
 - The build waits on a **Harbor readiness gate** (`kubectl rollout status`

@@ -13,6 +13,7 @@
 - 본 문서 내 secret 값은 문서가 secret을 운반하지 않도록 마스킹함.
 
 ### 최종 검증 (2026-06-27)
+
 | 항목 | 결과 |
 |------|------|
 | 히스토리·reflog `idp/` 커밋 | **0** ✅ |
@@ -47,7 +48,7 @@
 
 ## 2. `.gitignore`에 있으나 추적되는 모순
 
-```
+```text
 .gitignore:45  idp-portal/
 .gitignore:46  idp/          ← 무시 대상이지만…
 ```
@@ -82,7 +83,7 @@
 
 ## 5. 최상위 추적 디렉토리 (정상 구성)
 
-```
+```text
 scripts/      # 현행 설치/운영 스크립트 (cluster, common, airgap, test)
 gitops/       # ArgoCD apps/resources/templates (현행 GitOps 소스)
 configs/      # 클러스터 설정값
@@ -93,9 +94,11 @@ Vagrantfile, Makefile, README.md, VERSIONS.md, CHANGELOG.md, CLAUDE.md
 ```
 
 ### 추적되는 도구 상태(검토 대상)
+
 - `.bkit/` (audit·snapshots·runtime·state), `.claude/`, `.github/` — 에이전트/CI 상태가 일부 커밋됨.
 
 ### 미추적 잡파일 (디스크에만, .gitignore로 제외됨 — 안전)
+
 - `00.bak` (279MB), `graphify-out/` (캐시), `_workspace/`, `.codegraph/`, `*.log` — 모두 추적 안 됨.
 
 ---

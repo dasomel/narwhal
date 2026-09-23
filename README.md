@@ -61,7 +61,7 @@ more than a fix:
 
 Those rows then become checks. The chain is deliberate:
 
-```
+```text
 Incident  →  Lesson  →  Discriminator  →  Regression test
 ```
 
@@ -134,7 +134,7 @@ vagrant destroy -f
 
 ## Architecture
 
-```
+```text
 ┌──────────────────────────────────────────────────┐
 │                    Vagrant VMs                   │
 ├──────────────────┬─────────────┬─────────────────┤
@@ -223,14 +223,14 @@ DNS Configuration: Configure the client's DNS to `192.168.56.10` or add entries 
 
 | Service | URL | Credentials |
 |--------|-----|-----------|
-| ArgoCD | https://argocd.local.narwhal.internal | admin / (auto-generated secret) or Keycloak SSO |
-| Grafana | https://grafana.local.narwhal.internal | Keycloak SSO (or the generated local admin) |
-| Gitea | https://gitea.local.narwhal.internal | gitea-admin / see show-credentials.sh or Keycloak SSO |
-| Harbor | https://harbor.local.narwhal.internal | admin / see show-credentials.sh or Keycloak SSO |
-| Keycloak | https://keycloak.local.narwhal.internal | temp-admin / (auto-generated) |
-| Headlamp | https://headlamp.local.narwhal.internal | Keycloak SSO |
-| OpenBao | https://openbao.local.narwhal.internal | root token (`bao operator init`) |
-| Hubble | https://hubble.local.narwhal.internal | - |
+| ArgoCD | <https://argocd.local.narwhal.internal> | admin / (auto-generated secret) or Keycloak SSO |
+| Grafana | <https://grafana.local.narwhal.internal> | Keycloak SSO (or the generated local admin) |
+| Gitea | <https://gitea.local.narwhal.internal> | gitea-admin / see show-credentials.sh or Keycloak SSO |
+| Harbor | <https://harbor.local.narwhal.internal> | admin / see show-credentials.sh or Keycloak SSO |
+| Keycloak | <https://keycloak.local.narwhal.internal> | temp-admin / (auto-generated) |
+| Headlamp | <https://headlamp.local.narwhal.internal> | Keycloak SSO |
+| OpenBao | <https://openbao.local.narwhal.internal> | root token (`bao operator init`) |
+| Hubble | <https://hubble.local.narwhal.internal> | - |
 
 > **Note**: Due to the use of self-signed certificates, a security warning will be displayed in your browser. Access the service by clicking "Advanced" → "Proceed".
 
@@ -282,6 +282,7 @@ All apps are integrated with Keycloak OIDC. (HTTPS required, K8s 1.35+)
 | guest | - | - (Web UI only) |
 
 **Default Users:**
+
 - `admin` — cluster-admin
 - `dev` — developer
 - `view` — viewer
@@ -361,7 +362,7 @@ quietly reaches the internet fails the install instead of hiding behind an egres
 
 ## GitOps Structure
 
-```
+```text
 gitops/
 ├── apps/
 │   └── app-of-apps.yaml          # the only Application here; points ArgoCD at charts/narwhal-apps
@@ -446,7 +447,7 @@ vagrant destroy -f
 
 **Authentication and authorization are separate here.** The APISIX `openid-connect` plugin only
 proves who you are; it applies no group restriction, so every user in the `narwhal` realm reaches
-the application. What each user may then *do* is enforced by the application itself and by
+the application. What each user may then _do_ is enforced by the application itself and by
 Kubernetes RBAC, per the mapping above. The table describes authorization; the sentence below
 describes the gateway:
 
@@ -466,6 +467,7 @@ load balancers, DNS and image delivery differ entirely. Start at the index:
 - [VERSIONS.md](VERSIONS.md) - Component versions
 
 **Deployment-target agnostic** — [`docs/common/`](docs/common/)
+
 - [architecture.md](docs/common/architecture.md) - Architecture (infra section is Vagrant-based)
 - [kubeconfig.md](docs/common/kubeconfig.md) - kubectl authentication (cert / token / OIDC)
 - [developer-onboarding.md](docs/common/developer-onboarding.md) - Developer onboarding
@@ -476,11 +478,13 @@ load balancers, DNS and image delivery differ entirely. Start at the index:
 - [lessons-log.md](docs/common/lessons-log.md) - Incident history
 
 **Vagrant (local)** — [`docs/vagrant/`](docs/vagrant/)
+
 - [dns-access.md](docs/vagrant/dns-access.md) - `*.local.narwhal.internal` DNS and service access
 - [operations.md](docs/vagrant/operations.md) - Operations guide
 - [disaster-recovery.md](docs/vagrant/disaster-recovery.md) - Disaster recovery runbook
 
 **Kakao Cloud** — [`docs/kakao/`](docs/kakao/)
+
 - [cloud-deployment.md](docs/kakao/cloud-deployment.md) - Topology, egress proxy, airgap registry, provider-aware GitOps
 - [service-domains.md](docs/kakao/service-domains.md) - `*.kakao.narwhal.internal` per-service domains, SSO modes, access
 - [csp/kakao-cloud/terraform/README.md](csp/kakao-cloud/terraform/README.md) - Terraform usage
@@ -558,7 +562,7 @@ change before sending a pull request.
 Two conventions matter more than the rest here:
 
 1. **Every fix records a row in [`lessons-log.md`](docs/common/lessons-log.md)** — including
-   mistakes made *while* fixing, which are often the more useful entries. Record the discriminator,
+   mistakes made _while_ fixing, which are often the more useful entries. Record the discriminator,
    not the conclusion.
 2. **Every shell script uses `set -euo pipefail`**, and shell and YAML both indent two spaces. CI checks
    the second; nothing checks the first, so removing it fails silently.

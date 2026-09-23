@@ -10,14 +10,14 @@ Narwhal IDP 클러스터에서 개발자로 작업하기 위한 가이드입니�
 
 | 서비스 | URL | 용도 |
 |--------|-----|------|
-| **Narwhal Portal** | https://portal.local.narwhal.internal | 클러스터 관리 UI (대시보드, 온보딩, 설정) |
-| ArgoCD | https://argocd.local.narwhal.internal | GitOps 배포 관리 |
-| Gitea | https://gitea.local.narwhal.internal | Git 저장소 |
-| Harbor | https://harbor.local.narwhal.internal | 컨테이너 레지스트리 |
-| Grafana | https://grafana.local.narwhal.internal | 모니터링 대시보드 |
-| Headlamp | https://headlamp.local.narwhal.internal | Kubernetes UI |
-| Keycloak | https://keycloak.local.narwhal.internal | SSO 계정 관리 |
-| OpenBao | https://openbao.local.narwhal.internal | 시크릿 관리 |
+| **Narwhal Portal** | <https://portal.local.narwhal.internal> | 클러스터 관리 UI (대시보드, 온보딩, 설정) |
+| ArgoCD | <https://argocd.local.narwhal.internal> | GitOps 배포 관리 |
+| Gitea | <https://gitea.local.narwhal.internal> | Git 저장소 |
+| Harbor | <https://harbor.local.narwhal.internal> | 컨테이너 레지스트리 |
+| Grafana | <https://grafana.local.narwhal.internal> | 모니터링 대시보드 |
+| Headlamp | <https://headlamp.local.narwhal.internal> | Kubernetes UI |
+| Keycloak | <https://keycloak.local.narwhal.internal> | SSO 계정 관리 |
+| OpenBao | <https://openbao.local.narwhal.internal> | 시크릿 관리 |
 
 > Narwhal Portal은 별도 저장소(`narwhal-portal`)에서 빌드·배포되며, 다른 서비스와 달리 APISIX
 > openid-connect 플러그인이 아닌 자체 NextAuth.js로 Keycloak OIDC 연동을 처리합니다.
@@ -28,6 +28,7 @@ Narwhal IDP 클러스터에서 개발자로 작업하기 위한 가이드입니�
 DNS는 Master 노드의 dnsmasq가 처리합니다.
 
 **macOS:**
+
 ```bash
 sudo mkdir -p /etc/resolver
 printf 'nameserver 192.168.56.10\nnameserver 192.168.56.11\nnameserver 192.168.56.12\n' \
@@ -38,6 +39,7 @@ scutil --dns | grep -A3 "local.narwhal.internal"
 ```
 
 **Linux (systemd-resolved):**
+
 ```bash
 sudo mkdir -p /etc/systemd/resolved.conf.d
 sudo tee /etc/systemd/resolved.conf.d/narwhal.conf << 'EOF'
@@ -49,7 +51,8 @@ sudo systemctl restart systemd-resolved
 ```
 
 **간편 대안 — /etc/hosts 직접 추가:**
-```
+
+```text
 192.168.56.200 portal.local.narwhal.internal argocd.local.narwhal.internal gitea.local.narwhal.internal harbor.local.narwhal.internal
 192.168.56.200 grafana.local.narwhal.internal headlamp.local.narwhal.internal keycloak.local.narwhal.internal
 192.168.56.200 openbao.local.narwhal.internal
@@ -169,7 +172,7 @@ kubectl apply -f my-app.yaml -n dev
 
 ### GitOps 배포 (권장)
 
-1. **Gitea에서 레포 생성**: https://gitea.local.narwhal.internal
+1. **Gitea에서 레포 생성**: <https://gitea.local.narwhal.internal>
 2. **Kubernetes 매니페스트 작성 후 push**
 3. **ArgoCD Application YAML 작성**:
 
@@ -196,8 +199,8 @@ spec:
       - CreateNamespace=false
 ```
 
-4. **App-of-Apps에 자동 반영** (`gitops/charts/narwhal-apps/templates/`에 YAML 추가 후 Gitea에 push)
-5. ArgoCD가 자동 감지하여 배포
+1. **App-of-Apps에 자동 반영** (`gitops/charts/narwhal-apps/templates/`에 YAML 추가 후 Gitea에 push)
+2. ArgoCD가 자동 감지하여 배포
 
 > `selfHeal: true`가 활성화된 경우 ArgoCD 외부에서 직접 수정하면 원복됩니다.
 
@@ -232,6 +235,7 @@ docker push harbor.local.narwhal.internal/library/myapp:latest
 > self-signed 인증서로 인해 Docker daemon에 insecure registry 추가가 필요할 수 있습니다.
 
 **`/etc/docker/daemon.json`에 추가:**
+
 ```json
 {
   "insecure-registries": ["harbor.local.narwhal.internal"]
@@ -253,7 +257,7 @@ spec:
 
 ### Grafana 대시보드
 
-https://grafana.local.narwhal.internal 접속 → Keycloak SSO 로그인
+<https://grafana.local.narwhal.internal> 접속 → Keycloak SSO 로그인
 
 - **Kubernetes / Cluster Overview**: 클러스터 전체 상태
 - **Kubernetes / Pods**: Pod별 CPU/메모리

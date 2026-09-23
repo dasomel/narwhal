@@ -5,7 +5,7 @@
 이 문서는 Keycloak이 발급하는 `groups` 클레임 하나가 (1) Kubernetes API 서버의 RBAC
 서브젝트, (2) ArgoCD의 Casbin 정책 그룹, (3) narwhal-portal의 `UserRole`이라는 서로 다른
 세 소비자에게 각각 다른 형태로 도달하는 계약을 명문화한다. narwhal#163
-"[P0][Security][IAM] Align Portal OIDC Group Claims with Kubernetes RBAC Group Bindings"는
+"\[P0\]\[Security\]\[IAM\] Align Portal OIDC Group Claims with Kubernetes RBAC Group Bindings"는
 이 계약이 문서화되어 있지 않아 발생한 이슈다 — Portal의 `ALLOWED_GROUPS`가 K8s RBAC
 서브젝트(`oidc:cluster-admin` 등 접두사 포함)와 문자열이 다르다는 점이 코드만 봐서는
 "불일치(버그)"인지 "의도된 계층 분리"인지 판별되지 않았다. 결론부터 말하면 **Portal
@@ -80,12 +80,14 @@ OIDC로 통신하고 K8s apiserver를 거치지 않으므로 `oidc:` 접두사�
 - `13-argocd.sh:298-321`의 `argocd-rbac-cm` ConfigMap이 Casbin 정책의 근원이다.
   `scopes: '[groups]'`로 OIDC `groups` 클레임을 그대로 읽고, `g` 라인은 **bare
   name**을 ArgoCD 내장 role에 매핑한다:
-  ```
+
+  ```text
   g, cluster-admin, role:admin
   g, developer, role:developer
   g, viewer, role:readonly
   g, guest, role:none
   ```
+
   `p` 라인은 `role:developer`에 `tenants/*` 프로젝트 sync만 허용하고(`applications,
   sync, tenants/*, allow`), `get`/`logs`는 전체(`*/*`)로 넓게 열어둔다 — 배포는
   좁게, 가시성은 넓게 라는 원칙이며 주석(:290-299)이 그 이유를 "developer가

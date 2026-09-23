@@ -34,7 +34,7 @@ IaC와 운영 명령은 [`csp/kakao-cloud/terraform/README.md`](../../csp/kakao-
 
 ## 2. 클라우드 토폴로지
 
-```
+```text
                             인터넷
                                 |
         +-----------------------+-----------------------+
@@ -89,7 +89,7 @@ airgap 번들은 **컨테이너 이미지와 차트 tarball만** 미러링하므
 
 `configure-node-proxy.sh`가 세 소비자에 각각 설정을 심는다. 서로의 설정을 읽지 않기 때문이다:
 
-```
+```text
 apt        → /etc/apt/apt.conf.d/01narwhal-proxy   (+ Acquire::Retries "5")
 로그인 셸   → /etc/environment                      (curl, helm, git)
 containerd → systemd drop-in                       (미러에 없는 이미지용)
@@ -99,7 +99,7 @@ containerd → systemd drop-in                       (미러에 없는 이미지
 
 프록시로 새어 나가면 **에러가 아니라 행(hang)**이 나는 대상들이다:
 
-```
+```text
 localhost, 127.0.0.1, ::1,
 VPC CIDR + 내부 IP 리터럴 7개,          ← curl 은 CIDR 을 파싱하지 못한다
 10.244.0.0/16 (podSubnet),
@@ -151,7 +151,7 @@ server = "https://registry.k8s.io"
 `/<upstream>`으로 쓰면 `<REG>/<upstream>/v2/<repo>`를 요청하는데 저장 위치는
 `<REG>/v2/<upstream>/<repo>`라 어긋나고, 레지스트리가 404 **HTML**을 돌려주므로 kubelet에는
 
-```
+```text
 unexpected media type text/html for sha256:...: not found
 ```
 
@@ -206,7 +206,7 @@ sudo ctr -n k8s.io images pull --hosts-dir /etc/containerd/certs.d <image>
 
 Vagrantfile의 provisioner 목록이 하던 순서 제어를 클라우드에서는 `provision-kakao.sh`가 한다.
 
-```
+```text
 base    01-prerequisites → 02-containerd → 03-k8s-install → 06-boot-heal   (전 노드)
 runtime 02-containerd + mirror 재적용                                       (전 노드)
 mirror  06-configure-mirrors --local-only                                   (전 노드)

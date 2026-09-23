@@ -15,6 +15,7 @@ Airgap goes from "images only" to an install that genuinely completes with no ro
 the internet, on both Vagrant (arm64) and Kakao Cloud (amd64).
 
 ### Added
+
 - **A closed-network install that is actually closed.** The bundle now carries Helm charts,
   binaries (helm/cilium/hubble/yq), remote manifests and OS packages — previously only
   container images were bundled and everything else came from the public internet, hidden
@@ -32,6 +33,7 @@ the internet, on both Vagrant (arm64) and Kakao Cloud (amd64).
   checks, each mapped to a dated lessons-log row) wired into CI on every push.
 
 ### Fixed
+
 - **The airgap mirror had never served a single pull.** Ubuntu's containerd 2.2.1 ships
   `config_path` as a colon-separated pair, which containerd does not accept — it looked for
   a directory of that literal name and ignored every `hosts.toml`. Measured both ways on one
@@ -53,12 +55,14 @@ the internet, on both Vagrant (arm64) and Kakao Cloud (amd64).
   ArgoCD, Cilium operator, Tempo and Prometheus.
 
 ### Security
+
 - Removed a hardcoded S3 credential and a stale public IP from the repo, and scrubbed a
   6.8 GB accidentally-committed registry blob store from history (5.79 GiB → 3.86 MiB).
 - New check R35 fails the build on any file that is tracked *and* gitignored — the
   combination that let that blob store in, since `.gitignore` never applies retroactively.
 
 ### Removed
+
 - The KubeMetal MLOps integration (MLflow/SeaweedFS/Prefect). kubemetal installs only its
   agent now, via Helm OCI charts into its own namespace, so the gitops export had no caller.
   Takes the mlflow and prefect images out of both bundles with it.
@@ -69,6 +73,7 @@ Released without a CHANGELOG entry at the time; reconstructed here from the 83 c
 `v1.0.0..v1.1.0` so the history is continuous.
 
 ### Added
+
 - Kubernetes Dashboard 3.0 (chart 7.14.0, vendored — the upstream Helm index 404s) with
   zero-click Keycloak SSO.
 - Dual-mode (light/dark) Keycloak login theme synced with the portal, plus logout
@@ -80,6 +85,7 @@ Released without a CHANGELOG entry at the time; reconstructed here from the 83 c
   MetalLB→NodePort ingress, bastion host, LB public IPs and pinned contiguous private IPs.
 
 ### Fixed
+
 - argocd-redis opted out of the ambient mesh — root cause of the recurring EOF wedge.
 - APISIX proxy buffers raised; the portal login callback 502'd on a too-big `Set-Cookie`.
 - Harbor's non-deterministic chart secrets caused an endless ~5 min rollout.
@@ -91,6 +97,7 @@ First stable release — validated by consecutive zero-fix, from-scratch clean i
 (6-node HA control plane, Ubuntu 26.04 / kernel 7.0, ARM64).
 
 ### Highlights
+
 - **IDP Portal (Next.js 16 + React 19) ships from a pinned public image** `ghcr.io/dasomel/narwhal-portal:1.0.0` (GHCR, multi-arch); the in-cluster Kaniko build is demoted to an optional developer self-service tool.
 - **Harbor hardened**: internal shared secrets externalized to the `harbor-shared-secrets` K8s Secret (no plaintext in git); all component images pinned to immutable `:v2.15.1` (fixes the stale-`:latest` amd64 layer crashloop — `exec format error` — on ARM64 kernel-7.0 nodes); metrics/exporter disabled.
 - **Portal ↔ cluster seam fixed end-to-end**: `monitoring` PERMISSIVE mTLS exception (metrics/logs/traces/alerts now reach the non-mesh portal), retry-hardened ArgoCD API-token and ServiceAccount-token issuance, kube-apiserver CA added to the portal trust bundle, and trivy scan-job CPU/memory tuned for the 2-core workers.
@@ -98,6 +105,7 @@ First stable release — validated by consecutive zero-fix, from-scratch clean i
 - CI (Lint & Validate / ShellCheck) is green; the READMEs (EN + KO) gain a live portal screenshot gallery.
 
 ### Changed
+
 - **Domain migration `local.narwhal.io` → `local.narwhal.internal`** (2026-06-28): all 61 source
   files updated. Reason: `narwhal.io` is a real public domain — its wildcard DNS entry shadowed the
   internal cluster domain, causing external DNS resolution to win over the local dnsmasq. The
@@ -105,6 +113,7 @@ First stable release — validated by consecutive zero-fix, from-scratch clean i
   the shadow. Takes effect on next clean install; existing live clusters still run `.io`.
 
 ### Added
+
 - OIDC RBAC test section (`test-sso.sh` 8/8: 15 checks)
 - Keycloak `kubernetes` client audience mapper (validates K8s API server `aud` claim)
 - `--oidc-ca-file` API server flag (validates self-signed certificate JWKS)
@@ -118,6 +127,7 @@ First stable release — validated by consecutive zero-fix, from-scratch clean i
 - Added `test-sso.sh` 9/9 per-app access control validation section
 
 ### Fixed
+
 - `kcadm.sh --format csv --noquotes` returned incorrect IDs → replaced with jq-based queries (11 locations)
 - Stale namespace references in `test-sso.sh` (keycloak→iam, argocd→devtools, etc.)
 - Test false negatives caused by `kubectl auth can-i` warning messages
@@ -127,6 +137,7 @@ First stable release — validated by consecutive zero-fix, from-scratch clean i
 ## [0.2.0] - 2026-02-24
 
 ### Added
+
 - Consolidated namespaces by function (`platform-system`, `iam`, `devtools`, `storage`, `dev`)
 - 4-user system: `admin`, `dev`, `view`, `guest`
 - 4-group system (singular form): `cluster-admin`, `developer`, `viewer`, `guest`
@@ -139,6 +150,7 @@ First stable release — validated by consecutive zero-fix, from-scratch clean i
 - Release and license badges in README
 
 ### Changed
+
 - Namespace restructuring: individual OSS namespaces → consolidated function-based namespaces
   - `metallb-system`, `traefik`, `cert-manager`, `cnpg-system`, `kyverno` → `platform-system`
   - `keycloak`, `oauth2-proxy` → `iam`
@@ -150,6 +162,7 @@ First stable release — validated by consecutive zero-fix, from-scratch clean i
 - Keycloak hostname v1 (`hostname-url`) → v2 (`hostname.hostname` + `hostname.strict`)
 
 ### Fixed
+
 - Missing HBONE 15008 port in Keycloak Operator NetworkPolicy (mesh-to-mesh communication failure)
 - ArgoCD ClusterRoleBinding subject namespace mismatch (`argocd`→`devtools`)
 - ArgoCD pods CrashLoopBackOff (ztunnel blocking kubelet probes)
@@ -159,6 +172,7 @@ First stable release — validated by consecutive zero-fix, from-scratch clean i
 ## [0.1.0] - 2026-02-20
 
 ### Added
+
 - Vagrant-based Kubernetes v1.35 IDP cluster automated provisioning
 - 2-Phase provisioning architecture (Phase 1: cluster infrastructure, Phase 2: platform apps)
 - HA Control Plane: 3 masters + kube-vip VIP (192.168.56.100)
@@ -179,6 +193,7 @@ First stable release — validated by consecutive zero-fix, from-scratch clean i
 - DNS HA: dnsmasq on all master nodes, CoreDNS forward configuration
 
 ### Changed
+
 - 3 CNPG clusters → consolidated `narwhal-db` (HA failover, ExternalName services)
 - Individual scripts → extracted common scripts based on kube-ready-box
 - Topology: single node → 3m+3w (Master NoSchedule, platform apps running on Workers)

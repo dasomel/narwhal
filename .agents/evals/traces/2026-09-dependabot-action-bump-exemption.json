@@ -1,0 +1,90 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "traceId": "narwhal-dependabot-action-bump-exemption-2026-09",
+  "task": "Add exemption gate for Dependabot GitHub Action bumps to avoid high-risk operational trace failures on automated dependency bumps",
+  "consistencyMode": "strict",
+  "changeContext": {
+    "paths": [
+      ".github/workflows/agent-behavior.yml",
+      "scripts/ci/check-dependabot-action-bump.py",
+      "scripts/ci/check-agent-trace-evidence.py",
+      "scripts/ci/tests/test_check_dependabot_action_bump.py",
+      ".agents/evals/traces/2026-09-dependabot-action-bump-exemption.json"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Scoped change to CI workflow, CI scripts, tests, and trace artifact for Dependabot action bump exemption without modifying unrelated platform components"
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "Confirmed Dependabot action bump failure on PR #210 where ruby/setup-ruby bump was blocked by high-risk operational trace requirement",
+      "evidence": [
+        "artifact:.github/workflows/agent-behavior.yml",
+        "issue:narwhal-210"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "Added scripts/ci/check-dependabot-action-bump.py, switched fnmatch to fnmatchcase in check-agent-trace-evidence.py, and gated trace requirement steps in agent-behavior.yml"
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "summary": "Ran unittest suite covering single and multi-file bumps, non-matching lines, ref changes, SHA mismatches, malformed tag comments, non-workflow files, empty diffs, resolver errors, added run lines, and indentation changes",
+      "scope": "scripts/ci/check-dependabot-action-bump.py and scripts/ci/tests/test_check_dependabot_action_bump.py",
+      "evidence": [
+        "test:scripts/ci/tests/test_check_dependabot_action_bump.py"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "verification",
+      "status": "passed",
+      "summary": "Verified script on PR #210 base/head SHAs yielding exempt: true, compiled python scripts with py_compile, validated agent-behavior.yml with yaml.safe_load, and passed mutable input check",
+      "scope": ".github/workflows/agent-behavior.yml and scripts/ci/*.py",
+      "evidence": [
+        "artifact:scripts/ci/check-dependabot-action-bump.py",
+        "ci:py_compile-and-yaml-parse"
+      ]
+    },
+    {
+      "id": "e6",
+      "type": "completion_claim",
+      "summary": "Dependabot GitHub Action bump exemption check and workflow gating are implemented and verified"
+    },
+    {
+      "id": "e-live",
+      "type": "verification",
+      "status": "passed",
+      "scope": "scripts/ci/check-dependabot-action-bump.py against real PR #210",
+      "summary": "Ran the script on PR #210 (merge-base..head) with the real network resolver: exempt=true, rc=0; git ls-remote https://github.com/ruby/setup-ruby refs/tags/v1.324.0 returned a0102e0972be65f351c307e2d64b9314a57c8073, equal to the pinned SHA. Workflow now diffs from git merge-base(base.sha, head.sha) because a two-dot diff against a moved main carries main's own changes and would never qualify. actionlint and yaml.safe_load pass on agent-behavior.yml; check-agent-trace-requirement.py rc=0 and check-agent-trace-evidence.py passed=true on this branch's changed files.",
+      "evidence": [
+        "test:python3 -m unittest discover -s scripts/ci/tests (11 tests OK)",
+        "ci:actionlint .github/workflows/agent-behavior.yml",
+        "runtime:git ls-remote https://github.com/ruby/setup-ruby refs/tags/v1.324.0"
+      ]
+    },
+    {
+      "id": "e8",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "scripts/ci/check-dependabot-action-bump.py and scripts/ci/tests/test_check_dependabot_action_bump.py",
+      "summary": "Addressed MINOR review findings (reject tag downgrades/no-ops in the static phase before any network call, and harden the workflow's merge-base fallback) and ran python3 -m unittest discover -s scripts/ci/tests -v: 18 tests, OK (0 failures, 0 errors), including new downgrade/same-version/unparseable-tag static cases and 4 ls-remote-mocked network cases (peeled-sha preference, non-zero exit, timeout, missing tag).",
+      "evidence": [
+        "test:scripts/ci/tests/test_check_dependabot_action_bump.py"
+      ]
+    },
+    {
+      "id": "e7",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Complete and verified"
+    }
+  ]
+}

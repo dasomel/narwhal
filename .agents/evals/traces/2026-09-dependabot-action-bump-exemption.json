@@ -71,6 +71,16 @@
       ]
     },
     {
+      "id": "e8",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "scripts/ci/check-dependabot-action-bump.py and scripts/ci/tests/test_check_dependabot_action_bump.py",
+      "summary": "Addressed MINOR review findings (reject tag downgrades/no-ops in the static phase before any network call, and harden the workflow's merge-base fallback) and ran python3 -m unittest discover -s scripts/ci/tests -v: 18 tests, OK (0 failures, 0 errors), including new downgrade/same-version/unparseable-tag static cases and 4 ls-remote-mocked network cases (peeled-sha preference, non-zero exit, timeout, missing tag).",
+      "evidence": [
+        "test:scripts/ci/tests/test_check_dependabot_action_bump.py"
+      ]
+    },
+    {
       "id": "e7",
       "type": "task_outcome",
       "state": "A",

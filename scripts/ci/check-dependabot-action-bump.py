@@ -6,6 +6,16 @@ USES_RE = re.compile(
   r"^\s+(-\s+)?uses:\s+(?P<ref>[A-Za-z0-9_.-]+/[A-Za-z0-9_./-]+)@(?P<sha>[0-9a-f]{40})\s+#\s+(?P<tag>v?[0-9][0-9A-Za-z.+-]*)\s*$"
 )
 
+def parse_version_tag(tag):
+  s = tag[1:] if tag.startswith("v") else tag
+  components = []
+  for part in s.split("."):
+    m = re.match(r"^[0-9]+", part)
+    if not m:
+      return None
+    components.append(int(m.group(0)))
+  return tuple(components) if components else None
+
 def emit(result, report_out=None):
   text = json.dumps(result, indent=2)
   print(text)
@@ -165,6 +175,12 @@ def check_bump(base, head, report_out=None, resolver_json=None):
             rem_tag, add_tag = rem_m.group("tag"), add_m.group("tag")
             if rem_sha == add_sha and rem_tag == add_tag:
               reasons.append("sha and tag did not change")
+            old_v = parse_version_tag(rem_tag)
+            new_v = parse_version_tag(add_tag)
+            if old_v is None or new_v is None:
+              reasons.append(f"unparseable tag: {rem_tag!r} -> {add_tag!r}")
+            elif new_v <= old_v:
+              reasons.append(f"tag downgrade or no-op: {rem_tag} -> {add_tag}")
             ref_parts = add_ref.split("/")
             if len(ref_parts) < 2:
               reasons.append(f"ref must have owner/repo: {add_ref}")
@@ -196,7 +212,7 @@ def main():
   p.add_argument("--base", required=True, help="Base commit SHA")
   p.add_argument("--head", required=True, help="Head commit SHA")
   p.add_argument("--report-out", help="Optional report output path")
-  p.add_argument("--resolver-json", help="Optional JSON file mapping owner/repo@tag -> sha for offline test resolution")
+  p.add_argument("--resolver-json", help="TEST-ONLY offline resolver: JSON file mapping owner/repo@tag -> sha, used only by the test suite. The workflow never passes this flag; it always resolves via live git ls-remote")
   a = p.parse_args()
   return check_bump(a.base, a.head, a.report_out, a.resolver_json)
 

@@ -63,7 +63,11 @@ jobs:
           set -euo pipefail
           # Diff against the merge base, not the base tip: once main moves ahead, a two-dot
           # diff also carries main's own changes and the bump would never qualify.
-          merge_base="$(git merge-base "${{ github.event.pull_request.base.sha }}" "${{ github.event.pull_request.head.sha }}")"
+          merge_base="$(git merge-base "${{ github.event.pull_request.base.sha }}" "${{ github.event.pull_request.head.sha }}")" || {
+            echo "exempt=false" >> "$GITHUB_OUTPUT"
+            echo "merge-base failed; normal gate applies" >&2
+            exit 0
+          }
           if python3 scripts/ci/check-dependabot-action-bump.py \
             --base "${merge_base}" \
             --head "${{ github.event.pull_request.head.sha }}" \

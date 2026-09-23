@@ -1197,13 +1197,13 @@ PYEOF
     test -x scripts/airgap/09-verify-bundle-completeness.sh
 
   # Every script keeps its error handling — CI does not catch a missing set line.
-  # 00-config.sh is exempt by design: it is sourced, so `set -e` there would impose
-  # itself on whatever sourced it rather than on a process of its own.
+  # 00-config.sh and lib-ssh.sh are exempt by design: both are sourced, so `set -e`
+  # there would impose itself on whatever sourced it rather than on a process of its own.
   local missing=""
   local f
   for f in scripts/cloud/*.sh scripts/airgap/*.sh; do
     [ -f "$f" ] || continue
-    [ "$(basename "$f")" = "00-config.sh" ] && continue
+    case "$(basename "$f")" in 00-config.sh|lib-ssh.sh) continue ;; esac
     grep -q 'set -euo pipefail' "$f" || missing="${missing}$(basename "$f") "
   done
   if [ -z "${missing}" ]; then
@@ -2104,31 +2104,31 @@ assert '--from-literal=K8S_SA_TOKEN=' not in content, 'unconditional K8S_SA_TOKE
 "
   rm -rf "${r148_drift_tmp}"
 
-  # 2026-09-07 (Narwhal #156): OpenBao narwhal-portal policy enforces least privilege by
-  # separating secret data access (read-only) from metadata access (read/list), with no
-  # create/update/delete capabilities.
-  check R137 "OpenBao portal policy separates metadata from data access with least privilege (2026-09-07)" \
+  # 2026-09-21 (Narwhal #209 follow-up): the portal's secret inventory uses KV-v2
+  # metadata only; granting data/read would expose values without a consumer.
+  check R137 "OpenBao portal policy grants metadata only, never secret values (2026-09-21)" \
     python3 -c '
 content = open("scripts/cluster/13-2-narwhal-portal-bindings.sh").read()
-assert "path \"secret/data/narwhal-portal/*\"" in content
 assert "path \"secret/metadata/narwhal-portal/*\"" in content
-data_block = content[content.find("path \"secret/data/narwhal-portal/*\""):content.find("path \"secret/metadata/narwhal-portal/*\"")]
-assert "capabilities = [\"read\"]" in data_block
-for forbidden in ["create", "update", "delete"]:
-    assert forbidden not in data_block
+assert "path \"secret/data/narwhal-portal/*\"" not in content
 '
 
   local r137_drift_tmp
   r137_drift_tmp="$(mktemp -d)"
   cp scripts/cluster/13-2-narwhal-portal-bindings.sh "${r137_drift_tmp}/13-2-narwhal-portal-bindings.sh"
-  sed -i.bak 's/capabilities = \["read"\]/capabilities = \["create","read","update","delete"\]/' "${r137_drift_tmp}/13-2-narwhal-portal-bindings.sh"
+  R137_FILE="${r137_drift_tmp}/13-2-narwhal-portal-bindings.sh" python3 -c '
+import os
+path = os.environ["R137_FILE"]
+content = open(path).read()
+marker = "path \"secret/metadata/narwhal-portal/*\" {"
+assert marker in content
+open(path, "w").write(content.replace(marker, "path \"secret/data/narwhal-portal/*\" {\\n  capabilities = [\"read\"]\\n}\\n" + marker, 1))
+'
   rm -f "${r137_drift_tmp}/13-2-narwhal-portal-bindings.sh.bak"
-  check_not R137b "R137 check catches broad write capabilities in portal policy (2026-09-07)" \
+  check_not R137b "R137 check catches a reintroduced portal data-read grant (2026-09-21)" \
     python3 -c "
 content = open('${r137_drift_tmp}/13-2-narwhal-portal-bindings.sh').read()
-data_block = content[content.find('path \"secret/data/narwhal-portal/*\"'):content.find('path \"secret/metadata/narwhal-portal/*\"')]
-for forbidden in ['create', 'update', 'delete']:
-    assert forbidden not in data_block
+assert 'path \"secret/data/narwhal-portal/*\"' not in content
 "
   rm -rf "${r137_drift_tmp}"
 
@@ -2215,6 +2215,144 @@ PYEOF
       [ "${rc}" -ne 0 ] && echo "${out}" | grep -q "helm template" && echo "${out}" | grep -qi "forced render failure"
     '
   rm -rf "${render_fail_drift_tmp}"
+
+  # 2026-09-17 (Narwhal#185): cloud/bastion SSH must fail closed on an unexpected host
+  # key, never silently accept one. StrictHostKeyChecking=no combined with
+  # UserKnownHostsFile=/dev/null is the insecure pair — no on-path attacker needs to
+  # forge anything, they just need to be reachable when the script connects. This
+  # scans every scripts/cloud/*.sh for that combination reappearing, and also checks
+  # that lib-ssh.sh's accept-new policy is intact (not reverted to =no) and that every
+  # cloud script that talks to the bastion/nodes actually sources it.
+  check R152 "cloud/bastion SSH scripts use accept-new + a real known_hosts file, not StrictHostKeyChecking=no + UserKnownHostsFile=/dev/null (Narwhal#185, 2026-09-17)" \
+    python3 -c '
+import re, sys, pathlib
+
+cloud_dir = pathlib.Path("scripts/cloud")
+insecure_pair = re.compile(r"StrictHostKeyChecking=no\b.*UserKnownHostsFile=/dev/null|UserKnownHostsFile=/dev/null.*StrictHostKeyChecking=no\b")
+
+def code_lines(text):
+    # Drop full-line comments so explanatory prose about the old insecure pattern
+    # (which necessarily quotes it) is not mistaken for the pattern itself.
+    return "\n".join(l for l in text.splitlines() if not l.strip().startswith("#"))
+
+lib = cloud_dir / "lib-ssh.sh"
+assert lib.exists(), "scripts/cloud/lib-ssh.sh is missing"
+lib_code = code_lines(lib.read_text())
+assert "StrictHostKeyChecking=accept-new" in lib_code, "lib-ssh.sh no longer pins accept-new"
+assert "UserKnownHostsFile=/dev/null" not in lib_code, "lib-ssh.sh discards known_hosts state"
+
+failures = []
+for path in sorted(cloud_dir.glob("*.sh")):
+    if path.name == "lib-ssh.sh":
+        continue
+    content = code_lines(path.read_text())
+    if insecure_pair.search(content):
+        failures.append(f"{path}: insecure StrictHostKeyChecking=no + UserKnownHostsFile=/dev/null pair")
+    if ("ssh -i" in content or "ssh_bastion" in content or "ssh_node" in content) and "source scripts/cloud/lib-ssh.sh" not in content and "StrictHostKeyChecking=accept-new" not in content:
+        failures.append(f"{path}: builds ssh/scp calls but does not source lib-ssh.sh and has no accept-new policy of its own")
+
+assert not failures, "; ".join(failures)
+'
+
+  local r151_drift_tmp
+  r151_drift_tmp="$(mktemp -d)"
+  cp scripts/cloud/provision-kakao.sh "${r151_drift_tmp}/provision-kakao.sh"
+  sed -i.bak 's/"\${KAKAO_SSH_OPTS\[@\]}" \\/-o StrictHostKeyChecking=no -o UserKnownHostsFile=\/dev\/null \\/' \
+    "${r151_drift_tmp}/provision-kakao.sh"
+  rm -f "${r151_drift_tmp}/provision-kakao.sh.bak"
+  check_not R152b "R152's check catches a reintroduced StrictHostKeyChecking=no + UserKnownHostsFile=/dev/null pair (Narwhal#185, 2026-09-17)" \
+    python3 -c "
+content = open('${r151_drift_tmp}/provision-kakao.sh').read()
+import re
+assert not re.search(r'StrictHostKeyChecking=no\b.*UserKnownHostsFile=/dev/null|UserKnownHostsFile=/dev/null.*StrictHostKeyChecking=no\b', content), 'insecure pair reintroduced but not caught'
+"
+  rm -rf "${r151_drift_tmp}"
+
+  # 2026-09-17 (Narwhal#185 follow-up): the same insecure pair R152 catches in
+  # scripts/cloud/*.sh also existed outside that directory -- test/airgap/common
+  # scripts that open their own SSH connections instead of going through
+  # lib-ssh.sh. Three of these (verify-isolation.sh, airgap-isolate-kakao.sh,
+  # regression-check-kakao.sh's own live-check setup_ssh()) now source
+  # lib-ssh.sh directly like the cloud scripts. The other two don't fit that
+  # mold -- 06-configure-mirrors.sh runs node-to-node with no TF_DIR/terraform
+  # state to pin a shared known_hosts file against, and set-config.sh targets
+  # the local Vagrant cluster, not Kakao -- so they pin accept-new against their
+  # own known_hosts file instead. Either way, StrictHostKeyChecking=no +
+  # UserKnownHostsFile=/dev/null must not reappear in any of them.
+  check R153 "test/airgap/common SSH scripts do not reintroduce StrictHostKeyChecking=no + UserKnownHostsFile=/dev/null (Narwhal#185 follow-up, 2026-09-17)" \
+    python3 -c '
+import re, pathlib
+
+files = [
+    "scripts/test/verify-isolation.sh",
+    "scripts/test/airgap-isolate-kakao.sh",
+    "scripts/airgap/06-configure-mirrors.sh",
+    "scripts/common/set-config.sh",
+]
+insecure_pair = re.compile(r"StrictHostKeyChecking=no\b.*UserKnownHostsFile=/dev/null|UserKnownHostsFile=/dev/null.*StrictHostKeyChecking=no\b")
+
+def code_lines(text):
+    return "\n".join(l for l in text.splitlines() if not l.strip().startswith("#"))
+
+failures = []
+for f in files:
+    p = pathlib.Path(f)
+    assert p.exists(), f"{f} is missing"
+    content = code_lines(p.read_text())
+    if insecure_pair.search(content):
+        failures.append(f"{f}: insecure StrictHostKeyChecking=no + UserKnownHostsFile=/dev/null pair")
+
+# regression-check-kakao.sh itself is checked separately, below: its own file is
+# excluded from the loop above because it legitimately CONTAINS this literal pattern
+# as fixture text in the R152b/R153b drift tests (sed replacement strings), which
+# would otherwise false-positive against a whole-file scan the way R152 avoids by
+# exempting lib-ssh.sh. setup_ssh() -- its one real SSH_OPTS builder -- is extracted
+# and checked on its own instead.
+self_path = pathlib.Path("scripts/test/regression-check-kakao.sh")
+self_text = self_path.read_text()
+m = re.search(r"^setup_ssh\(\) \{.*?\n\}\n", self_text, re.MULTILINE | re.DOTALL)
+assert m, "setup_ssh() function not found in regression-check-kakao.sh"
+setup_ssh_code = code_lines(m.group(0))
+if insecure_pair.search(setup_ssh_code):
+    failures.append("scripts/test/regression-check-kakao.sh: setup_ssh() has an insecure StrictHostKeyChecking=no + UserKnownHostsFile=/dev/null pair")
+
+assert not failures, "; ".join(failures)
+'
+
+  local r153_drift_tmp
+  r153_drift_tmp="$(mktemp -d)"
+  cp scripts/test/verify-isolation.sh "${r153_drift_tmp}/verify-isolation.sh"
+  sed -i.bak 's/"\${KAKAO_SSH_OPTS\[@\]}" -o ConnectTimeout=10 \\/-o StrictHostKeyChecking=no -o UserKnownHostsFile=\/dev\/null \\/' \
+    "${r153_drift_tmp}/verify-isolation.sh"
+  rm -f "${r153_drift_tmp}/verify-isolation.sh.bak"
+  check_not R153b "R153's check catches a reintroduced StrictHostKeyChecking=no + UserKnownHostsFile=/dev/null pair (Narwhal#185 follow-up, 2026-09-17)" \
+    python3 -c "
+content = open('${r153_drift_tmp}/verify-isolation.sh').read()
+import re
+assert not re.search(r'StrictHostKeyChecking=no\b.*UserKnownHostsFile=/dev/null|UserKnownHostsFile=/dev/null.*StrictHostKeyChecking=no\b', content), 'insecure pair reintroduced but not caught'
+"
+  rm -rf "${r153_drift_tmp}"
+
+  # narwhal#186: the NFS share root was mode 0777 (world-writable) and both export lines
+  # carried no_root_squash (any root-capable client on the CIDR kept real root identity
+  # on the server). Neither is required by anything in this repo -- csi-driver-nfs only
+  # needs owner rights on a root it already owns as nobody.
+  check_not R151 "NFS share root is not created mode 0777 (narwhal#186)" \
+    grep -qE '^[^#]*chmod +777 +"\$\{NFS_SHARE_PATH\}"' scripts/cluster/01-nfs-server.sh
+  check_not R151b "NFS exports do not default to no_root_squash (narwhal#186)" \
+    grep -qE '^[^#]*\(rw,sync,no_subtree_check,no_root_squash\)' scripts/cluster/01-nfs-server.sh
+
+  # R152c proves the wrapper preserves a real SSH failure. The old implementation
+  # read $? after an if statement and could turn a host-key refusal into success.
+  local ssh_wrapper_tmp
+  ssh_wrapper_tmp="$(mktemp -d)"
+  printf '#!/usr/bin/env bash\necho "REMOTE HOST IDENTIFICATION HAS CHANGED" >&2\nexit 255\n' \
+    > "${ssh_wrapper_tmp}/ssh"
+  chmod +x "${ssh_wrapper_tmp}/ssh"
+  check_not R152c "SSH wrapper preserves host-key refusal exit status (Narwhal#185, 2026-09-17)" \
+    env PATH="${ssh_wrapper_tmp}:${PATH}" TF_DIR="${ssh_wrapper_tmp}" KAKAO_KNOWN_HOSTS="${ssh_wrapper_tmp}/known_hosts" \
+    bash -c 'source scripts/cloud/lib-ssh.sh; kakao_ssh ubuntu@example.invalid'
+  rm -rf "${ssh_wrapper_tmp}"
 }
 
 #=========================================
@@ -2240,7 +2378,9 @@ setup_ssh() {
   [ -n "${SSH_KEY}" ] || SSH_KEY="${TF_DIR}/KPAAS_KEYPAIR.pem"
   case "${SSH_KEY}" in /*) ;; *) SSH_KEY="${TF_DIR}/${SSH_KEY#./}" ;; esac
   [ -f "${SSH_KEY}" ] || return 1
-  SSH_OPTS="-i ${SSH_KEY} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -o ConnectTimeout=10"
+  # shellcheck source=scripts/cloud/lib-ssh.sh
+  source scripts/cloud/lib-ssh.sh
+  SSH_OPTS="-i ${SSH_KEY} ${KAKAO_SSH_OPTS[*]} -o ConnectTimeout=10"
   SSH_READY=1
 }
 

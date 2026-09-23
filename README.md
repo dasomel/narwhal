@@ -1,9 +1,22 @@
 # Narwhal
 
+Narwhal is a reproducible Kubernetes Internal Developer Platform.
+It integrates GitOps, IAM, networking, observability, security, and storage/backup into one
+installable unit.
+Integration failures are converted into regression tests and continuously revalidated across
+upgrades.
+It runs on ARM64/AMD64, in the cloud or on-premises, and fully air-gapped.
+
+**Verified against this repo right now:** 582 commits (`git log --oneline | wc -l`), 4 tags
+(`git tag | wc -l`), 318 dated integration incidents in
+[`lessons-log.md`](docs/common/lessons-log.md) (rows matching `| YYYY-MM-DD |`), and 192 regression
+checks in [`scripts/test/regression-check-kakao.sh`](scripts/test/regression-check-kakao.sh)
+(`check`/`check_not` call sites).
+
 [![GitHub Release](https://img.shields.io/github/v/release/dasomel/narwhal)](https://github.com/dasomel/narwhal/releases/latest)
 [![License](https://img.shields.io/github/license/dasomel/narwhal)](LICENSE)
 
-English | [한국어](README_ko.md)
+English | [한국어](README-ko.md)
 
 > **Narwhal** - A whale inhabiting the Arctic Ocean, characterized by a single long spiral tusk growing from its head. Called the "unicorn of the sea," it provides a powerful platform in a single cluster, just like this project.
 
@@ -11,8 +24,11 @@ English | [한국어](README_ko.md)
 
 Narwhal adds GitOps, IAM/SSO, service mesh, observability, registry, storage, backup, policy, an
 API gateway and a management portal on top of Kubernetes, and delivers them as **one platform that
-installs, verifies and operates as a single unit** — on a laptop, in a cloud, on-premises, or in a
-fully air-gapped network.
+installs as a single unit, with integration failures captured as regression tests re-run on every
+change** — on a laptop, in a cloud, on-premises, or in a fully air-gapped network. Upgrade/rollback
+and live end-to-end verification are still partly manual; see
+[`docs/common/test-strategy.md`](docs/common/test-strategy.md) for exactly what's covered by CI
+today versus what requires a live cluster.
 
 > **Narwhal is not a Kubernetes installer.**
 > Installing Kubernetes is the easy part. The hard part is making independently developed projects
@@ -57,7 +73,7 @@ count — is how this project is maintained.
 
 | | |
 |---|---|
-| Activity | 483 commits since 2026-02-08, 4 tagged releases (latest [v1.2.0](CHANGELOG.md)) |
+| Activity | Active development since 2026-02-08; see the [commit history](https://github.com/dasomel/narwhal/commits/main/) and [CHANGELOG](CHANGELOG.md) |
 | Verification | 51-check regression suite runs in CI on every push, plus cluster, SSO, backup and network-isolation test scripts |
 | Integration knowledge | [263 documented incidents](docs/common/lessons-log.md), newest first, each with a discriminator |
 | Deployment targets | Vagrant (ARM64) · Kakao Cloud (AMD64) · fully air-gapped |

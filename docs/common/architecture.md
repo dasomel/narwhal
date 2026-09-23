@@ -7,6 +7,36 @@ Narwhal은 Vagrant VM 기반의 Kubernetes Internal Developer Platform (IDP) 클
 > (APISIX, Keycloak, ArgoCD, 스토리지 등)은 배포 대상과 무관하게 동일합니다.
 > 퍼블릭 클라우드 배포에서 무엇이 달라지는지는 [`cloud-deployment.md`](../kakao/cloud-deployment.md) 참고.
 
+## Architecture at a glance
+
+```mermaid
+flowchart TB
+    U["Developer or operator"] --> DNS["DNS · LoadBalancer"]
+    DNS --> G["APISIX gateway"]
+    G --> S["Keycloak OIDC"]
+    G --> P["Portal and platform services"]
+    A["Argo CD GitOps"] -. reconciles .-> P
+    P --> K["Kubernetes workload plane"]
+    K --> N["Cilium network"]
+    K --> ST["NFS · SeaweedFS · CNPG"]
+    K --> O["Prometheus · Loki · Tempo · Hubble"]
+```
+
+This overview intentionally shows trust and ownership boundaries, not every deployed
+application. The infrastructure view below expands Vagrant nodes and addressing; the
+component, identity, storage and GitOps sections expand their respective concerns.
+
+### Sources of truth
+
+| Concern | Source of truth |
+|---|---|
+| VM and cluster provisioning | `Vagrantfile`, `scripts/cluster/`, environment configuration |
+| Desired platform state | `gitops/apps/`, `gitops/charts/`, `gitops/resources/` |
+| User identity and SSO | Keycloak realm/client configuration managed by GitOps |
+| Runtime workload state | Kubernetes API |
+| Telemetry | Prometheus, Loki, Tempo and Hubble backends |
+| Portal presentation | `narwhal-portal` repository |
+
 ---
 
 ## Infrastructure Overview

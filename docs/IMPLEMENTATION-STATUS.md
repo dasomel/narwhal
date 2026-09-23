@@ -1,6 +1,6 @@
 # Current Implementation Status
 
-Last verified: 2026-08-28 against `main`.
+Last verified: 2026-09-14 against `main`.
 
 This file is a concise snapshot of capabilities that are implemented and documented in the repository today. It is not a roadmap; planned work belongs in GitHub Issues and design documents.
 

@@ -5,6 +5,10 @@ on:
     types: [closed]
   workflow_dispatch:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: false
+
 permissions:
   contents: write
   pull-requests: read
@@ -56,6 +60,8 @@ jobs:
               try:
                   req(f"{api}/repos/{repository}/git/refs/heads/{urllib.parse.quote(name,safe='')}",method='DELETE'); deleted.append(name)
               except urllib.error.HTTPError as exc:
+                  # #206: a merge tool may already have deleted the ref -> 422 "Reference does not exist".
+                  if exc.code==422 and b'Reference does not exist' in exc.read(): continue
                   if exc.code!=404: raise
           print('deleted:',json.dumps(deleted,ensure_ascii=False)); print('retained:',json.dumps(retained,ensure_ascii=False))
           PY

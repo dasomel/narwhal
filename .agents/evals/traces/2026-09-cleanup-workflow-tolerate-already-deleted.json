@@ -1,0 +1,16 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-cleanup-workflow-tolerate-already-deleted",
+  "task": "Fix cleanup-merged-branch.yml treating a head ref already deleted by the merge tool as a fatal failure, instead of the intended no-op success",
+  "changeContext": {"paths": [".github/workflows/cleanup-merged-branch.yml"]},
+  "events": [
+    {"id": "e1", "type": "scope_check", "summary": "Scoped to the single DELETE-ref failure-handling script; no other workflow logic touched"},
+    {"id": "e2", "type": "reproduction", "summary": "Ran a live authenticated DELETE against a nonexistent branch ref via curl and confirmed the exact real failure mode", "evidence": ["http:422", "message:Reference does not exist"]},
+    {"id": "e3", "type": "bug_fix", "summary": "Replaced --fail-with-body (any non-2xx is fatal) with explicit status-code handling: 204 success, 422+\"Reference does not exist\" treated as already-deleted no-op success, everything else still fails the job"},
+    {"id": "e4", "type": "regression_verification", "status": "passed", "summary": "Same fix already landed and self-verified in narwhal-portal (PR #119): its own merge triggered this workflow and the corrected logic passed against the now-already-deleted branch", "scope": "Live GitHub Actions run against the identical script", "evidence": ["ci:narwhal-portal-pr-119-cleanup-run"]},
+    {"id": "e5", "type": "verification", "status": "passed", "summary": "YAML parses cleanly (python3 yaml.safe_load); embedded shell script passes bash -n", "scope": "Static syntax validation", "evidence": ["yaml:valid", "bash:-n-clean"]},
+    {"id": "e6", "type": "completion_claim", "summary": "The narrow failure mode (branch already deleted by the merge tool) is fixed and verified against a live API reproduction plus an identical fix's real CI run in the sibling repo; any other deletion failure still fails the job as before"},
+    {"id": "e7", "type": "task_outcome", "state": "A", "summary": "Complete and verified"}
+  ]
+}

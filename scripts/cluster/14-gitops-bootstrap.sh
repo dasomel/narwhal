@@ -396,7 +396,8 @@ if kubectl get secret narwhal-portal-secrets -n devtools >/dev/null 2>&1; then
   "GITEA_URL": "${GITEA_URL}",
   "GITEA_OWNER": "${GITEA_ADMIN_USER}",
   "GITEA_REPO": "${REPO_NAME}",
-  "GITEA_TOKEN": "${PORTAL_GIT_TOKEN}"
+  "GITEA_TOKEN": "${PORTAL_GIT_TOKEN}",
+  "GITEA_BASE_BRANCH": "main"
 }}
 PATCHEOF
 )" >/dev/null

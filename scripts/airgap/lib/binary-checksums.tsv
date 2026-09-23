@@ -33,6 +33,6 @@ keycloak-keycloakrealmimports.k8s.keycloak.org-v1.yml	-	26.5.7	32529b67b32cb7f70
 keycloak-keycloaks.k8s.keycloak.org-v1.yml	-	26.5.7	8566794a421a23b643ac7a053e00e913c227a0519edc43f01097f37983bb915f	https://raw.githubusercontent.com/keycloak/keycloak-k8s-resources/refs/tags/26.5.7/kubernetes/keycloaks.k8s.keycloak.org-v1.yml
 keycloak-kubernetes.yml	-	26.5.7	8bd1236cb813e9040aa3dd341746699d9b17bef4d0b21fb715782964af7086d8	https://raw.githubusercontent.com/keycloak/keycloak-k8s-resources/refs/tags/26.5.7/kubernetes/kubernetes.yml
 metrics-server.yaml	-	v0.8.1	4a672c4891902573a3ff753cece5de1bf1f55dd053403dfec39df9d1636b7ff1	https://github.com/kubernetes-sigs/metrics-server/releases/download/v0.8.1/components.yaml
-nfs-quota-agent	-	387b057eec6aab7ebf7e26757e47dbb93a944307	3b71dc3b854b34470777eefacb5e283fd0f1b9337ebfe45f805f79093dfe7416	https://github.com/dasomel/nfs-quota-agent/archive/387b057eec6aab7ebf7e26757e47dbb93a944307.tar.gz
+nfs-quota-agent	-	386ac455d5f9e609d39e8e42c295db6a362917cc	18ee8e6c2757d82a43e96ac516ad8d9022881c42db1ebd885fd6f9afcb118377	https://github.com/dasomel/nfs-quota-agent/archive/386ac455d5f9e609d39e8e42c295db6a362917cc.tar.gz
 yq	amd64	v4.44.6	0c2b24e645b57d8e7c0566d18643a6d4f5580feeea3878127354a46f2a1e4598	https://github.com/mikefarah/yq/releases/download/v4.44.6/yq_linux_amd64
 yq	arm64	v4.44.6	9477ac3cc447b6c083986129e35af8122eb2b938fe55c9c3e40436fb966e5813	https://github.com/mikefarah/yq/releases/download/v4.44.6/yq_linux_arm64

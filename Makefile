@@ -30,9 +30,11 @@ lint:
 
 validate:
 	ruby -c Vagrantfile
-	@for f in gitops/apps/*.yaml gitops/resources/*.yaml; do \
-		yq eval '.' "$$f" > /dev/null && echo "OK: $$f" || echo "FAIL: $$f"; \
-	done
+	@fail=0; \
+	for f in gitops/apps/*.yaml gitops/resources/*.yaml; do \
+		if yq eval '.' "$$f" > /dev/null; then echo "OK: $$f"; else echo "FAIL: $$f"; fail=1; fi; \
+	done; \
+	exit $$fail
 
 test:
 	./scripts/test/regression-check-kakao.sh --static

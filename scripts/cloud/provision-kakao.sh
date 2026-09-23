@@ -79,6 +79,9 @@ SSH_KEY=$(cd "${TF_DIR}" && tofu output -raw ssh_key_path 2>/dev/null || true)
 case "${SSH_KEY}" in /*) ;; *) SSH_KEY="${TF_DIR}/${SSH_KEY#./}" ;; esac
 [ -f "${SSH_KEY}" ] || { echo "ERROR: private key not found at ${SSH_KEY}" >&2; exit 1; }
 
+# shellcheck source=scripts/cloud/lib-ssh.sh
+source scripts/cloud/lib-ssh.sh
+
 read_ips() { printf '%s' "$1" | python3 -c 'import json,sys
 for ip in json.load(sys.stdin): print(ip)'; }
 
@@ -99,9 +102,9 @@ MASTER_IPS="${MASTERS[*]:1}"
 ssh_node() {
   local ip="$1"; shift
   ssh -i "${SSH_KEY}" \
-    -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR \
+    "${KAKAO_SSH_OPTS[@]}" \
     -o ConnectTimeout=25 -o ServerAliveInterval=30 \
-    -o ProxyCommand="ssh -i ${SSH_KEY} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -W %h:%p ${SSH_USER}@${BASTION_IP}" \
+    -o ProxyCommand="ssh -i ${SSH_KEY} ${KAKAO_SSH_OPTS[*]} -W %h:%p ${SSH_USER}@${BASTION_IP}" \
     "${SSH_USER}@${ip}" "$@"
 }
 
@@ -224,7 +227,7 @@ stage_proxy() {
 
 ssh_bastion() {
   ssh -i "${SSH_KEY}" \
-    -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR \
+    "${KAKAO_SSH_OPTS[@]}" \
     -o ConnectTimeout=25 -o ServerAliveInterval=30 \
     "${SSH_USER}@${BASTION_IP}" "$@"
 }
@@ -268,7 +271,7 @@ stage_registry() {
       sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \${need} >/dev/null
     fi" || { note "docker/skopeo install FAILED"; return 1; }
 
-  local rsh="ssh -i ${SSH_KEY} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR"
+  local rsh="ssh -i ${SSH_KEY} ${KAKAO_SSH_OPTS[*]}"
 
   # rsync rather than tar-over-ssh: several GB, and a re-run after an interrupted copy
   # should move only what is missing. COPYFILE_DISABLE stops macOS emitting ._* sidecars

@@ -1,0 +1,25 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "traceId": "narwhal-ssh-hostkey-remaining-scripts-2026-09",
+  "task": "Extend the Narwhal#185 SSH host-key trust fix (accept-new + a real known_hosts file, not StrictHostKeyChecking=no + UserKnownHostsFile=/dev/null) beyond scripts/cloud/*.sh to the remaining scripts that still opened SSH connections with the insecure pair",
+  "consistencyMode": "strict",
+  "changeContext": {
+    "paths": [
+      "scripts/test/verify-isolation.sh",
+      "scripts/test/airgap-isolate-kakao.sh",
+      "scripts/test/regression-check-kakao.sh",
+      "scripts/airgap/06-configure-mirrors.sh",
+      "scripts/common/set-config.sh"
+    ]
+  },
+  "events": [
+    {"id":"e1","type":"scope_check","summary":"Narwhal#185 fixed scripts/cloud/*.sh only (lib-ssh.sh + R151/R151b). A follow-up review found the same StrictHostKeyChecking=no + UserKnownHostsFile=/dev/null pair still live in scripts/test/verify-isolation.sh, scripts/test/airgap-isolate-kakao.sh, scripts/test/regression-check-kakao.sh's own runtime setup_ssh(), scripts/airgap/06-configure-mirrors.sh, and scripts/common/set-config.sh"},
+    {"id":"e2","type":"reproduction","summary":"grep -rn 'StrictHostKeyChecking=no' scripts/ | grep 'UserKnownHostsFile=/dev/null' found the insecure pair live in all five target files before the fix","evidence":["artifact:scripts/test/verify-isolation.sh","artifact:scripts/test/airgap-isolate-kakao.sh","artifact:scripts/test/regression-check-kakao.sh","artifact:scripts/airgap/06-configure-mirrors.sh","artifact:scripts/common/set-config.sh"]},
+    {"id":"e3","type":"bug_fix","summary":"verify-isolation.sh, airgap-isolate-kakao.sh, and regression-check-kakao.sh's setup_ssh() now source scripts/cloud/lib-ssh.sh and use KAKAO_SSH_OPTS (accept-new pinned against a persistent per-cluster known_hosts file), matching the provision-kakao.sh pattern -- all three already share lib-ssh.sh's TF_DIR/repo-root assumptions. 06-configure-mirrors.sh runs node-to-node with no TF_DIR/terraform state available on that host, so it was adapted minimally to StrictHostKeyChecking=accept-new against the node's own default known_hosts instead of forcing lib-ssh.sh's TF_DIR-based path to fit. set-config.sh targets the local Vagrant cluster (not Kakao), so it pins accept-new against a repo-scoped .vagrant/known_hosts file of its own."},
+    {"id":"e4","type":"regression_verification","status":"passed","summary":"Added R153 (scans the four adapted files plus regression-check-kakao.sh's own setup_ssh() function body for the insecure pair) and R153b (proves R153 catches a reintroduced insecure pair via a sed-mutated copy of verify-isolation.sh) to scripts/test/regression-check-kakao.sh, alongside the existing R152/R152b/R152c cloud-script checks","scope":"scripts/test/regression-check-kakao.sh","evidence":["policy:accept-new-known-hosts-no-dev-null"]},
+    {"id":"e5","type":"verification","status":"passed","summary":"bash -n on all five touched files passed; shellcheck --severity=warning across the whole scripts/ tree produced no output; ./scripts/test/regression-check-kakao.sh --static ran 203 checks, 0 failures (R152, R152b, R152c, R153, R153b, R151, R151b all PASS)","evidence":["artifact:scripts/test/regression-check-kakao.sh"]},
+    {"id":"e6","type":"verification","status":"partial","summary":"Repo-wide grep for the insecure pair after the fix found it still present in scripts/up.sh (a Vagrant-only bootstrap script not in the follow-up review's scope), so this change does not close Narwhal#185 outright -- it is referenced from the PR without a closing keyword","evidence":["artifact:scripts/up.sh"]},
+    {"id":"e7","type":"completion_claim","summary":"All five files named in the follow-up review now fail closed on a changed host key instead of silently trusting it; a static regression check (R153/R153b) guards against the pattern reappearing in any of them","evidence":["e4","e5"]},
+    {"id":"e8","type":"task_outcome","state":"A","summary":"The insecure StrictHostKeyChecking=no + UserKnownHostsFile=/dev/null pattern is fixed in every location the follow-up review flagged, with a regression check covering all of them; one unrelated pre-existing instance (scripts/up.sh) remains out of scope and is called out rather than silently left"}
+  ]
+}

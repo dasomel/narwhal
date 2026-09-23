@@ -22,6 +22,14 @@ set -euo pipefail
 
 DOMAIN="${DOMAIN:-local.narwhal.internal}"
 REALM="narwhal"
+# Valkey itself has no TLS/AUTH configured in this cluster yet (narwhal-portal-valkey
+# Deployment runs plain valkey-server, VALKEY_PASSWORD="" below) — so
+# VALKEY_INSECURE_PRODUCTION must stay "true" on every provider until Valkey actually gets
+# TLS + a password wired up (tracked as follow-up infra work, not done in this pass).
+# Flipping this to "false" without that infra makes the portal's own production guard
+# (src/lib/valkey.ts assertProductionSecurity) throw and readiness go 503 on every
+# non-vagrant deploy — caught by Codex review before landing (see lessons-log).
+VALKEY_INSECURE_PRODUCTION_VALUE="true"
 export KUBECONFIG=/home/vagrant/.kube/config-local
 
 echo "=========================================="
@@ -216,6 +224,11 @@ echo "narwhal-portal client secret: 획득 완료 (${#PORTAL_CLIENT_SECRET} char
 # post_logout_redirect_uri를 클라이언트의 post.logout.redirect.uris와 대조하므로,
 # 이게 비어 있으면 로그아웃이 "Invalid redirect uri"로 막힌다(2026-07-13 발생).
 # 키에 점이 있어 -s는 반드시 따옴표로 감싼다("...").
+# `portal.${DOMAIN}/*` 와일드카드는 장식이 아니다 — narwhal-portal의
+# federated-logout 라우트(isAllowedRedirectUrl)가 portal 호스트 아래 임의 경로를
+# 로그아웃 후 리다이렉트로 허용하므로(/login 외에도 /dashboard 등), 두 개 명시
+# URL만 등록하면 그 외 경로 요청이 Keycloak에서 "Invalid redirect uri"로 거부된다
+# (seam-drift S08 정리 시 제거했다가 Codex 리뷰로 회귀 발견, 원복).
 PORTAL_CID=$(kc_exec get clients -r "${REALM}" -q clientId=narwhal-portal \
   --fields id --format csv --noquotes 2>/dev/null | head -1)
 kc_exec update "clients/${PORTAL_CID}" -r "${REALM}" \
@@ -272,22 +285,16 @@ else
     bao secrets enable -version=2 -path=secret kv 2>/dev/null \
     || echo "  secret/ mount 이미 존재 (정상)"
 
-  # 정책 작성: Least privilege — metadata(목록/버전 조회)와 data(값 조회) 권한 분리
-  # narwhal-portal은 GET-only(read/list) 소비자이므로 쓰기(create/update/delete) 권한을 부여하지 않음
+  # 정책 작성: Least privilege — portal secret inventory uses metadata only.
+  # Do not grant secret/data access: the portal must never read secret values.
   kubectl exec -n storage "${OPENBAO_POD}" -- \
     env BAO_TOKEN="${OPENBAO_ROOT_TOKEN}" \
         BAO_ADDR="https://127.0.0.1:8200" \
         BAO_SKIP_VERIFY=true \
     /bin/sh -c '
 cat > /tmp/portal.hcl << '"'"'POLICY_EOF'"'"'
-# Least privilege: narwhal-portal only ever GETs (list via metadata, read via
-# data) — src/lib/openbao.ts:listSecrets() and src/app/api/secrets/route.ts
-# (GET-only) are the sole HTTP consumers of this token, and neither writes or
-# deletes. Previously granted create/update/delete on secret/data/* with no
-# code path using them.
-path "secret/data/narwhal-portal/*" {
-  capabilities = ["read"]
-}
+# Least privilege: secret inventory uses only KV-v2 metadata list/read.
+# Secret values are intentionally inaccessible to the portal identity.
 path "secret/metadata/narwhal-portal/*" {
   capabilities = ["read","list"]
 }
@@ -376,7 +383,6 @@ echo "  narwhal-portal policy written"
   "token_max_ttl": "4h",
   "policy": "narwhal-portal",
   "policy_capabilities": {
-    "secret/data/narwhal-portal/*": ["read"],
     "secret/metadata/narwhal-portal/*": ["read", "list"]
   },
   "legacy_token_enabled": ${ENABLE_LEGACY_OPENBAO_TOKEN},
@@ -570,7 +576,6 @@ kubectl create secret generic narwhal-portal-secrets \
   --from-literal=KEYCLOAK_ISSUER="https://keycloak.${DOMAIN}/realms/${REALM}" \
   --from-literal=KEYCLOAK_CLIENT_ID="narwhal-portal" \
   --from-literal=KEYCLOAK_CLIENT_SECRET="${PORTAL_CLIENT_SECRET}" \
-  --from-literal=OIDC_CLIENT_ID="narwhal-portal" \
   --from-literal=KEYCLOAK_URL="https://keycloak.${DOMAIN}" \
   --from-literal=KEYCLOAK_REALM="${REALM}" \
   --from-literal=KEYCLOAK_ADMIN_REALM="${REALM}" \
@@ -591,9 +596,10 @@ kubectl create secret generic narwhal-portal-secrets \
   --from-literal=ALERT_SILENCE_MAX_HOURS="24" \
   --from-literal=LOKI_URL="http://loki.monitoring.svc.cluster.local:3100" \
   --from-literal=TEMPO_URL="http://tempo.monitoring.svc.cluster.local:3200" \
+  --from-literal=HUBBLE_RELAY_ADDR="hubble-relay.kube-system.svc.cluster.local:80" \
   --from-literal=VALKEY_URL="redis://narwhal-portal-valkey.devtools.svc.cluster.local:6379" \
   --from-literal=VALKEY_TLS="false" \
-  --from-literal=VALKEY_INSECURE_PRODUCTION="true" \
+  --from-literal=VALKEY_INSECURE_PRODUCTION="${VALKEY_INSECURE_PRODUCTION_VALUE}" \
   --from-literal=VALKEY_PASSWORD="" \
   --from-literal=OPENBAO_ADDR="https://openbao.storage.svc.cluster.local:8200" \
   --from-literal=OPENBAO_AUTH_METHOD="${OPENBAO_AUTH_METHOD_VALUE}" \
@@ -603,6 +609,8 @@ kubectl create secret generic narwhal-portal-secrets \
   --from-literal=OPENBAO_K8S_AUTH_AUDIENCE="${OPENBAO_K8S_AUTH_AUDIENCE}" \
   --from-literal=TUNING_JOB_IMAGE="harbor.${DOMAIN}/library/tuning-job:latest" \
   --from-literal=TUNING_JOB_NAMESPACE="devtools" \
+  --from-literal=TUNING_JOB_SERVICE_ACCOUNT="narwhal-tuning-job" \
+  --from-literal=TRIVY_DB_REGISTRY="harbor.${DOMAIN}/library/trivy-db" \
   --from-literal=LIVE_INGEST_SECRET="${LIVE_INGEST_SECRET}" \
   --from-literal=LIVE_INGEST_LINK_HOSTS="" \
   --from-literal=LIVE_STREAM_DEGRADED="false" \

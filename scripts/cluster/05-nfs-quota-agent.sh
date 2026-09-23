@@ -24,7 +24,7 @@ retry() {
 
 NFS_SHARE_PATH="${NFS_SHARE_PATH:-/srv/nfs/k8s}"
 MASTER_HOSTNAME="${MASTER_HOSTNAME:-narwhal-master}"
-NFS_QUOTA_AGENT_VERSION="${NFS_QUOTA_AGENT_VERSION:-v0.3.0}"
+NFS_QUOTA_AGENT_VERSION="${NFS_QUOTA_AGENT_VERSION:-v0.5.0}"
 
 echo "=== NFS Quota Agent Installation ==="
 

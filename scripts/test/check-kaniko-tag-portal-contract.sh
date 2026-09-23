@@ -42,11 +42,35 @@ if [ ! -f "${KANIKO_JOB_FILE}" ]; then
 fi
 
 # Compare tags only, not the full ref -- the two files may use different registry
-# prefixes for the same image (e.g. `alpine/git` vs `docker.io/alpine/git`).
-images_kaniko_tag="$(grep -oE 'kaniko-project/executor:[^"'"'"'[:space:]]+' "${IMAGES_TXT}" | head -1 | cut -d: -f2)"
-images_git_tag="$(grep -oE 'alpine/git:[^"'"'"'[:space:]]+' "${IMAGES_TXT}" | head -1 | cut -d: -f2)"
-portal_kaniko_tag="$(grep -oE 'kaniko-project/executor:[^"'"'"'[:space:]]+' "${KANIKO_JOB_FILE}" | head -1 | cut -d: -f2)"
-portal_git_tag="$(grep -oE 'alpine/git:[^"'"'"'[:space:]]+' "${KANIKO_JOB_FILE}" | head -1 | cut -d: -f2)"
+# prefixes for the same image (e.g. `alpine/git` vs `docker.io/alpine/git`), and
+# either side may additionally digest-pin as `tag@sha256:...` (narwhal-portal#23).
+#
+# Extraction hazards, both real (found re-running this check live after
+# narwhal-portal#23 added digest pins):
+#   1. `cut -d: -f2` alone grabs everything after the FIRST colon, including the
+#      digest's own `sha256:<hex>` colon -- "v1.24.0@sha256:4e7a52dd..." instead
+#      of "v1.24.0" -- so strip a trailing `@...` before extracting the tag.
+#   2. Matching anywhere in the file (not just the actual pin) picks up a prose
+#      comment mentioning the same tag with trailing punctuation -- e.g. "...from
+#      gcr.io/kaniko-project/executor:v1.24.0." captures "v1.24.0." with the
+#      sentence's full stop attached. IMAGES_TXT is a plain list (`#`-comments,
+#      then bare `registry/image:tag` lines, no `image:` YAML key) -- restrict it
+#      to non-comment lines. KANIKO_JOB_FILE is a K8s manifest -- restrict it to
+#      actual `image:` lines. Either grep can legitimately match nothing (comment
+#      text mentioning the tag falls outside both filters); `|| true` keeps that
+#      from aborting the script under `set -e -o pipefail`, and the empty-value
+#      checks below report it as a real FAIL rather than silently passing.
+extract_tag() {
+  local file="$1" name="$2" line_filter="$3"
+  grep -E "${line_filter}" "${file}" 2>/dev/null \
+    | grep -oE "${name}:[^\"'[:space:]]+" \
+    | head -1 | cut -d@ -f1 | cut -d: -f2 || true
+}
+
+images_kaniko_tag="$(extract_tag "${IMAGES_TXT}" 'kaniko-project/executor' '^[^#]')"
+images_git_tag="$(extract_tag "${IMAGES_TXT}" 'alpine/git' '^[^#]')"
+portal_kaniko_tag="$(extract_tag "${KANIKO_JOB_FILE}" 'kaniko-project/executor' '^\s*image:')"
+portal_git_tag="$(extract_tag "${KANIKO_JOB_FILE}" 'alpine/git' '^\s*image:')"
 
 if [ -z "${images_kaniko_tag}" ] || [ -z "${images_git_tag}" ]; then
   echo "FAIL: could not find a pinned kaniko-project/executor or alpine/git tag in ${IMAGES_TXT}" >&2

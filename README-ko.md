@@ -55,7 +55,7 @@ Narwhal은 통합 과정에서 발생한 실패를 폐기하지 않습니다. �
 
 | | |
 |---|---|
-| 활동 | 2026-02-08 이후 483 커밋, 태그 릴리스 4건 (최신 [v1.2.0](CHANGELOG.md)) |
+| 활동 | 2026-02-08 이후 지속 개발 중. 최신 내용은 [커밋 기록](https://github.com/dasomel/narwhal/commits/main/)과 [CHANGELOG](CHANGELOG.md) 참고 |
 | 검증 | 푸시마다 CI에서 51개 회귀 검사 실행, 그 외 클러스터·SSO·백업·격리 테스트 스크립트 |
 | 통합 지식 | [263개 사건 기록](docs/common/lessons-log.md), 최신순, 각 행에 판별자 포함 |
 | 배포 대상 | Vagrant (ARM64) · Kakao Cloud (AMD64) · 완전 폐쇄망 |

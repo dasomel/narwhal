@@ -1,0 +1,16 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-tuning-job-admission-policy",
+  "task": "Add restrict-tuning-job-admission: a Kyverno ClusterPolicy narrowing devtools' privileged/hostPID/hostNetwork exception to the narwhal-tuning-job ServiceAccount only (the enforceable, non-live-dependent slice of narwhal-portal#55's cluster-side completion). A companion control-plane-node-targeting guard is also added in this same change, shipped in Audit mode pending live verification -- that guard is explicitly NOT covered by this trace's completion claim.",
+  "changeContext": {"paths": ["gitops/resources/kyverno-policies.yaml"]},
+  "events": [
+    {"id": "e1", "type": "scope_check", "summary": "Read the portal's actual k8s-job-runner.ts/tuning route handler remotely to confirm the real ServiceAccount name (narwhal-tuning-job), namespace (devtools), and pod spec shape before writing policy"},
+    {"id": "e2", "type": "reproduction", "summary": "Confirmed devtools is wholesale-excluded from the baseline disallow-privileged-containers/disallow-host-namespaces policies, and that no other current devtools workload sets privileged/hostPID/hostNetwork under a different ServiceAccount"},
+    {"id": "e3", "type": "bug_fix", "summary": "Added restrict-tuning-job-admission (Enforce) narrowing the devtools host-namespace exception to narwhal-tuning-job only, and a separate tuning-job-control-plane-node-guard policy (Audit) for the live-apiCall-dependent control-plane-node check"},
+    {"id": "e4", "type": "regression_verification", "status": "passed", "summary": "make validate: all gitops/resources/*.yaml OK including the new/modified policy file", "scope": "YAML/kubeconform validation", "evidence": ["ci:lint-validate"]},
+    {"id": "e5", "type": "verification", "status": "passed", "summary": "kyverno apply against synthetic Pod fixtures: non-tuning-SA privileged/host-namespace pod in devtools denied; same shape with narwhal-tuning-job SA allowed; node-targeting rule precondition and apiCall wiring confirmed structurally (full resolution needs a live cluster, unavailable here)", "scope": "Kyverno CLI dry-run against fixtures", "evidence": ["kyverno-apply:fixtures"]},
+    {"id": "e6", "type": "completion_claim", "summary": "restrict-tuning-job-admission (this trace's task) is complete and verified: Enforce mode, no live-cluster dependency, fixture-tested allow/deny behavior. The separately-shipped tuning-job-control-plane-node-guard policy is out of scope for this claim -- it stays in Audit and needs its own live-cluster verification trace before it can be claimed complete."},
+    {"id": "e7", "type": "task_outcome", "state": "A", "summary": "Complete and verified for restrict-tuning-job-admission. The control-plane-node-guard companion remains open work, tracked separately (see docs/common/lessons-log.md follow-up note), not claimed here."}
+  ]
+}

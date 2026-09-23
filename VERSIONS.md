@@ -50,7 +50,7 @@ Components and versions used in this project.
 | NFS Client | apt package | nfs-common (pre-installed in box) |
 | quota tools | apt package | quota, quotatool |
 | csi-driver-nfs | 4.13.2 (chart) | CSI driver for NFS (SECURITY: CVE-2026-3864 path traversal fixed; chart drops `v` prefix) |
-| nfs-quota-agent | v0.2.1 | NFS project quota enforcement |
+| nfs-quota-agent | v0.5.0 | NFS project quota enforcement |
 | SeaweedFS | v4.34 (chart 4.34.0) | S3-compatible object storage (Apache 2.0); image tag scheme = chart appVersion ("4.34"); ARM64 needs nodeSelector override |
 
 ## Database
@@ -105,7 +105,7 @@ Components and versions used in this project.
 
 | Component | Version | Description |
 |-----------|---------|-------------|
-| Harbor | latest (chart 1.19.1) — `:latest` currently resolves to app **v2.15.1** (harbor-core digest match, 2026-07-07); v2.15.2 published but not yet promoted to `:latest` | Container registry (ARM64: ghcr.io/dasomel/goharbor, multi-arch amd64+arm64). Deploys track `:latest` by policy. To move to v2.15.2, the custom rebuild pipeline must promote `:latest`→v2.15.2 for the 6 versioned components (core, jobservice, registry-photon, registryctl, portal, nginx-photon); redis-photon has no v2.15.2 (stays v2.15.1) and harbor-exporter is unversioned (`:latest` only) |
+| Harbor | v2.15.1 (chart 1.19.1) — pinned by immutable tag since 2026-07-07 (an earlier `:latest`-tracking policy caused a stale-layer ARM64 exec-format bug on a pre-baked Vagrant box; see lessons-log) | Container registry (ARM64: ghcr.io/dasomel/goharbor, multi-arch amd64+arm64). `gitops/charts/narwhal-apps/templates/harbor.yaml` and `scripts/airgap/lib/image-digests.tsv` both pin the 6 versioned components (core, jobservice, registry-photon, registryctl, portal, nginx-photon) to `v2.15.1`; redis-photon has no v2.15.2 (stays v2.15.1) and harbor-exporter has no clean multi-arch v2.15.x tag, so it stays disabled rather than pinned to `:latest` |
 
 ## IDP Portal
 
@@ -184,6 +184,15 @@ if reproducibility becomes required), **the action to reach v2.15.2 is on the re
 this repo**: promote `:latest`→v2.15.2 for the 6 versioned components in the
 `ghcr.io/dasomel/goharbor` rebuild pipeline. Once promoted, the cluster picks it up automatically
 (ArgoCD selfHeal + image pull) — no narwhal repo change. Chart 1.19.1 remains the correct pin.
+
+**Superseded (2026-07-07, `0e9a1fd`):** the `:latest`-auto-track policy above (`D-harbor-latest`)
+was overturned after a pre-baked ARM64 Vagrant box served stale amd64 layers under the mutable
+`:latest` tag (`exec format error` on every Harbor pod — see lessons-log 2026-07-07). Both
+`harbor.yaml` and `08-5-registry.sh` now pin the immutable tag `v2.15.1` for all 6 versioned
+components; `redis-photon` stays at `v2.15.1` (no v2.15.2 build) and `harbor-exporter` (no clean
+v2.15.x multi-arch tag) stays disabled (`metrics.enabled=false`) rather than tracking `:latest`.
+The table row above has been updated to reflect this; the narrative in this paragraph is kept as
+historical record of the superseded decision.
 
 Loki and Tempo chart source moved to grafana-community 2026-07-05 (both `grafana/loki` and
 `grafana/tempo` are past the GEL-only cutover date, per each chart's own README migration

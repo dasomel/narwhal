@@ -29,7 +29,7 @@ vi.mock("@/lib/valkey", () => ({
 }))
 
 const { requireRole } = await import("@/lib/auth")
-const { assertAppAccessible, syncArgoApp, getArgoAppFresh } = await import("@/lib/argocd")
+const { assertAppAccessible, syncArgoApp, getArgoAppFresh, ArgoCDCredentialError } = await import("@/lib/argocd")
 const { POST } = await import("./route")
 const { getRecentEvents } = await import("@/lib/live-stream")
 
@@ -141,5 +141,20 @@ describe("POST /api/catalog/[name]/sync", () => {
     const body = await res.json()
     expect(body.success).toBe(false)
     expect(body.pending).toBeUndefined()
+  })
+
+  // D1 (#54 review): syncArgoApp is a WRITE path and keeps throwing
+  // ArgoCDCredentialError; the route fails closed with 503 instead of a bare
+  // 502, so a rejected/missing ARGOCD_TOKEN reads as "unavailable", not a
+  // generic sync failure.
+  it("returns 503 when syncArgoApp throws ArgoCDCredentialError", async () => {
+    vi.mocked(syncArgoApp).mockRejectedValue(
+      new ArgoCDCredentialError("ArgoCD sync rejected (HTTP 401): check ARGOCD_TOKEN"),
+    )
+    const req = new Request("http://localhost/api/catalog/checkout-api/sync", { method: "POST" })
+    const res = await POST(req, params("checkout-api"))
+    expect(res.status).toBe(503)
+    const body = await res.json()
+    expect(body.error).toContain("Catalog sync is unavailable")
   })
 })

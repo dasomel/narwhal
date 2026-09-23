@@ -12,5 +12,14 @@
     {"risk": "high", "pattern": "gitops/**", "reason": "desired-state deployment contract"},
     {"risk": "high", "pattern": "VERSIONS*", "reason": "platform version source of truth"},
     {"risk": "high", "pattern": ".agents/**", "reason": "agent policy or evidence contract"}
-  ]
+  ],
+  "dependencyBumpExemption": {
+    "_comment": "Narrow, fail-closed carve-out so Dependabot pin bumps (e.g. ruby/setup-ruby 1.321.0->1.324.0) satisfy the high-risk trace requirement via a standing trace instead of an impossible per-PR trace. Restricted to .github/workflows/**: dependabot.yml only watches the github-actions ecosystem here (no package manifest/lockfile in this repo to bump). trustedCommitAuthorLogin/trustedCommitCommitterLogin are checked per-commit alongside commit.verification (verified==true, reason==\"valid\"): dependabot[bot]/web-flow login match alone is not authenticated (an insider can spoof git author/committer email to match), so both the login pair AND GitHub's own signed verification are required. Any human author, unverified/mismatched-count commit, non-uses: workflow edit, or file outside allowedPathPatterns still requires a changed trace.",
+    "trustedAuthors": ["dependabot[bot]"],
+    "trustedCommitAuthorLogin": "dependabot[bot]",
+    "trustedCommitCommitterLogin": "web-flow",
+    "standingTrace": ".agents/evals/traces/dependency-bump.json",
+    "allowedPathPatterns": [".github/workflows/*.yml", ".github/workflows/*.yaml"],
+    "pinOnlyLineRe": "^(?P<prefix>\\s*-?\\s*)uses:\\s*(?P<ref>\\S+)(?:\\s*#.*)?$"
+  }
 }

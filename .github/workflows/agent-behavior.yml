@@ -11,6 +11,13 @@ concurrency:
 
 permissions:
   contents: read
+  # Read-only: needed for the "Collect PR commit records" step's `gh api .../pulls/.../commits`
+  # call, which the dependency-bump exemption uses to verify every commit on the PR is both
+  # authored/committed by the trusted logins AND GitHub-signature-verified. Login alone is not
+  # proof: an insider can `git commit --author="dependabot[bot] <...noreply...>"` with a
+  # matching committer email and get the same `.author.login`/`.committer.login` with no GitHub
+  # involvement at all, so the check also requires `commit.verification.verified == true`.
+  pull-requests: read
 
 jobs:
   behavior-contract:
@@ -46,21 +53,54 @@ jobs:
       - name: Collect PR changed paths
         if: github.event_name == 'pull_request'
         shell: bash
+        # Three-dot range (base...head): diffs head against the merge-base of base and head,
+        # so changes already on base (which the branch hasn't rebased onto) never show up as
+        # "PR changes" here. A plain two-dot diff would compare the two snapshots directly and
+        # could disagree with what GitHub itself calls the PR's diff.
         run: |
           set -euo pipefail
-          git diff --name-only \
-            "${{ github.event.pull_request.base.sha }}" \
-            "${{ github.event.pull_request.head.sha }}" \
-            > /tmp/agent-changed-files.txt
+          RANGE="${{ github.event.pull_request.base.sha }}...${{ github.event.pull_request.head.sha }}"
+          git diff --name-only "$RANGE" > /tmp/agent-changed-files.txt
           cat /tmp/agent-changed-files.txt
+          git diff "$RANGE" -- .github/workflows > /tmp/agent-workflow-diff.txt
+      - name: Collect PR commit records
+        if: github.event_name == 'pull_request'
+        shell: bash
+        # Used only by the dependency-bump exemption. `.author.login`/`.committer.login` are
+        # GitHub matching a commit's author/committer EMAIL to an account -- not proof of who
+        # made the commit -- so this also captures `commit.verification.{verified,reason}`,
+        # which GitHub sets only for commits it actually signed itself (true for every commit
+        # the Dependabot API authors and GitHub's own "web-flow" identity commits). Also caps
+        # at 250 commits even with --paginate; --expected-commit-count below (from the PR's own
+        # commit count) lets the checker fail closed if that cap was ever hit.
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh api "repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/commits" \
+            --paginate \
+            --jq '.[] | {sha: .sha, author_login: (.author.login // "NONE"), committer_login: (.committer.login // "NONE"), verified: .commit.verification.verified, reason: (.commit.verification.reason // "NONE")}' \
+            > /tmp/agent-pr-commits.jsonl
+          cat /tmp/agent-pr-commits.jsonl
       - name: Require operational trace for high-risk changes
         if: github.event_name == 'pull_request'
         shell: bash
+        # PR_AUTHOR goes through env, not string interpolation, so an untrusted login
+        # can't inject shell; check-agent-trace-requirement.py only ever compares it
+        # against risk-policy.json's trustedAuthors allowlist. PR_COMMIT_COUNT is a plain
+        # integer from GitHub's own PR metadata (github.event.pull_request.commits).
+        env:
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+          PR_COMMIT_COUNT: ${{ github.event.pull_request.commits }}
         run: |
           set -euo pipefail
           python3 scripts/ci/check-agent-trace-requirement.py \
             --policy .agents/evals/risk-policy.json \
             --changed-files /tmp/agent-changed-files.txt \
+            --workflow-diff /tmp/agent-workflow-diff.txt \
+            --commits /tmp/agent-pr-commits.jsonl \
+            --expected-commit-count "$PR_COMMIT_COUNT" \
+            --pr-author "$PR_AUTHOR" \
             --report-out /tmp/agent-risk-result.json
       - name: Bind live version-consistency evidence
         shell: bash

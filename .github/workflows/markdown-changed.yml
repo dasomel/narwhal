@@ -16,6 +16,10 @@ on:
       - 'scripts/ci/markdownlint-changed.py'
       - '.github/workflows/markdown-changed.yml'
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 

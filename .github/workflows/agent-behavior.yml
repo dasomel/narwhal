@@ -43,6 +43,8 @@ jobs:
             scripts/airgap/lib/binary-checksums.tsv
       - name: Evaluate representative trace
         run: python3 .agents/evals/evaluate.py .agents/evals/reference-trace.json
+      - name: Run CI helper tests
+        run: python3 -m unittest discover -s scripts/ci/tests -v
       - name: Collect PR changed paths
         if: github.event_name == 'pull_request'
         shell: bash
@@ -53,8 +55,25 @@ jobs:
             "${{ github.event.pull_request.head.sha }}" \
             > /tmp/agent-changed-files.txt
           cat /tmp/agent-changed-files.txt
+      - name: Check Dependabot action bump exemption
+        id: dependabot-bump
+        if: github.event_name == 'pull_request' && github.event.pull_request.user.login == 'dependabot[bot]'
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Diff against the merge base, not the base tip: once main moves ahead, a two-dot
+          # diff also carries main's own changes and the bump would never qualify.
+          merge_base="$(git merge-base "${{ github.event.pull_request.base.sha }}" "${{ github.event.pull_request.head.sha }}")"
+          if python3 scripts/ci/check-dependabot-action-bump.py \
+            --base "${merge_base}" \
+            --head "${{ github.event.pull_request.head.sha }}" \
+            --report-out /tmp/dependabot-bump-result.json; then
+            echo "exempt=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exempt=false" >> "$GITHUB_OUTPUT"
+          fi
       - name: Require operational trace for high-risk changes
-        if: github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request' && steps.dependabot-bump.outputs.exempt != 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -108,7 +127,7 @@ jobs:
           print('Local and OpenForge reusable gates are semantically equivalent')
           PY
       - name: Correlate high-risk changes with trace evidence
-        if: github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request' && steps.dependabot-bump.outputs.exempt != 'true'
         shell: bash
         run: |
           set -euo pipefail

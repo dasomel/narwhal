@@ -4,8 +4,8 @@ from pathlib import Path
 P=("test:","ci:","runtime:","artifact:","policy:");PASS={"pass","passed","success","successful","ok","verified"}
 def j(p):return json.loads(Path(p).read_text(encoding="utf-8"))
 def changed(p):return [x.strip() for x in Path(p).read_text(encoding="utf-8").splitlines() if x.strip()]
-def high(paths,policy):return [p for p in paths if "high" in policy.get("traceRequiredAt",[]) and any(r.get("risk")=="high" and fnmatch.fnmatch(p,r["pattern"]) for r in policy.get("rules",[]))]
-def covers(t,p):return any(fnmatch.fnmatch(p,g) for g in t.get("changeContext",{}).get("paths",[]))
+def high(paths,policy):return [p for p in paths if "high" in policy.get("traceRequiredAt",[]) and any(r.get("risk")=="high" and fnmatch.fnmatchcase(p,r["pattern"]) for r in policy.get("rules",[]))]
+def covers(t,p):return any(fnmatch.fnmatchcase(p,g) for g in t.get("changeContext",{}).get("paths",[]))
 def validate(t,paths):
  f=[]
  if t.get("schemaVersion")!="openforge-agent-trace/v1":f.append("invalid schemaVersion")

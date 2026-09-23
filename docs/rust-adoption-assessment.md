@@ -15,15 +15,18 @@ Existing Go/TypeScript/shell implementations remain the default where their ecos
 ## Candidate areas
 
 ### High
+
 - offline artifact manifest/resolution verifier
 - image/chart digest, checksum, signature and SBOM evidence processor
 - sandbox/security policy validator
 
 ### Medium
+
 - high-volume event/evidence normalization helper
 - isolated parser helpers for upgrade/RCA evidence
 
 ### Keep in existing language
+
 - Kubernetes control-plane/orchestration integrations that already align with the Go ecosystem
 - Helm/Kustomize/YAML orchestration glue where Rust does not provide sufficient benefit
 

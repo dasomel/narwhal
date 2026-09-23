@@ -10,18 +10,21 @@
 ## 1. 배경 및 목표
 
 ### 현황
+
 - IAM: Authentik `2026.2.1` (namespace: `iam`)
 - SSO 방식: 단일 `apisix` confidential client → APISIX openid-connect plugin이 모든 서비스 인증 처리
 - K8s OIDC: `kubernetes` public provider (kubectl-oidc-login)
 - 서비스 자체 native OIDC/OAuth 미구성 (APISIX gateway-level 인증만)
 
 ### 목표
+
 1. Keycloak Operator 기반 Keycloak 설치
 2. 모든 OSS 서비스에 **서비스별 전용 Keycloak client** 등록 (Keycloak에서 앱별 관리)
 3. **SSO는 APISIX openid-connect plugin이 전담** — 서비스별 native OIDC 설정 없음
 4. K8s API Server OIDC를 Keycloak으로 전환
 
 ### 설계 원칙
+
 - Keycloak Operator 사용 (Helm chart 아님) — Operator가 Ingress 자동 관리
 - **HTTPRoute 생성 금지** — Operator Ingress와 충돌 시 502 발생
 - 모든 OIDC client에 **audience mapper 필수** 추가
@@ -47,7 +50,8 @@
 ## 3. 아키텍처 설계
 
 ### Realm 구조
-```
+
+```text
 Realm: narwhal
 ├── Groups
 │   ├── cluster-admin
@@ -78,12 +82,14 @@ Realm: narwhal
 > 서비스 자체에는 OIDC 설정 없음. Keycloak에서 서비스별 앱으로 분리하여 감사/정책 적용.
 
 ### Issuer URL
-```
+
+```text
 https://keycloak.local.narwhal.internal/realms/narwhal
 ```
 
 ### SSO 흐름
-```
+
+```text
 브라우저 → APISIX Gateway
   → 라우트별 openid-connect plugin (서비스 전용 client_id 사용)
   → 미인증 → Keycloak 로그인 (서비스별 client로 리다이렉트)
@@ -103,7 +109,7 @@ kubectl → kubectl-oidc-login → Keycloak (kubernetes client, public)
 
 **목표**: Keycloak Operator + Keycloak CR 배포, APISIX ExternalName 서비스 생성
 
-```
+```text
 1-1. Namespace 생성: iam
 1-2. CNPG DB 사용자/DB 생성 (narwhal-db 클러스터 재사용)
      - user: keycloak, db: keycloak
@@ -126,6 +132,7 @@ kubectl → kubectl-oidc-login → Keycloak (kubernetes client, public)
 ```
 
 **주의사항**:
+
 - Keycloak Operator는 `keycloak-network-policy` NetworkPolicy를 자동 생성 — 직접 수정 금지
 - Istio ambient 환경에서 Keycloak pod에 `istio.io/dataplane-mode: none` 레이블 필요
   → `spec.unsupported.podTemplate.metadata.labels`에 설정
@@ -139,7 +146,7 @@ kubectl → kubectl-oidc-login → Keycloak (kubernetes client, public)
 
 **사용 도구**: `kcadm.sh` (Keycloak Admin CLI)
 
-```
+```text
 2-1. Admin CLI 초기화
      - kcadm.sh config credentials --server http://localhost:8080 \
          --realm master --user admin --password <bootstrap-password>
@@ -192,7 +199,8 @@ kubectl → kubectl-oidc-login → Keycloak (kubernetes client, public)
 **SSO 방식**: 모든 인증은 APISIX openid-connect plugin이 처리. 서비스 자체 OIDC 설정 없음.
 
 **공통 client 설정**:
-```
+
+```text
 - client_type: confidential
 - scope: openid, profile, email, groups
 - Mappers (모든 client 공통):
@@ -204,6 +212,7 @@ kubectl → kubectl-oidc-login → Keycloak (kubernetes client, public)
 ```
 
 **APISIX openid-connect plugin 공통 구조**:
+
 ```yaml
 plugins:
   - name: openid-connect
@@ -227,7 +236,8 @@ plugins:
 ---
 
 #### 3-1. ArgoCD
-```
+
+```text
 Keycloak Client:
   clientId: argocd
   redirectUri: https://argocd.local.narwhal.internal/apisix/callback
@@ -239,7 +249,8 @@ APISIX Route: argocd.local.narwhal.internal
 ```
 
 #### 3-2. Grafana
-```
+
+```text
 Keycloak Client:
   clientId: grafana
   redirectUri: https://grafana.local.narwhal.internal/apisix/callback
@@ -251,7 +262,8 @@ APISIX Route: grafana.local.narwhal.internal
 ```
 
 #### 3-3. Gitea
-```
+
+```text
 Keycloak Client:
   clientId: gitea
   redirectUri: https://gitea.local.narwhal.internal/apisix/callback
@@ -263,7 +275,8 @@ APISIX Route: gitea.local.narwhal.internal
 ```
 
 #### 3-4. Harbor
-```
+
+```text
 Keycloak Client:
   clientId: harbor
   redirectUri: https://harbor.local.narwhal.internal/apisix/callback
@@ -276,7 +289,8 @@ APISIX Route: harbor.local.narwhal.internal
 ```
 
 #### 3-5. Headlamp
-```
+
+```text
 Keycloak Client:
   clientId: headlamp
   redirectUri: https://headlamp.local.narwhal.internal/apisix/callback
@@ -288,7 +302,8 @@ APISIX Route: headlamp.local.narwhal.internal
 ```
 
 #### 3-6. Velero UI
-```
+
+```text
 Keycloak Client:
   clientId: velero-ui
   redirectUri: https://velero-ui.local.narwhal.internal/apisix/callback
@@ -300,7 +315,8 @@ APISIX Route: velero-ui.local.narwhal.internal
 ```
 
 #### 3-7. Hubble UI
-```
+
+```text
 Keycloak Client:
   clientId: hubble
   redirectUri: https://hubble.local.narwhal.internal/apisix/callback
@@ -312,7 +328,8 @@ APISIX Route: hubble.local.narwhal.internal
 ```
 
 #### 3-8. Prometheus / Alertmanager
-```
+
+```text
 Keycloak Client:
   clientId: prometheus
   redirectUri: https://prometheus.local.narwhal.internal/apisix/callback,
@@ -326,7 +343,8 @@ APISIX Routes:
 ```
 
 #### 3-9. OpenBao
-```
+
+```text
 Keycloak Client:
   clientId: openbao
   redirectUri: https://openbao.local.narwhal.internal/apisix/callback
@@ -347,7 +365,7 @@ APISIX Route: openbao.local.narwhal.internal
 
 **목표**: kube-apiserver OIDC 설정을 Keycloak issuer로 변경
 
-```
+```text
 4-1. Keycloak TLS 인증서 추출 (self-signed CA)
      openssl s_client -connect keycloak.local.narwhal.internal:443 -showcerts \
        2>/dev/null | openssl x509 -outform PEM > /tmp/keycloak-ca.crt
@@ -397,7 +415,7 @@ discovery: "https://keycloak.local.narwhal.internal/realms/narwhal/.well-known/o
 
 ### Phase 6: GitOps 업데이트
 
-```
+```text
 6-1. gitops/apps/authentik.yaml → gitops/apps/keycloak.yaml 교체
      - Keycloak Operator는 CRD+RBAC를 스크립트로 설치
      - GitOps는 Keycloak CR만 관리 (또는 스크립트 완전 관리)
@@ -454,12 +472,14 @@ discovery: "https://keycloak.local.narwhal.internal/realms/narwhal/.well-known/o
 ## 7. 검증 체크리스트
 
 ### Keycloak 설치 검증
+
 - [ ] Keycloak pod Running
 - [ ] `https://keycloak.local.narwhal.internal` 접속 가능
 - [ ] Admin Console 로그인 성공
 - [ ] `.well-known/openid-configuration` 엔드포인트 응답
 
 ### SSO 검증 (APISIX openid-connect 공통 흐름)
+
 - [ ] ArgoCD: 미인증 접근 → Keycloak(argocd client) 리다이렉트 → 로그인 → 서비스 진입
 - [ ] Grafana: 미인증 접근 → Keycloak(grafana client) 리다이렉트 → 로그인 → 서비스 진입
 - [ ] Gitea: 미인증 접근 → Keycloak(gitea client) 리다이렉트 → 로그인 → 서비스 진입
@@ -472,11 +492,13 @@ discovery: "https://keycloak.local.narwhal.internal/realms/narwhal/.well-known/o
 - [ ] `/apisix/logout` → Keycloak 세션 종료 → 재접근 시 로그인 페이지
 
 ### K8s OIDC 검증
+
 - [ ] `kubectl-oidc-login` → Keycloak 인증 → `kubectl get nodes` 성공
 - [ ] `oidc:cluster-admin` 그룹 → ClusterAdmin 권한 확인
 - [ ] `oidc:developer` 그룹 → dev namespace edit 권한 확인
 
 ### APISIX Gateway 검증
+
 - [ ] 미인증 브라우저 → Keycloak 리다이렉트
 - [ ] 로그인 후 원래 서비스 접근
 - [ ] `/apisix/logout` 동작 확인
@@ -494,7 +516,7 @@ discovery: "https://keycloak.local.narwhal.internal/realms/narwhal/.well-known/o
 
 ## 9. 구현 순서 (의존성)
 
-```
+```text
 11-keycloak.sh
     ↓
 11-2-keycloak-config.sh  (Realm, Groups, Users, apisix/kubernetes clients)

@@ -22,6 +22,7 @@
 ### Task 1: Define the upgrade contract
 
 **Files:**
+
 - Create: `docs/common/upgrade-orchestration.md`
 - Modify: `docs/common/lessons-log.md`
 
@@ -32,6 +33,7 @@
 ### Task 2: Encode and check cert-manager HA intent
 
 **Files:**
+
 - Modify: `gitops/charts/narwhal-apps/templates/cert-manager.yaml`
 - Create: `scripts/cluster/preflight-cert-manager-upgrade.sh`
 
@@ -42,6 +44,7 @@
 ### Task 3: Capture rollback inputs and prevent regression
 
 **Files:**
+
 - Create: `scripts/cluster/capture-cert-manager-upgrade-checkpoint.sh`
 - Modify: `scripts/test/regression-check-kakao.sh`
 

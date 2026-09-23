@@ -22,17 +22,20 @@
 ## 1. 배경 및 목적
 
 ### 1.1 현재 상황
+
 - Narwhal IDP는 ArgoCD, Gitea, Harbor, Grafana, Headlamp 등 10개 이상의 OSS로 구성
 - 각 도구별 URL을 개별적으로 기억해야 하며, 플랫폼 전체 상태를 한눈에 볼 수 없음
 - 새로운 개발자 온보딩 시 kubeconfig 설정, kubectl 설치 등 수동 작업 필요
 - 설정 변경(사용자 추가, APISIX 라우트 등)은 각 도구 UI에 직접 접속 필요
 
 ### 1.2 목적
+
 - 모든 플랫폼 도구의 단일 진입점(Single Pane of Glass) 제공
 - Authentik OIDC SSO로 한 번 로그인으로 전체 플랫폼 접근
 - 역할 기반 화면으로 필요한 정보만 표시
 
 ### 1.3 레퍼런스
+
 - **Cloudforet (SpaceONE)**: 멀티클라우드 관리 포털 — 대시보드 위젯 구성, 서비스 카드 레이아웃, RBAC 통합 패턴 참고
 
 ---
@@ -42,11 +45,13 @@
 ### 2.1 기능 요건
 
 #### FR-01: SSO 로그인
+
 - Authentik OIDC로 로그인 (NextAuth.js)
 - 그룹 클레임 기반 역할 자동 매핑 (cluster-admin / developer / viewer)
 - APISIX `openid-connect` 플러그인으로 포털 자체 보호
 
 #### FR-02: 홈 대시보드 (메트릭)
+
 - **클러스터 상태**: 노드 수 / Ready 상태, 전체 파드 수 / Running 수
 - **리소스 사용률**: CPU / Memory 사용률 (Prometheus API)
 - **ArgoCD 상태**: Synced / OutOfSync / Degraded 앱 카운트
@@ -55,6 +60,7 @@
 - 30초 자동 갱신 (SWR)
 
 #### FR-03: 플랫폼 도구 링크
+
 서비스를 카드 형태로 표시, 헬스 상태(정상/경고/오프라인) 표시 후 클릭 시 해당 URL로 이동
 
 | 카테고리 | 도구 |
@@ -70,20 +76,24 @@
 #### FR-04: 설정 관리 (cluster-admin 전용)
 
 **사용자/그룹 관리** (Authentik API)
+
 - 사용자 목록 조회 / 생성 / 비활성화
 - 그룹 멤버십 변경 (cluster-admin / developer / viewer / guest)
 - 사용자별 마지막 로그인 시각 표시
 
 **APISIX 라우트 관리** (APISIX Admin API)
+
 - 현재 라우트 목록 조회
 - 라우트 활성화 / 비활성화 토글
 - SSO 보호 여부 표시
 
 **cert-manager 인증서 상태** (K8s API)
+
 - 인증서 목록 (만료일, 갱신 상태)
 - 만료 임박 인증서 경고 (30일 이내)
 
 **Kyverno 정책 상태** (K8s API)
+
 - 정책 목록 및 위반 카운트
 - Enforce/Audit 모드 표시
 
@@ -100,6 +110,7 @@
 | 온보딩 | 전체 | 전체 | 전체 |
 
 #### FR-06: 개발자 온보딩
+
 - **kubeconfig 다운로드**: 로그인 사용자의 OIDC 토큰 기반 kubeconfig 자동 생성
 - **kubectl 설정 가이드**: OS별 단계별 가이드 (macOS / Linux / Windows)
 - **첫 배포 가이드**: Gitea → Harbor → ArgoCD 플로우 설명
@@ -121,6 +132,7 @@
 ## 3. 기술 스택
 
 ### 3.1 프론트엔드
+
 - **Next.js 15** (App Router, TypeScript)
 - **pnpm** — 패키지 매니저 (속도, 디스크 효율)
 - **Tailwind CSS** + **shadcn/ui** (폼/레이아웃) + **Tremor** (대시보드 위젯/차트)
@@ -154,7 +166,7 @@
 
 K8s Secret에 평문 저장하는 대신 **OpenBao**에서 동적으로 조회:
 
-```
+```text
 [idp-portal Pod 시작]
   → OpenBao Agent Injector (사이드카)
     → OpenBao KV에서 시크릿 조회
@@ -172,7 +184,7 @@ K8s Secret에 평문 저장하는 대신 **OpenBao**에서 동적으로 조회:
 
 K8s API / Prometheus 호출 빈도를 줄이기 위해 **Valkey**를 서버단 캐시로 운용:
 
-```
+```text
 [Next.js API Route]
   → Valkey에서 캐시 조회 (HIT → 즉시 반환)
   → MISS 시 K8s API / Prometheus 호출
@@ -188,6 +200,7 @@ K8s API / Prometheus 호출 빈도를 줄이기 위해 **Valkey**를 서버단 �
 | APISIX 라우트 목록 | 30초 | 설정 변경 빈도 낮음 |
 
 **Valkey 배포 전략**:
+
 - Gitea의 `gitea-valkey`와 **분리** — 포털 전용 Valkey 인스턴스 배포
 - namespace: `devtools`, DB 번호 분리도 가능하나 독립 인스턴스 권장
 - `ioredis` 클라이언트 (TypeScript 지원)
@@ -195,7 +208,8 @@ K8s API / Prometheus 호출 빈도를 줄이기 위해 **Valkey**를 서버단 �
 > TanStack Query 클라이언트 캐시(staleTime)와 서버단 Valkey 캐시를 2계층으로 운용
 
 ### 3.6 배포 구조
-```
+
+```text
 [사용자 브라우저]
     → APISIX (portal.local.narwhal.internal)
         → openid-connect 플러그인 → Authentik 인증
@@ -214,7 +228,8 @@ K8s API / Prometheus 호출 빈도를 줄이기 위해 **Valkey**를 서버단 �
 ## 4. 화면 구성
 
 ### 4.1 전체 레이아웃
-```
+
+```text
 ┌─────────────────────────────────────────────────────────┐
 │  [Narwhal IDP]    홈 | 도구 | 설정 | 온보딩    [user v] │
 ├─────────────────────────────────────────────────────────┤
@@ -239,7 +254,8 @@ K8s API / Prometheus 호출 빈도를 줄이기 위해 **Valkey**를 서버단 �
 ```
 
 ### 4.2 설정 > 사용자 관리 (cluster-admin)
-```
+
+```text
 ┌─ 사용자 관리 ────────────────────────────────────────────┐
 │  [+ 사용자 추가]                        [검색...]         │
 │                                                         │
@@ -255,6 +271,7 @@ K8s API / Prometheus 호출 빈도를 줄이기 위해 **Valkey**를 서버단 �
 ## 5. 구현 단계 (Milestone)
 
 ### M1: 기반 설정
+
 - [ ] Next.js 15 프로젝트 초기화 (TypeScript + Tailwind + shadcn/ui)
 - [ ] NextAuth.js v5 + Authentik OIDC 연동
 - [ ] APISIX 라우트 추가 (`portal.local.narwhal.internal`)
@@ -262,6 +279,7 @@ K8s API / Prometheus 호출 빈도를 줄이기 위해 **Valkey**를 서버단 �
 - [ ] ArgoCD Application YAML (`gitops/apps/idp-portal.yaml`)
 
 ### M2: 홈 대시보드
+
 - [ ] Prometheus API 연동 (노드, 파드, CPU/Memory 쿼리)
 - [ ] ArgoCD API 연동 (앱 상태 집계)
 - [ ] Alertmanager API 연동 (알럿 목록)
@@ -269,17 +287,20 @@ K8s API / Prometheus 호출 빈도를 줄이기 위해 **Valkey**를 서버단 �
 - [ ] 30초 자동 갱신 (SWR + polling)
 
 ### M3: 플랫폼 도구 링크
+
 - [ ] 서비스 카드 컴포넌트 (아이콘 + 상태 배지 + 링크)
 - [ ] 각 서비스 헬스체크 (HTTP ping)
 - [ ] 역할별 카드 필터링
 
 ### M4: 설정 관리
+
 - [ ] Authentik API 연동 (사용자/그룹 CRUD)
 - [ ] APISIX Admin API 연동 (라우트 목록/토글)
 - [ ] cert-manager CRD 조회 (Certificate 리소스)
 - [ ] Kyverno CRD 조회 (ClusterPolicy + PolicyReport)
 
 ### M5: 온보딩
+
 - [ ] kubeconfig 자동 생성 API 엔드포인트
 - [ ] OS별 kubectl 가이드 페이지
 - [ ] 플랫폼 아키텍처 다이어그램 (Mermaid)

@@ -65,6 +65,7 @@ vagrant ssh master-1 -c "kubectl get nodes"
 ```
 
 **주의사항**:
+
 - `vagrant up` 후 모든 노드가 Ready가 될 때까지 2-3분 대기
 - master-1이 먼저 기동되어야 다른 노드가 API 서버에 접근 가능
 - VM 삭제 후 재생성 시 NFS 데이터도 삭제됨 (백업 필수)
@@ -122,6 +123,7 @@ vagrant ssh master-1 -c "sudo bash /home/vagrant/scripts/cluster/14-gitops-boots
 ```
 
 **실행 순서 중요**:
+
 - cert-manager/APISIX (08) → Istio (09) → DNS (10) → Keycloak OIDC (11) 순서를 반드시 지켜야 함
 - HTTPS 인증서가 준비된 후에 OIDC 설정이 활성화됨 (K8s 1.35+)
 
@@ -149,6 +151,7 @@ vagrant ssh master-1 -c "kubectl logs -n istio-system -l app=ztunnel --tail=50"
 ```
 
 **스크립트 수정 후 재실행**:
+
 ```bash
 # 로컬에서 스크립트 수정 후
 vagrant rsync master-1
@@ -209,6 +212,7 @@ kubectl exec -n openbao openbao-0 -- bao status
 ```
 
 **주의사항**:
+
 - VM 재시작 시마다 unseal 필요 (sealed 상태로 시작)
 - Unseal Key와 Root Token은 안전하게 보관 (분실 시 복구 불가)
 - 프로덕션 환경에서는 auto-unseal 설정 권장
@@ -295,6 +299,7 @@ vagrant ssh master-1 -c "kubectl delete application my-app -n argocd"
 ```
 
 **주의사항**:
+
 - ArgoCD Application 삭제 시 `finalizers`로 인해 관리 중인 리소스도 함께 삭제됨
 - 리소스만 보존하려면 Application에서 `finalizers` 제거 후 삭제
 - GitOps 파일 삭제만으로는 ArgoCD에서 자동 제거되지 않음
@@ -505,12 +510,14 @@ vagrant ssh master-1 -c "kubectl get pods -A -o wide | grep worker-3"
 ```
 
 **IP 대역 규칙**:
+
 - Master: `192.168.56.10` (master-1), `192.168.56.11` (master-2), `192.168.56.12` (master-3)
 - Worker: `192.168.56.2X` (worker-1: .21, worker-2: .22, worker-3: .23)
 - VIP: `192.168.56.100`
 - MetalLB: `192.168.56.200`
 
 **리소스 할당**:
+
 - Master CPU: 2 cores, Memory: 4GB (control-plane only, NoSchedule taint)
 - Worker CPU: 2 cores (Vagrantfile에서 조정 가능)
 - Worker Memory: 6GB (Vagrantfile에서 조정 가능)
@@ -602,6 +609,7 @@ vagrant ssh master-1 -c "kubectl delete pod narwhal-db-1 -n database"
 ```
 
 **주의사항**:
+
 - Primary Pod 삭제 시 자동 failover 발생 (짧은 downtime)
 - PVC 삭제 전 데이터 백업 필수
 - 프로덕션 환경에서는 `instances: 3` 권장 (HA)
@@ -677,6 +685,7 @@ vagrant ssh master-1 -c "kubectl exec -n headlamp \
 ```
 
 **CA cert 마운트 패턴**:
+
 - `volumes` + `volumeMounts` (subPath)로 `/etc/ssl/certs/narwhal-ca.crt` 마운트
 - Go 앱은 자동으로 `/etc/ssl/certs/` 디렉토리 스캔하여 인식
 - `SSL_CERT_FILE` 환경 변수 설정 금지 (시스템 CA 번들 대체됨)
@@ -779,6 +788,7 @@ vagrant ssh master-1 -c "kubectl exec -n velero deployment/velero -- \
 ```
 
 **주의사항**:
+
 - Velero는 `upgradeCRDs: false` 설정 필수 (musl/glibc 비호환)
 - NFS 기반 백업 스토리지 사용 (`/nfs/velero/`)
 - PVC 백업은 restic 통합 사용 (설정에 따라)
@@ -798,6 +808,7 @@ vagrant ssh master-1 -c "bash /home/vagrant/scripts/test/verify-cluster.sh"
 ```
 
 **검증 섹션**:
+
 1. Nodes
 2. kube-vip & VIP
 3. etcd
@@ -848,6 +859,7 @@ vagrant ssh master-1 -c "bash /home/vagrant/scripts/test/test-sso.sh"
 ```
 
 **SSO 테스트 섹션**:
+
 1. Keycloak Client Scopes
 2. Keycloak Client Scope Mappers
 3. Client Scope Assignments
@@ -892,6 +904,7 @@ vagrant ssh master-1 -c "bash /home/vagrant/scripts/test/test-sso.sh \
 ```
 
 **트러블슈팅**:
+
 - 실패한 체크 항목은 `✗` 마크와 함께 힌트 명령어 표시
 - 검증 스크립트 로그는 `/tmp/verify-cluster.log`에 저장
 - `set -euo pipefail`로 첫 에러에서 중단되지 않음 (모든 체크 실행)

@@ -13,6 +13,7 @@
 ## File Map
 
 ### Files to CREATE
+
 | File | Purpose |
 |------|---------|
 | `gitops/apps/apisix.yaml` | ArgoCD Application — APISIX Helm chart (includes Ingress Controller) |
@@ -22,6 +23,7 @@
 | `gitops/apps/apisix-routes.yaml` | ArgoCD Application managing apisix-routes.yaml |
 
 ### Files to MODIFY
+
 | File | Change |
 |------|--------|
 | `gitops/apps/app-of-apps.yaml` | Add apisix/apisix-dashboard/apisix-routes, remove traefik/oauth2-proxy refs |
@@ -32,6 +34,7 @@
 | `VERSIONS.md` | Add APISIX/etcd versions, remove Traefik/OAuth2-Proxy |
 
 ### Files to DELETE
+
 | File | Reason |
 |------|--------|
 | `gitops/apps/traefik.yaml` | Replaced by apisix.yaml |
@@ -46,6 +49,7 @@
 ### Task 1: Delete obsolete GitOps files
 
 **Files:**
+
 - Delete: `gitops/apps/traefik.yaml`
 - Delete: `gitops/apps/oauth2-proxy.yaml`
 - Delete: `gitops/resources/traefik-routes.yaml`
@@ -65,6 +69,7 @@ rm gitops/apps/traefik-routes.yaml
 ```bash
 ls gitops/apps/ gitops/resources/
 ```
+
 Expected: traefik.yaml, oauth2-proxy.yaml, traefik-routes.yaml absent
 
 - [ ] **Step 3: Commit**
@@ -79,6 +84,7 @@ git commit -m "chore: remove Traefik and OAuth2-Proxy GitOps files"
 ### Task 2: Create `gitops/apps/apisix.yaml`
 
 **Files:**
+
 - Create: `gitops/apps/apisix.yaml`
 
 - [ ] **Step 1: Create APISIX ArgoCD Application**
@@ -203,6 +209,7 @@ spec:
 ```bash
 yq eval '.' gitops/apps/apisix.yaml > /dev/null && echo "OK"
 ```
+
 Expected: OK
 
 - [ ] **Step 3: Commit**
@@ -217,6 +224,7 @@ git commit -m "feat(apisix): add APISIX ArgoCD application"
 ### Task 3: Create `gitops/apps/apisix-dashboard.yaml`
 
 **Files:**
+
 - Create: `gitops/apps/apisix-dashboard.yaml`
 
 - [ ] **Step 1: Create Dashboard ArgoCD Application**
@@ -310,6 +318,7 @@ app-of-apps는 `apps/` 디렉토리 전체를 sync하는 구조이므로 파일 
 ```bash
 cat gitops/apps/app-of-apps.yaml
 ```
+
 Expected: `path: apps` — 디렉토리 기반 sync 확인
 
 - [ ] **Step 2: No changes needed if directory-based**
@@ -325,6 +334,7 @@ app-of-apps가 `path: apps`로 디렉토리 전체를 sync한다면 Task 1~3의 
 etcd, 와일드카드 TLS 인증서, ApisixTls 리소스.
 
 **Files:**
+
 - Create: `gitops/resources/apisix-infra.yaml`
 
 - [ ] **Step 1: Create infrastructure manifest**
@@ -445,6 +455,7 @@ yq eval '.' gitops/resources/apisix-infra.yaml > /dev/null && echo "OK"
 - [ ] **Step 3: Create ArgoCD app for infra resources**
 
 `gitops/apps/apisix-infra.yaml` 파일 생성:
+
 ```yaml
 apiVersion: argoproj.io/v1alpha1
 kind: Application
@@ -489,6 +500,7 @@ git commit -m "feat(apisix): add etcd, wildcard TLS, ApisixTls infra resources"
 모든 앱의 ApisixRoute 정의. OIDC 플러그인 포함.
 
 **Files:**
+
 - Create: `gitops/resources/apisix-routes.yaml`
 
 - [ ] **Step 1: Create routes manifest**
@@ -851,6 +863,7 @@ yq eval '.' gitops/resources/apisix-routes.yaml > /dev/null && echo "OK"
 - [ ] **Step 3: Create apisix-routes ArgoCD app**
 
 `gitops/apps/apisix-routes.yaml` 파일 생성:
+
 ```yaml
 apiVersion: argoproj.io/v1alpha1
 kind: Application
@@ -895,6 +908,7 @@ git commit -m "feat(apisix): add ApisixRoute for all platform apps"
 ### Task 7: Update `scripts/cluster/08-1-networking.sh` — Replace Traefik with APISIX
 
 **Files:**
+
 - Modify: `scripts/cluster/08-1-networking.sh`
 
 Traefik 설치 블록 (라인 40~79) 전체를 APISIX 설치 블록으로 교체.
@@ -1020,6 +1034,7 @@ echo "APISIX installed"
 ```bash
 bash -n scripts/cluster/08-1-networking.sh && echo "Syntax OK"
 ```
+
 Expected: Syntax OK
 
 - [ ] **Step 4: Run shellcheck**
@@ -1027,6 +1042,7 @@ Expected: Syntax OK
 ```bash
 shellcheck scripts/cluster/08-1-networking.sh -x
 ```
+
 Expected: No errors (style warnings acceptable)
 
 - [ ] **Step 5: Commit**
@@ -1041,6 +1057,7 @@ git commit -m "feat(apisix): replace Traefik with APISIX in 08-1-networking.sh"
 ### Task 8: Update `scripts/cluster/08-3-security.sh` — Remove OAuth2-Proxy
 
 **Files:**
+
 - Modify: `scripts/cluster/08-3-security.sh`
 
 - [ ] **Step 1: Read current file**
@@ -1050,6 +1067,7 @@ OAuth2-Proxy 섹션 (라인 83~131) 전체를 제거.
 - [ ] **Step 2: Remove OAuth2-Proxy section**
 
 헤더도 업데이트:
+
 ```bash
 # 변경 전:
 echo "=== Installing Security Apps (Kyverno, Headlamp, OAuth2-Proxy) ==="
@@ -1058,6 +1076,7 @@ echo "=== Installing Security Apps (Kyverno, Headlamp) ==="
 ```
 
 OAuth2-Proxy 설치 블록 전체 삭제:
+
 ```bash
 # 삭제 대상 (라인 83~131):
 #=========================================
@@ -1085,6 +1104,7 @@ git commit -m "feat(apisix): remove OAuth2-Proxy from 08-3-security.sh"
 ### Task 9: Update `scripts/cluster/11-3-keycloak-clients.sh` — Add `apisix` OIDC Client
 
 **Files:**
+
 - Modify: `scripts/cluster/11-3-keycloak-clients.sh`
 
 기존 `oauth2-proxy` 클라이언트에 더해 `apisix` 클라이언트를 추가. APISIX의 `/apisix/callback` redirect URI 사용.
@@ -1166,6 +1186,7 @@ git commit -m "feat(apisix): add apisix OIDC client to Keycloak"
 ### Task 10: Update `scripts/cluster/08-6-tls-routes.sh` — Remove Traefik routes, add APISIX route apply
 
 **Files:**
+
 - Modify: `scripts/cluster/08-6-tls-routes.sh`
 
 - [ ] **Step 1: Read current file**
@@ -1175,6 +1196,7 @@ git commit -m "feat(apisix): add apisix OIDC client to Keycloak"
 - [ ] **Step 2: Replace Traefik route apply with APISIX route apply**
 
 Traefik HTTPRoute/Middleware apply 부분을:
+
 ```bash
 # Apply APISIX routes (after cert is ready and APISIX is running)
 echo "Applying APISIX routes..."
@@ -1206,11 +1228,12 @@ git commit -m "feat(apisix): update tls-routes script for APISIX"
 ### Task 11: Update `VERSIONS.md`
 
 **Files:**
+
 - Modify: `VERSIONS.md`
 
 - [ ] **Step 1: Remove Traefik/OAuth2-Proxy entries**
 
-```
+```text
 # 제거:
 | Traefik | v39.0.0 (chart) / v3.6.7 (app) | ... |
 | OAuth2-Proxy | 10.1.3 (chart) | ... |
@@ -1237,6 +1260,7 @@ git commit -m "docs: update VERSIONS.md for APISIX migration"
 ### Task 12: Update `scripts/cluster/10-dnsmasq.sh` — Update DNS test domains
 
 **Files:**
+
 - Modify: `scripts/cluster/10-dnsmasq.sh`
 
 - [ ] **Step 1: Find DNS test references**
@@ -1271,6 +1295,7 @@ yq eval '.' gitops/apps/apisix-routes.yaml > /dev/null && echo "apisix-routes.ya
 yq eval '.' gitops/resources/apisix-infra.yaml > /dev/null && echo "apisix-infra resources OK"
 yq eval '.' gitops/resources/apisix-routes.yaml > /dev/null && echo "apisix-routes resources OK"
 ```
+
 Expected: 모두 OK
 
 - [ ] **Step 2: Shellcheck all modified scripts**
@@ -1284,6 +1309,7 @@ shellcheck \
   scripts/cluster/11-3-keycloak-clients.sh \
   -x 2>&1 | grep -E "error:|SC[0-9]+" | head -30
 ```
+
 Expected: error 없음
 
 - [ ] **Step 3: Verify deleted files are gone**
@@ -1293,6 +1319,7 @@ ls gitops/apps/traefik.yaml 2>/dev/null && echo "ERROR: should be deleted" || ec
 ls gitops/apps/oauth2-proxy.yaml 2>/dev/null && echo "ERROR: should be deleted" || echo "OK: deleted"
 ls gitops/resources/traefik-routes.yaml 2>/dev/null && echo "ERROR: should be deleted" || echo "OK: deleted"
 ```
+
 Expected: 모두 OK: deleted
 
 - [ ] **Step 4: Verify no Traefik/OAuth2-Proxy references remain in active scripts**
@@ -1301,6 +1328,7 @@ Expected: 모두 OK: deleted
 grep -r "traefik\|oauth2.proxy" scripts/cluster/ --include="*.sh" \
   | grep -v "bak/\|deprecated\|#" | grep -v "WARN\|echo"
 ```
+
 Expected: 출력 없음 (참조 없음)
 
 - [ ] **Step 5: Verify VERSIONS.md consistency**
@@ -1309,6 +1337,7 @@ Expected: 출력 없음 (참조 없음)
 grep -i "apisix" VERSIONS.md
 grep -i "traefik\|oauth2" VERSIONS.md
 ```
+
 Expected: APISIX 항목 존재, Traefik/OAuth2-Proxy 항목 없음
 
 - [ ] **Step 6: Final commit**
@@ -1366,6 +1395,7 @@ curl -k https://grafana.local.narwhal.internal/api/health
 ## Migration Rollback
 
 롤백이 필요한 경우:
+
 ```bash
 # Traefik 재설치
 helm upgrade --install traefik traefik/traefik -n platform-system --version 39.0.0 ...

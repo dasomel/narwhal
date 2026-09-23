@@ -2,7 +2,7 @@
 
 > **이 문서는 Vagrant 기준이다.** 호스트가 꺼졌다 켜지는 로컬 VM 특유의 문제를 다룬다 —
 > Kakao Cloud 인스턴스는 그렇게 정지하지 않으므로 절차가 그대로 적용되지 않는다.
-
+>
 > Narwhal IDP 클러스터의 VM 리부트 시 자동 복구를 보장하는 아키텍처 설계 문서
 
 ---
@@ -27,7 +27,7 @@
 `vagrant halt && vagrant up` 또는 VM 비정상 종료 후 재부팅 시 전체 플랫폼이
 CrashLoopBackOff에 빠지는 카스케이드 장애가 발생했습니다.
 
-```
+```text
 t+0s    VM 부팅
 t+30s   containerd 시작
 t+60s   kubelet 시작, Cilium agent 초기화 시작
@@ -62,7 +62,7 @@ Cilium CNI는 노드 부팅 시 `node.cilium.io/agent-not-ready:NoSchedule` tain
 이는 Cilium이 완전히 초기화되기 전에 Pod가 스케줄링되어 네트워크 없이 시작하는 것을 방지하는
 정상적인 안전장치입니다.
 
-```
+```text
 노드 부팅
   → kubelet 시작
     → Cilium DaemonSet Pod 스케줄링
@@ -238,6 +238,7 @@ end
 **파일**: `Vagrantfile`
 
 kubelet이 먼저 종료되면:
+
 - 실행 중인 Pod에 SIGTERM 전달
 - containerd가 컨테이너를 정상 종료
 - 리부트 시 스테일 containerd 참조 감소
@@ -248,7 +249,7 @@ kubelet이 먼저 종료되면:
 
 ### 변경 전 (장애 패턴)
 
-```
+```text
 t+0s    VM 부팅
 t+30s   containerd 시작
 t+60s   kubelet → Cilium agent-not-ready taint
@@ -261,7 +262,7 @@ t+600s+ backoff 간격 증가로 복구 장기화
 
 ### 변경 후 (정상 복구)
 
-```
+```text
 t+0s    VM 부팅
 t+30s   containerd 시작 (Restart=always 보장)
 t+60s   kubelet 재시작, Cilium agent 초기화 시작
@@ -286,7 +287,7 @@ t+300s  전체 플랫폼 정상 운영
 
 리부트 후 정상 복구가 되지 않으면 다음 알림이 발생합니다:
 
-```
+```text
 3분 후   CiliumAgentNotReady (warning)
          → Cilium 초기화 지연, 노드 네트워킹 문제 가능성
 5분 후   ZtunnelNotReady (critical)
@@ -405,7 +406,7 @@ kubectl describe pod -n istio-system -l app=ztunnel | grep -A 10 Events
 kubectl get ds ztunnel -n istio-system -o jsonpath='{.spec.template.spec.tolerations}'
 ```
 
-**원인 1: ArgoCD가 toleration을 되돌림**
+#### 원인 1: ArgoCD가 toleration을 되돌림
 
 ArgoCD `selfHeal: true`가 GitOps 상태를 강제합니다.
 GitOps 파일(`gitops/charts/narwhal-apps/templates/ztunnel.yaml`)에 toleration이 없으면 스크립트 변경이 무효화됩니다.
@@ -418,7 +419,7 @@ cat gitops/charts/narwhal-apps/templates/ztunnel.yaml | grep -A 10 tolerations
 kubectl get application ztunnel -n devtools -o jsonpath='{.status.sync.status}'
 ```
 
-**원인 2: Helm release와 ArgoCD 충돌**
+#### 원인 2: Helm release와 ArgoCD 충돌
 
 ```bash
 # Helm 릴리스 values 확인

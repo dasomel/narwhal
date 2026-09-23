@@ -21,14 +21,14 @@ Master 노드의 dnsmasq(포트 53)가 `*.local.narwhal.internal` 도메인을 `
 
 | 서비스 | URL | 설명 |
 |--------|-----|------|
-| ArgoCD | https://argocd.local.narwhal.internal | GitOps CD |
-| Grafana | https://grafana.local.narwhal.internal | 모니터링 대시보드 |
-| Gitea | https://gitea.local.narwhal.internal | Git 서버 |
-| Harbor | https://harbor.local.narwhal.internal | 컨테이너 레지스트리 |
-| Keycloak | https://keycloak.local.narwhal.internal | IAM / SSO |
-| Headlamp | https://headlamp.local.narwhal.internal | Kubernetes UI |
-| OpenBao | https://openbao.local.narwhal.internal | 시크릿 관리 |
-| Hubble | https://hubble.local.narwhal.internal | Cilium 네트워크 관찰 |
+| ArgoCD | <https://argocd.local.narwhal.internal> | GitOps CD |
+| Grafana | <https://grafana.local.narwhal.internal> | 모니터링 대시보드 |
+| Gitea | <https://gitea.local.narwhal.internal> | Git 서버 |
+| Harbor | <https://harbor.local.narwhal.internal> | 컨테이너 레지스트리 |
+| Keycloak | <https://keycloak.local.narwhal.internal> | IAM / SSO |
+| Headlamp | <https://headlamp.local.narwhal.internal> | Kubernetes UI |
+| OpenBao | <https://openbao.local.narwhal.internal> | 시크릿 관리 |
+| Hubble | <https://hubble.local.narwhal.internal> | Cilium 네트워크 관찰 |
 
 ## DNS 설정
 
@@ -226,6 +226,7 @@ vagrant ssh master-1 -c "kubectl get apisixtls -A"
 2. **브라우저 경고 수락**: `https://argocd.local.narwhal.internal` 접속 시 "위험 감수 및 계속" 클릭
 
 3. **curl 테스트**: `-k` 플래그로 인증서 검증 스킵
+
    ```bash
    curl -k https://argocd.local.narwhal.internal
    ```

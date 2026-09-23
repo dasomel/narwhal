@@ -41,7 +41,7 @@ component, identity, storage and GitOps sections expand their respective concern
 
 ## Infrastructure Overview
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                           Host Machine (macOS)                              │
 │                                                                             │
@@ -98,7 +98,7 @@ component, identity, storage and GitOps sections expand their respective concern
 
 ## Platform Architecture
 
-```
+```text
 ┌──────────────────────────────────────────────────────────────────────┐
 │                          Client Access                               │
 │                                                                      │
@@ -149,7 +149,7 @@ component, identity, storage and GitOps sections expand their respective concern
 
 ### Layer Diagram
 
-```
+```text
 ┌──────────────────────────────────────────────────────────────┐
 │                      GitOps Layer                            │
 │  ┌──────────┐  ┌──────────┐  ┌────────────────────────────┐  │
@@ -210,7 +210,7 @@ component, identity, storage and GitOps sections expand their respective concern
 
 ## Storage Architecture
 
-```
+```text
 narwhal-master (/srv/nfs/k8s)
 │
 ├── NFS Server (nfs-kernel-server)
@@ -254,7 +254,7 @@ PostgreSQL HA (CloudNative-PG)
 
 ## Identity & SSO Architecture
 
-```
+```text
 ┌────────────────────────────────────────────────────┐
 │                   Keycloak                         │
 │              Realm: kubernetes                     │
@@ -300,7 +300,7 @@ PostgreSQL HA (CloudNative-PG)
 
 모든 웹 앱은 APISIX의 `openid-connect` 플러그인을 통해 Gateway 레벨에서 Keycloak OIDC 인증을 강제한다.
 
-```
+```text
 Browser → argocd.local.narwhal.internal
     │
     ▼
@@ -366,7 +366,7 @@ kubectl logs -n platform-system -l app.kubernetes.io/name=apisix --tail=20
 
 ## Observability Stack
 
-```
+```text
 ┌────────────────────────────────────────────────────────┐
 │                    Grafana Dashboard                   │
 │        https://grafana.local.narwhal.internal (admin/admin)  │
@@ -402,6 +402,7 @@ PrometheusRule `narwhal-alerts`로 17개 알림 규칙 관리:
 | certificates | 2 | 인증서 만료 7일전, Ready=False |
 
 AlertmanagerConfig로 severity별 라우팅:
+
 - **critical**: 1시간 반복, 서비스 장애
 - **warning**: 4시간 반복, 성능/용량 문제
 
@@ -409,7 +410,7 @@ AlertmanagerConfig로 severity별 라우팅:
 
 ## GitOps Architecture
 
-```
+```text
 ┌──────────────────────────────────────────────────────────┐
 │                     ArgoCD (v3.3.0)                      │
 │                                                          │
@@ -467,6 +468,7 @@ GitHub Actions 워크플로우:
 | release.yml | v* 태그 | GitHub Release 자동 생성 |
 
 로컬 검증:
+
 ```bash
 make lint      # shellcheck + yamllint
 make validate  # Vagrantfile + yq 검증
@@ -480,7 +482,7 @@ make validate  # Vagrantfile + yq 검증
 
 ### Phase 1: Base Infrastructure (All Nodes)
 
-```
+```text
 01-prerequisites.sh  → 호스트명, /etc/hosts (VIP + 멀티마스터), 커널 모듈
 02-containerd.sh     → containerd 런타임 설치
 03-k8s-install.sh    → kubeadm, kubelet, kubectl 설치
@@ -488,7 +490,7 @@ make validate  # Vagrantfile + yq 검증
 
 ### Phase 2: Master-1 Setup (Full Provisioning)
 
-```
+```text
 00-kube-vip.sh       → Control Plane VIP 정적 Pod (192.168.56.100, super-admin.conf)
 01-nfs-server.sh     → NFS 서버 (XFS prjquota)
 02-init-cluster.sh   → kubeadm init (--upload-certs, VIP endpoint)
@@ -501,7 +503,7 @@ make validate  # Vagrantfile + yq 검증
 
 ### Phase 3: Master-2/3 Setup (Control Plane Join)
 
-```
+```text
 00-kube-vip.sh           → Control Plane VIP 정적 Pod (admin.conf)
 02-join-control-plane.sh → master-1에서 SCP로 join 명령 가져와 실행
                            kubeadm join --control-plane (etcd 3-node 쿼럼, 1 fault tolerance)
@@ -510,6 +512,7 @@ make validate  # Vagrantfile + yq 검증
 ### Phase 4: Platform Services (Master-1 only, auto-triggered after last worker join)
 
 **Phase 2 Auto-Trigger:**
+
 - Phase 1 (scripts 00-05) runs during master-1 provisioning
 - Phase 2 (scripts 07-14) auto-triggers after last worker joins via Vagrant trigger
 - Manual execution: `vagrant provision master-1 --provision-with phase2-platform`
@@ -517,7 +520,7 @@ make validate  # Vagrantfile + yq 검증
 
 **Execution Order:**
 
-```
+```text
 07-cnpg.sh                → CloudNative-PG Operator + narwhal-db (unified DB)
 08-1-networking.sh        → MetalLB, APISIX, cert-manager
 08-2-monitoring.sh        → Prometheus, Loki, Alloy, Tempo
@@ -537,13 +540,14 @@ make validate  # Vagrantfile + yq 검증
 ```
 
 **설치 순서의 중요성:**
+
 - cert-manager와 APISIX TLS는 Keycloak OIDC보다 먼저 설치되어야 함 (K8s 1.35+ HTTPS 필수)
 - dnsmasq는 Keycloak 전에 설정되어 DNS 해석 가능해야 함
 - CNPG는 모든 DB 의존 앱보다 먼저 실행되어야 함
 
 ### Worker Nodes
 
-```
+```text
 02-join-worker.sh    → kubeadm join (master-1에서 토큰 가져오기)
 ```
 
@@ -551,7 +555,7 @@ make validate  # Vagrantfile + yq 검증
 
 ## Namespace Topology
 
-```
+```text
 kube-system          Cilium, Hubble, CoreDNS, CSI-NFS, metrics-server, nfs-quota-agent
 platform-system      CloudNative-PG Operator, MetalLB, APISIX, cert-manager, Kyverno
 istio-system         Istio control plane (istiod, istio-cni, ztunnel)
@@ -583,14 +587,14 @@ sudo resolvectl domain eth0 ~local.narwhal.internal
 
 | Service | URL | Credentials |
 |---------|-----|-------------|
-| Grafana | https://grafana.local.narwhal.internal | admin / admin |
-| Harbor | https://harbor.local.narwhal.internal | admin / Harbor12345 |
-| Keycloak | https://keycloak.local.narwhal.internal | (auto-generated) |
-| OpenBao | https://openbao.local.narwhal.internal | (unseal required) |
-| Hubble | https://hubble.local.narwhal.internal | - |
-| ArgoCD | https://argocd.local.narwhal.internal | admin / (auto) |
-| Gitea | https://gitea.local.narwhal.internal | gitea-admin / gitea-admin |
-| Headlamp | https://headlamp.local.narwhal.internal | Keycloak OIDC |
+| Grafana | <https://grafana.local.narwhal.internal> | admin / admin |
+| Harbor | <https://harbor.local.narwhal.internal> | admin / Harbor12345 |
+| Keycloak | <https://keycloak.local.narwhal.internal> | (auto-generated) |
+| OpenBao | <https://openbao.local.narwhal.internal> | (unseal required) |
+| Hubble | <https://hubble.local.narwhal.internal> | - |
+| ArgoCD | <https://argocd.local.narwhal.internal> | admin / (auto) |
+| Gitea | <https://gitea.local.narwhal.internal> | gitea-admin / gitea-admin |
+| Headlamp | <https://headlamp.local.narwhal.internal> | Keycloak OIDC |
 
 ### OIDC Login
 
@@ -609,7 +613,7 @@ kubectl --token=$TOKEN get nodes
 
 ## Backup & Recovery
 
-```
+```text
 Velero
 ├── Backup Storage: SeaweedFS S3 (seaweedfs-s3:8333)
 ├── Bucket: velero
@@ -651,6 +655,7 @@ CNPG PostgreSQL
 | velero-s3-credentials | storage | 08-4-storage.sh | S3 백업 자격증명 |
 
 비밀번호 확인:
+
 ```bash
 kubectl get secret <name> -n <namespace> -o jsonpath='{.data.<key>}' | base64 -d
 ```
@@ -659,7 +664,7 @@ kubectl get secret <name> -n <namespace> -o jsonpath='{.data.<key>}' | base64 -d
 
 ## Security Boundaries
 
-```
+```text
 ┌─ External ───────────────────────────────────────────┐
 │                                                      │
 │  cert-manager   → Self-signed ClusterIssuer          │

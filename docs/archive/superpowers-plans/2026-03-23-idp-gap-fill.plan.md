@@ -120,13 +120,15 @@
 **목적**: 8개 narwhal 서비스 엔드포인트 HTTP 가용성 모니터링
 
 **파일**:
+
 - `scripts/cluster/08-7-blackbox.sh` (신규)
 - `gitops/apps/blackbox-exporter.yaml` (신규)
 
 **Helm 차트**: `prometheus-community/prometheus-blackbox-exporter`
 
 **모니터링 대상**:
-```
+
+```text
 https://authentik.local.narwhal.internal/-/health/ready/
 https://argocd.local.narwhal.internal/healthz
 https://grafana.local.narwhal.internal/api/health
@@ -138,6 +140,7 @@ https://hubble.local.narwhal.internal
 ```
 
 **PrometheusRule**:
+
 ```yaml
 - alert: EndpointDown
   expr: probe_success == 0
@@ -155,15 +158,18 @@ https://hubble.local.narwhal.internal
 **목적**: 서비스 다운, 노드 이슈 등 Telegram 채널 알림
 
 **파일**:
+
 - `scripts/cluster/08-8-alertmanager-telegram.sh` (신규)
 - `gitops/resources/alertmanager-telegram.yaml` (신규)
 
 **사전 요건** (수동):
+
 1. Telegram BotFather에서 봇 생성 → BOT_TOKEN 취득
 2. 봇을 채널에 초대 → CHAT_ID 취득
 3. `kubectl create secret generic alertmanager-telegram -n monitoring --from-literal=botToken=<TOKEN> --from-literal=chatID=<ID>`
 
 **리소스**:
+
 ```yaml
 # AlertmanagerConfig (narwhal-telegram)
 # receiver: telegram-receiver
@@ -171,6 +177,7 @@ https://hubble.local.narwhal.internal
 ```
 
 **PrometheusRule** (기본 3개):
+
 - `NarwhalEndpointDown`: Blackbox probe 실패 5분
 - `NarwhalNodePressure`: 노드 디스크/메모리 압력
 - `NarwhalPodCrashLoop`: CrashLoopBackOff 15분
@@ -184,7 +191,8 @@ https://hubble.local.narwhal.internal
 **파일**: `scripts/verify/verify-k8s-rbac.sh` (신규, idp 패턴 참조)
 
 **테스트 항목** (~20개):
-```
+
+```text
 [그룹: cluster-admin]
   ✓ kubectl get pods -n platform-system
   ✓ kubectl get pods -n monitoring
@@ -200,6 +208,7 @@ https://hubble.local.narwhal.internal
 ```
 
 **실행 방법**:
+
 ```bash
 vagrant ssh master-1 -- bash /home/vagrant/scripts/verify/verify-k8s-rbac.sh
 ```
@@ -218,16 +227,19 @@ vagrant ssh master-1 -- bash /home/vagrant/scripts/verify/verify-k8s-rbac.sh
 **도메인**: `pgadmin.local.narwhal.internal`
 
 **Authentik 연동**:
+
 - OAuth2 Provider: `pgadmin` 클라이언트 (`11-2-authentik-config.sh`에 추가)
 - Redirect URI: `https://pgadmin.local.narwhal.internal/oauth2/authorize`
 
 **ApisixRoute**:
+
 ```yaml
 # pgadmin.local.narwhal.internal → harbor:80
 # openid-connect 플러그인으로 Authentik SSO
 ```
 
 **리소스 제약** (Worker 6GB):
+
 ```yaml
 resources:
   requests: {memory: 256Mi, cpu: 100m}
@@ -258,6 +270,7 @@ resources:
 **파일**: `gitops/apps/velero-ui.yaml`
 
 **변경 내용**:
+
 ```yaml
 # Before:
 targetRevision: "0.10.0"  # tag: 0.10.1
@@ -272,7 +285,7 @@ targetRevision: "0.14.0"
 
 ## 6. 구현 순서 (실행 계획)
 
-```
+```text
 Step 1: CLAUDE.md 교훈 반영     (즉시, 파일 수정)
 Step 2: Velero UI 업그레이드    (즉시, YAML 수정 → ArgoCD sync)
 Step 3: Blackbox Exporter 추가  (스크립트 + GitOps app)
@@ -282,6 +295,7 @@ Step 6: RBAC 검증 스크립트      (신규 스크립트 작성)
 ```
 
 **의존성**:
+
 - Step 3, 4: Prometheus-stack 정상 동작 필요 (현재 완료)
 - Step 5: Authentik 정상 동작 필요 (현재 완료)
 - Step 4: Telegram 봇 수동 생성 필요 (사용자 수동 작업)

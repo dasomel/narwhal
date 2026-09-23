@@ -9,7 +9,7 @@ resources) and need ArgoCD to apply it.
 ArgoCD watches the **in-cluster Gitea repo**, not this GitHub repo and not your
 local working copy:
 
-```
+```text
 repoURL: http://gitea-http.devtools.svc.cluster.local:3000/gitea-admin/narwhal-gitops.git
 path:    charts/narwhal-apps   (app-of-apps' Helm chart; templates the rest of the apps,
                                  including the narwhal-platform sub-app at charts/narwhal-platform)
@@ -31,7 +31,7 @@ Consequences of `selfHeal: true`:
 
 The Gitea `narwhal-gitops` repo's **root** is the **contents of `gitops/`**:
 
-```
+```text
 narwhal repo                gitea narwhal-gitops repo (ArgoCD root)
 -------------------------   ---------------------------------------
 gitops/apps/*            -> apps/*      (app-of-apps; path=charts/narwhal-apps)

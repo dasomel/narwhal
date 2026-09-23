@@ -39,7 +39,7 @@ gitea가 5시간 넘게 `Init:0/3`, ArgoCD application 0개, 비정상 파드 10
 
 ### 메커니즘
 
-```
+```text
 서버 (master-1)                          클라이언트 (worker-1)
 nfsd4_destroy_session                    nfs4_destroy_clientid
   → nfsd4_probe_callback_sync              → rpc_call_sync
@@ -76,7 +76,7 @@ NFSv3로 전환했다. v3는 상태가 없어 clientid도, 세션도, 콜백 워
 
 ### 검증
 
-```
+```text
 Postgres    2/2, Cluster in healthy state
 PVC         14개 Bound
 PV          전부 nfsvers=3
@@ -220,7 +220,7 @@ static 회귀 검사는 이미 CI에 있다. 남은 것은 **실제로 클러스
 
 재구축된 클러스터를 회귀 검사와 외부 접속으로 확인한 결과다.
 
-```
+```text
 regression-check-kakao.sh --all    39/39 통과 (static 26 + runtime 13), 실패 0, 경고 0
 노드                                6/6 Ready
 ArgoCD applications                33/33 Synced + Healthy
@@ -266,7 +266,7 @@ ArgoCD의 git 요청 절반이 죽은 파드로 갔다.
 
 ### 3회차 검증 (2026-08-03)
 
-```
+```text
 regression-check-kakao.sh --all    39/39 통과, 실패 0, 경고 0
 provision-kakao.sh all             무개입 완주, phase2 FAILED 0건
 노드                                6/6 Ready
@@ -292,7 +292,7 @@ set-config-kakao.sh                노드 교체 후에도 정상 (2회차에는
 
 ---
 
-# 부록 — 완전 폐쇄망 실행 (2026-08-05)
+## 부록 — 완전 폐쇄망 실행 (2026-08-05)
 
 앞의 4회는 전부 squid 프록시나 VPC 자체 egress가 뒤를 받쳐준 상태였다. 이번에 처음으로
 **인터넷 경로 없이** 돌렸다: `01-prerequisites.sh`가 기본 라우트를 제거하고, apt 소스는
@@ -300,7 +300,7 @@ set-config-kakao.sh                노드 교체 후에도 정상 (2회차에는
 
 결과: 6노드 클러스터 + 플랫폼이 기동했고, **인터넷이 가려주던 결함 5건**이 드러났다.
 
-## 왜 그동안 안 보였나
+### 왜 그동안 안 보였나
 
 같은 구조가 반복된다 — 폴백이 존재하는 한, 미러가 비어 있어도 설치는 성공한다.
 
@@ -324,11 +324,11 @@ set-config-kakao.sh                노드 교체 후에도 정상 (2회차에는
 | 콜론 목록 | `network is unreachable` | 0건 |
 | 단일 경로 | 6개 이미지 전부 성공 | 132건 |
 
-## 하류 영향의 사슬
+### 하류 영향의 사슬
 
 2번(미러 커버리지)이 어디까지 번졌는지가 이번의 교훈이다.
 
-```
+```text
 미러에 없는 레지스트리 → gitea ImagePullBackOff
   → 14-gitops-bootstrap.sh의 푸시 실패
     → WARN 후 계속 → ArgoCD 앱 0개로 "Phase 2 Complete"
@@ -338,7 +338,7 @@ set-config-kakao.sh                노드 교체 후에도 정상 (2회차에는
 
 한 건의 미러 공백이 플랫폼 대부분을 조용히 제거했고, 검사 두 개가 그것을 통과시켰다.
 
-## 판별법 (다음 번을 위해)
+### 판별법 (다음 번을 위해)
 
 - **미러가 실제로 쓰이는가**: 레지스트리 로그에서 `useragent="containerd"` grep. 0건이면
   이미지가 있든 없든 미러는 무용지물이다. 2026-07-26에 적어둔 이 한 줄이 1번을 찾아냈다.
@@ -348,7 +348,7 @@ set-config-kakao.sh                노드 교체 후에도 정상 (2회차에는
   squid 정지 후에도 `get.helm.sh`에 닿는다. `curl --noproxy '*'`로 확인할 것 —
   프록시의 부재는 경로의 부재가 아니다.
 
-## 상태
+### 상태
 
 | 항목 | 결과 |
 |------|------|

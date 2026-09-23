@@ -96,11 +96,11 @@ Sigstore Cosign은 Keyless(Fulcio OIDC + Rekor 투명성 로그) 및 Static Publ
 
 ### 2) Promotion & Verification Pipeline
 
-```
+```text
 [Build & Scan Stage] -> [Cosign Sign & Attest] -> [Harbor Internal Registry] -> [GitOps & Kyverno Admission Audit]
 ```
+
 1. **Build & Scan**: 이미지 빌드 후 Trivy 취약점/라이선스 검사 수행.
 2. **Cosign Sign & Attest**: `cosign sign`으로 서명 생성 및 `cosign attest --type cyclonedx`로 SBOM 증명 첨부.
 3. **Harbor Internal Registry**: 검증된 이미지를 Harbor 레지스트리로 promote.
 4. **GitOps & Kyverno Admission**: ArgoCD 배포 시 Kyverno `verify-image-signatures` 정책 및 에어갭 사전 검사 `10-verify-image-signatures.sh`로 서명/증명 무결성 확인.
-

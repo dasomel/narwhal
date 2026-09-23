@@ -22,7 +22,7 @@ Result: CIS 72% → 84%+, NSA 44% → 59%+. Control-plane flag controls (profili
 > that defines the same pod (e.g. `kube-apiserver.yaml.bak`) SHADOWS the real
 > manifest — the apiserver silently runs the stale spec. Always write manifest
 > backups/temp files OUTSIDE that directory.
-
+>
 > **Live rollout note:** applied master-by-master via the manifest edit; the initial
 > secret-encryption is only consistent once ALL apiservers share the key, after which
 > `kubectl get secrets -A -o json | kubectl replace -f -` rewrites every Secret encrypted.

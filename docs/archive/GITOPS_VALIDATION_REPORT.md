@@ -20,11 +20,13 @@
 ## Validation Scope
 
 ### Files Analyzed
+
 - `gitops/apps/` - 20 ArgoCD Application manifest files
 - `gitops/resources/` - 15 Kubernetes resource manifest files
 - Total: **35 files**, **48 resources**, **736+ lines**
 
 ### Validation Criteria
+
 1. ✓ YAML syntax validity (yq parser)
 2. ✓ ArgoCD Application structure (apiVersion, kind, spec)
 3. ✓ Repository URL format and accessibility
@@ -70,10 +72,12 @@
 #### Repository Analysis
 
 **HTTPS Repositories:** 18/20 (90%)
+
 - All external Helm repositories use HTTPS
 - Examples: Jetstack, Harbor, Grafana, Prometheus, etc.
 
 **HTTP Repositories:** 2/20 (10% - Expected)
+
 - `app-of-apps`: `http://gitea-http.devtools.svc.cluster.local:3000/...`
 - `traefik-routes`: `http://gitea-http.devtools.svc.cluster.local:3000/...`
 - **Status:** ✓ EXPECTED - Internal Gitea service uses HTTP (not exposed externally)
@@ -125,9 +129,11 @@
 #### File Details
 
 ##### traefik-routes.yaml (33 resources)
+
 **Purpose:** Traefik Gateway API configuration with HTTPRoutes and middlewares
 
 **Gateway Configuration:**
+
 - Name: `traefik-gateway`
 - Namespace: `platform-system`
 - HTTP Listener: port 8000
@@ -136,6 +142,7 @@
 - Allowed Namespaces: iam, devtools, monitoring, storage, platform-system, kube-system
 
 **HTTPRoutes (8 total):**
+
 1. **argocd** (devtools) → argocd-server:80
 2. **grafana** (monitoring) → prometheus-stack-grafana:80
 3. **gitea** (devtools) → gitea-http:3000
@@ -146,64 +153,80 @@
 8. **openbao** (storage) → openbao:8200
 
 **Middlewares (17 total):**
+
 - **Security**: security-headers (4 instances across namespaces)
 - **Authentication**: forwardauth-oauth2 (4 instances), auth-signin (4 instances)
 - **Rate Limiting**: rate-limit (1 platform-system)
 - **Size Limits**: body-limit-10m (1), body-limit-100m (1)
 
 **Services (7 total):**
+
 - auth-redirect (nginx + nginx-ingress controller)
 - oauth2-proxy external access points
 - Gitea ExternalName services
 - Harbor routing services
 
 **ConfigMaps (1):**
+
 - auth-redirect-page: JavaScript redirect page for OAuth2 callback handling
 
 **Deployment (1):**
+
 - auth-redirect-nginx: nginx server for auth redirect page
 
 **Certificate (1):**
+
 - traefik-tls: Wildcard cert for *.local.narwhal.internal
 
 ##### narwhal-db.yaml (7 resources)
+
 **Purpose:** Consolidated PostgreSQL cluster (CNPG) for all applications
 
 **Cluster Configuration:**
+
 - Name: `narwhal-db`
 - Namespace: `database`
 - Kind: CloudNativePG Cluster
 
 **Services:**
+
 - `narwhal-db-rw`: Read-write endpoint
 - `narwhal-db-ro`: Read-only endpoint
 - `narwhal-db-r`: Replication endpoint
 
 **Secrets (3):**
+
 - `pguser`: Default postgres user
 - `pguser-gitea`: Gitea database user
 - `pguser-harbor`: Harbor database user
 
 **Databases:**
+
 - `narwhal` (primary application database)
 - `gitea` (Gitea application database)
 - `harbor` (Harbor registry database)
 
 ##### network-policies.yaml (5 resources)
+
 **Coverage:**
+
 - Pod-to-pod network isolation
 - Cross-namespace communication rules
 - Ingress/egress restrictions
 
 ##### kyverno-policies.yaml (7 resources)
+
 **Policy Types:**
+
 - Pod security standards enforcement
 - Container image registry validation
 - Resource requests/limits requirements
 - Privileged container restrictions
 
 ##### rbac-policies.yaml (7 resources)
+
 **RBAC Scope:**
+
 - ArgoCD service accounts and permissions
 - Monitoring/observability access
 - Storage system access
@@ -236,29 +259,35 @@
 ## Validation Issues Found
 
 ### ✓ Issue 1: HTTP Repository URLs
+
 **Severity:** ℹ️ Informational (Expected)
 **Files:** `app-of-apps.yaml`, `traefik-routes.yaml`
 **Issue:** Uses `http://gitea-http.devtools.svc.cluster.local:3000`
 **Assessment:**
+
 - Gitea is an internal service (ClusterIP service)
 - HTTP is appropriate for internal Kubernetes service-to-service communication
 - Not exposed to external traffic
 - **Status:** ✓ NO ACTION NEEDED
 
 ### ✓ Issue 2: Deprecated Database Files
+
 **Severity:** ℹ️ Informational (Expected)
 **Files:** `gitea-db.yaml`, `harbor-db.yaml`
 **Issue:** Files are empty except for comments
 **Assessment:**
+
 - Databases consolidated into narwhal-db (CNPG) cluster
 - Files kept as reference documentation
 - Comments clearly explain the change
 - **Status:** ✓ ACCEPTABLE - Keep for documentation
 
 ### ✓ Issue 3: Traefik Gateway Namespace Allowlist
+
 **Severity:** ℹ️ Informational
 **File:** `traefik-routes.yaml` (Gateway spec)
 **Current Configuration:**
+
 ```yaml
 allowedRoutes:
   namespaces:
@@ -275,7 +304,9 @@ allowedRoutes:
             - platform-system
             - kube-system
 ```
+
 **Assessment:**
+
 - All namespaces with HTTPRoutes are included
 - Proper restrictive configuration (not `from: All`)
 - **Status:** ✓ CORRECT
@@ -285,26 +316,31 @@ allowedRoutes:
 ## Security Assessment
 
 ### ✓ Network Security
+
 - **NetworkPolicies:** 5 policies in place
 - **Pod Isolation:** Proper ingress/egress rules
 - **Namespace Segregation:** Clear boundaries maintained
 
 ### ✓ RBAC Configuration
+
 - **ClusterRoles:** 5 defined (ArgoCD, monitoring, storage, etc.)
 - **Bindings:** Proper scoping with namespace and cluster scope
 - **Principle of Least Privilege:** Applied
 
 ### ✓ Policy Management
+
 - **Kyverno ClusterPolicies:** 7 policies
 - **Coverage:** PSS enforcement, image registry validation, resource limits
 - **Audit Mode:** Can be verified during deployment
 
 ### ✓ Secrets Management
+
 - **Database Credentials:** In Kubernetes Secrets
 - **Encryption:** Depends on etcd encryption (verify with `kubectl get secrets -o yaml`)
 - **Access Control:** RBAC-protected
 
 ### ✓ TLS/Certificate Management
+
 - **cert-manager Integration:** ✓ Present
 - **Wildcard Certificate:** *.local.narwhal.internal
 - **Certificate Duration:** 8760h (1 year)
@@ -315,38 +351,45 @@ allowedRoutes:
 ## Application Health Indicators
 
 ### Ready for Deployment
+
 All 20 applications are ready for ArgoCD sync:
 
-**Core Infrastructure (6 apps)**
+#### Core Infrastructure (6 apps)
+
 - ✓ cert-manager (TLS automation)
 - ✓ traefik (ingress controller)
 - ✓ metallb (load balancer)
 - ✓ kyverno (policy management)
 
-**Monitoring Stack (5 apps)**
+#### Monitoring Stack (5 apps)
+
 - ✓ prometheus-stack (metrics)
 - ✓ loki (logging)
 - ✓ tempo (tracing)
 - ✓ promtail (log shipper)
 - ✓ grafana (dashboards) - packaged with prometheus-stack
 
-**Service Mesh (3 apps)**
+#### Service Mesh (3 apps)
+
 - ✓ istio-base (mesh definition)
 - ✓ istiod (mesh control plane)
 - ✓ istio-cni (network plugin)
 - ✓ ztunnel (ambient mesh proxy)
 
-**Data & Storage (4 apps)**
+#### Data & Storage (4 apps)
+
 - ✓ seaweedfs (object storage)
 - ✓ openbao (secrets)
 - ✓ velero (backup)
 
-**Developer Tools (3 apps)**
+#### Developer Tools (3 apps)
+
 - ✓ gitea (git server)
 - ✓ harbor (registry)
 - ✓ argocd (gitops)
 
-**Access Control (1 app)**
+#### Access Control (1 app)
+
 - ✓ oauth2-proxy (authentication)
 - ✓ headlamp (dashboard - packaged with devtools)
 
@@ -355,9 +398,11 @@ All 20 applications are ready for ArgoCD sync:
 ## Recommendations
 
 ### Current State
+
 ✓ All validations passed. No blocking issues.
 
 ### Best Practices Compliance
+
 1. ✓ Separate apps by concern (infrastructure, monitoring, storage)
 2. ✓ Namespace isolation maintained
 3. ✓ HTTPS repositories (external)
@@ -366,6 +411,7 @@ All 20 applications are ready for ArgoCD sync:
 6. ✓ Network policies defined
 
 ### Operational Checklist
+
 - [ ] Verify etcd encryption is enabled on cluster
 - [ ] Confirm all Services referenced in HTTPRoutes exist and have correct ports
 - [ ] Test ArgoCD sync with `argocd app sync idp-apps` after cluster bootstrap
@@ -375,7 +421,9 @@ All 20 applications are ready for ArgoCD sync:
 - [ ] Confirm MetalLB IP assignment to ingress
 
 ### Version Pinning
+
 All apps use specific, pinned versions (not `:latest`):
+
 - ✓ Helm chart versions: Semantic (v1.2.3 or 1.2.3)
 - ✓ Git revisions: HEAD (for Gitea-hosted configs)
 - ✓ No floating versions detected
@@ -408,6 +456,7 @@ find gitops/resources -name "*.yaml" -exec grep -c "^kind:" {} + | awk '{sum+=$1
 **Validation Status:** ✓ **PASS**
 
 All GitOps YAML files are:
+
 - ✓ Syntactically valid
 - ✓ Structurally correct
 - ✓ Properly configured

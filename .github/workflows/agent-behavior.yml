@@ -53,14 +53,26 @@ jobs:
             "${{ github.event.pull_request.head.sha }}" \
             > /tmp/agent-changed-files.txt
           cat /tmp/agent-changed-files.txt
+          git diff \
+            "${{ github.event.pull_request.base.sha }}" \
+            "${{ github.event.pull_request.head.sha }}" \
+            -- .github/workflows \
+            > /tmp/agent-workflow-diff.txt
       - name: Require operational trace for high-risk changes
         if: github.event_name == 'pull_request'
         shell: bash
+        # PR_AUTHOR goes through env, not string interpolation, so an untrusted login
+        # can't inject shell; check-agent-trace-requirement.py only ever compares it
+        # against risk-policy.json's trustedAuthors allowlist.
+        env:
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
         run: |
           set -euo pipefail
           python3 scripts/ci/check-agent-trace-requirement.py \
             --policy .agents/evals/risk-policy.json \
             --changed-files /tmp/agent-changed-files.txt \
+            --workflow-diff /tmp/agent-workflow-diff.txt \
+            --pr-author "$PR_AUTHOR" \
             --report-out /tmp/agent-risk-result.json
       - name: Bind live version-consistency evidence
         shell: bash

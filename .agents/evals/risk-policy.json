@@ -12,5 +12,22 @@
     {"risk": "high", "pattern": "gitops/**", "reason": "desired-state deployment contract"},
     {"risk": "high", "pattern": "VERSIONS*", "reason": "platform version source of truth"},
     {"risk": "high", "pattern": ".agents/**", "reason": "agent policy or evidence contract"}
-  ]
+  ],
+  "dependencyBumpExemption": {
+    "_comment": "Narrow, fail-closed carve-out so Dependabot pin bumps (e.g. ruby/setup-ruby 1.321.0->1.324.0) satisfy the high-risk trace requirement via a standing trace instead of an impossible per-PR trace. Any human author, non-uses: workflow edit, or file outside allowedPathPatterns still requires a changed trace.",
+    "trustedAuthors": ["dependabot[bot]"],
+    "standingTrace": ".agents/evals/traces/dependency-bump.json",
+    "workflowPathPatterns": [".github/workflows/*.yml", ".github/workflows/*.yaml"],
+    "allowedPathPatterns": [
+      ".github/workflows/*.yml",
+      ".github/workflows/*.yaml",
+      "package.json", "package-lock.json", "npm-shrinkwrap.json",
+      "yarn.lock", "pnpm-lock.yaml",
+      "Gemfile", "Gemfile.lock", "*.gemspec",
+      "go.mod", "go.sum",
+      "requirements*.txt", "Pipfile", "Pipfile.lock", "pyproject.toml", "poetry.lock",
+      ".python-version", ".nvmrc", ".ruby-version", ".tool-versions"
+    ],
+    "pinOnlyLineRe": "^[+-]\\s*-?\\s*uses:\\s*\\S+(\\s*#.*)?$"
+  }
 }

@@ -44,6 +44,12 @@ Observed run evidence:
 - `smolvm machine ls --json` returned `[]` after both runs. The command was ephemeral and its VM was removed on exit.
 - There are no `kustomization.yaml`, `kustomization.yml`, or `Kustomization` files in this checkout, so a Kustomize validation target does not exist.
 
+The repeatable operator-run harness is `scripts/test/smolvm-validation-poc.sh`. It requires smolvm v1.18.2, Skopeo 1.24.1, and yq v4.53.6; fetches the two images by their platform manifest digests with an empty registry auth file; verifies the resulting archive SHA-256 values; and runs both guests without `--net` or inherited host environment. Each VM is capped at 2 vCPUs, 2048 MiB, 20 GiB storage, and 60 seconds. The script writes stdout, stderr, VM identity, runtime version, timestamps, duration, exit status, and capability probes to `SMOLVM_EVIDENCE_DIR` (or a new temporary evidence directory). It deletes its staging workspace and verifies the temporary smolvm profile has no remaining machines.
+
+Run it with the verified smolvm wrapper on `PATH`, or pass `SMOLVM_BIN=/path/to/smolvm`; optionally set `SMOLVM_EVIDENCE_DIR` to an empty directory to retain the run evidence at a chosen location. The test was rerun after adding the harness: Helm lint/render passed with 101,815 rendered bytes, all network/write/credential probes were denied, and Kubeconform reported 24 valid resources with no invalid, error, or skipped resources.
+
+On macOS, stage the VM inputs under `/tmp`: the default `$TMPDIR` resolves under `/var/folders`, which caused libkrun to fail starting the VM with `EINVAL` in this environment. The validation guest still sees only explicit read-only mounts. The script is intentionally manual and macOS/Apple Silicon only; CI runners do not have the host prerequisites verified for this PoC.
+
 Reproduction shape (use local archives already verified by digest, and mount only a temporary workspace copy):
 
 ```sh

@@ -1,0 +1,71 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "traceId": "narwhal-research-evidence-192-2026-09",
+  "task": "Adopt the OpenForge research evidence standard and capture safe, machine-readable verification outcomes",
+  "consistencyMode": "strict",
+  "agent": {
+    "tool": "Codex",
+    "model": "GPT-6",
+    "taskType": "issue-implementation"
+  },
+  "changeContext": {
+    "paths": [
+      ".github/workflows/lint.yml",
+      "Makefile",
+      "research/README.md",
+      "research/evidence/2026-09.jsonl",
+      "research/schemas/evidence-1.0.schema.json",
+      "scripts/research/run-recorded.py",
+      "scripts/research/tests/test_run_recorded.py",
+      ".agents/evals/traces/2026-09-research-evidence-192.json"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Scoped implementation to Narwhal's prospective evidence contract, regression-test recording, and CI artifact retention; existing historical evidence remains in the OpenForge portfolio catalog"
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "Confirmed the existing research README described collection policy but had no versioned prospective schema or safe recorder; local static regression produced 207 passes, one R55 failure, and one warning",
+      "evidence": ["issue:narwhal-192", "artifact:research/README.md", "test:make-test-local"]
+    },
+    {
+      "id": "e3",
+      "type": "implementation",
+      "summary": "Added schema-validated JSONL recording that stores controlled fields only, extracts regression counts without descriptions, preserves failed outcomes, and uploads CI records with bounded retention"
+    },
+    {
+      "id": "e4",
+      "type": "verification",
+      "status": "passed",
+      "scope": "Evidence recorder success/failure handling, report-summary sanitization, JSON Schema, docs, and mutable workflow input pinning",
+      "summary": "Five recorder unit tests passed; JSON Schema validated successful and failed records; markdownlint, workflow YAML parse, and the mutable-input guard passed",
+      "evidence": ["test:research-recorder-unit-tests", "test:json-schema-check", "policy:mutable-input-guard"]
+    },
+    {
+      "id": "e5",
+      "type": "regression_verification",
+      "status": "failed",
+      "scope": "Local static regression suite",
+      "summary": "The existing R55 portal OIDC parser check fails locally; 207 checks pass and one warning is reported. The failure is outside the evidence recorder change and its measured summary was recorded without raw check descriptions.",
+      "evidence": ["test:make-test-local", "artifact:research/evidence/2026-09.jsonl"]
+    },
+    {
+      "id": "e6",
+      "type": "verification",
+      "status": "failed",
+      "scope": "Hosted PR workflow policy",
+      "summary": "The first PR behavior-contract run correctly required an operational trace for the changed CI workflow; this trace is the corrective evidence",
+      "evidence": ["ci:https://github.com/dasomel/narwhal/actions/runs/36210225731/job/108315006901"]
+    },
+    {
+      "id": "e7",
+      "type": "task_outcome",
+      "state": "B",
+      "summary": "Implementation and local checks are complete; PR CI remains pending after adding this required trace"
+    }
+  ]
+}

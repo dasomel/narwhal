@@ -1,0 +1,85 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "traceId": "narwhal-research-evidence-192-2026-09",
+  "task": "Adopt the OpenForge research evidence standard and capture safe, machine-readable verification outcomes",
+  "consistencyMode": "strict",
+  "agent": {
+    "tool": "Codex",
+    "model": "GPT-6",
+    "taskType": "issue-implementation"
+  },
+  "changeContext": {
+    "paths": [
+      ".github/workflows/lint.yml",
+      "Makefile",
+      "research/README.md",
+      "research/evidence/2026-09.jsonl",
+      "research/schemas/evidence-1.0.schema.json",
+      "scripts/research/run-recorded.py",
+      "scripts/research/tests/test_run_recorded.py",
+      ".agents/evals/traces/2026-09-research-evidence-192.json"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Scoped implementation to Narwhal's prospective evidence contract, regression-test recording, and CI artifact retention; existing historical evidence remains in the OpenForge portfolio catalog"
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "Confirmed the existing research README had no versioned prospective schema or recorder; the source regression JSON report also contains free-form check descriptions that must not be published as evidence",
+      "evidence": ["issue:narwhal-192", "artifact:research/README.md", "artifact:scripts/test/regression-check-kakao.sh"]
+    },
+    {
+      "id": "e3",
+      "type": "implementation",
+      "summary": "Added the versioned JSONL schema and recorder, integrated measured static-regression outcomes with Make and CI, and bounded the CI evidence artifact retention"
+    },
+    {
+      "id": "e4",
+      "type": "bug_fix",
+      "summary": "Closed the evidence privacy gap by extracting only allowlisted summary counts from the regression report; free-form per-check descriptions are not copied into the public artifact"
+    },
+    {
+      "id": "e5",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "Regression report summary extraction and public evidence redaction",
+      "summary": "A fixture containing a token-like check description produced only pass/fail/warning counts in JSONL and marked the run failed when the report contained a failure",
+      "evidence": ["test:only-summary-counts-copied", "artifact:research/schemas/evidence-1.0.schema.json"]
+    },
+    {
+      "id": "e6",
+      "type": "verification",
+      "status": "passed",
+      "scope": "Evidence recorder success/failure handling, report-summary sanitization, JSON Schema, docs, and mutable workflow input pinning",
+      "summary": "Five recorder unit tests passed; JSON Schema validated successful and failed records; markdownlint, workflow YAML parse, and the mutable-input guard passed",
+      "evidence": ["test:research-recorder-unit-tests", "test:json-schema-check", "policy:mutable-input-guard"]
+    },
+    {
+      "id": "e7",
+      "type": "observation",
+      "summary": "Local static regression still reports the unrelated existing R55 portal OIDC parser failure (207 pass, 1 fail, 1 warning); both observed runs remain recorded as failed JSONL rows without raw descriptions",
+      "evidence": ["test:make-test-local", "artifact:research/evidence/2026-09.jsonl"]
+    },
+    {
+      "id": "e8",
+      "type": "observation",
+      "summary": "The first hosted trace evaluator run rejected the initial trace because a failed baseline observation was modeled as a verification event and the task outcome conflicted with its completion claim; the trace was revised to classify facts and scoped verification separately",
+      "evidence": ["ci:https://github.com/dasomel/narwhal/actions/runs/36210427124/job/108315586367"]
+    },
+    {
+      "id": "e9",
+      "type": "completion_claim",
+      "summary": "The evidence schema, safe recorder, static-regression integration, CI artifact path, and regression tests are implemented; unrelated R55 remains explicitly measured and separate"
+    },
+    {
+      "id": "e10",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "The scoped evidence collection implementation is complete and locally verified; hosted PR CI is the final merge gate"
+    }
+  ]
+}

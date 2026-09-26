@@ -37,7 +37,11 @@ validate:
 	exit $$fail
 
 test:
-	./scripts/test/regression-check-kakao.sh --static
+	@report_path_192="$$(mktemp)"; \
+	trap 'rm -f "$$report_path_192"' EXIT; \
+	python3 scripts/research/run-recorded.py --task regression-static --event-type test \
+		--test-report "$$report_path_192" -- \
+		./scripts/test/regression-check-kakao.sh --static --json-report "$$report_path_192"
 	@echo "Live-cluster half (needs a running cluster):"
 	@echo "  vagrant ssh master-1 -c 'bash /home/vagrant/scripts/test/verify-cluster.sh'"
 	@echo "  vagrant ssh master-1 -c 'bash /home/vagrant/scripts/test/test-sso.sh'"

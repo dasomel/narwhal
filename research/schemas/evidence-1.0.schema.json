@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/dasomel/narwhal/blob/main/research/schemas/evidence-1.0.schema.json",
+  "title": "Narwhal research evidence record",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "timestamp",
+    "repository",
+    "revision",
+    "event_type",
+    "task_or_test",
+    "result",
+    "duration_ms",
+    "environment",
+    "attempt",
+    "human_interventions",
+    "review_corrections",
+    "ci_retries",
+    "metadata"
+  ],
+  "properties": {
+    "schema_version": { "const": "1.0" },
+    "timestamp": { "type": "string", "format": "date-time" },
+    "repository": { "const": "dasomel/narwhal" },
+    "revision": { "type": ["string", "null"], "pattern": "^[0-9a-f]{40}$" },
+    "event_type": {
+      "enum": ["build", "test", "install", "deploy", "runtime", "recovery", "agent_task", "release", "benchmark"]
+    },
+    "task_or_test": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._/-]{0,79}$" },
+    "result": { "enum": ["pass", "fail", "partial", "cancelled", "skipped"] },
+    "duration_ms": { "type": "integer", "minimum": 0 },
+    "environment": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._/-]{0,63}$" },
+    "attempt": { "type": "integer", "minimum": 1 },
+    "human_interventions": { "type": "integer", "minimum": 0 },
+    "review_corrections": { "type": "integer", "minimum": 0 },
+    "ci_retries": { "type": "integer", "minimum": 0 },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "exit_code": { "type": ["integer", "null"] },
+        "working_tree_dirty": { "type": "boolean" },
+        "platform": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._/-]{0,63}$" },
+        "pass_count": { "type": "integer", "minimum": 0 },
+        "fail_count": { "type": "integer", "minimum": 0 },
+        "skip_count": { "type": "integer", "minimum": 0 },
+        "warning_count": { "type": "integer", "minimum": 0 },
+        "summary_available": { "type": "boolean" },
+        "cpu_time_ms": { "type": "integer", "minimum": 0 },
+        "peak_memory_mib": { "type": "integer", "minimum": 0 },
+        "storage_bytes": { "type": "integer", "minimum": 0 },
+        "artifact_digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+        "failure_stage": {
+          "enum": ["download", "validation", "provision", "install", "deploy", "health-check", "rollback", "recovery", "cleanup", "timeout", "authorization", "verification", "other"]
+        },
+        "recovery_result": { "enum": ["recovered", "not_recovered", "not_applicable"] }
+      }
+    }
+  }
+}

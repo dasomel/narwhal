@@ -93,7 +93,22 @@ jobs:
         env:
           NARWHAL_PORTAL_REQUIRED: "1"
           NARWHAL_PORTAL_DIR: .narwhal-portal-ci
-        run: ./scripts/test/regression-check-kakao.sh --static
+          RESEARCH_EVIDENCE_DIR: ${{ runner.temp }}/research-evidence
+        run: |
+          report_path="${RUNNER_TEMP}/narwhal-regression-report.json"
+          python3 -m unittest discover -s scripts/research/tests -v
+          python3 scripts/research/run-recorded.py --task regression-static --event-type test \
+            --test-report "${report_path}" -- \
+            ./scripts/test/regression-check-kakao.sh --static --json-report "${report_path}"
+
+      - name: Preserve structured regression evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: research-evidence-regression-static
+          path: ${{ runner.temp }}/research-evidence/
+          if-no-files-found: warn
+          retention-days: 30
 
   # The Mistakes Log is a set of 3-column tables. An unescaped `|` inside a cell silently
   # adds a column and the row stops rendering — three rows had drifted that way unnoticed

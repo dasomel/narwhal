@@ -247,8 +247,12 @@ fi
 echo "Verifying Keycloak HTTPS endpoint..."
 KEYCLOAK_REACHABLE=false
 for attempt in $(seq 1 20); do
+  # /health/* is on Keycloak 26's management port (9000), which the gateway route never
+  # proxies (it targets :8080), so probing it through the gateway is a permanent 404 (#230).
+  # The question here is "does the TLS route reach a serving Keycloak"; pod readiness on :9000
+  # is already gated by the pod-status block above.
   HTTP_CODE=$(curl -sk --max-time 10 -o /dev/null -w '%{http_code}' \
-    "https://keycloak.${DOMAIN}/health/ready" 2>/dev/null || echo "000")
+    "https://keycloak.${DOMAIN}/realms/master" 2>/dev/null || echo "000")
   if [ "${HTTP_CODE}" = "200" ]; then
     KEYCLOAK_REACHABLE=true
     echo "Keycloak ready (HTTP ${HTTP_CODE})"

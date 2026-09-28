@@ -310,6 +310,9 @@ aws_secret_access_key = ${S3_SECRET_KEY}" \
   -n storage --dry-run=client -o yaml | kubectl apply -f -
 
 cat > /tmp/velero-values.yaml << EOF
+rbac:
+  create: false
+  clusterAdministrator: false
 initContainers:
   - name: velero-plugin-for-aws
     image: velero/velero-plugin-for-aws:v1.14.1
@@ -356,7 +359,248 @@ nodeAgent:
     - key: node-role.kubernetes.io/control-plane
       operator: Exists
       effect: NoSchedule
+# D2: Keep each schedule's includedResources equal to the generated READ inventory.
+# D3: events and coordination Leases stay excluded from that inventory.
+schedules:
+  daily-full:
+    disabled: false
+    schedule: 0 2 * * *
+    template:
+      ttl: 168h
+      includedResources: &velero_included
+      - alertmanagerconfigs.monitoring.coreos.com
+      - alertmanagers.monitoring.coreos.com
+      - alloys.collectors.grafana.com
+      - apiservices.apiregistration.k8s.io
+      - apisixclusterconfigs.apisix.apache.org
+      - apisixconsumers.apisix.apache.org
+      - apisixglobalrules.apisix.apache.org
+      - apisixpluginconfigs.apisix.apache.org
+      - apisixroutes.apisix.apache.org
+      - apisixtlses.apisix.apache.org
+      - apisixupstreams.apisix.apache.org
+      - applications.argoproj.io
+      - applicationsets.argoproj.io
+      - appprojects.argoproj.io
+      - authorizationpolicies.security.istio.io
+      - backups.postgresql.cnpg.io
+      - bfdprofiles.metallb.io
+      - bgpadvertisements.metallb.io
+      - bgppeers.metallb.io
+      - bgpsessionstates.frrk8s.metallb.io
+      - certificaterequests.cert-manager.io
+      - certificates.cert-manager.io
+      - challenges.acme.cert-manager.io
+      - ciliumcidrgroups.cilium.io
+      - ciliumclusterwideenvoyconfigs.cilium.io
+      - ciliumclusterwidenetworkpolicies.cilium.io
+      - ciliumendpoints.cilium.io
+      - ciliumenvoyconfigs.cilium.io
+      - ciliumgatewayclassconfigs.cilium.io
+      - ciliumidentities.cilium.io
+      - ciliuml2announcementpolicies.cilium.io
+      - ciliumloadbalancerippools.cilium.io
+      - ciliumnetworkpolicies.cilium.io
+      - ciliumnodeconfigs.cilium.io
+      - ciliumnodes.cilium.io
+      - ciliumpodippools.cilium.io
+      - cleanuppolicies.kyverno.io
+      - clustercleanuppolicies.kyverno.io
+      - clusterephemeralreports.reports.kyverno.io
+      - clusterimagecatalogs.postgresql.cnpg.io
+      - clusterissuers.cert-manager.io
+      - clusterpolicies.kyverno.io
+      - clusterpolicyreports.wgpolicyk8s.io
+      - clusterrolebindings.rbac.authorization.k8s.io
+      - clusterroles.rbac.authorization.k8s.io
+      - clusters.postgresql.cnpg.io
+      - communities.metallb.io
+      - configmaps
+      - configurationstates.metallb.io
+      - controllerrevisions.apps
+      - cronjobs.batch
+      - csidrivers.storage.k8s.io
+      - csinodes.storage.k8s.io
+      - csistoragecapacities.storage.k8s.io
+      - customresourcedefinitions.apiextensions.k8s.io
+      - daemonsets.apps
+      - databases.postgresql.cnpg.io
+      - deletingpolicies.policies.kyverno.io
+      - deployments.apps
+      - destinationrules.networking.istio.io
+      - deviceclasses.resource.k8s.io
+      - endpoints
+      - endpointslices.discovery.k8s.io
+      - envoyfilters.networking.istio.io
+      - ephemeralreports.reports.kyverno.io
+      - failoverquorums.postgresql.cnpg.io
+      - flowschemas.flowcontrol.apiserver.k8s.io
+      - frrconfigurations.frrk8s.metallb.io
+      - frrk8sconfigurations.frrk8s.metallb.io
+      - frrnodestates.frrk8s.metallb.io
+      - gatewayclasses.gateway.networking.k8s.io
+      - gateways.gateway.networking.k8s.io
+      - gateways.networking.istio.io
+      - generatingpolicies.policies.kyverno.io
+      - globalcontextentries.kyverno.io
+      - grpcroutes.gateway.networking.k8s.io
+      - horizontalpodautoscalers.autoscaling
+      - httproutes.gateway.networking.k8s.io
+      - imagecatalogs.postgresql.cnpg.io
+      - imagevalidatingpolicies.policies.kyverno.io
+      - ingressclasses.networking.k8s.io
+      - ingresses.networking.k8s.io
+      - ipaddresses.networking.k8s.io
+      - ipaddresspools.metallb.io
+      - issuers.cert-manager.io
+      - jobs.batch
+      - keycloakrealmimports.k8s.keycloak.org
+      - keycloaks.k8s.keycloak.org
+      - l2advertisements.metallb.io
+      - limitranges
+      - mutatingpolicies.policies.kyverno.io
+      - mutatingwebhookconfigurations.admissionregistration.k8s.io
+      - namespaceddeletingpolicies.policies.kyverno.io
+      - namespacedgeneratingpolicies.policies.kyverno.io
+      - namespacedimagevalidatingpolicies.policies.kyverno.io
+      - namespacedmutatingpolicies.policies.kyverno.io
+      - namespacedvalidatingpolicies.policies.kyverno.io
+      - namespaces
+      - networkpolicies.networking.k8s.io
+      - orders.acme.cert-manager.io
+      - peerauthentications.security.istio.io
+      - persistentvolumeclaims
+      - persistentvolumes
+      - poddisruptionbudgets.policy
+      - podmonitors.monitoring.coreos.com
+      - pods
+      - podtemplates
+      - policies.kyverno.io
+      - policyexceptions.kyverno.io
+      - policyexceptions.policies.kyverno.io
+      - policyreports.wgpolicyk8s.io
+      - poolers.postgresql.cnpg.io
+      - priorityclasses.scheduling.k8s.io
+      - prioritylevelconfigurations.flowcontrol.apiserver.k8s.io
+      - probes.monitoring.coreos.com
+      - prometheusagents.monitoring.coreos.com
+      - prometheuses.monitoring.coreos.com
+      - prometheusrules.monitoring.coreos.com
+      - proxyconfigs.networking.istio.io
+      - publications.postgresql.cnpg.io
+      - quotapolicies.quota.nfs.io
+      - referencegrants.gateway.networking.k8s.io
+      - replicasets.apps
+      - replicationcontrollers
+      - requestauthentications.security.istio.io
+      - resourceclaims.resource.k8s.io
+      - resourceclaimtemplates.resource.k8s.io
+      - resourcequotas
+      - resourceslices.resource.k8s.io
+      - rolebindings.rbac.authorization.k8s.io
+      - roles.rbac.authorization.k8s.io
+      - runtimeclasses.node.k8s.io
+      - scheduledbackups.postgresql.cnpg.io
+      - scrapeconfigs.monitoring.coreos.com
+      - secrets
+      - serviceaccounts
+      - servicebgpstatuses.metallb.io
+      - servicecidrs.networking.k8s.io
+      - serviceentries.networking.istio.io
+      - servicel2statuses.metallb.io
+      - servicemonitors.monitoring.coreos.com
+      - services
+      - sidecars.networking.istio.io
+      - statefulsets.apps
+      - storageclasses.storage.k8s.io
+      - subscriptions.postgresql.cnpg.io
+      - telemetries.telemetry.istio.io
+      - thanosrulers.monitoring.coreos.com
+      - trafficextensions.extensions.istio.io
+      - updaterequests.kyverno.io
+      - validatingadmissionpolicies.admissionregistration.k8s.io
+      - validatingadmissionpolicybindings.admissionregistration.k8s.io
+      - validatingpolicies.policies.kyverno.io
+      - validatingwebhookconfigurations.admissionregistration.k8s.io
+      - virtualservices.networking.istio.io
+      - volumeattachments.storage.k8s.io
+      - volumeattributesclasses.storage.k8s.io
+      - wasmplugins.extensions.istio.io
+      - workloadentries.networking.istio.io
+      - workloadgroups.networking.istio.io
+      includedNamespaces:
+      - '*'
+      excludedNamespaces:
+      - kube-system
+      - storage
+      - monitoring
+      includeClusterResources: true
+      storageLocation: default
+      defaultVolumesToFsBackup: true
+  daily-databases:
+    disabled: false
+    schedule: 0 1 * * *
+    template:
+      ttl: 336h
+      includedResources: *velero_included
+      includedNamespaces:
+      - iam
+      - devtools
+      labelSelector:
+        matchLabels:
+          cnpg.io/cluster: ''
+      includeClusterResources: false
+      storageLocation: default
+      defaultVolumesToFsBackup: true
+  daily-gitea:
+    disabled: false
+    schedule: 0 3 * * *
+    template:
+      ttl: 336h
+      includedResources: *velero_included
+      includedNamespaces:
+      - devtools
+      includeClusterResources: false
+      storageLocation: default
+      defaultVolumesToFsBackup: true
+  daily-harbor:
+    disabled: false
+    schedule: 0 4 * * *
+    template:
+      ttl: 168h
+      includedResources: *velero_included
+      includedNamespaces:
+      - devtools
+      includeClusterResources: false
+      storageLocation: default
+      defaultVolumesToFsBackup: true
+  daily-openbao:
+    disabled: false
+    schedule: 0 5 * * *
+    template:
+      ttl: 336h
+      includedResources: *velero_included
+      includedNamespaces:
+      - storage
+      includeClusterResources: false
+      storageLocation: default
+      defaultVolumesToFsBackup: true
 EOF
+
+# Apply the same RBAC source before Helm creates velero-server, so its ServiceAccount
+# never starts without the dedicated restore permissions bound to it.
+if [[ ! -f /home/vagrant/configs/gitops/resources/velero-server-rbac.yaml ]]; then
+  echo "ERROR: Velero RBAC manifest is missing from synced GitOps resources" >&2
+  exit 1
+fi
+# roleRef is immutable. Remove the chart's legacy binding only when it still grants
+# cluster-admin; leave any same-named binding with a different roleRef untouched.
+LEGACY_VELERO_ROLE_REF="$(kubectl get clusterrolebinding velero-server \
+  -o jsonpath='{.roleRef.name}' 2>/dev/null || true)"
+if [[ "${LEGACY_VELERO_ROLE_REF}" == cluster-admin ]]; then
+  kubectl delete clusterrolebinding velero-server
+fi
+kubectl apply -f /home/vagrant/configs/gitops/resources/velero-server-rbac.yaml
 
 VELERO_OK=false
 for attempt in 1 2 3 4 5; do

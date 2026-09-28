@@ -1874,6 +1874,21 @@ PYEOF
   check R203 "every GitOps resource has a reconciling Application (Narwhal#235)" \
     python3 scripts/test/lib/check-gitops-resource-ownership.py --mutation-verify
 
+  check R204 "Velero Helm paths explicitly disable chart-managed broad RBAC (Narwhal#226)" \
+    python3 scripts/test/lib/check-velero-rbac.py --gitops-values gitops/charts/narwhal-apps/templates/velero.yaml --script-values scripts/cluster/08-4-storage.sh
+  check R205 "Velero generated RBAC is safe and legacy upgrade prunes cluster-admin (Narwhal#226)" \
+    python3 scripts/test/lib/check-velero-rbac.py --role gitops/resources/velero-server-rbac.yaml --script scripts/cluster/08-4-storage.sh --chart gitops/charts/narwhal-apps/templates/velero.yaml
+  check R206 "Velero RBAC drift, privilege, and upgrade regressions reject mutations (Narwhal#226)" \
+    python3 scripts/test/lib/check-velero-rbac.py --mutation-verify --role gitops/resources/velero-server-rbac.yaml --script scripts/cluster/08-4-storage.sh --chart gitops/charts/narwhal-apps/templates/velero.yaml --schedules gitops/charts/narwhal-apps/templates/velero.yaml scripts/cluster/08-4-storage.sh
+  check R207 "Velero RBAC matches the committed live API discovery snapshot (Narwhal#226)" \
+    python3 scripts/ops/gen-velero-rbac.py scripts/ops/velero-rbac-api-resources.snapshot.txt --output gitops/resources/velero-server-rbac.yaml --check --check-schedules gitops/charts/narwhal-apps/templates/velero.yaml scripts/cluster/08-4-storage.sh
+  check R208 "every Velero schedule includes exactly the generator readable resource inventory (Narwhal#226)" \
+    python3 scripts/test/lib/check-velero-rbac.py --role gitops/resources/velero-server-rbac.yaml --schedules gitops/charts/narwhal-apps/templates/velero.yaml scripts/cluster/08-4-storage.sh
+  check R209 "Velero schedule resource inventory rejects drift and missing fields (Narwhal#226)" \
+    python3 scripts/test/lib/check-velero-rbac.py --mutation-verify --role gitops/resources/velero-server-rbac.yaml --script scripts/cluster/08-4-storage.sh --chart gitops/charts/narwhal-apps/templates/velero.yaml --schedules gitops/charts/narwhal-apps/templates/velero.yaml scripts/cluster/08-4-storage.sh
+  check R215 "Velero restores namespaced Roles and RoleBindings while cluster RBAC stays read-only (Narwhal#226)" \
+    python3 scripts/test/lib/check-velero-rbac.py --role gitops/resources/velero-server-rbac.yaml
+
   check R154 "bundle preflight and chart builder share install-call requirements (2026-09-28)" \
     bash -c '
       set -euo pipefail

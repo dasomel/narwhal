@@ -16,7 +16,7 @@ set -euo pipefail
 cd "$(dirname "$0")/../.."
 
 RBAC_FILE="${RBAC_FILE:-gitops/resources/rbac-policies.yaml}"
-PORTAL_DIR="${PORTAL_DIR:-../narwhal-portal}"
+PORTAL_DIR="${NARWHAL_PORTAL_DIR:-${PORTAL_DIR:-../narwhal-portal}}"
 AUTH_FILE="${PORTAL_DIR}/src/lib/auth.ts"
 
 # The portal repo is a sibling checkout, not a submodule of this one — it may not
@@ -32,6 +32,40 @@ fi
 if [ ! -f "${AUTH_FILE}" ]; then
   echo "SKIP: ${AUTH_FILE} not found -- nothing to compare"
   exit 0
+fi
+
+# Production Gitea calls require a configured HTTPS endpoint and API token.
+# Owner/repo/base branch have safe portal defaults; admin passwords are not runtime inputs.
+PORTAL_CONFIG_FILE="${PORTAL_DIR}/src/lib/config.ts"
+PORTAL_GITEA_FILE="${PORTAL_DIR}/src/lib/gitea.ts"
+PORTAL_DEPLOYMENT="${PORTAL_DEPLOYMENT_FILE:-gitops/charts/narwhal-platform/templates/narwhal-portal-k8s.yaml}"
+PORTAL_BINDINGS="${PORTAL_BINDINGS_FILE:-scripts/cluster/13-2-narwhal-portal-bindings.sh}"
+if [ -f "${PORTAL_CONFIG_FILE}" ] && [ -f "${PORTAL_GITEA_FILE}" ]; then
+  for required_var in GITEA_URL GITEA_TOKEN; do
+    case "${required_var}" in
+      GITEA_URL)
+        if ! grep -q '"GITEA_URL", process.env.GITEA_URL' "${PORTAL_CONFIG_FILE}"; then
+          echo "FAIL: portal production requirement for GITEA_URL was not found" >&2
+          exit 1
+        fi
+        provided=0
+        grep -q 'name: GITEA_URL' "${PORTAL_DEPLOYMENT}" && provided=1
+        ;;
+      GITEA_TOKEN)
+        if ! grep -q 'GITEA_TOKEN is not configured' "${PORTAL_GITEA_FILE}"; then
+          echo "FAIL: portal production requirement for GITEA_TOKEN was not found" >&2
+          exit 1
+        fi
+        provided=0
+        grep -q -- '--from-literal=GITEA_TOKEN=' "${PORTAL_BINDINGS}" && provided=1
+        ;;
+    esac
+    if [ "${provided}" -ne 1 ]; then
+      echo "FAIL: production-required ${required_var} is not provided by Narwhal" >&2
+      exit 1
+    fi
+  done
+  echo "PASS: production-required Gitea env is provided (GITEA_URL, GITEA_TOKEN)"
 fi
 
 # RBAC side: bare names of every "oidc:<X>" Group subject bound by a

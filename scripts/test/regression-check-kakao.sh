@@ -243,6 +243,9 @@ assert "kubectl get applications -A" in block and "exit 1" in block and "OutOfSy
     python3 scripts/test/lib/check-lib-sourced.py
   check R218b "R218 reports a lib-using script whose source line is removed (Narwhal#243)" \
     python3 scripts/test/lib/check-lib-sourced.py --mutation-verify
+  # Narwhal#243: the portal readiness gate rejects a non-https GITEA_URL; 14 owns that key.
+  check R220 "14-gitops-bootstrap gives the portal an https GITEA_URL (Narwhal#243)" \
+    python3 -c 'import re,pathlib; s=pathlib.Path("scripts/cluster/14-gitops-bootstrap.sh").read_text(); m=re.search(r"\"GITEA_URL\": \"\$\{(\w+)\}\"", s); assert m, "portal GITEA_URL patch not found"; v=re.search(r"^"+m.group(1)+r"=\"([^\"]*)\"", s, re.M); assert v and v.group(1).startswith("https://"), "portal GITEA_URL is not https"'
   check R215 "all node provisioning paths enable rpc-statd at boot (Narwhal#246, 2026-09-28)" \
     python3 scripts/test/lib/check-rpc-statd-boot.py --mutation-verify
 
@@ -1222,14 +1225,14 @@ PYEOF
     NARWHAL_PORTAL_DIR="${portal_dir}" scripts/test/check-oidc-rbac-portal-contract.sh \
       >/dev/null 2>&1 || gitea_contract_ok=0
     gitea_tmp="$(mktemp -d)"
-    sed '/--from-literal=GITEA_TOKEN=/d' scripts/cluster/13-2-narwhal-portal-bindings.sh \
-      > "${gitea_tmp}/bindings.sh"
-    NARWHAL_PORTAL_DIR="${portal_dir}" PORTAL_BINDINGS_FILE="${gitea_tmp}/bindings.sh" \
+    sed '/"GITEA_TOKEN": "${PORTAL_GIT_TOKEN}"/d' scripts/cluster/14-gitops-bootstrap.sh \
+      > "${gitea_tmp}/gitops-bootstrap.sh"
+    NARWHAL_PORTAL_DIR="${portal_dir}" PORTAL_GITOPS_BOOTSTRAP_FILE="${gitea_tmp}/gitops-bootstrap.sh" \
       scripts/test/check-oidc-rbac-portal-contract.sh >/dev/null 2>&1 \
       || gitea_mutation_caught=1
     rm -rf "${gitea_tmp}"
     if [ "${gitea_contract_ok}" -eq 1 ] && [ "${gitea_mutation_caught}" -eq 1 ]; then
-      ok R216 "portal production Gitea env is provided and missing token is caught (Narwhal#243, 2026-09-28)"
+      ok R216 "portal-required Gitea keys are provided by bootstrap secret and envFrom; missing token is caught (Narwhal#243, 2026-09-28)"
     elif [ "${gitea_contract_ok}" -eq 0 ]; then
       bad R216 "portal production Gitea env contract is currently broken (Narwhal#243, 2026-09-28)"
     else
@@ -1239,51 +1242,8 @@ PYEOF
     warn R216 "narwhal-portal sibling checkout not found; Gitea env contract skipped"
   fi
 
-  # #243: fail closed if the portal's token owner or scope drifts back to the site admin.
-  local portal_token_contract_ok=0 portal_token_mutation_caught=0 portal_token_tmp
-  if python3 - <<'PYTOKEN'
-from pathlib import Path
-s = Path("scripts/cluster/13-2-narwhal-portal-bindings.sh").read_text()
-expected = (
-    'GITEA_PORTAL_USER="narwhal-portal"' in s
-    and 'http://localhost:3000/api/v1/users/${GITEA_PORTAL_USER}/tokens' in s
-    and '"scopes":["write:repository"]' in s
-    and '"write:admin"' not in s
-    and '"write:user"' not in s
-    and '"write:organization"' not in s
-    and 'if [ "${repo_perms}" != "ok" ] || [ "${token_scope_ok}" != "true" ]' in s
-    and 'p.get("push") and not p.get("admin")' in s
-    and 'http://localhost:3000/api/v1/users/gitea-admin/tokens' in s
-    and 'http://localhost:3000/api/v1/users/gitea-admin/tokens/${stale_token_id}' in s
-    and s.index('http://localhost:3000/api/v1/users/gitea-admin/tokens/${stale_token_id}') < s.index('if kubectl get secret narwhal-portal-secrets')
-)
-raise SystemExit(0 if expected else 1)
-PYTOKEN
-  then portal_token_contract_ok=1; fi
-  portal_token_tmp="$(mktemp -d)"
-  sed 's#users/${GITEA_PORTAL_USER}/tokens)#users/gitea-admin/tokens)#; s#"scopes":\["write:repository"\]#"scopes":["write:repository","write:admin"]#' \
-    scripts/cluster/13-2-narwhal-portal-bindings.sh > "${portal_token_tmp}/bindings.sh"
-  PORTAL_BINDINGS_FILE="${portal_token_tmp}/bindings.sh" python3 - <<'PYTOKEN' >/dev/null 2>&1 \
-    || portal_token_mutation_caught=1
-from pathlib import Path
-import os
-s = Path(os.environ["PORTAL_BINDINGS_FILE"]).read_text()
-valid = ('GITEA_PORTAL_USER="narwhal-portal"' in s
-         and 'users/${GITEA_PORTAL_USER}/tokens)' in s
-         and '"scopes":["write:repository"]' in s
-         and '"write:admin"' not in s
-         and 'if [ "${repo_perms}" != "ok" ] || [ "${token_scope_ok}" != "true" ]' in s
-         and 'users/gitea-admin/tokens' in s
-         and 'users/gitea-admin/tokens/${stale_token_id}' in s
-         and s.index('users/gitea-admin/tokens/${stale_token_id}') < s.index('if kubectl get secret narwhal-portal-secrets'))
-raise SystemExit(0 if valid else 1)
-PYTOKEN
-  rm -rf "${portal_token_tmp}"
-  if [ "${portal_token_contract_ok}" -eq 1 ] && [ "${portal_token_mutation_caught}" -eq 1 ]; then
-    ok R217 "portal Gitea token is owned by narwhal-portal with repository-only scope; owner/scope mutations are caught (Narwhal#243, 2026-09-28)"
-  else
-    bad R217 "portal Gitea token owner/scope contract or mutation detection is broken"
-  fi
+  check R219 "13-2 preserves keys owned by other secret writers on rerun (Narwhal#243, 2026-09-28)" \
+    python3 scripts/test/lib/check-portal-secret-preservation.py --mutation-verify
 
   # 2026-08-23 (#160): 492e65a's own commit message left this open — the pod-network CIDR
   # trusted_proxies narrowing is a second layer, not a boundary, since every pod shares it.

@@ -259,14 +259,6 @@ spec:
           # volume instead of the default automount, whose audience is not guaranteed to
           # stay pinned to the API server's actual issuer.
           env:
-            - name: GITEA_URL
-              value: https://gitea.{{ .Values.baseDomain }}
-            - name: GITEA_OWNER
-              value: gitea-admin
-            - name: GITEA_REPO
-              value: narwhal-gitops
-            - name: GITEA_BASE_BRANCH
-              value: main
             - name: K8S_SA_TOKEN_FILE
               value: /var/run/secrets/kubernetes.io/serviceaccount-k8s-api/token
             - name: K8S_TOKEN_AUDIENCE

@@ -52,7 +52,9 @@ done
 sudo mkdir -p /etc/kubernetes/enc /etc/kubernetes/audit /var/log/kubernetes/audit
 if [[ ! -f /etc/kubernetes/enc/encryption-config.yaml ]]; then
   ENC_KEY=$(head -c 32 /dev/urandom | base64)
-  cat <<ENCEOF | sudo tee /etc/kubernetes/enc/encryption-config.yaml >/dev/null
+  (
+    umask 077
+    cat <<ENCEOF | sudo tee /etc/kubernetes/enc/encryption-config.yaml >/dev/null
 apiVersion: apiserver.config.k8s.io/v1
 kind: EncryptionConfiguration
 resources:
@@ -64,8 +66,18 @@ resources:
               secret: ${ENC_KEY}
       - identity: {}
 ENCEOF
+  )
   sudo chmod 600 /etc/kubernetes/enc/encryption-config.yaml
 fi
+# Keep a separately permissioned copy of the active key for file-permission auditing and
+# break-glass inventory. The EncryptionConfiguration remains the apiserver source of truth.
+(
+  umask 077
+  sudo yq -r '.resources[] | select(.resources | contains(["secrets"])) | .providers[] | select(has("aescbc")) | .aescbc.keys[0].secret' \
+    /etc/kubernetes/enc/encryption-config.yaml | sudo tee /etc/kubernetes/enc/encryption-key >/dev/null
+)
+sudo chown root:root /etc/kubernetes/enc/encryption-key
+sudo chmod 600 /etc/kubernetes/enc/encryption-key
 cat <<'AUDEOF' | sudo tee /etc/kubernetes/audit/audit-policy.yaml >/dev/null
 apiVersion: audit.k8s.io/v1
 kind: Policy
@@ -84,9 +96,10 @@ rules:
   - level: Metadata
 AUDEOF
 # Stage the encryption config so joining control-plane nodes fetch the SAME key.
-sudo cp /etc/kubernetes/enc/encryption-config.yaml /home/vagrant/encryption-config.yaml
-sudo chown vagrant:vagrant /home/vagrant/encryption-config.yaml
-sudo chmod 600 /home/vagrant/encryption-config.yaml
+(
+  umask 077
+  sudo install -o vagrant -g vagrant -m 600 /etc/kubernetes/enc/encryption-config.yaml /home/vagrant/encryption-config.yaml
+)
 
 # Generate kubeadm config for HA setup
 cat <<EOF > /tmp/kubeadm-config.yaml

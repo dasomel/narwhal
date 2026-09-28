@@ -97,6 +97,42 @@ the provisioning scripts do not mutate existing clusters.
 > **The source changes above are NOT yet clean-install validated** — verify enc/audit come
 > up on a from-scratch `vagrant up` (all 3 masters) before relying on the provisioning path.
 
+## etcd encryption verification and key rotation (Narwhal#109)
+
+The current profile protects Kubernetes `secrets` with local `aescbc`; `identity` is the
+last provider and exists only to decrypt legacy unencrypted values. The first provider for
+each protected resource handles new writes. Expanding scope to ConfigMaps or CRDs requires
+an explicit resource inventory and rollout review.
+
+On every control-plane node, `/etc/kubernetes/enc/encryption-config.yaml` is the
+EncryptionConfiguration and contains the base64 key material. Treat it as both config and
+key material: it must be `root:root` mode `0600`. Master-1 generates it once and stages the
+same file to joining masters before kubeadm join. Run
+`sudo /home/vagrant/scripts/verify/etcd-encryption-check.sh <master-1-ip> <master-2-ip>
+<master-3-ip>` on a control-plane node to check provider order, permissions, active
+apiserver wiring, raw etcd ciphertext, HA config hashes, and the count of legacy plaintext
+Secret values. It accepts the legacy layout where the key exists only in the protected config.
+The verifier uses `kubectl exec` with `/etc/kubernetes/admin.conf` to run etcdctl inside the
+etcd static pod; Python decodes the JSON/base64 values on the node.
+
+Run `sudo scripts/ops/rotate-etcd-encryption-key.sh <master-1-ip> <master-2-ip>
+<master-3-ip>` from master-1. Review `--dry-run` first. On legacy clusters the rotation reads
+the key from the embedded config; its first config mutation creates the separate mode-0600
+key file, making that mutation the documented legacy-layout migration step. The resumable state file records
+the completed phase and new key name, never key bytes. Rotation adds a second key, rolls each apiserver
+sequentially, promotes the new key, rolls again, rewrites Secrets namespace by namespace,
+and requires zero unencrypted etcd values before removing the old key. Both keys remain
+available to decrypt during this dual-key decrypt window. If verification fails, leave the
+old key and resume after resolving the cause.
+
+Local `aescbc` is the offline default and keeps key custody on the control-plane hosts, so a
+host compromise also exposes the key. `secretbox` is another local provider if explicitly
+selected in the cluster profile. KMS v2 is a documented future option for external key
+custody, not an implicit dependency: any KMS profile must specify fail-closed behavior when
+KMS is unavailable and a tested offline fallback/restore procedure. The offline fallback
+remains a locally managed provider with separately controlled key backups; never silently
+fall back to `identity` for new writes.
+
 ## NFS export least-privilege migration (narwhal#186, 2026-09-17)
 
 `scripts/cluster/01-nfs-server.sh` changed the NFS share root from mode `0777`
@@ -254,3 +290,7 @@ trivy-operator scanners must be enabled (`gitops/charts/narwhal-apps/templates/t
 `clusterComplianceEnabled` = true, and `compliance.reportType: all` (summary yields no
 per-control detail). Reports regenerate on the `0 */6 * * *` cron; to force one, briefly
 patch a report's `spec.cron` to `* * * * *`.
+
+## Issue #109 live verifier findings
+
+The lead's first live run on master-1 of the six-node kubeadm 1.35 cluster built from main returned 6 PASS / 3 FAIL. Provider order, config permissions, manifest/apiserver wiring, and peer hashes passed. The failures exposed two compatibility gaps: legacy clusters embed the key in the protected config without a separate key file, and kubeadm has etcdctl only in the distroless etcd static pod. The verifier now recognizes the embedded-key layout and executes etcdctl in that pod with explicit admin.conf, decoding JSON/base64 values on the node. The lead will rerun the live check after these fixes.

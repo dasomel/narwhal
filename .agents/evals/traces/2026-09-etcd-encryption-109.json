@@ -1,0 +1,122 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-issue-109-etcd-encryption-2026-09",
+  "task": "Add a control-plane etcd encryption verifier, resumable local key rotation, documentation, and static regression coverage for Narwhal#109",
+  "changeContext": {
+    "paths": [
+      "scripts/verify/etcd-encryption-check.sh",
+      "scripts/ops/rotate-etcd-encryption-key.sh",
+      "scripts/cluster/02-init-cluster.sh",
+      "scripts/cluster/02-join-control-plane.sh",
+      "scripts/test/regression-check-kakao.sh",
+      "docs/common/compliance-hardening.md",
+      "docs/common/lessons-log.md",
+      ".agents/evals/traces/2026-09-etcd-encryption-109.json"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Read issue #109, the existing init and join encryption flow, repository instructions, risk policy, lessons log, and recent trace schema; current config uses aescbc first and identity last, and joining masters stage the same master-1 config.",
+      "evidence": [
+        "artifact:scripts/cluster/02-init-cluster.sh",
+        "artifact:scripts/cluster/02-join-control-plane.sh",
+        "artifact:.agents/evals/risk-policy.json"
+      ]
+    },
+    {
+      "id": "e2",
+      "type": "bug_fix",
+      "summary": "Added node-side encryption checks for provider order, key/config permissions, apiserver wiring, raw etcd ciphertext, HA hashes, and plaintext Secret count; added resumable seven-phase rotation and separate protected key file generation on init/join.",
+      "evidence": [
+        "artifact:scripts/verify/etcd-encryption-check.sh",
+        "artifact:scripts/ops/rotate-etcd-encryption-key.sh",
+        "artifact:scripts/cluster/02-init-cluster.sh",
+        "artifact:scripts/cluster/02-join-control-plane.sh"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "regression_verification",
+      "status": "passed",
+      "summary": "Final shellcheck --severity=warning and bash -n passed for both new scripts and all changed scripts; regression-check-kakao.sh --static passed 205 checks with 0 failures and 4 existing warnings.",
+      "scope": "Shell static analysis and static regression suite",
+      "evidence": [
+        "command:shellcheck --severity=warning",
+        "command:bash -n",
+        "artifact:/tmp/narwhal-109-regression.log"
+      ]
+    },
+    {
+      "id": "e4",
+      "type": "verification",
+      "status": "passed",
+      "summary": "Mutation verification inserted identity before aescbc in a temporary copy of 02-init-cluster.sh; R155 failed and the regression command exited 1. Dry-run printed all seven rotation steps, completed without state/config changes, and exposed no key material.",
+      "scope": "Static mutation and rotation dry-run behavior",
+      "evidence": [
+        "command:INIT_CLUSTER_SCRIPT=<temporary-mutated-copy> ./scripts/test/regression-check-kakao.sh --static",
+        "artifact:/tmp/narwhal-109-dryrun-confirm.log"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "reproduction",
+      "summary": "Lead live run on master-1 of a six-node kubeadm 1.35 cluster (built from main, peers 192.168.56.11/.12) returned 6 PASS / 3 FAIL. HA SHA-256, aescbc-first, config 0600 root:root, manifest reference, and apiserver flag passed; failures were absent separate key file on a legacy config-embedded-key cluster and storage/count checks requiring host etcdctl, which kubeadm static-pod nodes lack.",
+      "scope": "Live cluster and operational rotation",
+      "evidence": [
+        "live:6 PASS / 3 FAIL on master-1; pre-branch cluster"
+      ]
+    },
+    {
+      "id": "e8",
+      "type": "bug_fix",
+      "summary": "Verifier now accepts legacy embedded-key layout when the config is protected, runs etcdctl inside the etcd static pod using explicit admin.conf, and scans JSON/base64 values on the node. Rotation already recovers key bytes from encryption-config.yaml and writes the separate key file during its first config mutation; docs now require reviewing dry-run for this migration. Added offline legacy-layout, ciphertext-prefix, and plaintext protobuf fixtures.",
+      "evidence": [
+        "artifact:scripts/verify/etcd-encryption-check.sh",
+        "artifact:scripts/ops/rotate-etcd-encryption-key.sh",
+        "artifact:scripts/test/test-etcd-encryption-static.py",
+        "artifact:docs/common/compliance-hardening.md"
+      ]
+    },
+    {
+      "id": "e9",
+      "type": "verification",
+      "status": "passed",
+      "summary": "shellcheck --severity=warning passed; bash -n passed; offline encryption fixtures passed (legacy layout, raw binary aescbc prefix, plaintext protobuf value); regression-check-kakao.sh --static passed 213 checks with 0 failures and 4 pre-existing warnings. git diff --check passed. Lead live rerun is still pending.",
+      "scope": "shellcheck, bash syntax, kakao static regression, etcd encryption fixtures",
+      "evidence": [
+        "command:shellcheck --severity=warning scripts/verify/etcd-encryption-check.sh scripts/ops/rotate-etcd-encryption-key.sh scripts/cluster/02-init-cluster.sh scripts/cluster/02-join-control-plane.sh scripts/test/regression-check-kakao.sh",
+        "command:bash -n scripts/verify/etcd-encryption-check.sh scripts/ops/rotate-etcd-encryption-key.sh scripts/cluster/02-init-cluster.sh scripts/cluster/02-join-control-plane.sh scripts/test/regression-check-kakao.sh",
+        "command:python3 scripts/test/test-etcd-encryption-static.py",
+        "command:./scripts/test/regression-check-kakao.sh --static (213 pass, 0 fail, 4 warnings)",
+        "command:git diff --check",
+        "not-run:live-cluster-rerun"
+      ]
+    },
+    {
+      "id": "e10",
+      "type": "verification",
+      "status": "passed",
+      "scope": "live six-node kubeadm 1.35 cluster, master-1, scripts/verify/etcd-encryption-check.sh --strict after e8",
+      "summary": "Lead re-ran the fixed verifier live in --strict mode on master-1: 9 PASS / 0 FAIL (legacy embedded-key layout accepted, etcdctl run inside the etcd static pod, zero unencrypted secrets, HA config hash matches on both peers).",
+      "evidence": [
+        "runtime:master-1 etcd-encryption-check.sh --strict => 9 PASS / 0 FAIL",
+        "test:scripts/test/test-etcd-encryption-static.py PASS",
+        "ci:./scripts/test/regression-check-kakao.sh --static passed 220 failed 0"
+      ]
+    },
+    {
+      "id": "e6",
+      "type": "completion_claim",
+      "summary": "Verifier (standard + --strict), rotation script, init/join hardening, regression guards and docs are present; verifier live-verified 9/0 in strict mode. The rotation script is verified offline (dry-run + failed-verifier abort gate); a real live rotation is a follow-up operational run, not part of this change's acceptance."
+    },
+    {
+      "id": "e7",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Converged: verifier false positives from the first live run fixed and re-verified live (9 PASS / 0 FAIL); static suite and fixtures pass."
+    }
+  ]
+}

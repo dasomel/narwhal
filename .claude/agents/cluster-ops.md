@@ -65,10 +65,10 @@ vagrant ssh master-1 -c "kubectl get events -n <ns> --sort-by=.lastTimestamp | t
 | velero-ui ErrImagePull | Tag has `v` prefix | Use `0.10.1` (NOT `v0.10.1`) |
 | Keycloak OIDC token missing `aud` | No audience mapper on client | Add `oidc-audience-mapper` to each Keycloak client: `included.client.audience=<client-id>` |
 | Keycloak exec fails | Keycloak is StatefulSet, not Deployment | Use `kubectl exec -n iam keycloak-0 -c keycloak -- /opt/keycloak/bin/kcadm.sh` |
-| APISIX IC ResourceSyncAborted | ExternalName backend has no endpoints | IC cannot sync these routes; maintain via admin API directly (see 11-3-keycloak-clients.sh) |
+| APISIX IC ResourceSyncAborted | IC 1.8 treats an Admin API 404 on empty etcd as fatal, or an ExternalName backend has no endpoints | Recreate the affected CRs with `scripts/cluster/lib/recover-apisix-resource-sync.sh`; see lessons-log for the discriminator |
 | APISIX routes lost after restart | Routes stored in etcd | Verify etcd PVC persistence, re-apply via Admin API |
 | APISIX admin API curl fails | APISIX container has no curl | Use master-1: `curl http://$(kubectl get svc apisix-admin -n platform-system -o jsonpath='{.spec.clusterIP}'):9180/apisix/admin/...` |
-| APISIX openid-connect `unauthorized_client` | IC stored `$secret://` literal (no secret manager) | DELETE + PUT route via admin API with plaintext client_secret |
+| APISIX openid-connect `unauthorized_client` | `$secret://kubernetes/...` refs never resolve (APISIX has no kubernetes secret manager) | Inject the client secret via apisix `extraEnvVars` and reference `$env://VAR` in the ApisixRoute |
 
 ## Output Format
 

@@ -45,9 +45,10 @@ You are a comprehensive validation specialist for the Narwhal IDP cluster.
 - Based on CIS Kubernetes Benchmark
 
 ### Mistakes Log Cross-Reference
-- Compare new code against known mistake patterns in CLAUDE.md
+
+- Compare new code against known mistake patterns in `docs/common/lessons-log.md`
 - If matched, warn with correct pattern suggestion
-- Reference: `.claude/skills/narwhal-ops/references/validation-checklist.md`
+- Reference: `.agents/skills/narwhal-verification/SKILL.md`
 
 ## Output Format
 

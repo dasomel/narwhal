@@ -13,18 +13,11 @@ Runs Claude in an infinite loop based on a PROMPT.md file for autonomous task ex
 
 ## Usage
 
-### 1. Create PROMPT.md
+### 1. Write PROMPT.md
 
-Copy template:
-```bash
-cp .claude/templates/PROMPT.md ./PROMPT.md
-```
+Create `./PROMPT.md` with the goal, the task list, and the completion criteria.
 
-### 2. Edit PROMPT.md
-
-Clearly define goals, task list, and completion criteria.
-
-### 3. Run Ralph
+### 2. Run Ralph
 
 ```bash
 .claude/scripts/ralph.sh                          # default (unlimited)

@@ -14,21 +14,22 @@ Quickly validates key project configurations and scripts.
    ruby -c Vagrantfile
    ```
 
-2. **Shell script validation** (if shellcheck installed)
+2. **Shell script validation** (a missing or failing validator is a FAIL, not a skip)
    ```bash
-   shellcheck scripts/**/*.sh 2>/dev/null || echo "shellcheck not installed"
+   find scripts/ -name '*.sh' -print0 | xargs -0 shellcheck --severity=warning
    ```
 
 3. **YAML syntax validation**
    ```bash
-   for f in gitops/apps/*.yaml gitops/resources/*.yaml; do
-     yq eval '.' "$f" > /dev/null && echo "OK: $f" || echo "FAIL: $f"
+   for f in gitops/resources/*.yaml; do
+     yq eval '.' "$f" > /dev/null || echo "FAIL: $f"
    done
+   helm template narwhal-apps gitops/charts/narwhal-apps > /dev/null
    ```
 
 4. **Version consistency check**
    - Compare VERSIONS.md versions with script versions
-   - Verify chart versions in gitops/apps/*.yaml
+   - Verify chart versions in gitops/charts/narwhal-apps/templates/*.yaml
 
 5. **Output results summary**
 

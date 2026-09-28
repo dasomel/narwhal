@@ -84,6 +84,8 @@ Components and versions used in this project.
 | velero-plugin-for-aws | v1.14.1 | S3-compatible storage plugin (strict pairing w/ Velero 1.18) |
 | velero-ui | v0.10.1 (chart 0.14.0) | Velero Web UI (otwld/velero-ui, ARM64). **Frozen** — no newer upstream (inactive since 2024-10) |
 
+Velero schedule `includedResources` is the generated readable API inventory; new CRDs are excluded until deliberately added. To add a kind, update the API discovery snapshot, regenerate RBAC with `python3 scripts/ops/gen-velero-rbac.py scripts/ops/velero-rbac-api-resources.snapshot.txt --output gitops/resources/velero-server-rbac.yaml`, then run it with `--check --check-schedules gitops/charts/narwhal-apps/templates/velero.yaml scripts/cluster/08-4-storage.sh` to verify every schedule still matches. Review the new read/write privileges, run the static regressions, and test a backup and restore. Events and coordination Leases remain excluded.
+
 ## Observability
 
 | Component | Version | Description |

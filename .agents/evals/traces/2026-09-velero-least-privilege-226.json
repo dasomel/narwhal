@@ -1,0 +1,200 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "traceId": "narwhal-velero-least-privilege-226-2026-09",
+  "task": "Remove Velero server cluster-admin and replace chart-wide RBAC with explicit restore permissions for Narwhal#226",
+  "consistencyMode": "strict",
+  "changeContext": {
+    "paths": [
+      "gitops/charts/narwhal-apps/templates/velero.yaml",
+      "gitops/charts/narwhal-apps/templates/velero-server-rbac-app.yaml",
+      "scripts/ops/gen-velero-rbac.py",
+      "scripts/ops/velero-rbac-api-resources.snapshot.txt",
+      "gitops/resources/velero-server-rbac.yaml",
+      "scripts/cluster/08-4-storage.sh",
+      "scripts/test/lib/check-velero-rbac.py",
+      "scripts/test/regression-check-kakao.sh",
+      "docs/common/lessons-log.md",
+      ".agents/evals/traces/2026-09-velero-least-privilege-226.json",
+      "VERSIONS.md"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Reviewed AGENTS.md, Narwhal verification guidance, issue #226, prior Velero chart values, velero-ui RBAC precedent, lessons log, and current regression IDs. Confirmed the Velero 12.0.3 chart template gates its server ClusterRoleBinding on both rbac.create and clusterAdministrator; rbac.create also creates a storage Role with wildcard groups/resources/verbs.",
+      "evidence": [
+        "artifact:AGENTS.md",
+        "artifact:docs/common/agent-operational-rules.md",
+        "issue:narwhal-226",
+        "artifact:gitops/charts/narwhal-apps/templates/velero.yaml",
+        "artifact:gitops/charts/narwhal-apps/templates/velero-ui.yaml",
+        "artifact:gitops/resources/rbac-policies.yaml",
+        "test:command:helm template velero vmware-tanzu/velero --version 12.0.3 --namespace storage with rbac.create=true -> Role contains apiGroups/resources/verbs wildcards"
+      ]
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "Lead live-ran the RBAC on the six-node cluster: the legacy cluster-admin binding was gone, only velero-server-least-privilege was bound, and the BSL was Available. A namespace backup containing cm/secret/sa/role/rolebinding/deployment saved 15/15 selected items but ended PartiallyFailed with 60 forbidden LIST errors: 44 chaos-mesh.org kinds, 7 aquasecurity.github.io report kinds, events, and coordination Leases. Restore also failed to create Role r1 and RoleBinding rb1 because namespaced RBAC writes had been made read-only.",
+      "evidence": [
+        "live:cluster-admin binding absent; only velero-server-least-privilege bound; BSL Available",
+        "live:namespace backup PartiallyFailed; 15/15 selected objects saved; 60 forbidden LIST errors across 44 Chaos Mesh kinds, 7 Trivy report kinds, events, and leases.coordination.k8s.io",
+        "live:namespace restore failed to create roles/r1 and rolebindings/rb1 due to missing create permission"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "Set rbac.create=false and clusterAdministrator=false in both GitOps and direct Helm values. Added an explicitly enumerated velero-server ClusterRole and binding for platform backup/restore resources, PV/PVC, snapshots, namespaces, CRD discovery/creation, and velero.io resources. The provisioning script applies the shared RBAC manifest before Helm installation. Added an owning Argo CD Application at wave 0 and placed Velero at wave 1. Added R204-R206 and a lessons-log row.",
+      "evidence": [
+        "artifact:gitops/charts/narwhal-apps/templates/velero.yaml",
+        "artifact:gitops/resources/velero-server-rbac.yaml",
+        "artifact:scripts/cluster/08-4-storage.sh",
+        "artifact:scripts/test/lib/check-velero-rbac.py",
+        "artifact:scripts/test/regression-check-kakao.sh",
+        "artifact:docs/common/lessons-log.md",
+        "artifact:gitops/charts/narwhal-apps/templates/velero-server-rbac-app.yaml",
+        "artifact:VERSIONS.md"
+      ]
+    },
+    {
+      "id": "e9",
+      "type": "reproduction",
+      "summary": "Lead live-ran the RBAC on the six-node kubeadm cluster. The old ClusterRoleBinding named velero-server collided with the chart binding and failed immutable roleRef validation. The first backup was forbidden from listing clusterrolebindings. After adding cluster RBAC read live, a namespace backup with only cm/secret/sa/role/rolebinding saved 10/10 selected items but ended PartiallyFailed with 96 errors across 48 discovered namespaced kinds because Velero LISTs every discovered kind in each included namespace.",
+      "evidence": [
+        "live:clusterrolebinding velero-server immutable roleRef cluster-admin apply failure",
+        "live:backup forbidden listing clusterrolebindings.rbac.authorization.k8s.io",
+        "live:namespace backup PartiallyFailed; 10/10 items, 96 forbidden errors, 48 kinds"
+      ]
+    },
+    {
+      "id": "e10",
+      "type": "bug_fix",
+      "summary": "Renamed the managed binding, documented chart rbac.create=false rendering no ClusterRoleBinding and Argo prune removal of the old chart binding, and made 08-4-storage.sh delete velero-server only when roleRef is cluster-admin. Generated read rules from the captured live discovery snapshot for every listable kind except documented sensitive/ephemeral exclusions, including cluster RBAC read. Kept all RBAC writes excluded to prevent restoring broader Roles/RoleBindings, retained Secret read, and limited write rules to namespaced resources plus PVs/namespaces and create-only CRDs; velero.io keeps full access.",
+      "evidence": [
+        "artifact:scripts/ops/gen-velero-rbac.py",
+        "artifact:scripts/ops/velero-rbac-api-resources.snapshot.txt",
+        "artifact:gitops/resources/velero-server-rbac.yaml",
+        "artifact:scripts/cluster/08-4-storage.sh",
+        "artifact:gitops/charts/narwhal-apps/templates/velero.yaml"
+      ]
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "summary": "R204-R207 passed, including mutation verification for discovery drift, forbidden privilege mutations, and the legacy binding upgrade guard. Full static Kakao suite passed with 247 passes, 0 failures, and 4 existing environment warnings.",
+      "scope": "Velero-specific mutations and scripts/test/regression-check-kakao.sh --static",
+      "evidence": [
+        "test:command:python3 scripts/test/lib/check-velero-rbac.py --mutation-verify --role gitops/resources/velero-server-rbac.yaml --script scripts/cluster/08-4-storage.sh --chart gitops/charts/narwhal-apps/templates/velero.yaml -> PASS",
+        "test:command:python3 scripts/ops/gen-velero-rbac.py scripts/ops/velero-rbac-api-resources.snapshot.txt --output gitops/resources/velero-server-rbac.yaml --check -> READ 38, WRITE 32, velero.io 1; PASS",
+        "test:command:./scripts/test/regression-check-kakao.sh --static -> 247 pass, 0 fail, 4 environment warnings"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "verification",
+      "status": "passed",
+      "summary": "Rendered Velero 12.0.3 with rbac.create=false and clusterAdministrator=false: serviceAccount.server.create remains true and the chart emits ServiceAccount velero-server in namespace storage, used by the server pod. The managed ClusterRoleBinding subject matches that exact name/namespace. RBAC Application wave 0 precedes Velero Application wave 1. ShellCheck, two-space indentation, kubeconform (68 valid), and whitespace checks passed.",
+      "scope": "chart render, shell lint/indentation, GitOps resource schema validation, and working diff",
+      "evidence": [
+        "test:command:helm template velero /tmp/velero-chart-check/velero --namespace storage -f /tmp/velero-values.yaml -> ServiceAccount velero-server namespace storage; server pod serviceAccountName velero-server; chart values.yaml serviceAccount.server.create=true; rbac.create=false",
+        "artifact:gitops/resources/velero-server-rbac.yaml -> ClusterRoleBinding subject name velero-server namespace storage exactly matches helm template output",
+        "artifact:gitops/charts/narwhal-apps/templates/velero-server-rbac-app.yaml -> wave 0; gitops/charts/narwhal-apps/templates/velero.yaml -> wave 1",
+        "test:command:find scripts/ -name '*.sh' -print0 | xargs -0 shellcheck --severity=warning -> exit 0",
+        "test:command:repository shell indentation check from .github/workflows/lint.yml -> exit 0",
+        "test:command:kubeconform -strict -summary -kubernetes-version 1.31.0 -schema-location default -schema-location schemas/crds/... gitops/resources/*.yaml -> 68 valid, 0 invalid/errors",
+        "test:command:git diff --check -> exit 0",
+        "test:command:python3 scripts/ci/check-agent-trace-evidence.py with this trace -> passed",
+        "test:command:python3 .agents/evals/gate.py with this trace and baseline.eval.json -> 0 regressions"
+      ]
+    },
+    {
+      "id": "e11",
+      "type": "regression_verification",
+      "status": "passed",
+      "summary": "Final local verification passed: static suite 250 passed, 0 failed, 4 warnings; shellcheck passed; two-space shell indent passed; kubeconform validated 68 resources with 0 invalid/errors; generator checked all five schedules against 160 READ resources; RBAC and schedule mutation checks plus GitOps ownership mutation check passed; both trace gates reported 0 regressions.",
+      "scope": "chart render, generated YAML, static suite, lint, and trace gates",
+      "evidence": [
+        "test:command:helm template velero vmware-tanzu/velero --version 12.0.3 --namespace storage --set rbac.create=false --set rbac.clusterAdministrator=false --set upgradeCRDs=false -> no ClusterRoleBinding rendered",
+        "test:command:kubeconform -strict -summary -kubernetes-version 1.31.0 -schema-location default -schema-location schemas/crds/... gitops/resources/*.yaml -> 68 valid, 0 invalid/errors",
+        "test:command:find scripts/ -name *.sh -print0 | xargs -0 shellcheck --severity=warning -> exit 0",
+        "test:command:lint.yml 2-space shell indentation check -> exit 0",
+        "test:command:python3 scripts/ci/check-agent-trace-evidence.py with Velero trace -> passed",
+        "test:command:python3 .agents/evals/gate.py with Velero trace and baseline.eval.json -> 0 regressions",
+        "test:command:python3 scripts/test/lib/check-velero-rbac.py --mutation-verify --role gitops/resources/velero-server-rbac.yaml --script scripts/cluster/08-4-storage.sh --chart gitops/charts/narwhal-apps/templates/velero.yaml --schedules gitops/charts/narwhal-apps/templates/velero.yaml scripts/cluster/08-4-storage.sh -> PASS; includedResources count 160",
+        "test:command:./scripts/test/regression-check-kakao.sh --static -> PASS after correction to R203 ownership",
+        "test:command:python3 scripts/ops/gen-velero-rbac.py scripts/ops/velero-rbac-api-resources.snapshot.txt --output gitops/resources/velero-server-rbac.yaml --check --check-schedules gitops/charts/narwhal-apps/templates/velero.yaml scripts/cluster/08-4-storage.sh -> READ resources 160; PASS",
+        "test:command:./scripts/test/regression-check-kakao.sh --static -> 250 passed, 0 failed, 4 warnings",
+        "test:command:trace requirement, trace evidence, and .agents/evals/gate.py -> pass; 0 regressions"
+      ]
+    },
+    {
+      "id": "e6",
+      "type": "live_verification",
+      "status": "pending",
+      "summary": "Lead live re-verification remains pending after deployment: verify Argo prunes the legacy cluster-admin binding, the least-privilege binding is active, and both full and namespace-scoped backups complete without forbidden discovery LIST errors. No live mutation or post-fix runtime check was performed by this worker.",
+      "scope": "live Narwhal six-node cluster",
+      "evidence": [
+        "artifact:scripts/verify/kubelet-authz-check.sh",
+        "test:pending:lead live RBAC and backup re-verification after deployment"
+      ]
+    },
+    {
+      "id": "e12",
+      "type": "verification",
+      "status": "passed",
+      "scope": "live six-node cluster: chart cluster-admin CRB and storage Role binding removed, only velero-server-least-privilege bound, velero Application auto-sync paused for the test",
+      "summary": "can-i as system:serviceaccount:storage:velero-server: nodes/proxy, pods/exec, pods/attach, pods/portforward, serviceaccounts/token, impersonate, escalate, create clusterroles/clusterrolebindings all 'no'; create roles (namespaced) 'yes'. Backup of a namespace with cm/secret/sa/role/rolebinding/deployment using the schedule's 160-kind includedResources: Completed, 17/17 items, 0 errors (round 3 without includedResources: PartiallyFailed, 60 forbidden-list errors). Namespace deleted and restored: Completed 17/17, 0 errors; all six objects including Role r1 and RoleBinding rb1 back (round 3: Role/RoleBinding forbidden).",
+      "evidence": [
+        "runtime:kubectl auth can-i matrix => dangerous verbs/subresources no, namespaced roles create yes",
+        "runtime:velero Backup rbac-test-bk5 => Completed 17/17 errors=0",
+        "runtime:velero Restore rbac-test-rs5 => Completed 17/17 errors=0; role/r1 rolebinding/rb1 present"
+      ]
+    },
+    {
+      "id": "e13",
+      "type": "bug_fix",
+      "summary": "Defined the 160-kind includedResources inventory once per YAML document using a shared YAML anchor; subsequent schedules alias it. Generator validation parses aliases and checks each effective list exactly matches the generated READ inventory, including duplicate rejection.",
+      "evidence": [
+        "artifact:gitops/charts/narwhal-apps/templates/velero.yaml",
+        "artifact:scripts/cluster/08-4-storage.sh",
+        "artifact:scripts/ops/gen-velero-rbac.py"
+      ]
+    },
+    {
+      "id": "e14",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "anchor mutation regressions, Helm Application rendering, requested repository checks",
+      "summary": "Removed-one-anchor-entry and missing-schedule-field mutations both fail. helm template x renders five Application schedules with 160 resources each; PyYAML parsing confirms valuesObject contains ordinary alias-resolved data. Static Kakao regressions, ShellCheck, bash syntax, kubeconform (68 valid), AppProject fit, and two-space indentation passed.",
+      "evidence": [
+        "test:python3 scripts/test/lib/check-velero-rbac.py --mutation-verify --role gitops/resources/velero-server-rbac.yaml --script scripts/cluster/08-4-storage.sh --chart gitops/charts/narwhal-apps/templates/velero.yaml --schedules gitops/charts/narwhal-apps/templates/velero.yaml scripts/cluster/08-4-storage.sh -> PASS",
+        "test:helm template x gitops/charts/narwhal-apps -> five schedules, 160 includedResources each; Application valuesObject aliases resolved",
+        "test:./scripts/test/regression-check-kakao.sh --static -> 254 passed, 0 failed, 4 warnings",
+        "test:find scripts/ -name *.sh -print0 | xargs -0 shellcheck --severity=warning -> exit 0",
+        "test:bash -n scripts/cluster/08-4-storage.sh -> exit 0",
+        "test:kubeconform -strict -summary -kubernetes-version 1.31.0 -schema-location default -schema-location schemas/crds/... gitops/resources/*.yaml -> 68 valid, 0 invalid/errors",
+        "test:python3 scripts/test/lib/check-appproject-fit.py -> exit 0",
+        "test:lint.yml repository two-space shell indentation check -> exit 0"
+      ]
+    },
+    {
+      "id": "e7",
+      "type": "completion_claim",
+      "summary": "Offline implementation and requested verification are complete. Lead live verification confirmed backup and restore completed 17/17 with 0 errors and the can-i matrix was correct.",
+      "evidence": [
+        "e13",
+        "e14",
+        "e12"
+      ]
+    },
+    {
+      "id": "e8",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Schedule includedResources is defined once per YAML file and resolves to the 160-kind generated READ inventory for all five schedules; lead live backup/restore and can-i verification passed."
+    }
+  ]
+}

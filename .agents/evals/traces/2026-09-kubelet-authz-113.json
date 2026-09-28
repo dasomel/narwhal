@@ -1,0 +1,135 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "traceId": "narwhal-kubelet-authz-113-2026-09",
+  "task": "Audit and harden kubelet API authentication, authorization, NodeRestriction, RBAC exposure, and verification for Narwhal#113",
+  "consistencyMode": "strict",
+  "changeContext": {
+    "paths": [
+      "scripts/cluster/02-init-cluster.sh",
+      "scripts/verify/kubelet-authz-check.sh",
+      "scripts/test/regression-check-kakao.sh",
+      "docs/common/compliance-hardening.md",
+      ".agents/evals/traces/2026-09-kubelet-authz-113.json"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Reviewed repository instructions, risk policy, recent trace schema, and Narwhal#113 acceptance criteria; confined implementation to explicit kubelet and apiserver settings, verification, static regression coverage, and findings documentation.",
+      "evidence": [
+        "artifact:AGENTS.md",
+        "artifact:.agents/evals/risk-policy.json",
+        "issue:narwhal-113"
+      ]
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "Before the change, the KubeletConfiguration declared only cgroupDriver. Kubernetes v1.35 defaults implied anonymous auth disabled, webhook authn enabled, authorization Webhook, readOnlyPort 0, and serverTLSBootstrap false. ClusterConfiguration had no apiserver flag overrides; kubeadm defaults imply Node,RBAC and NodeRestriction. Join commands were kubeadm-generated. Kakao security group allowed TCP 10250 from the VPC CIDR; repository review found no matching host firewall, nftables, or Cilium host policy. Runtime reachability was not tested.",
+      "evidence": [
+        "artifact:scripts/cluster/02-init-cluster.sh:100-183",
+        "artifact:scripts/cluster/02-init-cluster.sh:364-385",
+        "artifact:scripts/cluster/02-join-worker.sh:63-67",
+        "artifact:scripts/cluster/02-join-control-plane.sh:118-120",
+        "artifact:csp/kakao-cloud/terraform/modules/security/main.tf:35-43",
+        "artifact:gitops/resources/metallb-config.yaml:1-11"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "Explicitly set anonymous authentication false, webhook authentication and authorization, readOnlyPort zero, apiserver Node,RBAC, and NodeRestriction. Added a sudo control-plane verifier for each node's configz and anonymous /pods response, apiserver flags, and bound ClusterRole privileges; documented the proxy allowlist and network-exposure finding. Network exposure was not changed.",
+      "evidence": [
+        "artifact:scripts/cluster/02-init-cluster.sh",
+        "artifact:scripts/verify/kubelet-authz-check.sh",
+        "artifact:docs/common/compliance-hardening.md"
+      ]
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "summary": "Static regression suite passed with 206 pass, 0 fail, and 4 existing warnings. Mutating anonymous.enabled to true produced FAIL R155; mutating readOnlyPort to 10255 produced FAIL R156. The source config was restored and the unmutated suite passed.",
+      "scope": "scripts/test/regression-check-kakao.sh --static plus independent anonymous and readOnlyPort negative mutations",
+      "evidence": [
+        "artifact:scripts/verify/kubelet-authz-check.sh",
+        "test:command:./scripts/test/regression-check-kakao.sh --static",
+        "test:command:temporary anonymous.enabled=true mutation -> FAIL R155",
+        "test:command:temporary readOnlyPort=10255 mutation -> FAIL R156"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "verification",
+      "status": "passed",
+      "summary": "ShellCheck at warning severity over scripts/, bash syntax checks over scripts/, and git diff --check completed successfully.",
+      "scope": "all shell scripts under scripts/ and whitespace validation of the working diff",
+      "evidence": [
+        "artifact:scripts/verify/kubelet-authz-check.sh",
+        "test:command:find scripts/ -name '*.sh' -print0 | xargs -0 shellcheck --severity=warning",
+        "test:command:find scripts/ -name '*.sh' -print0 | xargs -0 -n1 bash -n",
+        "test:command:git diff --check"
+      ]
+    },
+    {
+      "id": "e6",
+      "type": "live_verification",
+      "status": "observed",
+      "summary": "Lead ran the verifier on a live six-node kubeadm 1.35 cluster: 30 PASS / 7 FAIL. Six failures were false positives because configz omitted readOnlyPort when its value was zero. The allowlist failure included six approved kubeadm/Kubernetes built-ins and the real storage:velero-server cluster-admin grant, now tracked as #226. Live state confirmed anonymous auth disabled, authorization mode Webhook, and TCP 10255 closed on every node.",
+      "scope": "live Narwhal cluster",
+      "evidence": [
+        "artifact:scripts/verify/kubelet-authz-check.sh",
+        "runtime:live-cluster kubelet-authz-check.sh 42 PASS 1 FAIL (velero-server, #226)",
+        "test:live:30 PASS / 7 FAIL; 6 readOnlyPort omission false positives and 1 allowlist result",
+        "test:live:anonymous authentication enabled=false on all six nodes",
+        "test:live:authorization mode=Webhook on all six nodes",
+        "test:live:TCP 10255 closed on all six nodes",
+        "test:live:storage:velero-server bound to cluster-admin; issue #226"
+      ]
+    },
+    {
+      "id": "e9",
+      "type": "completion_claim",
+      "summary": "Kubelet auth is explicit in the kubeadm config and the verifier reports the live cluster correctly: 42 PASS, with the single FAIL being the real velero-server cluster-admin finding (#226)",
+      "evidence": [
+        "e4",
+        "e5",
+        "e6",
+        "e8"
+      ]
+    },
+    {
+      "id": "e8",
+      "type": "regression_verification",
+      "status": "passed",
+      "summary": "Self-test covers omitted and mutated readOnlyPort values, all six approved built-ins, and Velero service-account access through cluster-admin. ShellCheck, Bash syntax, and the static Kakao regression suite passed.",
+      "scope": "local verifier and static regression checks",
+      "evidence": [
+        "artifact:scripts/verify/kubelet-authz-check.sh",
+        "test:command:scripts/verify/kubelet-authz-check.sh --self-test -> PASS",
+        "test:command:find scripts/ -name '*.sh' -print0 | xargs -0 shellcheck --severity=warning -> exit 0",
+        "test:command:find scripts/ -name '*.sh' -print0 | xargs -0 -n1 bash -n -> exit 0",
+        "test:command:./scripts/test/regression-check-kakao.sh --static -> 206 pass, 0 fail, 4 warnings",
+        "test:command:git diff --check and trace JSON parse -> exit 0"
+      ]
+    },
+    {
+      "id": "e10",
+      "type": "verification",
+      "status": "passed",
+      "scope": "live six-node kubeadm 1.35 cluster",
+      "summary": "Second live run after the false-positive fixes: 42 PASS, 1 FAIL. The single FAIL is the real velero-server cluster-admin binding, filed as #226 and intentionally not allowlisted. Live state: anonymous disabled, Webhook authz, 10255 closed on all nodes",
+      "evidence": [
+        "runtime:live-cluster kubelet-authz-check.sh 42 PASS / 1 FAIL (velero-server #226)",
+        "artifact:scripts/verify/kubelet-authz-check.sh"
+      ]
+    },
+    {
+      "id": "e7",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Complete and verified live; the one remaining verifier FAIL is a real, separately tracked finding (#226), not a defect of this change"
+    }
+  ]
+}

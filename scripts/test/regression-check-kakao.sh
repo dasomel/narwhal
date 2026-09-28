@@ -2461,6 +2461,12 @@ line = next((line for line in text.splitlines() if 'port=\$(vagrant port master-
 assert '22[[:space:]]' in line and 'guest' in line, 'parser no longer selects guest port 22'
 "
   rm -rf "${r156_drift_tmp}"
+  # narwhal#113: kubeadm must pass a hardened KubeletConfiguration to init and
+  # kubeadm publishes that same cluster config for both worker and control-plane joins.
+  check R160 "kubelet anonymous authentication is explicitly disabled (Narwhal#113)" \
+    python3 -c "text=open('scripts/cluster/02-init-cluster.sh').read(); assert 'authentication:\\n  anonymous:\\n    enabled: false' in text"
+  check R161 "kubelet readOnlyPort is explicitly zero (Narwhal#113)" \
+    bash -c 'grep -qE "^readOnlyPort:[[:space:]]*0[[:space:]]*$" scripts/cluster/02-init-cluster.sh && scripts/verify/kubelet-authz-check.sh --self-test'
 }
 
 #=========================================

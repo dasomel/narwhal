@@ -65,6 +65,7 @@ python3 - "${PROJECT_ROOT}" "${UPSTREAM_SOURCES}" <<'PYEOF' > /tmp/charts.txt
 import glob
 import os
 import re
+import subprocess
 import sys
 
 root = sys.argv[1]
@@ -223,6 +224,13 @@ def parse_bootstrap(root):
 
 
 raw = parse_gitops(root, upstream_sources) + parse_bootstrap(root)
+
+checker = os.path.join(root, "scripts/airgap/lib/check-required-charts.py")
+manual_rows = subprocess.check_output([sys.executable, checker, root], text=True)
+for line in manual_rows.splitlines():
+    chart, source, version = line.split("\t")
+    raw.append(("helm-repo", source, chart, version, "", "", "",
+                "install-call scanner (pinned in VERSIONS.md)"))
 
 exact = {}
 for source_type, source, chart, ver, source_ref, chart_path, expected_commit, src in raw:

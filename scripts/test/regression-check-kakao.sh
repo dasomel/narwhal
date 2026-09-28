@@ -1692,6 +1692,35 @@ PYEOF
   check R90 "GitOps bundle sources are complete and separate from Gitea (2026-08-26)" \
     python3 scripts/airgap/lib/check-chart-upstream-sources.py
 
+  check R154 "bundle preflight and chart builder share install-call requirements (2026-09-28)" \
+    bash -c '
+      set -euo pipefail
+      checker=scripts/airgap/lib/check-required-charts.py
+      python3 "$checker" . >/dev/null
+      tmp=$(mktemp -d)
+      trap '\''rm -rf "$tmp"'\'' EXIT
+      awk -F "\t" '\''$1 != "gitea"'\'' scripts/airgap/lib/manual-chart-sources.tsv > "$tmp/manual.tsv"
+      if python3 "$checker" . --manual-sources "$tmp/manual.tsv" >"$tmp/out" 2>"$tmp/err"; then
+        echo "checker accepted required chart with manual source removed" >&2
+        exit 1
+      fi
+      grep -q "gitea" "$tmp/err"
+      out=$(mktemp -d)
+      if AIRGAP_BUNDLE_DIR="$out" scripts/airgap/check-bundle.sh >"$tmp/check.out" 2>"$tmp/check.err"; then
+        echo "empty bundle unexpectedly passed" >&2
+        exit 1
+      fi
+      line=$(sed -n "s/^  \\(AIRGAP_ARCH=[^ ]* scripts\/airgap\/07-save-binaries.sh\)$/\\1/p" "$tmp/check.err")
+      arch=${line#AIRGAP_ARCH=}; arch=${arch%% *}
+      # Apply the printed assignment to the same 00-config.sh / 07 output rules.
+      AIRGAP_ARCH="linux/${arch##*/}"
+      configured_bundle="${PWD}/narwhal-airgap-bundle-${AIRGAP_ARCH##*/}"
+      binary_out="${configured_bundle%-*}-${arch##*/}/bin"
+      checked_out="${configured_bundle}/bin"
+      test "$binary_out" = "$checked_out"
+      rm -rf "$out"
+    '
+
   local chart_source_drift_tmp
   chart_source_drift_tmp="$(mktemp -d)"
   python3 - "${chart_source_drift_tmp}/chart-upstream-sources.tsv" <<'PYEOF'

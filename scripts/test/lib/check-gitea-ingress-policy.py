@@ -9,7 +9,7 @@ Kaniko) instead of trusting the whole pod network.
 
 This checks structure, not just presence: a NetworkPolicy that names gitea-http but
 still carries a bare allow-all `from: []` / `- {}` rule looks like a fix and is not
-one -- that is exactly the shape this script is here to catch. Takes an optional path
+one. Ambient HBONE is added to each caller-specific rule. Takes an optional path
 so the regression suite can point it at a mutated temp copy and prove the negative case
 actually fails.
 """
@@ -80,7 +80,13 @@ def main() -> int:
 
     for i, rule in enumerate(ingress_rules):
         if is_allow_all(rule.get("from")):
-            problems.append(f"{name}: ingress rule #{i} allows all sources (missing/empty selector) -- not default-deny-others")
+            problems.append(f"{name}: ingress rule #{i} allows all sources -- not default-deny-others")
+        tcp_ports = {
+            port.get("port") for port in rule.get("ports", []) or []
+            if port.get("protocol", "TCP") == "TCP"
+        }
+        if rule.get("ports") and 15008 not in tcp_ports:
+            problems.append(f"{name}: ingress rule #{i} lacks TCP/15008")
 
     # Flatten every podSelector matchLabels pair seen across every `from` entry.
     seen_labels = set()

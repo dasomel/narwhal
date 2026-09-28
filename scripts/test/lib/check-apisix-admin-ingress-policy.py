@@ -11,6 +11,7 @@ PORTAL = {"app": "narwhal-portal"}
 DEVTOOLS = {"kubernetes.io/metadata.name": "devtools"}
 ADMIN_PORT = 9180
 GATEWAY_PORTS = {9080, 9443}
+HBONE_PORT = 15008
 
 
 def main() -> int:
@@ -37,19 +38,19 @@ def main() -> int:
             tcp_ports = {p.get("port") for p in ports if p.get("protocol") == "TCP"}
 
             if not entries:
-                # An unrestricted (no `from`) rule is only acceptable for the gateway
-                # data-plane ports — anything else means an unintended open door.
-                if not tcp_ports or (tcp_ports - GATEWAY_PORTS):
+                # The existing selector isolates APISIX; only its gateway ports and
+                # ambient HBONE may be open to arbitrary sources.
+                if not tcp_ports or (tcp_ports - GATEWAY_PORTS - {HBONE_PORT}):
                     problems.append(
                         "unrestricted ingress rule covers non-gateway port(s) "
                         f"{sorted(tcp_ports - GATEWAY_PORTS) or 'none'}"
                     )
                 else:
-                    gateway_open_ports |= tcp_ports
+                    gateway_open_ports |= tcp_ports & GATEWAY_PORTS
                 continue
 
-            if tcp_ports != {ADMIN_PORT}:
-                problems.append("restricted ingress rule does not limit access to TCP/9180")
+            if tcp_ports != {ADMIN_PORT, HBONE_PORT}:
+                problems.append("restricted ingress rule does not limit access to TCP/9180 and TCP/15008")
             for entry in entries:
                 if not any(k in entry for k in ("podSelector", "namespaceSelector", "ipBlock")):
                     problems.append("ingress rule contains an unrestricted source")

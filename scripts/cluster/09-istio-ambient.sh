@@ -198,6 +198,11 @@ kubectl rollout status daemonset/ztunnel -n istio-system --timeout=180s || true
 #=========================================
 # 5) Label namespaces for ambient mesh
 #=========================================
+# Apply the GitOps-owned CCNP before namespace NetworkPolicies arrive at step 14.
+# GitOps later reconciles this exact object; this bootstrap apply closes the window
+# where kubelet probes would otherwise be denied during clean installation.
+kubectl apply -f /home/vagrant/configs/gitops/resources/ambient-kubelet-probes-ccnp.yaml
+
 echo "Labeling namespaces for ambient mesh..."
 
 AMBIENT_NAMESPACES=(

@@ -60,6 +60,8 @@ spec:
       ports:
         - protocol: TCP
           port: 3000
+        - protocol: TCP
+          port: 15008
     # 2. ArgoCD repo-server (same namespace) — direct repo reads.
     - from:
         - podSelector:
@@ -68,6 +70,8 @@ spec:
       ports:
         - protocol: TCP
           port: 3000
+        - protocol: TCP
+          port: 15008
     # 3. ArgoCD application-controller (same namespace) — live-manifest diffing.
     - from:
         - podSelector:
@@ -76,6 +80,8 @@ spec:
       ports:
         - protocol: TCP
           port: 3000
+        - protocol: TCP
+          port: 15008
     # 4. narwhal-portal backend (same namespace) — tenant-namespace-by-PR flow.
     - from:
         - podSelector:
@@ -84,6 +90,8 @@ spec:
       ports:
         - protocol: TCP
           port: 3000
+        - protocol: TCP
+          port: 15008
     # 5. Kaniko build job (same namespace) — clones the source repo to build.
     - from:
         - podSelector:
@@ -92,3 +100,5 @@ spec:
       ports:
         - protocol: TCP
           port: 3000
+        - protocol: TCP
+          port: 15008

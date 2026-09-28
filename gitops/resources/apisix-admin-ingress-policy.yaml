@@ -34,6 +34,8 @@ spec:
           port: 9080
         - protocol: TCP
           port: 9443
+        - protocol: TCP
+          port: 15008
     - from:
         - podSelector:
             matchLabels:
@@ -41,6 +43,8 @@ spec:
       ports:
         - protocol: TCP
           port: 9180
+        - protocol: TCP
+          port: 15008
     - from:
         - namespaceSelector:
             matchLabels:
@@ -51,3 +55,5 @@ spec:
       ports:
         - protocol: TCP
           port: 9180
+        - protocol: TCP
+          port: 15008

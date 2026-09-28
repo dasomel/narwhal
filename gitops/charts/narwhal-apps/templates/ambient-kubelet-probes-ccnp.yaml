@@ -17,6 +17,9 @@ spec:
       include: "ambient-kubelet-probes-ccnp.yaml"
   destination:
     server: https://kubernetes.default.svc
+    # Cluster-scoped resource: the namespace is ignored for the CCNP itself but must be
+    # a destination the platform project allows, or ArgoCD rejects the spec.
+    namespace: kube-system
   syncPolicy:
     automated:
       prune: true

@@ -140,6 +140,12 @@ def main() -> int:
             if url and url not in set(policy.get("sourceRepos", [])):
                 problems.append(f"{name}: repoURL '{url}' is not in project '{proj}'")
 
+        # An empty destination namespace is itself a destination ArgoCD checks: a
+        # cluster-scoped-only Application with no namespace fails InvalidSpecError
+        # unless the project lists "" (#241 follow-up). Rendered resources without
+        # metadata.namespace stay exempt; only the destination is checked empty.
+        if not destination_ns and "" not in allowed:
+            problems.append(f"{name}: destination namespace is empty and project '{proj}' does not allow ''")
         for ns in sorted(ns for ns in namespaces if ns):
             if not namespace_allowed(ns, allowed):
                 problems.append(f"{name}: namespace '{ns}' is not in project '{proj}'")

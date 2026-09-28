@@ -64,7 +64,8 @@ if [ -f "${PORTAL_CONFIG_FILE}" ] && [ -f "${PORTAL_GITEA_FILE}" ]; then
           exit 1
         fi
         provided=0
-        grep -q '"GITEA_URL": "${GITEA_URL}"' "${PORTAL_GITOPS_BOOTSTRAP}" \
+        # 14 patches the portal's GITEA_URL from PORTAL_GITEA_URL (https; R220 checks the scheme).
+        grep -q '"GITEA_URL": "${PORTAL_GITEA_URL}"' "${PORTAL_GITOPS_BOOTSTRAP}" \
           && grep -A3 '          envFrom:' "${PORTAL_DEPLOYMENT}" \
             | grep -q 'name: narwhal-portal-secrets' && provided=1
         ;;

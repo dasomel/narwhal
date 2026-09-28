@@ -1,0 +1,90 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "traceId": "narwhal-sso-buffer-chart-publish-242",
+  "task": "Fix clean-install SSO response buffering and Gitea chart publication failures (Narwhal#242)",
+  "consistencyMode": "strict",
+  "changeContext": {
+    "paths": [
+      "scripts/cluster/08-1-networking.sh",
+      "scripts/cluster/12-gitea.sh",
+      "scripts/cluster/14-gitops-bootstrap.sh",
+      "scripts/test/regression-check-kakao.sh",
+      "docs/common/lessons-log.md",
+      ".agents/evals/traces/2026-09-sso-buffer-chart-publish-242.json"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Fix bootstrap APISIX buffers, make chart publishing reliable and fatal on persistent failure, and gate bootstrap on ArgoCD chart fetch errors."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "Verified on a live clean install: portal SSO callback returned 502 and all 26 chart uploads failed transiently through APISIX.",
+      "evidence": [
+        "runtime:live-cluster [error] upstream sent too big header while reading response header from upstream ... request: GET /api/auth/callback/keycloak",
+        "runtime:live-cluster WARN: 503 apisix-2.13.0.tgz ... charts published: 0, failed: 26"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "Placed bootstrap APISIX buffers at the chart's effective nginx.configurationSnippet.httpStart path, removed the invalid Kubernetes secret-provider config block, added registry readiness and bounded transient retries with fail-closed chart publication, and added a chart-fetch-error-only ArgoCD bootstrap gate."
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "Narwhal#242 regressions R212-R214",
+      "summary": "Static regressions R212-R214 pass; R212 parses effective bootstrap and GitOps values, rejects moving buffers to the ignored config path, and renders the local bundled chart with the directive in its ConfigMap.",
+      "evidence": [
+        "test:scripts/test/regression-check-kakao.sh --static R212-R214",
+        "test:mutation verification R212 dead-path regression, R213, and R214 each rejected",
+        "helm:template apisix narwhal-airgap-bundle-arm64/charts/apisix-2.13.0.tgz: ConfigMap contains proxy_buffer_size 16k;"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "verification",
+      "status": "passed",
+      "scope": "scripts/cluster/08-1-networking.sh, scripts/cluster/12-gitea.sh, scripts/cluster/14-gitops-bootstrap.sh",
+      "summary": "shellcheck --severity=warning, the 2-space script indentation check, static regressions, both trace gates, and bundled-chart rendering pass; live re-verification is pending for the lead.",
+      "evidence": [
+        "test:shellcheck --severity=warning and 2-space script indentation check pass",
+        "test:static regression suite 247 passed, 0 failed",
+        "ci:trace evidence and evaluation gates pass",
+        "runtime:pending lead live clean-install re-verification"
+      ]
+    },
+    {
+      "id": "e8",
+      "type": "verification",
+      "status": "passed",
+      "scope": "bundled apisix-2.13.0 chart render + live six-node cluster (master-1)",
+      "summary": "Lead verified independently: helm template of the 08-1 values with the bundled apisix 2.13.0 chart renders http_configuration_snippet with proxy_buffer_size 16k / proxy_buffers 8 16k / proxy_busy_buffers_size 32k (round 1's dead path rendered nothing). The new 12-gitea publish block run live: registry index wait passed, 'charts published: 26, failed: 0', rc=0. The new 14-gitops-bootstrap chart gate run live: 'GATE PASSED after 76s', rc=0. Earlier the same session, once APISIX carried the buffer snippet, a headless-Chromium SSO E2E reached the portal dashboard (session 200).",
+      "evidence": [
+        "artifact:helm template apisix-2.13.0.tgz -f 08-1 values => proxy_buffer_size 16k in ConfigMap",
+        "runtime:master-1 12-gitea publish block => charts published: 26, failed: 0 (rc=0)",
+        "runtime:master-1 14-gitops-bootstrap chart gate => GATE PASSED after 76s (rc=0)",
+        "runtime:playwright SSO E2E => /api/auth/session 200 after snippet applied"
+      ]
+    },
+    {
+      "id": "e6",
+      "type": "completion_claim",
+      "summary": "The local fix and all requested static validation are complete; live clean-install confirmation remains assigned to the lead.",
+      "evidence": [
+        "e4",
+        "e5"
+      ]
+    },
+    {
+      "id": "e7",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Implementation and requested local verification are complete; live re-verification remains pending for the lead."
+    }
+  ]
+}

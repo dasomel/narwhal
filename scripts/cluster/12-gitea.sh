@@ -216,13 +216,43 @@ fi
 #=========================================
 echo "=== Publishing bundled Helm charts to the Gitea registry ==="
 CHART_DIR="${NARWHAL_CHART_DIR:-/home/vagrant/charts}"
+CHART_UPLOAD_RETRIES="${CHART_UPLOAD_RETRIES:-5}"
+CHART_UPLOAD_RETRY_DELAY="${CHART_UPLOAD_RETRY_DELAY:-5}"
+CHART_REGISTRY_INDEX="https://gitea.${DOMAIN}/api/packages/gitea-admin/helm/index.yaml"
+echo "Waiting up to 300s for the Gitea Helm registry index..."
+registry_ready=false
+registry_deadline=$((SECONDS + 300))
+while [ "${SECONDS}" -lt "${registry_deadline}" ]; do
+  index_code=$(curl -sk -o /dev/null -w '%{http_code}' --max-time 5 "${CHART_REGISTRY_INDEX}" || true)
+  if [ "${index_code}" = "200" ]; then
+    registry_ready=true
+    break
+  fi
+  sleep 5
+done
+if [ "${registry_ready}" != true ]; then
+  echo "ERROR: Gitea Helm registry index did not return HTTP 200 within 300s (last: ${index_code})." >&2
+  exit 1
+fi
 if [ -d "${CHART_DIR}" ]; then
   chart_ok=0; chart_fail=0
   for tgz in "${CHART_DIR}"/*.tgz; do
     [ -e "${tgz}" ] || continue
-    code=$(curl -sk -o /dev/null -w '%{http_code}' --max-time 120 \
-      -u "gitea-admin:${GITEA_ADMIN_PASS}" -X POST --upload-file "${tgz}" \
-      "https://gitea.${DOMAIN}/api/packages/gitea-admin/helm/api/charts" || echo "000")
+    code=000
+    for attempt in $(seq 1 "${CHART_UPLOAD_RETRIES}"); do
+      code=$(curl -sk -o /dev/null -w '%{http_code}' --max-time 120 \
+        -u "gitea-admin:${GITEA_ADMIN_PASS}" -X POST --upload-file "${tgz}" \
+        "https://gitea.${DOMAIN}/api/packages/gitea-admin/helm/api/charts" || true)
+      case "${code}" in
+        5*|000)
+          if [ "${attempt}" -lt "${CHART_UPLOAD_RETRIES}" ]; then
+            echo "  retry ${attempt}/${CHART_UPLOAD_RETRIES} for $(basename "${tgz}") after HTTP ${code}; waiting ${CHART_UPLOAD_RETRY_DELAY}s"
+            sleep "${CHART_UPLOAD_RETRY_DELAY}"
+          fi
+          ;;
+        *) break ;;
+      esac
+    done
     # 409 = this exact chart version is already published, which is success on a re-run.
     case "${code}" in
       200|201|409) chart_ok=$((chart_ok + 1)) ;;
@@ -231,12 +261,12 @@ if [ -d "${CHART_DIR}" ]; then
   done
   echo "  charts published: ${chart_ok}, failed: ${chart_fail}"
   if [ "${chart_fail}" -gt 0 ]; then
-    echo "WARN: ${chart_fail} chart(s) did not publish — the Applications that need them" >&2
-    echo "      will sit Unknown with 'error fetching chart' until this is re-run." >&2
+    echo "ERROR: ${chart_fail} chart(s) did not publish; GitOps cannot fetch required charts." >&2
+    exit 1
   fi
 else
-  echo "WARN: ${CHART_DIR} not found — no charts published, so every ArgoCD Application" >&2
-  echo "      sourcing from the in-cluster registry will fail to resolve its chart." >&2
+  echo "ERROR: ${CHART_DIR} not found — GitOps cannot fetch required charts." >&2
+  exit 1
 fi
 
 echo "=== Gitea Installation Done ==="

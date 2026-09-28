@@ -115,16 +115,12 @@ apisix:
   ssl:
     enabled: true
     containerPort: 9443
-  # Kubernetes Secret Provider for OIDC credentials
-  # Enables: $secret://kubernetes/k8s-1/apisix-oidc-config/<key>
-  config:
-    apisix:
-      secret_providers:
-        - name: kubernetes
-          uid: k8s-1
-          auth_type: serviceaccount
-          apiservers:
-            - https://kubernetes.default.svc
+  nginx:
+    configurationSnippet:
+      httpStart: |
+        proxy_buffer_size 16k;
+        proxy_buffers 8 16k;
+        proxy_busy_buffers_size 32k;
   # D3: chart v2.13.0 has no top-level `admin:` key — Helm silently drops unknown keys,
   # so a sibling `admin:` block (as this file had) never reaches the chart at all; the
   # schema is `apisix.admin.{enabled,type,port,allow.ipList}` (verified via the pinned

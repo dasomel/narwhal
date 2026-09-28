@@ -479,6 +479,64 @@ spec:
       - ServerSideApply=true
 EOF
 
+echo "Waiting up to 10 minutes for ArgoCD chart resolution..."
+chart_gate_deadline=$((SECONDS + 600))
+chart_gate_clear_since=0
+while [ "${SECONDS}" -lt "${chart_gate_deadline}" ]; do
+  chart_gate_output=$(kubectl get applications -A -o json 2>/dev/null | python3 -c '
+import json, re, sys
+try:
+    apps = json.load(sys.stdin).get("items", [])
+except (json.JSONDecodeError, OSError):
+    print("COUNT:0")
+    sys.exit(0)
+print(f"COUNT:{len(apps)}")
+pattern = re.compile(r"error fetching chart|failed to fetch chart", re.IGNORECASE)
+for app in apps:
+    name = app.get("metadata", {}).get("name", "unknown")
+    namespace = app.get("metadata", {}).get("namespace", "unknown")
+    for condition in app.get("status", {}).get("conditions", []):
+        message = condition.get("message", "")
+        if pattern.search(message):
+            print(f"{namespace}/{name}: {message}")
+  ' || true)
+  chart_gate_lines=()
+  while IFS= read -r gate_line; do
+    chart_gate_lines+=("${gate_line}")
+  done <<< "${chart_gate_output}"
+  chart_app_count=0
+  chart_errors=""
+  for gate_line in "${chart_gate_lines[@]}"; do
+    case "${gate_line}" in
+      COUNT:*) chart_app_count="${gate_line#COUNT:}" ;;
+      *) chart_errors+="${gate_line}"$'\n' ;;
+    esac
+  done
+  if [ -z "${chart_errors}" ] && [ "${chart_app_count}" -gt 1 ]; then
+    if [ "${chart_gate_clear_since}" -eq 0 ]; then
+      chart_gate_clear_since="${SECONDS}"
+    elif [ $((SECONDS - chart_gate_clear_since)) -ge 60 ]; then
+      break
+    fi
+  else
+    chart_gate_clear_since=0
+  fi
+  if [ -z "${chart_errors}" ] && [ "${chart_app_count}" -le 1 ]; then
+    sleep 15
+    continue
+  fi
+  sleep 15
+done
+if [ "${SECONDS}" -ge "${chart_gate_deadline}" ]; then
+  echo "ERROR: ArgoCD chart resolution did not stabilize within 10 minutes." >&2
+  if [ -n "${chart_errors}" ]; then
+    printf '%s\n' "${chart_errors}" >&2
+  else
+    echo "No child Applications appeared or chart errors did not clear for 60 seconds." >&2
+  fi
+  exit 1
+fi
+
 echo "=== GitOps Bootstrap Done ==="
 
 echo ""

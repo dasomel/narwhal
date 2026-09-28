@@ -45,12 +45,12 @@ rbac_groups="$(
     | sort -u
 )"
 
-# Portal side: string literals inside the `const ALLOWED_GROUPS = new Set([...])`
+# Portal side: string literals inside the `[export ]const ALLOWED_GROUPS[: T] = new Set([...])`
 # block only -- the awk range keeps this from matching an unrelated string
 # literal elsewhere in auth.ts. TypeScript, so a scoped grep/sed extraction is
 # fine here (no TS parser available in this repo).
 portal_groups="$(
-  awk '/^const ALLOWED_GROUPS/,/^\]\)/' "${AUTH_FILE}" \
+  awk '/^(export )?const ALLOWED_GROUPS/,/^\]\)/' "${AUTH_FILE}" \
     | grep -oE '"[a-zA-Z0-9_-]+"' \
     | tr -d '"' \
     | sort -u

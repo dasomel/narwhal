@@ -2527,7 +2527,7 @@ assert '22[[:space:]]' in line and 'guest' in line, 'parser no longer selects gu
   check R180 "APISIX values heredoc substitution and guard execute successfully (#228)" \
     python3 -c '
 from pathlib import Path
-import os, subprocess, tempfile
+import os, platform, subprocess, tempfile
 s=Path("scripts/cluster/08-1-networking.sh").read_text()
 def extract(source, target):
     lines=source.splitlines()
@@ -2537,7 +2537,9 @@ def extract(source, target):
     substitution=next(i for i in range(start, len(lines)) if lines[i].startswith("sed -i ") and "POD_NETWORK_CIDR" in lines[i])
     end=max(end, substitution)
     block="\n".join(lines[start:end+1]).replace("/tmp/apisix-values.yaml", target)
-    # Production runs on Linux; macOS sed requires an empty in-place-edit suffix.
+    # Production and CI run GNU sed; only BSD sed (macOS dev hosts) needs an empty suffix.
+    if platform.system() != "Darwin":
+        return block
     return block.replace("sed -i "+chr(34), "sed -i "+chr(39)+chr(39)+" "+chr(34))
 def execute(source):
     with tempfile.TemporaryDirectory() as d:

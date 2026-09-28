@@ -1,0 +1,124 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "traceId": "narwhal-ambient-netpol-235-2026-09",
+  "task": "Allow Istio ambient kubelet probe SNAT and HBONE traffic while preserving workload source restrictions",
+  "consistencyMode": "strict",
+  "changeContext": {
+    "paths": [
+      "gitops/resources/database-ingress-policy.yaml",
+      "gitops/resources/gitea-ingress-policy.yaml",
+      "gitops/resources/tuning-job-network-policy.yaml",
+      "gitops/resources/apisix-admin-ingress-policy.yaml",
+      "gitops/resources/ambient-kubelet-probes-ccnp.yaml",
+      "scripts/cluster/09-istio-ambient.sh",
+      "scripts/cluster/13-argocd.sh",
+      "scripts/test/lib/check-ambient-netpol.py",
+      "scripts/test/regression-check-kakao.sh",
+      "scripts/verify/ambient-netpol-check.sh",
+      "docs/common/lessons-log.md",
+      ".agents/evals/traces/2026-09-ambient-netpol-235.json",
+      "scripts/test/lib/check-apisix-admin-ingress-policy.py",
+      "scripts/test/lib/check-gitea-ingress-policy.py",
+      "scripts/test/lib/check-tuning-job-network-policy.py",
+      "scripts/test/lib/check-gitea-ingress-policy.py",
+      "scripts/test/lib/check-apisix-admin-ingress-policy.py",
+      "scripts/test/lib/check-tuning-job-network-policy.py",
+      "schemas/crds/cilium.io/ciliumclusterwidenetworkpolicy_v2.json",
+      "schemas/crds/SOURCE.md"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Scope covers the probe SNAT exception, ambient namespace HBONE ingress, bootstrap ordering, static regression coverage, and a live verifier for Narwhal#235"
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "Issue #235 live cilium-dbg monitor drop evidence showed world->1397 169.254.7.127:51468 -> 10.0.3.168:8000 and identity 6832->1397 10.0.2.129:39770 -> 10.0.3.168:15008 denied after GitOps bootstrap; CNPG probes restarted and Keycloak lost its database connection",
+      "evidence": [
+        "artifact:github-issue-235-live-drop-log"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "Kept the allow-only probe CCNP and early bootstrap apply; added TCP/15008 to every existing port-limited rule in repo-owned policies and upstream ArgoCD policies so each rule retains its from peers; left the tuning Job ingress empty"
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "summary": "Round 2 verification requires per-rule HBONE, rejects a peer-less HBONE-only rule beside peer-restricted rules, accepts ingress: [] and all-ports rules, and rejects a port-limited rule missing 15008",
+      "scope": "scripts/test/lib/check-ambient-netpol.py and R200-R201 in scripts/test/regression-check-kakao.sh --static",
+      "evidence": [
+        "test:ambient-netpol-static",
+        "artifact:scripts/test/lib/check-ambient-netpol.py"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "verification",
+      "status": "partial",
+      "summary": "Round 2 static suite passed 225 checks with 0 failures and 4 existing warnings; make validate, ShellCheck, repo policy checks, and static ambient mutation gate passed. Live ambient verifier could not reach the configured Kubernetes API at 192.168.77.10:6443 and was interrupted after repeated i/o timeouts; live cluster confirmation remains pending",
+      "scope": "Ambient policy manifests and changed shell scripts",
+      "evidence": [
+        "test:ambient-netpol-mutation-verify"
+      ]
+    },
+    {
+      "id": "e6",
+      "type": "follow_up",
+      "status": "pending",
+      "summary": "Live cluster re-verification remains pending; local fixtures cover verifier logic but no runtime cluster result is claimed",
+      "scope": "Live ambient namespaces, ingress NetworkPolicies, and Cilium CCNP",
+      "evidence": [
+        "artifact:scripts/verify/ambient-netpol-check.sh"
+      ]
+    },
+    {
+      "id": "e9",
+      "type": "bug_fix",
+      "summary": "Lead live run: 13-argocd HBONE post-check read the pre-patch snapshot and exited 1 after its own successful appends; now re-reads each policy (R202, mutation-verified)."
+    },
+    {
+      "id": "e10",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "static suite + R202 mutation",
+      "evidence": [
+        "test:./scripts/test/regression-check-kakao.sh --static passed 226 failed 0",
+        "test:R202 fails when the post-patch re-read is removed (mutation)"
+      ]
+    },
+    {
+      "id": "e11",
+      "type": "verification",
+      "status": "passed",
+      "scope": "live six-node kubeadm 1.35 ambient cluster, all lead mitigations removed, ArgoCD auto-sync paused for the three policy apps",
+      "summary": "Applied the branch's database/gitea/apisix-admin policies and the probe CCNP, deleted every live-mitigation policy; after 90s: ambient-netpol-check PASS for probe-ccnp/database/devtools/platform-system, CNPG 'Cluster in healthy state', keycloak/gitea/harbor/argocd reachable (302), pod creation through the kyverno webhook OK. Fixed ArgoCD block run on reproduced fresh state: rc=0, dex/repo-server ingress/1 appended; re-run patched 0 (idempotent).",
+      "evidence": [
+        "runtime:master-1 ambient-netpol-check.sh => PASS x4 with 0 live-mitigation policies",
+        "runtime:kubectl get cluster narwhal-db => Cluster in healthy state",
+        "runtime:kubectl run --dry-run=server x3 => created (kyverno reachable)",
+        "runtime:13-argocd HBONE block on fresh state => rc=0, PASS appended TCP 15008"
+      ]
+    },
+    {
+      "id": "e7",
+      "type": "completion_claim",
+      "summary": "Repo-side policy changes await round 2 local verification and lead live re-verification",
+      "evidence": [
+        "e4",
+        "e5"
+      ]
+    },
+    {
+      "id": "e8",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Peer-preserving repo-side correction is locally verified; live cluster confirmation remains pending because the configured API endpoint timed out"
+    }
+  ]
+}

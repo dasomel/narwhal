@@ -92,22 +92,69 @@ if ! kubectl apply -n devtools -f /home/vagrant/configs/gitops/resources/argocd-
   exit 1
 fi
 
-# Patch ArgoCD NetworkPolicies for Istio ambient mesh (HBONE port 15008)
-echo "Patching ArgoCD NetworkPolicies for Istio ambient mesh (HBONE port 15008)..."
-# NetworkPolicy 생성 대기 (최대 30초)
+# Upstream ArgoCD policies are not repo-owned. Append HBONE to each port-restricted
+# rule so its existing source peers continue to constrain the new port.
+echo "Allowing ambient HBONE on ArgoCD NetworkPolicies..."
 for i in $(seq 1 30); do
-  # No `| grep -q`: grep -q closes the pipe on its first match and pipefail turns kubectl's
-  # SIGPIPE into a false "not found" (measured 2/40 on a comparable list). A false negative
-  # here only wastes the 30s wait, but the no-pipe form costs nothing.
-  if [ -n "$(kubectl get networkpolicy -n devtools -o name 2>/dev/null | grep argocd || true)" ]; then
+  argocd_policies="$(kubectl get networkpolicies.networking.k8s.io -n devtools -o json)"
+  if jq -e '[.items[] | select(.metadata.name | startswith("argocd"))] | length > 0' \
+    <<<"$argocd_policies" >/dev/null; then
     break
   fi
   sleep 1
 done
-for np in $(kubectl get networkpolicy -n devtools -o name 2>/dev/null | grep argocd); do
-  kubectl patch "$np" -n devtools --type='json' \
-    -p='[{"op": "add", "path": "/spec/ingress/0/ports/-", "value": {"port": 15008, "protocol": "TCP"}}]' 2>/dev/null || true
-done
+
+argocd_policies="$(kubectl get networkpolicies.networking.k8s.io -n devtools -o json)"
+if ! jq -e '[.items[] | select(.metadata.name | startswith("argocd"))] | length > 0' \
+  <<<"$argocd_policies" >/dev/null; then
+  echo "ERROR: no ArgoCD NetworkPolicies appeared after the 30-second wait" >&2
+  exit 1
+fi
+patch_failed=0
+while IFS= read -r policy_name; do
+  [ -n "$policy_name" ] || continue
+  policy="$(jq -c --arg name "$policy_name" '.items[] | select(.metadata.name == $name)' \
+    <<<"$argocd_policies")"
+  if ! jq -e '((.spec.policyTypes // []) | index("Ingress") != null) or (.spec | has("ingress"))' \
+    <<<"$policy" >/dev/null; then
+    continue
+  fi
+  policy_failed=0
+  while IFS= read -r rule_index; do
+    [ -n "$rule_index" ] || continue
+    rule="$(jq -c --argjson index "$rule_index" '.spec.ingress[$index]' <<<"$policy")"
+    if jq -e 'any(.ports[]?; .port == 15008 and (.protocol // "TCP") == "TCP")' \
+      <<<"$rule" >/dev/null; then
+      echo "  SKIP $policy_name ingress/$rule_index: TCP 15008 already allowed"
+      continue
+    fi
+    if kubectl patch "networkpolicy/$policy_name" -n devtools --type='json' \
+      -p="[{\"op\":\"add\",\"path\":\"/spec/ingress/$rule_index/ports/-\",\"value\":{\"port\":15008,\"protocol\":\"TCP\"}}]"; then
+      echo "  PASS $policy_name ingress/$rule_index: appended TCP 15008"
+    else
+      echo "  ERROR $policy_name ingress/$rule_index: failed to append TCP 15008" >&2
+      policy_failed=1
+    fi
+  done < <(jq -r '.spec.ingress // [] | to_entries[] | select(.value | has("ports")) | .key' <<<"$policy")
+  if [ "$policy_failed" -ne 0 ]; then
+    patch_failed=1
+  fi
+  # Re-read after patching: the snapshot above predates this loop's own appends, so
+  # checking it would report every freshly patched rule as missing 15008.
+  policy="$(kubectl get "networkpolicy/$policy_name" -n devtools -o json)"
+  if ! jq -e 'any(.spec.ingress[]?; has("ports") | not)' <<<"$policy" >/dev/null \
+    && ! jq -e 'all(.spec.ingress[]?; any(.ports[]?; .port == 15008 and (.protocol // "TCP") == "TCP"))' <<<"$policy" >/dev/null; then
+    # Empty ingress arrays have no restricted rule to patch.
+    echo "  ERROR $policy_name: one or more restricted rules lack TCP 15008" >&2
+    patch_failed=1
+  fi
+done < <(jq -r '.items[] | select(.metadata.name | startswith("argocd")) | .metadata.name' \
+  <<<"$argocd_policies" | sort)
+
+if [ "$patch_failed" -ne 0 ]; then
+  echo "ERROR: one or more ArgoCD NetworkPolicies were not patched" >&2
+  exit 1
+fi
 
 # Give every ArgoCD workload resource requests/limits.
 # Upstream install.yaml ships NO resources block, so all 7 components land in the

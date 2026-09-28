@@ -1,0 +1,15 @@
+# Istio's platform prerequisites recommend allowing the ambient kubelet probe
+# SNAT address through Cilium policy: https://istio.io/latest/docs/ambient/install/platform-prerequisites/
+apiVersion: cilium.io/v2
+kind: CiliumClusterwideNetworkPolicy
+metadata:
+  name: allow-ambient-kubelet-probes
+spec:
+  description: Allow Istio ambient kubelet probe traffic SNATed by ztunnel.
+  endpointSelector: {}
+  enableDefaultDeny:
+    ingress: false
+    egress: false
+  ingress:
+    - fromCIDR:
+        - 169.254.7.127/32

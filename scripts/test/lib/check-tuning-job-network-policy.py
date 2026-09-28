@@ -6,11 +6,11 @@ that hardening is a NetworkPolicy on the Job pod (podSelector
 app.kubernetes.io/name=narwhal-tuning, devtools namespace) that permits neither
 ingress nor egress — the pod manipulates the host via nsenter, it does not call out
 to anything else in-cluster, and nothing else in-cluster calls it, so unlike
-gitea-ingress-policy.yaml (issue #160) there is no allowlist to enumerate: any
-non-empty ingress/egress rule here is a regression, not a legitimate caller.
+gitea-ingress-policy.yaml (issue #160) there is no ingress or egress traffic to permit,
+including ambient HBONE: the Job receives no inbound traffic.
 
 This checks structure, not just presence: a NetworkPolicy that names narwhal-tuning
-but carries even one non-empty ingress/egress rule reads as fixed and is not. The
+but carries an egress rule or another ingress rule reads as fixed and is not. The
 negative case runs against a mutated temp copy — one with a rule added back — never
 the real file, and proves the check actually fails when the gap reopens.
 """

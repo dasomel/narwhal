@@ -1749,6 +1749,17 @@ PYEOF
   check R190 "11-keycloak.sh HTTPS gate probes a main-port path, never /health through the gateway (Narwhal#230, 2026-09-28)" \
     bash -c '! grep -Eq "https://keycloak\\.\\\$\\{DOMAIN\\}/health" scripts/cluster/11-keycloak.sh && grep -q "https://keycloak.\\\${DOMAIN}/realms/master" scripts/cluster/11-keycloak.sh'
 
+  # Narwhal#235: ambient ingress policies need HBONE and Cilium must accept the
+  # kubelet SNAT probe address. Mutations ensure both assertions actually fail.
+  check R200 "ambient ingress policies allow HBONE and probe CCNP exists (Narwhal#235)" \
+    python3 scripts/test/lib/check-ambient-netpol.py
+  check R201 "ambient policy regressions reject HBONE and probe-CIDR mutations (Narwhal#235)" \
+    python3 scripts/test/lib/check-ambient-netpol.py --mutation-verify
+  # Narwhal#235 (lead live run): the ArgoCD HBONE post-check read a pre-patch snapshot and
+  # exited 1 on every fresh cluster after its own successful appends.
+  check R202 "13-argocd re-reads each policy after patching before the 15008 post-check (Narwhal#235)" \
+    python3 -c 'import re,pathlib; s=pathlib.Path("scripts/cluster/13-argocd.sh").read_text(); i=s.index("appended TCP 15008"); j=s.index("one or more restricted rules lack TCP 15008"); assert re.search(r"policy=\"\$\(kubectl get \"networkpolicy/\$policy_name\"", s[i:j]), "no re-read between patch and post-check"'
+
   check R154 "bundle preflight and chart builder share install-call requirements (2026-09-28)" \
     bash -c '
       set -euo pipefail

@@ -72,6 +72,8 @@ spec:
           port: 5432
         - protocol: TCP
           port: 8000
+        - protocol: TCP
+          port: 15008
     # 2. CNPG operator (platform-system) - instance manager status/reconciliation API.
     - from:
         - namespaceSelector:
@@ -83,6 +85,8 @@ spec:
       ports:
         - protocol: TCP
           port: 8000
+        - protocol: TCP
+          port: 15008
     # 3. Keycloak (iam) - authentik-db-rw -> narwhal-db-rw.
     - from:
         - namespaceSelector:
@@ -94,6 +98,8 @@ spec:
       ports:
         - protocol: TCP
           port: 5432
+        - protocol: TCP
+          port: 15008
     # 4. Harbor (devtools) - harbor-db-rw -> narwhal-db-rw.
     - from:
         - namespaceSelector:
@@ -105,6 +111,8 @@ spec:
       ports:
         - protocol: TCP
           port: 5432
+        - protocol: TCP
+          port: 15008
     # 5. Gitea (devtools) - gitea-db-rw -> narwhal-db-rw.
     - from:
         - namespaceSelector:
@@ -116,3 +124,5 @@ spec:
       ports:
         - protocol: TCP
           port: 5432
+        - protocol: TCP
+          port: 15008

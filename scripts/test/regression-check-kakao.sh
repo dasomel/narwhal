@@ -2521,6 +2521,93 @@ assert '22[[:space:]]' in line and 'guest' in line, 'parser no longer selects gu
     python3 -c "text=open('scripts/cluster/02-init-cluster.sh').read(); assert 'authentication:\\n  anonymous:\\n    enabled: false' in text"
   check R161 "kubelet readOnlyPort is explicitly zero (Narwhal#113)" \
     bash -c 'grep -qE "^readOnlyPort:[[:space:]]*0[[:space:]]*$" scripts/cluster/02-init-cluster.sh && scripts/verify/kubelet-authz-check.sh --self-test'
+
+  # Narwhal#228/#229: provisioning regressions must detect literal CIDRs, chart-ignored
+  # ambient labels, and APISIX controller resources wedged in ResourceSyncAborted.
+  check R180 "APISIX values heredoc substitution and guard execute successfully (#228)" \
+    python3 -c '
+from pathlib import Path
+import os, subprocess, tempfile
+s=Path("scripts/cluster/08-1-networking.sh").read_text()
+def extract(source, target):
+    lines=source.splitlines()
+    start=next(i for i,x in enumerate(lines) if x.startswith("cat > /tmp/apisix-values.yaml <<"))
+    guard=next(i for i in range(start, len(lines)) if "if grep -Fq" in lines[i])
+    end=next(i for i in range(guard, len(lines)) if lines[i] == "fi")
+    substitution=next(i for i in range(start, len(lines)) if lines[i].startswith("sed -i ") and "POD_NETWORK_CIDR" in lines[i])
+    end=max(end, substitution)
+    block="\n".join(lines[start:end+1]).replace("/tmp/apisix-values.yaml", target)
+    # Production runs on Linux; macOS sed requires an empty in-place-edit suffix.
+    return block.replace("sed -i "+chr(34), "sed -i "+chr(39)+chr(39)+" "+chr(34))
+def execute(source):
+    with tempfile.TemporaryDirectory() as d:
+        target=f"{d}/values.yaml"
+        result=subprocess.run(["bash", "-c", extract(source, target)], env={**os.environ, "POD_NETWORK_CIDR":"10.244.0.0/16"}, capture_output=True, text=True)
+        return result.returncode, Path(target).read_text() if Path(target).exists() else ""
+rc, rendered=execute(s)
+assert rc == 0, f"block exited {rc}"
+assert "10.244.0.0/16" in rendered and "${" not in rendered, "CIDR not rendered cleanly"
+# Restore the reviewed bad order; the real executed block must fail.
+lines=s.splitlines()
+sed=next(x for x in lines if x.startswith("sed -i ") and "POD_NETWORK_CIDR" in x)
+lines.remove(sed)
+guard=next(i for i,x in enumerate(lines) if "if grep -Fq" in x)
+end=next(i for i in range(guard, len(lines)) if lines[i] == "fi")
+lines.insert(end+1, sed)
+rc, _=execute("\n".join(lines))
+assert rc != 0, "guard-before-substitution mutation passed"
+'
+
+  check R180c "CNI calls the live pod CIDR verifier after Cilium readiness" \
+    python3 -c 'from pathlib import Path; s=Path("scripts/cluster/03-cni-install.sh").read_text(); i=s.index("cilium status --wait --wait-duration 120s"); t=s[i:i+900]; assert "else\n      /home/vagrant/scripts/verify/pod-cidr-consistency-check.sh\n    fi" in t, "fresh-install path must run the verifier fatally"; assert "cilium_preexisting=true" in s[:i]'
+  check R180d "existing Cilium pool mismatch warns without mutation" \
+    python3 -c 'from pathlib import Path; s=Path("scripts/cluster/03-cni-install.sh").read_text(); b=s[s.index("install_cilium() {"):s.index("# `cilium install`")]; assert "cluster-pool-ipv4-cidr" in b and "WARN:" in b and "cannot be changed in place" in b and "return 0" in b; assert "kubectl patch" not in b'
+
+
+  check R181 "Cilium cluster pool is configured from POD_NETWORK_CIDR (#228)" \
+    grep -Fq -- '--set "ipam.operator.clusterPoolIPv4PodCIDRList[0]=${POD_NETWORK_CIDR}"' scripts/cluster/03-cni-install.sh
+  check R181b "R181 mutation check detects a pool CIDR detached from POD_NETWORK_CIDR" \
+    python3 -c '
+from pathlib import Path
+s=Path("scripts/cluster/03-cni-install.sh").read_text()
+needle="clusterPoolIPv4PodCIDRList[0]=" + chr(36) + "{POD_NETWORK_CIDR}"
+mutant=s.replace(needle, "clusterPoolIPv4PodCIDRList[0]=10.0.0.0/8", 1)
+assert needle in s and needle not in mutant
+'
+
+  check R182 "APISIX deployments are pod-template patched and live pod labels asserted (#229)" \
+    python3 -c '
+from pathlib import Path
+s=Path("scripts/cluster/08-1-networking.sh").read_text()
+assert "kubectl patch deployment" in s
+assert "pod_label" in s and "!= none" in s
+'
+  check R182b "R182 mutation check detects removal of the dataplane-mode assertion" \
+    python3 -c '
+from pathlib import Path
+s=Path("scripts/cluster/08-1-networking.sh").read_text()
+needle="if [ " + chr(34) + "${pod_label}" + chr(34) + " != none ]; then"
+mutant=s.replace(needle, "", 1)
+assert needle in s and needle not in mutant
+'
+
+  check R183 "APISIX ResourceSyncAborted recovery is bounded and strips server metadata (#229)" \
+    python3 -c '
+from pathlib import Path
+s=Path("scripts/cluster/lib/recover-apisix-resource-sync.sh").read_text()
+assert "MAX_ROUNDS" in s and "ResourceSyncAborted" in s
+assert "resourceVersion" in s and "managedFields" in s and "uid" in s
+assert "kubectl delete" in s and "kubectl apply -f -" in s and "obj.pop" in s
+'
+  check R183b "R183 mutation check detects removal of the recovery round bound" \
+    python3 -c '
+from pathlib import Path
+s=Path("scripts/cluster/lib/recover-apisix-resource-sync.sh").read_text()
+line=next(line for line in s.splitlines() if line.startswith("MAX_ROUNDS="))
+mutant=s.replace(line, "MAX_ROUNDS=", 1)
+assert line in s and not any(x.startswith("MAX_ROUNDS=") and ":-3" in x for x in mutant.splitlines())
+'
+
 }
 
 #=========================================

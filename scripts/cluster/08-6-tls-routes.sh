@@ -19,6 +19,11 @@ if ! helm template narwhal-platform /home/vagrant/configs/gitops/charts/narwhal-
   exit 1
 fi
 
+# The pinned ingress-controller can leave resources aborted after an initial 404 on empty etcd.
+echo "Waiting for APISIX ingress controller before bounded sync recovery..."
+kubectl rollout status deployment/apisix-ingress-controller -n platform-system --timeout=180s
+"$(dirname "$0")/lib/recover-apisix-resource-sync.sh" platform-system
+
 # Wait for APISIX Ingress Controller to sync routes
 echo "Waiting for APISIX routes to sync..."
 sleep 10

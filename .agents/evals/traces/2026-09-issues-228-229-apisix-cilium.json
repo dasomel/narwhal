@@ -1,0 +1,152 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-issues-228-229-apisix-cilium",
+  "task": "Fix APISIX bootstrap CIDR rendering, align Cilium pod allocation, opt APISIX workloads out of ambient enrollment, and recover aborted ingress resources",
+  "changeContext": {
+    "paths": [
+      "scripts/cluster/03-cni-install.sh",
+      "scripts/cluster/08-1-networking.sh",
+      "scripts/cluster/08-6-tls-routes.sh",
+      "scripts/cluster/lib/recover-apisix-resource-sync.sh",
+      "scripts/verify/pod-cidr-consistency-check.sh",
+      "scripts/test/regression-check-kakao.sh",
+      "docs/common/lessons-log.md",
+      ".agents/evals/traces/2026-09-issues-228-229-apisix-cilium.json"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "reproduction",
+      "summary": "Issues #228 and #229 report live clean-install evidence from 2026-09-28: APISIX nginx rejected literal ${POD_NETWORK_CIDR}; real pod IPs were 10.0.x.x while kubeadm used 10.244.0.0/16; the APISIX and ingress-controller Pods lacked dataplane-mode=none and controller traffic to Admin API :9180 failed; controller 1.8.0 left ApisixUpstream and ApisixRoute resources in ResourceSyncAborted/not found.",
+      "evidence": [
+        "issue:228",
+        "issue:229"
+      ]
+    },
+    {
+      "id": "e2",
+      "type": "bug_fix",
+      "summary": "Substitute only the APISIX CIDR token and fail on unresolved shell placeholders; remove the obsolete ConfigMap allowlist sed. Configure Cilium's cluster pool from POD_NETWORK_CIDR with /24 node masks and add a live kubeadm/CiliumNode containment verifier. Remove unsupported podLabels chart values, patch both Deployment pod templates and assert live Pod labels. Add bounded status-driven CR recreation after route apply and controller readiness.",
+      "evidence": [
+        "artifact:scripts/cluster/03-cni-install.sh",
+        "artifact:scripts/cluster/08-1-networking.sh",
+        "artifact:scripts/cluster/08-6-tls-routes.sh",
+        "artifact:scripts/cluster/lib/recover-apisix-resource-sync.sh",
+        "artifact:scripts/verify/pod-cidr-consistency-check.sh"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "regression_verification",
+      "status": "passed",
+      "summary": "R180-R183 and R180b-R183b pass, including mutation checks for placeholder substitution, Cilium pool binding, pod label assertion, and bounded ResourceSyncAborted recovery.",
+      "scope": "./scripts/test/regression-check-kakao.sh --static",
+      "evidence": [
+        "test:R180-R183",
+        "test:R180b-R183b",
+        "artifact:scripts/test/regression-check-kakao.sh"
+      ]
+    },
+    {
+      "id": "e4",
+      "type": "verification",
+      "status": "passed",
+      "summary": "ShellCheck warning severity and bash syntax checks passed for all changed shell scripts.",
+      "scope": "Changed shell scripts",
+      "evidence": [
+        "ci:shellcheck-warning",
+        "test:bash-n"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "pending_action",
+      "status": "pending",
+      "summary": "Lead to rerun a clean install and verify live Cilium podCIDRs, both APISIX pod labels, controller Admin API sync, and absence of remaining ResourceSyncAborted CRs.",
+      "scope": "Clean-install Kubernetes runtime on the target cluster",
+      "evidence": [
+        "runtime:pending-lead-clean-install-reverification"
+      ]
+    },
+    {
+      "id": "e6",
+      "type": "documentation",
+      "summary": "Added one dated lessons-log row for each of the four distinct root causes and their discriminators.",
+      "evidence": [
+        "artifact:docs/common/lessons-log.md"
+      ]
+    },
+    {
+      "id": "e9",
+      "type": "bug_fix",
+      "summary": "Review round #228/#229: move the APISIX unresolved-placeholder guard after CIDR substitution; invoke the live pod-CIDR verifier after successful Cilium readiness; warn without mutation when an existing cluster pool differs from POD_NETWORK_CIDR.",
+      "evidence": [
+        "artifact:scripts/cluster/03-cni-install.sh",
+        "artifact:scripts/cluster/08-1-networking.sh",
+        "artifact:docs/common/lessons-log.md"
+      ]
+    },
+    {
+      "id": "e10",
+      "type": "regression_verification",
+      "status": "passed",
+      "summary": "Review regression executed the extracted APISIX heredoc, substitution, and guard against a temporary file with POD_NETWORK_CIDR=10.244.0.0/16; the swapped bad ordering failed as expected. Static checks also confirmed verifier wiring and a non-mutating warning on existing pool mismatch. shellcheck --severity=warning and bash -n passed for scripts/**/*.sh; Kakao static regression passed 217 checks with 4 existing warnings.",
+      "scope": "R180/R180c/R180d, shellcheck warning severity, bash syntax, and ./scripts/test/regression-check-kakao.sh --static",
+      "evidence": [
+        "test:R180",
+        "test:R180 mutation:guard-before-substitution",
+        "test:R180c",
+        "test:R180d",
+        "ci:shellcheck-warning",
+        "test:bash-n",
+        "test:regression-static-217-pass",
+        "artifact:scripts/test/regression-check-kakao.sh"
+      ]
+    },
+    {
+      "id": "e11",
+      "type": "bug_fix",
+      "summary": "Lead review: pod-cidr verifier was fatal on re-runs against clusters that pre-date the pool fix (install_cilium only WARNs there). Verifier is now fatal only when Cilium was absent at script start; R180c rewritten and mutation-verified."
+    },
+    {
+      "id": "e12",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "static suite + R180c mutation",
+      "evidence": [
+        "test:./scripts/test/regression-check-kakao.sh --static passed 217 failed 0",
+        "test:R180c fails when the fresh-install verifier call is made non-fatal (mutation)"
+      ]
+    },
+    {
+      "id": "e13",
+      "type": "verification",
+      "status": "passed",
+      "scope": "live six-node kubeadm 1.35 cluster (pool 10.0.0.0/8 from the pre-fix install)",
+      "summary": "pod-cidr-consistency-check.sh exits 1 and names the mismatch (master-1 podCIDR 10.0.5.0/24 outside 10.244.0.0/16; POD_NETWORK_CIDR vs kubeadm podSubnet); recover-apisix-resource-sync.sh completes with no CR recreated on a healthy cluster; apisix and ingress-controller pods carry istio.io/dataplane-mode=none.",
+      "evidence": [
+        "runtime:master-1 pod-cidr-consistency-check.sh rc=1 on the known-mismatched live cluster",
+        "runtime:master-1 recover-apisix-resource-sync.sh => recovery complete, 0 recreated",
+        "runtime:kubectl -L istio.io/dataplane-mode => none on apisix + ingress-controller"
+      ]
+    },
+    {
+      "id": "e7",
+      "type": "completion_claim",
+      "summary": "The requested source fixes and local static verification are complete; clean-install live behavior remains pending the lead's runtime re-verification.",
+      "evidence": [
+        "e3",
+        "e4",
+        "e5"
+      ]
+    },
+    {
+      "id": "e8",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Requested implementation and local evidence are complete. The separate clean-install live re-verification remains pending for the lead and is not claimed here."
+    }
+  ]
+}

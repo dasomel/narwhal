@@ -39,8 +39,23 @@ fi
 PORTAL_CONFIG_FILE="${PORTAL_DIR}/src/lib/config.ts"
 PORTAL_GITEA_FILE="${PORTAL_DIR}/src/lib/gitea.ts"
 PORTAL_DEPLOYMENT="${PORTAL_DEPLOYMENT_FILE:-gitops/charts/narwhal-platform/templates/narwhal-portal-k8s.yaml}"
+PORTAL_GITOPS_BOOTSTRAP="${PORTAL_GITOPS_BOOTSTRAP_FILE:-scripts/cluster/14-gitops-bootstrap.sh}"
 PORTAL_BINDINGS="${PORTAL_BINDINGS_FILE:-scripts/cluster/13-2-narwhal-portal-bindings.sh}"
 if [ -f "${PORTAL_CONFIG_FILE}" ] && [ -f "${PORTAL_GITEA_FILE}" ]; then
+  for configured_var in GITEA_URL GITEA_OWNER GITEA_REPO GITEA_TOKEN GITEA_BASE_BRANCH; do
+    if ! grep -q "\"${configured_var}\":" "${PORTAL_GITOPS_BOOTSTRAP}" \
+      && ! grep -q -- "--from-literal=${configured_var}=" "${PORTAL_BINDINGS}" \
+      && ! grep -q "name: ${configured_var}" "${PORTAL_DEPLOYMENT}"; then
+      echo "FAIL: ${configured_var} is not provided by bootstrap, secret creation, or Deployment env" >&2
+      exit 1
+    fi
+  done
+  if ! grep -A3 '          envFrom:' "${PORTAL_DEPLOYMENT}" \
+    | grep -q 'name: narwhal-portal-secrets'; then
+    echo "FAIL: portal Deployment does not import narwhal-portal-secrets through envFrom" >&2
+    exit 1
+  fi
+
   for required_var in GITEA_URL GITEA_TOKEN; do
     case "${required_var}" in
       GITEA_URL)
@@ -49,7 +64,10 @@ if [ -f "${PORTAL_CONFIG_FILE}" ] && [ -f "${PORTAL_GITEA_FILE}" ]; then
           exit 1
         fi
         provided=0
-        grep -q 'name: GITEA_URL' "${PORTAL_DEPLOYMENT}" && provided=1
+        # 14 patches the portal's GITEA_URL from PORTAL_GITEA_URL (https; R220 checks the scheme).
+        grep -q '"GITEA_URL": "${PORTAL_GITEA_URL}"' "${PORTAL_GITOPS_BOOTSTRAP}" \
+          && grep -A3 '          envFrom:' "${PORTAL_DEPLOYMENT}" \
+            | grep -q 'name: narwhal-portal-secrets' && provided=1
         ;;
       GITEA_TOKEN)
         if ! grep -q 'GITEA_TOKEN is not configured' "${PORTAL_GITEA_FILE}"; then
@@ -57,7 +75,9 @@ if [ -f "${PORTAL_CONFIG_FILE}" ] && [ -f "${PORTAL_GITEA_FILE}" ]; then
           exit 1
         fi
         provided=0
-        grep -q -- '--from-literal=GITEA_TOKEN=' "${PORTAL_BINDINGS}" && provided=1
+        grep -q '"GITEA_TOKEN": "${PORTAL_GIT_TOKEN}"' "${PORTAL_GITOPS_BOOTSTRAP}" \
+          && grep -A3 '          envFrom:' "${PORTAL_DEPLOYMENT}" \
+            | grep -q 'name: narwhal-portal-secrets' && provided=1
         ;;
     esac
     if [ "${provided}" -ne 1 ]; then

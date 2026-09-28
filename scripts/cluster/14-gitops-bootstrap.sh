@@ -387,13 +387,16 @@ kubectl create secret generic narwhal-gitops-repo -n devtools \
   | kubectl apply -f -
 echo "  ArgoCD repository credentials registered for ${REPO_NAME}"
 
+# The portal refuses a non-https GITEA_URL in production (readiness 503 "GITEA_URL
+# (must be https://)"), so it gets the ingress URL; ArgoCD keeps the in-cluster http URL.
+PORTAL_GITEA_URL="https://gitea.${DOMAIN}"
 # The portal reads these to open its pull requests. narwhal-portal-secrets is created
 # by 13-2-narwhal-portal-bindings.sh, which runs first, so this adds keys to it rather
 # than creating it — a `create --dry-run | apply` here would drop every other key.
 if kubectl get secret narwhal-portal-secrets -n devtools >/dev/null 2>&1; then
   kubectl patch secret narwhal-portal-secrets -n devtools --type merge -p "$(cat <<PATCHEOF
 {"stringData":{
-  "GITEA_URL": "${GITEA_URL}",
+  "GITEA_URL": "${PORTAL_GITEA_URL}",
   "GITEA_OWNER": "${GITEA_ADMIN_USER}",
   "GITEA_REPO": "${REPO_NAME}",
   "GITEA_TOKEN": "${PORTAL_GIT_TOKEN}",

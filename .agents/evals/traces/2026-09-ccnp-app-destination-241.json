@@ -1,0 +1,67 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "traceId": "narwhal-ccnp-app-destination-241-followup",
+  "task": "Give the ambient probe CCNP Application a destination namespace the platform project allows, and make the AppProject fit check flag empty destination namespaces (#241 follow-up)",
+  "consistencyMode": "strict",
+  "changeContext": {
+    "paths": [
+      "gitops/charts/narwhal-apps/templates/ambient-kubelet-probes-ccnp.yaml",
+      "scripts/test/lib/check-appproject-fit.py",
+      "docs/common/lessons-log.md",
+      ".agents/evals/traces/2026-09-ccnp-app-destination-241.json"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Scope: the one Application template merged in #241, the fit checker that missed it, and a lessons-log row. Not touching other Applications or the AppProject."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "Live, after pushing main's gitops to in-cluster Gitea: application ambient-kubelet-probes-ccnp stayed sync=Unknown with InvalidSpecError \"application destination server 'https://kubernetes.default.svc' and namespace '' do not match any of the allowed destinations in project 'platform'\". check-appproject-fit.py passed on the same tree because it filters empty namespaces with `if ns`.",
+      "evidence": [
+        "runtime:kubectl get application ambient-kubelet-probes-ccnp => InvalidSpecError namespace ''"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "destination.namespace: kube-system (allowed by platform; kyverno-policies uses devtools the same way); the checker reports an empty destination namespace unless the project lists ''."
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "check-appproject-fit.py on the fixed tree and on the #241 tree (mutation)",
+      "evidence": [
+        "test:check-appproject-fit.py => rc 0 on the fixed tree",
+        "test:check-appproject-fit.py with the namespace removed => 'destination namespace is empty and project platform does not allow' (rc 1)",
+        "ci:./scripts/test/regression-check-kakao.sh --static passed 247 failed 0"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "verification",
+      "status": "passed",
+      "scope": "live six-node cluster via in-cluster Gitea push of the fixed template",
+      "summary": "After the push the Application reached sync=Synced health=Healthy with dest=kube-system and no conditions; the CCNP now carries the ArgoCD tracking-id annotation, so GitOps reconciles it.",
+      "evidence": [
+        "runtime:kubectl get application ambient-kubelet-probes-ccnp => Synced/Healthy, conditions empty",
+        "runtime:ccnp allow-ambient-kubelet-probes tracking-id => ambient-kubelet-probes-ccnp:cilium.io/CiliumClusterwideNetworkPolicy"
+      ]
+    },
+    {
+      "id": "e6",
+      "type": "completion_claim",
+      "summary": "The CCNP Application is valid and live-synced; the fit check now catches empty destination namespaces."
+    },
+    {
+      "id": "e7",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Converged with static, mutation, and live evidence."
+    }
+  ]
+}

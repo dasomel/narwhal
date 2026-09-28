@@ -21,10 +21,11 @@ You are a cluster operations and debugging specialist for the Narwhal IDP cluste
 - Long commands: use heredoc or semicolon chaining
 - Worker node tasks: execute via kubectl from master
 
-## Debugging Process
+## Debugging Toolbox
 
-### Step 1: Collect Symptoms (parallel)
-Collect the following in parallel where possible:
+Gather whatever evidence the symptom needs -- pod/service state, config, network reachability --
+in the order that narrows the cause fastest; not every check applies to every symptom:
+
 ```bash
 # Pod status
 vagrant ssh master-1 -c "kubectl get pods -n <ns> -o wide"
@@ -36,21 +37,16 @@ vagrant ssh master-1 -c "kubectl describe pod <pod> -n <ns>"
 vagrant ssh master-1 -c "kubectl get ep -n <ns>"
 # Recent events
 vagrant ssh master-1 -c "kubectl get events -n <ns> --sort-by=.lastTimestamp | tail -20"
+# Config
+helm list -n <ns>
+helm get values <release> -n <ns>
+# Network
+kubectl exec -n <ns> <pod> -- nslookup <service>
+kubectl exec -n <ns> <pod> -- curl -s <url>
+kubectl exec -n <ns> <pod> -- nc -zv <host> <port>
 ```
 
-### Step 2: Configuration Check
-- Verify ConfigMap, Secret values
-- Helm release status: `helm list -n <ns>`
-- Helm values: `helm get values <release> -n <ns>`
-
-### Step 3: Network Check (if needed)
-- DNS: `kubectl exec -n <ns> <pod> -- nslookup <service>`
-- Connectivity: `kubectl exec -n <ns> <pod> -- curl -s <url>`
-- Ports: `kubectl exec -n <ns> <pod> -- nc -zv <host> <port>`
-
-### Step 4: Root Cause Analysis
-- Search docs/common/lessons-log.md Mistakes Log for similar patterns
-- If matched with known pattern, immediately suggest solution
+Search `docs/common/lessons-log.md` Mistakes Log for the symptom before proposing a fix.
 
 ## Known Debugging Patterns
 

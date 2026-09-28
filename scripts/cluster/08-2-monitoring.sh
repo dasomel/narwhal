@@ -44,6 +44,7 @@ for attempt in 1 2 3 4 5; do
     --set grafana.admin.existingSecret=grafana-secrets \
     --set grafana.admin.userKey=admin-user \
     --set grafana.admin.passwordKey=admin-password \
+    --set grafana.initChownData.enabled=false \
     --set grafana.persistence.enabled=true \
     --set grafana.persistence.storageClassName=nfs-csi \
     --set grafana.persistence.size=5Gi \

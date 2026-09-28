@@ -77,11 +77,31 @@ kubectl rollout status deployment/metrics-server -n kube-system --timeout=180s \
 #=========================================
 echo "=== Installing CSI Driver NFS ${CSI_DRIVER_NFS_VERSION} ==="
 
+# Chart 4.13.2 renders fsGroupPolicy: File only when this feature is true; false omits
+# the field. Kubernetes defaults the omission to ReadWriteOnceWithFSType, which performs
+# ownership changes only when a volume has an fsType and uses RWO. This NFS StorageClass
+# sets no fstype parameter, so the default cannot trigger chown through root_squash.
+# With this value retained, later chart manifests also omit the field; Helm's three-way
+# upgrade patch leaves the API-defaulted live value alone instead of restoring File.
+live_fs_group_policy="$(kubectl get csidriver nfs.csi.k8s.io -o jsonpath='{.spec.fsGroupPolicy}' 2>/dev/null || true)"
+if [ "${live_fs_group_policy}" = "File" ]; then
+  # D1: Delete only the incompatible immutable policy; registration metadata is recreated
+  # by Helm and existing PVs/mounts are unaffected. Other policies remain untouched.
+  kubectl delete csidriver nfs.csi.k8s.io
+  echo "Deleted nfs.csi.k8s.io CSIDriver with immutable fsGroupPolicy=File before upgrade"
+fi
 
 helm upgrade --install csi-driver-nfs "$(chart csi-driver-nfs)" \
   --namespace kube-system \
   --version "${CSI_DRIVER_NFS_VERSION}" \
-  --set controller.replicas=1
+  --set controller.replicas=1 \
+  --set feature.enableFSGroupPolicy=false
+
+live_fs_group_policy="$(kubectl get csidriver nfs.csi.k8s.io -o jsonpath='{.spec.fsGroupPolicy}' 2>/dev/null || true)"
+if [ "${live_fs_group_policy}" = "File" ]; then
+  echo "ERROR: nfs.csi.k8s.io CSIDriver still has fsGroupPolicy=File after Helm upgrade" >&2
+  exit 1
+fi
 
 # Wait for CSI driver pods
 echo "Waiting for CSI driver pods..."

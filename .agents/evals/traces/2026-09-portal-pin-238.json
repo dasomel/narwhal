@@ -14,7 +14,8 @@
       "scripts/airgap/lib/image-digests.tsv",
       "scripts/test/regression-check-kakao.sh",
       "docs/common/lessons-log.md",
-      ".agents/evals/traces/2026-09-portal-pin-238.json"
+      ".agents/evals/traces/2026-09-portal-pin-238.json",
+      ".github/workflows/lint.yml"
     ]
   },
   "events": [

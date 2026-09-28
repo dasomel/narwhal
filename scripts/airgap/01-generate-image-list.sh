@@ -62,6 +62,21 @@ velero/velero-plugin-for-aws:v1.14.1
 mirror.gcr.io/aquasec/trivy:0.60.0
 EOF
 )
+# D1: these build images are consumed by digest-pinned portal Jobs, so use the
+# reviewed digest table to emit matching bundle refs. Cost: preserve both OCI indexes in
+# the bundle. Escape hatch: update the TSV pins and portal manifest together on upgrade.
+pin_transient_images() {
+  while IFS= read -r ref; do
+    row=$(awk -F '\t' -v ref="$ref" '$1 == ref {print $2 "\t" $4}' "${SCRIPT_DIR}/lib/image-digests.tsv")
+    IFS=$'\t' read -r digest source <<< "$row"
+    if [[ "$source" == portal-pin ]]; then
+      [[ "$digest" =~ ^sha256:[a-f0-9]{64}$ ]] || { echo "ERROR: missing digest pin for ${ref}" >&2; return 1; }
+      printf '%s@%s\n' "$ref" "$digest"
+    else
+      printf '%s\n' "$ref"
+    fi
+  done <<< "${TRANSIENT_IMAGES}"
+}
 # NOTE: the trivy scanner (aquasec/trivy) is spawned by trivy-operator as a
 # short-lived VulnerabilityReport scan Job, so it only appears in a live pod
 # snapshot while a scan is running — pinned here so it's captured deterministically.
@@ -90,10 +105,9 @@ emit_header() {
 #     tags for all 7 components, so there is no goharbor :latest reference left to
 #     exempt. Re-add this bullet only if goharbor genuinely goes back to tracking
 #     :latest — do not carry it forward as boilerplate.
-#   - gcr.io/kaniko-project/executor and docker.io/alpine/git are PINNED (narwhal#52
-#     D3-A) to immutable version tags, coupled to narwhal-portal's
-#     deploy/kaniko-build-job.yaml, which pins the SAME tags — bump both together or
-#     the bundle and the deploy job disagree on which build-helper image runs.
+#   - gcr.io/kaniko-project/executor and docker.io/alpine/git are digest-pinned from
+#     image-digests.tsv (narwhal#261) to match narwhal-portal's deploy Job. Update both
+#     pins together when intentionally upgrading a build-helper image.
 #
 # Last regenerated (--live): ${LIVE_STAMP:-unknown}
 HEADER
@@ -214,11 +228,13 @@ if [[ "${MODE}" == "live" ]]; then
   fi
 
   LIVE_STAMP="$(date +%Y-%m-%d) (from live cluster)"
+  pinned_transient=$(pin_transient_images) || exit 1
   {
     emit_header
-    { printf '%s\n' "${live}"; printf '%s\n' "${TRANSIENT_IMAGES}"; printf '%s\n' "${kubeadm_imgs}"; \
-      printf '%s\n' "${hook_imgs}"; } \
-      | sed -E 's/@sha256:.*//' \
+    { printf '%s\n' "${live}" | sed -E 's/@sha256:[^[:space:]]+//g'; \
+      printf '%s\n' "${pinned_transient}"; \
+      printf '%s\n' "${kubeadm_imgs}" | sed -E 's/@sha256:[^[:space:]]+//g'; \
+      printf '%s\n' "${hook_imgs}" | sed -E 's/@sha256:[^[:space:]]+//g'; } \
       | grep -vE "${INCLUSTER_BUILT_RE}" \
       | grep -vE '^[[:space:]]*$' \
       | sort -u
@@ -263,6 +279,7 @@ for dirpath, _, files in os.walk(root):
 PYEOF
 
 # 3) Images from Vagrantfile K8s_VERSION → kubeadm-managed images
+pin_transient_images >> "${tmp}"
 K8S_VER=$(grep -E '^K8S_PATCH_VERSION\s*=' "${PROJECT_ROOT}/Vagrantfile" | head -1 | sed -E 's/.*"([^"]+)".*/\1/' || echo "1.35.4")
 cat >> "${tmp}" <<KUBE_IMAGES
 registry.k8s.io/kube-apiserver:v${K8S_VER}
@@ -283,7 +300,7 @@ grep -rhE --exclude-dir=bak '\-\-set.*image\.' "${PROJECT_ROOT}/scripts" 2>/dev/
 sort -u "${tmp}" \
   | grep -vE '^(runtime|cgroupDriver|tag|image|name):' \
   | grep -vE '^(quay\.io|docker\.io|ghcr\.io|registry\.k8s\.io|cr\.fluentbit\.io)/?$' \
-  | grep -E '^[a-z0-9][a-z0-9._/-]+(/[a-z0-9._-]+)*:[A-Za-z0-9._+-]+$' \
+  | grep -E '^[a-z0-9][a-z0-9._/-]+(/[a-z0-9._-]+)*:[A-Za-z0-9._+-]+(@sha256:[a-f0-9]{64})?$' \
   > "${OUT_FILE}"
 
 count=$(wc -l < "${OUT_FILE}")

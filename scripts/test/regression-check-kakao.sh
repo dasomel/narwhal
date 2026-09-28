@@ -1136,15 +1136,18 @@ PYEOF
   # later tag re-push. Joined on image_ref (TSV column 1), not counted rows, so
   # reordering either file cannot hide a missing entry.
   check_not R116 "image-digests.tsv has a row for every image in images.txt (Narwhal#52, 2026-09-06)" \
-    bash -c "comm -23 <(grep -vE '^[[:space:]]*(#|\$)' scripts/airgap/images.txt | sort -u) <(cut -f1 scripts/airgap/lib/image-digests.tsv | grep -vE '^#' | sort -u) | grep -q ."
+    bash -c "comm -23 <(grep -vE '^[[:space:]]*(#|\$)' scripts/airgap/images.txt | sed -E 's/@sha256:[a-f0-9]{64}\$//' | sort -u) <(cut -f1 scripts/airgap/lib/image-digests.tsv | grep -vE '^#' | sort -u) | grep -q ."
 
   local digest_join_drift_tmp
   digest_join_drift_tmp="$(mktemp -d)"
   cp scripts/airgap/images.txt "${digest_join_drift_tmp}/images.txt"
   echo "example.com/narwhal52-drift-test:v1" >> "${digest_join_drift_tmp}/images.txt"
   check R116b "R116's check catches an image added without a resolved-digest row (Narwhal#52, 2026-09-06)" \
-    bash -c "comm -23 <(grep -vE '^[[:space:]]*(#|\$)' '${digest_join_drift_tmp}/images.txt' | sort -u) <(cut -f1 scripts/airgap/lib/image-digests.tsv | grep -vE '^#' | sort -u) | grep -q ."
+    bash -c "comm -23 <(grep -vE '^[[:space:]]*(#|\$)' '${digest_join_drift_tmp}/images.txt' | sed -E 's/@sha256:[a-f0-9]{64}\$//' | sort -u) <(cut -f1 scripts/airgap/lib/image-digests.tsv | grep -vE '^#' | sort -u) | grep -q ."
   rm -rf "${digest_join_drift_tmp}"
+
+  check R224 "skopeo source refs drop tags before preserving pinned digests (Narwhal#261, 2026-09-29)" \
+    bash -c 'source scripts/airgap/lib/skopeo-source-ref.sh; test "$(skopeo_source_ref docker.io/alpine/git:v2.54.0@sha256:0b5f57d22181e8b8fbe8ac5ca8754faa0d577f101b9857418f1acc43955ad464)" = "docker://docker.io/alpine/git@sha256:0b5f57d22181e8b8fbe8ac5ca8754faa0d577f101b9857418f1acc43955ad464"'
 
   # narwhal#52 (D3-A): the seam between this repo's images.txt and narwhal-portal's
   # deploy/kaniko-build-job.yaml has no compiler to catch drift -- a tag bumped on

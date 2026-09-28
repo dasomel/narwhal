@@ -68,16 +68,33 @@ while IFS= read -r img; do
   [ -z "${img}" ] && continue
   case "${img}" in \#*) continue ;; esac
 
-  if [[ "${img}" =~ ${INCLUSTER_BUILT_RE} ]]; then
-    printf '%s\tUNRESOLVED\t%s\tin-cluster build (Kaniko); never pulled from a registry, matches INCLUSTER_BUILT_RE\n' \
-      "${img}" "${resolved_at}" >> "${TMP_ROWS}"
+  image_ref="${img%@sha256:*}"
+  frozen_row=$(awk -F '\t' -v ref="${image_ref}" '$1 == ref && $4 ~ /^portal-pin$/ {print $2}' "${MAP}")
+  if [ -n "${frozen_row}" ]; then
+    # D1: keep the reviewed portal pin, but prove it still exists upstream. A moved
+    # tag is informational; a missing frozen manifest is a broken portal contract.
+    if ! crane manifest "${image_ref}@${frozen_row}" >/dev/null 2>&1; then
+      echo "ERROR: frozen portal pin no longer exists upstream: ${image_ref}@${frozen_row}" >&2
+      fail=1
+      continue
+    fi
+    if current_digest="$(resolve_digest "${image_ref}")" && [ "${current_digest}" != "${frozen_row}" ]; then
+      echo "INFO: ${image_ref} tag now points to ${current_digest}; retaining portal pin ${frozen_row}" >&2
+    fi
+    printf '%s\t%s\t%s\tportal-pin\n' "${image_ref}" "${frozen_row}" "${resolved_at}" >> "${TMP_ROWS}"
     continue
   fi
 
-  if digest="$(resolve_digest "${img}")"; then
-    printf '%s\t%s\t%s\tcrane digest\n' "${img}" "${digest}" "${resolved_at}" >> "${TMP_ROWS}"
+  if [[ "${image_ref}" =~ ${INCLUSTER_BUILT_RE} ]]; then
+    printf '%s\tUNRESOLVED\t%s\tin-cluster build (Kaniko); never pulled from a registry, matches INCLUSTER_BUILT_RE\n' \
+      "${image_ref}" "${resolved_at}" >> "${TMP_ROWS}"
+    continue
+  fi
+
+  if digest="$(resolve_digest "${image_ref}")"; then
+    printf '%s\t%s\t%s\tcrane digest\n' "${image_ref}" "${digest}" "${resolved_at}" >> "${TMP_ROWS}"
   else
-    echo "ERROR: failed to resolve digest for ${img} (not the in-cluster-built pattern — this must resolve)" >&2
+    echo "ERROR: failed to resolve digest for ${image_ref} (not the in-cluster-built pattern — this must resolve)" >&2
     fail=1
   fi
 
@@ -91,27 +108,24 @@ if [ "${fail}" -eq 1 ]; then
 fi
 
 cat << 'EOF' > "${TMP_OUT}"
-# image_ref -> upstream index digest -> resolution timestamp -> source.
+# image_ref -> upstream index digest -> resolution timestamp -> source (crane digest or portal-pin).
 #
 # WHY THIS FILE EXISTS: a container tag is a mutable pointer — the registry lets
 # `v1.2.3` be re-pushed to point at different bytes with no visible change in
-# images.txt. This table pins the digest each tag resolved to when last reviewed, so
-# a re-push is a diff here (caught by `refresh-image-digests.sh --check`) instead of
-# a silent change in what the next airgap bundle ships.
+# images.txt. This table pins each tag digest. Ordinary rows track upstream drift;
+# portal-pin rows are deliberately frozen to the digest consumed by narwhal-portal
+# and are skipped by the drift check, so upstream re-publishing the same tag does
+# not move the bundle.
 #
 # index_digest is what the registry returns for `<image_ref>` with NO arch override
 # (`crane digest <ref>`, equivalently `skopeo inspect --raw docker://<ref> | sha256sum`)
 # — for a multi-arch image this is the manifest-list/index digest, and it is the
-# value that changes on a tag re-push. IT IS NOT the digest that ends up on disk in
-# an airgap bundle: 02-save-images.sh runs `skopeo copy --override-arch ... oci:...`,
-# which selects one platform's manifest AND re-serializes it (and its config blob)
-# from Docker schema2 media types into OCI media types — a real re-encoding that
-# changes the digest even with zero tampering (verified while building this table:
-# copying a plain docker.io/library/busybox:1.28 produced a local digest matching
-# NEITHER the source index digest NOR the source per-arch manifest digest). So this
-# column is the upstream drift detector, not a value 09-verify-bundle-completeness.sh
-# can byte-compare against the local OCI layout — see that script's own comments for
-# what it checks instead.
+# value that changes on a tag re-push. For ordinary images 02-save-images.sh selects
+# the bundle platform and re-serializes the manifest into OCI media types, so this
+# digest does not byte-match that saved image. Portal-pin refs instead use `skopeo
+# copy --all` to preserve the full OCI index consumed by the portal Job; that index
+# is pushed back under its tag by 05-load-images.sh so containerd can resolve the
+# same digest in the mirror. See 09-verify-bundle-completeness.sh for local OCI checks.
 #
 # UNRESOLVED rows: if images.txt ever lists an image matching
 # 01-generate-image-list.sh's INCLUSTER_BUILT_RE (built in-cluster by Kaniko, never

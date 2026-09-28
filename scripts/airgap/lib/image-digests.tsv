@@ -1,24 +1,21 @@
-# image_ref -> upstream index digest -> resolution timestamp -> source.
+# image_ref -> upstream index digest -> resolution timestamp -> source (crane digest or portal-pin).
 #
 # WHY THIS FILE EXISTS: a container tag is a mutable pointer — the registry lets
 # `v1.2.3` be re-pushed to point at different bytes with no visible change in
-# images.txt. This table pins the digest each tag resolved to when last reviewed, so
-# a re-push is a diff here (caught by `refresh-image-digests.sh --check`) instead of
-# a silent change in what the next airgap bundle ships.
+# images.txt. This table pins each tag digest. Ordinary rows track upstream drift;
+# portal-pin rows are deliberately frozen to the digest consumed by narwhal-portal
+# and are skipped by the drift check, so upstream re-publishing the same tag does
+# not move the bundle.
 #
 # index_digest is what the registry returns for `<image_ref>` with NO arch override
 # (`crane digest <ref>`, equivalently `skopeo inspect --raw docker://<ref> | sha256sum`)
 # — for a multi-arch image this is the manifest-list/index digest, and it is the
-# value that changes on a tag re-push. IT IS NOT the digest that ends up on disk in
-# an airgap bundle: 02-save-images.sh runs `skopeo copy --override-arch ... oci:...`,
-# which selects one platform's manifest AND re-serializes it (and its config blob)
-# from Docker schema2 media types into OCI media types — a real re-encoding that
-# changes the digest even with zero tampering (verified while building this table:
-# copying a plain docker.io/library/busybox:1.28 produced a local digest matching
-# NEITHER the source index digest NOR the source per-arch manifest digest). So this
-# column is the upstream drift detector, not a value 09-verify-bundle-completeness.sh
-# can byte-compare against the local OCI layout — see that script's own comments for
-# what it checks instead.
+# value that changes on a tag re-push. For ordinary images 02-save-images.sh selects
+# the bundle platform and re-serializes the manifest into OCI media types, so this
+# digest does not byte-match that saved image. Portal-pin refs instead use `skopeo
+# copy --all` to preserve the full OCI index consumed by the portal Job; that index
+# is pushed back under its tag by 05-load-images.sh so containerd can resolve the
+# same digest in the mirror. See 09-verify-bundle-completeness.sh for local OCI checks.
 #
 # UNRESOLVED rows: if images.txt ever lists an image matching
 # 01-generate-image-list.sh's INCLUSTER_BUILT_RE (built in-cluster by Kaniko, never
@@ -38,7 +35,7 @@ apache/apisix:3.15.0-ubuntu	sha256:142dde6b11d7dd2a4e1440906910595aad04f05d6d39a
 busybox:1.28	sha256:141c253bc4c3fd0a201d32dc1f493bcf3fff003b6df416dea4f41046e0f37d47	2026-09-28T12:06:18Z	crane digest
 chrislusf/seaweedfs:4.34	sha256:6620371e8af8282056685c652d4637265698c9e2c2d59f9594e6ac333ad6c634	2026-09-28T12:06:18Z	crane digest
 docker.gitea.com/gitea:1.26.2-rootless	sha256:c5c21a7705a16f2b2369384a3b7d67c5ed761a818bbb0a55187b5cf98cdc2e68	2026-09-28T12:06:18Z	crane digest
-docker.io/alpine/git:v2.54.0	sha256:832b1cd1a271509f3d5272a1a62d4cb2ab1a53426ebde1f6c2cb7349f907dc6f	2026-09-28T12:06:18Z	crane digest
+docker.io/alpine/git:v2.54.0	sha256:0b5f57d22181e8b8fbe8ac5ca8754faa0d577f101b9857418f1acc43955ad464	2026-09-28T12:06:18Z	portal-pin
 docker.io/alpine/k8s:1.31.4	sha256:9c4976d47656d78cf53a92b0203fc54ac45eae18a2b45001ac221c27da4c8036	2026-09-28T12:06:18Z	crane digest
 docker.io/grafana/alloy:v1.17.0	sha256:41c41849989b7e054ccbadc17938ee1e5592fe26bfbc56ef3ffc109c0b0b2739	2026-09-28T12:06:18Z	crane digest
 docker.io/grafana/grafana:13.0.2	sha256:5dad0df181cb644a14e13617b913b261a54f7d4fd4510721dba420929f35bea2	2026-09-28T12:06:18Z	crane digest
@@ -57,7 +54,7 @@ docker.io/library/registry:2	sha256:a3d8aaa63ed8681a604f1dea0aa03f100d5895b6a58a
 docker.io/otwld/velero-ui:0.10.1	sha256:d52893e4a4976ccc7e4c6830cf8b1d4e5125a1bdcac38f7c1f65f201479bffc3	2026-09-28T12:06:18Z	crane digest
 docker.io/valkey/valkey:8-alpine	sha256:081c2f5cb575efc901aa80ff9cdbd1ec6a301682fd35e1ebb4b0990a4a4a8507	2026-09-28T12:06:18Z	crane digest
 docker.io/velero/velero:v1.18.1	sha256:11459094b1b21ec7c817b08f8067d9e89380835547915cac9c4132ff05b55b90	2026-09-28T12:06:18Z	crane digest
-gcr.io/kaniko-project/executor:v1.24.0	sha256:4e7a52dd1f14872430652bb3b027405b8dfd17c4538751c620ac005741ef9698	2026-09-28T12:06:18Z	crane digest
+gcr.io/kaniko-project/executor:v1.24.0	sha256:4e7a52dd1f14872430652bb3b027405b8dfd17c4538751c620ac005741ef9698	2026-09-28T12:06:18Z	portal-pin
 ghcr.io/chaos-mesh/chaos-daemon:v2.8.3	sha256:69b1d3c09cfa58df94f5be7e498591f88f5007f6d22ebeeeda1731cb37acd377	2026-09-28T12:06:18Z	crane digest
 ghcr.io/chaos-mesh/chaos-mesh:v2.8.3	sha256:bdb31f3121a2979361c2a12cfb2a7845b7e66dc7589dcde5f9457473b50c707f	2026-09-28T12:06:18Z	crane digest
 ghcr.io/cloudnative-pg/cloudnative-pg:1.29.1	sha256:0dfff19ba7b52ca25851a1010028b6940fff2e233290465af1cfb08a5f3f4661	2026-09-28T12:06:18Z	crane digest

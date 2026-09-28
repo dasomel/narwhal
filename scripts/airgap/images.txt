@@ -21,15 +21,9 @@
 #     tags for all 7 components (see below), so there is no goharbor :latest
 #     reference left to exempt. Re-add this bullet only if goharbor genuinely goes
 #     back to tracking :latest — do not carry it forward as boilerplate.
-#   - gcr.io/kaniko-project/executor and docker.io/alpine/git are PINNED (narwhal#52
-#     D3-A) to immutable version tags, not :latest — they are coupled to
-#     narwhal-portal's deploy/kaniko-build-job.yaml, which pins the SAME tags, because
-#     the bundle and the deploy manifest must ship identical build-helper images or the
-#     bundle silently omits what the deploy job actually pulls. A comment saying "keep
-#     these in sync" is not enough (that's how #52 found this pair drifted in the first
-#     place) — R117/R117b in regression-check-kakao.sh cross-checks both files. Bump
-#     both in the SAME commit; see docs/common/supply-chain-policy.md for the cooling
-#     window each new tag must clear before it can be picked.
+#   - kaniko executor and alpine/git use the digest pins in image-digests.tsv (Narwhal#254)
+#     to match narwhal-portal's deploy Job. The R117 contract checks both repos. Update
+#     both pins together when intentionally upgrading a build-helper image.
 #
 # Last regenerated (--live): 2026-07-28 (from live cluster)
 
@@ -38,7 +32,7 @@ apache/apisix:3.15.0-ubuntu
 busybox:1.28
 chrislusf/seaweedfs:4.34
 docker.gitea.com/gitea:1.26.2-rootless
-docker.io/alpine/git:v2.54.0
+docker.io/alpine/git:v2.54.0@sha256:0b5f57d22181e8b8fbe8ac5ca8754faa0d577f101b9857418f1acc43955ad464
 docker.io/alpine/k8s:1.31.4
 docker.io/grafana/alloy:v1.17.0
 docker.io/grafana/grafana:13.0.2
@@ -57,7 +51,7 @@ docker.io/library/registry:2
 docker.io/otwld/velero-ui:0.10.1
 docker.io/valkey/valkey:8-alpine
 docker.io/velero/velero:v1.18.1
-gcr.io/kaniko-project/executor:v1.24.0
+gcr.io/kaniko-project/executor:v1.24.0@sha256:4e7a52dd1f14872430652bb3b027405b8dfd17c4538751c620ac005741ef9698
 ghcr.io/chaos-mesh/chaos-daemon:v2.8.3
 ghcr.io/chaos-mesh/chaos-mesh:v2.8.3
 ghcr.io/cloudnative-pg/cloudnative-pg:1.29.1

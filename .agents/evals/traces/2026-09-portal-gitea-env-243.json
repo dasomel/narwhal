@@ -1,0 +1,102 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-issue-243-portal-gitea-env",
+  "task": "Provide the narwhal-portal production Gitea endpoint and repository-limited non-admin token",
+  "changeContext": {
+    "paths": [
+      "scripts/cluster/13-2-narwhal-portal-bindings.sh",
+      "gitops/charts/narwhal-platform/templates/narwhal-portal-k8s.yaml",
+      "scripts/test/check-oidc-rbac-portal-contract.sh",
+      "scripts/test/regression-check-kakao.sh",
+      "docs/common/lessons-log.md",
+      ".agents/evals/traces/2026-09-portal-gitea-env-243.json",
+      "scripts/test/lib/check-lib-sourced.py"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Inspected portal GITEA_* reads, production requirements, API calls, and existing bootstrap/GitOps ownership"
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "The live dependency JSON was {\"dependency\":\"gitea\",\"state\":\"unavailable\",\"reason\":\"unconfigured\"}",
+      "evidence": [
+        "runtime:issue-243-live-dependency-json"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "Provision/reuse non-admin narwhal-portal, grant write collaborator access only to gitea-admin/narwhal-gitops, and mint its write:repository token via admin sudo; cached-token validation checks owner, admin status, and scopes. API calls: GET /users/{user}; POST /admin/users; PATCH /admin/users/{user}; PUT /repos/{owner}/{repo}/collaborators/{user}; GET/DELETE /users/{user}/tokens; POST /users/{user}/tokens with Sudo header."
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "summary": "R216 and R217 passed with no sibling and with the explicit portal sibling; mutations removing GITEA_TOKEN, changing token owner, or adding write:admin were detected",
+      "scope": "portal Gitea env wiring, dedicated token owner/scope, and mutation detection",
+      "evidence": [
+        "test:R216-default-sibling-absent",
+        "test:R216-explicit-sibling",
+        "test:R217-owner-and-scope-mutations"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "verification",
+      "status": "passed",
+      "summary": "ShellCheck, bash -n, Kakao static regression with and without the requested sibling, and 2-space indent check passed",
+      "scope": "all shell scripts for ShellCheck/indent; changed shell scripts for bash -n; static regression suite in both sibling configurations",
+      "evidence": [
+        "ci:shellcheck-warning",
+        "ci:bash-n",
+        "test:kakao-static-no-sibling",
+        "test:kakao-static-explicit-sibling",
+        "ci:two-space-indent"
+      ]
+    },
+    {
+      "id": "e8",
+      "type": "bug_fix",
+      "summary": "Lead live runs of 13-2 failed four times despite green static checks: unsourced lib.sh (rc 127), invalid email domain (422), PATCH requires login_name/source_id (422), and /api/v1/user needs read:user so the write:repository token was always judged invalid and re-minted. Fixed all four; ownership now proven via the user's token list (last eight) and function via repo permissions (push, not admin). New R218: lib-calling cluster scripts must source lib.sh."
+    },
+    {
+      "id": "e9",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "static suite with and without the portal sibling + R217/R218 mutations",
+      "evidence": [
+        "test:./scripts/test/regression-check-kakao.sh --static passed 251 failed 0",
+        "test:R217 fails when the admin-permission guard is removed (mutation)",
+        "test:R218b reports 07-cnpg.sh with its source line removed"
+      ]
+    },
+    {
+      "id": "e10",
+      "type": "verification",
+      "status": "passed",
+      "scope": "live six-node cluster: fixed 13-2 run twice on master-1, portal Deployment template pushed to in-cluster Gitea",
+      "summary": "13-2 rc=0 on two consecutive runs with the token reused (idempotent); narwhal-portal owns exactly one token scoped write:repository and gitea-admin owns none named narwhal-portal. With the token: create repo 403, admin API 403, narwhal-gitops permissions push=true admin=false. After the narwhal-platform sync the Deployment carries GITEA_URL/OWNER/REPO/BASE_BRANCH; headless-Chromium SSO then reads /api/health/dependencies with all six ok (gitea was unavailable/unconfigured), and the header shows the all-systems-normal state.",
+      "evidence": [
+        "runtime:13-2 x2 => rc=0, token reused",
+        "runtime:token probes => POST /user/repos 403, GET /admin/users 403, repo permissions push=true admin=false",
+        "runtime:playwright SSO => dependencies gitea=ok (was unavailable/unconfigured)"
+      ]
+    },
+    {
+      "id": "e6",
+      "type": "completion_claim",
+      "summary": "Implementation is offline verified; target-cluster Gitea API mutation remains for the lead to verify"
+    },
+    {
+      "id": "e7",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Dedicated non-admin owner and repository permission are implemented and offline regression-verified; live target-cluster verification remains pending for the lead"
+    }
+  ]
+}

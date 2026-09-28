@@ -237,6 +237,12 @@ assert "error fetching chart|failed to fetch chart" in block.lower()
 assert "kubectl get applications -A" in block and "exit 1" in block and "OutOfSync" not in block
 '
 
+  # Narwhal#243 (lead live run): 13-2 called generate_password without sourcing lib.sh;
+  # bash -n and shellcheck pass, the clean install dies with rc=127.
+  check R218 "cluster scripts that call lib.sh functions source lib.sh (Narwhal#243)" \
+    python3 scripts/test/lib/check-lib-sourced.py
+  check R218b "R218 reports a lib-using script whose source line is removed (Narwhal#243)" \
+    python3 scripts/test/lib/check-lib-sourced.py --mutation-verify
   check R215 "all node provisioning paths enable rpc-statd at boot (Narwhal#246, 2026-09-28)" \
     python3 scripts/test/lib/check-rpc-statd-boot.py --mutation-verify
 
@@ -1207,6 +1213,76 @@ PYEOF
     fi
   else
     warn R55 "narwhal-portal sibling checkout not found; contract check skipped"
+  fi
+
+  # #243: production Gitea endpoint/token configuration is a cross-repo runtime seam.
+  local portal_dir="${NARWHAL_PORTAL_DIR:-../narwhal-portal}"
+  if [ -d "${portal_dir}" ]; then
+    local gitea_contract_ok=1 gitea_mutation_caught=0 gitea_tmp
+    NARWHAL_PORTAL_DIR="${portal_dir}" scripts/test/check-oidc-rbac-portal-contract.sh \
+      >/dev/null 2>&1 || gitea_contract_ok=0
+    gitea_tmp="$(mktemp -d)"
+    sed '/--from-literal=GITEA_TOKEN=/d' scripts/cluster/13-2-narwhal-portal-bindings.sh \
+      > "${gitea_tmp}/bindings.sh"
+    NARWHAL_PORTAL_DIR="${portal_dir}" PORTAL_BINDINGS_FILE="${gitea_tmp}/bindings.sh" \
+      scripts/test/check-oidc-rbac-portal-contract.sh >/dev/null 2>&1 \
+      || gitea_mutation_caught=1
+    rm -rf "${gitea_tmp}"
+    if [ "${gitea_contract_ok}" -eq 1 ] && [ "${gitea_mutation_caught}" -eq 1 ]; then
+      ok R216 "portal production Gitea env is provided and missing token is caught (Narwhal#243, 2026-09-28)"
+    elif [ "${gitea_contract_ok}" -eq 0 ]; then
+      bad R216 "portal production Gitea env contract is currently broken (Narwhal#243, 2026-09-28)"
+    else
+      bad R216 "portal Gitea env checker misses removed token provision (Narwhal#243, 2026-09-28)"
+    fi
+  else
+    warn R216 "narwhal-portal sibling checkout not found; Gitea env contract skipped"
+  fi
+
+  # #243: fail closed if the portal's token owner or scope drifts back to the site admin.
+  local portal_token_contract_ok=0 portal_token_mutation_caught=0 portal_token_tmp
+  if python3 - <<'PYTOKEN'
+from pathlib import Path
+s = Path("scripts/cluster/13-2-narwhal-portal-bindings.sh").read_text()
+expected = (
+    'GITEA_PORTAL_USER="narwhal-portal"' in s
+    and 'http://localhost:3000/api/v1/users/${GITEA_PORTAL_USER}/tokens' in s
+    and '"scopes":["write:repository"]' in s
+    and '"write:admin"' not in s
+    and '"write:user"' not in s
+    and '"write:organization"' not in s
+    and 'if [ "${repo_perms}" != "ok" ] || [ "${token_scope_ok}" != "true" ]' in s
+    and 'p.get("push") and not p.get("admin")' in s
+    and 'http://localhost:3000/api/v1/users/gitea-admin/tokens' in s
+    and 'http://localhost:3000/api/v1/users/gitea-admin/tokens/${stale_token_id}' in s
+    and s.index('http://localhost:3000/api/v1/users/gitea-admin/tokens/${stale_token_id}') < s.index('if kubectl get secret narwhal-portal-secrets')
+)
+raise SystemExit(0 if expected else 1)
+PYTOKEN
+  then portal_token_contract_ok=1; fi
+  portal_token_tmp="$(mktemp -d)"
+  sed 's#users/${GITEA_PORTAL_USER}/tokens)#users/gitea-admin/tokens)#; s#"scopes":\["write:repository"\]#"scopes":["write:repository","write:admin"]#' \
+    scripts/cluster/13-2-narwhal-portal-bindings.sh > "${portal_token_tmp}/bindings.sh"
+  PORTAL_BINDINGS_FILE="${portal_token_tmp}/bindings.sh" python3 - <<'PYTOKEN' >/dev/null 2>&1 \
+    || portal_token_mutation_caught=1
+from pathlib import Path
+import os
+s = Path(os.environ["PORTAL_BINDINGS_FILE"]).read_text()
+valid = ('GITEA_PORTAL_USER="narwhal-portal"' in s
+         and 'users/${GITEA_PORTAL_USER}/tokens)' in s
+         and '"scopes":["write:repository"]' in s
+         and '"write:admin"' not in s
+         and 'if [ "${repo_perms}" != "ok" ] || [ "${token_scope_ok}" != "true" ]' in s
+         and 'users/gitea-admin/tokens' in s
+         and 'users/gitea-admin/tokens/${stale_token_id}' in s
+         and s.index('users/gitea-admin/tokens/${stale_token_id}') < s.index('if kubectl get secret narwhal-portal-secrets'))
+raise SystemExit(0 if valid else 1)
+PYTOKEN
+  rm -rf "${portal_token_tmp}"
+  if [ "${portal_token_contract_ok}" -eq 1 ] && [ "${portal_token_mutation_caught}" -eq 1 ]; then
+    ok R217 "portal Gitea token is owned by narwhal-portal with repository-only scope; owner/scope mutations are caught (Narwhal#243, 2026-09-28)"
+  else
+    bad R217 "portal Gitea token owner/scope contract or mutation detection is broken"
   fi
 
   # 2026-08-23 (#160): 492e65a's own commit message left this open — the pod-network CIDR

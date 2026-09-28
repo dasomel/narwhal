@@ -19,6 +19,8 @@
 #   OpenBao: secret/ KV-v2 mount + narwhal-portal 정책 + k8s auth role (Workload Identity)
 #   Keycloak: narwhal-portal + narwhal-portal-admin 클라이언트 (재실행 안전)
 set -euo pipefail
+# shellcheck source=scripts/common/lib.sh
+source /home/vagrant/scripts/common/lib.sh  # generate_password
 
 DOMAIN="${DOMAIN:-local.narwhal.internal}"
 REALM="narwhal"
@@ -530,6 +532,127 @@ fi
 echo ""
 echo "=== [4/4] narwhal-portal-secrets 생성 ==="
 
+# The portal runs as a dedicated non-admin user with access to this repository only.
+GITEA_PORTAL_USER="narwhal-portal"
+GITEA_REPO_OWNER="gitea-admin"
+GITEA_REPO_NAME="narwhal-gitops"
+GITEA_PORTAL_TOKEN=""
+GITEA_ADMIN_PASS=$(kubectl get secret gitea-admin -n devtools \
+  -o jsonpath='{.data.admin-password}' | base64 -d)
+GITEA_POD=$(kubectl get pod -n devtools -l app.kubernetes.io/name=gitea \
+  -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)
+if [ -z "${GITEA_POD}" ]; then
+  echo "ERROR: Gitea pod not found; cannot provision the portal user/token" >&2
+  exit 1
+fi
+
+# Create idempotently. The password only crosses stdin to curl and is immediately discarded.
+portal_user=$(kubectl exec -n devtools "${GITEA_POD}" -- curl -sf \
+  -u "gitea-admin:${GITEA_ADMIN_PASS}" \
+  http://localhost:3000/api/v1/users/${GITEA_PORTAL_USER} 2>/dev/null || true)
+if [ -z "${portal_user}" ]; then
+  GITEA_PORTAL_PASSWORD=$(generate_password)
+  printf '{"username":"%s","email":"narwhal-portal@%s","full_name":"Narwhal Portal","password":"%s","must_change_password":false,"restricted":true}' \
+    "${GITEA_PORTAL_USER}" "${DOMAIN}" "${GITEA_PORTAL_PASSWORD}" \
+    | kubectl exec -i -n devtools "${GITEA_POD}" -- curl -sf -X POST \
+      -u "gitea-admin:${GITEA_ADMIN_PASS}" \
+      -H 'Content-Type: application/json' --data-binary @- \
+      http://localhost:3000/api/v1/admin/users >/dev/null
+  unset GITEA_PORTAL_PASSWORD
+fi
+# Repair drift on a pre-existing account: it must never retain administrative privileges.
+# This Gitea's EditUserOption requires login_name/source_id (422 "[LoginName]: Required" without).
+kubectl exec -n devtools "${GITEA_POD}" -- curl -sf -X PATCH \
+  -u "gitea-admin:${GITEA_ADMIN_PASS}" \
+  -H 'Content-Type: application/json' \
+  -d "{\"login_name\":\"${GITEA_PORTAL_USER}\",\"source_id\":0,\"admin\":false,\"must_change_password\":false,\"restricted\":true}" \
+  "http://localhost:3000/api/v1/admin/users/${GITEA_PORTAL_USER}" >/dev/null
+
+# Repository write permission allows branch/content writes and PR creation; branch
+# protection rules still govern which branches may be pushed.
+kubectl exec -n devtools "${GITEA_POD}" -- curl -sf -X PUT \
+  -u "gitea-admin:${GITEA_ADMIN_PASS}" \
+  -H 'Content-Type: application/json' \
+  -d '{"permission":"write"}' \
+  "http://localhost:3000/api/v1/repos/${GITEA_REPO_OWNER}/${GITEA_REPO_NAME}/collaborators/${GITEA_PORTAL_USER}" >/dev/null
+
+# Remove the previous overprivileged token if round 1 created it under the admin.
+stale_tokens=$(kubectl exec -n devtools "${GITEA_POD}" -- curl -sf \
+  -u "gitea-admin:${GITEA_ADMIN_PASS}" \
+  http://localhost:3000/api/v1/users/gitea-admin/tokens 2>/dev/null || echo '[]')
+stale_admin_token_ids=$(printf '%s' "${stale_tokens}" | python3 -c '
+import json, sys
+for token in json.load(sys.stdin):
+    if token.get("name") == "narwhal-portal":
+        print(token["id"])
+' 2>/dev/null || true)
+while IFS= read -r stale_token_id; do
+  [ -z "${stale_token_id}" ] && continue
+  kubectl exec -n devtools "${GITEA_POD}" -- curl -sf -X DELETE \
+    -u "gitea-admin:${GITEA_ADMIN_PASS}" \
+    "http://localhost:3000/api/v1/users/gitea-admin/tokens/${stale_token_id}" >/dev/null
+done <<EOF
+${stale_admin_token_ids}
+EOF
+
+if kubectl get secret narwhal-portal-secrets -n devtools >/dev/null 2>&1; then
+  GITEA_PORTAL_TOKEN=$(kubectl get secret narwhal-portal-secrets -n devtools \
+    -o jsonpath='{.data.GITEA_TOKEN}' 2>/dev/null | base64 -d || true)
+fi
+if [ -n "${GITEA_PORTAL_TOKEN}" ]; then
+  # /api/v1/user needs read:user, which this write:repository token deliberately lacks,
+  # so ownership is proven by the token's last eight chars in narwhal-portal's own token
+  # list (below) and function by its permissions on the one repository it may write.
+  repo_perms=$(kubectl exec -n devtools "${GITEA_POD}" -- curl -sf \
+    -H "Authorization: token ${GITEA_PORTAL_TOKEN}" \
+    http://localhost:3000/api/v1/repos/gitea-admin/narwhal-gitops 2>/dev/null \
+    | python3 -c 'import json,sys; p=json.load(sys.stdin).get("permissions") or {}; print("ok" if p.get("push") and not p.get("admin") else "bad")' 2>/dev/null || echo bad)
+  portal_tokens=$(kubectl exec -n devtools "${GITEA_POD}" -- curl -sf \
+    -u "gitea-admin:${GITEA_ADMIN_PASS}" -H "Sudo: ${GITEA_PORTAL_USER}" \
+    http://localhost:3000/api/v1/users/${GITEA_PORTAL_USER}/tokens 2>/dev/null || echo '[]')
+  token_scope_ok=$(PORTAL_TOKENS="${portal_tokens}" PORTAL_TOKEN="${GITEA_PORTAL_TOKEN}" python3 -c '
+import json, os
+suffix = os.environ["PORTAL_TOKEN"][-8:]
+tokens = json.loads(os.environ["PORTAL_TOKENS"])
+print("true" if any(t.get("token_last_eight") == suffix and t.get("name") == "narwhal-portal" and t.get("scopes") == ["write:repository"] for t in tokens) else "false")
+')
+  if [ "${repo_perms}" != "ok" ] || [ "${token_scope_ok}" != "true" ]; then
+    GITEA_PORTAL_TOKEN=""
+  fi
+fi
+if [ -z "${GITEA_PORTAL_TOKEN}" ]; then
+  # Replace only this user's named token; sudo is supported on token APIs by Gitea.
+  portal_tokens=$(kubectl exec -n devtools "${GITEA_POD}" -- curl -sf \
+    -u "gitea-admin:${GITEA_ADMIN_PASS}" -H "Sudo: ${GITEA_PORTAL_USER}" \
+    http://localhost:3000/api/v1/users/${GITEA_PORTAL_USER}/tokens 2>/dev/null || echo '[]')
+  stale_portal_token_ids=$(printf '%s' "${portal_tokens}" | python3 -c '
+import json, sys
+for token in json.load(sys.stdin):
+    if token.get("name") == "narwhal-portal":
+        print(token["id"])
+' 2>/dev/null || true)
+  while IFS= read -r stale_token_id; do
+    [ -z "${stale_token_id}" ] && continue
+    kubectl exec -n devtools "${GITEA_POD}" -- curl -sf -X DELETE \
+      -u "gitea-admin:${GITEA_ADMIN_PASS}" -H "Sudo: ${GITEA_PORTAL_USER}" \
+      "http://localhost:3000/api/v1/users/${GITEA_PORTAL_USER}/tokens/${stale_token_id}" >/dev/null
+  done <<EOF
+${stale_portal_token_ids}
+EOF
+  token_response=$(kubectl exec -n devtools "${GITEA_POD}" -- curl -sf -X POST \
+    -u "gitea-admin:${GITEA_ADMIN_PASS}" -H "Sudo: ${GITEA_PORTAL_USER}" \
+    -H 'Content-Type: application/json' \
+    -d '{"name":"narwhal-portal","scopes":["write:repository"]}' \
+    http://localhost:3000/api/v1/users/${GITEA_PORTAL_USER}/tokens)
+  GITEA_PORTAL_TOKEN=$(printf '%s' "${token_response}" \
+    | python3 -c 'import json,sys; print(json.load(sys.stdin).get("sha1", ""))')
+  if [ -z "${GITEA_PORTAL_TOKEN}" ]; then
+    echo "ERROR: Gitea did not return a portal access token" >&2
+    exit 1
+  fi
+fi
+unset GITEA_ADMIN_PASS portal_identity token_identity token_owner token_admin portal_tokens token_scope_ok token_response
+
 # ARGOCD_TOKEN is passed only when one was issued AND verified. Omitting the key beats
 # writing a placeholder: envFrom simply leaves it unset, the portal fails the same way,
 # and nothing in the secret pretends to be a credential.
@@ -569,6 +692,7 @@ kubectl create secret generic narwhal-portal-secrets \
   "${ARGOCD_TOKEN_ARG[@]}" \
   "${OPENBAO_TOKEN_ARG[@]}" \
   --from-literal=AUTH_SECRET="${AUTH_SECRET}" \
+  --from-literal=GITEA_TOKEN="${GITEA_PORTAL_TOKEN}" \
   --from-literal=AUTH_URL="https://portal.${DOMAIN}" \
   --from-literal=AUTH_TRUST_HOST="true" \
   --from-literal=AUTH_MOCK="false" \

@@ -1,0 +1,77 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-issue-254-image-digest-refresh",
+  "task": "Refresh the air-gap image digest table after the scheduled drift detector reported a moved alpine/git tag",
+  "changeContext": {
+    "paths": [
+      "scripts/airgap/lib/image-digests.tsv",
+      "docs/common/lessons-log.md",
+      ".agents/evals/traces/2026-09-image-digest-refresh-254.json"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Scoped the change to the generated digest table and its supply-chain lesson; no image tags or refresh logic changed"
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "Confirmed docker.io/alpine/git:v2.54.0 resolved to sha256:832b1cd1a271509f3d5272a1a62d4cb2ab1a53426ebde1f6c2cb7349f907dc6f while the table held sha256:ae0f6f4bce38d2b8c40becc0d6241a08d9f57186ea03029de2189a2b5e722d94",
+      "evidence": [
+        "issue:254",
+        "crane:digest:docker.io/alpine/git:v2.54.0"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "verification",
+      "status": "passed",
+      "summary": "Verified the move came from the upstream scheduled build: run 36310326769 succeeded on source revision f4166bc; the new image config reports that same revision",
+      "scope": "upstream publisher run and image source revision",
+      "evidence": [
+        "artifact:github-run:alpine-docker/git:36310326769",
+        "artifact:image-config:org.opencontainers.image.revision=f4166bc"
+      ]
+    },
+    {
+      "id": "e4",
+      "type": "bug_fix",
+      "summary": "Ran scripts/airgap/lib/refresh-image-digests.sh to regenerate the digest table; all 104 references resolved and only the alpine/git index digest differed"
+    },
+    {
+      "id": "e5",
+      "type": "regression_verification",
+      "status": "passed",
+      "summary": "Re-ran scripts/airgap/lib/refresh-image-digests.sh --check after refresh",
+      "scope": "currency of every recorded air-gap image index digest",
+      "evidence": [
+        "test:refresh-image-digests:exit-0",
+        "test:refresh-image-digests:table-current"
+      ]
+    },
+    {
+      "id": "e6",
+      "type": "verification",
+      "status": "passed",
+      "summary": "scripts/test/regression-check-kakao.sh --static reported 267 passed and 0 failed; one bundle-dependent check warned because no air-gap bundle was available",
+      "scope": "static regression suite",
+      "evidence": [
+        "test:regression-check-kakao:267-pass:0-fail:1-warning"
+      ]
+    },
+    {
+      "id": "e7",
+      "type": "completion_claim",
+      "summary": "The recorded digest now matches the expected upstream weekly image build; PR CI remains the merge gate"
+    },
+    {
+      "id": "e8",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Locally complete and verified; closes #254 on merge"
+    }
+  ]
+}

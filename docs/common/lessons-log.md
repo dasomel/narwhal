@@ -1,18 +1,24 @@
 # Narwhal 사건 기록 (Lessons Log)
 
 > `CLAUDE.md`의 Mistakes Log를 그대로 옮긴 아카이브. 매 턴 재전송되는 컨텍스트 파일에는
-> **여러 사건에 걸쳐 일반화되는 규칙만** 남기고(→ `CLAUDE.md` "Recurring Rules"), 날짜별 사건
+> **여러 사건에 걸쳐 일반화되는 규칙만** 남기고(→ `docs/common/agent-operational-rules.md`), 날짜별 사건
 > 서술은 여기에 보관한다. 새 사건이 발생하면: 서술은 이 파일에, 일반 규칙이 도출되면 그것만
-> `CLAUDE.md`에 추가.
+> `docs/common/agent-operational-rules.md`에 추가.
 >
 > 항목 추가 형식: `| YYYY-MM-DD | 사건 설명 | 조치 |`
 
 ## Mistakes Log (Compounding Engineering)
 
 > Add entries here whenever Claude makes a mistake. The same mistake will not be repeated.
-> Request CLAUDE.md updates with the `@.claude` tag during code reviews.
+> Rules that generalize across incidents graduate into `docs/common/agent-operational-rules.md`.
 
 | 2026-09-28 | Clean install에서 narwhal-portal 파드가 CrashLoopBackOff였다. GitOps probe는 `/api/health/live`와 `/api/health/ready`를 호출했지만 고정 이미지 1.0.17에는 두 Next.js route가 없어 실제 응답이 404였고, airgap inventory는 더 오래된 1.0.16을 가리켰다. 누구도 이미지 pin을 probe 경로와 대조하지 않았다. | 포털 pin과 digest를 1.0.18로 통일하고, sibling 저장소의 고정 태그 트리에서 두 route를 확인하는 R211 및 모든 pin 버전 일치 R210을 추가했다. 판별자: **probe가 참조하는 경로가 현재 실행 중인 이미지 태그에 포함되는지 릴리스 트리에서 확인한다**; 선언된 probe와 애플리케이션 소스는 함께 바뀌어도 버전 경계를 넘어 자동 동기화되지 않는다. |
+
+### Agent Instruction Mistakes
+
+| Date | Mistake | Fix |
+|------|---------|-----|
+| 2026-09-28 | The SessionStart hook injected the hardware fact “Master 4GB” into every session, and it went stale when `Vagrantfile` was bumped to 6GB. PR #256's audit fixed the same wrong “patterns in CLAUDE.md” attribution in two files but missed a third. | Update the hook to match the `Vagrantfile` comment and correct the remaining attribution (and this log's own preamble, which still pointed general rules at a nonexistent `CLAUDE.md` "Recurring Rules" section). Discriminator: when a source changes, grep for every restatement of facts in instruction files and hooks. |
 
 ### Shell Script Mistakes
 

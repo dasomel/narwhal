@@ -119,7 +119,7 @@ grep -rn "token\|api[_-]key\|secret[_-]key" scripts/ gitops/ --include="*.sh" --
 
 ## 5. Mistakes Log Cross-Reference Key Patterns
 
-Most frequent mistake patterns from CLAUDE.md (priority checks for new code):
+Most frequent mistake patterns from `docs/common/lessons-log.md` (priority checks for new code):
 
 | Pattern | Check Point |
 |---------|-------------|

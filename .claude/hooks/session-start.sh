@@ -14,6 +14,6 @@ fi
 jq -n '{
   hookSpecificOutput: {
     hookEventName: "SessionStart",
-    additionalContext: "Narwhal IDP project. K8s 1.35, 2-phase provisioning, HTTPS OIDC required. Master 4GB (control-plane only), Worker 6GB (platform apps). Use vagrant ssh master-1."
+    additionalContext: "Narwhal IDP project. K8s 1.35, 2-phase provisioning, HTTPS OIDC required. Master 6GB (control-plane + DaemonSets headroom), Worker 6GB (platform apps). Use vagrant ssh master-1."
   }
 }'

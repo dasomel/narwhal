@@ -1,0 +1,96 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-issue-238-portal-pin-probe-routes",
+  "task": "Pin narwhal-portal to the release containing the GitOps liveness and readiness routes (Narwhal#238)",
+  "changeContext": {
+    "paths": [
+      "gitops/charts/narwhal-platform/templates/narwhal-portal-k8s.yaml",
+      "gitops/README.md",
+      "gitops/README-ko.md",
+      "VERSIONS.md",
+      "SECURITY.md",
+      "scripts/airgap/images.txt",
+      "scripts/airgap/lib/image-digests.tsv",
+      "scripts/test/regression-check-kakao.sh",
+      "docs/common/lessons-log.md",
+      ".agents/evals/traces/2026-09-portal-pin-238.json"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Issue #238 identifies a GitOps image and probe-path seam plus an airgap version drift; changes stay within portal pins, regression checks, lessons, and evidence."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "Clean install on 2026-09-28: narwhal-portal readiness probe to /api/health/ready returned HTTP 404 and the liveness probe failed, restarting the pod; the pinned v1.0.17 tree predates both routes.",
+      "evidence": [
+        "issue:238",
+        "runtime:clean-install readiness probe HTTP 404 /api/health/ready; liveness probe failure and CrashLoopBackOff",
+        "issue:238 states v1.0.17 predates /api/health/live and /api/health/ready"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "Updated every active portal image reference to 1.0.18, aligned the airgap OCI index digest, and added R210/R211 pin and route-tree regression checks. Recorded that the release is unsigned; no signing or policy change was made."
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "scripts/test/regression-check-kakao.sh R210/R211",
+      "summary": "R210 requires one shared active pin version; R211 inspects v<version> for both Next.js route files when the sibling checkout exists and clearly skips when absent.",
+      "evidence": [
+        "test:regression-check-kakao.sh --static",
+        "test:mutation R210 mixed portal versions rejected",
+        "test:mutation R211 v1.0.17 rejected for missing probe routes"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "verification",
+      "status": "passed",
+      "scope": "shellcheck, regression suite, trace evidence gates, Makefile validate",
+      "summary": "Digest matched the supplied OCI index; requested shell, regression, trace evidence, and repository validation gates passed.",
+      "evidence": [
+        "command:crane digest ghcr.io/dasomel/narwhal-portal:1.0.18",
+        "artifact:scripts/test/regression-check-kakao.sh",
+        "artifact:scripts/airgap/lib/image-digests.tsv",
+        "artifact:.agents/evals/traces/2026-09-portal-pin-238.json"
+      ]
+    },
+    {
+      "id": "e8",
+      "type": "bug_fix",
+      "summary": "1.0.18 crashed on start live (MODULE_NOT_FOUND @swc/helpers ESM, standalone trace gap); portal fixed in narwhal-portal#164 with a CI smoke-boot gate and re-released as v1.0.19; pins moved to 1.0.19 / sha256:a4c2a6ef…"
+    },
+    {
+      "id": "e9",
+      "type": "verification",
+      "status": "passed",
+      "scope": "live six-node cluster, devtools/narwhal-portal on ghcr.io/dasomel/narwhal-portal:1.0.19@sha256:a4c2a6efff6ee693b68f2920ef7dd6bedce48e662c866fe13a2d702150682160",
+      "summary": "Rollout succeeded; /api/health/live 200 and /api/health/ready 200 through APISIX. Headless-Chromium SSO E2E: portal /login -> Keycloak realm narwhal -> callback -> '/', /api/auth/session 200 (admin narwhal), header shows v1.0.19 · 6c5ac48, 0 console errors (after the APISIX proxy_buffer fix tracked in #242). R211 run against a portal origin/main checkout: PASS.",
+      "evidence": [
+        "runtime:kubectl rollout status deploy/narwhal-portal => successfully rolled out",
+        "runtime:curl https://portal.local.narwhal.internal/api/health/{live,ready} => 200/200",
+        "runtime:playwright SSO E2E => session 200, UI version v1.0.19",
+        "test:R210 PASS, R211 PASS with ../narwhal-portal at origin/main"
+      ]
+    },
+    {
+      "id": "e6",
+      "type": "completion_claim",
+      "summary": "All active Narwhal portal pins and airgap inventory reference 1.0.18; static checks prevent version drift and probe routes absent from the pinned tag."
+    },
+    {
+      "id": "e7",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Complete and verified locally; trace: .agents/evals/traces/2026-09-portal-pin-238.json"
+    }
+  ]
+}

@@ -105,6 +105,10 @@ apiServer:
     # the OIDC args below, merge them into THIS extraArgs list (one key only).
     - name: profiling
       value: "false"
+    - name: authorization-mode
+      value: "Node,RBAC"
+    - name: enable-admission-plugins
+      value: "NodeRestriction"
     # CIS 1.2.30 — encrypt Secrets at rest; CIS 1.2.19-22 — API audit logging.
     # Referenced files are written below on master-1 and fetched by joining masters
     # (02-join-control-plane.sh) so all apiservers share the SAME encryption key.
@@ -180,6 +184,14 @@ nodeRegistration:
 apiVersion: kubelet.config.k8s.io/v1beta1
 kind: KubeletConfiguration
 cgroupDriver: systemd
+authentication:
+  anonymous:
+    enabled: false
+  webhook:
+    enabled: true
+authorization:
+  mode: Webhook
+readOnlyPort: 0
 EOF
 
 # On cloud the Kakao LB owns the VIP (no local L2 interface binding); leave empty.

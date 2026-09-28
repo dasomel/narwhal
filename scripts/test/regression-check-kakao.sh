@@ -251,6 +251,9 @@ assert "kubectl get applications -A" in block and "exit 1" in block and "OutOfSy
     python3 scripts/test/lib/check-nodes-proxy-narrow.py role
   check R222 "every built-in kubelet proxy allowlist entry has a reason (Narwhal#251)" \
     python3 scripts/test/lib/check-nodes-proxy-narrow.py reasons
+  # Narwhal#257: rendered Kubernetes documents must retain their required API identity.
+  check R223 "rendered dashboard documents have apiVersion and kind (Narwhal#257)" \
+    python3 scripts/test/lib/check-rendered-apiversion.py
   check R215 "all node provisioning paths enable rpc-statd at boot (Narwhal#246, 2026-09-28)" \
     python3 scripts/test/lib/check-rpc-statd-boot.py --mutation-verify
 

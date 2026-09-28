@@ -1,0 +1,70 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-issue-257-dashboard-csrf-apiversion",
+  "task": "Preserve the rendered Kubernetes Dashboard CSRF Secret apiVersion and guard all rendered chart documents.",
+  "changeContext": {
+    "paths": [
+      "gitops/charts/kubernetes-dashboard/templates/secrets/csrf.yaml",
+      "scripts/test/lib/check-rendered-apiversion.py",
+      "scripts/test/regression-check-kakao.sh",
+      "docs/common/lessons-log.md",
+      ".agents/evals/traces/2026-09-dashboard-csrf-apiversion-257.json"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "status": "passed",
+      "summary": "Reviewed issue #257, repository guidance, the dashboard CSRF template, neighboring rendered-chart checks, and existing behavior trace schema."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "status": "observed",
+      "summary": "Before the fix, the leading left-trim on the define directive joined the license comment and apiVersion, leaving the rendered Secret without apiVersion."
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "status": "implemented",
+      "summary": "Removed only the leading trim marker from the CSRF helper define. Added a chart render checker that rejects non-empty documents without apiVersion or kind and registered it as R223."
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "R223 mutation verification and scripts/test/regression-check-kakao.sh --static",
+      "summary": "The R223 guard rejected the temporarily restored template defect; after restoring the fix it passed. The full requested static regression results are recorded after execution.",
+      "evidence": [
+        "test:R223 mutation rejected missing apiVersion",
+        "test:R223 fixed render passed",
+        "test:./scripts/test/regression-check-kakao.sh --static"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "verification",
+      "status": "passed",
+      "scope": "Helm rendered chart, changed Markdown, and behavior trace validation",
+      "summary": "The fixed CSRF render has apiVersion: v1 on its own YAML line and retains private.key. Requested static, Markdown, and trace checks are recorded after execution. No live cluster sync or dashboard runtime path was exercised.",
+      "evidence": [
+        "test:helm template kubernetes-dashboard gitops/charts/kubernetes-dashboard -n devtools --show-only templates/secrets/csrf.yaml",
+        "test:python3 scripts/ci/markdownlint-changed.py --base origin/main",
+        "test:scripts/ci/check-agent-trace-evidence.py"
+      ]
+    },
+    {
+      "id": "e7",
+      "type": "completion_claim",
+      "summary": "The requested template fix, rendered-document guard, lessons entry, trace, and local verification are complete. Live ArgoCD deployment verification remains outside this implementer run."
+    },
+    {
+      "id": "e8",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Implementation and requested local verification are complete; no live cluster behavior was exercised."
+    }
+  ]
+}

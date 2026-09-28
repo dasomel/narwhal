@@ -415,6 +415,26 @@ with open(sys.argv[1], "r", encoding="utf-8") as f:
     bash scripts/cluster/validate-keycloak-clients.sh --input "${kc_validator_origin_drift_tmp}/clients.json" narwhal
   rm -rf "${kc_validator_origin_drift_tmp}"
 
+  # Narwhal#232 (2026-09-28): Keycloak 26 system clients use "+" as a redirect-derived origin.
+  local kc_origin_exception_tmp
+  kc_origin_exception_tmp="$(mktemp -d)"
+  cat >"${kc_origin_exception_tmp}/security-admin-plus.json" <<'JSON'
+[{"clientId":"security-admin-console","webOrigins":["+"]}]
+JSON
+  cat >"${kc_origin_exception_tmp}/security-admin-star.json" <<'JSON'
+[{"clientId":"security-admin-console","webOrigins":["*"]}]
+JSON
+  cat >"${kc_origin_exception_tmp}/grafana-plus.json" <<'JSON'
+[{"clientId":"grafana","webOrigins":["+"]}]
+JSON
+  check R195 "Keycloak security-admin-console may use derived + webOrigin (Narwhal#232, 2026-09-28)" \
+    bash scripts/cluster/validate-keycloak-clients.sh --input "${kc_origin_exception_tmp}/security-admin-plus.json" narwhal
+  check_not R196 "Keycloak system client wildcard webOrigin remains forbidden (Narwhal#232, 2026-09-28)" \
+    bash scripts/cluster/validate-keycloak-clients.sh --input "${kc_origin_exception_tmp}/security-admin-star.json" narwhal
+  check_not R197 "application client cannot use derived + webOrigin (Narwhal#232, 2026-09-28)" \
+    bash scripts/cluster/validate-keycloak-clients.sh --input "${kc_origin_exception_tmp}/grafana-plus.json" narwhal
+  rm -rf "${kc_origin_exception_tmp}"
+
   # Narwhal#149 (2026-09-07): Kubernetes client and service clients must disable Direct Access Grants (ROPC).
   check R120 "all Keycloak clients explicitly disable directAccessGrants (Narwhal#149, 2026-09-07)" \
     python3 -c '

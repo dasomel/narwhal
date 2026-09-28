@@ -1,0 +1,86 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "traceId": "narwhal-keycloak-origin-exception-232",
+  "task": "Allow Keycloak 26 security-admin-console's redirect-derived + webOrigin while preserving wildcard rejection (Narwhal#232)",
+  "consistencyMode": "strict",
+  "changeContext": {
+    "paths": [
+      "scripts/cluster/validate-keycloak-clients.sh",
+      "scripts/test/regression-check-kakao.sh",
+      "docs/common/lessons-log.md",
+      ".agents/evals/traces/2026-09-keycloak-origin-exception-232.json"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Adjust the validator's built-in origin exceptions and add offline regressions for the reported Keycloak 26 defaults; no client provisioning defaults or cluster configuration are changed"
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "Live clean install 2026-09-28 (Narwhal#232): scripts/cluster/11-3-keycloak-clients.sh failed because the validator reported security-admin-console webOrigins ['+'] as unexpected",
+      "evidence": [
+        "runtime:issue-232 live output: ERROR: Keycloak client security validation FAILED; Client 'security-admin-console' has unexpected wildcard/relative webOrigins: ['+']"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "Default exceptions now include security-admin-console; exceptions admit '+' only, and any origin containing '*' remains an error"
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "scripts/test/regression-check-kakao.sh R195-R197",
+      "summary": "Offline JSON fixtures confirm security-admin-console ['+'] passes, security-admin-console ['*'] fails, and grafana ['+'] fails",
+      "evidence": [
+        "test:R195 security-admin-console + accepted",
+        "test:R196 security-admin-console * rejected",
+        "test:R197 grafana + rejected"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "verification",
+      "status": "passed",
+      "scope": "shellcheck, bash -n, regression static suite, trace evidence and behavior-contract gates",
+      "summary": "Requested shell syntax/lint checks and static regressions passed; both trace gates passed",
+      "evidence": [
+        "test:shellcheck --severity=warning",
+        "test:bash -n scripts/cluster/validate-keycloak-clients.sh scripts/test/regression-check-kakao.sh",
+        "test:./scripts/test/regression-check-kakao.sh --static",
+        "artifact:docs/common/lessons-log.md",
+        "policy:scripts/ci/check-agent-trace-evidence.py and .agents/evals/gate.py passed"
+      ]
+    },
+    {
+      "id": "e8",
+      "type": "verification",
+      "status": "passed",
+      "scope": "live Keycloak 26 realm narwhal on a clean-installed six-node kubeadm 1.35 cluster",
+      "summary": "Lead ran the fixed validator on master-1 against the live realm: 'validation passed (18 clients)' with security-admin-console webOrigins '+' accepted; the pre-fix validator on the same realm failed on security-admin-console.",
+      "evidence": [
+        "runtime:master-1 validate-keycloak-clients.sh narwhal => passed (18 clients)",
+        "runtime:pre-fix validator same realm => FAILED security-admin-console ['+']"
+      ]
+    },
+    {
+      "id": "e6",
+      "type": "completion_claim",
+      "summary": "The clean-install validator accepts the reported Keycloak system client's redirect-derived '+' and still rejects wildcard origins and '+' on application clients",
+      "evidence": [
+        "e4",
+        "e5"
+      ]
+    },
+    {
+      "id": "e7",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Complete and verified with offline fixture regressions and requested static checks"
+    }
+  ]
+}

@@ -59,13 +59,13 @@ fi
 sudo mkdir -p /etc/kubernetes/enc /etc/kubernetes/audit /var/log/kubernetes/audit
 if [ "${PROVIDER:-vagrant}" = "kakao" ]; then
   echo "PROVIDER=kakao: expecting pre-staged /tmp/encryption-config.yaml (operator-supplied)"
-  [[ -f /tmp/encryption-config.yaml ]] && sudo cp /tmp/encryption-config.yaml /etc/kubernetes/enc/encryption-config.yaml
+  [[ -f /tmp/encryption-config.yaml ]] && (umask 077; sudo install -o root -g root -m 600 /tmp/encryption-config.yaml /etc/kubernetes/enc/encryption-config.yaml)
 else
   echo "Fetching encryption-config.yaml from master-1 (same AES key)..."
   for i in $(seq 1 $MAX_RETRIES); do
-    if sshpass -p "vagrant" scp -o StrictHostKeyChecking=no \
-      "vagrant@${MASTER1_IP}:/home/vagrant/encryption-config.yaml" /tmp/encryption-config.yaml 2>/dev/null; then
-      sudo cp /tmp/encryption-config.yaml /etc/kubernetes/enc/encryption-config.yaml
+    if (umask 077; sshpass -p "vagrant" scp -o StrictHostKeyChecking=no \
+      "vagrant@${MASTER1_IP}:/home/vagrant/encryption-config.yaml" /tmp/encryption-config.yaml 2>/dev/null); then
+      (umask 077; sudo install -o root -g root -m 600 /tmp/encryption-config.yaml /etc/kubernetes/enc/encryption-config.yaml)
       echo "encryption-config fetched"
       break
     fi
@@ -78,6 +78,13 @@ if [[ ! -f /etc/kubernetes/enc/encryption-config.yaml ]]; then
   exit 1
 fi
 sudo chmod 600 /etc/kubernetes/enc/encryption-config.yaml
+(
+  umask 077
+  sudo yq -r '.resources[] | select(.resources | contains(["secrets"])) | .providers[] | select(has("aescbc")) | .aescbc.keys[0].secret' \
+    /etc/kubernetes/enc/encryption-config.yaml | sudo tee /etc/kubernetes/enc/encryption-key >/dev/null
+)
+sudo chown root:root /etc/kubernetes/enc/encryption-key
+sudo chmod 600 /etc/kubernetes/enc/encryption-key
 cat <<'AUDEOF' | sudo tee /etc/kubernetes/audit/audit-policy.yaml >/dev/null
 apiVersion: audit.k8s.io/v1
 kind: Policy

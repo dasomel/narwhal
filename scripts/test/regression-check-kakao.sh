@@ -53,6 +53,7 @@ case "${MD_REPORT}"   in ""|/*) ;; *) MD_REPORT="${ORIG_PWD}/${MD_REPORT}" ;; es
 
 DOMAIN="${DOMAIN:-kakao.narwhal.internal}"
 TF_DIR="${TF_DIR:-csp/kakao-cloud/terraform}"
+INIT_CLUSTER_SCRIPT="${INIT_CLUSTER_SCRIPT:-scripts/cluster/02-init-cluster.sh}"
 
 cd "$(dirname "$0")/../.."
 
@@ -126,6 +127,39 @@ check_not() {
 #=========================================
 run_static() {
   section "STATIC — known fixes still present in the repo"
+
+  # Narwhal#109: first provider controls new writes. A preceding identity provider
+  # silently stores Secrets in plaintext, even if aescbc appears later in the list.
+  check R171 "02-init-cluster keeps aescbc before identity for Secrets (Narwhal#109)" \
+    python3 -c '
+import pathlib, re, sys
+p = pathlib.Path(sys.argv[1])
+text = p.read_text()
+m = re.search(r"resources:\s*\[secrets\](.*?)(?=\n\s{2}- resources:|\n[A-Za-z]|\Z)", text, re.S)
+assert m, "Secrets EncryptionConfiguration block missing"
+block = m.group(1)
+aescbc = re.search(r"^\s*- aescbc:", block, re.M)
+identity = re.search(r"^\s*- identity:\s*\{\}", block, re.M)
+assert aescbc and (not identity or aescbc.start() < identity.start()), "identity is first (or aescbc missing) for Secrets"
+' "${INIT_CLUSTER_SCRIPT}"
+
+  # Narwhal#109: verifier rejects a plaintext-first provider and unsafe key-file modes.
+  check R172 "encryption verifier rejects identity-first config" \
+    python3 -c 'import pathlib; s=pathlib.Path("scripts/verify/etcd-encryption-check.sh").read_text(); assert "first" in s and "identity" in s and "result FAIL \"provider-$resource\"" in s'
+  check R173 "encryption verifier requires exact 0600 root:root key mode" \
+    python3 -c 'import pathlib; s=pathlib.Path("scripts/verify/etcd-encryption-check.sh").read_text(); assert "600 root:root" in s and "result FAIL permissions" in s'
+  check R174 "strict verifier fails when HA peers are skipped" \
+    python3 -c 'import pathlib; s=pathlib.Path("scripts/verify/etcd-encryption-check.sh").read_text(); assert "STRICT == 0 || SKIP == 0" in s'
+  check R175 "rotation strict verification gates old-key removal" \
+    python3 -c 'import pathlib; s=pathlib.Path("scripts/ops/rotate-etcd-encryption-key.sh").read_text(); verify=s.index("if ! \"$VERIFY\" --strict"); remove=s.index("step 6 "); assert verify < remove'
+  check R176 "rotation streams config without remote temporary file" \
+    python3 -c 'import pathlib; s=pathlib.Path("scripts/ops/rotate-etcd-encryption-key.sh").read_text(); assert "umask 077; sudo tee" in s and "/tmp/encryption-config.rotation" not in s'
+  check R177 "rotation uses named keys and records name before mutation" \
+    python3 -c 'import pathlib; s=pathlib.Path("scripts/ops/rotate-etcd-encryption-key.sh").read_text(); assert "save_key_name\n" in s and "select(.name == strenv(NEW_KEY_NAME))" in s and "keys[${key_index}]" not in s'
+  check R178 "rotation restarts manifest and gates local readyz on changed container" \
+    python3 -c 'import pathlib; s=pathlib.Path("scripts/ops/rotate-etcd-encryption-key.sh").read_text(); assert "manifest.rotation" in s and "https://127.0.0.1:6443/readyz" in s and "before" in s and "after" in s'
+  check R179 "etcd encryption negative behavior fixtures pass" \
+    python3 scripts/test/test-etcd-encryption-static.py
 
   # 2026-07-26: containerd=1.7.* pin paired 1.7.12 with runc 1.3.4; AppArmor denied
   # signal delivery and pods wedged in Terminating, taking NFS down with them.

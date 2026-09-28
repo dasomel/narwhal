@@ -162,6 +162,81 @@ assert required.issubset(listed), f"v{match.group(1)} missing probe routes: {sor
     echo "  SKIP  R211           sibling ../narwhal-portal checkout absent; route-tag check not run"
   fi
 
+  # Narwhal#242: bootstrap APISIX and the ArgoCD-owned Application must share the
+  # same response-buffer directives; publishing charts is a fatal dependency step.
+  check R212 "08-1 APISIX buffer directives match GitOps values (Narwhal#242, 2026-09-28)" \
+    python3 -c '
+import glob, pathlib, re, subprocess, tempfile, yaml
+from copy import deepcopy
+script = pathlib.Path("scripts/cluster/08-1-networking.sh").read_text()
+heredoc_start = script.index("cat > /tmp/apisix-values.yaml <<")
+body_start = script.index("\n", heredoc_start) + 1
+body_end = script.index("\nEOF", body_start)
+bootstrap_text = script[body_start:body_end].replace("${POD_NETWORK_CIDR}", "10.0.0.0/16")
+bootstrap = yaml.safe_load(bootstrap_text)
+effective = bootstrap["apisix"]["nginx"]["configurationSnippet"]["httpStart"]
+gitops = pathlib.Path("gitops/charts/narwhal-apps/templates/apisix.yaml").read_text()
+start = gitops.index("http_configuration_snippet: |", gitops.index("fullCustomConfig:"))
+lines = gitops[start:].splitlines()[1:]
+indent = len(lines[0]) - len(lines[0].lstrip())
+gitops_snippet = []
+for line in lines:
+    if line.strip() and len(line) - len(line.lstrip()) < indent:
+        break
+    gitops_snippet.append(line[indent:])
+gitops_snippet = "\n".join(gitops_snippet).strip()
+expected = ["proxy_buffer_size 16k;", "proxy_buffers 8 16k;", "proxy_busy_buffers_size 32k;"]
+def directives(snippet):
+    return [line.strip() for line in snippet.splitlines() if line.strip()]
+def check_effective(values):
+    assert directives(values["apisix"]["nginx"]["configurationSnippet"]["httpStart"]) == expected, "effective bootstrap APISIX buffer values are missing or misplaced"
+check_effective(bootstrap)
+mutated = deepcopy(bootstrap)
+snippet = mutated["apisix"]["nginx"].pop("configurationSnippet")
+mutated["apisix"]["config"] = {"apisix": {"nginx_config": {"http_configuration_snippet": snippet["httpStart"]}}}
+try:
+    check_effective(mutated)
+except (AssertionError, KeyError):
+    pass
+else:
+    raise AssertionError("R212 accepted the regression mutation back to the ignored config path")
+assert directives(gitops_snippet) == expected, "GitOps fullCustomConfig buffer values differ"
+bundles = []
+for directory in [pathlib.Path.cwd(), *pathlib.Path.cwd().parents]:
+    bundles.extend(glob.glob(str(directory / "narwhal-airgap-bundle-*/charts/apisix-[0-9]*.tgz")))
+if bundles:
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml") as values:
+        values.write(bootstrap_text)
+        values.flush()
+        rendered = subprocess.run(["helm", "template", "apisix", bundles[0], "-f", values.name], check=True, capture_output=True, text=True).stdout
+    assert "proxy_buffer_size 16k;" in rendered, "bundled APISIX chart did not render proxy_buffer_size in ConfigMap"
+    print("bundle helm template: proxy_buffer_size 16k; rendered")
+else:
+    print("SKIP: no narwhal-airgap-bundle-*/charts/apisix-*.tgz bundle present")
+'
+
+  check R213 "Gitea chart publish waits, retries transient failures, and fails closed (Narwhal#242, 2026-09-28)" \
+    python3 -c '
+import pathlib
+import re
+s = pathlib.Path("scripts/cluster/12-gitea.sh").read_text()
+assert "CHART_REGISTRY_INDEX=" in s and "did not return HTTP 200 within 300s" in s
+assert "CHART_UPLOAD_RETRIES" in s and "CHART_UPLOAD_RETRY_DELAY" in s and "5*|000)" in s
+block = s[s.index("=== Publishing bundled Helm charts"):s.index("=== Gitea Installation Done")]
+failure = re.search(r"if \[.*chart_fail.*-gt 0.*then(.*?)\n  fi", block, re.S)
+assert failure and "ERROR: ${chart_fail} chart(s) did not publish" in failure.group(1) and "exit 1" in failure.group(1)
+assert "WARN: ${chart_fail}" not in block
+'
+
+  check R214 "GitOps bootstrap gates persistent ArgoCD chart fetch errors (Narwhal#242, 2026-09-28)" \
+    python3 -c '
+import pathlib
+s = pathlib.Path("scripts/cluster/14-gitops-bootstrap.sh").read_text()
+block = s[s.index("Waiting up to 10 minutes for ArgoCD chart resolution"):s.index("=== GitOps Bootstrap Done ===")]
+assert "error fetching chart|failed to fetch chart" in block.lower()
+assert "kubectl get applications -A" in block and "exit 1" in block and "OutOfSync" not in block
+'
+
   # Narwhal#109: first provider controls new writes. A preceding identity provider
   # silently stores Secrets in plaintext, even if aescbc appears later in the list.
   check R171 "02-init-cluster keeps aescbc before identity for Secrets (Narwhal#109)" \

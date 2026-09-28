@@ -119,6 +119,7 @@ fetch() {
 }
 
 for arch in ${ARCHES}; do
+  arch="${arch##*/}"
   AIRGAP_ARCH_CURRENT="${arch}"
   OUT="${AIRGAP_BUNDLE_DIR%-*}-${arch}/bin"
   MAN="${AIRGAP_BUNDLE_DIR%-*}-${arch}/manifests"

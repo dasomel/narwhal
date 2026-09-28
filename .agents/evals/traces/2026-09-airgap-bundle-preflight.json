@@ -1,0 +1,31 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "traceId": "narwhal-airgap-bundle-preflight-2026-09",
+  "task": "Fail fast when the airgap bundle for the host arch is missing, and keep 03-save-helm-charts.sh in sync with the charts the install actually uses",
+  "consistencyMode": "strict",
+  "changeContext": {
+    "paths": [
+      "scripts/up.sh",
+      "scripts/airgap/check-bundle.sh",
+      "scripts/airgap/lib/scan-bundle-requirements.py",
+      "scripts/airgap/lib/check-required-charts.py",
+      "scripts/airgap/lib/manual-chart-sources.tsv",
+      "scripts/airgap/03-save-helm-charts.sh",
+      "scripts/airgap/07-save-binaries.sh",
+      "scripts/test/regression-check-kakao.sh",
+      "README.md",
+      "README-ko.md",
+      "docs/common/lessons-log.md"
+    ]
+  },
+  "events": [
+    {"id":"e1","type":"scope_check","summary":"Scope is the Vagrant bring-up precondition (bundle presence per host arch) and the chart save list; no change to what the install scripts install or how"},
+    {"id":"e2","type":"reproduction","summary":"Clean ./scripts/up.sh on Apple silicon (VMware) ran ~2h: all six nodes joined but stayed NotReady (cni plugin not initialized) and up.sh exited rc=1 after 6 attempts; the provisioning log shows 03-cni-install.sh stopping at \"ERROR: 'helm' is not in /home/vagrant/bin\" because only narwhal-airgap-bundle-amd64 existed while AIRGAP_ARCH_SUFFIX defaults to arm64. Separately, 03-save-helm-charts.sh for arm64 saved 21 charts with Failed: 0 while the install references 4 more (apisix-ingress-controller, cloudnative-pg, csi-driver-nfs, gitea)","evidence":["artifact:scripts/cluster/03-cni-install.sh","artifact:scripts/common/lib-charts.sh","artifact:Vagrantfile"]},
+    {"id":"e3","type":"bug_fix","summary":"check-bundle.sh runs from up.sh before any VM action (skipped when the cluster is already Ready) and verifies bin/, manifests/ and charts/ against requirements scanned from install_bin/manifest/chart call sites; 03-save-helm-charts.sh adds the four missing charts at VERSIONS.md versions and fails via a shared offline checker when a required chart lacks a source; 07-save-binaries.sh accepts linux/<arch>; README Quick Start documents the bundle step"},
+    {"id":"e4","type":"regression_verification","status":"passed","summary":"R154 added to regression-check-kakao.sh --static; mutation-verified: removing the gitea source from manual-chart-sources.tsv makes R154 FAIL, restoring it makes it PASS","scope":"scripts/test/regression-check-kakao.sh","evidence":["artifact:scripts/test/regression-check-kakao.sh","artifact:scripts/airgap/lib/check-required-charts.py"]},
+    {"id":"e5","type":"verification","status":"passed","summary":"shellcheck --severity=warning and bash -n clean on changed scripts; check-bundle.sh exits 1 listing gaps against an empty bundle dir and exits 0 against the real arm64 bundle; regression-check-kakao.sh --static: 204 passed, 0 failed","evidence":["artifact:scripts/airgap/check-bundle.sh"]},
+    {"id":"e6","type":"verification","status":"passed","summary":"Live: after creating narwhal-airgap-bundle-arm64 with these scripts and vagrant reload, the same cluster passed 03-cni-install.sh (\"CNI Plugin Installation Done\")","evidence":["artifact:scripts/cluster/03-cni-install.sh"]},
+    {"id":"e7","type":"completion_claim","summary":"A missing or incomplete bundle for the host arch now stops up.sh before any VM boots with the exact remediation commands, and the chart save list cannot drift from the install without failing R154","evidence":["e4","e5","e6"]},
+    {"id":"e8","type":"task_outcome","state":"A","summary":"Complete and verified; a full platform install on the fixed bundle is still in progress and is not claimed here"}
+  ]
+}

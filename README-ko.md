@@ -103,8 +103,13 @@ vagrant plugin install vagrant-disksize
 git clone https://github.com/dasomel/narwhal.git
 cd narwhal
 
-# Create cluster
-vagrant up --provider=vmware_desktop
+# 호스트 아키텍처용 airgap bundle을 한 번 생성합니다 (AIRGAP_ARCH_SUFFIX 기준: Apple Silicon arm64, Intel amd64)
+AIRGAP_ARCH=arm64 scripts/airgap/07-save-binaries.sh
+AIRGAP_ARCH=linux/arm64 scripts/airgap/03-save-helm-charts.sh
+# Intel에서는 위 명령의 arm64를 각각 amd64와 linux/amd64로 바꿉니다.
+
+# 클러스터 생성 (권장 진입점: bundle 사전 검사 포함)
+./scripts/up.sh
 
 # Check status
 vagrant ssh master-1 -c "kubectl get nodes"

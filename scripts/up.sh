@@ -79,6 +79,22 @@ k8s_ready_nodes() {
     | sed 's/narwhal-//' || true
 }
 
+# Re-runs on a fully Ready cluster do not need the original host-side bundle.
+bundle_check_needed=false
+ready_nodes=$(k8s_ready_nodes)
+for vm in ${ALL_VMS}; do
+  state=$(vm_state "${vm}")
+  if [ "${state}" = "not_created" ] || ! grep -qx "${vm}" <<<"${ready_nodes}"; then
+    bundle_check_needed=true
+    break
+  fi
+done
+if [ "${bundle_check_needed}" = true ]; then
+  "${PWD}/scripts/airgap/check-bundle.sh"
+else
+  echo "bundle check skipped: cluster already Ready"
+fi
+
 # master1_ssh_ok: returns 0 if master-1 responds to SSH, 1 otherwise.
 # No `| grep -q`: it closes the pipe early and pipefail turns the upstream's SIGPIPE into a
 # false negative (see the CLAUDE.md shell rule).

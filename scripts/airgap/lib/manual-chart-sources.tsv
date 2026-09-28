@@ -1,0 +1,5 @@
+# chart<TAB>source<TAB>version
+apisix-ingress-controller	https://charts.apiseven.com	0.14.1
+cloudnative-pg	https://cloudnative-pg.github.io/charts	0.28.3
+csi-driver-nfs	https://raw.githubusercontent.com/kubernetes-csi/csi-driver-nfs/master/charts	4.13.2
+gitea	https://dl.gitea.com/charts/	12.6.0

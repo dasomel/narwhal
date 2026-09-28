@@ -122,8 +122,13 @@ vagrant plugin install vagrant-disksize
 git clone https://github.com/dasomel/narwhal.git
 cd narwhal
 
+# Build the host-architecture airgap bundle once (use AIRGAP_ARCH_SUFFIX: arm64 on Apple silicon, amd64 on Intel)
+AIRGAP_ARCH=arm64 scripts/airgap/07-save-binaries.sh
+AIRGAP_ARCH=linux/arm64 scripts/airgap/03-save-helm-charts.sh
+# On Intel, use amd64 above and linux/amd64 for the charts command.
+
 # Create cluster
-vagrant up --provider=vmware_desktop
+./scripts/up.sh
 
 # Check status
 vagrant ssh master-1 -c "kubectl get nodes"

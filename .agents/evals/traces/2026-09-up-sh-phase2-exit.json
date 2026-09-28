@@ -1,0 +1,87 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-up-sh-phase2-exit",
+  "task": "Finish Narwhal#223 Phase 2 failure handling and macOS Local Network probe regressions",
+  "changeContext": {
+    "paths": [
+      "scripts/up.sh",
+      "scripts/test/regression-check-kakao.sh",
+      "docs/common/lessons-log.md",
+      ".agents/evals/traces/2026-09-up-sh-phase2-exit.json"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "reproduction",
+      "summary": "Issue #223 reports a clean Apple-silicon VMware install where up.sh printed Phase 2 incomplete after five attempts and returned rc=0; each Phase 2 attempt also reported no route to host / EHOSTUNREACH while the host interface and 127.0.0.1 forwarded ports worked. The issue attributes the LAN failure to macOS Local Network Privacy on the terminal app.",
+      "evidence": [
+        "gh:issue-223"
+      ]
+    },
+    {
+      "id": "e2",
+      "type": "scope_check",
+      "summary": "Inspected scripts/cluster/06-phase2-start.sh: its critical-script failure branch already exits 1 after printing the failure message, so the issue's reported rc=0 was not reproduced from current source and no change was needed there.",
+      "evidence": [
+        "scripts/cluster/06-phase2-start.sh:critical-failure-branch"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "Restricted Vagrant forwarded-port parsing to guest port 22 and made it emit only the first matching host port. Cached only a positive master-1 reachability result so failed/transient probes are retried.",
+      "evidence": [
+        "scripts/up.sh"
+      ]
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "summary": "Static regression suite passed all 208 checks with zero failures and four existing environment warnings; new R156 validates guest-port selection and positive-only caching, and mutation check R156b detected a loosened guest-port selector.",
+      "scope": "./scripts/test/regression-check-kakao.sh --static",
+      "evidence": [
+        "artifact:scripts/test/regression-check-kakao.sh",
+        "test:R155",
+        "test:R155b",
+        "test:R156",
+        "test:R156b"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "verification",
+      "status": "passed",
+      "summary": "shellcheck --severity=warning passed for both changed shell scripts; bash -n passed for both changed shell scripts.",
+      "scope": "scripts/up.sh and scripts/test/regression-check-kakao.sh",
+      "evidence": [
+        "artifact:scripts/up.sh"
+      ]
+    },
+    {
+      "id": "e6",
+      "type": "documentation",
+      "summary": "Sharpened the existing 2026-07-29 macOS Local Network lesson with the issue's Phase 2 silent-success discriminator and recorded the current-source check of 06-phase2-start.sh.",
+      "evidence": [
+        "docs/common/lessons-log.md"
+      ]
+    },
+    {
+      "id": "e7",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Requested source changes and operational trace are complete and locally verified; no commit or push performed."
+    },
+    {
+      "id": "e8",
+      "type": "completion_claim",
+      "summary": "up.sh exits non-zero when Phase 2 stays incomplete and stops early with the exact macOS fix when Local Network Privacy blocks host-to-VM traffic",
+      "evidence": [
+        "e4",
+        "e5"
+      ]
+    }
+  ]
+}

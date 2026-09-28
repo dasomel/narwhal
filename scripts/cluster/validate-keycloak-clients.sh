@@ -82,9 +82,12 @@ except Exception as exc:
 # Documented exceptions for Keycloak built-in/system clients:
 # - admin-cli: Keycloak internal CLI client (defaults to directAccessGrantsEnabled=true)
 # - account-console: Keycloak internal account console (defaults to webOrigins=["+"])
+# - security-admin-console: Keycloak system client (defaults to webOrigins=["+"])
+#   Keycloak system clients may use "+" because it derives origins from redirectUris;
+#   "*" remains forbidden because it is a wildcard.
 # Zero production application clients are permitted in either exception set.
 ropc_env = os.environ.get("KEYCLOAK_ROPC_EXCEPTIONS", "admin-cli")
-origin_env = os.environ.get("KEYCLOAK_ORIGIN_EXCEPTIONS", "account-console")
+origin_env = os.environ.get("KEYCLOAK_ORIGIN_EXCEPTIONS", "account-console,security-admin-console")
 ROPC_EXCEPTIONS = set(filter(None, [x.strip() for x in ropc_env.split(",")]))
 ORIGIN_EXCEPTIONS = set(filter(None, [x.strip() for x in origin_env.split(",")]))
 
@@ -112,10 +115,12 @@ for c in sorted(clients, key=lambda x: x.get("clientId", "")):
     if ropc and cid not in ROPC_EXCEPTIONS:
         errors.append(f"Client '{cid}' has directAccessGrantsEnabled=true (unexpected ROPC client)")
 
-    # Check wildcard or relative webOrigins (* or +) (#148)
-    wildcards = [o for o in origins if any(ch in o for ch in ("*", "+"))]
-    if wildcards and cid not in ORIGIN_EXCEPTIONS:
-        errors.append(f"Client '{cid}' has unexpected wildcard/relative webOrigins: {wildcards}")
+    # Check wildcard or relative webOrigins (#148, #232): system exceptions cover "+" only.
+    wildcards = [o for o in origins if "*" in o]
+    relative = [o for o in origins if "+" in o]
+    unexpected = wildcards + (relative if cid not in ORIGIN_EXCEPTIONS else [])
+    if unexpected:
+        errors.append(f"Client '{cid}' has unexpected wildcard/relative webOrigins: {unexpected}")
 
     inventory.append((cid, client_type, "ENABLED" if ropc else "disabled", origins))
 

@@ -60,8 +60,106 @@ vm_state() {
 # The readiness probe below is the expensive victim: it reported 0 Ready nodes for a cluster
 # with 5 Ready nodes, and this script duly "recovered" a healthy master-1 with a reload.
 # 192.168.56.10 is static, unique per VM and never shared, so none of that applies.
-MASTER1_IP="${MASTER1_IP:-192.168.56.10}"
+HOST_IF_IP="${HOST_IF_IP:-192.168.56.1}"
+MASTER_IP_BASE="${MASTER_IP_BASE:-192.168.56.1}"
+MASTER1_IP="${MASTER1_IP:-${MASTER_IP_BASE}0}"
 MASTER1_KEY=".vagrant/machines/master-1/vmware_desktop/private_key"
+
+# detect_parent_app: walks the process tree upwards with ps until reaching
+# a top-level .app under /Applications/ or /System/Applications/
+# (e.g. Orca.app, iTerm.app, Terminal.app).
+detect_parent_app() {
+  local cur="$$" ppid comm args app=""
+  while [ -n "${cur}" ] && [ "${cur}" -gt 1 ]; do
+    comm=$(ps -o comm= -p "${cur}" 2>/dev/null || true)
+    case "${comm}" in
+      *Applications/*[!.].app*)
+        app=$(printf '%s\n' "${comm}" | sed -E 's|.*Applications/((Utilities/)?[^/]+)\.app.*|\1|' | sed -E 's|.*/||')
+        case "${app}" in
+          ""|"*") app="" ;;
+          *) break ;;
+        esac
+        ;;
+    esac
+    if [ -z "${app}" ]; then
+      args=$(ps -o args= -p "${cur}" 2>/dev/null || true)
+      case "${args}" in
+        *Applications/*[!.].app*)
+          app=$(printf '%s\n' "${args}" | sed -E 's|.*Applications/((Utilities/)?[^/]+)\.app.*|\1|' | sed -E 's|.*/||')
+          case "${app}" in
+            ""|"*") app="" ;;
+            *) break ;;
+          esac
+          ;;
+      esac
+    fi
+    ppid=$(ps -o ppid= -p "${cur}" 2>/dev/null | tr -d ' ' || true)
+    [ -n "${ppid}" ] || break
+    [ "${ppid}" -ne "${cur}" ] || break
+    cur="${ppid}"
+  done
+  printf '%s\n' "${app:-Terminal}"
+}
+
+# check_macos_local_network_privacy: detects macOS Local Network Privacy block.
+# On macOS, Local Network Privacy can block the parent terminal application
+# from reaching LAN/VM addresses (e.g. 192.168.56.x and 172.16.x) with EHOSTUNREACH
+# ("no route to host"), while the host interface (192.168.56.1) and 127.0.0.1
+# forwarded ports still work.
+#
+# Probe:
+#   1. Host-only interface (192.168.56.1) responds to ping.
+#   2. master-1 IP (MASTER_IP_BASE+0 = 192.168.56.10) does NOT respond to ping or TCP check.
+#   3. master-1 127.0.0.1 forwarded SSH port (from vagrant port or ssh-config) DOES respond.
+#
+# If detected:
+#   D13: Option (b) chosen over (a).
+#   Reusing Vagrantfile's phase2-platform env values from bash cannot be done
+#   reliably without evaluating Ruby in the Vagrant runtime (Vagrant does not expose
+#   provisioner env via CLI). More fundamentally, running Phase 2 over 127.0.0.1
+#   leaves all subsequent host operations (kubectl, ingress, metalLB, DNS, browser access)
+#   broken because the host terminal remains blocked by macOS Local Network Privacy.
+#   Exiting immediately with the exact macOS settings fix directs the user to resolve
+#   the root cause in one toggle, restoring full cluster networking.
+MACOS_LOCAL_NETWORK_REACHABLE=false
+check_macos_local_network_privacy() {
+  [ "$(uname -s)" = "Darwin" ] || return 0
+  [ "${MACOS_LOCAL_NETWORK_REACHABLE}" = true ] && return 0
+
+  local host_if_ip="${HOST_IF_IP:-192.168.56.1}"
+  local master_base="${MASTER_IP_BASE:-192.168.56.1}"
+  local master1_target="${MASTER1_IP:-${master_base}0}"
+
+  # Step 1: Check host-only interface
+  if ! ping -c 1 -W 500 "${host_if_ip}" >/dev/null 2>&1; then
+    return 0
+  fi
+
+  # Step 2: Check master-1 IP
+  if ping -c 1 -W 500 "${master1_target}" >/dev/null 2>&1 || nc -z -G 1 "${master1_target}" 22 >/dev/null 2>&1; then
+    MACOS_LOCAL_NETWORK_REACHABLE=true
+    return 0
+  fi
+
+  # Step 3: Check master-1 127.0.0.1 forwarded port
+  local port=""
+  port=$(vagrant port master-1 2>/dev/null | awk -F'=>[[:space:]]*' '$1 ~ /^[[:space:]]*22[[:space:]]*\(guest\)[[:space:]]*$/ {if ($2 ~ /^[0-9]+[[:space:]]*\(host\)/) {gsub(/[^0-9]/, "", $2); print $2; exit}}')
+  if [ -z "${port}" ]; then
+    port=$(vagrant ssh-config master-1 2>/dev/null | awk '$1 == "Port" {print $2}')
+  fi
+
+  if [ -n "${port}" ] && nc -z -G 1 127.0.0.1 "${port}" >/dev/null 2>&1; then
+    local app
+    app=$(detect_parent_app)
+    echo "ERROR: macOS Local Network Privacy is blocking access to cluster VMs." >&2
+    echo "       Host interface (${host_if_ip}) and 127.0.0.1 forwarded port (${port}) respond," >&2
+    echo "       but master-1 IP (${master1_target}) is unreachable (EHOSTUNREACH / no route to host)." >&2
+    echo "       Fix: System Settings → Privacy & Security → Local Network → enable ${app}" >&2
+    exit 2
+  fi
+
+  return 0
+}
 master1_exec() {
   local out=""
   if [ -r "${MASTER1_KEY}" ]; then
@@ -78,6 +176,8 @@ k8s_ready_nodes() {
   master1_exec "kubectl get nodes --no-headers 2>/dev/null | awk '\$2==\"Ready\"{print \$1}'" \
     | sed 's/narwhal-//' || true
 }
+
+check_macos_local_network_privacy
 
 # Re-runs on a fully Ready cluster do not need the original host-side bundle.
 bundle_check_needed=false
@@ -192,6 +292,7 @@ recover_master1_ssh() {
 attempt=1
 while [ "${attempt}" -le "${MAX_ATTEMPTS}" ]; do
   say "=== attempt ${attempt}/${MAX_ATTEMPTS} ==="
+  check_macos_local_network_privacy
 
   # Before touching any VM: if two of them share a NAT address, every `vagrant ssh` and
   # `vagrant provision` below is a coin flip on which machine it reaches. Fix that first,
@@ -239,6 +340,8 @@ while [ "${attempt}" -le "${MAX_ATTEMPTS}" ]; do
     # stably Ready, causing node flapping during 08-1's kubectl operations.
     # We always run Phase 2 here — 06-phase2-start.sh and its sub-scripts are
     # idempotent, so re-running after a partial trigger-driven attempt is safe.
+
+    check_macos_local_network_privacy
 
     # Ensure master-1 SSH is healthy before attempting Phase 2. VMware's key-
     # replacement race can leave a k8s-Ready node with a broken SSH channel.
@@ -292,6 +395,7 @@ while [ "${attempt}" -le "${MAX_ATTEMPTS}" ]; do
     p2_attempt=1
     while [ "${p2_attempt}" -le "${PHASE2_MAX_ATTEMPTS}" ]; do
       say "Running Phase 2 platform provision — attempt ${p2_attempt}/${PHASE2_MAX_ATTEMPTS} (up.sh is the sole driver)..."
+      check_macos_local_network_privacy
 
       # Ensure SSH is healthy before each attempt; SSH failure is non-fatal
       # for the loop — recover and continue unless recovery itself gives up.
@@ -332,7 +436,8 @@ while [ "${attempt}" -le "${MAX_ATTEMPTS}" ]; do
     echo "       Namespaces above were still missing — a critical script likely" >&2
     echo "       failed mid-run (DNS/transient issues are the usual cause)." >&2
     echo "       Re-run: vagrant provision master-1 --provision-with phase2-platform" >&2
-    exit 1
+    echo "Phase 2 incomplete: cluster platform provision failed after ${PHASE2_MAX_ATTEMPTS} attempts." >&2
+    exit 2
   fi
 
   say "  ${ready_count}/${EXPECTED_NODES} nodes Ready — settle ${SETTLE_DELAY}s, then retry"

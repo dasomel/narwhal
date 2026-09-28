@@ -2382,6 +2382,82 @@ assert not re.search(r'StrictHostKeyChecking=no\b.*UserKnownHostsFile=/dev/null|
     env PATH="${ssh_wrapper_tmp}:${PATH}" TF_DIR="${ssh_wrapper_tmp}" KAKAO_KNOWN_HOSTS="${ssh_wrapper_tmp}/known_hosts" \
     bash -c 'source scripts/cloud/lib-ssh.sh; kakao_ssh ubuntu@example.invalid'
   rm -rf "${ssh_wrapper_tmp}"
+
+  # 2026-09-28 (Narwhal#223): up.sh printed "Phase 2 incomplete: namespace 'platform-system' not found"
+  # after 5 attempts and still exited rc=0 on failure paths. up.sh must never exit 0 after
+  # reporting Phase 2 incomplete or exhausting retry attempts; rc=0 is reserved exclusively
+  # for full success (all namespaces present).
+  check R155 "up.sh has no exit-0 path after Phase 2 incomplete message (Narwhal#223, 2026-09-28)" \
+    python3 -c '
+import re, pathlib
+
+content = pathlib.Path("scripts/up.sh").read_text()
+code_lines = [l for l in content.splitlines() if not l.strip().startswith("#")]
+text = "\n".join(code_lines)
+
+# Find Phase 2 retry loop and the subsequent exhaustion handler
+m = re.search(r"while\s+\[\s*\"\$\{p2_attempt\}\"\s+-le\s*\"\$\{PHASE2_MAX_ATTEMPTS\}\"\s*\];\s*do(.*?)done(.*?)(\n\s*fi\b|\Z)", text, re.DOTALL)
+assert m, "Phase 2 retry loop not found in scripts/up.sh"
+
+after_loop = m.group(2)
+# Must not contain exit 0
+assert not re.search(r"\bexit\s+0\b", after_loop), "Found exit 0 on Phase 2 exhaustion path in scripts/up.sh"
+# Must contain non-zero exit
+assert re.search(r"\bexit\s+[1-9]\b", after_loop), "Missing non-zero exit on Phase 2 exhaustion path in scripts/up.sh"
+# Must state Phase 2 incomplete or failure
+assert re.search(r"Phase 2 (incomplete|did not complete)", after_loop), "Missing Phase 2 incomplete failure message after loop in scripts/up.sh"
+'
+
+  local r155_drift_tmp
+  r155_drift_tmp="$(mktemp -d)"
+  cp scripts/up.sh "${r155_drift_tmp}/up.sh"
+  sed -i.bak 's/exit 2/exit 0/' "${r155_drift_tmp}/up.sh"
+  rm -f "${r155_drift_tmp}/up.sh.bak"
+  check_not R155b "R155 check catches an exit-0 path reintroduced after Phase 2 incomplete (Narwhal#223, 2026-09-28)" \
+    python3 -c "
+import re, pathlib
+
+content = pathlib.Path('${r155_drift_tmp}/up.sh').read_text()
+code_lines = [l for l in content.splitlines() if not l.strip().startswith('#')]
+text = '\n'.join(code_lines)
+
+m = re.search(r'while\s+\[\s*\"\$\{p2_attempt\}\"\s+-le\s*\"\$\{PHASE2_MAX_ATTEMPTS\}\"\s*\];\s*do(.*?)done(.*?)(\n\s*fi\b|\Z)', text, re.DOTALL)
+assert m, 'Phase 2 retry loop not found'
+after_loop = m.group(2)
+assert not re.search(r'\bexit\s+0\b', after_loop), 'Found exit 0 on Phase 2 exhaustion path'
+assert re.search(r'\bexit\s+[1-9]\b', after_loop), 'Missing non-zero exit'
+"
+  rm -rf "${r155_drift_tmp}"
+
+  # Narwhal#223: Local Network detection must select only the guest SSH port and
+  # cache only confirmed host-only reachability, so a transient early block is retried.
+  check R156 "up.sh scopes the forwarded-port probe to guest port 22 and caches only reachable results (Narwhal#223, 2026-09-28)" \
+    python3 -c '
+import pathlib, re
+
+text = pathlib.Path("scripts/up.sh").read_text()
+port_line = next((line for line in text.splitlines() if "port=$(vagrant port master-1" in line), "")
+assert port_line, "forwarded-port parsing not found"
+assert re.search(re.escape(chr(36) + "1") + r"\s*~\s*/\^\[\[:space:\]\]\*22", port_line), "forwarded-port parser is not anchored to guest port 22"
+assert "print $2; exit" in port_line, "forwarded-port parser must emit only the first matching host port"
+assert "MACOS_LOCAL_NETWORK_REACHABLE=false" in text, "positive-reachability cache is not initialized false"
+assert re.search(r"if ping .*master1_target.*; then\s+MACOS_LOCAL_NETWORK_REACHABLE=true", text, re.S), "cache is not set only after master-1 is reachable"
+assert "[ \"${MACOS_LOCAL_NETWORK_REACHABLE}\" = true ] && return 0" in text, "cached reachable result is not reused"
+'
+
+  local r156_drift_tmp
+  r156_drift_tmp="$(mktemp -d)"
+  cp scripts/up.sh "${r156_drift_tmp}/up.sh"
+  sed -i.bak 's/22\[\[:space:\]\]/[0-9]+[[:space:]]/' "${r156_drift_tmp}/up.sh"
+  rm -f "${r156_drift_tmp}/up.sh.bak"
+  check_not R156b "R156 check catches a forwarded-port parser that accepts any guest port (Narwhal#223, 2026-09-28)" \
+    python3 -c "
+import pathlib, re
+text = pathlib.Path('${r156_drift_tmp}/up.sh').read_text()
+line = next((line for line in text.splitlines() if 'port=\$(vagrant port master-1' in line), '')
+assert '22[[:space:]]' in line and 'guest' in line, 'parser no longer selects guest port 22'
+"
+  rm -rf "${r156_drift_tmp}"
 }
 
 #=========================================

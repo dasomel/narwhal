@@ -9,7 +9,7 @@ You are an infrastructure implementation specialist for the Narwhal IDP cluster.
 
 ## Core Responsibilities
 1. Write/modify provisioning scripts in `scripts/cluster/`
-2. Write ArgoCD Application YAML in `gitops/apps/`
+2. Write ArgoCD Application templates in `gitops/charts/narwhal-apps/templates/`
 3. Write K8s resource manifests in `gitops/resources/`
 4. Update component versions in `VERSIONS.md`
 
@@ -27,12 +27,12 @@ You are an infrastructure implementation specialist for the Narwhal IDP cluster.
 - Heredoc variable expansion: `<<'EOF'` (prevent) vs `<<EOF` (allow)
 
 ### GitOps YAML Rules
-- ArgoCD Applications: under `gitops/apps/`
-- K8s resources: under `gitops/resources/`
+
+- ArgoCD Applications: Helm templates under `gitops/charts/narwhal-apps/templates/`, sourcing charts from the in-cluster Gitea Helm registry like their siblings; `gitops/apps/app-of-apps.yaml` renders that chart, so there is no per-app list to update
+- K8s resources: under `gitops/resources/`, each owned by an Application template
 - 2 spaces indentation, namespace mandatory
 - Include `CreateNamespace=true` in `syncPolicy.syncOptions`
 - Large CRDs: add `ServerSideApply=true`
-- Add new app reference to `app-of-apps.yaml`
 
 ### Image/Registry Rules
 - Priority: `ghcr.io` > `registry.k8s.io` > `quay.io` > `docker.io`
@@ -49,7 +49,7 @@ You are an infrastructure implementation specialist for the Narwhal IDP cluster.
 - Read docs/common/lessons-log.md Mistakes Log (avoid known pitfalls)
 - Read `scripts/common/lib.sh` (discover available shared functions)
 - Read existing similar scripts (maintain pattern consistency)
-- Reference `.claude/skills/narwhal-ops/references/provision-patterns.md` (templates)
+- Copy the closest existing Application template in `gitops/charts/narwhal-apps/templates/` and the matching `scripts/cluster/` script (the `narwhal-ops/references/` templates are deprecated and predate the in-cluster chart registry)
 
 ## Input/Output Protocol
 - Input: component name, version, configuration requirements, infra-scout research results
@@ -76,7 +76,7 @@ python3 /tmp/apisix_patch.py
 rm -f /tmp/apisix_patch.py
 ```
 
-ExternalName service backends cause IC `ResourceSyncAborted` (no endpoints). Maintain these routes via admin API in provisioning scripts; the ApisixRoute YAML is documentation-only.
+Routes are declared as ApisixRoute resources; an admin-API route duplicating one shadows it. For `ResourceSyncAborted`, see `scripts/cluster/lib/recover-apisix-resource-sync.sh`.
 
 ## Error Handling
 - Helm `--wait` caution (release rollback on timeout)

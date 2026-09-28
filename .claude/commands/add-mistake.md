@@ -8,10 +8,6 @@ disable-model-invocation: true
 
 Adds a row to the Mistakes Log tables in `docs/common/lessons-log.md`.
 
-The log used to live in `CLAUDE.md` and this command still pointed there long after it
-moved — so confirm the target section exists before writing, rather than trusting this
-file's paths.
-
 ## Scope
 
 Cluster incidents and **mistakes made while fixing them** both belong here. The second kind is
@@ -37,13 +33,8 @@ they hit first.
 
 ## Target Location
 
-Pick the section matching the cause, and insert **newest first** at the top of its table:
-
-- `### Shell Script Mistakes`
-- `### Kubernetes/Helm Mistakes`
-- `### GitOps/ArgoCD Mistakes`
-- `### Vagrant/Infrastructure Mistakes`
-- `### Cloud Deployment Mistakes (Kakao Cloud, 2026-07)`
+Pick the `###` section whose name matches the cause (`grep '^### ' docs/common/lessons-log.md`
+lists them), and insert **newest first** at the top of its table.
 
 ## Format
 
@@ -55,5 +46,5 @@ Write the discriminator, not the conclusion. "Loki CrashLoopBackOff → deleted 
 nobody; what earns a row is how to tell this cause from its look-alikes and which obvious fix
 is wrong. Escape any literal `|` inside a cell as `\|`, or the table silently gains a column.
 
-A rule graduates into `CLAUDE.md` "Recurring Rules" only once it has bitten across more than
-one incident. One-off narratives stay here.
+A rule graduates into `docs/common/agent-operational-rules.md` only once it has bitten across
+more than one incident. One-off narratives stay here.

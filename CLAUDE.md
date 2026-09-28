@@ -23,7 +23,7 @@ The legacy `.claude/skills/narwhal-ops` entry is a compatibility router only.
 
 - Use Plan mode for new components, major script/GitOps structure changes, and version upgrades when planning materially reduces risk.
 - Project slash commands live in `.claude/commands/`.
-- Ralph/OMC workflows use `.claude/templates/PROMPT.md` when explicitly invoked.
+- Ralph/OMC workflows read a `PROMPT.md` in the project root when explicitly invoked; see `.claude/commands/ralph.md`.
 - Claude-specific agent-team/model routing belongs under `.claude/rules/` or the active harness, not in portable project skills.
 
 ## Source-of-truth reminders

@@ -15,12 +15,13 @@ Validates work results to ensure quality.
 ruby -c Vagrantfile
 
 # Shell scripts
-shellcheck scripts/**/*.sh 2>/dev/null || echo "shellcheck not installed"
+find scripts/ -name '*.sh' -print0 | xargs -0 shellcheck --severity=warning
 
 # YAML files
-for f in gitops/apps/*.yaml gitops/resources/*.yaml; do
-  yq eval '.' "$f" > /dev/null 2>&1 && echo "OK: $f" || echo "FAIL: $f"
+for f in gitops/resources/*.yaml; do
+  yq eval '.' "$f" > /dev/null || echo "FAIL: $f"
 done
+helm template narwhal-apps gitops/charts/narwhal-apps > /dev/null
 ```
 
 ### 2. Git Status Check
@@ -43,7 +44,7 @@ vagrant ssh master-1 -c "kubectl get applications -n devtools 2>/dev/null" || tr
 
 ### 4. Version Consistency Check
 - Compare VERSIONS.md with script versions
-- Verify chart versions in gitops/apps/*.yaml
+- Verify chart versions in gitops/charts/narwhal-apps/templates/*.yaml
 
 ## Output Format
 
@@ -51,11 +52,11 @@ vagrant ssh master-1 -c "kubectl get applications -n devtools 2>/dev/null" || tr
 === Verification Report ===
 [OK] Vagrantfile syntax
 [OK] scripts/cluster/02-init-cluster.sh
-[WARN] scripts/cluster/11-authentik.sh - shellcheck warnings
-[OK] gitops/apps/cert-manager.yaml
-[FAIL] gitops/apps/harbor.yaml - YAML syntax error
+[WARN] scripts/cluster/11-keycloak.sh - shellcheck warnings
+[OK] gitops/resources/rbac-policies.yaml
+[FAIL] helm template gitops/charts/narwhal-apps - render error
 
-Cluster Status: 3/3 nodes Ready
+Cluster Status: 6/6 nodes Ready
 ArgoCD Apps: 8 Synced, 1 Progressing
 ===========================
 ```

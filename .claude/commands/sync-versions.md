@@ -10,7 +10,7 @@ Compares and synchronizes versions between VERSIONS.md and actual scripts/manife
 ## Check Targets
 
 1. **Script files**: VERSION variables and Helm chart versions in `scripts/cluster/*.sh`
-2. **GitOps manifests**: targetRevision in `gitops/apps/*.yaml`
+2. **GitOps manifests**: targetRevision in `gitops/charts/narwhal-apps/templates/*.yaml`
 
 ## Tasks
 
@@ -24,8 +24,8 @@ Compares and synchronizes versions between VERSIONS.md and actual scripts/manife
 ```
 === Version Sync Report ===
 
-[OK] Cilium: v1.19.0 (VERSIONS.md) = v1.19.0 (scripts/cluster/03-cni-install.sh)
-[MISMATCH] cert-manager: v1.19.3 (VERSIONS.md) != v1.19.2 (gitops/apps/cert-manager.yaml)
+[OK] Cilium: v1.19.4 (VERSIONS.md) = 1.19.4 (scripts/cluster/03-cni-install.sh)
+[MISMATCH] cert-manager: vX.Y.Z (VERSIONS.md) != vX.Y.W (gitops/charts/narwhal-apps/templates/cert-manager.yaml)
 
 Found 1 mismatch(es). Fix? [y/n]
 ```

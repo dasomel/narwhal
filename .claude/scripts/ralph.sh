@@ -53,8 +53,7 @@ done
 if [[ ! -f "${PROMPT_FILE}" ]]; then
   echo "Error: PROMPT file not found: ${PROMPT_FILE}"
   echo ""
-  echo "Create a PROMPT.md file first. Template available at:"
-  echo "  .claude/templates/PROMPT.md"
+  echo "Create a PROMPT.md file first (goal, task list, completion criteria)."
   exit 1
 fi
 

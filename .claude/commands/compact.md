@@ -54,7 +54,7 @@ git status --short
 === Context Compact Complete ===
 Session summary saved to .claude/cache/SESSION_STATE.md
 Changed files: [N], Completed: [N], Remaining: [N]
-Will be automatically restored in next session.
+Read it back at the start of the next session.
 ===
 ```
 

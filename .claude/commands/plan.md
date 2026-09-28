@@ -14,14 +14,16 @@ Press **Shift + Tab** twice to enter Plan mode.
 
 ## When to Use
 
-### Always use for:
+### Use when planning materially reduces risk, such as
+
 - Adding new IDP components
 - Major script modifications
 - GitOps app structure changes
 - Version upgrades (especially with breaking changes)
 - Network/storage architecture changes
 
-### Optional for:
+### Usually unnecessary for
+
 - Simple bug fixes
 - Documentation updates
 - Configuration value changes

@@ -2428,6 +2428,43 @@ assert not re.search(r'StrictHostKeyChecking=no\b.*UserKnownHostsFile=/dev/null|
   check_not R151b "NFS exports do not default to no_root_squash (narwhal#186)" \
     grep -qE '^[^#]*\(rw,sync,no_subtree_check,no_root_squash\)' scripts/cluster/01-nfs-server.sh
 
+  # narwhal#224: chart 4.13.2 omits fsGroupPolicy when its feature is false. The
+  # Kubernetes default (ReadWriteOnceWithFSType) cannot chown this NFS CSI volume because
+  # the StorageClass does not set fstype; keep the install compatible with Helm 4.
+  check R185 "NFS CSI uses Helm 4-compatible feature flag and relies on no NFS fsType (narwhal#224)" \
+    python3 -c 'from pathlib import Path; addon=Path("scripts/cluster/04-addons.sh").read_text(); sc=addon.split("# Create StorageClass",1)[1]; assert "--set feature.enableFSGroupPolicy=false" in addon and "--post-renderer" not in addon and "ReadWriteOnceWithFSType" in addon and "sets no fstype parameter" in addon and "fsType" not in sc and "fstype:" not in sc'
+  check_not R185b "nfs-csi StorageClass has no mountPermissions (narwhal#224)" \
+    grep -qE '^[[:space:]]*mountPermissions:' scripts/cluster/04-addons.sh
+  check R185c "NFS server installs per-PV permission convergence (narwhal#224)" \
+    grep -q 'narwhal-nfs-pv-permissions' scripts/cluster/01-nfs-server.sh
+  check R185d "NFS permission repair targets depth-2 directories only (narwhal#224)" \
+    grep -qE 'find /srv/nfs/k8s -xdev -mindepth 2 -maxdepth 2 -type d .*chmod 0777' scripts/cluster/01-nfs-server.sh
+  check R185e "NFS CSI upgrade removes only legacy File fsGroupPolicy and verifies the result (narwhal#224)" \
+    python3 -c 'from pathlib import Path; s=Path("scripts/cluster/04-addons.sh").read_text(); pre=s.index("if [ \"${live_fs_group_policy}\" = \"File\" ]; then"); delete=s.index("kubectl delete csidriver nfs.csi.k8s.io", pre); helm=s.index("helm upgrade --install csi-driver-nfs"); post=s.index("ERROR: nfs.csi.k8s.io CSIDriver still has fsGroupPolicy=File"); assert s.index("kubectl get csidriver nfs.csi.k8s.io") < pre < delete < helm < post; assert s.count("if [ \"${live_fs_group_policy}\" = \"File\" ]; then") == 2; assert "2>/dev/null || true)\"" in s; assert "CSIDriver with immutable fsGroupPolicy=File before upgrade" in s'
+
+  # The live root_squash install showed Grafana's root initChownData fails on its
+  # NFS PVC. Both clean-install owners must disable it; mutate GitOps to prove coverage.
+  check R186 "Grafana initChownData is disabled in shell and GitOps owners (narwhal#224)" \
+    python3 -c 'from pathlib import Path; shell=Path("scripts/cluster/08-2-monitoring.sh").read_text(); gitops=Path("gitops/charts/narwhal-apps/templates/prometheus-stack.yaml").read_text(); assert "--set grafana.initChownData.enabled=false" in shell; grafana=gitops.split("        grafana:\n",1)[1].split("        # Trivy",1)[0]; assert "initChownData:\n            enabled: false" in grafana'
+
+  local grafana_chown_drift_tmp
+  grafana_chown_drift_tmp="$(mktemp -d)"
+  cp gitops/charts/narwhal-apps/templates/prometheus-stack.yaml "${grafana_chown_drift_tmp}/prometheus-stack.yaml"
+  python3 - "${grafana_chown_drift_tmp}/prometheus-stack.yaml" <<'PYEOF'
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+text = path.read_text()
+needle = "          initChownData:\n            enabled: false\n"
+assert text.count(needle) == 1
+path.write_text(text.replace(needle, "", 1))
+PYEOF
+  check_not R186b "R186 catches a removed GitOps Grafana initChownData override (narwhal#224)" \
+    python3 -c 'from pathlib import Path; import sys; shell=Path("scripts/cluster/08-2-monitoring.sh").read_text(); gitops=Path(sys.argv[1]).read_text(); grafana=gitops.split("        grafana:\n",1)[1].split("        # Trivy",1)[0]; assert "--set grafana.initChownData.enabled=false" in shell and "initChownData:\n            enabled: false" in grafana' \
+      "${grafana_chown_drift_tmp}/prometheus-stack.yaml"
+  rm -rf "${grafana_chown_drift_tmp}"
+
   # R152c proves the wrapper preserves a real SSH failure. The old implementation
   # read $? after an if statement and could turn a host-key refusal into success.
   local ssh_wrapper_tmp

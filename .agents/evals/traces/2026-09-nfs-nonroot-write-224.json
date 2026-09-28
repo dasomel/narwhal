@@ -1,0 +1,92 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-issue-224-nfs-nonroot-write",
+  "task": "Repair root_squash compatibility for non-root nfs-csi workloads while retaining root_squash on both exports and mode 0750 on the export root.",
+  "changeContext": {
+    "paths": [
+      "scripts/cluster/01-nfs-server.sh",
+      "scripts/cluster/04-addons.sh",
+      "scripts/cluster/nfs-csi-post-renderer.sh",
+      "scripts/test/regression-check-kakao.sh",
+      "scripts/verify/nfs-nonroot-write-check.sh",
+      "docs/common/lessons-log.md",
+      ".agents/evals/traces/2026-09-nfs-nonroot-write-224.json",
+      "scripts/cluster/08-2-monitoring.sh",
+      "gitops/charts/narwhal-apps/templates/prometheus-stack.yaml"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Reviewed issue #224, repository guidance and existing NFS changes; inspected the bundled CSI chart template and addon StorageClass/PVC behavior."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "Reproduced the blocker using Helm 4.2.1: an executable path passed to --post-renderer is rejected because Helm expects a named plugin.",
+      "status": "passed",
+      "evidence": [
+        "helm:4.2.1+gd591a19",
+        "Error: invalid argument \"/tmp/pr.sh\" for \"--post-renderer\" flag: plugin: {Name:/tmp/pr.sh Type:postrenderer/v1} not found"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "Removed the Helm 3 post-renderer and rely on the Helm feature value. Chart 4.13.2 emits fsGroupPolicy: File only when enabled; disabling omits it. NFS has no fstype and the verification PVC uses ReadWriteMany, so the Kubernetes default does not trigger fsGroup ownership changes. For existing clusters, the pre-upgrade guard deletes the CSIDriver only when its immutable live policy is exactly File, then checks after Helm that File is gone."
+    },
+    {
+      "id": "e8",
+      "type": "bug_fix",
+      "summary": "Disabled Grafana initChownData in direct Helm and GitOps owners. Swept deployed NFS PVC consumers: Harbor, Gitea, SeaweedFS, OpenBao, CNPG, Prometheus and Alertmanager use server-converged writable PV dirs; Prometheus/Alertmanager, Gitea and OpenBao may set fsGroup, but CSI fsGroupPolicy is off and StorageClass has no fsType, so kubelet ownership changes do not run. SeaweedFS runs as root-squashed UID with PV mode 0777. Harbor uses external PostgreSQL and internal Redis without PVCs; Bitnami PostgreSQL and volumePermissions are disabled. Loki/Tempo persistence and Harbor Trivy are disabled; Velero plugin initContainer uses emptyDir. No other enabled root chown/chmod init container on an NFS PVC was found."
+    },
+    {
+      "id": "e9",
+      "type": "regression_verification",
+      "status": "passed",
+      "summary": "R186 passed for both installation owners; R186b removed the override in a temporary GitOps copy and the check rejected it. ShellCheck --severity=warning passed across scripts/, bash -n passed across scripts/, and regression-check-kakao.sh --static passed (218 passed, 0 failed, 4 warnings).",
+      "scope": "Grafana root chown mitigation, NFS chart permissions sweep, regression suite and trace gates",
+      "evidence": [
+        "test:R186",
+        "test:mutation:R186b",
+        "test:shellcheck --severity=warning",
+        "test:bash -n",
+        "test:scripts/test/regression-check-kakao.sh --static"
+      ]
+    },
+    {
+      "id": "e10",
+      "type": "bug_fix",
+      "summary": "Lead review: Helm 4 rejects executable --post-renderer paths (live: 'plugin ... not found'); replaced by feature.enableFSGroupPolicy=false plus a File-only pre-upgrade CSIDriver delete and a post-check."
+    },
+    {
+      "id": "e11",
+      "type": "verification",
+      "status": "passed",
+      "scope": "live six-node kubeadm 1.35 cluster, root_squash NFS on master-1",
+      "summary": "With the per-PV timer installed and the StorageClass without mountPermissions: nfs-nonroot-write-check.sh PASS (uid 26 wrote to an nfs-csi PVC after the timer window, pod Completed, /srv/nfs/k8s stays 750). Grafana with initChownData disabled: 3/3 Running with no init containers (was Init:CrashLoopBackOff on 'chown: /var/lib/grafana: Operation not permitted'). helm --dry-run=server upgrade of csi-driver-nfs with the new values accepted.",
+      "evidence": [
+        "runtime:master-1 nfs-nonroot-write-check.sh => PASS uid 26 wrote; /srv/nfs/k8s remains 750",
+        "runtime:kubectl -n monitoring get pods => grafana 3/3 Running, initContainers=[]",
+        "runtime:helm upgrade csi-driver-nfs --dry-run=server => pending-upgrade (accepted)"
+      ]
+    },
+    {
+      "id": "e6",
+      "type": "completion_claim",
+      "summary": "The Grafana root init-chown failure is covered in both installation owners and guarded by R186/R186b; requested local checks pass. Live Grafana recovery after applying the updated desired state remains a separate runtime confirmation.",
+      "evidence": [
+        "e8",
+        "e9"
+      ]
+    },
+    {
+      "id": "e7",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Implementation and requested local verification complete; applying desired state and confirming Grafana recovers in the live cluster is still required."
+    }
+  ]
+}

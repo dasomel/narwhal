@@ -23,6 +23,50 @@ sudo mkdir -p "${NFS_SHARE_PATH}"
 sudo chown nobody:nogroup "${NFS_SHARE_PATH}"
 sudo chmod 750 "${NFS_SHARE_PATH}"
 
+# csi-driver-nfs creates <namespace>/<pvc> directories through root_squash as
+# nobody:nogroup. A server-side timer owns this permission repair: unlike chmod over the
+# client export, it runs as real root, and unlike the quota agent it does not depend on
+# container UID/capabilities or the agent's hostPath view. find is deliberately depth-2,
+# same-filesystem, and non-following so only PV directories change, never the share root,
+# namespace directories, or symlink targets. A pod can be scheduled in the few seconds
+# before the next pass; its initial write may fail and restart, then succeed after mode
+# convergence (the live check retries writes for this startup window). Use 0777 because
+# the platform's workloads have different UIDs and fsGroups, with no shared per-PVC GID
+# contract; a fixed group mode would leave some supported workloads unable to write.
+sudo tee /usr/local/sbin/narwhal-nfs-pv-permissions >/dev/null <<'PERMISSIONEOF'
+#!/bin/sh
+set -eu
+find /srv/nfs/k8s -xdev -mindepth 2 -maxdepth 2 -type d -exec chmod 0777 -- {} +
+PERMISSIONEOF
+sudo chmod 0755 /usr/local/sbin/narwhal-nfs-pv-permissions
+
+sudo tee /etc/systemd/system/narwhal-nfs-pv-permissions.service >/dev/null <<'UNITEOF'
+[Unit]
+Description=Set writable permissions on NFS CSI PV directories
+After=local-fs.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/narwhal-nfs-pv-permissions
+UNITEOF
+
+sudo tee /etc/systemd/system/narwhal-nfs-pv-permissions.timer >/dev/null <<'TIMEREOF'
+[Unit]
+Description=Converge permissions on new NFS CSI PV directories
+
+[Timer]
+OnBootSec=5s
+OnUnitActiveSec=5s
+Unit=narwhal-nfs-pv-permissions.service
+
+[Install]
+WantedBy=timers.target
+TIMEREOF
+sudo systemctl daemon-reload
+sudo systemctl enable --now narwhal-nfs-pv-permissions.timer
+# Repair any PV directories that predate this installation immediately.
+sudo systemctl start narwhal-nfs-pv-permissions.service
+
 # Configure exports
 #
 # Least-privilege default (narwhal#186): no_root_squash used to be the default for both

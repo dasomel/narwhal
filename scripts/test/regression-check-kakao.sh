@@ -1759,6 +1759,8 @@ PYEOF
   # exited 1 on every fresh cluster after its own successful appends.
   check R202 "13-argocd re-reads each policy after patching before the 15008 post-check (Narwhal#235)" \
     python3 -c 'import re,pathlib; s=pathlib.Path("scripts/cluster/13-argocd.sh").read_text(); i=s.index("appended TCP 15008"); j=s.index("one or more restricted rules lack TCP 15008"); assert re.search(r"policy=\"\$\(kubectl get \"networkpolicy/\$policy_name\"", s[i:j]), "no re-read between patch and post-check"'
+  check R203 "every GitOps resource has a reconciling Application (Narwhal#235)" \
+    python3 scripts/test/lib/check-gitops-resource-ownership.py --mutation-verify
 
   check R154 "bundle preflight and chart builder share install-call requirements (2026-09-28)" \
     bash -c '

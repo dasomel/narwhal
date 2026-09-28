@@ -1,11 +1,9 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: database-ingress-policy
+  name: ambient-kubelet-probes-ccnp
   namespace: devtools
   annotations:
-    # narwhal#190 live-verified 2026-09-28; evidence and scope are recorded in
-    # gitops/resources/database-ingress-policy.yaml.
     narwhal.io/verification-status: "live-verified-2026-09-28-narwhal#235"
   finalizers:
     - resources-finalizer.argocd.argoproj.io
@@ -16,10 +14,9 @@ spec:
     targetRevision: HEAD
     path: resources
     directory:
-      include: "database-ingress-policy.yaml"
+      include: "ambient-kubelet-probes-ccnp.yaml"
   destination:
     server: https://kubernetes.default.svc
-    namespace: database
   syncPolicy:
     automated:
       prune: true

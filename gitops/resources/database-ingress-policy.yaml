@@ -40,18 +40,13 @@
 # flag ever flips to true. Backups go outward over the barman S3 endpoint (egress,
 # not covered here), so no ingress rule from `storage` is needed either.
 #
-# Caveat, documented rather than silently assumed away (see tuning-job-network-policy.yaml
-# for the same discipline): this has only been validated statically (`make validate`,
-# `make lint`) in a repo with no live cluster attached to this session. CNPG's own
-# liveness/readiness probes hit the instance manager on port 8000 from the kubelet, and
-# kubelet-sourced traffic is not matched by any podSelector/namespaceSelector `from`
-# entry below - on some CNI/kube-proxy configurations that traffic bypasses per-pod
-# NetworkPolicy enforcement entirely (kubelet talks to the pod's actual IP, not through
-# a Service), on others it does not. Before this Application is allowed to auto-sync
-# against a real cluster, verify CNPG instance health (`kubectl get cluster narwhal-db
-# -n database`) and Hubble/connectivity evidence for callers 1-5 above; roll back by
-# deleting this NetworkPolicy object (`kubectl delete -n database networkpolicy
-# database-default-deny-ingress`) if instances go NotReady or a caller starts failing.
+# Live verification (2026-09-28, narwhal#235): with the ambient probe CCNP and the
+# per-rule TCP 15008 allowances applied, and every mitigation removed, CNPG reported
+# "Cluster in healthy state" and kubelet probes on :8000 passed; Keycloak (which needs the
+# DB to start) came up, and the Keycloak/Gitea/Harbor/ArgoCD web endpoints answered 302.
+# Per-caller DB connections were not traced individually. Roll back by deleting this
+# NetworkPolicy (`kubectl delete -n database networkpolicy database-default-deny-ingress`)
+# if instances go NotReady or a caller starts failing.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:

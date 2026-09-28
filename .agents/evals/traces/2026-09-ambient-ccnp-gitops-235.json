@@ -1,0 +1,16 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "traceId": "narwhal-ambient-ccnp-gitops-235",
+  "task": "Reconcile ambient kubelet probe CCNP and record Narwhal#235 live verification",
+  "consistencyMode": "strict",
+  "changeContext": {"paths": ["gitops/charts/narwhal-apps/templates/ambient-kubelet-probes-ccnp.yaml", "gitops/charts/narwhal-apps/templates/database-ingress-policy.yaml", "gitops/resources/database-ingress-policy.yaml", "scripts/cluster/09-istio-ambient.sh", "scripts/test/regression-check-kakao.sh", "scripts/test/lib/check-gitops-resource-ownership.py", "docs/common/lessons-log.md", ".agents/evals/traces/2026-09-ambient-ccnp-gitops-235.json"]},
+  "events": [
+    {"id":"e1","type":"scope_check","summary":"Add self-healing ArgoCD ownership for the bootstrapped ambient kubelet probe CCNP, correct the comment, record supplied live verification, and guard ownership."},
+    {"id":"e2","type":"reproduction","summary":"Confirmed bootstrap applied the CCNP once with no ArgoCD Application; database ingress still had a pending live-check annotation."},
+    {"id":"e3","type":"bug_fix","summary":"Added exact directory.include Application with selfHeal and prune under platform; platform already permits cluster resources via clusterResourceWhitelist. Updated database live evidence and bootstrap comment."},
+    {"id":"e4","type":"regression_verification","status":"passed","scope":"R203 in regression-check-kakao.sh","summary":"Ownership checker verified exact includes or documented exclusions; mutation verification removed the new template and detected the unowned resource.","evidence":["test:python3 scripts/test/lib/check-gitops-resource-ownership.py --mutation-verify"]},
+    {"id":"e5","type":"verification","status":"passed","scope":"requested local lint, manifest, chart, regression, and trace gates","summary":"shellcheck, regression static suite, kubeconform, Helm rendering, and both trace gates passed.","evidence":["test:find scripts/ -name *.sh -print0 | xargs -0 shellcheck --severity=warning","test:./scripts/test/regression-check-kakao.sh --static","test:kubeconform -strict -summary -kubernetes-version 1.31.0 gitops/resources/*.yaml","test:helm template narwhal-apps gitops/charts/narwhal-apps","test:check-agent-trace-evidence.py passed","test:gate.py passed"]},
+    {"id":"e6","type":"completion_claim","summary":"Every GitOps resource has explicit reconciliation ownership or a documented owner exclusion; live verification and regression evidence are recorded."},
+    {"id":"e7","type":"task_outcome","state":"A","summary":"Reconciliation ownership is explicit, live verification is recorded, and static ownership regression is in place."}
+  ]
+}

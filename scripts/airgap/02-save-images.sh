@@ -13,6 +13,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=00-config.sh
 source "${SCRIPT_DIR}/00-config.sh"
+source "${SCRIPT_DIR}/lib/skopeo-source-ref.sh"
 
 LIST_FILE=""
 OUT_DIR="${AIRGAP_BUNDLE_DIR}"
@@ -46,9 +47,14 @@ while IFS= read -r img; do
   dest="${OUT_DIR}/oci/${safe}"
 
   echo "[save] ${img}"
-  if skopeo copy --override-arch "${AIRGAP_ARCH##*/}" --override-os linux \
-       --retry-times 3 --quiet \
-       "docker://${img}" "oci:${dest}:latest" 2>&1 | tail -3; then
+  copy_options=(--retry-times 3 --quiet)
+  if [[ "${img}" == *@sha256:* ]]; then
+    copy_options+=(--all --preserve-digests)
+  else
+    copy_options+=(--override-arch "${AIRGAP_ARCH##*/}" --override-os linux)
+  fi
+  if skopeo copy "${copy_options[@]}" \
+       "$(skopeo_source_ref "${img}")" "oci:${dest}:latest" 2>&1 | tail -3; then
     echo "${img}" >> "${OUT_DIR}/manifest.txt"
     ok=$((ok+1))
   else

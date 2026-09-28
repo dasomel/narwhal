@@ -53,7 +53,7 @@ def find_violations(images: list[str]) -> list[str]:
     return [
         img
         for img in images
-        if img.endswith(":latest") and not ALLOWED_LATEST_RE.match(img)
+        if img.split("@", 1)[0].endswith(":latest") and not ALLOWED_LATEST_RE.match(img)
     ]
 
 

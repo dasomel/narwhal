@@ -60,10 +60,16 @@ while IFS= read -r img; do
     *)                       qualified="docker.io/library/${img}" ;;
   esac
 
-  dst="${REG}/${qualified}"
+  # Bundle refs may be digest-pinned. Push the OCI index under its tag so
+  # containerd can also resolve the portal's digest request against the mirror.
+  push_ref="${qualified%@sha256:*}"
+  dst="${REG}/${push_ref}"
 
   echo "[load] ${img} → ${dst}"
-  if skopeo copy ${TLS_OPT} --retry-times 3 --quiet \
+  copy_options=(--retry-times 3 --quiet)
+  [ -n "${TLS_OPT}" ] && copy_options+=("${TLS_OPT}")
+  [[ "${img}" == *@sha256:* ]] && copy_options+=(--all --preserve-digests)
+  if skopeo copy "${copy_options[@]}" \
        "oci:${src}:latest" "docker://${dst}"; then
     ok=$((ok+1))
   else

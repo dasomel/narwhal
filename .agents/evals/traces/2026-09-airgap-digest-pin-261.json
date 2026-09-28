@@ -1,0 +1,85 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-issue-261-airgap-digest-pin",
+  "task": "Ship portal-pinned build image digests through the airgap save and mirror paths, preserving OCI digests and validating frozen pins.",
+  "changeContext": {
+    "paths": [
+      ".agents/evals/traces/2026-09-airgap-digest-pin-261.json",
+      "docs/common/lessons-log.md",
+      "scripts/airgap/01-generate-image-list.sh",
+      "scripts/airgap/02-save-images.sh",
+      "scripts/airgap/05-load-images.sh",
+      "scripts/airgap/09-verify-bundle-completeness.sh",
+      "scripts/airgap/images.txt",
+      "scripts/airgap/lib/build_sbom.py",
+      "scripts/airgap/lib/image-digests.tsv",
+      "scripts/airgap/lib/refresh-image-digests.sh",
+      "scripts/airgap/lib/skopeo-source-ref.sh",
+      "scripts/test/check-kaniko-tag-portal-contract.sh",
+      "scripts/test/lib/check-no-mutable-transient-images.py",
+      "scripts/test/regression-check-kakao.sh"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "status": "passed",
+      "summary": "Reviewed issue #261 and the affected airgap save, load, completeness, digest refresh, SBOM, regression, and trace requirements."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "status": "observed",
+      "summary": "A direct tag@digest skopeo source is rejected; the pinned Kaniko save path reproduced successfully after stripping its tag."
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "status": "implemented",
+      "summary": "Added digest-safe skopeo refs and preservation, normalized TSV joins and SBOM parsing, live image normalization, upstream frozen-pin checks, and R224."
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "R224 helper execution, mutation rejection, and pinned Kaniko bundle save/load",
+      "summary": "R224 produced docker://docker.io/alpine/git@sha256:0b5f…; a mutated helper retaining the tag failed the expected-output assertion. Kaniko save and registry load preserved digest 4e7a…9698.",
+      "evidence": [
+        "test:R224",
+        "test:mutation:tag-plus-digest source rejected",
+        "runtime:02-save-images Kaniko OCI raw digest 4e7a52dd1f14872430652bb3b027405b8dfd17c4538751c620ac005741ef9698",
+        "runtime:05-load-images registry tag and pinned manifest digest verified"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "verification",
+      "status": "passed",
+      "scope": "bundle completeness, SBOM, frozen pins and repository checks",
+      "summary": "The one-image completeness gate and SBOM parsing passed; the frozen alpine/git digest still exists upstream while its moved tag was reported informationally. Drift check, static suite, markdown lint, and trace policy checks passed.",
+      "evidence": [
+        "test:09-verify-bundle-completeness kaniko bundle passed",
+        "test:build_sbom.py emitted gcr.io/kaniko-project/executor v1.24.0 with pinned purl digest",
+        "test:refresh-image-digests.sh --check current; alpine/git tag movement informational",
+        "test:regression-check-kakao.sh --static 263 passed 0 failed 5 warnings",
+        "test:markdownlint-changed.py --base origin/main no violations",
+        "ci:check-agent-trace-requirement.py passed",
+        "ci:check-agent-trace-evidence.py passed"
+      ]
+    },
+    {
+      "id": "e6",
+      "type": "completion_claim",
+      "summary": "Issue #261 implementation and requested runnable verification completed in this worktree; no commit or push was made.",
+      "status": "passed"
+    },
+    {
+      "id": "e7",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Digest-pinned airgap save and registry mirror paths preserve the portal pin; live outputs and policy checks confirm the repair."
+    }
+  ]
+}

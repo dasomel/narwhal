@@ -112,7 +112,8 @@ def image_components(bundle: pathlib.Path) -> list:
             except (json.JSONDecodeError, OSError):
                 digest = None
 
-        name, _, version = ref.rpartition(":")
+        image_ref, _, pinned_digest = ref.partition("@")
+        name, _, version = image_ref.rpartition(":")
         if not name:                      # ref carried no tag
             name, version = ref, "latest"
 
@@ -124,7 +125,7 @@ def image_components(bundle: pathlib.Path) -> list:
         }
         if digest:
             comp["hashes"] = [{"alg": "SHA-256", "content": digest.removeprefix("sha256:")}]
-            comp["purl"] += f"&digest={digest}"
+            comp["purl"] += f"&digest={pinned_digest or digest}"
         else:
             # Say so rather than emitting a component that looks verified but is not.
             comp["description"] = "digest unavailable: OCI layout missing or unreadable in bundle"

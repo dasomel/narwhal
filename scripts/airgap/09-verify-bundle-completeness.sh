@@ -111,7 +111,8 @@ missing_digest_row=""
 malformed_digest=""
 while IFS= read -r img; do
   [[ -z "${img}" ]] && continue
-  row=$(awk -F'\t' -v ref="${img}" '$1 == ref { print; exit }' "${digests_sorted}")
+  image_ref="${img%@sha256:*}"
+  row=$(awk -F'\t' -v ref="${image_ref}" '$1 == ref { print; exit }' "${digests_sorted}")
   if [[ -z "${row}" ]]; then
     missing_digest_row="${missing_digest_row}${img}
 "

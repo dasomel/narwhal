@@ -41,7 +41,7 @@ if [ ! -f "${KANIKO_JOB_FILE}" ]; then
   exit 0
 fi
 
-# Compare tags only, not the full ref -- the two files may use different registry
+# Compare tags and digest pins, not the full ref -- the two files may use different registry
 # prefixes for the same image (e.g. `alpine/git` vs `docker.io/alpine/git`), and
 # either side may additionally digest-pin as `tag@sha256:...` (narwhal-portal#23).
 #
@@ -66,11 +66,21 @@ extract_tag() {
     | grep -oE "${name}:[^\"'[:space:]]+" \
     | head -1 | cut -d@ -f1 | cut -d: -f2 || true
 }
+extract_digest() {
+  local file="$1" name="$2" line_filter="$3"
+  grep -E "${line_filter}" "${file}" 2>/dev/null \
+    | grep -oE "${name}:[^\"'[:space:]]+" \
+    | grep -oE '@sha256:[a-f0-9]{64}$' | head -1 | sed 's/^@//' || true
+}
 
 images_kaniko_tag="$(extract_tag "${IMAGES_TXT}" 'kaniko-project/executor' '^[^#]')"
 images_git_tag="$(extract_tag "${IMAGES_TXT}" 'alpine/git' '^[^#]')"
 portal_kaniko_tag="$(extract_tag "${KANIKO_JOB_FILE}" 'kaniko-project/executor' '^\s*image:')"
 portal_git_tag="$(extract_tag "${KANIKO_JOB_FILE}" 'alpine/git' '^\s*image:')"
+images_kaniko_digest="$(extract_digest "${IMAGES_TXT}" 'kaniko-project/executor' '^[^#]')"
+images_git_digest="$(extract_digest "${IMAGES_TXT}" 'alpine/git' '^[^#]')"
+portal_kaniko_digest="$(extract_digest "${KANIKO_JOB_FILE}" 'kaniko-project/executor' '^\s*image:')"
+portal_git_digest="$(extract_digest "${KANIKO_JOB_FILE}" 'alpine/git' '^\s*image:')"
 
 if [ -z "${images_kaniko_tag}" ] || [ -z "${images_git_tag}" ]; then
   echo "FAIL: could not find a pinned kaniko-project/executor or alpine/git tag in ${IMAGES_TXT}" >&2
@@ -78,6 +88,10 @@ if [ -z "${images_kaniko_tag}" ] || [ -z "${images_git_tag}" ]; then
 fi
 if [ -z "${portal_kaniko_tag}" ] || [ -z "${portal_git_tag}" ]; then
   echo "FAIL: could not find a pinned kaniko-project/executor or alpine/git tag in ${KANIKO_JOB_FILE}" >&2
+  exit 1
+fi
+if [ -z "${images_kaniko_digest}" ] || [ -z "${images_git_digest}" ] || [ -z "${portal_kaniko_digest}" ] || [ -z "${portal_git_digest}" ]; then
+  echo "FAIL: could not find digest pins for kaniko-project/executor and alpine/git" >&2
   exit 1
 fi
 
@@ -90,6 +104,14 @@ if [ "${images_git_tag}" != "${portal_git_tag}" ]; then
   echo "FAIL: alpine/git tag mismatch: ${IMAGES_TXT}=${images_git_tag} vs ${KANIKO_JOB_FILE}=${portal_git_tag}" >&2
   fail=1
 fi
+if [ "${images_kaniko_digest}" != "${portal_kaniko_digest}" ]; then
+  echo "FAIL: kaniko-project/executor digest mismatch: ${IMAGES_TXT}=${images_kaniko_digest} vs ${KANIKO_JOB_FILE}=${portal_kaniko_digest}" >&2
+  fail=1
+fi
+if [ "${images_git_digest}" != "${portal_git_digest}" ]; then
+  echo "FAIL: alpine/git digest mismatch: ${IMAGES_TXT}=${images_git_digest} vs ${KANIKO_JOB_FILE}=${portal_git_digest}" >&2
+  fail=1
+fi
 
-[ "${fail}" -eq 0 ] && echo "OK: kaniko/alpine-git tags match between ${IMAGES_TXT} and ${KANIKO_JOB_FILE}"
+[ "${fail}" -eq 0 ] && echo "OK: kaniko/alpine-git tags and digests match between ${IMAGES_TXT} and ${KANIKO_JOB_FILE}"
 exit "${fail}"

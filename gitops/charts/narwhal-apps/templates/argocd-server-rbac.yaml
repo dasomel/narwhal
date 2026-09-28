@@ -1,0 +1,99 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: argocd-server
+  labels:
+    app.kubernetes.io/component: server
+    app.kubernetes.io/name: argocd-server
+    app.kubernetes.io/part-of: argocd
+rules:
+  # D1: keep Argo CD's resource-tree discovery while excluding API subresources;
+  # the upstream wildcard grants nodes/proxy. The escape hatch is to add a named
+  # resource to its API group as platform UI coverage grows.
+  - apiGroups: [""]
+    resources:
+      - bindings
+      - configmaps
+      - endpoints
+      - events
+      - limitranges
+      - namespaces
+      - nodes
+      - persistentvolumeclaims
+      - persistentvolumes
+      - pods
+      - replicationcontrollers
+      - resourcequotas
+      - secrets
+      - serviceaccounts
+      - services
+    verbs: [get, list, watch]
+  - apiGroups: [apps]
+    resources: [controllerrevisions, daemonsets, deployments, replicasets, statefulsets]
+    verbs: [get, list, watch]
+  - apiGroups: [batch]
+    resources: [cronjobs, jobs]
+    verbs: [get, list, watch]
+  - apiGroups: [autoscaling]
+    resources: [horizontalpodautoscalers]
+    verbs: [get, list, watch]
+  - apiGroups: [networking.k8s.io]
+    resources: [ingresses, ingressclasses, networkpolicies]
+    verbs: [get, list, watch]
+  - apiGroups: [policy]
+    resources: [ poddisruptionbudgets ]
+    verbs: [get, list, watch]
+  - apiGroups: [rbac.authorization.k8s.io]
+    resources: [clusterrolebindings, clusterroles, rolebindings, roles]
+    verbs: [get, list, watch]
+  - apiGroups: [storage.k8s.io]
+    resources: [csidrivers, csinodes, csistoragecapacities, storageclasses, volumeattachments]
+    verbs: [get, list, watch]
+  - apiGroups: [apiextensions.k8s.io]
+    resources: [customresourcedefinitions]
+    verbs: [get, list, watch]
+  - apiGroups: [argoproj.io]
+    resources: [applications, applications/finalizers, applicationsets, appprojects, workflows]
+    verbs: [get, list, watch]
+  # D1: custom resources in these explicit groups belong in the application tree.
+  # Cost: future resources in these groups are readable too. Escape hatch: replace a
+  # group's wildcard with named resources if its API later adds sensitive content.
+  - apiGroups:
+      - apisix.apache.org
+      - aquasecurity.github.io
+      - cert-manager.io
+      - cilium.io
+      - grafana.integreatly.org
+      - k8s.keycloak.org
+      - kyverno.io
+      - metallb.io
+      - monitoring.coreos.com
+      - postgresql.cnpg.io
+      - security.istio.io
+    resources: ["*"]
+    verbs: [get, list, watch]
+  # Upstream app actions need mutation on Argo CD objects; these grants cannot
+  # reach Kubernetes workload objects or their subresources.
+  - apiGroups: [argoproj.io]
+    resources: [applications, applications/finalizers, applicationsets]
+    verbs: [delete, patch]
+  # UI resource actions (restart = patch, delete pod/workload) on the objects Argo CD
+  # shows; upstream grants delete/patch on `*`, which also reaches node subresources.
+  - apiGroups: [apps]
+    resources: [daemonsets, deployments, replicasets, statefulsets]
+    verbs: [delete, patch]
+  - apiGroups: [""]
+    resources: [pods]
+    verbs: [delete]
+  - apiGroups: [""]
+    resources: [events]
+    verbs: [list]
+  - apiGroups: [""]
+    resources: [pods/log]
+    verbs: [get]
+  - apiGroups: [batch]
+    resources: [jobs]
+    verbs: [create]
+  - apiGroups: [argoproj.io]
+    resources: [workflows]
+    verbs: [create]

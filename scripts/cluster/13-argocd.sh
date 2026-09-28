@@ -33,6 +33,11 @@ kubectl label namespace devtools istio.io/dataplane-mode=ambient --overwrite
 # Install ArgoCD (server-side apply for large CRDs like applicationsets)
 kubectl apply -n devtools -f "$(manifest argocd-install.yaml)" \
   --server-side --force-conflicts
+# Narwhal#251: upstream's argocd-server ClusterRole grants `*` on `*` (reaching
+# nodes/proxy). Replace it right away with the narrowed role idp-apps reconciles, so
+# this file is the single source and a re-run never reopens the grant until selfHeal.
+kubectl apply --server-side --force-conflicts \
+  -f /home/vagrant/configs/gitops/charts/narwhal-apps/templates/argocd-server-rbac.yaml
 
 # Fix ClusterRoleBindings: ArgoCD is installed in devtools, not argocd namespace
 # The upstream manifests always use 'argocd' as Subject namespace - must be patched

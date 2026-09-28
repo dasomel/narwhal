@@ -456,7 +456,21 @@ fs.nfs.nlm_tcpport = 4045
 fs.nfs.nlm_udpport = 4045
 LOCKDEOF
 sudo sysctl -p /etc/sysctl.d/90-nfs-lockd.conf >/dev/null 2>&1 || true
-sudo systemctl restart rpc-statd 2>/dev/null || true
+sudo mkdir -p /etc/systemd/system/rpc-statd.service.d
+sudo tee /etc/systemd/system/rpc-statd.service.d/boot.conf >/dev/null <<'STATDEOF'
+[Unit]
+After=rpcbind.service network-online.target
+Wants=rpcbind.service network-online.target
+[Install]
+WantedBy=multi-user.target
+STATDEOF
+# D1: systemd.unit(5) describes [Install] as enable-time link metadata, but the
+# documentation does not guarantee that metadata from a drop-in makes a static unit
+# enable-able. Add the target dependency directly; add-wants is idempotent and leaves
+# the unit static while making multi-user.target start it at boot.
+sudo systemctl daemon-reload
+sudo systemctl add-wants multi-user.target rpc-statd.service
+sudo systemctl start rpc-statd.service
 echo "  statd pinned to 4047/4048, lockd to 4045"
 
 # jq. Present on both images today, but only as a transitive dependency — nothing in the

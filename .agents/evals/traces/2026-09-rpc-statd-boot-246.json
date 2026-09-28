@@ -1,0 +1,90 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-issue-246-rpc-statd-boot",
+  "task": "Start rpc-statd at boot on every Kubernetes node so containerized NFS CSI mounts work after node reboot.",
+  "changeContext": {
+    "paths": [
+      "scripts/common/01-prerequisites.sh",
+      "scripts/verify/nfs-client-statd-check.sh",
+      "scripts/test/lib/check-rpc-statd-boot.py",
+      "scripts/test/regression-check-kakao.sh",
+      "docs/common/lessons-log.md",
+      ".agents/evals/traces/2026-09-rpc-statd-boot-246.json"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Issue #246 and shared node prerequisites were reviewed. The common prerequisite script is used by both standard provisioning and the Kakao provider path, covering masters and workers."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "After node reboot, NFS PVC mounts fail because the host rpc-statd remains inactive while mount.nfs runs inside the CSI node-plugin container.",
+      "status": "observed",
+      "evidence": [
+        "mount.nfs: rpc.statd is not running but is required for remote locking."
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "Shared node prerequisites install an rpc-statd drop-in with rpcbind/network-online ordering and add rpc-statd as a multi-user.target want. systemctl add-wants is used because systemd.unit documents [Install] as enable-time metadata while not guaranteeing that [Install] in a drop-in makes a static unit enable-able. The start command is idempotent and the service is started immediately on install."
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "R215 in scripts/test/regression-check-kakao.sh --static",
+      "summary": "Static regression confirms the drop-in, boot dependency and immediate start are present in the common setup. Its mutation removes the add-wants command and the checker rejects the mutated configuration.",
+      "evidence": [
+        "test:R215",
+        "test:mutation:R215 boot dependency removal rejected"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "follow_up",
+      "status": "pending",
+      "scope": "Live node reboot on the lead's cluster",
+      "summary": "The per-node live verifier is provided. Rebooting nodes and confirming RPC statd remains active with its multi-user.target wants link is pending for the lead.",
+      "evidence": [
+        "artifact:scripts/verify/nfs-client-statd-check.sh"
+      ]
+    },
+    {
+      "id": "e8",
+      "type": "bug_fix",
+      "summary": "Lead live run: the verifier passed every node (kubectl debug returns 0 without -i, and even with -i does not propagate the container exit code: live 'exit 3' -> kubectl_rc=0; default namespace was also Kyverno-denied). Now a node-printed sentinel decides, the debug pod runs in kube-system (policy-exempt) and is cleaned up."
+    },
+    {
+      "id": "e9",
+      "type": "verification",
+      "status": "passed",
+      "scope": "live six-node cluster, real reboot of worker-3",
+      "summary": "Applied the 01-prerequisites statd block on worker-3 (symlink created), rebooted it with vagrant reload: after boot rpc-statd=active and rpcbind=active with no manual start, and worker-3's NFS-backed pods came up (before the fix every node had statd inactive after reboot and all NFS mounts failed). The fixed verifier discriminated: 5 FAIL (no boot link) + worker-3 PASS, rc=1; after applying the block to the other nodes: 6/6 PASS, rc=0.",
+      "evidence": [
+        "runtime:vagrant reload worker-3 => statd=active rpcbind=active after boot",
+        "runtime:nfs-client-statd-check.sh before rollout => 5 FAIL / 1 PASS (rc=1)",
+        "runtime:nfs-client-statd-check.sh after rollout => 6/6 PASS (rc=0)",
+        "runtime:kubectl debug 'exit 3' => kubectl_rc=0 (exit code not propagated)"
+      ]
+    },
+    {
+      "id": "e6",
+      "type": "completion_claim",
+      "summary": "The implementation, static mutation regression, requested local shell checks, and trace gates are complete. Live reboot verification is explicitly assigned to the lead as a follow-up.",
+      "evidence": [
+        "e4"
+      ]
+    },
+    {
+      "id": "e7",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Requested implementation and local verification are complete; lead live reboot verification remains pending as a follow-up."
+    }
+  ]
+}

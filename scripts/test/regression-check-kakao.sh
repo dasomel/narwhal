@@ -237,6 +237,9 @@ assert "error fetching chart|failed to fetch chart" in block.lower()
 assert "kubectl get applications -A" in block and "exit 1" in block and "OutOfSync" not in block
 '
 
+  check R215 "all node provisioning paths enable rpc-statd at boot (Narwhal#246, 2026-09-28)" \
+    python3 scripts/test/lib/check-rpc-statd-boot.py --mutation-verify
+
   # Narwhal#109: first provider controls new writes. A preceding identity provider
   # silently stores Secrets in plaintext, even if aescbc appears later in the list.
   check R171 "02-init-cluster keeps aescbc before identity for Secrets (Narwhal#109)" \

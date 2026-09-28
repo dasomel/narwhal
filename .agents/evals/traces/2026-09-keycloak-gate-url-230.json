@@ -1,0 +1,72 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "traceId": "narwhal-keycloak-gate-url-230",
+  "task": "Make the 11-keycloak.sh HTTPS gate probe a path the gateway route actually serves (Narwhal#230)",
+  "consistencyMode": "strict",
+  "changeContext": {
+    "paths": [
+      "scripts/cluster/11-keycloak.sh",
+      "scripts/test/regression-check-kakao.sh",
+      "docs/common/lessons-log.md",
+      ".agents/evals/traces/2026-09-keycloak-gate-url-230.json"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Only the HTTPS gate URL in 11-keycloak.sh; the route, the Keycloak CR and the pod probes are unchanged"
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "Live clean install 2026-09-28: the gate saw /health/ready 404 on all 20 attempts while /realms/master returned 200 through the same gateway; the route proxies /* to keycloak-service:8080 and Keycloak 26 serves /health on :9000",
+      "evidence": [
+        "runtime:live-cluster curl https://keycloak.local.narwhal.internal/health/ready 404, /realms/master 200",
+        "artifact:gitops/charts/narwhal-platform/templates/apisix-routes.yaml"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "Gate now probes https://keycloak.${DOMAIN}/realms/master; the comment records why /health cannot be probed through the gateway"
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "scripts/test/regression-check-kakao.sh R190",
+      "summary": "R190 passes; restoring the /health/ready URL makes R190 FAIL, restoring the fix makes it PASS",
+      "evidence": [
+        "test:R190 mutation (FAIL on revert, PASS on fix)",
+        "artifact:scripts/test/regression-check-kakao.sh"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "verification",
+      "status": "passed",
+      "scope": "scripts/cluster/11-keycloak.sh",
+      "summary": "shellcheck --severity=warning and bash -n clean; regression-check-kakao.sh --static 209 passed 0 failed",
+      "evidence": [
+        "artifact:scripts/cluster/11-keycloak.sh",
+        "test:regression-check-kakao.sh --static 209/0"
+      ]
+    },
+    {
+      "id": "e6",
+      "type": "completion_claim",
+      "summary": "The Keycloak HTTPS gate now checks the route it is meant to check and cannot regress to a management-port path",
+      "evidence": [
+        "e4",
+        "e5"
+      ]
+    },
+    {
+      "id": "e7",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Complete and verified statically; the live re-run with the patched gate is in progress"
+    }
+  ]
+}

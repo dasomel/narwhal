@@ -1692,6 +1692,9 @@ PYEOF
   check R90 "GitOps bundle sources are complete and separate from Gitea (2026-08-26)" \
     python3 scripts/airgap/lib/check-chart-upstream-sources.py
 
+  check R190 "11-keycloak.sh HTTPS gate probes a main-port path, never /health through the gateway (Narwhal#230, 2026-09-28)" \
+    bash -c '! grep -Eq "https://keycloak\\.\\\$\\{DOMAIN\\}/health" scripts/cluster/11-keycloak.sh && grep -q "https://keycloak.\\\${DOMAIN}/realms/master" scripts/cluster/11-keycloak.sh'
+
   check R154 "bundle preflight and chart builder share install-call requirements (2026-09-28)" \
     bash -c '
       set -euo pipefail

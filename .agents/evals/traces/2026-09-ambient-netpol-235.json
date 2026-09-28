@@ -22,7 +22,9 @@
       "scripts/test/lib/check-tuning-job-network-policy.py",
       "scripts/test/lib/check-gitea-ingress-policy.py",
       "scripts/test/lib/check-apisix-admin-ingress-policy.py",
-      "scripts/test/lib/check-tuning-job-network-policy.py"
+      "scripts/test/lib/check-tuning-job-network-policy.py",
+      "schemas/crds/cilium.io/ciliumclusterwidenetworkpolicy_v2.json",
+      "schemas/crds/SOURCE.md"
     ]
   },
   "events": [

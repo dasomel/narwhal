@@ -36,6 +36,7 @@ need no vendored file).
 | `aquasecurity.github.io/clustercompliancereport_v1alpha1.json` | `595a939e9cc33872e04f8555c383152e3198c9ed3eeb3384f7ce4ba03d5b12e6` |
 | `metallb.io/ipaddresspool_v1beta1.json` | `af960060185517d3478fd46103709e8864885f06ab97e6bb34ce103b25fd5c41` |
 | `metallb.io/l2advertisement_v1beta1.json` | `b46a5b24012be1d5486efc25d75fefed39b40b325a11c178708538fca0dac27f` |
+| `cilium.io/ciliumclusterwidenetworkpolicy_v2.json` | `26d412da176005e249897913a21c498f0125f94b9ec87804e556799a30764e11` |
 
 ## CRD kinds found vs. vendored
 

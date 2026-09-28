@@ -103,8 +103,6 @@ apisix:
   image:
     repository: apache/apisix
     tag: "3.15.0-debian"
-  podLabels:
-    istio.io/dataplane-mode: "none"
   resources:
     requests:
       cpu: 100m
@@ -129,13 +127,9 @@ apisix:
             - https://kubernetes.default.svc
   # D3: chart v2.13.0 has no top-level `admin:` key — Helm silently drops unknown keys,
   # so a sibling `admin:` block (as this file had) never reaches the chart at all; the
-  # schema is `apisix.admin.{enabled,type,port,allow.ipList}` (verified via
-  # `helm template apisix/apisix --version 2.13.0`, which renders the default
-  # 127.0.0.1/24 allowlist unless nested here). `enabled`/`type`/`port` were previously
-  # inert duplicates of the chart's own defaults (ClusterIP/9180) so moving them here
-  # changes nothing functionally; `allow.ipList` is the operative fix — it was the only
-  # field silently discarded that actually diverged from the chart default. The sed
-  # patch on the live configmap below is now a belt-and-braces no-op, kept as-is.
+  # schema is `apisix.admin.{enabled,type,port,allow.ipList}` (verified via the pinned
+  # chart values and template). `enabled`/`type`/`port` are explicit defaults
+  # (ClusterIP/9180); `allow.ipList` is the operative restriction.
   admin:
     enabled: true
     type: ClusterIP
@@ -167,8 +161,6 @@ ingressController:
   image:
     repository: apache/apisix-ingress-controller
     tag: "1.8.0"
-  podLabels:
-    istio.io/dataplane-mode: "none"
   config:
     apisix:
       serviceNamespace: platform-system
@@ -187,6 +179,12 @@ tolerations:
     operator: "Exists"
     effect: "NoSchedule"
 EOF
+
+sed -i "s|\${POD_NETWORK_CIDR}|${POD_NETWORK_CIDR}|g" /tmp/apisix-values.yaml
+if grep -Fq '${' /tmp/apisix-values.yaml; then
+  echo "ERROR: APISIX values contain an unexpanded shell variable." >&2
+  exit 1
+fi
 
 APISIX_OK=false
 for attempt in 1 2 3 4 5; do
@@ -259,7 +257,6 @@ kubectl get configmap apisix -n platform-system -o jsonpath='{.data.config\.yaml
   | grep -v '    user: ' \
   | grep -v '    password: ' \
   | sed 's|"http://etcd.host:2379"|"http://apisix-etcd.platform-system.svc.cluster.local:2379"|g' \
-  | sed "s|- 127.0.0.1/24|- 127.0.0.1/32\n      - ${POD_NETWORK_CIDR}|g" \
   > "${APISIX_CFG_TMP}"
 # Add Kubernetes Secret Provider (for $secret://kubernetes/k8s-1/... in ApisixRoute plugins)
 if ! grep -q 'secret_providers' "${APISIX_CFG_TMP}"; then
@@ -330,7 +327,6 @@ for attempt in 1 2 3 4 5; do
     --skip-crds \
     --set image.repository=apache/apisix-ingress-controller \
     --set image.tag="1.8.0" \
-    --set "podLabels.istio\\.io/dataplane-mode=none" \
     --set config.apisix.serviceNamespace=platform-system \
     --set config.apisix.serviceName=apisix-admin \
     --set config.apisix.adminKey="${APISIX_ADMIN_KEY}" \
@@ -355,6 +351,22 @@ fi
 echo "Waiting for APISIX ingress controller..."
 kubectl wait --for=condition=Ready pod -l app.kubernetes.io/name=apisix-ingress-controller \
   -n platform-system --timeout=120s || true
+
+# These charts do not expose pod-template labels in their values schemas.
+echo "Opting APISIX workloads out of ambient enrollment..."
+for deployment in apisix apisix-ingress-controller; do
+  kubectl patch deployment "${deployment}" -n platform-system --type=merge \
+    -p '{"spec":{"template":{"metadata":{"labels":{"istio.io/dataplane-mode":"none"}}}}}'
+done
+for deployment in apisix apisix-ingress-controller; do
+  kubectl rollout status "deployment/${deployment}" -n platform-system --timeout=180s
+  pod_label=$(kubectl get pods -n platform-system -l "app.kubernetes.io/instance=${deployment}" \
+    -o jsonpath='{.items[0].metadata.labels.istio\.io/dataplane-mode}' 2>/dev/null || true)
+  if [ "${pod_label}" != none ]; then
+    echo "ERROR: ${deployment} pod lacks istio.io/dataplane-mode=none." >&2
+    exit 1
+  fi
+done
 
 echo "APISIX ingress controller installed"
 

@@ -9,6 +9,7 @@ CNI_PLUGIN="${CNI_PLUGIN:-cilium}"
 CILIUM_VERSION="${CILIUM_VERSION:-1.19.4}"
 CILIUM_CLI_VERSION="${CILIUM_CLI_VERSION:-v0.19.4}"
 CALICO_VERSION="${CALICO_VERSION:-v3.31.3}"
+POD_NETWORK_CIDR="${POD_NETWORK_CIDR:-10.244.0.0/16}"
 
 # Cilium kube-proxy replacement (VIP for HA control plane)
 K8S_API_SERVER="${MASTER_IP:-192.168.56.100}"
@@ -81,6 +82,12 @@ case "${CNI_PLUGIN}" in
       # fail on "already exists" and turn a recoverable retry into a hard failure.
       if kubectl -n kube-system get daemonset cilium >/dev/null 2>&1; then
         echo "  Cilium DaemonSet already present — skipping install"
+        local live_pool
+        live_pool=$(kubectl -n kube-system get configmap cilium-config \
+          -o jsonpath='{.data.cluster-pool-ipv4-cidr}' 2>/dev/null || true)
+        if [ "${live_pool}" != "${POD_NETWORK_CIDR}" ]; then
+          echo "WARN: existing Cilium cluster pool '${live_pool:-<unset>}' differs from POD_NETWORK_CIDR '${POD_NETWORK_CIDR}'. The pool cannot be changed in place without re-IPing pods; leaving it unchanged." >&2
+        fi
         return 0
       fi
       # --chart-directory, not the default --repository https://helm.cilium.io. The bundle
@@ -96,6 +103,8 @@ case "${CNI_PLUGIN}" in
       --set k8sServicePort=6443 \
       --set hubble.relay.enabled=true \
       --set hubble.ui.enabled=true \
+      --set "ipam.operator.clusterPoolIPv4PodCIDRList[0]=${POD_NETWORK_CIDR}" \
+      --set ipam.operator.clusterPoolIPv4MaskSize=24 \
       --set gatewayAPI.enabled=true \
       --set cni.exclusive=false \
       --set socketLB.hostNamespaceOnly=true \
@@ -114,6 +123,10 @@ case "${CNI_PLUGIN}" in
     # `cilium install` reaches helm.cilium.io for the chart, and that fetch failed with
     # `context deadline exceeded` on a clean run while curl to the same host answered 200
     # five times a minute later.
+    # Captured before any install attempt: an in-run retry also sees the DaemonSet, but
+    # only a cluster that already had Cilium can carry a legacy pool we must not re-IP.
+    cilium_preexisting=false
+    kubectl -n kube-system get daemonset cilium >/dev/null 2>&1 && cilium_preexisting=true
     retry install_cilium
 
     # D6: Wait for cilium-operator Ready before declaring Phase-1 CNI done.
@@ -125,7 +138,15 @@ case "${CNI_PLUGIN}" in
       || echo "WARN: cilium-operator rollout status timed out; Phase-2 gate will retry"
 
     # Wait for core Cilium components (not hubble - it needs worker nodes)
-    cilium status --wait --wait-duration 120s || echo "WARN: cilium status timed out (hubble may need worker nodes)"
+    cilium status --wait --wait-duration 120s
+    if [ "${cilium_preexisting}" = true ]; then
+      # Existing clusters only get the WARN from install_cilium; failing here would make
+      # every re-run of this script fatal on a pool that cannot be changed in place.
+      /home/vagrant/scripts/verify/pod-cidr-consistency-check.sh \
+        || echo "WARN: pre-existing Cilium pod CIDR mismatch (see above); not fatal on re-run" >&2
+    else
+      /home/vagrant/scripts/verify/pod-cidr-consistency-check.sh
+    fi
 
     # Install Hubble CLI
     HUBBLE_CLI_VERSION="${HUBBLE_CLI_VERSION:-v1.19.4}"

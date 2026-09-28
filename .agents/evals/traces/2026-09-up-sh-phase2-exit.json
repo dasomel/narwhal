@@ -73,6 +73,15 @@
       "type": "task_outcome",
       "state": "A",
       "summary": "Requested source changes and operational trace are complete and locally verified; no commit or push performed."
+    },
+    {
+      "id": "e8",
+      "type": "completion_claim",
+      "summary": "up.sh exits non-zero when Phase 2 stays incomplete and stops early with the exact macOS fix when Local Network Privacy blocks host-to-VM traffic",
+      "evidence": [
+        "e4",
+        "e5"
+      ]
     }
   ]
 }

@@ -246,6 +246,11 @@ assert "kubectl get applications -A" in block and "exit 1" in block and "OutOfSy
   # Narwhal#243: the portal readiness gate rejects a non-https GITEA_URL; 14 owns that key.
   check R220 "14-gitops-bootstrap gives the portal an https GITEA_URL (Narwhal#243)" \
     python3 -c 'import re,pathlib; s=pathlib.Path("scripts/cluster/14-gitops-bootstrap.sh").read_text(); m=re.search(r"\"GITEA_URL\": \"\$\{(\w+)\}\"", s); assert m, "portal GITEA_URL patch not found"; v=re.search(r"^"+m.group(1)+r"=\"([^\"]*)\"", s, re.M); assert v and v.group(1).startswith("https://"), "portal GITEA_URL is not https"'
+  # Narwhal#251: rendered server RBAC must exclude wildcard and kubelet subresources.
+  check R221 "Argo CD server RBAC rendering excludes wildcard nodes/proxy access (Narwhal#251)" \
+    python3 scripts/test/lib/check-nodes-proxy-narrow.py role
+  check R222 "every built-in kubelet proxy allowlist entry has a reason (Narwhal#251)" \
+    python3 scripts/test/lib/check-nodes-proxy-narrow.py reasons
   check R215 "all node provisioning paths enable rpc-statd at boot (Narwhal#246, 2026-09-28)" \
     python3 scripts/test/lib/check-rpc-statd-boot.py --mutation-verify
 

@@ -40,13 +40,21 @@ def proxy_check(inventory, extras=""):
                  "nodes/exec", "nodes/attach", "nodes/portforward", "nodes/configz",
                  "nodes/spec", "nodes/healthz", "pods/exec", "pods/attach", "pods/portforward")
     allowlist = {
-        "group:system:masters", "group:system:nodes", "group:kubeadm:cluster-admins",
-        "user:kube-apiserver-kubelet-client", "user:system:kube-controller-manager",
-        "serviceaccount:kube-system:generic-garbage-collector",
-        "serviceaccount:kube-system:namespace-controller",
-        "serviceaccount:kube-system:resourcequota-controller",
+        "group:system:masters": "Kubernetes cluster administrators",
+        "group:system:nodes": "Kubelet identity group required for node API access",
+        "group:kubeadm:cluster-admins": "Kubeadm cluster administrator group",
+        "user:kube-apiserver-kubelet-client": "API server kubelet client",
+        "user:system:kube-controller-manager": "Kubernetes controller manager",
+        "serviceaccount:kube-system:generic-garbage-collector": "Built-in garbage collector",
+        "serviceaccount:kube-system:namespace-controller": "Built-in namespace controller",
+        "serviceaccount:kube-system:resourcequota-controller": "Built-in resource quota controller",
+        # Argo CD's wildcard reconciliation can reach kubelet APIs if compromised.
+        "serviceaccount:devtools:argocd-application-controller": "Argo CD reconciles arbitrary platform resources; compromise permits kubelet API access",
+        # The 0.27.0 chart adds nodes/proxy with global private-registry scan access enabled.
+        # nodeCollector also reads kubelet configz for the platform's node inventory.
+        "serviceaccount:security-system:trivy-operator": "Chart 0.27.0 grants proxy for enabled private-image scan credentials; nodeCollector also reads configz",
     }
-    allowlist.update(x.strip() for x in extras.split(",") if x.strip())
+    allowlist.update({x.strip(): "operator-supplied EXTRA_PROXY_ALLOWLIST entry" for x in extras.split(",") if x.strip()})
     roles = {item["metadata"]["name"]: item for item in inventory["items"] if item["kind"] == "ClusterRole"}
     subjects_with_proxy = set()
     for binding in inventory["items"]:
@@ -63,7 +71,7 @@ def proxy_check(inventory, extras=""):
                    f"user:{subject['name']}" if kind == "User" else
                    f"serviceaccount:{subject.get('namespace', 'default')}:{subject['name']}")
             subjects_with_proxy.add(key)
-    unexpected = subjects_with_proxy - allowlist
+    unexpected = subjects_with_proxy - allowlist.keys()
     return not unexpected, sorted(unexpected)
 
 
@@ -187,13 +195,21 @@ resources = ("nodes/proxy", "nodes/log", "nodes/stats", "nodes/metrics",
              "nodes/exec", "nodes/attach", "nodes/portforward", "nodes/configz",
              "nodes/spec", "nodes/healthz", "pods/exec", "pods/attach", "pods/portforward")
 allowlist = {
-    "group:system:masters", "group:system:nodes", "group:kubeadm:cluster-admins",
-    "user:kube-apiserver-kubelet-client", "user:system:kube-controller-manager",
-    "serviceaccount:kube-system:generic-garbage-collector",
-    "serviceaccount:kube-system:namespace-controller",
-    "serviceaccount:kube-system:resourcequota-controller",
+    "group:system:masters": "Kubernetes cluster administrators",
+    "group:system:nodes": "Kubelet identity group required for node API access",
+    "group:kubeadm:cluster-admins": "Kubeadm cluster administrator group",
+    "user:kube-apiserver-kubelet-client": "API server kubelet client",
+    "user:system:kube-controller-manager": "Kubernetes controller manager",
+    "serviceaccount:kube-system:generic-garbage-collector": "Built-in garbage collector",
+    "serviceaccount:kube-system:namespace-controller": "Built-in namespace controller",
+    "serviceaccount:kube-system:resourcequota-controller": "Built-in resource quota controller",
+    # Argo CD's wildcard reconciliation can reach kubelet APIs if compromised.
+    "serviceaccount:devtools:argocd-application-controller": "Argo CD reconciles arbitrary platform resources; compromise permits kubelet API access",
+    # The 0.27.0 chart adds nodes/proxy with global private-registry scan access enabled.
+    # nodeCollector also reads kubelet configz for the platform's node inventory.
+    "serviceaccount:security-system:trivy-operator": "Chart 0.27.0 grants proxy for enabled private-image scan credentials; nodeCollector also reads configz",
 }
-allowlist.update(x.strip() for x in sys.argv[2].split(",") if x.strip())
+allowlist.update({x.strip(): "operator-supplied EXTRA_PROXY_ALLOWLIST entry" for x in sys.argv[2].split(",") if x.strip()})
 roles = {item["metadata"]["name"]: item for item in inventory["items"] if item["kind"] == "ClusterRole"}
 bindings = [item for item in inventory["items"] if item["kind"] == "ClusterRoleBinding"]
 proxy_subjects = set()
@@ -223,10 +239,10 @@ for binding in bindings:
                        f"serviceaccount:{subject.get('namespace', 'default')}:{subject['name']}")
                 proxy_subjects.add(key)
 
-unexpected = sorted(proxy_subjects - allowlist)
+unexpected = sorted(proxy_subjects - allowlist.keys())
 print("nodes/proxy classified PRIVILEGED, NON-READ-ONLY")
 print("nodes/proxy subjects: " + (", ".join(sorted(proxy_subjects)) or "<none>"))
-print("nodes/proxy allowlist: " + ", ".join(sorted(allowlist)))
+print("nodes/proxy allowlist: " + ", ".join(sorted(allowlist.keys())))
 if unexpected:
     print("FAIL nodes/proxy has non-allowlisted subjects: " + ", ".join(unexpected))
     sys.exit(1)

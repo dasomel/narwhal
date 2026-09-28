@@ -1,0 +1,99 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-issue-251-nodes-proxy-narrow",
+  "task": "Narrow kubelet nodes/proxy access for Argo CD server and document the remaining intended grants.",
+  "changeContext": {
+    "paths": [
+      "scripts/verify/kubelet-authz-check.sh",
+      "gitops/charts/narwhal-apps/templates/argocd-server-rbac.yaml",
+      "scripts/test/lib/check-nodes-proxy-narrow.py",
+      "scripts/test/regression-check-kakao.sh",
+      "docs/common/lessons-log.md",
+      ".agents/evals/traces/2026-09-nodes-proxy-narrow-251.json",
+      "scripts/cluster/13-argocd.sh"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "status": "passed",
+      "summary": "Reviewed issue #251, repo guidance, verifier, Argo CD installation path, and Trivy Operator 0.27.0 chart RBAC and values. Argo CD installs the bundled upstream install.yaml; this repo does not use its Helm chart."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "status": "observed",
+      "summary": "Issue #251 live verifier failure: FAIL nodes/proxy has non-allowlisted subjects: serviceaccount:devtools:argocd-application-controller, serviceaccount:devtools:argocd-server, serviceaccount:security-system:trivy-operator"
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "status": "implemented",
+      "summary": "Added a GitOps-owned argocd-server ClusterRole with explicit resource lists and read access for the resource tree, plus narrowly scoped Argo CD application actions. Added reasoned allowlist entries for application-controller and Trivy; their arbitrary reconciliation and active nodeCollector/private registry secret features retain their upstream grants."
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "R221 and R222, scripts/test/regression-check-kakao.sh --static",
+      "summary": "Rendered narwhal-apps chart has no argocd-server wildcard group/resource pair or nodes/proxy grant. Allowlist entries have non-empty reasons. Both assertions reject deliberate mutations.",
+      "evidence": [
+        "test:R221",
+        "test:mutation:R221 wildcard rule rejected",
+        "test:R222",
+        "test:mutation:R222 empty reason rejected"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "verification",
+      "status": "passed",
+      "scope": "Local verifier and chart render checks",
+      "summary": "The kubelet verifier self-test passed. The local Helm render confirmed the narrowed argocd-server role. Live cluster behavior has not been exercised in this implementer lane.",
+      "evidence": [
+        "test:scripts/verify/kubelet-authz-check.sh --self-test",
+        "test:python3 scripts/test/lib/check-nodes-proxy-narrow.py all"
+      ]
+    },
+    {
+      "id": "e6",
+      "type": "follow_up",
+      "status": "pending",
+      "scope": "Lead live verification",
+      "summary": "Lead should sync GitOps, run the verifier on the cluster, confirm argocd-server no longer has nodes/proxy, and validate Argo CD UI resource tree and app actions.",
+      "evidence": [
+        "artifact:scripts/verify/kubelet-authz-check.sh"
+      ]
+    },
+    {
+      "id": "e9",
+      "type": "bug_fix",
+      "summary": "Lead review: the narrowed role dropped the UI resource actions upstream allows (restart = patch workloads, delete pod); restored delete/patch on apps workloads and delete on pods. Made the role single-sourced: 13-argocd applies the same file right after the upstream install.yaml, so a re-run never reopens `*` on `*` before idp-apps selfHeal."
+    },
+    {
+      "id": "e10",
+      "type": "verification",
+      "status": "passed",
+      "scope": "live six-node cluster, narrowed argocd-server ClusterRole applied",
+      "summary": "can-i as devtools:argocd-server: nodes/proxy no, pods/exec no; pods/log get yes, patch deployments yes, delete pods yes, list applications yes. Argo CD API with a real token: /api/v1/applications/velero/resource-tree 200 and pod logs 200. kubelet-authz-check.sh: 43 PASS / 0 FAIL (was 42/1 with argocd-server and the two reasoned subjects not yet allowlisted).",
+      "evidence": [
+        "runtime:kubectl auth can-i matrix for argocd-server",
+        "runtime:argocd API resource-tree 200, logs 200",
+        "runtime:kubelet-authz-check.sh => Summary: 43 PASS, 0 FAIL"
+      ]
+    },
+    {
+      "id": "e7",
+      "type": "completion_claim",
+      "summary": "The requested implementation and local checks are complete. Lead live verification is explicitly pending as a follow-up."
+    },
+    {
+      "id": "e8",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Implementation and local verification are complete; the lead owns the pending live verification follow-up."
+    }
+  ]
+}

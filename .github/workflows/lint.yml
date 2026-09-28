@@ -85,6 +85,10 @@ jobs:
         with:
           repository: dasomel/narwhal-portal
           ref: main
+          # R211 (narwhal#238) reads the source tree behind the pinned release tag, so the
+          # default shallow, tag-less checkout is not enough.
+          fetch-depth: 0
+          fetch-tags: true
           # actions/checkout refuses paths outside GITHUB_WORKSPACE, so it lands inside
           # the workspace and the script is pointed at it via NARWHAL_PORTAL_DIR.
           path: .narwhal-portal-ci

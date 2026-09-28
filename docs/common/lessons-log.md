@@ -12,6 +12,8 @@
 > Add entries here whenever Claude makes a mistake. The same mistake will not be repeated.
 > Request CLAUDE.md updates with the `@.claude` tag during code reviews.
 
+| 2026-09-28 | Clean install에서 narwhal-portal 파드가 CrashLoopBackOff였다. GitOps probe는 `/api/health/live`와 `/api/health/ready`를 호출했지만 고정 이미지 1.0.17에는 두 Next.js route가 없어 실제 응답이 404였고, airgap inventory는 더 오래된 1.0.16을 가리켰다. 누구도 이미지 pin을 probe 경로와 대조하지 않았다. | 포털 pin과 digest를 1.0.18로 통일하고, sibling 저장소의 고정 태그 트리에서 두 route를 확인하는 R211 및 모든 pin 버전 일치 R210을 추가했다. 판별자: **probe가 참조하는 경로가 현재 실행 중인 이미지 태그에 포함되는지 릴리스 트리에서 확인한다**; 선언된 probe와 애플리케이션 소스는 함께 바뀌어도 버전 경계를 넘어 자동 동기화되지 않는다. |
+
 ### Shell Script Mistakes
 
 | Date | Mistake | Fix |

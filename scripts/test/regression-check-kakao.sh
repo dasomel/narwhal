@@ -128,6 +128,40 @@ check_not() {
 run_static() {
   section "STATIC — known fixes still present in the repo"
 
+  # narwhal#238 (2026-09-28): every active portal image pin must agree. Historical
+  # release notes and lessons are excluded; D1 keeps this inventory check small and
+  # source-controlled, with the escape hatch of adding new active pin docs to grep.
+  check R210 "all active narwhal-portal image pins use one version (Narwhal#238, 2026-09-28)" \
+    python3 -c '
+import re
+import subprocess
+result = subprocess.run(["git", "grep", "-h", "-E", r"ghcr\.io/dasomel/narwhal-portal:1\.0\.[0-9]+", "--", ".", ":!CHANGELOG*", ":!docs/common/lessons-log.md", ":!scripts/test/regression-check-kakao.sh", ":!.agents/evals/traces"], capture_output=True, text=True)
+if result.returncode not in (0, 1):
+    raise SystemExit(result.stderr)
+versions = set(re.findall(r"ghcr\.io/dasomel/narwhal-portal:(1\.0\.[0-9]+)", result.stdout))
+assert len(versions) == 1, f"portal pin versions differ: {sorted(versions)}"
+'
+
+  # D2: inspect the source tree behind the deployed tag; cost is one git tree read,
+  # and CI without the optional sibling checkout reports an explicit skip.
+  local portal_dir="${NARWHAL_PORTAL_DIR:-../narwhal-portal}"
+  if [ -d "${portal_dir}" ]; then
+    check R211 "pinned portal tag contains both probe routes (Narwhal#238, 2026-09-28)" \
+      python3 -c '
+import pathlib
+import re
+import subprocess
+manifest = pathlib.Path("gitops/charts/narwhal-platform/templates/narwhal-portal-k8s.yaml").read_text()
+match = re.search(r"image:\s*ghcr\.io/dasomel/narwhal-portal:(\d+\.\d+\.\d+)", manifest)
+assert match, "portal image pin missing from GitOps Deployment"
+listed = subprocess.run(["git", "-C", pathlib.Path(__import__("sys").argv[1]).as_posix(), "ls-tree", "-r", "--name-only", "v" + match.group(1)], check=True, capture_output=True, text=True).stdout.splitlines()
+required = {"src/app/api/health/live/route.ts", "src/app/api/health/ready/route.ts"}
+assert required.issubset(listed), f"v{match.group(1)} missing probe routes: {sorted(required - set(listed))}"
+' "${portal_dir}"
+  else
+    echo "  SKIP  R211           sibling ../narwhal-portal checkout absent; route-tag check not run"
+  fi
+
   # Narwhal#109: first provider controls new writes. A preceding identity provider
   # silently stores Secrets in plaintext, even if aescbc appears later in the list.
   check R171 "02-init-cluster keeps aescbc before identity for Secrets (Narwhal#109)" \

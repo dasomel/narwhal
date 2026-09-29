@@ -16,3 +16,9 @@ variable "vpc_cidr" {
   type        = string
   default     = "172.16.0.0/16"
 }
+
+variable "subnet_cidr" {
+  description = "Main subnet CIDR block, for rules that only need to reach cluster nodes, not the whole VPC (e.g. the VPC's own auto-created default subnet, where the bastion sits)"
+  type        = string
+  default     = "172.16.0.0/24"
+}

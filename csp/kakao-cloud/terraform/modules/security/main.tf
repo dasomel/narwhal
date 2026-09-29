@@ -32,14 +32,17 @@ resource "kakaocloud_security_group" "security_group" {
       remote_ip_prefix = var.vpc_cidr
       description      = "etcd cluster communication (internal)"
     },
-    # Kubelet API
+    # Kubelet API (narwhal#113: scoped to the node subnet, not the whole VPC — the
+    # only callers are the apiserver's exec/logs/portforward proxy and in-cluster
+    # metrics scraping, both on cluster nodes; the VPC's other subnet holds only
+    # the bastion, which never calls kubelet's API).
     {
       direction        = "ingress"
       protocol         = "TCP"
       port_range_min   = 10250
       port_range_max   = 10250
-      remote_ip_prefix = var.vpc_cidr
-      description      = "Kubelet API (internal)"
+      remote_ip_prefix = var.subnet_cidr
+      description      = "Kubelet API (internal, node subnet only)"
     },
     # K8s Scheduler & Controller Manager
     # 10251/10252 are the pre-1.17 insecure metric ports and match nothing on this

@@ -24,6 +24,7 @@ module "security" {
 
   security_group_name = var.security_group_name
   vpc_cidr            = module.network.vpc_cidr
+  subnet_cidr         = module.network.subnet_cidr
   depends_on          = [module.network]
 }
 

@@ -38,6 +38,7 @@ DNS, 이미지 반입 경로)은 완전히 다르다. 섞어두면 어느 절차
 | [lessons-log.md](./common/lessons-log.md) | 사건 기록 — 양쪽 배포 대상 모두 |
 | [test-strategy.md](./common/test-strategy.md) | T1-T7 테스트 계층 전략, 기존 체크 매핑, 리포트 export |
 | [failure-injection-catalog.md](./common/failure-injection-catalog.md) | T5 chaos/장애주입 시나리오 카탈로그 |
+| [unified-observability-contract.md](./common/unified-observability-contract.md) | 관측 신호·SLO·상관·보존·비용 귀속 계약 초안 |
 
 ## vagrant/ — 로컬 (Vagrant VM)
 

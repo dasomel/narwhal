@@ -1161,6 +1161,8 @@ PYEOF
     python3 scripts/test/lib/check-admission-webhook-settings.py scripts/test/fixtures/admission-webhook-good.yaml
   check_not R226b "admission webhook check rejects a missing policy and out-of-range timeout" \
     python3 scripts/test/lib/check-admission-webhook-settings.py scripts/test/fixtures/admission-webhook-bad.yaml
+  check R228 "namespace PSA declarations match the workload security profile (Narwhal#144)" \
+    python3 scripts/test/lib/check-workload-psa-profile.py --mutation-verify
 
   # narwhal#52 (D3-A): the seam between this repo's images.txt and narwhal-portal's
   # deploy/kaniko-build-job.yaml has no compiler to catch drift -- a tag bumped on

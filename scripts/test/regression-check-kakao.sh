@@ -1155,6 +1155,13 @@ PYEOF
   check R225 "Kakao security group scopes kubelet (10250) to the node subnet, not the whole VPC (Narwhal#113)" \
     python3 scripts/test/lib/check-kubelet-sg-scope.py
 
+  check R226 "repo webhook entries declare failure policy and bounded API timeout" \
+    python3 scripts/test/lib/check-admission-webhook-settings.py
+  check R226a "admission webhook check accepts per-entry Ignore and templated timeout" \
+    python3 scripts/test/lib/check-admission-webhook-settings.py scripts/test/fixtures/admission-webhook-good.yaml
+  check_not R226b "admission webhook check rejects a missing policy and out-of-range timeout" \
+    python3 scripts/test/lib/check-admission-webhook-settings.py scripts/test/fixtures/admission-webhook-bad.yaml
+
   # narwhal#52 (D3-A): the seam between this repo's images.txt and narwhal-portal's
   # deploy/kaniko-build-job.yaml has no compiler to catch drift -- a tag bumped on
   # one side and not the other silently ships a bundle that doesn't match what the

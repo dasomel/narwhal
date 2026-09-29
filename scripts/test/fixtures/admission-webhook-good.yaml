@@ -1,0 +1,11 @@
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingWebhookConfiguration
+metadata:
+  name: sample
+webhooks:
+  - name: validate.example.test
+    failurePolicy: Ignore
+    timeoutSeconds: 5
+  - name: mutate.example.test
+    failurePolicy: Fail
+    timeoutSeconds: "{{ .Values.webhook.timeoutSeconds }}"

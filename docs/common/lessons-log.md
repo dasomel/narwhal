@@ -13,6 +13,7 @@
 > Rules that generalize across incidents graduate into `docs/common/agent-operational-rules.md`.
 
 | 2026-09-28 | Clean install에서 narwhal-portal 파드가 CrashLoopBackOff였다. GitOps probe는 `/api/health/live`와 `/api/health/ready`를 호출했지만 고정 이미지 1.0.17에는 두 Next.js route가 없어 실제 응답이 404였고, airgap inventory는 더 오래된 1.0.16을 가리켰다. 누구도 이미지 pin을 probe 경로와 대조하지 않았다. | 포털 pin과 digest를 1.0.18로 통일하고, sibling 저장소의 고정 태그 트리에서 두 route를 확인하는 R211 및 모든 pin 버전 일치 R210을 추가했다. 판별자: **probe가 참조하는 경로가 현재 실행 중인 이미지 태그에 포함되는지 릴리스 트리에서 확인한다**; 선언된 probe와 애플리케이션 소스는 함께 바뀌어도 버전 경계를 넘어 자동 동기화되지 않는다. |
+| 2026-09-30 | Admission webhook 설정 검사는 Helm 템플릿 YAML 파싱 오류를 조용히 건너뛰어 실제 평가 webhook 수가 0인데도 PASS를 출력했고, 전역으로 `Fail`을 강제했다. | 템플릿의 각 webhook 항목을 텍스트로 검사하고 평가 개수를 출력하며, undecidable chart 값은 이유와 함께 WARN한다. 판별자: **정적 정책 검사에서 Helm YAML 파싱 오류를 건너뛰거나 평가 항목 수를 숨기면 vacuous PASS가 가능하므로, 파싱 실패는 실패로 만들고 검사한 리소스/항목 수를 출력한다.** |
 
 ### Agent Instruction Mistakes
 

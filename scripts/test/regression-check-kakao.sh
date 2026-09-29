@@ -1149,6 +1149,12 @@ PYEOF
   check R224 "skopeo source refs drop tags before preserving pinned digests (Narwhal#261, 2026-09-29)" \
     bash -c 'source scripts/airgap/lib/skopeo-source-ref.sh; test "$(skopeo_source_ref docker.io/alpine/git:v2.54.0@sha256:0b5f57d22181e8b8fbe8ac5ca8754faa0d577f101b9857418f1acc43955ad464)" = "docker://docker.io/alpine/git@sha256:0b5f57d22181e8b8fbe8ac5ca8754faa0d577f101b9857418f1acc43955ad464"'
 
+  # Narwhal#113: kubelet's 10250 exposure on Kakao was opened to the whole VPC
+  # CIDR, same as every other "(internal)" rule in this file -- but only kubelet
+  # was named as a finding, so only kubelet is narrowed here.
+  check R225 "Kakao security group scopes kubelet (10250) to the node subnet, not the whole VPC (Narwhal#113)" \
+    python3 scripts/test/lib/check-kubelet-sg-scope.py
+
   # narwhal#52 (D3-A): the seam between this repo's images.txt and narwhal-portal's
   # deploy/kaniko-build-job.yaml has no compiler to catch drift -- a tag bumped on
   # one side and not the other silently ships a bundle that doesn't match what the

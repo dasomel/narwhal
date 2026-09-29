@@ -31,6 +31,7 @@ DNS, 이미지 반입 경로)은 완전히 다르다. 섞어두면 어느 절차
 | [compliance-hardening.md](./common/compliance-hardening.md) | 컴플라이언스 하드닝 |
 | [gitops-push.md](./common/gitops-push.md) | GitOps 변경 반영 (Gitea 푸시) |
 | [apisix-etcd-recovery.md](./common/apisix-etcd-recovery.md) | apisix-etcd 빈-prefix 교착 복구 |
+| [etcd-operations.md](./common/etcd-operations.md) | kubeadm control-plane etcd 운영 기준 및 제안 절차 |
 | [master-memory-pressure.md](./common/master-memory-pressure.md) | 마스터 메모리 압박 진단 |
 | [rtk-token-compression-policy.md](./common/rtk-token-compression-policy.md) | RTK 토큰 압축 정책 |
 | [troubleshooting.md](./common/troubleshooting.md) | 트러블슈팅 (3·4·5·13절은 Vagrant 전용) |

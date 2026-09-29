@@ -1,0 +1,16 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-versions-kubeadm-drift",
+  "task": "Align VERSIONS.md kubeadm/kubelet/kubectl rows with the installed K8S_PATCH_VERSION and extend the version consistency check to those rows",
+  "changeContext": {"paths": ["VERSIONS.md", "scripts/ci/check-version-consistency.sh", "docs/common/lessons-log.md", "docs/common/compatibility-matrix.md", "docs/common/test-strategy.md"]},
+  "events": [
+    {"id": "e1", "type": "scope_check", "summary": "Scoped to the three drifted VERSIONS.md rows, the check that missed them, and doc references to the stale value; no pins, charts, or install scripts changed"},
+    {"id": "e2", "type": "reproduction", "summary": "VERSIONS.md kubeadm/kubelet/kubectl rows said v1.35.5 while 03-k8s-install.sh installs K8S_PATCH_VERSION 1.35.7; check-version-consistency.sh compared only the Kubernetes row so the three rows passed CI unnoticed", "evidence": ["policy:version-source-drift", "lessons-log:2026-09-07"]},
+    {"id": "e3", "type": "bug_fix", "summary": "Set the three rows to v1.35.7 and compare kubeadm/kubelet/kubectl against the same Vagrantfile K8S_PATCH_VERSION in check-version-consistency.sh; fixed stale 1.35.5 references in docs; added a lessons-log row"},
+    {"id": "e4", "type": "regression_verification", "status": "passed", "summary": "The extended check exited 1 with mismatch on kubeadm, kubelet and kubectl before the VERSIONS.md fix and exits 0 with all rows OK after it", "scope": "Version consistency of Kubernetes, kubeadm, kubelet, kubectl and pinned component versions", "evidence": ["ci:version-consistency"]},
+    {"id": "e5", "type": "verification", "status": "passed", "summary": "lessons-log rows parse as three columns; separate Codex critic pass returned PASS", "scope": "Mistakes Log format and version source-of-truth consistency", "evidence": ["ci:version-consistency", "ci:lessons-log-format"]},
+    {"id": "e6", "type": "completion_claim", "summary": "VERSIONS.md matches the installed Kubernetes pin and the check now guards all four rows"},
+    {"id": "e7", "type": "task_outcome", "state": "A", "summary": "Complete and verified by the extended consistency check"}
+  ]
+}

@@ -15,9 +15,9 @@ Components and versions used in this project.
 |-----------|---------|-------------|
 | Kubernetes | v1.35.7 | Container orchestration. **Not the newest minor** — 1.36 is current upstream (1.36.2, 2026-06-09). 1.35 stays on a supported branch until 2027-02-28; the platform deliberately trails one minor so the 35 integrated components have released compatible versions. Branch latest is 1.35.7 |
 | containerd | 1.7.x (24.04) / repo default 2.x (26.04, 2.3.x LTS available) | Container runtime (Ubuntu apt; 02-containerd.sh pins 1.7.* then falls back to repo default) |
-| kubeadm | v1.35.5 | Cluster bootstrap tool |
-| kubelet | v1.35.5 | Node agent |
-| kubectl | v1.35.5 | CLI tool |
+| kubeadm | v1.35.7 | Cluster bootstrap tool |
+| kubelet | v1.35.7 | Node agent |
+| kubectl | v1.35.7 | CLI tool |
 
 ## Networking
 

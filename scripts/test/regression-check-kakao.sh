@@ -2847,6 +2847,9 @@ mutant=s.replace(line, "MAX_ROUNDS=", 1)
 assert line in s and not any(x.startswith("MAX_ROUNDS=") and ":-3" in x for x in mutant.splitlines())
 '
 
+  check R227 "GitOps hostPaths are allowlisted and static-pod manifest hardening matches scripts" \
+    python3 scripts/test/lib/check-static-pod-hostpaths.py --mutation-verify
+
 }
 
 #=========================================

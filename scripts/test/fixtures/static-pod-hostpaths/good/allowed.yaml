@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: airgap-registry-fixture
+  namespace: platform-system
+spec:
+  containers:
+    - name: registry
+      volumeMounts:
+        - name: data
+          mountPath: /var/lib/registry
+  volumes:
+    - name: data
+      hostPath:
+        path: /srv/airgap-registry
+        type: DirectoryOrCreate

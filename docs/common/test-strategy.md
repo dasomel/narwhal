@@ -228,7 +228,7 @@ TODO로 주석 처리된 채로 남아 있다 — 확인 완료, 알림 채널 �
   정적으로 이미 검증한다(§3.1).
 - **없음**: canary/staged upgrade 자동화, preflight 게이트, zero/minimal-disruption
   판정, upgrade 후 rollback evidence 저장, version matrix의 "조합"(예: K8s
-  1.35.5 + Cilium 1.19.4 + Istio 1.30.1가 같이 도는지) 자동 검증 — 지금은 컴포넌트별
+  1.35.7 + Cilium 1.19.4 + Istio 1.30.1가 같이 도는지) 자동 검증 — 지금은 컴포넌트별
   1:1 버전 비교만 있고 조합 호환성 개념 자체가 없다.
 
 ### 3.7 T7 — 커버리지 0

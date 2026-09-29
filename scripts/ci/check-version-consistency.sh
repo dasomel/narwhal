@@ -32,6 +32,12 @@ echo "=== Version Sync Check ==="
 echo ""
 compare "Kubernetes" "$(versions_md Kubernetes)" "Vagrantfile K8S_PATCH_VERSION" \
   "$(grep -E '^K8S_PATCH_VERSION' Vagrantfile | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)"
+# kubeadm/kubelet/kubectl are installed at K8S_PATCH_VERSION too (03-k8s-install.sh); their rows once
+# drifted at 1.35.5 for weeks because only the "Kubernetes" row was compared.
+for tool in kubeadm kubelet kubectl; do
+  compare "${tool}" "$(versions_md "${tool}")" "Vagrantfile K8S_PATCH_VERSION" \
+    "$(grep -E '^K8S_PATCH_VERSION' Vagrantfile | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)"
+done
 compare "Cilium" "$(versions_md Cilium)" "03-cni-install.sh CILIUM_VERSION" \
   "$(script_pin scripts/cluster/03-cni-install.sh CILIUM_VERSION)"
 compare "Cilium CLI" "$(versions_md 'Cilium CLI')" "03-cni-install.sh CILIUM_CLI_VERSION" \

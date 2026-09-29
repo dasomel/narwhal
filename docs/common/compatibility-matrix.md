@@ -20,7 +20,7 @@
 
 | 계층 / 컴포넌트 | 현재 선언 pin | Direct source / 비고 | 상태 |
 |---|---|---|---|
-| Kubernetes | `v1.35.7`; kubeadm/kubelet/kubectl도 `K8S_PATCH_VERSION`(`v1.35.7`)으로 설치됨 (`VERSIONS.md`의 kubeadm/kubelet `v1.35.5` 표기는 실제 pin과 어긋난 문서 드리프트) | `Vagrantfile`의 `K8S_PATCH_VERSION`, `scripts/common/03-k8s-install.sh`, `scripts/cluster/02-init-cluster.sh`. control plane과 node 도구 patch가 서로 다르게 선언됨 | pinned; skew 별도 gate 필요 |
+| Kubernetes | `v1.35.7`; kubeadm/kubelet/kubectl도 `K8S_PATCH_VERSION`(`v1.35.7`)으로 설치됨 (`VERSIONS.md`의 kubeadm/kubelet/kubectl 행도 v1.35.7로 정정되었고 `check-version-consistency.sh`가 함께 검사한다) | `Vagrantfile`의 `K8S_PATCH_VERSION`, `scripts/common/03-k8s-install.sh`, `scripts/cluster/02-init-cluster.sh`. control plane과 node 도구 patch가 서로 다르게 선언됨 | pinned; skew 별도 gate 필요 |
 | OS | Ubuntu `26.04 LTS`; box `dasomel/ubuntu-26.04-xfs v0.1.0` | `VERSIONS.md`; Vagrant box 기준. Kakao 노드 OS가 이 값과 같다는 보장은 없음 | pinned (Vagrant) |
 | containerd | Ubuntu 24.04는 `1.7.x` 시도, 26.04는 distro default `2.x` | `scripts/common/02-containerd.sh`는 `CONTAINERD_VERSION` 미설정 시 저장소 기본값을 설치하고 실제 설치 버전을 출력. 고정 patch가 아님 | unpinned runtime version |
 | CNI | Cilium `v1.19.4`; CLI `v0.19.4`; Hubble `v1.19.4` | `scripts/cluster/03-cni-install.sh`; `CNI_PLUGIN`은 기본 `cilium`, 스크립트에는 Calico 대체 pin도 존재 | pinned (기본 경로) |
@@ -49,7 +49,7 @@
 
 이 표는 runtime 결과, release별 지원 기간, 다른 component의 호환성을 담지 않는다. 1.35 row의 최소 버전 형식은 실제 pin `Cilium 1.19.4`, CSI `4.13.2`, Istio `1.30.1`과 일치하지만, 이를 조합 통합시험 증거로 승격하지 않는다.
 
-Kubernetes skew 판정은 각 upgrade 대상 버전의 upstream 공식 정책을 기준으로 해야 한다. 저장소에서 확인되는 사실은 `scripts/common/03-k8s-install.sh`가 kubeadm·kubelet·kubectl을 모두 `K8S_PATCH_VERSION`(`1.35.7`)으로 설치하고 `scripts/cluster/02-init-cluster.sh`도 `v1.35.7`을 기록한다는 것이며, 따라서 설치 pin 사이 skew는 0이다. `VERSIONS.md`의 kubeadm/kubelet `1.35.5`는 실제 pin과 다른 문서 드리프트이므로 별도로 정정해야 한다 [PROPOSED]. **PROPOSED:** 사전 검사기는 control-plane, kubeadm, kubelet, kubectl의 minor/patch 관계를 지원 upstream skew 규칙과 비교하고, 정책 근거 버전이 없거나 차이가 허용 범위를 벗어나면 `BLOCKED`로 종료한다. 이 문서는 upstream 허용 범위를 자체적으로 재정의하지 않는다.
+Kubernetes skew 판정은 각 upgrade 대상 버전의 upstream 공식 정책을 기준으로 해야 한다. 저장소에서 확인되는 사실은 `scripts/common/03-k8s-install.sh`가 kubeadm·kubelet·kubectl을 모두 `K8S_PATCH_VERSION`(`1.35.7`)으로 설치하고 `scripts/cluster/02-init-cluster.sh`도 `v1.35.7`을 기록한다는 것이며, 따라서 설치 pin 사이 skew는 0이다. `VERSIONS.md`의 세 행은 과거 `1.35.5`로 드리프트했으나 정정되었고 `check-version-consistency.sh`가 같은 pin과 비교한다. **PROPOSED:** 사전 검사기는 control-plane, kubeadm, kubelet, kubectl의 minor/patch 관계를 지원 upstream skew 규칙과 비교하고, 정책 근거 버전이 없거나 차이가 허용 범위를 벗어나면 `BLOCKED`로 종료한다. 이 문서는 upstream 허용 범위를 자체적으로 재정의하지 않는다.
 
 ## 지원 정책과 upgrade 순서
 

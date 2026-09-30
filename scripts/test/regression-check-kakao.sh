@@ -2865,6 +2865,13 @@ assert line in s and not any(x.startswith("MAX_ROUNDS=") and ":-3" in x for x in
   check R233 "static-pod manifest verifier rejects filesystem and hash drift (Narwhal#114)" \
     scripts/verify/static-pod-manifest-check.sh --self-test
 
+  check R235 "admission self-lockout selectors, conditional cert-manager waiver, and inventory warnings (Narwhal#143)" \
+    python3 scripts/test/lib/check-admission-selflock.py --mutation-verify
+  check R235a "selflock check accepts Fail webhook with proper namespace exclusion" \
+    python3 scripts/test/lib/check-admission-selflock.py scripts/test/fixtures/admission-selflock-good.yaml
+  check_not R235b "selflock check rejects Fail webhook with no namespace selector" \
+    python3 scripts/test/lib/check-admission-selflock.py scripts/test/fixtures/admission-selflock-bad.yaml
+
 }
 
 #=========================================

@@ -1,0 +1,47 @@
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingWebhookConfiguration
+metadata:
+  name: unsafe-webhook
+webhooks:
+  - name: validate.unsafe.example.test
+    failurePolicy: Fail
+    timeoutSeconds: 5
+    sideEffects: None
+    admissionReviewVersions: ["v1"]
+    clientConfig:
+      service:
+        name: unsafe-webhook
+        namespace: platform-system
+  - name: validate.wrong-key.example.test
+    failurePolicy: Fail
+    namespaceSelector:
+      matchExpressions:
+        - key: unrelated.example/key
+          operator: NotIn
+          values: [kube-system, platform-system]
+    clientConfig:
+      service:
+        name: unsafe-webhook
+        namespace: platform-system
+  - name: validate.wrong-operator.example.test
+    failurePolicy: Fail
+    namespaceSelector:
+      matchExpressions:
+        - key: kubernetes.io/metadata.name
+          operator: In
+          values: [kube-system, platform-system]
+    clientConfig:
+      service:
+        name: unsafe-webhook
+        namespace: platform-system
+  - name: validate.missing-kube-system.example.test
+    failurePolicy: Fail
+    namespaceSelector:
+      matchExpressions:
+        - key: kubernetes.io/metadata.name
+          operator: NotIn
+          values: [platform-system]
+    clientConfig:
+      service:
+        name: unsafe-webhook
+        namespace: platform-system

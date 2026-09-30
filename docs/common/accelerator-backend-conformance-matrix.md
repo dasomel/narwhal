@@ -61,7 +61,11 @@ capabilities:
     profile: <profile-id-or-null>
     limitations: []
     evidenceRefs: []
+    evidenceKind: static|hardware # PROPOSED; hardware is required to report hardware-only capabilities as supported
 ```
+
+`evidenceKind` and its `static`/`hardware` values are **PROPOSED**. Hardware-only
+capabilities require `hardware` evidence before they can be reported as `supported`.
 
 `backend`, API version, and field names are **PROPOSED**. Record exact Kubernetes,
 OS/architecture, adapter, driver/operator, and runtime versions; `latest` or a
@@ -162,10 +166,13 @@ Offline checks are contract evidence only and cannot mark hardware behavior
 4. Assert scheduler combinations without a compatibility record are reported
    `UNVERIFIED` and cannot pass admission.
 
-This repository currently has no accelerator schema, adapter fixture suite, or
-scheduler integration test. These criteria are **PROPOSED** acceptance tests, not
-claims that `make test` exercises accelerators. The existing partitioning policy
-also states that its contract checks are future tests.
+The repository now has a profile schema, five backend-profile fixtures, and the
+R236 static check that validates those profiles against this matrix. These provide
+offline profile-contract evidence only. There is still no accelerator adapter
+fixture suite, scheduler integration test, or real hardware run. These criteria
+remain **PROPOSED** acceptance tests, not claims that `make test` exercises
+accelerators. The existing partitioning policy also states that its contract checks
+are future tests.
 
 ### Hardware-only profile
 
@@ -210,8 +217,9 @@ upgrade the capability status.
 - **D1 —** Use the capability policy's four values (`supported`, `partial`,
   `unavailable`, `not-applicable`) and record `UNVERIFIED` in matrices as an
   evidence state, not as a fifth capability status. Cost: consumers must distinguish
-  missing verification from a runtime report. Escape hatch: after a schema exists,
-  encode verification separately from capability status.
+  missing verification from a runtime report. Escape hatch: encode verification
+  separately from capability status in the profile schema when that field becomes
+  normative.
 - **D2 —** Keep whole-device, hardware partitioning, time-slicing, and process
   sharing as separate capabilities. Cost: more discovery fields and tests. Escape
   hatch: a backend may bundle fields in its adapter but must still publish separate

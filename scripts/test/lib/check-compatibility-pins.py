@@ -19,6 +19,12 @@ VERSIONS_ALIASES = {
     "기타 주요 add-ons": ("Kyverno", "metrics-server", "cert-manager", "CloudNative-PG", "MetalLB", "Headlamp"),
     "OS": ("Ubuntu",),
 }
+# These direct pins are repeated in every cited direct source for the row.
+# Other rows intentionally use union semantics because their sources differ.
+EACH_SOURCE_ROWS = {
+    "Istio ambient": ("1.30.1",),
+    "Backup": ("12.0.3", "1.14.1"),
+}
 
 
 def rows(text):
@@ -61,7 +67,8 @@ def cited_paths(root, source_cell, failures, component):
     return list(dict.fromkeys(result))
 
 
-def check(root, document=DOC):
+def check(root, document=DOC, source_overrides=None):
+    source_overrides = source_overrides or {}
     failures, warnings, evaluated = [], [], 0
     try:
         inventory = rows((root / document).read_text())
@@ -90,7 +97,7 @@ def check(root, document=DOC):
         direct_values = set()
         values_by_path = {}
         for path in direct_paths:
-            source_text = path.read_text(errors="replace")
+            source_text = source_overrides.get(path, path.read_text(errors="replace"))
             path_values = set()
             for line in source_text.splitlines():
                 if component == "Backup" and not any(
@@ -114,12 +121,12 @@ def check(root, document=DOC):
                     version_values.update(value.lstrip("v") for value in VERSION_RE.findall(line))
 
         for token in direct_tokens:
+            if component in EACH_SOURCE_ROWS and token in EACH_SOURCE_ROWS[component]:
+                for path, source_values in values_by_path.items():
+                    if not any(value == token or value.startswith(token + ".") for value in source_values):
+                        failures.append(f"{component}: {token} missing from {path.relative_to(root)}")
+                continue
             if any(value == token or value.startswith(token + ".") for value in direct_values):
-                if component == "Backup" and any(
-                    not any(value == token or value.startswith(token + ".") for value in source_values)
-                    for source_values in values_by_path.values()
-                ):
-                    failures.append(f"{component}: direct pin {token} is missing from one cited source")
                 continue
             found = ", ".join(sorted(direct_values)) or "none"
             failures.append(f"{component}: stated direct pin {token} absent from cited source values ({found})")
@@ -168,6 +175,16 @@ def mutation_verify(root):
                     raise OSError(f"failed byte-identical restore: {relative}")
         print(f"PASS: {label} targets restored byte-identical")
 
+    def mutate_in_memory(relative, old, new, label):
+        path = root / relative
+        source_text = path.read_text(errors="replace")
+        if old not in source_text:
+            raise ValueError(f"cannot construct {label} mutation in {relative}")
+        result = check(root, source_overrides={path: source_text.replace(old, new, 1)})
+        if result == 0:
+            raise ValueError(f"{label} mutation was accepted")
+        print(f"PASS: {label} rejected in memory (exit {result})")
+
     try:
         mutate([
             (Path("gitops/charts/narwhal-apps/templates/velero.yaml"), "targetRevision: 12.0.3", "targetRevision: 99.0.0"),
@@ -178,6 +195,7 @@ def mutation_verify(root):
             (Path("scripts/cluster/08-4-storage.sh"), "velero-plugin-for-aws:v1.14.1", "velero-plugin-for-aws:v9.9.9"),
         ], "Velero plugin app pin mutation")
         mutate([(Path("scripts/cluster/03-cni-install.sh"), "CILIUM_VERSION:-1.19.4", "CILIUM_VERSION:-9.9.9")], "Cilium source mutation")
+        mutate_in_memory(Path("gitops/charts/narwhal-apps/templates/ztunnel.yaml"), "targetRevision: 1.30.1", "targetRevision: 1.29.0", "single Istio template mutation")
         mutate([(DOC, "Cilium `v1.19.4`", "Cilium `v0.0.0`")], "doc-side mutation")
     finally:
         for relative, original in saved.items():

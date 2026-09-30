@@ -10,7 +10,7 @@
 | local PV | 저장소에서 local PV/host-local StorageClass 선언을 확인하지 못했다. | **ASSUMPTION:** 현재 추적 범위의 배포에는 local PV 백엔드가 없다. 환경에 별도 추가된 경우 노드 상실 시 다른 노드에서 데이터가 자동 제공된다고 가정하지 않는다. |
 | CNPG | `gitops/resources/narwhal-db.yaml`은 `narwhal-db` 2 인스턴스, `storageClass: nfs-csi`, S3 `destinationPath: s3://cnpg-backup/narwhal-db`, WAL 및 data gzip 압축, `retentionPolicy: "7d"`를 선언한다. | CNPG 인스턴스 복제/자동 장애조치는 데이터베이스 HA 기능이다. 저장소에는 사이트 간 동기 복제 계약 또는 실제 측정 RPO가 없다. CNPG의 백업 대상 SeaweedFS가 같은 클러스터의 NFS-backed 구성에 의존한다. |
 | Velero | `gitops/charts/narwhal-apps/templates/velero.yaml`은 백업 위치를 `seaweedfs-s3.storage.svc.cluster.local:8333`의 `velero` 버킷으로 지정, `uploaderType: kopia`, `defaultVolumesToFsBackup: true`, `snapshotsEnabled: false`, node-agent 활성화를 선언한다. | PVC 파일시스템 백업 경로는 설정되어 있지만 CSI 스냅샷 기반 일관성 그룹은 활성화되지 않았다. 저장소 위치와 보호 대상이 같은 클러스터 장애 영역을 공유하므로 이 설정만으로 클러스터/사이트 재해 복구를 주장할 수 없다. |
-| 스케줄 | 같은 Velero 설정의 `daily-full`은 매일 02:00, `daily-databases`는 01:00, `daily-gitea` 03:00, `daily-harbor` 04:00, `daily-openbao` 05:00이며 각각 TTL 7일 또는 14일이다. CNPG object-store 설정에는 별도 `ScheduledBackup` 리소스가 보이지 않는다. | 스케줄 선언은 성공한 백업, 백업 신선도, 복구 가능성을 증명하지 않는다. 실제 RPO는 마지막 검증 성공 시각과 장애 시각의 차이로 측정해야 한다. |
+| 스케줄 | 같은 Velero 설정의 `daily-full`은 매일 02:00, `daily-databases`는 01:00, `daily-gitea` 03:00, `daily-harbor` 04:00, `daily-openbao` 05:00이며 각각 TTL 7일 또는 14일이다. `gitops/resources/cnpg-backup.yaml`은 `narwhal-db-daily` ScheduledBackup을 매일 02:00 UTC (`0 2 * * *`), `barmanObjectStore`, cluster `narwhal-db`, target `prefer-standby`로 선언한다. | 스케줄 선언은 성공한 백업, 백업 신선도, 복구 가능성을 증명하지 않는다. 실제 RPO는 마지막 검증 성공 시각과 장애 시각의 차이로 측정해야 한다. |
 
 `docs/common/database.md`의 설명은 CNPG Barman Full Backup/WAL 및 Velero PVC 보호를 요약한다. 구체적인 현재 스케줄과 스냅샷 비활성 상태는 위 GitOps 설정을 기준으로 판정한다. 이 문서와 설정이 충돌하면 실행 가능한 선언을 우선한다.
 
@@ -79,6 +79,7 @@
 rg -n 'kind: StorageClass|name: nfs-csi|provisioner: nfs.csi.k8s.io|server:|share:' scripts/cluster/04-addons.sh
 rg -n 'root_squash|sync,no_subtree_check|NFS_SHARE_PATH' scripts/cluster/01-nfs-server.sh
 rg -n 'storageClass:|destinationPath:|wal:|retentionPolicy:' gitops/resources/narwhal-db.yaml
+rg -n 'kind: ScheduledBackup|name: narwhal-db-daily|schedule:|cluster:|name: narwhal-db|method:|target:' gitops/resources/cnpg-backup.yaml
 rg -n 'schedule:|ttl:|snapshotsEnabled:|defaultVolumesToFsBackup:|uploaderType:|volumeSnapshotLocation:' gitops/charts/narwhal-apps/templates/velero.yaml
 rg -n 'local-path|local PV|kind: PersistentVolume' scripts gitops/resources gitops/charts/narwhal-apps/templates
 ```

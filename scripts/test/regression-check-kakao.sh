@@ -2872,6 +2872,9 @@ assert line in s and not any(x.startswith("MAX_ROUNDS=") and ":-3" in x for x in
   check_not R235b "selflock check rejects Fail webhook with no namespace selector" \
     python3 scripts/test/lib/check-admission-selflock.py scripts/test/fixtures/admission-selflock-bad.yaml
 
+  check R237 "release images, pinned Helm charts, and binaries have SBOM/license inventory or reviewed UNKNOWN rows (Narwhal#53)" \
+    python3 scripts/test/lib/check-sbom-inventory-completeness.py --mutation-verify
+
 }
 
 #=========================================

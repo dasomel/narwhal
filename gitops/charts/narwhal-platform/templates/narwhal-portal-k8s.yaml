@@ -154,6 +154,23 @@ subjects:
     namespace: devtools
 ---
 # Valkey (포털 전용 캐시)
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: narwhal-portal-valkey-tls
+  namespace: devtools
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  secretName: narwhal-portal-valkey-tls
+  issuerRef:
+    name: narwhal-ca-issuer
+    kind: ClusterIssuer
+  dnsNames:
+    - narwhal-portal-valkey.devtools.svc.cluster.local
+    - narwhal-portal-valkey.devtools.svc
+    - narwhal-portal-valkey
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -195,7 +212,44 @@ spec:
             limits:
               cpu: 200m
               memory: 128Mi
-          command: [valkey-server, --save, "", --appendonly, "no"]
+          # D2: TLS-only transport and command-scoped ACL keep this private cache usable by
+          # the portal while rejecting plaintext, anonymous, and administrative access. Cost:
+          # cert-manager readiness gates the pod. Escape: roll back the linked workloads together.
+          command:
+            - valkey-server
+            - --save
+            - ""
+            - --appendonly
+            - "no"
+            - --port
+            - "0"
+            - --tls-port
+            - "6379"
+            - --tls-cert-file
+            - /etc/valkey/tls/tls.crt
+            - --tls-key-file
+            - /etc/valkey/tls/tls.key
+            - --tls-auth-clients
+            - "no"
+            - --aclfile
+            - /etc/valkey/auth/users.acl
+          volumeMounts:
+            - name: valkey-tls
+              mountPath: /etc/valkey/tls
+              readOnly: true
+            - name: valkey-auth
+              mountPath: /etc/valkey/auth
+              readOnly: true
+      volumes:
+        - name: valkey-tls
+          secret:
+            secretName: narwhal-portal-valkey-tls
+        - name: valkey-auth
+          secret:
+            secretName: narwhal-portal-valkey-auth
+            items:
+              - key: users.acl
+                path: users.acl
 ---
 apiVersion: v1
 kind: Service
@@ -208,6 +262,27 @@ spec:
   ports:
     - port: 6379
       targetPort: 6379
+---
+# Cache ingress is limited to the sole consumer; the Service remains ClusterIP-only.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: narwhal-portal-valkey-ingress
+  namespace: devtools
+spec:
+  podSelector:
+    matchLabels:
+      app: narwhal-portal-valkey
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: narwhal-portal
+      ports:
+        - protocol: TCP
+          port: 6379
 ---
 # Narwhal Portal Deployment
 # Image is pulled from GHCR (ghcr.io/dasomel/narwhal-portal, public package) at a
@@ -269,6 +344,13 @@ spec:
           # volume instead of the default automount, whose audience is not guaranteed to
           # stay pinned to the API server's actual issuer.
           env:
+            - name: VALKEY_USERNAME
+              value: portal
+            - name: VALKEY_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: narwhal-portal-valkey-auth
+                  key: password
             - name: K8S_SA_TOKEN_FILE
               value: /var/run/secrets/kubernetes.io/serviceaccount-k8s-api/token
             - name: K8S_TOKEN_AUDIENCE

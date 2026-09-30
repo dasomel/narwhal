@@ -21,14 +21,6 @@
 set -euo pipefail
 DOMAIN="${DOMAIN:-local.narwhal.internal}"
 REALM="narwhal"
-# Valkey itself has no TLS/AUTH configured in this cluster yet (narwhal-portal-valkey
-# Deployment runs plain valkey-server, VALKEY_PASSWORD="" below) — so
-# VALKEY_INSECURE_PRODUCTION must stay "true" on every provider until Valkey actually gets
-# TLS + a password wired up (tracked as follow-up infra work, not done in this pass).
-# Flipping this to "false" without that infra makes the portal's own production guard
-# (src/lib/valkey.ts assertProductionSecurity) throw and readiness go 503 on every
-# non-vagrant deploy — caught by Codex review before landing (see lessons-log).
-VALKEY_INSECURE_PRODUCTION_VALUE="true"
 export KUBECONFIG=/home/vagrant/.kube/config-local
 
 echo "=========================================="
@@ -567,6 +559,36 @@ umask 077
 portal_secret_tmp="$(mktemp -d)"
 trap 'rm -rf "${portal_secret_tmp}"' EXIT
 
+# D1: keep the cache password in a dedicated Secret and preserve it across bootstrap reruns
+# so the ACL and portal env stay synchronized; cost is one Secret; rotate only as a coordinated
+# portal/Valkey rollout if preservation must be escaped.
+valkey_auth_dir="${portal_secret_tmp}/valkey-auth"
+mkdir -m 700 "${valkey_auth_dir}"
+if kubectl get secret narwhal-portal-valkey-auth -n devtools -o jsonpath='{.data.password}' \
+  | base64 -d > "${valkey_auth_dir}/password"; then
+  if [ ! -s "${valkey_auth_dir}/password" ]; then
+    echo "ERROR: narwhal-portal-valkey-auth exists without a password" >&2
+    exit 1
+  fi
+else
+  openssl rand -hex 32 > "${valkey_auth_dir}/password"
+fi
+chmod 600 "${valkey_auth_dir}/password"
+valkey_password="$(cat "${valkey_auth_dir}/password")"
+# D3: only cache and live-stream commands are granted, with Pub/Sub scoped to its event
+# channel; cost is ACL maintenance when commands change; escape via reviewed per-command ACL
+# addition rather than granting a broad command category.
+cat > "${valkey_auth_dir}/users.acl" <<EOF
+user default off
+user portal on >${valkey_password} ~* &live:events:chan +auth +hello +ping +info +select +client|setname +client|setinfo +get +set +del +expire +ttl +lpush +ltrim +lrange +publish +subscribe +unsubscribe
+EOF
+unset valkey_password
+kubectl create secret generic narwhal-portal-valkey-auth \
+  --namespace devtools \
+  --from-file=password="${valkey_auth_dir}/password" \
+  --from-file=users.acl="${valkey_auth_dir}/users.acl" \
+  --dry-run=client -o yaml | kubectl apply -f - >/dev/null
+
 kubectl create secret generic narwhal-portal-secrets \
   --namespace devtools \
   "${ARGOCD_TOKEN_ARG[@]}" \
@@ -600,10 +622,8 @@ kubectl create secret generic narwhal-portal-secrets \
   --from-literal=LOKI_URL="http://loki.monitoring.svc.cluster.local:3100" \
   --from-literal=TEMPO_URL="http://tempo.monitoring.svc.cluster.local:3200" \
   --from-literal=HUBBLE_RELAY_ADDR="hubble-relay.kube-system.svc.cluster.local:80" \
-  --from-literal=VALKEY_URL="redis://narwhal-portal-valkey.devtools.svc.cluster.local:6379" \
-  --from-literal=VALKEY_TLS="false" \
-  --from-literal=VALKEY_INSECURE_PRODUCTION="${VALKEY_INSECURE_PRODUCTION_VALUE}" \
-  --from-literal=VALKEY_PASSWORD="" \
+  --from-literal=VALKEY_URL="rediss://narwhal-portal-valkey.devtools.svc.cluster.local:6379" \
+  --from-literal=VALKEY_TLS="true" \
   --from-literal=OPENBAO_ADDR="https://openbao.storage.svc.cluster.local:8200" \
   --from-literal=OPENBAO_AUTH_METHOD="${OPENBAO_AUTH_METHOD_VALUE}" \
   --from-literal=OPENBAO_K8S_ROLE="${OPENBAO_K8S_ROLE}" \
@@ -639,7 +659,9 @@ if kubectl get secret narwhal-portal-secrets -n devtools --ignore-not-found -o j
       "${portal_secret_tmp}/merged.json" \
       --owned-key ARGOCD_TOKEN \
       --owned-key OPENBAO_TOKEN \
-      --owned-key K8S_SA_TOKEN
+      --owned-key K8S_SA_TOKEN \
+      --owned-key VALKEY_PASSWORD \
+      --owned-key VALKEY_INSECURE_PRODUCTION
     kubectl apply -f "${portal_secret_tmp}/merged.json"
   else
     kubectl apply -f "${portal_secret_tmp}/desired.json"
@@ -664,9 +686,7 @@ echo "  K8s SA token:     narwhal-portal@devtools (8760h)"
 echo "  ArgoCD token:     account=narwhal-portal"
 echo "  Secret:           narwhal-portal-secrets (devtools)"
 echo ""
-echo "NOTE: Valkey는 현재 noauth 모드 (--save \"\" --appendonly no)."
-echo "  VALKEY_PASSWORD는 빈 값으로 설정됨."
-echo "  프로덕션에서는 TLS+AUTH 활성화 필요 (docs/common/security.md 'Local Dev Exceptions')."
+echo "  Valkey: TLS + portal ACL enabled; dedicated auth Secret reconciled without printing its contents."
 echo ""
 echo "NOTE: TUNING_JOB_IMAGE는 digest pin 없이 :latest 태그."
 echo "  프로덕션에서는 @sha256:<64hex> digest로 교체 필요."

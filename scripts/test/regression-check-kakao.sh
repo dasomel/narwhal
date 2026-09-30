@@ -2860,6 +2860,8 @@ assert line in s and not any(x.startswith("MAX_ROUNDS=") and ":-3" in x for x in
     python3 scripts/test/lib/check-etcd-operations.py --mutation-verify
   check R231 "storage protection policy matches static storage, backup, and export declarations" \
     python3 scripts/test/lib/check-storage-protection-policy.py --mutation-verify
+  check R233 "static-pod manifest verifier rejects filesystem and hash drift (Narwhal#114)" \
+    scripts/verify/static-pod-manifest-check.sh --self-test
 
 }
 

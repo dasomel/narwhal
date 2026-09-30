@@ -1163,6 +1163,8 @@ PYEOF
     python3 scripts/test/lib/check-admission-webhook-settings.py scripts/test/fixtures/admission-webhook-bad.yaml
   check R228 "namespace PSA declarations match the workload security profile (Narwhal#144)" \
     python3 scripts/test/lib/check-workload-psa-profile.py --mutation-verify
+  check R234 "RuntimeClass references and workload security posture are ratcheted (Narwhal#144)" \
+    python3 scripts/test/lib/check-workload-runtime-posture.py --mutation-verify
   check R229 "compatibility inventory pins match cited repository sources" \
     python3 scripts/test/lib/check-compatibility-pins.py --mutation-verify
 

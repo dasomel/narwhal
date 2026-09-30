@@ -26,7 +26,8 @@ MANIFEST_DIR="${ROOT%/}/etc/kubernetes/manifests"
 [ "$ROOT" != / ] || MANIFEST_DIR=/etc/kubernetes/manifests
 
 file_hash() {
-  if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1" | awk '{print $1}'
+  # GNU sha256sum prefixes the digest with a backslash when the file name contains one; drop it.
+  if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1" | awk '{print $1}' | tr -d '\\'
   else shasum -a 256 "$1" | awk '{print $1}'; fi
 }
 file_details() {

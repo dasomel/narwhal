@@ -1,0 +1,99 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "apiVersion",
+    "backend",
+    "backendVersion",
+    "platform",
+    "kubernetesVersion",
+    "driverOrRuntime",
+    "capabilities"
+  ],
+  "properties": {
+    "apiVersion": {
+      "enum": [
+        "narwhal.io/accelerator-capability/v1alpha1"
+      ]
+    },
+    "backend": {
+      "type": "string",
+      "enum": [
+        "apple-metal-mps",
+        "nvidia-linux",
+        "amd-linux",
+        "intel-linux",
+        "other"
+      ]
+    },
+    "backendVersion": {
+      "type": "string",
+      "minLength": 1
+    },
+    "platform": {
+      "type": "string",
+      "minLength": 1
+    },
+    "kubernetesVersion": {
+      "type": "string",
+      "minLength": 1
+    },
+    "driverOrRuntime": {
+      "type": "string",
+      "minLength": 1
+    },
+    "capabilities": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "required": [
+          "status",
+          "profile",
+          "limitations",
+          "evidenceRefs",
+          "evidenceKind"
+        ],
+        "properties": {
+          "status": {
+            "enum": [
+              "supported",
+              "partial",
+              "unavailable",
+              "not-applicable"
+            ]
+          },
+          "profile": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "limitations": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "evidenceRefs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "reason": {
+            "type": "string"
+          },
+          "evidenceKind": {
+            "type": "string",
+            "enum": [
+              "static",
+              "hardware"
+            ]
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  }
+}

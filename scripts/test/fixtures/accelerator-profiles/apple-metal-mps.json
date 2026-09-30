@@ -1,0 +1,132 @@
+{
+  "apiVersion": "narwhal.io/accelerator-capability/v1alpha1",
+  "backendVersion": "unverified",
+  "platform": "unverified",
+  "kubernetesVersion": "1.35.7",
+  "driverOrRuntime": "unverified",
+  "backend": "apple-metal-mps",
+  "capabilities": {
+    "allocation.dedicated": {
+      "status": "unavailable",
+      "profile": null,
+      "limitations": [],
+      "evidenceRefs": [],
+      "evidenceKind": "static"
+    },
+    "benchmark.contract": {
+      "status": "unavailable",
+      "profile": null,
+      "limitations": [],
+      "evidenceRefs": [],
+      "evidenceKind": "static"
+    },
+    "health.device": {
+      "status": "unavailable",
+      "profile": null,
+      "limitations": [],
+      "evidenceRefs": [],
+      "evidenceKind": "static"
+    },
+    "inventory.whole-device": {
+      "status": "unavailable",
+      "profile": null,
+      "limitations": [],
+      "evidenceRefs": [],
+      "evidenceKind": "static"
+    },
+    "isolation.compute-memory": {
+      "status": "unavailable",
+      "profile": null,
+      "limitations": [],
+      "evidenceRefs": [],
+      "evidenceKind": "static"
+    },
+    "isolation.security-boundary": {
+      "status": "unavailable",
+      "profile": null,
+      "limitations": [],
+      "evidenceRefs": [],
+      "evidenceKind": "static"
+    },
+    "monitoring.memory": {
+      "status": "unavailable",
+      "profile": null,
+      "limitations": [],
+      "evidenceRefs": [],
+      "evidenceKind": "static"
+    },
+    "monitoring.power": {
+      "status": "unavailable",
+      "profile": null,
+      "limitations": [],
+      "evidenceRefs": [],
+      "evidenceKind": "static"
+    },
+    "monitoring.thermal": {
+      "status": "unavailable",
+      "profile": null,
+      "limitations": [],
+      "evidenceRefs": [],
+      "evidenceKind": "static"
+    },
+    "monitoring.utilization": {
+      "status": "unavailable",
+      "profile": null,
+      "limitations": [],
+      "evidenceRefs": [],
+      "evidenceKind": "static"
+    },
+    "network.fast-path.collective": {
+      "status": "not-applicable",
+      "profile": null,
+      "limitations": [],
+      "evidenceRefs": [],
+      "reason": "Not applicable to the Metal/MPS backend class.",
+      "evidenceKind": "static"
+    },
+    "network.fast-path.rdma": {
+      "status": "not-applicable",
+      "profile": null,
+      "limitations": [],
+      "evidenceRefs": [],
+      "reason": "Not applicable to the Metal/MPS backend class.",
+      "evidenceKind": "static"
+    },
+    "offline.bundle": {
+      "status": "unavailable",
+      "profile": null,
+      "limitations": [],
+      "evidenceRefs": [],
+      "evidenceKind": "static"
+    },
+    "partitioning.hardware": {
+      "status": "unavailable",
+      "profile": null,
+      "limitations": [],
+      "evidenceRefs": [],
+      "evidenceKind": "static"
+    },
+    "sharing.multiprocess": {
+      "status": "unavailable",
+      "profile": null,
+      "limitations": [],
+      "evidenceRefs": [],
+      "evidenceKind": "static"
+    },
+    "sharing.time-slicing": {
+      "status": "unavailable",
+      "profile": null,
+      "limitations": [],
+      "evidenceRefs": [],
+      "evidenceKind": "static"
+    },
+    "storage.fast-path.gds": {
+      "status": "not-applicable",
+      "profile": null,
+      "limitations": [],
+      "evidenceRefs": [],
+      "reason": "Not applicable to the Metal/MPS backend class.",
+      "evidenceKind": "static"
+    }
+  }
+}

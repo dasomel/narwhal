@@ -2852,6 +2852,9 @@ assert line in s and not any(x.startswith("MAX_ROUNDS=") and ":-3" in x for x in
   check R227 "GitOps hostPaths are allowlisted and static-pod manifest hardening matches scripts" \
     python3 scripts/test/lib/check-static-pod-hostpaths.py --mutation-verify
 
+  check R230 "etcd operations current-state claims match repository configuration" \
+    python3 scripts/test/lib/check-etcd-operations.py --mutation-verify
+
 }
 
 #=========================================

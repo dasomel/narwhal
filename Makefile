@@ -110,3 +110,7 @@ attest:
 	@echo "Current status: releases are not signed and carry no build provenance" \
 	     "attestation yet. See SECURITY.md and narwhal#161 (portfolio-wide provenance" \
 	     "contract) for the target state."
+
+.PHONY: research-check
+research-check:
+	python3 scripts/research/check-research-evidence.py

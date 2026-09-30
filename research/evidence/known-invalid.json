@@ -1,0 +1,14 @@
+[
+  {
+    "file": "2026-09.jsonl",
+    "line": 1,
+    "sha256": "b07534b04e466c67ab90f85dcf0ab9a9b8b4dedc6047414f08b357234ab64ee8",
+    "reason": "environment: pattern"
+  },
+  {
+    "file": "2026-09.jsonl",
+    "line": 2,
+    "sha256": "a6ddc8f364a5d7e36352552d7327d77d86f646ac626248aa7270f4949d91f54b",
+    "reason": "environment: pattern"
+  }
+]

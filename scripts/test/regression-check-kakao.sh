@@ -2874,6 +2874,8 @@ assert line in s and not any(x.startswith("MAX_ROUNDS=") and ":-3" in x for x in
 
   check R237 "release images, pinned Helm charts, and binaries have SBOM/license inventory or reviewed UNKNOWN rows (Narwhal#53)" \
     python3 scripts/test/lib/check-sbom-inventory-completeness.py --mutation-verify
+  check R238 "machine-readable compatibility support matrix matches policy and current pins (Narwhal#26)" \
+    python3 scripts/test/lib/check-compatibility-matrix.py --mutation-verify
 
 }
 

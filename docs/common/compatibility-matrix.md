@@ -21,19 +21,19 @@
 | 계층 / 컴포넌트 | 현재 선언 pin | Direct source / 비고 | 상태 |
 |---|---|---|---|
 | Kubernetes | `v1.35.7`; kubeadm/kubelet/kubectl도 `K8S_PATCH_VERSION`(`v1.35.7`)으로 설치됨 (`VERSIONS.md`의 kubeadm/kubelet/kubectl 행도 v1.35.7로 정정되었고 `check-version-consistency.sh`가 함께 검사한다) | `Vagrantfile`의 `K8S_PATCH_VERSION`, `scripts/common/03-k8s-install.sh`, `scripts/cluster/02-init-cluster.sh`. control plane과 node 도구 patch가 서로 다르게 선언됨 | pinned; skew 별도 gate 필요 |
-| OS | Ubuntu `26.04 LTS`; box `dasomel/ubuntu-26.04-xfs v0.1.0` | `VERSIONS.md`; Vagrant box 기준. Kakao 노드 OS가 이 값과 같다는 보장은 없음 | pinned (Vagrant) |
+| OS | Ubuntu `26.04 LTS`; Vagrant box `v0.1.0` | `Vagrantfile`의 box 및 `box_version` pin; Kakao 노드 OS가 이 값과 같다는 보장은 없음 | pinned (Vagrant) |
 | containerd | Ubuntu 24.04는 `1.7.x` 시도, 26.04는 distro default `2.x` | `scripts/common/02-containerd.sh`는 `CONTAINERD_VERSION` 미설정 시 저장소 기본값을 설치하고 실제 설치 버전을 출력. 고정 patch가 아님 | unpinned runtime version |
 | CNI | Cilium `v1.19.4`; CLI `v0.19.4`; Hubble `v1.19.4` | `scripts/cluster/03-cni-install.sh`; `CNI_PLUGIN`은 기본 `cilium`, 스크립트에는 Calico 대체 pin도 존재 | pinned (기본 경로) |
 | APISIX / ingress | APISIX app `3.15.0`, chart `2.13.0`; Ingress Controller `1.8.0` | GitOps `apisix.yaml`, ingress controller 세부는 `VERSIONS.md` 및 관련 manifests | pinned; controller 2.x는 major break 사유로 frozen |
-| Istio ambient | Istio, `istio-cni`, `ztunnel` `v1.30.1` | `gitops/charts/narwhal-apps/templates/{istiod,istio-cni,ztunnel}.yaml`; 순서: istiod → istio-cni → ztunnel | pinned |
-| CSI / storage | NFS CSI chart `4.13.2`; SeaweedFS chart `4.34.0` / app `v4.34` | `VERSIONS.md`; SeaweedFS GitOps `seaweedfs.yaml` | pinned |
+| Istio ambient | Istio, `istio-cni`, `ztunnel` `v1.30.1` | `gitops/charts/narwhal-apps/templates/istiod.yaml`, `gitops/charts/narwhal-apps/templates/istio-cni.yaml`, `gitops/charts/narwhal-apps/templates/ztunnel.yaml`; 순서: istiod → istio-cni → ztunnel | pinned |
+| CSI / storage | NFS CSI chart `4.13.2`; SeaweedFS chart `4.34.0` / app `v4.34` | `scripts/cluster/04-addons.sh`, `gitops/charts/narwhal-apps/templates/seaweedfs.yaml`, `scripts/cluster/08-4-storage.sh`; NFS CSI `4.13.2` and SeaweedFS `4.34.0` are separate chart pins | pinned |
 | GitOps | Argo CD `v3.4.4`; Gitea `v1.26.2` / chart `12.6.0` | `scripts/cluster/13-argocd.sh`, `scripts/cluster/12-gitea.sh` | pinned |
 | Identity / secrets | Keycloak 및 Operator `26.5.7`; OpenBao chart `0.28.3` / app `v2.5.4` | `scripts/cluster/11-keycloak.sh`, GitOps `openbao.yaml`, `VERSIONS.md` | pinned |
 | Registry | Harbor `v2.15.1`, chart `1.19.1` | `gitops/charts/narwhal-apps/templates/harbor.yaml`; 6 versioned images 고정, exporter 비활성 상태는 `VERSIONS.md` 설명 참조 | pinned |
-| Observability | kube-prometheus-stack chart `86.2.3`; Loki app `v3.7.3` / chart `18.4.0`; Tempo app `v2.9.0` / chart `2.2.3`; Alloy chart `4.2.0` | 각 GitOps 템플릿 및 `VERSIONS.md`. Tempo chart 기본 app보다 `2.9.0`을 명시적으로 유지 | pinned; Tempo 상향에는 block audit 전제 |
-| Backup | Velero app `v1.18.1` / chart `12.0.3`; AWS plugin `v1.14.1` | `gitops/charts/narwhal-apps/templates/velero.yaml`, `scripts/cluster/08-4-storage.sh` | pinned |
-| Portal | Narwhal Portal `1.0.19`; Next.js `16.2.1` | `gitops/charts/narwhal-platform/templates/narwhal-portal-k8s.yaml`, `VERSIONS.md` | pinned |
-| 기타 주요 add-ons | cert-manager chart `v1.20.2`; CNPG `v1.29.1` / chart `0.28.3`; Kyverno `v1.18.1` / chart `3.8.1`; MetalLB chart `v0.16.1`; metrics-server `v0.8.1` / chart `3.13.1`; Headlamp `v0.42.0` | `gitops/charts/narwhal-apps/templates/` 및 `scripts/cluster/07-cnpg.sh`, `VERSIONS.md` | pinned |
+| Observability | kube-prometheus-stack chart `86.2.3`; Loki chart `18.4.0`; Tempo app `v2.9.0` / chart `2.2.3`; Alloy chart `4.2.0`. VERSIONS.md-only: Loki app `v3.7.3` | `gitops/charts/narwhal-apps/templates/prometheus-stack.yaml`, `loki.yaml`, `tempo.yaml`, `k8s-monitoring.yaml`, `VERSIONS.md`; Loki app version is recorded in `VERSIONS.md` | pinned; VERSIONS.md-only token WARN; Tempo 상향에는 block audit 전제 |
+| Backup | Direct chart `12.0.3`; AWS plugin image `v1.14.1`; VERSIONS.md-only app `v1.18.1` | `gitops/charts/narwhal-apps/templates/velero.yaml`, `scripts/cluster/08-4-storage.sh`, `VERSIONS.md`; chart and plugin are direct source pins; `VERSIONS.md` records the Velero app version | pinned; app version WARN |
+| Portal | Direct Narwhal Portal image `1.0.19`; VERSIONS.md-only Next.js `16.2.1` | `gitops/charts/narwhal-platform/templates/narwhal-portal-k8s.yaml`, `VERSIONS.md`; the manifest pins the Portal image, while `VERSIONS.md` alone records its Next.js version | pinned; framework version WARN |
+| 기타 주요 add-ons | Direct: cert-manager chart `v1.20.2`; CNPG app `v1.29.1` / chart `0.28.3`; Kyverno chart `3.8.1`; MetalLB chart `v0.16.1`; metrics-server app `v0.8.1`; Headlamp chart/app `v0.42.0`. VERSIONS.md-only: Kyverno app `v1.18.1`, metrics-server chart `3.13.1` | `gitops/charts/narwhal-apps/templates/cert-manager.yaml`, `gitops/charts/narwhal-apps/templates/kyverno.yaml`, `gitops/charts/narwhal-apps/templates/metallb.yaml`, `gitops/charts/narwhal-apps/templates/headlamp.yaml`, `scripts/cluster/04-addons.sh`, `scripts/cluster/07-cnpg.sh`, `VERSIONS.md`; only the labelled VERSIONS.md-only tokens rely on that inventory | pinned; VERSIONS.md-only tokens WARN |
 
 전체 세부 버전과 예외 사유는 [VERSIONS.md](../../VERSIONS.md)가 우선 참조다. 거기에 있는 compatibility 표는 아래 선언 범위로만 취급하며 tested 조합 표로 읽지 않는다.
 

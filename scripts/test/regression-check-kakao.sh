@@ -2762,6 +2762,8 @@ assert '22[[:space:]]' in line and 'guest' in line, 'parser no longer selects gu
     python3 -c "text=open('scripts/cluster/02-init-cluster.sh').read(); assert 'authentication:\\n  anonymous:\\n    enabled: false' in text"
   check R161 "kubelet readOnlyPort is explicitly zero (Narwhal#113)" \
     bash -c 'grep -qE "^readOnlyPort:[[:space:]]*0[[:space:]]*$" scripts/cluster/02-init-cluster.sh && scripts/verify/kubelet-authz-check.sh --self-test'
+  check R232 "kubeadm kubelet and apiserver authz baseline has no repository override (Narwhal#113)" \
+    python3 scripts/test/lib/check-kubelet-authz-baseline.py --mutation-verify
 
   # Narwhal#228/#229: provisioning regressions must detect literal CIDRs, chart-ignored
   # ambient labels, and APISIX controller resources wedged in ResourceSyncAborted.

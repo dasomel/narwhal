@@ -564,8 +564,15 @@ trap 'rm -rf "${portal_secret_tmp}"' EXIT
 # portal/Valkey rollout if preservation must be escaped.
 valkey_auth_dir="${portal_secret_tmp}/valkey-auth"
 mkdir -m 700 "${valkey_auth_dir}"
-if kubectl get secret narwhal-portal-valkey-auth -n devtools -o jsonpath='{.data.password}' \
-  | base64 -d > "${valkey_auth_dir}/password"; then
+# --ignore-not-found makes "absent" an empty success; any other kubectl failure aborts
+# instead of silently rotating the password under a running portal/Valkey pair.
+existing_valkey_password_b64="$(kubectl get secret narwhal-portal-valkey-auth -n devtools \
+  --ignore-not-found -o jsonpath='{.data.password}')" || {
+  echo "ERROR: could not read narwhal-portal-valkey-auth; refusing to rotate the Valkey password" >&2
+  exit 1
+}
+if [ -n "${existing_valkey_password_b64}" ]; then
+  printf '%s' "${existing_valkey_password_b64}" | base64 -d > "${valkey_auth_dir}/password"
   if [ ! -s "${valkey_auth_dir}/password" ]; then
     echo "ERROR: narwhal-portal-valkey-auth exists without a password" >&2
     exit 1
@@ -575,12 +582,15 @@ else
 fi
 chmod 600 "${valkey_auth_dir}/password"
 valkey_password="$(cat "${valkey_auth_dir}/password")"
-# D3: only cache and live-stream commands are granted, with Pub/Sub scoped to its event
-# channel; cost is ACL maintenance when commands change; escape via reviewed per-command ACL
+# D3: only cache and live-stream commands are granted (derived from every ioredis call in
+# narwhal-portal src: valkey.ts get/mget/set/multi/exec/del, idempotency.ts set/get,
+# live-stream.ts incr/lpush/ltrim/lrange/publish/subscribe, live-k8s-informer.ts eval lease
+# scripts calling get/pexpire/del, cache-invalidation.ts scan/unlink, ready check ping/info),
+# with Pub/Sub scoped to its event channel; cost is ACL maintenance when commands change; escape via reviewed per-command ACL
 # addition rather than granting a broad command category.
 cat > "${valkey_auth_dir}/users.acl" <<EOF
 user default off
-user portal on >${valkey_password} ~* &live:events:chan +auth +hello +ping +info +select +client|setname +client|setinfo +get +set +del +expire +ttl +lpush +ltrim +lrange +publish +subscribe +unsubscribe
+user portal on >${valkey_password} ~* &live:events:chan +auth +hello +ping +info +select +client|setname +client|setinfo +get +mget +set +del +unlink +scan +incr +multi +exec +eval +pexpire +lpush +ltrim +lrange +publish +subscribe +unsubscribe
 EOF
 unset valkey_password
 kubectl create secret generic narwhal-portal-valkey-auth \

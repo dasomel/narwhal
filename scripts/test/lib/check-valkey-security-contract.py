@@ -9,12 +9,20 @@ CHART_PATH = ROOT / "gitops/charts/narwhal-platform/templates/narwhal-portal-k8s
 BOOTSTRAP_PATH = ROOT / "scripts/cluster/13-2-narwhal-portal-bindings.sh"
 
 
+# Commands the portal really issues (narwhal-portal src: valkey.ts, idempotency.ts,
+# live-stream.ts, live-k8s-informer.ts, cache-invalidation.ts, health ping/ready check).
+PORTAL_ACL_COMMANDS = [
+  "auth", "hello", "ping", "info", "select", "client|setname", "client|setinfo",
+  "get", "mget", "set", "del", "unlink", "scan", "incr", "multi", "exec", "eval", "pexpire",
+  "lpush", "ltrim", "lrange", "publish", "subscribe", "unsubscribe",
+]
+
+
 def validate(chart: str, bootstrap: str) -> None:
   required_chart = [
     "name: narwhal-portal-valkey-tls",
     "name: narwhal-ca-issuer",
     "narwhal-portal-valkey.devtools.svc.cluster.local",
-    "--port",
     '            - "0"',
     "--tls-port",
     "--tls-cert-file",
@@ -30,6 +38,8 @@ def validate(chart: str, bootstrap: str) -> None:
     "app: narwhal-portal\n",
     "port: 6379",
   ]
+  if not re.search(r'(?m)^\s+- "?--port"?\s*\n\s+- "0"\s*$', chart):
+    raise AssertionError("chart must disable the plaintext listener with exactly --port 0")
   missing = [item for item in required_chart if item not in chart]
   if missing:
     raise AssertionError(f"chart missing security contract fragments: {missing}")
@@ -63,7 +73,6 @@ def validate(chart: str, bootstrap: str) -> None:
     '--from-file=users.acl="${valkey_auth_dir}/users.acl"',
     "user default off",
     "user portal on >${valkey_password} ~* &live:events:chan",
-    "+ping +info +select +client|setname +client|setinfo +get +set +del +expire +ttl +lpush +ltrim +lrange +publish +subscribe +unsubscribe",
     'VALKEY_URL="rediss://narwhal-portal-valkey.devtools.svc.cluster.local:6379"',
     'VALKEY_TLS="true"',
     "--owned-key VALKEY_PASSWORD",
@@ -72,6 +81,12 @@ def validate(chart: str, bootstrap: str) -> None:
   missing = [item for item in required_bootstrap if item not in bootstrap]
   if missing:
     raise AssertionError(f"bootstrap missing security contract fragments: {missing}")
+
+  acl_line = next((l for l in bootstrap.splitlines() if l.startswith("user portal on ")), "")
+  granted = set(re.findall(r"(?<=\s)\+(\S+)", acl_line))
+  absent = [cmd for cmd in PORTAL_ACL_COMMANDS if cmd not in granted]
+  if absent:
+    raise AssertionError(f"portal ACL missing required commands: {absent}")
 
   forbidden = [
     "--from-literal=VALKEY_INSECURE_PRODUCTION=",
@@ -121,6 +136,9 @@ def main() -> None:
     (chart, bootstrap + "\n  --from-literal VALKEY_PASSWORD=inline-secret\n"),
     (chart, bootstrap.replace('VALKEY_TLS="true"', 'VALKEY_TLS="false"', 1)),
     (chart, bootstrap.replace("user default off", "user default on", 1)),
+    (chart, bootstrap.replace(" +mget", "", 1)),
+    (chart, bootstrap.replace(" +unlink", "", 1)),
+    (chart.replace('            - "0"', '            - "1"', 1), bootstrap),
   ]
   for index, (mutant_chart, mutant_bootstrap) in enumerate(mutants, start=1):
     try:
@@ -129,7 +147,7 @@ def main() -> None:
       continue
     raise AssertionError(f"security regression mutation {index} was accepted")
 
-  print("PASS: Valkey TLS, ACL, secret wiring, ingress scope, and 8 negative mutations")
+  print("PASS: Valkey TLS, ACL, secret wiring, ingress scope, and {} negative mutations".format(len(mutants)))
 
 
 if __name__ == "__main__":

@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import importlib.util
 import json
 import os
 import pathlib
@@ -81,17 +82,17 @@ def evidence_path() -> pathlib.Path:
 
 
 def append_record(record: dict[str, object], path: pathlib.Path) -> None:
+    # D2: New Narwhal records use the shared v1 writer; the existing CLI and
+    # regression-report summary remain the compatibility escape hatch.
     validate_public_record(record)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    line = json.dumps(record, sort_keys=True, separators=(",", ":")) + "\n"
-    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
-    try:
-        remaining = memoryview(line.encode("utf-8"))
-        while remaining:
-            written = os.write(fd, remaining)
-            remaining = remaining[written:]
-    finally:
-        os.close(fd)
+    script = pathlib.Path(__file__).with_name("record-evidence.py")
+    spec = importlib.util.spec_from_file_location("shared_recorder", script)
+    if spec is None or spec.loader is None:
+        raise RuntimeError("shared research recorder is missing")
+    shared = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(shared)
+    record["environment"] = shared.safe_label(record["environment"])
+    shared.append_record(record, path, PROJECT_ROOT)
 
 
 def regression_summary(path: pathlib.Path | None) -> dict[str, object]:

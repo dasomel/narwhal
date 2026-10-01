@@ -1733,6 +1733,11 @@ PYEOF
     python3 scripts/airgap/lib/check-security-db-freshness.py "${secdb_fresh_tmp}/does-not-exist.json"
   rm -rf "${secdb_fresh_tmp}"
 
+  # Narwhal#48: validate security DB manifest provenance, file integrity, freshness,
+  # scanner/schema compatibility, and reject unlisted or symlinked bundle entries.
+  check R239 "security DB bundle verifier self-tests provenance and bundle integrity (2026-09-30)" \
+    scripts/verify/security-db-bundle-check.sh --self-test
+
   # narwhal#35: Kyverno verify-image-signatures policy configures Cosign public key
   # signature verification, SBOM attestation predicate checking, and digest validation.
   check R74 "Kyverno verify-image-signatures ClusterPolicy is present and valid (2026-08-25)" \

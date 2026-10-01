@@ -2883,6 +2883,8 @@ assert line in s and not any(x.startswith("MAX_ROUNDS=") and ":-3" in x for x in
     python3 scripts/test/lib/check-compatibility-matrix.py --mutation-verify
   check R240 "upgrade bundle contents, dependencies, and compatibility are verified (Narwhal#45)" \
     python3 scripts/verify/upgrade-bundle-check.py --self-test
+  check R241 "component upgrade waves cover Argo CD Applications and reject graph and reference drift (Narwhal#46)" \
+    python3 scripts/test/lib/check-upgrade-waves.py --mutation-verify
   check R236 "accelerator backend profiles match the conformance matrix (Narwhal#95)" \
     python3 scripts/test/lib/check-accelerator-profiles.py --mutation-verify
 

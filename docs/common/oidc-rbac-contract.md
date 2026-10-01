@@ -13,6 +13,10 @@
 apiserver-side 변환이며, 토큰 자체에는 절대 포함되지 않는다. 아래 표와 절마다 그
 근거를 파일:라인으로 못박는다.
 
+서비스 단위 SSO 흐름과 앱별 권한은 [Application SSO and Permission Matrix](app-sso-permission-matrix.md)를
+참고한다. 이 문서는 그룹 클레임이 Kubernetes·ArgoCD·Portal 역할로 매핑되는 공통 계약을
+정의하고, 서비스별 매트릭스는 그 계약이 개별 앱에서 어떻게 적용되는지 요약한다.
+
 ## 2. 그룹 매핑 표
 
 | Keycloak 원본 클레임 (`groups`) | apiserver 변환 후 RBAC 서브젝트 | ClusterRole | Portal `UserRole` |

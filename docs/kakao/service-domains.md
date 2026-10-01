@@ -115,6 +115,9 @@ kubectl get apisixroute -A -o jsonpath='{range .items[*].spec.http[*]}{.match.ho
 
 각 서비스가 SSO를 어떻게 붙였는지가 다르고, **실패했을 때 어디를 봐야 하는지**가 달라진다.
 
+서비스별 Keycloak 그룹과 실제 앱 인가, Portal 링크 노출을 대조하려면
+[Application SSO and Permission Matrix](../common/app-sso-permission-matrix.md)를 참고한다.
+
 | 방식 | 대상 | 동작 | 실패 시 확인 |
 |------|------|------|--------------|
 | **게이트웨이 OIDC** | Gitea, Prometheus, Alertmanager, Hubble, NFS Quota | APISIX `openid-connect` 플러그인이 로그인 전 트래픽을 Keycloak으로 보낸다. 백엔드는 인증을 모른다 | `platform-system`의 `*-oidc-secret`, 리다이렉트 URI `…/apisix/callback` |

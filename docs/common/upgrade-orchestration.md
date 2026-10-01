@@ -19,6 +19,14 @@ An edge means the row on the left must be healthy before starting the row on the
 right. Versions remain pinned in [`VERSIONS.md`](../../VERSIONS.md); an upgrade
 proposal must state the source and target pins for every changed component.
 
+The machine-readable component graph is
+[`upgrade-waves.json`](upgrade-waves.json). It refines this conceptual ordering
+against the deployed Argo CD Applications and separately pinned bootstrap
+components. Applications that are configuration bundles or do not yet have an
+independent upgrade contract remain in its `NOT_YET_MODELLED` ratchet table with
+a reason. Its strategies and repository references define static planning inputs;
+they do not implement component-specific upgrades or prove runtime health.
+
 | Wave | Component | Depends on | Reason |
 |---|---|---|---|
 | 0 | Kubernetes control plane | approved etcd backup and node capacity | The API, scheduler, and CRD machinery are the substrate for every other rollout. |

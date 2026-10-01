@@ -111,3 +111,10 @@ narwhal-airgap-bundle*/
 # Local airgap mirror registry data (6.4G of blobs, rebuildable from the bundle)
 .airgap-registry-data/
 __pycache__/
+
+# Local agent harness config — never publish. .codex/hooks.json execs scripts by absolute
+# path on the author's machine; the untracked skills are per-checkout tooling. Tracked
+# skills (narwhal-cluster-debug, narwhal-verification, ...) are unaffected by these patterns.
+/.codex/
+/.agents/skills/narwhal-ops/
+/.agents/skills/source-command-*/

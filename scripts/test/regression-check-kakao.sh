@@ -2876,6 +2876,8 @@ assert line in s and not any(x.startswith("MAX_ROUNDS=") and ":-3" in x for x in
     python3 scripts/test/lib/check-sbom-inventory-completeness.py --mutation-verify
   check R238 "machine-readable compatibility support matrix matches policy and current pins (Narwhal#26)" \
     python3 scripts/test/lib/check-compatibility-matrix.py --mutation-verify
+  check R240 "upgrade bundle contents, dependencies, and compatibility are verified (Narwhal#45)" \
+    python3 scripts/verify/upgrade-bundle-check.py --self-test
   check R236 "accelerator backend profiles match the conformance matrix (Narwhal#95)" \
     python3 scripts/test/lib/check-accelerator-profiles.py --mutation-verify
 

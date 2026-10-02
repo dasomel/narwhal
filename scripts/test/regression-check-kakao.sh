@@ -3057,7 +3057,7 @@ assert line in s and not any(x.startswith("MAX_ROUNDS=") and ":-3" in x for x in
     python3 scripts/verify/upgrade-bundle-check.py --self-test
   check R241 "component upgrade waves cover Argo CD Applications and reject graph and reference drift (Narwhal#46)" \
     python3 scripts/test/lib/check-upgrade-waves.py --mutation-verify
-  check R242 "Argo CD developer sync scope matches bootstrap and preserves portal-reader policy (2026-10-02)" \
+  check R242 "Argo CD developer and portal-reader policies/group maps match the reviewed contract (2026-10-02)" \
     python3 scripts/test/lib/check-argocd-developer-sync-scope.py --mutation-verify
   check R236 "accelerator backend profiles match the conformance matrix (Narwhal#95)" \
     python3 scripts/test/lib/check-accelerator-profiles.py --mutation-verify

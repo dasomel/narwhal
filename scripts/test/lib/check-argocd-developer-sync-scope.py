@@ -11,7 +11,25 @@ ROOT = Path(__file__).resolve().parents[3]
 GITOPS = ROOT / "gitops/charts/narwhal-platform/templates/argocd-config.yaml"
 BOOTSTRAP = ROOT / "scripts/cluster/13-argocd.sh"
 DEVELOPER_RULE = "p, role:developer, applications, sync, tenants/*, allow"
-PORTAL_READER_RULE = "p, role:portal-reader, applications, sync, */*, allow"
+DEVELOPER_POLICIES = {
+    "p, role:developer, applications, sync, tenants/*, allow",
+    "p, role:developer, applications, get, */*, allow",
+    "p, role:developer, logs, get, */*, allow",
+}
+PORTAL_READER_POLICIES = {
+    "p, role:portal-reader, applications, get, */*, allow",
+    "p, role:portal-reader, applications, list, */*, allow",
+    "p, role:portal-reader, logs, get, */*, allow",
+    "p, role:portal-reader, applications, sync, */*, allow",
+}
+GITOPS_GROUPS = {
+    "g, narwhal-portal, role:portal-reader",
+    "g, cluster-admin, role:admin",
+    "g, developer, role:developer",
+    "g, viewer, role:readonly",
+    "g, guest, role:none",
+}
+BOOTSTRAP_GROUPS = GITOPS_GROUPS - {"g, narwhal-portal, role:portal-reader"}
 
 
 def policy_lines(text: str, source: str) -> list[str]:
@@ -30,24 +48,27 @@ def policy_lines(text: str, source: str) -> list[str]:
 def valid(gitops_text: str, bootstrap_text: str) -> bool:
     gitops_rules = policy_lines(gitops_text, "gitops")
     bootstrap_rules = policy_lines(bootstrap_text, "bootstrap")
-    developer = ("p", "role:developer", "applications", "sync")
-    portal_reader = ("p", "role:portal-reader", "applications", "sync")
 
-    def sync_rules(lines: list[str], role: tuple[str, ...]) -> list[str]:
-        found = []
+    def normalized(lines: list[str], prefix: tuple[str, ...]) -> set[str]:
+        found = set()
         for line in lines:
             fields = tuple(field.strip() for field in line.split(","))
-            if fields[:4] == role:
-                found.append(", ".join(fields))
+            if fields[: len(prefix)] == prefix:
+                found.add(", ".join(fields))
         return found
 
-    gitops_developer = sync_rules(gitops_rules, developer)
-    bootstrap_developer = sync_rules(bootstrap_rules, developer)
-    portal_rules = sync_rules(gitops_rules, portal_reader)
+    def p_rules(lines: list[str], role: str) -> set[str]:
+        return normalized(lines, ("p", role))
+
+    def g_rules(lines: list[str]) -> set[str]:
+        return normalized(lines, ("g",))
+
     return (
-        gitops_developer == [DEVELOPER_RULE]
-        and bootstrap_developer == [DEVELOPER_RULE]
-        and portal_rules == [PORTAL_READER_RULE]
+        p_rules(gitops_rules, "role:developer") == DEVELOPER_POLICIES
+        and p_rules(bootstrap_rules, "role:developer") == DEVELOPER_POLICIES
+        and p_rules(gitops_rules, "role:portal-reader") == PORTAL_READER_POLICIES
+        and g_rules(gitops_rules) == GITOPS_GROUPS
+        and g_rules(bootstrap_rules) == BOOTSTRAP_GROUPS
     )
 
 
@@ -66,7 +87,11 @@ def mutation_verify(gitops_text: str, bootstrap_text: str) -> None:
             bootstrap_text,
         ),
         "portal-reader policy changed": (
-            gitops_text.replace(PORTAL_READER_RULE, "p, role:portal-reader, applications, sync, tenants/*, allow", 1),
+            gitops_text.replace(
+                "p, role:portal-reader, applications, sync, */*, allow",
+                "p, role:portal-reader, applications, sync, tenants/*, allow",
+                1,
+            ),
             bootstrap_text,
         ),
         "whitespace-obfuscated broad developer rule": (
@@ -77,11 +102,51 @@ def mutation_verify(gitops_text: str, bootstrap_text: str) -> None:
             ),
             bootstrap_text,
         ),
+        "developer granted admin by group union": (
+            gitops_text.replace(
+                "    g, developer, role:developer",
+                "    g, developer, role:developer\n    g, developer, role:admin",
+                1,
+            ),
+            bootstrap_text,
+        ),
+        "portal-reader get policy changed": (
+            gitops_text.replace(
+                "p, role:portal-reader, applications, get, */*, allow",
+                "p, role:portal-reader, applications, get, tenants/*, allow",
+                1,
+            ),
+            bootstrap_text,
+        ),
+        "portal-reader list policy changed": (
+            gitops_text.replace(
+                "p, role:portal-reader, applications, list, */*, allow",
+                "p, role:portal-reader, applications, list, tenants/*, allow",
+                1,
+            ),
+            bootstrap_text,
+        ),
+        "portal-reader logs policy changed": (
+            gitops_text.replace(
+                "p, role:portal-reader, logs, get, */*, allow",
+                "p, role:portal-reader, logs, get, tenants/*, allow",
+                1,
+            ),
+            bootstrap_text,
+        ),
+        "portal-reader group binding changed": (
+            gitops_text.replace(
+                "g, narwhal-portal, role:portal-reader",
+                "g, narwhal-portal, role:admin",
+                1,
+            ),
+            bootstrap_text,
+        ),
     }
     for name, (mutated_gitops, mutated_bootstrap) in mutations.items():
         if valid(mutated_gitops, mutated_bootstrap):
             raise AssertionError(f"checker accepted mutation: {name}")
-    print(f"PASS: rejected all {len(mutations)} developer-scope and portal-reader mutations")
+    print(f"PASS: rejected all {len(mutations)} developer-role and portal-reader mutations")
 
 
 def main() -> int:
@@ -91,11 +156,11 @@ def main() -> int:
     gitops_text = GITOPS.read_text()
     bootstrap_text = BOOTSTRAP.read_text()
     if not valid(gitops_text, bootstrap_text):
-        raise SystemExit("FAIL: developer sync must be exactly tenants/* in GitOps and bootstrap; portal-reader policy must remain unchanged")
+        raise SystemExit("FAIL: developer policy/group scope or portal-reader policy/group binding diverges from the reviewed contract")
     if args.mutation_verify:
         mutation_verify(gitops_text, bootstrap_text)
     else:
-        print("PASS: GitOps and bootstrap developer sync both use tenants/*; portal-reader sync is unchanged")
+        print("PASS: developer policies and group bindings match in GitOps/bootstrap; portal-reader contract is unchanged")
     return 0
 
 

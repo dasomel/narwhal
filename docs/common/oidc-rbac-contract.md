@@ -109,6 +109,10 @@ OIDC로 통신하고 K8s apiserver를 거치지 않으므로 `oidc:` 접두사�
   applications sync 규칙은 현재 모두 `*/*`다. R242는 두 source의 human policies/group
   mappings와 GitOps의 portal-reader 전체 policy/binding을 함께 고정한다. Portal service
   role 변경은 developer scope 수정과 별도 검토가 필요하다.
+- 두 ConfigMap 모두 `policy.default: role:readonly`와 `scopes: '[groups]'`도 계약이다.
+  기본 role을 `role:admin`으로 넓히면 명시 규칙과 무관하게 무인증/미매핑 사용자가
+  관리 권한을 받을 수 있고, scope 변경은 Keycloak 그룹 매핑 평가를 바꾼다. R242는
+  양쪽 값의 drift 및 admin 기본값 변이를 함께 거부한다.
 - 즉 ArgoCD 인가는 두 겹이다: (a) `argocd-rbac-cm`의 전역 role(`role:admin` /
   `role:developer` / `role:readonly` / `role:none`), (b) `tenants` AppProject 내부
   role(`deploy`). 둘 다 Keycloak `groups` 클레임의 bare name을 그대로 소비하며,

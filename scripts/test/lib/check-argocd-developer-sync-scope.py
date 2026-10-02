@@ -30,6 +30,8 @@ GITOPS_GROUPS = {
     "g, guest, role:none",
 }
 BOOTSTRAP_GROUPS = GITOPS_GROUPS - {"g, narwhal-portal, role:portal-reader"}
+EXPECTED_POLICY_DEFAULT = "policy.default: role:readonly"
+EXPECTED_SCOPES = "scopes: '[groups]'"
 
 
 def policy_lines(text: str, source: str) -> list[str]:
@@ -63,12 +65,21 @@ def valid(gitops_text: str, bootstrap_text: str) -> bool:
     def g_rules(lines: list[str]) -> set[str]:
         return normalized(lines, ("g",))
 
+    def setting_matches(text: str, expected: str) -> bool:
+        key = expected.split(":", 1)[0]
+        configured = [line.strip() for line in text.splitlines() if line.strip().startswith(f"{key}:")]
+        return configured == [expected]
+
     return (
         p_rules(gitops_rules, "role:developer") == DEVELOPER_POLICIES
         and p_rules(bootstrap_rules, "role:developer") == DEVELOPER_POLICIES
         and p_rules(gitops_rules, "role:portal-reader") == PORTAL_READER_POLICIES
         and g_rules(gitops_rules) == GITOPS_GROUPS
         and g_rules(bootstrap_rules) == BOOTSTRAP_GROUPS
+        and setting_matches(gitops_text, EXPECTED_POLICY_DEFAULT)
+        and setting_matches(bootstrap_text, EXPECTED_POLICY_DEFAULT)
+        and setting_matches(gitops_text, EXPECTED_SCOPES)
+        and setting_matches(bootstrap_text, EXPECTED_SCOPES)
     )
 
 
@@ -142,6 +153,30 @@ def mutation_verify(gitops_text: str, bootstrap_text: str) -> None:
             ),
             bootstrap_text,
         ),
+        "GitOps default role widened": (
+            gitops_text.replace(EXPECTED_POLICY_DEFAULT, "policy.default: role:admin", 1),
+            bootstrap_text,
+        ),
+        "bootstrap default role widened": (
+            gitops_text,
+            bootstrap_text.replace(EXPECTED_POLICY_DEFAULT, "policy.default: role:admin", 1),
+        ),
+        "both default roles widened": (
+            gitops_text.replace(EXPECTED_POLICY_DEFAULT, "policy.default: role:admin", 1),
+            bootstrap_text.replace(EXPECTED_POLICY_DEFAULT, "policy.default: role:admin", 1),
+        ),
+        "GitOps group claim scope changed": (
+            gitops_text.replace(EXPECTED_SCOPES, "scopes: '[email]'", 1),
+            bootstrap_text,
+        ),
+        "bootstrap group claim scope changed": (
+            gitops_text,
+            bootstrap_text.replace(EXPECTED_SCOPES, "scopes: '[email]'", 1),
+        ),
+        "both group claim scopes changed": (
+            gitops_text.replace(EXPECTED_SCOPES, "scopes: '[email]'", 1),
+            bootstrap_text.replace(EXPECTED_SCOPES, "scopes: '[email]'", 1),
+        ),
     }
     for name, (mutated_gitops, mutated_bootstrap) in mutations.items():
         if valid(mutated_gitops, mutated_bootstrap):
@@ -156,11 +191,11 @@ def main() -> int:
     gitops_text = GITOPS.read_text()
     bootstrap_text = BOOTSTRAP.read_text()
     if not valid(gitops_text, bootstrap_text):
-        raise SystemExit("FAIL: developer policy/group scope or portal-reader policy/group binding diverges from the reviewed contract")
+        raise SystemExit("FAIL: Argo CD policies, group bindings, default role or group claim scopes diverge from the reviewed contract")
     if args.mutation_verify:
         mutation_verify(gitops_text, bootstrap_text)
     else:
-        print("PASS: developer policies and group bindings match in GitOps/bootstrap; portal-reader contract is unchanged")
+        print("PASS: Argo CD policy, group bindings, read-only default and group claim scopes match the reviewed contract")
     return 0
 
 

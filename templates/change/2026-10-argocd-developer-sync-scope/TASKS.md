@@ -11,13 +11,13 @@ Link: [`CHANGE.md`](CHANGE.md)
 ## Implement
 
 - [x] `T-010` (`REQ-001`, `REQ-002`) Align GitOps developer sync scope with bootstrap; `portal-reader` is preserved.
-- [x] `T-011` (`REQ-003`) R242 checks both developer policies and group maps, plus the full GitOps `portal-reader` policy and group binding; 10 mutation cases reject widening or drift.
+- [x] `T-011` (`REQ-003`) R242 checks both developer policies and group maps, both read-only defaults and groups scopes, plus the full GitOps `portal-reader` policy and group binding; 16 mutation cases reject privilege widening or drift.
 - [x] `T-012` (`REQ-001`) Corrected the normative ArgoCD mapping and recorded both the source drift and checker-coverage lesson.
 
 ## Verify
 
 - [x] `T-020` (`AC-001`) `helm template narwhal-platform gitops/charts/narwhal-platform --namespace devtools` exited 0; rendered policy has the tenant-scoped developer rule, unchanged `portal-reader` rules and bindings, and the D1 comment remains outside the `policy.csv` scalar.
-- [x] `T-021` (`AC-002`) `python3 scripts/test/lib/check-argocd-developer-sync-scope.py --mutation-verify` passed and rejected all 10 mutations, including developer→admin group union and each portal-reader permission/binding change.
+- [x] `T-021` (`AC-002`) `python3 scripts/test/lib/check-argocd-developer-sync-scope.py --mutation-verify` passed and rejected all 16 mutations, including developer→admin group union, admin `policy.default` in either/both sources, altered OIDC scopes, and every portal-reader permission/binding change.
 - [x] `T-022` `scripts/test/regression-check-kakao.sh --static` and serial `make test` each passed: 285 passed, 0 failed, 5 warnings. Warnings are existing absent portal sibling checks (`R117`, `R117b`, `R55`, `R216`) and absent airgap bundle (`R19`). No live cluster rollout was run.
 
 ## Synchronize durable truth
@@ -34,4 +34,4 @@ Link: [`CHANGE.md`](CHANGE.md)
 ## Follow-up review evidence
 
 - The first overlapping `--static` and `make test` run produced one R229 failure while its mutation checker temporarily edited shared checkout files. The R229 checker was rerun and passed; then `make test` was rerun by itself and passed 285/0. R242 also passed in each static suite.
-- The follow-up review's `g, developer, role:admin` union and portal-reader policy/binding cases are covered by the added mutation set. The follow-up source changes are committed separately after verification; local merge is pending lead coordination.
+- Follow-up review also identified that `policy.default: role:admin` bypassed the explicit developer mapping. R242 now asserts exact `role:readonly` defaults and `scopes: '[groups]'` in both writers and rejects each single-source or both-source mutation; the focused checker passes with 16 rejected mutations. The follow-up source changes are committed separately after verification; local merge is pending lead coordination.

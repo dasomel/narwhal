@@ -106,7 +106,7 @@ temp copy를 검증한다; 살아 있는 Keycloak process를 기동하는 `--mod
 | R44 | Application이 default AppProject를 쓰지 않음 | |
 | R45 | developer sync가 클러스터-와이드가 아님 | |
 | R46 | 모든 Application이 자기 AppProject 정책에 맞음 | |
-| R242 | bootstrap/GitOps의 전체 Argo CD developer policy·group map과 portal-reader 전체 policy/binding이 검토 계약과 일치하고 broadening mutation을 거부 | |
+| R242 | bootstrap/GitOps의 Argo CD policy·group map·readonly default·groups scope와 portal-reader 전체 policy/binding이 검토 계약과 일치하고 widening mutation을 거부 | |
 | R47 | GitOps git 연산에 스왈로된 실패 없음 | |
 | R48 | idp-apps가 source validation에 게이트됨 | |
 | R49 | 언쿼티드 heredoc 안에 백틱 없음 | |

@@ -27,6 +27,7 @@ access guarantee.
 | Hubble UI | APISIX OIDC; `hubble` | Gateway login is enforced. No group-specific authorization rule appears in the cited route/configuration. | `cluster-admin` |
 | NFS Quota | APISIX OIDC; shares the `hubble` client | Gateway login is enforced. The route does not define group-specific authorization. The shared client also means it is not a distinct Keycloak client boundary. | `cluster-admin` |
 | Narwhal Portal | Native OIDC; `narwhal-portal` | Portal maps the bare `groups` values to `cluster-admin`, `developer`, `viewer`, or `guest`; route/API checks and resource scope enforce Portal permissions. | Catalog links are separately filtered by each tool's `roles` list. |
+| Keycloak | Identity-provider console; no external SSO client | The initial admin console account is provisioned from `iam/keycloak-initial-admin`. The cited setup does not map Narwhal groups to Keycloak console roles; console and realm-management privileges are Keycloak's own roles. | No Portal catalog link |
 
 ## Shared group and Kubernetes RBAC mapping
 

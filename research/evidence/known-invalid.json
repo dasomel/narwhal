@@ -10,5 +10,29 @@
     "line": 2,
     "sha256": "a6ddc8f364a5d7e36352552d7327d77d86f646ac626248aa7270f4949d91f54b",
     "reason": "environment: pattern"
+  },
+  {
+    "file": "2026-09.jsonl",
+    "line": 3,
+    "sha256": "45fd6db0d1ad75e52e9792695c3f0488069c4485623201204977eaa73bac56d2",
+    "reason": "environment: pattern"
+  },
+  {
+    "file": "2026-09.jsonl",
+    "line": 4,
+    "sha256": "51bf257c6e88920a95a3948614b955caab34cf582034c9e50cbd2f6d6a12f2b6",
+    "reason": "environment: pattern"
+  },
+  {
+    "file": "2026-09.jsonl",
+    "line": 5,
+    "sha256": "055dbe2d3ff8cf83fc4fd3d4025bd2f2afaad3fa68194df3d1ce29eb25203c04",
+    "reason": "environment: pattern"
+  },
+  {
+    "file": "2026-09.jsonl",
+    "line": 6,
+    "sha256": "be20c48a732bf1eda00d83f73c0674912955a34a100fa774e6583df5244e3ab1",
+    "reason": "environment: pattern"
   }
 ]

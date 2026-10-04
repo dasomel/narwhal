@@ -21,10 +21,12 @@ Quickly validates key project configurations and scripts.
 
 3. **YAML syntax validation**
    ```bash
+   fail=0
    for f in gitops/resources/*.yaml; do
-     yq eval '.' "$f" > /dev/null || echo "FAIL: $f"
+     yq eval '.' "$f" > /dev/null || { echo "FAIL: $f"; fail=1; }
    done
-   helm template narwhal-apps gitops/charts/narwhal-apps > /dev/null
+   helm template narwhal-apps gitops/charts/narwhal-apps > /dev/null || fail=1
+   [ "$fail" -eq 0 ]
    ```
 
 4. **Version consistency check**

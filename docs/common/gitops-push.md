@@ -24,7 +24,7 @@ Consequences of `selfHeal: true`:
 | Edit `gitops/**` + local `git commit` (no push) | ❌ ArgoCD never sees it (reads Gitea, not local/GitHub) |
 | **Push the change into Gitea** | ✅ ArgoCD syncs it — durable |
 
-> Recorded mistake (`CLAUDE.md`): *"ArgoCD selfHeal reverts kubectl apply changes —
+> Recorded mistake (`docs/common/agent-operational-rules.md`): *"ArgoCD selfHeal reverts kubectl apply changes —
 > Must push to Gitea repo for persistence."*
 
 ## Structure mapping (do not get this wrong)

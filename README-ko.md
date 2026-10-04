@@ -539,7 +539,7 @@ AI 보조 유지보수를 계획 중인 영역:
 2. **모든 셸 스크립트는 `set -euo pipefail`을 사용**하고, 셸과 YAML 모두 2칸 들여쓰기를 씁니다. 두
    번째는 CI가 검사하지만 첫 번째는 아무도 검사하지 않으므로, 지우면 조용히 실패합니다.
 
-전체 작업 지침은 [`CLAUDE.md`](CLAUDE.md), 문서 색인은 [`docs/README.md`](docs/README.md)를
+전체 작업 지침은 [`AGENTS.md`](AGENTS.md), 문서 색인은 [`docs/README.md`](docs/README.md)를
 참고하세요.
 
 ## License

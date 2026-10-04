@@ -13,7 +13,7 @@ spec:
     #
     # CPU: recommend REQUEST only = p99 usage over 7d. Deliberately NO cpu
     # limit recommendation — cpu limit throttling trips liveness probes
-    # (see narwhal CLAUDE.md 2026-06-11 Keycloak CPU-starvation OOM lesson).
+    # (see narwhal docs/common/lessons-log.md 2026-06-11 Keycloak CPU-starvation OOM lesson).
     # JVM-based workloads (Keycloak) additionally need cpu request >= ~1 core
     # or an explicit ActiveProcessorCount, because JVM availableProcessors()
     # reads the NODE's CPU count, not the container cgroup quota, when the

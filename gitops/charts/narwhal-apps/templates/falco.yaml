@@ -11,7 +11,7 @@ support is still UNVERIFIED. Disabling stops the crashloop; runtime coverage rem
 trivy-operator (vuln scan), kyverno (policy), NetworkPolicy, and STRICT mTLS.
 Re-enable: flip the guard below to `{{- if true }}` AFTER completing the Falco 0.43+
 migration (args/config/rules/container-plugin) and confirming scap_init passes on kernel 7.0.
-See CLAUDE.md mistakes log 2026-07-08.
+See docs/common/lessons-log.md 2026-07-08.
 */}}
 {{- if false }}
 apiVersion: argoproj.io/v1alpha1

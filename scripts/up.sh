@@ -197,7 +197,7 @@ fi
 
 # master1_ssh_ok: returns 0 if master-1 responds to SSH, 1 otherwise.
 # No `| grep -q`: it closes the pipe early and pipefail turns the upstream's SIGPIPE into a
-# false negative (see the CLAUDE.md shell rule).
+# false negative (see "Shell reliability" in docs/common/agent-operational-rules.md).
 master1_ssh_ok() {
   case "$(master1_exec 'echo SSH_OK')" in *SSH_OK*) return 0 ;; *) return 1 ;; esac
 }

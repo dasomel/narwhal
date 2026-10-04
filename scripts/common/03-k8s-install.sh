@@ -60,7 +60,7 @@ retry sudo apt-get update
 # apt-cache is still writing, apt-cache takes SIGPIPE, and `set -o pipefail` turns that
 # into a script-killing failure before any of the error handling below can run. The
 # first version of this line did exactly that and every node died here with no message
-# at all — see the CLAUDE.md rule about pipefail and early-closing pipes.
+# at all — see "Shell reliability" in docs/common/agent-operational-rules.md about pipefail and early-closing pipes.
 K8S_APT_VERSION="$(apt-cache madison kubelet 2>/dev/null | awk -v v="${K8S_PATCH_VERSION}-" '$3 ~ "^"v && !seen {print $3; seen=1}')"
 if [ -z "${K8S_APT_VERSION}" ]; then
   echo "ERROR: kubelet ${K8S_PATCH_VERSION} not offered by the v${K8S_VERSION} APT repo." >&2

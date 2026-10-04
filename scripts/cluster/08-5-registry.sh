@@ -190,7 +190,7 @@ if [ "${HARBOR_HEALTH}" = "200" ]; then
   # of ghcr.io — that is the actual fix for #48's "scan Job pulls the DB live from the
   # internet" gap. Public (no auth) so pulling it needs no credential in gitops/ — the
   # trivy-operator chart has no existingSecret option for dbRepository credentials,
-  # only plaintext value fields, which CLAUDE.md forbids putting in git. Public is an
+  # only plaintext value fields, which docs/common/agent-operational-rules.md forbids putting in git. Public is an
   # acceptable trade here: this project is airgapped from the real internet in the
   # first place, so an unauthenticated pull is only reachable from inside the cluster
   # network. Idempotent: Harbor 400s on an existing project name, which is fine here.

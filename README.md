@@ -572,7 +572,7 @@ Two conventions matter more than the rest here:
 2. **Every shell script uses `set -euo pipefail`**, and shell and YAML both indent two spaces. CI checks
    the second; nothing checks the first, so removing it fails silently.
 
-See [`CLAUDE.md`](CLAUDE.md) for the full working guide and [`docs/README.md`](docs/README.md) for
+See [`AGENTS.md`](AGENTS.md) for the full working guide and [`docs/README.md`](docs/README.md) for
 the documentation index.
 
 ## License

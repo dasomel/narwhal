@@ -30,7 +30,7 @@
 : "${AIRGAP_SKOPEO_DEST_TLS_VERIFY:=false}"
 
 # Known external registries that need mirroring
-# Narwhal policy: ghcr > registry.k8s.io > quay > docker.io (CLAUDE.md)
+# Narwhal policy: ghcr > registry.k8s.io > quay > docker.io (docs/common/agent-operational-rules.md)
 AIRGAP_SOURCE_REGISTRIES=(
   "registry.k8s.io"
   "quay.io"

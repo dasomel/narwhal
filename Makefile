@@ -49,7 +49,8 @@ test:
 # There is no automated dependency/image vulnerability scan or CI job for it yet
 # (tracked in narwhal#52/#53) — this target is deliberately narrow: it checks for a
 # literal `password: "<value>"` and private-key blocks hardcoded into scripts or
-# manifests, the specific case CLAUDE.md's Guardrails section forbids. Deliberately
+# manifests, the specific case the "Repository guardrails" section of
+# docs/common/agent-operational-rules.md forbids. Deliberately
 # does NOT match on the word "secret" alone — `existingSecret`/`secretName`-style
 # fields reference a K8s Secret OBJECT by name (the normal, correct GitOps pattern
 # throughout this repo), not a literal credential value, and matching them would make

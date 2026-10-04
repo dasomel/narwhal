@@ -1,6 +1,6 @@
 # AGENTS.md
 
-Narwhal follows the OpenForge agent engineering model: https://github.com/dasomel/openforge/blob/main/docs/change-management.md (risk-scaled change classes, convergence) and https://github.com/dasomel/openforge/blob/main/docs/agent-engineering.md. Narwhal deviates only where stated below.
+Narwhal follows the OpenForge agent engineering model: [change-management](https://github.com/dasomel/openforge/blob/main/docs/change-management.md) (risk-scaled change classes, convergence) and [agent-engineering](https://github.com/dasomel/openforge/blob/main/docs/agent-engineering.md). Narwhal deviates only where stated below.
 
 ## Load on demand
 

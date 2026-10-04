@@ -19,7 +19,7 @@ set -euo pipefail
 # registry gitops/resources/trivy-operator.yaml's dbRegistry/javaDbRegistry/
 # policiesBundle.registry now point at.
 #
-# WHY A PUBLIC PROJECT, NOT A ROBOT-ACCOUNT SECRET: this repo's CLAUDE.md forbids
+# WHY A PUBLIC PROJECT, NOT A ROBOT-ACCOUNT SECRET: this repo's rules (docs/common/agent-operational-rules.md) forbid
 # hardcoding a password/token in any script or manifest, and the trivy-operator
 # Helm chart (0.27.0) has no existingSecret option for dbRepository credentials —
 # only plaintext dbRepositoryUsername/dbRepositoryPassword values fields, which

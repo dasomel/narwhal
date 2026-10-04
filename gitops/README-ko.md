@@ -214,7 +214,7 @@ kubectl 없이 Velero 백업/복원을 트리거하고 조회할 수 있는 웹 
 
 Kubernetes 네이티브 정책 엔진으로, 어드미션 시점 및 백그라운드 정책(예: 포털이 생성하는 Job 제한, NetworkPolicy 자동 생성)을 클러스터 전역에 강제합니다. 컨트롤러별(admission/background/cleanup/reports)로 다중 레플리카로 동작해 복원력을 확보하며, fail-closed 방식이므로 자체 어드미션 웹훅의 가용성이 모든 파드 스케줄링의 critical path에 있습니다.
 
-> **Falco**(런타임 보안/시스템콜 수준 위협 탐지)는 `templates/falco.yaml`에 정의되어 있으나 현재 **비활성화**(`{{- if false }}`)되어 있습니다 — Falco 0.39.2의 modern_eBPF 드라이버가 이 클러스터의 Ubuntu 26.04/커널 7.0 노드에서 `scap_init`에 실패하며, 이를 해결할 0.43+ 업그레이드는 breaking 마이그레이션이기 때문입니다. 그동안의 런타임 보호는 Trivy Operator + Kyverno + NetworkPolicy + STRICT mTLS로 대체됩니다. 자세한 내용은 파일 헤더와 `CLAUDE.md` 미스테이크 로그(2026-07-08)를 참고하세요.
+> **Falco**(런타임 보안/시스템콜 수준 위협 탐지)는 `templates/falco.yaml`에 정의되어 있으나 현재 **비활성화**(`{{- if false }}`)되어 있습니다 — Falco 0.39.2의 modern_eBPF 드라이버가 이 클러스터의 Ubuntu 26.04/커널 7.0 노드에서 `scap_init`에 실패하며, 이를 해결할 0.43+ 업그레이드는 breaking 마이그레이션이기 때문입니다. 그동안의 런타임 보호는 Trivy Operator + Kyverno + NetworkPolicy + STRICT mTLS로 대체됩니다. 자세한 내용은 파일 헤더와 `docs/common/lessons-log.md`(2026-07-08)를 참고하세요.
 
 ### 인증·인가 (IAM & SSO)
 
@@ -271,4 +271,4 @@ Narwhal 관리 포털(Next.js)은 이 IDP 전체를 위한 개발자 대상 UI�
 
 ---
 
-<sub>이 문서는 각 매니페스트에 고정된 버전을 기준으로 `gitops/apps`, `gitops/charts`의 상태를 설명합니다 — 내용이 어긋난다면 항상 매니페스트를 우선하세요. 프로비저닝 스크립트와 버전 이력은 `../CLAUDE.md`, `../VERSIONS.md`를 참고하세요.</sub>
+<sub>이 문서는 각 매니페스트에 고정된 버전을 기준으로 `gitops/apps`, `gitops/charts`의 상태를 설명합니다 — 내용이 어긋난다면 항상 매니페스트를 우선하세요. 프로비저닝 스크립트와 버전 이력은 `../AGENTS.md`, `../VERSIONS.md`를 참고하세요.</sub>

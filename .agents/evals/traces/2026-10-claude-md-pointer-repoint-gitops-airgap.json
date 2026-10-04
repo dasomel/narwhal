@@ -1,0 +1,31 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-claude-md-pointer-repoint-gitops-airgap-2026-10",
+  "task": "Repoint stale CLAUDE.md section references (Mistakes Log, Core Flows, policy rules) in gitops/airgap/CI comments and docs to AGENTS.md, docs/common/lessons-log.md and docs/common/agent-operational-rules.md after CLAUDE.md became a bare @AGENTS.md bridge; follow-up to #305 for the paths the behavior-contract gate classifies as high-risk",
+  "changeContext": {
+    "paths": [
+      ".github/workflows/lint.yml",
+      "gitops/README-ko.md",
+      "gitops/README.md",
+      "gitops/charts/narwhal-apps/templates/falco.yaml",
+      "gitops/charts/narwhal-apps/templates/harbor.yaml",
+      "gitops/charts/narwhal-platform/templates/argocd-config.yaml",
+      "gitops/resources/dev-namespace.yaml",
+      "gitops/resources/prometheus-rightsizing-rules.yaml",
+      "scripts/airgap/00-config.sh",
+      "scripts/airgap/README.md",
+      "scripts/airgap/lib/push-security-db.sh",
+      ".agents/evals/traces/2026-10-claude-md-pointer-repoint-gitops-airgap.json"
+    ]
+  },
+  "events": [
+    {"id": "e1", "type": "scope_check", "summary": "Scoped to 15 comment/prose lines in 11 files whose only change is the referenced document name; no manifest value, script statement, workflow step, version pin or template guard changed. This is a documentation-only change; no cluster or runtime behavior is claimed or exercised"},
+    {"id": "e2", "type": "reproduction", "summary": "grep on origin/main (1890bab) found each of these 11 files still citing CLAUDE.md sections (Mistakes Log, Core Flows, policy, 2-space rule) that no longer exist; the targets verified present: dated rows 2026-06-11/07-07/07-08/07-13 in docs/common/lessons-log.md, 'Core flows', registry-order, Bitnami and no-hardcoded-credential rules in docs/common/agent-operational-rules.md, 2-space indentation rule in CONTRIBUTING.md", "evidence": ["artifact:grep-CLAUDE.md-origin-main-1890bab", "docs/common/lessons-log.md", "docs/common/agent-operational-rules.md", "CONTRIBUTING.md"]},
+    {"id": "e3", "type": "bug_fix", "summary": "Replaced each stale CLAUDE.md pointer with the file that now holds the content; filtered diff shows only comment/prose lines changed"},
+    {"id": "e4", "type": "regression_verification", "status": "passed", "summary": "Local runs on the branch: scripts/ci/markdownlint-changed.py --base origin/main (0 violations), make validate (GitOps YAML parse OK), make test (static regression suite, exit 0), shellcheck --severity=warning over scripts/ (clean), bash -n on both edited scripts, scripts/ci/check-mutable-inputs.py on the gated workflow/inputs (exit 0). yamllint was not installed locally so the yamllint half of make lint was not run locally and is left to CI", "scope": "Static lint, YAML parse, markdown changed-line gate and static regression suite over the comment/docs-only edits", "evidence": ["test:make-test-static-regression", "test:make-validate", "ci:markdown-changed"]},
+    {"id": "e5", "type": "verification", "status": "passed", "summary": "Filtered diff (excluding lines naming the old/new document) shows only a re-wrapped comment line in harbor.yaml; no non-comment line changed in any YAML, shell or workflow file", "scope": "Change is comment/prose-only; no deployment, install or CI behavior altered", "evidence": ["artifact:git-diff-comment-only-review"]},
+    {"id": "e6", "type": "completion_claim", "summary": "Stale CLAUDE.md pointers in the 11 gated files repointed; documentation-only, no live-cluster or air-gap run performed or claimed"},
+    {"id": "e7", "type": "task_outcome", "state": "A", "summary": "Complete for the listed files; live runtime behavior unchanged and unverified by design"}
+  ]
+}

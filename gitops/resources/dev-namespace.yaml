@@ -8,7 +8,7 @@
 # 설계 결정:
 #   - Istio ambient: `none` 으로 opt-out
 #     이유: 개발 앱은 SSO 쿠키를 사용하지 않는 경우가 많고,
-#     ztunnel HBONE이 쿠키 헤더를 손상시킬 수 있음 (CLAUDE.md 참조)
+#     ztunnel HBONE이 쿠키 헤더를 손상시킬 수 있음 (docs/common/agent-operational-rules.md 참조)
 #     SSO가 필요한 앱은 pod 레이블로 개별 설정 가능
 #   - RBAC: rbac-policies.yaml의 developer-full-access RoleBinding이
 #     이 네임스페이스에서 oidc:developer 그룹에 edit 권한 부여

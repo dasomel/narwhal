@@ -29,7 +29,7 @@ jobs:
         run: |
           find scripts/ -name '*.sh' -print0 | xargs -0 shellcheck --severity=warning
 
-      # CLAUDE.md documents 2-space indentation for shell. All 52 scripts already
+      # CONTRIBUTING.md documents 2-space indentation for shell. All 52 scripts already
       # comply, so this blocks rather than warns. shellcheck does not cover it.
       - name: Check 2-space indentation
         run: |

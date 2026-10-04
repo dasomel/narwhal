@@ -2,17 +2,18 @@
 
 Narwhal provisions a full Kubernetes IDP stack (GitOps, SSO, monitoring, storage, backup) onto
 Vagrant VMs, and separately onto Kakao Cloud. This document is the human-facing entrypoint;
-`CLAUDE.md` carries the same rules in more detail for AI coding agents working in this repo — both
-describe the same conventions, so a change to one that generalizes past a single incident should be
-reflected in the other.
+`AGENTS.md` (loaded by `CLAUDE.md`) and `docs/common/agent-operational-rules.md` carry the same
+rules in more detail for AI coding agents working in this repo — both describe the same
+conventions, so a change to one that generalizes past a single incident should be reflected in
+the other.
 
 ## Before you start
 
-- Read `README.md` for the project overview and `CLAUDE.md`'s "Recurring Rules" section for
+- Read `README.md` for the project overview and `docs/common/agent-operational-rules.md` for
   conventions that aren't obvious from the code (image/registry policy, GitOps push path, shell
   pitfalls, Kyverno/Keycloak gotchas).
 - For anything that touches cluster architecture, GitOps app structure, or a version upgrade, open
-  an issue first — these are exactly the changes `CLAUDE.md` calls out for Plan Mode.
+  an issue first — these are exactly the changes `AGENTS.md` treats as design changes.
 
 ## Reporting a security issue
 
@@ -23,12 +24,12 @@ as documented in `SECURITY.md`.
 ## Development workflow
 
 - Standard `vagrant up/halt/destroy/ssh`. Phase 2 (platform apps) does not run automatically from a
-  bare `vagrant up` — see `CLAUDE.md` → Development Commands.
+  bare `vagrant up` — see `AGENTS.md` → Boundaries.
 - `make lint` (shellcheck + yamllint), `make validate` (Vagrantfile syntax + YAML parse), and
   `./scripts/test/regression-check-kakao.sh --static` reproduce the checks CI runs on every PR —
   run them locally before pushing. `make test` prints the commands for the runtime half, which
   needs a live cluster.
-- Edit YAML with `yq`, never `sed` — see `CLAUDE.md`.
+- Edit YAML with `yq`, never `sed` — see `docs/common/agent-operational-rules.md` → Editing manifests and values.
 
 ## Code conventions
 

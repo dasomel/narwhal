@@ -53,8 +53,8 @@ that masters cannot avoid (they tolerate all taints by design).
 
 1. **Increase `MASTER_MEMORY` 4096 → 6144 in `Vagrantfile`** (recommended, durable).
    + Apply rolling: `vagrant reload master-1` → verify `kubectl get nodes` stable →
-     master-2 → master-3 (one at a time; see CLAUDE.md "Limit parallel cluster
-     modifications", "modify one → verify → next").
+     master-2 → master-3 (one at a time; see "Repository guardrails" in
+     docs/common/agent-operational-rules.md: bounded changes, confirm each settles).
    + This is the only fix that gives apiserver real headroom.
 2. **Exclude `falco` DaemonSet from masters** (partial relief ~300Mi/master, GitOps
    push via `scripts/gitops/push-to-gitea.sh`). Trade-off: loses runtime-security

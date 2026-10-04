@@ -38,7 +38,7 @@ find scripts/ -name '*.sh' -print0 | xargs -0 shellcheck --severity=warning
 
 ### 2. 2-space 들여쓰기 검사
 
-CLAUDE.md가 강제하는 쉘 2칸 들여쓰기 규칙. shellcheck이 잡아주지 않아 별도 검사한다.
+CONTRIBUTING.md가 정한 쉘 2칸 들여쓰기 규칙. shellcheck이 잡아주지 않아 별도 검사한다.
 
 ```bash
 bad=0

@@ -52,7 +52,7 @@ if [ "${AIRGAP:-0}" = "1" ]; then
   # durable: the NAT link keeps its address and its on-link subnet, and simply stops
   # accepting a gateway from DHCP.
   # No `awk ... exit` and no `grep -q` on these pipelines — both close the pipe early and
-  # pipefail turns the upstream's SIGPIPE into a failure. See the CLAUDE.md shell rule.
+  # pipefail turns the upstream's SIGPIPE into a failure. See "Shell reliability" in docs/common/agent-operational-rules.md.
   AIRGAP_NAT_IF="$(ip -o route show default 2>/dev/null | awk '!seen {print $5; seen=1}')"
   if [ -n "${AIRGAP_NAT_IF}" ]; then
     echo "=== AIRGAP: dropping the default route to enforce isolation ==="

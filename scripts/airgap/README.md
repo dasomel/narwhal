@@ -139,7 +139,7 @@ vagrant up --provider=vmware_desktop
 export PROVIDER=kakao
 sudo -E ./scripts/common/01-prerequisites.sh     # 전 노드
 sudo -E ./scripts/cluster/02-init-cluster.sh     # master-1
-#    이후 join/Phase 2 순서는 파일명 접두사 순서를 따른다 (`docs/common/agent-operational-rules.md` "Core flows").
+#    이후 join/Phase 2 순서는 파일명 접두사 순서를 따른다 (CLAUDE.md "Core Flows").
 ```
 
 ## 구성 요소
@@ -200,4 +200,4 @@ Harbor 설치의 일부로 수행한다.
 - **Private CA**: Harbor/레지스트리가 자체 서명 인증서를 사용하면 `hosts.toml`에 `skip_verify = true` 추가 또는 CA를 `/usr/local/share/ca-certificates/`에 설치 (`08-6-tls-routes.sh`의 DaemonSet 패턴 참고).
 - **Multi-arch**: 한 번들 = 한 아치다. `AIRGAP_ARCH` 로 고르며(위 per-arch 섹션 참고) 로컬 Vagrant 는 `linux/arm64`, Kakao Cloud 는 `linux/amd64`. 기본값만 `00-config.sh` 에 있다.
 - **Helm 차트 의존성**: `helm pull --untar`로 서브차트까지 포함해 번들링.
-- **Bitnami 금지**: Bitnami 이미지는 번들링 대상에서 제외 (프로젝트 정책, `docs/common/agent-operational-rules.md` 참고).
+- **Bitnami 금지**: Bitnami 이미지는 번들링 대상에서 제외 (프로젝트 정책, CLAUDE.md 참고).

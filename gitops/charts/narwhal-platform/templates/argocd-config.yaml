@@ -53,7 +53,7 @@ data:
   # (which silently killed HMR). CONDITIONAL on the live image being a :dev-*
   # tag: the original unconditional image ignore made every GitOps SemVer pin
   # bump invisible (app stayed Synced on a stale image; bumps only landed by
-  # piggybacking on unrelated syncs — see docs/common/lessons-log.md 2026-07-13). With the
+  # piggybacking on unrelated syncs — see CLAUDE.md 2026-07-13). With the
   # select() guard the paths only exist while a dev image is actually running,
   # so prod pin bumps diff normally and dev sessions stay protected.
   resource.customizations.ignoreDifferences.apps_Deployment: |

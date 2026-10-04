@@ -214,7 +214,7 @@ Continuous vulnerability, misconfiguration, exposed-secret, and compliance scann
 
 A Kubernetes-native policy engine enforcing admission-time and background policies (e.g. restricting portal-created Jobs, generating NetworkPolicies) across the cluster. Runs with multiple replicas per controller (admission/background/cleanup/reports) for resilience; it is fail-closed, so its own admission webhook availability is on the critical path for all pod scheduling.
 
-> **Falco** (runtime security / syscall-level threat detection) is defined in `templates/falco.yaml` but currently **disabled** (`{{- if false }}`) — Falco 0.39.2's modern_eBPF driver fails `scap_init` on the Ubuntu 26.04 / kernel 7.0 nodes used by this cluster, and the 0.43+ upgrade needed to fix it is a breaking migration. Runtime coverage in the meantime comes from Trivy Operator + Kyverno + NetworkPolicy + STRICT mTLS. See the file header and `docs/common/lessons-log.md` (2026-07-08) for details.
+> **Falco** (runtime security / syscall-level threat detection) is defined in `templates/falco.yaml` but currently **disabled** (`{{- if false }}`) — Falco 0.39.2's modern_eBPF driver fails `scap_init` on the Ubuntu 26.04 / kernel 7.0 nodes used by this cluster, and the 0.43+ upgrade needed to fix it is a breaking migration. Runtime coverage in the meantime comes from Trivy Operator + Kyverno + NetworkPolicy + STRICT mTLS. See the file header and `CLAUDE.md` mistakes log (2026-07-08) for details.
 
 ### IAM & SSO
 
@@ -271,4 +271,4 @@ The Narwhal management portal (Next.js) — the developer-facing UI for this ent
 
 ---
 
-<sub>Generated to describe the state of `gitops/apps` and `gitops/charts` as of the versions pinned in each manifest — always trust the manifests over this document if they diverge. See `../AGENTS.md` and `../VERSIONS.md` for provisioning scripts and version history.</sub>
+<sub>Generated to describe the state of `gitops/apps` and `gitops/charts` as of the versions pinned in each manifest — always trust the manifests over this document if they diverge. See `../CLAUDE.md` and `../VERSIONS.md` for provisioning scripts and version history.</sub>

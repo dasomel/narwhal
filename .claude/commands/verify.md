@@ -18,10 +18,12 @@ ruby -c Vagrantfile
 find scripts/ -name '*.sh' -print0 | xargs -0 shellcheck --severity=warning
 
 # YAML files
+fail=0
 for f in gitops/resources/*.yaml; do
-  yq eval '.' "$f" > /dev/null || echo "FAIL: $f"
+  yq eval '.' "$f" > /dev/null || { echo "FAIL: $f"; fail=1; }
 done
-helm template narwhal-apps gitops/charts/narwhal-apps > /dev/null
+helm template narwhal-apps gitops/charts/narwhal-apps > /dev/null || fail=1
+[ "$fail" -eq 0 ]
 ```
 
 ### 2. Git Status Check

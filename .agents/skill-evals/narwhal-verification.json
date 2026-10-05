@@ -1,0 +1,36 @@
+{
+  "schemaVersion": "openforge-agent-skill-verification/v1",
+  "skill": "narwhal-verification",
+  "skillVersion": "1",
+  "freshSession": true,
+  "agentRuntime": "claude-sonnet-5-5 (Claude Code subagent)",
+  "happyPath": {
+    "status": "pass",
+    "summary": "Fresh-session replay (dasomel/openforge#54, 2026-10-05). Read only AGENTS.md and the skill description, which selected the skill for a 'verify a finished GitOps/script change before claiming done' task. Followed its workflow against the unmodified repo: ran the deterministic offline entrypoints from the Makefile and classified the results by the evidence classes the skill requires (static/render, script regression, security/policy), stating that GitOps/cluster state and end-to-end runtime were not exercised.",
+    "evidence": [
+      "make validate -> ruby -c Vagrantfile OK, every gitops/apps and gitops/resources YAML parses (OK lines), exit 0",
+      "make test -> regression-check-kakao.sh --static: passed 289, failed 0, warnings 1, 'no known bug reappeared'",
+      "make security -> 'no obvious hardcoded credentials found', exit 0",
+      "make lint -> not run: yamllint is not installed in the replay environment (shellcheck is)"
+    ]
+  },
+  "edgeCase": {
+    "status": "pass",
+    "summary": "Appended a literal adminPassword value to gitops/resources/rbac-policies.yaml (the 'secrets' high-risk boundary the skill names). The repository's own make security failed non-zero and named the file; after git checkout of that file it passed again with exit 0 and git status showed the file clean.",
+    "evidence": [
+      "make security (mutated) -> 'possible hardcoded credential: gitops/resources/rbac-policies.yaml', make exit 2 (underlying script exit 1)",
+      "make security (after git checkout -- gitops/resources/rbac-policies.yaml) -> 'no obvious hardcoded credentials found', exit 0"
+    ]
+  },
+  "deterministicChecks": [
+    { "command": "make validate", "status": "pass" },
+    { "command": "make test", "status": "pass" },
+    { "command": "make security", "status": "pass" }
+  ],
+  "unverified": [
+    "make lint was not run: yamllint is not installed in the replay environment.",
+    "Live-cluster half was not run (no cluster): scripts/test/verify-cluster.sh and scripts/test/test-sso.sh, so skill workflow steps 6-7 (nodes/Pods/ArgoCD state, user-side service path) are unexercised.",
+    "Rendered-Helm validation (workflow step 3) and version/image inventory consistency under a real component bump (step 4) were not mutated in this replay; only the secret-boundary edge case was."
+  ],
+  "verifiedAt": "2026-10-05"
+}

@@ -1,0 +1,55 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-issue-54-verification-skill-promotion",
+  "task": "Promote narwhal-verification from draft to verified per openforge#54 fresh-session replay evidence; narwhal-cluster-debug deliberately left at draft because its workflow needs a live cluster",
+  "changeContext": {
+    "paths": [
+      ".agents/skills/narwhal-verification/SKILL.md",
+      ".agents/skill-evals/narwhal-verification.json"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Replayed both draft skills. narwhal-cluster-debug was not promoted: its happy path (live Pod/event/ArgoCD evidence, same-discriminator re-run, user-side check) cannot be exercised without a cluster, so no evidence was written"
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "Happy path on the clean tree: make validate, make test (289 passed, 0 failed) and make security all exit 0; make lint skipped because yamllint is not installed"
+    },
+    {
+      "id": "e3",
+      "type": "reproduction",
+      "summary": "Edge case: appended `adminPassword: \"hunter2hunter2\"` (>=4-char value; shorter values are ignored by the regex) to gitops/resources/rbac-policies.yaml; make security failed non-zero naming the file; reverted with git checkout and make security passed again"
+    },
+    {
+      "id": "e4",
+      "type": "bug_fix",
+      "summary": "Flipped openforge-maturity draft -> verified and added .agents/skill-evals/narwhal-verification.json listing live-cluster scripts and make lint under unverified"
+    },
+    {
+      "id": "e5",
+      "type": "regression_verification",
+      "status": "passed",
+      "summary": "make validate, make test (289 passed, 0 failed) and make security pass after the maturity flip; audit-agent-skills.py --strict reports 0 findings across 5 skills",
+      "scope": "openforge skill audit",
+      "evidence": [
+        "ci:agent-skills-audit-strict"
+      ]
+    },
+    {
+      "id": "e6",
+      "type": "completion_claim",
+      "summary": "narwhal-verification promoted with schema-valid replay evidence; live-cluster behavior explicitly unverified"
+    },
+    {
+      "id": "e7",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "One of two skills promoted; the other reported not-supported rather than given invented evidence"
+    }
+  ]
+}

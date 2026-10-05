@@ -23,7 +23,7 @@
     {
       "id": "e3",
       "type": "reproduction",
-      "summary": "Edge case: appended a literal adminPassword to gitops/resources/rbac-policies.yaml; make security failed non-zero naming the file; reverted with git checkout and make security passed again"
+      "summary": "Edge case: appended `adminPassword: \"hunter2hunter2\"` (>=4-char value; shorter values are ignored by the regex) to gitops/resources/rbac-policies.yaml; make security failed non-zero naming the file; reverted with git checkout and make security passed again"
     },
     {
       "id": "e4",

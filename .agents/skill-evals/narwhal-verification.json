@@ -16,7 +16,7 @@
   },
   "edgeCase": {
     "status": "pass",
-    "summary": "Appended a literal adminPassword value to gitops/resources/rbac-policies.yaml (the 'secrets' high-risk boundary the skill names). The repository's own make security failed non-zero and named the file; after git checkout of that file it passed again with exit 0 and git status showed the file clean.",
+    "summary": "Appended `adminPassword: \"hunter2hunter2\"` (a value of >=4 characters; the Makefile credential regex ignores shorter values) to gitops/resources/rbac-policies.yaml (the 'secrets' high-risk boundary the skill names). The repository's own make security failed non-zero and named the file; after git checkout of that file it passed again with exit 0 and git status showed the file clean.",
     "evidence": [
       "make security (mutated) -> 'possible hardcoded credential: gitops/resources/rbac-policies.yaml', make exit 2 (underlying script exit 1)",
       "make security (after git checkout -- gitops/resources/rbac-policies.yaml) -> 'no obvious hardcoded credentials found', exit 0"

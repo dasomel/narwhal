@@ -15,19 +15,19 @@ HEX = "0123456789abcdef"
 def plan_status(pr, reviewed_sha):
   """Return (ok, reason) for `gh pr view --json headRefOid,isDraft,state` output.
 
-  The reviewer must name the SHA it reviewed (full, or a >=7 char prefix). It is accepted only if it
-  resolves to the PR's current head, so a push between review and posting never earns a PASS.
-  On ok, reason is the full 40-char SHA to stamp.
+  `reviewed_sha` must be the FULL 40-hex SHA the reviewer actually reviewed (case-insensitive) and must
+  equal the PR's current head exactly: a short prefix could be ground by an author, and a head that
+  moved since review never earns a PASS. On ok, reason is the lowercase SHA to stamp.
   """
   if not isinstance(pr, dict):
     return False, "malformed PR data"
   head = pr.get("headRefOid")
-  if not isinstance(head, str) or len(head) != 40 or any(c not in HEX for c in head):
+  if not _is_full_sha(head):
     return False, "missing or invalid headRefOid"
   rev = reviewed_sha.lower() if isinstance(reviewed_sha, str) else ""
-  if not rev or len(rev) < 7 or len(rev) > 40 or any(c not in HEX for c in rev):
-    return False, "--sha is required: the full or >=7 char hex SHA the reviewer actually reviewed"
-  if not head.startswith(rev):
+  if not _is_full_sha(rev):
+    return False, "--sha is required and must be the full 40-hex SHA the reviewer actually reviewed"
+  if rev != head:
     return False, f"reviewed SHA {rev} does not match current PR head {head}; the head moved, re-review it"
   if pr.get("isDraft") is not False:
     return False, "PR is a draft (or draft state unknown); mark it ready first"
@@ -36,31 +36,42 @@ def plan_status(pr, reviewed_sha):
   return True, head
 
 
-def view(number):
-  out = subprocess.run(["gh", "pr", "view", number, "-R", REPO, "--json", "headRefOid,isDraft,state"],
-                       capture_output=True, text=True, check=True).stdout
-  return json.loads(out)
+def _is_full_sha(value):
+  return isinstance(value, str) and len(value) == 40 and all(c in HEX for c in value)
 
 
-def main(argv):
+def run_gh(args):
+  return subprocess.run(["gh"] + args, capture_output=True, text=True, check=True).stdout
+
+
+def view(number, gh):
+  return json.loads(gh(["pr", "view", number, "-R", REPO, "--json", "headRefOid,isDraft,state"]))
+
+
+def main(argv, gh=run_gh):
   if len(argv) != 4 or not argv[1].isdigit() or argv[2] != "--sha":
-    print("usage: mark-review-pass.py <pr-number> --sha <reviewed-sha>", file=sys.stderr)
+    print("usage: mark-review-pass.py <pr-number> --sha <full-40-hex-reviewed-sha>", file=sys.stderr)
     return 2
+  number = argv[1]
   try:
-    ok, sha = plan_status(view(argv[1]), argv[3])
+    ok, sha = plan_status(view(number, gh), argv[3])
     if not ok:
       print(f"mark-review-pass: REFUSED: {sha}", file=sys.stderr)
       return 1
-    subprocess.run(["gh", "api", f"repos/{REPO}/statuses/{sha}", "-f", "state=success", "-f", f"context={CONTEXT}",
-                    "-f", f"description=independent review PASS @{sha[:7]}"], check=True, capture_output=True, text=True)
-    after = view(argv[1]).get("headRefOid")
-  except (subprocess.CalledProcessError, ValueError) as e:
-    print(f"mark-review-pass: FAILED: {getattr(e, 'stderr', None) or e}", file=sys.stderr)
+    gh(["api", f"repos/{REPO}/statuses/{sha}", "-f", "state=success", "-f", f"context={CONTEXT}",
+        "-f", f"description=independent review PASS @{sha[:7]}"])
+    after = view(number, gh).get("headRefOid")
+  except subprocess.CalledProcessError as e:
+    detail = ((e.stderr or "").strip().splitlines() or ["gh error"])[-1]
+    print(f"mark-review-pass: FAILED: {detail}", file=sys.stderr)
     return 1
-  print(f"mark-review-pass: posted '{CONTEXT}' success for {sha} (PR #{argv[1]})")
+  except (ValueError, AttributeError, OSError) as e:
+    print(f"mark-review-pass: FAILED: {e}", file=sys.stderr)
+    return 1
   if after != sha:
     print(f"WARNING: PR head moved after posting ({sha[:7]} -> {str(after)[:7]}); the status is bound to the old SHA (harmless), the new head is NOT reviewed: re-review it", file=sys.stderr)
     return 1
+  print(f"mark-review-pass: posted '{CONTEXT}' success for {sha} (PR #{number})")
   return 0
 
 

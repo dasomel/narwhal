@@ -1,0 +1,51 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-issue-308-kong-digest-refresh",
+  "task": "Refresh the kong:3.9 row in image-digests.tsv after the floating minor tag moved to the 3.9.3 patch release (narwhal#308), keeping the diff to that single row",
+  "changeContext": {
+    "paths": [
+      "scripts/airgap/lib/image-digests.tsv",
+      "docs/common/lessons-log.md",
+      ".agents/evals/traces/2026-10-kong-digest-refresh-308.json"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "reproduction",
+      "summary": "refresh-image-digests.sh --check reported kong:3.9 moved from sha256:12972ce1ab63 (created 2026-09-16) to sha256:92035d16d7ff (created 2026-10-02)"
+    },
+    {
+      "id": "e2",
+      "type": "scope_check",
+      "summary": "crane digest kong:3.9.3 (latest immutable 3.9.x tag) equals the new kong:3.9 digest, so the move is a patch release. The refresh script rewrote every row's timestamp; comparing ref, digest and source columns showed only kong:3.9 changed, so the other rows were reverted and only that row kept"
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "Updated the kong:3.9 digest row in image-digests.tsv and added one Supply Chain row to lessons-log.md recording the discriminator: compare a moved floating tag with the immutable patch tag and the image created date"
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "summary": "refresh-image-digests.sh --check exits 0 (only the expected alpine/git portal-pin INFO); make validate, make test (289 passed, 0 failed) and make security pass; lessons-log 3-column format check reports 0 bad rows",
+      "scope": "airgap image digest pins",
+      "evidence": [
+        "ci:image-digest-drift"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "completion_claim",
+      "summary": "kong:3.9 digest refreshed to the 3.9.3 digest with a single-row diff; no other pin or chart value changed"
+    },
+    {
+      "id": "e6",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Drift gate clean for kong:3.9; the alpine/git portal pin remains intentionally frozen"
+    }
+  ]
+}

@@ -1,0 +1,52 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-independent-review-gate",
+  "task": "Add a pre-merge independent-review gate: a required `independent-review` commit status bound to the PR head SHA, posted by the independent reviewer via a helper",
+  "changeContext": {
+    "paths": [
+      "scripts/ci/mark-review-pass.py",
+      "scripts/ci/tests/test_mark_review_pass.py",
+      "AGENTS.md",
+      ".agents/evals/traces/2026-10-independent-review-gate.json"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "reproduction",
+      "summary": "In the sibling repo beluga, PRs were self-merged seconds after CI went green, before an independent review finished; no check ties merge to a review that postdates the last push"
+    },
+    {
+      "id": "e2",
+      "type": "scope_check",
+      "summary": "Design review found that a pull_request workflow runs the PR's own gate script and committer.date is author-forgeable, so the label+timestamp design was dropped; the control is now a commit status on the head SHA (new push = new SHA = no status), with no workflow and no timestamps"
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "Added scripts/ci/mark-review-pass.py (refuses draft or non-open PRs, requires exactly one literal full 40-hex --sha (no abbreviations, repeats or --sha=) of the reviewed commit (no prefixes) and refuses unless it equals the PR head, posts the status on exactly that SHA, re-reads the head and prints a warning instead of success (exit 1) if it moved), its unit tests and one AGENTS.md note; no existing policy, workflow or gate was weakened"
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "summary": "scripts/ci/tests (incl. new plan_status and injected-gh main-path tests asserting the exact status POST) pass; mutation checks confirmed failure when the reviewed-SHA mismatch check is disabled, the exact-argv check is loosened to accept flag abbreviations or a repeated --sha, the status context string is changed, the open-state check is disabled and the draft check is weakened, then restored; make validate, make test (289 passed, 0 failed) and shellcheck pass",
+      "scope": "independent-review gate logic",
+      "evidence": [
+        "test:python3 -m unittest discover -s scripts/ci/tests"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "completion_claim",
+      "summary": "The helper posts the independent-review status only for an open, ready PR whose current head equals the SHA the reviewer names; the check becomes merge-blocking once the owner marks it required after this PR merges. It is a procedural control, not identity-proof"
+    },
+    {
+      "id": "e6",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Gate implemented and unit-verified; live behavior is verified on the first PRs after rollout"
+    }
+  ]
+}

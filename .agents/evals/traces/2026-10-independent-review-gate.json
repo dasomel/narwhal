@@ -2,12 +2,11 @@
   "schemaVersion": "openforge-agent-trace/v1",
   "consistencyMode": "strict",
   "traceId": "narwhal-independent-review-gate",
-  "task": "Add a pre-merge independent-review gate: a required check that is green only when label review:pass was applied after the PR's latest commit or force-push",
+  "task": "Add a pre-merge independent-review gate: a required `independent-review` commit status bound to the PR head SHA, posted by the independent reviewer via a helper",
   "changeContext": {
     "paths": [
-      ".github/workflows/independent-review.yml",
-      "scripts/ci/check-independent-review.py",
-      "scripts/ci/tests/test_check_independent_review.py",
+      "scripts/ci/mark-review-pass.py",
+      "scripts/ci/tests/test_mark_review_pass.py",
       "AGENTS.md",
       ".agents/evals/traces/2026-10-independent-review-gate.json"
     ]
@@ -21,18 +20,18 @@
     {
       "id": "e2",
       "type": "scope_check",
-      "summary": "New workflow runs scripts/ci/check-independent-review.py from the base commit (a PR cannot edit its own judge) with read-only permissions and no third-party actions; the gate logic is a pure function over gh api payloads, covered by unit tests that need no network"
+      "summary": "Design review found that a pull_request workflow runs the PR's own gate script and committer.date is author-forgeable, so the label+timestamp design was dropped; the control is now a commit status on the head SHA (new push = new SHA = no status), with no workflow and no timestamps"
     },
     {
       "id": "e3",
       "type": "bug_fix",
-      "summary": "Added the independent-review job, the gate script and tests, the review:pass label and one AGENTS.md note; no existing policy, workflow or gate was weakened"
+      "summary": "Added scripts/ci/mark-review-pass.py (refuses draft or non-open PRs, requires --sha of the reviewed commit and refuses if the PR head differs, posts the status on exactly that SHA, re-reads the head and warns if it moved), its unit tests and one AGENTS.md note; no existing policy, workflow or gate was weakened"
     },
     {
       "id": "e4",
       "type": "regression_verification",
       "status": "passed",
-      "summary": "scripts/ci/tests (32 tests incl. 14 new) pass; mutation checks confirmed the tests fail when the strict comparison is relaxed to >= (1 failure) and when the draft check is disabled (2 failures), then restored; make validate, make test (289 passed, 0 failed) and shellcheck pass",
+      "summary": "scripts/ci/tests (27 tests incl. 9 new for plan_status) pass; mutation checks confirmed failure when the reviewed-SHA mismatch check is disabled, the open-state check is disabled and the draft check is weakened, then restored; make validate, make test (289 passed, 0 failed) and shellcheck pass",
       "scope": "independent-review gate logic",
       "evidence": [
         "test:python3 -m unittest discover -s scripts/ci/tests"
@@ -41,7 +40,7 @@
     {
       "id": "e5",
       "type": "completion_claim",
-      "summary": "The independent-review check fails closed unless review:pass postdates the newest commit and force-push; it only becomes merge-blocking once the owner marks it a required check after this PR merges"
+      "summary": "The helper posts the independent-review status only for an open, ready PR whose current head equals the SHA the reviewer names; the check becomes merge-blocking once the owner marks it required after this PR merges. It is a procedural control, not identity-proof"
     },
     {
       "id": "e6",

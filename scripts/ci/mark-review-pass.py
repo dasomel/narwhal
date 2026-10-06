@@ -49,7 +49,7 @@ def view(number, gh):
 
 
 def main(argv, gh=run_gh):
-  if len(argv) != 4 or not argv[1].isdigit() or argv[2] != "--sha":
+  if len(argv) != 4 or not argv[1].isdigit() or argv[2] != "--sha" or not argv[3]:
     print("usage: mark-review-pass.py <pr-number> --sha <full-40-hex-reviewed-sha>", file=sys.stderr)
     return 2
   number = argv[1]

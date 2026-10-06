@@ -25,13 +25,13 @@
     {
       "id": "e3",
       "type": "bug_fix",
-      "summary": "Added scripts/ci/mark-review-pass.py (refuses draft or non-open PRs, requires the full 40-hex --sha of the reviewed commit (no prefixes) and refuses unless it equals the PR head, posts the status on exactly that SHA, re-reads the head and prints a warning instead of success (exit 1) if it moved), its unit tests and one AGENTS.md note; no existing policy, workflow or gate was weakened"
+      "summary": "Added scripts/ci/mark-review-pass.py (refuses draft or non-open PRs, requires exactly one literal full 40-hex --sha (no abbreviations, repeats or --sha=) of the reviewed commit (no prefixes) and refuses unless it equals the PR head, posts the status on exactly that SHA, re-reads the head and prints a warning instead of success (exit 1) if it moved), its unit tests and one AGENTS.md note; no existing policy, workflow or gate was weakened"
     },
     {
       "id": "e4",
       "type": "regression_verification",
       "status": "passed",
-      "summary": "scripts/ci/tests (incl. new plan_status and injected-gh main-path tests asserting the exact status POST) pass; mutation checks confirmed failure when the reviewed-SHA mismatch check is disabled, the status context string is changed, the open-state check is disabled and the draft check is weakened, then restored; make validate, make test (289 passed, 0 failed) and shellcheck pass",
+      "summary": "scripts/ci/tests (incl. new plan_status and injected-gh main-path tests asserting the exact status POST) pass; mutation checks confirmed failure when the reviewed-SHA mismatch check is disabled, the exact-argv check is loosened to accept flag abbreviations or a repeated --sha, the status context string is changed, the open-state check is disabled and the draft check is weakened, then restored; make validate, make test (289 passed, 0 failed) and shellcheck pass",
       "scope": "independent-review gate logic",
       "evidence": [
         "test:python3 -m unittest discover -s scripts/ci/tests"

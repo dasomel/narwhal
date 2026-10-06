@@ -132,6 +132,17 @@ class MainTest(unittest.TestCase):
     self.assertEqual(M.main(["x", "7"], gh=FakeGh([SHA])), 2)
     self.assertEqual(M.main(["x", "7", "--sha"], gh=FakeGh([SHA])), 2)
 
+  def test_abbreviated_repeated_or_valueless_sha_flag_exit_2_with_no_gh_calls(self):
+    other = "b" * 40
+    cases = [["--s", SHA], ["--sh", SHA], ["--sha=" + SHA], ["--sha", SHA, "--sha", other], ["--sha", other, "--sha", SHA],
+             ["--sha", SHA, "--sha", SHA], ["--sha"], ["--sha", ""], [SHA]]
+    for extra in cases:
+      gh = FakeGh([SHA])
+      err = io.StringIO()
+      with redirect_stderr(err):
+        rc = M.main(["x", "7"] + extra, gh=gh)
+      self.assertEqual(rc, 2, extra)
+      self.assertEqual(gh.calls, [], extra)
 
 if __name__ == "__main__":
   unittest.main()

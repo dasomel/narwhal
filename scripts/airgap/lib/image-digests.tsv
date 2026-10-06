@@ -75,7 +75,7 @@ ghcr.io/headlamp-k8s/headlamp:v0.42.0	sha256:c9754bae1d799220da0547e51ceee234f6e
 ghcr.io/jkroepke/kube-webhook-certgen:1.8.3	sha256:8ce13c365c8e9ced0aad5ef350a53c50b7ca5817f99d856b9eec895db1056728	2026-09-28T12:06:18Z	crane digest
 ghcr.io/kube-vip/kube-vip:v1.1.2	sha256:840305b94ef2a89abb3b7fd2b09edfbde690d90052020da4dff90679fe892da2	2026-09-28T12:06:18Z	crane digest
 ghcr.io/kyverno/readiness-checker:v1.18.1	sha256:455400758235cf448dd9be3374ecb9e8bf543ee0c39adc880d25ed28cc7eb69d	2026-09-28T12:06:18Z	crane digest
-kong:3.9	sha256:12972ce1ab6396083e56e7d46fce084836c98cc819344bef44a1f583ec3ab191	2026-09-28T12:06:18Z	crane digest
+kong:3.9	sha256:92035d16d7ff86b7bc12fb1d0090d29357d924238b1880f78735f3f2fea6b631	2026-10-06T23:03:57Z	crane digest
 mirror.gcr.io/aquasec/trivy-operator:0.25.0	sha256:886761b8b4c0f431407257ab614516a08b88c887619400c9606134f504844a52	2026-09-28T12:06:18Z	crane digest
 mirror.gcr.io/aquasec/trivy:0.60.0	sha256:91c3a842834563a6860dbaec5af7c1949df5caf988f9632ef5cbb0a5cd59d8f8	2026-09-28T12:06:18Z	crane digest
 mirror.gcr.io/chrislusf/seaweedfs:4.40	sha256:52194fba4fecd0083c842158b3a902ba6e04a63619b2b0efcd08007bdb6a4602	2026-09-28T12:06:18Z	crane digest

@@ -1,0 +1,53 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-independent-review-gate",
+  "task": "Add a pre-merge independent-review gate: a required check that is green only when label review:pass was applied after the PR's latest commit or force-push",
+  "changeContext": {
+    "paths": [
+      ".github/workflows/independent-review.yml",
+      "scripts/ci/check-independent-review.py",
+      "scripts/ci/tests/test_check_independent_review.py",
+      "AGENTS.md",
+      ".agents/evals/traces/2026-10-independent-review-gate.json"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "reproduction",
+      "summary": "In the sibling repo beluga, PRs were self-merged seconds after CI went green, before an independent review finished; no check ties merge to a review that postdates the last push"
+    },
+    {
+      "id": "e2",
+      "type": "scope_check",
+      "summary": "New workflow runs scripts/ci/check-independent-review.py from the base commit (a PR cannot edit its own judge) with read-only permissions and no third-party actions; the gate logic is a pure function over gh api payloads, covered by unit tests that need no network"
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "Added the independent-review job, the gate script and tests, the review:pass label and one AGENTS.md note; no existing policy, workflow or gate was weakened"
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "summary": "scripts/ci/tests (32 tests incl. 14 new) pass; mutation checks confirmed the tests fail when the strict comparison is relaxed to >= (1 failure) and when the draft check is disabled (2 failures), then restored; make validate, make test (289 passed, 0 failed) and shellcheck pass",
+      "scope": "independent-review gate logic",
+      "evidence": [
+        "test:python3 -m unittest discover -s scripts/ci/tests"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "completion_claim",
+      "summary": "The independent-review check fails closed unless review:pass postdates the newest commit and force-push; it only becomes merge-blocking once the owner marks it a required check after this PR merges"
+    },
+    {
+      "id": "e6",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Gate implemented and unit-verified; live behavior is verified on the first PRs after rollout"
+    }
+  ]
+}

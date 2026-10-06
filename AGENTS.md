@@ -17,6 +17,7 @@ Narwhal follows the OpenForge agent engineering model: [change-management](https
 - Shared/production/destructive/release/credential/permission/external mutations need explicit authorization; local disposable work within the requested scope does not.
 - `scripts/up.sh` owns the full platform Phase 2 path; bare `vagrant up` is not equivalent. `.vagrant/` is generated.
 - Mocked/unit evidence does not substitute for real cluster verification when the defect depends on Kubernetes, networking, storage, GitOps, identity or external services.
+- Merge requires the `independent-review` check: label `review:pass` must be applied AFTER the last push (any later push or force-push invalidates it). Only the independent reviewer applies it, after a PASS; the author lane never does. Escape hatch is an admin merge, stated in the PR body. Gate script: `scripts/ci/check-independent-review.py`.
 
 ## Verification
 

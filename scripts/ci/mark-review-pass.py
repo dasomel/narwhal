@@ -5,7 +5,7 @@ Run by the independent reviewer after a PASS, with the SHA it reviewed (never th
 SHA, so any later push (new SHA) has no status and the required check blocks the merge.
 Procedural control: any repo writer can post it; it is not identity-proof.
 """
-import json, subprocess, sys
+import json, re, subprocess, sys
 
 REPO = "dasomel/narwhal"
 CONTEXT = "independent-review"
@@ -49,7 +49,7 @@ def view(number, gh):
 
 
 def main(argv, gh=run_gh):
-  if len(argv) != 4 or not argv[1].isdigit() or argv[2] != "--sha" or not argv[3]:
+  if len(argv) != 4 or not re.fullmatch(r"[0-9]+", argv[1]) or argv[2] != "--sha" or not argv[3]:
     print("usage: mark-review-pass.py <pr-number> --sha <full-40-hex-reviewed-sha>", file=sys.stderr)
     return 2
   number = argv[1]

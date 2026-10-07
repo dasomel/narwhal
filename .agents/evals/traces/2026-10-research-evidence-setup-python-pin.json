@@ -1,0 +1,45 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-research-evidence-setup-python-pin",
+  "task": "Pin actions/setup-python in the research-evidence workflow to the immutable commit of v7.0.0 instead of the mutable v7 tag",
+  "changeContext": {
+    "paths": [
+      ".github/workflows/research-evidence.yml",
+      ".agents/evals/traces/2026-10-research-evidence-setup-python-pin.json"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "reproduction",
+      "summary": "research-evidence.yml referenced actions/setup-python@v7, a mutable tag, while every other action in the workflow is pinned to a commit SHA"
+    },
+    {
+      "id": "e2",
+      "type": "bug_fix",
+      "summary": "Replaced actions/setup-python@v7 with actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0; gh api repos/actions/setup-python/git/ref/tags/v7.0.0 resolves to that SHA; no other line changed"
+    },
+    {
+      "id": "e3",
+      "type": "regression_verification",
+      "status": "passed",
+      "summary": "actionlint and a YAML parse of research-evidence.yml pass and make validate passes; the diff is the single uses line",
+      "scope": "research-evidence workflow action pin",
+      "evidence": [
+        "test:actionlint .github/workflows/research-evidence.yml"
+      ]
+    },
+    {
+      "id": "e4",
+      "type": "completion_claim",
+      "summary": "research-evidence.yml now pins setup-python to an immutable SHA with the v7.0.0 tag recorded in a comment"
+    },
+    {
+      "id": "e5",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "setup-python pin applied; the independent-review status is left to the independent reviewer"
+    }
+  ]
+}

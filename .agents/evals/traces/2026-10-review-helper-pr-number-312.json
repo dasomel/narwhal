@@ -1,0 +1,46 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-issue-312-review-helper-pr-number",
+  "task": "Make mark-review-pass.py accept only ASCII-digit PR numbers and test the refusal of non-numeric input (narwhal#312)",
+  "changeContext": {
+    "paths": [
+      "scripts/ci/mark-review-pass.py",
+      "scripts/ci/tests/test_mark_review_pass.py",
+      ".agents/evals/traces/2026-10-review-helper-pr-number-312.json"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "reproduction",
+      "summary": "The PR-number guard used argv[1].isdigit(), which accepts Unicode digits such as the superscript two; replacing the guard with True left the existing suite green, so non-numeric input was untested"
+    },
+    {
+      "id": "e2",
+      "type": "bug_fix",
+      "summary": "Replaced the isdigit() guard with re.fullmatch(r\"[0-9]+\", argv[1]) and added a MainTest case asserting exit 2 and zero gh calls for -1, 1e3, 12;id, superscript two, Arabic-Indic digits, empty, leading-space, trailing-space and trailing-newline PR numbers"
+    },
+    {
+      "id": "e3",
+      "type": "regression_verification",
+      "status": "passed",
+      "summary": "scripts/ci/tests pass (35 tests); mutation check replacing the guard with True made the new test fail, then the guard was restored and the suite passed again; make validate, make test (289 passed, 0 failed) and shellcheck pass",
+      "scope": "mark-review-pass PR number guard",
+      "evidence": [
+        "test:python3 -m unittest discover -s scripts/ci/tests"
+      ]
+    },
+    {
+      "id": "e4",
+      "type": "completion_claim",
+      "summary": "mark-review-pass.py now rejects non-ASCII and non-numeric PR numbers before any gh call, covered by a mutation-checked test"
+    },
+    {
+      "id": "e5",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Issue #312 items 1 and 2 addressed; the independent-review status is left to the independent reviewer"
+    }
+  ]
+}

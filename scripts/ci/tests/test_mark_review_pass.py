@@ -144,5 +144,14 @@ class MainTest(unittest.TestCase):
       self.assertEqual(rc, 2, extra)
       self.assertEqual(gh.calls, [], extra)
 
+  def test_non_ascii_or_non_numeric_pr_number_exit_2_with_no_gh_calls(self):
+    for number in ["-1", "1e3", "12;id", "\u00b2", "\u0661\u0662", "", " 12", "12 ", "12\n"]:
+      gh = FakeGh([SHA])
+      err = io.StringIO()
+      with redirect_stderr(err):
+        rc = M.main(["x", number, "--sha", SHA], gh=gh)
+      self.assertEqual(rc, 2, repr(number))
+      self.assertEqual(gh.calls, [], repr(number))
+
 if __name__ == "__main__":
   unittest.main()

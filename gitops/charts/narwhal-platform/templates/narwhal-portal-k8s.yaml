@@ -23,6 +23,16 @@ rules:
   - apiGroups: [""]
     resources: [nodes, pods, persistentvolumeclaims, namespaces, services, events, configmaps]
     verbs: [get, list, watch]
+  # D1: portal#30 PVC expansion preflight quota headroom evidence; the portal route must scope-check the caller's namespace before any use (the read is not wired yet, so this is a requirement, not a current fact).
+  # get/list only limits read access; remove this rule if the preflight is retired.
+  - apiGroups: [""]
+    resources: [resourcequotas]
+    verbs: [get, list]
+  # D2: portal#30 PVC expansion preflight allowVolumeExpansion evidence; the portal route must scope-check the caller's namespace before any use (the read is not wired yet, so this is a requirement, not a current fact).
+  # get/list only limits read access; remove this rule if the preflight is retired.
+  - apiGroups: ["storage.k8s.io"]
+    resources: ["storageclasses"]
+    verbs: [get, list]
   - apiGroups: [""]
     resources: [pods/log]
     verbs: [get]

@@ -1,0 +1,16 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "traceId": "narwhal-portal-storage-rbac-30",
+  "task": "Grant narwhal-portal read-only StorageClass and ResourceQuota access for the PVC expansion preflight (narwhal-portal#30)",
+  "consistencyMode": "strict",
+  "changeContext": {"paths": ["gitops/charts/narwhal-platform/templates/narwhal-portal-k8s.yaml", ".agents/evals/traces/2026-10-portal-storage-rbac-30.json"]},
+  "events": [
+    {"id":"e1","type":"scope_check","summary":"Add exactly two get/list-only rules (core resourcequotas, storage.k8s.io storageclasses) to ClusterRole narwhal-portal; no watch, wildcard, write verb or other resource. Portal-side read wiring is a separate follow-up."},
+    {"id":"e2","type":"reproduction","summary":"Portal PR narwhal-portal#221 returns evidence_gaps [storage-class, quota] because the ClusterRole only grants persistentvolumeclaims; verdict can never leave needs-evidence."},
+    {"id":"e3","type":"bug_fix","summary":"Added the two read-only rules with comments stating portal#30 as the consumer and that the portal route must scope-check before use. An independent security review passed the rules and caught an inaccurate 'portal enforces' comment, corrected in the same PR."},
+    {"id":"e4","type":"regression_verification","status":"passed","scope":"portal contract and static regression suite","summary":"OIDC RBAC/portal contract check and the static regression suite pass with the change.","evidence":["test:bash scripts/test/check-oidc-rbac-portal-contract.sh","test:./scripts/test/regression-check-kakao.sh --static"]},
+    {"id":"e5","type":"verification","status":"passed","scope":"helm rendering and manifest schema of narwhal-platform","summary":"helm template renders the ClusterRole with exactly the two added rules; kubeconform strict reports 0 invalid and 0 errors on the rendered output. Not applied to a live cluster.","evidence":["test:helm template narwhal-platform gitops/charts/narwhal-platform --set baseDomain=t2.narwhal.test","test:kubeconform -strict -summary -ignore-missing-schemas -kubernetes-version 1.31.0"]},
+    {"id":"e6","type":"completion_claim","summary":"The manifest grant is complete and statically verified; live apply and portal read-wiring remain follow-ups and are not claimed."},
+    {"id":"e7","type":"task_outcome","state":"A","summary":"Static RBAC grant complete and verified within the stated scope; live cluster apply not performed."}
+  ]
+}

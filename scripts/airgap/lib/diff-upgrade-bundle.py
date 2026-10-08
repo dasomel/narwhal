@@ -42,7 +42,11 @@ def generate_diff(current_doc: dict, new_doc: dict) -> dict:
             old_ver, new_ver = old_art.get("version"), new_art.get("version")
             old_dig, new_dig = old_art.get("digest"), new_art.get("digest")
 
-            if old_ver != new_ver or old_dig != new_dig:
+            old_license, new_license = old_art.get("license"), new_art.get("license")
+            # D2: License corrections affect review even without a byte/version
+            # change. Cost: metadata-only entries become updated; the existing
+            # license field retains the candidate value for compatibility.
+            if old_ver != new_ver or old_dig != new_dig or old_license != new_license:
                 updated.append({
                     "name": name,
                     "artifact_type": new_art.get("artifact_type"),
@@ -51,7 +55,9 @@ def generate_diff(current_doc: dict, new_doc: dict) -> dict:
                     "old_digest": old_dig,
                     "new_digest": new_dig,
                     "source_ref": new_art.get("source_ref"),
-                    "license": new_art.get("license"),
+                    "license": new_license,
+                    "old_license": old_license,
+                    "new_license": new_license,
                 })
             else:
                 unchanged.append(new_art)
@@ -119,6 +125,7 @@ def format_text_report(diff: dict) -> str:
                 f"  * {item['name']} ({item['artifact_type']}): "
                 f"{item['old_version']} ({item['old_digest'][:19]}...) -> "
                 f"{item['new_version']} ({item['new_digest'][:19]}...)"
+                f"; license {item['old_license']} -> {item['new_license']}"
             )
 
     if diff["added"]:

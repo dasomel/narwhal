@@ -1,0 +1,67 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-upgrade-license-diff-20261008",
+  "task": "Expose license-only upgrade metadata deltas (#53)",
+  "changeContext": {
+    "paths": [
+      "scripts/airgap/lib/diff-upgrade-bundle.py",
+      "scripts/airgap/tests/test_upgrade_license_diff.py",
+      "scripts/test/regression-check-kakao.sh",
+      "docs/common/upgrade-orchestration.md",
+      "docs/common/lessons-log.md",
+      ".agents/evals/traces/2026-10-upgrade-license-diff.json"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Existing diff report only; additive license metadata, no policy approvals or deployed inputs; checked for repository JSON consumers."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "Same version/digest but changed license classified unchanged",
+      "evidence": [
+        "test:three tests before fix: one FAIL and one ERROR"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "License changes classify updated; retain candidate license field, add old_license/new_license, print text delta."
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "Offline diff function plus actual CLI JSON/text",
+      "summary": "Three license delta tests pass",
+      "evidence": [
+        "test:python3 -m unittest discover -s scripts/airgap/tests -p test_upgrade_license_diff.py -v: Ran3 tests OK"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "verification",
+      "status": "passed",
+      "scope": "Repository offline static checks; no cluster/release runtime",
+      "summary": "Static suite passes",
+      "evidence": [
+        "test:./scripts/test/regression-check-kakao.sh --static: passed286 failed0 warnings5"
+      ]
+    },
+    {
+      "id": "e6",
+      "type": "completion_claim",
+      "summary": "License-only bundle metadata diffs exposed; transitive dependency/source SBOM diff and full #53 remain incomplete."
+    },
+    {
+      "id": "e7",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Bounded upgrade license report verified."
+    }
+  ]
+}

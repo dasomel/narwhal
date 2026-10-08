@@ -154,3 +154,12 @@ it. JSON `missing_dependencies` and the text report carry the same warning.
 The diff remains a reporting tool (exit 0); promotion must also run the existing
 bundle verifier, which rejects missing dependencies. Delta bundles are not inferred
 from the current cluster or current manifest.
+
+## Upgrade license evidence (#53)
+
+The offline bundle dry-run classifies license-only metadata changes as `updated`,
+even if version and digest stay equal. Updated JSON entries retain `license` as
+the candidate license and add `old_license`/`new_license`; text exports show both.
+This report identifies license review changes; it does not approve new licenses
+or replace the existing forbidden-license promotion verifier. Whole transitive
+SBOM dependency/license diffs still require complete build inventory.

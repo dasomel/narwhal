@@ -74,7 +74,7 @@ Dependabot의 `cooldown:` 설정은 pnpm 적용 시 내부적으로 `--config.mi
 - CI/CD 빌드 작업의 아웃바운드 네트워크 통제 미적용 (이슈 #164에서 제한 요구사항 다룸).
 - 여러 저장소 간 카나리/점진적 채택(Canary/progressive adoption) 메커니즘 부재.
 - 이슈 #165에서 언급된 다른 저장소들(`Beluga`, `OpenForge`, `KubeMetal`, `kube-ready-box`, `ldapium`, `nfs-quota-agent`)은 본 문서의 통제 대상에 포함되지 않음.
-- `Go`, `Rust`, `Java`, `Python` 생태계는 이 두 저장소(`narwhal`, `narwhal-portal`)에 존재하지 않으며 통제 수단 역시 없음.
+- `Go`, `Rust`, `Java` 의존성 그래프의 통제 수단은 없음. Python research-evidence CI는 exact top-level 버전만 고정하며 전이 의존성 hash-lock은 미적용.
 
 ## 5. 고정 도구 버전 변경 절차 (How to Bump a Pinned Tool)
 
@@ -121,3 +121,17 @@ release 전체 SBOM completeness를 증명하지 않는다.
 Package ecosystem은 현재 Trivy `Result.Type`을 보존하지 않으므로 같은 name/version의
 서로 다른 ecosystem package 구별은 후속 과제다. Container manifest identity 회귀와
 실제 CLI의 JSON 출력/strict promotion gate는 함께 검증한다.
+## CI mutable-input gate coverage (narwhal#164)
+
+`python3 scripts/ci/check-mutable-inputs.py .github/workflows scripts/airgap/lib/binary-checksums.tsv`
+is invoked by Agent Behavior for every workflow, including newly added workflows.
+It rejects floating npm/pnpm/pip package versions, requirements installs without
+`--require-hashes`, mutable Git archive refs, and download-to-shell/tar pipes, in
+addition to latest tags/downloads and non-SHA GitHub Actions. Exact package
+versions and frozen lockfile installs remain usable.
+
+This is a source-text guard, not a shell interpreter or malware scanner. It does
+not prove transitive package integrity, network containment, release age, SBOM
+completeness, or trust in an exact version. Existing runner egress and build
+provenance gaps in #164 remain open. Python is now used by research-evidence CI;
+its exact top-level version is guarded, but its transitive graph is not hash locked.

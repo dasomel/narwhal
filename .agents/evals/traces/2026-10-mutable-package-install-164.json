@@ -1,0 +1,64 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-164-mutable-package-install-guard",
+  "task": "Prevent floating third-party package installs and streamed download execution in every CI workflow (#164)",
+  "changeContext": {
+    "paths": [
+      "scripts/ci/check-mutable-inputs.py",
+      "scripts/ci/tests/test_check_mutable_inputs.py",
+      ".github/workflows/agent-behavior.yml",
+      ".agents/evals/traces/2026-10-mutable-package-install-164.json"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Bounded existing source-text gate; leave runner egress, transitive integrity and provenance requirements open."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "Original scanner permits npm install package and pip install package; fixed named-workflow scope misses newly added workflows."
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "Scan full workflow directory and reject floating package versions, unhashed requirements, mutable Git archives and download-to-shell/tar pipes."
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "immutable-input scanner and CLI enforcement",
+      "summary": "42 actual CI-helper tests pass including CLI exit 1 for newly added unpinned workflow; real workflow guard passes.",
+      "evidence": [
+        "test:python3 -m unittest discover -s scripts/ci/tests -v",
+        "runtime:command-exit-0"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "verification",
+      "status": "passed",
+      "scope": "all repository workflows",
+      "summary": "Mutable-input guard passed for 10 files; git diff --check passes.",
+      "evidence": [
+        "test:python3 scripts/ci/check-mutable-inputs.py .github/workflows scripts/airgap/lib/binary-checksums.tsv",
+        "runtime:command-exit-0"
+      ]
+    },
+    {
+      "id": "e6",
+      "type": "completion_claim",
+      "summary": "Bounded source-text guard complete; issue #164 remains partial."
+    },
+    {
+      "id": "e7",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Bounded CI source-text guard task complete; broader issue #164 remains open with documented runner/provenance gaps."
+    }
+  ]
+}

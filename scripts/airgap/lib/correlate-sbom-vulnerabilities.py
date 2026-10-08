@@ -90,32 +90,40 @@ def extract_trivy_vulnerabilities(trivy_doc: Any) -> list[dict[str, Any]]:
 def match_vuln_to_component(vuln: dict, comp: dict) -> bool:
     name = comp.get("name", "")
     version = comp.get("version", "")
-    purl = comp.get("purl", "")
+    if not name:
+        return False
+
+    if comp.get("type") != "container":
+        return (
+            vuln.get("pkg_name") in (name, name.removeprefix("pkg:deb/ubuntu/"))
+            and bool(version)
+            and vuln.get("installed_version") == version
+        )
+
     comp_digest = extract_digest_from_component(comp)
+    repo_digests = {
+        ref.rsplit("@", 1)[-1] for ref in vuln.get("repo_digests", [])
+        if isinstance(ref, str) and "@" in ref
+    }
+    # D1: Manifest identity wins over mutable names; cost: conflicting reports
+    # remain unlinked. Escape hatch: regenerate the scan for the pinned artifact.
+    if comp_digest and repo_digests:
+        return comp_digest in repo_digests
 
-    art_name = vuln.get("artifact_name", "")
-    target = vuln.get("target", "")
-    pkg_name = vuln.get("pkg_name", "")
-
-    # Direct match on container image name or purl
-    if art_name and (art_name == name or art_name == f"{name}:{version}" or name in art_name):
-        return True
-    if target and (name in target or art_name in target):
-        return True
-
-    # Match by repo digest
+    identities = {name}
+    if version:
+        identities.add(f"{name}:{version}")
     if comp_digest:
-        for rd in vuln.get("repo_digests", []):
-            if comp_digest in rd:
-                return True
-        if vuln.get("image_id") and comp_digest in vuln["image_id"]:
-            return True
+        identities.add(f"{name}@{comp_digest}")
 
-    # Match by OS / library package name
-    if pkg_name and (pkg_name == name or name == f"pkg:deb/ubuntu/{pkg_name}"):
-        return True
-
-    return False
+    # D2: ImageID is a config digest, not the manifest digest; do not reject a
+    # correct name solely on that mismatch. RepoDigests supplies strong identity.
+    artifact_name = vuln.get("artifact_name", "")
+    if artifact_name:
+        return artifact_name in identities
+    target = vuln.get("target", "")
+    # Trivy annotates container targets with an OS suffix, not arbitrary paths.
+    return target.split(" (", 1)[0] in identities
 
 
 def validate_correlation_schema(doc: dict, schema: dict) -> list[str]:

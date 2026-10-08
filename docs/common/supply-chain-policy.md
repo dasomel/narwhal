@@ -104,3 +104,20 @@ Sigstore Cosign은 Keyless(Fulcio OIDC + Rekor 투명성 로그) 및 Static Publ
 2. **Cosign Sign & Attest**: `cosign sign`으로 서명 생성 및 `cosign attest --type cyclonedx`로 SBOM 증명 첨부.
 3. **Harbor Internal Registry**: 검증된 이미지를 Harbor 레지스트리로 promote.
 4. **GitOps & Kyverno Admission**: ArgoCD 배포 시 Kyverno `verify-image-signatures` 정책 및 에어갭 사전 검사 `10-verify-image-signatures.sh`로 서명/증명 무결성 확인.
+
+## SBOM 취약점 correlation identity (#53)
+
+`correlate-sbom-vulnerabilities.py`는 container의 `RepoDigests` manifest digest가
+존재하면 이를 우선하며, 불일치 시 같은 image name/tag여도 연결하지 않는다.
+Digest evidence가 없을 때만 정확한 artifact name/tag 또는 Trivy OS suffix를
+제거한 target으로 매칭한다. Prefix/substring은 identity가 아니다. Trivy
+`ImageID`는 image config digest여서 manifest digest와 혼동하지 않는다.
+Package component는 name과 installed version 모두 일치해야 한다.
+
+검증: `python3 -m unittest discover -s scripts/airgap/tests -v` (offline).
+이 검증은 CVE identity join의 회귀 증적이며, 실제 scanner/DB freshness나
+release 전체 SBOM completeness를 증명하지 않는다.
+
+Package ecosystem은 현재 Trivy `Result.Type`을 보존하지 않으므로 같은 name/version의
+서로 다른 ecosystem package 구별은 후속 과제다. Container manifest identity 회귀와
+실제 CLI의 JSON 출력/strict promotion gate는 함께 검증한다.

@@ -1,0 +1,67 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-candidate-dependency-diff-20261008",
+  "task": "Report removed dependencies missing from complete upgrade candidate snapshots (#45/#47)",
+  "changeContext": {
+    "paths": [
+      "scripts/airgap/lib/diff-upgrade-bundle.py",
+      "scripts/airgap/tests/test_upgrade_diff.py",
+      "scripts/test/regression-check-kakao.sh",
+      "docs/common/upgrade-orchestration.md",
+      "docs/common/lessons-log.md",
+      ".agents/evals/traces/2026-10-upgrade-diff-candidate-dependencies.json"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Match existing candidate-only validate_metadata dependency contract; diff remains reporting exit0, verifier still blocks promotion."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "Removed database remains required by app; current union hides missing candidate dependency",
+      "evidence": [
+        "test:python3 -m unittest discover -s scripts/airgap/tests -v: FAILED failures=2 of3"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "Candidate dependency availability excludes artifacts removed from current bundle."
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "Actual offline diff helper and CLI JSON/text",
+      "summary": "Three tests pass including removed and present candidate dependencies",
+      "evidence": [
+        "test:python3 -m unittest discover -s scripts/airgap/tests -v: Ran3 tests OK"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "verification",
+      "status": "passed",
+      "scope": "Repository static regression, not live deployment",
+      "summary": "Static suite passes",
+      "evidence": [
+        "test:./scripts/test/regression-check-kakao.sh --static: passed285 failed0 warnings5"
+      ]
+    },
+    {
+      "id": "e6",
+      "type": "completion_claim",
+      "summary": "Bounded removed-dependency warning corrected; #45/#47 remain partial and require offline runtime promotion/impact evidence."
+    },
+    {
+      "id": "e7",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Bounded report defect verified."
+    }
+  ]
+}

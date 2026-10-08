@@ -144,3 +144,13 @@ Application `Synced` and `Healthy`:
   which require a live cluster.
 - Direct integration with the air-gap bundle; an operator must separately confirm
   the proposed target chart/images are present and admissible before a live upgrade.
+
+## Candidate bundle dependency dry-run (#45/#47)
+
+`diff-upgrade-bundle.py` compares complete bundle snapshots. Declared dependencies
+must exist in the candidate, matching `verify-upgrade-bundle.py`; a dependency
+removed from the candidate is reported missing even if the current bundle includes
+it. JSON `missing_dependencies` and the text report carry the same warning.
+The diff remains a reporting tool (exit 0); promotion must also run the existing
+bundle verifier, which rejects missing dependencies. Delta bundles are not inferred
+from the current cluster or current manifest.

@@ -11,6 +11,7 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[3]
 PROFILE = "docs/common/workload-security-profile.md"
+TEXT_PROFILE_PRESENT = object()
 
 # D1: known counts are explicit debt until each namespace is remediated. Cost: a
 # changed baseline needs review; escape hatch: update only after inspecting the diff.
@@ -70,7 +71,8 @@ def documents(path, root):
                                 item = "\n".join(item_lines)
                                 containers.append({"securityContext": {
                                     "privileged": bool(re.search(r"(?m)^\s*privileged:\s*true\s*$", item)),
-                                    "seccompProfile": bool(re.search(r"(?m)^\s*seccompProfile:", item)),
+                                    **({"seccompProfile": TEXT_PROFILE_PRESENT}
+                                       if re.search(r"(?m)^\s*seccompProfile:", item) else {}),
                                 }})
                             item_lines = [child]
                         elif item_lines:
@@ -79,11 +81,12 @@ def documents(path, root):
                         item = "\n".join(item_lines)
                         containers.append({"securityContext": {
                             "privileged": bool(re.search(r"(?m)^\s*privileged:\s*true\s*$", item)),
-                            "seccompProfile": bool(re.search(r"(?m)^\s*seccompProfile:", item)),
+                            **({"seccompProfile": TEXT_PROFILE_PRESENT}
+                                       if re.search(r"(?m)^\s*seccompProfile:", item) else {}),
                         }})
                 spec["containers"] = containers
                 spec["runtimeClassName"] = (re.search(r"(?m)^\s*runtimeClassName:\s*([\w.-]+)", block) or [None, None])[1]
-                spec["securityContext"] = {"seccompProfile": True} if re.search(r"(?m)^\s*seccompProfile:", block) else {}
+                spec["securityContext"] = {"seccompProfile": TEXT_PROFILE_PRESENT} if re.search(r"(?m)^\s*seccompProfile:", block) else {}
                 found.append({"kind": kind, "metadata": {"name": name.group(1) if name else "<template>", "namespace": namespace.group(1) if namespace else "default"}, "spec": spec})
             return found, "text-fallback"
         raise ValueError(f"{path.relative_to(root)}: YAML/template parse failed: {exc}") from exc
@@ -121,7 +124,7 @@ def seccomp_gap(pod_security, container_security):
         return "missingSeccomp"
     # Text-fallback inventory records presence only; render/runtime verification
     # is still required for these Helm sources, as documented in the profile.
-    if profile is True:
+    if profile is TEXT_PROFILE_PRESENT:
         return None
     if not isinstance(profile, dict):
         return "invalidSeccomp"

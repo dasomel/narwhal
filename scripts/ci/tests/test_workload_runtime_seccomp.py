@@ -29,6 +29,8 @@ class SeccompOverrideTests(unittest.TestCase):
           "type": "Localhost", "localhostProfile": path}}), "invalidSeccomp")
     self.assertIsNone(module.seccomp_gap({}, {"seccompProfile": {
       "type": "Localhost", "localhostProfile": "operator/profile.json"}}))
+    self.assertEqual(module.seccomp_gap({}, {"seccompProfile": True}), "invalidSeccomp")
+    self.assertIsNone(module.seccomp_gap({}, {"seccompProfile": module.TEXT_PROFILE_PRESENT}))
     self.assertEqual(module.seccomp_gap({}, {"seccompProfile": {"type": "Typo"}}),
       "invalidSeccomp")
 
@@ -61,3 +63,8 @@ spec:
           capture_output=True, text=True)
         self.assertEqual(result.returncode, 1)
         self.assertIn("regression:unconfinedSeccomp=1", result.stderr)
+        manifest.write_text(manifest.read_text().replace("seccompProfile:\n          type: Unconfined", "seccompProfile: true"))
+        result = subprocess.run([sys.executable, str(SCRIPT), "--root", directory],
+          capture_output=True, text=True)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("regression:invalidSeccomp=1", result.stderr)

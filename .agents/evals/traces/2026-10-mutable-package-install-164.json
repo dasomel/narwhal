@@ -8,7 +8,8 @@
       "scripts/ci/check-mutable-inputs.py",
       "scripts/ci/tests/test_check_mutable_inputs.py",
       ".github/workflows/agent-behavior.yml",
-      ".agents/evals/traces/2026-10-mutable-package-install-164.json"
+      ".agents/evals/traces/2026-10-mutable-package-install-164.json",
+      "scripts/test/regression-check-kakao.sh"
     ]
   },
   "events": [
@@ -25,7 +26,7 @@
     {
       "id": "e3",
       "type": "bug_fix",
-      "summary": "Scan full workflow directory and reject floating package versions, unhashed requirements, mutable Git archives and download-to-shell/tar pipes."
+      "summary": "Scan full workflow directory and reject floating package versions, unhashed requirements, mutable Git archives and download-to-shell/tar pipes. R52 ignores test fixtures and binary bytecode to avoid treating intentional negative input as a production install."
     },
     {
       "id": "e4",

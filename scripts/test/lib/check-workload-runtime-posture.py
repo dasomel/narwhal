@@ -11,6 +11,7 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[3]
 PROFILE = "docs/common/workload-security-profile.md"
+TEXT_PROFILE_PRESENT = object()
 
 # D1: known counts are explicit debt until each namespace is remediated. Cost: a
 # changed baseline needs review; escape hatch: update only after inspecting the diff.
@@ -70,7 +71,8 @@ def documents(path, root):
                                 item = "\n".join(item_lines)
                                 containers.append({"securityContext": {
                                     "privileged": bool(re.search(r"(?m)^\s*privileged:\s*true\s*$", item)),
-                                    "seccompProfile": bool(re.search(r"(?m)^\s*seccompProfile:", item)),
+                                    **({"seccompProfile": TEXT_PROFILE_PRESENT}
+                                       if re.search(r"(?m)^\s*seccompProfile:", item) else {}),
                                 }})
                             item_lines = [child]
                         elif item_lines:
@@ -79,11 +81,12 @@ def documents(path, root):
                         item = "\n".join(item_lines)
                         containers.append({"securityContext": {
                             "privileged": bool(re.search(r"(?m)^\s*privileged:\s*true\s*$", item)),
-                            "seccompProfile": bool(re.search(r"(?m)^\s*seccompProfile:", item)),
+                            **({"seccompProfile": TEXT_PROFILE_PRESENT}
+                                       if re.search(r"(?m)^\s*seccompProfile:", item) else {}),
                         }})
                 spec["containers"] = containers
                 spec["runtimeClassName"] = (re.search(r"(?m)^\s*runtimeClassName:\s*([\w.-]+)", block) or [None, None])[1]
-                spec["securityContext"] = {"seccompProfile": True} if re.search(r"(?m)^\s*seccompProfile:", block) else {}
+                spec["securityContext"] = {"seccompProfile": TEXT_PROFILE_PRESENT} if re.search(r"(?m)^\s*seccompProfile:", block) else {}
                 found.append({"kind": kind, "metadata": {"name": name.group(1) if name else "<template>", "namespace": namespace.group(1) if namespace else "default"}, "spec": spec})
             return found, "text-fallback"
         raise ValueError(f"{path.relative_to(root)}: YAML/template parse failed: {exc}") from exc
@@ -109,6 +112,34 @@ def is_unevaluated_workload_file(source, workload_count):
     mentions_runtime_class = bool(re.search(r"(?m)^\s*runtimeClassName\s*:", source))
     mentions_workload = declares_workload or mentions_runtime_class
     return mentions_workload and workload_count == 0
+
+
+def seccomp_gap(pod_security, container_security):
+    # D3: a container override wins even when explicitly empty/Unconfined. Cost:
+    # Localhost existence remains runtime evidence; escape hatch: RuntimeDefault.
+    profile = (container_security["seccompProfile"]
+               if "seccompProfile" in container_security
+               else pod_security.get("seccompProfile"))
+    if not profile:
+        return "missingSeccomp"
+    # Text-fallback inventory records presence only; render/runtime verification
+    # is still required for these Helm sources, as documented in the profile.
+    if profile is TEXT_PROFILE_PRESENT:
+        return None
+    if not isinstance(profile, dict):
+        return "invalidSeccomp"
+    kind = profile.get("type")
+    if kind == "Unconfined":
+        return "unconfinedSeccomp"
+    if kind == "RuntimeDefault":
+        return None
+    if kind == "Localhost":
+        name = profile.get("localhostProfile")
+        if (isinstance(name, str) and name.strip()
+                and not name.startswith("/")
+                and all(part not in {"", ".", ".."} for part in name.split("/"))):
+            return None
+    return "invalidSeccomp"
 
 
 def scan(root, mutate=False):
@@ -190,10 +221,9 @@ def scan(root, mutate=False):
                 gaps[(namespace, "privileged")] += 1
             pod_security = spec.get("securityContext")
             pod_security = pod_security if isinstance(pod_security, dict) else {}
-            pod_seccomp = pod_security.get("seccompProfile")
-            container_seccomp = security.get("seccompProfile")
-            if not pod_seccomp and not container_seccomp:
-                gaps[(namespace, "missingSeccomp")] += 1
+            seccomp_problem = seccomp_gap(pod_security, security)
+            if seccomp_problem:
+                gaps[(namespace, seccomp_problem)] += 1
     if mutate and not any("r234-mutation-missing" in item for item in problems):
         problems.append("mutation was not detected")
     actual = {f"{ns}:{field}": count for (ns, field), count in gaps.items()}

@@ -1,0 +1,63 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-144-effective-seccomp-override",
+  "task": "Reject explicit unsafe seccomp container overrides in existing offline workload ratchet (#144)",
+  "changeContext": {
+    "paths": [
+      "scripts/test/lib/check-workload-runtime-posture.py",
+      "scripts/ci/tests/test_workload_runtime_seccomp.py",
+      ".agents/evals/traces/2026-10-seccomp-override-144.json"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Limit change to offline parsed YAML ratchet; no workload or admission policy mutation."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "Pod RuntimeDefault plus container Unconfined previously passed truthiness OR check."
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "Compute container override before inheritance; reject Unconfined/invalid Localhost and unknown profile types."
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "effective seccomp precedence and CLI negative behavior",
+      "summary": "38 CI-helper tests pass including actual CLI rejection for app/init/ephemeral Unconfined overrides and inheritance/Localhost cases.",
+      "evidence": [
+        "test:python3 -m unittest discover -s scripts/ci/tests -v",
+        "runtime:command-exit-0"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "verification",
+      "status": "passed",
+      "scope": "repository workload inventory",
+      "summary": "Existing mutation-verified ratchet passes for 26 workloads; fallback Helm is explicitly presence-only, no runtime claim.",
+      "evidence": [
+        "test:python3 scripts/test/lib/check-workload-runtime-posture.py --mutation-verify",
+        "runtime:command-exit-0"
+      ]
+    },
+    {
+      "id": "e6",
+      "type": "completion_claim",
+      "summary": "Bounded parsed-YAML seccomp override bug fixed; full #144 runtime conformance remains open."
+    },
+    {
+      "id": "e7",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Bounded guard fix verified, no security baseline widening."
+    }
+  ]
+}

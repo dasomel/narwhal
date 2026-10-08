@@ -99,3 +99,17 @@ evidence: [<offline bundle-relative paths>]
 ## 범위 경계
 
 이 정책은 Kubernetes PSS/PSA, RuntimeClass, seccomp, AppArmor 또는 SELinux 구현을 대체하지 않는다. kernel/runtime 자체 구현, gVisor/Kata 설치, 상용 workload security 제품 기능은 범위 밖이다. 이슈가 요구하는 RuntimeClass inventory, PSS enforce, effective kernel profile verification, drift quarantine 및 offline conformance는 현재 GitOps에서 확인되지 않은 **구현 과제**다.
+
+## Offline seccomp override ratchet (#144)
+
+`check-workload-runtime-posture.py` evaluates the effective seccomp profile for
+parsed YAML: an explicit container profile overrides the Pod default for app,
+init, and ephemeral containers. `Unconfined` is a new security gap even when the
+Pod declares `RuntimeDefault`; unknown profile types and missing/absolute/traversal
+Localhost paths are invalid. A valid relative Localhost path still requires node
+file and runtime validation.
+
+The Helm text-fallback inventory records profile presence only and does not prove
+its effective type or inheritance. Render those templates and inspect the live
+Pod before claiming runtime conformance. Repository ratchets remain offline
+evidence, not proof that the cluster uses the requested seccomp profile.

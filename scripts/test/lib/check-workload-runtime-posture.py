@@ -111,6 +111,34 @@ def is_unevaluated_workload_file(source, workload_count):
     return mentions_workload and workload_count == 0
 
 
+def seccomp_gap(pod_security, container_security):
+    # D3: a container override wins even when explicitly empty/Unconfined. Cost:
+    # Localhost existence remains runtime evidence; escape hatch: RuntimeDefault.
+    profile = (container_security["seccompProfile"]
+               if "seccompProfile" in container_security
+               else pod_security.get("seccompProfile"))
+    if not profile:
+        return "missingSeccomp"
+    # Text-fallback inventory records presence only; render/runtime verification
+    # is still required for these Helm sources, as documented in the profile.
+    if profile is True:
+        return None
+    if not isinstance(profile, dict):
+        return "invalidSeccomp"
+    kind = profile.get("type")
+    if kind == "Unconfined":
+        return "unconfinedSeccomp"
+    if kind == "RuntimeDefault":
+        return None
+    if kind == "Localhost":
+        name = profile.get("localhostProfile")
+        if (isinstance(name, str) and name.strip()
+                and not name.startswith("/")
+                and all(part not in {"", ".", ".."} for part in name.split("/"))):
+            return None
+    return "invalidSeccomp"
+
+
 def scan(root, mutate=False):
     files = sorted(p for base in (root / "gitops", root / "scripts")
                    for p in base.rglob("*") if p.suffix in {".yaml", ".yml"}
@@ -190,10 +218,9 @@ def scan(root, mutate=False):
                 gaps[(namespace, "privileged")] += 1
             pod_security = spec.get("securityContext")
             pod_security = pod_security if isinstance(pod_security, dict) else {}
-            pod_seccomp = pod_security.get("seccompProfile")
-            container_seccomp = security.get("seccompProfile")
-            if not pod_seccomp and not container_seccomp:
-                gaps[(namespace, "missingSeccomp")] += 1
+            seccomp_problem = seccomp_gap(pod_security, security)
+            if seccomp_problem:
+                gaps[(namespace, seccomp_problem)] += 1
     if mutate and not any("r234-mutation-missing" in item for item in problems):
         problems.append("mutation was not detected")
     actual = {f"{ns}:{field}": count for (ns, field), count in gaps.items()}

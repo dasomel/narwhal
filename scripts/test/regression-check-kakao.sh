@@ -1878,6 +1878,9 @@ PYEOF
       --commit a1b2c3d4e5f60718293a4b5c6d7e8f9012345678 \
       --workflow-run-id 123456789
 
+  check R86c "SBOM correlation rejects unrelated artifact and package identities (narwhal#53)" \
+    python3 -m unittest discover -s scripts/airgap/tests -v
+
   local sbom_corr_drift_tmp
   sbom_corr_drift_tmp="$(mktemp -d)"
   python3 - <<PYEOF

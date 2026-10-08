@@ -1,0 +1,66 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-sbom-correlation-identity-20261008",
+  "task": "Fix false SBOM-to-CVE identity joins in issue #53",
+  "changeContext": {
+    "paths": [
+      "scripts/airgap/lib/correlate-sbom-vulnerabilities.py",
+      "scripts/airgap/tests/test_sbom_correlation.py",
+      "scripts/test/regression-check-kakao.sh",
+      "docs/common/supply-chain-policy.md",
+      "docs/common/lessons-log.md"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Only correlation identity, its regression integration, documentation and lesson; no scanner/admission or deployment changes."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "Existing matcher fails seven of ten identity regression cases",
+      "evidence": [
+        "python3 -m unittest discover -s scripts/airgap/tests -v: FAILED (failures=7)"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "Exact manifest and image references, package version constraints; distinguish config ImageID from manifest identity."
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "summary": "Same ten identity cases now pass",
+      "scope": "Offline real matching implementation",
+      "evidence": [
+        "python3 -m unittest discover -s scripts/airgap/tests -v: Ran 10 tests; OK"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "verification",
+      "status": "passed",
+      "summary": "Repository static regression suite",
+      "scope": "Offline static and executable contracts; live cluster not exercised",
+      "evidence": [
+        "./scripts/test/regression-check-kakao.sh --static: passed 285 failed 0 warnings 5"
+      ]
+    },
+    {
+      "id": "e6",
+      "type": "completion_claim",
+      "summary": "False identity joins fixed; issue #53 remains open for full inventory/release/runtime acceptance."
+    },
+    {
+      "id": "e7",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Bounded identity fix verified; broad issue remains partial."
+    }
+  ]
+}

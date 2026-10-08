@@ -33,6 +33,7 @@ from __future__ import annotations
 import argparse
 import datetime
 import json
+import math
 import sys
 
 DEFAULT_SLO_DAYS = 7
@@ -48,6 +49,15 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
 def main(argv: list[str]) -> int:
     args = parse_args(argv)
 
+    if not math.isfinite(args.slo_days) or args.slo_days <= 0:
+        print("FAIL: --slo-days must be a finite positive number", file=sys.stderr)
+        return 1
+    try:
+        slo = datetime.timedelta(days=args.slo_days)
+    except OverflowError:
+        print("FAIL: --slo-days exceeds the supported duration", file=sys.stderr)
+        return 1
+
     try:
         with open(args.manifest, encoding="utf-8") as f:
             doc = json.load(f)
@@ -58,19 +68,25 @@ def main(argv: list[str]) -> int:
         print(f"FAIL: manifest is not valid JSON: {args.manifest} ({e})", file=sys.stderr)
         return 1
 
+    if not isinstance(doc, dict):
+        print("FAIL: manifest must be an object", file=sys.stderr)
+        return 1
+
     artifacts = doc.get("artifacts")
     if not isinstance(artifacts, list) or not artifacts:
         print(f"FAIL: manifest has no artifacts: {args.manifest}", file=sys.stderr)
         return 1
 
     now = datetime.datetime.now(datetime.timezone.utc)
-    slo = datetime.timedelta(days=args.slo_days)
     violations = []
 
     for a in artifacts:
+        if not isinstance(a, dict):
+            violations.append("artifact entry must be an object")
+            continue
         name = a.get("name", "<unnamed>")
         raw_ts = a.get("fetched_at")
-        if not raw_ts:
+        if not isinstance(raw_ts, str) or not raw_ts:
             violations.append(f"{name}: no fetched_at field")
             continue
         try:
@@ -81,7 +97,11 @@ def main(argv: list[str]) -> int:
             violations.append(f"{name}: unparseable fetched_at '{raw_ts}'")
             continue
         age = now - fetched_at
-        if age > slo:
+        # D1: Future evidence cannot extend DB freshness; cost: clock skew must
+        # be corrected at intake. Escape hatch: regenerate metadata after sync.
+        if age < datetime.timedelta(0):
+            violations.append(f"{name}: fetched_at is in the future — {raw_ts}")
+        elif age > slo:
             violations.append(
                 f"{name}: fetched {age.days}d ago (SLO {args.slo_days:g}d) — fetched_at={raw_ts}"
             )

@@ -121,6 +121,7 @@ release 전체 SBOM completeness를 증명하지 않는다.
 Package ecosystem은 현재 Trivy `Result.Type`을 보존하지 않으므로 같은 name/version의
 서로 다른 ecosystem package 구별은 후속 과제다. Container manifest identity 회귀와
 실제 CLI의 JSON 출력/strict promotion gate는 함께 검증한다.
+
 ## CI mutable-input gate coverage (narwhal#164)
 
 `python3 scripts/ci/check-mutable-inputs.py .github/workflows scripts/airgap/lib/binary-checksums.tsv`

@@ -35,10 +35,10 @@
       "id": "e4",
       "type": "regression_verification",
       "status": "passed",
-      "summary": "Same ten identity cases now pass",
+      "summary": "Ten identity cases plus CLI JSON isolation and strict-gate behavior now pass",
       "scope": "Offline real matching implementation",
       "evidence": [
-        "python3 -m unittest discover -s scripts/airgap/tests -v: Ran 10 tests; OK"
+        "python3 -m unittest discover -s scripts/airgap/tests -v: Ran 11 tests; OK"
       ]
     },
     {

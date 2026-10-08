@@ -1,5 +1,10 @@
+import copy
 import importlib.util
+import json
 import pathlib
+import subprocess
+import sys
+import tempfile
 import unittest
 
 MODULE_PATH = pathlib.Path(__file__).resolve().parents[1] / 'lib/correlate-sbom-vulnerabilities.py'
@@ -60,6 +65,39 @@ class CorrelationIdentityTests(unittest.TestCase):
 
     def test_empty_component_identity_never_matches(self):
         self.assertFalse(correlation.match_vuln_to_component(self.finding, {}))
+
+
+class CorrelationCliTests(unittest.TestCase):
+    def test_report_isolates_unrelated_components_and_strict_gate(self):
+        lib = MODULE_PATH.parent
+        sbom = json.loads((lib / 'sample-sbom.cdx.json').read_text())
+        report = json.loads((lib / 'sample-trivy-report.json').read_text())
+        unrelated = copy.deepcopy(sbom['components'][0])
+        unrelated.update(name='docker.io/library/nginx-extra', version='1.25.3')
+        unrelated['hashes'][0]['content'] = 'b' * 64
+        unrelated['purl'] = 'pkg:oci/nginx-extra'
+        sbom['components'].append(unrelated)
+        with tempfile.TemporaryDirectory() as tmp:
+            directory = pathlib.Path(tmp)
+            sbom_path = directory / 'sbom.json'
+            report_path = directory / 'report.json'
+            sbom_path.write_text(json.dumps(sbom))
+            report_path.write_text(json.dumps(report))
+            command = [sys.executable, str(MODULE_PATH), '--sbom', str(sbom_path),
+                       '--trivy-report', str(report_path), '--json']
+            run = subprocess.run(command, capture_output=True, text=True)
+            self.assertEqual(run.returncode, 0, run.stderr)
+            components = json.loads(run.stdout)['components']
+            self.assertEqual(len(components[0]['vulnerabilities']), 2)
+            self.assertEqual(components[1]['vulnerabilities'], [])
+            strict = subprocess.run(command + ['--strict'], capture_output=True, text=True)
+            self.assertEqual(strict.returncode, 1, strict.stderr)
+            # With only the unrelated component, false joins must not trip the gate.
+            sbom['components'] = [unrelated]
+            sbom_path.write_text(json.dumps(sbom))
+            clean = subprocess.run(command + ['--strict'], capture_output=True, text=True)
+            self.assertEqual(clean.returncode, 0, clean.stderr)
+            self.assertEqual(json.loads(clean.stdout)['components'][0]['vulnerabilities'], [])
 
 
 if __name__ == '__main__':

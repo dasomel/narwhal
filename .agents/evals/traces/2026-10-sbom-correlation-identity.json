@@ -9,7 +9,8 @@
       "scripts/airgap/tests/test_sbom_correlation.py",
       "scripts/test/regression-check-kakao.sh",
       "docs/common/supply-chain-policy.md",
-      "docs/common/lessons-log.md"
+      "docs/common/lessons-log.md",
+      ".agents/evals/traces/2026-10-sbom-correlation-identity.json"
     ]
   },
   "events": [
@@ -38,7 +39,7 @@
       "summary": "Ten identity cases plus CLI JSON isolation and strict-gate behavior now pass",
       "scope": "Offline real matching implementation",
       "evidence": [
-        "python3 -m unittest discover -s scripts/airgap/tests -v: Ran 11 tests; OK"
+        "test:python3 -m unittest discover -s scripts/airgap/tests -v: Ran 11 tests; OK"
       ]
     },
     {
@@ -48,7 +49,7 @@
       "summary": "Repository static regression suite",
       "scope": "Offline static and executable contracts; live cluster not exercised",
       "evidence": [
-        "./scripts/test/regression-check-kakao.sh --static: passed 285 failed 0 warnings 5"
+        "test:./scripts/test/regression-check-kakao.sh --static: passed 285 failed 0 warnings 5"
       ]
     },
     {

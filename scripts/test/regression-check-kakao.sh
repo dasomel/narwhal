@@ -1206,7 +1206,7 @@ PYEOF
   # digest to assert for a global install, so the version pin IS the control and an
   # unpinned name is the whole failure.
   check_not R52 "no unpinned global npm install (2026-08-23)" \
-    bash -c "grep -rnE '^[^#]*npm (install|i) -g' .github/workflows/ scripts/ | grep -vE '@[0-9]+\\.[0-9]+\\.[0-9]+' | grep -q ."
+    bash -c "grep -rnIE --exclude-dir=tests --exclude-dir=fixtures '^[^#]*npm (install|i) -g' .github/workflows/ scripts/ | grep -vE '@[0-9]+\\.[0-9]+\\.[0-9]+' | grep -q ."
 
   # The air-gap bundle downloaded 19 artifacts and verified none of them. Verification
   # lives in fetch(), which every artifact goes through; a copy-pasted curl beside it

@@ -61,7 +61,10 @@ def generate_diff(current_doc: dict, new_doc: dict) -> dict:
             removed.append(old_art)
 
     # Missing dependency analysis
-    all_available = set(new_artifacts.keys()) | set(current_artifacts.keys())
+    # D1: A candidate is a complete bundle snapshot, as verify-upgrade-bundle.py
+    # requires. Cost: removed dependencies now warn; escape hatch: include the
+    # retained dependency in the candidate instead of relying on current state.
+    all_available = set(new_artifacts.keys())
     missing_dependencies = []
 
     for name, new_art in new_artifacts.items():

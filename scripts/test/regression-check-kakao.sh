@@ -1816,6 +1816,9 @@ PYEOF
   check R81 "air-gap upgrade bundle schema and dry-run diff tool validate static manifests (2026-08-25)" \
     python3 scripts/airgap/lib/verify-upgrade-bundle.py --manifest scripts/airgap/lib/upgrade-bundle-v1.1.0.json
 
+  check R81c "upgrade dry-run flags dependencies removed from candidate snapshots (narwhal#45/#47)" \
+    python3 -m unittest discover -s scripts/airgap/tests -p test_upgrade_diff.py -v
+
   local upgrade_bundle_drift_tmp
   upgrade_bundle_drift_tmp="$(mktemp -d)"
   python3 - "${upgrade_bundle_drift_tmp}/invalid-bundle.json" <<'PYEOF'

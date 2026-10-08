@@ -1,0 +1,63 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-113-disabled-noderestriction",
+  "task": "Reject explicitly disabled NodeRestriction in the existing source baseline (#113)",
+  "changeContext": {
+    "paths": [
+      "scripts/test/lib/check-kubelet-authz-baseline.py",
+      "scripts/ci/tests/test_kubelet_disabled_admission.py",
+      ".agents/evals/traces/2026-10-disabled-noderestriction-113.json"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Limit work to declared kubeadm source validation, no cluster authz mutation."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "Original guard ignores disable-admission-plugins so explicitly disabled NodeRestriction appears enabled."
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "Retain list/map/template disable flags and check disabled membership before allowing NodeRestriction; require review for external source overrides."
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "disable precedence and actual baseline CLI",
+      "summary": "39 CI-helper tests pass including CLI exit 1 against copied bootstrap source explicitly disabling NodeRestriction; positive other-plugin case passes.",
+      "evidence": [
+        "test:python3 -m unittest discover -s scripts/ci/tests -v",
+        "runtime:command-exit-0"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "verification",
+      "status": "passed",
+      "scope": "repository source baseline",
+      "summary": "Existing guard passes 5 assertions and rejects all 7 prior mutations. Actual API-server runtime/authz remains unverified.",
+      "evidence": [
+        "test:python3 scripts/test/lib/check-kubelet-authz-baseline.py --mutation-verify",
+        "runtime:command-exit-0"
+      ]
+    },
+    {
+      "id": "e6",
+      "type": "completion_claim",
+      "summary": "Bounded offline override bug fixed; full issue #113 remains open."
+    },
+    {
+      "id": "e7",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Verified source guard; no production mutation or runtime proof claimed."
+    }
+  ]
+}

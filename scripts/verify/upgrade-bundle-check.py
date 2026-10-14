@@ -64,11 +64,20 @@ def verify(bundle):
         errors.append("manifest artifacts are missing or empty")
         artifacts = []
     declared = {}
+    seen_names = set()
     files_checked = dependencies_checked = versions_checked = 0
     for index, artifact in enumerate(artifacts):
         if not isinstance(artifact, dict) or not artifact.get("path"):
             errors.append(f"artifact {index} has no bundle-relative path")
             continue
+        raw_name = artifact.get("name")
+        if not isinstance(raw_name, str) or not raw_name.strip():
+            errors.append(f"artifact {index} has invalid or missing name")
+            continue
+        name = raw_name.strip()
+        if name in seen_names:
+            errors.append(f"duplicate artifact name: {name}")
+        seen_names.add(name)
         relative = Path(artifact["path"])
         if relative.is_absolute() or ".." in relative.parts:
             errors.append(f"artifact {artifact.get('name', index)} has unsafe path {relative}")

@@ -10,7 +10,12 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[3]
 WEBHOOK_KINDS = {"MutatingWebhookConfiguration", "ValidatingWebhookConfiguration"}
-WEBHOOK_KIND_RE = re.compile(r"(?m)^kind:\s*(MutatingWebhookConfiguration|ValidatingWebhookConfiguration)\s*$")
+# D1: YAML quotes/comments do not change resource identity. Cost: template
+# headers remain source text; escape hatch: validate the rendered webhook too.
+WEBHOOK_KIND_RE = re.compile(
+    r"(?m)^kind:[ \t]*[\"']?(MutatingWebhookConfiguration|ValidatingWebhookConfiguration)"
+    r"[\"']?[ \t]*(?:#.*)?$"
+)
 FIELD_RE = {
     field: re.compile(rf"(?m)^[ \t]+{field}:[ \t]*(.*?)[ \t]*(?:#.*)?$")
     for field in ("failurePolicy", "timeoutSeconds")

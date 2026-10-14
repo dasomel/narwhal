@@ -79,3 +79,14 @@ Evidence record 최소 필드 (**PROPOSED**): `timestamp`, `cluster`, `git commi
 - Kyverno policy 예시와 fail 기본값 근거: `gitops/resources/kyverno-policies.yaml`; 정책별 enforcement는 `gitops/resources/kyverno-policies.yaml`의 `validationFailureAction`과 개별 rule을 기준으로 판단한다.
 - selector 및 dashboard 하위 chart 비활성 상태: `gitops/charts/kubernetes-dashboard/values.yaml`; ingress-nginx 기본값/템플릿은 현재 배포 설정 근거가 아니다.
 - 이 문서는 #107 인증서 수명주기, #117 waiver, #42/#125 evidence와 연결하는 운영 계약을 제안하지만 해당 issue의 구현/승인 워크플로를 검증하지 않았다. API server latency SLO, automated selector drift gate, admission evidence pipeline, offline deterministic replay는 모두 현재 구현으로 확인되지 않은 제안이다.
+
+## YAML resource identity inventory (#143)
+
+The offline webhook settings guard includes quoted webhook `kind` scalars and
+trailing comments, in ordinary YAML and Helm template headers. Valid YAML syntax
+variants must not hide a new webhook from failure-policy/timeout validation when
+other baseline webhook configurations already exist.
+
+This validates declared settings and inventory only. Template values marked
+undecidable still require render validation, and actual availability/enforcement
+continuity requires the live failure-injection checks described above.

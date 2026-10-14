@@ -31,7 +31,7 @@
       "type": "regression_verification",
       "status": "passed",
       "scope": "disable precedence and actual baseline CLI",
-      "summary": "39 CI-helper tests pass including CLI exit 1 against copied bootstrap source explicitly disabling NodeRestriction; positive other-plugin case passes.",
+      "summary": "2026-10-14: 49 CI-helper tests passed on latest main, including CLI exit 1 against copied bootstrap explicitly disabling NodeRestriction; positive other-plugin case passes.",
       "evidence": [
         "test:python3 -m unittest discover -s scripts/ci/tests -v",
         "runtime:command-exit-0"
@@ -42,7 +42,7 @@
       "type": "verification",
       "status": "passed",
       "scope": "repository source baseline",
-      "summary": "Existing guard passes 5 assertions and rejects all 7 prior mutations. Actual API-server runtime/authz remains unverified.",
+      "summary": "2026-10-14: source guard passes 5 assertions and rejects7 prior mutations; static regression286pass0fail5environment warnings; Markdown passes. Actual API-server runtime remains unverified.",
       "evidence": [
         "test:python3 scripts/test/lib/check-kubelet-authz-baseline.py --mutation-verify",
         "runtime:command-exit-0"

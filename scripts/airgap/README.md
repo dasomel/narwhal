@@ -201,3 +201,12 @@ Harbor 설치의 일부로 수행한다.
 - **Multi-arch**: 한 번들 = 한 아치다. `AIRGAP_ARCH` 로 고르며(위 per-arch 섹션 참고) 로컬 Vagrant 는 `linux/arm64`, Kakao Cloud 는 `linux/amd64`. 기본값만 `00-config.sh` 에 있다.
 - **Helm 차트 의존성**: `helm pull --untar`로 서브차트까지 포함해 번들링.
 - **Bitnami 금지**: Bitnami 이미지는 번들링 대상에서 제외 (프로젝트 정책, docs/common/agent-operational-rules.md 참고).
+
+### Security DB promotion freshness (#48)
+
+`lib/check-security-db-freshness.py` rejects future-dated intake metadata as well
+as stale/missing evidence. Synchronize the intake clock before generating the
+manifest; a future timestamp is never a freshness extension. `--slo-days` must
+be a finite positive duration. Malformed manifest/artifact/timestamp shapes fail
+with explicit diagnostics instead of tracebacks. This checks promotion metadata,
+not the age of a DB actually loaded by a live scanner.

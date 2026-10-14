@@ -1733,6 +1733,9 @@ PYEOF
     python3 scripts/airgap/lib/check-security-db-freshness.py "${secdb_fresh_tmp}/does-not-exist.json"
   rm -rf "${secdb_fresh_tmp}"
 
+  check R73c "security DB freshness rejects future timestamps and malformed inputs cleanly (#48)" \
+    python3 -m unittest discover -s scripts/airgap/tests -p test_security_db_freshness.py -v
+
   # Narwhal#48: validate security DB manifest provenance, file integrity, freshness,
   # scanner/schema compatibility, and reject unlisted or symlinked bundle entries.
   check R239 "security DB bundle verifier self-tests provenance and bundle integrity (2026-09-30)" \

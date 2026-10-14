@@ -1,0 +1,67 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-security-db-freshness-inputs-20261008",
+  "task": "Reject future security DB promotion metadata and diagnose malformed freshness input (#48)",
+  "changeContext": {
+    "paths": [
+      "scripts/airgap/lib/check-security-db-freshness.py",
+      "scripts/airgap/tests/test_security_db_freshness.py",
+      "scripts/test/regression-check-kakao.sh",
+      "scripts/airgap/README.md",
+      "docs/common/lessons-log.md",
+      ".agents/evals/traces/2026-10-security-db-freshness-inputs.json"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Promotion metadata freshness validation only; align future-date rejection with extended verifier; no live scanner or security DB mutations."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "Future timestamp succeeds; nonfinite/out-of-range SLO and malformed document shapes crash",
+      "evidence": [
+        "test:python3 -m unittest discover -s scripts/airgap/tests -v: five tests with eight failing subcases"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "Validate finite positive representable SLO, object manifest/artifacts, string timestamps; fail future dates explicitly."
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "Actual checker CLI for freshness/SLO/malformed metadata",
+      "summary": "All five CLI tests pass",
+      "evidence": [
+        "test:python3 -m unittest discover -s scripts/airgap/tests -v: Ran5 tests OK"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "verification",
+      "status": "passed",
+      "scope": "Offline repository static regression; not scanner runtime",
+      "summary": "Static suite passes",
+      "evidence": [
+        "test:./scripts/test/regression-check-kakao.sh --static: passed285 failed0 warnings5"
+      ]
+    },
+    {
+      "id": "e6",
+      "type": "completion_claim",
+      "summary": "Bounded promotion metadata defects fixed; live scanner age/distribution and full #48 remain unproven."
+    },
+    {
+      "id": "e7",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Bounded CLI validation verified."
+    }
+  ]
+}

@@ -1,0 +1,63 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-143-quoted-webhook-kind",
+  "task": "Include quoted/commented YAML webhook kinds in existing settings inventory (#143)",
+  "changeContext": {
+    "paths": [
+      "scripts/test/lib/check-admission-webhook-settings.py",
+      "scripts/ci/tests/test_webhook_kind_inventory.py",
+      ".agents/evals/traces/2026-10-webhook-kind-inventory-143.json"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Change inventory syntax recognition only; preserve existing failurePolicy/timeout contract and live policy."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "Before fix3 tests reported5 failures: actual CLI skipped quoted/commented unsafe webhooks when baseline existed; valid quoted resource and template counts also wrong."
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "Recognize quoted kind scalars and trailing comments; ordinary documents still parsed as YAML and existing per-entry validation retained."
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "quoted/commented YAML resource inventory and actual CLI",
+      "summary": "55 CI-helper tests passed on latestmain7ea3557, including actual CLI rejection of timeout99 for three resource syntax variants and positive quoted/template inventory.",
+      "evidence": [
+        "test:python3 -m unittest discover -s scripts/ci/tests -v",
+        "runtime:command-exit-0"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "verification",
+      "status": "passed",
+      "scope": "existing repository webhook configuration inventory",
+      "summary": "Existing settings guard passes4 configurations/6entries across337files; generated template values remain explicitly undecidable warnings.",
+      "evidence": [
+        "test:python3 scripts/test/lib/check-admission-webhook-settings.py",
+        "runtime:command-exit-0"
+      ]
+    },
+    {
+      "id": "e6",
+      "type": "completion_claim",
+      "summary": "Bounded source inventory gap fixed; real HA/failure-policy/runtime continuity AC remain unverified."
+    },
+    {
+      "id": "e7",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Existing static guard verified; no deployment/admission mutation."
+    }
+  ]
+}

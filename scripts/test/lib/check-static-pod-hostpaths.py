@@ -28,7 +28,13 @@ def workload_pod_spec(document):
     kind = document.get("kind")
     if kind == "Pod":
         return document.get("metadata", {}), document.get("spec", {})
-    template = document.get("spec", {}).get("template", {})
+    # D2: CronJobs embed the Pod one level below jobTemplate; cost: each new
+    # controller shape needs review; escape hatch: validate its rendered Pod.
+    spec = document.get("spec", {})
+    if kind == "CronJob":
+        template = spec.get("jobTemplate", {}).get("spec", {}).get("template", {})
+    else:
+        template = spec.get("template", {})
     return template.get("metadata", {}), template.get("spec", {})
 
 
@@ -46,7 +52,8 @@ def hostpath_mounts(path):
                             for volume in pod_spec.get("volumes", [])
                             if isinstance(volume, dict) and isinstance(volume.get("hostPath"), dict)}
             mount_flags = {}
-            for container in pod_spec.get("containers", []) + pod_spec.get("initContainers", []):
+            for container in (pod_spec.get("containers", []) + pod_spec.get("initContainers", [])
+                              + pod_spec.get("ephemeralContainers", [])):
                 for mount in container.get("volumeMounts", []):
                     if mount.get("name") in volume_names:
                         mount_flags.setdefault(mount["name"], []).append(mount.get("readOnly", False))

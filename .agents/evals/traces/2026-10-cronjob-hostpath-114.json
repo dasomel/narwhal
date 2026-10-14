@@ -1,0 +1,63 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-114-nested-workload-hostpath",
+  "task": "Inventory CronJob and ephemeral-container hostPath mounts in existing static guard (#114)",
+  "changeContext": {
+    "paths": [
+      "scripts/test/lib/check-static-pod-hostpaths.py",
+      "scripts/ci/tests/test_hostpath_workload_shapes.py",
+      ".agents/evals/traces/2026-10-cronjob-hostpath-114.json"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Scope source guard only; preserve allowlist and cluster host hardening."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "3 regressions failed before fix; actual CLI allowed writable manifest-directory CronJob alongside legitimate registry; ephemeral readOnly inventory wrong."
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "Follow CronJob jobTemplate nesting and include ephemeral container mounts."
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "workload-shape inventory and actual hostPath guard CLI",
+      "summary": "48 CI-helper tests passed, including previously failing3 regressions now passing and old controller shapes retained.",
+      "evidence": [
+        "test:python3 -m unittest discover -s scripts/ci/tests -v",
+        "runtime:command-exit-0"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "verification",
+      "status": "passed",
+      "scope": "repository hostPath allowlist and existing mutations",
+      "summary": "Actual hostPath guard --mutation-verify passes, unchanged approved baseline retained; no runtime enforcement claim.",
+      "evidence": [
+        "test:python3 scripts/test/lib/check-static-pod-hostpaths.py --mutation-verify",
+        "runtime:command-exit-0"
+      ]
+    },
+    {
+      "id": "e6",
+      "type": "completion_claim",
+      "summary": "Bounded nested-workload inventory gap fixed; broader host protection/runtime requirements stay open."
+    },
+    {
+      "id": "e7",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Existing source guard verified without policy/production changes."
+    }
+  ]
+}

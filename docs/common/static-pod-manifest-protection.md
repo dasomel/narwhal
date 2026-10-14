@@ -113,3 +113,14 @@ manifest 갱신 전 변경 참조, 영향 노드, 승인자, 이전 hash, 계획
 5. 증적에는 노드, actor/context(확인 불가하면 unknown), 시간, before/after hash, 파일 속성, 승인/incident 참조, 복구 결과 및 health 결과를 포함한다.
 
 이 저장소에는 last-known-good manifest 저장소, 자동 rollback, tamper alert, 위 절차의 통합 검증이 없으므로 acceptance criteria 중 해당 항목은 현재 미충족이다. 이 문서는 요구 기준을 정한 것이며 구현 완료를 선언하지 않는다.
+
+## API workload hostPath inventory coverage (#114)
+
+The repository guard inventories Pod, Deployment, StatefulSet, DaemonSet, Job,
+and nested CronJob Pod specs. Mount permissions include app, init, and ephemeral
+containers. An unapproved CronJob hostPath therefore cannot disappear from the
+static allowlist check simply because its Pod template is nested under jobTemplate.
+
+This checks parsed repository YAML identity and declared mount flags. It does not
+prove effective host-path resolution, live admission, static-Pod enforcement, or
+runtime write protection; those require the host/runtime validation described above.

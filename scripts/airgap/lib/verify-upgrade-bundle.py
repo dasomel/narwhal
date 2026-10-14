@@ -8,6 +8,7 @@ Validates an offline upgrade bundle manifest against:
 """
 import argparse
 import json
+import re
 from pathlib import Path
 from runpy import run_path
 import sys
@@ -71,6 +72,15 @@ def validate_metadata(manifest: dict) -> list[str]:
             continue
 
         name = art.get("name", f"index-{idx}")
+        # D1: Metadata integrity cannot depend on optional jsonschema availability.
+        # Cost: malformed pins fail intake; escape hatch: regenerate the digest
+        # from the actual artifact using the declared supported algorithm.
+        digest = art.get("digest")
+        if not isinstance(digest, str) or not re.fullmatch(
+            r"sha256:[a-fA-F0-9]{64}|sha512:[a-fA-F0-9]{128}", digest
+        ):
+            errors.append(f"Artifact '{name}' requires an exact SHA-256 or SHA-512 digest")
+
         raw_license = art.get("license", "")
         if not isinstance(raw_license, str):
             errors.append(f"Artifact '{name}' license must be a string")

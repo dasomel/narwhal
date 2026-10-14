@@ -1,0 +1,68 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-upgrade-digest-width-20261014",
+  "task": "Reject malformed algorithm/digest metadata with or without optional jsonschema (#45)",
+  "changeContext": {
+    "paths": [
+      "schemas/upgrade-bundle-1.0.schema.json",
+      "scripts/airgap/lib/verify-upgrade-bundle.py",
+      "scripts/airgap/tests/test_upgrade_digest.py",
+      "scripts/test/regression-check-kakao.sh",
+      "docs/common/upgrade-orchestration.md",
+      "docs/common/lessons-log.md",
+      ".agents/evals/traces/2026-10-upgrade-digest-width.json"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Correct algorithm-specific metadata widths; retain existing supported SHA-256/SHA-512 and hex casing; no artifact bytes/signature source changes."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "Wrong digest widths and malformed fallback metadata pass intake CLI",
+      "evidence": [
+        "test:python3 -m unittest discover -s scripts/airgap/tests -p test_upgrade_digest.py -v: Ran3 tests FAILED failures13"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "Schema couples widths to algorithms; metadata validator always fullmatches typed digest regardless of optional jsonschema."
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "Actual verifier CLI using normal interpreter and -S optional-dependency fallback",
+      "summary": "Three tests pass with correct widths retained and malformed types/algorithms/widths rejected",
+      "evidence": [
+        "test:python3 -m unittest discover -s scripts/airgap/tests -p test_upgrade_digest.py -v: Ran3 tests OK"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "verification",
+      "status": "passed",
+      "scope": "Repository static suite; digest syntax only, no real bundle byte transfer",
+      "summary": "Static suite passes",
+      "evidence": [
+        "test:./scripts/test/regression-check-kakao.sh --static: passed288 failed0 warnings5"
+      ]
+    },
+    {
+      "id": "e6",
+      "type": "completion_claim",
+      "summary": "Bounded digest metadata validation fixed; actual artifact bytes/signatures/offline distribution and full #45 require separate evidence."
+    },
+    {
+      "id": "e7",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Narrow metadata identity gate verified."
+    }
+  ]
+}

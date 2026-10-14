@@ -1,0 +1,68 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-upgrade-license-policy-parity-20261014",
+  "task": "Apply canonical reviewed-license policy at upgrade promotion boundary (#53)",
+  "changeContext": {
+    "paths": [
+      "scripts/airgap/lib/verify-upgrade-bundle.py",
+      "scripts/airgap/tests/test_upgrade_license_gate.py",
+      "scripts/test/regression-check-kakao.sh",
+      "docs/common/supply-chain-policy.md",
+      "docs/common/lessons-log.md",
+      ".agents/evals/traces/2026-10-upgrade-license-policy-parity.json"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Load existing ALLOWED/FORBIDDEN inventory policy, do not expand identifiers or SPDX expressions; local temporary promotion fixtures only."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "Unreviewed licenses accepted by verifier; malformed types cause traceback",
+      "evidence": [
+        "test:python3 -m unittest discover -s scripts/airgap/tests -p test_upgrade_license_gate.py -v: Ran4 tests FAILED failures8"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "Reuse canonical policy with run_path; type-check license value and reject unreviewed identifiers with explicit needs-review error."
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "Actual offline verifier CLI and real promotion script against disposable local fixture",
+      "summary": "Approved license path retained; unknown rejection leaves previous promoted state and audit untouched; approved path produces promotion audit",
+      "evidence": [
+        "test:python3 -m unittest discover -s scripts/airgap/tests -p test_upgrade_license_gate.py -v: Ran5 tests OK"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "verification",
+      "status": "passed",
+      "scope": "Repository static suite and canonical inventory license gate; no real registry/production promotion",
+      "summary": "Static suite and existing inventory policy pass",
+      "evidence": [
+        "test:./scripts/test/regression-check-kakao.sh --static: passed287 failed0 warnings5",
+        "test:python3 scripts/airgap/lib/check-license-policy.py: 99 component licenses OK"
+      ]
+    },
+    {
+      "id": "e6",
+      "type": "completion_claim",
+      "summary": "Narrow license policy mismatch corrected; complete transitive/source inventory and full issue53 remain unproven."
+    },
+    {
+      "id": "e7",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Bounded offline license promotion contract verified."
+    }
+  ]
+}

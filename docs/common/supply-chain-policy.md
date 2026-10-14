@@ -136,3 +136,13 @@ not prove transitive package integrity, network containment, release age, SBOM
 completeness, or trust in an exact version. Existing runner egress and build
 provenance gaps in #164 remain open. Python is now used by research-evidence CI;
 its exact top-level version is guarded, but its transitive graph is not hash locked.
+
+## Upgrade bundle license review gate (#53)
+
+`verify-upgrade-bundle.py` loads the same reviewed `ALLOWED`/`FORBIDDEN` policy
+from `scripts/airgap/lib/check-license-policy.py` as the inventory CI check.
+Blank, malformed, UNKNOWN, NOASSERTION and unreviewed identifiers fail promotion
+verification. Compound SPDX expressions are also unreviewed until the canonical
+policy explicitly accepts them; no new waiver or expression parser is introduced.
+Distribute both scripts together for offline validation. This metadata gate does
+not prove transitive/source dependency inventory coverage or license provenance.

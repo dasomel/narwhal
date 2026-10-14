@@ -163,3 +163,12 @@ the candidate license and add `old_license`/`new_license`; text exports show bot
 This report identifies license review changes; it does not approve new licenses
 or replace the existing forbidden-license promotion verifier. Whole transitive
 SBOM dependency/license diffs still require complete build inventory.
+
+## Upgrade digest identity validation (#45)
+
+The bundle metadata verifier accepts `sha256:` plus exactly 64 hexadecimal digits
+or `sha512:` plus exactly 128 hexadecimal digits. These checks also run without
+the optional `jsonschema` package. Null/non-string values, wrong algorithm widths,
+unsupported algorithms and trailing characters fail intake validation. This is
+syntax evidence; the separate bundle-content verifier is still required to prove
+that artifact bytes match a declared digest.

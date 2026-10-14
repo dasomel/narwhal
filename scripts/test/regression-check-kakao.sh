@@ -1843,6 +1843,9 @@ PYEOF
   check R82c "upgrade promotion applies the reviewed inventory license policy (#53)" \
     python3 -m unittest discover -s scripts/airgap/tests -p test_upgrade_license_gate.py -v
 
+  check R82d "upgrade digest pins enforce algorithm widths without optional dependencies (#45)" \
+    python3 -m unittest discover -s scripts/airgap/tests -p test_upgrade_digest.py -v
+
   # narwhal#6: an exported member-cluster credential must retain a stable ID while
   # reusing the existing Portal reader RBAC; a second broad reader role would drift.
   # Structural presence checks alone never prove they can fail, so each of R83/R84/R85

@@ -83,7 +83,7 @@
           },
           "digest": {
             "type": "string",
-            "pattern": "^(sha256|sha512):[a-fA-F0-9]{64,128}$"
+            "pattern": "^(sha256:[a-fA-F0-9]{64}|sha512:[a-fA-F0-9]{128})$"
           },
           "source_ref": {
             "type": "string",

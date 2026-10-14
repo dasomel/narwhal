@@ -31,7 +31,7 @@
       "type": "regression_verification",
       "status": "passed",
       "scope": "quoted/commented YAML resource inventory and actual CLI",
-      "summary": "52 CI-helper tests passed including actual CLI rejection of timeout99 for three resource syntax variants and positive quoted/template inventory.",
+      "summary": "55 CI-helper tests passed on latestmain7ea3557, including actual CLI rejection of timeout99 for three resource syntax variants and positive quoted/template inventory.",
       "evidence": [
         "test:python3 -m unittest discover -s scripts/ci/tests -v",
         "runtime:command-exit-0"

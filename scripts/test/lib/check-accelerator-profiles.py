@@ -82,6 +82,12 @@ def validate(profile, backends, capabilities, schema):
             fail(f"{profile['backend']}/{name}: not-applicable requires reason")
         if entry["status"] == "supported" and name in HARDWARE_ONLY and entry["evidenceKind"] != "hardware":
             fail(f"{profile['backend']}/{name}: hardware-only capability requires hardware evidence")
+        # D1: a hardware label alone is not a traceable evidence reference. Cost:
+        # this checks nonempty identity only; escape hatch: use an offline bundle reference.
+        if entry["status"] == "supported" and name in HARDWARE_ONLY:
+            refs = entry["evidenceRefs"]
+            if not refs or any(not ref.strip() for ref in refs):
+                fail(f"{profile['backend']}/{name}: supported hardware capability requires nonempty evidenceRefs")
 
 
 def validate_backend_set(found, expected):
@@ -152,6 +158,11 @@ def main(profile_dir=PROFILE_DIR):
             hardware = copy.deepcopy(original)
             hardware["capabilities"]["partitioning.hardware"].update(status="supported", evidenceKind="static")
             mutants.append(("hardware-evidence", hardware))
+            for label, refs in (("missing-hardware-reference", []), ("blank-hardware-reference", [" "])):
+                reference = copy.deepcopy(original)
+                reference["capabilities"]["partitioning.hardware"].update(
+                    status="supported", evidenceKind="hardware", evidenceRefs=refs)
+                mutants.append((label, reference))
             schema_mutation = json.loads((temp_dir / SCHEMA.name).read_text())
             schema_mutation["properties"]["backend"]["enum"] = ["not-a-backend"]
             mutants.append(("schema", schema_mutation))

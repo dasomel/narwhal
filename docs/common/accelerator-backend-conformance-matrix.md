@@ -242,3 +242,14 @@ upgrade the capability status.
 This document does not install drivers/operators, implement an adapter or schema,
 choose backend versions, certify upstream DRA/Kueue combinations, create actual
 benchmarks/evidence bundles, or establish KubeMetal #11 / Narwhal #81/#94 integration.
+
+## Supported hardware evidence references (#95)
+
+R236 rejects a hardware-only `supported` capability unless `evidenceKind` is
+`hardware` and `evidenceRefs` contains at least one nonblank string, with no blank
+entries. Relative offline report references and URNs are valid; no public URL or
+network access is required. Partial/unavailable baseline fixtures remain unchanged.
+
+This validates traceable reference presence, not report existence, authenticity,
+freshness, or actual hardware execution. Validate those properties against the
+evidence bundle before treating a supported claim as certified.

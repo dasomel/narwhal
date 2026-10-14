@@ -31,7 +31,7 @@
       "type": "regression_verification",
       "status": "passed",
       "scope": "workload-shape inventory and actual hostPath guard CLI",
-      "summary": "48 CI-helper tests passed, including previously failing3 regressions now passing and old controller shapes retained.",
+      "summary": "55 CI-helper tests passed on latest main7ea3557, including previously failing3 regressions now passing and old controller shapes retained.",
       "evidence": [
         "test:python3 -m unittest discover -s scripts/ci/tests -v",
         "runtime:command-exit-0"

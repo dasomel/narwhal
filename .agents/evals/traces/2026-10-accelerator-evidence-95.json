@@ -1,0 +1,63 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-95-supported-hardware-reference",
+  "task": "Reject unsupported evidence-free hardware capability support claims in existing profile guard (#95)",
+  "changeContext": {
+    "paths": [
+      "scripts/test/lib/check-accelerator-profiles.py",
+      "scripts/ci/tests/test_accelerator_evidence_refs.py",
+      ".agents/evals/traces/2026-10-accelerator-evidence-95.json"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Bounded offline reference-presence guard; no live hardware or new support claims."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "Actual original validate accepted supported hardware partition with evidenceKind hardware and evidenceRefs empty."
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "Require nonempty/nonblank evidenceRefs for supported hardware-only claims; preserve offline relative reference/URN acceptance."
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "hardware evidence reference validation and real directory gate",
+      "summary": "48 CI-helper tests passed; missing/blank/malformed references rejected, offline nonempty refs accepted.",
+      "evidence": [
+        "test:python3 -m unittest discover -s scripts/ci/tests -v",
+        "runtime:command-exit-0"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "verification",
+      "status": "passed",
+      "scope": "existing accelerator fixture inventory",
+      "summary": "5 backend profiles/85 capability entries pass;9 of9 real-directory mutations rejected. No evidence content/authenticity/hardware execution claimed.",
+      "evidence": [
+        "test:python3 scripts/test/lib/check-accelerator-profiles.py --mutation-verify",
+        "runtime:command-exit-0"
+      ]
+    },
+    {
+      "id": "e6",
+      "type": "completion_claim",
+      "summary": "Bounded unsupported empty-reference gap fixed; broader #95 hardware conformance stays unverified."
+    },
+    {
+      "id": "e7",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Existing source guard verified; baseline capability statuses unchanged."
+    }
+  ]
+}

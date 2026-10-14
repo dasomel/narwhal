@@ -294,3 +294,14 @@ patch a report's `spec.cron` to `* * * * *`.
 ## Issue #109 live verifier findings
 
 The lead's first live run on master-1 of the six-node kubeadm 1.35 cluster built from main returned 6 PASS / 3 FAIL. Provider order, config permissions, manifest/apiserver wiring, and peer hashes passed. The failures exposed two compatibility gaps: legacy clusters embed the key in the protected config without a separate key file, and kubeadm has etcdctl only in the distroless etcd static pod. The verifier now recognizes the embedded-key layout and executes etcdctl in that pod with explicit admin.conf, decoding JSON/base64 values on the node. The lead will rerun the live check after these fixes.
+
+## NodeRestriction disable precedence (#113)
+
+The offline kubelet/API-server baseline guard inspects both
+`enable-admission-plugins` and `disable-admission-plugins` in list/map kubeadm
+arguments and template fallback text. Explicitly disabling `NodeRestriction`
+fails the declared baseline even if it also appears enabled or is assumed by
+default. Additional configuration sources declaring disable flags require review.
+
+Verify actual API-server command arguments and node admission behavior on the
+cluster separately; passing repository source checks is not runtime evidence.

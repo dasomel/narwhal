@@ -54,7 +54,7 @@ def parse_kubeadm_documents(text):
 
 
 def apiserver_args(apiserver):
-    names = ("authorization-mode", "enable-admission-plugins")
+    names = ("authorization-mode", "enable-admission-plugins", "disable-admission-plugins")
     if isinstance(apiserver, dict):
         args = (apiserver.get("apiServer") or {}).get("extraArgs") or {}
         if isinstance(args, dict):
@@ -85,12 +85,12 @@ def apiserver_args(apiserver):
     )
     parsed = {}
     for name, value in re.findall(
-        r"(?ms)^\s*-\s*name:\s*(authorization-mode|enable-admission-plugins)\s*\n"
+        r"(?ms)^\s*-\s*name:\s*(authorization-mode|enable-admission-plugins|disable-admission-plugins)\s*\n"
         r"\s+value:\s*([^\n]*)$", apiserver
     ):
         parsed[name] = value.strip().strip("\"'").strip()
     map_values = re.findall(
-        r"(?m)^\s*(authorization-mode|enable-admission-plugins)\s*:\s*([^\n#]+)",
+        r"(?m)^\s*(authorization-mode|enable-admission-plugins|disable-admission-plugins)\s*:\s*([^\n#]+)",
         "\n".join(active),
     )
     for name, value in map_values:
@@ -110,11 +110,14 @@ def checks(kubelet, apiserver):
     args = apiserver_args(apiserver)
     authorization = args.get("authorization-mode", "Node,RBAC")
     plugins = args.get("enable-admission-plugins", "NodeRestriction")
+    # D1: explicit disable takes precedence over enabled/default plugins. Cost:
+    # this remains declared-config evidence; escape hatch: inspect live flags.
+    disabled = args.get("disable-admission-plugins", "")
     return {
         "kubelet authorization is Webhook": authz is not None and authz.group(1) == "Webhook",
         "kubelet anonymous authentication is disabled": anonymous is not None and anonymous.group(1) == "false",
         "apiserver Node authorizer is enabled": "Node" in authorization.split(","),
-        "apiserver NodeRestriction admission plugin is enabled": "NodeRestriction" in plugins.split(","),
+        "apiserver NodeRestriction admission plugin is enabled": "NodeRestriction" in plugins.split(",") and "NodeRestriction" not in disabled.split(","),
         "kubelet readOnlyPort is disabled": read_only is not None and read_only.group(1) == "0",
     }
 
@@ -141,7 +144,7 @@ def repository_sources(init_text=None):
             active = "\n".join(line for line in text.splitlines()
                                  if not line.lstrip().startswith(("#", "//")))
             if re.search(
-                r"(?:authorization-mode|enable-admission-plugins|readOnlyPort|"
+                r"(?:authorization-mode|enable-admission-plugins|disable-admission-plugins|readOnlyPort|"
                 r"anonymous-auth|^\s*anonymous:)", active
             ):
                 override_files.append(path)

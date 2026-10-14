@@ -64,14 +64,28 @@ def validate_metadata(manifest: dict) -> list[str]:
         errors.append("Field 'artifacts' must be a list")
         return errors
 
-    artifact_names = {a.get("name") for a in artifacts if isinstance(a, dict) and "name" in a}
+    artifact_names = {
+        a["name"].strip()
+        for a in artifacts
+        if isinstance(a, dict) and isinstance(a.get("name"), str) and a.get("name").strip()
+    }
+    seen_names = set()
 
     for idx, art in enumerate(artifacts):
         if not isinstance(art, dict):
             errors.append(f"Artifact at index {idx} is not an object")
             continue
 
-        name = art.get("name", f"index-{idx}")
+        raw_name = art.get("name")
+        if not isinstance(raw_name, str) or not raw_name.strip():
+            errors.append(f"Artifact at index {idx} has invalid or missing name")
+            continue
+
+        name = raw_name.strip()
+        if name in seen_names:
+            errors.append(f"Artifact at index {idx} declares duplicate artifact name '{name}'")
+        seen_names.add(name)
+
         # D1: Metadata integrity cannot depend on optional jsonschema availability.
         # Cost: malformed pins fail intake; escape hatch: regenerate the digest
         # from the actual artifact using the declared supported algorithm.

@@ -1,0 +1,67 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-upgrade-artifact-identity-20261014",
+  "task": "Enforce unique non-empty artifact identity across upgrade bundle (#45)",
+  "changeContext": {
+    "paths": [
+      "scripts/airgap/lib/verify-upgrade-bundle.py",
+      "scripts/verify/upgrade-bundle-check.py",
+      "scripts/airgap/tests/test_upgrade_artifact_identity.py",
+      "docs/common/lessons-log.md",
+      ".agents/evals/traces/2026-10-upgrade-artifact-identity.json"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Check non-empty string name identity and prevent duplicate names across manifest artifacts; no schema redesign or remote verification."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "Duplicate artifact names accepted and unhandled non-string names caused tracebacks in metadata verification.",
+      "evidence": [
+        "test:python3 scripts/airgap/tests/test_upgrade_artifact_identity.py: Ran 6 tests FAILED failures=11"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "Validate artifact name as non-empty string and reject duplicates in verify-upgrade-bundle.py and upgrade-bundle-check.py."
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "Actual offline verifier and bundle content checker CLI fixtures",
+      "summary": "Distinct names retained; duplicates and invalid names cleanly rejected without traceback.",
+      "evidence": [
+        "test:python3 scripts/airgap/tests/test_upgrade_artifact_identity.py: Ran 6 tests OK",
+        "test:python3 scripts/verify/upgrade-bundle-check.py --self-test: PASS"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "verification",
+      "status": "passed",
+      "scope": "Repository CI helper and static checks",
+      "summary": "All tests pass without traceback or unexpected regressions.",
+      "evidence": [
+        "test:python3 -m unittest discover -s scripts/ci/tests -v: OK"
+      ]
+    },
+    {
+      "id": "e6",
+      "type": "completion_claim",
+      "summary": "Bounded upgrade artifact identity check enforced; broader bundle signing remains unverified."
+    },
+    {
+      "id": "e7",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Unique non-empty artifact identity verified across upgrade verifiers."
+    }
+  ]
+}

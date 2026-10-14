@@ -9,6 +9,7 @@ Validates an offline upgrade bundle manifest against:
 import argparse
 import json
 from pathlib import Path
+from runpy import run_path
 import sys
 from typing import Any
 
@@ -16,13 +17,12 @@ REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_SCHEMA = REPOSITORY_ROOT / "schemas" / "upgrade-bundle-1.0.schema.json"
 DEFAULT_MANIFEST = REPOSITORY_ROOT / "scripts" / "airgap" / "lib" / "upgrade-bundle-v1.1.0.json"
 
-FORBIDDEN_LICENSES = {
-    "RSALv2",
-    "SSPLv1",
-    "SSPL-1.0",
-    "BUSL-1.1",
-    "Elastic-2.0",
-}
+# D1: Promotion and inventory share the reviewed license policy. Cost: the
+# checker travels with this verifier; escape hatch: distribute the lib directory
+# together instead of copying this entrypoint and inventing another allowlist.
+LICENSE_POLICY = run_path(str(Path(__file__).with_name("check-license-policy.py")))
+ALLOWED_LICENSES = LICENSE_POLICY["ALLOWED"]
+FORBIDDEN_LICENSES = LICENSE_POLICY["FORBIDDEN"]
 
 
 def read_json(path: Path, label: str) -> Any:
@@ -71,12 +71,18 @@ def validate_metadata(manifest: dict) -> list[str]:
             continue
 
         name = art.get("name", f"index-{idx}")
-        lic = art.get("license", "").strip()
+        raw_license = art.get("license", "")
+        if not isinstance(raw_license, str):
+            errors.append(f"Artifact '{name}' license must be a string")
+            continue
+        lic = raw_license.strip()
 
         if not lic:
             errors.append(f"Artifact '{name}' has a blank license")
         elif lic in FORBIDDEN_LICENSES:
             errors.append(f"Artifact '{name}' uses forbidden license '{lic}'")
+        elif lic not in ALLOWED_LICENSES:
+            errors.append(f"Artifact '{name}' license '{lic}' needs review in check-license-policy.py")
 
         # Dependency check: all declared dependencies must exist in the bundle
         for dep in art.get("dependencies", []):

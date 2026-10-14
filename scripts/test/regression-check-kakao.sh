@@ -1840,6 +1840,9 @@ PYEOF
     python3 scripts/airgap/lib/verify-upgrade-bundle.py --manifest "${upgrade_bundle_drift_tmp}/invalid-bundle.json"
   rm -rf "${upgrade_bundle_drift_tmp}"
 
+  check R82c "upgrade promotion applies the reviewed inventory license policy (#53)" \
+    python3 -m unittest discover -s scripts/airgap/tests -p test_upgrade_license_gate.py -v
+
   # narwhal#6: an exported member-cluster credential must retain a stable ID while
   # reusing the existing Portal reader RBAC; a second broad reader role would drift.
   # Structural presence checks alone never prove they can fail, so each of R83/R84/R85

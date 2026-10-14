@@ -36,10 +36,7 @@ jobs:
       - name: Guard immutable build and release inputs
         run: |
           python3 scripts/ci/check-mutable-inputs.py \
-            .github/workflows/lint.yml \
-            .github/workflows/release.yml \
-            .github/workflows/version-check.yml \
-            .github/workflows/agent-behavior.yml \
+            .github/workflows \
             scripts/airgap/lib/binary-checksums.tsv
       - name: Evaluate representative trace
         run: python3 .agents/evals/evaluate.py .agents/evals/reference-trace.json

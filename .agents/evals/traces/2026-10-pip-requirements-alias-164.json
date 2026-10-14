@@ -1,0 +1,63 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-164-attached-pip-requirements",
+  "task": "Apply existing pip requirements hash obligation to attached file-option aliases (#164)",
+  "changeContext": {
+    "paths": [
+      "scripts/ci/check-mutable-inputs.py",
+      "scripts/ci/tests/test_check_mutable_inputs.py",
+      ".agents/evals/traces/2026-10-pip-requirements-alias-164.json"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Literal documented pip option equivalence only; no resolver/runner/policy redesign."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "Original CLI test failed4 option cases: attached requirement/constraint flags without hashes exited0."
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "Recognize --requirement=file/-rfile/--constraint=file/-cfile before generic option skipping; retain existing hash obligation."
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "actual source-guard CLI negative and hash-enforced positive cases",
+      "summary": "53 CI-helper tests pass; actual CLI rejects four unhashed aliases and accepts each with --require-hashes.",
+      "evidence": [
+        "test:python3 -m unittest discover -s scripts/ci/tests -v",
+        "runtime:command-exit-0"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "verification",
+      "status": "passed",
+      "scope": "all protected CI workflow source inputs",
+      "summary": "Guard passed10protectedfiles; Markdown/whitespace checks passed. Source guard does not prove resolver integrity or runner network containment.",
+      "evidence": [
+        "test:python3 scripts/ci/check-mutable-inputs.py .github/workflows scripts/airgap/lib/binary-checksums.tsv",
+        "runtime:command-exit-0"
+      ]
+    },
+    {
+      "id": "e6",
+      "type": "completion_claim",
+      "summary": "Bounded equivalent-option bypass fixed; broader #164 supply-chain acceptance remains partial."
+    },
+    {
+      "id": "e7",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Existing source guard/hash policy preserved and option bypass regression verified."
+    }
+  ]
+}

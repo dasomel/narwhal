@@ -74,3 +74,18 @@ class MutableInputTests(unittest.TestCase):
       result = subprocess.run([sys.executable, str(SCRIPT), directory],
         capture_output=True, text=True)
       self.assertEqual(result.returncode, 0, result.stderr)
+
+  def test_cli_requires_hashes_for_attached_requirement_options(self):
+    for option in ("--requirement=requirements.txt", "-rrequirements.txt",
+      "--constraint=constraints.txt", "-cconstraints.txt"):
+      with self.subTest(option=option), tempfile.TemporaryDirectory() as directory:
+        path = Path(directory) / "workflow.yml"
+        path.write_text("run: python3 -m pip install " + option + "\n")
+        result = subprocess.run([sys.executable, str(SCRIPT), directory],
+          capture_output=True, text=True)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("--require-hashes", result.stderr)
+        path.write_text("run: python3 -m pip install --require-hashes " + option + "\n")
+        result = subprocess.run([sys.executable, str(SCRIPT), directory],
+          capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)

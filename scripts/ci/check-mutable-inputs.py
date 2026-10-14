@@ -29,6 +29,11 @@ def installation_findings(line):
       if skip: skip=False; continue
       if token in ('-r','--requirement','-c','--constraint'):
         requirements=True; skip=True; continue
+      # D2: attached pip file options carry the same hash obligation. Cost:
+      # documented literal flags only; escape hatch: use hash-pinned requirements.
+      if match.group(2) and (token.startswith(('--requirement=', '--constraint='))
+                            or (len(token)>2 and token[:2] in ('-r','-c'))):
+        requirements=True; continue
       if token in ('--prefix','--registry','--index-url','--extra-index-url','--cache-dir'):
         skip=True; continue
       if token.startswith('-'): continue

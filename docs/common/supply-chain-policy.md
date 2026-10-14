@@ -146,3 +146,11 @@ verification. Compound SPDX expressions are also unreviewed until the canonical
 policy explicitly accepts them; no new waiver or expression parser is introduced.
 Distribute both scripts together for offline validation. This metadata gate does
 not prove transitive/source dependency inventory coverage or license provenance.
+
+### Attached pip file options (#164)
+
+The requirements hash obligation also applies to pip's equivalent attached
+`--requirement=file`, `-rfile`, `--constraint=file`, and `-cfile` forms. Actual CLI
+negative tests reject all four without `--require-hashes`; hash-enforced variants
+remain accepted. This closes an option-spelling bypass, not transitive integrity
+verification of the existing exact-version Python CI install.

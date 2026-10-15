@@ -199,7 +199,7 @@ jobs:
       - name: Verify gate failure scenarios
         if: needs.changes.outputs.portal == 'true'
         working-directory: portal
-        run: node --test scripts/check-regression-results.node.mjs
+        run: node --test scripts/check-regression-results.node.mjs scripts/notices-format.node.mjs
       - name: Require successful critical suites
         if: needs.changes.outputs.portal == 'true'
         working-directory: portal

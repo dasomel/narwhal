@@ -11,7 +11,7 @@ Link: [`CHANGE.md`](CHANGE.md)
 ## Implement
 
 - [x] `T-010` (`REQ-001`, `REQ-002`) Align GitOps developer sync scope with bootstrap; `portal-reader` is preserved.
-- [x] `T-011` (`REQ-003`) R242 checks both developer policies and group maps, both read-only defaults and groups scopes, plus the full GitOps `portal-reader` policy and group binding; 16 mutation cases reject privilege widening or drift.
+- [x] `T-011` (`REQ-003`) R246 checks both developer policies and group maps, both read-only defaults and groups scopes, plus the full GitOps `portal-reader` policy and group binding; 16 mutation cases reject privilege widening or drift.
 - [x] `T-012` (`REQ-001`) Corrected the normative ArgoCD mapping and recorded both the source drift and checker-coverage lesson.
 
 ## Verify
@@ -22,7 +22,7 @@ Link: [`CHANGE.md`](CHANGE.md)
 
 ## Synchronize durable truth
 
-- [x] `T-030` Updated `docs/common/oidc-rbac-contract.md` and `docs/common/test-strategy.md` with the complete human/service policy contract and R242.
+- [x] `T-030` Updated `docs/common/oidc-rbac-contract.md` and `docs/common/test-strategy.md` with the complete human/service policy contract and R246.
 - [x] `T-031` Added Mistakes Log rows for source drift, incomplete inherited-role coverage, and overlapping mutation-suite execution.
 - [ ] `T-032` Merge scoped change locally without pushing.
 
@@ -33,5 +33,5 @@ Link: [`CHANGE.md`](CHANGE.md)
 
 ## Follow-up review evidence
 
-- The first overlapping `--static` and `make test` run produced one R229 failure while its mutation checker temporarily edited shared checkout files. The R229 checker was rerun and passed; then `make test` was rerun by itself and passed 285/0. R242 also passed in each static suite.
-- Follow-up review also identified that `policy.default: role:admin` bypassed the explicit developer mapping. R242 now asserts exact `role:readonly` defaults and `scopes: '[groups]'` in both writers and rejects each single-source or both-source mutation; the focused checker passes with 16 rejected mutations. The follow-up source changes are committed separately after verification; local merge is pending lead coordination.
+- The first overlapping `--static` and `make test` run produced one R229 failure while its mutation checker temporarily edited shared checkout files. The R229 checker was rerun and passed; then `make test` was rerun by itself and passed 285/0. R246 also passed in each static suite.
+- Follow-up review also identified that `policy.default: role:admin` bypassed the explicit developer mapping. R246 now asserts exact `role:readonly` defaults and `scopes: '[groups]'` in both writers and rejects each single-source or both-source mutation; the focused checker passes with 16 rejected mutations. The follow-up source changes are committed separately after verification; local merge is pending lead coordination.

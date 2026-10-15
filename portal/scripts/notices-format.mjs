@@ -8,7 +8,9 @@
 // `Markdown changed lines` job, which lints every line a dependency bump touches
 // (MD034 bare URL, MD040 fence without language), so the emitters must stay lint-clean.
 
-const ABSOLUTE_URL = /^[a-z][a-z0-9+.-]*:\/\/[^\s<>]+$/i
+// Package homepages are untrusted npm metadata: only web/VCS schemes become autolinks, so a value
+// such as `javascript://...` is passed through verbatim instead of being turned into a link.
+const ABSOLUTE_URL = /^(?:https?|git|git\+https?|ssh):\/\/[^\s<>]+$/i
 
 /** Wrap an absolute URL as an autolink (MD034); anything else is passed through verbatim. */
 export function autolink(value) {

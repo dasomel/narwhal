@@ -11,6 +11,10 @@ test("autolink wraps absolute URLs and leaves everything else alone", () => {
   assert.equal(autolink("https://github.com/a/b#readme"), "<https://github.com/a/b#readme>")
   assert.equal(autolink("github.com/a/b"), "github.com/a/b")
   assert.equal(autolink("https://a.dev/with space"), "https://a.dev/with space")
+  assert.equal(autolink("git+https://github.com/a/b.git"), "<git+https://github.com/a/b.git>")
+  // untrusted metadata: non-web schemes are never turned into autolinks
+  assert.equal(autolink("javascript://a%0Aalert(1)"), "javascript://a%0Aalert(1)")
+  assert.equal(autolink("data://text/html,x"), "data://text/html,x")
 })
 
 test("legalFileBlock opens with a tagged fence and keeps nested fences from closing it", () => {

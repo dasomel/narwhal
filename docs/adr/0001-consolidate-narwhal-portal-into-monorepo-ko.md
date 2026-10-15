@@ -1,6 +1,6 @@
 # ADR-0001: narwhal-portal을 narwhal 모노레포로 통합
 
-- 상태: Proposed (import PR이 머지되면 Accepted)
+- 상태: Accepted (import는 PR #347로 2026-10-15 머지)
 - 날짜: 2026-10-15
 - 대체: —
 - 대체됨: —
@@ -8,7 +8,7 @@
 
 결정 ID: D-MONO-1(이력 보존 import), D-MONO-2(seam 검사는 저장소 내부 트리를 읽음),
 D-MONO-3(CI), D-MONO-4(릴리스·이미지 정체성), D-MONO-5(이 ADR). import와 seam/문서 배선은
-`feat/import-portal-seam` 브랜치에 있다.
+PR #347로 반영됐고, CI·릴리스 보강은 PR #355로 이어졌다.
 
 ## 배경
 
@@ -79,12 +79,20 @@ D-MONO-3(CI), D-MONO-4(릴리스·이미지 정체성), D-MONO-5(이 ADR). impor
   게이트에 보고되지 않는다. import 시점에는 1686건(MD034 687, MD040 664, MD032 137, MD022 121, MD031 42,
   MD058 11, 기타 15)이었고, 정리는 별도의 의도적 변경이다.
 
+## import 이후 완료
+
+- 포털의 열린 이슈 27건을 narwhal #356-#382(라벨 `area:portal`)로 이전했다. 신구 번호 매핑은
+  narwhal#356의 코멘트다. 닫힌 포털 이슈와 모든 PR은 옛 저장소에 남는다.
+- 포털 초안 #187, #77은 narwhal #383, #384로 다시 열었고 원본은 닫았다. Dependabot은 이제 여기서
+  `/portal`을 감시하며, 옛 저장소의 Dependabot PR은 닫았다.
+- `portal/` 안내 README가 옛 저장소에 머지된 뒤(portal PR #251) `dasomel/narwhal-portal`을
+  삭제하지 않고 아카이브했다.
+
 ## 미완료 (아직 하지 않음)
 
-- 포털의 열린 이슈 27건을 이 저장소로 이전하고 신구 번호 매핑 코멘트를 남긴다.
-- 열린 PR은 옮길 수 없다. Dependabot PR은 재생성되고, 초안 #187과 #77은 다시 열어야 한다.
-- PR 머지 후 `dasomel/narwhal-portal`을 `portal/` 안내와 함께 아카이브한다.
-- 브랜치 보호의 필수 체크에 `Portal gate`를 반영한다.
+- 브랜치 보호의 필수 체크에 `Portal gate`를 반영한다(관리자 설정).
+- 첫 `portal/v*` 릴리스 전에 GHCR 패키지 `narwhal-portal`에 narwhal Actions 쓰기 권한을 주고
+  `COSIGN_PRIVATE_KEY` / `COSIGN_PASSWORD` 시크릿을 만든다.
 - Valkey 변경(PR #343)과 portal v1.1.0 릴리스 순서를 정한 뒤 pin을 올린다.
 - OpenForge 레지스트리의 별도 `narwhal-portal` 항목을 정리한다.
 

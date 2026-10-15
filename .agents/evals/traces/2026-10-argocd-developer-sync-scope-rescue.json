@@ -24,7 +24,7 @@
     {
       "id": "e3",
       "type": "bug_fix",
-      "summary": "argocd-config.yaml developer rule is 'applications, sync, tenants/*' so selfHeal no longer overwrites 13-argocd.sh restriction; check renumbered R246 after finding R242 collision with #332."
+      "summary": "argocd-config.yaml developer rule is 'applications, sync, tenants/*' so selfHeal no longer overwrites 13-argocd.sh restriction; check renumbered R246 after finding R242 collision with #332. Checker hardened after independent review: pins the complete p/g line set per source, rejects extra policy.*.csv keys, duplicate argocd-rbac-cm declarations and templated policy text; 11 new reason-asserted mutation cases (27 total)."
     },
     {
       "id": "e4",
@@ -58,8 +58,8 @@
     {
       "id": "e7",
       "type": "task_outcome",
-      "state": "B",
-      "summary": "Static checks only; live reconcile of argocd-rbac-cm unverified."
+      "state": "A",
+      "summary": "Rescue of the static policy fix and its guard verified; live argocd-rbac-cm reconcile is out of scope and unverified (stated in e6)"
     }
   ]
 }

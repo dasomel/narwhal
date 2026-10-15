@@ -47,40 +47,54 @@ def policy_lines(text: str, source: str) -> list[str]:
     return [line.strip() for line in match.group(1).splitlines() if line.strip()]
 
 
-def valid(gitops_text: str, bootstrap_text: str) -> bool:
-    gitops_rules = policy_lines(gitops_text, "gitops")
-    bootstrap_rules = policy_lines(bootstrap_text, "bootstrap")
+NONE_POLICIES = {"p, role:none, applications, get, */*, deny"}
+# D1: allowlist the COMPLETE p/g line set of each source (not just the two reviewed roles),
+# so a new subject, role:admin grant or dropped deny line is rejected. Cost: any intended
+# policy change must update this contract. Escape: edit these sets together with both sources.
+EXPECTED_LINES = {
+    "gitops": DEVELOPER_POLICIES | NONE_POLICIES | PORTAL_READER_POLICIES | GITOPS_GROUPS,
+    "bootstrap": DEVELOPER_POLICIES | NONE_POLICIES | BOOTSTRAP_GROUPS,
+}
+TEMPLATE_MARKERS = ("{{", "${", "$(", "`")
+RBAC_NAME_LINE = "name: argocd-rbac-cm"
 
-    def normalized(lines: list[str], prefix: tuple[str, ...]) -> set[str]:
-        found = set()
+
+def problems(gitops_text: str, bootstrap_text: str) -> list[str]:
+    found: list[str] = []
+    for source, text in (("gitops", gitops_text), ("bootstrap", bootstrap_text)):
+        keys = re.findall(r"(?m)^[ \t]*(policy\.[\w.\-]*csv)[ \t]*:", text)
+        if keys != ["policy.csv"]:
+            found.append(f"{source}: policy csv keys {keys} != ['policy.csv']")
+        declared = sum(1 for line in text.splitlines() if line.strip() == RBAC_NAME_LINE)
+        if declared != 1:
+            found.append(f"{source}: argocd-rbac-cm declared {declared} times, expected exactly 1")
+        lines = policy_lines(text, source)
+        if not lines:
+            found.append(f"{source}: policy.csv missing or unparseable")
+        normalized: list[str] = []
         for line in lines:
-            fields = tuple(field.strip() for field in line.split(","))
-            if fields[: len(prefix)] == prefix:
-                found.add(", ".join(fields))
-        return found
+            if any(marker in line for marker in TEMPLATE_MARKERS):
+                found.append(f"{source}: templated policy text is undecidable: {line}")
+                continue
+            fields = [field.strip() for field in line.split(",")]
+            if fields[0] not in ("p", "g"):
+                found.append(f"{source}: unparseable policy line: {line}")
+                continue
+            normalized.append(", ".join(fields))
+        extra = sorted(set(normalized) - EXPECTED_LINES[source])
+        missing = sorted(EXPECTED_LINES[source] - set(normalized))
+        if extra or missing or len(normalized) != len(set(normalized)):
+            found.append(f"{source}: policy lines differ from reviewed set (extra={extra}, missing={missing})")
+        for expected in (EXPECTED_POLICY_DEFAULT, EXPECTED_SCOPES):
+            key = expected.split(":", 1)[0]
+            configured = [ln.strip() for ln in text.splitlines() if ln.strip().startswith(f"{key}:")]
+            if configured != [expected]:
+                found.append(f"{source}: {key} is {configured}, expected {expected}")
+    return found
 
-    def p_rules(lines: list[str], role: str) -> set[str]:
-        return normalized(lines, ("p", role))
 
-    def g_rules(lines: list[str]) -> set[str]:
-        return normalized(lines, ("g",))
-
-    def setting_matches(text: str, expected: str) -> bool:
-        key = expected.split(":", 1)[0]
-        configured = [line.strip() for line in text.splitlines() if line.strip().startswith(f"{key}:")]
-        return configured == [expected]
-
-    return (
-        p_rules(gitops_rules, "role:developer") == DEVELOPER_POLICIES
-        and p_rules(bootstrap_rules, "role:developer") == DEVELOPER_POLICIES
-        and p_rules(gitops_rules, "role:portal-reader") == PORTAL_READER_POLICIES
-        and g_rules(gitops_rules) == GITOPS_GROUPS
-        and g_rules(bootstrap_rules) == BOOTSTRAP_GROUPS
-        and setting_matches(gitops_text, EXPECTED_POLICY_DEFAULT)
-        and setting_matches(bootstrap_text, EXPECTED_POLICY_DEFAULT)
-        and setting_matches(gitops_text, EXPECTED_SCOPES)
-        and setting_matches(bootstrap_text, EXPECTED_SCOPES)
-    )
+def valid(gitops_text: str, bootstrap_text: str) -> bool:
+    return not problems(gitops_text, bootstrap_text)
 
 
 def mutation_verify(gitops_text: str, bootstrap_text: str) -> None:
@@ -181,7 +195,57 @@ def mutation_verify(gitops_text: str, bootstrap_text: str) -> None:
     for name, (mutated_gitops, mutated_bootstrap) in mutations.items():
         if valid(mutated_gitops, mutated_bootstrap):
             raise AssertionError(f"checker accepted mutation: {name}")
-    print(f"PASS: rejected all {len(mutations)} developer-role and portal-reader mutations")
+
+    def after(text: str, anchor: str, addition: str) -> str:
+        assert anchor in text, anchor
+        return text.replace(anchor, anchor + addition, 1)
+
+    broad = "p, alice, applications, sync, */*, allow"
+    anchor_line = "    p, role:none, applications, get, */*, deny"
+    reasoned = {
+        "unreviewed subject sync (GitOps)": (
+            after(gitops_text, anchor_line, f"\n    {broad}"), bootstrap_text, "policy lines differ"),
+        "unreviewed subject sync (bootstrap)": (
+            gitops_text, after(bootstrap_text, anchor_line, f"\n    {broad}"), "policy lines differ"),
+        "role:admin wildcard added (GitOps)": (
+            after(gitops_text, anchor_line, "\n    p, role:admin, *, *, */*, allow"), bootstrap_text,
+            "policy lines differ"),
+        "role:admin wildcard added (bootstrap)": (
+            gitops_text, after(bootstrap_text, anchor_line, "\n    p, role:admin, *, *, */*, allow"),
+            "policy lines differ"),
+        "policy.override.csv developer */* (GitOps)": (
+            after(gitops_text, "  policy.default: role:readonly",
+                  "\n  policy.override.csv: |\n    p, role:developer, applications, sync, */*, allow"),
+            bootstrap_text, "policy csv keys"),
+        "policy.override.csv developer */* (bootstrap)": (
+            gitops_text,
+            after(bootstrap_text, "  policy.default: role:readonly",
+                  "\n  policy.override.csv: |\n    p, role:developer, applications, sync, */*, allow"),
+            "policy csv keys"),
+        "argocd-rbac-cm declared twice after --- (GitOps)": (
+            gitops_text + "\n---\napiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: argocd-rbac-cm\n"
+            "  namespace: devtools\ndata:\n  policy.csv: |\n"
+            "    p, role:developer, applications, sync, */*, allow\n",
+            bootstrap_text, "declared 2 times"),
+        "argocd-rbac-cm declared twice after --- (bootstrap)": (
+            gitops_text,
+            bootstrap_text + "\n---\napiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: argocd-rbac-cm\n",
+            "declared 2 times"),
+        "role:none deny line deleted (GitOps)": (
+            gitops_text.replace(anchor_line + "\n", "", 1), bootstrap_text, "policy lines differ"),
+        "role:none deny line deleted (bootstrap)": (
+            gitops_text, bootstrap_text.replace(anchor_line + "\n", "", 1), "policy lines differ"),
+        "templated policy line (GitOps)": (
+            after(gitops_text, anchor_line, "\n    g, {{ .Values.group }}, role:admin"), bootstrap_text,
+            "templated policy text"),
+    }
+    for name, (mutated_gitops, mutated_bootstrap, reason) in reasoned.items():
+        if mutated_gitops == gitops_text and mutated_bootstrap == bootstrap_text:
+            raise AssertionError(f"mutation did not change input: {name}")
+        found = problems(mutated_gitops, mutated_bootstrap)
+        if not any(reason in item for item in found):
+            raise AssertionError(f"mutation not rejected for intended reason {reason!r}: {name}: {found}")
+    print(f"PASS: rejected all {len(mutations) + len(reasoned)} developer-role, portal-reader and full-policy-set mutations")
 
 
 def main() -> int:
@@ -191,7 +255,8 @@ def main() -> int:
     gitops_text = GITOPS.read_text()
     bootstrap_text = BOOTSTRAP.read_text()
     if not valid(gitops_text, bootstrap_text):
-        raise SystemExit("FAIL: Argo CD policies, group bindings, default role or group claim scopes diverge from the reviewed contract")
+        details = "; ".join(problems(gitops_text, bootstrap_text))
+        raise SystemExit(f"FAIL: Argo CD policies, group bindings, default role or group claim scopes diverge from the reviewed contract: {details}")
     if args.mutation_verify:
         mutation_verify(gitops_text, bootstrap_text)
     else:

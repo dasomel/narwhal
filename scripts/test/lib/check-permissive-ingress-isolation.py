@@ -5,17 +5,26 @@ Such a namespace accepts plaintext from every pod in the cluster unless an INGRE
 compensates. check-peer-authentication.py (R243) governs the exceptions themselves; this check
 requires, for each namespace-wide (no workload selector) PERMISSIVE/DISABLE PeerAuthentication in
 namespace N (istio-system/default, the mesh root, stays with R243), a policy in N that is either
-  - a networking.k8s.io/v1 NetworkPolicy in N with `podSelector: {}` (exactly empty, not matchLabels)
-    and `Ingress` in a list-typed `policyTypes`, whose ingress rules are not allow-from-everything
-    (a rule without a non-empty `from`, `{}`/namespaceSelector {}/ipBlock 0.0.0.0/0 sources), or
+  - an exactly `networking.k8s.io/v1` NetworkPolicy in N with `podSelector: {}` (exactly empty, not
+    matchLabels) and `Ingress` in a list-typed `policyTypes`, whose ingress rules are not
+    allow-from-everything (a rule without a non-empty `from`, a source with no valid selector key,
+    a select-all namespaceSelector, an ipBlock with a /0 or unparseable cidr), or
   - a CiliumNetworkPolicy (in N) / CiliumClusterwideNetworkPolicy with `endpointSelector: {}` and
-    non-empty ingress rules that each name a restricted `from*` source. Anything unparsable or
-    unexpected does NOT count as isolation (fail closed).
+    non-empty ingress rules that each name a restricted `from*` source.
+A selector is select-all unless it has a non-empty matchLabels or an `In` matchExpression with values;
+Exists/NotIn/DoesNotExist or a malformed expression cannot be shown to restrict. Anything unparsable
+or unexpected does NOT count as isolation (fail closed). A cidr with prefixlen 0 is catch-all even
+with `except` entries (allow-almost-all is not isolation). Cilium `cluster`/`all`/`world` entities
+are broad; `host`, `remote-node`, `kube-apiserver` are narrow.
+D8: a CiliumClusterwideNetworkPolicy with `endpointSelector: {}` counts for EVERY namespace, but only
+when it keeps default-deny on (`enableDefaultDeny.ingress` not false) and every rule is restricted by
+the rules above; so the repo's ambient-kubelet-probes CCNP (default-deny off) never counts.
 Sources: gitops json/yaml/yml/tpl except the vendored third-party sub-charts under
-gitops/charts/kubernetes-dashboard/charts/**, plus heredocs in scripts/**/*.sh.
+gitops/charts/kubernetes-dashboard/charts/**, plus heredocs in scripts/**/*.sh (PeerAuthentications
+from any script, as R243; policies only from scripts/cluster/*.sh, never test helpers).
 Fails closed on unparsable sources, duplicate keys, non-mapping documents/fields (arrays are not
 objects), and a helm-templated or .tpl file declaring a PeerAuthentication. A templated file that
-only declares NetworkPolicies cannot be evaluated, so it simply does not count as isolation.
+only declares NetworkPolicies cannot be evaluated, so it is skipped and never counts as isolation.
 KNOWN_ISSUES is an explicit baseline keyed on (namespace, name) with an exact COUNT: drift in either
 direction (incl. a stale entry) fails; it is printed on stdout so the harness WARNs. Default mode only.
 """
@@ -23,6 +32,7 @@ direction (incl. a stale entry) fails; it is printed on stdout so the harness WA
 from __future__ import annotations
 
 import collections
+import ipaddress
 import json
 import os
 import pathlib
@@ -34,8 +44,7 @@ import yaml
 ROOT = pathlib.Path(os.environ.get("INGRESS_ISO_ROOT") or pathlib.Path(__file__).resolve().parents[3]).resolve()  # env: probe trees
 MESH = ("istio-system", "default")
 MODES = {"STRICT", "PERMISSIVE", "DISABLE", "UNSET"}
-EXCLUDED = ("scripts/test/fixtures", "gitops/charts/kubernetes-dashboard/charts/")  # path prefixes
-CATCH_ALL = {"0.0.0.0/0", "::/0"}
+EXCLUDED = ("scripts/test/fixtures/", "gitops/charts/kubernetes-dashboard/charts/")  # path prefixes
 # Real gaps in the current repo: (namespace, name) -> (count, reason). Remove when fixed.
 KNOWN_ISSUES = {
     ("monitoring", "monitoring-permissive"): (1, "namespace-wide PERMISSIVE, no ingress default-deny (#126)"),
@@ -156,21 +165,46 @@ def wide_permissive(rel: str, doc: dict) -> tuple[str, str, str] | None:
     return None if workload or weakest is None or (ns, name) == MESH else (ns, name, weakest)
 
 
+def restricts(sel: object) -> bool:
+    """True only if a label selector provably narrows what it selects (else it is select-all or unparseable)."""
+    if not isinstance(sel, dict):
+        return False
+    labels, exprs = sel.get("matchLabels"), sel.get("matchExpressions")
+    if (labels is not None and not isinstance(labels, dict)) or (exprs is not None and not isinstance(exprs, list)):
+        return False
+    narrow = bool(labels)
+    for e in exprs or []:
+        if not (isinstance(e, dict) and isinstance(e.get("key"), str) and e.get("operator") in
+                ("In", "NotIn", "Exists", "DoesNotExist")):
+            return False  # one malformed expression poisons the selector
+        narrow = narrow or (e["operator"] == "In" and isinstance(e.get("values"), list) and bool(e["values"]))
+    return narrow
+
+
+def cidr_restricted(cidr: object) -> bool:
+    """False for a /0 network (even with `except`: allow-almost-all) or an unparseable cidr (fail closed)."""
+    try:
+        return ipaddress.ip_network(str(cidr).strip(), strict=False).prefixlen != 0
+    except ValueError:
+        return False
+
+
 def allows_everyone(rule: object) -> bool:
     """True unless the NetworkPolicy ingress rule restricts its sources."""
     sources = rule.get("from") if isinstance(rule, dict) else None
     if not isinstance(sources, list) or not sources:  # absent/[]/non-list `from` matches every source
         return True
     for src in sources:
-        if not isinstance(src, dict) or not src:
+        if not isinstance(src, dict):
             return True
-        pod, ns = src.get("podSelector"), src.get("namespaceSelector")
+        pod, ns, block = src.get("podSelector"), src.get("namespaceSelector"), src.get("ipBlock")
+        if pod is None and ns is None and block is None:  # no valid selector key at all
+            return True
         if (pod is not None and not isinstance(pod, dict)) or (ns is not None and not isinstance(ns, dict)):
             return True
-        if ns == {} and pod in (None, {}):
+        if ns is not None and not restricts(ns) and not restricts(pod):  # podSelector alone = own namespace
             return True
-        block = src.get("ipBlock")
-        if block is not None and (not isinstance(block, dict) or str(block.get("cidr", "")).strip() in CATCH_ALL):
+        if block is not None and not (isinstance(block, dict) and cidr_restricted(block.get("cidr"))):
             return True
     return False
 
@@ -181,11 +215,11 @@ def cilium_rule_restricted(rule: object) -> bool:
     froms = {k: v for k, v in rule.items() if k.startswith("from")}
     if not froms or any(not isinstance(v, list) or not v for v in froms.values()):
         return False
-    entities = froms.get("fromEntities", [])
-    cidrs = [str(c).strip() for c in froms.get("fromCIDR", [])]
-    cidrs += [str(c.get("cidr", "")).strip() if isinstance(c, dict) else "" for c in froms.get("fromCIDRSet", [])]
-    return not ({"all", "world"} & set(map(str, entities)) or set(cidrs) & CATCH_ALL
-                or any(e in ({}, None) or not isinstance(e, dict) for e in froms.get("fromEndpoints", [])))
+    cidrs = list(froms.get("fromCIDR", []))
+    cidrs += [c.get("cidr") if isinstance(c, dict) else None for c in froms.get("fromCIDRSet", [])]
+    return not ({"all", "world", "cluster"} & set(map(str, froms.get("fromEntities", [])))
+                or not all(cidr_restricted(c) for c in cidrs)
+                or not all(restricts(e) for e in froms.get("fromEndpoints", [])))
 
 
 def isolates(doc: dict, ns: str) -> bool:
@@ -196,7 +230,7 @@ def isolates(doc: dict, ns: str) -> bool:
     api, kind, rules = str(doc.get("apiVersion", "")), doc.get("kind"), spec.get("ingress")
     if kind == "NetworkPolicy":
         types = spec.get("policyTypes")
-        return (api.startswith("networking.k8s.io/") and meta.get("namespace") == ns
+        return (api == "networking.k8s.io/v1" and meta.get("namespace") == ns
                 and isinstance(spec.get("podSelector"), dict) and not spec["podSelector"]
                 and isinstance(types, list) and "Ingress" in types
                 and (rules is None or (isinstance(rules, list) and not any(allows_everyone(r) for r in rules))))
@@ -222,6 +256,7 @@ def main() -> int:
     policies: list[dict] = []
     for path in args or default_files():
         rel = path.resolve().relative_to(ROOT).as_posix() if ROOT in path.resolve().parents else str(path)
+        scripted = not args and path.suffix == ".sh" and not rel.startswith("scripts/cluster/")
         try:
             for doc in documents(rel, path, path.read_text()):
                 if not isinstance(doc, dict):
@@ -229,7 +264,7 @@ def main() -> int:
                 if doc.get("kind") == "PeerAuthentication":
                     hit = wide_permissive(rel, doc)
                     wide += [(rel, *hit)] if hit else []
-                else:
+                elif not scripted:  # only scripts/cluster heredocs are real isolation, not test helpers
                     policies.append(doc)
         except (OSError, UnicodeDecodeError, ValueError) as exc:
             problems.append(str(exc))

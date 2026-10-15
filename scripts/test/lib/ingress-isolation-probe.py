@@ -35,6 +35,17 @@ def deny(pod: str = "{}", types: str = "[Ingress]", ingress: str = "") -> str:
 
 FROM_POD = "ingress:\n- from:\n  - podSelector: {}"
 CIL = dict(kind="CiliumNetworkPolicy", api="cilium.io/v2")
+CCNP = dict(kind="CiliumClusterwideNetworkPolicy", api="cilium.io/v2", meta="labels: {a: b}")
+
+
+def frm(src: str) -> str:  # one NetworkPolicy ingress source
+    return pa() + deny(ingress=f"ingress:\n- from:\n  - {src}")
+
+
+def cil(rule: str, extra: str = "", **kw: str) -> str:  # one ingress rule of an endpointSelector {} Cilium policy
+    return pa() + np(f"endpointSelector: {{}}\n{extra}ingress:\n- {rule}", **(kw or CIL))
+
+
 # name -> manifest text
 GOOD = {
     "default-deny": pa() + deny(),
@@ -44,6 +55,12 @@ GOOD = {
     "strict-no-policy": pa(spec="  mtls:\n    mode: STRICT\n"),
     "mesh-root-exempt": pa("istio-system").replace("name: p", "name: default"),
     "cilium-restricted": pa() + np("endpointSelector: {}\ningress:\n- fromEndpoints:\n  - matchLabels: {a: b}", **CIL),
+    "ns-selector-restricted": frm("namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: istio-system}}"),
+    "ns-selector-in-expression": frm("namespaceSelector: {matchExpressions: [{key: team, operator: In, values: [a]}]}"),
+    "cidr-restricted": frm("ipBlock: {cidr: 10.0.0.0/8}"),
+    "cilium-clusterwide-restricted": cil("fromEndpoints:\n  - matchLabels: {a: b}", **CCNP),  # D8: counts for every ns
+    "cilium-narrow-entities": cil("fromEntities: [host, remote-node, kube-apiserver]"),
+    "cilium-cidr-restricted": cil("fromCIDR: ['10.0.0.0/8']\n  fromCIDRSet:\n  - cidr: 192.168.0.0/16"),
 }
 BAD = {
     "missing": pa(),
@@ -75,6 +92,30 @@ BAD = {
                                         "namespace: other", **CIL),
     "cilium-selector": pa() + np("endpointSelector: {matchLabels: {a: b}}\ningress:\n- fromEndpoints:\n  - matchLabels: {a: b}", **CIL),
     "networkpolicy-wrong-api": pa() + np("podSelector: {}\npolicyTypes: [Ingress]", api="example.com/v1"),
+    "networkpolicy-v1beta1": pa() + np("podSelector: {}\npolicyTypes: [Ingress]", api="networking.k8s.io/v1beta1"),
+    "ns-empty-matchlabels": frm("namespaceSelector: {matchLabels: {}}"),
+    "ns-empty-matchexpressions": frm("namespaceSelector: {matchExpressions: []}"),
+    "ns-both-empty": frm("namespaceSelector: {matchLabels: {}, matchExpressions: []}"),
+    "ns-exists-expression": frm("namespaceSelector: {matchExpressions: [{key: kubernetes.io/metadata.name, operator: Exists}]}"),
+    "ns-malformed-expression": frm("namespaceSelector: {matchExpressions: [{key: team}]}"),
+    "ns-empty-matchlabels-pod-empty": frm("namespaceSelector: {matchLabels: {}}\n    podSelector: {matchLabels: {}}"),
+    "cidr-ipv6-0": frm("ipBlock: {cidr: '0::/0'}"),
+    "cidr-ipv6-zero-compressed": frm("ipBlock: {cidr: '::0/0'}"),
+    "cidr-ipv6-expanded": frm("ipBlock: {cidr: '0:0:0:0:0:0:0:0/0'}"),
+    "cidr-ipv6-catch-all": frm("ipBlock: {cidr: '::/0'}"),
+    "cidr-ipv4-with-except": frm("ipBlock: {cidr: 0.0.0.0/0, except: [10.0.0.0/8]}"),
+    "cidr-unparseable": frm("ipBlock: {cidr: not-a-cidr}"),
+    "source-ipblock-null": frm("ipBlock: null"),
+    "source-typo-key": frm("namespaceSelctor: {}"),
+    "source-empty": frm("{}"),
+    "cilium-entity-cluster": cil("fromEntities: [cluster]"),
+    "cilium-entity-all": cil("fromEntities: [all]"),
+    "cilium-endpoints-empty-matchlabels": cil("fromEndpoints:\n  - matchLabels: {}"),
+    "cilium-endpoints-empty-matchexpressions": cil("fromEndpoints:\n  - matchExpressions: []"),
+    "cilium-cidr-ipv6-zero": cil("fromCIDR: ['0::/0']"),
+    "cilium-cidrset-ipv6-zero": cil("fromCIDRSet:\n  - cidr: '::0/0'"),
+    "cilium-cidr-unparseable": cil("fromCIDR: [garbage]"),
+    "cilium-clusterwide-default-deny-off": cil("fromCIDR: ['169.254.7.127/32']", "enableDefaultDeny: {ingress: false}\n", **CCNP),
 }
 FAILCLOSED = {  # name -> (text, suffix, expected stderr substring)
     "malformed": (pa(spec="  mtls: [\n"), ".yaml", "unparsable source"),
@@ -143,6 +184,9 @@ def main(group: str) -> int:
             "platform-chart-counts": ({"gitops/a.yaml": wide, "gitops/charts/narwhal-platform/templates/np.yaml": iso}, 1, drift),
             "resources-count": ({"gitops/a.yaml": wide, "gitops/resources/np.yaml": iso}, 1, drift),
             "script-heredoc-counts": ({"gitops/a.yaml": wide, "scripts/cluster/x.sh": f"cat <<EOF | kubectl apply -f -\n{iso}\nEOF\n"}, 1, drift),
+            "script-test-heredoc-not-isolation": ({"gitops/a.yaml": wide, "scripts/test/x.sh": f"cat <<EOF\n{iso}\nEOF\n"}, 0, ""),
+            "fixtures-skipped": ({"gitops/a.yaml": wide, "scripts/test/fixtures/x.sh": f"cat <<EOF\n{pa('payments')}\nEOF\n"}, 0, ""),
+            "fixtures-lookalike-scanned": ({"gitops/a.yaml": wide, "scripts/test/fixturesevil/x.sh": f"cat <<EOF\n{pa('payments')}\nEOF\n"}, 1, NOISO),
             "script-outside-heredoc": ({"gitops/a.yaml": wide, "scripts/cluster/x.sh": "echo x\nkind: NetworkPolicy\n"}, 1, "outside a heredoc"),
         }
         for n, (files, want_rc, want_err) in cases.items():

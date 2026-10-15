@@ -17,3 +17,5 @@ Examples of behavior that contributes to a positive environment:
 ## Enforcement
 
 Report issues to the repository maintainers. All complaints will be reviewed promptly and impartially.
+
+<!-- gate probe: portal untouched path (temporary, do not merge) -->

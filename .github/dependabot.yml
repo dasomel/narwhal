@@ -1,8 +1,10 @@
 version: 2
 
-# Only github-actions is watched here. This repository ships shell and YAML — there is no
-# package manifest for a language ecosystem to track, and the component versions that do
-# matter (Kubernetes, Istio, Harbor and the rest) are pinned in VERSIONS.md and rolled
+# Two ecosystems are watched: github-actions (root) and npm for the portal app (/portal,
+# D-MONO-CI, ported from narwhal-portal's own dependabot.yml). The cluster side ships shell
+# and YAML — there is no package manifest for a language ecosystem to track, and the
+# component versions that do matter (Kubernetes, Istio, Harbor and the rest) are pinned in
+# VERSIONS.md and rolled
 # deliberately, not automatically: a chart bump has to be re-verified against the other 34
 # components and re-bundled for the air-gapped install, which is not something a bot can judge.
 #
@@ -22,3 +24,48 @@ updates:
     labels:
       - dependencies
       - github-actions
+
+  # D-MONO-CI: portal/ keeps its own pnpm lockfile. npm updates are validated by the
+  # Portal Build Check workflow (frozen-lockfile install, tsc, build, standalone assertion).
+  #
+  # Grouped rather than one PR per package: this is a Next.js app, so next, react and
+  # react-dom move together and reviewing them apart wastes the reviewer's time and can
+  # produce a peer-dependency state that never existed upstream.
+  #
+  # Majors are deliberately excluded. A React or Next major here is a migration and should
+  # be planned, not opened as a routine PR that CI can green-light.
+  #
+  # Dependabot's own cooldown option is deliberately NOT set: it reaches pnpm as
+  # `--config.minimumReleaseAge`, a graph-wide constraint that fails on transitive packages
+  # already in the lockfile (every update failed that way, security ones included). The
+  # seven-day window is enforced instead by portal/scripts/check-lockfile-cooling.mjs in the
+  # Portal License & SBOM workflow, and portal/scripts/check-supply-chain-policy.mjs fails
+  # if the option is ever added here.
+  - package-ecosystem: npm
+    directory: /portal
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    versioning-strategy: increase
+    commit-message:
+      prefix: chore
+      include: scope
+    labels:
+      - dependencies
+    ignore:
+      - dependency-name: "*"
+        update-types: [version-update:semver-major]
+    groups:
+      next-react:
+        patterns:
+          - next
+          - react
+          - react-dom
+          - "@types/react"
+          - "@types/react-dom"
+          - eslint-config-next
+      opentelemetry:
+        patterns:
+          - "@opentelemetry/*"
+      dev-tooling:
+        dependency-type: development

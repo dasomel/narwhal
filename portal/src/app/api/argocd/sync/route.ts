@@ -1,0 +1,132 @@
+import { NextRequest, NextResponse } from "next/server"
+import { requireRole } from "@/lib/auth"
+import {
+  assertAppAccessible,
+  ArgoCDCredentialError,
+  ArgoForbiddenError,
+  ArgoNotFoundError,
+  getArgoAppFresh,
+  getOperationOutcome,
+  syncArgoApp,
+} from "@/lib/argocd"
+import { invalidateFor } from "@/lib/cache-invalidation"
+import { assertK8sName, ValidationError } from "@/lib/validation"
+import { beginOperation, completeOperation, failOperation } from "@/lib/operation-context"
+import type { ArgoCDSyncRequest, ArgoCDSyncResponse } from "@/types/api"
+
+export const dynamic = "force-dynamic"
+
+export async function POST(
+  req: NextRequest,
+): Promise<NextResponse<ArgoCDSyncResponse>> {
+  const gate = await requireRole("cluster-admin", "developer")
+  if ("error" in gate) {
+    return NextResponse.json(
+      { ok: false, error: gate.error === "unauthorized" ? "Unauthorized" : "Forbidden" },
+      { status: gate.error === "unauthorized" ? 401 : 403 }
+    )
+  }
+  const { session } = gate
+
+  let body: Partial<ArgoCDSyncRequest>
+  try {
+    body = await req.json()
+  } catch {
+    return NextResponse.json({ ok: false, error: "Invalid JSON body" }, { status: 400 })
+  }
+
+  const { appName } = body
+  if (!appName || typeof appName !== "string" || appName.trim() === "") {
+    return NextResponse.json({ ok: false, error: "appName is required" }, { status: 400 })
+  }
+  const trimmed = appName.trim()
+  try {
+    assertK8sName(trimmed, "appName")
+  } catch (err) {
+    if (err instanceof ValidationError) {
+      return NextResponse.json({ ok: false, error: err.message }, { status: 400 })
+    }
+    throw err
+  }
+
+  try {
+    // H-3: project-scope check.
+    const app = await assertAppAccessible(trimmed, {
+      role: session.user.role,
+      groups: session.groups,
+      teams: session.teams,
+    })
+
+    const ctx = await beginOperation({
+      request: req,
+      session,
+      operationType: "argocd.sync",
+      source: "argocd",
+      resource: {
+        kind: "Application",
+        namespace: app.spec.destination?.namespace,
+        name: trimmed,
+      },
+      title: `ArgoCD sync started: ${trimmed}`,
+    })
+
+    let result
+    try {
+      result = await syncArgoApp(trimmed)
+    } catch (err) {
+      await failOperation(
+        ctx,
+        `ArgoCD sync failed: ${trimmed}`,
+        err instanceof ArgoCDCredentialError || err instanceof ArgoForbiddenError || err instanceof ArgoNotFoundError
+          ? err.message
+          : "sync step failed: ArgoCD request failed",
+      )
+      throw err
+    }
+
+    await invalidateFor("argocd.app.changed", { appName: trimmed })
+
+    // portal#59: the sync response above only means ArgoCD *accepted* the sync
+    // request, not that reconciliation finished. Re-read the app and check
+    // operationState.phase before claiming verified success.
+    const fresh = await getArgoAppFresh(trimmed)
+    const outcome = fresh === null ? "pending" : getOperationOutcome(fresh)
+    if (outcome === "failed") {
+      const message = `sync failed; operationState.phase=${fresh?.status.operationState?.phase ?? "unknown"}`
+      await failOperation(ctx, `ArgoCD sync failed: ${trimmed}`, message)
+      return NextResponse.json({ ok: false, app: result, error: message }, { status: 502 })
+    }
+    if (outcome === "pending") {
+      await completeOperation(
+        ctx,
+        `ArgoCD sync triggered (pending convergence): ${trimmed}`,
+        `sync accepted; operationState.phase=${fresh?.status.operationState?.phase ?? "unknown"}`,
+      )
+      return NextResponse.json({ ok: true, app: result, pending: true })
+    }
+
+    await completeOperation(
+      ctx,
+      `ArgoCD sync completed: ${trimmed}`,
+      `Synced to revision ${result.revision ?? "unknown"}`,
+    )
+
+    return NextResponse.json({ ok: true, app: result })
+  } catch (err) {
+    if (err instanceof ArgoNotFoundError) {
+      return NextResponse.json({ ok: false, error: err.message }, { status: 404 })
+    }
+    if (err instanceof ArgoForbiddenError) {
+      return NextResponse.json({ ok: false, error: err.message }, { status: 403 })
+    }
+    // D1 (#54 review): the inner try/catch around syncArgoApp already recorded
+    // failOperation before rethrowing; this only maps the error to a response.
+    if (err instanceof ArgoCDCredentialError) {
+      const message = `ArgoCD sync is unavailable: ${err.message}`
+      console.error("[api/argocd/sync]", message)
+      return NextResponse.json({ ok: false, error: message }, { status: 503 })
+    }
+    console.error("[api/argocd/sync]", err instanceof Error ? err.name : "unknown error")
+    return NextResponse.json({ ok: false, error: "ArgoCD sync failed" }, { status: 502 })
+  }
+}

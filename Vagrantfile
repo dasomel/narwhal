@@ -157,11 +157,11 @@ Vagrant.configure("2") do |config|
       owner: "vagrant", group: "vagrant"
   end
 
-  # Sync the sibling narwhal-portal repo so the in-cluster Kaniko build
+  # Sync the in-repo portal/ so the in-cluster Kaniko build
   # (15-narwhal-portal.sh -> kaniko-build.sh) has the portal source on the VM.
-  # rsync excludes build junk so this stays small (a few MB, not the 1.5G repo).
-  if Dir.exist?(File.join(__dir__, "..", "narwhal-portal"))
-    config.vm.synced_folder "../narwhal-portal", "/home/vagrant/narwhal-portal",
+  # rsync excludes build junk so this stays small (a few MB, not the 1.5G tree).
+  if Dir.exist?(File.join(__dir__, "portal"))
+    config.vm.synced_folder "portal", "/home/vagrant/narwhal-portal",
       type: "rsync",
       rsync__exclude: [".git/", "node_modules/", ".next/", "test-results/"],
       owner: "vagrant", group: "vagrant"

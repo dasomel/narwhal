@@ -1,0 +1,254 @@
+import { readFileSync } from "fs"
+import { cacheGet, cacheSet } from "./valkey"
+import { cacheKeys, cacheTtl } from "./cache-keys"
+import { assertHttpsInProduction, getDependencyUrl, isProduction } from "./config"
+import { fetchWithPolicy, readJsonWithPolicy } from "./http-client"
+
+/**
+ * 환경변수에서 시크릿 읽기. OpenBao Agent Injector 애노테이션이 클러스터 배포에
+ * 존재하지 않으므로(파일 마운트 경로 사용 불가) 환경변수 폴백만 지원한다.
+ */
+export function getSecret(name: string, envFallback?: string): string {
+  const envVal = envFallback ? process.env[envFallback] : undefined
+  if (envVal) return envVal
+  throw new Error(`Secret '${name}' not found in environment`)
+}
+
+// --- HTTP 클라이언트 ---
+
+function openbaoAddr(): string {
+  return getDependencyUrl("OPENBAO_ADDR", "http://localhost:8200")
+}
+
+export interface SecretEntry {
+  path: string
+  version: number
+  createdTime: string
+  updatedTime: string
+}
+
+/**
+ * Thrown when OpenBao secret metadata cannot be read (non-404 error on the list
+ * or a per-secret metadata call). listSecrets() fails closed on this instead of
+ * returning an empty/partial list — an empty array would read as "no secrets
+ * exist" to the governance view (portal#19) when the real cause is a permission
+ * or connectivity problem, silently under-reporting exposure rather than
+ * surfacing the degraded state explicitly.
+ */
+export class SecretMetadataError extends Error {}
+
+// --- Kubernetes auth token provider (narwhal#156 / portal#54) ---
+//
+// The cluster stopped injecting a long-lived OPENBAO_TOKEN and instead grants
+// this workload OpenBao Kubernetes auth (auth/kubernetes/login) via a projected
+// service-account token. OPENBAO_K8S_AUTH_AUDIENCE ("vault") is consumed by the
+// kubelet when minting that projected token (kustomize/helm on the cluster
+// side) — the login call itself only needs the resulting JWT, not the audience.
+
+const DEFAULT_K8S_ROLE = "narwhal-portal"
+const DEFAULT_K8S_AUTH_MOUNT = "kubernetes"
+const DEFAULT_K8S_TOKEN_PATH = "/var/run/secrets/openbao/token"
+const FALLBACK_K8S_TOKEN_PATH = "/var/run/secrets/kubernetes.io/serviceaccount/token"
+
+function k8sAuthMount(): string {
+  return process.env.OPENBAO_K8S_AUTH_MOUNT || DEFAULT_K8S_AUTH_MOUNT
+}
+
+function k8sRole(): string {
+  return process.env.OPENBAO_K8S_ROLE || DEFAULT_K8S_ROLE
+}
+
+function readFileIfExists(path: string): string | null {
+  try {
+    return readFileSync(path, "utf-8").trim()
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err
+    return null
+  }
+}
+
+// Reads the projected SA token, falling back to the default in-cluster SA
+// token when the OpenBao-specific projected volume isn't mounted.
+function readK8sJwt(): string | null {
+  const primary = process.env.OPENBAO_K8S_TOKEN_PATH || DEFAULT_K8S_TOKEN_PATH
+  return readFileIfExists(primary) ?? readFileIfExists(FALLBACK_K8S_TOKEN_PATH)
+}
+
+function resolvedAuthMethod(): "kubernetes" | "token" {
+  const configured = process.env.OPENBAO_AUTH_METHOD
+  if (configured === "token" || configured === "kubernetes") return configured
+  // Unset: prefer Kubernetes auth when a projected SA token is actually mounted.
+  return readK8sJwt() !== null ? "kubernetes" : "token"
+}
+
+// OPENBAO_TOKEN is only a legitimate source of truth when auth is explicitly
+// (or implicitly, outside production) static-token mode. Mirrors
+// getDependencyUrl()'s fail-fast pattern: throw in production, tolerate an
+// empty token in dev so local flows without OpenBao configured still boot.
+function tokenFromEnv(): string {
+  const envToken = process.env.OPENBAO_TOKEN
+  if (envToken) {
+    // D7: Production legacy mode must be explicit, matching the cluster's
+    // ENABLE_LEGACY_OPENBAO_TOKEN contract. Cost: reject accidental fallback;
+    // operators can choose token mode intentionally until identity migration.
+    if (isProduction() && process.env.OPENBAO_AUTH_METHOD !== "token") {
+      throw new Error("[OpenBao] Static credentials require explicit OPENBAO_AUTH_METHOD=token in production; prefer Kubernetes auth")
+    }
+    return envToken
+  }
+  if (isProduction()) {
+    throw new Error(
+      "[OpenBao] Missing required production configuration: no Kubernetes auth JWT found and OPENBAO_TOKEN is not set"
+    )
+  }
+  return ""
+}
+
+interface CachedToken {
+  token: string
+  expiresAt: number
+}
+
+let cachedToken: CachedToken | null = null
+// Shared in-flight login so N concurrent callers on a cold/expired cache
+// converge on one POST /login instead of a stampede against OpenBao.
+let loginInFlight: Promise<CachedToken> | null = null
+
+async function loginWithKubernetes(): Promise<CachedToken> {
+  const jwt = readK8sJwt()
+  if (!jwt) {
+    throw new Error(
+      "[OpenBao] Kubernetes auth JWT not found at OPENBAO_K8S_TOKEN_PATH or the default service-account token path"
+    )
+  }
+
+  const addr = openbaoAddr()
+  assertHttpsInProduction("OPENBAO_ADDR", addr)
+  const mount = k8sAuthMount()
+
+  const res = await fetchWithPolicy(`${addr}/v1/auth/${mount}/login`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ role: k8sRole(), jwt }),
+  }, { retry: false })
+  if (!res.ok) {
+    throw new Error(`[OpenBao] Kubernetes auth login failed: ${res.status}`)
+  }
+
+  const data = await readJsonWithPolicy<{ auth?: { client_token?: string; lease_duration?: number } }>(res)
+  const clientToken: string | undefined = data?.auth?.client_token
+  // lease_duration 0 means "no lease" in OpenBao; treat it (and garbage) as the
+  // default rather than expiring the cache immediately and re-logging in per call.
+  const rawLease = Number(data?.auth?.lease_duration)
+  const leaseDuration = Number.isFinite(rawLease) && rawLease > 0 ? rawLease : 3600
+  if (!clientToken) {
+    throw new Error("[OpenBao] Kubernetes auth login response missing auth.client_token")
+  }
+
+  // Refresh at 80% of the lease so we re-login before the 1h client token
+  // actually expires, even under clock drift.
+  return { token: clientToken, expiresAt: Date.now() + leaseDuration * 0.8 * 1000 }
+}
+
+/**
+ * Resolves the token to send as X-Vault-Token. Kubernetes-auth tokens are
+ * cached in-memory (per process) until ~80% of their lease elapses; pass
+ * `forceRefresh` to bypass the cache and re-login (used after a 403).
+ */
+export async function getOpenBaoToken(forceRefresh = false): Promise<string> {
+  const configured = process.env.OPENBAO_AUTH_METHOD
+  if (configured && configured !== "kubernetes" && configured !== "token" && isProduction()) {
+    throw new Error("[OpenBao] OPENBAO_AUTH_METHOD must be kubernetes or token")
+  }
+  // A valid cached Kubernetes-auth token wins before re-resolving the auth
+  // method: with OPENBAO_AUTH_METHOD unset, resolution re-reads the JWT file,
+  // and a transient unmount during volume rotation must not flip us to
+  // "token" mode and fail fast while the cached client token is still good.
+  if (!forceRefresh && cachedToken && cachedToken.expiresAt > Date.now()) {
+    return cachedToken.token
+  }
+
+  if (resolvedAuthMethod() === "token") {
+    return tokenFromEnv()
+  }
+
+  if (!loginInFlight) {
+    loginInFlight = loginWithKubernetes().finally(() => {
+      loginInFlight = null
+    })
+  }
+  cachedToken = await loginInFlight
+  return cachedToken.token
+}
+
+export async function baoFetch(path: string, init?: RequestInit): Promise<Response> {
+  const addr = openbaoAddr()
+  assertHttpsInProduction("OPENBAO_ADDR", addr)
+
+  const token = await getOpenBaoToken()
+  const res = await fetchWithPolicy(`${addr}${path}`, {
+    ...init,
+    headers: { "X-Vault-Token": token, ...init?.headers },
+  }, { retry: init?.method && !["GET", "HEAD"].includes(init.method.toUpperCase()) ? false : undefined })
+
+  if (res.status !== 403) return res
+
+  // Client token may have been revoked/expired server-side before our cache
+  // window elapsed (or a static OPENBAO_TOKEN was rotated) — re-login once.
+  const retryToken = await getOpenBaoToken(true)
+  return fetchWithPolicy(`${addr}${path}`, {
+    ...init,
+    headers: { "X-Vault-Token": retryToken, ...init?.headers },
+  }, { retry: false })
+}
+
+export async function listSecrets(): Promise<SecretEntry[]> {
+  const cacheKey = cacheKeys.openbaoSecrets()
+  const cached = await cacheGet<SecretEntry[]>(cacheKey)
+  if (cached) return cached
+
+  // The scoped policy only grants list/read on secret/metadata/narwhal-portal/*,
+  // so list the granted sub-prefix rather than the KV mount root (which 403s).
+  const SECRET_PREFIX = "narwhal-portal/"
+
+  const listRes = await baoFetch(`/v1/secret/metadata/${SECRET_PREFIX}?list=true`)
+  if (listRes.status === 404) {
+    // KV v2 404s a list on a prefix with nothing under it — a genuine empty
+    // inventory, distinct from a read failure, so this caches and returns clean.
+    await cacheSet(cacheKey, [], cacheTtl("openbaoSecrets"))
+    return []
+  }
+  if (!listRes.ok) {
+    throw new SecretMetadataError(`Failed to list secret metadata (HTTP ${listRes.status})`)
+  }
+
+  const listData = await readJsonWithPolicy<{ data?: { keys?: string[] } }>(listRes)
+  // Keys are returned relative to the listed prefix (e.g. "keycloak-token"),
+  // so prefix them back for metadata lookups while displaying the leaf name.
+  const keys: string[] = listData?.data?.keys ?? []
+
+  // portal#19: this used to also GET /v1/secret/data/<path> per secret solely to
+  // read Object.keys() off the value, which required KV data-read capability the
+  // inventory view has no business holding. Everything the UI shows now comes
+  // from /v1/secret/metadata/<path> alone; KV v2 metadata does not expose field
+  // names, so per-secret key names are dropped rather than approximated.
+  const entries: SecretEntry[] = await Promise.all(
+    keys.filter((k) => !k.endsWith("/")).map(async (key) => {
+      const fullPath = `${SECRET_PREFIX}${key}`
+      const metaRes = await baoFetch(`/v1/secret/metadata/${fullPath}`)
+      if (!metaRes.ok) {
+        throw new SecretMetadataError(`Failed to read metadata for '${key}' (HTTP ${metaRes.status})`)
+      }
+      const meta = await readJsonWithPolicy<{ data?: { current_version?: number; created_time?: string; updated_time?: string } }>(metaRes)
+      return {
+        path: key,
+        version: meta?.data?.current_version ?? 0,
+        createdTime: meta?.data?.created_time ?? "",
+        updatedTime: meta?.data?.updated_time ?? "",
+      }
+    })
+  )
+
+  await cacheSet(cacheKey, entries, cacheTtl("openbaoSecrets"))
+  return entries
+}

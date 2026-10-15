@@ -1,0 +1,312 @@
+"use client"
+
+/**
+ * CostOverview — spec §5.5 상단 카드(시간당/월 + CPU/Mem/Storage 분해) + 30일 추이 라인차트
+ * 차트: Recharts (resource-chart.tsx 동일 라이브러리)
+ */
+
+import { useQuery } from "@tanstack/react-query"
+import { useEffect, useState } from "react"
+import { useT } from "@/lib/i18n-client"
+import {
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  Tooltip,
+  ResponsiveContainer,
+  CartesianGrid,
+} from "recharts"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { DataState } from "@/components/ui/data-state"
+
+interface CostItem {
+  id: string
+  cpu: { cores: number; hourly: number }
+  memory: { gb: number; hourly: number }
+  storage: { gb: number; hourly: number }
+  totalHourly: number
+  totalMonthly: number
+}
+
+// portal#64 AC4: mirrors CostTelemetry in src/lib/cost.ts — "ok"/"partial" are real
+// data (possibly degraded), "unavailable" means Prometheus could not be queried at
+// all and must not be rendered as "$0 / no data".
+interface CostTelemetry {
+  state: "ok" | "empty" | "unavailable" | "partial" | "ambiguous" | "stale"
+  queriedAt?: string
+}
+
+interface CostResponse {
+  scope: string
+  generatedAt: string
+  unitPrices: { cpuHourly: number; memGbHourly: number; storageGbHourly: number }
+  pricing: {
+    estimate: true
+    currency: string
+    version: string
+    effectiveDate: string | null
+    source: string
+    scope: string | null
+    configured: boolean
+  }
+  items: CostItem[]
+  notice?: string
+  telemetry?: CostTelemetry
+}
+
+interface TrendPoint {
+  date: string
+  total: number
+}
+
+interface TrendResponse {
+  scope: string
+  id: string
+  days: number
+  points: TrendPoint[]
+  notice?: string
+  telemetry?: CostTelemetry
+}
+
+export function CostTelemetryState({ state, onRetry, now }: { state: CostTelemetry | undefined; onRetry: () => void; now?: number }) {
+  if (state?.state === "unavailable") return <DataState state="unavailable" onRetry={onRetry} observedAt={state.queriedAt} now={now} detailKey="costUnavailable" />
+  if (state?.state === "partial" || state?.state === "ambiguous") return <DataState state="partial" onRetry={onRetry} observedAt={state.queriedAt} now={now} detailKey="costPartial" />
+  return null
+}
+
+export function CostOverview() {
+  const t = useT()
+  const [now, setNow] = useState<number>()
+  useEffect(() => {
+    let interval: ReturnType<typeof setInterval> | undefined
+    const initialTick = setTimeout(() => {
+      setNow(Date.now())
+      interval = setInterval(() => setNow(Date.now()), 60_000)
+    }, 0)
+    return () => {
+      clearTimeout(initialTick)
+      if (interval) clearInterval(interval)
+    }
+  }, [])
+  const { data: costData, isLoading: costLoading, error: costError, refetch: refetchCost } = useQuery<CostResponse>({
+    queryKey: ["cost", "cluster"],
+    queryFn: async () => {
+      const response = await fetch("/api/cost?scope=cluster")
+      if (!response.ok) throw new Error("Cost data is unavailable")
+      return response.json()
+    },
+    refetchInterval: 60_000,
+  })
+
+  const { data: trendData, isLoading: trendLoading, error: trendError, refetch: refetchTrend } = useQuery<TrendResponse>({
+    queryKey: ["cost-trend", "cluster", "cluster", 30],
+    queryFn: async () => {
+      const response = await fetch("/api/cost/trend?scope=cluster&id=cluster&days=30")
+      if (!response.ok) throw new Error("Cost trend data is unavailable")
+      return response.json()
+    },
+    refetchInterval: 300_000,
+  })
+
+  const telemetryUnavailable = costData?.telemetry?.state === "unavailable"
+  const item = costData?.items?.[0]
+  const totalHourly = item?.totalHourly ?? 0
+  const totalMonthly = item?.totalMonthly ?? 0
+  const cpuHourly = item?.cpu.hourly ?? 0
+  const memHourly = item?.memory.hourly ?? 0
+  const storHourly = item?.storage.hourly ?? 0
+  const currency = costData?.pricing.currency ?? "USD"
+  const formatCurrency = (amount: number, maximumFractionDigits = 4) =>
+    new Intl.NumberFormat(undefined, { style: "currency", currency, maximumFractionDigits }).format(amount)
+
+  const chartData = (trendData?.points ?? []).map((p) => ({
+    date: p.date.slice(5), // MM-DD
+    total: p.total,
+  }))
+
+  if (costLoading) return <DataState state="loading" onRetry={() => { void refetchCost() }} />
+  if (costError || !costData) {
+    return <DataState state="error" onRetry={() => { void refetchCost() }} />
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* portal#64 AC4: Prometheus 실패는 "$0/데이터 없음"이 아니라 명시적 unavailable
+          배너로 표시한다 — telemetry.state가 notice와 별도로 이를 구분해준다. */}
+      <CostTelemetryState state={costData.telemetry} onRetry={() => { void refetchCost() }} now={now} />
+      {costData?.notice && (
+        <div className="rounded-md border border-yellow-200 bg-yellow-50 px-4 py-3 text-sm text-yellow-800 dark:border-yellow-800 dark:bg-yellow-900/20 dark:text-yellow-300">
+          {costData.notice}
+        </div>
+      )}
+      {costData?.pricing && (
+        <div className="rounded-md border border-border bg-muted/30 px-4 py-3 text-xs text-muted-foreground">
+          <p className="font-medium text-foreground">
+            {t("cost.estimateNotice")}
+          </p>
+          <p className="mt-1">
+            {t("cost.pricingMetadata", {
+              currency: costData.pricing.currency,
+              version: costData.pricing.version,
+              effectiveDate: costData.pricing.effectiveDate ?? t("cost.notConfigured"),
+              source: costData.pricing.source,
+              scope: costData.pricing.scope ?? t("cost.notConfigured"),
+            })}
+          </p>
+          {!costData.pricing.configured && <p className="mt-1">{t("cost.developmentPricing")}</p>}
+        </div>
+      )}
+
+      {/* 상단 요약 카드 — telemetry.state가 unavailable이면 "$0"으로 오인될 수 있는
+          숫자 카드 대신 위의 배너만 보인다 */}
+      {!telemetryUnavailable && (
+      <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+        <Card>
+          <CardHeader className="pb-1">
+            <CardTitle className="text-xs font-medium text-muted-foreground">
+              {t("cost.hourlyCost")}
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="pt-0">
+            <p className="text-2xl font-bold text-foreground">
+              {formatCurrency(totalHourly)}
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-1">
+            <CardTitle className="text-xs font-medium text-muted-foreground">
+              {t("cost.estimatedMonthlyCost")}
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="pt-0">
+            <p className="text-2xl font-bold text-foreground">
+              {formatCurrency(totalMonthly, 2)}
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-1">
+            <CardTitle className="text-xs font-medium text-muted-foreground">
+              {t("cost.cpuCostHourly")}
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="pt-0">
+            <div>
+              <p className="text-xl font-bold text-indigo-600 dark:text-indigo-400">
+                {formatCurrency(cpuHourly)}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                {item?.cpu.cores.toFixed(3) ?? "0"} {t("cost.cores")}
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-1">
+            <CardTitle className="text-xs font-medium text-muted-foreground">
+              {t("cost.memoryCostHourly")}
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="pt-0">
+            <div>
+              <p className="text-xl font-bold text-emerald-600 dark:text-emerald-400">
+                {formatCurrency(memHourly)}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                {item?.memory.gb.toFixed(2) ?? "0"} {t("cost.gb")}
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+      )}
+
+      {/* Storage 카드 (스펙 §5.5 분해) */}
+      {storHourly > 0 && (
+        <div className="grid grid-cols-1">
+          <Card>
+            <CardHeader className="pb-1">
+              <CardTitle className="text-xs font-medium text-muted-foreground">
+                {t("cost.storageCostHourly")}
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="pt-0">
+              <p className="text-xl font-bold text-orange-600 dark:text-orange-400">
+                {formatCurrency(storHourly)}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                {item?.storage.gb.toFixed(2) ?? "0"} {t("cost.gb")}
+              </p>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {/* 30일 추이 라인차트 */}
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm font-medium text-foreground">
+            {t("cost.trendTitle30d")}
+          </CardTitle>
+          {/* Codex 리뷰 #3: trend telemetry가 partial이면(예: cpu는 실패, mem은
+              성공) 차트는 그려지지만 저평가됐을 수 있다는 경고가 전혀 없었다. */}
+          {trendData?.telemetry?.state === "partial" && (
+            <p className="mt-1 text-xs text-yellow-700 dark:text-yellow-400">
+              {t("cost.telemetryPartial")}
+            </p>
+          )}
+        </CardHeader>
+        <CardContent className="pt-0">
+          {trendLoading ? (
+            <DataState state="loading" onRetry={() => { void refetchTrend() }} />
+          ) : trendError ? (
+            <DataState state="error" onRetry={() => { void refetchTrend() }} />
+          ) : chartData.length === 0 ? (
+            <DataState state={trendData?.telemetry?.state === "unavailable" ? "unavailable" : "empty"} onRetry={() => { void refetchTrend() }} />
+          ) : (
+            <ResponsiveContainer width="100%" height={200}>
+              <LineChart data={chartData} margin={{ top: 4, right: 16, left: -10, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+                <XAxis
+                  dataKey="date"
+                  tick={{ fontSize: 10, fill: "var(--muted-foreground)" }}
+                  axisLine={false}
+                  tickLine={false}
+                  interval="preserveStartEnd"
+                />
+                <YAxis
+                  tick={{ fontSize: 10, fill: "var(--muted-foreground)" }}
+                  axisLine={false}
+                  tickLine={false}
+                  tickFormatter={(v) => formatCurrency(Number(v), 2)}
+                />
+                <Tooltip
+                  contentStyle={{
+                    fontSize: 12,
+                    borderRadius: 8,
+                    border: "1px solid var(--border)",
+                    background: "var(--card)",
+                  }}
+                  formatter={(value) => [`${formatCurrency(Number(value))}/h`, t("cost.cost")]}
+                />
+                <Line
+                  type="monotone"
+                  dataKey="total"
+                  stroke="#6366f1"
+                  strokeWidth={2}
+                  dot={false}
+                  animationDuration={1000}
+                />
+              </LineChart>
+            </ResponsiveContainer>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  )
+}

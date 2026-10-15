@@ -1,0 +1,462 @@
+import { cacheDel, cacheGet, cacheSet } from "./valkey"
+import { getUserScope, type OwnershipMismatch } from "./role-filter"
+import { getEffectiveScope, namespaceVisible } from "./scope"
+import { getDependencyUrl, isProduction } from "./config"
+import { fetchWithPolicy, readJsonWithPolicy, readTextWithPolicy } from "./http-client"
+
+function argocdUrl(): string {
+  return getDependencyUrl("ARGOCD_URL", "http://localhost:8080")
+}
+
+// Portal #54: distinguishes "the ArgoCD auth credential is missing/rejected"
+// from "ArgoCD is unreachable" so callers don't mistake a credential gap for an
+// outage or an empty application inventory (mirrors ApisixCredentialError /
+// KeycloakCredentialError).
+export class ArgoCDCredentialError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = "ArgoCDCredentialError"
+  }
+}
+
+// Read at call-time (not a module-level const) — mirrors apisix-client / keycloak-client
+// so credential rotation via a re-mounted env/secret takes effect on the next call
+// without a process restart.
+export function getArgoToken(): string {
+  const token = process.env.ARGOCD_TOKEN
+  if (token) return token
+  if (!isProduction()) return ""
+  throw new ArgoCDCredentialError(
+    "ARGOCD_TOKEN is not configured. Set ARGOCD_TOKEN to an ArgoCD auth token."
+  )
+}
+
+// H-3: ArgoCD project allowlist for the `developer` role.
+// Empty (default) means developers are denied any sync/rollback unless
+// they have an explicit role-filter mapping (config/role-filter.json).
+const DEVELOPER_PROJECTS = (process.env.ARGOCD_DEVELOPER_PROJECTS ?? "")
+  .split(",")
+  .map((s) => s.trim())
+  .filter((s) => s.length > 0)
+
+// ArgoCD 앱 목록에서 숨길 앱 이름 (중복 노출 방지)
+const HIDDEN_APPS: string[] = []
+
+export interface ArgoApp {
+  metadata: { name: string; namespace?: string; creationTimestamp?: string; annotations?: Record<string, string> }
+  spec: {
+    project?: string
+    source?: { repoURL?: string; targetRevision?: string; chart?: string; path?: string }
+    destination?: { server?: string; namespace?: string }
+  }
+  status: {
+    sync: { status: string; revision?: string }
+    health: { status: string; message?: string }
+    operationState?: {
+      phase?: string
+      message?: string
+      startedAt?: string
+      finishedAt?: string
+      syncResult?: { revision?: string }
+    }
+    reconciledAt?: string
+    history?: Array<{
+      id: number
+      revision: string
+      deployedAt: string
+      source?: { repoURL?: string; targetRevision?: string }
+    }>
+    resources?: Array<{
+      group?: string
+      version: string
+      kind: string
+      namespace?: string
+      name: string
+      status?: string
+      health?: { status?: string; message?: string }
+    }>
+  }
+}
+
+async function argoFetch(path: string, timeoutMs = 5000): Promise<Response> {
+  const token = getArgoToken()
+  // portal#48: timeout + bounded retry (GET is idempotent, so a 502/503/504/429
+  // or a network blip gets retried automatically) now come from the shared
+  // client instead of a per-call AbortController/setTimeout pair.
+  const res = await fetchWithPolicy(
+    `${argocdUrl()}${path}`,
+    { headers: { Authorization: `Bearer ${token}` } },
+    { timeoutMs }
+  )
+  if (res.status === 401) {
+    throw new ArgoCDCredentialError(
+      `ArgoCD request rejected (HTTP ${res.status}): check ARGOCD_TOKEN`
+    )
+  }
+  return res
+}
+
+async function loadArgoApps(): Promise<ArgoApp[]> {
+  const cached = await cacheGet<ArgoApp[]>("argocd:apps")
+  if (cached) return cached
+  const res = await argoFetch("/api/v1/applications")
+  if (!res.ok) throw new Error(`ArgoCD API failed: ${res.status}`)
+  const data = await readJsonWithPolicy<{ items?: ArgoApp[] }>(res)
+  const apps: ArgoApp[] = (data.items ?? []).filter((a: ArgoApp) => !HIDDEN_APPS.includes(a.metadata.name))
+  await cacheSet("argocd:apps", apps, 10)
+  return apps
+}
+
+export async function getArgoAppsOrThrow(): Promise<ArgoApp[]> {
+  return loadArgoApps()
+}
+
+// D1 (#54 review): read helpers keep their pre-existing non-throwing contracts —
+// getArgoApps/getArgoApp swallow ArgoCDCredentialError into []/null, same as any
+// other connectivity failure, because callers assume that (governance/dora and
+// events/route Promise.all fan-outs, the unguarded architecture/service-graph SSE
+// reads). Only WRITE paths (syncArgoApp/rollbackArgoApp below) throw it, so a
+// caller mutating state can fail closed and surface a 503 instead of silently
+// no-opping. argoFetch still throws internally so this catch can log credential
+// rejection distinctly from a plain connectivity failure.
+export async function getArgoApps(): Promise<ArgoApp[]> {
+  try {
+    return await loadArgoApps()
+  } catch (err) {
+    if (err instanceof ArgoCDCredentialError) {
+      console.error("[argocd] credential rejected/missing — check ARGOCD_TOKEN", err.message)
+      return []
+    }
+    console.warn("[argocd] Connection failed, returning empty:", (err as Error).message)
+    return []
+  }
+}
+
+export async function getArgoApp(name: string): Promise<ArgoApp | null> {
+  const cacheKey = `argocd:app:${name}`
+  const cached = await cacheGet<ArgoApp>(cacheKey)
+  if (cached) return cached
+
+  try {
+    const res = await argoFetch(`/api/v1/applications/${encodeURIComponent(name)}`)
+    if (!res.ok) return null
+    const app: ArgoApp = await readJsonWithPolicy<ArgoApp>(res)
+    await cacheSet(cacheKey, app, 10)
+    return app
+  } catch (err) {
+    if (err instanceof ArgoCDCredentialError) {
+      console.error("[argocd] credential rejected/missing — check ARGOCD_TOKEN", err.message)
+      return null
+    }
+    return null
+  }
+}
+
+/**
+ * #47: strict counterpart of getArgoApp for WRITE preconditions. Returns null only
+ * for an explicit 404 (app does not exist); credential rejection, 403, other non-2xx,
+ * timeout/network failure and a body that is not an Application all throw, because
+ * they are unknown provider state, not "app is absent". getArgoApp keeps its
+ * non-throwing contract for read fan-outs (D1, #54 review).
+ */
+const isPlainObject = (v: unknown): v is Record<string, unknown> =>
+  typeof v === "object" && v !== null && !Array.isArray(v)
+
+async function getArgoAppOrThrow(name: string): Promise<ArgoApp | null> {
+  const cacheKey = `argocd:app:${name}`
+  const cached = await cacheGet<ArgoApp>(cacheKey)
+  if (cached) return cached
+
+  const res = await argoFetch(`/api/v1/applications/${encodeURIComponent(name)}`)
+  if (res.status === 404) return null
+  if (res.status === 403) throw new ArgoForbiddenError("ArgoCD denied access to the application")
+  if (!res.ok) throw new Error(`ArgoCD application lookup failed: ${res.status}`)
+  const app = await readJsonWithPolicy<ArgoApp>(res)
+  // status is deliberately not required: a brand-new Application has none until the first reconcile;
+  // spec.project/destination are enforced (fail closed) where assertAppAccessible reads them.
+  if (!isPlainObject(app) || !isPlainObject(app.metadata) || typeof app.metadata.name !== "string" || !app.metadata.name || !isPlainObject(app.spec)) {
+    throw new Error("ArgoCD application lookup returned a malformed Application")
+  }
+  await cacheSet(cacheKey, app, 10)
+  return app
+}
+
+export type ScoreTier = "gold" | "silver" | "bronze" | "none"
+
+export interface CatalogService {
+  name: string
+  project: string
+  namespace: string
+  repoURL: string
+  revision: string
+  syncStatus: string
+  healthStatus: string
+  lastDeployed: string | null
+  resourceCount: number
+  owner?: string
+  runbookUrl?: string
+  scoreTier?: ScoreTier
+  scoreValue?: number
+  /** portal#31: set by callers that have team-mapping context (appToCatalogService
+   * itself has none) — null when project/namespace ownership agree or neither is
+   * mapped, otherwise the ownership disagreement. See role-filter.ts's
+   * findOwnershipMismatch. */
+  ownershipMismatch?: OwnershipMismatch | null
+}
+
+export function appToCatalogService(app: ArgoApp): CatalogService {
+  const lastHistory = app.status.history?.at(-1)
+  const annotations = app.metadata.annotations ?? {}
+  return {
+    name: app.metadata.name,
+    project: app.spec.project ?? "default",
+    namespace: app.spec.destination?.namespace ?? "default",
+    repoURL: app.spec.source?.repoURL ?? "",
+    revision: app.status.sync.revision?.slice(0, 7) ?? lastHistory?.revision?.slice(0, 7) ?? "-",
+    syncStatus: app.status.sync.status,
+    healthStatus: app.status.health.status,
+    lastDeployed: lastHistory?.deployedAt ?? app.status.operationState?.finishedAt ?? null,
+    resourceCount: app.status.resources?.length ?? 0,
+    owner: annotations["narwhal.io/owner"],
+    runbookUrl: annotations["narwhal.io/runbook"],
+  }
+}
+
+export interface SyncResult {
+  name: string
+  syncStatus: string
+  revision: string | null
+}
+
+/**
+ * portal#59: the ArgoCD sync/rollback POST response reflects the moment the
+ * operation was *accepted*, not that it *converged* -- ArgoCD reconciles
+ * asynchronously and status.operationState.phase only reaches a terminal
+ * value once the operation actually finishes. Callers must re-read the app
+ * (bypassing the cache populated by earlier GETs) and check this before
+ * reporting verified success.
+ */
+export type OperationOutcome = "converged" | "failed" | "pending"
+
+/**
+ * portal#59 review: an earlier version of this function only special-cased
+ * "Succeeded" and returned false for everything else, including terminal
+ * "Failed"/"Error" phases -- callers treated that bare false as pending:true,
+ * silently reporting real failures as still-in-progress. Distinguish the three
+ * outcomes explicitly so a failed operation is never mistaken for a pending one.
+ */
+export function getOperationOutcome(app: ArgoApp): OperationOutcome {
+  const phase = app.status.operationState?.phase
+  if (phase === "Succeeded") return app.status.sync.status === "Synced" ? "converged" : "pending"
+  if (phase === "Failed" || phase === "Error") return "failed"
+  return "pending"
+}
+
+/** @deprecated use getOperationOutcome() -- kept only so any lingering caller fails loud, not silent. */
+export function isOperationConverged(app: ArgoApp): boolean {
+  return getOperationOutcome(app) === "converged"
+}
+
+/** Re-reads an app's live status, bypassing any cached copy from before the mutation. */
+export async function getArgoAppFresh(name: string): Promise<ArgoApp | null> {
+  const cacheKey = `argocd:app:${name}`
+  await cacheDel(cacheKey)
+  return getArgoApp(name)
+}
+
+export async function syncArgoApp(name: string): Promise<SyncResult> {
+  const token = getArgoToken()
+  // POST is a mutation (triggers a real sync) — never auto-retried, even on a
+  // 502/503/504, so the shared client's retry gate never engages here anyway;
+  // `retry: false` just makes that explicit instead of relying on the method
+  // check alone.
+  const res = await fetchWithPolicy(
+    `${argocdUrl()}/api/v1/applications/${encodeURIComponent(name)}/sync`,
+    {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    },
+    { timeoutMs: 10000, retry: false }
+  )
+
+  if (res.status === 401) {
+    throw new ArgoCDCredentialError(
+      `ArgoCD sync rejected (HTTP ${res.status}): check ARGOCD_TOKEN`
+    )
+  }
+
+  if (!res.ok) {
+    const body = await readTextWithPolicy(res).catch(() => "")
+    throw new Error(`ArgoCD sync failed: ${res.status} ${body}`.trim())
+  }
+
+  const app: ArgoApp = await readJsonWithPolicy<ArgoApp>(res)
+  return {
+    name: app.metadata.name,
+    syncStatus: app.status.sync.status,
+    revision: app.status.sync.revision?.slice(0, 7) ?? app.status.history?.at(-1)?.revision?.slice(0, 7) ?? null,
+  }
+}
+
+/** #47: ArgoCD answered the rollback POST with a 4xx (other than 401/403): it did NOT accept it. */
+export class ArgoRollbackRejectedError extends Error {
+  constructor(readonly status: number) {
+    super(`ArgoCD rejected the rollback (HTTP ${status})`)
+    this.name = "ArgoRollbackRejectedError"
+  }
+}
+
+/**
+ * #47: the POST was sent but its result is unknown (timeout, network error, 5xx, 408 or an
+ * unreadable 2xx body) -- ArgoCD may already have applied the rollback. Callers must verify
+ * via app status and must not blindly retry. Message is fixed: the http-client error text
+ * carries the ArgoCD host, which must not reach logs/responses.
+ */
+export class ArgoRollbackOutcomeUnknownError extends Error {
+  constructor() {
+    super("ArgoCD rollback outcome unknown; verify the application status before retrying")
+    this.name = "ArgoRollbackOutcomeUnknownError"
+  }
+}
+
+/**
+ * Resolves true only when ArgoCD accepted the rollback with a 2xx body that is the requested Application (accepted,
+ * not yet verified converged). Everything else throws a classified error: 401 ->
+ * ArgoCDCredentialError, 403 -> ArgoForbiddenError, other 4xx -> ArgoRollbackRejectedError,
+ * unknown outcome -> ArgoRollbackOutcomeUnknownError. Never returns false, so a provider
+ * failure cannot be read as "ArgoCD said no". POST is never retried.
+ */
+export async function rollbackArgoApp(name: string, id: number): Promise<boolean> {
+  const token = getArgoToken()
+  let res: Response
+  try {
+    // Inherits the shared client's 10s timeout (matching syncArgoApp); POST, so never retried.
+    res = await fetchWithPolicy(
+      `${argocdUrl()}/api/v1/applications/${encodeURIComponent(name)}/rollback`,
+      {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ id }),
+      },
+      { timeoutMs: 10000, retry: false }
+    )
+  } catch {
+    throw new ArgoRollbackOutcomeUnknownError()
+  }
+  if (res.status === 401) {
+    throw new ArgoCDCredentialError(
+      `ArgoCD rollback rejected (HTTP ${res.status}): check ARGOCD_TOKEN`
+    )
+  }
+  if (res.status === 403) throw new ArgoForbiddenError("ArgoCD denied the rollback")
+  if (res.status >= 400 && res.status < 500 && res.status !== 408) {
+    throw new ArgoRollbackRejectedError(res.status)
+  }
+  if (!res.ok) throw new ArgoRollbackOutcomeUnknownError()
+  try {
+    const app = await readJsonWithPolicy<ArgoApp>(res)
+    // Must be THIS app's object with a spec; status is not required (a never-synced app has none).
+    if (!isPlainObject(app) || !isPlainObject(app.metadata) || app.metadata.name !== name || !isPlainObject(app.spec)) {
+      throw new Error("malformed")
+    }
+  } catch {
+    throw new ArgoRollbackOutcomeUnknownError()
+  }
+  return true
+}
+
+// ---------------------------------------------------------------------------
+// H-3: Project-scope authorization
+// ---------------------------------------------------------------------------
+
+export type ArgoActorRole = "cluster-admin" | "developer" | "viewer" | "guest"
+
+export interface ArgoActor {
+  role: ArgoActorRole
+  groups?: string[]
+  /** OIDC team claims — same field getEffectiveScope reads for narwhal.io/team ownership. */
+  teams?: string[]
+}
+
+export class ArgoForbiddenError extends Error {
+  readonly status = 403 as const
+  constructor(message: string) {
+    super(message)
+    this.name = "ArgoForbiddenError"
+  }
+}
+
+export class ArgoNotFoundError extends Error {
+  readonly status = 404 as const
+  constructor(message: string) {
+    super(message)
+    this.name = "ArgoNotFoundError"
+  }
+}
+
+/**
+ * Returns the set of ArgoCD projects an actor is allowed to act upon.
+ * - cluster-admin: unrestricted (returns null = wildcard)
+ * - developer: union of `ARGOCD_DEVELOPER_PROJECTS` env + role-filter.json mapping
+ * - viewer / guest: empty
+ */
+export function getAllowedProjects(actor: ArgoActor): Set<string> | null {
+  if (actor.role === "cluster-admin") return null // unrestricted
+  if (actor.role !== "developer") return new Set()
+
+  const allowed = new Set<string>(DEVELOPER_PROJECTS)
+  const claims = [...(actor.groups ?? []), ...(actor.teams ?? [])]
+  if (claims.length > 0) {
+    const scope = getUserScope(claims)
+    for (const p of scope.argocdProjects) allowed.add(p)
+  }
+  return allowed
+}
+
+/**
+ * Asserts that the actor is allowed to operate on the given app's project AND its
+ * actual destination namespace.
+ *
+ * #37: the project check alone is not enough. `tenants` is a single ArgoCD project
+ * shared by every team's namespaces (narwhal gitops/resources/argocd-projects.yaml),
+ * so an actor mapped to the `tenants` project would pass the project check for an
+ * Application destined at ANY tenant namespace, including one their team does not
+ * own. This mirrors the read-side check appVisible/namespaceVisible already do in
+ * scope.ts, but as an AND (both project and namespace must be in scope) rather than
+ * appVisible's OR (visibility only needs one) — this gates a write, not a read.
+ *
+ * Throws ArgoForbiddenError or ArgoNotFoundError on failure.
+ */
+export async function assertAppAccessible(name: string, actor: ArgoActor): Promise<ArgoApp> {
+  const app = await getArgoAppOrThrow(name)
+  if (!app) throw new ArgoNotFoundError(`Application not found: ${name}`)
+  const project = app.spec.project ?? "default"
+  const allowed = getAllowedProjects(actor)
+  if (allowed === null) return app // cluster-admin
+  if (!allowed.has(project)) {
+    throw new ArgoForbiddenError(
+      `Forbidden: actor not authorized for ArgoCD project '${project}'`,
+    )
+  }
+
+  const destNamespace = app.spec.destination?.namespace
+  const scope = await getEffectiveScope({ groups: actor.groups ?? [], teams: actor.teams ?? [] })
+  if (!destNamespace || !namespaceVisible(destNamespace, scope)) {
+    throw new ArgoForbiddenError(
+      `Forbidden: actor not authorized for namespace '${destNamespace ?? "unknown"}'`,
+    )
+  }
+  return app
+}
+
+export async function getArgoStatus() {
+  const apps = await getArgoApps()
+  return {
+    total: apps.length,
+    synced: apps.filter((a) => a.status.sync.status === "Synced").length,
+    outOfSync: apps.filter((a) => a.status.sync.status === "OutOfSync").length,
+    degraded: apps.filter((a) => a.status.health.status === "Degraded").length,
+    healthy: apps.filter((a) => a.status.health.status === "Healthy").length,
+  }
+}

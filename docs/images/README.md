@@ -12,7 +12,7 @@ section. Overwrite these same-named PNGs with fresh captures to update the READM
 | `portal-governance.png`   | Governance — scorecard / DORA / distribution |
 | `portal-catalog.png`      | Catalog — self-service application catalog |
 
-Full portal UI source & gallery: **[narwhal-portal](https://github.com/dasomel/narwhal-portal)**.
+Full portal UI source & gallery: **[`portal/`](../../portal/)** in this repo.
 
 ## Capture tips
 

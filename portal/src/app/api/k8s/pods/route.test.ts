@@ -1,0 +1,111 @@
+import { describe, expect, it, vi, beforeEach } from "vitest"
+import { NextRequest } from "next/server"
+import type { NamespaceInfo, PodSummary } from "@/lib/k8s-client"
+
+// portal#33: /api/k8s/pods gates cross-namespace reads via
+// assertK8sNamespace -> getEffectiveScope -> namespaceVisible, but had no
+// route-level test exercising an out-of-scope namespace request. See
+// src/app/api/catalog/route.test.ts for the mocking rationale (auth mocked
+// wholesale; scope.ts left real).
+vi.mock("@/lib/auth", () => ({ auth: vi.fn() }))
+vi.mock("@/lib/valkey", () => ({ cacheGet: vi.fn(), cacheGetWithMeta: vi.fn(), cacheSet: vi.fn() }))
+vi.mock("@/lib/k8s-client", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/k8s-client")>()
+  return { ...actual, getNamespaces: vi.fn(), getPodsList: vi.fn() }
+})
+
+const { auth } = await import("@/lib/auth")
+const { cacheGet, cacheGetWithMeta, cacheSet } = await import("@/lib/valkey")
+const { getNamespaces, getPodsList } = await import("@/lib/k8s-client")
+const { GET } = await import("./route")
+
+const platformTeamSession = { groups: ["developer"], teams: ["platform-team"], user: { role: "developer" } }
+const frontendTeamSession = { groups: ["developer"], teams: ["frontend-team"], user: { role: "developer" } }
+const adminSession = { groups: ["cluster-admin"], teams: [], user: { role: "cluster-admin" } }
+// No role/team claim resolves to role-filter.ts's branch 4 (guest / no mapping):
+// hasMapping=false, namespaces=[] — denied regardless of which namespace is asked for.
+const unscopedSession = { groups: [], teams: [], user: { role: "guest" } }
+
+const namespaces: NamespaceInfo[] = [
+  { name: "platform-system", status: "Active", labels: {}, createdAt: "2026-01-01T00:00:00Z" },
+  { name: "frontend-app", status: "Active", labels: {}, createdAt: "2026-01-01T00:00:00Z" },
+]
+
+const pods: PodSummary[] = [
+  { name: "pod-1", namespace: "platform-system", phase: "Running", ready: "1/1", restarts: 0, node: "node-1", age: "1d", images: ["nginx:1"] },
+]
+
+function req(namespace: string) {
+  return new NextRequest(`http://localhost/api/k8s/pods?namespace=${namespace}`)
+}
+
+beforeEach(() => {
+  vi.clearAllMocks()
+  vi.mocked(getNamespaces).mockResolvedValue(namespaces)
+  vi.mocked(getPodsList).mockResolvedValue(pods)
+  vi.mocked(cacheGet).mockResolvedValue(null)
+  vi.mocked(cacheGetWithMeta).mockResolvedValue(null)
+  vi.mocked(cacheSet).mockResolvedValue(undefined)
+})
+
+describe("GET /api/k8s/pods — scope enforcement", () => {
+  it("403s a cross-namespace request outside the caller's team scope", async () => {
+    vi.mocked(auth).mockResolvedValue(frontendTeamSession as never)
+    const res = await GET(req("platform-system"))
+    expect(res.status).toBe(403)
+    expect(getPodsList).not.toHaveBeenCalled()
+  })
+
+  it("200s a request for the caller's own namespace (positive control)", async () => {
+    vi.mocked(auth).mockResolvedValue(platformTeamSession as never)
+    const res = await GET(req("platform-system"))
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.pods).toEqual(pods)
+    expect(body.freshness.source).toBe("live")
+    expect(getPodsList).toHaveBeenCalledWith("platform-system", undefined)
+  })
+
+  it("401s an unauthenticated caller", async () => {
+    vi.mocked(auth).mockResolvedValue(null as never)
+    const res = await GET(req("platform-system"))
+    expect(res.status).toBe(401)
+  })
+
+  it("200s cluster-admin reading a namespace no team mapping grants them (fleet visibility)", async () => {
+    vi.mocked(auth).mockResolvedValue(adminSession as never)
+    const res = await GET(req("frontend-app"))
+    expect(res.status).toBe(200)
+    expect(getPodsList).toHaveBeenCalledWith("frontend-app", undefined)
+  })
+
+  it("403s a caller with no team mapping and no role default (unscoped non-admin)", async () => {
+    vi.mocked(auth).mockResolvedValue(unscopedSession as never)
+    const res = await GET(req("platform-system"))
+    expect(res.status).toBe(403)
+    expect(getPodsList).not.toHaveBeenCalled()
+  })
+
+  it("keys the cache per-namespace so one namespace's cached pods never answer another's request", async () => {
+    const frontendPods: PodSummary[] = [
+      { name: "pod-2", namespace: "frontend-app", phase: "Running", ready: "1/1", restarts: 0, node: "node-2", age: "2d", images: ["nginx:2"] },
+    ]
+    vi.mocked(cacheGetWithMeta).mockImplementation(async (key: string) => {
+      if (key === "k8s:pods:platform-system:all") return { value: pods, cachedAt: "2026-09-28T00:00:00.000Z", ageSeconds: 0 }
+      if (key === "k8s:pods:frontend-app:all") return { value: frontendPods, cachedAt: "2026-09-28T00:00:00.000Z", ageSeconds: 0 }
+      return null
+    })
+    vi.mocked(auth).mockResolvedValue(adminSession as never)
+
+    const platformRes = await GET(req("platform-system"))
+    const frontendRes = await GET(req("frontend-app"))
+
+    const platformBody = await platformRes.json()
+    const frontendBody = await frontendRes.json()
+    expect(platformBody.pods).toEqual(pods)
+    expect(frontendBody.pods).toEqual(frontendPods)
+    expect(platformBody.freshness).toEqual({ source: "cache", observedAt: "2026-09-28T00:00:00.000Z" })
+    // Both served from cache — the upstream list call never ran for either namespace.
+    expect(getPodsList).not.toHaveBeenCalled()
+  })
+})

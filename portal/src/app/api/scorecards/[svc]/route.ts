@@ -1,0 +1,142 @@
+import { NextRequest, NextResponse } from "next/server"
+import { requireRole } from "@/lib/auth"
+import { getArgoApp, appToCatalogService } from "@/lib/argocd"
+import { evaluateService, loadRules } from "@/lib/scorecard"
+import { appVisible, getEffectiveScope } from "@/lib/scope"
+
+export const dynamic = "force-dynamic"
+
+export interface ScorecardDetailResponse {
+  service: { id: string; name: string; namespace: string; owner?: string }
+  score: number
+  tier: "gold" | "silver" | "bronze" | "none"
+  evaluatedAt: string
+  evaluationComplete: boolean
+  rules: Array<{
+    id: string
+    name: string
+    description: string
+    weight: number
+    status: "pass" | "fail" | "unavailable"
+    failReason?: string
+    actionUrl?: string
+  }>
+}
+
+export async function GET(
+  _req: NextRequest,
+  { params }: { params: Promise<{ svc: string }> },
+) {
+  const gate = await requireRole("cluster-admin", "developer", "viewer")
+  if ("error" in gate) {
+    return NextResponse.json(
+      { error: gate.error === "unauthorized" ? "Unauthorized" : "Forbidden" },
+      { status: gate.error === "unauthorized" ? 401 : 403 },
+    )
+  }
+
+  const { svc } = await params
+
+  // ConfigMap 없으면 503
+  let rulesDoc
+  try {
+    rulesDoc = await loadRules()
+  } catch (err) {
+    const msg = (err as Error).message ?? ""
+    const isNotFound =
+      (err as NodeJS.ErrnoException).code === "NOT_FOUND" || msg.includes("404")
+    if (isNotFound) {
+      return NextResponse.json(
+        { error: "Source unavailable", source: "configmap", message: "Scorecard rules ConfigMap not found" },
+        { status: 503 },
+      )
+    }
+    return NextResponse.json(
+      { error: "Source unavailable", source: "configmap", message: msg },
+      { status: 503 },
+    )
+  }
+
+  try {
+    const [app, evaluation] = await Promise.all([
+      getArgoApp(svc),
+      evaluateService(svc),
+    ])
+
+    if (!app) {
+      return NextResponse.json({ error: "Service not found" }, { status: 404 })
+    }
+
+    // portal#31: same by-name scope bypass as /api/catalog/[name] — a guessed
+    // service id returned full scorecard detail regardless of team ownership.
+    const scope = await getEffectiveScope(gate.session)
+    if (!appVisible(app.spec.project ?? "default", app.spec.destination?.namespace ?? app.metadata.namespace ?? "default", scope)) {
+      return NextResponse.json({ error: "Service not found" }, { status: 404 })
+    }
+
+    const catalogSvc = appToCatalogService(app)
+
+    // Build ruleMap for name + ArgoCD deep link
+    const ruleMap = new Map(rulesDoc.rules.map((r) => [r.id, r]))
+    const argocdUrl = process.env.ARGOCD_URL ?? ""
+
+    const passedIds = new Set(evaluation.passed.map((p) => p.ruleId))
+    const failedMap = new Map(evaluation.failed.map((f) => [f.ruleId, f.reason]))
+    const unavailableMap = new Map(evaluation.unavailable.map((u) => [u.ruleId, u.reason]))
+
+    const rules = rulesDoc.rules.map((rule) => {
+      const pass = passedIds.has(rule.id)
+      const unavailableReason = unavailableMap.get(rule.id)
+      const failReason = failedMap.get(rule.id)
+      const status: "pass" | "fail" | "unavailable" = pass
+        ? "pass"
+        : unavailableReason !== undefined
+          ? "unavailable"
+          : "fail"
+
+      let actionUrl: string | undefined
+      if (status === "fail") {
+        const check = rule.check
+        if (check.type === "argocd-status" || check.type === "argocd-history") {
+          actionUrl = `${argocdUrl}/applications/${svc}`
+        } else if (catalogSvc.runbookUrl) {
+          actionUrl = catalogSvc.runbookUrl
+        }
+      }
+
+      return {
+        id: rule.id,
+        name: rule.name,
+        description: ruleMap.get(rule.id)?.name ?? rule.id,
+        weight: rule.weight,
+        status,
+        ...(failReason ? { failReason } : {}),
+        ...(unavailableReason ? { failReason: unavailableReason } : {}),
+        ...(actionUrl ? { actionUrl } : {}),
+      }
+    })
+
+    const response: ScorecardDetailResponse = {
+      service: {
+        id: svc,
+        name: catalogSvc.name,
+        namespace: catalogSvc.namespace,
+        owner: catalogSvc.owner,
+      },
+      score: evaluation.score,
+      tier: evaluation.tier,
+      evaluatedAt: evaluation.evaluatedAt,
+      evaluationComplete: evaluation.evaluationComplete,
+      rules,
+    }
+
+    return NextResponse.json(response)
+  } catch (err) {
+    const msg = (err as Error).message ?? ""
+    if (msg.includes("not found")) {
+      return NextResponse.json({ error: "Service not found" }, { status: 404 })
+    }
+    console.error("[api/scorecards/[svc]]", err)
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 })
+  }
+}

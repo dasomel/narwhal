@@ -1,0 +1,159 @@
+import { NextResponse } from "next/server"
+import { requireRole } from "@/lib/auth"
+import {
+  assertAppAccessible,
+  ArgoCDCredentialError,
+  ArgoForbiddenError,
+  ArgoNotFoundError,
+  ArgoRollbackOutcomeUnknownError,
+  ArgoRollbackRejectedError,
+  getArgoAppFresh,
+  getOperationOutcome,
+  rollbackArgoApp,
+} from "@/lib/argocd"
+import { assertK8sName, ValidationError, toValidationErrorBody } from "@/lib/validation"
+import { beginOperation, completeOperation, failOperation } from "@/lib/operation-context"
+import { invalidateFor } from "@/lib/cache-invalidation"
+
+export const dynamic = "force-dynamic"
+
+export async function POST(req: Request, { params }: { params: Promise<{ name: string }> }) {
+  const gate = await requireRole("cluster-admin")
+  if ("error" in gate) {
+    return NextResponse.json(
+      { error: gate.error === "unauthorized" ? "Unauthorized" : "Forbidden: cluster-admin only" },
+      { status: gate.error === "unauthorized" ? 401 : 403 }
+    )
+  }
+  const { session } = gate
+
+  const { name } = await params
+  try {
+    assertK8sName(name, "appName")
+  } catch (err) {
+    if (err instanceof ValidationError) {
+      return NextResponse.json(toValidationErrorBody(err), { status: 400 })
+    }
+    throw err
+  }
+  const body = await req.json().catch(() => ({}))
+  const idRaw = (body as { id?: unknown }).id
+  if (typeof idRaw !== "number" || !Number.isInteger(idRaw) || idRaw < 0) {
+    return NextResponse.json(
+      { error: "ValidationError", message: "id must be a non-negative integer", field: "id" },
+      { status: 400 },
+    )
+  }
+
+  try {
+    const app = await assertAppAccessible(name, {
+      role: session.user.role,
+      groups: session.groups,
+      teams: session.teams,
+    })
+    const ctx = await beginOperation({
+      request: req,
+      session,
+      operationType: "catalog.rollback",
+      source: "argocd",
+      resource: {
+        kind: "Application",
+        namespace: app.spec.destination?.namespace,
+        name,
+      },
+      title: `Catalog rollback started: ${name} to #${idRaw}`,
+    })
+
+    let ok = false
+    try {
+      ok = await rollbackArgoApp(name, idRaw)
+    } catch (err) {
+      await failOperation(
+        ctx,
+        `Catalog rollback failed: ${name}`,
+        // The event is stored and streamed to namespace-scoped viewers. Classified provider errors
+        // carry fixed text (credential/forbidden messages have no host); an untyped error's raw
+        // message may carry the ArgoCD host/URL, so it gets a fixed description (server log only).
+        err instanceof ArgoRollbackOutcomeUnknownError
+          ? "rollback outcome unknown (may have been applied)"
+          : err instanceof ArgoRollbackRejectedError
+            ? `ArgoCD rejected the rollback (HTTP ${err.status})`
+            : err instanceof ArgoCDCredentialError || err instanceof ArgoForbiddenError
+              ? err.message
+              : "rollback step failed: ArgoCD request failed",
+      )
+      throw err
+    }
+
+    if (!ok) {
+      await failOperation(
+        ctx,
+        `Catalog rollback failed: ${name}`,
+        `Rollback to #${idRaw} returned false`,
+      )
+      return NextResponse.json({ error: "Rollback failed" }, { status: 500 })
+    }
+
+    await invalidateFor("argocd.app.changed", { appName: name })
+
+    // portal#59: rollbackArgoApp only tells us ArgoCD accepted the rollback
+    // request (HTTP 2xx), not that reconciliation to the target revision
+    // finished. Re-read the app and check operationState.phase before
+    // claiming verified success.
+    const fresh = await getArgoAppFresh(name)
+    const outcome = fresh === null ? "pending" : getOperationOutcome(fresh)
+    if (outcome === "failed") {
+      const message = `rollback failed; operationState.phase=${fresh?.status.operationState?.phase ?? "unknown"}`
+      await failOperation(ctx, `Catalog rollback failed: ${name}`, message)
+      return NextResponse.json({ success: false, message }, { status: 502 })
+    }
+    if (outcome === "pending") {
+      await completeOperation(
+        ctx,
+        `Catalog rollback triggered (pending convergence): ${name}`,
+        `rollback accepted; operationState.phase=${fresh?.status.operationState?.phase ?? "unknown"}`,
+      )
+      return NextResponse.json({
+        success: true,
+        pending: true,
+        message: `Rollback triggered for ${name} to #${idRaw}; awaiting convergence`,
+      })
+    }
+
+    await completeOperation(
+      ctx,
+      `Catalog rollback completed: ${name}`,
+      `Rolled back ${name} to revision #${idRaw}`,
+    )
+
+    return NextResponse.json({ success: true, message: `Rollback triggered for ${name} to #${idRaw}` })
+  } catch (err) {
+    if (err instanceof ArgoNotFoundError) {
+      return NextResponse.json({ error: err.message }, { status: 404 })
+    }
+    if (err instanceof ArgoForbiddenError) {
+      return NextResponse.json({ error: err.message }, { status: 403 })
+    }
+    // #47: ArgoCD answered 4xx -> NOT accepted; surface its status class (400/404/409...).
+    if (err instanceof ArgoRollbackRejectedError) {
+      return NextResponse.json({ success: false, outcome: "rejected", error: err.message }, { status: err.status })
+    }
+    // #47: POST sent, result unknown -> the rollback MAY have been applied. 502 + outcome:"unknown"
+    // (not 500 "Rollback failed", not 200 pending: nothing was acknowledged). Clients verify via
+    // application status instead of blindly retrying.
+    if (err instanceof ArgoRollbackOutcomeUnknownError) {
+      return NextResponse.json({ success: false, outcome: "unknown", error: err.message }, { status: 502 })
+    }
+    // D1 (#54 review): the inner try/catch around rollbackArgoApp already recorded
+    // failOperation before rethrowing; this only maps the error to a response.
+    if (err instanceof ArgoCDCredentialError) {
+      const message = `Catalog rollback is unavailable: ${err.message}`
+      console.error("[api/catalog/rollback]", message)
+      return NextResponse.json({ error: message }, { status: 503 })
+    }
+    // Untyped errors (e.g. the precondition lookup's network error) carry the ArgoCD host/URL in
+    // err.message: log server-side only, return a fixed message.
+    console.error("[api/catalog/rollback]", err instanceof Error ? err.name : "unknown error")
+    return NextResponse.json({ error: "ArgoCD request failed" }, { status: 500 })
+  }
+}

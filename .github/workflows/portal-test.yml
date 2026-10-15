@@ -1,0 +1,242 @@
+name: Portal Unit Test Gate
+
+# D-MONO-CI ported from narwhal-portal test.yml. Decisions:
+#   D1  PATH-FILTER TRAP. This workflow hosts the merge-blocking contexts, so it must run on
+#       EVERY pull request: a workflow-level `paths:` filter leaves a required check pending
+#       forever on PRs that do not touch portal/. Instead a `changes` job (plain
+#       `git diff --name-only base...head`, no third-party action) decides whether portal/ was
+#       touched; the heavy jobs are skipped when it was not, and `Portal gate` (always runs)
+#       turns "skipped because untouched" into success and anything else into failure.
+#       The other portal-* workflows are NOT required checks, so they keep workflow-level
+#       `paths:` filters (a filtered-out advisory workflow blocks nobody).
+#   D2  `Portal gate` is the single context an admin should require on narwhal main.
+#       `Portal critical regression gate` is kept (same name, same script) as the detail job
+#       behind it, so portal's existing script and its node:test scenarios stay meaningful.
+#   D3  Fail closed: if `changes` itself fails, the gate fails (an empty output is never read
+#       as "untouched"). Unknown/zero base SHA (new branch push) counts as "portal touched".
+#   D4  Job-level working-directory: portal; pnpm/action-setup reads portal/package.json
+#       (`uses:` steps ignore `defaults.run`); cache keyed on portal/pnpm-lock.yaml.
+#   D6  The regression-gate job has NO job-level working-directory: its checkout is conditional,
+#       so only the post-checkout steps set it (static check: scripts/ci/check-workflow-workdir.py).
+#   D5  `pnpm install --frozen-lockfile --ignore-scripts`: narwhal's R245 guard forbids
+#       script-running installs. Safe here: pnpm-workspace.yaml already pins
+#       onlyBuiltDependencies: [] so no dependency script ever ran.
+#
+# Original rationale: runs typecheck, lint, and the Vitest regression suite (619+ tests
+# covering RBAC, cluster/team scope, event idempotency, and other security-critical paths)
+# on every pull request, including documentation, so a broken suite or lint error blocks
+# merge instead of only being discoverable by running it by hand. See portal #18.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+# Read-only: these jobs inspect the checkout and produce no artifact.
+permissions:
+  contents: read
+
+jobs:
+  changes:
+    name: Portal change filter
+    runs-on: ubuntu-latest
+    outputs:
+      portal: ${{ steps.filter.outputs.portal }}
+    steps:
+      # Full history: the three-dot diff needs the merge base of base and head.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Did this change touch portal/?
+        id: filter
+        shell: bash
+        env:
+          EVENT: ${{ github.event_name }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD: ${{ github.event.pull_request.head.sha }}
+          PUSH_BEFORE: ${{ github.event.before }}
+          PUSH_AFTER: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          base=""
+          head=""
+          case "$EVENT" in
+            pull_request) base="$PR_BASE"; head="$PR_HEAD" ;;
+            push) base="$PUSH_BEFORE"; head="$PUSH_AFTER" ;;
+          esac
+          # No usable range (manual run, new branch, force-push that dropped the old tip):
+          # run everything rather than guess.
+          if [ -z "$base" ] || [[ "$base" =~ ^0+$ ]] || ! git cat-file -e "${base}^{commit}" 2>/dev/null; then
+            echo "no comparable base for ${EVENT}; treating portal/ as touched"
+            echo "portal=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          files="$(git diff --name-only "${base}...${head}")"
+          echo "changed files:"
+          printf '%s\n' "$files"
+          # portal/ itself, or any portal-* workflow (a workflow edit must prove itself).
+          if grep -Eq '^(portal/|\.github/workflows/portal-)' <<< "$files"; then
+            echo "portal=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "portal=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  test:
+    name: Portal typecheck and unit/API tests
+    needs: changes
+    if: needs.changes.outputs.portal == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: portal
+    steps:
+      # Same allowlist rationale as portal-build-check.yml: block egress before checkout so
+      # a malicious install/build script cannot reach anything outside package
+      # registries and GitHub itself.
+      - uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
+        with:
+          egress-policy: block
+          allowed-endpoints: >
+            github.com:443
+            api.github.com:443
+            codeload.github.com:443
+            objects.githubusercontent.com:443
+            registry.npmjs.org:443
+            raw.githubusercontent.com:443
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        with:
+          package_json_file: portal/package.json
+
+      # Version comes from package.json "packageManager", matching portal-build-check.yml.
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: portal/pnpm-lock.yaml
+
+      - name: Install
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Type-check
+        run: pnpm typecheck
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Unit / API tests
+        run: pnpm test
+
+  browser-e2e:
+    name: Portal browser E2E
+    needs: changes
+    if: needs.changes.outputs.portal == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: portal
+    steps:
+      - uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
+        with:
+          egress-policy: block
+          allowed-endpoints: >
+            github.com:443
+            api.github.com:443
+            codeload.github.com:443
+            objects.githubusercontent.com:443
+            registry.npmjs.org:443
+            raw.githubusercontent.com:443
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        with:
+          package_json_file: portal/package.json
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: portal/pnpm-lock.yaml
+
+      - name: Install
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Browser E2E
+        run: pnpm test:e2e
+        env:
+          CI: true
+
+  regression-gate:
+    name: Portal critical regression gate
+    if: ${{ always() }}
+    needs: [changes, test, browser-e2e]
+    runs-on: ubuntu-latest
+    # No job-level working-directory on purpose (D6): checkout is skipped when portal/ is
+    # untouched, and a missing cwd fails a step before the shell even starts. Only the steps
+    # that run after checkout set working-directory: portal.
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: needs.changes.outputs.portal == 'true'
+
+      # D3: an unreadable filter is a failure, never "untouched".
+      - name: Change filter must have succeeded
+        if: needs.changes.result != 'success'
+        run: |
+          echo "::error::the portal change filter did not succeed (${{ needs.changes.result }})"
+          exit 1
+
+      - name: Portal untouched, suites intentionally skipped
+        if: needs.changes.result == 'success' && needs.changes.outputs.portal != 'true'
+        run: echo "portal/ is untouched by this change; the critical suites were skipped on purpose"
+
+      - name: Verify gate failure scenarios
+        if: needs.changes.outputs.portal == 'true'
+        working-directory: portal
+        run: node --test scripts/check-regression-results.node.mjs
+      - name: Require successful critical suites
+        if: needs.changes.outputs.portal == 'true'
+        working-directory: portal
+        run: node scripts/check-regression-results.mjs
+        env:
+          UNIT_API_RESULT: ${{ needs.test.result }}
+          BROWSER_RESULT: ${{ needs.browser-e2e.result }}
+
+  portal-gate:
+    name: Portal gate
+    if: ${{ always() }}
+    needs: [changes, test, browser-e2e, regression-gate]
+    runs-on: ubuntu-latest
+    steps:
+      # The one context to require on main (D2). untouched => the heavy jobs must be
+      # `skipped` (not failed/cancelled) and the filter must have succeeded; touched =>
+      # everything must be `success`. Any other combination fails.
+      - name: Aggregate
+        shell: bash
+        env:
+          CHANGES: ${{ needs.changes.result }}
+          PORTAL: ${{ needs.changes.outputs.portal }}
+          TEST: ${{ needs.test.result }}
+          E2E: ${{ needs.browser-e2e.result }}
+          REGRESSION: ${{ needs.regression-gate.result }}
+        run: |
+          set -euo pipefail
+          echo "changes=$CHANGES portal=$PORTAL test=$TEST e2e=$E2E regression=$REGRESSION"
+          [ "$CHANGES" = success ] || { echo "::error::change filter: $CHANGES"; exit 1; }
+          [ "$REGRESSION" = success ] || { echo "::error::critical regression gate: $REGRESSION"; exit 1; }
+          case "$PORTAL" in
+            true)
+              [ "$TEST" = success ] && [ "$E2E" = success ] \
+                || { echo "::error::portal touched but suites did not all succeed"; exit 1; } ;;
+            false)
+              [ "$TEST" = skipped ] && [ "$E2E" = skipped ] \
+                || { echo "::error::portal untouched but suites ran/failed unexpectedly"; exit 1; }
+              echo "portal/ untouched: gate passes" ;;
+            *) echo "::error::unreadable change filter output '${PORTAL}'"; exit 1 ;;
+          esac

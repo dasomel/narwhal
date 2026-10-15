@@ -1,0 +1,302 @@
+import { NextRequest, NextResponse } from "next/server"
+import { requireRole } from "@/lib/auth"
+import { cacheGetWithMeta, cacheSet } from "@/lib/valkey"
+import { getCluster, resolveClusterCredentials, clusterCacheKey, DEFAULT_CLUSTER_ID } from "@/lib/cluster-registry"
+
+export const dynamic = "force-dynamic"
+
+export interface ClusterInfra {
+  freshness: { source: "cache" | "live"; observedAt: string | null }
+  nodes: Array<{
+    name: string
+    status: "Ready" | "NotReady"
+    roles: string[]
+    cpu: { used: number | null; total: number; percent: number | null }
+    memory: { usedGi: number | null; totalGi: number; percent: number | null }
+    pods: { running: number; total: number }
+    kubeletVersion: string
+    osImage: string
+  }>
+  controlPlane: Array<{
+    name: string
+    status: "Running" | "Pending" | "Failed"
+    restarts: number
+    age: string
+  }>
+  namespaces: Array<{
+    name: string
+    podCount: number
+    status: "Active" | "Terminating"
+  }>
+  summary: {
+    totalNodes: number
+    readyNodes: number
+    totalPods: number
+    totalNamespaces: number
+    /** portal#52: true when the pod or namespace list hit its page cap — totals below are then a partial view. */
+    truncated: boolean
+  }
+}
+
+// Fallback used only when the DEFAULT_CLUSTER_ID cluster is registered but its
+// credentialRef env vars resolve to nothing (e.g. local dev with no .env) —
+// keeps this route's out-of-the-box behavior identical to before portal#21.
+const LEGACY_API_SERVER_FALLBACK = "https://192.168.56.100:6443"
+
+async function k8sFetch<T>(apiServer: string, token: string, path: string): Promise<T> {
+  const res = await fetch(`${apiServer}${path}`, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+      Accept: "application/json",
+    },
+    cache: "no-store",
+  })
+  if (!res.ok) throw new Error(`K8s API ${res.status}: ${path}`)
+  return res.json() as Promise<T>
+}
+
+// portal#52: this route resolves a per-request cluster's credentials (portal#21),
+// so it can't reuse k8s-client.ts's single-cluster listBounded — this is the same
+// continue-token-following shape, scoped to this route's own k8sFetch.
+const LIST_LIMIT = 500
+const LIST_MAX_PAGES = 20
+
+async function listBoundedFrom<T>(
+  apiServer: string,
+  token: string,
+  path: string,
+): Promise<{ items: T[]; truncated: boolean }> {
+  const items: T[] = []
+  let continueToken: string | undefined
+  let truncated = false
+  for (let page = 0; page < LIST_MAX_PAGES; page++) {
+    const params = new URLSearchParams({ limit: String(LIST_LIMIT) })
+    if (continueToken) params.set("continue", continueToken)
+    const sep = path.includes("?") ? "&" : "?"
+    const data = await k8sFetch<{ metadata?: { continue?: string }; items: T[] }>(
+      apiServer,
+      token,
+      `${path}${sep}${params.toString()}`,
+    )
+    items.push(...(data.items ?? []))
+    continueToken = data.metadata?.continue
+    if (!continueToken) break
+    if (page + 1 >= LIST_MAX_PAGES) truncated = true
+  }
+  return { items, truncated }
+}
+
+function parseCpuCores(cpuStr: string): number {
+  if (cpuStr.endsWith("n")) return parseInt(cpuStr) / 1_000_000_000
+  if (cpuStr.endsWith("m")) return parseInt(cpuStr) / 1000
+  return parseFloat(cpuStr)
+}
+
+function parseMemoryGi(memStr: string): number {
+  if (memStr.endsWith("Ki")) return parseInt(memStr) / (1024 * 1024)
+  if (memStr.endsWith("Mi")) return parseInt(memStr) / 1024
+  if (memStr.endsWith("Gi")) return parseFloat(memStr)
+  return parseInt(memStr) / (1024 * 1024 * 1024)
+}
+
+function calcAge(creationTimestamp: string): string {
+  const seconds = Math.floor((Date.now() - new Date(creationTimestamp).getTime()) / 1000)
+  if (seconds < 3600) return `${Math.floor(seconds / 60)}m`
+  if (seconds < 86400) return `${Math.floor(seconds / 3600)}h`
+  return `${Math.floor(seconds / 86400)}d`
+}
+
+export async function GET(request: NextRequest) {
+  // portal#33 follow-up: this is a fleet-wide node/pod/namespace dump, so it
+  // carries the same role gate as /api/metrics and /api/nodes — guest sessions
+  // only ever had it hidden client-side.
+  const gate = await requireRole("cluster-admin", "developer", "viewer")
+  if ("error" in gate) {
+    return NextResponse.json(
+      { error: gate.error === "unauthorized" ? "Unauthorized" : "Forbidden" },
+      { status: gate.error === "unauthorized" ? 401 : 403 }
+    )
+  }
+
+  // portal#21 pilot: this route now resolves an explicit cluster instead of
+  // reading process-global K8S_API_SERVER/K8S_SA_TOKEN directly. Defaulting to
+  // DEFAULT_CLUSTER_ID and falling back to the legacy env consts keeps
+  // behavior identical to before this change when no ?cluster_id= is given —
+  // the rest of k8s-client.ts's ~30 other functions still read the global env
+  // pair directly and are NOT migrated by this pass (see portal#21 tracking
+  // comment); this route is the one named in the issue's own triage.
+  const clusterId = request.nextUrl.searchParams.get("cluster_id") ?? DEFAULT_CLUSTER_ID
+  const cluster = await getCluster(clusterId)
+  if (!cluster) {
+    return NextResponse.json({ error: "ValidationError", message: `cluster '${clusterId}' is not registered`, field: "cluster_id" }, { status: 400 })
+  }
+  const credentials = resolveClusterCredentials(cluster)
+  const apiServer = credentials?.apiServer ?? (clusterId === DEFAULT_CLUSTER_ID ? LEGACY_API_SERVER_FALLBACK : null)
+  if (!apiServer) {
+    return NextResponse.json({ error: "cluster credentials are not configured", cluster_id: clusterId }, { status: 503 })
+  }
+  const token = credentials?.token ?? ""
+
+  const cacheKey = clusterCacheKey(clusterId, "infra")
+  const cached = await cacheGetWithMeta<ClusterInfra>(cacheKey)
+  if (cached) return NextResponse.json({ ...cached.value, freshness: { source: "cache", observedAt: cached.cachedAt } })
+
+  try {
+    type NodeList = {
+      items: Array<{
+        metadata: { name: string; labels?: Record<string, string>; creationTimestamp: string }
+        status: {
+          conditions: Array<{ type: string; status: string }>
+          allocatable: Record<string, string>
+          nodeInfo: { kubeletVersion: string; osImage: string }
+        }
+      }>
+    }
+
+    type NodeMetricsList = {
+      items: Array<{
+        metadata: { name: string }
+        usage: Record<string, string>
+      }>
+    }
+
+    type PodList = {
+      items: Array<{
+        metadata: { name: string; namespace: string; creationTimestamp: string }
+        spec: { nodeName?: string }
+        status: {
+          phase: string
+          containerStatuses?: Array<{ restartCount: number }>
+        }
+      }>
+    }
+
+    type NamespaceList = {
+      items: Array<{
+        metadata: { name: string }
+        status: { phase: string }
+      }>
+    }
+
+    const [nodesResult, nodeMetricsResult, controlPlanePodResult, allPodsResult, namespacesResult] =
+      await Promise.allSettled([
+        k8sFetch<NodeList>(apiServer, token, "/api/v1/nodes"),
+        k8sFetch<NodeMetricsList>(apiServer, token, "/apis/metrics.k8s.io/v1beta1/nodes"),
+        k8sFetch<PodList>(apiServer, token, "/api/v1/namespaces/kube-system/pods?labelSelector=tier=control-plane"),
+        // portal#52: cluster-wide pods/namespaces were single unbounded LISTs — bounded
+        // via listBoundedFrom (limit + continue-following) so a large cluster can't
+        // return an uncapped response here.
+        listBoundedFrom<PodList["items"][number]>(apiServer, token, "/api/v1/pods"),
+        listBoundedFrom<NamespaceList["items"][number]>(apiServer, token, "/api/v1/namespaces"),
+      ])
+
+    const rawNodes = nodesResult.status === "fulfilled" ? nodesResult.value.items : []
+    const metricsMap = new Map<string, { cpu: string; memory: string }>()
+    if (nodeMetricsResult.status === "fulfilled") {
+      for (const m of nodeMetricsResult.value.items) {
+        metricsMap.set(m.metadata.name, m.usage as { cpu: string; memory: string })
+      }
+    }
+
+    const allPods = allPodsResult.status === "fulfilled" ? allPodsResult.value.items : []
+    const podCountByNode = new Map<string, { running: number; total: number }>()
+    for (const pod of allPods) {
+      const node = pod.spec.nodeName ?? ""
+      const cur = podCountByNode.get(node) ?? { running: 0, total: 0 }
+      cur.total++
+      if (pod.status.phase === "Running") cur.running++
+      podCountByNode.set(node, cur)
+    }
+
+    const nodes: ClusterInfra["nodes"] = rawNodes.map((n) => {
+      const isReady = n.status.conditions.some((c) => c.type === "Ready" && c.status === "True")
+      const rawRoles = Object.keys(n.metadata.labels ?? {})
+        .filter((l) => l.startsWith("node-role.kubernetes.io/"))
+        .map((l) => l.replace("node-role.kubernetes.io/", ""))
+        .map((r) => (r === "master" ? "control-plane" : r))
+      const roles = Array.from(new Set(rawRoles))
+      if (roles.length === 0) roles.push("worker")
+
+      const totalCpu = parseCpuCores(n.status.allocatable.cpu ?? "0")
+      const totalMemGi = parseMemoryGi(n.status.allocatable.memory ?? "0")
+      const usage = metricsMap.get(n.metadata.name)
+      const usedCpu = usage ? parseCpuCores(usage.cpu) : null
+      const usedMemGi = usage ? parseMemoryGi(usage.memory) : null
+
+      return {
+        name: n.metadata.name,
+        status: isReady ? "Ready" : "NotReady",
+        roles,
+        cpu: {
+          used: usedCpu !== null ? Math.round(usedCpu * 1000) / 1000 : null,
+          total: Math.round(totalCpu * 1000) / 1000,
+          percent: usedCpu !== null && totalCpu > 0 ? Math.round((usedCpu / totalCpu) * 100) : null,
+        },
+        memory: {
+          usedGi: usedMemGi !== null ? Math.round(usedMemGi * 100) / 100 : null,
+          totalGi: Math.round(totalMemGi * 100) / 100,
+          percent: usedMemGi !== null && totalMemGi > 0 ? Math.round((usedMemGi / totalMemGi) * 100) : null,
+        },
+        pods: podCountByNode.get(n.metadata.name) ?? { running: 0, total: 0 },
+        kubeletVersion: n.status.nodeInfo.kubeletVersion,
+        osImage: n.status.nodeInfo.osImage,
+      }
+    })
+
+    const controlPlane: ClusterInfra["controlPlane"] =
+      controlPlanePodResult.status === "fulfilled"
+        ? controlPlanePodResult.value.items.map((p) => {
+            const restarts = p.status.containerStatuses?.reduce((s, c) => s + c.restartCount, 0) ?? 0
+            const phaseMap: Record<string, "Running" | "Pending" | "Failed"> = {
+              Running: "Running",
+              Pending: "Pending",
+              Failed: "Failed",
+            }
+            return {
+              name: p.metadata.name.replace(/-[^-]+$/, ""),
+              status: phaseMap[p.status.phase] ?? "Pending",
+              restarts,
+              age: calcAge(p.metadata.creationTimestamp),
+            }
+          })
+        : []
+
+    const rawNamespaces = namespacesResult.status === "fulfilled" ? namespacesResult.value.items : []
+    const podCountByNs = new Map<string, number>()
+    for (const pod of allPods) {
+      const ns = pod.metadata.namespace
+      podCountByNs.set(ns, (podCountByNs.get(ns) ?? 0) + 1)
+    }
+
+    const namespaces: ClusterInfra["namespaces"] = rawNamespaces.map((ns) => ({
+      name: ns.metadata.name,
+      podCount: podCountByNs.get(ns.metadata.name) ?? 0,
+      status: (ns.status.phase === "Terminating" ? "Terminating" : "Active") as "Active" | "Terminating",
+    }))
+
+    const readyNodes = nodes.filter((n) => n.status === "Ready").length
+    const totalPods = allPods.length
+
+    const result: ClusterInfra = {
+      freshness: { source: "live", observedAt: new Date().toISOString() },
+      nodes,
+      controlPlane,
+      namespaces,
+      summary: {
+        totalNodes: nodes.length,
+        readyNodes,
+        totalPods,
+        totalNamespaces: namespaces.length,
+        truncated:
+          (allPodsResult.status === "fulfilled" && allPodsResult.value.truncated) ||
+          (namespacesResult.status === "fulfilled" && namespacesResult.value.truncated),
+      },
+    }
+
+    await cacheSet(cacheKey, result, 30)
+    return NextResponse.json(result)
+  } catch (err) {
+    console.error("[api/cluster]", err)
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 })
+  }
+}

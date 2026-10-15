@@ -7,6 +7,8 @@ import argparse
 import re
 from pathlib import Path
 
+import yaml
+
 ROOT = Path(__file__).resolve().parents[3]
 GITOPS = ROOT / "gitops/charts/narwhal-platform/templates/argocd-config.yaml"
 BOOTSTRAP = ROOT / "scripts/cluster/13-argocd.sh"
@@ -75,6 +77,107 @@ def rbac_declarations(text: str) -> int:
     return count
 
 
+# D3: line regexes cannot follow YAML notation (flow style, tags, escapes, `? key`), so the
+# sources are pinned structurally too: exact document counts (any new document changes the
+# count whatever its notation) and the PARSED argocd-rbac-cm data. Cost: adding a document
+# to either source needs a matching bump here. Escape: update these pins with the source.
+GITOPS_DOCS = 3
+BOOTSTRAP_HEREDOC_DOCS = [1, 1, 1, 1, 1]  # per heredoc, in file order
+RBAC_MENTIONS = {"gitops": 2, "bootstrap": 2}  # raw `argocd-rbac-cm` substrings
+EXPECTED_DATA_KEYS = {"policy.csv", "policy.default", "scopes"}
+
+
+class StrictLoader(yaml.SafeLoader):
+    def construct_mapping(self, node, deep=False):
+        seen = set()
+        for key_node, _ in node.value:
+            key = self.construct_object(key_node, deep=True)
+            if key in seen:
+                raise yaml.YAMLError(f"duplicate mapping key {key!r}")
+            seen.add(key)
+        return super().construct_mapping(node, deep)
+
+
+def load_docs(text: str, label: str, found: list[str]) -> list:
+    """Parse text; fail closed on tags, anchors, aliases, duplicate keys or parse errors."""
+    try:
+        for event in yaml.parse(text, Loader=yaml.SafeLoader):
+            if isinstance(event, yaml.AliasEvent):
+                found.append(f"{label}: YAML alias is not allowed")
+            if getattr(event, "anchor", None):
+                found.append(f"{label}: YAML anchor is not allowed")
+            if getattr(event, "tag", None):
+                found.append(f"{label}: YAML tag {event.tag!r} is not allowed")
+        docs = list(yaml.load_all(text, Loader=StrictLoader))
+    except yaml.YAMLError as exc:
+        found.append(f"{label}: unparseable YAML ({str(exc).splitlines()[0]})")
+        return []
+    return [doc for doc in docs if doc is not None]
+
+
+def heredocs(text: str) -> list[tuple[str, str]]:
+    blocks, lines, i = [], text.splitlines(), 0
+    while i < len(lines):
+        match = re.search(r"(?<!<)<<-?[ \t]*(['\"]?)([A-Za-z_]\w*)\1", lines[i])
+        if not match:
+            i += 1
+            continue
+        body = []
+        i += 1
+        while i < len(lines) and lines[i].strip() != match.group(2):
+            body.append(lines[i])
+            i += 1
+        blocks.append((match.group(1), "\n".join(body) + "\n"))
+        i += 1
+    return blocks
+
+
+def structural_problems(gitops_text: str, bootstrap_text: str) -> list[str]:
+    found: list[str] = []
+    docs_by_source: dict[str, list] = {}
+    gitops_docs = load_docs(re.sub(r"\{\{.*?\}\}", "HELMVALUE", gitops_text), "gitops", found)
+    if len(gitops_docs) != GITOPS_DOCS:
+        found.append(f"gitops: document count {len(gitops_docs)} != {GITOPS_DOCS}")
+    docs_by_source["gitops"] = gitops_docs
+    blocks = heredocs(bootstrap_text)
+    if len(blocks) != len(BOOTSTRAP_HEREDOC_DOCS):
+        found.append(f"bootstrap: heredoc count {len(blocks)} != {len(BOOTSTRAP_HEREDOC_DOCS)}")
+    bootstrap_docs: list = []
+    for index, (quote, body) in enumerate(blocks):
+        if not quote and ("`" in body or "$(" in body):
+            found.append(f"bootstrap: heredoc {index} runs command substitution inside YAML")
+        # a bare ${VAR} line injects a block of keys; model it as one extra key so it can never
+        # hide inside the argocd-rbac-cm data mapping
+        body = re.sub(r"(?m)^\$\{[^}]*\}$", "  SUBSTITUTED: x", body)
+        body = re.sub(r"\$\{[^}]*\}", "SUBSTITUTED", body)
+        docs = load_docs(body, f"bootstrap heredoc {index}", found)
+        if index < len(BOOTSTRAP_HEREDOC_DOCS) and len(docs) != BOOTSTRAP_HEREDOC_DOCS[index]:
+            found.append(f"bootstrap: heredoc {index} document count {len(docs)} != {BOOTSTRAP_HEREDOC_DOCS[index]}")
+        bootstrap_docs += docs
+    docs_by_source["bootstrap"] = bootstrap_docs
+    for source, text in (("gitops", gitops_text), ("bootstrap", bootstrap_text)):
+        if text.count(RBAC_NAME) != RBAC_MENTIONS[source]:
+            found.append(f"{source}: raw {RBAC_NAME} mentions {text.count(RBAC_NAME)} != {RBAC_MENTIONS[source]}")
+        rbac = [
+            d for d in docs_by_source[source]
+            if isinstance(d, dict) and d.get("kind") == "ConfigMap"
+            and isinstance(d.get("metadata"), dict) and d["metadata"].get("name") == RBAC_NAME
+        ]
+        if len(rbac) != 1:
+            found.append(f"{source}: parsed {RBAC_NAME} ConfigMap count {len(rbac)} != 1")
+            continue
+        data = rbac[0].get("data")
+        if not isinstance(data, dict) or set(data) != EXPECTED_DATA_KEYS:
+            found.append(f"{source}: parsed data keys {sorted(data) if isinstance(data, dict) else data!r} != {sorted(EXPECTED_DATA_KEYS)}")
+            continue
+        if data["policy.default"] != "role:readonly" or data["scopes"] != "[groups]":
+            found.append(f"{source}: parsed policy.default/scopes differ from reviewed values")
+        csv = [", ".join(f.strip() for f in ln.split(",")) for ln in str(data["policy.csv"]).splitlines() if ln.strip()]
+        if sorted(csv) != sorted(EXPECTED_LINES[source]):
+            found.append(f"{source}: parsed policy.csv lines differ from reviewed set (extra={sorted(set(csv) - EXPECTED_LINES[source])}, missing={sorted(EXPECTED_LINES[source] - set(csv))})")
+    return found
+
+
 def problems(gitops_text: str, bootstrap_text: str) -> list[str]:
     found: list[str] = []
     for source, text in (("gitops", gitops_text), ("bootstrap", bootstrap_text)):
@@ -106,11 +209,63 @@ def problems(gitops_text: str, bootstrap_text: str) -> list[str]:
             configured = [ln.strip() for ln in text.splitlines() if ln.strip().startswith(f"{key}:")]
             if configured != [expected]:
                 found.append(f"{source}: {key} is {configured}, expected {expected}")
-    return found
+    return found + structural_problems(gitops_text, bootstrap_text)
 
 
 def valid(gitops_text: str, bootstrap_text: str) -> bool:
     return not problems(gitops_text, bootstrap_text)
+
+
+def structural_cases(gitops_text: str, bootstrap_text: str) -> dict:
+    """Notation tricks that line regexes miss; each must be rejected by the structural layer."""
+    flow_doc = (
+        "{apiVersion: v1, kind: ConfigMap, metadata: {name: argocd-rbac-cm}, "
+        'data: {policy.csv: "p, role:developer, applications, sync, */*, allow"}}'
+    )
+    flow_data = (
+        'data: {policy.csv: "p, role:developer, applications, sync, */*, allow", '
+        'policy.default: "role:readonly", scopes: "[groups]"}'
+    )
+
+    def swap(text: str, old: str, new: str) -> str:
+        assert text.count(old) == 1, old
+        return text.replace(old, new, 1)
+
+    def with_data(text: str, source: str, new_data: str) -> str:
+        start = text.index("\ndata:\n", text.index("\n  name: argocd-rbac-cm\n")) + 1
+        end = text.index("\nEOF", start) if source == "bootstrap" else len(text)
+        return text[:start] + new_data + text[end:]
+
+    edits = {
+        "one-line flow document after ---": (
+            lambda t, src: t + "\n---\n" + flow_doc + "\n" if src == "gitops"
+            else swap(t, "  scopes: '[groups]'\nEOF", "  scopes: '[groups]'\n---\n" + flow_doc + "\nEOF"),
+            "document count"),
+        "flow data mapping widened": (lambda t, src: with_data(t, src, flow_data + "\n"), "parsed policy.csv lines"),
+        "flow metadata plus ? policy.csv widened": (
+            lambda t, src: swap(
+                swap(t, "metadata:\n  name: argocd-rbac-cm\n  namespace: devtools\n  labels:\n",
+                     "metadata: {name: argocd-rbac-cm, namespace: devtools}\nx-labels:\n"),
+                "  policy.csv: |\n    p, role:developer, applications, sync, tenants/*, allow",
+                "  ? policy.csv\n  : |\n    p, role:developer, applications, sync, */*, allow"),
+            "parsed policy.csv lines"),
+        "escaped name hides the ConfigMap": (
+            lambda t, src: swap(t, "\n  name: argocd-rbac-cm\n", '\n  name: "argocd-rbac\\x2dcm"\n'),
+            "raw argocd-rbac-cm mentions"),
+        "!!str tagged name": (
+            lambda t, src: swap(t, "\n  name: argocd-rbac-cm\n", "\n  name: !!str argocd-rbac-cm\n"), "YAML tag"),
+        "duplicate scopes key": (
+            lambda t, src: swap(t, "  scopes: '[groups]'", "  scopes: '[groups]'\n  scopes: '[email]'"),
+            "duplicate mapping key"),
+        "YAML anchor": (lambda t, src: swap(t, "  scopes: '[groups]'", "  scopes: &a '[groups]'"), "YAML anchor"),
+        "folded policy.csv": (
+            lambda t, src: swap(t, "  policy.csv: |\n", "  policy.csv: >-\n"), "parsed policy.csv lines"),
+    }
+    cases = {}
+    for name, (edit, reason) in edits.items():
+        cases[f"{name} (GitOps)"] = (edit(gitops_text, "gitops"), bootstrap_text, reason)
+        cases[f"{name} (bootstrap)"] = (gitops_text, edit(bootstrap_text, "bootstrap"), reason)
+    return cases
 
 
 def mutation_verify(gitops_text: str, bootstrap_text: str) -> None:
@@ -277,6 +432,7 @@ def mutation_verify(gitops_text: str, bootstrap_text: str) -> None:
                 "    p, role:developer, applications, sync, */*, allow\n",
             )
         },
+        **structural_cases(gitops_text, bootstrap_text),
         "role:none deny line deleted (GitOps)": (
             gitops_text.replace(anchor_line + "\n", "", 1), bootstrap_text, "policy lines differ"),
         "role:none deny line deleted (bootstrap)": (

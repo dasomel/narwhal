@@ -24,7 +24,7 @@
     {
       "id": "e3",
       "type": "bug_fix",
-      "summary": "argocd-config.yaml developer rule is 'applications, sync, tenants/*' so selfHeal no longer overwrites 13-argocd.sh restriction; check renumbered R246 after finding R242 collision with #332. Checker hardened after independent review: pins the complete p/g line set per source, rejects extra policy.*.csv keys, duplicate argocd-rbac-cm declarations and templated policy text; 21 new reason-asserted mutation cases (37 total), including quoted/commented names and quoted keys normalised."
+      "summary": "argocd-config.yaml developer rule is 'applications, sync, tenants/*' so selfHeal no longer overwrites 13-argocd.sh restriction; check renumbered R246 after finding R242 collision with #332. Checker hardened after independent review: pins the complete p/g line set per source, rejects extra policy.*.csv keys, duplicate argocd-rbac-cm declarations and templated policy text; 37 reason-asserted mutation cases beyond the original 16 (53 total): quoted names/keys normalised, YAML document counts pinned, and the parsed argocd-rbac-cm data (all keys, tags, anchors, duplicate keys) compared to the reviewed contract."
     },
     {
       "id": "e4",

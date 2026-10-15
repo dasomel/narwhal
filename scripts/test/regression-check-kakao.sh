@@ -2106,6 +2106,8 @@ PYEOF
     python3 scripts/test/lib/check-install-scripts.py --root scripts/test/fixtures/install-scripts/tree-alias
   check_not R245p "install-script check baseline: swapping one violation for another in the same file fails" \
     python3 scripts/test/lib/check-install-scripts.py --root scripts/test/fixtures/install-scripts/tree-swap
+  check R245q "install-script check baseline: a violation with an empty baseline is reported as unexpected (not only as stale)" \
+    bash -c 'out="$(python3 scripts/test/lib/check-install-scripts.py --root scripts/test/fixtures/install-scripts/tree-unexpected 2>&1)"; rc=$?; [ "$rc" -eq 1 ] && printf "%s" "$out" | grep -q "unexpected script-running install"'
   is_gaps="$(python3 scripts/test/lib/check-install-scripts.py 2>/dev/null | grep -c '^KNOWN-ISSUE' || true)"
   if [ "${is_gaps:-0}" -gt 0 ]; then
     warn R245-known "${is_gaps} known script-running installs baselined (Narwhal#164): see the KNOWN-ISSUE lines of scripts/test/lib/check-install-scripts.py"

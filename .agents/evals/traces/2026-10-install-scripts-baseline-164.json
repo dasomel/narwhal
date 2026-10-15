@@ -27,7 +27,7 @@
     {
       "id": "e3",
       "type": "bug_fix",
-      "summary": "Added --ignore-scripts to both markdownlint-cli installs and --only-binary=:all: to the jsonschema install (run value double-quoted because an unquoted ': ' made the YAML unparsable); KNOWN_ISSUES emptied; --root fixture trees now read DIR/known-issues.json; R245-known warn message made generic. Local proof: npm --ignore-scripts install into a temp prefix gave 74 packages with no install/postinstall script and a working markdownlint 0.49.1; pip --only-binary=:all: jsonschema==4.25.1 in a fresh venv imported as 4.25.1."
+      "summary": "Added --ignore-scripts to both markdownlint-cli installs and --only-binary=:all: to the jsonschema install (run value double-quoted because an unquoted ': ' made the YAML unparsable); KNOWN_ISSUES emptied; --root fixture trees now read DIR/known-issues.json; R245-known warn message made generic. Local proof: npm --ignore-scripts install into a temp prefix gave 74 packages with no install/postinstall script and a working markdownlint 0.49.1; pip --only-binary=:all: jsonschema==4.25.1 in a fresh venv imported as 4.25.1. Added R245q (empty baseline reports an unexpected violation) after review found the unexpected branch was indistinguishable from stale in the fixtures; a mutant without that branch passes the checker, so R245q fails on it."
     },
     {
       "id": "e4",

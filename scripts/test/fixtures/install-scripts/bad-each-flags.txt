@@ -1,0 +1,13 @@
+npm --prefix x ci
+----
+pnpm --filter x install
+----
+pnpm -F x add y
+----
+npm -w a ci
+----
+yarn --cwd x install
+----
+npm --unknown-flag y ci
+----
+npm -C x --registry https://r.example i left

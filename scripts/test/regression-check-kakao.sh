@@ -2092,6 +2092,20 @@ PYEOF
     python3 scripts/test/lib/check-install-scripts.py scripts/test/fixtures/install-scripts/bad-absent.yaml
   check_not R245i "install-script check baseline: entries fixed in the tree fail as stale" \
     python3 scripts/test/lib/check-install-scripts.py --root scripts/test/fixtures/install-scripts/tree-clean
+  check R245j "install-script check parses manager global options (npm --prefix x ci, pnpm --filter x install, -F/-w/--cwd, unknown flag fails closed)" \
+    python3 scripts/test/lib/check-install-scripts.py --each-bad scripts/test/fixtures/install-scripts/bad-each-flags.txt
+  check R245k "install-script check treats --ignore-scripts false|0|no, =no and --no-ignore-scripts as not ignoring" \
+    python3 scripts/test/lib/check-install-scripts.py --each-bad scripts/test/fixtures/install-scripts/bad-each-falsy.txt
+  check R245l "install-script check sees installs in subshells, \$(...), backticks, braces, bash -c and shell heredocs" \
+    python3 scripts/test/lib/check-install-scripts.py --each-bad scripts/test/fixtures/install-scripts/bad-each-nesting.txt
+  check R245m "install-script check flags bare yarn and bun install|add" \
+    python3 scripts/test/lib/check-install-scripts.py --each-bad scripts/test/fixtures/install-scripts/bad-each-managers.txt
+  check R245n "install-script check accepts safe forms (flag values, subshells, quoted/heredoc text, npx/dlx/exec by design)" \
+    python3 scripts/test/lib/check-install-scripts.py --each-good scripts/test/fixtures/install-scripts/good-each.txt
+  check R245o "install-script check baseline counts a YAML alias once" \
+    python3 scripts/test/lib/check-install-scripts.py --root scripts/test/fixtures/install-scripts/tree-alias
+  check_not R245p "install-script check baseline: swapping one violation for another in the same file fails" \
+    python3 scripts/test/lib/check-install-scripts.py --root scripts/test/fixtures/install-scripts/tree-swap
   is_gaps="$(python3 scripts/test/lib/check-install-scripts.py 2>/dev/null | grep -c '^KNOWN-ISSUE' || true)"
   if [ "${is_gaps:-0}" -gt 0 ]; then
     warn R245-known "${is_gaps} known script-running installs baselined (Narwhal#164): markdownlint-cli npm install in lint.yml and markdown-changed.yml, pip install jsonschema in research-evidence.yml"

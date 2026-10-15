@@ -1,0 +1,20 @@
+x=$(npm ci)
+----
+(npm ci)
+----
+for d in a b; do (cd $d && npm ci); done
+----
+`npm ci`
+----
+echo "$(npm ci)"
+----
+{ npm ci; }
+----
+bash -c "npm ci"
+----
+cat <<EOF
+ok
+EOF
+bash <<EOF
+npm ci
+EOF

@@ -2,10 +2,11 @@
   "schemaVersion": "openforge-agent-trace/v1",
   "consistencyMode": "strict",
   "traceId": "narwhal-airgap-digest-inventory-124-20261015",
-  "task": "02 records a save-time per-image digest inventory and 09 verifies the layouts against it (#124)",
-  "createdAt": "2026-10-15T03:05:43.787365+00:00",
+  "task": "02 records a save-time per-image digest inventory and 09 verifies the layouts against it; 02 fails at save time on layout-name collisions and stale layouts (#124)",
+  "createdAt": "2026-10-15T03:21:59.356505+00:00",
   "changeContext": {
     "paths": [
+      ".agents/evals/traces/2026-10-airgap-digest-inventory-124.json",
       "docs/common/lessons-log.md",
       "scripts/airgap/02-save-images.sh",
       "scripts/airgap/09-verify-bundle-completeness.sh",
@@ -13,51 +14,51 @@
       "scripts/airgap/lib/verify-oci-layout.py",
       "scripts/airgap/tests/test_oci_inventory.py",
       "scripts/airgap/tests/test_oci_layout.py",
-      "scripts/test/regression-check-kakao.sh",
-      ".agents/evals/traces/2026-10-airgap-digest-inventory-124.json"
+      "scripts/test/regression-check-kakao.sh"
     ]
   },
   "events": [
     {
       "id": "e1",
       "type": "scope_check",
-      "summary": "02-save-images.sh writes images.digests.json via lib/verify-oci-layout.py --inventory-out; 09 passes --inventory/--manifest and fails closed on absent/malformed/unsorted inventory, image without entry, unrecorded oci/ dir, digest or platform mismatch. Pre-inventory bundles fail (re-run 02). 05 load path untouched; no registry, no referrer copy, no network.",
-      "recordedAt": "2026-10-15T03:05:43.788394+00:00"
+      "summary": "02-save-images.sh writes images.digests.json via lib/verify-oci-layout.py --inventory-out; 09 passes --inventory/--manifest and fails closed on absent/malformed/unsorted inventory, image without entry, unrecorded oci/ dir, digest or platform mismatch. Review fixes: 02 refuses (before touching the bundle) two refs that normalize to one oci/ directory and any oci/ entry its list does not produce (nothing is deleted); inventory errors show the re-save hint only when the file is absent; deeply nested JSON is an invalid-inventory error. Pre-inventory bundles fail (re-run 02). 05 load path untouched; no registry, no referrer copy, no network.",
+      "recordedAt": "2026-10-15T03:21:59.356773+00:00"
     },
     {
       "id": "e2",
       "type": "reproduction",
-      "summary": "Pre-change 02+09 (git archive of origin/main scripts/airgap, real skopeo oci->oci layouts, skopeo stub only for the docker:// source) write no inventory and accept a wholly different but self-consistent layout swapped in after save, and an unrecorded oci/ directory",
-      "recordedAt": "2026-10-15T03:05:43.839289+00:00",
+      "summary": "Pre-change reproduction: origin/main 02+09 write no inventory and accept a wholly different but self-consistent layout swapped in after save (git archive extract; an offline stub skopeo writes the oci layouts). The previous slice (b9926ab) let two colliding refs and a shorter re-run through 02 with rc=0 and only failed later in 09 with a hint that cannot help",
+      "recordedAt": "2026-10-15T03:21:59.405094+00:00",
+      "scope": "Offline: git archive extracts of origin/main and b9926ab scripts/airgap, stub skopeo; no registry, no cluster",
       "evidence": [
         "runtime:origin/main 02 rc=0 and no images.digests.json in the bundle",
         "runtime:origin/main 09 intact bundle: exit=0 'Bundle complete: 1 images'",
-        "runtime:origin/main 09 after swapping oci/docker.io_x_y_1 for another valid layout (different digest): exit=0 'Bundle complete: 1 images in images.txt'",
-        "runtime:origin/main 09 with extra oci/stray_unlisted directory: exit=0 'Bundle complete: 1 images in images.txt'"
+        "runtime:origin/main 09 after swapping oci/docker.io_x_y_1 for another valid layout: exit=0 'Bundle complete: 1 images in images.txt'",
+        "runtime:b9926ab 02 with docker.io/a/b:c and docker.io/a_b:c: rc=0 'Saved: 2 | Failed: 0'; then 09 rc=1 'two images map to the same layout directory ... must be re-saved with 02-save-images.sh'",
+        "runtime:b9926ab 02 of two images then 02 with a shorter list: rc=0; 09 rc=1 'oci/docker.io_x_z_2: layout not recorded in the digest inventory' (no remedy)"
       ]
     },
     {
       "id": "e3",
       "type": "bug_fix",
-      "summary": "verify-oci-layout.py gains --inventory-out (02) and --inventory/--manifest (09): strict sorted schema with duplicate-key rejection, per-image digest/platform compare, unrecorded or non-directory oci/ entries rejected, inventoried images verified even outside both lists, atomic write only after layouts verify. 09 always requires the inventory; 02 removes any stale one first.",
-      "recordedAt": "2026-10-15T03:05:43.877624+00:00",
+      "summary": "verify-oci-layout.py gains --inventory-out (02) and --inventory/--manifest (09) with a strict sorted schema; 02 fails before touching the bundle on a layout-name collision (names both refs) or stale oci/ entries (names them; remedy: remove or fresh --out); 09 unrecorded-layout error names the likely cause; 09 manifest-only ghost refs fail; the re-save hint shows only when the inventory file is absent; RecursionError is reported as an invalid inventory",
+      "recordedAt": "2026-10-15T03:21:59.444174+00:00",
       "evidence": [
-        "runtime:new 02 (same stub) rc=0 writes images.digests.json (sha256:a0840a8c... single-platform linux/arm64)",
-        "runtime:new 09 intact: exit=0 'Bundle complete'",
-        "runtime:new 09 swapped consistent layout: exit=1 'ERROR: docker.io/x/y:1: layout digest sha256:64ca2a80... != saved sha256:a0840a8c...'",
-        "runtime:new 09 extra dir: exit=1 'ERROR: oci/stray_unlisted: layout not recorded in the digest inventory'",
-        "runtime:new 09 inventory deleted: exit=1 'inventory missing or not a regular file. Bundles saved before the inventory existed must be re-saved with 02-save-images.sh'"
+        "runtime:new 02 (stub skopeo) rc=0 writes images.digests.json; new 09 intact: exit=0 'Bundle complete'",
+        "runtime:new 09 swapped consistent layout: exit=1 'ERROR: docker.io/x/y:1: layout digest sha256:0c804503... != saved sha256:f8b47971...'",
+        "runtime:new 02 colliding refs: rc=1 'ERROR: layout name collision: docker.io/a/b:c and docker.io/a_b:c both map to oci/docker.io_a_b_c'; no oci/ written",
+        "runtime:new 02 shorter list over a bundle holding oci/docker.io_x_z_2: rc=1 'ERROR: stale oci/ entries not produced by one.txt ... Remove them or save into a fresh --out; nothing was changed.'"
       ]
     },
     {
       "id": "e4",
       "type": "regression_verification",
-      "summary": "Airgap unit suite with inventory tests (normal, violating, malformed, absent, symlink, duplicate/unsorted, swapped layout, platform change); each new check disabled one at a time (20 mutations) and each made the suite fail",
-      "recordedAt": "2026-10-15T03:05:43.916187+00:00",
-      "scope": "Offline only: python3 unittest, hand-built layouts plus a skopeo oci->oci layout; no registry, no cluster, no real network 02 run",
+      "summary": "Airgap unit suite incl. save-time tests (collision, stale layout, broken layout, manifest ghost ref, hint and recursion) plus a mutation run on a git-archive temp copy of HEAD: 29 single-check mutants, 28 killed, 1 survivor (equivalent). Run: 09 drops --manifest (killed by test_gate_fails_on_manifest_only_ghost_ref); 09 drops --inventory; digest compare off; platform compare off; missing-entry off; unrecorded-dir off; symlink/stray-dir off; duplicate-layout off; sorted/duplicate-image off; schema off; tool off; top-level keys off; images-not-list off; entry keys off; layout path off; digest syntax off; platforms enum off; collapsed_to os/arch off; collapsed_to null off; duplicate JSON key rejection off; inventoried-images-not-verified; manifest-refs-not-read; hint always re-save; RecursionError catch removed; 02 collision check off; 02 stale check off; 02 stale-inventory rm removed; 02 ignores inventory failure -- all KILLED. Survivor: writer does not sort rows -- equivalent, main() already iterates sorted(images) so rows arrive sorted",
+      "recordedAt": "2026-10-15T03:21:59.503162+00:00",
+      "scope": "Offline only: python3 unittest, hand-built layouts and stub skopeo; no registry, no cluster, no real network 02 run",
       "evidence": [
-        "test:python3 -I -m unittest discover -s scripts/airgap/tests: Ran 67 tests OK",
-        "test:mutation run of 20 single-check disablements in verify-oci-layout.py and the 09 wiring: 20 KILLED, 0 SURVIVED (two first-run survivors got dedicated tests)",
+        "test:python3 -I -m unittest discover -s scripts/airgap/tests: Ran 73 tests OK",
+        "test:mutation run on a temp copy (scratch script, not committed): TOTAL 29 KILLED 28 SURVIVED ['writer does not sort'] (equivalent)",
         "runtime:command-exit-0"
       ],
       "status": "passed",
@@ -67,10 +68,10 @@
       "id": "e5",
       "type": "verification",
       "summary": "Static suite and shellcheck pass on the committed tree",
-      "recordedAt": "2026-10-15T03:05:43.962567+00:00",
+      "recordedAt": "2026-10-15T03:21:59.545746+00:00",
       "scope": "Repository static suite and shellcheck; no live cluster, no registry",
       "evidence": [
-        "test:./scripts/test/regression-check-kakao.sh --static: passed 332 failed 0 warnings 6 (R82g added)",
+        "test:./scripts/test/regression-check-kakao.sh --static: passed 332 failed 0 warnings 6",
         "test:find scripts/ -name '*.sh' | xargs shellcheck --severity=warning: rc=0",
         "runtime:command-exit-0"
       ],
@@ -80,14 +81,14 @@
     {
       "id": "e6",
       "type": "completion_claim",
-      "summary": "09 now compares saved layouts with a save-time per-image digest record and fails closed on missing, extra, mismatched or malformed records. Not shown: a real full-bundle 02 run against registries (02 exercised only with a skopeo stub for the docker:// source), load-time pushed-digest compare (05 does not read the inventory), referrer copy, layer re-hash, saved config arch vs collapsed_to, trust in the inventory itself (rewriting both layout and inventory passes; needs an externally pinned digest).",
-      "recordedAt": "2026-10-15T03:05:44.027243+00:00"
+      "summary": "09 compares saved layouts with a save-time per-image digest record and fails closed on missing, extra, mismatched or malformed records; 02 refuses layout-name collisions and stale oci/ entries at save time. Not shown: a real full-bundle 02 run against registries (02 exercised only with a stub skopeo), load-time pushed-digest compare, referrer copy (referrers are NOT preserved), layer re-hash, saved config arch vs collapsed_to. The inventory is trust-on-first-save: rewriting both layout and inventory passes, there is no signature or external pin; its tool field is host-dependent so the file is not byte-identical across hosts. One mutation survivor, equivalent (writer sort; rows are already sorted).",
+      "recordedAt": "2026-10-15T03:21:59.583771+00:00"
     },
     {
       "id": "e7",
       "type": "task_outcome",
-      "summary": "Offline save-time digest inventory slice of #124 verified within stated scope.",
-      "recordedAt": "2026-10-15T03:05:44.071173+00:00",
+      "summary": "Offline save-time digest inventory slice of #124, with review fixes, verified within stated scope.",
+      "recordedAt": "2026-10-15T03:21:59.626128+00:00",
       "state": "A"
     }
   ]

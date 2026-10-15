@@ -35,7 +35,7 @@ component, identity, storage and GitOps sections expand their respective concern
 | User identity and SSO | Keycloak realm/client configuration managed by GitOps |
 | Runtime workload state | Kubernetes API |
 | Telemetry | Prometheus, Loki, Tempo and Hubble backends |
-| Portal presentation | `narwhal-portal` repository |
+| Portal presentation | `portal/` (in this repo) |
 
 ---
 

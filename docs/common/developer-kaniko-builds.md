@@ -16,19 +16,19 @@ privileged Docker socket, no local Docker needed.
 | Just run the released portal | Nothing — ArgoCD pulls `ghcr.io/dasomel/narwhal-portal:<ver>` |
 | Build & test a local/WIP portal change in the cluster | Kaniko (`kaniko-build.sh`, below) |
 | Build any other app from source, no local Docker | Kaniko (adapt `kaniko-build.sh`) |
-| Cut a real release for everyone | Push a `vX.Y.Z` git tag → GitHub Actions publishes to GHCR (see narwhal-portal `.github/workflows/docker-publish.yml`) |
+| Cut a real release for everyone | Push a `portal/vX.Y.Z` git tag → GitHub Actions publishes to GHCR (see `.github/workflows/portal-*.yml`; the tag is namespaced `portal/vX.Y.Z`) |
 
 ## Prerequisites
 
 - A running narwhal cluster with Harbor up (`08-5-registry.sh` done).
-- The `narwhal-portal` source (host, or the repo's `scripts/kaniko-build.sh`).
+- The portal source (`portal/` in this repo, with its `portal/scripts/kaniko-build.sh`).
 
 ## Build the portal in-cluster
 
-From the `narwhal-portal` repo:
+From the `portal/` directory of this repo:
 
 ```bash
-cd narwhal-portal
+cd portal
 ./scripts/kaniko-build.sh          # DOMAIN defaults to local.narwhal.internal
 ```
 

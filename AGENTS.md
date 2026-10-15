@@ -11,6 +11,12 @@ Narwhal follows the OpenForge agent engineering model: [change-management](https
   - `narwhal-cluster-debug`: live cluster, provisioning, GitOps, SSO/network/storage diagnosis
   - `narwhal-verification`: final completion/evidence check
 
+## `portal/` (Narwhal IDP Portal, imported into this repo)
+
+- `portal/` has its own `portal/AGENTS.md` and `CLAUDE.md` bridge; read them before editing it. Run portal commands (`pnpm`, `make`) from `portal/`, not the root.
+- Git tags are `portal/vX.Y.Z`; the image name stays `ghcr.io/dasomel/narwhal-portal`. The GitOps pin is a published release, so it can lag `portal/` HEAD; seam checks (R55, R117, R211, R216) read the in-repo tree, never a tag or a sibling checkout.
+- Lessons-log: a fix's row goes in the log of the area it touches (`portal/docs/lessons-log.md` or `docs/common/lessons-log.md`); a fix spanning both goes in narwhal's. Decision record: `docs/adr/0001-consolidate-narwhal-portal-into-monorepo.md`.
+
 ## Boundaries
 
 - Preserve Kubernetes/platform layer boundaries, GitOps ownership and security boundaries. Treat exported APIs, RBAC/permission widening, destructive operations, cluster topology changes and source-of-truth changes as design changes. Determine GitOps ownership from the current charts/resources before touching live objects.

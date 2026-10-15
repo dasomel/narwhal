@@ -16,22 +16,18 @@ set -euo pipefail
 cd "$(dirname "$0")/../.."
 
 RBAC_FILE="${RBAC_FILE:-gitops/resources/rbac-policies.yaml}"
-PORTAL_DIR="${NARWHAL_PORTAL_DIR:-${PORTAL_DIR:-../narwhal-portal}}"
+# portal/ lives in this monorepo (ADR-0001, D-MONO-2): read the working tree, not a
+# sibling checkout or a pinned tag. PORTAL_DIR stays overridable only so the
+# regression suite can point the check at a mutated temp copy.
+PORTAL_DIR="${PORTAL_DIR:-portal}"
 AUTH_FILE="${PORTAL_DIR}/src/lib/auth.ts"
 
-# The portal repo is a sibling checkout, not a submodule of this one — it may not
-# exist in every environment this runs in (e.g. a narwhal-only CI job). This is
-# structured as an `if` block, not `[ -d ... ] && ...`: under `set -e` the latter
-# aborts the whole script the instant the directory is absent, never reaching the
-# skip message below. Same hazard the 07-save-binaries.sh chmod fix hit.
-if [ ! -d "${PORTAL_DIR}" ]; then
-  echo "SKIP: narwhal-portal sibling checkout not found at ${PORTAL_DIR} -- nothing to compare"
-  exit 0
-fi
-
+# In-repo, so absence is a broken tree (or a mutation that deleted the file), not an
+# optional-checkout skip: a SKIP-and-exit-0 here once let a contract check report
+# PASS without comparing anything.
 if [ ! -f "${AUTH_FILE}" ]; then
-  echo "SKIP: ${AUTH_FILE} not found -- nothing to compare"
-  exit 0
+  echo "FAIL: ${AUTH_FILE} not found -- nothing to compare" >&2
+  exit 1
 fi
 
 # Production Gitea calls require a configured HTTPS endpoint and API token.

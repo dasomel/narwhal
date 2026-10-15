@@ -19,7 +19,7 @@ Narwhal IDP 클러스터에서 개발자로 작업하기 위한 가이드입니�
 | Keycloak | <https://keycloak.local.narwhal.internal> | SSO 계정 관리 |
 | OpenBao | <https://openbao.local.narwhal.internal> | 시크릿 관리 |
 
-> Narwhal Portal은 별도 저장소(`narwhal-portal`)에서 빌드·배포되며, 다른 서비스와 달리 APISIX
+> Narwhal Portal은 이 저장소의 `portal/`에서 빌드되어 GHCR 이미지(`ghcr.io/dasomel/narwhal-portal`)로 배포되며, 다른 서비스와 달리 APISIX
 > openid-connect 플러그인이 아닌 자체 NextAuth.js로 Keycloak OIDC 연동을 처리합니다.
 
 ### DNS 설정 (로컬 머신)

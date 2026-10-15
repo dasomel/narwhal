@@ -27,6 +27,11 @@ secrets/
 *.key
 kubeconfig
 .env
+# portal/ Next.js route directories share names with the patterns above (api/secrets,
+# api/pods/.../logs, api/onboarding/kubeconfig); they are source, not credentials or logs.
+!/portal/src/**/logs/
+!/portal/src/**/secrets/
+!/portal/src/**/kubeconfig/
 
 # Temp
 tmp/

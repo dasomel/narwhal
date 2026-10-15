@@ -2048,10 +2048,27 @@ PYEOF
     python3 scripts/test/lib/peer-authentication-probe.py scope-gitops-json
   check_not R243ab "PeerAuthentication check scope: a PeerAuthentication in gitops/*.tpl fails closed" \
     python3 scripts/test/lib/peer-authentication-probe.py scope-gitops-tpl
+  check_not R243ac "PeerAuthentication check scope: a PERMISSIVE heredoc in a scripts/test/fixturesevil/ look-alike dir is scanned" \
+    python3 scripts/test/lib/peer-authentication-probe.py scope-fixtures-lookalike
   # Visible, non-failing: the harness check() discards stdout, so surface the baselined gaps here.
   pa_gaps="$(python3 scripts/test/lib/check-peer-authentication.py 2>/dev/null | grep -c '^KNOWN-ISSUE' || true)"
   if [ "${pa_gaps:-0}" -gt 0 ]; then
     warn R243-known "${pa_gaps} known PeerAuthentication gaps baselined (Narwhal#126): mesh-wide PERMISSIVE bootstrap in 09-istio-ambient.sh, monitoring namespace-wide PERMISSIVE"
+  fi
+  # Narwhal#126: a namespace-wide PERMISSIVE/DISABLE PeerAuthentication needs an ingress default-deny.
+  check R244 "namespace-wide PERMISSIVE PeerAuthentication needs an ingress default-deny; known-issue baseline explicit (Narwhal#126)" \
+    python3 scripts/test/lib/check-permissive-ingress-isolation.py
+  check R244a "ingress isolation check accepts default-deny, workload-scoped, STRICT, mesh root and restricted Cilium cases" \
+    python3 scripts/test/lib/ingress-isolation-probe.py good
+  check R244b "ingress isolation check rejects wrong namespace/selector/policyTypes/array shapes/allow-all/Cilium look-alikes (intended reason)" \
+    python3 scripts/test/lib/ingress-isolation-probe.py bad
+  check R244c "ingress isolation check fails closed on malformed/duplicate/templated/.tpl/array-typed input (intended reason)" \
+    python3 scripts/test/lib/ingress-isolation-probe.py failclosed
+  check R244d "ingress isolation check default mode: exact baseline, vendored sub-charts excluded, other charts/scripts counted" \
+    python3 scripts/test/lib/ingress-isolation-probe.py tree
+  iso_gaps="$(python3 scripts/test/lib/check-permissive-ingress-isolation.py 2>/dev/null | grep -c '^KNOWN-ISSUE' || true)"
+  if [ "${iso_gaps:-0}" -gt 0 ]; then
+    warn R244-known "${iso_gaps} known ingress isolation gaps baselined (Narwhal#126): monitoring and platform-system namespace-wide PERMISSIVE lack an ingress default-deny"
   fi
   # Narwhal#235 (lead live run): the ArgoCD HBONE post-check read a pre-patch snapshot and
   # exited 1 on every fresh cluster after its own successful appends.

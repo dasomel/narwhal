@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: List
+items:
+  - apiVersion: security.istio.io/v1
+    kind: PeerAuthentication
+    metadata: {name: rogue, namespace: payments}
+    spec: {mtls: {mode: PERMISSIVE}}
+---
+apiVersion: security.istio.io/v1
+kind: PeerAuthentication
+metadata: {name: default, namespace: istio-system}
+spec: {mtls: {mode: STRICT}}

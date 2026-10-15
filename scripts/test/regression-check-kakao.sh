@@ -1978,6 +1978,70 @@ PYEOF
     python3 scripts/test/lib/check-ambient-enrollment.py scripts/test/fixtures/ambient-enrollment-bad-dup-entry.txt
   check_not R242i "ambient enrollment check rejects a malformed namespace name" \
     python3 scripts/test/lib/check-ambient-enrollment.py scripts/test/fixtures/ambient-enrollment-bad-malformed.txt
+  # Narwhal#126: mesh mTLS must be STRICT by default; every PERMISSIVE/DISABLE is a reviewed allowlist entry.
+  check R243 "PeerAuthentication PERMISSIVE/DISABLE only via reviewed allowlist; known-issue baseline explicit (Narwhal#126)" \
+    python3 scripts/test/lib/check-peer-authentication.py
+  check R243a "PeerAuthentication check accepts a STRICT mesh with an allowlisted exception" \
+    python3 scripts/test/lib/check-peer-authentication.py scripts/test/fixtures/peer-auth-good.yaml
+  check_not R243b "PeerAuthentication check rejects an unlisted PERMISSIVE namespace" \
+    python3 scripts/test/lib/check-peer-authentication.py scripts/test/fixtures/peer-auth-bad-unlisted.yaml
+  check_not R243c "PeerAuthentication check rejects DISABLE even for an allowlisted name" \
+    python3 scripts/test/lib/check-peer-authentication.py scripts/test/fixtures/peer-auth-bad-disable.yaml
+  check_not R243d "PeerAuthentication check rejects a port-level DISABLE hidden under STRICT" \
+    python3 scripts/test/lib/check-peer-authentication.py scripts/test/fixtures/peer-auth-bad-portlevel.yaml
+  check_not R243e "PeerAuthentication check rejects a mesh-wide PERMISSIVE default" \
+    python3 scripts/test/lib/check-peer-authentication.py scripts/test/fixtures/peer-auth-bad-mesh-permissive.yaml
+  check_not R243f "PeerAuthentication check rejects an allowlisted name with the wrong scope" \
+    python3 scripts/test/lib/check-peer-authentication.py scripts/test/fixtures/peer-auth-bad-scope.yaml
+  check_not R243g "PeerAuthentication check finds exceptions inside a List kind" \
+    python3 scripts/test/lib/check-peer-authentication.py scripts/test/fixtures/peer-auth-bad-list.yaml
+  check_not R243h "PeerAuthentication check fails closed on malformed YAML" \
+    python3 scripts/test/lib/check-peer-authentication.py scripts/test/fixtures/peer-auth-bad-malformed.yaml
+  check_not R243i "PeerAuthentication check fails closed on helm-templated values" \
+    python3 scripts/test/lib/check-peer-authentication.py scripts/test/fixtures/peer-auth-bad-templated.yaml
+  check_not R243j "PeerAuthentication check rejects duplicate keys" \
+    python3 scripts/test/lib/check-peer-authentication.py scripts/test/fixtures/peer-auth-bad-dupkey.yaml
+  check_not R243k "PeerAuthentication check fails closed when no mesh-wide STRICT policy exists" \
+    python3 scripts/test/lib/check-peer-authentication.py scripts/test/fixtures/peer-auth-bad-absent.yaml
+  check R243l "PeerAuthentication check accepts the exact allowlisted Harbor selector" \
+    python3 scripts/test/lib/check-peer-authentication.py scripts/test/fixtures/peer-auth-good-harbor.yaml
+  check_not R243m "PeerAuthentication check rejects Harbor with a look-alike selector (kubernetes.io/metadata.name)" \
+    python3 scripts/test/lib/check-peer-authentication.py scripts/test/fixtures/peer-auth-bad-harbor-labels.yaml
+  check_not R243n "PeerAuthentication check rejects a typo mode (PERMISIVE) instead of treating it as non-weak" \
+    python3 scripts/test/lib/check-peer-authentication.py scripts/test/fixtures/peer-auth-bad-mode-typo.yaml
+  check_not R243o "PeerAuthentication check rejects a lowercase mode (permissive), not a CRD enum value" \
+    python3 scripts/test/lib/check-peer-authentication.py scripts/test/fixtures/peer-auth-bad-mode-lower.yaml
+  check_not R243p "PeerAuthentication check rejects a selector-scoped default as the mesh-wide STRICT policy" \
+    python3 scripts/test/lib/check-peer-authentication.py scripts/test/fixtures/peer-auth-bad-mesh-selector.yaml
+  check_not R243q "PeerAuthentication check rejects a STRICT policy not named default as the mesh-wide policy" \
+    python3 scripts/test/lib/check-peer-authentication.py scripts/test/fixtures/peer-auth-bad-mesh-name.yaml
+  check R243r "PeerAuthentication check handles a tab-indented <<- heredoc" \
+    python3 scripts/test/lib/check-peer-authentication.py scripts/test/fixtures/peer-auth-good-heredoc-tab.txt
+  check_not R243s "PeerAuthentication check scans a PERMISSIVE leak inside a tab-indented <<- heredoc" \
+    python3 scripts/test/lib/check-peer-authentication.py scripts/test/fixtures/peer-auth-bad-heredoc-tab.txt
+  check R243t "PeerAuthentication check default-mode probe tree control (real baselined files copied) passes" \
+    python3 scripts/test/lib/peer-authentication-probe.py control
+  check_not R243u "PeerAuthentication check baseline: a key-matching entry whose mode became DISABLE fails" \
+    python3 scripts/test/lib/peer-authentication-probe.py mode-changed
+  check_not R243v "PeerAuthentication check baseline: a second same-name heredoc with a selector and DISABLE fails" \
+    python3 scripts/test/lib/peer-authentication-probe.py second-selector-disable
+  check_not R243w "PeerAuthentication check baseline: a duplicated identical entry fails (count must match exactly)" \
+    python3 scripts/test/lib/peer-authentication-probe.py duplicate-entry
+  check_not R243x "PeerAuthentication check baseline: an entry fixed in the repo fails as stale" \
+    python3 scripts/test/lib/peer-authentication-probe.py entry-fixed
+  check_not R243y "PeerAuthentication check scope: PERMISSIVE heredoc in scripts/other/*.sh is scanned" \
+    python3 scripts/test/lib/peer-authentication-probe.py scope-scripts-other
+  check_not R243z "PeerAuthentication check scope: PERMISSIVE heredoc in nested scripts/cluster/sub/*.sh is scanned" \
+    python3 scripts/test/lib/peer-authentication-probe.py scope-scripts-nested
+  check_not R243aa "PeerAuthentication check scope: PERMISSIVE PeerAuthentication in gitops/*.json is scanned" \
+    python3 scripts/test/lib/peer-authentication-probe.py scope-gitops-json
+  check_not R243ab "PeerAuthentication check scope: a PeerAuthentication in gitops/*.tpl fails closed" \
+    python3 scripts/test/lib/peer-authentication-probe.py scope-gitops-tpl
+  # Visible, non-failing: the harness check() discards stdout, so surface the baselined gaps here.
+  pa_gaps="$(python3 scripts/test/lib/check-peer-authentication.py 2>/dev/null | grep -c '^KNOWN-ISSUE' || true)"
+  if [ "${pa_gaps:-0}" -gt 0 ]; then
+    warn R243-known "${pa_gaps} known PeerAuthentication gaps baselined (Narwhal#126): mesh-wide PERMISSIVE bootstrap in 09-istio-ambient.sh, monitoring namespace-wide PERMISSIVE"
+  fi
   # Narwhal#235 (lead live run): the ArgoCD HBONE post-check read a pre-patch snapshot and
   # exited 1 on every fresh cluster after its own successful appends.
   check R202 "13-argocd re-reads each policy after patching before the 15008 post-check (Narwhal#235)" \

@@ -27,15 +27,27 @@ def covered_namespaces() -> set[str]:
     return set(module.AMBIENT)
 
 
+# A bare mention (not "$X" / "${X...}" / "${#X...}") is an assignment target: =, +=, declare, read -a, mapfile, for.
+TARGET = re.compile(r"(?<![\w$])(?<!\$\{)(?<!\$\{[#!])AMBIENT_NAMESPACES(?!\w)")
+
+
 def enrolled_namespaces(text: str) -> list[str]:
-    arrays = re.findall(r"^AMBIENT_NAMESPACES=\(([^)]*)\)", text, re.M)
-    if len(arrays) != 1:
-        raise ValueError(f"expected exactly one AMBIENT_NAMESPACES array, found {len(arrays)}")
-    names: list[str] = []
-    for line in arrays[0].splitlines():
-        line = line.split("#", 1)[0].strip()
-        names.extend(line.split())
-    return names
+    lines = [line.split("#", 1)[0] for line in text.splitlines()]
+    starts = [i for i, line in enumerate(lines) if re.match(r"AMBIENT_NAMESPACES=\(", line)]
+    targets = sum(len(TARGET.findall(line)) for line in lines)
+    if len(starts) != 1 or targets != 1:
+        raise ValueError(
+            f"expected exactly one AMBIENT_NAMESPACES definition and no other assignment, "
+            f"found {len(starts)} array(s) and {targets} assignment target(s)"
+        )
+    body = ""
+    for line in lines[starts[0]:]:
+        body += line + "\n"
+        if ")" in line:
+            break
+    else:
+        raise ValueError("AMBIENT_NAMESPACES array is not closed")
+    return body.split("(", 1)[1].split(")", 1)[0].split()
 
 
 def validate(text: str, covered: set[str]) -> list[str]:

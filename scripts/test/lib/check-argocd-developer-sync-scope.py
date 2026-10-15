@@ -34,17 +34,20 @@ EXPECTED_POLICY_DEFAULT = "policy.default: role:readonly"
 EXPECTED_SCOPES = "scopes: '[groups]'"
 
 
+BLOCK_RE = r"(?m)^  (['\"]?)policy\.csv\1: \|\n((?:^    .*\n|^\n)*)"
+
+
 def policy_lines(text: str, source: str) -> list[str]:
     if source == "gitops":
-        match = re.search(r"(?m)^  policy\.csv: \|\n((?:^    .*\n|^\n)*)", text)
+        match = re.search(BLOCK_RE, text)
     else:
-        start = text.find("  policy.csv: |")
-        if start < 0:
+        found = re.search(r"(?m)^  (['\"]?)policy\.csv\1: \|", text)
+        if not found:
             return []
-        match = re.search(r"(?m)^  policy\.csv: \|\n((?:^    .*\n|^\n)*)", text[start:])
+        match = re.search(BLOCK_RE, text[found.start():])
     if not match:
         return []
-    return [line.strip() for line in match.group(1).splitlines() if line.strip()]
+    return [line.strip() for line in match.group(2).splitlines() if line.strip()]
 
 
 NONE_POLICIES = {"p, role:none, applications, get, */*, deny"}
@@ -56,16 +59,29 @@ EXPECTED_LINES = {
     "bootstrap": DEVELOPER_POLICIES | NONE_POLICIES | BOOTSTRAP_GROUPS,
 }
 TEMPLATE_MARKERS = ("{{", "${", "$(", "`")
-RBAC_NAME_LINE = "name: argocd-rbac-cm"
+RBAC_NAME = "argocd-rbac-cm"
+# D2: YAML allows quoted scalars and trailing comments, so names and keys are normalised
+# before comparison; a later document wins in Argo, so an unrecognised spelling is a bypass.
+KEY_RE = r"(?m)^[ \t]*(['\"]?)(policy\.[\w.\-]*csv)\1[ \t]*:"
+NAME_RE = re.compile(r"""^[ \t]*name[ \t]*:[ \t]*(?:(['"])(.*?)\1|([^\s#'"]+))[ \t]*(?:#.*)?$""")
+
+
+def rbac_declarations(text: str) -> int:
+    count = 0
+    for line in text.splitlines():
+        match = NAME_RE.match(line)
+        if match and (match.group(2) if match.group(1) else match.group(3)) == RBAC_NAME:
+            count += 1
+    return count
 
 
 def problems(gitops_text: str, bootstrap_text: str) -> list[str]:
     found: list[str] = []
     for source, text in (("gitops", gitops_text), ("bootstrap", bootstrap_text)):
-        keys = re.findall(r"(?m)^[ \t]*(policy\.[\w.\-]*csv)[ \t]*:", text)
+        keys = [key for _, key in re.findall(KEY_RE, text)]
         if keys != ["policy.csv"]:
             found.append(f"{source}: policy csv keys {keys} != ['policy.csv']")
-        declared = sum(1 for line in text.splitlines() if line.strip() == RBAC_NAME_LINE)
+        declared = rbac_declarations(text)
         if declared != 1:
             found.append(f"{source}: argocd-rbac-cm declared {declared} times, expected exactly 1")
         lines = policy_lines(text, source)
@@ -231,6 +247,36 @@ def mutation_verify(gitops_text: str, bootstrap_text: str) -> None:
             gitops_text,
             bootstrap_text + "\n---\napiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: argocd-rbac-cm\n",
             "declared 2 times"),
+        **{
+            f"second rbac-cm with {label} name ({src})": (
+                gitops_text + (extra if src == "GitOps" else ""),
+                bootstrap_text + (extra if src == "bootstrap" else ""),
+                "declared 2 times",
+            )
+            for label, name in (
+                ("single-quoted", "'argocd-rbac-cm'"),
+                ("double-quoted", '"argocd-rbac-cm"'),
+                ("trailing-comment", "argocd-rbac-cm # c"),
+            )
+            for src in ("GitOps", "bootstrap")
+            for extra in (
+                "\n---\napiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: " + name + "\ndata:\n"
+                "  policy.csv: |\n    p, role:developer, applications, sync, */*, allow\n",
+            )
+        },
+        **{
+            f"second rbac-cm with {label} policy.csv key ({src})": (
+                gitops_text + (extra if src == "GitOps" else ""),
+                bootstrap_text + (extra if src == "bootstrap" else ""),
+                "policy csv keys",
+            )
+            for label, key in (("double-quoted", '"policy.csv"'), ("single-quoted", "'policy.csv'"))
+            for src in ("GitOps", "bootstrap")
+            for extra in (
+                "\n---\napiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: other\ndata:\n  " + key + ": |\n"
+                "    p, role:developer, applications, sync, */*, allow\n",
+            )
+        },
         "role:none deny line deleted (GitOps)": (
             gitops_text.replace(anchor_line + "\n", "", 1), bootstrap_text, "policy lines differ"),
         "role:none deny line deleted (bootstrap)": (

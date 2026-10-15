@@ -1,0 +1,85 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-airgap-oci-layout-verify-124-20261015",
+  "task": "09 completeness gate verifies saved OCI layout bytes, pinned-digest identity, and reports referrer loss (#124)",
+  "createdAt": "2026-10-15T02:31:01.882232+00:00",
+  "changeContext": {
+    "paths": [
+      "scripts/airgap/09-verify-bundle-completeness.sh",
+      "scripts/airgap/lib/verify-oci-layout.py",
+      "scripts/airgap/tests/test_oci_layout.py",
+      "scripts/airgap/README.md",
+      "scripts/test/regression-check-kakao.sh",
+      "docs/common/lessons-log.md",
+      ".agents/evals/traces/2026-10-airgap-oci-layout-verify-124.json"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Add lib/verify-oci-layout.py called from 09-verify-bundle-completeness.sh: hash manifest/index/config blobs, layer presence+size, reject symlinked blobs, pinned refs must keep pinned digest, report referrer loss and platform collapse. No change to 02/05 copy behavior, no referrer copying, no live registry.",
+      "recordedAt": "2026-10-15T02:31:01.882547+00:00"
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "Pre-change 09 (git archive of origin/main scripts) on a layout written by a real offline 'skopeo copy --all --preserve-digests oci: oci:' accepts a flipped-byte manifest blob and an index.json of {} as a complete bundle",
+      "recordedAt": "2026-10-15T02:31:01.921227+00:00",
+      "evidence": [
+        "runtime:origin/main 09-verify-bundle-completeness.sh intact layout: exit=0 'Bundle complete: 1 images'",
+        "runtime:origin/main 09 manifest blob with one flipped byte (same size): exit=0 'Bundle complete: 1 images in images.txt, all present in manifest.txt, oci/ layout'",
+        "runtime:origin/main 09 index.json replaced by {}: exit=0 'Bundle complete: 1 images in images.txt, all present in manifest.txt, oci/ layout'"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "09 now runs verify-oci-layout.py (python3 -I, stdlib): fails closed on missing/invalid oci-layout or index.json, ambiguous latest entry, absent/symlinked/wrong-size/wrong-hash blob, malformed digest or size, unsupported mediaType, pin != layout digest; prints referrers-preserved 0 of N and platform-collapse counts, optional --report FILE JSON. Referrer loss is reported not failed (open AC).",
+      "recordedAt": "2026-10-15T02:31:01.960380+00:00"
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "summary": "Corrupted blob and empty index rejected by the real 09 CLI; intact skopeo-made layout still passes; unit tests with mutations",
+      "recordedAt": "2026-10-15T02:31:02.001259+00:00",
+      "scope": "Real 09-verify-bundle-completeness.sh on temp copy of a skopeo-written oci layout; unit-level via test_oci_layout.py (10 tests incl. 2 end-to-end 09 runs); mutations of hash, pin, size, symlink, subject, ambiguity checks and of the 09 wiring each made a test fail",
+      "evidence": [
+        "runtime:new 09 intact skopeo-made layout: exit=0 'OCI layouts verified: 1 images' + 'NOTE: referrers (SBOM/signature/attestation) preserved for 0 of 1 images'",
+        "runtime:new 09 manifest blob one flipped byte: exit=1 'ERROR: ...: index.json.manifests[latest]: blob content hashes to sha256:efe9f883...' + 'Bundle ... is INCOMPLETE'",
+        "runtime:new 09 index.json={}: exit=1 'ERROR: ...: index.json lists no manifests'",
+        "test:python3 -I -m unittest discover -s scripts/airgap/tests: Ran 54 tests OK",
+        "runtime:command-exit-0"
+      ],
+      "status": "passed",
+      "commandExitCode": 0
+    },
+    {
+      "id": "e5",
+      "type": "verification",
+      "summary": "Static suite passes",
+      "recordedAt": "2026-10-15T02:31:02.045386+00:00",
+      "scope": "Repository static suite; offline layout bytes only, no registry push, no 05-load digest comparison, no live cluster",
+      "evidence": [
+        "test:./scripts/test/regression-check-kakao.sh --static: passed 331 failed 0 warnings 6 (R82f added)",
+        "runtime:command-exit-0"
+      ],
+      "status": "passed",
+      "commandExitCode": 0
+    },
+    {
+      "id": "e6",
+      "type": "completion_claim",
+      "summary": "09 now proves saved layout bytes match their recorded descriptors and pinned digests, and states referrer/platform loss. Not shown: source digest == registry digest after 05-load (needs a registry), save-time per-image digest record, referrer copying, layer re-hashing, behavior against a full real bundle (only a minimal skopeo-written layout was exercised).",
+      "recordedAt": "2026-10-15T02:31:02.084338+00:00"
+    },
+    {
+      "id": "e7",
+      "type": "task_outcome",
+      "summary": "Offline layout integrity slice of #124 verified within stated scope.",
+      "recordedAt": "2026-10-15T02:31:02.125691+00:00",
+      "state": "A"
+    }
+  ]
+}

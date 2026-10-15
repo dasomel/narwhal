@@ -203,7 +203,7 @@ a reader trusts is whichever they hit first.
 
 ## Management Portal
 
-The cluster ships with the **[Narwhal IDP Portal](https://github.com/dasomel/narwhal-portal)** (Next.js 16 + React 19) for day-2 operations — real-time metrics, GitOps status, security, cost, and self-service. Reachable at `https://portal.local.narwhal.internal` after install.
+The cluster ships with the **Narwhal IDP Portal** (Next.js 16 + React 19), whose source lives in this repo under [`portal/`](portal/) (image `ghcr.io/dasomel/narwhal-portal`, tags `portal/vX.Y.Z`; see [ADR-0001](docs/adr/0001-consolidate-narwhal-portal-into-monorepo.md)) for day-2 operations — real-time metrics, GitOps status, security, cost, and self-service. Reachable at `https://portal.local.narwhal.internal` after install.
 
 | Dashboard | Architecture |
 | :---: | :---: |
@@ -216,7 +216,7 @@ The cluster ships with the **[Narwhal IDP Portal](https://github.com/dasomel/nar
 | ![Governance](docs/images/portal-governance.png) | ![Catalog](docs/images/portal-catalog.png) |
 | _Scorecard, DORA & distribution_ | _Self-service app catalog_ |
 
-> Drop captures into [`docs/images/`](docs/images/) ([details](docs/images/README.md)). Full UI gallery: [narwhal-portal](https://github.com/dasomel/narwhal-portal).
+> Drop captures into [`docs/images/`](docs/images/) ([details](docs/images/README.md)). Full UI gallery: [`portal/`](portal/).
 
 ## Access Services
 
@@ -526,8 +526,7 @@ and to write down.
 
 > **Narwhal does not replace the cloud-native ecosystem. It makes the ecosystem work together.**
 
-Sibling projects: [narwhal-portal](https://github.com/dasomel/narwhal-portal) (management UI),
-[kube-ready-box](https://github.com/dasomel/kube-ready-box) (Packer base box),
+Sibling projects: [kube-ready-box](https://github.com/dasomel/kube-ready-box) (Packer base box),
 [nfs-quota-agent](https://github.com/dasomel/nfs-quota-agent) (per-PVC NFS quota).
 
 ## AI-Assisted Maintenance

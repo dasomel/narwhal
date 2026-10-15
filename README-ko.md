@@ -183,7 +183,7 @@ vagrant destroy -f
 
 ## Management Portal
 
-클러스터에는 day-2 운영용 **[Narwhal IDP Portal](https://github.com/dasomel/narwhal-portal)** (Next.js 16 + React 19)이 포함됩니다 — 실시간 메트릭·GitOps 상태·보안·비용·셀프서비스. 설치 후 `https://portal.local.narwhal.internal`로 접속.
+클러스터에는 day-2 운영용 **Narwhal IDP Portal** (Next.js 16 + React 19)이 포함됩니다. 소스는 이 저장소의 [`portal/`](portal/)에 있습니다(이미지 `ghcr.io/dasomel/narwhal-portal`, 태그 `portal/vX.Y.Z`, [ADR-0001](docs/adr/0001-consolidate-narwhal-portal-into-monorepo.md) 참고) — 실시간 메트릭·GitOps 상태·보안·비용·셀프서비스. 설치 후 `https://portal.local.narwhal.internal`로 접속.
 
 | 대시보드 | 아키텍처 |
 | :---: | :---: |
@@ -196,7 +196,7 @@ vagrant destroy -f
 | ![Governance](docs/images/portal-governance.png) | ![Catalog](docs/images/portal-catalog.png) |
 | _스코어카드·DORA·분포_ | _셀프서비스 앱 카탈로그_ |
 
-> 캡쳐를 [`docs/images/`](docs/images/)에 넣으세요 ([상세](docs/images/README.md)). 전체 UI 갤러리: [narwhal-portal](https://github.com/dasomel/narwhal-portal).
+> 캡쳐를 [`docs/images/`](docs/images/)에 넣으세요 ([상세](docs/images/README.md)). 전체 UI 갤러리: [`portal/`](portal/).
 
 ## Access Services
 
@@ -497,8 +497,7 @@ Narwhal은 무엇도 대체하지 않습니다. 독자 컴포넌트를 추가하
 
 > **Narwhal does not replace the cloud-native ecosystem. It makes the ecosystem work together.**
 
-형제 프로젝트: [narwhal-portal](https://github.com/dasomel/narwhal-portal)(관리 UI),
-[kube-ready-box](https://github.com/dasomel/kube-ready-box)(Packer 베이스 Box),
+형제 프로젝트: [kube-ready-box](https://github.com/dasomel/kube-ready-box)(Packer 베이스 Box),
 [nfs-quota-agent](https://github.com/dasomel/nfs-quota-agent)(PVC별 NFS 쿼터).
 
 ## AI 보조 유지보수

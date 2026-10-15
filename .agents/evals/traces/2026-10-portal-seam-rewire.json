@@ -1,0 +1,70 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-portal-seam-rewire",
+  "task": "Rewire narwhal's portal seam checks (R55, R117/R117b, R211, R216) from a sibling checkout / pinned tag tree to the in-repo portal/ working tree after the history-preserving import",
+  "changeContext": {
+    "paths": [
+      ".gitignore",
+      "Vagrantfile",
+      "scripts/cluster/15-narwhal-portal.sh",
+      "scripts/test/check-kaniko-tag-portal-contract.sh",
+      "scripts/test/check-oidc-rbac-portal-contract.sh",
+      "scripts/test/regression-check-kakao.sh",
+      ".agents/evals/traces/2026-10-portal-seam-rewire.json"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Only the portal seam checks (check-oidc-rbac-portal-contract.sh, check-kaniko-tag-portal-contract.sh, R55/R117/R117b/R211/R216 in regression-check-kakao.sh), the R210 pathspec, the .gitignore re-include for portal route dirs, a Vagrantfile/15-script path comment, docs and ADR-0001 change. Image pin ghcr.io/dasomel/narwhal-portal:1.0.19, .github/**, portal/ source and live clusters are untouched."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "At 498a3ae (post-import) the checks still looked for a sibling repo: running the old check-oidc-rbac-portal-contract.sh and check-kaniko-tag-portal-contract.sh from a tree without ../narwhal-portal printed 'SKIP: narwhal-portal sibling checkout not found at ../narwhal-portal -- nothing to compare' and exited 0 although portal/ sat in the same repo; R211 ran 'git -C <portal> ls-tree -r --name-only v<pin>' and printed 'SKIP R211 sibling ../narwhal-portal checkout absent'. The first --static run after the rewire also exposed two import side effects: R210 FAIL (portal/CHANGELOG*, portal/SECURITY.md mention older image tags) and R35 FAIL (root .gitignore patterns logs/, secrets/, kubeconfig match tracked portal route dirs)."
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "Both contract scripts default PORTAL_DIR to portal/ and exit 1 (FAIL, not SKIP) when the file is missing; R55/R117/R117b/R216 lose their sibling/warn branches and always run against portal/; R211 asserts the probe routes in the portal/ working tree (no tag) and gets a negative test R211b on a mutated temp tree; R210 excludes portal/CHANGELOG* and portal/SECURITY.md; .gitignore re-includes /portal/src/**/{logs,secrets,kubeconfig}/. Existing mutation tests (removed 'viewer' group, mutated kaniko tag, removed GITEA_TOKEN) are kept and now mutate temp copies of in-repo files."
+    },
+    {
+      "id": "e4",
+      "type": "verification",
+      "status": "passed",
+      "scope": "the two converted contract scripts run directly against the real portal/ tree",
+      "summary": "check-oidc-rbac-portal-contract.sh and check-kaniko-tag-portal-contract.sh both pass against portal/.",
+      "evidence": [
+        "test:scripts/test/check-oidc-rbac-portal-contract.sh",
+        "runtime:command-exit-0"
+      ],
+      "commandExitCode": 0
+    },
+    {
+      "id": "e5",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "full static regression suite incl. R55, R117, R117b, R210, R211, R211b, R216, R35",
+      "summary": "regression-check-kakao.sh --static passes with 0 failures.",
+      "evidence": [
+        "test:./scripts/test/regression-check-kakao.sh --static",
+        "runtime:command-exit-0"
+      ],
+      "commandExitCode": 0
+    },
+    {
+      "id": "e6",
+      "type": "completion_claim",
+      "summary": "Seam checks now read the in-repo portal/ tree and fail loudly when it is missing; static suite and negative tests verified locally. NOT verified: GitHub Actions runs (lint.yml still checks out the sibling repo until the CI lane lands), the portal-*.yml workflows, branch protection, live-cluster behaviour, and that R211 reflects the released 1.0.19 tag (it now checks portal/ HEAD by design, D-MONO-2)."
+    },
+    {
+      "id": "e7",
+      "type": "task_outcome",
+      "state": "A",
+      "scope": "Seam checks, docs, ADR-0001 and ignore rules verified locally; CI runner behaviour and the pending migration steps (issue transfer, archive, required-check change, Valkey/v1.1.0 sequencing) are out of scope and unverified",
+      "summary": "Static suite green with explicit unverified scope stated in e6."
+    }
+  ]
+}

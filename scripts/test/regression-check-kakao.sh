@@ -1852,6 +1852,11 @@ PYEOF
   check R82f "09 hashes saved OCI layouts, enforces pinned-digest identity, reports referrer loss (#124)" \
     python3 -m unittest discover -s scripts/airgap/tests -p test_oci_layout.py -v
 
+  check R82g "02 records and 09 verifies the per-image saved-digest inventory; mismatch/missing/unlisted fail closed (#124)" \
+    bash -c 'python3 -m unittest discover -s scripts/airgap/tests -p test_oci_inventory.py -v \
+      && grep -q -- "--inventory-out" scripts/airgap/02-save-images.sh \
+      && grep -q -- "--inventory " scripts/airgap/09-verify-bundle-completeness.sh'
+
   # narwhal#6: an exported member-cluster credential must retain a stable ID while
   # reusing the existing Portal reader RBAC; a second broad reader role would drift.
   # Structural presence checks alone never prove they can fail, so each of R83/R84/R85

@@ -78,6 +78,12 @@ Rancher airgap 방식을 Narwhal에 적용한 버전입니다. 외부 인터넷�
 #    확인하며, digest 고정 ref(@sha256:)는 layout 최상위 digest가 pin과 같아야 한다.
 #    skopeo copy는 OCI referrer(SBOM/서명/attestation)를 복사하지 않으므로 보존 0건임을
 #    stderr(또는 --report FILE의 JSON)에 명시한다 — 실패로 처리하지는 않는다(미해결 AC).
+#    (#124) 02가 저장 시점에 기록한 <bundle>/images.digests.json(이미지 → 최상위 digest, layout 경로,
+#    플랫폼 모드, skopeo 버전; 정렬·타임스탬프 없음)과 디스크의 layout을 대조한다. 목록에 없는 oci/
+#    디렉터리, 항목 없는 이미지, digest/플랫폼 불일치, 비정렬·중복·알 수 없는 필드는 exit 1.
+#    인벤토리 도입 전에 만든 번들은 의도적으로 실패한다 — 02-save-images.sh를 다시 실행해 재생성한다
+#    (현재 디스크에서 만든 인벤토리는 디스크 내용을 그대로 보증할 뿐이라 만들지 않는다).
+#    05-load-images.sh는 이 파일을 읽지 않으므로 적재 경로는 영향이 없다.
 ./scripts/airgap/09-verify-bundle-completeness.sh --bundle ./narwhal-airgap-bundle-amd64
 
 # 결과: narwhal-airgap-bundle-<arch>/ 폴더를 대상 클러스터로 전송

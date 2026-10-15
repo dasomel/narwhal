@@ -8,6 +8,7 @@ set -euo pipefail
 # Bundle layout:
 #   <bundle>/oci/<normalized-ref>/...
 #   <bundle>/manifest.txt  (list of saved images)
+#   <bundle>/images.digests.json  (per-image saved digest inventory, #124; 09 verifies it)
 # =============================================================================
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -38,6 +39,8 @@ fi
 
 mkdir -p "${OUT_DIR}/oci"
 : > "${OUT_DIR}/manifest.txt"
+# A stale inventory from an earlier run must never describe this run's layouts.
+rm -f "${OUT_DIR}/images.digests.json"
 
 fail=0 ok=0
 while IFS= read -r img; do
@@ -62,6 +65,17 @@ while IFS= read -r img; do
     fail=$((fail+1))
   fi
 done < "${LIST_FILE}"
+
+# Record what was just saved (image -> top-level digest, layout, platform). The tool also
+# re-verifies each layout's bytes first, so a half-written layout fails the save, not 09.
+if python3 -I "${SCRIPT_DIR}/lib/verify-oci-layout.py" --bundle "${OUT_DIR}" \
+     --images "${OUT_DIR}/manifest.txt" --inventory-out "${OUT_DIR}/images.digests.json" \
+     --platform "linux/${AIRGAP_ARCH##*/}" --tool "$(skopeo --version 2>/dev/null || echo skopeo-unknown)"; then
+  echo "[ok] digest inventory: ${OUT_DIR}/images.digests.json"
+else
+  echo "[FAIL] digest inventory ${OUT_DIR}/images.digests.json" >&2
+  fail=$((fail+1))
+fi
 
 # Bootstrap registry image — saved as a docker-archive (not OCI layout) so 04
 # can `docker/nerdctl load` it WITHOUT a running registry (chicken-and-egg).

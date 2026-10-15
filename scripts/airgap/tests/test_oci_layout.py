@@ -161,10 +161,13 @@ class CompletenessGateTests(unittest.TestCase):
             lay = Layout(b)
             manifest, config, _ = lay.image()
             lay.index(manifest)
-            if corrupt:
-                lay.blob(config).write_bytes(b'{"os":"darwi"}')
             (b / 'list.txt').write_text(IMG + '\n')
             (b / 'manifest.txt').write_text(IMG + '\n')
+            subprocess.run([sys.executable, '-I', str(VERIFIER), '--bundle', str(b), '--images', str(b / 'list.txt'),
+                            '--inventory-out', str(b / 'images.digests.json'), '--platform', 'linux/arm64'],
+                           check=True, capture_output=True)
+            if corrupt:
+                lay.blob(config).write_bytes(b'{"os":"darwi"}')
             (b / 'digests.tsv').write_text(f'{IMG}\tsha256:{"b" * 64}\t2026-10-15T00:00:00Z\tcrane\n')
             return subprocess.run(
                 ['bash', str(GATE), '--list', str(b / 'list.txt'), '--bundle', str(b),

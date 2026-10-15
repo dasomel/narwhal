@@ -37,6 +37,16 @@ set -euo pipefail
 # --override-arch dropped. Referrer loss is reported, not failed — it is the open part
 # of #124, and failing every bundle until it is fixed would only teach people to skip 09.
 #
+# SAVED-DIGEST INVENTORY (narwhal#124): the byte check above compares a layout with its OWN
+# index.json, so a layout swapped wholesale for another consistent one would pass.
+# 02-save-images.sh records what it saved in <bundle>/images.digests.json (image ->
+# top-level digest, layout dir, platform mode, skopeo version); this gate fails closed when
+# that file is absent/malformed/unsorted, an image in images.txt or manifest.txt has no
+# entry, oci/ holds a directory no entry accounts for, or a digest/platform differs. A
+# bundle saved before the inventory existed FAILS here by design: re-run
+# 02-save-images.sh to regenerate it (an inventory built from the current disk would only
+# attest whatever is there). 05-load-images.sh does not read it, so loading is unaffected.
+#
 # Usage:
 #   scripts/airgap/09-verify-bundle-completeness.sh [--list images.txt] [--bundle DIR] [--digests image-digests.tsv] [--report FILE]
 #
@@ -147,7 +157,8 @@ if [[ -z "${missing_oci_layout}" ]]; then
   report_args=()
   [[ -n "${REPORT_FILE}" ]] && report_args=(--report-out "${REPORT_FILE}")
   python3 -I "${SCRIPT_DIR}/lib/verify-oci-layout.py" --bundle "${BUNDLE_DIR}" \
-    --images "${wanted_sorted}" ${report_args[@]+"${report_args[@]}"} || fail=1
+    --images "${wanted_sorted}" --manifest "${BUNDLE_DIR}/manifest.txt" \
+    --inventory "${BUNDLE_DIR}/images.digests.json" ${report_args[@]+"${report_args[@]}"} || fail=1
 fi
 
 if [[ -n "${missing_from_manifest}" ]]; then

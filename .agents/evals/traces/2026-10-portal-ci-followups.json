@@ -12,6 +12,7 @@
       "scripts/ci/tests/test_check_portal_release_ref.py",
       "docs/adr/0001-consolidate-narwhal-portal-into-monorepo.md",
       "docs/adr/0001-consolidate-narwhal-portal-into-monorepo-ko.md",
+      "docs/common/lessons-log.md",
       ".agents/evals/traces/2026-10-portal-ci-followups.json"
     ]
   },
@@ -19,7 +20,7 @@
     {
       "id": "e1",
       "type": "scope_check",
-      "summary": "Only the workdir checker + tests, check-portal-release-ref.py (--repo) + tests, portal-release.yml (validator checkout) and the two ADR-0001 files change; portal-docker-publish.yml, portal/ and the cluster are untouched."
+      "summary": "Only the workdir checker + tests, check-portal-release-ref.py (--repo) + tests, portal-release.yml (validator checkout) and the two ADR-0001 files change; portal-docker-publish.yml, portal/ and the cluster are untouched. PR #355 round adds docs/common/lessons-log.md; portal-docker-publish.yml still untouched."
     },
     {
       "id": "e2",
@@ -33,6 +34,11 @@
     },
     {
       "id": "e4",
+      "type": "bug_fix",
+      "summary": "PR #355 review round: portal-release.yml checked out the tagged commit into the workspace root and trusted/ inside it, so a tagged tree with a symlink or directory named trusted could shadow it or make actions/checkout clean the root. Roles inverted: the default-branch tip (github.sha, persist-credentials false) is the workspace root and runs scripts/ci/check-portal-release-ref.py --repo tagged; the tagged commit is checked out only under tagged/; the changelog and NOTICE/LICENSE/THIRD-PARTY-NOTICES.md are extracted as git blobs after an ls-tree regular-file (100644/100755) check; trivy scans tagged/portal. Checker: a run step before the first unconditional checkout with a relative own working-directory now fails (only ., github.workspace, runner.temp, absolute paths pass); jobs with uses: and no steps are skipped. Tests: symlink-named-trusted tagged repo with --repo tagged, 4 workflow layout tests (fail on the committed workflow), 5 checker tests (3 fail on the committed checker)."
+    },
+    {
+      "id": "e5",
       "type": "verification",
       "status": "passed",
       "scope": "CI helper unit tests incl. the new workdir cases (a)-(d) and --repo tests",
@@ -44,7 +50,7 @@
       "commandExitCode": 0
     },
     {
-      "id": "e5",
+      "id": "e6",
       "type": "regression_verification",
       "status": "passed",
       "scope": "full static regression suite",
@@ -56,16 +62,16 @@
       "commandExitCode": 0
     },
     {
-      "id": "e6",
+      "id": "e7",
       "type": "completion_claim",
-      "summary": "Static checker, unit tests, actionlint and mutable-input guard verified locally; the release workflow was not executed on GitHub Actions, so the trusted/ checkout ordering and github.sha value on a real workflow_run are unverified."
+      "summary": "Static checker, unit tests (incl. the tagged/ layout and symlink cases), actionlint and the mutable-input guard verified locally; portal-release.yml was not executed on GitHub Actions, so the two-checkout layout, github.sha on a real workflow_run and the blob extraction step are unverified."
     },
     {
-      "id": "e7",
+      "id": "e8",
       "type": "task_outcome",
       "state": "A",
-      "scope": "Checker, validator --repo and docs verified locally; GitHub Actions execution of the release workflow unverified",
-      "summary": "Local verification is green; behaviour of portal-release.yml on a real workflow_run is out of scope and unverified (stated in e6)."
+      "scope": "Checker, validator --repo, workflow layout and docs verified locally; GitHub Actions execution of the release workflow unverified",
+      "summary": "Local verification is green; behaviour of portal-release.yml on a real workflow_run is out of scope and unverified (stated in e7)."
     }
   ]
 }

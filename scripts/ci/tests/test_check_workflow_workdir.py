@@ -111,6 +111,40 @@ class WorkdirCheck(unittest.TestCase):
         out = self.check(wf(steps))
         self.assertEqual(len([x for x in out if "before checkout" in x]), 1, out)
 
+    # P2-2: a step's own relative working-directory is absent before the checkout too
+    def test_step_relative_workdir_before_checkout_fails(self):
+        for wd in ("portal", "./portal", "sub/dir"):
+            steps = f"      - run: echo early\n        working-directory: {wd}\n      - uses: {CHECKOUT}\n"
+            out = self.check(wf(steps))
+            self.assertTrue(any("relative working-directory" in x for x in out), (wd, out))
+
+    def test_step_known_workdir_before_checkout_passes(self):
+        for wd in (".", "${{ github.workspace }}", "${{ runner.temp }}", "/tmp"):
+            steps = f"      - run: echo early\n        working-directory: '{wd}'\n      - uses: {CHECKOUT}\n"
+            self.assertEqual(self.check(wf(steps)), [], wd)
+
+    def test_step_relative_workdir_after_checkout_passes(self):
+        steps = f"      - uses: {CHECKOUT}\n      - run: echo hi\n        working-directory: portal\n"
+        self.assertEqual(self.check(wf(steps)), [])
+
+    # P2-3: reusable-workflow jobs get no workflow defaults
+    def test_reusable_workflow_job_ignored(self):
+        text = (
+            "name: t\non: push\ndefaults:\n  run:\n    working-directory: portal\n"
+            "jobs:\n  j:\n    uses: ./.github/workflows/x.yml\n"
+        )
+        self.assertEqual(self.check(text), [])
+
+    def test_normal_job_beside_reusable_job_still_fails(self):
+        text = (
+            "name: t\non: push\ndefaults:\n  run:\n    working-directory: portal\n"
+            "jobs:\n  r:\n    uses: ./.github/workflows/x.yml\n"
+            "  j:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo hi\n"
+        )
+        out = self.check(text)
+        self.assertEqual(len(out), 1, out)
+        self.assertIn("job 'j'", out[0])
+
 
 if __name__ == "__main__":
     unittest.main()

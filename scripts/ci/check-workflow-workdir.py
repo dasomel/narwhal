@@ -10,9 +10,12 @@ default, else the WORKFLOW-level one; `.` is the always-present workspace root a
   - an UNCONDITIONAL `actions/checkout` must exist (a conditional one earlier does not count, a
     later unconditional one does) and it must check out into the workspace root, or into exactly
     the working directory (`with.path` unset, `.`, or equal to it);
-  - before that checkout there may be no `run:` step that inherits the default (a step with its own
-    `working-directory` is not affected) and no local action (`uses: ./...`), which needs the files.
-`uses:` steps such as harden-runner may precede it.
+  - before that checkout there may be no `run:` step that inherits the default, none whose own
+    `working-directory` is a relative path (still absent on a fresh runner; only `.`,
+    `${{ github.workspace }}`, `${{ runner.temp }}` and absolute paths are known to exist), and no
+    local action (`uses: ./...`), which needs the files.
+`uses:` steps such as harden-runner may precede it. Reusable-workflow jobs (`uses:`, no steps) are
+skipped: workflow `defaults` are not passed to called workflows.
 Fix by dropping the default and setting `working-directory:` on the post-checkout steps.
 
 Usage: check-workflow-workdir.py [FILE...]   (default scan: .github/workflows/portal-*.yml)
@@ -33,6 +36,11 @@ def default_workdir(node: object) -> str | None:
 
 def norm(path: str) -> str:
     return path.strip().removeprefix("./").rstrip("/")
+
+
+def exists_before_checkout(wd: object) -> bool:
+    w = " ".join(str(wd).split())
+    return w in (".", "./", "${{ github.workspace }}", "${{ runner.temp }}") or w.startswith("/")
 
 
 def is_checkout(step: dict) -> bool:
@@ -57,6 +65,8 @@ def problems(path: Path) -> list[str]:
     out: list[str] = []
     for name, job in (doc.get("jobs") or {}).items():
         job = job or {}
+        if "uses" in job and not job.get("steps"):
+            continue
         workdir = default_workdir(job) or wf_default
         if not workdir or norm(workdir) in ("", "."):
             continue
@@ -79,6 +89,11 @@ def problems(path: Path) -> list[str]:
                 out.append(
                     f"{path}: job '{name}' runs step '{s.get('name', '?')}' before checkout "
                     f"with working-directory '{workdir}'"
+                )
+            elif "run" in s and not exists_before_checkout(s["working-directory"]):
+                out.append(
+                    f"{path}: job '{name}' runs step '{s.get('name', '?')}' before checkout "
+                    f"with its own relative working-directory '{s['working-directory']}'"
                 )
             if str(s.get("uses", "")).startswith("./"):
                 out.append(

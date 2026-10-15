@@ -3090,16 +3090,8 @@ assert line in s and not any(x.startswith("MAX_ROUNDS=") and ":-3" in x for x in
   # (lib.sh resolve_s3_credentials, default "admin" per D-velero) now serves 07 and 08-4.
   check R249 "07-cnpg.sh and 08-4-storage.sh derive S3 credentials via resolve_s3_credentials; 07 does not read the later-created Velero Secret itself (2026-10-16)" \
     bash -c 'grep -Fq "resolve_s3_credentials" scripts/cluster/07-cnpg.sh && grep -Fq "resolve_s3_credentials" scripts/cluster/08-4-storage.sh && ! grep -Fq "velero-s3-credentials" scripts/cluster/07-cnpg.sh'
-  check R250 "resolve_s3_credentials defaults both keys to admin when the Secret is absent or empty, honours env, and never yields an empty key" \
-    bash -c 'set -euo pipefail
-      k=$(mktemp -d); trap "rm -rf $k" EXIT
-      printf "#!/bin/bash\nexit 1\n" > "$k/kubectl"; chmod +x "$k/kubectl"
-      export PATH="$k:$PATH"
-      source scripts/common/lib.sh
-      unset S3_ACCESS_KEY S3_SECRET_KEY; resolve_s3_credentials
-      [ "$S3_ACCESS_KEY" = admin ] && [ "$S3_SECRET_KEY" = admin ]
-      S3_ACCESS_KEY=ak S3_SECRET_KEY=""; resolve_s3_credentials
-      [ "$S3_ACCESS_KEY" = ak ] && [ -n "$S3_SECRET_KEY" ]'
+  check R250 "resolve_s3_credentials: NotFound defaults to admin, any other kubectl error fails closed, an existing cnpg secret is preserved, env wins" \
+    bash scripts/test/lib/check-s3-credentials-resolve.sh
 
   # 2026-10-16: up.sh printed "Phase 2 complete" right after 14-gitops-bootstrap.sh failed because
   # phase2_complete() only looked for namespaces. 06-phase2-start.sh now writes a success marker.

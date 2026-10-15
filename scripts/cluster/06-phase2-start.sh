@@ -9,7 +9,7 @@ echo ""
 # D-p2marker: success marker read by scripts/up.sh phase2_complete(). Removed on entry so a
 # failed re-run never leaves a stale "complete" behind; written only after every critical
 # script passed (the loop below exits 1 on a critical failure before reaching the end).
-PHASE2_MARKER="${PHASE2_MARKER:-/var/lib/narwhal/phase2-complete}"
+PHASE2_MARKER="/var/lib/narwhal/phase2-complete"  # keep identical to PHASE2_MARKER in scripts/up.sh
 mkdir -p "$(dirname "${PHASE2_MARKER}")"
 rm -f "${PHASE2_MARKER}"
 

@@ -24,6 +24,9 @@ set -euo pipefail
 
 PROVIDER="${PROVIDER:-vmware_desktop}"
 
+# Written by scripts/cluster/06-phase2-start.sh only after every Phase 2 script passed.
+PHASE2_MARKER="/var/lib/narwhal/phase2-complete"
+
 # Timestamped progress line. vagrant's own output carries no clock, which is what made the
 # 2026-08-04 SSH drop uncorrelatable against the guests' journals — the drop was visible in
 # this log and invisible in time. Milestones this script prints go through say() so the next
@@ -392,12 +395,12 @@ while [ "${attempt}" -le "${MAX_ATTEMPTS}" ]; do
     phase2_complete() {
       local have ns
       if ! have=$(vagrant ssh master-1 -c \
-            "kubectl get ns -o name || exit 1; if [ -f /var/lib/narwhal/phase2-complete ]; then echo PHASE2_MARKER_OK; fi" 2>/dev/null); then
+            "kubectl get ns -o name || exit 1; if [ -f ${PHASE2_MARKER} ]; then echo PHASE2_MARKER_OK; fi" 2>/dev/null); then
         echo "  Phase 2 status unknown: master-1 unreachable (SSH or kubectl failed)."
         return 1
       fi
       if ! grep -q "^PHASE2_MARKER_OK" <<<"${have}"; then
-        echo "  Phase 2 incomplete: success marker /var/lib/narwhal/phase2-complete not written (a critical script failed)."
+        echo "  Phase 2 incomplete: success marker ${PHASE2_MARKER} not written (a critical script failed)."
         return 1
       fi
       for ns in platform-system monitoring security-system storage istio-system iam devtools; do

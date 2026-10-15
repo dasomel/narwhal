@@ -122,7 +122,7 @@ fi
 # S3 credentials - reuse SeaweedFS creds, resolved by the same helper as 08-4-storage.sh
 # (the Velero S3 Secret does not exist yet when 07 runs; the shared default is "admin").
 # resolve_s3_credentials fails if either key is empty, so the secret below never has one.
-resolve_s3_credentials || { echo "ERROR: cannot derive cnpg-s3-credentials" >&2; exit 1; }
+resolve_s3_credentials cnpg-s3-credentials database ACCESS_KEY_ID ACCESS_SECRET_KEY || { echo "ERROR: cannot derive cnpg-s3-credentials" >&2; exit 1; }
 
 cat <<EOF | kubectl apply -f -
 apiVersion: v1

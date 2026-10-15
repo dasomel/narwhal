@@ -35,8 +35,8 @@
       "id": "e4",
       "type": "verification",
       "status": "passed",
-      "scope": "Valkey TLS/ACL/secret/ingress contract with 36 negative mutations incl. explicit VALKEY_INSECURE_PRODUCTION removal (static; live unverified)",
-      "summary": "check-valkey-security-contract.py passes (36 negative mutations) after merging origin/main (R248 kept alongside R247), the 1.1.0 repin, critical 13-2 and explicit stale-key removal.",
+      "scope": "Valkey TLS/ACL/secret/ingress contract with 37 negative mutations incl. explicit, existence-based VALKEY_INSECURE_PRODUCTION removal incl. empty value (static; live unverified)",
+      "summary": "check-valkey-security-contract.py passes (37 negative mutations) after merging origin/main (R248 kept alongside R247), the 1.1.0 repin, critical 13-2 and explicit stale-key removal.",
       "evidence": [
         "test:python3 scripts/test/lib/check-valkey-security-contract.py",
         "runtime:command-exit-0"

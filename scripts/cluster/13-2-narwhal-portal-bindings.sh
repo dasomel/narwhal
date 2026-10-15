@@ -738,21 +738,31 @@ fi
 # explicitly and verify. Idempotent: guarded by a no-pipe existence read. Escape hatch:
 # none needed, the key has no supported use.
 stale_key="VALKEY_INSECURE_PRODUCTION"
-stale_present="$(kubectl get secret narwhal-portal-secrets -n devtools \
-  -o "jsonpath={.data.${stale_key}}")" || {
+# Existence, not value: a key present with an EMPTY value is still "defined" to the portal.
+secret_has_key() {
+  local json
+  json="$(kubectl get secret narwhal-portal-secrets -n devtools -o json)" || return 2
+  STALE_KEY="$1" SECRET_JSON="${json}" python3 -c '
+import json, os
+data = json.loads(os.environ["SECRET_JSON"]).get("data") or {}
+raise SystemExit(0 if os.environ["STALE_KEY"] in data else 1)
+'
+}
+stale_rc=0
+secret_has_key "${stale_key}" || stale_rc=$?
+if [ "${stale_rc}" -gt 1 ]; then
   echo "ERROR: could not re-read narwhal-portal-secrets to check ${stale_key}" >&2
   exit 1
-}
-if [ -n "${stale_present}" ]; then
+fi
+if [ "${stale_rc}" -eq 0 ]; then
+  patch_rc=0
   kubectl patch secret narwhal-portal-secrets -n devtools --type=json \
-    -p "[{\"op\":\"remove\",\"path\":\"/data/${stale_key}\"}]" || {
-    echo "ERROR: could not remove ${stale_key} from narwhal-portal-secrets" >&2
-    exit 1
-  }
-  stale_present="$(kubectl get secret narwhal-portal-secrets -n devtools \
-    -o "jsonpath={.data.${stale_key}}")" || exit 1
-  if [ -n "${stale_present}" ]; then
-    echo "ERROR: ${stale_key} still present in narwhal-portal-secrets after removal" >&2
+    -p "[{\"op\":\"remove\",\"path\":\"/data/${stale_key}\"}]" || patch_rc=$?
+  # A concurrent removal makes the patch fail; only fail if the key is still there.
+  stale_rc=0
+  secret_has_key "${stale_key}" || stale_rc=$?
+  if [ "${stale_rc}" -ne 1 ]; then
+    echo "ERROR: ${stale_key} still present in narwhal-portal-secrets after removal (patch rc=${patch_rc})" >&2
     exit 1
   fi
 fi

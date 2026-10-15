@@ -3099,6 +3099,8 @@ assert names.index("13-2-narwhal-portal-bindings.sh") < names.index("14-gitops-b
 assert "PORTAL_BINDINGS_DEGRADED_RC=3" in s
 b = open("scripts/cluster/13-2-narwhal-portal-bindings.sh").read()
 assert re.search(r"ARGOCD_TOKEN 없이 완료[^\n]*\n\s*exit 3\b", b), "13-2 must exit 3 only for the ArgoCD-token-only case"
+code = [l for l in b.splitlines() if not l.lstrip().startswith("#")]
+assert sum(1 for l in code if re.search(r"\bexit 3\b", l)) == 1, "exit 3 must appear exactly once in non-comment 13-2 code"
 '
   check R248 "every kakaocloud_public_ip has lifecycle prevent_destroy (D-PUBIP, 2026-10-15); the check fails when a guard is removed" \
     python3 scripts/test/lib/check-kakao-public-ip-guard.py --mutation-verify

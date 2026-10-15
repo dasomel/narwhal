@@ -210,6 +210,9 @@ def validate(chart: str, bootstrap: str) -> None:
   if missing:
     raise AssertionError(f"bootstrap missing security contract fragments: {missing}")
 
+  if 'os.environ["STALE_KEY"] in data' not in bootstrap or "jsonpath={.data.${stale_key}}" in bootstrap:
+    raise AssertionError("stale-key probe must test key existence, not its value (empty value is still defined)")
+
   forbidden = [
     "--from-literal=VALKEY_INSECURE_PRODUCTION=",
     "--requirepass",
@@ -306,6 +309,8 @@ def main() -> None:
     (chart, bootstrap.replace("*AlreadyExists*)", "*NeverMatches*)", 1), "AlreadyExists"),
     (chart, bootstrap.replace("exists without a password; refusing to regenerate", "exists", 1), "refusing to regenerate"),
     (chart, bootstrap.replace("kubectl patch secret narwhal-portal-secrets -n devtools --type=json", "kubectl get secret narwhal-portal-secrets -n devtools -o name", 1), "missing security contract fragments"),
+    # Empty-value case: a value-based (jsonpath) probe never sees a key present with "".
+    (chart, bootstrap.replace('raise SystemExit(0 if os.environ["STALE_KEY"] in data else 1)', 'raise SystemExit(0 if data.get(os.environ["STALE_KEY"]) else 1)', 1), "existence"),
     (chart, bootstrap.replace("still present in narwhal-portal-secrets after removal", "removed", 1), "missing security contract fragments"),
     (chart, bootstrap.replace("  --ignore-not-found -o name)", "  --ignore-not-found -o jsonpath='{.data.password}')", 1), "existence probe"),
     (chart, bootstrap.replace('users.acl" 2>&1 >/dev/null)"; then', 'users.acl" --dry-run=client -o yaml 2>&1 >/dev/null)"; then', 1), "atomic"),

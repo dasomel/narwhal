@@ -75,6 +75,13 @@ that is not itself a Git repository.
 - The root `.gitignore` patterns for `logs/`, `secrets/` and `kubeconfig` matched portal
   API route directories of the same names; `/portal/src/**/` negations keep that source
   tracked, and R35 fails if a portal source file is ignored again.
+- **Markdown gate (D-MONO-CI-MD):** portal never linted Markdown, so against the PR base every
+  imported portal line is "new". `scripts/ci/markdownlint-changed.py` therefore measures `portal/`
+  files against the import baseline commit `e8e8229d8adf350f57feb218f6c19233e2685df4` (when it is an
+  ancestor of HEAD; otherwise the PR base). Legacy debt is not excluded and the docs are not edited:
+  only lines changed since the import must be clean. Honest limit: that legacy debt is never reported
+  by the gate. At the import it was 1686 findings (MD034 687, MD040 664, MD032 137, MD022 121,
+  MD031 42, MD058 11, 15 other), so cleaning it is a separate, deliberate change.
 
 ## Pending (not done yet)
 

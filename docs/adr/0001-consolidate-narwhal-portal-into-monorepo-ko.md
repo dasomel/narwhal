@@ -63,6 +63,12 @@ D-MONO-3(CI), D-MONO-4(릴리스·이미지 정체성), D-MONO-5(이 ADR). impor
   `dasomel/narwhal-portal`(아카이브하되 삭제하지 않음)에 남는다.
 - 루트 `.gitignore`의 `logs/`, `secrets/`, `kubeconfig` 패턴이 같은 이름의 portal API 라우트 디렉터리와
   일치했다. `/portal/src/**/` 예외로 해당 소스를 추적하며, portal 소스가 다시 무시되면 R35가 실패한다.
+- **Markdown 게이트 (D-MONO-CI-MD):** portal은 Markdown lint를 한 적이 없어, PR 기준(base) 대비로는 가져온
+  portal의 모든 줄이 "새 줄"이 된다. 그래서 `scripts/ci/markdownlint-changed.py`는 `portal/` 파일을 import 기준
+  커밋 `e8e8229d8adf350f57feb218f6c19233e2685df4`(HEAD의 조상일 때, 아니면 PR base) 대비로 측정한다. 레거시
+  부채는 제외하지도, 문서를 고치지도 않는다: import 이후 바뀐 줄만 깨끗해야 한다. 정직한 한계: 레거시 부채는
+  게이트에 보고되지 않는다. import 시점에는 1686건(MD034 687, MD040 664, MD032 137, MD022 121, MD031 42,
+  MD058 11, 기타 15)이었고, 정리는 별도의 의도적 변경이다.
 
 ## 미완료 (아직 하지 않음)
 

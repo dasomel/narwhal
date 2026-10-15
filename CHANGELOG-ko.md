@@ -46,36 +46,58 @@ ArgoCD, Gitea, RBAC, OpenBao, Keycloak, APISIX, NFS, `database` 신뢰 경계가
   형식이 잘못된 신선도 증거는 거부됨.
 - **ArgoCD Application이 더 이상 `default` AppProject에서 실행되지 않음 (6ead267).** `13-argocd.sh`가 새
   `platform`, `tenants` AppProject(`gitops/resources/argocd-projects.yaml`)를 적용하며 적용하지 못하면 실패함.
-  목록에 없는 네임스페이스나 리포지토리를 지정한 Application은 동기화 시점에 거부됨. ArgoCD `developer` 역할은
-  `tenants/*`만 동기화할 수 있음(기존 `*/*`). 따라서 개발자는 argocd, keycloak, kyverno를 동기화할 수 없음.
+  목록에 없는 네임스페이스나 리포지토리를 지정한 Application은 동기화 시점에 거부됨. **개발자 동기화 제한은 아직
+  적용되지 않음:** `13-argocd.sh`는 `developer` 역할에 `tenants/*`의 `sync`를 쓰지만, `narwhal-platform` GitOps
+  차트(`gitops/charts/narwhal-platform/templates/argocd-config.yaml`)는 같은 `argocd-rbac-cm` ConfigMap에서
+  `developer`(및 `portal-reader`)에 여전히 `*/*`의 `sync`를 선언함. `narwhal-platform` Application은 이 파일을
+  `selfHeal`과 `prune`으로 동기화하고 해당 ConfigMap을 무시하지 않으며 14단계가 13단계 뒤에 실행되므로, 앱이
+  동기화되면 Git이 스크립트의 값을 덮어씀. 알려진 이슈 참고.
 - **`narwhal-gitops`가 비공개 Gitea 리포지토리가 됨 (52dbb8d).** ArgoCD는 전용 `argocd` 계정과
   `read:repository` 토큰(리포지토리 Secret으로 등록)으로 읽으며, 최초 push 이후 `main`은 push 허용 목록으로
   보호됨. `14-gitops-bootstrap.sh`를 다시 실행하면 기존 리포지토리에도 `private: true`가 재적용됨.
   리포지토리 생성, clone, 설정 복사, push 실패는 더 이상 무시되지 않고 부트스트랩을 중단시킴 (65d07b1).
 - **`developer` ClusterRole이 읽기 전용이 됨 (7551c21).** 변경 동사와 `exec` / `portforward` / `attach`는 새
   `developer-workload-admin` 역할로 옮겨졌고 `dev`(및 테넌트 네임스페이스, ed06e82)에만 바인딩됨. 그 외 모든
-  네임스페이스는 직접 `kubectl` 사용 시 읽기 전용이며, 포털은 자체 ServiceAccount를 쓰므로 영향 없음.
+  네임스페이스는 직접 `kubectl` 사용 시 읽기 전용이고 개발자는 더 이상 ArgoCD Application을 `kubectl patch`할 수
+  없으며, 포털은 자체 ServiceAccount를 쓰므로 영향 없음.
 - **포털의 OpenBao 접근이 1시간짜리 Kubernetes 인증 토큰이 됨 (e923d7b, 2b589b7).**
   `13-2-narwhal-portal-bindings.sh`가 `narwhal-portal` Kubernetes 인증 역할(TTL 1h, audience 검증)을 만들고,
-  `storage:openbao`에 `system:auth-delegator`를 바인딩하고, projected ServiceAccount 토큰을 마운트하며, 8760h
-  토큰을 더 이상 저장하지 않음. 레거시 토큰은 `ENABLE_LEGACY_OPENBAO_TOKEN=true`일 때만 발급됨. 포털 정책은 KV-v2
-  메타데이터 접근만 유지하고 `secret/data/narwhal-portal/*`는 더 이상 부여하지 않음. 기존 배포에서 무엇을 다시
-  적용해야 하는지는 확인되지 않음(unverified). 해당 커밋은 여기서 라이브 클러스터에 실행되지 않았음.
+  `storage:openbao`에 `system:auth-delegator`를 바인딩하며, 8760h 토큰을 더 이상 저장하지 않음. 레거시 토큰은
+  `ENABLE_LEGACY_OPENBAO_TOKEN=true`일 때만 발급됨. projected ServiceAccount 토큰은 스크립트가 아니라
+  `narwhal-platform` 차트(`narwhal-portal-k8s.yaml`)가 마운트함. 포털 정책은 KV-v2 메타데이터 접근만 유지하고
+  `secret/data/narwhal-portal/*`는 더 이상 부여하지 않음. 기존 배포에서 무엇을 다시 적용해야 하는지는 확인되지
+  않음(unverified). 해당 커밋은 여기서 라이브 클러스터에 실행되지 않았음.
+- **1년짜리 Kubernetes API 토큰이 기본적으로 더 이상 발급되지 않음 (77d6ce3).**
+  `13-2-narwhal-portal-bindings.sh`는 `ENABLE_LEGACY_K8S_SA_TOKEN=true`(기본값 `false`, 설정하면 WARN 출력)가 아니면 8760h
+  `K8S_SA_TOKEN`을 만들지 않으며, 포털은 대신 1시간짜리 projected 토큰(audience
+  `https://kubernetes.default.svc.cluster.local`)을 읽음. 정적 `K8S_SA_TOKEN`에 의존하는 배포는 이 변수를
+  설정하거나 projected 토큰으로 옮겨야 함.
 - **Keycloak OIDC TLS가 검증되며 실패 시 차단됨 (5352bc2, dae7237, 3950512, 6790454).** ArgoCD OIDC 설정에서
   `insecureSkipVerify`가 제거되었고 `rootCA`가 `argocd-cm` / `argocd-secret`에 주입됨.
   `11-3-keycloak-clients.sh`는 `narwhal-wildcard-tls`와 `narwhal-ca-cert` 어디에서도 CA를 얻지 못하면 exit 1로
   종료함. `test-sso.sh`는 검증이 성공하기를 기대함.
 - **APISIX Admin API는 파드 CIDR과 루프백만 허용 (1dddbe4).** 허용 소스는 `10.244.0.0/16`과 `127.0.0.1/32`이며,
-  NetworkPolicy가 `:9180` ingress를 제한함. 장애 복구(break-glass)용 파드에는 라벨
+  NetworkPolicy가 `:9180` ingress를 APISIX ingress controller와 `devtools`의 `narwhal-portal`로 제한함
+  (`gitops/resources/apisix-admin-ingress-policy.yaml`). 장애 복구(break-glass)용 파드에는 라벨
   `app.kubernetes.io/name=apisix-ingress-controller`가 있어야 함(`docs/common/apisix-etcd-recovery.md`,
-  `docs/common/apisix-admin-api.md`).
+  `docs/common/apisix-admin-api.md`). 허용 CIDR은 `POD_NETWORK_CIDR`에서 가져오지 않고
+  `gitops/charts/narwhal-apps/templates/apisix.yaml`에 하드코딩되어 있으므로, 파드 CIDR을 바꾼 클러스터에서는
+  파드가 Admin API에 접근할 수 없음.
 - **NFS export 기본값이 `root_squash`와 모드 750 루트로 변경 (6151b86, 7e4e622).** 두 export 줄에서
   `no_root_squash`가 제거됨. `root_squash`는 디스크에 이미 있는 소유권을 바꾸지 않으므로
   `docs/common/compliance-hardening.md`의 마이그레이션 런북을 따르고 `scripts/test/verify-nfs-root-squash.sh`로
   확인할 것. 비루트 쓰기를 위해 `csi-driver-nfs`는 `feature.enableFSGroupPolicy=false`로 실행되며(불변 `File`
   정책을 가진 라이브 CSIDriver는 사전 업그레이드 가드가 삭제함) Grafana의 `initChownData`는 비활성화됨.
 - **`database` 네임스페이스가 기본적으로 ingress를 차단 (3148c14).** CloudNativePG, 그 오퍼레이터, Keycloak,
-  Harbor, Gitea만 허용되며 그 외 호출자는 차단됨.
+  Harbor, Gitea만 허용되며 그 외 호출자는 차단됨. `database`와 `platform-system` 네임스페이스에는 여전히
+  네임스페이스 전체 `PERMISSIVE` `PeerAuthentication` 예외가 있어(R243 허용 목록) mTLS가 요구되지 않음.
+- **Gitea ingress가 기본 차단 (67ea222).** `gitea-http`는 APISIX, ArgoCD repo-server와 application-controller,
+  포털 백엔드, Kaniko 빌드 Job만 허용하며 그 외 호출자는 차단됨.
+- **노드 튜닝 Job이 격리됨 (6fd186e).** 전용 `narwhal-tuning-job` ServiceAccount(RBAC 부여 없음, 토큰 미마운트)와
+  ingress·egress 전체 차단 NetworkPolicy로 실행됨. `hostNetwork` 파드에 대한 CNI 적용 여부는 확인되지 않음.
+- **Kyverno `disallow-latest-tag`가 이제 집행됨 (24fedbb).** `Audit`에서 `Enforce`로 바뀌어, 이미지가 `:latest`인
+  Pod는 `kube-system`, `istio-system`, `platform-system`, `devtools`, `security-system`을 제외한 모든 곳에서
+  어드미션 시 거부됨. 이 네임스페이스 밖의 워크로드는 업그레이드 전에 태그를 고정할 것.
 - **ArgoCD 캐시가 Valkey로 실행됨 (3a3aef9).** `13-argocd.sh`가 `argocd-redis`를
   `docker.io/valkey/valkey:8-alpine`으로 지정함(Redis 8은 RSALv2/SSPL/AGPL). 기존 클러스터는 `13-argocd.sh`를
   다시 적용하면 반영됨.
@@ -108,7 +130,8 @@ ArgoCD, Gitea, RBAC, OpenBao, Keycloak, APISIX, NFS, `database` 신뢰 경계가
 - **서비스 메시용 신규 정적 게이트.** R242는 `09-istio-ambient.sh`의 `AMBIENT_NAMESPACES`가 NetworkPolicy
   검사가 다루는 네임스페이스와 다르면 CI를 실패시킴(#332). R243은 `PeerAuthentication`의 `PERMISSIVE` /
   `DISABLE`을 검토된 허용 목록에서만 허용하고, 메시 전역 `STRICT`를 요구하며, 기존 예외 2건을 개수가 고정된 알려진
-  이슈로 기록함(#333, #334).
+  이슈로 기록함(#333, #334). R244는 네임스페이스 전체 `PERMISSIVE` `PeerAuthentication`이 있는 모든 네임스페이스에
+  ingress 기본 차단을 요구하며 `monitoring`과 `platform-system`을 알려진 이슈로 집계함(#339).
 - **보안 태세용 정적 게이트 추가 (#283-#293, #319, #322, #325, #326).** 웹훅 `failurePolicy`와 타임아웃,
   `hostPath` 마운트(중첩된 CronJob 포함), Pod Security Admission 라벨, 워크로드 런타임 태세와 RuntimeClass 참조,
   seccomp 오버라이드, kubelet 및 API 서버 인가 기준선, 비활성화된 `NodeRestriction` 거부.
@@ -171,15 +194,18 @@ ArgoCD, Gitea, RBAC, OpenBao, Keycloak, APISIX, NFS, `database` 신뢰 경계가
   적용하고, GitOps 차트는 같은 이름으로 `STRICT`를 선언하므로 ArgoCD가 수렴하기 전까지 트래픽이 fail-open임
   (#126).
 - **`monitoring-permissive`**는 자체 주석이 워크로드별 범위를 권장함에도 `monitoring` 네임스페이스 전체를
-  PERMISSIVE로 설정함. R243이 개수를 고정하여 확산되지 않음.
+  PERMISSIVE로 설정함. R243이 개수를 고정하여 확산되지 않으며, R244가
+  `monitoring`과 `platform-system`을 ingress 기본 차단 없이 PERMISSIVE인 네임스페이스로 추적함(#126, #339).
 - **`dev` 네임스페이스 라벨 충돌.** `gitops/resources/dev-namespace.yaml`은
   `istio.io/dataplane-mode: none`을 설정하지만 `09-istio-ambient.sh`는 `dev`를 `AMBIENT_NAMESPACES`에 넣고
   ambient로 라벨링함(#128). 라이브 클러스터에서 어느 쪽이 우선하는지는 확인되지 않음(unverified).
 - **Ingress 격리가 부분적임.** `gitops/resources`에서 ingress를 격리하는 정책은 `database`, Gitea, APISIX Admin
-  API뿐이며 `monitoring`과 `platform-system`에는 없음(차트에 포함된 정책은 전수 확인하지 않음).
-- **설치 경로에 따라 개발자 ArgoCD 역할이 다를 수 있음(unverified).** `13-argocd.sh`는 `tenants/*`에 `sync`를
-  쓰지만 `gitops/charts/narwhal-platform/templates/argocd-config.yaml`의 `argocd-rbac-cm`은 여전히 `*/*`에
-  `sync`를 선언함. 라이브 클러스터가 어느 쪽이 되는지는 확인되지 않음.
+  API, 노드 튜닝 Job(전체 차단)뿐이며 `monitoring`과 `platform-system`에는 없음(차트에 포함된 정책은 전수 확인하지
+  않음).
+- **`developer` 역할이 GitOps 차트를 통해 `sync */*`를 유지함.** `gitops/charts/narwhal-platform` 차트가
+  `argocd-rbac-cm`에서 `developer`와 `portal-reader`에 `*/*`의 `sync`를 선언하며, 자가 복구하는
+  `narwhal-platform` Application이 `13-argocd.sh`가 쓴 `tenants/*` 값을 되돌림. 따라서 차트를 고치기 전까지
+  개발자는 모든 Application을 동기화할 수 있음.
 - **에어갭 번들 복사는 OCI referrer(SBOM, 서명, attestation)를 보존하지 않음.** `09`는 손실을 보고하지만
   실패시키지 않음(#124).
 - **다이제스트 인벤토리는 최초 저장 시점 신뢰(trust-on-first-save)임.** `images.digests.json`에는 서명이 없으므로

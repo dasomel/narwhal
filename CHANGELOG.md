@@ -53,8 +53,13 @@ existing cluster or bundle; read **Upgrade notes** first.
 - **ArgoCD Applications no longer run in the `default` AppProject (6ead267).** `13-argocd.sh`
   applies the new `platform` and `tenants` AppProjects (`gitops/resources/argocd-projects.yaml`)
   and fails closed if it cannot. An Application that names an unlisted namespace or repo is now
-  refused at sync time. The `developer` ArgoCD role may sync only `tenants/*` (was `*/*`), so
-  developers can no longer sync argocd, keycloak or kyverno.
+  refused at sync time. **The developer-sync restriction is not in effect yet:** `13-argocd.sh`
+  writes `sync` on `tenants/*` for the `developer` role, but the `narwhal-platform` GitOps chart
+  (`gitops/charts/narwhal-platform/templates/argocd-config.yaml`) still declares `sync` on `*/*`
+  for `developer` (and for `portal-reader`) in the same `argocd-rbac-cm` ConfigMap. The
+  `narwhal-platform` Application syncs that file with `selfHeal` and `prune` and does not ignore
+  the ConfigMap, and step 14 runs after step 13, so Git overwrites the script's value once the
+  app syncs. See Known issues.
 - **`narwhal-gitops` is a private Gitea repository (52dbb8d).** ArgoCD reads it with its own
   `argocd` account and a `read:repository` token registered as a repository Secret; `main` is
   protected by a push whitelist after the initial push. Re-running `14-gitops-bootstrap.sh`
@@ -63,23 +68,35 @@ existing cluster or bundle; read **Upgrade notes** first.
 - **The `developer` ClusterRole is read-only (7551c21).** Mutating verbs and `exec` /
   `portforward` / `attach` moved to the new `developer-workload-admin` role, bound only in `dev`
   (and in tenant namespaces, ed06e82). Every other namespace is read-only for direct `kubectl`
-  use; the portal uses its own ServiceAccount and is unaffected.
+  use, and developers can no longer `kubectl patch` an ArgoCD Application; the portal uses its
+  own ServiceAccount and is unaffected.
 - **Portal OpenBao access is a 1-hour Kubernetes-auth token (e923d7b, 2b589b7).**
   `13-2-narwhal-portal-bindings.sh` creates the `narwhal-portal` Kubernetes-auth role (1h TTL,
-  audience verified), binds `system:auth-delegator` to `storage:openbao`, mounts a projected
-  ServiceAccount token, and no longer persists the 8760h token; the legacy token is issued only
-  with `ENABLE_LEGACY_OPENBAO_TOKEN=true`. The portal policy keeps KV-v2 metadata access and no
-  longer grants `secret/data/narwhal-portal/*`. What an existing deployment must re-apply is
-  unverified; the commits were not run against a live cluster here.
+  audience verified), binds `system:auth-delegator` to `storage:openbao`, and no longer persists
+  the 8760h token; the legacy token is issued only with `ENABLE_LEGACY_OPENBAO_TOKEN=true`. The
+  projected ServiceAccount token is mounted by the `narwhal-platform` chart
+  (`narwhal-portal-k8s.yaml`), not by the script. The portal policy keeps KV-v2 metadata access
+  and no longer grants `secret/data/narwhal-portal/*`. What an existing deployment must re-apply
+  is unverified; the commits were not run against a live cluster here.
+- **The 1-year Kubernetes API token is no longer minted by default (77d6ce3).**
+  `13-2-narwhal-portal-bindings.sh` skips the 8760h `K8S_SA_TOKEN` unless
+  `ENABLE_LEGACY_K8S_SA_TOKEN=true` (default `false`; setting it prints a WARN); the portal reads a 1-hour
+  projected token (audience `https://kubernetes.default.svc.cluster.local`) instead. A deployment
+  that still depends on the static `K8S_SA_TOKEN` must set the variable or move to the projected
+  token.
 - **Keycloak OIDC TLS is verified and fails closed (5352bc2, dae7237, 3950512, 6790454).**
   `insecureSkipVerify` is gone from the ArgoCD OIDC config and `rootCA` is injected into
   `argocd-cm` / `argocd-secret`. `11-3-keycloak-clients.sh` now exits 1 when neither
   `narwhal-wildcard-tls` nor `narwhal-ca-cert` yields a CA. `test-sso.sh` expects verification to
   succeed.
 - **The APISIX Admin API allows only the pod CIDR and loopback (1dddbe4).** Source allowlist is
-  `10.244.0.0/16` plus `127.0.0.1/32`, and a NetworkPolicy limits `:9180` ingress. Break-glass
-  recovery pods must carry the label `app.kubernetes.io/name=apisix-ingress-controller`
-  (`docs/common/apisix-etcd-recovery.md`, `docs/common/apisix-admin-api.md`).
+  `10.244.0.0/16` plus `127.0.0.1/32`, and a NetworkPolicy limits `:9180` ingress to the APISIX
+  ingress controller and `narwhal-portal` in `devtools`
+  (`gitops/resources/apisix-admin-ingress-policy.yaml`). Break-glass recovery pods must carry the
+  label `app.kubernetes.io/name=apisix-ingress-controller` (`docs/common/apisix-etcd-recovery.md`,
+  `docs/common/apisix-admin-api.md`). The allowed CIDR is hard-coded in
+  `gitops/charts/narwhal-apps/templates/apisix.yaml`, not taken from `POD_NETWORK_CIDR`, so a
+  cluster with a custom pod CIDR locks pods out of the Admin API.
 - **NFS exports default to `root_squash` with a mode-750 root (6151b86, 7e4e622).**
   `no_root_squash` is removed from both export lines. `root_squash` does not rewrite existing
   on-disk ownership; follow the migration runbook in `docs/common/compliance-hardening.md` and
@@ -87,7 +104,19 @@ existing cluster or bundle; read **Upgrade notes** first.
   with `feature.enableFSGroupPolicy=false` (a live CSIDriver with the immutable `File` policy is
   deleted by a pre-upgrade guard) and Grafana's `initChownData` is disabled.
 - **The `database` namespace denies ingress by default (3148c14).** Only CloudNativePG,
-  its operator, Keycloak, Harbor and Gitea are allowed in; any other caller is blocked.
+  its operator, Keycloak, Harbor and Gitea are allowed in; any other caller is blocked. The
+  `database` and `platform-system` namespaces still carry namespace-wide `PERMISSIVE`
+  `PeerAuthentication` exceptions (allowlisted by R243), so mTLS is not required there.
+- **Gitea ingress is default-deny (67ea222).** `gitea-http` accepts only APISIX, the ArgoCD
+  repo-server and application-controller, the portal backend and the Kaniko build job; every
+  other caller is blocked.
+- **The node-tuning Job is isolated (6fd186e).** It runs under a dedicated
+  `narwhal-tuning-job` ServiceAccount (no RBAC grants, token unmounted) and a deny-all
+  ingress and egress NetworkPolicy. CNI enforcement for its `hostNetwork` pod is unverified.
+- **Kyverno `disallow-latest-tag` now enforces (24fedbb).** It moved from `Audit` to `Enforce`:
+  a Pod whose image is `:latest` is rejected at admission everywhere except `kube-system`,
+  `istio-system`, `platform-system`, `devtools` and `security-system`. Pin the tag before
+  upgrading any workload outside those namespaces.
 - **ArgoCD's cache runs Valkey (3a3aef9).** `13-argocd.sh` points `argocd-redis` at
   `docker.io/valkey/valkey:8-alpine` (Redis 8 is RSALv2/SSPL/AGPL). An existing cluster picks
   it up when `13-argocd.sh` is re-applied.
@@ -127,7 +156,9 @@ existing cluster or bundle; read **Upgrade notes** first.
   `09-istio-ambient.sh` diverges from the namespaces the NetworkPolicy check covers (#332).
   R243 allows `PeerAuthentication` `PERMISSIVE` / `DISABLE` only from a reviewed allowlist,
   requires mesh-wide `STRICT`, and records two existing exceptions as counted known issues
-  (#333, #334).
+  (#333, #334). R244 requires an ingress default-deny around every namespace that has a
+  namespace-wide `PERMISSIVE` `PeerAuthentication`, and counts `monitoring` and `platform-system`
+  as known issues (#339).
 - **More static gates for security posture (#283-#293, #319, #322, #325, #326).** Webhook
   `failurePolicy` and timeout, `hostPath` mounts (including nested CronJobs), Pod Security
   Admission labels, workload runtime posture and RuntimeClass references, seccomp overrides,
@@ -201,18 +232,21 @@ existing cluster or bundle; read **Upgrade notes** first.
   PERMISSIVE `PeerAuthentication`; the GitOps chart declares `STRICT` under the same name, so
   traffic is fail-open until ArgoCD reconciles (#126).
 - **`monitoring-permissive`** sets PERMISSIVE for the whole `monitoring` namespace although its
-  own comment recommends per-workload scope. R243 pins the count so it cannot spread.
+  own comment recommends per-workload scope. R243 pins the count so it cannot spread; R244
+  tracks `monitoring` and `platform-system` as namespaces that are PERMISSIVE without an
+  ingress default-deny (#126, #339).
 - **`dev` namespace label conflict.** `gitops/resources/dev-namespace.yaml` sets
   `istio.io/dataplane-mode: none`, while `09-istio-ambient.sh` lists `dev` in
   `AMBIENT_NAMESPACES` and labels it ambient (#128). Which one wins on a live cluster is
   unverified.
-- **Ingress isolation is partial.** In `gitops/resources`, only `database`, Gitea and the APISIX
-  Admin API have ingress-isolating policies; `monitoring` and `platform-system` have none
-  (policies bundled inside charts were not exhaustively checked).
-- **Developer ArgoCD role may differ by install path (unverified).** `13-argocd.sh` writes
-  `sync` on `tenants/*`, but `gitops/charts/narwhal-platform/templates/argocd-config.yaml` still
-  declares `sync` on `*/*` in its `argocd-rbac-cm`. Which one a live cluster ends up with is
-  unverified.
+- **Ingress isolation is partial.** In `gitops/resources`, only `database`, Gitea, the APISIX
+  Admin API and the node-tuning Job (deny-all) have ingress-isolating policies; `monitoring` and
+  `platform-system` have none (policies bundled inside charts were not exhaustively checked).
+- **The `developer` role keeps `sync */*` through the GitOps chart.** The
+  `gitops/charts/narwhal-platform` chart declares `sync` on `*/*` for `developer` and
+  `portal-reader` in `argocd-rbac-cm`, and the self-healing `narwhal-platform` Application
+  reverts the `tenants/*` value that `13-argocd.sh` writes. Developers can therefore sync any
+  Application until the chart is changed.
 - **Air-gap bundle copy does not preserve OCI referrers** (SBOM, signature, attestation).
   `09` reports the loss but does not fail (#124).
 - **The digest inventory is trust-on-first-save.** `images.digests.json` is not signed, so it

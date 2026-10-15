@@ -6,6 +6,14 @@ once would make CI permanently red and encourage disabling rules. Instead this g
 keeps legacy debt visible while preventing changed active documentation from adding or
 modifying violating lines. `docs/archive/**` is historical evidence and is intentionally
 outside the blocking scope.
+
+D-MONO-CI-MD (PR #347): `portal/` was imported with its full history and never linted Markdown,
+so against the PR base every portal line is "new" (1757 violations in 69 files). For files under
+`portal/`, "changed" is therefore measured against the imported baseline commit
+(PORTAL_IMPORT_BASELINE, the rewritten portal head) when that commit is an ancestor of HEAD;
+otherwise the normal base applies. Legacy portal debt stays visible (it is NOT excluded and the
+docs are NOT edited), but only lines changed since the import must be clean. Honest limit: the
+legacy portal debt is never reported by this gate; the per-rule counts are in ADR-0001.
 """
 
 from __future__ import annotations
@@ -17,6 +25,9 @@ import sys
 from pathlib import Path
 
 HUNK_RE = re.compile(r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@")
+# The rewritten portal head that the import merge brought in (see docs/adr/0001-*).
+PORTAL_IMPORT_BASELINE = "e8e8229d8adf350f57feb218f6c19233e2685df4"
+PORTAL_PREFIX = "portal/"
 LINT_RE = re.compile(r"^(.*?):(\d+)(?::\d+)?\s+(MD\d+|[A-Za-z][A-Za-z0-9-]*)\b")
 
 
@@ -29,7 +40,11 @@ def active_markdown_files() -> list[str]:
     return [path for path in tracked if not path.startswith("docs/archive/")]
 
 
-def changed_line_ranges(base: str) -> dict[str, list[range]]:
+def is_ancestor(commit: str) -> bool:
+    return run("git", "merge-base", "--is-ancestor", commit, "HEAD", check=False).returncode == 0
+
+
+def diff_ranges(base: str, *pathspec: str) -> dict[str, list[range]]:
     diff = run(
         "git",
         "diff",
@@ -37,7 +52,7 @@ def changed_line_ranges(base: str) -> dict[str, list[range]]:
         "--no-color",
         f"{base}...HEAD",
         "--",
-        "*.md",
+        *pathspec,
     ).stdout
 
     changed: dict[str, list[range]] = {}
@@ -58,6 +73,14 @@ def changed_line_ranges(base: str) -> dict[str, list[range]]:
     return changed
 
 
+def changed_line_ranges(base: str, portal_baseline: str = PORTAL_IMPORT_BASELINE) -> dict[str, list[range]]:
+    if not is_ancestor(portal_baseline):
+        return diff_ranges(base, "*.md")
+    changed = diff_ranges(base, "*.md", f":(exclude){PORTAL_PREFIX}**")
+    changed.update(diff_ranges(portal_baseline, f"{PORTAL_PREFIX}**/*.md", f"{PORTAL_PREFIX}*.md"))
+    return changed
+
+
 def line_changed(ranges: list[range], line: int) -> bool:
     return any(line in item for item in ranges)
 
@@ -65,9 +88,14 @@ def line_changed(ranges: list[range], line: int) -> bool:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--base", required=True, help="base commit SHA used for the diff")
+    parser.add_argument(
+        "--portal-baseline",
+        default=PORTAL_IMPORT_BASELINE,
+        help="commit that portal/ lines are measured against when it is an ancestor of HEAD",
+    )
     args = parser.parse_args()
 
-    changed = changed_line_ranges(args.base)
+    changed = changed_line_ranges(args.base, args.portal_baseline)
     active = active_markdown_files()
     if not active:
         print("No active Markdown files found.")

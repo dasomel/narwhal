@@ -280,7 +280,9 @@ provider 0.5.0에서 `kakaocloud_vpc.subnet`이 제거됐고, bastion의 `initia
 ```bash
 # 1. state 백업, 그리고 0.4.x 스키마가 아직 보여줄 때 기본 서브넷 ID 확인
 tofu state pull > ~/narwhal-kakao-state-pre-0.5.1.json   # git 밖에 보관
-tofu state show module.network.kakaocloud_vpc.vpc        # `subnet` 블록의 id
+tofu state show module.network.kakaocloud_vpc.vpc        # `subnet` 블록에는 cidr_block/az만 있고 id는 없다:
+# 그 CIDR(이름 "main")의 서브넷 ID를 Kakao Cloud 콘솔(VPC > Subnet)이나
+# `data "kakaocloud_subnets"`를 쓴 임시 설정(읽기 전용)으로 조회한다
 
 # 2. 새 provider 받기 (lock 파일은 이미 0.5.1로 고정돼 있다)
 tofu init   # 커밋된 lock이 이미 0.5.1을 고정한다. -upgrade는 다시 해석한다

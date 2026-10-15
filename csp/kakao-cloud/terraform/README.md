@@ -290,7 +290,9 @@ steps below, in order, run from this directory with the operator's `terraform.tf
 ```bash
 # 1. Back up state, and note the default subnet ID while the 0.4.x schema still shows it
 tofu state pull > ~/narwhal-kakao-state-pre-0.5.1.json   # keep outside git
-tofu state show module.network.kakaocloud_vpc.vpc        # the `subnet` block's id
+tofu state show module.network.kakaocloud_vpc.vpc        # the `subnet` block has only cidr_block/az, NO id:
+# look up the subnet ID with that CIDR (named "main") in the Kakao Cloud console (VPC > Subnet),
+# or with a throwaway config using `data "kakaocloud_subnets"` (read-only)
 
 # 2. Pull the new provider (the lock file is already pinned to 0.5.1)
 tofu init   # the committed lock already pins 0.5.1; -upgrade would re-resolve it

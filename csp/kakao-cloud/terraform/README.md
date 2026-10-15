@@ -288,7 +288,7 @@ cannot be changed in place (`Changing the initial security group is not allowed`
 steps below, in order, run from this directory with the operator's `terraform.tfvars`.
 
 ```bash
-# 1. Back up state, and note the default subnet ID while the 0.4.x schema still shows it
+# 1. Back up state, and note the default subnet CIDR while the 0.4.x schema still shows it
 tofu state pull > ~/narwhal-kakao-state-pre-0.5.1.json   # keep outside git
 tofu state show module.network.kakaocloud_vpc.vpc        # the `subnet` block has only cidr_block/az, NO id:
 # look up the subnet ID with that CIDR (named "main") in the Kakao Cloud console (VPC > Subnet),

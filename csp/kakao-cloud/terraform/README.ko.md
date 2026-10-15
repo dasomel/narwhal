@@ -278,7 +278,7 @@ provider 0.5.0에서 `kakaocloud_vpc.subnet`이 제거됐고, bastion의 `initia
 운영자의 `terraform.tfvars`로 진행한다.
 
 ```bash
-# 1. state 백업, 그리고 0.4.x 스키마가 아직 보여줄 때 기본 서브넷 ID 확인
+# 1. state 백업, 그리고 0.4.x 스키마가 아직 보여줄 때 기본 서브넷 CIDR 확인
 tofu state pull > ~/narwhal-kakao-state-pre-0.5.1.json   # git 밖에 보관
 tofu state show module.network.kakaocloud_vpc.vpc        # `subnet` 블록에는 cidr_block/az만 있고 id는 없다:
 # 그 CIDR(이름 "main")의 서브넷 ID를 Kakao Cloud 콘솔(VPC > Subnet)이나

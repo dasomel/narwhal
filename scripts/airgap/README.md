@@ -74,6 +74,10 @@ Rancher airgap 방식을 Narwhal에 적용한 버전입니다. 외부 인터넷�
 #    images.txt의 이미지 전부가 manifest.txt에 기록되고 oci/ 아래 실제 layout(index.json)이
 #    있는지, 그리고 lib/image-digests.tsv에 resolved digest 행이 있는지 1:1로 대조한다.
 #    하나라도 빠지면 exit 1 — CI/release에서는 이 결과를 게이트로 써야 한다.
+#    (#124) layout 안의 manifest/index/config blob을 sha256으로 재계산하고 layer 존재·크기를
+#    확인하며, digest 고정 ref(@sha256:)는 layout 최상위 digest가 pin과 같아야 한다.
+#    skopeo copy는 OCI referrer(SBOM/서명/attestation)를 복사하지 않으므로 보존 0건임을
+#    stderr(또는 --report FILE의 JSON)에 명시한다 — 실패로 처리하지는 않는다(미해결 AC).
 ./scripts/airgap/09-verify-bundle-completeness.sh --bundle ./narwhal-airgap-bundle-amd64
 
 # 결과: narwhal-airgap-bundle-<arch>/ 폴더를 대상 클러스터로 전송

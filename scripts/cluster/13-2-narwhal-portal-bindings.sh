@@ -571,14 +571,20 @@ existing_valkey_password_b64="$(kubectl get secret narwhal-portal-valkey-auth -n
   echo "ERROR: could not read narwhal-portal-valkey-auth; refusing to rotate the Valkey password" >&2
   exit 1
 }
+# D4: the password file becomes Secret key `password` (portal env VALKEY_PASSWORD, used
+# untrimmed) AND the users.acl token, so both must be byte-identical: write it without a
+# trailing newline (tr, never a bare `> file` from openssl) and accept only 64 lowercase hex
+# chars. Real Valkey 8.1.10 answers WRONGPASS to "<hex>\n". Cost: an existing Secret with any
+# other shape aborts; escape: delete that Secret deliberately (coordinated portal rollout).
 if [ -n "${existing_valkey_password_b64}" ]; then
   printf '%s' "${existing_valkey_password_b64}" | base64 -d > "${valkey_auth_dir}/password"
-  if [ ! -s "${valkey_auth_dir}/password" ]; then
-    echo "ERROR: narwhal-portal-valkey-auth exists without a password" >&2
-    exit 1
-  fi
 else
-  openssl rand -hex 32 > "${valkey_auth_dir}/password"
+  openssl rand -hex 32 | tr -d '\n' > "${valkey_auth_dir}/password"
+fi
+if ! LC_ALL=C grep -qxE '[0-9a-f]{64}' "${valkey_auth_dir}/password" \
+  || [ "$(wc -c < "${valkey_auth_dir}/password" | tr -d ' ')" != 64 ]; then
+  echo "ERROR: Valkey password must be exactly 64 hex chars with no whitespace/newline (narwhal-portal-valkey-auth or generation is malformed)" >&2
+  exit 1
 fi
 chmod 600 "${valkey_auth_dir}/password"
 valkey_password="$(cat "${valkey_auth_dir}/password")"

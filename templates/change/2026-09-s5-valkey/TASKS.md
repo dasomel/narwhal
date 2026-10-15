@@ -39,7 +39,7 @@ Change Package: [`CHANGE.md`](CHANGE.md), package ID `narwhal-s5-valkey-2026-09`
 
 ## Observed evidence
 
-- `python3 scripts/test/lib/check-valkey-security-contract.py` — PASS; eight mutations rejected, including unrestricted ingress, a broad peer selector, and both inline password wiring forms.
+- `python3 scripts/test/lib/check-valkey-security-contract.py` — PASS; 21 mutations rejected (parsed flags/ACL; duplicate --port, commented default off, +@all/nopass/allcommands, second user line, raw `> password`), including unrestricted ingress, a broad peer selector, and both inline password wiring forms.
 - `bash -n scripts/cluster/13-2-narwhal-portal-bindings.sh` — PASS.
 - `helm template narwhal-platform gitops/charts/narwhal-platform --namespace devtools --set baseDomain=local.narwhal.internal > /tmp/s5-valkey-rendered.yaml` — PASS.
 - `kubeconform -strict -ignore-missing-schemas /tmp/s5-valkey-rendered.yaml` — PASS.
@@ -55,3 +55,7 @@ Change Package: [`CHANGE.md`](CHANGE.md), package ID `narwhal-s5-valkey-2026-09`
   Pub/Sub channel returned `NOPERM`. The throwaway password and certificates stayed in temporary
   files and were not printed. This does not verify Kubernetes NetworkPolicy, cert-manager issuance,
   bootstrap behavior against a live cluster, or the actual portal deployment.
+- Review follow-up (D4/D5): on Docker Valkey 8.1.10 `AUTH portal <hex>\n` (old generation) returned
+  WRONGPASS while `AUTH portal <hex>` returned OK; the fixed generation (`| tr -d '\n'`, 64-hex
+  validation) authenticates with the exact Secret bytes. `tls-auto-reload-interval` does not exist
+  in 8.1.10, so the Certificate has explicit `duration`/`renewBefore` and CHANGE.md documents the restart.

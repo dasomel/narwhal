@@ -163,6 +163,12 @@ metadata:
     argocd.argoproj.io/sync-wave: "0"
 spec:
   secretName: narwhal-portal-valkey-tls
+  # D5: Valkey 8.1 has no tls-auto-reload-interval, so a renewed cert is only picked up after a
+  # pod restart. 1y validity + 30d renewBefore keeps the in-memory cert valid for ~11 months;
+  # cost is one planned rollout restart per year. Escape: kubectl rollout restart
+  # deploy/narwhal-portal-valkey after any renewal (see CHANGE.md Known limits).
+  duration: 8760h
+  renewBefore: 720h
   issuerRef:
     name: narwhal-ca-issuer
     kind: ClusterIssuer

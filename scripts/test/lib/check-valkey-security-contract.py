@@ -4,6 +4,8 @@
 from pathlib import Path
 import re
 
+import yaml
+
 ROOT = Path(__file__).resolve().parents[3]
 CHART_PATH = ROOT / "gitops/charts/narwhal-platform/templates/narwhal-portal-k8s.yaml"
 BOOTSTRAP_PATH = ROOT / "scripts/cluster/13-2-narwhal-portal-bindings.sh"
@@ -16,6 +18,87 @@ PORTAL_ACL_COMMANDS = [
   "get", "mget", "set", "del", "unlink", "scan", "incr", "multi", "exec", "eval", "pexpire",
   "lpush", "ltrim", "lrange", "publish", "subscribe", "unsubscribe",
 ]
+
+
+def _valkey_args(chart: str) -> dict:
+  """Parse the Valkey container command into {flag: [values]}; duplicates are kept so they
+  can be rejected (Valkey applies the LAST occurrence, so a trailing --port would win)."""
+  docs = [d for d in yaml.safe_load_all(chart) if isinstance(d, dict)]
+  deploys = [
+    d for d in docs
+    if d.get("kind") == "Deployment" and d["metadata"]["name"] == "narwhal-portal-valkey"
+  ]
+  if len(deploys) != 1:
+    raise AssertionError("exactly one narwhal-portal-valkey Deployment is required")
+  containers = [c for c in deploys[0]["spec"]["template"]["spec"]["containers"] if c["name"] == "valkey"]
+  if len(containers) != 1:
+    raise AssertionError("exactly one valkey container is required")
+  tokens = [str(t) for t in containers[0].get("command", [])]
+  if not tokens or tokens[0] != "valkey-server":
+    raise AssertionError("valkey container must run valkey-server")
+  flags: dict = {}
+  index = 1
+  while index < len(tokens):
+    if not tokens[index].startswith("--"):
+      raise AssertionError(f"unexpected positional valkey-server argument: {tokens[index]!r}")
+    values = []
+    index += 1
+    while index < len(tokens) and not tokens[index].startswith("--"):
+      values.append(tokens[index])
+      index += 1
+    flags.setdefault(tokens[index - len(values) - 1], []).append(values)
+  return flags
+
+
+def validate_structured(chart: str, bootstrap: str) -> None:
+  """Parsed (not substring) checks: R247 hardening after the independent review."""
+  flags = _valkey_args(chart)
+  duplicated = sorted(f for f, v in flags.items() if len(v) != 1)
+  if duplicated:
+    raise AssertionError(f"valkey flags must appear exactly once (last wins): {duplicated}")
+  expected = {
+    "--port": ["0"], "--tls-port": ["6379"], "--tls-auth-clients": ["no"],
+    "--tls-cert-file": ["/etc/valkey/tls/tls.crt"], "--tls-key-file": ["/etc/valkey/tls/tls.key"],
+    "--aclfile": ["/etc/valkey/auth/users.acl"],
+  }
+  for flag, value in expected.items():
+    if flags.get(flag, [None])[0] != value:
+      raise AssertionError(f"valkey {flag} must be exactly {value}, got {flags.get(flag)}")
+  banned = sorted({"--requirepass", "--protected-mode", "--user"} & set(flags))
+  if banned:
+    raise AssertionError(f"valkey flags bypass the ACL file: {banned}")
+
+  cert = next(
+    (d for d in yaml.safe_load_all(chart)
+     if isinstance(d, dict) and d.get("kind") == "Certificate"
+     and d["metadata"]["name"] == "narwhal-portal-valkey-tls"),
+    None,
+  )
+  if cert is None or not cert["spec"].get("duration") or not cert["spec"].get("renewBefore"):
+    raise AssertionError("Valkey Certificate needs explicit duration and renewBefore (no cert reload in 8.1)")
+
+  match = re.findall(r'(?ms)^cat > "\$\{valkey_auth_dir\}/users\.acl" <<EOF\n(.*?)\nEOF$', bootstrap)
+  if len(match) != 1:
+    raise AssertionError("exactly one users.acl heredoc is required")
+  lines = [l.strip() for l in match[0].splitlines() if l.strip() and not l.strip().startswith("#")]
+  if len(lines) != 2 or lines[0] != "user default off":
+    raise AssertionError(f"users.acl must be exactly 'user default off' + one portal user, got {lines}")
+  tokens = lines[1].split()
+  head = ["user", "portal", "on", ">${valkey_password}", "~*", "&live:events:chan"]
+  if tokens[:6] != head:
+    raise AssertionError(f"portal ACL line must start with {head}, got {tokens[:6]}")
+  grants = tokens[6:]
+  if any(not g.startswith("+") or g.startswith("+@") or g == "+all" for g in grants):
+    raise AssertionError(f"portal ACL may only grant explicit +command entries, got {grants}")
+  if len(grants) != len(set(grants)) or sorted(g[1:] for g in grants) != sorted(PORTAL_ACL_COMMANDS):
+    raise AssertionError("portal ACL commands must equal the reviewed allowlist exactly")
+
+  if not re.search(r"openssl rand -hex 32 \| tr -d '\\n' > \"\$\{valkey_auth_dir\}/password\"", bootstrap):
+    raise AssertionError("password must be generated newline-free: openssl rand -hex 32 | tr -d '\\n'")
+  if re.search(r"openssl rand[^\n|]*>\s*\"?\$\{valkey_auth_dir\}/password", bootstrap):
+    raise AssertionError("raw `openssl rand > password` writes a trailing newline (WRONGPASS)")
+  if "[0-9a-f]{64}" not in bootstrap:
+    raise AssertionError("bootstrap must validate the password shape (64 hex, no whitespace)")
 
 
 def validate(chart: str, bootstrap: str) -> None:
@@ -38,8 +121,7 @@ def validate(chart: str, bootstrap: str) -> None:
     "app: narwhal-portal\n",
     "port: 6379",
   ]
-  if not re.search(r'(?m)^\s+- "?--port"?\s*\n\s+- "0"\s*$', chart):
-    raise AssertionError("chart must disable the plaintext listener with exactly --port 0")
+  validate_structured(chart, bootstrap)
   missing = [item for item in required_chart if item not in chart]
   if missing:
     raise AssertionError(f"chart missing security contract fragments: {missing}")
@@ -67,7 +149,6 @@ def validate(chart: str, bootstrap: str) -> None:
     raise AssertionError("NetworkPolicy contains a broader ingress rule than portal pods")
 
   required_bootstrap = [
-    "openssl rand -hex 32",
     "narwhal-portal-valkey-auth",
     '--from-file=password="${valkey_auth_dir}/password"',
     '--from-file=users.acl="${valkey_auth_dir}/users.acl"',
@@ -81,12 +162,6 @@ def validate(chart: str, bootstrap: str) -> None:
   missing = [item for item in required_bootstrap if item not in bootstrap]
   if missing:
     raise AssertionError(f"bootstrap missing security contract fragments: {missing}")
-
-  acl_line = next((l for l in bootstrap.splitlines() if l.startswith("user portal on ")), "")
-  granted = set(re.findall(r"(?<=\s)\+(\S+)", acl_line))
-  absent = [cmd for cmd in PORTAL_ACL_COMMANDS if cmd not in granted]
-  if absent:
-    raise AssertionError(f"portal ACL missing required commands: {absent}")
 
   forbidden = [
     "--from-literal=VALKEY_INSECURE_PRODUCTION=",
@@ -139,8 +214,22 @@ def main() -> None:
     (chart, bootstrap.replace(" +mget", "", 1)),
     (chart, bootstrap.replace(" +unlink", "", 1)),
     (chart.replace('            - "0"', '            - "1"', 1), bootstrap),
+    # Review-driven mutations (parsed checks): duplicate flag, commented-out default off,
+    # privilege additions, a second user line, newline-producing generation, no cert duration.
+    (chart.replace("            - --aclfile", '            - --port\n            - "6379"\n            - --aclfile', 1), bootstrap),
+    (chart, bootstrap.replace("\nuser default off\nuser portal", "\n# user default off\nuser default on nopass\nuser portal", 1)),
+    (chart, bootstrap.replace(" +unsubscribe\nEOF", " +unsubscribe +@all\nEOF", 1)),
+    (chart, bootstrap.replace(" +unsubscribe\nEOF", " +unsubscribe +@dangerous\nEOF", 1)),
+    (chart, bootstrap.replace(" +unsubscribe\nEOF", " +unsubscribe nopass\nEOF", 1)),
+    (chart, bootstrap.replace(" +unsubscribe\nEOF", " +unsubscribe allcommands\nEOF", 1)),
+    (chart, bootstrap.replace(" +unsubscribe\nEOF", " +unsubscribe\nuser portal on >x ~* +get\nEOF", 1)),
+    (chart, bootstrap.replace("openssl rand -hex 32 | tr -d '\\n' >", "openssl rand -hex 32 >", 1)),
+    (chart, bootstrap.replace("[0-9a-f]{64}", "[0-9a-f]+")),
+    (chart.replace("  renewBefore: 720h\n", "", 1), bootstrap),
   ]
   for index, (mutant_chart, mutant_bootstrap) in enumerate(mutants, start=1):
+    if (mutant_chart, mutant_bootstrap) == (chart, bootstrap):
+      raise AssertionError(f"mutation {index} did not change the input (stale anchor)")
     try:
       validate(mutant_chart, mutant_bootstrap)
     except AssertionError:

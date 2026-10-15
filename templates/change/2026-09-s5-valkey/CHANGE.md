@@ -1,5 +1,7 @@
 # Change: Encrypt and authenticate the portal Valkey cache
 
+**Merge only together with a portal image that supports VALKEY_USERNAME (not 1.0.19).**
+
 - Change class: `D`
 - Owner: narwhal
 - Related issue: `S5-VALKEY-INSECURE-PRODUCTION`
@@ -64,6 +66,13 @@ stored in a dedicated Kubernetes Secret, and only portal pods can reach the cach
   to recreate the ACL file from that Secret without rotating credentials.
 - `D2` — Use the existing Narwhal CA and only TLS on port 6379; cost is cert-manager readiness
   gating the pod; recovery is rollback of the linked portal/Valkey manifests as one change.
+- `D4` — The password file feeds both Secret key `password` (portal env, used untrimmed) and the
+  `users.acl` token, so it is generated with `openssl rand -hex 32 | tr -d '\n'` and both generated
+  and preserved values must match `^[0-9a-f]{64}$` or bootstrap aborts. Reproduced on Valkey 8.1.10:
+  `AUTH portal <hex>\n` returns WRONGPASS, `AUTH portal <hex>` returns OK. Cost: a malformed
+  existing Secret blocks bootstrap; escape: delete that Secret deliberately and roll portal+Valkey.
+- `D5` — Certificate sets `duration: 8760h` / `renewBefore: 720h` because Valkey 8.1 has no
+  `tls-auto-reload-interval` (absent from `CONFIG GET tls-*`); cost: one planned restart per year.
 - `D3` — Restrict Valkey to explicit cache/live-stream commands and portal-only ingress; cost is
   future portal Valkey command additions require an ACL update; recovery is a reviewed ACL
   expansion limited to the required command/key/channel.
@@ -97,10 +106,24 @@ stored in a dedicated Kubernetes Secret, and only portal pods can reach the cach
 - Rollout sequence: run `13-2-narwhal-portal-bindings.sh` to create/preserve the auth Secret;
   sync the Narwhal CA-signed certificate and TLS-only Valkey; deploy the linked portal change
   together after certificate and Secret readiness.
+- Apply ORDER: run `13-2-narwhal-portal-bindings.sh` BEFORE ArgoCD syncs this chart. The Valkey
+  pod mounts Secret `narwhal-portal-valkey-auth`; if the chart syncs first the pod stays in
+  `ContainerCreating` until the Secret exists (self-heals once bootstrap runs).
+- If the Secret holds `password` but no `users.acl`, bootstrap rebuilds `users.acl` from the
+  preserved password (the ACL is always regenerated from the password file on every run).
 - Rollback trigger and procedure: if TLS/authenticated portal readiness or live events fail,
   roll back both linked workloads as one operation and retain the dedicated Secret for retry.
 - Data/configuration recovery: cache is ephemeral; recreate cert-manager certificate and ACL
   Secret from bootstrap if missing. Password rotation requires a coordinated portal rollout.
+
+## Known limits
+
+- Valkey 8.1 does not reload its TLS certificate. After cert-manager renews
+  `narwhal-portal-valkey-tls` (30 days before the 1-year expiry), run
+  `kubectl -n devtools rollout restart deploy/narwhal-portal-valkey`, or TLS clients fail at
+  expiry. No reloader is installed on purpose.
+- Live TLS handshake with the cluster CA and portal connectivity are not verified; only a
+  disposable Docker Valkey 8.1.10 was exercised (AUTH byte-exactness, ACL).
 
 ## Evidence and durable synchronization
 

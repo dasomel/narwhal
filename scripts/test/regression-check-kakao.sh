@@ -1961,23 +1961,23 @@ PYEOF
   check R242 "ambient enrollment list matches the NetworkPolicy check's namespace set (Narwhal#128)" \
     python3 scripts/test/lib/check-ambient-enrollment.py
   check R242a "ambient enrollment check accepts a matching list" \
-    python3 scripts/test/lib/check-ambient-enrollment.py scripts/test/fixtures/ambient-enrollment-good.sh
+    python3 scripts/test/lib/check-ambient-enrollment.py scripts/test/fixtures/ambient-enrollment-good.txt
   check_not R242b "ambient enrollment check rejects an enrolled namespace the policy check does not cover" \
-    python3 scripts/test/lib/check-ambient-enrollment.py scripts/test/fixtures/ambient-enrollment-bad-extra.sh
+    python3 scripts/test/lib/check-ambient-enrollment.py scripts/test/fixtures/ambient-enrollment-bad-extra.txt
   check_not R242c "ambient enrollment check rejects a covered namespace that is not enrolled" \
-    python3 scripts/test/lib/check-ambient-enrollment.py scripts/test/fixtures/ambient-enrollment-bad-missing.sh
+    python3 scripts/test/lib/check-ambient-enrollment.py scripts/test/fixtures/ambient-enrollment-bad-missing.txt
   check_not R242d "ambient enrollment check fails closed when the array is absent" \
-    python3 scripts/test/lib/check-ambient-enrollment.py scripts/test/fixtures/ambient-enrollment-bad-absent.sh
+    python3 scripts/test/lib/check-ambient-enrollment.py scripts/test/fixtures/ambient-enrollment-bad-absent.txt
   check_not R242e "ambient enrollment check rejects an appended += array" \
-    python3 scripts/test/lib/check-ambient-enrollment.py scripts/test/fixtures/ambient-enrollment-bad-append.sh
+    python3 scripts/test/lib/check-ambient-enrollment.py scripts/test/fixtures/ambient-enrollment-bad-append.txt
   check_not R242f "ambient enrollment check rejects a duplicate canonical definition" \
-    python3 scripts/test/lib/check-ambient-enrollment.py scripts/test/fixtures/ambient-enrollment-bad-duplicate-def.sh
+    python3 scripts/test/lib/check-ambient-enrollment.py scripts/test/fixtures/ambient-enrollment-bad-duplicate-def.txt
   check_not R242g "ambient enrollment check rejects an empty array" \
-    python3 scripts/test/lib/check-ambient-enrollment.py scripts/test/fixtures/ambient-enrollment-bad-empty.sh
+    python3 scripts/test/lib/check-ambient-enrollment.py scripts/test/fixtures/ambient-enrollment-bad-empty.txt
   check_not R242h "ambient enrollment check rejects a duplicate entry" \
-    python3 scripts/test/lib/check-ambient-enrollment.py scripts/test/fixtures/ambient-enrollment-bad-dup-entry.sh
+    python3 scripts/test/lib/check-ambient-enrollment.py scripts/test/fixtures/ambient-enrollment-bad-dup-entry.txt
   check_not R242i "ambient enrollment check rejects a malformed namespace name" \
-    python3 scripts/test/lib/check-ambient-enrollment.py scripts/test/fixtures/ambient-enrollment-bad-malformed.sh
+    python3 scripts/test/lib/check-ambient-enrollment.py scripts/test/fixtures/ambient-enrollment-bad-malformed.txt
   # Narwhal#235 (lead live run): the ArgoCD HBONE post-check read a pre-patch snapshot and
   # exited 1 on every fresh cluster after its own successful appends.
   check R202 "13-argocd re-reads each policy after patching before the 15008 post-check (Narwhal#235)" \

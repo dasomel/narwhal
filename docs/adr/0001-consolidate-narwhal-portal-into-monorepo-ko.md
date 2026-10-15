@@ -31,7 +31,16 @@ D-MONO-3(CI), D-MONO-4(릴리스·이미지 정체성), D-MONO-5(이 ADR). impor
 1. **D-MONO-1:** `narwhal-portal`을 전체 이력과 함께 `portal/`로 import한다(`git-filter-repo` 경로
    재작성, 415 커밋). 커밋 메시지의 PR 참조는 narwhal 번호와 혼동되지 않도록
    `dasomel/narwhal-portal#N`으로 한정한다. 태그는 `portal/vX.Y.Z`로 네임스페이스화한다. import된
-   트리는 `portal@39c0079`와 동일함을 검증했다.
+   트리는 `portal@39c0079`와 동일함을 검증했다. import 시점에 재작성된 head `e8e8229d`(import 머지
+   `498a3ae`의 두 번째 부모이며, 첫 번째 부모는 main의 `0935ac1`)의 `portal/` 트리가 원본 트리와
+   같다. 두 명령 모두 `8a50ade5f710b14732b1ce12f05ebddd16d67862`를 출력한다.
+
+   ```bash
+   git rev-parse e8e8229d:portal '39c0079^{tree}'
+   ```
+
+   이후 main의 커밋은 의도적으로 `portal/`을 바꾸므로(`portal/.github` 제거, seam 수정)
+   `origin/main:portal`은 더 이상 이 해시와 같지 않다. 이 검증은 import 시점에만 적용된다.
 2. **D-MONO-2:** seam 검사는 저장소 내부 `portal/` 작업 트리를 읽는다. pin된 태그, 형제 체크아웃,
    네트워크가 없다. `check-oidc-rbac-portal-contract.sh`와 `check-kaniko-tag-portal-contract.sh`는
    기본값이 `portal/`이고, 파일이 없으면 SKIP이 아니라 FAIL한다. R117/R117b, R55, R216, R211은 항상

@@ -24,6 +24,8 @@ import { execFileSync } from "node:child_process"
 import { readdirSync, readFileSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 
+import { autolink, legalFileBlock } from "./notices-format.mjs"
+
 const OUT = "THIRD-PARTY-NOTICES.md"
 
 // Licenses that need nothing beyond the notice this file already carries. Any
@@ -254,7 +256,7 @@ if (flagged.length) {
     md.push(`### ${license}`)
     md.push("")
     for (const p of pkgs.filter((p) => p.license === license)) {
-      md.push(`- \`${p.name}@${p.version}\`${p.homepage ? ` — ${p.homepage}` : ""}`)
+      md.push(`- \`${p.name}@${p.version}\`${p.homepage ? ` — ${autolink(p.homepage)}` : ""}`)
       const note = noteFor(p.name)
       if (note) md.push(`  ${note}`)
     }
@@ -269,7 +271,7 @@ for (const p of pkgs) {
   md.push("")
   md.push(`- License: \`${p.license}\``)
   if (p.author) md.push(`- Author: ${p.author}`)
-  if (p.homepage) md.push(`- Homepage: ${p.homepage}`)
+  if (p.homepage) md.push(`- Homepage: ${autolink(p.homepage)}`)
   const note = noteFor(p.name)
   if (note) md.push(`- ${note}`)
   md.push("")
@@ -284,14 +286,7 @@ for (const p of pkgs) {
     continue
   }
   for (const f of [...licenses, ...notices]) {
-    md.push(`<details><summary>${f.file}</summary>`)
-    md.push("")
-    md.push("```")
-    md.push(f.text.replace(/```/g, "'''"))
-    md.push("```")
-    md.push("")
-    md.push("</details>")
-    md.push("")
+    md.push(...legalFileBlock(f.file, f.text))
   }
 }
 

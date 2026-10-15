@@ -7,7 +7,8 @@ name: Portal Release
 #   D2  Release notes come from portal/CHANGELOG.md; the footer links portal/CHANGELOG-ko.md
 #       (portal #248 fixed that link), the release title is `Portal vX.Y.Z`.
 #   D3  IMAGE is hardcoded ghcr.io/dasomel/narwhal-portal (github.repository is now narwhal).
-#   D4  SBOM scan and the attached NOTICE/LICENSE/THIRD-PARTY-NOTICES.md are taken from portal/.
+#   D4  SBOM scan and the attached NOTICE/LICENSE/THIRD-PARTY-NOTICES.md are taken from portal/
+#       of the tagged commit (checked out under tagged/; assets are extracted as regular-file blobs).
 #   D5  The tag prefix `portal/v` is stripped for the image tag and changelog heading lookups;
 #       the GitHub release itself is created on the full tag `portal/vX.Y.Z`.
 #
@@ -91,11 +92,23 @@ jobs:
       TAG_NAME: ${{ github.event.workflow_run.head_branch }}
       IMAGE: ghcr.io/dasomel/narwhal-portal
     steps:
+      # D7 (PR #347 follow-up, trust; D8 inverts the layout): everything this job EXECUTES comes
+      # from the default branch. For workflow_run events GITHUB_SHA is the "Last commit on default
+      # branch" (GitHub docs, events that trigger workflows), so github.sha is that tip; it is the
+      # workspace ROOT. The tagged commit is attacker-influenced content and lives only under
+      # tagged/, where nothing trusted exists for a symlink or directory in its tree (e.g. one
+      # named `trusted`) to shadow or make actions/checkout clean. Reviewed on PR #355.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # Pin to the exact commit portal-docker-publish.yml built, not whatever
           # HEAD of the tag happens to resolve to at release time.
           ref: ${{ github.event.workflow_run.head_sha }}
+          path: tagged
           # Tags are needed to prove the tag-vs-commit binding below.
           fetch-depth: 0
           fetch-tags: true
@@ -106,9 +119,27 @@ jobs:
           RUN_SHA: ${{ github.event.workflow_run.head_sha }}
         run: |
           set -euo pipefail
-          git fetch --force --tags origin
-          python3 scripts/ci/check-portal-release-ref.py --mode release \
+          git -C tagged fetch --force --tags origin
+          python3 scripts/ci/check-portal-release-ref.py --mode release --repo tagged \
             --event "$RUN_EVENT" --ref-name "$TAG_NAME" --sha "$RUN_SHA"
+
+      # Release inputs are read as git BLOBS of the validated commit and must be regular files
+      # (mode 100644/100755): a symlink in the tagged tree would otherwise make the notes or the
+      # attached assets read some other file of the runner.
+      - name: Extract changelog and release assets from the tagged commit
+        env:
+          RUN_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -euo pipefail
+          mkdir release-assets
+          for f in CHANGELOG.md THIRD-PARTY-NOTICES.md NOTICE LICENSE; do
+            mode=$(git -C tagged ls-tree "$RUN_SHA" "portal/$f" | cut -d' ' -f1)
+            case "$mode" in
+              100644|100755) ;;
+              *) echo "::error::portal/$f is not a regular file in ${RUN_SHA} (mode '${mode:-missing}')"; exit 1 ;;
+            esac
+            git -C tagged show "${RUN_SHA}:portal/$f" > "release-assets/$f"
+          done
 
       - name: Set up Buildx
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
@@ -176,10 +207,10 @@ jobs:
                 started = 1
                 print lines[i]
               }
-            }' portal/CHANGELOG.md > release_notes.md
+            }' release-assets/CHANGELOG.md > release_notes.md
 
           if [ ! -s release_notes.md ]; then
-            echo "::error::portal/CHANGELOG.md has no '## [${version}]' section. Add the entry, then re-tag."
+            echo "::error::portal/CHANGELOG.md (tagged commit) has no '## [${version}]' section. Add the entry, then re-tag."
             exit 1
           fi
 
@@ -205,7 +236,7 @@ jobs:
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           scan-type: fs
-          scan-ref: portal
+          scan-ref: tagged/portal
           format: cyclonedx
           output: sbom-cyclonedx.json
 
@@ -224,6 +255,6 @@ jobs:
           # repository — someone holding the tag should not have to clone to get them.
           files: |
             sbom-cyclonedx.json
-            portal/THIRD-PARTY-NOTICES.md
-            portal/NOTICE
-            portal/LICENSE
+            release-assets/THIRD-PARTY-NOTICES.md
+            release-assets/NOTICE
+            release-assets/LICENSE

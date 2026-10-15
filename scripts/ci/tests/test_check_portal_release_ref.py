@@ -4,6 +4,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+import yaml
+
 SCRIPT = Path(__file__).resolve().parents[1] / "check-portal-release-ref.py"
 
 
@@ -74,6 +76,97 @@ class ReleaseRef(unittest.TestCase):
 
     def test_publish_dispatch_from_release_looking_branch_refused(self):
         self.assertEqual(self.run_script("--mode", "publish", "--event", "workflow_dispatch", "--ref-type", "branch", "--ref-name", "portal/v1.2.3", "--sha", self.two)[0], 1)
+
+    def test_repo_arg_reads_tags_from_other_checkout(self):
+        # the validator lives in one checkout (cwd here is an unrelated empty repo), the tag in another
+        with tempfile.TemporaryDirectory() as other:
+            git(other, "init", "-q")
+            args = ("--mode", "release", "--event", "push", "--ref-name", "portal/v1.2.3", "--sha", self.two)
+            r = subprocess.run(["python3", str(SCRIPT), *args], cwd=other, text=True, capture_output=True)
+            self.assertEqual(r.returncode, 1)
+            self.assertIn("does not exist", r.stderr)
+            r = subprocess.run(["python3", str(SCRIPT), *args, "--repo", self.dir], cwd=other, text=True, capture_output=True)
+            self.assertEqual(r.returncode, 0, r.stderr)
+
+    def test_repo_arg_mismatch_still_refused(self):
+        with tempfile.TemporaryDirectory() as other:
+            git(other, "init", "-q")
+            r = subprocess.run(
+                ["python3", str(SCRIPT), "--mode", "release", "--event", "push", "--ref-name", "portal/v9.9.9",
+                 "--sha", self.two, "--repo", self.dir],
+                cwd=other, text=True, capture_output=True,
+            )
+            self.assertEqual(r.returncode, 1)
+            self.assertIn("points at", r.stderr)
+
+    def test_tagged_repo_with_trusted_symlink_has_no_effect(self):
+        # portal-release.yml layout: validator from the trusted root, tag lookup in tagged/ whose
+        # tree carries symlinks named `trusted` / `scripts` pointing at . and .git (PR #355 P2-1)
+        with tempfile.TemporaryDirectory() as root:
+            tagged = Path(root) / "tagged"
+            tagged.mkdir()
+            git(tagged, "init", "-q")
+            for k, v in (("user.name", "t"), ("user.email", "t@example.invalid"), ("commit.gpgsign", "false"), ("tag.gpgsign", "false")):
+                git(tagged, "config", k, v)
+            (tagged / "trusted").symlink_to(".")
+            (tagged / "scripts").symlink_to(".git")
+            git(tagged, "add", "trusted", "scripts")
+            git(tagged, "commit", "-q", "-m", "evil tree")
+            sha = git(tagged, "rev-parse", "HEAD")
+            git(tagged, "tag", "portal/v2.0.0", sha)
+            r = subprocess.run(
+                ["python3", str(SCRIPT), "--mode", "release", "--event", "push", "--ref-name", "portal/v2.0.0",
+                 "--sha", sha, "--repo", "tagged"],
+                cwd=root, text=True, capture_output=True,
+            )
+            self.assertEqual(r.returncode, 0, r.stderr)
+            self.assertTrue((tagged / ".git").is_dir())
+            r = subprocess.run(
+                ["python3", str(SCRIPT), "--mode", "release", "--event", "push", "--ref-name", "portal/v2.0.0",
+                 "--sha", self.two, "--repo", "tagged"],
+                cwd=root, text=True, capture_output=True,
+            )
+            self.assertEqual(r.returncode, 1)
+            self.assertIn("points at", r.stderr)
+
+
+class ReleaseWorkflowLayout(unittest.TestCase):
+    """portal-release.yml: trusted default branch at the root, tagged commit only under tagged/."""
+
+    @classmethod
+    def setUpClass(cls):
+        wf = Path(__file__).resolve().parents[3] / ".github/workflows/portal-release.yml"
+        cls.text = wf.read_text(encoding="utf-8")
+        cls.steps = yaml.safe_load(cls.text)["jobs"]["release"]["steps"]
+
+    def checkouts(self):
+        return [s for s in self.steps if str(s.get("uses", "")).startswith("actions/checkout@")]
+
+    def test_root_checkout_is_default_branch_without_credentials(self):
+        root = self.checkouts()[0]
+        self.assertNotIn("path", root["with"])
+        self.assertEqual(root["with"]["ref"], "${{ github.sha }}")
+        self.assertIs(root["with"]["persist-credentials"], False)
+
+    def test_tagged_commit_only_under_tagged_dir(self):
+        cos = self.checkouts()
+        self.assertEqual(len(cos), 2)
+        self.assertEqual(cos[1]["with"]["path"], "tagged")
+        self.assertEqual(cos[1]["with"]["ref"], "${{ github.event.workflow_run.head_sha }}")
+
+    def test_validator_runs_from_root_against_tagged(self):
+        run = next(s["run"] for s in self.steps if "check-portal-release-ref.py" in s.get("run", ""))
+        self.assertIn("python3 scripts/ci/check-portal-release-ref.py", run)
+        self.assertIn("--repo tagged", run)
+        self.assertNotIn("tagged/scripts", run)
+
+    def test_release_inputs_are_blobs_of_regular_files(self):
+        run = next(s["run"] for s in self.steps if "ls-tree" in s.get("run", ""))
+        self.assertIn("100644|100755", run)
+        self.assertIn('git -C tagged show', run)
+        for banned in ("portal/CHANGELOG.md >", "files: |\n            portal/"):
+            self.assertNotIn(banned, self.text)
+        self.assertNotIn("working-directory", self.text)
 
 
 if __name__ == "__main__":

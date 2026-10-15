@@ -37,7 +37,16 @@ that is not itself a Git repository.
    (`git-filter-repo` path rewrite of 415 commits). PR references in commit messages are
    qualified as `dasomel/narwhal-portal#N` so they do not resolve to narwhal's numbers.
    Tags are namespaced `portal/vX.Y.Z`. The imported tree was verified identical to
-   `portal@39c0079`.
+   `portal@39c0079`: at import time the `portal/` tree of the rewritten head `e8e8229d`
+   (second parent of the import merge `498a3ae`; the first parent is main's `0935ac1`) equals
+   the original tree. Both commands print `8a50ade5f710b14732b1ce12f05ebddd16d67862`:
+
+   ```bash
+   git rev-parse e8e8229d:portal '39c0079^{tree}'
+   ```
+
+   Later commits on main change `portal/` on purpose (`portal/.github` removed, seam fixes), so
+   `origin/main:portal` no longer equals that hash; the check applies to the import only.
 2. **D-MONO-2:** seam checks read the in-repo `portal/` working tree: no pinned tag, no
    sibling checkout, no network. `check-oidc-rbac-portal-contract.sh` and
    `check-kaniko-tag-portal-contract.sh` default to `portal/` and now FAIL, not SKIP, when

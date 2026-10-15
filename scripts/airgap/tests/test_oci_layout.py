@@ -27,8 +27,13 @@ class Layout:
         (self.dir / 'blobs' / 'sha256' / hexd).write_bytes(data)
         return {'mediaType': media, 'digest': 'sha256:' + hexd, 'size': len(data)}
 
-    def image(self, subject=False):
-        config = self.put(b'{"os":"linux"}', 'application/vnd.oci.image.config.v1+json')
+    def image(self, subject=False, arch='arm64', os='linux', variant=None):
+        doc_cfg = {'os': os}
+        if arch is not None:
+            doc_cfg['architecture'] = arch
+        if variant is not None:
+            doc_cfg['variant'] = variant
+        config = self.put(json.dumps(doc_cfg).encode(), 'application/vnd.oci.image.config.v1+json')
         layer = self.put(b'layer-bytes', 'application/vnd.oci.image.layer.v1.tar')
         doc = {'schemaVersion': 2, 'mediaType': OCI_MANIFEST, 'config': config, 'layers': [layer]}
         if subject:
@@ -102,7 +107,8 @@ class OciLayoutTests(unittest.TestCase):
 
     def test_corrupted_blob_same_size_is_rejected(self):
         lay, manifest, config, _ = self.good()
-        lay.blob(config).write_bytes(b'{"os":"darwi"}')
+        blob = lay.blob(config)
+        blob.write_bytes(blob.read_bytes().replace(b'linux', b'darwi'))
         self.assertRejected('hashes to sha256')
 
     def test_missing_and_truncated_blobs_are_rejected(self):
@@ -167,7 +173,8 @@ class CompletenessGateTests(unittest.TestCase):
                             '--inventory-out', str(b / 'images.digests.json'), '--platform', 'linux/arm64'],
                            check=True, capture_output=True)
             if corrupt:
-                lay.blob(config).write_bytes(b'{"os":"darwi"}')
+                cfg_blob = lay.blob(config)
+                cfg_blob.write_bytes(cfg_blob.read_bytes().replace(b'linux', b'darwi'))
             (b / 'digests.tsv').write_text(f'{IMG}\tsha256:{"b" * 64}\t2026-10-15T00:00:00Z\tcrane\n')
             return subprocess.run(
                 ['bash', str(GATE), '--list', str(b / 'list.txt'), '--bundle', str(b),

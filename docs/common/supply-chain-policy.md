@@ -92,6 +92,7 @@ Sigstore Cosign은 Keyless(Fulcio OIDC + Rekor 투명성 로그) 및 Static Publ
 
 - **Keyless 방식의 한계 (Air-gapped 환경)**: Keyless 검증은 pod admission 또는 image verification 시점에 Rekor 투명성 로그(`rekor.sigstore.dev`) 및 Fulcio CA 조회가 기본 필요하다. 외부 인터넷이 차단된 공공/금융 에어갭 환경에서는 별도의 내부 Rekor/Fulcio 스택을 구축하여 운영하지 않는 한 Keyless 검증이 차단된다.
 - **채택안 (Static Public Key / Trusted Authority)**: 에어갭 및 오프라인 검증이 필수인 Narwhal 클러스터 특성에 맞추어, **고정 공개키(Static Public Key) / 신뢰 x509 CA 기반 검증 모델**을 기본으로 채택한다.
+- **D-REKOR (Rekor 투명성 로그 처리)**: CI(`portal-docker-publish.yml`)는 공개 이미지이므로 서명을 공개 Rekor에 계속 업로드해 온라인 소비자에게 투명성을 제공한다. 대신 **모든 오프라인 검증자는 tlog를 건너뛴다**: Kyverno key attestor(서명·CycloneDX attestation 모두)에 `rekor.ignoreTlog: true`, `ctlog.ignoreSCT: true`를 설정하고, 오프라인 `cosign verify`는 `--insecure-ignore-tlog=true`를 쓴다(예: `portal/docs/cosign-signing-setup.md` §5). 비용: 오프라인 검증은 고정 공개키에만 의존한다. 탈출구: 클러스터가 Rekor에 도달할 수 있게 되면 ignore 플래그를 제거한다. R74/R75d가 플래그 유지 여부를 검사한다.
 - **Admission 정책 (Kyverno Audit Mode)**: `gitops/resources/kyverno-policies.yaml`에 `verify-image-signatures` ClusterPolicy를 도입하여, admission 시점 Cosign 이미지 서명 및 CycloneDX SBOM attestation 존재 여부를 `Audit` 모드로 기록한다.
 
 ### 2) Promotion & Verification Pipeline

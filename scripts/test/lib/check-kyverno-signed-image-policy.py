@@ -74,6 +74,14 @@ def main() -> int:
         print("VIOLATION: every signature and attestation attestor must use keys.publicKeys", file=sys.stderr)
         return 1
 
+    # D-REKOR: the cluster is air-gapped and cannot reach Rekor, so every key attestor must skip
+    # the tlog/SCT lookup (CI still uploads to public Rekor for online consumers).
+    for entry in entries:
+        keys = entry["keys"]
+        if (keys.get("rekor") or {}).get("ignoreTlog") is not True or (keys.get("ctlog") or {}).get("ignoreSCT") is not True:
+            print("VIOLATION: every key attestor must set keys.rekor.ignoreTlog and keys.ctlog.ignoreSCT to true (air-gap, D-REKOR)", file=sys.stderr)
+            return 1
+
     # Fail closed: a missing committed key must not silently skip the drift check.
     if not KEY_PATH.is_file():
         print(f"VIOLATION: committed cosign public key {KEY_PATH} is missing", file=sys.stderr)

@@ -3087,7 +3087,7 @@ assert line in s and not any(x.startswith("MAX_ROUNDS=") and ":-3" in x for x in
     python3 scripts/test/lib/check-accelerator-profiles.py --mutation-verify
   check R247 "portal Valkey TLS, ACL, dedicated Secret, and ingress remain hardened (S5)" \
     python3 scripts/test/lib/check-valkey-security-contract.py
-  check R249 "Phase 2 treats 13-2 portal bindings as critical (only exit 3, ARGOCD_TOKEN missing, is tolerated) so 14 never hands TLS Valkey to ArgoCD with stale portal Secrets (PR #343)" \
+  check R253 "Phase 2 treats 13-2 portal bindings as critical (only exit 3, ARGOCD_TOKEN missing, is tolerated) so 14 never hands TLS Valkey to ArgoCD with stale portal Secrets (PR #343)" \
     python3 -c '
 import re
 s = open("scripts/cluster/06-phase2-start.sh").read()

@@ -121,7 +121,11 @@ stored in a dedicated Kubernetes Secret, and only portal pods can reach the cach
 - Valkey 8.1 does not reload its TLS certificate. After cert-manager renews
   `narwhal-portal-valkey-tls` (30 days before the 1-year expiry), run
   `kubectl -n devtools rollout restart deploy/narwhal-portal-valkey`, or TLS clients fail at
-  expiry. No reloader is installed on purpose.
+  expiry. No reloader is installed on purpose. The yearly restart is prose only: there is no
+  automation or alert for it. Suggested follow-up: open an issue to add a cert-expiry alert or a
+  restart job.
+- The R247 static check reads only this chart and the 13-2 script; it cannot see runtime state
+  (live Secret contents, running pod flags) or other manifests that might also touch the cache.
 - Live TLS handshake with the cluster CA and portal connectivity are not verified; only a
   disposable Docker Valkey 8.1.10 was exercised (AUTH byte-exactness, ACL).
 

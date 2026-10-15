@@ -39,7 +39,7 @@ Change Package: [`CHANGE.md`](CHANGE.md), package ID `narwhal-s5-valkey-2026-09`
 
 ## Observed evidence
 
-- `python3 scripts/test/lib/check-valkey-security-contract.py` — PASS; 21 mutations rejected (parsed flags/ACL; duplicate --port, commented default off, +@all/nopass/allcommands, second user line, raw `> password`), including unrestricted ingress, a broad peer selector, and both inline password wiring forms.
+- `python3 scripts/test/lib/check-valkey-security-contract.py` — PASS; 30 mutations rejected (parsed flags/ACL; duplicate --port, commented default off, +@all/nopass/allcommands, second user line, raw `> password`), including unrestricted ingress, a broad peer selector, and both inline password wiring forms.
 - `bash -n scripts/cluster/13-2-narwhal-portal-bindings.sh` — PASS.
 - `helm template narwhal-platform gitops/charts/narwhal-platform --namespace devtools --set baseDomain=local.narwhal.internal > /tmp/s5-valkey-rendered.yaml` — PASS.
 - `kubeconform -strict -ignore-missing-schemas /tmp/s5-valkey-rendered.yaml` — PASS.

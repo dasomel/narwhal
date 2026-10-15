@@ -20,9 +20,10 @@ PORTAL_ACL_COMMANDS = [
 ]
 
 
-def _valkey_args(chart: str) -> dict:
-  """Parse the Valkey container command into {flag: [values]}; duplicates are kept so they
-  can be rejected (Valkey applies the LAST occurrence, so a trailing --port would win)."""
+def _valkey_args(chart: str) -> tuple:
+  """Parse the effective Valkey argv (command + args) into {flag: [values]}; duplicates are kept
+  so they can be rejected (Valkey applies the LAST occurrence, so a trailing --port would win).
+  Returns (flags, container, pod_spec)."""
   docs = [d for d in yaml.safe_load_all(chart) if isinstance(d, dict)]
   deploys = [
     d for d in docs
@@ -30,10 +31,13 @@ def _valkey_args(chart: str) -> dict:
   ]
   if len(deploys) != 1:
     raise AssertionError("exactly one narwhal-portal-valkey Deployment is required")
-  containers = [c for c in deploys[0]["spec"]["template"]["spec"]["containers"] if c["name"] == "valkey"]
+  pod = deploys[0]["spec"]["template"]["spec"]
+  containers = [c for c in pod["containers"] if c["name"] == "valkey"]
   if len(containers) != 1:
     raise AssertionError("exactly one valkey container is required")
-  tokens = [str(t) for t in containers[0].get("command", [])]
+  tokens = [str(t) for t in containers[0].get("command", [])] + [
+    str(t) for t in containers[0].get("args", [])
+  ]
   if not tokens or tokens[0] != "valkey-server":
     raise AssertionError("valkey container must run valkey-server")
   flags: dict = {}
@@ -47,12 +51,12 @@ def _valkey_args(chart: str) -> dict:
       values.append(tokens[index])
       index += 1
     flags.setdefault(tokens[index - len(values) - 1], []).append(values)
-  return flags
+  return flags, containers[0], pod
 
 
 def validate_structured(chart: str, bootstrap: str) -> None:
   """Parsed (not substring) checks: R247 hardening after the independent review."""
-  flags = _valkey_args(chart)
+  flags, container, pod = _valkey_args(chart)
   duplicated = sorted(f for f, v in flags.items() if len(v) != 1)
   if duplicated:
     raise AssertionError(f"valkey flags must appear exactly once (last wins): {duplicated}")
@@ -64,9 +68,32 @@ def validate_structured(chart: str, bootstrap: str) -> None:
   for flag, value in expected.items():
     if flags.get(flag, [None])[0] != value:
       raise AssertionError(f"valkey {flag} must be exactly {value}, got {flags.get(flag)}")
-  banned = sorted({"--requirepass", "--protected-mode", "--user"} & set(flags))
+  banned = sorted({"--requirepass", "--protected-mode", "--user", "--include", "--acl-pubsub-default"} & set(flags))
   if banned:
     raise AssertionError(f"valkey flags bypass the ACL file: {banned}")
+  unknown = sorted(set(flags) - set(expected) - {"--save", "--appendonly"})
+  if unknown:
+    raise AssertionError(f"unreviewed valkey flags (allowlist only): {unknown}")
+  if container.get("args"):
+    raise AssertionError("valkey container must not use args beyond the reviewed command")
+  if container.get("env"):
+    raise AssertionError("valkey container must not set env entries (config via env bypasses flags)")
+  launchers = [
+    c["name"] for c in pod["containers"] + pod.get("initContainers", [])
+    if "valkey" in str(c.get("image", "")) or "valkey-server" in " ".join(
+      str(t) for t in c.get("command", []) + c.get("args", []))
+  ]
+  if launchers != ["valkey"]:
+    raise AssertionError(f"exactly one reviewed valkey-server launcher is allowed, got {launchers}")
+  volumes = {v["name"]: v for v in pod.get("volumes", [])}
+  auth = volumes.get("valkey-auth", {}).get("secret", {})
+  if auth.get("secretName") != "narwhal-portal-valkey-auth" or auth.get("items") != [
+    {"key": "users.acl", "path": "users.acl"}
+  ]:
+    raise AssertionError("valkey-auth volume must project only key users.acl at path users.acl")
+  mounts = {m["name"]: m["mountPath"] for m in container.get("volumeMounts", [])}
+  if mounts.get("valkey-auth") != "/etc/valkey/auth":
+    raise AssertionError("valkey-auth must be mounted at /etc/valkey/auth (aclfile path)")
 
   cert = next(
     (d for d in yaml.safe_load_all(chart)
@@ -93,6 +120,12 @@ def validate_structured(chart: str, bootstrap: str) -> None:
   if len(grants) != len(set(grants)) or sorted(g[1:] for g in grants) != sorted(PORTAL_ACL_COMMANDS):
     raise AssertionError("portal ACL commands must equal the reviewed allowlist exactly")
 
+  acl_writes = [
+    l for l in bootstrap.splitlines()
+    if not l.lstrip().startswith("#") and "users.acl" in l and re.search(r">|\btee\b", l)
+  ]
+  if len(acl_writes) != 1:
+    raise AssertionError(f"users.acl must be written only by the reviewed heredoc, got {acl_writes}")
   if not re.search(r"openssl rand -hex 32 \| tr -d '\\n' > \"\$\{valkey_auth_dir\}/password\"", bootstrap):
     raise AssertionError("password must be generated newline-free: openssl rand -hex 32 | tr -d '\\n'")
   if re.search(r"openssl rand[^\n|]*>\s*\"?\$\{valkey_auth_dir\}/password", bootstrap):
@@ -236,7 +269,39 @@ def main() -> None:
       continue
     raise AssertionError(f"security regression mutation {index} was accepted")
 
-  print("PASS: Valkey TLS, ACL, secret wiring, ingress scope, and {} negative mutations".format(len(mutants)))
+  # Round-2 mutations assert the rejection REASON, not only that something failed.
+  vk_mounts = "          volumeMounts:\n            - name: valkey-tls"
+  extra = "            - /etc/valkey/auth/users.acl\n"
+  reasoned = [
+    (chart.replace('            - --port\n            - "0"\n', '            - --tls-session-caching\n            - "0"\n', 1).replace(vk_mounts, '          args:\n            - --port\n            - "6380"\n' + vk_mounts, 1), bootstrap, "must be exactly ['0']"),
+    (chart.replace(extra, extra + '            - --port\n          args:\n            - "6380"\n', 1), bootstrap, "exactly once"),
+    (chart.replace(extra, extra + "            - --include\n            - /tmp/extra.conf\n", 1), bootstrap, "bypass the ACL"),
+    (chart.replace(extra, extra + "            - --acl-pubsub-default\n            - allchannels\n", 1), bootstrap, "bypass the ACL"),
+    (chart.replace(extra, extra + "            - --enable-debug-command\n            - \"yes\"\n", 1), bootstrap, "allowlist"),
+    (chart.replace(vk_mounts, '          env:\n            - name: X\n              value: y\n' + vk_mounts, 1), bootstrap, "env entries"),
+    (
+      chart.replace(
+        "      volumes:\n        - name: valkey-tls",
+        '        - name: valkey-plain\n          image: docker.io/valkey/valkey:8-alpine\n          command: [valkey-server, --port, "6380"]\n      volumes:\n        - name: valkey-tls',
+        1,
+      ),
+      bootstrap, "launcher",
+    ),
+    (chart.replace("                path: users.acl\n", "                path: users2.acl\n", 1), bootstrap, "path users.acl"),
+    (chart, bootstrap.replace("unset valkey_password\n", "unset valkey_password\necho 'user default on nopass' >> \"${valkey_auth_dir}/users.acl\"\n", 1), "reviewed heredoc"),
+  ]
+  for index, (mutant_chart, mutant_bootstrap, reason) in enumerate(reasoned, start=1):
+    if (mutant_chart, mutant_bootstrap) == (chart, bootstrap):
+      raise AssertionError(f"reasoned mutation {index} did not change the input (stale anchor)")
+    try:
+      validate(mutant_chart, mutant_bootstrap)
+    except AssertionError as exc:
+      if reason in str(exc):
+        continue
+      raise AssertionError(f"reasoned mutation {index} rejected for the wrong reason: {exc}") from exc
+    raise AssertionError(f"security regression reasoned mutation {index} was accepted")
+
+  print("PASS: Valkey TLS, ACL, secret wiring, ingress scope, and {} negative mutations".format(len(mutants) + len(reasoned)))
 
 
 if __name__ == "__main__":

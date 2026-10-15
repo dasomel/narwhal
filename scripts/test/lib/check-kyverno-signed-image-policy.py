@@ -10,7 +10,7 @@ from pathlib import Path
 import yaml
 
 DEFAULT_PATH = Path("gitops/resources/kyverno-policies.yaml")
-KEY_PATH = Path("scripts/airgap/keys/cosign.pub")
+KEY_PATH = Path(__file__).resolve().parents[3] / "scripts/airgap/keys/cosign.pub"
 
 
 def load_policies(path: Path) -> list[dict]:
@@ -74,12 +74,15 @@ def main() -> int:
         print("VIOLATION: every signature and attestation attestor must use keys.publicKeys", file=sys.stderr)
         return 1
 
-    if KEY_PATH.exists():
-        want = KEY_PATH.read_text(encoding="utf-8").strip()
-        for entry in entries:
-            if entry["keys"]["publicKeys"].strip() != want:
-                print(f"VIOLATION: publicKeys differs from {KEY_PATH} (inline key must match the committed key)", file=sys.stderr)
-                return 1
+    # Fail closed: a missing committed key must not silently skip the drift check.
+    if not KEY_PATH.is_file():
+        print(f"VIOLATION: committed cosign public key {KEY_PATH} is missing", file=sys.stderr)
+        return 1
+    want = KEY_PATH.read_text(encoding="utf-8").strip()
+    for entry in entries:
+        if entry["keys"]["publicKeys"].strip() != want:
+            print(f"VIOLATION: publicKeys differs from {KEY_PATH} (inline key must match the committed key)", file=sys.stderr)
+            return 1
 
     print(f"OK: verify-image-signatures policy in {path} is valid (mode: {mode})", file=sys.stderr)
     return 0

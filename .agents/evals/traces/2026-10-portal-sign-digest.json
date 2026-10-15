@@ -20,12 +20,12 @@
     {
       "id": "e2",
       "type": "reproduction",
-      "summary": "Run 38747268314: merge job step 'Create manifest list and push' wrote digest=$(jq -r '.[\"containerimage.digest\"]' manifest-metadata.json); sign job then ran cosign sign on IMAGE@null (could not parse reference). The index digest the registry holds is sha256:16e228757febda1b7649ce2ee79908f30a70ba41648943987fe26831d88ac30a, confirmed by docker buildx imagetools inspect --format '{{.Manifest.Digest}}' ghcr.io/dasomel/narwhal-portal:1.1.0."
+      "summary": "Run 38747268314: merge job step 'Create manifest list and push' wrote digest=$(jq -r '.[\"containerimage.digest\"]' manifest-metadata.json); sign job then ran cosign sign on IMAGE@null (could not parse reference). The index digest the registry holds is sha256:16e228757febda1b7649ce2ee79908f30a70ba41648943987fe26831d88ac30a, confirmed by docker buildx imagetools inspect --format '{{.Manifest.Digest}}' ghcr.io/dasomel/narwhal-portal:1.1.0. buildx v0.37 commands/imagetools/create.go writes {containerimage.descriptor:{mediaType,digest,size}, image.name}, so the digest key was absent."
     },
     {
       "id": "e3",
       "type": "bug_fix",
-      "summary": "Merge job reads the digest from the registry for the first pushed tag and validates sha256:[0-9a-f]{64}; sign job gains a 'Validate image digest' step before cosign and passes DIGEST through env; workflow_dispatch input sign_digest signs an existing digest with build/merge skipped. New unit test fails on the old workflow and passes on the new one."
+      "summary": "Merge job takes the digest from the create step's containerimage.descriptor.digest (not a tag lookup), validates sha256:[0-9a-f]{64} and on a release tag cross-checks the immutable :X.Y.Z tag; sign job validates the digest, requires signing when sign_digest is set (missing secrets fail), checks the digest exists via imagetools inspect before cosign, and sign_digest reaches shell only via env. New unit tests cover these; the original ones fail on the old workflow."
     },
     {
       "id": "e4",
@@ -54,7 +54,7 @@
     {
       "id": "e6",
       "type": "completion_claim",
-      "summary": "Unit tests, actionlint and a live imagetools inspect of the published 1.1.0 index verified locally; the changed workflow was not executed on GitHub Actions, so the new imagetools inspect step and the sign_digest recovery path are unverified until a real run."
+      "summary": "Unit tests, actionlint and the buildx source were checked locally; the changed workflow was not executed on GitHub Actions, so the descriptor read, tag cross-check, existence check and the sign_digest path are unverified until a real run."
     },
     {
       "id": "e7",

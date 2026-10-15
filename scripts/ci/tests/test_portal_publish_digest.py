@@ -42,6 +42,31 @@ class PublishDigestPropagation(unittest.TestCase):
         self.assertLess(validate, cosign)
         self.assertIn(pattern, self.sign["steps"][validate]["run"])
 
+    def _step(self, name):
+        return next(s for s in self.sign["steps"] if s.get("name") == name)
+
+    def test_sign_digest_makes_signing_required(self):
+        gate = self._step("Determine whether signing is mandatory")
+        self.assertIn("-n \"$SIGN_DIGEST\"", gate["run"])
+        self.assertIn("inputs.sign_digest", gate["env"]["SIGN_DIGEST"])
+
+    def test_sign_digest_reaches_shell_only_via_env(self):
+        for job in (self.merge, self.sign):
+            for step in job["steps"]:
+                self.assertNotIn("inputs.sign_digest", str(step.get("run", "")))
+                self.assertNotIn("needs.merge.outputs", str(step.get("run", "")))
+
+    def test_existence_check_precedes_cosign(self):
+        names = [s.get("name") for s in self.sign["steps"]]
+        exists = names.index("Verify digest exists in the image repository")
+        self.assertLess(exists, names.index("Sign image digest"))
+        self.assertIn('imagetools inspect "${IMAGE}@${DIGEST}"', self.sign["steps"][exists]["run"])
+
+    def test_merge_digest_comes_from_create_descriptor_not_a_tag_lookup(self):
+        run = next(s for s in self.merge["steps"] if s.get("id") == "create-manifest")["run"]
+        self.assertIn("containerimage.descriptor", run)
+        self.assertNotIn("tags[0]", run)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -1,0 +1,65 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-argocd-developer-sync-scope-rescue",
+  "task": "Land the locally-held ArgoCD developer sync scope fix (tenants/*) that never reached origin/main",
+  "changeContext": {
+    "paths": [
+      "gitops/charts/narwhal-platform/templates/argocd-config.yaml",
+      "scripts/test/lib/check-argocd-developer-sync-scope.py",
+      ".agents/evals/traces/2026-10-argocd-developer-sync-scope-rescue.json"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Rescue 7 unpushed commits onto origin/main; developer sync narrowed to tenants/*; portal-reader sync */* intentionally unchanged; no live cluster change."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "With the origin/main chart restored in place, check-argocd-developer-sync-scope.py exits non-zero with FAIL (policy diverges from contract); with the fixed chart it prints PASS."
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "argocd-config.yaml developer rule is 'applications, sync, tenants/*' so selfHeal no longer overwrites 13-argocd.sh restriction; check renumbered R246 after finding R242 collision with #332. Checker hardened after independent review: pins the complete p/g line set per source, rejects extra policy.*.csv keys, duplicate argocd-rbac-cm declarations and templated policy text; 37 reason-asserted mutation cases beyond the original 16 (57 total): quoted names/keys normalised, YAML document counts pinned, and the parsed argocd-rbac-cm data (all keys, tags, anchors, duplicate keys) compared to the reviewed contract, and Helm / shell substitution expressions pinned."
+    },
+    {
+      "id": "e4",
+      "type": "verification",
+      "status": "passed",
+      "scope": "ArgoCD policy/group map/default role contract check",
+      "summary": "check-argocd-developer-sync-scope.py passes on the rebased tree.",
+      "evidence": [
+        "test:python3 scripts/test/lib/check-argocd-developer-sync-scope.py",
+        "runtime:command-exit-0"
+      ],
+      "commandExitCode": 0
+    },
+    {
+      "id": "e5",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "full static regression suite incl. R246 mutation verification",
+      "summary": "regression-check-kakao.sh --static on the rebased tree passes 356 with 0 failures.",
+      "evidence": [
+        "test:./scripts/test/regression-check-kakao.sh --static",
+        "runtime:command-exit-0"
+      ],
+      "commandExitCode": 0
+    },
+    {
+      "id": "e6",
+      "type": "completion_claim",
+      "summary": "Static contract verified; live ArgoCD behaviour after sync is not verified (no cluster)."
+    },
+    {
+      "id": "e7",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Rescue of the static policy fix and its guard verified; live argocd-rbac-cm reconcile is out of scope and unverified (stated in e6)"
+    }
+  ]
+}

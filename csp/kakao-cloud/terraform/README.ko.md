@@ -283,7 +283,7 @@ tofu state pull > ~/narwhal-kakao-state-pre-0.5.1.json   # git 밖에 보관
 tofu state show module.network.kakaocloud_vpc.vpc        # `subnet` 블록의 id
 
 # 2. 새 provider 받기 (lock 파일은 이미 0.5.1로 고정돼 있다)
-tofu init -upgrade
+tofu init   # 커밋된 lock이 이미 0.5.1을 고정한다. -upgrade는 다시 해석한다
 
 # 3. VPC 기본 서브넷 import (예전 인라인 `subnet` 블록)
 tofu import module.network.kakaocloud_subnet.vpc_default_subnet <default-subnet-id>

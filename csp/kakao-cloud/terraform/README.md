@@ -293,7 +293,7 @@ tofu state pull > ~/narwhal-kakao-state-pre-0.5.1.json   # keep outside git
 tofu state show module.network.kakaocloud_vpc.vpc        # the `subnet` block's id
 
 # 2. Pull the new provider (the lock file is already pinned to 0.5.1)
-tofu init -upgrade
+tofu init   # the committed lock already pins 0.5.1; -upgrade would re-resolve it
 
 # 3. Import the VPC default subnet (the former inline `subnet` block)
 tofu import module.network.kakaocloud_subnet.vpc_default_subnet <default-subnet-id>

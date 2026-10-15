@@ -47,7 +47,7 @@ On provider v0.3.3 `kakaocloud_vpc` rejected variables for `name`, `cidr_block`,
 so those three were hardcoded in `main.tf`. **Fixed in v0.4.4** — all VPC attributes are
 variable-driven again, so change them through `terraform.tfvars`, not by editing `main.tf`.
 
-Verified offline against the pinned 0.4.4 provider: `tofu validate` passes with variables (both
+Verified offline against the pinned 0.4.4 provider (unchanged on 0.5.1): `tofu validate` passes with variables (both
 with and without defaults), while a literal malformed CIDR is still rejected with
 `Invalid IP CIDR String Value` — proving the provider validator runs and no longer trips on
 variables.

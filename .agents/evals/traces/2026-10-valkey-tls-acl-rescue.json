@@ -1,0 +1,66 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-valkey-tls-acl-rescue",
+  "task": "Land the locally-held portal Valkey TLS-only + ACL hardening that never reached origin/main",
+  "changeContext": {
+    "paths": [
+      "gitops/charts/narwhal-platform/templates/narwhal-portal-k8s.yaml",
+      "scripts/cluster/13-2-narwhal-portal-bindings.sh",
+      "scripts/test/lib/check-valkey-security-contract.py",
+      ".agents/evals/traces/2026-10-valkey-tls-acl-rescue.json"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Rescue 3 unpushed commits onto origin/main: Valkey TLS-only listener, dedicated ACL user, dedicated Secret, ingress scope; no live cluster change; requires portal build newer than 1.0.19 (VALKEY_USERNAME support)."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "With the origin/main chart and bindings script restored in place, check-valkey-security-contract.py fails with AssertionError 'chart must disable the plaintext listener with exactly --port 0'; with the rescued files it passes."
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "Valkey serves TLS only with ACL user portal and default user off; bindings inject rediss:// and VALKEY_TLS=true, drop VALKEY_INSECURE_PRODUCTION, abort on secret read errors; check renumbered R247 after finding R240 collision."
+    },
+    {
+      "id": "e4",
+      "type": "verification",
+      "status": "passed",
+      "scope": "Valkey TLS/ACL/secret/ingress contract with 11 negative mutations",
+      "summary": "check-valkey-security-contract.py passes on the rebased tree.",
+      "evidence": [
+        "test:python3 scripts/test/lib/check-valkey-security-contract.py",
+        "runtime:command-exit-0"
+      ],
+      "commandExitCode": 0
+    },
+    {
+      "id": "e5",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "full static regression suite incl. R247",
+      "summary": "regression-check-kakao.sh --static on the rebased tree passes with 0 failures.",
+      "evidence": [
+        "test:./scripts/test/regression-check-kakao.sh --static",
+        "runtime:command-exit-0"
+      ],
+      "commandExitCode": 0
+    },
+    {
+      "id": "e6",
+      "type": "completion_claim",
+      "summary": "Static contract verified; live Valkey TLS handshake with the cluster CA and portal connectivity are not verified here (only a local Docker Valkey test existed on the original branch)."
+    },
+    {
+      "id": "e7",
+      "type": "task_outcome",
+      "state": "B",
+      "summary": "Static checks only; do not deploy with portal 1.0.19, which lacks VALKEY_USERNAME support."
+    }
+  ]
+}

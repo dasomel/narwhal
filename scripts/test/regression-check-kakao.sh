@@ -1956,6 +1956,18 @@ PYEOF
     python3 scripts/test/lib/check-ambient-netpol.py
   check R201 "ambient policy regressions reject HBONE and probe-CIDR mutations (Narwhal#235)" \
     python3 scripts/test/lib/check-ambient-netpol.py --mutation-verify
+  # Narwhal#128: the HBONE check only covers its hardcoded AMBIENT set; the enrollment list in
+  # 09-istio-ambient.sh must stay identical to it or a newly enrolled namespace goes unchecked.
+  check R242 "ambient enrollment list matches the NetworkPolicy check's namespace set (Narwhal#128)" \
+    python3 scripts/test/lib/check-ambient-enrollment.py
+  check R242a "ambient enrollment check accepts a matching list" \
+    python3 scripts/test/lib/check-ambient-enrollment.py scripts/test/fixtures/ambient-enrollment-good.sh
+  check_not R242b "ambient enrollment check rejects an enrolled namespace the policy check does not cover" \
+    python3 scripts/test/lib/check-ambient-enrollment.py scripts/test/fixtures/ambient-enrollment-bad-extra.sh
+  check_not R242c "ambient enrollment check rejects a covered namespace that is not enrolled" \
+    python3 scripts/test/lib/check-ambient-enrollment.py scripts/test/fixtures/ambient-enrollment-bad-missing.sh
+  check_not R242d "ambient enrollment check fails closed when the array is absent" \
+    python3 scripts/test/lib/check-ambient-enrollment.py scripts/test/fixtures/ambient-enrollment-bad-absent.sh
   # Narwhal#235 (lead live run): the ArgoCD HBONE post-check read a pre-patch snapshot and
   # exited 1 on every fresh cluster after its own successful appends.
   check R202 "13-argocd re-reads each policy after patching before the 15008 post-check (Narwhal#235)" \

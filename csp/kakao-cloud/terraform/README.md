@@ -303,9 +303,15 @@ tofu import module.network.kakaocloud_subnet.vpc_default_subnet <default-subnet-
 # 4. Pin the bastion's current private IP: nodes use it as DNS, squid proxy and registry mirror
 tofu output -raw bastion_private_ip   # set this value as bastion_private_ip in terraform.tfvars
 
-# 5. Destroy the bastion alone, then apply (-replace does not work, see above)
+# 5. Replace the bastion alone. -replace is refused for the old bastion (see above), and a
+#    targeted destroy would also destroy its public IP (prevent_destroy then errors).
+#    Take the address out of state first, destroy the instance, recreate, re-import:
+tofu state show kakaocloud_public_ip.bastion_public | grep -E '^\s+id\s'   # note <public_ip_id>
+tofu state rm kakaocloud_public_ip.bastion_public
 tofu destroy -target=kakaocloud_instance.bastion -refresh=false
-tofu apply
+tofu apply -target=kakaocloud_instance.bastion      # new bastion; its address is not attached yet
+tofu import kakaocloud_public_ip.bastion_public <public_ip_id>
+tofu apply                                          # re-associates the kept address (in-place update)
 
 # 6. Rebuild what lived on the bastion (squid, registry) from the repo root
 cd ../../..
@@ -321,12 +327,46 @@ Notes:
   re-push into a bastion registry that is still alive. Sentinel-guarded node stages
   (`base`, `mirror`, ...) are not redone.
 - The new bastion has a new SSH host key; clear the old entry from `known_hosts`.
+- Every `kakaocloud_public_ip` carries `prevent_destroy` (D-PUBIP), so the address survives
+  VM and LB recreation. Once the bastion is on 0.5.1, future replacements use `-replace`
+  (next section) and need none of the state surgery in step 5.
+
+## Replacing a VM
+
+Public IPs (bastion, node egress, both LBs) are external endpoints: DNS, kubeconfig, operator
+SSH and allowlists point at them. Keep the address by replacing the VM, not destroying it:
+
+```bash
+tofu apply -replace=kakaocloud_instance.bastion   # plan shows the public IP "updated in-place"
+```
+
+- Never `tofu destroy -target=<instance>`: it also destroys the dependent public IP, and
+  with the guard it now errors instead.
+- `initial_security_groups` cannot change in place. Swapping a security group therefore still
+  means recreating the instance: do it with `-replace` above, not with a targeted destroy.
+- If `-replace` itself is blocked by the provider, use the step 5 sequence above
+  (`tofu state rm` the public IP, destroy the instance, recreate, `tofu import`, apply).
 
 ## Cleanup
 
+`kakaocloud_public_ip` resources are guarded by `prevent_destroy` (D-PUBIP), so a plain
+`tofu destroy` fails with `Instance cannot be destroyed`. To tear everything down, drop the
+guard first, either by removing the lifecycle blocks or by releasing the addresses from state:
+
 ```bash
+# Option A: remove the guards (all five resources), then destroy; the addresses are released
+sed -i.bak '/prevent_destroy = true/s/true/false/' bastion.tf modules/compute/main.tf modules/loadbalancer/main.tf
+tofu destroy
+# restore the guards afterwards: mv bastion.tf.bak bastion.tf (and the two module files)
+
+# Option B: keep the addresses outside OpenTofu (they stay allocated and billed until you
+# release them in the Kakao Cloud console: VPC > Public IP)
+tofu state list | grep kakaocloud_public_ip | xargs -n1 tofu state rm
 tofu destroy
 ```
+
+`assign_node_public_ips = false` on a live cluster is blocked by the same guard; use option B
+for the node addresses first.
 
 52 of the 53 resources go in ~15 minutes. **VPC deletion alone can stretch into hours.**
 

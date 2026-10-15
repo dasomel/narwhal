@@ -293,9 +293,15 @@ tofu import module.network.kakaocloud_subnet.vpc_default_subnet <default-subnet-
 # 4. bastion 현재 사설 IP 고정: 노드가 DNS, squid 프록시, 레지스트리 미러로 쓴다
 tofu output -raw bastion_private_ip   # 이 값을 terraform.tfvars의 bastion_private_ip에 넣는다
 
-# 5. bastion만 destroy 후 apply (-replace는 위 이유로 안 된다)
+# 5. bastion만 교체. 예전 bastion은 -replace가 거부되고(위 참고), 대상 지정 destroy는 공인 IP까지
+#    지운다(prevent_destroy가 있으면 에러). 먼저 주소를 state에서 빼고 인스턴스를 지운 뒤
+#    다시 만들고 import한다:
+tofu state show kakaocloud_public_ip.bastion_public | grep -E '^\s+id\s'   # <public_ip_id> 메모
+tofu state rm kakaocloud_public_ip.bastion_public
 tofu destroy -target=kakaocloud_instance.bastion -refresh=false
-tofu apply
+tofu apply -target=kakaocloud_instance.bastion      # 새 bastion, 주소는 아직 연결 안 됨
+tofu import kakaocloud_public_ip.bastion_public <public_ip_id>
+tofu apply                                          # 유지한 주소를 다시 연결 (제자리 업데이트)
 
 # 6. bastion에 있던 것(squid, 레지스트리)을 저장소 루트에서 다시 구성
 cd ../../..
@@ -311,12 +317,45 @@ cd ../../..
   레지스트리에 다시 push할 때만 필요하다. sentinel로 보호되는 노드 스테이지(`base`, `mirror` 등)는
   다시 돌지 않는다.
 - 새 bastion은 SSH 호스트 키가 바뀐다. `known_hosts`의 옛 항목을 지운다.
+- 모든 `kakaocloud_public_ip`에 `prevent_destroy`(D-PUBIP)가 있어 VM, LB를 다시 만들어도 주소가
+  유지된다. bastion이 0.5.1이 된 뒤의 교체는 `-replace`(다음 절)로 하며 5단계의 state 조작이 필요 없다.
+
+## VM 교체
+
+공인 IP(bastion, 노드 egress, LB 2개)는 외부 엔드포인트다. DNS, kubeconfig, 운영자 SSH,
+허용 목록이 이 주소를 가리킨다. 주소를 지키려면 VM을 destroy하지 말고 교체한다:
+
+```bash
+tofu apply -replace=kakaocloud_instance.bastion   # plan에 공인 IP가 "updated in-place"로 나온다
+```
+
+- `tofu destroy -target=<instance>`는 쓰지 않는다. 의존하는 공인 IP까지 지우며, 가드가 있으면
+  이제 에러가 난다.
+- `initial_security_groups`는 제자리 변경이 안 된다. 보안그룹을 바꾸려면 인스턴스를 다시 만들어야
+  하며, 이때도 대상 지정 destroy가 아니라 위 `-replace`를 쓴다.
+- provider가 `-replace` 자체를 막으면 위 5단계 순서(공인 IP `tofu state rm`, 인스턴스 destroy,
+  재생성, `tofu import`, apply)를 쓴다.
 
 ## 정리
 
+`kakaocloud_public_ip`는 `prevent_destroy`(D-PUBIP)로 보호되므로 그냥 `tofu destroy`는
+`Instance cannot be destroyed`로 실패한다. 전부 정리하려면 먼저 가드를 푼다. lifecycle 블록을
+없애거나, 주소를 state에서 빼면 된다:
+
 ```bash
+# 방법 A: 가드 해제(5개 리소스 전부) 후 destroy. 주소는 반납된다
+sed -i.bak '/prevent_destroy = true/s/true/false/' bastion.tf modules/compute/main.tf modules/loadbalancer/main.tf
+tofu destroy
+# 끝나면 가드 복원: mv bastion.tf.bak bastion.tf (모듈 파일 2개도 동일)
+
+# 방법 B: 주소를 OpenTofu 밖에 남긴다 (Kakao Cloud 콘솔 VPC > Public IP에서 직접 반납하기
+# 전까지 할당·과금이 유지된다)
+tofu state list | grep kakaocloud_public_ip | xargs -n1 tofu state rm
 tofu destroy
 ```
+
+운영 중인 클러스터에서 `assign_node_public_ips = false`도 같은 가드에 막힌다. 노드 주소는 먼저
+방법 B로 처리한다.
 
 리소스 52개는 ~15분에 사라진다. **VPC 삭제만 몇 시간 단위로 늘어질 수 있다.**
 

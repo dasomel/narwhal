@@ -3082,6 +3082,8 @@ assert line in s and not any(x.startswith("MAX_ROUNDS=") and ":-3" in x for x in
     python3 scripts/test/lib/check-argocd-developer-sync-scope.py --mutation-verify
   check R236 "accelerator backend profiles match the conformance matrix (Narwhal#95)" \
     python3 scripts/test/lib/check-accelerator-profiles.py --mutation-verify
+  check R248 "every kakaocloud_public_ip has lifecycle prevent_destroy (D-PUBIP, 2026-10-15); the check fails when a guard is removed" \
+    python3 scripts/test/lib/check-kakao-public-ip-guard.py --mutation-verify
 
 }
 

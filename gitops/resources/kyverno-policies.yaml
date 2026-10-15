@@ -335,7 +335,8 @@ spec:
                 - keys:
                     publicKeys: |
                       -----BEGIN PUBLIC KEY-----
-                      MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE/narwhal/cosign/trusted/signer/pub
+                      MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE9IgOjh5OHAGQMLCf2/yuuNZofCZ9
+                      sd6xuhQq/RLamGorvENKttj0rHby3glfnrZKXFvUB7DhBmdAy59QCo3JbA==
                       -----END PUBLIC KEY-----
           attestations:
             - predicateType: https://cyclonedx.org/schema/1.4
@@ -345,7 +346,8 @@ spec:
                     - keys:
                         publicKeys: |
                           -----BEGIN PUBLIC KEY-----
-                          MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE/narwhal/cosign/trusted/signer/pub
+                          MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE9IgOjh5OHAGQMLCf2/yuuNZofCZ9
+                          sd6xuhQq/RLamGorvENKttj0rHby3glfnrZKXFvUB7DhBmdAy59QCo3JbA==
                           -----END PUBLIC KEY-----
 ---
 apiVersion: kyverno.io/v1

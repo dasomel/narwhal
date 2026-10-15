@@ -85,14 +85,16 @@ PR #347로 반영됐고, CI·릴리스 보강은 PR #355로 이어졌다.
   narwhal#356의 코멘트다. 닫힌 포털 이슈와 모든 PR은 옛 저장소에 남는다.
 - 포털 초안 #187, #77은 narwhal #383, #384로 다시 열었고 원본은 닫았다. Dependabot은 이제 여기서
   `/portal`을 감시하며, 옛 저장소의 Dependabot PR은 닫았다.
+- 브랜치 보호의 필수 체크에 `independent-review`와 함께 `Portal gate`를 반영했다(2026-10-15 완료).
+- GHCR 패키지 `narwhal-portal`에 narwhal Actions 쓰기 권한을 부여했고(관리자 UI, 첫 `portal/v*`
+  릴리스 전에는 API로 확인 불가) `dasomel/narwhal`에 `COSIGN_PRIVATE_KEY` / `COSIGN_PASSWORD`
+  시크릿을 만들었다(2026-10-15 완료). 공개 키는 `scripts/airgap/keys/cosign.pub`에 커밋하고
+  `verify-image-signatures`에 인라인했다.
 - `portal/` 안내 README가 옛 저장소에 머지된 뒤(portal PR #251) `dasomel/narwhal-portal`을
   삭제하지 않고 아카이브했다.
 
 ## 미완료 (아직 하지 않음)
 
-- 브랜치 보호의 필수 체크에 `Portal gate`를 반영한다(관리자 설정).
-- 첫 `portal/v*` 릴리스 전에 GHCR 패키지 `narwhal-portal`에 narwhal Actions 쓰기 권한을 주고
-  `COSIGN_PRIVATE_KEY` / `COSIGN_PASSWORD` 시크릿을 만든다.
 - Valkey 변경(PR #343)과 portal v1.1.0 릴리스 순서를 정한 뒤 pin을 올린다.
 - OpenForge 레지스트리의 별도 `narwhal-portal` 항목을 정리한다.
 

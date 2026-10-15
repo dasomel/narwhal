@@ -150,8 +150,14 @@ CRITICAL_SCRIPTS=(
   # behind them. A step whose failure silently removes most of the platform is not
   # non-critical.
   "12-gitea.sh"
+  # 13-2 builds narwhal-portal-secrets and the Valkey auth Secret that the TLS-only
+  # Valkey and portal 1.1.0 both require. As a warning-only step, a failure let 14 hand
+  # the TLS Valkey to ArgoCD while the portal Secret was stale or absent (portal outage).
+  # Exit code 3 is the one tolerated result: Secrets applied, only ARGOCD_TOKEN missing.
+  "13-2-narwhal-portal-bindings.sh"
   "14-gitops-bootstrap.sh"
 )
+PORTAL_BINDINGS_DEGRADED_RC=3
 
 # Run all scripts in order (07→08-1~08-6→09→10→11-keycloak,11-2,11-3,11-4→12→13→14)
 # Critical scripts will abort Phase 2 on failure; non-critical will warn and continue
@@ -169,7 +175,13 @@ for script in "07-cnpg.sh" "08-1-networking.sh" "08-2-monitoring.sh" "08-3-secur
   if [[ "${is_critical}" == "true" ]]; then
     echo ">>> Running ${script} (critical)..."
     echo "============================================"
-    if ! bash "${SCRIPT_DIR}/${script}"; then
+    rc=0
+    bash "${SCRIPT_DIR}/${script}" || rc=$?
+    if [[ "${script}" == "13-2-narwhal-portal-bindings.sh" && "${rc}" -eq "${PORTAL_BINDINGS_DEGRADED_RC}" ]]; then
+      echo "WARN: ${script} finished without ARGOCD_TOKEN (Secrets applied); continuing — re-run it to mint the token."
+      rc=0
+    fi
+    if [[ "${rc}" -ne 0 ]]; then
       echo "ERROR: Critical script ${script} failed. Phase 2 cannot continue safely."
       echo "Fix the error above and re-run: vagrant provision master-1 --provision-with phase2-platform"
       exit 1

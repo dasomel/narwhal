@@ -129,18 +129,21 @@ run_static() {
   section "STATIC — known fixes still present in the repo"
 
   # narwhal#238 (2026-09-28): every active portal image pin must agree. Historical
-  # release notes (root and portal/) and lessons are excluded, as is portal/SECURITY.md's
-  # example command; D1 keeps this inventory check small and
+  # release notes (root and portal/), lessons and ADRs (decision records) are excluded, as is portal/SECURITY.md's
+  # example command; the pin must also be >= 1.1.0 (Valkey TLS+ACL contract, PR #343); D1 keeps this inventory check small and
   # source-controlled, with the escape hatch of adding new active pin docs to grep.
   check R210 "all active narwhal-portal image pins use one version (Narwhal#238, 2026-09-28)" \
     python3 -c '
 import re
 import subprocess
-result = subprocess.run(["git", "grep", "-h", "-E", r"ghcr\.io/dasomel/narwhal-portal:1\.0\.[0-9]+", "--", ".", ":!CHANGELOG*", ":!docs/common/lessons-log.md", ":!scripts/test/regression-check-kakao.sh", ":!.agents/evals/traces", ":!portal/CHANGELOG*", ":!portal/SECURITY.md"], capture_output=True, text=True)
+result = subprocess.run(["git", "grep", "-h", "-E", r"ghcr\.io/dasomel/narwhal-portal:[0-9]+\.[0-9]+\.[0-9]+", "--", ".", ":!CHANGELOG*", ":!docs/common/lessons-log.md", ":!scripts/test/regression-check-kakao.sh", ":!.agents/evals/traces", ":!portal/CHANGELOG*", ":!portal/SECURITY.md", ":!docs/adr"], capture_output=True, text=True)
 if result.returncode not in (0, 1):
     raise SystemExit(result.stderr)
-versions = set(re.findall(r"ghcr\.io/dasomel/narwhal-portal:(1\.0\.[0-9]+)", result.stdout))
+versions = set(re.findall(r"ghcr\.io/dasomel/narwhal-portal:([0-9]+\.[0-9]+\.[0-9]+)", result.stdout))
 assert len(versions) == 1, f"portal pin versions differ: {sorted(versions)}"
+# Floor: the chart binds Valkey TLS + ACL (VALKEY_USERNAME), which images up to 1.0.19 do not read.
+pin = tuple(int(x) for x in next(iter(versions)).split("."))
+assert pin >= (1, 1, 0), f"portal pin {pin} predates the Valkey TLS+ACL contract (needs >= 1.1.0)"
 '
 
   # D2 / D-MONO-2: portal/ is in this repo, so inspect its working tree instead of
@@ -3082,6 +3085,23 @@ assert line in s and not any(x.startswith("MAX_ROUNDS=") and ":-3" in x for x in
     python3 scripts/test/lib/check-argocd-developer-sync-scope.py --mutation-verify
   check R236 "accelerator backend profiles match the conformance matrix (Narwhal#95)" \
     python3 scripts/test/lib/check-accelerator-profiles.py --mutation-verify
+  check R247 "portal Valkey TLS, ACL, dedicated Secret, and ingress remain hardened (S5)" \
+    python3 scripts/test/lib/check-valkey-security-contract.py
+  check R253 "Phase 2 treats 13-2 portal bindings as critical (only exit 3, ARGOCD_TOKEN missing, is tolerated) so 14 never hands TLS Valkey to ArgoCD with stale portal Secrets (PR #343)" \
+    python3 -c '
+import re
+s = open("scripts/cluster/06-phase2-start.sh").read()
+m = re.search(r"CRITICAL_SCRIPTS=\((.*?)\n\)", s, re.S)
+assert m, "CRITICAL_SCRIPTS array missing"
+names = re.findall(r"^\s*\"([^\"]+\.sh)\"", m.group(1), re.M)
+assert "13-2-narwhal-portal-bindings.sh" in names, names
+assert names.index("13-2-narwhal-portal-bindings.sh") < names.index("14-gitops-bootstrap.sh")
+assert "PORTAL_BINDINGS_DEGRADED_RC=3" in s
+b = open("scripts/cluster/13-2-narwhal-portal-bindings.sh").read()
+assert re.search(r"ARGOCD_TOKEN 없이 완료[^\n]*\n\s*exit 3\b", b), "13-2 must exit 3 only for the ArgoCD-token-only case"
+code = [l for l in b.splitlines() if not l.lstrip().startswith("#")]
+assert sum(1 for l in code if re.search(r"\bexit 3\b", l)) == 1, "exit 3 must appear exactly once in non-comment 13-2 code"
+'
   check R248 "every kakaocloud_public_ip has lifecycle prevent_destroy (D-PUBIP, 2026-10-15); the check fails when a guard is removed" \
     python3 scripts/test/lib/check-kakao-public-ip-guard.py --mutation-verify
 

@@ -67,6 +67,15 @@ that is not itself a Git repository.
   (`portal/docs/lessons-log.md` or `docs/common/lessons-log.md`); a fix spanning both goes
   in narwhal's.
 
+- **The rewritten historical tags are deliberately not pushed.** The import carries
+  `portal/v1.0.0` .. `portal/v1.0.19` locally, but `portal-docker-publish.yml` triggers on
+  `portal/v*.*.*`: pushing them would rebuild and re-sign image tags that are already
+  published. Releases restart from the next new `portal/vX.Y.Z`; the old tags stay in
+  `dasomel/narwhal-portal` (archived, never deleted).
+- The root `.gitignore` patterns for `logs/`, `secrets/` and `kubeconfig` matched portal
+  API route directories of the same names; `/portal/src/**/` negations keep that source
+  tracked, and R35 fails if a portal source file is ignored again.
+
 ## Pending (not done yet)
 
 - Transfer portal's 27 open issues to this repository, with an old-to-new number-mapping

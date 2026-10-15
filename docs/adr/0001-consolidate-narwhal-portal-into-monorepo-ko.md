@@ -57,6 +57,13 @@ D-MONO-3(CI), D-MONO-4(릴리스·이미지 정체성), D-MONO-5(이 ADR). impor
 - lessons 규칙: 수정의 lessons-log 행은 그 수정이 건드린 영역의 로그(`portal/docs/lessons-log.md` 또는
   `docs/common/lessons-log.md`)에 쓰고, 양쪽에 걸친 수정은 narwhal 쪽에 쓴다.
 
+- **다시 쓴 과거 태그는 의도적으로 푸시하지 않는다.** import에는 `portal/v1.0.0` ~ `portal/v1.0.19`가
+  로컬로 들어 있지만, `portal-docker-publish.yml`이 `portal/v*.*.*`에서 트리거되므로 푸시하면 이미 배포된 이미지
+  태그를 다시 빌드하고 서명한다. 릴리스는 다음 새 `portal/vX.Y.Z`부터 시작하며, 과거 태그는
+  `dasomel/narwhal-portal`(아카이브하되 삭제하지 않음)에 남는다.
+- 루트 `.gitignore`의 `logs/`, `secrets/`, `kubeconfig` 패턴이 같은 이름의 portal API 라우트 디렉터리와
+  일치했다. `/portal/src/**/` 예외로 해당 소스를 추적하며, portal 소스가 다시 무시되면 R35가 실패한다.
+
 ## 미완료 (아직 하지 않음)
 
 - 포털의 열린 이슈 27건을 이 저장소로 이전하고 신구 번호 매핑 코멘트를 남긴다.

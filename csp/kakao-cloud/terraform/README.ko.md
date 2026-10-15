@@ -296,7 +296,7 @@ tofu output -raw bastion_private_ip   # 이 값을 terraform.tfvars의 bastion_p
 # 5. bastion만 교체. 예전 bastion은 -replace가 거부되고(위 참고), 대상 지정 destroy는 공인 IP까지
 #    지운다(prevent_destroy가 있으면 에러). 먼저 주소를 state에서 빼고 인스턴스를 지운 뒤
 #    다시 만들고 import한다:
-tofu state show kakaocloud_public_ip.bastion_public | grep -E '^\s+id\s'   # <public_ip_id> 메모
+tofu show -json | jq -r '.values.root_module.resources[] | select(.address=="kakaocloud_public_ip.bastion_public") | .values.id'   # state rm 전에 <public_ip_id> 기록
 tofu state rm kakaocloud_public_ip.bastion_public
 tofu destroy -target=kakaocloud_instance.bastion -refresh=false
 tofu apply -target=kakaocloud_instance.bastion      # 새 bastion, 주소는 아직 연결 안 됨
@@ -334,7 +334,11 @@ tofu apply -replace=kakaocloud_instance.bastion   # plan에 공인 IP가 "update
 - `initial_security_groups`는 제자리 변경이 안 된다. 보안그룹을 바꾸려면 인스턴스를 다시 만들어야
   하며, 이때도 대상 지정 destroy가 아니라 위 `-replace`를 쓴다.
 - provider가 `-replace` 자체를 막으면 위 5단계 순서(공인 IP `tofu state rm`, 인스턴스 destroy,
-  재생성, `tofu import`, apply)를 쓴다.
+  재생성, `tofu import`, apply)를 쓴다. import 뒤 `tofu plan`에서 공인 IP는 `update in-place`로
+  나와야 한다. replace로 나오면 `prevent_destroy`가 의도대로 막는 것이므로 가드를 지우지 말고
+  멈춰서 원인을 조사한다. 이 state rm / import 순서는 아직 실제 배포에서 검증되지 않았다.
+- 위 jq 조회는 루트 리소스 기준(`.values.root_module.resources[]`)이며, 모듈 안 리소스는
+  `.values.root_module.child_modules[]` 아래에 있다.
 
 ## 정리
 
@@ -354,8 +358,9 @@ tofu state list | grep kakaocloud_public_ip | xargs -n1 tofu state rm
 tofu destroy
 ```
 
-운영 중인 클러스터에서 `assign_node_public_ips = false`도 같은 가드에 막힌다. 노드 주소는 먼저
-방법 B로 처리한다.
+운영 중인 클러스터에서 `assign_node_public_ips = false`도 같은 가드에 막히고,
+`assign_node_public_ips = true`일 때 `master_count` / `worker_count`를 줄이는 것도 막힌다
+(제거되는 인덱스의 주소가 destroy되므로). 해당 주소는 먼저 방법 B로 처리한다.
 
 리소스 52개는 ~15분에 사라진다. **VPC 삭제만 몇 시간 단위로 늘어질 수 있다.**
 

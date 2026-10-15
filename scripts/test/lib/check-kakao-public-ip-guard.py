@@ -10,9 +10,18 @@ RESOURCE = re.compile(r'^resource "kakaocloud_public_ip" "([^"]+)" \{\n(.*?)^\}\
 GUARD = re.compile(r'^\s*lifecycle \{[^}]*^\s*prevent_destroy\s*=\s*true\s*$[^}]*\}', re.S | re.M)
 
 
+BLOCK_COMMENT = re.compile(r"/\*.*?\*/", re.S)
+LINE_COMMENT = re.compile(r"(?:#|//).*$", re.M)
+
+
+def strip_comments(text):
+    return LINE_COMMENT.sub("", BLOCK_COMMENT.sub("", text))
+
+
 def unguarded(files):
     found, missing = 0, []
     for name, text in files.items():
+        text = strip_comments(text)
         for m in RESOURCE.finditer(text):
             found += 1
             if not GUARD.search(m.group(2)):
@@ -35,9 +44,19 @@ def main():
     if "--mutation-verify" in sys.argv:
         files = load(TF_DIR)
         victim = next(k for k, v in files.items() if RESOURCE.search(v))
-        files[victim] = files[victim].replace("prevent_destroy = true", "prevent_destroy = false")
-        if not unguarded(files)[1]:
-            print("mutation (prevent_destroy removed) was not detected")
+        text = files[victim]
+        guard = "prevent_destroy = true"
+        mutations = {
+            "guard flipped to false": text.replace(guard, "prevent_destroy = false"),
+            "guard in line comment": text.replace(guard, "# " + guard),
+            "guard in block comment": text.replace(guard, "/* " + guard + " */"),
+        }
+        for label, mutated in mutations.items():
+            if not unguarded({victim: mutated})[1]:
+                print(f"mutation not detected: {label}")
+                return 1
+        if unguarded({victim: text.replace(guard, guard + "  # inline note")})[1]:
+            print("trailing comment on the guard line false-fails")
             return 1
     return 0
 

@@ -59,8 +59,8 @@
     {
       "id": "e7",
       "type": "task_outcome",
-      "state": "B",
-      "summary": "Static checks only; do not deploy with portal 1.0.19, which lacks VALKEY_USERNAME support."
+      "state": "A",
+      "summary": "Rescue of the static Valkey TLS/ACL change and its guard verified; live TLS handshake and portal connectivity are out of scope and unverified (stated in e6). Do not deploy with portal 1.0.19."
     }
   ]
 }

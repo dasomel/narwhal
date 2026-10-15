@@ -31,6 +31,12 @@ not isolated. Inherent limits (not detected): a policy selecting only a LABELLED
 it does not break the default-deny for the other pods, so it is ignored; `namespaceSelector: {}` combined
 with a podSelector that has labels counts as restricted although it selects those labelled pods in every
 namespace; a `podSelector: {}` source alone means the policy's own namespace only.
+Accepted conservative limits: (i) an NP with `policyTypes: [Egress]` that still carries an `ingress:` list is
+flagged as punching although Kubernetes ignores those rules; (ii) a ports-only select-all ingress rule is flagged
+(allows_everyone ignores ports); (iii) a punching policy whose metadata.namespace is missing, empty or not a
+string is treated as potentially in EVERY namespace (applied via `kubectl -n` / Argo destination; a CCNP is
+cluster-scoped anyway), while isolates() still needs the exact namespace; (iv) a skipped templated
+NetworkPolicy file prints `WARN: skipped templated NetworkPolicy file <path>` on stderr (once per file).
 KNOWN_ISSUES is an explicit baseline keyed on (namespace, name) with an exact COUNT: drift in either
 direction (incl. a stale entry) fails; it is printed on stdout so the harness WARNs. Default mode only.
 """
@@ -57,6 +63,8 @@ KNOWN_ISSUES = {
     ("platform-system", "platform-system-permissive"): (1, "namespace-wide PERMISSIVE, no ingress default-deny (#126)"),
 }
 KIND_RE = re.compile(r"""kind["']?\s*:\s*["']?(PeerAuthentication|\w*NetworkPolicy)\b""")
+NP_RE = re.compile(r"""kind["']?\s*:\s*["']?\w*NetworkPolicy\b""")
+WARNED: set[str] = set()
 PA_RE = re.compile(r"""kind["']?\s*:\s*["']?PeerAuthentication\b""")
 
 
@@ -121,7 +129,10 @@ def documents(rel: str, path: pathlib.Path, text: str) -> list[dict]:
         if path.suffix == ".tpl" or "{{" in strip(chunk):
             if PA_RE.search(strip(chunk)):
                 raise ValueError(f"{rel}: templated/.tpl PeerAuthentication cannot be evaluated statically")
-            continue  # templated NetworkPolicy: unevaluable, so never counts as isolation
+            if NP_RE.search(strip(chunk)) and rel not in WARNED:  # unevaluable, so never counts as isolation
+                WARNED.add(rel)
+                print(f"WARN: skipped templated NetworkPolicy file {rel} (cannot be evaluated statically)", file=sys.stderr)
+            continue
         try:
             loaded = [json.loads(chunk, object_pairs_hook=_json_pairs)] if path.suffix == ".json" \
                 else list(yaml.load_all(chunk, Loader=UniqueLoader))
@@ -251,6 +262,12 @@ def isolates(doc: dict, ns: str) -> bool:
     return False
 
 
+def in_ns(meta: dict, ns: str) -> bool:
+    """A policy without a string metadata.namespace may be applied (-n / Argo destination) to ANY namespace."""
+    own = meta.get("namespace")
+    return own == ns or not (isinstance(own, str) and own)
+
+
 def punches(doc: dict, ns: str) -> bool:
     """True if doc is an ADDITIVE select-all policy of ns that opens ingress to everyone (defeats a default-deny)."""
     meta, spec = doc.get("metadata"), doc.get("spec")
@@ -260,10 +277,10 @@ def punches(doc: dict, ns: str) -> bool:
     if not isinstance(rules, list):
         return False
     if kind == "NetworkPolicy":
-        return (api == "networking.k8s.io/v1" and meta.get("namespace") == ns and not restricts(spec.get("podSelector"))
+        return (api == "networking.k8s.io/v1" and in_ns(meta, ns) and not restricts(spec.get("podSelector"))
                 and any(allows_everyone(r) for r in rules))
     if kind in ("CiliumNetworkPolicy", "CiliumClusterwideNetworkPolicy"):
-        return (api.startswith("cilium.io/") and (kind == "CiliumClusterwideNetworkPolicy" or meta.get("namespace") == ns)
+        return (api.startswith("cilium.io/") and (kind == "CiliumClusterwideNetworkPolicy" or in_ns(meta, ns))
                 and not restricts(spec.get("endpointSelector")) and not all(cilium_rule_restricted(r) for r in rules))
     return False
 

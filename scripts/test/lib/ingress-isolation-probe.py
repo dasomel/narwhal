@@ -68,6 +68,7 @@ GOOD = {
     "additive-labelled-subset-allow-all": pa() + deny() + np("podSelector: {matchLabels: {app: x}}\n" + ALLOW_ALL),  # documented limit
     "additive-restricted-extra": pa() + deny() + np("podSelector: {}\npolicyTypes: [Ingress]\n" + FROM_POD),
     "additive-allow-all-other-namespace": pa() + deny() + np("podSelector: {}\n" + ALLOW_ALL, "namespace: other"),
+    "additive-no-namespace-restricted": pa() + deny() + np("podSelector: {}\npolicyTypes: [Ingress]\n" + FROM_POD, "labels: {a: b}"),
     "additive-cilium-other-namespace": pa() + deny() + np("endpointSelector: {}\ningress:\n- fromEntities: [all]", "namespace: other", **CIL),
 }
 BAD = {
@@ -140,6 +141,10 @@ BAD = {
     "additive-ns-selector-all": pa() + deny() + np("podSelector: {}\npolicyTypes: [Ingress]\ningress:\n- from:\n  - namespaceSelector: {}"),
     "additive-broad-cidr": pa() + deny() + np("podSelector: {}\npolicyTypes: [Ingress]\ningress:\n- from:\n  - ipBlock: {cidr: 0.0.0.0/1}"),
     "additive-cilium-allow-all": pa() + deny() + np("endpointSelector: {}\ningress:\n- fromEntities: [all]", **CIL),
+    "additive-no-namespace-allow-all": pa() + deny() + np("podSelector: {}\n" + ALLOW_ALL, "labels: {a: b}"),
+    "additive-nonstring-namespace": pa() + deny() + np("podSelector: {}\n" + ALLOW_ALL, "namespace: [t]"),
+    "additive-empty-namespace": pa() + deny() + np("podSelector: {}\n" + ALLOW_ALL, "namespace: ''"),
+    "additive-cilium-no-namespace-allow-all": pa() + deny() + np("endpointSelector: {}\ningress:\n- fromEntities: [all]", "labels: {a: b}", **CIL),
     "additive-ccnp-allow-all": pa() + deny() + np("endpointSelector: {}\ningress:\n- fromEntities: [all]", **CCNP),
 }
 FAILCLOSED = {  # name -> (text, suffix, expected stderr substring)
@@ -200,6 +205,10 @@ def main(group: str) -> int:
         wide = mon + "---\n" + pa("platform-system").replace("name: p", "name: platform-system-permissive")
         iso = deny().replace("namespace: t", "namespace: monitoring")
         drift = "KNOWN_ISSUES drift"
+        t_iso = pa("t") + deny()
+        nons = np("podSelector: {}\n" + ALLOW_ALL, "labels: {a: b}")
+        tpl = np("podSelector: {}\n" + ALLOW_ALL).replace("name: n", "name: '{{ .Values.n }}'")
+        warn = "WARN: skipped templated NetworkPolicy file "
         cases = {  # name -> (files, expected rc, stderr substring)
             "control": ({"gitops/a.yaml": wide}, 0, ""),
             "stale-entry": ({"gitops/a.yaml": mon}, 1, drift),
@@ -213,10 +222,16 @@ def main(group: str) -> int:
             "fixtures-skipped": ({"gitops/a.yaml": wide, "scripts/test/fixtures/x.sh": f"cat <<EOF\n{pa('payments')}\nEOF\n"}, 0, ""),
             "fixtures-lookalike-scanned": ({"gitops/a.yaml": wide, "scripts/test/fixturesevil/x.sh": f"cat <<EOF\n{pa('payments')}\nEOF\n"}, 1, NOISO),
             "script-outside-heredoc": ({"gitops/a.yaml": wide, "scripts/cluster/x.sh": "echo x\nkind: NetworkPolicy\n"}, 1, "outside a heredoc"),
+            "no-namespace-allow-all-tree": ({"gitops/a.yaml": wide + "---\n" + t_iso, "gitops/b.yaml": nons}, 1, NOISO),
+            "no-namespace-allow-all-script": ({"gitops/a.yaml": wide + "---\n" + t_iso,
+                                               "scripts/cluster/x.sh": f"cat <<EOF | kubectl apply -n t -f -\n{nons}\nEOF\n"}, 1, NOISO),
+            "warn-templated-yaml": ({"gitops/a.yaml": wide, "gitops/b.yaml": tpl}, 0, warn + "gitops/b.yaml (cannot be evaluated statically)"),
+            "warn-tpl": ({"gitops/a.yaml": wide, "gitops/_np.tpl": nons}, 0, warn + "gitops/_np.tpl (cannot be evaluated statically)"),
+            "warn-vendored-silent": ({"gitops/a.yaml": wide, "gitops/charts/kubernetes-dashboard/charts/k/np.yaml": tpl}, 0, "", "WARN"),
         }
-        for n, (files, want_rc, want_err) in cases.items():
+        for n, (files, want_rc, want_err, *absent) in cases.items():
             rc, err = tree(files)
-            if (rc != 0) != bool(want_rc) or want_err not in err:
+            if (rc != 0) != bool(want_rc) or want_err not in err or any(a in err for a in absent):
                 failures.append(f"{n}: rc={rc} want {want_rc}/{want_err!r} stderr={err!r}")
     else:
         return 2

@@ -23,7 +23,7 @@ Kubernetes와 플랫폼 앱은 이후
 | Public IP | 3 | bastion + LB 2개. **클러스터 노드에는 없다** |
 
 노드를 프라이빗으로 두는 것은 의도된 설계다. 접근은 전부 bastion을 경유하고, 노드의 아웃바운드는
-거기서 도는 squid 프록시를 탄다 — Kakao Cloud provider 0.4.4에는 NAT 게이트웨이 리소스가 없고,
+거기서 도는 squid 프록시를 탄다 — Kakao Cloud provider 0.5.1(0.4.4와 동일)에는 NAT 게이트웨이 리소스가 없고,
 노드마다 공인 IP를 붙이면 이 보안그룹이 `0.0.0.0/0`으로 열어둔 SSH·6443 규칙이 그대로 노출된다.
 직접 egress가 필요하면 `assign_node_public_ips = true`가 탈출구다.
 
@@ -56,7 +56,7 @@ Kubernetes와 플랫폼 앱은 이후
 
 ## 사전 요구사항
 
-- **OpenTofu** >= 1.6.0 (`tofu`; Terraform CLI도 동작)
+- **OpenTofu** >= 1.13.0 (`tofu`; Terraform CLI도 동작)
 - **Kakao Cloud 계정** + Application Credential (ID + Secret)
 - **쿼터**: 인스턴스 7, vCPU 26, RAM 52GB+, 볼륨 1.2TB, 공인 IP 3, LB 2
 
@@ -211,7 +211,7 @@ terraform/
   bastion.tf           # 점프 호스트 + 공인 IP
   variables.tf         # 변수 정의
   outputs.tf           # 노드 IP, LB 엔드포인트, bastion, ssh_key_path, subnet_cidr, vpc_cidr
-  provider.tf          # kakaocloud provider v0.4.4
+  provider.tf          # kakaocloud provider v0.5.1
   cloud-init.yaml      # 기본 VM 초기화 (SSH 공개키만)
   terraform.tfvars.example
   modules/
@@ -269,6 +269,48 @@ terraform/
 | **합계** | **~45분** | 리소스 48개 |
 
 이후 클러스터 프로비저닝에 약 1시간이 더 들고, airgap 번들을 쓴다면 전송(~6GB)이 추가된다.
+
+## 기존 배포를 provider 0.5.1로 업그레이드
+
+provider 0.5.0에서 `kakaocloud_vpc.subnet`이 제거됐고, bastion의 `initial_security_groups`는
+제자리 변경이 안 된다(`Changing the initial security group is not allowed`, `-replace`로도
+마찬가지; #202 대기 중). 신규 설치는 해당 없다. 운영 중인 배포는 아래 순서대로, 이 디렉토리에서
+운영자의 `terraform.tfvars`로 진행한다.
+
+```bash
+# 1. state 백업, 그리고 0.4.x 스키마가 아직 보여줄 때 기본 서브넷 CIDR 확인
+tofu state pull > ~/narwhal-kakao-state-pre-0.5.1.json   # git 밖에 보관
+tofu state show module.network.kakaocloud_vpc.vpc        # `subnet` 블록에는 cidr_block/az만 있고 id는 없다:
+# 그 CIDR(이름 "main")의 서브넷 ID를 Kakao Cloud 콘솔(VPC > Subnet)이나
+# `data "kakaocloud_subnets"`를 쓴 임시 설정(읽기 전용)으로 조회한다
+
+# 2. 새 provider 받기 (lock 파일은 이미 0.5.1로 고정돼 있다)
+tofu init   # 커밋된 lock이 이미 0.5.1을 고정한다. -upgrade는 다시 해석한다
+
+# 3. VPC 기본 서브넷 import (예전 인라인 `subnet` 블록)
+tofu import module.network.kakaocloud_subnet.vpc_default_subnet <default-subnet-id>
+
+# 4. bastion 현재 사설 IP 고정: 노드가 DNS, squid 프록시, 레지스트리 미러로 쓴다
+tofu output -raw bastion_private_ip   # 이 값을 terraform.tfvars의 bastion_private_ip에 넣는다
+
+# 5. bastion만 destroy 후 apply (-replace는 위 이유로 안 된다)
+tofu destroy -target=kakaocloud_instance.bastion -refresh=false
+tofu apply
+
+# 6. bastion에 있던 것(squid, 레지스트리)을 저장소 루트에서 다시 구성
+cd ../../..
+./scripts/cloud/provision-kakao.sh proxy registry
+```
+
+참고:
+
+- 3, 4단계 뒤 `tofu plan`을 읽어 본다. 예상 변경은 bastion 교체뿐이고, import한 서브넷은
+  변경이 없어야 한다(`vpc_default_subnet_name` 기본값이 `main`).
+- `proxy` 스테이지는 sentinel이 없어 항상 다시 돈다. `registry` 스테이지는 bastion이 이미
+  `:5000`을 서빙하면 건너뛴다. 새 bastion은 그렇지 않으므로 `FORCE=1`은 살아 있는 bastion
+  레지스트리에 다시 push할 때만 필요하다. sentinel로 보호되는 노드 스테이지(`base`, `mirror` 등)는
+  다시 돌지 않는다.
+- 새 bastion은 SSH 호스트 키가 바뀐다. `known_hosts`의 옛 항목을 지운다.
 
 ## 정리
 
@@ -330,6 +372,6 @@ tofu apply
 
 ## 버전 정보
 
-- **OpenTofu**: >= 1.6.0
-- **Provider**: kakaocloud v0.4.4
+- **OpenTofu**: >= 1.13.0
+- **Provider**: kakaocloud v0.5.1
 - **OS**: Ubuntu 24.04 LTS (Kakao Cloud에 26.04 이미지가 없다; Vagrant 경로는 26.04)

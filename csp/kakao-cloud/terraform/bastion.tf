@@ -102,7 +102,14 @@ resource "kakaocloud_instance" "bastion" {
   image_id    = local.bastion_image_id
   key_name    = var.key_name
 
-  subnets = [{ id = module.network.subnet_id }]
+  # D-BASTION-IP: nodes use the bastion's private IP as DNS server, squid proxy and
+  # registry mirror, so a replaced bastion must come back on the same address or every
+  # node loses all three. null (default) = auto-assign for clean installs; live
+  # deployments pin the current address in terraform.tfvars.
+  subnets = [{
+    id         = module.network.subnet_id
+    private_ip = var.bastion_private_ip
+  }]
 
   initial_security_groups = [{
     name = kakaocloud_security_group.bastion_sg.name

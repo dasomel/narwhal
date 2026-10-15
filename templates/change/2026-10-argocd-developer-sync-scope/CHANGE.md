@@ -117,3 +117,13 @@ rollout was requested.
 - Material changes after acceptance and re-review: none.
 - Open questions or blockers: live Argo CD authorization remains unverified until a later
   authorized cluster rollout.
+
+## Known limits
+
+LOW residuals of the R246 checker (`scripts/test/lib/check-argocd-developer-sync-scope.py`), accepted and not covered:
+
+- A `kubectl patch`/`create`/`replace` of `argocd-rbac-cm` outside the pinned heredocs of `13-argocd.sh` is not inspected.
+- Other charts or files declaring `argocd-rbac-cm` are out of scope (only the platform chart template and `13-argocd.sh`).
+- Other `argocd-cm` settings that widen access (for example `users.anonymous.enabled`) are not pinned.
+- The `argocd-rbac-cm` `metadata.namespace` is not pinned.
+- Helm rendering is not verified in CI: `{{ }}` expressions are pinned textually, and `helm template` was checked by hand only (rendered data keys `policy.csv`, `policy.default`, `scopes`).

@@ -35,3 +35,13 @@ Link: [`CHANGE.md`](CHANGE.md)
 
 - The first overlapping `--static` and `make test` run produced one R229 failure while its mutation checker temporarily edited shared checkout files. The R229 checker was rerun and passed; then `make test` was rerun by itself and passed 285/0. R246 also passed in each static suite.
 - Follow-up review also identified that `policy.default: role:admin` bypassed the explicit developer mapping. R246 now asserts exact `role:readonly` defaults and `scopes: '[groups]'` in both writers and rejects each single-source or both-source mutation; the focused checker passes with 16 rejected mutations. The follow-up source changes are committed separately after verification; local merge is pending lead coordination.
+
+## Known limits
+
+LOW residuals of the R246 checker (`scripts/test/lib/check-argocd-developer-sync-scope.py`), accepted and not covered:
+
+- A `kubectl patch`/`create`/`replace` of `argocd-rbac-cm` outside the pinned heredocs of `13-argocd.sh` is not inspected.
+- Other charts or files declaring `argocd-rbac-cm` are out of scope (only the platform chart template and `13-argocd.sh`).
+- Other `argocd-cm` settings that widen access (for example `users.anonymous.enabled`) are not pinned.
+- The `argocd-rbac-cm` `metadata.namespace` is not pinned.
+- Helm rendering is not verified in CI: `{{ }}` expressions are pinned textually, and `helm template` was checked by hand only (rendered data keys `policy.csv`, `policy.default`, `scopes`).

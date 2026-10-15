@@ -83,6 +83,19 @@ def rbac_declarations(text: str) -> int:
 # to either source needs a matching bump here. Escape: update these pins with the source.
 GITOPS_DOCS = 3
 BOOTSTRAP_HEREDOC_DOCS = [1, 1, 1, 1, 1]  # per heredoc, in file order
+# D4: shell/Helm expansion happens BEFORE YAML parsing, so what a substitution can emit is
+# invisible here. Pin every expansion site instead: Helm `{{ }}` expressions in the chart, and
+# per heredoc the count of `$` and `\\` plus the multiset of single-line `${...}` expressions.
+# Cost: a new expansion needs a pin bump. Escape: update the pins with the reviewed source.
+GITOPS_TEMPLATES = ["{{ .Values.baseDomain }}", "{{ .Values.baseDomain }}"]
+BOOTSTRAP_EXPANSIONS = [  # per heredoc: ($ count, backslash count, sorted ${...} expressions)
+    (0, 0, []),
+    (3, 2, ["${KEYCLOAK_ISSUER}"]),
+    (2, 0, ["${ARGOCD_OIDC_CONFIG}", "${DOMAIN}"]),
+    (0, 0, []),
+    (0, 0, []),
+]
+SUBST_RE = r"\$\{[^}\n]*\}"
 RBAC_MENTIONS = {"gitops": 2, "bootstrap": 2}  # raw `argocd-rbac-cm` substrings
 EXPECTED_DATA_KEYS = {"policy.csv", "policy.default", "scopes"}
 
@@ -135,6 +148,11 @@ def heredocs(text: str) -> list[tuple[str, str]]:
 def structural_problems(gitops_text: str, bootstrap_text: str) -> list[str]:
     found: list[str] = []
     docs_by_source: dict[str, list] = {}
+    templates = re.findall(r"\{\{.*?\}\}", gitops_text)
+    if sorted(templates) != sorted(GITOPS_TEMPLATES) or gitops_text.count("{{") != len(templates):
+        found.append(f"gitops: Helm template expressions {templates} (open braces {gitops_text.count('{{')}) differ from reviewed {GITOPS_TEMPLATES}")
+    if any("{{" in ln for ln in gitops_text.splitlines() if ln.lstrip().startswith("#")):
+        found.append("gitops: Helm template expression inside a comment line")
     gitops_docs = load_docs(re.sub(r"\{\{.*?\}\}", "HELMVALUE", gitops_text), "gitops", found)
     if len(gitops_docs) != GITOPS_DOCS:
         found.append(f"gitops: document count {len(gitops_docs)} != {GITOPS_DOCS}")
@@ -148,8 +166,14 @@ def structural_problems(gitops_text: str, bootstrap_text: str) -> list[str]:
             found.append(f"bootstrap: heredoc {index} runs command substitution inside YAML")
         # a bare ${VAR} line injects a block of keys; model it as one extra key so it can never
         # hide inside the argocd-rbac-cm data mapping
-        body = re.sub(r"(?m)^\$\{[^}]*\}$", "  SUBSTITUTED: x", body)
-        body = re.sub(r"\$\{[^}]*\}", "SUBSTITUTED", body)
+        exprs = re.findall(SUBST_RE, body)
+        facts = (body.count("$"), body.count("\\"), sorted(exprs))
+        if body.count("${") != len(exprs) or (
+            index < len(BOOTSTRAP_EXPANSIONS) and facts != BOOTSTRAP_EXPANSIONS[index]
+        ):
+            found.append(f"bootstrap: heredoc {index} substitution expressions {facts} differ from reviewed pins")
+        body = re.sub(r"(?m)^" + SUBST_RE + "$", "  SUBSTITUTED: x", body)
+        body = re.sub(SUBST_RE, "SUBSTITUTED", body)
         docs = load_docs(body, f"bootstrap heredoc {index}", found)
         if index < len(BOOTSTRAP_HEREDOC_DOCS) and len(docs) != BOOTSTRAP_HEREDOC_DOCS[index]:
             found.append(f"bootstrap: heredoc {index} document count {len(docs)} != {BOOTSTRAP_HEREDOC_DOCS[index]}")
@@ -237,6 +261,23 @@ def structural_cases(gitops_text: str, bootstrap_text: str) -> dict:
         return text[:start] + new_data + text[end:]
 
     edits = {
+        "multi-line ${...} smuggles a key past the heredoc": (
+            lambda t, src: t if src == "gitops" else swap(
+                t, "  scopes: '[groups]'\nEOF",
+                "  scopes: '[groups]'\n  # ${UNSETVAR_X:-\n  policy.override.csv\\\n: |\n"
+                "    p, role:developer, applications, sync, */*, allow\n}\nEOF"),
+            "substitution expressions"),
+        "unterminated ${ in heredoc": (
+            lambda t, src: t if src == "gitops" else swap(
+                t, "  scopes: '[groups]'\nEOF", "  scopes: '[groups]'\n  # ${UNSET\nEOF"),
+            "substitution expressions"),
+        "Helm expression in a comment renders an extra key": (
+            lambda t, src: t if src == "bootstrap" else t + (
+                '  # {{ "\\n  policy.override.csv: |\\n    p, role:developer, applications, sync, */*, allow" }}\n'),
+            "Helm template expressions"),
+        "Helm expression inside a comment line": (
+            lambda t, src: t if src == "bootstrap" else swap(t, "  scopes: '[groups]'", "  scopes: '[groups]'\n  # {{ .Values.baseDomain }}"),
+            "inside a comment line"),
         "one-line flow document after ---": (
             lambda t, src: t + "\n---\n" + flow_doc + "\n" if src == "gitops"
             else swap(t, "  scopes: '[groups]'\nEOF", "  scopes: '[groups]'\n---\n" + flow_doc + "\nEOF"),
@@ -263,8 +304,12 @@ def structural_cases(gitops_text: str, bootstrap_text: str) -> dict:
     }
     cases = {}
     for name, (edit, reason) in edits.items():
-        cases[f"{name} (GitOps)"] = (edit(gitops_text, "gitops"), bootstrap_text, reason)
-        cases[f"{name} (bootstrap)"] = (gitops_text, edit(bootstrap_text, "bootstrap"), reason)
+        mutated = edit(gitops_text, "gitops")
+        if mutated != gitops_text:
+            cases[f"{name} (GitOps)"] = (mutated, bootstrap_text, reason)
+        mutated = edit(bootstrap_text, "bootstrap")
+        if mutated != bootstrap_text:
+            cases[f"{name} (bootstrap)"] = (gitops_text, mutated, reason)
     return cases
 
 

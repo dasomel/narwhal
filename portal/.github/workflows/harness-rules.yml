@@ -1,0 +1,60 @@
+name: harness-rules
+
+# Enforce the countable AGENTS.md "Verify" rules (Tailwind-first styling, i18n
+# for UI text). Both have pre-existing debt, so this is a ratchet against
+# recorded baselines — see scripts/harness-rules.sh. It blocks NEW violations,
+# not the existing ones.
+#
+# It also runs the unit tests, because this is the workflow that already watches
+# src/**. Build Check is filtered to dependency and build-config changes, so a
+# pure src/** change ran no test at all — which was fine while there were none.
+# src/lib/role-filter.ts now decides who may see which namespace, project, alert
+# and cached result; that is not something to leave to review.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "src/**"
+      - "scripts/harness-rules.sh"
+      - ".github/workflows/harness-rules.yml"
+  pull_request:
+    paths:
+      - "src/**"
+      - "scripts/harness-rules.sh"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+# Least privilege: this workflow only reads the checkout.
+permissions:
+  contents: read
+
+jobs:
+  ratchet:
+    name: AGENTS.md rule ratchet
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Check rule baselines
+        run: bash scripts/harness-rules.sh
+
+  test:
+    name: Unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Test
+        run: pnpm test

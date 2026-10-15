@@ -1,0 +1,225 @@
+name: License & SBOM
+
+# Keeps the redistribution paperwork honest, and produces the dependency SBOM.
+#
+# WHY: the published image redistributes ~660 npm packages, and MIT/BSD/ISC all
+# require the copyright and permission notice to travel with the copy. Next.js
+# file tracing strips LICENSE files out of the build output — a 1.0.17 build had
+# 631 under node_modules and 3 under .next/standalone — so THIRD-PARTY-NOTICES.md
+# is generated instead and copied into the image by the Dockerfile. A generated
+# file that nothing checks goes stale, which is what this workflow prevents.
+#
+# The strict gate is the other half: a new dependency arriving under a copyleft
+# license should stop CI and get a decision, not land as one more table row.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - "Dockerfile"
+      - "scripts/check-supply-chain-policy.mjs"
+      - "scripts/check-lockfile-cooling.mjs"
+      - "THIRD-PARTY-NOTICES.md"
+      - "NOTICE"
+      - "LICENSE"
+      - "scripts/generate-third-party-notices.mjs"
+      - ".github/workflows/license-and-sbom.yml"
+  pull_request:
+    paths:
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - "Dockerfile"
+      - "scripts/check-supply-chain-policy.mjs"
+      - "scripts/check-lockfile-cooling.mjs"
+      - "THIRD-PARTY-NOTICES.md"
+      - "NOTICE"
+      - "LICENSE"
+      - "scripts/generate-third-party-notices.mjs"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+# Read-only: both jobs inspect the checkout. The SBOM leaves as a build artifact,
+# not as a commit.
+permissions:
+  contents: read
+
+jobs:
+  notices:
+    name: Third-party notices are current
+    runs-on: ubuntu-latest
+    steps:
+      # See build-check.yml for why this runs first: a compromised install/build
+      # script only gets one shot before egress is blocked.
+      - uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
+        with:
+          egress-policy: block
+          allowed-endpoints: >
+            github.com:443
+            api.github.com:443
+            codeload.github.com:443
+            objects.githubusercontent.com:443
+            registry.npmjs.org:443
+            raw.githubusercontent.com:443
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: pnpm
+
+      # The generator reads license text out of node_modules, so the tree has to
+      # be the exact one the lockfile describes — a drifting install would produce
+      # a diff that has nothing to do with the change under review.
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      # --strict fails on a license that is neither permissive nor listed in the
+      # generator's ACCEPTED map. Widening PERMISSIVE to silence it defeats the check.
+      # Runs before the notices, because a broken trust boundary makes the
+      # attribution question moot: if a dependency can execute at install time, what
+      # it is licensed under is not the pressing problem.
+      - name: Supply-chain policy
+        run: node scripts/check-supply-chain-policy.mjs
+
+      - name: Regenerate notices
+        run: node scripts/generate-third-party-notices.mjs --strict
+
+      - name: Assert the committed file matches
+        run: |
+          set -euo pipefail
+          if ! git diff --quiet -- THIRD-PARTY-NOTICES.md; then
+            echo "::error::THIRD-PARTY-NOTICES.md is stale. Run 'pnpm run notices' and commit the result."
+            git diff --stat -- THIRD-PARTY-NOTICES.md
+            exit 1
+          fi
+          echo "notices are current"
+
+      # The image ships these three. A COPY of a missing file fails the docker
+      # build, but it fails at release time; catching it here is cheaper.
+      - name: Assert the files the image copies exist
+        run: |
+          set -euo pipefail
+          for f in LICENSE NOTICE THIRD-PARTY-NOTICES.md; do
+            [ -s "$f" ] || { echo "::error::$f is missing or empty"; exit 1; }
+          done
+          grep -q '^!THIRD-PARTY-NOTICES.md' .dockerignore \
+            || { echo "::error::.dockerignore excludes *.md without re-including THIRD-PARTY-NOTICES.md"; exit 1; }
+          echo "license files present and reachable from the build context"
+
+  cooling:
+    name: New lockfile entries have matured
+    runs-on: ubuntu-latest
+    steps:
+      # No install here, but the script itself calls out to registry.npmjs.org, so it
+      # gets the same egress floor as the jobs that do install.
+      - uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
+        with:
+          egress-policy: block
+          allowed-endpoints: >
+            github.com:443
+            api.github.com:443
+            codeload.github.com:443
+            objects.githubusercontent.com:443
+            registry.npmjs.org:443
+            raw.githubusercontent.com:443
+
+      # The check compares the lockfile against its state at the base of the change, so
+      # the default depth-1 checkout is not enough — there would be nothing to diff.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      # No install: the script reads the two lockfiles through git and asks the registry
+      # when each new version was published. Nothing from node_modules is involved, which
+      # is deliberate — this gate has to be able to run on a lockfile it refuses to install.
+      - name: Cooling window on the lockfile delta
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          set -euo pipefail
+          base="$BASE_SHA"
+          if [ -z "$base" ] || [ "$base" = "0000000000000000000000000000000000000000" ] \
+             || ! git cat-file -e "$base^{commit}" 2>/dev/null; then
+            base=$(git rev-parse --verify HEAD~1 2>/dev/null || true)
+          fi
+          if [ -z "$base" ]; then
+            echo "no base commit to compare against, nothing to gate"
+            exit 0
+          fi
+          echo "base: $base"
+          node scripts/check-lockfile-cooling.mjs "$base"
+
+  sbom:
+    name: Dependency SBOM
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # Filesystem scan of the lockfile, not an image scan: the image already
+      # carries an SPDX attestation from buildx (docker-publish.yml), and this
+      # covers the dependency graph before it is built. Same tool the cluster
+      # runs for vulnerability reports, so the outputs are comparable.
+      - name: CycloneDX SBOM
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          format: cyclonedx
+          output: sbom-cyclonedx.json
+
+      - name: SPDX SBOM
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          format: spdx-json
+          output: sbom-spdx.json
+
+      - name: Summarize
+        run: |
+          set -euo pipefail
+          for f in sbom-cyclonedx.json sbom-spdx.json; do
+            [ -s "$f" ] || { echo "::error::$f was not produced"; exit 1; }
+            echo "$f: $(wc -c < "$f") bytes"
+          done
+          echo "components: $(python3 -c "import json;print(len(json.load(open('sbom-cyclonedx.json')).get('components',[])))")"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: sbom
+          path: |
+            sbom-cyclonedx.json
+            sbom-spdx.json
+          retention-days: 90
+
+      # Proves upload v7 and download v8 interoperate, on every push.
+      #
+      # WHY HERE: the only other place the pair is used is docker-publish.yml, where
+      # the per-arch build jobs upload digests and the merge job downloads them to
+      # assemble the multi-arch manifest — and that workflow runs ONLY on a v*.*.*
+      # tag. v1.0.16 already failed to publish for a defect that was only reachable
+      # at release time; a pinned-major bump on that path should not be the second.
+      # This job already produces artifacts, so the check costs one step.
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: sbom
+          path: roundtrip
+
+      - name: Assert the round trip preserved both documents
+        run: |
+          set -euo pipefail
+          for f in sbom-cyclonedx.json sbom-spdx.json; do
+            cmp "$f" "roundtrip/$f" \
+              || { echo "::error::$f did not survive the artifact round trip"; exit 1; }
+          done
+          echo "upload v7 -> download v8 round trip intact"

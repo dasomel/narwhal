@@ -1,0 +1,215 @@
+---
+# Kaniko in-cluster build Job for narwhal-portal
+#
+# Namespace: devtools
+# Context  : clones narwhal-portal from the in-cluster Gitea (private), builds with Kaniko,
+#            pushes to harbor.${DOMAIN}/library/narwhal-portal:<full-source-sha>
+#            HARBOR_TAG may explicitly select a SemVer tag; it is the deploy reference.
+#
+# Required secrets (created by harbor-kaniko-setup.sh):
+#   devtools/idp-portal-kaniko-harbor   — docker config.json for Harbor push auth
+#   devtools/narwhal-root-ca-secret     — Narwhal Root CA (ca.crt key)
+#
+# Required secrets (runtime, not created here):
+#   devtools/gitea-admin                — admin-password key (created by 12-gitea.sh)
+#
+# Domain templating:
+#   Harbor host/repository prefix and optional SemVer tag are replaced at apply-time.
+#
+# Live-build caveats (cannot verify without a running cluster):
+#   - oven/bun:1.3.13-alpine must be pullable inside the cluster (Docker Hub rate limits may apply).
+#   - node:22-alpine must be pullable (same concern).
+#   - Kaniko multi-stage builds with --use-new-run=false (default) work on ARM64;
+#     snapshot mode=redo is not needed unless the alpine multi-stage copy fails.
+#   - The Next.js standalone output (output: "standalone" in next.config.js) must be
+#     enabled; without it the runner stage's COPY .next/standalone fails.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: kaniko-build-narwhal-portal
+  namespace: devtools
+  labels:
+    app.kubernetes.io/name: kaniko-build-narwhal-portal
+    app.kubernetes.io/component: build
+spec:
+  ttlSecondsAfterFinished: 3600   # keep logs for 1 h, then GC
+  # D16: raised from 1 — on a clean install this Job runs while Harbor/Gitea are
+  # still settling from their own just-completed rollout. kaniko-build.sh's
+  # readiness gate only waits for harbor-core/harbor-registry Deployments to
+  # report Available; it does not (and practically cannot) confirm the internal
+  # JWT trust between harbor-core (token issuer) and harbor-registry (token
+  # verifier) has finished propagating, nor that Gitea has fully warmed up.
+  # Observed live (2026-07-02): attempt 1 failed with a clean push 401
+  # (`HEAD .../manifests/latest: unexpected status code 401`) after a fully
+  # successful build; attempt 2 failed earlier with a Gitea clone 500. Manually
+  # re-running the exact same push flow (auth token fetch + push) seconds later
+  # succeeded immediately with the same credentials — confirming both failures
+  # were transient startup races, not a credentials or config defect. 3 gives
+  # the Job's own exponential backoff (10s/20s/40s/80s) enough attempts to ride
+  # out the window; JOB_TIMEOUT=1200s in kaniko-build.sh comfortably fits 4
+  # build attempts at ~3 min each plus backoff delay.
+  backoffLimit: 3
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: kaniko-build-narwhal-portal
+        app.kubernetes.io/component: build
+      annotations:
+        # Opt out of Istio ambient mesh — ztunnel would intercept the Gitea
+        # clone and Harbor push and corrupt them under HBONE.
+        istio.io/dataplane-mode: "none"
+    spec:
+      restartPolicy: Never
+
+      # ------------------------------------------------------------------ #
+      #  initContainer: clone the narwhal-portal repo from in-cluster Gitea #
+      # ------------------------------------------------------------------ #
+      initContainers:
+        - name: git-clone
+          # alpine/git is musl-based, ARM64-compatible, available on ghcr
+          # fallback: docker.io/alpine/git (same image, Docker Hub mirror)
+          # Pinned per narwhal#52 D3-A; must move in lockstep with narwhal's
+          # scripts/airgap/images.txt or the air-gap build job can't pull it.
+          # Digest pin (portal#23), resolved 2026-09-18 from docker.io/alpine/git:v2.54.0.
+          image: alpine/git:v2.54.0@sha256:0b5f57d22181e8b8fbe8ac5ca8754faa0d577f101b9857418f1acc43955ad464
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: GITEA_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: gitea-admin
+                  key: admin-password
+          command:
+            - sh
+            - -c
+            - |
+              set -eu
+              trap 'rm -f "${HOME}/.netrc"' EXIT
+              echo "==> Cloning narwhal-portal from in-cluster Gitea..."
+              # portal#23: credential goes in a .netrc read by git's own HTTP auth,
+              # never in the clone URL/argv — `ps`, Job events, and pod logs only
+              # ever see the bare URL below, no password.
+              cat > "${HOME}/.netrc" <<-NETRC
+              machine gitea-http.devtools.svc.cluster.local
+              login gitea-admin
+              password ${GITEA_ADMIN_PASSWORD}
+              NETRC
+              chmod 600 "${HOME}/.netrc"
+              # Gitea service: gitea-http.devtools.svc.cluster.local:3000
+              # Repo is created/pushed by kaniko-build.sh before this Job runs.
+              git clone \
+                "http://gitea-http.devtools.svc.cluster.local:3000/gitea-admin/narwhal-portal.git" \
+                /workspace
+              source_sha="$(git -C /workspace rev-parse HEAD)"
+              # D1: verify the passed commit against the clone; stale sources fail early.
+              # Cost: exact checkout required. HARBOR_TAG SemVer override is the escape hatch.
+              test "$source_sha" = "__GIT_SHA__"
+              echo "$source_sha" > /build-metadata/source-sha
+              echo "==> Clone complete. HEAD: $source_sha"
+          volumeMounts:
+            - name: workspace
+              mountPath: /workspace
+            - name: build-metadata
+              mountPath: /build-metadata
+
+      # ------------------------------------------------------------------ #
+      #  Main container: Kaniko builds from /workspace (dir:// context)     #
+      # ------------------------------------------------------------------ #
+      containers:
+        - name: kaniko
+          # gcr.io/kaniko-project/executor supports ARM64 from v1.21+
+          # Pinned per narwhal#52 D3-A; must move in lockstep with narwhal's
+          # scripts/airgap/images.txt or the air-gap build job can't pull it.
+          # Digest pin (portal#23), resolved 2026-09-18 from gcr.io/kaniko-project/executor:v1.24.0.
+          image: gcr.io/kaniko-project/executor:v1.24.0@sha256:4e7a52dd1f14872430652bb3b027405b8dfd17c4538751c620ac005741ef9698
+          imagePullPolicy: IfNotPresent
+          # D2: expose the shared digest file through termination status for the caller.
+          # Cost: one emptyDir file; kubectl logs remain the fallback when status expires.
+          terminationMessagePath: /build-metadata/image-digest
+          terminationMessagePolicy: File
+          args:
+            - "--context=dir:///workspace"
+            - "--dockerfile=/workspace/Dockerfile"
+            - "--build-arg=GIT_SHA=$(GIT_SHA)"
+            - "--destination=__HARBOR_DESTINATION_PREFIX__:$(HARBOR_TAG)"
+            - "--digest-file=/build-metadata/image-digest"
+            - "--label=org.opencontainers.image.revision=$(GIT_SHA)"
+            - "--label=org.opencontainers.image.source=https://github.com/dasomel/narwhal-portal"
+            # Trust the Narwhal Root CA for Harbor TLS verification; the CA is mounted at
+            # /kaniko/ssl/certs/narwhal-ca.crt so Kaniko's certificate store picks it up.
+            - "--registry-certificate=__HARBOR_HOST__=/kaniko/ssl/certs/narwhal-ca.crt"
+            - "--snapshot-mode=redo"
+            - "--cache=false"
+            # D8: compressed-caching=false — do NOT keep a second compressed copy of each
+            # layer in memory. Next.js 16 + React 19 standalone builds produce large snapshot
+            # diffs; both copies in memory caused the OOMKill at the previous 4 Gi limit.
+            # Trade-off: layers are compressed at push time (slight CPU cost). For the same
+            # reason --reproducible (known to raise peak memory) is not used.
+            - "--compressed-caching=false"
+          env:
+            - name: GIT_SHA
+              value: "__GIT_SHA__"
+            - name: HARBOR_TAG
+              value: "__HARBOR_TAG__"
+          resources:
+            requests:
+              # D15: lowered from 1000m — worker nodes only have 2 vCPU allocatable
+              # each, and the full narwhal platform stack (Cilium, Istio, Harbor,
+              # Keycloak, Prometheus, Loki, etc.) can reserve enough CPU via its own
+              # requests that no worker has 1 full core free, even at 6-17% actual
+              # CPU usage (scheduling is requests-based, not usage-based) — observed
+              # live: "0/6 nodes: 3 insufficient cpu" leaving the Kaniko pod Pending
+              # for its whole 1200s wait, forever unable to schedule. 300m reliably
+              # fits; the limit stays high so the build can still burst when CPU is
+              # actually available.
+              cpu: "300m"
+              # D8: 2 Gi request — enough to schedule on any worker node (workers have
+              # ~5.8 Gi allocatable; worker-2 had ~3.8 Gi free at install time).
+              memory: "2Gi"
+            limits:
+              cpu: "2000m"
+              # D8: 4 Gi limit retained — sufficient now that compressed-caching=false
+              # halves peak memory. Node headroom confirmed: workers ≤ 5.8 Gi allocatable,
+              # 4 Gi request fits on any worker with normal system overhead (~1 Gi reserved).
+              memory: "4Gi"
+          volumeMounts:
+            # Harbor push auth — Kaniko reads /kaniko/.docker/config.json
+            - name: kaniko-docker-config
+              mountPath: /kaniko/.docker
+              readOnly: true
+            # Narwhal Root CA — mounted into Kaniko's certificate path
+            - name: narwhal-root-ca
+              mountPath: /kaniko/ssl/certs/narwhal-ca.crt
+              subPath: ca.crt
+              readOnly: true
+            # Shared workspace from git-clone initContainer
+            - name: workspace
+              mountPath: /workspace
+              readOnly: true
+            - name: build-metadata
+              mountPath: /build-metadata
+
+      volumes:
+        - name: kaniko-docker-config
+          secret:
+            secretName: idp-portal-kaniko-harbor
+            items:
+              - key: config.json
+                path: config.json
+        - name: narwhal-root-ca
+          secret:
+            secretName: narwhal-root-ca-secret
+        - name: workspace
+          emptyDir: {}
+        - name: build-metadata
+          emptyDir: {}
+
+      # Prefer worker nodes (avoid memory-tight masters)
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              preference:
+                matchExpressions:
+                  - key: node-role.kubernetes.io/control-plane
+                    operator: DoesNotExist

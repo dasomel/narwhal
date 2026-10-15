@@ -1,0 +1,682 @@
+import "server-only"
+import { getK8sApiServer } from "./config"
+import { getK8sBearerToken } from "./k8s-token"
+import { fetchWithPolicy, readJsonWithPolicy } from "./http-client"
+import { K8S_POLICY } from "./k8s-client"
+import { cacheGet, cacheSet } from "./valkey"
+import { cacheKeys, cacheTtl } from "./cache-keys"
+import type {
+  Severity,
+  CheckSummary,
+  AuditCheck,
+  ConfigAuditRow,
+  ConfigAuditDetail,
+  RbacAuditRow,
+  RbacAuditDetail,
+  InfraAuditRow,
+  InfraAuditDetail,
+  ComplianceFramework,
+  ComplianceFrameworkDetail,
+  ComplianceControl,
+  ComplianceSummary,
+} from "@/types/compliance"
+
+// --- K8s API helpers ---
+
+async function complianceK8sFetch<T>(path: string): Promise<T> {
+  const apiServer = getK8sApiServer()
+  const headers: Record<string, string> = { "Content-Type": "application/json" }
+  if (apiServer.startsWith("https://")) {
+    const token = getK8sBearerToken()
+    if (token.length > 0) headers["Authorization"] = `Bearer ${token}`
+  }
+  const res = await fetchWithPolicy(`${apiServer}${path}`, { headers }, { ...K8S_POLICY, timeoutMs: 60_000 })
+  if (!res.ok) {
+    throw new Error(`K8s API ${res.status} ${res.statusText} for ${path}`)
+  }
+  return readJsonWithPolicy<T>(res)
+}
+
+// System namespaces whose config-audit findings are inherent to K8s static pods / CNI / mesh
+// (hostNetwork, root, hostPath on apiserver/etcd/cilium/istio) and are NOT actionable by the
+// platform team — see narwhal/docs/compliance-hardening.md "Risk-accepted exceptions".
+export const SYSTEM_NAMESPACES = ["kube-system", "kube-public", "kube-node-lease", "istio-system"] as const
+
+function isSystemNamespace(namespace: string): boolean {
+  return (SYSTEM_NAMESPACES as readonly string[]).includes(namespace)
+}
+
+// K8s default ClusterRoles bound cluster-wide by kubeadm/aggregation — inherently broad, not
+// authored by the platform team.
+const K8S_DEFAULT_CLUSTER_ROLES = new Set(["cluster-admin", "admin", "edit", "view"])
+
+// Upstream controller/chart-owned RBAC role name patterns (case-insensitive substring match) —
+// these roles need broad permissions inherent to their function (cert-manager manages secrets,
+// kyverno manages webhooks, etc.) and are NOT actionable by the platform team — see
+// narwhal/docs/compliance-hardening.md "Risk-accepted exceptions".
+const UPSTREAM_RBAC_ROLE_PATTERNS = [
+  "cert-manager", "kyverno", "cilium", "metallb", "prometheus", "kube-prom", "trivy",
+  "velero", "openbao", "seaweedfs", "argocd", "istio", "harbor", "keycloak", "loki",
+  "tempo", "alloy", "k8s-monitoring", "nfs-", "headlamp", "apisix", "cnpg", "narwhal-db",
+  "gitea", "ghost-pod", "coredns", "metrics-server", "csi-", "snapshot", "node-",
+  "gatekeeper", "kubelet",
+] as const
+
+// Our own authored roles whose name happens to contain an upstream pattern as a substring
+// (e.g. "velero-ui-admin" contains "velero") — must be checked BEFORE the upstream patterns so
+// they aren't swept into "accepted".
+const OWN_ROLE_EXCEPTIONS = ["velero-ui"] as const
+
+// RBAC findings owned by Kubernetes built-in roles (system:*/kubeadm:*, default cluster-admin/
+// admin/edit/view) or upstream controller/chart roles are inherent to what those roles do and are
+// NOT actionable by the platform team. Only our own authored roles (platform-admin, developer,
+// narwhal-portal*, velero-ui-*, etc.) are actionable.
+export function isAcceptedRbacRole(roleName: string): boolean {
+  if (roleName.startsWith("system:") || roleName.startsWith("kubeadm:")) return true
+  if (K8S_DEFAULT_CLUSTER_ROLES.has(roleName)) return true
+  const lower = roleName.toLowerCase()
+  if (OWN_ROLE_EXCEPTIONS.some((exception) => lower.includes(exception))) return false
+  return UPSTREAM_RBAC_ROLE_PATTERNS.some((pattern) => lower.includes(pattern))
+}
+
+// --- CRD raw types ---
+
+interface RawCheck {
+  checkID: string
+  title: string
+  description?: string
+  severity: string
+  category?: string
+  success: boolean
+  messages?: string[]
+  remediation?: string
+}
+
+interface RawAuditSummary {
+  criticalCount: number
+  highCount: number
+  mediumCount: number
+  lowCount: number
+}
+
+interface RawAuditReport {
+  metadata: {
+    name: string
+    namespace?: string
+    creationTimestamp?: string
+    labels?: Record<string, string>
+    ownerReferences?: Array<{ kind: string; name: string }>
+  }
+  report: {
+    summary: RawAuditSummary
+    checks: RawCheck[]
+  }
+}
+
+interface RawAuditList {
+  items: RawAuditReport[]
+}
+
+interface RawComplianceReport {
+  metadata: {
+    name: string
+    creationTimestamp?: string
+  }
+  spec: {
+    compliance: {
+      id: string
+      title: string
+      controls?: Array<{
+        id: string
+        name: string
+        severity: string
+        description?: string
+      }>
+    }
+  }
+  status?: {
+    summary?: {
+      passCount?: number
+      failCount?: number
+    }
+    detailReport?: {
+      // trivy-operator (reportType=all) emits `results`, each control carrying a
+      // `checks[]` array with per-check `success` — NOT `controls[]`/passTotal/failTotal.
+      results?: Array<{
+        id: string
+        name: string
+        severity: string
+        description?: string
+        checks?: Array<{ success?: boolean }>
+      }>
+    }
+  }
+}
+
+interface RawComplianceList {
+  items: RawComplianceReport[]
+}
+
+// --- Mapping helpers ---
+
+function mapSeverity(raw: string): Severity {
+  const s = raw.charAt(0).toUpperCase() + raw.slice(1).toLowerCase()
+  if (s === "Critical" || s === "High" || s === "Medium" || s === "Low") return s
+  return "Unknown"
+}
+
+function buildCheckSummaryFromFailures(checks: RawCheck[]): CheckSummary {
+  const summary: CheckSummary = { Critical: 0, High: 0, Medium: 0, Low: 0 }
+  for (const c of checks) {
+    if (c.success) continue
+    const sev = mapSeverity(c.severity)
+    if (sev === "Unknown") continue
+    summary[sev]++
+  }
+  return summary
+}
+
+function buildCheckSummaryFromCounts(raw: RawAuditSummary): CheckSummary {
+  return {
+    Critical: raw.criticalCount,
+    High: raw.highCount,
+    Medium: raw.mediumCount,
+    Low: raw.lowCount,
+  }
+}
+
+function mapChecks(rawChecks: RawCheck[]): AuditCheck[] {
+  // Trivy가 동일 checkID + success 조합을 여러 번 emit하는 경우가 있어 dedup.
+  // (Pod 안 여러 컨테이너가 같은 정책에 동시 실패하면 동일 항목 반복)
+  const seen = new Set<string>()
+  const deduped: RawCheck[] = []
+  for (const c of rawChecks) {
+    const key = `${c.checkID}|${c.success}|${(c.messages ?? []).join("\n")}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    deduped.push(c)
+  }
+  return deduped.map((c) => ({
+    id: c.checkID,
+    title: c.title,
+    description: c.description,
+    severity: mapSeverity(c.severity),
+    category: c.category,
+    success: c.success,
+    messages: c.messages,
+    remediation: c.remediation,
+  }))
+}
+
+function addSummaries(a: CheckSummary, b: CheckSummary): CheckSummary {
+  return {
+    Critical: a.Critical + b.Critical,
+    High: a.High + b.High,
+    Medium: a.Medium + b.Medium,
+    Low: a.Low + b.Low,
+  }
+}
+
+const emptyCheckSummary: CheckSummary = { Critical: 0, High: 0, Medium: 0, Low: 0 }
+
+// rbacassessmentreport/clusterrbacassessmentreport metadata.name is a content hash, not the real
+// Role/ClusterRole name — the real name is the report's owning object (ownerReferences[0].name).
+// Falls back to the resource-name label / metadata.name if ownerReferences is absent.
+function resolveRbacRoleName(item: RawAuditReport): string {
+  const labels = item.metadata.labels ?? {}
+  const ownerRefs = item.metadata.ownerReferences ?? []
+  return ownerRefs[0]?.name ?? labels["trivy-operator.resource.name"] ?? item.metadata.name
+}
+
+// --- getConfigAuditList ---
+
+export async function getConfigAuditList(): Promise<ConfigAuditRow[]> {
+  const cacheKey = cacheKeys.complianceConfigAuditList()
+  const cached = await cacheGet<ConfigAuditRow[]>(cacheKey)
+  if (cached) return cached
+
+  try {
+    const list = await complianceK8sFetch<RawAuditList>(
+      "/apis/aquasecurity.github.io/v1alpha1/configauditreports",
+    )
+    const rows: ConfigAuditRow[] = (list.items ?? []).map((item) => {
+      const labels = item.metadata.labels ?? {}
+      const kind = labels["trivy-operator.resource.kind"] ?? "Unknown"
+      const name = labels["trivy-operator.resource.name"] ?? item.metadata.name
+      const namespace = item.metadata.namespace ?? ""
+      return {
+        namespace,
+        kind,
+        name,
+        summary: buildCheckSummaryFromCounts(item.report.summary),
+        accepted: isSystemNamespace(namespace),
+      }
+    })
+    await cacheSet(cacheKey, rows, cacheTtl("complianceConfigAuditList"))
+    return rows
+  } catch (err) {
+    console.warn("[compliance] getConfigAuditList failed:", err instanceof Error ? err.message : err)
+    return []
+  }
+}
+
+// --- getConfigAuditDetail ---
+
+export async function getConfigAuditDetail(
+  namespace: string,
+  name: string,
+): Promise<ConfigAuditDetail | null> {
+  const cacheKey = cacheKeys.complianceConfigAuditDetail(namespace, name)
+  const cached = await cacheGet<ConfigAuditDetail>(cacheKey)
+  if (cached) return cached
+
+  try {
+    const list = await complianceK8sFetch<RawAuditList>(
+      "/apis/aquasecurity.github.io/v1alpha1/configauditreports",
+    )
+    const item = (list.items ?? []).find((i) => {
+      const labels = i.metadata.labels ?? {}
+      const rName = labels["trivy-operator.resource.name"] ?? i.metadata.name
+      return i.metadata.namespace === namespace && rName === name
+    })
+    if (!item) return null
+
+    const labels = item.metadata.labels ?? {}
+    const kind = labels["trivy-operator.resource.kind"] ?? "Unknown"
+    const rName = labels["trivy-operator.resource.name"] ?? item.metadata.name
+    const rNamespace = item.metadata.namespace ?? ""
+    const checks = mapChecks(item.report.checks ?? [])
+    const detail: ConfigAuditDetail = {
+      namespace: rNamespace,
+      kind,
+      name: rName,
+      summary: buildCheckSummaryFromCounts(item.report.summary),
+      accepted: isSystemNamespace(rNamespace),
+      checks,
+    }
+    await cacheSet(cacheKey, detail, cacheTtl("complianceConfigAuditDetail"))
+    return detail
+  } catch (err) {
+    console.warn("[compliance] getConfigAuditDetail failed:", err instanceof Error ? err.message : err)
+    return null
+  }
+}
+
+// --- getRbacAuditList ---
+
+export async function getRbacAuditList(): Promise<RbacAuditRow[]> {
+  const cacheKey = cacheKeys.complianceRbacAuditList()
+  const cached = await cacheGet<RbacAuditRow[]>(cacheKey)
+  if (cached) return cached
+
+  try {
+    const [namespaced, clustered] = await Promise.all([
+      complianceK8sFetch<RawAuditList>(
+        "/apis/aquasecurity.github.io/v1alpha1/rbacassessmentreports",
+      ).catch(() => ({ items: [] as RawAuditReport[] })),
+      complianceK8sFetch<RawAuditList>(
+        "/apis/aquasecurity.github.io/v1alpha1/clusterrbacassessmentreports",
+      ).catch(() => ({ items: [] as RawAuditReport[] })),
+    ])
+
+    const allItems = [...(namespaced.items ?? []), ...(clustered.items ?? [])]
+    const rows: RbacAuditRow[] = allItems.map((item) => {
+      const labels = item.metadata.labels ?? {}
+      const kind = labels["trivy-operator.resource.kind"] ?? "Unknown"
+      const name = resolveRbacRoleName(item)
+      return {
+        namespace: item.metadata.namespace ?? "",
+        kind,
+        name,
+        summary: buildCheckSummaryFromCounts(item.report.summary),
+        accepted: isAcceptedRbacRole(name),
+      }
+    })
+    await cacheSet(cacheKey, rows, cacheTtl("complianceRbacAuditList"))
+    return rows
+  } catch (err) {
+    console.warn("[compliance] getRbacAuditList failed:", err instanceof Error ? err.message : err)
+    return []
+  }
+}
+
+// --- getRbacAuditDetail ---
+
+export async function getRbacAuditDetail(
+  namespace: string,
+  name: string,
+): Promise<RbacAuditDetail | null> {
+  const cacheKey = cacheKeys.complianceRbacAuditDetail(namespace, name)
+  const cached = await cacheGet<RbacAuditDetail>(cacheKey)
+  if (cached) return cached
+
+  try {
+    const [namespaced, clustered] = await Promise.all([
+      complianceK8sFetch<RawAuditList>(
+        "/apis/aquasecurity.github.io/v1alpha1/rbacassessmentreports",
+      ).catch(() => ({ items: [] as RawAuditReport[] })),
+      complianceK8sFetch<RawAuditList>(
+        "/apis/aquasecurity.github.io/v1alpha1/clusterrbacassessmentreports",
+      ).catch(() => ({ items: [] as RawAuditReport[] })),
+    ])
+
+    const allItems = [...(namespaced.items ?? []), ...(clustered.items ?? [])]
+    const item = allItems.find((i) => {
+      const rName = resolveRbacRoleName(i)
+      const rNamespace = i.metadata.namespace ?? ""
+      return rNamespace === namespace && rName === name
+    })
+    if (!item) return null
+
+    const labels = item.metadata.labels ?? {}
+    const kind = labels["trivy-operator.resource.kind"] ?? "Unknown"
+    const rName = resolveRbacRoleName(item)
+    const checks = mapChecks(item.report.checks ?? [])
+    const detail: RbacAuditDetail = {
+      namespace: item.metadata.namespace ?? "",
+      kind,
+      name: rName,
+      summary: buildCheckSummaryFromCounts(item.report.summary),
+      accepted: isAcceptedRbacRole(rName),
+      checks,
+    }
+    await cacheSet(cacheKey, detail, cacheTtl("complianceRbacAuditDetail"))
+    return detail
+  } catch (err) {
+    console.warn("[compliance] getRbacAuditDetail failed:", err instanceof Error ? err.message : err)
+    return null
+  }
+}
+
+// --- getInfraAuditList ---
+
+export async function getInfraAuditList(): Promise<InfraAuditRow[]> {
+  const cacheKey = cacheKeys.complianceInfraAuditList()
+  const cached = await cacheGet<InfraAuditRow[]>(cacheKey)
+  if (cached) return cached
+
+  try {
+    const [namespaced, clustered] = await Promise.all([
+      complianceK8sFetch<RawAuditList>(
+        "/apis/aquasecurity.github.io/v1alpha1/infraassessmentreports",
+      ).catch(() => ({ items: [] as RawAuditReport[] })),
+      complianceK8sFetch<RawAuditList>(
+        "/apis/aquasecurity.github.io/v1alpha1/clusterinfraassessmentreports",
+      ).catch(() => ({ items: [] as RawAuditReport[] })),
+    ])
+
+    const allItems = [...(namespaced.items ?? []), ...(clustered.items ?? [])]
+    const rows: InfraAuditRow[] = allItems.map((item) => {
+      const labels = item.metadata.labels ?? {}
+      const node = labels["trivy-operator.resource.name"] ?? item.metadata.name
+      return {
+        node,
+        summary: buildCheckSummaryFromCounts(item.report.summary),
+      }
+    })
+    await cacheSet(cacheKey, rows, cacheTtl("complianceInfraAuditList"))
+    return rows
+  } catch (err) {
+    console.warn("[compliance] getInfraAuditList failed:", err instanceof Error ? err.message : err)
+    return []
+  }
+}
+
+// --- getInfraAuditDetail ---
+
+export async function getInfraAuditDetail(node: string): Promise<InfraAuditDetail | null> {
+  const cacheKey = cacheKeys.complianceInfraAuditDetail(node)
+  const cached = await cacheGet<InfraAuditDetail>(cacheKey)
+  if (cached) return cached
+
+  try {
+    const [namespaced, clustered] = await Promise.all([
+      complianceK8sFetch<RawAuditList>(
+        "/apis/aquasecurity.github.io/v1alpha1/infraassessmentreports",
+      ).catch(() => ({ items: [] as RawAuditReport[] })),
+      complianceK8sFetch<RawAuditList>(
+        "/apis/aquasecurity.github.io/v1alpha1/clusterinfraassessmentreports",
+      ).catch(() => ({ items: [] as RawAuditReport[] })),
+    ])
+
+    const allItems = [...(namespaced.items ?? []), ...(clustered.items ?? [])]
+    const item = allItems.find((i) => {
+      const labels = i.metadata.labels ?? {}
+      const rName = labels["trivy-operator.resource.name"] ?? i.metadata.name
+      return rName === node
+    })
+    if (!item) return null
+
+    const labels = item.metadata.labels ?? {}
+    const rNode = labels["trivy-operator.resource.name"] ?? item.metadata.name
+    const checks = mapChecks(item.report.checks ?? [])
+    const detail: InfraAuditDetail = {
+      node: rNode,
+      summary: buildCheckSummaryFromCounts(item.report.summary),
+      checks,
+    }
+    await cacheSet(cacheKey, detail, cacheTtl("complianceInfraAuditDetail"))
+    return detail
+  } catch (err) {
+    console.warn("[compliance] getInfraAuditDetail failed:", err instanceof Error ? err.message : err)
+    return null
+  }
+}
+
+// --- getComplianceFrameworks ---
+
+export async function getComplianceFrameworks(): Promise<ComplianceFramework[]> {
+  const cacheKey = cacheKeys.complianceFrameworksList()
+  const cached = await cacheGet<ComplianceFramework[]>(cacheKey)
+  if (cached) return cached
+
+  try {
+    const list = await complianceK8sFetch<RawComplianceList>(
+      "/apis/aquasecurity.github.io/v1alpha1/clustercompliancereports",
+    )
+    const frameworks: ComplianceFramework[] = (list.items ?? []).map((item) => {
+      const passCount = item.status?.summary?.passCount ?? 0
+      const failCount = item.status?.summary?.failCount ?? 0
+      // totalControls는 spec 정의 기준이 정확 (summary는 평가된 항목만 카운트)
+      const totalControls = (item.spec.compliance.controls?.length ?? 0) || passCount + failCount
+      const evaluated = passCount + failCount
+      const passRate = evaluated > 0 ? passCount / evaluated : 0
+      return {
+        id: item.spec.compliance.id,
+        title: item.spec.compliance.title,
+        passCount,
+        failCount,
+        totalControls,
+        passRate,
+      }
+    })
+    await cacheSet(cacheKey, frameworks, cacheTtl("complianceFrameworksList"))
+    return frameworks
+  } catch (err) {
+    console.warn("[compliance] getComplianceFrameworks failed:", err instanceof Error ? err.message : err)
+    return []
+  }
+}
+
+// --- getComplianceFrameworkDetail ---
+
+export async function getComplianceFrameworkDetail(
+  id: string,
+): Promise<ComplianceFrameworkDetail | null> {
+  const cacheKey = cacheKeys.complianceFrameworksDetail(id)
+  const cached = await cacheGet<ComplianceFrameworkDetail>(cacheKey)
+  if (cached) return cached
+
+  try {
+    const list = await complianceK8sFetch<RawComplianceList>(
+      "/apis/aquasecurity.github.io/v1alpha1/clustercompliancereports",
+    )
+    const item = (list.items ?? []).find((i) => i.spec.compliance.id === id)
+    if (!item) return null
+
+    const aggPass = item.status?.summary?.passCount ?? 0
+    const aggFail = item.status?.summary?.failCount ?? 0
+
+    // status.detailReport.results 가 있으면 per-control 사용, 없으면 spec.compliance.controls 폴백.
+    // (Trivy reportType=summary 이면 detailReport 비어있음 — 정의만 표시, pass/fail은 0으로.
+    //  reportType=all 이면 results[].checks[].success 로 컨트롤별 pass/fail 집계.)
+    const detailControls = item.status?.detailReport?.results ?? []
+    const specControls = item.spec.compliance.controls ?? []
+
+    let controls: ComplianceControl[]
+    if (detailControls.length > 0) {
+      controls = detailControls.map((c) => {
+        const checks = c.checks ?? []
+        return {
+          id: c.id,
+          name: c.name,
+          severity: mapSeverity(c.severity),
+          passCount: checks.filter((k) => k.success === true).length,
+          failCount: checks.filter((k) => k.success === false).length,
+          description: c.description,
+        }
+      })
+    } else {
+      controls = specControls.map((c) => ({
+        id: c.id,
+        name: c.name,
+        severity: mapSeverity(c.severity),
+        passCount: 0,
+        failCount: 0,
+        description: c.description,
+      }))
+    }
+
+    const passCount = aggPass
+    const failCount = aggFail
+    const totalControls = controls.length || aggPass + aggFail
+    const passRate = totalControls > 0 ? aggPass / (aggPass + aggFail || totalControls) : 0
+
+    const detail: ComplianceFrameworkDetail = {
+      id: item.spec.compliance.id,
+      title: item.spec.compliance.title,
+      passCount,
+      failCount,
+      totalControls,
+      passRate,
+      controls,
+    }
+    await cacheSet(cacheKey, detail, cacheTtl("complianceFrameworksDetail"))
+    return detail
+  } catch (err) {
+    console.warn("[compliance] getComplianceFrameworkDetail failed:", err instanceof Error ? err.message : err)
+    return null
+  }
+}
+
+// --- getComplianceSummary ---
+
+export async function getComplianceSummary(): Promise<ComplianceSummary> {
+  const cacheKey = cacheKeys.complianceSummary()
+  const cached = await cacheGet<ComplianceSummary>(cacheKey)
+  if (cached) return cached
+
+  try {
+    const [configAuditList, rbacAuditList, infraAuditList, frameworks] = await Promise.all([
+      getConfigAuditList(),
+      getRbacAuditList(),
+      getInfraAuditList(),
+      getComplianceFrameworks(),
+    ])
+
+    // Headline number reflects ACTIONABLE findings only: non-system namespace AND
+    // Critical/High/Medium severity. LOW-severity checks (KSV020/021 UID/GID, KSV011/015/016/018
+    // resource limits) are risk-accepted hygiene per narwhal/docs/compliance-hardening.md and are
+    // split into their own tier so they don't inflate the actionable count. System-namespace
+    // findings are inherent to K8s/CNI/mesh and surfaced separately (not silently dropped).
+    const nonSystemConfigAuditFailures = configAuditList
+      .filter((row) => !row.accepted)
+      .reduce((acc, row) => addSummaries(acc, row.summary), { ...emptyCheckSummary })
+    const totalConfigAuditFailures: CheckSummary = {
+      Critical: nonSystemConfigAuditFailures.Critical,
+      High: nonSystemConfigAuditFailures.High,
+      Medium: nonSystemConfigAuditFailures.Medium,
+      Low: 0,
+    }
+    const lowSeverityConfigAuditFailures: CheckSummary = {
+      Critical: 0,
+      High: 0,
+      Medium: 0,
+      Low: nonSystemConfigAuditFailures.Low,
+    }
+    const acceptedSystemConfigAuditFailures = configAuditList
+      .filter((row) => row.accepted)
+      .reduce((acc, row) => addSummaries(acc, row.summary), { ...emptyCheckSummary })
+    // Headline RBAC number reflects ACTIONABLE findings only: excludes findings owned by K8s
+    // built-in roles or upstream controller/chart roles (see isAcceptedRbacRole above) — those
+    // are inherent to what the role does and not actionable by the platform team.
+    const totalRbacFailures = rbacAuditList
+      .filter((row) => !row.accepted)
+      .reduce((acc, row) => addSummaries(acc, row.summary), { ...emptyCheckSummary })
+    const acceptedRbacFailures = rbacAuditList
+      .filter((row) => row.accepted)
+      .reduce((acc, row) => addSummaries(acc, row.summary), { ...emptyCheckSummary })
+    const totalInfraFailures = infraAuditList.reduce(
+      (acc, row) => addSummaries(acc, row.summary),
+      { ...emptyCheckSummary },
+    )
+
+    // Derive lastUpdated from K8s timestamps via a separate fetch
+    let lastUpdated = new Date().toISOString()
+    try {
+      const [configList, rbacNs, rbacCluster, infraNs, infraCluster, ccList] = await Promise.all([
+        complianceK8sFetch<RawAuditList>("/apis/aquasecurity.github.io/v1alpha1/configauditreports").catch(() => ({ items: [] as RawAuditReport[] })),
+        complianceK8sFetch<RawAuditList>("/apis/aquasecurity.github.io/v1alpha1/rbacassessmentreports").catch(() => ({ items: [] as RawAuditReport[] })),
+        complianceK8sFetch<RawAuditList>("/apis/aquasecurity.github.io/v1alpha1/clusterrbacassessmentreports").catch(() => ({ items: [] as RawAuditReport[] })),
+        complianceK8sFetch<RawAuditList>("/apis/aquasecurity.github.io/v1alpha1/infraassessmentreports").catch(() => ({ items: [] as RawAuditReport[] })),
+        complianceK8sFetch<RawAuditList>("/apis/aquasecurity.github.io/v1alpha1/clusterinfraassessmentreports").catch(() => ({ items: [] as RawAuditReport[] })),
+        complianceK8sFetch<RawComplianceList>("/apis/aquasecurity.github.io/v1alpha1/clustercompliancereports").catch(() => ({ items: [] as RawComplianceReport[] })),
+      ])
+      const allTs = [
+        ...(configList.items ?? []),
+        ...(rbacNs.items ?? []),
+        ...(rbacCluster.items ?? []),
+        ...(infraNs.items ?? []),
+        ...(infraCluster.items ?? []),
+      ]
+        .map((i) => i.metadata.creationTimestamp ?? "")
+        .concat((ccList.items ?? []).map((i) => i.metadata.creationTimestamp ?? ""))
+        .filter(Boolean)
+        .sort()
+      if (allTs.length > 0) lastUpdated = allTs[allTs.length - 1]
+    } catch {
+      // lastUpdated stays as now
+    }
+
+    const result: ComplianceSummary = {
+      totalConfigAuditFailures,
+      lowSeverityConfigAuditFailures,
+      acceptedSystemConfigAuditFailures,
+      totalRbacFailures,
+      acceptedRbacFailures,
+      totalInfraFailures,
+      frameworks,
+      scannedWorkloads: configAuditList.length,
+      scannedRbacObjects: rbacAuditList.length,
+      scannedNodes: infraAuditList.length,
+      lastUpdated,
+    }
+    await cacheSet(cacheKey, result, cacheTtl("complianceSummary"))
+    return result
+  } catch (err) {
+    console.warn("[compliance] getComplianceSummary failed:", err instanceof Error ? err.message : err)
+    return {
+      totalConfigAuditFailures: { ...emptyCheckSummary },
+      lowSeverityConfigAuditFailures: { ...emptyCheckSummary },
+      acceptedSystemConfigAuditFailures: { ...emptyCheckSummary },
+      totalRbacFailures: { ...emptyCheckSummary },
+      acceptedRbacFailures: { ...emptyCheckSummary },
+      totalInfraFailures: { ...emptyCheckSummary },
+      frameworks: [],
+      scannedWorkloads: 0,
+      scannedRbacObjects: 0,
+      scannedNodes: 0,
+      lastUpdated: new Date().toISOString(),
+    }
+  }
+}

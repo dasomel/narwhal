@@ -1,0 +1,283 @@
+"use client"
+
+import { useQuery } from "@tanstack/react-query"
+import Link from "next/link"
+import { useT } from "@/lib/i18n-client"
+import type { ClusterInfra } from "@/app/api/cluster/route"
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table"
+import { Badge } from "@/components/ui/badge"
+import { DataState } from "@/components/ui/data-state"
+
+const SYSTEM_NAMESPACES = new Set([
+  "kube-system",
+  "kube-public",
+  "kube-node-lease",
+  "cert-manager",
+  "istio-system",
+  "metallb-system",
+  "platform-system",
+  "devtools",
+  "iam",
+  "monitoring",
+  "logging",
+  "tracing",
+])
+
+function isClusterInfra(value: unknown): value is ClusterInfra {
+  if (typeof value !== "object" || value === null) return false
+  const response = value as Partial<ClusterInfra>
+  return Array.isArray(response.nodes)
+    && Array.isArray(response.controlPlane)
+    && Array.isArray(response.namespaces)
+    && typeof response.summary === "object"
+    && response.summary !== null
+    && typeof response.summary.truncated === "boolean"
+}
+
+function usageColor(percent: number): string {
+  if (percent >= 90) return "bg-narwhal-danger"
+  if (percent >= 70) return "bg-narwhal-warning"
+  return "bg-narwhal-success"
+}
+
+function UsageBar({ percent }: { percent: number | null }) {
+  if (percent === null) {
+    return (
+      <div className="flex items-center gap-2 min-w-[100px]">
+        <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden" />
+        <span className="text-xs text-muted-foreground w-8 text-right">N/A</span>
+      </div>
+    )
+  }
+  return (
+    <div className="flex items-center gap-2 min-w-[100px]">
+      <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
+        <div
+          className={`h-full rounded-full ${usageColor(percent)}`}
+          style={{ width: `${Math.min(percent, 100)}%` }}
+        />
+      </div>
+      <span className="text-xs text-muted-foreground w-8 text-right">{percent}%</span>
+    </div>
+  )
+}
+
+function SummaryCard({
+  label,
+  value,
+  sub,
+  accent,
+}: {
+  label: string
+  value: string
+  sub?: string
+  accent?: "green" | "red" | "default"
+}) {
+  const accentClass =
+    accent === "green"
+      ? "text-narwhal-success"
+      : accent === "red"
+        ? "text-narwhal-danger"
+        : "text-foreground"
+  return (
+    <div className="rounded-lg border bg-card p-4 flex flex-col gap-1">
+      <p className="text-xs text-muted-foreground font-medium">{label}</p>
+      <p className={`text-2xl font-bold ${accentClass}`}>{value}</p>
+      {sub && <p className="text-xs text-muted-foreground">{sub}</p>}
+    </div>
+  )
+}
+
+export function ClusterInfraView() {
+  const t = useT()
+
+  const { data, isLoading, isError, refetch } = useQuery<ClusterInfra>({
+    queryKey: ["cluster-infra"],
+    queryFn: () => fetch("/api/cluster").then((r) => r.json()),
+    refetchInterval: 30_000,
+  })
+
+  const validData = isClusterInfra(data) ? data : undefined
+  if (isLoading && !data) return <DataState state="loading" onRetry={() => { void refetch() }} />
+  if ((isError && !data) || (data && !validData)) return <DataState state="error" onRetry={() => { void refetch() }} />
+  if (!validData) return <DataState state="empty" />
+
+  const cpReady = validData.controlPlane.filter((c) => c.status === "Running").length
+  const cpTotal = validData.controlPlane.length
+
+  return (
+    <div className="space-y-6">
+      {isError ? (
+        <DataState state="error" onRetry={() => { void refetch() }} />
+      ) : validData.summary.truncated ? (
+        <DataState state="partial" />
+      ) : null}
+
+      {/* 섹션 1: 요약 카드 */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+        <>
+            <SummaryCard
+              label={t("arch.nodes")}
+              value={`${validData.summary.readyNodes}/${validData.summary.totalNodes} ${t("arch.ready")}`}
+              accent={validData.summary.readyNodes === validData.summary.totalNodes ? "green" : "red"}
+            />
+            <SummaryCard
+              label={t("arch.pods")}
+              value={String(validData.summary.totalPods)}
+              sub={t("arch.running")}
+              accent="default"
+            />
+            <SummaryCard
+              label={t("arch.namespaces")}
+              value={String(validData.summary.totalNamespaces)}
+              accent="default"
+            />
+            <SummaryCard
+              label={t("arch.controlPlane")}
+              value={`${cpReady}/${cpTotal} ${t("arch.running")}`}
+              accent={cpReady === cpTotal && cpTotal > 0 ? "green" : "red"}
+            />
+        </>
+      </div>
+
+      {/* 섹션 2: 노드 상태 테이블 */}
+      <div className="rounded-lg border bg-card overflow-hidden">
+        <div className="px-4 py-3 border-b">
+          <h2 className="text-sm font-semibold text-foreground">{t("arch.nodes")}</h2>
+        </div>
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead className="w-40">{t("arch.nodes")}</TableHead>
+              <TableHead>{t("arch.role")}</TableHead>
+              <TableHead className="w-24">Status</TableHead>
+              <TableHead className="w-36">{t("arch.cpu")}</TableHead>
+              <TableHead className="w-36">{t("arch.memory")}</TableHead>
+              <TableHead className="w-24">{t("arch.pods")}</TableHead>
+              <TableHead>{t("arch.version")}</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {validData.nodes.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={7} className="text-center text-sm text-muted-foreground py-8">
+                  <DataState state="empty" />
+                </TableCell>
+              </TableRow>
+            ) : (
+              validData.nodes.map((node) => (
+                <TableRow key={node.name}>
+                  <TableCell className="font-medium">
+                    <Link
+                      href={`/nodes/${node.name}`}
+                      className="text-narwhal-accent hover:underline text-sm"
+                    >
+                      {node.name}
+                    </Link>
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex flex-wrap gap-1">
+                      {node.roles.map((r) => (
+                        <Badge key={r} variant="outline" className="text-xs">
+                          {r}
+                        </Badge>
+                      ))}
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    <Badge
+                      variant={node.status === "Ready" ? "default" : "destructive"}
+                      className={`text-xs ${node.status === "Ready" ? "bg-narwhal-success/15 text-narwhal-success hover:bg-narwhal-success/10 border-narwhal-success/30" : ""}`}
+                    >
+                      {node.status}
+                    </Badge>
+                  </TableCell>
+                  <TableCell>
+                    <UsageBar percent={node.cpu.percent} />
+                  </TableCell>
+                  <TableCell>
+                    <UsageBar percent={node.memory.percent} />
+                  </TableCell>
+                  <TableCell className="text-sm text-muted-foreground">
+                    {node.pods.running}/{node.pods.total}
+                  </TableCell>
+                  <TableCell className="text-xs text-muted-foreground font-mono">
+                    {node.kubeletVersion}
+                  </TableCell>
+                </TableRow>
+              ))
+            )}
+          </TableBody>
+        </Table>
+      </div>
+
+      {/* 섹션 3: 네임스페이스 그리드 */}
+      <div className="rounded-lg border bg-card p-4">
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-sm font-semibold text-foreground">{t("arch.namespaces")}</h2>
+          <div className="flex items-center gap-4 text-xs text-muted-foreground">
+            <span className="flex items-center gap-1.5">
+              <span className="inline-block w-3 h-3 rounded border border-narwhal-accent/40 bg-narwhal-accent/10" />
+              {t("arch.legendSystem")}
+            </span>
+            <span className="flex items-center gap-1.5">
+              {/* 실제 카드는 bg-muted/30이지만 3px 견본에서는 안 보여서 진하게 표시 */}
+              <span className="inline-block w-3 h-3 rounded border border-muted-foreground/40 bg-muted" />
+              {t("arch.legendUser")}
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="inline-block w-3 h-3 rounded border border-dashed border-muted-foreground/60 bg-muted opacity-60" />
+              {t("arch.legendTerminating")}
+            </span>
+          </div>
+        </div>
+        {validData.namespaces.length === 0 ? (
+          <DataState state="empty" />
+        ) : (
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-3">
+            {validData.namespaces.map((ns) => {
+              const isSystem = SYSTEM_NAMESPACES.has(ns.name)
+              return (
+                <div
+                  key={ns.name}
+                  className={`rounded-lg border p-3 flex flex-col gap-1 ${
+                    isSystem
+                      ? "border-narwhal-accent/20 bg-narwhal-accent/10"
+                      : "border-border/50 bg-muted/30"
+                  } ${ns.status === "Terminating" ? "opacity-50" : ""}`}
+                >
+                  <p
+                    className={`text-xs font-medium truncate ${isSystem ? "text-narwhal-accent" : "text-foreground"}`}
+                    title={ns.name}
+                  >
+                    {ns.name}
+                  </p>
+                  <div className="flex items-center gap-1">
+                    <Badge
+                      variant="outline"
+                      className="text-xs px-1 py-0 h-4 border-border text-muted-foreground"
+                    >
+                      {ns.podCount} {t("arch.pods")}
+                    </Badge>
+                    {ns.status === "Terminating" && (
+                      <Badge variant="destructive" className="text-xs px-1 py-0 h-4">
+                        Terminating
+                      </Badge>
+                    )}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}

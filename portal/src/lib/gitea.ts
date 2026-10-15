@@ -1,0 +1,302 @@
+import { cacheGet, cacheSet } from "./valkey"
+import { assertHttpsInProduction, getDependencyUrl, isProduction } from "./config"
+import { fetchWithPolicy, readJsonWithPolicy, readTextWithPolicy } from "./http-client"
+
+// Gitea client for the one thing the portal writes: a namespace request.
+//
+// The portal does NOT create namespaces. Its Kubernetes ServiceAccount has
+// `namespaces: [get, list, watch]` and keeps it that way, because a namespace is a
+// tenancy decision — who owns it, what quota it gets, which group may deploy into
+// it — and those are decided by a person, not by whoever can reach the form.
+//
+// So a request becomes a pull request against the GitOps repository, and merging it
+// is the approval. That is enforced on the server, not here: `portal-gitops` is
+// deliberately absent from the repo's `main` push whitelist, so it can push a branch
+// and nothing else. Verified against Gitea 1.26.2 — a push to main is rejected with
+// "protected branch main", and merging its own PR returns 405 "Does not have enough
+// approvals". If this file were rewritten to push straight to main it would fail.
+
+// Read at call-time, not module top level (see 85ca55c / getDependencyUrl's contract
+// in config.ts) so a missing GITEA_URL fails on first use in production instead of
+// silently sending the GITEA_TOKEN machine credential to the in-cluster default.
+function getGiteaUrl(): string {
+  const url = getDependencyUrl(
+    "GITEA_URL",
+    "http://gitea-http.devtools.svc.cluster.local:3000"
+  ).replace(/\/+$/, "")
+  // narwhal-portal#39: the GITEA_TOKEN below is a scoped machine credential (see the
+  // portal-gitops branch-only push whitelist note above) travelling over this URL —
+  // require TLS in production so it can't be read or replayed off the wire.
+  assertHttpsInProduction("GITEA_URL", url)
+  return url
+}
+const GITEA_OWNER = process.env.GITEA_OWNER ?? "gitea-admin"
+const GITEA_REPO = process.env.GITEA_REPO ?? "narwhal-gitops"
+const BASE_BRANCH = process.env.GITEA_BASE_BRANCH ?? "main"
+
+// Portal #54: distinguishes "the Gitea auth credential is missing/rejected"
+// from "Gitea is unreachable" (mirrors ApisixCredentialError /
+// KeycloakCredentialError).
+export class GiteaCredentialError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = "GiteaCredentialError"
+  }
+}
+
+// Read at call-time (not a module-level const) — mirrors apisix-client / keycloak-client
+// so credential rotation via a re-mounted env/secret takes effect on the next call
+// without a process restart.
+export function getGiteaToken(): string {
+  const token = process.env.GITEA_TOKEN
+  if (token) return token
+  if (!isProduction()) return ""
+  throw new GiteaCredentialError(
+    "GITEA_TOKEN is not configured. Set GITEA_TOKEN to a Gitea access token."
+  )
+}
+
+// Configured check must not throw during build/static analysis, so it reads the raw
+// env var presence rather than calling getGiteaUrl() (which throws in production when
+// unset). "Not configured" here just means GITEA_URL was never set at all. Evaluated
+// per call (portal#54) so a token mounted after startup counts.
+export function isGiteaConfigured(): boolean {
+  return Boolean(process.env.GITEA_URL && GITEA_OWNER && GITEA_REPO && process.env.GITEA_TOKEN)
+}
+
+export class GiteaError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+  ) {
+    super(message)
+    this.name = "GiteaError"
+  }
+}
+
+async function api<T>(path: string, init: RequestInit): Promise<T> {
+  const token = getGiteaToken()
+  // Every current caller of this helper is a POST that creates a commit or a
+  // pull request — never safe to retry automatically (a retried commit/PR
+  // create could double up), so retry is off explicitly rather than relying
+  // only on the shared client's idempotent-method gate.
+  const res = await fetchWithPolicy(
+    `${getGiteaUrl()}/api/v1${path}`,
+    {
+      ...init,
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `token ${token}`,
+        ...(init.headers as Record<string, string> | undefined),
+      },
+    },
+    { timeoutMs: 10000, retry: false }
+  )
+  if (res.status === 401) {
+    throw new GiteaCredentialError(
+      `Gitea request rejected (HTTP ${res.status}): check GITEA_TOKEN`
+    )
+  }
+  if (!res.ok) {
+    // Gitea answers with {"message": "..."}; keep it, since "namespace already
+    // requested" and "token expired" are different problems for the caller.
+    const detail = await readTextWithPolicy(res).catch(() => "")
+    let message = detail
+    try {
+      message = (JSON.parse(detail) as { message?: string }).message ?? detail
+    } catch {
+      /* not JSON — use the raw body */
+    }
+    throw new GiteaError(message || res.statusText, res.status)
+  }
+  return await readJsonWithPolicy<T>(res)
+}
+
+/** resources/tenants/<team>/<namespace>.yaml — the layout the tenants Application recurses over. */
+export const tenantPath = (team: string, namespace: string) =>
+  `resources/tenants/${team}/${namespace}.yaml`
+
+/**
+ * The manifest a request adds. Three objects, because a Namespace on its own is a
+ * namespace nobody can use: the label is what the portal and the RoleBinding both
+ * read as ownership, the RoleBinding is what turns that into permission (the
+ * cluster-wide `developer` role is read-only), and the quota is what keeps one
+ * tenant from starving the rest.
+ */
+export function tenantManifest(namespace: string, team: string, requestedBy: string): string {
+  return `# Requested through the Narwhal portal by ${requestedBy}.
+# Generated file — change it by opening another pull request, not by editing in place.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ${namespace}
+  labels:
+    narwhal.io/team: ${team}
+    app.kubernetes.io/managed-by: narwhal-gitops
+    istio.io/dataplane-mode: none
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: developer-workload-admin
+  namespace: ${namespace}
+  labels:
+    narwhal.io/team: ${team}
+    app.kubernetes.io/managed-by: narwhal-gitops
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: developer-workload-admin
+subjects:
+  - apiGroup: rbac.authorization.k8s.io
+    kind: Group
+    name: "oidc:${team}"
+---
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: ${namespace}-quota
+  namespace: ${namespace}
+  labels:
+    app.kubernetes.io/managed-by: narwhal-gitops
+spec:
+  hard:
+    requests.cpu: "2"
+    limits.cpu: "4"
+    requests.memory: 4Gi
+    limits.memory: 8Gi
+    requests.storage: 20Gi
+    persistentvolumeclaims: "5"
+    pods: "20"
+`
+}
+
+export interface TenantRequest {
+  namespace: string
+  team: string
+  requestedBy: string
+}
+
+export interface TenantRequestResult {
+  pullRequestUrl: string
+  pullRequestNumber: number
+  branch: string
+  path: string
+}
+
+/**
+ * Commits the tenant manifest onto a new branch and opens a pull request for it.
+ *
+ * Two calls, not three: Gitea's contents API takes `new_branch` and creates the
+ * branch and the commit together, so there is no window where a branch exists with
+ * nothing on it. `branch` stays the base — it is what the new branch is cut FROM,
+ * not what is written to.
+ */
+export async function requestTenantNamespace(req: TenantRequest): Promise<TenantRequestResult> {
+  const branch = `selfservice/${req.namespace}`
+  const path = tenantPath(req.team, req.namespace)
+  const repo = `/repos/${GITEA_OWNER}/${GITEA_REPO}`
+
+  await api<unknown>(`${repo}/contents/${path}`, {
+    method: "POST",
+    body: JSON.stringify({
+      content: Buffer.from(tenantManifest(req.namespace, req.team, req.requestedBy)).toString("base64"),
+      message: `feat(tenant): request namespace ${req.namespace} for ${req.team}`,
+      branch: BASE_BRANCH,
+      new_branch: branch,
+    }),
+  })
+
+  const pr = await api<{ number: number; html_url: string }>(`${repo}/pulls`, {
+    method: "POST",
+    body: JSON.stringify({
+      head: branch,
+      base: BASE_BRANCH,
+      title: `Namespace request: ${req.namespace}`,
+      body: [
+        `Requested by **${req.requestedBy}** for team \`${req.team}\`.`,
+        "",
+        "Merging this grants the team a namespace, a `developer-workload-admin`",
+        "RoleBinding in it, and the quota below. Check that the requester is",
+        "actually in that team before approving — the portal verifies the claim",
+        "against the caller's group membership, but the reviewer is the last check.",
+      ].join("\n"),
+    }),
+  })
+
+  return { pullRequestUrl: pr.html_url, pullRequestNumber: pr.number, branch, path }
+}
+
+/**
+ * Retrieves the commit timestamp from the in-cluster Gitea API.
+ * Follows spec's graceful-degradation rules exactly (returns null, never throws).
+ *
+ * NOW SENDS THE TOKEN. This read used to be anonymous and worked only because
+ * narwhal-gitops was a public repository. It is private as of the GitOps hardening
+ * (narwhal 52dbb8d), and an unauthenticated fetch returns 404 — which this function
+ * would have degraded into "no timestamp" rather than an error, quietly emptying the
+ * DORA lead-time metric. Same shape as ArgoCD's missing repository Secret: a consumer
+ * with no credentials is a consumer relying on the repo being public.
+ *
+ * D1 (#54 review): stays non-throwing even for a rejected/missing credential — the
+ * DORA route fans this out over Promise.all per commit sha, and one rejected token
+ * must not fail every other sha's lookup. A credential rejection is logged
+ * distinctly from a plain connectivity failure so it doesn't read as "commit not
+ * found"; requestTenantNamespace (a write) still throws GiteaCredentialError.
+ */
+export async function getCommitTimestamp(sha: string): Promise<string | null> {
+  if (!sha) return null
+  const cacheKey = `dora:commit:${sha}`
+  try {
+    const cached = await cacheGet<string>(cacheKey)
+    if (cached) return cached
+  } catch (err) {
+    console.warn("[gitea] Cache lookup failed:", err)
+  }
+
+  try {
+    const token = getGiteaToken()
+    const url = `${getGiteaUrl()}/api/v1/repos/${GITEA_OWNER}/${GITEA_REPO}/git/commits/${encodeURIComponent(sha)}`
+
+    // GET, so the shared client's default retry (idempotent + retryable
+    // failures only) applies — a transient 503/network blip no longer costs
+    // this sha's DORA lead-time datapoint outright.
+    const res = await fetchWithPolicy(
+      url,
+      {
+        next: { revalidate: 0 },
+        headers: token ? { Authorization: `token ${token}` } : {},
+      },
+      { timeoutMs: 5000 }
+    )
+
+    if (res.status === 401) {
+      throw new GiteaCredentialError(
+        `Gitea request rejected (HTTP ${res.status}): check GITEA_TOKEN`
+      )
+    }
+
+    if (!res.ok) {
+      console.warn(`[gitea] Failed to fetch commit ${sha}: status ${res.status}`)
+      return null
+    }
+
+    const data = await readJsonWithPolicy<{ commit?: { committer?: { date?: string }; author?: { date?: string } } }>(res)
+    const commitDate = data?.commit?.committer?.date || data?.commit?.author?.date || null
+    if (commitDate) {
+      try {
+        await cacheSet(cacheKey, commitDate, 3600) // Cache for 1 hour
+      } catch (err) {
+        console.warn("[gitea] Cache save failed:", err)
+      }
+      return commitDate
+    }
+  } catch (err) {
+    if (err instanceof GiteaCredentialError) {
+      console.error("[gitea] credential rejected/missing — check GITEA_TOKEN", `commit ${sha}`)
+      return null
+    }
+    console.warn(`[gitea] Error fetching commit ${sha}:`, err)
+  }
+  return null
+}

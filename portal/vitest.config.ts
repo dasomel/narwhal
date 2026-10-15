@@ -1,0 +1,23 @@
+import { configDefaults, defineConfig } from "vitest/config"
+import { fileURLToPath } from "node:url"
+
+// portal#21: every existing "@/..." import in a src/lib/*.ts file that vitest
+// actually exercises at runtime happened to be `import type` (erased by esbuild
+// before module resolution runs), so the "@/*" -> "./src/*" alias tsconfig.json
+// declares for Next.js/tsc was never actually resolved by vitest — there was no
+// vitest.config.ts at all. This surfaced the first time a lib module needed a
+// real (non-type) "@/..." value import (DEFAULT_CLUSTER_ID from
+// src/types/cluster.ts). Mirrors the one alias tsconfig.json's "paths" defines.
+export default defineConfig({
+  test: {
+    // Agent worktrees are created under .claude/worktrees/ inside this repo; without
+    // this, vitest also collects every test file in those checkouts and the suite
+    // count doubles (observed 559 vs 283), so "all green" stops meaning this tree.
+    exclude: [...configDefaults.exclude, ".claude/**", "e2e/**"],
+  },
+  resolve: {
+    alias: {
+      "@": fileURLToPath(new URL("./src", import.meta.url)),
+    },
+  },
+})

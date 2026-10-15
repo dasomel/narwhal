@@ -1,0 +1,443 @@
+"use client"
+import { useState } from "react"
+import { useQuery } from "@tanstack/react-query"
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend } from "recharts"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import {
+  Tooltip as InfoTooltip,
+  TooltipTrigger as InfoTooltipTrigger,
+  TooltipContent as InfoTooltipContent,
+} from "@/components/ui/tooltip"
+import { useT } from "@/lib/i18n-client"
+import { DataState } from "@/components/ui/data-state"
+import { ResourceDetailDrawer } from "./resource-detail-drawer"
+import type { ResourcesResponseV2, NamespaceUsageV2 } from "./types"
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog"
+
+const toGiB = (bytes: number) => (bytes / (1024 * 1024 * 1024)).toFixed(2)
+
+// Pure and exported so a plain unit test can cover both bases without rendering the
+// component (this repo has no jsdom/testing-library setup for hook-bearing components —
+// see resource-chart.basis.test.ts). cpuPercent/memPercent mean different things per
+// basis (usage/node-capacity vs. usage/visible-requests), so the label AND the tooltip
+// explaining it must both switch, not just the number.
+//
+// This only decides WHICH branch applies — the translation calls at each call site stay
+// literal string keys, never a variable, so the i18n dynamic-call-site audit
+// (i18n.test.ts's BASELINE_DYNAMIC_SKIPPED) doesn't have to special-case this switch.
+export function isScopedBasis(basis: "cluster-capacity" | "visible-requests"): boolean {
+  return basis === "visible-requests"
+}
+
+const formatBytes = (bytes: number) => {
+  const mib = bytes / (1024 * 1024)
+  if (mib >= 1024) {
+    return `${(mib / 1024).toFixed(2)} GiB`
+  }
+  return `${mib.toFixed(1)} MiB`
+}
+
+export function ResourceChart() {
+  const t = useT()
+  const [selectedNamespace, setSelectedNamespace] = useState<string | null>(null)
+  const [selectedPodName, setSelectedPodName] = useState<string | undefined>(undefined)
+  const [noRequestDialogOpen, setNoRequestDialogOpen] = useState(false)
+  const [filterNamespace, setFilterNamespace] = useState<string>("all")
+
+  const { data, isLoading, isError, refetch } = useQuery<ResourcesResponseV2>({
+    queryKey: ["governance-resources"],
+    queryFn: () => fetch("/api/governance/resources").then((r) => r.json()),
+    refetchInterval: 30_000,
+  })
+
+  if (isLoading) return <DataState state="loading" onRetry={() => { void refetch() }} />
+  if (isError || !data) return <DataState state="unavailable" onRetry={() => { void refetch() }} />
+
+  const namespaces = data?.namespaces ?? []
+  const topCpuPods = data?.topCpuPods ?? []
+  const topMemPods = data?.topMemPods ?? []
+  const cluster = data?.cluster ?? {
+    cpuPercent: 0,
+    memPercent: 0,
+    totalPods: 0,
+    noRequestPods: 0,
+    basis: "cluster-capacity" as const,
+  }
+  const scopedBasis = isScopedBasis(cluster.basis)
+
+  const noRequestPodsList = data?.noRequestPodsList ?? []
+  const uniqueNamespaces = Array.from(new Set(noRequestPodsList.map((p) => p.namespace))).sort()
+  const filteredNoRequestPods = filterNamespace === "all"
+    ? noRequestPodsList
+    : noRequestPodsList.filter((p) => p.namespace === filterNamespace)
+
+  const handleChartClick = (state: any) => {
+    if (state && state.activeLabel && state.activePayload && state.activePayload.length > 0) {
+      setSelectedNamespace(state.activeLabel)
+      setSelectedPodName(undefined)
+    }
+  }
+
+  const handlePodClick = (namespace: string, podName: string) => {
+    setSelectedNamespace(namespace)
+    setSelectedPodName(podName)
+  }
+
+  const hasNoRequestPods = cluster.noRequestPods > 0
+  const noRequestCardBg = hasNoRequestPods
+    ? "bg-amber-50 border-amber-200 dark:bg-amber-950/30 dark:border-amber-900"
+    : "bg-card border-border"
+  const noRequestTextColor = hasNoRequestPods
+    ? "text-amber-500 dark:text-amber-400"
+    : "text-foreground"
+
+  // Literal translation keys on both branches — see isScopedBasis's comment for why.
+  const usageTooltip = scopedBasis
+    ? t("resources.stat.usageTooltip.visibleRequests")
+    : t("resources.stat.usageTooltip.clusterCapacity")
+
+  const statCards = [
+    {
+      label: scopedBasis ? t("resources.stat.cpuUsageScoped") : t("resources.stat.cpuUsage"),
+      value: `${cluster.cpuPercent.toFixed(1)}%`,
+      color: "text-indigo-600 dark:text-indigo-400",
+      bg: "bg-indigo-50/50 border-indigo-150/40 dark:bg-indigo-950/20 dark:border-indigo-900/40",
+      tooltip: usageTooltip,
+    },
+    {
+      label: scopedBasis ? t("resources.stat.memUsageScoped") : t("resources.stat.memUsage"),
+      value: `${cluster.memPercent.toFixed(1)}%`,
+      color: "text-emerald-600 dark:text-emerald-400",
+      bg: "bg-emerald-50/50 border-emerald-150/40 dark:bg-emerald-950/20 dark:border-emerald-900/40",
+      tooltip: usageTooltip,
+    },
+    {
+      label: t("resources.stat.totalPods"),
+      value: cluster.totalPods,
+      color: "text-foreground",
+      bg: "bg-card border-border"
+    },
+    {
+      label: t("resources.stat.noRequestPods"),
+      value: cluster.noRequestPods,
+      color: noRequestTextColor,
+      bg: noRequestCardBg,
+      caption: hasNoRequestPods ? t("resources.stat.noRequestPodsCaption") : undefined
+    }
+  ]
+
+  return (
+    <div className="space-y-4">
+      {/* 4 Stat Cards */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        {statCards.map((card, idx) => {
+          const isClickable = idx === 3
+          const cardContent = (
+            <>
+              <div>
+                <div className="text-xs font-medium text-muted-foreground">
+                  {card.tooltip ? (
+                    <InfoTooltip>
+                      <InfoTooltipTrigger className="cursor-default underline decoration-dotted decoration-muted-foreground/50">
+                        {card.label}
+                      </InfoTooltipTrigger>
+                      <InfoTooltipContent>{card.tooltip}</InfoTooltipContent>
+                    </InfoTooltip>
+                  ) : (
+                    card.label
+                  )}
+                </div>
+                <div className={`text-2xl font-bold mt-1.5 ${card.color}`}>{card.value}</div>
+              </div>
+              {isClickable ? (
+                <div className="text-[10px] mt-2 font-medium flex items-center justify-between gap-2">
+                  <span className="text-amber-600 dark:text-amber-400 truncate">
+                    {card.caption || ""}
+                  </span>
+                  <span className="text-muted-foreground hover:text-foreground shrink-0 font-semibold transition-colors">
+                    {t("resources.noRequestDialog.action")}
+                  </span>
+                </div>
+              ) : (
+                card.caption && (
+                  <div className="text-[10px] text-muted-foreground mt-2 font-medium">
+                    {card.caption}
+                  </div>
+                )
+              )}
+            </>
+          )
+          const cardClass = `rounded-lg border p-4 flex flex-col justify-between transition-all ${card.bg}`
+
+          return isClickable ? (
+            <button
+              key={idx}
+              type="button"
+              className={`${cardClass} cursor-pointer hover:ring-2 hover:ring-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring`}
+              onClick={() => setNoRequestDialogOpen(true)}
+              aria-label={card.label}
+            >
+              {cardContent}
+            </button>
+          ) : (
+            <div key={idx} className={cardClass}>{cardContent}</div>
+          )
+        })}
+      </div>
+
+      {/* Namespace Bar Chart Card */}
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm font-medium text-foreground">{t("resources.title")}</CardTitle>
+        </CardHeader>
+        <CardContent className="pt-0">
+          {namespaces.length === 0 ? (
+            <DataState state="empty" />
+          ) : (
+            <ResponsiveContainer width="100%" height={300}>
+              <BarChart
+                data={namespaces}
+                margin={{ top: 4, right: 16, left: -10, bottom: 60 }}
+                onClick={handleChartClick}
+                style={{ cursor: "pointer" }}
+              >
+                <XAxis
+                  dataKey="namespace"
+                  tick={{ fontSize: 10, fill: "#94a3b8" }}
+                  axisLine={false}
+                  tickLine={false}
+                  angle={-35}
+                  textAnchor="end"
+                  interval={0}
+                />
+                <YAxis
+                  tick={{ fontSize: 10, fill: "#94a3b8" }}
+                  axisLine={false}
+                  tickLine={false}
+                  domain={[0, 100]}
+                  tickFormatter={(v) => `${v}%`}
+                />
+                <Tooltip
+                  contentStyle={{ fontSize: 12, borderRadius: 8, border: "1px solid #e2e8f0" }}
+                  content={({ active, payload, label }) => {
+                    if (active && payload && payload.length) {
+                      const nsData = payload[0].payload as NamespaceUsageV2
+                      const cpuPercent = nsData.cpuPercent.toFixed(1)
+                      const memPercent = nsData.memoryPercent.toFixed(1)
+                      const cpuUsed = nsData.cpuUsedCores.toFixed(3)
+                      const cpuReq = nsData.cpuRequestedCores.toFixed(3)
+                      const memUsed = toGiB(nsData.memUsedBytes)
+                      const memReq = toGiB(nsData.memRequestedBytes)
+
+                      return (
+                        <div className="bg-popover text-popover-foreground p-3 border rounded-lg shadow-sm space-y-2">
+                          <div className="font-semibold text-xs border-b pb-1">{label}</div>
+                          <div className="space-y-1 text-xs">
+                            <div className="flex items-center gap-4 justify-between">
+                              <span className="flex items-center gap-1.5 font-medium">
+                                <span className="w-2 h-2 rounded-full bg-[#6366f1]" />
+                                {t("resources.cpu")}
+                              </span>
+                              <span className="font-semibold">{cpuPercent}%</span>
+                            </div>
+                            <div className="text-[10px] text-muted-foreground pl-3.5">
+                              {cpuUsed} / {cpuReq} cores
+                            </div>
+
+                            <div className="flex items-center gap-4 justify-between mt-1.5">
+                              <span className="flex items-center gap-1.5 font-medium">
+                                <span className="w-2 h-2 rounded-full bg-[#10b981]" />
+                                {t("resources.memory")}
+                              </span>
+                              <span className="font-semibold">{memPercent}%</span>
+                            </div>
+                            <div className="text-[10px] text-muted-foreground pl-3.5">
+                              {memUsed} / {memReq} GiB
+                            </div>
+
+                            <div className="text-[10px] text-muted-foreground border-t pt-1.5 mt-1.5">
+                              Pods: {nsData.podCount} (unconfigured: {nsData.noRequestPods})
+                            </div>
+                          </div>
+                        </div>
+                      )
+                    }
+                    return null
+                  }}
+                />
+                <Legend wrapperStyle={{ fontSize: 11, paddingTop: 8 }} />
+                <Bar dataKey="cpuPercent" name={t("resources.cpu")} fill="#6366f1" radius={[3, 3, 0, 0]} cursor="pointer" />
+                <Bar dataKey="memoryPercent" name={t("resources.memory")} fill="#10b981" radius={[3, 3, 0, 0]} cursor="pointer" />
+              </BarChart>
+            </ResponsiveContainer>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Top 10 CPU / Memory Tables Grid */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {/* Top 10 CPU Table */}
+        <Card className="p-4 border">
+          <h3 className="font-semibold text-sm mb-3 flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-[#6366f1]" />
+            {t("resources.topCpuTitle")}
+          </h3>
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs text-left">
+              <thead>
+                <tr className="border-b text-muted-foreground pb-2">
+                  <th className="pb-2">{t("resources.table.namespace")}</th>
+                  <th className="pb-2">{t("resources.table.pod")}</th>
+                  <th className="pb-2 text-right">{t("resources.table.usage")}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {topCpuPods.length === 0 ? (
+                  <tr>
+                    <td colSpan={3}><DataState state="empty" /></td>
+                  </tr>
+                ) : (
+                  topCpuPods.map((pod, idx) => (
+                    <tr key={idx} className="border-b last:border-0 hover:bg-muted/40 transition-colors">
+                      <td className="py-2 pr-2 font-medium max-w-[120px] truncate" title={pod.namespace}>{pod.namespace}</td>
+                      <td className="py-2 pr-2 font-mono text-[11px] truncate max-w-[180px]" title={pod.pod}><button type="button" className="text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" onClick={() => handlePodClick(pod.namespace, pod.pod)}>{pod.pod}</button></td>
+                      <td className="py-2 text-right font-mono text-[11px] font-semibold text-foreground">
+                        {pod.cpuCores.toFixed(3)} cores
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+
+        {/* Top 10 Memory Table */}
+        <Card className="p-4 border">
+          <h3 className="font-semibold text-sm mb-3 flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-[#10b981]" />
+            {t("resources.topMemTitle")}
+          </h3>
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs text-left">
+              <thead>
+                <tr className="border-b text-muted-foreground pb-2">
+                  <th className="pb-2">{t("resources.table.namespace")}</th>
+                  <th className="pb-2">{t("resources.table.pod")}</th>
+                  <th className="pb-2 text-right">{t("resources.table.usage")}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {topMemPods.length === 0 ? (
+                  <tr>
+                    <td colSpan={3}><DataState state="empty" /></td>
+                  </tr>
+                ) : (
+                  topMemPods.map((pod, idx) => (
+                    <tr key={idx} className="border-b last:border-0 hover:bg-muted/40 transition-colors">
+                      <td className="py-2 pr-2 font-medium max-w-[120px] truncate" title={pod.namespace}>{pod.namespace}</td>
+                      <td className="py-2 pr-2 font-mono text-[11px] truncate max-w-[180px]" title={pod.pod}><button type="button" className="text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" onClick={() => handlePodClick(pod.namespace, pod.pod)}>{pod.pod}</button></td>
+                      <td className="py-2 text-right font-mono text-[11px] font-semibold text-foreground">
+                        {formatBytes(pod.memBytes)}
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      </div>
+
+      <ResourceDetailDrawer
+        namespace={selectedNamespace ?? ""}
+        open={!!selectedNamespace}
+        onOpenChange={(open) => {
+          if (!open) {
+            setSelectedNamespace(null)
+            setSelectedPodName(undefined)
+          }
+        }}
+        initialPodName={selectedPodName}
+      />
+
+      <Dialog open={noRequestDialogOpen} onOpenChange={setNoRequestDialogOpen}>
+        <DialogContent className="max-w-2xl max-h-[85vh] flex flex-col p-6">
+          <DialogHeader className="pb-2">
+            <DialogTitle className="text-lg font-semibold flex items-center gap-2">
+              <span className="w-2.5 h-2.5 rounded-full bg-amber-500" />
+              {t("resources.noRequestDialog.title")}
+            </DialogTitle>
+            <DialogDescription className="text-xs text-muted-foreground">
+              {t("resources.noRequestDialog.summary", { count: filteredNoRequestPods.length })}
+            </DialogDescription>
+          </DialogHeader>
+
+          {/* Filter Dropdown */}
+          <div className="flex justify-end items-center gap-2 mb-3">
+            <span className="text-xs text-muted-foreground">{t("resources.table.namespace")}:</span>
+            <select
+              value={filterNamespace}
+              onChange={(e) => setFilterNamespace(e.target.value)}
+              className="text-xs bg-background border border-input rounded-md px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-amber-500"
+            >
+              <option value="all">{t("resources.noRequestDialog.all")}</option>
+              {uniqueNamespaces.map((ns) => (
+                <option key={ns} value={ns}>
+                  {ns}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Table Container */}
+          <div className="flex-1 min-h-0 overflow-y-auto border border-border rounded-lg max-h-[50vh]">
+            {filteredNoRequestPods.length === 0 ? (
+              <div className="py-12 text-center text-xs text-muted-foreground italic">
+                {t("resources.noRequestDialog.empty")}
+              </div>
+            ) : (
+              <table className="w-full text-xs text-left border-collapse">
+                <thead className="bg-muted/50 sticky top-0 border-b z-10">
+                  <tr>
+                    <th className="p-3 font-semibold text-muted-foreground">
+                      {t("resources.table.namespace")}
+                    </th>
+                    <th className="p-3 font-semibold text-muted-foreground">
+                      {t("resources.table.pod")}
+                    </th>
+                    <th className="p-3 font-semibold text-muted-foreground">
+                      {t("resources.noRequestDialog.missingContainers")}
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y">
+                  {filteredNoRequestPods.map((pod, idx) => (
+                    <tr key={idx} className="hover:bg-muted/40 transition-colors"
+                    >
+                      <td className="p-3 font-medium text-foreground">
+                        <button type="button" className="text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" onClick={() => { setNoRequestDialogOpen(false); handlePodClick(pod.namespace, pod.pod) }}>{pod.namespace}</button>
+                      </td>
+                      <td className="p-3 font-mono text-[11px] text-foreground">
+                        {pod.pod}
+                      </td>
+                      <td className="p-3 text-muted-foreground font-mono text-[10px]">
+                        {pod.containers.join(", ")}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+    </div>
+  )
+}

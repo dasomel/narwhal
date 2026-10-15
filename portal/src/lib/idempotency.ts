@@ -1,0 +1,205 @@
+/**
+ * Idempotency-key dedup store for /api/events/ingest (portal#11).
+ *
+ * The store is an injectable interface (not a direct ioredis call) so the dedup
+ * decision — claimIdempotencyKey — is unit-testable with an in-memory fake, the
+ * same way src/lib/gitea.test.ts keeps the pure logic testable and leaves the
+ * real Valkey-touching half to be verified by hand against a live instance.
+ */
+import { getValkey } from "./valkey"
+
+const KEY_PREFIX = "events:idempotency:"
+export const IDEMPOTENCY_TTL_SECONDS = 24 * 60 * 60
+
+export function idempotencyStoreKey(key: string): string {
+  return `${KEY_PREFIX}${key}`
+}
+
+export interface IdempotencyStore {
+  /**
+   * Atomically claims `key` with `value` if it hasn't been claimed yet.
+   * Returns `null` if this call claimed it (first time — proceed).
+   * Returns the previously-claimed value if `key` was already claimed (duplicate — short-circuit).
+   */
+  claim(key: string, value: string, ttlSeconds: number): Promise<string | null>
+  /**
+   * Overwrites `key`'s value after the caller has finished acting on its claim —
+   * for a producer whose real result id (e.g. an Alertmanager silence id) isn't
+   * known until after the claim succeeds, unlike /api/events/ingest which mints its
+   * own id up front and claims with that. Best-effort: a failure here only means a
+   * later duplicate falls through to the placeholder value claim() stored instead
+   * of the real result, not that dedup breaks entirely.
+   */
+  fulfill(key: string, value: string, ttlSeconds: number): Promise<void>
+}
+
+/**
+ * In-memory fallback dedup store when Valkey is unavailable.
+ * Bounded by maxEntries with TTL-based eviction to prevent memory growth.
+ */
+export class InMemoryIdempotencyStore implements IdempotencyStore {
+  // `degraded: true` means this entry was claimed while Valkey was unavailable
+  // and Valkey has never seen it — distinct from a `degraded: false` entry,
+  // which is only a mirror of a claim Valkey already holds (see fulfill()).
+  // The distinction is what lets ValkeyIdempotencyStore.claim() recognize a
+  // post-recovery redelivery of a still-unreconciled key (portal#178 gap 2)
+  // without also shadowing Valkey for keys it already knows about.
+  private map = new Map<string, { value: string; expiresAt: number; degraded: boolean }>()
+  private maxEntries: number
+
+  constructor(maxEntries = 5000) {
+    this.maxEntries = maxEntries
+  }
+
+  private sweep(now: number): void {
+    for (const [k, v] of this.map.entries()) {
+      if (v.expiresAt <= now) {
+        this.map.delete(k)
+      }
+    }
+  }
+
+  /**
+   * Sweeps expired entries, evicts the oldest entry if at capacity, then writes
+   * key/value. Shared by claim() and fulfill() — fulfill() is called on every
+   * successful Valkey claim by ValkeyIdempotencyStore (as a fallback mirror), so
+   * without the same bound here the fallback map grows unbounded while Valkey
+   * stays healthy.
+   */
+  private setBounded(key: string, value: string, ttlSeconds: number, now: number, degraded: boolean): void {
+    this.sweep(now)
+    if (!this.map.has(key) && this.map.size >= this.maxEntries) {
+      const oldest = this.map.keys().next().value
+      if (oldest) this.map.delete(oldest)
+    }
+    this.map.set(key, { value, expiresAt: now + ttlSeconds * 1000, degraded })
+  }
+
+  async claim(key: string, value: string, ttlSeconds: number): Promise<string | null> {
+    const now = Date.now()
+    const existing = this.map.get(key)
+    if (existing && existing.expiresAt > now) {
+      return existing.value
+    }
+    this.setBounded(key, value, ttlSeconds, now, true)
+    return null
+  }
+
+  async fulfill(key: string, value: string, ttlSeconds: number): Promise<void> {
+    this.setBounded(key, value, ttlSeconds, Date.now(), false)
+  }
+
+  /**
+   * Returns the value of a key claimed while Valkey was unavailable and still
+   * unexpired, without mutating anything — or `null` if there is no such entry
+   * (never claimed, expired, or only ever a mirror of a Valkey-known key).
+   * Used by ValkeyIdempotencyStore.claim() to catch a redelivery whose
+   * original claim never reached Valkey: Valkey's own `SET NX` would
+   * otherwise see no record of the key and wrongly treat it as new
+   * (portal#178 gap 2).
+   */
+  peekDegraded(key: string): string | null {
+    const existing = this.map.get(key)
+    if (existing?.degraded && existing.expiresAt > Date.now()) return existing.value
+    return null
+  }
+
+  clear(): void {
+    this.map.clear()
+  }
+
+  size(): number {
+    return this.map.size
+  }
+}
+
+/**
+ * Valkey-backed store: SET key value EX ttl NX, falling back to GET on a miss to
+ * report the existing value. When Valkey is unavailable, falls back to an in-memory
+ * store so deduplication remains active in degraded mode.
+ */
+export class ValkeyIdempotencyStore implements IdempotencyStore {
+  private inMemoryFallback: InMemoryIdempotencyStore
+
+  constructor(fallback?: InMemoryIdempotencyStore) {
+    this.inMemoryFallback = fallback ?? new InMemoryIdempotencyStore()
+  }
+
+  async claim(key: string, value: string, ttlSeconds: number): Promise<string | null> {
+    // A key claimed only in the in-memory fallback during a Valkey outage never
+    // reached Valkey, so once Valkey recovers its own SET NX would see no
+    // record of the key and wrongly treat a redelivery as the first claim —
+    // re-ingesting it and overwriting the fallback's original value with the
+    // duplicate's (portal#178 gap 2). Check the unreconciled fallback first.
+    const unreconciled = this.inMemoryFallback.peekDegraded(key)
+    if (unreconciled !== null) return unreconciled
+
+    try {
+      const client = getValkey()
+      const result = await client.set(key, value, "EX", ttlSeconds, "NX")
+      if (result === "OK") {
+        await this.inMemoryFallback.fulfill(key, value, ttlSeconds)
+        return null
+      }
+      const existing = await client.get(key)
+      // existing === null here would mean the key expired between SET NX and GET —
+      // treat that race as "not a duplicate" (this call effectively wins).
+      return existing
+    } catch {
+      // Valkey unavailable — use in-memory fallback store
+      return this.inMemoryFallback.claim(key, value, ttlSeconds)
+    }
+  }
+
+  async fulfill(key: string, value: string, ttlSeconds: number): Promise<void> {
+    try {
+      const client = getValkey()
+      await client.set(key, value, "EX", ttlSeconds)
+    } catch {
+      // Valkey error — fail-open to in-memory fallback
+    }
+    await this.inMemoryFallback.fulfill(key, value, ttlSeconds)
+  }
+
+  getFallback(): InMemoryIdempotencyStore {
+    return this.inMemoryFallback
+  }
+}
+
+const defaultStore = new ValkeyIdempotencyStore()
+let storeOverride: IdempotencyStore | null = null
+
+export function getIdempotencyStore(): IdempotencyStore {
+  return storeOverride ?? defaultStore
+}
+
+export function setIdempotencyStoreForTesting(store: IdempotencyStore | null): void {
+  storeOverride = store
+}
+
+/**
+ * Claims an idempotency key against `store`. Returns the id of the original
+ * event when `key` is a duplicate within the TTL window, or `null` when this is
+ * the first time `key` has been seen (the caller should proceed).
+ */
+export async function claimIdempotencyKey(
+  store: IdempotencyStore,
+  key: string,
+  value: string,
+  ttlSeconds: number = IDEMPOTENCY_TTL_SECONDS,
+): Promise<string | null> {
+  return store.claim(idempotencyStoreKey(key), value, ttlSeconds)
+}
+
+/**
+ * Overwrites a previously-claimed key with its real result — see
+ * IdempotencyStore.fulfill for when this is needed over a plain claim().
+ */
+export async function fulfillIdempotencyKey(
+  store: IdempotencyStore,
+  key: string,
+  value: string,
+  ttlSeconds: number = IDEMPOTENCY_TTL_SECONDS,
+): Promise<void> {
+  return store.fulfill(idempotencyStoreKey(key), value, ttlSeconds)
+}

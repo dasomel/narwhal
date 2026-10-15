@@ -1,0 +1,50 @@
+# Install-time and build-time dependencies are executable inputs, not just data.
+#
+# A dependency's install script runs with the privileges of whoever ran `pnpm install`
+# — a developer's laptop, or a CI job holding a registry token. It runs whether or not
+# application code ever imports the package, and a transitive dependency is enough.
+# That is the shape of the Rust incident #66 references, and npm has the same shape.
+
+# NOTHING may run an install script. pnpm 10 already defaults to blocking them, but a
+# default is not a policy: it can change between majors, and `pnpm approve-builds`
+# writes exceptions into this same file. An explicit empty allowlist states the intent,
+# so adding an exception is a visible diff someone has to justify rather than a config
+# drift nobody notices.
+onlyBuiltDependencies: []
+
+# Kept for the record: these two ASK to run build scripts and are denied. sharp is
+# excluded from the image entirely (next.config.ts), and unrs-resolver is dev tooling.
+ignoredBuiltDependencies:
+  - sharp
+  - unrs-resolver
+
+# The cooling window is NOT set here, deliberately. pnpm's `minimumReleaseAge` applies to
+# the whole graph at resolution time, not to the versions a change actually introduces, so
+# one young transitive dependency blocks every lockfile operation until it matures:
+#
+#   ERR_PNPM_NO_MATURE_MATCHING_VERSION  Version 1.2.5 (released 3 days ago) of rolldown
+#   does not meet the minimumReleaseAge constraint
+#   This error happened while installing the dependencies of vite@8.2.1
+#
+# rolldown was already in this lockfile and already reviewed; pnpm still refused. With it
+# set, every Dependabot update failed — including the security ones, which is the opposite
+# of the intent. `scripts/check-lockfile-cooling.mjs` enforces the same 7 days on the
+# lockfile delta instead: a version that is new to the graph must have matured, one that is
+# already in it re-resolves freely.
+
+# `frozenLockfile` is NOT set here either, for the same class of reason as above: it
+# applies to every install, including the ones whose whole purpose is to rewrite the
+# lockfile. Dependabot bumps package.json and then regenerates the lockfile, so it fails
+# on its own edit:
+#
+#   corepack pnpm install --lockfile-only
+#   ERR_PNPM_OUTDATED_LOCKFILE  Cannot install with "frozen-lockfile" because
+#   pnpm-lock.yaml is not up to date with package.json
+#     - @tanstack/react-query (lockfile: ^5.95.2, manifest: ^5.101.4)
+#
+# What actually needs guaranteeing is that no INSTALL in CI or in the image resolves
+# fresh versions, and `scripts/check-supply-chain-policy.mjs` asserts exactly that by
+# reading every install line in .github/workflows/ and the Dockerfiles. A missing
+# `--frozen-lockfile` fails the check at review time, which is earlier and more legible
+# than failing at run time — and it does not also break the one install that is supposed
+# to change the lockfile.

@@ -1,0 +1,48 @@
+# Dev image (Debian slim) — Next.js HMR inside cluster for Skaffold file sync.
+#
+# WHY debian, not alpine: Skaffold file-sync extracts synced files into the
+# container using GNU tar. Alpine's busybox tar makes sync fail with
+# "didn't sync any files", forcing a full rebuild+redeploy on every src change
+# (and `apk add tar` does not reliably install GNU tar over busybox's applet).
+# Debian ships GNU tar by default, so HMR file-sync works.
+#
+# digest pin (운영 배포 시): docker pull node:22-slim; docker images --digests node | grep 22-slim
+FROM node:22-slim AS base
+ENV PNPM_HOME="/pnpm"
+ENV PATH="$PNPM_HOME:$PATH"
+# CA: narwhal-root-ca-secret is volume-mounted at runtime; the deployment sets
+# NODE_EXTRA_CA_CERTS=/etc/ssl/narwhal/ca.crt (overrides the value below).
+ENV NODE_EXTRA_CA_CERTS=/etc/ssl/narwhal/ca.crt
+ENV NEXT_TELEMETRY_DISABLED=1
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends ca-certificates curl \
+ && rm -rf /var/lib/apt/lists/* \
+ && corepack enable
+
+WORKDIR /app
+
+# H-10: non-root user
+RUN groupadd --system --gid 1001 nodejs \
+ && useradd --system --uid 1001 --gid nodejs --create-home --home-dir /home/nextjs nextjs
+
+COPY package.json bun.lock* pnpm-lock.yaml* ./
+RUN pnpm install --frozen-lockfile
+
+# H-10: 파일 소유권 nextjs:nodejs
+COPY --chown=nextjs:nodejs . .
+
+# /app is created by WORKDIR as root; make it (+ .next) writable by nextjs so
+# `next dev` can create /app/.next/dev at runtime under the non-root user.
+RUN mkdir -p /app/.next && chown -R nextjs:nodejs /app
+
+USER nextjs
+
+EXPOSE 3000 9229
+
+# H-10: HEALTHCHECK
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+  CMD curl -fsS http://localhost:3000/ >/dev/null || exit 1
+
+CMD ["sh", "-c", "pnpm dev"]
+# NOTE: dev pod memory raised to 3Gi (deploy/skaffold-dev-portal.yaml); next dev needs >2Gi under load
+# protos/ + @grpc deps for hubble-relay streaming (rebuild trigger 2026-06-11)

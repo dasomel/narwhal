@@ -1,0 +1,152 @@
+# Narwhal IDP Portal
+
+English | [한국어](README-ko.md)
+
+[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+
+Management portal (Next.js) for the **Narwhal Kubernetes Internal Developer Platform (IDP)**
+cluster. Sibling repo `../narwhal` provisions the cluster itself (GitOps, SSO, monitoring,
+storage); this repo is the web UI operators and developers use to observe and operate it.
+
+Served in-cluster at **https://portal.local.narwhal.internal** via the cluster's APISIX gateway.
+
+## Key Features
+
+- **Dashboard** — cluster health, ArgoCD app status, alerts (`src/app/(dashboard)/page.tsx`)
+- **Onboarding** — kubeconfig issuance, getting-started guide (`onboarding/`)
+- **Catalog / My Apps** — deployed service catalog, per-user app view (`catalog/`, `my-apps/`)
+- **Nodes** — cluster node inventory and status (`nodes/`)
+- **Cost** — cost visibility (`cost/`)
+- **Compliance / Security / Governance** — policy, RBAC, and audit views (`compliance/`,
+  `security/`, `governance/`)
+- **Architecture / Templates / Tools** — service graph, scaffolding templates, platform tools
+  grid (`architecture/`, `templates/`, `tools/`)
+- **Settings** — users, routes, certificates, policies
+
+Routes live under `src/app/(dashboard)/`; backing API routes under `src/app/api/`.
+
+## Screenshots
+
+> Placeholder gallery — drop your captures into [`docs/images/`](docs/images/) using the filenames shown ([details & tips](docs/images/README.md)); they render automatically.
+
+| Dashboard | Architecture |
+| :---: | :---: |
+| ![Dashboard](docs/images/dashboard.png) | ![Architecture](docs/images/architecture.png) |
+| _Real-time metrics, ArgoCD apps & alerts_ | _Nodes, namespaces & service graph_ |
+| **Security** | **Cost** |
+| ![Security](docs/images/security.png) | ![Cost](docs/images/cost.png) |
+| _Trivy vulnerability reports_ | _Namespace cost breakdown_ |
+| **Governance** | **Catalog** |
+| ![Governance](docs/images/governance.png) | ![Catalog](docs/images/catalog.png) |
+| _Scorecard, DORA & distribution_ | _Self-service app catalog_ |
+
+## Tech Stack
+
+| Layer | Technology |
+|-------|------------|
+| Framework | Next.js 16 (App Router) + React 19 |
+| Styling | TailwindCSS 4 + shadcn/ui |
+| Data | TanStack Query (server) + Zustand (client) |
+| Auth | NextAuth 5 (beta) + Keycloak OIDC |
+| Cache | Valkey (ioredis) |
+| Secrets | OpenBao Agent Injector |
+| Package manager | pnpm (`pnpm@10.27.0`, pinned via `packageManager`) |
+| Test | Vitest unit/API regression suite + Playwright browser auth checks |
+
+## Quick Start
+
+```bash
+pnpm install
+pnpm dev
+```
+
+Open http://localhost:3000. For a clean-install secrets bootstrap
+(`AUTH_SECRET`, `VALKEY_PASSWORD`, Keycloak/OpenBao/ArgoCD credentials), see
+[docs/security-clean-install.md](./docs/security-clean-install.md) and run
+`bash scripts/bootstrap-secrets.sh` first.
+
+## Build & Deploy
+
+### Host build
+
+```bash
+pnpm build   # next build
+pnpm start   # next start
+```
+
+A production Docker image can also be built locally with `make build` / `make push` / `make all`
+(requires Docker Desktop; pushes to `harbor.local.narwhal.internal`).
+
+### In-cluster Kaniko build (no local Docker required)
+
+The cluster builds and pushes images itself via Kaniko, so a local Docker daemon is never
+required for a normal deploy:
+
+```bash
+./scripts/kaniko-build.sh
+```
+
+This pushes the current source to the in-cluster Gitea, applies the Kaniko `Job` template
+(`deploy/kaniko-build-job.yaml`), and waits for the build to push
+`harbor.local.narwhal.internal/library/narwhal-portal:latest`. Pass `--skip-push` to reuse
+source already pushed to Gitea.
+
+### Live development (Skaffold + HMR)
+
+For iterative in-cluster development with hot reload (no local Docker/Node run needed at all),
+see **[docs/local-dev.md](./docs/local-dev.md)** — covers `pnpm run dev:skaffold`,
+debugging with the Node inspector, and IntelliJ/VS Code attach.
+
+## Development Commands
+
+```bash
+pnpm dev              # local dev server
+pnpm build            # production build
+pnpm run dev:skaffold # in-cluster HMR dev loop (Skaffold + Kaniko)
+pnpm run harbor:setup # one-time Kaniko/Harbor auth secret bootstrap
+pnpm typecheck        # type check
+pnpm test             # unit/API tests (vitest)
+pnpm lint             # eslint
+pnpm test:e2e         # browser login/session and API permission boundaries
+npx shadcn@latest add {component}  # add a shadcn/ui component
+```
+
+The Unit Test Gate runs typecheck, lint, unit/API tests and browser E2E on application
+and test-input changes. Browser tests use development-only mock login with real
+session cookies; they verify anonymous, Viewer, Developer and Cluster Admin mutation
+permissions without production credentials or upstream mutations. They do not prove
+Keycloak SSO, tenant-scoped views or successful provider-backed mutations (#18).
+
+## Related Docs
+
+- [docs/architecture.md](./docs/architecture.md) — system context, application layers, request flow,
+  and trust boundaries
+- [docs/local-dev.md](./docs/local-dev.md) — full Skaffold/Kaniko dev workflow, troubleshooting
+- [docs/security-clean-install.md](./docs/security-clean-install.md) — clean-install secrets and
+  security hardening checklist
+- `AGENTS.md` — agent contract (gotchas, boundaries, verification); `CLAUDE.md` is a thin Claude Code bridge that imports it
+
+## License
+
+Apache License 2.0 — see [LICENSE](LICENSE).
+
+This repository vendors no dependency, but the published container image
+`ghcr.io/dasomel/narwhal-portal` redistributes its production npm packages, which carries their
+attribution obligations. Two files satisfy them and both are copied into the image:
+
+| File | What it is |
+|---|---|
+| [`NOTICE`](NOTICE) | Human-readable summary — principal components, what is redistributed where, trademarks |
+| [`THIRD-PARTY-NOTICES.md`](THIRD-PARTY-NOTICES.md) | Generated per-package record with the verbatim license text of every production dependency |
+
+`THIRD-PARTY-NOTICES.md` is generated, never hand-edited:
+
+```bash
+pnpm run notices    # regenerate; CI fails if the committed file is stale
+```
+
+The generator exists because `next build` cannot be relied on to carry license files — its file
+tracing keeps only what the server loads, so a 1.0.17 build had 631 `LICENSE` files under
+`node_modules` and 3 under `.next/standalone`. Image optimization is disabled and `sharp` is
+excluded from tracing so the image does not redistribute LGPL-licensed libvips for an optimizer
+the portal never calls; see [`NOTICE`](NOTICE).

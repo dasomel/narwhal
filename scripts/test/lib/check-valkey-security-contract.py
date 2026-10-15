@@ -202,6 +202,9 @@ def validate(chart: str, bootstrap: str) -> None:
     'VALKEY_TLS="true"',
     "--owned-key VALKEY_PASSWORD",
     "--owned-key VALKEY_INSECURE_PRODUCTION",
+    'stale_key="VALKEY_INSECURE_PRODUCTION"',
+    "kubectl patch secret narwhal-portal-secrets -n devtools --type=json",
+    "still present in narwhal-portal-secrets after removal",
   ]
   missing = [item for item in required_bootstrap if item not in bootstrap]
   if missing:
@@ -302,6 +305,8 @@ def main() -> None:
     (chart, bootstrap.replace("EOF\n}\napply_valkey_auth", "EOF\necho 'user default on nopass' >> \"${valkey_auth_dir}/users.acl\"\n}\napply_valkey_auth", 1), "reviewed heredoc"),
     (chart, bootstrap.replace("*AlreadyExists*)", "*NeverMatches*)", 1), "AlreadyExists"),
     (chart, bootstrap.replace("exists without a password; refusing to regenerate", "exists", 1), "refusing to regenerate"),
+    (chart, bootstrap.replace("kubectl patch secret narwhal-portal-secrets -n devtools --type=json", "kubectl get secret narwhal-portal-secrets -n devtools -o name", 1), "missing security contract fragments"),
+    (chart, bootstrap.replace("still present in narwhal-portal-secrets after removal", "removed", 1), "missing security contract fragments"),
     (chart, bootstrap.replace("  --ignore-not-found -o name)", "  --ignore-not-found -o jsonpath='{.data.password}')", 1), "existence probe"),
     (chart, bootstrap.replace('users.acl" 2>&1 >/dev/null)"; then', 'users.acl" --dry-run=client -o yaml 2>&1 >/dev/null)"; then', 1), "atomic"),
   ]

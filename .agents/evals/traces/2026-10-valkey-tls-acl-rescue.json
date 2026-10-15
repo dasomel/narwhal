@@ -11,7 +11,8 @@
       ".agents/evals/traces/2026-10-valkey-tls-acl-rescue.json",
       "scripts/airgap/lib/image-digests.tsv",
       "scripts/airgap/images.txt",
-      "scripts/test/regression-check-kakao.sh"
+      "scripts/test/regression-check-kakao.sh",
+      "scripts/cluster/06-phase2-start.sh"
     ]
   },
   "events": [
@@ -28,14 +29,14 @@
     {
       "id": "e3",
       "type": "bug_fix",
-      "summary": "Valkey serves TLS only with ACL user portal and default user off; bindings inject rediss:// and VALKEY_TLS=true, drop VALKEY_INSECURE_PRODUCTION, abort on secret read errors; check renumbered R247 after finding R240 collision. Review fixes: password generated newline-free (tr -d) and validated as 64 hex for generated and preserved values (re-tested against real Valkey: exact Secret bytes authenticate); Certificate duration/renewBefore set because Valkey 8.1.10 lacks tls-auto-reload-interval (CONFIG GET tls-* confirmed); R247 now parses Valkey flags and users.acl (duplicate flags, allowlist, no nopass/allcommands/+@ categories) with 30 mutations (round 2: effective argv = command + args, flag allowlist, no args/env, single valkey-server launcher, aclfile volume path pinned, single users.acl write), each asserting its rejection reason and proven accepted when the new checks are disabled in a temp copy. After two sonnet reviews, a Codex critic found two further bootstrap defects: an existing-but-incomplete Secret was treated as absent and its password regenerated, and first creation could race via apply. Fixed with a separate existence probe, abort on an incomplete Secret, and atomic kubectl create with an AlreadyExists re-read; exercised with a fake kubectl stub (not a real API server); R247 now has 34 mutations."
+      "summary": "Valkey serves TLS only with ACL user portal and default user off; bindings inject rediss:// and VALKEY_TLS=true, drop VALKEY_INSECURE_PRODUCTION, abort on secret read errors; check renumbered R247 after finding R240 collision. Review fixes: password generated newline-free (tr -d) and validated as 64 hex for generated and preserved values (re-tested against real Valkey: exact Secret bytes authenticate); Certificate duration/renewBefore set because Valkey 8.1.10 lacks tls-auto-reload-interval (CONFIG GET tls-* confirmed); R247 now parses Valkey flags and users.acl (duplicate flags, allowlist, no nopass/allcommands/+@ categories) with 30 mutations (round 2: effective argv = command + args, flag allowlist, no args/env, single valkey-server launcher, aclfile volume path pinned, single users.acl write), each asserting its rejection reason and proven accepted when the new checks are disabled in a temp copy. After two sonnet reviews, a Codex critic found two further bootstrap defects: an existing-but-incomplete Secret was treated as absent and its password regenerated, and first creation could race via apply. Fixed with a separate existence probe, abort on an incomplete Secret, and atomic kubectl create with an AlreadyExists re-read; exercised with a fake kubectl stub (not a real API server); R247 now has 34 mutations. Final review: 13-2 made critical in 06-phase2-start.sh (exit 3 = ARGOCD_TOKEN-only is tolerated; R249); VALKEY_INSECURE_PRODUCTION removed explicitly with kubectl patch and verified absent (not exercised against a real API server)."
     },
     {
       "id": "e4",
       "type": "verification",
       "status": "passed",
-      "scope": "Valkey TLS/ACL/secret/ingress contract with 34 negative mutations (static; live TLS and portal connectivity unverified)",
-      "summary": "check-valkey-security-contract.py passes after merging origin/main and the 1.1.0 repin.",
+      "scope": "Valkey TLS/ACL/secret/ingress contract with 36 negative mutations incl. explicit VALKEY_INSECURE_PRODUCTION removal (static; live unverified)",
+      "summary": "check-valkey-security-contract.py passes (36 negative mutations) after merging origin/main (R248 kept alongside R247), the 1.1.0 repin, critical 13-2 and explicit stale-key removal.",
       "evidence": [
         "test:python3 scripts/test/lib/check-valkey-security-contract.py",
         "runtime:command-exit-0"
@@ -60,7 +61,7 @@
       "type": "regression_verification",
       "status": "passed",
       "scope": "full static regression suite incl. R210 (pin policy) and R247",
-      "summary": "regression-check-kakao.sh --static after merging origin/main and the repin: passed 373, failed 0 (R210 now requires a single pin >= 1.1.0; R247 unchanged).",
+      "summary": "regression-check-kakao.sh --static after the second origin/main merge: passed 375 failed 0 (incl. R247, R248, R249); R249 (13-2 critical in Phase 2, exit 3 tolerated) added and shown failing when 13-2 is dropped from CRITICAL_SCRIPTS.",
       "evidence": [
         "test:./scripts/test/regression-check-kakao.sh --static",
         "runtime:command-exit-0"

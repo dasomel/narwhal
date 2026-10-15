@@ -503,8 +503,8 @@ fi
 # looked healthy and the failure surfaced only when someone asked why the portal was
 # blank. An absent key is honest — the portal fails the same way, but the secret no
 # longer claims to hold a credential, and this script says so and exits non-zero.
-# 13-2 is non-critical in 06-phase2-start.sh, so a non-zero exit warns without
-# aborting Phase 2.
+# 13-2 is critical in 06-phase2-start.sh; exit 3 (Secrets applied, only ARGOCD_TOKEN
+# missing) is the single non-zero result Phase 2 tolerates, every other failure aborts.
 ARGOCD_TOKEN_OK=true
 if [ -z "${ARGOCD_TOKEN}" ]; then
   ARGOCD_TOKEN_OK=false
@@ -732,6 +732,31 @@ else
   exit 1
 fi
 
+# D5: portal 1.1.0 refuses to start its Valkey client when VALKEY_INSECURE_PRODUCTION is
+# defined at all (even "false"). `kubectl apply` only prunes it if the last-applied
+# annotation lists it, which an older secret created by other means may not, so remove it
+# explicitly and verify. Idempotent: guarded by a no-pipe existence read. Escape hatch:
+# none needed, the key has no supported use.
+stale_key="VALKEY_INSECURE_PRODUCTION"
+stale_present="$(kubectl get secret narwhal-portal-secrets -n devtools \
+  -o "jsonpath={.data.${stale_key}}")" || {
+  echo "ERROR: could not re-read narwhal-portal-secrets to check ${stale_key}" >&2
+  exit 1
+}
+if [ -n "${stale_present}" ]; then
+  kubectl patch secret narwhal-portal-secrets -n devtools --type=json \
+    -p "[{\"op\":\"remove\",\"path\":\"/data/${stale_key}\"}]" || {
+    echo "ERROR: could not remove ${stale_key} from narwhal-portal-secrets" >&2
+    exit 1
+  }
+  stale_present="$(kubectl get secret narwhal-portal-secrets -n devtools \
+    -o "jsonpath={.data.${stale_key}}")" || exit 1
+  if [ -n "${stale_present}" ]; then
+    echo "ERROR: ${stale_key} still present in narwhal-portal-secrets after removal" >&2
+    exit 1
+  fi
+fi
+
 echo ""
 echo "narwhal-portal-secrets 생성 완료"
 echo ""
@@ -753,10 +778,10 @@ echo "NOTE: TUNING_JOB_IMAGE는 digest pin 없이 :latest 태그."
 echo "  프로덕션에서는 @sha256:<64hex> digest로 교체 필요."
 
 # Exit non-zero when the ArgoCD token never landed, so the Phase 2 log carries a
-# failure rather than a success. 13-2 is non-critical, so this warns and Phase 2
-# continues — the portal is simply missing its ArgoCD integration until re-run.
+# failure rather than a success. Exit 3 is warned about and Phase 2 continues — the
+# portal is simply missing its ArgoCD integration until re-run.
 if [ "${ARGOCD_TOKEN_OK}" != "true" ]; then
   echo ""
   echo "RESULT: ARGOCD_TOKEN 없이 완료 — 포털의 ArgoCD 위젯은 동작하지 않는다." >&2
-  exit 1
+  exit 3
 fi

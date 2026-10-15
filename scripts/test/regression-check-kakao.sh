@@ -3087,6 +3087,21 @@ assert line in s and not any(x.startswith("MAX_ROUNDS=") and ":-3" in x for x in
     python3 scripts/test/lib/check-accelerator-profiles.py --mutation-verify
   check R247 "portal Valkey TLS, ACL, dedicated Secret, and ingress remain hardened (S5)" \
     python3 scripts/test/lib/check-valkey-security-contract.py
+  check R249 "Phase 2 treats 13-2 portal bindings as critical (only exit 3, ARGOCD_TOKEN missing, is tolerated) so 14 never hands TLS Valkey to ArgoCD with stale portal Secrets (PR #343)" \
+    python3 -c '
+import re
+s = open("scripts/cluster/06-phase2-start.sh").read()
+m = re.search(r"CRITICAL_SCRIPTS=\((.*?)\n\)", s, re.S)
+assert m, "CRITICAL_SCRIPTS array missing"
+names = re.findall(r"^\s*\"([^\"]+\.sh)\"", m.group(1), re.M)
+assert "13-2-narwhal-portal-bindings.sh" in names, names
+assert names.index("13-2-narwhal-portal-bindings.sh") < names.index("14-gitops-bootstrap.sh")
+assert "PORTAL_BINDINGS_DEGRADED_RC=3" in s
+b = open("scripts/cluster/13-2-narwhal-portal-bindings.sh").read()
+assert re.search(r"ARGOCD_TOKEN 없이 완료[^\n]*\n\s*exit 3\b", b), "13-2 must exit 3 only for the ArgoCD-token-only case"
+'
+  check R248 "every kakaocloud_public_ip has lifecycle prevent_destroy (D-PUBIP, 2026-10-15); the check fails when a guard is removed" \
+    python3 scripts/test/lib/check-kakao-public-ip-guard.py --mutation-verify
 
 }
 

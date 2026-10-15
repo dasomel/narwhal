@@ -1,0 +1,1 @@
+pip3 install --only-binary=:all: --no-binary=somepkg somepkg==1.0.0

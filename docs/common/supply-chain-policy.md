@@ -154,3 +154,18 @@ The requirements hash obligation also applies to pip's equivalent attached
 negative tests reject all four without `--require-hashes`; hash-enforced variants
 remain accepted. This closes an option-spelling bypass, not transitive integrity
 verification of the existing exact-version Python CI install.
+
+## Quarantine and rollback of a compromised dependency (narwhal#164)
+
+악성 릴리스 또는 회수(retract/yank)된 릴리스가 고정된 도구·이미지·바이너리에서 발견됐을 때의 절차다. 이 저장소에는 추적되는 `requirements*.txt`, `package-lock.json`, `pnpm-lock.yaml`, `Cargo.lock`, `go.sum`이 없다(`git ls-files`로 확인). 고정 지점은 아래 표의 파일뿐이며, narwhal-portal의 잠금 파일은 다른 저장소에 있다.
+
+| 단계 | 조치 (정확한 명령/파일) | 강제화 수단 (`Enforced by`) |
+| --- | --- | --- |
+| (a) 동결 | 자동 갱신을 멈춘다. `.github/dependabot.yml`은 `github-actions`만 감시하므로 해당 Action 항목을 PR로 제거(또는 보류)한다. Renovate 설정은 없다. 에어갭 번들 입력(`scripts/airgap/07-save-binaries.sh`, `scripts/airgap/images.txt`)을 쓰는 번들 빌드를 중단하고, 이미 만든 번들은 전달하지 않는다. | 수동. `.github/dependabot.yml`이 유일한 자동 갱신 경로라는 점만 구조로 보장된다. |
+| (b) 영향 범위 | `grep -rnF '<이름 또는 버전 또는 digest>' VERSIONS.md scripts/airgap/lib/binary-checksums.tsv scripts/airgap/lib/image-digests.tsv scripts/airgap/images.txt scripts/airgap/07-save-binaries.sh .github/workflows gitops` 후 `git log -S'<값>' --oneline -- <파일>`로 도입 시점을 찾는다. npm/pip 설치는 `python3 scripts/test/lib/check-install-scripts.py`가 출력하는 `KNOWN-ISSUE` 줄과 `grep -rnE 'npm (install\|ci)\|pip3? install' .github/workflows scripts`로 확인한다. | 수동 조회. `check-install-scripts.py`(R245)는 설치 줄이 패키지 스크립트를 실행하는지만 알려준다. |
+| (c) 롤백 | 고정을 직전 검증본으로 되돌린다. 워크플로 도구는 `.github/workflows/lint.yml`의 버전과 `SHA256`을 함께, 에어갭 바이너리는 `scripts/airgap/07-save-binaries.sh`의 버전과 `scripts/airgap/lib/binary-checksums.tsv` 행을 `git log -p -- scripts/airgap/lib/binary-checksums.tsv`에서 찾은 이전 커밋 값으로 되돌린다. 이미지 태그는 `scripts/airgap/images.txt`와 `scripts/airgap/lib/image-digests.tsv`를 되돌린다. 이전 digest는 당시 리뷰된 값이므로 재다운로드로 새로 계산한 값보다 신뢰한다. | `07-save-binaries.sh`의 `fetch()`가 `binary-checksums.tsv`와 대조하고 행이 없으면 실패(R53/R54). `scripts/airgap/lib/refresh-binary-checksums.sh --check`와 `scripts/airgap/lib/refresh-image-digests.sh --check`가 표와 업스트림의 드리프트를 알려준다(네트워크 필요). |
+| (d) 번들 재생성·재검증 | `scripts/airgap/07-save-binaries.sh`(및 필요 시 `02-save-images.sh`)로 번들을 다시 만들고 `scripts/airgap/09-verify-bundle-completeness.sh`(`--list`, `--bundle` 옵션), `scripts/airgap/lib/refresh-image-digests.sh --check`, `scripts/airgap/10-verify-image-signatures.sh`를 다시 실행한다. 마지막으로 `make lint validate test`. | `09-verify-bundle-completeness.sh`가 `image-digests.tsv`와 조인해 불일치를 실패 처리(R60). `10-verify-image-signatures.sh`는 Cosign 서명을 검증한다. |
+| (e) 기록 | `docs/common/lessons-log.md`의 `Supply Chain Mistakes` 표에 행을 추가한다(날짜, 무엇이 들어왔고 어떻게 발견했는지, 롤백한 고정값, 판별자). 기존 유사 행이 있으면 새 행 대신 그 행을 보강한다. | `docs/common/agent-operational-rules.md`의 규칙(모든 수정은 행을 남김). 자동 검사는 없다. |
+| (f) 자동화되지 않은 것 | 위 (a)~(e) 전부 사람이 수행한다. 악성 여부 판정, 레지스트리 회수 알림 수신, 이미 배포된 클러스터·이미 전달된 번들의 회수와 재배포, 유출 가능성이 있는 자격 증명의 폐기·회전, 자동화된 "롤백 PR" 생성은 없다. | 없음 (아래 미적용 목록과 같음). |
+
+미적용 항목: 위 절차를 실행하는 스크립트는 없다. 빌드 러너가 이미 악성 코드를 실행했는지를 탐지하는 수단과 러너 아웃바운드 통제도 없다(4절). `check-install-scripts.py`는 설치 줄 텍스트만 검사하며, 정확한 버전이 악성인 경우 자체는 막지 못한다. 다만 설치 시 패키지 스크립트가 실행되지 않게 해 피해 범위를 줄인다. 현재 기준선으로 기록된 위반은 `lint.yml`·`markdown-changed.yml`의 `npm install -g markdownlint-cli@0.49.1`(`--ignore-scripts` 없음)과 `research-evidence.yml`의 `pip install 'jsonschema==4.25.1'`(`--only-binary=:all:` 없음) 3건이며, 워크플로 수정은 별도 변경으로 남겨 두었다.

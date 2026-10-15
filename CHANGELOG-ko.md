@@ -9,6 +9,184 @@
 
 ## [Unreleased]
 
+보안 강화 중심의 릴리스. 에어갭 번들과 오프라인 업그레이드 번들에 무결성 검증 체인이 추가되어 승격 전에 검사되며,
+ArgoCD, Gitea, RBAC, OpenBao, Keycloak, APISIX, NFS, `database` 신뢰 경계가 강화되었고, 이 경계가 퇴행하지 않도록
+정적 CI 게이트가 다수 추가됨. 기존 클러스터나 번들에서 운영자 조치가 필요한 변경이 여러 건 있으므로 먼저
+**업그레이드 참고**를 읽을 것.
+
+### 업그레이드 참고
+
+- **다이제스트 인벤토리 도입 이전에 만든 에어갭 번들은 다시 저장해야 함 (#337).** `02-save-images.sh`가 이제
+  `images.digests.json`을 기록하며, `09-verify-bundle-completeness.sh`는 이 파일이 없거나, 형식이 잘못되었거나,
+  정렬되지 않았을 때, 이미지에 항목이 없을 때, `oci/` 디렉터리가 기록되어 있지 않을 때, 다이제스트 또는 플랫폼이
+  일치하지 않을 때 실패(fail closed)함. 이전에 저장한 번들은 `02`를 다시 실행하기 전까지 `09`에서 실패하며,
+  `05`(로드)는 변경 없음.
+- **`09`가 모든 OCI 레이아웃의 바이트를 읽음 (#336, #338).** manifest, index, config blob의 해시를 재계산하고,
+  레이어 존재 여부와 크기를 확인하며, 심볼릭 링크된 blob을 거부하고, 다이제스트로 고정된 ref가 고정된 다이제스트를
+  유지하도록 요구하며, 이미지 config의 `os/architecture`가 기록된 `collapsed_to` 플랫폼과 다르면 실패함
+  (amd64 번들에 arm64 이미지가 들어간 경우 이제 거부됨).
+- **업그레이드 번들 승격이 번들 생성 시각과 출처에 대해 fail closed로 동작 (#335).**
+  `promote-upgrade-bundle.sh`는 `created_at`이 `UPGRADE_BUNDLE_MAX_AGE_DAYS`(기본 90, 허용 범위는 0 초과 3650
+  이하이며 0은 검사를 끄지 않음)보다 오래되었거나, 없거나, 형식이 잘못되었거나, 미래 시각이거나,
+  `provenance.author` / `provenance.source_repo`가 비어 있는 번들을 거부함. 이 값을 올리는 것은 검토를 거친
+  결정이어야 함. `--rollback`은 검증기를 실행하지 않으므로 신선도 검사를 적용하지 않음.
+  `scripts/airgap/lib/`의 샘플 매니페스트는 2026-08-01과 2026-08-25 날짜이므로 기본 상한을 통과하는 기간이
+  각각 2026-10-30, 2026-11-23까지임. CI는 이 상한을 적용하지 않음.
+- **업그레이드 번들 매니페스트 검증이 더 엄격해짐 (#318, #321, #324, #327, #331).**
+  아티팩트 ID는 유일하고 비어 있지 않아야 하며, 다이제스트 길이는 알고리즘과 일치해야 하고, 승격 시 검토된
+  라이선스 정책이 강제되며, 라이선스만 바뀐 변경도 dry-run diff에 나타나고, 후보 번들에서 제거된 의존성이
+  보고됨. ID가 중복되거나 비어 있거나, 다이제스트 길이가 틀렸거나, 라이선스 정책을 위반한 매니페스트는 승격 시
+  거부됨.
+- **이미지 목록 수집이 엄격해짐 (93161df, #222).** 번들된 차트를 렌더링하지 못하면(따라서 hook/Job 이미지를
+  수집하지 못하면) `01-generate-image-list.sh`가 중단됨. 로컬 반복 작업에서는 `AIRGAP_ALLOW_INCOMPLETE=1`로
+  해제할 수 있음. `up.sh`는 VM 작업 전에 `check-bundle.sh`를 실행하며 호스트 아키텍처용 번들이 없으면 일찍 중단됨.
+- **에어갭 Trivy가 클러스터 내 Harbor에서 DB를 가져옴 (9377dee, #302, #320).** 취약점 DB, Java DB, 정책 번들을
+  더 이상 `ghcr.io`에서 실시간으로 받지 않음. `scripts/airgap/lib/fetch-security-db.sh`,
+  `promote-security-db.sh`, `push-security-db.sh`로 준비해야 함(Harbor 프로젝트 `trivy-db`). 미래 시각이거나
+  형식이 잘못된 신선도 증거는 거부됨.
+- **ArgoCD Application이 더 이상 `default` AppProject에서 실행되지 않음 (6ead267).** `13-argocd.sh`가 새
+  `platform`, `tenants` AppProject(`gitops/resources/argocd-projects.yaml`)를 적용하며 적용하지 못하면 실패함.
+  목록에 없는 네임스페이스나 리포지토리를 지정한 Application은 동기화 시점에 거부됨. ArgoCD `developer` 역할은
+  `tenants/*`만 동기화할 수 있음(기존 `*/*`). 따라서 개발자는 argocd, keycloak, kyverno를 동기화할 수 없음.
+- **`narwhal-gitops`가 비공개 Gitea 리포지토리가 됨 (52dbb8d).** ArgoCD는 전용 `argocd` 계정과
+  `read:repository` 토큰(리포지토리 Secret으로 등록)으로 읽으며, 최초 push 이후 `main`은 push 허용 목록으로
+  보호됨. `14-gitops-bootstrap.sh`를 다시 실행하면 기존 리포지토리에도 `private: true`가 재적용됨.
+  리포지토리 생성, clone, 설정 복사, push 실패는 더 이상 무시되지 않고 부트스트랩을 중단시킴 (65d07b1).
+- **`developer` ClusterRole이 읽기 전용이 됨 (7551c21).** 변경 동사와 `exec` / `portforward` / `attach`는 새
+  `developer-workload-admin` 역할로 옮겨졌고 `dev`(및 테넌트 네임스페이스, ed06e82)에만 바인딩됨. 그 외 모든
+  네임스페이스는 직접 `kubectl` 사용 시 읽기 전용이며, 포털은 자체 ServiceAccount를 쓰므로 영향 없음.
+- **포털의 OpenBao 접근이 1시간짜리 Kubernetes 인증 토큰이 됨 (e923d7b, 2b589b7).**
+  `13-2-narwhal-portal-bindings.sh`가 `narwhal-portal` Kubernetes 인증 역할(TTL 1h, audience 검증)을 만들고,
+  `storage:openbao`에 `system:auth-delegator`를 바인딩하고, projected ServiceAccount 토큰을 마운트하며, 8760h
+  토큰을 더 이상 저장하지 않음. 레거시 토큰은 `ENABLE_LEGACY_OPENBAO_TOKEN=true`일 때만 발급됨. 포털 정책은 KV-v2
+  메타데이터 접근만 유지하고 `secret/data/narwhal-portal/*`는 더 이상 부여하지 않음. 기존 배포에서 무엇을 다시
+  적용해야 하는지는 확인되지 않음(unverified). 해당 커밋은 여기서 라이브 클러스터에 실행되지 않았음.
+- **Keycloak OIDC TLS가 검증되며 실패 시 차단됨 (5352bc2, dae7237, 3950512, 6790454).** ArgoCD OIDC 설정에서
+  `insecureSkipVerify`가 제거되었고 `rootCA`가 `argocd-cm` / `argocd-secret`에 주입됨.
+  `11-3-keycloak-clients.sh`는 `narwhal-wildcard-tls`와 `narwhal-ca-cert` 어디에서도 CA를 얻지 못하면 exit 1로
+  종료함. `test-sso.sh`는 검증이 성공하기를 기대함.
+- **APISIX Admin API는 파드 CIDR과 루프백만 허용 (1dddbe4).** 허용 소스는 `10.244.0.0/16`과 `127.0.0.1/32`이며,
+  NetworkPolicy가 `:9180` ingress를 제한함. 장애 복구(break-glass)용 파드에는 라벨
+  `app.kubernetes.io/name=apisix-ingress-controller`가 있어야 함(`docs/common/apisix-etcd-recovery.md`,
+  `docs/common/apisix-admin-api.md`).
+- **NFS export 기본값이 `root_squash`와 모드 750 루트로 변경 (6151b86, 7e4e622).** 두 export 줄에서
+  `no_root_squash`가 제거됨. `root_squash`는 디스크에 이미 있는 소유권을 바꾸지 않으므로
+  `docs/common/compliance-hardening.md`의 마이그레이션 런북을 따르고 `scripts/test/verify-nfs-root-squash.sh`로
+  확인할 것. 비루트 쓰기를 위해 `csi-driver-nfs`는 `feature.enableFSGroupPolicy=false`로 실행되며(불변 `File`
+  정책을 가진 라이브 CSIDriver는 사전 업그레이드 가드가 삭제함) Grafana의 `initChownData`는 비활성화됨.
+- **`database` 네임스페이스가 기본적으로 ingress를 차단 (3148c14).** CloudNativePG, 그 오퍼레이터, Keycloak,
+  Harbor, Gitea만 허용되며 그 외 호출자는 차단됨.
+- **ArgoCD 캐시가 Valkey로 실행됨 (3a3aef9).** `13-argocd.sh`가 `argocd-redis`를
+  `docker.io/valkey/valkey:8-alpine`으로 지정함(Redis 8은 RSALv2/SSPL/AGPL). 기존 클러스터는 `13-argocd.sh`를
+  다시 적용하면 반영됨.
+- **포털이 `narwhal-portal:1.0.19`로 고정됨 (2a11c10, #245).** Cosign 서명이 없으며, 1.0.18은 시작 시
+  크래시하므로 사용하면 안 됨(`SECURITY.md`).
+- **`up.sh`가 Phase 2가 불완전하면 exit 2로 종료 (#225)**, macOS 로컬 네트워크 권한이 VM을 막는 경우 정확한
+  시스템 설정 수정 방법을 출력하고 중단함.
+- **Kakao Cloud (e496631, 8f24bcf, eda06db).** 바스천이 자체 보안 그룹을 가지며, SSH는 필수값인
+  `bastion_ssh_allowed_cidrs`로 제한되고 `0.0.0.0/0`은 거부됨. SSH 호스트 키는 클러스터별 `known_hosts`로
+  검증되며(최초 접속 시 신뢰, 키가 바뀌면 차단), 노드나 바스천을 재구축한 후에는 `kakao_forget_host`로 이전
+  항목을 지울 것. 큐블릿 포트 10250은 노드 서브넷에만 열림.
+
+### 추가
+
+- **오프라인 업그레이드 번들 파이프라인 (7becc87, #300, #301).** JSON 스키마, 검증기, 승인이 포함된 승격
+  게이트, dry-run diff, 내용 및 의존성 검증, 컴포넌트 업그레이드 웨이브 그래프의 정적 검사(#46). cert-manager가
+  첫 오케스트레이션 파일럿임 (dd9ca0e).
+- **에어갭 번들 무결성 체인 (#336, #337, #338).** OCI 레이아웃 바이트 검증, 저장 시점 이미지별 다이제스트
+  인벤토리, `09` 게이트의 config 플랫폼 검증. `--report FILE`로 JSON 레이아웃 리포트를 기록함.
+- **오프라인 취약점 DB 번들 무결성 검사** `scripts/verify/security-db-bundle-check.sh` (#302).
+- **불변 릴리스 기반 작업 (24fedbb, a12401c, b342bff).** `image-digests.tsv`가 각 태그가 해석된 다이제스트를
+  기록하며 `09`는 행이 없는 이미지가 있으면 실패함. kaniko와 alpine/git은 불변 태그로 고정되고, 예약된
+  워크플로가 이미지 다이제스트 드리프트를 감지함.
+- **공급망 CI 게이트.** 가변 이미지 태그를 병합 전에 거부(ad7804c)하고 모든 워크플로의 가변 패키지 설치를
+  거부(#316)하며, pip 요구 사항 옵션에는 해시가 필요하고(#330), `component-licenses.tsv`에 대한 라이선스 정책
+  게이트(aa9c1a4), SBOM·커밋·워크플로 실행·취약점 상관 분석(6dab398, #317), 오프라인 번들용 CycloneDX
+  SBOM(c6c16dd), 이미지별 라이선스 맵이 포함된 `NOTICE`(c65f3ab), 모든 릴리스 아티팩트는 목록에 있거나
+  `UNKNOWN`으로 검토되어야 함(#295), kubeconform CRD 스키마를 벤더링하고 `-ignore-missing-schemas`를
+  제거(7493182), 서드파티 다운로드는 고정되고 체크섬이 검증됨(fc31efb).
+- **서비스 메시용 신규 정적 게이트.** R242는 `09-istio-ambient.sh`의 `AMBIENT_NAMESPACES`가 NetworkPolicy
+  검사가 다루는 네임스페이스와 다르면 CI를 실패시킴(#332). R243은 `PeerAuthentication`의 `PERMISSIVE` /
+  `DISABLE`을 검토된 허용 목록에서만 허용하고, 메시 전역 `STRICT`를 요구하며, 기존 예외 2건을 개수가 고정된 알려진
+  이슈로 기록함(#333, #334).
+- **보안 태세용 정적 게이트 추가 (#283-#293, #319, #322, #325, #326).** 웹훅 `failurePolicy`와 타임아웃,
+  `hostPath` 마운트(중첩된 CronJob 포함), Pod Security Admission 라벨, 워크로드 런타임 태세와 RuntimeClass 참조,
+  seccomp 오버라이드, kubelet 및 API 서버 인가 기준선, 비활성화된 `NodeRestriction` 거부.
+- **노드 및 etcd 검증기.** `scripts/verify/kubelet-authz-check.sh`(#227), 노드 측 static pod 매니페스트
+  검증기(#291), 안전한 키 교체를 위한 `etcd-encryption-check.sh`와 `rotate-etcd-encryption-key.sh`(#233).
+  kubeadm 설정은 이제 kubelet 익명 인증 끔, webhook 인증/인가, `readOnlyPort: 0`을 명시함(kubeadm 기본값과
+  동일).
+- **Kyverno `verify-image-signatures`(Audit, 9b19aa1)와
+  `scripts/airgap/10-verify-image-signatures.sh`.** 알려진 이슈 참조: 이 정책은 현재 아무것도 집행하지 않음.
+- **Kyverno `restrict-tuning-job-admission` (9742afc).** `devtools`의 privileged 및 호스트 네임스페이스 파드는
+  `narwhal-tuning-job` ServiceAccount로 제한됨.
+- **풀 리퀘스트 기반 테넌트 네임스페이스 (ed06e82).** `resources/tenants/<team>/<namespace>.yaml`을 `tenants`
+  Application이 동기화하며, 포털의 `portal-gitops` 신원은 브랜치를 push할 수 있지만 `main`에 병합할 수 없음.
+- **설계 문서와 기준선.** CAPI 대 프로바이더 ADR(#266), Kubernetes/OSS 호환성 매트릭스(#271, #296), 통합 관측성
+  계약(#281), 스토리지 보호 정책(#279), 관리 플레인 HA 계약(#280), 이벤트 엔벨롭 기준선과 멀티클러스터 자격 증명
+  내보내기(9af2489, 7fc3a45), T1-T7 테스트 분류(c16dc86).
+
+### 변경
+
+- **컴포넌트 고정 (`VERSIONS.md`).** Kubernetes 1.35.5 → 1.35.7(kubeadm/kubelet/kubectl 행은 이제 CI에서
+  검사, 80c0c77), nfs-quota-agent 0.2.1 → 0.5.0(d8821a9), Harbor는 불변 태그 v2.15.1로 고정, 포털 이미지
+  1.0.16 → 1.0.19(#245).
+- **포털 RBAC.** PVC 사전 점검을 위한 `StorageClass`, `ResourceQuota` 읽기 전용 접근(#315), `argocd-server`가
+  더 이상 `nodes/proxy`에 접근하지 않음(#255), Velero 서버 역할이 `cluster-admin` 대신 최소 권한이 됨(#250),
+  포털의 Gitea 토큰이 최소 권한이 됨(#252, #253).
+- **GitOps 부트스트랩이 fail closed로 동작 (65d07b1, a6bc6bb).** ArgoCD가 소스를 바라보기 전에 Gitea API로
+  소스를 검증하며, Gitea 토큰 발급은 멱등적임.
+- **Keycloak 클라이언트 강화 (e67f234, 50aef34).** 와일드카드 대신 클라이언트별 정확한 `webOrigins`, 업데이트
+  경로에서도 `directAccessGrantsEnabled=false`, 예상치 못한 클라이언트가 있으면 부트스트랩을 실패시키는
+  `validate-keycloak-clients.sh`.
+- **SBOM 상관 분석이 무관한 취약점 식별자와 매칭되지 않음 (#317).**
+
+### 수정
+
+- **Ambient 프로브와 HBONE.** GitOps NetworkPolicy가 이제 kubelet 프로브와 포트 15008을 허용함(#240, #241).
+- **네트워킹.** APISIX values 렌더링, Cilium 풀이 `POD_NETWORK_CIDR`을 따름, APISIX viewer 키가 비어 있으면
+  스크립트가 중단됨(#236, 0ca929e). Prometheus 파드는 ambient 데이터플레인에서 제외됨(dee1dca).
+- **재부팅 후 NFS PVC 마운트.** `rpc-statd`가 이제 부팅 시 시작됨(#249).
+- **대시보드.** CSRF Secret이 `apiVersion`과 함께 렌더링되어 앱이 동기화됨(#258).
+- **에어갭 이미지 다이제스트**를 업스트림 드리프트 이후 갱신(#194, #259, #310)하고, 포털 Kaniko Job이 고정한
+  빌드 헬퍼 다이제스트를 번들에 포함(#262).
+- **Keycloak HTTPS 준비 게이트**가 관리 포트 대신 `/realms/master`를 조사함(#231).
+
+### 보안
+
+- `database` 기본 ingress 차단, Gitea ingress를 APISIX를 거치지 않는 정당한 소스로 제한, APISIX Admin API는
+  파드 CIDR과 루프백에서만 접근 가능.
+- 게이트웨이가 더 이상 클라이언트가 보낸 `X-WEBAUTH-USER`를 신뢰하지 않음 (492e65a).
+- ArgoCD 읽기 전용 신원을 가진 비공개 GitOps 리포지토리, AppProject 경계, 클러스터 전역 `exec`나 변경 권한이 없는
+  개발자 역할.
+- 단기 포털 OpenBao 신원, Keycloak OIDC TLS 검증과 CA 신뢰, `root_squash` NFS export.
+- Kakao 바스천 SSH 허용 목록과 검증된 호스트 키 (e496631, 8f24bcf).
+
+### 알려진 이슈
+
+- **이미지 서명이 집행되지 않음.** Kyverno `verify-image-signatures` 정책은 `Audit` 전용이며 `required: false`이고
+  공개 키는 PLACEHOLDER(`MFkw...AAE/narwhal/cosign/trusted/signer/pub`)임. cosign 키가 발급되지 않았으므로(#35)
+  이 정책은 현재 아무것도 집행하지 않음. 포털 이미지 1.0.19도 Cosign 서명이 없음.
+- **부트스트랩 중 메시 전역 PERMISSIVE.** `09-istio-ambient.sh`가 메시 전역 PERMISSIVE `PeerAuthentication`을
+  적용하고, GitOps 차트는 같은 이름으로 `STRICT`를 선언하므로 ArgoCD가 수렴하기 전까지 트래픽이 fail-open임
+  (#126).
+- **`monitoring-permissive`**는 자체 주석이 워크로드별 범위를 권장함에도 `monitoring` 네임스페이스 전체를
+  PERMISSIVE로 설정함. R243이 개수를 고정하여 확산되지 않음.
+- **`dev` 네임스페이스 라벨 충돌.** `gitops/resources/dev-namespace.yaml`은
+  `istio.io/dataplane-mode: none`을 설정하지만 `09-istio-ambient.sh`는 `dev`를 `AMBIENT_NAMESPACES`에 넣고
+  ambient로 라벨링함(#128). 라이브 클러스터에서 어느 쪽이 우선하는지는 확인되지 않음(unverified).
+- **Ingress 격리가 부분적임.** `gitops/resources`에서 ingress를 격리하는 정책은 `database`, Gitea, APISIX Admin
+  API뿐이며 `monitoring`과 `platform-system`에는 없음(차트에 포함된 정책은 전수 확인하지 않음).
+- **설치 경로에 따라 개발자 ArgoCD 역할이 다를 수 있음(unverified).** `13-argocd.sh`는 `tenants/*`에 `sync`를
+  쓰지만 `gitops/charts/narwhal-platform/templates/argocd-config.yaml`의 `argocd-rbac-cm`은 여전히 `*/*`에
+  `sync`를 선언함. 라이브 클러스터가 어느 쪽이 되는지는 확인되지 않음.
+- **에어갭 번들 복사는 OCI referrer(SBOM, 서명, attestation)를 보존하지 않음.** `09`는 손실을 보고하지만
+  실패시키지 않음(#124).
+- **다이제스트 인벤토리는 최초 저장 시점 신뢰(trust-on-first-save)임.** `images.digests.json`에는 서명이 없으므로
+  번들이 `02`가 기록한 것과 일치함은 증명하지만 `02`가 올바른 바이트를 보았음은 증명하지 않음(#124).
+- **라이브 클러스터에 적용되지 않음.** AppProject 분리, 개발자 RBAC 변경, 비공개 Gitea 리포지토리, Valkey 교체의
+  커밋 메시지는 실행 중인 narwhal 클러스터가 아니라 정적 검사 또는 임시 클러스터에서 확인했다고 명시함.
+
 ## [1.2.0] - 2026-08-08
 
 Vagrant (arm64) 및 Kakao Cloud (amd64) 환경 모두에서 에어갭이 "이미지 전용"에서 인터넷 경로 없이

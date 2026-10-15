@@ -3059,7 +3059,7 @@ assert line in s and not any(x.startswith("MAX_ROUNDS=") and ":-3" in x for x in
     python3 scripts/test/lib/check-upgrade-waves.py --mutation-verify
   check R236 "accelerator backend profiles match the conformance matrix (Narwhal#95)" \
     python3 scripts/test/lib/check-accelerator-profiles.py --mutation-verify
-  check R240 "portal Valkey TLS, ACL, dedicated Secret, and ingress remain hardened (S5)" \
+  check R247 "portal Valkey TLS, ACL, dedicated Secret, and ingress remain hardened (S5)" \
     python3 scripts/test/lib/check-valkey-security-contract.py
 
 }

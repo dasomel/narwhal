@@ -46,7 +46,7 @@ Change Package: [`CHANGE.md`](CHANGE.md), package ID `narwhal-s5-valkey-2026-09`
 - `make validate` — PASS; Vagrantfile syntax and repository GitOps YAML parsed.
 - `make security` — PASS; no obvious hardcoded credentials found.
 - `shellcheck --severity=warning scripts/cluster/13-2-narwhal-portal-bindings.sh` — PASS.
-- `make test` — PASS; 282 passed, 0 failed, 5 warnings; R240 passed.
+- `make test` — PASS; 282 passed, 0 failed, 5 warnings; R247 passed.
 - `make lint` — ShellCheck phase passed, then stopped with `/bin/sh: yamllint: command not found`.
 - `uvx --from yamllint yamllint -d '{extends: default, rules: {line-length: {max: 200}, truthy: disable}}' gitops/apps/*.yaml gitops/resources/*.yaml gitops/charts/narwhal-platform/templates/narwhal-portal-k8s.yaml` — the modified chart has no lint finding; repository-wide lint reports existing issues in untouched `gitops/resources/ghost-pod-reaper.yaml` and `gitops/resources/velero-server-rbac.yaml`.
 - Disposable Docker test using `docker.io/valkey/valkey:8-alpine` (reported Valkey 8.1.10): INFO,

@@ -172,3 +172,11 @@ the optional `jsonschema` package. Null/non-string values, wrong algorithm width
 unsupported algorithms and trailing characters fail intake validation. This is
 syntax evidence; the separate bundle-content verifier is still required to prove
 that artifact bytes match a declared digest.
+
+## Upgrade bundle freshness (#124)
+
+`promote-upgrade-bundle.sh` rejects a staged bundle whose `created_at` is older than
+`UPGRADE_BUNDLE_MAX_AGE_DAYS` (default 90; valid range above 0 up to 3650, and 0 does
+not disable the check). Accepting a stale-but-legitimate bundle means raising this
+variable deliberately, as a reviewed decision; the promote error names it. `--rollback`
+does not run the verifier, so it applies no freshness check.

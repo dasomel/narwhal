@@ -51,6 +51,14 @@ class UpgradeFreshnessTests(unittest.TestCase):
         self.assert_rejected(self.run_verifier(lambda m: m['provenance'].update(source_repo='  ')))
         self.assert_rejected(self.run_verifier(lambda m: m['provenance'].pop('author')))
 
+    def test_unusable_max_age_is_usage_error_not_traceback(self):
+        for value in ['nan', '0', '-1', 'inf', '1e400', '1e10', '3651']:
+            with self.subTest(value=value):
+                result = self.run_verifier(extra=['--max-age-days', value])
+                self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+                self.assertNotIn('Traceback', result.stderr)
+        self.assertEqual(self.run_verifier(extra=['--max-age-days', '3650']).returncode, 0)
+
     def test_bad_cli_clock_is_an_error(self):
         result = self.run_verifier(extra=['--now', 'soon'])
         self.assertEqual(result.returncode, 2)

@@ -130,6 +130,9 @@ def parse_timestamp(value: Any) -> datetime.datetime | None:
         return None
 
 
+MAX_AGE_CEILING_DAYS = 3650  # ten years; above this the ceiling is meaningless
+
+
 def validate_freshness(manifest: dict, now: datetime.datetime, max_age_days: float | None) -> list[str]:
     """narwhal#124: bundle generation time and producer must be present and sane.
 
@@ -190,8 +193,9 @@ def main() -> int:
         if now is None:
             print(f"ERROR: --now {args.now!r} is not an RFC 3339 timestamp with timezone", file=sys.stderr)
             return 2
-    if args.max_age_days is not None and not args.max_age_days > 0:
-        print("ERROR: --max-age-days must be positive", file=sys.stderr)
+    if args.max_age_days is not None and not 0 < args.max_age_days <= MAX_AGE_CEILING_DAYS:
+        # Also rejects nan/inf; huge values overflow timedelta (OverflowError traceback).
+        print(f"ERROR: --max-age-days must be a finite number in (0, {MAX_AGE_CEILING_DAYS}]", file=sys.stderr)
         return 2
     return verify_bundle(args.manifest, args.schema, now, args.max_age_days)
 

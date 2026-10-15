@@ -78,8 +78,14 @@ jobs:
     # workflow_run, so it is re-checked here as a defense-in-depth prefix
     # match; portal-docker-publish.yml itself only builds portal/v*.*.* tags or
     # workflow_dispatch, and workflow_dispatch runs never satisfy this).
+    #
+    # D6 (PR #347 review): the name alone is NOT proof. A manual publish run on a BRANCH named
+    # portal/v1.2.3 has the same head_branch. So the job also requires event == 'push' (a tag
+    # push), and the first step proves the tag exists and its commit is the run's head_sha
+    # (scripts/ci/check-portal-release-ref.py, unit-tested).
     if: >
       github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
       startsWith(github.event.workflow_run.head_branch, 'portal/v')
     env:
       TAG_NAME: ${{ github.event.workflow_run.head_branch }}
@@ -90,6 +96,19 @@ jobs:
           # Pin to the exact commit portal-docker-publish.yml built, not whatever
           # HEAD of the tag happens to resolve to at release time.
           ref: ${{ github.event.workflow_run.head_sha }}
+          # Tags are needed to prove the tag-vs-commit binding below.
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Prove the run is a tag push of this exact commit
+        env:
+          RUN_EVENT: ${{ github.event.workflow_run.event }}
+          RUN_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -euo pipefail
+          git fetch --force --tags origin
+          python3 scripts/ci/check-portal-release-ref.py --mode release \
+            --event "$RUN_EVENT" --ref-name "$TAG_NAME" --sha "$RUN_SHA"
 
       - name: Set up Buildx
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1

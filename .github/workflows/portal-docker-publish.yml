@@ -80,6 +80,19 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      # D7 (PR #347 review): a tag run must be a real portal/vX.Y.Z tag whose commit is this
+      # run's commit; an ad-hoc workflow_dispatch from a branch is fine, but never from a branch
+      # named like a release tag (portal-release.yml keys off the run's ref name).
+      - name: Validate the ref is a release tag or an ordinary branch
+        env:
+          RUN_EVENT: ${{ github.event_name }}
+          RUN_REF_TYPE: ${{ github.ref_type }}
+          RUN_REF_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          python3 scripts/ci/check-portal-release-ref.py --mode publish \
+            --event "$RUN_EVENT" --ref-type "$RUN_REF_TYPE" --ref-name "$RUN_REF_NAME" --sha "$GITHUB_SHA"
+
       # Slashes are illegal in artifact names — linux/amd64 -> linux-amd64.
       - name: Derive platform slug
         run: |

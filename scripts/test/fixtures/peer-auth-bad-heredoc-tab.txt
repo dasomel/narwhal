@@ -1,0 +1,16 @@
+if true; then
+	kubectl apply -f - <<-EOF
+	apiVersion: security.istio.io/v1
+kind: PeerAuthentication
+	metadata: {name: default, namespace: istio-system}
+	spec: {mtls: {mode: STRICT}}
+	EOF
+fi
+if true; then
+	kubectl apply -f - <<-EOF
+	apiVersion: security.istio.io/v1
+kind: PeerAuthentication
+	metadata: {name: leak, namespace: database}
+	spec: {mtls: {mode: PERMISSIVE}}
+	EOF
+fi

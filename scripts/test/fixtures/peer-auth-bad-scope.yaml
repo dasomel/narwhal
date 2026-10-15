@@ -1,0 +1,9 @@
+apiVersion: security.istio.io/v1
+kind: PeerAuthentication
+metadata: {name: default, namespace: istio-system}
+spec: {mtls: {mode: STRICT}}
+---
+apiVersion: security.istio.io/v1
+kind: PeerAuthentication
+metadata: {name: database-permissive, namespace: database}
+spec: {selector: {matchLabels: {app: x}}, mtls: {mode: PERMISSIVE}}

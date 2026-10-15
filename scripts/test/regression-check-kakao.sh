@@ -1773,6 +1773,8 @@ with open(f"{tmp}/kyverno-policies-invalid-key.yaml", "w") as f:
     f.write(text.replace("publicKeys:", "publickeys:"))
 with open(f"{tmp}/kyverno-policies-key-drift.yaml", "w") as f:
     f.write(text.replace("MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE9IgOjh5", "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEAAAAAAA", 1))
+with open(f"{tmp}/kyverno-policies-tlog-required.yaml", "w") as f:
+    f.write(text.replace("ignoreTlog: true", "ignoreTlog: false", 1))
 PYEOF
   check_not R75 "check-kyverno-signed-image-policy.py catches a removed verify-image-signatures policy (2026-08-25)" \
     python3 scripts/test/lib/check-kyverno-signed-image-policy.py "${kyverno_signed_img_tmp}/kyverno-policies.yaml"
@@ -1780,6 +1782,8 @@ PYEOF
     python3 scripts/test/lib/check-kyverno-signed-image-policy.py "${kyverno_signed_img_tmp}/kyverno-policies-invalid-key.yaml"
   check_not R75c "check-kyverno-signed-image-policy.py catches inline publicKeys drifting from scripts/airgap/keys/cosign.pub (2026-10-15)" \
     python3 scripts/test/lib/check-kyverno-signed-image-policy.py "${kyverno_signed_img_tmp}/kyverno-policies-key-drift.yaml"
+  check_not R75d "check-kyverno-signed-image-policy.py catches a key attestor that no longer skips the Rekor tlog (air-gap D-REKOR, 2026-10-15)" \
+    python3 scripts/test/lib/check-kyverno-signed-image-policy.py "${kyverno_signed_img_tmp}/kyverno-policies-tlog-required.yaml"
   rm -rf "${kyverno_signed_img_tmp}"
 
   # narwhal#35: 10-verify-image-signatures.sh exists as the air-gap image signature gate.

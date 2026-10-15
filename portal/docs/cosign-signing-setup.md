@@ -86,8 +86,20 @@ sanity-check the non-mandatory path) and confirm the `sign` job's "Sign image di
 succeeds. To manually verify a signed image once `cosign.pub` is committed:
 
 ```bash
+# Online (Rekor reachable): the CI signature is in the public Rekor log, so tlog is checked.
 cosign verify --key scripts/airgap/keys/cosign.pub ghcr.io/dasomel/narwhal-portal@sha256:<digest>
+
+# Offline / air-gapped (no Rekor access): skip the tlog lookup, the static key alone is trusted.
+cosign verify --key scripts/airgap/keys/cosign.pub --insecure-ignore-tlog=true \
+  ghcr.io/dasomel/narwhal-portal@sha256:<digest>
 ```
+
+**D-REKOR.** The `sign` job keeps uploading to the public Rekor log (the image is public, so
+online consumers get transparency). Every *offline* verifier skips the tlog instead: Kyverno's key
+attestors set `rekor.ignoreTlog: true` and `ctlog.ignoreSCT: true`, and offline `cosign verify`
+uses `--insecure-ignore-tlog=true`. Cost: offline verification relies solely on the static key (no
+transparency-log cross-check). Escape hatch: drop the ignore flags if the cluster ever gains Rekor
+reachability. `scripts/test/lib/check-kyverno-signed-image-policy.py` (R74/R75d) enforces the flags.
 
 ### Local sanity check (cosign v3 gotcha)
 

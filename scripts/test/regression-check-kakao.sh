@@ -2108,7 +2108,7 @@ PYEOF
     python3 scripts/test/lib/check-install-scripts.py --root scripts/test/fixtures/install-scripts/tree-swap
   is_gaps="$(python3 scripts/test/lib/check-install-scripts.py 2>/dev/null | grep -c '^KNOWN-ISSUE' || true)"
   if [ "${is_gaps:-0}" -gt 0 ]; then
-    warn R245-known "${is_gaps} known script-running installs baselined (Narwhal#164): markdownlint-cli npm install in lint.yml and markdown-changed.yml, pip install jsonschema in research-evidence.yml"
+    warn R245-known "${is_gaps} known script-running installs baselined (Narwhal#164): see the KNOWN-ISSUE lines of scripts/test/lib/check-install-scripts.py"
   fi
   # Narwhal#235 (lead live run): the ArgoCD HBONE post-check read a pre-patch snapshot and
   # exited 1 on every fresh cluster after its own successful appends.

@@ -18,7 +18,8 @@ Usage: check-install-scripts.py [--root DIR] [FILE...]
   FILE...   check only those files (.yml/.yaml: every `run:`; anything else: text). No baseline.
   --each-bad FILE | --each-good FILE   test mode: FILE holds cases split by a `----` line; every case
             must be flagged (bad) / none may be flagged (good).
-  (none)    scan the real tree under --root (default: repo root) and apply KNOWN_ISSUES.
+  (none)    scan the real tree under --root (default: repo root) and apply KNOWN_ISSUES
+            (with --root: DIR/known-issues.json instead).
 
 Fails closed: an unreadable, unparsable or absent file, and a default scan that finds no workflow.
 Shell-aware: `&& || ; | ( ) $( ) ` + "`" + ` { }` and newlines split commands, quotes stay intact, heredoc bodies and
@@ -42,6 +43,7 @@ This is a source-text guard.
 from __future__ import annotations
 
 import collections
+import json
 import pathlib
 import re
 import sys
@@ -63,18 +65,21 @@ SHELLS = {"bash", "sh", "zsh", "dash", "eval"}
 FALSY = {"false", "0", "no", "off"}
 Q = "\0"  # prefix marking a token that contained quotes (never a flag, a name or a subcommand)
 
-# D1: baseline of the real violations found when this guard was added. The three are CI installs
-# of one exact version each (markdownlint-cli, jsonschema); the fix is `--ignore-scripts` /
-# `--only-binary=:all:` in .github/workflows/**, which is a HIGH-risk path and needs its own change.
-# Escape hatch: fix the workflow line, then delete the entry (a stale entry fails this check).
-KNOWN_ISSUES = {
-    (".github/workflows/lint.yml", "npm", "no-ignore-scripts", "npm install -g markdownlint-cli@0.49.1"):
-        (1, "the global markdownlint-cli npm install runs package lifecycle scripts"),
-    (".github/workflows/markdown-changed.yml", "npm", "no-ignore-scripts", "npm install -g markdownlint-cli@0.49.1"):
-        (1, "the global markdownlint-cli npm install runs package lifecycle scripts"),
-    (".github/workflows/research-evidence.yml", "pip", "no-only-binary", "pip install jsonschema==4.25.1"):
-        (1, "pip install jsonschema may build an sdist and run its build backend"),
-}
+# D1: baseline of known script-running installs. Empty since the three CI installs found when this
+# guard was added (markdownlint-cli twice, jsonschema once) were fixed with `--ignore-scripts` /
+# `--only-binary=:all:` (Narwhal#164). Keep the mechanism: a future entry must name the reason and
+# the fix; a stale entry fails this check. With `--root DIR`, the baseline comes from
+# DIR/known-issues.json instead (a list of {file, manager, rule, command, count, reason}; absent =
+# empty) so the fixture trees under scripts/test/fixtures/install-scripts/ can exercise the
+# exact-count / stale / swap logic without a real entry here.
+KNOWN_ISSUES: dict = {}
+
+
+def load_known_issues(root: pathlib.Path) -> dict:
+    f = root / "known-issues.json"
+    if not f.is_file():
+        return {}
+    return {(e["file"], e["manager"], e["rule"], e["command"]): (e["count"], e["reason"]) for e in json.loads(f.read_text(encoding="utf-8"))}
 
 
 def run_strings(node, seen: set | None = None) -> list[str]:
@@ -245,11 +250,13 @@ def scan(rel: str, path: pathlib.Path) -> list[tuple[str, str, str]]:
 def main() -> int:
     argv = sys.argv[1:]
     root = pathlib.Path(__file__).resolve().parents[3]
+    known = KNOWN_ISSUES
     if argv[:1] == ["--root"]:
         if len(argv) < 2:
             print("--root needs a directory", file=sys.stderr)
             return 2
         root, argv = pathlib.Path(argv[1]), argv[2:]
+        known = load_known_issues(root)
     if argv[:1] in (["--each-bad"], ["--each-good"]):
         if len(argv) != 2:
             print(f"{argv[0]} needs one file", file=sys.stderr)
@@ -286,12 +293,12 @@ def main() -> int:
             problems.append(str(exc))
     baseline: list[str] = []
     if not argv:
-        for key, (want, reason) in sorted(KNOWN_ISSUES.items()):
+        for key, (want, reason) in sorted(known.items()):
             got = seen[key]
             if got != want:
                 problems.append(f"KNOWN_ISSUES drift: {key[0]} {key[1]} {key[2]} `{key[3]}` expected {want}, found {got} (remove or update the entry)")
             baseline.extend(f"KNOWN-ISSUE {key[0]} {key[1]} {key[2]}: {reason}" for _ in range(got))
-        problems.extend(f"unexpected script-running install {k[0]} {k[1]} ({k[2]}): {k[3]}" for k in sorted(set(seen) - set(KNOWN_ISSUES)))
+        problems.extend(f"unexpected script-running install {k[0]} {k[1]} ({k[2]}): {k[3]}" for k in sorted(set(seen) - set(known)))
     if problems:
         print("\n".join(problems), file=sys.stderr)
         return 1

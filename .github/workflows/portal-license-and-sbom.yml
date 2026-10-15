@@ -1,4 +1,14 @@
-name: License & SBOM
+name: Portal License & SBOM
+
+# D-MONO-CI ported from narwhal-portal. Decisions:
+#   D1  Not a required check: workflow-level `paths:` kept, rewritten to portal/...
+#   D2  Job-level working-directory: portal for notices/cooling; the SBOM job scans `portal`
+#       but writes sbom-*.json at the workspace root so artifact paths stay unchanged.
+#   D3  Lockfile cooling script reads the base lockfile via `git show <base>:./pnpm-lock.yaml`
+#       (portal/scripts/check-lockfile-cooling.mjs fixed: the bare path resolved at the repo root).
+#   D4  scripts/check-supply-chain-policy.mjs now scans ../.github/workflows/portal-*.yml and
+#       ../.github/dependabot.yml; `--ignore-scripts` added to installs (R245).
+#
 
 # Keeps the redistribution paperwork honest, and produces the dependency SBOM.
 #
@@ -16,29 +26,30 @@ on:
   push:
     branches: [main]
     paths:
-      - "package.json"
-      - "pnpm-lock.yaml"
-      - "pnpm-workspace.yaml"
-      - "Dockerfile"
-      - "scripts/check-supply-chain-policy.mjs"
-      - "scripts/check-lockfile-cooling.mjs"
-      - "THIRD-PARTY-NOTICES.md"
-      - "NOTICE"
-      - "LICENSE"
-      - "scripts/generate-third-party-notices.mjs"
-      - ".github/workflows/license-and-sbom.yml"
+      - "portal/package.json"
+      - "portal/pnpm-lock.yaml"
+      - "portal/pnpm-workspace.yaml"
+      - "portal/Dockerfile"
+      - "portal/scripts/check-supply-chain-policy.mjs"
+      - "portal/scripts/check-lockfile-cooling.mjs"
+      - "portal/THIRD-PARTY-NOTICES.md"
+      - "portal/NOTICE"
+      - "portal/LICENSE"
+      - "portal/scripts/generate-third-party-notices.mjs"
+      - ".github/workflows/portal-license-and-sbom.yml"
   pull_request:
     paths:
-      - "package.json"
-      - "pnpm-lock.yaml"
-      - "pnpm-workspace.yaml"
-      - "Dockerfile"
-      - "scripts/check-supply-chain-policy.mjs"
-      - "scripts/check-lockfile-cooling.mjs"
-      - "THIRD-PARTY-NOTICES.md"
-      - "NOTICE"
-      - "LICENSE"
-      - "scripts/generate-third-party-notices.mjs"
+      - "portal/package.json"
+      - "portal/pnpm-lock.yaml"
+      - "portal/pnpm-workspace.yaml"
+      - "portal/Dockerfile"
+      - "portal/scripts/check-supply-chain-policy.mjs"
+      - "portal/scripts/check-lockfile-cooling.mjs"
+      - "portal/THIRD-PARTY-NOTICES.md"
+      - "portal/NOTICE"
+      - "portal/LICENSE"
+      - "portal/scripts/generate-third-party-notices.mjs"
+      - ".github/workflows/portal-license-and-sbom.yml"
   workflow_dispatch:
 
 concurrency:
@@ -52,10 +63,13 @@ permissions:
 
 jobs:
   notices:
-    name: Third-party notices are current
+    name: Portal third-party notices are current
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: portal
     steps:
-      # See build-check.yml for why this runs first: a compromised install/build
+      # See portal-build-check.yml for why this runs first: a compromised install/build
       # script only gets one shot before egress is blocked.
       - uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
         with:
@@ -71,17 +85,20 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        with:
+          package_json_file: portal/package.json
 
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
           cache: pnpm
+          cache-dependency-path: portal/pnpm-lock.yaml
 
       # The generator reads license text out of node_modules, so the tree has to
       # be the exact one the lockfile describes — a drifting install would produce
       # a diff that has nothing to do with the change under review.
       - name: Install
-        run: pnpm install --frozen-lockfile
+        run: pnpm install --frozen-lockfile --ignore-scripts
 
       # --strict fails on a license that is neither permissive nor listed in the
       # generator's ACCEPTED map. Widening PERMISSIVE to silence it defeats the check.
@@ -117,8 +134,11 @@ jobs:
           echo "license files present and reachable from the build context"
 
   cooling:
-    name: New lockfile entries have matured
+    name: Portal new lockfile entries have matured
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: portal
     steps:
       # No install here, but the script itself calls out to registry.npmjs.org, so it
       # gets the same egress floor as the jobs that do install.
@@ -160,20 +180,20 @@ jobs:
           node scripts/check-lockfile-cooling.mjs "$base"
 
   sbom:
-    name: Dependency SBOM
+    name: Portal dependency SBOM
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       # Filesystem scan of the lockfile, not an image scan: the image already
-      # carries an SPDX attestation from buildx (docker-publish.yml), and this
+      # carries an SPDX attestation from buildx (portal-docker-publish.yml), and this
       # covers the dependency graph before it is built. Same tool the cluster
       # runs for vulnerability reports, so the outputs are comparable.
       - name: CycloneDX SBOM
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           scan-type: fs
-          scan-ref: .
+          scan-ref: portal
           format: cyclonedx
           output: sbom-cyclonedx.json
 
@@ -181,7 +201,7 @@ jobs:
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           scan-type: fs
-          scan-ref: .
+          scan-ref: portal
           format: spdx-json
           output: sbom-spdx.json
 
@@ -206,7 +226,7 @@ jobs:
       #
       # WHY HERE: the only other place the pair is used is docker-publish.yml, where
       # the per-arch build jobs upload digests and the merge job downloads them to
-      # assemble the multi-arch manifest — and that workflow runs ONLY on a v*.*.*
+      # assemble the multi-arch manifest — and that workflow runs ONLY on a portal/v*.*.*
       # tag. v1.0.16 already failed to publish for a defect that was only reachable
       # at release time; a pinned-major bump on that path should not be the second.
       # This job already produces artifacts, so the check costs one step.

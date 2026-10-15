@@ -118,3 +118,9 @@ __pycache__/
 /.codex/
 /.agents/skills/narwhal-ops/
 /.agents/skills/source-command-*/
+
+# D-MONO-CI: portal/ has API route directories literally named logs/, secrets/ and kubeconfig;
+# the root patterns above are for runtime artifacts and must not swallow portal source.
+!/portal/src/**/logs/
+!/portal/src/**/secrets/
+!/portal/src/**/kubeconfig/

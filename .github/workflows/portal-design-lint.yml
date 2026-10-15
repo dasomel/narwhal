@@ -1,4 +1,11 @@
-name: design-lint
+name: Portal design-lint
+
+# D-MONO-CI ported from narwhal-portal. Decisions:
+#   D1  Not a required check: workflow-level `paths:` kept, rewritten to portal/...
+#   D2  Job renamed `Portal design-lint` (the old job name `lint` would collide with root lint);
+#       job-level working-directory: portal. `npx -y @google/design.md@0.3.0` is an exact pin
+#       and npx is outside R245's scope (its purpose is to run the fetched package).
+#
 
 # Lint the DESIGN.md token contract. Alpha spec (@google/design.md) is PINNED.
 # Fails on errors (broken token refs, schema errors) and the two high-value
@@ -10,13 +17,14 @@ name: design-lint
 on:
   push:
     paths:
-      - "DESIGN.md"
-      - "src/app/globals.css"
-      - ".github/workflows/design-lint.yml"
+      - "portal/DESIGN.md"
+      - "portal/src/app/globals.css"
+      - ".github/workflows/portal-design-lint.yml"
   pull_request:
     paths:
-      - "DESIGN.md"
-      - "src/app/globals.css"
+      - "portal/DESIGN.md"
+      - "portal/src/app/globals.css"
+      - ".github/workflows/portal-design-lint.yml"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
@@ -28,7 +36,11 @@ permissions:
 
 jobs:
   lint:
+    name: Portal design-lint
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: portal
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
@@ -38,6 +50,7 @@ jobs:
         run: |
           set -euo pipefail
           npx -y @google/design.md@0.3.0 lint --format json DESIGN.md > report.json
+          # shellcheck disable=SC2016  # the node program is deliberately single-quoted
           node -e '
             const r = JSON.parse(require("fs").readFileSync("report.json", "utf8"));
             // Block on any error (broken-ref is error severity) plus the one

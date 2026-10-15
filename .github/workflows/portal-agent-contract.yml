@@ -1,21 +1,27 @@
-name: Agent Contract
+name: Portal Agent Contract
+
+# D-MONO-CI ported from narwhal-portal. Decisions:
+#   D1  Not a required check: workflow-level `paths:` kept, rewritten to portal/...
+#   D2  The auditor runs against the `portal` directory (the portal's own AGENTS.md/.agents/.claude);
+#       the pinned OpenForge auditor checkout path is unchanged.
+#
 
 on:
   pull_request:
     paths:
-      - 'AGENTS.md'
-      - 'CLAUDE.md'
-      - '.agents/**'
-      - '.claude/**'
-      - '.github/workflows/agent-contract.yml'
+      - 'portal/AGENTS.md'
+      - 'portal/CLAUDE.md'
+      - 'portal/.agents/**'
+      - 'portal/.claude/**'
+      - '.github/workflows/portal-agent-contract.yml'
   push:
     branches: [main]
     paths:
-      - 'AGENTS.md'
-      - 'CLAUDE.md'
-      - '.agents/**'
-      - '.claude/**'
-      - '.github/workflows/agent-contract.yml'
+      - 'portal/AGENTS.md'
+      - 'portal/CLAUDE.md'
+      - 'portal/.agents/**'
+      - 'portal/.claude/**'
+      - '.github/workflows/portal-agent-contract.yml'
   workflow_dispatch:
 
 concurrency:
@@ -27,7 +33,7 @@ permissions:
 
 jobs:
   validate:
-    name: OpenForge agent contract
+    name: Portal OpenForge agent contract
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -54,4 +60,4 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python3 .openforge-audit/templates/scripts/audit-agent-skills.py .
+          python3 .openforge-audit/templates/scripts/audit-agent-skills.py portal

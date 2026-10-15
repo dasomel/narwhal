@@ -1,4 +1,11 @@
-name: harness-rules
+name: Portal harness-rules
+
+# D-MONO-CI ported from narwhal-portal. Decisions:
+#   D1  Not a required check: workflow-level `paths:` kept, rewritten to portal/...
+#   D2  Job-level working-directory: portal (scripts/harness-rules.sh cd's to its own root);
+#       pnpm/setup-node repointed at portal/; `--ignore-scripts` for R245.
+#   D3  Job names `Portal ...`-prefixed to avoid check-context collisions with root workflows.
+#
 
 # Enforce the countable AGENTS.md "Verify" rules (Tailwind-first styling, i18n
 # for UI text). Both have pre-existing debt, so this is a ratchet against
@@ -15,13 +22,14 @@ on:
   push:
     branches: [main]
     paths:
-      - "src/**"
-      - "scripts/harness-rules.sh"
-      - ".github/workflows/harness-rules.yml"
+      - "portal/src/**"
+      - "portal/scripts/harness-rules.sh"
+      - ".github/workflows/portal-harness-rules.yml"
   pull_request:
     paths:
-      - "src/**"
-      - "scripts/harness-rules.sh"
+      - "portal/src/**"
+      - "portal/scripts/harness-rules.sh"
+      - ".github/workflows/portal-harness-rules.yml"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
@@ -33,28 +41,37 @@ permissions:
 
 jobs:
   ratchet:
-    name: AGENTS.md rule ratchet
+    name: Portal AGENTS.md rule ratchet
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: portal
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Check rule baselines
         run: bash scripts/harness-rules.sh
 
   test:
-    name: Unit tests
+    name: Portal unit tests
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: portal
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        with:
+          package_json_file: portal/package.json
 
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
           cache: pnpm
+          cache-dependency-path: portal/pnpm-lock.yaml
 
       - name: Install
-        run: pnpm install --frozen-lockfile
+        run: pnpm install --frozen-lockfile --ignore-scripts
 
       - name: Test
         run: pnpm test

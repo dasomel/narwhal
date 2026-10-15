@@ -1,0 +1,80 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-portal-ci-port",
+  "task": "Port the narwhal-portal CI/CD (11 workflows, dependabot) into narwhal's root .github after the monorepo import, and delete the inert portal/.github",
+  "changeContext": {
+    "paths": [
+      ".github/dependabot.yml",
+      ".github/workflows/lint.yml",
+      ".github/workflows/portal-agent-contract.yml",
+      ".github/workflows/portal-build-check.yml",
+      ".github/workflows/portal-design-lint.yml",
+      ".github/workflows/portal-docker-publish.yml",
+      ".github/workflows/portal-harness-rules.yml",
+      ".github/workflows/portal-license-and-sbom.yml",
+      ".github/workflows/portal-publish-openforge-status.yml",
+      ".github/workflows/portal-release.yml",
+      ".github/workflows/portal-research-evidence.yml",
+      ".github/workflows/portal-test.yml",
+      ".gitignore",
+      "portal/scripts/check-lockfile-cooling.mjs",
+      "portal/scripts/check-supply-chain-policy.mjs",
+      "scripts/test/regression-check-kakao.sh",
+      ".agents/evals/traces/2026-10-portal-ci-port.json"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Only .github (portal-*.yml workflows, dependabot npm /portal entry, lint.yml sibling-checkout removal), two portal/scripts that read .github, portal/SECURITY.md example/tag text, root .gitignore negations and two regression-check-kakao.sh hunks (R112 egress-allowlist, R210 portal CHANGELOG exclusion) change. portal/.github is deleted. No portal application source, no cluster, no branch-protection API call."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "Path-filter trap documented: portal main requires the check 'Portal critical regression gate'. A workflow-level paths: filter (or a portal/-only trigger) leaves a required check Pending forever on PRs that do not touch portal/, so narwhal-only PRs could never merge. Reproduced by design: portal-test.yml's old triggers (pull_request, no filter) would run the 619+ test suites on every narwhal PR, while path-filtering it would hang the required context. Also reproduced two latent breakages from moving the files: check-lockfile-cooling.mjs did 'git show base:pnpm-lock.yaml' (repo-root path, empty base inside portal/), and check-supply-chain-policy.mjs readdirSync('.github/workflows') threw once portal/.github was gone."
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "portal-test.yml: always-triggered 'changes' job (git diff --name-only base...head, fail-open on unknown base, fail-closed if the job itself fails) gates the heavy jobs; 'Portal gate' (always()) accepts skipped only when changes succeeded and reported portal=false, else requires success. Tag namespace portal/v*.*.* (v* never matches portal/v1.2.3: '*' does not cross '/'), IMAGE hardcoded ghcr.io/dasomel/narwhal-portal, tag prefix stripped via metadata-action semver value=, context portal. Fixed git show ...:./pnpm-lock.yaml and the policy script's workflow dir. Dry-run of the extracted change-filter step: portal-touching range -> portal=true, narwhal-only range -> portal=false, zero base and workflow_dispatch -> true."
+    },
+    {
+      "id": "e4",
+      "type": "verification",
+      "status": "passed",
+      "scope": "R245 and immutable-input guards over the new workflows",
+      "summary": "check-install-scripts.py passes with an empty baseline over the ported workflows (all pnpm installs carry --ignore-scripts).",
+      "evidence": [
+        "test:python3 scripts/test/lib/check-install-scripts.py",
+        "runtime:command-exit-0"
+      ],
+      "commandExitCode": 0
+    },
+    {
+      "id": "e5",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "full static regression suite including the R112/R210/R35 collisions fixed in this change",
+      "summary": "regression-check-kakao.sh --static reports failed 0.",
+      "evidence": [
+        "test:./scripts/test/regression-check-kakao.sh --static",
+        "runtime:command-exit-0"
+      ],
+      "commandExitCode": 0
+    },
+    {
+      "id": "e6",
+      "type": "completion_claim",
+      "summary": "Static contract verified locally: actionlint clean, mutable-input and R245 guards pass, portal typecheck/lint/2060 unit tests/build/standalone/research-check/cooling/supply-chain/regression-results scripts run from portal/. Actual GitHub Actions execution (path filtering, the gate, GHCR push permission, cosign secrets, workflow_run chaining, harden-runner egress) is not verified until the PR runs."
+    },
+    {
+      "id": "e7",
+      "type": "task_outcome",
+      "state": "A",
+      "scope": "Workflow and script content verified locally; real Actions execution, branch-protection change, GHCR package Actions access and cosign secrets are unverified admin follow-ups",
+      "summary": "Portal CI lives in .github/workflows/portal-*.yml with a path-filter-safe Portal gate; execution on GitHub is unverified until the PR runs (stated in e6)."
+    }
+  ]
+}

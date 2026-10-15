@@ -12,6 +12,11 @@
 import { readFileSync, readdirSync } from "node:fs"
 import { join } from "node:path"
 
+// D-MONO-CI: the workflows and dependabot config live in the monorepo root (../.github), as
+// portal-*.yml; portal/.github is inert and no longer exists.
+const WORKFLOWS_DIR = "../.github/workflows"
+const portalWorkflows = () => readdirSync(WORKFLOWS_DIR).filter((f) => f.startsWith("portal-"))
+
 const problems = []
 const read = (p) => {
   try {
@@ -52,10 +57,10 @@ if (ws === null) {
 //     (`--config.minimumReleaseAge=10080`), so setting it there re-breaks every update
 //     exactly the way setting it in pnpm-workspace.yaml did. It reads as a hardening
 //     change, which is why it needs a check rather than a comment.
-const dependabot = read(".github/dependabot.yml")
+const dependabot = read("../.github/dependabot.yml")
 if (dependabot !== null && /^\s*cooldown:/m.test(dependabot)) {
   problems.push(
-    ".github/dependabot.yml: cooldown is set.\n" +
+    "../.github/dependabot.yml: cooldown is set.\n" +
       "    Dependabot passes it to pnpm as --config.minimumReleaseAge, which fails on transitive\n" +
       "    packages already in the lockfile. scripts/check-lockfile-cooling.mjs gates the PR instead.",
   )
@@ -72,8 +77,8 @@ if (cooling === null) {
   } else if (Number(days[1]) < 3) {
     problems.push(`scripts/check-lockfile-cooling.mjs: cooling window is ${days[1]} days, below the 3-day floor`)
   }
-  const wiredIn = readdirSync(".github/workflows")
-    .map((f) => read(join(".github/workflows", f)) ?? "")
+  const wiredIn = portalWorkflows()
+    .map((f) => read(join(WORKFLOWS_DIR, f)) ?? "")
     .some((body) => body.includes("check-lockfile-cooling.mjs"))
   if (!wiredIn) {
     problems.push("no workflow runs scripts/check-lockfile-cooling.mjs — the gate exists but never fires")
@@ -96,7 +101,7 @@ if (ws !== null && /^frozenLockfile:\s*true\s*$/m.test(ws)) {
 //    pass --ignore-scripts, because bun does not block them the way pnpm 10 does.
 const installers = /(pnpm|npm|bun)\s+(install|ci|add)\b[^\n]*/g
 for (const file of [
-  ...readdirSync(".github/workflows").map((f) => join(".github/workflows", f)),
+  ...portalWorkflows().map((f) => join(WORKFLOWS_DIR, f)),
   "Dockerfile",
   "Dockerfile.dev",
 ]) {

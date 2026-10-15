@@ -1,0 +1,62 @@
+name: Portal Research evidence
+
+# D-MONO-CI ported from narwhal-portal. Decisions:
+#   D1  Kept as a portal-scoped copy, NOT merged into root research-evidence.yml: that one
+#       runs `make research-check` from the repo root over research/**, while the portal has
+#       its own Makefile, schema and portal/research/** (different paths, different command).
+#   D2  Job-level working-directory: portal; `paths:` rewritten to portal/research/**.
+#   D3  setup-python was `@v7` (a floating tag, which check-mutable-inputs.py rejects); pinned
+#       to the SHA the root workflow already uses. pip install gets --only-binary=:all: (R245).
+#
+
+# D4: Path filtering avoids slowing unrelated PRs. Other changes do not run
+# this gate automatically; run make research-check manually when needed.
+on:
+  push:
+    paths:
+      - 'portal/research/**'
+      - 'portal/scripts/research/**'
+      - '.github/workflows/portal-research-evidence.yml'
+  pull_request:
+    paths:
+      - 'portal/research/**'
+      - 'portal/scripts/research/**'
+      - '.github/workflows/portal-research-evidence.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  research-check:
+    name: Portal research-check
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: portal
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
+        with:
+          egress-policy: block
+          allowed-endpoints: >
+            github.com:443
+            api.github.com:443
+            raw.githubusercontent.com:443
+            objects.githubusercontent.com:443
+            release-assets.githubusercontent.com:443
+            pypi.org:443
+            files.pythonhosted.org:443
+
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+      - name: Install validator dependency
+        run: |
+          python3 -m pip install --only-binary=:all: 'jsonschema==4.25.1'
+      - name: Validate research evidence
+        run: make research-check

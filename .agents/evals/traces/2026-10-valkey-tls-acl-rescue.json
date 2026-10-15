@@ -20,18 +20,18 @@
     {
       "id": "e2",
       "type": "reproduction",
-      "summary": "With the origin/main chart and bindings script restored in place, check-valkey-security-contract.py fails with AssertionError 'chart must disable the plaintext listener with exactly --port 0'; with the rescued files it passes."
+      "summary": "Original claim: with the origin/main chart and bindings script restored in place, check-valkey-security-contract.py failed with AssertionError 'chart must disable the plaintext listener with exactly --port 0'; with the rescued files it passed. Independent review then found a defect that check could not see: the password file was written by 'openssl rand -hex 32 > file' (trailing newline) while users.acl used the newline-stripped value. Reproduced on a real Valkey 8.1.10 container over raw RESP: AUTH portal <hex>\\n returned WRONGPASS, AUTH portal <hex> returned +OK."
     },
     {
       "id": "e3",
       "type": "bug_fix",
-      "summary": "Valkey serves TLS only with ACL user portal and default user off; bindings inject rediss:// and VALKEY_TLS=true, drop VALKEY_INSECURE_PRODUCTION, abort on secret read errors; check renumbered R247 after finding R240 collision."
+      "summary": "Valkey serves TLS only with ACL user portal and default user off; bindings inject rediss:// and VALKEY_TLS=true, drop VALKEY_INSECURE_PRODUCTION, abort on secret read errors; check renumbered R247 after finding R240 collision. Review fixes: password generated newline-free (tr -d) and validated as 64 hex for generated and preserved values (re-tested against real Valkey: exact Secret bytes authenticate); Certificate duration/renewBefore set because Valkey 8.1.10 lacks tls-auto-reload-interval (CONFIG GET tls-* confirmed); R247 now parses Valkey flags and users.acl (duplicate flags, allowlist, no nopass/allcommands/+@ categories) with 21 mutations, proven to fail when the new checks are disabled in a temp copy."
     },
     {
       "id": "e4",
       "type": "verification",
       "status": "passed",
-      "scope": "Valkey TLS/ACL/secret/ingress contract with 11 negative mutations",
+      "scope": "Valkey TLS/ACL/secret/ingress contract with 21 negative mutations (static; live TLS and portal connectivity unverified)",
       "summary": "check-valkey-security-contract.py passes on the rebased tree.",
       "evidence": [
         "test:python3 scripts/test/lib/check-valkey-security-contract.py",
@@ -60,7 +60,7 @@
       "id": "e7",
       "type": "task_outcome",
       "state": "A",
-      "summary": "Rescue of the static Valkey TLS/ACL change and its guard verified; live TLS handshake and portal connectivity are out of scope and unverified (stated in e6). Do not deploy with portal 1.0.19."
+      "summary": "Rescue of the static Valkey TLS/ACL change and its guard verified, plus a locally reproduced and fixed password-newline AUTH mismatch (Docker Valkey 8.1.10); live TLS handshake with the cluster CA and portal connectivity are out of scope and unverified (stated in e6). Do not deploy with portal 1.0.19."
     }
   ]
 }

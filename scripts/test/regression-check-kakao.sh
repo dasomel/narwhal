@@ -129,18 +129,21 @@ run_static() {
   section "STATIC — known fixes still present in the repo"
 
   # narwhal#238 (2026-09-28): every active portal image pin must agree. Historical
-  # release notes (root and portal/) and lessons are excluded, as is portal/SECURITY.md's
-  # example command; D1 keeps this inventory check small and
+  # release notes (root and portal/), lessons and ADRs (decision records) are excluded, as is portal/SECURITY.md's
+  # example command; the pin must also be >= 1.1.0 (Valkey TLS+ACL contract, PR #343); D1 keeps this inventory check small and
   # source-controlled, with the escape hatch of adding new active pin docs to grep.
   check R210 "all active narwhal-portal image pins use one version (Narwhal#238, 2026-09-28)" \
     python3 -c '
 import re
 import subprocess
-result = subprocess.run(["git", "grep", "-h", "-E", r"ghcr\.io/dasomel/narwhal-portal:1\.0\.[0-9]+", "--", ".", ":!CHANGELOG*", ":!docs/common/lessons-log.md", ":!scripts/test/regression-check-kakao.sh", ":!.agents/evals/traces", ":!portal/CHANGELOG*", ":!portal/SECURITY.md"], capture_output=True, text=True)
+result = subprocess.run(["git", "grep", "-h", "-E", r"ghcr\.io/dasomel/narwhal-portal:[0-9]+\.[0-9]+\.[0-9]+", "--", ".", ":!CHANGELOG*", ":!docs/common/lessons-log.md", ":!scripts/test/regression-check-kakao.sh", ":!.agents/evals/traces", ":!portal/CHANGELOG*", ":!portal/SECURITY.md", ":!docs/adr"], capture_output=True, text=True)
 if result.returncode not in (0, 1):
     raise SystemExit(result.stderr)
-versions = set(re.findall(r"ghcr\.io/dasomel/narwhal-portal:(1\.0\.[0-9]+)", result.stdout))
+versions = set(re.findall(r"ghcr\.io/dasomel/narwhal-portal:([0-9]+\.[0-9]+\.[0-9]+)", result.stdout))
 assert len(versions) == 1, f"portal pin versions differ: {sorted(versions)}"
+# Floor: the chart binds Valkey TLS + ACL (VALKEY_USERNAME), which images up to 1.0.19 do not read.
+pin = tuple(int(x) for x in next(iter(versions)).split("."))
+assert pin >= (1, 1, 0), f"portal pin {pin} predates the Valkey TLS+ACL contract (needs >= 1.1.0)"
 '
 
   # D2 / D-MONO-2: portal/ is in this repo, so inspect its working tree instead of

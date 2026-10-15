@@ -2,20 +2,23 @@
   "schemaVersion": "openforge-agent-trace/v1",
   "consistencyMode": "strict",
   "traceId": "narwhal-valkey-tls-acl-rescue",
-  "task": "Land the locally-held portal Valkey TLS-only + ACL hardening that never reached origin/main",
+  "task": "Land the portal Valkey TLS-only + ACL hardening together with the repin of narwhal-portal to 1.1.0 (one PR)",
   "changeContext": {
     "paths": [
       "gitops/charts/narwhal-platform/templates/narwhal-portal-k8s.yaml",
       "scripts/cluster/13-2-narwhal-portal-bindings.sh",
       "scripts/test/lib/check-valkey-security-contract.py",
-      ".agents/evals/traces/2026-10-valkey-tls-acl-rescue.json"
+      ".agents/evals/traces/2026-10-valkey-tls-acl-rescue.json",
+      "scripts/airgap/lib/image-digests.tsv",
+      "scripts/airgap/images.txt",
+      "scripts/test/regression-check-kakao.sh"
     ]
   },
   "events": [
     {
       "id": "e1",
       "type": "scope_check",
-      "summary": "Rescue 3 unpushed commits onto origin/main: Valkey TLS-only listener, dedicated ACL user, dedicated Secret, ingress scope; no live cluster change; requires portal build newer than 1.0.19 (VALKEY_USERNAME support)."
+      "summary": "Rescue 3 unpushed commits onto origin/main (Valkey TLS-only listener, dedicated ACL user, dedicated Secret, ingress scope) and repin narwhal-portal 1.0.19 -> 1.1.0 in the same PR, because 1.0.19 lacks VALKEY_USERNAME and portal main requires rediss+VALKEY_TLS+VALKEY_USERNAME+VALKEY_PASSWORD in production. No live cluster change."
     },
     {
       "id": "e2",
@@ -32,9 +35,22 @@
       "type": "verification",
       "status": "passed",
       "scope": "Valkey TLS/ACL/secret/ingress contract with 34 negative mutations (static; live TLS and portal connectivity unverified)",
-      "summary": "check-valkey-security-contract.py passes on the rebased tree.",
+      "summary": "check-valkey-security-contract.py passes after merging origin/main and the 1.1.0 repin.",
       "evidence": [
         "test:python3 scripts/test/lib/check-valkey-security-contract.py",
+        "runtime:command-exit-0"
+      ],
+      "commandExitCode": 0
+    },
+    {
+      "id": "e4b",
+      "type": "verification",
+      "status": "passed",
+      "scope": "repin consistency, GitOps render, CI unit tests, research evidence (static)",
+      "summary": "scripts/ci/check-version-consistency.sh reports all versions consistent; helm template of narwhal-platform renders image narwhal-portal:1.1.0; scripts/ci unittest discover ran 113 tests OK; research evidence check OK.",
+      "evidence": [
+        "test:bash scripts/ci/check-version-consistency.sh",
+        "test:python3 -m unittest discover -s scripts/ci/tests",
         "runtime:command-exit-0"
       ],
       "commandExitCode": 0
@@ -43,8 +59,8 @@
       "id": "e5",
       "type": "regression_verification",
       "status": "passed",
-      "scope": "full static regression suite incl. R247",
-      "summary": "regression-check-kakao.sh --static on the rebased tree passes with 0 failures.",
+      "scope": "full static regression suite incl. R210 (pin policy) and R247",
+      "summary": "regression-check-kakao.sh --static after merging origin/main and the repin: passed 373, failed 0 (R210 now requires a single pin >= 1.1.0; R247 unchanged).",
       "evidence": [
         "test:./scripts/test/regression-check-kakao.sh --static",
         "runtime:command-exit-0"
@@ -54,13 +70,13 @@
     {
       "id": "e6",
       "type": "completion_claim",
-      "summary": "Static contract verified; live Valkey TLS handshake with the cluster CA and portal connectivity are not verified here (only a local Docker Valkey test existed on the original branch)."
+      "summary": "Static contract verified; live Valkey TLS handshake with the cluster CA, portal 1.1.0 readiness/health and the 1.1.0 env contract on a running cluster are not verified here (only a local Docker Valkey test existed on the original branch)."
     },
     {
       "id": "e7",
       "type": "task_outcome",
       "state": "A",
-      "summary": "Rescue of the static Valkey TLS/ACL change and its guard verified, plus a locally reproduced and fixed password-newline AUTH mismatch (Docker Valkey 8.1.10); live TLS handshake with the cluster CA and portal connectivity are out of scope and unverified (stated in e6). Do not deploy with portal 1.0.19."
+      "summary": "Static Valkey TLS/ACL change, its guard and the portal 1.1.0 repin (index digest sha256:16e228757febda1b7649ce2ee79908f30a70ba41648943987fe26831d88ac30a, from the release signing step; re-resolved digests not re-fetched by this lane) verified statically, plus the earlier local password-newline fix; 13-2 now also injects SLO_CHAIN_START required by portal 1.1.0. Live verification on a local cluster is pending (e6)."
     }
   ]
 }

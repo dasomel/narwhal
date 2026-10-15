@@ -1,6 +1,6 @@
 # Change: Encrypt and authenticate the portal Valkey cache
 
-**Merge only together with a portal image that supports VALKEY_USERNAME (not 1.0.19).**
+**Merge only together with a portal image that supports VALKEY_USERNAME (not 1.0.19; this PR repins to 1.1.0).**
 
 - Change class: `D`
 - Owner: narwhal

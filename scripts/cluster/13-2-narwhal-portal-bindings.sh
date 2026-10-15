@@ -667,6 +667,7 @@ kubectl create secret generic narwhal-portal-secrets \
   --from-literal=KEYCLOAK_ADMIN_CLIENT_ID="narwhal-portal-admin" \
   --from-literal=KEYCLOAK_ADMIN_CLIENT_SECRET="${ADMIN_CLIENT_SECRET}" \
   --from-literal=KEYCLOAK_INTERNAL_URL="http://keycloak-service.iam.svc.cluster.local:8080" \
+  --from-literal=SLO_CHAIN_START="https://gitea.${DOMAIN}/apisix/logout" \
   --from-literal=K8S_API_SERVER="https://${VIP_ADDRESS:-192.168.56.100}:6443" \
   "${K8S_SA_TOKEN_ARG[@]}" \
   --from-literal=CLUSTER_NAME="narwhal" \

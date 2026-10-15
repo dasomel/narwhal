@@ -47,6 +47,12 @@ on:
   push:
     tags: ['portal/v*.*.*']
   workflow_dispatch:
+    inputs:
+      sign_digest:
+        description: 'Recovery only: sign this existing manifest-list digest (sha256:<64 hex>) of the published image and skip build/merge'
+        required: false
+        default: ''
+        type: string
 
 concurrency:
   group: portal-ghcr-publish-${{ github.ref }}
@@ -63,6 +69,7 @@ permissions:
 jobs:
   build:
     name: build (${{ matrix.platform }})
+    if: ${{ inputs.sign_digest == '' }}
     runs-on: ${{ matrix.runner }}
     permissions:
       contents: read
@@ -196,6 +203,7 @@ jobs:
 
   merge:
     name: merge manifest & tag
+    if: ${{ inputs.sign_digest == '' }}
     runs-on: ubuntu-latest
     needs: build
     permissions:
@@ -243,12 +251,20 @@ jobs:
             type=sha,prefix=sha-,format=short
             type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/portal/v') }}
 
-      # --metadata-file captures the resulting manifest-list digest (containerimage.digest),
-      # the same mechanism docker/build-push-action uses for the per-arch "Export digest"
-      # step above. The sign job below signs this digest, not a mutable tag.
+      # D8: the sign job signs the manifest-list digest, not a mutable tag. `imagetools create
+      # --metadata-file` has no `containerimage.digest` key (that is docker/build-push-action's
+      # shape): buildx v0.37 writes {"containerimage.descriptor": {mediaType,digest,size},
+      # "image.name": ...} (commands/imagetools/create.go), so the old jq read gave `null` and the
+      # sign job ran `cosign sign ...@null` on portal/v1.1.0. The digest is therefore taken from
+      # the create step's own descriptor, never from a tag lookup (`:latest`/`:1`/`:1.1` are
+      # mutable and could be re-pointed between create and inspect). On a release tag it is
+      # additionally cross-checked against the immutable full-SemVer tag. Fail closed unless it is
+      # a well-formed sha256 digest.
       - name: Create manifest list and push
         id: create-manifest
         working-directory: ${{ runner.temp }}/digests
+        env:
+          VERSION: ${{ steps.ver.outputs.version }}
         run: |
           set -euo pipefail
           # One file per arch, named after its digest (see "Export digest").
@@ -260,7 +276,15 @@ jobs:
             --metadata-file "${RUNNER_TEMP}/manifest-metadata.json" \
             $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
             $(printf "${IMAGE}@sha256:%s " *)
-          digest=$(jq -r '.["containerimage.digest"]' "${RUNNER_TEMP}/manifest-metadata.json")
+          digest=$(jq -r '.["containerimage.descriptor"].digest // empty' "${RUNNER_TEMP}/manifest-metadata.json")
+          if ! [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+            echo "::error::imagetools create reported no valid manifest list digest (got '${digest}'); refusing to pass it to the sign job"
+            exit 1
+          fi
+          if [ -n "$VERSION" ]; then
+            tagged=$(docker buildx imagetools inspect --format '{{.Manifest.Digest}}' "${IMAGE}:${VERSION}")
+            [ "$tagged" = "$digest" ] || { echo "::error::${IMAGE}:${VERSION} is ${tagged}, create reported ${digest}"; exit 1; }
+          fi
           echo "digest=${digest}" >> "$GITHUB_OUTPUT"
 
       - name: Verify both architectures are present
@@ -282,6 +306,8 @@ jobs:
     name: Sign published image
     runs-on: ubuntu-latest
     needs: merge
+    # Normal run: merge succeeded. Recovery run (sign_digest input): merge is skipped by design.
+    if: ${{ !cancelled() && (needs.merge.result == 'success' || (inputs.sign_digest != '' && needs.merge.result == 'skipped')) }}
     # WHY THIS EXISTS (narwhal#35): narwhal's Kyverno verify-image-signatures ClusterPolicy
     # and its air-gap preflight gate (scripts/airgap/10-verify-image-signatures.sh) both
     # expect a Cosign signature made with a static key pair — narwhal's own docs
@@ -294,15 +320,33 @@ jobs:
       contents: read
       packages: write # cosign pushes the signature as an OCI artifact alongside the image
     steps:
+      # Fail closed before anything touches cosign: an empty/`null`/malformed digest must never
+      # reach `cosign sign` (it became `...@null` on portal/v1.1.0).
+      - name: Validate image digest
+        env:
+          DIGEST: ${{ inputs.sign_digest || needs.merge.outputs.digest }}
+        run: |
+          set -euo pipefail
+          if ! [[ "$DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+            echo "::error::image digest to sign is not sha256:<64 hex> (got '${DIGEST}'). The merge job output 'digest' is missing or malformed; refusing to sign."
+            exit 1
+          fi
+          echo "signing ${IMAGE}@${DIGEST}"
+
       # A portal/v*.*.* tag is a real release — GitOps will pull this image, so it must be signed
       # or the workflow fails. workflow_dispatch is an ad-hoc/manual build (same distinction
       # the merge job already draws for the :latest tag at line ~172); it still gets signed
       # when the secrets are configured, but a missing secret only warns, never fails it.
+      # EXCEPTION: a sign_digest recovery run exists only to sign, so there signing is always
+      # required and missing secrets fail the job instead of ending green with nothing signed.
       - name: Determine whether signing is mandatory
         id: gate
+        env:
+          IS_RELEASE_TAG: ${{ startsWith(github.ref, 'refs/tags/portal/v') }}
+          SIGN_DIGEST: ${{ inputs.sign_digest }}
         run: |
           set -euo pipefail
-          if [[ "${{ startsWith(github.ref, 'refs/tags/portal/v') }}" == "true" ]]; then
+          if [[ "$IS_RELEASE_TAG" == "true" || -n "$SIGN_DIGEST" ]]; then
             echo "required=true" >> "$GITHUB_OUTPUT"
           else
             echo "required=false" >> "$GITHUB_OUTPUT"
@@ -352,6 +396,19 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # D9: sign_digest can sign ANY digest that exists in ${IMAGE} (not only a release). Accepted
+      # risk: it needs workflow_dispatch, i.e. repo write access, which already allows pushing
+      # to this package. The existence check below only stops typos and `@null`-style refs from
+      # reaching cosign; it is not an authorization control.
+      - name: Verify digest exists in the image repository
+        if: steps.secrets-check.outputs.present == 'true'
+        env:
+          DIGEST: ${{ inputs.sign_digest || needs.merge.outputs.digest }}
+        run: |
+          set -euo pipefail
+          docker buildx imagetools inspect "${IMAGE}@${DIGEST}" >/dev/null \
+            || { echo "::error::${IMAGE}@${DIGEST} does not exist in the registry; refusing to sign"; exit 1; }
+
       # Signs the immutable manifest-list digest from the merge job, not a mutable tag —
       # a later `:latest`/`:1.2` re-point must not silently carry an old signature.
       # --yes skips cosign's interactive "publish to a public registry?" confirmation
@@ -370,6 +427,7 @@ jobs:
         env:
           COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
           COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
+          DIGEST: ${{ inputs.sign_digest || needs.merge.outputs.digest }}
         run: |
           set -euo pipefail
-          cosign sign --yes --key env://COSIGN_PRIVATE_KEY "${IMAGE}@${{ needs.merge.outputs.digest }}"
+          cosign sign --yes --key env://COSIGN_PRIVATE_KEY "${IMAGE}@${DIGEST}"

@@ -122,7 +122,8 @@ def walk(layout: Path, desc, label: str, depth: int, stats: dict):
             stats["children"] += 1
             walk(layout, child, f"{label}.manifests[{i}]", depth + 1, stats)
         return
-    check_descriptor(layout, doc.get("config"), f"{label}.config", hash_it=True)
+    cfg_blob = check_descriptor(layout, doc.get("config"), f"{label}.config", hash_it=True)
+    stats["config_blob"] = cfg_blob
     layers = doc.get("layers")
     if not isinstance(layers, list):
         raise LayoutError(f"{label}: manifest has no layers array")
@@ -166,6 +167,7 @@ def verify_image(bundle: Path, img: str):
         "platforms": platforms,
         "referrers_in_layout": stats["referrers"],
         "referrers_preserved": False,
+        "config_blob": stats.get("config_blob"),
     }
 
 
@@ -226,6 +228,27 @@ def load_inventory(path: Path) -> dict:
     return entries
 
 
+def config_platform_problem(cfg_blob, recorded: str):
+    """Compare the image config's os/architecture with the recorded collapsed_to ("<os>/<arch>").
+
+    A recorded platform is a claim until the config is compared to it (#124). Returns None
+    only on an exact match; a missing/ill-typed config or field is a problem, never a pass.
+    """
+    if cfg_blob is None:
+        return f"config blob not located (recorded {recorded})"
+    try:
+        cfg = read_json(cfg_blob, "config")
+    except LayoutError as exc:
+        return f"config unreadable ({exc}) (recorded {recorded})"
+    if not isinstance(cfg, dict):
+        return f"config is not a JSON object (recorded {recorded})"
+    got = [cfg.get("os"), cfg.get("architecture")]
+    shown = "/".join(v if isinstance(v, str) and v else "<missing>" for v in got)
+    if got != recorded.split("/"):
+        return f"config platform {shown} != recorded {recorded}"
+    return None
+
+
 def check_inventory(bundle: Path, entries: dict, rows: list) -> list:
     """Compare verified layouts with the save-time record; return error strings."""
     errors = []
@@ -237,6 +260,10 @@ def check_inventory(bundle: Path, entries: dict, rows: list) -> list:
             errors.append(f"{r['image']}: layout digest {r['layout_digest']} != saved {e['digest']}")
         elif e["platforms"] != platform_mode(r):
             errors.append(f"{r['image']}: layout is {platform_mode(r)} but saved as {e['platforms']}")
+        elif e["collapsed_to"] is not None:
+            problem = config_platform_problem(r.get("config_blob"), e["collapsed_to"])
+            if problem:
+                errors.append(f"{r['image']}: {problem}")
     known = {e["layout"].split("/", 1)[1] for e in entries.values()}
     oci = bundle / "oci"
     for child in sorted(oci.iterdir(), key=lambda p: p.name) if oci.is_dir() and not oci.is_symlink() else []:
@@ -315,7 +342,8 @@ def main() -> int:
     print(f"NOTE: {collapsed} images collapsed to one platform by --override-arch; "
           f"{len(rows) - collapsed} keep the source manifest/index as pinned.", file=sys.stderr)
     if args.report_out:
-        report = {"schema": "narwhal-airgap-layout-report/v1", "images": rows}
+        clean = [{k: v for k, v in r.items() if k != "config_blob"} for r in rows]
+        report = {"schema": "narwhal-airgap-layout-report/v1", "images": clean}
         args.report_out.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
     return 0
 

@@ -265,6 +265,102 @@ class InventoryTests(unittest.TestCase):
         self.inv.unlink()
         self.assertRejected('re-saved with 02-save-images.sh')
 
+    def test_config_platform_matching_collapsed_to_passes(self):
+        self.saved()
+        r = self.verify()
+        self.assertEqual(r.returncode, 0, r.stderr)
+
+    def test_config_arch_mismatch_with_collapsed_to_fails(self):
+        self.saved()
+
+        def build(lay):
+            return lay.image(arch='amd64')[0]
+        top = self.swap_in(build)
+        self.rewrite(lambda d: d['images'][0].update(digest=top['digest']))
+        self.assertRejected('config platform linux/amd64 != recorded linux/arm64')
+
+    def test_config_os_mismatch_with_collapsed_to_fails(self):
+        self.saved()
+
+        def build(lay):
+            return lay.image(os='darwin', arch='arm64')[0]
+        top = self.swap_in(build)
+        self.rewrite(lambda d: d['images'][0].update(digest=top['digest']))
+        self.assertRejected('config platform darwin/arm64 != recorded linux/arm64')
+
+    def test_config_missing_architecture_fails(self):
+        self.saved()
+
+        def build(lay):
+            return lay.image(arch=None)[0]
+        top = self.swap_in(build)
+        self.rewrite(lambda d: d['images'][0].update(digest=top['digest']))
+        self.assertRejected('config platform linux/<missing> != recorded linux/arm64')
+
+    def test_config_not_an_object_fails(self):
+        self.saved()
+
+        def build(lay):
+            config = lay.put(b'[1, 2, 3]', 'application/vnd.oci.image.config.v1+json')
+            layer = lay.put(b'layer', 'application/vnd.oci.image.layer.v1.tar')
+            doc = {'schemaVersion': 2, 'mediaType': 'application/vnd.oci.image.manifest.v1+json',
+                   'config': config, 'layers': [layer]}
+            return lay.put(json.dumps(doc).encode(), 'application/vnd.oci.image.manifest.v1+json')
+        top = self.swap_in(build)
+        self.rewrite(lambda d: d['images'][0].update(digest=top['digest']))
+        self.assertRejected('config is not a JSON object')
+
+    def test_unparseable_config_fails_without_traceback(self):
+        self.saved()
+
+        def build(lay):
+            config = lay.put(b'not json', 'application/vnd.oci.image.config.v1+json')
+            layer = lay.put(b'layer', 'application/vnd.oci.image.layer.v1.tar')
+            doc = {'schemaVersion': 2, 'mediaType': 'application/vnd.oci.image.manifest.v1+json',
+                   'config': config, 'layers': [layer]}
+            return lay.put(json.dumps(doc).encode(), 'application/vnd.oci.image.manifest.v1+json')
+        top = self.swap_in(build)
+        self.rewrite(lambda d: d['images'][0].update(digest=top['digest']))
+        self.assertRejected('config unreadable')
+
+    def test_unlocated_config_blob_is_a_problem_not_a_pass(self):
+        import importlib.util
+        spec = importlib.util.spec_from_file_location('verify_oci_layout', VERIFIER)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        self.assertIn('config blob not located', mod.config_platform_problem(None, 'linux/arm64'))
+
+    def test_entry_without_collapsed_to_skips_platform_check(self):
+        shutil.rmtree(self.b / 'oci', ignore_errors=True)
+        lay = Layout(self.b, IMG)
+        child = lay.image(arch='amd64')[0]
+        top = lay.put(json.dumps({'schemaVersion': 2, 'mediaType': OCI_INDEX, 'manifests': [child]}).encode(), OCI_INDEX)
+        lay.index(top)
+        (self.b / 'manifest.txt').write_text(IMG + '\n')
+        r = self.run_py('--images', str(self.b / 'manifest.txt'), '--inventory-out', str(self.inv),
+                        '--platform', 'linux/arm64', '--tool', 'skopeo version 9.9')
+        self.assertEqual(r.returncode, 0, r.stderr)
+        doc = json.loads(self.inv.read_text())
+        self.assertIsNone(doc['images'][0]['collapsed_to'])
+        self.assertEqual(doc['images'][0]['platforms'], 'full-index-preserved')
+        self.assertEqual(self.verify().returncode, 0)
+
+    def test_gate_rejects_platform_mismatch_end_to_end(self):
+        self.saved()
+        (self.b / 'list.txt').write_text(IMG + '\n')
+        (self.b / 'digests.tsv').write_text(f'{IMG}\tsha256:{"b" * 64}\t2026-10-15T00:00:00Z\tcrane\n')
+
+        def build(lay):
+            return lay.image(arch='amd64')[0]
+        top = self.swap_in(build)
+        self.rewrite(lambda d: d['images'][0].update(digest=top['digest']))
+        cmd = ['bash', str(GATE), '--list', str(self.b / 'list.txt'), '--bundle', str(self.b),
+               '--digests', str(self.b / 'digests.tsv')]
+        r = subprocess.run(cmd, capture_output=True, text=True)
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        self.assertIn('INCOMPLETE', r.stderr)
+        self.assertIn('config platform linux/amd64 != recorded linux/arm64', r.stderr)
+
 
 class SaveTimeTests(unittest.TestCase):
     def setUp(self):

@@ -1,0 +1,86 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-airgap-config-platform-124-20261015",
+  "task": "09 compares the image config os/architecture with the inventory's recorded collapsed_to platform (#124)",
+  "createdAt": "2026-10-15T04:34:44.264064+00:00",
+  "changeContext": {
+    "paths": [
+      ".agents/evals/traces/2026-10-airgap-config-platform-124.json",
+      "docs/common/lessons-log.md",
+      "scripts/airgap/README.md",
+      "scripts/airgap/lib/verify-oci-layout.py",
+      "scripts/airgap/tests/test_oci_inventory.py",
+      "scripts/airgap/tests/test_oci_layout.py"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "lib/verify-oci-layout.py (09 path) now reads each verified image's config blob and, when the inventory entry has collapsed_to (<os>/<arch>), requires config os and architecture to equal it exactly; an unlocated config, unreadable config, non-object config, or missing/ill-typed field is a reported problem, never a pass; entries with collapsed_to null skip the check; config_blob is stripped from --report-out rows. Tests: Layout.image() gains arch/os/variant (default arm64/linux), 10 new tests in test_oci_inventory.py. 02, 05 and the inventory schema untouched; no registry, no network.",
+      "recordedAt": "2026-10-15T04:34:44.264671+00:00"
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "Pre-change reproduction: one-image bundle whose config says architecture arm64 while the inventory entry's collapsed_to is linux/amd64. origin/main 09 accepts it (the gap); HEAD 09 rejects it naming the image and both platforms. A matching bundle (config amd64, collapsed_to linux/amd64) passes on both.",
+      "recordedAt": "2026-10-15T04:34:44.323257+00:00",
+      "scope": "Offline: git archive extracts of origin/main and HEAD scripts/airgap; layout is a hand-crafted source built with the tests' Layout helper then copied into the bundle with a REAL offline 'skopeo copy oci:<src>:latest oci:<dest>:latest' (skopeo version 1.24.1); inventory written by origin/main's verify-oci-layout.py --inventory-out --platform; no registry, no cluster",
+      "evidence": [
+        "runtime:origin/main 09 on config arm64 vs collapsed_to linux/amd64: rc=0 'Bundle complete: 1 images in images.txt'",
+        "runtime:HEAD 09 on the same bundle: rc=1 'ERROR: docker.io/x/y:1: config platform linux/arm64 != recorded linux/amd64' then 'is INCOMPLETE and must not be promoted'",
+        "runtime:matching bundle (config amd64, collapsed_to linux/amd64): origin/main 09 rc=0, HEAD 09 rc=0 'Bundle complete: 1 images'"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "check_inventory() calls config_platform_problem() for entries with collapsed_to; walk() keeps the config blob path in stats so verify_image() can hand it over; report rows drop config_blob. Error text names the image, the config os/arch and the recorded platform.",
+      "recordedAt": "2026-10-15T04:34:44.374506+00:00",
+      "evidence": [
+        "runtime:HEAD 09 mismatch bundle rc=1 'config platform linux/arm64 != recorded linux/amd64'"
+      ]
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "summary": "Airgap unit suite (82 tests) plus a mutation run on a git-archive temp copy of HEAD: 7 single-condition mutants, 7 killed, 0 survivors. collapsed_to gate off (killed by 6 platform tests incl. test_config_arch_mismatch_with_collapsed_to_fails and test_gate_rejects_platform_mismatch_end_to_end); arch compare off (killed by test_config_arch_mismatch_with_collapsed_to_fails, test_config_missing_architecture_fails, test_gate_rejects_platform_mismatch_end_to_end); os compare off (killed only by test_config_os_mismatch_with_collapsed_to_fails); non-object check off (test_config_not_an_object_fails); unreadable-config handler returns pass (test_unparseable_config_fails_without_traceback); unlocated-config guard off (test_unlocated_config_blob_is_a_problem_not_a_pass, a direct call of the helper because no real bundle reaches that branch); report keeps config_blob (test_index_children_walked_and_referrers_counted, test_normal_layout_passes_and_report_states_referrer_loss). Unmutated extract: 82 tests OK. Not mutated: the non-str/empty-field display branch of the error text.",
+      "recordedAt": "2026-10-15T04:34:44.424014+00:00",
+      "scope": "Offline only: python3 unittest of scripts/airgap/tests (82 tests, hand-built layouts and a stub skopeo for 02); mutation run on a git archive extract of HEAD; no registry, no cluster, the docker:// source of 02 is stubbed",
+      "evidence": [
+        "test:python3 -I -m unittest discover -s scripts/airgap/tests: Ran 82 tests OK",
+        "test:mutation run on a temp copy (scratch script, not committed): TOTAL 7 KILLED 7 SURVIVED 0",
+        "runtime:command-exit-0"
+      ],
+      "status": "passed",
+      "commandExitCode": 0
+    },
+    {
+      "id": "e5",
+      "type": "verification",
+      "summary": "Static regression suite passes on the committed tree",
+      "recordedAt": "2026-10-15T04:34:44.479690+00:00",
+      "scope": "Repository static suite; no live cluster, no registry",
+      "evidence": [
+        "test:./scripts/test/regression-check-kakao.sh --static: passed 332 failed 0 warnings 6",
+        "runtime:command-exit-0"
+      ],
+      "status": "passed",
+      "commandExitCode": 0
+    },
+    {
+      "id": "e6",
+      "type": "completion_claim",
+      "summary": "09 now fails closed when an image's config os/architecture differs from the inventory's recorded collapsed_to, naming image and both platforms. Verified only offline against hand-crafted layouts (one copied with a real offline skopeo oci->oci copy) and a stub skopeo; the docker:// source of 02 is stubbed, no registry or cluster behavior observed. collapsed_to is trust-on-first-save inventory data: rewriting layout, config and inventory together still passes, and the check is not a signature or external pin. Config variant (arm/v7 vs v8) is not compared. No mutation survivors among the 7 mutants.",
+      "recordedAt": "2026-10-15T04:34:44.528156+00:00"
+    },
+    {
+      "id": "e7",
+      "type": "task_outcome",
+      "summary": "Image-config platform check slice of #124 verified within stated scope.",
+      "recordedAt": "2026-10-15T04:34:44.577417+00:00",
+      "state": "A"
+    }
+  ]
+}

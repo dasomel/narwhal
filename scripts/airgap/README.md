@@ -81,6 +81,8 @@ Rancher airgap 방식을 Narwhal에 적용한 버전입니다. 외부 인터넷�
 #    (#124) 02가 저장 시점에 기록한 <bundle>/images.digests.json(이미지 → 최상위 digest, layout 경로,
 #    플랫폼 모드, skopeo 버전; 정렬·타임스탬프 없음)과 디스크의 layout을 대조한다. 목록에 없는 oci/
 #    디렉터리, 항목 없는 이미지, digest/플랫폼 불일치, 비정렬·중복·알 수 없는 필드는 exit 1.
+#    (#124) 단일 플랫폼 이미지는 layout의 config blob(os/architecture)이 인벤토리의 collapsed_to와 일치해야
+#    하며, 아키텍처 불일치·필드 누락·비객체 config는 exit 1로 차단한다(arm64 이미지를 amd64 번들에 오인 반입 방지).
 #    인벤토리 도입 전에 만든 번들은 의도적으로 실패한다 — 02-save-images.sh를 다시 실행해 재생성한다
 #    (현재 디스크에서 만든 인벤토리는 디스크 내용을 그대로 보증할 뿐이라 만들지 않는다).
 #    05-load-images.sh는 이 파일을 읽지 않으므로 적재 경로는 영향이 없다.

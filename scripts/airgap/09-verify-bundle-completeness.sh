@@ -28,8 +28,17 @@ set -euo pipefail
 # (a digest that isn't a well-formed sha256, for an image that isn't the one
 # documented in-cluster-built exception).
 #
+# LAYOUT BYTE CHECK (narwhal#124): an index.json that merely EXISTS proved nothing — an
+# empty one, a missing/truncated blob, or a digest-pinned image whose layout carries
+# other bytes passed. lib/verify-oci-layout.py now hashes every manifest/index/config
+# blob, checks layer presence+size, and requires pinned refs (02 uses --all
+# --preserve-digests) to keep their pinned digest. It also reports what the bundle
+# does NOT carry: OCI referrers (skopeo copy never copies them) and the platforms
+# --override-arch dropped. Referrer loss is reported, not failed — it is the open part
+# of #124, and failing every bundle until it is fixed would only teach people to skip 09.
+#
 # Usage:
-#   scripts/airgap/09-verify-bundle-completeness.sh [--list images.txt] [--bundle DIR] [--digests image-digests.tsv]
+#   scripts/airgap/09-verify-bundle-completeness.sh [--list images.txt] [--bundle DIR] [--digests image-digests.tsv] [--report FILE]
 #
 # Defaults: --list scripts/airgap/images.txt, --bundle "${AIRGAP_BUNDLE_DIR}" (arch-suffixed),
 #           --digests scripts/airgap/lib/image-digests.tsv.
@@ -42,6 +51,7 @@ source "${SCRIPT_DIR}/00-config.sh"
 LIST_FILE="${SCRIPT_DIR}/images.txt"
 BUNDLE_DIR="${AIRGAP_BUNDLE_DIR}"
 DIGESTS_FILE="${SCRIPT_DIR}/lib/image-digests.tsv"
+REPORT_FILE=""
 
 # shellcheck source=lib/image-classes.sh
 source "${SCRIPT_DIR}/lib/image-classes.sh"
@@ -51,6 +61,7 @@ while [[ $# -gt 0 ]]; do
     --list)     LIST_FILE="$2"; shift 2 ;;
     --bundle)   BUNDLE_DIR="$2"; shift 2 ;;
     --digests)  DIGESTS_FILE="$2"; shift 2 ;;
+    --report)   REPORT_FILE="$2"; shift 2 ;;
     *)          echo "Unknown arg: $1" >&2; exit 1 ;;
   esac
 done
@@ -129,6 +140,15 @@ while IFS= read -r img; do
 done < "${wanted_sorted}"
 
 fail=0
+
+# Byte-level layout check — skipped when layouts are already reported missing above,
+# so one absent directory does not also print as a per-image byte failure.
+if [[ -z "${missing_oci_layout}" ]]; then
+  report_args=()
+  [[ -n "${REPORT_FILE}" ]] && report_args=(--report-out "${REPORT_FILE}")
+  python3 -I "${SCRIPT_DIR}/lib/verify-oci-layout.py" --bundle "${BUNDLE_DIR}" \
+    --images "${wanted_sorted}" ${report_args[@]+"${report_args[@]}"} || fail=1
+fi
 
 if [[ -n "${missing_from_manifest}" ]]; then
   echo "ERROR: listed in images.txt but never recorded as saved in manifest.txt:" >&2

@@ -37,6 +37,40 @@ if ! command -v skopeo >/dev/null 2>&1; then
   exit 1
 fi
 
+# Layout names are lossy (`/` and `:` both become `_`), so two refs can share one oci/ dir and
+# the second copy would silently overwrite the first. Refuse before anything is touched.
+expected=$(mktemp)
+trap 'rm -f "${expected}"' EXIT
+collide=0
+while IFS= read -r img; do
+  [[ -z "${img}" || "${img}" =~ ^# ]] && continue
+  safe=$(echo "${img}" | tr '/:' '__')
+  prev=$(awk -F'\t' -v s="${safe}" '$1 == s { print $2; exit }' "${expected}")
+  if [[ -z "${prev}" ]]; then
+    printf '%s\t%s\n' "${safe}" "${img}" >> "${expected}"
+  elif [[ "${prev}" != "${img}" ]]; then
+    echo "ERROR: layout name collision: '${prev}' and '${img}' both map to oci/${safe}; one would overwrite the other" >&2
+    collide=1
+  fi
+done < "${LIST_FILE}"
+[[ ${collide} -eq 0 ]] || exit 1
+
+# An earlier run with a longer list leaves oci/<dir> that this list does not produce; the
+# inventory could not account for it and 09 would reject the bundle. Never delete for the user.
+stale=""
+if [[ -d "${OUT_DIR}/oci" ]]; then
+  while IFS= read -r d; do
+    awk -F'\t' -v s="${d##*/}" '$1 == s { f = 1 } END { exit !f }' "${expected}" || stale="${stale}  ${d}
+"
+  done < <(find "${OUT_DIR}/oci" -mindepth 1 -maxdepth 1 | sort)
+fi
+if [[ -n "${stale}" ]]; then
+  echo "ERROR: stale oci/ entries not produced by ${LIST_FILE}:" >&2
+  printf '%s' "${stale}" >&2
+  echo "Remove them or save into a fresh --out; nothing was changed." >&2
+  exit 1
+fi
+
 mkdir -p "${OUT_DIR}/oci"
 : > "${OUT_DIR}/manifest.txt"
 # A stale inventory from an earlier run must never describe this run's layouts.

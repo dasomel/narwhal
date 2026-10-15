@@ -73,6 +73,8 @@ def read_json(path: Path, label: str, strict_keys: bool = False):
                           object_pairs_hook=no_duplicate_keys if strict_keys else None)
     except (UnicodeDecodeError, ValueError) as exc:
         raise LayoutError(f"{label} is not valid JSON ({exc})")
+    except RecursionError:
+        raise LayoutError(f"{label} is nested too deeply to be a valid document")
 
 
 def check_descriptor(layout: Path, desc, label: str, hash_it: bool) -> Path:
@@ -241,7 +243,8 @@ def check_inventory(bundle: Path, entries: dict, rows: list) -> list:
         if child.is_symlink() or not child.is_dir():
             errors.append(f"oci/{child.name}: not a real directory (symlink or stray file)")
         elif child.name not in known:
-            errors.append(f"oci/{child.name}: layout not recorded in the digest inventory")
+            errors.append(f"oci/{child.name}: layout not recorded in the digest inventory (likely left over "
+                          "from an earlier 02 run with a different image list: remove it, or re-save into a fresh --out)")
     return errors
 
 
@@ -279,8 +282,11 @@ def main() -> int:
         try:
             entries = load_inventory(args.inventory)
         except (LayoutError, OSError) as exc:
-            print(f"ERROR: image digest inventory {args.inventory}: {exc}. Bundles saved before the "
-                  "inventory existed must be re-saved with 02-save-images.sh.", file=sys.stderr)
+            if not args.inventory.exists() and not args.inventory.is_symlink():
+                hint = "Bundles saved before the inventory existed must be re-saved with 02-save-images.sh."
+            else:
+                hint = "The file is invalid or untrusted: re-create the bundle from a trusted source."
+            print(f"ERROR: image digest inventory {args.inventory}: {exc}. {hint}", file=sys.stderr)
             return 1
         images |= set(entries)
     images = sorted(images)

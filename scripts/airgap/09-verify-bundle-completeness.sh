@@ -186,7 +186,7 @@ if [[ -n "${malformed_digest}" ]]; then
 fi
 
 if [[ -n "${extra_in_manifest}" ]]; then
-  echo "WARN: saved in this bundle but no longer in images.txt (stale bundle?):" >&2
+  echo "NOTE: manifest.txt lists images not in images.txt (stale bundle?); they are verified too, so a missing or mismatched layout/inventory entry for any of them fails this gate:" >&2
   echo "${extra_in_manifest}" | sed 's/^/  /' >&2
 fi
 

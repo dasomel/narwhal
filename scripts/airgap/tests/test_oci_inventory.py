@@ -1,4 +1,5 @@
 import json
+import os
 import pathlib
 import shutil
 import subprocess
@@ -6,9 +7,33 @@ import sys
 import tempfile
 import unittest
 
-from test_oci_layout import GATE, IMG, OCI_INDEX, VERIFIER, Layout
+from test_oci_layout import AIRGAP, GATE, IMG, OCI_INDEX, VERIFIER, Layout
 
 OTHER = 'docker.io/x/z:2'
+SAVE = AIRGAP / '02-save-images.sh'
+# Offline skopeo stand-in: `copy ... <src> oci:<dir>:latest` writes a tiny valid layout seeded by <src>.
+SKOPEO_STUB = '''#!/usr/bin/env python3
+import hashlib, json, os, sys
+a = sys.argv[1:]
+if a[0] == '--version':
+    print('skopeo version 9.9'); sys.exit(0)
+src, dest = a[-2], a[-1]
+if dest.startswith('docker-archive:'):
+    open(dest.split(':')[1], 'wb').write(b'tar'); sys.exit(0)
+d = dest[len('oci:'):].rsplit(':', 1)[0]
+os.makedirs(d + '/blobs/sha256', exist_ok=True)
+open(d + '/oci-layout', 'w').write('{"imageLayoutVersion":"1.0.0"}')
+def put(data, media):
+    h = hashlib.sha256(data).hexdigest()
+    open(d + '/blobs/sha256/' + h, 'wb').write(data)
+    return {'mediaType': media, 'digest': 'sha256:' + h, 'size': len(data)}
+cfg = put(json.dumps({'os': 'linux', 'src': src}).encode(), 'application/vnd.oci.image.config.v1+json')
+lay = put(b'layer', 'application/vnd.oci.image.layer.v1.tar')
+m = put(json.dumps({'schemaVersion': 2, 'mediaType': 'application/vnd.oci.image.manifest.v1+json',
+                    'config': cfg, 'layers': [lay]}).encode(), 'application/vnd.oci.image.manifest.v1+json')
+m['annotations'] = {'org.opencontainers.image.ref.name': 'latest'}
+open(d + '/index.json', 'w').write('{}' if 'broken' in src else json.dumps({'schemaVersion': 2, 'manifests': [m]}))
+'''
 
 
 class InventoryTests(unittest.TestCase):
@@ -213,6 +238,79 @@ class InventoryTests(unittest.TestCase):
         self.assertEqual(bad.returncode, 1)
         self.assertIn('INCOMPLETE', bad.stderr)
         self.assertIn('re-saved with 02-save-images.sh', bad.stderr)
+
+    def test_unrecorded_layout_message_names_cause_and_remedy(self):
+        self.saved()
+        Layout(self.b, OTHER)
+        self.assertRejected('left over from an earlier 02 run')
+        self.assertRejected('fresh --out')
+
+    def test_gate_fails_on_manifest_only_ghost_ref(self):
+        self.saved()
+        (self.b / 'list.txt').write_text(IMG + '\n')
+        (self.b / 'digests.tsv').write_text(f'{IMG}\tsha256:{"b" * 64}\t2026-10-15T00:00:00Z\tcrane\n')
+        (self.b / 'manifest.txt').write_text(IMG + '\nghcr.io/ghost/img:9\n')
+        r = subprocess.run(['bash', str(GATE), '--list', str(self.b / 'list.txt'), '--bundle', str(self.b),
+                            '--digests', str(self.b / 'digests.tsv')], capture_output=True, text=True)
+        self.assertEqual(r.returncode, 1, r.stderr)
+        self.assertIn('ghcr.io/ghost/img:9', r.stderr)
+
+    def test_inventory_error_hint_depends_on_cause(self):
+        self.saved()
+        self.inv.write_text('{not json')
+        self.assertRejected('invalid or untrusted')
+        self.assertNotIn('re-saved', self.verify().stderr)
+        self.inv.write_text('[' * 200000 + ']' * 200000)
+        self.assertRejected('nested too deeply')
+        self.inv.unlink()
+        self.assertRejected('re-saved with 02-save-images.sh')
+
+
+class SaveTimeTests(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        root = pathlib.Path(self._tmp.name)
+        self.out = root / 'bundle'
+        self.bin = root / 'bin'
+        self.bin.mkdir()
+        (self.bin / 'skopeo').write_text(SKOPEO_STUB)
+        (self.bin / 'skopeo').chmod(0o755)
+        self.root = root
+
+    def save(self, *images):
+        lst = self.root / 'images.txt'
+        lst.write_text('\n'.join(images) + '\n')
+        env = dict(os.environ, PATH=f'{self.bin}:{os.environ["PATH"]}')
+        return subprocess.run(['bash', str(SAVE), '--list', str(lst), '--out', str(self.out)],
+                              capture_output=True, text=True, env=env)
+
+    def test_layout_name_collision_fails_before_any_copy(self):
+        a, b = 'docker.io/a/b:c', 'docker.io/a_b:c'  # both -> oci/docker.io_a_b_c
+        r = self.save(a, b)
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        self.assertIn(a, r.stderr)
+        self.assertIn(b, r.stderr)
+        self.assertIn('oci/docker.io_a_b_c', r.stderr)
+        self.assertFalse((self.out / 'oci').exists())
+        self.assertEqual(self.save(a, a).returncode, 0)  # a repeated identical ref is not a collision
+
+    def test_shorter_list_with_stale_layout_fails_and_deletes_nothing(self):
+        self.assertEqual(self.save(IMG, OTHER).returncode, 0)
+        before = (self.out / 'images.digests.json').read_bytes()
+        r = self.save(IMG)
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        self.assertIn('docker.io_x_z_2', r.stderr)
+        self.assertIn('fresh --out', r.stderr)
+        self.assertTrue((self.out / 'oci' / 'docker.io_x_z_2').is_dir())
+        self.assertEqual((self.out / 'images.digests.json').read_bytes(), before)
+
+    def test_broken_layout_fails_the_save_and_leaves_no_stale_inventory(self):
+        self.assertEqual(self.save(IMG).returncode, 0)
+        self.assertTrue((self.out / 'images.digests.json').exists())
+        r = self.save(IMG, 'docker.io/x/broken:1')
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        self.assertFalse((self.out / 'images.digests.json').exists())
 
 
 if __name__ == '__main__':

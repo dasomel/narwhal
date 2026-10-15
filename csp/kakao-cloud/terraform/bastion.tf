@@ -129,4 +129,12 @@ resource "kakaocloud_public_ip" "bastion_public" {
     device_type = "instance"
     id          = kakaocloud_instance.bastion.addresses[0].network_interface_id
   }
+
+  # D-PUBIP: external endpoints (DNS, kubeconfig, operator SSH, allowlists) hang on this
+  # address. Replace VMs with `tofu apply -replace=...`, never a targeted destroy. Cost:
+  # `tofu destroy` and assign_node_public_ips=false fail until this guard is removed.
+  # Escape hatch: delete this block, or `tofu state rm` the address (see README Cleanup).
+  lifecycle {
+    prevent_destroy = true
+  }
 }

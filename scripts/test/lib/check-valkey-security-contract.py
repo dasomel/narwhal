@@ -122,10 +122,21 @@ def validate_structured(chart: str, bootstrap: str) -> None:
 
   acl_writes = [
     l for l in bootstrap.splitlines()
-    if not l.lstrip().startswith("#") and "users.acl" in l and re.search(r">|\btee\b", l)
+    if not l.lstrip().startswith("#") and re.search(r">>?\s*\"?\S*users\.acl|\btee\b.*users\.acl", l)
   ]
   if len(acl_writes) != 1:
     raise AssertionError(f"users.acl must be written only by the reviewed heredoc, got {acl_writes}")
+  if "-o name)" not in bootstrap or "get secret narwhal-portal-valkey-auth -n devtools \\\n  --ignore-not-found -o name" not in bootstrap:
+    raise AssertionError("existence probe must be a separate `kubectl get secret --ignore-not-found -o name`")
+  if "exists without a password; refusing to regenerate" not in bootstrap:
+    raise AssertionError("an existing Secret without a usable password must abort (refusing to regenerate)")
+  if "*AlreadyExists*)" not in bootstrap or "2>&1 >/dev/null)\"; then" not in bootstrap:
+    raise AssertionError("first creation must handle AlreadyExists by re-reading the stored password")
+  if len(re.findall(r"kubectl create secret generic narwhal-portal-valkey-auth", bootstrap)) != 2:
+    raise AssertionError("atomic first create needs exactly one plain create plus one dry-run apply path")
+  create_block = bootstrap.split("if ! valkey_create_err=", 1)[-1].split("; then", 1)[0]
+  if "--dry-run" in create_block or "kubectl apply" in create_block:
+    raise AssertionError("first creation must use atomic `kubectl create`, not apply/dry-run")
   if not re.search(r"openssl rand -hex 32 \| tr -d '\\n' > \"\$\{valkey_auth_dir\}/password\"", bootstrap):
     raise AssertionError("password must be generated newline-free: openssl rand -hex 32 | tr -d '\\n'")
   if re.search(r"openssl rand[^\n|]*>\s*\"?\$\{valkey_auth_dir\}/password", bootstrap):
@@ -288,7 +299,11 @@ def main() -> None:
       bootstrap, "launcher",
     ),
     (chart.replace("                path: users.acl\n", "                path: users2.acl\n", 1), bootstrap, "path users.acl"),
-    (chart, bootstrap.replace("unset valkey_password\n", "unset valkey_password\necho 'user default on nopass' >> \"${valkey_auth_dir}/users.acl\"\n", 1), "reviewed heredoc"),
+    (chart, bootstrap.replace("EOF\n}\napply_valkey_auth", "EOF\necho 'user default on nopass' >> \"${valkey_auth_dir}/users.acl\"\n}\napply_valkey_auth", 1), "reviewed heredoc"),
+    (chart, bootstrap.replace("*AlreadyExists*)", "*NeverMatches*)", 1), "AlreadyExists"),
+    (chart, bootstrap.replace("exists without a password; refusing to regenerate", "exists", 1), "refusing to regenerate"),
+    (chart, bootstrap.replace("  --ignore-not-found -o name)", "  --ignore-not-found -o jsonpath='{.data.password}')", 1), "existence probe"),
+    (chart, bootstrap.replace('users.acl" 2>&1 >/dev/null)"; then', 'users.acl" --dry-run=client -o yaml 2>&1 >/dev/null)"; then', 1), "atomic"),
   ]
   for index, (mutant_chart, mutant_bootstrap, reason) in enumerate(reasoned, start=1):
     if (mutant_chart, mutant_bootstrap) == (chart, bootstrap):

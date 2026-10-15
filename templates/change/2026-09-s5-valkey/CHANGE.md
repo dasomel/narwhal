@@ -71,6 +71,10 @@ stored in a dedicated Kubernetes Secret, and only portal pods can reach the cach
   and preserved values must match `^[0-9a-f]{64}$` or bootstrap aborts. Reproduced on Valkey 8.1.10:
   `AUTH portal <hex>\n` returns WRONGPASS, `AUTH portal <hex>` returns OK. Cost: a malformed
   existing Secret blocks bootstrap; escape: delete that Secret deliberately and roll portal+Valkey.
+- `D6` — Secret existence is probed separately from its password; an existing Secret without a
+  valid 64-hex `password` aborts and is never regenerated (a running Valkey still holds the old ACL).
+- `D7` — First creation uses plain `kubectl create` so concurrent first runs cannot overwrite each
+  other; the AlreadyExists loser re-reads the winner's password. Later runs keep apply.
 - `D5` — Certificate sets `duration: 8760h` / `renewBefore: 720h` because Valkey 8.1 has no
   `tls-auto-reload-interval` (absent from `CONFIG GET tls-*`); cost: one planned restart per year.
 - `D3` — Restrict Valkey to explicit cache/live-stream commands and portal-only ingress; cost is

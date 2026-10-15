@@ -564,30 +564,46 @@ trap 'rm -rf "${portal_secret_tmp}"' EXIT
 # portal/Valkey rollout if preservation must be escaped.
 valkey_auth_dir="${portal_secret_tmp}/valkey-auth"
 mkdir -m 700 "${valkey_auth_dir}"
-# --ignore-not-found makes "absent" an empty success; any other kubectl failure aborts
-# instead of silently rotating the password under a running portal/Valkey pair.
-existing_valkey_password_b64="$(kubectl get secret narwhal-portal-valkey-auth -n devtools \
-  --ignore-not-found -o jsonpath='{.data.password}')" || {
+# D6: existence is probed separately from the password. A jsonpath read is empty both when the
+# Secret is absent and when it exists without a usable `password`; conflating them would
+# regenerate the password and overwrite a Secret that a running Valkey (ACL held in memory)
+# still authenticates against. Any kubectl failure aborts; an existing-but-incomplete Secret
+# aborts; only a truly absent Secret is generated. Cost: an incomplete Secret needs a manual
+# fix; escape: delete that Secret deliberately and roll portal+Valkey together.
+valkey_secret_exists="$(kubectl get secret narwhal-portal-valkey-auth -n devtools \
+  --ignore-not-found -o name)" || {
   echo "ERROR: could not read narwhal-portal-valkey-auth; refusing to rotate the Valkey password" >&2
   exit 1
+}
+load_valkey_password() {
+  local b64
+  b64="$(kubectl get secret narwhal-portal-valkey-auth -n devtools -o jsonpath='{.data.password}')" || {
+    echo "ERROR: could not read narwhal-portal-valkey-auth; refusing to rotate the Valkey password" >&2
+    exit 1
+  }
+  if [ -z "${b64}" ]; then
+    echo "ERROR: narwhal-portal-valkey-auth exists without a password; refusing to regenerate it (fix or delete the Secret deliberately)" >&2
+    exit 1
+  fi
+  if ! printf '%s' "${b64}" | base64 -d > "${valkey_auth_dir}/password"; then
+    echo "ERROR: narwhal-portal-valkey-auth password is not valid base64; refusing to regenerate it" >&2
+    exit 1
+  fi
 }
 # D4: the password file becomes Secret key `password` (portal env VALKEY_PASSWORD, used
 # untrimmed) AND the users.acl token, so both must be byte-identical: write it without a
 # trailing newline (tr, never a bare `> file` from openssl) and accept only 64 lowercase hex
 # chars. Real Valkey 8.1.10 answers WRONGPASS to "<hex>\n". Cost: an existing Secret with any
 # other shape aborts; escape: delete that Secret deliberately (coordinated portal rollout).
-if [ -n "${existing_valkey_password_b64}" ]; then
-  printf '%s' "${existing_valkey_password_b64}" | base64 -d > "${valkey_auth_dir}/password"
-else
-  openssl rand -hex 32 | tr -d '\n' > "${valkey_auth_dir}/password"
-fi
-if ! LC_ALL=C grep -qxE '[0-9a-f]{64}' "${valkey_auth_dir}/password" \
-  || [ "$(wc -c < "${valkey_auth_dir}/password" | tr -d ' ')" != 64 ]; then
-  echo "ERROR: Valkey password must be exactly 64 hex chars with no whitespace/newline (narwhal-portal-valkey-auth or generation is malformed)" >&2
-  exit 1
-fi
-chmod 600 "${valkey_auth_dir}/password"
-valkey_password="$(cat "${valkey_auth_dir}/password")"
+prepare_valkey_auth() {
+  if ! LC_ALL=C grep -qxE '[0-9a-f]{64}' "${valkey_auth_dir}/password" \
+    || [ "$(wc -c < "${valkey_auth_dir}/password" | tr -d ' ')" != 64 ]; then
+    echo "ERROR: Valkey password must be exactly 64 hex chars with no whitespace/newline (narwhal-portal-valkey-auth or generation is malformed)" >&2
+    exit 1
+  fi
+  chmod 600 "${valkey_auth_dir}/password"
+  local valkey_password
+  valkey_password="$(cat "${valkey_auth_dir}/password")"
 # D3: only cache and live-stream commands are granted (derived from every ioredis call in
 # narwhal-portal src: valkey.ts get/mget/set/multi/exec/del, idempotency.ts set/get,
 # live-stream.ts incr/lpush/ltrim/lrange/publish/subscribe, live-k8s-informer.ts eval lease
@@ -598,12 +614,40 @@ cat > "${valkey_auth_dir}/users.acl" <<EOF
 user default off
 user portal on >${valkey_password} ~* &live:events:chan +auth +hello +ping +info +select +client|setname +client|setinfo +get +mget +set +del +unlink +scan +incr +multi +exec +eval +pexpire +lpush +ltrim +lrange +publish +subscribe +unsubscribe
 EOF
-unset valkey_password
-kubectl create secret generic narwhal-portal-valkey-auth \
-  --namespace devtools \
-  --from-file=password="${valkey_auth_dir}/password" \
-  --from-file=users.acl="${valkey_auth_dir}/users.acl" \
-  --dry-run=client -o yaml | kubectl apply -f - >/dev/null
+}
+apply_valkey_auth() {
+  kubectl create secret generic narwhal-portal-valkey-auth \
+    --namespace devtools \
+    --from-file=password="${valkey_auth_dir}/password" \
+    --from-file=users.acl="${valkey_auth_dir}/users.acl" \
+    --dry-run=client -o yaml | kubectl apply -f - >/dev/null
+}
+if [ -n "${valkey_secret_exists}" ]; then
+  load_valkey_password
+  prepare_valkey_auth
+  apply_valkey_auth
+else
+  openssl rand -hex 32 | tr -d '\n' > "${valkey_auth_dir}/password"
+  prepare_valkey_auth
+  # D7: first creation is atomic (`create`, never apply) so two concurrent first runs cannot
+  # overwrite each other's password; the loser re-reads the winner's stored password.
+  if ! valkey_create_err="$(kubectl create secret generic narwhal-portal-valkey-auth \
+    --namespace devtools \
+    --from-file=password="${valkey_auth_dir}/password" \
+    --from-file=users.acl="${valkey_auth_dir}/users.acl" 2>&1 >/dev/null)"; then
+    case "${valkey_create_err}" in
+      *AlreadyExists*)
+        load_valkey_password
+        prepare_valkey_auth
+        apply_valkey_auth
+        ;;
+      *)
+        echo "ERROR: could not create narwhal-portal-valkey-auth: ${valkey_create_err}" >&2
+        exit 1
+        ;;
+    esac
+  fi
+fi
 
 kubectl create secret generic narwhal-portal-secrets \
   --namespace devtools \

@@ -25,13 +25,13 @@
     {
       "id": "e3",
       "type": "bug_fix",
-      "summary": "Valkey serves TLS only with ACL user portal and default user off; bindings inject rediss:// and VALKEY_TLS=true, drop VALKEY_INSECURE_PRODUCTION, abort on secret read errors; check renumbered R247 after finding R240 collision. Review fixes: password generated newline-free (tr -d) and validated as 64 hex for generated and preserved values (re-tested against real Valkey: exact Secret bytes authenticate); Certificate duration/renewBefore set because Valkey 8.1.10 lacks tls-auto-reload-interval (CONFIG GET tls-* confirmed); R247 now parses Valkey flags and users.acl (duplicate flags, allowlist, no nopass/allcommands/+@ categories) with 30 mutations (round 2: effective argv = command + args, flag allowlist, no args/env, single valkey-server launcher, aclfile volume path pinned, single users.acl write), each asserting its rejection reason and proven accepted when the new checks are disabled in a temp copy."
+      "summary": "Valkey serves TLS only with ACL user portal and default user off; bindings inject rediss:// and VALKEY_TLS=true, drop VALKEY_INSECURE_PRODUCTION, abort on secret read errors; check renumbered R247 after finding R240 collision. Review fixes: password generated newline-free (tr -d) and validated as 64 hex for generated and preserved values (re-tested against real Valkey: exact Secret bytes authenticate); Certificate duration/renewBefore set because Valkey 8.1.10 lacks tls-auto-reload-interval (CONFIG GET tls-* confirmed); R247 now parses Valkey flags and users.acl (duplicate flags, allowlist, no nopass/allcommands/+@ categories) with 30 mutations (round 2: effective argv = command + args, flag allowlist, no args/env, single valkey-server launcher, aclfile volume path pinned, single users.acl write), each asserting its rejection reason and proven accepted when the new checks are disabled in a temp copy. After two sonnet reviews, a Codex critic found two further bootstrap defects: an existing-but-incomplete Secret was treated as absent and its password regenerated, and first creation could race via apply. Fixed with a separate existence probe, abort on an incomplete Secret, and atomic kubectl create with an AlreadyExists re-read; exercised with a fake kubectl stub (not a real API server); R247 now has 34 mutations."
     },
     {
       "id": "e4",
       "type": "verification",
       "status": "passed",
-      "scope": "Valkey TLS/ACL/secret/ingress contract with 30 negative mutations (static; live TLS and portal connectivity unverified)",
+      "scope": "Valkey TLS/ACL/secret/ingress contract with 34 negative mutations (static; live TLS and portal connectivity unverified)",
       "summary": "check-valkey-security-contract.py passes on the rebased tree.",
       "evidence": [
         "test:python3 scripts/test/lib/check-valkey-security-contract.py",

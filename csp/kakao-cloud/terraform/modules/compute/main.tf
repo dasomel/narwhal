@@ -70,7 +70,7 @@ resource "kakaocloud_instance" "worker" {
 # Node egress
 #
 # Nodes reach apt, GitHub releases and Helm repos through the squid forward
-# proxy on the bastion (scripts/cloud/setup-bastion-proxy.sh) — provider 0.4.4
+# proxy on the bastion (scripts/cloud/setup-bastion-proxy.sh) — provider 0.5.1 (as 0.4.4)
 # exposes no NAT gateway resource, and a public IP per node would expose the
 # SSH and 6443 rules that this security group opens to 0.0.0.0/0.
 #

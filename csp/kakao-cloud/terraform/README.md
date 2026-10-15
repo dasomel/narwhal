@@ -24,7 +24,7 @@ services reachable through the worker LB.
 | Public IPs | 3 | Bastion + 2 LBs. **Cluster nodes have none** |
 
 Nodes are private by design. Everything reaches them through the bastion, and their
-outbound traffic goes through a squid proxy running there — Kakao Cloud provider 0.4.4
+outbound traffic goes through a squid proxy running there — Kakao Cloud provider 0.5.1 (as 0.4.4)
 exposes no NAT gateway resource, and giving each node a public IP would expose the SSH
 and 6443 rules this security group opens to 0.0.0.0/0. `assign_node_public_ips = true`
 is the escape hatch if you need direct egress instead.
@@ -58,7 +58,7 @@ is the escape hatch if you need direct egress instead.
 
 ## Prerequisites
 
-- **OpenTofu** >= 1.6.0 (`tofu`; Terraform CLI also works)
+- **OpenTofu** >= 1.13.0 (`tofu`; Terraform CLI also works)
 - **Kakao Cloud Account** with Application Credential (ID + Secret)
 - **Quotas**: 7 instances, 26 vCPU, 52GB+ RAM, 1.2TB volume, 3 public IPs, 2 LBs
 
@@ -219,7 +219,7 @@ terraform/
   bastion.tf           # Jump host + its public IP
   variables.tf         # Variable definitions
   outputs.tf           # Node IPs, LB endpoints, bastion, ssh_key_path, subnet_cidr, vpc_cidr
-  provider.tf          # kakaocloud provider v0.4.4
+  provider.tf          # kakaocloud provider v0.5.1
   cloud-init.yaml      # Basic VM init (SSH pubkey only)
   terraform.tfvars.example
   modules/
@@ -279,6 +279,46 @@ Measured 2026-07-26, `tofu apply` only:
 
 Cluster provisioning after that is roughly another hour, plus the airgap bundle transfer
 (~6GB) if you use one.
+
+## Upgrading an existing deployment to provider 0.5.1
+
+Provider 0.5.0 removed `kakaocloud_vpc.subnet`, and the bastion's `initial_security_groups`
+cannot be changed in place (`Changing the initial security group is not allowed`, even with
+`-replace`; pending #202). A fresh install needs none of this. A live deployment needs the
+steps below, in order, run from this directory with the operator's `terraform.tfvars`.
+
+```bash
+# 1. Back up state, and note the default subnet ID while the 0.4.x schema still shows it
+tofu state pull > ~/narwhal-kakao-state-pre-0.5.1.json   # keep outside git
+tofu state show module.network.kakaocloud_vpc.vpc        # the `subnet` block's id
+
+# 2. Pull the new provider (the lock file is already pinned to 0.5.1)
+tofu init -upgrade
+
+# 3. Import the VPC default subnet (the former inline `subnet` block)
+tofu import module.network.kakaocloud_subnet.vpc_default_subnet <default-subnet-id>
+
+# 4. Pin the bastion's current private IP: nodes use it as DNS, squid proxy and registry mirror
+tofu output -raw bastion_private_ip   # set this value as bastion_private_ip in terraform.tfvars
+
+# 5. Destroy the bastion alone, then apply (-replace does not work, see above)
+tofu destroy -target=kakaocloud_instance.bastion -refresh=false
+tofu apply
+
+# 6. Rebuild what lived on the bastion (squid, registry) from the repo root
+cd ../../..
+./scripts/cloud/provision-kakao.sh proxy registry
+```
+
+Notes:
+
+- Read `tofu plan` after steps 3 and 4. The only expected change is the bastion replacement;
+  the imported subnet should plan no change (the `vpc_default_subnet_name` default is `main`).
+- The `proxy` stage has no sentinel and always re-runs. The `registry` stage skips when the
+  bastion already serves `:5000`; a new bastion does not, so `FORCE=1` is only needed to
+  re-push into a bastion registry that is still alive. Sentinel-guarded node stages
+  (`base`, `mirror`, ...) are not redone.
+- The new bastion has a new SSH host key; clear the old entry from `known_hosts`.
 
 ## Cleanup
 
@@ -341,6 +381,6 @@ in [`docs/common/lessons-log.md`](../../../docs/common/lessons-log.md).
 
 ## Version Info
 
-- **OpenTofu**: >= 1.6.0
-- **Provider**: kakaocloud v0.4.4
+- **OpenTofu**: >= 1.13.0
+- **Provider**: kakaocloud v0.5.1
 - **OS**: Ubuntu 24.04 LTS (Kakao Cloud offers no 26.04 image; the Vagrant path uses 26.04)

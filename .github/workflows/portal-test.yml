@@ -16,6 +16,8 @@ name: Portal Unit Test Gate
 #       as "untouched"). Unknown/zero base SHA (new branch push) counts as "portal touched".
 #   D4  Job-level working-directory: portal; pnpm/action-setup reads portal/package.json
 #       (`uses:` steps ignore `defaults.run`); cache keyed on portal/pnpm-lock.yaml.
+#   D6  The regression-gate job has NO job-level working-directory: its checkout is conditional,
+#       so only the post-checkout steps set it (static check: scripts/ci/check-workflow-workdir.py).
 #   D5  `pnpm install --frozen-lockfile --ignore-scripts`: narwhal's R245 guard forbids
 #       script-running installs. Safe here: pnpm-workspace.yaml already pins
 #       onlyBuiltDependencies: [] so no dependency script ever ran.
@@ -176,9 +178,9 @@ jobs:
     if: ${{ always() }}
     needs: [changes, test, browser-e2e]
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: portal
+    # No job-level working-directory on purpose (D6): checkout is skipped when portal/ is
+    # untouched, and a missing cwd fails a step before the shell even starts. Only the steps
+    # that run after checkout set working-directory: portal.
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         if: needs.changes.outputs.portal == 'true'
@@ -196,9 +198,11 @@ jobs:
 
       - name: Verify gate failure scenarios
         if: needs.changes.outputs.portal == 'true'
+        working-directory: portal
         run: node --test scripts/check-regression-results.node.mjs
       - name: Require successful critical suites
         if: needs.changes.outputs.portal == 'true'
+        working-directory: portal
         run: node scripts/check-regression-results.mjs
         env:
           UNIT_API_RESULT: ${{ needs.test.result }}

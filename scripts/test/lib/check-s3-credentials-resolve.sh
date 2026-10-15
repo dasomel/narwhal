@@ -9,6 +9,12 @@ cat > "$k/kubectl" <<'FAKE'
 # args: get secret <name> -n <ns> -o jsonpath={.data.<key>}
 name="$3"; key="${6#jsonpath=\{.data.}"; key="${key%\}}"
 case "${FAKE_SCENARIO}" in
+  missing) echo "kubectl: command not found" >&2; exit 127 ;;
+  notfound_nomsg) echo "bash: kubectl: command not found" >&2; exit 1 ;;
+  warn_ok)
+    echo "Warning: stderr noise that must not reach the value" >&2
+    case "${key}" in access-key) printf 'a2V5' ;; secret-key) printf 'c2VjcmV0' ;; esac
+    exit 0 ;;
   notfound) echo "Error from server (NotFound): secrets \"${name}\" not found" >&2; exit 1 ;;
   apierror) echo "Unable to connect to the server: net/http: TLS handshake timeout" >&2; exit 1 ;;
   cnpg_only)
@@ -33,6 +39,11 @@ run notfound "${cnpg[@]}"; [ "$S3_ACCESS_KEY" = admin ] && [ "$S3_SECRET_KEY" = 
 # any other kubectl error -> fail closed
 if run apierror; then echo "apierror must fail" >&2; exit 1; fi
 if run apierror "${cnpg[@]}"; then echo "apierror (cnpg) must fail" >&2; exit 1; fi
+# kubectl missing (rc 127, "command not found") or any non-server "not found" -> fail closed
+if run missing; then echo "rc127 must fail" >&2; exit 1; fi
+if run notfound_nomsg; then echo "shell not-found text must fail" >&2; exit 1; fi
+# stderr warning on a successful read must not corrupt the value
+run warn_ok; [ "$S3_ACCESS_KEY" = key ] && [ "$S3_SECRET_KEY" = secret ]
 # existing cnpg secret (velero absent) is preserved, not defaulted
 run cnpg_only "${cnpg[@]}"; [ "$S3_ACCESS_KEY" = key ] && [ "$S3_SECRET_KEY" = secret ]
 # env override wins; empty secret key still ends non-empty

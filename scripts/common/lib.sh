@@ -23,12 +23,19 @@ generate_password() {
 # error (API blip, timeout, RBAC) returns 1 so the caller aborts instead of defaulting over
 # real credentials. Values are never logged.
 read_secret_field() {
-  local out rc=0
-  out=$(kubectl get secret "$1" -n "$2" -o "jsonpath={.data.$3}" 2>&1) || rc=$?
+  local out err rc=0 errf
+  errf=$(mktemp) || return 1
+  out=$(kubectl get secret "$1" -n "$2" -o "jsonpath={.data.$3}" 2>"${errf}") || rc=$?
+  err=$(cat "${errf}" 2>/dev/null || true)
+  rm -f "${errf}"
   if [ "${rc}" -ne 0 ]; then
-    case "${out}" in
-      *NotFound*|*"not found"*) return 0 ;;
-    esac
+    # Only kubectl's own server NotFound counts as absent. A bare "not found" would also
+    # match the shell's "kubectl: command not found" (rc 127) and fail open.
+    if [ "${rc}" -ne 127 ]; then
+      case "${err}" in
+        *"Error from server (NotFound)"*) return 0 ;;
+      esac
+    fi
     echo "ERROR: cannot read secret $2/$1 (kubectl failed, not NotFound); refusing to default credentials." >&2
     return 1
   fi

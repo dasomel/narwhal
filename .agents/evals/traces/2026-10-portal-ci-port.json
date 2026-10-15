@@ -21,7 +21,13 @@
       "portal/scripts/check-lockfile-cooling.mjs",
       "portal/scripts/check-supply-chain-policy.mjs",
       "scripts/test/regression-check-kakao.sh",
-      ".agents/evals/traces/2026-10-portal-ci-port.json"
+      ".agents/evals/traces/2026-10-portal-ci-port.json",
+      "scripts/ci/check-workflow-workdir.py",
+      "scripts/ci/check-portal-release-ref.py",
+      "scripts/ci/markdownlint-changed.py",
+      "scripts/ci/tests/test_check_workflow_workdir.py",
+      "scripts/ci/tests/test_check_portal_release_ref.py",
+      "scripts/ci/tests/test_markdownlint_changed.py"
     ]
   },
   "events": [
@@ -77,6 +83,35 @@
       "summary": "regression-check-kakao.sh --static reports failed 0 with the narrowed exemption.",
       "evidence": [
         "test:./scripts/test/regression-check-kakao.sh --static",
+        "runtime:command-exit-0"
+      ],
+      "commandExitCode": 0
+    },
+    {
+      "id": "e10",
+      "type": "bug_fix",
+      "summary": "PR #347 review round: (1) portal-test.yml regression-gate dropped its job-level working-directory (its checkout is skipped when portal/ is untouched, so the cwd did not exist and Portal gate failed on every non-portal PR); simulated the untouched path in an empty temp dir (step passes) and the touched path (node --test 13 pass, gate script success); check-workflow-workdir.py + tests fail the old file (mutation on `git show HEAD~` copy) and pass all 10 portal workflows. Audited every portal-*.yml: no other job has a default with conditional/absent checkout or a run step before checkout. (2) portal-release.yml now requires workflow_run.event == push and proves the tag exists with commit == head_sha (check-portal-release-ref.py, 10 unit cases: push+tag ok, annotated tag ok, dispatch on branch named portal/v1.2.3, tag elsewhere, non-matching names, missing tag, short sha, publish ok/mismatch/release-looking branch); portal-docker-publish.yml applies the same validation first. (3) markdownlint-changed.py measures portal/ against baseline e8e8229d when it is an ancestor of HEAD (else the PR base): 5 unit tests incl. unchanged imported file, changed line, non-portal unaffected, absent-baseline fallback, end-to-end; mutation (bare URL added to portal/README.md in a temp clone) fails with portal/README.md:154 MD034. Verified with --base origin/main, not 498a3ae."
+    },
+    {
+      "id": "e11",
+      "type": "verification",
+      "status": "passed",
+      "scope": "scripts/ci unit tests incl. the three new suites",
+      "summary": "Full scripts/ci unit test discovery passes.",
+      "evidence": [
+        "test:python3 -m unittest discover -s scripts/ci/tests",
+        "runtime:command-exit-0"
+      ],
+      "commandExitCode": 0
+    },
+    {
+      "id": "e12",
+      "type": "verification",
+      "status": "passed",
+      "scope": "markdownlint-changed.py against the real PR base origin/main",
+      "summary": "No markdownlint violations on added/modified active-documentation lines with --base origin/main.",
+      "evidence": [
+        "test:python3 scripts/ci/markdownlint-changed.py --base origin/main",
         "runtime:command-exit-0"
       ],
       "commandExitCode": 0

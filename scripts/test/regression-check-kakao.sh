@@ -129,38 +129,44 @@ run_static() {
   section "STATIC — known fixes still present in the repo"
 
   # narwhal#238 (2026-09-28): every active portal image pin must agree. Historical
-  # release notes and lessons are excluded; D1 keeps this inventory check small and
+  # release notes (root and portal/) and lessons are excluded, as is portal/SECURITY.md's
+  # example command; D1 keeps this inventory check small and
   # source-controlled, with the escape hatch of adding new active pin docs to grep.
   check R210 "all active narwhal-portal image pins use one version (Narwhal#238, 2026-09-28)" \
     python3 -c '
 import re
 import subprocess
-result = subprocess.run(["git", "grep", "-h", "-E", r"ghcr\.io/dasomel/narwhal-portal:1\.0\.[0-9]+", "--", ".", ":!CHANGELOG*", ":!docs/common/lessons-log.md", ":!scripts/test/regression-check-kakao.sh", ":!.agents/evals/traces"], capture_output=True, text=True)
+result = subprocess.run(["git", "grep", "-h", "-E", r"ghcr\.io/dasomel/narwhal-portal:1\.0\.[0-9]+", "--", ".", ":!CHANGELOG*", ":!docs/common/lessons-log.md", ":!scripts/test/regression-check-kakao.sh", ":!.agents/evals/traces", ":!portal/CHANGELOG*", ":!portal/SECURITY.md"], capture_output=True, text=True)
 if result.returncode not in (0, 1):
     raise SystemExit(result.stderr)
 versions = set(re.findall(r"ghcr\.io/dasomel/narwhal-portal:(1\.0\.[0-9]+)", result.stdout))
 assert len(versions) == 1, f"portal pin versions differ: {sorted(versions)}"
 '
 
-  # D2: inspect the source tree behind the deployed tag; cost is one git tree read,
-  # and CI without the optional sibling checkout reports an explicit skip.
-  local portal_dir="${NARWHAL_PORTAL_DIR:-../narwhal-portal}"
-  if [ -d "${portal_dir}" ]; then
-    check R211 "pinned portal tag contains both probe routes (Narwhal#238, 2026-09-28)" \
-      python3 -c '
+  # D2 / D-MONO-2: portal/ is in this repo, so inspect its working tree instead of
+  # a pinned release tag's tree (no sibling checkout, no tags, no network). The pin
+  # in the GitOps Deployment must still be a well-formed SemVer. R211b proves the
+  # check fails when a probe route is missing, using a temp tree (never portal/).
+  local probe_check='
 import pathlib
 import re
-import subprocess
+import sys
+root = pathlib.Path(sys.argv[1])
 manifest = pathlib.Path("gitops/charts/narwhal-platform/templates/narwhal-portal-k8s.yaml").read_text()
-match = re.search(r"image:\s*ghcr\.io/dasomel/narwhal-portal:(\d+\.\d+\.\d+)", manifest)
-assert match, "portal image pin missing from GitOps Deployment"
-listed = subprocess.run(["git", "-C", pathlib.Path(__import__("sys").argv[1]).as_posix(), "ls-tree", "-r", "--name-only", "v" + match.group(1)], check=True, capture_output=True, text=True).stdout.splitlines()
-required = {"src/app/api/health/live/route.ts", "src/app/api/health/ready/route.ts"}
-assert required.issubset(listed), f"v{match.group(1)} missing probe routes: {sorted(required - set(listed))}"
-' "${portal_dir}"
-  else
-    echo "  SKIP  R211           sibling ../narwhal-portal checkout absent; route-tag check not run"
-  fi
+assert re.search(r"image:\s*ghcr\.io/dasomel/narwhal-portal:\d+\.\d+\.\d+", manifest), "portal image pin missing from GitOps Deployment"
+required = ["src/app/api/health/live/route.ts", "src/app/api/health/ready/route.ts"]
+missing = [r for r in required if not (root / r).is_file()]
+assert not missing, f"{root} missing probe routes: {missing}"
+'
+  check R211 "in-repo portal/ contains both probe routes the GitOps probes call (Narwhal#238, 2026-09-28)" \
+    python3 -c "${probe_check}" portal
+  local probe_drift_tmp
+  probe_drift_tmp="$(mktemp -d)"
+  mkdir -p "${probe_drift_tmp}/src/app/api/health/live"
+  : > "${probe_drift_tmp}/src/app/api/health/live/route.ts"
+  check_not R211b "R211's check catches a missing ready probe route (mutated temp tree)" \
+    python3 -c "${probe_check}" "${probe_drift_tmp}"
+  rm -rf "${probe_drift_tmp}"
 
   # Narwhal#242: bootstrap APISIX and the ArgoCD-owned Application must share the
   # same response-buffer directives; publishing charts is a fatal dependency step.
@@ -1070,8 +1076,17 @@ git push origin main || true' \
   # (pinned commit, see schemas/crds/SOURCE.md) and the flag is gone, so a missing
   # schema is a hard failure. One grep, alternation of both regressions, same shape
   # as R50/R51 — either one alone reopens #164.
+  # D-MONO-CI: the only exempt line is the harden-runner egress allowlist entry on its own
+  # (`raw.githubusercontent.com:443`, nothing else on the line). Any other occurrence --
+  # `curl https://raw...:443/x`, `wget raw...:443/x`, `raw...:8443`, `raw...:443/path` -- is
+  # still a mutable fetch and still fails. -h drops the file prefix so the filter sees the line.
+  r112_hits() {
+    grep -rhE '^[^#]*(raw\.githubusercontent\.com|-ignore-missing-schemas)' "$1" \
+      | grep -vE '^[[:space:]]*raw\.githubusercontent\.com:443[[:space:]]*$' \
+      | grep -q .
+  }
   check_not R112 "no mutable-URL CRD schema-location or -ignore-missing-schemas in workflows (2026-09-06)" \
-    grep -rqE '^[^#]*(raw\.githubusercontent\.com|-ignore-missing-schemas)' .github/workflows/
+    r112_hits .github/workflows/
 
   local kubeconform_schema_drift_tmp
   kubeconform_schema_drift_tmp="$(mktemp -d)"
@@ -1080,7 +1095,27 @@ git push origin main || true' \
     "${kubeconform_schema_drift_tmp}/lint.yml"
   rm -f "${kubeconform_schema_drift_tmp}/lint.yml.bak"
   check R112b "R112's check catches a reintroduced mutable-main CRD schema-location (2026-09-06)" \
-    grep -rqE '^[^#]*(raw\.githubusercontent\.com|-ignore-missing-schemas)' "${kubeconform_schema_drift_tmp}"
+    r112_hits "${kubeconform_schema_drift_tmp}"
+  printf '      - run: curl -fsSL -o x.sh https://raw.example.invalid/x\n      - run: sed -i s/a/b/ -ignore-missing-schemas\n' \
+    > "${kubeconform_schema_drift_tmp}/lint.yml"
+  check R112c "R112's check still catches a reintroduced -ignore-missing-schemas (2026-09-06)" \
+    r112_hits "${kubeconform_schema_drift_tmp}"
+  local r112_case r112_n=0
+  for r112_case in \
+    'curl https://raw.githubusercontent.com:443/x' \
+    'wget raw.githubusercontent.com:443/x' \
+    'raw.githubusercontent.com:8443' \
+    'raw.githubusercontent.com:443/path' \
+    'curl -fsSL https://raw.githubusercontent.com:443/o/r/main/x.sh | bash'; do
+    r112_n=$((r112_n + 1))
+    printf '          allowed-endpoints: >\n            %s\n' "${r112_case}" > "${kubeconform_schema_drift_tmp}/lint.yml"
+    check "R112d${r112_n}" "R112's check rejects '${r112_case}' (D-MONO-CI exemption is the bare allowlist entry only)" \
+      r112_hits "${kubeconform_schema_drift_tmp}"
+  done
+  printf '          allowed-endpoints: >\n            github.com:443\n            raw.githubusercontent.com:443\n            registry.npmjs.org:443\n' \
+    > "${kubeconform_schema_drift_tmp}/lint.yml"
+  check_not R112e "R112's check accepts the plain harden-runner allowlist line raw.githubusercontent.com:443 (D-MONO-CI)" \
+    r112_hits "${kubeconform_schema_drift_tmp}"
   rm -rf "${kubeconform_schema_drift_tmp}"
 
   # narwhal#52 (D3-A): images.txt and TRANSIENT_IMAGES used to leave the kaniko
@@ -1174,33 +1209,19 @@ PYEOF
   # deploy job actually runs. check-kaniko-tag-portal-contract.sh compares the
   # tags; the mutation runs against a temp copy of the portal manifest, never the
   # real sibling checkout.
-  # NARWHAL_PORTAL_DIR lets CI point at an in-workspace checkout (actions/checkout
-  # cannot write outside GITHUB_WORKSPACE); locally the sibling directory is the default.
-  local portal_dir="${NARWHAL_PORTAL_DIR:-../narwhal-portal}"
-  if [ -d "${portal_dir}" ]; then
-    check R117 "images.txt and portal deploy/kaniko-build-job.yaml pin the same kaniko/alpine-git tags (Narwhal#52, 2026-09-06)" \
-      env PORTAL_DIR="${portal_dir}" scripts/test/check-kaniko-tag-portal-contract.sh
+  # portal/ is in-repo (D-MONO-2), so this always runs: no sibling checkout, no skip.
+  local portal_dir="portal"
+  check R117 "images.txt and portal deploy/kaniko-build-job.yaml pin the same kaniko/alpine-git tags (Narwhal#52, 2026-09-06)" \
+    env PORTAL_DIR="${portal_dir}" scripts/test/check-kaniko-tag-portal-contract.sh
 
-    local kaniko_tag_drift_tmp
-    kaniko_tag_drift_tmp="$(mktemp -d)"
-    mkdir -p "${kaniko_tag_drift_tmp}/deploy"
-    sed -E "s#(kaniko-project/executor:)[^\"'[:space:]]+#\\1v0.0.0-drift-test#" \
-      "${portal_dir}/deploy/kaniko-build-job.yaml" > "${kaniko_tag_drift_tmp}/deploy/kaniko-build-job.yaml"
-    check_not R117b "R117's check catches a mutated portal kaniko tag (Narwhal#52, 2026-09-06)" \
-      env PORTAL_DIR="${kaniko_tag_drift_tmp}" scripts/test/check-kaniko-tag-portal-contract.sh
-    rm -rf "${kaniko_tag_drift_tmp}"
-  elif [ "${NARWHAL_PORTAL_REQUIRED:-0}" = "1" ]; then
-    # CI sets NARWHAL_PORTAL_REQUIRED=1 once it checks out the sibling repo (see
-    # .github/workflows/lint.yml) specifically so this pair can never again silently
-    # regress to the warn-and-skip path that let the kaniko/alpine-git tags drift to
-    # :latest in the first place (#52 triage, 2026-09-06) -- a missing checkout there
-    # is a CI misconfiguration, not an expected local-dev absence, so it fails loud.
-    bad R117 "NARWHAL_PORTAL_REQUIRED=1 but narwhal-portal sibling checkout not found; kaniko/alpine-git tag contract check cannot run"
-    bad R117b "NARWHAL_PORTAL_REQUIRED=1 but narwhal-portal sibling checkout not found; kaniko/alpine-git tag drift-detection check cannot run"
-  else
-    warn R117 "narwhal-portal sibling checkout not found; kaniko/alpine-git tag contract check skipped"
-    warn R117b "narwhal-portal sibling checkout not found; kaniko/alpine-git tag drift-detection check skipped"
-  fi
+  local kaniko_tag_drift_tmp
+  kaniko_tag_drift_tmp="$(mktemp -d)"
+  mkdir -p "${kaniko_tag_drift_tmp}/deploy"
+  sed -E "s#(kaniko-project/executor:)[^\"'[:space:]]+#\\1v0.0.0-drift-test#" \
+    "${portal_dir}/deploy/kaniko-build-job.yaml" > "${kaniko_tag_drift_tmp}/deploy/kaniko-build-job.yaml"
+  check_not R117b "R117's check catches a mutated portal kaniko tag (Narwhal#52, 2026-09-06)" \
+    env PORTAL_DIR="${kaniko_tag_drift_tmp}" scripts/test/check-kaniko-tag-portal-contract.sh
+  rm -rf "${kaniko_tag_drift_tmp}"
 
   # `npm install -g markdownlint-cli` took the newest release on every run. npm has no
   # digest to assert for a global install, so the version pin IS the control and an
@@ -1222,54 +1243,44 @@ PYEOF
   # 2026-08-23: the seam between this repo's RBAC bindings and narwhal-portal's login
   # allowlist has no compiler to catch drift — a group renamed or removed on either side
   # just silently breaks login or grants a role nobody can ever present a token for.
-  # Proves both directions: the contract holds against the real sibling checkout, AND a
+  # Proves both directions: the contract holds against the in-repo portal/ tree, AND a
   # deliberately removed group actually fails the check rather than passing quietly.
-  # The mutation runs against a temp copy of portal's auth.ts, never the real checkout.
-  if [ -d ../narwhal-portal ]; then
-    local contract_ok=1
-    scripts/test/check-oidc-rbac-portal-contract.sh >/dev/null 2>&1 || contract_ok=0
+  # The mutation runs against a temp copy of portal's auth.ts, never the real tree.
+  local contract_ok=1
+  scripts/test/check-oidc-rbac-portal-contract.sh >/dev/null 2>&1 || contract_ok=0
 
-    local drift_tmp drift_detected=0
-    drift_tmp="$(mktemp -d)"
-    mkdir -p "${drift_tmp}/src/lib"
-    sed '/"viewer",/d' ../narwhal-portal/src/lib/auth.ts > "${drift_tmp}/src/lib/auth.ts"
-    PORTAL_DIR="${drift_tmp}" scripts/test/check-oidc-rbac-portal-contract.sh >/dev/null 2>&1 \
-      || drift_detected=1
-    rm -rf "${drift_tmp}"
+  local drift_tmp drift_detected=0
+  drift_tmp="$(mktemp -d)"
+  mkdir -p "${drift_tmp}/src/lib"
+  sed '/"viewer",/d' portal/src/lib/auth.ts > "${drift_tmp}/src/lib/auth.ts"
+  PORTAL_DIR="${drift_tmp}" scripts/test/check-oidc-rbac-portal-contract.sh >/dev/null 2>&1 \
+    || drift_detected=1
+  rm -rf "${drift_tmp}"
 
-    if [ "${contract_ok}" -eq 1 ] && [ "${drift_detected}" -eq 1 ]; then
-      ok R55 "OIDC RBAC groups match portal ALLOWED_GROUPS, and drift is caught (2026-08-23)"
-    elif [ "${contract_ok}" -eq 0 ]; then
-      bad R55 "OIDC RBAC <-> portal ALLOWED_GROUPS contract is currently drifted (2026-08-23)"
-    else
-      bad R55 "check-oidc-rbac-portal-contract.sh fails to detect a removed portal group (2026-08-23)"
-    fi
+  if [ "${contract_ok}" -eq 1 ] && [ "${drift_detected}" -eq 1 ]; then
+    ok R55 "OIDC RBAC groups match portal ALLOWED_GROUPS, and drift is caught (2026-08-23)"
+  elif [ "${contract_ok}" -eq 0 ]; then
+    bad R55 "OIDC RBAC <-> portal ALLOWED_GROUPS contract is currently drifted (2026-08-23)"
   else
-    warn R55 "narwhal-portal sibling checkout not found; contract check skipped"
+    bad R55 "check-oidc-rbac-portal-contract.sh fails to detect a removed portal group (2026-08-23)"
   fi
 
-  # #243: production Gitea endpoint/token configuration is a cross-repo runtime seam.
-  local portal_dir="${NARWHAL_PORTAL_DIR:-../narwhal-portal}"
-  if [ -d "${portal_dir}" ]; then
-    local gitea_contract_ok=1 gitea_mutation_caught=0 gitea_tmp
-    NARWHAL_PORTAL_DIR="${portal_dir}" scripts/test/check-oidc-rbac-portal-contract.sh \
-      >/dev/null 2>&1 || gitea_contract_ok=0
-    gitea_tmp="$(mktemp -d)"
-    sed '/"GITEA_TOKEN": "${PORTAL_GIT_TOKEN}"/d' scripts/cluster/14-gitops-bootstrap.sh \
-      > "${gitea_tmp}/gitops-bootstrap.sh"
-    NARWHAL_PORTAL_DIR="${portal_dir}" PORTAL_GITOPS_BOOTSTRAP_FILE="${gitea_tmp}/gitops-bootstrap.sh" \
-      scripts/test/check-oidc-rbac-portal-contract.sh >/dev/null 2>&1 \
-      || gitea_mutation_caught=1
-    rm -rf "${gitea_tmp}"
-    if [ "${gitea_contract_ok}" -eq 1 ] && [ "${gitea_mutation_caught}" -eq 1 ]; then
-      ok R216 "portal-required Gitea keys are provided by bootstrap secret and envFrom; missing token is caught (Narwhal#243, 2026-09-28)"
-    elif [ "${gitea_contract_ok}" -eq 0 ]; then
-      bad R216 "portal production Gitea env contract is currently broken (Narwhal#243, 2026-09-28)"
-    else
-      bad R216 "portal Gitea env checker misses removed token provision (Narwhal#243, 2026-09-28)"
-    fi
+  # #243: production Gitea endpoint/token configuration is a portal<->cluster runtime seam.
+  local gitea_contract_ok=1 gitea_mutation_caught=0 gitea_tmp
+  scripts/test/check-oidc-rbac-portal-contract.sh >/dev/null 2>&1 || gitea_contract_ok=0
+  gitea_tmp="$(mktemp -d)"
+  sed '/"GITEA_TOKEN": "${PORTAL_GIT_TOKEN}"/d' scripts/cluster/14-gitops-bootstrap.sh \
+    > "${gitea_tmp}/gitops-bootstrap.sh"
+  PORTAL_GITOPS_BOOTSTRAP_FILE="${gitea_tmp}/gitops-bootstrap.sh" \
+    scripts/test/check-oidc-rbac-portal-contract.sh >/dev/null 2>&1 \
+    || gitea_mutation_caught=1
+  rm -rf "${gitea_tmp}"
+  if [ "${gitea_contract_ok}" -eq 1 ] && [ "${gitea_mutation_caught}" -eq 1 ]; then
+    ok R216 "portal-required Gitea keys are provided by bootstrap secret and envFrom; missing token is caught (Narwhal#243, 2026-09-28)"
+  elif [ "${gitea_contract_ok}" -eq 0 ]; then
+    bad R216 "portal production Gitea env contract is currently broken (Narwhal#243, 2026-09-28)"
   else
-    warn R216 "narwhal-portal sibling checkout not found; Gitea env contract skipped"
+    bad R216 "portal Gitea env checker misses removed token provision (Narwhal#243, 2026-09-28)"
   fi
 
   check R219 "13-2 preserves keys owned by other secret writers on rerun (Narwhal#243, 2026-09-28)" \
@@ -1280,7 +1291,7 @@ PYEOF
   # The actual boundary is an ingress NetworkPolicy on gitea-http naming its real direct
   # callers (APISIX, ArgoCD repo-server/application-controller, the portal, Kaniko),
   # verified against this repo rather than guessed (12-gitea.sh, 13-argocd.sh,
-  # 08-1-networking.sh, narwhal-portal-k8s.yaml, narwhal-portal's deploy/kaniko-build-job.yaml).
+  # 08-1-networking.sh, narwhal-portal-k8s.yaml, portal/deploy/kaniko-build-job.yaml).
   # check-gitea-ingress-policy.py checks structure, not just presence: a policy that names
   # gitea but still carries a bare allow-all `from` rule reads as fixed and is not. The
   # negative case runs against a mutated temp copy — one with the APISIX rule stripped —
@@ -1760,11 +1771,19 @@ with open(f"{tmp}/kyverno-policies.yaml", "w") as f:
     f.write(parts[0])
 with open(f"{tmp}/kyverno-policies-invalid-key.yaml", "w") as f:
     f.write(text.replace("publicKeys:", "publickeys:"))
+with open(f"{tmp}/kyverno-policies-key-drift.yaml", "w") as f:
+    f.write(text.replace("MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE9IgOjh5", "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEAAAAAAA", 1))
+with open(f"{tmp}/kyverno-policies-tlog-required.yaml", "w") as f:
+    f.write(text.replace("ignoreTlog: true", "ignoreTlog: false", 1))
 PYEOF
   check_not R75 "check-kyverno-signed-image-policy.py catches a removed verify-image-signatures policy (2026-08-25)" \
     python3 scripts/test/lib/check-kyverno-signed-image-policy.py "${kyverno_signed_img_tmp}/kyverno-policies.yaml"
   check_not R75b "check-kyverno-signed-image-policy.py catches a mis-cased Kyverno publicKeys field (2026-08-28)" \
     python3 scripts/test/lib/check-kyverno-signed-image-policy.py "${kyverno_signed_img_tmp}/kyverno-policies-invalid-key.yaml"
+  check_not R75c "check-kyverno-signed-image-policy.py catches inline publicKeys drifting from scripts/airgap/keys/cosign.pub (2026-10-15)" \
+    python3 scripts/test/lib/check-kyverno-signed-image-policy.py "${kyverno_signed_img_tmp}/kyverno-policies-key-drift.yaml"
+  check_not R75d "check-kyverno-signed-image-policy.py catches a key attestor that no longer skips the Rekor tlog (air-gap D-REKOR, 2026-10-15)" \
+    python3 scripts/test/lib/check-kyverno-signed-image-policy.py "${kyverno_signed_img_tmp}/kyverno-policies-tlog-required.yaml"
   rm -rf "${kyverno_signed_img_tmp}"
 
   # narwhal#35: 10-verify-image-signatures.sh exists as the air-gap image signature gate.
@@ -2106,9 +2125,11 @@ PYEOF
     python3 scripts/test/lib/check-install-scripts.py --root scripts/test/fixtures/install-scripts/tree-alias
   check_not R245p "install-script check baseline: swapping one violation for another in the same file fails" \
     python3 scripts/test/lib/check-install-scripts.py --root scripts/test/fixtures/install-scripts/tree-swap
+  check R245q "install-script check baseline: a violation with an empty baseline is reported as unexpected (not only as stale)" \
+    bash -c 'out="$(python3 scripts/test/lib/check-install-scripts.py --root scripts/test/fixtures/install-scripts/tree-unexpected 2>&1)"; rc=$?; [ "$rc" -eq 1 ] && printf "%s" "$out" | grep -q "unexpected script-running install"'
   is_gaps="$(python3 scripts/test/lib/check-install-scripts.py 2>/dev/null | grep -c '^KNOWN-ISSUE' || true)"
   if [ "${is_gaps:-0}" -gt 0 ]; then
-    warn R245-known "${is_gaps} known script-running installs baselined (Narwhal#164): markdownlint-cli npm install in lint.yml and markdown-changed.yml, pip install jsonschema in research-evidence.yml"
+    warn R245-known "${is_gaps} known script-running installs baselined (Narwhal#164): see the KNOWN-ISSUE lines of scripts/test/lib/check-install-scripts.py"
   fi
   # Narwhal#235 (lead live run): the ArgoCD HBONE post-check read a pre-patch snapshot and
   # exited 1 on every fresh cluster after its own successful appends.
@@ -3057,6 +3078,8 @@ assert line in s and not any(x.startswith("MAX_ROUNDS=") and ":-3" in x for x in
     python3 scripts/verify/upgrade-bundle-check.py --self-test
   check R241 "component upgrade waves cover Argo CD Applications and reject graph and reference drift (Narwhal#46)" \
     python3 scripts/test/lib/check-upgrade-waves.py --mutation-verify
+  check R246 "Argo CD developer and portal-reader policies/group maps match the reviewed contract (2026-10-02)" \
+    python3 scripts/test/lib/check-argocd-developer-sync-scope.py --mutation-verify
   check R236 "accelerator backend profiles match the conformance matrix (Narwhal#95)" \
     python3 scripts/test/lib/check-accelerator-profiles.py --mutation-verify
   check R247 "portal Valkey TLS, ACL, dedicated Secret, and ingress remain hardened (S5)" \

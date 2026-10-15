@@ -6,7 +6,7 @@ set -euo pipefail
 #=========================================
 # Cross-repo seam (narwhal#52 D3-A): scripts/airgap/images.txt pins the kaniko
 # executor and alpine/git build-helper images to immutable version tags so the
-# airgap bundle ships them; narwhal-portal's deploy/kaniko-build-job.yaml pins the
+# airgap bundle ships them; portal/deploy/kaniko-build-job.yaml pins the
 # SAME two images because that's the manifest that actually runs them. A comment on
 # either side saying "keep these in sync" is not enough to keep them in sync — that
 # is exactly how this pair drifted to :latest in the first place (#52 triage,
@@ -17,28 +17,18 @@ set -euo pipefail
 cd "$(dirname "$0")/../.."
 
 IMAGES_TXT="${IMAGES_TXT:-scripts/airgap/images.txt}"
-PORTAL_DIR="${PORTAL_DIR:-../narwhal-portal}"
+# portal/ lives in this monorepo (ADR-0001, D-MONO-2): the working tree is the
+# source of truth, so there is no pinned tag, no sibling checkout and no network.
+# PORTAL_DIR stays overridable only so the regression suite can point the check at
+# a mutated temp copy of the manifest.
+PORTAL_DIR="${PORTAL_DIR:-portal}"
 KANIKO_JOB_FILE="${PORTAL_DIR}/deploy/kaniko-build-job.yaml"
 
-# The portal repo is a sibling checkout, not a submodule of this one -- it may not
-# exist in every environment this runs in (e.g. a narwhal-only CI job). Structured
-# as an `if` block, not `[ -d ... ] && ...`: under `set -e` the latter aborts the
-# whole script the instant the directory is absent, never reaching the skip message.
-if [ ! -d "${PORTAL_DIR}" ]; then
-  # A missing checkout is a skip locally but a hard failure when the caller says the
-  # portal is required (CI): a silent exit 0 here once let R117 report PASS from a
-  # git worktree whose ../narwhal-portal did not exist.
-  if [ "${NARWHAL_PORTAL_REQUIRED:-0}" = "1" ]; then
-    echo "FAIL: NARWHAL_PORTAL_REQUIRED=1 but narwhal-portal checkout not found at ${PORTAL_DIR}" >&2
-    exit 1
-  fi
-  echo "SKIP: narwhal-portal sibling checkout not found at ${PORTAL_DIR} -- nothing to compare"
-  exit 0
-fi
-
+# In-repo, so absence is a broken tree, not an optional-checkout skip: the old
+# SKIP-and-exit-0 path let R117 report PASS without comparing anything.
 if [ ! -f "${KANIKO_JOB_FILE}" ]; then
-  echo "SKIP: ${KANIKO_JOB_FILE} not found -- nothing to compare"
-  exit 0
+  echo "FAIL: ${KANIKO_JOB_FILE} not found -- nothing to compare" >&2
+  exit 1
 fi
 
 # Compare tags and digest pins, not the full ref -- the two files may use different registry

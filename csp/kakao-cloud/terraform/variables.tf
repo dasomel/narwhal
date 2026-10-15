@@ -210,6 +210,17 @@ variable "assign_node_public_ips" {
 # =============================================
 # Bastion Security Group (issue #188)
 # =============================================
+variable "bastion_private_ip" {
+  description = "Fixed private IP for the bastion inside the main subnet. Leave null to auto-assign (clean install); set it to the current address before replacing a live bastion, because nodes point DNS, proxy and registry mirror at it."
+  type        = string
+  default     = null
+
+  validation {
+    condition     = var.bastion_private_ip == null || can(cidrhost("${var.bastion_private_ip}/32", 0))
+    error_message = "bastion_private_ip must be a valid IPv4 address or null"
+  }
+}
+
 variable "bastion_ssh_allowed_cidrs" {
   description = "CIDR blocks allowed to SSH into the bastion. Required and must NOT include 0.0.0.0/0 - the bastion has a public IP, so unrestricted SSH there was the original finding in #188. Set to your operator IP(s)/office CIDR, e.g. [\"203.0.113.4/32\"]."
   type        = list(string)

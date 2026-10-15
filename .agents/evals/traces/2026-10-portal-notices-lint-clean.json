@@ -1,0 +1,71 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-portal-notices-lint-clean-20261015",
+  "task": "Make portal/scripts/generate-third-party-notices.mjs emit markdownlint-clean output (MD034, MD040) so dependency-bump PRs pass the changed-lines Markdown gate",
+  "changeContext": {
+    "paths": [
+      ".github/workflows/portal-license-and-sbom.yml",
+      ".github/workflows/portal-test.yml",
+      "portal/scripts/generate-third-party-notices.mjs",
+      "portal/scripts/notices-format.mjs",
+      "portal/scripts/notices-format.node.mjs",
+      "portal/THIRD-PARTY-NOTICES.md",
+      "portal/docs/lessons-log.md",
+      ".agents/evals/traces/2026-10-portal-notices-lint-clean.json"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Only the notices generator (+ extracted pure emitters), its regenerated output, a node:test file wired into the existing portal-test.yml node --test step, one path-filter line in portal-license-and-sbom.yml (x2) and a lessons-log row change; the markdown gate is NOT weakened or excluded; license text bodies stay byte-identical."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "The pre-change output fails markdownlint with MD034 on every Homepage line and MD040 on every license fence; the new node:test file run against old-behavior emitters and the old committed file fails 3 of 3."
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "autolink() wraps absolute URLs as <url>; legalFileBlock() tags fences text and keeps the '''-escape of nested fences; the generator uses both; THIRD-PARTY-NOTICES.md regenerated (set of 665 packages, versions, licenses and all 646 license bodies compared old vs new: identical)."
+    },
+    {
+      "id": "e4",
+      "type": "verification",
+      "status": "passed",
+      "scope": "emitter unit tests and committed-file structure",
+      "summary": "node --test scripts/notices-format.node.mjs passes.",
+      "evidence": [
+        "test:cd portal && node --test scripts/notices-format.node.mjs",
+        "runtime:command-exit-0"
+      ],
+      "commandExitCode": 0
+    },
+    {
+      "id": "e5",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "full static regression suite",
+      "summary": "regression-check-kakao.sh --static passes with 0 failures.",
+      "evidence": [
+        "test:./scripts/test/regression-check-kakao.sh --static",
+        "runtime:command-exit-0"
+      ],
+      "commandExitCode": 0
+    },
+    {
+      "id": "e6",
+      "type": "completion_claim",
+      "summary": "Generator output verified locally (idempotent, markdownlint MD034/MD040 gone, portal typecheck/lint/test, changed-lines gate against origin/main); the GitHub Actions run of the touched workflows and the dependabot PR re-run are unverified. Three MD010 hard-tab lines inside verbatim license text remain by design."
+    },
+    {
+      "id": "e7",
+      "type": "task_outcome",
+      "state": "A",
+      "scope": "Generator, regenerated file and tests verified locally; GitHub Actions execution unverified",
+      "summary": "Local verification is green; Actions behavior is out of scope and stated in e6."
+    }
+  ]
+}

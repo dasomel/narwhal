@@ -9,7 +9,7 @@
 #     ArgoCD App-of-Apps가 Deployment를 동기화하므로 여기서는 이미지를 빌드하지 않고,
 #     Deployment가 Ready가 될 때까지 대기(readiness gate)만 한다.
 #   - (개발자용) 커스텀 포털 이미지를 in-cluster로 빌드하려면 Kaniko 셀프서비스
-#     도구를 쓴다: narwhal-portal repo의 scripts/kaniko-build.sh 가 소스를 in-cluster
+#     도구를 쓴다: 저장소의 portal/scripts/kaniko-build.sh 가 소스를 in-cluster
 #     Gitea에 push → Kaniko Job으로 빌드 → Harbor에 push한다. 그 뒤 gitops 이미지
 #     태그를 그 이미지로 바꾸면 ArgoCD가 배포한다. 자세한 내용: docs/common/developer-kaniko-builds.md
 #

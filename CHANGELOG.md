@@ -53,13 +53,11 @@ existing cluster or bundle; read **Upgrade notes** first.
 - **ArgoCD Applications no longer run in the `default` AppProject (6ead267).** `13-argocd.sh`
   applies the new `platform` and `tenants` AppProjects (`gitops/resources/argocd-projects.yaml`)
   and fails closed if it cannot. An Application that names an unlisted namespace or repo is now
-  refused at sync time. **The developer-sync restriction is not in effect yet:** `13-argocd.sh`
-  writes `sync` on `tenants/*` for the `developer` role, but the `narwhal-platform` GitOps chart
-  (`gitops/charts/narwhal-platform/templates/argocd-config.yaml`) still declares `sync` on `*/*`
-  for `developer` (and for `portal-reader`) in the same `argocd-rbac-cm` ConfigMap. The
-  `narwhal-platform` Application syncs that file with `selfHeal` and `prune` and does not ignore
-  the ConfigMap, and step 14 runs after step 13, so Git overwrites the script's value once the
-  app syncs. See Known issues.
+  refused at sync time. The `developer` role may `sync` only `tenants/*` in both
+  `13-argocd.sh` and the `narwhal-platform` GitOps chart (`argocd-config.yaml`), so the
+  self-healing Application no longer reverts the restriction (#342). `portal-reader` keeps
+  `sync */*` on purpose. R246 pins both sources, including the full policy line set. Not
+  verified on a live cluster. See Known issues.
 - **`narwhal-gitops` is a private Gitea repository (52dbb8d).** ArgoCD reads it with its own
   `argocd` account and a `read:repository` token registered as a repository Secret; `main` is
   protected by a push whitelist after the initial push. Re-running `14-gitops-bootstrap.sh`
@@ -242,11 +240,11 @@ existing cluster or bundle; read **Upgrade notes** first.
 - **Ingress isolation is partial.** In `gitops/resources`, only `database`, Gitea, the APISIX
   Admin API and the node-tuning Job (deny-all) have ingress-isolating policies; `monitoring` and
   `platform-system` have none (policies bundled inside charts were not exhaustively checked).
-- **The `developer` role keeps `sync */*` through the GitOps chart.** The
-  `gitops/charts/narwhal-platform` chart declares `sync` on `*/*` for `developer` and
-  `portal-reader` in `argocd-rbac-cm`, and the self-healing `narwhal-platform` Application
-  reverts the `tenants/*` value that `13-argocd.sh` writes. Developers can therefore sync any
-  Application until the chart is changed.
+- **The `portal-reader` role keeps `sync */*` by design.** The portal's service identity syncs
+  on any project; narrowing it needs a separate review. R246 (#342) checks the ArgoCD policy by
+  line set, parsed `argocd-rbac-cm` data and substitution expressions, but not the rendered Helm
+  output, other charts, `argocd-cm`, or changes made with `kubectl` outside the bootstrap
+  heredoc (see the change package's Known limits).
 - **Air-gap bundle copy does not preserve OCI referrers** (SBOM, signature, attestation).
   `09` reports the loss but does not fail (#124).
 - **The digest inventory is trust-on-first-save.** `images.digests.json` is not signed, so it

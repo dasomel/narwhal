@@ -1,0 +1,247 @@
+// Privileged 일회성 Job으로 노드 위에서 셸 스크립트 실행.
+// nsenter를 통해 host PID/mount/network 네임스페이스로 진입 → host의 sysctl/modprobe/apt-get을 그대로 사용.
+
+import "server-only"
+import { getK8sApiServer } from "./config"
+import { getK8sBearerToken } from "./k8s-token"
+import { assertK8sNamespace, assertK8sNodeName, safeK8sSegment } from "./validation"
+import { buildJobScript, type ApplyTarget } from "./tuning-commands"
+import { fetchWithPolicy, readJsonWithPolicy, readTextWithPolicy } from "./http-client"
+import { K8S_POLICY } from "./k8s-client"
+
+function authHeaders(apiServer: string): Record<string, string> {
+  if (!apiServer.startsWith("https://")) return {}
+  const token = getK8sBearerToken()
+  return token.length > 0 ? { Authorization: `Bearer ${token}` } : {}
+}
+
+const TUNING_NAMESPACE = process.env.TUNING_JOB_NAMESPACE ?? "devtools"
+assertK8sNamespace(TUNING_NAMESPACE)
+
+// #55: dedicated, least-privilege identity for the tuning Job pod. It never calls
+// the K8s API from inside the pod (it only nsenters into the host), so it needs no
+// RBAC grants at all — see narwhal gitops/resources/rbac-policies.yaml for the SA
+// definition (zero Role/RoleBinding on purpose) and automountServiceAccountToken
+// below, which additionally suppresses the default token projection.
+const TUNING_SERVICE_ACCOUNT = process.env.TUNING_JOB_SERVICE_ACCOUNT ?? "narwhal-tuning-job"
+
+const DIGEST_IMAGE_RE = /^[^\s@:]+(?::[0-9]+)?\/[a-z0-9._\-/]+@sha256:[0-9a-f]{64}$/i
+
+function getTuningImage(): string {
+  const image = process.env.TUNING_JOB_IMAGE ?? ""
+  if (!image || !DIGEST_IMAGE_RE.test(image)) {
+    throw new Error(
+      "TUNING_JOB_IMAGE env must be set to a digest-pinned image " +
+        "(e.g. registry.example.com/narwhal/tuning@sha256:<64-hex>). " +
+        "Tag-only references are rejected to prevent supply-chain tampering.",
+    )
+  }
+  return image
+}
+
+async function k8sFetch<T>(path: string, init?: RequestInit, policy: { timeoutMs?: number } = {}): Promise<T> {
+  const apiServer = getK8sApiServer()
+  const headers: Record<string, string> = {
+    Accept: "application/json",
+    "Content-Type": "application/json",
+    ...authHeaders(apiServer),
+    ...(init?.headers as Record<string, string> | undefined),
+  }
+  const res = await fetchWithPolicy(`${apiServer}${path}`, { ...init, headers }, {
+    ...K8S_POLICY,
+    timeoutMs: policy.timeoutMs ?? 60_000,
+  })
+  if (!res.ok) {
+    const body = await readTextWithPolicy(res).catch(() => "")
+    throw new Error(`K8s API ${res.status} ${path}: ${body.slice(0, 400)}`)
+  }
+  return readJsonWithPolicy<T>(res)
+}
+
+async function k8sFetchText(path: string): Promise<string> {
+  const apiServer = getK8sApiServer()
+  const headers: Record<string, string> = { Accept: "text/plain", ...authHeaders(apiServer) }
+  const res = await fetchWithPolicy(`${apiServer}${path}`, { headers }, { ...K8S_POLICY, timeoutMs: 60_000 })
+  if (!res.ok) throw new Error(`K8s API ${res.status} ${path}`)
+  return readTextWithPolicy(res)
+}
+
+async function deleteJob(namespace: string, name: string): Promise<void> {
+  const apiServer = getK8sApiServer()
+  // propagationPolicy=Background로 Job + Pod 모두 정리.
+  await fetchWithPolicy(
+    `${apiServer}/apis/batch/v1/namespaces/${safeK8sSegment(namespace)}/jobs/${safeK8sSegment(name)}?propagationPolicy=Background`,
+    {
+      method: "DELETE",
+      headers: authHeaders(apiServer),
+    },
+    { ...K8S_POLICY, timeoutMs: 10_000 },
+  ).catch(() => {})
+}
+
+interface JobStatus {
+  status?: {
+    succeeded?: number
+    failed?: number
+    conditions?: Array<{ type: string; status: string; message?: string }>
+  }
+}
+
+interface PodList {
+  items: Array<{ metadata: { name: string }; status: { phase: string } }>
+}
+
+export interface RunJobResult {
+  ok: boolean
+  logs: string
+  jobName: string
+}
+
+export interface RunJobOptions {
+  nodeName: string
+  /**
+   * #55: allowlisted tuning operations only — NOT a raw shell string. The host
+   * script is always built internally via `buildJobScript` from `tuning-commands.ts`,
+   * so a caller cannot smuggle arbitrary shell through this interface; every
+   * command that ends up running on the host traces back to a reviewed template
+   * in tuning-commands.ts's ApplyTarget switch.
+   */
+  targets: ApplyTarget[]
+  /** 식별 라벨용 (예: "tuning"). 영문/숫자/하이픈만. */
+  label?: string
+  timeoutMs?: number
+}
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
+
+export function jobStatusPollTimeoutMs(deadline: number, now = Date.now()): number {
+  return Math.min(60_000, deadline - now)
+}
+
+/**
+ * 지정 노드에서 셸 스크립트를 1회 실행.
+ *  - hostPID + hostNetwork + privileged
+ *  - nsenter로 host 네임스페이스 진입
+ *  - 완료 시 로그 반환, Job 삭제
+ *
+ * 호출자는 RBAC 검증을 마친 후에만 호출할 것.
+ */
+export async function runHostJob(opts: RunJobOptions): Promise<RunJobResult> {
+  assertK8sNodeName(opts.nodeName)
+  const label = (opts.label ?? "tuning").replace(/[^a-z0-9-]/gi, "").toLowerCase() || "tuning"
+  const jobName = `narwhal-${label}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+  const timeoutMs = opts.timeoutMs ?? 5 * 60_000
+
+  // #55: script is built from the allowlisted targets, never accepted as raw
+  // input. buildJobScript already prefixes `set -euo pipefail`.
+  const wrapped = buildJobScript(opts.targets)
+
+  const job = {
+    apiVersion: "batch/v1",
+    kind: "Job",
+    metadata: {
+      name: jobName,
+      namespace: TUNING_NAMESPACE,
+      labels: {
+        "app.kubernetes.io/name": "narwhal-tuning",
+        "app.kubernetes.io/component": label,
+        "narwhal.io/node": opts.nodeName,
+      },
+    },
+    spec: {
+      ttlSecondsAfterFinished: 60,
+      backoffLimit: 0,
+      activeDeadlineSeconds: Math.ceil(timeoutMs / 1000),
+      template: {
+        metadata: {
+          labels: {
+            "app.kubernetes.io/name": "narwhal-tuning",
+            "narwhal.io/job": jobName,
+            "istio.io/dataplane-mode": "none",
+          },
+        },
+        spec: {
+          restartPolicy: "Never",
+          hostPID: true,
+          hostNetwork: true,
+          nodeName: opts.nodeName,
+          // #55: dedicated least-privilege identity — the pod never calls the K8s
+          // API (it only nsenters into the host), so it needs no ServiceAccount
+          // token at all. automountServiceAccountToken=false additionally
+          // suppresses the default token projection even if TUNING_SERVICE_ACCOUNT
+          // is ever repointed at an SA that does carry grants.
+          serviceAccountName: TUNING_SERVICE_ACCOUNT,
+          automountServiceAccountToken: false,
+          tolerations: [
+            { operator: "Exists" },
+          ],
+          containers: [
+            {
+              name: "tuning",
+              image: getTuningImage(),
+              securityContext: { privileged: true },
+              command: ["/bin/sh", "-c"],
+              // #55: TUNING_JOB_IMAGE must be built from deploy/tuning-job.Dockerfile
+              // (or equivalent), which bakes in nsenter/util-linux at build time.
+              // Runtime `apk add` was removed — it fetched unpinned tooling from the
+              // network on every job run, defeating the digest pin on the base image.
+              args: [`nsenter -t 1 -m -u -i -n -p -- sh -c ${JSON.stringify(wrapped)}`],
+              resources: {
+                requests: { cpu: "50m", memory: "64Mi" },
+                limits: { cpu: "200m", memory: "128Mi" },
+              },
+            },
+          ],
+        },
+      },
+    },
+  }
+
+  // 1. Job 생성
+  await k8sFetch(`/apis/batch/v1/namespaces/${safeK8sSegment(TUNING_NAMESPACE)}/jobs`, {
+    method: "POST",
+    body: JSON.stringify(job),
+  })
+
+  try {
+    // 2. 완료 대기 (간단 폴링)
+    const deadline = Date.now() + timeoutMs
+    let succeeded = false
+    let failed = false
+    while (Date.now() < deadline) {
+      await sleep(1500)
+      const remainingMs = deadline - Date.now()
+      if (remainingMs <= 0) break
+      const status = await k8sFetch<JobStatus>(
+        `/apis/batch/v1/namespaces/${safeK8sSegment(TUNING_NAMESPACE)}/jobs/${safeK8sSegment(jobName)}`,
+        undefined,
+        { timeoutMs: jobStatusPollTimeoutMs(deadline) },
+      )
+      if (status.status?.succeeded && status.status.succeeded >= 1) { succeeded = true; break }
+      if (status.status?.failed && status.status.failed >= 1) { failed = true; break }
+    }
+
+    // 3. Pod 로그 수집
+    const pods = await k8sFetch<PodList>(
+      `/api/v1/namespaces/${safeK8sSegment(TUNING_NAMESPACE)}/pods?labelSelector=narwhal.io/job%3D${encodeURIComponent(jobName)}`,
+    )
+    let logs = ""
+    if (pods.items.length > 0) {
+      try {
+        logs = await k8sFetchText(
+          `/api/v1/namespaces/${safeK8sSegment(TUNING_NAMESPACE)}/pods/${safeK8sSegment(pods.items[0].metadata.name)}/log`,
+        )
+      } catch (e) {
+        logs = `(log fetch failed: ${(e as Error).message})`
+      }
+    } else {
+      logs = "(no pod produced)"
+    }
+
+    if (succeeded) return { ok: true, logs, jobName }
+    if (failed) return { ok: false, logs, jobName }
+    return { ok: false, logs: `${logs}\n(timeout after ${timeoutMs}ms)`, jobName }
+  } finally {
+    await deleteJob(TUNING_NAMESPACE, jobName)
+  }
+}

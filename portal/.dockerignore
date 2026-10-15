@@ -1,0 +1,37 @@
+# 환경변수 파일 (example 제외)
+.env
+.env.*
+!.env.example
+.env.local
+.env.*.local
+
+# 빌드 산출물 및 의존성
+node_modules
+.next
+
+# 버전관리
+.git
+
+# 문서 (빌드 불필요)
+*.md
+# 단, 라이선스 고지는 이미지에 들어가야 한다 — Dockerfile runner 스테이지가 COPY 한다.
+# 이 예외가 없으면 *.md에 걸려 THIRD-PARTY-NOTICES.md가 컨텍스트에서 빠지고 빌드가 깨진다.
+!THIRD-PARTY-NOTICES.md
+
+# Skaffold / dev tooling
+skaffold.yaml
+Dockerfile.dev
+_workspace/
+.claude/
+.bkit/
+.omc/
+.idea/
+docs/
+scripts/
+playwright-report/
+test-results/
+coverage/
+
+# 인증서 비밀키 — 절대 이미지에 포함 금지
+certs/*.key
+*.pem

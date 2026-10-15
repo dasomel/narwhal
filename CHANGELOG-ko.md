@@ -46,12 +46,10 @@ ArgoCD, Gitea, RBAC, OpenBao, Keycloak, APISIX, NFS, `database` 신뢰 경계가
   형식이 잘못된 신선도 증거는 거부됨.
 - **ArgoCD Application이 더 이상 `default` AppProject에서 실행되지 않음 (6ead267).** `13-argocd.sh`가 새
   `platform`, `tenants` AppProject(`gitops/resources/argocd-projects.yaml`)를 적용하며 적용하지 못하면 실패함.
-  목록에 없는 네임스페이스나 리포지토리를 지정한 Application은 동기화 시점에 거부됨. **개발자 동기화 제한은 아직
-  적용되지 않음:** `13-argocd.sh`는 `developer` 역할에 `tenants/*`의 `sync`를 쓰지만, `narwhal-platform` GitOps
-  차트(`gitops/charts/narwhal-platform/templates/argocd-config.yaml`)는 같은 `argocd-rbac-cm` ConfigMap에서
-  `developer`(및 `portal-reader`)에 여전히 `*/*`의 `sync`를 선언함. `narwhal-platform` Application은 이 파일을
-  `selfHeal`과 `prune`으로 동기화하고 해당 ConfigMap을 무시하지 않으며 14단계가 13단계 뒤에 실행되므로, 앱이
-  동기화되면 Git이 스크립트의 값을 덮어씀. 알려진 이슈 참고.
+  목록에 없는 네임스페이스나 리포지토리를 지정한 Application은 동기화 시점에 거부됨. `developer` 역할은 `13-argocd.sh`와 `narwhal-platform`
+  GitOps 차트(`argocd-config.yaml`) 양쪽에서 `tenants/*`만 `sync`할 수 있으며, 자가 복구 Application이 제한을 더 이상
+  되돌리지 않음(#342). `portal-reader`의 `sync */*`는 의도적으로 유지됨. R246이 전체 정책 줄 집합을 포함해 두 소스를
+  고정함. 라이브 클러스터에서는 확인하지 않음. 알려진 이슈 참고.
 - **`narwhal-gitops`가 비공개 Gitea 리포지토리가 됨 (52dbb8d).** ArgoCD는 전용 `argocd` 계정과
   `read:repository` 토큰(리포지토리 Secret으로 등록)으로 읽으며, 최초 push 이후 `main`은 push 허용 목록으로
   보호됨. `14-gitops-bootstrap.sh`를 다시 실행하면 기존 리포지토리에도 `private: true`가 재적용됨.
@@ -202,10 +200,10 @@ ArgoCD, Gitea, RBAC, OpenBao, Keycloak, APISIX, NFS, `database` 신뢰 경계가
 - **Ingress 격리가 부분적임.** `gitops/resources`에서 ingress를 격리하는 정책은 `database`, Gitea, APISIX Admin
   API, 노드 튜닝 Job(전체 차단)뿐이며 `monitoring`과 `platform-system`에는 없음(차트에 포함된 정책은 전수 확인하지
   않음).
-- **`developer` 역할이 GitOps 차트를 통해 `sync */*`를 유지함.** `gitops/charts/narwhal-platform` 차트가
-  `argocd-rbac-cm`에서 `developer`와 `portal-reader`에 `*/*`의 `sync`를 선언하며, 자가 복구하는
-  `narwhal-platform` Application이 `13-argocd.sh`가 쓴 `tenants/*` 값을 되돌림. 따라서 차트를 고치기 전까지
-  개발자는 모든 Application을 동기화할 수 있음.
+- **`portal-reader` 역할은 설계상 `sync */*`를 유지함.** 포털의 서비스 신원은 모든 프로젝트를 동기화하며, 범위를
+  좁히려면 별도 검토가 필요함. R246(#342)은 ArgoCD 정책을 줄 집합, 파싱된 `argocd-rbac-cm` data, 치환식 기준으로
+  검사하지만 렌더링된 Helm 결과, 다른 차트, `argocd-cm`, 부트스트랩 heredoc 밖의 `kubectl` 변경은 보지 않음(변경
+  패키지의 Known limits 참고).
 - **에어갭 번들 복사는 OCI referrer(SBOM, 서명, attestation)를 보존하지 않음.** `09`는 손실을 보고하지만
   실패시키지 않음(#124).
 - **다이제스트 인벤토리는 최초 저장 시점 신뢰(trust-on-first-save)임.** `images.digests.json`에는 서명이 없으므로

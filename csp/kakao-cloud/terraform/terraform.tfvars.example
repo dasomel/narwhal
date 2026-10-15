@@ -28,6 +28,8 @@ ssh_key_path        = "./YOUR_KEYPAIR.pem"      # SSH private key file path
 # Required (issue #188): CIDRs allowed to SSH into the public bastion.
 # Must NOT be 0.0.0.0/0 - set this to your operator IP(s)/office CIDR.
 bastion_ssh_allowed_cidrs = ["203.0.113.4/32"]
+# Pin the bastion private IP only when replacing a live bastion (nodes use it for DNS/proxy/mirror)
+# bastion_private_ip = "172.17.0.191"
 
 #####################################################################
 # Compute Configuration

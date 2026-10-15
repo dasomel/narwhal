@@ -13,6 +13,10 @@
 apiserver-side 변환이며, 토큰 자체에는 절대 포함되지 않는다. 아래 표와 절마다 그
 근거를 파일:라인으로 못박는다.
 
+서비스 단위 SSO 흐름과 앱별 권한은 [Application SSO and Permission Matrix](app-sso-permission-matrix.md)를
+참고한다. 이 문서는 그룹 클레임이 Kubernetes·ArgoCD·Portal 역할로 매핑되는 공통 계약을
+정의하고, 서비스별 매트릭스는 그 계약이 개별 앱에서 어떻게 적용되는지 요약한다.
+
 ## 2. 그룹 매핑 표
 
 | Keycloak 원본 클레임 (`groups`) | apiserver 변환 후 RBAC 서브젝트 | ClusterRole | Portal `UserRole` |
@@ -96,6 +100,19 @@ OIDC로 통신하고 K8s apiserver를 거치지 않으므로 `oidc:` 접두사�
 - `argocd-projects.yaml`의 `tenants` AppProject(:78-128)는 별도의 프로젝트 스코프
   role을 하나 더 정의한다: `deploy` role이 `tenants/*` 애플리케이션의 get/sync를
   허용하고, `groups: [developer]`(:128-129) — 이 역시 bare name이다.
+- 현재 전역 `argocd-rbac-cm` 계약은 두 작성자(`gitops/charts/narwhal-platform/templates/argocd-config.yaml`과
+  `scripts/cluster/13-argocd.sh`)가 동일한 human role policy를 유지한다: `developer`는
+  applications sync `tenants/*`, applications get `*/*`, logs get `*/*`; 그룹 매핑은
+  `cluster-admin`→`role:admin`, `developer`→`role:developer`, `viewer`→`role:readonly`,
+  `guest`→`role:none`이다. GitOps에는 별도 service mapping
+  `narwhal-portal`→`role:portal-reader`가 있고 그 role의 applications get/list, logs get,
+  applications sync 규칙은 현재 모두 `*/*`다. R246는 두 source의 human policies/group
+  mappings와 GitOps의 portal-reader 전체 policy/binding을 함께 고정한다. Portal service
+  role 변경은 developer scope 수정과 별도 검토가 필요하다.
+- 두 ConfigMap 모두 `policy.default: role:readonly`와 `scopes: '[groups]'`도 계약이다.
+  기본 role을 `role:admin`으로 넓히면 명시 규칙과 무관하게 무인증/미매핑 사용자가
+  관리 권한을 받을 수 있고, scope 변경은 Keycloak 그룹 매핑 평가를 바꾼다. R246는
+  양쪽 값의 drift 및 admin 기본값 변이를 함께 거부한다.
 - 즉 ArgoCD 인가는 두 겹이다: (a) `argocd-rbac-cm`의 전역 role(`role:admin` /
   `role:developer` / `role:readonly` / `role:none`), (b) `tenants` AppProject 내부
   role(`deploy`). 둘 다 Keycloak `groups` 클레임의 bare name을 그대로 소비하며,

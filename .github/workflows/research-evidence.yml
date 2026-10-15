@@ -28,6 +28,7 @@ jobs:
         with:
           python-version: '3.12'
       - name: Install validator dependency
-        run: python3 -m pip install 'jsonschema==4.25.1'
+        run: |
+          python3 -m pip install --only-binary=:all: 'jsonschema==4.25.1'
       - name: Validate research evidence
         run: make research-check

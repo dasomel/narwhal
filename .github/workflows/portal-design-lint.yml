@@ -1,0 +1,72 @@
+name: Portal design-lint
+
+# D-MONO-CI ported from narwhal-portal. Decisions:
+#   D1  Not a required check: workflow-level `paths:` kept, rewritten to portal/...
+#   D2  Job renamed `Portal design-lint` (the old job name `lint` would collide with root lint);
+#       job-level working-directory: portal. `npx -y @google/design.md@0.3.0` is an exact pin
+#       and npx is outside R245's scope (its purpose is to run the fetched package).
+#
+
+# Lint the DESIGN.md token contract. Alpha spec (@google/design.md) is PINNED.
+# Fails on errors (broken token refs, schema errors) and the two high-value
+# warnings — broken-ref and contrast-ratio (WCAG AA). Orphaned-token and
+# section-order warnings are tolerated: the portal's colors are consumed by
+# shadcn/ui + Tailwind utilities, not by DESIGN.md's `components` map, so
+# "orphaned" is expected noise here, not a defect.
+
+on:
+  push:
+    paths:
+      - "portal/DESIGN.md"
+      - "portal/src/app/globals.css"
+      - ".github/workflows/portal-design-lint.yml"
+  pull_request:
+    paths:
+      - "portal/DESIGN.md"
+      - "portal/src/app/globals.css"
+      - ".github/workflows/portal-design-lint.yml"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+# Least privilege: this workflow only reads the checkout.
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: Portal design-lint
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: portal
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22"
+      - name: Lint DESIGN.md
+        run: |
+          set -euo pipefail
+          npx -y @google/design.md@0.3.0 lint --format json DESIGN.md > report.json
+          # shellcheck disable=SC2016  # the node program is deliberately single-quoted
+          node -e '
+            const r = JSON.parse(require("fs").readFileSync("report.json", "utf8"));
+            // Block on any error (broken-ref is error severity) plus the one
+            // high-value warning: contrast-ratio. Match on distinctive words
+            // only — NOT "reference" (the orphaned-token message says
+            // "never referenced" and must stay tolerated).
+            const blocking = r.findings.filter(f =>
+              f.severity === "error" ||
+              (f.severity === "warning" && /contrast|wcag|ratio/i.test(f.message))
+            );
+            const orphans = r.findings.filter(f => /never referenced/.test(f.message)).length;
+            console.log(`errors=${r.summary.errors} warnings=${r.summary.warnings} (orphaned=${orphans}, tolerated)`);
+            if (blocking.length) {
+              console.error("Blocking findings:");
+              for (const f of blocking) console.error(`  [${f.severity}] ${f.path ?? ""}: ${f.message}`);
+              process.exit(1);
+            }
+            console.log("DESIGN.md OK (no blocking findings).");
+          '

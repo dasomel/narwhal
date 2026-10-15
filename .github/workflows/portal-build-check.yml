@@ -1,0 +1,203 @@
+name: Portal Build Check
+
+# D-MONO-CI ported from narwhal-portal. Decisions:
+#   D1  Not a required check, so it keeps workflow-level `paths:` (all rewritten to portal/...);
+#       the merge-blocking contexts live in portal-test.yml (see its D1). The workflow file itself
+#       now also triggers a run on pull requests so an edit to it proves itself.
+#   D2  Job names carry a `Portal` prefix: GitHub check contexts are job names, and the root
+#       workflows already own generic ones.
+#   D3  Job-level working-directory: portal; pnpm/action-setup, setup-node cache and the
+#       docker build context are repointed at portal/. `--ignore-scripts` added for R245
+#       (pnpm-workspace.yaml already forbids dependency build scripts).
+#
+
+# Type-check and build whenever source, dependency, or build inputs change.
+#
+# WHY THIS EXISTS: every other workflow here is filtered to src/**, DESIGN.md or a
+# v*.*.* tag, so a change to package.json or pnpm-lock.yaml ran NO checks at all. The
+# Next.js 16.2.6 -> 16.3.0 bump (7fb1b16) went to main with nothing verifying it in CI;
+# it was only known-good because it was built by hand first. The next one might not be,
+# and Dependabot raises exactly this kind of PR.
+#
+# Also runs on source and build-input changes — a TypeScript/Next regression must not rely
+# on a dependency change to receive the production-build gate. The unit-test workflow is
+# not a substitute: it does not compile the route graph or standalone output.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "portal/src/**"
+      - "portal/package.json"
+      - "portal/pnpm-lock.yaml"
+      - "portal/next.config.ts"
+      - "portal/tsconfig.json"
+      - "portal/Dockerfile"
+      - ".github/workflows/portal-build-check.yml"
+  pull_request:
+    paths:
+      - "portal/src/**"
+      - "portal/package.json"
+      - "portal/pnpm-lock.yaml"
+      - "portal/next.config.ts"
+      - "portal/tsconfig.json"
+      - "portal/Dockerfile"
+      - ".github/workflows/portal-build-check.yml"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+# Read-only: this job inspects the checkout and produces no artifact.
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Portal type-check and build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: portal
+    steps:
+      # Blocks egress before checkout so a malicious install/build script (transitive,
+      # postinstall-equivalent, or otherwise) cannot reach anything outside this
+      # allowlist. `pnpm install --frozen-lockfile` below only needs the npm registry
+      # and GitHub itself; a real exfiltration attempt fails closed instead of quietly
+      # succeeding. audit mode intentionally off: block is the point of this gate.
+      - uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
+        with:
+          egress-policy: block
+          allowed-endpoints: >
+            github.com:443
+            api.github.com:443
+            codeload.github.com:443
+            objects.githubusercontent.com:443
+            registry.npmjs.org:443
+            raw.githubusercontent.com:443
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        with:
+          package_json_file: portal/package.json
+
+      # Version comes from package.json "packageManager"; keep the runtime aligned with
+      # the container base image (node:22-alpine) so CI cannot pass on a Node the
+      # published image never runs.
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: portal/pnpm-lock.yaml
+
+      # --frozen-lockfile is the point, not a detail: it fails when package.json and
+      # pnpm-lock.yaml disagree, which is the most common way a dependency change breaks.
+      - name: Install
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Type-check
+        run: pnpm typecheck
+
+      # The published image runs the standalone output, so a build that succeeds without
+      # producing it would still be broken at deploy time.
+      - name: Build
+        run: pnpm build
+
+      - name: Assert standalone output exists
+        run: |
+          set -euo pipefail
+          if [ ! -d .next/standalone ]; then
+            echo "::error::.next/standalone missing — the Dockerfile copies it, so the image would not run"
+            exit 1
+          fi
+          echo "standalone output present"
+
+      # next/image is unused and sharp is excluded from tracing so the image does
+      # not redistribute LGPL-licensed libvips (see NOTICE). Config alone does not
+      # do it — `images.unoptimized` leaves sharp in the trace — so the exclusion
+      # is asserted against the actual output rather than trusted.
+      - name: Assert libvips is not in the output
+        run: |
+          set -euo pipefail
+          found=$(find .next/standalone -ipath '*libvips*' -type f | head -5)
+          if [ -n "$found" ]; then
+            echo "::error::libvips (LGPL-3.0-or-later) is in the standalone output"
+            echo "$found"
+            exit 1
+          fi
+          echo "no libvips in output"
+
+      # THIRD-PARTY-NOTICES.md excludes platform-gated native packages — @img/sharp-*,
+      # @next/swc-* and friends — on the grounds that the build ships no native binary.
+      # That is a claim about the output, so the output is what checks it. Without this,
+      # a future change could start shipping one and the notices would silently omit it.
+      - name: Assert no native binary ships
+        run: |
+          set -euo pipefail
+          found=$(find .next/standalone -name '*.node' -type f | head -5)
+          if [ -n "$found" ]; then
+            echo "::error::a native binary is in the standalone output; THIRD-PARTY-NOTICES.md excludes platform-gated packages and would now be incomplete"
+            echo "$found"
+            exit 1
+          fi
+          echo "no native binaries in output"
+
+  image:
+    name: Portal container image builds
+    runs-on: ubuntu-latest
+    # WHY THIS EXISTS: portal-docker-publish.yml only runs on a portal/v*.*.* tag, so a broken
+    # Dockerfile was first discovered at release time. The runner stage now copies
+    # LICENSE, NOTICE and THIRD-PARTY-NOTICES.md, and .dockerignore excludes *.md
+    # with a re-include for the last of those — exactly the kind of interaction
+    # that fails silently in review and loudly during a release.
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Build (no push)
+        run: docker build -t narwhal-portal:ci portal
+
+      - name: Smoke test standalone image
+        run: |
+          set -euo pipefail
+          container=$(docker run -d -p 3000:3000 \
+            -e AUTH_SECRET=smoke-test-secret-at-least-32-characters \
+            -e KEYCLOAK_ISSUER=https://keycloak.invalid/realms/narwhal \
+            -e KEYCLOAK_CLIENT_ID=portal \
+            -e KEYCLOAK_CLIENT_SECRET=dummy \
+            -e K8S_API_SERVER=https://kubernetes.invalid:6443 \
+            narwhal-portal:ci)
+          trap 'docker logs "$container"; docker rm -f "$container" >/dev/null' EXIT
+          for attempt in $(seq 1 60); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:3000/api/health/live || true)
+            if [ "$code" = 200 ]; then
+              echo "live health: $code"
+              ready=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:3000/api/health/ready || true)
+              echo "ready health: $ready"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "::error::container did not return 200 from /api/health/live after ${attempt} attempts (last status: ${code:-none})"
+          exit 1
+
+      - name: Assert the license files are in the image
+        run: |
+          set -euo pipefail
+          for f in LICENSE NOTICE THIRD-PARTY-NOTICES.md; do
+            docker run --rm --entrypoint sh narwhal-portal:ci -c "[ -s /app/$f ]" \
+              || { echo "::error::/app/$f missing from the image"; exit 1; }
+            echo "/app/$f present"
+          done
+
+      - name: Assert libvips is not in the image
+        run: |
+          set -euo pipefail
+          hits=$(docker run --rm --entrypoint sh narwhal-portal:ci \
+            -c "find / -ipath '*libvips*' -type f 2>/dev/null | head -5")
+          if [ -n "$hits" ]; then
+            echo "::error::libvips (LGPL-3.0-or-later) is present in the published image"
+            echo "$hits"
+            exit 1
+          fi
+          echo "no libvips in the image"

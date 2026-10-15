@@ -155,8 +155,11 @@ metadata:
     app.kubernetes.io/name: argocd-rbac-cm
     app.kubernetes.io/part-of: argocd
 data:
+  # D1: Tenant-scope human sync to prevent platform deploys. Cost: developers cannot
+  # sync platform apps. Escape: review and update GitOps and bootstrap together for a
+  # time-bounded exception, then revert the expansion.
   policy.csv: |
-    p, role:developer, applications, sync, */*, allow
+    p, role:developer, applications, sync, tenants/*, allow
     p, role:developer, applications, get, */*, allow
     p, role:developer, logs, get, */*, allow
     p, role:none, applications, get, */*, deny

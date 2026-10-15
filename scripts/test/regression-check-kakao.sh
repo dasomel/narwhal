@@ -2048,6 +2048,8 @@ PYEOF
     python3 scripts/test/lib/peer-authentication-probe.py scope-gitops-json
   check_not R243ab "PeerAuthentication check scope: a PeerAuthentication in gitops/*.tpl fails closed" \
     python3 scripts/test/lib/peer-authentication-probe.py scope-gitops-tpl
+  check_not R243ac "PeerAuthentication check scope: a PERMISSIVE heredoc in a scripts/test/fixturesevil/ look-alike dir is scanned" \
+    python3 scripts/test/lib/peer-authentication-probe.py scope-fixtures-lookalike
   # Visible, non-failing: the harness check() discards stdout, so surface the baselined gaps here.
   pa_gaps="$(python3 scripts/test/lib/check-peer-authentication.py 2>/dev/null | grep -c '^KNOWN-ISSUE' || true)"
   if [ "${pa_gaps:-0}" -gt 0 ]; then

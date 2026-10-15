@@ -8,12 +8,12 @@ namespace N (istio-system/default, the mesh root, stays with R243), a policy in 
   - an exactly `networking.k8s.io/v1` NetworkPolicy in N with `podSelector: {}` (exactly empty, not
     matchLabels) and `Ingress` in a list-typed `policyTypes`, whose ingress rules are not
     allow-from-everything (a rule without a non-empty `from`, a source with no valid selector key,
-    a select-all namespaceSelector, an ipBlock with a /0 or unparseable cidr), or
+    a select-all namespaceSelector, an ipBlock with a /0 or unparseable cidr, or one shorter than IPv4 /8 / IPv6 /16), or
   - a CiliumNetworkPolicy (in N) / CiliumClusterwideNetworkPolicy with `endpointSelector: {}` and
     non-empty ingress rules that each name a restricted `from*` source.
 A selector is select-all unless it has a non-empty matchLabels or an `In` matchExpression with values;
 Exists/NotIn/DoesNotExist or a malformed expression cannot be shown to restrict. Anything unparsable
-or unexpected does NOT count as isolation (fail closed). A cidr with prefixlen 0 is catch-all even
+or unexpected does NOT count as isolation (fail closed). A cidr shorter than IPv4 /8 or IPv6 /16 is catch-all even
 with `except` entries (allow-almost-all is not isolation). Cilium `cluster`/`all`/`world` entities
 are broad; `host`, `remote-node`, `kube-apiserver` are narrow.
 D8: a CiliumClusterwideNetworkPolicy with `endpointSelector: {}` counts for EVERY namespace, but only
@@ -25,6 +25,12 @@ from any script, as R243; policies only from scripts/cluster/*.sh, never test he
 Fails closed on unparsable sources, duplicate keys, non-mapping documents/fields (arrays are not
 objects), and a helm-templated or .tpl file declaring a PeerAuthentication. A templated file that
 only declares NetworkPolicies cannot be evaluated, so it is skipped and never counts as isolation.
+NetworkPolicies are additive: even with a default-deny present, another select-all policy of the namespace
+(NetworkPolicy, or Cilium CNP/CCNP selecting every endpoint) with an open ingress rule defeats it, so N is
+not isolated. Inherent limits (not detected): a policy selecting only a LABELLED subset of pods and opening
+it does not break the default-deny for the other pods, so it is ignored; `namespaceSelector: {}` combined
+with a podSelector that has labels counts as restricted although it selects those labelled pods in every
+namespace; a `podSelector: {}` source alone means the policy's own namespace only.
 KNOWN_ISSUES is an explicit baseline keyed on (namespace, name) with an exact COUNT: drift in either
 direction (incl. a stale entry) fails; it is printed on stdout so the harness WARNs. Default mode only.
 """
@@ -182,9 +188,11 @@ def restricts(sel: object) -> bool:
 
 
 def cidr_restricted(cidr: object) -> bool:
-    """False for a /0 network (even with `except`: allow-almost-all) or an unparseable cidr (fail closed)."""
+    """False for a catch-all-equivalent network (IPv4 < /8, IPv6 < /16: split halves like 0.0.0.0/1 + 128.0.0.0/1
+    cover everything; even with `except`) or an unparseable cidr (fail closed)."""
     try:
-        return ipaddress.ip_network(str(cidr).strip(), strict=False).prefixlen != 0
+        net = ipaddress.ip_network(str(cidr).strip(), strict=False)
+        return net.prefixlen >= (8 if net.version == 4 else 16)
     except ValueError:
         return False
 
@@ -243,6 +251,23 @@ def isolates(doc: dict, ns: str) -> bool:
     return False
 
 
+def punches(doc: dict, ns: str) -> bool:
+    """True if doc is an ADDITIVE select-all policy of ns that opens ingress to everyone (defeats a default-deny)."""
+    meta, spec = doc.get("metadata"), doc.get("spec")
+    if not isinstance(meta, dict) or not isinstance(spec, dict):
+        return False
+    api, kind, rules = str(doc.get("apiVersion", "")), doc.get("kind"), spec.get("ingress")
+    if not isinstance(rules, list):
+        return False
+    if kind == "NetworkPolicy":
+        return (api == "networking.k8s.io/v1" and meta.get("namespace") == ns and not restricts(spec.get("podSelector"))
+                and any(allows_everyone(r) for r in rules))
+    if kind in ("CiliumNetworkPolicy", "CiliumClusterwideNetworkPolicy"):
+        return (api.startswith("cilium.io/") and (kind == "CiliumClusterwideNetworkPolicy" or meta.get("namespace") == ns)
+                and not restricts(spec.get("endpointSelector")) and not all(cilium_rule_restricted(r) for r in rules))
+    return False
+
+
 def default_files() -> list[pathlib.Path]:
     found = [p for ext in ("yaml", "yml", "json", "tpl") for p in (ROOT / "gitops").rglob(f"*.{ext}")]
     found += (ROOT / "scripts").rglob("*.sh")
@@ -270,7 +295,7 @@ def main() -> int:
             problems.append(str(exc))
     seen: collections.Counter = collections.Counter()
     for rel, ns, name, mode in wide:
-        if any(isolates(p, ns) for p in policies):
+        if any(isolates(p, ns) for p in policies) and not any(punches(p, ns) for p in policies):
             continue
         if not args and (ns, name) in KNOWN_ISSUES:
             seen[(ns, name)] += 1

@@ -34,6 +34,7 @@ def deny(pod: str = "{}", types: str = "[Ingress]", ingress: str = "") -> str:
 
 
 FROM_POD = "ingress:\n- from:\n  - podSelector: {}"
+ALLOW_ALL = "policyTypes: [Ingress]\ningress: [{}]"
 CIL = dict(kind="CiliumNetworkPolicy", api="cilium.io/v2")
 CCNP = dict(kind="CiliumClusterwideNetworkPolicy", api="cilium.io/v2", meta="labels: {a: b}")
 
@@ -61,6 +62,13 @@ GOOD = {
     "cilium-clusterwide-restricted": cil("fromEndpoints:\n  - matchLabels: {a: b}", **CCNP),  # D8: counts for every ns
     "cilium-narrow-entities": cil("fromEntities: [host, remote-node, kube-apiserver]"),
     "cilium-cidr-restricted": cil("fromCIDR: ['10.0.0.0/8']\n  fromCIDRSet:\n  - cidr: 192.168.0.0/16"),
+    "cidr-host-bits": frm("ipBlock: {cidr: 10.0.0.1/8}"),
+    "cidr-ipv6-16": frm("ipBlock: {cidr: 'fd00::/16'}"),
+    "cilium-cidrset-v6-16": cil("fromCIDRSet:\n  - cidr: 'fd00::/16'"),
+    "additive-labelled-subset-allow-all": pa() + deny() + np("podSelector: {matchLabels: {app: x}}\n" + ALLOW_ALL),  # documented limit
+    "additive-restricted-extra": pa() + deny() + np("podSelector: {}\npolicyTypes: [Ingress]\n" + FROM_POD),
+    "additive-allow-all-other-namespace": pa() + deny() + np("podSelector: {}\n" + ALLOW_ALL, "namespace: other"),
+    "additive-cilium-other-namespace": pa() + deny() + np("endpointSelector: {}\ningress:\n- fromEntities: [all]", "namespace: other", **CIL),
 }
 BAD = {
     "missing": pa(),
@@ -116,6 +124,23 @@ BAD = {
     "cilium-cidrset-ipv6-zero": cil("fromCIDRSet:\n  - cidr: '::0/0'"),
     "cilium-cidr-unparseable": cil("fromCIDR: [garbage]"),
     "cilium-clusterwide-default-deny-off": cil("fromCIDR: ['169.254.7.127/32']", "enableDefaultDeny: {ingress: false}\n", **CCNP),
+    "cidr-ipv4-slash1": frm("ipBlock: {cidr: 0.0.0.0/1}"),
+    "cidr-ipv4-split-halves": frm("ipBlock: {cidr: 0.0.0.0/1}\n  - ipBlock: {cidr: 128.0.0.0/1}"),
+    "cidr-ipv4-slash7": frm("ipBlock: {cidr: 10.0.0.0/7}"),
+    "cidr-ipv6-slash1": frm("ipBlock: {cidr: '::/1'}"),
+    "cidr-ipv6-split-halves": frm("ipBlock: {cidr: '::/1'}\n  - ipBlock: {cidr: '8000::/1'}"),
+    "cidr-ipv6-slash15": frm("ipBlock: {cidr: '2000::/15'}"),
+    "cilium-cidr-ipv4-slash1": cil("fromCIDR: ['0.0.0.0/1']"),
+    "cilium-cidrset-ipv4-split": cil("fromCIDRSet:\n  - cidr: 0.0.0.0/1\n  - cidr: 128.0.0.0/1"),
+    "cilium-cidrset-ipv4-slash7": cil("fromCIDRSet:\n  - cidr: 10.0.0.0/7"),
+    "cilium-cidr-ipv6-slash1": cil("fromCIDR: ['::/1']"),
+    "cilium-cidrset-ipv6-slash15": cil("fromCIDRSet:\n  - cidr: '2000::/15'"),
+    "additive-allow-all-selectall": pa() + deny() + np("podSelector: {}\n" + ALLOW_ALL),
+    "additive-allow-all-empty-matchlabels": pa() + deny() + np("podSelector: {matchLabels: {}}\n" + ALLOW_ALL),
+    "additive-ns-selector-all": pa() + deny() + np("podSelector: {}\npolicyTypes: [Ingress]\ningress:\n- from:\n  - namespaceSelector: {}"),
+    "additive-broad-cidr": pa() + deny() + np("podSelector: {}\npolicyTypes: [Ingress]\ningress:\n- from:\n  - ipBlock: {cidr: 0.0.0.0/1}"),
+    "additive-cilium-allow-all": pa() + deny() + np("endpointSelector: {}\ningress:\n- fromEntities: [all]", **CIL),
+    "additive-ccnp-allow-all": pa() + deny() + np("endpointSelector: {}\ningress:\n- fromEntities: [all]", **CCNP),
 }
 FAILCLOSED = {  # name -> (text, suffix, expected stderr substring)
     "malformed": (pa(spec="  mtls: [\n"), ".yaml", "unparsable source"),

@@ -3,7 +3,7 @@
 
 Cilium L3/L4 policy plus mesh mTLS only compose to a closed default if the mesh-wide
 PeerAuthentication is STRICT and every exception is a deliberate, reviewed one. Scans every
-GitOps YAML and every shell heredoc under scripts/cluster that mentions PeerAuthentication.
+GitOps YAML/JSON/tpl and every shell heredoc under scripts/**/*.sh that mentions PeerAuthentication.
 
 Fails closed: unreadable/unparsable source, duplicate keys, non-mapping documents, wrong
 apiVersion, an mtls mode outside the CRD set, helm-templated values ({{ }} outside comments in
@@ -31,7 +31,7 @@ ROOT = pathlib.Path(os.environ.get("PEER_AUTH_ROOT") or pathlib.Path(__file__).r
 MESH_NS, MESH_NAME = "istio-system", "default"
 MODES = {"STRICT", "PERMISSIVE", "DISABLE", "UNSET"}  # PeerAuthentication CRD mtls.mode enum
 NS_SCOPE = "namespace"  # selector signature of a policy without a workload selector
-EXCLUDED = "scripts/test/fixtures"  # deliberately bad negative probes, never scanned by default
+EXCLUDED = "scripts/test/fixtures/"  # path prefix; deliberately bad negative probes, never scanned by default
 # (namespace, name) -> exact selector signature: reviewed PERMISSIVE exceptions; the reason lives
 # next to the manifest. A workload entry pins its exact matchLabels (the real Harbor selector).
 ALLOWLIST = {
@@ -180,7 +180,7 @@ def policies(rel: str, docs: list[dict]) -> list[tuple[str, str, str, str, bool]
 
 def default_files() -> list[pathlib.Path]:
     gitops = [p for ext in ("yaml", "yml", "json", "tpl") for p in (ROOT / "gitops").rglob(f"*.{ext}")]
-    scripts = [p for p in (ROOT / "scripts").rglob("*.sh") if EXCLUDED not in p.relative_to(ROOT).as_posix()]
+    scripts = [p for p in (ROOT / "scripts").rglob("*.sh") if not p.relative_to(ROOT).as_posix().startswith(EXCLUDED)]
     return sorted([*gitops, *scripts])
 
 

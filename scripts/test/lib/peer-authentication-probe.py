@@ -67,6 +67,7 @@ PROBES = {
     "scope-scripts-nested": add("scripts/cluster/sub/x.sh", heredoc(LEAK)),
     "scope-gitops-json": add("gitops/x.json", JSON_LEAK),
     "scope-gitops-tpl": add("gitops/x.tpl", LEAK),
+    "scope-fixtures-lookalike": add("scripts/test/fixturesevil/x.sh", heredoc(LEAK)),
 }
 
 

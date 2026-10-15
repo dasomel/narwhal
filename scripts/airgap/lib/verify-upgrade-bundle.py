@@ -7,6 +7,7 @@ Validates an offline upgrade bundle manifest against:
 3. Integrity rules (digest syntax, version pinning, dependency references)
 """
 import argparse
+import datetime
 import json
 import re
 from pathlib import Path
@@ -116,14 +117,54 @@ def validate_metadata(manifest: dict) -> list[str]:
     return errors
 
 
-def verify_bundle(manifest_path: Path, schema_path: Path) -> int:
+RFC3339 = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})")
+CLOCK_SKEW = datetime.timedelta(minutes=5)
+
+
+def parse_timestamp(value: Any) -> datetime.datetime | None:
+    if not isinstance(value, str) or not RFC3339.fullmatch(value):
+        return None
+    try:
+        return datetime.datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
+MAX_AGE_CEILING_DAYS = 3650  # ten years; above this the ceiling is meaningless
+
+
+def validate_freshness(manifest: dict, now: datetime.datetime, max_age_days: float | None) -> list[str]:
+    """narwhal#124: bundle generation time and producer must be present and sane.
+
+    D1: absent/unparsable/future evidence fails closed; the age ceiling is opt-in
+    (--max-age-days) so the committed manifests do not rot in CI. Cost: promotion
+    needs a fresh bundle; escape hatch: regenerate it or raise the ceiling.
+    """
+    errors: list[str] = []
+    created = parse_timestamp(manifest.get("created_at"))
+    if created is None:
+        errors.append(f"created_at {manifest.get('created_at')!r} is not an RFC 3339 timestamp with timezone")
+    elif created - now > CLOCK_SKEW:
+        errors.append(f"created_at {manifest['created_at']} is in the future")
+    elif max_age_days is not None and now - created > datetime.timedelta(days=max_age_days):
+        errors.append(f"bundle is {(now - created).days}d old (max {max_age_days:g}d): created_at={manifest['created_at']}")
+    provenance = manifest.get("provenance")
+    for key in ("author", "source_repo"):
+        value = provenance.get(key) if isinstance(provenance, dict) else None
+        if not isinstance(value, str) or not value.strip():
+            errors.append(f"provenance.{key} (bundle producer/source) must be a non-empty string")
+    return errors
+
+
+def verify_bundle(manifest_path: Path, schema_path: Path, now: datetime.datetime, max_age_days: float | None) -> int:
     schema_doc = read_json(schema_path, "schema")
     manifest_doc = read_json(manifest_path, "manifest")
 
     schema_errs = validate_schema(manifest_doc, schema_doc)
     meta_errs = validate_metadata(manifest_doc)
+    fresh_errs = validate_freshness(manifest_doc, now, max_age_days)
 
-    all_errs = schema_errs + meta_errs
+    all_errs = schema_errs + meta_errs + fresh_errs
     if all_errs:
         for err in all_errs:
             print(f"ERROR: {err}", file=sys.stderr)
@@ -142,9 +183,21 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Verify upgrade bundle manifest compliance")
     parser.add_argument("--manifest", type=Path, default=DEFAULT_MANIFEST, help="Path to upgrade bundle manifest JSON")
     parser.add_argument("--schema", type=Path, default=DEFAULT_SCHEMA, help="Path to JSON Schema file")
+    parser.add_argument("--max-age-days", type=float, default=None, help="Reject bundles whose created_at is older than this")
+    parser.add_argument("--now", default=None, help="RFC 3339 clock override for offline replay")
     args = parser.parse_args()
 
-    return verify_bundle(args.manifest, args.schema)
+    now = datetime.datetime.now(datetime.timezone.utc)
+    if args.now is not None:
+        now = parse_timestamp(args.now)
+        if now is None:
+            print(f"ERROR: --now {args.now!r} is not an RFC 3339 timestamp with timezone", file=sys.stderr)
+            return 2
+    if args.max_age_days is not None and not 0 < args.max_age_days <= MAX_AGE_CEILING_DAYS:
+        # Also rejects nan/inf; huge values overflow timedelta (OverflowError traceback).
+        print(f"ERROR: --max-age-days must be a finite number in (0, {MAX_AGE_CEILING_DAYS}]", file=sys.stderr)
+        return 2
+    return verify_bundle(args.manifest, args.schema, now, args.max_age_days)
 
 
 if __name__ == "__main__":

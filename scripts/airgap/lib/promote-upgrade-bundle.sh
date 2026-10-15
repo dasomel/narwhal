@@ -15,6 +15,13 @@ set -euo pipefail
 # USAGE:
 #   promote-upgrade-bundle.sh --approved-by <name> [--bundle <dir>]
 #   promote-upgrade-bundle.sh --rollback --approved-by <name> [--bundle <dir>]
+#
+# FRESHNESS (#124): promotion (not --rollback, which does not run the verifier)
+#   rejects a staged bundle whose created_at is older than
+#   UPGRADE_BUNDLE_MAX_AGE_DAYS (default 90; must be 0 < N <= 3650, 0 is not a
+#   "disable" value). Raising it to accept a stale-but-legitimate bundle must be
+#   a deliberate, reviewed choice, e.g.:
+#     UPGRADE_BUNDLE_MAX_AGE_DAYS=180 promote-upgrade-bundle.sh --approved-by <name>
 # =============================================================================
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -99,7 +106,16 @@ if [[ ! -f "${STAGED_MANIFEST}" ]]; then
 fi
 
 # Validate staged manifest schema and license policy
-if ! python3 "${SCRIPT_DIR}/verify-upgrade-bundle.py" --manifest "${STAGED_MANIFEST}"; then
+VERIFY_ERR="$(mktemp)"
+trap 'rm -f "${VERIFY_ERR}"' EXIT
+if ! python3 "${SCRIPT_DIR}/verify-upgrade-bundle.py" --manifest "${STAGED_MANIFEST}" \
+    --max-age-days "${UPGRADE_BUNDLE_MAX_AGE_DAYS:-90}" 2> "${VERIFY_ERR}"; then
+  cat "${VERIFY_ERR}" >&2
+  if grep -q ' old (max ' "${VERIFY_ERR}"; then
+    echo "HINT: bundle exceeds the age ceiling (UPGRADE_BUNDLE_MAX_AGE_DAYS, default 90)." >&2
+    echo "      To accept an older bundle set UPGRADE_BUNDLE_MAX_AGE_DAYS=<days> (0 < days <= 3650;" >&2
+    echo "      0 is NOT allowed). This must be a deliberate, reviewed choice." >&2
+  fi
   echo "ERROR: staged upgrade bundle failed schema/policy verification." >&2
   exit 1
 fi

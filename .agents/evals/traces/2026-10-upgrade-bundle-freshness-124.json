@@ -1,0 +1,84 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-upgrade-bundle-freshness-124-20261015",
+  "task": "Reject stale, future-dated, or producer-less upgrade bundles at promotion (#124)",
+  "createdAt": "2026-10-15T02:17:25.170513+00:00",
+  "changeContext": {
+    "paths": [
+      "scripts/airgap/lib/promote-upgrade-bundle.sh",
+      "scripts/airgap/lib/verify-upgrade-bundle.py",
+      "scripts/airgap/tests/test_upgrade_freshness.py",
+      "scripts/test/regression-check-kakao.sh",
+      "docs/common/upgrade-orchestration.md",
+      "docs/common/lessons-log.md",
+      ".agents/evals/traces/2026-10-upgrade-bundle-freshness-124.json"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Add created_at/provenance freshness validation and a promote-time age ceiling (default 90d, 0<N<=3650); no artifact bytes, signature, schema or manifest content changes; rollback path unchanged (does not run the verifier).",
+      "recordedAt": "2026-10-15T02:17:25.170822+00:00"
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "Pre-change promote (origin/main 7b952b0 scripts, temp bundle with created_at 2025-01-01) promotes a 652-day-old bundle without complaint",
+      "recordedAt": "2026-10-15T02:17:25.214611+00:00",
+      "evidence": [
+        "runtime:origin/main promote-upgrade-bundle.sh --approved-by tester --bundle <tmp> on created_at=2025-01-01T00:00:00Z: exit=0, 'Promoted upgrade bundle: staged/ -> promoted/ (stage: production).'"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "verify-upgrade-bundle.py gains validate_freshness (RFC 3339 created_at with tz, not future beyond 5m skew, optional --max-age-days ceiling in (0,3650], non-blank provenance.author/source_repo, --now replay clock); promote-upgrade-bundle.sh passes UPGRADE_BUNDLE_MAX_AGE_DAYS (default 90) and prints an override hint.",
+      "recordedAt": "2026-10-15T02:17:25.253775+00:00"
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "summary": "Stale bundle rejected with override hint, raised ceiling accepts, blank producer rejected, unusable ceiling is a usage error",
+      "recordedAt": "2026-10-15T02:17:35.498411+00:00",
+      "scope": "Real promote-upgrade-bundle.sh and verify-upgrade-bundle.py CLIs on temp copies of upgrade-bundle-v1.1.0.json; committed manifest untouched; unit-level via test_upgrade_freshness.py",
+      "evidence": [
+        "runtime:promote created_at=2025-01-01 default ceiling: exit=1 'ERROR: bundle is 652d old (max 90d): created_at=2025-01-01T00:00:00Z' + 'HINT: bundle exceeds the age ceiling (UPGRADE_BUNDLE_MAX_AGE_DAYS, default 90).' + 'To accept an older bundle set UPGRADE_BUNDLE_MAX_AGE_DAYS=<days> (0 < days <= 3650;'",
+        "runtime:promote created_at=2025-01-01 with UPGRADE_BUNDLE_MAX_AGE_DAYS=900: exit=0 'OK: upgrade-bundle.json conforms to schema' + 'Promoted upgrade bundle: staged/ -> promoted/ (stage: production).' (override works; verifier outcome genuinely passes)",
+        "runtime:promote provenance.source_repo='  ': exit=1 'ERROR: provenance.source_repo (bundle producer/source) must be a non-empty string'",
+        "runtime:verify-upgrade-bundle.py --max-age-days inf: exit=2 'ERROR: --max-age-days must be a finite number in (0, 3650]'",
+        "test:python3 -I -m unittest discover -s scripts/airgap/tests: Ran 44 tests OK",
+        "runtime:command-exit-0"
+      ],
+      "status": "passed",
+      "commandExitCode": 0
+    },
+    {
+      "id": "e5",
+      "type": "verification",
+      "summary": "Static suite passes",
+      "recordedAt": "2026-10-15T02:17:35.537042+00:00",
+      "scope": "Repository static suite; manifest freshness/producer syntax only, no real bundle byte transfer or live promotion",
+      "evidence": [
+        "test:./scripts/test/regression-check-kakao.sh --static: passed 330 failed 0 warnings 6",
+        "runtime:command-exit-0"
+      ],
+      "status": "passed",
+      "commandExitCode": 0
+    },
+    {
+      "id": "e6",
+      "type": "completion_claim",
+      "summary": "Bounded freshness/producer gate added to promotion. Not shown: bundle signatures or artifact bytes, live cluster promotion, enforcement on non-promote verifier callers (ceiling is opt-in there).",
+      "recordedAt": "2026-10-15T02:17:35.574484+00:00"
+    },
+    {
+      "id": "e7",
+      "type": "task_outcome",
+      "summary": "Promotion-time bundle freshness gate verified within stated scope.",
+      "recordedAt": "2026-10-15T02:17:35.632094+00:00",
+      "state": "A"
+    }
+  ]
+}

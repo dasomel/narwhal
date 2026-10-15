@@ -1846,6 +1846,9 @@ PYEOF
   check R82d "upgrade digest pins enforce algorithm widths without optional dependencies (#45)" \
     python3 -m unittest discover -s scripts/airgap/tests -p test_upgrade_digest.py -v
 
+  check R82e "upgrade bundle rejects absent/future/malformed created_at, blank producer, and stale age (#124)" \
+    python3 -m unittest discover -s scripts/airgap/tests -p test_upgrade_freshness.py -v
+
   # narwhal#6: an exported member-cluster credential must retain a stable ID while
   # reusing the existing Portal reader RBAC; a second broad reader role would drift.
   # Structural presence checks alone never prove they can fail, so each of R83/R84/R85

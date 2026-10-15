@@ -99,7 +99,8 @@ if [[ ! -f "${STAGED_MANIFEST}" ]]; then
 fi
 
 # Validate staged manifest schema and license policy
-if ! python3 "${SCRIPT_DIR}/verify-upgrade-bundle.py" --manifest "${STAGED_MANIFEST}"; then
+if ! python3 "${SCRIPT_DIR}/verify-upgrade-bundle.py" --manifest "${STAGED_MANIFEST}" \
+    --max-age-days "${UPGRADE_BUNDLE_MAX_AGE_DAYS:-90}"; then
   echo "ERROR: staged upgrade bundle failed schema/policy verification." >&2
   exit 1
 fi

@@ -1,4 +1,15 @@
-name: Publish OpenForge Portfolio Status
+name: Portal Publish OpenForge Portfolio Status
+
+# D-MONO-CI ported from narwhal-portal. Decisions:
+#   D1  Kept as a portal-scoped copy, not folded into root publish-openforge-status.yml: the root
+#       one publishes project `narwhal` and listens to workflow `Release`; this one publishes
+#       project `narwhal-portal` and listens to `Portal Release` (distinct names, so a narwhal
+#       release never publishes portal status or the reverse).
+#   D2  FOLLOW-UP DECISION (not invented here): `project`/`repository` stay narwhal-portal /
+#       dasomel/narwhal-portal, and `revision` is now a narwhal-repo SHA. Whether OpenForge keeps
+#       one portfolio entry for the portal after the repo is archived, and which repository its
+#       reusable workflow should verify the revision against, needs an OpenForge-side decision.
+#
 
 on:
   workflow_dispatch:
@@ -22,7 +33,7 @@ on:
         required: false
         type: string
   workflow_run:
-    workflows: ["Release"]
+    workflows: ["Portal Release"]
     types: [completed]
 
 permissions:

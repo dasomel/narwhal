@@ -1,4 +1,15 @@
-name: Build Check
+name: Portal Build Check
+
+# D-MONO-CI ported from narwhal-portal. Decisions:
+#   D1  Not a required check, so it keeps workflow-level `paths:` (all rewritten to portal/...);
+#       the merge-blocking contexts live in portal-test.yml (see its D1). The workflow file itself
+#       now also triggers a run on pull requests so an edit to it proves itself.
+#   D2  Job names carry a `Portal` prefix: GitHub check contexts are job names, and the root
+#       workflows already own generic ones.
+#   D3  Job-level working-directory: portal; pnpm/action-setup, setup-node cache and the
+#       docker build context are repointed at portal/. `--ignore-scripts` added for R245
+#       (pnpm-workspace.yaml already forbids dependency build scripts).
+#
 
 # Type-check and build whenever source, dependency, or build inputs change.
 #
@@ -16,21 +27,22 @@ on:
   push:
     branches: [main]
     paths:
-      - "src/**"
-      - "package.json"
-      - "pnpm-lock.yaml"
-      - "next.config.ts"
-      - "tsconfig.json"
-      - "Dockerfile"
-      - ".github/workflows/build-check.yml"
+      - "portal/src/**"
+      - "portal/package.json"
+      - "portal/pnpm-lock.yaml"
+      - "portal/next.config.ts"
+      - "portal/tsconfig.json"
+      - "portal/Dockerfile"
+      - ".github/workflows/portal-build-check.yml"
   pull_request:
     paths:
-      - "src/**"
-      - "package.json"
-      - "pnpm-lock.yaml"
-      - "next.config.ts"
-      - "tsconfig.json"
-      - "Dockerfile"
+      - "portal/src/**"
+      - "portal/package.json"
+      - "portal/pnpm-lock.yaml"
+      - "portal/next.config.ts"
+      - "portal/tsconfig.json"
+      - "portal/Dockerfile"
+      - ".github/workflows/portal-build-check.yml"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
@@ -42,8 +54,11 @@ permissions:
 
 jobs:
   build:
-    name: Type-check and build
+    name: Portal type-check and build
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: portal
     steps:
       # Blocks egress before checkout so a malicious install/build script (transitive,
       # postinstall-equivalent, or otherwise) cannot reach anything outside this
@@ -64,6 +79,8 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        with:
+          package_json_file: portal/package.json
 
       # Version comes from package.json "packageManager"; keep the runtime aligned with
       # the container base image (node:22-alpine) so CI cannot pass on a Node the
@@ -72,11 +89,12 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
+          cache-dependency-path: portal/pnpm-lock.yaml
 
       # --frozen-lockfile is the point, not a detail: it fails when package.json and
       # pnpm-lock.yaml disagree, which is the most common way a dependency change breaks.
       - name: Install
-        run: pnpm install --frozen-lockfile
+        run: pnpm install --frozen-lockfile --ignore-scripts
 
       - name: Type-check
         run: pnpm typecheck
@@ -126,9 +144,9 @@ jobs:
           echo "no native binaries in output"
 
   image:
-    name: Container image builds
+    name: Portal container image builds
     runs-on: ubuntu-latest
-    # WHY THIS EXISTS: docker-publish.yml only runs on a v*.*.* tag, so a broken
+    # WHY THIS EXISTS: portal-docker-publish.yml only runs on a portal/v*.*.* tag, so a broken
     # Dockerfile was first discovered at release time. The runner stage now copies
     # LICENSE, NOTICE and THIRD-PARTY-NOTICES.md, and .dockerignore excludes *.md
     # with a re-include for the last of those — exactly the kind of interaction
@@ -137,7 +155,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Build (no push)
-        run: docker build -t narwhal-portal:ci .
+        run: docker build -t narwhal-portal:ci portal
 
       - name: Smoke test standalone image
         run: |

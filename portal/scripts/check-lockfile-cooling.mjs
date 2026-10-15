@@ -95,7 +95,7 @@ const main = async () => {
 
   let baseContent = ""
   try {
-    baseContent = execFileSync("git", ["show", `${baseRef}:pnpm-lock.yaml`], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] })
+    baseContent = execFileSync("git", ["show", `${baseRef}:./pnpm-lock.yaml`], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] })
   } catch {
     baseContent = ""
   }

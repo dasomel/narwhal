@@ -135,7 +135,7 @@ run_static() {
     python3 -c '
 import re
 import subprocess
-result = subprocess.run(["git", "grep", "-h", "-E", r"ghcr\.io/dasomel/narwhal-portal:1\.0\.[0-9]+", "--", ".", ":!CHANGELOG*", ":!docs/common/lessons-log.md", ":!scripts/test/regression-check-kakao.sh", ":!.agents/evals/traces"], capture_output=True, text=True)
+result = subprocess.run(["git", "grep", "-h", "-E", r"ghcr\.io/dasomel/narwhal-portal:1\.0\.[0-9]+", "--", ".", ":!CHANGELOG*", ":!portal/CHANGELOG*", ":!docs/common/lessons-log.md", ":!scripts/test/regression-check-kakao.sh", ":!.agents/evals/traces"], capture_output=True, text=True)
 if result.returncode not in (0, 1):
     raise SystemExit(result.stderr)
 versions = set(re.findall(r"ghcr\.io/dasomel/narwhal-portal:(1\.0\.[0-9]+)", result.stdout))
@@ -1070,8 +1070,10 @@ git push origin main || true' \
   # (pinned commit, see schemas/crds/SOURCE.md) and the flag is gone, so a missing
   # schema is a hard failure. One grep, alternation of both regressions, same shape
   # as R50/R51 — either one alone reopens #164.
+  # D-MONO-CI: `raw.githubusercontent.com:443` (harden-runner egress allowlist, no path) is not
+  # a mutable fetch; only the bare host followed by a path/end is. Both greps share the pattern.
   check_not R112 "no mutable-URL CRD schema-location or -ignore-missing-schemas in workflows (2026-09-06)" \
-    grep -rqE '^[^#]*(raw\.githubusercontent\.com|-ignore-missing-schemas)' .github/workflows/
+    grep -rqE '^[^#]*(raw\.githubusercontent\.com([^:]|$)|-ignore-missing-schemas)' .github/workflows/
 
   local kubeconform_schema_drift_tmp
   kubeconform_schema_drift_tmp="$(mktemp -d)"
@@ -1080,7 +1082,7 @@ git push origin main || true' \
     "${kubeconform_schema_drift_tmp}/lint.yml"
   rm -f "${kubeconform_schema_drift_tmp}/lint.yml.bak"
   check R112b "R112's check catches a reintroduced mutable-main CRD schema-location (2026-09-06)" \
-    grep -rqE '^[^#]*(raw\.githubusercontent\.com|-ignore-missing-schemas)' "${kubeconform_schema_drift_tmp}"
+    grep -rqE '^[^#]*(raw\.githubusercontent\.com([^:]|$)|-ignore-missing-schemas)' "${kubeconform_schema_drift_tmp}"
   rm -rf "${kubeconform_schema_drift_tmp}"
 
   # narwhal#52 (D3-A): images.txt and TRANSIENT_IMAGES used to leave the kaniko

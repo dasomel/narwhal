@@ -1,12 +1,32 @@
-name: Build & Publish Container (GHCR)
+name: Portal Build & Publish Container (GHCR)
+
+# D-MONO-CI ported from narwhal-portal. Decisions:
+#   D1  Trigger: tags `portal/v*.*.*` only. GitHub's tag glob `*` never matches `/`, so
+#       narwhal's own `v*` / `v*.*.*` tags do not fire this workflow, and `portal/v1.2.3`
+#       does not match narwhal's `v*` (it starts with `p`). Verified in the PR description.
+#   D2  IMAGE is hardcoded ghcr.io/dasomel/narwhal-portal. `github.repository` would silently
+#       become ghcr.io/dasomel/narwhal and GitOps pins the old name.
+#   D3  The version used for image tags is the tag minus the `portal/v` prefix; metadata-action's
+#       type=semver is fed it explicitly (`value=`) because it cannot parse `portal/v1.2.3`.
+#   D4  Build context `portal`, Dockerfile `portal/Dockerfile`. cosign/provenance/SBOM steps and
+#       their secrets contract (COSIGN_PRIVATE_KEY, COSIGN_PASSWORD) are unchanged.
+#   D5  ADMIN PREREQUISITES (cannot be done from here): (a) the GHCR package
+#       ghcr.io/dasomel/narwhal-portal must grant this repository (dasomel/narwhal) write access
+#       under Package settings > Manage Actions access, otherwise GITHUB_TOKEN gets 403 on push;
+#       (b) COSIGN_PRIVATE_KEY / COSIGN_PASSWORD must exist as dasomel/narwhal secrets (known
+#       missing in narwhal-portal too: a portal/v*.*.* release FAILS at the sign job until set,
+#       see portal/docs/cosign-signing-setup.md).
+#   D6  Job-level working-directory is not used: the only file-reading run step is the
+#       package.json guard, which takes the explicit portal/ path.
+#
 
 # Builds the narwhal-portal container and publishes it to GitHub Container
 # Registry (ghcr.io/dasomel/narwhal-portal).
 #
 # Tagging strategy (docker/metadata-action):
-#   - push tag v1.2.3 (SemVer)-> :1.2.3, :1.2, :1, :latest
+#   - push tag portal/v1.2.3 (SemVer)-> :1.2.3, :1.2, :1, :latest
 #   - manual (workflow_dispatch)
-# Version source of truth = git tags (v-prefixed). On a release tag we also
+# Version source of truth = git tags (portal/v-prefixed). On a release tag we also
 # assert the tag matches package.json "version" so the two never drift.
 #
 # Builds ONLY on version tags (not on every main push): a release commit is
@@ -25,15 +45,15 @@ name: Build & Publish Container (GHCR)
 
 on:
   push:
-    tags: ['v*.*.*']
+    tags: ['portal/v*.*.*']
   workflow_dispatch:
 
 concurrency:
-  group: ghcr-publish-${{ github.ref }}
+  group: portal-ghcr-publish-${{ github.ref }}
   cancel-in-progress: false
 
 env:
-  IMAGE: ghcr.io/${{ github.repository }} # ghcr.io/dasomel/narwhal-portal (lowercase)
+  IMAGE: ghcr.io/dasomel/narwhal-portal # hardcoded on purpose (D2): github.repository is now dasomel/narwhal
 
 # Default for any job that does not declare its own; the build and merge jobs below
 # widen this deliberately for GHCR push and provenance.
@@ -67,15 +87,15 @@ jobs:
           platform='${{ matrix.platform }}'
           echo "PLATFORM_PAIR=${platform//\//-}" >> "$GITHUB_ENV"
 
-      # Guard: on a vX.Y.Z tag, the tag must match package.json version.
+      # Guard: on a portal/vX.Y.Z tag, the tag must match portal/package.json version.
       - name: Verify tag matches package.json version
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: startsWith(github.ref, 'refs/tags/portal/v')
         run: |
-          pkg="$(node -p "require('./package.json').version")"
-          tag="${GITHUB_REF_NAME#v}"
-          echo "package.json=$pkg  tag=$tag"
+          pkg="$(node -p "require('./portal/package.json').version")"
+          tag="${GITHUB_REF_NAME#portal/v}"
+          echo "portal/package.json=$pkg  tag=$tag"
           if [ "$pkg" != "$tag" ]; then
-            echo "::error::git tag v$tag does not match package.json version $pkg — bump package.json before tagging."
+            echo "::error::git tag portal/v$tag does not match portal/package.json version $pkg — bump portal/package.json before tagging."
             exit 1
           fi
 
@@ -105,8 +125,8 @@ jobs:
         id: build
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
-          context: .
-          file: ./Dockerfile
+          context: portal
+          file: portal/Dockerfile
           platforms: ${{ matrix.platform }}
           build-args: GIT_SHA=${{ github.sha }}
           labels: ${{ steps.meta.outputs.labels }}
@@ -187,18 +207,28 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # D3: `portal/v1.2.3` -> `1.2.3`. Only meaningful on a tag; workflow_dispatch leaves it empty.
+      - name: Derive version from the tag
+        id: ver
+        if: startsWith(github.ref, 'refs/tags/portal/v')
+        env:
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          echo "version=${REF_NAME#portal/v}" >> "$GITHUB_OUTPUT"
+
       - name: Derive image tags
         id: meta
         uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
         with:
           images: ${{ env.IMAGE }}
           tags: |
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=semver,pattern={{major}}
+            type=semver,pattern={{version}},value=${{ steps.ver.outputs.version || '0.0.0' }},enable=${{ startsWith(github.ref, 'refs/tags/portal/v') }}
+            type=semver,pattern={{major}}.{{minor}},value=${{ steps.ver.outputs.version || '0.0.0' }},enable=${{ startsWith(github.ref, 'refs/tags/portal/v') }}
+            type=semver,pattern={{major}},value=${{ steps.ver.outputs.version || '0.0.0' }},enable=${{ startsWith(github.ref, 'refs/tags/portal/v') }}
             type=ref,event=branch
             type=sha,prefix=sha-,format=short
-            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
+            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/portal/v') }}
 
       # --metadata-file captures the resulting manifest-list digest (containerimage.digest),
       # the same mechanism docker/build-push-action uses for the per-arch "Export digest"
@@ -245,13 +275,13 @@ jobs:
     # (docs/common/supply-chain-policy.md §6) chose key-based verification specifically to
     # avoid a runtime dependency on the public Sigstore Rekor log in an air-gapped cluster.
     # narwhal#35 flagged that the signing half belongs here, since narwhal only consumes
-    # images this repo publishes. See docs/cosign-signing-setup.md for the one-time human
+    # images this repo publishes. See portal/docs/cosign-signing-setup.md for the one-time human
     # setup (key generation + the two secrets below) this step assumes.
     permissions:
       contents: read
       packages: write # cosign pushes the signature as an OCI artifact alongside the image
     steps:
-      # A v*.*.* tag is a real release — GitOps will pull this image, so it must be signed
+      # A portal/v*.*.* tag is a real release — GitOps will pull this image, so it must be signed
       # or the workflow fails. workflow_dispatch is an ad-hoc/manual build (same distinction
       # the merge job already draws for the :latest tag at line ~172); it still gets signed
       # when the secrets are configured, but a missing secret only warns, never fails it.
@@ -259,7 +289,7 @@ jobs:
         id: gate
         run: |
           set -euo pipefail
-          if [[ "${{ startsWith(github.ref, 'refs/tags/v') }}" == "true" ]]; then
+          if [[ "${{ startsWith(github.ref, 'refs/tags/portal/v') }}" == "true" ]]; then
             echo "required=true" >> "$GITHUB_OUTPUT"
           else
             echo "required=false" >> "$GITHUB_OUTPUT"
@@ -287,12 +317,12 @@ jobs:
       - name: Fail — release build published without signing secrets
         if: steps.gate.outputs.required == 'true' && steps.secrets-check.outputs.present == 'false'
         run: |
-          echo "::error::COSIGN_PRIVATE_KEY and/or COSIGN_PASSWORD secrets are not configured. A v*.*.* release must be signed for narwhal's Kyverno admission policy. See docs/cosign-signing-setup.md."
+          echo "::error::COSIGN_PRIVATE_KEY and/or COSIGN_PASSWORD secrets are not configured. A portal/v*.*.* release must be signed for narwhal's Kyverno admission policy. See portal/docs/cosign-signing-setup.md."
           exit 1
 
       - name: Skip signing — secrets not configured on a non-release build
         if: steps.gate.outputs.required == 'false' && steps.secrets-check.outputs.present == 'false'
-        run: echo "::warning::COSIGN_PRIVATE_KEY/COSIGN_PASSWORD not configured — skipping image signing for this workflow_dispatch build (not a v*.*.* release)."
+        run: echo "::warning::COSIGN_PRIVATE_KEY/COSIGN_PASSWORD not configured — skipping image signing for this workflow_dispatch build (not a portal/v*.*.* release)."
 
       # cosign-installer verifies the cosign binary it downloads itself (see the action's
       # README), matching this repo's convention of pinning every `uses:` to a full commit

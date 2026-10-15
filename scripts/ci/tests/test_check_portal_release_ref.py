@@ -75,6 +75,28 @@ class ReleaseRef(unittest.TestCase):
     def test_publish_dispatch_from_release_looking_branch_refused(self):
         self.assertEqual(self.run_script("--mode", "publish", "--event", "workflow_dispatch", "--ref-type", "branch", "--ref-name", "portal/v1.2.3", "--sha", self.two)[0], 1)
 
+    def test_repo_arg_reads_tags_from_other_checkout(self):
+        # the validator lives in one checkout (cwd here is an unrelated empty repo), the tag in another
+        with tempfile.TemporaryDirectory() as other:
+            git(other, "init", "-q")
+            args = ("--mode", "release", "--event", "push", "--ref-name", "portal/v1.2.3", "--sha", self.two)
+            r = subprocess.run(["python3", str(SCRIPT), *args], cwd=other, text=True, capture_output=True)
+            self.assertEqual(r.returncode, 1)
+            self.assertIn("does not exist", r.stderr)
+            r = subprocess.run(["python3", str(SCRIPT), *args, "--repo", self.dir], cwd=other, text=True, capture_output=True)
+            self.assertEqual(r.returncode, 0, r.stderr)
+
+    def test_repo_arg_mismatch_still_refused(self):
+        with tempfile.TemporaryDirectory() as other:
+            git(other, "init", "-q")
+            r = subprocess.run(
+                ["python3", str(SCRIPT), "--mode", "release", "--event", "push", "--ref-name", "portal/v9.9.9",
+                 "--sha", self.two, "--repo", self.dir],
+                cwd=other, text=True, capture_output=True,
+            )
+            self.assertEqual(r.returncode, 1)
+            self.assertIn("points at", r.stderr)
+
 
 if __name__ == "__main__":
     unittest.main()

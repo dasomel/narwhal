@@ -100,6 +100,19 @@ jobs:
           fetch-depth: 0
           fetch-tags: true
 
+      # D7 (PR #347 follow-up, trust): the validator must not come from the commit it validates -
+      # a malicious tagged commit could ship a script that always passes. For workflow_run events
+      # GITHUB_SHA is the "Last commit on default branch" (GitHub docs, events that trigger
+      # workflows), so github.sha is the default-branch tip; it is checked out into trusted/ and
+      # the script runs from there with --repo pointing at the tagged checkout (workspace root).
+      # Ordered AFTER the tagged checkout so that one's clean step cannot touch trusted/.
+      - name: Check out the validator from the default branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          path: trusted
+          persist-credentials: false
+
       - name: Prove the run is a tag push of this exact commit
         env:
           RUN_EVENT: ${{ github.event.workflow_run.event }}
@@ -107,7 +120,7 @@ jobs:
         run: |
           set -euo pipefail
           git fetch --force --tags origin
-          python3 scripts/ci/check-portal-release-ref.py --mode release \
+          python3 trusted/scripts/ci/check-portal-release-ref.py --mode release --repo . \
             --event "$RUN_EVENT" --ref-name "$TAG_NAME" --sha "$RUN_SHA"
 
       - name: Set up Buildx

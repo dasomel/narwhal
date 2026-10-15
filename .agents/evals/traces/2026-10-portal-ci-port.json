@@ -65,6 +65,23 @@
       "commandExitCode": 0
     },
     {
+      "id": "e8",
+      "type": "bug_fix",
+      "summary": "Review found the R112 exemption `raw.githubusercontent.com([^:]|$)` let any `raw.githubusercontent.com:<anything>` through, so `curl https://raw.githubusercontent.com:443/o/r/main/x.sh | bash` in a workflow passed. R112/R112b now share r112_hits(): the original bare-host/-ignore-missing-schemas grep (-rh) minus lines that consist solely of the harden-runner allowlist entry `raw.githubusercontent.com:443`. Temp-tree cases added: R112c (-ignore-missing-schemas still fails), R112d1-d5 (curl/wget with :443, :8443, :443/path, curl|bash all rejected), R112e (plain allowlist line accepted); the bare-host mutation R112b still fails as before."
+    },
+    {
+      "id": "e9",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "R112 narrowing: R112/R112b/R112c/R112d1-5/R112e inside the full static suite on the merged tree",
+      "summary": "regression-check-kakao.sh --static reports failed 0 with the narrowed exemption.",
+      "evidence": [
+        "test:./scripts/test/regression-check-kakao.sh --static",
+        "runtime:command-exit-0"
+      ],
+      "commandExitCode": 0
+    },
+    {
       "id": "e6",
       "type": "completion_claim",
       "summary": "Static contract verified locally: actionlint clean, mutable-input and R245 guards pass, portal typecheck/lint/2060 unit tests/build/standalone/research-check/cooling/supply-chain/regression-results scripts run from portal/. Actual GitHub Actions execution (path filtering, the gate, GHCR push permission, cosign secrets, workflow_run chaining, harden-runner egress) is not verified until the PR runs."

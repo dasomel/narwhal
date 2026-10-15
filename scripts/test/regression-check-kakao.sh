@@ -1076,10 +1076,17 @@ git push origin main || true' \
   # (pinned commit, see schemas/crds/SOURCE.md) and the flag is gone, so a missing
   # schema is a hard failure. One grep, alternation of both regressions, same shape
   # as R50/R51 — either one alone reopens #164.
-  # D-MONO-CI: `raw.githubusercontent.com:443` (harden-runner egress allowlist, no path) is not
-  # a mutable fetch; only the bare host followed by a path/end is. Both greps share the pattern.
+  # D-MONO-CI: the only exempt line is the harden-runner egress allowlist entry on its own
+  # (`raw.githubusercontent.com:443`, nothing else on the line). Any other occurrence --
+  # `curl https://raw...:443/x`, `wget raw...:443/x`, `raw...:8443`, `raw...:443/path` -- is
+  # still a mutable fetch and still fails. -h drops the file prefix so the filter sees the line.
+  r112_hits() {
+    grep -rhE '^[^#]*(raw\.githubusercontent\.com|-ignore-missing-schemas)' "$1" \
+      | grep -vE '^[[:space:]]*raw\.githubusercontent\.com:443[[:space:]]*$' \
+      | grep -q .
+  }
   check_not R112 "no mutable-URL CRD schema-location or -ignore-missing-schemas in workflows (2026-09-06)" \
-    grep -rqE '^[^#]*(raw\.githubusercontent\.com([^:]|$)|-ignore-missing-schemas)' .github/workflows/
+    r112_hits .github/workflows/
 
   local kubeconform_schema_drift_tmp
   kubeconform_schema_drift_tmp="$(mktemp -d)"
@@ -1088,7 +1095,27 @@ git push origin main || true' \
     "${kubeconform_schema_drift_tmp}/lint.yml"
   rm -f "${kubeconform_schema_drift_tmp}/lint.yml.bak"
   check R112b "R112's check catches a reintroduced mutable-main CRD schema-location (2026-09-06)" \
-    grep -rqE '^[^#]*(raw\.githubusercontent\.com([^:]|$)|-ignore-missing-schemas)' "${kubeconform_schema_drift_tmp}"
+    r112_hits "${kubeconform_schema_drift_tmp}"
+  printf '      - run: curl -fsSL -o x.sh https://raw.example.invalid/x\n      - run: sed -i s/a/b/ -ignore-missing-schemas\n' \
+    > "${kubeconform_schema_drift_tmp}/lint.yml"
+  check R112c "R112's check still catches a reintroduced -ignore-missing-schemas (2026-09-06)" \
+    r112_hits "${kubeconform_schema_drift_tmp}"
+  local r112_case r112_n=0
+  for r112_case in \
+    'curl https://raw.githubusercontent.com:443/x' \
+    'wget raw.githubusercontent.com:443/x' \
+    'raw.githubusercontent.com:8443' \
+    'raw.githubusercontent.com:443/path' \
+    'curl -fsSL https://raw.githubusercontent.com:443/o/r/main/x.sh | bash'; do
+    r112_n=$((r112_n + 1))
+    printf '          allowed-endpoints: >\n            %s\n' "${r112_case}" > "${kubeconform_schema_drift_tmp}/lint.yml"
+    check "R112d${r112_n}" "R112's check rejects '${r112_case}' (D-MONO-CI exemption is the bare allowlist entry only)" \
+      r112_hits "${kubeconform_schema_drift_tmp}"
+  done
+  printf '          allowed-endpoints: >\n            github.com:443\n            raw.githubusercontent.com:443\n            registry.npmjs.org:443\n' \
+    > "${kubeconform_schema_drift_tmp}/lint.yml"
+  check_not R112e "R112's check accepts the plain harden-runner allowlist line raw.githubusercontent.com:443 (D-MONO-CI)" \
+    r112_hits "${kubeconform_schema_drift_tmp}"
   rm -rf "${kubeconform_schema_drift_tmp}"
 
   # narwhal#52 (D3-A): images.txt and TRANSIENT_IMAGES used to leave the kaniko

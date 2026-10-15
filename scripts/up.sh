@@ -46,6 +46,27 @@ vm_state() {
     | awk -v n="$1" '$1 == n {print $2}'
 }
 
+# recover_dpkg: a provision killed mid-install leaves dpkg "interrupted" and every later
+# apt step fails with "dpkg was interrupted, you must manually run 'dpkg --configure -a'".
+# dpkg keeps in-flight journal entries in /var/lib/dpkg/updates, so a non-empty directory is
+# the interruption signal; a clean VM is left untouched (idempotent). Captured into a variable
+# rather than piped into `grep -q`/`head -1` (SIGPIPE under pipefail). Never fatal.
+recover_dpkg() {
+  local vm="$1" pending
+  pending=$(vagrant ssh "${vm}" -c \
+    "sudo find /var/lib/dpkg/updates -type f -print -quit 2>/dev/null" </dev/null 2>/dev/null || true)
+  pending="${pending//[[:space:]]/}"
+  if [ -z "${pending}" ]; then
+    return 0
+  fi
+  say "  ${vm}: interrupted dpkg detected (${pending}) -> dpkg --configure -a"
+  if vagrant ssh "${vm}" -c 'sudo dpkg --configure -a' </dev/null; then
+    say "  ${vm}: dpkg --configure -a done"
+  else
+    say "  ${vm}: WARNING dpkg --configure -a failed (apt/dpkg lock held?); continuing to provision"
+  fi
+}
+
 # master1_exec: run a command on master-1 over the HOST-ONLY address, falling back to
 # `vagrant ssh`.
 #
@@ -316,6 +337,7 @@ while [ "${attempt}" -le "${MAX_ATTEMPTS}" ]; do
         # `vagrant provision` skips the flaky boot-time SSH setup. If it fails
         # (VM's SSH still racing), `vagrant reload --provision` reboots the
         # guest — a clean boot usually clears the key-replacement race.
+        recover_dpkg "${vm}"
         echo "  ${vm}: running but not Ready -> vagrant provision"
         if ! vagrant provision "${vm}"; then
           echo "  ${vm}: provision failed -> vagrant reload --provision"
@@ -352,11 +374,14 @@ while [ "${attempt}" -le "${MAX_ATTEMPTS}" ]; do
       fi
     fi
 
-    # phase2_complete: returns 0 only when all key namespaces created by Phase 2
-    # scripts 08-x/09/11/12/13 are present, indicating the run reached the end.
+    # phase2_complete: returns 0 only when 06-phase2-start.sh wrote its success marker
+    # (/var/lib/narwhal/phase2-complete: removed on entry, written after every critical script
+    # passed) AND the key namespaces exist. Namespaces alone are not a completion signal: 08-x
+    # create them early, so on 2026-10-16 "Phase 2 complete" printed right after
+    # 14-gitops-bootstrap.sh had failed. Namespaces stay as a sanity check on the marker.
     # Namespaces: platform-system (08-1), monitoring (08-2), security-system (08-3),
     # storage (08-4), istio-system (09), iam (11), devtools (12/13).
-    # Ask master-1 for the namespace list ONCE, then decide locally.
+    # Ask master-1 for the namespace list and marker ONCE, then decide locally.
     #
     # The previous version ran `vagrant ssh -c "kubectl get ns X"` per namespace and read
     # only the exit code, so an unreachable master-1 — the normal state right after the
@@ -367,8 +392,12 @@ while [ "${attempt}" -le "${MAX_ATTEMPTS}" ]; do
     phase2_complete() {
       local have ns
       if ! have=$(vagrant ssh master-1 -c \
-            "kubectl get ns -o name" 2>/dev/null); then
+            "kubectl get ns -o name || exit 1; if [ -f /var/lib/narwhal/phase2-complete ]; then echo PHASE2_MARKER_OK; fi" 2>/dev/null); then
         echo "  Phase 2 status unknown: master-1 unreachable (SSH or kubectl failed)."
+        return 1
+      fi
+      if ! grep -q "^PHASE2_MARKER_OK" <<<"${have}"; then
+        echo "  Phase 2 incomplete: success marker /var/lib/narwhal/phase2-complete not written (a critical script failed)."
         return 1
       fi
       for ns in platform-system monitoring security-system storage istio-system iam devtools; do

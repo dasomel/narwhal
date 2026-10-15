@@ -3085,6 +3085,33 @@ assert line in s and not any(x.startswith("MAX_ROUNDS=") and ":-3" in x for x in
   check R248 "every kakaocloud_public_ip has lifecycle prevent_destroy (D-PUBIP, 2026-10-15); the check fails when a guard is removed" \
     python3 scripts/test/lib/check-kakao-public-ip-guard.py --mutation-verify
 
+  # 2026-10-16: 07-cnpg.sh built cnpg-s3-credentials from velero-s3-credentials, which 08-4
+  # creates later, so ACCESS_SECRET_KEY came out empty and narwhal-db failed over. One helper
+  # (lib.sh resolve_s3_credentials, default "admin" per D-velero) now serves 07 and 08-4.
+  check R249 "07-cnpg.sh and 08-4-storage.sh derive S3 credentials via resolve_s3_credentials; 07 does not read the later-created Velero Secret itself (2026-10-16)" \
+    bash -c 'grep -Fq "resolve_s3_credentials" scripts/cluster/07-cnpg.sh && grep -Fq "resolve_s3_credentials" scripts/cluster/08-4-storage.sh && ! grep -Fq "velero-s3-credentials" scripts/cluster/07-cnpg.sh'
+  check R250 "resolve_s3_credentials defaults both keys to admin when the Secret is absent or empty, honours env, and never yields an empty key" \
+    bash -c 'set -euo pipefail
+      k=$(mktemp -d); trap "rm -rf $k" EXIT
+      printf "#!/bin/bash\nexit 1\n" > "$k/kubectl"; chmod +x "$k/kubectl"
+      export PATH="$k:$PATH"
+      source scripts/common/lib.sh
+      unset S3_ACCESS_KEY S3_SECRET_KEY; resolve_s3_credentials
+      [ "$S3_ACCESS_KEY" = admin ] && [ "$S3_SECRET_KEY" = admin ]
+      S3_ACCESS_KEY=ak S3_SECRET_KEY=""; resolve_s3_credentials
+      [ "$S3_ACCESS_KEY" = ak ] && [ -n "$S3_SECRET_KEY" ]'
+
+  # 2026-10-16: up.sh printed "Phase 2 complete" right after 14-gitops-bootstrap.sh failed because
+  # phase2_complete() only looked for namespaces. 06-phase2-start.sh now writes a success marker.
+  check R251 "up.sh phase2_complete requires the 06-phase2-start.sh success marker; 06 clears it on entry and writes it only after the script loop (2026-10-16)" \
+    bash -c 'f=scripts/cluster/06-phase2-start.sh; u=scripts/up.sh
+      grep -Fq "PHASE2_MARKER_OK" "$u" && grep -Fq "/var/lib/narwhal/phase2-complete" "$u" &&
+      grep -Fq "rm -f \"\${PHASE2_MARKER}\"" "$f" &&
+      [ "$(grep -n "PHASE2_MARKER}\"\$" "$f" | tail -1 | cut -d: -f1)" -gt "$(grep -n "^done\$" "$f" | tail -1 | cut -d: -f1)" ]'
+  check R252 "up.sh recovers an interrupted dpkg (non-empty /var/lib/dpkg/updates) before re-provisioning a running not-Ready VM (2026-10-16)" \
+    bash -c 'grep -Fq "dpkg --configure -a" scripts/up.sh && grep -Fq "/var/lib/dpkg/updates" scripts/up.sh &&
+      [ "$(grep -n "recover_dpkg \"\${vm}\"" scripts/up.sh | head -1 | cut -d: -f1)" -lt "$(grep -n "vagrant provision \"\${vm}\"" scripts/up.sh | head -1 | cut -d: -f1)" ]'
+
 }
 
 #=========================================

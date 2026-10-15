@@ -4,6 +4,8 @@ set -euo pipefail
 # Charts come from the airgap bundle, never a public repository.
 # shellcheck source=/dev/null
 source /home/vagrant/scripts/common/lib-charts.sh
+# shellcheck source=scripts/common/lib.sh
+source /home/vagrant/scripts/common/lib.sh
 
 echo "=== Installing Storage Apps (SeaweedFS, OpenBao, Velero) ==="
 
@@ -287,15 +289,12 @@ echo "OpenBao installed"
 #=========================================
 echo "=== Installing Velero ==="
 
-# S3 credentials — prefer environment overrides, fall back to Secret or defaults
-S3_ACCESS_KEY="${S3_ACCESS_KEY:-$(kubectl get secret velero-s3-credentials -n storage \
-  -o jsonpath='{.data.access-key}' 2>/dev/null | base64 -d || echo "admin")}"
-# D-velero: default to "admin" (matches S3_ACCESS_KEY), not empty. An empty
-# aws_secret_access_key makes the AWS SDK fall through to the EC2 IMDS provider
-# (169.254.169.254), which times out every BSL reconcile and crashloops velero.
-# SeaweedFS S3 is anonymous here, so any non-empty key satisfies the SDK.
-S3_SECRET_KEY="${S3_SECRET_KEY:-$(kubectl get secret velero-s3-credentials -n storage \
-  -o jsonpath='{.data.secret-key}' 2>/dev/null | base64 -d || echo "admin")}"
+# S3 credentials — env override, then existing Secret, then the shared "admin" default.
+# D-velero: never empty (an empty aws_secret_access_key makes the AWS SDK fall through to the
+# EC2 IMDS provider (169.254.169.254), which times out every BSL reconcile and crashloops
+# velero). SeaweedFS S3 is anonymous here, so any non-empty key satisfies the SDK.
+# Shared with 07-cnpg.sh via resolve_s3_credentials (scripts/common/lib.sh).
+resolve_s3_credentials
 
 # Persist S3 credentials into a dedicated Secret (idempotent)
 # 'cloud' key uses AWS credentials file format required by velero-plugin-for-aws

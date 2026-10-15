@@ -2070,6 +2070,46 @@ PYEOF
   if [ "${iso_gaps:-0}" -gt 0 ]; then
     warn R244-known "${iso_gaps} known ingress isolation gaps baselined (Narwhal#126): monitoring and platform-system namespace-wide PERMISSIVE lack an ingress default-deny"
   fi
+  # Narwhal#164: a package install must not run the package's own build/lifecycle scripts (a malicious
+  # release's build script is the incident); exact pins alone (R50-R54) do not stop that.
+  check R245 "CI/script package installs pass --ignore-scripts / --only-binary=:all:; known-issue baseline explicit (Narwhal#164)" \
+    python3 scripts/test/lib/check-install-scripts.py
+  check R245a "install-script check accepts script-less npm/pnpm/pip installs (and ignores echo text)" \
+    python3 scripts/test/lib/check-install-scripts.py scripts/test/fixtures/install-scripts/good.yaml
+  check_not R245b "install-script check rejects a typosquat-looking npm install that runs lifecycle scripts" \
+    python3 scripts/test/lib/check-install-scripts.py scripts/test/fixtures/install-scripts/bad-typosquat-npm.yaml
+  check_not R245c "install-script check rejects a pip install that may build an sdist" \
+    python3 scripts/test/lib/check-install-scripts.py scripts/test/fixtures/install-scripts/bad-pip-sdist.yaml
+  check_not R245d "install-script check rejects a line-continued pnpm install without --ignore-scripts" \
+    python3 scripts/test/lib/check-install-scripts.py scripts/test/fixtures/install-scripts/bad-multiline-pnpm.yaml
+  check_not R245e "install-script check rejects --ignore-scripts=false" \
+    python3 scripts/test/lib/check-install-scripts.py scripts/test/fixtures/install-scripts/bad-scripts-true.txt
+  check_not R245f "install-script check rejects pip --no-binary even with --only-binary=:all:" \
+    python3 scripts/test/lib/check-install-scripts.py scripts/test/fixtures/install-scripts/bad-no-binary.txt
+  check_not R245g "install-script check fails closed on unparsable YAML" \
+    python3 scripts/test/lib/check-install-scripts.py scripts/test/fixtures/install-scripts/bad-malformed.yaml
+  check_not R245h "install-script check fails closed on an absent file" \
+    python3 scripts/test/lib/check-install-scripts.py scripts/test/fixtures/install-scripts/bad-absent.yaml
+  check_not R245i "install-script check baseline: entries fixed in the tree fail as stale" \
+    python3 scripts/test/lib/check-install-scripts.py --root scripts/test/fixtures/install-scripts/tree-clean
+  check R245j "install-script check parses manager global options (npm --prefix x ci, pnpm --filter x install, -F/-w/--cwd, unknown flag fails closed)" \
+    python3 scripts/test/lib/check-install-scripts.py --each-bad scripts/test/fixtures/install-scripts/bad-each-flags.txt
+  check R245k "install-script check treats --ignore-scripts false|0|no, =no and --no-ignore-scripts as not ignoring" \
+    python3 scripts/test/lib/check-install-scripts.py --each-bad scripts/test/fixtures/install-scripts/bad-each-falsy.txt
+  check R245l "install-script check sees installs in subshells, \$(...), backticks, braces, bash -c and shell heredocs" \
+    python3 scripts/test/lib/check-install-scripts.py --each-bad scripts/test/fixtures/install-scripts/bad-each-nesting.txt
+  check R245m "install-script check flags bare yarn and bun install|add" \
+    python3 scripts/test/lib/check-install-scripts.py --each-bad scripts/test/fixtures/install-scripts/bad-each-managers.txt
+  check R245n "install-script check accepts safe forms (flag values, subshells, quoted/heredoc text, npx/dlx/exec by design)" \
+    python3 scripts/test/lib/check-install-scripts.py --each-good scripts/test/fixtures/install-scripts/good-each.txt
+  check R245o "install-script check baseline counts a YAML alias once" \
+    python3 scripts/test/lib/check-install-scripts.py --root scripts/test/fixtures/install-scripts/tree-alias
+  check_not R245p "install-script check baseline: swapping one violation for another in the same file fails" \
+    python3 scripts/test/lib/check-install-scripts.py --root scripts/test/fixtures/install-scripts/tree-swap
+  is_gaps="$(python3 scripts/test/lib/check-install-scripts.py 2>/dev/null | grep -c '^KNOWN-ISSUE' || true)"
+  if [ "${is_gaps:-0}" -gt 0 ]; then
+    warn R245-known "${is_gaps} known script-running installs baselined (Narwhal#164): markdownlint-cli npm install in lint.yml and markdown-changed.yml, pip install jsonschema in research-evidence.yml"
+  fi
   # Narwhal#235 (lead live run): the ArgoCD HBONE post-check read a pre-patch snapshot and
   # exited 1 on every fresh cluster after its own successful appends.
   check R202 "13-argocd re-reads each policy after patching before the 15008 post-check (Narwhal#235)" \

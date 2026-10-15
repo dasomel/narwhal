@@ -1,0 +1,6 @@
+jobs:
+  tools:
+    steps:
+      - run: |
+          pnpm install \
+            --frozen-lockfile

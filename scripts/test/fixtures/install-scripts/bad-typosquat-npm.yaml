@@ -1,0 +1,4 @@
+jobs:
+  tools:
+    steps:
+      - run: npm install -g markdownlnt-cli@0.49.1

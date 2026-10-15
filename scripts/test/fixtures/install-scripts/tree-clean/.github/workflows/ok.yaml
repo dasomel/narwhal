@@ -1,0 +1,4 @@
+jobs:
+  tools:
+    steps:
+      - run: npm ci --ignore-scripts

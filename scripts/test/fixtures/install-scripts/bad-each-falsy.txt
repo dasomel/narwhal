@@ -1,0 +1,9 @@
+npm ci --ignore-scripts false
+----
+npm ci --ignore-scripts 0
+----
+npm ci --ignore-scripts=no
+----
+npm ci --ignore-scripts --no-ignore-scripts
+----
+npm ci --no-ignore-scripts

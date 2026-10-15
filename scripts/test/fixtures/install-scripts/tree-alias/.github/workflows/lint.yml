@@ -1,0 +1,6 @@
+jobs:
+  a:
+    steps:
+      - &r
+        run: npm install -g markdownlint-cli@0.49.1
+      - *r

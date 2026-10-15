@@ -1,0 +1,4 @@
+jobs:
+  a:
+    steps:
+      - run: python3 -m pip install 'jsonschema==4.25.1'

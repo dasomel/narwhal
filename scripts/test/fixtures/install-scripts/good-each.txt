@@ -1,0 +1,31 @@
+npm --prefix x ci --ignore-scripts
+----
+pnpm --filter x install --ignore-scripts
+----
+npm ci --ignore-scripts true
+----
+npm ci --ignore-scripts --foo
+----
+x=$(npm ci --ignore-scripts)
+----
+(cd a && npm ci --ignore-scripts)
+----
+for d in a b; do (cd $d && pnpm i --ignore-scripts); done
+----
+bun install --ignore-scripts
+----
+yarn --version
+----
+yarn run build
+----
+npm run install-deps
+----
+cat <<EOF
+npm install foo
+EOF
+----
+echo "--ignore-scripts" "foo;bar" ${HOME}
+----
+grep -c "npm install" file; echo 'npm ci'
+----
+npx left-pad && pnpm dlx foo && bunx foo && npm exec foo

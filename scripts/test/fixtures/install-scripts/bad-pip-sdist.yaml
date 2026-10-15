@@ -1,0 +1,4 @@
+jobs:
+  tools:
+    steps:
+      - run: python3 -m pip install 'jsonschem==4.25.1'

@@ -1,0 +1,4 @@
+jobs:
+  a:
+    steps:
+      - run: npm install -g other-pkg@1.0.0

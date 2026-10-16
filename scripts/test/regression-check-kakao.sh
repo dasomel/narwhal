@@ -3208,6 +3208,15 @@ PYEOF'
     python3 scripts/test/lib/check-seaweedfs-nonroot.py
   check R268 "nfs-root-squash-align.sh resolves targets (static SeaweedFS map, pod securityContext), leaves unresolved PVs alone, refuses a Running different-uid consumer and does not change anything without --apply (2026-10-16)" \
     bash scripts/test/lib/check-nfs-root-squash-align.sh
+  check R269 "nfs-root-squash-align.sh requires root (id -u), exits 4 on an unreadable PV dir and reads volumeAttributes.subDir; 04-addons.sh pins feature.enableFSGroupPolicy=false with D-fsgroup; the runbook documents CSIDriver immutability, 'sudo bash' align commands and the apt-unreachable export switch (2026-10-16)" \
+    bash -c 'a=scripts/cluster/nfs-root-squash-align.sh; r=docs/runbooks/nfs-xfs-migration.md; u=scripts/cluster/04-addons.sh
+      grep -Fq "id -u" "$a" && grep -Fq "must run as root" "$a" && grep -Fq "exit 4" "$a" &&
+      grep -Fq "volumeAttributes.subDir" "$a" &&
+      grep -Fq "D-fsgroup" "$u" && grep -Fq -- "--set feature.enableFSGroupPolicy=false" "$u" &&
+      grep -Fq "is immutable" "$r" && grep -Fq "kubectl delete csidriver nfs.csi.k8s.io" "$r" &&
+      grep -Fq "sudo bash scripts/cluster/nfs-root-squash-align.sh --apply" "$r" &&
+      grep -Fq "Supported alternative where apt is unreachable" "$r" &&
+      ! grep -Eq "^[[:space:]]*scripts/cluster/nfs-root-squash-align.sh" "$r"'
 }
 
 #=========================================

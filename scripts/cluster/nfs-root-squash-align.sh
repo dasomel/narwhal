@@ -1,9 +1,12 @@
 #!/bin/bash
 # Align the on-disk NFS layout with a root_squash export (narwhal#224, #186).
 #
-# Run on the NFS server (master-1) as a user who can sudo and reach the cluster:
-#   scripts/cluster/nfs-root-squash-align.sh            # dry run (default): prints the plan, changes nothing
-#   scripts/cluster/nfs-root-squash-align.sh --apply    # performs the chown/chmod below
+# Run on the NFS server (master-1) AS ROOT (sudo bash ...); it refuses to start otherwise (D-rs-root):
+#   sudo bash scripts/cluster/nfs-root-squash-align.sh            # dry run (default): prints the plan, changes nothing
+#   sudo bash scripts/cluster/nfs-root-squash-align.sh --apply    # performs the chown/chmod below
+# Why root: once the share root is nobody:nogroup 0750 an unprivileged user cannot traverse it, so
+# every PV directory looks absent. Exit codes: 0 ok, 1 error / not root, 3 PVs skipped or unresolved,
+# 4 a PV directory could not be read (never reported as success).
 #
 # What it changes (and nothing else; /etc/exports is NEVER touched, the export switch is a
 # separate step in docs/runbooks/nfs-xfs-migration.md):
@@ -51,6 +54,12 @@ case "${1:-}" in
     ;;
 esac
 
+# D-rs-root: fail fast; an unprivileged run silently skips every PV once the share root is 0750.
+if [ "$(id -u)" -ne 0 ]; then
+  echo "ERROR: must run as root: sudo bash $0 ${1:-}" >&2
+  exit 1
+fi
+
 if ${APPLY}; then MODE="APPLY"; else MODE="DRY-RUN"; fi
 echo "=== NFS root_squash alignment (${MODE}) share=${NFS_SHARE_PATH} ==="
 
@@ -92,7 +101,7 @@ echo "--- PV directories ---"
 PV_ROWS="$(${KUBECTL} get pv -o json | jq -r '.items[]
   | select(.spec.csi.driver == "nfs.csi.k8s.io" and .spec.claimRef != null)
   | [.spec.claimRef.namespace, .spec.claimRef.name,
-     (.spec.csi.volumeAttributes.subdir // (.spec.claimRef.namespace + "/" + .spec.claimRef.name))]
+     (.spec.csi.volumeAttributes.subDir // .spec.csi.volumeAttributes.subdir // (.spec.claimRef.namespace + "/" + .spec.claimRef.name))]
   | @tsv')"
 # One row per pod volume: ns, claim, pod, phase, runAsUser, gid (fsGroup, else runAsGroup).
 POD_ROWS="$(${KUBECTL} get pods -A -o json | jq -r '.items[]
@@ -106,11 +115,17 @@ POD_ROWS="$(${KUBECTL} get pods -A -o json | jq -r '.items[]
   | @tsv')"
 
 skipped=0
+unreadable=0
 while IFS=$'\t' read -r ns claim subdir; do
   [ -n "${ns}" ] || continue
   dir="${NFS_SHARE_PATH}/${subdir}"
   key="${ns}/${claim}"
   echo "${key} -> ${dir}"
+  if stat_err="$(stat -c '%a' "${dir}" 2>&1 >/dev/null)"; [[ "${stat_err}" == *"Permission denied"* ]]; then
+    echo "  UNREADABLE: cannot traverse ${dir} (${stat_err}); nothing was checked for this PV"
+    unreadable=$((unreadable + 1))
+    continue
+  fi
   if [ ! -d "${dir}" ]; then
     echo "  SKIP: directory not found on this host"
     skipped=$((skipped + 1))
@@ -143,7 +158,11 @@ while IFS=$'\t' read -r ns claim subdir; do
     continue
   fi
 
-  count="$(sudo find "${dir}" -xdev \( -uid 0 -o -gid 0 \) -print0 | tr -cd '\0' | wc -c | tr -d ' ')"
+  if ! count="$(sudo find "${dir}" -xdev \( -uid 0 -o -gid 0 \) -print0 | tr -cd '\0' | wc -c | tr -d ' ')"; then
+    echo "  UNREADABLE: find failed under ${dir}; not counted as aligned"
+    unreadable=$((unreadable + 1))
+    continue
+  fi
   if [ "${count}" -eq 0 ]; then
     echo "  ok: no root-owned entries"
     continue
@@ -174,6 +193,7 @@ root_mode="$(sudo stat -c '%a' "${NFS_SHARE_PATH}")"
 [ "${root_mode}" = "750" ] || act "chmod 750 ${NFS_SHARE_PATH} (was ${root_mode})" sudo chmod 750 "${NFS_SHARE_PATH}"
 [ "${root_owner}:${root_mode}" != "nobody:nogroup:750" ] || echo "  ok: ${NFS_SHARE_PATH} nobody:nogroup 750"
 
-echo "=== done (${MODE}); skipped/unresolved PVs: ${skipped} ==="
+echo "=== done (${MODE}); skipped/unresolved PVs: ${skipped}; unreadable PVs: ${unreadable} ==="
 if ! ${APPLY}; then echo "Dry run only. Re-run with --apply to perform the changes above."; fi
+if [ "${unreadable}" -gt 0 ]; then exit 4; fi
 if [ "${skipped}" -gt 0 ]; then exit 3; fi

@@ -717,12 +717,13 @@ PYEOF
   # (10.244.0.0/16) and localhost (127.0.0.1/32); broad supernets (10.0.0.0/8, 172.16.0.0/12)
   # or wildcard (0.0.0.0/0) must not appear in gitops manifests or bootstrap scripts.
   check_not R126 "APISIX Admin allowlists contain no broad CIDRs (0.0.0.0/0, 10.0.0.0/8, 172.16.0.0/12) (Narwhal#142, 2026-09-07)" \
-    grep -E '0\.0\.0\.0/0|10\.0\.0\.0/8|172\.16\.0\.0/12' gitops/charts/narwhal-apps/templates/apisix.yaml scripts/cluster/08-1-networking.sh
+    grep -E '0\.0\.0\.0/0|10\.0\.0\.0/8|172\.16\.0\.0/12' gitops/charts/narwhal-apps/templates/apisix.yaml gitops/charts/narwhal-apps/values.yaml scripts/cluster/08-1-networking.sh
 
   local apisix_allowlist_drift_tmp
   apisix_allowlist_drift_tmp="$(mktemp -d)"
-  cp gitops/charts/narwhal-apps/templates/apisix.yaml "${apisix_allowlist_drift_tmp}/apisix.yaml"
-  sed -i.bak 's|- 10.244.0.0/16|- 10.0.0.0/8|g' "${apisix_allowlist_drift_tmp}/apisix.yaml"
+  # The allowlist is templated (.Values.podNetworkCidr); its default lives in values.yaml.
+  cp gitops/charts/narwhal-apps/values.yaml "${apisix_allowlist_drift_tmp}/apisix.yaml"
+  sed -i.bak 's|^podNetworkCidr: 10.244.0.0/16|podNetworkCidr: 10.0.0.0/8|' "${apisix_allowlist_drift_tmp}/apisix.yaml"
   rm -f "${apisix_allowlist_drift_tmp}/apisix.yaml.bak"
   check R126b "R126's check catches a reintroduced broad CIDR in apisix.yaml (Narwhal#142, 2026-09-07)" \
     grep -qE '0\.0\.0\.0/0|10\.0\.0\.0/8|172\.16\.0\.0/12' "${apisix_allowlist_drift_tmp}/apisix.yaml"

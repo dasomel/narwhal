@@ -1,0 +1,74 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-kakao-deploy-findings",
+  "task": "Land the fixes applied live during the 2026-10-16 Kakao deploy so main matches the cluster (APISIX admin key extraction, ambient-label gate, podNetworkCidr allowlist, Kyverno apiCall method drift)",
+  "changeContext": {
+    "paths": [
+      "gitops/charts/narwhal-apps/templates/apisix.yaml",
+      "gitops/charts/narwhal-apps/values.yaml",
+      "gitops/resources/kyverno-policies.yaml",
+      "scripts/cloud/provision-kakao.sh",
+      "scripts/cluster/08-1-networking.sh",
+      "scripts/cluster/14-gitops-bootstrap.sh",
+      "scripts/test/regression-check-kakao.sh",
+      "docs/common/lessons-log.md",
+      ".agents/evals/traces/2026-10-kakao-deploy-findings.json"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Four defects found during the Kakao deploy, three already patched live as uncommitted worktree edits: (a) 08-1 APISIX admin-key extraction never matched the live configmap so the empty-key guard aborted phase 2; (b) the ambient-label gate read pods items[0], which can be a terminating old pod; (c) the APISIX Admin API allowlist hardcoded 10.244.0.0/16 while the Kakao Cilium pool is the legacy 10.0.0.0/16; (d) kyverno-policies stayed OutOfSync because Kyverno defaults apiCall.method to GET. This PR commits (a)-(c) as applied and adds (d) as a source fix. The live apisix-admin-key Secret was overwritten once with placeholders during the deploy and restored from the portal secret copy (best available source, not the original value)."
+    },
+    {
+      "id": "e1b",
+      "type": "reproduction",
+      "summary": "Observed on the live Kakao cluster during the deploy and reported by the orchestrating session (not re-run by this lane): phase 2 aborted at the 08-1 empty-key guard; the Deployment ambient-label gate failed against a terminating old pod; the APISIX ingress controller got 403 ResourceSyncAborted against the 10.244.0.0/16 allowlist on a 10.0.0.0/16 pod pool; the kyverno-policies app stayed OutOfSync on tuning-job-control-plane-node-guard. The fixes were then applied live and phase 2 completed."
+    },
+    {
+      "id": "e2",
+      "type": "bug_fix",
+      "summary": "Admin key now comes from the existing apisix-admin-key Secret, then an awk parse of the bootstrap configmap, and values containing { or $ are rejected as placeholders. Ambient label read from the Deployment pod template. New chart value podNetworkCidr (default 10.244.0.0/16) feeds both APISIX allowlists, passed by provision-kakao.sh (POD_NETWORK_CIDR) and 14-gitops-bootstrap.sh. R126/R126b read the default from values.yaml. method: GET set explicitly on the tuning-job-control-plane-node-guard apiCall (D1) instead of widening ignoreDifferences, which would mask real drift in every rule context."
+    },
+    {
+      "id": "e3",
+      "type": "verification",
+      "status": "passed",
+      "scope": "shellcheck at warning severity on the four touched scripts, GitOps YAML parse, CI unit tests, helm render of narwhal-apps (static)",
+      "summary": "shellcheck -S warning exits 0 (info-level notes are pre-existing and untouched). make validate exits 0. scripts/ci unittest discover ran 113 tests OK. helm template of narwhal-apps with default values differs from the pre-change render only by quoting of the CIDR (10.244.0.0/16 now rendered as a quoted string) and one comment line, so the Vagrant allowlist is unchanged; with provider=kakao and podNetworkCidr=10.0.0.0/16 both allowlist entries render 10.0.0.0/16.",
+      "evidence": [
+        "test:shellcheck -S warning scripts/cluster/08-1-networking.sh scripts/cluster/14-gitops-bootstrap.sh scripts/cloud/provision-kakao.sh scripts/test/regression-check-kakao.sh",
+        "test:make validate",
+        "test:python3 -m unittest discover -s scripts/ci/tests",
+        "test:helm template x gitops/charts/narwhal-apps",
+        "runtime:command-exit-0"
+      ],
+      "commandExitCode": 0
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "full static regression suite incl. R126 and R126b after the podNetworkCidr change",
+      "summary": "regression-check-kakao.sh --static: passed 381 failed 0 warnings 3. The Mistakes Log format check (logic copied from lint.yml) reported 0 bad rows after the four new rows.",
+      "evidence": [
+        "test:./scripts/test/regression-check-kakao.sh --static",
+        "runtime:command-exit-0"
+      ],
+      "commandExitCode": 0
+    },
+    {
+      "id": "e5",
+      "type": "completion_claim",
+      "summary": "Static checks pass. Live results below were reported by the orchestrating session from the deploy and were not re-run by this lane: phase 2 completed on the Kakao cluster, 42 ArgoCD apps Healthy, portal 1.1.0 ready and answering 200. The Kyverno method: GET source fix (d) is NOT applied to the live cluster yet; its effect on kyverno-policies sync status is unverified."
+    },
+    {
+      "id": "e6",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Fixes (a)-(c) are committed as already applied live; (d) is a static source fix pending a live sync check. Independent review and the independent-review status are not done by this lane."
+    }
+  ]
+}

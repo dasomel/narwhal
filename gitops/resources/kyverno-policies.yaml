@@ -471,7 +471,13 @@ spec:
             value: ""
       context:
         - name: targetNodeRole
+          # D1: method is explicit because Kyverno defaults apiCall.method to GET on the live
+          # object; omitting it left kyverno-policies OutOfSync. Fixing it at the source keeps
+          # .spec.rules[].context out of the app's ignoreDifferences, which would mask real
+          # drift in every rule's context (cost: one extra line per apiCall; escape hatch: if
+          # Kyverno starts defaulting other apiCall fields, set them here rather than ignoring).
           apiCall:
+            method: GET
             urlPath: "/api/v1/nodes/{{ request.object.spec.nodeName }}"
             jmesPath: "metadata.labels.\"node-role.kubernetes.io/control-plane\" || 'not-control-plane'"
       validate:

@@ -470,6 +470,7 @@ spec:
         # to vagrant and selfHeal undoes the cloud wiring 08-1-networking.sh applied:
         # MetalLB gets re-created and the APISIX gateway flips back to LoadBalancer.
         provider: ${PROVIDER:-vagrant}
+        podNetworkCidr: ${POD_NETWORK_CIDR:-10.244.0.0/16}
   destination:
     server: https://kubernetes.default.svc
     namespace: devtools

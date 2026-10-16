@@ -406,6 +406,9 @@ tofu apply
 시에만 켤 수 있고 remount로는 켤 수 없습니다. 볼륨에는 `prevent_destroy`(D-NFS-VOL)가 있고
 `is_delete_on_termination = false`로 연결됩니다.
 
+기존 ext4 export 이전: [`docs/runbooks/nfs-xfs-migration.md`](../../../docs/runbooks/nfs-xfs-migration.md),
+첫 실행 기록: [`docs/kakao/nfs-xfs-migration-2026-10-16.md`](../../../docs/kakao/nfs-xfs-migration-2026-10-16.md).
+
 4단계 게이트로 적용합니다. 이 절차에서 `-target`은 의도된 예외이며 필수입니다. attach 이후 전체 plan은
 깨끗하지 않습니다. master-1을 in-place 갱신하면 계산 속성 `addresses`가 apply 중 unknown이 되어, 이를
 `address`로 읽는 로드밸런서 타깃 그룹 멤버 4개(etcd, master, master_http, master_https `["0"]`)가

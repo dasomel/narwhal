@@ -1,0 +1,76 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-post-nfs-migration-seaweedfs-pin",
+  "task": "Post-migration fixes after the live Kakao NFS to XFS migration: pin the SeaweedFS volume server to its data node, correct runbook wording and pre-checks, make nfs-nonroot-write-check squash-aware",
+  "changeContext": {
+    "paths": [
+      "gitops/charts/narwhal-apps/templates/seaweedfs.yaml",
+      "scripts/cluster/08-4-storage.sh",
+      "scripts/verify/nfs-nonroot-write-check.sh",
+      "scripts/test/regression-check-kakao.sh",
+      "scripts/test/lib/check-seaweedfs-volume-pin.py",
+      "docs/runbooks/nfs-xfs-migration.md",
+      "docs/kakao/nfs-xfs-migration-2026-10-16.md",
+      "docs/common/lessons-log.md",
+      "csp/kakao-cloud/terraform/README.md",
+      ".agents/evals/traces/2026-10-post-nfs-migration-seaweedfs-pin.json",
+      "csp/kakao-cloud/terraform/README.ko.md",
+      "scripts/verify/lib-nfs-squash.sh",
+      "scripts/test/lib/check-nfs-squash-verdict.sh"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "GitOps and provisioning change. No GitOps/chart change has been applied live yet; the only live change is the node label narwhal.io/seaweedfs-volume=true on host-172-17-0-22, applied by the orchestrator on 2026-10-16 (before: kubectl get nodes -l ... returned No resources found and seaweedfs-volume-0 ran on host-172-17-0-22; after: only host-172-17-0-22 labeled). Migration evidence below comes from the 2026-10-16 migration run (log.md)."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "Migration run evidence (not reproduced here): after scale-down/up the SeaweedFS volume server (hostPath /ssd/object_store, no node affinity) was scheduled on .21 (empty) instead of .22 (23G); Loki crash-looped with unexpected EOF loki_index_20742; recovered by moving the new volumes to .22 and restarting there. The same run saw XFS quota overflow return ENOSPC (dd stopped at 100M, uid 26) and the share root at mode 777 under no_root_squash."
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "Chart volume.nodeSelector narwhal.io/seaweedfs-volume=true plus the same flag and a once-only node label in 08-4-storage.sh; runbook pre-check, ENOSPC wording, idp-apps pause, CNPG primary note; nfs-nonroot-write-check.sh reads /etc/exports (750 required under root_squash, WARN under no_root_squash); R265; two lessons-log rows; migration record."
+    },
+    {
+      "id": "e4",
+      "type": "verification",
+      "status": "passed",
+      "scope": "Rendered SeaweedFS volume StatefulSet carries the nodeSelector (helm template of the bundled seaweedfs 4.34.0 chart with the Application's valuesObject); static contract R265 fails on the old tree and passes on the new one",
+      "summary": "helm template output contains nodeSelector narwhal.io/seaweedfs-volume: \"true\" on the volume StatefulSet; check-seaweedfs-volume-pin.py exits 1 (AssertionError chart volume nodeSelector) against the pre-change chart and 0 after. Re-review fix: nfs_share_root_verdict (scripts/verify/lib-nfs-squash.sh) guards every grep with || true; check-nfs-squash-verdict.sh (R266) runs it under set -euo pipefail for root_squash+750 PASS, +777 FAIL, all no_root_squash WARN, mixed needs 750, no line FAIL; 08-4 aborts on more than one labeled node.",
+      "evidence": [
+        "test:python3 scripts/test/lib/check-seaweedfs-volume-pin.py",
+        "runtime:command-exit-0"
+      ],
+      "commandExitCode": 0
+    },
+    {
+      "id": "e5",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "Repo static suite and shell lint with the change (cluster workloads not exercised; only the node label was applied live)",
+      "summary": "make test: 391 passed, 0 failed, 3 warnings; regression-check-kakao.sh --static: R265 PASS, 391/0; make validate OK; shellcheck --severity=warning clean on the three changed scripts; markdownlint clean on the record and runbook; helm template renders the nodeSelector once (volume StatefulSet only). make lint not run (yamllint missing).",
+      "evidence": [
+        "test:make test",
+        "test:make validate",
+        "test:shellcheck --severity=warning scripts/cluster/08-4-storage.sh scripts/verify/nfs-nonroot-write-check.sh scripts/test/regression-check-kakao.sh"
+      ],
+      "commandExitCode": 0
+    },
+    {
+      "id": "e6",
+      "type": "completion_claim",
+      "summary": "Static changes verified; live application (label host-172-17-0-22, ArgoCD sync, confirm the volume pod stays on .22) is pending and unverified."
+    },
+    {
+      "id": "e7",
+      "type": "task_outcome",
+      "summary": "Static change (chart nodeSelector, 08-4 label, runbook, squash-aware check, R265, migration record) verified statically; live rollout (label host-172-17-0-22, ArgoCD sync, volume pod stays on .22) pending and unverified (e6).",
+      "state": "A"
+    }
+  ]
+}

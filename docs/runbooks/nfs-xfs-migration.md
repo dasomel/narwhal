@@ -38,8 +38,33 @@ Pass 1 is online and can be repeated; it only shortens the downtime copy.
 
 ## 3. Stop writers
 
+**Pre-check: pin node-local workloads before any scale-down.** Some workloads keep data on a
+node-local `hostPath`, not on NFS. A scale-down/up lets the scheduler place them on another
+worker, where they start empty (2026-10-16: the SeaweedFS volume server moved from `.22`, which held
+23G, to `.21` and Loki crash-looped on `unexpected EOF`). List them and record the node holding the data:
+
+```bash
+kubectl get pods -A -o json | jq -r '.items[] | select(any(.spec.volumes[]?; .hostPath != null))
+  | select(.metadata.namespace | test("^(kube-system|monitoring-agents)$") | not)
+  | "\(.metadata.namespace)/\(.metadata.name) node=\(.spec.nodeName) hostPath=\([.spec.volumes[].hostPath.path // empty] | join(","))"'
+kubectl get nodes -l narwhal.io/seaweedfs-volume=true      # must name the node that holds /ssd/object_store
+```
+
+If the SeaweedFS label is missing (cluster provisioned before D-sw-pin), put it on the node that
+holds the data BEFORE scaling anything down: `kubectl label node <node> narwhal.io/seaweedfs-volume=true`
+(find it with `du -sh /ssd/object_store` on each worker). Any other hostPath workload found must be
+pinned the same way (or cordon every other candidate node while it starts).
+
+Rollout order for the SeaweedFS pin (D-sw-pin) on a cluster that already holds data: label the data
+node BEFORE the new chart reaches the cluster, and never run `08-4-storage.sh` first. On Kakao, ArgoCD
+syncs from the in-cluster Gitea, which only `scripts/cluster/14-gitops-bootstrap.sh` updates, so a GitHub
+merge alone changes nothing there. Order: verify the data node, label it, merge, run 14, then verify
+the volume pod stays on that node.
+
 Pause ArgoCD autosync for the apps below first (otherwise it scales them back up), then scale
-down in this order and wait for each to terminate:
+down in this order and wait for each to terminate. The root app `idp-apps` owns the child
+Applications and re-creates their `automated` policy, so pause it too (remove `automated` on
+`idp-apps` and on each child, keep the originals to restore):
 
 1. gitea
 2. harbor
@@ -47,7 +72,8 @@ down in this order and wait for each to terminate:
 4. prometheus and alertmanager: set the `Prometheus` / `Alertmanager` CR `replicas: 0` (not the StatefulSet)
 5. seaweedfs
 6. openbao
-7. CNPG clusters: hibernate (`cnpg.io/hibernation: "on"` annotation)
+7. CNPG clusters: hibernate (`cnpg.io/hibernation: "on"` annotation); the primary may be a different
+   instance after un-hibernation (2026-10-16: `narwhal-db-2` became `narwhal-db-1`), which is expected
 8. nfs-quota-agent (DaemonSet)
 
 Verify no NFS client remains:
@@ -99,8 +125,10 @@ sudo xfs_quota -x -c 'report -p -h' /srv/nfs/k8s    # one project per quota-mana
 scripts/verify/nfs-nonroot-write-check.sh           # non-root write from a pod
 ```
 
-EDQUOT test: from a non-root pod on a PVC with a small quota, write past the limit and expect
-`Disk quota exceeded` (not `No space left on device` for the whole export). Check that
+Quota overflow test: from a non-root pod on a PVC with a small quota, write past the limit. XFS
+project quota over NFS returns `ENOSPC` (`No space left on device`), not `EDQUOT`
+(`Disk quota exceeded`); expect the write to stop at the PVC size while the rest of the export stays
+writable (`df` on another PVC is unaffected). Check that
 nfs-quota-agent logs show applied (not failed) projects, all workloads are Ready and ArgoCD
 apps are Synced/Healthy.
 
@@ -134,6 +162,8 @@ apps are Synced/Healthy.
 4. `sudo systemctl start nfs-server`, then bring up as in step 5.
 
 Delete the old ext4 data only after a verified soak period.
+
+Record of the first execution (timeline, gates, deviations, cleanup): [`docs/kakao/nfs-xfs-migration-2026-10-16.md`](../kakao/nfs-xfs-migration-2026-10-16.md).
 
 ## Optional: root_squash alignment during the same downtime
 

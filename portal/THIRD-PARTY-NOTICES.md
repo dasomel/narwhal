@@ -11,7 +11,7 @@ reproduced below as those licenses require. The portal's own code is Apache-2.0;
 pnpm run notices
 ```
 
-Scope: production dependencies only (`pnpm licenses list --prod`) — 664 packages.
+Scope: production dependencies only (`pnpm licenses list --prod`) — 665 packages.
 Development-only tooling is not redistributed and is therefore out of scope.
 Platform-gated native packages are excluded and listed separately (95 in the lockfile).
 
@@ -133,7 +133,7 @@ revisited — starting with `@img/sharp-libvips-*`, which is LGPL-3.0-or-later.
 
 | License | Packages |
 |---|---:|
-| MIT | 476 |
+| MIT | 477 |
 | Apache-2.0 | 110 |
 | ISC | 52 |
 | BSD-3-Clause | 9 |
@@ -863,6 +863,38 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 </details>
 
 ### @babel/parser@7.29.8
+
+- License: `MIT`
+- Author: The Babel Team
+- Homepage: <https://babel.dev/docs/en/next/babel-parser>
+
+<details><summary>LICENSE</summary>
+
+```text
+Copyright (C) 2012-2014 by various contributors (see AUTHORS)
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+```
+
+</details>
+
+### @babel/parser@7.29.9
 
 - License: `MIT`
 - Author: The Babel Team
@@ -20091,7 +20123,7 @@ Apache License
 
 </details>
 
-### @playwright/test@1.62.1
+### @playwright/test@1.64.0
 
 - License: `Apache-2.0`
 - Author: Microsoft Corporation
@@ -22682,7 +22714,7 @@ MIT License
 
 </details>
 
-### @types/node@22.20.1
+### @types/node@22.20.5
 
 - License: `MIT`
 - Homepage: <https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/node>
@@ -22715,7 +22747,7 @@ MIT License
 
 </details>
 
-### @types/node@24.12.0
+### @types/node@24.19.2
 
 - License: `MIT`
 - Homepage: <https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/node>
@@ -25558,41 +25590,6 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 </details>
 
 ### brace-expansion@5.0.12
-
-- License: `MIT`
-- Homepage: <https://github.com/juliangruber/brace-expansion#readme>
-
-<details><summary>LICENSE</summary>
-
-```text
-MIT License
-
-Copyright Julian Gruber <julian@juliangruber.com>
-
-TypeScript port Copyright Isaac Z. Schlueter <i@izs.me>
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
-```
-
-</details>
-
-### brace-expansion@5.0.9
 
 - License: `MIT`
 - Homepage: <https://github.com/juliangruber/brace-expansion#readme>
@@ -28946,7 +28943,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 </details>
 
-### es-object-atoms@1.1.1
+### es-object-atoms@1.1.2
 
 - License: `MIT`
 - Author: Jordan Harband
@@ -31328,6 +31325,40 @@ SOFTWARE.
 </details>
 
 ### hasown@2.0.2
+
+- License: `MIT`
+- Author: Jordan Harband
+- Homepage: <https://github.com/inspect-js/hasOwn#readme>
+
+<details><summary>LICENSE</summary>
+
+```text
+MIT License
+
+Copyright (c) Jordan Harband and contributors
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
+</details>
+
+### hasown@2.0.4
 
 - License: `MIT`
 - Author: Jordan Harband
@@ -36192,7 +36223,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 </details>
 
-### playwright@1.62.1
+### playwright@1.64.0
 
 - License: `Apache-2.0`
 - Author: Microsoft Corporation
@@ -36419,7 +36450,7 @@ available under the Apache 2.0 license (https://github.com/puppeteer/puppeteer/b
 
 </details>
 
-### playwright-core@1.62.1
+### playwright-core@1.64.0
 
 - License: `Apache-2.0`
 - Author: Microsoft Corporation
@@ -40250,7 +40281,7 @@ SOFTWARE.
 
 </details>
 
-### undici-types@7.16.0
+### undici-types@7.24.6
 
 - License: `MIT`
 - Homepage: <https://undici.nodejs.org>

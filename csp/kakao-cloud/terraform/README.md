@@ -339,15 +339,37 @@ formats it XFS (label `narwhal-nfs`) and mounts it on `/srv/nfs/k8s` with `prjqu
 `nfs-quota-agent` needs (XFS project quota can only be enabled at the initial mount, never by remount).
 The volume has `prevent_destroy` (D-NFS-VOL) and is attached with `is_delete_on_termination = false`.
 
-Apply in two steps, so the instance is never touched before the volume exists:
+Apply in four gated steps. `-target` is the deliberate exception to the usual "never target"
+rule here, and it is required: a full plan after the attach is not clean. Updating master-1
+in place makes its computed `addresses` unknown during apply, which forces replacement of
+the four load balancer target-group members (etcd, master, master_http, master_https `["0"]`)
+that read `address` from it. Create the volume, attach it alone, then confirm the plan converges.
 
 ```bash
-tofu apply -target=module.compute.kakaocloud_volume.nfs_data   # 1: create the volume only
-tofu plan                                                       # 2: review, then tofu apply
+# a) create the volume only
+tofu plan -target=module.compute.kakaocloud_volume.nfs_data -out=s1.tfplan
+#    STOP unless exactly 1 to add, 0 to change, 0 to destroy
+tofu apply s1.tfplan
+
+# b) attach it to master-1 only
+tofu plan -target='module.compute.kakaocloud_instance.master[0]' -out=s2.tfplan
+#    STOP unless 0 to add, 1 to change, 0 to destroy, and the volumes diff is +1 element
+#    (id = the new volume, is_delete_on_termination = false) with the root element unchanged
+tofu apply s2.tfplan
+
+# c) confirm convergence
+tofu plan
+#    STOP unless "No changes". Any LB member "must be replaced": stop, refresh, re-plan
 ```
 
-The full plan must show master-1 `update in-place` (AttachVolume) only. If it says
-`must be replaced`, stop: do not apply, investigate the `volumes` diff first.
+d) On master-1, before running `01-nfs-server.sh`:
+
+```bash
+ls -l /dev/disk/by-id/virtio-<first 20 chars of the volume id>
+sudo blkid -p /dev/disk/by-id/virtio-<first 20 chars of the volume id>   # must print nothing
+```
+
+STOP unless the link exists and `blkid` prints nothing (a blank volume).
 
 The device appears in the VM as `/dev/disk/by-id/virtio-<first 20 chars of the volume id>`
 (virtio-blk serial). `scripts/cloud/provision-kakao.sh` derives it from the `nfs_data_volume_id`

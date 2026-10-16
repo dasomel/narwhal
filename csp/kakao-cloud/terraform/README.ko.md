@@ -406,15 +406,36 @@ tofu apply
 시에만 켤 수 있고 remount로는 켤 수 없습니다. 볼륨에는 `prevent_destroy`(D-NFS-VOL)가 있고
 `is_delete_on_termination = false`로 연결됩니다.
 
-2단계로 적용합니다(볼륨이 존재하기 전에는 인스턴스를 건드리지 않음).
+4단계 게이트로 적용합니다. 이 절차에서 `-target`은 의도된 예외이며 필수입니다. attach 이후 전체 plan은
+깨끗하지 않습니다. master-1을 in-place 갱신하면 계산 속성 `addresses`가 apply 중 unknown이 되어, 이를
+`address`로 읽는 로드밸런서 타깃 그룹 멤버 4개(etcd, master, master_http, master_https `["0"]`)가
+교체 대상이 됩니다. 볼륨 생성, master-1 단독 attach, 수렴 확인 순서로 진행합니다.
 
 ```bash
-tofu apply -target=module.compute.kakaocloud_volume.nfs_data   # 1: 볼륨만 생성
-tofu plan                                                       # 2: 검토 후 tofu apply
+# a) 볼륨만 생성
+tofu plan -target=module.compute.kakaocloud_volume.nfs_data -out=s1.tfplan
+#    정확히 1 add / 0 change / 0 destroy가 아니면 중단
+tofu apply s1.tfplan
+
+# b) master-1에만 attach
+tofu plan -target='module.compute.kakaocloud_instance.master[0]' -out=s2.tfplan
+#    0 add / 1 change / 0 destroy가 아니거나, volumes diff가 요소 +1개(id = 새 볼륨,
+#    is_delete_on_termination = false)이고 루트 요소가 그대로가 아니면 중단
+tofu apply s2.tfplan
+
+# c) 수렴 확인
+tofu plan
+#    "No changes"가 아니면 중단. LB 멤버가 "must be replaced"면 중단 후 refresh하고 다시 plan
 ```
 
-전체 plan에서 master-1은 `update in-place`(AttachVolume)만 나와야 합니다. `must be replaced`가 보이면
-적용하지 말고 `volumes` diff를 먼저 조사하세요.
+d) master-1에서 `01-nfs-server.sh` 실행 전에 확인합니다.
+
+```bash
+ls -l /dev/disk/by-id/virtio-<볼륨 id 앞 20자>
+sudo blkid -p /dev/disk/by-id/virtio-<볼륨 id 앞 20자>   # 아무것도 출력되면 안 됨
+```
+
+링크가 있고 `blkid`가 아무것도 출력하지 않는(빈 볼륨) 경우가 아니면 중단합니다.
 
 VM 안에서 장치는 `/dev/disk/by-id/virtio-<볼륨 id 앞 20자>`(virtio-blk 시리얼)입니다.
 `scripts/cloud/provision-kakao.sh`가 `nfs_data_volume_id` output으로 계산해 `NFS_DATA_DEVICE`로 전달하며,

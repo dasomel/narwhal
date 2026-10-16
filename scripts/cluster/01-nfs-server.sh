@@ -42,7 +42,7 @@ if [ -n "${NFS_DATA_DEVICE}" ]; then
       echo "       Refusing to mount over live data. Migrate with docs/runbooks/nfs-xfs-migration.md." >&2
       exit 1
     fi
-    fs_type=$(sudo blkid -o value -s TYPE "${data_dev}" || true)
+    fs_type=$(sudo blkid -p -o value -s TYPE "${data_dev}" || true)
     if [ -z "${fs_type}" ]; then
       echo "No filesystem on ${data_dev}; creating XFS (label narwhal-nfs)"
       sudo mkfs.xfs -L narwhal-nfs "${data_dev}"
@@ -50,7 +50,7 @@ if [ -n "${NFS_DATA_DEVICE}" ]; then
       echo "ERROR: ${data_dev} already holds a '${fs_type}' filesystem; refusing to touch it." >&2
       exit 1
     fi
-    data_uuid=$(sudo blkid -o value -s UUID "${data_dev}")
+    data_uuid=$(sudo blkid -p -o value -s UUID "${data_dev}")
     sudo sed -i "\|[[:space:]]${NFS_SHARE_PATH}[[:space:]]|d" /etc/fstab
     echo "UUID=${data_uuid} ${NFS_SHARE_PATH} xfs defaults,prjquota,nofail 0 2" | sudo tee -a /etc/fstab >/dev/null
     sudo systemctl daemon-reload

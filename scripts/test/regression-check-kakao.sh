@@ -3197,6 +3197,8 @@ PYEOF'
       ! grep -Fq "xfs -> add" "$f" &&
       grep -Fq "NFS_DATA_DEVICE=\${NFS_DATA_DEVICE}" scripts/cloud/provision-kakao.sh &&
       [ -f docs/runbooks/nfs-xfs-migration.md ]'
+  check R264 "01-nfs-server.sh NFS_DATA_DEVICE block is behavioral (fake blkid/findmnt/mkfs.xfs): blank -> mkfs, existing xfs -> no mkfs, other fs -> fail, non-empty share path -> refuse without mkfs/mount (2026-10-16)" \
+    bash scripts/test/lib/check-nfs-data-device.sh
 
 }
 

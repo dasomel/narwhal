@@ -73,7 +73,7 @@ Mount at the real path. The old ext4 data stays underneath as the rollback copy.
 cutover by hand, because `01-nfs-server.sh` refuses a non-empty `/srv/nfs/k8s`:
 
 ```bash
-UUID=$(sudo blkid -o value -s UUID "$DEV")
+UUID=$(sudo blkid -p -o value -s UUID "$DEV")
 echo "UUID=${UUID} /srv/nfs/k8s xfs defaults,prjquota,nofail 0 2" | sudo tee -a /etc/fstab
 sudo mkdir -p /etc/systemd/system/nfs-server.service.d
 printf '[Unit]\nRequiresMountsFor=/srv/nfs/k8s\n' | sudo tee /etc/systemd/system/nfs-server.service.d/requires-mount.conf
@@ -106,10 +106,23 @@ apps are Synced/Healthy.
 
 ## 7. Rollback
 
-`sudo systemctl stop nfs-server && sudo umount /srv/nfs/k8s`, remove the fstab line and the
-`requires-mount.conf` drop-in. The untouched ext4 directory underneath is exposed again with the
-pre-cutover data. Start `nfs-server` and bring up as in step 5. Writes made after the cutover are
-NOT in the old copy. Delete the old ext4 data only after a verified soak period.
+1. Repeat step 3: stop every writer in the same order and verify no NFS clients remain
+   (`findmnt -t nfs,nfs4` on all nodes, `ss ... sport = :2049` == 0), then `sudo systemctl stop nfs-server`.
+2. Copy writes made after the cutover back to the old ext4 copy, which is still hidden under the mount.
+   Bind-mount the root filesystem to reach it:
+
+   ```bash
+   sudo mkdir -p /mnt/rootfs-old && sudo mount --bind / /mnt/rootfs-old
+   sudo rsync -aHAX --numeric-ids --sparse --delete /srv/nfs/k8s/ /mnt/rootfs-old/srv/nfs/k8s/
+   sudo umount /mnt/rootfs-old
+   ```
+
+   If you skip this, everything written after the cutover is LOST on rollback.
+3. `sudo umount /srv/nfs/k8s`, remove the fstab line and the `requires-mount.conf` drop-in, `sudo systemctl daemon-reload`.
+   The ext4 directory is exposed again.
+4. `sudo systemctl start nfs-server`, then bring up as in step 5.
+
+Delete the old ext4 data only after a verified soak period.
 
 ## Optional: root_squash alignment during the same downtime
 

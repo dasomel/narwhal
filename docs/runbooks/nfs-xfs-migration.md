@@ -201,24 +201,25 @@ Preconditions (the align script prints each of them in its dry run):
 
 Steps, in this order:
 
-1. On the NFS server (`master-1`), dry run, and read the plan:
-   `scripts/cluster/nfs-root-squash-align.sh`. Exit 3 means a PV was skipped (unresolved
-   identity, or a Running consumer with a different non-root uid): resolve it before going on.
-2. `scripts/cluster/nfs-root-squash-align.sh --apply`. It chowns only root-owned entries to the
-   workload identity (SeaweedFS `1000:1000` from the reviewed map, the rest from the bound pod's
-   `securityContext`), makes namespace directories `nobody:nogroup`, and the share root
-   `nobody:nogroup 0750`. Re-running it reports nothing to do. It never edits `/etc/exports`.
-   The running SeaweedFS pods are still uid 0; root bypasses permissions under `no_root_squash`,
-   so the chown cannot break them. Do this BEFORE step 3: a non-root filer/master started on
-   root-owned files crash-loops with `EACCES`.
-3. Merge the GitOps PR, then run `scripts/cluster/14-gitops-bootstrap.sh` (the cluster syncs from
-   Gitea, so a merge alone changes nothing live). ArgoCD restarts the SeaweedFS filer and master as
-   uid 1000 on the already-chowned data.
-4. Confirm the filer and master are Ready and uid 1000 (`kubectl -n storage exec
-   seaweedfs-filer-0 -- id -u` prints `1000`), and S3 still works (the Loki pod is the canary).
-5. Switch the export. Take the live CIDRs from `/etc/exports`, then run the export logic of
-   `01-nfs-server.sh`; it also installs the timer and restarts `nfs-kernel-server` (a short NFS stall;
-   mounts are `hard`, so clients wait and recover):
+1. Merge the GitOps PR. Kakao is unaffected until step 3, because the cluster syncs from Gitea.
+2. On the NFS server (`master-1`): dry run `scripts/cluster/nfs-root-squash-align.sh` and read the
+   plan (exit 3 means a PV was skipped: resolve it first), then `--apply`. It chowns only
+   root-owned entries to the workload identity (SeaweedFS `1000:1000` from the reviewed map, the
+   rest from the bound pod's `securityContext`), makes namespace directories `nobody:nogroup`
+   and the share root `nobody:nogroup 0750`. It never edits `/etc/exports`. The SeaweedFS pods are
+   still uid 0 here; root bypasses permissions under `no_root_squash`, so this cannot break them.
+3. Stage and roll out: run `scripts/cluster/14-gitops-bootstrap.sh`. The filer and master restart as
+   uid 1000. Race: until they stop, the old root processes keep creating uid-0 files (master raft
+   snapshot `0600`, filer leveldb `.ldb`/`MANIFEST`, flush on shutdown), and the new pods hit
+   `EACCES` on them. So, immediately after the rollout, re-run
+   `scripts/cluster/nfs-root-squash-align.sh --apply` (the running-consumer guard passes because the
+   pod uid now equals the target), then delete the master and filer pods if either is in
+   CrashLoopBackOff (`kubectl -n storage delete pod seaweedfs-master-0 seaweedfs-filer-0`).
+4. Verify: filer and master Ready, `kubectl -n storage exec seaweedfs-filer-0 -- id -u` and the
+   master print `1000`, and S3 works (the Loki pod is the canary).
+5. Switch the export. WARNING: `01-nfs-server.sh` rewrites `/etc/exports` wholesale (and restarts
+   `nfs-kernel-server`, a short stall; mounts are `hard`, so clients wait and recover). Back it up
+   and take the live CIDRs from it first; the script also installs the timer:
 
    ```bash
    sudo cp -a /etc/exports /etc/exports.pre-rootsquash
@@ -231,14 +232,17 @@ Steps, in this order:
    active and only the option must change, use `sudo sed -i 's/no_root_squash/root_squash/'
    /etc/exports && sudo exportfs -ra` (install the timer from the script's heredocs first if
    `systemctl is-active narwhal-nfs-pv-permissions.timer` is not `active`).
-6. Verify: every pod that mounts an NFS PVC is Ready, and `scripts/verify/nfs-nonroot-write-check.sh`
-   passes (it reports PASS, not WARN, for the share root once the export is `root_squash` and the
-   mode is 750).
-7. Prove dynamic provisioning under squash: create a throwaway namespace and PVC from the
-   `nfs-csi` class, mount it from a pod running as a non-root uid, write a file, then delete the
-   namespace (`nfs-nonroot-write-check.sh` does exactly this; a PVC that stays Pending, or a pod
-   that cannot `touch`, is a failure).
-8. Rollback of the export only: `sudo cp -a /etc/exports.pre-rootsquash /etc/exports` (or set the
-   two lines back to `no_root_squash`), `sudo exportfs -ra`, confirm with `sudo exportfs -v`. The
-   chowns stay: app-owned files work under both modes, and so does the non-root SeaweedFS. Revert the
-   GitOps change only if the non-root filer/master themselves misbehave.
+6. Verify under squash: every pod that mounts an NFS PVC is Ready, and
+   `scripts/verify/nfs-nonroot-write-check.sh` passes (PASS, not WARN, for the share root). It also
+   proves dynamic provisioning: it creates a throwaway namespace and PVC from the `nfs-csi` class
+   and writes from a pod running as non-root uid 26; a PVC stuck Pending or a failed `touch` is a
+   failure.
+
+Rollback, in this order. Reverting the GitOps change (SeaweedFS back to root) is only safe while
+the export is `no_root_squash`, so:
+
+1. Export first: `sudo cp -a /etc/exports.pre-rootsquash /etc/exports` (or set the two lines back
+   to `no_root_squash`), `sudo exportfs -ra`, confirm with `sudo exportfs -v`.
+2. Only then, and only if the non-root filer/master themselves misbehave, revert the GitOps change
+   and re-run `14-gitops-bootstrap.sh`. The chowns stay valid: app-owned files work under both
+   modes.

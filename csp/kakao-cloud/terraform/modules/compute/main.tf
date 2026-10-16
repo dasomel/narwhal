@@ -20,6 +20,23 @@ locals {
   ][0]
 }
 
+# Dedicated data volume for the NFS export on master-1 (XFS + prjquota).
+# D-NFS-VOL: holds every PVC served by nfs-quota-agent. Cost: billed while it exists, and
+# `tofu destroy` / size 0 fail until this guard is removed. Why: the data must outlive
+# VM replacement (it is attached with is_delete_on_termination=false) and one stray
+# destroy must not wipe the platform's state. Escape hatch: delete this block's lifecycle
+# guard after a verified backup, or `tofu state rm` the volume (see README).
+resource "kakaocloud_volume" "nfs_data" {
+  count             = var.nfs_data_volume_size > 0 ? 1 : 0
+  name              = "${var.master_name}-1-nfs-data"
+  availability_zone = var.availability_zone
+  size              = var.nfs_data_volume_size
+
+  lifecycle {
+    prevent_destroy = true
+  }
+}
+
 # Master node instances
 resource "kakaocloud_instance" "master" {
   count       = var.master_count
@@ -37,7 +54,15 @@ resource "kakaocloud_instance" "master" {
     name = var.security_group_name
   }]
 
-  volumes = [{ size = var.volume_size }]
+  # master-1 only gets the NFS data volume. Both branches share one object type; the
+  # root element keeps its id from state (UseStateForUnknown), so adding the data volume
+  # later is an in-place AttachVolume, never a replacement.
+  volumes = count.index == 0 && var.nfs_data_volume_size > 0 ? [
+    { size = var.volume_size, id = null, is_delete_on_termination = null },
+    { size = null, id = kakaocloud_volume.nfs_data[0].id, is_delete_on_termination = false },
+    ] : [
+    { size = var.volume_size, id = null, is_delete_on_termination = null },
+  ]
 
   user_data = var.cloud_init_base64
 }

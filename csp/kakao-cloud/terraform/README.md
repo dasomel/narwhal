@@ -331,6 +331,53 @@ Notes:
   VM and LB recreation. Once the bastion is on 0.5.1, future replacements use `-replace`
   (next section) and need none of the state surgery in step 5.
 
+## NFS data volume (Kakao)
+
+`nfs_data_volume_size` (GB, default `0` = disabled, otherwise 50..16384) creates a dedicated
+block volume `<master_name>-1-nfs-data` and attaches it to master-1. `scripts/cluster/01-nfs-server.sh`
+formats it XFS (label `narwhal-nfs`) and mounts it on `/srv/nfs/k8s` with `prjquota`, which
+`nfs-quota-agent` needs (XFS project quota can only be enabled at the initial mount, never by remount).
+The volume has `prevent_destroy` (D-NFS-VOL) and is attached with `is_delete_on_termination = false`.
+
+Apply in four gated steps. `-target` is the deliberate exception to the usual "never target"
+rule here, and it is required: a full plan after the attach is not clean. Updating master-1
+in place makes its computed `addresses` unknown during apply, which forces replacement of
+the four load balancer target-group members (etcd, master, master_http, master_https `["0"]`)
+that read `address` from it. Create the volume, attach it alone, then confirm the plan converges.
+
+```bash
+# a) create the volume only
+tofu plan -target=module.compute.kakaocloud_volume.nfs_data -out=s1.tfplan
+#    STOP unless exactly 1 to add, 0 to change, 0 to destroy
+tofu apply s1.tfplan
+
+# b) attach it to master-1 only
+tofu plan -target='module.compute.kakaocloud_instance.master[0]' -out=s2.tfplan
+#    STOP unless 0 to add, 1 to change, 0 to destroy, and the volumes diff is +1 element
+#    (id = the new volume, is_delete_on_termination = false) with the root element unchanged
+tofu apply s2.tfplan
+
+# c) confirm convergence
+tofu plan
+#    STOP unless "No changes". Any LB member "must be replaced": stop, refresh, re-plan
+```
+
+d) On master-1, before running `01-nfs-server.sh`:
+
+```bash
+ls -l /dev/disk/by-id/virtio-<first 20 chars of the volume id>
+sudo blkid -p /dev/disk/by-id/virtio-<first 20 chars of the volume id>   # must print nothing
+```
+
+STOP unless the link exists and `blkid` prints nothing (a blank volume).
+
+The device appears in the VM as `/dev/disk/by-id/virtio-<first 20 chars of the volume id>`
+(virtio-blk serial). `scripts/cloud/provision-kakao.sh` derives it from the `nfs_data_volume_id`
+output and passes it as `NFS_DATA_DEVICE`; override it by exporting `NFS_DATA_DEVICE` yourself.
+
+Migrating the data already on the ext4 root disk is a separate, approval-gated runbook:
+`docs/runbooks/nfs-xfs-migration.md`. `01-nfs-server.sh` refuses to mount over a non-empty `/srv/nfs/k8s`.
+
 ## Replacing a VM
 
 Public IPs (bastion, node egress, both LBs) are external endpoints: DNS, kubeconfig, operator

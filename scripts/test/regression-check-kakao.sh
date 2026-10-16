@@ -3167,6 +3167,39 @@ sys.exit(0 if all(f) and v and mi(f[0].group(1))>=512 and mi(f[1].group(1))>=256
     bash -c 'bash scripts/test/lib/check-up-recover-dpkg.sh &&
       [ "$(grep -c "recover_dpkg \"\${vm}\"" scripts/up.sh)" -ge 2 ]'
 
+  # 2026-10-16: the NFS export sat on the ext4 root disk, where XFS-only prjquota semantics cannot be
+  # reached. A dedicated data volume (D-NFS-VOL) carries it; losing or reformatting it is data loss.
+  check R261 "kakao NFS data volume is off by default (nfs_data_volume_size=0, validated 0|50..16384) and kakaocloud_volume.nfs_data has prevent_destroy (D-NFS-VOL) with master-1 attaching it with is_delete_on_termination=false (2026-10-16)" \
+    bash -c 'd=csp/kakao-cloud/terraform
+      python3 - "$d" <<PYEOF
+import re,sys
+d=sys.argv[1]
+v=open(d+"/variables.tf").read()
+m=re.search(r"variable \"nfs_data_volume_size\" \{.*?\n\}\n",v,re.S)
+assert m and re.search(r"default\s*=\s*0\b",m.group(0)) and "16384" in m.group(0) and ">= 50" in m.group(0)
+c=open(d+"/modules/compute/main.tf").read()
+r=re.search(r"resource \"kakaocloud_volume\" \"nfs_data\" \{.*?\n\}\n",c,re.S)
+assert r and re.search(r"prevent_destroy\s*=\s*true",r.group(0)) and "var.nfs_data_volume_size > 0" in r.group(0)
+assert "is_delete_on_termination = false" in c and "D-NFS-VOL" in c
+PYEOF'
+  check R262 "01-nfs-server.sh never mkfs a device that already has a filesystem, refuses non-xfs and a non-empty share path, only acts when NFS_DATA_DEVICE is set, mounts prjquota via fstab + RequiresMountsFor and leaves the export options alone (2026-10-16)" \
+    bash -c 'f=scripts/cluster/01-nfs-server.sh
+      [ "$(grep -c "mkfs\.xfs" "$f")" -eq 1 ] &&
+      grep -Fq "if [ -n \"\${NFS_DATA_DEVICE}\" ]; then" "$f" &&
+      grep -Fq "if [ -z \"\${fs_type}\" ]; then" "$f" &&
+      [ "$(grep -n "if \[ -z \"\${fs_type}\" \]" "$f" | head -1 | cut -d: -f1)" -lt "$(grep -n "mkfs\.xfs" "$f" | head -1 | cut -d: -f1)" ] &&
+      grep -Fq "\"\${fs_type}\" != \"xfs\"" "$f" && grep -Fq "is not empty" "$f" &&
+      grep -Fq "xfs defaults,prjquota,nofail 0 2" "$f" && grep -Fq "RequiresMountsFor" "$f" &&
+      grep -Fq "no_subtree_check,root_squash)" "$f"'
+  check R263 "05-nfs-quota-agent.sh remediation says xfs prjquota cannot be enabled by remount and points at the data-volume README/runbook; provision-kakao.sh passes NFS_DATA_DEVICE (2026-10-16)" \
+    bash -c 'f=scripts/cluster/05-nfs-quota-agent.sh
+      grep -Fq "CANNOT be enabled by remount" "$f" && grep -Fq "nfs-xfs-migration.md" "$f" &&
+      ! grep -Fq "xfs -> add" "$f" &&
+      grep -Fq "NFS_DATA_DEVICE=\${NFS_DATA_DEVICE}" scripts/cloud/provision-kakao.sh &&
+      [ -f docs/runbooks/nfs-xfs-migration.md ]'
+  check R264 "01-nfs-server.sh NFS_DATA_DEVICE block is behavioral (fake blkid/findmnt/mkfs.xfs): blank -> mkfs, existing xfs -> no mkfs, other fs -> fail, non-empty share path -> refuse without mkfs/mount (2026-10-16)" \
+    bash scripts/test/lib/check-nfs-data-device.sh
+
 }
 
 #=========================================

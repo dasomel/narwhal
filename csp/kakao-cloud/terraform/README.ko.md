@@ -398,6 +398,52 @@ tofu apply
 중단해도 데이터 손실은 없다. 삭제는 서버 쪽에서 계속 진행되며, `tofu destroy`를 다시 돌리는
 것과 그냥 기다리는 것의 차이도 없다.
 
+## NFS 데이터 볼륨 (Kakao)
+
+`nfs_data_volume_size`(GB, 기본 `0` = 비활성, 사용 시 50..16384)는 `<master_name>-1-nfs-data` 전용 블록 볼륨을
+만들어 master-1에 연결합니다. `scripts/cluster/01-nfs-server.sh`가 이를 XFS(라벨 `narwhal-nfs`)로 포맷하고
+`prjquota`로 `/srv/nfs/k8s`에 마운트합니다. `nfs-quota-agent`에 필요하며, XFS 프로젝트 쿼터는 최초 마운트
+시에만 켤 수 있고 remount로는 켤 수 없습니다. 볼륨에는 `prevent_destroy`(D-NFS-VOL)가 있고
+`is_delete_on_termination = false`로 연결됩니다.
+
+4단계 게이트로 적용합니다. 이 절차에서 `-target`은 의도된 예외이며 필수입니다. attach 이후 전체 plan은
+깨끗하지 않습니다. master-1을 in-place 갱신하면 계산 속성 `addresses`가 apply 중 unknown이 되어, 이를
+`address`로 읽는 로드밸런서 타깃 그룹 멤버 4개(etcd, master, master_http, master_https `["0"]`)가
+교체 대상이 됩니다. 볼륨 생성, master-1 단독 attach, 수렴 확인 순서로 진행합니다.
+
+```bash
+# a) 볼륨만 생성
+tofu plan -target=module.compute.kakaocloud_volume.nfs_data -out=s1.tfplan
+#    정확히 1 add / 0 change / 0 destroy가 아니면 중단
+tofu apply s1.tfplan
+
+# b) master-1에만 attach
+tofu plan -target='module.compute.kakaocloud_instance.master[0]' -out=s2.tfplan
+#    0 add / 1 change / 0 destroy가 아니거나, volumes diff가 요소 +1개(id = 새 볼륨,
+#    is_delete_on_termination = false)이고 루트 요소가 그대로가 아니면 중단
+tofu apply s2.tfplan
+
+# c) 수렴 확인
+tofu plan
+#    "No changes"가 아니면 중단. LB 멤버가 "must be replaced"면 중단 후 refresh하고 다시 plan
+```
+
+d) master-1에서 `01-nfs-server.sh` 실행 전에 확인합니다.
+
+```bash
+ls -l /dev/disk/by-id/virtio-<볼륨 id 앞 20자>
+sudo blkid -p /dev/disk/by-id/virtio-<볼륨 id 앞 20자>   # 아무것도 출력되면 안 됨
+```
+
+링크가 있고 `blkid`가 아무것도 출력하지 않는(빈 볼륨) 경우가 아니면 중단합니다.
+
+VM 안에서 장치는 `/dev/disk/by-id/virtio-<볼륨 id 앞 20자>`(virtio-blk 시리얼)입니다.
+`scripts/cloud/provision-kakao.sh`가 `nfs_data_volume_id` output으로 계산해 `NFS_DATA_DEVICE`로 전달하며,
+`NFS_DATA_DEVICE`를 직접 export하면 덮어씁니다.
+
+ext4 루트 디스크의 기존 데이터 이전은 별도의 승인 필요 런북(`docs/runbooks/nfs-xfs-migration.md`)입니다.
+`01-nfs-server.sh`는 비어 있지 않은 `/srv/nfs/k8s` 위에는 마운트하지 않고 중단합니다.
+
 ## 알려진 이슈
 
 이 프로젝트에 미해결 이슈는 없다. 다만 다른 문제로 오해하기 쉬운 두 가지는 알아둘 것:

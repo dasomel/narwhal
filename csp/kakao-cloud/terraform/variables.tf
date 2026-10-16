@@ -151,6 +151,17 @@ variable "volume_size" {
   }
 }
 
+variable "nfs_data_volume_size" {
+  description = "Size in GB of a dedicated data volume attached to master-1 for the NFS export (/srv/nfs/k8s), formatted XFS with prjquota by scripts/cluster/01-nfs-server.sh. 0 (default) disables it. See README 'NFS data volume (Kakao)' for the two-step apply."
+  type        = number
+  default     = 0
+
+  validation {
+    condition     = var.nfs_data_volume_size == 0 || (var.nfs_data_volume_size >= 50 && var.nfs_data_volume_size <= 16384 && var.nfs_data_volume_size == floor(var.nfs_data_volume_size))
+    error_message = "nfs_data_volume_size must be 0 (disabled) or an integer between 50 and 16384 GB"
+  }
+}
+
 # =============================================
 # Security
 # =============================================

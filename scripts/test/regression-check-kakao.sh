@@ -129,18 +129,21 @@ run_static() {
   section "STATIC — known fixes still present in the repo"
 
   # narwhal#238 (2026-09-28): every active portal image pin must agree. Historical
-  # release notes (root and portal/) and lessons are excluded, as is portal/SECURITY.md's
-  # example command; D1 keeps this inventory check small and
+  # release notes (root and portal/), lessons and ADRs (decision records) are excluded, as is portal/SECURITY.md's
+  # example command; the pin must also be >= 1.1.0 (Valkey TLS+ACL contract, PR #343); D1 keeps this inventory check small and
   # source-controlled, with the escape hatch of adding new active pin docs to grep.
   check R210 "all active narwhal-portal image pins use one version (Narwhal#238, 2026-09-28)" \
     python3 -c '
 import re
 import subprocess
-result = subprocess.run(["git", "grep", "-h", "-E", r"ghcr\.io/dasomel/narwhal-portal:1\.0\.[0-9]+", "--", ".", ":!CHANGELOG*", ":!docs/common/lessons-log.md", ":!scripts/test/regression-check-kakao.sh", ":!.agents/evals/traces", ":!portal/CHANGELOG*", ":!portal/SECURITY.md"], capture_output=True, text=True)
+result = subprocess.run(["git", "grep", "-h", "-E", r"ghcr\.io/dasomel/narwhal-portal:[0-9]+\.[0-9]+\.[0-9]+", "--", ".", ":!CHANGELOG*", ":!docs/common/lessons-log.md", ":!scripts/test/regression-check-kakao.sh", ":!.agents/evals/traces", ":!portal/CHANGELOG*", ":!portal/SECURITY.md", ":!docs/adr"], capture_output=True, text=True)
 if result.returncode not in (0, 1):
     raise SystemExit(result.stderr)
-versions = set(re.findall(r"ghcr\.io/dasomel/narwhal-portal:(1\.0\.[0-9]+)", result.stdout))
+versions = set(re.findall(r"ghcr\.io/dasomel/narwhal-portal:([0-9]+\.[0-9]+\.[0-9]+)", result.stdout))
 assert len(versions) == 1, f"portal pin versions differ: {sorted(versions)}"
+# Floor: the chart binds Valkey TLS + ACL (VALKEY_USERNAME), which images up to 1.0.19 do not read.
+pin = tuple(int(x) for x in next(iter(versions)).split("."))
+assert pin >= (1, 1, 0), f"portal pin {pin} predates the Valkey TLS+ACL contract (needs >= 1.1.0)"
 '
 
   # D2 / D-MONO-2: portal/ is in this repo, so inspect its working tree instead of
@@ -714,15 +717,22 @@ PYEOF
   # (10.244.0.0/16) and localhost (127.0.0.1/32); broad supernets (10.0.0.0/8, 172.16.0.0/12)
   # or wildcard (0.0.0.0/0) must not appear in gitops manifests or bootstrap scripts.
   check_not R126 "APISIX Admin allowlists contain no broad CIDRs (0.0.0.0/0, 10.0.0.0/8, 172.16.0.0/12) (Narwhal#142, 2026-09-07)" \
-    grep -E '0\.0\.0\.0/0|10\.0\.0\.0/8|172\.16\.0\.0/12' gitops/charts/narwhal-apps/templates/apisix.yaml scripts/cluster/08-1-networking.sh
+    grep -E '0\.0\.0\.0/0|10\.0\.0\.0/8|172\.16\.0\.0/12' gitops/charts/narwhal-apps/templates/apisix.yaml gitops/charts/narwhal-apps/values.yaml scripts/cluster/08-1-networking.sh
 
-  local apisix_allowlist_drift_tmp
+  # R126b: mutate the REAL sources (not a string the check itself wrote) and require R126's
+  # pattern to fire: (1) the template hardcodes a broad supernet in the allowlist, (2) the
+  # chart default itself becomes a supernet.
+  local apisix_allowlist_drift_tmp broad_cidr_re='0\.0\.0\.0/0|10\.0\.0\.0/8|172\.16\.0\.0/12'
   apisix_allowlist_drift_tmp="$(mktemp -d)"
-  cp gitops/charts/narwhal-apps/templates/apisix.yaml "${apisix_allowlist_drift_tmp}/apisix.yaml"
-  sed -i.bak 's|- 10.244.0.0/16|- 10.0.0.0/8|g' "${apisix_allowlist_drift_tmp}/apisix.yaml"
-  rm -f "${apisix_allowlist_drift_tmp}/apisix.yaml.bak"
-  check R126b "R126's check catches a reintroduced broad CIDR in apisix.yaml (Narwhal#142, 2026-09-07)" \
-    grep -qE '0\.0\.0\.0/0|10\.0\.0\.0/8|172\.16\.0\.0/12' "${apisix_allowlist_drift_tmp}/apisix.yaml"
+  sed 's#^\( *- \){{ .Values.podNetworkCidr | quote }}#\110.0.0.0/8#' \
+    gitops/charts/narwhal-apps/templates/apisix.yaml > "${apisix_allowlist_drift_tmp}/apisix.yaml"
+  sed 's|^podNetworkCidr: 10.244.0.0/16|podNetworkCidr: 172.16.0.0/12|' \
+    gitops/charts/narwhal-apps/values.yaml > "${apisix_allowlist_drift_tmp}/values.yaml"
+  check R126b "R126's pattern catches a broad CIDR hardcoded into the real apisix.yaml template or the real values.yaml default, and the unmutated sources differ from the mutants (Narwhal#142, 2026-09-07)" \
+    bash -c 'grep -qE "$1" "$2/apisix.yaml" && grep -qE "$1" "$2/values.yaml" \
+      && ! diff -q "$2/apisix.yaml" gitops/charts/narwhal-apps/templates/apisix.yaml >/dev/null \
+      && ! diff -q "$2/values.yaml" gitops/charts/narwhal-apps/values.yaml >/dev/null' _ \
+    "${broad_cidr_re}" "${apisix_allowlist_drift_tmp}"
   rm -rf "${apisix_allowlist_drift_tmp}"
 
   # NetworkPolicy isolation: check-apisix-admin-ingress-policy validates authorized callers
@@ -1771,11 +1781,19 @@ with open(f"{tmp}/kyverno-policies.yaml", "w") as f:
     f.write(parts[0])
 with open(f"{tmp}/kyverno-policies-invalid-key.yaml", "w") as f:
     f.write(text.replace("publicKeys:", "publickeys:"))
+with open(f"{tmp}/kyverno-policies-key-drift.yaml", "w") as f:
+    f.write(text.replace("MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE9IgOjh5", "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEAAAAAAA", 1))
+with open(f"{tmp}/kyverno-policies-tlog-required.yaml", "w") as f:
+    f.write(text.replace("ignoreTlog: true", "ignoreTlog: false", 1))
 PYEOF
   check_not R75 "check-kyverno-signed-image-policy.py catches a removed verify-image-signatures policy (2026-08-25)" \
     python3 scripts/test/lib/check-kyverno-signed-image-policy.py "${kyverno_signed_img_tmp}/kyverno-policies.yaml"
   check_not R75b "check-kyverno-signed-image-policy.py catches a mis-cased Kyverno publicKeys field (2026-08-28)" \
     python3 scripts/test/lib/check-kyverno-signed-image-policy.py "${kyverno_signed_img_tmp}/kyverno-policies-invalid-key.yaml"
+  check_not R75c "check-kyverno-signed-image-policy.py catches inline publicKeys drifting from scripts/airgap/keys/cosign.pub (2026-10-15)" \
+    python3 scripts/test/lib/check-kyverno-signed-image-policy.py "${kyverno_signed_img_tmp}/kyverno-policies-key-drift.yaml"
+  check_not R75d "check-kyverno-signed-image-policy.py catches a key attestor that no longer skips the Rekor tlog (air-gap D-REKOR, 2026-10-15)" \
+    python3 scripts/test/lib/check-kyverno-signed-image-policy.py "${kyverno_signed_img_tmp}/kyverno-policies-tlog-required.yaml"
   rm -rf "${kyverno_signed_img_tmp}"
 
   # narwhal#35: 10-verify-image-signatures.sh exists as the air-gap image signature gate.
@@ -3074,7 +3092,131 @@ assert line in s and not any(x.startswith("MAX_ROUNDS=") and ":-3" in x for x in
     python3 scripts/test/lib/check-argocd-developer-sync-scope.py --mutation-verify
   check R236 "accelerator backend profiles match the conformance matrix (Narwhal#95)" \
     python3 scripts/test/lib/check-accelerator-profiles.py --mutation-verify
+  check R247 "portal Valkey TLS, ACL, dedicated Secret, and ingress remain hardened (S5)" \
+    python3 scripts/test/lib/check-valkey-security-contract.py
+  check R253 "Phase 2 treats 13-2 portal bindings as critical (only exit 3, ARGOCD_TOKEN missing, is tolerated) so 14 never hands TLS Valkey to ArgoCD with stale portal Secrets (PR #343)" \
+    python3 -c '
+import re
+s = open("scripts/cluster/06-phase2-start.sh").read()
+m = re.search(r"CRITICAL_SCRIPTS=\((.*?)\n\)", s, re.S)
+assert m, "CRITICAL_SCRIPTS array missing"
+names = re.findall(r"^\s*\"([^\"]+\.sh)\"", m.group(1), re.M)
+assert "13-2-narwhal-portal-bindings.sh" in names, names
+assert names.index("13-2-narwhal-portal-bindings.sh") < names.index("14-gitops-bootstrap.sh")
+assert "PORTAL_BINDINGS_DEGRADED_RC=3" in s
+b = open("scripts/cluster/13-2-narwhal-portal-bindings.sh").read()
+assert re.search(r"ARGOCD_TOKEN 없이 완료[^\n]*\n\s*exit 3\b", b), "13-2 must exit 3 only for the ArgoCD-token-only case"
+code = [l for l in b.splitlines() if not l.lstrip().startswith("#")]
+assert sum(1 for l in code if re.search(r"\bexit 3\b", l)) == 1, "exit 3 must appear exactly once in non-comment 13-2 code"
+'
+  check R248 "every kakaocloud_public_ip has lifecycle prevent_destroy (D-PUBIP, 2026-10-15); the check fails when a guard is removed" \
+    python3 scripts/test/lib/check-kakao-public-ip-guard.py --mutation-verify
 
+  # 2026-10-16: 07-cnpg.sh built cnpg-s3-credentials from velero-s3-credentials, which 08-4
+  # creates later, so ACCESS_SECRET_KEY came out empty and narwhal-db failed over. One helper
+  # (lib.sh resolve_s3_credentials, default "admin" per D-velero) now serves 07 and 08-4.
+  check R249 "07-cnpg.sh and 08-4-storage.sh derive S3 credentials via resolve_s3_credentials; 07 does not read the later-created Velero Secret itself (2026-10-16)" \
+    bash -c 'grep -Fq "resolve_s3_credentials" scripts/cluster/07-cnpg.sh && grep -Fq "resolve_s3_credentials" scripts/cluster/08-4-storage.sh && ! grep -Fq "velero-s3-credentials" scripts/cluster/07-cnpg.sh'
+  check R250 "resolve_s3_credentials: NotFound defaults to admin, any other kubectl error fails closed, an existing cnpg secret is preserved, env wins" \
+    bash scripts/test/lib/check-s3-credentials-resolve.sh
+
+  # 2026-10-16 (PR #399): the APISIX Admin API allowlist is detected from the live CNI by
+  # resolve_apisix_admin_cidr (lib.sh) and wired by 14 -- NOT taken from POD_NETWORK_CIDR, which
+  # also feeds pod-cidr-consistency-check, NFS exports and trusted proxies.
+  check R254 "resolve_apisix_admin_cidr: cilium cluster-pool, kubeadm podSubnet fallback, chart default only on NotFound, API error / multi-CIDR / invalid CIDR fail closed; 14 wires it and does not reuse POD_NETWORK_CIDR" \
+    bash -c 'bash scripts/test/lib/check-apisix-admin-cidr.sh && grep -Fq "podNetworkCidr: \${APISIX_ADMIN_CIDR_RESOLVED}" scripts/cluster/14-gitops-bootstrap.sh && grep -Fq "resolve_apisix_admin_cidr" scripts/cluster/14-gitops-bootstrap.sh && ! grep -Fq "podNetworkCidr: \${POD_NETWORK_CIDR" scripts/cluster/14-gitops-bootstrap.sh'
+  check R255 "resolve_apisix_keys: an existing random Secret key is preserved, the public upstream default (Secret or configmap) and placeholders are never reused (replaced by a generated key), a Secret read error fails closed" \
+    bash scripts/test/lib/check-apisix-key-parse.sh
+
+  # 2026-10-16: the live Kakao cluster ran the public upstream APISIX admin key because 08-1 read it
+  # back from the chart-rendered configmap. Keys are now generated into apisix-admin-key and read
+  # from it by every consumer; the defaults are recognised by sha256 only (D-apisix-key).
+  check R256 "no tracked file contains the public upstream APISIX admin/viewer key (matched by sha256, so this check carries no literal; D-apisix-key)" \
+    python3 scripts/test/lib/check-apisix-no-default-key.py
+  check R257 "APISIX and the ingress controller read the admin key from the apisix-admin-key Secret (credentials.secretName / existingSecret), keys are resolved before the APISIX helm install, 13-2 reads the Secret, rotate-apisix-admin-key.sh (behavioral, fake kubectl) rotates in order, re-syncs the portal, verifies 401 old / 200 new and rolls back on failure, lib.sh NotFound checks are anchored" \
+    bash -c 'python3 scripts/test/lib/check-apisix-key-wiring.py && bash scripts/test/lib/check-apisix-rotate.sh'
+
+  # 2026-10-16: live Kakao nfs-quota-agent crash-looped ~14,000 times / 50 days: a v0.3.0 image under a
+  # chart that passes --state-dir (flag first defined in v0.4.0), while 05 waited on a Deployment that
+  # does not exist and only warned (D-nqa-skew).
+  # Same day, second layer: after v0.5.0 the bundle on master-1 was still the 2026-08-23 chart snapshot,
+  # whose policy.enabled renders --default-quota (removed in v0.4.0); 05 exited 0 on "not ready yet" while
+  # the pod restarted (D-nqa-skew, D-nqa-prjquota).
+  check R259 "nfs-quota-agent: 05 renders the chart with its own helm args and refuses any flag the pinned per-version table lacks (stale --default-quota bundle, unknown versions fail closed, before helm install); a failed rollout or a restarted/not-Ready pod exits 1 with logs --previous (no WARN, no grep -q pipe); prjquota is detected and warned (behavioral, fake helm/kubectl)" \
+    bash scripts/test/lib/check-nqa-skew.sh
+  # 2026-10-16: the IC was OOMKilled at startup under the 256Mi limit during the full resource sync.
+  check R258 "08-1 sizes the APISIX ingress controller memory: explicit limit >= 512Mi and request >= 256Mi, in the helm flags and the apisix chart values (D-ic-mem)" \
+    python3 -c 'import re,sys
+t=open("scripts/cluster/08-1-networking.sh").read()
+def mi(v): return int(v[:-2])*(1024 if v.endswith("Gi") else 1)
+f=[re.search(r"resources\.limits\.memory=(\d+(?:Mi|Gi))",t),re.search(r"resources\.requests\.memory=(\d+(?:Mi|Gi))",t)]
+v=re.search(r"ingressController:.*?limits:\s*cpu: \S+\s*memory: (\d+(?:Mi|Gi))",t,re.S)
+sys.exit(0 if all(f) and v and mi(f[0].group(1))>=512 and mi(f[1].group(1))>=256 and mi(v.group(1))>=512 else 1)'
+
+  # 2026-10-16: up.sh printed "Phase 2 complete" right after 14-gitops-bootstrap.sh failed because
+  # phase2_complete() only looked for namespaces. 06-phase2-start.sh now writes a success marker.
+  check R251 "up.sh phase2_complete requires the 06-phase2-start.sh success marker; 06 clears it on entry and writes it only after the script loop (2026-10-16)" \
+    bash -c 'f=scripts/cluster/06-phase2-start.sh; u=scripts/up.sh
+      grep -Fq "PHASE2_MARKER_OK" "$u" && grep -Fq "/var/lib/narwhal/phase2-complete" "$u" &&
+      grep -Fq "rm -f \"\${PHASE2_MARKER}\"" "$f" &&
+      [ "$(grep -n "PHASE2_MARKER}\"\$" "$f" | tail -1 | cut -d: -f1)" -gt "$(grep -n "^done\$" "$f" | tail -1 | cut -d: -f1)" ]'
+  check R252 "up.sh recovers an interrupted dpkg (non-empty /var/lib/dpkg/updates) before re-provisioning a running not-Ready VM (2026-10-16)" \
+    bash -c 'grep -Fq "dpkg --configure -a" scripts/up.sh && grep -Fq "/var/lib/dpkg/updates" scripts/up.sh &&
+      [ "$(grep -n "recover_dpkg \"\${vm}\"" scripts/up.sh | head -1 | cut -d: -f1)" -lt "$(grep -n "vagrant provision \"\${vm}\"" scripts/up.sh | head -1 | cut -d: -f1)" ]'
+  check R260 "up.sh recover_dpkg is behavioral (fake vagrant): dpkg --configure -a only when /var/lib/dpkg/updates is non-empty, never fatal on configure/ssh failure; also re-run before the vagrant reload --provision fallback (2026-10-16)" \
+    bash -c 'bash scripts/test/lib/check-up-recover-dpkg.sh &&
+      [ "$(grep -c "recover_dpkg \"\${vm}\"" scripts/up.sh)" -ge 2 ]'
+
+  # 2026-10-16: the NFS export sat on the ext4 root disk, where XFS-only prjquota semantics cannot be
+  # reached. A dedicated data volume (D-NFS-VOL) carries it; losing or reformatting it is data loss.
+  check R261 "kakao NFS data volume is off by default (nfs_data_volume_size=0, validated 0|50..16384) and kakaocloud_volume.nfs_data has prevent_destroy (D-NFS-VOL) with master-1 attaching it with is_delete_on_termination=false (2026-10-16)" \
+    bash -c 'd=csp/kakao-cloud/terraform
+      python3 - "$d" <<PYEOF
+import re,sys
+d=sys.argv[1]
+v=open(d+"/variables.tf").read()
+m=re.search(r"variable \"nfs_data_volume_size\" \{.*?\n\}\n",v,re.S)
+assert m and re.search(r"default\s*=\s*0\b",m.group(0)) and "16384" in m.group(0) and ">= 50" in m.group(0)
+c=open(d+"/modules/compute/main.tf").read()
+r=re.search(r"resource \"kakaocloud_volume\" \"nfs_data\" \{.*?\n\}\n",c,re.S)
+assert r and re.search(r"prevent_destroy\s*=\s*true",r.group(0)) and "var.nfs_data_volume_size > 0" in r.group(0)
+assert "is_delete_on_termination = false" in c and "D-NFS-VOL" in c
+PYEOF'
+  check R262 "01-nfs-server.sh never mkfs a device that already has a filesystem, refuses non-xfs and a non-empty share path, only acts when NFS_DATA_DEVICE is set, mounts prjquota via fstab + RequiresMountsFor and leaves the export options alone (2026-10-16)" \
+    bash -c 'f=scripts/cluster/01-nfs-server.sh
+      [ "$(grep -c "mkfs\.xfs" "$f")" -eq 1 ] &&
+      grep -Fq "if [ -n \"\${NFS_DATA_DEVICE}\" ]; then" "$f" &&
+      grep -Fq "if [ -z \"\${fs_type}\" ]; then" "$f" &&
+      [ "$(grep -n "if \[ -z \"\${fs_type}\" \]" "$f" | head -1 | cut -d: -f1)" -lt "$(grep -n "mkfs\.xfs" "$f" | head -1 | cut -d: -f1)" ] &&
+      grep -Fq "\"\${fs_type}\" != \"xfs\"" "$f" && grep -Fq "is not empty" "$f" &&
+      grep -Fq "xfs defaults,prjquota,nofail 0 2" "$f" && grep -Fq "RequiresMountsFor" "$f" &&
+      grep -Fq "no_subtree_check,root_squash)" "$f"'
+  check R263 "05-nfs-quota-agent.sh remediation says xfs prjquota cannot be enabled by remount and points at the data-volume README/runbook; provision-kakao.sh passes NFS_DATA_DEVICE (2026-10-16)" \
+    bash -c 'f=scripts/cluster/05-nfs-quota-agent.sh
+      grep -Fq "CANNOT be enabled by remount" "$f" && grep -Fq "nfs-xfs-migration.md" "$f" &&
+      ! grep -Fq "xfs -> add" "$f" &&
+      grep -Fq "NFS_DATA_DEVICE=\${NFS_DATA_DEVICE}" scripts/cloud/provision-kakao.sh &&
+      [ -f docs/runbooks/nfs-xfs-migration.md ]'
+  check R264 "01-nfs-server.sh NFS_DATA_DEVICE block is behavioral (fake blkid/findmnt/mkfs.xfs): blank -> mkfs, existing xfs -> no mkfs, other fs -> fail, non-empty share path -> refuse without mkfs/mount (2026-10-16)" \
+    bash scripts/test/lib/check-nfs-data-device.sh
+  check R265 "SeaweedFS volume server (node-local hostPath data) is pinned by nodeSelector narwhal.io/seaweedfs-volume=true in the GitOps chart AND the 08-4 helm install, and 08-4 labels a node only when none carries it; nfs-nonroot-write-check.sh derives the share-root mode from the export squash mode (2026-10-16)" \
+    python3 scripts/test/lib/check-seaweedfs-volume-pin.py
+  check R266 "nfs_share_root_verdict is behavioral under set -euo pipefail: root_squash+750 PASS, root_squash+777 FAIL, all-no_root_squash WARN, mixed requires 750, no export line FAIL with its message; 08-4 aborts on >1 labeled node (2026-10-16)" \
+    bash -c 'bash scripts/test/lib/check-nfs-squash-verdict.sh && grep -Fq "LABELED_NODES=\"\$(kubectl get nodes -l narwhal.io/seaweedfs-volume=true -o name)\"" scripts/cluster/08-4-storage.sh && grep -Fq "more than one node carries" scripts/cluster/08-4-storage.sh'
+
+  check R267 "SeaweedFS master/filer run as the image's seaweed user (uid/gid 1000, emptyDir logs) in the GitOps chart and the 08-4 helm install; nfs-root-squash-align.sh is dry-run by default, never edits exports and its static map matches (narwhal#224, 2026-10-16)" \
+    python3 scripts/test/lib/check-seaweedfs-nonroot.py
+  check R268 "nfs-root-squash-align.sh resolves targets (static SeaweedFS map, pod securityContext), leaves unresolved PVs alone, refuses a Running different-uid consumer and does not change anything without --apply (2026-10-16)" \
+    bash scripts/test/lib/check-nfs-root-squash-align.sh
+  check R269 "nfs-root-squash-align.sh requires root (id -u), exits 4 on an unreadable PV dir and reads volumeAttributes.subDir; 04-addons.sh pins feature.enableFSGroupPolicy=false with D-fsgroup; the runbook documents CSIDriver immutability, 'sudo bash' align commands and the apt-unreachable export switch (2026-10-16)" \
+    bash -c 'a=scripts/cluster/nfs-root-squash-align.sh; r=docs/runbooks/nfs-xfs-migration.md; u=scripts/cluster/04-addons.sh
+      grep -Fq "id -u" "$a" && grep -Fq "must run as root" "$a" && grep -Fq "exit 4" "$a" &&
+      grep -Fq "volumeAttributes.subDir" "$a" &&
+      grep -Fq "D-fsgroup" "$u" && grep -Fq -- "--set feature.enableFSGroupPolicy=false" "$u" &&
+      grep -Fq "is immutable" "$r" && grep -Fq "kubectl delete csidriver nfs.csi.k8s.io" "$r" &&
+      grep -Fq "sudo bash scripts/cluster/nfs-root-squash-align.sh --apply" "$r" &&
+      grep -Fq "Supported alternative where apt is unreachable" "$r" &&
+      ! grep -Eq "^[[:space:]]*scripts/cluster/nfs-root-squash-align.sh" "$r"'
 }
 
 #=========================================

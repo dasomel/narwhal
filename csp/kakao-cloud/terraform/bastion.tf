@@ -102,7 +102,14 @@ resource "kakaocloud_instance" "bastion" {
   image_id    = local.bastion_image_id
   key_name    = var.key_name
 
-  subnets = [{ id = module.network.subnet_id }]
+  # D-BASTION-IP: nodes use the bastion's private IP as DNS server, squid proxy and
+  # registry mirror, so a replaced bastion must come back on the same address or every
+  # node loses all three. null (default) = auto-assign for clean installs; live
+  # deployments pin the current address in terraform.tfvars.
+  subnets = [{
+    id         = module.network.subnet_id
+    private_ip = var.bastion_private_ip
+  }]
 
   initial_security_groups = [{
     name = kakaocloud_security_group.bastion_sg.name
@@ -121,5 +128,13 @@ resource "kakaocloud_public_ip" "bastion_public" {
     device_id   = kakaocloud_instance.bastion.id
     device_type = "instance"
     id          = kakaocloud_instance.bastion.addresses[0].network_interface_id
+  }
+
+  # D-PUBIP: external endpoints (DNS, kubeconfig, operator SSH, allowlists) hang on this
+  # address. Replace VMs with `tofu apply -replace=...`, never a targeted destroy. Cost:
+  # `tofu destroy` and assign_node_public_ips=false fail until this guard is removed.
+  # Escape hatch: delete this block, or `tofu state rm` the address (see README Cleanup).
+  lifecycle {
+    prevent_destroy = true
   }
 }

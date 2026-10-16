@@ -24,7 +24,7 @@ services reachable through the worker LB.
 | Public IPs | 3 | Bastion + 2 LBs. **Cluster nodes have none** |
 
 Nodes are private by design. Everything reaches them through the bastion, and their
-outbound traffic goes through a squid proxy running there — Kakao Cloud provider 0.4.4
+outbound traffic goes through a squid proxy running there — Kakao Cloud provider 0.5.1 (and 0.4.4 before it)
 exposes no NAT gateway resource, and giving each node a public IP would expose the SSH
 and 6443 rules this security group opens to 0.0.0.0/0. `assign_node_public_ips = true`
 is the escape hatch if you need direct egress instead.
@@ -58,7 +58,7 @@ is the escape hatch if you need direct egress instead.
 
 ## Prerequisites
 
-- **OpenTofu** >= 1.6.0 (`tofu`; Terraform CLI also works)
+- **OpenTofu** >= 1.13.0 (`tofu`; Terraform CLI also works)
 - **Kakao Cloud Account** with Application Credential (ID + Secret)
 - **Quotas**: 7 instances, 26 vCPU, 52GB+ RAM, 1.2TB volume, 3 public IPs, 2 LBs
 
@@ -219,7 +219,7 @@ terraform/
   bastion.tf           # Jump host + its public IP
   variables.tf         # Variable definitions
   outputs.tf           # Node IPs, LB endpoints, bastion, ssh_key_path, subnet_cidr, vpc_cidr
-  provider.tf          # kakaocloud provider v0.4.4
+  provider.tf          # kakaocloud provider v0.5.1
   cloud-init.yaml      # Basic VM init (SSH pubkey only)
   terraform.tfvars.example
   modules/
@@ -280,11 +280,149 @@ Measured 2026-07-26, `tofu apply` only:
 Cluster provisioning after that is roughly another hour, plus the airgap bundle transfer
 (~6GB) if you use one.
 
-## Cleanup
+## Upgrading an existing deployment to provider 0.5.1
+
+Provider 0.5.0 removed `kakaocloud_vpc.subnet`, and the bastion's `initial_security_groups`
+cannot be changed in place (`Changing the initial security group is not allowed`, even with
+`-replace`; pending #202). A fresh install needs none of this. A live deployment needs the
+steps below, in order, run from this directory with the operator's `terraform.tfvars`.
 
 ```bash
+# 1. Back up state, and note the default subnet CIDR while the 0.4.x schema still shows it
+tofu state pull > ~/narwhal-kakao-state-pre-0.5.1.json   # keep outside git
+tofu state show module.network.kakaocloud_vpc.vpc        # the `subnet` block has only cidr_block/az, NO id:
+# look up the subnet ID with that CIDR (named "main") in the Kakao Cloud console (VPC > Subnet),
+# or with a throwaway config using `data "kakaocloud_subnets"` (read-only)
+
+# 2. Pull the new provider (the lock file is already pinned to 0.5.1)
+tofu init   # the committed lock already pins 0.5.1; -upgrade would re-resolve it
+
+# 3. Import the VPC default subnet (the former inline `subnet` block)
+tofu import module.network.kakaocloud_subnet.vpc_default_subnet <default-subnet-id>
+
+# 4. Pin the bastion's current private IP: nodes use it as DNS, squid proxy and registry mirror
+tofu output -raw bastion_private_ip   # set this value as bastion_private_ip in terraform.tfvars
+
+# 5. Replace the bastion alone. -replace is refused for the old bastion (see above), and a
+#    targeted destroy would also destroy its public IP (prevent_destroy then errors).
+#    Take the address out of state first, destroy the instance, recreate, re-import:
+tofu show -json | jq -r '.values.root_module.resources[] | select(.address=="kakaocloud_public_ip.bastion_public") | .values.id'   # record <public_ip_id> BEFORE state rm
+tofu state rm kakaocloud_public_ip.bastion_public
+tofu destroy -target=kakaocloud_instance.bastion -refresh=false
+tofu apply -target=kakaocloud_instance.bastion      # new bastion; its address is not attached yet
+tofu import kakaocloud_public_ip.bastion_public <public_ip_id>
+tofu apply                                          # re-associates the kept address (in-place update)
+
+# 6. Rebuild what lived on the bastion (squid, registry) from the repo root
+cd ../../..
+./scripts/cloud/provision-kakao.sh proxy registry
+```
+
+Notes:
+
+- Read `tofu plan` after steps 3 and 4. The only expected change is the bastion replacement;
+  the imported subnet should plan no change (the `vpc_default_subnet_name` default is `main`).
+- The `proxy` stage has no sentinel and always re-runs. The `registry` stage skips when the
+  bastion already serves `:5000`; a new bastion does not, so `FORCE=1` is only needed to
+  re-push into a bastion registry that is still alive. Sentinel-guarded node stages
+  (`base`, `mirror`, ...) are not redone.
+- The new bastion has a new SSH host key; clear the old entry from `known_hosts`.
+- Every `kakaocloud_public_ip` carries `prevent_destroy` (D-PUBIP), so the address survives
+  VM and LB recreation. Once the bastion is on 0.5.1, future replacements use `-replace`
+  (next section) and need none of the state surgery in step 5.
+
+## NFS data volume (Kakao)
+
+`nfs_data_volume_size` (GB, default `0` = disabled, otherwise 50..16384) creates a dedicated
+block volume `<master_name>-1-nfs-data` and attaches it to master-1. `scripts/cluster/01-nfs-server.sh`
+formats it XFS (label `narwhal-nfs`) and mounts it on `/srv/nfs/k8s` with `prjquota`, which
+`nfs-quota-agent` needs (XFS project quota can only be enabled at the initial mount, never by remount).
+The volume has `prevent_destroy` (D-NFS-VOL) and is attached with `is_delete_on_termination = false`.
+
+Moving an existing ext4 export onto the volume: [`docs/runbooks/nfs-xfs-migration.md`](../../../docs/runbooks/nfs-xfs-migration.md);
+record of the first live run: [`docs/kakao/nfs-xfs-migration-2026-10-16.md`](../../../docs/kakao/nfs-xfs-migration-2026-10-16.md).
+
+Apply in four gated steps. `-target` is the deliberate exception to the usual "never target"
+rule here, and it is required: a full plan after the attach is not clean. Updating master-1
+in place makes its computed `addresses` unknown during apply, which forces replacement of
+the four load balancer target-group members (etcd, master, master_http, master_https `["0"]`)
+that read `address` from it. Create the volume, attach it alone, then confirm the plan converges.
+
+```bash
+# a) create the volume only
+tofu plan -target=module.compute.kakaocloud_volume.nfs_data -out=s1.tfplan
+#    STOP unless exactly 1 to add, 0 to change, 0 to destroy
+tofu apply s1.tfplan
+
+# b) attach it to master-1 only
+tofu plan -target='module.compute.kakaocloud_instance.master[0]' -out=s2.tfplan
+#    STOP unless 0 to add, 1 to change, 0 to destroy, and the volumes diff is +1 element
+#    (id = the new volume, is_delete_on_termination = false) with the root element unchanged
+tofu apply s2.tfplan
+
+# c) confirm convergence
+tofu plan
+#    STOP unless "No changes". Any LB member "must be replaced": stop, refresh, re-plan
+```
+
+d) On master-1, before running `01-nfs-server.sh`:
+
+```bash
+ls -l /dev/disk/by-id/virtio-<first 20 chars of the volume id>
+sudo blkid -p /dev/disk/by-id/virtio-<first 20 chars of the volume id>   # must print nothing
+```
+
+STOP unless the link exists and `blkid` prints nothing (a blank volume).
+
+The device appears in the VM as `/dev/disk/by-id/virtio-<first 20 chars of the volume id>`
+(virtio-blk serial). `scripts/cloud/provision-kakao.sh` derives it from the `nfs_data_volume_id`
+output and passes it as `NFS_DATA_DEVICE`; override it by exporting `NFS_DATA_DEVICE` yourself.
+
+Migrating the data already on the ext4 root disk is a separate, approval-gated runbook:
+`docs/runbooks/nfs-xfs-migration.md`. `01-nfs-server.sh` refuses to mount over a non-empty `/srv/nfs/k8s`.
+
+## Replacing a VM
+
+Public IPs (bastion, node egress, both LBs) are external endpoints: DNS, kubeconfig, operator
+SSH and allowlists point at them. Keep the address by replacing the VM, not destroying it:
+
+```bash
+tofu apply -replace=kakaocloud_instance.bastion   # plan shows the public IP "updated in-place"
+```
+
+- Never `tofu destroy -target=<instance>`: it also destroys the dependent public IP, and
+  with the guard it now errors instead.
+- `initial_security_groups` cannot change in place. Swapping a security group therefore still
+  means recreating the instance: do it with `-replace` above, not with a targeted destroy.
+- If `-replace` itself is blocked by the provider, use the step 5 sequence above
+  (`tofu state rm` the public IP, destroy the instance, recreate, `tofu import`, apply).
+  After the import, read `tofu plan`: the public IP must show `update in-place`. If it shows
+  replace, `prevent_destroy` blocks it by design; stop and investigate, do not remove the guard.
+  This state rm / import sequence has not yet been verified against a live deployment.
+- Root-level resources sit under `.values.root_module.resources[]` in the `tofu show -json`
+  query; a resource inside a module is under `.values.root_module.child_modules[]`.
+
+## Cleanup
+
+`kakaocloud_public_ip` resources are guarded by `prevent_destroy` (D-PUBIP), so a plain
+`tofu destroy` fails with `Instance cannot be destroyed`. To tear everything down, drop the
+guard first, either by removing the lifecycle blocks or by releasing the addresses from state:
+
+```bash
+# Option A: remove the guards (all five resources), then destroy; the addresses are released
+sed -i.bak '/prevent_destroy = true/s/true/false/' bastion.tf modules/compute/main.tf modules/loadbalancer/main.tf
+tofu destroy
+# restore the guards afterwards: mv bastion.tf.bak bastion.tf (and the two module files)
+
+# Option B: keep the addresses outside OpenTofu (they stay allocated and billed until you
+# release them in the Kakao Cloud console: VPC > Public IP)
+tofu state list | grep kakaocloud_public_ip | xargs -n1 tofu state rm
 tofu destroy
 ```
+
+`assign_node_public_ips = false` on a live cluster is blocked by the same guard, and so is
+scaling `master_count` / `worker_count` down while `assign_node_public_ips = true` (the removed
+index's address would be destroyed); use option B for those addresses first.
 
 52 of the 53 resources go in ~15 minutes. **VPC deletion alone can stretch into hours.**
 
@@ -341,6 +479,6 @@ in [`docs/common/lessons-log.md`](../../../docs/common/lessons-log.md).
 
 ## Version Info
 
-- **OpenTofu**: >= 1.6.0
-- **Provider**: kakaocloud v0.4.4
+- **OpenTofu**: >= 1.13.0
+- **Provider**: kakaocloud v0.5.1
 - **OS**: Ubuntu 24.04 LTS (Kakao Cloud offers no 26.04 image; the Vagrant path uses 26.04)

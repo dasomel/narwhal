@@ -36,7 +36,7 @@ not pulling a moving tag.
 - **The published image carries an SBOM and provenance.** Every `portal/v*.*.*` build attaches an SPDX
   document and a `slsa.dev/provenance/v1` predicate per architecture. Verify with:
   ```bash
-  docker buildx imagetools inspect --raw ghcr.io/dasomel/narwhal-portal:1.0.19
+  docker buildx imagetools inspect --raw ghcr.io/dasomel/narwhal-portal:1.1.0
   ```
   The `unknown/unknown` entries in the manifest list are those attestations.
 - **Images are built on native runners**, one architecture each, with no QEMU emulation, and the

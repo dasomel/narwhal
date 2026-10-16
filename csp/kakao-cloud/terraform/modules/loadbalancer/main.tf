@@ -205,6 +205,14 @@ resource "kakaocloud_public_ip" "master_lb_public" {
     device_id   = kakaocloud_load_balancer.master_lb.id
     device_type = "load-balancer"
   }
+
+  # D-PUBIP: external endpoints (DNS, kubeconfig, operator SSH, allowlists) hang on this
+  # address. Replace VMs with `tofu apply -replace=...`, never a targeted destroy. Cost:
+  # `tofu destroy` and assign_node_public_ips=false fail until this guard is removed.
+  # Escape hatch: delete this block, or `tofu state rm` the address (see README Cleanup).
+  lifecycle {
+    prevent_destroy = true
+  }
 }
 
 # Worker LB Public IP (external Ingress)
@@ -214,6 +222,14 @@ resource "kakaocloud_public_ip" "worker_lb_public" {
   related_resource = {
     device_id   = kakaocloud_load_balancer.worker_lb.id
     device_type = "load-balancer"
+  }
+
+  # D-PUBIP: external endpoints (DNS, kubeconfig, operator SSH, allowlists) hang on this
+  # address. Replace VMs with `tofu apply -replace=...`, never a targeted destroy. Cost:
+  # `tofu destroy` and assign_node_public_ips=false fail until this guard is removed.
+  # Escape hatch: delete this block, or `tofu state rm` the address (see README Cleanup).
+  lifecycle {
+    prevent_destroy = true
   }
 }
 

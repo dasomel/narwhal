@@ -1,0 +1,67 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-portal-sign-digest",
+  "task": "Fix portal/v1.1.0 sign job receiving digest null: producer uses a key imagetools does not write; validate at producer and consumer; add recovery dispatch",
+  "changeContext": {
+    "paths": [
+      ".github/workflows/portal-docker-publish.yml",
+      "scripts/ci/tests/test_portal_publish_digest.py",
+      "docs/common/lessons-log.md",
+      ".agents/evals/traces/2026-10-portal-sign-digest.json"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Only portal-docker-publish.yml, one new unit test, the lessons-log row and this trace change. Signing key/secret handling and cosign flags are untouched."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "Run 38747268314: merge job step 'Create manifest list and push' wrote digest=$(jq -r '.[\"containerimage.digest\"]' manifest-metadata.json); sign job then ran cosign sign on IMAGE@null (could not parse reference). The index digest the registry holds is sha256:16e228757febda1b7649ce2ee79908f30a70ba41648943987fe26831d88ac30a, confirmed by docker buildx imagetools inspect --format '{{.Manifest.Digest}}' ghcr.io/dasomel/narwhal-portal:1.1.0. buildx v0.37 commands/imagetools/create.go writes {containerimage.descriptor:{mediaType,digest,size}, image.name}, so the digest key was absent."
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "Merge job takes the digest from the create step's containerimage.descriptor.digest (not a tag lookup), validates sha256:[0-9a-f]{64} and on a release tag cross-checks the immutable :X.Y.Z tag; sign job validates the digest, requires signing when sign_digest is set (missing secrets fail), checks the digest exists via imagetools inspect before cosign, and sign_digest reaches shell only via env. New unit tests cover these; the original ones fail on the old workflow."
+    },
+    {
+      "id": "e4",
+      "type": "verification",
+      "status": "passed",
+      "scope": "CI helper unit tests incl. the new digest propagation test and actionlint",
+      "summary": "python3 -m unittest discover -s scripts/ci/tests passes; actionlint clean.",
+      "evidence": [
+        "test:python3 -m unittest discover -s scripts/ci/tests",
+        "runtime:command-exit-0"
+      ],
+      "commandExitCode": 0
+    },
+    {
+      "id": "e5",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "full static regression suite",
+      "summary": "regression-check-kakao.sh --static passes with 0 failures.",
+      "evidence": [
+        "test:./scripts/test/regression-check-kakao.sh --static",
+        "runtime:command-exit-0"
+      ],
+      "commandExitCode": 0
+    },
+    {
+      "id": "e6",
+      "type": "completion_claim",
+      "summary": "Unit tests, actionlint and the buildx source were checked locally; the changed workflow was not executed on GitHub Actions, so the descriptor read, tag cross-check, existence check and the sign_digest path are unverified until a real run."
+    },
+    {
+      "id": "e7",
+      "type": "task_outcome",
+      "state": "A",
+      "scope": "Static and local checks verified; GitHub Actions execution of the fixed workflow unverified",
+      "summary": "Local verification is green; real-run behaviour is unverified (stated in e6)."
+    }
+  ]
+}

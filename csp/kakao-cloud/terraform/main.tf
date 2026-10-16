@@ -53,22 +53,24 @@ resource "local_sensitive_file" "kpaas_key_file" {
 module "compute" {
   source = "./modules/compute"
 
-  master_name         = var.master_name
-  worker_name         = var.worker_name
-  master_count        = var.master_count
-  worker_count        = var.worker_count
-  image_name          = var.image_name
-  master_flavor       = var.master_flavor
-  worker_flavor       = var.worker_flavor
-  volume_size         = var.volume_size
-  key_name            = var.key_name
-  subnet_id           = module.network.subnet_id
-  subnet_cidr         = var.subnet_cidr
-  security_group_name = module.security.security_group_name
-  cloud_init_base64   = filebase64("${path.module}/cloud-init.yaml")
+  master_name          = var.master_name
+  worker_name          = var.worker_name
+  master_count         = var.master_count
+  worker_count         = var.worker_count
+  image_name           = var.image_name
+  master_flavor        = var.master_flavor
+  worker_flavor        = var.worker_flavor
+  volume_size          = var.volume_size
+  availability_zone    = var.availability_zone
+  nfs_data_volume_size = var.nfs_data_volume_size
+  key_name             = var.key_name
+  subnet_id            = module.network.subnet_id
+  subnet_cidr          = var.subnet_cidr
+  security_group_name  = module.security.security_group_name
+  cloud_init_base64    = filebase64("${path.module}/cloud-init.yaml")
 
   # Nodes need outbound internet for apt, GitHub releases and Helm repos; there is
-  # no NAT gateway in provider 0.4.4, so a public IP per node is the egress path.
+  # no NAT gateway in provider 0.5.1 (nor 0.4.4 before it), so a public IP per node is the egress path.
   assign_node_public_ips = var.assign_node_public_ips
 
   # Only the keypair. module.security is deliberately NOT listed: the instances

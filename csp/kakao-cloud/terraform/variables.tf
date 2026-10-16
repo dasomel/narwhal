@@ -216,7 +216,7 @@ variable "bastion_private_ip" {
   default     = null
 
   validation {
-    condition     = var.bastion_private_ip == null || can(cidrhost("${var.bastion_private_ip}/32", 0))
+    condition     = var.bastion_private_ip == null || can(regex("^((25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])\\.){3}(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])$", var.bastion_private_ip))
     error_message = "bastion_private_ip must be a valid IPv4 address or null"
   }
 }

@@ -344,6 +344,8 @@ while [ "${attempt}" -le "${MAX_ATTEMPTS}" ]; do
         echo "  ${vm}: running but not Ready -> vagrant provision"
         if ! vagrant provision "${vm}"; then
           echo "  ${vm}: provision failed -> vagrant reload --provision"
+          # the failed provision may itself have been killed mid-install
+          recover_dpkg "${vm}"
           vagrant reload "${vm}" --provision || true
         fi
         ;;

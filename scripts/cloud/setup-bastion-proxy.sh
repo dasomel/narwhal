@@ -1,7 +1,7 @@
 #!/bin/bash
 # Turn the Kakao Cloud bastion into the egress path for the private nodes.
 #
-# The nodes have no public IP and provider 0.5.1 (as 0.4.4) has no NAT gateway resource, but
+# The nodes have no public IP and provider 0.5.1 (and 0.4.4 before it) has no NAT gateway resource, but
 # provisioning is not fully offline: apt pulls containerd and the kube* packages,
 # GitHub serves cilium-cli / hubble / metrics-server / nfs-quota-agent, and half a
 # dozen Helm repos are added. The airgap bundle only mirrors container images and

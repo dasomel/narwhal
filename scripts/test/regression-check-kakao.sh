@@ -3146,6 +3146,9 @@ assert sum(1 for l in code if re.search(r"\bexit 3\b", l)) == 1, "exit 3 must ap
   check R252 "up.sh recovers an interrupted dpkg (non-empty /var/lib/dpkg/updates) before re-provisioning a running not-Ready VM (2026-10-16)" \
     bash -c 'grep -Fq "dpkg --configure -a" scripts/up.sh && grep -Fq "/var/lib/dpkg/updates" scripts/up.sh &&
       [ "$(grep -n "recover_dpkg \"\${vm}\"" scripts/up.sh | head -1 | cut -d: -f1)" -lt "$(grep -n "vagrant provision \"\${vm}\"" scripts/up.sh | head -1 | cut -d: -f1)" ]'
+  check R258 "up.sh recover_dpkg is behavioral (fake vagrant): dpkg --configure -a only when /var/lib/dpkg/updates is non-empty, never fatal on configure/ssh failure; also re-run before the vagrant reload --provision fallback (2026-10-16)" \
+    bash -c 'bash scripts/test/lib/check-up-recover-dpkg.sh &&
+      [ "$(grep -c "recover_dpkg \"\${vm}\"" scripts/up.sh)" -ge 2 ]'
 
 }
 

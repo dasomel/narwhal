@@ -3125,8 +3125,16 @@ assert sum(1 for l in code if re.search(r"\bexit 3\b", l)) == 1, "exit 3 must ap
   # also feeds pod-cidr-consistency-check, NFS exports and trusted proxies.
   check R254 "resolve_apisix_admin_cidr: cilium cluster-pool, kubeadm podSubnet fallback, chart default only on NotFound, API error / multi-CIDR / invalid CIDR fail closed; 14 wires it and does not reuse POD_NETWORK_CIDR" \
     bash -c 'bash scripts/test/lib/check-apisix-admin-cidr.sh && grep -Fq "podNetworkCidr: \${APISIX_ADMIN_CIDR_RESOLVED}" scripts/cluster/14-gitops-bootstrap.sh && grep -Fq "resolve_apisix_admin_cidr" scripts/cluster/14-gitops-bootstrap.sh && ! grep -Fq "podNetworkCidr: \${POD_NETWORK_CIDR" scripts/cluster/14-gitops-bootstrap.sh'
-  check R255 "08-1 APISIX key helpers: Secret first, placeholders rejected, configmap list layout parsed, both keys fail closed with no public default" \
+  check R255 "resolve_apisix_keys: an existing random Secret key is preserved, the public upstream default (Secret or configmap) and placeholders are never reused (replaced by a generated key), a Secret read error fails closed" \
     bash scripts/test/lib/check-apisix-key-parse.sh
+
+  # 2026-10-16: the live Kakao cluster ran the public upstream APISIX admin key because 08-1 read it
+  # back from the chart-rendered configmap. Keys are now generated into apisix-admin-key and read
+  # from it by every consumer; the defaults are recognised by sha256 only (D-apisix-key).
+  check R256 "no tracked file contains the public upstream APISIX admin/viewer key (matched by sha256, so this check carries no literal; D-apisix-key)" \
+    python3 scripts/test/lib/check-apisix-no-default-key.py
+  check R257 "APISIX and the ingress controller read the admin key from the apisix-admin-key Secret (credentials.secretName / existingSecret), keys are resolved before the APISIX helm install, 13-2 reads the Secret, rotate-apisix-admin-key.sh (behavioral, fake kubectl) rotates in order, re-syncs the portal, verifies 401 old / 200 new and rolls back on failure, lib.sh NotFound checks are anchored" \
+    bash -c 'python3 scripts/test/lib/check-apisix-key-wiring.py && bash scripts/test/lib/check-apisix-rotate.sh'
 
   # 2026-10-16: up.sh printed "Phase 2 complete" right after 14-gitops-bootstrap.sh failed because
   # phase2_complete() only looked for namespaces. 06-phase2-start.sh now writes a success marker.

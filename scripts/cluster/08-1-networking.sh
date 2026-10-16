@@ -4,6 +4,8 @@ set -euo pipefail
 # Charts come from the airgap bundle, never a public repository.
 # shellcheck source=/dev/null
 source /home/vagrant/scripts/common/lib-charts.sh
+# shellcheck source=scripts/common/lib.sh
+source /home/vagrant/scripts/common/lib.sh
 
 echo "=== Installing Networking Apps (MetalLB, APISIX, cert-manager) ==="
 
@@ -97,6 +99,26 @@ echo "Waiting for etcd..."
 kubectl wait --for=condition=Available deployment/apisix-etcd -n platform-system --timeout=120s || true
 
 # Install APISIX + Ingress Controller (etcd.enabled=false → uses external etcd above)
+# APISIX Admin API keys (D-apisix-key). Generated once, stored only in the apisix-admin-key
+# Secret and consumed from it by APISIX (admin.credentials) and the ingress controller
+# (existingSecret) -- no key literal lives in git or in Helm values. The public upstream
+# default keys are never reused (resolve_apisix_keys replaces them), so re-running this script
+# on a cluster that still holds the default is the rotation path; see
+# scripts/cluster/rotate-apisix-admin-key.sh for the verified live rotation.
+resolve_apisix_keys || { echo "ERROR: cannot resolve the APISIX admin keys (Secret read failed)." >&2; exit 1; }
+echo "Creating apisix-admin-key secret..."
+# Keys go through 0600 files, not --from-literal, so they never appear in argv / ps.
+APISIX_KEY_DIR=$(mktemp -d)
+( umask 077
+  printf '%s' "${APISIX_ADMIN_KEY}" > "${APISIX_KEY_DIR}/key"
+  printf '%s' "${APISIX_VIEWER_KEY}" > "${APISIX_KEY_DIR}/viewer" )
+kubectl create secret generic apisix-admin-key \
+  --namespace platform-system \
+  --from-file=key="${APISIX_KEY_DIR}/key" \
+  --from-file=viewer="${APISIX_KEY_DIR}/viewer" \
+  --dry-run=client -o yaml | kubectl apply -f -
+rm -rf "${APISIX_KEY_DIR}"
+
 cat > /tmp/apisix-values.yaml << 'EOF'
 apisix:
   enabled: true
@@ -134,6 +156,12 @@ apisix:
       ipList:
         - 127.0.0.1/32
         - "${POD_NETWORK_CIDR}"
+    # Keys come from the apisix-admin-key Secret (env APISIX_ADMIN_KEY / APISIX_VIEWER_KEY);
+    # the rendered config holds only the env placeholders.
+    credentials:
+      secretName: apisix-admin-key
+      secretAdminKey: key
+      secretViewerKey: viewer
 gateway:
   type: LoadBalancer
   annotations:
@@ -289,45 +317,6 @@ echo "APISIX installed"
 #=========================================
 echo "=== Installing APISIX Ingress Controller ==="
 
-# APISIX admin/viewer keys. Source order:
-#  1. the existing apisix-admin-key Secret -- once GitOps owns the apisix app the configmap
-#     holds env PLACEHOLDERS (`${{APISIX_ADMIN_KEY}}`), the real values live only here;
-#     re-extracting from the configmap would overwrite the Secret with the placeholder text.
-#  2. the bootstrap configmap (literal keys on a fresh install). Layout is a YAML list:
-#     `- key: <k>` comes BEFORE `name: admin|viewer` (name may be unquoted); awk remembers
-#     the last `- key:` and prints it on the matching name line (no early exit: pipefail).
-# Anything containing `{`/`$` is a placeholder, never a key.
-secret_key() {
-  kubectl get secret apisix-admin-key -n platform-system -o "jsonpath={.data.$1}" 2>/dev/null \
-    | base64 -d 2>/dev/null || true
-}
-cm_key() {
-  kubectl get configmap apisix -n platform-system -o jsonpath='{.data.config\.yaml}' 2>/dev/null \
-    | awk -v role="$1" '/^[[:space:]]*-[[:space:]]*key:/ {k=$3; gsub(/"/, "", k)} $0 ~ "^[[:space:]]*name:[[:space:]]*\"?" role "\"?[[:space:]]*$" && !f {print k; f=1}' || true
-}
-real_key() { case "$1" in ''|*'{'*|*'$'*) return 1 ;; *) printf '%s' "$1" ;; esac; }
-APISIX_ADMIN_KEY=$(real_key "$(secret_key key)" || real_key "$(cm_key admin)" || true)
-APISIX_VIEWER_KEY=$(real_key "$(secret_key viewer)" || real_key "$(cm_key viewer)" || true)
-# Fail closed for BOTH keys: a missing admin key must not silently become the public chart
-# default (a Secret holding only `viewer` used to get it written), and an empty viewer key is
-# consumed downstream as APISIX_API_KEY_READONLY.
-for _role in admin viewer; do
-  _val=APISIX_ADMIN_KEY; [ "${_role}" = viewer ] && _val=APISIX_VIEWER_KEY
-  if [ -z "${!_val}" ]; then
-    echo "ERROR: failed to determine the APISIX ${_role} key from secret/apisix-admin-key or configmap/apisix (empty or placeholder) -- refusing to store an empty/default key into apisix-admin-key secret" >&2
-    exit 1
-  fi
-done
-
-# Persist both keys into the Secret that show-credentials.sh and the APISIX deployment
-# env vars (secretKeyRef name: apisix-admin-key) expect.  Idempotent via dry-run|apply.
-echo "Creating apisix-admin-key secret..."
-kubectl create secret generic apisix-admin-key \
-  --namespace platform-system \
-  --from-literal=key="${APISIX_ADMIN_KEY}" \
-  --from-literal=viewer="${APISIX_VIEWER_KEY}" \
-  --dry-run=client -o yaml | kubectl apply -f -
-
 APISIX_INGRESS_CONTROLLER_OK=false
 for attempt in 1 2 3 4 5; do
   if helm upgrade --install apisix-ingress-controller "$(chart apisix-ingress-controller)" \
@@ -339,7 +328,9 @@ for attempt in 1 2 3 4 5; do
     --set image.tag="1.8.0" \
     --set config.apisix.serviceNamespace=platform-system \
     --set config.apisix.serviceName=apisix-admin \
-    --set config.apisix.adminKey="${APISIX_ADMIN_KEY}" \
+    --set config.apisix.existingSecret=apisix-admin-key \
+    --set config.apisix.existingSecretAdminKeyKey=key \
+    --set config.apisix.adminKey= \
     --set config.apisix.adminAPIVersion=v3 \
     --set resources.requests.cpu=50m \
     --set resources.requests.memory=128Mi \
@@ -358,6 +349,10 @@ if [ "${APISIX_INGRESS_CONTROLLER_OK}" != true ]; then
   exit 1
 fi
 
+# The controller reads the key from the Secret only at start: restart it when the key changed.
+if [ "${APISIX_KEYS_GENERATED}" = true ]; then
+  kubectl rollout restart deployment/apisix-ingress-controller -n platform-system
+fi
 echo "Waiting for APISIX ingress controller..."
 kubectl wait --for=condition=Ready pod -l app.kubernetes.io/name=apisix-ingress-controller \
   -n platform-system --timeout=120s || true

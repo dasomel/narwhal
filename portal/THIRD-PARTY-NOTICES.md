@@ -11,7 +11,7 @@ reproduced below as those licenses require. The portal's own code is Apache-2.0;
 pnpm run notices
 ```
 
-Scope: production dependencies only (`pnpm licenses list --prod`) — 664 packages.
+Scope: production dependencies only (`pnpm licenses list --prod`) — 666 packages.
 Development-only tooling is not redistributed and is therefore out of scope.
 Platform-gated native packages are excluded and listed separately (95 in the lockfile).
 
@@ -133,7 +133,7 @@ revisited — starting with `@img/sharp-libvips-*`, which is LGPL-3.0-or-later.
 
 | License | Packages |
 |---|---:|
-| MIT | 476 |
+| MIT | 478 |
 | Apache-2.0 | 110 |
 | ISC | 52 |
 | BSD-3-Clause | 9 |
@@ -152,7 +152,7 @@ or is an SPDX expression rather than a single identifier.
 
 ### CC-BY-4.0
 
-- `caniuse-lite@1.0.30001810` — <https://github.com/browserslist/caniuse-lite#readme>
+- `caniuse-lite@1.0.30001815` — <https://github.com/browserslist/caniuse-lite#readme>
 
 ### MIT AND ISC
 
@@ -863,6 +863,38 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 </details>
 
 ### @babel/parser@7.29.8
+
+- License: `MIT`
+- Author: The Babel Team
+- Homepage: <https://babel.dev/docs/en/next/babel-parser>
+
+<details><summary>LICENSE</summary>
+
+```text
+Copyright (C) 2012-2014 by various contributors (see AUTHORS)
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+```
+
+</details>
+
+### @babel/parser@7.29.9
 
 - License: `MIT`
 - Author: The Babel Team
@@ -2617,7 +2649,7 @@ SOFTWARE.
 
 </details>
 
-### @next/env@16.3.5
+### @next/env@16.4.0
 
 - License: `MIT`
 - Author: Next.js Team
@@ -25271,7 +25303,7 @@ Apache License
 
 </details>
 
-### baseline-browser-mapping@2.11.20
+### baseline-browser-mapping@2.11.28
 
 - License: `Apache-2.0`
 - Homepage: <https://github.com/web-platform-dx/baseline-browser-mapping#readme>
@@ -25592,41 +25624,6 @@ SOFTWARE.
 
 </details>
 
-### brace-expansion@5.0.9
-
-- License: `MIT`
-- Homepage: <https://github.com/juliangruber/brace-expansion#readme>
-
-<details><summary>LICENSE</summary>
-
-```text
-MIT License
-
-Copyright Julian Gruber <julian@juliangruber.com>
-
-TypeScript port Copyright Isaac Z. Schlueter <i@izs.me>
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
-```
-
-</details>
-
 ### braces@3.0.3
 
 - License: `MIT`
@@ -25842,7 +25839,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 </details>
 
-### caniuse-lite@1.0.30001810
+### caniuse-lite@1.0.30001815
 
 - License: `CC-BY-4.0`
 - Author: Ben Briggs
@@ -28946,7 +28943,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 </details>
 
-### es-object-atoms@1.1.1
+### es-object-atoms@1.1.2
 
 - License: `MIT`
 - Author: Jordan Harband
@@ -31328,6 +31325,40 @@ SOFTWARE.
 </details>
 
 ### hasown@2.0.2
+
+- License: `MIT`
+- Author: Jordan Harband
+- Homepage: <https://github.com/inspect-js/hasOwn#readme>
+
+<details><summary>LICENSE</summary>
+
+```text
+MIT License
+
+Copyright (c) Jordan Harband and contributors
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
+</details>
+
+### hasown@2.0.4
 
 - License: `MIT`
 - Author: Jordan Harband
@@ -34865,7 +34896,7 @@ SOFTWARE.
 
 </details>
 
-### nanoid@3.3.18
+### nanoid@3.3.20
 
 - License: `MIT`
 - Author: Andrey Sitnik
@@ -34934,7 +34965,7 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 </details>
 
-### next@16.3.5
+### next@16.4.0
 
 - License: `MIT`
 - Homepage: <https://nextjs.org>
@@ -36647,6 +36678,39 @@ available under the Apache 2.0 license (https://github.com/puppeteer/puppeteer/b
 </details>
 
 ### postcss@8.5.26
+
+- License: `MIT`
+- Author: Andrey Sitnik
+- Homepage: <https://postcss.org/>
+
+<details><summary>LICENSE</summary>
+
+```text
+The MIT License (MIT)
+
+Copyright 2013 Andrey Sitnik <andrey@sitnik.es>
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of
+this software and associated documentation files (the "Software"), to deal in
+the Software without restriction, including without limitation the rights to
+use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of
+the Software, and to permit persons to whom the Software is furnished to do so,
+subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
+FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
+COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
+IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+```
+
+</details>
+
+### postcss@8.5.29
 
 - License: `MIT`
 - Author: Andrey Sitnik
@@ -38448,7 +38512,7 @@ SOFTWARE.
 
 </details>
 
-### sharp@0.35.4
+### sharp@0.35.5
 
 - License: `Apache-2.0`
 - Author: Lovell Fuller
@@ -39065,7 +39129,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 </details>
 
-### source-map-js@1.2.1
+### source-map-js@1.2.2
 
 - License: `BSD-3-Clause`
 - Author: Valentin 7rulnik Semirulnik

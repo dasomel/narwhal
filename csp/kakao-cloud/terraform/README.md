@@ -24,7 +24,7 @@ services reachable through the worker LB.
 | Public IPs | 3 | Bastion + 2 LBs. **Cluster nodes have none** |
 
 Nodes are private by design. Everything reaches them through the bastion, and their
-outbound traffic goes through a squid proxy running there — Kakao Cloud provider 0.5.1 (as 0.4.4)
+outbound traffic goes through a squid proxy running there — Kakao Cloud provider 0.5.1 (and 0.4.4 before it)
 exposes no NAT gateway resource, and giving each node a public IP would expose the SSH
 and 6443 rules this security group opens to 0.0.0.0/0. `assign_node_public_ips = true`
 is the escape hatch if you need direct egress instead.

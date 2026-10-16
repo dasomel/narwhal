@@ -253,7 +253,7 @@ jobs:
 
       # D8: the sign job signs the manifest-list digest, not a mutable tag. `imagetools create
       # --metadata-file` has no `containerimage.digest` key (that is docker/build-push-action's
-      # shape): buildx v0.37 writes {"containerimage.descriptor": {mediaType,digest,size},
+      # shape): buildx v0.38 writes {"containerimage.descriptor": {mediaType,digest,size},
       # "image.name": ...} (commands/imagetools/create.go), so the old jq read gave `null` and the
       # sign job ran `cosign sign ...@null` on portal/v1.1.0. The digest is therefore taken from
       # the create step's own descriptor, never from a tag lookup (`:latest`/`:1`/`:1.1` are
@@ -288,9 +288,11 @@ jobs:
           echo "digest=${digest}" >> "$GITHUB_OUTPUT"
 
       - name: Verify both architectures are present
+        env:
+          DIGEST: ${{ steps.create-manifest.outputs.digest }}
         run: |
           set -euo pipefail
-          ref="${IMAGE}:${{ steps.meta.outputs.version }}"
+          ref="${IMAGE}@${DIGEST}"
           docker buildx imagetools inspect "$ref"
           raw=$(docker buildx imagetools inspect --raw "$ref")
           for arch in amd64 arm64; do

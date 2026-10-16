@@ -67,6 +67,12 @@ class PublishDigestPropagation(unittest.TestCase):
         self.assertIn("containerimage.descriptor", run)
         self.assertNotIn("tags[0]", run)
 
+    def test_arch_check_inspects_the_created_digest_not_a_mutable_tag(self):
+        step = next(s for s in self.merge["steps"] if s.get("name") == "Verify both architectures are present")
+        self.assertIn("steps.create-manifest.outputs.digest", step["env"]["DIGEST"])
+        self.assertIn('ref="${IMAGE}@${DIGEST}"', step["run"])
+        self.assertNotIn("steps.meta.outputs.version", step["run"])
+
 
 if __name__ == "__main__":
     unittest.main()

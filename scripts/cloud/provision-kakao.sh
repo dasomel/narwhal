@@ -209,7 +209,7 @@ tail_log() {
 stage_proxy() {
   log "proxy: squid on the bastion, then point every node at it"
   # This has to come before `base`, and it is not optional: the nodes have no public
-  # IP and provider 0.5.1 (as 0.4.4) has no NAT gateway, so 01-prerequisites' first apt-get has
+  # IP and provider 0.5.1 (and 0.4.4 before it) has no NAT gateway, so 01-prerequisites' first apt-get has
   # nowhere to go without it. It used to be two commands you were expected to know
   # about — the quick-start listed stage + provision and nothing else, which is a
   # clean install that cannot work.

@@ -68,7 +68,7 @@ module "compute" {
   cloud_init_base64   = filebase64("${path.module}/cloud-init.yaml")
 
   # Nodes need outbound internet for apt, GitHub releases and Helm repos; there is
-  # no NAT gateway in provider 0.5.1 (as 0.4.4), so a public IP per node is the egress path.
+  # no NAT gateway in provider 0.5.1 (nor 0.4.4 before it), so a public IP per node is the egress path.
   assign_node_public_ips = var.assign_node_public_ips
 
   # Only the keypair. module.security is deliberately NOT listed: the instances

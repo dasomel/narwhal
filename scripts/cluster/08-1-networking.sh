@@ -194,10 +194,10 @@ ingressController:
   resources:
     requests:
       cpu: 50m
-      memory: 128Mi
+      memory: 256Mi
     limits:
       cpu: 200m
-      memory: 256Mi
+      memory: 512Mi
 tolerations:
   - key: "node.kubernetes.io/disk-pressure"
     operator: "Exists"
@@ -317,6 +317,9 @@ echo "APISIX installed"
 #=========================================
 echo "=== Installing APISIX Ingress Controller ==="
 
+# D-ic-mem: 256Mi limit OOMKilled the IC at startup (full resource sync, 17 routes/14 upstreams/192 svc+ing
+# objects; steady state is ~83Mi). 512Mi limit gives the sync peak headroom; request 256Mi keeps the scheduler
+# honest. Escape hatch: raise both here; do not drop the limit (worker nodes are 6GB).
 APISIX_INGRESS_CONTROLLER_OK=false
 for attempt in 1 2 3 4 5; do
   if helm upgrade --install apisix-ingress-controller "$(chart apisix-ingress-controller)" \
@@ -333,9 +336,9 @@ for attempt in 1 2 3 4 5; do
     --set config.apisix.adminKey= \
     --set config.apisix.adminAPIVersion=v3 \
     --set resources.requests.cpu=50m \
-    --set resources.requests.memory=128Mi \
+    --set resources.requests.memory=256Mi \
     --set resources.limits.cpu=200m \
-    --set resources.limits.memory=256Mi \
+    --set resources.limits.memory=512Mi \
     --set securityContext.allowPrivilegeEscalation=false \
     --set 'securityContext.capabilities.drop[0]=ALL' \
     --set securityContext.seccompProfile.type=RuntimeDefault; then

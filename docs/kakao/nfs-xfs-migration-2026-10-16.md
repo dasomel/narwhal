@@ -16,7 +16,7 @@
 |----|------|-------------|
 | D-NFS-VOL | 전용 200GiB XFS 블록 볼륨을 master-1에 attach | 대안: ext4 루트에서 `tune2fs`로 쿼터 조정, 별도 NFS VM. 둘 다 채택하지 않았다(에이전트가 XFS project quota 전제, VM 분리는 클러스터 토폴로지 변경) |
 | overmount | 같은 경로 `/srv/nfs/k8s`에 XFS를 mount | PV/PVC의 서버·경로가 그대로라 클라이언트 변경 없음. 기존 ext4 데이터는 mount 아래에 롤백 사본으로 남음 |
-| squash | `no_root_squash` 유지, `root_squash` 전환은 보류 | SeaweedFS 등 uid 0 쓰기 주체가 깨진다(런북 "root_squash alignment") |
+| squash | `no_root_squash` 유지, `root_squash` 전환은 보류(같은 날 후속 완료, 9절) | SeaweedFS 등 uid 0 쓰기 주체가 깨진다(런북 "root_squash alignment") |
 
 ## 3. Phase 1 — 볼륨 준비 (PR #407, #408)
 
@@ -77,8 +77,7 @@
   sudo umount /mnt/rootfs-old && sudo rmdir /mnt/rootfs-old
   ```
 
-- **root_squash 정렬**: 보류. uid 0 항목이 깊이 3 이하에서 약 72개(`filerldb2/*`, `m9333/snapshot`, `alertmanager-db`)이며,
-  SeaweedFS에 `runAsUser`/`fsGroup`을 주는 GitOps PR이 선행돼야 한다(런북 선택 절).
+- **root_squash 정렬**: 같은 날 후속으로 완료했다. 9절 참조.
 - **`/etc/projects` 점검**: 쿼터 smoke test로 만든 임시 project 항목이 남았는지 확인한다(`/etc/projects`, `/etc/projid`).
 - `scripts/verify/nfs-nonroot-write-check.sh`는 no_root_squash 하에서 공유 루트가 777이므로 이제 FAIL이 아니라 WARN을 낸다.
 
@@ -92,3 +91,48 @@
 - 런북: [`docs/runbooks/nfs-xfs-migration.md`](../runbooks/nfs-xfs-migration.md)
 - Terraform: [`csp/kakao-cloud/terraform/README.md`](../../csp/kakao-cloud/terraform/README.md) "NFS data volume (Kakao)"
 - PR: #404, #406 (agent chart/image 불일치), #407 (전용 XFS 볼륨), #408 (롤백 역동기화 보호)
+
+## 9. root_squash 전환 (2026-10-16)
+
+XFS 이전 뒤 같은 날 `no_root_squash` export를 `root_squash`로 전환했다(narwhal#224, #186). 절차: 런북 "Optional: root_squash alignment".
+기준 커밋 `c91a01f`. 시각은 UTC이며 운영자 세션의 `root-squash/log.md`에서 옮겼다.
+
+### 9.1 타임라인과 게이트
+
+| 시각 | 게이트 | 결과 |
+|------|--------|------|
+| 08:54 | G0 기준선 | 42/42 Synced/Healthy, 비Running pod 0, export `no_root_squash` 2줄, SeaweedFS master/filer uid 0, loki-0 2/2, BSL Available. 발견: CSIDriver `fsGroupPolicy=File`, PV 권한 timer 비활성, apt 접근 불가 |
+| 08:56 | 노드 준비 | `stage-kakao-nodes.sh 172.17.0.10` rc=0 |
+| 08:57 | G1 정렬 dry-run | rc=3. PV 14개 계획, `gitea-shared-storage`는 UNRESOLVED(PV 디렉터리만 `0:1000 2775`, pod uid 1000, 내부 377개 항목은 이미 `1000:1000`이라 조치 불필요로 판단) |
+| 08:58:39 | G1 `--apply` | rc=3(gitea skip뿐). 공유 루트가 `0750`이 된 뒤 일반 사용자로 재실행하면 모든 PV를 조용히 건너뛰는 결함 발견, 이후 `sudo bash`로 실행 |
+| 08:59:11 | CSIDriver 재생성 | `fsGroupPolicy=File` 삭제 후 `helm upgrade csi-driver-nfs 4.13.2`(`feature.enableFSGroupPolicy=false`, rev 3) → `ReadWriteOnceWithFSType` |
+| 08:59:25 | G2 GitOps 롤아웃 | `14-gitops-bootstrap.sh` rc=0. ArgoCD가 09:05:20에 SeaweedFS master/filer를 uid 1000으로 재기동 |
+| 09:05:34, 09:05:56 | G2 정렬 `--apply`(root) 2회 | 롤아웃 중 옛 root 프로세스가 만든 uid 0 항목 0개가 될 때까지 반복 |
+| 09:07:17 | G2 검증 | `id -u` 1000/1000, IsLeader true, filer 200, `s3.bucket.list` 버킷 4개, loki ready + `query_range` 성공, BSL Available |
+| 09:07:41 | G3 timer | `narwhal-nfs-pv-permissions.timer`를 `01-nfs-server.sh` heredoc에서 설치(active) |
+| 09:07:53 | G3 export 전환 | `/etc/exports` 백업 후 `sed` + `exportfs -ra` rc=0. `exportfs -v`가 2줄 모두 `root_squash`, 백업과의 diff는 옵션뿐 |
+| 09:08:01 | G4 비root 쓰기 | `nfs-nonroot-write-check.sh` PASS, 공유 루트 mode 750. 임시 Retain PV와 디렉터리 정리 |
+| 09:09 / 09:16 / 09:18:49 | G4 soak | 42/42, 비Ready pod 없음, NFS 워크로드 14개의 권한 오류 0, quota agent 오류 0, CNPG 2/2 정상 |
+
+롤백은 하지 않았다.
+
+### 9.2 이탈 사항
+
+1. **CSIDriver 재생성(약 1초).** 라이브 객체가 `fsGroupPolicy=File`이었다. 원인: chart 기본값(`feature.enableFSGroupPolicy=true`)이 `File`을 렌더링하고,
+   클러스터는 이 값을 고정한 7e4e6227(2026-09-28) 이전에 설치됐으며 `04-addons.sh`가 그 뒤로 다시 실행되지 않았다(CSI pod 나이 50일).
+   이 필드는 immutable이라 `helm upgrade`나 `kubectl patch`로 못 바꾼다. 객체를 삭제하고 `04-addons.sh`와 같은 helm 명령을 다시 실행했다.
+   재생성 동안 기존 PV와 mount, controller/node pod는 영향이 없었다.
+2. **export 전환 방식.** 런북 기본 경로(`01-nfs-server.sh`)는 `apt-get update`를 실행하는데 apt에 닿지 않았다. 대신 timer를 스크립트의 heredoc 블록에서 설치하고
+   `sed -i 's/no_root_squash/root_squash/' /etc/exports` + `exportfs -ra`로 옵션만 바꿨다. 런북에 지원 경로로 명시했다.
+3. **정렬 스크립트는 root로 실행.** 스크립트가 root를 요구하지 않았던 탓에 공유 루트 `0750` 이후 일반 사용자 실행이 모든 PV를 건너뛰었다.
+   후속 PR에서 root 필수 + 읽지 못한 대상은 exit 4로 바꿨다. 또 PV `volumeAttributes`는 `subDir`(camelCase)인데 스크립트는 `subdir`만 읽어
+   기본 경로 규칙으로 대체되던 결함도 같이 고쳤다.
+
+### 9.3 백업
+
+- `/etc/exports.pre-rootsquash-20261016T090753Z` (master-1, 원본 `no_root_squash` 2줄). 같은 내용의 `/etc/exports.pre-rootsquash`도 있다.
+- 롤백은 런북의 "Rollback" 순서(export 먼저)를 따른다.
+
+### 9.4 남은 위험
+
+- **Velero 파일 시스템 백업과 root_squash**: 확인 중. NFS PV를 읽는 Velero node-agent가 squash된 uid로도 전체 파일을 읽을 수 있는지 조사하고 있으며, 결과는 확정되면 이 절에 채운다.

@@ -193,17 +193,33 @@ Preconditions (the align script prints each of them in its dry run):
   1000 for master and filer, logs on `emptyDir`; uid verified as the `seaweed` user of
   `chrislusf/seaweedfs:4.34`). The chart overrides the image entrypoint, so without it the pods
   stay uid 0.
-- `kubectl get csidriver nfs.csi.k8s.io -o jsonpath='{.spec.fsGroupPolicy}'` is not `File`. If it
-  is, delete only that object and re-run the chart exactly as `scripts/cluster/04-addons.sh` does
-  (`helm upgrade --install csi-driver-nfs ... --set feature.enableFSGroupPolicy=false`); the field
-  is immutable and a `File` policy makes kubelet chown through `root_squash`.
+- `kubectl get csidriver nfs.csi.k8s.io -o jsonpath='{.spec.fsGroupPolicy}'` is not `File`. The
+  chart default (`feature.enableFSGroupPolicy=true`) renders `File`, so a cluster installed before
+  7e4e6227 (2026-09-28) still has it (Kakao: `File`, found 2026-10-16). `CSIDriver.spec.fsGroupPolicy`
+  is immutable: `kubectl patch` and `helm upgrade` cannot change it, the object must be deleted and
+  recreated. If it is `File`, delete only that object and re-run the chart exactly as
+  `scripts/cluster/04-addons.sh` does (~1 s without a CSIDriver; existing PVs and mounts are
+  unaffected, the controller and node pods keep running):
+
+  ```bash
+  kubectl delete csidriver nfs.csi.k8s.io
+  helm upgrade --install csi-driver-nfs <chart bundle or repo chart> -n kube-system \
+    --version <CSI_DRIVER_NFS_VERSION, default in scripts/cluster/04-addons.sh> \
+    --set controller.replicas=1 --set feature.enableFSGroupPolicy=false
+  kubectl get csidriver nfs.csi.k8s.io -o jsonpath='{.spec.fsGroupPolicy}'   # ReadWriteOnceWithFSType
+  ```
+
+  A `File` policy makes kubelet chown PV volumes through `root_squash`.
 - `systemctl is-active narwhal-nfs-pv-permissions.timer` is `active` (step 5 installs it if not).
 
 Steps, in this order:
 
 1. Merge the GitOps PR. Kakao is unaffected until step 3, because the cluster syncs from Gitea.
-2. On the NFS server (`master-1`): dry run `scripts/cluster/nfs-root-squash-align.sh` and read the
-   plan (exit 3 means a PV was skipped: resolve it first), then `--apply`. It chowns only
+2. On the NFS server (`master-1`), as root (the script refuses otherwise; once the share root is
+   `0750 nobody:nogroup` an unprivileged user cannot traverse it): dry run
+   `sudo bash scripts/cluster/nfs-root-squash-align.sh` and read the plan (exit 3 means a PV was
+   skipped, exit 4 that a PV directory could not be read: resolve either first), then
+   `sudo bash scripts/cluster/nfs-root-squash-align.sh --apply`. It chowns only
    root-owned entries to the workload identity (SeaweedFS `1000:1000` from the reviewed map, the
    rest from the bound pod's `securityContext`), makes namespace directories `nobody:nogroup`
    and the share root `nobody:nogroup 0750`. It never edits `/etc/exports`. The SeaweedFS pods are
@@ -212,7 +228,7 @@ Steps, in this order:
    uid 1000. Race: until they stop, the old root processes keep creating uid-0 files (master raft
    snapshot `0600`, filer leveldb `.ldb`/`MANIFEST`, flush on shutdown), and the new pods hit
    `EACCES` on them. So, immediately after the rollout, re-run
-   `scripts/cluster/nfs-root-squash-align.sh --apply` (the running-consumer guard passes because the
+   `sudo bash scripts/cluster/nfs-root-squash-align.sh --apply` (the running-consumer guard passes because the
    pod uid now equals the target), then delete the master and filer pods if either is in
    CrashLoopBackOff (`kubectl -n storage delete pod seaweedfs-master-0 seaweedfs-filer-0`).
 4. Verify: filer and master Ready, `kubectl -n storage exec seaweedfs-filer-0 -- id -u` and the
@@ -228,10 +244,24 @@ Steps, in this order:
    sudo exportfs -v   # both lines must say root_squash
    ```
 
-   `01-nfs-server.sh` runs `apt-get update`; where apt is unreachable, or the timer is already
-   active and only the option must change, use `sudo sed -i 's/no_root_squash/root_squash/'
-   /etc/exports && sudo exportfs -ra` (install the timer from the script's heredocs first if
-   `systemctl is-active narwhal-nfs-pv-permissions.timer` is not `active`).
+   **Supported alternative where apt is unreachable** (used on Kakao 2026-10-16), or where the timer
+   is already active and only the option must change: `01-nfs-server.sh` runs `apt-get update` and
+   rewrites `/etc/exports`, so skip it. Install the timer from the script's own blocks, then flip
+   only the export option. Run the timer block of `01-nfs-server.sh` (script, `.service` and
+   `.timer` heredocs, `daemon-reload`, `enable --now`, first run) from a copy of the repo on master-1:
+
+   ```bash
+   sed -n '/^sudo tee \/usr\/local\/sbin\/narwhal-nfs-pv-permissions/,/^sudo systemctl start narwhal-nfs-pv-permissions.service/p' \
+     scripts/cluster/01-nfs-server.sh | bash
+   systemctl is-active narwhal-nfs-pv-permissions.timer          # must print: active
+   TS=$(date -u +%Y%m%dT%H%M%SZ)
+   sudo cp -a /etc/exports "/etc/exports.pre-rootsquash-${TS}"   # timestamped backup
+   sudo sed -i 's/no_root_squash/root_squash/' /etc/exports
+   sudo exportfs -ra
+   sudo exportfs -v                                              # both lines must say root_squash
+   diff "/etc/exports.pre-rootsquash-${TS}" /etc/exports         # only the option may differ
+   ```
+
 6. Verify under squash: every pod that mounts an NFS PVC is Ready, and
    `scripts/verify/nfs-nonroot-write-check.sh` passes (PASS, not WARN, for the share root). It also
    proves dynamic provisioning: it creates a throwaway namespace and PVC from the `nfs-csi` class

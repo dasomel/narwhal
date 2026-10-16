@@ -16,6 +16,17 @@ export KUBECONFIG=/home/vagrant/.kube/config-local
 #=========================================
 echo "=== Installing SeaweedFS ==="
 
+# D-sw-pin: the volume server stores data on node-local hostPath /ssd/object_store, so it must
+# always land on the same node. Label one worker once; an existing label is never moved (the
+# data lives where the label is). Clean installs (Vagrant + Kakao) get the first worker by
+# name; on a cluster that already holds data, label that node by hand BEFORE running this.
+if [ -z "$(kubectl get nodes -l narwhal.io/seaweedfs-volume=true -o name)" ]; then
+  SW_NODE="$(kubectl get nodes -l '!node-role.kubernetes.io/control-plane' -o name | sort | head -n1)"
+  [ -n "${SW_NODE}" ] || SW_NODE="$(kubectl get nodes -o name | sort | head -n1)"
+  echo "Labeling ${SW_NODE} narwhal.io/seaweedfs-volume=true (SeaweedFS volume data is node-local)"
+  kubectl label "${SW_NODE}" narwhal.io/seaweedfs-volume=true --overwrite
+fi
+
 SEAWEEDFS_OK=false
 for attempt in 1 2 3 4 5; do
   if helm upgrade --install seaweedfs "$(chart seaweedfs)" \
@@ -31,6 +42,7 @@ for attempt in 1 2 3 4 5; do
     --set master.data.storageClass=nfs-csi \
     --set volume.enabled=true \
     --set volume.replicas=1 \
+    --set-string 'volume.nodeSelector=narwhal.io/seaweedfs-volume: "true"' \
     --set volume.data.type=persistentVolumeClaim \
     --set volume.data.size=50Gi \
     --set volume.data.storageClass=nfs-csi \

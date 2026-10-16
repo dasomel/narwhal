@@ -40,6 +40,14 @@ spec:
         volume:
           enabled: true
           replicas: 1
+          # D-sw-pin: the volume server keeps its data on node-local hostPath
+          # /ssd/object_store (the `data:` PVC keys below are ignored by chart 4.34.0), so a
+          # reschedule to another worker starts with an empty store and breaks every S3 user
+          # (Loki CrashLoop, 2026-10-16). Pin it to the node labelled
+          # narwhal.io/seaweedfs-volume=true (set once by 08-4-storage.sh, never moved).
+          # Live Kakao: the label belongs on host-172-17-0-22, where the 23G of data is.
+          nodeSelector: |
+            narwhal.io/seaweedfs-volume: "true"
           storage: 50Gi
           data:
             type: persistentVolumeClaim

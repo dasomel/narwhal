@@ -3199,6 +3199,8 @@ PYEOF'
       [ -f docs/runbooks/nfs-xfs-migration.md ]'
   check R264 "01-nfs-server.sh NFS_DATA_DEVICE block is behavioral (fake blkid/findmnt/mkfs.xfs): blank -> mkfs, existing xfs -> no mkfs, other fs -> fail, non-empty share path -> refuse without mkfs/mount (2026-10-16)" \
     bash scripts/test/lib/check-nfs-data-device.sh
+  check R265 "SeaweedFS volume server (node-local hostPath data) is pinned by nodeSelector narwhal.io/seaweedfs-volume=true in the GitOps chart AND the 08-4 helm install, and 08-4 labels a node only when none carries it; nfs-nonroot-write-check.sh derives the share-root mode from the export squash mode (2026-10-16)" \
+    python3 scripts/test/lib/check-seaweedfs-volume-pin.py
 
 }
 

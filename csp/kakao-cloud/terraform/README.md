@@ -339,6 +339,9 @@ formats it XFS (label `narwhal-nfs`) and mounts it on `/srv/nfs/k8s` with `prjqu
 `nfs-quota-agent` needs (XFS project quota can only be enabled at the initial mount, never by remount).
 The volume has `prevent_destroy` (D-NFS-VOL) and is attached with `is_delete_on_termination = false`.
 
+Moving an existing ext4 export onto the volume: [`docs/runbooks/nfs-xfs-migration.md`](../../../docs/runbooks/nfs-xfs-migration.md);
+record of the first live run: [`docs/kakao/nfs-xfs-migration-2026-10-16.md`](../../../docs/kakao/nfs-xfs-migration-2026-10-16.md).
+
 Apply in four gated steps. `-target` is the deliberate exception to the usual "never target"
 rule here, and it is required: a full plan after the attach is not clean. Updating master-1
 in place makes its computed `addresses` unknown during apply, which forces replacement of

@@ -14,7 +14,8 @@
       "docs/kakao/nfs-xfs-migration-2026-10-16.md",
       "docs/common/lessons-log.md",
       "csp/kakao-cloud/terraform/README.md",
-      ".agents/evals/traces/2026-10-post-nfs-migration-seaweedfs-pin.json"
+      ".agents/evals/traces/2026-10-post-nfs-migration-seaweedfs-pin.json",
+      "csp/kakao-cloud/terraform/README.ko.md"
     ]
   },
   "events": [
@@ -50,7 +51,7 @@
       "type": "regression_verification",
       "status": "passed",
       "scope": "Repo static suite and shell lint with the change (live cluster not exercised)",
-      "summary": "make test: 391 passed, 0 failed, 3 warnings; make validate: all GitOps YAML OK; shellcheck --severity=warning on the three changed scripts clean; markdownlint on the new migration record clean. make lint could not run locally (yamllint not installed).",
+      "summary": "make test: 391 passed, 0 failed, 3 warnings; regression-check-kakao.sh --static: R265 PASS, 391/0; make validate OK; shellcheck --severity=warning clean on the three changed scripts; markdownlint clean on the record and runbook; helm template renders the nodeSelector once (volume StatefulSet only). make lint not run (yamllint missing).",
       "evidence": [
         "test:make test",
         "test:make validate",

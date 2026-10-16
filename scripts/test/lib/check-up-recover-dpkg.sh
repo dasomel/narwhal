@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Behavioral check for up.sh recover_dpkg (R258): extract the real function and run it against a
+# Behavioral check for up.sh recover_dpkg (R260): extract the real function and run it against a
 # fake `vagrant` — dirty VM -> `dpkg --configure -a` runs, clean VM -> it does not, ssh failure
 # is never fatal.
 set -euo pipefail

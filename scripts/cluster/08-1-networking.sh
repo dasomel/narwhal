@@ -289,21 +289,35 @@ echo "APISIX installed"
 #=========================================
 echo "=== Installing APISIX Ingress Controller ==="
 
-# Get APISIX admin/viewer keys from the live config (chart v2.13.0 bakes them in at install
-# time; the configmap stores the literal key after env-substitution by the APISIX process).
-# The grep target is the plain key line that appears AFTER "name: admin" / "name: viewer".
-APISIX_ADMIN_KEY=$(kubectl get configmap apisix -n platform-system \
-  -o jsonpath='{.data.config\.yaml}' 2>/dev/null \
-  | grep -A2 'name: "admin"' | grep '^\s*key:' | awk '{print $2}' | head -1 || true)
-APISIX_ADMIN_KEY="${APISIX_ADMIN_KEY:-edd1c9f034335f136f87ad84b625c8f1}"
-
-APISIX_VIEWER_KEY=$(kubectl get configmap apisix -n platform-system \
-  -o jsonpath='{.data.config\.yaml}' 2>/dev/null \
-  | grep -A2 'name: "viewer"' | grep '^\s*key:' | awk '{print $2}' | head -1 || true)
-if [ -z "${APISIX_VIEWER_KEY}" ]; then
-  echo "ERROR: failed to extract APISIX viewer key from configmap/apisix (empty result) -- refusing to store an empty/default key into apisix-admin-key secret (consumed as APISIX_API_KEY_READONLY downstream)" >&2
-  exit 1
-fi
+# APISIX admin/viewer keys. Source order:
+#  1. the existing apisix-admin-key Secret -- once GitOps owns the apisix app the configmap
+#     holds env PLACEHOLDERS (`${{APISIX_ADMIN_KEY}}`), the real values live only here;
+#     re-extracting from the configmap would overwrite the Secret with the placeholder text.
+#  2. the bootstrap configmap (literal keys on a fresh install). Layout is a YAML list:
+#     `- key: <k>` comes BEFORE `name: admin|viewer` (name may be unquoted); awk remembers
+#     the last `- key:` and prints it on the matching name line (no early exit: pipefail).
+# Anything containing `{`/`$` is a placeholder, never a key.
+secret_key() {
+  kubectl get secret apisix-admin-key -n platform-system -o "jsonpath={.data.$1}" 2>/dev/null \
+    | base64 -d 2>/dev/null || true
+}
+cm_key() {
+  kubectl get configmap apisix -n platform-system -o jsonpath='{.data.config\.yaml}' 2>/dev/null \
+    | awk -v role="$1" '/^[[:space:]]*-[[:space:]]*key:/ {k=$3; gsub(/"/, "", k)} $0 ~ "^[[:space:]]*name:[[:space:]]*\"?" role "\"?[[:space:]]*$" && !f {print k; f=1}' || true
+}
+real_key() { case "$1" in ''|*'{'*|*'$'*) return 1 ;; *) printf '%s' "$1" ;; esac; }
+APISIX_ADMIN_KEY=$(real_key "$(secret_key key)" || real_key "$(cm_key admin)" || true)
+APISIX_VIEWER_KEY=$(real_key "$(secret_key viewer)" || real_key "$(cm_key viewer)" || true)
+# Fail closed for BOTH keys: a missing admin key must not silently become the public chart
+# default (a Secret holding only `viewer` used to get it written), and an empty viewer key is
+# consumed downstream as APISIX_API_KEY_READONLY.
+for _role in admin viewer; do
+  _val=APISIX_ADMIN_KEY; [ "${_role}" = viewer ] && _val=APISIX_VIEWER_KEY
+  if [ -z "${!_val}" ]; then
+    echo "ERROR: failed to determine the APISIX ${_role} key from secret/apisix-admin-key or configmap/apisix (empty or placeholder) -- refusing to store an empty/default key into apisix-admin-key secret" >&2
+    exit 1
+  fi
+done
 
 # Persist both keys into the Secret that show-credentials.sh and the APISIX deployment
 # env vars (secretKeyRef name: apisix-admin-key) expect.  Idempotent via dry-run|apply.
@@ -356,8 +370,10 @@ for deployment in apisix apisix-ingress-controller; do
 done
 for deployment in apisix apisix-ingress-controller; do
   kubectl rollout status "deployment/${deployment}" -n platform-system --timeout=180s
-  pod_label=$(kubectl get pods -n platform-system -l "app.kubernetes.io/instance=${deployment}" \
-    -o jsonpath='{.items[0].metadata.labels.istio\.io/dataplane-mode}' 2>/dev/null || true)
+  # Template label, not `pods ... items[0]`: during a rollout items[0] can be the old
+  # terminating pod, which made this check fail on a correctly patched Deployment.
+  pod_label=$(kubectl get deployment "${deployment}" -n platform-system \
+    -o jsonpath='{.spec.template.metadata.labels.istio\.io/dataplane-mode}' 2>/dev/null || true)
   if [ "${pod_label}" != none ]; then
     echo "ERROR: ${deployment} pod lacks istio.io/dataplane-mode=none." >&2
     exit 1

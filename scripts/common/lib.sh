@@ -72,6 +72,54 @@ resolve_s3_credentials() {
   fi
 }
 
+# is_cidr <value> -- strict IPv4 CIDR (octets <= 255, prefix 0-32).
+is_cidr() {
+  local ip prefix o
+  [[ "$1" =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}/[0-9]{1,2}$ ]] || return 1
+  ip="${1%/*}"; prefix="${1#*/}"
+  [ "${prefix}" -le 32 ] || return 1
+  for o in ${ip//./ }; do [ "$((10#${o}))" -le 255 ] || return 1; done
+}
+
+# resolve_apisix_admin_cidr -- prints the pod CIDR allowed to reach the APISIX Admin API.
+# Deliberately NOT POD_NETWORK_CIDR: that value also drives pod-cidr-consistency-check, NFS
+# exports and trusted proxies, and a legacy Cilium pool (Kakao: 10.0.0.0/8 pool, CiliumNodes
+# 10.0.x.0/24) differs from it. Order (D1): APISIX_ADMIN_CIDR env -> cilium-config with
+# ipam=cluster-pool -> cluster-pool-ipv4-cidr -> kubeadm-config podSubnet -> chart default
+# 10.244.0.0/16. Defaulting happens only when a ConfigMap is NotFound; any other kubectl
+# error, an unparsable value or a multi-CIDR pool returns non-zero (fail closed): silently
+# defaulting on a live cluster re-creates the Admin API 403 (ResourceSyncAborted).
+resolve_apisix_admin_cidr() {
+  local cidr="${APISIX_ADMIN_CIDR:-}" out err ipam
+  err=$(mktemp)
+  if [ -z "${cidr}" ]; then
+    if out=$(kubectl -n kube-system get configmap cilium-config \
+        -o 'jsonpath={.data.ipam}{"\t"}{.data.cluster-pool-ipv4-cidr}' 2>"${err}"); then
+      ipam="${out%%$'\t'*}"
+      [ "${ipam}" = cluster-pool ] && cidr="${out#*$'\t'}"
+    elif ! grep -q 'NotFound' "${err}"; then
+      echo "ERROR: cannot read configmap/cilium-config: $(head -c 200 "${err}")" >&2
+      rm -f "${err}"; return 1
+    fi
+  fi
+  if [ -z "${cidr}" ]; then
+    if out=$(kubectl -n kube-system get configmap kubeadm-config \
+        -o 'jsonpath={.data.ClusterConfiguration}' 2>"${err}"); then
+      cidr=$(printf '%s\n' "${out}" | awk '/^[[:space:]]*podSubnet:/ {print $2; exit}')
+    elif ! grep -q 'NotFound' "${err}"; then
+      echo "ERROR: cannot read configmap/kubeadm-config: $(head -c 200 "${err}")" >&2
+      rm -f "${err}"; return 1
+    fi
+  fi
+  rm -f "${err}"
+  cidr="${cidr:-10.244.0.0/16}"
+  if ! is_cidr "${cidr}"; then
+    echo "ERROR: APISIX admin allowlist '${cidr}' is not a single IPv4 CIDR; set APISIX_ADMIN_CIDR" >&2
+    return 1
+  fi
+  printf '%s\n' "${cidr}"
+}
+
 # Wait for Kubernetes API server to be reachable
 wait_for_api_server() {
   local max_attempts="${1:-30}"

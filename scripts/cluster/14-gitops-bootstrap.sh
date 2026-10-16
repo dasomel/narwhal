@@ -5,6 +5,9 @@ DOMAIN="${DOMAIN:-local.narwhal.internal}"
 
 echo "=== Bootstrapping GitOps ==="
 
+# shellcheck source=scripts/common/lib.sh
+source /home/vagrant/scripts/common/lib.sh
+
 # Use local kubeconfig (bypasses VIP) to avoid disruption during master-2 join
 export KUBECONFIG=/home/vagrant/.kube/config-local
 
@@ -443,6 +446,15 @@ if [ "${GITOPS_SOURCE_VALIDATED:-0}" != "1" ]; then
   exit 1
 fi
 
+# APISIX Admin API allowlist: detected from the live CNI (not POD_NETWORK_CIDR, which other
+# scripts use for different purposes), so re-running this script cannot revert idp-apps to the
+# chart default and bring back the 403. Aborts on detection errors instead of guessing.
+APISIX_ADMIN_CIDR_RESOLVED="$(resolve_apisix_admin_cidr)" || {
+  echo "ERROR: could not determine the APISIX Admin API allowlist CIDR; set APISIX_ADMIN_CIDR to override." >&2
+  exit 1
+}
+echo "  APISIX Admin allowlist CIDR: ${APISIX_ADMIN_CIDR_RESOLVED}"
+
 cat <<EOF | kubectl apply -f -
 apiVersion: argoproj.io/v1alpha1
 kind: Application
@@ -470,6 +482,7 @@ spec:
         # to vagrant and selfHeal undoes the cloud wiring 08-1-networking.sh applied:
         # MetalLB gets re-created and the APISIX gateway flips back to LoadBalancer.
         provider: ${PROVIDER:-vagrant}
+        podNetworkCidr: ${APISIX_ADMIN_CIDR_RESOLVED}
   destination:
     server: https://kubernetes.default.svc
     namespace: devtools

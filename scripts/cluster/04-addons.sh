@@ -77,6 +77,12 @@ kubectl rollout status deployment/metrics-server -n kube-system --timeout=180s \
 #=========================================
 echo "=== Installing CSI Driver NFS ${CSI_DRIVER_NFS_VERSION} ==="
 
+# D-fsgroup: the intended fsGroupPolicy is "not File" (K8s default ReadWriteOnceWithFSType).
+# Under a root_squash export kubelet's fsGroup chown runs as the squashed client uid and fails, or
+# chowns through the share, so File would break every pod with an fsGroup. The chart default
+# (feature.enableFSGroupPolicy=true) renders File, which is why a cluster installed before 7e4e6227
+# (2026-09-28) keeps it: CSIDriver.spec.fsGroupPolicy is immutable and Helm upgrades do not
+# recreate the object (Kakao 2026-10-16: File, 50-day-old release). Never drop the --set below.
 # Chart 4.13.2 renders fsGroupPolicy: File only when this feature is true; false omits
 # the field. Kubernetes defaults the omission to ReadWriteOnceWithFSType, which performs
 # ownership changes only when a volume has an fsType and uses RWO. This NFS StorageClass

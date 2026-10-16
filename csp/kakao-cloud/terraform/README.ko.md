@@ -23,7 +23,7 @@ Kubernetes와 플랫폼 앱은 이후
 | Public IP | 3 | bastion + LB 2개. **클러스터 노드에는 없다** |
 
 노드를 프라이빗으로 두는 것은 의도된 설계다. 접근은 전부 bastion을 경유하고, 노드의 아웃바운드는
-거기서 도는 squid 프록시를 탄다 — Kakao Cloud provider 0.4.4에는 NAT 게이트웨이 리소스가 없고,
+거기서 도는 squid 프록시를 탄다 — Kakao Cloud provider 0.5.1(0.4.4와 동일)에는 NAT 게이트웨이 리소스가 없고,
 노드마다 공인 IP를 붙이면 이 보안그룹이 `0.0.0.0/0`으로 열어둔 SSH·6443 규칙이 그대로 노출된다.
 직접 egress가 필요하면 `assign_node_public_ips = true`가 탈출구다.
 
@@ -56,7 +56,7 @@ Kubernetes와 플랫폼 앱은 이후
 
 ## 사전 요구사항
 
-- **OpenTofu** >= 1.6.0 (`tofu`; Terraform CLI도 동작)
+- **OpenTofu** >= 1.13.0 (`tofu`; Terraform CLI도 동작)
 - **Kakao Cloud 계정** + Application Credential (ID + Secret)
 - **쿼터**: 인스턴스 7, vCPU 26, RAM 52GB+, 볼륨 1.2TB, 공인 IP 3, LB 2
 
@@ -211,7 +211,7 @@ terraform/
   bastion.tf           # 점프 호스트 + 공인 IP
   variables.tf         # 변수 정의
   outputs.tf           # 노드 IP, LB 엔드포인트, bastion, ssh_key_path, subnet_cidr, vpc_cidr
-  provider.tf          # kakaocloud provider v0.4.4
+  provider.tf          # kakaocloud provider v0.5.1
   cloud-init.yaml      # 기본 VM 초기화 (SSH 공개키만)
   terraform.tfvars.example
   modules/
@@ -270,11 +270,97 @@ terraform/
 
 이후 클러스터 프로비저닝에 약 1시간이 더 들고, airgap 번들을 쓴다면 전송(~6GB)이 추가된다.
 
-## 정리
+## 기존 배포를 provider 0.5.1로 업그레이드
+
+provider 0.5.0에서 `kakaocloud_vpc.subnet`이 제거됐고, bastion의 `initial_security_groups`는
+제자리 변경이 안 된다(`Changing the initial security group is not allowed`, `-replace`로도
+마찬가지; #202 대기 중). 신규 설치는 해당 없다. 운영 중인 배포는 아래 순서대로, 이 디렉토리에서
+운영자의 `terraform.tfvars`로 진행한다.
 
 ```bash
+# 1. state 백업, 그리고 0.4.x 스키마가 아직 보여줄 때 기본 서브넷 CIDR 확인
+tofu state pull > ~/narwhal-kakao-state-pre-0.5.1.json   # git 밖에 보관
+tofu state show module.network.kakaocloud_vpc.vpc        # `subnet` 블록에는 cidr_block/az만 있고 id는 없다:
+# 그 CIDR(이름 "main")의 서브넷 ID를 Kakao Cloud 콘솔(VPC > Subnet)이나
+# `data "kakaocloud_subnets"`를 쓴 임시 설정(읽기 전용)으로 조회한다
+
+# 2. 새 provider 받기 (lock 파일은 이미 0.5.1로 고정돼 있다)
+tofu init   # 커밋된 lock이 이미 0.5.1을 고정한다. -upgrade는 다시 해석한다
+
+# 3. VPC 기본 서브넷 import (예전 인라인 `subnet` 블록)
+tofu import module.network.kakaocloud_subnet.vpc_default_subnet <default-subnet-id>
+
+# 4. bastion 현재 사설 IP 고정: 노드가 DNS, squid 프록시, 레지스트리 미러로 쓴다
+tofu output -raw bastion_private_ip   # 이 값을 terraform.tfvars의 bastion_private_ip에 넣는다
+
+# 5. bastion만 교체. 예전 bastion은 -replace가 거부되고(위 참고), 대상 지정 destroy는 공인 IP까지
+#    지운다(prevent_destroy가 있으면 에러). 먼저 주소를 state에서 빼고 인스턴스를 지운 뒤
+#    다시 만들고 import한다:
+tofu show -json | jq -r '.values.root_module.resources[] | select(.address=="kakaocloud_public_ip.bastion_public") | .values.id'   # state rm 전에 <public_ip_id> 기록
+tofu state rm kakaocloud_public_ip.bastion_public
+tofu destroy -target=kakaocloud_instance.bastion -refresh=false
+tofu apply -target=kakaocloud_instance.bastion      # 새 bastion, 주소는 아직 연결 안 됨
+tofu import kakaocloud_public_ip.bastion_public <public_ip_id>
+tofu apply                                          # 유지한 주소를 다시 연결 (제자리 업데이트)
+
+# 6. bastion에 있던 것(squid, 레지스트리)을 저장소 루트에서 다시 구성
+cd ../../..
+./scripts/cloud/provision-kakao.sh proxy registry
+```
+
+참고:
+
+- 3, 4단계 뒤 `tofu plan`을 읽어 본다. 예상 변경은 bastion 교체뿐이고, import한 서브넷은
+  변경이 없어야 한다(`vpc_default_subnet_name` 기본값이 `main`).
+- `proxy` 스테이지는 sentinel이 없어 항상 다시 돈다. `registry` 스테이지는 bastion이 이미
+  `:5000`을 서빙하면 건너뛴다. 새 bastion은 그렇지 않으므로 `FORCE=1`은 살아 있는 bastion
+  레지스트리에 다시 push할 때만 필요하다. sentinel로 보호되는 노드 스테이지(`base`, `mirror` 등)는
+  다시 돌지 않는다.
+- 새 bastion은 SSH 호스트 키가 바뀐다. `known_hosts`의 옛 항목을 지운다.
+- 모든 `kakaocloud_public_ip`에 `prevent_destroy`(D-PUBIP)가 있어 VM, LB를 다시 만들어도 주소가
+  유지된다. bastion이 0.5.1이 된 뒤의 교체는 `-replace`(다음 절)로 하며 5단계의 state 조작이 필요 없다.
+
+## VM 교체
+
+공인 IP(bastion, 노드 egress, LB 2개)는 외부 엔드포인트다. DNS, kubeconfig, 운영자 SSH,
+허용 목록이 이 주소를 가리킨다. 주소를 지키려면 VM을 destroy하지 말고 교체한다:
+
+```bash
+tofu apply -replace=kakaocloud_instance.bastion   # plan에 공인 IP가 "updated in-place"로 나온다
+```
+
+- `tofu destroy -target=<instance>`는 쓰지 않는다. 의존하는 공인 IP까지 지우며, 가드가 있으면
+  이제 에러가 난다.
+- `initial_security_groups`는 제자리 변경이 안 된다. 보안그룹을 바꾸려면 인스턴스를 다시 만들어야
+  하며, 이때도 대상 지정 destroy가 아니라 위 `-replace`를 쓴다.
+- provider가 `-replace` 자체를 막으면 위 5단계 순서(공인 IP `tofu state rm`, 인스턴스 destroy,
+  재생성, `tofu import`, apply)를 쓴다. import 뒤 `tofu plan`에서 공인 IP는 `update in-place`로
+  나와야 한다. replace로 나오면 `prevent_destroy`가 의도대로 막는 것이므로 가드를 지우지 말고
+  멈춰서 원인을 조사한다. 이 state rm / import 순서는 아직 실제 배포에서 검증되지 않았다.
+- 위 jq 조회는 루트 리소스 기준(`.values.root_module.resources[]`)이며, 모듈 안 리소스는
+  `.values.root_module.child_modules[]` 아래에 있다.
+
+## 정리
+
+`kakaocloud_public_ip`는 `prevent_destroy`(D-PUBIP)로 보호되므로 그냥 `tofu destroy`는
+`Instance cannot be destroyed`로 실패한다. 전부 정리하려면 먼저 가드를 푼다. lifecycle 블록을
+없애거나, 주소를 state에서 빼면 된다:
+
+```bash
+# 방법 A: 가드 해제(5개 리소스 전부) 후 destroy. 주소는 반납된다
+sed -i.bak '/prevent_destroy = true/s/true/false/' bastion.tf modules/compute/main.tf modules/loadbalancer/main.tf
+tofu destroy
+# 끝나면 가드 복원: mv bastion.tf.bak bastion.tf (모듈 파일 2개도 동일)
+
+# 방법 B: 주소를 OpenTofu 밖에 남긴다 (Kakao Cloud 콘솔 VPC > Public IP에서 직접 반납하기
+# 전까지 할당·과금이 유지된다)
+tofu state list | grep kakaocloud_public_ip | xargs -n1 tofu state rm
 tofu destroy
 ```
+
+운영 중인 클러스터에서 `assign_node_public_ips = false`도 같은 가드에 막히고,
+`assign_node_public_ips = true`일 때 `master_count` / `worker_count`를 줄이는 것도 막힌다
+(제거되는 인덱스의 주소가 destroy되므로). 해당 주소는 먼저 방법 B로 처리한다.
 
 리소스 52개는 ~15분에 사라진다. **VPC 삭제만 몇 시간 단위로 늘어질 수 있다.**
 
@@ -312,6 +398,55 @@ tofu apply
 중단해도 데이터 손실은 없다. 삭제는 서버 쪽에서 계속 진행되며, `tofu destroy`를 다시 돌리는
 것과 그냥 기다리는 것의 차이도 없다.
 
+## NFS 데이터 볼륨 (Kakao)
+
+`nfs_data_volume_size`(GB, 기본 `0` = 비활성, 사용 시 50..16384)는 `<master_name>-1-nfs-data` 전용 블록 볼륨을
+만들어 master-1에 연결합니다. `scripts/cluster/01-nfs-server.sh`가 이를 XFS(라벨 `narwhal-nfs`)로 포맷하고
+`prjquota`로 `/srv/nfs/k8s`에 마운트합니다. `nfs-quota-agent`에 필요하며, XFS 프로젝트 쿼터는 최초 마운트
+시에만 켤 수 있고 remount로는 켤 수 없습니다. 볼륨에는 `prevent_destroy`(D-NFS-VOL)가 있고
+`is_delete_on_termination = false`로 연결됩니다.
+
+기존 ext4 export 이전: [`docs/runbooks/nfs-xfs-migration.md`](../../../docs/runbooks/nfs-xfs-migration.md),
+첫 실행 기록: [`docs/kakao/nfs-xfs-migration-2026-10-16.md`](../../../docs/kakao/nfs-xfs-migration-2026-10-16.md).
+
+4단계 게이트로 적용합니다. 이 절차에서 `-target`은 의도된 예외이며 필수입니다. attach 이후 전체 plan은
+깨끗하지 않습니다. master-1을 in-place 갱신하면 계산 속성 `addresses`가 apply 중 unknown이 되어, 이를
+`address`로 읽는 로드밸런서 타깃 그룹 멤버 4개(etcd, master, master_http, master_https `["0"]`)가
+교체 대상이 됩니다. 볼륨 생성, master-1 단독 attach, 수렴 확인 순서로 진행합니다.
+
+```bash
+# a) 볼륨만 생성
+tofu plan -target=module.compute.kakaocloud_volume.nfs_data -out=s1.tfplan
+#    정확히 1 add / 0 change / 0 destroy가 아니면 중단
+tofu apply s1.tfplan
+
+# b) master-1에만 attach
+tofu plan -target='module.compute.kakaocloud_instance.master[0]' -out=s2.tfplan
+#    0 add / 1 change / 0 destroy가 아니거나, volumes diff가 요소 +1개(id = 새 볼륨,
+#    is_delete_on_termination = false)이고 루트 요소가 그대로가 아니면 중단
+tofu apply s2.tfplan
+
+# c) 수렴 확인
+tofu plan
+#    "No changes"가 아니면 중단. LB 멤버가 "must be replaced"면 중단 후 refresh하고 다시 plan
+```
+
+d) master-1에서 `01-nfs-server.sh` 실행 전에 확인합니다.
+
+```bash
+ls -l /dev/disk/by-id/virtio-<볼륨 id 앞 20자>
+sudo blkid -p /dev/disk/by-id/virtio-<볼륨 id 앞 20자>   # 아무것도 출력되면 안 됨
+```
+
+링크가 있고 `blkid`가 아무것도 출력하지 않는(빈 볼륨) 경우가 아니면 중단합니다.
+
+VM 안에서 장치는 `/dev/disk/by-id/virtio-<볼륨 id 앞 20자>`(virtio-blk 시리얼)입니다.
+`scripts/cloud/provision-kakao.sh`가 `nfs_data_volume_id` output으로 계산해 `NFS_DATA_DEVICE`로 전달하며,
+`NFS_DATA_DEVICE`를 직접 export하면 덮어씁니다.
+
+ext4 루트 디스크의 기존 데이터 이전은 별도의 승인 필요 런북(`docs/runbooks/nfs-xfs-migration.md`)입니다.
+`01-nfs-server.sh`는 비어 있지 않은 `/srv/nfs/k8s` 위에는 마운트하지 않고 중단합니다.
+
 ## 알려진 이슈
 
 이 프로젝트에 미해결 이슈는 없다. 다만 다른 문제로 오해하기 쉬운 두 가지는 알아둘 것:
@@ -330,6 +465,6 @@ tofu apply
 
 ## 버전 정보
 
-- **OpenTofu**: >= 1.6.0
-- **Provider**: kakaocloud v0.4.4
+- **OpenTofu**: >= 1.13.0
+- **Provider**: kakaocloud v0.5.1
 - **OS**: Ubuntu 24.04 LTS (Kakao Cloud에 26.04 이미지가 없다; Vagrant 경로는 26.04)

@@ -9,6 +9,12 @@ English | [한국어](CHANGELOG-ko.md)
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-10-15
+
+The portal now lives in the `dasomel/narwhal` monorepo under `portal/`; release tags are `portal/vX.Y.Z`
+(this is the first release cut from there, and versions up to 1.0.17 keep their old `dasomel/narwhal-portal`
+links).
+
 Hardens the portal's production posture (authenticated Valkey TLS, explicit OpenBao auth mode,
 call-time dependency configuration checks, namespace-scoped reads) and makes provider failures visible
 instead of silently healthy: write routes now distinguish rejected, credential and
@@ -397,7 +403,8 @@ management dashboard built with Next.js 16 and React 19.
   - Skaffold development profile configured for live Hot Module Replacement (HMR) and container
     file syncing.
 
-[Unreleased]: https://github.com/dasomel/narwhal-portal/compare/v1.0.17...HEAD
+[Unreleased]: https://github.com/dasomel/narwhal/compare/portal/v1.1.0...HEAD
+[1.1.0]: https://github.com/dasomel/narwhal/releases/tag/portal/v1.1.0
 [1.0.17]: https://github.com/dasomel/narwhal-portal/compare/v1.0.16...v1.0.17
 [1.0.16]: https://github.com/dasomel/narwhal-portal/compare/v1.0.15...v1.0.16
 [1.0.15]: https://github.com/dasomel/narwhal-portal/compare/v1.0.4...v1.0.15

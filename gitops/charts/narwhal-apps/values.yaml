@@ -7,6 +7,11 @@ baseDomain: local.narwhal.internal
 #             LB fronts APISIX through the node ports pinned below.
 provider: vagrant
 
+# Pod CIDR allowed to reach the APISIX Admin API (ingress-controller sync). Must equal the CNI's
+# real pod pool: a cluster built before the Cilium pool was pinned to POD_NETWORK_CIDR still
+# uses Cilium's legacy default pool (10.0.x.x), and a mismatch makes the IC get 403 (ResourceSyncAborted).
+podNetworkCidr: 10.244.0.0/16
+
 # NodePorts the Kakao worker LB target groups forward to (80->31080, 443->31443).
 # Ignored unless provider is kakao. Changing these means changing the LB target
 # groups in csp/kakao-cloud/terraform to match.

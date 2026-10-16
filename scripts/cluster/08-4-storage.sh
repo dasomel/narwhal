@@ -4,6 +4,8 @@ set -euo pipefail
 # Charts come from the airgap bundle, never a public repository.
 # shellcheck source=/dev/null
 source /home/vagrant/scripts/common/lib-charts.sh
+# shellcheck source=scripts/common/lib.sh
+source /home/vagrant/scripts/common/lib.sh
 
 echo "=== Installing Storage Apps (SeaweedFS, OpenBao, Velero) ==="
 
@@ -13,6 +15,22 @@ export KUBECONFIG=/home/vagrant/.kube/config-local
 # SeaweedFS (S3-compatible Object Storage)
 #=========================================
 echo "=== Installing SeaweedFS ==="
+
+# D-sw-pin: the volume server stores data on node-local hostPath /ssd/object_store, so it must
+# always land on the same node. Label one worker once; an existing label is never moved (the
+# data lives where the label is). Clean installs (Vagrant + Kakao) get the first worker by
+# name; on a cluster that already holds data, label that node by hand BEFORE running this.
+LABELED_NODES="$(kubectl get nodes -l narwhal.io/seaweedfs-volume=true -o name)"
+if [ "$(printf '%s' "${LABELED_NODES}" | grep -c .)" -gt 1 ]; then
+  echo "ERROR: more than one node carries narwhal.io/seaweedfs-volume=true: ${LABELED_NODES}" >&2
+  exit 1
+fi
+if [ -z "${LABELED_NODES}" ]; then
+  SW_NODE="$(kubectl get nodes -l '!node-role.kubernetes.io/control-plane' -o name | sort | head -n1)"
+  [ -n "${SW_NODE}" ] || SW_NODE="$(kubectl get nodes -o name | sort | head -n1)"
+  echo "Labeling ${SW_NODE} narwhal.io/seaweedfs-volume=true (SeaweedFS volume data is node-local)"
+  kubectl label "${SW_NODE}" narwhal.io/seaweedfs-volume=true --overwrite
+fi
 
 SEAWEEDFS_OK=false
 for attempt in 1 2 3 4 5; do
@@ -27,8 +45,15 @@ for attempt in 1 2 3 4 5; do
     --set master.data.type=persistentVolumeClaim \
     --set master.data.size=1Gi \
     --set master.data.storageClass=nfs-csi \
+    --set master.podSecurityContext.enabled=true \
+    --set master.podSecurityContext.runAsUser=1000 \
+    --set master.podSecurityContext.runAsGroup=1000 \
+    --set master.podSecurityContext.fsGroup=1000 \
+    --set master.podSecurityContext.fsGroupChangePolicy=OnRootMismatch \
+    --set master.logs.type=emptyDir \
     --set volume.enabled=true \
     --set volume.replicas=1 \
+    --set-string 'volume.nodeSelector=narwhal.io/seaweedfs-volume: "true"' \
     --set volume.data.type=persistentVolumeClaim \
     --set volume.data.size=50Gi \
     --set volume.data.storageClass=nfs-csi \
@@ -37,6 +62,12 @@ for attempt in 1 2 3 4 5; do
     --set filer.data.type=persistentVolumeClaim \
     --set filer.data.size=5Gi \
     --set filer.data.storageClass=nfs-csi \
+    --set filer.podSecurityContext.enabled=true \
+    --set filer.podSecurityContext.runAsUser=1000 \
+    --set filer.podSecurityContext.runAsGroup=1000 \
+    --set filer.podSecurityContext.fsGroup=1000 \
+    --set filer.podSecurityContext.fsGroupChangePolicy=OnRootMismatch \
+    --set filer.logs.type=emptyDir \
     --set filer.s3.enabled=true \
     --set filer.s3.port=8333 \
     --set filer.s3.allowEmptyFolder=true \
@@ -287,15 +318,12 @@ echo "OpenBao installed"
 #=========================================
 echo "=== Installing Velero ==="
 
-# S3 credentials — prefer environment overrides, fall back to Secret or defaults
-S3_ACCESS_KEY="${S3_ACCESS_KEY:-$(kubectl get secret velero-s3-credentials -n storage \
-  -o jsonpath='{.data.access-key}' 2>/dev/null | base64 -d || echo "admin")}"
-# D-velero: default to "admin" (matches S3_ACCESS_KEY), not empty. An empty
-# aws_secret_access_key makes the AWS SDK fall through to the EC2 IMDS provider
-# (169.254.169.254), which times out every BSL reconcile and crashloops velero.
-# SeaweedFS S3 is anonymous here, so any non-empty key satisfies the SDK.
-S3_SECRET_KEY="${S3_SECRET_KEY:-$(kubectl get secret velero-s3-credentials -n storage \
-  -o jsonpath='{.data.secret-key}' 2>/dev/null | base64 -d || echo "admin")}"
+# S3 credentials — env override, then existing Secret, then the shared "admin" default.
+# D-velero: never empty (an empty aws_secret_access_key makes the AWS SDK fall through to the
+# EC2 IMDS provider (169.254.169.254), which times out every BSL reconcile and crashloops
+# velero). SeaweedFS S3 is anonymous here, so any non-empty key satisfies the SDK.
+# Shared with 07-cnpg.sh via resolve_s3_credentials (scripts/common/lib.sh).
+resolve_s3_credentials
 
 # Persist S3 credentials into a dedicated Secret (idempotent)
 # 'cloud' key uses AWS credentials file format required by velero-plugin-for-aws

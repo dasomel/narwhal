@@ -29,6 +29,11 @@ output "master_instance_ids" {
   value       = module.compute.master_instance_ids
 }
 
+output "nfs_data_volume_id" {
+  description = "NFS data volume ID attached to master-1 (null when nfs_data_volume_size is 0)"
+  value       = module.compute.nfs_data_volume_id
+}
+
 output "master_private_ips" {
   description = "Master instance private IPs"
   value       = module.compute.master_private_ips

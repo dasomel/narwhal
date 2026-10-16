@@ -1,6 +1,6 @@
 # ADR-0001: Consolidate narwhal-portal into the narwhal monorepo
 
-- Status: Proposed (becomes Accepted when the import PR merges)
+- Status: Accepted (import merged in PR #347, 2026-10-15)
 - Date: 2026-10-15
 - Supersedes: —
 - Superseded by: —
@@ -8,7 +8,7 @@
 
 Decision IDs: D-MONO-1 (history-preserving import), D-MONO-2 (seam checks read the
 in-repo tree), D-MONO-3 (CI), D-MONO-4 (release and image identity), D-MONO-5 (this ADR).
-The import and its seam/docs wiring are in the `feat/import-portal-seam` branch.
+The import and its seam/docs wiring landed in PR #347; CI and release hardening followed in PR #355.
 
 ## Context
 
@@ -92,13 +92,22 @@ that is not itself a Git repository.
   by the gate. At the import it was 1686 findings (MD034 687, MD040 664, MD032 137, MD022 121,
   MD031 42, MD058 11, 15 other), so cleaning it is a separate, deliberate change.
 
+## Completed after the import
+
+- The 27 open portal issues were transferred to narwhal #356-#382 (label `area:portal`); the old-to-new
+  mapping is the comment on narwhal#356. Closed portal issues and all PRs stay in the old repository.
+- Portal drafts #187 and #77 were re-opened as narwhal #383 and #384; the originals were closed.
+  Dependabot now watches `/portal` here and the old repository's Dependabot PRs were closed.
+- Branch protection now requires `Portal gate` in addition to `independent-review` (done 2026-10-15).
+- narwhal Actions was granted write on the GHCR package `narwhal-portal` (admin UI; not verifiable via
+  API until the first `portal/v*` release) and the `COSIGN_PRIVATE_KEY` / `COSIGN_PASSWORD` secrets were
+  created on `dasomel/narwhal` (done 2026-10-15). The public key is committed at
+  `scripts/airgap/keys/cosign.pub` and inlined in `verify-image-signatures`.
+- `dasomel/narwhal-portal` was archived (not deleted) after a README pointer to `portal/` merged there
+  (portal PR #251).
+
 ## Pending (not done yet)
 
-- Transfer portal's 27 open issues to this repository, with an old-to-new number-mapping
-  comment.
-- Open PRs cannot move. Dependabot PRs regenerate; drafts #187 and #77 must be re-opened.
-- Archive `dasomel/narwhal-portal` with a pointer to `portal/`, after the PR merges.
-- Change branch protection required checks to include `Portal gate`.
 - Sequence the Valkey change (PR #343) with a portal v1.1.0 release, then bump the pin.
 - Retire the separate `narwhal-portal` entry in the OpenForge registry.
 

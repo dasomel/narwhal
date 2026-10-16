@@ -6,7 +6,10 @@ set -euo pipefail
 source scripts/common/lib-nqa.sh
 
 T=$(mktemp -d); trap 'rm -rf "${T}"' EXIT
-base='          args:
+base='spec:
+  containers:
+    - name: a
+      args:
             - --nfs-base-path=/export
             - --state-dir=/var/lib/nfs-quota-agent
             - --enable-policy'
@@ -52,7 +55,8 @@ judge() { # <rc> <label> <before> <after>
 }
 judge 0 healthy 'a\ttrue\t0\t\n' 'a\ttrue\t0\t\n'
 judge 0 old-restart-stable 'a\ttrue\t3\t\n' 'a\ttrue\t3\t\n'   # re-run against a healthy pod
-judge 0 new-pod-after-upgrade '' 'a\ttrue\t1\t\n'
+judge 1 pod-replaced 'a\ttrue\t0\t\n' 'b\ttrue\t0\t\n'
+judge 1 pod-added 'a\ttrue\t0\t\n' 'a\ttrue\t0\t\nb\ttrue\t0\t\n'
 judge 1 restart-in-window 'a\ttrue\t0\t\n' 'a\ttrue\t1\t\n'
 judge 1 not-ready 'a\ttrue\t0\t\n' 'a\tfalse\t0\t\n'
 judge 1 crashloop 'a\ttrue\t2\t\n' 'a\ttrue\t2\tCrashLoopBackOff\n'
@@ -60,12 +64,18 @@ judge 1 waiting-error 'a\ttrue\t2\t\n' 'a\ttrue\t2\tError\n'
 judge 1 no-pods 'a\ttrue\t0\t\n' ''
 
 # Rendered-args parsing: block, quoted and flow style, with and without PyYAML.
-q='        args:
-          - "--quoted-flag=1"
-          - '"'--single-flag'"'
-          - --block-flag
-        other: ["--not-an-arg"]'
-f1='        args: ["--flow-a", "--flow-b=x"]'
+q='spec:
+  containers:
+    - name: a
+      args:
+        - "--quoted-flag=1"
+        - '"'--single-flag'"'
+        - --block-flag
+      other: ["--not-an-arg"]'
+f1='spec:
+  containers:
+    - name: a
+      args: ["--flow-a", "--flow-b=x"]'
 want_q=$'block-flag\nquoted-flag\nsingle-flag'
 want_f=$'flow-a\nflow-b'
 [ "$(printf '%s\n' "${q}" | nqa_rendered_flags)" = "${want_q}" ] || { echo "FAIL: quoted/block args parse"; fail=1; }
@@ -78,6 +88,12 @@ python3() { return 1; }
 unset -f python3
 printf '%s\n            - "--default-quota=1Gi"\n' "${base}" >"${T}/quoted"
 expect 1 quoted v0.5.0
+printf 'spec:\n  containers: [unclosed\n    - : bad\n' >"${T}/invalid"
+expect 1 invalid v0.5.0   # unparsable render must fail closed, not approve an empty flag list
+: >"${T}/empty"
+expect 1 empty v0.5.0
+printf 'spec:\n  containers:\n    - name: a\n      args:\n        - --state-dir=x\n      livenessProbe:\n        exec:\n          command: ["--probe-only"]\n' >"${T}/probe"
+expect 0 probe v0.5.0     # args under a probe are not container flags
 
 f=scripts/cluster/05-nfs-quota-agent.sh
 grep -Fq 'source /home/vagrant/scripts/common/lib-nqa.sh' "${f}" || { echo "FAIL: 05 does not source lib-nqa.sh"; fail=1; }

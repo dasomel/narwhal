@@ -25,21 +25,24 @@ nqa_known_flags() {
 }
 
 # nqa_rendered_flags -- stdin: rendered manifests; prints the distinct --flag names (no dashes) that
-# container args/command pass. python3+PyYAML reads block, quoted and flow-style lists alike; the regex
-# fallback covers `- --x`, `- "--x"` and `args: ["--x", ...]` lines.
+# containers[]/initContainers[] pass in command/args (probes are ignored). python3+PyYAML reads block,
+# quoted and flow-style lists alike and exits 1 on a parse error (the caller fails closed); without
+# PyYAML a regex covers `- --x`, `- "--x"` and `args: ["--x", ...]` lines.
 nqa_rendered_flags() {
-  local doc
+  local doc out
   doc=$(cat)
   if printf '' | python3 -c 'import yaml' 2>/dev/null; then
-    printf '%s\n' "${doc}" | python3 -c '
+    out=$(printf '%s\n' "${doc}" | python3 -c '
 import sys, yaml
 def walk(o):
     if isinstance(o, dict):
         for k, v in o.items():
-            if k in ("args", "command") and isinstance(v, list):
-                for a in v:
-                    if isinstance(a, str) and a.startswith("--"):
-                        print(a[2:].split("=", 1)[0])
+            if k in ("containers", "initContainers") and isinstance(v, list):
+                for c in v:
+                    for key in ("args", "command"):
+                        for a in (c.get(key) or []) if isinstance(c, dict) else []:
+                            if isinstance(a, str) and a.startswith("--"):
+                                print(a[2:].split("=", 1)[0])
             else:
                 walk(v)
     elif isinstance(o, list):
@@ -47,7 +50,8 @@ def walk(o):
             walk(i)
 for d in yaml.safe_load_all(sys.stdin):
     walk(d)
-' | sort -u
+') || return 1
+    printf '%s\n' "${out}" | sort -u | sed '/^$/d'
   else
     printf '%s\n' "${doc}" | grep -E "^[[:space:]]*-[[:space:]]+[\"']?--|(args|command):[[:space:]]*\[" |
       grep -oE "(^|[-\[,])[[:space:]]*[\"']?--[a-z][a-z0-9-]*" | sed -E "s/^.*--//" | sort -u
@@ -58,7 +62,7 @@ for d in yaml.safe_load_all(sys.stdin):
 # Renders the chart with the install's own helm args and rc 1 if it passes a flag the image lacks,
 # the tag is not in the table, or the chart does not render.
 nqa_check_skew() {
-  local chart_dir="$1" tag="$2" known rendered flag bad=""
+  local chart_dir="$1" tag="$2" known rendered flags flag bad=""
   shift 2
   if ! known=$(nqa_known_flags "${tag}"); then
     echo "ERROR: nfs-quota-agent image ${tag} has no known-flags row in scripts/common/lib-nqa.sh; refusing to deploy unverified." >&2
@@ -70,7 +74,11 @@ nqa_check_skew() {
     echo "${rendered}" >&2
     return 1
   fi
-  for flag in $(printf '%s\n' "${rendered}" | nqa_rendered_flags); do
+  if ! flags=$(printf '%s\n' "${rendered}" | nqa_rendered_flags) || [ -z "${flags}" ]; then
+    echo "ERROR: could not read any container flag from the rendered nfs-quota-agent chart (invalid YAML or no args); refusing to deploy unverified." >&2
+    return 1
+  fi
+  for flag in ${flags}; do
     case " ${known} " in
       *" ${flag} "*) ;;
       *) bad="${bad} --${flag}" ;;
@@ -91,7 +99,8 @@ nqa_pod_state() {
 }
 
 # nqa_judge <state-before> <state-after> -- rc 0 healthy; rc 1 (reasons on stdout) when there is no pod,
-# a pod is not Ready or waits in CrashLoopBackOff/Error at the end, or its restartCount grew in between.
+# a pod is not Ready or waits in CrashLoopBackOff/Error at the end, its restartCount grew in between, or
+# a pod is absent from the snapshot (replaced mid-window).
 # An old restart that did not move is fine: a one-off startup restart must not fail a healthy pod.
 nqa_judge() {
   local before="$1" after="$2" out
@@ -102,7 +111,8 @@ nqa_judge() {
   out=$(printf '%s\n--\n%s\n' "${before}" "${after}" | awk -F'\t' '
     /^--$/ { second = 1; next }
     !second { base[$1] = $3 + 0; next }
-    { if ($2 != "true") print $1 ": not Ready"
+    { if (!($1 in base)) print $1 ": appeared during the window (pod replaced)"
+      if ($2 != "true") print $1 ": not Ready"
       if (($1 in base) && $3 + 0 > base[$1]) print $1 ": restarted during the window (" base[$1] " -> " $3 ")"
       if ($4 == "CrashLoopBackOff" || $4 == "Error") print $1 ": waiting " $4 }')
   [ -z "${out}" ] || { printf '%s\n' "${out}"; return 1; }

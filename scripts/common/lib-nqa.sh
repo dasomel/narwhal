@@ -1,39 +1,70 @@
 #!/bin/bash
 # nfs-quota-agent chart/image skew guard, sourced by 05-nfs-quota-agent.sh.
 #
-# The bundled chart is a source-tree snapshot (NFS_QUOTA_AGENT_COMMIT) and its DaemonSet passes
-# flags that only newer images define. On the live Kakao cluster a v0.3.0 image ran with a chart
-# that passes --state-dir: the binary exits with "flag provided but not defined: -state-dir" and
-# the pod crash-looped ~14,000 times over 50 days while the install script reported success.
-# D-nqa-skew: refuse the mismatch up front instead of rolling out a pod that cannot start.
+# The chart is a source-tree snapshot (NFS_QUOTA_AGENT_COMMIT, bundled as nfs-quota-agent-0.0.0-main.tgz
+# whose file name never changes) and its DaemonSet passes CLI flags the image must define. A mismatch
+# does not fail the Helm release: the pod just exits "flag provided but not defined" and crash-loops.
+# Live Kakao, 2026-10-16: (1) a v0.3.0 image under a chart passing --state-dir (v0.4.0+), ~14,000
+# restarts in 50 days; (2) after moving to v0.5.0 the bundle on master-1 was still the 2026-08-23
+# snapshot, whose policy.enabled renders --default-quota (removed in v0.4.0) -> same crash loop.
+# D-nqa-skew: render the chart exactly as 05 will install it and require every flag it passes to be
+# in a pinned per-version table; unknown versions fail closed (add a row when bumping the image).
 
-# Oldest image whose CLI defines every flag the bundled chart passes (--state-dir landed in v0.4.0).
-NQA_MIN_IMAGE_VERSION="${NQA_MIN_IMAGE_VERSION:-v0.4.0}"
+# Flags defined by `nfs-quota-agent run` (cmd/nfs-quota-agent/main.go runAgent), per release tag.
+# --default-quota / --enforce-max-quota do not exist in any release here (removed in v0.4.0).
+NQA_FLAGS_V040="audit-log-path cleanup-dry-run cleanup-interval enable-audit enable-auto-cleanup enable-history enable-policy enable-quota-policy enable-ui ha-active-file history-interval history-path history-retention kubeconfig metrics-addr nfs-base-path nfs-server-path orphan-grace-period process-all-nfs provisioner-name quota-policy-single-writer state-dir sync-interval ui-addr"
+NQA_FLAGS_V050="${NQA_FLAGS_V040} enable-events"
 
-# nqa_check_skew <chart-dir> <image-tag>
-# rc 0 = compatible (or tag is not a semver, e.g. a digest/branch build: cannot judge, allowed),
-# rc 1 = chart passes --state-dir but the tag is older than NQA_MIN_IMAGE_VERSION.
-nqa_check_skew() {
-  local chart_dir="$1" tag="$2" oldest
-  if ! grep -rqs -e '--state-dir' "${chart_dir}/templates"; then
-    return 0
-  fi
-  case "${tag}" in
-    v[0-9]*.[0-9]*.[0-9]*) ;;
-    *) return 0 ;;
+# nqa_known_flags <image-tag> -- prints the supported flags, rc 1 for a tag not in the table.
+nqa_known_flags() {
+  case "$1" in
+    v0.4.0 | v0.4.1 | v0.4.2 | v0.4.3) echo "${NQA_FLAGS_V040}" ;;
+    v0.5.0) echo "${NQA_FLAGS_V050}" ;;
+    *) return 1 ;;
   esac
-  oldest=$(printf '%s\n%s\n' "${NQA_MIN_IMAGE_VERSION}" "${tag}" | sort -V | head -n1)
-  if [ "${oldest}" != "${NQA_MIN_IMAGE_VERSION}" ]; then
-    echo "ERROR: nfs-quota-agent image ${tag} is older than ${NQA_MIN_IMAGE_VERSION}, but the bundled chart passes --state-dir." >&2
-    echo "       The pod would exit 'flag provided but not defined: -state-dir' and crash-loop. Use NFS_QUOTA_AGENT_VERSION>=${NQA_MIN_IMAGE_VERSION}." >&2
+}
+
+# nqa_check_skew <chart-dir> <image-tag> [helm args...]
+# Renders the chart with the install's own helm args and rc 1 if it passes a flag the image lacks,
+# the tag is not in the table, or the chart does not render.
+nqa_check_skew() {
+  local chart_dir="$1" tag="$2" known rendered flag bad=""
+  shift 2
+  if ! known=$(nqa_known_flags "${tag}"); then
+    echo "ERROR: nfs-quota-agent image ${tag} has no known-flags row in scripts/common/lib-nqa.sh; refusing to deploy unverified." >&2
+    echo "       Add the row from the release's cmd/nfs-quota-agent/main.go runAgent flags (D-nqa-skew)." >&2
+    return 1
+  fi
+  if ! rendered=$(helm template nfs-quota-agent "${chart_dir}" "$@" 2>&1); then
+    echo "ERROR: helm template of the nfs-quota-agent chart failed:" >&2
+    echo "${rendered}" >&2
+    return 1
+  fi
+  for flag in $(printf '%s\n' "${rendered}" | grep -oE '^[[:space:]]+- --[a-z][a-z0-9-]*' | sed -E 's/^[[:space:]]+- --//' | sort -u); do
+    case " ${known} " in
+      *" ${flag} "*) ;;
+      *) bad="${bad} --${flag}" ;;
+    esac
+  done
+  if [ -n "${bad}" ]; then
+    echo "ERROR: the bundled nfs-quota-agent chart passes flag(s)${bad} that image ${tag} does not define." >&2
+    echo "       The pod would exit 'flag provided but not defined' and crash-loop. The chart in the airgap bundle is stale:" >&2
+    echo "       rebuild nfs-quota-agent-0.0.0-main.tgz (scripts/airgap/07-save-binaries.sh, pin NFS_QUOTA_AGENT_COMMIT) and re-sync it, or fix the --set values." >&2
     return 1
   fi
   return 0
 }
 
-# nqa_crashlooping <namespace> -- rc 0 when any pod in the namespace waits in CrashLoopBackOff.
-nqa_crashlooping() {
-  kubectl get pods -n "$1" \
-    -o jsonpath='{range .items[*].status.containerStatuses[*]}{.state.waiting.reason}{"\n"}{end}' 2>/dev/null |
-    grep -qx 'CrashLoopBackOff'
+# nqa_unhealthy_pods <namespace> -- prints one line per pod that is not Ready, has restarted or has a
+# terminated lastState; rc 0 when there is at least one such pod or no pod at all.
+nqa_unhealthy_pods() {
+  local out
+  out=$(kubectl get pods -n "$1" -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.status.containerStatuses[0].ready}{"\t"}{.status.containerStatuses[0].restartCount}{"\t"}{.status.containerStatuses[0].lastState.terminated.reason}{"\n"}{end}' 2>/dev/null) || out=""
+  if [ -z "${out}" ]; then
+    echo "no pods found in namespace $1"
+    return 0
+  fi
+  out=$(printf '%s\n' "${out}" | awk -F'\t' '$2 != "true" || $3 + 0 > 0 || $4 != "" {print}')
+  [ -n "${out}" ] || return 1
+  printf '%s\n' "${out}"
 }

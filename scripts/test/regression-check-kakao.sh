@@ -3139,7 +3139,10 @@ assert sum(1 for l in code if re.search(r"\bexit 3\b", l)) == 1, "exit 3 must ap
   # 2026-10-16: live Kakao nfs-quota-agent crash-looped ~14,000 times / 50 days: a v0.3.0 image under a
   # chart that passes --state-dir (flag first defined in v0.4.0), while 05 waited on a Deployment that
   # does not exist and only warned (D-nqa-skew).
-  check R259 "nfs-quota-agent: 05 refuses an image older than v0.4.0 when the chart passes --state-dir (before helm), waits on the DaemonSet and fails on CrashLoopBackOff (behavioral, version sort)" \
+  # Same day, second layer: after v0.5.0 the bundle on master-1 was still the 2026-08-23 chart snapshot,
+  # whose policy.enabled renders --default-quota (removed in v0.4.0); 05 exited 0 on "not ready yet" while
+  # the pod restarted (D-nqa-skew, D-nqa-prjquota).
+  check R259 "nfs-quota-agent: 05 renders the chart with its own helm args and refuses any flag the pinned per-version table lacks (stale --default-quota bundle, unknown versions fail closed, before helm install); a failed rollout or a restarted/not-Ready pod exits 1 with logs --previous (no WARN, no grep -q pipe); prjquota is detected and warned (behavioral, fake helm/kubectl)" \
     bash scripts/test/lib/check-nqa-skew.sh
   # 2026-10-16: the IC was OOMKilled at startup under the 256Mi limit during the full resource sync.
   check R258 "08-1 sizes the APISIX ingress controller memory: explicit limit >= 512Mi and request >= 256Mi, in the helm flags and the apisix chart values (D-ic-mem)" \

@@ -165,28 +165,80 @@ Delete the old ext4 data only after a verified soak period.
 
 Record of the first execution (timeline, gates, deviations, cleanup): [`docs/kakao/nfs-xfs-migration-2026-10-16.md`](../kakao/nfs-xfs-migration-2026-10-16.md).
 
-## Optional: root_squash alignment during the same downtime
+## Optional: root_squash alignment
 
-Not part of the default path; needs separate explicit owner approval at migration time. The
-default path preserves the live `no_root_squash` export unchanged.
+Not part of the default path; needs separate explicit owner approval. The default migration
+preserves the live `no_root_squash` export unchanged. This is the procedure that makes
+`root_squash` safe on the live Kakao export (narwhal#224, #186). No downtime is needed before the
+export switch; the SeaweedFS filer and master restart once.
 
 Context: the live Kakao export is `no_root_squash` (installed 2026-08-26, before 6151b86b made
-`root_squash` the default and 7e4e6227 fixed non-root writes); the share root is
-`drwxrwxrwx nobody:nogroup`. Switching to `root_squash` breaks anything that writes as uid 0:
+`root_squash` the default and 7e4e6227 fixed non-root writes). Layout there versus the
+Vagrant/`01-nfs-server.sh` layout that is proven under `root_squash`:
 
-- SeaweedFS filer/master have no securityContext (uid 0, dirs `0:0 755`): they break.
-- `alertmanager-db` is uid 0; about 72 uid-0 entries at depth <= 3 (`filerldb2/*`,
-  `m9333/snapshot`, `alertmanager-db`).
-- Gitea init containers may run as root: verify.
-- CNPG, Harbor, Prometheus, Loki, Tempo, Grafana and OpenBao use their own uid/fsGroup and setgid
-  dirs: fine.
+| Path | Live Kakao (reported, re-verify with the dry run) | Target (Vagrant-proven) |
+| --- | --- | --- |
+| share root | `nobody:nogroup 0777` | `nobody:nogroup 0750` |
+| `<share>/<namespace>` | `root:root 0755` | `nobody:nogroup 0755` (the squashed provisioner creates `<ns>/<pvc>` as nobody, so it must own `<ns>`; no `chmod 777`) |
+| `<share>/<ns>/<pvc>` | owned by the app (kubelet fsGroup chown under `no_root_squash`) | `0777` from the server-side timer `narwhal-nfs-pv-permissions` |
+| root-owned files inside a PV | SeaweedFS filer/master (~76 + 6 entries), `alertmanager-db`, `prometheus-db` (uid 0, gid 2000, `2775`) | owned by the workload uid:gid |
 
-Steps:
+Why this layout: csi-driver-nfs creates the directories as the squashed `nobody`; the NFS CSI
+driver sets no fsGroup policy (`feature.enableFSGroupPolicy=false`), so kubelet never chowns; the
+timer is the only thing that makes a fresh PV directory writable to an arbitrary workload uid.
 
-1. Separate GitOps PR first: give SeaweedFS `runAsUser`/`fsGroup`, or keep it off the NFS export.
-2. After rsync pass 2, on the NEW volume, `chown` the uid-0 entries to each pod's uid (list them
-   with `find /srv/nfs/k8s -maxdepth 3 -uid 0`).
-3. Switch the export to `root_squash` using the export logic in `01-nfs-server.sh` (its export
-   options are intentionally not changed by the PR that added this runbook), then `sudo exportfs -ra`.
-4. Run `scripts/verify/nfs-nonroot-write-check.sh` and confirm every workload is Ready.
-5. Rollback of this step only: revert the export line to `no_root_squash` and `sudo exportfs -ra`.
+Preconditions (the align script prints each of them in its dry run):
+
+- SeaweedFS runs as non-root: the GitOps change in this PR (`runAsUser`/`runAsGroup`/`fsGroup`
+  1000 for master and filer, logs on `emptyDir`; uid verified as the `seaweed` user of
+  `chrislusf/seaweedfs:4.34`). The chart overrides the image entrypoint, so without it the pods
+  stay uid 0.
+- `kubectl get csidriver nfs.csi.k8s.io -o jsonpath='{.spec.fsGroupPolicy}'` is not `File`. If it
+  is, delete only that object and re-run the chart exactly as `scripts/cluster/04-addons.sh` does
+  (`helm upgrade --install csi-driver-nfs ... --set feature.enableFSGroupPolicy=false`); the field
+  is immutable and a `File` policy makes kubelet chown through `root_squash`.
+- `systemctl is-active narwhal-nfs-pv-permissions.timer` is `active` (step 5 installs it if not).
+
+Steps, in this order:
+
+1. On the NFS server (`master-1`), dry run, and read the plan:
+   `scripts/cluster/nfs-root-squash-align.sh`. Exit 3 means a PV was skipped (unresolved
+   identity, or a Running consumer with a different non-root uid): resolve it before going on.
+2. `scripts/cluster/nfs-root-squash-align.sh --apply`. It chowns only root-owned entries to the
+   workload identity (SeaweedFS `1000:1000` from the reviewed map, the rest from the bound pod's
+   `securityContext`), makes namespace directories `nobody:nogroup`, and the share root
+   `nobody:nogroup 0750`. Re-running it reports nothing to do. It never edits `/etc/exports`.
+   The running SeaweedFS pods are still uid 0; root bypasses permissions under `no_root_squash`,
+   so the chown cannot break them. Do this BEFORE step 3: a non-root filer/master started on
+   root-owned files crash-loops with `EACCES`.
+3. Merge the GitOps PR, then run `scripts/cluster/14-gitops-bootstrap.sh` (the cluster syncs from
+   Gitea, so a merge alone changes nothing live). ArgoCD restarts the SeaweedFS filer and master as
+   uid 1000 on the already-chowned data.
+4. Confirm the filer and master are Ready and uid 1000 (`kubectl -n storage exec
+   seaweedfs-filer-0 -- id -u` prints `1000`), and S3 still works (the Loki pod is the canary).
+5. Switch the export. Take the live CIDRs from `/etc/exports`, then run the export logic of
+   `01-nfs-server.sh`; it also installs the timer and restarts `nfs-kernel-server` (a short NFS stall;
+   mounts are `hard`, so clients wait and recover):
+
+   ```bash
+   sudo cp -a /etc/exports /etc/exports.pre-rootsquash
+   sudo grep -n "${NFS_SHARE_PATH:-/srv/nfs/k8s}" /etc/exports   # note the two CIDRs
+   HOST_NETWORK_CIDR=<first cidr> POD_NETWORK_CIDR=<second cidr> bash scripts/cluster/01-nfs-server.sh
+   sudo exportfs -v   # both lines must say root_squash
+   ```
+
+   `01-nfs-server.sh` runs `apt-get update`; where apt is unreachable, or the timer is already
+   active and only the option must change, use `sudo sed -i 's/no_root_squash/root_squash/'
+   /etc/exports && sudo exportfs -ra` (install the timer from the script's heredocs first if
+   `systemctl is-active narwhal-nfs-pv-permissions.timer` is not `active`).
+6. Verify: every pod that mounts an NFS PVC is Ready, and `scripts/verify/nfs-nonroot-write-check.sh`
+   passes (it reports PASS, not WARN, for the share root once the export is `root_squash` and the
+   mode is 750).
+7. Prove dynamic provisioning under squash: create a throwaway namespace and PVC from the
+   `nfs-csi` class, mount it from a pod running as a non-root uid, write a file, then delete the
+   namespace (`nfs-nonroot-write-check.sh` does exactly this; a PVC that stays Pending, or a pod
+   that cannot `touch`, is a failure).
+8. Rollback of the export only: `sudo cp -a /etc/exports.pre-rootsquash /etc/exports` (or set the
+   two lines back to `no_root_squash`), `sudo exportfs -ra`, confirm with `sudo exportfs -v`. The
+   chowns stay: app-owned files work under both modes, and so does the non-root SeaweedFS. Revert the
+   GitOps change only if the non-root filer/master themselves misbehave.

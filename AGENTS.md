@@ -16,6 +16,7 @@ Narwhal follows the OpenForge agent engineering model: [change-management](https
 - `portal/` has its own `portal/AGENTS.md` and `CLAUDE.md` bridge; read them before editing it. Run portal commands (`pnpm`, `make`) from `portal/`, not the root.
 - Git tags are `portal/vX.Y.Z`; the image name stays `ghcr.io/dasomel/narwhal-portal`. The GitOps pin is a published release, so it can lag `portal/` HEAD; seam checks (R55, R117, R211, R216) read the in-repo tree, never a tag or a sibling checkout.
 - Lessons-log: a fix's row goes in the log of the area it touches (`portal/docs/lessons-log.md` or `docs/common/lessons-log.md`); a fix spanning both goes in narwhal's. Decision record: `docs/adr/0001-consolidate-narwhal-portal-into-monorepo.md`.
+- Issue/PR numbers: a bare `#N` in `portal/` docs, code comments, lessons-log rows or commit messages written before PR #347 merged (2026-10-15) refers to a `dasomel/narwhal-portal` issue or PR, not a narwhal one (the two repos number issues and PRs independently, so the same `#N` can exist in both). The 27 open portal issues were transferred to narwhal #356-#382 (mapping table: the comment on narwhal#356, label `area:portal`); URLs of those 27 transferred issues redirect (closed issues and PRs stay in the old repo and do not). Qualify new cross-repo references as `dasomel/narwhal-portal#N`.
 
 ## Boundaries
 

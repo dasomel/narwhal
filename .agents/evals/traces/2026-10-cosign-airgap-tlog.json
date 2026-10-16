@@ -1,0 +1,67 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-cosign-airgap-tlog",
+  "task": "Make Kyverno key attestors skip Rekor tlog and SCT so air-gapped static-key image verification does not need Rekor reachability (PR #389 review MEDIUM finding, D-REKOR)",
+  "changeContext": {
+    "paths": [
+      "gitops/resources/kyverno-policies.yaml",
+      "scripts/test/lib/check-kyverno-signed-image-policy.py",
+      "scripts/test/regression-check-kakao.sh",
+      "portal/docs/cosign-signing-setup.md",
+      "docs/common/supply-chain-policy.md",
+      "docs/common/lessons-log.md",
+      ".agents/evals/traces/2026-10-cosign-airgap-tlog.json"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Keep verify-image-signatures in Audit with required:false and unchanged keys; CI keeps uploading to public Rekor; only add ignoreTlog/ignoreSCT to the two key attestors. scripts/airgap/10-verify-image-signatures.sh does not invoke cosign verify, so it is untouched."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "Before the change the key attestors had no rekor/ctlog block, so Kyverno would look up the public Rekor log during verification, which an air-gapped cluster cannot reach once the policy is Enforce."
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "Added rekor.ignoreTlog: true and ctlog.ignoreSCT: true to the signature and CycloneDX attestation attestors (fields confirmed in Kyverno v1.18.1 image_verification_types.go), extended R74 to require them, added R75d mutation test, documented D-REKOR in the policy YAML comment and both docs."
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "Kyverno signed-image policy static guards",
+      "summary": "Static regression suite passes including R74 and the new R75d (flipping ignoreTlog to false is rejected).",
+      "evidence": [
+        "test:make test",
+        "runtime:command-exit-0"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "verification",
+      "status": "passed",
+      "scope": "GitOps YAML parse",
+      "summary": "make validate parsed the edited kyverno-policies.yaml.",
+      "evidence": [
+        "test:make validate",
+        "runtime:command-exit-0"
+      ]
+    },
+    {
+      "id": "e6",
+      "type": "completion_claim",
+      "summary": "Static guards and docs done; behavior of Kyverno against a live air-gapped cluster and a real signed image is not verified."
+    },
+    {
+      "id": "e7",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Static guards verified; policy stays Audit, no live cluster mutation."
+    }
+  ]
+}

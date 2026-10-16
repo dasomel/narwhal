@@ -11,7 +11,7 @@ reproduced below as those licenses require. The portal's own code is Apache-2.0;
 pnpm run notices
 ```
 
-Scope: production dependencies only (`pnpm licenses list --prod`) — 665 packages.
+Scope: production dependencies only (`pnpm licenses list --prod`) — 664 packages.
 Development-only tooling is not redistributed and is therefore out of scope.
 Platform-gated native packages are excluded and listed separately (95 in the lockfile).
 
@@ -133,8 +133,8 @@ revisited — starting with `@img/sharp-libvips-*`, which is LGPL-3.0-or-later.
 
 | License | Packages |
 |---|---:|
-| MIT | 475 |
-| Apache-2.0 | 112 |
+| MIT | 476 |
+| Apache-2.0 | 110 |
 | ISC | 52 |
 | BSD-3-Clause | 9 |
 | BlueOak-1.0.0 | 6 |
@@ -152,11 +152,11 @@ or is an SPDX expression rather than a single identifier.
 
 ### CC-BY-4.0
 
-- `caniuse-lite@1.0.30001810` — https://github.com/browserslist/caniuse-lite#readme
+- `caniuse-lite@1.0.30001810` — <https://github.com/browserslist/caniuse-lite#readme>
 
 ### MIT AND ISC
 
-- `victory-vendor@37.3.6` — https://commerce.nearform.com/open-source/victory
+- `victory-vendor@37.3.6` — <https://commerce.nearform.com/open-source/victory>
 
 ## Packages
 
@@ -164,7 +164,7 @@ or is an SPDX expression rather than a single identifier.
 
 - License: `ISC`
 - Author: Balázs Orbán
-- Homepage: https://authjs.dev
+- Homepage: <https://authjs.dev>
 
 _No license file shipped with the package; the SPDX identifier above is its declaration._
 
@@ -172,11 +172,11 @@ _No license file shipped with the package; the SPDX identifier above is its decl
 
 - License: `ISC`
 - Author: Balázs Orbán
-- Homepage: https://authjs.dev
+- Homepage: <https://authjs.dev>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 ISC License
 
 Copyright (c) 2022-2024, Balázs Orbán
@@ -200,11 +200,11 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
 - License: `MIT`
 - Author: The Babel Team
-- Homepage: https://babel.dev/docs/en/next/babel-code-frame
+- Homepage: <https://babel.dev/docs/en/next/babel-code-frame>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) 2014-present Sebastian McKenzie and other contributors
@@ -235,11 +235,11 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 - License: `MIT`
 - Author: The Babel Team
-- Homepage: https://github.com/babel/babel#readme
+- Homepage: <https://github.com/babel/babel#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) 2014-present Sebastian McKenzie and other contributors
@@ -270,11 +270,11 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 - License: `MIT`
 - Author: The Babel Team
-- Homepage: https://babel.dev/docs/en/next/babel-core
+- Homepage: <https://babel.dev/docs/en/next/babel-core>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) 2014-present Sebastian McKenzie and other contributors
@@ -305,11 +305,11 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 - License: `MIT`
 - Author: The Babel Team
-- Homepage: https://babel.dev/docs/en/next/babel-generator
+- Homepage: <https://babel.dev/docs/en/next/babel-generator>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) 2014-present Sebastian McKenzie and other contributors
@@ -340,11 +340,11 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 - License: `MIT`
 - Author: The Babel Team
-- Homepage: https://babel.dev/docs/en/next/babel-helper-annotate-as-pure
+- Homepage: <https://babel.dev/docs/en/next/babel-helper-annotate-as-pure>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) 2014-present Sebastian McKenzie and other contributors
@@ -375,11 +375,11 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 - License: `MIT`
 - Author: The Babel Team
-- Homepage: https://github.com/babel/babel#readme
+- Homepage: <https://github.com/babel/babel#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) 2014-present Sebastian McKenzie and other contributors
@@ -410,11 +410,11 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 - License: `MIT`
 - Author: The Babel Team
-- Homepage: https://github.com/babel/babel#readme
+- Homepage: <https://github.com/babel/babel#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) 2014-present Sebastian McKenzie and other contributors
@@ -445,11 +445,11 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 - License: `MIT`
 - Author: The Babel Team
-- Homepage: https://github.com/babel/babel#readme
+- Homepage: <https://github.com/babel/babel#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) 2014-present Sebastian McKenzie and other contributors
@@ -480,11 +480,11 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 - License: `MIT`
 - Author: The Babel Team
-- Homepage: https://babel.dev/docs/en/next/babel-helper-member-expression-to-functions
+- Homepage: <https://babel.dev/docs/en/next/babel-helper-member-expression-to-functions>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) 2014-present Sebastian McKenzie and other contributors
@@ -515,11 +515,11 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 - License: `MIT`
 - Author: The Babel Team
-- Homepage: https://babel.dev/docs/en/next/babel-helper-module-imports
+- Homepage: <https://babel.dev/docs/en/next/babel-helper-module-imports>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) 2014-present Sebastian McKenzie and other contributors
@@ -550,11 +550,11 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 - License: `MIT`
 - Author: The Babel Team
-- Homepage: https://babel.dev/docs/en/next/babel-helper-module-transforms
+- Homepage: <https://babel.dev/docs/en/next/babel-helper-module-transforms>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) 2014-present Sebastian McKenzie and other contributors
@@ -585,11 +585,11 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 - License: `MIT`
 - Author: The Babel Team
-- Homepage: https://babel.dev/docs/en/next/babel-helper-optimise-call-expression
+- Homepage: <https://babel.dev/docs/en/next/babel-helper-optimise-call-expression>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) 2014-present Sebastian McKenzie and other contributors
@@ -620,11 +620,11 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 - License: `MIT`
 - Author: The Babel Team
-- Homepage: https://babel.dev/docs/en/next/babel-helper-plugin-utils
+- Homepage: <https://babel.dev/docs/en/next/babel-helper-plugin-utils>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) 2014-present Sebastian McKenzie and other contributors
@@ -655,11 +655,11 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 - License: `MIT`
 - Author: The Babel Team
-- Homepage: https://babel.dev/docs/en/next/babel-helper-replace-supers
+- Homepage: <https://babel.dev/docs/en/next/babel-helper-replace-supers>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) 2014-present Sebastian McKenzie and other contributors
@@ -690,11 +690,11 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 - License: `MIT`
 - Author: The Babel Team
-- Homepage: https://github.com/babel/babel#readme
+- Homepage: <https://github.com/babel/babel#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) 2014-present Sebastian McKenzie and other contributors
@@ -725,11 +725,11 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 - License: `MIT`
 - Author: The Babel Team
-- Homepage: https://babel.dev/docs/en/next/babel-helper-string-parser
+- Homepage: <https://babel.dev/docs/en/next/babel-helper-string-parser>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) 2014-present Sebastian McKenzie and other contributors
@@ -760,11 +760,11 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 - License: `MIT`
 - Author: The Babel Team
-- Homepage: https://github.com/babel/babel#readme
+- Homepage: <https://github.com/babel/babel#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) 2014-present Sebastian McKenzie and other contributors
@@ -795,11 +795,11 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 - License: `MIT`
 - Author: The Babel Team
-- Homepage: https://github.com/babel/babel#readme
+- Homepage: <https://github.com/babel/babel#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) 2014-present Sebastian McKenzie and other contributors
@@ -830,11 +830,11 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 - License: `MIT`
 - Author: The Babel Team
-- Homepage: https://babel.dev/docs/en/next/babel-helpers
+- Homepage: <https://babel.dev/docs/en/next/babel-helpers>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) 2014-present Sebastian McKenzie and other contributors
@@ -866,11 +866,11 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 - License: `MIT`
 - Author: The Babel Team
-- Homepage: https://babel.dev/docs/en/next/babel-parser
+- Homepage: <https://babel.dev/docs/en/next/babel-parser>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Copyright (C) 2012-2014 by various contributors (see AUTHORS)
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -898,11 +898,11 @@ THE SOFTWARE.
 
 - License: `MIT`
 - Author: The Babel Team
-- Homepage: https://babel.dev/docs/en/next/babel-plugin-syntax-jsx
+- Homepage: <https://babel.dev/docs/en/next/babel-plugin-syntax-jsx>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) 2014-present Sebastian McKenzie and other contributors
@@ -933,11 +933,11 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 - License: `MIT`
 - Author: The Babel Team
-- Homepage: https://babel.dev/docs/en/next/babel-plugin-syntax-typescript
+- Homepage: <https://babel.dev/docs/en/next/babel-plugin-syntax-typescript>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) 2014-present Sebastian McKenzie and other contributors
@@ -968,11 +968,11 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 - License: `MIT`
 - Author: The Babel Team
-- Homepage: https://babel.dev/docs/en/next/babel-plugin-transform-modules-commonjs
+- Homepage: <https://babel.dev/docs/en/next/babel-plugin-transform-modules-commonjs>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) 2014-present Sebastian McKenzie and other contributors
@@ -1003,11 +1003,11 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 - License: `MIT`
 - Author: The Babel Team
-- Homepage: https://babel.dev/docs/en/next/babel-plugin-transform-typescript
+- Homepage: <https://babel.dev/docs/en/next/babel-plugin-transform-typescript>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) 2014-present Sebastian McKenzie and other contributors
@@ -1038,11 +1038,11 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 - License: `MIT`
 - Author: The Babel Team
-- Homepage: https://babel.dev/docs/en/next/babel-preset-typescript
+- Homepage: <https://babel.dev/docs/en/next/babel-preset-typescript>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) 2014-present Sebastian McKenzie and other contributors
@@ -1073,11 +1073,11 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 - License: `MIT`
 - Author: The Babel Team
-- Homepage: https://babel.dev/docs/en/next/babel-runtime
+- Homepage: <https://babel.dev/docs/en/next/babel-runtime>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) 2014-present Sebastian McKenzie and other contributors
@@ -1108,11 +1108,11 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 - License: `MIT`
 - Author: The Babel Team
-- Homepage: https://babel.dev/docs/en/next/babel-template
+- Homepage: <https://babel.dev/docs/en/next/babel-template>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) 2014-present Sebastian McKenzie and other contributors
@@ -1143,11 +1143,11 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 - License: `MIT`
 - Author: The Babel Team
-- Homepage: https://babel.dev/docs/en/next/babel-traverse
+- Homepage: <https://babel.dev/docs/en/next/babel-traverse>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) 2014-present Sebastian McKenzie and other contributors
@@ -1178,11 +1178,11 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 - License: `MIT`
 - Author: The Babel Team
-- Homepage: https://babel.dev/docs/en/next/babel-types
+- Homepage: <https://babel.dev/docs/en/next/babel-types>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) 2014-present Sebastian McKenzie and other contributors
@@ -1213,11 +1213,11 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 - License: `MIT`
 - Author: MUI Team
-- Homepage: https://base-ui.com
+- Homepage: <https://base-ui.com>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) 2019 Material-UI SAS
@@ -1247,11 +1247,11 @@ SOFTWARE.
 
 - License: `MIT`
 - Author: MUI Team
-- Homepage: https://github.com/mui/base-ui#readme
+- Homepage: <https://github.com/mui/base-ui#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) 2019 Material-UI SAS
@@ -1281,11 +1281,11 @@ SOFTWARE.
 
 - License: `BSD-3-Clause`
 - Author: @motdotla
-- Homepage: https://github.com/dotenvx/dotenvx
+- Homepage: <https://github.com/dotenvx/dotenvx>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 BSD 3-Clause License
 
 Copyright (c) 2024, Scott Motte
@@ -1322,11 +1322,11 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 - License: `BSD-3-Clause`
 - Author: @motdotla
-- Homepage: https://github.com/dotenvx/dotenvx
+- Homepage: <https://github.com/dotenvx/dotenvx>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 BSD 3-Clause License
 
 Copyright (c) 2024, Scott Motte
@@ -1363,11 +1363,11 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 - License: `MIT`
 - Author: atomiks
-- Homepage: https://floating-ui.com
+- Homepage: <https://floating-ui.com>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) 2021-present Floating UI contributors
@@ -1396,11 +1396,11 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 - License: `MIT`
 - Author: atomiks
-- Homepage: https://floating-ui.com
+- Homepage: <https://floating-ui.com>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) 2021-present Floating UI contributors
@@ -1429,11 +1429,11 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 - License: `MIT`
 - Author: atomiks
-- Homepage: https://floating-ui.com/docs/react-dom
+- Homepage: <https://floating-ui.com/docs/react-dom>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) 2021-present Floating UI contributors
@@ -1462,11 +1462,11 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 - License: `MIT`
 - Author: atomiks
-- Homepage: https://floating-ui.com
+- Homepage: <https://floating-ui.com>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) 2021-present Floating UI contributors
@@ -1495,11 +1495,11 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 - License: `Apache-2.0`
 - Author: Google Inc.
-- Homepage: https://grpc.io/
+- Homepage: <https://grpc.io/>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Apache License
                            Version 2.0, January 2004
                         http://www.apache.org/licenses/
@@ -1709,11 +1709,11 @@ Apache License
 
 - License: `Apache-2.0`
 - Author: Google Inc.
-- Homepage: https://grpc.io/
+- Homepage: <https://grpc.io/>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Apache License
                            Version 2.0, January 2004
                         http://www.apache.org/licenses/
@@ -1923,11 +1923,11 @@ Apache License
 
 - License: `MIT`
 - Author: Yusuke Wada
-- Homepage: https://github.com/honojs/node-server
+- Homepage: <https://github.com/honojs/node-server>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) 2022 - present, Yusuke Wada and Hono contributors
@@ -1956,11 +1956,11 @@ SOFTWARE.
 ### @img/colour@1.1.0
 
 - License: `MIT`
-- Homepage: https://github.com/lovell/colour#readme
+- Homepage: <https://github.com/lovell/colour#readme>
 
 <details><summary>LICENSE.md</summary>
 
-```
+```text
 # Licensing
 
 ## color
@@ -2051,11 +2051,11 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 - License: `MIT`
 - Author: Zihua Li
-- Homepage: https://github.com/ioredis/commands
+- Homepage: <https://github.com/ioredis/commands>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 The MIT License (MIT)
 
 Copyright (c) 2022 Zihua Li
@@ -2086,11 +2086,11 @@ SOFTWARE.
 
 - License: `ISC`
 - Author: Ben Coe
-- Homepage: https://github.com/yargs/cliui#readme
+- Homepage: <https://github.com/yargs/cliui#readme>
 
 <details><summary>LICENSE.txt</summary>
 
-```
+```text
 Copyright (c) 2015, Contributors
 
 Permission to use, copy, modify, and/or distribute this software
@@ -2113,11 +2113,11 @@ ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
 - License: `MIT`
 - Author: Justin Ridgewell
-- Homepage: https://github.com/jridgewell/sourcemaps/tree/main/packages/gen-mapping
+- Homepage: <https://github.com/jridgewell/sourcemaps/tree/main/packages/gen-mapping>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Copyright 2024 Justin Ridgewell <justin@ridgewell.name>
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -2145,11 +2145,11 @@ SOFTWARE.
 
 - License: `MIT`
 - Author: Justin Ridgewell
-- Homepage: https://github.com/jridgewell/sourcemaps/tree/main/packages/remapping
+- Homepage: <https://github.com/jridgewell/sourcemaps/tree/main/packages/remapping>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Copyright 2024 Justin Ridgewell <justin@ridgewell.name>
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -2177,11 +2177,11 @@ SOFTWARE.
 
 - License: `MIT`
 - Author: Justin Ridgewell
-- Homepage: https://github.com/jridgewell/resolve-uri#readme
+- Homepage: <https://github.com/jridgewell/resolve-uri#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Copyright 2019 Justin Ridgewell <jridgewell@google.com>
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -2209,11 +2209,11 @@ SOFTWARE.
 
 - License: `MIT`
 - Author: Justin Ridgewell
-- Homepage: https://github.com/jridgewell/sourcemaps/tree/main/packages/sourcemap-codec
+- Homepage: <https://github.com/jridgewell/sourcemaps/tree/main/packages/sourcemap-codec>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Copyright 2024 Justin Ridgewell <justin@ridgewell.name>
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -2241,11 +2241,11 @@ SOFTWARE.
 
 - License: `MIT`
 - Author: Justin Ridgewell
-- Homepage: https://github.com/jridgewell/sourcemaps/tree/main/packages/trace-mapping
+- Homepage: <https://github.com/jridgewell/sourcemaps/tree/main/packages/trace-mapping>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Copyright 2024 Justin Ridgewell <justin@ridgewell.name>
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -2273,11 +2273,11 @@ SOFTWARE.
 
 - License: `MIT`
 - Author: ZLY201
-- Homepage: https://js-sdsl.org
+- Homepage: <https://js-sdsl.org>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) 2021 Zilong Yao
@@ -2307,11 +2307,11 @@ SOFTWARE.
 
 - License: `MIT`
 - Author: Shelly
-- Homepage: https://ericsmekens.github.io/jsep/tree/master/packages/assignment#readme
+- Homepage: <https://ericsmekens.github.io/jsep/tree/master/packages/assignment#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Copyright (c) 2013 Stephen Oney, https://ericsmekens.github.io/jsep/
 
 Permission is hereby granted, free of charge, to any person obtaining
@@ -2340,11 +2340,11 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 - License: `MIT`
 - Author: Shelly
-- Homepage: https://ericsmekens.github.io/jsep/tree/master/packages/regex#readme
+- Homepage: <https://ericsmekens.github.io/jsep/tree/master/packages/regex#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Copyright (c) 2013 Stephen Oney, https://ericsmekens.github.io/jsep/
 
 Permission is hereby granted, free of charge, to any person obtaining
@@ -2373,11 +2373,11 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 - License: `Apache-2.0`
 - Author: Kubernetes Authors
-- Homepage: https://github.com/kubernetes-client/javascript#readme
+- Homepage: <https://github.com/kubernetes-client/javascript#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Apache License
                            Version 2.0, January 2004
                         http://www.apache.org/licenses/
@@ -2587,11 +2587,11 @@ Apache License
 
 - License: `MIT`
 - Author: Anthropic, PBC
-- Homepage: https://modelcontextprotocol.io
+- Homepage: <https://modelcontextprotocol.io>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) 2024 Anthropic, PBC
@@ -2621,18 +2621,18 @@ SOFTWARE.
 
 - License: `MIT`
 - Author: Next.js Team
-- Homepage: https://github.com/vercel/next.js#readme
+- Homepage: <https://github.com/vercel/next.js#readme>
 
 _No license file shipped with the package; the SPDX identifier above is its declaration._
 
 ### @nodelib/fs.scandir@2.1.5
 
 - License: `MIT`
-- Homepage: https://github.com/nodelib/nodelib/tree/master#readme
+- Homepage: <https://github.com/nodelib/nodelib/tree/master#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 The MIT License (MIT)
 
 Copyright (c) Denis Malinochkin
@@ -2661,11 +2661,11 @@ SOFTWARE.
 ### @nodelib/fs.stat@2.0.5
 
 - License: `MIT`
-- Homepage: https://github.com/nodelib/nodelib/tree/master#readme
+- Homepage: <https://github.com/nodelib/nodelib/tree/master#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 The MIT License (MIT)
 
 Copyright (c) Denis Malinochkin
@@ -2694,11 +2694,11 @@ SOFTWARE.
 ### @nodelib/fs.walk@1.2.8
 
 - License: `MIT`
-- Homepage: https://github.com/nodelib/nodelib/tree/master#readme
+- Homepage: <https://github.com/nodelib/nodelib/tree/master#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 The MIT License (MIT)
 
 Copyright (c) Denis Malinochkin
@@ -2728,11 +2728,11 @@ SOFTWARE.
 
 - License: `Apache-2.0`
 - Author: OpenTelemetry Authors
-- Homepage: https://github.com/open-telemetry/opentelemetry-js/tree/main/api
+- Homepage: <https://github.com/open-telemetry/opentelemetry-js/tree/main/api>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Apache License
                            Version 2.0, January 2004
                         http://www.apache.org/licenses/
@@ -2938,15 +2938,15 @@ Apache License
 
 </details>
 
-### @opentelemetry/api-logs@0.222.0
+### @opentelemetry/api-logs@0.223.0
 
 - License: `Apache-2.0`
 - Author: OpenTelemetry Authors
-- Homepage: https://github.com/open-telemetry/opentelemetry-js/tree/main/experimental/packages/api-logs
+- Homepage: <https://github.com/open-telemetry/opentelemetry-js/tree/main/experimental/packages/api-logs>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Apache License
                            Version 2.0, January 2004
                         http://www.apache.org/licenses/
@@ -3152,15 +3152,15 @@ Apache License
 
 </details>
 
-### @opentelemetry/auto-instrumentations-node@0.80.0
+### @opentelemetry/auto-instrumentations-node@0.81.0
 
 - License: `Apache-2.0`
 - Author: OpenTelemetry Authors
-- Homepage: https://github.com/open-telemetry/opentelemetry-js-contrib/tree/main/packages/auto-instrumentations-node#readme
+- Homepage: <https://github.com/open-telemetry/opentelemetry-js-contrib/tree/main/packages/auto-instrumentations-node#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Apache License
                            Version 2.0, January 2004
                         http://www.apache.org/licenses/
@@ -3366,15 +3366,15 @@ Apache License
 
 </details>
 
-### @opentelemetry/configuration@0.222.0
+### @opentelemetry/configuration@0.223.0
 
 - License: `Apache-2.0`
 - Author: OpenTelemetry Authors
-- Homepage: https://github.com/open-telemetry/opentelemetry-js/tree/main/experimental/packages/configuration
+- Homepage: <https://github.com/open-telemetry/opentelemetry-js/tree/main/experimental/packages/configuration>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Apache License
                            Version 2.0, January 2004
                         http://www.apache.org/licenses/
@@ -3580,15 +3580,15 @@ Apache License
 
 </details>
 
-### @opentelemetry/context-async-hooks@2.11.0
+### @opentelemetry/context-async-hooks@2.12.0
 
 - License: `Apache-2.0`
 - Author: OpenTelemetry Authors
-- Homepage: https://github.com/open-telemetry/opentelemetry-js/tree/main/packages/opentelemetry-context-async-hooks
+- Homepage: <https://github.com/open-telemetry/opentelemetry-js/tree/main/packages/opentelemetry-context-async-hooks>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Apache License
                            Version 2.0, January 2004
                         http://www.apache.org/licenses/
@@ -3794,15 +3794,15 @@ Apache License
 
 </details>
 
-### @opentelemetry/core@2.10.0
+### @opentelemetry/core@2.12.0
 
 - License: `Apache-2.0`
 - Author: OpenTelemetry Authors
-- Homepage: https://github.com/open-telemetry/opentelemetry-js/tree/main/packages/opentelemetry-core
+- Homepage: <https://github.com/open-telemetry/opentelemetry-js/tree/main/packages/opentelemetry-core>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Apache License
                            Version 2.0, January 2004
                         http://www.apache.org/licenses/
@@ -4008,15 +4008,15 @@ Apache License
 
 </details>
 
-### @opentelemetry/core@2.11.0
+### @opentelemetry/exporter-logs-otlp-grpc@0.223.0
 
 - License: `Apache-2.0`
 - Author: OpenTelemetry Authors
-- Homepage: https://github.com/open-telemetry/opentelemetry-js/tree/main/packages/opentelemetry-core
+- Homepage: <https://github.com/open-telemetry/opentelemetry-js/tree/main/experimental/packages/exporter-logs-otlp-grpc>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Apache License
                            Version 2.0, January 2004
                         http://www.apache.org/licenses/
@@ -4222,15 +4222,15 @@ Apache License
 
 </details>
 
-### @opentelemetry/exporter-logs-otlp-grpc@0.222.0
+### @opentelemetry/exporter-logs-otlp-http@0.223.0
 
 - License: `Apache-2.0`
 - Author: OpenTelemetry Authors
-- Homepage: https://github.com/open-telemetry/opentelemetry-js/tree/main/experimental/packages/exporter-logs-otlp-grpc
+- Homepage: <https://github.com/open-telemetry/opentelemetry-js/tree/main/experimental/packages/exporter-logs-otlp-http>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Apache License
                            Version 2.0, January 2004
                         http://www.apache.org/licenses/
@@ -4436,15 +4436,15 @@ Apache License
 
 </details>
 
-### @opentelemetry/exporter-logs-otlp-http@0.222.0
+### @opentelemetry/exporter-logs-otlp-proto@0.223.0
 
 - License: `Apache-2.0`
 - Author: OpenTelemetry Authors
-- Homepage: https://github.com/open-telemetry/opentelemetry-js/tree/main/experimental/packages/exporter-logs-otlp-http
+- Homepage: <https://github.com/open-telemetry/opentelemetry-js/tree/main/experimental/packages/exporter-logs-otlp-proto>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Apache License
                            Version 2.0, January 2004
                         http://www.apache.org/licenses/
@@ -4650,15 +4650,15 @@ Apache License
 
 </details>
 
-### @opentelemetry/exporter-logs-otlp-proto@0.222.0
+### @opentelemetry/exporter-metrics-otlp-grpc@0.223.0
 
 - License: `Apache-2.0`
 - Author: OpenTelemetry Authors
-- Homepage: https://github.com/open-telemetry/opentelemetry-js/tree/main/experimental/packages/exporter-logs-otlp-proto
+- Homepage: <https://github.com/open-telemetry/opentelemetry-js/tree/main/experimental/packages/opentelemetry-exporter-metrics-otlp-grpc>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Apache License
                            Version 2.0, January 2004
                         http://www.apache.org/licenses/
@@ -4864,15 +4864,15 @@ Apache License
 
 </details>
 
-### @opentelemetry/exporter-metrics-otlp-grpc@0.222.0
+### @opentelemetry/exporter-metrics-otlp-http@0.223.0
 
 - License: `Apache-2.0`
 - Author: OpenTelemetry Authors
-- Homepage: https://github.com/open-telemetry/opentelemetry-js/tree/main/experimental/packages/opentelemetry-exporter-metrics-otlp-grpc
+- Homepage: <https://github.com/open-telemetry/opentelemetry-js/tree/main/experimental/packages/opentelemetry-exporter-metrics-otlp-http>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Apache License
                            Version 2.0, January 2004
                         http://www.apache.org/licenses/
@@ -5078,15 +5078,15 @@ Apache License
 
 </details>
 
-### @opentelemetry/exporter-metrics-otlp-http@0.222.0
+### @opentelemetry/exporter-metrics-otlp-proto@0.223.0
 
 - License: `Apache-2.0`
 - Author: OpenTelemetry Authors
-- Homepage: https://github.com/open-telemetry/opentelemetry-js/tree/main/experimental/packages/opentelemetry-exporter-metrics-otlp-http
+- Homepage: <https://github.com/open-telemetry/opentelemetry-js/tree/main/experimental/packages/opentelemetry-exporter-metrics-otlp-proto>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Apache License
                            Version 2.0, January 2004
                         http://www.apache.org/licenses/
@@ -5292,15 +5292,15 @@ Apache License
 
 </details>
 
-### @opentelemetry/exporter-metrics-otlp-proto@0.222.0
+### @opentelemetry/exporter-prometheus@0.223.0
 
 - License: `Apache-2.0`
 - Author: OpenTelemetry Authors
-- Homepage: https://github.com/open-telemetry/opentelemetry-js/tree/main/experimental/packages/opentelemetry-exporter-metrics-otlp-proto
+- Homepage: <https://github.com/open-telemetry/opentelemetry-js/tree/main/experimental/packages/opentelemetry-exporter-prometheus>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Apache License
                            Version 2.0, January 2004
                         http://www.apache.org/licenses/
@@ -5506,15 +5506,15 @@ Apache License
 
 </details>
 
-### @opentelemetry/exporter-prometheus@0.222.0
+### @opentelemetry/exporter-trace-otlp-grpc@0.223.0
 
 - License: `Apache-2.0`
 - Author: OpenTelemetry Authors
-- Homepage: https://github.com/open-telemetry/opentelemetry-js/tree/main/experimental/packages/opentelemetry-exporter-prometheus
+- Homepage: <https://github.com/open-telemetry/opentelemetry-js/tree/main/experimental/packages/exporter-trace-otlp-grpc>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Apache License
                            Version 2.0, January 2004
                         http://www.apache.org/licenses/
@@ -5720,15 +5720,15 @@ Apache License
 
 </details>
 
-### @opentelemetry/exporter-trace-otlp-grpc@0.222.0
+### @opentelemetry/exporter-trace-otlp-http@0.223.0
 
 - License: `Apache-2.0`
 - Author: OpenTelemetry Authors
-- Homepage: https://github.com/open-telemetry/opentelemetry-js/tree/main/experimental/packages/exporter-trace-otlp-grpc
+- Homepage: <https://github.com/open-telemetry/opentelemetry-js/tree/main/experimental/packages/exporter-trace-otlp-http>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Apache License
                            Version 2.0, January 2004
                         http://www.apache.org/licenses/
@@ -5934,15 +5934,15 @@ Apache License
 
 </details>
 
-### @opentelemetry/exporter-trace-otlp-http@0.222.0
+### @opentelemetry/exporter-trace-otlp-proto@0.223.0
 
 - License: `Apache-2.0`
 - Author: OpenTelemetry Authors
-- Homepage: https://github.com/open-telemetry/opentelemetry-js/tree/main/experimental/packages/exporter-trace-otlp-http
+- Homepage: <https://github.com/open-telemetry/opentelemetry-js/tree/main/experimental/packages/exporter-trace-otlp-proto>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Apache License
                            Version 2.0, January 2004
                         http://www.apache.org/licenses/
@@ -6148,15 +6148,15 @@ Apache License
 
 </details>
 
-### @opentelemetry/exporter-trace-otlp-proto@0.222.0
+### @opentelemetry/exporter-zipkin@2.12.0
 
 - License: `Apache-2.0`
 - Author: OpenTelemetry Authors
-- Homepage: https://github.com/open-telemetry/opentelemetry-js/tree/main/experimental/packages/exporter-trace-otlp-proto
+- Homepage: <https://github.com/open-telemetry/opentelemetry-js/tree/main/packages/opentelemetry-exporter-zipkin>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Apache License
                            Version 2.0, January 2004
                         http://www.apache.org/licenses/
@@ -6362,15 +6362,15 @@ Apache License
 
 </details>
 
-### @opentelemetry/exporter-zipkin@2.11.0
+### @opentelemetry/instrumentation@0.223.0
 
 - License: `Apache-2.0`
 - Author: OpenTelemetry Authors
-- Homepage: https://github.com/open-telemetry/opentelemetry-js/tree/main/packages/opentelemetry-exporter-zipkin
+- Homepage: <https://github.com/open-telemetry/opentelemetry-js/tree/main/experimental/packages/opentelemetry-instrumentation>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Apache License
                            Version 2.0, January 2004
                         http://www.apache.org/licenses/
@@ -6576,15 +6576,15 @@ Apache License
 
 </details>
 
-### @opentelemetry/instrumentation@0.222.0
+### @opentelemetry/instrumentation-amqplib@0.70.0
 
 - License: `Apache-2.0`
 - Author: OpenTelemetry Authors
-- Homepage: https://github.com/open-telemetry/opentelemetry-js/tree/main/experimental/packages/opentelemetry-instrumentation
+- Homepage: <https://github.com/open-telemetry/opentelemetry-js-contrib/tree/main/packages/instrumentation-amqplib#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Apache License
                            Version 2.0, January 2004
                         http://www.apache.org/licenses/
@@ -6790,15 +6790,15 @@ Apache License
 
 </details>
 
-### @opentelemetry/instrumentation-amqplib@0.69.0
+### @opentelemetry/instrumentation-aws-lambda@0.75.0
 
 - License: `Apache-2.0`
 - Author: OpenTelemetry Authors
-- Homepage: https://github.com/open-telemetry/opentelemetry-js-contrib/tree/main/packages/instrumentation-amqplib#readme
+- Homepage: <https://github.com/open-telemetry/opentelemetry-js-contrib/tree/main/packages/instrumentation-aws-lambda#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Apache License
                            Version 2.0, January 2004
                         http://www.apache.org/licenses/
@@ -7004,15 +7004,15 @@ Apache License
 
 </details>
 
-### @opentelemetry/instrumentation-aws-lambda@0.74.0
+### @opentelemetry/instrumentation-aws-sdk@0.78.0
 
 - License: `Apache-2.0`
 - Author: OpenTelemetry Authors
-- Homepage: https://github.com/open-telemetry/opentelemetry-js-contrib/tree/main/packages/instrumentation-aws-lambda#readme
+- Homepage: <https://github.com/open-telemetry/opentelemetry-js-contrib/tree/main/packages/instrumentation-aws-sdk#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Apache License
                            Version 2.0, January 2004
                         http://www.apache.org/licenses/
@@ -7218,15 +7218,15 @@ Apache License
 
 </details>
 
-### @opentelemetry/instrumentation-aws-sdk@0.77.0
+### @opentelemetry/instrumentation-bunyan@0.68.0
 
 - License: `Apache-2.0`
 - Author: OpenTelemetry Authors
-- Homepage: https://github.com/open-telemetry/opentelemetry-js-contrib/tree/main/packages/instrumentation-aws-sdk#readme
+- Homepage: <https://github.com/open-telemetry/opentelemetry-js-contrib/tree/main/packages/instrumentation-bunyan#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Apache License
                            Version 2.0, January 2004
                         http://www.apache.org/licenses/
@@ -7432,15 +7432,15 @@ Apache License
 
 </details>
 
-### @opentelemetry/instrumentation-bunyan@0.67.0
+### @opentelemetry/instrumentation-cassandra-driver@0.68.0
 
 - License: `Apache-2.0`
 - Author: OpenTelemetry Authors
-- Homepage: https://github.com/open-telemetry/opentelemetry-js-contrib/tree/main/packages/instrumentation-bunyan#readme
+- Homepage: <https://github.com/open-telemetry/opentelemetry-js-contrib/tree/main/packages/instrumentation-cassandra-driver#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Apache License
                            Version 2.0, January 2004
                         http://www.apache.org/licenses/
@@ -7646,15 +7646,15 @@ Apache License
 
 </details>
 
-### @opentelemetry/instrumentation-cassandra-driver@0.67.0
+### @opentelemetry/instrumentation-connect@0.66.0
 
 - License: `Apache-2.0`
 - Author: OpenTelemetry Authors
-- Homepage: https://github.com/open-telemetry/opentelemetry-js-contrib/tree/main/packages/instrumentation-cassandra-driver#readme
+- Homepage: <https://github.com/open-telemetry/opentelemetry-js-contrib/tree/main/packages/instrumentation-connect#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Apache License
                            Version 2.0, January 2004
                         http://www.apache.org/licenses/
@@ -7860,15 +7860,15 @@ Apache License
 
 </details>
 
-### @opentelemetry/instrumentation-connect@0.65.0
+### @opentelemetry/instrumentation-cucumber@0.39.0
 
 - License: `Apache-2.0`
 - Author: OpenTelemetry Authors
-- Homepage: https://github.com/open-telemetry/opentelemetry-js-contrib/tree/main/packages/instrumentation-connect#readme
+- Homepage: <https://github.com/open-telemetry/opentelemetry-js-contrib/tree/main/packages/instrumentation-cucumber#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Apache License
                            Version 2.0, January 2004
                         http://www.apache.org/licenses/
@@ -8074,15 +8074,15 @@ Apache License
 
 </details>
 
-### @opentelemetry/instrumentation-cucumber@0.38.0
+### @opentelemetry/instrumentation-dataloader@0.40.0
 
 - License: `Apache-2.0`
 - Author: OpenTelemetry Authors
-- Homepage: https://github.com/open-telemetry/opentelemetry-js-contrib/tree/main/packages/instrumentation-cucumber#readme
+- Homepage: <https://github.com/open-telemetry/opentelemetry-js-contrib/tree/main/packages/instrumentation-dataloader#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Apache License
                            Version 2.0, January 2004
                         http://www.apache.org/licenses/
@@ -8288,15 +8288,15 @@ Apache License
 
 </details>
 
-### @opentelemetry/instrumentation-dataloader@0.39.0
+### @opentelemetry/instrumentation-dns@0.66.0
 
 - License: `Apache-2.0`
 - Author: OpenTelemetry Authors
-- Homepage: https://github.com/open-telemetry/opentelemetry-js-contrib/tree/main/packages/instrumentation-dataloader#readme
+- Homepage: <https://github.com/open-telemetry/opentelemetry-js-contrib/tree/main/packages/instrumentation-dns#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Apache License
                            Version 2.0, January 2004
                         http://www.apache.org/licenses/
@@ -8502,15 +8502,15 @@ Apache License
 
 </details>
 
-### @opentelemetry/instrumentation-dns@0.65.0
+### @opentelemetry/instrumentation-express@0.71.0
 
 - License: `Apache-2.0`
 - Author: OpenTelemetry Authors
-- Homepage: https://github.com/open-telemetry/opentelemetry-js-contrib/tree/main/packages/instrumentation-dns#readme
+- Homepage: <https://github.com/open-telemetry/opentelemetry-js-contrib/tree/main/packages/instrumentation-express#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Apache License
                            Version 2.0, January 2004
                         http://www.apache.org/licenses/
@@ -8716,15 +8716,15 @@ Apache License
 
 </details>
 
-### @opentelemetry/instrumentation-express@0.70.0
+### @opentelemetry/instrumentation-fs@0.42.0
 
 - License: `Apache-2.0`
 - Author: OpenTelemetry Authors
-- Homepage: https://github.com/open-telemetry/opentelemetry-js-contrib/tree/main/packages/instrumentation-express#readme
+- Homepage: <https://github.com/open-telemetry/opentelemetry-js-contrib/tree/main/packages/instrumentation-fs#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Apache License
                            Version 2.0, January 2004
                         http://www.apache.org/licenses/
@@ -8930,15 +8930,15 @@ Apache License
 
 </details>
 
-### @opentelemetry/instrumentation-fs@0.41.0
+### @opentelemetry/instrumentation-generic-pool@0.66.0
 
 - License: `Apache-2.0`
 - Author: OpenTelemetry Authors
-- Homepage: https://github.com/open-telemetry/opentelemetry-js-contrib/tree/main/packages/instrumentation-fs#readme
+- Homepage: <https://github.com/open-telemetry/opentelemetry-js-contrib/tree/main/packages/instrumentation-generic-pool#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Apache License
                            Version 2.0, January 2004
                         http://www.apache.org/licenses/
@@ -9144,15 +9144,15 @@ Apache License
 
 </details>
 
-### @opentelemetry/instrumentation-generic-pool@0.65.0
+### @opentelemetry/instrumentation-graphql@0.71.0
 
 - License: `Apache-2.0`
 - Author: OpenTelemetry Authors
-- Homepage: https://github.com/open-telemetry/opentelemetry-js-contrib/tree/main/packages/instrumentation-generic-pool#readme
+- Homepage: <https://github.com/open-telemetry/opentelemetry-js-contrib/tree/main/packages/instrumentation-graphql#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Apache License
                            Version 2.0, January 2004
                         http://www.apache.org/licenses/
@@ -9358,15 +9358,15 @@ Apache License
 
 </details>
 
-### @opentelemetry/instrumentation-graphql@0.70.0
+### @opentelemetry/instrumentation-grpc@0.223.0
 
 - License: `Apache-2.0`
 - Author: OpenTelemetry Authors
-- Homepage: https://github.com/open-telemetry/opentelemetry-js-contrib/tree/main/packages/instrumentation-graphql#readme
+- Homepage: <https://github.com/open-telemetry/opentelemetry-js/tree/main/experimental/packages/opentelemetry-instrumentation-grpc>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Apache License
                            Version 2.0, January 2004
                         http://www.apache.org/licenses/
@@ -9572,15 +9572,15 @@ Apache License
 
 </details>
 
-### @opentelemetry/instrumentation-grpc@0.222.0
+### @opentelemetry/instrumentation-hapi@0.69.0
 
 - License: `Apache-2.0`
 - Author: OpenTelemetry Authors
-- Homepage: https://github.com/open-telemetry/opentelemetry-js/tree/main/experimental/packages/opentelemetry-instrumentation-grpc
+- Homepage: <https://github.com/open-telemetry/opentelemetry-js-contrib/tree/main/packages/instrumentation-hapi#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Apache License
                            Version 2.0, January 2004
                         http://www.apache.org/licenses/
@@ -9786,15 +9786,15 @@ Apache License
 
 </details>
 
-### @opentelemetry/instrumentation-hapi@0.68.0
+### @opentelemetry/instrumentation-host-metrics@0.6.0
 
 - License: `Apache-2.0`
 - Author: OpenTelemetry Authors
-- Homepage: https://github.com/open-telemetry/opentelemetry-js-contrib/tree/main/packages/instrumentation-hapi#readme
+- Homepage: <https://github.com/open-telemetry/opentelemetry-js-contrib/tree/main/packages/instrumentation-host-metrics#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Apache License
                            Version 2.0, January 2004
                         http://www.apache.org/licenses/
@@ -10000,15 +10000,15 @@ Apache License
 
 </details>
 
-### @opentelemetry/instrumentation-host-metrics@0.5.0
+### @opentelemetry/instrumentation-http@0.223.0
 
 - License: `Apache-2.0`
 - Author: OpenTelemetry Authors
-- Homepage: https://github.com/open-telemetry/opentelemetry-js-contrib/tree/main/packages/instrumentation-host-metrics#readme
+- Homepage: <https://github.com/open-telemetry/opentelemetry-js/tree/main/experimental/packages/opentelemetry-instrumentation-http>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Apache License
                            Version 2.0, January 2004
                         http://www.apache.org/licenses/
@@ -10214,15 +10214,15 @@ Apache License
 
 </details>
 
-### @opentelemetry/instrumentation-http@0.222.0
+### @opentelemetry/instrumentation-ioredis@0.71.0
 
 - License: `Apache-2.0`
 - Author: OpenTelemetry Authors
-- Homepage: https://github.com/open-telemetry/opentelemetry-js/tree/main/experimental/packages/opentelemetry-instrumentation-http
+- Homepage: <https://github.com/open-telemetry/opentelemetry-js-contrib/tree/main/packages/instrumentation-ioredis#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Apache License
                            Version 2.0, January 2004
                         http://www.apache.org/licenses/
@@ -10428,15 +10428,15 @@ Apache License
 
 </details>
 
-### @opentelemetry/instrumentation-ioredis@0.70.0
+### @opentelemetry/instrumentation-kafkajs@0.32.0
 
 - License: `Apache-2.0`
 - Author: OpenTelemetry Authors
-- Homepage: https://github.com/open-telemetry/opentelemetry-js-contrib/tree/main/packages/instrumentation-ioredis#readme
+- Homepage: <https://github.com/open-telemetry/opentelemetry-js-contrib/tree/main/packages/instrumentation-kafkajs#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Apache License
                            Version 2.0, January 2004
                         http://www.apache.org/licenses/
@@ -10642,15 +10642,15 @@ Apache License
 
 </details>
 
-### @opentelemetry/instrumentation-kafkajs@0.31.0
+### @opentelemetry/instrumentation-knex@0.67.0
 
 - License: `Apache-2.0`
 - Author: OpenTelemetry Authors
-- Homepage: https://github.com/open-telemetry/opentelemetry-js-contrib/tree/main/packages/instrumentation-kafkajs#readme
+- Homepage: <https://github.com/open-telemetry/opentelemetry-js-contrib/tree/main/packages/instrumentation-knex#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Apache License
                            Version 2.0, January 2004
                         http://www.apache.org/licenses/
@@ -10856,15 +10856,15 @@ Apache License
 
 </details>
 
-### @opentelemetry/instrumentation-knex@0.66.0
+### @opentelemetry/instrumentation-koa@0.71.0
 
 - License: `Apache-2.0`
 - Author: OpenTelemetry Authors
-- Homepage: https://github.com/open-telemetry/opentelemetry-js-contrib/tree/main/packages/instrumentation-knex#readme
+- Homepage: <https://github.com/open-telemetry/opentelemetry-js-contrib/tree/main/packages/instrumentation-koa#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Apache License
                            Version 2.0, January 2004
                         http://www.apache.org/licenses/
@@ -11070,15 +11070,15 @@ Apache License
 
 </details>
 
-### @opentelemetry/instrumentation-koa@0.70.0
+### @opentelemetry/instrumentation-lru-memoizer@0.67.0
 
 - License: `Apache-2.0`
 - Author: OpenTelemetry Authors
-- Homepage: https://github.com/open-telemetry/opentelemetry-js-contrib/tree/main/packages/instrumentation-koa#readme
+- Homepage: <https://github.com/open-telemetry/opentelemetry-js-contrib/tree/main/packages/instrumentation-lru-memoizer#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Apache License
                            Version 2.0, January 2004
                         http://www.apache.org/licenses/
@@ -11284,15 +11284,15 @@ Apache License
 
 </details>
 
-### @opentelemetry/instrumentation-lru-memoizer@0.66.0
+### @opentelemetry/instrumentation-memcached@0.66.0
 
 - License: `Apache-2.0`
 - Author: OpenTelemetry Authors
-- Homepage: https://github.com/open-telemetry/opentelemetry-js-contrib/tree/main/packages/instrumentation-lru-memoizer#readme
+- Homepage: <https://github.com/open-telemetry/opentelemetry-js-contrib/tree/main/packages/instrumentation-memcached#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Apache License
                            Version 2.0, January 2004
                         http://www.apache.org/licenses/
@@ -11498,15 +11498,15 @@ Apache License
 
 </details>
 
-### @opentelemetry/instrumentation-memcached@0.65.0
+### @opentelemetry/instrumentation-mongodb@0.76.0
 
 - License: `Apache-2.0`
 - Author: OpenTelemetry Authors
-- Homepage: https://github.com/open-telemetry/opentelemetry-js-contrib/tree/main/packages/instrumentation-memcached#readme
+- Homepage: <https://github.com/open-telemetry/opentelemetry-js-contrib/tree/main/packages/instrumentation-mongodb#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Apache License
                            Version 2.0, January 2004
                         http://www.apache.org/licenses/
@@ -11712,15 +11712,15 @@ Apache License
 
 </details>
 
-### @opentelemetry/instrumentation-mongodb@0.75.0
+### @opentelemetry/instrumentation-mongoose@0.69.0
 
 - License: `Apache-2.0`
 - Author: OpenTelemetry Authors
-- Homepage: https://github.com/open-telemetry/opentelemetry-js-contrib/tree/main/packages/instrumentation-mongodb#readme
+- Homepage: <https://github.com/open-telemetry/opentelemetry-js-contrib/tree/main/packages/instrumentation-mongoose#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Apache License
                            Version 2.0, January 2004
                         http://www.apache.org/licenses/
@@ -11926,15 +11926,15 @@ Apache License
 
 </details>
 
-### @opentelemetry/instrumentation-mongoose@0.68.0
+### @opentelemetry/instrumentation-mysql@0.69.0
 
 - License: `Apache-2.0`
 - Author: OpenTelemetry Authors
-- Homepage: https://github.com/open-telemetry/opentelemetry-js-contrib/tree/main/packages/instrumentation-mongoose#readme
+- Homepage: <https://github.com/open-telemetry/opentelemetry-js-contrib/tree/main/packages/instrumentation-mysql#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Apache License
                            Version 2.0, January 2004
                         http://www.apache.org/licenses/
@@ -12140,15 +12140,15 @@ Apache License
 
 </details>
 
-### @opentelemetry/instrumentation-mysql@0.68.0
+### @opentelemetry/instrumentation-mysql2@0.69.0
 
 - License: `Apache-2.0`
 - Author: OpenTelemetry Authors
-- Homepage: https://github.com/open-telemetry/opentelemetry-js-contrib/tree/main/packages/instrumentation-mysql#readme
+- Homepage: <https://github.com/open-telemetry/opentelemetry-js-contrib/tree/main/packages/instrumentation-mysql2#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Apache License
                            Version 2.0, January 2004
                         http://www.apache.org/licenses/
@@ -12354,15 +12354,15 @@ Apache License
 
 </details>
 
-### @opentelemetry/instrumentation-mysql2@0.68.0
+### @opentelemetry/instrumentation-nestjs-core@0.69.0
 
 - License: `Apache-2.0`
 - Author: OpenTelemetry Authors
-- Homepage: https://github.com/open-telemetry/opentelemetry-js-contrib/tree/main/packages/instrumentation-mysql2#readme
+- Homepage: <https://github.com/open-telemetry/opentelemetry-js-contrib/tree/main/packages/instrumentation-nestjs-core#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Apache License
                            Version 2.0, January 2004
                         http://www.apache.org/licenses/
@@ -12568,15 +12568,15 @@ Apache License
 
 </details>
 
-### @opentelemetry/instrumentation-nestjs-core@0.68.0
+### @opentelemetry/instrumentation-net@0.67.0
 
 - License: `Apache-2.0`
 - Author: OpenTelemetry Authors
-- Homepage: https://github.com/open-telemetry/opentelemetry-js-contrib/tree/main/packages/instrumentation-nestjs-core#readme
+- Homepage: <https://github.com/open-telemetry/opentelemetry-js-contrib/tree/main/packages/instrumentation-net#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Apache License
                            Version 2.0, January 2004
                         http://www.apache.org/licenses/
@@ -12782,15 +12782,15 @@ Apache License
 
 </details>
 
-### @opentelemetry/instrumentation-net@0.66.0
+### @opentelemetry/instrumentation-openai@0.21.0
 
 - License: `Apache-2.0`
 - Author: OpenTelemetry Authors
-- Homepage: https://github.com/open-telemetry/opentelemetry-js-contrib/tree/main/packages/instrumentation-net#readme
+- Homepage: <https://github.com/open-telemetry/opentelemetry-js-contrib/tree/main/packages/instrumentation-openai#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Apache License
                            Version 2.0, January 2004
                         http://www.apache.org/licenses/
@@ -12996,15 +12996,15 @@ Apache License
 
 </details>
 
-### @opentelemetry/instrumentation-openai@0.20.0
+### @opentelemetry/instrumentation-oracledb@0.48.0
 
 - License: `Apache-2.0`
 - Author: OpenTelemetry Authors
-- Homepage: https://github.com/open-telemetry/opentelemetry-js-contrib/tree/main/packages/instrumentation-openai#readme
+- Homepage: <https://github.com/open-telemetry/opentelemetry-js-contrib/tree/main/packages/instrumentation-oracledb#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Apache License
                            Version 2.0, January 2004
                         http://www.apache.org/licenses/
@@ -13210,15 +13210,15 @@ Apache License
 
 </details>
 
-### @opentelemetry/instrumentation-oracledb@0.47.0
+### @opentelemetry/instrumentation-pg@0.75.0
 
 - License: `Apache-2.0`
 - Author: OpenTelemetry Authors
-- Homepage: https://github.com/open-telemetry/opentelemetry-js-contrib/tree/main/packages/instrumentation-oracledb#readme
+- Homepage: <https://github.com/open-telemetry/opentelemetry-js-contrib/tree/main/packages/instrumentation-pg#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Apache License
                            Version 2.0, January 2004
                         http://www.apache.org/licenses/
@@ -13424,15 +13424,15 @@ Apache License
 
 </details>
 
-### @opentelemetry/instrumentation-pg@0.74.0
+### @opentelemetry/instrumentation-pino@0.69.0
 
 - License: `Apache-2.0`
 - Author: OpenTelemetry Authors
-- Homepage: https://github.com/open-telemetry/opentelemetry-js-contrib/tree/main/packages/instrumentation-pg#readme
+- Homepage: <https://github.com/open-telemetry/opentelemetry-js-contrib/tree/main/packages/instrumentation-pino#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Apache License
                            Version 2.0, January 2004
                         http://www.apache.org/licenses/
@@ -13638,15 +13638,15 @@ Apache License
 
 </details>
 
-### @opentelemetry/instrumentation-pino@0.68.0
+### @opentelemetry/instrumentation-redis@0.71.0
 
 - License: `Apache-2.0`
 - Author: OpenTelemetry Authors
-- Homepage: https://github.com/open-telemetry/opentelemetry-js-contrib/tree/main/packages/instrumentation-pino#readme
+- Homepage: <https://github.com/open-telemetry/opentelemetry-js-contrib/tree/main/packages/instrumentation-redis#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Apache License
                            Version 2.0, January 2004
                         http://www.apache.org/licenses/
@@ -13852,15 +13852,15 @@ Apache License
 
 </details>
 
-### @opentelemetry/instrumentation-redis@0.70.0
+### @opentelemetry/instrumentation-restify@0.68.0
 
 - License: `Apache-2.0`
 - Author: OpenTelemetry Authors
-- Homepage: https://github.com/open-telemetry/opentelemetry-js-contrib/tree/main/packages/instrumentation-redis#readme
+- Homepage: <https://github.com/open-telemetry/opentelemetry-js-contrib/tree/main/packages/instrumentation-restify#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Apache License
                            Version 2.0, January 2004
                         http://www.apache.org/licenses/
@@ -14066,15 +14066,15 @@ Apache License
 
 </details>
 
-### @opentelemetry/instrumentation-restify@0.67.0
+### @opentelemetry/instrumentation-router@0.67.0
 
 - License: `Apache-2.0`
 - Author: OpenTelemetry Authors
-- Homepage: https://github.com/open-telemetry/opentelemetry-js-contrib/tree/main/packages/instrumentation-restify#readme
+- Homepage: <https://github.com/open-telemetry/opentelemetry-js-contrib/tree/main/packages/instrumentation-router#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Apache License
                            Version 2.0, January 2004
                         http://www.apache.org/licenses/
@@ -14280,15 +14280,15 @@ Apache License
 
 </details>
 
-### @opentelemetry/instrumentation-router@0.66.0
+### @opentelemetry/instrumentation-runtime-node@0.36.0
 
 - License: `Apache-2.0`
 - Author: OpenTelemetry Authors
-- Homepage: https://github.com/open-telemetry/opentelemetry-js-contrib/tree/main/packages/instrumentation-router#readme
+- Homepage: <https://github.com/open-telemetry/opentelemetry-js-contrib/tree/main/packages/instrumentation-runtime-node#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Apache License
                            Version 2.0, January 2004
                         http://www.apache.org/licenses/
@@ -14494,15 +14494,15 @@ Apache License
 
 </details>
 
-### @opentelemetry/instrumentation-runtime-node@0.35.0
+### @opentelemetry/instrumentation-socket.io@0.70.0
 
 - License: `Apache-2.0`
 - Author: OpenTelemetry Authors
-- Homepage: https://github.com/open-telemetry/opentelemetry-js-contrib/tree/main/packages/instrumentation-runtime-node#readme
+- Homepage: <https://github.com/open-telemetry/opentelemetry-js-contrib/tree/main/packages/instrumentation-socket.io#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Apache License
                            Version 2.0, January 2004
                         http://www.apache.org/licenses/
@@ -14708,15 +14708,15 @@ Apache License
 
 </details>
 
-### @opentelemetry/instrumentation-socket.io@0.69.0
+### @opentelemetry/instrumentation-tedious@0.42.0
 
 - License: `Apache-2.0`
 - Author: OpenTelemetry Authors
-- Homepage: https://github.com/open-telemetry/opentelemetry-js-contrib/tree/main/packages/instrumentation-socket.io#readme
+- Homepage: <https://github.com/open-telemetry/opentelemetry-js-contrib/tree/main/packages/instrumentation-tedious#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Apache License
                            Version 2.0, January 2004
                         http://www.apache.org/licenses/
@@ -14922,15 +14922,15 @@ Apache License
 
 </details>
 
-### @opentelemetry/instrumentation-tedious@0.41.0
+### @opentelemetry/instrumentation-undici@0.33.0
 
 - License: `Apache-2.0`
 - Author: OpenTelemetry Authors
-- Homepage: https://github.com/open-telemetry/opentelemetry-js-contrib/tree/main/packages/instrumentation-tedious#readme
+- Homepage: <https://github.com/open-telemetry/opentelemetry-js-contrib/tree/main/packages/instrumentation-undici#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Apache License
                            Version 2.0, January 2004
                         http://www.apache.org/licenses/
@@ -15136,15 +15136,15 @@ Apache License
 
 </details>
 
-### @opentelemetry/instrumentation-undici@0.32.0
+### @opentelemetry/instrumentation-winston@0.67.0
 
 - License: `Apache-2.0`
 - Author: OpenTelemetry Authors
-- Homepage: https://github.com/open-telemetry/opentelemetry-js-contrib/tree/main/packages/instrumentation-undici#readme
+- Homepage: <https://github.com/open-telemetry/opentelemetry-js-contrib/tree/main/packages/instrumentation-winston#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Apache License
                            Version 2.0, January 2004
                         http://www.apache.org/licenses/
@@ -15350,15 +15350,15 @@ Apache License
 
 </details>
 
-### @opentelemetry/instrumentation-winston@0.66.0
+### @opentelemetry/otlp-exporter-base@0.223.0
 
 - License: `Apache-2.0`
 - Author: OpenTelemetry Authors
-- Homepage: https://github.com/open-telemetry/opentelemetry-js-contrib/tree/main/packages/instrumentation-winston#readme
+- Homepage: <https://github.com/open-telemetry/opentelemetry-js/tree/main/experimental/packages/otlp-exporter-base>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Apache License
                            Version 2.0, January 2004
                         http://www.apache.org/licenses/
@@ -15564,15 +15564,15 @@ Apache License
 
 </details>
 
-### @opentelemetry/otlp-exporter-base@0.222.0
+### @opentelemetry/otlp-grpc-exporter-base@0.223.0
 
 - License: `Apache-2.0`
 - Author: OpenTelemetry Authors
-- Homepage: https://github.com/open-telemetry/opentelemetry-js/tree/main/experimental/packages/otlp-exporter-base
+- Homepage: <https://github.com/open-telemetry/opentelemetry-js/tree/main/experimental/packages/otlp-grpc-exporter-base>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Apache License
                            Version 2.0, January 2004
                         http://www.apache.org/licenses/
@@ -15778,229 +15778,15 @@ Apache License
 
 </details>
 
-### @opentelemetry/otlp-grpc-exporter-base@0.222.0
+### @opentelemetry/otlp-transformer@0.223.0
 
 - License: `Apache-2.0`
 - Author: OpenTelemetry Authors
-- Homepage: https://github.com/open-telemetry/opentelemetry-js/tree/main/experimental/packages/otlp-grpc-exporter-base
+- Homepage: <https://github.com/open-telemetry/opentelemetry-js/tree/main/experimental/packages/otlp-transformer>
 
 <details><summary>LICENSE</summary>
 
-```
-Apache License
-                           Version 2.0, January 2004
-                        http://www.apache.org/licenses/
-
-   TERMS AND CONDITIONS FOR USE, REPRODUCTION, AND DISTRIBUTION
-
-   1. Definitions.
-
-      "License" shall mean the terms and conditions for use, reproduction,
-      and distribution as defined by Sections 1 through 9 of this document.
-
-      "Licensor" shall mean the copyright owner or entity authorized by
-      the copyright owner that is granting the License.
-
-      "Legal Entity" shall mean the union of the acting entity and all
-      other entities that control, are controlled by, or are under common
-      control with that entity. For the purposes of this definition,
-      "control" means (i) the power, direct or indirect, to cause the
-      direction or management of such entity, whether by contract or
-      otherwise, or (ii) ownership of fifty percent (50%) or more of the
-      outstanding shares, or (iii) beneficial ownership of such entity.
-
-      "You" (or "Your") shall mean an individual or Legal Entity
-      exercising permissions granted by this License.
-
-      "Source" form shall mean the preferred form for making modifications,
-      including but not limited to software source code, documentation
-      source, and configuration files.
-
-      "Object" form shall mean any form resulting from mechanical
-      transformation or translation of a Source form, including but
-      not limited to compiled object code, generated documentation,
-      and conversions to other media types.
-
-      "Work" shall mean the work of authorship, whether in Source or
-      Object form, made available under the License, as indicated by a
-      copyright notice that is included in or attached to the work
-      (an example is provided in the Appendix below).
-
-      "Derivative Works" shall mean any work, whether in Source or Object
-      form, that is based on (or derived from) the Work and for which the
-      editorial revisions, annotations, elaborations, or other modifications
-      represent, as a whole, an original work of authorship. For the purposes
-      of this License, Derivative Works shall not include works that remain
-      separable from, or merely link (or bind by name) to the interfaces of,
-      the Work and Derivative Works thereof.
-
-      "Contribution" shall mean any work of authorship, including
-      the original version of the Work and any modifications or additions
-      to that Work or Derivative Works thereof, that is intentionally
-      submitted to Licensor for inclusion in the Work by the copyright owner
-      or by an individual or Legal Entity authorized to submit on behalf of
-      the copyright owner. For the purposes of this definition, "submitted"
-      means any form of electronic, verbal, or written communication sent
-      to the Licensor or its representatives, including but not limited to
-      communication on electronic mailing lists, source code control systems,
-      and issue tracking systems that are managed by, or on behalf of, the
-      Licensor for the purpose of discussing and improving the Work, but
-      excluding communication that is conspicuously marked or otherwise
-      designated in writing by the copyright owner as "Not a Contribution."
-
-      "Contributor" shall mean Licensor and any individual or Legal Entity
-      on behalf of whom a Contribution has been received by Licensor and
-      subsequently incorporated within the Work.
-
-   2. Grant of Copyright License. Subject to the terms and conditions of
-      this License, each Contributor hereby grants to You a perpetual,
-      worldwide, non-exclusive, no-charge, royalty-free, irrevocable
-      copyright license to reproduce, prepare Derivative Works of,
-      publicly display, publicly perform, sublicense, and distribute the
-      Work and such Derivative Works in Source or Object form.
-
-   3. Grant of Patent License. Subject to the terms and conditions of
-      this License, each Contributor hereby grants to You a perpetual,
-      worldwide, non-exclusive, no-charge, royalty-free, irrevocable
-      (except as stated in this section) patent license to make, have made,
-      use, offer to sell, sell, import, and otherwise transfer the Work,
-      where such license applies only to those patent claims licensable
-      by such Contributor that are necessarily infringed by their
-      Contribution(s) alone or by combination of their Contribution(s)
-      with the Work to which such Contribution(s) was submitted. If You
-      institute patent litigation against any entity (including a
-      cross-claim or counterclaim in a lawsuit) alleging that the Work
-      or a Contribution incorporated within the Work constitutes direct
-      or contributory patent infringement, then any patent licenses
-      granted to You under this License for that Work shall terminate
-      as of the date such litigation is filed.
-
-   4. Redistribution. You may reproduce and distribute copies of the
-      Work or Derivative Works thereof in any medium, with or without
-      modifications, and in Source or Object form, provided that You
-      meet the following conditions:
-
-      (a) You must give any other recipients of the Work or
-          Derivative Works a copy of this License; and
-
-      (b) You must cause any modified files to carry prominent notices
-          stating that You changed the files; and
-
-      (c) You must retain, in the Source form of any Derivative Works
-          that You distribute, all copyright, patent, trademark, and
-          attribution notices from the Source form of the Work,
-          excluding those notices that do not pertain to any part of
-          the Derivative Works; and
-
-      (d) If the Work includes a "NOTICE" text file as part of its
-          distribution, then any Derivative Works that You distribute must
-          include a readable copy of the attribution notices contained
-          within such NOTICE file, excluding those notices that do not
-          pertain to any part of the Derivative Works, in at least one
-          of the following places: within a NOTICE text file distributed
-          as part of the Derivative Works; within the Source form or
-          documentation, if provided along with the Derivative Works; or,
-          within a display generated by the Derivative Works, if and
-          wherever such third-party notices normally appear. The contents
-          of the NOTICE file are for informational purposes only and
-          do not modify the License. You may add Your own attribution
-          notices within Derivative Works that You distribute, alongside
-          or as an addendum to the NOTICE text from the Work, provided
-          that such additional attribution notices cannot be construed
-          as modifying the License.
-
-      You may add Your own copyright statement to Your modifications and
-      may provide additional or different license terms and conditions
-      for use, reproduction, or distribution of Your modifications, or
-      for any such Derivative Works as a whole, provided Your use,
-      reproduction, and distribution of the Work otherwise complies with
-      the conditions stated in this License.
-
-   5. Submission of Contributions. Unless You explicitly state otherwise,
-      any Contribution intentionally submitted for inclusion in the Work
-      by You to the Licensor shall be under the terms and conditions of
-      this License, without any additional terms or conditions.
-      Notwithstanding the above, nothing herein shall supersede or modify
-      the terms of any separate license agreement you may have executed
-      with Licensor regarding such Contributions.
-
-   6. Trademarks. This License does not grant permission to use the trade
-      names, trademarks, service marks, or product names of the Licensor,
-      except as required for reasonable and customary use in describing the
-      origin of the Work and reproducing the content of the NOTICE file.
-
-   7. Disclaimer of Warranty. Unless required by applicable law or
-      agreed to in writing, Licensor provides the Work (and each
-      Contributor provides its Contributions) on an "AS IS" BASIS,
-      WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
-      implied, including, without limitation, any warranties or conditions
-      of TITLE, NON-INFRINGEMENT, MERCHANTABILITY, or FITNESS FOR A
-      PARTICULAR PURPOSE. You are solely responsible for determining the
-      appropriateness of using or redistributing the Work and assume any
-      risks associated with Your exercise of permissions under this License.
-
-   8. Limitation of Liability. In no event and under no legal theory,
-      whether in tort (including negligence), contract, or otherwise,
-      unless required by applicable law (such as deliberate and grossly
-      negligent acts) or agreed to in writing, shall any Contributor be
-      liable to You for damages, including any direct, indirect, special,
-      incidental, or consequential damages of any character arising as a
-      result of this License or out of the use or inability to use the
-      Work (including but not limited to damages for loss of goodwill,
-      work stoppage, computer failure or malfunction, or any and all
-      other commercial damages or losses), even if such Contributor
-      has been advised of the possibility of such damages.
-
-   9. Accepting Warranty or Additional Liability. While redistributing
-      the Work or Derivative Works thereof, You may choose to offer,
-      and charge a fee for, acceptance of support, warranty, indemnity,
-      or other liability obligations and/or rights consistent with this
-      License. However, in accepting such obligations, You may act only
-      on Your own behalf and on Your sole responsibility, not on behalf
-      of any other Contributor, and only if You agree to indemnify,
-      defend, and hold each Contributor harmless for any liability
-      incurred by, or claims asserted against, such Contributor by reason
-      of your accepting any such warranty or additional liability.
-
-   END OF TERMS AND CONDITIONS
-
-   APPENDIX: How to apply the Apache License to your work.
-
-      To apply the Apache License to your work, attach the following
-      boilerplate notice, with the fields enclosed by brackets "[]"
-      replaced with your own identifying information. (Don't include
-      the brackets!)  The text should be enclosed in the appropriate
-      comment syntax for the file format. We also recommend that a
-      file or class name and description of purpose be included on the
-      same "printed page" as the copyright notice for easier
-      identification within third-party archives.
-
-   Copyright [yyyy] [name of copyright owner]
-
-   Licensed under the Apache License, Version 2.0 (the "License");
-   you may not use this file except in compliance with the License.
-   You may obtain a copy of the License at
-
-       http://www.apache.org/licenses/LICENSE-2.0
-
-   Unless required by applicable law or agreed to in writing, software
-   distributed under the License is distributed on an "AS IS" BASIS,
-   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-   See the License for the specific language governing permissions and
-   limitations under the License.
-```
-
-</details>
-
-### @opentelemetry/otlp-transformer@0.222.0
-
-- License: `Apache-2.0`
-- Author: OpenTelemetry Authors
-- Homepage: https://github.com/open-telemetry/opentelemetry-js/tree/main/experimental/packages/otlp-transformer
-
-<details><summary>LICENSE</summary>
-
-```
+```text
 Apache License
                            Version 2.0, January 2004
                         http://www.apache.org/licenses/
@@ -16210,11 +15996,11 @@ Apache License
 
 - License: `Apache-2.0`
 - Author: OpenTelemetry Authors
-- Homepage: https://github.com/open-telemetry/opentelemetry-js-contrib/tree/main/packages/propagator-aws-xray#readme
+- Homepage: <https://github.com/open-telemetry/opentelemetry-js-contrib/tree/main/packages/propagator-aws-xray#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Apache License
                            Version 2.0, January 2004
                         http://www.apache.org/licenses/
@@ -16420,15 +16206,15 @@ Apache License
 
 </details>
 
-### @opentelemetry/propagator-b3@2.11.0
+### @opentelemetry/propagator-b3@2.12.0
 
 - License: `Apache-2.0`
 - Author: OpenTelemetry Authors
-- Homepage: https://github.com/open-telemetry/opentelemetry-js/tree/main/packages/opentelemetry-propagator-b3
+- Homepage: <https://github.com/open-telemetry/opentelemetry-js/tree/main/packages/opentelemetry-propagator-b3>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Apache License
                            Version 2.0, January 2004
                         http://www.apache.org/licenses/
@@ -16634,15 +16420,15 @@ Apache License
 
 </details>
 
-### @opentelemetry/propagator-jaeger@2.11.0
+### @opentelemetry/propagator-jaeger@2.12.0
 
 - License: `Apache-2.0`
 - Author: OpenTelemetry Authors
-- Homepage: https://github.com/open-telemetry/opentelemetry-js/tree/main/packages/opentelemetry-propagator-jaeger
+- Homepage: <https://github.com/open-telemetry/opentelemetry-js/tree/main/packages/opentelemetry-propagator-jaeger>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Apache License
                            Version 2.0, January 2004
                         http://www.apache.org/licenses/
@@ -16852,11 +16638,11 @@ Apache License
 
 - License: `Apache-2.0`
 - Author: OpenTelemetry Authors
-- Homepage: https://github.com/open-telemetry/opentelemetry-js-contrib/tree/main/packages/redis-common#readme
+- Homepage: <https://github.com/open-telemetry/opentelemetry-js-contrib/tree/main/packages/redis-common#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Apache License
                            Version 2.0, January 2004
                         http://www.apache.org/licenses/
@@ -17062,15 +16848,15 @@ Apache License
 
 </details>
 
-### @opentelemetry/resource-detector-alibaba-cloud@0.37.0
+### @opentelemetry/resource-detector-alibaba-cloud@0.38.0
 
 - License: `Apache-2.0`
 - Author: OpenTelemetry Authors
-- Homepage: https://github.com/open-telemetry/opentelemetry-js-contrib/tree/main/packages/resource-detector-alibaba-cloud#readme
+- Homepage: <https://github.com/open-telemetry/opentelemetry-js-contrib/tree/main/packages/resource-detector-alibaba-cloud#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Apache License
                            Version 2.0, January 2004
                         http://www.apache.org/licenses/
@@ -17276,15 +17062,15 @@ Apache License
 
 </details>
 
-### @opentelemetry/resource-detector-aws@2.22.0
+### @opentelemetry/resource-detector-aws@2.23.0
 
 - License: `Apache-2.0`
 - Author: OpenTelemetry Authors
-- Homepage: https://github.com/open-telemetry/opentelemetry-js-contrib/tree/main/packages/resource-detector-aws#readme
+- Homepage: <https://github.com/open-telemetry/opentelemetry-js-contrib/tree/main/packages/resource-detector-aws#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Apache License
                            Version 2.0, January 2004
                         http://www.apache.org/licenses/
@@ -17490,15 +17276,15 @@ Apache License
 
 </details>
 
-### @opentelemetry/resource-detector-azure@0.30.0
+### @opentelemetry/resource-detector-azure@0.31.0
 
 - License: `Apache-2.0`
 - Author: OpenTelemetry Authors
-- Homepage: https://github.com/open-telemetry/opentelemetry-js-contrib/tree/main/packages/resource-detector-azure#readme
+- Homepage: <https://github.com/open-telemetry/opentelemetry-js-contrib/tree/main/packages/resource-detector-azure#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Apache License
                         Version 2.0, January 2004
                     http://www.apache.org/licenses/
@@ -17704,15 +17490,15 @@ limitations under the License.
 
 </details>
 
-### @opentelemetry/resource-detector-container@0.8.13
+### @opentelemetry/resource-detector-container@0.8.14
 
 - License: `Apache-2.0`
 - Author: OpenTelemetry Authors
-- Homepage: https://github.com/open-telemetry/opentelemetry-js-contrib/tree/main/packages/resource-detector-container#readme
+- Homepage: <https://github.com/open-telemetry/opentelemetry-js-contrib/tree/main/packages/resource-detector-container#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Apache License
                            Version 2.0, January 2004
                         http://www.apache.org/licenses/
@@ -17918,15 +17704,15 @@ Apache License
 
 </details>
 
-### @opentelemetry/resource-detector-gcp@0.57.0
+### @opentelemetry/resource-detector-gcp@0.58.0
 
 - License: `Apache-2.0`
 - Author: OpenTelemetry Authors
-- Homepage: https://github.com/open-telemetry/opentelemetry-js-contrib/tree/main/packages/resource-detector-gcp#readme
+- Homepage: <https://github.com/open-telemetry/opentelemetry-js-contrib/tree/main/packages/resource-detector-gcp#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Apache License
                            Version 2.0, January 2004
                         http://www.apache.org/licenses/
@@ -18132,15 +17918,15 @@ Apache License
 
 </details>
 
-### @opentelemetry/resources@2.10.0
+### @opentelemetry/resources@2.12.0
 
 - License: `Apache-2.0`
 - Author: OpenTelemetry Authors
-- Homepage: https://github.com/open-telemetry/opentelemetry-js/tree/main/packages/opentelemetry-resources
+- Homepage: <https://github.com/open-telemetry/opentelemetry-js/tree/main/packages/opentelemetry-resources>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Apache License
                            Version 2.0, January 2004
                         http://www.apache.org/licenses/
@@ -18346,15 +18132,15 @@ Apache License
 
 </details>
 
-### @opentelemetry/resources@2.11.0
+### @opentelemetry/sdk-logs@0.223.0
 
 - License: `Apache-2.0`
 - Author: OpenTelemetry Authors
-- Homepage: https://github.com/open-telemetry/opentelemetry-js/tree/main/packages/opentelemetry-resources
+- Homepage: <https://github.com/open-telemetry/opentelemetry-js/tree/main/experimental/packages/sdk-logs>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Apache License
                            Version 2.0, January 2004
                         http://www.apache.org/licenses/
@@ -18560,15 +18346,15 @@ Apache License
 
 </details>
 
-### @opentelemetry/sdk-logs@0.222.0
+### @opentelemetry/sdk-metrics@2.12.0
 
 - License: `Apache-2.0`
 - Author: OpenTelemetry Authors
-- Homepage: https://github.com/open-telemetry/opentelemetry-js/tree/main/experimental/packages/sdk-logs
+- Homepage: <https://github.com/open-telemetry/opentelemetry-js/tree/main/packages/sdk-metrics>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Apache License
                            Version 2.0, January 2004
                         http://www.apache.org/licenses/
@@ -18774,15 +18560,15 @@ Apache License
 
 </details>
 
-### @opentelemetry/sdk-metrics@2.11.0
+### @opentelemetry/sdk-node@0.223.0
 
 - License: `Apache-2.0`
 - Author: OpenTelemetry Authors
-- Homepage: https://github.com/open-telemetry/opentelemetry-js/tree/main/packages/sdk-metrics
+- Homepage: <https://github.com/open-telemetry/opentelemetry-js/tree/main/experimental/packages/opentelemetry-sdk-node>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Apache License
                            Version 2.0, January 2004
                         http://www.apache.org/licenses/
@@ -18988,15 +18774,15 @@ Apache License
 
 </details>
 
-### @opentelemetry/sdk-node@0.222.0
+### @opentelemetry/sdk-trace@2.12.0
 
 - License: `Apache-2.0`
 - Author: OpenTelemetry Authors
-- Homepage: https://github.com/open-telemetry/opentelemetry-js/tree/main/experimental/packages/opentelemetry-sdk-node
+- Homepage: <https://github.com/open-telemetry/opentelemetry-js/tree/main/packages/sdk-trace>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Apache License
                            Version 2.0, January 2004
                         http://www.apache.org/licenses/
@@ -19202,15 +18988,15 @@ Apache License
 
 </details>
 
-### @opentelemetry/sdk-trace@2.11.0
+### @opentelemetry/sdk-trace-base@2.12.0
 
 - License: `Apache-2.0`
 - Author: OpenTelemetry Authors
-- Homepage: https://github.com/open-telemetry/opentelemetry-js/tree/main/packages/sdk-trace
+- Homepage: <https://github.com/open-telemetry/opentelemetry-js/tree/main/packages/opentelemetry-sdk-trace-base>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Apache License
                            Version 2.0, January 2004
                         http://www.apache.org/licenses/
@@ -19416,229 +19202,15 @@ Apache License
 
 </details>
 
-### @opentelemetry/sdk-trace-base@2.11.0
+### @opentelemetry/sdk-trace-node@2.12.0
 
 - License: `Apache-2.0`
 - Author: OpenTelemetry Authors
-- Homepage: https://github.com/open-telemetry/opentelemetry-js/tree/main/packages/opentelemetry-sdk-trace-base
+- Homepage: <https://github.com/open-telemetry/opentelemetry-js/tree/main/packages/opentelemetry-sdk-trace-node>
 
 <details><summary>LICENSE</summary>
 
-```
-Apache License
-                           Version 2.0, January 2004
-                        http://www.apache.org/licenses/
-
-   TERMS AND CONDITIONS FOR USE, REPRODUCTION, AND DISTRIBUTION
-
-   1. Definitions.
-
-      "License" shall mean the terms and conditions for use, reproduction,
-      and distribution as defined by Sections 1 through 9 of this document.
-
-      "Licensor" shall mean the copyright owner or entity authorized by
-      the copyright owner that is granting the License.
-
-      "Legal Entity" shall mean the union of the acting entity and all
-      other entities that control, are controlled by, or are under common
-      control with that entity. For the purposes of this definition,
-      "control" means (i) the power, direct or indirect, to cause the
-      direction or management of such entity, whether by contract or
-      otherwise, or (ii) ownership of fifty percent (50%) or more of the
-      outstanding shares, or (iii) beneficial ownership of such entity.
-
-      "You" (or "Your") shall mean an individual or Legal Entity
-      exercising permissions granted by this License.
-
-      "Source" form shall mean the preferred form for making modifications,
-      including but not limited to software source code, documentation
-      source, and configuration files.
-
-      "Object" form shall mean any form resulting from mechanical
-      transformation or translation of a Source form, including but
-      not limited to compiled object code, generated documentation,
-      and conversions to other media types.
-
-      "Work" shall mean the work of authorship, whether in Source or
-      Object form, made available under the License, as indicated by a
-      copyright notice that is included in or attached to the work
-      (an example is provided in the Appendix below).
-
-      "Derivative Works" shall mean any work, whether in Source or Object
-      form, that is based on (or derived from) the Work and for which the
-      editorial revisions, annotations, elaborations, or other modifications
-      represent, as a whole, an original work of authorship. For the purposes
-      of this License, Derivative Works shall not include works that remain
-      separable from, or merely link (or bind by name) to the interfaces of,
-      the Work and Derivative Works thereof.
-
-      "Contribution" shall mean any work of authorship, including
-      the original version of the Work and any modifications or additions
-      to that Work or Derivative Works thereof, that is intentionally
-      submitted to Licensor for inclusion in the Work by the copyright owner
-      or by an individual or Legal Entity authorized to submit on behalf of
-      the copyright owner. For the purposes of this definition, "submitted"
-      means any form of electronic, verbal, or written communication sent
-      to the Licensor or its representatives, including but not limited to
-      communication on electronic mailing lists, source code control systems,
-      and issue tracking systems that are managed by, or on behalf of, the
-      Licensor for the purpose of discussing and improving the Work, but
-      excluding communication that is conspicuously marked or otherwise
-      designated in writing by the copyright owner as "Not a Contribution."
-
-      "Contributor" shall mean Licensor and any individual or Legal Entity
-      on behalf of whom a Contribution has been received by Licensor and
-      subsequently incorporated within the Work.
-
-   2. Grant of Copyright License. Subject to the terms and conditions of
-      this License, each Contributor hereby grants to You a perpetual,
-      worldwide, non-exclusive, no-charge, royalty-free, irrevocable
-      copyright license to reproduce, prepare Derivative Works of,
-      publicly display, publicly perform, sublicense, and distribute the
-      Work and such Derivative Works in Source or Object form.
-
-   3. Grant of Patent License. Subject to the terms and conditions of
-      this License, each Contributor hereby grants to You a perpetual,
-      worldwide, non-exclusive, no-charge, royalty-free, irrevocable
-      (except as stated in this section) patent license to make, have made,
-      use, offer to sell, sell, import, and otherwise transfer the Work,
-      where such license applies only to those patent claims licensable
-      by such Contributor that are necessarily infringed by their
-      Contribution(s) alone or by combination of their Contribution(s)
-      with the Work to which such Contribution(s) was submitted. If You
-      institute patent litigation against any entity (including a
-      cross-claim or counterclaim in a lawsuit) alleging that the Work
-      or a Contribution incorporated within the Work constitutes direct
-      or contributory patent infringement, then any patent licenses
-      granted to You under this License for that Work shall terminate
-      as of the date such litigation is filed.
-
-   4. Redistribution. You may reproduce and distribute copies of the
-      Work or Derivative Works thereof in any medium, with or without
-      modifications, and in Source or Object form, provided that You
-      meet the following conditions:
-
-      (a) You must give any other recipients of the Work or
-          Derivative Works a copy of this License; and
-
-      (b) You must cause any modified files to carry prominent notices
-          stating that You changed the files; and
-
-      (c) You must retain, in the Source form of any Derivative Works
-          that You distribute, all copyright, patent, trademark, and
-          attribution notices from the Source form of the Work,
-          excluding those notices that do not pertain to any part of
-          the Derivative Works; and
-
-      (d) If the Work includes a "NOTICE" text file as part of its
-          distribution, then any Derivative Works that You distribute must
-          include a readable copy of the attribution notices contained
-          within such NOTICE file, excluding those notices that do not
-          pertain to any part of the Derivative Works, in at least one
-          of the following places: within a NOTICE text file distributed
-          as part of the Derivative Works; within the Source form or
-          documentation, if provided along with the Derivative Works; or,
-          within a display generated by the Derivative Works, if and
-          wherever such third-party notices normally appear. The contents
-          of the NOTICE file are for informational purposes only and
-          do not modify the License. You may add Your own attribution
-          notices within Derivative Works that You distribute, alongside
-          or as an addendum to the NOTICE text from the Work, provided
-          that such additional attribution notices cannot be construed
-          as modifying the License.
-
-      You may add Your own copyright statement to Your modifications and
-      may provide additional or different license terms and conditions
-      for use, reproduction, or distribution of Your modifications, or
-      for any such Derivative Works as a whole, provided Your use,
-      reproduction, and distribution of the Work otherwise complies with
-      the conditions stated in this License.
-
-   5. Submission of Contributions. Unless You explicitly state otherwise,
-      any Contribution intentionally submitted for inclusion in the Work
-      by You to the Licensor shall be under the terms and conditions of
-      this License, without any additional terms or conditions.
-      Notwithstanding the above, nothing herein shall supersede or modify
-      the terms of any separate license agreement you may have executed
-      with Licensor regarding such Contributions.
-
-   6. Trademarks. This License does not grant permission to use the trade
-      names, trademarks, service marks, or product names of the Licensor,
-      except as required for reasonable and customary use in describing the
-      origin of the Work and reproducing the content of the NOTICE file.
-
-   7. Disclaimer of Warranty. Unless required by applicable law or
-      agreed to in writing, Licensor provides the Work (and each
-      Contributor provides its Contributions) on an "AS IS" BASIS,
-      WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
-      implied, including, without limitation, any warranties or conditions
-      of TITLE, NON-INFRINGEMENT, MERCHANTABILITY, or FITNESS FOR A
-      PARTICULAR PURPOSE. You are solely responsible for determining the
-      appropriateness of using or redistributing the Work and assume any
-      risks associated with Your exercise of permissions under this License.
-
-   8. Limitation of Liability. In no event and under no legal theory,
-      whether in tort (including negligence), contract, or otherwise,
-      unless required by applicable law (such as deliberate and grossly
-      negligent acts) or agreed to in writing, shall any Contributor be
-      liable to You for damages, including any direct, indirect, special,
-      incidental, or consequential damages of any character arising as a
-      result of this License or out of the use or inability to use the
-      Work (including but not limited to damages for loss of goodwill,
-      work stoppage, computer failure or malfunction, or any and all
-      other commercial damages or losses), even if such Contributor
-      has been advised of the possibility of such damages.
-
-   9. Accepting Warranty or Additional Liability. While redistributing
-      the Work or Derivative Works thereof, You may choose to offer,
-      and charge a fee for, acceptance of support, warranty, indemnity,
-      or other liability obligations and/or rights consistent with this
-      License. However, in accepting such obligations, You may act only
-      on Your own behalf and on Your sole responsibility, not on behalf
-      of any other Contributor, and only if You agree to indemnify,
-      defend, and hold each Contributor harmless for any liability
-      incurred by, or claims asserted against, such Contributor by reason
-      of your accepting any such warranty or additional liability.
-
-   END OF TERMS AND CONDITIONS
-
-   APPENDIX: How to apply the Apache License to your work.
-
-      To apply the Apache License to your work, attach the following
-      boilerplate notice, with the fields enclosed by brackets "[]"
-      replaced with your own identifying information. (Don't include
-      the brackets!)  The text should be enclosed in the appropriate
-      comment syntax for the file format. We also recommend that a
-      file or class name and description of purpose be included on the
-      same "printed page" as the copyright notice for easier
-      identification within third-party archives.
-
-   Copyright [yyyy] [name of copyright owner]
-
-   Licensed under the Apache License, Version 2.0 (the "License");
-   you may not use this file except in compliance with the License.
-   You may obtain a copy of the License at
-
-       http://www.apache.org/licenses/LICENSE-2.0
-
-   Unless required by applicable law or agreed to in writing, software
-   distributed under the License is distributed on an "AS IS" BASIS,
-   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-   See the License for the specific language governing permissions and
-   limitations under the License.
-```
-
-</details>
-
-### @opentelemetry/sdk-trace-node@2.11.0
-
-- License: `Apache-2.0`
-- Author: OpenTelemetry Authors
-- Homepage: https://github.com/open-telemetry/opentelemetry-js/tree/main/packages/opentelemetry-sdk-trace-node
-
-<details><summary>LICENSE</summary>
-
-```
+```text
 Apache License
                            Version 2.0, January 2004
                         http://www.apache.org/licenses/
@@ -19848,11 +19420,11 @@ Apache License
 
 - License: `Apache-2.0`
 - Author: OpenTelemetry Authors
-- Homepage: https://github.com/open-telemetry/opentelemetry-js/tree/main/semantic-conventions
+- Homepage: <https://github.com/open-telemetry/opentelemetry-js/tree/main/semantic-conventions>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Apache License
                            Version 2.0, January 2004
                         http://www.apache.org/licenses/
@@ -20062,11 +19634,11 @@ Apache License
 
 - License: `Apache-2.0`
 - Author: OpenTelemetry Authors
-- Homepage: https://github.com/open-telemetry/opentelemetry-js-contrib/tree/main/packages/sql-common#readme
+- Homepage: <https://github.com/open-telemetry/opentelemetry-js-contrib/tree/main/packages/sql-common#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Apache License
                            Version 2.0, January 2004
                         http://www.apache.org/licenses/
@@ -20276,11 +19848,11 @@ Apache License
 
 - License: `MIT`
 - Author: Filip Skokan
-- Homepage: https://github.com/panva/hkdf
+- Homepage: <https://github.com/panva/hkdf>
 
 <details><summary>LICENSE.md</summary>
 
-```
+```text
 The MIT License (MIT)
 
 Copyright (c) 2021 Filip Skokan
@@ -20309,11 +19881,11 @@ SOFTWARE.
 ### @pkgjs/parseargs@0.11.0
 
 - License: `MIT`
-- Homepage: https://github.com/pkgjs/parseargs#readme
+- Homepage: <https://github.com/pkgjs/parseargs#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Apache License
                            Version 2.0, January 2004
                         http://www.apache.org/licenses/
@@ -20523,11 +20095,11 @@ Apache License
 
 - License: `Apache-2.0`
 - Author: Microsoft Corporation
-- Homepage: https://playwright.dev
+- Homepage: <https://playwright.dev>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Apache License
                            Version 2.0, January 2004
                         http://www.apache.org/licenses/
@@ -20736,7 +20308,7 @@ Apache License
 
 <details><summary>NOTICE</summary>
 
-```
+```text
 Playwright
 Copyright (c) Microsoft Corporation
 
@@ -20749,11 +20321,11 @@ available under the Apache 2.0 license (https://github.com/puppeteer/puppeteer/b
 ### @radix-ui/primitive@1.1.3
 
 - License: `MIT`
-- Homepage: https://radix-ui.com/primitives
+- Homepage: <https://radix-ui.com/primitives>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) 2022 WorkOS
@@ -20782,25 +20354,25 @@ SOFTWARE.
 ### @radix-ui/react-compose-refs@1.1.2
 
 - License: `MIT`
-- Homepage: https://radix-ui.com/primitives
+- Homepage: <https://radix-ui.com/primitives>
 
 _No license file shipped with the package; the SPDX identifier above is its declaration._
 
 ### @radix-ui/react-context@1.1.2
 
 - License: `MIT`
-- Homepage: https://radix-ui.com/primitives
+- Homepage: <https://radix-ui.com/primitives>
 
 _No license file shipped with the package; the SPDX identifier above is its declaration._
 
 ### @radix-ui/react-dialog@1.1.15
 
 - License: `MIT`
-- Homepage: https://radix-ui.com/primitives
+- Homepage: <https://radix-ui.com/primitives>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) 2022 WorkOS
@@ -20829,11 +20401,11 @@ SOFTWARE.
 ### @radix-ui/react-dismissable-layer@1.1.11
 
 - License: `MIT`
-- Homepage: https://radix-ui.com/primitives
+- Homepage: <https://radix-ui.com/primitives>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) 2022 WorkOS
@@ -20862,11 +20434,11 @@ SOFTWARE.
 ### @radix-ui/react-focus-guards@1.1.3
 
 - License: `MIT`
-- Homepage: https://radix-ui.com/primitives
+- Homepage: <https://radix-ui.com/primitives>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) 2022 WorkOS
@@ -20895,11 +20467,11 @@ SOFTWARE.
 ### @radix-ui/react-focus-scope@1.1.7
 
 - License: `MIT`
-- Homepage: https://radix-ui.com/primitives
+- Homepage: <https://radix-ui.com/primitives>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) 2022 WorkOS
@@ -20928,18 +20500,18 @@ SOFTWARE.
 ### @radix-ui/react-id@1.1.1
 
 - License: `MIT`
-- Homepage: https://radix-ui.com/primitives
+- Homepage: <https://radix-ui.com/primitives>
 
 _No license file shipped with the package; the SPDX identifier above is its declaration._
 
 ### @radix-ui/react-portal@1.1.9
 
 - License: `MIT`
-- Homepage: https://radix-ui.com/primitives
+- Homepage: <https://radix-ui.com/primitives>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) 2022 WorkOS
@@ -20968,11 +20540,11 @@ SOFTWARE.
 ### @radix-ui/react-presence@1.1.5
 
 - License: `MIT`
-- Homepage: https://radix-ui.com/primitives
+- Homepage: <https://radix-ui.com/primitives>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) 2022 WorkOS
@@ -21001,11 +20573,11 @@ SOFTWARE.
 ### @radix-ui/react-primitive@2.1.3
 
 - License: `MIT`
-- Homepage: https://radix-ui.com/primitives
+- Homepage: <https://radix-ui.com/primitives>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) 2022 WorkOS
@@ -21034,11 +20606,11 @@ SOFTWARE.
 ### @radix-ui/react-primitive@2.1.4
 
 - License: `MIT`
-- Homepage: https://radix-ui.com/primitives
+- Homepage: <https://radix-ui.com/primitives>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) 2022 WorkOS
@@ -21067,11 +20639,11 @@ SOFTWARE.
 ### @radix-ui/react-slot@1.2.3
 
 - License: `MIT`
-- Homepage: https://radix-ui.com/primitives
+- Homepage: <https://radix-ui.com/primitives>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) 2022 WorkOS
@@ -21100,11 +20672,11 @@ SOFTWARE.
 ### @radix-ui/react-slot@1.2.4
 
 - License: `MIT`
-- Homepage: https://radix-ui.com/primitives
+- Homepage: <https://radix-ui.com/primitives>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) 2022 WorkOS
@@ -21133,18 +20705,18 @@ SOFTWARE.
 ### @radix-ui/react-use-callback-ref@1.1.1
 
 - License: `MIT`
-- Homepage: https://radix-ui.com/primitives
+- Homepage: <https://radix-ui.com/primitives>
 
 _No license file shipped with the package; the SPDX identifier above is its declaration._
 
 ### @radix-ui/react-use-controllable-state@1.2.2
 
 - License: `MIT`
-- Homepage: https://radix-ui.com/primitives
+- Homepage: <https://radix-ui.com/primitives>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) 2022 WorkOS
@@ -21173,11 +20745,11 @@ SOFTWARE.
 ### @radix-ui/react-use-effect-event@0.0.2
 
 - License: `MIT`
-- Homepage: https://radix-ui.com/primitives
+- Homepage: <https://radix-ui.com/primitives>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) 2022 WorkOS
@@ -21206,25 +20778,25 @@ SOFTWARE.
 ### @radix-ui/react-use-escape-keydown@1.1.1
 
 - License: `MIT`
-- Homepage: https://radix-ui.com/primitives
+- Homepage: <https://radix-ui.com/primitives>
 
 _No license file shipped with the package; the SPDX identifier above is its declaration._
 
 ### @radix-ui/react-use-layout-effect@1.1.1
 
 - License: `MIT`
-- Homepage: https://radix-ui.com/primitives
+- Homepage: <https://radix-ui.com/primitives>
 
 _No license file shipped with the package; the SPDX identifier above is its declaration._
 
 ### @reactflow/background@11.3.14
 
 - License: `MIT`
-- Homepage: https://github.com/xyflow/xyflow#readme
+- Homepage: <https://github.com/xyflow/xyflow#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) 2019-2023 webkid GmbH
@@ -21253,11 +20825,11 @@ SOFTWARE.
 ### @reactflow/controls@11.2.14
 
 - License: `MIT`
-- Homepage: https://github.com/xyflow/xyflow#readme
+- Homepage: <https://github.com/xyflow/xyflow#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) 2019-2023 webkid GmbH
@@ -21286,11 +20858,11 @@ SOFTWARE.
 ### @reactflow/core@11.11.4
 
 - License: `MIT`
-- Homepage: https://github.com/xyflow/xyflow#readme
+- Homepage: <https://github.com/xyflow/xyflow#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) 2019-2023 webkid GmbH
@@ -21319,11 +20891,11 @@ SOFTWARE.
 ### @reactflow/minimap@11.7.14
 
 - License: `MIT`
-- Homepage: https://github.com/xyflow/xyflow#readme
+- Homepage: <https://github.com/xyflow/xyflow#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) 2019-2023 webkid GmbH
@@ -21352,11 +20924,11 @@ SOFTWARE.
 ### @reactflow/node-resizer@2.2.14
 
 - License: `MIT`
-- Homepage: https://github.com/xyflow/xyflow#readme
+- Homepage: <https://github.com/xyflow/xyflow#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) 2019-2023 webkid GmbH
@@ -21385,11 +20957,11 @@ SOFTWARE.
 ### @reactflow/node-toolbar@1.3.14
 
 - License: `MIT`
-- Homepage: https://github.com/xyflow/xyflow#readme
+- Homepage: <https://github.com/xyflow/xyflow#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) 2019-2023 webkid GmbH
@@ -21419,11 +20991,11 @@ SOFTWARE.
 
 - License: `MIT`
 - Author: Mark Erikson
-- Homepage: https://redux-toolkit.js.org
+- Homepage: <https://redux-toolkit.js.org>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) 2018 Mark Erikson
@@ -21453,11 +21025,11 @@ SOFTWARE.
 
 - License: `MIT`
 - Author: Ze-Zheng Wu
-- Homepage: https://github.com/Sec-ant/readable-stream
+- Homepage: <https://github.com/Sec-ant/readable-stream>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) 2022 Ze-Zheng Wu
@@ -21487,11 +21059,11 @@ SOFTWARE.
 
 - License: `MIT`
 - Author: Sindre Sorhus
-- Homepage: https://github.com/sindresorhus/merge-streams#readme
+- Homepage: <https://github.com/sindresorhus/merge-streams#readme>
 
 <details><summary>license</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) Sindre Sorhus <sindresorhus@gmail.com> (https://sindresorhus.com)
@@ -21509,11 +21081,11 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 - License: `MIT`
 - Author: Colin McDonnell
-- Homepage: https://standardschema.dev
+- Homepage: <https://standardschema.dev>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) 2024 Colin McDonnell
@@ -21543,11 +21115,11 @@ SOFTWARE.
 
 - License: `MIT`
 - Author: Fabian Hiller
-- Homepage: https://github.com/standard-schema/standard-schema#readme
+- Homepage: <https://github.com/standard-schema/standard-schema#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) 2024 Fabian Hiller
@@ -21577,11 +21149,11 @@ SOFTWARE.
 
 - License: `Apache-2.0`
 - Author: 강동윤
-- Homepage: https://swc.rs
+- Homepage: <https://swc.rs>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Apache License
                         Version 2.0, January 2004
                      http://www.apache.org/licenses/
@@ -21791,11 +21363,11 @@ limitations under the License.
 
 - License: `MIT`
 - Author: tannerlinsley
-- Homepage: https://tanstack.com/query
+- Homepage: <https://tanstack.com/query>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) 2021-present Tanner Linsley
@@ -21825,11 +21397,11 @@ SOFTWARE.
 
 - License: `MIT`
 - Author: tannerlinsley
-- Homepage: https://tanstack.com/query
+- Homepage: <https://tanstack.com/query>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) 2021-present Tanner Linsley
@@ -21859,11 +21431,11 @@ SOFTWARE.
 
 - License: `MIT`
 - Author: David Sherret
-- Homepage: https://github.com/dsherret/ts-morph#readme
+- Homepage: <https://github.com/dsherret/ts-morph#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 The MIT License (MIT)
 
 Copyright (c) 2017 David Sherret
@@ -21889,14 +21461,14 @@ SOFTWARE.
 
 </details>
 
-### @types/aws-lambda@8.10.162
+### @types/aws-lambda@8.10.164
 
 - License: `MIT`
-- Homepage: https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/aws-lambda
+- Homepage: <https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/aws-lambda>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
     Copyright (c) Microsoft Corporation.
@@ -21925,11 +21497,11 @@ MIT License
 ### @types/connect@3.4.38
 
 - License: `MIT`
-- Homepage: https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/connect
+- Homepage: <https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/connect>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
     Copyright (c) Microsoft Corporation.
@@ -21958,11 +21530,11 @@ MIT License
 ### @types/cookie@0.6.0
 
 - License: `MIT`
-- Homepage: https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/cookie
+- Homepage: <https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/cookie>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
     Copyright (c) Microsoft Corporation.
@@ -21991,11 +21563,11 @@ MIT License
 ### @types/d3@7.4.3
 
 - License: `MIT`
-- Homepage: https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/d3
+- Homepage: <https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/d3>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
     Copyright (c) Microsoft Corporation.
@@ -22024,11 +21596,11 @@ MIT License
 ### @types/d3-array@3.2.2
 
 - License: `MIT`
-- Homepage: https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/d3-array
+- Homepage: <https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/d3-array>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
     Copyright (c) Microsoft Corporation.
@@ -22057,11 +21629,11 @@ MIT License
 ### @types/d3-axis@3.0.6
 
 - License: `MIT`
-- Homepage: https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/d3-axis
+- Homepage: <https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/d3-axis>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
     Copyright (c) Microsoft Corporation.
@@ -22090,11 +21662,11 @@ MIT License
 ### @types/d3-brush@3.0.6
 
 - License: `MIT`
-- Homepage: https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/d3-brush
+- Homepage: <https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/d3-brush>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
     Copyright (c) Microsoft Corporation.
@@ -22123,11 +21695,11 @@ MIT License
 ### @types/d3-chord@3.0.6
 
 - License: `MIT`
-- Homepage: https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/d3-chord
+- Homepage: <https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/d3-chord>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
     Copyright (c) Microsoft Corporation.
@@ -22156,11 +21728,11 @@ MIT License
 ### @types/d3-color@3.1.3
 
 - License: `MIT`
-- Homepage: https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/d3-color
+- Homepage: <https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/d3-color>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
     Copyright (c) Microsoft Corporation.
@@ -22189,11 +21761,11 @@ MIT License
 ### @types/d3-contour@3.0.6
 
 - License: `MIT`
-- Homepage: https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/d3-contour
+- Homepage: <https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/d3-contour>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
     Copyright (c) Microsoft Corporation.
@@ -22222,11 +21794,11 @@ MIT License
 ### @types/d3-delaunay@6.0.4
 
 - License: `MIT`
-- Homepage: https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/d3-delaunay
+- Homepage: <https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/d3-delaunay>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
     Copyright (c) Microsoft Corporation.
@@ -22255,11 +21827,11 @@ MIT License
 ### @types/d3-dispatch@3.0.7
 
 - License: `MIT`
-- Homepage: https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/d3-dispatch
+- Homepage: <https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/d3-dispatch>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
     Copyright (c) Microsoft Corporation.
@@ -22288,11 +21860,11 @@ MIT License
 ### @types/d3-drag@3.0.7
 
 - License: `MIT`
-- Homepage: https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/d3-drag
+- Homepage: <https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/d3-drag>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
     Copyright (c) Microsoft Corporation.
@@ -22321,11 +21893,11 @@ MIT License
 ### @types/d3-dsv@3.0.7
 
 - License: `MIT`
-- Homepage: https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/d3-dsv
+- Homepage: <https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/d3-dsv>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
     Copyright (c) Microsoft Corporation.
@@ -22354,11 +21926,11 @@ MIT License
 ### @types/d3-ease@3.0.2
 
 - License: `MIT`
-- Homepage: https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/d3-ease
+- Homepage: <https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/d3-ease>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
     Copyright (c) Microsoft Corporation.
@@ -22387,11 +21959,11 @@ MIT License
 ### @types/d3-fetch@3.0.7
 
 - License: `MIT`
-- Homepage: https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/d3-fetch
+- Homepage: <https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/d3-fetch>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
     Copyright (c) Microsoft Corporation.
@@ -22420,11 +21992,11 @@ MIT License
 ### @types/d3-force@3.0.10
 
 - License: `MIT`
-- Homepage: https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/d3-force
+- Homepage: <https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/d3-force>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
     Copyright (c) Microsoft Corporation.
@@ -22453,11 +22025,11 @@ MIT License
 ### @types/d3-format@3.0.4
 
 - License: `MIT`
-- Homepage: https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/d3-format
+- Homepage: <https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/d3-format>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
     Copyright (c) Microsoft Corporation.
@@ -22486,11 +22058,11 @@ MIT License
 ### @types/d3-geo@3.1.0
 
 - License: `MIT`
-- Homepage: https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/d3-geo
+- Homepage: <https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/d3-geo>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
     Copyright (c) Microsoft Corporation.
@@ -22519,11 +22091,11 @@ MIT License
 ### @types/d3-hierarchy@3.1.7
 
 - License: `MIT`
-- Homepage: https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/d3-hierarchy
+- Homepage: <https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/d3-hierarchy>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
     Copyright (c) Microsoft Corporation.
@@ -22552,11 +22124,11 @@ MIT License
 ### @types/d3-interpolate@3.0.4
 
 - License: `MIT`
-- Homepage: https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/d3-interpolate
+- Homepage: <https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/d3-interpolate>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
     Copyright (c) Microsoft Corporation.
@@ -22585,11 +22157,11 @@ MIT License
 ### @types/d3-path@3.1.1
 
 - License: `MIT`
-- Homepage: https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/d3-path
+- Homepage: <https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/d3-path>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
     Copyright (c) Microsoft Corporation.
@@ -22618,11 +22190,11 @@ MIT License
 ### @types/d3-polygon@3.0.2
 
 - License: `MIT`
-- Homepage: https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/d3-polygon
+- Homepage: <https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/d3-polygon>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
     Copyright (c) Microsoft Corporation.
@@ -22651,11 +22223,11 @@ MIT License
 ### @types/d3-quadtree@3.0.6
 
 - License: `MIT`
-- Homepage: https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/d3-quadtree
+- Homepage: <https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/d3-quadtree>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
     Copyright (c) Microsoft Corporation.
@@ -22684,11 +22256,11 @@ MIT License
 ### @types/d3-random@3.0.3
 
 - License: `MIT`
-- Homepage: https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/d3-random
+- Homepage: <https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/d3-random>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
     Copyright (c) Microsoft Corporation.
@@ -22717,11 +22289,11 @@ MIT License
 ### @types/d3-scale@4.0.9
 
 - License: `MIT`
-- Homepage: https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/d3-scale
+- Homepage: <https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/d3-scale>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
     Copyright (c) Microsoft Corporation.
@@ -22750,11 +22322,11 @@ MIT License
 ### @types/d3-scale-chromatic@3.1.0
 
 - License: `MIT`
-- Homepage: https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/d3-scale-chromatic
+- Homepage: <https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/d3-scale-chromatic>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
     Copyright (c) Microsoft Corporation.
@@ -22783,11 +22355,11 @@ MIT License
 ### @types/d3-selection@3.0.11
 
 - License: `MIT`
-- Homepage: https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/d3-selection
+- Homepage: <https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/d3-selection>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
     Copyright (c) Microsoft Corporation.
@@ -22816,11 +22388,11 @@ MIT License
 ### @types/d3-shape@3.1.8
 
 - License: `MIT`
-- Homepage: https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/d3-shape
+- Homepage: <https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/d3-shape>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
     Copyright (c) Microsoft Corporation.
@@ -22849,11 +22421,11 @@ MIT License
 ### @types/d3-time@3.0.4
 
 - License: `MIT`
-- Homepage: https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/d3-time
+- Homepage: <https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/d3-time>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
     Copyright (c) Microsoft Corporation.
@@ -22882,11 +22454,11 @@ MIT License
 ### @types/d3-time-format@4.0.3
 
 - License: `MIT`
-- Homepage: https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/d3-time-format
+- Homepage: <https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/d3-time-format>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
     Copyright (c) Microsoft Corporation.
@@ -22915,11 +22487,11 @@ MIT License
 ### @types/d3-timer@3.0.2
 
 - License: `MIT`
-- Homepage: https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/d3-timer
+- Homepage: <https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/d3-timer>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
     Copyright (c) Microsoft Corporation.
@@ -22948,11 +22520,11 @@ MIT License
 ### @types/d3-transition@3.0.9
 
 - License: `MIT`
-- Homepage: https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/d3-transition
+- Homepage: <https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/d3-transition>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
     Copyright (c) Microsoft Corporation.
@@ -22981,11 +22553,11 @@ MIT License
 ### @types/d3-zoom@3.0.8
 
 - License: `MIT`
-- Homepage: https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/d3-zoom
+- Homepage: <https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/d3-zoom>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
     Copyright (c) Microsoft Corporation.
@@ -23014,11 +22586,11 @@ MIT License
 ### @types/geojson@7946.0.16
 
 - License: `MIT`
-- Homepage: https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/geojson
+- Homepage: <https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/geojson>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
     Copyright (c) Microsoft Corporation.
@@ -23047,11 +22619,11 @@ MIT License
 ### @types/js-yaml@4.0.9
 
 - License: `MIT`
-- Homepage: https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/js-yaml
+- Homepage: <https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/js-yaml>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
     Copyright (c) Microsoft Corporation.
@@ -23080,11 +22652,11 @@ MIT License
 ### @types/memcached@2.2.10
 
 - License: `MIT`
-- Homepage: https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/memcached
+- Homepage: <https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/memcached>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
     Copyright (c) Microsoft Corporation.
@@ -23113,11 +22685,11 @@ MIT License
 ### @types/node@22.20.1
 
 - License: `MIT`
-- Homepage: https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/node
+- Homepage: <https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/node>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
     Copyright (c) Microsoft Corporation.
@@ -23146,11 +22718,11 @@ MIT License
 ### @types/node@24.12.0
 
 - License: `MIT`
-- Homepage: https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/node
+- Homepage: <https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/node>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
     Copyright (c) Microsoft Corporation.
@@ -23179,11 +22751,11 @@ MIT License
 ### @types/node-fetch@2.6.13
 
 - License: `MIT`
-- Homepage: https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/node-fetch
+- Homepage: <https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/node-fetch>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
     Copyright (c) Microsoft Corporation.
@@ -23212,11 +22784,11 @@ MIT License
 ### @types/pg@8.15.6
 
 - License: `MIT`
-- Homepage: https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/pg
+- Homepage: <https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/pg>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
     Copyright (c) Microsoft Corporation.
@@ -23245,11 +22817,11 @@ MIT License
 ### @types/pg-pool@2.0.7
 
 - License: `MIT`
-- Homepage: https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/pg-pool
+- Homepage: <https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/pg-pool>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
     Copyright (c) Microsoft Corporation.
@@ -23278,11 +22850,11 @@ MIT License
 ### @types/react@19.3.0
 
 - License: `MIT`
-- Homepage: https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/react
+- Homepage: <https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/react>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
     Copyright (c) Microsoft Corporation.
@@ -23311,11 +22883,11 @@ MIT License
 ### @types/react-dom@19.3.0
 
 - License: `MIT`
-- Homepage: https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/react-dom
+- Homepage: <https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/react-dom>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
     Copyright (c) Microsoft Corporation.
@@ -23344,11 +22916,11 @@ MIT License
 ### @types/stream-buffers@3.0.8
 
 - License: `MIT`
-- Homepage: https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/stream-buffers
+- Homepage: <https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/stream-buffers>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
     Copyright (c) Microsoft Corporation.
@@ -23377,11 +22949,11 @@ MIT License
 ### @types/use-sync-external-store@0.0.6
 
 - License: `MIT`
-- Homepage: https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/use-sync-external-store
+- Homepage: <https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/use-sync-external-store>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
     Copyright (c) Microsoft Corporation.
@@ -23410,11 +22982,11 @@ MIT License
 ### @types/validate-npm-package-name@4.0.2
 
 - License: `MIT`
-- Homepage: https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/validate-npm-package-name
+- Homepage: <https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/validate-npm-package-name>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
     Copyright (c) Microsoft Corporation.
@@ -23443,11 +23015,11 @@ MIT License
 ### accepts@2.0.0
 
 - License: `MIT`
-- Homepage: https://github.com/jshttp/accepts#readme
+- Homepage: <https://github.com/jshttp/accepts#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 (The MIT License)
 
 Copyright (c) 2014 Jonathan Ong <me@jongleberry.com>
@@ -23479,11 +23051,11 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 - License: `MIT`
 - Author: Nathan Rajlich
-- Homepage: https://github.com/TooTallNate/proxy-agents#readme
+- Homepage: <https://github.com/TooTallNate/proxy-agents#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 (The MIT License)
 
 Copyright (c) 2013 Nathan Rajlich <nathan@tootallnate.net>
@@ -23514,11 +23086,11 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 - License: `MIT`
 - Author: Evgeny Poberezkin
-- Homepage: https://ajv.js.org
+- Homepage: <https://ajv.js.org>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 The MIT License (MIT)
 
 Copyright (c) 2015-2021 Evgeny Poberezkin
@@ -23548,11 +23120,11 @@ SOFTWARE.
 
 - License: `MIT`
 - Author: Evgeny Poberezkin
-- Homepage: https://github.com/ajv-validator/ajv-formats#readme
+- Homepage: <https://github.com/ajv-validator/ajv-formats#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) 2020 Evgeny Poberezkin
@@ -23582,11 +23154,11 @@ SOFTWARE.
 
 - License: `MIT`
 - Author: Evgeny Poberezkin
-- Homepage: https://github.com/ajv-validator/ajv-formats#readme
+- Homepage: <https://github.com/ajv-validator/ajv-formats#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) 2020 Evgeny Poberezkin
@@ -23616,11 +23188,11 @@ SOFTWARE.
 
 - License: `MIT`
 - Author: Brian Woodward
-- Homepage: https://github.com/doowb/ansi-colors
+- Homepage: <https://github.com/doowb/ansi-colors>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 The MIT License (MIT)
 
 Copyright (c) 2015-present, Brian Woodward.
@@ -23650,11 +23222,11 @@ THE SOFTWARE.
 
 - License: `MIT`
 - Author: Sindre Sorhus
-- Homepage: https://github.com/chalk/ansi-regex#readme
+- Homepage: <https://github.com/chalk/ansi-regex#readme>
 
 <details><summary>license</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) Sindre Sorhus <sindresorhus@gmail.com> (sindresorhus.com)
@@ -23672,11 +23244,11 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 - License: `MIT`
 - Author: Sindre Sorhus
-- Homepage: https://github.com/chalk/ansi-regex#readme
+- Homepage: <https://github.com/chalk/ansi-regex#readme>
 
 <details><summary>license</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) Sindre Sorhus <sindresorhus@gmail.com> (https://sindresorhus.com)
@@ -23694,11 +23266,11 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 - License: `MIT`
 - Author: Sindre Sorhus
-- Homepage: https://github.com/chalk/ansi-styles#readme
+- Homepage: <https://github.com/chalk/ansi-styles#readme>
 
 <details><summary>license</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) Sindre Sorhus <sindresorhus@gmail.com> (sindresorhus.com)
@@ -23716,11 +23288,11 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 - License: `MIT`
 - Author: Sindre Sorhus
-- Homepage: https://github.com/chalk/ansi-styles#readme
+- Homepage: <https://github.com/chalk/ansi-styles#readme>
 
 <details><summary>license</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) Sindre Sorhus <sindresorhus@gmail.com> (https://sindresorhus.com)
@@ -23737,11 +23309,11 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 ### argparse@2.0.1
 
 - License: `Python-2.0`
-- Homepage: https://github.com/nodeca/argparse#readme
+- Homepage: <https://github.com/nodeca/argparse#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 A. HISTORY OF THE SOFTWARE
 ==========================
 
@@ -24000,11 +23572,11 @@ OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
 - License: `MIT`
 - Author: Anton Korzunov
-- Homepage: https://github.com/theKashey/aria-hidden#readme
+- Homepage: <https://github.com/theKashey/aria-hidden#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) 2017 Anton Korzunov
@@ -24034,11 +23606,11 @@ SOFTWARE.
 
 - License: `MIT`
 - Author: Ben Newman
-- Homepage: http://github.com/benjamn/ast-types
+- Homepage: <http://github.com/benjamn/ast-types>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Copyright (c) 2013 Ben Newman <bn@cs.stanford.edu>
 
 Permission is hereby granted, free of charge, to any person obtaining
@@ -24067,11 +23639,11 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 - License: `MIT`
 - Author: Alex Indigo
-- Homepage: https://github.com/alexindigo/asynckit#readme
+- Homepage: <https://github.com/alexindigo/asynckit#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 The MIT License (MIT)
 
 Copyright (c) 2016 Alex Indigo
@@ -24101,11 +23673,11 @@ SOFTWARE.
 
 - License: `MIT`
 - Author: Fabio Spampinato
-- Homepage: https://github.com/fabiospampinato/atomically#readme
+- Homepage: <https://github.com/fabiospampinato/atomically#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 The MIT License (MIT)
 
 Copyright (c) 2020-present Fabio Spampinato
@@ -24135,11 +23707,11 @@ DEALINGS IN THE SOFTWARE.
 
 - License: `Apache-2.0`
 - Author: Holepunch
-- Homepage: https://github.com/holepunchto/b4a#readme
+- Homepage: <https://github.com/holepunchto/b4a#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Apache License
                            Version 2.0, January 2004
                         http://www.apache.org/licenses/
@@ -24348,11 +23920,11 @@ Apache License
 ### balanced-match@4.0.4
 
 - License: `MIT`
-- Homepage: https://github.com/juliangruber/balanced-match#readme
+- Homepage: <https://github.com/juliangruber/balanced-match#readme>
 
 <details><summary>LICENSE.md</summary>
 
-```
+```text
 (MIT)
 
 Original code Copyright Julian Gruber <julian@juliangruber.com>
@@ -24384,11 +23956,11 @@ SOFTWARE.
 
 - License: `Apache-2.0`
 - Author: Holepunch
-- Homepage: https://github.com/holepunchto/bare-events#readme
+- Homepage: <https://github.com/holepunchto/bare-events#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Apache License
                            Version 2.0, January 2004
                         http://www.apache.org/licenses/
@@ -24598,11 +24170,11 @@ Apache License
 
 - License: `Apache-2.0`
 - Author: Holepunch
-- Homepage: https://github.com/holepunchto/bare-fs#readme
+- Homepage: <https://github.com/holepunchto/bare-fs#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Apache License
                            Version 2.0, January 2004
                         http://www.apache.org/licenses/
@@ -24812,11 +24384,11 @@ Apache License
 
 - License: `Apache-2.0`
 - Author: Holepunch
-- Homepage: https://github.com/holepunchto/bare-os#readme
+- Homepage: <https://github.com/holepunchto/bare-os#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Apache License
                            Version 2.0, January 2004
                         http://www.apache.org/licenses/
@@ -25026,11 +24598,11 @@ Apache License
 
 - License: `Apache-2.0`
 - Author: Holepunch
-- Homepage: https://github.com/holepunchto/bare-path#readme
+- Homepage: <https://github.com/holepunchto/bare-path#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Apache License
                            Version 2.0, January 2004
                         http://www.apache.org/licenses/
@@ -25238,7 +24810,7 @@ Apache License
 
 <details><summary>NOTICE</summary>
 
-```
+```text
 Copyright 2023 Holepunch Inc
 
 Licensed under the Apache License, Version 2.0 (the "License");
@@ -25275,11 +24847,11 @@ in all copies or substantial portions of the Software.
 
 - License: `Apache-2.0`
 - Author: Holepunch
-- Homepage: https://github.com/holepunchto/bare-stream#readme
+- Homepage: <https://github.com/holepunchto/bare-stream#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Apache License
                            Version 2.0, January 2004
                         http://www.apache.org/licenses/
@@ -25489,11 +25061,11 @@ Apache License
 
 - License: `Apache-2.0`
 - Author: Holepunch
-- Homepage: https://github.com/holepunchto/bare-url
+- Homepage: <https://github.com/holepunchto/bare-url>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Apache License
                            Version 2.0, January 2004
                         http://www.apache.org/licenses/
@@ -25702,11 +25274,11 @@ Apache License
 ### baseline-browser-mapping@2.11.20
 
 - License: `Apache-2.0`
-- Homepage: https://github.com/web-platform-dx/baseline-browser-mapping#readme
+- Homepage: <https://github.com/web-platform-dx/baseline-browser-mapping#readme>
 
 <details><summary>LICENSE.txt</summary>
 
-```
+```text
 Apache License
                            Version 2.0, January 2004
                         http://www.apache.org/licenses/
@@ -25916,11 +25488,11 @@ Apache License
 
 - License: `MIT`
 - Author: Michael Mclaughlin
-- Homepage: https://github.com/MikeMcl/bignumber.js#readme
+- Homepage: <https://github.com/MikeMcl/bignumber.js#readme>
 
 <details><summary>LICENCE.md</summary>
 
-```
+```text
 The MIT License (MIT)
 =====================
 
@@ -25953,11 +25525,11 @@ OTHER DEALINGS IN THE SOFTWARE.
 ### body-parser@2.3.0
 
 - License: `MIT`
-- Homepage: https://github.com/expressjs/body-parser#readme
+- Homepage: <https://github.com/expressjs/body-parser#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 (The MIT License)
 
 Copyright (c) 2014 Jonathan Ong <me@jongleberry.com>
@@ -25985,14 +25557,49 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 </details>
 
-### brace-expansion@5.0.9
+### brace-expansion@5.0.12
 
 - License: `MIT`
-- Homepage: https://github.com/juliangruber/brace-expansion#readme
+- Homepage: <https://github.com/juliangruber/brace-expansion#readme>
 
 <details><summary>LICENSE</summary>
 
+```text
+MIT License
+
+Copyright Julian Gruber <julian@juliangruber.com>
+
+TypeScript port Copyright Isaac Z. Schlueter <i@izs.me>
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
 ```
+
+</details>
+
+### brace-expansion@5.0.9
+
+- License: `MIT`
+- Homepage: <https://github.com/juliangruber/brace-expansion#readme>
+
+<details><summary>LICENSE</summary>
+
+```text
 MIT License
 
 Copyright Julian Gruber <julian@juliangruber.com>
@@ -26024,11 +25631,11 @@ SOFTWARE.
 
 - License: `MIT`
 - Author: Jon Schlinkert
-- Homepage: https://github.com/micromatch/braces
+- Homepage: <https://github.com/micromatch/braces>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 The MIT License (MIT)
 
 Copyright (c) 2014-present, Jon Schlinkert.
@@ -26058,11 +25665,11 @@ THE SOFTWARE.
 
 - License: `MIT`
 - Author: Andrey Sitnik
-- Homepage: https://github.com/browserslist/browserslist#readme
+- Homepage: <https://github.com/browserslist/browserslist#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 The MIT License (MIT)
 
 Copyright 2014 Andrey Sitnik <andrey@sitnik.es> and other contributors
@@ -26091,11 +25698,11 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 - License: `MIT`
 - Author: Sindre Sorhus
-- Homepage: https://github.com/sindresorhus/bundle-name#readme
+- Homepage: <https://github.com/sindresorhus/bundle-name#readme>
 
 <details><summary>license</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) Sindre Sorhus <sindresorhus@gmail.com> (https://sindresorhus.com)
@@ -26113,11 +25720,11 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 - License: `MIT`
 - Author: TJ Holowaychuk
-- Homepage: https://github.com/visionmedia/bytes.js#readme
+- Homepage: <https://github.com/visionmedia/bytes.js#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 (The MIT License)
 
 Copyright (c) 2012-2014 TJ Holowaychuk <tj@vision-media.ca>
@@ -26149,11 +25756,11 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 - License: `MIT`
 - Author: Jordan Harband
-- Homepage: https://github.com/ljharb/call-bind-apply-helpers#readme
+- Homepage: <https://github.com/ljharb/call-bind-apply-helpers#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) 2024 Jordan Harband
@@ -26183,11 +25790,11 @@ SOFTWARE.
 
 - License: `MIT`
 - Author: Jordan Harband
-- Homepage: https://github.com/ljharb/call-bound#readme
+- Homepage: <https://github.com/ljharb/call-bound#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) 2024 Jordan Harband
@@ -26217,11 +25824,11 @@ SOFTWARE.
 
 - License: `MIT`
 - Author: Sindre Sorhus
-- Homepage: https://github.com/sindresorhus/callsites#readme
+- Homepage: <https://github.com/sindresorhus/callsites#readme>
 
 <details><summary>license</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) Sindre Sorhus <sindresorhus@gmail.com> (sindresorhus.com)
@@ -26239,11 +25846,11 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 - License: `CC-BY-4.0`
 - Author: Ben Briggs
-- Homepage: https://github.com/browserslist/caniuse-lite#readme
+- Homepage: <https://github.com/browserslist/caniuse-lite#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Attribution 4.0 International
 
 =======================================================================
@@ -26637,11 +26244,11 @@ Creative Commons may be contacted at creativecommons.org.
 ### chalk@5.6.2
 
 - License: `MIT`
-- Homepage: https://github.com/chalk/chalk#readme
+- Homepage: <https://github.com/chalk/chalk#readme>
 
 <details><summary>license</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) Sindre Sorhus <sindresorhus@gmail.com> (https://sindresorhus.com)
@@ -26655,15 +26262,15 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 </details>
 
-### cjs-module-lexer@2.2.1
+### cjs-module-lexer@2.3.0
 
 - License: `MIT`
 - Author: Guy Bedford
-- Homepage: https://github.com/nodejs/cjs-module-lexer#readme
+- Homepage: <https://github.com/nodejs/cjs-module-lexer#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 -----------
 
@@ -26682,11 +26289,11 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 - License: `Apache-2.0`
 - Author: Joe Bell
-- Homepage: https://github.com/joe-bell/cva#readme
+- Homepage: <https://github.com/joe-bell/cva#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Apache License
                            Version 2.0, January 2004
                         http://www.apache.org/licenses/
@@ -26885,11 +26492,11 @@ Apache License
 
 - License: `MIT`
 - Author: Jorge Bucaran
-- Homepage: https://github.com/jorgebucaran/classcat#readme
+- Homepage: <https://github.com/jorgebucaran/classcat#readme>
 
 <details><summary>LICENSE.md</summary>
 
-```
+```text
 Copyright © Jorge Bucaran <<https://jorgebucaran.com>>
 
 Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the 'Software'), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
@@ -26905,11 +26512,11 @@ THE SOFTWARE IS PROVIDED 'AS IS', WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 - License: `MIT`
 - Author: Sindre Sorhus
-- Homepage: https://github.com/sindresorhus/cli-cursor#readme
+- Homepage: <https://github.com/sindresorhus/cli-cursor#readme>
 
 <details><summary>license</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) Sindre Sorhus <sindresorhus@gmail.com> (https://sindresorhus.com)
@@ -26927,11 +26534,11 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 - License: `MIT`
 - Author: Sindre Sorhus
-- Homepage: https://github.com/sindresorhus/cli-spinners#readme
+- Homepage: <https://github.com/sindresorhus/cli-spinners#readme>
 
 <details><summary>license</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) Sindre Sorhus <sindresorhus@gmail.com> (https://sindresorhus.com)
@@ -26948,7 +26555,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 ### client-only@0.0.1
 
 - License: `MIT`
-- Homepage: https://reactjs.org/
+- Homepage: <https://reactjs.org/>
 
 _No license file shipped with the package; the SPDX identifier above is its declaration._
 
@@ -26956,11 +26563,11 @@ _No license file shipped with the package; the SPDX identifier above is its decl
 
 - License: `ISC`
 - Author: Ben Coe
-- Homepage: https://github.com/yargs/cliui#readme
+- Homepage: <https://github.com/yargs/cliui#readme>
 
 <details><summary>LICENSE.txt</summary>
 
-```
+```text
 Copyright (c) 2015, Contributors
 
 Permission to use, copy, modify, and/or distribute this software
@@ -26983,11 +26590,11 @@ ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
 - License: `MIT`
 - Author: Luke Edwards
-- Homepage: https://github.com/lukeed/clsx#readme
+- Homepage: <https://github.com/lukeed/clsx#readme>
 
 <details><summary>license</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) Luke Edwards <luke.edwards05@gmail.com> (lukeed.com)
@@ -27005,11 +26612,11 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 - License: `Apache-2.0`
 - Author: Mike Diarmid
-- Homepage: https://github.com/Salakar/cluster-key-slot#readme
+- Homepage: <https://github.com/Salakar/cluster-key-slot#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Copyright (c) 2018 Mike Diarmid (Salakar) <mike.diarmid@gmail.com>
 
 Licensed under the Apache License, Version 2.0 (the "License");
@@ -27031,11 +26638,11 @@ limitations under the License.
 
 - License: `MIT`
 - Author: Paco
-- Homepage: https://github.com/pacocoursey/cmdk#readme
+- Homepage: <https://github.com/pacocoursey/cmdk#readme>
 
 <details><summary>LICENSE.md</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) 2022 Paco Coursey
@@ -27065,11 +26672,11 @@ SOFTWARE.
 
 - License: `MIT`
 - Author: David Sherret
-- Homepage: https://github.com/dsherret/code-block-writer#readme
+- Homepage: <https://github.com/dsherret/code-block-writer#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 The MIT License (MIT)
 
 Copyright (c) 2015-2024 David Sherret
@@ -27099,11 +26706,11 @@ SOFTWARE.
 
 - License: `MIT`
 - Author: Heather Arthur
-- Homepage: https://github.com/Qix-/color-convert#readme
+- Homepage: <https://github.com/Qix-/color-convert#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Copyright (c) 2011-2016 Heather Arthur <fayearthur@gmail.com>
 
 Permission is hereby granted, free of charge, to any person obtaining
@@ -27132,11 +26739,11 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 - License: `MIT`
 - Author: DY
-- Homepage: https://github.com/colorjs/color-name
+- Homepage: <https://github.com/colorjs/color-name>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 The MIT License (MIT)
 Copyright (c) 2015 Dmitry Ivanov
 
@@ -27153,11 +26760,11 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 - License: `MIT`
 - Author: Felix Geisendörfer
-- Homepage: https://github.com/felixge/node-combined-stream
+- Homepage: <https://github.com/felixge/node-combined-stream>
 
 <details><summary>License</summary>
 
-```
+```text
 Copyright (c) 2011 Debuggable Limited <felix@debuggable.com>
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -27185,11 +26792,11 @@ THE SOFTWARE.
 
 - License: `MIT`
 - Author: TJ Holowaychuk
-- Homepage: https://github.com/tj/commander.js#readme
+- Homepage: <https://github.com/tj/commander.js#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 (The MIT License)
 
 Copyright (c) 2011 TJ Holowaychuk <tj@vision-media.ca>
@@ -27220,11 +26827,11 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 - License: `MIT`
 - Author: TJ Holowaychuk
-- Homepage: https://github.com/tj/commander.js#readme
+- Homepage: <https://github.com/tj/commander.js#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 (The MIT License)
 
 Copyright (c) 2011 TJ Holowaychuk <tj@vision-media.ca>
@@ -27255,11 +26862,11 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 - License: `MIT`
 - Author: Sindre Sorhus
-- Homepage: https://github.com/sindresorhus/conf#readme
+- Homepage: <https://github.com/sindresorhus/conf#readme>
 
 <details><summary>license</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) Sindre Sorhus <sindresorhus@gmail.com> (https://sindresorhus.com)
@@ -27277,11 +26884,11 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 - License: `MIT`
 - Author: Douglas Christopher Wilson
-- Homepage: https://github.com/jshttp/content-disposition#readme
+- Homepage: <https://github.com/jshttp/content-disposition#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 (The MIT License)
 
 Copyright (c) 2014-2017 Douglas Christopher Wilson
@@ -27312,11 +26919,11 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 - License: `MIT`
 - Author: Douglas Christopher Wilson
-- Homepage: https://github.com/jshttp/content-type#readme
+- Homepage: <https://github.com/jshttp/content-type#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 (The MIT License)
 
 Copyright (c) 2015 Douglas Christopher Wilson
@@ -27347,11 +26954,11 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 - License: `MIT`
 - Author: Douglas Christopher Wilson
-- Homepage: https://github.com/jshttp/content-type#readme
+- Homepage: <https://github.com/jshttp/content-type#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 (The MIT License)
 
 Copyright (c) 2015 Douglas Christopher Wilson
@@ -27382,11 +26989,11 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 - License: `MIT`
 - Author: Thorsten Lorenz
-- Homepage: https://github.com/thlorenz/convert-source-map
+- Homepage: <https://github.com/thlorenz/convert-source-map>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Copyright 2013 Thorsten Lorenz. 
 All rights reserved.
 
@@ -27418,11 +27025,11 @@ OTHER DEALINGS IN THE SOFTWARE.
 
 - License: `MIT`
 - Author: Roman Shtylman
-- Homepage: https://github.com/jshttp/cookie#readme
+- Homepage: <https://github.com/jshttp/cookie#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 (The MIT License)
 
 Copyright (c) 2012-2014 Roman Shtylman <shtylman@gmail.com>
@@ -27454,11 +27061,11 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 - License: `MIT`
 - Author: Roman Shtylman
-- Homepage: https://github.com/jshttp/cookie#readme
+- Homepage: <https://github.com/jshttp/cookie#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 (The MIT License)
 
 Copyright (c) 2012-2014 Roman Shtylman <shtylman@gmail.com>
@@ -27490,11 +27097,11 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 - License: `MIT`
 - Author: TJ Holowaychuk
-- Homepage: https://github.com/visionmedia/node-cookie-signature#readme
+- Homepage: <https://github.com/visionmedia/node-cookie-signature#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 (The MIT License)
 
 Copyright (c) 2012–2024 LearnBoost <tj@learnboost.com> and other contributors;
@@ -27525,11 +27132,11 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 - License: `MIT`
 - Author: Troy Goode
-- Homepage: https://github.com/expressjs/cors#readme
+- Homepage: <https://github.com/expressjs/cors#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 (The MIT License)
 
 Copyright (c) 2013 Troy Goode <troygoode@gmail.com>
@@ -27560,11 +27167,11 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 - License: `MIT`
 - Author: Daniel Fischer
-- Homepage: https://github.com/cosmiconfig/cosmiconfig#readme
+- Homepage: <https://github.com/cosmiconfig/cosmiconfig#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 The MIT License (MIT)
 
 Copyright (c) 2015 David Clark
@@ -27594,11 +27201,11 @@ SOFTWARE.
 
 - License: `MIT`
 - Author: André Cruz
-- Homepage: https://github.com/moxystudio/node-cross-spawn
+- Homepage: <https://github.com/moxystudio/node-cross-spawn>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 The MIT License (MIT)
 
 Copyright (c) 2018 Made With MOXY Lda <hello@moxy.studio>
@@ -27628,7 +27235,7 @@ THE SOFTWARE.
 
 - License: `MIT`
 - Author: Mathias Bynens
-- Homepage: https://mths.be/cssesc
+- Homepage: <https://mths.be/cssesc>
 
 _No license file shipped with the package; the SPDX identifier above is its declaration._
 
@@ -27636,11 +27243,11 @@ _No license file shipped with the package; the SPDX identifier above is its decl
 
 - License: `MIT`
 - Author: Fredrik Nicol
-- Homepage: https://github.com/frenic/csstype#readme
+- Homepage: <https://github.com/frenic/csstype#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Copyright (c) 2017-2018 Fredrik Nicol
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -27668,11 +27275,11 @@ SOFTWARE.
 
 - License: `ISC`
 - Author: Mike Bostock
-- Homepage: https://d3js.org/d3-array/
+- Homepage: <https://d3js.org/d3-array/>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Copyright 2010-2023 Mike Bostock
 
 Permission to use, copy, modify, and/or distribute this software for any purpose
@@ -27694,11 +27301,11 @@ THIS SOFTWARE.
 
 - License: `ISC`
 - Author: Mike Bostock
-- Homepage: https://d3js.org/d3-color/
+- Homepage: <https://d3js.org/d3-color/>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Copyright 2010-2022 Mike Bostock
 
 Permission to use, copy, modify, and/or distribute this software for any purpose
@@ -27720,11 +27327,11 @@ THIS SOFTWARE.
 
 - License: `ISC`
 - Author: Mike Bostock
-- Homepage: https://d3js.org/d3-dispatch/
+- Homepage: <https://d3js.org/d3-dispatch/>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Copyright 2010-2021 Mike Bostock
 
 Permission to use, copy, modify, and/or distribute this software for any purpose
@@ -27746,11 +27353,11 @@ THIS SOFTWARE.
 
 - License: `ISC`
 - Author: Mike Bostock
-- Homepage: https://d3js.org/d3-drag/
+- Homepage: <https://d3js.org/d3-drag/>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Copyright 2010-2021 Mike Bostock
 
 Permission to use, copy, modify, and/or distribute this software for any purpose
@@ -27772,11 +27379,11 @@ THIS SOFTWARE.
 
 - License: `BSD-3-Clause`
 - Author: Mike Bostock
-- Homepage: https://d3js.org/d3-ease/
+- Homepage: <https://d3js.org/d3-ease/>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Copyright 2010-2021 Mike Bostock
 Copyright 2001 Robert Penner
 All rights reserved.
@@ -27813,11 +27420,11 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 - License: `ISC`
 - Author: Mike Bostock
-- Homepage: https://d3js.org/d3-format/
+- Homepage: <https://d3js.org/d3-format/>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Copyright 2010-2026 Mike Bostock
 
 Permission to use, copy, modify, and/or distribute this software for any purpose
@@ -27839,11 +27446,11 @@ THIS SOFTWARE.
 
 - License: `ISC`
 - Author: Mike Bostock
-- Homepage: https://d3js.org/d3-interpolate/
+- Homepage: <https://d3js.org/d3-interpolate/>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Copyright 2010-2021 Mike Bostock
 
 Permission to use, copy, modify, and/or distribute this software for any purpose
@@ -27865,11 +27472,11 @@ THIS SOFTWARE.
 
 - License: `ISC`
 - Author: Mike Bostock
-- Homepage: https://d3js.org/d3-path/
+- Homepage: <https://d3js.org/d3-path/>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Copyright 2015-2022 Mike Bostock
 
 Permission to use, copy, modify, and/or distribute this software for any purpose
@@ -27891,11 +27498,11 @@ THIS SOFTWARE.
 
 - License: `ISC`
 - Author: Mike Bostock
-- Homepage: https://d3js.org/d3-scale/
+- Homepage: <https://d3js.org/d3-scale/>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Copyright 2010-2021 Mike Bostock
 
 Permission to use, copy, modify, and/or distribute this software for any purpose
@@ -27917,11 +27524,11 @@ THIS SOFTWARE.
 
 - License: `ISC`
 - Author: Mike Bostock
-- Homepage: https://d3js.org/d3-selection/
+- Homepage: <https://d3js.org/d3-selection/>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Copyright 2010-2021 Mike Bostock
 
 Permission to use, copy, modify, and/or distribute this software for any purpose
@@ -27943,11 +27550,11 @@ THIS SOFTWARE.
 
 - License: `ISC`
 - Author: Mike Bostock
-- Homepage: https://d3js.org/d3-shape/
+- Homepage: <https://d3js.org/d3-shape/>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Copyright 2010-2022 Mike Bostock
 
 Permission to use, copy, modify, and/or distribute this software for any purpose
@@ -27969,11 +27576,11 @@ THIS SOFTWARE.
 
 - License: `ISC`
 - Author: Mike Bostock
-- Homepage: https://d3js.org/d3-time/
+- Homepage: <https://d3js.org/d3-time/>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Copyright 2010-2022 Mike Bostock
 
 Permission to use, copy, modify, and/or distribute this software for any purpose
@@ -27995,11 +27602,11 @@ THIS SOFTWARE.
 
 - License: `ISC`
 - Author: Mike Bostock
-- Homepage: https://d3js.org/d3-time-format/
+- Homepage: <https://d3js.org/d3-time-format/>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Copyright 2010-2021 Mike Bostock
 
 Permission to use, copy, modify, and/or distribute this software for any purpose
@@ -28021,11 +27628,11 @@ THIS SOFTWARE.
 
 - License: `ISC`
 - Author: Mike Bostock
-- Homepage: https://d3js.org/d3-timer/
+- Homepage: <https://d3js.org/d3-timer/>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Copyright 2010-2021 Mike Bostock
 
 Permission to use, copy, modify, and/or distribute this software for any purpose
@@ -28047,11 +27654,11 @@ THIS SOFTWARE.
 
 - License: `ISC`
 - Author: Mike Bostock
-- Homepage: https://d3js.org/d3-transition/
+- Homepage: <https://d3js.org/d3-transition/>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Copyright 2010-2021 Mike Bostock
 
 Permission to use, copy, modify, and/or distribute this software for any purpose
@@ -28073,11 +27680,11 @@ THIS SOFTWARE.
 
 - License: `ISC`
 - Author: Mike Bostock
-- Homepage: https://d3js.org/d3-zoom/
+- Homepage: <https://d3js.org/d3-zoom/>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Copyright 2010-2021 Mike Bostock
 
 Permission to use, copy, modify, and/or distribute this software for any purpose
@@ -28099,7 +27706,7 @@ THIS SOFTWARE.
 
 - License: `MIT`
 - Author: Nathan Rajlich
-- Homepage: https://github.com/TooTallNate/node-data-uri-to-buffer
+- Homepage: <https://github.com/TooTallNate/node-data-uri-to-buffer>
 
 _No license file shipped with the package; the SPDX identifier above is its declaration._
 
@@ -28107,11 +27714,11 @@ _No license file shipped with the package; the SPDX identifier above is its decl
 
 - License: `MIT`
 - Author: Sindre Sorhus
-- Homepage: https://github.com/sindresorhus/debounce-fn#readme
+- Homepage: <https://github.com/sindresorhus/debounce-fn#readme>
 
 <details><summary>license</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) Sindre Sorhus <sindresorhus@gmail.com> (https://sindresorhus.com)
@@ -28129,11 +27736,11 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 - License: `MIT`
 - Author: Josh Junon
-- Homepage: https://github.com/debug-js/debug#readme
+- Homepage: <https://github.com/debug-js/debug#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 (The MIT License)
 
 Copyright (c) 2014-2017 TJ Holowaychuk <tj@vision-media.ca>
@@ -28161,11 +27768,11 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 - License: `MIT`
 - Author: Michael Mclaughlin
-- Homepage: https://github.com/MikeMcl/decimal.js-light#readme
+- Homepage: <https://github.com/MikeMcl/decimal.js-light#readme>
 
 <details><summary>LICENCE.md</summary>
 
-```
+```text
 The MIT Expat Licence.
 
 Copyright (c) 2020 Michael Mclaughlin
@@ -28196,11 +27803,11 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 - License: `MIT`
 - Author: Desmond Brand
-- Homepage: https://github.com/dmnd/dedent
+- Homepage: <https://github.com/dmnd/dedent>
 
 <details><summary>LICENSE.md</summary>
 
-```
+```text
 # MIT License
 
 Permission is hereby granted, free of charge, to any person obtaining
@@ -28228,11 +27835,11 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ### deepmerge@4.3.1
 
 - License: `MIT`
-- Homepage: https://github.com/TehShrike/deepmerge
+- Homepage: <https://github.com/TehShrike/deepmerge>
 
 <details><summary>license.txt</summary>
 
-```
+```text
 The MIT License (MIT)
 
 Copyright (c) 2012 James Halliday, Josh Duff, and other contributors
@@ -28262,11 +27869,11 @@ THE SOFTWARE.
 
 - License: `MIT`
 - Author: Sindre Sorhus
-- Homepage: https://github.com/sindresorhus/default-browser#readme
+- Homepage: <https://github.com/sindresorhus/default-browser#readme>
 
 <details><summary>license</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) Sindre Sorhus <sindresorhus@gmail.com> (https://sindresorhus.com)
@@ -28284,11 +27891,11 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 - License: `MIT`
 - Author: Sindre Sorhus
-- Homepage: https://github.com/sindresorhus/default-browser-id#readme
+- Homepage: <https://github.com/sindresorhus/default-browser-id#readme>
 
 <details><summary>license</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) Sindre Sorhus <sindresorhus@gmail.com> (https://sindresorhus.com)
@@ -28306,11 +27913,11 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 - License: `MIT`
 - Author: Sindre Sorhus
-- Homepage: https://github.com/sindresorhus/define-lazy-prop#readme
+- Homepage: <https://github.com/sindresorhus/define-lazy-prop#readme>
 
 <details><summary>license</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) Sindre Sorhus <sindresorhus@gmail.com> (sindresorhus.com)
@@ -28328,11 +27935,11 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 - License: `MIT`
 - Author: Sindre Sorhus
-- Homepage: https://github.com/sindresorhus/define-lazy-prop#readme
+- Homepage: <https://github.com/sindresorhus/define-lazy-prop#readme>
 
 <details><summary>license</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) Sindre Sorhus <sindresorhus@gmail.com> (https://sindresorhus.com)
@@ -28350,11 +27957,11 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 - License: `MIT`
 - Author: Felix Geisendörfer
-- Homepage: https://github.com/felixge/node-delayed-stream
+- Homepage: <https://github.com/felixge/node-delayed-stream>
 
 <details><summary>License</summary>
 
-```
+```text
 Copyright (c) 2011 Debuggable Limited <felix@debuggable.com>
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -28382,11 +27989,11 @@ THE SOFTWARE.
 
 - License: `Apache-2.0`
 - Author: Invertase
-- Homepage: https://docs.page/invertase/denque
+- Homepage: <https://docs.page/invertase/denque>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Apache License
                            Version 2.0, January 2004
                         http://www.apache.org/licenses/
@@ -28596,11 +28203,11 @@ Apache License
 
 - License: `MIT`
 - Author: Douglas Christopher Wilson
-- Homepage: https://github.com/dougwilson/nodejs-depd#readme
+- Homepage: <https://github.com/dougwilson/nodejs-depd#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 (The MIT License)
 
 Copyright (c) 2014-2018 Douglas Christopher Wilson
@@ -28631,11 +28238,11 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 - License: `Apache-2.0`
 - Author: Lovell Fuller
-- Homepage: https://github.com/lovell/detect-libc#readme
+- Homepage: <https://github.com/lovell/detect-libc#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Apache License
                            Version 2.0, January 2004
                         http://www.apache.org/licenses/
@@ -28845,11 +28452,11 @@ Apache License
 
 - License: `MIT`
 - Author: Ilya Kantor
-- Homepage: https://github.com/thekashey/detect-node
+- Homepage: <https://github.com/thekashey/detect-node>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) 2017 Ilya Kantor
@@ -28878,11 +28485,11 @@ SOFTWARE.
 ### diff@8.0.4
 
 - License: `BSD-3-Clause`
-- Homepage: https://github.com/kpdecker/jsdiff#readme
+- Homepage: <https://github.com/kpdecker/jsdiff#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 BSD 3-Clause License
 
 Copyright (c) 2009-2015, Kevin Decker <kpdecker@gmail.com>
@@ -28920,11 +28527,11 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 - License: `MIT`
 - Author: Sindre Sorhus
-- Homepage: https://github.com/sindresorhus/dot-prop#readme
+- Homepage: <https://github.com/sindresorhus/dot-prop#readme>
 
 <details><summary>license</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) Sindre Sorhus <sindresorhus@gmail.com> (https://sindresorhus.com)
@@ -28941,11 +28548,11 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 ### dotenv@17.4.2
 
 - License: `BSD-2-Clause`
-- Homepage: https://github.com/motdotla/dotenv#readme
+- Homepage: <https://github.com/motdotla/dotenv#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Copyright (c) 2015, Scott Motte
 All rights reserved.
 
@@ -28977,11 +28584,11 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 - License: `MIT`
 - Author: Jordan Harband
-- Homepage: https://github.com/es-shims/dunder-proto#readme
+- Homepage: <https://github.com/es-shims/dunder-proto#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) 2024 ECMAScript Shims
@@ -29011,7 +28618,7 @@ SOFTWARE.
 
 - License: `MIT`
 - Author: Masaki Komagata
-- Homepage: https://github.com/komagata/eastasianwidth#readme
+- Homepage: <https://github.com/komagata/eastasianwidth#readme>
 
 _No license file shipped with the package; the SPDX identifier above is its declaration._
 
@@ -29019,11 +28626,11 @@ _No license file shipped with the package; the SPDX identifier above is its decl
 
 - License: `MIT`
 - Author: Jonathan Ong
-- Homepage: https://github.com/jonathanong/ee-first#readme
+- Homepage: <https://github.com/jonathanong/ee-first#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 The MIT License (MIT)
 
 Copyright (c) 2014 Jonathan Ong me@jongleberry.com
@@ -29053,11 +28660,11 @@ THE SOFTWARE.
 
 - License: `ISC`
 - Author: Kilian Valkhof
-- Homepage: https://github.com/Kilian/electron-to-chromium#readme
+- Homepage: <https://github.com/Kilian/electron-to-chromium#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Copyright 2018 Kilian Valkhof
 
 Permission to use, copy, modify, and/or distribute this software for any purpose with or without fee is hereby granted, provided that the above copyright notice and this permission notice appear in all copies.
@@ -29071,7 +28678,7 @@ THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH RE
 
 - License: `MIT`
 - Author: Mathias Bynens
-- Homepage: https://mths.be/emoji-regex
+- Homepage: <https://mths.be/emoji-regex>
 
 _No license file shipped with the package; the SPDX identifier above is its declaration._
 
@@ -29079,7 +28686,7 @@ _No license file shipped with the package; the SPDX identifier above is its decl
 
 - License: `MIT`
 - Author: Mathias Bynens
-- Homepage: https://mths.be/emoji-regex
+- Homepage: <https://mths.be/emoji-regex>
 
 _No license file shipped with the package; the SPDX identifier above is its declaration._
 
@@ -29087,18 +28694,18 @@ _No license file shipped with the package; the SPDX identifier above is its decl
 
 - License: `MIT`
 - Author: Mathias Bynens
-- Homepage: https://mths.be/emoji-regex
+- Homepage: <https://mths.be/emoji-regex>
 
 _No license file shipped with the package; the SPDX identifier above is its declaration._
 
 ### encodeurl@2.0.0
 
 - License: `MIT`
-- Homepage: https://github.com/pillarjs/encodeurl#readme
+- Homepage: <https://github.com/pillarjs/encodeurl#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 (The MIT License)
 
 Copyright (c) 2016 Douglas Christopher Wilson
@@ -29129,11 +28736,11 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 - License: `MIT`
 - Author: Mathias Buus
-- Homepage: https://github.com/mafintosh/end-of-stream
+- Homepage: <https://github.com/mafintosh/end-of-stream>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 The MIT License (MIT)
 
 Copyright (c) 2014 Mathias Buus
@@ -29163,11 +28770,11 @@ THE SOFTWARE.
 
 - License: `MIT`
 - Author: Jon Schlinkert
-- Homepage: https://github.com/enquirer/enquirer
+- Homepage: <https://github.com/enquirer/enquirer>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 The MIT License (MIT)
 
 Copyright (c) 2016-present, Jon Schlinkert.
@@ -29197,11 +28804,11 @@ THE SOFTWARE.
 
 - License: `MIT`
 - Author: Sindre Sorhus
-- Homepage: https://github.com/sindresorhus/env-paths#readme
+- Homepage: <https://github.com/sindresorhus/env-paths#readme>
 
 <details><summary>license</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) Sindre Sorhus <sindresorhus@gmail.com> (sindresorhus.com)
@@ -29218,11 +28825,11 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 ### error-ex@1.3.4
 
 - License: `MIT`
-- Homepage: https://github.com/qix-/node-error-ex#readme
+- Homepage: <https://github.com/qix-/node-error-ex#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 The MIT License (MIT)
 
 Copyright (c) 2015 JD Ballard
@@ -29252,11 +28859,11 @@ THE SOFTWARE.
 
 - License: `MIT`
 - Author: Jordan Harband
-- Homepage: https://github.com/ljharb/es-define-property#readme
+- Homepage: <https://github.com/ljharb/es-define-property#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) 2024 Jordan Harband
@@ -29286,11 +28893,11 @@ SOFTWARE.
 
 - License: `MIT`
 - Author: Jordan Harband
-- Homepage: https://github.com/ljharb/es-errors#readme
+- Homepage: <https://github.com/ljharb/es-errors#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) 2024 Jordan Harband
@@ -29316,15 +28923,15 @@ SOFTWARE.
 
 </details>
 
-### es-module-lexer@2.3.2
+### es-module-lexer@3.0.3
 
 - License: `MIT`
 - Author: Guy Bedford
-- Homepage: https://github.com/guybedford/es-module-lexer#readme
+- Homepage: <https://github.com/guybedford/es-module-lexer#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 -----------
 
@@ -29343,11 +28950,11 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 - License: `MIT`
 - Author: Jordan Harband
-- Homepage: https://github.com/ljharb/es-object-atoms#readme
+- Homepage: <https://github.com/ljharb/es-object-atoms#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) 2024 Jordan Harband
@@ -29377,11 +28984,11 @@ SOFTWARE.
 
 - License: `MIT`
 - Author: Jordan Harband
-- Homepage: https://github.com/es-shims/es-set-tostringtag#readme
+- Homepage: <https://github.com/es-shims/es-set-tostringtag#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) 2022 ECMAScript Shims
@@ -29410,11 +29017,11 @@ SOFTWARE.
 ### es-toolkit@1.45.1
 
 - License: `MIT`
-- Homepage: https://es-toolkit.dev
+- Homepage: <https://es-toolkit.dev>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) 2024 Viva Republica, Inc
@@ -29448,11 +29055,11 @@ SOFTWARE.
 
 - License: `MIT`
 - Author: Luke Edwards
-- Homepage: https://github.com/lukeed/escalade#readme
+- Homepage: <https://github.com/lukeed/escalade#readme>
 
 <details><summary>license</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) Luke Edwards <luke.edwards05@gmail.com> (lukeed.com)
@@ -29469,11 +29076,11 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 ### escape-html@1.0.3
 
 - License: `MIT`
-- Homepage: https://github.com/component/escape-html#readme
+- Homepage: <https://github.com/component/escape-html#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 (The MIT License)
 
 Copyright (c) 2012-2013 TJ Holowaychuk
@@ -29506,11 +29113,11 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 - License: `BSD-2-Clause`
 - Author: Ariya Hidayat
-- Homepage: http://esprima.org
+- Homepage: <http://esprima.org>
 
 <details><summary>LICENSE.BSD</summary>
 
-```
+```text
 Copyright JS Foundation and other contributors, https://js.foundation/
 
 Redistribution and use in source and binary forms, with or without
@@ -29539,11 +29146,11 @@ THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ### etag@1.8.1
 
 - License: `MIT`
-- Homepage: https://github.com/jshttp/etag#readme
+- Homepage: <https://github.com/jshttp/etag#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 (The MIT License)
 
 Copyright (c) 2014-2016 Douglas Christopher Wilson
@@ -29574,11 +29181,11 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 - License: `MIT`
 - Author: Arnout Kazemier
-- Homepage: https://github.com/primus/eventemitter3#readme
+- Homepage: <https://github.com/primus/eventemitter3#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 The MIT License (MIT)
 
 Copyright (c) 2014 Arnout Kazemier
@@ -29608,11 +29215,11 @@ SOFTWARE.
 
 - License: `Apache-2.0`
 - Author: Holepunch
-- Homepage: https://github.com/holepunchto/events-universal#readme
+- Homepage: <https://github.com/holepunchto/events-universal#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Apache License
                            Version 2.0, January 2004
                         http://www.apache.org/licenses/
@@ -29822,11 +29429,11 @@ Apache License
 
 - License: `MIT`
 - Author: Espen Hovlandsdal
-- Homepage: https://github.com/EventSource/eventsource#readme
+- Homepage: <https://github.com/EventSource/eventsource#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 The MIT License
 
 Copyright (c) EventSource GitHub organisation
@@ -29857,11 +29464,11 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 - License: `MIT`
 - Author: Espen Hovlandsdal
-- Homepage: https://github.com/rexxars/eventsource-parser#readme
+- Homepage: <https://github.com/rexxars/eventsource-parser#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) 2026 Espen Hovlandsdal <espen@hovlandsdal.com>
@@ -29891,11 +29498,11 @@ SOFTWARE.
 
 - License: `MIT`
 - Author: Sindre Sorhus
-- Homepage: https://github.com/sindresorhus/execa#readme
+- Homepage: <https://github.com/sindresorhus/execa#readme>
 
 <details><summary>license</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) Sindre Sorhus <sindresorhus@gmail.com> (https://sindresorhus.com)
@@ -29913,11 +29520,11 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 - License: `MIT`
 - Author: Sindre Sorhus
-- Homepage: https://github.com/sindresorhus/execa#readme
+- Homepage: <https://github.com/sindresorhus/execa#readme>
 
 <details><summary>license</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) Sindre Sorhus <sindresorhus@gmail.com> (https://sindresorhus.com)
@@ -29935,11 +29542,11 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 - License: `MIT`
 - Author: TJ Holowaychuk
-- Homepage: https://expressjs.com/
+- Homepage: <https://expressjs.com/>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 (The MIT License)
 
 Copyright (c) 2009-2014 TJ Holowaychuk <tj@vision-media.ca>
@@ -29972,11 +29579,11 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 - License: `MIT`
 - Author: Nathan Friedly
-- Homepage: https://github.com/express-rate-limit/express-rate-limit
+- Homepage: <https://github.com/express-rate-limit/express-rate-limit>
 
 <details><summary>license.md</summary>
 
-```
+```text
 # MIT License
 
 Copyright 2023 Nathan Friedly, Vedant K
@@ -30005,11 +29612,11 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 - License: `MIT`
 - Author: Stefan Thomas
-- Homepage: https://github.com/justmoon/node-extend#readme
+- Homepage: <https://github.com/justmoon/node-extend#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 The MIT License (MIT)
 
 Copyright (c) 2014 Stefan Thomas
@@ -30040,11 +29647,11 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 - License: `MIT`
 - Author: Evgeny Poberezkin
-- Homepage: https://github.com/epoberezkin/fast-deep-equal#readme
+- Homepage: <https://github.com/epoberezkin/fast-deep-equal#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) 2017 Evgeny Poberezkin
@@ -30074,11 +29681,11 @@ SOFTWARE.
 
 - License: `MIT`
 - Author: Mathias Buus
-- Homepage: https://github.com/mafintosh/fast-fifo
+- Homepage: <https://github.com/mafintosh/fast-fifo>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 The MIT License (MIT)
 
 Copyright (c) 2019 Mathias Buus
@@ -30108,11 +29715,11 @@ THE SOFTWARE.
 
 - License: `MIT`
 - Author: Denis Malinochkin
-- Homepage: https://github.com/mrmlnc/fast-glob#readme
+- Homepage: <https://github.com/mrmlnc/fast-glob#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 The MIT License (MIT)
 
 Copyright (c) Denis Malinochkin
@@ -30142,11 +29749,11 @@ SOFTWARE.
 
 - License: `BSD-3-Clause`
 - Author: Vincent Le Goff
-- Homepage: https://github.com/fastify/fast-uri
+- Homepage: <https://github.com/fastify/fast-uri>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Copyright (c) 2011-2021, Gary Court until https://github.com/garycourt/uri-js/commit/a1acf730b4bba3f1097c9f52e7d9d3aba8cdcaae
 Copyright (c) 2021-present The Fastify team <https://github.com/fastify/fastify#team>
 All rights reserved.
@@ -30185,11 +29792,11 @@ The complete list of contributors can be found at:
 
 - License: `ISC`
 - Author: Matteo Collina
-- Homepage: https://github.com/mcollina/fastq#readme
+- Homepage: <https://github.com/mcollina/fastq#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Copyright (c) 2015-2020, Matteo Collina <matteo.collina@gmail.com>
 
 Permission to use, copy, modify, and/or distribute this software for any
@@ -30211,11 +29818,11 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
 - License: `MIT`
 - Author: thecodrr
-- Homepage: https://github.com/thecodrr/fdir#readme
+- Homepage: <https://github.com/thecodrr/fdir#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Copyright 2023 Abdullah Atta
 
 Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
@@ -30231,11 +29838,11 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 - License: `MIT`
 - Author: Jimmy Wärting
-- Homepage: https://github.com/node-fetch/fetch-blob#readme
+- Homepage: <https://github.com/node-fetch/fetch-blob#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) 2019 David Frank
@@ -30265,11 +29872,11 @@ SOFTWARE.
 
 - License: `MIT`
 - Author: Sindre Sorhus
-- Homepage: https://github.com/sindresorhus/figures#readme
+- Homepage: <https://github.com/sindresorhus/figures#readme>
 
 <details><summary>license</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) Sindre Sorhus <sindresorhus@gmail.com> (https://sindresorhus.com)
@@ -30287,11 +29894,11 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 - License: `MIT`
 - Author: Jon Schlinkert
-- Homepage: https://github.com/jonschlinkert/fill-range
+- Homepage: <https://github.com/jonschlinkert/fill-range>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 The MIT License (MIT)
 
 Copyright (c) 2014-present, Jon Schlinkert.
@@ -30321,11 +29928,11 @@ THE SOFTWARE.
 
 - License: `MIT`
 - Author: Douglas Christopher Wilson
-- Homepage: https://github.com/pillarjs/finalhandler#readme
+- Homepage: <https://github.com/pillarjs/finalhandler#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 (The MIT License)
 
 Copyright (c) 2014-2022 Douglas Christopher Wilson <doug@somethingdoug.com>
@@ -30356,11 +29963,11 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 - License: `MIT`
 - Author: Sindre Sorhus
-- Homepage: https://github.com/sindresorhus/find-up#readme
+- Homepage: <https://github.com/sindresorhus/find-up#readme>
 
 <details><summary>license</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) Sindre Sorhus <sindresorhus@gmail.com> (sindresorhus.com)
@@ -30378,11 +29985,11 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 - License: `ISC`
 - Author: Isaac Z. Schlueter
-- Homepage: https://github.com/tapjs/foreground-child#readme
+- Homepage: <https://github.com/tapjs/foreground-child#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 The ISC License
 
 Copyright (c) 2015-2023 Isaac Z. Schlueter and Contributors
@@ -30406,11 +30013,11 @@ IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
 - License: `MIT`
 - Author: Felix Geisendörfer
-- Homepage: https://github.com/form-data/form-data#readme
+- Homepage: <https://github.com/form-data/form-data#readme>
 
 <details><summary>License</summary>
 
-```
+```text
 Copyright (c) 2012 Felix Geisendörfer (felix@debuggable.com) and contributors
 
  Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -30438,11 +30045,11 @@ Copyright (c) 2012 Felix Geisendörfer (felix@debuggable.com) and contributors
 
 - License: `MIT`
 - Author: Jimmy Wärting
-- Homepage: https://github.com/jimmywarting/FormData#readme
+- Homepage: <https://github.com/jimmywarting/FormData#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) 2016 Jimmy Karl Roland Wärting
@@ -30471,11 +30078,11 @@ SOFTWARE.
 ### forwarded@0.2.0
 
 - License: `MIT`
-- Homepage: https://github.com/jshttp/forwarded#readme
+- Homepage: <https://github.com/jshttp/forwarded#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 (The MIT License)
 
 Copyright (c) 2014-2017 Douglas Christopher Wilson
@@ -30506,11 +30113,11 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 - License: `MIT`
 - Author: Luigi Pinca
-- Homepage: https://github.com/lpinca/forwarded-parse
+- Homepage: <https://github.com/lpinca/forwarded-parse>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Copyright (c) 2015 Luigi Pinca
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -30538,11 +30145,11 @@ THE SOFTWARE.
 
 - License: `MIT`
 - Author: TJ Holowaychuk
-- Homepage: https://github.com/jshttp/fresh#readme
+- Homepage: <https://github.com/jshttp/fresh#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 (The MIT License)
 
 Copyright (c) 2012 TJ Holowaychuk <tj@vision-media.ca>
@@ -30574,11 +30181,11 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 - License: `MIT`
 - Author: JP Richardson
-- Homepage: https://github.com/jprichardson/node-fs-extra
+- Homepage: <https://github.com/jprichardson/node-fs-extra>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 (The MIT License)
 
 Copyright (c) 2011-2024 JP Richardson
@@ -30602,11 +30209,11 @@ OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHE
 
 - License: `MIT`
 - Author: Raynos
-- Homepage: https://github.com/Raynos/function-bind
+- Homepage: <https://github.com/Raynos/function-bind>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Copyright (c) 2013 Raynos.
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -30634,11 +30241,11 @@ THE SOFTWARE.
 
 - License: `MIT`
 - Author: farzher
-- Homepage: https://github.com/farzher/fuzzysort#readme
+- Homepage: <https://github.com/farzher/fuzzysort#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) 2018 Stephen Kamenar
@@ -30668,11 +30275,11 @@ SOFTWARE.
 
 - License: `Apache-2.0`
 - Author: Google, LLC
-- Homepage: https://github.com/googleapis/google-cloud-node-core/tree/main/packages/gaxios
+- Homepage: <https://github.com/googleapis/google-cloud-node-core/tree/main/packages/gaxios>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Apache License
                            Version 2.0, January 2004
                         http://www.apache.org/licenses/
@@ -30882,11 +30489,11 @@ Apache License
 
 - License: `Apache-2.0`
 - Author: Google LLC
-- Homepage: https://github.com/googleapis/google-cloud-node/tree/main/core/packages/gcp-metadata
+- Homepage: <https://github.com/googleapis/google-cloud-node/tree/main/core/packages/gcp-metadata>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Apache License
                            Version 2.0, January 2004
                         http://www.apache.org/licenses/
@@ -31096,11 +30703,11 @@ Apache License
 
 - License: `MIT`
 - Author: Logan Smyth
-- Homepage: https://github.com/loganfsmyth/gensync
+- Homepage: <https://github.com/loganfsmyth/gensync>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Copyright 2018 Logan Smyth <loganfsmyth@gmail.com>
 
 Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
@@ -31116,11 +30723,11 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 - License: `ISC`
 - Author: Stefan Penner
-- Homepage: https://github.com/stefanpenner/get-caller-file#readme
+- Homepage: <https://github.com/stefanpenner/get-caller-file#readme>
 
 <details><summary>LICENSE.md</summary>
 
-```
+```text
 ISC License (ISC)
 Copyright 2018 Stefan Penner
 
@@ -31135,11 +30742,11 @@ THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH RE
 
 - License: `MIT`
 - Author: Sindre Sorhus
-- Homepage: https://github.com/sindresorhus/get-east-asian-width#readme
+- Homepage: <https://github.com/sindresorhus/get-east-asian-width#readme>
 
 <details><summary>license</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) Sindre Sorhus <sindresorhus@gmail.com> (https://sindresorhus.com)
@@ -31157,11 +30764,11 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 - License: `MIT`
 - Author: Jordan Harband
-- Homepage: https://github.com/ljharb/get-intrinsic#readme
+- Homepage: <https://github.com/ljharb/get-intrinsic#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) 2020 Jordan Harband
@@ -31191,11 +30798,11 @@ SOFTWARE.
 
 - License: `MIT`
 - Author: Anton Korzunov
-- Homepage: https://github.com/theKashey/get-nonce
+- Homepage: <https://github.com/theKashey/get-nonce>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) 2020 Anton Korzunov
@@ -31225,11 +30832,11 @@ SOFTWARE.
 
 - License: `MIT`
 - Author: Sindre Sorhus
-- Homepage: https://github.com/sindresorhus/get-own-enumerable-keys#readme
+- Homepage: <https://github.com/sindresorhus/get-own-enumerable-keys#readme>
 
 <details><summary>license</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) Sindre Sorhus <sindresorhus@gmail.com> (https://sindresorhus.com)
@@ -31247,11 +30854,11 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 - License: `MIT`
 - Author: Jordan Harband
-- Homepage: https://github.com/ljharb/get-proto#readme
+- Homepage: <https://github.com/ljharb/get-proto#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) 2025 Jordan Harband
@@ -31281,11 +30888,11 @@ SOFTWARE.
 
 - License: `MIT`
 - Author: Sindre Sorhus
-- Homepage: https://github.com/sindresorhus/get-stream#readme
+- Homepage: <https://github.com/sindresorhus/get-stream#readme>
 
 <details><summary>license</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) Sindre Sorhus <sindresorhus@gmail.com> (https://sindresorhus.com)
@@ -31303,11 +30910,11 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 - License: `MIT`
 - Author: Sindre Sorhus
-- Homepage: https://github.com/sindresorhus/get-stream#readme
+- Homepage: <https://github.com/sindresorhus/get-stream#readme>
 
 <details><summary>license</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) Sindre Sorhus <sindresorhus@gmail.com> (https://sindresorhus.com)
@@ -31325,11 +30932,11 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 - License: `ISC`
 - Author: Isaac Z. Schlueter
-- Homepage: https://github.com/isaacs/node-glob#readme
+- Homepage: <https://github.com/isaacs/node-glob#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 The ISC License
 
 Copyright (c) 2009-2023 Isaac Z. Schlueter and Contributors
@@ -31353,11 +30960,11 @@ IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
 - License: `ISC`
 - Author: Gulp Team
-- Homepage: https://github.com/gulpjs/glob-parent#readme
+- Homepage: <https://github.com/gulpjs/glob-parent#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 The ISC License
 
 Copyright (c) 2015, 2019 Elan Shanker
@@ -31381,11 +30988,11 @@ IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
 - License: `Apache-2.0`
 - Author: Google API Authors
-- Homepage: https://github.com/googleapis/google-cloud-node-core/tree/main/dev-packages/logging-utils
+- Homepage: <https://github.com/googleapis/google-cloud-node-core/tree/main/dev-packages/logging-utils>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Apache License
                            Version 2.0, January 2004
                         http://www.apache.org/licenses/
@@ -31595,11 +31202,11 @@ Apache License
 
 - License: `MIT`
 - Author: Jordan Harband
-- Homepage: https://github.com/ljharb/gopd#readme
+- Homepage: <https://github.com/ljharb/gopd#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) 2022 Jordan Harband
@@ -31628,11 +31235,11 @@ SOFTWARE.
 ### graceful-fs@4.2.11
 
 - License: `ISC`
-- Homepage: https://github.com/isaacs/node-graceful-fs#readme
+- Homepage: <https://github.com/isaacs/node-graceful-fs#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 The ISC License
 
 Copyright (c) 2011-2022 Isaac Z. Schlueter, Ben Noordhuis, and Contributors
@@ -31656,11 +31263,11 @@ IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
 - License: `MIT`
 - Author: Jordan Harband
-- Homepage: https://github.com/ljharb/has-symbols#readme
+- Homepage: <https://github.com/ljharb/has-symbols#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) 2016 Jordan Harband
@@ -31690,11 +31297,11 @@ SOFTWARE.
 
 - License: `MIT`
 - Author: Jordan Harband
-- Homepage: https://github.com/inspect-js/has-tostringtag#readme
+- Homepage: <https://github.com/inspect-js/has-tostringtag#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) 2021 Inspect JS
@@ -31724,11 +31331,11 @@ SOFTWARE.
 
 - License: `MIT`
 - Author: Jordan Harband
-- Homepage: https://github.com/inspect-js/hasOwn#readme
+- Homepage: <https://github.com/inspect-js/hasOwn#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) Jordan Harband and contributors
@@ -31758,11 +31365,11 @@ SOFTWARE.
 
 - License: `MIT`
 - Author: Yusuke Wada
-- Homepage: https://hono.dev
+- Homepage: <https://hono.dev>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) 2021 - present, Yusuke Wada and Hono contributors
@@ -31792,11 +31399,11 @@ SOFTWARE.
 
 - License: `MIT`
 - Author: Tomas Della Vedova
-- Homepage: https://github.com/delvedor/hpagent#readme
+- Homepage: <https://github.com/delvedor/hpagent#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) 2020 Tomas Della Vedova
@@ -31826,11 +31433,11 @@ SOFTWARE.
 
 - License: `MIT`
 - Author: Jonathan Ong
-- Homepage: https://github.com/jshttp/http-errors#readme
+- Homepage: <https://github.com/jshttp/http-errors#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 The MIT License (MIT)
 
 Copyright (c) 2014 Jonathan Ong me@jongleberry.com
@@ -31861,11 +31468,11 @@ THE SOFTWARE.
 
 - License: `MIT`
 - Author: Nathan Rajlich
-- Homepage: https://github.com/TooTallNate/proxy-agents#readme
+- Homepage: <https://github.com/TooTallNate/proxy-agents#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 (The MIT License)
 
 Copyright (c) 2013 Nathan Rajlich <nathan@tootallnate.net>
@@ -31896,11 +31503,11 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 - License: `Apache-2.0`
 - Author: ehmicky
-- Homepage: https://www.github.com/ehmicky/human-signals
+- Homepage: <https://www.github.com/ehmicky/human-signals>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Apache License
                            Version 2.0, January 2004
                         http://www.apache.org/licenses/
@@ -32110,11 +31717,11 @@ Apache License
 
 - License: `Apache-2.0`
 - Author: ehmicky
-- Homepage: https://www.github.com/ehmicky/human-signals
+- Homepage: <https://www.github.com/ehmicky/human-signals>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Apache License
                            Version 2.0, January 2004
                         http://www.apache.org/licenses/
@@ -32324,11 +31931,11 @@ Apache License
 
 - License: `MIT`
 - Author: Alexander Shtuchkin
-- Homepage: https://github.com/pillarjs/iconv-lite
+- Homepage: <https://github.com/pillarjs/iconv-lite>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Copyright (c) 2011 Alexander Shtuchkin
 
 Permission is hereby granted, free of charge, to any person obtaining
@@ -32357,7 +31964,7 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 - License: `MIT`
 - Author: kael
-- Homepage: https://github.com/kaelzhang/node-ignore#readme
+- Homepage: <https://github.com/kaelzhang/node-ignore#readme>
 
 _No license file shipped with the package; the SPDX identifier above is its declaration._
 
@@ -32365,11 +31972,11 @@ _No license file shipped with the package; the SPDX identifier above is its decl
 
 - License: `MIT`
 - Author: Michel Weststrate
-- Homepage: https://github.com/immerjs/immer#readme
+- Homepage: <https://github.com/immerjs/immer#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) 2017 Michel Weststrate
@@ -32399,11 +32006,11 @@ SOFTWARE.
 
 - License: `MIT`
 - Author: Sindre Sorhus
-- Homepage: https://github.com/sindresorhus/import-fresh#readme
+- Homepage: <https://github.com/sindresorhus/import-fresh#readme>
 
 <details><summary>license</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) Sindre Sorhus <sindresorhus@gmail.com> (https://sindresorhus.com)
@@ -32417,15 +32024,15 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 </details>
 
-### import-in-the-middle@3.3.3
+### import-in-the-middle@3.5.2
 
 - License: `Apache-2.0`
 - Author: Bryan English
-- Homepage: https://github.com/nodejs/import-in-the-middle#readme
+- Homepage: <https://github.com/nodejs/import-in-the-middle#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Apache License
                            Version 2.0, January 2004
                         http://www.apache.org/licenses/
@@ -32633,7 +32240,7 @@ Apache License
 
 <details><summary>NOTICE</summary>
 
-```
+```text
 import-in-the-middle is licensed for use as follows:
 
 Copyright 2024 Node.js contributors. All rights reserved.
@@ -32675,11 +32282,11 @@ https://github.com/DataDog/import-in-the-middle repository:
 ### inherits@2.0.4
 
 - License: `ISC`
-- Homepage: https://github.com/isaacs/inherits#readme
+- Homepage: <https://github.com/isaacs/inherits#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 The ISC License
 
 Copyright (c) Isaac Z. Schlueter
@@ -32703,11 +32310,11 @@ PERFORMANCE OF THIS SOFTWARE.
 
 - License: `ISC`
 - Author: Mike Bostock
-- Homepage: https://github.com/mbostock/internmap/
+- Homepage: <https://github.com/mbostock/internmap/>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Copyright 2021 Mike Bostock
 
 Permission to use, copy, modify, and/or distribute this software for any purpose
@@ -32729,11 +32336,11 @@ THIS SOFTWARE.
 
 - License: `MIT`
 - Author: Zihua Li
-- Homepage: https://github.com/luin/ioredis#readme
+- Homepage: <https://github.com/luin/ioredis#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 The MIT License (MIT)
 
 Copyright (c) 2015-2022 Zihua Li
@@ -32763,11 +32370,11 @@ SOFTWARE.
 
 - License: `MIT`
 - Author: Beau Gunderson
-- Homepage: https://github.com/beaugunderson/ip-address#readme
+- Homepage: <https://github.com/beaugunderson/ip-address#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Copyright (C) 2011 by Beau Gunderson
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -32795,11 +32402,11 @@ THE SOFTWARE.
 
 - License: `MIT`
 - Author: whitequark
-- Homepage: https://github.com/whitequark/ipaddr.js#readme
+- Homepage: <https://github.com/whitequark/ipaddr.js#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Copyright (C) 2011-2017 whitequark <whitequark@whitequark.org>
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -32827,11 +32434,11 @@ THE SOFTWARE.
 
 - License: `MIT`
 - Author: Qix
-- Homepage: https://github.com/qix-/node-is-arrayish#readme
+- Homepage: <https://github.com/qix-/node-is-arrayish#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 The MIT License (MIT)
 
 Copyright (c) 2015 JD Ballard
@@ -32861,11 +32468,11 @@ THE SOFTWARE.
 
 - License: `MIT`
 - Author: Sindre Sorhus
-- Homepage: https://github.com/sindresorhus/is-docker#readme
+- Homepage: <https://github.com/sindresorhus/is-docker#readme>
 
 <details><summary>license</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) Sindre Sorhus <sindresorhus@gmail.com> (https://sindresorhus.com)
@@ -32883,11 +32490,11 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 - License: `MIT`
 - Author: Sindre Sorhus
-- Homepage: https://github.com/sindresorhus/is-docker#readme
+- Homepage: <https://github.com/sindresorhus/is-docker#readme>
 
 <details><summary>license</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) Sindre Sorhus <sindresorhus@gmail.com> (https://sindresorhus.com)
@@ -32905,11 +32512,11 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 - License: `MIT`
 - Author: Jon Schlinkert
-- Homepage: https://github.com/jonschlinkert/is-extglob
+- Homepage: <https://github.com/jonschlinkert/is-extglob>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 The MIT License (MIT)
 
 Copyright (c) 2014-2016, Jon Schlinkert
@@ -32939,11 +32546,11 @@ THE SOFTWARE.
 
 - License: `MIT`
 - Author: Sindre Sorhus
-- Homepage: https://github.com/sindresorhus/is-fullwidth-code-point#readme
+- Homepage: <https://github.com/sindresorhus/is-fullwidth-code-point#readme>
 
 <details><summary>license</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) Sindre Sorhus <sindresorhus@gmail.com> (sindresorhus.com)
@@ -32961,11 +32568,11 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 - License: `MIT`
 - Author: Jon Schlinkert
-- Homepage: https://github.com/micromatch/is-glob
+- Homepage: <https://github.com/micromatch/is-glob>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 The MIT License (MIT)
 
 Copyright (c) 2014-2017, Jon Schlinkert.
@@ -32995,11 +32602,11 @@ THE SOFTWARE.
 
 - License: `MIT`
 - Author: Sindre Sorhus
-- Homepage: https://github.com/sindresorhus/is-in-ssh#readme
+- Homepage: <https://github.com/sindresorhus/is-in-ssh#readme>
 
 <details><summary>license</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) Sindre Sorhus <sindresorhus@gmail.com> (https://sindresorhus.com)
@@ -33017,11 +32624,11 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 - License: `MIT`
 - Author: Sindre Sorhus
-- Homepage: https://github.com/sindresorhus/is-inside-container#readme
+- Homepage: <https://github.com/sindresorhus/is-inside-container#readme>
 
 <details><summary>license</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) Sindre Sorhus <sindresorhus@gmail.com> (https://sindresorhus.com)
@@ -33039,11 +32646,11 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 - License: `MIT`
 - Author: Sindre Sorhus
-- Homepage: https://github.com/sindresorhus/is-interactive#readme
+- Homepage: <https://github.com/sindresorhus/is-interactive#readme>
 
 <details><summary>license</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) Sindre Sorhus <sindresorhus@gmail.com> (https://sindresorhus.com)
@@ -33061,11 +32668,11 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 - License: `MIT`
 - Author: Jon Schlinkert
-- Homepage: https://github.com/jonschlinkert/is-number
+- Homepage: <https://github.com/jonschlinkert/is-number>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 The MIT License (MIT)
 
 Copyright (c) 2014-present, Jon Schlinkert.
@@ -33095,11 +32702,11 @@ THE SOFTWARE.
 
 - License: `MIT`
 - Author: Sindre Sorhus
-- Homepage: https://github.com/sindresorhus/is-obj#readme
+- Homepage: <https://github.com/sindresorhus/is-obj#readme>
 
 <details><summary>license</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) Sindre Sorhus <sindresorhus@gmail.com> (sindresorhus.com)
@@ -33117,11 +32724,11 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 - License: `MIT`
 - Author: Sindre Sorhus
-- Homepage: https://github.com/sindresorhus/is-obj#readme
+- Homepage: <https://github.com/sindresorhus/is-obj#readme>
 
 <details><summary>license</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) Sindre Sorhus <sindresorhus@gmail.com> (https://sindresorhus.com)
@@ -33139,11 +32746,11 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 - License: `MIT`
 - Author: Sindre Sorhus
-- Homepage: https://github.com/sindresorhus/is-plain-obj#readme
+- Homepage: <https://github.com/sindresorhus/is-plain-obj#readme>
 
 <details><summary>license</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) Sindre Sorhus <sindresorhus@gmail.com> (https://sindresorhus.com)
@@ -33161,11 +32768,11 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 - License: `MIT`
 - Author: ForbesLindesay
-- Homepage: https://github.com/then/is-promise#readme
+- Homepage: <https://github.com/then/is-promise#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Copyright (c) 2014 Forbes Lindesay
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -33193,11 +32800,11 @@ THE SOFTWARE.
 
 - License: `MIT`
 - Author: Sindre Sorhus
-- Homepage: https://github.com/sindresorhus/is-regexp#readme
+- Homepage: <https://github.com/sindresorhus/is-regexp#readme>
 
 <details><summary>license</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) Sindre Sorhus <sindresorhus@gmail.com> (https://sindresorhus.com)
@@ -33215,11 +32822,11 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 - License: `MIT`
 - Author: Sindre Sorhus
-- Homepage: https://github.com/sindresorhus/is-stream#readme
+- Homepage: <https://github.com/sindresorhus/is-stream#readme>
 
 <details><summary>license</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) Sindre Sorhus <sindresorhus@gmail.com> (https://sindresorhus.com)
@@ -33237,11 +32844,11 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 - License: `MIT`
 - Author: Sindre Sorhus
-- Homepage: https://github.com/sindresorhus/is-stream#readme
+- Homepage: <https://github.com/sindresorhus/is-stream#readme>
 
 <details><summary>license</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) Sindre Sorhus <sindresorhus@gmail.com> (https://sindresorhus.com)
@@ -33259,11 +32866,11 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 - License: `MIT`
 - Author: Sindre Sorhus
-- Homepage: https://github.com/sindresorhus/is-unicode-supported#readme
+- Homepage: <https://github.com/sindresorhus/is-unicode-supported#readme>
 
 <details><summary>license</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) Sindre Sorhus <sindresorhus@gmail.com> (https://sindresorhus.com)
@@ -33281,11 +32888,11 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 - License: `MIT`
 - Author: Sindre Sorhus
-- Homepage: https://github.com/sindresorhus/is-unicode-supported#readme
+- Homepage: <https://github.com/sindresorhus/is-unicode-supported#readme>
 
 <details><summary>license</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) Sindre Sorhus <sindresorhus@gmail.com> (https://sindresorhus.com)
@@ -33303,11 +32910,11 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 - License: `MIT`
 - Author: Sindre Sorhus
-- Homepage: https://github.com/sindresorhus/is-wsl#readme
+- Homepage: <https://github.com/sindresorhus/is-wsl#readme>
 
 <details><summary>license</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) Sindre Sorhus <sindresorhus@gmail.com> (sindresorhus.com)
@@ -33325,11 +32932,11 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 - License: `MIT`
 - Author: Sindre Sorhus
-- Homepage: https://github.com/sindresorhus/is-wsl#readme
+- Homepage: <https://github.com/sindresorhus/is-wsl#readme>
 
 <details><summary>license</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) Sindre Sorhus <sindresorhus@gmail.com> (https://sindresorhus.com)
@@ -33347,11 +32954,11 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 - License: `ISC`
 - Author: Isaac Z. Schlueter
-- Homepage: https://github.com/isaacs/isexe#readme
+- Homepage: <https://github.com/isaacs/isexe#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 The ISC License
 
 Copyright (c) Isaac Z. Schlueter and Contributors
@@ -33375,11 +32982,11 @@ IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
 - License: `BlueOak-1.0.0`
 - Author: Isaac Z. Schlueter
-- Homepage: https://github.com/isaacs/isexe#readme
+- Homepage: <https://github.com/isaacs/isexe#readme>
 
 <details><summary>LICENSE.md</summary>
 
-```
+```text
 # Blue Oak Model License
 
 Version 1.0.0
@@ -33443,11 +33050,11 @@ software or this license, under any kind of legal claim.***
 
 - License: `MIT`
 - Author: @heineiuo
-- Homepage: https://github.com/heineiuo/isomorphic-ws#readme
+- Homepage: <https://github.com/heineiuo/isomorphic-ws#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 The MIT License (MIT)
 
 Copyright (c) 2018 Zejin Zhuang <heineiuo@gmail.com>
@@ -33477,11 +33084,11 @@ SOFTWARE.
 
 - License: `BlueOak-1.0.0`
 - Author: Isaac Z. Schlueter
-- Homepage: https://github.com/isaacs/jackspeak#readme
+- Homepage: <https://github.com/isaacs/jackspeak#readme>
 
 <details><summary>LICENSE.md</summary>
 
-```
+```text
 # Blue Oak Model License
 
 Version 1.0.0
@@ -33545,11 +33152,11 @@ software or this license, under any kind of legal claim._**
 
 - License: `MIT`
 - Author: Filip Skokan
-- Homepage: https://github.com/panva/jose
+- Homepage: <https://github.com/panva/jose>
 
 <details><summary>LICENSE.md</summary>
 
-```
+```text
 The MIT License (MIT)
 
 Copyright (c) 2018 Filip Skokan
@@ -33579,11 +33186,11 @@ SOFTWARE.
 
 - License: `MIT`
 - Author: Filip Skokan
-- Homepage: https://github.com/panva/jose
+- Homepage: <https://github.com/panva/jose>
 
 <details><summary>LICENSE.md</summary>
 
-```
+```text
 The MIT License (MIT)
 
 Copyright (c) 2018 Filip Skokan
@@ -33613,11 +33220,11 @@ SOFTWARE.
 
 - License: `MIT`
 - Author: Filip Skokan
-- Homepage: https://github.com/panva/jose
+- Homepage: <https://github.com/panva/jose>
 
 <details><summary>LICENSE.md</summary>
 
-```
+```text
 The MIT License (MIT)
 
 Copyright (c) 2018 Filip Skokan
@@ -33647,11 +33254,11 @@ SOFTWARE.
 
 - License: `MIT`
 - Author: Simon Lydell
-- Homepage: https://github.com/lydell/js-tokens#readme
+- Homepage: <https://github.com/lydell/js-tokens#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 The MIT License (MIT)
 
 Copyright (c) 2014, 2015, 2016, 2017, 2018 Simon Lydell
@@ -33681,11 +33288,11 @@ THE SOFTWARE.
 
 - License: `MIT`
 - Author: Vladimir Zapparov
-- Homepage: https://github.com/nodeca/js-yaml#readme
+- Homepage: <https://github.com/nodeca/js-yaml#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 (The MIT License)
 
 Copyright (C) 2011-2015 by Vitaly Puzrin
@@ -33715,11 +33322,11 @@ THE SOFTWARE.
 
 - License: `MIT`
 - Author: Stephen Oney
-- Homepage: https://ericsmekens.github.io/jsep/
+- Homepage: <https://ericsmekens.github.io/jsep/>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Copyright (c) 2013 Stephen Oney, https://ericsmekens.github.io/jsep/
 
 Permission is hereby granted, free of charge, to any person obtaining
@@ -33748,7 +33355,7 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 - License: `MIT`
 - Author: Mathias Bynens
-- Homepage: https://mths.be/jsesc
+- Homepage: <https://mths.be/jsesc>
 
 _No license file shipped with the package; the SPDX identifier above is its declaration._
 
@@ -33756,11 +33363,11 @@ _No license file shipped with the package; the SPDX identifier above is its decl
 
 - License: `MIT`
 - Author: Andrey Sidorov
-- Homepage: https://github.com/sidorares/json-bigint#readme
+- Homepage: <https://github.com/sidorares/json-bigint#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 The MIT License (MIT)
 
 Copyright (c) 2013 Andrey Sidorov
@@ -33789,11 +33396,11 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 - License: `MIT`
 - Author: Kat Marchán
-- Homepage: https://github.com/npm/json-parse-even-better-errors#readme
+- Homepage: <https://github.com/npm/json-parse-even-better-errors#readme>
 
 <details><summary>LICENSE.md</summary>
 
-```
+```text
 Copyright 2017 Kat Marchán
 Copyright npm, Inc.
 
@@ -33827,11 +33434,11 @@ distributed under the terms of the MIT license above.
 
 - License: `MIT`
 - Author: Evgeny Poberezkin
-- Homepage: https://github.com/epoberezkin/json-schema-traverse#readme
+- Homepage: <https://github.com/epoberezkin/json-schema-traverse#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) 2017 Evgeny Poberezkin
@@ -33861,11 +33468,11 @@ SOFTWARE.
 
 - License: `BSD-2-Clause`
 - Author: Remy Rylan
-- Homepage: https://github.com/RemyRylan/json-schema-typed/tree/main/dist/node
+- Homepage: <https://github.com/RemyRylan/json-schema-typed/tree/main/dist/node>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 BSD-2-Clause License
 
 Copyright (c) 2018 IETF Trust, Austin Wright, Henry Andrews, Geraint Luff,
@@ -33900,11 +33507,11 @@ POSSIBILITY OF SUCH DAMAGE.
 
 - License: `BSD-2-Clause`
 - Author: Remy Rylan
-- Homepage: https://github.com/RemyRylan/json-schema-typed/tree/main/dist/node
+- Homepage: <https://github.com/RemyRylan/json-schema-typed/tree/main/dist/node>
 
 <details><summary>LICENSE.md</summary>
 
-```
+```text
 BSD 2-Clause License
 
 Original source code is copyright (c) 2019-2025 Remy Rylan
@@ -33970,11 +33577,11 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 - License: `MIT`
 - Author: Aseem Kishore
-- Homepage: http://json5.org/
+- Homepage: <http://json5.org/>
 
 <details><summary>LICENSE.md</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) 2012-2018 Aseem Kishore, and [others].
@@ -34006,11 +33613,11 @@ SOFTWARE.
 
 - License: `MIT`
 - Author: JP Richardson
-- Homepage: https://github.com/jprichardson/node-jsonfile#readme
+- Homepage: <https://github.com/jprichardson/node-jsonfile#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 (The MIT License)
 
 Copyright (c) 2012-2015, JP Richardson <jprichardson@gmail.com>
@@ -34034,11 +33641,11 @@ OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHE
 
 - License: `MIT`
 - Author: Stefan Goessner
-- Homepage: https://github.com/s3u/JSONPath
+- Homepage: <https://github.com/s3u/JSONPath>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) 2011-2019 Stefan Goessner, Subbu Allamaraju, Mike Brevoort,
@@ -34069,11 +33676,11 @@ SOFTWARE.
 
 - License: `MIT`
 - Author: Luke Edwards
-- Homepage: https://github.com/lukeed/kleur#readme
+- Homepage: <https://github.com/lukeed/kleur#readme>
 
 <details><summary>license</summary>
 
-```
+```text
 The MIT License (MIT)
 
 Copyright (c) Luke Edwards <luke.edwards05@gmail.com> (lukeed.com)
@@ -34103,11 +33710,11 @@ THE SOFTWARE.
 
 - License: `MIT`
 - Author: Luke Edwards
-- Homepage: https://github.com/lukeed/kleur#readme
+- Homepage: <https://github.com/lukeed/kleur#readme>
 
 <details><summary>license</summary>
 
-```
+```text
 The MIT License (MIT)
 
 Copyright (c) Luke Edwards <luke.edwards05@gmail.com> (lukeed.com)
@@ -34137,11 +33744,11 @@ THE SOFTWARE.
 
 - License: `MIT`
 - Author: Brian Donovan
-- Homepage: https://github.com/eventualbuddha/lines-and-columns#readme
+- Homepage: <https://github.com/eventualbuddha/lines-and-columns#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 The MIT License (MIT)
 
 Copyright (c) 2015 Brian Donovan
@@ -34171,11 +33778,11 @@ THE SOFTWARE.
 
 - License: `MIT`
 - Author: Sindre Sorhus
-- Homepage: https://github.com/sindresorhus/locate-path#readme
+- Homepage: <https://github.com/sindresorhus/locate-path#readme>
 
 <details><summary>license</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) Sindre Sorhus <sindresorhus@gmail.com> (sindresorhus.com)
@@ -34193,11 +33800,11 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 - License: `MIT`
 - Author: John-David Dalton
-- Homepage: https://lodash.com/
+- Homepage: <https://lodash.com/>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Copyright jQuery Foundation and other contributors <https://jquery.org/>
 
 Based on Underscore.js, copyright Jeremy Ashkenas,
@@ -34253,11 +33860,11 @@ terms above.
 
 - License: `MIT`
 - Author: Sindre Sorhus
-- Homepage: https://github.com/sindresorhus/log-symbols#readme
+- Homepage: <https://github.com/sindresorhus/log-symbols#readme>
 
 <details><summary>license</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) Sindre Sorhus <sindresorhus@gmail.com> (https://sindresorhus.com)
@@ -34275,11 +33882,11 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 - License: `Apache-2.0`
 - Author: Daniel Wirtz
-- Homepage: https://github.com/dcodeIO/long.js#readme
+- Homepage: <https://github.com/dcodeIO/long.js#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Apache License
                            Version 2.0, January 2004
                         http://www.apache.org/licenses/
@@ -34489,11 +34096,11 @@ Apache License
 
 - License: `ISC`
 - Author: Isaac Z. Schlueter
-- Homepage: https://github.com/isaacs/node-lru-cache#readme
+- Homepage: <https://github.com/isaacs/node-lru-cache#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 The ISC License
 
 Copyright (c) 2010-2023 Isaac Z. Schlueter and Contributors
@@ -34517,11 +34124,11 @@ IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
 - License: `ISC`
 - Author: Isaac Z. Schlueter
-- Homepage: https://github.com/isaacs/node-lru-cache#readme
+- Homepage: <https://github.com/isaacs/node-lru-cache#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 The ISC License
 
 Copyright (c) Isaac Z. Schlueter and Contributors
@@ -34545,11 +34152,11 @@ IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
 - License: `ISC`
 - Author: Eric Fennis
-- Homepage: https://lucide.dev
+- Homepage: <https://lucide.dev>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 ISC License
 
 Copyright (c) 2026 Lucide Icons and Contributors
@@ -34601,11 +34208,11 @@ SOFTWARE.
 
 - License: `MIT`
 - Author: Jordan Harband
-- Homepage: https://github.com/es-shims/math-intrinsics#readme
+- Homepage: <https://github.com/es-shims/math-intrinsics#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) 2024 ECMAScript Shims
@@ -34635,11 +34242,11 @@ SOFTWARE.
 
 - License: `MIT`
 - Author: Douglas Christopher Wilson
-- Homepage: https://github.com/jshttp/media-typer#readme
+- Homepage: <https://github.com/jshttp/media-typer#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 (The MIT License)
 
 Copyright (c) 2014-2017 Douglas Christopher Wilson
@@ -34669,11 +34276,11 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ### merge-descriptors@2.0.0
 
 - License: `MIT`
-- Homepage: https://github.com/sindresorhus/merge-descriptors#readme
+- Homepage: <https://github.com/sindresorhus/merge-descriptors#readme>
 
 <details><summary>license</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) Jonathan Ong <me@jongleberry.com>
@@ -34693,11 +34300,11 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 - License: `MIT`
 - Author: Stephen Sugden
-- Homepage: https://github.com/grncdr/merge-stream#readme
+- Homepage: <https://github.com/grncdr/merge-stream#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 The MIT License (MIT)
 
 Copyright (c) Stephen Sugden <me@stephensugden.com> (stephensugden.com)
@@ -34726,11 +34333,11 @@ THE SOFTWARE.
 ### merge2@1.4.1
 
 - License: `MIT`
-- Homepage: https://github.com/teambition/merge2
+- Homepage: <https://github.com/teambition/merge2>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 The MIT License (MIT)
 
 Copyright (c) 2014-2020 Teambition
@@ -34760,11 +34367,11 @@ SOFTWARE.
 
 - License: `MIT`
 - Author: Jon Schlinkert
-- Homepage: https://github.com/micromatch/micromatch
+- Homepage: <https://github.com/micromatch/micromatch>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 The MIT License (MIT)
 
 Copyright (c) 2014-present, Jon Schlinkert.
@@ -34793,11 +34400,11 @@ THE SOFTWARE.
 ### mime-db@1.52.0
 
 - License: `MIT`
-- Homepage: https://github.com/jshttp/mime-db#readme
+- Homepage: <https://github.com/jshttp/mime-db#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 (The MIT License)
 
 Copyright (c) 2014 Jonathan Ong <me@jongleberry.com>
@@ -34828,11 +34435,11 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ### mime-db@1.54.0
 
 - License: `MIT`
-- Homepage: https://github.com/jshttp/mime-db#readme
+- Homepage: <https://github.com/jshttp/mime-db#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 (The MIT License)
 
 Copyright (c) 2014 Jonathan Ong <me@jongleberry.com>
@@ -34863,11 +34470,11 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ### mime-types@2.1.35
 
 - License: `MIT`
-- Homepage: https://github.com/jshttp/mime-types#readme
+- Homepage: <https://github.com/jshttp/mime-types#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 (The MIT License)
 
 Copyright (c) 2014 Jonathan Ong <me@jongleberry.com>
@@ -34898,11 +34505,11 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ### mime-types@3.0.2
 
 - License: `MIT`
-- Homepage: https://github.com/jshttp/mime-types#readme
+- Homepage: <https://github.com/jshttp/mime-types#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 (The MIT License)
 
 Copyright (c) 2014 Jonathan Ong <me@jongleberry.com>
@@ -34934,11 +34541,11 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 - License: `MIT`
 - Author: Sindre Sorhus
-- Homepage: https://github.com/sindresorhus/mimic-fn#readme
+- Homepage: <https://github.com/sindresorhus/mimic-fn#readme>
 
 <details><summary>license</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) Sindre Sorhus <sindresorhus@gmail.com> (sindresorhus.com)
@@ -34956,11 +34563,11 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 - License: `MIT`
 - Author: Sindre Sorhus
-- Homepage: https://github.com/sindresorhus/mimic-fn#readme
+- Homepage: <https://github.com/sindresorhus/mimic-fn#readme>
 
 <details><summary>license</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) Sindre Sorhus <sindresorhus@gmail.com> (sindresorhus.com)
@@ -34978,11 +34585,11 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 - License: `MIT`
 - Author: Sindre Sorhus
-- Homepage: https://github.com/sindresorhus/mimic-function#readme
+- Homepage: <https://github.com/sindresorhus/mimic-function#readme>
 
 <details><summary>license</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) Sindre Sorhus <sindresorhus@gmail.com> (https://sindresorhus.com)
@@ -35000,11 +34607,11 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 - License: `BlueOak-1.0.0`
 - Author: Isaac Z. Schlueter
-- Homepage: https://github.com/isaacs/minimatch#readme
+- Homepage: <https://github.com/isaacs/minimatch#readme>
 
 <details><summary>LICENSE.md</summary>
 
-```
+```text
 # Blue Oak Model License
 
 Version 1.0.0
@@ -35068,11 +34675,11 @@ software or this license, under any kind of legal claim._**
 
 - License: `ISC`
 - Author: Isaac Z. Schlueter
-- Homepage: https://github.com/isaacs/minimatch#readme
+- Homepage: <https://github.com/isaacs/minimatch#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 The ISC License
 
 Copyright (c) 2011-2023 Isaac Z. Schlueter and Contributors
@@ -35096,11 +34703,11 @@ IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
 - License: `MIT`
 - Author: James Halliday
-- Homepage: https://github.com/minimistjs/minimist
+- Homepage: <https://github.com/minimistjs/minimist>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 This software is released under the MIT license:
 
 Permission is hereby granted, free of charge, to any person obtaining a copy of
@@ -35127,11 +34734,11 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 - License: `BlueOak-1.0.0`
 - Author: Isaac Z. Schlueter
-- Homepage: https://github.com/isaacs/minipass#readme
+- Homepage: <https://github.com/isaacs/minipass#readme>
 
 <details><summary>LICENSE.md</summary>
 
-```
+```text
 # Blue Oak Model License
 
 Version 1.0.0
@@ -35195,11 +34802,11 @@ software or this license, under any kind of legal claim.***
 
 - License: `MIT`
 - Author: Thomas Watson
-- Homepage: https://github.com/watson/module-details-from-path#readme
+- Homepage: <https://github.com/watson/module-details-from-path#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 The MIT License (MIT)
 
 Copyright (c) 2016-2025 Thomas Watson Steen
@@ -35228,11 +34835,11 @@ SOFTWARE.
 ### ms@2.1.3
 
 - License: `MIT`
-- Homepage: https://github.com/vercel/ms#readme
+- Homepage: <https://github.com/vercel/ms#readme>
 
 <details><summary>license.md</summary>
 
-```
+```text
 The MIT License (MIT)
 
 Copyright (c) 2020 Vercel, Inc.
@@ -35262,11 +34869,11 @@ SOFTWARE.
 
 - License: `MIT`
 - Author: Andrey Sitnik
-- Homepage: https://github.com/ai/nanoid#readme
+- Homepage: <https://github.com/ai/nanoid#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 The MIT License (MIT)
 
 Copyright 2017 Andrey Sitnik <andrey@sitnik.ru>
@@ -35294,11 +34901,11 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ### negotiator@1.1.0
 
 - License: `MIT`
-- Homepage: https://github.com/jshttp/negotiator#readme
+- Homepage: <https://github.com/jshttp/negotiator#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 (The MIT License)
 
 Copyright (c) 2012-2014 Federico Romero
@@ -35330,11 +34937,11 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ### next@16.3.5
 
 - License: `MIT`
-- Homepage: https://nextjs.org
+- Homepage: <https://nextjs.org>
 
 <details><summary>license.md</summary>
 
-```
+```text
 The MIT License (MIT)
 
 Copyright (c) 2025 Vercel, Inc.
@@ -35364,11 +34971,11 @@ SOFTWARE.
 
 - License: `ISC`
 - Author: Balázs Orbán
-- Homepage: https://nextjs.authjs.dev
+- Homepage: <https://nextjs.authjs.dev>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 ISC License
 
 Copyright (c) 2022-2024, Balázs Orbán
@@ -35392,11 +34999,11 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
 - License: `MIT`
 - Author: Jimmy Wärting
-- Homepage: https://github.com/jimmywarting/node-domexception#readme
+- Homepage: <https://github.com/jimmywarting/node-domexception#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) 2021 Jimmy Wärting
@@ -35426,11 +35033,11 @@ SOFTWARE.
 
 - License: `MIT`
 - Author: David Frank
-- Homepage: https://github.com/node-fetch/node-fetch
+- Homepage: <https://github.com/node-fetch/node-fetch>
 
 <details><summary>LICENSE.md</summary>
 
-```
+```text
 The MIT License (MIT)
 
 Copyright (c) 2016 David Frank
@@ -35460,11 +35067,11 @@ SOFTWARE.
 
 - License: `MIT`
 - Author: David Frank
-- Homepage: https://github.com/node-fetch/node-fetch
+- Homepage: <https://github.com/node-fetch/node-fetch>
 
 <details><summary>LICENSE.md</summary>
 
-```
+```text
 The MIT License (MIT)
 
 Copyright (c) 2016 - 2020 Node Fetch Team
@@ -35494,11 +35101,11 @@ SOFTWARE.
 
 - License: `MIT`
 - Author: Sergey Rubanov
-- Homepage: https://github.com/chicoxyzzy/node-releases#readme
+- Homepage: <https://github.com/chicoxyzzy/node-releases#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 The MIT License
 
 Copyright (c) 2017 Sergey Rubanov (https://github.com/chicoxyzzy)
@@ -35528,11 +35135,11 @@ THE SOFTWARE.
 
 - License: `MIT`
 - Author: Sindre Sorhus
-- Homepage: https://github.com/sindresorhus/npm-run-path#readme
+- Homepage: <https://github.com/sindresorhus/npm-run-path#readme>
 
 <details><summary>license</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) Sindre Sorhus <sindresorhus@gmail.com> (sindresorhus.com)
@@ -35550,11 +35157,11 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 - License: `MIT`
 - Author: Sindre Sorhus
-- Homepage: https://github.com/sindresorhus/npm-run-path#readme
+- Homepage: <https://github.com/sindresorhus/npm-run-path#readme>
 
 <details><summary>license</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) Sindre Sorhus <sindresorhus@gmail.com> (https://sindresorhus.com)
@@ -35572,11 +35179,11 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 - License: `MIT`
 - Author: Filip Skokan
-- Homepage: https://github.com/panva/oauth4webapi
+- Homepage: <https://github.com/panva/oauth4webapi>
 
 <details><summary>LICENSE.md</summary>
 
-```
+```text
 The MIT License (MIT)
 
 Copyright (c) 2022 Filip Skokan
@@ -35606,11 +35213,11 @@ SOFTWARE.
 
 - License: `MIT`
 - Author: Filip Skokan
-- Homepage: https://github.com/panva/oauth4webapi
+- Homepage: <https://github.com/panva/oauth4webapi>
 
 <details><summary>LICENSE.md</summary>
 
-```
+```text
 The MIT License (MIT)
 
 Copyright (c) 2022 Filip Skokan
@@ -35640,11 +35247,11 @@ SOFTWARE.
 
 - License: `MIT`
 - Author: Sindre Sorhus
-- Homepage: https://github.com/sindresorhus/object-assign#readme
+- Homepage: <https://github.com/sindresorhus/object-assign#readme>
 
 <details><summary>license</summary>
 
-```
+```text
 The MIT License (MIT)
 
 Copyright (c) Sindre Sorhus <sindresorhus@gmail.com> (sindresorhus.com)
@@ -35674,11 +35281,11 @@ THE SOFTWARE.
 
 - License: `MIT`
 - Author: James Halliday
-- Homepage: https://github.com/inspect-js/object-inspect
+- Homepage: <https://github.com/inspect-js/object-inspect>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) 2013 James Halliday
@@ -35708,11 +35315,11 @@ SOFTWARE.
 
 - License: `MIT`
 - Author: Lukas Siemon
-- Homepage: https://github.com/blackflux/object-treeify#readme
+- Homepage: <https://github.com/blackflux/object-treeify#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Copyright (c) 2019 Lukas Siemon
 
 Permission is hereby granted, free of charge, to any person
@@ -35742,11 +35349,11 @@ OTHER DEALINGS IN THE SOFTWARE.
 ### on-finished@2.4.1
 
 - License: `MIT`
-- Homepage: https://github.com/jshttp/on-finished#readme
+- Homepage: <https://github.com/jshttp/on-finished#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 (The MIT License)
 
 Copyright (c) 2013 Jonathan Ong <me@jongleberry.com>
@@ -35778,11 +35385,11 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 - License: `ISC`
 - Author: Isaac Z. Schlueter
-- Homepage: https://github.com/isaacs/once#readme
+- Homepage: <https://github.com/isaacs/once#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 The ISC License
 
 Copyright (c) Isaac Z. Schlueter and Contributors
@@ -35806,11 +35413,11 @@ IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
 - License: `MIT`
 - Author: Sindre Sorhus
-- Homepage: https://github.com/sindresorhus/onetime#readme
+- Homepage: <https://github.com/sindresorhus/onetime#readme>
 
 <details><summary>license</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) Sindre Sorhus <sindresorhus@gmail.com> (https://sindresorhus.com)
@@ -35828,11 +35435,11 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 - License: `MIT`
 - Author: Sindre Sorhus
-- Homepage: https://github.com/sindresorhus/onetime#readme
+- Homepage: <https://github.com/sindresorhus/onetime#readme>
 
 <details><summary>license</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) Sindre Sorhus <sindresorhus@gmail.com> (https://sindresorhus.com)
@@ -35850,11 +35457,11 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 - License: `MIT`
 - Author: Sindre Sorhus
-- Homepage: https://github.com/sindresorhus/open#readme
+- Homepage: <https://github.com/sindresorhus/open#readme>
 
 <details><summary>license</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) Sindre Sorhus <sindresorhus@gmail.com> (https://sindresorhus.com)
@@ -35872,11 +35479,11 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 - License: `MIT`
 - Author: Sindre Sorhus
-- Homepage: https://github.com/sindresorhus/open#readme
+- Homepage: <https://github.com/sindresorhus/open#readme>
 
 <details><summary>license</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) Sindre Sorhus <sindresorhus@gmail.com> (https://sindresorhus.com)
@@ -35894,11 +35501,11 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 - License: `MIT`
 - Author: Filip Skokan
-- Homepage: https://github.com/panva/openid-client
+- Homepage: <https://github.com/panva/openid-client>
 
 <details><summary>LICENSE.md</summary>
 
-```
+```text
 The MIT License (MIT)
 
 Copyright (c) 2016 Filip Skokan
@@ -35928,11 +35535,11 @@ SOFTWARE.
 
 - License: `MIT`
 - Author: Sindre Sorhus
-- Homepage: https://github.com/sindresorhus/ora#readme
+- Homepage: <https://github.com/sindresorhus/ora#readme>
 
 <details><summary>license</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) Sindre Sorhus <sindresorhus@gmail.com> (https://sindresorhus.com)
@@ -35950,11 +35557,11 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 - License: `MIT`
 - Author: Sindre Sorhus
-- Homepage: https://github.com/sindresorhus/p-limit#readme
+- Homepage: <https://github.com/sindresorhus/p-limit#readme>
 
 <details><summary>license</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) Sindre Sorhus <sindresorhus@gmail.com> (sindresorhus.com)
@@ -35972,11 +35579,11 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 - License: `MIT`
 - Author: Sindre Sorhus
-- Homepage: https://github.com/sindresorhus/p-locate#readme
+- Homepage: <https://github.com/sindresorhus/p-locate#readme>
 
 <details><summary>license</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) Sindre Sorhus <sindresorhus@gmail.com> (sindresorhus.com)
@@ -35994,11 +35601,11 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 - License: `MIT`
 - Author: Sindre Sorhus
-- Homepage: https://github.com/sindresorhus/p-try#readme
+- Homepage: <https://github.com/sindresorhus/p-try#readme>
 
 <details><summary>license</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) Sindre Sorhus <sindresorhus@gmail.com> (sindresorhus.com)
@@ -36016,11 +35623,11 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 - License: `BlueOak-1.0.0`
 - Author: Isaac Z. Schlueter
-- Homepage: https://github.com/isaacs/package-json-from-dist#readme
+- Homepage: <https://github.com/isaacs/package-json-from-dist#readme>
 
 <details><summary>LICENSE.md</summary>
 
-```
+```text
 All packages under `src/` are licensed according to the terms in
 their respective `LICENSE` or `LICENSE.md` files.
 
@@ -36092,11 +35699,11 @@ software or this license, under any kind of legal claim.***
 
 - License: `MIT`
 - Author: Sindre Sorhus
-- Homepage: https://github.com/sindresorhus/parent-module#readme
+- Homepage: <https://github.com/sindresorhus/parent-module#readme>
 
 <details><summary>license</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) Sindre Sorhus <sindresorhus@gmail.com> (sindresorhus.com)
@@ -36114,11 +35721,11 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 - License: `MIT`
 - Author: Sindre Sorhus
-- Homepage: https://github.com/sindresorhus/parse-json#readme
+- Homepage: <https://github.com/sindresorhus/parse-json#readme>
 
 <details><summary>license</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) Sindre Sorhus <sindresorhus@gmail.com> (https://sindresorhus.com)
@@ -36136,11 +35743,11 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 - License: `MIT`
 - Author: Sindre Sorhus
-- Homepage: https://github.com/sindresorhus/parse-ms#readme
+- Homepage: <https://github.com/sindresorhus/parse-ms#readme>
 
 <details><summary>license</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) Sindre Sorhus <sindresorhus@gmail.com> (https://sindresorhus.com)
@@ -36157,11 +35764,11 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 ### parseurl@1.3.3
 
 - License: `MIT`
-- Homepage: https://github.com/pillarjs/parseurl#readme
+- Homepage: <https://github.com/pillarjs/parseurl#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 (The MIT License)
 
 Copyright (c) 2014 Jonathan Ong <me@jongleberry.com>
@@ -36193,11 +35800,11 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 - License: `MIT`
 - Author: James Halliday
-- Homepage: https://github.com/browserify/path-browserify
+- Homepage: <https://github.com/browserify/path-browserify>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) 2013 James Halliday
@@ -36226,11 +35833,11 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 - License: `MIT`
 - Author: Sindre Sorhus
-- Homepage: https://github.com/sindresorhus/path-exists#readme
+- Homepage: <https://github.com/sindresorhus/path-exists#readme>
 
 <details><summary>license</summary>
 
-```
+```text
 The MIT License (MIT)
 
 Copyright (c) Sindre Sorhus <sindresorhus@gmail.com> (sindresorhus.com)
@@ -36260,11 +35867,11 @@ THE SOFTWARE.
 
 - License: `MIT`
 - Author: Sindre Sorhus
-- Homepage: https://github.com/sindresorhus/path-key#readme
+- Homepage: <https://github.com/sindresorhus/path-key#readme>
 
 <details><summary>license</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) Sindre Sorhus <sindresorhus@gmail.com> (sindresorhus.com)
@@ -36282,11 +35889,11 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 - License: `MIT`
 - Author: Sindre Sorhus
-- Homepage: https://github.com/sindresorhus/path-key#readme
+- Homepage: <https://github.com/sindresorhus/path-key#readme>
 
 <details><summary>license</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) Sindre Sorhus <sindresorhus@gmail.com> (https://sindresorhus.com)
@@ -36304,11 +35911,11 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 - License: `BlueOak-1.0.0`
 - Author: Isaac Z. Schlueter
-- Homepage: https://github.com/isaacs/path-scurry#readme
+- Homepage: <https://github.com/isaacs/path-scurry#readme>
 
 <details><summary>LICENSE.md</summary>
 
-```
+```text
 # Blue Oak Model License
 
 Version 1.0.0
@@ -36371,11 +35978,11 @@ software or this license, under any kind of legal claim.***
 ### path-to-regexp@8.4.2
 
 - License: `MIT`
-- Homepage: https://github.com/pillarjs/path-to-regexp#readme
+- Homepage: <https://github.com/pillarjs/path-to-regexp#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 The MIT License (MIT)
 
 Copyright (c) 2014 Blake Embrey (hello@blakeembrey.com)
@@ -36404,11 +36011,11 @@ THE SOFTWARE.
 ### pg-int8@1.0.1
 
 - License: `ISC`
-- Homepage: https://github.com/charmander/pg-int8#readme
+- Homepage: <https://github.com/charmander/pg-int8#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Copyright © 2017, Charmander <~@charmander.me>
 
 Permission to use, copy, modify, and/or distribute this software for any
@@ -36426,14 +36033,14 @@ PERFORMANCE OF THIS SOFTWARE.
 
 </details>
 
-### pg-protocol@1.16.0
+### pg-protocol@1.16.1
 
 - License: `MIT`
-- Homepage: https://github.com/brianc/node-postgres#readme
+- Homepage: <https://github.com/brianc/node-postgres#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) 2010 - 2021 Brian Carlson
@@ -36463,7 +36070,7 @@ SOFTWARE.
 
 - License: `MIT`
 - Author: Brian M. Carlson
-- Homepage: https://github.com/brianc/node-pg-types
+- Homepage: <https://github.com/brianc/node-pg-types>
 
 _No license file shipped with the package; the SPDX identifier above is its declaration._
 
@@ -36471,11 +36078,11 @@ _No license file shipped with the package; the SPDX identifier above is its decl
 
 - License: `ISC`
 - Author: Alexey Raspopov
-- Homepage: https://github.com/alexeyraspopov/picocolors#readme
+- Homepage: <https://github.com/alexeyraspopov/picocolors#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 ISC License
 
 Copyright (c) 2021-2024 Oleksii Raspopov, Kostiantyn Denysov, Anton Verinov
@@ -36499,11 +36106,11 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
 - License: `MIT`
 - Author: Jon Schlinkert
-- Homepage: https://github.com/micromatch/picomatch
+- Homepage: <https://github.com/micromatch/picomatch>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 The MIT License (MIT)
 
 Copyright (c) 2017-present, Jon Schlinkert.
@@ -36533,11 +36140,11 @@ THE SOFTWARE.
 
 - License: `MIT`
 - Author: crouchcd
-- Homepage: https://github.com/crouchcd/pkce-challenge#readme
+- Homepage: <https://github.com/crouchcd/pkce-challenge#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) 2019 
@@ -36567,11 +36174,11 @@ SOFTWARE.
 
 - License: `MIT`
 - Author: Sindre Sorhus
-- Homepage: https://github.com/sindresorhus/pkg-up#readme
+- Homepage: <https://github.com/sindresorhus/pkg-up#readme>
 
 <details><summary>license</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) Sindre Sorhus <sindresorhus@gmail.com> (sindresorhus.com)
@@ -36589,11 +36196,11 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 - License: `Apache-2.0`
 - Author: Microsoft Corporation
-- Homepage: https://playwright.dev
+- Homepage: <https://playwright.dev>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Apache License
                            Version 2.0, January 2004
                         http://www.apache.org/licenses/
@@ -36802,7 +36409,7 @@ Apache License
 
 <details><summary>NOTICE</summary>
 
-```
+```text
 Playwright
 Copyright (c) Microsoft Corporation
 
@@ -36816,11 +36423,11 @@ available under the Apache 2.0 license (https://github.com/puppeteer/puppeteer/b
 
 - License: `Apache-2.0`
 - Author: Microsoft Corporation
-- Homepage: https://playwright.dev
+- Homepage: <https://playwright.dev>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Apache License
                            Version 2.0, January 2004
                         http://www.apache.org/licenses/
@@ -37029,7 +36636,7 @@ Apache License
 
 <details><summary>NOTICE</summary>
 
-```
+```text
 Playwright
 Copyright (c) Microsoft Corporation
 
@@ -37043,11 +36650,11 @@ available under the Apache 2.0 license (https://github.com/puppeteer/puppeteer/b
 
 - License: `MIT`
 - Author: Andrey Sitnik
-- Homepage: https://postcss.org/
+- Homepage: <https://postcss.org/>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 The MIT License (MIT)
 
 Copyright 2013 Andrey Sitnik <andrey@sitnik.es>
@@ -37075,7 +36682,7 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ### postcss-selector-parser@7.1.5
 
 - License: `MIT`
-- Homepage: https://github.com/postcss/postcss-selector-parser
+- Homepage: <https://github.com/postcss/postcss-selector-parser>
 
 _No license file shipped with the package; the SPDX identifier above is its declaration._
 
@@ -37083,11 +36690,11 @@ _No license file shipped with the package; the SPDX identifier above is its decl
 
 - License: `MIT`
 - Author: Ben Drucker
-- Homepage: https://github.com/bendrucker/postgres-array#readme
+- Homepage: <https://github.com/bendrucker/postgres-array#readme>
 
 <details><summary>license</summary>
 
-```
+```text
 The MIT License (MIT)
 
 Copyright (c) Ben Drucker <bvdrucker@gmail.com> (bendrucker.me)
@@ -37117,11 +36724,11 @@ THE SOFTWARE.
 
 - License: `MIT`
 - Author: Ben Drucker
-- Homepage: https://github.com/bendrucker/postgres-bytea#readme
+- Homepage: <https://github.com/bendrucker/postgres-bytea#readme>
 
 <details><summary>license</summary>
 
-```
+```text
 The MIT License (MIT)
 
 Copyright (c) Ben Drucker <bvdrucker@gmail.com> (bendrucker.me)
@@ -37151,11 +36758,11 @@ THE SOFTWARE.
 
 - License: `MIT`
 - Author: Ben Drucker
-- Homepage: https://github.com/bendrucker/postgres-date#readme
+- Homepage: <https://github.com/bendrucker/postgres-date#readme>
 
 <details><summary>license</summary>
 
-```
+```text
 The MIT License (MIT)
 
 Copyright (c) Ben Drucker <bvdrucker@gmail.com> (bendrucker.me)
@@ -37185,11 +36792,11 @@ THE SOFTWARE.
 
 - License: `MIT`
 - Author: Ben Drucker
-- Homepage: https://github.com/bendrucker/postgres-interval#readme
+- Homepage: <https://github.com/bendrucker/postgres-interval#readme>
 
 <details><summary>license</summary>
 
-```
+```text
 The MIT License (MIT)
 
 Copyright (c) Ben Drucker <bvdrucker@gmail.com> (bendrucker.me)
@@ -37219,11 +36826,11 @@ THE SOFTWARE.
 
 - License: `MIT`
 - Author: Sindre Sorhus
-- Homepage: https://github.com/sindresorhus/powershell-utils#readme
+- Homepage: <https://github.com/sindresorhus/powershell-utils#readme>
 
 <details><summary>license</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) Sindre Sorhus <sindresorhus@gmail.com> (https://sindresorhus.com)
@@ -37241,11 +36848,11 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 - License: `MIT`
 - Author: Sindre Sorhus
-- Homepage: https://github.com/sindresorhus/powershell-utils#readme
+- Homepage: <https://github.com/sindresorhus/powershell-utils#readme>
 
 <details><summary>license</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) Sindre Sorhus <sindresorhus@gmail.com> (https://sindresorhus.com)
@@ -37262,11 +36869,11 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 ### preact@10.11.3
 
 - License: `MIT`
-- Homepage: https://preactjs.com
+- Homepage: <https://preactjs.com>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 The MIT License (MIT)
 
 Copyright (c) 2015-present Jason Miller
@@ -37295,11 +36902,11 @@ SOFTWARE.
 ### preact@10.24.3
 
 - License: `MIT`
-- Homepage: https://preactjs.com
+- Homepage: <https://preactjs.com>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 The MIT License (MIT)
 
 Copyright (c) 2015-present Jason Miller
@@ -37329,11 +36936,11 @@ SOFTWARE.
 
 - License: `MIT`
 - Author: The Preact Authors
-- Homepage: https://github.com/preactjs/preact-render-to-string
+- Homepage: <https://github.com/preactjs/preact-render-to-string>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 The MIT License (MIT)
 
 Copyright (c) 2015 Jason Miller
@@ -37363,11 +36970,11 @@ SOFTWARE.
 
 - License: `MIT`
 - Author: The Preact Authors
-- Homepage: https://github.com/preactjs/preact-render-to-string
+- Homepage: <https://github.com/preactjs/preact-render-to-string>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 The MIT License (MIT)
 
 Copyright (c) 2015 Jason Miller
@@ -37397,11 +37004,11 @@ SOFTWARE.
 
 - License: `MIT`
 - Author: James Kyle
-- Homepage: https://github.com/thejameskle/pretty-format
+- Homepage: <https://github.com/thejameskle/pretty-format>
 
 <details><summary>LICENSE.md</summary>
 
-```
+```text
 ## ISC License
 
 Copyright (c) 2016, James Kyle <me@thejameskyle.com>
@@ -37425,11 +37032,11 @@ THIS SOFTWARE.
 
 - License: `MIT`
 - Author: Sindre Sorhus
-- Homepage: https://github.com/sindresorhus/pretty-ms#readme
+- Homepage: <https://github.com/sindresorhus/pretty-ms#readme>
 
 <details><summary>license</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) Sindre Sorhus <sindresorhus@gmail.com> (https://sindresorhus.com)
@@ -37447,11 +37054,11 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 - License: `MIT`
 - Author: Terkel Gjervig
-- Homepage: https://github.com/terkelg/prompts#readme
+- Homepage: <https://github.com/terkelg/prompts#readme>
 
 <details><summary>license</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) 2018 Terkel Gjervig Nielsen
@@ -37481,11 +37088,11 @@ SOFTWARE.
 
 - License: `BSD-3-Clause`
 - Author: Daniel Wirtz
-- Homepage: https://github.com/protobufjs/protobuf.js#readme
+- Homepage: <https://github.com/protobufjs/protobuf.js#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 This license applies to all parts of protobuf.js except those files
 either explicitly including or referencing a different license or
 located in a directory containing a different LICENSE file.
@@ -37533,11 +37140,11 @@ support library is itself covered by the above license.
 
 - License: `MIT`
 - Author: Douglas Christopher Wilson
-- Homepage: https://github.com/jshttp/proxy-addr#readme
+- Homepage: <https://github.com/jshttp/proxy-addr#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 (The MIT License)
 
 Copyright (c) 2014-2016 Douglas Christopher Wilson
@@ -37568,11 +37175,11 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 - License: `MIT`
 - Author: Mathias Buus Madsen
-- Homepage: https://github.com/mafintosh/pump#readme
+- Homepage: <https://github.com/mafintosh/pump#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 The MIT License (MIT)
 
 Copyright (c) 2014 Mathias Buus
@@ -37601,11 +37208,11 @@ THE SOFTWARE.
 ### qs@6.15.3
 
 - License: `BSD-3-Clause`
-- Homepage: https://github.com/ljharb/qs
+- Homepage: <https://github.com/ljharb/qs>
 
 <details><summary>LICENSE.md</summary>
 
-```
+```text
 BSD 3-Clause License
 
 Copyright (c) 2014, Nathan LaFreniere and other [contributors](https://github.com/ljharb/qs/graphs/contributors)
@@ -37643,11 +37250,11 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 - License: `MIT`
 - Author: Feross Aboukhadijeh
-- Homepage: https://github.com/feross/queue-microtask
+- Homepage: <https://github.com/feross/queue-microtask>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 The MIT License (MIT)
 
 Copyright (c) Feross Aboukhadijeh
@@ -37676,11 +37283,11 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 - License: `MIT`
 - Author: TJ Holowaychuk
-- Homepage: https://github.com/jshttp/range-parser#readme
+- Homepage: <https://github.com/jshttp/range-parser#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 (The MIT License)
 
 Copyright (c) 2012-2014 TJ Holowaychuk <tj@vision-media.ca>
@@ -37712,11 +37319,11 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 - License: `MIT`
 - Author: Jonathan Ong
-- Homepage: https://github.com/stream-utils/raw-body#readme
+- Homepage: <https://github.com/stream-utils/raw-body#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 The MIT License (MIT)
 
 Copyright (c) 2013-2014 Jonathan Ong <me@jongleberry.com>
@@ -37746,11 +37353,11 @@ THE SOFTWARE.
 ### react@19.3.0
 
 - License: `MIT`
-- Homepage: https://react.dev/
+- Homepage: <https://react.dev/>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) Meta Platforms, Inc. and affiliates.
@@ -37779,11 +37386,11 @@ SOFTWARE.
 ### react-dom@19.3.0
 
 - License: `MIT`
-- Homepage: https://react.dev/
+- Homepage: <https://react.dev/>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) Meta Platforms, Inc. and affiliates.
@@ -37812,11 +37419,11 @@ SOFTWARE.
 ### react-is@19.2.4
 
 - License: `MIT`
-- Homepage: https://react.dev/
+- Homepage: <https://react.dev/>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) Meta Platforms, Inc. and affiliates.
@@ -37846,11 +37453,11 @@ SOFTWARE.
 
 - License: `MIT`
 - Author: Dan Abramov
-- Homepage: https://github.com/reduxjs/react-redux
+- Homepage: <https://github.com/reduxjs/react-redux>
 
 <details><summary>LICENSE.md</summary>
 
-```
+```text
 The MIT License (MIT)
 
 Copyright (c) 2015-present Dan Abramov
@@ -37880,11 +37487,11 @@ SOFTWARE.
 
 - License: `MIT`
 - Author: Anton Korzunov
-- Homepage: https://github.com/theKashey/react-remove-scroll#readme
+- Homepage: <https://github.com/theKashey/react-remove-scroll#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) 2017 Anton Korzunov
@@ -37914,7 +37521,7 @@ SOFTWARE.
 
 - License: `MIT`
 - Author: Anton Korzunov
-- Homepage: https://github.com/theKashey/react-remove-scroll-bar#readme
+- Homepage: <https://github.com/theKashey/react-remove-scroll-bar#readme>
 
 _No license file shipped with the package; the SPDX identifier above is its declaration._
 
@@ -37922,11 +37529,11 @@ _No license file shipped with the package; the SPDX identifier above is its decl
 
 - License: `MIT`
 - Author: Anton Korzunov
-- Homepage: https://github.com/theKashey/react-style-singleton#readme
+- Homepage: <https://github.com/theKashey/react-style-singleton#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) 2017 Anton Korzunov
@@ -37955,11 +37562,11 @@ SOFTWARE.
 ### reactflow@11.11.4
 
 - License: `MIT`
-- Homepage: https://github.com/xyflow/xyflow#readme
+- Homepage: <https://github.com/xyflow/xyflow#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) 2019-2023 webkid GmbH
@@ -37989,11 +37596,11 @@ SOFTWARE.
 
 - License: `MIT`
 - Author: Ben Newman
-- Homepage: http://github.com/benjamn/recast
+- Homepage: <http://github.com/benjamn/recast>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Copyright (c) 2012 Ben Newman <bn@cs.stanford.edu>
 
 Permission is hereby granted, free of charge, to any person obtaining
@@ -38022,11 +37629,11 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 - License: `MIT`
 - Author: recharts group
-- Homepage: https://github.com/recharts/recharts
+- Homepage: <https://github.com/recharts/recharts>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 The MIT License (MIT)
 
 Copyright (c) 2015-present recharts
@@ -38056,11 +37663,11 @@ SOFTWARE.
 
 - License: `MIT`
 - Author: Ruben Bridgewater
-- Homepage: https://github.com/NodeRedis/redis-errors#readme
+- Homepage: <https://github.com/NodeRedis/redis-errors#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 The MIT License (MIT)
 
 Copyright (c) 2017 Ruben Bridgewater
@@ -38090,11 +37697,11 @@ SOFTWARE.
 
 - License: `MIT`
 - Author: Ruben Bridgewater
-- Homepage: https://github.com/NodeRedis/node-redis-parser#readme
+- Homepage: <https://github.com/NodeRedis/node-redis-parser#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 The MIT License (MIT)
 
 Copyright (c) 2015 NodeRedis
@@ -38123,11 +37730,11 @@ SOFTWARE.
 ### redux@5.0.1
 
 - License: `MIT`
-- Homepage: http://redux.js.org
+- Homepage: <http://redux.js.org>
 
 <details><summary>LICENSE.md</summary>
 
-```
+```text
 The MIT License (MIT)
 
 Copyright (c) 2015-present Dan Abramov
@@ -38157,11 +37764,11 @@ SOFTWARE.
 
 - License: `MIT`
 - Author: Dan Abramov
-- Homepage: https://github.com/reduxjs/redux-thunk
+- Homepage: <https://github.com/reduxjs/redux-thunk>
 
 <details><summary>LICENSE.md</summary>
 
-```
+```text
 The MIT License (MIT)
 
 Copyright (c) 2015-present Dan Abramov
@@ -38191,11 +37798,11 @@ SOFTWARE.
 
 - License: `MIT`
 - Author: Troy Goode
-- Homepage: https://github.com/troygoode/node-require-directory/
+- Homepage: <https://github.com/troygoode/node-require-directory/>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 The MIT License (MIT)
 
 Copyright (c) 2011 Troy Goode <troygoode@gmail.com>
@@ -38226,11 +37833,11 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 - License: `MIT`
 - Author: Vsevolod Strukchinsky
-- Homepage: https://github.com/floatdrop/require-from-string#readme
+- Homepage: <https://github.com/floatdrop/require-from-string#readme>
 
 <details><summary>license</summary>
 
-```
+```text
 The MIT License (MIT)
 
 Copyright (c) Vsevolod Strukchinsky <floatdrop@gmail.com> (github.com/floatdrop)
@@ -38260,11 +37867,11 @@ THE SOFTWARE.
 
 - License: `MIT`
 - Author: Thomas Watson Steen
-- Homepage: https://github.com/nodejs/require-in-the-middle#readme
+- Homepage: <https://github.com/nodejs/require-in-the-middle#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 The MIT License (MIT)
 
 Copyright (c) 2016-2019, Thomas Watson Steen
@@ -38295,11 +37902,11 @@ SOFTWARE.
 ### reselect@5.2.0
 
 - License: `MIT`
-- Homepage: https://github.com/reduxjs/reselect#readme
+- Homepage: <https://github.com/reduxjs/reselect#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 The MIT License (MIT)
 
 Copyright (c) 2015-2018 Reselect Contributors
@@ -38328,11 +37935,11 @@ SOFTWARE.
 ### reselect@5.3.0
 
 - License: `MIT`
-- Homepage: https://github.com/reduxjs/reselect#readme
+- Homepage: <https://github.com/reduxjs/reselect#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 The MIT License (MIT)
 
 Copyright (c) 2015-2018 Reselect Contributors
@@ -38362,11 +37969,11 @@ SOFTWARE.
 
 - License: `MIT`
 - Author: Sindre Sorhus
-- Homepage: https://github.com/sindresorhus/resolve-from#readme
+- Homepage: <https://github.com/sindresorhus/resolve-from#readme>
 
 <details><summary>license</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) Sindre Sorhus <sindresorhus@gmail.com> (sindresorhus.com)
@@ -38384,11 +37991,11 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 - License: `MIT`
 - Author: Sindre Sorhus
-- Homepage: https://github.com/sindresorhus/restore-cursor#readme
+- Homepage: <https://github.com/sindresorhus/restore-cursor#readme>
 
 <details><summary>license</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) Sindre Sorhus <sindresorhus@gmail.com> (https://sindresorhus.com)
@@ -38406,11 +38013,11 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 - License: `MIT`
 - Author: Matteo Collina
-- Homepage: https://github.com/mcollina/reusify#readme
+- Homepage: <https://github.com/mcollina/reusify#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 The MIT License (MIT)
 
 Copyright (c) 2015-2024 Matteo Collina
@@ -38440,11 +38047,11 @@ SOFTWARE.
 
 - License: `MIT`
 - Author: William Swanson
-- Homepage: https://github.com/swansontec/rfc4648.js#readme
+- Homepage: <https://github.com/swansontec/rfc4648.js#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 The MIT License (MIT)
 
 Copyright © 2022 William R Swanson
@@ -38462,11 +38069,11 @@ THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR I
 
 - License: `ISC`
 - Author: Isaac Z. Schlueter
-- Homepage: https://github.com/isaacs/rimraf#readme
+- Homepage: <https://github.com/isaacs/rimraf#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 The ISC License
 
 Copyright (c) 2011-2023 Isaac Z. Schlueter and Contributors
@@ -38490,11 +38097,11 @@ IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
 - License: `MIT`
 - Author: Douglas Christopher Wilson
-- Homepage: https://github.com/pillarjs/router#readme
+- Homepage: <https://github.com/pillarjs/router#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 (The MIT License)
 
 Copyright (c) 2013 Roman Shtylman
@@ -38526,11 +38133,11 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 - License: `MIT`
 - Author: Sindre Sorhus
-- Homepage: https://github.com/sindresorhus/run-applescript#readme
+- Homepage: <https://github.com/sindresorhus/run-applescript#readme>
 
 <details><summary>license</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) Sindre Sorhus <sindresorhus@gmail.com> (https://sindresorhus.com)
@@ -38548,11 +38155,11 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 - License: `MIT`
 - Author: Feross Aboukhadijeh
-- Homepage: https://github.com/feross/run-parallel
+- Homepage: <https://github.com/feross/run-parallel>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 The MIT License (MIT)
 
 Copyright (c) Feross Aboukhadijeh
@@ -38581,11 +38188,11 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 - License: `MIT`
 - Author: Nikita Skovoroda
-- Homepage: https://github.com/ChALkeR/safer-buffer#readme
+- Homepage: <https://github.com/ChALkeR/safer-buffer#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) 2018 Nikita Skovoroda <chalkerx@gmail.com>
@@ -38614,11 +38221,11 @@ SOFTWARE.
 ### scheduler@0.28.0
 
 - License: `MIT`
-- Homepage: https://react.dev/
+- Homepage: <https://react.dev/>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) Meta Platforms, Inc. and affiliates.
@@ -38648,11 +38255,11 @@ SOFTWARE.
 
 - License: `ISC`
 - Author: GitHub Inc.
-- Homepage: https://github.com/npm/node-semver#readme
+- Homepage: <https://github.com/npm/node-semver#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 The ISC License
 
 Copyright (c) Isaac Z. Schlueter and Contributors
@@ -38676,11 +38283,11 @@ IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
 - License: `ISC`
 - Author: GitHub Inc.
-- Homepage: https://github.com/npm/node-semver#readme
+- Homepage: <https://github.com/npm/node-semver#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 The ISC License
 
 Copyright (c) Isaac Z. Schlueter and Contributors
@@ -38704,11 +38311,11 @@ IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
 - License: `MIT`
 - Author: TJ Holowaychuk
-- Homepage: https://github.com/pillarjs/send#readme
+- Homepage: <https://github.com/pillarjs/send#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 (The MIT License)
 
 Copyright (c) 2012 TJ Holowaychuk
@@ -38740,11 +38347,11 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 - License: `MIT`
 - Author: Douglas Christopher Wilson
-- Homepage: https://github.com/expressjs/serve-static#readme
+- Homepage: <https://github.com/expressjs/serve-static#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 (The MIT License)
 
 Copyright (c) 2010 Sencha Inc.
@@ -38777,7 +38384,7 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ### server-only@0.0.1
 
 - License: `MIT`
-- Homepage: https://reactjs.org/
+- Homepage: <https://reactjs.org/>
 
 _No license file shipped with the package; the SPDX identifier above is its declaration._
 
@@ -38785,11 +38392,11 @@ _No license file shipped with the package; the SPDX identifier above is its decl
 
 - License: `ISC`
 - Author: Wes Todd
-- Homepage: https://github.com/wesleytodd/setprototypeof
+- Homepage: <https://github.com/wesleytodd/setprototypeof>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Copyright (c) 2015, Wes Todd
 
 Permission to use, copy, modify, and/or distribute this software for any
@@ -38811,11 +38418,11 @@ CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
 - License: `MIT`
 - Author: shadcn
-- Homepage: https://github.com/shadcn-ui/ui#readme
+- Homepage: <https://github.com/shadcn-ui/ui#readme>
 
 <details><summary>LICENSE.md</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) 2023 shadcn
@@ -38845,11 +38452,11 @@ SOFTWARE.
 
 - License: `Apache-2.0`
 - Author: Lovell Fuller
-- Homepage: https://sharp.pixelplumbing.com
+- Homepage: <https://sharp.pixelplumbing.com>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Apache License
 Version 2.0, January 2004
 http://www.apache.org/licenses/
@@ -39049,11 +38656,11 @@ third-party archives.
 
 - License: `MIT`
 - Author: Kevin Mårtensson
-- Homepage: https://github.com/kevva/shebang-command#readme
+- Homepage: <https://github.com/kevva/shebang-command#readme>
 
 <details><summary>license</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) Kevin Mårtensson <kevinmartensson@gmail.com> (github.com/kevva)
@@ -39071,11 +38678,11 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 - License: `MIT`
 - Author: Sindre Sorhus
-- Homepage: https://github.com/sindresorhus/shebang-regex#readme
+- Homepage: <https://github.com/sindresorhus/shebang-regex#readme>
 
 <details><summary>license</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) Sindre Sorhus <sindresorhus@gmail.com> (sindresorhus.com)
@@ -39093,11 +38700,11 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 - License: `MIT`
 - Author: Jordan Harband
-- Homepage: https://github.com/ljharb/side-channel#readme
+- Homepage: <https://github.com/ljharb/side-channel#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) 2019 Jordan Harband
@@ -39127,11 +38734,11 @@ SOFTWARE.
 
 - License: `MIT`
 - Author: Jordan Harband
-- Homepage: https://github.com/ljharb/side-channel-list#readme
+- Homepage: <https://github.com/ljharb/side-channel-list#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) 2024 Jordan Harband
@@ -39161,11 +38768,11 @@ SOFTWARE.
 
 - License: `MIT`
 - Author: Jordan Harband
-- Homepage: https://github.com/ljharb/side-channel-map#readme
+- Homepage: <https://github.com/ljharb/side-channel-map#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) 2024 Jordan Harband
@@ -39195,11 +38802,11 @@ SOFTWARE.
 
 - License: `MIT`
 - Author: Jordan Harband
-- Homepage: https://github.com/ljharb/side-channel-weakmap#readme
+- Homepage: <https://github.com/ljharb/side-channel-weakmap#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) 2019 Jordan Harband
@@ -39229,11 +38836,11 @@ SOFTWARE.
 
 - License: `ISC`
 - Author: Ben Coe
-- Homepage: https://github.com/tapjs/signal-exit#readme
+- Homepage: <https://github.com/tapjs/signal-exit#readme>
 
 <details><summary>LICENSE.txt</summary>
 
-```
+```text
 The ISC License
 
 Copyright (c) 2015, Contributors
@@ -39258,11 +38865,11 @@ ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
 - License: `ISC`
 - Author: Ben Coe
-- Homepage: https://github.com/tapjs/signal-exit#readme
+- Homepage: <https://github.com/tapjs/signal-exit#readme>
 
 <details><summary>LICENSE.txt</summary>
 
-```
+```text
 The ISC License
 
 Copyright (c) 2015-2023 Benjamin Coe, Isaac Z. Schlueter, and Contributors
@@ -39287,11 +38894,11 @@ ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
 - License: `MIT`
 - Author: Terkel Gjervig
-- Homepage: https://github.com/terkelg/sisteransi#readme
+- Homepage: <https://github.com/terkelg/sisteransi#readme>
 
 <details><summary>license</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) 2018 Terkel Gjervig Nielsen
@@ -39321,11 +38928,11 @@ SOFTWARE.
 
 - License: `MIT`
 - Author: Josh Glazebrook
-- Homepage: https://github.com/JoshGlazebrook/smart-buffer/
+- Homepage: <https://github.com/JoshGlazebrook/smart-buffer/>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 The MIT License (MIT)
 
 Copyright (c) 2013-2017 Josh Glazebrook
@@ -39354,11 +38961,11 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 - License: `MIT`
 - Author: Josh Glazebrook
-- Homepage: https://github.com/JoshGlazebrook/socks/
+- Homepage: <https://github.com/JoshGlazebrook/socks/>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 The MIT License (MIT)
 
 Copyright (c) 2013 Josh Glazebrook
@@ -39387,11 +38994,11 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 - License: `MIT`
 - Author: Nathan Rajlich
-- Homepage: https://github.com/TooTallNate/proxy-agents#readme
+- Homepage: <https://github.com/TooTallNate/proxy-agents#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 (The MIT License)
 
 Copyright (c) 2013 Nathan Rajlich <nathan@tootallnate.net>
@@ -39422,11 +39029,11 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 - License: `BSD-3-Clause`
 - Author: Nick Fitzgerald
-- Homepage: https://github.com/mozilla/source-map
+- Homepage: <https://github.com/mozilla/source-map>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Copyright (c) 2009-2011, Mozilla Foundation and contributors
 All rights reserved.
 
@@ -39462,11 +39069,11 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 - License: `BSD-3-Clause`
 - Author: Valentin 7rulnik Semirulnik
-- Homepage: https://github.com/7rulnik/source-map-js
+- Homepage: <https://github.com/7rulnik/source-map-js>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Copyright (c) 2009-2011, Mozilla Foundation and contributors
 All rights reserved.
 
@@ -39502,11 +39109,11 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 - License: `MIT`
 - Author: luin
-- Homepage: https://github.com/luin/asCallback#readme
+- Homepage: <https://github.com/luin/asCallback#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) 2018 Zihua Li
@@ -39536,11 +39143,11 @@ SOFTWARE.
 ### statuses@2.0.2
 
 - License: `MIT`
-- Homepage: https://github.com/jshttp/statuses#readme
+- Homepage: <https://github.com/jshttp/statuses#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 The MIT License (MIT)
 
 Copyright (c) 2014 Jonathan Ong <me@jongleberry.com>
@@ -39571,11 +39178,11 @@ THE SOFTWARE.
 
 - License: `MIT`
 - Author: Sindre Sorhus
-- Homepage: https://github.com/sindresorhus/stdin-discarder#readme
+- Homepage: <https://github.com/sindresorhus/stdin-discarder#readme>
 
 <details><summary>license</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) Sindre Sorhus <sindresorhus@gmail.com> (https://sindresorhus.com)
@@ -39593,7 +39200,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 - License: `Unlicense`
 - Author: Sam Day
-- Homepage: https://github.com/samcday/node-stream-buffer#readme
+- Homepage: <https://github.com/samcday/node-stream-buffer#readme>
 
 _No license file shipped with the package; the SPDX identifier above is its declaration._
 
@@ -39601,11 +39208,11 @@ _No license file shipped with the package; the SPDX identifier above is its decl
 
 - License: `MIT`
 - Author: Mathias Buus
-- Homepage: https://github.com/mafintosh/streamx
+- Homepage: <https://github.com/mafintosh/streamx>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 The MIT License (MIT)
 
 Copyright (c) 2019 Mathias Buus
@@ -39635,11 +39242,11 @@ THE SOFTWARE.
 
 - License: `MIT`
 - Author: Sindre Sorhus
-- Homepage: https://github.com/sindresorhus/string-width#readme
+- Homepage: <https://github.com/sindresorhus/string-width#readme>
 
 <details><summary>license</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) Sindre Sorhus <sindresorhus@gmail.com> (sindresorhus.com)
@@ -39657,11 +39264,11 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 - License: `MIT`
 - Author: Sindre Sorhus
-- Homepage: https://github.com/sindresorhus/string-width#readme
+- Homepage: <https://github.com/sindresorhus/string-width#readme>
 
 <details><summary>license</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) Sindre Sorhus <sindresorhus@gmail.com> (https://sindresorhus.com)
@@ -39679,11 +39286,11 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 - License: `MIT`
 - Author: Sindre Sorhus
-- Homepage: https://github.com/sindresorhus/string-width#readme
+- Homepage: <https://github.com/sindresorhus/string-width#readme>
 
 <details><summary>license</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) Sindre Sorhus <sindresorhus@gmail.com> (https://sindresorhus.com)
@@ -39701,11 +39308,11 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 - License: `BSD-2-Clause`
 - Author: Sindre Sorhus
-- Homepage: https://github.com/yeoman/stringify-object#readme
+- Homepage: <https://github.com/yeoman/stringify-object#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Copyright (c) 2015, Yeoman team
 All rights reserved.
 
@@ -39736,11 +39343,11 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 - License: `MIT`
 - Author: Sindre Sorhus
-- Homepage: https://github.com/chalk/strip-ansi#readme
+- Homepage: <https://github.com/chalk/strip-ansi#readme>
 
 <details><summary>license</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) Sindre Sorhus <sindresorhus@gmail.com> (sindresorhus.com)
@@ -39758,11 +39365,11 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 - License: `MIT`
 - Author: Sindre Sorhus
-- Homepage: https://github.com/chalk/strip-ansi#readme
+- Homepage: <https://github.com/chalk/strip-ansi#readme>
 
 <details><summary>license</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) Sindre Sorhus <sindresorhus@gmail.com> (https://sindresorhus.com)
@@ -39780,11 +39387,11 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 - License: `MIT`
 - Author: Sindre Sorhus
-- Homepage: https://github.com/sindresorhus/strip-bom#readme
+- Homepage: <https://github.com/sindresorhus/strip-bom#readme>
 
 <details><summary>license</summary>
 
-```
+```text
 The MIT License (MIT)
 
 Copyright (c) Sindre Sorhus <sindresorhus@gmail.com> (sindresorhus.com)
@@ -39814,11 +39421,11 @@ THE SOFTWARE.
 
 - License: `MIT`
 - Author: Sindre Sorhus
-- Homepage: https://github.com/sindresorhus/strip-final-newline#readme
+- Homepage: <https://github.com/sindresorhus/strip-final-newline#readme>
 
 <details><summary>license</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) Sindre Sorhus <sindresorhus@gmail.com> (sindresorhus.com)
@@ -39836,11 +39443,11 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 - License: `MIT`
 - Author: Sindre Sorhus
-- Homepage: https://github.com/sindresorhus/strip-final-newline#readme
+- Homepage: <https://github.com/sindresorhus/strip-final-newline#readme>
 
 <details><summary>license</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) Sindre Sorhus <sindresorhus@gmail.com> (https://sindresorhus.com)
@@ -39857,11 +39464,11 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 ### styled-jsx@5.1.6
 
 - License: `MIT`
-- Homepage: https://github.com/vercel/styled-jsx#readme
+- Homepage: <https://github.com/vercel/styled-jsx#readme>
 
 <details><summary>license.md</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) 2016-present Vercel, Inc.
@@ -39891,11 +39498,11 @@ SOFTWARE.
 
 - License: `MIT`
 - Author: Dany Castillo
-- Homepage: https://github.com/dcastil/tailwind-merge
+- Homepage: <https://github.com/dcastil/tailwind-merge>
 
 <details><summary>LICENSE.md</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) 2021 Dany Castillo
@@ -39925,11 +39532,11 @@ SOFTWARE.
 
 - License: `MIT`
 - Author: Mathias Buus
-- Homepage: https://github.com/mafintosh/tar-fs
+- Homepage: <https://github.com/mafintosh/tar-fs>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 The MIT License (MIT)
 
 Copyright (c) 2014 Mathias Buus
@@ -39959,11 +39566,11 @@ THE SOFTWARE.
 
 - License: `MIT`
 - Author: Mathias Buus
-- Homepage: https://github.com/mafintosh/tar-stream
+- Homepage: <https://github.com/mafintosh/tar-stream>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 The MIT License (MIT)
 
 Copyright (c) 2014 Mathias Buus
@@ -39993,11 +39600,11 @@ THE SOFTWARE.
 
 - License: `MIT`
 - Author: Mathias Buus
-- Homepage: https://github.com/mafintosh/teex
+- Homepage: <https://github.com/mafintosh/teex>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 The MIT License (MIT)
 
 Copyright (c) 2020 Mathias Buus
@@ -40027,11 +39634,11 @@ THE SOFTWARE.
 
 - License: `Apache-2.0`
 - Author: Holepunch
-- Homepage: https://github.com/holepunchto/text-decoder#readme
+- Homepage: <https://github.com/holepunchto/text-decoder#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Apache License
                            Version 2.0, January 2004
                         http://www.apache.org/licenses/
@@ -40241,11 +39848,11 @@ Apache License
 
 - License: `MIT`
 - Author: Alex Reardon
-- Homepage: https://github.com/alexreardon/tiny-invariant#readme
+- Homepage: <https://github.com/alexreardon/tiny-invariant#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) 2019 Alexander Reardon
@@ -40275,11 +39882,11 @@ SOFTWARE.
 
 - License: `MIT`
 - Author: Jon Schlinkert
-- Homepage: https://github.com/micromatch/to-regex-range
+- Homepage: <https://github.com/micromatch/to-regex-range>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 The MIT License (MIT)
 
 Copyright (c) 2015-present, Jon Schlinkert.
@@ -40309,11 +39916,11 @@ THE SOFTWARE.
 
 - License: `MIT`
 - Author: Douglas Christopher Wilson
-- Homepage: https://github.com/component/toidentifier#readme
+- Homepage: <https://github.com/component/toidentifier#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) 2016 Douglas Christopher Wilson <doug@somethingdoug.com>
@@ -40343,7 +39950,7 @@ SOFTWARE.
 
 - License: `MIT`
 - Author: Sebastian Mayr
-- Homepage: https://github.com/Sebmaster/tr46.js#readme
+- Homepage: <https://github.com/Sebmaster/tr46.js#readme>
 
 _No license file shipped with the package; the SPDX identifier above is its declaration._
 
@@ -40351,11 +39958,11 @@ _No license file shipped with the package; the SPDX identifier above is its decl
 
 - License: `MIT`
 - Author: David Sherret
-- Homepage: https://github.com/dsherret/ts-morph#readme
+- Homepage: <https://github.com/dsherret/ts-morph#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 The MIT License (MIT)
 
 Copyright (c) 2017 David Sherret
@@ -40385,11 +39992,11 @@ SOFTWARE.
 
 - License: `MIT`
 - Author: Jonas Kello
-- Homepage: https://github.com/dividab/tsconfig-paths#readme
+- Homepage: <https://github.com/dividab/tsconfig-paths#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 The MIT License (MIT)
 
 Copyright (c) 2016 Jonas Kello
@@ -40419,11 +40026,11 @@ SOFTWARE.
 
 - License: `0BSD`
 - Author: Microsoft Corp.
-- Homepage: https://www.typescriptlang.org/
+- Homepage: <https://www.typescriptlang.org/>
 
 <details><summary>LICENSE.txt</summary>
 
-```
+```text
 Copyright (c) Microsoft Corporation.
 
 Permission to use, copy, modify, and/or distribute this software for any
@@ -40444,11 +40051,11 @@ PERFORMANCE OF THIS SOFTWARE.
 
 - License: `MIT`
 - Author: Luca Bosin
-- Homepage: https://github.com/Wombosvideo/tw-animate-css#readme
+- Homepage: <https://github.com/Wombosvideo/tw-animate-css#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) 2025 Wombosvideo
@@ -40477,11 +40084,11 @@ SOFTWARE.
 ### type-is@2.1.0
 
 - License: `MIT`
-- Homepage: https://github.com/jshttp/type-is#readme
+- Homepage: <https://github.com/jshttp/type-is#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 (The MIT License)
 
 Copyright (c) 2014 Jonathan Ong <me@jongleberry.com>
@@ -40513,11 +40120,11 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 - License: `Apache-2.0`
 - Author: Microsoft Corp.
-- Homepage: https://www.typescriptlang.org/
+- Homepage: <https://www.typescriptlang.org/>
 
 <details><summary>LICENSE.txt</summary>
 
-```
+```text
 Apache License
 
 Version 2.0, January 2004
@@ -40580,11 +40187,11 @@ END OF TERMS AND CONDITIONS
 ### undici@7.29.0
 
 - License: `MIT`
-- Homepage: https://undici.nodejs.org
+- Homepage: <https://undici.nodejs.org>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) Matteo Collina and Undici contributors
@@ -40613,11 +40220,11 @@ SOFTWARE.
 ### undici-types@6.21.0
 
 - License: `MIT`
-- Homepage: https://undici.nodejs.org
+- Homepage: <https://undici.nodejs.org>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) Matteo Collina and Undici contributors
@@ -40646,11 +40253,11 @@ SOFTWARE.
 ### undici-types@7.16.0
 
 - License: `MIT`
-- Homepage: https://undici.nodejs.org
+- Homepage: <https://undici.nodejs.org>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) Matteo Collina and Undici contributors
@@ -40680,11 +40287,11 @@ SOFTWARE.
 
 - License: `MIT`
 - Author: Sindre Sorhus
-- Homepage: https://github.com/sindresorhus/unicorn-magic#readme
+- Homepage: <https://github.com/sindresorhus/unicorn-magic#readme>
 
 <details><summary>license</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) Sindre Sorhus <sindresorhus@gmail.com> (https://sindresorhus.com)
@@ -40702,11 +40309,11 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 - License: `MIT`
 - Author: Ryan Zimmerman
-- Homepage: https://github.com/RyanZim/universalify#readme
+- Homepage: <https://github.com/RyanZim/universalify#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 (The MIT License)
 
 Copyright (c) 2017, Ryan Zimmerman <opensrc@ryanzim.com>
@@ -40735,11 +40342,11 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 - License: `MIT`
 - Author: Douglas Christopher Wilson
-- Homepage: https://github.com/stream-utils/unpipe#readme
+- Homepage: <https://github.com/stream-utils/unpipe#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 (The MIT License)
 
 Copyright (c) 2015 Douglas Christopher Wilson <doug@somethingdoug.com>
@@ -40770,11 +40377,11 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 - License: `MIT`
 - Author: Andrey Sitnik
-- Homepage: https://github.com/browserslist/update-db#readme
+- Homepage: <https://github.com/browserslist/update-db#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 The MIT License (MIT)
 
 Copyright 2022 Andrey Sitnik <andrey@sitnik.es> and other contributors
@@ -40803,11 +40410,11 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 - License: `MIT`
 - Author: theKashey
-- Homepage: https://github.com/theKashey/use-callback-ref#readme
+- Homepage: <https://github.com/theKashey/use-callback-ref#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) 2017 Anton Korzunov
@@ -40837,11 +40444,11 @@ SOFTWARE.
 
 - License: `MIT`
 - Author: theKashey
-- Homepage: https://github.com/theKashey/use-sidecar
+- Homepage: <https://github.com/theKashey/use-sidecar>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) 2017 Anton Korzunov
@@ -40870,11 +40477,11 @@ SOFTWARE.
 ### use-sync-external-store@1.6.0
 
 - License: `MIT`
-- Homepage: https://github.com/react/react#readme
+- Homepage: <https://github.com/react/react#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) Meta Platforms, Inc. and affiliates.
@@ -40903,11 +40510,11 @@ SOFTWARE.
 ### use-sync-external-store@1.7.0
 
 - License: `MIT`
-- Homepage: https://github.com/react/react#readme
+- Homepage: <https://github.com/react/react#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) Meta Platforms, Inc. and affiliates.
@@ -40937,11 +40544,11 @@ SOFTWARE.
 
 - License: `MIT`
 - Author: Nathan Rajlich
-- Homepage: https://github.com/TooTallNate/util-deprecate
+- Homepage: <https://github.com/TooTallNate/util-deprecate>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 (The MIT License)
 
 Copyright (c) 2014 Nathan Rajlich <nathan@tootallnate.net>
@@ -40974,11 +40581,11 @@ OTHER DEALINGS IN THE SOFTWARE.
 
 - License: `ISC`
 - Author: GitHub Inc.
-- Homepage: https://github.com/npm/validate-npm-package-name
+- Homepage: <https://github.com/npm/validate-npm-package-name>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Copyright (c) 2015, npm, Inc
 
 Permission to use, copy, modify, and/or distribute this software for any purpose with or without fee is hereby granted, provided that the above copyright notice and this permission notice appear in all copies.
@@ -40992,11 +40599,11 @@ THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH RE
 
 - License: `MIT`
 - Author: Douglas Christopher Wilson
-- Homepage: https://github.com/jshttp/vary#readme
+- Homepage: <https://github.com/jshttp/vary#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 (The MIT License)
 
 Copyright (c) 2014-2017 Douglas Christopher Wilson
@@ -41027,7 +40634,7 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 - License: `MIT AND ISC`
 - Author: Formidable
-- Homepage: https://commerce.nearform.com/open-source/victory
+- Homepage: <https://commerce.nearform.com/open-source/victory>
 
 _No license file shipped with the package; the SPDX identifier above is its declaration._
 
@@ -41035,11 +40642,11 @@ _No license file shipped with the package; the SPDX identifier above is its decl
 
 - License: `MIT`
 - Author: Mattias Buelens
-- Homepage: https://github.com/MattiasBuelens/web-streams-polyfill#readme
+- Homepage: <https://github.com/MattiasBuelens/web-streams-polyfill#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 The MIT License (MIT)
 
 Copyright (c) 2024 Mattias Buelens
@@ -41070,11 +40677,11 @@ SOFTWARE.
 
 - License: `BSD-2-Clause`
 - Author: Domenic Denicola
-- Homepage: https://github.com/jsdom/webidl-conversions#readme
+- Homepage: <https://github.com/jsdom/webidl-conversions#readme>
 
 <details><summary>LICENSE.md</summary>
 
-```
+```text
 # The BSD 2-Clause License
 
 Copyright (c) 2014, Domenic Denicola
@@ -41095,11 +40702,11 @@ THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND 
 
 - License: `MIT`
 - Author: Sebastian Mayr
-- Homepage: https://github.com/jsdom/whatwg-url#readme
+- Homepage: <https://github.com/jsdom/whatwg-url#readme>
 
 <details><summary>LICENSE.txt</summary>
 
-```
+```text
 The MIT License (MIT)
 
 Copyright (c) 2015–2016 Sebastian Mayr
@@ -41129,11 +40736,11 @@ THE SOFTWARE.
 
 - License: `ISC`
 - Author: GitHub Inc.
-- Homepage: https://github.com/npm/node-which#readme
+- Homepage: <https://github.com/npm/node-which#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 The ISC License
 
 Copyright (c) Isaac Z. Schlueter and Contributors
@@ -41157,11 +40764,11 @@ IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
 - License: `ISC`
 - Author: GitHub Inc.
-- Homepage: https://github.com/npm/node-which#readme
+- Homepage: <https://github.com/npm/node-which#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 The ISC License
 
 Copyright (c) Isaac Z. Schlueter and Contributors
@@ -41185,11 +40792,11 @@ IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
 - License: `MIT`
 - Author: Sindre Sorhus
-- Homepage: https://github.com/chalk/wrap-ansi#readme
+- Homepage: <https://github.com/chalk/wrap-ansi#readme>
 
 <details><summary>license</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) Sindre Sorhus <sindresorhus@gmail.com> (https://sindresorhus.com)
@@ -41207,11 +40814,11 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 - License: `MIT`
 - Author: Sindre Sorhus
-- Homepage: https://github.com/chalk/wrap-ansi#readme
+- Homepage: <https://github.com/chalk/wrap-ansi#readme>
 
 <details><summary>license</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) Sindre Sorhus <sindresorhus@gmail.com> (https://sindresorhus.com)
@@ -41229,11 +40836,11 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 - License: `ISC`
 - Author: Isaac Z. Schlueter
-- Homepage: https://github.com/npm/wrappy
+- Homepage: <https://github.com/npm/wrappy>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 The ISC License
 
 Copyright (c) Isaac Z. Schlueter and Contributors
@@ -41257,11 +40864,11 @@ IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
 - License: `MIT`
 - Author: Einar Otto Stangvik
-- Homepage: https://github.com/websockets/ws
+- Homepage: <https://github.com/websockets/ws>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Copyright (c) 2011 Einar Otto Stangvik <einaros@gmail.com>
 Copyright (c) 2013 Arnout Kazemier and contributors
 Copyright (c) 2016 Luigi Pinca and contributors
@@ -41290,11 +40897,11 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 - License: `MIT`
 - Author: Sindre Sorhus
-- Homepage: https://github.com/sindresorhus/wsl-utils#readme
+- Homepage: <https://github.com/sindresorhus/wsl-utils#readme>
 
 <details><summary>license</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) Sindre Sorhus <sindresorhus@gmail.com> (https://sindresorhus.com)
@@ -41312,11 +40919,11 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 - License: `MIT`
 - Author: Raynos
-- Homepage: https://github.com/Raynos/xtend
+- Homepage: <https://github.com/Raynos/xtend>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 The MIT License (MIT)
 Copyright (c) 2012-2014 Raynos.
 
@@ -41345,11 +40952,11 @@ THE SOFTWARE.
 
 - License: `ISC`
 - Author: Ben Coe
-- Homepage: https://github.com/yargs/y18n
+- Homepage: <https://github.com/yargs/y18n>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Copyright (c) 2015, Contributors
 
 Permission to use, copy, modify, and/or distribute this software for any purpose
@@ -41371,11 +40978,11 @@ THIS SOFTWARE.
 
 - License: `ISC`
 - Author: Isaac Z. Schlueter
-- Homepage: https://github.com/isaacs/yallist#readme
+- Homepage: <https://github.com/isaacs/yallist#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 The ISC License
 
 Copyright (c) Isaac Z. Schlueter and Contributors
@@ -41395,15 +41002,15 @@ IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
 </details>
 
-### yaml@2.9.0
+### yaml@2.9.1
 
 - License: `ISC`
 - Author: Eemeli Aro
-- Homepage: https://eemeli.org/yaml/
+- Homepage: <https://eemeli.org/yaml/>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 Copyright Eemeli Aro <eemeli@gmail.com>
 
 Permission to use, copy, modify, and/or distribute this software for any purpose
@@ -41424,11 +41031,11 @@ THIS SOFTWARE.
 ### yargs@17.7.2
 
 - License: `MIT`
-- Homepage: https://yargs.js.org/
+- Homepage: <https://yargs.js.org/>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
 Copyright 2010 James Halliday (mail@substack.net); Modified work Copyright 2014 Contributors (ben@npmjs.com)
@@ -41458,11 +41065,11 @@ THE SOFTWARE.
 
 - License: `ISC`
 - Author: Ben Coe
-- Homepage: https://github.com/yargs/yargs-parser#readme
+- Homepage: <https://github.com/yargs/yargs-parser#readme>
 
 <details><summary>LICENSE.txt</summary>
 
-```
+```text
 Copyright (c) 2016, Contributors
 
 Permission to use, copy, modify, and/or distribute this software
@@ -41485,11 +41092,11 @@ ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
 - License: `MIT`
 - Author: Sindre Sorhus
-- Homepage: https://github.com/sindresorhus/yocto-spinner#readme
+- Homepage: <https://github.com/sindresorhus/yocto-spinner#readme>
 
 <details><summary>license</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) Sindre Sorhus <sindresorhus@gmail.com> (https://sindresorhus.com)
@@ -41507,11 +41114,11 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 - License: `MIT`
 - Author: Sindre Sorhus
-- Homepage: https://github.com/sindresorhus/yoctocolors#readme
+- Homepage: <https://github.com/sindresorhus/yoctocolors#readme>
 
 <details><summary>license</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) Sindre Sorhus <sindresorhus@gmail.com> (https://sindresorhus.com)
@@ -41529,11 +41136,11 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 - License: `MIT`
 - Author: Colin McDonnell
-- Homepage: https://zod.dev
+- Homepage: <https://zod.dev>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) 2025 Colin McDonnell
@@ -41563,11 +41170,11 @@ SOFTWARE.
 
 - License: `ISC`
 - Author: Stefan Terdell
-- Homepage: https://github.com/StefanTerdell/zod-to-json-schema#readme
+- Homepage: <https://github.com/StefanTerdell/zod-to-json-schema#readme>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 ISC License
 
 Copyright (c) 2020, Stefan Terdell
@@ -41591,11 +41198,11 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
 - License: `MIT`
 - Author: Paul Henschel
-- Homepage: https://github.com/pmndrs/zustand
+- Homepage: <https://github.com/pmndrs/zustand>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) 2019 Paul Henschel
@@ -41625,11 +41232,11 @@ SOFTWARE.
 
 - License: `MIT`
 - Author: Paul Henschel
-- Homepage: https://github.com/pmndrs/zustand
+- Homepage: <https://github.com/pmndrs/zustand>
 
 <details><summary>LICENSE</summary>
 
-```
+```text
 MIT License
 
 Copyright (c) 2019 Paul Henschel

@@ -30,7 +30,17 @@ permissions:
 
 jobs:
   publish:
-    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    # workflow_run matches "Release" by workflow NAME only, so a fork PR that adds its own
+    # workflow named "Release" on pull_request would also trigger this job and receive
+    # OPENFORGE_STATUS_TOKEN. Bind the run to a v* tag push in this repository, which only
+    # maintainers can create (release.yml listens to push: tags: v*). workflow_dispatch
+    # needs write access and stays the trusted manual path.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push' &&
+       github.event.workflow_run.head_repository.full_name == github.repository &&
+       startsWith(github.event.workflow_run.head_branch, 'v'))
     uses: dasomel/openforge/.github/workflows/publish-project-status.yml@0276924d288d3426ad2c2c09f5b9878a86c68d11
     with:
       project: narwhal

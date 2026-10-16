@@ -1,0 +1,74 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-apisix-admin-key-random",
+  "task": "Replace the well-known APISIX Admin API key with a generated Secret consumed by APISIX and the ingress controller, with a verified rotation path",
+  "changeContext": {
+    "paths": [
+      "scripts/common/lib.sh",
+      "scripts/cluster/08-1-networking.sh",
+      "scripts/cluster/rotate-apisix-admin-key.sh",
+      "scripts/test/lib/check-apisix-key-parse.sh",
+      "scripts/test/lib/check-apisix-key-wiring.py",
+      "scripts/test/regression-check-kakao.sh",
+      "docs/common/apisix-admin-api.md",
+      "docs/common/lessons-log.md",
+      ".agents/evals/traces/2026-10-apisix-admin-key-random.json",
+      "scripts/test/lib/check-apisix-rotate.sh",
+      "scripts/test/lib/check-apisix-no-default-key.py"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Live Kakao APISIX ran the public upstream default admin key (owner approved the fix). Consumers: 08-1 (Secret + bootstrap values + IC helm adminKey), gitops apisix.yaml (already secretName), 13-2 portal bindings and show-credentials (read the Secret). No live cluster change in this PR."
+    },
+    {
+      "id": "e1b",
+      "type": "reproduction",
+      "summary": "Original 08-1 helpers accepted any non-placeholder value as a key, so the chart-rendered public default read back from configmap/apisix was persisted into the Secret. The new fake-kubectl check run against origin/main's lib.sh fails (no apisix_key_usable / resolve_apisix_keys; 'random key rejected'), and passes with the fix. Reproduced statically; the live cluster was not touched."
+    },
+    {
+      "id": "e2",
+      "type": "bug_fix",
+      "summary": "Root cause: bootstrap values set no admin credentials, the chart rendered its default into the configmap and 08-1 read it back into the Secret. Fix: resolve_apisix_keys generates keys, rejects upstream defaults by sha256 and placeholders, preserves existing random keys; APISIX uses admin.credentials.secretName, the controller existingSecret (both verified in the vendored chart 2.13.0 / 0.14.1 templates). rotate-apisix-admin-key.sh orders Secret, APISIX config, APISIX restart, controller, verification. lib.sh NotFound checks anchored. Review round 1: verification via port-forward + host curl (the APISIX image has no curl), rollback on failure, keys via files not argv, portal Secret re-synced, default-key check by sha256 over all tracked files. Review round 2: no key in any argv (env+awk; the rotate test records every tool's argv and fails on a key; mutation-checked), helm --force-conflicts, port-forward started in the main shell with INT/TERM trap and bind retry, placeholder-Secret backup from the configmap, backup dir kept on ROLLBACK INCOMPLETE."
+    },
+    {
+      "id": "e3",
+      "type": "verification",
+      "status": "passed",
+      "scope": "static and fake-kubectl only; no live cluster",
+      "summary": "check-apisix-key-parse.sh (fake kubectl: preserve, default Secret/configmap replaced, placeholders, read error fails closed), check-apisix-key-wiring.py, no-literal grep, shellcheck, make validate/test, helm template for both providers.",
+      "evidence": [
+        "test:bash scripts/test/lib/check-apisix-key-parse.sh",
+        "test:python3 scripts/test/lib/check-apisix-key-wiring.py",
+        "runtime:command-exit-0"
+      ],
+      "commandExitCode": 0
+    },
+    {
+      "id": "e3b",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "full static regression suite incl. R255-R257",
+      "summary": "make test (regression-check-kakao.sh --static): passed 383 failed 0 incl. R255-R257; check-apisix-rotate.sh drives the rotate script against fake kubectl/helm/curl for the happy path and the rollback path; shellcheck -S warning clean; make validate OK; helm template of narwhal-apps renders secretName apisix-admin-key for both providers.",
+      "evidence": [
+        "test:make test",
+        "runtime:command-exit-0"
+      ],
+      "commandExitCode": 0
+    },
+    {
+      "id": "e3c",
+      "type": "completion_claim",
+      "summary": "Static change verified with a fake kubectl; live rotation and the 401/200 verification are not exercised against a real cluster and remain for the owner."
+    },
+    {
+      "id": "e4",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Static change verified with a fake kubectl; the rotation script's 401/200 verification and IC re-point are unexercised against a real cluster and must be run by the owner."
+    }
+  ]
+}

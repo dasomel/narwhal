@@ -36,6 +36,7 @@ on:
       - "portal/NOTICE"
       - "portal/LICENSE"
       - "portal/scripts/generate-third-party-notices.mjs"
+      - "portal/scripts/notices-format.mjs"
       - ".github/workflows/portal-license-and-sbom.yml"
   pull_request:
     paths:
@@ -49,6 +50,7 @@ on:
       - "portal/NOTICE"
       - "portal/LICENSE"
       - "portal/scripts/generate-third-party-notices.mjs"
+      - "portal/scripts/notices-format.mjs"
       - ".github/workflows/portal-license-and-sbom.yml"
   workflow_dispatch:
 

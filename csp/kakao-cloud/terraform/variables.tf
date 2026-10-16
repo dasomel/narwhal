@@ -151,6 +151,17 @@ variable "volume_size" {
   }
 }
 
+variable "nfs_data_volume_size" {
+  description = "Size in GB of a dedicated data volume attached to master-1 for the NFS export (/srv/nfs/k8s), formatted XFS with prjquota by scripts/cluster/01-nfs-server.sh. 0 (default) disables it. See README 'NFS data volume (Kakao)' for the two-step apply."
+  type        = number
+  default     = 0
+
+  validation {
+    condition     = var.nfs_data_volume_size == 0 || (var.nfs_data_volume_size >= 50 && var.nfs_data_volume_size <= 16384 && var.nfs_data_volume_size == floor(var.nfs_data_volume_size))
+    error_message = "nfs_data_volume_size must be 0 (disabled) or an integer between 50 and 16384 GB"
+  }
+}
+
 # =============================================
 # Security
 # =============================================
@@ -210,6 +221,17 @@ variable "assign_node_public_ips" {
 # =============================================
 # Bastion Security Group (issue #188)
 # =============================================
+variable "bastion_private_ip" {
+  description = "Fixed private IP for the bastion inside the main subnet. Leave null to auto-assign (clean install); set it to the current address before replacing a live bastion, because nodes point DNS, proxy and registry mirror at it."
+  type        = string
+  default     = null
+
+  validation {
+    condition     = var.bastion_private_ip == null || can(regex("^((25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])\\.){3}(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])$", var.bastion_private_ip))
+    error_message = "bastion_private_ip must be a valid IPv4 address or null"
+  }
+}
+
 variable "bastion_ssh_allowed_cidrs" {
   description = "CIDR blocks allowed to SSH into the bastion. Required and must NOT include 0.0.0.0/0 - the bastion has a public IP, so unrestricted SSH there was the original finding in #188. Set to your operator IP(s)/office CIDR, e.g. [\"203.0.113.4/32\"]."
   type        = list(string)

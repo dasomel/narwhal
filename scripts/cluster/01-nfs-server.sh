@@ -4,6 +4,9 @@ set -euo pipefail
 NFS_SHARE_PATH="${NFS_SHARE_PATH:-/srv/nfs/k8s}"
 HOST_NETWORK_CIDR="${HOST_NETWORK_CIDR:-192.168.56.0/24}"
 POD_NETWORK_CIDR="${POD_NETWORK_CIDR:-10.244.0.0/16}"
+# Optional dedicated data device (Kakao: /dev/disk/by-id/virtio-<volume id[0:20]>, set by
+# scripts/cloud/provision-kakao.sh). Empty/unset keeps the share on the root filesystem.
+NFS_DATA_DEVICE="${NFS_DATA_DEVICE:-}"
 
 echo "=== NFS Server Installation ==="
 echo "Share Path: ${NFS_SHARE_PATH}"
@@ -11,6 +14,60 @@ echo "Share Path: ${NFS_SHARE_PATH}"
 # Install NFS server and quota tools
 sudo apt-get update
 sudo apt-get install -y nfs-kernel-server quota quotatool
+
+# Dedicated XFS data volume (only when NFS_DATA_DEVICE is set; Vagrant leaves it unset).
+# XFS project quota can only be enabled at the initial mount, so the export lives on its
+# own prjquota-mounted filesystem. D-NFS-VOL safety rules, in order of risk:
+#  - never mkfs a device that already carries a filesystem (data loss);
+#  - never mount over a non-empty share path: moving live data is a runbook
+#    (docs/runbooks/nfs-xfs-migration.md), not something a provisioning script may do.
+if [ -n "${NFS_DATA_DEVICE}" ]; then
+  echo "Dedicated NFS data device: ${NFS_DATA_DEVICE}"
+  for _ in $(seq 1 60); do
+    [ -b "${NFS_DATA_DEVICE}" ] && break
+    sleep 2
+  done
+  if [ ! -b "${NFS_DATA_DEVICE}" ]; then
+    echo "ERROR: ${NFS_DATA_DEVICE} did not appear within 120s (is the volume attached?)." >&2
+    exit 1
+  fi
+  data_dev=$(readlink -f "${NFS_DATA_DEVICE}")
+  mounted_src=$(findmnt -rno SOURCE --mountpoint "${NFS_SHARE_PATH}" 2>/dev/null || true)
+  if [ -n "${mounted_src}" ] && [ "$(readlink -f "${mounted_src}")" = "${data_dev}" ]; then
+    echo "${data_dev} is already mounted on ${NFS_SHARE_PATH}"
+  else
+    sudo mkdir -p "${NFS_SHARE_PATH}"
+    if [ -n "$(sudo ls -A "${NFS_SHARE_PATH}")" ]; then
+      echo "ERROR: ${NFS_SHARE_PATH} is not empty and ${data_dev} is not mounted there." >&2
+      echo "       Refusing to mount over live data. Migrate with docs/runbooks/nfs-xfs-migration.md." >&2
+      exit 1
+    fi
+    fs_type=$(sudo blkid -p -o value -s TYPE "${data_dev}" || true)
+    if [ -z "${fs_type}" ]; then
+      echo "No filesystem on ${data_dev}; creating XFS (label narwhal-nfs)"
+      sudo mkfs.xfs -L narwhal-nfs "${data_dev}"
+    elif [ "${fs_type}" != "xfs" ]; then
+      echo "ERROR: ${data_dev} already holds a '${fs_type}' filesystem; refusing to touch it." >&2
+      exit 1
+    fi
+    data_uuid=$(sudo blkid -p -o value -s UUID "${data_dev}")
+    sudo sed -i "\|[[:space:]]${NFS_SHARE_PATH}[[:space:]]|d" /etc/fstab
+    echo "UUID=${data_uuid} ${NFS_SHARE_PATH} xfs defaults,prjquota,nofail 0 2" | sudo tee -a /etc/fstab >/dev/null
+    sudo systemctl daemon-reload
+    sudo mount "${NFS_SHARE_PATH}"
+  fi
+  # nofail keeps boot alive without the disk; the NFS server must not export an empty
+  # root-disk directory in that case.
+  sudo mkdir -p /etc/systemd/system/nfs-server.service.d
+  printf '[Unit]\nRequiresMountsFor=%s\n' "${NFS_SHARE_PATH}" |
+    sudo tee /etc/systemd/system/nfs-server.service.d/requires-mount.conf >/dev/null
+  sudo systemctl daemon-reload
+  if ! findmnt -rno FSTYPE,OPTIONS --mountpoint "${NFS_SHARE_PATH}" | grep -Eq '^xfs .*(prjquota|pquota)'; then
+    echo "ERROR: ${NFS_SHARE_PATH} is not an XFS mount with prjquota:" >&2
+    findmnt "${NFS_SHARE_PATH}" >&2 || true
+    exit 1
+  fi
+fi
 
 # Create NFS share directory
 #

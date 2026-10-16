@@ -4,6 +4,8 @@ set -euo pipefail
 # Charts come from the airgap bundle, never a public repository.
 # shellcheck source=/dev/null
 source /home/vagrant/scripts/common/lib-charts.sh
+# shellcheck source=scripts/common/lib.sh
+source /home/vagrant/scripts/common/lib.sh
 
 echo "=== Installing Networking Apps (MetalLB, APISIX, cert-manager) ==="
 
@@ -97,6 +99,26 @@ echo "Waiting for etcd..."
 kubectl wait --for=condition=Available deployment/apisix-etcd -n platform-system --timeout=120s || true
 
 # Install APISIX + Ingress Controller (etcd.enabled=false → uses external etcd above)
+# APISIX Admin API keys (D-apisix-key). Generated once, stored only in the apisix-admin-key
+# Secret and consumed from it by APISIX (admin.credentials) and the ingress controller
+# (existingSecret) -- no key literal lives in git or in Helm values. The public upstream
+# default keys are never reused (resolve_apisix_keys replaces them), so re-running this script
+# on a cluster that still holds the default is the rotation path; see
+# scripts/cluster/rotate-apisix-admin-key.sh for the verified live rotation.
+resolve_apisix_keys || { echo "ERROR: cannot resolve the APISIX admin keys (Secret read failed)." >&2; exit 1; }
+echo "Creating apisix-admin-key secret..."
+# Keys go through 0600 files, not --from-literal, so they never appear in argv / ps.
+APISIX_KEY_DIR=$(mktemp -d)
+( umask 077
+  printf '%s' "${APISIX_ADMIN_KEY}" > "${APISIX_KEY_DIR}/key"
+  printf '%s' "${APISIX_VIEWER_KEY}" > "${APISIX_KEY_DIR}/viewer" )
+kubectl create secret generic apisix-admin-key \
+  --namespace platform-system \
+  --from-file=key="${APISIX_KEY_DIR}/key" \
+  --from-file=viewer="${APISIX_KEY_DIR}/viewer" \
+  --dry-run=client -o yaml | kubectl apply -f -
+rm -rf "${APISIX_KEY_DIR}"
+
 cat > /tmp/apisix-values.yaml << 'EOF'
 apisix:
   enabled: true
@@ -134,6 +156,12 @@ apisix:
       ipList:
         - 127.0.0.1/32
         - "${POD_NETWORK_CIDR}"
+    # Keys come from the apisix-admin-key Secret (env APISIX_ADMIN_KEY / APISIX_VIEWER_KEY);
+    # the rendered config holds only the env placeholders.
+    credentials:
+      secretName: apisix-admin-key
+      secretAdminKey: key
+      secretViewerKey: viewer
 gateway:
   type: LoadBalancer
   annotations:
@@ -166,10 +194,10 @@ ingressController:
   resources:
     requests:
       cpu: 50m
-      memory: 128Mi
+      memory: 256Mi
     limits:
       cpu: 200m
-      memory: 256Mi
+      memory: 512Mi
 tolerations:
   - key: "node.kubernetes.io/disk-pressure"
     operator: "Exists"
@@ -289,31 +317,9 @@ echo "APISIX installed"
 #=========================================
 echo "=== Installing APISIX Ingress Controller ==="
 
-# Get APISIX admin/viewer keys from the live config (chart v2.13.0 bakes them in at install
-# time; the configmap stores the literal key after env-substitution by the APISIX process).
-# The grep target is the plain key line that appears AFTER "name: admin" / "name: viewer".
-APISIX_ADMIN_KEY=$(kubectl get configmap apisix -n platform-system \
-  -o jsonpath='{.data.config\.yaml}' 2>/dev/null \
-  | grep -A2 'name: "admin"' | grep '^\s*key:' | awk '{print $2}' | head -1 || true)
-APISIX_ADMIN_KEY="${APISIX_ADMIN_KEY:-edd1c9f034335f136f87ad84b625c8f1}"
-
-APISIX_VIEWER_KEY=$(kubectl get configmap apisix -n platform-system \
-  -o jsonpath='{.data.config\.yaml}' 2>/dev/null \
-  | grep -A2 'name: "viewer"' | grep '^\s*key:' | awk '{print $2}' | head -1 || true)
-if [ -z "${APISIX_VIEWER_KEY}" ]; then
-  echo "ERROR: failed to extract APISIX viewer key from configmap/apisix (empty result) -- refusing to store an empty/default key into apisix-admin-key secret (consumed as APISIX_API_KEY_READONLY downstream)" >&2
-  exit 1
-fi
-
-# Persist both keys into the Secret that show-credentials.sh and the APISIX deployment
-# env vars (secretKeyRef name: apisix-admin-key) expect.  Idempotent via dry-run|apply.
-echo "Creating apisix-admin-key secret..."
-kubectl create secret generic apisix-admin-key \
-  --namespace platform-system \
-  --from-literal=key="${APISIX_ADMIN_KEY}" \
-  --from-literal=viewer="${APISIX_VIEWER_KEY}" \
-  --dry-run=client -o yaml | kubectl apply -f -
-
+# D-ic-mem: 256Mi limit OOMKilled the IC at startup (full resource sync, 17 routes/14 upstreams/192 svc+ing
+# objects; steady state is ~83Mi). 512Mi limit gives the sync peak headroom; request 256Mi keeps the scheduler
+# honest. Escape hatch: raise both here; do not drop the limit (worker nodes are 6GB).
 APISIX_INGRESS_CONTROLLER_OK=false
 for attempt in 1 2 3 4 5; do
   if helm upgrade --install apisix-ingress-controller "$(chart apisix-ingress-controller)" \
@@ -325,12 +331,14 @@ for attempt in 1 2 3 4 5; do
     --set image.tag="1.8.0" \
     --set config.apisix.serviceNamespace=platform-system \
     --set config.apisix.serviceName=apisix-admin \
-    --set config.apisix.adminKey="${APISIX_ADMIN_KEY}" \
+    --set config.apisix.existingSecret=apisix-admin-key \
+    --set config.apisix.existingSecretAdminKeyKey=key \
+    --set config.apisix.adminKey= \
     --set config.apisix.adminAPIVersion=v3 \
     --set resources.requests.cpu=50m \
-    --set resources.requests.memory=128Mi \
+    --set resources.requests.memory=256Mi \
     --set resources.limits.cpu=200m \
-    --set resources.limits.memory=256Mi \
+    --set resources.limits.memory=512Mi \
     --set securityContext.allowPrivilegeEscalation=false \
     --set 'securityContext.capabilities.drop[0]=ALL' \
     --set securityContext.seccompProfile.type=RuntimeDefault; then
@@ -344,6 +352,10 @@ if [ "${APISIX_INGRESS_CONTROLLER_OK}" != true ]; then
   exit 1
 fi
 
+# The controller reads the key from the Secret only at start: restart it when the key changed.
+if [ "${APISIX_KEYS_GENERATED}" = true ]; then
+  kubectl rollout restart deployment/apisix-ingress-controller -n platform-system
+fi
 echo "Waiting for APISIX ingress controller..."
 kubectl wait --for=condition=Ready pod -l app.kubernetes.io/name=apisix-ingress-controller \
   -n platform-system --timeout=120s || true
@@ -356,8 +368,10 @@ for deployment in apisix apisix-ingress-controller; do
 done
 for deployment in apisix apisix-ingress-controller; do
   kubectl rollout status "deployment/${deployment}" -n platform-system --timeout=180s
-  pod_label=$(kubectl get pods -n platform-system -l "app.kubernetes.io/instance=${deployment}" \
-    -o jsonpath='{.items[0].metadata.labels.istio\.io/dataplane-mode}' 2>/dev/null || true)
+  # Template label, not `pods ... items[0]`: during a rollout items[0] can be the old
+  # terminating pod, which made this check fail on a correctly patched Deployment.
+  pod_label=$(kubectl get deployment "${deployment}" -n platform-system \
+    -o jsonpath='{.spec.template.metadata.labels.istio\.io/dataplane-mode}' 2>/dev/null || true)
   if [ "${pod_label}" != none ]; then
     echo "ERROR: ${deployment} pod lacks istio.io/dataplane-mode=none." >&2
     exit 1

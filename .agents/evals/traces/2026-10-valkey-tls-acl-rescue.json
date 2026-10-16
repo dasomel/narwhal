@@ -1,0 +1,83 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-valkey-tls-acl-rescue",
+  "task": "Land the portal Valkey TLS-only + ACL hardening together with the repin of narwhal-portal to 1.1.0 (one PR)",
+  "changeContext": {
+    "paths": [
+      "gitops/charts/narwhal-platform/templates/narwhal-portal-k8s.yaml",
+      "scripts/cluster/13-2-narwhal-portal-bindings.sh",
+      "scripts/test/lib/check-valkey-security-contract.py",
+      ".agents/evals/traces/2026-10-valkey-tls-acl-rescue.json",
+      "scripts/airgap/lib/image-digests.tsv",
+      "scripts/airgap/images.txt",
+      "scripts/test/regression-check-kakao.sh",
+      "scripts/cluster/06-phase2-start.sh"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Rescue 3 unpushed commits onto origin/main (Valkey TLS-only listener, dedicated ACL user, dedicated Secret, ingress scope) and repin narwhal-portal 1.0.19 -> 1.1.0 in the same PR, because 1.0.19 lacks VALKEY_USERNAME and portal main requires rediss+VALKEY_TLS+VALKEY_USERNAME+VALKEY_PASSWORD in production. No live cluster change."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "Original claim: with the origin/main chart and bindings script restored in place, check-valkey-security-contract.py failed with AssertionError 'chart must disable the plaintext listener with exactly --port 0'; with the rescued files it passed. Independent review then found a defect that check could not see: the password file was written by 'openssl rand -hex 32 > file' (trailing newline) while users.acl used the newline-stripped value. Reproduced on a real Valkey 8.1.10 container over raw RESP: AUTH portal <hex>\\n returned WRONGPASS, AUTH portal <hex> returned +OK."
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "Valkey serves TLS only with ACL user portal and default user off; bindings inject rediss:// and VALKEY_TLS=true, drop VALKEY_INSECURE_PRODUCTION, abort on secret read errors; check renumbered R247 after finding R240 collision. Review fixes: password generated newline-free (tr -d) and validated as 64 hex for generated and preserved values (re-tested against real Valkey: exact Secret bytes authenticate); Certificate duration/renewBefore set because Valkey 8.1.10 lacks tls-auto-reload-interval (CONFIG GET tls-* confirmed); R247 now parses Valkey flags and users.acl (duplicate flags, allowlist, no nopass/allcommands/+@ categories) with 30 mutations (round 2: effective argv = command + args, flag allowlist, no args/env, single valkey-server launcher, aclfile volume path pinned, single users.acl write), each asserting its rejection reason and proven accepted when the new checks are disabled in a temp copy. After two sonnet reviews, a Codex critic found two further bootstrap defects: an existing-but-incomplete Secret was treated as absent and its password regenerated, and first creation could race via apply. Fixed with a separate existence probe, abort on an incomplete Secret, and atomic kubectl create with an AlreadyExists re-read; exercised with a fake kubectl stub (not a real API server); R247 now has 34 mutations. Final review: 13-2 made critical in 06-phase2-start.sh (exit 3 = ARGOCD_TOKEN-only is tolerated; R253); VALKEY_INSECURE_PRODUCTION removed explicitly with kubectl patch and verified absent (not exercised against a real API server)."
+    },
+    {
+      "id": "e4",
+      "type": "verification",
+      "status": "passed",
+      "scope": "Valkey TLS/ACL/secret/ingress contract with 37 negative mutations incl. explicit, existence-based VALKEY_INSECURE_PRODUCTION removal incl. empty value (static; live unverified)",
+      "summary": "check-valkey-security-contract.py passes (37 negative mutations) after merging origin/main (R248 kept alongside R247), the 1.1.0 repin, critical 13-2 and explicit stale-key removal.",
+      "evidence": [
+        "test:python3 scripts/test/lib/check-valkey-security-contract.py",
+        "runtime:command-exit-0"
+      ],
+      "commandExitCode": 0
+    },
+    {
+      "id": "e4b",
+      "type": "verification",
+      "status": "passed",
+      "scope": "repin consistency, GitOps render, CI unit tests, research evidence (static)",
+      "summary": "scripts/ci/check-version-consistency.sh reports all versions consistent; helm template of narwhal-platform renders image narwhal-portal:1.1.0; scripts/ci unittest discover ran 113 tests OK; research evidence check OK.",
+      "evidence": [
+        "test:bash scripts/ci/check-version-consistency.sh",
+        "test:python3 -m unittest discover -s scripts/ci/tests",
+        "runtime:command-exit-0"
+      ],
+      "commandExitCode": 0
+    },
+    {
+      "id": "e5",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "full static regression suite incl. R210 (pin policy) and R247",
+      "summary": "regression-check-kakao.sh --static after the second origin/main merge: passed 379 failed 0 (incl. R247, R248, R253, R249-R252 from main); R253 (13-2 critical in Phase 2, exit 3 tolerated) added and shown failing when 13-2 is dropped from CRITICAL_SCRIPTS.",
+      "evidence": [
+        "test:./scripts/test/regression-check-kakao.sh --static",
+        "runtime:command-exit-0"
+      ],
+      "commandExitCode": 0
+    },
+    {
+      "id": "e6",
+      "type": "completion_claim",
+      "summary": "Static contract verified; live Valkey TLS handshake with the cluster CA, portal 1.1.0 readiness/health and the 1.1.0 env contract on a running cluster are not verified here (only a local Docker Valkey test existed on the original branch)."
+    },
+    {
+      "id": "e7",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Static Valkey TLS/ACL change, its guard and the portal 1.1.0 repin (index digest sha256:16e228757febda1b7649ce2ee79908f30a70ba41648943987fe26831d88ac30a, from the release signing step; re-resolved digests not re-fetched by this lane) verified statically, plus the earlier local password-newline fix; 13-2 now also injects SLO_CHAIN_START required by portal 1.1.0. Live verification on a local cluster is pending (e6)."
+    }
+  ]
+}

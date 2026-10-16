@@ -119,11 +119,10 @@ else
 fi
 
 # CNPG bootstrap uses narwhal-db-credentials directly (username/password fields)
-# S3 credentials - reuse SeaweedFS creds (aligned with Velero pattern in 08-4-storage.sh)
-S3_ACCESS_KEY="${S3_ACCESS_KEY:-$(kubectl get secret velero-s3-credentials -n storage \
-  -o jsonpath='{.data.access-key}' 2>/dev/null | base64 -d || echo "admin")}"
-S3_SECRET_KEY="${S3_SECRET_KEY:-$(kubectl get secret velero-s3-credentials -n storage \
-  -o jsonpath='{.data.secret-key}' 2>/dev/null | base64 -d || echo "")}"
+# S3 credentials - reuse SeaweedFS creds, resolved by the same helper as 08-4-storage.sh
+# (the Velero S3 Secret does not exist yet when 07 runs; the shared default is "admin").
+# resolve_s3_credentials fails if either key is empty, so the secret below never has one.
+resolve_s3_credentials cnpg-s3-credentials database ACCESS_KEY_ID ACCESS_SECRET_KEY || { echo "ERROR: cannot derive cnpg-s3-credentials" >&2; exit 1; }
 
 cat <<EOF | kubectl apply -f -
 apiVersion: v1

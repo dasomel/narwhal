@@ -18,6 +18,12 @@ variable "vpc_default_subnet_cidr" {
   default     = "172.16.255.0/24"
 }
 
+variable "vpc_default_subnet_name" {
+  description = "VPC default subnet name (Kakao Cloud named the former inline subnet \"main\")"
+  type        = string
+  default     = "main"
+}
+
 variable "subnet_name" {
   description = "Main subnet name"
   type        = string

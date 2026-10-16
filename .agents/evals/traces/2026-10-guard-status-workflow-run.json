@@ -1,0 +1,55 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-guard-status-workflow-run-20261016",
+  "task": "Stop a fork PR from triggering the OpenForge status publisher (and receiving OPENFORGE_STATUS_TOKEN) through a workflow named Release",
+  "changeContext": {
+    "paths": [
+      ".github/workflows/publish-openforge-status.yml",
+      "scripts/ci/tests/test_publish_openforge_status_guard.py",
+      ".agents/evals/traces/2026-10-guard-status-workflow-run.json"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Only the publish job's if: guard changes; inputs, secrets, the pinned reusable workflow and portal-release.yml (tracked in #395) stay unchanged."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "The guard accepted any successful workflow_run of a workflow named Release, including a pull_request run from a fork that defines its own Release workflow, so OPENFORGE_STATUS_TOKEN reached that run.",
+      "evidence": [
+        "test:python3 -m unittest scripts/ci/tests/test_publish_openforge_status_guard.py on origin/main -> FAILED (failures=3): no event == 'push', head_repository, or v* tag condition"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "workflow_run path now also requires event == 'push', head_repository == github.repository, and a head_branch starting with v (release.yml only runs on push: tags: v*)."
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "scripts/ci/tests and .github/workflows/publish-openforge-status.yml",
+      "summary": "The new guard test passes, the full scripts/ci suite stays green, and actionlint accepts the workflow.",
+      "evidence": [
+        "test:python3 -m unittest discover -s scripts/ci/tests -> Ran 118 tests OK",
+        "test:actionlint .github/workflows/publish-openforge-status.yml -> no findings"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "completion_claim",
+      "summary": "Status publisher can only run from a maintainer tag push or a manual dispatch."
+    },
+    {
+      "id": "e6",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Complete and verified within the stated scope"
+    }
+  ]
+}

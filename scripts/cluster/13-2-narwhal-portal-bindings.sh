@@ -21,14 +21,6 @@
 set -euo pipefail
 DOMAIN="${DOMAIN:-local.narwhal.internal}"
 REALM="narwhal"
-# Valkey itself has no TLS/AUTH configured in this cluster yet (narwhal-portal-valkey
-# Deployment runs plain valkey-server, VALKEY_PASSWORD="" below) — so
-# VALKEY_INSECURE_PRODUCTION must stay "true" on every provider until Valkey actually gets
-# TLS + a password wired up (tracked as follow-up infra work, not done in this pass).
-# Flipping this to "false" without that infra makes the portal's own production guard
-# (src/lib/valkey.ts assertProductionSecurity) throw and readiness go 503 on every
-# non-vagrant deploy — caught by Codex review before landing (see lessons-log).
-VALKEY_INSECURE_PRODUCTION_VALUE="true"
 export KUBECONFIG=/home/vagrant/.kube/config-local
 
 echo "=========================================="
@@ -511,8 +503,8 @@ fi
 # looked healthy and the failure surfaced only when someone asked why the portal was
 # blank. An absent key is honest — the portal fails the same way, but the secret no
 # longer claims to hold a credential, and this script says so and exits non-zero.
-# 13-2 is non-critical in 06-phase2-start.sh, so a non-zero exit warns without
-# aborting Phase 2.
+# 13-2 is critical in 06-phase2-start.sh; exit 3 (Secrets applied, only ARGOCD_TOKEN
+# missing) is the single non-zero result Phase 2 tolerates, every other failure aborts.
 ARGOCD_TOKEN_OK=true
 if [ -z "${ARGOCD_TOKEN}" ]; then
   ARGOCD_TOKEN_OK=false
@@ -567,6 +559,96 @@ umask 077
 portal_secret_tmp="$(mktemp -d)"
 trap 'rm -rf "${portal_secret_tmp}"' EXIT
 
+# D1: keep the cache password in a dedicated Secret and preserve it across bootstrap reruns
+# so the ACL and portal env stay synchronized; cost is one Secret; rotate only as a coordinated
+# portal/Valkey rollout if preservation must be escaped.
+valkey_auth_dir="${portal_secret_tmp}/valkey-auth"
+mkdir -m 700 "${valkey_auth_dir}"
+# D6: existence is probed separately from the password. A jsonpath read is empty both when the
+# Secret is absent and when it exists without a usable `password`; conflating them would
+# regenerate the password and overwrite a Secret that a running Valkey (ACL held in memory)
+# still authenticates against. Any kubectl failure aborts; an existing-but-incomplete Secret
+# aborts; only a truly absent Secret is generated. Cost: an incomplete Secret needs a manual
+# fix; escape: delete that Secret deliberately and roll portal+Valkey together.
+valkey_secret_exists="$(kubectl get secret narwhal-portal-valkey-auth -n devtools \
+  --ignore-not-found -o name)" || {
+  echo "ERROR: could not read narwhal-portal-valkey-auth; refusing to rotate the Valkey password" >&2
+  exit 1
+}
+load_valkey_password() {
+  local b64
+  b64="$(kubectl get secret narwhal-portal-valkey-auth -n devtools -o jsonpath='{.data.password}')" || {
+    echo "ERROR: could not read narwhal-portal-valkey-auth; refusing to rotate the Valkey password" >&2
+    exit 1
+  }
+  if [ -z "${b64}" ]; then
+    echo "ERROR: narwhal-portal-valkey-auth exists without a password; refusing to regenerate it (fix or delete the Secret deliberately)" >&2
+    exit 1
+  fi
+  if ! printf '%s' "${b64}" | base64 -d > "${valkey_auth_dir}/password"; then
+    echo "ERROR: narwhal-portal-valkey-auth password is not valid base64; refusing to regenerate it" >&2
+    exit 1
+  fi
+}
+# D4: the password file becomes Secret key `password` (portal env VALKEY_PASSWORD, used
+# untrimmed) AND the users.acl token, so both must be byte-identical: write it without a
+# trailing newline (tr, never a bare `> file` from openssl) and accept only 64 lowercase hex
+# chars. Real Valkey 8.1.10 answers WRONGPASS to "<hex>\n". Cost: an existing Secret with any
+# other shape aborts; escape: delete that Secret deliberately (coordinated portal rollout).
+prepare_valkey_auth() {
+  if ! LC_ALL=C grep -qxE '[0-9a-f]{64}' "${valkey_auth_dir}/password" \
+    || [ "$(wc -c < "${valkey_auth_dir}/password" | tr -d ' ')" != 64 ]; then
+    echo "ERROR: Valkey password must be exactly 64 hex chars with no whitespace/newline (narwhal-portal-valkey-auth or generation is malformed)" >&2
+    exit 1
+  fi
+  chmod 600 "${valkey_auth_dir}/password"
+  local valkey_password
+  valkey_password="$(cat "${valkey_auth_dir}/password")"
+# D3: only cache and live-stream commands are granted (derived from every ioredis call in
+# narwhal-portal src: valkey.ts get/mget/set/multi/exec/del, idempotency.ts set/get,
+# live-stream.ts incr/lpush/ltrim/lrange/publish/subscribe, live-k8s-informer.ts eval lease
+# scripts calling get/pexpire/del, cache-invalidation.ts scan/unlink, ready check ping/info),
+# with Pub/Sub scoped to its event channel; cost is ACL maintenance when commands change; escape via reviewed per-command ACL
+# addition rather than granting a broad command category.
+cat > "${valkey_auth_dir}/users.acl" <<EOF
+user default off
+user portal on >${valkey_password} ~* &live:events:chan +auth +hello +ping +info +select +client|setname +client|setinfo +get +mget +set +del +unlink +scan +incr +multi +exec +eval +pexpire +lpush +ltrim +lrange +publish +subscribe +unsubscribe
+EOF
+}
+apply_valkey_auth() {
+  kubectl create secret generic narwhal-portal-valkey-auth \
+    --namespace devtools \
+    --from-file=password="${valkey_auth_dir}/password" \
+    --from-file=users.acl="${valkey_auth_dir}/users.acl" \
+    --dry-run=client -o yaml | kubectl apply -f - >/dev/null
+}
+if [ -n "${valkey_secret_exists}" ]; then
+  load_valkey_password
+  prepare_valkey_auth
+  apply_valkey_auth
+else
+  openssl rand -hex 32 | tr -d '\n' > "${valkey_auth_dir}/password"
+  prepare_valkey_auth
+  # D7: first creation is atomic (`create`, never apply) so two concurrent first runs cannot
+  # overwrite each other's password; the loser re-reads the winner's stored password.
+  if ! valkey_create_err="$(kubectl create secret generic narwhal-portal-valkey-auth \
+    --namespace devtools \
+    --from-file=password="${valkey_auth_dir}/password" \
+    --from-file=users.acl="${valkey_auth_dir}/users.acl" 2>&1 >/dev/null)"; then
+    case "${valkey_create_err}" in
+      *AlreadyExists*)
+        load_valkey_password
+        prepare_valkey_auth
+        apply_valkey_auth
+        ;;
+      *)
+        echo "ERROR: could not create narwhal-portal-valkey-auth: ${valkey_create_err}" >&2
+        exit 1
+        ;;
+    esac
+  fi
+fi
+
 kubectl create secret generic narwhal-portal-secrets \
   --namespace devtools \
   "${ARGOCD_TOKEN_ARG[@]}" \
@@ -585,6 +667,7 @@ kubectl create secret generic narwhal-portal-secrets \
   --from-literal=KEYCLOAK_ADMIN_CLIENT_ID="narwhal-portal-admin" \
   --from-literal=KEYCLOAK_ADMIN_CLIENT_SECRET="${ADMIN_CLIENT_SECRET}" \
   --from-literal=KEYCLOAK_INTERNAL_URL="http://keycloak-service.iam.svc.cluster.local:8080" \
+  --from-literal=SLO_CHAIN_START="https://gitea.${DOMAIN}/apisix/logout" \
   --from-literal=K8S_API_SERVER="https://${VIP_ADDRESS:-192.168.56.100}:6443" \
   "${K8S_SA_TOKEN_ARG[@]}" \
   --from-literal=CLUSTER_NAME="narwhal" \
@@ -600,10 +683,8 @@ kubectl create secret generic narwhal-portal-secrets \
   --from-literal=LOKI_URL="http://loki.monitoring.svc.cluster.local:3100" \
   --from-literal=TEMPO_URL="http://tempo.monitoring.svc.cluster.local:3200" \
   --from-literal=HUBBLE_RELAY_ADDR="hubble-relay.kube-system.svc.cluster.local:80" \
-  --from-literal=VALKEY_URL="redis://narwhal-portal-valkey.devtools.svc.cluster.local:6379" \
-  --from-literal=VALKEY_TLS="false" \
-  --from-literal=VALKEY_INSECURE_PRODUCTION="${VALKEY_INSECURE_PRODUCTION_VALUE}" \
-  --from-literal=VALKEY_PASSWORD="" \
+  --from-literal=VALKEY_URL="rediss://narwhal-portal-valkey.devtools.svc.cluster.local:6379" \
+  --from-literal=VALKEY_TLS="true" \
   --from-literal=OPENBAO_ADDR="https://openbao.storage.svc.cluster.local:8200" \
   --from-literal=OPENBAO_AUTH_METHOD="${OPENBAO_AUTH_METHOD_VALUE}" \
   --from-literal=OPENBAO_K8S_ROLE="${OPENBAO_K8S_ROLE}" \
@@ -639,7 +720,9 @@ if kubectl get secret narwhal-portal-secrets -n devtools --ignore-not-found -o j
       "${portal_secret_tmp}/merged.json" \
       --owned-key ARGOCD_TOKEN \
       --owned-key OPENBAO_TOKEN \
-      --owned-key K8S_SA_TOKEN
+      --owned-key K8S_SA_TOKEN \
+      --owned-key VALKEY_PASSWORD \
+      --owned-key VALKEY_INSECURE_PRODUCTION
     kubectl apply -f "${portal_secret_tmp}/merged.json"
   else
     kubectl apply -f "${portal_secret_tmp}/desired.json"
@@ -647,6 +730,41 @@ if kubectl get secret narwhal-portal-secrets -n devtools --ignore-not-found -o j
 else
   echo "ERROR: could not read existing narwhal-portal-secrets" >&2
   exit 1
+fi
+
+# D5: portal 1.1.0 refuses to start its Valkey client when VALKEY_INSECURE_PRODUCTION is
+# defined at all (even "false"). `kubectl apply` only prunes it if the last-applied
+# annotation lists it, which an older secret created by other means may not, so remove it
+# explicitly and verify. Idempotent: guarded by a no-pipe existence read. Escape hatch:
+# none needed, the key has no supported use.
+stale_key="VALKEY_INSECURE_PRODUCTION"
+# Existence, not value: a key present with an EMPTY value is still "defined" to the portal.
+secret_has_key() {
+  local json
+  json="$(kubectl get secret narwhal-portal-secrets -n devtools -o json)" || return 2
+  STALE_KEY="$1" SECRET_JSON="${json}" python3 -c '
+import json, os
+data = json.loads(os.environ["SECRET_JSON"]).get("data") or {}
+raise SystemExit(0 if os.environ["STALE_KEY"] in data else 1)
+'
+}
+stale_rc=0
+secret_has_key "${stale_key}" || stale_rc=$?
+if [ "${stale_rc}" -gt 1 ]; then
+  echo "ERROR: could not re-read narwhal-portal-secrets to check ${stale_key}" >&2
+  exit 1
+fi
+if [ "${stale_rc}" -eq 0 ]; then
+  patch_rc=0
+  kubectl patch secret narwhal-portal-secrets -n devtools --type=json \
+    -p "[{\"op\":\"remove\",\"path\":\"/data/${stale_key}\"}]" || patch_rc=$?
+  # A concurrent removal makes the patch fail; only fail if the key is still there.
+  stale_rc=0
+  secret_has_key "${stale_key}" || stale_rc=$?
+  if [ "${stale_rc}" -ne 1 ]; then
+    echo "ERROR: ${stale_key} still present in narwhal-portal-secrets after removal (patch rc=${patch_rc})" >&2
+    exit 1
+  fi
 fi
 
 echo ""
@@ -664,18 +782,16 @@ echo "  K8s SA token:     narwhal-portal@devtools (8760h)"
 echo "  ArgoCD token:     account=narwhal-portal"
 echo "  Secret:           narwhal-portal-secrets (devtools)"
 echo ""
-echo "NOTE: Valkey는 현재 noauth 모드 (--save \"\" --appendonly no)."
-echo "  VALKEY_PASSWORD는 빈 값으로 설정됨."
-echo "  프로덕션에서는 TLS+AUTH 활성화 필요 (docs/common/security.md 'Local Dev Exceptions')."
+echo "  Valkey: TLS + portal ACL enabled; dedicated auth Secret reconciled without printing its contents."
 echo ""
 echo "NOTE: TUNING_JOB_IMAGE는 digest pin 없이 :latest 태그."
 echo "  프로덕션에서는 @sha256:<64hex> digest로 교체 필요."
 
 # Exit non-zero when the ArgoCD token never landed, so the Phase 2 log carries a
-# failure rather than a success. 13-2 is non-critical, so this warns and Phase 2
-# continues — the portal is simply missing its ArgoCD integration until re-run.
+# failure rather than a success. Exit 3 is warned about and Phase 2 continues — the
+# portal is simply missing its ArgoCD integration until re-run.
 if [ "${ARGOCD_TOKEN_OK}" != "true" ]; then
   echo ""
   echo "RESULT: ARGOCD_TOKEN 없이 완료 — 포털의 ArgoCD 위젯은 동작하지 않는다." >&2
-  exit 1
+  exit 3
 fi

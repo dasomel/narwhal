@@ -9,6 +9,11 @@
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-10-15
+
+포털은 이제 `dasomel/narwhal` 모노레포의 `portal/` 아래에 있으며 릴리스 태그는 `portal/vX.Y.Z`임
+(모노레포에서 만든 첫 릴리스이며, 1.0.17 이하 버전은 기존 `dasomel/narwhal-portal` 링크를 유지함).
+
 프로덕션 보안 기준을 강화하고(인증된 Valkey TLS, 명시적 OpenBao 인증 모드, 호출 시점 의존성 설정 검사,
 네임스페이스 범위 읽기) provider 장애가 조용히 정상으로 보이지 않도록 수정함. 쓰기 라우트는 이제
 거절·자격 증명·결과 미상을 구분하며, ArgoCD나 Alertmanager를 읽을 수 없을 때 플랫폼 상태가 더 이상
@@ -381,7 +386,8 @@ Portal의 첫 번째 공개 릴리스.
     매니페스트(`deploy/kaniko-build-job.yaml`).
   - 실시간 핫 모듈 교체(HMR) 및 컨테이너 파일 동기화를 위해 구성된 Skaffold 개발 프로필.
 
-[Unreleased]: https://github.com/dasomel/narwhal-portal/compare/v1.0.17...HEAD
+[Unreleased]: https://github.com/dasomel/narwhal/compare/portal/v1.1.0...HEAD
+[1.1.0]: https://github.com/dasomel/narwhal/releases/tag/portal/v1.1.0
 [1.0.17]: https://github.com/dasomel/narwhal-portal/compare/v1.0.16...v1.0.17
 [1.0.16]: https://github.com/dasomel/narwhal-portal/compare/v1.0.15...v1.0.16
 [1.0.15]: https://github.com/dasomel/narwhal-portal/compare/v1.0.4...v1.0.15

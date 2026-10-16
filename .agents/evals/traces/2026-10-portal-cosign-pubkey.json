@@ -1,0 +1,70 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-portal-cosign-pubkey",
+  "task": "Provision the real portal cosign public key in the Kyverno signature policy and air-gap bundle after the signing secrets moved to dasomel/narwhal",
+  "changeContext": {
+    "paths": [
+      "gitops/resources/kyverno-policies.yaml",
+      "scripts/airgap/keys/cosign.pub",
+      "scripts/airgap/10-verify-image-signatures.sh",
+      "scripts/test/lib/check-kyverno-signed-image-policy.py",
+      "scripts/test/regression-check-kakao.sh",
+      "portal/docs/cosign-signing-setup.md",
+      "docs/adr/0001-consolidate-narwhal-portal-into-monorepo.md",
+      "docs/adr/0001-consolidate-narwhal-portal-into-monorepo-ko.md",
+      "docs/common/lessons-log.md",
+      ".agents/evals/traces/2026-10-portal-cosign-pubkey.json"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Replace only the two placeholder publicKeys PEM blocks; keep verify-image-signatures in Audit with required:false so no workload admission changes."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "Policy carried a non-PEM placeholder key and dasomel/narwhal had no COSIGN_PRIVATE_KEY/COSIGN_PASSWORD, so the first portal/v* release would fail at the sign job and signatures could never verify."
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "Key pair generated locally, sign/verify roundtrip passed before the secrets were set, private key wiped; committed cosign.pub inlined in both attestors; R74 now fails closed on missing key or inline drift (R75c mutation test)."
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "Kyverno signed-image policy static guards",
+      "summary": "Static regression suite 371 passed 0 failed, including R74, R75, R75b and R75c; missing-key case exits 1.",
+      "evidence": [
+        "test:bash scripts/test/regression-check-kakao.sh --static",
+        "runtime:command-exit-0"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "verification",
+      "status": "passed",
+      "scope": "GitOps YAML parse",
+      "summary": "make validate parsed every GitOps YAML file including the edited kyverno-policies.yaml.",
+      "evidence": [
+        "test:make validate",
+        "runtime:command-exit-0"
+      ]
+    },
+    {
+      "id": "e6",
+      "type": "completion_claim",
+      "summary": "Static key provisioning done; actual image signing, GHCR push permission and Kyverno verification against a signed portal image remain unverified until the first portal/v* release."
+    },
+    {
+      "id": "e7",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Static guards verified; policy stays Audit, no live cluster mutation."
+    }
+  ]
+}

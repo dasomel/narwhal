@@ -13,7 +13,10 @@ and passed. A release must be provable from the run's own facts, not from a name
       ref-type `branch` (ad-hoc workflow_dispatch build): allowed, but a branch whose name looks
       like a release tag (`portal/v...`) is refused, so no later job can mistake it for one.
 
-Exit 0 = allowed, 1 = refused (reason on stderr), 2 = usage error. Run inside the checked-out repo.
+Exit 0 = allowed, 1 = refused (reason on stderr), 2 = usage error.
+--repo PATH (default `.`) is the repository whose tags are consulted. portal-release.yml runs this
+script from a checkout of the DEFAULT BRANCH (`trusted/`) and points --repo at the tagged checkout,
+so a tagged commit cannot ship a validator that always passes (PR #347 follow-up, D-TRUST).
 """
 
 from __future__ import annotations
@@ -27,16 +30,16 @@ TAG_RE = re.compile(r"^portal/v[0-9]+\.[0-9]+\.[0-9]+(?:[-+][0-9A-Za-z.-]+)?$")
 SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 
 
-def tag_commit(name: str) -> str | None:
+def tag_commit(name: str, repo: str = ".") -> str | None:
     r = subprocess.run(
-        ["git", "rev-parse", "--verify", "--quiet", f"refs/tags/{name}^{{commit}}"],
+        ["git", "-C", repo, "rev-parse", "--verify", "--quiet", f"refs/tags/{name}^{{commit}}"],
         text=True,
         capture_output=True,
     )
     return r.stdout.strip() if r.returncode == 0 else None
 
 
-def verdict(mode: str, event: str, ref_type: str, name: str, sha: str) -> str | None:
+def verdict(mode: str, event: str, ref_type: str, name: str, sha: str, repo: str = ".") -> str | None:
     """Return a refusal reason, or None when allowed."""
     if not SHA_RE.fullmatch(sha):
         return f"head sha '{sha}' is not a full 40-hex commit"
@@ -52,7 +55,7 @@ def verdict(mode: str, event: str, ref_type: str, name: str, sha: str) -> str | 
         return f"ref type '{ref_type}' cannot publish a release"
     if not TAG_RE.fullmatch(name):
         return f"'{name}' is not a portal/vX.Y.Z tag"
-    found = tag_commit(name)
+    found = tag_commit(name, repo)
     if found is None:
         return f"tag '{name}' does not exist in this checkout (fetch tags first)"
     if found != sha:
@@ -67,8 +70,9 @@ def main() -> int:
     p.add_argument("--ref-type", default="tag", choices=["tag", "branch"])
     p.add_argument("--ref-name", required=True)
     p.add_argument("--sha", required=True)
+    p.add_argument("--repo", default=".", help="repository holding the tags (default: cwd)")
     a = p.parse_args()
-    reason = verdict(a.mode, a.event, a.ref_type, a.ref_name, a.sha)
+    reason = verdict(a.mode, a.event, a.ref_type, a.ref_name, a.sha, a.repo)
     if reason:
         print(f"::error::{reason}", file=sys.stderr)
         return 1

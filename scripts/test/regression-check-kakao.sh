@@ -3136,6 +3136,12 @@ assert sum(1 for l in code if re.search(r"\bexit 3\b", l)) == 1, "exit 3 must ap
   check R257 "APISIX and the ingress controller read the admin key from the apisix-admin-key Secret (credentials.secretName / existingSecret), keys are resolved before the APISIX helm install, 13-2 reads the Secret, rotate-apisix-admin-key.sh (behavioral, fake kubectl) rotates in order, re-syncs the portal, verifies 401 old / 200 new and rolls back on failure, lib.sh NotFound checks are anchored" \
     bash -c 'python3 scripts/test/lib/check-apisix-key-wiring.py && bash scripts/test/lib/check-apisix-rotate.sh'
 
+  # 2026-10-16: live Kakao nfs-quota-agent crash-looped ~14,000 times / 50 days: a v0.3.0 image under a
+  # chart that passes --state-dir (flag first defined in v0.4.0), while 05 waited on a Deployment that
+  # does not exist and only warned (D-nqa-skew).
+  check R258 "nfs-quota-agent: 05 refuses an image older than v0.4.0 when the chart passes --state-dir (before helm), waits on the DaemonSet and fails on CrashLoopBackOff (behavioral, version sort)" \
+    bash scripts/test/lib/check-nqa-skew.sh
+
   # 2026-10-16: up.sh printed "Phase 2 complete" right after 14-gitops-bootstrap.sh failed because
   # phase2_complete() only looked for namespaces. 06-phase2-start.sh now writes a success marker.
   check R251 "up.sh phase2_complete requires the 06-phase2-start.sh success marker; 06 clears it on entry and writes it only after the script loop (2026-10-16)" \

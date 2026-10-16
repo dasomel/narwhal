@@ -307,12 +307,17 @@ cm_key() {
 }
 real_key() { case "$1" in ''|*'{'*|*'$'*) return 1 ;; *) printf '%s' "$1" ;; esac; }
 APISIX_ADMIN_KEY=$(real_key "$(secret_key key)" || real_key "$(cm_key admin)" || true)
-APISIX_ADMIN_KEY="${APISIX_ADMIN_KEY:-edd1c9f034335f136f87ad84b625c8f1}"
 APISIX_VIEWER_KEY=$(real_key "$(secret_key viewer)" || real_key "$(cm_key viewer)" || true)
-if [ -z "${APISIX_VIEWER_KEY}" ]; then
-  echo "ERROR: failed to extract APISIX viewer key from configmap/apisix (empty result) -- refusing to store an empty/default key into apisix-admin-key secret (consumed as APISIX_API_KEY_READONLY downstream)" >&2
-  exit 1
-fi
+# Fail closed for BOTH keys: a missing admin key must not silently become the public chart
+# default (a Secret holding only `viewer` used to get it written), and an empty viewer key is
+# consumed downstream as APISIX_API_KEY_READONLY.
+for _role in admin viewer; do
+  _val=APISIX_ADMIN_KEY; [ "${_role}" = viewer ] && _val=APISIX_VIEWER_KEY
+  if [ -z "${!_val}" ]; then
+    echo "ERROR: failed to determine the APISIX ${_role} key from secret/apisix-admin-key or configmap/apisix (empty or placeholder) -- refusing to store an empty/default key into apisix-admin-key secret" >&2
+    exit 1
+  fi
+done
 
 # Persist both keys into the Secret that show-credentials.sh and the APISIX deployment
 # env vars (secretKeyRef name: apisix-admin-key) expect.  Idempotent via dry-run|apply.

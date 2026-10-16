@@ -719,14 +719,20 @@ PYEOF
   check_not R126 "APISIX Admin allowlists contain no broad CIDRs (0.0.0.0/0, 10.0.0.0/8, 172.16.0.0/12) (Narwhal#142, 2026-09-07)" \
     grep -E '0\.0\.0\.0/0|10\.0\.0\.0/8|172\.16\.0\.0/12' gitops/charts/narwhal-apps/templates/apisix.yaml gitops/charts/narwhal-apps/values.yaml scripts/cluster/08-1-networking.sh
 
-  local apisix_allowlist_drift_tmp
+  # R126b: mutate the REAL sources (not a string the check itself wrote) and require R126's
+  # pattern to fire: (1) the template hardcodes a broad supernet in the allowlist, (2) the
+  # chart default itself becomes a supernet.
+  local apisix_allowlist_drift_tmp broad_cidr_re='0\.0\.0\.0/0|10\.0\.0\.0/8|172\.16\.0\.0/12'
   apisix_allowlist_drift_tmp="$(mktemp -d)"
-  # The allowlist is templated (.Values.podNetworkCidr); its default lives in values.yaml.
-  cp gitops/charts/narwhal-apps/values.yaml "${apisix_allowlist_drift_tmp}/apisix.yaml"
-  sed -i.bak 's|^podNetworkCidr: 10.244.0.0/16|podNetworkCidr: 10.0.0.0/8|' "${apisix_allowlist_drift_tmp}/apisix.yaml"
-  rm -f "${apisix_allowlist_drift_tmp}/apisix.yaml.bak"
-  check R126b "R126's check catches a reintroduced broad CIDR in apisix.yaml (Narwhal#142, 2026-09-07)" \
-    grep -qE '0\.0\.0\.0/0|10\.0\.0\.0/8|172\.16\.0\.0/12' "${apisix_allowlist_drift_tmp}/apisix.yaml"
+  sed 's#^\( *- \){{ .Values.podNetworkCidr | quote }}#\110.0.0.0/8#' \
+    gitops/charts/narwhal-apps/templates/apisix.yaml > "${apisix_allowlist_drift_tmp}/apisix.yaml"
+  sed 's|^podNetworkCidr: 10.244.0.0/16|podNetworkCidr: 172.16.0.0/12|' \
+    gitops/charts/narwhal-apps/values.yaml > "${apisix_allowlist_drift_tmp}/values.yaml"
+  check R126b "R126's pattern catches a broad CIDR hardcoded into the real apisix.yaml template or the real values.yaml default, and the unmutated sources differ from the mutants (Narwhal#142, 2026-09-07)" \
+    bash -c 'grep -qE "$1" "$2/apisix.yaml" && grep -qE "$1" "$2/values.yaml" \
+      && ! diff -q "$2/apisix.yaml" gitops/charts/narwhal-apps/templates/apisix.yaml >/dev/null \
+      && ! diff -q "$2/values.yaml" gitops/charts/narwhal-apps/values.yaml >/dev/null' _ \
+    "${broad_cidr_re}" "${apisix_allowlist_drift_tmp}"
   rm -rf "${apisix_allowlist_drift_tmp}"
 
   # NetworkPolicy isolation: check-apisix-admin-ingress-policy validates authorized callers
@@ -3113,6 +3119,14 @@ assert sum(1 for l in code if re.search(r"\bexit 3\b", l)) == 1, "exit 3 must ap
     bash -c 'grep -Fq "resolve_s3_credentials" scripts/cluster/07-cnpg.sh && grep -Fq "resolve_s3_credentials" scripts/cluster/08-4-storage.sh && ! grep -Fq "velero-s3-credentials" scripts/cluster/07-cnpg.sh'
   check R250 "resolve_s3_credentials: NotFound defaults to admin, any other kubectl error fails closed, an existing cnpg secret is preserved, env wins" \
     bash scripts/test/lib/check-s3-credentials-resolve.sh
+
+  # 2026-10-16 (PR #399): the APISIX Admin API allowlist is detected from the live CNI by
+  # resolve_apisix_admin_cidr (lib.sh) and wired by 14 -- NOT taken from POD_NETWORK_CIDR, which
+  # also feeds pod-cidr-consistency-check, NFS exports and trusted proxies.
+  check R254 "resolve_apisix_admin_cidr: cilium cluster-pool, kubeadm podSubnet fallback, chart default only on NotFound, API error / multi-CIDR / invalid CIDR fail closed; 14 wires it and does not reuse POD_NETWORK_CIDR" \
+    bash -c 'bash scripts/test/lib/check-apisix-admin-cidr.sh && grep -Fq "podNetworkCidr: \${APISIX_ADMIN_CIDR_RESOLVED}" scripts/cluster/14-gitops-bootstrap.sh && grep -Fq "resolve_apisix_admin_cidr" scripts/cluster/14-gitops-bootstrap.sh && ! grep -Fq "podNetworkCidr: \${POD_NETWORK_CIDR" scripts/cluster/14-gitops-bootstrap.sh'
+  check R255 "08-1 APISIX key helpers: Secret first, placeholders rejected, configmap list layout parsed, both keys fail closed with no public default" \
+    bash scripts/test/lib/check-apisix-key-parse.sh
 
   # 2026-10-16: up.sh printed "Phase 2 complete" right after 14-gitops-bootstrap.sh failed because
   # phase2_complete() only looked for namespaces. 06-phase2-start.sh now writes a success marker.

@@ -13,7 +13,10 @@
       "scripts/cluster/14-gitops-bootstrap.sh",
       "scripts/test/regression-check-kakao.sh",
       "docs/common/lessons-log.md",
-      ".agents/evals/traces/2026-10-kakao-deploy-findings.json"
+      ".agents/evals/traces/2026-10-kakao-deploy-findings.json",
+      "scripts/common/lib.sh",
+      "scripts/test/lib/check-apisix-admin-cidr.sh",
+      "scripts/test/lib/check-apisix-key-parse.sh"
     ]
   },
   "events": [
@@ -30,15 +33,17 @@
     {
       "id": "e2",
       "type": "bug_fix",
-      "summary": "Admin key now comes from the existing apisix-admin-key Secret, then an awk parse of the bootstrap configmap, and values containing { or $ are rejected as placeholders. Ambient label read from the Deployment pod template. New chart value podNetworkCidr (default 10.244.0.0/16) feeds both APISIX allowlists, passed by provision-kakao.sh (POD_NETWORK_CIDR) and 14-gitops-bootstrap.sh. R126/R126b read the default from values.yaml. method: GET set explicitly on the tuning-job-control-plane-node-guard apiCall (D1) instead of widening ignoreDifferences, which would mask real drift in every rule context."
+      "summary": "Admin key now comes from the existing apisix-admin-key Secret, then an awk parse of the bootstrap configmap, and values containing { or $ are rejected as placeholders. Ambient label read from the Deployment pod template. New chart value podNetworkCidr (default 10.244.0.0/16) feeds both APISIX allowlists, passed by provision-kakao.sh (POD_NETWORK_CIDR) and 14-gitops-bootstrap.sh. R126/R126b read the default from values.yaml. method: GET set explicitly on the tuning-job-control-plane-node-guard apiCall (D1) instead of widening ignoreDifferences, which would mask real drift in every rule context. Review follow-up: the allowlist CIDR is no longer taken from POD_NETWORK_CIDR; 14 calls resolve_apisix_admin_cidr (lib.sh: APISIX_ADMIN_CIDR override, cilium-config cluster-pool-ipv4-cidr, kubeadm podSubnet, chart default only on ConfigMap NotFound, abort on other errors or invalid/multi CIDR). 08-1 now fails closed on a missing admin key as well as viewer. R126b mutates the real template and values instead of a self-written string."
     },
     {
       "id": "e3",
       "type": "verification",
       "status": "passed",
       "scope": "shellcheck at warning severity on the four touched scripts, GitOps YAML parse, CI unit tests, helm render of narwhal-apps (static)",
-      "summary": "shellcheck -S warning exits 0 (info-level notes are pre-existing and untouched). make validate exits 0. scripts/ci unittest discover ran 113 tests OK. helm template of narwhal-apps with default values differs from the pre-change render only by quoting of the CIDR (10.244.0.0/16 now rendered as a quoted string) and one comment line, so the Vagrant allowlist is unchanged; with provider=kakao and podNetworkCidr=10.0.0.0/16 both allowlist entries render 10.0.0.0/16.",
+      "summary": "After review fixes: shellcheck -S warning exits 0 on the touched scripts and new checks. make validate exits 0. scripts/ci unittest 113 OK. helm template of narwhal-apps with default values differs from the pre-change render only by quoting of the CIDR and one comment line; with provider=kakao and podNetworkCidr=10.0.0.0/8 both allowlist entries render that value. Fake-kubectl checks cover cluster-pool, kubeadm fallback, NotFound default, API error abort, invalid/multi CIDR, and the key-parse helpers (mutation of real_key shown failing).",
       "evidence": [
+        "test:bash scripts/test/lib/check-apisix-admin-cidr.sh",
+        "test:bash scripts/test/lib/check-apisix-key-parse.sh",
         "test:shellcheck -S warning scripts/cluster/08-1-networking.sh scripts/cluster/14-gitops-bootstrap.sh scripts/cloud/provision-kakao.sh scripts/test/regression-check-kakao.sh",
         "test:make validate",
         "test:python3 -m unittest discover -s scripts/ci/tests",
@@ -52,7 +57,7 @@
       "type": "regression_verification",
       "status": "passed",
       "scope": "full static regression suite incl. R126 and R126b after the podNetworkCidr change",
-      "summary": "regression-check-kakao.sh --static: passed 381 failed 0 warnings 3. The Mistakes Log format check (logic copied from lint.yml) reported 0 bad rows after the four new rows.",
+      "summary": "regression-check-kakao.sh --static and make test: passed 383 failed 0 warnings 3 (new R254, R255; R126b now a real mutation). Mistakes Log format check: 0 bad rows.",
       "evidence": [
         "test:./scripts/test/regression-check-kakao.sh --static",
         "runtime:command-exit-0"
@@ -62,13 +67,13 @@
     {
       "id": "e5",
       "type": "completion_claim",
-      "summary": "Static checks pass. Live results below were reported by the orchestrating session from the deploy and were not re-run by this lane: phase 2 completed on the Kakao cluster, 42 ArgoCD apps Healthy, portal 1.1.0 ready and answering 200. The Kyverno method: GET source fix (d) is NOT applied to the live cluster yet; its effect on kyverno-policies sync status is unverified."
+      "summary": "Static checks pass. Live results below were reported by the orchestrating session from the deploy and were not re-run by this lane: phase 2 completed on the Kakao cluster, 42 ArgoCD apps Healthy, portal 1.1.0 ready and answering 200. The Kyverno method: GET source fix (d) is NOT applied to the live cluster yet; its effect on kyverno-policies sync status is unverified. The review follow-up changes (CIDR detection in 14, 08-1 admin fail-closed) are code-only and have NOT been run on the live cluster; the live Kakao cluster reports cilium-config ipam=cluster-pool with cluster-pool-ipv4-cidr 10.0.0.0/8 per the coordinator, not re-read by this lane."
     },
     {
       "id": "e6",
       "type": "task_outcome",
       "state": "A",
-      "summary": "Fixes (a)-(c) are committed as already applied live; (d) is a static source fix pending a live sync check. Independent review and the independent-review status are not done by this lane."
+      "summary": "Fixes (a)-(c) were applied live earlier; the CIDR detection and 08-1 fail-closed changes and fix (d) are static-only and pending a live run. Independent re-review and the independent-review status are not done by this lane."
     }
   ]
 }

@@ -66,8 +66,8 @@
     {
       "id": "e7",
       "type": "task_outcome",
-      "status": "partial",
-      "summary": "Code, docs and checks done and passing statically; live rollout not performed."
+      "summary": "Static change (chart nodeSelector, 08-4 label, runbook, squash-aware check, R265, migration record) verified statically; live rollout (label host-172-17-0-22, ArgoCD sync, volume pod stays on .22) pending and unverified (e6).",
+      "state": "A"
     }
   ]
 }

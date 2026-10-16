@@ -109,7 +109,18 @@ apps are Synced/Healthy.
 1. Repeat step 3: stop every writer in the same order and verify no NFS clients remain
    (`findmnt -t nfs,nfs4` on all nodes, `ss ... sport = :2049` == 0), then `sudo systemctl stop nfs-server`.
 2. Copy writes made after the cutover back to the old ext4 copy, which is still hidden under the mount.
-   Bind-mount the root filesystem to reach it:
+   First confirm the XFS volume is still mounted over it:
+
+   ```bash
+   findmnt -no FSTYPE /srv/nfs/k8s    # must print: xfs
+   ```
+
+   If it prints `ext4` or nothing, the XFS volume is already unmounted and `/srv/nfs/k8s` is the ext4
+   directory itself, so the reverse sync below would copy the directory onto itself. Do not run it:
+   mount the XFS volume at a temporary path (`sudo mkdir -p /mnt/xfs-new && sudo mount UUID=<uuid> /mnt/xfs-new`)
+   and use `/mnt/xfs-new/` as the rsync source instead, then `sudo umount /mnt/xfs-new`.
+
+   Bind-mount the root filesystem to reach the ext4 copy:
 
    ```bash
    sudo mkdir -p /mnt/rootfs-old && sudo mount --bind / /mnt/rootfs-old

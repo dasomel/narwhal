@@ -3204,6 +3204,10 @@ PYEOF'
   check R266 "nfs_share_root_verdict is behavioral under set -euo pipefail: root_squash+750 PASS, root_squash+777 FAIL, all-no_root_squash WARN, mixed requires 750, no export line FAIL with its message; 08-4 aborts on >1 labeled node (2026-10-16)" \
     bash -c 'bash scripts/test/lib/check-nfs-squash-verdict.sh && grep -Fq "LABELED_NODES=\"\$(kubectl get nodes -l narwhal.io/seaweedfs-volume=true -o name)\"" scripts/cluster/08-4-storage.sh && grep -Fq "more than one node carries" scripts/cluster/08-4-storage.sh'
 
+  check R267 "SeaweedFS master/filer run as the image's seaweed user (uid/gid 1000, emptyDir logs) in the GitOps chart and the 08-4 helm install; nfs-root-squash-align.sh is dry-run by default, never edits exports and its static map matches (narwhal#224, 2026-10-16)" \
+    python3 scripts/test/lib/check-seaweedfs-nonroot.py
+  check R268 "nfs-root-squash-align.sh resolves targets (static SeaweedFS map, pod securityContext), leaves unresolved PVs alone, refuses a Running different-uid consumer and does not change anything without --apply (2026-10-16)" \
+    bash scripts/test/lib/check-nfs-root-squash-align.sh
 }
 
 #=========================================

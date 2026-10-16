@@ -45,6 +45,12 @@ for attempt in 1 2 3 4 5; do
     --set master.data.type=persistentVolumeClaim \
     --set master.data.size=1Gi \
     --set master.data.storageClass=nfs-csi \
+    --set master.podSecurityContext.enabled=true \
+    --set master.podSecurityContext.runAsUser=1000 \
+    --set master.podSecurityContext.runAsGroup=1000 \
+    --set master.podSecurityContext.fsGroup=1000 \
+    --set master.podSecurityContext.fsGroupChangePolicy=OnRootMismatch \
+    --set master.logs.type=emptyDir \
     --set volume.enabled=true \
     --set volume.replicas=1 \
     --set-string 'volume.nodeSelector=narwhal.io/seaweedfs-volume: "true"' \
@@ -56,6 +62,12 @@ for attempt in 1 2 3 4 5; do
     --set filer.data.type=persistentVolumeClaim \
     --set filer.data.size=5Gi \
     --set filer.data.storageClass=nfs-csi \
+    --set filer.podSecurityContext.enabled=true \
+    --set filer.podSecurityContext.runAsUser=1000 \
+    --set filer.podSecurityContext.runAsGroup=1000 \
+    --set filer.podSecurityContext.fsGroup=1000 \
+    --set filer.podSecurityContext.fsGroupChangePolicy=OnRootMismatch \
+    --set filer.logs.type=emptyDir \
     --set filer.s3.enabled=true \
     --set filer.s3.port=8333 \
     --set filer.s3.allowEmptyFolder=true \

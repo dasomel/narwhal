@@ -18,12 +18,28 @@ spec:
         # Trivy KSV001/003/030/104 on all 4 components (verified container-level via
         # helm template; requires `enabled: true` INSIDE containerSecurityContext
         # itself — the chart gates the whole block on that flag, "enabled" is omitted
-        # from final render). Not forcing runAsNonRoot (KSV012): all 4 containers
-        # verified running as root (uid=0) live — SeaweedFS needs it, forcing non-root
-        # would break the pods.
+        # from final render). runAsNonRoot (KSV012) is not forced chart-wide: volume and
+        # s3 keep the image default root (hostPath data, no NFS).
+        #
+        # D-sw-nonroot: master and filer keep state on nfs-csi PVCs, so they must survive a
+        # root_squash export (uid 0 -> nobody; narwhal#224). The chart overrides the image
+        # entrypoint, so they ran as root (the image USER) and left uid-0 files. They now
+        # run as the image's `seaweed` user (uid/gid 1000, verified in chrislusf/seaweedfs:4.34
+        # /etc/passwd). fsGroup is inert on NFS (nfs.csi.k8s.io sets no fsGroupPolicy), so
+        # existing data must be chowned first: scripts/cluster/nfs-root-squash-align.sh.
+        # Logs move from root-owned hostPath to emptyDir (fsGroup applies there; hostPath is
+        # root:root 0755 and unwritable by uid 1000). Escape hatch: revert this block.
         master:
           enabled: true
           replicas: 1
+          podSecurityContext:
+            enabled: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            fsGroup: 1000
+            fsGroupChangePolicy: OnRootMismatch
+          logs:
+            type: emptyDir
           storage: 1Gi
           data:
             type: persistentVolumeClaim
@@ -64,6 +80,14 @@ spec:
         filer:
           enabled: true
           replicas: 1
+          podSecurityContext:
+            enabled: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            fsGroup: 1000
+            fsGroupChangePolicy: OnRootMismatch
+          logs:
+            type: emptyDir
           storage: 5Gi
           data:
             type: persistentVolumeClaim

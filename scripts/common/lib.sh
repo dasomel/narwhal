@@ -97,7 +97,7 @@ resolve_apisix_admin_cidr() {
         -o 'jsonpath={.data.ipam}{"\t"}{.data.cluster-pool-ipv4-cidr}' 2>"${err}"); then
       ipam="${out%%$'\t'*}"
       [ "${ipam}" = cluster-pool ] && cidr="${out#*$'\t'}"
-    elif ! grep -q 'NotFound' "${err}"; then
+    elif ! grep -q 'Error from server (NotFound)' "${err}"; then
       echo "ERROR: cannot read configmap/cilium-config: $(head -c 200 "${err}")" >&2
       rm -f "${err}"; return 1
     fi
@@ -106,7 +106,7 @@ resolve_apisix_admin_cidr() {
     if out=$(kubectl -n kube-system get configmap kubeadm-config \
         -o 'jsonpath={.data.ClusterConfiguration}' 2>"${err}"); then
       cidr=$(printf '%s\n' "${out}" | awk '/^[[:space:]]*podSubnet:/ {print $2; exit}')
-    elif ! grep -q 'NotFound' "${err}"; then
+    elif ! grep -q 'Error from server (NotFound)' "${err}"; then
       echo "ERROR: cannot read configmap/kubeadm-config: $(head -c 200 "${err}")" >&2
       rm -f "${err}"; return 1
     fi
@@ -118,6 +118,51 @@ resolve_apisix_admin_cidr() {
     return 1
   fi
   printf '%s\n' "${cidr}"
+}
+
+# --- APISIX Admin API keys (Secret platform-system/apisix-admin-key, fields key + viewer) ---
+# The upstream APISIX/ingress-controller chart defaults are public. They are recognised by
+# sha256 only (D-apisix-key: no key literal in git, not even the one to refuse) and are never
+# reused: anything matching is replaced by a fresh random key, which is also the rotation path.
+APISIX_DEFAULT_KEY_SHA256S="477a2767fa27931db11a3581100a4124b5720f6b6468ddd64062170cec157185 228ab1b6080ec4178302ba76f9fa4af4f2dc14fc105a364b324bdb9045af03a1"
+
+# apisix_key_usable <value>: succeeds for a real, non-default key. Empty values, env
+# placeholders (`${{APISIX_ADMIN_KEY}}`) and the public upstream defaults fail.
+apisix_key_usable() {
+  local h
+  case "$1" in ''|*'{'*|*'$'*) return 1 ;; esac
+  h=$(printf '%s' "$1" | openssl dgst -sha256 -r | cut -d' ' -f1)
+  case " ${APISIX_DEFAULT_KEY_SHA256S} " in *" ${h} "*) return 1 ;; esac
+  return 0
+}
+
+# apisix_cm_key <admin|viewer>: key of that role in configmap/apisix (YAML list layout:
+# `- key: <k>` precedes `name: <role>`; name may be quoted). "" when absent or on any error.
+apisix_cm_key() {
+  kubectl get configmap apisix -n platform-system -o jsonpath='{.data.config\.yaml}' 2>/dev/null \
+    | awk -v role="$1" '/^[[:space:]]*-[[:space:]]*key:/ {k=$3; gsub(/"/, "", k)} $0 ~ "^[[:space:]]*name:[[:space:]]*\"?" role "\"?[[:space:]]*$" && !f {print k; f=1}' || true
+}
+
+# shellcheck disable=SC2034  # outputs are read by the sourcing script
+# resolve_apisix_keys: sets APISIX_ADMIN_KEY / APISIX_VIEWER_KEY and APISIX_KEYS_GENERATED
+# (true when either was newly generated, i.e. consumers must restart). Per role: the existing
+# Secret value, else the bootstrap configmap literal, else a new `openssl rand -hex 16`; a
+# default/placeholder/empty value is skipped. A non-NotFound Secret read error returns 1
+# (fail closed, never regenerate over real credentials). Never prints values.
+resolve_apisix_keys() {
+  local role field var v
+  APISIX_KEYS_GENERATED=false
+  for role in admin viewer; do
+    field=key; var=APISIX_ADMIN_KEY
+    if [ "${role}" = viewer ]; then field=viewer; var=APISIX_VIEWER_KEY; fi
+    v=$(read_secret_field apisix-admin-key platform-system "${field}") || return 1
+    apisix_key_usable "${v}" || v=$(apisix_cm_key "${role}")
+    if ! apisix_key_usable "${v}"; then
+      v=$(openssl rand -hex 16)
+      APISIX_KEYS_GENERATED=true
+    fi
+    printf -v "${var}" '%s' "${v}"
+  done
 }
 
 # Wait for Kubernetes API server to be reachable

@@ -1,72 +1,69 @@
 #!/bin/bash
-# R255: real_key/cm_key/secret_key (scripts/cluster/08-1-networking.sh) against a fake kubectl.
-# Run from the repo root. Key values are fixtures; nothing real is read or printed.
+# R255/R256: resolve_apisix_keys / apisix_key_usable (scripts/common/lib.sh) against a fake
+# kubectl. Run from the repo root. Key values are fixtures; nothing real is read or printed.
 set -euo pipefail
 
 k=$(mktemp -d); trap 'rm -rf "$k"' EXIT
+b64() { printf '%s' "$1" | base64 | tr -d '\n'; }
+# The upstream defaults, assembled so no complete literal sits in the tree.
+DEF_ADMIN="edd1c9f0""34335f136f87ad84b625c8f1"
+DEF_VIEWER="4054f7cf""07e344346cd3f287985e76a2"
+export DEF_ADMIN DEF_VIEWER
 cat > "$k/kubectl" <<'FAKE'
 #!/bin/bash
-# args: get secret apisix-admin-key -n ns -o jsonpath={.data.<k>} | get configmap apisix -n ns -o jsonpath=...
+b64() { printf '%s' "$1" | base64 | tr -d '\n'; }
 case "$2" in
   secret)
+    [ "${FAKE_SECRET}" = error ] && { echo 'Unable to connect to the server: timeout' >&2; exit 1; }
+    [ "${FAKE_SECRET}" = none ] && { echo 'Error from server (NotFound): secrets "apisix-admin-key" not found' >&2; exit 1; }
     f="${7#jsonpath=\{.data.}"; f="${f%\}}"
     case "${FAKE_SECRET}:${f}" in
-      both:key) printf 'c2VjcmV0YWRtaW4=' ;;           # secretadmin
-      both:viewer) printf 'c2VjcmV0dmlld2Vy' ;;        # secretviewer
-      placeholder:key) printf '%s' "$(printf '%s' '${{APISIX_ADMIN_KEY}}' | base64)" ;;
-      placeholder:viewer) printf '%s' "$(printf '%s' '${{APISIX_VIEWER_KEY}}' | base64)" ;;
-      viewer_only:viewer) printf 'c2VjcmV0dmlld2Vy' ;;
+      both:key) b64 secretadmin ;;
+      both:viewer) b64 secretviewer ;;
+      default:key) b64 "${DEF_ADMIN}" ;;
+      default:viewer) b64 secretviewer ;;
+      defviewer:key) b64 secretadmin ;;
+      defviewer:viewer) b64 "${DEF_VIEWER}" ;;
+      placeholder:key) b64 '${{APISIX_ADMIN_KEY}}' ;;
+      placeholder:viewer) b64 '${{APISIX_VIEWER_KEY}}' ;;
+      viewer_only:viewer) b64 secretviewer ;;
     esac
-    [ "${FAKE_SECRET}" = none ] && { echo 'Error from server (NotFound): secrets "apisix-admin-key" not found' >&2; exit 1; }
     exit 0 ;;
   configmap)
-    if [ "${FAKE_CM}" = literal ]; then
-      cat <<'Y'
-deployment:
-  admin:
-    admin_key:
-      - key: cmadminkey
-        name: admin
-        role: admin
-      - key: "cmviewerkey"
-        name: "viewer"
-        role: viewer
-Y
-    else
-      cat <<'Y'
-deployment:
-  admin:
-    admin_key:
-      - key: ${{APISIX_ADMIN_KEY}}
-        name: admin
-        role: admin
-      - key: ${{APISIX_VIEWER_KEY}}
-        name: viewer
-        role: viewer
-Y
-    fi ;;
+    case "${FAKE_CM}" in
+      literal) printf 'admin_key:\n  - key: cmadminkey\n    name: admin\n    role: admin\n  - key: "cmviewerkey"\n    name: "viewer"\n    role: viewer\n' ;;
+      default) printf 'admin_key:\n  - key: %s\n    name: admin\n    role: admin\n  - key: %s\n    name: viewer\n    role: viewer\n' "${DEF_ADMIN}" "${DEF_VIEWER}" ;;
+      placeholder) printf 'admin_key:\n  - key: ${{APISIX_ADMIN_KEY}}\n    name: admin\n    role: admin\n  - key: ${{APISIX_VIEWER_KEY}}\n    name: viewer\n    role: viewer\n' ;;
+    esac ;;
 esac
 FAKE
 chmod +x "$k/kubectl"
 export PATH="$k:$PATH"
 
-# Pull the helper definitions out of the real script so the test cannot drift from it.
-defs=$(sed -n '/^secret_key() {/,/^real_key() {/p' scripts/cluster/08-1-networking.sh)
-[ -n "${defs}" ]
-eval "${defs}"
-resolve() { # <FAKE_SECRET> <FAKE_CM> <role: key|viewer> <cm role: admin|viewer>
+# shellcheck source=scripts/common/lib.sh
+source scripts/common/lib.sh
+run() { # <FAKE_SECRET> <FAKE_CM>: sets A V G in this shell
   export FAKE_SECRET="$1" FAKE_CM="$2"
-  real_key "$(secret_key "$3")" || real_key "$(cm_key "$4")" || true
+  resolve_apisix_keys; A="${APISIX_ADMIN_KEY}"; V="${APISIX_VIEWER_KEY}"; G="${APISIX_KEYS_GENERATED}"
 }
 eq() { [ "$1" = "$2" ] || { echo "expected '$2' got '$1' ($3)" >&2; exit 1; }; }
+hex32() { [[ "$1" =~ ^[0-9a-f]{32}$ ]] || { echo "not 32 hex: ($2)" >&2; exit 1; }; }
 
-eq "$(resolve both literal key admin)" secretadmin "secret wins over configmap"
-eq "$(resolve both literal viewer viewer)" secretviewer "secret viewer wins"
-eq "$(resolve placeholder literal key admin)" cmadminkey "placeholder secret falls back to configmap (unquoted name)"
-eq "$(resolve none literal viewer viewer)" cmviewerkey "quoted key/name parsed"
-eq "$(resolve viewer_only literal key admin)" cmadminkey "secret lacking key falls back to configmap admin"
-eq "$(resolve none placeholder key admin)" "" "configmap placeholders are never keys"
-eq "$(resolve none placeholder viewer viewer)" "" "configmap placeholder viewer is never a key"
-# the script must abort when either key is empty (no public default admin key)
-grep -q 'for _role in admin viewer' scripts/cluster/08-1-networking.sh
-! grep -q 'edd1c9f034335f136f87ad84b625c8f1' scripts/cluster/08-1-networking.sh
+# apisix_key_usable: defaults and placeholders are never usable
+apisix_key_usable "${DEF_ADMIN}" && { echo "default admin key accepted" >&2; exit 1; }
+apisix_key_usable "${DEF_VIEWER}" && { echo "default viewer key accepted" >&2; exit 1; }
+apisix_key_usable '' && { echo "empty accepted" >&2; exit 1; }
+apisix_key_usable '${{APISIX_ADMIN_KEY}}' && { echo "placeholder accepted" >&2; exit 1; }
+apisix_key_usable abc123 || { echo "random key rejected" >&2; exit 1; }
+
+run both literal;       eq "$A $V $G" "secretadmin secretviewer false" "existing random keys are preserved"
+run both default;       eq "$A $V $G" "secretadmin secretviewer false" "secret wins over configmap"
+run none literal;       eq "$A $V $G" "cmadminkey cmviewerkey false" "non-default bootstrap configmap keys adopted"
+run viewer_only literal; eq "$A $V $G" "cmadminkey secretviewer false" "per-role fallback"
+run default placeholder; eq "$V" secretviewer "viewer kept"; [ "$A" != "${DEF_ADMIN}" ] && hex32 "$A" "default admin replaced"; eq "$G" true "default admin flagged generated"
+run defviewer placeholder; eq "$A" secretadmin "admin kept"; [ "$V" != "${DEF_VIEWER}" ] && hex32 "$V" "default viewer replaced"
+run none default;       [ "$A" != "${DEF_ADMIN}" ] && [ "$V" != "${DEF_VIEWER}" ] && hex32 "$A" cmA && hex32 "$V" cmV; eq "$G" true "configmap defaults never reused"
+run placeholder placeholder; hex32 "$A" phA; hex32 "$V" phV; eq "$G" true "placeholders alone => fresh keys"
+run none placeholder;   hex32 "$A" freshA; [ "$A" != "$V" ] || { echo "admin == viewer" >&2; exit 1; }
+export FAKE_SECRET=error FAKE_CM=literal
+if (resolve_apisix_keys) 2>/dev/null; then echo "Secret read error must fail closed" >&2; exit 1; fi

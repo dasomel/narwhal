@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Behavioral check for the NFS_DATA_DEVICE block of 01-nfs-server.sh (R264): extract the real block
 # and run it against fake blkid/findmnt/mkfs.xfs/sudo. Blank device -> mkfs; existing xfs -> no mkfs;
-# other fs -> fail; non-empty share path -> refuse (never mkfs, never mount).
+# other fs -> fail; final mount without prjquota -> fail; non-empty share path -> refuse (never mkfs, never mount).
 set -euo pipefail
 
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)
@@ -19,6 +19,11 @@ exec "${args[@]}"
 F
 cat > "${tmp}/bin/blkid" <<'F'
 #!/usr/bin/env bash
+# -p (low-level probe) must be passed: without it blkid can serve a stale cache entry.
+case " $* " in
+  *" -p "*) ;;
+  *) echo "blkid called without -p: $*" >&2; exit 2 ;;
+esac
 case "$*" in
   *"-s TYPE"*) printf '%s' "${FAKE_FS:-}" ;;
   *"-s UUID"*) echo "uuid-1234" ;;
@@ -28,7 +33,7 @@ cat > "${tmp}/bin/findmnt" <<'F'
 #!/usr/bin/env bash
 case "$*" in
   *SOURCE*) printf '%s' "${FAKE_MNT_SRC:-}" ;;
-  *FSTYPE*) echo "xfs rw,prjquota" ;;
+  *FSTYPE*) echo "${FAKE_FSTYPE:-xfs} ${FAKE_OPTS:-rw,prjquota}" ;;
 esac
 F
 cat > "${tmp}/bin/mkfs.xfs" <<'F'
@@ -61,6 +66,10 @@ grep -Fq "prjquota" "${tmp}/etc/fstab" || { echo "fstab must carry prjquota" >&2
 
 run xfs || { echo "existing xfs must succeed" >&2; exit 1; }
 ! grep -Fq "mkfs.xfs" "${FAKE_LOG}" || { echo "existing xfs must never be formatted" >&2; exit 1; }
+
+if FAKE_OPTS="rw,noquota" run xfs; then echo "xfs mount without prjquota must fail" >&2; exit 1; fi
+grep -Fq "not an XFS mount with prjquota" "${tmp}/out" || { echo "missing prjquota must hit the final check" >&2; exit 1; }
+if FAKE_FSTYPE=ext4 run xfs; then echo "non-xfs mount must fail" >&2; exit 1; fi
 
 if run ext4; then echo "ext4 device must fail" >&2; exit 1; fi
 ! grep -Fq "mkfs.xfs" "${FAKE_LOG}" || { echo "ext4 must never be formatted" >&2; exit 1; }

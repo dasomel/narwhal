@@ -68,6 +68,14 @@ chmod +x "$w/bin"/*
 mkdir -p "$w/scripts/common"
 cp "$repo/scripts/common/lib.sh" "$w/scripts/common/lib.sh"
 printf 'chart() { echo "/charts/$1.tgz"; }\n' > "$w/scripts/common/lib-charts.sh"
+G=$(command -v grep)
+# argv recorder: every external tool the script (or a fake) runs is logged to the calls file
+# with its full argv, then delegated to the real binary, so a key in ANY argv is caught.
+for tool in grep awk cat base64 tr sed openssl mv seq sleep mktemp rm cp kill; do
+  real=$(command -v "$tool")
+  printf '#!/bin/bash\necho "%s $*" >> "${FAKE_ST}/calls"\nexec %s "$@"\n' "$tool" "$real" > "$w/bin/$tool"
+  chmod +x "$w/bin/$tool"
+done
 export PATH="$w/bin:$PATH" FAKE_ST="$w/st" NARWHAL_SCRIPTS_DIR="$w/scripts" KUBECONFIG=/dev/null
 
 reset() {
@@ -81,23 +89,32 @@ reset
 bash scripts/cluster/rotate-apisix-admin-key.sh > "$w/out" 2>&1 || { cat "$w/out" >&2; fail "happy path exited non-zero"; }
 [[ "$(cat "$w/st/s_key")" =~ ^[0-9a-f]{32}$ ]] || fail "Secret admin key not rotated"
 [ "$(cat "$w/st/s_key")" != oldadmin ] || fail "admin key unchanged"
-grep -q oldadmin "$w/st/cm" && fail "configmap literal still holds the old key"
-grep -q "$(cat "$w/st/s_key")" "$w/st/cm" || fail "configmap literal not updated to the new key"
-grep -q 'HTTP 401' "$w/out" || fail "old key 401 not verified"
+"$G" -q oldadmin "$w/st/cm" && fail "configmap literal still holds the old key"
+"$G" -q "$(cat "$w/st/s_key")" "$w/st/cm" || fail "configmap literal not updated to the new key"
+"$G" -q 'HTTP 401' "$w/out" || fail "old key 401 not verified"
 [ ! -f "$w/st/leak" ] || fail "key passed via --from-literal"
-grep -q "$(b64 "$(cat "$w/st/s_key")")" "$w/st/portal_patch" || fail "portal secret not re-synced"
-grep -q 'rollout restart deployment/narwhal-portal' "$w/st/calls" || fail "portal not restarted"
+"$G" -q "$(b64 "$(cat "$w/st/s_key")")" "$w/st/portal_patch" || fail "portal secret not re-synced"
+"$G" -q 'rollout restart deployment/narwhal-portal' "$w/st/calls" || fail "portal not restarted"
 # order: secret apply, apisix restart, helm (IC), portal patch
-ln_apply=$(grep -n 'apply -f' "$w/st/calls" | head -1 | cut -d: -f1)
-ln_apx=$(grep -n 'rollout restart deployment/apisix ' "$w/st/calls" | head -1 | cut -d: -f1)
-ln_helm=$(grep -n '^helm upgrade' "$w/st/calls" | head -1 | cut -d: -f1)
+ln_apply=$("$G" -n 'apply -f' "$w/st/calls" | head -1 | cut -d: -f1)
+ln_apx=$("$G" -n 'rollout restart deployment/apisix ' "$w/st/calls" | head -1 | cut -d: -f1)
+ln_helm=$("$G" -n '^helm upgrade' "$w/st/calls" | head -1 | cut -d: -f1)
 [ "$ln_apply" -lt "$ln_apx" ] && [ "$ln_apx" -lt "$ln_helm" ] || fail "order must be Secret, APISIX restart, IC"
-grep -rq "oldadmin\|$(cat "$w/st/s_key")" "$w/st/calls" && fail "key value leaked into kubectl/helm argv"
+for secret in oldadmin oldviewer "$(cat "$w/st/s_key")" "$(cat "$w/st/s_viewer")"; do
+  "$G" -Fq -- "$secret" "$w/st/calls" && fail "key value appears in a command argv"
+done
 
 reset
 if FAKE_BREAK=1 bash scripts/cluster/rotate-apisix-admin-key.sh > "$w/out" 2>&1; then fail "broken verification must exit non-zero"; fi
-grep -q 'ROLLBACK COMPLETE' "$w/out" || { cat "$w/out" >&2; fail "rollback did not complete"; }
+"$G" -q 'ROLLBACK COMPLETE' "$w/out" || { cat "$w/out" >&2; fail "rollback did not complete"; }
 [ "$(cat "$w/st/s_key")" = oldadmin ] && [ "$(cat "$w/st/s_viewer")" = oldviewer ] || fail "previous Secret not restored"
-[ "$(grep -c '^helm upgrade' "$w/st/calls")" -ge 2 ] || fail "IC not re-applied on rollback"
-[ "$(grep -c 'rollout restart deployment/apisix ' "$w/st/calls")" -ge 2 ] || fail "APISIX not restarted on rollback"
-grep -q oldadmin "$w/st/cm" || fail "configmap not restored"
+[ "$("$G" -c '^helm upgrade' "$w/st/calls")" -ge 2 ] || fail "IC not re-applied on rollback"
+[ "$("$G" -c 'rollout restart deployment/apisix ' "$w/st/calls")" -ge 2 ] || fail "APISIX not restarted on rollback"
+"$G" -q oldadmin "$w/st/cm" || fail "configmap not restored"
+
+# #399 case: Secret holds env placeholders -> the backup falls back to the configmap literal,
+# so a failed rotation still rolls back cleanly (no false INCOMPLETE).
+reset
+printf '%s' '${{APISIX_ADMIN_KEY}}' > "$w/st/s_key"; printf '%s' '${{APISIX_VIEWER_KEY}}' > "$w/st/s_viewer"
+if FAKE_BREAK=1 bash scripts/cluster/rotate-apisix-admin-key.sh > "$w/out" 2>&1; then fail "placeholder case must exit non-zero when verification breaks"; fi
+"$G" -q 'ROLLBACK COMPLETE' "$w/out" || { cat "$w/out" >&2; fail "placeholder Secret: rollback not complete"; }

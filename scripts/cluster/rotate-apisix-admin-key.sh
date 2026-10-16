@@ -38,6 +38,7 @@ CHANGED=false
 ROLLING_BACK=false
 PORTAL_CHANGED=false
 CM_CHANGED=false
+KEEP_T=false
 
 stop_pf() {
   if [ -n "${PF_PID}" ]; then kill "${PF_PID}" 2>/dev/null || true; wait "${PF_PID}" 2>/dev/null || true; PF_PID=""; fi
@@ -55,7 +56,7 @@ apply_secret() {
 # apply_ic: point the IC helm release at the Secret, re-label and restart it.
 apply_ic() {
   helm upgrade apisix-ingress-controller "$(chart apisix-ingress-controller)" \
-    --namespace "${NS}" --version 0.14.1 --skip-crds --reuse-values \
+    --force-conflicts --namespace "${NS}" --version 0.14.1 --skip-crds --reuse-values \
     --set config.apisix.existingSecret=apisix-admin-key \
     --set config.apisix.existingSecretAdminKeyKey=key \
     --set config.apisix.adminKey=
@@ -80,32 +81,46 @@ sync_portal() {
   kubectl rollout restart deployment/narwhal-portal -n "${PORTAL_NS}"
 }
 
-# admin_status <key>: HTTP status of GET /routes through a fresh port-forward to the pod
-# loopback. Key travels over stdin (curl -K -), never argv. Prints 000 when unreachable.
+# start_pf: background `kubectl port-forward svc/apisix-admin` in THIS shell (not a command
+# substitution, so PF_PID reaches the EXIT/INT/TERM trap). Retries with a new port when the
+# bind fails (the process exits within a second).
+start_pf() {
+  for _ in 1 2 3 4 5; do
+    PF_PORT=$(python3 -c 'import socket;s=socket.socket();s.bind(("127.0.0.1",0));print(s.getsockname()[1])')
+    kubectl port-forward -n "${NS}" svc/apisix-admin "${PF_PORT}:9180" >/dev/null 2>&1 &
+    PF_PID=$!
+    sleep 1
+    if kill -0 "${PF_PID}" 2>/dev/null; then return 0; fi
+    wait "${PF_PID}" 2>/dev/null || true; PF_PID=""
+  done
+  echo "ERROR: kubectl port-forward to svc/apisix-admin failed to start." >&2
+  return 1
+}
+
+# admin_status <key>: HTTP status of GET /routes through the running port-forward (pod
+# loopback). Key travels over stdin (curl -K -), never argv. Prints 000 when unreachable.
 admin_status() {
-  local port code="000" i
-  port=$(python3 -c 'import socket;s=socket.socket();s.bind(("127.0.0.1",0));print(s.getsockname()[1])')
-  kubectl port-forward -n "${NS}" svc/apisix-admin "${port}:9180" >/dev/null 2>&1 &
-  PF_PID=$!
-  for i in $(seq 1 20); do
+  local code="000"
+  for _ in $(seq 1 20); do
     code=$(printf 'header = "X-API-KEY: %s"\n' "$1" | curl -s -o /dev/null -m 5 -w '%{http_code}' -K - \
-      "http://127.0.0.1:${port}/apisix/admin/routes" 2>/dev/null || true)
+      "http://127.0.0.1:${PF_PORT}/apisix/admin/routes" 2>/dev/null || true)
     [ "${code}" != 000 ] && [ -n "${code}" ] && break
     code=000; sleep 1
   done
-  stop_pf
   printf '%s' "${code}"
 }
 
 # verify_keys <label:keyfile:want>...: every check must return the wanted status.
 verify_keys() {
   local c label file want got fail=0
+  start_pf || return 1
   for c in "$@"; do
     label="${c%%:*}"; want="${c##*:}"; file="${c#*:}"; file="${file%:*}"
     got=$(admin_status "$(cat "${file}")")
     if [ "${got}" = "${want}" ]; then echo "  OK   ${label}: HTTP ${got}"
     else echo "  FAIL ${label}: expected HTTP ${want}, got '${got}'" >&2; fail=1; fi
   done
+  stop_pf
   return "${fail}"
 }
 
@@ -127,7 +142,11 @@ rollback() {
   if [ "${rc}" -eq 0 ]; then
     echo "ROLLBACK COMPLETE: APISIX and the ingress controller are back on the previous keys; rotation FAILED." >&2
   else
-    echo "ROLLBACK INCOMPLETE: inspect Secret ${NS}/apisix-admin-key, deploy/apisix and deploy/apisix-ingress-controller manually; they may be on different keys." >&2
+    KEEP_T=true
+    echo "ROLLBACK INCOMPLETE: APISIX and the ingress controller may be on different keys." >&2
+    echo "  Re-run this script to converge both on one new key (it is idempotent), or restore manually from the backup" >&2
+    echo "  in ${T} (0700; old_admin/old_viewer = previous keys, old_cfg = previous configmap config.yaml)." >&2
+    echo "  Delete ${T} once the cluster is healthy: it holds key material." >&2
   fi
 }
 
@@ -136,15 +155,22 @@ on_exit() {
   trap - EXIT ERR
   stop_pf
   if [ "${rc}" -ne 0 ] && [ "${CHANGED}" = true ] && [ "${ROLLING_BACK}" != true ]; then rollback; fi
-  rm -rf "${T}"
+  if [ "${KEEP_T}" != true ]; then rm -rf "${T}"; fi
   exit "${rc}"
 }
 trap on_exit EXIT
 trap 'exit 1' ERR
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 OLD_ADMIN=$(read_secret_field apisix-admin-key "${NS}" key) || exit 1
 OLD_VIEWER=$(read_secret_field apisix-admin-key "${NS}" viewer) || exit 1
-[ -n "${OLD_ADMIN}" ] && [ -n "${OLD_VIEWER}" ] || { echo "ERROR: Secret ${NS}/apisix-admin-key is missing or incomplete; run 08-1-networking.sh first." >&2; exit 1; }
+# #399 case: a GitOps-converted Secret may hold env placeholders; fall back to the configmap
+# literal so the backup (and a rollback) restores a real key. Never roll back to a placeholder.
+case "${OLD_ADMIN}" in ''|*'{'*|*'$'*) OLD_ADMIN=$(apisix_cm_key admin) ;; esac
+case "${OLD_VIEWER}" in ''|*'{'*|*'$'*) OLD_VIEWER=$(apisix_cm_key viewer) ;; esac
+case "${OLD_ADMIN}${OLD_VIEWER}" in *'{'*|*'$'*) OLD_ADMIN="" ;; esac
+[ -n "${OLD_ADMIN}" ] && [ -n "${OLD_VIEWER}" ] || { echo "ERROR: Secret ${NS}/apisix-admin-key (and configmap/apisix) hold no restorable key; run 08-1-networking.sh first." >&2; exit 1; }
 put_key "${T}/old_admin" "${OLD_ADMIN}"; put_key "${T}/old_viewer" "${OLD_VIEWER}"
 put_key "${T}/new_admin" "$(openssl rand -hex 16)"; put_key "${T}/new_viewer" "$(openssl rand -hex 16)"
 CM_ADMIN=$(apisix_cm_key admin)
@@ -159,7 +185,8 @@ apply_secret "${T}/new_admin" "${T}/new_viewer"
 echo "2/6 Updating literal keys in configmap/apisix (if any)..."
 # swap_in_cfg <old> <new-file>: replace every literal <old> in the working config; values via env.
 swap_in_cfg() {
-  [ -n "$1" ] && grep -Fq -- "$1" "${T}/cfg" || return 0
+  [ -n "$1" ] || return 0
+  OLD="$1" awk 'index($0, ENVIRON["OLD"]) {f=1} END {exit !f}' "${T}/cfg" || return 0
   OLD="$1" NEW="$(cat "$2")" awk '{ while ((i = index($0, ENVIRON["OLD"])) > 0) $0 = substr($0, 1, i-1) ENVIRON["NEW"] substr($0, i+length(ENVIRON["OLD"])); print }' \
     "${T}/cfg" > "${T}/cfg.new" && mv "${T}/cfg.new" "${T}/cfg"
   CM_CHANGED=true

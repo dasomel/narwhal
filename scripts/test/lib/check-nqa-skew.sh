@@ -44,19 +44,40 @@ expect 1 missing v0.5.0  # chart does not render
 # Every pinned flag set must really be the table's content (default-quota/enforce-max-quota never come back).
 case " $(nqa_known_flags v0.5.0) " in *" default-quota "*) echo "FAIL: default-quota in table"; fail=1 ;; esac
 
-# kubectl fake for nqa_unhealthy_pods: prints $NQA_FAKE_PODS (name<TAB>ready<TAB>restarts<TAB>lastReason).
-# shellcheck disable=SC2329 # invoked by nqa_unhealthy_pods
-kubectl() { printf '%b' "${NQA_FAKE_PODS}"; }
-pods() { # <rc> <label> <pods>
+# nqa_judge <before> <after> (name<TAB>ready<TAB>restarts<TAB>waiting): rc 0 = healthy.
+judge() { # <rc> <label> <before> <after>
   local want="$1" rc=0
-  NQA_FAKE_PODS="$3" nqa_unhealthy_pods ns >/dev/null || rc=$?
-  if [ "${rc}" -ne "${want}" ]; then echo "FAIL: pods($2) rc=${rc} want ${want} (0 = unhealthy)"; fail=1; fi
+  nqa_judge "$(printf '%b' "$3")" "$(printf '%b' "$4")" >/dev/null || rc=$?
+  if [ "${rc}" -ne "${want}" ]; then echo "FAIL: judge($2) rc=${rc} want ${want}"; fail=1; fi
 }
-pods 1 healthy 'a\ttrue\t0\t\n'
-pods 0 restarting-not-ready 'a\tfalse\t5\tError\n'
-pods 0 ready-but-restarted 'a\ttrue\t1\t\n'
-pods 0 lastState-error 'a\ttrue\t0\tError\n'
-pods 0 no-pods ''
+judge 0 healthy 'a\ttrue\t0\t\n' 'a\ttrue\t0\t\n'
+judge 0 old-restart-stable 'a\ttrue\t3\t\n' 'a\ttrue\t3\t\n'   # re-run against a healthy pod
+judge 0 new-pod-after-upgrade '' 'a\ttrue\t1\t\n'
+judge 1 restart-in-window 'a\ttrue\t0\t\n' 'a\ttrue\t1\t\n'
+judge 1 not-ready 'a\ttrue\t0\t\n' 'a\tfalse\t0\t\n'
+judge 1 crashloop 'a\ttrue\t2\t\n' 'a\ttrue\t2\tCrashLoopBackOff\n'
+judge 1 waiting-error 'a\ttrue\t2\t\n' 'a\ttrue\t2\tError\n'
+judge 1 no-pods 'a\ttrue\t0\t\n' ''
+
+# Rendered-args parsing: block, quoted and flow style, with and without PyYAML.
+q='        args:
+          - "--quoted-flag=1"
+          - '"'--single-flag'"'
+          - --block-flag
+        other: ["--not-an-arg"]'
+f1='        args: ["--flow-a", "--flow-b=x"]'
+want_q=$'block-flag\nquoted-flag\nsingle-flag'
+want_f=$'flow-a\nflow-b'
+[ "$(printf '%s\n' "${q}" | nqa_rendered_flags)" = "${want_q}" ] || { echo "FAIL: quoted/block args parse"; fail=1; }
+[ "$(printf '%s\n' "${f1}" | nqa_rendered_flags)" = "${want_f}" ] || { echo "FAIL: flow args parse"; fail=1; }
+# regex fallback: hide PyYAML by shadowing python3 with a failing stub.
+# shellcheck disable=SC2329 # invoked by nqa_rendered_flags
+python3() { return 1; }
+[ "$(printf '%s\n' "${q}" | nqa_rendered_flags | grep -v not-an-arg)" = "${want_q}" ] || { echo "FAIL: fallback quoted/block parse"; fail=1; }
+[ "$(printf '%s\n' "${f1}" | nqa_rendered_flags)" = "${want_f}" ] || { echo "FAIL: fallback flow parse"; fail=1; }
+unset -f python3
+printf '%s\n            - "--default-quota=1Gi"\n' "${base}" >"${T}/quoted"
+expect 1 quoted v0.5.0
 
 f=scripts/cluster/05-nfs-quota-agent.sh
 grep -Fq 'source /home/vagrant/scripts/common/lib-nqa.sh' "${f}" || { echo "FAIL: 05 does not source lib-nqa.sh"; fail=1; }
@@ -68,7 +89,7 @@ grep -Fq '"${HELM_ARGS[@]}"' "${f}" || { echo "FAIL: guard and install must shar
 grep -Fq 'rollout status daemonset/nfs-quota-agent' "${f}" || { echo "FAIL: 05 must wait on the DaemonSet"; fail=1; }
 ! grep -Fq 'rollout status deployment/nfs-quota-agent' "${f}" || { echo "FAIL: 05 still waits on a nonexistent Deployment"; fail=1; }
 ! grep -Fq 'not ready yet' "${f}" || { echo "FAIL: 05 must not downgrade a failed rollout to a WARN"; fail=1; }
-grep -Fq 'nqa_unhealthy_pods' "${f}" || { echo "FAIL: 05 must fail on restarted/not-Ready pods"; fail=1; }
+grep -Fq 'nqa_wait_stable' "${f}" || { echo "FAIL: 05 must fail on restarted/not-Ready pods"; fail=1; }
 grep -Fq -- '--previous' "${f}" || { echo "FAIL: 05 must print logs --previous on failure"; fail=1; }
 grep -Eq '\| *grep -q' "${f}" scripts/common/lib-nqa.sh && { echo "FAIL: no '| grep -q' under pipefail"; fail=1; }
 { grep -Fq 'findmnt -no OPTIONS' "${f}" && grep -Fq 'prjquota' "${f}"; } || { echo "FAIL: 05 must detect prjquota (D-nqa-prjquota)"; fail=1; }

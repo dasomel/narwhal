@@ -115,7 +115,7 @@ echo "Installing nfs-quota-agent..."
 helm upgrade --install nfs-quota-agent "${CHART_DIR}" "${HELM_ARGS[@]}"
 
 # The chart renders a DaemonSet (pinned to the nfs-server node), not a Deployment. Wait on it with a
-# timeout, then also require the pod to be Ready with no restarts: a crash-looping pod is briefly
+# timeout, then watch the pod through a stabilization window: a crash-looping pod is briefly
 # Running between restarts, so the state at one instant (CrashLoopBackOff or not) proves nothing.
 echo "Waiting for nfs-quota-agent daemonset..."
 nqa_fail() {
@@ -126,10 +126,9 @@ nqa_fail() {
 }
 kubectl rollout status daemonset/nfs-quota-agent -n nfs-quota-agent --timeout=180s ||
   nqa_fail "rollout did not complete within 180s"
-sleep 15
-if bad_pods=$(nqa_unhealthy_pods nfs-quota-agent); then
-  nqa_fail "not Ready, restarted or terminated: ${bad_pods}"
-fi
+# Stabilization window (NQA_STABLE_WINDOW, default 60s): a past one-off restart is fine, a pod that is
+# not Ready, restarts, or sits in CrashLoopBackOff/Error during the window is not.
+bad_pods=$(nqa_wait_stable nfs-quota-agent) || nqa_fail "${bad_pods}"
 
 # Cleanup
 rm -rf "${CHART_DIR}"

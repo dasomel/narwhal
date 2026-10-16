@@ -24,6 +24,36 @@ nqa_known_flags() {
   esac
 }
 
+# nqa_rendered_flags -- stdin: rendered manifests; prints the distinct --flag names (no dashes) that
+# container args/command pass. python3+PyYAML reads block, quoted and flow-style lists alike; the regex
+# fallback covers `- --x`, `- "--x"` and `args: ["--x", ...]` lines.
+nqa_rendered_flags() {
+  local doc
+  doc=$(cat)
+  if printf '' | python3 -c 'import yaml' 2>/dev/null; then
+    printf '%s\n' "${doc}" | python3 -c '
+import sys, yaml
+def walk(o):
+    if isinstance(o, dict):
+        for k, v in o.items():
+            if k in ("args", "command") and isinstance(v, list):
+                for a in v:
+                    if isinstance(a, str) and a.startswith("--"):
+                        print(a[2:].split("=", 1)[0])
+            else:
+                walk(v)
+    elif isinstance(o, list):
+        for i in o:
+            walk(i)
+for d in yaml.safe_load_all(sys.stdin):
+    walk(d)
+' | sort -u
+  else
+    printf '%s\n' "${doc}" | grep -E "^[[:space:]]*-[[:space:]]+[\"']?--|(args|command):[[:space:]]*\[" |
+      grep -oE "(^|[-\[,])[[:space:]]*[\"']?--[a-z][a-z0-9-]*" | sed -E "s/^.*--//" | sort -u
+  fi
+}
+
 # nqa_check_skew <chart-dir> <image-tag> [helm args...]
 # Renders the chart with the install's own helm args and rc 1 if it passes a flag the image lacks,
 # the tag is not in the table, or the chart does not render.
@@ -40,7 +70,7 @@ nqa_check_skew() {
     echo "${rendered}" >&2
     return 1
   fi
-  for flag in $(printf '%s\n' "${rendered}" | grep -oE '^[[:space:]]+- --[a-z][a-z0-9-]*' | sed -E 's/^[[:space:]]+- --//' | sort -u); do
+  for flag in $(printf '%s\n' "${rendered}" | nqa_rendered_flags); do
     case " ${known} " in
       *" ${flag} "*) ;;
       *) bad="${bad} --${flag}" ;;
@@ -55,16 +85,33 @@ nqa_check_skew() {
   return 0
 }
 
-# nqa_unhealthy_pods <namespace> -- prints one line per pod that is not Ready, has restarted or has a
-# terminated lastState; rc 0 when there is at least one such pod or no pod at all.
-nqa_unhealthy_pods() {
-  local out
-  out=$(kubectl get pods -n "$1" -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.status.containerStatuses[0].ready}{"\t"}{.status.containerStatuses[0].restartCount}{"\t"}{.status.containerStatuses[0].lastState.terminated.reason}{"\n"}{end}' 2>/dev/null) || out=""
-  if [ -z "${out}" ]; then
-    echo "no pods found in namespace $1"
-    return 0
+# nqa_pod_state <namespace> -- one line per pod: name, ready, restartCount, waiting reason (tab-separated).
+nqa_pod_state() {
+  kubectl get pods -n "$1" -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.status.containerStatuses[0].ready}{"\t"}{.status.containerStatuses[0].restartCount}{"\t"}{.status.containerStatuses[0].state.waiting.reason}{"\n"}{end}' 2>/dev/null || true
+}
+
+# nqa_judge <state-before> <state-after> -- rc 0 healthy; rc 1 (reasons on stdout) when there is no pod,
+# a pod is not Ready or waits in CrashLoopBackOff/Error at the end, or its restartCount grew in between.
+# An old restart that did not move is fine: a one-off startup restart must not fail a healthy pod.
+nqa_judge() {
+  local before="$1" after="$2" out
+  if [ -z "${after}" ]; then
+    echo "no pods found"
+    return 1
   fi
-  out=$(printf '%s\n' "${out}" | awk -F'\t' '$2 != "true" || $3 + 0 > 0 || $4 != "" {print}')
-  [ -n "${out}" ] || return 1
-  printf '%s\n' "${out}"
+  out=$(printf '%s\n--\n%s\n' "${before}" "${after}" | awk -F'\t' '
+    /^--$/ { second = 1; next }
+    !second { base[$1] = $3 + 0; next }
+    { if ($2 != "true") print $1 ": not Ready"
+      if (($1 in base) && $3 + 0 > base[$1]) print $1 ": restarted during the window (" base[$1] " -> " $3 ")"
+      if ($4 == "CrashLoopBackOff" || $4 == "Error") print $1 ": waiting " $4 }')
+  [ -z "${out}" ] || { printf '%s\n' "${out}"; return 1; }
+}
+
+# nqa_wait_stable <namespace> [window-seconds] -- snapshot, wait NQA_STABLE_WINDOW (default 60s), judge.
+nqa_wait_stable() {
+  local before
+  before=$(nqa_pod_state "$1")
+  sleep "${2:-${NQA_STABLE_WINDOW:-60}}"
+  nqa_judge "${before}" "$(nqa_pod_state "$1")"
 }

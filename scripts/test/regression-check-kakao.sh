@@ -3139,8 +3139,16 @@ assert sum(1 for l in code if re.search(r"\bexit 3\b", l)) == 1, "exit 3 must ap
   # 2026-10-16: live Kakao nfs-quota-agent crash-looped ~14,000 times / 50 days: a v0.3.0 image under a
   # chart that passes --state-dir (flag first defined in v0.4.0), while 05 waited on a Deployment that
   # does not exist and only warned (D-nqa-skew).
-  check R258 "nfs-quota-agent: 05 refuses an image older than v0.4.0 when the chart passes --state-dir (before helm), waits on the DaemonSet and fails on CrashLoopBackOff (behavioral, version sort)" \
+  check R259 "nfs-quota-agent: 05 refuses an image older than v0.4.0 when the chart passes --state-dir (before helm), waits on the DaemonSet and fails on CrashLoopBackOff (behavioral, version sort)" \
     bash scripts/test/lib/check-nqa-skew.sh
+  # 2026-10-16: the IC was OOMKilled at startup under the 256Mi limit during the full resource sync.
+  check R258 "08-1 sizes the APISIX ingress controller memory: explicit limit >= 512Mi and request >= 256Mi, in the helm flags and the apisix chart values (D-ic-mem)" \
+    python3 -c 'import re,sys
+t=open("scripts/cluster/08-1-networking.sh").read()
+def mi(v): return int(v[:-2])*(1024 if v.endswith("Gi") else 1)
+f=[re.search(r"resources\.limits\.memory=(\d+(?:Mi|Gi))",t),re.search(r"resources\.requests\.memory=(\d+(?:Mi|Gi))",t)]
+v=re.search(r"ingressController:.*?limits:\s*cpu: \S+\s*memory: (\d+(?:Mi|Gi))",t,re.S)
+sys.exit(0 if all(f) and v and mi(f[0].group(1))>=512 and mi(f[1].group(1))>=256 and mi(v.group(1))>=512 else 1)'
 
   # 2026-10-16: up.sh printed "Phase 2 complete" right after 14-gitops-bootstrap.sh failed because
   # phase2_complete() only looked for namespaces. 06-phase2-start.sh now writes a success marker.

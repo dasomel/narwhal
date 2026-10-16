@@ -1,5 +1,5 @@
 #!/bin/bash
-# R258: nfs-quota-agent chart/image skew guard (scripts/common/lib-nqa.sh) + 05 wiring.
+# R259: nfs-quota-agent chart/image skew guard (scripts/common/lib-nqa.sh) + 05 wiring.
 # Run from the repo root.
 set -euo pipefail
 # shellcheck source=/dev/null

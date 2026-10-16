@@ -107,11 +107,17 @@ kubectl wait --for=condition=Available deployment/apisix-etcd -n platform-system
 # scripts/cluster/rotate-apisix-admin-key.sh for the verified live rotation.
 resolve_apisix_keys || { echo "ERROR: cannot resolve the APISIX admin keys (Secret read failed)." >&2; exit 1; }
 echo "Creating apisix-admin-key secret..."
+# Keys go through 0600 files, not --from-literal, so they never appear in argv / ps.
+APISIX_KEY_DIR=$(mktemp -d)
+( umask 077
+  printf '%s' "${APISIX_ADMIN_KEY}" > "${APISIX_KEY_DIR}/key"
+  printf '%s' "${APISIX_VIEWER_KEY}" > "${APISIX_KEY_DIR}/viewer" )
 kubectl create secret generic apisix-admin-key \
   --namespace platform-system \
-  --from-literal=key="${APISIX_ADMIN_KEY}" \
-  --from-literal=viewer="${APISIX_VIEWER_KEY}" \
+  --from-file=key="${APISIX_KEY_DIR}/key" \
+  --from-file=viewer="${APISIX_KEY_DIR}/viewer" \
   --dry-run=client -o yaml | kubectl apply -f -
+rm -rf "${APISIX_KEY_DIR}"
 
 cat > /tmp/apisix-values.yaml << 'EOF'
 apisix:

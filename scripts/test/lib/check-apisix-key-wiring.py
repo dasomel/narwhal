@@ -14,7 +14,7 @@ assert "get secret apisix-admin-key" in open("scripts/cluster/13-2-narwhal-porta
 r = "scripts/cluster/rotate-apisix-admin-key.sh"
 t = open(r).read()
 assert os.access(r, os.X_OK), "rotate script must be executable"
-assert '"old admin key:${OLD_ADMIN}:401"' in t and '"new admin key:${NEW_ADMIN}:200"' in t
+assert "old admin key:${T}/old_admin:401" in t and "new admin key:${T}/new_admin:200" in t
 assert "existingSecret=apisix-admin-key" in t
 order = [t.index(m) for m in ("Updating Secret", "Restarting APISIX", "ingress controller at the Secret", "Verifying")]
 assert order == sorted(order), "rotation order must be Secret -> APISIX -> IC -> verify"

@@ -57,6 +57,7 @@ apisix_key_usable '${{APISIX_ADMIN_KEY}}' && { echo "placeholder accepted" >&2; 
 apisix_key_usable abc123 || { echo "random key rejected" >&2; exit 1; }
 
 run both literal;       eq "$A $V $G" "secretadmin secretviewer false" "existing random keys are preserved"
+run placeholder literal; eq "$A $V $G" "cmadminkey cmviewerkey false" "placeholder Secret falls back to literal configmap (#399 case)"
 run both default;       eq "$A $V $G" "secretadmin secretviewer false" "secret wins over configmap"
 run none literal;       eq "$A $V $G" "cmadminkey cmviewerkey false" "non-default bootstrap configmap keys adopted"
 run viewer_only literal; eq "$A $V $G" "cmadminkey secretviewer false" "per-role fallback"

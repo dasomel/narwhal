@@ -136,8 +136,9 @@ apisix_key_usable() {
   return 0
 }
 
-# apisix_cm_key <admin|viewer>: key of that role in configmap/apisix (YAML list layout:
-# `- key: <k>` precedes `name: <role>`; name may be quoted). "" when absent or on any error.
+# apisix_cm_key <admin|viewer>: literal key of that role in configmap/apisix, "" when absent or
+# on any error. Layout is a YAML list where `- key: <k>` precedes `name: <role>` (name may be
+# quoted): remember the last `- key:` and print it on the matching name line.
 apisix_cm_key() {
   kubectl get configmap apisix -n platform-system -o jsonpath='{.data.config\.yaml}' 2>/dev/null \
     | awk -v role="$1" '/^[[:space:]]*-[[:space:]]*key:/ {k=$3; gsub(/"/, "", k)} $0 ~ "^[[:space:]]*name:[[:space:]]*\"?" role "\"?[[:space:]]*$" && !f {print k; f=1}' || true

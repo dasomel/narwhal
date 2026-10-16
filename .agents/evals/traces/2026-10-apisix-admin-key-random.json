@@ -13,7 +13,9 @@
       "scripts/test/regression-check-kakao.sh",
       "docs/common/apisix-admin-api.md",
       "docs/common/lessons-log.md",
-      ".agents/evals/traces/2026-10-apisix-admin-key-random.json"
+      ".agents/evals/traces/2026-10-apisix-admin-key-random.json",
+      "scripts/test/lib/check-apisix-rotate.sh",
+      "scripts/test/lib/check-apisix-no-default-key.py"
     ]
   },
   "events": [
@@ -30,7 +32,7 @@
     {
       "id": "e2",
       "type": "bug_fix",
-      "summary": "Root cause: bootstrap values set no admin credentials, the chart rendered its default into the configmap and 08-1 read it back into the Secret. Fix: resolve_apisix_keys generates keys, rejects upstream defaults by sha256 and placeholders, preserves existing random keys; APISIX uses admin.credentials.secretName, the controller existingSecret (both verified in the vendored chart 2.13.0 / 0.14.1 templates). rotate-apisix-admin-key.sh orders Secret, APISIX config, APISIX restart, controller, verification. lib.sh NotFound checks anchored."
+      "summary": "Root cause: bootstrap values set no admin credentials, the chart rendered its default into the configmap and 08-1 read it back into the Secret. Fix: resolve_apisix_keys generates keys, rejects upstream defaults by sha256 and placeholders, preserves existing random keys; APISIX uses admin.credentials.secretName, the controller existingSecret (both verified in the vendored chart 2.13.0 / 0.14.1 templates). rotate-apisix-admin-key.sh orders Secret, APISIX config, APISIX restart, controller, verification. lib.sh NotFound checks anchored. Review round 1: verification via port-forward + host curl (the APISIX image has no curl), rollback on failure, keys via files not argv, portal Secret re-synced, default-key check by sha256 over all tracked files."
     },
     {
       "id": "e3",
@@ -50,7 +52,7 @@
       "type": "regression_verification",
       "status": "passed",
       "scope": "full static regression suite incl. R255-R257",
-      "summary": "make test (regression-check-kakao.sh --static): passed 383 failed 0; shellcheck -S warning clean on changed scripts; make validate OK; helm template of narwhal-apps renders secretName apisix-admin-key for both providers.",
+      "summary": "make test (regression-check-kakao.sh --static): passed 383 failed 0 incl. R255-R257; check-apisix-rotate.sh drives the rotate script against fake kubectl/helm/curl for the happy path and the rollback path; shellcheck -S warning clean; make validate OK; helm template of narwhal-apps renders secretName apisix-admin-key for both providers.",
       "evidence": [
         "test:make test",
         "runtime:command-exit-0"

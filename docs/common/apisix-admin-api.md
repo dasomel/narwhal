@@ -79,10 +79,15 @@ Any pod launched without `app.kubernetes.io/name: apisix-ingress-controller` (or
 
 Run `scripts/cluster/rotate-apisix-admin-key.sh` on the control plane. It does, in this order:
 
-1. Secret: new random keys replace `platform-system/apisix-admin-key` (`key`, `viewer`).
+1. Secret: new random keys replace `platform-system/apisix-admin-key` (`key`, `viewer`); the previous values are kept in a 0600 temp file for rollback.
 2. APISIX config: a configmap that still holds literal keys (legacy bootstrap) is rewritten; a GitOps-rendered configmap holds only `APISIX_ADMIN_KEY`/`APISIX_VIEWER_KEY` env placeholders, so ArgoCD has nothing to revert.
 3. APISIX restart (reads the Secret env at start).
 4. Ingress controller: helm release pointed at the Secret (`config.apisix.existingSecret`), re-labelled `istio.io/dataplane-mode=none`, restarted.
-5. Verification from inside the cluster: old admin key returns 401, new admin key 200, new viewer key 200; no 401 in the controller log. Values are never printed.
+5. Portal: `devtools/narwhal-portal-secrets` (`APISIX_API_KEY`, `APISIX_API_KEY_READONLY`) is patched and `deploy/narwhal-portal` restarted.
+6. Verification through `kubectl port-forward svc/apisix-admin` (the pod loopback, which `allow_admin` permits; the APISIX image has no curl): old admin key 401, new admin key 200, new viewer key 200, no 401 in the controller log. Values never reach argv or the terminal.
 
-Re-running `08-1-networking.sh` on a cluster that still holds the public default also replaces it. Consumers that cache the key (the portal reads it from the Secret via `13-2-narwhal-portal-bindings.sh`) must be re-bound after a rotation: re-run `13-2`.
+Any failure after step 1 triggers a rollback (previous Secret, configmap and portal Secret restored, APISIX restarted, controller re-applied, old key re-verified), so APISIX and the controller never stay on different keys. The script prints `ROLLBACK COMPLETE` or `ROLLBACK INCOMPLETE`.
+
+Re-running `08-1-networking.sh` on a cluster that still holds the public default also replaces it, but it does not re-sync the portal; use the rotate script, or re-run `13-2-narwhal-portal-bindings.sh`.
+
+"No key literal in git" covers tracked files (R256). The vendored ingress-controller chart in the untracked airgap bundle still ships the upstream default as an unused chart value; 08-1 overrides it with `existingSecret`.

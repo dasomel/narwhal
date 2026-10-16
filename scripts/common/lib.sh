@@ -44,32 +44,97 @@ read_secret_field() {
   fi
 }
 
-# resolve_s3_credentials [<existing-secret> <ns> <access-key-field> <secret-key-field>]
-# Single source of truth for the in-cluster SeaweedFS S3 credentials shared by 07-cnpg.sh
-# (cnpg-s3-credentials) and 08-4-storage.sh (velero-s3-credentials).
-# Order per key: env override -> velero-s3-credentials (storage) -> the optional existing
-# Secret named by the arguments (07 passes its own cnpg-s3-credentials so a re-run keeps
-# real values) -> "admin" (D-velero). 07 runs BEFORE 08-4 creates the Velero Secret, so on
-# a first run the default must live here. Defaulting only happens on NotFound; any other
-# kubectl error returns non-zero (fail closed). An empty key is also a hard failure: an
-# empty aws_secret_access_key makes the AWS SDK fall through to EC2 IMDS (2026-10-16).
-# Sets S3_ACCESS_KEY and S3_SECRET_KEY in the caller's shell. Never prints values.
-resolve_s3_credentials() {
-  local ak="${S3_ACCESS_KEY:-}" sk="${S3_SECRET_KEY:-}"
-  if [ -z "${ak}" ]; then
-    ak=$(read_secret_field velero-s3-credentials storage access-key) || return 1
-    if [ -z "${ak}" ] && [ $# -ge 4 ]; then ak=$(read_secret_field "$1" "$2" "$3") || return 1; fi
-  fi
-  if [ -z "${sk}" ]; then
-    sk=$(read_secret_field velero-s3-credentials storage secret-key) || return 1
-    if [ -z "${sk}" ] && [ $# -ge 4 ]; then sk=$(read_secret_field "$1" "$2" "$4") || return 1; fi
-  fi
-  S3_ACCESS_KEY="${ak:-admin}"
-  S3_SECRET_KEY="${sk:-admin}"
-  if [ -z "${S3_ACCESS_KEY}" ] || [ -z "${S3_SECRET_KEY}" ]; then
-    echo "ERROR: resolved S3 credentials are empty; refusing to create a secret with an empty key." >&2
-    return 1
-  fi
+# --- SeaweedFS S3 identities (D-s3auth, 2026-10-16) ---------------------------------------
+# One identity per client (loki, tempo, velero, cnpg), each scoped to its own bucket. The four
+# client Secrets are the single source of truth; storage/seaweedfs-s3-config (the server JSON,
+# key seaweedfs_s3_config) and the Velero `cloud` credentials file are derived from them on
+# every run, so a partial earlier run converges instead of diverging. No value is ever printed.
+
+# s3_identity_spec <name>: "<namespace> <secret> <access-field> <secret-field> <bucket>".
+s3_identity_spec() {
+  case "$1" in
+    loki)   echo "monitoring loki-s3-credentials S3_ACCESS_KEY_ID S3_SECRET_ACCESS_KEY loki" ;;
+    tempo)  echo "monitoring tempo-s3-credentials S3_ACCESS_KEY_ID S3_SECRET_ACCESS_KEY tempo" ;;
+    velero) echo "storage velero-s3-credentials access-key secret-key velero" ;;
+    cnpg)   echo "database cnpg-s3-credentials ACCESS_KEY_ID ACCESS_SECRET_KEY cnpg-backup" ;;
+    *) return 1 ;;
+  esac
+}
+
+# s3_key_state <access> <secret>: absent (both empty) | default (the historic inline
+# admin/admin pair) | usable | invalid. invalid covers a half-filled pair, one default half,
+# and characters that would break the JSON/INI/env projections: callers fail closed on it.
+s3_key_state() {
+  if [ -z "$1" ] && [ -z "$2" ]; then echo absent; return 0; fi
+  if [ -z "$1" ] || [ -z "$2" ]; then echo invalid; return 0; fi
+  if [ "$1" = admin ] && [ "$2" = admin ]; then echo default; return 0; fi
+  if [ "$1" = admin ] || [ "$2" = admin ]; then echo invalid; return 0; fi
+  case "$1$2" in *[!A-Za-z0-9+/=_.-]*) echo invalid; return 0 ;; esac
+  echo usable
+}
+
+# ensure_s3_identities: sets S3_IDENTITIES_CHANGED=true when any key was generated or a default
+# was replaced (the S3 server must then be restarted: it does not hot-reload the identities
+# file). Existing random keys are kept. Only absent -> generate and the exact default pair ->
+# replace (once: afterwards the pair is no longer the default). A half-filled/odd pair or any
+# Secret read error other than NotFound returns 1 (fail closed, never regenerate over data).
+# shellcheck disable=SC2034  # S3_IDENTITIES_CHANGED is read by the sourcing script
+ensure_s3_identities() {
+  local name spec ns secret af sf bucket ak sk state tmp i json=""
+  local -a names=(loki tempo velero cnpg) aks=() sks=() buckets=()
+  S3_IDENTITIES_CHANGED=false
+  for name in "${names[@]}"; do
+    spec=$(s3_identity_spec "${name}") || return 1
+    read -r ns secret af sf bucket <<<"${spec}"
+    ak=$(read_secret_field "${secret}" "${ns}" "${af}") || return 1
+    sk=$(read_secret_field "${secret}" "${ns}" "${sf}") || return 1
+    state=$(s3_key_state "${ak}" "${sk}")
+    case "${state}" in
+      usable) echo "  s3 identity ${name}: keeping existing keys" >&2 ;;
+      absent|default)
+        ak=$(openssl rand -hex 10 | tr a-f A-F) || return 1
+        sk=$(openssl rand -hex 24) || return 1
+        S3_IDENTITIES_CHANGED=true
+        if [ "${state}" = default ]; then
+          echo "  s3 identity ${name}: replacing the default admin/admin pair with generated keys" >&2
+        else
+          echo "  s3 identity ${name}: generated new keys" >&2
+        fi ;;
+      *)
+        echo "ERROR: secret ${ns}/${secret} holds a partial, empty or unsupported S3 key pair; refusing to regenerate. Fix or delete it by hand." >&2
+        return 1 ;;
+    esac
+    aks+=("${ak}"); sks+=("${sk}"); buckets+=("${bucket}")
+  done
+
+  for name in "${names[@]}"; do
+    spec=$(s3_identity_spec "${name}")
+    kubectl create namespace "${spec%% *}" --dry-run=client -o yaml | kubectl apply -f - >/dev/null || return 1
+  done
+
+  tmp=$(mktemp) || return 1
+  for i in "${!names[@]}"; do
+    name="${names[$i]}"
+    read -r ns secret af sf bucket <<<"$(s3_identity_spec "${name}")"
+    {
+      printf 'apiVersion: v1\nkind: Secret\nmetadata:\n  name: %s\n  namespace: %s\n' "${secret}" "${ns}"
+      printf '  labels:\n    narwhal.io/s3-identity: %s\ntype: Opaque\nstringData:\n' "${name}"
+      printf '  %s: %s\n  %s: %s\n' "${af}" "${aks[$i]}" "${sf}" "${sks[$i]}"
+      if [ "${name}" = velero ]; then
+        # velero-plugin-for-aws reads this AWS credentials-file blob (key `cloud`)
+        printf '  cloud: |\n    [default]\n    aws_access_key_id = %s\n    aws_secret_access_key = %s\n' "${aks[$i]}" "${sks[$i]}"
+      fi
+    } >"${tmp}"
+    kubectl apply -f "${tmp}" >/dev/null || { rm -f "${tmp}"; return 1; }
+    json+="${json:+,}{\"name\":\"${name}\",\"credentials\":[{\"accessKey\":\"${aks[$i]}\",\"secretKey\":\"${sks[$i]}\"}],\"actions\":[\"Read:${buckets[$i]}\",\"Write:${buckets[$i]}\",\"List:${buckets[$i]}\",\"Tagging:${buckets[$i]}\"]}"
+  done
+  {
+    printf 'apiVersion: v1\nkind: Secret\nmetadata:\n  name: seaweedfs-s3-config\n  namespace: storage\n'
+    printf 'type: Opaque\nstringData:\n'
+    printf "  seaweedfs_s3_config: '{\"identities\":[%s]}'\n" "${json}"
+  } >"${tmp}"
+  kubectl apply -f "${tmp}" >/dev/null || { rm -f "${tmp}"; return 1; }
+  rm -f "${tmp}"
 }
 
 # is_cidr <value> -- strict IPv4 CIDR (octets <= 255, prefix 0-32).

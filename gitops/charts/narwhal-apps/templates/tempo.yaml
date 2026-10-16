@@ -23,6 +23,11 @@ spec:
           # top-level override is silently accepted but never wired to the
           # StatefulSet's container image).
           tag: 2.9.0
+          extraArgs:
+            config.expand-env: "true"
+          extraEnvFrom:
+            - secretRef:
+                name: tempo-s3-credentials
           # The chart ships `tempo.resources: {}`, which leaves the pod BestEffort — the
           # highest oom_score_adj on the node, so the kernel kills it first. tempo was the
           # last workload still OOM-looping (94 restarts) once the apiserver heap bound
@@ -41,8 +46,10 @@ spec:
               s3:
                 endpoint: seaweedfs-s3.storage.svc.cluster.local:8333
                 bucket: tempo
-                access_key: admin
-                secret_key: admin
+                # D-s3auth: from Secret monitoring/tempo-s3-credentials (envFrom +
+                # -config.expand-env below); nothing is inline. Env changes need a pod restart.
+                access_key: ${S3_ACCESS_KEY_ID}
+                secret_key: ${S3_SECRET_ACCESS_KEY}
                 insecure: true
         persistence:
           enabled: false

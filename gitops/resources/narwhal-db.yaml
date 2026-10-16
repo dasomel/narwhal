@@ -6,16 +6,9 @@ kind: Namespace
 metadata:
   name: database
 ---
-apiVersion: v1
-kind: Secret
-metadata:
-  name: cnpg-s3-credentials
-  namespace: database
-type: Opaque
-stringData:
-  ACCESS_KEY_ID: admin
-  ACCESS_SECRET_KEY: admin
----
+# D-s3auth: Secret database/cnpg-s3-credentials is deliberately NOT in this file. 14-gitops-
+# bootstrap.sh re-applies it on every run and used to revert the keys to the inline default; the
+# per-client random keys are created by scripts/common/lib.sh ensure_s3_identities (07-cnpg.sh).
 apiVersion: postgresql.cnpg.io/v1
 kind: Cluster
 metadata:

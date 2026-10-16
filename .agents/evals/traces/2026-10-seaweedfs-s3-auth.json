@@ -1,0 +1,71 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-seaweedfs-s3-auth",
+  "task": "Enable SeaweedFS S3 authentication with per-client random keys (loki, tempo, velero, cnpg) in Kubernetes Secrets and remove the inline admin/admin from every client",
+  "changeContext": {
+    "paths": [
+      "gitops/charts/narwhal-apps/templates/seaweedfs.yaml",
+      "gitops/charts/narwhal-apps/templates/loki.yaml",
+      "gitops/charts/narwhal-apps/templates/tempo.yaml",
+      "gitops/resources/narwhal-db.yaml",
+      "scripts/common/lib.sh",
+      "scripts/cluster/07-cnpg.sh",
+      "scripts/cluster/08-4-storage.sh",
+      "scripts/cluster/14-gitops-bootstrap.sh",
+      "scripts/test/verify-backup.sh",
+      "scripts/test/regression-check-kakao.sh",
+      "scripts/test/lib/check-s3-identities.sh",
+      "scripts/test/lib/check-s3-auth-contract.py",
+      "docs/runbooks/seaweedfs-s3-auth.md",
+      ".agents/evals/traces/2026-10-seaweedfs-s3-auth.json"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Owner-approved change. Repo and chart edits only; no live cluster change, no secret value read or printed. Addresses a Codex architect critique (P1 default-key preservation and 07 copying the Velero key, P1 14 re-applying inline admin/admin, P1 two S3 servers, P1 staged cutover and no hot reload, P2 Loki/Tempo value paths, P2 verify-backup 403 and missing real-I/O tests)."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "Confirmed in the vendored charts (narwhal-airgap-bundle-amd64, seaweedfs 4.34.0 / loki 18.4.0 / tempo 2.2.3) with helm template: the seaweedfs-filer Service publishes the embedded filer S3 port 8333 next to the standalone s3 Deployment; the s3 Deployment mounts seaweedfs_s3_config only when s3.enableAuth is set; the chart already passes -config.expand-env=true to Loki and Tempo reads tempo.extraArgs/extraEnvFrom. gitops/resources/narwhal-db.yaml is applied only by 14-gitops-bootstrap.sh (no ArgoCD Application includes it), so removing the Secret from it cannot prune the live one.",
+      "evidence": ["test:helm template seaweedfs/loki/tempo with the valuesObject of the changed Applications", "runtime:command-exit-0"]
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "ensure_s3_identities (lib.sh) replaces resolve_s3_credentials: client Secrets are the single source, server config and Velero cloud file are derived; only the exact admin/admin pair is replaced, once; half-filled pair, unsupported characters and non-NotFound read errors fail closed with no write. Chart enables s3.enableAuth with existingConfigSecret seaweedfs-s3-config and disables the embedded filer S3; Loki/Tempo read keys via envFrom + expand-env; narwhal-db.yaml no longer owns the CNPG Secret and 14 aborts if it is missing; 08-4 installs Velero with existingSecret and restarts the S3 Deployment when keys changed. verify-backup.sh now requires an anonymous 403 (200 is FAIL) and Ready BackupRepositories. Runbook stages the cutover (clients first while the server is still anonymous, Velero only after auth is on) with gates and rollback."
+    },
+    {
+      "id": "e4",
+      "type": "verification",
+      "status": "passed",
+      "scope": "ensure_s3_identities behaviour against a stateful fake kubectl (static, not a real API server)",
+      "summary": "check-s3-identities.sh passes: fresh install, rerun keeps keys, default replaced exactly once, fail-closed cases write nothing, no key in the log. Mutation runs showed the replace-default, half-pair and bucket-scope assertions fail when broken.",
+      "evidence": ["test:bash scripts/test/lib/check-s3-identities.sh", "runtime:command-exit-0"],
+      "commandExitCode": 0
+    },
+    {
+      "id": "e5",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "full static regression suite incl. R249, R250, R270 (14 mutations), R271",
+      "summary": "regression-check-kakao.sh --static (via make test): passed 397 failed 0. shellcheck --severity=warning over scripts/ clean; make validate clean. yamllint is not installed on this host, so make lint's yamllint step was not run (gitops YAML parsed with PyYAML and helm template instead).",
+      "evidence": ["test:./scripts/test/regression-check-kakao.sh --static", "test:make validate", "test:shellcheck --severity=warning scripts/**/*.sh", "runtime:command-exit-0"],
+      "commandExitCode": 0
+    },
+    {
+      "id": "e6",
+      "type": "completion_claim",
+      "summary": "Static contract verified only. Not verified: identity action semantics of bucket-scoped actions on SeaweedFS 4.34 (HeadBucket, multipart, DeleteObjects), real Loki/Tempo/CNPG WAL/Velero kopia I/O against the authenticated server, CNPG restart picking up the new Secret, and the boto3 snippet in the runbook. These are the runbook gates and need a live run with owner approval."
+    },
+    {
+      "id": "e7",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Static change and guards complete; live cutover pending the runbook (e6)."
+    }
+  ]
+}

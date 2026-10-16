@@ -32,6 +32,10 @@ if [ -z "${LABELED_NODES}" ]; then
   kubectl label "${SW_NODE}" narwhal.io/seaweedfs-volume=true --overwrite
 fi
 
+# D-s3auth: per-client random S3 keys. The server config Secret (storage/seaweedfs-s3-config)
+# must exist before the S3 Deployment mounts it. Fails closed (never regenerates over data).
+ensure_s3_identities || { echo "ERROR: cannot ensure the SeaweedFS S3 identities" >&2; exit 1; }
+
 SEAWEEDFS_OK=false
 for attempt in 1 2 3 4 5; do
   if helm upgrade --install seaweedfs "$(chart seaweedfs)" \
@@ -68,10 +72,10 @@ for attempt in 1 2 3 4 5; do
     --set filer.podSecurityContext.fsGroup=1000 \
     --set filer.podSecurityContext.fsGroupChangePolicy=OnRootMismatch \
     --set filer.logs.type=emptyDir \
-    --set filer.s3.enabled=true \
-    --set filer.s3.port=8333 \
-    --set filer.s3.allowEmptyFolder=true \
-    --set s3.enabled=true; then
+    --set filer.s3.enabled=false \
+    --set s3.enabled=true \
+    --set s3.enableAuth=true \
+    --set s3.existingConfigSecret=seaweedfs-s3-config; then
     SEAWEEDFS_OK=true; break
   fi
   echo "SeaweedFS install attempt ${attempt}/5 failed, waiting 15s..."
@@ -81,6 +85,14 @@ if [ "${SEAWEEDFS_OK}" != true ]; then
   echo "ERROR: SeaweedFS install failed after 5 attempts." >&2
   exit 1
 fi
+
+# D-s3auth: the S3 server reads its identities file once at start (no hot reload), so a changed
+# Secret needs a restart. The embedded filer S3 is disabled above: the seaweedfs-filer Service
+# would otherwise expose a second, unauthenticated :8333.
+if [ "${S3_IDENTITIES_CHANGED}" = true ] && kubectl get deployment seaweedfs-s3 -n storage >/dev/null 2>&1; then
+  kubectl rollout restart deployment/seaweedfs-s3 -n storage
+fi
+kubectl rollout status deployment/seaweedfs-s3 -n storage --timeout=180s
 
 # Create S3 buckets for platform apps
 # All apps using SeaweedFS S3: Tempo, Velero, Loki, CNPG backup
@@ -318,24 +330,11 @@ echo "OpenBao installed"
 #=========================================
 echo "=== Installing Velero ==="
 
-# S3 credentials — env override, then existing Secret, then the shared "admin" default.
-# D-velero: never empty (an empty aws_secret_access_key makes the AWS SDK fall through to the
-# EC2 IMDS provider (169.254.169.254), which times out every BSL reconcile and crashloops
-# velero). SeaweedFS S3 is anonymous here, so any non-empty key satisfies the SDK.
-# Shared with 07-cnpg.sh via resolve_s3_credentials (scripts/common/lib.sh).
-resolve_s3_credentials
-
-# Persist S3 credentials into a dedicated Secret (idempotent)
-# 'cloud' key uses AWS credentials file format required by velero-plugin-for-aws
-# (referenced by gitops/apps/velero.yaml as existingSecret: velero-s3-credentials)
+# S3 credentials: velero-s3-credentials (key `cloud` = AWS credentials file) was written by
+# ensure_s3_identities above; the chart reads it via credentials.existingSecret so no key lands
+# in a values file or the Helm release (D-s3auth). An empty aws_secret_access_key would make the
+# AWS SDK fall through to EC2 IMDS, which ensure_s3_identities rules out (never empty).
 kubectl create namespace storage --dry-run=client -o yaml | kubectl apply -f -
-kubectl create secret generic velero-s3-credentials \
-  --from-literal=access-key="${S3_ACCESS_KEY}" \
-  --from-literal=secret-key="${S3_SECRET_KEY}" \
-  --from-literal=cloud="[default]
-aws_access_key_id = ${S3_ACCESS_KEY}
-aws_secret_access_key = ${S3_SECRET_KEY}" \
-  -n storage --dry-run=client -o yaml | kubectl apply -f -
 
 cat > /tmp/velero-values.yaml << EOF
 rbac:
@@ -366,11 +365,7 @@ configuration:
   defaultVolumesToFsBackup: true
 credentials:
   useSecret: true
-  secretContents:
-    cloud: |
-      [default]
-      aws_access_key_id = ${S3_ACCESS_KEY}
-      aws_secret_access_key = ${S3_SECRET_KEY}
+  existingSecret: velero-s3-credentials
 snapshotsEnabled: false
 # Disable CRD upgrade hook - alpine/k8s musl binaries can't exec in velero glibc container
 upgradeCRDs: false

@@ -421,6 +421,14 @@ echo "Ensuring unified PostgreSQL cluster (narwhal-db) is ready..."
 # Create database namespace first
 kubectl create namespace database --dry-run=client -o yaml | kubectl apply -f -
 
+# D-s3auth: cnpg-s3-credentials is owned by 07-cnpg.sh (ensure_s3_identities), no longer by
+# narwhal-db.yaml, so this apply cannot revert the keys. Fail closed when 07 never created it:
+# narwhal-db would otherwise start with a missing barman Secret.
+if ! kubectl get secret cnpg-s3-credentials -n database >/dev/null 2>&1; then
+  echo "ERROR: secret database/cnpg-s3-credentials is missing; run scripts/cluster/07-cnpg.sh first." >&2
+  exit 1
+fi
+
 # Apply unified narwhal-db resource
 if [[ -f "/home/vagrant/configs/gitops/resources/narwhal-db.yaml" ]]; then
   kubectl apply -f /home/vagrant/configs/gitops/resources/narwhal-db.yaml

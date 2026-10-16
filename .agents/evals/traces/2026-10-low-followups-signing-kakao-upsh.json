@@ -28,6 +28,11 @@
       "summary": "Five LOW follow-ups from earlier reviews; no live cluster or registry change. The up.sh path audit found halted VMs go through vagrant up (no SSH, nothing to recover); the only uncovered path is the failed-provision -> reload --provision fallback."
     },
     {
+      "id": "e1b",
+      "type": "reproduction",
+      "summary": "Reproduced statically: the old arch check read ${IMAGE}:${version} (a mutable tag); the old bastion_private_ip condition cidrhost(ip/32) accepted IPv6 literals such as ::1; recover_dpkg was not called before the reload --provision fallback (grep of up.sh). No live cluster touched."
+    },
+    {
       "id": "e2",
       "type": "bug_fix",
       "summary": "Arch verification inspects ${IMAGE}@${DIGEST} from the create step instead of a mutable tag; buildx comment corrected to v0.38; bastion_private_ip uses a dotted-quad regex (cidrhost accepted IPv6); (as 0.4.4) comments reworded; recover_dpkg also runs before vagrant reload --provision; R260 runs the real recover_dpkg against a fake vagrant."

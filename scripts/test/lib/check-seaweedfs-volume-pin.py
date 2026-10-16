@@ -12,12 +12,14 @@ assert re.search(r'nodeSelector: \|\n\s+' + re.escape(LABEL) + r': "true"', m.gr
 
 s = open('scripts/cluster/08-4-storage.sh').read()
 assert f'volume.nodeSelector={LABEL}: "true"' in s, '08-4 helm flag'
-assert f'-l {LABEL}=true -o name' in s, '08-4 must skip labelling when a node already carries the label'
+assert f'-l {LABEL}=true -o name' in s and 'LABELED_NODES=' in s, '08-4 must skip labelling when a node already carries the label'
 label = f'label "${{SW_NODE}}" {LABEL}=true --overwrite'
 assert label in s, '08-4 label command'
 assert s.index(label) < s.index('helm upgrade --install seaweedfs'), 'label must precede the install'
 
 v = open('scripts/verify/nfs-nonroot-write-check.sh').read()
-for needle in ('no_root_squash', '/etc/exports', 'expected 750'):
-    assert needle in v, f'squash-aware root mode check: {needle}'
+lib = open('scripts/verify/lib-nfs-squash.sh').read()
+assert 'lib-nfs-squash.sh' in v
+for needle in ('no_root_squash', 'expected 750'):
+    assert needle in lib, f'squash-aware root mode check: {needle}'
 sys.exit(0)

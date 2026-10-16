@@ -63,7 +63,8 @@
   Kakao의 ArgoCD는 클러스터 내부 Gitea에서 sync하고, Gitea는 `scripts/cluster/14-gitops-bootstrap.sh`만 갱신하므로
   GitHub merge만으로는 적용되지 않는다. 순서: (1) 워커에서 `du -sh /ssd/object_store`로 데이터 위치 확인,
   (2) merge/bootstrap 전에 데이터 노드에 라벨(`kubectl label node host-172-17-0-22 narwhal.io/seaweedfs-volume=true`,
-  2026-10-16 라이브 적용 완료, 라벨 노드가 정확히 1개인지 확인), (3) merge, (4) 14 실행 후 ArgoCD 자동 sync,
+  라이브에는 2026-10-16에 오케스트레이터가 적용함: 적용 전 `kubectl get nodes -l narwhal.io/seaweedfs-volume=true`는
+  `No resources found`, seaweedfs-volume-0은 host-172-17-0-22, 적용 후 라벨 노드는 host-172-17-0-22 하나뿐. 라벨 노드가 정확히 1개인지 확인), (3) merge, (4) 14 실행 후 ArgoCD 자동 sync,
   (5) pod가 .22에 있는지, pod 삭제 후에도 .22로 돌아오는지, Loki Ready, S3 읽기 확인. (6) 2단계 전에는 `08-4-storage.sh`를 실행하지 않는다.
 - **옛 ext4 데이터 12G**: mount 아래(루트 디스크)에 숨어 남아 있다. 삭제하지 않았다. soak 기간(운영자 판단) 뒤, XFS가 mount된 상태를
   확인하고 bind mount로 접근해 지운다.

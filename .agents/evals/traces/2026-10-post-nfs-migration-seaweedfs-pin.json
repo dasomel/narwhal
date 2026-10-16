@@ -15,14 +15,16 @@
       "docs/common/lessons-log.md",
       "csp/kakao-cloud/terraform/README.md",
       ".agents/evals/traces/2026-10-post-nfs-migration-seaweedfs-pin.json",
-      "csp/kakao-cloud/terraform/README.ko.md"
+      "csp/kakao-cloud/terraform/README.ko.md",
+      "scripts/verify/lib-nfs-squash.sh",
+      "scripts/test/lib/check-nfs-squash-verdict.sh"
     ]
   },
   "events": [
     {
       "id": "e1",
       "type": "scope_check",
-      "summary": "GitOps and provisioning change only; nothing applied to a live cluster. Live evidence below comes from the 2026-10-16 migration run by the operator session (log.md), not from this change."
+      "summary": "GitOps and provisioning change. No GitOps/chart change has been applied live yet; the only live change is the node label narwhal.io/seaweedfs-volume=true on host-172-17-0-22, applied by the orchestrator on 2026-10-16 (before: kubectl get nodes -l ... returned No resources found and seaweedfs-volume-0 ran on host-172-17-0-22; after: only host-172-17-0-22 labeled). Migration evidence below comes from the 2026-10-16 migration run (log.md)."
     },
     {
       "id": "e2",
@@ -39,7 +41,7 @@
       "type": "verification",
       "status": "passed",
       "scope": "Rendered SeaweedFS volume StatefulSet carries the nodeSelector (helm template of the bundled seaweedfs 4.34.0 chart with the Application's valuesObject); static contract R265 fails on the old tree and passes on the new one",
-      "summary": "helm template output contains nodeSelector narwhal.io/seaweedfs-volume: \"true\" on the volume StatefulSet; check-seaweedfs-volume-pin.py exits 1 (AssertionError chart volume nodeSelector) against the pre-change chart and 0 after.",
+      "summary": "helm template output contains nodeSelector narwhal.io/seaweedfs-volume: \"true\" on the volume StatefulSet; check-seaweedfs-volume-pin.py exits 1 (AssertionError chart volume nodeSelector) against the pre-change chart and 0 after. Re-review fix: nfs_share_root_verdict (scripts/verify/lib-nfs-squash.sh) guards every grep with || true; check-nfs-squash-verdict.sh (R266) runs it under set -euo pipefail for root_squash+750 PASS, +777 FAIL, all no_root_squash WARN, mixed needs 750, no line FAIL; 08-4 aborts on more than one labeled node.",
       "evidence": [
         "test:python3 scripts/test/lib/check-seaweedfs-volume-pin.py",
         "runtime:command-exit-0"
@@ -50,7 +52,7 @@
       "id": "e5",
       "type": "regression_verification",
       "status": "passed",
-      "scope": "Repo static suite and shell lint with the change (live cluster not exercised)",
+      "scope": "Repo static suite and shell lint with the change (cluster workloads not exercised; only the node label was applied live)",
       "summary": "make test: 391 passed, 0 failed, 3 warnings; regression-check-kakao.sh --static: R265 PASS, 391/0; make validate OK; shellcheck --severity=warning clean on the three changed scripts; markdownlint clean on the record and runbook; helm template renders the nodeSelector once (volume StatefulSet only). make lint not run (yamllint missing).",
       "evidence": [
         "test:make test",

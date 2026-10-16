@@ -75,21 +75,10 @@ sudo kubectl logs "${POD}" -n "${NAMESPACE}"
 # the share root must stay 750: only the squashed provisioner identity writes there. A cluster
 # installed before that change keeps no_root_squash and a 777 root (live Kakao, 2026-10-16), where
 # 750 would be a false FAIL; report it as WARN and keep the hardening intent visible.
+# shellcheck source=scripts/verify/lib-nfs-squash.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib-nfs-squash.sh"
 SHARE_MODE="$(stat -c '%a' "${SHARE_ROOT}")"
-EXPORT_LINES="$(sudo grep -hE "^[[:space:]]*${SHARE_ROOT}[[:space:]]" /etc/exports /etc/exports.d/*.exports 2>/dev/null || true)"
-# Judge every client option group "(...)": WARN only when all of them are no_root_squash.
-TOTAL_CLIENTS="$(printf '%s\n' "${EXPORT_LINES}" | grep -oE '\([^)]*\)' | wc -l | tr -d ' ')"
-NRS_CLIENTS="$(printf '%s\n' "${EXPORT_LINES}" | grep -oE '\([^)]*no_root_squash[^)]*\)' | wc -l | tr -d ' ')"
-if [ -z "${EXPORT_LINES}" ] || [ "${TOTAL_CLIENTS}" -eq 0 ]; then
-  echo "FAIL: no export line for ${SHARE_ROOT} in /etc/exports, cannot judge the share root mode (${SHARE_MODE})" >&2
-  exit 1
-elif [ "${NRS_CLIENTS}" -eq "${TOTAL_CLIENTS}" ]; then
-  if [ "${SHARE_MODE}" != "750" ]; then
-    echo "WARN: ${SHARE_ROOT} is exported no_root_squash to every client and has mode ${SHARE_MODE} (hardened target: root_squash + 750; see the root_squash section of docs/runbooks/nfs-xfs-migration.md)" >&2
-  fi
-elif [ "${SHARE_MODE}" != "750" ]; then
-  echo "FAIL: ${SHARE_ROOT} has a root_squash client but mode is ${SHARE_MODE}, expected 750" >&2
-  exit 1
-fi
+EXPORTS_TEXT="$(sudo cat /etc/exports /etc/exports.d/*.exports 2>/dev/null || true)"
+nfs_share_root_verdict "${SHARE_ROOT}" "${SHARE_MODE}" "${EXPORTS_TEXT}"
 
 echo "PASS: uid 26 wrote to nfs-csi PVC; pod Completed; ${SHARE_ROOT} mode ${SHARE_MODE}"

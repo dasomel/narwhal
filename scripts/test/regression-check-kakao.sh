@@ -3201,6 +3201,8 @@ PYEOF'
     bash scripts/test/lib/check-nfs-data-device.sh
   check R265 "SeaweedFS volume server (node-local hostPath data) is pinned by nodeSelector narwhal.io/seaweedfs-volume=true in the GitOps chart AND the 08-4 helm install, and 08-4 labels a node only when none carries it; nfs-nonroot-write-check.sh derives the share-root mode from the export squash mode (2026-10-16)" \
     python3 scripts/test/lib/check-seaweedfs-volume-pin.py
+  check R266 "nfs_share_root_verdict is behavioral under set -euo pipefail: root_squash+750 PASS, root_squash+777 FAIL, all-no_root_squash WARN, mixed requires 750, no export line FAIL with its message; 08-4 aborts on >1 labeled node (2026-10-16)" \
+    bash -c 'bash scripts/test/lib/check-nfs-squash-verdict.sh && grep -Fq "LABELED_NODES=\"\$(kubectl get nodes -l narwhal.io/seaweedfs-volume=true -o name)\"" scripts/cluster/08-4-storage.sh && grep -Fq "more than one node carries" scripts/cluster/08-4-storage.sh'
 
 }
 

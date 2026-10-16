@@ -20,7 +20,12 @@ echo "=== Installing SeaweedFS ==="
 # always land on the same node. Label one worker once; an existing label is never moved (the
 # data lives where the label is). Clean installs (Vagrant + Kakao) get the first worker by
 # name; on a cluster that already holds data, label that node by hand BEFORE running this.
-if [ -z "$(kubectl get nodes -l narwhal.io/seaweedfs-volume=true -o name)" ]; then
+LABELED_NODES="$(kubectl get nodes -l narwhal.io/seaweedfs-volume=true -o name)"
+if [ "$(printf '%s' "${LABELED_NODES}" | grep -c .)" -gt 1 ]; then
+  echo "ERROR: more than one node carries narwhal.io/seaweedfs-volume=true: ${LABELED_NODES}" >&2
+  exit 1
+fi
+if [ -z "${LABELED_NODES}" ]; then
   SW_NODE="$(kubectl get nodes -l '!node-role.kubernetes.io/control-plane' -o name | sort | head -n1)"
   [ -n "${SW_NODE}" ] || SW_NODE="$(kubectl get nodes -o name | sort | head -n1)"
   echo "Labeling ${SW_NODE} narwhal.io/seaweedfs-volume=true (SeaweedFS volume data is node-local)"

@@ -74,6 +74,14 @@ AIRGAP_REGISTRY="${AIRGAP_REGISTRY:-${BASTION_PRIVATE_IP}:5000}"
 # turning it on is the real closed-network run, and it needs stage-kakao-nodes.sh to have
 # staged the apt bundle.
 AIRGAP="${AIRGAP:-0}"
+# Dedicated NFS data volume (nfs_data_volume_size > 0): virtio-blk exposes the first 20
+# characters of the volume id as the serial, so udev creates /dev/disk/by-id/virtio-<id[0:20]>.
+# Export NFS_DATA_DEVICE to override; it stays empty (share on the root disk) when the volume is off.
+NFS_DATA_VOLUME_ID=$(cd "${TF_DIR}" && tofu output -raw nfs_data_volume_id 2>/dev/null || true)
+NFS_DATA_DEVICE="${NFS_DATA_DEVICE:-}"
+if [ -z "${NFS_DATA_DEVICE}" ] && [ -n "${NFS_DATA_VOLUME_ID}" ]; then
+  NFS_DATA_DEVICE="/dev/disk/by-id/virtio-${NFS_DATA_VOLUME_ID:0:20}"
+fi
 SSH_KEY=$(cd "${TF_DIR}" && tofu output -raw ssh_key_path 2>/dev/null || true)
 [ -n "${SSH_KEY}" ] || SSH_KEY="${TF_DIR}/KPAAS_KEYPAIR.pem"
 case "${SSH_KEY}" in /*) ;; *) SSH_KEY="${TF_DIR}/${SSH_KEY#./}" ;; esac
@@ -134,7 +142,9 @@ MASTER_COUNT=${#MASTERS[@]} \
 MASTER_IPS='${MASTER_IPS}' \
 MASTER_HOSTNAME=${MASTER_HOSTNAME} \
 NFS_SERVER_IP=${MASTER1} \
+NFS_DATA_DEVICE=${NFS_DATA_DEVICE} \
 HOST_NETWORK_CIDR=${SUBNET_CIDR} \
+APISIX_ADMIN_CIDR=${APISIX_ADMIN_CIDR:-} \
 AIRGAP=${AIRGAP} \
 AIRGAP_REGISTRY=${AIRGAP_REGISTRY} \
 DNS_SERVER=${BASTION_PRIVATE_IP} \
@@ -208,7 +218,7 @@ tail_log() {
 stage_proxy() {
   log "proxy: squid on the bastion, then point every node at it"
   # This has to come before `base`, and it is not optional: the nodes have no public
-  # IP and provider 0.4.4 has no NAT gateway, so 01-prerequisites' first apt-get has
+  # IP and provider 0.5.1 (and 0.4.4 before it) has no NAT gateway, so 01-prerequisites' first apt-get has
   # nowhere to go without it. It used to be two commands you were expected to know
   # about — the quick-start listed stage + provision and nothing else, which is a
   # clean install that cannot work.

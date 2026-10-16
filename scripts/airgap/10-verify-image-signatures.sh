@@ -16,6 +16,7 @@
 #   scripts/airgap/10-verify-image-signatures.sh [--bundle DIR] [--key KEY_FILE] [--mode audit|enforce]
 #
 # Defaults: --bundle "${AIRGAP_BUNDLE_DIR}", --mode audit
+# Portal image signing public key: scripts/airgap/keys/cosign.pub (--key scripts/airgap/keys/cosign.pub)
 #=========================================================================
 set -euo pipefail
 

@@ -1,0 +1,73 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-nfs-root-squash-readiness",
+  "task": "Make SeaweedFS filer/master and the NFS directory layout ready for a root_squash export (narwhal#224): non-root SeaweedFS, align script, runbook procedure",
+  "changeContext": {
+    "paths": [
+      "gitops/charts/narwhal-apps/templates/seaweedfs.yaml",
+      "scripts/cluster/08-4-storage.sh",
+      "scripts/cluster/nfs-root-squash-align.sh",
+      "scripts/test/lib/check-nfs-root-squash-align.sh",
+      "scripts/test/lib/check-seaweedfs-nonroot.py",
+      "scripts/test/regression-check-kakao.sh",
+      "docs/runbooks/nfs-xfs-migration.md",
+      "docs/common/lessons-log.md",
+      ".agents/evals/traces/2026-10-nfs-root-squash-readiness.json"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Repo-only change. No live Kakao cluster, export, or ownership was changed. The input inventory (.omc/logs/f2-report.md) was an unverified Gemini lane; image uid, chart keys, and Vagrant layout were re-derived from the pinned image, the bundled chart and the repo scripts."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "chrislusf/seaweedfs:4.34 has user seaweed 1000:1000 (docker run --entrypoint cat /etc/passwd) and an entrypoint that su-execs to it, but the chart's command runs /usr/bin/weed directly, so the pods run as the image USER (root). Chart 4.34.0 master/filer log volumes render as root-owned hostPath, which uid 1000 cannot write; fsGroup is inert on nfs.csi.k8s.io."
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "master/filer podSecurityContext 1000/1000 + fsGroup OnRootMismatch and logs emptyDir in the GitOps chart and 08-4 helm flags; scripts/cluster/nfs-root-squash-align.sh (dry-run default, --apply, running-consumer guard, never edits exports); runbook procedure; R267, R268; lessons-log row."
+    },
+    {
+      "id": "e4",
+      "type": "verification",
+      "status": "passed",
+      "scope": "helm template of the bundled seaweedfs 4.34.0 chart with the Application valuesObject, before versus after",
+      "summary": "Diff shows only the securityContext on the master and filer StatefulSets and their log volumes becoming emptyDir; volume and s3 unchanged. The align script was run in a root debian container against fake kubectl output: dry run changed nothing, --apply chowned root-owned entries to 1000:1000 / 1000:2000, namespace dirs to nobody:nogroup, share root to nobody:nogroup 750, and a second --apply planned nothing.",
+      "evidence": [
+        "test:helm template sw seaweedfs-4.34.0 -f valuesObject",
+        "test:docker run debian:bookworm-slim nfs-root-squash-align.sh --apply",
+        "runtime:command-exit-0"
+      ],
+      "commandExitCode": 0
+    },
+    {
+      "id": "e5",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "Repo static suite and lint with the change; no cluster",
+      "summary": "make test: 394 passed, 0 failed, 3 warnings (R267, R268 PASS; R267 fails when the filer runAsUser is mutated); make validate OK; shellcheck --severity=warning clean on the changed scripts.",
+      "evidence": [
+        "test:make test",
+        "test:make validate",
+        "test:shellcheck --severity=warning scripts/cluster/nfs-root-squash-align.sh scripts/cluster/08-4-storage.sh"
+      ],
+      "commandExitCode": 0
+    },
+    {
+      "id": "e6",
+      "type": "completion_claim",
+      "summary": "Static and container-level behavior verified. Not verified: non-root SeaweedFS against real data on the live cluster, the live file inventory, CSIDriver fsGroupPolicy and timer state on Kakao, and the export switch itself."
+    },
+    {
+      "id": "e7",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Repo change verified statically and in a root container; live alignment and export switch pending per the runbook and unverified (e6)."
+    }
+  ]
+}

@@ -335,8 +335,17 @@ spec:
                 - keys:
                     publicKeys: |
                       -----BEGIN PUBLIC KEY-----
-                      MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE/narwhal/cosign/trusted/signer/pub
+                      MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE9IgOjh5OHAGQMLCf2/yuuNZofCZ9
+                      sd6xuhQq/RLamGorvENKttj0rHby3glfnrZKXFvUB7DhBmdAy59QCo3JbA==
                       -----END PUBLIC KEY-----
+                    # D-REKOR: CI uploads signatures to public Rekor (public image), but the
+                    # air-gapped cluster cannot reach it. Static-key verification therefore skips
+                    # the tlog/SCT lookup. Cost: offline verification relies solely on this key.
+                    # Escape hatch: drop ignoreTlog/ignoreSCT if the cluster gains Rekor reachability.
+                    rekor:
+                      ignoreTlog: true
+                    ctlog:
+                      ignoreSCT: true
           attestations:
             - predicateType: https://cyclonedx.org/schema/1.4
               attestors:
@@ -345,8 +354,14 @@ spec:
                     - keys:
                         publicKeys: |
                           -----BEGIN PUBLIC KEY-----
-                          MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE/narwhal/cosign/trusted/signer/pub
+                          MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE9IgOjh5OHAGQMLCf2/yuuNZofCZ9
+                          sd6xuhQq/RLamGorvENKttj0rHby3glfnrZKXFvUB7DhBmdAy59QCo3JbA==
                           -----END PUBLIC KEY-----
+                        # D-REKOR: see signature attestor above.
+                        rekor:
+                          ignoreTlog: true
+                        ctlog:
+                          ignoreSCT: true
 ---
 apiVersion: kyverno.io/v1
 kind: ClusterPolicy
@@ -456,7 +471,13 @@ spec:
             value: ""
       context:
         - name: targetNodeRole
+          # D1: method is explicit because Kyverno defaults apiCall.method to GET on the live
+          # object; omitting it left kyverno-policies OutOfSync. Fixing it at the source keeps
+          # .spec.rules[].context out of the app's ignoreDifferences, which would mask real
+          # drift in every rule's context (cost: one extra line per apiCall; escape hatch: if
+          # Kyverno starts defaulting other apiCall fields, set them here rather than ignoring).
           apiCall:
+            method: GET
             urlPath: "/api/v1/nodes/{{ request.object.spec.nodeName }}"
             jmesPath: "metadata.labels.\"node-role.kubernetes.io/control-plane\" || 'not-control-plane'"
       validate:

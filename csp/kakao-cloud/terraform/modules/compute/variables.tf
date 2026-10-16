@@ -46,6 +46,17 @@ variable "volume_size" {
   default     = 200
 }
 
+variable "availability_zone" {
+  description = "Availability zone for the NFS data volume (must match the instances' zone)"
+  type        = string
+}
+
+variable "nfs_data_volume_size" {
+  description = "Size in GB of the dedicated NFS data volume attached to master-1; 0 disables it"
+  type        = number
+  default     = 0
+}
+
 variable "key_name" {
   description = "SSH key pair name"
   type        = string

@@ -69,9 +69,9 @@ Stated so a reporter can tell a gap from a deliberate choice:
   and is never distributed to nodes
 - **The portal image ships an SBOM and SLSA provenance.** Verify with:
   ```bash
-  docker buildx imagetools inspect --raw ghcr.io/dasomel/narwhal-portal:1.0.19
+  docker buildx imagetools inspect --raw ghcr.io/dasomel/narwhal-portal:1.1.0
   ```
-  v1.0.19 is not Cosign-signed; the portal repository has no `COSIGN` secrets. (v1.0.18 is also unsigned and must not be used: it crashes on start, see narwhal#238.)
+  v1.1.0 is Cosign-signed with the repository key (`scripts/airgap/keys/cosign.pub`). v1.0.19 and earlier are not signed; v1.0.18 also crashes on start and must not be used (narwhal#238).
   The `unknown/unknown` entries are the attestation manifests, carrying an SPDX document and a
   `slsa.dev/provenance/v1` predicate per architecture.
 - **The air-gapped bundle ships a CycloneDX SBOM.** `scripts/airgap/08-generate-sbom.sh` writes

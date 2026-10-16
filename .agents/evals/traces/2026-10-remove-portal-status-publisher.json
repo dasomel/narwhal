@@ -1,0 +1,54 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-remove-portal-status-publisher-20261015",
+  "task": "Remove the portal-scoped OpenForge status publisher after OpenForge folded narwhal-portal into the narwhal portfolio entry",
+  "changeContext": {
+    "paths": [
+      ".github/workflows/portal-publish-openforge-status.yml",
+      ".agents/evals/traces/2026-10-remove-portal-status-publisher.json"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Delete only the leaf workflow that publishes project narwhal-portal; root publish-openforge-status.yml (project narwhal) and every other portal workflow stay unchanged."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "A narwhal-portal status payload is rejected by the OpenForge registry once dasomel/openforge#162 removes the narwhal-portal row, so every Portal Release would open a failing status PR.",
+      "evidence": [
+        "test:python3 templates/scripts/apply-portfolio-status.py <status.example.json with project=narwhal-portal> on dasomel/openforge#162 head 2643ed0+ -> 'unknown project: narwhal-portal'"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "Remove .github/workflows/portal-publish-openforge-status.yml; narwhal status keeps flowing through the root publisher."
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": ".github/workflows status publishers",
+      "summary": "No workflow publishes project narwhal-portal any more; the root publisher for project narwhal is untouched.",
+      "evidence": [
+        "test:grep -rn 'project: narwhal-portal|repository: dasomel/narwhal-portal' .github/workflows/ -> no match",
+        "policy:dasomel/openforge#162 folds narwhal-portal into the single narwhal portfolio entry"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "completion_claim",
+      "summary": "Portal status publishing retired within the stated scope."
+    },
+    {
+      "id": "e6",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Complete and verified within the stated scope"
+    }
+  ]
+}

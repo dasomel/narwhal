@@ -71,10 +71,14 @@ sudo kubectl wait --for=jsonpath='{.status.phase}'=Succeeded "pod/${POD}" \
   -n "${NAMESPACE}" --timeout=180s
 sudo kubectl logs "${POD}" -n "${NAMESPACE}"
 
+# The root mode depends on the export's squash mode. Under root_squash (the default since narwhal#186)
+# the share root must stay 750: only the squashed provisioner identity writes there. A cluster
+# installed before that change keeps no_root_squash and a 777 root (live Kakao, 2026-10-16), where
+# 750 would be a false FAIL; report it as WARN and keep the hardening intent visible.
+# shellcheck source=scripts/verify/lib-nfs-squash.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib-nfs-squash.sh"
 SHARE_MODE="$(stat -c '%a' "${SHARE_ROOT}")"
-if [ "${SHARE_MODE}" != "750" ]; then
-  echo "FAIL: ${SHARE_ROOT} mode is ${SHARE_MODE}, expected 750" >&2
-  exit 1
-fi
+EXPORTS_TEXT="$(sudo cat /etc/exports /etc/exports.d/*.exports 2>/dev/null || true)"
+nfs_share_root_verdict "${SHARE_ROOT}" "${SHARE_MODE}" "${EXPORTS_TEXT}"
 
-echo "PASS: uid 26 wrote to nfs-csi PVC; pod Completed; ${SHARE_ROOT} remains 750"
+echo "PASS: uid 26 wrote to nfs-csi PVC; pod Completed; ${SHARE_ROOT} mode ${SHARE_MODE}"

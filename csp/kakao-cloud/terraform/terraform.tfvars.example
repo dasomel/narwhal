@@ -48,6 +48,10 @@ master_flavor = "t1i.large"      # CPU 2core, RAM 4GB (control-plane only)
 worker_flavor = "t1i.xlarge"     # CPU 4core, RAM 8GB (platform apps)
 volume_size   = 200              # Disk size in GB
 
+# Dedicated XFS prjquota data volume for the NFS export on master-1 (0 = disabled).
+# Two-step apply required, see README "NFS data volume (Kakao)". 0 or 50..16384 GB.
+# nfs_data_volume_size = 500
+
 #####################################################################
 # Load Balancer Configuration
 #####################################################################

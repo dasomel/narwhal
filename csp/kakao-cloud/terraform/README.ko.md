@@ -398,6 +398,31 @@ tofu apply
 중단해도 데이터 손실은 없다. 삭제는 서버 쪽에서 계속 진행되며, `tofu destroy`를 다시 돌리는
 것과 그냥 기다리는 것의 차이도 없다.
 
+## NFS 데이터 볼륨 (Kakao)
+
+`nfs_data_volume_size`(GB, 기본 `0` = 비활성, 사용 시 50..16384)는 `<master_name>-1-nfs-data` 전용 블록 볼륨을
+만들어 master-1에 연결합니다. `scripts/cluster/01-nfs-server.sh`가 이를 XFS(라벨 `narwhal-nfs`)로 포맷하고
+`prjquota`로 `/srv/nfs/k8s`에 마운트합니다. `nfs-quota-agent`에 필요하며, XFS 프로젝트 쿼터는 최초 마운트
+시에만 켤 수 있고 remount로는 켤 수 없습니다. 볼륨에는 `prevent_destroy`(D-NFS-VOL)가 있고
+`is_delete_on_termination = false`로 연결됩니다.
+
+2단계로 적용합니다(볼륨이 존재하기 전에는 인스턴스를 건드리지 않음).
+
+```bash
+tofu apply -target=module.compute.kakaocloud_volume.nfs_data   # 1: 볼륨만 생성
+tofu plan                                                       # 2: 검토 후 tofu apply
+```
+
+전체 plan에서 master-1은 `update in-place`(AttachVolume)만 나와야 합니다. `must be replaced`가 보이면
+적용하지 말고 `volumes` diff를 먼저 조사하세요.
+
+VM 안에서 장치는 `/dev/disk/by-id/virtio-<볼륨 id 앞 20자>`(virtio-blk 시리얼)입니다.
+`scripts/cloud/provision-kakao.sh`가 `nfs_data_volume_id` output으로 계산해 `NFS_DATA_DEVICE`로 전달하며,
+`NFS_DATA_DEVICE`를 직접 export하면 덮어씁니다.
+
+ext4 루트 디스크의 기존 데이터 이전은 별도의 승인 필요 런북(`docs/runbooks/nfs-xfs-migration.md`)입니다.
+`01-nfs-server.sh`는 비어 있지 않은 `/srv/nfs/k8s` 위에는 마운트하지 않고 중단합니다.
+
 ## 알려진 이슈
 
 이 프로젝트에 미해결 이슈는 없다. 다만 다른 문제로 오해하기 쉬운 두 가지는 알아둘 것:

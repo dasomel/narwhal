@@ -331,6 +331,31 @@ Notes:
   VM and LB recreation. Once the bastion is on 0.5.1, future replacements use `-replace`
   (next section) and need none of the state surgery in step 5.
 
+## NFS data volume (Kakao)
+
+`nfs_data_volume_size` (GB, default `0` = disabled, otherwise 50..16384) creates a dedicated
+block volume `<master_name>-1-nfs-data` and attaches it to master-1. `scripts/cluster/01-nfs-server.sh`
+formats it XFS (label `narwhal-nfs`) and mounts it on `/srv/nfs/k8s` with `prjquota`, which
+`nfs-quota-agent` needs (XFS project quota can only be enabled at the initial mount, never by remount).
+The volume has `prevent_destroy` (D-NFS-VOL) and is attached with `is_delete_on_termination = false`.
+
+Apply in two steps, so the instance is never touched before the volume exists:
+
+```bash
+tofu apply -target=module.compute.kakaocloud_volume.nfs_data   # 1: create the volume only
+tofu plan                                                       # 2: review, then tofu apply
+```
+
+The full plan must show master-1 `update in-place` (AttachVolume) only. If it says
+`must be replaced`, stop: do not apply, investigate the `volumes` diff first.
+
+The device appears in the VM as `/dev/disk/by-id/virtio-<first 20 chars of the volume id>`
+(virtio-blk serial). `scripts/cloud/provision-kakao.sh` derives it from the `nfs_data_volume_id`
+output and passes it as `NFS_DATA_DEVICE`; override it by exporting `NFS_DATA_DEVICE` yourself.
+
+Migrating the data already on the ext4 root disk is a separate, approval-gated runbook:
+`docs/runbooks/nfs-xfs-migration.md`. `01-nfs-server.sh` refuses to mount over a non-empty `/srv/nfs/k8s`.
+
 ## Replacing a VM
 
 Public IPs (bastion, node egress, both LBs) are external endpoints: DNS, kubeconfig, operator

@@ -56,3 +56,8 @@ output "worker_count" {
   description = "Number of worker nodes"
   value       = var.worker_count
 }
+
+output "nfs_data_volume_id" {
+  description = "NFS data volume ID attached to master-1 (empty when nfs_data_volume_size is 0)"
+  value       = one(kakaocloud_volume.nfs_data[*].id)
+}

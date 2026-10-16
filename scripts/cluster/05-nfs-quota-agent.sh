@@ -106,7 +106,9 @@ case ",${mnt_opts}," in
   *)
     echo "WARN: ${NFS_SHARE_PATH} is not mounted with prjquota (options: ${mnt_opts:-unknown}); nfs-quota-agent cannot enforce quotas." >&2
     echo "      Remediation (needs a brief NFS outage): ext4 -> 'tune2fs -O project,quota <dev>' while unmounted, then" >&2
-    echo "      add 'prjquota' to the fstab options and remount; xfs -> add 'prjquota' and remount." >&2
+    echo "      add 'prjquota' to the fstab options and remount; xfs -> prjquota CANNOT be enabled by remount;" >&2
+    echo "      it only takes effect at the initial mount, so the export needs a fresh XFS mounted with prjquota." >&2
+    echo "      Kakao: set nfs_data_volume_size (README 'NFS data volume (Kakao)') and follow docs/runbooks/nfs-xfs-migration.md." >&2
     ;;
 esac
 

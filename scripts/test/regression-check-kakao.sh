@@ -3113,12 +3113,20 @@ assert sum(1 for l in code if re.search(r"\bexit 3\b", l)) == 1, "exit 3 must ap
     python3 scripts/test/lib/check-kakao-public-ip-guard.py --mutation-verify
 
   # 2026-10-16: 07-cnpg.sh built cnpg-s3-credentials from velero-s3-credentials, which 08-4
-  # creates later, so ACCESS_SECRET_KEY came out empty and narwhal-db failed over. One helper
-  # (lib.sh resolve_s3_credentials, default "admin" per D-velero) now serves 07 and 08-4.
-  check R249 "07-cnpg.sh and 08-4-storage.sh derive S3 credentials via resolve_s3_credentials; 07 does not read the later-created Velero Secret itself (2026-10-16)" \
-    bash -c 'grep -Fq "resolve_s3_credentials" scripts/cluster/07-cnpg.sh && grep -Fq "resolve_s3_credentials" scripts/cluster/08-4-storage.sh && ! grep -Fq "velero-s3-credentials" scripts/cluster/07-cnpg.sh'
-  check R250 "resolve_s3_credentials: NotFound defaults to admin, any other kubectl error fails closed, an existing cnpg secret is preserved, env wins" \
-    bash scripts/test/lib/check-s3-credentials-resolve.sh
+  # creates later, so ACCESS_SECRET_KEY came out empty and narwhal-db failed over. Later the same
+  # day SeaweedFS S3 authentication was enabled (D-s3auth): one helper (lib.sh
+  # ensure_s3_identities) creates per-client random identities for 07 and 08-4; the old
+  # "default admin" resolver and its tests are gone.
+  check R249 "07-cnpg.sh and 08-4-storage.sh create S3 credentials only via ensure_s3_identities; 07 does not read the later-created Velero Secret itself and no script keeps an admin default (2026-10-16)" \
+    bash -c 'grep -Fq "ensure_s3_identities" scripts/cluster/07-cnpg.sh && grep -Fq "ensure_s3_identities" scripts/cluster/08-4-storage.sh && ! grep -Fq "velero-s3-credentials" scripts/cluster/07-cnpg.sh && ! git grep -Fq "resolve_s3_credentials" -- scripts ":!scripts/test" && ! grep -Eq "S3_(ACCESS|SECRET)_KEY:-admin|:-admin\}" scripts/common/lib.sh'
+  check R250 "ensure_s3_identities (stateful fake kubectl): fresh install = 4 random distinct bucket-scoped identities + server config + Velero credentials file, rerun keeps keys, the admin/admin default is replaced exactly once, a duplicate access key across clients is rotated and the rendered config has unique keys, a present-but-empty Secret / half-filled pair / unsupported characters / any read error fails closed without writing, s3_sync_server_config rolls the S3 Deployment whenever the config differs from the running checksum (partial failure repair, 07-before-08-4), no key reaches the log" \
+    bash scripts/test/lib/check-s3-identities.sh
+  check R270 "SeaweedFS S3 auth contract: s3.enableAuth + existingConfigSecret in the chart AND 08-4, embedded filer S3 disabled, Loki/Tempo keys only via envFrom + expand-env, narwhal-db.yaml owns no S3 Secret and 14 guards it, Velero via existingSecret; 14 mutations each rejected (D-s3auth)" \
+    python3 scripts/test/lib/check-s3-auth-contract.py --mutation-verify
+  check R272 "scripts/verify/s3-client-check.py (runbook per-client S3 check): anonymous access uses botocore UNSIGNED, only a ClientError 403/AccessDenied counts as a deny, success or another error is FAIL, a crashing step prints FAIL not a traceback (stubbed boto3)" \
+    python3 scripts/test/lib/check-s3-client-check.py
+  check R271 "verify-backup.sh: an anonymous S3 request must be 403 (200 = auth open = FAIL, 403 is no longer a generic success) and every Velero BackupRepository must be Ready" \
+    bash -c 'f=scripts/test/verify-backup.sh; grep -Fq "authentication is not enforced" "$f" && grep -Fq "enforces authentication" "$f" && grep -Fq "BackupRepository not Ready" "$f" && ! grep -Fq "endpoint reachable: HTTP" "$f"'
 
   # 2026-10-16 (PR #399): the APISIX Admin API allowlist is detected from the live CNI by
   # resolve_apisix_admin_cidr (lib.sh) and wired by 14 -- NOT taken from POD_NETWORK_CIDR, which

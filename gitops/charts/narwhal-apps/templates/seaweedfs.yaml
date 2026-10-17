@@ -93,10 +93,11 @@ spec:
             type: persistentVolumeClaim
             size: 5Gi
             storageClass: nfs-csi
+          # D-s3auth: the embedded filer S3 is off. Its port is published by the seaweedfs-filer
+          # Service, so leaving it on would be a second :8333 endpoint outside the identities
+          # file below. Nothing uses it (every client targets seaweedfs-s3:8333 = the s3 Deployment).
           s3:
-            enabled: true
-            port: 8333
-            allowEmptyFolder: true
+            enabled: false
           containerSecurityContext:
             enabled: true
             allowPrivilegeEscalation: false
@@ -105,8 +106,15 @@ spec:
                 - ALL
             seccompProfile:
               type: RuntimeDefault
+        # D-s3auth: S3 authentication with per-client random identities (loki, tempo, velero,
+        # cnpg), each limited to its own bucket. The Secret is created by
+        # scripts/common/lib.sh ensure_s3_identities (07/08-4), never by Git. The server reads
+        # the file once at start: a changed Secret needs `rollout restart deploy/seaweedfs-s3`
+        # (docs/runbooks/seaweedfs-s3-auth.md). Rollback = enableAuth: false (anonymous again).
         s3:
           enabled: true
+          enableAuth: true
+          existingConfigSecret: seaweedfs-s3-config
           containerSecurityContext:
             enabled: true
             allowPrivilegeEscalation: false

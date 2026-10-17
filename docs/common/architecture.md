@@ -652,7 +652,10 @@ CNPG PostgreSQL
 | grafana-secrets | monitoring | 08-2-monitoring.sh | Grafana 관리자 비밀번호 |
 | harbor-secrets | devtools | 08-5-registry.sh | Harbor 관리자 비밀번호 |
 | gitea-admin | devtools | 12-gitea.sh | Gitea 관리자 비밀번호 |
-| velero-s3-credentials | storage | 08-4-storage.sh | S3 백업 자격증명 |
+| velero-s3-credentials | storage | 07/08-4 (`ensure_s3_identities`) | Velero S3 키 (버킷 `velero` 한정, 랜덤) |
+| loki-s3-credentials / tempo-s3-credentials | monitoring | 07/08-4 (`ensure_s3_identities`) | Loki/Tempo S3 키 (envFrom, 버킷별 랜덤) |
+| cnpg-s3-credentials | database | 07 (`ensure_s3_identities`) | CNPG barman S3 키 (`cnpg-backup` 한정, GitOps 미소유) |
+| seaweedfs-s3-config | storage | 07/08-4 (`ensure_s3_identities`) | SeaweedFS S3 identities JSON (`docs/runbooks/seaweedfs-s3-auth.md`) |
 
 비밀번호 확인:
 

@@ -119,22 +119,11 @@ else
 fi
 
 # CNPG bootstrap uses narwhal-db-credentials directly (username/password fields)
-# S3 credentials - reuse SeaweedFS creds, resolved by the same helper as 08-4-storage.sh
-# (the Velero S3 Secret does not exist yet when 07 runs; the shared default is "admin").
-# resolve_s3_credentials fails if either key is empty, so the secret below never has one.
-resolve_s3_credentials cnpg-s3-credentials database ACCESS_KEY_ID ACCESS_SECRET_KEY || { echo "ERROR: cannot derive cnpg-s3-credentials" >&2; exit 1; }
-
-cat <<EOF | kubectl apply -f -
-apiVersion: v1
-kind: Secret
-metadata:
-  name: cnpg-s3-credentials
-  namespace: database
-type: Opaque
-stringData:
-  ACCESS_KEY_ID: ${S3_ACCESS_KEY}
-  ACCESS_SECRET_KEY: ${S3_SECRET_KEY}
-EOF
+# S3 credentials: per-client random keys (D-s3auth). ensure_s3_identities (lib.sh) creates the
+# cnpg/loki/tempo/velero client Secrets plus the SeaweedFS server config; an existing random key
+# is kept, the historic admin/admin pair is replaced once, a half-filled pair or a read error
+# fails closed. 14-gitops-bootstrap.sh no longer applies a cnpg-s3-credentials Secret.
+ensure_s3_identities || { echo "ERROR: cannot ensure the SeaweedFS S3 identities" >&2; exit 1; }
 
 # Write cluster manifest to temp file (avoids heredoc + if + set -e issues)
 CLUSTER_MANIFEST=$(mktemp)

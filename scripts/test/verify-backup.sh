@@ -184,11 +184,35 @@ if should_run "seaweedfs"; then
       -- wget -qO- --server-response --timeout=10 \
       "${SEAWEEDFS_S3_URL}" 2>&1 | { grep "HTTP/" | awk '{print $2}' | tail -1 || true; })
 
-    # SeaweedFS S3 returns 403 (NoCredentials) or 200 on root — both mean reachable
-    if [ "${S3_HTTP_CODE}" = "200" ] || [ "${S3_HTTP_CODE}" = "403" ] || [ "${S3_HTTP_CODE}" = "400" ]; then
-      pass "SeaweedFS S3 endpoint reachable: HTTP ${S3_HTTP_CODE}"
+    # D-s3auth: with S3 authentication on, an anonymous request is answered 403 (AccessDenied)
+    # and that is the only healthy answer. 200 means anonymous access is open (auth off or
+    # bypassed); anything else (no response, 5xx, 400) means the endpoint is not serving.
+    # A 403 alone never proves the clients' signed requests work: the BSL/BackupRepository
+    # checks below and docs/runbooks/seaweedfs-s3-auth.md (real backup + restore) do.
+    if [ "${S3_HTTP_CODE}" = "403" ]; then
+      pass "SeaweedFS S3 endpoint enforces authentication (anonymous request: HTTP 403)"
+    elif [ "${S3_HTTP_CODE}" = "200" ]; then
+      fail "SeaweedFS S3 endpoint answered an anonymous request with HTTP 200: authentication is not enforced"
     else
-      fail "SeaweedFS S3 endpoint unreachable: HTTP ${S3_HTTP_CODE:-no response}"
+      fail "SeaweedFS S3 endpoint unhealthy: HTTP ${S3_HTTP_CODE:-no response} (expected 403 for an anonymous request)"
+    fi
+
+    # kopia repositories can only initialise against an authenticated S3 (the pre-auth
+    # failure: "Signed request requires setting up SeaweedFS S3 authentication")
+    REPO_PHASES=$(kube_get get backuprepository -n "${VELERO_NS}" \
+      -o jsonpath='{range .items[*]}{.metadata.name}{"="}{.status.phase}{" "}{end}')
+    if [ -z "${REPO_PHASES}" ]; then
+      warn "No Velero BackupRepository exists yet (created by the first volume backup)"
+    else
+      REPO_BAD=false
+      for repo_phase in ${REPO_PHASES}; do
+        [ "${repo_phase##*=}" = "Ready" ] || REPO_BAD=true
+      done
+      if [ "${REPO_BAD}" = true ]; then
+        fail "Velero BackupRepository not Ready: ${REPO_PHASES}"
+      else
+        pass "Velero BackupRepositories Ready: ${REPO_PHASES}"
+      fi
     fi
 
     # Check velero bucket via BackupStorageLocation lastValidationTime

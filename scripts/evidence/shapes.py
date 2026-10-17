@@ -14,11 +14,12 @@ REQUIRED_CP_FIELDS = (
 
 
 def _is_hex64(val: Any) -> bool:
-    return isinstance(val, str) and len(val) == 64 and all(c in "0123456789abcdefABCDEF" for c in val)
+    return isinstance(val, str) and len(val) == 64 and all(c in "0123456789abcdef" for c in val)
 
 
 def _is_hex_str(val: Any) -> bool:
-    return isinstance(val, str) and len(val) > 0 and len(val) % 2 == 0 and all(c in "0123456789abcdefABCDEF" for c in val)
+    return isinstance(val, str) and len(val) > 0 and len(val) % 2 == 0 and all(c in "0123456789abcdef" for c in val)
+
 
 
 def validate_entry_shape(entry: Any, i: int) -> List[str]:

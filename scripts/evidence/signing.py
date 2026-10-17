@@ -150,6 +150,21 @@ class OpensslSigner:
             return res.stdout
 
 
+def extract_pubkey_from_priv(priv_path: Union[str, Path], pub_path: Union[str, Path]) -> None:
+    """Extract public key PEM from Ed25519 private key (D-EV-36, D-EV-37)."""
+    p = Path(priv_path)
+    if not p.exists():
+        raise FileNotFoundError(f"private key not found: {p}")
+    out = Path(pub_path)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    subprocess.run(
+        ["openssl", "pkey", "-in", str(p), "-pubout", "-out", str(out)],
+        check=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+
+
 class OpensslVerifier:
     """Ed25519 verifier via openssl pkeyutl -verify -pubin -inkey PUB -rawin -sigfile F (D-EV-1, D-EV-10)."""
 
@@ -157,6 +172,17 @@ class OpensslVerifier:
         self.pub_path = Path(pub_path)
         if not self.pub_path.exists():
             raise FileNotFoundError(f"public key not found: {self.pub_path}")
+        content = self.pub_path.read_bytes()
+        if b"PRIVATE KEY" in content:
+            raise ValueError(f"private key cannot be used as public key (D-EV-41): {self.pub_path}")
+        res = subprocess.run(
+            ["openssl", "pkey", "-pubin", "-in", str(self.pub_path), "-noout"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        if res.returncode != 0:
+            raise ValueError(f"invalid public key (D-EV-41): {res.stderr.decode().strip()}")
+
 
     def verify(self, msg: bytes, sig: bytes) -> bool:
         """Verify signature bytes over raw message bytes using temp files (D-EV-10)."""

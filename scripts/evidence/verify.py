@@ -231,11 +231,14 @@ def verify(
                     report.errors.append(f"checkpoint {j} invalid signature format: {e}")
                 prev_cp_h = cp.get("cp_hash")
 
-            # D-EV-12: check EVERY checkpoint's head against the chain
+            # D-EV-12, D-EV-41: check EVERY checkpoint's head against the chain
             if type(c_count) is int and c_count >= 0:
-                if c_count > len(entry_list):
+                if c_count == 0:
+                    if cp.get("head_hash") != GENESIS_PREV_HASH:
+                        report.errors.append(f"checkpoint {j} count=0 must have head_hash == GENESIS: got {cp.get('head_hash')}")
+                elif c_count > len(entry_list):
                     report.errors.append(f"checkpoint {j} count {c_count} > entries length {len(entry_list)} (tail truncation/rollback)")
-                elif c_count > 0 and c_count <= len(entry_list):
+                else:
                     target_entry = entry_list[c_count - 1]
                     if isinstance(target_entry, dict):
                         target_hash = target_entry.get("entry_hash")

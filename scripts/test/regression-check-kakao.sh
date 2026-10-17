@@ -3225,6 +3225,8 @@ PYEOF'
       grep -Fq "sudo bash scripts/cluster/nfs-root-squash-align.sh --apply" "$r" &&
       grep -Fq "Supported alternative where apt is unreachable" "$r" &&
       ! grep -Eq "^[[:space:]]*scripts/cluster/nfs-root-squash-align.sh" "$r"'
+  check R273 "evidence chain enforces intent/result records, checkpoint tail-truncation detection, key separation and spend-once (2026-10-17)" \
+    python3 scripts/test/lib/check-evidence-chain.py
 }
 
 #=========================================

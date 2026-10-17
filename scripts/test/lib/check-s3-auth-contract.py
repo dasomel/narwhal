@@ -39,7 +39,7 @@ def verify(t):
         assert flag in s08, f"08-4 {flag}"
     assert "--set filer.s3.enabled=true" not in s08, "08-4 must not enable filer S3"
     assert s08.index("ensure_s3_identities ||") < s08.index("helm upgrade --install seaweedfs"), "identities before the S3 server"
-    assert "rollout restart deployment/seaweedfs-s3" in s08 and "S3_IDENTITIES_CHANGED" in s08, "08-4 restarts S3 on changed keys"
+    assert "s3_sync_server_config ||" in s08 and "S3_IDENTITIES_CHANGED" not in s08, "08-4 rolls S3 on a config checksum mismatch"
     assert "existingSecret: velero-s3-credentials" in s08 and "secretContents" not in s08, "08-4 velero reads the Secret"
     assert "resolve_s3_credentials" not in s08 + t["s07"] + t["lib"], "old default-admin resolver is gone"
     assert "ensure_s3_identities ||" in t["s07"], "07 ensures identities"
@@ -75,7 +75,7 @@ def mutations():
         ("s08", "--set s3.enableAuth=true", "--set s3.enableAuth=false"),
         ("s08", "--set filer.s3.enabled=false", "--set filer.s3.enabled=true"),
         ("s08", "existingSecret: velero-s3-credentials", "secretContents:\n    cloud: x"),
-        ("s08", "rollout restart deployment/seaweedfs-s3", "rollout status deployment/seaweedfs-s3"),
+        ("s08", "s3_sync_server_config ||", "true ||"),
         ("s07", "ensure_s3_identities ||", "true ||"),
         ("loki", "accessKeyId: ${S3_ACCESS_KEY_ID}", "accessKeyId: admin"),
         ("loki", "name: loki-s3-credentials", "name: other"),

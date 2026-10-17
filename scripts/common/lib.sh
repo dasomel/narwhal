@@ -61,6 +61,22 @@ s3_identity_spec() {
   esac
 }
 
+# secret_exists <secret> <ns>: 0 present, 1 absent (kubectl NotFound only). Any other failure
+# aborts the caller (return 2): a present-but-unreadable Secret must never look absent.
+secret_exists() {
+  local err rc=0 errf
+  errf=$(mktemp) || return 2
+  kubectl get secret "$1" -n "$2" -o name >/dev/null 2>"${errf}" || rc=$?
+  err=$(cat "${errf}" 2>/dev/null || true)
+  rm -f "${errf}"
+  [ "${rc}" -eq 0 ] && return 0
+  if [ "${rc}" -ne 127 ]; then
+    case "${err}" in *"Error from server (NotFound)"*) return 1 ;; esac
+  fi
+  echo "ERROR: cannot check secret $2/$1 (kubectl failed, not NotFound)." >&2
+  return 2
+}
+
 # s3_key_state <access> <secret>: absent (both empty) | default (the historic inline
 # admin/admin pair) | usable | invalid. invalid covers a half-filled pair, one default half,
 # and characters that would break the JSON/INI/env projections: callers fail closed on it.
@@ -73,30 +89,50 @@ s3_key_state() {
   echo usable
 }
 
-# ensure_s3_identities: sets S3_IDENTITIES_CHANGED=true when any key was generated or a default
-# was replaced (the S3 server must then be restarted: it does not hot-reload the identities
-# file). Existing random keys are kept. Only absent -> generate and the exact default pair ->
+# ensure_s3_identities: sets S3_IDENTITIES_CHANGED=true when any key was generated or replaced
+# (informational only: the S3 restart decision is s3_sync_server_config, which compares the
+# server config with what the running pods loaded, so a repaired or earlier-written config still
+# rolls the server). Existing random keys are kept. Only absent -> generate and the exact default pair ->
 # replace (once: afterwards the pair is no longer the default). A half-filled/odd pair or any
 # Secret read error other than NotFound returns 1 (fail closed, never regenerate over data).
 # shellcheck disable=SC2034  # S3_IDENTITIES_CHANGED is read by the sourcing script
 ensure_s3_identities() {
-  local name spec ns secret af sf bucket ak sk state tmp i json=""
+  local name spec ns secret af sf bucket ak sk state tmp i prev rc json=""
   local -a names=(loki tempo velero cnpg) aks=() sks=() buckets=()
   S3_IDENTITIES_CHANGED=false
   for name in "${names[@]}"; do
     spec=$(s3_identity_spec "${name}") || return 1
     read -r ns secret af sf bucket <<<"${spec}"
-    ak=$(read_secret_field "${secret}" "${ns}" "${af}") || return 1
-    sk=$(read_secret_field "${secret}" "${ns}" "${sf}") || return 1
-    state=$(s3_key_state "${ak}" "${sk}")
+    rc=0; secret_exists "${secret}" "${ns}" || rc=$?
+    if [ "${rc}" -eq 1 ]; then
+      ak=""; sk=""; state=absent
+    elif [ "${rc}" -ne 0 ]; then
+      return 1
+    else
+      ak=$(read_secret_field "${secret}" "${ns}" "${af}") || return 1
+      sk=$(read_secret_field "${secret}" "${ns}" "${sf}") || return 1
+      state=$(s3_key_state "${ak}" "${sk}")
+      # a Secret that exists with both fields empty/missing is corrupt, not absent: fail closed
+      if [ "${state}" = absent ]; then state=invalid; fi
+    fi
+    # SeaweedFS maps identities by access key and the later one wins, so a key shared by two
+    # clients would hand one of them the other's bucket. The first holder (loki, tempo, velero,
+    # cnpg order) keeps its pair; later holders are rotated like the default.
+    if [ "${state}" = usable ]; then
+      for prev in ${aks[@]+"${aks[@]}"}; do
+        if [ "${prev}" = "${ak}" ]; then state=duplicate; break; fi
+      done
+    fi
     case "${state}" in
       usable) echo "  s3 identity ${name}: keeping existing keys" >&2 ;;
-      absent|default)
+      absent|default|duplicate)
         ak=$(openssl rand -hex 10 | tr a-f A-F) || return 1
         sk=$(openssl rand -hex 24) || return 1
         S3_IDENTITIES_CHANGED=true
         if [ "${state}" = default ]; then
           echo "  s3 identity ${name}: replacing the default admin/admin pair with generated keys" >&2
+        elif [ "${state}" = duplicate ]; then
+          echo "  s3 identity ${name}: duplicate access key shared with another client, rotating it" >&2
         else
           echo "  s3 identity ${name}: generated new keys" >&2
         fi ;;
@@ -106,6 +142,11 @@ ensure_s3_identities() {
     esac
     aks+=("${ak}"); sks+=("${sk}"); buckets+=("${bucket}")
   done
+
+  if [ "$(printf '%s\n' "${aks[@]}" | sort -u | wc -l | tr -d ' ')" -ne "${#names[@]}" ]; then
+    echo "ERROR: S3 access keys are not unique across identities; refusing to render seaweedfs_s3_config." >&2
+    return 1
+  fi
 
   for name in "${names[@]}"; do
     spec=$(s3_identity_spec "${name}")
@@ -269,4 +310,32 @@ ensure_secret_key() {
       --type='json' \
       -p="[{\"op\":\"add\",\"path\":\"/data/${key}\",\"value\":\"$(echo -n "${value}" | base64 -w0)\"}]"
   fi
+}
+
+# s3_sync_server_config: SeaweedFS reads its identities file once at start (no hot reload).
+# Compare sha256 of storage/seaweedfs-s3-config with the pod-template annotation
+# narwhal.io/s3-config-sha256 of Deployment seaweedfs-s3 and patch it when they differ; the
+# patch changes the pod template, which is the rollout. Idempotent, independent of which run
+# wrote which Secret (partial failures and 07-before-08-4 both converge). No Deployment yet
+# (07, or first 08-4 run before helm) is a no-op; any other read error fails closed.
+s3_sync_server_config() {
+  local cfg sum cur err rc=0 errf
+  cfg=$(read_secret_field seaweedfs-s3-config storage seaweedfs_s3_config) || return 1
+  [ -n "${cfg}" ] || { echo "ERROR: storage/seaweedfs-s3-config is missing or empty." >&2; return 1; }
+  sum=$(printf '%s' "${cfg}" | openssl dgst -sha256 -r | cut -d' ' -f1) || return 1
+  errf=$(mktemp) || return 1
+  cur=$(kubectl get deployment seaweedfs-s3 -n storage \
+    -o 'jsonpath={.spec.template.metadata.annotations.narwhal\.io/s3-config-sha256}' 2>"${errf}") || rc=$?
+  err=$(cat "${errf}" 2>/dev/null || true)
+  rm -f "${errf}"
+  if [ "${rc}" -ne 0 ]; then
+    case "${err}" in
+      *"Error from server (NotFound)"*) return 0 ;;
+      *) echo "ERROR: cannot read Deployment storage/seaweedfs-s3." >&2; return 1 ;;
+    esac
+  fi
+  if [ "${cur}" = "${sum}" ]; then return 0; fi
+  echo "  seaweedfs-s3 runs a different identities file; rolling it" >&2
+  kubectl patch deployment seaweedfs-s3 -n storage --type=merge \
+    -p "{\"spec\":{\"template\":{\"metadata\":{\"annotations\":{\"narwhal.io/s3-config-sha256\":\"${sum}\"}}}}}" >/dev/null
 }

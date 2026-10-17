@@ -27,7 +27,9 @@ file are derived from them by `ensure_s3_identities` (`scripts/common/lib.sh`).
   the embedded filer S3 is also published by the `seaweedfs-filer` Service, so the chart now
   disables it (`filer.s3.enabled=false`). Nothing used it.
 - The server reads the identities file once at start. A changed Secret needs
-  `rollout restart deployment/seaweedfs-s3`; it is never hot-reloaded.
+  a rollout; it is never hot-reloaded. `s3_sync_server_config` (lib.sh) compares the sha256 of the
+  config Secret with the pod-template annotation `narwhal.io/s3-config-sha256` and patches on any
+  difference, so a repaired or earlier-written config still rolls the server.
 - Loki/Tempo/CNPG already send signed requests (with `admin`/`admin`), so switching them to the new
   keys while the server is still anonymous does not change the request shape. Velero is held back
   until auth is on: signed uploads to an unauthenticated server are not universally safe
@@ -57,6 +59,8 @@ existing random key; fails closed and writes nothing on a partial pair or a read
 export KUBECONFIG=/home/vagrant/.kube/config-local
 bash -c 'set -euo pipefail; source scripts/common/lib.sh; ensure_s3_identities; echo "changed=${S3_IDENTITIES_CHANGED}"'
 ```
+
+Two clients sharing one access key are resolved by rotating the later ones (SeaweedFS maps identities by access key, later wins); a Secret that exists but has empty or missing fields aborts instead of being regenerated.
 
 Gate: output lists four identities as `generated` or `replacing the default`, `changed=true`, no
 key printed. `kubectl -n storage get secret seaweedfs-s3-config velero-s3-credentials` and the
@@ -93,7 +97,9 @@ Do not print the values.
 scripts/gitops/push-to-gitea.sh "feat(storage): authenticate SeaweedFS S3" \
   charts/narwhal-apps/templates/seaweedfs.yaml
 kubectl -n devtools get app seaweedfs -o jsonpath='{.status.sync.status}{"\n"}'   # Synced
-kubectl -n storage rollout restart deployment/seaweedfs-s3
+# the S3 server reads its identities once: roll it when the config differs from what the pods loaded
+# (sha256 annotation on the pod template; also what 08-4 does)
+bash -c 'set -euo pipefail; source scripts/common/lib.sh; s3_sync_server_config'
 kubectl -n storage rollout status deployment/seaweedfs-s3
 kubectl -n storage get deploy seaweedfs-s3 -o jsonpath='{.spec.template.spec.containers[0].args}' | grep -c 'config=/etc/sw/seaweedfs_s3_config'
 kubectl -n storage get pods -l app.kubernetes.io/component=filer -o jsonpath='{.items[0].spec.containers[0].args}' | grep -c -- '-s3'   # 0 (filer S3 off)
@@ -139,47 +145,38 @@ kubectl -n database get cluster narwhal-db -o jsonpath='{.status.conditions[?(@.
 ```bash
 kubectl -n storage get backupstoragelocation default -o jsonpath='{.status.phase}{"\n"}'   # Available
 kubectl create ns s3auth-test
-kubectl -n s3auth-test run w --image=busybox:1.37 --restart=Never --overrides='{"spec":{"volumes":[{"name":"d","emptyDir":{}}],"containers":[{"name":"w","image":"busybox:1.37","command":["sh","-c","echo s3auth-ok >/data/f; sleep 3600"],"volumeMounts":[{"name":"d","mountPath":"/data"}]}]}}'
+# the pod only sleeps: nothing in it can recreate the marker after a restore
+kubectl -n s3auth-test run w --image=busybox:1.37 --restart=Never --overrides='{"spec":{"volumes":[{"name":"d","emptyDir":{}}],"containers":[{"name":"w","image":"busybox:1.37","command":["sleep","3600"],"volumeMounts":[{"name":"d","mountPath":"/data"}]}]}}'
+kubectl -n s3auth-test wait --for=condition=Ready pod/w --timeout=120s
 kubectl -n s3auth-test annotate pod w backup.velero.io/backup-volumes=d
+TOKEN="$(openssl rand -hex 16)"                                  # random, written AFTER the pod runs
+kubectl -n s3auth-test exec w -- sh -c "echo $TOKEN >/data/token"
 velero backup create s3auth-test --include-namespaces s3auth-test --wait
 velero backup describe s3auth-test --details | grep -i 'phase\|PodVolumeBackup\|Completed'
 kubectl -n storage get backuprepository                  # Ready (was: never initialised)
 kubectl delete ns s3auth-test --wait
 velero restore create --from-backup s3auth-test --wait
-kubectl -n s3auth-test exec w -- cat /data/f              # s3auth-ok
+kubectl -n s3auth-test wait --for=condition=Ready pod/w --timeout=180s
+[ "$(kubectl -n s3auth-test exec w -- cat /data/token)" = "$TOKEN" ] && echo RESTORE-OK || echo RESTORE-FAIL
 ```
 
 Use a Velero CLI that matches the server (v1.18.x); if it is not installed, create the `Backup` and
 `Restore` custom resources in `storage` instead. Delete the test namespace and backup afterwards.
 
-**Multipart, delete and cross-bucket deny** (needs `boto3`, present in the CNPG postgres image; keys
-are passed on stdin, never on the command line):
+**Multipart, delete and cross-bucket deny** (`scripts/verify/s3-client-check.py`, needs `boto3`, present
+in the CNPG postgres image; tested by R272). Keys go over stdin, never on the command line: access key,
+secret key, own bucket, another client's bucket.
 
 ```bash
-PY='import sys,boto3,io
-from botocore.config import Config
-from botocore.exceptions import ClientError
-ak,sk,b,other=[sys.stdin.readline().strip() for _ in range(4)]
-mk=lambda sig=None,**k: boto3.client("s3",endpoint_url="http://seaweedfs-s3.storage.svc.cluster.local:8333",region_name="us-east-1",config=Config(signature_version=sig,s3={"addressing_style":"path"}),**k)
-c=mk(aws_access_key_id=ak,aws_secret_access_key=sk)
-c.put_object(Bucket=b,Key="s3auth/small",Body=b"x"); print("PASS put")
-c.upload_fileobj(io.BytesIO(b"y"*(11*1024*1024)),b,"s3auth/big"); print("PASS multipart")
-assert c.get_object(Bucket=b,Key="s3auth/small")["Body"].read()==b"x"; print("PASS get")
-c.delete_objects(Bucket=b,Delete={"Objects":[{"Key":"s3auth/small"},{"Key":"s3auth/big"}]}); print("PASS delete")
-def denied(f):
-    try: f()
-    except ClientError as e: return e.response["Error"]["Code"] in ("AccessDenied","403","SignatureDoesNotMatch")
-    return False
-print("PASS cross-bucket deny" if denied(lambda: c.put_object(Bucket=other,Key="s3auth/x",Body=b"x")) else "FAIL cross-bucket")
-print("PASS anonymous deny" if denied(lambda: mk("unsigned").list_objects_v2(Bucket=b)) else "FAIL anonymous")'
 get() { kubectl -n "$1" get secret "$2" -o jsonpath="{.data.$3}" | base64 -d; echo; }
 { get monitoring loki-s3-credentials S3_ACCESS_KEY_ID; get monitoring loki-s3-credentials S3_SECRET_ACCESS_KEY; echo loki; echo tempo; } \
-  | kubectl -n database exec -i narwhal-db-1 -c postgres -- python3 -c "$PY"
+  | kubectl -n database exec -i narwhal-db-1 -c postgres -- python3 -c "$(cat scripts/verify/s3-client-check.py)"
 ```
 
-Repeat with the `tempo`, `velero` (`storage/velero-s3-credentials`: `access-key`, `secret-key`) and
-`cnpg` Secrets and their own bucket as the third line. Every line must be `PASS`; a `FAIL` or a
-`ClientError` other than the expected denies is a stop.
+Repeat with `tempo` (own bucket `tempo`), `velero` (`storage/velero-s3-credentials`: `access-key`,
+`secret-key`, bucket `velero`) and `cnpg` (`database/cnpg-s3-credentials`, bucket `cnpg-backup`), each
+with a different bucket as the fourth line. Six `PASS` lines per client are required; any `FAIL` or a
+non-zero exit is a stop.
 
 ## 5. Finish
 

@@ -86,12 +86,12 @@ if [ "${SEAWEEDFS_OK}" != true ]; then
   exit 1
 fi
 
-# D-s3auth: the S3 server reads its identities file once at start (no hot reload), so a changed
-# Secret needs a restart. The embedded filer S3 is disabled above: the seaweedfs-filer Service
-# would otherwise expose a second, unauthenticated :8333.
-if [ "${S3_IDENTITIES_CHANGED}" = true ] && kubectl get deployment seaweedfs-s3 -n storage >/dev/null 2>&1; then
-  kubectl rollout restart deployment/seaweedfs-s3 -n storage
-fi
+# D-s3auth: the S3 server reads its identities file once at start (no hot reload). The restart
+# is decided by comparing the config with what the running pods loaded (annotation checksum), not
+# by whether this run wrote a Secret, so a repaired or 07-written config still rolls the server.
+# The embedded filer S3 is disabled above: the seaweedfs-filer Service would otherwise expose a
+# second, unauthenticated :8333.
+s3_sync_server_config || { echo "ERROR: cannot sync the S3 server identities" >&2; exit 1; }
 kubectl rollout status deployment/seaweedfs-s3 -n storage --timeout=180s
 
 # Create S3 buckets for platform apps

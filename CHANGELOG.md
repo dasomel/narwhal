@@ -162,9 +162,9 @@ existing cluster or bundle; read **Upgrade notes** first.
 - **Optional dedicated XFS volume for the NFS export on Kakao Cloud (#407, #408, #409, #411).**
   `nfs_data_volume_size` (default 0) creates a `prevent_destroy` volume attached to master-1;
   `01-nfs-server.sh` formats it XFS only when it is blank and mounts it with `prjquota`. Moving an
-  existing export is the approval-gated `docs/runbooks/nfs-xfs-migration.md`: four `-target`-gated
-  OpenTofu steps, because a full plan after the attach replaces four load-balancer members. The
-  same runbook orders the `root_squash` switch (ownership alignment with the dry-run-by-default
+  existing export is the approval-gated `docs/runbooks/nfs-xfs-migration.md`. Its OpenTofu part is
+  four `-target`-gated steps (`csp/kakao-cloud/terraform/README.md`), because a full plan after the
+  attach replaces four load-balancer members. The same runbook orders the `root_squash` switch (ownership alignment with the dry-run-by-default
   `scripts/cluster/nfs-root-squash-align.sh`, which needs root; the CSIDriver `fsGroupPolicy` is
   immutable). Both ran once on the live Kakao cluster on 2026-10-16
   (`docs/kakao/nfs-xfs-migration-2026-10-16.md`); there is no clean-room repeat.
@@ -183,8 +183,10 @@ existing cluster or bundle; read **Upgrade notes** first.
   and restore, and the permissions. A scheduled backup after the change has not been observed yet.
 - **Kakao Cloud networking (#396, #265, #403).** All five `kakaocloud_public_ip` resources are
   `prevent_destroy`; use `-replace` instead of a targeted destroy. The kubelet (10250) security
-  group rule is limited to the node subnet. The APISIX ingress controller limit is 512Mi
-  (it was OOMKilled at 256Mi during its full sync).
+  group rule is limited to the node subnet. The `08-1` install now gives the APISIX ingress
+  controller a 256Mi request and 512Mi limit (it was OOMKilled at 256Mi during its full sync). The
+  GitOps chart's `ingressController` block still declares 128Mi/256Mi (#403 did not change it);
+  the controller on kakao-narwhal is a separate Helm release and runs 512Mi.
 
 ### Added
 

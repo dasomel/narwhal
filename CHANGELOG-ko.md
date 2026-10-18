@@ -112,7 +112,7 @@ ArgoCD, Gitea, RBAC, OpenBao, Keycloak, APISIX, NFS, `database` 신뢰 경계가
 - **Kakao Cloud (e496631, 8f24bcf, eda06db).** 바스천이 자체 보안 그룹을 가지며, SSH는 필수값인
   `bastion_ssh_allowed_cidrs`로 제한되고 `0.0.0.0/0`은 거부됨. SSH 호스트 키는 클러스터별 `known_hosts`로
   검증되며(최초 접속 시 신뢰, 키가 바뀌면 차단), 노드나 바스천을 재구축한 후에는 `kakao_forget_host`로 이전
-  항목을 지울 것. 큐블릿 포트 10250은 노드 서브넷에만 열림.
+  항목을 지울 것. kubelet 포트 10250은 노드 서브넷에만 열림.
 - **SeaweedFS S3에 클라이언트별 키 필요 (#412).** S3 서버가 이제 `enableAuth` 및 각자 전용 버킷으로 제한된 4개
   클라이언트 Secret(`loki`, `tempo`, `velero`, `cnpg`)에서 생성된 identities 파일로 실행됨.
   `storage/seaweedfs-s3-config`는 자동 생성되며 직접 편집하면 안 됨. 내장 filer S3는 꺼져 있으므로
@@ -140,8 +140,8 @@ ArgoCD, Gitea, RBAC, OpenBao, Keycloak, APISIX, NFS, `database` 신뢰 경계가
 - **Kakao Cloud의 NFS export용 선택적 전용 XFS 볼륨 (#407, #408, #409, #411).** `nfs_data_volume_size`
   (기본값 0)는 master-1에 연결되는 `prevent_destroy` 볼륨을 생성함. `01-nfs-server.sh`는 볼륨이 비어 있을
   때만 XFS로 포맷하고 `prjquota`로 마운트함. 기존 export 마이그레이션은 승인 기반
-  `docs/runbooks/nfs-xfs-migration.md`를 따름: 연결 후 전체 plan 실행 시 로드밸런서 멤버 4개가 교체되므로
-  4단계의 `-target` 제한 OpenTofu 단계를 거침. 동일 런북이 `root_squash` 전환도 함께 처리함(기본 dry-run인
+  `docs/runbooks/nfs-xfs-migration.md`를 따름. OpenTofu 부분은 4단계의 `-target` 제한 단계이며
+  (`csp/kakao-cloud/terraform/README.md`), 연결 후 전체 plan 실행 시 로드밸런서 멤버 4개가 교체되기 때문임. 동일 런북이 `root_squash` 전환도 함께 처리함(기본 dry-run인
   `scripts/cluster/nfs-root-squash-align.sh`로 소유권 일치 작업 수행, root 필요, CSIDriver `fsGroupPolicy`는
   불변). 두 작업 모두 2026-10-16 라이브 Kakao 클러스터에서 1회 수행되었으며
   (`docs/kakao/nfs-xfs-migration-2026-10-16.md`), 클린룸 재수행 이력은 없음.
@@ -159,8 +159,10 @@ ArgoCD, Gitea, RBAC, OpenBao, Keycloak, APISIX, NFS, `database` 신뢰 경계가
   백업된 적이 없었음. 2026-10-18/19 kakao-narwhal에서 볼륨 백업 및 복원, 권한이 검증됨. 변경 후 예약 백업은
   아직 관찰되지 않음.
 - **Kakao Cloud 네트워킹 (#396, #265, #403).** 5개의 `kakaocloud_public_ip` 리소스 전체가 `prevent_destroy`로
-  설정됨. 대상 지정 destroy 대신 `-replace`를 사용할 것. 큐블릿(10250) 보안 그룹 규칙은 노드 서브넷으로
-  제한됨. APISIX ingress controller limit은 512Mi임(전체 동기화 중 256Mi에서 OOMKilled되었음).
+  설정됨. 대상 지정 destroy 대신 `-replace`를 사용할 것. kubelet(10250) 보안 그룹 규칙은 노드 서브넷으로
+  제한됨. `08-1` 설치는 이제 APISIX ingress controller에 request 256Mi, limit 512Mi를 부여함(전체 동기화 중
+  256Mi에서 OOMKilled되었음). GitOps 차트의 `ingressController` 블록은 여전히 128Mi/256Mi로 선언되어 있으며
+  (#403은 이를 바꾸지 않았음), kakao-narwhal의 컨트롤러는 별도 Helm 릴리즈이고 512Mi로 실행 중임.
 
 ### 추가
 

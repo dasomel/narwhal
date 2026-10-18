@@ -139,14 +139,19 @@ existing cluster or bundle; read **Upgrade notes** first.
   embedded filer S3 is off, so `seaweedfs-filer` no longer publishes `:8333`. Loki and Tempo read
   their keys from `monitoring/loki-s3-credentials` and `monitoring/tempo-s3-credentials` via
   `envFrom`, and `narwhal-db.yaml` no longer carries `cnpg-s3-credentials`. **On an existing cluster
-  follow `docs/runbooks/seaweedfs-s3-auth.md` in stages.** Re-running `08-4-storage.sh` rotates the
-  keys, turns authentication on and restarts the S3 server in one go, so Loki and Tempo get 403 until
-  the GitOps push catches up (#414). Two runbook checks are wrong and must not be used as gates:
-  `env | grep AWS_` in the CNPG pod (the instance manager reads the Secret; it is not pod
-  environment) and `args | grep config=` on the S3 Deployment (the flag is in `command`) (#419).
-  `s3_sync_server_config` writes a pod-template annotation that Argo CD self-heal reverts, so a key
-  rotation does not reliably restart the S3 server yet (#419). `ensure_s3_identities` is idempotent:
-  a second run keeps the keys.
+  follow `docs/runbooks/seaweedfs-s3-auth.md` in stages.** `08-4-storage.sh` now runs a read-only
+  guard first (#414): it aborts when an existing S3 server has no `-config=` and the Loki or Tempo
+  credentials Secret is missing; an approved immediate cutover sets
+  `NARWHAL_ALLOW_S3_AUTH_CUTOVER=true` (kubectl, RBAC and parse errors are never bypassed). The
+  runbook gates were corrected (#419): `backups.velero.io,schedules.velero.io`, WAL archiving
+  progress plus an on-demand CNPG backup instead of `env | grep AWS_`, and the S3 server flag is
+  read from `command` and `args`. The seaweedfs Application now ignores the
+  `narwhal.io/s3-config-sha256` pod-template annotation (`ignoreDifferences` plus
+  `RespectIgnoreDifferences=true`) so the restart marker written by `s3_sync_server_config`
+  survives self-heal, and `07-cnpg.sh` calls that helper too (#415). `verify-backup.sh` probes the
+  anonymous 403 with `python3` inside a `narwhal-db` pod instead of `wget` in a Velero pod (#419),
+  and generated key values are single-quoted so numeric keys stay strings (#415).
+  `ensure_s3_identities` is idempotent: a second run keeps the keys.
 - **Label the SeaweedFS data node before running `08-4-storage.sh` (#409, cd62c691).** The volume
   server keeps data in node-local hostPath `/ssd/object_store` and is pinned by
   `nodeSelector narwhal.io/seaweedfs-volume=true` (chart and `08-4-storage.sh`). On an existing
@@ -321,12 +326,13 @@ existing cluster or bundle; read **Upgrade notes** first.
   `09` reports the loss but does not fail (#124).
 - **The digest inventory is trust-on-first-save.** `images.digests.json` is not signed, so it
   proves the bundle matches what `02` recorded, not that `02` saw the right bytes (#124).
-- **S3 authentication operations are not finished (#414, #415, #419).** See the upgrade note
-  above: a re-run of `08-4-storage.sh` collapses the staged cutover, the restart helper's
-  annotation is reverted by Argo CD, `verify-backup.sh` picks the `node-agent` pod for its
-  anonymous-403 check (no `wget` there), so that check cannot pass, and a few script details
-  (numeric access keys are not quoted, `07-cnpg.sh` does not restart the S3 server, keys remain in
-  the `last-applied` annotation) are open.
+- **S3 authentication operations are only partly verified (#414, #415, #419).** The fixes are
+  described in the upgrade note above and are tested with fake `kubectl` only. Not verified on a
+  live cluster: that Argo CD keeps the annotation (`ignoreDifferences`) through a self-heal, and
+  the new `verify-backup.sh` anonymous check. Still open: the key stays in the
+  `kubectl.kubernetes.io/last-applied-configuration` annotation of the client Secrets (server-side
+  apply was rejected for now), and Secret existence in the guard does not prove Loki/Tempo loaded
+  the new keys.
 - **Velero schedules back up every volume in `storage`, including emptyDir (#422).** One
   `PodVolumeBackup` (OpenBao `data`) ended `Canceled` without a message; the cause is unknown.
   Until it is explained, treat the daily OpenBao backup as unverified.

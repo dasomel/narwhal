@@ -124,6 +124,9 @@ fi
 # is kept, the historic admin/admin pair is replaced once, a half-filled pair or a read error
 # fails closed. 14-gitops-bootstrap.sh no longer applies a cnpg-s3-credentials Secret.
 ensure_s3_identities || { echo "ERROR: cannot ensure the SeaweedFS S3 identities" >&2; exit 1; }
+# D-s3ops-5 (#415): roll the S3 server when the identities file changed (no-op while the
+# seaweedfs-s3 Deployment does not exist yet, i.e. on a clean install).
+s3_sync_server_config || { echo "ERROR: cannot sync the SeaweedFS S3 server config" >&2; exit 1; }
 
 # Write cluster manifest to temp file (avoids heredoc + if + set -e issues)
 CLUSTER_MANIFEST=$(mktemp)

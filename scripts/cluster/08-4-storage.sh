@@ -16,6 +16,10 @@ export KUBECONFIG=/home/vagrant/.kube/config-local
 #=========================================
 echo "=== Installing SeaweedFS ==="
 
+# D-s3ops-4 (#414): read-only pre-flight, before the node label, identities and helm. Aborts when
+# an anonymous seaweedfs-s3 would be switched to auth while Loki/Tempo hold no credentials yet.
+guard_s3_auth_cutover || exit 1
+
 # D-sw-pin: the volume server stores data on node-local hostPath /ssd/object_store, so it must
 # always land on the same node. Label one worker once; an existing label is never moved (the
 # data lives where the label is). Clean installs (Vagrant + Kakao) get the first worker by

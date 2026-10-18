@@ -132,3 +132,16 @@ spec:
       selfHeal: true
     syncOptions:
       - CreateNamespace=true
+      # D-s3ops-1: makes the ignoreDifferences entry below hold during sync too.
+      - RespectIgnoreDifferences=true
+  # D-s3ops-1 (#419): s3_sync_server_config (lib.sh) rolls seaweedfs-s3 by patching the pod
+  # template annotation narwhal.io/s3-config-sha256; selfHeal reverted it within seconds (old
+  # ReplicaSet came back). Why: the roll marker must survive self-heal. Cost: drift of exactly
+  # this one field is not repaired. Escape hatch: remove this list and RespectIgnoreDifferences.
+  ignoreDifferences:
+    - group: apps
+      kind: Deployment
+      namespace: storage
+      name: seaweedfs-s3
+      jsonPointers:
+        - /spec/template/metadata/annotations/narwhal.io~1s3-config-sha256

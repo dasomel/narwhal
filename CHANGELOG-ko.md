@@ -119,13 +119,16 @@ ArgoCD, Gitea, RBAC, OpenBao, Keycloak, APISIX, NFS, `database` 신뢰 경계가
   `seaweedfs-filer`는 더 이상 `:8333`을 게시하지 않음. Loki와 Tempo는 `envFrom`을 통해
   `monitoring/loki-s3-credentials` 및 `monitoring/tempo-s3-credentials`에서 키를 읽으며,
   `narwhal-db.yaml`은 더 이상 `cnpg-s3-credentials`를 포함하지 않음. **기존 클러스터에서는
-  `docs/runbooks/seaweedfs-s3-auth.md`를 단계별로 따를 것.** `08-4-storage.sh`를 다시 실행하면 키 교체, 인증
-  활성화, S3 서버 재시작이 한 번에 진행되므로 GitOps push가 반영될 때까지 Loki와 Tempo에 403이 발생함(#414).
-  런북의 두 가지 검사는 잘못되었으므로 게이트로 사용하면 안 됨: CNPG 파드의 `env | grep AWS_`(인스턴스 매니저가
-  Secret을 읽으므로 파드 환경변수가 아님) 및 S3 Deployment의 `args | grep config=`(플래그는 `command`에 있음)
-  (#419). `s3_sync_server_config`가 작성하는 파드 템플릿 어노테이션은 Argo CD 자가 치유(self-heal)에 의해 되돌려지므로,
-  키 교체 시 아직 S3 서버가 안정적으로 재시작되지 않음(#419). `ensure_s3_identities`는 멱등적임: 두 번째 실행 시
-  기존 키를 유지함.
+  `docs/runbooks/seaweedfs-s3-auth.md`를 단계별로 따를 것.** `08-4-storage.sh`는 이제 읽기 전용 가드를 먼저
+  실행함(#414): 기존 S3 서버에 `-config=`가 없고 Loki 또는 Tempo 자격 증명 Secret이 없으면 중단하며, 승인된 즉시
+  전환은 `NARWHAL_ALLOW_S3_AUTH_CUTOVER=true`를 설정함(kubectl, RBAC, 파싱 오류는 절대 우회되지 않음). 런북
+  게이트가 수정됨(#419): `backups.velero.io,schedules.velero.io`, `env | grep AWS_` 대신 WAL 아카이빙 진행
+  확인과 온디맨드 CNPG 백업, S3 서버 플래그는 `command`와 `args`에서 읽음. seaweedfs Application은 이제
+  `narwhal.io/s3-config-sha256` 파드 템플릿 어노테이션을 무시하므로(`ignoreDifferences`와
+  `RespectIgnoreDifferences=true`) `s3_sync_server_config`가 기록한 재시작 표식이 자가 치유(self-heal) 후에도
+  유지되며, `07-cnpg.sh`도 해당 헬퍼를 호출함(#415). `verify-backup.sh`는 Velero 파드의 `wget` 대신
+  `narwhal-db` 파드 안에서 `python3`로 익명 403을 확인함(#419). 생성되는 키 값은 작은따옴표로 감싸므로 숫자 형태의
+  키도 문자열로 유지됨(#415). `ensure_s3_identities`는 멱등적임: 두 번째 실행 시 기존 키를 유지함.
 - **`08-4-storage.sh` 실행 전 SeaweedFS 데이터 노드 라벨링 필요 (#409, cd62c691).** 볼륨 서버는 노드 로컬
   hostPath `/ssd/object_store`에 데이터를 보관하며 `nodeSelector narwhal.io/seaweedfs-volume=true`로 고정됨
   (차트 및 `08-4-storage.sh`). 기존 클러스터에서는 이미 데이터를 보관 중인 노드에 먼저 수동으로 라벨을 지정할 것.
@@ -275,11 +278,11 @@ ArgoCD, Gitea, RBAC, OpenBao, Keycloak, APISIX, NFS, `database` 신뢰 경계가
   실패시키지 않음(#124).
 - **다이제스트 인벤토리는 최초 저장 시점 신뢰(trust-on-first-save)임.** `images.digests.json`에는 서명이 없으므로
   번들이 `02`가 기록한 것과 일치함은 증명하지만 `02`가 올바른 바이트를 보았음은 증명하지 않음(#124).
-- **S3 인증 운영 작업이 완료되지 않음 (#414, #415, #419).** 위의 업그레이드 참고를 참조할 것: `08-4-storage.sh`를
-  다시 실행하면 단계적 전환이 무너지며, 재시작 헬퍼의 어노테이션이 Argo CD에 의해 되돌려지고, `verify-backup.sh`가
-  익명 403 검사 대상 파드로 `node-agent`를 선택하여(`wget`이 없음) 해당 검사를 통과할 수 없으며, 일부 스크립트
-  세부 사항(숫자 형태의 access key 미따옴표 처리, `07-cnpg.sh`가 S3 서버를 재시작하지 않음, `last-applied`
-  어노테이션에 키가 남아있음)이 미해결 상태임.
+- **S3 인증 운영 작업은 일부만 검증됨 (#414, #415, #419).** 수정 사항은 위의 업그레이드 참고에 설명되어 있으며
+  가짜 `kubectl`로만 테스트됨. 라이브 클러스터에서 검증되지 않은 것: 자가 치유(self-heal) 후에도 Argo CD가
+  어노테이션을 유지하는지(`ignoreDifferences`)와 새 `verify-backup.sh` 익명 검사. 여전히 미해결: 클라이언트
+  Secret의 `kubectl.kubernetes.io/last-applied-configuration` 어노테이션에 키가 남아있음(서버 사이드 어플라이는
+  당분간 거부됨), 그리고 가드가 확인하는 Secret 존재 여부는 Loki/Tempo가 새 키를 로드했음을 증명하지 않음.
 - **Velero 스케줄이 `emptyDir`을 포함하여 `storage`의 모든 볼륨을 백업함 (#422).** 하나의 `PodVolumeBackup`
   (OpenBao `data`)이 메시지 없이 `Canceled`로 종료됨; 원인은 알 수 없음. 원인이 규명될 때까지 매일 실행되는
   OpenBao 백업은 검증되지 않은 것으로 간주할 것.

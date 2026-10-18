@@ -8,6 +8,10 @@
 * narwhal-db.yaml carries no cnpg-s3-credentials Secret (14 re-applies that file and reverted the keys).
 * 14 aborts when the Secret is missing; 07 and 08-4 call ensure_s3_identities; no admin/admin default left.
 * Velero in 08-4 reads velero-s3-credentials (existingSecret), never inline secretContents.
+* D-s3ops-1: the seaweedfs Application ignores the seaweedfs-s3 pod-template roll annotation (field
+  scoped) and respects it during sync, so selfHeal cannot revert s3_sync_server_config's patch.
+* D-s3ops-4/5: 08-4 runs guard_s3_auth_cutover before the node label, identities and helm; 07 syncs
+  the S3 server config right after ensuring the identities.
 Use --mutation-verify to prove every assertion fails when its contract is broken."""
 import re
 import sys
@@ -34,7 +38,18 @@ def verify(t):
     assert sw["s3"]["enableAuth"] is True, "chart s3.enableAuth"
     assert sw["s3"]["existingConfigSecret"] == "seaweedfs-s3-config", "chart existingConfigSecret"
     assert sw["filer"]["s3"]["enabled"] is False, "chart filer.s3 must be disabled"
+    spec = yaml.safe_load(t["sw"])["spec"]
+    ign = [e for e in spec.get("ignoreDifferences", []) if e.get("name") == "seaweedfs-s3"]
+    assert len(ign) == 1, "ignoreDifferences entry for seaweedfs-s3"
+    assert ign[0].get("group") == "apps" and ign[0].get("kind") == "Deployment", "ignoreDifferences kind"
+    assert ign[0].get("namespace") == "storage", "ignoreDifferences namespace"
+    assert ign[0].get("jsonPointers") == ["/spec/template/metadata/annotations/narwhal.io~1s3-config-sha256"], "ignoreDifferences pointer"
+    assert "RespectIgnoreDifferences=true" in spec["syncPolicy"]["syncOptions"], "RespectIgnoreDifferences sync option"
+    assert spec["syncPolicy"]["automated"]["selfHeal"] is True, "selfHeal stays on"
     s08 = t["s08"]
+    assert s08.count("guard_s3_auth_cutover || exit 1") == 1, "08-4 calls the cutover guard once"
+    assert s08.index("guard_s3_auth_cutover") < s08.index("kubectl label") and \
+        s08.index("guard_s3_auth_cutover") < s08.index("ensure_s3_identities ||"), "guard before label and identities"
     for flag in ("--set s3.enableAuth=true", "--set s3.existingConfigSecret=seaweedfs-s3-config", "--set filer.s3.enabled=false"):
         assert flag in s08, f"08-4 {flag}"
     assert "--set filer.s3.enabled=true" not in s08, "08-4 must not enable filer S3"
@@ -43,6 +58,7 @@ def verify(t):
     assert "existingSecret: velero-s3-credentials" in s08 and "secretContents" not in s08, "08-4 velero reads the Secret"
     assert "resolve_s3_credentials" not in s08 + t["s07"] + t["lib"], "old default-admin resolver is gone"
     assert "ensure_s3_identities ||" in t["s07"], "07 ensures identities"
+    assert "s3_sync_server_config ||" in t["s07"] and t["s07"].index("ensure_s3_identities ||") < t["s07"].index("s3_sync_server_config ||"), "07 syncs the S3 server after the identities"
 
     loki = values(t["loki"])
     ls3 = loki["loki"]["storage"]["s3"]
@@ -77,6 +93,14 @@ def mutations():
         ("s08", "existingSecret: velero-s3-credentials", "secretContents:\n    cloud: x"),
         ("s08", "s3_sync_server_config ||", "true ||"),
         ("s07", "ensure_s3_identities ||", "true ||"),
+        ("s07", "s3_sync_server_config ||", "true ||"),
+        ("s08", "guard_s3_auth_cutover || exit 1", "true"),
+        ("s08", "guard_s3_auth_cutover || exit 1", "kubectl label x\nguard_s3_auth_cutover || exit 1"),
+        ("sw", "      namespace: storage\n      name: seaweedfs-s3\n", "      namespace: other\n      name: seaweedfs-s3\n"),
+        ("sw", "      kind: Deployment\n", "      kind: StatefulSet\n"),
+        ("sw", "      name: seaweedfs-s3\n", "      name: other\n"),
+        ("sw", "narwhal.io~1s3-config-sha256", "narwhal.io~1other"),
+        ("sw", "      - RespectIgnoreDifferences=true\n", ""),
         ("loki", "accessKeyId: ${S3_ACCESS_KEY_ID}", "accessKeyId: admin"),
         ("loki", "name: loki-s3-credentials", "name: other"),
         ("tempo", "secret_key: ${S3_SECRET_ACCESS_KEY}", "secret_key: admin"),

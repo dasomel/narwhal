@@ -12,18 +12,14 @@ try:
     from .chain import GENESIS_PREV_HASH, ChainWriter, read_chain
     from .chain_verify import process_entry_kind, verify_entry_integrity
     from .checkpoint import _fsync_dir, append_checkpoint_fd, build_checkpoint, read_checkpoints, verify_checkpoints_list
-    from .signing import (
-        OpensslSigner, OpensslVerifier, _secure_tempdir, extract_pubkey_from_priv, keygen, priv_matches_pub
-    )
+    from .signing import OpensslSigner, OpensslVerifier, _secure_tempdir, extract_pubkey_from_priv, keygen, priv_matches_pub
     from .verify import verify
 except ImportError:
     from canonical import canonical
     from chain import GENESIS_PREV_HASH, ChainWriter, read_chain
     from chain_verify import process_entry_kind, verify_entry_integrity
     from checkpoint import _fsync_dir, append_checkpoint_fd, build_checkpoint, read_checkpoints, verify_checkpoints_list
-    from signing import (
-        OpensslSigner, OpensslVerifier, _secure_tempdir, extract_pubkey_from_priv, keygen, priv_matches_pub
-    )
+    from signing import OpensslSigner, OpensslVerifier, _secure_tempdir, extract_pubkey_from_priv, keygen, priv_matches_pub
     from verify import verify
 
 
@@ -43,17 +39,15 @@ def cmd_keygen(args: argparse.Namespace) -> int:
 
 
 def cmd_intent(args: argparse.Namespace) -> int:
-    signer = OpensslSigner(args.key)
-    writer = ChainWriter(args.chain, args.instance_id, args.epoch, signer, args.pub)
-    rec = writer.append_intent(grant_id=args.grant_id, invocation_hash=args.invocation_hash)
+    w = ChainWriter(args.chain, args.instance_id, args.epoch, OpensslSigner(args.key), args.pub)
+    rec = w.append_intent(grant_id=args.grant_id, invocation_hash=args.invocation_hash)
     print(json.dumps(rec, ensure_ascii=False))
     return 0
 
 
 def cmd_result(args: argparse.Namespace) -> int:
-    signer = OpensslSigner(args.key)
-    writer = ChainWriter(args.chain, args.instance_id, args.epoch, signer, args.pub)
-    rec = writer.append_result(intent_seq=args.intent_seq, outcome=args.outcome)
+    w = ChainWriter(args.chain, args.instance_id, args.epoch, OpensslSigner(args.key), args.pub)
+    rec = w.append_result(intent_seq=args.intent_seq, outcome=args.outcome)
     print(json.dumps(rec, ensure_ascii=False))
     return 0
 
@@ -86,6 +80,9 @@ def cmd_checkpoint(args: argparse.Namespace) -> int:
                 return 1
         else:
             try:
+                if not priv_matches_pub(args.key, cp_pub_path):
+                    print("ERROR: checkpoint signing key does not match checkpoint public key", file=sys.stderr)
+                    return 1
                 cp_verifier = OpensslVerifier(cp_pub_path)
             except Exception as e:
                 print(f"ERROR: cannot load checkpoint verifier: {e}", file=sys.stderr)
@@ -95,11 +92,24 @@ def cmd_checkpoint(args: argparse.Namespace) -> int:
         cp_file_p = Path(args.cp_file)
         cp_file_p.parent.mkdir(parents=True, exist_ok=True)
         is_new_cp = not cp_file_p.exists() or cp_file_p.stat().st_size == 0
-        cp_fd = os.open(str(cp_file_p), os.O_RDWR | os.O_CREAT, 0o666)
+        cp_fd = os.open(str(cp_file_p), os.O_RDWR | os.O_CREAT, 0o600)
         try:
             fcntl.flock(cp_fd, fcntl.LOCK_EX)
             if is_new_cp:
+                try:
+                    os.fchmod(cp_fd, 0o600)
+                except OSError:
+                    pass
                 _fsync_dir(cp_file_p.parent)
+
+            try:
+                st_cp_fd, st_cp_p = os.fstat(cp_fd), os.stat(cp_file_p)
+                if st_cp_fd.st_ino != st_cp_p.st_ino or st_cp_fd.st_dev != st_cp_p.st_dev:
+                    print("ERROR: checkpoint file replacement detected (rename swap) (D-EV-31, D-FU-3)", file=sys.stderr)
+                    return 1
+            except OSError as e:
+                print(f"ERROR: checkpoint file inaccessible: {e} (D-EV-31, D-FU-3)", file=sys.stderr)
+                return 1
 
             # 1. Read existing checkpoints from locked fd
             try:
@@ -228,10 +238,8 @@ def build_parser() -> argparse.ArgumentParser:
     p_keygen.add_argument("--pub", required=True)
 
     def _add_writer_args(p):
-        p.add_argument("--chain", required=True)
-        p.add_argument("--key", required=True)
-        p.add_argument("--pub", required=True)
-        p.add_argument("--instance-id", required=True)
+        for a in ("--chain", "--key", "--pub", "--instance-id"):
+            p.add_argument(a, required=True)
         p.add_argument("--epoch", type=int, default=0)
 
     p_intent = sub.add_parser("intent", help="Append intent record")

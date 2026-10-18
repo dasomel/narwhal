@@ -203,3 +203,11 @@ ADDENDUM4_TESTS = [
     ("D-EV-40: cached head hash mismatch detection", test_d_ev_40_cached_head_hash_mismatch),
     ("D-EV-41: zero count head hash and verifier private key rejection", test_d_ev_41_zero_count_head_and_verifier_rejects_private_key),
 ]
+
+try:
+    from .evidence_addendum5 import ADDENDUM5_TESTS
+except ImportError:
+    from evidence_addendum5 import ADDENDUM5_TESTS
+
+ADDENDUM4_TESTS.extend(ADDENDUM5_TESTS)
+

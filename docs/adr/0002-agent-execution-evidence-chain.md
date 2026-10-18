@@ -6,7 +6,7 @@
 - Superseded by: —
 - Korean: [0002-agent-execution-evidence-chain-ko.md](0002-agent-execution-evidence-chain-ko.md)
 
-Decision IDs: D-EV-1..9 (core specification), D-EV-10..19 (independent review addendum 1), D-EV-20..27 (independent re-review addendum 2, binding), D-EV-28..35 (independent re-review 2 addendum 3, binding), D-EV-36..42 (final review addendum 4, binding).
+Decision IDs: D-EV-1..9 (core specification), D-EV-10..19 (independent review addendum 1), D-EV-20..27 (independent re-review addendum 2, binding), D-EV-28..35 (independent re-review 2 addendum 3, binding), D-EV-36..42 (final review addendum 4, binding), D-EV-43 (follow-ups, binding).
 D-EV-1 (roles and key separation), D-EV-2 (records and PEP ordering),
 D-EV-3 (canonical JSON subset), D-EV-4 (domain-separated hashing and signing),
 D-EV-5 (countersigned checkpoints and export store), D-EV-6 (strict verification and findings),
@@ -29,7 +29,8 @@ D-EV-34 (round 3 mutation survivor defenses), D-EV-35 (decision record alignment
 D-EV-36 (countersigner atomicity and lock ordering), D-EV-37 (countersigner pre-verification of checkpoints),
 D-EV-38 (standardized exit codes 64 and 2), D-EV-39 (canonical lowercase hex enforcement),
 D-EV-40 (cached head hash in-place tamper detection), D-EV-41 (genesis checkpoint head and verifier key check),
-D-EV-42 (decision record alignment and risk documentation for round 4).
+D-EV-42 (decision record alignment and risk documentation for round 4),
+D-EV-43 (torn checkpoint line recovery procedure and epoch advance).
 
 ## Context
 
@@ -526,6 +527,19 @@ The verification function `verify(entries, entry_pub, checkpoints, cp_pub)` enfo
 
 - **Reason:** Comprehensive auditability and synchronization between implementation, tests, and documentation.
 - **Cost:** Documentation maintenance.
+- **Escape Hatch:** None.
+
+### D-EV-43: Recovery from a Torn Checkpoint Line
+
+#### Recovery from a torn checkpoint line
+
+- The verifier and countersigner correctly refuse to process a store containing a torn (partially written) checkpoint line (fail-closed).
+- An append-only store cannot be repaired in place.
+- Procedure: archive the damaged store read-only as evidence, start a new store with `cp_seq = 0` under a NEW epoch (the chain writer's epoch must also increase), and record the old store's last good checkpoint hash in the incident record.
+- **Residual Risk:** History before the new epoch is anchored only by the archived store.
+
+- **Reason:** Standardizes the operational disaster recovery procedure for immutable WORM storage corruption without weakening fail-closed validation.
+- **Cost:** Operational incident response overhead and epoch rotation coordination.
 - **Escape Hatch:** None.
 
 ## Protocol Sequence

@@ -207,7 +207,8 @@ ArgoCD, Gitea, RBAC, OpenBao, Keycloak, APISIX, NFS, `database` 신뢰 경계가
   롤백을 감지하는 교차 서명 체크포인트, 분리된 엔트리 및 체크포인트 키, 체인에서 파생되는 1회 사용(spend-once)
   보장. Python 표준 라이브러리와 `openssl`로 구현되었으며, 61개의 공격 테스트가 R273으로 실행됨. 현재 **어떤
   정책 집행 지점에도 아직 연동되지 않음**; `docs/adr/0002-agent-execution-evidence-chain.md`에 잔여 위험
-  (서명 오라클, advisory locking, 체크포인트 간격)이 정리됨.
+  (서명 오라클, advisory locking, 체크포인트 간격)이 정리됨. #417의 후속 작업이 수정됨 (DER 개인 키 거부,
+  key-pair 검사, rename-swap 검사를 포함한 0600 checkpoint 파일 모드, 문서화된 torn-line 복구 절차).
 
 ### 변경
 
@@ -285,8 +286,6 @@ ArgoCD, Gitea, RBAC, OpenBao, Keycloak, APISIX, NFS, `database` 신뢰 경계가
   OpenBao 백업은 검증되지 않은 것으로 간주할 것.
 - **Tempo가 1536Mi 제한에서 만성적으로 OOMKilled됨 (#420).** S3 변경과 무관하게 라이브 클러스터에서
   매주 수백 건의 재시작이 발생함.
-- **증거 체인 후속 작업 (#417).** 공개 키가 예상되는 위치에 DER 개인 키가 허용되며, append-only 저장소에서
-  손상된(torn) 체크포인트 라인에 대한 복구 절차가 없고, 체크포인트 파일에 rename-swap 검사가 없음.
 - **라이브 클러스터에 적용되지 않음.** AppProject 분리, 개발자 RBAC 변경, 비공개 Gitea 리포지토리, Valkey 교체의
   커밋 메시지는 실행 중인 narwhal 클러스터가 아니라 정적 검사 또는 임시 클러스터에서 확인했다고 명시함.
   이후 라이브 kakao-narwhal 클러스터에서 검증 완료됨: S3 인증, Velero 백업 및 복원(2026-10-18), Velero RBAC 권한

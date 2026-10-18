@@ -52,14 +52,53 @@ def _write_0600_file(td: str, content: bytes, suffix: str = ".tmp") -> str:
     return path
 
 
+def _assert_is_public_key_file(p: Path) -> None:
+    """Ensure path is a valid public key file and reject private keys in PEM or DER form (D-EV-41, D-FU-1).
+
+    Implementation: a file is acceptable only if `openssl pkey -pubin -in K -noout`
+    (and -inform DER for non-PEM) succeeds AND `openssl pkey -in K -noout`
+    (private parse, both informs) FAILS.
+    """
+    if not p.exists():
+        raise FileNotFoundError(f"public key not found: {p}")
+    try:
+        content = p.read_bytes()
+    except OSError as e:
+        raise ValueError(f"cannot read public key file: {e}")
+    if b"PRIVATE KEY" in content:
+        raise ValueError(f"private key cannot be used as public key (D-EV-41, D-FU-1): {p}")
+
+    for inform in ([], ["-inform", "DER"]):
+        cmd_priv = ["openssl", "pkey"] + inform + ["-in", str(p), "-noout"]
+        res_priv = subprocess.run(cmd_priv, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        if res_priv.returncode == 0:
+            raise ValueError(f"private key cannot be used as public key (D-EV-41, D-FU-1): {p}")
+
+    res_pub = subprocess.run(
+        ["openssl", "pkey", "-pubin", "-in", str(p), "-noout"],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    if res_pub.returncode != 0:
+        res_pub_der = subprocess.run(
+            ["openssl", "pkey", "-pubin", "-inform", "DER", "-in", str(p), "-noout"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        if res_pub_der.returncode != 0:
+            raise ValueError(f"invalid public key (D-EV-41, D-FU-1): {res_pub.stderr.decode().strip()}")
+
+
 def get_canonical_der(pub: Union[str, Path, bytes]) -> bytes:
-    """Extract canonical DER representation of an Ed25519 public key (D-EV-14)."""
+    """Extract canonical DER representation of an Ed25519 public key (D-EV-14, D-FU-1)."""
     if isinstance(pub, (str, Path)):
         p = Path(pub)
-        if not p.exists():
-            raise FileNotFoundError(f"public key not found: {p}")
+        _assert_is_public_key_file(p)
         cmd = ["openssl", "pkey", "-pubin", "-in", str(p), "-outform", "DER"]
         res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        if res.returncode != 0:
+            cmd = ["openssl", "pkey", "-pubin", "-inform", "DER", "-in", str(p), "-outform", "DER"]
+            res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         if res.returncode != 0:
             raise ValueError(f"failed to parse public key as DER: {res.stderr.decode().strip()}")
         return res.stdout
@@ -67,8 +106,12 @@ def get_canonical_der(pub: Union[str, Path, bytes]) -> bytes:
     data = pub if isinstance(pub, bytes) else str(pub).encode("utf-8")
     with _secure_tempdir() as td:
         tpath = _write_0600_file(td, data, suffix=".pub")
+        _assert_is_public_key_file(Path(tpath))
         cmd = ["openssl", "pkey", "-pubin", "-in", tpath, "-outform", "DER"]
         res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        if res.returncode != 0:
+            cmd = ["openssl", "pkey", "-pubin", "-inform", "DER", "-in", tpath, "-outform", "DER"]
+            res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         if res.returncode != 0:
             raise ValueError(f"failed to parse public key as DER: {res.stderr.decode().strip()}")
         return res.stdout
@@ -166,22 +209,11 @@ def extract_pubkey_from_priv(priv_path: Union[str, Path], pub_path: Union[str, P
 
 
 class OpensslVerifier:
-    """Ed25519 verifier via openssl pkeyutl -verify -pubin -inkey PUB -rawin -sigfile F (D-EV-1, D-EV-10)."""
+    """Ed25519 verifier via openssl pkeyutl -verify -pubin -inkey PUB -rawin -sigfile F (D-EV-1, D-EV-10, D-FU-1)."""
 
     def __init__(self, pub_path: Union[str, Path]):
         self.pub_path = Path(pub_path)
-        if not self.pub_path.exists():
-            raise FileNotFoundError(f"public key not found: {self.pub_path}")
-        content = self.pub_path.read_bytes()
-        if b"PRIVATE KEY" in content:
-            raise ValueError(f"private key cannot be used as public key (D-EV-41): {self.pub_path}")
-        res = subprocess.run(
-            ["openssl", "pkey", "-pubin", "-in", str(self.pub_path), "-noout"],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-        )
-        if res.returncode != 0:
-            raise ValueError(f"invalid public key (D-EV-41): {res.stderr.decode().strip()}")
+        _assert_is_public_key_file(self.pub_path)
 
 
     def verify(self, msg: bytes, sig: bytes) -> bool:
@@ -207,4 +239,22 @@ class OpensslVerifier:
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
             )
-            return res.returncode == 0
+            if res.returncode != 0:
+                cmd_der = [
+                    "openssl",
+                    "pkeyutl",
+                    "-verify",
+                    "-pubin",
+                    "-keyform",
+                    "DER",
+                    "-inkey",
+                    str(self.pub_path),
+                    "-rawin",
+                    "-sigfile",
+                    sig_file,
+                    "-in",
+                    in_file,
+                ]
+                res_der = subprocess.run(cmd_der, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                return res_der.returncode == 0
+            return True

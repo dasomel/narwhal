@@ -161,8 +161,8 @@ ArgoCD, Gitea, RBAC, OpenBao, Keycloak, APISIX, NFS, `database` 신뢰 경계가
 - **Kakao Cloud 네트워킹 (#396, #265, #403).** 5개의 `kakaocloud_public_ip` 리소스 전체가 `prevent_destroy`로
   설정됨. 대상 지정 destroy 대신 `-replace`를 사용할 것. kubelet(10250) 보안 그룹 규칙은 노드 서브넷으로
   제한됨. `08-1` 설치는 이제 APISIX ingress controller에 request 256Mi, limit 512Mi를 부여함(전체 동기화 중
-  256Mi에서 OOMKilled되었음). GitOps 차트의 `ingressController` 블록은 여전히 128Mi/256Mi로 선언되어 있으며
-  (#403은 이를 바꾸지 않았음), kakao-narwhal의 컨트롤러는 별도 Helm 릴리즈이고 512Mi로 실행 중임.
+  256Mi에서 OOMKilled되었음). GitOps 차트의 `ingressController` 블록은 이제 일치하며(256Mi request / 512Mi limit, #424),
+  kakao-narwhal의 컨트롤러는 별도 Helm 릴리즈이고 512Mi로 실행 중임.
 
 ### 추가
 

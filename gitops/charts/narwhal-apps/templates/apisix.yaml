@@ -302,13 +302,15 @@ spec:
               adminAPIVersion: "v3"
             kubernetes:
               watchNamespaces: []  # All namespaces
+          # D-ic-mem (#403, #424): align with 08-1-networking.sh; 256Mi limit OOMKilled at startup sync.
+          # Request 256Mi keeps scheduler honest, 512Mi limit accommodates full resource sync.
           resources:
             requests:
               cpu: 50m
-              memory: 128Mi
+              memory: 256Mi
             limits:
               cpu: 200m
-              memory: 256Mi
+              memory: 512Mi
 
         # Metrics for Prometheus
         serviceMonitor:

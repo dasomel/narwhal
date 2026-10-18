@@ -3153,13 +3153,16 @@ assert sum(1 for l in code if re.search(r"\bexit 3\b", l)) == 1, "exit 3 must ap
   check R259 "nfs-quota-agent: 05 renders the chart with its own helm args and refuses any flag the pinned per-version table lacks (stale --default-quota bundle, unknown versions fail closed, before helm install); a failed rollout or a restarted/not-Ready pod exits 1 with logs --previous (no WARN, no grep -q pipe); prjquota is detected and warned (behavioral, fake helm/kubectl)" \
     bash scripts/test/lib/check-nqa-skew.sh
   # 2026-10-16: the IC was OOMKilled at startup under the 256Mi limit during the full resource sync.
-  check R258 "08-1 sizes the APISIX ingress controller memory: explicit limit >= 512Mi and request >= 256Mi, in the helm flags and the apisix chart values (D-ic-mem)" \
+  check R258 "08-1 and GitOps chart size the APISIX ingress controller memory: explicit limit >= 512Mi and request >= 256Mi, in the helm flags and the apisix chart values (D-ic-mem, #424)" \
     python3 -c 'import re,sys
 t=open("scripts/cluster/08-1-networking.sh").read()
+g=open("gitops/charts/narwhal-apps/templates/apisix.yaml").read()
 def mi(v): return int(v[:-2])*(1024 if v.endswith("Gi") else 1)
 f=[re.search(r"resources\.limits\.memory=(\d+(?:Mi|Gi))",t),re.search(r"resources\.requests\.memory=(\d+(?:Mi|Gi))",t)]
 v=re.search(r"ingressController:.*?limits:\s*cpu: \S+\s*memory: (\d+(?:Mi|Gi))",t,re.S)
-sys.exit(0 if all(f) and v and mi(f[0].group(1))>=512 and mi(f[1].group(1))>=256 and mi(v.group(1))>=512 else 1)'
+gr=re.search(r"ingressController:.*?requests:\s*cpu:\s*\S+\s*memory: (\d+(?:Mi|Gi))",g,re.S)
+gl=re.search(r"ingressController:.*?limits:\s*cpu:\s*\S+\s*memory: (\d+(?:Mi|Gi))",g,re.S)
+sys.exit(0 if all(f) and v and gr and gl and mi(f[0].group(1))>=512 and mi(f[1].group(1))>=256 and mi(v.group(1))>=512 and mi(gr.group(1))>=256 and mi(gl.group(1))>=512 else 1)'
 
   # 2026-10-16: up.sh printed "Phase 2 complete" right after 14-gitops-bootstrap.sh failed because
   # phase2_complete() only looked for namespaces. 06-phase2-start.sh now writes a success marker.

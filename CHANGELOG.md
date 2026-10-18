@@ -185,7 +185,7 @@ existing cluster or bundle; read **Upgrade notes** first.
   `prevent_destroy`; use `-replace` instead of a targeted destroy. The kubelet (10250) security
   group rule is limited to the node subnet. The `08-1` install now gives the APISIX ingress
   controller a 256Mi request and 512Mi limit (it was OOMKilled at 256Mi during its full sync). The
-  GitOps chart's `ingressController` block still declares 128Mi/256Mi (#403 did not change it);
+  GitOps chart's `ingressController` block now matches (256Mi request / 512Mi limit, #424);
   the controller on kakao-narwhal is a separate Helm release and runs 512Mi.
 
 ### Added

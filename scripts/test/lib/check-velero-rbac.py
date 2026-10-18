@@ -9,6 +9,11 @@ import tempfile
 
 import yaml
 
+try:
+    from velero_rbac_fsbackup import check_fsbackup_role, mutation_verify_fsbackup
+except ImportError:
+    from scripts.test.lib.velero_rbac_fsbackup import check_fsbackup_role, mutation_verify_fsbackup
+
 
 FORBIDDEN_VERBS = {"impersonate", "escalate", "bind"}
 READ_VERBS = {"get", "list", "watch"}
@@ -86,6 +91,7 @@ def check_role(path: Path) -> list[str]:
                                      "customresourcedefinitions" in rule.get("resources", [])))
     if crd_write_verbs - {"create"}:
         problems.append(f"{path}: CRDs must be create-only")
+    problems.extend(check_fsbackup_role(path, role))
     return problems
 
 
@@ -141,7 +147,9 @@ def check_upgrade(script_path: Path, chart_path: Path) -> list[str]:
 def mutation_verify(role_path: Path, script_path: Path, chart_path: Path,
                     gitops_path: Path, schedules_script: Path) -> list[str]:
     problems = []
-    role, binding = role_docs(role_path)
+    docs = list(yaml.safe_load_all(role_path.read_text()))
+    role = next(doc for doc in docs if doc.get("kind") == "ClusterRole")
+    binding = next(doc for doc in docs if doc.get("kind") == "ClusterRoleBinding")
     with tempfile.TemporaryDirectory() as temp_dir:
         temp = Path(temp_dir)
         mutations = [
@@ -155,7 +163,7 @@ def mutation_verify(role_path: Path, script_path: Path, chart_path: Path,
         for name, mutation in mutations:
             role["rules"].append(mutation)
             target = temp / "mutated.yaml"
-            target.write_text(yaml.safe_dump_all([role, binding], sort_keys=False))
+            target.write_text(yaml.safe_dump_all(docs, sort_keys=False))
             if not check_role(target):
                 problems.append(f"safety mutation escaped: {name}")
             role["rules"].pop()
@@ -164,7 +172,7 @@ def mutation_verify(role_path: Path, script_path: Path, chart_path: Path,
                              ("rbac.authorization.k8s.io" in rule.get("apiGroups", []) and
                               name in rule.get("resources", []) and WRITE_VERBS <= set(rule.get("verbs", [])))]
             target = temp / f"mutated-{name}.yaml"
-            target.write_text(yaml.safe_dump_all([role, binding], sort_keys=False))
+            target.write_text(yaml.safe_dump_all(docs, sort_keys=False))
             if not check_role(target):
                 problems.append(f"namespaced {name} write-removal mutation escaped")
             generated_role, _ = role_docs(role_path)
@@ -172,10 +180,11 @@ def mutation_verify(role_path: Path, script_path: Path, chart_path: Path,
         original = binding["metadata"]["name"]
         binding["metadata"]["name"] = "velero-server"
         target = temp / "mutated-binding.yaml"
-        target.write_text(yaml.safe_dump_all([role, binding], sort_keys=False))
+        target.write_text(yaml.safe_dump_all(docs, sort_keys=False))
         if not check_role(target):
             problems.append("binding-name mutation escaped")
         binding["metadata"]["name"] = original
+        problems.extend(mutation_verify_fsbackup(role_path, temp, check_role))
         original = script_path.read_text()
         mutated = temp / "mutated-script.sh"
         mutated.write_text(original.replace('== cluster-admin', '== some-role'))

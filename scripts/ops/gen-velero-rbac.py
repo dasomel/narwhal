@@ -26,6 +26,9 @@ DENYLIST = {
     ("metrics.k8s.io", "pods"): "ephemeral utilization measurements are not backup state",
     ("coordination.k8s.io", "leases"): "ephemeral leader election and heartbeat state",
 }
+EXTRA_CLUSTER_RULES = [
+    ([""], ["nodes"], ["get"], "Velero 1.18 fs-backup reads the node OS to expose a PodVolumeBackup; get only"),
+]
 READ_VERBS = ["get", "list", "watch"]
 WRITE_VERBS = ["create", "update", "patch", "delete"]
 READ_ONLY_RBAC = {"clusterroles", "clusterrolebindings"}
@@ -97,6 +100,8 @@ def generate(snapshot: Path) -> str:
         "# WRITE (create/update/patch/delete) is limited to namespaced listable kinds,",
         "# PVs and Namespaces. CRDs are create-only; Velero API objects have full access.",
         "# api-resources omits subresources, so rules cannot grant nodes/proxy or pods/exec.",
+        "# Exception: nodes get is granted cluster-wide (Velero 1.18 fs-backup reads the node OS to expose a PodVolumeBackup; get only).",
+        "# Exception: events get/list/watch is granted in namespace storage via velero-node-agent-events Role (node-agent event informer).",
         "apiVersion: rbac.authorization.k8s.io/v1",
         "kind: ClusterRole",
         "metadata:",
@@ -109,6 +114,8 @@ def generate(snapshot: Path) -> str:
     lines.extend(group_rules(writable, WRITE_VERBS))
     if crd in all_resources:
         lines.append(rule([crd[0]], [crd[1]], ["create"]))
+    for api_groups, resources, verbs, _reason in EXTRA_CLUSTER_RULES:
+        lines.append(rule(api_groups, resources, verbs))
     lines.append(rule(["velero.io"], ["*"], ["*"]))
     lines.extend([
         "---",
@@ -122,6 +129,34 @@ def generate(snapshot: Path) -> str:
         "  apiGroup: rbac.authorization.k8s.io",
         "  kind: ClusterRole",
         "  name: velero-server",
+        "subjects:",
+        "  - kind: ServiceAccount",
+        "    name: velero-server",
+        "    namespace: storage",
+        "---",
+        "apiVersion: rbac.authorization.k8s.io/v1",
+        "kind: Role",
+        "metadata:",
+        "  name: velero-node-agent-events",
+        "  namespace: storage",
+        "  labels:",
+        "    app.kubernetes.io/managed-by: narwhal",
+        "rules:",
+        '  - apiGroups: [""]',
+        '    resources: ["events"]',
+        '    verbs: ["get", "list", "watch"]',
+        "---",
+        "apiVersion: rbac.authorization.k8s.io/v1",
+        "kind: RoleBinding",
+        "metadata:",
+        "  name: velero-node-agent-events",
+        "  namespace: storage",
+        "  labels:",
+        "    app.kubernetes.io/managed-by: narwhal",
+        "roleRef:",
+        "  apiGroup: rbac.authorization.k8s.io",
+        "  kind: Role",
+        "  name: velero-node-agent-events",
         "subjects:",
         "  - kind: ServiceAccount",
         "    name: velero-server",

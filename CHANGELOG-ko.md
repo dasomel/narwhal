@@ -74,13 +74,16 @@ ArgoCD, Gitea, RBAC, OpenBao, Keycloak, APISIX, NFS, `database` 신뢰 경계가
   `insecureSkipVerify`가 제거되었고 `rootCA`가 `argocd-cm` / `argocd-secret`에 주입됨.
   `11-3-keycloak-clients.sh`는 `narwhal-wildcard-tls`와 `narwhal-ca-cert` 어디에서도 CA를 얻지 못하면 exit 1로
   종료함. `test-sso.sh`는 검증이 성공하기를 기대함.
-- **APISIX Admin API는 파드 CIDR과 루프백만 허용 (1dddbe4).** 허용 소스는 `10.244.0.0/16`과 `127.0.0.1/32`이며,
-  NetworkPolicy가 `:9180` ingress를 APISIX ingress controller와 `devtools`의 `narwhal-portal`로 제한함
-  (`gitops/resources/apisix-admin-ingress-policy.yaml`). 장애 복구(break-glass)용 파드에는 라벨
-  `app.kubernetes.io/name=apisix-ingress-controller`가 있어야 함(`docs/common/apisix-etcd-recovery.md`,
-  `docs/common/apisix-admin-api.md`). 허용 CIDR은 `POD_NETWORK_CIDR`에서 가져오지 않고
-  `gitops/charts/narwhal-apps/templates/apisix.yaml`에 하드코딩되어 있으므로, 파드 CIDR을 바꾼 클러스터에서는
-  파드가 Admin API에 접근할 수 없음.
+- **APISIX Admin API는 파드 CIDR과 루프백만 허용 (1dddbe4, #399).** 허용 소스는 파드 CIDR(차트 기본값
+  `10.244.0.0/16`)과 `127.0.0.1/32`이며, NetworkPolicy가 `:9180` ingress를 APISIX ingress controller와
+  `devtools`의 `narwhal-portal`로 제한함(`gitops/resources/apisix-admin-ingress-policy.yaml`). 장애 복구(break-glass)용
+  파드에는 라벨 `app.kubernetes.io/name=apisix-ingress-controller`가 있어야 함(`docs/common/apisix-etcd-recovery.md`,
+  `docs/common/apisix-admin-api.md`). 허용 CIDR은 차트 값 `podNetworkCidr`
+  (`gitops/charts/narwhal-apps/templates/apisix.yaml`)이며, `14-gitops-bootstrap.sh`가
+  `resolve_apisix_admin_cidr`(`scripts/common/lib.sh`)를 통해 채움: `APISIX_ADMIN_CIDR`, Cilium
+  cluster-pool CIDR, kubeadm `podSubnet`, 차트 기본값 순서임. 의도적으로 `POD_NETWORK_CIDR`을 사용하지
+  않으며, 조회 오류 시 기본값으로 대체하는 대신 fail closed로 동작하므로 커스텀 파드 CIDR에 더 이상
+  수동 편집이 필요 없음. 재정의할 때만 `APISIX_ADMIN_CIDR`을 설정할 것.
 - **NFS export 기본값이 `root_squash`와 모드 750 루트로 변경 (6151b86, 7e4e622).** 두 export 줄에서
   `no_root_squash`가 제거됨. `root_squash`는 디스크에 이미 있는 소유권을 바꾸지 않으므로
   `docs/common/compliance-hardening.md`의 마이그레이션 런북을 따르고 `scripts/test/verify-nfs-root-squash.sh`로
@@ -99,14 +102,65 @@ ArgoCD, Gitea, RBAC, OpenBao, Keycloak, APISIX, NFS, `database` 신뢰 경계가
 - **ArgoCD 캐시가 Valkey로 실행됨 (3a3aef9).** `13-argocd.sh`가 `argocd-redis`를
   `docker.io/valkey/valkey:8-alpine`으로 지정함(Redis 8은 RSALv2/SSPL/AGPL). 기존 클러스터는 `13-argocd.sh`를
   다시 적용하면 반영됨.
-- **포털이 `narwhal-portal:1.0.19`로 고정됨 (2a11c10, #245).** Cosign 서명이 없으며, 1.0.18은 시작 시
-  크래시하므로 사용하면 안 됨(`SECURITY.md`).
+- **포털이 `narwhal-portal:1.1.0`으로 고정됨 (#343, eb993c24; 기존 2a11c10, #245의 1.0.19).**
+  1.1.0은 리포지토리 키로 Cosign 서명됨. 1.0.19 및 그 이전 버전은 서명되지 않았으며, 1.0.18은 시작 시
+  크래시하므로 사용하면 안 됨(`SECURITY.md`). 1.1.0은 동일한 변경에서 설치하는 TLS 전용 Valkey 리스너와
+  전용 ACL 사용자를 필요로 함(`rediss://`, `VALKEY_USERNAME`, `VALKEY_PASSWORD`). 포털 1.0.19는
+  `VALKEY_USERNAME`을 지원하지 않아 이에 연결하여 실행할 수 없음.
 - **`up.sh`가 Phase 2가 불완전하면 exit 2로 종료 (#225)**, macOS 로컬 네트워크 권한이 VM을 막는 경우 정확한
   시스템 설정 수정 방법을 출력하고 중단함.
 - **Kakao Cloud (e496631, 8f24bcf, eda06db).** 바스천이 자체 보안 그룹을 가지며, SSH는 필수값인
   `bastion_ssh_allowed_cidrs`로 제한되고 `0.0.0.0/0`은 거부됨. SSH 호스트 키는 클러스터별 `known_hosts`로
   검증되며(최초 접속 시 신뢰, 키가 바뀌면 차단), 노드나 바스천을 재구축한 후에는 `kakao_forget_host`로 이전
   항목을 지울 것. 큐블릿 포트 10250은 노드 서브넷에만 열림.
+- **SeaweedFS S3에 클라이언트별 키 필요 (#412).** S3 서버가 이제 `enableAuth` 및 각자 전용 버킷으로 제한된 4개
+  클라이언트 Secret(`loki`, `tempo`, `velero`, `cnpg`)에서 생성된 identities 파일로 실행됨.
+  `storage/seaweedfs-s3-config`는 자동 생성되며 직접 편집하면 안 됨. 내장 filer S3는 꺼져 있으므로
+  `seaweedfs-filer`는 더 이상 `:8333`을 게시하지 않음. Loki와 Tempo는 `envFrom`을 통해
+  `monitoring/loki-s3-credentials` 및 `monitoring/tempo-s3-credentials`에서 키를 읽으며,
+  `narwhal-db.yaml`은 더 이상 `cnpg-s3-credentials`를 포함하지 않음. **기존 클러스터에서는
+  `docs/runbooks/seaweedfs-s3-auth.md`를 단계별로 따를 것.** `08-4-storage.sh`를 다시 실행하면 키 교체, 인증
+  활성화, S3 서버 재시작이 한 번에 진행되므로 GitOps push가 반영될 때까지 Loki와 Tempo에 403이 발생함(#414).
+  런북의 두 가지 검사는 잘못되었으므로 게이트로 사용하면 안 됨: CNPG 파드의 `env | grep AWS_`(인스턴스 매니저가
+  Secret을 읽으므로 파드 환경변수가 아님) 및 S3 Deployment의 `args | grep config=`(플래그는 `command`에 있음)
+  (#419). `s3_sync_server_config`가 작성하는 파드 템플릿 어노테이션은 Argo CD 자가 치유(self-heal)에 의해 되돌려지므로,
+  키 교체 시 아직 S3 서버가 안정적으로 재시작되지 않음(#419). `ensure_s3_identities`는 멱등적임: 두 번째 실행 시
+  기존 키를 유지함.
+- **`08-4-storage.sh` 실행 전 SeaweedFS 데이터 노드 라벨링 필요 (#409, cd62c691).** 볼륨 서버는 노드 로컬
+  hostPath `/ssd/object_store`에 데이터를 보관하며 `nodeSelector narwhal.io/seaweedfs-volume=true`로 고정됨
+  (차트 및 `08-4-storage.sh`). 기존 클러스터에서는 이미 데이터를 보관 중인 노드에 먼저 수동으로 라벨을 지정할 것.
+  라벨이 지정된 노드가 없으면 `08-4`는 이름순 첫 번째 워커에 라벨을 지정하며, 데이터가 없는 노드에 배치된 볼륨
+  서버는 빈 상태로 시작됨(2026-10-16 NFS 마이그레이션 중 재스케줄링이 정확히 이 문제를 일으켜 Loki가
+  크래시 루프에 빠짐). 둘 이상의 노드에 라벨이 있으면 `08-4`는 중단됨. SeaweedFS master와 filer는 이제
+  uid/gid 1000으로 실행됨 (#410).
+- **APISIX admin 키가 생성됨 (#400).** 라이브 Kakao 클러스터는 공개된 업스트림 admin 키로 실행 중이었음.
+  이제 부트스트랩 시 키를 1회 생성하고(`resolve_apisix_keys`), 업스트림 기본값을 sha256으로 거부하며,
+  ingress controller에 기존 Secret을 제공함. 기존 클러스터는 `scripts/cluster/rotate-apisix-admin-key.sh`를
+  실행해야 함(이전 키에 대한 401 및 새 키에 대한 200을 검증함). 신규 설치에는 별도 조치가 필요 없음.
+- **Kakao Cloud의 NFS export용 선택적 전용 XFS 볼륨 (#407, #408, #409, #411).** `nfs_data_volume_size`
+  (기본값 0)는 master-1에 연결되는 `prevent_destroy` 볼륨을 생성함. `01-nfs-server.sh`는 볼륨이 비어 있을
+  때만 XFS로 포맷하고 `prjquota`로 마운트함. 기존 export 마이그레이션은 승인 기반
+  `docs/runbooks/nfs-xfs-migration.md`를 따름: 연결 후 전체 plan 실행 시 로드밸런서 멤버 4개가 교체되므로
+  4단계의 `-target` 제한 OpenTofu 단계를 거침. 동일 런북이 `root_squash` 전환도 함께 처리함(기본 dry-run인
+  `scripts/cluster/nfs-root-squash-align.sh`로 소유권 일치 작업 수행, root 필요, CSIDriver `fsGroupPolicy`는
+  불변). 두 작업 모두 2026-10-16 라이브 Kakao 클러스터에서 1회 수행되었으며
+  (`docs/kakao/nfs-xfs-migration-2026-10-16.md`), 클린룸 재수행 이력은 없음.
+- **nfs-quota-agent 차트/이미지 버전 불일치 거부 (#404, #406).** `05-nfs-quota-agent.sh`는 `helm` 실행 전
+  차트의 플래그와 이미지를 비교하고(`scripts/common/lib-nqa.sh`), DaemonSet을 대기하며 `CrashLoopBackOff` 시
+  exit 1로 종료함. 라이브 클러스터에서 `--state-dir`(v0.4.0 신규)을 전달하는 차트에 v0.3.0 이미지가 실행되어
+  약 14,000회 재시작된 바 있음.
+- **Velero 볼륨 백업에 두 가지 추가 권한 필요 (#421).** 생성된 `velero-server` RBAC에 `nodes`에 대한 `get`
+  (클러스터 스코프)과 `storage` 네임스페이스의 `events` get/list/watch를 위한 네임스페이스 Role
+  `velero-node-agent-events`가 추가됨. 노드에 대한 `list`/`watch` 및 클러스터 전체 이벤트는 계속 거부됨.
+  이 권한이 없으면 `PodVolumeBackup`이 `cannot get resource "nodes"` 오류로 실패하고 `Prepared` 상태로
+  남게 됨. Argo CD가 `kubectl apply`를 되돌리므로, `push-to-gitea.sh`로
+  `resources/velero-server-rbac.yaml`을 push한 후 `velero-server-rbac` Application을 하드 새로고침(hard-refresh)할 것
+  (스크립트는 이를 새로고침하지 않음). #412 이전에는 kopia 리포지토리가 익명 S3에 대해 초기화되지 못해 어떤 볼륨도
+  백업된 적이 없었음. 2026-10-18/19 kakao-narwhal에서 볼륨 백업 및 복원, 권한이 검증됨. 변경 후 예약 백업은
+  아직 관찰되지 않음.
+- **Kakao Cloud 네트워킹 (#396, #265, #403).** 5개의 `kakaocloud_public_ip` 리소스 전체가 `prevent_destroy`로
+  설정됨. 대상 지정 destroy 대신 `-replace`를 사용할 것. 큐블릿(10250) 보안 그룹 규칙은 노드 서브넷으로
+  제한됨. APISIX ingress controller limit은 512Mi임(전체 동기화 중 256Mi에서 OOMKilled되었음).
 
 ### 추가
 
@@ -146,12 +200,18 @@ ArgoCD, Gitea, RBAC, OpenBao, Keycloak, APISIX, NFS, `database` 신뢰 경계가
 - **설계 문서와 기준선.** CAPI 대 프로바이더 ADR(#266), Kubernetes/OSS 호환성 매트릭스(#271, #296), 통합 관측성
   계약(#281), 스토리지 보호 정책(#279), 관리 플레인 HA 계약(#280), 이벤트 엔벨롭 기준선과 멀티클러스터 자격 증명
   내보내기(9af2489, 7fc3a45), T1-T7 테스트 분류(c16dc86).
+- **에이전트 실행 증거 체인, 참조 구현체 (#413, ADR-0002).** `scripts/evidence/`는 권한 부여(grant) 사용에 대한
+  서명 및 해시 체인 로그임: grant 사용 전의 `intent` 레코드와 사용 후의 `result` 레코드, 꼬리 잘림(tail truncation)과
+  롤백을 감지하는 교차 서명 체크포인트, 분리된 엔트리 및 체크포인트 키, 체인에서 파생되는 1회 사용(spend-once)
+  보장. Python 표준 라이브러리와 `openssl`로 구현되었으며, 61개의 공격 테스트가 R273으로 실행됨. 현재 **어떤
+  정책 집행 지점에도 아직 연동되지 않음**; `docs/adr/0002-agent-execution-evidence-chain.md`에 잔여 위험
+  (서명 오라클, advisory locking, 체크포인트 간격)이 정리됨.
 
 ### 변경
 
 - **컴포넌트 고정 (`VERSIONS.md`).** Kubernetes 1.35.5 → 1.35.7(kubeadm/kubelet/kubectl 행은 이제 CI에서
   검사, 80c0c77), nfs-quota-agent 0.2.1 → 0.5.0(d8821a9), Harbor는 불변 태그 v2.15.1로 고정, 포털 이미지
-  1.0.16 → 1.0.19(#245).
+  1.0.16 → 1.0.19(#245), 이후 1.1.0(#343).
 - **포털 RBAC.** PVC 사전 점검을 위한 `StorageClass`, `ResourceQuota` 읽기 전용 접근(#315), `argocd-server`가
   더 이상 `nodes/proxy`에 접근하지 않음(#255), Velero 서버 역할이 `cluster-admin` 대신 최소 권한이 됨(#250),
   포털의 Gitea 토큰이 최소 권한이 됨(#252, #253).
@@ -161,6 +221,10 @@ ArgoCD, Gitea, RBAC, OpenBao, Keycloak, APISIX, NFS, `database` 신뢰 경계가
   경로에서도 `directAccessGrantsEnabled=false`, 예상치 못한 클라이언트가 있으면 부트스트랩을 실패시키는
   `validate-keycloak-clients.sh`.
 - **SBOM 상관 분석이 무관한 취약점 식별자와 매칭되지 않음 (#317).**
+- **CI 및 릴리스 게이트.** CI 패키지 설치가 라이프사이클 스크립트 없이 실행됨(#346), 포털 서명 job이
+  이미지 다이제스트를 전달받음(#394), 포털 `THIRD-PARTY-NOTICES.md`가 markdownlint를 통과함(#386),
+  `mark-review-pass`가 비-ASCII PR 번호를 거부함(#313), research-evidence 워크플로의 `setup-python`이
+  SHA로 고정됨(#314).
 
 ### 수정
 
@@ -185,9 +249,10 @@ ArgoCD, Gitea, RBAC, OpenBao, Keycloak, APISIX, NFS, `database` 신뢰 경계가
 
 ### 알려진 이슈
 
-- **이미지 서명이 집행되지 않음.** Kyverno `verify-image-signatures` 정책은 `Audit` 전용이며 `required: false`이고
-  공개 키는 PLACEHOLDER(`MFkw...AAE/narwhal/cosign/trusted/signer/pub`)임. cosign 키가 발급되지 않았으므로(#35)
-  이 정책은 현재 아무것도 집행하지 않음. 포털 이미지 1.0.19도 Cosign 서명이 없음.
+- **이미지 서명이 집행되지 않음.** Kyverno `verify-image-signatures` 정책은 `Audit` 전용이며 `required: false`임.
+  이제 리포지토리 Cosign 공개 키(`scripts/airgap/keys/cosign.pub`, #389; 드리프트 시 R74/R75c 실패)를 포함하고
+  에어갭 검증을 위해 Rekor 조회를 건너뛰므로(#391), 서명되지 않은 이미지를 보고하지만 아무것도 차단하지 않음
+  (#35). 포털 1.1.0은 서명되었으며 1.0.19 및 이전 버전은 서명되지 않음.
 - **부트스트랩 중 메시 전역 PERMISSIVE.** `09-istio-ambient.sh`가 메시 전역 PERMISSIVE `PeerAuthentication`을
   적용하고, GitOps 차트는 같은 이름으로 `STRICT`를 선언하므로 ArgoCD가 수렴하기 전까지 트래픽이 fail-open임
   (#126).
@@ -208,8 +273,22 @@ ArgoCD, Gitea, RBAC, OpenBao, Keycloak, APISIX, NFS, `database` 신뢰 경계가
   실패시키지 않음(#124).
 - **다이제스트 인벤토리는 최초 저장 시점 신뢰(trust-on-first-save)임.** `images.digests.json`에는 서명이 없으므로
   번들이 `02`가 기록한 것과 일치함은 증명하지만 `02`가 올바른 바이트를 보았음은 증명하지 않음(#124).
+- **S3 인증 운영 작업이 완료되지 않음 (#414, #415, #419).** 위의 업그레이드 참고를 참조할 것: `08-4-storage.sh`를
+  다시 실행하면 단계적 전환이 무너지며, 재시작 헬퍼의 어노테이션이 Argo CD에 의해 되돌려지고, `verify-backup.sh`가
+  익명 403 검사 대상 파드로 `node-agent`를 선택하여(`wget`이 없음) 해당 검사를 통과할 수 없으며, 일부 스크립트
+  세부 사항(숫자 형태의 access key 미따옴표 처리, `07-cnpg.sh`가 S3 서버를 재시작하지 않음, `last-applied`
+  어노테이션에 키가 남아있음)이 미해결 상태임.
+- **Velero 스케줄이 `emptyDir`을 포함하여 `storage`의 모든 볼륨을 백업함 (#422).** 하나의 `PodVolumeBackup`
+  (OpenBao `data`)이 메시지 없이 `Canceled`로 종료됨; 원인은 알 수 없음. 원인이 규명될 때까지 매일 실행되는
+  OpenBao 백업은 검증되지 않은 것으로 간주할 것.
+- **Tempo가 1536Mi 제한에서 만성적으로 OOMKilled됨 (#420).** S3 변경과 무관하게 라이브 클러스터에서
+  매주 수백 건의 재시작이 발생함.
+- **증거 체인 후속 작업 (#417).** 공개 키가 예상되는 위치에 DER 개인 키가 허용되며, append-only 저장소에서
+  손상된(torn) 체크포인트 라인에 대한 복구 절차가 없고, 체크포인트 파일에 rename-swap 검사가 없음.
 - **라이브 클러스터에 적용되지 않음.** AppProject 분리, 개발자 RBAC 변경, 비공개 Gitea 리포지토리, Valkey 교체의
   커밋 메시지는 실행 중인 narwhal 클러스터가 아니라 정적 검사 또는 임시 클러스터에서 확인했다고 명시함.
+  이후 라이브 kakao-narwhal 클러스터에서 검증 완료됨: S3 인증, Velero 백업 및 복원(2026-10-18), Velero RBAC 권한
+  (2026-10-19), NFS의 XFS 및 `root_squash` 전환(2026-10-16).
 
 ## [1.2.0] - 2026-08-08
 

@@ -87,14 +87,17 @@ existing cluster or bundle; read **Upgrade notes** first.
   `argocd-cm` / `argocd-secret`. `11-3-keycloak-clients.sh` now exits 1 when neither
   `narwhal-wildcard-tls` nor `narwhal-ca-cert` yields a CA. `test-sso.sh` expects verification to
   succeed.
-- **The APISIX Admin API allows only the pod CIDR and loopback (1dddbe4).** Source allowlist is
-  `10.244.0.0/16` plus `127.0.0.1/32`, and a NetworkPolicy limits `:9180` ingress to the APISIX
+- **The APISIX Admin API allows only the pod CIDR and loopback (1dddbe4, #399).** Source allowlist
+  is the pod CIDR (chart default `10.244.0.0/16`) plus `127.0.0.1/32`, and a NetworkPolicy limits `:9180` ingress to the APISIX
   ingress controller and `narwhal-portal` in `devtools`
   (`gitops/resources/apisix-admin-ingress-policy.yaml`). Break-glass recovery pods must carry the
   label `app.kubernetes.io/name=apisix-ingress-controller` (`docs/common/apisix-etcd-recovery.md`,
-  `docs/common/apisix-admin-api.md`). The allowed CIDR is hard-coded in
-  `gitops/charts/narwhal-apps/templates/apisix.yaml`, not taken from `POD_NETWORK_CIDR`, so a
-  cluster with a custom pod CIDR locks pods out of the Admin API.
+  `docs/common/apisix-admin-api.md`). The allowed CIDR is the chart value `podNetworkCidr`
+  (`gitops/charts/narwhal-apps/templates/apisix.yaml`), filled by `14-gitops-bootstrap.sh` from
+  `resolve_apisix_admin_cidr` (`scripts/common/lib.sh`): `APISIX_ADMIN_CIDR`, then the Cilium
+  cluster-pool CIDR, then the kubeadm `podSubnet`, then the chart default. It deliberately does not
+  use `POD_NETWORK_CIDR`, and it fails closed instead of defaulting when a lookup errors, so a
+  custom pod CIDR no longer needs a manual edit. Set `APISIX_ADMIN_CIDR` only to override it.
 - **NFS exports default to `root_squash` with a mode-750 root (6151b86, 7e4e622).**
   `no_root_squash` is removed from both export lines. `root_squash` does not rewrite existing
   on-disk ownership; follow the migration runbook in `docs/common/compliance-hardening.md` and
@@ -118,8 +121,11 @@ existing cluster or bundle; read **Upgrade notes** first.
 - **ArgoCD's cache runs Valkey (3a3aef9).** `13-argocd.sh` points `argocd-redis` at
   `docker.io/valkey/valkey:8-alpine` (Redis 8 is RSALv2/SSPL/AGPL). An existing cluster picks
   it up when `13-argocd.sh` is re-applied.
-- **Portal is pinned to `narwhal-portal:1.0.19` (2a11c10, #245).** It is not Cosign-signed, and
-  1.0.18 crashes on start and must not be used (`SECURITY.md`).
+- **Portal is pinned to `narwhal-portal:1.1.0` (#343, eb993c24; was 1.0.19 from 2a11c10, #245).**
+  1.1.0 is Cosign-signed with the repository key; 1.0.19 and earlier are not, and 1.0.18 crashes on
+  start and must not be used (`SECURITY.md`). 1.1.0 requires the TLS-only Valkey listener and the
+  dedicated ACL user that the same change installs (`rediss://`, `VALKEY_USERNAME`,
+  `VALKEY_PASSWORD`); portal 1.0.19 has no `VALKEY_USERNAME` support and cannot run against it.
 - **`up.sh` exits 2 when Phase 2 is incomplete (#225)**, and stops with the exact System
   Settings fix when macOS Local Network permission blocks the VM.
 - **Kakao Cloud (e496631, 8f24bcf, eda06db).** The bastion has its own security group; SSH is
@@ -127,6 +133,58 @@ existing cluster or bundle; read **Upgrade notes** first.
   host keys are verified against a per-cluster `known_hosts` (trust on first use, a changed
   key fails closed); after rebuilding a node or the bastion, clear the old entry with
   `kakao_forget_host`. Kubelet port 10250 is open to the node subnet only.
+- **SeaweedFS S3 needs per-client keys (#412).** The S3 server now runs with `enableAuth` and an
+  identities file derived from four client Secrets (`loki`, `tempo`, `velero`, `cnpg`), each limited
+  to its own bucket; `storage/seaweedfs-s3-config` is generated and must not be edited by hand. The
+  embedded filer S3 is off, so `seaweedfs-filer` no longer publishes `:8333`. Loki and Tempo read
+  their keys from `monitoring/loki-s3-credentials` and `monitoring/tempo-s3-credentials` via
+  `envFrom`, and `narwhal-db.yaml` no longer carries `cnpg-s3-credentials`. **On an existing cluster
+  follow `docs/runbooks/seaweedfs-s3-auth.md` in stages.** Re-running `08-4-storage.sh` rotates the
+  keys, turns authentication on and restarts the S3 server in one go, so Loki and Tempo get 403 until
+  the GitOps push catches up (#414). Two runbook checks are wrong and must not be used as gates:
+  `env | grep AWS_` in the CNPG pod (the instance manager reads the Secret; it is not pod
+  environment) and `args | grep config=` on the S3 Deployment (the flag is in `command`) (#419).
+  `s3_sync_server_config` writes a pod-template annotation that Argo CD self-heal reverts, so a key
+  rotation does not reliably restart the S3 server yet (#419). `ensure_s3_identities` is idempotent:
+  a second run keeps the keys.
+- **Label the SeaweedFS data node before running `08-4-storage.sh` (#409, cd62c691).** The volume
+  server keeps data in node-local hostPath `/ssd/object_store` and is pinned by
+  `nodeSelector narwhal.io/seaweedfs-volume=true` (chart and `08-4-storage.sh`). On an existing
+  cluster, label the node that already holds the data by hand first. If no node carries the label,
+  `08-4` labels the first worker by name, and a volume server that lands on a node without the
+  data starts empty (a reschedule during the 2026-10-16 NFS migration did exactly that and
+  crash-looped Loki). `08-4` aborts when more than one node has the label. SeaweedFS master and filer now run as uid/gid 1000 (#410).
+- **The APISIX admin key is generated (#400).** The live Kakao cluster had been running the public
+  upstream admin key. Bootstrap now generates it once (`resolve_apisix_keys`), rejects the upstream
+  defaults by sha256, and gives the ingress controller an existing Secret. An existing cluster must
+  run `scripts/cluster/rotate-apisix-admin-key.sh` (it verifies 401 for the old key and 200 for the
+  new one). A new install needs no action.
+- **Optional dedicated XFS volume for the NFS export on Kakao Cloud (#407, #408, #409, #411).**
+  `nfs_data_volume_size` (default 0) creates a `prevent_destroy` volume attached to master-1;
+  `01-nfs-server.sh` formats it XFS only when it is blank and mounts it with `prjquota`. Moving an
+  existing export is the approval-gated `docs/runbooks/nfs-xfs-migration.md`: four `-target`-gated
+  OpenTofu steps, because a full plan after the attach replaces four load-balancer members. The
+  same runbook orders the `root_squash` switch (ownership alignment with the dry-run-by-default
+  `scripts/cluster/nfs-root-squash-align.sh`, which needs root; the CSIDriver `fsGroupPolicy` is
+  immutable). Both ran once on the live Kakao cluster on 2026-10-16
+  (`docs/kakao/nfs-xfs-migration-2026-10-16.md`); there is no clean-room repeat.
+- **nfs-quota-agent chart/image skew is refused (#404, #406).** `05-nfs-quota-agent.sh` compares
+  the chart's flags with the image before `helm` (`scripts/common/lib-nqa.sh`), waits on the
+  DaemonSet and exits 1 on `CrashLoopBackOff`. A live cluster had run a v0.3.0 image under a chart
+  that passes `--state-dir` (new in v0.4.0) for about 14,000 restarts.
+- **Velero volume backup needs two extra permissions (#421).** The generated `velero-server`
+  RBAC adds `get` on `nodes` (cluster scope) and a namespaced Role `velero-node-agent-events` for
+  `events` get/list/watch in `storage`; `list`/`watch` on nodes and cluster-wide events stay denied.
+  Without them a `PodVolumeBackup` fails with `cannot get resource "nodes"` and then stays
+  `Prepared`. Argo CD reverts `kubectl apply`: push `resources/velero-server-rbac.yaml` with
+  `push-to-gitea.sh`, then hard-refresh the `velero-server-rbac` Application (the script does not
+  refresh it). Before #412 the kopia repositories could not initialise against the anonymous S3, so
+  no volume had ever been backed up. Verified on kakao-narwhal on 2026-10-18/19: a volume backup
+  and restore, and the permissions. A scheduled backup after the change has not been observed yet.
+- **Kakao Cloud networking (#396, #265, #403).** All five `kakaocloud_public_ip` resources are
+  `prevent_destroy`; use `-replace` instead of a targeted destroy. The kubelet (10250) security
+  group rule is limited to the node subnet. The APISIX ingress controller limit is 512Mi
+  (it was OOMKilled at 256Mi during its full sync).
 
 ### Added
 
@@ -177,13 +235,20 @@ existing cluster or bundle; read **Upgrade notes** first.
   compatibility matrix (#271, #296), unified observability contract (#281), storage protection
   policy (#279), management-plane HA contract (#280), event-envelope baseline and
   multi-cluster credential export (9af2489, 7fc3a45), and the T1-T7 test taxonomy (c16dc86).
+- **Agent execution evidence chain, reference implementation (#413, ADR-0002).**
+  `scripts/evidence/` is a signed, hash-chained log around grant consumption: an `intent` record
+  before the grant is spent and a `result` record after, countersigned checkpoints that detect
+  tail truncation and rollback, separate entry and checkpoint keys, and spend-once derived from
+  the chain. Python standard library plus `openssl`; 61 attack tests run as R273. It is **not wired
+  into any policy enforcement point yet**; `docs/adr/0002-agent-execution-evidence-chain.md` lists
+  the residual risks (signing oracle, advisory locking, checkpoint interval).
 
 ### Changed
 
 - **Component pins (`VERSIONS.md`).** Kubernetes 1.35.5 to 1.35.7 with the
   kubeadm/kubelet/kubectl rows now checked in CI (80c0c77), nfs-quota-agent 0.2.1 to 0.5.0
   (d8821a9), Harbor pinned to the immutable tag v2.15.1, and the portal image 1.0.16 to 1.0.19
-  (#245).
+  (#245), then to 1.1.0 (#343).
 - **Portal RBAC.** Read-only `StorageClass` and `ResourceQuota` access for PVC preflight
   (#315); `argocd-server` no longer reaches `nodes/proxy` (#255); Velero's server role is
   least-privilege instead of `cluster-admin` (#250); the portal's Gitea token is least-privilege
@@ -194,6 +259,10 @@ existing cluster or bundle; read **Upgrade notes** first.
   a wildcard, `directAccessGrantsEnabled=false` on update paths too, and
   `validate-keycloak-clients.sh` fails the bootstrap on an unexpected client.
 - **SBOM correlation no longer matches unrelated vulnerability identities (#317).**
+- **CI and release gates.** CI package installs run without lifecycle scripts (#346), the portal
+  sign job receives the image digest (#394), the portal `THIRD-PARTY-NOTICES.md` is
+  markdownlint-clean (#386), `mark-review-pass` rejects non-ASCII PR numbers (#313), and
+  `setup-python` in the research-evidence workflow is pinned to a SHA (#314).
 
 ### Fixed
 
@@ -223,9 +292,10 @@ existing cluster or bundle; read **Upgrade notes** first.
 ### Known issues
 
 - **Image signatures are not enforced.** The Kyverno `verify-image-signatures` policy is
-  `Audit`-only with `required: false`, and its public key is a PLACEHOLDER
-  (`MFkw...AAE/narwhal/cosign/trusted/signer/pub`). No cosign key has been issued (#35), so the
-  policy currently enforces nothing. The portal image 1.0.19 is likewise not Cosign-signed.
+  `Audit`-only with `required: false`. It now carries the repository Cosign public key
+  (`scripts/airgap/keys/cosign.pub`, #389; R74/R75c fail if they drift) and skips the Rekor lookup
+  for air-gapped verification (#391), so it reports unsigned images but blocks nothing (#35). Portal
+  1.1.0 is signed; 1.0.19 and earlier are not.
 - **Mesh-wide PERMISSIVE during bootstrap.** `09-istio-ambient.sh` applies a mesh-wide
   PERMISSIVE `PeerAuthentication`; the GitOps chart declares `STRICT` under the same name, so
   traffic is fail-open until ArgoCD reconciles (#126).
@@ -249,9 +319,26 @@ existing cluster or bundle; read **Upgrade notes** first.
   `09` reports the loss but does not fail (#124).
 - **The digest inventory is trust-on-first-save.** `images.digests.json` is not signed, so it
   proves the bundle matches what `02` recorded, not that `02` saw the right bytes (#124).
+- **S3 authentication operations are not finished (#414, #415, #419).** See the upgrade note
+  above: a re-run of `08-4-storage.sh` collapses the staged cutover, the restart helper's
+  annotation is reverted by Argo CD, `verify-backup.sh` picks the `node-agent` pod for its
+  anonymous-403 check (no `wget` there), so that check cannot pass, and a few script details
+  (numeric access keys are not quoted, `07-cnpg.sh` does not restart the S3 server, keys remain in
+  the `last-applied` annotation) are open.
+- **Velero schedules back up every volume in `storage`, including emptyDir (#422).** One
+  `PodVolumeBackup` (OpenBao `data`) ended `Canceled` without a message; the cause is unknown.
+  Until it is explained, treat the daily OpenBao backup as unverified.
+- **Tempo is chronically OOMKilled at its 1536Mi limit (#420).** Hundreds of restarts a week on the
+  live cluster, unrelated to the S3 change.
+- **Evidence chain follow-ups (#417).** A DER private key is accepted where a public key is
+  expected, there is no recovery procedure for a torn checkpoint line in an append-only store, and
+  the checkpoint file has no rename-swap check.
 - **Not applied to a live cluster.** The commit messages for the AppProject split, the
   developer RBAC change, the private Gitea repository and the Valkey swap state that they were
   checked statically or on a scratch cluster, not on a running narwhal cluster.
+  Verified on the live kakao-narwhal cluster since: S3 authentication, Velero backup and restore
+  (2026-10-18), the Velero RBAC permissions (2026-10-19), and the NFS to XFS and `root_squash`
+  switch (2026-10-16).
 
 ## [1.2.0] - 2026-08-08
 

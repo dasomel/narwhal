@@ -142,6 +142,16 @@ def _mut_rb_another_role(docs: list[dict]) -> None:
     rb["roleRef"]["name"] = "another-role"
 
 
+def _mut_role_api_group(docs: list[dict]) -> None:
+    role = next(d for d in docs if d.get("kind") == "Role")
+    role["rules"][0]["apiGroups"] = ["events.k8s.io"]
+
+
+def _mut_rb_namespace_default(docs: list[dict]) -> None:
+    rb = next(d for d in docs if d.get("kind") == "RoleBinding")
+    rb["metadata"]["namespace"] = "default"
+
+
 FSBACKUP_MUTATIONS = [
     ("nodes+list", _mut_nodes_list),
     ("nodes+watch", _mut_nodes_watch),
@@ -154,6 +164,8 @@ FSBACKUP_MUTATIONS = [
     ("Role in namespace default", _mut_role_namespace_default),
     ("RoleBinding to another subject", _mut_rb_another_subject),
     ("RoleBinding to another Role", _mut_rb_another_role),
+    ("Role in another API group", _mut_role_api_group),
+    ("RoleBinding in namespace default", _mut_rb_namespace_default),
 ]
 
 

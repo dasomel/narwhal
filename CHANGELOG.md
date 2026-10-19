@@ -157,7 +157,9 @@ existing cluster or bundle; read **Upgrade notes** first.
   static annotation rolls the S3 server once. `07-cnpg.sh` calls the helper too (#415). `verify-backup.sh` probes the
   anonymous 403 with `python3` inside a `narwhal-db` pod instead of `wget` in a Velero pod (#419; it
   passed 6/6 on kakao-narwhal on 2026-10-19),
-  and generated key values are single-quoted so numeric keys stay strings (#415).
+  and generated key values are single-quoted so numeric keys stay strings (#415). `verify-backup.sh` now names
+  Velero and CNPG resources with their API group (`schedules.velero.io`, `backups.postgresql.cnpg.io`, ...);
+  the bare `schedule` resolved to Chaos Mesh and reported "No Velero schedules found" (R278).
   `ensure_s3_identities` is idempotent: a second run keeps the keys.
 - **Label the SeaweedFS data node before running `08-4-storage.sh` (#409, cd62c691).** The volume
   server keeps data in node-local hostPath `/ssd/object_store` and is pinned by

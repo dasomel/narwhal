@@ -193,12 +193,18 @@ existing cluster or bundle; read **Upgrade notes** first.
   refresh it). Before #412 the kopia repositories could not initialise against the anonymous S3, and
   on kakao-narwhal no `PodVolumeBackup` had ever existed. Verified on kakao-narwhal on 2026-10-18/19: a volume backup
   and restore, and the permissions. The permanent RBAC was applied on kakao-narwhal on 2026-10-19. That day's
-  `velero-daily-databases` run (no volumes) completed. A manual run of the `velero-daily-openbao`
-  template produced Completed `PodVolumeBackup`s (eight of eleven at the first check) and one
-  Canceled, and the backup later showed PartiallyFailed with 261/261 items. How long it took is not
-  known, and its errors were not captured because the backup was deleted during cleanup (#422). The
-  volume-bearing schedules (`full`, `gitea`, `harbor`, `openbao`) had not run since the change
-  when this was written.
+  `velero-daily-databases` run (no volumes) completed. **Volume backups do not work for volumes
+  whose files only their owner or group can read when the export uses the default `root_squash`
+  (#431).** The Velero data mover runs as root, `root_squash` maps root to `nobody`, kopia gets
+  `permission denied` and cancels the volume. Reproduced on kakao-narwhal on 2026-10-19 for the
+  OpenBao `data` volume (`vault.db` mode 0660, owner 100:1000) twice with a targeted backup, and for
+  the PostgreSQL `pgdata` volume (mode 0700) in the `velero-daily-full` schedule run. emptyDir volumes and
+  the OpenBao `audit` volume (world-readable) backed up in the same runs, and a test PVC was
+  backed up and restored earlier (#418). In the
+  first targeted run the backup, with one Canceled `PodVolumeBackup`, stayed `InProgress` for more
+  than 20 minutes and the next backup waited behind it; a delete request was refused while it was
+  in progress and restarting the Velero server pod released it. The second targeted run was
+  released after about two minutes, so how long such a backup stays `InProgress` is not known.
 - **Kakao Cloud networking (#396, #265, #403).** All five `kakaocloud_public_ip` resources are
   `prevent_destroy`; use `-replace` instead of a targeted destroy. The kubelet (10250) security
   group rule is limited to the node subnet. The `08-1` install now gives the APISIX ingress
@@ -351,9 +357,24 @@ existing cluster or bundle; read **Upgrade notes** first.
   apply was rejected for now), and the guard's `envFrom` check does not prove that the Loki/Tempo
   pods restarted and loaded the new keys. The same Application also lists the Secret
   `seaweedfs-db-secret` with no comparison status; that is not investigated.
-- **Velero schedules back up every volume in `storage`, including emptyDir (#422).** One
-  `PodVolumeBackup` (OpenBao `data`) ended `Canceled` without a message; the cause is unknown.
-  Until it is explained, treat the daily OpenBao backup as unverified.
+- **Velero volume backups fail on volumes with owner-only files under `root_squash` (#431).** On
+  the NFS server, files that other users cannot read were found in `database/` (7677 of 7686),
+  `monitoring/` (138 of 1317 at the first measurement, 115 of 1296 later: the data is live),
+  `devtools/` (72 of 292) and `storage/` (7 of 77). Until the owner
+  decides between running the data mover with a matching identity, application-level backups (for
+  OpenBao `bao operator raft snapshot` through a backup hook) and a backup taken on the NFS server,
+  do not rely on the Velero backups of OpenBao, PostgreSQL or other volumes with owner-only files.
+  CNPG's own barman backups to S3 are separate; an on-demand backup completed and WAL archiving
+  advanced on 2026-10-18.
+- **Velero schedules also back up emptyDir volumes, and failures are hard to diagnose (#422).** The
+  server account has no `pods/log` or `events create`, so the data mover pod's log is unreadable
+  without a temporary grant (that is how #431 was found), and Kyverno reports label violations
+  for the data mover pods.
+- **Scorecard `Dangerous-Workflow` finding on `portal-release.yml` (#395).** The workflow checks
+  out `workflow_run.head_sha`. It already runs only for `portal/v*` tag pushes, executes the
+  trusted default-branch checkout and proves the tag points to that commit, so this looks like a
+  heuristic match; the owner still has to accept it as an exception (with a review date) or
+  restructure the workflow.
 - **Tempo is chronically OOMKilled at its 1536Mi limit (#420).** Hundreds of restarts a week on the
   live cluster, unrelated to the S3 change.
 - **Not applied to a live cluster.** The commit messages for the AppProject split, the

@@ -50,7 +50,7 @@ Keycloak emits these bare group names in the `groups` claim. Kubernetes API serv
 - Kubernetes role bindings: [`rbac-policies.yaml`](../../gitops/resources/rbac-policies.yaml).
 - APISIX gateway authentication routes: [`apisix-routes.yaml`](../../gitops/charts/narwhal-platform/templates/apisix-routes.yaml).
 - Grafana role expression: [`prometheus-stack.yaml`](../../gitops/charts/narwhal-apps/templates/prometheus-stack.yaml).
-- Portal role mapping and link visibility: `narwhal-portal/src/lib/auth.ts` and `narwhal-portal/src/lib/tools.ts` in the companion repository.
+- Portal role mapping and link visibility: `portal/src/lib/auth.ts` and `portal/src/lib/tools.ts` in this repository.
 
 The source files above are authoritative when configuration changes. Update this table in
 the same change whenever a client's authentication flow, group mapping, app role, or Portal

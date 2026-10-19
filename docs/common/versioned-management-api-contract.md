@@ -7,7 +7,7 @@ has been runtime-verified.
 
 The canonical machine-readable artifact is
 [`schemas/event-envelope-1.0.schema.json`](../../schemas/event-envelope-1.0.schema.json).
-It deliberately mirrors `narwhal-portal/src/types/event-envelope.ts` (portal#11), so a
+It deliberately mirrors `portal/src/types/event-envelope.ts` (dasomel/narwhal-portal#11), so a
 producer or consumer can move between the portal pipeline and Narwhal control plane without
 field translation.
 

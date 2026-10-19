@@ -1,0 +1,60 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-velero-datapath-labels-422-20261020",
+  "task": "Label Velero data-mover pods via node-agent-config podLabels so Kyverno require-labels stops flagging them, and document the pods/log and Server rejected event messages (#422); Kyverno exclusion list deliberately not widened; live effect and maintenance Job labelling out of scope",
+  "changeContext": {
+    "paths": [
+      "gitops/charts/narwhal-apps/templates/velero.yaml",
+      "scripts/cluster/08-4-storage.sh",
+      "docs/common/storage-protection-policy.md",
+      "docs/common/lessons-log.md",
+      ".agents/evals/traces/2026-10-velero-datapath-labels-422.json"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Only the node-agent ConfigMap (podLabels), the --node-agent-configmap arg, and docs change; the Kyverno exclusion list, defaultVolumesToFsBackup, exclusion annotations and OpenBao work stay as they were."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "Issue #422 reports Kyverno require-labels/check-for-labels PolicyViolation events on Velero data-path pods (no app.kubernetes.io/name); read-only kubectl on the live cluster showed the kopia maintenance Job pods carry only velero.io/repo-name and job labels, and node-agent runs with args node-agent server and no configmap.",
+      "evidence": [
+        "doc:issue #422 (Kyverno label warning)",
+        "doc:velero.io/docs/v1.18 data-movement-pod-resource-configuration (node-agent-config podLabels)",
+        "doc:velero.io/docs/v1.18 repository-maintenance (maintenance Job labels are a fixed list, not configurable)"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "velero.yaml and 08-4-storage.sh add ConfigMap velero-node-agent-config with podLabels app.kubernetes.io/name=velero-data-mover and nodeAgent.extraArgs --node-agent-configmap; storage-protection-policy.md documents Role/velero-pod-logs and the event messages; lessons-log row added."
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "static regression suite, manifest validation and chart render",
+      "summary": "make test and make validate pass; helm template of velero 12.0.3 with the Application values renders the ConfigMap and the --node-agent-configmap arg. yamllint is not installed locally so make lint stopped after shellcheck. The Kyverno events stopping after rollout and maintenance Job pods staying unlabelled are NOT verified.",
+      "evidence": [
+        "test:make test -> passed 404 failed 0 warnings 3",
+        "test:make validate -> exit 0",
+        "test:helm template velero 12.0.3 -> ConfigMap velero-node-agent-config and --node-agent-configmap arg rendered"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "completion_claim",
+      "summary": "The declared config labels Velero data-mover pods; maintenance Job pods remain unlabelled because Velero 1.18 has no knob for them."
+    },
+    {
+      "id": "e6",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Complete and verified within the stated scope (static change; live rollout and Kyverno event cessation not observed)"
+    }
+  ]
+}

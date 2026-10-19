@@ -1,0 +1,59 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-portal-release-scorecard-395-20261019",
+  "task": "Remove the actions/checkout of workflow_run.head_sha from portal-release.yml (static restructure, #395); the Scorecard re-scan and a real portal tag release are out of scope and stay open on #395",
+  "changeContext": {
+    "paths": [
+      ".github/workflows/portal-release.yml",
+      "scripts/ci/check-portal-release-ref.py",
+      "scripts/ci/tests/test_check_portal_release_ref.py",
+      "scripts/test/regression-check-kakao.sh",
+      "scripts/test/lib/check-portal-release-no-run-ref.py",
+      ".agents/evals/traces/2026-10-portal-release-scorecard-395.json"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Only the tagged-commit materialization in portal-release.yml changes. Triggers, permissions, the success/push/portal-v gate, the ref proof script semantics, release notes, SBOM and release creation stay as they were."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "Scorecard Dangerous-Workflow flagged the second actions/checkout whose ref was github.event.workflow_run.head_sha (portal-release.yml:106), rated 0/10 on 2026-10-15.",
+      "evidence": [
+        "doc:issue #395 Scorecard v5.6.0 --checks=Dangerous-Workflow output"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "One checkout remains (default branch). The release tag is fetched with git, check-portal-release-ref.py proves it points at head_sha, and only then git worktree add --detach tagged <sha> creates the read-only tagged tree. Decision D9 recorded in the workflow header."
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "scripts/ci/tests, scripts/test/regression-check-kakao.sh, portal-release.yml",
+      "summary": "Layout tests assert a single checkout without a workflow_run ref and proof-before-worktree order; new R276 enforces the same statically. The workflow itself can only run on a real portal/v tag and is not exercised here.",
+      "evidence": [
+        "test:python3 -m unittest scripts/ci/tests/test_check_portal_release_ref.py -> Ran 18 tests OK",
+        "test:make test -> passed 402 failed 0 warnings 3 (R276 PASS)",
+        "test:actionlint .github/workflows/portal-release.yml -> no findings"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "completion_claim",
+      "summary": "The flagged checkout pattern is gone; whether Scorecard now scores 10 needs a re-scan after merge, and the first real portal tag release is the live test."
+    },
+    {
+      "id": "e6",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Complete and verified within the stated scope (static restructure only; live tag release and Scorecard re-scan not observed)"
+    }
+  ]
+}

@@ -200,8 +200,10 @@ existing cluster or bundle; read **Upgrade notes** first.
   OpenBao `data` volume (`vault.db` mode 0660, owner 100:1000) twice with a targeted backup, and for
   the PostgreSQL `pgdata` volume (mode 0700) in the `velero-daily-full` schedule run. Volumes with
   world-readable data (emptyDir, the OpenBao `audit` volume, a test PVC) back up and restore. In the
-  targeted runs a backup with one Canceled `PodVolumeBackup` stayed `InProgress` for more than 20
-  minutes and the next backup waited behind it; only restarting the Velero server pod released it.
+  first targeted run the backup, with one Canceled `PodVolumeBackup`, stayed `InProgress` for more
+  than 20 minutes and the next backup waited behind it; a delete request was refused while it was
+  in progress and restarting the Velero server pod released it. The second targeted run was
+  released after about two minutes, so how long such a backup stays `InProgress` is not known.
 - **Kakao Cloud networking (#396, #265, #403).** All five `kakaocloud_public_ip` resources are
   `prevent_destroy`; use `-replace` instead of a targeted destroy. The kubelet (10250) security
   group rule is limited to the node subnet. The `08-1` install now gives the APISIX ingress

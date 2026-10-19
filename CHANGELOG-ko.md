@@ -170,8 +170,10 @@ ArgoCD, Gitea, RBAC, OpenBao, Keycloak, APISIX, NFS, `database` 신뢰 경계가
   `permission denied`를 받고 해당 볼륨을 취소함. 2026-10-19 kakao-narwhal에서 OpenBao `data` 볼륨(`vault.db`
   모드 0660, 소유자 100:1000)은 타깃 백업으로 2회, PostgreSQL `pgdata` 볼륨(모드 0700)은
   `velero-daily-full` 스케줄 실행에서 재현됨. 누구나 읽을 수 있는 데이터를 가진 볼륨(emptyDir, OpenBao `audit`
-  볼륨, 시험용 PVC)은 백업·복원됨. 타깃 실행에서 `Canceled` `PodVolumeBackup`이 하나 있는 백업은 20분
-  넘게 `InProgress`로 남았고 다음 백업이 그 뒤에서 대기했으며, Velero 서버 파드를 재시작해야만 풀렸음.
+  볼륨, 시험용 PVC)은 백업·복원됨. 첫 번째 타깃 실행에서는 `Canceled` `PodVolumeBackup`이 하나 있는 백업이 20분
+  넘게 `InProgress`로 남았고 다음 백업이 그 뒤에서 대기했으며, 진행 중에는 삭제 요청이 거부되었고 Velero 서버 파드를
+  재시작하자 풀렸음. 두 번째 타깃 실행은 약 2분 뒤에 풀어 주었으므로 이런 백업이 얼마나 오래 `InProgress`로 남는지는
+  알 수 없음.
 - **Kakao Cloud 네트워킹 (#396, #265, #403).** 5개의 `kakaocloud_public_ip` 리소스 전체가 `prevent_destroy`로
   설정됨. 대상 지정 destroy 대신 `-replace`를 사용할 것. kubelet(10250) 보안 그룹 규칙은 노드 서브넷으로
   제한됨. `08-1` 설치는 이제 APISIX ingress controller에 request 256Mi, limit 512Mi를 부여함(전체 동기화 중

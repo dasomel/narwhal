@@ -149,10 +149,14 @@ existing cluster or bundle; read **Upgrade notes** first.
   read from `command` and `args`. The seaweedfs Application now ignores the
   `narwhal.io/s3-config-sha256` pod-template annotation (`ignoreDifferences` plus
   `RespectIgnoreDifferences=true`) so the restart marker written by `s3_sync_server_config`
-  survives self-heal (verified live that the marker survives), and the pod template carries the static annotation
-  `narwhal.io/s3-config-source` so the Application stays Synced (this OutOfSync fix is applied after merge and not yet
-  verified), and `07-cnpg.sh` calls that helper too (#415). `verify-backup.sh` probes the
-  anonymous 403 with `python3` inside a `narwhal-db` pod instead of `wget` in a Velero pod (#419),
+  survives self-heal, and the pod template carries the static annotation `narwhal.io/s3-config-source`
+  so the Application stays Synced (without it the ignored marker is the only pod-template
+  annotation, Argo CD's normalized live state keeps an empty `annotations: {}` and the Application
+  reads OutOfSync). Verified on kakao-narwhal on 2026-10-19: the marker survived self-heal, a second
+  `s3_sync_server_config` was a no-op and the Application is Synced and Healthy. The first sync of the
+  static annotation rolls the S3 server once. `07-cnpg.sh` calls the helper too (#415). `verify-backup.sh` probes the
+  anonymous 403 with `python3` inside a `narwhal-db` pod instead of `wget` in a Velero pod (#419; it
+  passed 6/6 on kakao-narwhal on 2026-10-19),
   and generated key values are single-quoted so numeric keys stay strings (#415).
   `ensure_s3_identities` is idempotent: a second run keeps the keys.
 - **Label the SeaweedFS data node before running `08-4-storage.sh` (#409, cd62c691).** The volume
@@ -186,9 +190,15 @@ existing cluster or bundle; read **Upgrade notes** first.
   Without them a `PodVolumeBackup` fails with `cannot get resource "nodes"` and then stays
   `Prepared`. Argo CD reverts `kubectl apply`: push `resources/velero-server-rbac.yaml` with
   `push-to-gitea.sh`, then hard-refresh the `velero-server-rbac` Application (the script does not
-  refresh it). Before #412 the kopia repositories could not initialise against the anonymous S3, so
-  no volume had ever been backed up. Verified on kakao-narwhal on 2026-10-18/19: a volume backup
-  and restore, and the permissions. A scheduled backup after the change has not been observed yet.
+  refresh it). Before #412 the kopia repositories could not initialise against the anonymous S3, and
+  on kakao-narwhal no `PodVolumeBackup` had ever existed. Verified on kakao-narwhal on 2026-10-18/19: a volume backup
+  and restore, and the permissions. The permanent RBAC was applied on kakao-narwhal on 2026-10-19. That day's
+  `velero-daily-databases` run (no volumes) completed. A manual run of the `velero-daily-openbao`
+  template produced Completed `PodVolumeBackup`s (eight of eleven at the first check) and one
+  Canceled, and the backup later showed PartiallyFailed with 261/261 items. How long it took is not
+  known, and its errors were not captured because the backup was deleted during cleanup (#422). The
+  volume-bearing schedules (`full`, `gitea`, `harbor`, `openbao`) had not run since the change
+  when this was written.
 - **Kakao Cloud networking (#396, #265, #403).** All five `kakaocloud_public_ip` resources are
   `prevent_destroy`; use `-replace` instead of a targeted destroy. The kubelet (10250) security
   group rule is limited to the node subnet. The `08-1` install now gives the APISIX ingress
@@ -331,13 +341,16 @@ existing cluster or bundle; read **Upgrade notes** first.
   `09` reports the loss but does not fail (#124).
 - **The digest inventory is trust-on-first-save.** `images.digests.json` is not signed, so it
   proves the bundle matches what `02` recorded, not that `02` saw the right bytes (#124).
-- **S3 authentication operations are only partly verified (#414, #415, #419).** The fixes are
-  described in the upgrade note above and are tested with fake `kubectl` only. Not verified on a
-  live cluster: that Argo CD keeps the annotation (`ignoreDifferences`) through a self-heal, and
-  the new `verify-backup.sh` anonymous check. Still open: the key stays in the
+- **S3 authentication operations: what is still open (#414, #415).** Verified on kakao-narwhal on
+  2026-10-19: the roll marker survives self-heal, the Application is Synced, the anonymous check
+  passes, and all four clients pass their per-client I/O check after the S3 server rolled. The
+  `08-4-storage.sh` guard was run read-only against that authenticated cluster (it passes); its
+  abort paths on an anonymous cluster are covered by fake `kubectl` tests and an independent
+  review's simulation, not by a live re-run of `08-4`. Still open: the key stays in the
   `kubectl.kubernetes.io/last-applied-configuration` annotation of the client Secrets (server-side
   apply was rejected for now), and the guard's `envFrom` check does not prove that the Loki/Tempo
-  pods restarted and loaded the new keys.
+  pods restarted and loaded the new keys. The same Application also lists the Secret
+  `seaweedfs-db-secret` with no comparison status; that is not investigated.
 - **Velero schedules back up every volume in `storage`, including emptyDir (#422).** One
   `PodVolumeBackup` (OpenBao `data`) ended `Canceled` without a message; the cause is unknown.
   Until it is explained, treat the daily OpenBao backup as unverified.
@@ -347,7 +360,7 @@ existing cluster or bundle; read **Upgrade notes** first.
   developer RBAC change, the private Gitea repository and the Valkey swap state that they were
   checked statically or on a scratch cluster, not on a running narwhal cluster.
   Verified on the live kakao-narwhal cluster since: S3 authentication, Velero backup and restore
-  (2026-10-18), the Velero RBAC permissions (2026-10-19), and the NFS to XFS and `root_squash`
+  (2026-10-18), the Velero RBAC permissions (2026-10-19), the S3 operations fixes (2026-10-19), and the NFS to XFS and `root_squash`
   switch (2026-10-16).
 
 ## [1.2.0] - 2026-08-08

@@ -210,6 +210,11 @@ server:
     replicas: 1
     raft:
       enabled: true
+  # D-pvb-exclude (#431): exclude the volume from Velero fs-backup. NFS root_squash maps kopia (uid 0) to
+  # nobody, which cannot read owner-only files, so the PodVolumeBackup is Canceled and leaves the whole Backup
+  # InProgress, queueing every later schedule. This volume (mirrors gitops/charts/narwhal-apps/templates/openbao.yaml) is NOT protected by Velero; see CHANGELOG.
+  annotations:
+    backup.velero.io/backup-volumes-excludes: data
   dataStorage:
     enabled: true
     storageClass: nfs-csi

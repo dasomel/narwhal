@@ -36,7 +36,8 @@ def check_fsbackup_role(path: Path, role: dict) -> list[str]:
     except (yaml.YAMLError, OSError) as exc:
         return [f"{path}: failed to read documents for fsbackup check: {exc}"]
 
-    roles = [d for d in docs if isinstance(d, dict) and d.get("kind") == "Role"]
+    # velero-pod-logs (pods/log get, D-pvb-log, #431) is the one other namespaced grant; check-velero-pvb-excludes.py pins its exact shape.
+    roles = [d for d in docs if isinstance(d, dict) and d.get("kind") == "Role" and d.get("metadata", {}).get("name") != "velero-pod-logs"]
     matching_roles = [r for r in roles if r.get("metadata", {}).get("name") == "velero-node-agent-events"]
     if len(matching_roles) != 1 or len(roles) != 1:
         problems.append(f"{path}: expected exactly one Role named velero-node-agent-events, found {len(matching_roles)} matching out of {len(roles)} Roles")
@@ -57,7 +58,7 @@ def check_fsbackup_role(path: Path, role: dict) -> list[str]:
             if verbs != {"get", "list", "watch"} or len(r0.get("verbs", [])) != 3:
                 problems.append(f"{path}: Role velero-node-agent-events verbs must be get, list, watch; got {r0.get('verbs')}")
 
-    bindings = [d for d in docs if isinstance(d, dict) and d.get("kind") == "RoleBinding"]
+    bindings = [d for d in docs if isinstance(d, dict) and d.get("kind") == "RoleBinding" and d.get("metadata", {}).get("name") != "velero-pod-logs"]
     matching_bindings = [b for b in bindings if b.get("metadata", {}).get("name") == "velero-node-agent-events"]
     if len(matching_bindings) != 1 or len(bindings) != 1:
         problems.append(f"{path}: expected exactly one RoleBinding named velero-node-agent-events, found {len(matching_bindings)} matching out of {len(bindings)} RoleBindings")

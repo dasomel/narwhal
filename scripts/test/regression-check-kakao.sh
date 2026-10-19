@@ -3234,6 +3234,10 @@ PYEOF'
       ! grep -Eq "^[[:space:]]*scripts/cluster/nfs-root-squash-align.sh" "$r"'
   check R273 "evidence chain enforces intent/result records, checkpoint tail-truncation detection, key separation and spend-once (2026-10-17)" \
     python3 scripts/test/lib/check-evidence-chain.py
+  # 2026-10-19 (#395): OpenSSF Scorecard Dangerous-Workflow flags an actions/checkout whose ref
+  # comes from workflow_run. portal-release.yml fetches the tag with git, proves it, then adds a worktree.
+  check R276 "portal-release.yml has no actions/checkout with a workflow_run ref and proves the tag before git worktree add (#395, 2026-10-19)" \
+    python3 scripts/test/lib/check-portal-release-no-run-ref.py
 }
 
 #=========================================

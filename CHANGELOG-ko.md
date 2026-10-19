@@ -258,6 +258,9 @@ ArgoCD, Gitea, RBAC, OpenBao, Keycloak, APISIX, NFS, `database` 신뢰 경계가
 
 ### 보안
 
+- `portal-release.yml`이 `workflow_run` ref를 쓰는 두 번째 `actions/checkout`을 더 이상 사용하지 않음. OpenSSF
+  Scorecard가 Dangerous-Workflow로 지적하던 패턴임 (#395). 태그를 git으로 가져와 실행의 `head_sha`를 가리키는지
+  증명한 뒤에만 `tagged/` worktree로 추가하며, 신뢰 모델은 그대로임.
 - `database` 기본 ingress 차단, Gitea ingress를 APISIX를 거치지 않는 정당한 소스로 제한, APISIX Admin API는
   파드 CIDR과 루프백에서만 접근 가능.
 - 게이트웨이가 더 이상 클라이언트가 보낸 `X-WEBAUTH-USER`를 신뢰하지 않음 (492e65a).

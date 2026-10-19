@@ -308,6 +308,9 @@ existing cluster or bundle; read **Upgrade notes** first.
 
 ### Security
 
+- `portal-release.yml` no longer uses a second `actions/checkout` with a `workflow_run` ref, which
+  OpenSSF Scorecard flags as Dangerous-Workflow (#395). The tag is fetched with git, proven to point
+  at the run's `head_sha`, and only then added as a `tagged/` worktree; the trust model is unchanged.
 - Default-deny ingress for `database`, Gitea ingress restricted to its legitimate non-APISIX
   sources, and the APISIX Admin API reachable only from the pod CIDR and loopback.
 - The gateway no longer trusts a client-supplied `X-WEBAUTH-USER` (492e65a).

@@ -40,6 +40,8 @@ fi
 # must exist before the S3 Deployment mounts it. Fails closed (never regenerates over data).
 ensure_s3_identities || { echo "ERROR: cannot ensure the SeaweedFS S3 identities" >&2; exit 1; }
 
+# D-pvb-exclude (#431): the seaweedfs-master 'data-storage' volume is excluded from Velero fs-backup (root_squash
+# makes the PodVolumeBackup Cancel and hang the Backup); it is NOT protected by Velero.
 SEAWEEDFS_OK=false
 for attempt in 1 2 3 4 5; do
   if helm upgrade --install seaweedfs "$(chart seaweedfs)" \
@@ -59,6 +61,7 @@ for attempt in 1 2 3 4 5; do
     --set master.podSecurityContext.fsGroup=1000 \
     --set master.podSecurityContext.fsGroupChangePolicy=OnRootMismatch \
     --set master.logs.type=emptyDir \
+    --set-string 'master.podAnnotations.backup\.velero\.io/backup-volumes-excludes=data-storage' \
     --set volume.enabled=true \
     --set volume.replicas=1 \
     --set-string 'volume.nodeSelector=narwhal.io/seaweedfs-volume: "true"' \

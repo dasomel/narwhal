@@ -28,11 +28,20 @@ def check():
         if actual != volume:
             problems.append(f"{label}: {KEY} must be {volume!r}, got {actual!r}")
 
-    # GitOps-owned: OpenBao (server.annotations), Harbor jobservice, CNPG narwhal-db.
+    # GitOps-owned: OpenBao (server.annotations), Harbor jobservice, SeaweedFS master, CNPG narwhal-db.
     expect("openbao.yaml server.annotations",
            app_values("gitops/charts/narwhal-apps/templates/openbao.yaml")["server"].get("annotations", {}).get(KEY), "data")
     expect("harbor.yaml jobservice.podAnnotations",
            app_values("gitops/charts/narwhal-apps/templates/harbor.yaml")["jobservice"].get("podAnnotations", {}).get(KEY), "job-logs")
+    # Master only: filer, volume and s3 must carry no exclusion (their volumes stay backed up).
+    seaweedfs = app_values("gitops/charts/narwhal-apps/templates/seaweedfs.yaml")
+    expect("seaweedfs.yaml master.podAnnotations",
+           seaweedfs["master"].get("podAnnotations", {}).get(KEY), "data-storage")
+    for component in ("filer", "volume"):
+        if KEY in seaweedfs[component].get("podAnnotations", {}):
+            problems.append(f"seaweedfs.yaml {component}.podAnnotations must not carry {KEY}")
+    if KEY in seaweedfs["s3"].get("podAnnotations", {}):
+        problems.append(f"seaweedfs.yaml s3.podAnnotations must not carry {KEY}")
     cluster = next((d for d in load("gitops/resources/narwhal-db.yaml") if d and d.get("kind") == "Cluster"), None)
     if cluster is None:
         problems.append("narwhal-db.yaml: CNPG Cluster missing")
@@ -44,6 +53,8 @@ def check():
     storage = (ROOT / "scripts/cluster/08-4-storage.sh").read_text()
     if not re.search(rf"^  annotations:\n    {re.escape(KEY)}: data$", storage, re.M):
         problems.append(f"08-4-storage.sh: OpenBao values heredoc lacks server annotations {KEY}: data")
+    if f"--set-string 'master.podAnnotations.{ESCAPED_KEY}=data-storage'" not in storage:
+        problems.append(f"08-4-storage.sh: SeaweedFS install lacks --set-string 'master.podAnnotations.{ESCAPED_KEY}=data-storage'")
     for script, flag in (("scripts/cluster/08-5-registry.sh", f"jobservice.podAnnotations.{ESCAPED_KEY}=job-logs"),
                          ("scripts/cluster/12-gitea.sh", f"gitea.podAnnotations.{ESCAPED_KEY}=data")):
         if f"--set-string '{flag}'" not in (ROOT / script).read_text():

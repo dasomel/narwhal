@@ -115,6 +115,14 @@ spec:
           enabled: true
           enableAuth: true
           existingConfigSecret: seaweedfs-s3-config
+          # D-s3ops-1b (#419): the ignored roll marker narwhal.io/s3-config-sha256 was the only pod
+          # template annotation, so Argo CD's normalized live state kept an empty `annotations: {}`
+          # that the desired manifest lacked and the Application read OutOfSync. One static
+          # annotation keeps the map non-empty. Cost: one extra pod annotation; the first sync
+          # after this change rolls the S3 server once (pod template changes). Escape hatch:
+          # remove this and the ignoreDifferences entry below.
+          podAnnotations:
+            narwhal.io/s3-config-source: seaweedfs-s3-config
           containerSecurityContext:
             enabled: true
             allowPrivilegeEscalation: false

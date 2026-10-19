@@ -10,6 +10,8 @@
 * Velero in 08-4 reads velero-s3-credentials (existingSecret), never inline secretContents.
 * D-s3ops-1: the seaweedfs Application ignores the seaweedfs-s3 pod-template roll annotation (field
   scoped) and respects it during sync, so selfHeal cannot revert s3_sync_server_config's patch.
+* D-s3ops-1b: the S3 pod template carries the static annotation narwhal.io/s3-config-source, so the
+  ignored roll marker is not its only annotation (an empty live map reads OutOfSync).
 * D-s3ops-4/5: 08-4 runs guard_s3_auth_cutover before the node label, identities and helm; 07 syncs
   the S3 server config right after ensuring the identities.
 Use --mutation-verify to prove every assertion fails when its contract is broken."""
@@ -38,6 +40,8 @@ def verify(t):
     assert sw["s3"]["enableAuth"] is True, "chart s3.enableAuth"
     assert sw["s3"]["existingConfigSecret"] == "seaweedfs-s3-config", "chart existingConfigSecret"
     assert sw["filer"]["s3"]["enabled"] is False, "chart filer.s3 must be disabled"
+    assert (sw["s3"].get("podAnnotations") or {}).get("narwhal.io/s3-config-source") == "seaweedfs-s3-config", \
+        "s3.podAnnotations keeps the pod-template annotation map non-empty (D-s3ops-1b)"
     spec = yaml.safe_load(t["sw"])["spec"]
     ign = [e for e in spec.get("ignoreDifferences", []) if e.get("name") == "seaweedfs-s3"]
     assert len(ign) == 1, "ignoreDifferences entry for seaweedfs-s3"
@@ -107,6 +111,8 @@ def mutations():
         ("tempo", 'config.expand-env: "true"', 'config.expand-env: "false"'),
         ("db", "apiVersion: postgresql.cnpg.io/v1", "apiVersion: v1\nkind: Secret\nmetadata:\n  name: cnpg-s3-credentials\nstringData: {}\n---\napiVersion: postgresql.cnpg.io/v1"),
         ("s14", "get secret cnpg-s3-credentials -n database", "get secret x -n database"),
+        ("sw", "            narwhal.io/s3-config-source: seaweedfs-s3-config\n", ""),
+        ("sw", "          podAnnotations:\n            narwhal.io/s3-config-source: seaweedfs-s3-config\n", "          podAnnotations: {}\n"),
     ]
 
 

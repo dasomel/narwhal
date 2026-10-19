@@ -3131,6 +3131,10 @@ assert sum(1 for l in code if re.search(r"\bexit 3\b", l)) == 1, "exit 3 must ap
     bash scripts/test/lib/check-s3-cutover-guard.sh
   check R275 "ensure_s3_identities hardening (fake kubectl): numeric and leading-zero keys stay YAML strings, the key-bearing temp file is removed on success, apply failure and TERM, the caller's trap and S3_IDENTITIES_CHANGED survive, s3_sync_server_config patches once when stale, never when equal, and propagates a patch failure (D-s3ops-5, #415)" \
     bash scripts/test/lib/check-s3-ensure-hardening.sh
+  # 2026-10-19 (#431): root_squash makes Velero fs-backup Cancel OpenBao data, CNPG pgdata, Gitea data and Harbor
+  # jobservice job-logs, and one Canceled PVB leaves the Backup InProgress and queues every later schedule.
+  check R277 "Velero fs-backup excludes exactly OpenBao data, CNPG pgdata, Gitea data and Harbor jobservice job-logs (pod annotation in the GitOps CR/Application and in the 08-4/08-5/12 install paths), and velero-server has only a namespaced pods/log get in storage (D-pvb-exclude, D-pvb-log, #431)" \
+    python3 scripts/test/lib/check-velero-pvb-excludes.py
 
   # 2026-10-16 (PR #399): the APISIX Admin API allowlist is detected from the live CNI by
   # resolve_apisix_admin_cidr (lib.sh) and wired by 14 -- NOT taken from POD_NETWORK_CIDR, which

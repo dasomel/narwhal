@@ -81,6 +81,8 @@ GITEA_DB_PASS=$(kubectl get secret narwhal-db-credentials -n database \
 # server. Re-enable valkey (with a non-Bitnami image) only if gitea goes HA.
 GITEA_CHART_VERSION="${GITEA_CHART_VERSION:-12.6.0}"
 
+# D-pvb-exclude (#431): the gitea-shared-storage 'data' volume is excluded from Velero fs-backup (root_squash
+# makes the PodVolumeBackup Cancel and hang the Backup); it is NOT protected by Velero.
 helm upgrade --install gitea "$(chart gitea)" \
   --force-conflicts \
   --namespace devtools \
@@ -108,6 +110,7 @@ helm upgrade --install gitea "$(chart gitea)" \
   --set persistence.enabled=true \
   --set persistence.storageClass=nfs-csi \
   --set persistence.size=10Gi \
+  --set-string 'gitea.podAnnotations.backup\.velero\.io/backup-volumes-excludes=data' \
   --set redis-cluster.enabled=false \
   --set redis.enabled=false \
   --set valkey-cluster.enabled=false \

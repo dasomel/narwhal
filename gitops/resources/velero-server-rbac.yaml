@@ -10,6 +10,10 @@
 # api-resources omits subresources, so rules cannot grant nodes/proxy or pods/exec.
 # Exception: nodes get is granted cluster-wide (Velero 1.18 fs-backup reads the node OS to expose a PodVolumeBackup; get only).
 # Exception: events get/list/watch is granted in namespace storage via velero-node-agent-events Role (node-agent event informer).
+# Exception: pods/log get is granted in namespace storage via velero-pod-logs Role (D-pvb-log, #431): Velero reads the node-agent
+# (hosting) pod log to report why a PodVolumeBackup failed; without it the cause is invisible. Subresource, get only, one namespace.
+# Not granted: events create/patch (#431 'Server rejected event'): needs a write verb and the rejected namespace is not established,
+# so it is left out rather than widening the diagnostic-record exception; the lost events are cosmetic.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
@@ -340,6 +344,34 @@ roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
   name: velero-node-agent-events
+subjects:
+  - kind: ServiceAccount
+    name: velero-server
+    namespace: storage
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: velero-pod-logs
+  namespace: storage
+  labels:
+    app.kubernetes.io/managed-by: narwhal
+rules:
+  - apiGroups: [""]
+    resources: ["pods/log"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: velero-pod-logs
+  namespace: storage
+  labels:
+    app.kubernetes.io/managed-by: narwhal
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: velero-pod-logs
 subjects:
   - kind: ServiceAccount
     name: velero-server

@@ -368,11 +368,22 @@ existing cluster or bundle; read **Upgrade notes** first.
   OpenBao `bao operator raft snapshot` through a backup hook) and a backup taken on the NFS server,
   do not rely on the Velero backups of OpenBao, PostgreSQL or other volumes with owner-only files.
   CNPG's own barman backups to S3 are separate; an on-demand backup completed and WAL archiving
-  advanced on 2026-10-18.
+  advanced on 2026-10-18. Containment (stage 1): the four volumes whose `PodVolumeBackup` was
+  Canceled in the scheduled runs (OpenBao `data`, CNPG `pgdata`, Gitea `data`, Harbor jobservice
+  `job-logs`) now carry the pod annotation `backup.velero.io/backup-volumes-excludes`, set through
+  the OpenBao and Harbor charts, the CNPG `Cluster` `inheritedMetadata` and the Gitea chart, so a
+  scheduled backup should finish instead of staying `InProgress` and queueing the later schedules.
+  This only stops the hang: **Velero still does not protect those volumes.** OpenBao has no
+  application-level backup yet, PostgreSQL relies on CNPG barman, and Gitea `data` and Harbor
+  `job-logs` are unprotected. The annotation change rolls the OpenBao, CNPG, Gitea and Harbor
+  jobservice pods when it is applied. Not verified on a live cluster. #431 stays open for the
+  durable fix.
 - **Velero schedules also back up emptyDir volumes, and failures are hard to diagnose (#422).** The
-  server account has no `pods/log` or `events create`, so the data mover pod's log is unreadable
-  without a temporary grant (that is how #431 was found), and Kyverno reports label violations
-  for the data mover pods.
+  server account had no `pods/log` or `events create`, so the data mover pod's log was unreadable
+  without a temporary grant (that is how #431 was found). `pods/log` `get` in namespace `storage`
+  is now granted by the generated `velero-pod-logs` Role (not verified on a live cluster);
+  `events create` is still missing because it needs a write verb and the rejected namespace is
+  not established. Kyverno reports label violations for the data mover pods.
 - **Scorecard `Dangerous-Workflow` finding on `portal-release.yml` (#395).** The workflow checks
   out `workflow_run.head_sha`. It already runs only for `portal/v*` tag pushes, executes the
   trusted default-branch checkout and proves the tag points to that commit, so this looks like a

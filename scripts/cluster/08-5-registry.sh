@@ -93,6 +93,7 @@ for attempt in 1 2 3 4 5; do
     --set existingSecretSecretKey=harbor-shared-secrets \
     --set core.existingSecret=harbor-shared-secrets \
     --set jobservice.existingSecret=harbor-shared-secrets \
+    --set-string 'jobservice.podAnnotations.backup\.velero\.io/backup-volumes-excludes=job-logs' \
     --set database.type=external \
     --set database.external.host=harbor-db-rw \
     --set database.external.port=5432 \

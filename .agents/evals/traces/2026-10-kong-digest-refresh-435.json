@@ -1,0 +1,54 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-kong-digest-refresh-435-20261019",
+  "task": "Accept the moved kong:3.9 floating-tag digest (3.9.3 -> 3.9.4) in the airgap digest table so the scheduled image-digest drift check passes again (#435)",
+  "changeContext": {
+    "paths": [
+      "scripts/airgap/lib/image-digests.tsv",
+      ".agents/evals/traces/2026-10-kong-digest-refresh-435.json"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Only the kong:3.9 row changes. The refresh script rewrites every row's timestamp; that noise was discarded. The alpine/git row keeps its intentional portal pin."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "image-digest-drift scheduled run failed: kong:3.9 resolves to sha256:aa4a4687... but the table holds sha256:92035d16...",
+      "evidence": [
+        "doc:issue #435 and its failing run output"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "Row updated to sha256:aa4a4687b1330e427ad0d3b27a0606b833894297c78abf1a212edc9ba73c8620. The new digest equals the immutable tag kong:3.9.4 (newest 3.9.x); the old one was kong:3.9.3 created 2026-10-02, the new one 2026-10-17. Same shape as #308. No Kyverno or cosign pin references the old digest."
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "digest table and static suite",
+      "summary": "The drift check exits 0 against the updated table; the static suite is green. The airgap bundle itself was not rebuilt.",
+      "evidence": [
+        "test:scripts/airgap/lib/refresh-image-digests.sh --check -> exit 0 'image-digests.tsv is current'",
+        "test:make test -> passed 403 failed 0 warnings 3"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "completion_claim",
+      "summary": "The digest table matches the current upstream kong:3.9."
+    },
+    {
+      "id": "e6",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Complete and verified within the stated scope (table refresh only; no airgap bundle rebuild or live kong rollout)"
+    }
+  ]
+}

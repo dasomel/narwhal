@@ -149,7 +149,9 @@ existing cluster or bundle; read **Upgrade notes** first.
   read from `command` and `args`. The seaweedfs Application now ignores the
   `narwhal.io/s3-config-sha256` pod-template annotation (`ignoreDifferences` plus
   `RespectIgnoreDifferences=true`) so the restart marker written by `s3_sync_server_config`
-  survives self-heal (not yet verified on a live cluster), and `07-cnpg.sh` calls that helper too (#415). `verify-backup.sh` probes the
+  survives self-heal (verified live that the marker survives), and the pod template carries the static annotation
+  `narwhal.io/s3-config-source` so the Application stays Synced (this OutOfSync fix is applied after merge and not yet
+  verified), and `07-cnpg.sh` calls that helper too (#415). `verify-backup.sh` probes the
   anonymous 403 with `python3` inside a `narwhal-db` pod instead of `wget` in a Velero pod (#419),
   and generated key values are single-quoted so numeric keys stay strings (#415).
   `ensure_s3_identities` is idempotent: a second run keeps the keys.

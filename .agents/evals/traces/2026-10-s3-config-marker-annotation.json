@@ -1,0 +1,57 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-s3-config-marker-annotation",
+  "task": "Keep the seaweedfs Application Synced while the S3 config roll marker is ignored by Argo CD: add one static pod-template annotation (Narwhal#419 follow-up to #426)",
+  "changeContext": {
+    "paths": [
+      "gitops/charts/narwhal-apps/templates/seaweedfs.yaml",
+      ".agents/evals/traces/2026-10-s3-config-marker-annotation.json"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Scope: one s3.podAnnotations entry (narwhal.io/s3-config-source) in the seaweedfs Application values. ignoreDifferences, RespectIgnoreDifferences, the jsonPointer, every other value and the unrelated OutOfSync Secret seaweedfs-db-secret are out of scope. No cluster was touched."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "Live finding on kakao-narwhal (2026-10-19, Argo CD v3.4.4), recorded in the task spec and not re-observed in this run: the roll marker survives self-heal, but the Application reads OutOfSync. The Argo CD managed-resources diff is one line: the normalized live state keeps an empty annotations map under spec.template.metadata while the desired manifest has no annotations key, because the ignored marker was the only pod-template annotation.",
+      "evidence": ["artifact:Narwhal#419"]
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "seaweedfs.yaml gains s3.podAnnotations narwhal.io/s3-config-source: seaweedfs-s3-config so the pod-template annotation map is never empty; R270 asserts it and rejects two mutations (annotation removed, podAnnotations set to an empty map)."
+    },
+    {
+      "id": "e4",
+      "type": "verification",
+      "status": "passed",
+      "scope": "static contract only: the Application values and 24 mutations of the S3 auth contract",
+      "summary": "check-s3-auth-contract.py --mutation-verify passes with the new assertion and both new mutations rejected. This does not show how Argo CD renders or diffs the Application.",
+      "evidence": ["test:python3 scripts/test/lib/check-s3-auth-contract.py --mutation-verify"]
+    },
+    {
+      "id": "e5",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "full static regression suite",
+      "summary": "make test passed with 0 failures after the change.",
+      "evidence": ["test:make test", "ci:regression-static"]
+    },
+    {
+      "id": "e6",
+      "type": "completion_claim",
+      "summary": "The Application values carry the static annotation and the contract test enforces it. Not claimed: that the Application turns Synced on the live cluster; the change is applied after merge with push-to-gitea.sh, and the first sync rolls the S3 server once."
+    },
+    {
+      "id": "e7",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Static change verified with a mutation-checked contract test; live verification that the Application reads Synced is a follow-up after the push."
+    }
+  ]
+}

@@ -126,7 +126,9 @@ ArgoCD, Gitea, RBAC, OpenBao, Keycloak, APISIX, NFS, `database` 신뢰 경계가
   확인과 온디맨드 CNPG 백업, S3 서버 플래그는 `command`와 `args`에서 읽음. seaweedfs Application은 이제
   `narwhal.io/s3-config-sha256` 파드 템플릿 어노테이션을 무시하므로(`ignoreDifferences`와
   `RespectIgnoreDifferences=true`) `s3_sync_server_config`가 기록한 재시작 표식이 자가 치유(self-heal) 후에도
-  유지됨(라이브 클러스터에서는 아직 검증되지 않음). `07-cnpg.sh`도 해당 헬퍼를 호출함(#415). `verify-backup.sh`는 Velero 파드의 `wget` 대신
+  유지되는 것은 라이브에서 검증됨. 파드 템플릿에는 정적 어노테이션
+  `narwhal.io/s3-config-source`가 있어 Application이 Synced 상태를 유지함(이 OutOfSync 수정은 머지 후 적용되며 아직
+  검증되지 않음). `07-cnpg.sh`도 해당 헬퍼를 호출함(#415). `verify-backup.sh`는 Velero 파드의 `wget` 대신
   `narwhal-db` 파드 안에서 `python3`로 익명 403을 확인함(#419). 생성되는 키 값은 작은따옴표로 감싸므로 숫자 형태의
   키도 문자열로 유지됨(#415). `ensure_s3_identities`는 멱등적임: 두 번째 실행 시 기존 키를 유지함.
 - **`08-4-storage.sh` 실행 전 SeaweedFS 데이터 노드 라벨링 필요 (#409, cd62c691).** 볼륨 서버는 노드 로컬

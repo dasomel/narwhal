@@ -141,14 +141,15 @@ existing cluster or bundle; read **Upgrade notes** first.
   `envFrom`, and `narwhal-db.yaml` no longer carries `cnpg-s3-credentials`. **On an existing cluster
   follow `docs/runbooks/seaweedfs-s3-auth.md` in stages.** `08-4-storage.sh` now runs a read-only
   guard first (#414): it aborts when an existing S3 server has no `-config=` and the Loki or Tempo
-  credentials Secret is missing; an approved immediate cutover sets
+  StatefulSet does not yet reference its S3 credential Secret via `envFrom` (the Secrets alone
+  prove nothing: `07-cnpg.sh` creates them first); an approved immediate cutover sets
   `NARWHAL_ALLOW_S3_AUTH_CUTOVER=true` (kubectl, RBAC and parse errors are never bypassed). The
   runbook gates were corrected (#419): `backups.velero.io,schedules.velero.io`, WAL archiving
   progress plus an on-demand CNPG backup instead of `env | grep AWS_`, and the S3 server flag is
   read from `command` and `args`. The seaweedfs Application now ignores the
   `narwhal.io/s3-config-sha256` pod-template annotation (`ignoreDifferences` plus
   `RespectIgnoreDifferences=true`) so the restart marker written by `s3_sync_server_config`
-  survives self-heal, and `07-cnpg.sh` calls that helper too (#415). `verify-backup.sh` probes the
+  survives self-heal (not yet verified on a live cluster), and `07-cnpg.sh` calls that helper too (#415). `verify-backup.sh` probes the
   anonymous 403 with `python3` inside a `narwhal-db` pod instead of `wget` in a Velero pod (#419),
   and generated key values are single-quoted so numeric keys stay strings (#415).
   `ensure_s3_identities` is idempotent: a second run keeps the keys.
@@ -331,8 +332,8 @@ existing cluster or bundle; read **Upgrade notes** first.
   live cluster: that Argo CD keeps the annotation (`ignoreDifferences`) through a self-heal, and
   the new `verify-backup.sh` anonymous check. Still open: the key stays in the
   `kubectl.kubernetes.io/last-applied-configuration` annotation of the client Secrets (server-side
-  apply was rejected for now), and Secret existence in the guard does not prove Loki/Tempo loaded
-  the new keys.
+  apply was rejected for now), and the guard's `envFrom` check does not prove that the Loki/Tempo
+  pods restarted and loaded the new keys.
 - **Velero schedules back up every volume in `storage`, including emptyDir (#422).** One
   `PodVolumeBackup` (OpenBao `data`) ended `Canceled` without a message; the cause is unknown.
   Until it is explained, treat the daily OpenBao backup as unverified.

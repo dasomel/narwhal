@@ -176,14 +176,14 @@ ensure_s3_identities() {
           # velero-plugin-for-aws reads this AWS credentials-file blob (key `cloud`)
           printf '  cloud: |\n    [default]\n    aws_access_key_id = %s\n    aws_secret_access_key = %s\n' "${aks[$i]}" "${sks[$i]}"
         fi
-      } >"${tmp}"
+      } >"${tmp}" || exit 1
       kubectl apply -f "${tmp}" >/dev/null || exit 1
     done
     {
       printf 'apiVersion: v1\nkind: Secret\nmetadata:\n  name: seaweedfs-s3-config\n  namespace: storage\n'
       printf 'type: Opaque\nstringData:\n'
       printf "  seaweedfs_s3_config: '{\"identities\":[%s]}'\n" "${json}"
-    } >"${tmp}"
+    } >"${tmp}" || exit 1
     kubectl apply -f "${tmp}" >/dev/null || exit 1
   ) || return 1
 }
@@ -351,21 +351,25 @@ s3_sync_server_config() {
 }
 
 # guard_s3_auth_cutover (D-s3ops-4, #414): read-only pre-flight for 08-4. Enabling S3 auth on a
-# live anonymous seaweedfs-s3 while Loki/Tempo still hold no credentials locks them out at the
-# next restart. Allowed: no Deployment yet (clean install, NotFound only), a server that already
-# runs a non-empty -config= (re-run), or both monitoring/{loki,tempo}-s3-credentials present
-# (staged cutover under way). Otherwise abort unless NARWHAL_ALLOW_S3_AUTH_CUTOVER=true, which
+# live anonymous seaweedfs-s3 while Loki/Tempo do not yet consume their new keys locks them out
+# at the next restart. Allowed: no Deployment yet (clean install, NotFound only), a server whose
+# command+args (any container) hold a non-empty -config= (re-run), or an anonymous server whose
+# Loki and Tempo StatefulSets (monitoring) both reference their S3 Secret via envFrom (staged
+# cutover, runbook step 2 done); a client whose StatefulSet is NotFound is not installed and
+# cannot be locked out. Otherwise abort unless NARWHAL_ALLOW_S3_AUTH_CUTOVER=true, which
 # bypasses ONLY that transition abort, never a kubectl/RBAC/parse error (fail closed).
-# Cost: Secret existence does not prove Loki/Tempo loaded the new keys; the runbook owns that.
+# Why not Secret existence: 07's ensure_s3_identities creates both Secrets before 08-4 runs, so
+# on a full Phase 2 re-run that test always passed. Cost: envFrom proves the workload is wired,
+# not that its pods restarted and loaded the keys; the runbook gate owns that.
 guard_s3_auth_cutover() {
-  local out err errf rc=0 name cfg_re='-config=[^"[:space:]]' missing=false
+  local out err errf rc=0 name refs cfg_re='-config=[^"[:space:]]' notconsuming=""
   errf=$(mktemp) || return 1
   out=$(kubectl get deployment seaweedfs-s3 -n storage -o \
-    'jsonpath={.spec.template.spec.containers[0].name}{"\t"}{.spec.template.spec.containers[0].command}{"\t"}{.spec.template.spec.containers[0].args}' \
+    'jsonpath={range .spec.template.spec.containers[*]}{.name}{"\t"}{.command}{"\t"}{.args}{"\n"}{end}' \
     2>"${errf}") || rc=$?
   err=$(cat "${errf}" 2>/dev/null || true)
-  rm -f "${errf}"
   if [ "${rc}" -ne 0 ]; then
+    rm -f "${errf}"
     case "${err}" in
       *"Error from server (NotFound)"*) return 0 ;;
       *) echo "ERROR: cannot read Deployment storage/seaweedfs-s3: ${err:0:200}" >&2; return 1 ;;
@@ -373,22 +377,32 @@ guard_s3_auth_cutover() {
   fi
   case "${out}" in
     ?*$'\t'*$'\t'*) ;;
-    *) echo "ERROR: cannot parse the container spec of Deployment storage/seaweedfs-s3." >&2; return 1 ;;
+    *) rm -f "${errf}"; echo "ERROR: cannot parse the container spec of Deployment storage/seaweedfs-s3." >&2; return 1 ;;
   esac
-  if [[ "${out}" =~ ${cfg_re} ]]; then return 0; fi
+  if [[ "${out}" =~ ${cfg_re} ]]; then rm -f "${errf}"; return 0; fi
   for name in loki tempo; do
-    rc=0; secret_exists "${name}-s3-credentials" monitoring || rc=$?
-    case "${rc}" in
-      0) ;;
-      1) missing=true ;;
-      *) return 1 ;;
+    rc=0
+    refs=$(kubectl get statefulset "${name}" -n monitoring -o \
+      'jsonpath={range .spec.template.spec.containers[*]}{range .envFrom[*]}{.secretRef.name}{"\n"}{end}{end}' \
+      2>"${errf}") || rc=$?
+    err=$(cat "${errf}" 2>/dev/null || true)
+    if [ "${rc}" -ne 0 ]; then
+      case "${err}" in
+        *"Error from server (NotFound)"*) continue ;;
+        *) rm -f "${errf}"; echo "ERROR: cannot read StatefulSet monitoring/${name}: ${err:0:200}" >&2; return 1 ;;
+      esac
+    fi
+    case $'\n'"${refs}"$'\n' in
+      *$'\n'"${name}-s3-credentials"$'\n'*) ;;
+      *) notconsuming="${notconsuming:+${notconsuming} }${name}" ;;
     esac
   done
-  [ "${missing}" = true ] || return 0
+  rm -f "${errf}"
+  [ -n "${notconsuming}" ] || return 0
   if [ "${NARWHAL_ALLOW_S3_AUTH_CUTOVER:-}" = true ]; then
-    echo "WARNING: NARWHAL_ALLOW_S3_AUTH_CUTOVER=true: enabling S3 auth on an anonymous server without Loki/Tempo credentials." >&2
+    echo "WARNING: NARWHAL_ALLOW_S3_AUTH_CUTOVER=true: enabling S3 auth while ${notconsuming} do not consume their S3 credential Secrets." >&2
     return 0
   fi
-  echo "ERROR: existing SeaweedFS S3 has no -config; Loki/Tempo credentials are missing. Follow docs/runbooks/seaweedfs-s3-auth.md before enabling auth. Approved immediate cutover only: NARWHAL_ALLOW_S3_AUTH_CUTOVER=true." >&2
+  echo "ERROR: existing SeaweedFS S3 has no -config; Loki/Tempo do not consume their S3 credential Secrets yet. Follow docs/runbooks/seaweedfs-s3-auth.md before enabling auth. Approved immediate cutover only: NARWHAL_ALLOW_S3_AUTH_CUTOVER=true." >&2
   return 1
 }

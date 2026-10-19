@@ -26,9 +26,10 @@ case "$1" in
     [ -z "${FAKE_PATCH_FAIL:-}" ] || { echo "patch failed" >&2; exit 1; }
     [[ "$*" =~ narwhal.io/s3-config-sha256\":\"([0-9a-f]+)\" ]] || exit 1
     printf '%s' "${BASH_REMATCH[1]}" > "${ST}/deploy_sha"; echo patch >> "${ST}/patches" ;;
-  create) printf 'kind: Namespace\n' ;;
+  create) touch "${ST}/ns_done"; printf 'kind: Namespace\n' ;;
   apply)
     [ "$3" != "-" ] || { cat >/dev/null; exit 0; }
+    [ ! -d "$3" ] || { echo dir >> "${ST}/dir_applies"; exit 0; }   # an apply of the unwritten server config
     ns=$(awk '/^  namespace:/{print $2}' "$3"); name=$(awk '/^  name:/{print $2; exit}' "$3")
     echo "$3" >> "${ST}/tmpfiles"
     if [ "${FAKE_APPLY_TERM:-}" = "$name" ]; then kill -TERM "$PPID"; sleep 1; fi
@@ -40,12 +41,22 @@ import base64, sys, yaml
 for key, val in (yaml.safe_load(open(sys.argv[1])).get("stringData") or {}).items():
     open(sys.argv[2] + key, "w").write(base64.b64encode(str(val).encode()).decode())
 PY
+    # the server config is written last into the same temp path: replace it by a directory so that write fails
+    if [ "${FAKE_APPLY_MKDIR:-}" = "$name" ]; then rm -f "$3"; mkdir "$3"; fi
     ;;
 esac
 FAKE
 # BSD/macOS mktemp ignores TMPDIR when called without a template; pin it so leaks are observable
 real_mktemp=$(command -v mktemp)
-printf '#!/bin/bash\n[ $# -eq 0 ] && exec %s "${TMPDIR}/tmp.XXXXXXXXXX"\nexec %s "$@"\n' "$real_mktemp" "$real_mktemp" > "$k/mktemp"
+mkdir -p "$k/wdir"
+cat > "$k/mktemp" <<SHIM
+#!/bin/bash
+# after the namespaces are created (= the temp file of the apply section), FAKE_MKTEMP_DIR=1 hands
+# out a directory so the write to it fails
+[ "\${FAKE_MKTEMP_DIR:-}" = 1 ] && [ -f "\${ST}/ns_done" ] && { echo "$k/wdir"; exit 0; }
+[ \$# -eq 0 ] && exec $real_mktemp "\${TMPDIR}/tmp.XXXXXXXXXX"
+exec $real_mktemp "\$@"
+SHIM
 chmod +x "$k/kubectl" "$k/mktemp"
 export PATH="$k:$PATH"
 # shellcheck source=/dev/null
@@ -79,6 +90,16 @@ leaked && fail "temp file leaked after a server Secret apply failure"
 reset; FAKE_APPLY_TERM=velero-s3-credentials run && fail "TERM during apply must fail the run"
 leaked && fail "temp file leaked after TERM"
 [ -s "$ST/tmpfiles" ] || fail "fixture never wrote a temp file (test is vacuous)"
+
+# --- LOW 1: a failing write of the temp file (here: the path is a directory) fails the run, applies nothing
+reset; FAKE_MKTEMP_DIR=1 run && fail "a failing temp-file write must fail the run"
+[ -e "$ST/ns_done" ] || fail "fixture never reached the apply section (test is vacuous)"
+[ ! -e "$ST/tmpfiles" ] && [ ! -e "$ST/applies" ] && [ ! -e "$ST/dir_applies" ] || fail "nothing may be applied after a failed temp-file write"
+# same for the final write (the server config), after all four client Secrets were applied
+reset; FAKE_APPLY_MKDIR=cnpg-s3-credentials run && fail "a failing write of the server config must fail the run"
+[ -e "$ST/database__cnpg-s3-credentials__exists" ] || fail "fixture did not reach the last client (test is vacuous)"
+[ ! -e "$ST/dir_applies" ] || fail "server config must not be applied after a failed write"
+rm -rf "${TMPDIR:?}"/*
 
 # --- the caller's own EXIT trap is untouched: it runs once, after the function returned
 reset

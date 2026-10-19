@@ -41,13 +41,17 @@ file are derived from them by `ensure_s3_identities` (`scripts/common/lib.sh`).
 - `scripts/cluster/08-4-storage.sh` refuses to start the transition on its own (D-s3ops-4, #414).
   `guard_s3_auth_cutover` (`lib.sh`, read-only) runs before the node label, the identities and
   helm. It allows a clean install (no `seaweedfs-s3` Deployment), a server that already runs a
-  non-empty `-config=`, and an anonymous server once **both** `monitoring/loki-s3-credentials` and
-  `monitoring/tempo-s3-credentials` exist (stage 1 has started). Otherwise it aborts with
-  `existing SeaweedFS S3 has no -config; Loki/Tempo credentials are missing`: follow this runbook.
+  non-empty `-config=` in any container's `command` or `args`, and an anonymous server once the
+  `monitoring/loki` and `monitoring/tempo` StatefulSets both reference `loki-s3-credentials` and
+  `tempo-s3-credentials` through `envFrom` (step 2 done; a StatefulSet that does not exist is
+  skipped). The Secrets alone do not count: `07-cnpg.sh` creates them before `08-4` runs on every
+  full Phase 2 re-run. Otherwise it aborts with
+  `existing SeaweedFS S3 has no -config; Loki/Tempo do not consume their S3 credential Secrets yet`:
+  follow this runbook.
   An approved immediate cutover (accepting that Loki/Tempo may lose access until they are moved)
   sets `NARWHAL_ALLOW_S3_AUTH_CUTOVER=true` for that run. The override bypasses only this
-  transition abort, never a `kubectl`, RBAC or parse error. Secret existence does not prove that
-  Loki/Tempo loaded the keys: the stage 1 gate below does.
+  transition abort, never a `kubectl`, RBAC or parse error (including reading the StatefulSets). `envFrom` proves the
+  workloads are wired, not that their pods restarted and loaded the keys: the stage 1 gate below does.
 - The roll marker `narwhal.io/s3-config-sha256` is set by `kubectl patch`, which Argo CD self-heal
   would revert. The seaweedfs Application therefore lists exactly that annotation in
   `ignoreDifferences` with `RespectIgnoreDifferences=true` (D-s3ops-1, #419). Not yet verified on a

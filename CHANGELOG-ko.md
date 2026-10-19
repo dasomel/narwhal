@@ -120,13 +120,13 @@ ArgoCD, Gitea, RBAC, OpenBao, Keycloak, APISIX, NFS, `database` 신뢰 경계가
   `monitoring/loki-s3-credentials` 및 `monitoring/tempo-s3-credentials`에서 키를 읽으며,
   `narwhal-db.yaml`은 더 이상 `cnpg-s3-credentials`를 포함하지 않음. **기존 클러스터에서는
   `docs/runbooks/seaweedfs-s3-auth.md`를 단계별로 따를 것.** `08-4-storage.sh`는 이제 읽기 전용 가드를 먼저
-  실행함(#414): 기존 S3 서버에 `-config=`가 없고 Loki 또는 Tempo 자격 증명 Secret이 없으면 중단하며, 승인된 즉시
+  실행함(#414): 기존 S3 서버에 `-config=`가 없고 Loki 또는 Tempo StatefulSet이 아직 `envFrom`으로 S3 자격 증명 Secret을 참조하지 않으면 중단하며(Secret 존재만으로는 아무것도 증명되지 않음: `07-cnpg.sh`가 먼저 생성함), 승인된 즉시
   전환은 `NARWHAL_ALLOW_S3_AUTH_CUTOVER=true`를 설정함(kubectl, RBAC, 파싱 오류는 절대 우회되지 않음). 런북
   게이트가 수정됨(#419): `backups.velero.io,schedules.velero.io`, `env | grep AWS_` 대신 WAL 아카이빙 진행
   확인과 온디맨드 CNPG 백업, S3 서버 플래그는 `command`와 `args`에서 읽음. seaweedfs Application은 이제
   `narwhal.io/s3-config-sha256` 파드 템플릿 어노테이션을 무시하므로(`ignoreDifferences`와
   `RespectIgnoreDifferences=true`) `s3_sync_server_config`가 기록한 재시작 표식이 자가 치유(self-heal) 후에도
-  유지되며, `07-cnpg.sh`도 해당 헬퍼를 호출함(#415). `verify-backup.sh`는 Velero 파드의 `wget` 대신
+  유지됨(라이브 클러스터에서는 아직 검증되지 않음). `07-cnpg.sh`도 해당 헬퍼를 호출함(#415). `verify-backup.sh`는 Velero 파드의 `wget` 대신
   `narwhal-db` 파드 안에서 `python3`로 익명 403을 확인함(#419). 생성되는 키 값은 작은따옴표로 감싸므로 숫자 형태의
   키도 문자열로 유지됨(#415). `ensure_s3_identities`는 멱등적임: 두 번째 실행 시 기존 키를 유지함.
 - **`08-4-storage.sh` 실행 전 SeaweedFS 데이터 노드 라벨링 필요 (#409, cd62c691).** 볼륨 서버는 노드 로컬
@@ -282,7 +282,7 @@ ArgoCD, Gitea, RBAC, OpenBao, Keycloak, APISIX, NFS, `database` 신뢰 경계가
   가짜 `kubectl`로만 테스트됨. 라이브 클러스터에서 검증되지 않은 것: 자가 치유(self-heal) 후에도 Argo CD가
   어노테이션을 유지하는지(`ignoreDifferences`)와 새 `verify-backup.sh` 익명 검사. 여전히 미해결: 클라이언트
   Secret의 `kubectl.kubernetes.io/last-applied-configuration` 어노테이션에 키가 남아있음(서버 사이드 어플라이는
-  당분간 거부됨), 그리고 가드가 확인하는 Secret 존재 여부는 Loki/Tempo가 새 키를 로드했음을 증명하지 않음.
+  당분간 거부됨), 그리고 가드가 확인하는 `envFrom` 참조는 Loki/Tempo 파드가 재시작되어 새 키를 로드했음을 증명하지 않음.
 - **Velero 스케줄이 `emptyDir`을 포함하여 `storage`의 모든 볼륨을 백업함 (#422).** 하나의 `PodVolumeBackup`
   (OpenBao `data`)이 메시지 없이 `Canceled`로 종료됨; 원인은 알 수 없음. 원인이 규명될 때까지 매일 실행되는
   OpenBao 백업은 검증되지 않은 것으로 간주할 것.

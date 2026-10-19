@@ -390,10 +390,21 @@ deployNodeAgent: true
 nodeAgent:
   podVolumePath: /var/lib/kubelet/pods
   privileged: true
+  # D-datapath-labels (#422): mirrors gitops/charts/narwhal-apps/templates/velero.yaml (see comment there).
+  extraArgs:
+    - --node-agent-configmap=velero-node-agent-config
   tolerations:
     - key: node-role.kubernetes.io/control-plane
       operator: Exists
       effect: NoSchedule
+extraObjects:
+  - apiVersion: v1
+    kind: ConfigMap
+    metadata:
+      name: velero-node-agent-config
+    data:
+      node-agent-config.json: |
+        {"podLabels": {"app.kubernetes.io/name": "velero-data-mover"}}
 # D2: Keep each schedule's includedResources equal to the generated READ inventory.
 # D3: events and coordination Leases stay excluded from that inventory.
 schedules:

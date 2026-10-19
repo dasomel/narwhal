@@ -166,26 +166,67 @@ ensure_s3_identities() {
     for i in "${!names[@]}"; do
       name="${names[$i]}"
       read -r ns secret af sf bucket <<<"$(s3_identity_spec "${name}")"
+      # D-s3apply-5: encode first and check the status; inside "$(...)" a failing base64 would leave
+      # an empty value that printf happily writes and apply then wipes the live credentials with.
+      b_ak=$(s3_b64 "${aks[$i]}") && b_sk=$(s3_b64 "${sks[$i]}") && b_cloud= && {
+        [ "${name}" != velero ] || {
+          # printf -v, not "$(...)": a command substitution would strip the final LF the old `cloud: |` block kept
+          printf -v cloud_file '[default]\naws_access_key_id = %s\naws_secret_access_key = %s\n' "${aks[$i]}" "${sks[$i]}"
+          b_cloud=$(s3_b64 "${cloud_file}")
+        }
+      } || { echo "ERROR: could not base64-encode the S3 credentials of ${name}; nothing was applied for it." >&2; exit 1; }
       {
         printf 'apiVersion: v1\nkind: Secret\nmetadata:\n  name: %s\n  namespace: %s\n' "${secret}" "${ns}"
-        printf '  labels:\n    narwhal.io/s3-identity: %s\ntype: Opaque\nstringData:\n' "${name}"
-        # D-s3ops-5: single-quoted so an all-digit or leading-zero key stays a YAML string
-        # (the s3_key_state whitelist already rejects `'`).
-        printf "  %s: '%s'\n  %s: '%s'\n" "${af}" "${aks[$i]}" "${sf}" "${sks[$i]}"
+        # D-s3apply-4: base64 `data`, not `stringData`. The API server converts stringData to data on
+        # write, so under server-side apply the manager would own a field that never persists and a
+        # key dropped here could linger; `data` makes the manager own exactly these keys. It also
+        # keeps an all-digit or leading-zero key a string (D-s3ops-5).
+        printf '  labels:\n    narwhal.io/s3-identity: %s\ntype: Opaque\ndata:\n' "${name}"
+        printf '  %s: %s\n  %s: %s\n' "${af}" "${b_ak}" "${sf}" "${b_sk}"
         if [ "${name}" = velero ]; then
           # velero-plugin-for-aws reads this AWS credentials-file blob (key `cloud`)
-          printf '  cloud: |\n    [default]\n    aws_access_key_id = %s\n    aws_secret_access_key = %s\n' "${aks[$i]}" "${sks[$i]}"
+          printf '  cloud: %s\n' "${b_cloud}"
         fi
       } >"${tmp}" || exit 1
-      kubectl apply -f "${tmp}" >/dev/null || exit 1
+      s3_apply_secret "${tmp}" "${ns}" "${secret}" || exit 1
     done
+    b_cfg=$(s3_b64 "{\"identities\":[${json}]}") ||
+      { echo "ERROR: could not base64-encode the SeaweedFS S3 server config; nothing was applied for it." >&2; exit 1; }
     {
       printf 'apiVersion: v1\nkind: Secret\nmetadata:\n  name: seaweedfs-s3-config\n  namespace: storage\n'
-      printf 'type: Opaque\nstringData:\n'
-      printf "  seaweedfs_s3_config: '{\"identities\":[%s]}'\n" "${json}"
+      printf 'type: Opaque\ndata:\n'
+      printf '  seaweedfs_s3_config: %s\n' "${b_cfg}"
     } >"${tmp}" || exit 1
-    kubectl apply -f "${tmp}" >/dev/null || exit 1
+    s3_apply_secret "${tmp}" storage seaweedfs-s3-config || exit 1
   ) || return 1
+}
+
+# s3_apply_secret <file> <namespace> <secret> -- applies a key-bearing Secret server-side so the keys are
+# not copied into the kubectl.kubernetes.io/last-applied-configuration annotation (#415).
+# D-s3apply-1: --force-conflicts is deliberate. This script is the only intended writer of these
+#   Secrets (D-s3auth) and its values are authoritative (rotation of a default/duplicate key must win
+#   over the old client-side-apply owner "kubectl-client-side-apply"); without it the first rotation
+#   after the switch would fail with a field conflict. Cost: it also overrides an ad-hoc edit.
+# D-s3apply-2: field manager name is fixed (narwhal-s3-identities) so ownership is stable across reruns.
+# D-s3apply-3: objects created by the old client-side apply still carry the plaintext annotation;
+#   it is removed after every apply (the object exists by then; `annotate key-` on an absent
+#   annotation is a no-op success). A real failure fails the run (fail closed): leaving the old keys
+#   in the annotation would defeat #415. The message carries no key.
+s3_apply_secret() {
+  kubectl apply -f "$1" --server-side --field-manager=narwhal-s3-identities --force-conflicts >/dev/null || return 1
+  kubectl annotate secret "$3" -n "$2" kubectl.kubernetes.io/last-applied-configuration- >/dev/null 2>&1 || {
+    echo "ERROR: could not clear the last-applied annotation of secret ${2}/${3}; it may still hold the previous keys. Remove it by hand and rerun." >&2
+    return 1
+  }
+}
+
+# s3_b64 <value> -- base64 on one line (GNU base64 wraps at 76 columns); fails on an encoder error or
+# empty output. Callers assign the result to a variable and check the status (a command substitution
+# inside printf arguments would hide the failure).
+s3_b64() {
+  local o
+  o=$(printf '%s' "$1" | base64) && [ -n "${o}" ] || return 1
+  printf '%s' "${o//$'\n'/}"
 }
 
 # is_cidr <value> -- strict IPv4 CIDR (octets <= 255, prefix 0-32).

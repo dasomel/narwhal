@@ -165,8 +165,9 @@ ArgoCD, Gitea, RBAC, OpenBao, Keycloak, APISIX, NFS, `database` 신뢰 경계가
   (스크립트는 이를 새로고침하지 않음). #412 이전에는 kopia 리포지토리가 익명 S3에 대해 초기화되지 못해 어떤 볼륨도
   백업된 적이 없었음. 2026-10-18/19 kakao-narwhal에서 볼륨 백업 및 복원, 권한이 검증됨. 영구 RBAC는
   2026-10-19 kakao-narwhal에 적용되었음. 그날의 `velero-daily-databases` 실행(볼륨 없음)은 완료되었음.
-  `velero-daily-openbao` 템플릿의 수동 실행은 완료된 `PodVolumeBackup`(첫 확인 시 8개)과 `Canceled` 1개를
-  만들었고, 오류를 기록하지 못한 채 약 30분 뒤 PartiallyFailed로 끝났음(#422). 볼륨이 있는 스케줄(`full`, `gitea`,
+  `velero-daily-openbao` 템플릿의 수동 실행은 완료된 `PodVolumeBackup`(첫 확인 시 11개 중 8개)과 `Canceled` 1개를
+  만들었고, 그 백업은 이후 PartiallyFailed(261/261 항목)로 표시되었음. 걸린 시간은 알 수 없고, 정리 중에 백업을
+  삭제했기 때문에 오류는 기록하지 못했음(#422). 볼륨이 있는 스케줄(`full`, `gitea`,
   `harbor`, `openbao`)은 이 글을 쓸 때 변경 이후 아직 실행되지 않았음.
 - **Kakao Cloud 네트워킹 (#396, #265, #403).** 5개의 `kakaocloud_public_ip` 리소스 전체가 `prevent_destroy`로
   설정됨. 대상 지정 destroy 대신 `-replace`를 사용할 것. kubelet(10250) 보안 그룹 규칙은 노드 서브넷으로

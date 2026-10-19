@@ -194,8 +194,9 @@ existing cluster or bundle; read **Upgrade notes** first.
   no volume had ever been backed up. Verified on kakao-narwhal on 2026-10-18/19: a volume backup
   and restore, and the permissions. The permanent RBAC was applied on kakao-narwhal on 2026-10-19. That day's
   `velero-daily-databases` run (no volumes) completed. A manual run of the `velero-daily-openbao`
-  template produced Completed `PodVolumeBackup`s (eight at the first check) and one Canceled, and
-  ended PartiallyFailed after about 30 minutes without its errors being captured (#422). The
+  template produced Completed `PodVolumeBackup`s (eight of eleven at the first check) and one
+  Canceled, and the backup later showed PartiallyFailed with 261/261 items. How long it took is not
+  known, and its errors were not captured because the backup was deleted during cleanup (#422). The
   volume-bearing schedules (`full`, `gitea`, `harbor`, `openbao`) had not run since the change
   when this was written.
 - **Kakao Cloud networking (#396, #265, #403).** All five `kakaocloud_public_ip` resources are

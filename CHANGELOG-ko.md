@@ -165,10 +165,13 @@ ArgoCD, Gitea, RBAC, OpenBao, Keycloak, APISIX, NFS, `database` 신뢰 경계가
   (스크립트는 이를 새로고침하지 않음). #412 이전에는 kopia 리포지토리가 익명 S3에 대해 초기화되지 못했고,
   kakao-narwhal에는 `PodVolumeBackup`이 한 번도 존재한 적이 없었음. 2026-10-18/19 kakao-narwhal에서 볼륨 백업 및 복원, 권한이 검증됨. 영구 RBAC는
   2026-10-19 kakao-narwhal에 적용되었음. 그날의 `velero-daily-databases` 실행(볼륨 없음)은 완료되었음.
-  `velero-daily-openbao` 템플릿의 수동 실행은 완료된 `PodVolumeBackup`(첫 확인 시 11개 중 8개)과 `Canceled` 1개를
-  만들었고, 그 백업은 이후 PartiallyFailed(261/261 항목)로 표시되었음. 걸린 시간은 알 수 없고, 정리 중에 백업을
-  삭제했기 때문에 오류는 기록하지 못했음(#422). 볼륨이 있는 스케줄(`full`, `gitea`,
-  `harbor`, `openbao`)은 이 글을 쓸 때 변경 이후 아직 실행되지 않았음.
+  **export가 기본값 `root_squash`일 때 소유자나 그룹만 읽을 수 있는 파일이 있는 볼륨은 볼륨 백업이 동작하지
+  않음 (#431).** Velero 데이터 이동 파드는 root로 실행되고 `root_squash`는 root를 `nobody`로 매핑하므로 kopia가
+  `permission denied`를 받고 해당 볼륨을 취소함. 2026-10-19 kakao-narwhal에서 OpenBao `data` 볼륨(`vault.db`
+  모드 0660, 소유자 100:1000)은 타깃 백업으로 2회, PostgreSQL `pgdata` 볼륨(모드 0700)은
+  `velero-daily-full` 스케줄 실행에서 재현됨. 누구나 읽을 수 있는 데이터를 가진 볼륨(emptyDir, OpenBao `audit`
+  볼륨, 시험용 PVC)은 백업·복원됨. 타깃 실행에서 `Canceled` `PodVolumeBackup`이 하나 있는 백업은 20분
+  넘게 `InProgress`로 남았고 다음 백업이 그 뒤에서 대기했으며, Velero 서버 파드를 재시작해야만 풀렸음.
 - **Kakao Cloud 네트워킹 (#396, #265, #403).** 5개의 `kakaocloud_public_ip` 리소스 전체가 `prevent_destroy`로
   설정됨. 대상 지정 destroy 대신 `-replace`를 사용할 것. kubelet(10250) 보안 그룹 규칙은 노드 서브넷으로
   제한됨. `08-1` 설치는 이제 APISIX ingress controller에 request 256Mi, limit 512Mi를 부여함(전체 동기화 중
@@ -295,9 +298,19 @@ ArgoCD, Gitea, RBAC, OpenBao, Keycloak, APISIX, NFS, `database` 신뢰 경계가
   `kubectl.kubernetes.io/last-applied-configuration` 어노테이션에 키가 남아있음(서버 사이드 어플라이는 당분간
   거부됨), 그리고 가드가 확인하는 `envFrom` 참조는 Loki/Tempo 파드가 재시작되어 새 키를 로드했음을 증명하지 않음.
   같은 Application은 `Secret seaweedfs-db-secret`을 비교 상태 없이 표시하며, 이는 조사하지 않았음.
-- **Velero 스케줄이 `emptyDir`을 포함하여 `storage`의 모든 볼륨을 백업함 (#422).** 하나의 `PodVolumeBackup`
-  (OpenBao `data`)이 메시지 없이 `Canceled`로 종료됨; 원인은 알 수 없음. 원인이 규명될 때까지 매일 실행되는
-  OpenBao 백업은 검증되지 않은 것으로 간주할 것.
+- **`root_squash`에서는 소유자 전용 파일이 있는 볼륨의 Velero 볼륨 백업이 실패함 (#431).** NFS 서버에서 다른
+  사용자가 읽을 수 없는 파일이 `database/`(7686개 중 7677개), `monitoring/`(1317개 중 138개), `devtools/`(292개
+  중 72개), `storage/`(77개 중 7개)에서 발견됨. 소유자가 데이터 이동 파드에 맞는 신원 부여, 애플리케이션 수준
+  백업(OpenBao는 백업 훅으로 `bao operator raft snapshot`), NFS 서버에서의 백업 중에서 결정하기 전까지는
+  OpenBao, PostgreSQL 및 소유자 전용 파일이 있는 다른 볼륨의 Velero 백업에 의존하지 말 것. CNPG 자체
+  barman 백업은 S3로 별도 수행되며, 2026-10-18에 온디맨드 백업이 완료되고 WAL 아카이빙이 진행됨을 확인함.
+- **Velero 스케줄은 emptyDir도 백업하며 실패 원인을 진단하기 어려움 (#422).** 서버 계정에 `pods/log`와
+  `events create`가 없어 임시 권한 없이는 데이터 이동 파드 로그를 읽을 수 없고(#431은 이렇게 발견됨), Kyverno가
+  데이터 이동 파드에 라벨 위반을 보고함.
+- **`portal-release.yml`에 대한 Scorecard `Dangerous-Workflow` 지적 (#395).** 워크플로가
+  `workflow_run.head_sha`를 체크아웃함. 이미 `portal/v*` 태그 푸시에서만 실행되고, 신뢰할 수 있는 기본 브랜치
+  체크아웃을 실행하며, 태그가 그 커밋을 가리키는지 증명하므로 휴리스틱 일치로 보이지만, 소유자가 (검토 기한과 함께)
+  예외로 수용하거나 워크플로를 재구성해야 함.
 - **Tempo가 1536Mi 제한에서 만성적으로 OOMKilled됨 (#420).** S3 변경과 무관하게 라이브 클러스터에서
   매주 수백 건의 재시작이 발생함.
 - **라이브 클러스터에 적용되지 않음.** AppProject 분리, 개발자 RBAC 변경, 비공개 Gitea 리포지토리, Valkey 교체의

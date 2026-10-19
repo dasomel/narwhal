@@ -1,0 +1,57 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-s3-auth-ops",
+  "task": "Finish the SeaweedFS S3 authentication operations: persist the restart annotation against Argo CD self-heal, fix the anonymous-403 verification, add a fail-closed 08-4 cutover guard, harden ensure_s3_identities (Narwhal#414, #415, #419)",
+  "changeContext": {
+    "paths": [
+      "gitops/charts/narwhal-apps/templates/seaweedfs.yaml",
+      ".agents/evals/traces/2026-10-s3-auth-ops.json"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Scope: ignoreDifferences on exactly the seaweedfs-s3 pod-template annotation plus RespectIgnoreDifferences (selfHeal stays on), a read-only guard in 08-4, a python3-in-narwhal-db anonymous check in verify-backup.sh, quoted key values, a subshell trap for the key-bearing temp file, an s3_sync_server_config call in 07, runbook and docs. Server-side apply and forced field-manager conflicts were considered and rejected (D-s3ops-6). No live cluster was touched."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "Findings recorded in Narwhal#419 and handed over as the task spec (observed on kakao-narwhal on 2026-10-18 by the issue author, not re-observed in this run): argocd-controller reverted the patched annotation within seconds and the old ReplicaSet returned; verify-backup.sh picked a node-agent pod without wget so its anonymous check could never pass.",
+      "evidence": ["artifact:Narwhal#419", "artifact:Narwhal#414", "artifact:Narwhal#415"]
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "seaweedfs.yaml gains spec.ignoreDifferences for apps/Deployment storage/seaweedfs-s3 with the jsonPointer /spec/template/metadata/annotations/narwhal.io~1s3-config-sha256 and the sync option RespectIgnoreDifferences=true; the shell, test and doc changes listed in the task are in the same change."
+    },
+    {
+      "id": "e4",
+      "type": "verification",
+      "status": "passed",
+      "scope": "static contract and fake-kubectl behaviour only: the Application fields (each mutated), the 08-4 guard cases, quoting, temp-file cleanup, 07 sync, and the verify-backup.sh anonymous check with the real embedded python",
+      "summary": "check-s3-auth-contract.py --mutation-verify (22 mutations rejected), check-s3-cutover-guard.sh, check-s3-ensure-hardening.sh and check-verify-backup-anon.sh pass; each new behaviour was removed in a temp copy and its test failed. This does not show how Argo CD behaves with the new ignoreDifferences entry.",
+      "evidence": ["test:python3 scripts/test/lib/check-s3-auth-contract.py --mutation-verify", "test:bash scripts/test/lib/check-s3-cutover-guard.sh", "test:bash scripts/test/lib/check-s3-ensure-hardening.sh", "test:bash scripts/test/lib/check-verify-backup-anon.sh"]
+    },
+    {
+      "id": "e5",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "full static regression suite",
+      "summary": "make test passed with 0 failures after the change.",
+      "evidence": ["test:make test", "ci:regression-static"]
+    },
+    {
+      "id": "e6",
+      "type": "completion_claim",
+      "summary": "The repository change is statically verified. Not claimed: that Argo CD keeps the annotation through a self-heal on a live cluster, that the new verify-backup.sh anonymous check returns 403 against the live endpoint, or that the guard behaves on a live cluster. The key remaining in kubectl's last-applied annotation is still open."
+    },
+    {
+      "id": "e7",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Static change verified with fake-kubectl behaviour tests and mutation proofs; live verification of the Argo CD ignoreDifferences behaviour and of verify-backup.sh is a follow-up after merge."
+    }
+  ]
+}

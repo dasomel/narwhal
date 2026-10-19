@@ -38,13 +38,32 @@ file are derived from them by `ensure_s3_identities` (`scripts/common/lib.sh`).
   clients at the same instant. Push in two stages with the path arguments of
   `scripts/gitops/push-to-gitea.sh`.
 
+- `scripts/cluster/08-4-storage.sh` refuses to start the transition on its own (D-s3ops-4, #414).
+  `guard_s3_auth_cutover` (`lib.sh`, read-only) runs before the node label, the identities and
+  helm. It allows a clean install (no `seaweedfs-s3` Deployment), a server that already runs a
+  non-empty `-config=` in any container's `command` or `args`, and an anonymous server once the
+  `monitoring/loki` and `monitoring/tempo` StatefulSets both reference `loki-s3-credentials` and
+  `tempo-s3-credentials` through `envFrom` (step 2 done; a StatefulSet that does not exist is
+  skipped). The Secrets alone do not count: `07-cnpg.sh` creates them before `08-4` runs on every
+  full Phase 2 re-run. Otherwise it aborts with
+  `existing SeaweedFS S3 has no -config; Loki/Tempo do not consume their S3 credential Secrets yet`:
+  follow this runbook.
+  An approved immediate cutover (accepting that Loki/Tempo may lose access until they are moved)
+  sets `NARWHAL_ALLOW_S3_AUTH_CUTOVER=true` for that run. The override bypasses only this
+  transition abort, never a `kubectl`, RBAC or parse error (including reading the StatefulSets). `envFrom` proves the
+  workloads are wired, not that their pods restarted and loaded the keys: the stage 1 gate below does.
+- The roll marker `narwhal.io/s3-config-sha256` is set by `kubectl patch`, which Argo CD self-heal
+  would revert. The seaweedfs Application therefore lists exactly that annotation in
+  `ignoreDifferences` with `RespectIgnoreDifferences=true` (D-s3ops-1, #419). Not yet verified on a
+  live cluster: after step 3 confirm the annotation survives a self-heal (below).
+
 ## 0. Preconditions and baseline (read only)
 
 ```bash
 git fetch origin && git checkout feat/seaweedfs-s3-auth     # or the merged main
 kubectl -n storage get deploy seaweedfs-s3 -o jsonpath='{.status.readyReplicas}{"\n"}'
 kubectl -n storage exec seaweedfs-filer-0 -- sh -c "echo 's3.bucket.list' | weed shell"   # note sizes
-kubectl get backup,schedule -n storage; kubectl -n database get cluster narwhal-db
+kubectl get backups.velero.io,schedules.velero.io -n storage; kubectl -n database get cluster narwhal-db
 ```
 
 Gate: no Backup `InProgress`, `narwhal-db` Ready, all four buckets listed. Pick a window with no
@@ -86,10 +105,23 @@ kubectl -n database get cluster narwhal-db -w     # until Ready, 2/2 instances
 `narwhal-db.yaml` no longer carries the Secret, so `14-gitops-bootstrap.sh` cannot revert it. If
 `kubectl -n monitoring get statefulset` shows different names, use the real ones.
 
-Gate (server still anonymous, so this only proves the pods start with the Secret keys): Loki and
-Tempo Ready, no `NoCredentialProviders`/`InvalidAccessKey` in their logs, `narwhal-db` Ready, and
-`kubectl -n database exec narwhal-db-1 -c postgres -- env | grep -c AWS_` is `2` or more.
-Do not print the values.
+Gate (server still anonymous, so this only proves the pods start with the Secret keys and that
+archiving works): Loki and Tempo Ready, no `NoCredentialProviders`/`InvalidAccessKey` in their
+logs, `narwhal-db` Ready. The in-tree `barmanObjectStore` passes its credentials to the archiver
+without exporting `AWS_*` into the postgres container, so `env | grep AWS_` proves nothing. Use
+WAL archiving progress on the current primary and an on-demand Backup instead (never print values):
+
+```bash
+PRIMARY=$(kubectl -n database get pod -l cnpg.io/cluster=narwhal-db,cnpg.io/instanceRole=primary -o jsonpath='{.items[0].metadata.name}')
+pq() { kubectl -n database exec "$PRIMARY" -c postgres -- psql -U postgres -Atc "$1"; }
+BEFORE=$(pq 'select last_archived_wal from pg_stat_archiver'); pq 'select pg_switch_wal()' >/dev/null; sleep 30
+AFTER=$(pq 'select last_archived_wal from pg_stat_archiver'); [ "$AFTER" != "$BEFORE" ] && echo ARCHIVE-PROGRESS || echo ARCHIVE-STUCK
+kubectl cnpg backup narwhal-db -n database --backup-name s3gate-$(date +%s)
+kubectl -n database get backups.postgresql.cnpg.io -w      # newest object reaches phase completed
+```
+
+An anonymous-server pass does not prove the credentials work (an anonymous server accepts any
+key). Repeat both checks after step 3, when authentication is on.
 
 ## 3. Enable authentication (stage 2 push) and restart the server
 
@@ -101,17 +133,20 @@ kubectl -n devtools get app seaweedfs -o jsonpath='{.status.sync.status}{"\n"}' 
 # (sha256 annotation on the pod template; also what 08-4 does)
 bash -c 'set -euo pipefail; source scripts/common/lib.sh; s3_sync_server_config'
 kubectl -n storage rollout status deployment/seaweedfs-s3
-kubectl -n storage get deploy seaweedfs-s3 -o jsonpath='{.spec.template.spec.containers[0].args}' | grep -c 'config=/etc/sw/seaweedfs_s3_config'
+kubectl -n storage get deploy seaweedfs-s3 -o jsonpath='{.spec.template.spec.containers[0].command}{.spec.template.spec.containers[0].args}' | grep -c -- '-config=/etc/sw/seaweedfs_s3_config'   # the chart puts the flag in command, so read both
 kubectl -n storage get pods -l app.kubernetes.io/component=filer -o jsonpath='{.items[0].spec.containers[0].args}' | grep -c -- '-s3'   # 0 (filer S3 off)
 ```
 
 Gate: restart complete, the first grep prints `1`, the second `0`, and
 `kubectl -n storage get svc seaweedfs-filer -o jsonpath='{.spec.ports[*].port}'` has no `8333`.
+Also wait a few minutes (self-heal interval) and confirm the roll marker is still on the Deployment:
+`kubectl -n storage get deploy seaweedfs-s3 -o jsonpath='{.spec.template.metadata.annotations}'` must
+still show `narwhal.io/s3-config-sha256` and no old ReplicaSet may come back (D-s3ops-1).
 
 ## 4. Verify every client with real I/O
 
 ```bash
-bash scripts/test/verify-backup.sh --section=seaweedfs   # anonymous request must be 403
+bash scripts/test/verify-backup.sh --section=seaweedfs   # anonymous request must be 403 (probed with python3 in a narwhal-db pod)
 ```
 
 **Loki**: push and read back.
@@ -135,8 +170,8 @@ ruler/compactor lines have no 403 and `s3.bucket.list` shows `loki` growing.
 
 ```bash
 kubectl cnpg backup narwhal-db -n database --backup-name s3auth-check
-kubectl -n database get backup s3auth-check -w            # phase completed
-kubectl -n database exec narwhal-db-1 -c postgres -- psql -U postgres -c 'select pg_switch_wal()'
+kubectl -n database get backups.postgresql.cnpg.io s3auth-check -w   # phase completed
+kubectl -n database exec "$PRIMARY" -c postgres -- psql -U postgres -c 'select pg_switch_wal()'   # PRIMARY from the step 2 gate
 kubectl -n database get cluster narwhal-db -o jsonpath='{.status.conditions[?(@.type=="ContinuousArchiving")].status}{"\n"}'   # True
 ```
 

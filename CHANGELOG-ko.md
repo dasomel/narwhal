@@ -126,10 +126,12 @@ ArgoCD, Gitea, RBAC, OpenBao, Keycloak, APISIX, NFS, `database` 신뢰 경계가
   확인과 온디맨드 CNPG 백업, S3 서버 플래그는 `command`와 `args`에서 읽음. seaweedfs Application은 이제
   `narwhal.io/s3-config-sha256` 파드 템플릿 어노테이션을 무시하므로(`ignoreDifferences`와
   `RespectIgnoreDifferences=true`) `s3_sync_server_config`가 기록한 재시작 표식이 자가 치유(self-heal) 후에도
-  유지되는 것은 라이브에서 검증됨. 파드 템플릿에는 정적 어노테이션
-  `narwhal.io/s3-config-source`가 있어 Application이 Synced 상태를 유지함(이 OutOfSync 수정은 머지 후 적용되며 아직
-  검증되지 않음). `07-cnpg.sh`도 해당 헬퍼를 호출함(#415). `verify-backup.sh`는 Velero 파드의 `wget` 대신
-  `narwhal-db` 파드 안에서 `python3`로 익명 403을 확인함(#419). 생성되는 키 값은 작은따옴표로 감싸므로 숫자 형태의
+  유지됨. 파드 템플릿에는 정적 어노테이션 `narwhal.io/s3-config-source`가 있어
+  Application이 Synced 상태를 유지함(없으면 무시한 표식이 파드 템플릿의 유일한 어노테이션이라 Argo CD의 정규화된
+  라이브 상태에 빈 `annotations: {}`가 남고 Application이 OutOfSync로 표시됨). 2026-10-19 kakao-narwhal에서
+  검증됨: 표식이 자가 치유 후에도 유지되었고, 두 번째 `s3_sync_server_config`는 무동작이었으며 Application은
+  Synced / Healthy임. 정적 어노테이션의 첫 sync는 S3 서버를 한 번 롤링함. `07-cnpg.sh`도 해당 헬퍼를 호출함(#415). `verify-backup.sh`는 Velero 파드의 `wget` 대신
+  `narwhal-db` 파드 안에서 `python3`로 익명 403을 확인함(#419, 2026-10-19 kakao-narwhal에서 6/6 통과). 생성되는 키 값은 작은따옴표로 감싸므로 숫자 형태의
   키도 문자열로 유지됨(#415). `ensure_s3_identities`는 멱등적임: 두 번째 실행 시 기존 키를 유지함.
 - **`08-4-storage.sh` 실행 전 SeaweedFS 데이터 노드 라벨링 필요 (#409, cd62c691).** 볼륨 서버는 노드 로컬
   hostPath `/ssd/object_store`에 데이터를 보관하며 `nodeSelector narwhal.io/seaweedfs-volume=true`로 고정됨
@@ -161,8 +163,11 @@ ArgoCD, Gitea, RBAC, OpenBao, Keycloak, APISIX, NFS, `database` 신뢰 경계가
   남게 됨. Argo CD가 `kubectl apply`를 되돌리므로, `push-to-gitea.sh`로
   `resources/velero-server-rbac.yaml`을 push한 후 `velero-server-rbac` Application을 하드 새로고침(hard-refresh)할 것
   (스크립트는 이를 새로고침하지 않음). #412 이전에는 kopia 리포지토리가 익명 S3에 대해 초기화되지 못해 어떤 볼륨도
-  백업된 적이 없었음. 2026-10-18/19 kakao-narwhal에서 볼륨 백업 및 복원, 권한이 검증됨. 변경 후 예약 백업은
-  아직 관찰되지 않음.
+  백업된 적이 없었음. 2026-10-18/19 kakao-narwhal에서 볼륨 백업 및 복원, 권한이 검증됨. 영구 RBAC는
+  2026-10-19 kakao-narwhal에 적용되었음. 그날의 `velero-daily-databases` 실행(볼륨 없음)은 완료되었음.
+  `velero-daily-openbao` 템플릿의 수동 실행은 완료된 `PodVolumeBackup`(첫 확인 시 8개)과 `Canceled` 1개를
+  만들었고, 오류를 기록하지 못한 채 약 30분 뒤 PartiallyFailed로 끝났음(#422). 볼륨이 있는 스케줄(`full`, `gitea`,
+  `harbor`, `openbao`)은 이 글을 쓸 때 변경 이후 아직 실행되지 않았음.
 - **Kakao Cloud 네트워킹 (#396, #265, #403).** 5개의 `kakaocloud_public_ip` 리소스 전체가 `prevent_destroy`로
   설정됨. 대상 지정 destroy 대신 `-replace`를 사용할 것. kubelet(10250) 보안 그룹 규칙은 노드 서브넷으로
   제한됨. `08-1` 설치는 이제 APISIX ingress controller에 request 256Mi, limit 512Mi를 부여함(전체 동기화 중
@@ -281,11 +286,14 @@ ArgoCD, Gitea, RBAC, OpenBao, Keycloak, APISIX, NFS, `database` 신뢰 경계가
   실패시키지 않음(#124).
 - **다이제스트 인벤토리는 최초 저장 시점 신뢰(trust-on-first-save)임.** `images.digests.json`에는 서명이 없으므로
   번들이 `02`가 기록한 것과 일치함은 증명하지만 `02`가 올바른 바이트를 보았음은 증명하지 않음(#124).
-- **S3 인증 운영 작업은 일부만 검증됨 (#414, #415, #419).** 수정 사항은 위의 업그레이드 참고에 설명되어 있으며
-  가짜 `kubectl`로만 테스트됨. 라이브 클러스터에서 검증되지 않은 것: 자가 치유(self-heal) 후에도 Argo CD가
-  어노테이션을 유지하는지(`ignoreDifferences`)와 새 `verify-backup.sh` 익명 검사. 여전히 미해결: 클라이언트
-  Secret의 `kubectl.kubernetes.io/last-applied-configuration` 어노테이션에 키가 남아있음(서버 사이드 어플라이는
-  당분간 거부됨), 그리고 가드가 확인하는 `envFrom` 참조는 Loki/Tempo 파드가 재시작되어 새 키를 로드했음을 증명하지 않음.
+- **S3 인증 운영 작업: 아직 남은 것 (#414, #415).** 2026-10-19 kakao-narwhal에서 검증됨: 롤 표식이 자가 치유
+  후에도 유지되고, Application이 Synced이며, 익명 검사가 통과하고, S3 서버를 롤링한 뒤에도 네 클라이언트 모두
+  클라이언트별 I/O 검사를 통과함. `08-4-storage.sh` 가드는 인증된 그 클러스터에 읽기 전용으로 실행해 통과를
+  확인했고, 익명 클러스터에서의 중단 경로는 가짜 `kubectl` 테스트와 독립 리뷰의 시뮬레이션으로만 확인했으며
+  `08-4`를 라이브에서 다시 실행하지는 않았음. 여전히 미해결: 클라이언트 Secret의
+  `kubectl.kubernetes.io/last-applied-configuration` 어노테이션에 키가 남아있음(서버 사이드 어플라이는 당분간
+  거부됨), 그리고 가드가 확인하는 `envFrom` 참조는 Loki/Tempo 파드가 재시작되어 새 키를 로드했음을 증명하지 않음.
+  같은 Application은 `Secret seaweedfs-db-secret`을 비교 상태 없이 표시하며, 이는 조사하지 않았음.
 - **Velero 스케줄이 `emptyDir`을 포함하여 `storage`의 모든 볼륨을 백업함 (#422).** 하나의 `PodVolumeBackup`
   (OpenBao `data`)이 메시지 없이 `Canceled`로 종료됨; 원인은 알 수 없음. 원인이 규명될 때까지 매일 실행되는
   OpenBao 백업은 검증되지 않은 것으로 간주할 것.
@@ -294,7 +302,7 @@ ArgoCD, Gitea, RBAC, OpenBao, Keycloak, APISIX, NFS, `database` 신뢰 경계가
 - **라이브 클러스터에 적용되지 않음.** AppProject 분리, 개발자 RBAC 변경, 비공개 Gitea 리포지토리, Valkey 교체의
   커밋 메시지는 실행 중인 narwhal 클러스터가 아니라 정적 검사 또는 임시 클러스터에서 확인했다고 명시함.
   이후 라이브 kakao-narwhal 클러스터에서 검증 완료됨: S3 인증, Velero 백업 및 복원(2026-10-18), Velero RBAC 권한
-  (2026-10-19), NFS의 XFS 및 `root_squash` 전환(2026-10-16).
+  (2026-10-19), S3 운영 수정(2026-10-19), NFS의 XFS 및 `root_squash` 전환(2026-10-16).
 
 ## [1.2.0] - 2026-08-08
 

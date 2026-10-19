@@ -190,8 +190,8 @@ existing cluster or bundle; read **Upgrade notes** first.
   Without them a `PodVolumeBackup` fails with `cannot get resource "nodes"` and then stays
   `Prepared`. Argo CD reverts `kubectl apply`: push `resources/velero-server-rbac.yaml` with
   `push-to-gitea.sh`, then hard-refresh the `velero-server-rbac` Application (the script does not
-  refresh it). Before #412 the kopia repositories could not initialise against the anonymous S3, so
-  no volume had ever been backed up. Verified on kakao-narwhal on 2026-10-18/19: a volume backup
+  refresh it). Before #412 the kopia repositories could not initialise against the anonymous S3, and
+  on kakao-narwhal no `PodVolumeBackup` had ever existed. Verified on kakao-narwhal on 2026-10-18/19: a volume backup
   and restore, and the permissions. The permanent RBAC was applied on kakao-narwhal on 2026-10-19. That day's
   `velero-daily-databases` run (no volumes) completed. A manual run of the `velero-daily-openbao`
   template produced Completed `PodVolumeBackup`s (eight of eleven at the first check) and one

@@ -162,8 +162,8 @@ ArgoCD, Gitea, RBAC, OpenBao, Keycloak, APISIX, NFS, `database` 신뢰 경계가
   이 권한이 없으면 `PodVolumeBackup`이 `cannot get resource "nodes"` 오류로 실패하고 `Prepared` 상태로
   남게 됨. Argo CD가 `kubectl apply`를 되돌리므로, `push-to-gitea.sh`로
   `resources/velero-server-rbac.yaml`을 push한 후 `velero-server-rbac` Application을 하드 새로고침(hard-refresh)할 것
-  (스크립트는 이를 새로고침하지 않음). #412 이전에는 kopia 리포지토리가 익명 S3에 대해 초기화되지 못해 어떤 볼륨도
-  백업된 적이 없었음. 2026-10-18/19 kakao-narwhal에서 볼륨 백업 및 복원, 권한이 검증됨. 영구 RBAC는
+  (스크립트는 이를 새로고침하지 않음). #412 이전에는 kopia 리포지토리가 익명 S3에 대해 초기화되지 못했고,
+  kakao-narwhal에는 `PodVolumeBackup`이 한 번도 존재한 적이 없었음. 2026-10-18/19 kakao-narwhal에서 볼륨 백업 및 복원, 권한이 검증됨. 영구 RBAC는
   2026-10-19 kakao-narwhal에 적용되었음. 그날의 `velero-daily-databases` 실행(볼륨 없음)은 완료되었음.
   `velero-daily-openbao` 템플릿의 수동 실행은 완료된 `PodVolumeBackup`(첫 확인 시 11개 중 8개)과 `Canceled` 1개를
   만들었고, 그 백업은 이후 PartiallyFailed(261/261 항목)로 표시되었음. 걸린 시간은 알 수 없고, 정리 중에 백업을

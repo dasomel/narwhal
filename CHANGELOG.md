@@ -241,7 +241,7 @@ existing cluster or bundle; read **Upgrade notes** first.
   `scripts/evidence/` is a signed, hash-chained log around grant consumption: an `intent` record
   before the grant is spent and a `result` record after, countersigned checkpoints that detect
   tail truncation and rollback, separate entry and checkpoint keys, and spend-once derived from
-  the chain. Python standard library plus `openssl`; 61 attack tests run as R273. It is **not wired
+  the chain. Python standard library plus `openssl`; 66 attack tests run as R273. It is **not wired
   into any policy enforcement point yet**; `docs/adr/0002-agent-execution-evidence-chain.md` lists
   the residual risks (signing oracle, advisory locking, checkpoint interval). Follow-ups in #417
   are fixed (DER private key rejected, key-pair check, 0600 checkpoint file with rename-swap check,

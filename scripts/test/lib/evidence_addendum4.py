@@ -206,8 +206,11 @@ ADDENDUM4_TESTS = [
 
 try:
     from .evidence_addendum5 import ADDENDUM5_TESTS
+    from .evidence_addendum6 import ADDENDUM6_TESTS
 except ImportError:
     from evidence_addendum5 import ADDENDUM5_TESTS
+    from evidence_addendum6 import ADDENDUM6_TESTS
 
 ADDENDUM4_TESTS.extend(ADDENDUM5_TESTS)
+ADDENDUM4_TESTS.extend(ADDENDUM6_TESTS)
 

@@ -515,7 +515,7 @@ The verification function `verify(entries, entry_pub, checkpoints, cp_pub)` enfo
 ### D-EV-41: Genesis Checkpoint Head Anchor and Verifier Key Type Strictness
 
 - A checkpoint with `count=0` explicitly anchors an empty chain and MUST specify `head_hash == GENESIS_PREV_HASH` (64 ASCII zeros); any other `head_hash` is rejected as an integrity error.
-- `OpensslVerifier` verifies on initialization that the provided key is a valid public key (`openssl pkey -pubin -in K -noout` succeeds) and that its PEM header does not contain `PRIVATE KEY`. Passing a private key to `OpensslVerifier` raises `ValueError`.
+- `OpensslVerifier` verifies on initialization that the provided key is a valid public key (`openssl pkey -pubin -in K -noout` succeeds) and that it is not a private key in any encoding. Superseded in detail by D-FU-1 below: a private key in PEM or DER form raises `ValueError`.
 
 - **Reason:** Enforces explicit genesis boundary semantics and prevents key confusion or accidental leakage of private keys into verifier contexts.
 - **Cost:** Key inspection and openssl preflight on verifier construction.
@@ -535,12 +535,23 @@ The verification function `verify(entries, entry_pub, checkpoints, cp_pub)` enfo
 
 - The verifier and countersigner correctly refuse to process a store containing a torn (partially written) checkpoint line (fail-closed).
 - An append-only store cannot be repaired in place.
-- Procedure: archive the damaged store read-only as evidence, start a new store with `cp_seq = 0` under a NEW epoch (the chain writer's epoch must also increase), and record the old store's last good checkpoint hash in the incident record.
-- **Residual Risk:** History before the new epoch is anchored only by the archived store.
+- Procedure:
+  1. Archive the damaged store read-only as evidence. The verifier cannot read it because of the torn line, so also keep a copy of the intact lines (everything before the torn one) and record that copy's last good checkpoint hash in the incident record.
+  2. Verify the chain against the intact-lines copy to learn the last proven `count` and `head_hash`.
+  3. Advance the epoch by appending an entry under a higher epoch with the chain writer (a checkpoint cannot carry a new epoch before the chain has an entry for it), then start a new store: its first checkpoint (`cp_seq = 0`) anchors the whole current chain head.
+- **Residual Risk:** The new `cp_seq = 0` checkpoint anchors the entire chain as it is when it is signed, so earlier history is covered again. Records written between the last good checkpoint and the new one are anchored only from that moment: a tail cut inside that gap is undetectable. The epoch advance is an operational convention; the code does not require it (a new store under the same epoch also verifies), so the incident record must state it.
 
 - **Reason:** Standardizes the operational disaster recovery procedure for immutable WORM storage corruption without weakening fail-closed validation.
 - **Cost:** Operational incident response overhead and epoch rotation coordination.
 - **Escape Hatch:** None.
+
+### D-FU-1..4: Follow-ups from the review of #413 (issue #417)
+
+- **D-FU-1:** a key file is accepted as a public key only if `openssl pkey -pubin` parses it and a private-key parse (`openssl pkey -in`, PEM and DER) fails. A probe killed by a signal is an error, never "not private" (fail closed), and the probe never reads stdin. OpenSSL 4 parses a DER private key with `-pubin`, so this probe is the only guard.
+- **D-FU-2:** the countersigner derives the public key of `--key` and refuses to sign when it differs from `--cp-pub`; nothing is written.
+- **D-FU-3:** the checkpoint file is created `0600` regardless of umask and is checked for a rename swap after the lock. A pre-existing file with looser permissions is not tightened.
+- **D-FU-4:** the stat-failure poison in the chain writer lock and the checkpoint rename-swap check have tests that fail when the guard is removed.
+- **Reason:** close the review gaps in key handling of the reference implementation. **Cost:** extra `openssl` calls per key check. **Escape Hatch:** None.
 
 ## Protocol Sequence
 

@@ -70,9 +70,12 @@ def _assert_is_public_key_file(p: Path) -> None:
 
     for inform in ([], ["-inform", "DER"]):
         cmd_priv = ["openssl", "pkey"] + inform + ["-in", str(p), "-noout"]
-        res_priv = subprocess.run(cmd_priv, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        res_priv = subprocess.run(cmd_priv, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         if res_priv.returncode == 0:
             raise ValueError(f"private key cannot be used as public key (D-EV-41, D-FU-1): {p}")
+        if res_priv.returncode < 0:
+            # killed by a signal: the probe did not answer, so fail closed instead of treating it as "not private"
+            raise ValueError(f"private-key probe crashed (signal {-res_priv.returncode}); refusing {p} (D-FU-1)")
 
     res_pub = subprocess.run(
         ["openssl", "pkey", "-pubin", "-in", str(p), "-noout"],

@@ -205,7 +205,7 @@ ArgoCD, Gitea, RBAC, OpenBao, Keycloak, APISIX, NFS, `database` 신뢰 경계가
 - **에이전트 실행 증거 체인, 참조 구현체 (#413, ADR-0002).** `scripts/evidence/`는 권한 부여(grant) 사용에 대한
   서명 및 해시 체인 로그임: grant 사용 전의 `intent` 레코드와 사용 후의 `result` 레코드, 꼬리 잘림(tail truncation)과
   롤백을 감지하는 교차 서명 체크포인트, 분리된 엔트리 및 체크포인트 키, 체인에서 파생되는 1회 사용(spend-once)
-  보장. Python 표준 라이브러리와 `openssl`로 구현되었으며, 61개의 공격 테스트가 R273으로 실행됨. 현재 **어떤
+  보장. Python 표준 라이브러리와 `openssl`로 구현되었으며, 66개의 공격 테스트가 R273으로 실행됨. 현재 **어떤
   정책 집행 지점에도 아직 연동되지 않음**; `docs/adr/0002-agent-execution-evidence-chain.md`에 잔여 위험
   (서명 오라클, advisory locking, 체크포인트 간격)이 정리됨. #417의 후속 작업이 수정됨 (DER 개인 키 거부,
   key-pair 검사, rename-swap 검사를 포함한 0600 checkpoint 파일 모드, 문서화된 torn-line 복구 절차).

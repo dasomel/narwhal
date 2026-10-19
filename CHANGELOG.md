@@ -198,8 +198,9 @@ existing cluster or bundle; read **Upgrade notes** first.
   (#431).** The Velero data mover runs as root, `root_squash` maps root to `nobody`, kopia gets
   `permission denied` and cancels the volume. Reproduced on kakao-narwhal on 2026-10-19 for the
   OpenBao `data` volume (`vault.db` mode 0660, owner 100:1000) twice with a targeted backup, and for
-  the PostgreSQL `pgdata` volume (mode 0700) in the `velero-daily-full` schedule run. Volumes with
-  world-readable data (emptyDir, the OpenBao `audit` volume, a test PVC) back up and restore. In the
+  the PostgreSQL `pgdata` volume (mode 0700) in the `velero-daily-full` schedule run. emptyDir volumes and
+  the OpenBao `audit` volume (world-readable) backed up in the same runs, and a test PVC was
+  backed up and restored earlier (#418). In the
   first targeted run the backup, with one Canceled `PodVolumeBackup`, stayed `InProgress` for more
   than 20 minutes and the next backup waited behind it; a delete request was refused while it was
   in progress and restarting the Velero server pod released it. The second targeted run was
@@ -358,7 +359,8 @@ existing cluster or bundle; read **Upgrade notes** first.
   `seaweedfs-db-secret` with no comparison status; that is not investigated.
 - **Velero volume backups fail on volumes with owner-only files under `root_squash` (#431).** On
   the NFS server, files that other users cannot read were found in `database/` (7677 of 7686),
-  `monitoring/` (138 of 1317), `devtools/` (72 of 292) and `storage/` (7 of 77). Until the owner
+  `monitoring/` (138 of 1317 at the first measurement, 115 of 1296 later: the data is live),
+  `devtools/` (72 of 292) and `storage/` (7 of 77). Until the owner
   decides between running the data mover with a matching identity, application-level backups (for
   OpenBao `bao operator raft snapshot` through a backup hook) and a backup taken on the NFS server,
   do not rely on the Velero backups of OpenBao, PostgreSQL or other volumes with owner-only files.

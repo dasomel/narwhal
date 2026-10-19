@@ -169,8 +169,8 @@ ArgoCD, Gitea, RBAC, OpenBao, Keycloak, APISIX, NFS, `database` 신뢰 경계가
   않음 (#431).** Velero 데이터 이동 파드는 root로 실행되고 `root_squash`는 root를 `nobody`로 매핑하므로 kopia가
   `permission denied`를 받고 해당 볼륨을 취소함. 2026-10-19 kakao-narwhal에서 OpenBao `data` 볼륨(`vault.db`
   모드 0660, 소유자 100:1000)은 타깃 백업으로 2회, PostgreSQL `pgdata` 볼륨(모드 0700)은
-  `velero-daily-full` 스케줄 실행에서 재현됨. 누구나 읽을 수 있는 데이터를 가진 볼륨(emptyDir, OpenBao `audit`
-  볼륨, 시험용 PVC)은 백업·복원됨. 첫 번째 타깃 실행에서는 `Canceled` `PodVolumeBackup`이 하나 있는 백업이 20분
+  `velero-daily-full` 스케줄 실행에서 재현됨. 같은 실행에서 emptyDir 볼륨과 (누구나 읽을 수 있는) OpenBao `audit` 볼륨은
+  백업되었고, 시험용 PVC는 앞서 백업·복원되었음(#418). 첫 번째 타깃 실행에서는 `Canceled` `PodVolumeBackup`이 하나 있는 백업이 20분
   넘게 `InProgress`로 남았고 다음 백업이 그 뒤에서 대기했으며, 진행 중에는 삭제 요청이 거부되었고 Velero 서버 파드를
   재시작하자 풀렸음. 두 번째 타깃 실행은 약 2분 뒤에 풀어 주었으므로 이런 백업이 얼마나 오래 `InProgress`로 남는지는
   알 수 없음.
@@ -301,7 +301,7 @@ ArgoCD, Gitea, RBAC, OpenBao, Keycloak, APISIX, NFS, `database` 신뢰 경계가
   거부됨), 그리고 가드가 확인하는 `envFrom` 참조는 Loki/Tempo 파드가 재시작되어 새 키를 로드했음을 증명하지 않음.
   같은 Application은 `Secret seaweedfs-db-secret`을 비교 상태 없이 표시하며, 이는 조사하지 않았음.
 - **`root_squash`에서는 소유자 전용 파일이 있는 볼륨의 Velero 볼륨 백업이 실패함 (#431).** NFS 서버에서 다른
-  사용자가 읽을 수 없는 파일이 `database/`(7686개 중 7677개), `monitoring/`(1317개 중 138개), `devtools/`(292개
+  사용자가 읽을 수 없는 파일이 `database/`(7686개 중 7677개), `monitoring/`(최초 측정 1317개 중 138개, 이후 1296개 중 115개: 데이터가 계속 변함), `devtools/`(292개
   중 72개), `storage/`(77개 중 7개)에서 발견됨. 소유자가 데이터 이동 파드에 맞는 신원 부여, 애플리케이션 수준
   백업(OpenBao는 백업 훅으로 `bao operator raft snapshot`), NFS 서버에서의 백업 중에서 결정하기 전까지는
   OpenBao, PostgreSQL 및 소유자 전용 파일이 있는 다른 볼륨의 Velero 백업에 의존하지 말 것. CNPG 자체

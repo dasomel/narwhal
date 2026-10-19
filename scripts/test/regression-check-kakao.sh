@@ -3244,6 +3244,9 @@ PYEOF'
     python3 scripts/test/lib/check-portal-release-no-run-ref.py
   check R278 "verify-backup.sh names every Velero resource with .velero.io and every CNPG one with .postgresql.cnpg.io: bare schedule/backup/restore/scheduledbackup resolve to chaos-mesh.org / postgresql.cnpg.io on a live cluster and made the schedule check FAIL (2026-10-19; strict matcher with self-test)" \
     bash scripts/test/lib/check-verify-backup-qualified.sh
+  # 2026-10-20 (#431): the OpenBao data volume is excluded from Velero (R277), so a raft snapshot job stages the backup instead.
+  check R279 "OpenBao raft snapshot backup: policy is read on sys/storage/raft/snapshot only, no root token/unseal key/skip-verify/tls.key, CronJob daily and before Velero daily-openbao with Forbid/deadline/non-root/seccomp/resources, openssl cms ciphertext only (.snap.cms; plaintext in a memory emptyDir, never the PVC; fail-closed recipient-certificate validation incl. PRIVATE KEY refusal, expiry, RSA>=3072; digest-pinned airgap image; keygen helper never ships the private key), temp-file + atomic rename + last-success marker + bounded retention, 0644/0755 so root_squashed Velero can read, holder pod mounts the PVC and it is not in the exclude list; 64 mutations each rejected, 10 of them by executing the script (rejection, pruning, atomicity, plaintext cleanup, fingerprint pin, OAEP round-trip) (D-auth, D-cms, D-plaintext, D-fpr, D-oaep, D-image, D-holder, D-perms, #431)" \
+    python3 scripts/test/lib/check-openbao-snapshot-backup.py --mutation-verify
 }
 
 #=========================================

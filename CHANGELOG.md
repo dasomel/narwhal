@@ -247,9 +247,11 @@ existing cluster or bundle; read **Upgrade notes** first.
   `scripts/evidence/` is a signed, hash-chained log around grant consumption: an `intent` record
   before the grant is spent and a `result` record after, countersigned checkpoints that detect
   tail truncation and rollback, separate entry and checkpoint keys, and spend-once derived from
-  the chain. Python standard library plus `openssl`; 61 attack tests run as R273. It is **not wired
+  the chain. Python standard library plus `openssl`; 66 attack tests run as R273. It is **not wired
   into any policy enforcement point yet**; `docs/adr/0002-agent-execution-evidence-chain.md` lists
-  the residual risks (signing oracle, advisory locking, checkpoint interval).
+  the residual risks (signing oracle, advisory locking, checkpoint interval). Follow-ups in #417
+  are fixed (DER private key rejected, key-pair check, 0600 checkpoint file with rename-swap check,
+  documented torn-line recovery).
 
 ### Changed
 
@@ -339,9 +341,6 @@ existing cluster or bundle; read **Upgrade notes** first.
   Until it is explained, treat the daily OpenBao backup as unverified.
 - **Tempo is chronically OOMKilled at its 1536Mi limit (#420).** Hundreds of restarts a week on the
   live cluster, unrelated to the S3 change.
-- **Evidence chain follow-ups (#417).** A DER private key is accepted where a public key is
-  expected, there is no recovery procedure for a torn checkpoint line in an append-only store, and
-  the checkpoint file has no rename-swap check.
 - **Not applied to a live cluster.** The commit messages for the AppProject split, the
   developer RBAC change, the private Gitea repository and the Valkey swap state that they were
   checked statically or on a scratch cluster, not on a running narwhal cluster.

@@ -3133,7 +3133,7 @@ assert sum(1 for l in code if re.search(r"\bexit 3\b", l)) == 1, "exit 3 must ap
     bash scripts/test/lib/check-s3-ensure-hardening.sh
   # 2026-10-19 (#431): root_squash makes Velero fs-backup Cancel OpenBao data, CNPG pgdata, Gitea data and Harbor
   # jobservice job-logs, and one Canceled PVB leaves the Backup InProgress and queues every later schedule.
-  check R277 "Velero fs-backup excludes exactly OpenBao data, CNPG pgdata, Gitea data and Harbor jobservice job-logs (pod annotation in the GitOps CR/Application and in the 08-4/08-5/12 install paths), and velero-server has only a namespaced pods/log get in storage (D-pvb-exclude, D-pvb-log, #431)" \
+  check R277 "Velero fs-backup excludes exactly OpenBao data, CNPG pgdata, Gitea data, Harbor jobservice job-logs and SeaweedFS master data-storage (pod annotation in the GitOps CR/Application and in the 08-4/08-5/12 install paths), and velero-server has only a namespaced pods/log get in storage (D-pvb-exclude, D-pvb-log, #431)" \
     python3 scripts/test/lib/check-velero-pvb-excludes.py
 
   # 2026-10-16 (PR #399): the APISIX Admin API allowlist is detected from the live CNI by

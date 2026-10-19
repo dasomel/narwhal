@@ -40,6 +40,12 @@ spec:
             fsGroupChangePolicy: OnRootMismatch
           logs:
             type: emptyDir
+          # D-pvb-exclude (#431): exclude the volume from Velero fs-backup. NFS root_squash maps kopia (uid 0) to
+          # nobody, which cannot read owner-only files (m9333/conf, log, state, snapshot), so the PodVolumeBackup is
+          # Canceled and leaves the whole Backup InProgress, queueing every later schedule. This volume (raft metadata)
+          # is NOT protected by Velero; seaweedfs-master-log-volume stays backed up; see CHANGELOG.
+          podAnnotations:
+            backup.velero.io/backup-volumes-excludes: data-storage
           storage: 1Gi
           data:
             type: persistentVolumeClaim

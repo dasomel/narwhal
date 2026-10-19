@@ -309,13 +309,14 @@ ArgoCD, Gitea, RBAC, OpenBao, Keycloak, APISIX, NFS, `database` 신뢰 경계가
   백업(OpenBao는 백업 훅으로 `bao operator raft snapshot`), NFS 서버에서의 백업 중에서 결정하기 전까지는
   OpenBao, PostgreSQL 및 소유자 전용 파일이 있는 다른 볼륨의 Velero 백업에 의존하지 말 것. CNPG 자체
   barman 백업은 S3로 별도 수행되며, 2026-10-18에 온디맨드 백업이 완료되고 WAL 아카이빙이 진행됨을 확인함.
-  봉쇄 조치(1단계): 스케줄 실행에서 `PodVolumeBackup`이 Canceled된 네 볼륨(OpenBao `data`, CNPG `pgdata`, Gitea
-  `data`, Harbor jobservice `job-logs`)에 파드 어노테이션 `backup.velero.io/backup-volumes-excludes`를 부여함
-  (OpenBao·Harbor 차트, CNPG `Cluster`의 `inheritedMetadata`, Gitea 차트로 설정). 스케줄 백업이 `InProgress`로
+  봉쇄 조치(1단계): 스케줄 실행에서 `PodVolumeBackup`이 Canceled된 다섯 볼륨(OpenBao `data`, CNPG `pgdata`, Gitea
+  `data`, Harbor jobservice `job-logs`, SeaweedFS 마스터 `data-storage`)에 파드 어노테이션 `backup.velero.io/backup-volumes-excludes`를 부여함
+  (OpenBao·Harbor·SeaweedFS(`master.podAnnotations`) 차트, CNPG `Cluster`의 `inheritedMetadata`, Gitea 차트로 설정). 스케줄 백업이 `InProgress`로
   멈춰 뒤 스케줄을 막는 대신 끝나도록 하기 위한 것임. 멈춤만 막을 뿐이며 **Velero는 여전히 이 볼륨들을 보호하지
-  않음.** OpenBao는 애플리케이션 수준 백업이 아직 없고, PostgreSQL은 CNPG barman에 의존하며, Gitea `data`와
-  Harbor `job-logs`는 보호되지 않음. 이 어노테이션을 적용하면 OpenBao, CNPG, Gitea, Harbor jobservice 파드가
-  롤링됨. 라이브 클러스터에서 검증하지 않음. 근본 해결을 위해 #431은 계속 열려 있음.
+  않음.** OpenBao는 애플리케이션 수준 백업이 아직 없고, PostgreSQL은 CNPG barman에 의존하며, Gitea `data`,
+  Harbor `job-logs`, SeaweedFS 마스터 `data-storage`(raft 메타데이터)는 보호되지 않으며, 마스터의
+  `seaweedfs-master-log-volume`은 계속 백업됨. 이 어노테이션을 적용하면 OpenBao, CNPG, Gitea, Harbor jobservice,
+  SeaweedFS 마스터 파드가 롤링됨. 라이브 클러스터에서 검증하지 않음. 근본 해결을 위해 #431은 계속 열려 있음.
 - **Velero 스케줄은 emptyDir도 백업하며 실패 원인을 진단하기 어려움 (#422).** 서버 계정에 `pods/log`와
   `events create`가 없어 임시 권한 없이는 데이터 이동 파드 로그를 읽을 수 없었음(#431은 이렇게 발견됨).
   이제 생성기가 만드는 `velero-pod-logs` Role로 `storage` 네임스페이스의 `pods/log` `get`을 부여함(라이브 클러스터에서

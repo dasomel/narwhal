@@ -132,7 +132,9 @@ ArgoCD, Gitea, RBAC, OpenBao, Keycloak, APISIX, NFS, `database` 신뢰 경계가
   검증됨: 표식이 자가 치유 후에도 유지되었고, 두 번째 `s3_sync_server_config`는 무동작이었으며 Application은
   Synced / Healthy임. 정적 어노테이션의 첫 sync는 S3 서버를 한 번 롤링함. `07-cnpg.sh`도 해당 헬퍼를 호출함(#415). `verify-backup.sh`는 Velero 파드의 `wget` 대신
   `narwhal-db` 파드 안에서 `python3`로 익명 403을 확인함(#419, 2026-10-19 kakao-narwhal에서 6/6 통과). 생성되는 키 값은 작은따옴표로 감싸므로 숫자 형태의
-  키도 문자열로 유지됨(#415). `ensure_s3_identities`는 멱등적임: 두 번째 실행 시 기존 키를 유지함.
+  키도 문자열로 유지됨(#415). `verify-backup.sh`는 Velero·CNPG 리소스를 API 그룹까지 붙여 지정함
+  (`schedules.velero.io`, `backups.postgresql.cnpg.io` 등). 짧은 이름 `schedule`이 Chaos Mesh로 해석되어
+  "No Velero schedules found"가 보고되던 문제를 고침(R278). `ensure_s3_identities`는 멱등적임: 두 번째 실행 시 기존 키를 유지함.
 - **`08-4-storage.sh` 실행 전 SeaweedFS 데이터 노드 라벨링 필요 (#409, cd62c691).** 볼륨 서버는 노드 로컬
   hostPath `/ssd/object_store`에 데이터를 보관하며 `nodeSelector narwhal.io/seaweedfs-volume=true`로 고정됨
   (차트 및 `08-4-storage.sh`). 기존 클러스터에서는 이미 데이터를 보관 중인 노드에 먼저 수동으로 라벨을 지정할 것.

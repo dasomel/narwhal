@@ -1,0 +1,57 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-verify-backup-qualified-resources-20261019",
+  "task": "Make scripts/test/verify-backup.sh address Velero and CNPG resources by fully qualified name so it no longer reads chaos-mesh Schedules or CNPG Backups as Velero ones",
+  "changeContext": {
+    "paths": [
+      "scripts/test/verify-backup.sh",
+      "scripts/test/lib/check-verify-backup-qualified.sh",
+      "scripts/test/regression-check-kakao.sh",
+      ".agents/evals/traces/2026-10-verify-backup-qualified-resources.json"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Only the kubectl resource names in verify-backup.sh change (18 lines); messages, thresholds and exit logic are untouched. No other script had an unqualified Velero/CNPG get."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "On kakao-narwhal, verify-backup.sh printed 'No Velero schedules found' and 'No backups found yet' although five velero.io schedules exist: 'schedule' resolves to chaos-mesh.org and 'backup' to postgresql.cnpg.io.",
+      "evidence": [
+        "test:bash scripts/test/verify-backup.sh on kakao-narwhal before -> Total 20 PASS 17 FAIL 1 WARN 2 (FAIL: No Velero schedules found)",
+        "test:kubectl api-resources -> schedules in chaos-mesh.org/v1alpha1 and velero.io/v1; backups in postgresql.cnpg.io/v1 and velero.io/v1"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "schedules/backups/restores/backupstoragelocations/backuprepositories use .velero.io; the CNPG backups and scheduledbackups use .postgresql.cnpg.io. R278 forbids unqualified names in the script and was shown to fail on a mutated copy."
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "verify-backup.sh live read-only run and static suite",
+      "summary": "After the fix the schedules check passes (5 schedules). The one remaining FAIL is a real finding: the latest backup velero-daily-openbao-20261019050041 is PartiallyFailed (#431).",
+      "evidence": [
+        "test:bash scripts/test/verify-backup.sh on kakao-narwhal after -> Total 21 PASS 19 FAIL 1 WARN 1 (FAIL: latest backup PartiallyFailed)",
+        "test:make test -> passed 404 failed 0 warnings 3 (R278 PASS)"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "completion_claim",
+      "summary": "verify-backup.sh now inspects the intended Velero and CNPG resources."
+    },
+    {
+      "id": "e6",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Complete and verified within the stated scope"
+    }
+  ]
+}

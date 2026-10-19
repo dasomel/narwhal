@@ -3242,6 +3242,8 @@ PYEOF'
   # comes from workflow_run. portal-release.yml fetches the tag with git, proves it, then adds a worktree.
   check R276 "portal-release.yml has no actions/checkout with a workflow_run ref and proves the tag before git worktree add (#395, 2026-10-19)" \
     python3 scripts/test/lib/check-portal-release-no-run-ref.py
+  check R278 "verify-backup.sh names every Velero resource with .velero.io and every CNPG one with .postgresql.cnpg.io: bare schedule/backup/restore/scheduledbackup resolve to chaos-mesh.org / postgresql.cnpg.io on a live cluster and made the schedule check FAIL (2026-10-19; strict matcher with self-test)" \
+    bash scripts/test/lib/check-verify-backup-qualified.sh
 }
 
 #=========================================

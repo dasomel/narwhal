@@ -19,15 +19,16 @@ export function autolink(value) {
 
 /**
  * One <details> block holding a license/notice file. The text is untouched except
- * that nested ``` are rewritten to ''' so they cannot close the fence early; the
- * fence carries `text` (MD040).
+ * that nested ``` are rewritten to ''' so they cannot close the fence early (the
+ * fence carries `text`, MD040) and hard tabs become four spaces (MD010; e.g. the
+ * CC-BY-4.0 text shipped by caniuse-lite indents its URLs with tabs).
  */
 export function legalFileBlock(file, text) {
   return [
     `<details><summary>${file}</summary>`,
     "",
     "```text",
-    text.replace(/```/g, "'''"),
+    text.replace(/```/g, "'''").replace(/\t/g, "    "),
     "```",
     "",
     "</details>",

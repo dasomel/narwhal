@@ -1,0 +1,369 @@
+# OpenBao raft snapshot backup (#431).
+#
+# Velero fs-backup cannot protect the OpenBao `data` volume (NFS root_squash maps kopia
+# to nobody, which cannot read the owner-only raft files; the volume is excluded in
+# openbao.yaml). This job takes an application-level raft snapshot instead and stages it
+# on a PVC that Velero CAN read.
+#
+# D-rpo: one snapshot per day at 04:30 UTC, shortly before Velero `daily-openbao` (05:00 UTC,
+#   velero.yaml). RPO is therefore <= 24h plus any Velero queueing. Keep the two in step.
+# D-location: the staging PVC is captured by the existing Velero backup location. It is the
+#   same failure domain as the cluster (SeaweedFS on NFS); an external copy is a follow-up.
+# D-auth: OpenBao Kubernetes auth, role `openbao-backup` -> policy `openbao-backup`, which
+#   grants only `read` on sys/storage/raft/snapshot (created by 13-2-narwhal-portal-bindings.sh).
+#   No root token, no unseal key is mounted. The token is a projected, audience-pinned SA token.
+# D-holder: Velero fs-backup only reads volumes of RUNNING pods, and this CronJob's pod is gone
+#   by 05:00. A tiny always-on holder pod mounts the PVC read-only so the volume is backed up;
+#   openbao-0 itself is left untouched (OnDelete StatefulSet, Shamir seal).
+# D-perms: Velero's node agent runs as root, which root_squash turns into nobody, so snapshot
+#   files are 0644 in a 0755 directory (umask 022). Only CIPHERTEXT is ever written there (D-cms).
+# D-cms: every snapshot is encrypted with `openssl cms -encrypt` to the operator's recipient
+#   CERTIFICATE (public only; ConfigMap openbao-backup-recipient, key recipient.pem, created by
+#   scripts/ops/openbao-backup-keygen.sh). The private key stays offline with the operator and is in
+#   no Secret/ConfigMap/backup. The job FAILS CLOSED on a missing/empty/malformed/expired/weak
+#   recipient or a PEM containing a private key: nothing is written, there is no plaintext fallback.
+#   KNOWN LIMITATION: `openbao-init` (unseal key + root token) is still in the Velero backup, so
+#   snapshots are protected by the offline key but the cluster unseal secret is not (follow-up).
+# D-plaintext: the plaintext snapshot lives only in a memory-backed emptyDir (`work`, 256Mi) shared
+#   by the initContainer (bao) and the encrypting container, never on the NFS PVC. The Job pod is
+#   excluded from Velero (label velero.io/exclude-from-backup + volume exclude on `work`), so kopia
+#   can never upload the plaintext even if the 05:00 backup overlaps a running job.
+#   Sizing: a raft snapshot is about the live KV data (MBs for this IDP; the 10Gi data volume is
+#   quota, not usage). `work` is capped at 256Mi: a bigger snapshot fails the write (ENOSPC) and the
+#   job fails loudly. The tmpfs is charged to the initContainer (limit 512Mi = 256Mi + bao). Encrypt
+#   uses `-stream`: measured RSS 5.5MiB for a 30MB input versus 170MiB without it (about 5x the
+#   input), so the 128Mi encrypt limit does not depend on the snapshot size. An OOM kill still
+#   fails the Job (visible in failedJobsHistory); there is NO freshness alert yet, only the
+#   `last-success` marker file (follow-up).
+# D-fpr: a ConfigMap writer could swap the recipient certificate and read every future snapshot.
+#   RECIPIENT_FPR (below, changeable only through Git/Argo) pins the certificate's SHA-256
+#   fingerprint: when set the job fails closed on a mismatch; when empty it logs a WARNING.
+# D-oaep: the session key is wrapped with RSA-OAEP (`-keyopt rsa_padding_mode:oaep`).
+# D-image: the encrypting container reuses docker.io/valkey/valkey:8-alpine (already in
+#   scripts/airgap/images.txt, digest-pinned in scripts/airgap/lib/image-digests.tsv; amd64+arm64,
+#   Alpine 3.24 with OpenSSL 3.5.8, `cms` included). No new image enters the airgap list.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: openbao-backup
+  namespace: storage
+  labels:
+    app.kubernetes.io/name: openbao-backup
+    app.kubernetes.io/part-of: openbao
+# The job authenticates with the projected token below, not the default SA token.
+automountServiceAccountToken: false
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: openbao-snapshots
+  namespace: storage
+  labels:
+    app.kubernetes.io/name: openbao-backup
+    app.kubernetes.io/part-of: openbao
+  annotations:
+    # Snapshots are the backup: never let an Application prune or delete take them with it.
+    argocd.argoproj.io/sync-options: Prune=false,Delete=false
+spec:
+  accessModes:
+    - ReadWriteMany
+  storageClassName: nfs-csi
+  resources:
+    requests:
+      # 7 retained snapshots; a snapshot of the 10Gi data volume is far smaller than that.
+      storage: 5Gi
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: openbao-snapshot
+  namespace: storage
+  labels:
+    app.kubernetes.io/name: openbao-snapshot
+    app.kubernetes.io/part-of: openbao
+spec:
+  schedule: "30 4 * * *"
+  timeZone: "Etc/UTC"
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 1200
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      activeDeadlineSeconds: 600
+      ttlSecondsAfterFinished: 86400
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: openbao-snapshot
+            # Keep out of the Istio ambient mesh — ztunnel mTLS would break the
+            # plain TLS call to the OpenBao listener.
+            istio.io/dataplane-mode: none
+            # The `work` volume holds the PLAINTEXT snapshot: Velero must never back this pod up.
+            velero.io/exclude-from-backup: "true"
+          annotations:
+            # Belt and braces next to the label above (daily-openbao uses defaultVolumesToFsBackup).
+            backup.velero.io/backup-volumes-excludes: work
+        spec:
+          restartPolicy: Never
+          serviceAccountName: openbao-backup
+          automountServiceAccountToken: false
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 100
+            seccompProfile:
+              type: RuntimeDefault
+          initContainers:
+            # Step 1 (bao): log in with the projected SA token and save the raft snapshot into the
+            # memory-backed `work` volume. This container never sees the recipient certificate.
+            - name: snapshot
+              image: quay.io/openbao/openbao:2.5.4
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: ["ALL"]
+              env:
+                # The Service (not the per-pod headless name) is in the cert SANs, so the
+                # connection is verified against the narwhal CA instead of skipping TLS.
+                - name: BAO_ADDR
+                  value: "https://openbao.storage.svc.cluster.local:8200"
+                - name: BAO_CACERT
+                  value: /openbao/ca/ca.crt
+                - name: HOME
+                  value: /tmp
+              command:
+                - /bin/sh
+                - -ec
+                - |
+                  set -eu
+                  umask 077
+                  PLAIN=/work/openbao.snap
+                  rm -f "${PLAIN}"
+                  # A failed step must not leave a half-written plaintext snapshot behind.
+                  trap 'rc=$?; [ "${rc}" -eq 0 ] || rm -f "${PLAIN}"' EXIT
+                  BAO_TOKEN=$(bao write -field=token auth/kubernetes/login \
+                    role=openbao-backup jwt=@/var/run/secrets/openbao/token)
+                  export BAO_TOKEN
+                  bao operator raft snapshot save "${PLAIN}"
+                  [ -s "${PLAIN}" ] || { echo "snapshot is empty" >&2; exit 1; }
+              resources:
+                requests:
+                  cpu: 10m
+                  memory: 64Mi
+                limits:
+                  cpu: 200m
+                  # Holds up to the 256Mi `work` tmpfs plus the bao CLI.
+                  memory: 512Mi
+              volumeMounts:
+                - name: work
+                  mountPath: /work
+                - name: openbao-token
+                  mountPath: /var/run/secrets/openbao
+                  readOnly: true
+                - name: openbao-ca
+                  mountPath: /openbao/ca
+                  readOnly: true
+                - name: tmp
+                  mountPath: /tmp
+          containers:
+            # Step 2 (openssl): validate the recipient certificate, encrypt work/openbao.snap to a temp
+            # file on the PVC, rename atomically, delete the plaintext, write the marker, prune.
+            - name: encrypt
+              image: docker.io/valkey/valkey:8-alpine@sha256:081c2f5cb575efc901aa80ff9cdbd1ec6a301682fd35e1ebb4b0990a4a4a8507
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: ["ALL"]
+              env:
+                - name: HOME
+                  value: /tmp
+                - name: KEEP
+                  value: "7"
+                # Optional pin (D-fpr): SHA-256 fingerprint of the recipient certificate, as printed by
+                # scripts/ops/openbao-backup-keygen.sh. Empty = no pin (the job logs a WARNING).
+                - name: RECIPIENT_FPR
+                  value: ""
+              command:
+                - /bin/sh
+                - -ec
+                - |
+                  set -eu
+                  umask 022
+                  CERT=/recipient/recipient.pem
+                  PLAIN=/work/openbao.snap
+                  DIR=/snapshots/raft
+                  TMP=""
+                  fail() { echo "ERROR: $*" >&2; exit 1; }
+                  # Plaintext, the temp ciphertext and the marker temp never outlive the job.
+                  trap 'rm -f "${PLAIN}" "${TMP}" "${DIR}/.last-success.tmp"' EXIT
+
+                  # Runtime guard: the tool and its CMS support must exist, else fail closed.
+                  command -v openssl >/dev/null 2>&1 || fail "openssl not found in image"
+                  openssl cms -help >/dev/null 2>&1 \
+                    || openssl list -commands 2>/dev/null | tr -s ' ' '\n' | grep -qx cms \
+                    || fail "openssl has no cms support"
+
+                  # Recipient certificate validation (D-cms). Any failure aborts before anything is written.
+                  [ -s "${CERT}" ] || fail "recipient.pem missing or empty (run scripts/ops/openbao-backup-keygen.sh)"
+                  if grep -q 'PRIVATE KEY' "${CERT}"; then fail "recipient.pem contains a private key"; fi
+                  [ "$(grep -c -- '-----BEGIN' "${CERT}")" = 1 ] || fail "recipient.pem must hold exactly one PEM block"
+                  grep -q -- '-----BEGIN CERTIFICATE-----' "${CERT}" || fail "recipient.pem is not a certificate"
+                  openssl x509 -in "${CERT}" -noout >/dev/null 2>&1 || fail "recipient.pem is malformed"
+                  openssl x509 -in "${CERT}" -noout -checkend 86400 >/dev/null 2>&1 || fail "recipient certificate is expired or expires within 24h"
+                  CERT_TEXT=$(openssl x509 -in "${CERT}" -noout -text)
+                  printf '%s\n' "${CERT_TEXT}" | grep -q 'Public Key Algorithm: rsaEncryption' || fail "recipient key must be RSA"
+                  BITS=$(printf '%s\n' "${CERT_TEXT}" | sed -n 's/.*Public-Key: (\([0-9]*\) bit).*/\1/p')
+                  [ "${BITS:-0}" -ge 3072 ] || fail "recipient RSA key must be >= 3072 bits (got ${BITS:-?})"
+                  # Pinned fingerprint (D-fpr): protects against a swapped ConfigMap.
+                  FPR=$(openssl x509 -in "${CERT}" -noout -fingerprint -sha256 | sed 's/^.*=//' | tr -d ':' | tr 'a-f' 'A-F')
+                  [ -n "${FPR}" ] || fail "cannot compute the recipient fingerprint"
+                  if [ -n "${RECIPIENT_FPR:-}" ]; then
+                    WANT=$(printf '%s' "${RECIPIENT_FPR}" | tr -d ': ' | tr 'a-f' 'A-F')
+                    [ "${FPR}" = "${WANT}" ] || fail "recipient certificate fingerprint ${FPR} does not match RECIPIENT_FPR"
+                  else
+                    echo "WARNING: RECIPIENT_FPR is empty; the recipient certificate (fingerprint ${FPR}) is not pinned" >&2
+                  fi
+
+                  [ -s "${PLAIN}" ] || fail "no snapshot in the work volume"
+                  mkdir -p "${DIR}"
+                  # After a Velero restore raft/ may belong to another uid: stay loud, fail only if unwritable.
+                  chmod 0755 "${DIR}" || echo "WARNING: cannot chmod ${DIR} (owned by another uid?)" >&2
+                  [ -w "${DIR}" ] || fail "${DIR} is not writable by uid $(id -u); recreate the directory"
+                  # Only ciphertext may live on the PVC: remove any plaintext left by older runs.
+                  rm -f "${DIR}"/openbao-*.snap "${DIR}"/.openbao-*.tmp
+                  STAMP=$(date -u +%Y%m%dT%H%M%SZ)
+                  TMP="${DIR}/.openbao-${STAMP}.snap.cms.tmp"
+                  # -stream keeps memory flat (otherwise ~5x the input); RSA-OAEP key wrapping (D-oaep).
+                  openssl cms -encrypt -binary -aes-256-cbc -outform DER -stream -in "${PLAIN}" -out "${TMP}" -recip "${CERT}" -keyopt rsa_padding_mode:oaep
+                  # Atomic publish: only a non-empty, CMS-shaped ciphertext gets a final name. A full
+                  # `cms -cmsout` parse would need ~5x the file in RAM, so check the framing instead:
+                  # indefinite-length SEQUENCE + envelopedData OID at the start, end-of-contents at the end.
+                  [ -s "${TMP}" ] || fail "ciphertext is empty"
+                  HEAD=$(head -c 13 "${TMP}" | od -An -v -tx1 | tr -d ' \n')
+                  TAIL=$(tail -c 2 "${TMP}" | od -An -v -tx1 | tr -d ' \n')
+                  [ "${HEAD}" = "308006092a864886f70d010703" ] || fail "ciphertext is not CMS EnvelopedData"
+                  [ "${TAIL}" = "0000" ] || fail "ciphertext is truncated"
+                  chmod 0644 "${TMP}"
+                  mv "${TMP}" "${DIR}/openbao-${STAMP}.snap.cms"
+                  TMP=""
+                  rm -f "${PLAIN}"
+
+                  # Freshness marker, written last and also atomically.
+                  printf '%s\n' "${STAMP} openbao-${STAMP}.snap.cms" > "${DIR}/.last-success.tmp"
+                  chmod 0644 "${DIR}/.last-success.tmp"
+                  mv "${DIR}/.last-success.tmp" "${DIR}/last-success"
+
+                  # Bounded retention: keep the newest ${KEEP} snapshots.
+                  ls -1 "${DIR}" | grep -E '^openbao-[0-9]{8}T[0-9]{6}Z\.snap\.cms$' | sort -r \
+                    | awk -v keep="${KEEP}" 'NR>keep' \
+                    | while read -r old; do rm -f "${DIR}/${old}"; done
+                  echo "snapshot OK: openbao-${STAMP}.snap.cms ($(wc -c < "${DIR}/openbao-${STAMP}.snap.cms") bytes, CMS/AES-256-CBC)"
+              resources:
+                requests:
+                  cpu: 10m
+                  memory: 32Mi
+                limits:
+                  cpu: 200m
+                  memory: 128Mi
+              volumeMounts:
+                - name: snapshots
+                  mountPath: /snapshots
+                - name: work
+                  mountPath: /work
+                - name: recipient
+                  mountPath: /recipient
+                  readOnly: true
+                - name: tmp
+                  mountPath: /tmp
+          volumes:
+            - name: snapshots
+              persistentVolumeClaim:
+                claimName: openbao-snapshots
+            # Plaintext snapshot: memory only, never the NFS PVC (D-plaintext).
+            - name: work
+              emptyDir:
+                medium: Memory
+                sizeLimit: 256Mi
+            # PUBLIC certificate only; the pod cannot start without it (fail closed).
+            - name: recipient
+              configMap:
+                name: openbao-backup-recipient
+                optional: false
+                items:
+                  - key: recipient.pem
+                    path: recipient.pem
+            - name: openbao-token
+              projected:
+                sources:
+                  - serviceAccountToken:
+                      path: token
+                      # Must match the role's audience (13-2 OPENBAO_K8S_AUTH_AUDIENCE, default "vault").
+                      audience: vault
+                      expirationSeconds: 3600
+            # Only the CA certificate; tls.key of openbao-tls is deliberately not projected.
+            - name: openbao-ca
+              secret:
+                secretName: openbao-tls
+                items:
+                  - key: ca.crt
+                    path: ca.crt
+            - name: tmp
+              emptyDir:
+                medium: Memory
+                sizeLimit: 16Mi
+---
+# D-holder: keeps the staging PVC mounted by a running pod so Velero fs-backup reads it.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: openbao-snapshot-holder
+  namespace: storage
+  labels:
+    app.kubernetes.io/name: openbao-snapshot-holder
+    app.kubernetes.io/part-of: openbao
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: openbao-snapshot-holder
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: openbao-snapshot-holder
+        app.kubernetes.io/part-of: openbao
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 100
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: holder
+          image: quay.io/openbao/openbao:2.5.4
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          command: ["/bin/sh", "-c", "trap 'exit 0' TERM; while true; do sleep 3600 & wait $!; done"]
+          resources:
+            requests:
+              cpu: 5m
+              memory: 16Mi
+            limits:
+              cpu: 50m
+              memory: 32Mi
+          volumeMounts:
+            - name: snapshots
+              mountPath: /snapshots
+              readOnly: true
+      volumes:
+        - name: snapshots
+          persistentVolumeClaim:
+            claimName: openbao-snapshots

@@ -24,6 +24,10 @@ test("legalFileBlock opens with a tagged fence and keeps nested fences from clos
   assert.equal(block[4], "```")
 })
 
+test("legalFileBlock expands hard tabs so the generated file stays MD010-clean", () => {
+  assert.equal(legalFileBlock("LICENSE", "a\n\thttp://x")[3], "a\n    http://x")
+})
+
 test("committed THIRD-PARTY-NOTICES.md has no bare Homepage URLs and no untagged fences", () => {
   const lines = readFileSync(new URL("../THIRD-PARTY-NOTICES.md", import.meta.url), "utf8").split("\n")
   let inFence = false

@@ -21388,7 +21388,7 @@ Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
 
-	http://www.apache.org/licenses/LICENSE-2.0
+    http://www.apache.org/licenses/LICENSE-2.0
 
 Unless required by applicable law or agreed to in writing, software
 distributed under the License is distributed on an "AS IS" BASIS,
@@ -26082,7 +26082,7 @@ exhaustive, and do not form part of our licenses.
      material not subject to the license. This includes other CC-
      licensed material, or material used under an exception or
      limitation to copyright. More considerations for licensors:
-	wiki.creativecommons.org/Considerations_for_licensors
+    wiki.creativecommons.org/Considerations_for_licensors
 
      Considerations for the public: By using one of our public
      licenses, a licensor grants the public permission to use the
@@ -26099,7 +26099,7 @@ exhaustive, and do not form part of our licenses.
      Although not required by our licenses, you are encouraged to
      respect those requests where reasonable. More_considerations
      for the public: 
-	wiki.creativecommons.org/Considerations_for_licensees
+    wiki.creativecommons.org/Considerations_for_licensees
 
 =======================================================================
 
@@ -26481,7 +26481,7 @@ exhaustive, and do not form part of our licenses.
      material not subject to the license. This includes other CC-
      licensed material, or material used under an exception or
      limitation to copyright. More considerations for licensors:
-	wiki.creativecommons.org/Considerations_for_licensors
+    wiki.creativecommons.org/Considerations_for_licensors
 
      Considerations for the public: By using one of our public
      licenses, a licensor grants the public permission to use the
@@ -26498,7 +26498,7 @@ exhaustive, and do not form part of our licenses.
      Although not required by our licenses, you are encouraged to
      respect those requests where reasonable. More_considerations
      for the public: 
-	wiki.creativecommons.org/Considerations_for_licensees
+    wiki.creativecommons.org/Considerations_for_licensees
 
 =======================================================================
 

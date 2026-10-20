@@ -28,6 +28,23 @@ spec:
           extraEnvFrom:
             - secretRef:
                 name: tempo-s3-credentials
+          # D-ballast (#420, HYPOTHESIS, not a confirmed root cause): the chart default
+          # `-mem-ballast-size-mbs=1024` keeps a 1GiB Go ballast that raises the GC heap
+          # target (GOGC=100 => ~2x(ballast+live)), possibly above the 1536Mi limit, so
+          # compactor merges may be OOMKilled before GC runs. Ballast 0 + GOMEMLIMIT make GC
+          # track the container limit. GOMEMLIMIT is a soft limit (GC CPU capped ~50%, heap
+          # may still exceed it); 256Mi headroom is a starting value. Cost: extra GC CPU.
+          # Verify: watch tempo-0 restartCount / last terminated reason for a few days; if
+          # OOM persists collect compaction heap-live/goal, GC count/CPU, RSS, cgroup
+          # memory.events/memory.stat, then revisit limit / compactor concurrency /
+          # persistence. Revert: remove both keys.
+          # Rollout: persistence=false, so /var/tempo is the writable layer and the restart
+          # loses un-flushed WAL/local blocks (same loss as an OOM). selfHeal reverts manual
+          # edits, so change this only through GitOps.
+          memBallastSizeMbs: 0
+          extraEnv:
+            - name: GOMEMLIMIT
+              value: 1280MiB
           # The chart ships `tempo.resources: {}`, which leaves the pod BestEffort — the
           # highest oom_score_adj on the node, so the kernel kills it first. tempo was the
           # last workload still OOM-looping (94 restarts) once the apiserver heap bound

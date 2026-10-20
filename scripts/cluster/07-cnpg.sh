@@ -405,7 +405,7 @@ metadata:
   name: narwhal-db-backup
   namespace: database
 spec:
-  schedule: "0 2 * * *"
+  schedule: "0 0 2 * * *"
   backupOwnerReference: self
   cluster:
     name: narwhal-db

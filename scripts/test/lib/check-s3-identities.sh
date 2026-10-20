@@ -38,10 +38,9 @@ case "$1" in
     cp "$src" "${ST}/${ns}__${name}__RAW"
     while IFS= read -r line; do
       if [[ "$line" =~ ^\ \ ([A-Za-z0-9_-]+):\ (.+)$ ]] && [ "${BASH_REMATCH[2]}" != "|" ]; then
-        v="${BASH_REMATCH[2]}"; v="${v#\'}"; v="${v%\'}"
-        printf '%s' "$v" | base64 | tr -d '\n' > "${ST}/${ns}__${name}__${BASH_REMATCH[1]}"
+        printf '%s' "${BASH_REMATCH[2]}" > "${ST}/${ns}__${name}__${BASH_REMATCH[1]}"   # `data:` values are already base64
       fi
-    done < <(sed -n '/^stringData:/,$p' "$src" | tail -n +2)
+    done < <(sed -n '/^data:/,$p' "$src" | tail -n +2)
     ;;
 esac
 FAKE
@@ -79,9 +78,10 @@ for n,(ns,sec,af,sf,b) in cl.items():
     c = ids[n]["credentials"][0]; assert (c["accessKey"], c["secretKey"]) == (ak, sk), n
     # cross-bucket deny: every action is scoped to this client's own bucket, none is global/Admin
     assert ids[n]["actions"] and all(a.split(":")[1:] == [b] and a.split(":")[0] != "Admin" for a in ids[n]["actions"]), (n, ids[n]["actions"])
-cloud = open(f"{st}/storage__velero-s3-credentials__RAW").read()
+cloud = f("storage", "velero-s3-credentials", "cloud")
 ak, sk = f("storage","velero-s3-credentials","access-key"), f("storage","velero-s3-credentials","secret-key")
-assert f"aws_access_key_id = {ak}" in cloud and f"aws_secret_access_key = {sk}" in cloud
+# exact bytes, final LF included (what the old `cloud: |` block produced)
+assert cloud == f"[default]\naws_access_key_id = {ak}\naws_secret_access_key = {sk}\n", repr(cloud)
 PY
 # no value reaches the log
 for s in loki:monitoring:loki-s3-credentials:S3_SECRET_ACCESS_KEY cnpg:database:cnpg-s3-credentials:ACCESS_SECRET_KEY; do

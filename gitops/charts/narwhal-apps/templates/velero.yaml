@@ -86,6 +86,13 @@ spec:
         deployNodeAgent: true
         nodeAgent:
           podVolumePath: /var/lib/kubelet/pods
+          # D-datapath-labels (#422): Kyverno require-labels (Audit) flags the data-path/hosting pods Velero
+          # creates in storage because they carry no app.kubernetes.io/name. Velero 1.18 applies the
+          # node-agent-config `podLabels` to DataUpload/DataDownload/PodVolumeBackup/PodVolumeRestore pods
+          # (velero.io/docs/v1.18/data-movement-pod-resource-configuration). Repository maintenance Jobs
+          # (*-kopia-maintain-job-*) cannot be labelled in 1.18 (fixed label list), so they stay flagged.
+          extraArgs:
+            - --node-agent-configmap=velero-node-agent-config
           # REQUIRED: kopia/restic이 hostPath volume 백업을 위해 privileged 필요
           # Kyverno disallow-privileged-containers 정책에서 velero nodeAgent 예외 처리됨
           privileged: true
@@ -93,6 +100,14 @@ spec:
           # file — same kyverno non-root-injection issue hits node-agent pods too.
           podSecurityContext:
             runAsNonRoot: false
+        extraObjects:
+          - apiVersion: v1
+            kind: ConfigMap
+            metadata:
+              name: velero-node-agent-config
+            data:
+              node-agent-config.json: |
+                {"podLabels": {"app.kubernetes.io/name": "velero-data-mover"}}
         # Narwhal#226: least-privilege RBAC for velero-server.
         # rbac.create=false makes the chart render no server ClusterRoleBinding;
         # Argo prune removes the legacy cluster-admin binding on upgrade.

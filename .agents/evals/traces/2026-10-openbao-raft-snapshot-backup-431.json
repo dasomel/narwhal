@@ -1,0 +1,85 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-openbao-raft-snapshot-backup-431-20261020",
+  "task": "Add an encrypted daily OpenBao raft snapshot job (CronJob, Kubernetes-auth role limited to snapshot read, memory-only plaintext, openssl CMS ciphertext on a staging PVC captured by Velero) because the OpenBao data volume is excluded from Velero fs-backup (#431); live behavior, restore drill and key-custody follow-ups out of scope",
+  "changeContext": {
+    "paths": [
+      "gitops/resources/openbao-backup.yaml",
+      "gitops/charts/narwhal-apps/templates/openbao-backup.yaml",
+      "scripts/cluster/13-2-narwhal-portal-bindings.sh",
+      "scripts/ops/openbao-backup-keygen.sh",
+      "scripts/test/lib/check-openbao-snapshot-backup.py",
+      "scripts/test/regression-check-kakao.sh",
+      "docs/common/storage-protection-policy.md",
+      "docs/common/lessons-log.md",
+      "docs/common/upgrade-waves.json",
+      ".agents/evals/traces/2026-10-openbao-raft-snapshot-backup-431.json"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "New CronJob/PVC/holder pod/ServiceAccount and its Argo CD Application, the openbao-backup Kubernetes-auth policy and role in the 13-2 script, an operator keygen helper, a static check (R279) and docs. The OpenBao StatefulSet, the Velero exclusion list, root_squash, Kyverno and the openbao-init Secret are not changed; an off-cluster copy and restore automation are out of scope."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "After #434/#436 the OpenBao data volume is excluded from Velero (root_squash made the PodVolumeBackup Cancel), so OpenBao had no usable backup. Independent reviews then found, in order: snapshot and the openbao-init unseal key landing in the same Velero backup; the plaintext work volume not excluded from Velero; cms -encrypt buffering about 5x the input; recipient certificate swappable through the ConfigMap; and a static check that only matched strings (11 of 13 reviewer mutations survived).",
+      "evidence": [
+        "doc:issue #431",
+        "doc:independent reviews relayed by the coordinator (Codex round 1 BLOCK, opus security review, agy review)"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "Snapshot saved by an initContainer into a memory emptyDir, encrypted with openssl cms (AES-256-CBC, RSA-OAEP, -stream) to an operator-held offline certificate, written as a temp file and renamed to .snap.cms on the PVC, 7 kept, last-success marker. Job pod excluded from Velero. Recipient certificate validated fail-closed (missing, empty, malformed, expired, weak, private key present) with an optional pinned SHA-256 fingerprint. Role has no default policy and a 10 minute token. The encrypt image is docker.io/valkey/valkey:8-alpine, already in the airgap list, pinned by digest."
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "static regression suite, manifest validation and executed behavior of the extracted encrypt script (local OpenSSL, not the cluster image)",
+      "summary": "R279 passes. Its checker executes the extracted encrypt script in a scratch tree (good certificate round-trips with openssl cms -decrypt; weak, expiring, empty, missing, malformed, private-key and wrong-fingerprint recipients write nothing; pruning keeps the newest 7; plaintext removed on failure) and its --mutation-verify rejects all 64 mutations, 10 of them on the executed behavior alone. The reviewer's mut.py: 12 of 13 killed, 1 not found because its anchor text moved (an equivalent -des3 mutation is in the 64). yamllint was not available locally.",
+      "evidence": [
+        "test:make test -> passed 405 failed 0 warnings 3 (R279 PASS)",
+        "test:make validate -> exit 0 (30 OK)",
+        "test:python3 scripts/test/lib/check-openbao-snapshot-backup.py --mutation-verify -> exit 0",
+        "test:shellcheck --severity=warning on the changed shell scripts -> exit 0",
+        "test:local openssl cms -encrypt -stream -keyopt rsa_padding_mode:oaep then cms -decrypt round trip of a 30MB file, RSS 5.5MiB with -stream versus 170MiB without"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "completion_claim",
+      "summary": "The repository now contains an encrypted OpenBao snapshot backup path with the documented restore steps; it is not deployed and nothing about the running cluster is claimed."
+    },
+    {
+      "id": "e6",
+      "type": "observation",
+      "status": "observed",
+      "summary": "Review record, as relayed to the author: Codex round 1 BLOCK on key custody was resolved by encrypting to an offline key; the opus security review findings (Velero exclusion, memory, fingerprint pin, DR secret restore, OAEP, passphrase, tests) were fixed; the agy review passed; the final Codex re-review was not done because of a usage limit. Known limitation kept in the docs: openbao-init (unseal key and root token) is still in the Velero backup.",
+      "evidence": [
+        "doc:docs/common/storage-protection-policy.md section 8"
+      ]
+    },
+    {
+      "id": "e7",
+      "type": "pending_action",
+      "status": "pending",
+      "summary": "NOT verified live: re-running 13-2 to create the role, a real snapshot and Kubernetes-auth login, the NFS write by uid 100, the memory emptyDir and OOM sizing, the busybox od/head/tail applets and openssl cms inside the pinned image, the Velero exclusion label, the Velero PodVolumeBackup of the holder pod, ArgoCD sync and Kyverno admission, and a restore drill. No freshness alert exists yet.",
+      "scope": "Live cluster, ArgoCD, Velero and restore drill",
+      "evidence": [
+        "runtime:pending-live-rollout-and-restore-drill"
+      ]
+    },
+    {
+      "id": "e8",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Complete and verified within the stated scope (static change plus executed local behavior tests; live rollout, Velero backup of the staging volume and restore drill not observed)"
+    }
+  ]
+}

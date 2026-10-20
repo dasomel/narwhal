@@ -1,0 +1,59 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-cnpg-scheduledbackup-cron-431-20261020",
+  "task": "Fix the CNPG ScheduledBackup schedule: spec.schedule is a 6-field cron with a leading seconds field, so the 5-field '0 2 * * *' fired every hour at minute 02 instead of daily at 02:00 (#431); applying the schedule to the existing cluster object and the first scheduled run are out of scope",
+  "changeContext": {
+    "paths": [
+      "gitops/resources/cnpg-backup.yaml",
+      "scripts/cluster/07-cnpg.sh",
+      "scripts/test/lib/check-storage-protection-policy.py",
+      "docs/common/storage-protection-policy.md",
+      "docs/common/lessons-log.md",
+      ".agents/evals/traces/2026-10-cnpg-scheduledbackup-cron-431.json"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Only the CNPG ScheduledBackup schedule string changes (gitops file and the 07-cnpg.sh heredoc), plus its static pin, the doc example and a lessons-log row; the Velero 5-field schedules, retentionPolicy (30d in 07-cnpg.sh vs 7d in narwhal-db.yaml, observed only) and existing Backup objects are untouched."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "Read-only on context kakao-narwhal: the live ScheduledBackup narwhal-db-backup has schedule '0 2 * * *' and its Backup objects are named narwhal-db-backup-YYYYMMDDHH0200, one per hour (checked the last 12, 2026-10-19 10:02 to 21:02 UTC, all completed); 1295 Backup objects exist in namespace database. The deployed operator is CloudNativePG v1.29.1 (VERSIONS.md).",
+      "evidence": [
+        "doc:kubectl --context kakao-narwhal get scheduledbackup -A / get backup.postgresql.cnpg.io -A --sort-by=.metadata.creationTimestamp (read-only)"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "schedule changed to '0 0 2 * * *' in gitops/resources/cnpg-backup.yaml and scripts/cluster/07-cnpg.sh; check-storage-protection-policy.py now pins the schedule in both files, with a new mutation (15b) for 07-cnpg.sh, and the policy doc example is updated to six fields."
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "static regression suite, manifest validation and the schedule pin mutation checks",
+      "summary": "make test and make validate pass; reverting either file to the 5-field schedule makes check-storage-protection-policy.py fail with the expected message, and restoring it passes. make lint was not completed locally because yamllint is not installed (the shellcheck step ran).",
+      "evidence": [
+        "test:make test -> passed 404 failed 0 warnings 3",
+        "test:make validate -> exit 0",
+        "test:check-storage-protection-policy.py with 07-cnpg.sh and cnpg-backup.yaml each reverted to 5 fields -> FAIL expected schedule='0 0 2 * * *'; restored -> PASS"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "completion_claim",
+      "summary": "The repository definitions of the CNPG ScheduledBackup now request a daily 02:00 backup. The live narwhal-db-backup object is not changed by merging (it is created by 07-cnpg.sh and the gitops file is not wired to ArgoCD), so existing clusters keep the hourly schedule until the documented operator step is applied; the first scheduled 02:00 run is not verified."
+    },
+    {
+      "id": "e6",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Complete and verified within the stated scope (static change; live apply and first scheduled run not observed)"
+    }
+  ]
+}

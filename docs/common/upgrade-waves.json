@@ -35,6 +35,7 @@
     "tenants": "Tenant bootstrap configuration, not platform component runtime.",
     "kyverno": "Policy engine is deployed but has no upgrade-specific model in the pilot.",
     "openbao-unseal": "Unseal configuration job owned with OpenBao.",
+    "openbao-backup": "Raft snapshot CronJob and staging volume owned with OpenBao.",
     "tuning-job-network-policy": "Network policy configuration, not a separately upgraded component.",
     "prometheus-rightsizing-rules": "Prometheus rules owned with the observability stack.",
     "ghost-pod-reaper": "Maintenance add-on; no component-specific upgrade contract.",

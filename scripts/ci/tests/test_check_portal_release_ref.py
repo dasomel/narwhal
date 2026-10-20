@@ -148,16 +148,24 @@ class ReleaseWorkflowLayout(unittest.TestCase):
         self.assertEqual(root["with"]["ref"], "${{ github.sha }}")
         self.assertIs(root["with"]["persist-credentials"], False)
 
-    def test_tagged_commit_only_under_tagged_dir(self):
+    def test_single_checkout_and_no_workflow_run_ref(self):
+        # D9 (#395): Scorecard Dangerous-Workflow flags a checkout whose ref comes from workflow_run
         cos = self.checkouts()
-        self.assertEqual(len(cos), 2)
-        self.assertEqual(cos[1]["with"]["path"], "tagged")
-        self.assertEqual(cos[1]["with"]["ref"], "${{ github.event.workflow_run.head_sha }}")
+        self.assertEqual(len(cos), 1)
+        for co in cos:
+            self.assertNotIn("workflow_run", str(co.get("with", {}).get("ref", "")))
 
-    def test_validator_runs_from_root_against_tagged(self):
+    def test_tagged_worktree_only_after_ref_proof(self):
+        runs = [s.get("run", "") for s in self.steps]
+        proof = next(i for i, r in enumerate(runs) if "check-portal-release-ref.py" in r)
+        wt = next(i for i, r in enumerate(runs) if "git worktree add --detach tagged" in r)
+        self.assertLess(proof, wt)
+        self.assertIn('"$RUN_SHA"', runs[wt])
+
+    def test_validator_runs_from_root_against_workspace(self):
         run = next(s["run"] for s in self.steps if "check-portal-release-ref.py" in s.get("run", ""))
         self.assertIn("python3 scripts/ci/check-portal-release-ref.py", run)
-        self.assertIn("--repo tagged", run)
+        self.assertIn("--repo .", run)
         self.assertNotIn("tagged/scripts", run)
 
     def test_release_inputs_are_blobs_of_regular_files(self):

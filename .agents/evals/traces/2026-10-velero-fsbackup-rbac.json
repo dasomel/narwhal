@@ -1,0 +1,57 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-velero-fsbackup-rbac",
+  "task": "Grant Velero fs-backup the two permissions it needs (nodes get, events in storage) without widening anything else (Narwhal#418)",
+  "changeContext": {
+    "paths": [
+      "gitops/resources/velero-server-rbac.yaml",
+      ".agents/evals/traces/2026-10-velero-fsbackup-rbac.json"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Permission widening is a design change (AGENTS.md). Scope: ClusterRole nodes get, plus a namespaced Role/RoleBinding for events get/list/watch in storage. READ inventory and schedule includedResources must not change; scripts/cluster/08-4-storage.sh, the Velero chart values and the API snapshot are out of scope."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "Live on kakao-narwhal (2026-10-18): a PodVolumeBackup failed with 'cannot get resource nodes at the cluster scope'; after granting only nodes get it stayed Prepared because node-agent (same ServiceAccount) could not list events in storage; with exactly those two grants the PVB completed 33/33 bytes and a restore returned the data. The temporary grants were deleted afterwards.",
+      "evidence": ["runtime:kubectl --context kakao-narwhal get podvolumebackups.velero.io (Failed, then Completed)", "artifact:Narwhal#416 comment with the live run"]
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "gen-velero-rbac.py keeps nodes and events in the denylist (list/watch and cluster-wide events stay denied) and adds one nodes get rule plus a Role/RoleBinding velero-node-agent-events in storage; velero-server-rbac.yaml regenerated; check-velero-rbac.py caps both grants and rejects 13 mutations."
+    },
+    {
+      "id": "e4",
+      "type": "verification",
+      "status": "passed",
+      "scope": "generated RBAC bytes, schedule inventory, grant ceilings and 13 negative mutations (static) plus server-side dry-run against the live API server",
+      "summary": "gen-velero-rbac.py --check --check-schedules reports no drift and an unchanged 160-resource READ inventory; check-velero-rbac.py R204-R209 and R215 invocations pass; disabling the Role apiGroups check or the RoleBinding namespace check makes the corresponding mutation escape (so the tests bite); kubectl apply --dry-run=server on kakao-narwhal accepted the manifest.",
+      "evidence": ["test:python3 scripts/ops/gen-velero-rbac.py scripts/ops/velero-rbac-api-resources.snapshot.txt --output gitops/resources/velero-server-rbac.yaml --check --check-schedules gitops/charts/narwhal-apps/templates/velero.yaml scripts/cluster/08-4-storage.sh", "test:python3 scripts/test/lib/check-velero-rbac.py --mutation-verify", "runtime:kubectl --context kakao-narwhal apply --dry-run=server -f gitops/resources/velero-server-rbac.yaml"]
+    },
+    {
+      "id": "e5",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "full static regression suite",
+      "summary": "make test passed 399 failed 0 (reviewer and author runs); an independent reviewer rejected 16 hostile edits of the generated YAML.",
+      "evidence": ["test:make test", "ci:regression-static"]
+    },
+    {
+      "id": "e6",
+      "type": "completion_claim",
+      "summary": "The generated RBAC grants exactly nodes get and a storage-only events Role and the checks cap them. Not claimed: the permanent RBAC is applied to the cluster (ArgoCD reads Gitea), or that the next scheduled backup produces PodVolumeBackups."
+    },
+    {
+      "id": "e7",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Static change verified with a live server-side dry-run and a prior live reproduction with the same two grants; live application of the permanent RBAC is a follow-up after merge."
+    }
+  ]
+}

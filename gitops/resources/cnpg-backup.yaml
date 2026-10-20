@@ -8,7 +8,7 @@ metadata:
   name: narwhal-db-daily
   namespace: database
 spec:
-  schedule: "0 2 * * *"  # Daily at 02:00 UTC
+  schedule: "0 0 2 * * *"  # Daily at 02:00 UTC (CNPG cron has a leading seconds field: sec min hour dom mon dow)
   backupOwnerReference: self
   cluster:
     name: narwhal-db

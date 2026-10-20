@@ -341,6 +341,63 @@ echo "  narwhal-portal policy written"
     }
   echo "  OpenBao Kubernetes auth role 'narwhal-portal' 설정 및 검증 완료"
 
+  # OpenBao raft snapshot 백업 (#431, gitops/resources/openbao-backup.yaml): 전용 정책/롤.
+  # 정책은 sys/storage/raft/snapshot 의 read 하나뿐 — root 토큰/unseal 키는 CronJob 에 주지 않는다.
+  kubectl exec -n storage "${OPENBAO_POD}" -- \
+    env BAO_TOKEN="${OPENBAO_ROOT_TOKEN}" \
+        BAO_ADDR="https://127.0.0.1:8200" \
+        BAO_SKIP_VERIFY=true \
+    /bin/sh -c '
+set -eu
+cat > /tmp/openbao-backup.hcl << '"'"'POLICY_EOF'"'"'
+# Least privilege: take a raft snapshot, nothing else (no restore = no sys/storage/raft/snapshot update).
+path "sys/storage/raft/snapshot" {
+  capabilities = ["read"]
+}
+POLICY_EOF
+bao policy write openbao-backup /tmp/openbao-backup.hcl
+rm -f /tmp/openbao-backup.hcl
+# 저장된 정책 내용 검증: snapshot read 한 경로만 있어야 한다 (write 실패/드리프트 fail-closed).
+STORED=$(bao policy read openbao-backup)
+[ "$(printf "%s\n" "${STORED}" | grep -c "^path ")" = 1 ]
+printf "%s\n" "${STORED}" | grep -Fq "path \"sys/storage/raft/snapshot\""
+printf "%s\n" "${STORED}" | grep -Fq "capabilities = [\"read\"]"
+echo "  openbao-backup policy written and verified"
+'
+
+  kubectl exec -n storage "${OPENBAO_POD}" -- \
+    env BAO_TOKEN="${OPENBAO_ROOT_TOKEN}" \
+        BAO_ADDR="https://127.0.0.1:8200" \
+        BAO_SKIP_VERIFY=true \
+    bao write auth/kubernetes/role/openbao-backup \
+      bound_service_account_names="openbao-backup" \
+      bound_service_account_namespaces="storage" \
+      policies="openbao-backup" \
+      audience="${OPENBAO_K8S_AUTH_AUDIENCE}" \
+      token_no_default_policy=true \
+      token_ttl="10m" \
+      token_max_ttl="10m"
+
+  kubectl exec -n storage "${OPENBAO_POD}" -- \
+    env BAO_TOKEN="${OPENBAO_ROOT_TOKEN}" \
+        BAO_ADDR="https://127.0.0.1:8200" \
+        BAO_SKIP_VERIFY=true \
+        EXPECT_AUDIENCE="${OPENBAO_K8S_AUTH_AUDIENCE}" \
+    /bin/sh -c '
+set -eu
+R=auth/kubernetes/role/openbao-backup
+bao read -format=json "${R}" | grep -Fq "\"token_no_default_policy\": true"
+# 저장된 롤이 의도한 값 그대로인지 확인 (정책/바인딩/audience 드리프트 fail-closed). audience 는 한 곳에서 읽는다.
+[ "$(bao read -field=policies "${R}")" = "[openbao-backup]" ]
+[ "$(bao read -field=bound_service_account_names "${R}")" = "[openbao-backup]" ]
+[ "$(bao read -field=bound_service_account_namespaces "${R}")" = "[storage]" ]
+[ "$(bao read -field=audience "${R}")" = "${EXPECT_AUDIENCE}" ]
+' || {
+      echo "ERROR: auth/kubernetes/role/openbao-backup 영속화 확인 실패" >&2
+      exit 1
+    }
+  echo "  OpenBao Kubernetes auth role 'openbao-backup' 설정 및 검증 완료"
+
   # Narwhal #156: 8760h 장기 bearer 토큰은 기본적으로 발급하지 않음.
   # 레거시 호환이 절대적으로 필요한 경우에만 ENABLE_LEGACY_OPENBAO_TOKEN=true 플래그로 게이트.
   if [ "${ENABLE_LEGACY_OPENBAO_TOKEN}" = "true" ]; then

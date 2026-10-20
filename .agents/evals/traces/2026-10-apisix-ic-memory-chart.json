@@ -1,0 +1,66 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-apisix-ic-memory-chart",
+  "task": "Align GitOps chart APISIX ingress controller memory requests/limits with 08-1 install values (Narwhal#424)",
+  "changeContext": {
+    "paths": [
+      "gitops/charts/narwhal-apps/templates/apisix.yaml",
+      ".agents/evals/traces/2026-10-apisix-ic-memory-chart.json"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "gitops/** is a high-risk path (risk-policy.json). Scope: align ingressController.resources in gitops/charts/narwhal-apps/templates/apisix.yaml to 256Mi request / 512Mi limit matching scripts/cluster/08-1-networking.sh (#403, D-ic-mem). Live cluster is not modified; live kakao-narwhal controller is a separate Helm release at 512Mi."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "In 08-1-networking.sh, APISIX ingress controller was OOMKilled at startup under 256Mi limit during full resource sync (#403), requiring 256Mi request and 512Mi limit. gitops/charts/narwhal-apps/templates/apisix.yaml was not updated in #403 and remained at 128Mi/256Mi, creating latent drift and OOMKill risk for chart installs.",
+      "evidence": [
+        "artifact:scripts/cluster/08-1-networking.sh (D-ic-mem)",
+        "artifact:Narwhal#403"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "Updated ingressController.resources in gitops/charts/narwhal-apps/templates/apisix.yaml to requests.memory 256Mi and limits.memory 512Mi with D-ic-mem comment. Extended regression check R258 in scripts/test/regression-check-kakao.sh to assert memory limits in both 08-1-networking.sh and apisix.yaml."
+    },
+    {
+      "id": "e4",
+      "type": "verification",
+      "status": "passed",
+      "scope": "extended R258 regression check and mutation verification",
+      "summary": "R258 regression check passes verifying both 08-1-networking.sh and apisix.yaml memory allocations. Negative mutation test reverting apisix.yaml to 128Mi/256Mi fails R258 as expected.",
+      "evidence": [
+        "test:bash scripts/test/regression-check-kakao.sh --static",
+        "artifact:scripts/test/regression-check-kakao.sh (R258)"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "full static regression suite and markdown linting",
+      "summary": "make test passed with 0 failures; markdownlint on CHANGELOG.md passed with 0 errors.",
+      "evidence": [
+        "test:make test",
+        "test:markdownlint --config .markdownlint.json CHANGELOG.md"
+      ]
+    },
+    {
+      "id": "e6",
+      "type": "completion_claim",
+      "summary": "The GitOps chart apisix.yaml ingressController resources memory is updated to 256Mi request / 512Mi limit, and regression check R258 enforces the floor across both install script and chart. The live cluster was NOT changed (live kakao-narwhal controller is a separate Helm release at 512Mi and is not managed by Argo CD)."
+    },
+    {
+      "id": "e7",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Static alignment of GitOps chart memory resources with 08-1 verified via extended R258 regression check, mutation proof, and full static regression test suite. Live cluster was not modified."
+    }
+  ]
+}

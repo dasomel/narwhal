@@ -1,0 +1,55 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-tempo-ballast-oom-420-20261020",
+  "task": "Mitigate Tempo OOMKilled (#420) by disabling the 1GiB Go ballast and setting GOMEMLIMIT; the cause is an unproven hypothesis, and live effect, image Go version and persistence are out of scope",
+  "changeContext": {
+    "paths": [
+      "gitops/charts/narwhal-apps/templates/tempo.yaml",
+      "docs/common/lessons-log.md",
+      ".agents/evals/traces/2026-10-tempo-ballast-oom-420.json"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Only tempo.memBallastSizeMbs and tempo.extraEnv (GOMEMLIMIT) are added to the Tempo Application values; the memory limit, requests, persistence and image tag stay as they were."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "Issue #420 reports tempo-0 last terminated OOMKilled during compactor block merge with args -mem-ballast-size-mbs=1024 and a 1536Mi limit (steady state ~827Mi). Taken from the issue; not reproduced or re-observed in this session.",
+      "evidence": [
+        "doc:issue #420 (kubectl describe pod tempo-0, as reported by the requester)"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "tempo.memBallastSizeMbs: 0 and GOMEMLIMIT=1280MiB (below the 1536Mi limit) on the chart tempo 2.2.3 values. Root cause is a hypothesis (ballast raises the GC heap target above the cgroup limit), not confirmed; the 256Mi headroom is a starting value."
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "chart key wiring, static regression suite and manifest validation",
+      "summary": "helm template of chart tempo 2.2.3 with the Application valuesObject renders -mem-ballast-size-mbs=0 and env GOMEMLIMIT=1280MiB on the tempo container. Not verified: restart count after rollout, the Go version of the tempo 2.9.0 image, behavior of ballast 0 in 2.9.0.",
+      "evidence": [
+        "test:make test -> passed 404 failed 0 warnings 3",
+        "test:make validate -> exit 0"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "completion_claim",
+      "summary": "Claim limited to the static GitOps values: the Tempo Application now renders ballast 0 and GOMEMLIMIT=1280MiB. It does not claim the OOMKills stop; the restart on rollout loses un-flushed WAL and local blocks because persistence is off."
+    },
+    {
+      "id": "e6",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Complete and verified within the stated static scope; NOT verified: effect on OOMKills, restart count after rollout (watch tempo-0 for a few days), the Go version of the tempo 2.9.0 image"
+    }
+  ]
+}

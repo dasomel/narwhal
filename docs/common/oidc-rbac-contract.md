@@ -55,7 +55,7 @@ apiserver-side 변환이며, 토큰 자체에는 절대 포함되지 않는다. 
   - `oidc:guest` 바인딩은 **존재하지 않는다**. `guest`는 K8s RBAC 관점에서
     권한이 0이며, 이건 실수가 아니라 설계다 — Portal 쪽에서만 의미를 갖는
     "미인증/최소 스코프 UI 사용자" 개념이다.
-- **Portal 측 원본 클레임 소비**: `narwhal-portal/src/lib/auth.ts:22-27`의
+- **Portal 측 원본 클레임 소비**: `portal/src/lib/auth.ts`의
   `ALLOWED_GROUPS`는 bare name(`cluster-admin | developer | viewer | guest`)만
   허용한다. **이것은 버그가 아니라 의도된 동작이다.** Portal은 K8s apiserver가
   아니라 Keycloak과 직접 OIDC로 통신하므로 apiserver의 `oidc:` 접두사를 절대
@@ -69,7 +69,7 @@ apiserver-side 변환이며, 토큰 자체에는 절대 포함되지 않는다. 
 ArgoCD 프로젝트에 대한 **UI 가시성 스코핑(visibility scoping)** 전용이며, RBAC
 role/권한 부여에는 절대 관여하지 않는다.
 
-`narwhal-portal/src/lib/auth.ts`의 `sanitizeTeamGroups()`(:65-73)가 이 분리를
+`portal/src/lib/auth.ts`의 `sanitizeTeamGroups()`가 이 분리를
 코드 레벨에서 강제한다 — `TEAM_GROUP_RE`에 매치하더라도 `ALLOWED_GROUPS`에 이미
 있는 값(즉 role 그룹)은 team 그룹 목록에서 명시적으로 제외한다
 (`!ALLOWED_GROUPS.has(g as UserRole)`). 두 그룹 집합은 상호 배타적으로 유지되며,
@@ -121,7 +121,7 @@ OIDC로 통신하고 K8s apiserver를 거치지 않으므로 `oidc:` 접두사�
 ## 5. 토큰 갱신 / 그룹 변경 전파 시맨틱 (알려진 한계)
 
 Portal은 NextAuth의 JWT 세션 전략을 쓴다. `groups` 클레임은 **최초 로그인 시점에만**
-`profile` 콜백에서 읽어(`narwhal-portal/src/lib/auth.ts` jwt 콜백의
+`profile` 콜백에서 읽어(`portal/src/lib/auth.ts` jwt 콜백의
 `rawGroups = p?.groups !== undefined ? p.groups : u?.groups` 및 그 아래
 `token.groups = sanitizeGroups(rawGroups)`) 세션 JWT에 고정 저장된다.
 
@@ -148,7 +148,7 @@ token-introspection을 호출하는 방식이 필요하며, 둘 다 이 문서 �
 
 토큰에 `ALLOWED_GROUPS`에 없는 미상 그룹 값이 들어오면 Portal은 **fail-closed**로
 동작한다 — 그 값은 role 매핑에서 조용히 버려지고, 남은 유효 그룹이 없으면
-`guest`로 강등된다. 이 로직은 `narwhal-portal/src/lib/auth.ts`에 이미 구현되어
+`guest`로 강등된다. 이 로직은 `portal/src/lib/auth.ts`에 이미 구현되어
 있다: `unknownGroups()`가 거부된 원본 값을 추출하고, `classifyGroupClaim()`이
 `ok` / `unknown_groups` / `no_groups`로 상태를 구분하며, jwt 콜백은
 `groupClaimStatus === "unknown_groups"`일 때 `console.warn`으로 subject와 거부된

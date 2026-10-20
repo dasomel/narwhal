@@ -309,11 +309,23 @@ class PolicyChecker:
       self.fail(f"{DOC_REL_PATH}:13", f"expected one ScheduledBackup 'narwhal-db-daily' for cluster narwhal-db across GitOps YAML, found {len(matching_schedules)}")
     else:
       schedule_path, scheduled_backup = matching_schedules[0]
-      if scheduled_backup.get("spec", {}).get("schedule") != "0 2 * * *":
-        self.fail(f"{DOC_REL_PATH}:13", f"expected CNPG ScheduledBackup schedule='0 2 * * *' in {schedule_path}, got {scheduled_backup.get('spec', {}).get('schedule')!r}")
+      if scheduled_backup.get("spec", {}).get("schedule") != "0 0 2 * * *":
+        self.fail(f"{DOC_REL_PATH}:13", f"expected CNPG ScheduledBackup schedule='0 0 2 * * *' in {schedule_path}, got {scheduled_backup.get('spec', {}).get('schedule')!r}")
       assertions_count += 1
       if scheduled_backup.get("spec", {}).get("target") != "prefer-standby":
         self.fail(f"{DOC_REL_PATH}:13", f"expected CNPG ScheduledBackup target='prefer-standby' in {schedule_path}, got {scheduled_backup.get('spec', {}).get('target')!r}")
+      assertions_count += 1
+
+    # The live ScheduledBackup (narwhal-db-backup) is created by 07-cnpg.sh, not GitOps; pin its 6-field schedule too.
+    cnpg_script_rel = "scripts/cluster/07-cnpg.sh"
+    cnpg_script_text = read_file(cnpg_script_rel)
+    if cnpg_script_text is None:
+      self.fail(f"{DOC_REL_PATH}:13", f"CNPG bootstrap script missing: {cnpg_script_rel}")
+    else:
+      files_scanned += 1
+      script_match = re.search(r"kind: ScheduledBackup\b.*?^\s*schedule:\s*\"([^\"]*)\"", cnpg_script_text, re.S | re.M)
+      if script_match is None or script_match.group(1) != "0 0 2 * * *":
+        self.fail(f"{DOC_REL_PATH}:13", f"expected CNPG ScheduledBackup schedule='0 0 2 * * *' in {cnpg_script_rel}, got {script_match.group(1) if script_match else None!r}")
       assertions_count += 1
 
     # 6. Check SeaweedFS NFS-backed storageClass in gitops/charts/narwhal-apps/templates/seaweedfs.yaml (Doc Line 11)
@@ -448,6 +460,7 @@ def mutation_check(root: Path = ROOT) -> None:
     "Vagrantfile",
     "gitops/resources/narwhal-db.yaml",
     "gitops/resources/cnpg-backup.yaml",
+    "scripts/cluster/07-cnpg.sh",
     "gitops/charts/narwhal-apps/templates/seaweedfs.yaml",
     "gitops/charts/narwhal-apps/templates/velero.yaml",
   ]
@@ -622,9 +635,17 @@ def mutation_check(root: Path = ROOT) -> None:
   # 15. CNPG ScheduledBackup schedule drifted
   test_text_mutation(
     "gitops/resources/cnpg-backup.yaml",
-    lambda s: s.replace('schedule: "0 2 * * *"', 'schedule: "0 3 * * *"'),
+    lambda s: s.replace('schedule: "0 0 2 * * *"', 'schedule: "0 0 3 * * *"'),
     "CNPG ScheduledBackup schedule=0 3 * * *",
-    "expected CNPG ScheduledBackup schedule='0 2 * * *'",
+    "expected CNPG ScheduledBackup schedule='0 0 2 * * *'",
+  )
+
+  # 15b. 07-cnpg.sh ScheduledBackup reverted to a 5-field cron (fires hourly in CNPG)
+  test_text_mutation(
+    "scripts/cluster/07-cnpg.sh",
+    lambda s: s.replace('schedule: "0 0 2 * * *"', 'schedule: "0 2 * * *"'),
+    "07-cnpg.sh ScheduledBackup schedule reverted to 5 fields",
+    "schedule='0 0 2 * * *' in scripts/cluster/07-cnpg.sh",
   )
 
   # 16. SeaweedFS storageClass mutated

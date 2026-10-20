@@ -1,0 +1,57 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-velero-exclude-seaweedfs-master-431-20261019",
+  "task": "Exclude the root_squash-unreadable SeaweedFS master data-storage volume from Velero fs-backup (#431, fifth volume); live effect and durable backup out of scope",
+  "changeContext": {
+    "paths": [
+      "gitops/charts/narwhal-apps/templates/seaweedfs.yaml",
+      "scripts/cluster/08-4-storage.sh",
+      "scripts/test/lib/check-velero-pvb-excludes.py",
+      "scripts/test/regression-check-kakao.sh",
+      ".agents/evals/traces/2026-10-velero-exclude-seaweedfs-master-431.json"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Only master.podAnnotations on the SeaweedFS Application and its install path change; the s3 annotation, ignoreDifferences, filer, volume and the master log volume stay as they were."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "Scheduled velero-daily-openbao-20261019050041 had a Canceled PodVolumeBackup for seaweedfs-master-0 volume data-storage and ended PartiallyFailed; on the NFS server 4 of 7 files under data-storage-seaweedfs-master-0 (m9333/conf, log, state, snapshot/0_4.ss) are not world-readable.",
+      "evidence": [
+        "doc:issue #431 (kubectl get podvolumebackups.velero.io; sudo find ! -perm -o=r on master-1 /srv/nfs/k8s/storage)"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "master.podAnnotations backup.velero.io/backup-volumes-excludes=data-storage in the Application values and the 08-4 helm install; R277 now requires exactly this volume on the master and none on filer, volume or s3."
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "static regression suite and manifest validation",
+      "summary": "R277 passes with the fifth exclusion and fails on a deliberately wrong value; the live rollout is not exercised here.",
+      "evidence": [
+        "test:make test -> passed 403 failed 0 warnings 3 (R277 PASS)",
+        "test:make validate -> exit 0"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "completion_claim",
+      "summary": "Scheduled Velero backups no longer include the SeaweedFS master data-storage volume, which remains unprotected by Velero."
+    },
+    {
+      "id": "e6",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Complete and verified within the stated scope (static change; live rollout and next scheduled backup not observed)"
+    }
+  ]
+}

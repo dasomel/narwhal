@@ -8,9 +8,12 @@ name: Portal Release
 #       (portal #248 fixed that link), the release title is `Portal vX.Y.Z`.
 #   D3  IMAGE is hardcoded ghcr.io/dasomel/narwhal-portal (github.repository is now narwhal).
 #   D4  SBOM scan and the attached NOTICE/LICENSE/THIRD-PARTY-NOTICES.md are taken from portal/
-#       of the tagged commit (checked out under tagged/; assets are extracted as regular-file blobs).
+#       of the tagged commit (a worktree under tagged/; assets are extracted as regular-file blobs).
 #   D5  The tag prefix `portal/v` is stripped for the image tag and changelog heading lookups;
 #       the GitHub release itself is created on the full tag `portal/vX.Y.Z`.
+#   D9  (#395) No `actions/checkout` takes `ref:` from a workflow_run expression: Scorecard's
+#       Dangerous-Workflow check flags that pattern regardless of what runs afterwards. The tagged
+#       commit is fetched as a tag with git, proven against head_sha, then added as a worktree.
 #
 
 # Publishes a GitHub Release whose body is the CHANGELOG.md section for the tag.
@@ -97,31 +100,38 @@ jobs:
       # branch" (GitHub docs, events that trigger workflows), so github.sha is that tip; it is the
       # workspace ROOT. The tagged commit is attacker-influenced content and lives only under
       # tagged/, where nothing trusted exists for a symlink or directory in its tree (e.g. one
-      # named `trusted`) to shadow or make actions/checkout clean. Reviewed on PR #355.
+      # named `trusted`) to shadow it. Reviewed on PR #355. Since D9 the tagged tree is a git
+      # worktree of this checkout, created only after the tag-vs-head_sha proof (see below).
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
 
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          # Pin to the exact commit portal-docker-publish.yml built, not whatever
-          # HEAD of the tag happens to resolve to at release time.
-          ref: ${{ github.event.workflow_run.head_sha }}
-          path: tagged
-          # Tags are needed to prove the tag-vs-commit binding below.
-          fetch-depth: 0
-          fetch-tags: true
-
-      - name: Prove the run is a tag push of this exact commit
+      # D9 (#395, OpenSSF Scorecard Dangerous-Workflow): a second actions/checkout with
+      # `ref: ${{ github.event.workflow_run.head_sha }}` is flagged as checkout of untrusted
+      # workflow_run code, whatever is done with it afterwards. So there is exactly ONE checkout
+      # (the default branch above) and the tagged commit is brought in with plain git, in this
+      # order: fetch the tag, PROVE it points at head_sha, and only then materialize that tree
+      # under tagged/. The proof runs from the default-branch workspace root against the
+      # workspace's own object store, so the trust model of D6-D8 is unchanged.
+      - name: Fetch the release tag and prove it is this exact commit
         env:
           RUN_EVENT: ${{ github.event.workflow_run.event }}
           RUN_SHA: ${{ github.event.workflow_run.head_sha }}
         run: |
           set -euo pipefail
-          git -C tagged fetch --force --tags origin
-          python3 scripts/ci/check-portal-release-ref.py --mode release --repo tagged \
+          git fetch --force --no-tags origin "+refs/tags/${TAG_NAME}:refs/tags/${TAG_NAME}"
+          python3 scripts/ci/check-portal-release-ref.py --mode release --repo . \
             --event "$RUN_EVENT" --ref-name "$TAG_NAME" --sha "$RUN_SHA"
+
+      # Only reached when the proof above passed. A detached worktree (not a checkout) of the
+      # validated commit; nothing from it is executed, it is only read, scanned and blob-extracted.
+      - name: Materialize the validated tagged commit under tagged/
+        env:
+          RUN_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -euo pipefail
+          git worktree add --detach tagged "$RUN_SHA"
 
       # Release inputs are read as git BLOBS of the validated commit and must be regular files
       # (mode 100644/100755): a symlink in the tagged tree would otherwise make the notes or the

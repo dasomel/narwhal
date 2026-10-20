@@ -1075,7 +1075,7 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 </details>
 
-### @babel/runtime@7.29.7
+### @babel/runtime@8.0.7
 
 - License: `MIT`
 - Author: The Babel Team
@@ -1215,7 +1215,7 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 </details>
 
-### @base-ui/react@1.8.0
+### @base-ui/react@1.9.0
 
 - License: `MIT`
 - Author: MUI Team
@@ -1249,7 +1249,7 @@ SOFTWARE.
 
 </details>
 
-### @base-ui/utils@0.4.0
+### @base-ui/utils@0.5.0
 
 - License: `MIT`
 - Author: MUI Team

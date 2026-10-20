@@ -10,7 +10,7 @@
 | local PV | 저장소에서 local PV/host-local StorageClass 선언을 확인하지 못했다. | **ASSUMPTION:** 현재 추적 범위의 배포에는 local PV 백엔드가 없다. 환경에 별도 추가된 경우 노드 상실 시 다른 노드에서 데이터가 자동 제공된다고 가정하지 않는다. |
 | CNPG | `gitops/resources/narwhal-db.yaml`은 `narwhal-db` 2 인스턴스, `storageClass: nfs-csi`, S3 `destinationPath: s3://cnpg-backup/narwhal-db`, WAL 및 data gzip 압축, `retentionPolicy: "7d"`를 선언한다. | CNPG 인스턴스 복제/자동 장애조치는 데이터베이스 HA 기능이다. 저장소에는 사이트 간 동기 복제 계약 또는 실제 측정 RPO가 없다. CNPG의 백업 대상 SeaweedFS가 같은 클러스터의 NFS-backed 구성에 의존한다. |
 | Velero | `gitops/charts/narwhal-apps/templates/velero.yaml`은 백업 위치를 `seaweedfs-s3.storage.svc.cluster.local:8333`의 `velero` 버킷으로 지정, `uploaderType: kopia`, `defaultVolumesToFsBackup: true`, `snapshotsEnabled: false`, node-agent 활성화를 선언한다. | PVC 파일시스템 백업 경로는 설정되어 있지만 CSI 스냅샷 기반 일관성 그룹은 활성화되지 않았다. 저장소 위치와 보호 대상이 같은 클러스터 장애 영역을 공유하므로 이 설정만으로 클러스터/사이트 재해 복구를 주장할 수 없다. |
-| 스케줄 | 같은 Velero 설정의 `daily-full`은 매일 02:00, `daily-databases`는 01:00, `daily-gitea` 03:00, `daily-harbor` 04:00, `daily-openbao` 05:00이며 각각 TTL 7일 또는 14일이다. `gitops/resources/cnpg-backup.yaml`은 `narwhal-db-daily` ScheduledBackup을 매일 02:00 UTC (`0 2 * * *`), `barmanObjectStore`, cluster `narwhal-db`, target `prefer-standby`로 선언한다. | 스케줄 선언은 성공한 백업, 백업 신선도, 복구 가능성을 증명하지 않는다. 실제 RPO는 마지막 검증 성공 시각과 장애 시각의 차이로 측정해야 한다. |
+| 스케줄 | 같은 Velero 설정의 `daily-full`은 매일 02:00, `daily-databases`는 01:00, `daily-gitea` 03:00, `daily-harbor` 04:00, `daily-openbao` 05:00이며 각각 TTL 7일 또는 14일이다. `gitops/resources/cnpg-backup.yaml`은 `narwhal-db-daily` ScheduledBackup을 매일 02:00 UTC (CNPG는 초 필드가 앞서는 6필드 cron이므로 `0 0 2 * * *`), `barmanObjectStore`, cluster `narwhal-db`, target `prefer-standby`로 선언한다. | 스케줄 선언은 성공한 백업, 백업 신선도, 복구 가능성을 증명하지 않는다. 실제 RPO는 마지막 검증 성공 시각과 장애 시각의 차이로 측정해야 한다. |
 
 `docs/common/database.md`의 설명은 CNPG Barman Full Backup/WAL 및 Velero PVC 보호를 요약한다. 구체적인 현재 스케줄과 스냅샷 비활성 상태는 위 GitOps 설정을 기준으로 판정한다. 이 문서와 설정이 충돌하면 실행 가능한 선언을 우선한다.
 
@@ -61,6 +61,12 @@
 
 부분 볼륨 실패에서는 성공한 일부 PVC를 먼저 writable 서비스로 내지 않는다. 가능한 경우 복원본을 격리해 재시도하고, 불가능하면 영향 workload 전체를 `INCOMPLETE`로 유지한다. 원본과 복구본을 동시에 writable로 두는 절차는 이 정책에서 허용하지 않는다.
 
+### Velero 진단 메시지 (#422, #431)
+
+- `No present log retrieved ... cannot get resource "pods/log"`: velero-server가 PodVolumeBackup 실패 원인을 `storage` 네임스페이스의 node-agent 호스팅 파드 로그에서 읽지 못할 때 남는다. `gitops/resources/velero-server-rbac.yaml`의 `Role/velero-pod-logs`(+ RoleBinding)가 `storage` 한 네임스페이스에서 `pods/log`의 `get`만 `velero-server`에 부여한다(PR #434). 적용 후에도 이 메시지가 남으면 해당 Role/RoleBinding의 sync 상태를 먼저 확인한다. 이 grant는 읽기 전용 진단용이며 백업 대상·쓰기 권한을 넓히지 않는다.
+- `Server rejected event`: velero-server는 `events` `create`/`patch`를 받지 못한다. 의도적으로 부여하지 않았으며(쓰기 verb 확대 회피) 잃는 것은 Event 기록뿐이다. 백업 결과는 Backup/PodVolumeBackup 상태로 판단한다.
+- Kyverno `require-labels/check-for-labels`(Audit): node-agent ConfigMap `velero-node-agent-config`의 `podLabels`가 data mover/호스팅 파드에 `app.kubernetes.io/name=velero-data-mover`를 붙인다(Velero 1.18). 저장소 유지보수 Job(`*-kopia-maintain-job-*`)은 1.18에서 라벨을 지정할 수 없어 Audit 이벤트가 남을 수 있다.
+
 ## 5. RPO/RTO 산정 및 오프라인 증거
 
 - **RPO 실측:** 장애 기준 시각에서 복구본에 검증된 최신 데이터 시각을 뺀 값. Velero는 마지막 `Completed` 백업 시각을 하한 정보로 기록하되 실제 데이터 손실량을 대체하지 않는다. CNPG는 복구 완료 후 DB가 가진 검증 가능한 트랜잭션 시각/업무 기준점을 기록한다.
@@ -89,3 +95,43 @@ rg -n 'local-path|local PV|kind: PersistentVolume' scripts gitops/resources gito
 ## 7. 명시적 범위
 
 이 정책은 현재 NFS/CNPG/Velero 구성의 근거 기반 평가와 제안된 control gate를 문서화한다. Ceph/Longhorn/object-store 복제, local PV 구현, CSI snapshot 활성화, site relationship/fencing 자동화, 자동 failover/failback, replacement-cluster 복구 기능, 성능 수치 및 호환성 매트릭스는 저장소에서 확인되지 않아 구현 또는 검증된 기능으로 간주하지 않는다.
+
+## 8. OpenBao raft snapshot 백업과 수동 복구 (#431)
+
+`daily-openbao` Velero fs-backup은 OpenBao `data` 볼륨을 읽지 못한다(NFS `root_squash`에서 kopia가 nobody로 매핑되어 owner-only raft 파일 접근 불가). 그래서 `data`는 `backup.velero.io/backup-volumes-excludes`로 제외되어 있고(R277), 대신 애플리케이션 수준 스냅샷을 만든다. 근거 파일은 `gitops/resources/openbao-backup.yaml`이다.
+
+| 항목 | 선언 |
+|---|---|
+| 주기 (D-rpo) | `openbao-snapshot` CronJob, 매일 04:30 UTC. Velero `daily-openbao`(05:00 UTC) 직전. Velero 큐 지연이 있으면 RPO는 24시간보다 길어질 수 있다. |
+| 인증 (D-auth) | OpenBao Kubernetes auth 롤 `openbao-backup`(SA `storage/openbao-backup`, audience는 13-2의 `OPENBAO_K8S_AUTH_AUDIENCE` 기본값 `vault`와 Job의 projected 토큰이 일치해야 하며 R279가 검사, 기본 정책 없음, 토큰 10분·갱신 없음) → 정책 `openbao-backup` = `sys/storage/raft/snapshot` `read` 하나. root 토큰과 unseal 키는 사용하지 않는다. 롤/정책은 `scripts/cluster/13-2-narwhal-portal-bindings.sh`가 만들고 저장된 값을 다시 읽어 검증한다. |
+| 암호화 (D-cms, D-oaep) | initContainer(bao)가 스냅샷을 메모리 emptyDir `work`(256Mi)에 저장하고, 메인 컨테이너가 `openssl cms -encrypt -binary -aes-256-cbc -outform DER -stream ... -keyopt rsa_padding_mode:oaep`로 수신자 **인증서(공개키)** 에 암호화해 PVC에 임시 파일로 쓴 뒤 `openbao-<ts>.snap.cms`로 원자적 rename하고 평문을 삭제한다. 평문은 NFS PVC에 쓰이지 않는다. 세션 키는 RSA-OAEP로 감싼다. 개인키는 운영자가 클러스터 밖(오프라인)에 보관하며 Secret/ConfigMap/백업 어디에도 없다. `-stream`을 쓰지 않으면 입력의 약 5배 메모리를 쓴다(30MB 입력에서 약 170MiB 대 5.5MiB 측정). 암호문 형식 검사는 전체 파싱(약 5배 메모리) 대신 DER 선두의 envelopedData 헤더와 끝의 EOC만 확인하므로 복호 가능성 자체는 검증하지 않는다. |
+| 평문 보호 (D-plaintext) | Job 파드는 라벨 `velero.io/exclude-from-backup: "true"`와 어노테이션 `backup.velero.io/backup-volumes-excludes: work`로 Velero에서 제외한다(`daily-openbao`가 `defaultVolumesToFsBackup`이고 Velero 지연이 길 수 있어 겹침이 가능하다). `work`는 256Mi로 제한되어 더 큰 스냅샷은 쓰기 실패(ENOSPC)로 Job이 실패한다. 메모리 한도(initContainer 512Mi, 암호화 128Mi) 초과로 OOM이 나도 Job이 실패해 `kubectl get jobs -n storage`에 남는다. **신선도 알림은 아직 없다(후속 과제): `last-success` 표식 파일만 있다.** |
+| 수신자 인증서 | ConfigMap `storage/openbao-backup-recipient`의 `recipient.pem`. `scripts/ops/openbao-backup-keygen.sh [--no-passphrase] <개인키 경로>`가 로컬에서 RSA-4096 자체서명 인증서(기본 10년)를 만들고 **인증서만** 적용한다. 개인키는 기본적으로 패스프레이즈로 암호화되며(`--no-passphrase`로만 해제), 지정 경로에만 0600으로 쓰고 출력하지 않으며 덮어쓰기를 거부한다. Job은 인증서가 없음/비어 있음/형식 오류/만료(24시간 이내 만료 포함)/RSA 3072비트 미만/개인키 포함/PEM 블록이 둘 이상이면 **실패하고 아무것도 쓰지 않는다**(평문 폴백 없음). 인증서가 만료되면 백업이 멈추므로 갱신 전에 새 키로 스크립트를 다시 실행하고, 이전 스냅샷 복호화용으로 이전 개인키를 보관한다. |
+| 인증서 고정 (D-fpr) | ConfigMap을 쓸 수 있는 주체가 수신자 인증서를 바꿔 이후 스냅샷을 읽을 수 있다. CronJob env `RECIPIENT_FPR`(Git/Argo로만 변경)에 키젠 스크립트가 출력한 SHA-256 지문을 넣으면 불일치 시 Job이 실패한다. 비어 있으면 Job 로그에 WARNING만 남기고 고정하지 않는다(기본값은 비어 있음). 운영 환경에서는 설정해야 한다. |
+| 이미지 (D-image) | 암호화 컨테이너는 이미 에어갭 목록에 있는 `docker.io/valkey/valkey:8-alpine`(다이제스트 핀, amd64+arm64, Alpine 3.24, OpenSSL 3.5.8, `cms` 포함)를 재사용한다. 새 이미지는 추가하지 않았다. Job은 `command -v openssl`과 `openssl cms -help` 가드가 실패하면 중단한다. |
+| 보관 위치 (D-location) | PVC `openbao-snapshots`(nfs-csi, RWX)의 `raft/` 디렉터리. 최신 7개 유지, `last-success`(타임스탬프+파일명)가 신선도 표식이다. 별도 장애 도메인 사본은 후속 과제이며 이번 범위가 아니다. |
+| Velero 전달 (D-holder) | fs-backup은 실행 중인 파드의 볼륨만 읽으므로 상시 파드 `openbao-snapshot-holder`가 PVC를 읽기 전용으로 마운트한다. 이 볼륨은 제외 목록에 없다. |
+| 권한 (D-perms) | 암호문 파일 0644, 디렉터리 0755(root_squash된 Velero 데이터 무버가 읽어야 함). Velero 복원 후 `raft/`가 다른 uid 소유가 되면 chmod는 경고만 하고, 쓰기 불가이면 Job이 실패하므로 디렉터리를 다시 만든다. |
+
+**KNOWN LIMITATION — unseal 키와 root 토큰은 보호되지 않는다.** 스냅샷은 오프라인 개인키로 보호되지만, unseal 키와 root 토큰이 들어 있는 `openbao-init` Secret은 여전히 `daily-openbao` Velero 백업(`storage` 네임스페이스 전체)에 들어 있다. 이 백업(SeaweedFS `velero` 버킷)을 읽을 수 있는 주체는 unseal 키와 **root 토큰(라이브 클러스터 접근)** 을 얻는다. 스냅샷 복호화에는 개인키가 필요하지만 클러스터 자격은 노출되어 있다. 후속 과제이며 이번 변경에서 해결되지 않았다. 개인키 분실 시 모든 스냅샷은 복구 불가이다.
+
+**기존 클러스터 적용 순서.** 새 CronJob은 아래 단계가 끝나기 전까지 실패한다(롤이 없거나 ConfigMap이 없어 파드가 시작되지 않음). 공유 클러스터에서는 각 단계가 클러스터 변경이므로 사전 승인이 필요하다.
+
+1. master-1에서 `scripts/cluster/13-2-narwhal-portal-bindings.sh`를 다시 실행해 정책/롤 `openbao-backup`을 만든다(root 토큰 사용, 멱등).
+2. 운영자 워크스테이션에서 `scripts/ops/openbao-backup-keygen.sh <개인키 경로>`를 실행한다. 출력된 지문을 `gitops/resources/openbao-backup.yaml`의 `RECIPIENT_FPR`에 Git으로 반영한다.
+3. GitOps 반영(`scripts/gitops/push-to-gitea.sh`) 후 ArgoCD가 `openbao-backup` 앱을 동기화한다.
+4. 첫 실행 확인은 클러스터를 변경하는 `kubectl create job --from=cronjob/openbao-snapshot` 수동 Job으로 한다. `daily-openbao`가 새 PVC를 처리하는지는 다음 Velero 실행의 PodVolumeBackup으로 확인한다.
+
+**수동 복구 절차 (복구 드릴 미검증).** 이 절차는 실제 클러스터에서 한 번도 수행·검증되지 않았다. 처음 수행은 드릴 환경에서 하고 결과를 `docs/common/lessons-log.md`에 남긴다.
+
+1. 전제: 대상 OpenBao가 초기화·unseal 상태이고(`bao status`), root 권한 토큰이 있으며, 운영자 개인키(`key.pem`)와 인증서(`cert.pem`)를 가지고 있다. 원본 클러스터의 unseal 키(`openbao-init`)가 스냅샷 생성 시점의 것과 같아야 일반 복구가 된다.
+2. 스냅샷 확보: 살아 있는 PVC에서 `last-success`가 가리키는 `.snap.cms` 파일을 쓰거나, 클러스터 재해 시 Velero `daily-openbao` 백업에서 `storage/openbao-snapshots` 볼륨을 복원한다.
+3. 운영자 워크스테이션에서 복호화: `openssl cms -decrypt -inform DER -in x.snap.cms -recip cert.pem -inkey key.pem -out x.snap`(패스프레이즈를 물어본다). 평문 `x.snap`은 안전한 임시 위치에만 두고 사용 후 삭제한다.
+4. 쓰기 클라이언트 중지(포털, 시크릿을 쓰는 워크로드) 후 `kubectl cp x.snap storage/openbao-0:/tmp/restore.snap`.
+5. 일반 복구(같은 클러스터, 같은 unseal 키). root 토큰을 명령행 인자에 넣지 않도록 표준입력으로 전달하고 서버 CA를 검증한다:
+   `printf '%s' "$ROOT_TOKEN" | kubectl exec -i -n storage openbao-0 -- sh -c 'read -r BAO_TOKEN; export BAO_TOKEN BAO_ADDR=https://127.0.0.1:8200 BAO_CACERT=/openbao/tls/ca.crt; bao operator raft snapshot restore /tmp/restore.snap'`.
+   `-force` 없이 실행하며 키 일치 검사가 유지된다. 거부되면 다른 클러스터의 파일이거나 키가 다르다는 뜻이므로 `-force`로 우회하지 말고 원인을 확인한다.
+   재해 복구(새로 초기화한 OpenBao에 원본 스냅샷을 되살림): 원본 unseal 키를 안전하게 확보해 둔 경우에만 같은 명령에 `restore -force`를 쓴다. **경고:** `-force`는 키 일치 검사를 건너뛰므로 정상 동작하는 저장소를 다른 클러스터의 파일로 덮어쓸 수 있다. 대상이 비어 있거나 폐기 예정인지 확인한 뒤에만 사용한다. 복원 직후 OpenBao는 원본 unseal 키를 요구하므로, 새 초기화로 만들어진 `openbao-init` Secret(새 unseal 키·root 토큰)을 **원본 값으로 되돌려야** 자동 unseal(`openbao-auto-unseal`)이 동작한다: 원본 `openbao-init`(Velero `daily-openbao` 백업의 `storage` 리소스 또는 운영자가 따로 보관한 사본)에서 `unseal_keys_b64`와 `root_token`을 꺼내 `kubectl create secret generic openbao-init -n storage --from-file=unseal_keys_b64=... --from-file=root_token=... --dry-run=client -o yaml | kubectl replace -f -`(값은 파일로만 전달, 명령행에 직접 넣지 않음) 후 2분 내 unseal을 확인한다. 새 root 토큰은 복원 후 무효가 되므로 이후에는 원본 root 토큰을 쓴다.
+6. 복원 후 `bao status`로 unseal 상태를 확인하고, `auth/kubernetes` 롤(`narwhal-portal`, `openbao-backup`)과 KV 데이터를 읽어 검증한 뒤 클라이언트를 다시 연다. `/tmp/restore.snap`과 워크스테이션의 평문 파일을 삭제한다.
+
+미검증 항목: 실제 스냅샷 생성, 인증 롤 동작과 13-2의 `bao read -field=...` 출력 형식, 클러스터 안에서의 `openssl cms` 암호화(로컬 OpenSSL로만 확인; 이미지의 busybox `od`/`head -c`/`tail -c`도 미실행), Velero 제외 라벨 동작, Velero PodVolumeBackup 완료, 복원 드릴. 스냅샷 신선도 알림도 아직 없다.

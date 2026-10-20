@@ -86,7 +86,7 @@ if should_run "velero"; then
   fi
 
   # BackupStorageLocation Available
-  BSL_PHASE=$(kube_get get backupstoragelocation default -n "${VELERO_NS}" \
+  BSL_PHASE=$(kube_get get backupstoragelocations.velero.io default -n "${VELERO_NS}" \
     -o jsonpath='{.status.phase}')
   if [ "${BSL_PHASE}" = "Available" ]; then
     pass "BackupStorageLocation 'default' is Available"
@@ -95,23 +95,23 @@ if should_run "velero"; then
   fi
 
   # Schedule count
-  SCHEDULE_COUNT=$(kube_get get schedule -n "${VELERO_NS}" --no-headers | wc -l | tr -d ' ')
+  SCHEDULE_COUNT=$(kube_get get schedules.velero.io -n "${VELERO_NS}" --no-headers | wc -l | tr -d ' ')
   if [ "${SCHEDULE_COUNT}" -ge 1 ]; then
     pass "Velero schedules exist (${SCHEDULE_COUNT} schedule(s))"
-    kube_get get schedule -n "${VELERO_NS}" --no-headers | awk '{printf "         - %s (%s)\n", $1, $4}' || true
+    kube_get get schedules.velero.io -n "${VELERO_NS}" --no-headers | awk '{printf "         - %s (%s)\n", $1, $4}' || true
   else
     fail "No Velero schedules found (expected >= 1)"
   fi
 
   # Most recent backup status
-  LATEST_BACKUP=$(kube_get get backup -n "${VELERO_NS}" \
+  LATEST_BACKUP=$(kube_get get backups.velero.io -n "${VELERO_NS}" \
     --sort-by='.metadata.creationTimestamp' \
     -o jsonpath='{.items[-1:].metadata.name}' 2>/dev/null || true)
 
   if [ -n "${LATEST_BACKUP}" ]; then
-    BACKUP_PHASE=$(kube_get get backup "${LATEST_BACKUP}" -n "${VELERO_NS}" \
+    BACKUP_PHASE=$(kube_get get backups.velero.io "${LATEST_BACKUP}" -n "${VELERO_NS}" \
       -o jsonpath='{.status.phase}')
-    BACKUP_START=$(kube_get get backup "${LATEST_BACKUP}" -n "${VELERO_NS}" \
+    BACKUP_START=$(kube_get get backups.velero.io "${LATEST_BACKUP}" -n "${VELERO_NS}" \
       -o jsonpath='{.status.startTimestamp}')
 
     if [ "${BACKUP_PHASE}" = "Completed" ]; then
@@ -174,33 +174,79 @@ if should_run "seaweedfs"; then
     fail "SeaweedFS volume pod is not Running"
   fi
 
-  # S3 endpoint reachable via a pod in the cluster
-  # Use velero pod to test internal S3 endpoint accessibility
-  VELERO_POD=$(kube_get get pod -n "${VELERO_NS}" -l app.kubernetes.io/name=velero \
-    -o jsonpath='{.items[0].metadata.name}')
+  # S3 endpoint reachability, asked from inside the mesh as an anonymous client.
+  # D-s3ops-2 (#419): the Velero pods are distroless (no wget/sh; a node-agent pod was picked
+  # first), so the check never ran. A CNPG pod (container postgres) ships python3 and sits in
+  # the mesh like Loki/Tempo/Velero. Prefer the primary, fall back to any Ready narwhal-db pod.
+  # PASS only when the exec succeeded AND the status is exactly 403; no pod, no python3, exec
+  # error, reset/timeout (ERR), 404/500 are FAIL with the status shown.
+  ready_pod() {
+    kube_get get pod -n "${DATABASE_NS}" -l "$1" \
+      -o jsonpath='{range .items[*]}{.metadata.name}{" "}{range .status.conditions[?(@.type=="Ready")]}{.status}{end}{"\n"}{end}' \
+      | awk '$2 == "True" && !f++ {print $1}'
+  }
+  S3_PROBE_POD=$(ready_pod "cnpg.io/cluster=narwhal-db,cnpg.io/instanceRole=primary")
+  [ -n "${S3_PROBE_POD}" ] || S3_PROBE_POD=$(ready_pod "cnpg.io/cluster=narwhal-db")
 
-  if [ -n "${VELERO_POD}" ]; then
-    S3_HTTP_CODE=$(kubectl exec -n "${VELERO_NS}" "${VELERO_POD}" \
-      -- wget -qO- --server-response --timeout=10 \
-      "${SEAWEEDFS_S3_URL}" 2>&1 | { grep "HTTP/" | awk '{print $2}' | tail -1 || true; })
-
-    # SeaweedFS S3 returns 403 (NoCredentials) or 200 on root — both mean reachable
-    if [ "${S3_HTTP_CODE}" = "200" ] || [ "${S3_HTTP_CODE}" = "403" ] || [ "${S3_HTTP_CODE}" = "400" ]; then
-      pass "SeaweedFS S3 endpoint reachable: HTTP ${S3_HTTP_CODE}"
-    else
-      fail "SeaweedFS S3 endpoint unreachable: HTTP ${S3_HTTP_CODE:-no response}"
-    fi
-
-    # Check velero bucket via BackupStorageLocation lastValidationTime
-    BSL_LAST_VALIDATED=$(kube_get get backupstoragelocation default -n "${VELERO_NS}" \
-      -o jsonpath='{.status.lastValidationTime}')
-    if [ -n "${BSL_LAST_VALIDATED}" ]; then
-      pass "SeaweedFS velero bucket validated at: ${BSL_LAST_VALIDATED}"
-    else
-      warn "BackupStorageLocation has not been validated yet"
-    fi
+  if [ -z "${S3_PROBE_POD}" ]; then
+    fail "SeaweedFS S3 anonymous check: no Ready narwhal-db pod in ${DATABASE_NS} to probe from"
   else
-    warn "Velero pod not found, skipping S3 endpoint check"
+    S3_EXEC_RC=0
+    S3_HTTP_CODE=$(kubectl exec -n "${DATABASE_NS}" "${S3_PROBE_POD}" -c postgres -i \
+      -- python3 - "${SEAWEEDFS_S3_URL}" 2>/dev/null <<'PY'
+import sys
+import urllib.error
+import urllib.request
+try:
+    print(urllib.request.urlopen(sys.argv[1], timeout=10).status)
+except urllib.error.HTTPError as e:
+    print(e.code)
+except Exception:
+    print("ERR")
+PY
+    ) || S3_EXEC_RC=$?
+    S3_HTTP_CODE="${S3_HTTP_CODE//[[:space:]]/}"
+    # D-s3auth: with S3 authentication on, an anonymous request is answered 403 (AccessDenied)
+    # and that is the only healthy answer. 200 means anonymous access is open (auth off or
+    # bypassed); anything else (no response, 5xx, 400) means the endpoint is not serving.
+    # A 403 alone never proves the clients' signed requests work: the BSL/BackupRepository
+    # checks below and docs/runbooks/seaweedfs-s3-auth.md (real backup + restore) do.
+    if [ "${S3_EXEC_RC}" -ne 0 ]; then
+      fail "SeaweedFS S3 anonymous check could not run in ${S3_PROBE_POD} (exec exit ${S3_EXEC_RC}, python3 missing?)"
+    elif [ "${S3_HTTP_CODE}" = "403" ]; then
+      pass "SeaweedFS S3 endpoint enforces authentication (anonymous request: HTTP 403)"
+    elif [ "${S3_HTTP_CODE}" = "200" ]; then
+      fail "SeaweedFS S3 endpoint answered an anonymous request with HTTP 200: authentication is not enforced"
+    else
+      fail "SeaweedFS S3 endpoint unhealthy: HTTP ${S3_HTTP_CODE:-no response} (expected 403 for an anonymous request)"
+    fi
+  fi
+
+  # kopia repositories can only initialise against an authenticated S3 (the pre-auth
+  # failure: "Signed request requires setting up SeaweedFS S3 authentication")
+  REPO_PHASES=$(kube_get get backuprepositories.velero.io -n "${VELERO_NS}" \
+    -o jsonpath='{range .items[*]}{.metadata.name}{"="}{.status.phase}{" "}{end}')
+  if [ -z "${REPO_PHASES}" ]; then
+    warn "No Velero BackupRepository exists yet (created by the first volume backup)"
+  else
+    REPO_BAD=false
+    for repo_phase in ${REPO_PHASES}; do
+      [ "${repo_phase##*=}" = "Ready" ] || REPO_BAD=true
+    done
+    if [ "${REPO_BAD}" = true ]; then
+      fail "Velero BackupRepository not Ready: ${REPO_PHASES}"
+    else
+      pass "Velero BackupRepositories Ready: ${REPO_PHASES}"
+    fi
+  fi
+
+  # Check velero bucket via BackupStorageLocation lastValidationTime
+  BSL_LAST_VALIDATED=$(kube_get get backupstoragelocations.velero.io default -n "${VELERO_NS}" \
+    -o jsonpath='{.status.lastValidationTime}')
+  if [ -n "${BSL_LAST_VALIDATED}" ]; then
+    pass "SeaweedFS velero bucket validated at: ${BSL_LAST_VALIDATED}"
+  else
+    warn "BackupStorageLocation has not been validated yet"
   fi
 
   echo ""
@@ -266,7 +312,7 @@ if should_run "cnpg"; then
     fi
 
     # Check recent ScheduledBackup CRs
-    SCHEDULED_BACKUP_COUNT=$(kube_get get scheduledbackup -n "${DATABASE_NS}" \
+    SCHEDULED_BACKUP_COUNT=$(kube_get get scheduledbackups.postgresql.cnpg.io -n "${DATABASE_NS}" \
       --no-headers | wc -l | tr -d ' ')
     if [ "${SCHEDULED_BACKUP_COUNT}" -ge 1 ]; then
       pass "CNPG ScheduledBackup resources found: ${SCHEDULED_BACKUP_COUNT}"
@@ -275,11 +321,11 @@ if should_run "cnpg"; then
     fi
 
     # Check most recent CNPG Backup CR
-    LATEST_CNPG_BACKUP=$(kube_get get backup -n "${DATABASE_NS}" \
+    LATEST_CNPG_BACKUP=$(kube_get get backups.postgresql.cnpg.io -n "${DATABASE_NS}" \
       --sort-by='.metadata.creationTimestamp' \
       -o jsonpath='{.items[-1:].metadata.name}' 2>/dev/null || true)
     if [ -n "${LATEST_CNPG_BACKUP}" ]; then
-      CNPG_BACKUP_STATUS=$(kube_get get backup "${LATEST_CNPG_BACKUP}" -n "${DATABASE_NS}" \
+      CNPG_BACKUP_STATUS=$(kube_get get backups.postgresql.cnpg.io "${LATEST_CNPG_BACKUP}" -n "${DATABASE_NS}" \
         -o jsonpath='{.status.phase}')
       if [ "${CNPG_BACKUP_STATUS}" = "completed" ]; then
         pass "CNPG latest Backup '${LATEST_CNPG_BACKUP}' is completed"
@@ -319,7 +365,7 @@ if should_run "restore" || [ "${RUN_RESTORE}" = "true" ]; then
     echo ""
   else
     # Find the most recent Completed backup
-    LATEST_COMPLETED=$(kube_get get backup -n "${VELERO_NS}" \
+    LATEST_COMPLETED=$(kube_get get backups.velero.io -n "${VELERO_NS}" \
       --sort-by='.metadata.creationTimestamp' \
       -o jsonpath='{range .items[*]}{.metadata.name}{" "}{.status.phase}{"\n"}{end}' 2>/dev/null \
       | { grep " Completed" | tail -1 | awk '{print $1}' || true; })
@@ -369,7 +415,7 @@ EOF
         echo "  Waiting for restore to complete (timeout: 5m)..."
         RESTORE_DONE=false
         for i in $(seq 1 30); do
-          RESTORE_PHASE=$(kube_get get restore "${RESTORE_NAME}" -n "${VELERO_NS}" \
+          RESTORE_PHASE=$(kube_get get restores.velero.io "${RESTORE_NAME}" -n "${VELERO_NS}" \
             -o jsonpath='{.status.phase}')
           if [ "${RESTORE_PHASE}" = "Completed" ]; then
             RESTORE_DONE=true
@@ -400,9 +446,9 @@ EOF
             | wc -l | tr -d ' ')
           pass "Restore stats: ${RESTORED_DEPLOYS} deployment(s), ${RESTORED_SERVICES} service(s) in '${RESTORE_TEST_NS}'"
         else
-          RESTORE_WARNINGS=$(kube_get get restore "${RESTORE_NAME}" -n "${VELERO_NS}" \
+          RESTORE_WARNINGS=$(kube_get get restores.velero.io "${RESTORE_NAME}" -n "${VELERO_NS}" \
             -o jsonpath='{.status.warnings}')
-          RESTORE_ERRORS=$(kube_get get restore "${RESTORE_NAME}" -n "${VELERO_NS}" \
+          RESTORE_ERRORS=$(kube_get get restores.velero.io "${RESTORE_NAME}" -n "${VELERO_NS}" \
             -o jsonpath='{.status.errors}')
           fail "Restore '${RESTORE_NAME}' phase: '${RESTORE_PHASE:-Timeout}' (warnings: ${RESTORE_WARNINGS:-0}, errors: ${RESTORE_ERRORS:-0})"
         fi

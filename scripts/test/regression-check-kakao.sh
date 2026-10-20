@@ -3113,12 +3113,28 @@ assert sum(1 for l in code if re.search(r"\bexit 3\b", l)) == 1, "exit 3 must ap
     python3 scripts/test/lib/check-kakao-public-ip-guard.py --mutation-verify
 
   # 2026-10-16: 07-cnpg.sh built cnpg-s3-credentials from velero-s3-credentials, which 08-4
-  # creates later, so ACCESS_SECRET_KEY came out empty and narwhal-db failed over. One helper
-  # (lib.sh resolve_s3_credentials, default "admin" per D-velero) now serves 07 and 08-4.
-  check R249 "07-cnpg.sh and 08-4-storage.sh derive S3 credentials via resolve_s3_credentials; 07 does not read the later-created Velero Secret itself (2026-10-16)" \
-    bash -c 'grep -Fq "resolve_s3_credentials" scripts/cluster/07-cnpg.sh && grep -Fq "resolve_s3_credentials" scripts/cluster/08-4-storage.sh && ! grep -Fq "velero-s3-credentials" scripts/cluster/07-cnpg.sh'
-  check R250 "resolve_s3_credentials: NotFound defaults to admin, any other kubectl error fails closed, an existing cnpg secret is preserved, env wins" \
-    bash scripts/test/lib/check-s3-credentials-resolve.sh
+  # creates later, so ACCESS_SECRET_KEY came out empty and narwhal-db failed over. Later the same
+  # day SeaweedFS S3 authentication was enabled (D-s3auth): one helper (lib.sh
+  # ensure_s3_identities) creates per-client random identities for 07 and 08-4; the old
+  # "default admin" resolver and its tests are gone.
+  check R249 "07-cnpg.sh and 08-4-storage.sh create S3 credentials only via ensure_s3_identities; 07 does not read the later-created Velero Secret itself and no script keeps an admin default (2026-10-16)" \
+    bash -c 'grep -Fq "ensure_s3_identities" scripts/cluster/07-cnpg.sh && grep -Fq "ensure_s3_identities" scripts/cluster/08-4-storage.sh && ! grep -Fq "velero-s3-credentials" scripts/cluster/07-cnpg.sh && ! git grep -Fq "resolve_s3_credentials" -- scripts ":!scripts/test" && ! grep -Eq "S3_(ACCESS|SECRET)_KEY:-admin|:-admin\}" scripts/common/lib.sh'
+  check R250 "ensure_s3_identities (stateful fake kubectl): fresh install = 4 random distinct bucket-scoped identities + server config + Velero credentials file, rerun keeps keys, the admin/admin default is replaced exactly once, a duplicate access key across clients is rotated and the rendered config has unique keys, a present-but-empty Secret / half-filled pair / unsupported characters / any read error fails closed without writing, s3_sync_server_config rolls the S3 Deployment whenever the config differs from the running checksum (partial failure repair, 07-before-08-4), no key reaches the log" \
+    bash scripts/test/lib/check-s3-identities.sh
+  check R270 "SeaweedFS S3 auth contract: s3.enableAuth + existingConfigSecret in the chart AND 08-4, embedded filer S3 disabled, Loki/Tempo keys only via envFrom + expand-env, narwhal-db.yaml owns no S3 Secret and 14 guards it, Velero via existingSecret, the seaweedfs Application ignores exactly the seaweedfs-s3 roll annotation and respects it (D-s3ops-1), the S3 pod template keeps a static annotation so the map is never empty (D-s3ops-1b), 08-4 runs the cutover guard first, 07 syncs the S3 server; 24 mutations each rejected (D-s3auth, D-s3ops)" \
+    python3 scripts/test/lib/check-s3-auth-contract.py --mutation-verify
+  check R272 "scripts/verify/s3-client-check.py (runbook per-client S3 check): anonymous access uses botocore UNSIGNED, only a ClientError 403/AccessDenied counts as a deny, success or another error is FAIL, a crashing step prints FAIL not a traceback (stubbed boto3)" \
+    python3 scripts/test/lib/check-s3-client-check.py
+  check R271 "verify-backup.sh: an anonymous S3 request must be 403 (200 = auth open = FAIL, 403 is no longer a generic success) and every Velero BackupRepository must be Ready; behaviour (D-s3ops-2, #419): python3 runs in a Ready narwhal-db pod (container postgres), only a successful exec with 403 passes, 200/404/500/ERR/no pod/exec failure fail (fake kubectl, real embedded python)" \
+    bash -c 'f=scripts/test/verify-backup.sh; grep -Fq "authentication is not enforced" "$f" && grep -Fq "enforces authentication" "$f" && grep -Fq "BackupRepository not Ready" "$f" && ! grep -Fq "endpoint reachable: HTTP" "$f" && bash scripts/test/lib/check-verify-backup-anon.sh'
+  check R274 "08-4 guard_s3_auth_cutover (fake kubectl, read-only): clean install and an already authenticated server pass, an anonymous server aborts with the exact message unless the Loki and Tempo StatefulSets reference their S3 Secret via envFrom (a full Phase 2 re-run that just created the Secrets still aborts), -config= is read from all containers, a StatefulSet that does not exist is skipped, NARWHAL_ALLOW_S3_AUTH_CUTOVER=true bypasses only that abort, Deployment/StatefulSet read errors and unparsable output fail closed (D-s3ops-4, #414)" \
+    bash scripts/test/lib/check-s3-cutover-guard.sh
+  check R275 "ensure_s3_identities hardening (fake kubectl): numeric and leading-zero keys stay YAML strings, the key-bearing temp file is removed on success, apply failure and TERM, the caller's trap and S3_IDENTITIES_CHANGED survive, s3_sync_server_config patches once when stale, never when equal, and propagates a patch failure (D-s3ops-5, #415); key-bearing Secrets are applied --server-side with a fixed field manager, the old last-applied annotation is cleared (a cleanup failure fails the run, key-free; exact kind/namespace/name and order checked; data not stringData) and no key reaches an argv (D-s3apply, #415)" \
+    bash scripts/test/lib/check-s3-ensure-hardening.sh
+  # 2026-10-19 (#431): root_squash makes Velero fs-backup Cancel OpenBao data, CNPG pgdata, Gitea data and Harbor
+  # jobservice job-logs, and one Canceled PVB leaves the Backup InProgress and queues every later schedule.
+  check R277 "Velero fs-backup excludes exactly OpenBao data, CNPG pgdata, Gitea data, Harbor jobservice job-logs and SeaweedFS master data-storage (pod annotation in the GitOps CR/Application and in the 08-4/08-5/12 install paths), and velero-server has only a namespaced pods/log get in storage (D-pvb-exclude, D-pvb-log, #431)" \
+    python3 scripts/test/lib/check-velero-pvb-excludes.py
 
   # 2026-10-16 (PR #399): the APISIX Admin API allowlist is detected from the live CNI by
   # resolve_apisix_admin_cidr (lib.sh) and wired by 14 -- NOT taken from POD_NETWORK_CIDR, which
@@ -3145,13 +3161,16 @@ assert sum(1 for l in code if re.search(r"\bexit 3\b", l)) == 1, "exit 3 must ap
   check R259 "nfs-quota-agent: 05 renders the chart with its own helm args and refuses any flag the pinned per-version table lacks (stale --default-quota bundle, unknown versions fail closed, before helm install); a failed rollout or a restarted/not-Ready pod exits 1 with logs --previous (no WARN, no grep -q pipe); prjquota is detected and warned (behavioral, fake helm/kubectl)" \
     bash scripts/test/lib/check-nqa-skew.sh
   # 2026-10-16: the IC was OOMKilled at startup under the 256Mi limit during the full resource sync.
-  check R258 "08-1 sizes the APISIX ingress controller memory: explicit limit >= 512Mi and request >= 256Mi, in the helm flags and the apisix chart values (D-ic-mem)" \
+  check R258 "08-1 and GitOps chart size the APISIX ingress controller memory: explicit limit >= 512Mi and request >= 256Mi, in the helm flags and the apisix chart values (D-ic-mem, #424)" \
     python3 -c 'import re,sys
 t=open("scripts/cluster/08-1-networking.sh").read()
+g=open("gitops/charts/narwhal-apps/templates/apisix.yaml").read()
 def mi(v): return int(v[:-2])*(1024 if v.endswith("Gi") else 1)
 f=[re.search(r"resources\.limits\.memory=(\d+(?:Mi|Gi))",t),re.search(r"resources\.requests\.memory=(\d+(?:Mi|Gi))",t)]
 v=re.search(r"ingressController:.*?limits:\s*cpu: \S+\s*memory: (\d+(?:Mi|Gi))",t,re.S)
-sys.exit(0 if all(f) and v and mi(f[0].group(1))>=512 and mi(f[1].group(1))>=256 and mi(v.group(1))>=512 else 1)'
+gr=re.search(r"ingressController:.*?requests:\s*cpu:\s*\S+\s*memory: (\d+(?:Mi|Gi))",g,re.S)
+gl=re.search(r"ingressController:.*?limits:\s*cpu:\s*\S+\s*memory: (\d+(?:Mi|Gi))",g,re.S)
+sys.exit(0 if all(f) and v and gr and gl and mi(f[0].group(1))>=512 and mi(f[1].group(1))>=256 and mi(v.group(1))>=512 and mi(gr.group(1))>=256 and mi(gl.group(1))>=512 else 1)'
 
   # 2026-10-16: up.sh printed "Phase 2 complete" right after 14-gitops-bootstrap.sh failed because
   # phase2_complete() only looked for namespaces. 06-phase2-start.sh now writes a success marker.
@@ -3217,6 +3236,17 @@ PYEOF'
       grep -Fq "sudo bash scripts/cluster/nfs-root-squash-align.sh --apply" "$r" &&
       grep -Fq "Supported alternative where apt is unreachable" "$r" &&
       ! grep -Eq "^[[:space:]]*scripts/cluster/nfs-root-squash-align.sh" "$r"'
+  check R273 "evidence chain enforces intent/result records, checkpoint tail-truncation detection, key separation and spend-once (2026-10-17)" \
+    python3 scripts/test/lib/check-evidence-chain.py
+  # 2026-10-19 (#395): OpenSSF Scorecard Dangerous-Workflow flags an actions/checkout whose ref
+  # comes from workflow_run. portal-release.yml fetches the tag with git, proves it, then adds a worktree.
+  check R276 "portal-release.yml has no actions/checkout with a workflow_run ref and proves the tag before git worktree add (#395, 2026-10-19)" \
+    python3 scripts/test/lib/check-portal-release-no-run-ref.py
+  check R278 "verify-backup.sh names every Velero resource with .velero.io and every CNPG one with .postgresql.cnpg.io: bare schedule/backup/restore/scheduledbackup resolve to chaos-mesh.org / postgresql.cnpg.io on a live cluster and made the schedule check FAIL (2026-10-19; strict matcher with self-test)" \
+    bash scripts/test/lib/check-verify-backup-qualified.sh
+  # 2026-10-20 (#431): the OpenBao data volume is excluded from Velero (R277), so a raft snapshot job stages the backup instead.
+  check R279 "OpenBao raft snapshot backup: policy is read on sys/storage/raft/snapshot only, no root token/unseal key/skip-verify/tls.key, CronJob daily and before Velero daily-openbao with Forbid/deadline/non-root/seccomp/resources, openssl cms ciphertext only (.snap.cms; plaintext in a memory emptyDir, never the PVC; fail-closed recipient-certificate validation incl. PRIVATE KEY refusal, expiry, RSA>=3072; digest-pinned airgap image; keygen helper never ships the private key), temp-file + atomic rename + last-success marker + bounded retention, 0644/0755 so root_squashed Velero can read, holder pod mounts the PVC and it is not in the exclude list; 64 mutations each rejected, 10 of them by executing the script (rejection, pruning, atomicity, plaintext cleanup, fingerprint pin, OAEP round-trip) (D-auth, D-cms, D-plaintext, D-fpr, D-oaep, D-image, D-holder, D-perms, #431)" \
+    python3 scripts/test/lib/check-openbao-snapshot-backup.py --mutation-verify
 }
 
 #=========================================

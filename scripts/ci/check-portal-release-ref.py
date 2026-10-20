@@ -15,8 +15,9 @@ and passed. A release must be provable from the run's own facts, not from a name
 
 Exit 0 = allowed, 1 = refused (reason on stderr), 2 = usage error.
 --repo PATH (default `.`) is the repository whose tags are consulted. portal-release.yml runs this
-script from a checkout of the DEFAULT BRANCH (`trusted/`) and points --repo at the tagged checkout,
-so a tagged commit cannot ship a validator that always passes (PR #347 follow-up, D-TRUST).
+script from the DEFAULT BRANCH checkout and, since D9 (#395), fetches the tag into that same
+workspace (--repo .) BEFORE the tagged tree is materialized, so a tagged commit cannot ship a
+validator that always passes (PR #347 follow-up, D-TRUST).
 """
 
 from __future__ import annotations

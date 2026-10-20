@@ -61,6 +61,12 @@
 
 부분 볼륨 실패에서는 성공한 일부 PVC를 먼저 writable 서비스로 내지 않는다. 가능한 경우 복원본을 격리해 재시도하고, 불가능하면 영향 workload 전체를 `INCOMPLETE`로 유지한다. 원본과 복구본을 동시에 writable로 두는 절차는 이 정책에서 허용하지 않는다.
 
+### Velero 진단 메시지 (#422, #431)
+
+- `No present log retrieved ... cannot get resource "pods/log"`: velero-server가 PodVolumeBackup 실패 원인을 `storage` 네임스페이스의 node-agent 호스팅 파드 로그에서 읽지 못할 때 남는다. `gitops/resources/velero-server-rbac.yaml`의 `Role/velero-pod-logs`(+ RoleBinding)가 `storage` 한 네임스페이스에서 `pods/log`의 `get`만 `velero-server`에 부여한다(PR #434). 적용 후에도 이 메시지가 남으면 해당 Role/RoleBinding의 sync 상태를 먼저 확인한다. 이 grant는 읽기 전용 진단용이며 백업 대상·쓰기 권한을 넓히지 않는다.
+- `Server rejected event`: velero-server는 `events` `create`/`patch`를 받지 못한다. 의도적으로 부여하지 않았으며(쓰기 verb 확대 회피) 잃는 것은 Event 기록뿐이다. 백업 결과는 Backup/PodVolumeBackup 상태로 판단한다.
+- Kyverno `require-labels/check-for-labels`(Audit): node-agent ConfigMap `velero-node-agent-config`의 `podLabels`가 data mover/호스팅 파드에 `app.kubernetes.io/name=velero-data-mover`를 붙인다(Velero 1.18). 저장소 유지보수 Job(`*-kopia-maintain-job-*`)은 1.18에서 라벨을 지정할 수 없어 Audit 이벤트가 남을 수 있다.
+
 ## 5. RPO/RTO 산정 및 오프라인 증거
 
 - **RPO 실측:** 장애 기준 시각에서 복구본에 검증된 최신 데이터 시각을 뺀 값. Velero는 마지막 `Completed` 백업 시각을 하한 정보로 기록하되 실제 데이터 손실량을 대체하지 않는다. CNPG는 복구 완료 후 DB가 가진 검증 가능한 트랜잭션 시각/업무 기준점을 기록한다.

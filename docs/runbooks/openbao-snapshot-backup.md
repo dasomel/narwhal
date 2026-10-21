@@ -131,12 +131,16 @@ kubectl -n storage delete job openbao-snapshot-manual-1
 다음 `daily-openbao` 실행(05:00 UTC) 이후 확인한다. fs-backup은 실행 중인 파드의 볼륨만 읽으므로, 확인 대상은 CronJob이 아니라 **holder 파드의 PodVolumeBackup**이다(lessons-log 2026-10-20).
 
 ```bash
-kubectl -n storage get backups.velero.io | grep daily-openbao
-kubectl -n storage get podvolumebackups.velero.io \
-  -o custom-columns=NAME:.metadata.name,POD:.spec.pod.name,VOLUME:.spec.volume,PHASE:.status.phase | grep -E 'openbao|NAME'
+# 가장 최근 daily-openbao Backup 이름 (생성 시각 순 정렬의 마지막)
+LATEST=$(kubectl -n storage get backups.velero.io --sort-by=.metadata.creationTimestamp -o name | grep 'daily-openbao' | tail -1 | cut -d/ -f2)
+echo "${LATEST}"
+kubectl -n storage get backups.velero.io "${LATEST}" -o jsonpath='{.status.phase}{"\n"}'
+# 그 Backup에 속한 PodVolumeBackup만 (과거 실행분 제외)
+kubectl -n storage get podvolumebackups.velero.io -l "velero.io/backup-name=${LATEST}" \
+  -o custom-columns=NAME:.metadata.name,POD:.spec.pod.name,VOLUME:.spec.volume,PHASE:.status.phase
 ```
 
-기대: `POD`가 `openbao-snapshot-holder-...`, `VOLUME`이 `snapshots`, `PHASE`가 `Completed`인 행이 있고, 가장 최근 `daily-openbao-*` Backup이 `Completed`이다. **없어야 할 것:** Job 파드의 `work` 볼륨(평문)이나 OpenBao `data` 볼륨의 PodVolumeBackup. (필드 경로는 Velero CRD 기준이며 이 저장소에서 라이브로 확인되지 않았다.) 이상이면 정책 문서 4절의 Velero 진단 메시지(#422, #431)를 함께 본다.
+기대: 최신 Backup의 `PHASE`가 `Completed`이고, 위 PodVolumeBackup 목록에 `POD`가 `openbao-snapshot-holder-...`, `VOLUME`이 `snapshots`, `PHASE`가 `Completed`인 행이 **있어야 한다**. 이런 행이 최신 Backup이 아닌 과거 Backup에만 있으면 성공이 아니다. **없어야 할 것:** Job 파드의 `work` 볼륨(평문)이나 OpenBao `data` 볼륨의 PodVolumeBackup. (`velero.io/backup-name` 라벨과 `spec.pod`/`spec.volume`/`status.phase` 필드는 Velero CRD 기준이며 이 저장소에서 라이브로 확인되지 않았다. 정렬로 고른 "최신"이 05:00 UTC 실행인지는 Backup 이름의 타임스탬프로 눈으로 확인한다.) 이상이면 정책 문서 4절의 Velero 진단 메시지(#422, #431)를 함께 본다.
 
 ## 4. 정기 점검
 
@@ -166,8 +170,8 @@ kubectl -n storage get backups.velero.io | grep daily-openbao
 1. 새 키 생성 [변경: ConfigMap]: `scripts/ops/openbao-backup-keygen.sh <새 개인키 경로>`. 3.2와 같은 보관 규칙(오프라인 두 곳)을 새 키에도 적용한다. 새 지문을 기록한다.
 2. 지문 갱신 [변경: Git]: `RECIPIENT_FPR`을 새 지문으로 바꾸는 PR을 리뷰·병합하고 `push-to-gitea.sh`로 `resources/openbao-backup.yaml`을 배포한다.
 3. **공백 구간 주의:** 키젠이 ConfigMap을 즉시 교체하므로, 새 지문이 배포되기 전에 Job이 돌면 `does not match RECIPIENT_FPR`로 실패한다(fail closed, 그날 스냅샷 없음). 반대로 지문을 먼저 배포해도 같은 이유로 실패한다. 둘 사이의 간격을 04:30 UTC 실행과 겹치지 않게 짧게 잡고, 직후 3.5의 수동 Job으로 확인한다.
-4. **이전 개인키는 지우지 않는다.** 교체 이전에 만들어진 `.snap.cms`는 이전 인증서로 암호화되어 있다. 보관본은 최신 7개이므로 교체 후 성공 실행이 7번 쌓이면 PVC에서는 모두 새 키 것이 된다. 단 Velero 백업(`daily-openbao`)에는 더 오래된 PVC 사본이 있을 수 있어, 이전 키의 폐기 시점은 Velero 백업 보존 기간 이후로 잡아야 한다. 그 보존 기간은 이 문서의 근거 파일에서 확인하지 않았다. **폐기 시점의 확정은 not designed/verified**이다.
-5. 교체 후 확인: 3.5의 수동 Job 결과, 이어서 새 개인키로 한 파일을 6절 3단계 방식으로 복호화해 보는 것은 좋은 검증이지만, 복호화 검증 자체가 이 변경에서 라이브로 실행된 적이 없다(8절).
+4. **이전 개인키는 지우지 않는다.** 교체 이전에 만들어진 `.snap.cms`는 이전 인증서로 암호화되어 있다. PVC는 성공한 최신 7개만 유지하므로(`KEEP=7`) 교체 후 성공 실행이 7번 쌓여야 PVC의 파일이 모두 새 키 것이 된다(실패한 날은 쌓이지 않는다). 단 Velero 백업(`daily-openbao`)에는 더 오래된 PVC 사본이 있을 수 있어, 이전 키의 폐기 시점은 Velero 백업 보존 기간 이후로 잡아야 한다. 그 보존 기간은 이 문서의 근거 파일에서 확인하지 않았다. **폐기 시점의 확정은 not designed/verified**이다.
+5. 교체 후 확인: 3.5의 수동 Job 결과, 이어서 새 개인키로 한 파일을 정책 문서 8절 "수동 복구 절차" 3단계 방식으로 복호화해 보는 것이 좋은 검증이지만, 복호화 검증 자체가 이 변경에서 라이브로 실행된 적이 없다(8절).
 
 개인키 유출이 의심될 때의 절차(이미 만들어진 스냅샷의 재암호화 등)는 설계에 없다. **not designed.**
 
@@ -187,29 +191,43 @@ kubectl -n storage get backups.velero.io | grep daily-openbao
 
 ## 7. 문제 해결
 
-모든 메시지는 `gitops/resources/openbao-backup.yaml`의 `fail()`(또는 WARNING)이 내는 문자열이다. 로그는 `kubectl -n storage logs job/<이름> -c encrypt`(`snapshot` 단계 문제는 `-c snapshot`). 실패한 Job은 `kubectl -n storage get jobs`에 남는다.
+"출처" 열: **코드** = `gitops/resources/openbao-backup.yaml`의 `fail()`/WARNING이 내는 문자열, **K8s 상태** = 쿠버네티스가 보여 주는 상태나 이벤트(저장소가 정한 문자열이 아님), **추정** = 코드가 직접 만들지 않는 오류라 원인을 추정한 것(라이브 확인 필요). 로그는 `kubectl -n storage logs job/<이름> -c encrypt`(`snapshot` 단계는 `-c snapshot`). 실패한 Job은 `kubectl -n storage get jobs`에 남는다.
 
-| 증상 / 메시지 | 원인 | 조치 |
-|---|---|---|
-| Job 파드가 시작되지 않고(`ContainerCreating`, 이벤트에 `openbao-backup-recipient` 마운트 오류) 600초 후 Job 실패 | ConfigMap `storage/openbao-backup-recipient`가 없다(볼륨 `optional: false`, fail closed) | 3.2 키젠을 실행한다. 이미 키가 있다면 새 키를 만들지 말고 인증서 파일로 ConfigMap을 다시 만든다. |
-| `recipient.pem missing or empty (run scripts/ops/openbao-backup-keygen.sh)` | ConfigMap은 있으나 `recipient.pem` 키가 비었거나 없다 | 3.2 키젠으로 다시 적용한다. |
-| `recipient.pem contains a private key` | ConfigMap에 개인키가 들어갔다 (키젠은 이를 직접 거부함: `BUG: certificate file contains a private key; not applying`) | **개인키가 클러스터에 노출된 것이다.** 해당 키를 폐기하고 5절로 새 키를 만든다. 노출 기간의 스냅샷은 보호되지 않은 것으로 본다. |
-| `recipient.pem must hold exactly one PEM block`, `recipient.pem is not a certificate`, `recipient.pem is malformed` | 인증서가 아니거나 PEM 블록이 둘 이상이거나 형식 오류 | 인증서 파일 자체를 확인(`openssl x509 -in <파일> -noout`)하고 3.2로 다시 적용한다. |
-| `recipient certificate is expired or expires within 24h` | 인증서 만료 또는 24시간 이내 만료 | 5절로 새 키를 만들고 지문을 갱신한다. 그 동안 스냅샷은 만들어지지 않는다. |
-| `recipient key must be RSA` | RSA가 아닌 키의 인증서 | 키젠 스크립트(RSA-4096)로 만든 인증서를 쓴다. |
-| `recipient RSA key must be >= 3072 bits (got N)` | RSA 3072비트 미만 | 키젠 스크립트로 새로 만든다. |
-| `recipient certificate fingerprint <A> does not match RECIPIENT_FPR` | ConfigMap의 인증서가 고정된 지문과 다르다: 누군가 ConfigMap을 바꿨거나(침해 가능성), 키 교체 중 Git 반영이 어긋남 | 먼저 변경이 의도된 것인지 확인한다. 의도된 교체라면 `RECIPIENT_FPR`을 Git으로 갱신(5절). 의도하지 않았다면 보안 사고로 보고, ConfigMap을 원래 인증서로 되돌리기 전에 접근 기록을 확인한다. |
-| `WARNING: RECIPIENT_FPR is empty; the recipient certificate (fingerprint ...) is not pinned` | 실패가 아님. 고정이 꺼져 있다 | 출력된 지문이 3.2의 것과 같은지 확인하고 3.3으로 고정한다. |
-| `openssl not found in image`, `openssl has no cms support` | 암호화 컨테이너 이미지가 다른 것으로 바뀌었다(기대: 다이제스트 핀된 `docker.io/valkey/valkey:8-alpine`) | 이미지 참조를 원래 핀으로 되돌린다. 이미지 변경은 에어갭 목록과 R279를 함께 확인한다. |
-| `no snapshot in the work volume` / `snapshot is empty` (`snapshot` 단계) | 스냅샷 저장 단계가 산출물을 남기지 않았다 | `-c snapshot` 로그를 본다(아래 로그인 항목). |
-| `-c snapshot` 로그에 `bao`의 로그인 오류(예: 권한 거부, 롤 없음, audience 불일치)가 보임 (메시지는 bao CLI가 내며 저장소가 정한 문자열이 아니다) | 13-2의 `openbao-backup` 정책/롤이 없거나(3.1 건너뜀), 롤의 audience·SA·네임스페이스가 Job과 다르다(projected 토큰 audience는 `vault`, 롤은 `OPENBAO_K8S_AUTH_AUDIENCE`) | 13-2 로그에서 `... 설정 및 검증 완료`를 확인하고 필요하면 3.1을 다시 실행한다. audience를 바꿨다면 Job의 `audience: vault`와 일치시킨다(R279가 검사). |
-| `-c snapshot`에서 TLS 오류 | `openbao-tls` Secret의 `ca.crt`가 없거나 서버 인증서가 CA와 맞지 않음 | `kubectl -n storage get secret openbao-tls`에서 `ca.crt` 키를 확인한다. (원인은 이 변경이 만들지 않는 영역이라 라이브 확인이 필요하다.) |
-| 파드 상태 `OOMKilled` | 메모리 한도 초과: initContainer 512Mi(`work` tmpfs 최대 256Mi 포함), 암호화 컨테이너 128Mi | 128Mi는 `-stream` 덕분에 스냅샷 크기와 무관하게 설계되었다. initContainer가 죽으면 스냅샷이 설계 상한(256Mi)을 넘은 것이다. 한도 변경은 설계 변경이므로 정책 문서 8절을 먼저 갱신한다. |
-| 스냅샷 저장 중 쓰기 실패(`No space left on device` 류) | 스냅샷이 `work` 메모리 볼륨 256Mi를 초과 (ENOSPC로 Job이 실패하는 것이 설계 동작) | 위와 같이 설계 상한 문제. 임의로 키우지 않는다. |
-| `/snapshots/raft is not writable by uid <uid>; recreate the directory` (Job은 uid 100으로 실행됨), 로그의 `WARNING: cannot chmod ...` | Velero 복원 후 `raft/` 디렉터리가 다른 uid 소유가 되었다(D-perms). chmod는 경고만 하고, 쓰기 불가이면 실패한다 | PVC에서 `raft/` 디렉터리를 다시 만든다. 지우기 전에 안의 `.snap.cms`가 필요한지 확인하고 다른 곳에 복사해 둔다. 복구 후 첫 Job으로 확인한다. (uid 100의 NFS 쓰기는 라이브 미검증, 8절.) |
-| `ciphertext is empty`, `ciphertext is not CMS EnvelopedData`, `ciphertext is truncated` | 암호화가 중간에 실패했거나 출력이 비정상. 최종 이름의 파일은 만들어지지 않는다 | `encrypt` 로그의 앞선 openssl 오류를 확인한다. PVC 용량(5Gi)과 메모리 한도도 본다. 이 검사는 복호화 가능성을 증명하지 않는다. |
-| `daily-openbao`의 PodVolumeBackup에 `openbao-snapshot-holder`/`snapshots`가 없음 | holder 파드가 실행 중이 아니거나(`openbao-snapshot-holder` Deployment 확인), Velero 쪽 문제 | `kubectl -n storage get deploy,pod -l app.kubernetes.io/name=openbao-snapshot-holder`. holder가 Running인데도 없으면 원인을 이 저장소만으로 단정할 수 없다. 정책 문서 4절의 Velero 진단 메시지와 Velero 로그를 본다. |
-| 같은 날 Job이 실행되지 않음 | CronJob이 20분(`startingDeadlineSeconds: 1200`) 안에 시작하지 못함, 또는 `SUSPEND`, 또는 앞선 실행이 아직 도는 중(`Forbid`) | `kubectl -n storage describe cronjob openbao-snapshot`. 필요하면 3.5처럼 수동 Job을 만든다. |
+| 출처 | 증상 / 메시지 | 원인 | 조치 |
+|---|---|---|---|
+| K8s 상태 | Job 파드가 `ContainerCreating`에 머물고 이벤트에 `FailedMount`(`openbao-backup-recipient` 또는 `openbao-tls`), 600초(`activeDeadlineSeconds`) 후 Job 실패 | 필수 볼륨을 마운트하지 못한다: ConfigMap `storage/openbao-backup-recipient`가 없거나, 그 안에 키 `recipient.pem`이 없거나, Secret `openbao-tls`에 키 `ca.crt`가 없다(둘 다 `items`로 키를 지정하고 `optional: false`라 키가 없어도 마운트가 실패한다. fail closed) | `kubectl -n storage describe pod -l app.kubernetes.io/name=openbao-snapshot`의 Events를 읽는다. 키 **이름만** 확인(값은 출력하지 않음): `kubectl -n storage get configmap openbao-backup-recipient -o go-template='{{range $k, $v := .data}}{{$k}}{{"\n"}}{{end}}'` 와 `kubectl -n storage get secret openbao-tls -o go-template='{{range $k, $v := .data}}{{$k}}{{"\n"}}{{end}}'`. ConfigMap 문제는 표 아래 "인증서 복구"를 따른다. `ca.crt` 문제는 이 변경이 만드는 영역이 아니므로 OpenBao TLS 발급 경로를 확인한다(추정). |
+| 코드 | `recipient.pem missing or empty (run scripts/ops/openbao-backup-keygen.sh)` | 마운트는 되었으나 `recipient.pem` 파일이 비어 있다(키가 아예 없으면 위 FailedMount 행) | 표 아래 "인증서 복구". |
+| 코드 | `recipient.pem contains a private key` | ConfigMap에 개인키가 들어갔다(키젠은 이를 직접 거부함: `BUG: certificate file contains a private key; not applying`) | **(a) 사용 중지:** 이 키 쌍으로 새 스냅샷을 더 암호화하지 않는다. 5절로 새 키 쌍·새 인증서를 만들고 `RECIPIENT_FPR`을 Git으로 갱신하며, 노출된 PEM을 ConfigMap에서 제거한다. **(b) 이전 개인키는 지우지 않는다:** 이미 이 키로 암호화된 스냅샷을 복호화할 유일한 수단이다. 그 키로 암호화된 스냅샷이 모두 보관 기간에서 사라지거나 다른 키로 재암호화되기 전에는 폐기하지 않는다. **재암호화·폐기 절차는 not designed/verified**이다. 노출 기간의 스냅샷은 보호되지 않은 것으로 본다. |
+| 코드 | `recipient.pem must hold exactly one PEM block`, `recipient.pem is not a certificate`, `recipient.pem is malformed` | 인증서가 아니거나 PEM 블록이 둘 이상이거나 형식 오류 | 원본 인증서 파일을 `openssl x509 -in <파일> -noout`로 확인하고 "인증서 복구"를 따른다. |
+| 코드 | `recipient certificate is expired or expires within 24h` | 인증서 만료 또는 24시간 이내 만료 | 5절로 새 키를 만들고 지문을 갱신한다. 그 동안 스냅샷은 만들어지지 않는다. |
+| 코드 | `recipient key must be RSA` | RSA가 아닌 키의 인증서 | 키젠 스크립트(RSA-4096)로 새 키 쌍을 만든다("인증서 복구" (ii)와 같이 `RECIPIENT_FPR` 갱신 필요). |
+| 코드 | `recipient RSA key must be >= 3072 bits (got N)` | RSA 3072비트 미만 | 위와 같다. |
+| 코드 | `recipient certificate fingerprint <A> does not match RECIPIENT_FPR` | ConfigMap의 인증서가 고정된 지문과 다르다: 누군가 ConfigMap을 바꿨거나(침해 가능성), 키 교체 중 Git 반영이 어긋남 | 먼저 변경이 의도된 것인지 확인한다. 의도된 교체라면 `RECIPIENT_FPR`을 Git으로 갱신(5절). 의도하지 않았다면 보안 사고로 보고, ConfigMap을 원래 인증서로 되돌리기 전에 접근 기록을 확인한다. |
+| 코드 | `WARNING: RECIPIENT_FPR is empty; the recipient certificate (fingerprint ...) is not pinned` | 실패가 아님. 고정이 꺼져 있다 | 출력된 지문이 3.2의 것과 같은지 확인하고 3.3으로 고정한다. |
+| 코드 | `openssl not found in image`, `openssl has no cms support` | 암호화 컨테이너 이미지가 다른 것으로 바뀌었다(기대: 다이제스트 핀된 `docker.io/valkey/valkey:8-alpine`) | 이미지 참조를 원래 핀으로 되돌린다. 이미지 변경은 에어갭 목록과 R279를 함께 확인한다. |
+| 코드 | `no snapshot in the work volume` (**`encrypt` 컨테이너**가 냄) | `work` 볼륨에 스냅샷이 없다. initContainer `snapshot`이 성공해야 `encrypt`가 시작되므로 보통은 일어나지 않는다 | `-c snapshot` 로그와 `kubectl describe pod`로 initContainer 종료 상태를 함께 확인한다. |
+| 코드 | `snapshot is empty` (**`snapshot` initContainer**가 냄) | `bao operator raft snapshot save` 뒤 파일 크기가 0 | `-c snapshot` 로그를 본다. |
+| 추정 | `-c snapshot` 로그에 `bao`의 로그인 오류(권한 거부, 롤 없음, audience 불일치 등; bao CLI가 내며 저장소가 정한 문자열이 아님) | 13-2의 `openbao-backup` 정책/롤이 없거나(3.1 건너뜀), 롤의 audience·SA·네임스페이스가 Job과 다르다(projected 토큰 audience는 `vault`, 롤은 `OPENBAO_K8S_AUTH_AUDIENCE`) | 13-2 로그에서 `... 설정 및 검증 완료`를 확인하고 필요하면 3.1을 다시 실행한다. audience를 바꿨다면 Job의 `audience: vault`와 일치시킨다(R279가 검사). |
+| 추정 | `-c snapshot` 로그에 TLS 검증 오류 | 서버 인증서가 `openbao-tls`의 `ca.crt`와 맞지 않는 등. (`ca.crt` 키가 없으면 TLS 오류가 아니라 위 FailedMount이다.) | 라이브 확인이 필요하다. |
+| K8s 상태 | 컨테이너 종료 사유 `OOMKilled`(exit 137) | **컨테이너 메모리 한도 초과.** 한도는 initContainer `snapshot` 512Mi, `encrypt` 128Mi이다. 메모리 emptyDir `work`(sizeLimit 256Mi)의 사용량은 `snapshot` 컨테이너에 청구된다(매니페스트 주석: 512Mi = 256Mi + bao). OOM은 "스냅샷이 256Mi를 넘었다"와 같은 말이 아니다: 코드는 스냅샷 크기, bao CLI 메모리, 그 밖의 원인을 구분하지 않는다 | `kubectl describe pod`에서 어느 컨테이너가 `OOMKilled`인지 확인하고 아래 ENOSPC 행과 구분한다. 한도 변경은 설계 변경이므로 정책 문서 8절을 먼저 갱신한다. |
+| 추정 | `-c snapshot` 로그에 `No space left on device` 류 쓰기 오류, 종료 사유는 `OOMKilled`가 아닌 일반 오류 | `work` emptyDir(Memory)의 `sizeLimit` 256Mi 초과로 쓰기가 ENOSPC로 실패한다(정책 문서가 말하는 설계 동작: Job이 실패한다). 정확한 메시지 문구는 bao/OS가 정하며 라이브 미확인 | OOM과의 구분: OOM은 종료 사유가 `OOMKilled`, ENOSPC는 일반 오류 종료와 로그 메시지. 한도를 임의로 키우지 않는다. |
+| 코드 | `/snapshots/raft is not writable by uid <uid>; recreate the directory` (Job은 uid 100으로 실행), 로그의 `WARNING: cannot chmod ...` | Velero 복원 후 `raft/` 디렉터리가 다른 uid 소유가 되었다(D-perms). chmod는 경고만 하고, 쓰기 불가이면 실패한다 | PVC에서 `raft/` 디렉터리를 다시 만든다. 지우기 전에 안의 `.snap.cms`가 필요한지 확인하고 다른 곳에 복사해 둔다. 복구 후 첫 Job으로 확인한다. (uid 100의 NFS 쓰기는 라이브 미검증, 8절.) |
+| 코드 | `ciphertext is empty`, `ciphertext is not CMS EnvelopedData`, `ciphertext is truncated` | 암호화가 중간에 실패했거나 출력이 비정상. 최종 이름의 파일은 만들어지지 않는다 | `encrypt` 로그의 앞선 openssl 오류를 확인한다. PVC 용량(5Gi)과 메모리 한도도 본다. 이 검사는 복호화 가능성을 증명하지 않는다. |
+| 추정 | 최신 `daily-openbao` Backup에 `openbao-snapshot-holder`/`snapshots` PodVolumeBackup이 없음 | holder 파드가 실행 중이 아니거나(`openbao-snapshot-holder` Deployment 확인), Velero 쪽 문제 | `kubectl -n storage get deploy,pod -l app.kubernetes.io/name=openbao-snapshot-holder`. holder가 Running인데도 없으면 원인을 이 저장소만으로 단정할 수 없다. 정책 문서 4절의 Velero 진단 메시지와 Velero 로그를 본다. |
+| K8s 상태 | 같은 날 Job이 실행되지 않음 | CronJob이 20분(`startingDeadlineSeconds: 1200`) 안에 시작하지 못함, 또는 `SUSPEND`, 또는 앞선 실행이 아직 도는 중(`Forbid`) | `kubectl -n storage describe cronjob openbao-snapshot`. 필요하면 3.5처럼 수동 Job을 만든다. |
+
+### 인증서 복구 (ConfigMap의 인증서가 없거나 깨졌을 때)
+
+`openbao-backup-keygen.sh`는 기존 파일을 덮어쓰지 않고, 새 경로를 주면 **새 키 쌍**을 만든다. 따라서 다시 실행하는 것은 복구가 아니다. 두 경우를 구분한다.
+
+- **(i) 원래 인증서(또는 키 쌍)를 아직 가지고 있다.** 같은 인증서를 ConfigMap에 다시 적용한다. 키젠 스크립트가 쓰는 것과 같은 명령이다(인증서만 적용, 개인키는 클러스터에 가지 않는다):
+
+  ```bash
+  kubectl create configmap openbao-backup-recipient -n storage --from-file=recipient.pem=<원래 인증서 경로> --dry-run=client -o yaml | kubectl apply -f -
+  ```
+
+  지문이 같으므로 `RECIPIENT_FPR`은 바꾸지 않는다. 이후 3.5의 수동 Job으로 확인한다.
+- **(ii) 키 쌍을 잃었다.** 새 키 쌍은 새 지문이므로 `RECIPIENT_FPR`을 Git으로 갱신해야 한다(5절 흐름; 갱신하지 않으면 Job은 지문 불일치로 계속 실패한다). **이전 키로 암호화된 기존 스냅샷은 복구할 수 없다.**
 
 ## 8. 미검증 목록
 

@@ -188,13 +188,20 @@ ArgoCD, Gitea, RBAC, OpenBao, Keycloak, APISIX, NFS, `database` 신뢰 경계가
     `kubectl patch scheduledbackup -n database narwhal-db-backup --type=merge -p '{"spec":{"schedule":"0 0 2 * * *"}}'`를
     실행할 것. 기존 5필드 스케줄은 매시간 실행되어 `Backup` 객체가 누적되었음. 일괄 삭제하지 말고 먼저 클러스터의
     `retentionPolicy`를 확인한 뒤 정리를 맡길 것.
-  - *OpenBao 스냅샷 백업 (#443).* `scripts/cluster/13-2-narwhal-portal-bindings.sh`를 다시 실행하고(`openbao-backup`
-    정책과 Kubernetes-auth 역할을 만듦), `scripts/ops/openbao-backup-keygen.sh`로 수신자 키 쌍을 오프라인에서
-    생성하고, `scripts/gitops/push-to-gitea.sh`로 `openbao-backup` GitOps 리소스를 push할 것. **개인 키는
-    오프라인으로 보관할 것. 분실하면 스냅샷을 복호화할 수 없음.** ConfigMap `openbao-backup-recipient`(수신자 인증서)가
-    생기기 전까지 CronJob은 fail closed로 동작하며 스냅샷을 쓰지 않음.
+  - *OpenBao 스냅샷 백업 (#443). 아직 어느 클러스터에도 활성화되지 않음.* 각 단계가 공유 클러스터를 변경하며
+    순서는 다음과 같음(`docs/common/storage-protection-policy.md` 8절). (1) `scripts/cluster/13-2-narwhal-portal-bindings.sh`를
+    다시 실행해 정책과 Kubernetes-auth 역할 `openbao-backup`을 만듦. (2) 운영자 워크스테이션에서
+    `scripts/ops/openbao-backup-keygen.sh <개인키 경로>`를 실행함. RSA 키 쌍을 로컬에서 생성하고(개인 키는 기본적으로
+    패스프레이즈로 보호되며 해당 경로에만 기록됨) 인증서만 ConfigMap `storage/openbao-backup-recipient`로 클러스터에
+    적용함. **개인 키는 클러스터와 Git 밖에 보관할 것. 분실하면 모든 스냅샷을 복구할 수 없음.** (3) 스크립트가 출력한
+    SHA-256 지문을 배포 전에 검토된 Git 변경으로 `gitops/resources/openbao-backup.yaml`의 `RECIPIENT_FPR`에 고정할 것
+    (비어 있으면 job은 WARNING만 남김). (4) `scripts/gitops/push-to-gitea.sh`로 배포함. (5) 수동 Job
+    (`kubectl create job --from=cronjob/openbao-snapshot ...`)으로 첫 실행을 확인하고 다음 `daily-openbao`
+    `PodVolumeBackup`이 스냅샷 볼륨을 가져가는지 확인함. ConfigMap이 생기기 전까지 CronJob은 fail closed로 동작하며
+    스냅샷을 쓰지 않음.
   - *롤아웃.* Tempo 변경(#439)은 Tempo를 재시작하며 `persistence`가 꺼져 있어 아직 flush되지 않은 WAL을 잃음.
-    Velero `node-agent`의 `podLabels` 변경(#440)은 node-agent 파드를 재시작함.
+    Velero `node-agent` 변경(#440)은 `--node-agent-configmap` 인자를 추가하므로
+    node-agent DaemonSet이 재시작됨.
 
 ### 추가
 
@@ -202,8 +209,8 @@ ArgoCD, Gitea, RBAC, OpenBao, Keycloak, APISIX, NFS, `database` 신뢰 경계가
   제한된 Kubernetes-auth 역할로 인증하고, 운영자가 보관하는 수신자 인증서로 `openssl cms`(RSA-OAEP) 암호화하여 PVC에
   기록함(개인 키는 오프라인). 평문은 메모리 `emptyDir`에만 존재함. holder Deployment가 PVC를 읽기 전용으로 마운트해
   Velero fs-backup이 파일을 가져가며, job 파드 자체는 Velero에서 제외됨. 실패 시 fail closed로 동작하고
-  `RECIPIENT_FPR`로 인증서 지문을 고정할 수 있음. 키 쌍은 `scripts/ops/openbao-backup-keygen.sh`로 생성함.
-  정적 검사만 수행함. 검증하지 않은 항목은 알려진 이슈 참고.
+  `RECIPIENT_FPR`로 인증서 지문을 고정할 수 있음. 키 쌍은 `scripts/ops/openbao-backup-keygen.sh`로 운영자 워크스테이션에서 로컬 생성함.
+  정적 검사와 추출한 스크립트의 로컬 실행으로만 검증함. 알려진 이슈 참고.
 - **오프라인 업그레이드 번들 파이프라인 (7becc87, #300, #301).** JSON 스키마, 검증기, 승인이 포함된 승격
   게이트, dry-run diff, 내용 및 의존성 검증, 컴포넌트 업그레이드 웨이브 그래프의 정적 검사(#46). cert-manager가
   첫 오케스트레이션 파일럿임 (dd9ca0e).
@@ -274,14 +281,19 @@ ArgoCD, Gitea, RBAC, OpenBao, Keycloak, APISIX, NFS, `database` 신뢰 경계가
 
 - **S3 키를 담은 Secret을 서버 사이드 어플라이로 적용 (#415, #442).** 필드 매니저는 `narwhal-s3-identities`이고
   값은 base64 `data:`로 기록되므로 키가 `kubectl.kubernetes.io/last-applied-configuration` 어노테이션에 남지
-  않음. 기존 어노테이션은 제거되며, 이 정리나 인코딩이 실패하면 계속 진행하지 않고 중단함.
+  않음. 대상은 Secret 5개(클라이언트 Secret 4개와 `storage/seaweedfs-s3-config`, `scripts/common/lib.sh`의
+  `s3_apply_secret`)임. 기존 어노테이션은 제거되며, 이 정리나 인코딩이 실패하면 계속 진행하지 않고 중단함. **기존
+  클러스터는 `ensure_s3_identities`(`07-cnpg.sh` / `08-4-storage.sh`)를 다시 실행하기 전까지 평문 키가 든 옛
+  어노테이션을 그대로 가짐.** 가짜 `kubectl`로만 검증했으며, 실제 API 서버에서의 옛 client-side 소유자로부터의 소유권
+  이전과 키 회전은 검증하지 않았음.
 - **CNPG `ScheduledBackup`이 매시간 실행됨 (#431, #441).** 스케줄이 5필드 `0 2 * * *`였으나 CNPG는 초가 앞에 오는
   6필드를 쓰므로 매시간 2분에 실행되어 `Backup` 객체가 누적되었음. 이제 `0 0 2 * * *`(매일 02:00)임. 라이브
   객체는 업그레이드 참고 확인.
 - **Tempo 메모리 ballast 비활성화 및 `GOMEMLIMIT=1280MiB` 설정 (#420, #439).** OOMKilled에 대한 가설이며
   확인된 수정이 아님. 알려진 이슈 참고.
-- **Velero node-agent 파드에 `app.kubernetes.io/name=velero-data-mover` 라벨 부여 (#422, #440)**, `pods/log`와
-  이벤트 거부에 대한 문서 추가.
+- **Velero 데이터 이동 파드에 `app.kubernetes.io/name=velero-data-mover` 라벨 부여 (#422, #440).** 라벨은 node-agent
+  ConfigMap `velero-node-agent-config`의 `podLabels`에서 오며, node-agent DaemonSet 파드가 아니라 node-agent가 볼륨
+  백업을 위해 만드는 파드에 적용됨. `pods/log`와 이벤트 거부에 대한 문서를 추가함.
 
 - **Ambient 프로브와 HBONE.** GitOps NetworkPolicy가 이제 kubelet 프로브와 포트 15008을 허용함(#240, #241).
 - **네트워킹.** APISIX values 렌더링, Cilium 풀이 `POD_NETWORK_CIDR`을 따름, APISIX viewer 키가 비어 있으면
@@ -349,21 +361,24 @@ ArgoCD, Gitea, RBAC, OpenBao, Keycloak, APISIX, NFS, `database` 신뢰 경계가
   `data`, Harbor jobservice `job-logs`, SeaweedFS 마스터 `data-storage`)에 파드 어노테이션 `backup.velero.io/backup-volumes-excludes`를 부여함
   (OpenBao·Harbor·SeaweedFS(`master.podAnnotations`) 차트, CNPG `Cluster`의 `inheritedMetadata`, Gitea 차트로 설정). 스케줄 백업이 `InProgress`로
   멈춰 뒤 스케줄을 막는 대신 끝나도록 하기 위한 것임. 멈춤만 막을 뿐이며 **Velero는 여전히 이 볼륨들을 보호하지
-  않음.** OpenBao는 애플리케이션 수준 백업이 아직 없고, PostgreSQL은 CNPG barman에 의존하며, Gitea `data`,
+  않음.** OpenBao는 새 애플리케이션 수준 스냅샷(#443, 아래, 아직 어느 클러스터에도 활성화되지 않음)에 의존하고, PostgreSQL은 CNPG barman에 의존하며, Gitea `data`,
   Harbor `job-logs`, SeaweedFS 마스터 `data-storage`(raft 메타데이터)는 보호되지 않으며, 마스터의
   `seaweedfs-master-log-volume`은 계속 백업됨. 이 어노테이션을 적용하면 OpenBao, CNPG, Gitea, Harbor jobservice,
-  SeaweedFS 마스터 파드가 롤링됨. 라이브 클러스터에서 검증하지 않음. 근본 해결을 위해 #431은 계속 열려 있음. **OpenBao 2단계 (#443):** 이제
-  Velero fs-backup이 읽을 수 있는 PVC에 일일 암호화 raft 스냅샷이 저장됨(추가 항목 참고). 한계: **`root_squash`
+  SeaweedFS 마스터 파드가 롤링됨. 라이브 클러스터에서 검증하지 않음. 근본 해결을 위해 #431은 계속 열려 있음. **OpenBao 2단계 (#443):** Velero fs-backup이 읽을 수 있는 PVC에
+  일일 암호화 raft 스냅샷을 저장하는 코드가 추가됨(추가 항목 참고). **어느 클러스터에도 활성화되지 않았음.** 운영자 키,
+  `13-2` 재실행, 배포가 필요하며(업그레이드 참고) 정적 검사와 로컬 OpenSSL 실행만 수행했음. 한계: **`root_squash`
   환경에서 Gitea `data`, SeaweedFS 마스터 `data-storage`, Harbor jobservice `job-logs` 볼륨은 여전히 Velero
   fs-backup으로 보호되지 않음.** `openbao-init` Secret(Shamir 언실 키와 root 토큰)은 여전히 Velero 백업 안에
   있으므로 스냅샷은 오프라인 키로 보호되지만 클러스터의 언실 시크릿은 보호되지 않음. OpenBao 스냅샷 복원은 훈련으로
-  검증하지 않았고, 스냅샷 최신성 알림도 아직 없으며, job의 며칠에 걸친 실제 동작은 관찰되지 않았음(변경은
-  2026-10-20 한 클러스터에 적용됨).
+  검증하지 않았고, 스냅샷 최신성 알림도 아직 없음. 라이브 미검증: 실제 스냅샷 생성, Kubernetes-auth 로그인, 클러스터
+  안에서의 `openssl cms`, uid 100의 NFS 쓰기, job 파드에 대한 Velero 제외 라벨의 효과, holder `PodVolumeBackup`
+  완료, 복원 드릴.
 - **Velero 스케줄은 emptyDir도 백업하며 실패 원인을 진단하기 어려움 (#422).** 서버 계정에 `pods/log`와
   `events create`가 없어 임시 권한 없이는 데이터 이동 파드 로그를 읽을 수 없었음(#431은 이렇게 발견됨).
   이제 생성기가 만드는 `velero-pod-logs` Role로 `storage` 네임스페이스의 `pods/log` `get`을 부여함(라이브 클러스터에서
   검증하지 않음). `events create`는 쓰기 동사가 필요하고 거부된 네임스페이스가 확인되지 않아 여전히 없음.
-  node-agent 파드에는 이제 `app.kubernetes.io/name=velero-data-mover` 라벨이 붙지만(#440), Velero v1.18은
+  node-agent가 만드는 데이터 이동 파드에는 이제 `app.kubernetes.io/name=velero-data-mover` 라벨이 붙지만(#440,
+  2026-10-20 라이브 적용, 단 Kyverno 이벤트가 실제로 줄었는지는 아직 검증하지 않음), Velero v1.18은
   repository-maintenance Job에 라벨을 붙일 수 없어 해당 Kyverno audit 이벤트는 남음. `events create` 거부는 문서화만
   되었고 수정되지 않았음.
 - **`portal-release.yml`에 대한 Scorecard `Dangerous-Workflow` 지적 (#395).** 워크플로가

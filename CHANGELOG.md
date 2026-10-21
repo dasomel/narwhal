@@ -221,15 +221,24 @@ existing cluster or bundle; read **Upgrade notes** first.
     `kubectl patch scheduledbackup -n database narwhal-db-backup --type=merge -p '{"spec":{"schedule":"0 0 2 * * *"}}'`.
     The old 5-field schedule ran hourly, so `Backup` objects have accumulated. Do not bulk-delete
     them: check the cluster's `retentionPolicy` first and let it prune.
-  - *OpenBao snapshot backup (#443).* Re-run `scripts/cluster/13-2-narwhal-portal-bindings.sh`
-    (it creates the `openbao-backup` policy and Kubernetes-auth role), generate the recipient key
-    pair offline with `scripts/ops/openbao-backup-keygen.sh`, and push the `openbao-backup` GitOps
-    resources with `scripts/gitops/push-to-gitea.sh`. **Keep the private key offline; if it is
-    lost, the snapshots cannot be decrypted.** Until the ConfigMap `openbao-backup-recipient`
-    (the recipient certificate) exists, the CronJob fails closed and writes no snapshot.
+  - *OpenBao snapshot backup (#443); not enabled on any cluster yet.* Each step changes a shared
+    cluster, in this order (`docs/common/storage-protection-policy.md` section 8): (1) re-run
+    `scripts/cluster/13-2-narwhal-portal-bindings.sh`, which creates the policy and
+    Kubernetes-auth role `openbao-backup`; (2) on the operator workstation run
+    `scripts/ops/openbao-backup-keygen.sh <private-key-path>`, which generates the RSA key pair
+    locally (the private key is passphrase-protected by default and written only to that path)
+    and applies only the certificate to the cluster as ConfigMap
+    `storage/openbao-backup-recipient`; **keep the private key off the cluster and off Git: if it
+    is lost, every snapshot is unrecoverable**; (3) pin the SHA-256 fingerprint the script prints
+    by setting `RECIPIENT_FPR` in `gitops/resources/openbao-backup.yaml` through a reviewed Git
+    change before deploying (unset, the job only logs a WARNING); (4) deploy with
+    `scripts/gitops/push-to-gitea.sh`; (5) check the first run with a manual Job
+    (`kubectl create job --from=cronjob/openbao-snapshot ...`) and confirm that the next
+    `daily-openbao` `PodVolumeBackup` picks up the snapshot volume. Until the ConfigMap exists the
+    CronJob fails closed and writes no snapshot.
   - *Rollouts.* The Tempo change (#439) restarts Tempo and, because `persistence` is off, drops
-    its un-flushed WAL. The Velero `node-agent` `podLabels` change (#440) restarts the node-agent
-    pods.
+    its un-flushed WAL. The Velero `node-agent` change (#440) adds the `--node-agent-configmap`
+    argument, which restarts the node-agent DaemonSet.
 
 ### Added
 
@@ -239,8 +248,8 @@ existing cluster or bundle; read **Upgrade notes** first.
   (the private key stays offline), and writes it to a PVC. The plaintext exists only in a memory
   `emptyDir`. A holder Deployment mounts the PVC read-only so Velero fs-backup picks the file up;
   the job pod itself is excluded from Velero. The job fails closed, and `RECIPIENT_FPR` can pin
-  the certificate fingerprint. `scripts/ops/openbao-backup-keygen.sh` generates the key pair.
-  Static checks only; see Known issues for what is not verified.
+  the certificate fingerprint. `scripts/ops/openbao-backup-keygen.sh` generates the key pair locally on the operator workstation.
+  Verified by static checks and by running the extracted script locally only; see Known issues.
 - **Offline upgrade bundle pipeline (7becc87, #300, #301).** JSON schema, verifier, promotion
   gate with approval, dry-run diff, content and dependency verification, and a static check of
   the component upgrade-wave graph (#46); cert-manager is the first orchestration pilot
@@ -326,16 +335,23 @@ existing cluster or bundle; read **Upgrade notes** first.
 
 - **S3 key-bearing Secrets are applied with server-side apply (#415, #442).** The field manager is
   `narwhal-s3-identities` and the values are written as base64 `data:`, so the key no longer lands
-  in the `kubectl.kubernetes.io/last-applied-configuration` annotation. The old annotation is
-  removed, and a failure of that cleanup or of the encoding aborts instead of continuing.
+  in the `kubectl.kubernetes.io/last-applied-configuration` annotation. Five Secrets are covered
+  (the four client Secrets and `storage/seaweedfs-s3-config`, `s3_apply_secret` in
+  `scripts/common/lib.sh`). The old annotation is removed, and a failure of that cleanup or of the
+  encoding aborts instead of continuing. **An existing cluster keeps the old annotation, with the
+  plaintext keys, until `ensure_s3_identities` runs again (`07-cnpg.sh` / `08-4-storage.sh`).**
+  Only a fake `kubectl` has exercised this; ownership transfer from the old client-side owner and
+  key rotation on a real API server are unverified.
 - **The CNPG `ScheduledBackup` ran hourly (#431, #441).** The schedule was the 5-field
   `0 2 * * *`, but CNPG uses 6 fields with seconds first, so it fired every hour at minute 2 and
   accumulated `Backup` objects. It is now `0 0 2 * * *` (daily at 02:00). See Upgrade notes for the
   live object.
 - **Tempo memory ballast disabled and `GOMEMLIMIT=1280MiB` set (#420, #439).** This is a
   hypothesis for the OOMKills, not a confirmed fix; see Known issues.
-- **Velero node-agent pods are labelled `app.kubernetes.io/name=velero-data-mover` (#422, #440)**
-  and the `pods/log` and event rejection are documented.
+- **Velero data-movement pods are labelled `app.kubernetes.io/name=velero-data-mover` (#422, #440).**
+  The label comes from `podLabels` in the node-agent ConfigMap `velero-node-agent-config` and is
+  applied to the pods node-agent creates for volume backups, not to the node-agent DaemonSet pods.
+  The `pods/log` and event rejection are documented.
 
 - **Ambient probes and HBONE.** GitOps NetworkPolicies now allow kubelet probes and port 15008
   (#240, #241).
@@ -416,26 +432,30 @@ existing cluster or bundle; read **Upgrade notes** first.
   `job-logs`, SeaweedFS master `data-storage`) now carry the pod annotation `backup.velero.io/backup-volumes-excludes`, set through
   the OpenBao, Harbor and SeaweedFS (`master.podAnnotations`) charts, the CNPG `Cluster` `inheritedMetadata` and the Gitea chart, so a
   scheduled backup should finish instead of staying `InProgress` and queueing the later schedules.
-  This only stops the hang: **Velero still does not protect those volumes.** OpenBao has no
-  application-level backup yet, PostgreSQL relies on CNPG barman, and Gitea `data`, Harbor
+  This only stops the hang: **Velero still does not protect those volumes.** OpenBao relies on the
+  new application-level snapshot (#443, below; not enabled on any cluster yet), PostgreSQL relies on CNPG barman, and Gitea `data`, Harbor
   `job-logs` and the SeaweedFS master `data-storage` (raft metadata) are unprotected; the master's
   `seaweedfs-master-log-volume` stays backed up. The annotation change rolls the OpenBao, CNPG, Gitea,
   Harbor jobservice and SeaweedFS master pods when it is applied. Not verified on a live cluster. #431 stays open for the
-  durable fix. **Stage 2 for OpenBao (#443):** a daily encrypted raft snapshot now lands on a PVC that
-  Velero fs-backup can read (see Added). Limits: **Gitea `data`, the SeaweedFS master
+  durable fix. **Stage 2 for OpenBao (#443):** the code adds a daily encrypted raft snapshot on a PVC that
+  Velero fs-backup can read (see Added). **It is not enabled on any cluster**: it needs the
+  operator key, the `13-2` re-run and a deploy (Upgrade notes), and only static checks and local
+  OpenSSL runs were done. Limits: **Gitea `data`, the SeaweedFS master
   `data-storage` and the Harbor jobservice `job-logs` volumes are still not protected by Velero
   fs-backup under `root_squash`.** The `openbao-init` Secret (Shamir unseal key and root token) is
   still inside the Velero backup, so the snapshot is protected by the offline key but the cluster's
   unseal secret is not. Restoring an OpenBao snapshot has not been drilled, there is no freshness
-  alert for the snapshot yet, and the job's live behaviour over several days is unobserved (the
-  change was applied to one cluster on 2026-10-20).
+  alert for the snapshot yet. Not verified live: real snapshot creation, the Kubernetes-auth login,
+  `openssl cms` inside the cluster, the NFS write by uid 100, the effect of the Velero exclusion
+  label on the job pod, completion of the holder `PodVolumeBackup`, and a restore drill.
 - **Velero schedules also back up emptyDir volumes, and failures are hard to diagnose (#422).** The
   server account had no `pods/log` or `events create`, so the data mover pod's log was unreadable
   without a temporary grant (that is how #431 was found). `pods/log` `get` in namespace `storage`
   is now granted by the generated `velero-pod-logs` Role (not verified on a live cluster);
   `events create` is still missing because it needs a write verb and the rejected namespace is
-  not established. The node-agent pods now carry the label `app.kubernetes.io/name=velero-data-mover`
-  (#440), but Velero v1.18 cannot label its repository-maintenance Jobs, so their Kyverno audit
+  not established. The data-movement pods that node-agent creates now carry the label
+  `app.kubernetes.io/name=velero-data-mover` (#440; applied live on 2026-10-20, but whether the
+  Kyverno events drop is not yet verified), but Velero v1.18 cannot label its repository-maintenance Jobs, so their Kyverno audit
   events remain. The `events create` rejection is only documented, not fixed.
 - **Scorecard `Dangerous-Workflow` finding on `portal-release.yml` (#395).** The workflow checks
   out `workflow_run.head_sha`. It already runs only for `portal/v*` tag pushes, executes the

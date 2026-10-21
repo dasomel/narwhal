@@ -213,9 +213,34 @@ existing cluster or bundle; read **Upgrade notes** first.
   controller a 256Mi request and 512Mi limit (it was OOMKilled at 256Mi during its full sync). The
   GitOps chart's `ingressController` block now matches (256Mi request / 512Mi limit, #424);
   the controller on kakao-narwhal is a separate Helm release and runs 512Mi.
+- **Existing clusters: CNPG backup schedule, OpenBao snapshot backup, Tempo and Velero restarts
+  (#441, #443, #439, #440).** Merging changes nothing on a running cluster, and each step below
+  changes a shared cluster, so get authorization first.
+  - *CNPG `ScheduledBackup` (#441).* The live `narwhal-db-backup` in `database` is created by
+    `07-cnpg.sh` and is not updated by a merge. Re-run that part of `07-cnpg.sh`, or run
+    `kubectl patch scheduledbackup -n database narwhal-db-backup --type=merge -p '{"spec":{"schedule":"0 0 2 * * *"}}'`.
+    The old 5-field schedule ran hourly, so `Backup` objects have accumulated. Do not bulk-delete
+    them: check the cluster's `retentionPolicy` first and let it prune.
+  - *OpenBao snapshot backup (#443).* Re-run `scripts/cluster/13-2-narwhal-portal-bindings.sh`
+    (it creates the `openbao-backup` policy and Kubernetes-auth role), generate the recipient key
+    pair offline with `scripts/ops/openbao-backup-keygen.sh`, and push the `openbao-backup` GitOps
+    resources with `scripts/gitops/push-to-gitea.sh`. **Keep the private key offline; if it is
+    lost, the snapshots cannot be decrypted.** Until the ConfigMap `openbao-backup-recipient`
+    (the recipient certificate) exists, the CronJob fails closed and writes no snapshot.
+  - *Rollouts.* The Tempo change (#439) restarts Tempo and, because `persistence` is off, drops
+    its un-flushed WAL. The Velero `node-agent` `podLabels` change (#440) restarts the node-agent
+    pods.
 
 ### Added
 
+- **Daily encrypted OpenBao raft snapshot for Velero (#431, #443).** A CronJob at 04:30 UTC
+  authenticates with a Kubernetes-auth role limited to reading `sys/storage/raft/snapshot`,
+  encrypts the snapshot with `openssl cms` (RSA-OAEP) to an operator-held recipient certificate
+  (the private key stays offline), and writes it to a PVC. The plaintext exists only in a memory
+  `emptyDir`. A holder Deployment mounts the PVC read-only so Velero fs-backup picks the file up;
+  the job pod itself is excluded from Velero. The job fails closed, and `RECIPIENT_FPR` can pin
+  the certificate fingerprint. `scripts/ops/openbao-backup-keygen.sh` generates the key pair.
+  Static checks only; see Known issues for what is not verified.
 - **Offline upgrade bundle pipeline (7becc87, #300, #301).** JSON schema, verifier, promotion
   gate with approval, dry-run diff, content and dependency verification, and a static check of
   the component upgrade-wave graph (#46); cert-manager is the first orchestration pilot
@@ -293,8 +318,24 @@ existing cluster or bundle; read **Upgrade notes** first.
   sign job receives the image digest (#394), the portal `THIRD-PARTY-NOTICES.md` is
   markdownlint-clean (#386), `mark-review-pass` rejects non-ASCII PR numbers (#313), and
   `setup-python` in the research-evidence workflow is pinned to a SHA (#314).
+- **Dependency bumps.** `ruby/setup-ruby` 1.327.0 to 1.329.0 (#349), `@base-ui/react` 1.8.0 to
+  1.9.0 (#354), and `shadcn` 4.19.0 to 4.21.4 in `portal/` (#353); the portal notices generator
+  now converts tabs to spaces in legal text blocks.
 
 ### Fixed
+
+- **S3 key-bearing Secrets are applied with server-side apply (#415, #442).** The field manager is
+  `narwhal-s3-identities` and the values are written as base64 `data:`, so the key no longer lands
+  in the `kubectl.kubernetes.io/last-applied-configuration` annotation. The old annotation is
+  removed, and a failure of that cleanup or of the encoding aborts instead of continuing.
+- **The CNPG `ScheduledBackup` ran hourly (#431, #441).** The schedule was the 5-field
+  `0 2 * * *`, but CNPG uses 6 fields with seconds first, so it fired every hour at minute 2 and
+  accumulated `Backup` objects. It is now `0 0 2 * * *` (daily at 02:00). See Upgrade notes for the
+  live object.
+- **Tempo memory ballast disabled and `GOMEMLIMIT=1280MiB` set (#420, #439).** This is a
+  hypothesis for the OOMKills, not a confirmed fix; see Known issues.
+- **Velero node-agent pods are labelled `app.kubernetes.io/name=velero-data-mover` (#422, #440)**
+  and the `pods/log` and event rejection are documented.
 
 - **Ambient probes and HBONE.** GitOps NetworkPolicies now allow kubelet probes and port 15008
   (#240, #241).
@@ -357,9 +398,9 @@ existing cluster or bundle; read **Upgrade notes** first.
   passes, and all four clients pass their per-client I/O check after the S3 server rolled. The
   `08-4-storage.sh` guard was run read-only against that authenticated cluster (it passes); its
   abort paths on an anonymous cluster are covered by fake `kubectl` tests and an independent
-  review's simulation, not by a live re-run of `08-4`. Still open: the key stays in the
-  `kubectl.kubernetes.io/last-applied-configuration` annotation of the client Secrets (server-side
-  apply was rejected for now), and the guard's `envFrom` check does not prove that the Loki/Tempo
+  review's simulation, not by a live re-run of `08-4`. Since then #442 applies the client Secrets with server-side apply and removes the key from the
+  `kubectl.kubernetes.io/last-applied-configuration` annotation (not re-verified on a live cluster).
+  Still open: the guard's `envFrom` check does not prove that the Loki/Tempo
   pods restarted and loaded the new keys. The same Application also lists the Secret
   `seaweedfs-db-secret` with no comparison status; that is not investigated.
 - **Velero volume backups fail on volumes with owner-only files under `root_squash` (#431).** On
@@ -380,20 +421,31 @@ existing cluster or bundle; read **Upgrade notes** first.
   `job-logs` and the SeaweedFS master `data-storage` (raft metadata) are unprotected; the master's
   `seaweedfs-master-log-volume` stays backed up. The annotation change rolls the OpenBao, CNPG, Gitea,
   Harbor jobservice and SeaweedFS master pods when it is applied. Not verified on a live cluster. #431 stays open for the
-  durable fix.
+  durable fix. **Stage 2 for OpenBao (#443):** a daily encrypted raft snapshot now lands on a PVC that
+  Velero fs-backup can read (see Added). Limits: **Gitea `data`, the SeaweedFS master
+  `data-storage` and the Harbor jobservice `job-logs` volumes are still not protected by Velero
+  fs-backup under `root_squash`.** The `openbao-init` Secret (Shamir unseal key and root token) is
+  still inside the Velero backup, so the snapshot is protected by the offline key but the cluster's
+  unseal secret is not. Restoring an OpenBao snapshot has not been drilled, there is no freshness
+  alert for the snapshot yet, and the job's live behaviour over several days is unobserved (the
+  change was applied to one cluster on 2026-10-20).
 - **Velero schedules also back up emptyDir volumes, and failures are hard to diagnose (#422).** The
   server account had no `pods/log` or `events create`, so the data mover pod's log was unreadable
   without a temporary grant (that is how #431 was found). `pods/log` `get` in namespace `storage`
   is now granted by the generated `velero-pod-logs` Role (not verified on a live cluster);
   `events create` is still missing because it needs a write verb and the rejected namespace is
-  not established. Kyverno reports label violations for the data mover pods.
+  not established. The node-agent pods now carry the label `app.kubernetes.io/name=velero-data-mover`
+  (#440), but Velero v1.18 cannot label its repository-maintenance Jobs, so their Kyverno audit
+  events remain. The `events create` rejection is only documented, not fixed.
 - **Scorecard `Dangerous-Workflow` finding on `portal-release.yml` (#395).** The workflow checks
   out `workflow_run.head_sha`. It already runs only for `portal/v*` tag pushes, executes the
   trusted default-branch checkout and proves the tag points to that commit, so this looks like a
   heuristic match; the owner still has to accept it as an exception (with a review date) or
   restructure the workflow.
 - **Tempo is chronically OOMKilled at its 1536Mi limit (#420).** Hundreds of restarts a week on the
-  live cluster, unrelated to the S3 change.
+  live cluster, unrelated to the S3 change. #439 sets the memory ballast to 0 and `GOMEMLIMIT` to
+  1280MiB as a hypothesis; whether the restarts stop is not yet observed, and a rollout drops the
+  un-flushed WAL (`persistence` is off).
 - **Not applied to a live cluster.** The commit messages for the AppProject split, the
   developer RBAC change, the private Gitea repository and the Valkey swap state that they were
   checked statically or on a scratch cluster, not on a running narwhal cluster.

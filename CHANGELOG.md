@@ -353,7 +353,9 @@ existing cluster or bundle; read **Upgrade notes** first.
 - **The CNPG `ScheduledBackup` ran hourly (#431, #441).** The schedule was the 5-field
   `0 2 * * *`, but CNPG uses 6 fields with seconds first, so it fired every hour at minute 2 and
   accumulated `Backup` objects. It is now `0 0 2 * * *` (daily at 02:00). See Upgrade notes for the
-  live object.
+  live object. Observed on one cluster: at 2026-10-21 02:00:00 UTC the corrected schedule produced
+  exactly one `Backup` (`narwhal-db-backup-20261021020000`, completed) and the hourly runs stopped
+  (`Backup` objects 1311 to 1312); the existing `Backup` objects were not deleted.
 - **Tempo memory ballast disabled and `GOMEMLIMIT=1280MiB` set (#420, #439).** This is a
   hypothesis for the OOMKills, not a confirmed fix; see Known issues.
 - **Velero data-movement pods are labelled `app.kubernetes.io/name=velero-data-mover` (#422, #440).**
@@ -418,23 +420,23 @@ existing cluster or bundle; read **Upgrade notes** first.
   `09` reports the loss but does not fail (#124).
 - **The digest inventory is trust-on-first-save.** `images.digests.json` is not signed, so it
   proves the bundle matches what `02` recorded, not that `02` saw the right bytes (#124).
-- **S3 authentication operations: what is still open (#414, #415).** Verified on kakao-narwhal on
+- **S3 authentication operations: remaining gaps (follow-ups to #412; #414 and #415 are closed).** Verified on kakao-narwhal on
   2026-10-19: the roll marker survives self-heal, the Application is Synced, the anonymous check
   passes, and all four clients pass their per-client I/O check after the S3 server rolled. The
   `08-4-storage.sh` guard was run read-only against that authenticated cluster (it passes); its
   abort paths on an anonymous cluster are covered by fake `kubectl` tests and an independent
   review's simulation, not by a live re-run of `08-4`. Since then #442 applies the client Secrets with server-side apply and removes the key from the
   `kubectl.kubernetes.io/last-applied-configuration` annotation (not re-verified on a live cluster).
-  Still open: the guard's `envFrom` check does not prove that the Loki/Tempo
+  Remaining: the guard's `envFrom` check does not prove that the Loki/Tempo
   pods restarted and loaded the new keys. The same Application also lists the Secret
   `seaweedfs-db-secret` with no comparison status; that is not investigated.
 - **Velero volume backups fail on volumes with owner-only files under `root_squash` (#431).** On
   the NFS server, files that other users cannot read were found in `database/` (7677 of 7686),
   `monitoring/` (138 of 1317 at the first measurement, 115 of 1296 later: the data is live),
-  `devtools/` (72 of 292) and `storage/` (7 of 77). Until the owner
-  decides between running the data mover with a matching identity, application-level backups (for
-  OpenBao `bao operator raft snapshot` through a backup hook) and a backup taken on the NFS server,
-  do not rely on the Velero backups of OpenBao, PostgreSQL or other volumes with owner-only files.
+  `devtools/` (72 of 292) and `storage/` (7 of 77). Do not rely on
+  the Velero backups of volumes with owner-only files: OpenBao gets an application-level encrypted
+  snapshot from a CronJob instead (#443, not enabled on any cluster yet, not a Velero backup hook),
+  PostgreSQL relies on CNPG barman, and the other volumes are not protected by Velero.
   CNPG's own barman backups to S3 are separate; an on-demand backup completed and WAL archiving
   advanced on 2026-10-18. Containment (stage 1): the five volumes whose `PodVolumeBackup` was
   Canceled in the scheduled runs (OpenBao `data`, CNPG `pgdata`, Gitea `data`, Harbor jobservice
@@ -445,7 +447,12 @@ existing cluster or bundle; read **Upgrade notes** first.
   new application-level snapshot (#443, below; not enabled on any cluster yet), PostgreSQL relies on CNPG barman, and Gitea `data`, Harbor
   `job-logs` and the SeaweedFS master `data-storage` (raft metadata) are unprotected; the master's
   `seaweedfs-master-log-volume` stays backed up. The annotation change rolls the OpenBao, CNPG, Gitea,
-  Harbor jobservice and SeaweedFS master pods when it is applied. Not verified on a live cluster. #431 stays open for the
+  Harbor jobservice and SeaweedFS master pods when it is applied. Observed on one cluster (kakao-narwhal): stage 1 (#434, #436) was applied on
+  2026-10-19; read-only checks on 2026-10-21 (UTC) showed the scheduled Velero backups of
+  2026-10-20 and 2026-10-21 (databases, full, gitea, harbor, openbao) all Completed, and the only
+  Canceled `PodVolumeBackup`s (5) belong to the 2026-10-19 runs, none to later runs (345 Completed
+  in total). That is an observation, not a guarantee; a full restore of any of these volumes is
+  still unverified. #431 stays open for the
   durable fix. **Stage 2 for OpenBao (#443):** the code adds a daily encrypted raft snapshot on a PVC that
   Velero fs-backup can read (see Added). **It is not enabled on any cluster**: it needs the
   operator key, the `13-2` re-run and a deploy (Upgrade notes), and only static checks and local

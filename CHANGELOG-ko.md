@@ -294,7 +294,9 @@ ArgoCD, Gitea, RBAC, OpenBao, Keycloak, APISIX, NFS, `database` 신뢰 경계가
   이전과 키 회전은 검증하지 않았음.
 - **CNPG `ScheduledBackup`이 매시간 실행됨 (#431, #441).** 스케줄이 5필드 `0 2 * * *`였으나 CNPG는 초가 앞에 오는
   6필드를 쓰므로 매시간 2분에 실행되어 `Backup` 객체가 누적되었음. 이제 `0 0 2 * * *`(매일 02:00)임. 라이브
-  객체는 업그레이드 참고 확인.
+  객체는 업그레이드 참고 확인. 한 클러스터에서 관찰함: 2026-10-21 02:00:00 UTC에 수정된 스케줄이 `Backup`
+  (`narwhal-db-backup-20261021020000`, completed) 정확히 1건을 만들었고 매시간 실행은 멈춤(`Backup` 객체 1311개에서
+  1312개); 기존 `Backup` 객체는 삭제하지 않았음.
 - **Tempo 메모리 ballast 비활성화 및 `GOMEMLIMIT=1280MiB` 설정 (#420, #439).** OOMKilled에 대한 가설이며
   확인된 수정이 아님. 알려진 이슈 참고.
 - **Velero 데이터 이동 파드에 `app.kubernetes.io/name=velero-data-mover` 라벨 부여 (#422, #440).** 라벨은 node-agent
@@ -349,19 +351,19 @@ ArgoCD, Gitea, RBAC, OpenBao, Keycloak, APISIX, NFS, `database` 신뢰 경계가
   실패시키지 않음(#124).
 - **다이제스트 인벤토리는 최초 저장 시점 신뢰(trust-on-first-save)임.** `images.digests.json`에는 서명이 없으므로
   번들이 `02`가 기록한 것과 일치함은 증명하지만 `02`가 올바른 바이트를 보았음은 증명하지 않음(#124).
-- **S3 인증 운영 작업: 아직 남은 것 (#414, #415).** 2026-10-19 kakao-narwhal에서 검증됨: 롤 표식이 자가 치유
+- **S3 인증 운영 작업: 남은 공백 (#412 후속, #414와 #415는 종료됨).** 2026-10-19 kakao-narwhal에서 검증됨: 롤 표식이 자가 치유
   후에도 유지되고, Application이 Synced이며, 익명 검사가 통과하고, S3 서버를 롤링한 뒤에도 네 클라이언트 모두
   클라이언트별 I/O 검사를 통과함. `08-4-storage.sh` 가드는 인증된 그 클러스터에 읽기 전용으로 실행해 통과를
   확인했고, 익명 클러스터에서의 중단 경로는 가짜 `kubectl` 테스트와 독립 리뷰의 시뮬레이션으로만 확인했으며
   `08-4`를 라이브에서 다시 실행하지는 않았음. 이후 #442가 클라이언트 Secret을 서버 사이드 어플라이로 적용하고
   `kubectl.kubernetes.io/last-applied-configuration` 어노테이션에서 키를 제거함(라이브 클러스터에서 다시 검증하지
-  않음). 여전히 미해결: 가드가 확인하는 `envFrom` 참조는 Loki/Tempo 파드가 재시작되어 새 키를 로드했음을 증명하지 않음.
+  않음). 남은 공백: 가드가 확인하는 `envFrom` 참조는 Loki/Tempo 파드가 재시작되어 새 키를 로드했음을 증명하지 않음.
   같은 Application은 `Secret seaweedfs-db-secret`을 비교 상태 없이 표시하며, 이는 조사하지 않았음.
 - **`root_squash`에서는 소유자 전용 파일이 있는 볼륨의 Velero 볼륨 백업이 실패함 (#431).** NFS 서버에서 다른
   사용자가 읽을 수 없는 파일이 `database/`(7686개 중 7677개), `monitoring/`(최초 측정 1317개 중 138개, 이후 1296개 중 115개: 데이터가 계속 변함), `devtools/`(292개
-  중 72개), `storage/`(77개 중 7개)에서 발견됨. 소유자가 데이터 이동 파드에 맞는 신원 부여, 애플리케이션 수준
-  백업(OpenBao는 백업 훅으로 `bao operator raft snapshot`), NFS 서버에서의 백업 중에서 결정하기 전까지는
-  OpenBao, PostgreSQL 및 소유자 전용 파일이 있는 다른 볼륨의 Velero 백업에 의존하지 말 것. CNPG 자체
+  중 72개), `storage/`(77개 중 7개)에서 발견됨. 소유자 전용 파일이 있는 볼륨의 Velero 백업에는 의존하지 말 것:
+  OpenBao는 대신 CronJob의 애플리케이션 수준 암호화 스냅샷을 쓰고(#443, 아직 어느 클러스터에도 활성화되지 않음, Velero
+  백업 훅 아님), PostgreSQL은 CNPG barman에 의존하며, 나머지 볼륨은 Velero로 보호되지 않음. CNPG 자체
   barman 백업은 S3로 별도 수행되며, 2026-10-18에 온디맨드 백업이 완료되고 WAL 아카이빙이 진행됨을 확인함.
   봉쇄 조치(1단계): 스케줄 실행에서 `PodVolumeBackup`이 Canceled된 다섯 볼륨(OpenBao `data`, CNPG `pgdata`, Gitea
   `data`, Harbor jobservice `job-logs`, SeaweedFS 마스터 `data-storage`)에 파드 어노테이션 `backup.velero.io/backup-volumes-excludes`를 부여함
@@ -370,7 +372,10 @@ ArgoCD, Gitea, RBAC, OpenBao, Keycloak, APISIX, NFS, `database` 신뢰 경계가
   않음.** OpenBao는 새 애플리케이션 수준 스냅샷(#443, 아래, 아직 어느 클러스터에도 활성화되지 않음)에 의존하고, PostgreSQL은 CNPG barman에 의존하며, Gitea `data`,
   Harbor `job-logs`, SeaweedFS 마스터 `data-storage`(raft 메타데이터)는 보호되지 않으며, 마스터의
   `seaweedfs-master-log-volume`은 계속 백업됨. 이 어노테이션을 적용하면 OpenBao, CNPG, Gitea, Harbor jobservice,
-  SeaweedFS 마스터 파드가 롤링됨. 라이브 클러스터에서 검증하지 않음. 근본 해결을 위해 #431은 계속 열려 있음. **OpenBao 2단계 (#443):** Velero fs-backup이 읽을 수 있는 PVC에
+  SeaweedFS 마스터 파드가 롤링됨. 한 클러스터(kakao-narwhal)에서 관찰함: 1단계(#434, #436)는
+  2026-10-19에 적용되었고, 2026-10-21(UTC) 읽기 전용 확인에서 2026-10-20과 2026-10-21의 예약 Velero 백업(databases,
+  full, gitea, harbor, openbao)이 모두 Completed였으며, Canceled된 `PodVolumeBackup` 5건은 모두 2026-10-19 실행분이고
+  이후 실행분에는 없음(Completed 총 345건). 관찰일 뿐 보장이 아니며, 이 볼륨들의 전체 복원은 여전히 검증되지 않음. 근본 해결을 위해 #431은 계속 열려 있음. **OpenBao 2단계 (#443):** Velero fs-backup이 읽을 수 있는 PVC에
   일일 암호화 raft 스냅샷을 저장하는 코드가 추가됨(추가 항목 참고). **어느 클러스터에도 활성화되지 않았음.** 운영자 키,
   `13-2` 재실행, 배포가 필요하며(업그레이드 참고) 정적 검사와 로컬 OpenSSL 실행만 수행했음. 한계: **`root_squash`
   환경에서 Gitea `data`, SeaweedFS 마스터 `data-storage`, Harbor jobservice `job-logs` 볼륨은 여전히 Velero

@@ -57,11 +57,17 @@ establish that it needs the apiserver proxy specifically. The verifier reports t
 actual role and subjects and fails closed if monitoring has `nodes/proxy`; add its
 exact service account only after the live scrape path proves that dependency.
 The live `storage:velero-server` service account was bound to `cluster-admin`, which
-grants `nodes/proxy` through a wildcard rule. This remains a real finding tracked by
-Narwhal#226 and is intentionally not allowlisted.
+grants `nodes/proxy` through a wildcard rule. This was a real finding tracked by
+Narwhal#226 and was intentionally not allowlisted. **Resolved (v1.3.0, #250/#421):**
+the binding `velero-server-least-privilege` in `gitops/resources/velero-server-rbac.yaml`
+now grants the generated least-privilege `velero-server` ClusterRole (no `nodes/proxy`)
+instead of `cluster-admin`. The finding text above is kept as the historical record of the run.
 
-Exposure finding (unchanged by this slice): Kakao's security group allows TCP
-10250 from the VPC CIDR (`csp/kakao-cloud/terraform/modules/security/main.tf`),
+Exposure finding (historical, at the time of this slice; **resolved by #265**): Kakao's
+security group allowed TCP 10250 from the VPC CIDR. It is now limited to the node subnet
+(`remote_ip_prefix = var.subnet_cidr` in
+`csp/kakao-cloud/terraform/modules/security/main.tf`). Original text: the rule allowed
+TCP 10250 from the VPC CIDR (`csp/kakao-cloud/terraform/modules/security/main.tf`),
 so any source in that VPC can reach kubelet if routing permits. Vagrant nodes use
 the host-only `192.168.56.0/24` network and this repository contains no explicit
 host firewall rule for 10250; host reachability should be confirmed at runtime.
@@ -203,6 +209,15 @@ An empty result from steps 2 and 3 means existing data needs no changes — the
 `root_squash` export change is safe to apply as-is.
 
 ### Fix an existing cluster's on-disk state (only if step 2/3 above found matches)
+
+> **Update (v1.3.0, #224/#408/#431):** the supported way to align the on-disk layout is now
+> `scripts/cluster/nfs-root-squash-align.sh` (dry run by default, `--apply` to change; run as root on
+> the NFS server), sequenced with the export switch in `docs/runbooks/nfs-xfs-migration.md`. It chowns
+> only root-owned entries inside each PV directory to that PV's workload identity. The blanket
+> `chown -R nobody:nogroup` below is the older manual fallback and can lock out pods that run as a
+> non-root uid; prefer the script. Note that under `root_squash` the Velero data mover (root) cannot
+> read owner-only volumes, so five of them are excluded from Velero fs-backup (#431); see
+> `docs/common/storage-protection-policy.md`.
 
 ```bash
 NFS_SHARE_PATH="${NFS_SHARE_PATH:-/srv/nfs/k8s}"

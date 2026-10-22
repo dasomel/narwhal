@@ -48,7 +48,7 @@ done
 |-------|----------|-------|
 | metadata.name | Y | Unique value |
 | metadata.namespace | Y | `devtools` |
-| spec.project | Y | `default` |
+| spec.project | Y | `platform` (or `tenants` for tenant apps) |
 | spec.source.repoURL | Y | Valid URL |
 | spec.source.targetRevision | Y | String version |
 | spec.destination.server | Y | `https://kubernetes.default.svc` |
@@ -56,7 +56,7 @@ done
 | spec.syncPolicy.syncOptions | Y | Includes `CreateNamespace=true` |
 
 ### app-of-apps Reference Check
-Verify new app is included in `gitops/apps/app-of-apps.yaml`.
+Verify the new app template is under `gitops/charts/narwhal-apps/templates/` (rendered by the app-of-apps in `gitops/apps/app-of-apps.yaml`).
 
 ---
 
@@ -65,7 +65,7 @@ Verify new app is included in `gitops/apps/app-of-apps.yaml`.
 Versions must match across 3 locations:
 
 ```
-VERSIONS.md  <-->  scripts/cluster/*.sh  <-->  gitops/apps/*.yaml
+VERSIONS.md  <-->  scripts/cluster/*.sh  <-->  gitops/charts/narwhal-apps/templates/*.yaml
 ```
 
 ### How to Verify

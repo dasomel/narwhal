@@ -232,9 +232,9 @@ apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
   name: my-app
-  namespace: argocd
+  namespace: devtools
 spec:
-  project: default
+  project: platform
   source:
     repoURL: https://charts.example.com
     chart: my-app
@@ -700,40 +700,40 @@ Velero는 Kubernetes 리소스 및 Persistent Volume 백업을 담당합니다.
 
 ```bash
 # 백업 목록
-vagrant ssh master-1 -c "kubectl get backups -n velero"
+vagrant ssh master-1 -c "kubectl get backups.velero.io -n storage"
 
 # 백업 상세 정보
-vagrant ssh master-1 -c "kubectl describe backup <backup-name> -n velero"
+vagrant ssh master-1 -c "kubectl describe backups.velero.io <backup-name> -n storage"
 ```
 
 ### 스케줄 백업 확인
 
 ```bash
 # 백업 스케줄 목록
-vagrant ssh master-1 -c "kubectl get schedules -n velero"
+vagrant ssh master-1 -c "kubectl get schedules.velero.io -n storage"
 
 # 스케줄 상세 정보
-vagrant ssh master-1 -c "kubectl describe schedule daily-backup -n velero"
+vagrant ssh master-1 -c "kubectl describe schedules.velero.io daily-full -n storage"
 ```
 
 ### 수동 백업 생성
 
 ```bash
 # 전체 클러스터 백업
-vagrant ssh master-1 -c "kubectl exec -n velero deployment/velero -- \
+vagrant ssh master-1 -c "kubectl exec -n storage deployment/velero -- \
   velero backup create manual-full-backup"
 
 # 특정 namespace만 백업
-vagrant ssh master-1 -c "kubectl exec -n velero deployment/velero -- \
-  velero backup create manual-gitea-backup --include-namespaces=gitea"
+vagrant ssh master-1 -c "kubectl exec -n storage deployment/velero -- \
+  velero backup create manual-gitea-backup --include-namespaces=devtools"
 
 # 여러 namespace 백업
-vagrant ssh master-1 -c "kubectl exec -n velero deployment/velero -- \
+vagrant ssh master-1 -c "kubectl exec -n storage deployment/velero -- \
   velero backup create manual-apps-backup \
-  --include-namespaces=gitea,keycloak,harbor"
+  --include-namespaces=devtools,iam"
 
 # Label selector로 백업
-vagrant ssh master-1 -c "kubectl exec -n velero deployment/velero -- \
+vagrant ssh master-1 -c "kubectl exec -n storage deployment/velero -- \
   velero backup create manual-labeled-backup \
   --selector='app=my-app'"
 ```
@@ -742,36 +742,36 @@ vagrant ssh master-1 -c "kubectl exec -n velero deployment/velero -- \
 
 ```bash
 # 백업 진행 상황
-vagrant ssh master-1 -c "kubectl exec -n velero deployment/velero -- \
+vagrant ssh master-1 -c "kubectl exec -n storage deployment/velero -- \
   velero backup describe <backup-name>"
 
 # 백업 로그 확인
-vagrant ssh master-1 -c "kubectl exec -n velero deployment/velero -- \
+vagrant ssh master-1 -c "kubectl exec -n storage deployment/velero -- \
   velero backup logs <backup-name>"
 
-# 백업 파일 위치 확인 (NFS)
-vagrant ssh master-1 -c "ls -lh /nfs/velero/backups/"
+# 백업 저장소 확인 (SeaweedFS S3 버킷 velero; 노드 로컬 디렉터리 아님)
+vagrant ssh master-1 -c "kubectl get backupstoragelocations.velero.io -n storage"
 ```
 
 ### 복구 (Restore)
 
 ```bash
 # 백업에서 복구
-vagrant ssh master-1 -c "kubectl exec -n velero deployment/velero -- \
+vagrant ssh master-1 -c "kubectl exec -n storage deployment/velero -- \
   velero restore create --from-backup <backup-name>"
 
 # 특정 namespace만 복구
-vagrant ssh master-1 -c "kubectl exec -n velero deployment/velero -- \
+vagrant ssh master-1 -c "kubectl exec -n storage deployment/velero -- \
   velero restore create restore-gitea \
   --from-backup <backup-name> \
-  --include-namespaces=gitea"
+  --include-namespaces=devtools"
 
 # 복구 상태 확인
-vagrant ssh master-1 -c "kubectl exec -n velero deployment/velero -- \
+vagrant ssh master-1 -c "kubectl exec -n storage deployment/velero -- \
   velero restore describe <restore-name>"
 
 # 복구 로그 확인
-vagrant ssh master-1 -c "kubectl exec -n velero deployment/velero -- \
+vagrant ssh master-1 -c "kubectl exec -n storage deployment/velero -- \
   velero restore logs <restore-name>"
 ```
 
@@ -779,19 +779,19 @@ vagrant ssh master-1 -c "kubectl exec -n velero deployment/velero -- \
 
 ```bash
 # 백업 삭제 (스토리지에서도 삭제)
-vagrant ssh master-1 -c "kubectl exec -n velero deployment/velero -- \
+vagrant ssh master-1 -c "kubectl exec -n storage deployment/velero -- \
   velero backup delete <backup-name>"
 
 # 오래된 백업 자동 삭제 (30일 이상)
-vagrant ssh master-1 -c "kubectl exec -n velero deployment/velero -- \
+vagrant ssh master-1 -c "kubectl exec -n storage deployment/velero -- \
   velero backup delete --older-than 720h"
 ```
 
 **주의사항**:
 
 - Velero는 `upgradeCRDs: false` 설정 필수 (musl/glibc 비호환)
-- NFS 기반 백업 스토리지 사용 (`/nfs/velero/`)
-- PVC 백업은 restic 통합 사용 (설정에 따라)
+- 백업 저장소는 SeaweedFS S3(버킷 `velero`, `http://seaweedfs-s3.storage.svc.cluster.local:8333`)이며 NFS 디렉터리가 아님
+- PVC 백업은 Kopia(`uploaderType: kopia`) 파일시스템 백업이며, NFS `root_squash`에서 읽을 수 없는 owner-only 볼륨 5종(OpenBao `data`, CNPG `pgdata`, Gitea `data`, Harbor `job-logs`, SeaweedFS master `data-storage`)은 제외되어 Velero가 보호하지 않음 (`docs/common/storage-protection-policy.md`)
 - 복구 시 기존 리소스와 충돌 가능 (namespace 삭제 후 복구 권장)
 
 ---

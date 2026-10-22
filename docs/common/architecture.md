@@ -154,7 +154,7 @@ component, identity, storage and GitOps sections expand their respective concern
 │                      GitOps Layer                            │
 │  ┌──────────┐  ┌──────────┐  ┌────────────────────────────┐  │
 │  │  ArgoCD  │  │  Gitea   │  │  App-of-Apps (18 apps)     │  │
-│  │  v3.3.0  │  │  v1.25.4 │  │  automated sync + prune    │  │
+│  │  v3.4.4  │  │  v1.26.2 │  │  automated sync + prune    │  │
 │  └──────────┘  └──────────┘  └────────────────────────────┘  │
 ├──────────────────────────────────────────────────────────────┤
 │                    Application Layer                         │
@@ -182,7 +182,7 @@ component, identity, storage and GitOps sections expand their respective concern
 │  │ control  │  │ node     │  │ ambient  │                    │
 │  │ plane    │  │ proxy    │  │ redirect │                    │
 │  └──────────┘  └──────────┘  └──────────┘                    │
-│  Istio v1.29 ambient mode — mTLS (PERMISSIVE), zero sidecars │
+│  Istio v1.30 ambient mode — mTLS (PERMISSIVE), zero sidecars │
 ├──────────────────────────────────────────────────────────────┤
 │                   Networking Layer                           │
 │  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌────────────┐    │
@@ -227,7 +227,7 @@ narwhal-master (/srv/nfs/k8s)
 │
 └── SeaweedFS (S3-compatible)
     ├── Velero 백업 저장소
-    └── CNPG WAL 아카이빙 (향후)
+    └── CNPG base backup + WAL 아카이빙
 
 PostgreSQL HA (CloudNative-PG)
 └── narwhal-db (1 primary + 1 PgBouncer)
@@ -247,8 +247,8 @@ PostgreSQL HA (CloudNative-PG)
 | Tempo | nfs-csi | 10 GiB | Trace data |
 | Harbor Registry | nfs-csi | 20 GiB | Container images |
 | OpenBao | nfs-csi | 10+5 GiB | Secrets + Audit |
-| SeaweedFS | nfs-csi | 1+50+5 GiB | Master + Volume + Filer |
-| PostgreSQL (narwhal-db) | nfs-csi | 10 GiB | Unified DB cluster |
+| SeaweedFS | nfs-csi (Master/Filer), hostPath `/ssd/object_store` (Volume) | 1+5 GiB PVC | Master + Filer; Volume 데이터는 노드 로컬 |
+| PostgreSQL (narwhal-db) | nfs-csi | 20 GiB | Unified DB cluster |
 
 ---
 
@@ -412,7 +412,7 @@ AlertmanagerConfig로 severity별 라우팅:
 
 ```text
 ┌──────────────────────────────────────────────────────────┐
-│                     ArgoCD (v3.3.0)                      │
+│                     ArgoCD (v3.4.4)                      │
 │                                                          │
 │  App-of-Apps Pattern                                     │
 │  ┌────────────────────────────────────────────────────┐  │
@@ -432,7 +432,7 @@ AlertmanagerConfig로 severity별 라우팅:
 └──────────────────────────────────────────────────────────┘
 
 ┌──────────────────────────────────────────────────────────┐
-│                     Gitea (v1.25.4)                      │
+│                     Gitea (v1.26.2)                      │
 │                                                          │
 │  Repository: narwhal-gitops                              │
 │  ├── apps/              (ArgoCD Application manifests)   │
@@ -622,8 +622,8 @@ Velero
 └── Volume Snapshots: disabled (NFS)
 
 CNPG PostgreSQL
-├── WAL Archiving: SeaweedFS S3 (향후 활성화)
-├── Retention: 14 days
+├── WAL Archiving: SeaweedFS S3 (활성, barmanObjectStore)
+├── Retention: 7 days (narwhal-db.yaml retentionPolicy)
 └── Point-in-Time Recovery: 지원
 ```
 
@@ -631,9 +631,14 @@ CNPG PostgreSQL
 
 | 컴포넌트 | 방법 | 주기 | 보존 |
 |----------|------|------|------|
-| 전체 클러스터 | Velero | 매일 | 7일 |
-| PostgreSQL | CNPG barman + WAL | 매일 02:00 UTC | 7일 |
-| Git 레포 | Velero (PVC) | 매일 | 7일 |
+| 전체 클러스터 | Velero (owner-only 5개 볼륨 제외) | 매일 | 7일 |
+| PostgreSQL | CNPG barman + WAL (`pgdata`는 Velero 제외) | 매일 02:00 UTC | 7일 |
+| OpenBao | 암호화 raft 스냅샷 (PVC `openbao-snapshots`를 `daily-openbao`가 수집, #443). 기본 비활성, 복구 미검증 | 매일 04:30 UTC | 운영 런북 참조 |
+| Git 레포 (Gitea `data`) | 백업 없음 (Velero 제외, #431). GitOps 소스는 `push-to-gitea.sh`로 재푸시 | - | - |
+
+NFS `root_squash`에서 Velero가 읽지 못하는 OpenBao `data`, CNPG `pgdata`, Gitea `data`, Harbor
+`job-logs`, SeaweedFS master `data-storage`는 `backup.velero.io/backup-volumes-excludes`로 제외되며
+Velero가 보호하지 않는다 (`docs/common/storage-protection-policy.md`, `docs/runbooks/openbao-snapshot-backup.md`).
 
 복구 절차: `docs/vagrant/disaster-recovery.md` 참조
 검증 스크립트: `scripts/test/verify-backup.sh`

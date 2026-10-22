@@ -30,7 +30,7 @@ The current README records the following verified scale:
 - 51 CI regression checks
 - 120+ live cluster verification checks
 - 49 SSO verification checks
-- 263 documented integration incidents with discriminators
+- 440 documented integration incidents with discriminators
 - 104 container images and 27 Helm charts in the architecture-specific offline bundle
 
 The operating model is deliberately evidence-driven:

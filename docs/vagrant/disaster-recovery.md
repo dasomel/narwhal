@@ -573,7 +573,7 @@ spec:
             name: cnpg-s3-credentials
             key: ACCESS_SECRET_KEY
         endpointURL: http://seaweedfs-s3.storage.svc.cluster.local:8333
-        destinationPath: s3://cnpg-backups/
+        destinationPath: s3://cnpg-backup/narwhal-db
 EOF
 ```
 
@@ -620,6 +620,14 @@ Velero는 SeaweedFS S3(`http://seaweedfs-s3.storage.svc.cluster.local:8333`)에 
 - 새 클러스터 Phase 1 완료 (kubeadm init, CNI, addons까지)
 - Velero 설치 완료
 - SeaweedFS(또는 외부 S3) 접근 가능
+
+> **경고: Velero는 모든 PVC를 보호하지 않습니다 (v1.3.0).** NFS `root_squash` 환경에서는 Velero 데이터
+> 무버(root)가 owner-only 볼륨을 읽지 못해, 다섯 개 볼륨을 `backup.velero.io/backup-volumes-excludes`로
+> fs-backup에서 제외했습니다: OpenBao `data`, CNPG `pgdata`, Gitea `data`, Harbor jobservice `job-logs`,
+> SeaweedFS master `data-storage`. 따라서 이 절의 Velero 복원으로는 이 볼륨들의 **데이터가 복원되지 않습니다**.
+> PostgreSQL은 CNPG Barman 복원(위 시나리오 4), OpenBao는 암호화 스냅샷 복구(12절의 "Velero에서 OpenBao
+> 데이터 복원" 참고, 기본 비활성), Gitea `data`·Harbor `job-logs`·SeaweedFS master는 백업이 없습니다.
+> 자세한 내용은 `docs/common/storage-protection-policy.md`를 참고하세요.
 
 ### 백업 목록 확인
 
@@ -714,6 +722,10 @@ dig @192.168.56.10 grafana.local.narwhal.internal +short
 ### 개별 네임스페이스 복원
 
 특정 앱만 복원할 경우:
+
+> **경고:** Gitea `data` 볼륨은 Velero fs-backup에서 제외되어 아래 Gitea 복원으로는 저장소 데이터가
+> 돌아오지 않습니다(백업 없음). GitOps 소스는 로컬 저장소에서 `scripts/gitops/push-to-gitea.sh`로
+> 다시 푸시합니다. Harbor 복원도 `job-logs` 볼륨은 포함하지 않습니다.
 
 ```bash
 # Gitea만 복원 (예시)
@@ -1002,8 +1014,11 @@ kubectl wait --for=condition=Available deployment/argocd-server \
 kubectl get pods -n devtools -l app=gitea
 
 # ArgoCD → Gitea 연결 테스트
+# narwhal-gitops 저장소는 비공개이므로 익명 요청은 401/404를 반환합니다(서비스 도달 확인용).
+# 인증 상태는 ArgoCD 저장소 Secret의 읽기 전용 계정으로 확인합니다.
 kubectl exec -n devtools deployment/argocd-repo-server -- \
-  curl -s http://gitea-http.gitea.svc.cluster.local:3000/gitea-admin/narwhal.git/info/refs?service=git-upload-pack | head -5
+  curl -s -o /dev/null -w '%{http_code}\n' \
+  'http://gitea-http.devtools.svc.cluster.local:3000/gitea-admin/narwhal-gitops.git/info/refs?service=git-upload-pack'
 ```
 
 #### Step 3: Application 강제 동기화
@@ -1294,6 +1309,17 @@ kubectl exec -n storage openbao-0 -- bao operator unseal <NEW_UNSEAL_KEY>
 ```
 
 ### Velero에서 OpenBao 데이터 복원
+
+> **경고: Velero로 OpenBao `data` 볼륨을 복원할 수 없습니다.** `data` 볼륨은 NFS `root_squash` 때문에
+> Velero fs-backup에서 제외되어 있어(#431) 아래 `daily-openbao` 복원은 raft 데이터를 되살리지 못합니다.
+> 실제 복구 경로는 OpenBao의 암호화 raft 스냅샷(매일 04:30 UTC, PVC `openbao-snapshots`, `daily-openbao`
+> 실행이 수집)이며, 절차는 `docs/runbooks/openbao-snapshot-backup.md`와
+> `docs/common/storage-protection-policy.md` 8절을 따릅니다. 이 스냅샷 백업은 **기본으로 활성화되어 있지
+> 않고**(운영자 수신자 인증서·키 준비 필요), 복구 절차는 아직 드릴로 검증되지 않았습니다. 활성화하지
+> 않은 클러스터에는 OpenBao 백업이 없으므로 Unseal Key와 Root Token을 별도로 보관하세요.
+>
+> 아래 명령은 `daily-openbao` 백업에 스냅샷 볼륨(`openbao-snapshots`)이 포함됐는지 확인하는 용도로만
+> 유효하며, `data` 볼륨 복원에는 쓸 수 없습니다.
 
 ```bash
 # OpenBao 백업 (daily-openbao 스케줄)

@@ -11,11 +11,11 @@ Narwhal 프로젝트는 CloudNative-PG Operator를 사용하여 단일 통합 Po
 
 ### 클러스터 정보
 
-- **Operator**: CloudNative-PG v1.28.1 (Helm chart 0.27.1)
+- **Operator**: CloudNative-PG v1.29.1 (Helm chart 0.28.3)
 - **클러스터명**: `narwhal-db`
 - **네임스페이스**: `database`
 - **인스턴스 수**: 2개 (Primary 1개 + Replica 1개)
-- **PostgreSQL 버전**: 18.2
+- **PostgreSQL 버전**: 18.3
 - **커넥션 풀러**: PgBouncer (transaction mode)
 
 ### HA 구성
@@ -110,15 +110,15 @@ jdbc:postgresql://keycloak-db-rw:5432/keycloak
 
 ### CNPG Barman (S3 백업)
 
-- **주기**: 매일 00:00
-- **대상**: SeaweedFS S3
-- **자격증명**: admin/admin
+- **주기**: 매일 02:00 UTC (CNPG 6필드 cron `0 0 2 * * *`)
+- **대상**: SeaweedFS S3 (`s3://cnpg-backup/narwhal-db`)
+- **자격증명**: Secret `cnpg-s3-credentials` (클라이언트별 랜덤 키, `ensure_s3_identities`가 생성; admin/admin 아님)
 - **방식**: WAL 아카이빙 + Full Backup
 
 ### Velero (PVC 백업)
 
 - **주기**: 매일 02:00
-- **대상**: 전체 PVC 스냅샷
+- **대상**: PVC (owner-only 5종 제외: OpenBao `data`, CNPG `pgdata`, Gitea `data`, Harbor `job-logs`, SeaweedFS master `data-storage`; `narwhal-db`의 `pgdata`는 Velero가 보호하지 않으며 Barman이 DB를 보호)
 - **용도**: 재해복구 (Disaster Recovery)
 
 ## 운영 명령어

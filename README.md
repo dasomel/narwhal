@@ -7,9 +7,9 @@ Integration failures are converted into regression tests and continuously revali
 upgrades.
 It runs on ARM64/AMD64, in the cloud or on-premises, and fully air-gapped.
 
-**Verified against this repo right now:** 582 commits (`git log --oneline | wc -l`), 4 tags
-(`git tag | wc -l`), 318 dated integration incidents in
-[`lessons-log.md`](docs/common/lessons-log.md) (rows matching `| YYYY-MM-DD |`), and 192 regression
+**Verified against this repo right now:** 1207 commits (`git log --oneline | wc -l`), 6 tags
+(`git tag | wc -l`), 440 dated integration incidents in
+[`lessons-log.md`](docs/common/lessons-log.md) (rows matching `| YYYY-MM-DD |`), and 393 regression
 checks in [`scripts/test/regression-check-kakao.sh`](scripts/test/regression-check-kakao.sh)
 (`check`/`check_not` call sites).
 
@@ -52,7 +52,7 @@ Narwhal treats those seams as the product: they are scripted, verified in CI, an
 ### Integration knowledge as tests
 
 Narwhal does not discard the failures it hits while integrating. Every one is written down —
-**263 dated incidents** in [`lessons-log.md`](docs/common/lessons-log.md) — and each row records
+**440 dated incidents** in [`lessons-log.md`](docs/common/lessons-log.md) — and each row records
 more than a fix:
 
 - what the cause actually was
@@ -75,7 +75,7 @@ count — is how this project is maintained.
 |---|---|
 | Activity | Active development since 2026-02-08; see the [commit history](https://github.com/dasomel/narwhal/commits/main/) and [CHANGELOG](CHANGELOG.md) |
 | Verification | 51-check regression suite runs in CI on every push, plus cluster, SSO, backup and network-isolation test scripts |
-| Integration knowledge | [263 documented incidents](docs/common/lessons-log.md), newest first, each with a discriminator |
+| Integration knowledge | [440 documented incidents](docs/common/lessons-log.md), newest first, each with a discriminator |
 | Deployment targets | Vagrant (ARM64) · Kakao Cloud (AMD64) · fully air-gapped |
 | Offline install | 104 container images, 27 Helm charts, binaries, remote manifests and OS packages, bundled per architecture |
 | Integrated components | 35 GitOps-managed applications |
@@ -331,7 +331,7 @@ breaks — the practice that keeps fixed defects from returning silently.
 
 Not every incident becomes its own CI check: many are covered by a shared check, and some are only
 observable against a live cluster, so they live in the cluster or SSO suites instead. The count
-differs from 263 for that reason, not because the rest were forgotten.
+differs from 440 for that reason, not because the rest were forgotten.
 
 ## Air-Gapped Installation
 
@@ -395,8 +395,17 @@ by selfHeal, and a local commit alone is invisible to ArgoCD.
 
 | Target | Method | Storage | Schedule |
 |--------|--------|---------|----------|
-| PostgreSQL | CNPG barman | SeaweedFS S3 | Daily 00:00 |
-| PVC (all) | Velero Kopia | SeaweedFS S3 | Daily 02:00 |
+| PostgreSQL | CNPG barman (base backup + WAL archive) | SeaweedFS S3 (`s3://cnpg-backup/narwhal-db`) | Daily 02:00 UTC |
+| PVC | Velero Kopia (five owner-only volumes excluded, see below) | SeaweedFS S3 | Daily 02:00 |
+| OpenBao | Encrypted raft snapshot collected by Velero (`daily-openbao`) | PVC `openbao-snapshots` | Daily 04:30 UTC; **not enabled by default** |
+
+Under NFS `root_squash` Velero cannot read owner-only volumes, so five are excluded from its
+fs-backup and are **not protected by Velero**: OpenBao `data`, CNPG `pgdata`, Gitea `data`, Harbor
+jobservice `job-logs` and SeaweedFS master `data-storage`. PostgreSQL is covered by CNPG barman; the
+OpenBao snapshot backup needs operator setup and has not been restore-drill-verified
+([runbook](docs/runbooks/openbao-snapshot-backup.md),
+[policy](docs/common/storage-protection-policy.md)); Gitea, Harbor job-logs and SeaweedFS master
+data have no other backup either.
 
 ```bash
 # Manual backup

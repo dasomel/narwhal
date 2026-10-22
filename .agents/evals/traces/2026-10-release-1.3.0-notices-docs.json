@@ -43,7 +43,7 @@
     {
       "id": "e3",
       "type": "scope_check",
-      "summary": "Not verified, so not edited: the portal 'not signed beyond provenance' limitation (the publish workflow has a cosign sign job but its secrets are recorded as missing), the portal vulnerability-reporting repository URL, and the portal 'no end-to-end security test suite' wording. The supported-version tables follow the existing latest-minor pattern (1.3.x narwhal, 1.1.x portal); this is a maintainer policy decision applied by following that pattern."
+      "summary": "NOT VERIFIED, so not edited: (1) the portal 'not signed beyond provenance' limitation. The workflow comment suggested the Cosign secret might be absent, while portal/docs/cosign-signing-setup.md records the key pair and secrets as registered on 2026-10-15; whether the published portal/v1.1.0 image actually carries a Cosign signature was not checked. (2) The portal vulnerability-reporting repository URL: nothing in the repository shows whether private vulnerability reporting is enabled on dasomel/narwhal, and that was not checked on GitHub. (3) The portal 'no end-to-end security test suite' wording: Playwright specs exist under portal/e2e (for example auth-boundary.spec.ts) but what they cover was not reviewed, so the sentence may be stale and is left as is. The supported-version tables follow the existing latest-minor pattern (1.3.x narwhal, 1.1.x portal); this is a maintainer policy decision applied by following that pattern."
     },
     {
       "id": "e4",
@@ -62,7 +62,7 @@
     {
       "id": "e5",
       "type": "completion_claim",
-      "summary": "The listed documentation statements now match the repository state at v1.3.0; an independent Codex review returned PASS, as relayed by the coordinator (not re-run by this lane)."
+      "summary": "The edited documentation statements were checked against the repository files named in e2 and no mismatch remains in them; an independent Codex review returned PASS, as relayed by the coordinator (not re-run by this lane)."
     },
     {
       "id": "e6",

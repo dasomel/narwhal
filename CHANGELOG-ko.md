@@ -9,6 +9,8 @@
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-10-22
+
 보안 강화 중심의 릴리스. 에어갭 번들과 오프라인 업그레이드 번들에 무결성 검증 체인이 추가되어 승격 전에 검사되며,
 ArgoCD, Gitea, RBAC, OpenBao, Keycloak, APISIX, NFS, `database` 신뢰 경계가 강화되었고, 이 경계가 퇴행하지 않도록
 정적 CI 게이트가 다수 추가됨. 기존 클러스터나 번들에서 운영자 조치가 필요한 변경이 여러 건 있으므로 먼저
@@ -189,7 +191,8 @@ ArgoCD, Gitea, RBAC, OpenBao, Keycloak, APISIX, NFS, `database` 신뢰 경계가
     실행할 것. 기존 5필드 스케줄은 매시간 실행되어 `Backup` 객체가 누적되었음. 일괄 삭제하지 말고 먼저 클러스터의
     `retentionPolicy`를 확인한 뒤 정리를 맡길 것.
   - *OpenBao 스냅샷 백업 (#443). 아직 어느 클러스터에도 활성화되지 않음.* 각 단계가 공유 클러스터를 변경하며
-    순서는 다음과 같음(`docs/common/storage-protection-policy.md` 8절). (1) `scripts/cluster/13-2-narwhal-portal-bindings.sh`를
+    순서는 다음과 같음(`docs/common/storage-protection-policy.md` 8절, 운영자 런북
+    `docs/runbooks/openbao-snapshot-backup.md`). (1) `scripts/cluster/13-2-narwhal-portal-bindings.sh`를
     다시 실행해 정책과 Kubernetes-auth 역할 `openbao-backup`을 만듦. (2) 운영자 워크스테이션에서
     `scripts/ops/openbao-backup-keygen.sh <개인키 경로>`를 실행함. RSA 키 쌍을 로컬에서 생성하고(개인 키는 기본적으로
     패스프레이즈로 보호되며 해당 경로에만 기록됨) 인증서만 ConfigMap `storage/openbao-backup-recipient`로 클러스터에
@@ -211,6 +214,9 @@ ArgoCD, Gitea, RBAC, OpenBao, Keycloak, APISIX, NFS, `database` 신뢰 경계가
   Velero fs-backup이 파일을 가져가며, job 파드 자체는 Velero에서 제외됨. 실패 시 fail closed로 동작하고
   `RECIPIENT_FPR`로 인증서 지문을 고정할 수 있음. 키 쌍은 `scripts/ops/openbao-backup-keygen.sh`로 운영자 워크스테이션에서 로컬 생성함.
   정적 검사와 추출한 스크립트의 로컬 실행으로만 검증함. 알려진 이슈 참고.
+- **OpenBao 스냅샷 백업 운영자 런북 (#431, #449).** `docs/runbooks/openbao-snapshot-backup.md`가 지문 고정을 포함한
+  활성화 순서, 첫 실행 확인, 정기 최신성 점검, 키 교체 및 노출 시 유의사항, 복원 절차 안내, 문제 해결을 다룸.
+  OpenBao 스냅샷 백업은 여전히 어느 클러스터에도 활성화되지 않았고 실제 동작은 검증되지 않음. 알려진 이슈 참고.
 - **오프라인 업그레이드 번들 파이프라인 (7becc87, #300, #301).** JSON 스키마, 검증기, 승인이 포함된 승격
   게이트, dry-run diff, 내용 및 의존성 검증, 컴포넌트 업그레이드 웨이브 그래프의 정적 검사(#46). cert-manager가
   첫 오케스트레이션 파일럿임 (dd9ca0e).
@@ -288,7 +294,9 @@ ArgoCD, Gitea, RBAC, OpenBao, Keycloak, APISIX, NFS, `database` 신뢰 경계가
   이전과 키 회전은 검증하지 않았음.
 - **CNPG `ScheduledBackup`이 매시간 실행됨 (#431, #441).** 스케줄이 5필드 `0 2 * * *`였으나 CNPG는 초가 앞에 오는
   6필드를 쓰므로 매시간 2분에 실행되어 `Backup` 객체가 누적되었음. 이제 `0 0 2 * * *`(매일 02:00)임. 라이브
-  객체는 업그레이드 참고 확인.
+  객체는 업그레이드 참고 확인. 한 클러스터에서 관찰함: 2026-10-21 02:00:00 UTC에 수정된 스케줄이 `Backup`
+  (`narwhal-db-backup-20261021020000`, completed) 정확히 1건을 만들었고 매시간 실행은 멈춤(`Backup` 객체 1311개에서
+  1312개); 기존 `Backup` 객체는 삭제하지 않았음.
 - **Tempo 메모리 ballast 비활성화 및 `GOMEMLIMIT=1280MiB` 설정 (#420, #439).** OOMKilled에 대한 가설이며
   확인된 수정이 아님. 알려진 이슈 참고.
 - **Velero 데이터 이동 파드에 `app.kubernetes.io/name=velero-data-mover` 라벨 부여 (#422, #440).** 라벨은 node-agent
@@ -307,8 +315,9 @@ ArgoCD, Gitea, RBAC, OpenBao, Keycloak, APISIX, NFS, `database` 신뢰 경계가
 ### 보안
 
 - `portal-release.yml`이 `workflow_run` ref를 쓰는 두 번째 `actions/checkout`을 더 이상 사용하지 않음. OpenSSF
-  Scorecard가 Dangerous-Workflow로 지적하던 패턴임 (#395). 태그를 git으로 가져와 실행의 `head_sha`를 가리키는지
-  증명한 뒤에만 `tagged/` worktree로 추가하며, 신뢰 모델은 그대로임.
+  Scorecard가 Dangerous-Workflow로 지적하던 패턴임 (#395, #433). 태그를 git으로 가져와 실행의 `head_sha`를 가리키는지
+  증명한 뒤에만 `tagged/` worktree로 추가하며, 신뢰 모델은 그대로임. 실제 `portal/v*` 릴리스로 아직 실행되지 않았고 Scorecard 점수도
+  재검사하지 않았음.
 - `database` 기본 ingress 차단, Gitea ingress를 APISIX를 거치지 않는 정당한 소스로 제한, APISIX Admin API는
   파드 CIDR과 루프백에서만 접근 가능.
 - 게이트웨이가 더 이상 클라이언트가 보낸 `X-WEBAUTH-USER`를 신뢰하지 않음 (492e65a).
@@ -337,25 +346,24 @@ ArgoCD, Gitea, RBAC, OpenBao, Keycloak, APISIX, NFS, `database` 신뢰 경계가
   않음).
 - **`portal-reader` 역할은 설계상 `sync */*`를 유지함.** 포털의 서비스 신원은 모든 프로젝트를 동기화하며, 범위를
   좁히려면 별도 검토가 필요함. R246(#342)은 ArgoCD 정책을 줄 집합, 파싱된 `argocd-rbac-cm` data, 치환식 기준으로
-  검사하지만 렌더링된 Helm 결과, 다른 차트, `argocd-cm`, 부트스트랩 heredoc 밖의 `kubectl` 변경은 보지 않음(변경
-  패키지의 Known limits 참고).
+  검사하지만 렌더링된 Helm 결과, 다른 차트, `argocd-cm`, 부트스트랩 heredoc 밖의 `kubectl` 변경은 보지 않음.
 - **에어갭 번들 복사는 OCI referrer(SBOM, 서명, attestation)를 보존하지 않음.** `09`는 손실을 보고하지만
   실패시키지 않음(#124).
 - **다이제스트 인벤토리는 최초 저장 시점 신뢰(trust-on-first-save)임.** `images.digests.json`에는 서명이 없으므로
   번들이 `02`가 기록한 것과 일치함은 증명하지만 `02`가 올바른 바이트를 보았음은 증명하지 않음(#124).
-- **S3 인증 운영 작업: 아직 남은 것 (#414, #415).** 2026-10-19 kakao-narwhal에서 검증됨: 롤 표식이 자가 치유
+- **S3 인증 운영 작업: 남은 공백 (#412 후속, #414와 #415는 종료됨).** 2026-10-19 kakao-narwhal에서 검증됨: 롤 표식이 자가 치유
   후에도 유지되고, Application이 Synced이며, 익명 검사가 통과하고, S3 서버를 롤링한 뒤에도 네 클라이언트 모두
   클라이언트별 I/O 검사를 통과함. `08-4-storage.sh` 가드는 인증된 그 클러스터에 읽기 전용으로 실행해 통과를
   확인했고, 익명 클러스터에서의 중단 경로는 가짜 `kubectl` 테스트와 독립 리뷰의 시뮬레이션으로만 확인했으며
   `08-4`를 라이브에서 다시 실행하지는 않았음. 이후 #442가 클라이언트 Secret을 서버 사이드 어플라이로 적용하고
   `kubectl.kubernetes.io/last-applied-configuration` 어노테이션에서 키를 제거함(라이브 클러스터에서 다시 검증하지
-  않음). 여전히 미해결: 가드가 확인하는 `envFrom` 참조는 Loki/Tempo 파드가 재시작되어 새 키를 로드했음을 증명하지 않음.
+  않음). 남은 공백: 가드가 확인하는 `envFrom` 참조는 Loki/Tempo 파드가 재시작되어 새 키를 로드했음을 증명하지 않음.
   같은 Application은 `Secret seaweedfs-db-secret`을 비교 상태 없이 표시하며, 이는 조사하지 않았음.
 - **`root_squash`에서는 소유자 전용 파일이 있는 볼륨의 Velero 볼륨 백업이 실패함 (#431).** NFS 서버에서 다른
   사용자가 읽을 수 없는 파일이 `database/`(7686개 중 7677개), `monitoring/`(최초 측정 1317개 중 138개, 이후 1296개 중 115개: 데이터가 계속 변함), `devtools/`(292개
-  중 72개), `storage/`(77개 중 7개)에서 발견됨. 소유자가 데이터 이동 파드에 맞는 신원 부여, 애플리케이션 수준
-  백업(OpenBao는 백업 훅으로 `bao operator raft snapshot`), NFS 서버에서의 백업 중에서 결정하기 전까지는
-  OpenBao, PostgreSQL 및 소유자 전용 파일이 있는 다른 볼륨의 Velero 백업에 의존하지 말 것. CNPG 자체
+  중 72개), `storage/`(77개 중 7개)에서 발견됨. 소유자 전용 파일이 있는 볼륨의 Velero 백업에는 의존하지 말 것:
+  OpenBao는 대신 CronJob의 애플리케이션 수준 암호화 스냅샷을 쓰고(#443, 아직 어느 클러스터에도 활성화되지 않음, Velero
+  백업 훅 아님), PostgreSQL은 CNPG barman에 의존하며, 나머지 볼륨은 Velero로 보호되지 않음. CNPG 자체
   barman 백업은 S3로 별도 수행되며, 2026-10-18에 온디맨드 백업이 완료되고 WAL 아카이빙이 진행됨을 확인함.
   봉쇄 조치(1단계): 스케줄 실행에서 `PodVolumeBackup`이 Canceled된 다섯 볼륨(OpenBao `data`, CNPG `pgdata`, Gitea
   `data`, Harbor jobservice `job-logs`, SeaweedFS 마스터 `data-storage`)에 파드 어노테이션 `backup.velero.io/backup-volumes-excludes`를 부여함
@@ -364,7 +372,10 @@ ArgoCD, Gitea, RBAC, OpenBao, Keycloak, APISIX, NFS, `database` 신뢰 경계가
   않음.** OpenBao는 새 애플리케이션 수준 스냅샷(#443, 아래, 아직 어느 클러스터에도 활성화되지 않음)에 의존하고, PostgreSQL은 CNPG barman에 의존하며, Gitea `data`,
   Harbor `job-logs`, SeaweedFS 마스터 `data-storage`(raft 메타데이터)는 보호되지 않으며, 마스터의
   `seaweedfs-master-log-volume`은 계속 백업됨. 이 어노테이션을 적용하면 OpenBao, CNPG, Gitea, Harbor jobservice,
-  SeaweedFS 마스터 파드가 롤링됨. 라이브 클러스터에서 검증하지 않음. 근본 해결을 위해 #431은 계속 열려 있음. **OpenBao 2단계 (#443):** Velero fs-backup이 읽을 수 있는 PVC에
+  SeaweedFS 마스터 파드가 롤링됨. 한 클러스터(kakao-narwhal)에서 관찰함: 1단계(#434, #436)는
+  2026-10-19에 적용되었고, 2026-10-21(UTC) 읽기 전용 확인에서 2026-10-20과 2026-10-21의 예약 Velero 백업(databases,
+  full, gitea, harbor, openbao)이 모두 Completed였으며, Canceled된 `PodVolumeBackup` 5건은 모두 2026-10-19 실행분이고
+  이후 실행분에는 없음(Completed 총 345건). 관찰일 뿐 보장이 아니며, 이 볼륨들의 전체 복원은 여전히 검증되지 않음. 근본 해결을 위해 #431은 계속 열려 있음. **OpenBao 2단계 (#443):** Velero fs-backup이 읽을 수 있는 PVC에
   일일 암호화 raft 스냅샷을 저장하는 코드가 추가됨(추가 항목 참고). **어느 클러스터에도 활성화되지 않았음.** 운영자 키,
   `13-2` 재실행, 배포가 필요하며(업그레이드 참고) 정적 검사와 로컬 OpenSSL 실행만 수행했음. 한계: **`root_squash`
   환경에서 Gitea `data`, SeaweedFS 마스터 `data-storage`, Harbor jobservice `job-logs` 볼륨은 여전히 Velero
@@ -381,10 +392,6 @@ ArgoCD, Gitea, RBAC, OpenBao, Keycloak, APISIX, NFS, `database` 신뢰 경계가
   2026-10-20 라이브 적용, 단 Kyverno 이벤트가 실제로 줄었는지는 아직 검증하지 않음), Velero v1.18은
   repository-maintenance Job에 라벨을 붙일 수 없어 해당 Kyverno audit 이벤트는 남음. `events create` 거부는 문서화만
   되었고 수정되지 않았음.
-- **`portal-release.yml`에 대한 Scorecard `Dangerous-Workflow` 지적 (#395).** 워크플로가
-  `workflow_run.head_sha`를 체크아웃함. 이미 `portal/v*` 태그 푸시에서만 실행되고, 신뢰할 수 있는 기본 브랜치
-  체크아웃을 실행하며, 태그가 그 커밋을 가리키는지 증명하므로 휴리스틱 일치로 보이지만, 소유자가 (검토 기한과 함께)
-  예외로 수용하거나 워크플로를 재구성해야 함.
 - **Tempo가 1536Mi 제한에서 만성적으로 OOMKilled됨 (#420).** S3 변경과 무관하게 라이브 클러스터에서
   매주 수백 건의 재시작이 발생함. #439는 메모리 ballast를 0으로, `GOMEMLIMIT`를 1280MiB로 설정했으나 가설이며,
   재시작이 멈추는지는 아직 관찰되지 않았고 롤아웃 시 flush되지 않은 WAL을 잃음(`persistence` 꺼짐).
@@ -567,7 +574,8 @@ Vagrant (arm64) 및 Kakao Cloud (amd64) 환경 모두에서 에어갭이 "이미
 - 토폴로지: 단일 노드 → 3m+3w (Master NoSchedule, Worker에서 플랫폼 앱 실행)
 - NFS StorageClass: 계층적 subDir + 최적화된 mountOptions
 
-[Unreleased]: https://github.com/dasomel/narwhal/compare/v1.2.0...HEAD
+[Unreleased]: https://github.com/dasomel/narwhal/compare/v1.3.0...HEAD
+[1.3.0]: https://github.com/dasomel/narwhal/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/dasomel/narwhal/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/dasomel/narwhal/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/dasomel/narwhal/compare/v0.2.0...v1.0.0

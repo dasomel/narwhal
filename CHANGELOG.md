@@ -9,6 +9,8 @@ English | [한국어](CHANGELOG-ko.md)
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-10-22
+
 A hardening release. The air-gapped bundle and the offline upgrade bundle now carry an
 integrity chain that is checked before anything is promoted, the ArgoCD, Gitea, RBAC, OpenBao,
 Keycloak, APISIX, NFS and `database` trust boundaries were tightened, and a batch of static CI
@@ -222,7 +224,8 @@ existing cluster or bundle; read **Upgrade notes** first.
     The old 5-field schedule ran hourly, so `Backup` objects have accumulated. Do not bulk-delete
     them: check the cluster's `retentionPolicy` first and let it prune.
   - *OpenBao snapshot backup (#443); not enabled on any cluster yet.* Each step changes a shared
-    cluster, in this order (`docs/common/storage-protection-policy.md` section 8): (1) re-run
+    cluster, in this order (`docs/common/storage-protection-policy.md` section 8; operator runbook
+    `docs/runbooks/openbao-snapshot-backup.md`): (1) re-run
     `scripts/cluster/13-2-narwhal-portal-bindings.sh`, which creates the policy and
     Kubernetes-auth role `openbao-backup`; (2) on the operator workstation run
     `scripts/ops/openbao-backup-keygen.sh <private-key-path>`, which generates the RSA key pair
@@ -250,6 +253,11 @@ existing cluster or bundle; read **Upgrade notes** first.
   the job pod itself is excluded from Velero. The job fails closed, and `RECIPIENT_FPR` can pin
   the certificate fingerprint. `scripts/ops/openbao-backup-keygen.sh` generates the key pair locally on the operator workstation.
   Verified by static checks and by running the extracted script locally only; see Known issues.
+- **OpenBao snapshot backup operator runbook (#431, #449).** `docs/runbooks/openbao-snapshot-backup.md`
+  covers the activation order including fingerprint pinning, the first-run check, the routine
+  freshness check, key rotation and exposure notes, a pointer to the restore procedure, and
+  troubleshooting. The OpenBao snapshot backup is still not enabled on any cluster and its live
+  behavior is unverified; see Known issues.
 - **Offline upgrade bundle pipeline (7becc87, #300, #301).** JSON schema, verifier, promotion
   gate with approval, dry-run diff, content and dependency verification, and a static check of
   the component upgrade-wave graph (#46); cert-manager is the first orchestration pilot
@@ -345,7 +353,9 @@ existing cluster or bundle; read **Upgrade notes** first.
 - **The CNPG `ScheduledBackup` ran hourly (#431, #441).** The schedule was the 5-field
   `0 2 * * *`, but CNPG uses 6 fields with seconds first, so it fired every hour at minute 2 and
   accumulated `Backup` objects. It is now `0 0 2 * * *` (daily at 02:00). See Upgrade notes for the
-  live object.
+  live object. Observed on one cluster: at 2026-10-21 02:00:00 UTC the corrected schedule produced
+  exactly one `Backup` (`narwhal-db-backup-20261021020000`, completed) and the hourly runs stopped
+  (`Backup` objects 1311 to 1312); the existing `Backup` objects were not deleted.
 - **Tempo memory ballast disabled and `GOMEMLIMIT=1280MiB` set (#420, #439).** This is a
   hypothesis for the OOMKills, not a confirmed fix; see Known issues.
 - **Velero data-movement pods are labelled `app.kubernetes.io/name=velero-data-mover` (#422, #440).**
@@ -368,8 +378,9 @@ existing cluster or bundle; read **Upgrade notes** first.
 ### Security
 
 - `portal-release.yml` no longer uses a second `actions/checkout` with a `workflow_run` ref, which
-  OpenSSF Scorecard flags as Dangerous-Workflow (#395). The tag is fetched with git, proven to point
-  at the run's `head_sha`, and only then added as a `tagged/` worktree; the trust model is unchanged.
+  OpenSSF Scorecard flags as Dangerous-Workflow (#395, #433). The tag is fetched with git, proven to point
+  at the run's `head_sha`, and only then added as a `tagged/` worktree; the trust model is unchanged. Not yet exercised by a real `portal/v*` release, and the Scorecard
+  score has not been re-scanned.
 - Default-deny ingress for `database`, Gitea ingress restricted to its legitimate non-APISIX
   sources, and the APISIX Admin API reachable only from the pod CIDR and loopback.
 - The gateway no longer trusts a client-supplied `X-WEBAUTH-USER` (492e65a).
@@ -404,28 +415,28 @@ existing cluster or bundle; read **Upgrade notes** first.
   on any project; narrowing it needs a separate review. R246 (#342) checks the ArgoCD policy by
   line set, parsed `argocd-rbac-cm` data and substitution expressions, but not the rendered Helm
   output, other charts, `argocd-cm`, or changes made with `kubectl` outside the bootstrap
-  heredoc (see the change package's Known limits).
+  heredoc.
 - **Air-gap bundle copy does not preserve OCI referrers** (SBOM, signature, attestation).
   `09` reports the loss but does not fail (#124).
 - **The digest inventory is trust-on-first-save.** `images.digests.json` is not signed, so it
   proves the bundle matches what `02` recorded, not that `02` saw the right bytes (#124).
-- **S3 authentication operations: what is still open (#414, #415).** Verified on kakao-narwhal on
+- **S3 authentication operations: remaining gaps (follow-ups to #412; #414 and #415 are closed).** Verified on kakao-narwhal on
   2026-10-19: the roll marker survives self-heal, the Application is Synced, the anonymous check
   passes, and all four clients pass their per-client I/O check after the S3 server rolled. The
   `08-4-storage.sh` guard was run read-only against that authenticated cluster (it passes); its
   abort paths on an anonymous cluster are covered by fake `kubectl` tests and an independent
   review's simulation, not by a live re-run of `08-4`. Since then #442 applies the client Secrets with server-side apply and removes the key from the
   `kubectl.kubernetes.io/last-applied-configuration` annotation (not re-verified on a live cluster).
-  Still open: the guard's `envFrom` check does not prove that the Loki/Tempo
+  Remaining: the guard's `envFrom` check does not prove that the Loki/Tempo
   pods restarted and loaded the new keys. The same Application also lists the Secret
   `seaweedfs-db-secret` with no comparison status; that is not investigated.
 - **Velero volume backups fail on volumes with owner-only files under `root_squash` (#431).** On
   the NFS server, files that other users cannot read were found in `database/` (7677 of 7686),
   `monitoring/` (138 of 1317 at the first measurement, 115 of 1296 later: the data is live),
-  `devtools/` (72 of 292) and `storage/` (7 of 77). Until the owner
-  decides between running the data mover with a matching identity, application-level backups (for
-  OpenBao `bao operator raft snapshot` through a backup hook) and a backup taken on the NFS server,
-  do not rely on the Velero backups of OpenBao, PostgreSQL or other volumes with owner-only files.
+  `devtools/` (72 of 292) and `storage/` (7 of 77). Do not rely on
+  the Velero backups of volumes with owner-only files: OpenBao gets an application-level encrypted
+  snapshot from a CronJob instead (#443, not enabled on any cluster yet, not a Velero backup hook),
+  PostgreSQL relies on CNPG barman, and the other volumes are not protected by Velero.
   CNPG's own barman backups to S3 are separate; an on-demand backup completed and WAL archiving
   advanced on 2026-10-18. Containment (stage 1): the five volumes whose `PodVolumeBackup` was
   Canceled in the scheduled runs (OpenBao `data`, CNPG `pgdata`, Gitea `data`, Harbor jobservice
@@ -436,7 +447,12 @@ existing cluster or bundle; read **Upgrade notes** first.
   new application-level snapshot (#443, below; not enabled on any cluster yet), PostgreSQL relies on CNPG barman, and Gitea `data`, Harbor
   `job-logs` and the SeaweedFS master `data-storage` (raft metadata) are unprotected; the master's
   `seaweedfs-master-log-volume` stays backed up. The annotation change rolls the OpenBao, CNPG, Gitea,
-  Harbor jobservice and SeaweedFS master pods when it is applied. Not verified on a live cluster. #431 stays open for the
+  Harbor jobservice and SeaweedFS master pods when it is applied. Observed on one cluster (kakao-narwhal): stage 1 (#434, #436) was applied on
+  2026-10-19; read-only checks on 2026-10-21 (UTC) showed the scheduled Velero backups of
+  2026-10-20 and 2026-10-21 (databases, full, gitea, harbor, openbao) all Completed, and the only
+  Canceled `PodVolumeBackup`s (5) belong to the 2026-10-19 runs, none to later runs (345 Completed
+  in total). That is an observation, not a guarantee; a full restore of any of these volumes is
+  still unverified. #431 stays open for the
   durable fix. **Stage 2 for OpenBao (#443):** the code adds a daily encrypted raft snapshot on a PVC that
   Velero fs-backup can read (see Added). **It is not enabled on any cluster**: it needs the
   operator key, the `13-2` re-run and a deploy (Upgrade notes), and only static checks and local
@@ -457,11 +473,6 @@ existing cluster or bundle; read **Upgrade notes** first.
   `app.kubernetes.io/name=velero-data-mover` (#440; applied live on 2026-10-20, but whether the
   Kyverno events drop is not yet verified), but Velero v1.18 cannot label its repository-maintenance Jobs, so their Kyverno audit
   events remain. The `events create` rejection is only documented, not fixed.
-- **Scorecard `Dangerous-Workflow` finding on `portal-release.yml` (#395).** The workflow checks
-  out `workflow_run.head_sha`. It already runs only for `portal/v*` tag pushes, executes the
-  trusted default-branch checkout and proves the tag points to that commit, so this looks like a
-  heuristic match; the owner still has to accept it as an exception (with a review date) or
-  restructure the workflow.
 - **Tempo is chronically OOMKilled at its 1536Mi limit (#420).** Hundreds of restarts a week on the
   live cluster, unrelated to the S3 change. #439 sets the memory ballast to 0 and `GOMEMLIMIT` to
   1280MiB as a hypothesis; whether the restarts stop is not yet observed, and a rollout drops the
@@ -663,7 +674,8 @@ First stable release — validated by consecutive zero-fix, from-scratch clean i
 - Topology: single node → 3m+3w (Master NoSchedule, platform apps running on Workers)
 - NFS StorageClass: hierarchical subDir + optimized mountOptions
 
-[Unreleased]: https://github.com/dasomel/narwhal/compare/v1.2.0...HEAD
+[Unreleased]: https://github.com/dasomel/narwhal/compare/v1.3.0...HEAD
+[1.3.0]: https://github.com/dasomel/narwhal/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/dasomel/narwhal/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/dasomel/narwhal/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/dasomel/narwhal/compare/v0.2.0...v1.0.0

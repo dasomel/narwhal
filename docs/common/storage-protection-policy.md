@@ -134,4 +134,6 @@ rg -n 'local-path|local PV|kind: PersistentVolume' scripts gitops/resources gito
    재해 복구(새로 초기화한 OpenBao에 원본 스냅샷을 되살림): 원본 unseal 키를 안전하게 확보해 둔 경우에만 같은 명령에 `restore -force`를 쓴다. **경고:** `-force`는 키 일치 검사를 건너뛰므로 정상 동작하는 저장소를 다른 클러스터의 파일로 덮어쓸 수 있다. 대상이 비어 있거나 폐기 예정인지 확인한 뒤에만 사용한다. 복원 직후 OpenBao는 원본 unseal 키를 요구하므로, 새 초기화로 만들어진 `openbao-init` Secret(새 unseal 키·root 토큰)을 **원본 값으로 되돌려야** 자동 unseal(`openbao-auto-unseal`)이 동작한다: 원본 `openbao-init`(Velero `daily-openbao` 백업의 `storage` 리소스 또는 운영자가 따로 보관한 사본)에서 `unseal_keys_b64`와 `root_token`을 꺼내 `kubectl create secret generic openbao-init -n storage --from-file=unseal_keys_b64=... --from-file=root_token=... --dry-run=client -o yaml | kubectl replace -f -`(값은 파일로만 전달, 명령행에 직접 넣지 않음) 후 2분 내 unseal을 확인한다. 새 root 토큰은 복원 후 무효가 되므로 이후에는 원본 root 토큰을 쓴다.
 6. 복원 후 `bao status`로 unseal 상태를 확인하고, `auth/kubernetes` 롤(`narwhal-portal`, `openbao-backup`)과 KV 데이터를 읽어 검증한 뒤 클라이언트를 다시 연다. `/tmp/restore.snap`과 워크스테이션의 평문 파일을 삭제한다.
 
+운영 순서·점검·키 교체·문제 해결의 상세는 `docs/runbooks/openbao-snapshot-backup.md`를 따른다(위 정책 표와 다르면 이 절이 우선).
+
 미검증 항목: 실제 스냅샷 생성, 인증 롤 동작과 13-2의 `bao read -field=...` 출력 형식, 클러스터 안에서의 `openssl cms` 암호화(로컬 OpenSSL로만 확인; 이미지의 busybox `od`/`head -c`/`tail -c`도 미실행), Velero 제외 라벨 동작, Velero PodVolumeBackup 완료, 복원 드릴. 스냅샷 신선도 알림도 아직 없다.

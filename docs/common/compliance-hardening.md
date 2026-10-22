@@ -205,7 +205,7 @@ sudo find "${NFS_SHARE_PATH}" -uid 0 -print
 sudo exportfs -v
 ```
 
-An empty result from steps 2 and 3 means existing data needs no changes — the
+An empty result from step 3 means no root-owned data exists (step 2 also lists legitimate files owned by a workload's own non-root uid, which need no change) — the
 `root_squash` export change is safe to apply as-is.
 
 ### Fix an existing cluster's on-disk state (only if step 2/3 above found matches)
@@ -214,8 +214,10 @@ An empty result from steps 2 and 3 means existing data needs no changes — the
 > `scripts/cluster/nfs-root-squash-align.sh` (dry run by default, `--apply` to change; run as root on
 > the NFS server), sequenced with the export switch in `docs/runbooks/nfs-xfs-migration.md`. It chowns
 > only root-owned entries inside each PV directory to that PV's workload identity. The blanket
-> `chown -R nobody:nogroup` below is the older manual fallback and can lock out pods that run as a
-> non-root uid; prefer the script. Note that under `root_squash` the Velero data mover (root) cannot
+> `chown -R nobody:nogroup` below is the older manual fallback. **Do not run it blanket over the
+> share:** it re-owns files of non-root workloads to nobody and locks those pods out of their own
+> data; prefer the script, and if you must use the manual command scope it to the specific
+> root-owned paths the audit flagged. Note that under `root_squash` the Velero data mover (root) cannot
 > read owner-only volumes, so five of them are excluded from Velero fs-backup (#431); see
 > `docs/common/storage-protection-policy.md`.
 
@@ -226,7 +228,7 @@ NFS_SHARE_PATH="${NFS_SHARE_PATH:-/srv/nfs/k8s}"
 # Review the step-2 output first — this is a recursive chown, scope it to the
 # specific subpaths the audit flagged rather than blindly running it over the
 # whole share if any subtree legitimately expects a different owner.
-sudo find "${NFS_SHARE_PATH}" \( ! -user nobody -o ! -group nogroup \) -print0 \
+sudo find "${NFS_SHARE_PATH}" \( -uid 0 -o -gid 0 \) -print0 \
   | sudo xargs -0 chown nobody:nogroup
 
 # Re-apply exports if /etc/exports was hand-edited out of band.
@@ -236,9 +238,13 @@ sudo exportfs -ra
 ### Confirm success
 
 ```bash
-# Re-run the audit — both should now be empty.
-sudo find "${NFS_SHARE_PATH}" \( ! -user nobody -o ! -group nogroup \) -print
+# Success criterion: no root-owned entry (uid 0 or gid 0) is left inside the PV directories,
+# except PVs the script reported as skipped/UNRESOLVED (exit code 3). Files owned by a
+# workload's own non-root uid (for example 1000:1000 for SeaweedFS) are CORRECT and must NOT be
+# changed to nobody:nogroup; only the share root and the namespace directories are nobody:nogroup.
 sudo find "${NFS_SHARE_PATH}" -uid 0 -print
+sudo find "${NFS_SHARE_PATH}" -gid 0 -print
+stat -c '%U:%G %a %n' "${NFS_SHARE_PATH}"   # expected: nobody:nogroup 750
 
 # Confirm dynamic provisioning still works: create a test PVC using the nfs.csi.k8s.io
 # storage class and verify it binds and is writable from a pod, then delete it.

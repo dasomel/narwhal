@@ -236,7 +236,7 @@ metadata:
 spec:
   project: platform
   source:
-    repoURL: https://charts.example.com
+    repoURL: http://gitea-http.devtools.svc.cluster.local:3000/api/packages/gitea-admin/helm  # platform AppProject sourceRepos 허용 목록(in-cluster Gitea)만 가능
     chart: my-app
     targetRevision: "1.0.0"
     helm:
@@ -244,7 +244,7 @@ spec:
         - values.yaml
   destination:
     server: https://kubernetes.default.svc
-    namespace: my-namespace
+    namespace: devtools  # platform AppProject destinations에 있는 네임스페이스만 가능 (gitops/resources/argocd-projects.yaml)
   syncPolicy:
     automated:
       prune: true
@@ -713,7 +713,7 @@ vagrant ssh master-1 -c "kubectl describe backups.velero.io <backup-name> -n sto
 vagrant ssh master-1 -c "kubectl get schedules.velero.io -n storage"
 
 # 스케줄 상세 정보
-vagrant ssh master-1 -c "kubectl describe schedules.velero.io daily-full -n storage"
+vagrant ssh master-1 -c "kubectl describe schedules.velero.io velero-daily-full -n storage"
 ```
 
 ### 수동 백업 생성
@@ -792,7 +792,13 @@ vagrant ssh master-1 -c "kubectl exec -n storage deployment/velero -- \
 - Velero는 `upgradeCRDs: false` 설정 필수 (musl/glibc 비호환)
 - 백업 저장소는 SeaweedFS S3(버킷 `velero`, `http://seaweedfs-s3.storage.svc.cluster.local:8333`)이며 NFS 디렉터리가 아님
 - PVC 백업은 Kopia(`uploaderType: kopia`) 파일시스템 백업이며, NFS `root_squash`에서 읽을 수 없는 owner-only 볼륨 5종(OpenBao `data`, CNPG `pgdata`, Gitea `data`, Harbor `job-logs`, SeaweedFS master `data-storage`)은 제외되어 Velero가 보호하지 않음 (`docs/common/storage-protection-policy.md`)
-- 복구 시 기존 리소스와 충돌 가능 (namespace 삭제 후 복구 권장)
+- 복구 시 기존 리소스와 충돌할 수 있습니다. **보호되지 않는 데이터가 있는 네임스페이스나 PVC는 삭제하지 마세요.**
+  Velero가 보호하지 않는 볼륨(Gitea `data`, OpenBao `data`(활성화되고 클러스터 밖으로 복사한 암호화 스냅샷이
+  없는 경우), Harbor jobservice `job-logs`, SeaweedFS master `data-storage`, CNPG `pgdata`(Barman 백업만 있음))를
+  가진 네임스페이스(`devtools`, `storage`, `database`)를 지우면 그 데이터는 복구할 수 없습니다. 대신 문제 파드를
+  재시작하고(PVC는 유지), 원인이 RBAC·설정이면 그 리소스를 GitOps(`push-to-gitea.sh`)로 제자리에서 고치세요.
+  네임스페이스 삭제 후 복구가 필요하면 먼저 `docs/vagrant/disaster-recovery.md`의 데이터별 복구 경로와 외부 사본
+  여부를 확인하세요.
 
 ---
 

@@ -7,7 +7,7 @@ Integration failures are converted into regression tests and continuously revali
 upgrades.
 It runs on ARM64/AMD64, in the cloud or on-premises, and fully air-gapped.
 
-**Verified against this repo right now:** 1207 commits (`git log --oneline | wc -l`), 6 tags
+**Verified against this repo as of v1.3.0:** 1207 commits (`git rev-list --count v1.3.0`), 6 tags
 (`git tag | wc -l`), 440 dated integration incidents in
 [`lessons-log.md`](docs/common/lessons-log.md) (rows matching `| YYYY-MM-DD |`), and 393 regression
 checks in [`scripts/test/regression-check-kakao.sh`](scripts/test/regression-check-kakao.sh)

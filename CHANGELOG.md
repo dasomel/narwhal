@@ -376,8 +376,9 @@ existing cluster or bundle; read **Upgrade notes** first.
 ### Security
 
 - `portal-release.yml` no longer uses a second `actions/checkout` with a `workflow_run` ref, which
-  OpenSSF Scorecard flags as Dangerous-Workflow (#395). The tag is fetched with git, proven to point
-  at the run's `head_sha`, and only then added as a `tagged/` worktree; the trust model is unchanged.
+  OpenSSF Scorecard flags as Dangerous-Workflow (#395, #433). The tag is fetched with git, proven to point
+  at the run's `head_sha`, and only then added as a `tagged/` worktree; the trust model is unchanged. Not yet exercised by a real `portal/v*` release, and the Scorecard
+  score has not been re-scanned.
 - Default-deny ingress for `database`, Gitea ingress restricted to its legitimate non-APISIX
   sources, and the APISIX Admin API reachable only from the pod CIDR and loopback.
 - The gateway no longer trusts a client-supplied `X-WEBAUTH-USER` (492e65a).
@@ -412,7 +413,7 @@ existing cluster or bundle; read **Upgrade notes** first.
   on any project; narrowing it needs a separate review. R246 (#342) checks the ArgoCD policy by
   line set, parsed `argocd-rbac-cm` data and substitution expressions, but not the rendered Helm
   output, other charts, `argocd-cm`, or changes made with `kubectl` outside the bootstrap
-  heredoc (see the change package's Known limits).
+  heredoc.
 - **Air-gap bundle copy does not preserve OCI referrers** (SBOM, signature, attestation).
   `09` reports the loss but does not fail (#124).
 - **The digest inventory is trust-on-first-save.** `images.digests.json` is not signed, so it
@@ -465,11 +466,6 @@ existing cluster or bundle; read **Upgrade notes** first.
   `app.kubernetes.io/name=velero-data-mover` (#440; applied live on 2026-10-20, but whether the
   Kyverno events drop is not yet verified), but Velero v1.18 cannot label its repository-maintenance Jobs, so their Kyverno audit
   events remain. The `events create` rejection is only documented, not fixed.
-- **Scorecard `Dangerous-Workflow` finding on `portal-release.yml` (#395).** The workflow checks
-  out `workflow_run.head_sha`. It already runs only for `portal/v*` tag pushes, executes the
-  trusted default-branch checkout and proves the tag points to that commit, so this looks like a
-  heuristic match; the owner still has to accept it as an exception (with a review date) or
-  restructure the workflow.
 - **Tempo is chronically OOMKilled at its 1536Mi limit (#420).** Hundreds of restarts a week on the
   live cluster, unrelated to the S3 change. #439 sets the memory ballast to 0 and `GOMEMLIMIT` to
   1280MiB as a hypothesis; whether the restarts stop is not yet observed, and a rollout drops the

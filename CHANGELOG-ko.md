@@ -313,8 +313,9 @@ ArgoCD, Gitea, RBAC, OpenBao, Keycloak, APISIX, NFS, `database` 신뢰 경계가
 ### 보안
 
 - `portal-release.yml`이 `workflow_run` ref를 쓰는 두 번째 `actions/checkout`을 더 이상 사용하지 않음. OpenSSF
-  Scorecard가 Dangerous-Workflow로 지적하던 패턴임 (#395). 태그를 git으로 가져와 실행의 `head_sha`를 가리키는지
-  증명한 뒤에만 `tagged/` worktree로 추가하며, 신뢰 모델은 그대로임.
+  Scorecard가 Dangerous-Workflow로 지적하던 패턴임 (#395, #433). 태그를 git으로 가져와 실행의 `head_sha`를 가리키는지
+  증명한 뒤에만 `tagged/` worktree로 추가하며, 신뢰 모델은 그대로임. 실제 `portal/v*` 릴리스로 아직 실행되지 않았고 Scorecard 점수도
+  재검사하지 않았음.
 - `database` 기본 ingress 차단, Gitea ingress를 APISIX를 거치지 않는 정당한 소스로 제한, APISIX Admin API는
   파드 CIDR과 루프백에서만 접근 가능.
 - 게이트웨이가 더 이상 클라이언트가 보낸 `X-WEBAUTH-USER`를 신뢰하지 않음 (492e65a).
@@ -343,8 +344,7 @@ ArgoCD, Gitea, RBAC, OpenBao, Keycloak, APISIX, NFS, `database` 신뢰 경계가
   않음).
 - **`portal-reader` 역할은 설계상 `sync */*`를 유지함.** 포털의 서비스 신원은 모든 프로젝트를 동기화하며, 범위를
   좁히려면 별도 검토가 필요함. R246(#342)은 ArgoCD 정책을 줄 집합, 파싱된 `argocd-rbac-cm` data, 치환식 기준으로
-  검사하지만 렌더링된 Helm 결과, 다른 차트, `argocd-cm`, 부트스트랩 heredoc 밖의 `kubectl` 변경은 보지 않음(변경
-  패키지의 Known limits 참고).
+  검사하지만 렌더링된 Helm 결과, 다른 차트, `argocd-cm`, 부트스트랩 heredoc 밖의 `kubectl` 변경은 보지 않음.
 - **에어갭 번들 복사는 OCI referrer(SBOM, 서명, attestation)를 보존하지 않음.** `09`는 손실을 보고하지만
   실패시키지 않음(#124).
 - **다이제스트 인벤토리는 최초 저장 시점 신뢰(trust-on-first-save)임.** `images.digests.json`에는 서명이 없으므로
@@ -387,10 +387,6 @@ ArgoCD, Gitea, RBAC, OpenBao, Keycloak, APISIX, NFS, `database` 신뢰 경계가
   2026-10-20 라이브 적용, 단 Kyverno 이벤트가 실제로 줄었는지는 아직 검증하지 않음), Velero v1.18은
   repository-maintenance Job에 라벨을 붙일 수 없어 해당 Kyverno audit 이벤트는 남음. `events create` 거부는 문서화만
   되었고 수정되지 않았음.
-- **`portal-release.yml`에 대한 Scorecard `Dangerous-Workflow` 지적 (#395).** 워크플로가
-  `workflow_run.head_sha`를 체크아웃함. 이미 `portal/v*` 태그 푸시에서만 실행되고, 신뢰할 수 있는 기본 브랜치
-  체크아웃을 실행하며, 태그가 그 커밋을 가리키는지 증명하므로 휴리스틱 일치로 보이지만, 소유자가 (검토 기한과 함께)
-  예외로 수용하거나 워크플로를 재구성해야 함.
 - **Tempo가 1536Mi 제한에서 만성적으로 OOMKilled됨 (#420).** S3 변경과 무관하게 라이브 클러스터에서
   매주 수백 건의 재시작이 발생함. #439는 메모리 ballast를 0으로, `GOMEMLIMIT`를 1280MiB로 설정했으나 가설이며,
   재시작이 멈추는지는 아직 관찰되지 않았고 롤아웃 시 flush되지 않은 WAL을 잃음(`persistence` 꺼짐).

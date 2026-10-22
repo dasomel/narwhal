@@ -1,0 +1,74 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-release-1.3.0-notices-docs-20261022",
+  "task": "Refresh release notices and indexes made stale by v1.3.0 (supported-version tables, gitops README portal pin and SeaweedFS storage wording, two runbook statements, docs index, CONTRIBUTING make test description); documentation only, no behavior change; unproven audit claims about portal signing, portal repository URL and portal E2E wording deliberately left unchanged",
+  "changeContext": {
+    "paths": [
+      "SECURITY.md",
+      "SECURITY-ko.md",
+      "portal/SECURITY.md",
+      "portal/SECURITY-ko.md",
+      "gitops/README.md",
+      "gitops/README-ko.md",
+      "docs/runbooks/openbao-snapshot-backup.md",
+      "docs/runbooks/seaweedfs-s3-auth.md",
+      "docs/README.md",
+      "CONTRIBUTING.md",
+      ".agents/evals/traces/2026-10-release-1.3.0-notices-docs.json"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Only Markdown documentation changes; no chart, script, manifest or workflow is touched. gitops/README.md and gitops/README-ko.md match the gitops/** high-risk class by path only. README, IMPLEMENTATION-STATUS and other docs/common files belong to another lane and are untouched. Historical records (older CHANGELOG sections, lessons-log, traces) are not edited."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "Each statement was checked against the repository before editing: the portal pin is 1.1.0 in narwhal-portal-k8s.yaml and VERSIONS.md; seaweedfs.yaml keeps the volume server on hostPath /ssd/object_store while master and filer use nfs-csi; the CHANGELOG [1.3.0] section records the 2026-10-19 kakao-narwhal verification; the Makefile test target runs regression-check-kakao.sh --static.",
+      "evidence": [
+        "doc:gitops/charts/narwhal-platform/templates/narwhal-portal-k8s.yaml image ghcr.io/dasomel/narwhal-portal:1.1.0",
+        "doc:gitops/charts/narwhal-apps/templates/seaweedfs.yaml D-sw-pin hostPath /ssd/object_store",
+        "doc:CHANGELOG.md [1.3.0] kakao-narwhal 2026-10-19 verification bullets",
+        "doc:Makefile test target"
+      ]
+    },
+    {
+      "id": "e2b",
+      "type": "bug_fix",
+      "summary": "Documentation defects corrected (no code or behavior change): supported-version tables, the gitops README portal pin (1.0.1 vs 1.1.0) and the SeaweedFS all-nfs-csi claim, the runbook 'Unreleased' pointer and 'none has been run' statements, the docs index gaps and the CONTRIBUTING make test description."
+    },
+    {
+      "id": "e3",
+      "type": "scope_check",
+      "summary": "Not verified, so not edited: the portal 'not signed beyond provenance' limitation (the publish workflow has a cosign sign job but its secrets are recorded as missing), the portal vulnerability-reporting repository URL, and the portal 'no end-to-end security test suite' wording. The supported-version tables follow the existing latest-minor pattern (1.3.x narwhal, 1.1.x portal); this is a maintainer policy decision applied by following that pattern."
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "static checks and markdown lint on the changed documentation",
+      "summary": "make validate, the static regression suite, the version-consistency check, git diff --check and the changed-line markdownlint gate pass. markdownlint run directly on the changed files still reports legacy violations on lines not changed here. The changes were not exercised on a live cluster; the runbook wording only restates what the CHANGELOG already records.",
+      "evidence": [
+        "test:make validate -> exit 0",
+        "test:./scripts/test/regression-check-kakao.sh --static -> passed 405 failed 0 warnings 3",
+        "test:bash scripts/ci/check-version-consistency.sh -> All checked versions are consistent.",
+        "test:git diff --check -> exit 0",
+        "test:python3 scripts/ci/markdownlint-changed.py --base origin/main -> No markdownlint violations on added/modified active-documentation lines."
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "completion_claim",
+      "summary": "The listed documentation statements now match the repository state at v1.3.0; an independent Codex review returned PASS, as relayed by the coordinator (not re-run by this lane)."
+    },
+    {
+      "id": "e6",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Complete and verified within the stated scope (documentation only; unproven portal items skipped, nothing exercised on a live cluster)"
+    }
+  ]
+}

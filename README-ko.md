@@ -35,7 +35,7 @@ Narwhal은 이 이음매를 산출물로 취급합니다. 전부 스크립트화
 ### 통합 경험을 테스트로
 
 Narwhal은 통합 과정에서 발생한 실패를 폐기하지 않습니다. 전부 기록으로 남기며 —
-[`lessons-log.md`](docs/common/lessons-log.md)에 날짜별 **263개 사건** — 각 행은 조치 이상을 담습니다.
+[`lessons-log.md`](docs/common/lessons-log.md)에 날짜별 **440개 사건** — 각 행은 조치 이상을 담습니다.
 
 - 실제 원인이 무엇이었는가
 - **비슷해 보이는 원인과 어떻게 구분하는가** (판별자)
@@ -57,7 +57,7 @@ Narwhal은 통합 과정에서 발생한 실패를 폐기하지 않습니다. �
 |---|---|
 | 활동 | 2026-02-08 이후 지속 개발 중. 최신 내용은 [커밋 기록](https://github.com/dasomel/narwhal/commits/main/)과 [CHANGELOG](CHANGELOG.md) 참고 |
 | 검증 | 푸시마다 CI에서 51개 회귀 검사 실행, 그 외 클러스터·SSO·백업·격리 테스트 스크립트 |
-| 통합 지식 | [263개 사건 기록](docs/common/lessons-log.md), 최신순, 각 행에 판별자 포함 |
+| 통합 지식 | [440개 사건 기록](docs/common/lessons-log.md), 최신순, 각 행에 판별자 포함 |
 | 배포 대상 | Vagrant (ARM64) · Kakao Cloud (AMD64) · 완전 폐쇄망 |
 | 오프라인 설치 | 컨테이너 이미지 104개, Helm 차트 27개, 바이너리·원격 매니페스트·OS 패키지를 아키텍처별 번들로 제공 |
 | 통합 컴포넌트 | GitOps로 관리되는 애플리케이션 35개 |
@@ -309,7 +309,7 @@ vagrant ssh master-1 -c "kubectl get nodes && kubectl get pods -A | grep -v Runn
 결함이 조용히 되돌아오지 못하게 하는 장치입니다.
 
 모든 사건이 각자의 CI 검사가 되지는 않습니다. 여러 사건이 하나의 검사로 함께 덮이기도 하고, 일부는
-라이브 클러스터에서만 관찰 가능해 클러스터·SSO 스위트에 들어갑니다. 검사 수가 263과 다른 이유는
+라이브 클러스터에서만 관찰 가능해 클러스터·SSO 스위트에 들어갑니다. 검사 수가 440과 다른 이유는
 그것이지, 나머지를 잊어서가 아닙니다.
 
 ## 폐쇄망(Air-Gapped) 설치
@@ -374,8 +374,17 @@ by selfHeal, and a local commit alone is invisible to ArgoCD.
 
 | Target | Method | Storage | Schedule |
 |--------|--------|---------|----------|
-| PostgreSQL | CNPG barman | SeaweedFS S3 | Daily 00:00 |
-| PVC (all) | Velero Kopia | SeaweedFS S3 | Daily 02:00 |
+| PostgreSQL | CNPG barman (base backup + WAL archive) | SeaweedFS S3 (`s3://cnpg-backup/narwhal-db`) | Daily 02:00 UTC |
+| PVC | Velero Kopia (five owner-only volumes excluded, see below) | SeaweedFS S3 | Daily 02:00 |
+| OpenBao | Encrypted raft snapshot collected by Velero (`daily-openbao`) | PVC `openbao-snapshots` | Daily 04:30 UTC; **not enabled by default** |
+
+Under NFS `root_squash` Velero cannot read owner-only volumes, so five are excluded from its
+fs-backup and are **not protected by Velero**: OpenBao `data`, CNPG `pgdata`, Gitea `data`, Harbor
+jobservice `job-logs` and SeaweedFS master `data-storage`. PostgreSQL is covered by CNPG barman; the
+OpenBao snapshot backup needs operator setup and has not been restore-drill-verified
+([runbook](docs/runbooks/openbao-snapshot-backup.md),
+[policy](docs/common/storage-protection-policy.md)); Gitea, Harbor job-logs and SeaweedFS master
+data have no other backup either.
 
 ```bash
 # Manual backup

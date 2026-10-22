@@ -535,9 +535,10 @@ kubectl rollout restart deployment cnpg-controller-manager -n platform-system
 kubectl wait --for=condition=Available deployment/cnpg-controller-manager \
   -n platform-system --timeout=120s
 
-# narwhal-db 클러스터 재생성 (데이터 손실 없음: PVC 유지)
+# 경고: Cluster 리소스를 삭제하면 CNPG가 소유한 PVC(pgdata)도 함께 삭제될 수 있습니다(데이터 손실 가능).
+# pgdata는 Velero가 보호하지 않으므로(제외됨) 복구 수단은 Barman 백업(s3://cnpg-backup/narwhal-db)뿐입니다.
+# 삭제 전에 최신 Barman 백업이 Completed인지 확인하고, 가능하면 Cluster 삭제 대신 Operator 재시작만 사용하세요.
 kubectl delete cluster narwhal-db -n database
-# PVC는 유지됨 (finalizer가 없으면 즉시 재생성 가능)
 vagrant ssh master-1 -c "sudo bash /home/vagrant/scripts/cluster/07-cnpg.sh"
 ```
 
@@ -573,7 +574,7 @@ spec:
             name: cnpg-s3-credentials
             key: ACCESS_SECRET_KEY
         endpointURL: http://seaweedfs-s3.storage.svc.cluster.local:8333
-        destinationPath: s3://cnpg-backups/
+        destinationPath: s3://cnpg-backup/narwhal-db
 EOF
 ```
 
@@ -621,6 +622,14 @@ Velero는 SeaweedFS S3(`http://seaweedfs-s3.storage.svc.cluster.local:8333`)에 
 - Velero 설치 완료
 - SeaweedFS(또는 외부 S3) 접근 가능
 
+> **경고: Velero는 모든 PVC를 보호하지 않습니다 (v1.3.0).** NFS `root_squash` 환경에서는 Velero 데이터
+> 무버(root)가 owner-only 볼륨을 읽지 못해, 다섯 개 볼륨을 `backup.velero.io/backup-volumes-excludes`로
+> fs-backup에서 제외했습니다: OpenBao `data`, CNPG `pgdata`, Gitea `data`, Harbor jobservice `job-logs`,
+> SeaweedFS master `data-storage`. 따라서 이 절의 Velero 복원으로는 이 볼륨들의 **데이터가 복원되지 않습니다**.
+> PostgreSQL은 CNPG Barman 복원(위 시나리오 4), OpenBao는 암호화 스냅샷 복구(12절의 "Velero에서 OpenBao
+> 데이터 복원" 참고, 기본 비활성), Gitea `data`·Harbor `job-logs`·SeaweedFS master는 백업이 없습니다.
+> 자세한 내용은 `docs/common/storage-protection-policy.md`를 참고하세요.
+
 ### 백업 목록 확인
 
 ```bash
@@ -629,7 +638,7 @@ kubectl exec -n storage deployment/velero -- velero backup get
 
 # 백업 상세 정보 (포함된 네임스페이스, 완료 시각)
 kubectl exec -n storage deployment/velero -- \
-  velero backup describe daily-full-<날짜> --details
+  velero backup describe velero-daily-full-<타임스탬프> --details
 ```
 
 ### 전체 클러스터 복원 절차
@@ -715,18 +724,22 @@ dig @192.168.56.10 grafana.local.narwhal.internal +short
 
 특정 앱만 복원할 경우:
 
+> **경고:** Gitea `data` 볼륨은 Velero fs-backup에서 제외되어 아래 Gitea 복원으로는 저장소 데이터가
+> 돌아오지 않습니다(백업 없음). GitOps 소스는 로컬 저장소에서 `scripts/gitops/push-to-gitea.sh`로
+> 다시 푸시합니다. Harbor 복원도 `job-logs` 볼륨은 포함하지 않습니다.
+
 ```bash
 # Gitea만 복원 (예시)
 kubectl exec -n storage deployment/velero -- \
   velero restore create restore-gitea-$(date +%Y%m%d) \
-  --from-backup daily-gitea-<날짜> \
+  --from-backup velero-daily-gitea-<타임스탬프> \
   --include-namespaces devtools \
   --selector 'app.kubernetes.io/name=gitea'
 
 # Harbor만 복원 (예시)
 kubectl exec -n storage deployment/velero -- \
   velero restore create restore-harbor-$(date +%Y%m%d) \
-  --from-backup daily-harbor-<날짜> \
+  --from-backup velero-daily-harbor-<타임스탬프> \
   --include-namespaces devtools \
   --selector 'app.kubernetes.io/name=harbor'
 ```
@@ -1002,8 +1015,11 @@ kubectl wait --for=condition=Available deployment/argocd-server \
 kubectl get pods -n devtools -l app=gitea
 
 # ArgoCD → Gitea 연결 테스트
+# narwhal-gitops 저장소는 비공개이므로 익명 요청은 401/404를 반환합니다(서비스 도달 확인용).
+# 인증 상태는 ArgoCD 저장소 Secret의 읽기 전용 계정으로 확인합니다.
 kubectl exec -n devtools deployment/argocd-repo-server -- \
-  curl -s http://gitea-http.gitea.svc.cluster.local:3000/gitea-admin/narwhal.git/info/refs?service=git-upload-pack | head -5
+  curl -s -o /dev/null -w '%{http_code}\n' \
+  'http://gitea-http.devtools.svc.cluster.local:3000/gitea-admin/narwhal-gitops.git/info/refs?service=git-upload-pack'
 ```
 
 #### Step 3: Application 강제 동기화
@@ -1114,6 +1130,8 @@ kubectl get pods -n kube-system -l app=csi-nfs-node
 kubectl get pv | grep <pvc-name>
 
 # PVC 삭제 후 재생성 (데이터 손실 주의!)
+# 경고: OpenBao data, CNPG pgdata, Gitea data, Harbor job-logs, SeaweedFS master data-storage는 Velero 백업이
+# 없어(제외됨) PVC를 삭제하면 복구할 수 없습니다. 이 PVC들은 삭제하지 말고 위 절의 전용 복구 경로를 따르세요.
 kubectl delete pvc <pvc-name> -n <namespace>
 # ArgoCD가 자동으로 PVC를 재생성하거나 앱 Helm values에서 재생성
 ```
@@ -1295,35 +1313,62 @@ kubectl exec -n storage openbao-0 -- bao operator unseal <NEW_UNSEAL_KEY>
 
 ### Velero에서 OpenBao 데이터 복원
 
-```bash
-# OpenBao 백업 (daily-openbao 스케줄)
-kubectl exec -n storage deployment/velero -- velero backup get | grep openbao
+> **경고: Velero로 OpenBao `data` 볼륨을 복원할 수 없습니다.** `data` 볼륨은 NFS `root_squash` 때문에
+> Velero fs-backup에서 제외되어 있어(#431) 아래 `daily-openbao` 복원은 raft 데이터를 되살리지 못합니다.
+> 실제 복구 경로는 OpenBao의 암호화 raft 스냅샷(매일 04:30 UTC, PVC `openbao-snapshots`, `daily-openbao`
+> 실행이 수집)이며, 절차는 `docs/runbooks/openbao-snapshot-backup.md`와
+> `docs/common/storage-protection-policy.md` 8절을 따릅니다. 이 스냅샷 백업은 **기본으로 활성화되어 있지
+> 않고**(운영자 수신자 인증서·키 준비 필요), 복구 절차는 아직 드릴로 검증되지 않았습니다. 활성화하지
+> 않은 클러스터에는 OpenBao 백업이 없으므로 Unseal Key와 Root Token을 별도로 보관하세요.
+>
+> 아래 명령은 **읽기 전용 확인**입니다: 최신 `daily-openbao` 백업이 스냅샷 볼륨을 가져갔는지(holder 파드의
+> `snapshots` 볼륨 PodVolumeBackup)만 봅니다. `data` 볼륨 복원에는 쓸 수 없고, 복원 명령은 이 절에
+> 두지 않습니다(복구는 위 런북 6절 / 정책 문서 8절).
 
-# 복원
-kubectl exec -n storage deployment/velero -- \
-  velero restore create restore-openbao-$(date +%Y%m%d) \
-  --from-backup daily-openbao-<날짜> \
-  --include-namespaces storage \
-  --selector app.kubernetes.io/name=openbao
+```bash
+# 가장 최근 daily-openbao Backup과 상태 (docs/runbooks/openbao-snapshot-backup.md 3.6절과 동일)
+LATEST=$(kubectl -n storage get backups.velero.io --sort-by=.metadata.creationTimestamp -o name | grep 'daily-openbao' | tail -1 | cut -d/ -f2)
+echo "${LATEST}"
+kubectl -n storage get backups.velero.io "${LATEST}" -o jsonpath='{.status.phase}{"\n"}'
+
+# 그 Backup의 PodVolumeBackup: POD가 openbao-snapshot-holder-*, VOLUME이 snapshots, PHASE가 Completed인 행이 있어야 함
+kubectl -n storage get podvolumebackups.velero.io -l "velero.io/backup-name=${LATEST}" \
+  -o custom-columns=NAME:.metadata.name,POD:.spec.pod.name,VOLUME:.spec.volume,PHASE:.status.phase
 ```
+
+스냅샷 PVC는 라벨 `app.kubernetes.io/name=openbao-backup`, holder 파드는
+`app.kubernetes.io/name=openbao-snapshot-holder`입니다(`gitops/resources/openbao-backup.yaml`).
 
 ---
 
 ## 13. 전체 클러스터 재구축
 
-데이터 손실 없이 전체 클러스터를 재구축하는 절차입니다.
+전체 클러스터를 재구축하는 절차입니다. **이 절차는 데이터 손실 없는 절차가 아닙니다.** `vagrant destroy -f`는
+모든 VM과 NFS 데이터를 삭제하며, 클러스터 안의 SeaweedFS는 외부 백업이 아닙니다(Velero 백업, CNPG Barman
+백업이 모두 그 안에 있어 클러스터와 함께 사라집니다). Velero 복원과 unseal로도 Velero에서 제외된 볼륨(OpenBao
+`data`, Gitea `data`, Harbor jobservice `job-logs`, SeaweedFS master `data-storage`)의 데이터는 돌아오지 않습니다.
 
-### 전제조건
+### 전제조건: 클러스터 밖의 독립 사본
 
-- Velero 백업이 외부 스토리지(SeaweedFS S3 또는 외부 S3)에 있는 경우
-- etcd 스냅샷 백업 보유
+`vagrant destroy` 전에 아래를 **클러스터 밖(호스트, 외부 S3 등)** 으로 복사해 두었는지 확인하세요.
+
+| 데이터 | 복구 가능 여부 | 필요한 외부 사본 |
+|--------|---------------|------------------|
+| PostgreSQL (CNPG) | Barman 백업(`s3://cnpg-backup/narwhal-db`)이 클러스터 내 SeaweedFS에 있어 클러스터와 함께 사라짐 | S3 버킷(`cnpg-backup`, `velero`) 데이터를 외부로 복사한 경우에만 복구 가능 |
+| Kubernetes 리소스 (Velero) | Velero 백업(버킷 `velero`)도 같은 SeaweedFS에 있음 | 위와 같이 외부 복사본 |
+| OpenBao | Velero로는 복구 불가(`data` 제외). 암호화 스냅샷 백업을 **활성화했고 스냅샷 파일을 클러스터 밖으로 복사한 경우에만** 복구 가능(기본 비활성, 복구 미검증) | 스냅샷 `.snap.cms` 파일, 운영자 개인키, 원본 unseal 키·root 토큰(`openbao-init`) |
+| Gitea `data` | 백업 없음. GitOps 소스는 로컬 저장소에서 `scripts/gitops/push-to-gitea.sh`로 재푸시 | 로컬 GitOps 저장소 |
+| Harbor `job-logs`, SeaweedFS master `data-storage` | 백업 없음 | 없음 |
+
+위 사본이 없으면 **PostgreSQL 데이터, OpenBao 시크릿, Gitea 데이터, Harbor job-logs가 영구 손실**된다는 것을
+확인하고 진행하세요. 그 외 전제: etcd 스냅샷 보유.
 
 ### 절차
 
 #### Step 1: 사전 백업 확인
 
 ```bash
-# 최신 Velero 백업 확인
+# 최신 Velero 백업 확인 (이 백업은 클러스터 안의 SeaweedFS에 있음 - 외부 사본은 위 표 참고)
 kubectl exec -n storage deployment/velero -- velero backup get
 
 # etcd 스냅샷 수동 생성
@@ -1353,6 +1398,9 @@ vagrant provision master-1 --provision-with phase2-platform
 
 #### Step 3: Velero 복원
 
+(Velero 제외 볼륨은 이 단계로 복원되지 않습니다. PostgreSQL은 외부로 복사해 둔 Barman 데이터를 새
+SeaweedFS에 되돌린 뒤 5절 시나리오 4로 복구하고, OpenBao는 12절의 스냅샷 경로를 따릅니다.)
+
 [6번 항목: Velero 전체 클러스터 복원](#6-velero-전체-클러스터-복원) 절차를 따르세요.
 
 #### Step 4: Phase 2 스크립트 재실행 (필요 시)
@@ -1370,7 +1418,8 @@ vagrant ssh master-1 -c "sudo bash /home/vagrant/scripts/cluster/14-gitops-boots
 
 #### Step 5: OpenBao Unseal
 
-[12번 항목: OpenBao Unseal](#12-openbao-장애-및-unseal) 절차를 따르세요.
+[12번 항목: OpenBao Unseal](#12-openbao-장애-및-unseal) 절차를 따르세요. 재구축 후 OpenBao는 비어 있으므로,
+외부로 복사해 둔 암호화 스냅샷이 없다면 새로 초기화(모든 시크릿 손실)해야 합니다.
 
 ---
 

@@ -9,6 +9,8 @@ English | [한국어](CHANGELOG-ko.md)
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-10-22
+
 A hardening release. The air-gapped bundle and the offline upgrade bundle now carry an
 integrity chain that is checked before anything is promoted, the ArgoCD, Gitea, RBAC, OpenBao,
 Keycloak, APISIX, NFS and `database` trust boundaries were tightened, and a batch of static CI
@@ -222,7 +224,8 @@ existing cluster or bundle; read **Upgrade notes** first.
     The old 5-field schedule ran hourly, so `Backup` objects have accumulated. Do not bulk-delete
     them: check the cluster's `retentionPolicy` first and let it prune.
   - *OpenBao snapshot backup (#443); not enabled on any cluster yet.* Each step changes a shared
-    cluster, in this order (`docs/common/storage-protection-policy.md` section 8): (1) re-run
+    cluster, in this order (`docs/common/storage-protection-policy.md` section 8; operator runbook
+    `docs/runbooks/openbao-snapshot-backup.md`): (1) re-run
     `scripts/cluster/13-2-narwhal-portal-bindings.sh`, which creates the policy and
     Kubernetes-auth role `openbao-backup`; (2) on the operator workstation run
     `scripts/ops/openbao-backup-keygen.sh <private-key-path>`, which generates the RSA key pair
@@ -250,6 +253,11 @@ existing cluster or bundle; read **Upgrade notes** first.
   the job pod itself is excluded from Velero. The job fails closed, and `RECIPIENT_FPR` can pin
   the certificate fingerprint. `scripts/ops/openbao-backup-keygen.sh` generates the key pair locally on the operator workstation.
   Verified by static checks and by running the extracted script locally only; see Known issues.
+- **OpenBao snapshot backup operator runbook (#431, #449).** `docs/runbooks/openbao-snapshot-backup.md`
+  covers the activation order including fingerprint pinning, the first-run check, the routine
+  freshness check, key rotation and exposure notes, a pointer to the restore procedure, and
+  troubleshooting. The OpenBao snapshot backup is still not enabled on any cluster and its live
+  behavior is unverified; see Known issues.
 - **Offline upgrade bundle pipeline (7becc87, #300, #301).** JSON schema, verifier, promotion
   gate with approval, dry-run diff, content and dependency verification, and a static check of
   the component upgrade-wave graph (#46); cert-manager is the first orchestration pilot
@@ -663,7 +671,8 @@ First stable release — validated by consecutive zero-fix, from-scratch clean i
 - Topology: single node → 3m+3w (Master NoSchedule, platform apps running on Workers)
 - NFS StorageClass: hierarchical subDir + optimized mountOptions
 
-[Unreleased]: https://github.com/dasomel/narwhal/compare/v1.2.0...HEAD
+[Unreleased]: https://github.com/dasomel/narwhal/compare/v1.3.0...HEAD
+[1.3.0]: https://github.com/dasomel/narwhal/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/dasomel/narwhal/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/dasomel/narwhal/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/dasomel/narwhal/compare/v0.2.0...v1.0.0

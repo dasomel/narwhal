@@ -9,6 +9,8 @@
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-10-22
+
 보안 강화 중심의 릴리스. 에어갭 번들과 오프라인 업그레이드 번들에 무결성 검증 체인이 추가되어 승격 전에 검사되며,
 ArgoCD, Gitea, RBAC, OpenBao, Keycloak, APISIX, NFS, `database` 신뢰 경계가 강화되었고, 이 경계가 퇴행하지 않도록
 정적 CI 게이트가 다수 추가됨. 기존 클러스터나 번들에서 운영자 조치가 필요한 변경이 여러 건 있으므로 먼저
@@ -189,7 +191,8 @@ ArgoCD, Gitea, RBAC, OpenBao, Keycloak, APISIX, NFS, `database` 신뢰 경계가
     실행할 것. 기존 5필드 스케줄은 매시간 실행되어 `Backup` 객체가 누적되었음. 일괄 삭제하지 말고 먼저 클러스터의
     `retentionPolicy`를 확인한 뒤 정리를 맡길 것.
   - *OpenBao 스냅샷 백업 (#443). 아직 어느 클러스터에도 활성화되지 않음.* 각 단계가 공유 클러스터를 변경하며
-    순서는 다음과 같음(`docs/common/storage-protection-policy.md` 8절). (1) `scripts/cluster/13-2-narwhal-portal-bindings.sh`를
+    순서는 다음과 같음(`docs/common/storage-protection-policy.md` 8절, 운영자 런북
+    `docs/runbooks/openbao-snapshot-backup.md`). (1) `scripts/cluster/13-2-narwhal-portal-bindings.sh`를
     다시 실행해 정책과 Kubernetes-auth 역할 `openbao-backup`을 만듦. (2) 운영자 워크스테이션에서
     `scripts/ops/openbao-backup-keygen.sh <개인키 경로>`를 실행함. RSA 키 쌍을 로컬에서 생성하고(개인 키는 기본적으로
     패스프레이즈로 보호되며 해당 경로에만 기록됨) 인증서만 ConfigMap `storage/openbao-backup-recipient`로 클러스터에
@@ -211,6 +214,9 @@ ArgoCD, Gitea, RBAC, OpenBao, Keycloak, APISIX, NFS, `database` 신뢰 경계가
   Velero fs-backup이 파일을 가져가며, job 파드 자체는 Velero에서 제외됨. 실패 시 fail closed로 동작하고
   `RECIPIENT_FPR`로 인증서 지문을 고정할 수 있음. 키 쌍은 `scripts/ops/openbao-backup-keygen.sh`로 운영자 워크스테이션에서 로컬 생성함.
   정적 검사와 추출한 스크립트의 로컬 실행으로만 검증함. 알려진 이슈 참고.
+- **OpenBao 스냅샷 백업 운영자 런북 (#431, #449).** `docs/runbooks/openbao-snapshot-backup.md`가 지문 고정을 포함한
+  활성화 순서, 첫 실행 확인, 정기 최신성 점검, 키 교체 및 노출 시 유의사항, 복원 절차 안내, 문제 해결을 다룸.
+  OpenBao 스냅샷 백업은 여전히 어느 클러스터에도 활성화되지 않았고 실제 동작은 검증되지 않음. 알려진 이슈 참고.
 - **오프라인 업그레이드 번들 파이프라인 (7becc87, #300, #301).** JSON 스키마, 검증기, 승인이 포함된 승격
   게이트, dry-run diff, 내용 및 의존성 검증, 컴포넌트 업그레이드 웨이브 그래프의 정적 검사(#46). cert-manager가
   첫 오케스트레이션 파일럿임 (dd9ca0e).
@@ -567,7 +573,8 @@ Vagrant (arm64) 및 Kakao Cloud (amd64) 환경 모두에서 에어갭이 "이미
 - 토폴로지: 단일 노드 → 3m+3w (Master NoSchedule, Worker에서 플랫폼 앱 실행)
 - NFS StorageClass: 계층적 subDir + 최적화된 mountOptions
 
-[Unreleased]: https://github.com/dasomel/narwhal/compare/v1.2.0...HEAD
+[Unreleased]: https://github.com/dasomel/narwhal/compare/v1.3.0...HEAD
+[1.3.0]: https://github.com/dasomel/narwhal/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/dasomel/narwhal/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/dasomel/narwhal/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/dasomel/narwhal/compare/v0.2.0...v1.0.0

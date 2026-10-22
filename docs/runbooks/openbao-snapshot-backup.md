@@ -242,4 +242,4 @@ kubectl -n storage get backups.velero.io | grep daily-openbao
 - 신선도 알림은 아직 없다(4절은 수동 점검이다)
 - `push-to-gitea.sh`로 두 경로를 반영했을 때 기존 클러스터의 ArgoCD 동작, 13-2 수동 재실행 명령(저장소에 문서화되어 있지 않음)
 
-관련: `CHANGELOG.md` Unreleased "Upgrade notes"(OpenBao snapshot backup), `docs/common/lessons-log.md`의 2026-10-20 행(#431, #443).
+관련: `CHANGELOG.md` [1.3.0] "Upgrade notes"(OpenBao snapshot backup), `docs/common/lessons-log.md`의 2026-10-20 행(#431, #443).

@@ -20,7 +20,7 @@
 
 | 버전 | 상태 |
 |---|---|
-| 1.0.x | 지원 대상 (최신 패치 태그) |
-| < 1.0 | 지원 종료 |
+| 1.1.x | 지원 대상 (최신 패치 태그) |
+| < 1.1 | 지원 종료 |
 
 참조: [OpenForge Security Standard](https://github.com/dasomel/openforge/blob/main/docs/security.md)

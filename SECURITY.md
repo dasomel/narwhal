@@ -28,8 +28,8 @@ the honest expectations below before relying on a particular response time.
 
 | Version | Status |
 |---|---|
-| 1.2.x | Supported — fixes land here |
-| < 1.2 | Not supported; upgrade first |
+| 1.3.x | Supported — fixes land here |
+| < 1.3 | Not supported; upgrade first |
 
 Only the latest minor is supported. Narwhal is installed by provisioning a cluster rather than by
 upgrading a package, so "patched" in practice means a clean install or a GitOps sync from a fixed

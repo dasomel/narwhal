@@ -1,8 +1,12 @@
 # Runbook: enable SeaweedFS S3 authentication with per-client random keys (live cluster)
 
 **REQUIRES EXPLICIT OWNER APPROVAL before execution** (shared cluster, credentials, backups
-are touched). The repository change (PR `feat/seaweedfs-s3-auth`) is static-verified only; none of
-the steps below has been run. Decision D-s3auth.
+are touched). The repository change (PR `feat/seaweedfs-s3-auth`) was static-verified; the
+CHANGELOG `[1.3.0]` section records a live check on one cluster (kakao-narwhal, 2026-10-19): the roll
+marker survived self-heal, the Application is Synced, the anonymous check passes and the four clients
+pass their per-client I/O check after the S3 server rolled. That is not a general guarantee: other
+clusters are unverified, and the `08-4-storage.sh` abort paths on an anonymous cluster are covered by
+fake `kubectl` tests and a simulation, not a live re-run. Decision D-s3auth.
 
 Why: SeaweedFS S3 ran with no identities (anonymous). Velero's kopia repositories cannot
 initialise against an anonymous server ("Signed request requires setting up SeaweedFS S3
@@ -54,8 +58,8 @@ file are derived from them by `ensure_s3_identities` (`scripts/common/lib.sh`).
   workloads are wired, not that their pods restarted and loaded the keys: the stage 1 gate below does.
 - The roll marker `narwhal.io/s3-config-sha256` is set by `kubectl patch`, which Argo CD self-heal
   would revert. The seaweedfs Application therefore lists exactly that annotation in
-  `ignoreDifferences` with `RespectIgnoreDifferences=true` (D-s3ops-1, #419). Not yet verified on a
-  live cluster: after step 3 confirm the annotation survives a self-heal (below).
+  `ignoreDifferences` with `RespectIgnoreDifferences=true` (D-s3ops-1, #419). Verified on kakao-narwhal
+  (2026-10-19) only; on any other cluster, after step 3 confirm the annotation survives a self-heal (below).
 
 ## 0. Preconditions and baseline (read only)
 

@@ -24,8 +24,8 @@ You will get an acknowledgement within a week. This is a single-maintainer proje
 
 | Version | Status |
 |---|---|
-| 1.0.x | Supported — the deployed tag is pinned in the cluster's GitOps repository |
-| < 1.0 | Not supported |
+| 1.1.x | Supported — the deployed tag is pinned in the cluster's GitOps repository |
+| < 1.1 | Not supported |
 
 The image is pinned by SemVer tag in the cluster repository, so upgrading means bumping that pin,
 not pulling a moving tag.

@@ -175,7 +175,7 @@ Grafana Alloy를 로그 수집용 DaemonSet으로 배포하며, 지원 종료된
 |---|---|---|
 | `seaweedfs` (seaweedfs.github.io) | `4.34.0` | `storage` |
 
-S3 호환 분산 오브젝트 스토어로, 버킷이 필요한 모든 컴포넌트(Loki 청크, Tempo 트레이스, Velero 백업, CNPG WAL 아카이브)를 위한 플랫폼의 자체 호스팅 스토리지 백엔드입니다. 영속 컴포넌트는 모두 `nfs-csi` 기반 PVC를 사용합니다.
+S3 호환 분산 오브젝트 스토어로, 버킷이 필요한 모든 컴포넌트(Loki 청크, Tempo 트레이스, Velero 백업, CNPG WAL 아카이브)를 위한 플랫폼의 자체 호스팅 스토리지 백엔드입니다. master와 filer는 `nfs-csi` 기반 PVC에 상태를 저장하고, volume 서버는 오브젝트 데이터를 노드 로컬 hostPath `/ssd/object_store`에 저장하며 `narwhal.io/seaweedfs-volume=true` 라벨이 붙은 노드에 고정됩니다.
 
 #### OpenBao
 | 차트 | 버전 | 네임스페이스 |
@@ -254,7 +254,7 @@ Narwhal 관리 포털(Next.js)은 이 IDP 전체를 위한 개발자 대상 UI�
 
 ## 규칙
 
-- **SemVer로 고정된 이미지/차트.** `:latest`처럼 변경 가능한 태그는 GitOps 매니페스트에서 지양합니다 — ArgoCD는 렌더링된 매니페스트 문자열을 diff하므로, 재게시된 `:latest`는 동일하게 보여 동기화 트리거가 조용히 실패합니다(포털 이미지가 이를 직접 겪은 뒤 `1.0.1`로 고정됨). 차트 `targetRevision`도 항상 명시적 버전을 사용합니다.
+- **SemVer로 고정된 이미지/차트.** `:latest`처럼 변경 가능한 태그는 GitOps 매니페스트에서 지양합니다 — ArgoCD는 렌더링된 매니페스트 문자열을 diff하므로, 재게시된 `:latest`는 동일하게 보여 동기화 트리거가 조용히 실패합니다(포털 이미지가 이를 직접 겪은 뒤 SemVer 태그로 고정됨, 현재 `1.1.0`). 차트 `targetRevision`도 항상 명시적 버전을 사용합니다.
 - **GitOps 전용 변경.** 지속적인 변경은 모두 이 저장소 수정 → Gitea push → ArgoCD 자동 동기화 순서를 따릅니다. 관리 대상 리소스에 대한 `kubectl apply`/`edit`는 다음 재동기화 루프에서 `selfHeal`이 되돌립니다 — 일회성 디버깅 용도로만 유용합니다.
 - **네임스페이스 개요:**
 

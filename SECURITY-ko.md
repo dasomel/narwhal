@@ -21,7 +21,7 @@
 
 | 버전 | 상태 |
 |---|---|
-| 1.2.x | 지원 대상 (Fix 릴리스 적용) |
-| < 1.2 | 지원 종료 (최신 버전 업그레이드 권장) |
+| 1.3.x | 지원 대상 (Fix 릴리스 적용) |
+| < 1.3 | 지원 종료 (최신 버전 업그레이드 권장) |
 
 참조: [OpenForge Security Standard](https://github.com/dasomel/openforge/blob/main/docs/security.md)

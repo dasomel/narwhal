@@ -27,8 +27,9 @@ as documented in `SECURITY.md`.
   bare `vagrant up` — see `AGENTS.md` → Boundaries.
 - `make lint` (shellcheck + yamllint), `make validate` (Vagrantfile syntax + YAML parse), and
   `./scripts/test/regression-check-kakao.sh --static` reproduce the checks CI runs on every PR —
-  run them locally before pushing. `make test` prints the commands for the runtime half, which
-  needs a live cluster.
+  run them locally before pushing. `make test` runs that static regression suite
+  (`regression-check-kakao.sh --static`) and then only prints the commands for the live-cluster
+  half, which needs a running cluster.
 - Edit YAML with `yq`, never `sed` — see `docs/common/agent-operational-rules.md` → Editing manifests and values.
 
 ## Code conventions

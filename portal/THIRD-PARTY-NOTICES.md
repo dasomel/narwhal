@@ -11,7 +11,7 @@ reproduced below as those licenses require. The portal's own code is Apache-2.0;
 pnpm run notices
 ```
 
-Scope: production dependencies only (`pnpm licenses list --prod`) — 659 packages.
+Scope: production dependencies only (`pnpm licenses list --prod`) — 661 packages.
 Development-only tooling is not redistributed and is therefore out of scope.
 Platform-gated native packages are excluded and listed separately (95 in the lockfile).
 
@@ -133,7 +133,7 @@ revisited — starting with `@img/sharp-libvips-*`, which is LGPL-3.0-or-later.
 
 | License | Packages |
 |---|---:|
-| MIT | 468 |
+| MIT | 470 |
 | Apache-2.0 | 110 |
 | ISC | 52 |
 | BSD-3-Clause | 10 |
@@ -20097,7 +20097,7 @@ Apache License
 
 </details>
 
-### @playwright/test@1.62.1
+### @playwright/test@1.64.1
 
 - License: `Apache-2.0`
 - Author: Microsoft Corporation
@@ -22722,7 +22722,7 @@ MIT License
 
 </details>
 
-### @types/node@22.20.1
+### @types/node@22.20.5
 
 - License: `MIT`
 - Homepage: <https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/node>
@@ -29541,6 +29541,40 @@ SOFTWARE.
 
 </details>
 
+### es-object-atoms@1.1.2
+
+- License: `MIT`
+- Author: Jordan Harband
+- Homepage: <https://github.com/ljharb/es-object-atoms#readme>
+
+<details><summary>LICENSE</summary>
+
+```text
+MIT License
+
+Copyright (c) 2024 Jordan Harband
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
+</details>
+
 ### es-set-tostringtag@2.1.0
 
 - License: `MIT`
@@ -31890,6 +31924,40 @@ SOFTWARE.
 </details>
 
 ### hasown@2.0.2
+
+- License: `MIT`
+- Author: Jordan Harband
+- Homepage: <https://github.com/inspect-js/hasOwn#readme>
+
+<details><summary>LICENSE</summary>
+
+```text
+MIT License
+
+Copyright (c) Jordan Harband and contributors
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
+</details>
+
+### hasown@2.0.4
 
 - License: `MIT`
 - Author: Jordan Harband
@@ -36615,7 +36683,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 </details>
 
-### playwright@1.62.1
+### playwright@1.64.1
 
 - License: `Apache-2.0`
 - Author: Microsoft Corporation
@@ -36842,7 +36910,7 @@ available under the Apache 2.0 license (https://github.com/puppeteer/puppeteer/b
 
 </details>
 
-### playwright-core@1.62.1
+### playwright-core@1.64.1
 
 - License: `Apache-2.0`
 - Author: Microsoft Corporation

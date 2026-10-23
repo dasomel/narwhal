@@ -92,6 +92,9 @@ jobs:
     needs: changes
     if: needs.changes.outputs.portal == 'true'
     runs-on: ubuntu-latest
+    # D-job-timeout (#462): harden-runner block egress intermittently rejects checkout and the
+    # job then hangs ~25 min in post steps; normal runs take 1-3 min. Fail fast and rerun instead.
+    timeout-minutes: 15
     defaults:
       run:
         working-directory: portal
@@ -140,6 +143,8 @@ jobs:
     needs: changes
     if: needs.changes.outputs.portal == 'true'
     runs-on: ubuntu-latest
+    # D-job-timeout (#462): see the test job.
+    timeout-minutes: 15
     defaults:
       run:
         working-directory: portal

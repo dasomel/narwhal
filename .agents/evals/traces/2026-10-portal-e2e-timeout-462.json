@@ -1,0 +1,54 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-portal-e2e-timeout-462-20261023",
+  "task": "Bound the two harden-runner portal jobs with timeout-minutes so an egress-blocked checkout fails fast instead of hanging (#462); mitigation only, root cause stays open.",
+  "changeContext": {
+    "paths": [
+      ".github/workflows/portal-test.yml",
+      ".agents/evals/traces/2026-10-portal-e2e-timeout-462.json"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Only portal-test.yml test and browser-e2e jobs. Egress policy, allowlist, harden-runner version and gate logic unchanged."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "Runs 39959435709 (#454) and 39966255902 (#461): checkout failed 'Failed to connect to github.com port 443 after 2 ms' under egress_policy block with github.com:443 allowed, then the job hung ~25 min in post steps until force-cancel.",
+      "evidence": [
+        "doc:https://github.com/dasomel/narwhal/issues/462"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "timeout-minutes: 15 on both harden-runner jobs (normal runtime 1-1.5 min, measured from recent runs). portal-gate/check-regression-results.mjs treats any non-success result, including cancelled, as failure, so a timeout fails closed."
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "static workflow parse and lint only",
+      "summary": "YAML parses with timeout-minutes 15 on test and browser-e2e; yamllint (repo rules: line-length 200, truthy off) clean; behaviour under a real hang is not reproduced.",
+      "evidence": [
+        "test:python3 -c yaml.safe_load(.github/workflows/portal-test.yml) -> test=15 browser-e2e=15",
+        "test:python3 -m yamllint -d '{extends: default, rules: {line-length: {max: 200}, truthy: disable, document-start: disable, comments: disable}}' .github/workflows/portal-test.yml -> no errors"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "completion_claim",
+      "summary": "A hung harden-runner portal job now ends within 15 minutes and fails the portal gate instead of blocking for ~25+ minutes."
+    },
+    {
+      "id": "e6",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Complete within the stated mitigation scope; the intermittent checkout rejection itself is not fixed (#462 stays open)."
+    }
+  ]
+}

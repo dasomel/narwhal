@@ -16,6 +16,7 @@ Security patch release: upgrades Auth.js and several transitive packages past pu
 `portal/v1.1.0` is covered here.
 
 ### Upgrade notes
+
 - **An OAuth login in flight during the rollout fails once and must be retried (narwhal#461)**:
   `@auth/core` 0.41.3 binds the state, nonce and PKCE check cookies to the provider that created
   them and rejects a callback whose cookie was issued for another provider. Cookies created before
@@ -23,6 +24,7 @@ Security patch release: upgrades Auth.js and several transitive packages past pu
   new one fails; signing in again works. Existing sessions are unaffected.
 
 ### Security
+
 - **Auth.js upgraded past critical advisories (narwhal#461, fixes narwhal#459)**: `next-auth`
   5.0.0-beta.30 to 5.0.0-beta.32 and `@auth/core` ^0.34.3 to ^0.41.3 (GHSA-8fpg-xm3f-6cx3,
   GHSA-7rqj-j65f-68wh, GHSA-xmf8-cvqr-rfgj). The new regression test
@@ -36,6 +38,7 @@ Security patch release: upgrades Auth.js and several transitive packages past pu
   security fixes. The image optimizer is disabled in this app.
 
 ### Changed
+
 - `lucide-react` 1.7.0 to 1.58.0 (narwhal#463); the `CheckCircle2` icon has a redrawn check mark.
 - `shadcn` 4.19.0 to 4.21.4 (narwhal#353) and `@base-ui/react` 1.8.0 to 1.9.0 (narwhal#354), both
   runtime `dependencies`.
@@ -44,6 +47,7 @@ Security patch release: upgrades Auth.js and several transitive packages past pu
 - `SECURITY.md` and `SECURITY-ko.md` list 1.1.x as the supported series (narwhal#451).
 
 ### Known issues
+
 - `braces` (GHSA-vfj7-8cjw-p6xm) has no patched version. It is reached only through the shadcn CLI
   (`shadcn > fast-glob > micromatch`) and is left as is (see `docs/lessons-log.md`).
 

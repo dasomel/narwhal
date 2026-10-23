@@ -15,12 +15,14 @@
 Next.js 16.4와 React 19.3.1 업데이트를 반영함. `portal/v1.1.0` 이후의 모든 변경을 다룸.
 
 ### 업그레이드 노트
+
 - **롤아웃 중 진행 중이던 OAuth 로그인은 한 번 실패하므로 다시 시도해야 함 (narwhal#461)**:
   `@auth/core` 0.41.3은 state, nonce, PKCE 검사 쿠키를 이를 만든 provider에 묶고, 다른 provider용으로
   발급된 쿠키의 콜백은 거부함. 업그레이드 이전에 만든 쿠키에는 이 바인딩이 없으므로 이전 파드에서
   시작해 새 파드에서 끝나는 로그인은 실패하며, 다시 로그인하면 정상 동작함. 기존 세션은 영향을 받지 않음.
 
 ### 보안
+
 - **치명적(critical) 권고를 해소하도록 Auth.js 업그레이드 (narwhal#461, narwhal#459 해결)**:
   `next-auth` 5.0.0-beta.30에서 5.0.0-beta.32로, `@auth/core` ^0.34.3에서 ^0.41.3으로
   (GHSA-8fpg-xm3f-6cx3, GHSA-7rqj-j65f-68wh, GHSA-xmf8-cvqr-rfgj). 새 회귀 테스트
@@ -33,6 +35,7 @@ Next.js 16.4와 React 19.3.1 업데이트를 반영함. `portal/v1.1.0` 이후�
   이 앱은 이미지 최적화기를 사용하지 않도록 비활성화되어 있음.
 
 ### 변경
+
 - `lucide-react` 1.7.0에서 1.58.0으로(narwhal#463). `CheckCircle2` 아이콘의 체크 모양이 새로 그려짐.
 - `shadcn` 4.19.0에서 4.21.4로(narwhal#353), `@base-ui/react` 1.8.0에서 1.9.0으로(narwhal#354).
   둘 다 런타임 `dependencies`임.
@@ -41,6 +44,7 @@ Next.js 16.4와 React 19.3.1 업데이트를 반영함. `portal/v1.1.0` 이후�
 - `SECURITY.md`와 `SECURITY-ko.md`가 지원 대상 버전을 1.1.x로 표기함(narwhal#451).
 
 ### 알려진 문제
+
 - `braces`(GHSA-vfj7-8cjw-p6xm)는 패치된 버전이 없음. shadcn CLI 경로(`shadcn > fast-glob > micromatch`)로만
   도달하며 그대로 둠(`docs/lessons-log.md` 참고).
 

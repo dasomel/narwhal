@@ -108,6 +108,34 @@ spec:
             data:
               node-agent-config.json: |
                 {"podLabels": {"app.kubernetes.io/name": "velero-data-mover"}}
+          # D-emptydir-skip (#422): scratch PVBs dominated the backup window (107/115).
+          # EmptyDir contents are not restored: pods start with empty scratch; apisix-etcd
+          # starts empty as on any restart; controller resync from backed-up APISIX CRDs
+          # can stall on empty prefixes (docs/common/apisix-etcd-recovery.md).
+          # Missing/unreadable storage/velero-volume-policy at schedule time causes
+          # FailedValidation for that day's backup; no retry until the next cron.
+          # Detect: kubectl -n storage get backups.velero.io; velero backup describe.
+          # No Velero failure alert exists yet (follow-up).
+          # v1.18.1 internal/volumehelper/volume_policy_helper.go ShouldPerformFSBackup
+          # looks up every PVC's PV with a policy present, unlike legacy selection:
+          # a Pending PVC or deleted PV matching no policy now errors for that volume.
+          # All kakao-narwhal PVCs were Bound on 2026-10-23. Available unmatched PVCs
+          # keep default fs-backup and existing volume exclusions.
+          # Escape hatch: remove resourcePolicy from a schedule to restore legacy selection.
+          # No includeExcludePolicy: it conflicts with the schedules' includedResources.
+          - apiVersion: v1
+            kind: ConfigMap
+            metadata:
+              name: velero-volume-policy
+              namespace: storage
+            data:
+              resource-policies.yaml: |
+                version: v1
+                volumePolicies:
+                  - conditions:
+                      volumeTypes: [emptyDir]
+                    action:
+                      type: skip
         # Narwhal#226: least-privilege RBAC for velero-server.
         # rbac.create=false makes the chart render no server ClusterRoleBinding;
         # Argo prune removes the legacy cluster-admin binding on upgrade.
@@ -297,6 +325,9 @@ spec:
               includeClusterResources: true
               storageLocation: default
               defaultVolumesToFsBackup: true
+              resourcePolicy:
+                kind: configmap
+                name: velero-volume-policy
           # Database backup (PostgreSQL - CNPG)
           daily-databases:
             disabled: false
@@ -313,6 +344,9 @@ spec:
               includeClusterResources: false
               storageLocation: default
               defaultVolumesToFsBackup: true
+              resourcePolicy:
+                kind: configmap
+                name: velero-volume-policy
           # Gitea backup
           daily-gitea:
             disabled: false
@@ -325,6 +359,9 @@ spec:
               includeClusterResources: false
               storageLocation: default
               defaultVolumesToFsBackup: true
+              resourcePolicy:
+                kind: configmap
+                name: velero-volume-policy
           # Harbor backup
           daily-harbor:
             disabled: false
@@ -337,6 +374,9 @@ spec:
               includeClusterResources: false
               storageLocation: default
               defaultVolumesToFsBackup: true
+              resourcePolicy:
+                kind: configmap
+                name: velero-volume-policy
           # OpenBao backup
           daily-openbao:
             disabled: false
@@ -349,6 +389,9 @@ spec:
               includeClusterResources: false
               storageLocation: default
               defaultVolumesToFsBackup: true
+              resourcePolicy:
+                kind: configmap
+                name: velero-volume-policy
   destination:
     server: https://kubernetes.default.svc
     namespace: storage

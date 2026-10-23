@@ -405,6 +405,20 @@ extraObjects:
     data:
       node-agent-config.json: |
         {"podLabels": {"app.kubernetes.io/name": "velero-data-mover"}}
+  # D-emptydir-skip (#422): see gitops/charts/narwhal-apps/templates/velero.yaml for risks and rollback.
+  - apiVersion: v1
+    kind: ConfigMap
+    metadata:
+      name: velero-volume-policy
+      namespace: storage
+    data:
+      resource-policies.yaml: |
+        version: v1
+        volumePolicies:
+          - conditions:
+              volumeTypes: [emptyDir]
+            action:
+              type: skip
 # D2: Keep each schedule's includedResources equal to the generated READ inventory.
 # D3: events and coordination Leases stay excluded from that inventory.
 schedules:
@@ -583,6 +597,9 @@ schedules:
       includeClusterResources: true
       storageLocation: default
       defaultVolumesToFsBackup: true
+      resourcePolicy:
+        kind: configmap
+        name: velero-volume-policy
   daily-databases:
     disabled: false
     schedule: 0 1 * * *
@@ -598,6 +615,9 @@ schedules:
       includeClusterResources: false
       storageLocation: default
       defaultVolumesToFsBackup: true
+      resourcePolicy:
+        kind: configmap
+        name: velero-volume-policy
   daily-gitea:
     disabled: false
     schedule: 0 3 * * *
@@ -609,6 +629,9 @@ schedules:
       includeClusterResources: false
       storageLocation: default
       defaultVolumesToFsBackup: true
+      resourcePolicy:
+        kind: configmap
+        name: velero-volume-policy
   daily-harbor:
     disabled: false
     schedule: 0 4 * * *
@@ -620,6 +643,9 @@ schedules:
       includeClusterResources: false
       storageLocation: default
       defaultVolumesToFsBackup: true
+      resourcePolicy:
+        kind: configmap
+        name: velero-volume-policy
   daily-openbao:
     disabled: false
     schedule: 0 5 * * *
@@ -631,6 +657,9 @@ schedules:
       includeClusterResources: false
       storageLocation: default
       defaultVolumesToFsBackup: true
+      resourcePolicy:
+        kind: configmap
+        name: velero-volume-policy
 EOF
 
 # Apply the same RBAC source before Helm creates velero-server, so its ServiceAccount

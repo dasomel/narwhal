@@ -1,0 +1,63 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-velero-skip-emptydir-422-20261023",
+  "task": "Skip emptyDir in the five scheduled Velero backups (#422); static/render scope, live rollout not part of this change.",
+  "changeContext": {
+    "paths": [
+      "gitops/charts/narwhal-apps/templates/velero.yaml",
+      "scripts/cluster/08-4-storage.sh",
+      "scripts/test/regression-check-kakao.sh",
+      "scripts/test/lib/check-velero-volume-policy.py",
+      "docs/common/lessons-log.md",
+      "docs/common/storage-protection-policy.md",
+      "docs/vagrant/disaster-recovery.md",
+      ".agents/evals/traces/2026-10-velero-skip-emptydir-422.json"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "GitOps-owned policy ConfigMap and five schedule references, static regression and docs. Preserve includedResources, default fs-backup, annotations and RBAC. No cluster access, push or PR."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "Lead measured on kakao-narwhal 2026-10-23 (read-only kubectl on podvolumebackups and pod specs): 107/115 PVBs were emptyDir (9,770 s); daily-full spent 4,373 s on 48 emptyDir PVBs versus 180 s on two PVC PVBs.",
+      "evidence": [
+        "doc:https://github.com/dasomel/narwhal/issues/422"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "One storage ConfigMap with version v1 and only an emptyDir skip volumePolicy; all five schedules reference it. Unmatched PVCs use legacy selection, no includeExcludePolicy. Scratch is not restored; apisix-etcd starts empty as on any restart and re-syncs from CRDs (docs/common/apisix-etcd-recovery.md). Mirrored in the 08-4 install path. Documented failure modes: missing ConfigMap -> FailedValidation; with a policy present, Velero v1.18.1 looks up every PVC's PV, so a PVC without an available PV errors (all PVCs Bound on 2026-10-23); no Velero failure alert yet (#456)."
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "local static regression and Helm render only",
+      "summary": "R280 checks the GitOps chart and the 08-4 install values (identical policy, all ten schedule references) and its --mutation-verify mode rejects 32/32 mutations; Helm chart 12.0.3 renders both. RBAC unchanged. No live effect verified. Independent review (agy Sonnet 5.5) FAIL at 96af64ec found the missing 08-4 mirror, undocumented failure modes and no committed mutation test; all fixed.",
+      "evidence": [
+        "test:helm template velero vmware-tanzu/velero --version 12.0.3 --namespace storage -> five templates carry resourcePolicy, ConfigMap rendered",
+        "doc:https://velero.io/docs/v1.18/resource-filtering/",
+        "test:make test -> passed 406 failed 0 warnings 3",
+        "test:make validate -> Ruby Syntax OK and 30 YAML files OK",
+        "test:python3 scripts/test/lib/check-velero-volume-policy.py --mutation-verify -> PASS, 32 mutations rejected"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "completion_claim",
+      "summary": "Scheduled Velero backups skip emptyDir volumes; PVC volumes keep fs-backup and the #431 exclusions."
+    },
+    {
+      "id": "e6",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Complete and verified within the stated scope (static change and Helm render; live rollout and the next scheduled backup not observed)."
+    }
+  ]
+}

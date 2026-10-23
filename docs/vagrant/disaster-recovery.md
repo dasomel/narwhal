@@ -629,6 +629,12 @@ Velero는 SeaweedFS S3(`http://seaweedfs-s3.storage.svc.cluster.local:8333`)에 
 > PostgreSQL은 CNPG Barman 복원(위 시나리오 4), OpenBao는 암호화 스냅샷 복구(12절의 "Velero에서 OpenBao
 > 데이터 복원" 참고, 기본 비활성), Gitea `data`·Harbor `job-logs`·SeaweedFS master는 백업이 없습니다.
 > 자세한 내용은 `docs/common/storage-protection-policy.md`를 참고하세요.
+>
+> 다섯 정기 스케줄은 `storage/velero-volume-policy`로 모든 `emptyDir` 데이터도 제외합니다(#422).
+> 복원한 파드는 빈 scratch로 시작합니다. `apisix-etcd`도 빈 상태로 시작하므로(원래 emptyDir라 재시작 때와 같음)
+> ingress controller의 APISIX CRD 재동기화는 빈 prefix에서 멈출 수 있어 복구를 보장하지 않습니다.
+> 이 경우 `docs/common/apisix-etcd-recovery.md`를 따르세요.
+> PVC의 기본 fs-backup과 위 볼륨 제외 어노테이션은 유지됩니다.
 
 ### 백업 목록 확인
 

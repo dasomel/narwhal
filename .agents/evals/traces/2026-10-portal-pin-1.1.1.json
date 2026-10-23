@@ -1,0 +1,66 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-portal-pin-1-1-1-20261023",
+  "task": "Pin the Narwhal IDP Portal image to the published release 1.1.1 (was 1.1.0); static change only, live rollout not part of this change.",
+  "changeContext": {
+    "paths": [
+      "gitops/charts/narwhal-platform/templates/narwhal-portal-k8s.yaml",
+      "gitops/README.md",
+      "gitops/README-ko.md",
+      "scripts/airgap/images.txt",
+      "scripts/airgap/lib/image-digests.tsv",
+      "VERSIONS.md",
+      "SECURITY.md",
+      "docs/common/compatibility-matrix.md",
+      "CHANGELOG.md",
+      "CHANGELOG-ko.md",
+      ".agents/evals/traces/2026-10-portal-pin-1.1.1.json"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Tag bump of one image in the GitOps manifest, its air-gap inventory and digest pin, and the docs that quote the pin. No manifest structure, env, RBAC or chart change. No cluster access, no PR, no merge."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "ghcr.io/dasomel/narwhal-portal:1.1.1 was published by portal-docker-publish run 39971656742 (arm64 and amd64 builds, manifest, signing succeeded). crane digest on the tag returned sha256:e8b137dc7979896d8eeb13fd3eec7a5e19a7b36c2474831a9e871765e63614df, equal to the digest reported by the release lane; cosign verify with scripts/airgap/keys/cosign.pub passes on that digest.",
+      "evidence": [
+        "test:crane digest ghcr.io/dasomel/narwhal-portal:1.1.1 -> sha256:e8b137dc7979896d8eeb13fd3eec7a5e19a7b36c2474831a9e871765e63614df",
+        "doc:https://github.com/dasomel/narwhal/releases/tag/portal%2Fv1.1.1"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "Pin moved 1.1.0 -> 1.1.1 in the Deployment image, images.txt and image-digests.tsv (new digest, crane digest method), gitops README pins (en/ko), VERSIONS.md (also corrects the stale Next.js 16.2.1 to 16.4.2), compatibility-matrix, SECURITY.md example and the Unreleased changelog entries."
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "local static checks only",
+      "summary": "See evidence for the commands run and their results. Live rollout is not part of the change and is not verified: no running portal pod was checked for the reported version.",
+      "evidence": [
+        "test:make test (RESEARCH_EVIDENCE_DIR set) -> passed 406 failed 0 warnings 3",
+        "test:make validate -> exit 0, all YAML files OK",
+        "test:bash scripts/ci/check-version-consistency.sh -> All checked versions are consistent",
+        "test:scripts/airgap/lib/refresh-image-digests.sh --check -> image-digests.tsv is current (no upstream tag movement detected)"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "completion_claim",
+      "summary": "The repository pins the IDP Portal to 1.1.1 consistently, with a digest that matches the registry."
+    },
+    {
+      "id": "e6",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Complete and verified within the stated scope (static pin change; live rollout and running-version confirmation not part of this change)."
+    }
+  ]
+}

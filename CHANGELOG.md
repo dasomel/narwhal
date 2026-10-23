@@ -9,6 +9,12 @@ English | [한국어](CHANGELOG-ko.md)
 
 ## [Unreleased]
 
+### Changed
+
+- **Portal is pinned to `narwhal-portal:1.1.1` (was 1.1.0).** The image is Cosign-signed with the
+  repository key (index digest `sha256:e8b137dc…`). Static change only; rolling it out to an
+  existing cluster is a separate step.
+
 ## [1.3.0] - 2026-10-22
 
 A hardening release. The air-gapped bundle and the offline upgrade bundle now carry an

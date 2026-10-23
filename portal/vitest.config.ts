@@ -14,6 +14,10 @@ export default defineConfig({
     // this, vitest also collects every test file in those checkouts and the suite
     // count doubles (observed 559 vs 283), so "all green" stops meaning this tree.
     exclude: [...configDefaults.exclude, ".claude/**", "e2e/**"],
+    // narwhal#459: next-auth imports "next/server" without an extension, which Node's ESM
+    // resolver rejects. Inlining it lets Vite resolve it, so auth.fail-closed.test.ts can run
+    // the real next-auth instead of a mock.
+    server: { deps: { inline: [/next-auth/] } },
   },
   resolve: {
     alias: {

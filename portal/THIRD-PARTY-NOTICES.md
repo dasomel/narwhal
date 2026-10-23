@@ -33926,7 +33926,7 @@ IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
 </details>
 
-### lucide-react@1.7.0
+### lucide-react@1.58.0
 
 - License: `ISC`
 - Author: Eric Fennis

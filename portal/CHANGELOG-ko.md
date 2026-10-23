@@ -9,6 +9,41 @@
 
 ## [Unreleased]
 
+## [1.1.1] - 2026-10-23
+
+보안 패치 릴리스. Auth.js와 일부 전이 의존성을 공개된 권고 이후 버전으로 올리고(narwhal#459)
+Next.js 16.4와 React 19.3.1 업데이트를 반영함. `portal/v1.1.0` 이후의 모든 변경을 다룸.
+
+### 업그레이드 노트
+- **롤아웃 중 진행 중이던 OAuth 로그인은 한 번 실패하므로 다시 시도해야 함 (narwhal#461)**:
+  `@auth/core` 0.41.3은 state, nonce, PKCE 검사 쿠키를 이를 만든 provider에 묶고, 다른 provider용으로
+  발급된 쿠키의 콜백은 거부함. 업그레이드 이전에 만든 쿠키에는 이 바인딩이 없으므로 이전 파드에서
+  시작해 새 파드에서 끝나는 로그인은 실패하며, 다시 로그인하면 정상 동작함. 기존 세션은 영향을 받지 않음.
+
+### 보안
+- **치명적(critical) 권고를 해소하도록 Auth.js 업그레이드 (narwhal#461, narwhal#459 해결)**:
+  `next-auth` 5.0.0-beta.30에서 5.0.0-beta.32로, `@auth/core` ^0.34.3에서 ^0.41.3으로
+  (GHSA-8fpg-xm3f-6cx3, GHSA-7rqj-j65f-68wh, GHSA-xmf8-cvqr-rfgj). 새 회귀 테스트
+  `src/lib/auth.fail-closed.test.ts`가 실제 next-auth를 실행하며, `AUTH_SECRET`이 없을 때 beta.30은
+  `null` 대신 오류 객체를 반환해(`if (!session)` 게이트가 걸리지 않음) `/api/alerts`가 200을
+  응답했고, beta.32는 `null`을 반환해 해당 라우트가 401을 응답함.
+- **lockfile의 전이 의존성 갱신 (narwhal#461)**: `form-data` 4.0.6(GHSA-hmw2-7cc7-3qxx),
+  `ws` 8.22.0(GHSA-96hv-2xvq-fx4p), `protobufjs` 8.8.1(GHSA-wcpc-wj8m-hjx6).
+- **Next.js 16.4.2, React 및 React DOM 19.3.1 (narwhal#457)**: Next.js 16.4.1 보안 수정을 반영함.
+  이 앱은 이미지 최적화기를 사용하지 않도록 비활성화되어 있음.
+
+### 변경
+- `lucide-react` 1.7.0에서 1.58.0으로(narwhal#463). `CheckCircle2` 아이콘의 체크 모양이 새로 그려짐.
+- `shadcn` 4.19.0에서 4.21.4로(narwhal#353), `@base-ui/react` 1.8.0에서 1.9.0으로(narwhal#354).
+  둘 다 런타임 `dependencies`임.
+- 개발 도구만 해당하며 이미지에 포함되지 않음(narwhal#454): Playwright, Vitest, Vite,
+  `@vitejs/plugin-react`, `@types/node`, `eslint-config-next`, TanStack Query devtools.
+- `SECURITY.md`와 `SECURITY-ko.md`가 지원 대상 버전을 1.1.x로 표기함(narwhal#451).
+
+### 알려진 문제
+- `braces`(GHSA-vfj7-8cjw-p6xm)는 패치된 버전이 없음. shadcn CLI 경로(`shadcn > fast-glob > micromatch`)로만
+  도달하며 그대로 둠(`docs/lessons-log.md` 참고).
+
 ## [1.1.0] - 2026-10-15
 
 포털은 이제 `dasomel/narwhal` 모노레포의 `portal/` 아래에 있으며 릴리스 태그는 `portal/vX.Y.Z`임
@@ -386,7 +421,8 @@ Portal의 첫 번째 공개 릴리스.
     매니페스트(`deploy/kaniko-build-job.yaml`).
   - 실시간 핫 모듈 교체(HMR) 및 컨테이너 파일 동기화를 위해 구성된 Skaffold 개발 프로필.
 
-[Unreleased]: https://github.com/dasomel/narwhal/compare/portal/v1.1.0...HEAD
+[Unreleased]: https://github.com/dasomel/narwhal/compare/portal/v1.1.1...HEAD
+[1.1.1]: https://github.com/dasomel/narwhal/compare/portal/v1.1.0...portal/v1.1.1
 [1.1.0]: https://github.com/dasomel/narwhal/releases/tag/portal/v1.1.0
 [1.0.17]: https://github.com/dasomel/narwhal-portal/compare/v1.0.16...v1.0.17
 [1.0.16]: https://github.com/dasomel/narwhal-portal/compare/v1.0.15...v1.0.16

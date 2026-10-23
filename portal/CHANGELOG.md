@@ -9,6 +9,44 @@ English | [한국어](CHANGELOG-ko.md)
 
 ## [Unreleased]
 
+## [1.1.1] - 2026-10-23
+
+Security patch release: upgrades Auth.js and several transitive packages past published advisories
+(narwhal#459), and picks up the Next.js 16.4 and React 19.3.1 updates. Everything since
+`portal/v1.1.0` is covered here.
+
+### Upgrade notes
+- **An OAuth login in flight during the rollout fails once and must be retried (narwhal#461)**:
+  `@auth/core` 0.41.3 binds the state, nonce and PKCE check cookies to the provider that created
+  them and rejects a callback whose cookie was issued for another provider. Cookies created before
+  the upgrade do not carry that binding, so a sign-in started on the old pod and completed on the
+  new one fails; signing in again works. Existing sessions are unaffected.
+
+### Security
+- **Auth.js upgraded past critical advisories (narwhal#461, fixes narwhal#459)**: `next-auth`
+  5.0.0-beta.30 to 5.0.0-beta.32 and `@auth/core` ^0.34.3 to ^0.41.3 (GHSA-8fpg-xm3f-6cx3,
+  GHSA-7rqj-j65f-68wh, GHSA-xmf8-cvqr-rfgj). The new regression test
+  `src/lib/auth.fail-closed.test.ts` runs the real next-auth: with `AUTH_SECRET` missing, beta.30
+  returned an error object instead of `null` (so `if (!session)` gates did not trip) and
+  `/api/alerts` answered 200; beta.32 returns `null` and the route answers 401.
+- **Transitive packages updated in the lockfile (narwhal#461)**: `form-data` 4.0.6
+  (GHSA-hmw2-7cc7-3qxx), `ws` 8.22.0 (GHSA-96hv-2xvq-fx4p) and `protobufjs` 8.8.1
+  (GHSA-wcpc-wj8m-hjx6).
+- **Next.js 16.4.2, React and React DOM 19.3.1 (narwhal#457)**: picks up the Next.js 16.4.1
+  security fixes. The image optimizer is disabled in this app.
+
+### Changed
+- `lucide-react` 1.7.0 to 1.58.0 (narwhal#463); the `CheckCircle2` icon has a redrawn check mark.
+- `shadcn` 4.19.0 to 4.21.4 (narwhal#353) and `@base-ui/react` 1.8.0 to 1.9.0 (narwhal#354), both
+  runtime `dependencies`.
+- Development tooling only, not part of the image (narwhal#454): Playwright, Vitest, Vite,
+  `@vitejs/plugin-react`, `@types/node`, `eslint-config-next` and TanStack Query devtools.
+- `SECURITY.md` and `SECURITY-ko.md` list 1.1.x as the supported series (narwhal#451).
+
+### Known issues
+- `braces` (GHSA-vfj7-8cjw-p6xm) has no patched version. It is reached only through the shadcn CLI
+  (`shadcn > fast-glob > micromatch`) and is left as is (see `docs/lessons-log.md`).
+
 ## [1.1.0] - 2026-10-15
 
 The portal now lives in the `dasomel/narwhal` monorepo under `portal/`; release tags are `portal/vX.Y.Z`
@@ -403,7 +441,8 @@ management dashboard built with Next.js 16 and React 19.
   - Skaffold development profile configured for live Hot Module Replacement (HMR) and container
     file syncing.
 
-[Unreleased]: https://github.com/dasomel/narwhal/compare/portal/v1.1.0...HEAD
+[Unreleased]: https://github.com/dasomel/narwhal/compare/portal/v1.1.1...HEAD
+[1.1.1]: https://github.com/dasomel/narwhal/compare/portal/v1.1.0...portal/v1.1.1
 [1.1.0]: https://github.com/dasomel/narwhal/releases/tag/portal/v1.1.0
 [1.0.17]: https://github.com/dasomel/narwhal-portal/compare/v1.0.16...v1.0.17
 [1.0.16]: https://github.com/dasomel/narwhal-portal/compare/v1.0.15...v1.0.16

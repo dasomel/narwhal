@@ -63,6 +63,9 @@
 
 ### Velero 진단 메시지 (#422, #431)
 
+- 스케줄 실행 시 `storage/velero-volume-policy` ConfigMap이 없거나 읽을 수 없으면 당일 백업은 `FailedValidation`으로 끝나며 다음 cron까지 재시도하지 않는다. `kubectl -n storage get backups.velero.io`의 phase와 `velero backup describe`로 확인한다. **Velero 실패 알림은 아직 없다(후속 과제).**
+- 정책이 있으면 Velero v1.18.1의 `internal/volumehelper/volume_policy_helper.go` `ShouldPerformFSBackup`은 모든 PVC 볼륨의 PV를 조회한다. 정책에 매칭되지 않는 PVC에 사용 가능한 PV가 없으면(Pending 또는 PV 삭제) 해당 볼륨은 오류가 된다. 기존 경로는 PV를 조회하지 않았다. 2026-10-23 확인 당시 kakao-narwhal의 PVC는 모두 Bound였다.
+
 - `No present log retrieved ... cannot get resource "pods/log"`: velero-server가 PodVolumeBackup 실패 원인을 `storage` 네임스페이스의 node-agent 호스팅 파드 로그에서 읽지 못할 때 남는다. `gitops/resources/velero-server-rbac.yaml`의 `Role/velero-pod-logs`(+ RoleBinding)가 `storage` 한 네임스페이스에서 `pods/log`의 `get`만 `velero-server`에 부여한다(PR #434). 적용 후에도 이 메시지가 남으면 해당 Role/RoleBinding의 sync 상태를 먼저 확인한다. 이 grant는 읽기 전용 진단용이며 백업 대상·쓰기 권한을 넓히지 않는다.
 - `Server rejected event`: velero-server는 `events` `create`/`patch`를 받지 못한다. 의도적으로 부여하지 않았으며(쓰기 verb 확대 회피) 잃는 것은 Event 기록뿐이다. 백업 결과는 Backup/PodVolumeBackup 상태로 판단한다.
 - Kyverno `require-labels/check-for-labels`(Audit): node-agent ConfigMap `velero-node-agent-config`의 `podLabels`가 data mover/호스팅 파드에 `app.kubernetes.io/name=velero-data-mover`를 붙인다(Velero 1.18). 저장소 유지보수 Job(`*-kopia-maintain-job-*`)은 1.18에서 라벨을 지정할 수 없어 Audit 이벤트가 남을 수 있다.

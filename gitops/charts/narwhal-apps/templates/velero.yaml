@@ -110,9 +110,17 @@ spec:
                 {"podLabels": {"app.kubernetes.io/name": "velero-data-mover"}}
           # D-emptydir-skip (#422): scratch PVBs dominated the backup window (107/115).
           # EmptyDir contents are not restored: pods start with empty scratch; apisix-etcd
-          # data starts empty (as on any restart) and is re-synced from backed-up APISIX CRDs
-          # (empty-prefix stall: docs/common/apisix-etcd-recovery.md).
-          # Unmatched PVCs keep default fs-backup and existing volume exclusions.
+          # starts empty as on any restart; controller resync from backed-up APISIX CRDs
+          # can stall on empty prefixes (docs/common/apisix-etcd-recovery.md).
+          # Missing/unreadable storage/velero-volume-policy at schedule time causes
+          # FailedValidation for that day's backup; no retry until the next cron.
+          # Detect: kubectl -n storage get backups.velero.io; velero backup describe.
+          # No Velero failure alert exists yet (follow-up).
+          # v1.18.1 internal/volumehelper/volume_policy_helper.go ShouldPerformFSBackup
+          # looks up every PVC's PV with a policy present, unlike legacy selection:
+          # a Pending PVC or deleted PV matching no policy now errors for that volume.
+          # All kakao-narwhal PVCs were Bound on 2026-10-23. Available unmatched PVCs
+          # keep default fs-backup and existing volume exclusions.
           # Escape hatch: remove resourcePolicy from a schedule to restore legacy selection.
           # No includeExcludePolicy: it conflicts with the schedules' includedResources.
           - apiVersion: v1

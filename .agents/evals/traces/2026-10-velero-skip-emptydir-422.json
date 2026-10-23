@@ -6,6 +6,7 @@
   "changeContext": {
     "paths": [
       "gitops/charts/narwhal-apps/templates/velero.yaml",
+      "scripts/cluster/08-4-storage.sh",
       "scripts/test/regression-check-kakao.sh",
       "scripts/test/lib/check-velero-volume-policy.py",
       "docs/common/lessons-log.md",
@@ -31,20 +32,20 @@
     {
       "id": "e3",
       "type": "bug_fix",
-      "summary": "One storage ConfigMap with version v1 and only an emptyDir skip volumePolicy; all five schedules reference it. Unmatched PVCs use legacy selection, no includeExcludePolicy. Scratch is not restored; apisix-etcd starts empty as on any restart and re-syncs from CRDs (docs/common/apisix-etcd-recovery.md)."
+      "summary": "One storage ConfigMap with version v1 and only an emptyDir skip volumePolicy; all five schedules reference it. Unmatched PVCs use legacy selection, no includeExcludePolicy. Scratch is not restored; apisix-etcd starts empty as on any restart and re-syncs from CRDs (docs/common/apisix-etcd-recovery.md). Mirrored in the 08-4 install path. Documented failure modes: missing ConfigMap -> FailedValidation; with a policy present, Velero v1.18.1 looks up every PVC's PV, so a PVC without an available PV errors (all PVCs Bound on 2026-10-23); no Velero failure alert yet (#456)."
     },
     {
       "id": "e4",
       "type": "regression_verification",
       "status": "passed",
       "scope": "local static regression and Helm render only",
-      "summary": "R280 passes and rejected 15 local policy/schedule mutations; Helm chart 12.0.3 renders all five schedule templates with resourcePolicy unchanged plus the ConfigMap in storage. Existing ClusterRole already grants configmaps get to storage/velero-server; RBAC unchanged. No live effect verified.",
+      "summary": "R280 checks the GitOps chart and the 08-4 install values (identical policy, all ten schedule references) and its --mutation-verify mode rejects 32/32 mutations; Helm chart 12.0.3 renders both. RBAC unchanged. No live effect verified. Independent review (agy Sonnet 5.5) FAIL at 96af64ec found the missing 08-4 mirror, undocumented failure modes and no committed mutation test; all fixed.",
       "evidence": [
-        "test:python3 scripts/test/lib/check-velero-volume-policy.py -> PASS",
         "test:helm template velero vmware-tanzu/velero --version 12.0.3 --namespace storage -> five templates carry resourcePolicy, ConfigMap rendered",
         "doc:https://velero.io/docs/v1.18/resource-filtering/",
         "test:make test -> passed 406 failed 0 warnings 3",
-        "test:make validate -> Ruby Syntax OK and 30 YAML files OK"
+        "test:make validate -> Ruby Syntax OK and 30 YAML files OK",
+        "test:python3 scripts/test/lib/check-velero-volume-policy.py --mutation-verify -> PASS, 32 mutations rejected"
       ]
     },
     {

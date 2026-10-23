@@ -34,5 +34,17 @@
     "line": 6,
     "sha256": "be20c48a732bf1eda00d83f73c0674912955a34a100fa774e6583df5244e3ab1",
     "reason": "environment: pattern"
+  },
+  {
+    "file": "2026-10.jsonl",
+    "line": 3,
+    "sha256": "5b92538ab5b3c40e261d8aea5e86423d370ef4ba5f2d096977e6fee184a8da6b",
+    "reason": "revision unreachable: 96af64ec was a commit on the squash-merged #455 branch (fix/velero-skip-emptydir-volumes, deleted); the measurement is genuine"
+  },
+  {
+    "file": "2026-10.jsonl",
+    "line": 4,
+    "sha256": "431551ee8b65c10e11b50fe06192dd6805c37fc3abadffb4b7f37d25d0e8160b",
+    "reason": "revision unreachable: 96af64ec was a commit on the squash-merged #455 branch (fix/velero-skip-emptydir-volumes, deleted); the measurement is genuine"
   }
 ]

@@ -113,8 +113,8 @@ Velero schedule `includedResources` is the generated readable API inventory; new
 
 | Component | Version | Description |
 |-----------|---------|-------------|
-| IDP Portal | 1.1.0 | Custom Next.js developer portal (Next.js 16.2.1). Deployed from `ghcr.io/dasomel/narwhal-portal:1.1.0` (pinned, public GHCR — was in-cluster Kaniko→Harbor `:latest`). Upgrade = bump the tag in `gitops/.../narwhal-portal-k8s.yaml`. In-cluster Kaniko build kept as optional dev tool (`docs/common/developer-kaniko-builds.md`) |
-| Next.js | 16.2.1 | React framework (App Router, standalone output) |
+| IDP Portal | 1.1.1 | Custom Next.js developer portal (Next.js 16.4.2). Deployed from `ghcr.io/dasomel/narwhal-portal:1.1.1` (pinned, public GHCR — was in-cluster Kaniko→Harbor `:latest`). Upgrade = bump the tag in `gitops/.../narwhal-portal-k8s.yaml`. In-cluster Kaniko build kept as optional dev tool (`docs/common/developer-kaniko-builds.md`) |
+| Next.js | 16.4.2 | React framework (App Router, standalone output) |
 | NextAuth.js | 5.0.0-beta.30 | OIDC authentication (Keycloak provider) |
 | Valkey (portal) | 8-alpine | Portal-dedicated cache (docker.io/valkey/valkey:8-alpine) |
 | TanStack Query | 5.x | Server state management / polling |

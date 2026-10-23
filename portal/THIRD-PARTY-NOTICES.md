@@ -11,7 +11,7 @@ reproduced below as those licenses require. The portal's own code is Apache-2.0;
 pnpm run notices
 ```
 
-Scope: production dependencies only (`pnpm licenses list --prod`) — 656 packages.
+Scope: production dependencies only (`pnpm licenses list --prod`) — 649 packages.
 Development-only tooling is not redistributed and is therefore out of scope.
 Platform-gated native packages are excluded and listed separately (95 in the lockfile).
 
@@ -133,9 +133,9 @@ revisited — starting with `@img/sharp-libvips-*`, which is LGPL-3.0-or-later.
 
 | License | Packages |
 |---|---:|
-| MIT | 468 |
+| MIT | 462 |
 | Apache-2.0 | 109 |
-| ISC | 52 |
+| ISC | 51 |
 | BSD-3-Clause | 9 |
 | BlueOak-1.0.0 | 6 |
 | BSD-2-Clause | 6 |
@@ -165,15 +165,7 @@ or is an SPDX expression rather than a single identifier.
 
 ## Packages
 
-### @auth/core@0.34.3
-
-- License: `ISC`
-- Author: Balázs Orbán
-- Homepage: <https://authjs.dev>
-
-_No license file shipped with the package; the SPDX identifier above is its declaration._
-
-### @auth/core@0.41.0
+### @auth/core@0.41.3
 
 - License: `ISC`
 - Author: Balázs Orbán
@@ -21566,39 +21558,6 @@ MIT License
 
 </details>
 
-### @types/cookie@0.6.0
-
-- License: `MIT`
-- Homepage: <https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/cookie>
-
-<details><summary>LICENSE</summary>
-
-```text
-MIT License
-
-    Copyright (c) Microsoft Corporation.
-
-    Permission is hereby granted, free of charge, to any person obtaining a copy
-    of this software and associated documentation files (the "Software"), to deal
-    in the Software without restriction, including without limitation the rights
-    to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-    copies of the Software, and to permit persons to whom the Software is
-    furnished to do so, subject to the following conditions:
-
-    The above copyright notice and this permission notice shall be included in all
-    copies or substantial portions of the Software.
-
-    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-    IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-    FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-    AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-    LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-    OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-    SOFTWARE
-```
-
-</details>
-
 ### @types/d3@7.4.3
 
 - License: `MIT`
@@ -27036,42 +26995,6 @@ OTHER DEALINGS IN THE SOFTWARE.
 
 </details>
 
-### cookie@1.1.1
-
-- License: `MIT`
-- Author: Roman Shtylman
-- Homepage: <https://github.com/jshttp/cookie#readme>
-
-<details><summary>LICENSE</summary>
-
-```text
-(The MIT License)
-
-Copyright (c) 2012-2014 Roman Shtylman <shtylman@gmail.com>
-Copyright (c) 2015 Douglas Christopher Wilson <doug@somethingdoug.com>
-
-Permission is hereby granted, free of charge, to any person obtaining
-a copy of this software and associated documentation files (the
-'Software'), to deal in the Software without restriction, including
-without limitation the rights to use, copy, modify, merge, publish,
-distribute, sublicense, and/or sell copies of the Software, and to
-permit persons to whom the Software is furnished to do so, subject to
-the following conditions:
-
-The above copyright notice and this permission notice shall be
-included in all copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED 'AS IS', WITHOUT WARRANTY OF ANY KIND,
-EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
-MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
-IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
-CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
-TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
-SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-```
-
-</details>
-
 ### cookie@2.0.1
 
 - License: `MIT`
@@ -29992,7 +29915,7 @@ IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
 </details>
 
-### form-data@4.0.5
+### form-data@4.0.6
 
 - License: `MIT`
 - Author: Felix Geisendörfer
@@ -33109,40 +33032,6 @@ software or this license, under any kind of legal claim._**
 
 </details>
 
-### jose@5.10.0
-
-- License: `MIT`
-- Author: Filip Skokan
-- Homepage: <https://github.com/panva/jose>
-
-<details><summary>LICENSE.md</summary>
-
-```text
-The MIT License (MIT)
-
-Copyright (c) 2018 Filip Skokan
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
-```
-
-</details>
-
 ### jose@6.2.12
 
 - License: `MIT`
@@ -34856,7 +34745,7 @@ SOFTWARE.
 
 </details>
 
-### next-auth@5.0.0-beta.30
+### next-auth@5.0.0-beta.32
 
 - License: `ISC`
 - Author: Balázs Orbán
@@ -35064,7 +34953,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 </details>
 
-### oauth4webapi@2.17.0
+### oauth4webapi@3.8.5
 
 - License: `MIT`
 - Author: Filip Skokan
@@ -35098,7 +34987,7 @@ SOFTWARE.
 
 </details>
 
-### oauth4webapi@3.8.5
+### oauth4webapi@3.8.8
 
 - License: `MIT`
 - Author: Filip Skokan
@@ -36689,39 +36578,6 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 </details>
 
-### preact@10.11.3
-
-- License: `MIT`
-- Homepage: <https://preactjs.com>
-
-<details><summary>LICENSE</summary>
-
-```text
-The MIT License (MIT)
-
-Copyright (c) 2015-present Jason Miller
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
-```
-
-</details>
-
 ### preact@10.24.3
 
 - License: `MIT`
@@ -36733,40 +36589,6 @@ SOFTWARE.
 The MIT License (MIT)
 
 Copyright (c) 2015-present Jason Miller
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
-```
-
-</details>
-
-### preact-render-to-string@5.2.3
-
-- License: `MIT`
-- Author: The Preact Authors
-- Homepage: <https://github.com/preactjs/preact-render-to-string>
-
-<details><summary>LICENSE</summary>
-
-```text
-The MIT License (MIT)
-
-Copyright (c) 2015 Jason Miller
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -36819,34 +36641,6 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
-```
-
-</details>
-
-### pretty-format@3.8.0
-
-- License: `MIT`
-- Author: James Kyle
-- Homepage: <https://github.com/thejameskle/pretty-format>
-
-<details><summary>LICENSE.md</summary>
-
-```text
-## ISC License
-
-Copyright (c) 2016, James Kyle <me@thejameskyle.com>
-
-Permission to use, copy, modify, and/or distribute this software for any purpose
-with or without fee is hereby granted, provided that the above copyright notice
-and this permission notice appear in all copies.
-
-THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH
-REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND
-FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT,
-INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS
-OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
-TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF
-THIS SOFTWARE.
 ```
 
 </details>
@@ -36907,7 +36701,7 @@ SOFTWARE.
 
 </details>
 
-### protobufjs@8.2.0
+### protobufjs@8.8.1
 
 - License: `BSD-3-Clause`
 - Author: Daniel Wirtz
@@ -40601,7 +40395,7 @@ IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
 </details>
 
-### ws@8.20.0
+### ws@8.22.0
 
 - License: `MIT`
 - Author: Einar Otto Stangvik

@@ -3135,6 +3135,8 @@ assert sum(1 for l in code if re.search(r"\bexit 3\b", l)) == 1, "exit 3 must ap
   # jobservice job-logs, and one Canceled PVB leaves the Backup InProgress and queues every later schedule.
   check R277 "Velero fs-backup excludes exactly OpenBao data, CNPG pgdata, Gitea data, Harbor jobservice job-logs and SeaweedFS master data-storage (pod annotation in the GitOps CR/Application and in the 08-4/08-5/12 install paths), and velero-server has only a namespaced pods/log get in storage (D-pvb-exclude, D-pvb-log, #431)" \
     python3 scripts/test/lib/check-velero-pvb-excludes.py
+  check R280 "Velero skips only emptyDir via storage/velero-volume-policy in every schedule, retaining default fs-backup and legacy exclusions (#422)" \
+    python3 scripts/test/lib/check-velero-volume-policy.py
 
   # 2026-10-16 (PR #399): the APISIX Admin API allowlist is detected from the live CNI by
   # resolve_apisix_admin_cidr (lib.sh) and wired by 14 -- NOT taken from POD_NETWORK_CIDR, which

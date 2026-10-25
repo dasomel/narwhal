@@ -21052,7 +21052,7 @@ SOFTWARE.
 
 </details>
 
-### @shadcn/registry@0.1.3
+### @shadcn/registry@0.2.0
 
 - License: `MIT`
 - Author: shadcn
@@ -38009,7 +38009,7 @@ CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
 </details>
 
-### shadcn@4.21.4
+### shadcn@4.22.0
 
 - License: `MIT`
 - Author: shadcn
@@ -39719,7 +39719,7 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 </details>
 
-### undici@7.30.0
+### undici@7.30.1
 
 - License: `MIT`
 - Homepage: <https://undici.nodejs.org>
@@ -40667,7 +40667,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 </details>
 
-### zod@3.25.76
+### zod@4.6.7
 
 - License: `MIT`
 - Author: Colin McDonnell

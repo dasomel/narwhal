@@ -3149,7 +3149,7 @@ Apache License
 
 </details>
 
-### @opentelemetry/auto-instrumentations-node@0.81.0
+### @opentelemetry/auto-instrumentations-node@0.81.2
 
 - License: `Apache-2.0`
 - Author: OpenTelemetry Authors
@@ -8499,7 +8499,7 @@ Apache License
 
 </details>
 
-### @opentelemetry/instrumentation-express@0.71.0
+### @opentelemetry/instrumentation-express@0.71.1
 
 - License: `Apache-2.0`
 - Author: OpenTelemetry Authors
@@ -11923,7 +11923,7 @@ Apache License
 
 </details>
 
-### @opentelemetry/instrumentation-mysql@0.69.0
+### @opentelemetry/instrumentation-mysql@0.69.1
 
 - License: `Apache-2.0`
 - Author: OpenTelemetry Authors
@@ -12351,7 +12351,7 @@ Apache License
 
 </details>
 
-### @opentelemetry/instrumentation-nestjs-core@0.69.0
+### @opentelemetry/instrumentation-nestjs-core@0.70.0
 
 - License: `Apache-2.0`
 - Author: OpenTelemetry Authors
@@ -13207,7 +13207,7 @@ Apache License
 
 </details>
 
-### @opentelemetry/instrumentation-pg@0.75.0
+### @opentelemetry/instrumentation-pg@0.76.0
 
 - License: `Apache-2.0`
 - Author: OpenTelemetry Authors
@@ -14277,7 +14277,7 @@ Apache License
 
 </details>
 
-### @opentelemetry/instrumentation-runtime-node@0.36.0
+### @opentelemetry/instrumentation-runtime-node@0.36.1
 
 - License: `Apache-2.0`
 - Author: OpenTelemetry Authors
@@ -15133,7 +15133,7 @@ Apache License
 
 </details>
 
-### @opentelemetry/instrumentation-winston@0.67.0
+### @opentelemetry/instrumentation-winston@0.68.1
 
 - License: `Apache-2.0`
 - Author: OpenTelemetry Authors

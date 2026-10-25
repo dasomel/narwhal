@@ -3249,6 +3249,9 @@ PYEOF'
   # 2026-10-20 (#431): the OpenBao data volume is excluded from Velero (R277), so a raft snapshot job stages the backup instead.
   check R279 "OpenBao raft snapshot backup: policy is read on sys/storage/raft/snapshot only, no root token/unseal key/skip-verify/tls.key, CronJob daily and before Velero daily-openbao with Forbid/deadline/non-root/seccomp/resources, openssl cms ciphertext only (.snap.cms; plaintext in a memory emptyDir, never the PVC; fail-closed recipient-certificate validation incl. PRIVATE KEY refusal, expiry, RSA>=3072; digest-pinned airgap image; keygen helper never ships the private key), temp-file + atomic rename + last-success marker + bounded retention, 0644/0755 so root_squashed Velero can read, holder pod mounts the PVC and it is not in the exclude list; 64 mutations each rejected, 10 of them by executing the script (rejection, pruning, atomicity, plaintext cleanup, fingerprint pin, OAEP round-trip) (D-auth, D-cms, D-plaintext, D-fpr, D-oaep, D-image, D-holder, D-perms, #431)" \
     python3 scripts/test/lib/check-openbao-snapshot-backup.py --mutation-verify
+  # 2026-10-25: direct visits to the OpenBao/Velero UI root stopped at the app login screen; only the portal link reached /sso.
+  check R281 "openbao-sso-entry (/, /ui, /ui/) and velero-ui-sso-entry (/) redirect to /sso only when the query string is empty, outrank the catch-all and keep the security headers; 7 mutations each rejected (D-ssoentry-1)" \
+    python3 scripts/test/lib/check-sso-direct-entry.py --mutation-verify
 }
 
 #=========================================

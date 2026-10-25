@@ -26,7 +26,9 @@ def check(text):
     catch_all = {'openbao-sso-entry': 'openbao', 'velero-ui-sso-entry': 'velero-ui'}
     for name, paths in RULES.items():
         b = block(text, name)
-        got = re.findall(r'^          - "([^"]+)"$', b.split('upstreams:')[0], re.M)[-len(paths):]
+        m = re.search(r'        paths:\n((?:          - "[^"]+"\n)+)', b)
+        assert m, '%s paths missing' % name
+        got = re.findall(r'"([^"]+)"', m.group(1))
         assert got == paths, '%s paths %s != %s' % (name, got, paths)
         assert re.search(r'^      priority: (\d+)$', b, re.M) and int(re.search(r'priority: (\d+)', b).group(1)) > 0, \
             '%s needs priority above the catch-all' % name
@@ -44,6 +46,12 @@ MUTATIONS = {
         'if ngx.var.args == nil or ngx.var.args == "" then', 'if true then', 1),
     'args check dropped (velero)': lambda t: t[::-1].replace(
         'if ngx.var.args == nil or ngx.var.args == "" then'[::-1], 'if true then'[::-1], 1)[::-1],
+    'openbao wildcard prepended': lambda t: t.replace(
+        '          - "/"\n          - "/ui"\n', '          - "/*"\n          - "/"\n          - "/ui"\n', 1),
+    'openbao /v1/* added': lambda t: t.replace('          - "/ui/"\n', '          - "/ui/"\n          - "/v1/*"\n', 1),
+    'velero /login added': lambda t: t.replace(
+        '    - name: velero-ui-sso-entry\n      priority: 10\n      match:\n        hosts:\n          - velero-ui.{{ .Values.baseDomain }}\n        paths:\n          - "/"\n',
+        '    - name: velero-ui-sso-entry\n      priority: 10\n      match:\n        hosts:\n          - velero-ui.{{ .Values.baseDomain }}\n        paths:\n          - "/"\n          - "/login"\n', 1),
     'redirect target changed': lambda t: t.replace('ngx.redirect("/sso", 302)', 'ngx.redirect("/ui/", 302)', 1),
     'openbao /ui/ path dropped': lambda t: t.replace('          - "/ui/"\n', '', 1),
     'entry rule removed (velero)': lambda t: t.replace('- name: velero-ui-sso-entry', '- name: velero-ui-x', 1),

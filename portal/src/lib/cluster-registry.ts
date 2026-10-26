@@ -34,6 +34,7 @@
 import { readFileSync, writeFileSync } from "fs"
 import { join } from "path"
 import { ValidationError } from "./validation"
+import { getK8sBearerToken } from "./k8s-token"
 import {
   type Cluster,
   type ClusterCredentialRef,
@@ -272,8 +273,31 @@ export function clusterCacheKey(clusterId: string, resource: string): string {
 export function resolveClusterCredentials(cluster: Cluster): { apiServer: string; token: string } | null {
   const apiServer = process.env[cluster.credentialRef.apiServerEnvVar]
   if (!apiServer) return null
-  const token = process.env[cluster.credentialRef.tokenEnvVar] ?? ""
-  return { apiServer, token }
+  return { apiServer, token: resolveToken(cluster.credentialRef) }
+}
+
+// The in-cluster pair (K8S_API_SERVER + K8S_SA_TOKEN) is owned by k8s-token.ts:
+// production mounts a projected token file and sets no K8S_SA_TOKEN env, so
+// reading process.env alone sent an empty bearer — every /api/cluster call ran as
+// system:anonymous and the architecture page showed 0 nodes. Only the exact pair
+// takes the file path: a ref that names K8S_SA_TOKEN with any other apiServer env
+// var stays env-only (empty in production), so this pod's SA token is never sent
+// to a host other than its own API server.
+const IN_CLUSTER_API_SERVER_ENV_VAR = "K8S_API_SERVER"
+const IN_CLUSTER_TOKEN_ENV_VAR = "K8S_SA_TOKEN"
+
+function resolveToken(ref: Cluster["credentialRef"]): string {
+  const inCluster = ref.apiServerEnvVar === IN_CLUSTER_API_SERVER_ENV_VAR && ref.tokenEnvVar === IN_CLUSTER_TOKEN_ENV_VAR
+  if (!inCluster) return process.env[ref.tokenEnvVar] ?? ""
+  try {
+    return getK8sBearerToken()
+  } catch (err) {
+    // Production with no usable token file: keep the old empty-token result rather
+    // than throwing from a resolver the settings route also calls for status only,
+    // but say so — an empty bearer otherwise surfaces only as an empty page.
+    console.warn("[cluster-registry] in-cluster token unavailable, using an empty bearer:", (err as Error).message)
+    return ""
+  }
 }
 
 // ---------------------------------------------------------------------------

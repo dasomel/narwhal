@@ -3137,6 +3137,15 @@ assert sum(1 for l in code if re.search(r"\bexit 3\b", l)) == 1, "exit 3 must ap
     python3 scripts/test/lib/check-velero-pvb-excludes.py
   check R280 "Velero emptyDir policy matches GitOps and 08-4 install path; all schedules and mutations checked (#422)" \
     python3 scripts/test/lib/check-velero-volume-policy.py --mutation-verify
+  # 2026-10-26 (Kakao SSO): four separate breaks behind "seamless SSO does not work".
+  check R283 "11-3 create_keycloak_client fails closed on an empty client-secret read instead of writing \"\" into app Secrets (behavioural, stubbed kcadm)" \
+    bash scripts/test/lib/check-keycloak-secret-fail-closed.sh
+  check R284 "setup-bastion-proxy.sh installs the dnsmasq drop-in (After=network-online.target, Restart=on-failure) and keeps bind-interfaces, which ubuntu-fan forces (D-DNSMASQ)" \
+    bash -c 'f=scripts/cloud/setup-bastion-proxy.sh; grep -Fq "dnsmasq.service.d/narwhal.conf" "$f" && grep -Fq "After=network-online.target" "$f" && grep -Fq "Restart=on-failure" "$f" && grep -qx "bind-interfaces" "$f" && ! grep -qx "bind-dynamic" "$f"'
+  check R285 "12-gitea.sh seed admin (fake kubectl): 404 creates it with --admin, 200 PATCHes admin=true echoing its own source_id/login_name (empty login_name -> username), a failed lookup neither creates nor PATCHes (D-GITEA-ADMIN)" \
+    bash scripts/test/lib/check-gitea-seed-admin.sh
+  check R286 "Headlamp zero-click login route: HTML-only injection on 200 with the body written back, no 304 path to a cached pre-injection page, hard load / pushState / popstate redirect to /oidc, 60 s loop guard; 7 mutations caught (D-HEADLAMP-AUTOLOGIN)" \
+    python3 scripts/test/lib/check-headlamp-autologin-route.py --mutation-verify
 
   # 2026-10-16 (PR #399): the APISIX Admin API allowlist is detected from the live CNI by
   # resolve_apisix_admin_cidr (lib.sh) and wired by 14 -- NOT taken from POD_NETWORK_CIDR, which

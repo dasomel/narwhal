@@ -97,7 +97,7 @@ kubectl -n kube-system get cm coredns -o jsonpath='{.data.Corefile}' | head -10
 | Narwhal Portal | `portal.` | 클러스터 관리 UI | `devtools/narwhal-portal:3000` | 앱 OIDC (NextAuth) |
 | Gitea | `gitea.` | Git 서버 (GitOps 소스) | `devtools/gitea-http:3000` | 게이트웨이 OIDC (+ git CLI 우회) |
 | Harbor | `harbor.` | 컨테이너 레지스트리 | `devtools/harbor:80` | 앱 OIDC + 로컬 admin |
-| Headlamp | `headlamp.` | Kubernetes UI | `devtools/headlamp:80` | 앱 OIDC |
+| Headlamp | `headlamp.` | Kubernetes UI | `devtools/headlamp:80` | 앱 OIDC + 무클릭 리다이렉트 |
 | K8s Dashboard | `dashboard.` | Kubernetes UI (공식) | `devtools/kubernetes-dashboard-kong-proxy:443` | 제로클릭 SSO (public+PKCE) |
 | Grafana | `grafana.` | 모니터링 대시보드 | `monitoring/prometheus-stack-grafana:80` | 앱 OIDC + 로컬 admin |
 | Prometheus | `prometheus.` | 메트릭 조회 | `monitoring/…-prometheus:9090` | 게이트웨이 OIDC |
@@ -122,8 +122,8 @@ kubectl get apisixroute -A -o jsonpath='{range .items[*].spec.http[*]}{.match.ho
 
 | 방식 | 대상 | 동작 | 실패 시 확인 |
 |------|------|------|--------------|
-| **게이트웨이 OIDC** | Gitea, Prometheus, Alertmanager, Hubble, NFS Quota | APISIX `openid-connect` 플러그인이 로그인 전 트래픽을 Keycloak으로 보낸다. 백엔드는 인증을 모른다 | `platform-system`의 `*-oidc-secret`, 리다이렉트 URI `…/apisix/callback` |
-| **앱 OIDC** | ArgoCD, Grafana, Harbor, Headlamp, Portal | 앱이 직접 OIDC 클라이언트로 동작. APISIX는 전달만 | 앱 자체 설정 + Keycloak 클라이언트 시크릿 |
+| **게이트웨이 OIDC** | Gitea, Prometheus, Alertmanager, Hubble, NFS Quota | APISIX `openid-connect` 플러그인이 로그인 전 트래픽을 Keycloak으로 보낸다. 백엔드는 인증을 모른다. 예외로 Gitea는 사용자 이름을 `X-WEBAUTH-USER` 헤더로 받아 계정을 자동 생성하며, 이 경로에는 그룹 매핑이 없다 | `platform-system`의 `*-oidc-secret`, 리다이렉트 URI `…/apisix/callback` |
+| **앱 OIDC** | ArgoCD, Grafana, Harbor, Headlamp, Portal | 앱이 직접 OIDC 클라이언트로 동작. APISIX는 전달만 하고, ArgoCD·Harbor·Headlamp는 로그인 화면을 건너뛰는 리다이렉트만 더한다 | 앱 자체 설정 + Keycloak 클라이언트 시크릿 |
 | **제로클릭 SSO** | K8s Dashboard, OpenBao, Velero UI | APISIX가 서빙하는 동일 오리진 부트스트랩 페이지(`/sso`, `/sso/callback`)의 브라우저 JS가 code를 교환하고 토큰을 앱에 주입 | `/sso` 라우트, Dashboard는 **public + PKCE** 클라이언트 |
 | **자체** | Keycloak | 자기 자신이 발급자 | `iam/keycloak-initial-admin` |
 

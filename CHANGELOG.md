@@ -11,9 +11,10 @@ English | [한국어](CHANGELOG-ko.md)
 
 ### Changed
 
-- **Portal is pinned to `narwhal-portal:1.1.1` (was 1.1.0).** The image is Cosign-signed with the
-  repository key (index digest `sha256:e8b137dc…`). Static change only; rolling it out to an
-  existing cluster is a separate step.
+- **Portal is pinned to `narwhal-portal:1.1.2` (was 1.1.0; 1.1.1 was pinned in between by #467).**
+  1.1.2 fixes the empty cluster-infrastructure view (#475) and carries the 1.1.1 security fixes.
+  The image is Cosign-signed with the repository key (index digest `sha256:a364ec5c…`). Static
+  change only; rolling it out to an existing cluster is a separate step.
 
 ## [1.3.0] - 2026-10-22
 

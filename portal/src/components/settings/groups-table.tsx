@@ -108,6 +108,13 @@ export function GroupsTable({ tools }: { tools: PlatformTool[] }) {
     if (group.pk in pending) return pending[group.pk]
     return (group.attributes.allowed_tools as string[]) ?? []
   }
+  // /api/tools grants a group's role defaults (tools.ts `roles`, keyed by the bare group
+  // name) plus its allowed_tools attribute. Without the defaults here, a realm with no
+  // attributes rendered every cell "off" although every role could reach its tools.
+  // The defaults are shown checked and locked; only the attribute is editable.
+  function getRoleDefaultTools(group: Group): string[] {
+    return tools.filter((tool) => (tool.roles as string[]).includes(group.name)).map((tool) => tool.id)
+  }
   function toggleTool(group: Group, toolId: string) {
     const current = getAllowedTools(group)
     const next = current.includes(toolId) ? current.filter((id) => id !== toolId) : [...current, toolId]
@@ -182,6 +189,7 @@ export function GroupsTable({ tools }: { tools: PlatformTool[] }) {
             <tbody>
               {filteredGroups.map((group, idx) => {
                 const allowedTools = getAllowedTools(group)
+                const roleDefaultTools = getRoleDefaultTools(group)
                 const isDirty = hasPending(group)
                 const isExpanded = expandedGroup === group.pk
 
@@ -225,17 +233,22 @@ export function GroupsTable({ tools }: { tools: PlatformTool[] }) {
 
                       {/* Tool checkboxes */}
                       {tools.map((tool) => {
-                        const checked = allowedTools.includes(tool.id)
+                        const locked = roleDefaultTools.includes(tool.id)
+                        const checked = locked || allowedTools.includes(tool.id)
                         return (
                           <td key={tool.id} className="py-3 px-3 text-center">
                             <button
-                              onClick={() => toggleTool(group, tool.id)}
-                              className={`inline-flex items-center justify-center w-7 h-7 rounded-full transition-all hover:scale-110 ${
-                                checked
-                                  ? "text-narwhal-accent hover:text-narwhal-accent/80"
-                                  : "text-muted-foreground/30 hover:text-muted-foreground"
+                              onClick={() => { if (!locked) toggleTool(group, tool.id) }}
+                              disabled={locked}
+                              data-access={locked ? "role" : checked ? "granted" : "none"}
+                              className={`inline-flex items-center justify-center w-7 h-7 rounded-full transition-all ${
+                                locked
+                                  ? "text-narwhal-accent/60 cursor-not-allowed"
+                                  : checked
+                                    ? "text-narwhal-accent hover:text-narwhal-accent/80 hover:scale-110"
+                                    : "text-muted-foreground/30 hover:text-muted-foreground hover:scale-110"
                               }`}
-                              title={`${group.name} / ${tool.name}`}
+                              title={locked ? `${group.name} / ${tool.name} — ${t("groups.roleDefault")}` : `${group.name} / ${tool.name}`}
                             >
                               {checked ? (
                                 <CheckCircle2 className="w-5 h-5 fill-narwhal-accent/10" />

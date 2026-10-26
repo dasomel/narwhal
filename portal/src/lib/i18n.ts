@@ -670,7 +670,8 @@ export const ko = {
   "nodes.audit.autoApply.viewLogs": "로그 보기",
 
   // groups table extras
-  "groups.checkboxHint": "체크박스를 클릭해 도구 접근 권한을 설정한 후 저장하세요.",
+  "groups.checkboxHint": "흐린 체크는 역할 기본 권한이라 끌 수 없습니다. 다른 도구는 체크해 추가한 후 저장하세요.",
+  "groups.roleDefault": "역할 기본 권한 (끌 수 없음)",
   "groups.unsaved": "미저장 변경",
   "groups.noResults": "검색 결과가 없습니다.",
   "groups.memberMgmt": "멤버 관리",
@@ -1831,7 +1832,8 @@ export const en: Record<keyof typeof ko, string> = {
   "nodes.audit.autoApply.viewLogs": "View logs",
 
   // groups table extras
-  "groups.checkboxHint": "Click checkboxes to configure tool access, then save.",
+  "groups.checkboxHint": "Dimmed checks are role defaults and cannot be removed. Check other tools to grant them, then save.",
+  "groups.roleDefault": "role default (cannot be removed)",
   "groups.unsaved": "Unsaved",
   "groups.noResults": "No groups found.",
   "groups.memberMgmt": "Member Management",

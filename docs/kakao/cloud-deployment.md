@@ -260,7 +260,7 @@ Helm 주석으로 둔 이유). 기존 클러스터에 드리프트가 생기지 
 
 `*.kakao.narwhal.internal`은 공개 DNS가 없다. Vagrant는 master 노드의 dnsmasq가 해석해 주지만
 (`dns-access.md`), 클라우드에서는 그 경로가 없다 — `PROVIDER=kakao`가 dnsmasq를 건너뛰고,
-노드는 프라이빗이라 리졸버로 지정할 수도 없다. 이름을 서빙하는 것은 **worker LB의 공인 IP**이므로
+노드는 프라이빗이라 리졸버로 지정할 수도 없다. 이름을 서빙하는 것은 **master LB의 공인 IP**(기본 `INGRESS_LB=master`, worker LB는 `INGRESS_LB=worker`)이므로
 `/etc/hosts`로 연결한다.
 
 ```bash
@@ -305,7 +305,7 @@ kubectl get application idp-apps -n devtools -o jsonpath='{.spec.source.helm.val
 kubectl get application metallb -n devtools 2>/dev/null | wc -l
 kubectl get svc apisix-gateway -n platform-system
 
-LB=$(cd csp/kakao-cloud/terraform && tofu output -raw worker_lb_public_ip)
+LB=$(cd csp/kakao-cloud/terraform && tofu output -raw master_lb_public_ip)
 curl -sk -o /dev/null -w '%{http_code}\n' --resolve "portal.kakao.narwhal.internal:443:$LB" https://portal.kakao.narwhal.internal/
 ```
 

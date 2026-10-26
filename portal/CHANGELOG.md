@@ -21,9 +21,9 @@ covered here.
   `/api/cluster` and `/api/domain/clusters` read the in-cluster token only from the `K8S_SA_TOKEN`
   env, which production does not set (it mounts a projected token file), so they called the API
   server with an empty bearer, got 403 as `system:anonymous`, and rendered the failures as empty
-  lists. The `K8S_SA_TOKEN` pair now reads the projected token like every other Kubernetes route;
-  any other registered cluster still reads only its own env, so this pod's token is never sent to
-  another API server.
+  lists. The in-cluster `K8S_API_SERVER` + `K8S_SA_TOKEN` pair now reads the projected token like every
+  other Kubernetes route; any other pairing still reads only its own env, so this pod's token is
+  never sent to another API server.
 
 ### Security
 
@@ -41,7 +41,6 @@ covered here.
   yet: their fixes are younger than the 7-day lockfile cooling gate (fast-uri clears it after
   2026-10-26 22:51Z, body-parser after 2026-10-29 11:39Z). They ship in a later patch
   (narwhal#470).
-- `braces` (GHSA-vfj7-8cjw-p6xm) still has no patched version, as in 1.1.1.
 
 ## [1.1.1] - 2026-10-23
 

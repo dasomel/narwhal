@@ -19,9 +19,9 @@
 - **아키텍처 > 클러스터 인프라가 노드·Pod·네임스페이스 0으로 표시됨 (narwhal#475)**:
   `/api/cluster`와 `/api/domain/clusters`가 in-cluster 토큰을 `K8S_SA_TOKEN` 환경변수에서만
   읽었는데, 프로덕션은 이 변수 없이 projected token 파일만 마운트함. 그래서 빈 bearer로 API
-  서버를 호출해 `system:anonymous` 403을 받았고, 실패가 빈 목록으로 표시됨. 이제 `K8S_SA_TOKEN`
-  쌍은 다른 Kubernetes 라우트와 같이 projected token을 읽음. 다른 등록 클러스터는 계속 자기
-  환경변수만 읽으므로 이 파드의 토큰이 다른 API 서버로 가지 않음.
+  서버를 호출해 `system:anonymous` 403을 받았고, 실패가 빈 목록으로 표시됨. 이제 in-cluster
+  `K8S_API_SERVER` + `K8S_SA_TOKEN` 쌍은 다른 Kubernetes 라우트와 같이 projected token을 읽음.
+  다른 조합은 계속 자기 환경변수만 읽으므로 이 파드의 토큰이 다른 API 서버로 가지 않음.
 
 ### 보안
 
@@ -38,7 +38,6 @@
   GHSA-wjr9-j795-jxcr, GHSA-xhq7-xmqj-769h, GHSA-333x-w4r6-6crp, 4.2.3에서 수정)는 아직 올리지
   않음. 수정판이 7일 lockfile cooling gate를 지나지 않았기 때문임(fast-uri는 2026-10-26 22:51Z,
   body-parser는 2026-10-29 11:39Z 이후). 다음 패치에서 반영 (narwhal#470).
-- `braces`(GHSA-vfj7-8cjw-p6xm)는 1.1.1과 같이 아직 패치 버전이 없음.
 
 ## [1.1.1] - 2026-10-23
 

@@ -182,7 +182,15 @@ describe("resolveClusterCredentials — in-cluster K8S_SA_TOKEN pair", () => {
     expect(resolveClusterCredentials(primary)).toEqual({ apiServer: "https://172.17.0.141:6443", token: "projected-sa-token" })
   })
 
+  it("never reads the projected token when K8S_SA_TOKEN is paired with another apiServer env var", () => {
+    vi.stubEnv("OTHER_API_SERVER", "https://elsewhere.example:6443")
+    const repointed = fakeCluster({ credentialRef: { apiServerEnvVar: "OTHER_API_SERVER", tokenEnvVar: "K8S_SA_TOKEN" } })
+    expect(resolveClusterCredentials(repointed)).toEqual({ apiServer: "https://elsewhere.example:6443", token: "" })
+    expect(getK8sBearerToken).not.toHaveBeenCalled()
+  })
+
   it("falls back to an empty token instead of throwing when no token source exists", () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {})
     vi.mocked(getK8sBearerToken).mockImplementation(() => {
       throw new Error("Missing required production configuration")
     })

@@ -9,6 +9,25 @@ English | [한국어](CHANGELOG-ko.md)
 
 ## [Unreleased]
 
+## [1.1.3] - 2026-10-27
+
+Patch release: the permission management table shows the tools each role actually reaches.
+Everything since `portal/v1.1.2` is covered here.
+
+### Fixed
+
+- **Settings > Permission management looked empty (narwhal#479)**: the table showed only each
+  group's `allowed_tools` attribute, while `/api/tools` grants the role defaults from `tools.ts`
+  plus that attribute. On a realm where no group carries the attribute, every cell was a faint
+  "off" icon. Role defaults are now shown checked and locked (they cannot be removed here);
+  attribute grants stay editable.
+
+### Known issues
+
+- `fast-uri` and `body-parser` are not upgraded yet (narwhal#470). The `fast-uri` fix cleared the
+  7-day lockfile cooling gate on 2026-10-26 22:51Z, after this release was prepared; `body-parser`
+  (GHSA-27r3-jxmh-p828) clears it after 2026-10-29 11:39Z. Both ship in a later patch.
+
 ## [1.1.2] - 2026-10-27
 
 Patch release: fixes the empty cluster-infrastructure view on production clusters and upgrades
@@ -478,7 +497,8 @@ management dashboard built with Next.js 16 and React 19.
   - Skaffold development profile configured for live Hot Module Replacement (HMR) and container
     file syncing.
 
-[Unreleased]: https://github.com/dasomel/narwhal/compare/portal/v1.1.2...HEAD
+[Unreleased]: https://github.com/dasomel/narwhal/compare/portal/v1.1.3...HEAD
+[1.1.3]: https://github.com/dasomel/narwhal/compare/portal/v1.1.2...portal/v1.1.3
 [1.1.2]: https://github.com/dasomel/narwhal/compare/portal/v1.1.1...portal/v1.1.2
 [1.1.1]: https://github.com/dasomel/narwhal/compare/portal/v1.1.0...portal/v1.1.1
 [1.1.0]: https://github.com/dasomel/narwhal/releases/tag/portal/v1.1.0

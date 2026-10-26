@@ -9,6 +9,24 @@
 
 ## [Unreleased]
 
+## [1.1.3] - 2026-10-27
+
+패치 릴리스. 권한 관리 표가 각 역할이 실제로 접근하는 도구를 보여 줌. `portal/v1.1.2` 이후의 모든
+변경을 다룸.
+
+### 수정
+
+- **설정 > 권한 관리 표가 비어 보임 (narwhal#479)**: 표가 그룹의 `allowed_tools` 속성만 보여
+  줬는데, `/api/tools`는 `tools.ts`의 역할 기본값에 그 속성을 더해 권한을 줌. 속성이 있는 그룹이
+  없는 realm에서는 모든 칸이 흐린 "꺼짐" 아이콘이었음. 이제 역할 기본값은 체크·잠금 상태로
+  표시되고(여기서 끌 수 없음), 속성으로 더한 도구만 편집할 수 있음.
+
+### 알려진 문제
+
+- `fast-uri`와 `body-parser`는 아직 올리지 않음 (narwhal#470). `fast-uri` 수정판은 이 릴리스를
+  준비한 뒤인 2026-10-26 22:51Z에 7일 lockfile cooling gate를 지났고, `body-parser`
+  (GHSA-27r3-jxmh-p828)는 2026-10-29 11:39Z 이후 지남. 둘 다 다음 패치에서 반영.
+
 ## [1.1.2] - 2026-10-27
 
 패치 릴리스. 프로덕션 클러스터에서 클러스터 인프라 화면이 비던 문제를 고치고, `zod`와 `undici`를
@@ -455,7 +473,8 @@ Portal의 첫 번째 공개 릴리스.
     매니페스트(`deploy/kaniko-build-job.yaml`).
   - 실시간 핫 모듈 교체(HMR) 및 컨테이너 파일 동기화를 위해 구성된 Skaffold 개발 프로필.
 
-[Unreleased]: https://github.com/dasomel/narwhal/compare/portal/v1.1.2...HEAD
+[Unreleased]: https://github.com/dasomel/narwhal/compare/portal/v1.1.3...HEAD
+[1.1.3]: https://github.com/dasomel/narwhal/compare/portal/v1.1.2...portal/v1.1.3
 [1.1.2]: https://github.com/dasomel/narwhal/compare/portal/v1.1.1...portal/v1.1.2
 [1.1.1]: https://github.com/dasomel/narwhal/compare/portal/v1.1.0...portal/v1.1.1
 [1.1.0]: https://github.com/dasomel/narwhal/releases/tag/portal/v1.1.0

@@ -34,6 +34,7 @@
 import { readFileSync, writeFileSync } from "fs"
 import { join } from "path"
 import { ValidationError } from "./validation"
+import { getK8sBearerToken } from "./k8s-token"
 import {
   type Cluster,
   type ClusterCredentialRef,
@@ -272,8 +273,26 @@ export function clusterCacheKey(clusterId: string, resource: string): string {
 export function resolveClusterCredentials(cluster: Cluster): { apiServer: string; token: string } | null {
   const apiServer = process.env[cluster.credentialRef.apiServerEnvVar]
   if (!apiServer) return null
-  const token = process.env[cluster.credentialRef.tokenEnvVar] ?? ""
-  return { apiServer, token }
+  return { apiServer, token: resolveToken(cluster.credentialRef.tokenEnvVar) }
+}
+
+// The in-cluster pair (K8S_SA_TOKEN) is owned by k8s-token.ts: production mounts
+// a projected token file and sets no K8S_SA_TOKEN env, so reading process.env
+// alone sent an empty bearer — every /api/cluster call ran as system:anonymous
+// and the architecture page showed 0 nodes. Only this pair takes the file path;
+// any other cluster's ref stays env-only so this pod's SA token never reaches
+// another cluster's API server.
+const IN_CLUSTER_TOKEN_ENV_VAR = "K8S_SA_TOKEN"
+
+function resolveToken(tokenEnvVar: string): string {
+  if (tokenEnvVar !== IN_CLUSTER_TOKEN_ENV_VAR) return process.env[tokenEnvVar] ?? ""
+  try {
+    return getK8sBearerToken()
+  } catch {
+    // Production with no token file: keep the old empty-token result rather than
+    // throwing from a resolver the settings route also calls for status only.
+    return ""
+  }
 }
 
 // ---------------------------------------------------------------------------

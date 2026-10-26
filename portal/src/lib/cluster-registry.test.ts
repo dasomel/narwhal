@@ -8,6 +8,9 @@ import {
 } from "./cluster-registry"
 import type { Cluster, ClusterRegistrationInput } from "@/types/cluster"
 import { ValidationError } from "./validation"
+import { getK8sBearerToken } from "./k8s-token"
+
+vi.mock("./k8s-token", () => ({ getK8sBearerToken: vi.fn(() => "projected-sa-token") }))
 
 function fakeCluster(overrides: Partial<Cluster> = {}): Cluster {
   return {
@@ -157,5 +160,32 @@ describe("resolveClusterCredentials", () => {
   it("defaults token to empty string when only apiServer is configured", () => {
     vi.stubEnv("TEST_CLUSTER_API", "https://cluster-2.example:6443")
     expect(resolveClusterCredentials(cluster)).toEqual({ apiServer: "https://cluster-2.example:6443", token: "" })
+  })
+  it("never reads the in-cluster projected token for another cluster's ref", () => {
+    vi.stubEnv("TEST_CLUSTER_API", "https://cluster-2.example:6443")
+    resolveClusterCredentials(cluster)
+    expect(getK8sBearerToken).not.toHaveBeenCalled()
+  })
+})
+
+describe("resolveClusterCredentials — in-cluster K8S_SA_TOKEN pair", () => {
+  const primary = fakeCluster({ credentialRef: { apiServerEnvVar: "K8S_API_SERVER", tokenEnvVar: "K8S_SA_TOKEN" } })
+
+  beforeEach(() => {
+    vi.stubEnv("K8S_API_SERVER", "https://172.17.0.141:6443")
+    vi.stubEnv("K8S_SA_TOKEN", "")
+    vi.mocked(getK8sBearerToken).mockReset().mockReturnValue("projected-sa-token")
+  })
+  afterEach(() => vi.unstubAllEnvs())
+
+  it("reads the projected token file when K8S_SA_TOKEN env is unset (production)", () => {
+    expect(resolveClusterCredentials(primary)).toEqual({ apiServer: "https://172.17.0.141:6443", token: "projected-sa-token" })
+  })
+
+  it("falls back to an empty token instead of throwing when no token source exists", () => {
+    vi.mocked(getK8sBearerToken).mockImplementation(() => {
+      throw new Error("Missing required production configuration")
+    })
+    expect(resolveClusterCredentials(primary)).toEqual({ apiServer: "https://172.17.0.141:6443", token: "" })
   })
 })

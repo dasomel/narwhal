@@ -506,12 +506,16 @@ spec:
       upstreams:
         - name: headlamp
       plugins:
+        # Conditional headers are dropped and validators stripped: otherwise a browser
+        # holding the pre-injection copy revalidates to a 304 and keeps that copy.
         - name: proxy-rewrite
           enable: true
           config:
             headers:
               remove:
                 - Accept-Encoding
+                - If-Modified-Since
+                - If-None-Match
         - name: serverless-pre-function
           enable: true
           config:
@@ -523,6 +527,9 @@ spec:
                   if ngx.status == 200 and string.find(ct, "text/html", 1, true) then
                     ngx.ctx.hl_login_inject = true
                     ngx.header.content_length = nil
+                    ngx.header["Last-Modified"] = nil
+                    ngx.header["ETag"] = nil
+                    ngx.header["Cache-Control"] = "no-store"
                   end
                 end
         - name: serverless-post-function

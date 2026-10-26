@@ -4,8 +4,11 @@
 2026-10-26: Headlamp v0.42 always stopped at /c/<cluster>/login and needed a "Sign In"
 click. apisix-routes.yaml now injects a script into the SPA's HTML that sends that route to
 /oidc?cluster=<cluster> at most once per 60 s. This check extracts that script from the
-template and runs it under node against a fake browser: hard load, SPA pushState, the loop
-guard, unrelated pages and the HTML-only injection guard.
+template and runs it under node against a fake browser (hard load, SPA pushState and
+popstate, the loop guard, unrelated pages), and checks the Lua side statically: HTML-only
+injection on 200, the rewritten body actually written back, Content-Length dropped, and no
+304 path back to a cached pre-injection copy (conditional headers removed, validators
+stripped, no-store).
 
 Usage: check-headlamp-autologin-route.py [--mutation-verify] [<apisix-routes.yaml>]
 """
@@ -27,16 +30,18 @@ function run(path, opts) {
   const store = {};
   if (opts.preset) store.narwhal_hl_auto_oidc = String(opts.preset);
   const out = { replaced: null };
+  const listeners = {};
   const ctx = {
     location: { pathname: path, replace: (u) => { out.replaced = u; } },
     sessionStorage: { getItem: (k) => (k in store ? store[k] : null), setItem: (k, v) => { store[k] = v; } },
     history: { pushState() {}, replaceState() {} },
-    window: { addEventListener() {} },
+    window: { addEventListener: (e, f) => { listeners[e] = f; } },
     Date: { now: () => 1e12 }, String, encodeURIComponent, decodeURIComponent,
     setTimeout: (f) => f(),
   };
   new Function(...Object.keys(ctx), src)(...Object.values(ctx));
   if (opts.pushTo) { ctx.location.pathname = opts.pushTo; ctx.history.pushState({}, "", opts.pushTo); }
+  if (opts.popTo) { ctx.location.pathname = opts.popTo; if (listeners.popstate) listeners.popstate(); }
   return out.replaced;
 }
 console.log(JSON.stringify({
@@ -45,6 +50,7 @@ console.log(JSON.stringify({
   expired: run("/c/main/login", { preset: 1e12 - 70000 }),
   root: run("/"),
   push: run("/", { pushTo: "/c/main/login" }),
+  pop: run("/", { popTo: "/c/main/login" }),
   other: run("/c/main/pods"),
 }));
 """
@@ -55,6 +61,7 @@ WANT = {
     "expired": "/oidc?cluster=main",
     "root": None,
     "push": "/oidc?cluster=main",
+    "pop": "/oidc?cluster=main",
     "other": None,
 }
 
@@ -77,6 +84,14 @@ def problems(text: str) -> list[str]:
         ('- "/"', "must match the root document"),
         ('string.find(ct, "text/html", 1, true)', "must inject into HTML responses only"),
         ("Accept-Encoding", "must strip Accept-Encoding so the body can be rewritten"),
+        ("ngx.status == 200", "must inject into 200 responses only"),
+        ("ngx.header.content_length = nil", "must drop Content-Length because the body grows"),
+        ("ngx.arg[1] = full", "must write the rewritten body back"),
+        ("- If-Modified-Since", "must drop conditional requests (a 304 keeps the cached pre-injection page)"),
+        ("- If-None-Match", "must drop conditional requests (a 304 keeps the cached pre-injection page)"),
+        ('ngx.header["Last-Modified"] = nil', "must strip validators on the rewritten page"),
+        ('ngx.header["ETag"] = nil', "must strip validators on the rewritten page"),
+        ('ngx.header["Cache-Control"] = "no-store"', "must not let the rewritten page be cached"),
     ):
         if needle not in block:
             out.append(f"{needle}: {why}")
@@ -110,12 +125,22 @@ def main(argv: list[str]) -> int:
         print(f"FAIL {p}")
     if found:
         return 1
-    print("OK headlamp-login-autoredirect: HTML-only injection, hard load + SPA navigation redirect, 60 s loop guard")
+    print("OK headlamp-login-autoredirect: HTML-only injection on 200 with the body written back, no 304 path to a cached copy, hard load / pushState / popstate redirect, 60 s loop guard")
     if mutation:
+        block = route_block(text)
+
+        def in_block(old: str, new: str) -> str:
+            # Mutate only this route: the sibling headlamp-auth-return shares some lines.
+            return text.replace(block, block.replace(old, new, 1), 1)
+
         mutants = {
-            "loop guard removed": text.replace("if (Date.now() - last < 60000) return;", "", 1),
-            "SPA navigation not followed": text.replace('["pushState", "replaceState"]', "[]", 1),
-            "injected into every content type": text.replace('string.find(ct, "text/html", 1, true)', "true", 1),
+            "loop guard removed": in_block("if (Date.now() - last < 60000) return;", ""),
+            "SPA navigation not followed": in_block('["pushState", "replaceState"]', "[]"),
+            "injected into every content type": in_block('string.find(ct, "text/html", 1, true)', "true"),
+            "rewritten body not written back": in_block("ngx.arg[1] = full", "local _ = full"),
+            "conditional requests kept": in_block("                - If-None-Match\n", ""),
+            "validators kept": in_block('ngx.header["ETag"] = nil', ""),
+            "back/forward navigation not followed": in_block('window.addEventListener("popstate", go);', ""),
         }
         for name, mutated in mutants.items():
             if mutated == text:

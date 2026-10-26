@@ -15,7 +15,8 @@
       "scripts/test/regression-check-kakao.sh",
       "scripts/test/lib/check-headlamp-autologin-route.py",
       "scripts/test/lib/check-keycloak-secret-fail-closed.sh",
-      ".agents/evals/traces/2026-10-kakao-sso-seamless.json"
+      ".agents/evals/traces/2026-10-kakao-sso-seamless.json",
+      "scripts/test/lib/check-gitea-seed-admin.sh"
     ]
   },
   "events": [
@@ -51,7 +52,8 @@
         "test:client_credentials with the restored grafana secret -> 'Client not enabled to retrieve service account' (a wrong secret -> 'Invalid client credentials')",
         "test:gitea API as admin (Sudo) GET repos/gitea-admin/narwhal-gitops -> 200",
         "test:bash scripts/test/lib/check-keycloak-secret-fail-closed.sh -> OK; fails on the origin/main 11-3",
-        "test:python3 scripts/test/lib/check-headlamp-autologin-route.py --mutation-verify -> OK, 3 mutations caught; fails on origin/main",
+        "test:bash scripts/test/lib/check-gitea-seed-admin.sh -> OK (fake kubectl: 404 create --admin, 200 PATCH with own source_id/login_name, failed lookup untouched); 4 mutations caught; fails on origin/main",
+        "test:python3 scripts/test/lib/check-headlamp-autologin-route.py --mutation-verify -> OK, 7 mutations caught (incl. body write-back, 304 path, popstate); fails on origin/main",
         "test:make test (RESEARCH_EVIDENCE_DIR set) -> passed 410 failed 0 warnings 3",
         "test:make validate -> exit 0; shellcheck --severity=warning over scripts/ -> clean"
       ]

@@ -158,6 +158,14 @@ create_keycloak_client() {
   local client_secret
   client_secret=$(kc_exec get "clients/${existing_id}/client-secret" -r "${REALM}" 2>/dev/null \
     | jq -r '.value // empty' || echo "")
+  # Fail closed (2026-10-26): an empty read used to flow straight into the app Secrets, so
+  # grafana-oidc-secret and devtools/gitea-oidc-secret held "" and Grafana login died with
+  # "Failed to get token from provider" (Keycloak: invalid client credentials). Every client
+  # this helper creates is confidential, so empty is always a failed read, never a value.
+  if [ -z "${client_secret}" ]; then
+    echo "ERROR: could not read the client secret of Keycloak client '${client_id}' (kcadm session expired or Keycloak unreachable); re-run 11-3" >&2
+    return 1
+  fi
   echo "${client_secret}"
 }
 
@@ -588,6 +596,10 @@ VELERO_UI_CLIENT_ID=$(kc_exec get clients -r "${REALM}" -q "clientId=velero-ui" 
   | jq -r '.[] | select(.clientId=="velero-ui") | .id')
 VELERO_UI_CLIENT_SECRET=$(kc_exec get "clients/${VELERO_UI_CLIENT_ID}/client-secret" -r "${REALM}" 2>/dev/null \
   | jq -r '.value // empty')
+if [ -z "${VELERO_UI_CLIENT_SECRET}" ]; then
+  echo "ERROR: could not read the velero-ui client secret; re-run 11-3" >&2
+  exit 1
+fi
 
 # velero-ui's native SPA OAuth flow redirects to Keycloak with redirect_uri=.../login
 # (in addition to the APISIX zero-click /apisix/callback). Register BOTH, otherwise the

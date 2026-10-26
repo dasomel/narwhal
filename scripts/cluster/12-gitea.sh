@@ -197,6 +197,44 @@ if [ -n "${GITEA_POD}" ]; then
       && echo "Gitea OAuth source 'keycloak' created" \
       || echo "WARN: Gitea OAuth config failed"
   fi
+
+  # D-GITEA-ADMIN (2026-10-26): browser logins reach Gitea through the gateway's
+  # reverse-proxy auth (X-WEBAUTH-USER from the APISIX OIDC session, apisix-routes.yaml).
+  # That path auto-registers the user but applies none of the OAuth source's --admin-group
+  # or --group-team-map mappings above, so the seeded Keycloak cluster-admin user (11-2)
+  # landed as a plain user and got 404 on the private gitea-admin/narwhal-gitops repo.
+  # Pre-create or promote it as a site admin so the reverse-proxy login maps onto that
+  # account, matching cluster-admin's admin role in ArgoCD, Grafana and Harbor. The PATCH
+  # echoes the user's own source_id/login_name back (Gitea requires login_name and a zero
+  # source_id would detach an OAuth-sourced user). Cost: only the listed users; a
+  # cluster-admin added in Keycloak later stays a plain Gitea user until promoted.
+  # Escape hatch: GITEA_SEED_ADMIN_USERS="" skips this.
+  read -r -a seed_admins <<< "${GITEA_SEED_ADMIN_USERS-admin}"
+  for seed_user in "${seed_admins[@]}"; do
+    seed_json=$(kubectl exec -n devtools "${GITEA_POD}" -- \
+        curl -sf -u "gitea-admin:${GITEA_ADMIN_PASS}" \
+          "http://localhost:3000/api/v1/admin/users?q=${seed_user}&limit=50" 2>/dev/null \
+      | jq -c --arg u "${seed_user}" '[.[] | select(.login == $u)][0] // empty' || echo "")
+    if [ -z "${seed_json}" ]; then
+      kubectl exec -n devtools "${GITEA_POD}" -- \
+        /app/gitea/gitea admin user create --username "${seed_user}" \
+          --email "${seed_user}@${DOMAIN}" --random-password --admin \
+          --must-change-password=false >/dev/null 2>&1 \
+        && echo "Gitea: created site admin '${seed_user}' (the reverse-proxy login maps onto it)" \
+        || echo "WARN: could not create Gitea user '${seed_user}'"
+    else
+      seed_body=$(jq -c --arg u "${seed_user}" \
+        '{admin: true, source_id: .source_id, login_name: (if (.login_name // "") == "" then $u else .login_name end)}' \
+        <<< "${seed_json}")
+      kubectl exec -n devtools "${GITEA_POD}" -- \
+        curl -sf -o /dev/null -X PATCH "http://localhost:3000/api/v1/admin/users/${seed_user}" \
+          -H "Content-Type: application/json" \
+          -u "gitea-admin:${GITEA_ADMIN_PASS}" \
+          -d "${seed_body}" \
+        && echo "Gitea: '${seed_user}' is a site admin" \
+        || echo "WARN: could not promote Gitea user '${seed_user}'"
+    fi
+  done
 else
   echo "WARN: Gitea pod not found, skipping OAuth2 configuration"
 fi

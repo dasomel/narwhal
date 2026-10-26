@@ -254,7 +254,7 @@ The Narwhal management portal (Next.js) — the developer-facing UI for this ent
 
 ## Conventions
 
-- **SemVer-pinned images and charts.** Mutable tags like `:latest` are avoided in GitOps manifests — ArgoCD diffs the rendered manifest string, so a re-published `:latest` looks identical and silently fails to trigger a sync (see the portal image, which learned this the hard way and is now pinned to a SemVer tag, currently `1.1.1`). Chart `targetRevision` is always an explicit version.
+- **SemVer-pinned images and charts.** Mutable tags like `:latest` are avoided in GitOps manifests — ArgoCD diffs the rendered manifest string, so a re-published `:latest` looks identical and silently fails to trigger a sync (see the portal image, which learned this the hard way and is now pinned to a SemVer tag, currently `1.1.2`). Chart `targetRevision` is always an explicit version.
 - **GitOps-only changes.** Every persistent change goes through this repo → push to Gitea → ArgoCD auto-syncs. `kubectl apply`/`edit` against a managed resource is reverted by `selfHeal` on the next reconcile loop; it's only useful for throwaway debugging.
 - **Namespace overview:**
 

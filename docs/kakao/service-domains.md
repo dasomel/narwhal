@@ -201,7 +201,8 @@ ssh narwhal-master-1 'sudo env KUBECONFIG=/home/vagrant/.kube/config-local \
 `DOMAIN`을 넘기지 않으면 출력의 URL이 Vagrant 도메인으로 나온다 (값 자체는 동일).
 
 SSO 로그인에는 realm `narwhal`의 시드 계정 `admin` / `dev` / `view` / `guest`를 쓴다 —
-비밀번호는 `iam/keycloak-user-passwords` Secret에 있고 위 명령이 함께 출력한다.
+비밀번호는 `iam/keycloak-user-passwords` Secret에 있고 위 명령이 함께 출력한다. 계정·그룹 상태 확인과
+비밀번호 변경은 [SSO 계정 확인 가이드](../common/sso-accounts.md)를 본다.
 
 ---
 

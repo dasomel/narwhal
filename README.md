@@ -472,6 +472,8 @@ describes the gateway:
 | `view` | `viewer` | `kubectl get secret keycloak-user-passwords -n iam -o jsonpath='{.data.view}' \| base64 -d` |
 | `guest` | `guest` | `kubectl get secret keycloak-user-passwords -n iam -o jsonpath='{.data.guest}' \| base64 -d` |
 
+Checking account and group state, and changing a password: [docs/common/sso-accounts.md](docs/common/sso-accounts.md) (Korean).
+
 ## Documentation
 
 Docs are split by **deployment target** — the platform layer is shared, but nodes,

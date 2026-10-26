@@ -282,7 +282,7 @@ PostgreSQL HA (CloudNative-PG)
 │          Kubernetes API Server                        │
 │                                                       │
 │  --oidc-issuer-url=https://keycloak.local.narwhal.internal/ │
-│          realms/kubernetes                            │
+│          realms/narwhal                               │
 │  --oidc-client-id=kubernetes                          │
 │  --oidc-username-claim=preferred_username             │
 │  --oidc-groups-claim=groups                           │
@@ -369,7 +369,7 @@ kubectl logs -n platform-system -l app.kubernetes.io/name=apisix --tail=20
 ```text
 ┌────────────────────────────────────────────────────────┐
 │                    Grafana Dashboard                   │
-│        https://grafana.local.narwhal.internal (admin/admin)  │
+│        https://grafana.local.narwhal.internal (SSO)    │
 ├──────────┬──────────────┬──────────────────────────────┤
 │          │              │                              │
 │    Metrics         Logs              Traces            │
@@ -587,23 +587,24 @@ sudo resolvectl domain eth0 ~local.narwhal.internal
 
 | Service | URL | Credentials |
 |---------|-----|-------------|
-| Grafana | <https://grafana.local.narwhal.internal> | admin / admin |
+| Grafana | <https://grafana.local.narwhal.internal> | Keycloak SSO (로컬 admin: `show-credentials.sh`) |
 | Harbor | <https://harbor.local.narwhal.internal> | admin / Harbor12345 |
 | Keycloak | <https://keycloak.local.narwhal.internal> | (auto-generated) |
 | OpenBao | <https://openbao.local.narwhal.internal> | (unseal required) |
 | Hubble | <https://hubble.local.narwhal.internal> | - |
 | ArgoCD | <https://argocd.local.narwhal.internal> | admin / (auto) |
-| Gitea | <https://gitea.local.narwhal.internal> | gitea-admin / gitea-admin |
+| Gitea | <https://gitea.local.narwhal.internal> | gitea-admin / `show-credentials.sh` |
 | Headlamp | <https://headlamp.local.narwhal.internal> | Keycloak OIDC |
 
 ### OIDC Login
 
+> 비밀번호 grant(ROPC)는 모든 Keycloak 클라이언트에서 꺼져 있다(`directAccessGrantsEnabled=false`). 토큰은 kubelogin으로 받는다 — [SSO 계정 확인 가이드](./sso-accounts.md#4-로그인-확인).
+
 ```bash
-# 토큰 발급 (HTTPS, self-signed cert)
-TOKEN=$(curl -k -s -X POST \
-  'https://keycloak.local.narwhal.internal/realms/kubernetes/protocol/openid-connect/token' \
-  -d 'grant_type=password&client_id=kubernetes&username=admin&password=admin' \
-  | jq -r '.access_token')
+# 토큰 발급 (kubelogin, 브라우저 로그인)
+TOKEN=$(kubectl oidc-login get-token \
+  --oidc-issuer-url=https://keycloak.local.narwhal.internal/realms/narwhal \
+  --oidc-client-id=kubernetes | jq -r '.status.token')
 
 # kubectl 사용
 kubectl --token=$TOKEN get nodes

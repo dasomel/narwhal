@@ -75,23 +75,16 @@ sudo systemctl restart systemd-resolved
 
 ### 기본 계정
 
-| 사용자 | 비밀번호 | 역할 |
-|--------|----------|------|
-| `admin` | `admin` | cluster-admin |
-| `dev` | `dev` | developer |
-| `view` | `view` | viewer |
-| `guest` | `guest` | guest (웹 UI만) |
+realm `narwhal`에 시드된 사용자 `admin`(cluster-admin) / `dev`(developer) / `view`(viewer) /
+`guest`(guest, 웹 UI만)를 쓴다. 비밀번호는 프로비저닝 때 무작위로 생성되어
+`iam/keycloak-user-passwords` Secret에 있다 — 고정 값이 없다. 조회·상태 확인 절차는
+[SSO 계정 확인 가이드](./sso-accounts.md)를 본다.
 
 ### 역할별 접근 권한
 
-| 역할 | ArgoCD | Gitea | Harbor | Grafana | Headlamp | kubectl |
-|------|--------|-------|--------|---------|----------|---------|
-| `cluster-admin` | Admin | Site Admin | Admin | Admin | 전체 | 전체 (platform-admin) |
-| `developer` | 읽기+동기화 | User | Developer | Editor | dev NS edit | dev NS edit |
-| `viewer` | 읽기 전용 | User (read-only) | Guest | Viewer | dev NS view | view |
-| `guest` | 차단 | 차단 | 차단 | Viewer | 차단 | 없음 |
-
-> `cluster-admin`은 노드 조작·RBAC 변경 등 위험 권한이 제거된 `platform-admin` 역할이 적용됩니다.
+앱별 권한은 [앱 SSO 권한 매트릭스](./app-sso-permission-matrix.md)가 정본이다. Kubernetes 쪽 요약:
+`cluster-admin` → `platform-admin`(노드 조작·RBAC 변경 등 위험 권한 제거), `developer` → 클러스터
+읽기 + `dev` 네임스페이스 쓰기, `viewer` → `platform-viewer`(읽기 전용), `guest` → 바인딩 없음.
 
 ---
 
@@ -123,17 +116,14 @@ kubectl config use-context narwhal-oidc
 kubectl get pods -n dev
 ```
 
-### 수동 토큰 발급 (스크립트/CI용)
+### 수동 토큰 발급
+
+> 비밀번호 grant(ROPC)는 모든 Keycloak 클라이언트에서 꺼져 있다(`directAccessGrantsEnabled=false`). 토큰은 kubelogin으로 받는다 — [SSO 계정 확인 가이드](./sso-accounts.md#4-로그인-확인).
 
 ```bash
-TOKEN=$(curl -sk -X POST \
-  "https://keycloak.local.narwhal.internal/realms/kubernetes/protocol/openid-connect/token" \
-  -d "grant_type=password" \
-  -d "client_id=kubernetes" \
-  -d "username=dev" \
-  -d "password=dev" \
-  -d "scope=openid groups" \
-  | jq -r '.access_token')
+TOKEN=$(kubectl oidc-login get-token \
+  --oidc-issuer-url=https://keycloak.local.narwhal.internal/realms/narwhal \
+  --oidc-client-id=kubernetes | jq -r '.status.token')
 
 # X.509 인증을 우회하려면 KUBECONFIG=/dev/null 필수
 KUBECONFIG=/dev/null kubectl \
@@ -301,7 +291,7 @@ vagrant ssh master-1 -c "kubectl get pods -n iam"
 vagrant ssh master-1 -c "kubectl get pods -n platform-system -l app.kubernetes.io/name=apisix"
 
 # 4. Keycloak 접근 테스트
-curl -k https://keycloak.local.narwhal.internal/realms/kubernetes/.well-known/openid-configuration
+curl -k https://keycloak.local.narwhal.internal/realms/narwhal/.well-known/openid-configuration
 ```
 
 ### DNS 해석 실패
@@ -369,6 +359,7 @@ kubectl get pods -n dev  # 재로그인 프롬프트 표시됨
 |------|------|
 | [DNS 접속 가이드](../vagrant/dns-access.md) | DNS 설정 상세 및 문제 해결 |
 | [Kubeconfig 설정](./kubeconfig.md) | kubectl 인증 설정 |
+| [SSO 계정 확인 가이드](./sso-accounts.md) | SSO 로그인 계정, 비밀번호 위치, 계정·그룹 상태 확인 |
 | `scripts/test/show-credentials.sh` | 계정과 비밀번호 — 클러스터가 생성하므로 문서에 값이 없다 |
 | [dns-access.md](../vagrant/dns-access.md) · [service-domains.md](../kakao/service-domains.md) | 서비스 도메인과 SSO 연동 방식 (배포 대상별) |
 | [아키텍처 문서](./architecture.md) | 전체 시스템 구조 |

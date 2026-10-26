@@ -180,7 +180,7 @@ Mesh 실행을 증명하지 않는다. runtime이 Docker default bridge에서 Ke
 | T09 | hairpin 존이 wildcard(고정 리스트 아님) |
 | T10 | APISIX admin `/routes`가 200(etcd 데드락 아님) |
 | T11 | Gitea에 AppleDouble 파일 없음 |
-| T12 | 모든 서비스 도메인이 worker LB로 도달 가능 |
+| T12 | 모든 서비스 도메인이 ingress LB(기본 master)로 도달 가능 |
 | T13 | AAAA가 SERVFAIL이 아니라 NODATA |
 
 **차단 사유**: Kakao 클러스터가 destroy된 상태(2026-08-10, 52/52 리소스 제거,

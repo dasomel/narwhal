@@ -7,7 +7,7 @@ set -euo pipefail
 # On Vagrant, master-1 runs dnsmasq and the docs tell you to point the resolver at it
 # (docs/vagrant/dns-access.md). None of that applies here: PROVIDER=kakao skips dnsmasq, and the
 # nodes are on a private subnet your machine cannot reach anyway. The names are served
-# by the worker LB's public IP and have no public DNS, so /etc/hosts is the way in.
+# by the master LB's public IP (INGRESS_LB=master, the default) and have no public DNS, so /etc/hosts is the way in.
 #
 # Hostnames are read from the cluster's ApisixRoutes rather than hardcoded, so this
 # stays correct as routes are added.
@@ -16,6 +16,7 @@ set -euo pipefail
 #   scripts/cloud/setup-hosts-kakao.sh           # print the lines, change nothing
 #   scripts/cloud/setup-hosts-kakao.sh --apply   # write them to /etc/hosts (needs sudo)
 #   scripts/cloud/setup-hosts-kakao.sh --remove  # take them back out
+#   INGRESS_LB=worker scripts/cloud/setup-hosts-kakao.sh --apply  # use the worker LB instead
 #
 # Needs a working kubectl context for the cluster — run scripts/cloud/set-config-kakao.sh
 # first.
@@ -43,7 +44,46 @@ if [ "${ACTION}" = "--remove" ]; then
   exit 0
 fi
 
-LB=$(cd "${TF_DIR}" && tofu output -raw worker_lb_public_ip)
+# D-INGRESS: both LBs forward 80/443 to the same ingress NodePorts (31080/31443), so either
+# one serves the names. Default is master.
+#   Reason     : the worker LB public IP stopped answering from the internet (verified live
+#                2026-10-23/25: ONLINE/ACTIVE and reachable from inside the VPC, yet ICMP+TCP
+#                dropped at the Kakao edge and external SYNs never reached a worker); the master
+#                LB public IP returns HTTP 302 externally.
+#   Cost       : the master ingress target groups (masters_http/masters_https) have no health
+#                monitor, so a failed master can cause intermittent failures.
+#   Escape hatch: INGRESS_LB=worker (e.g. once the worker LB public path is healthy again).
+INGRESS_LB="${INGRESS_LB:-master}"
+case "${INGRESS_LB}" in
+  worker|master) ;;
+  *) echo "ERROR: INGRESS_LB must be worker or master (got '${INGRESS_LB}')" >&2; exit 1 ;;
+esac
+LB=$(cd "${TF_DIR}" && tofu output -raw "${INGRESS_LB}_lb_public_ip" 2>/dev/null || true)
+[ -n "${LB}" ] && [ "${LB}" != "null" ] || {
+  echo "ERROR: tofu output ${INGRESS_LB}_lb_public_ip is empty — apply ${TF_DIR} first" >&2
+  exit 1
+}
+
+# "in_use" and ONLINE in the API do not prove the public path works, and an /etc/hosts
+# entry pointing at a dead address fails as a silent browser timeout. Probe from here.
+# Only connect failure (7) and timeout (28) mean unreachable; a TLS or HTTP error from a
+# bare-IP request without SNI still proves the path is open.
+probe_rc=0
+if [ "${ACTION}" = "--apply" ] && [ "${SKIP_PROBE:-0}" != "1" ]; then
+  curl -sk -m 5 -o /dev/null "https://${LB}/" 2>/dev/null || probe_rc=$?
+fi
+if [ "${probe_rc}" -eq 7 ] || [ "${probe_rc}" -eq 28 ]; then
+  echo "ERROR: ${INGRESS_LB} LB ${LB}:443 is not reachable from this machine." >&2
+  if [ "${INGRESS_LB}" = "master" ]; then
+    other=worker
+  else
+    other=master
+  fi
+  echo "       Try the ${other} LB, which serves the same NodePorts:" >&2
+  echo "         INGRESS_LB=${other} $0 --apply" >&2
+  echo "       SKIP_PROBE=1 writes the entry anyway." >&2
+  exit 1
+fi
 
 kubectl get apisixroute -A >/dev/null 2>&1 || {
   echo "ERROR: cannot reach the cluster with the current kubectl context." >&2
@@ -67,7 +107,7 @@ BLOCK="${MARK_BEGIN}
 ${LB} ${HOSTS}
 ${MARK_END}"
 
-echo "Worker LB : ${LB}"
+echo "Ingress LB: ${LB} (${INGRESS_LB})"
 echo "Hostnames : ${COUNT} (from ApisixRoutes)"
 echo ""
 

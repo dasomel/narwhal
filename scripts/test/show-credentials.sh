@@ -244,7 +244,7 @@ for res in state.get("resources", []):
   }
   BASTION_IP="${BASTION_IP:-$(tf_ip bastion_public)}"
   API_LB_IP="${API_LB_IP:-$(tf_ip master_lb_public)}"
-  INGRESS_LB_IP="${INGRESS_LB_IP:-$(tf_ip worker_lb_public)}"
+  INGRESS_LB_IP="${INGRESS_LB_IP:-$(tf_ip "${INGRESS_LB:-master}_lb_public")}"   # D-INGRESS: master default, INGRESS_LB=worker to switch
   KEYPAIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." 2>/dev/null && pwd)/csp/kakao-cloud/terraform/KPAAS_KEYPAIR.pem"
   row "SSH user"       "ubuntu (key: ${KEYPAIR})"
   row "Bastion"        "${BASTION_IP:-(set BASTION_IP; tfstate not readable here)}"

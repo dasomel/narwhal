@@ -3465,11 +3465,11 @@ print(" ".join(out))
     bad T11 "${ad} AppleDouble files in Gitea (2026-07-27)"
   fi
 
-  # Every documented service must answer through the public LB.
-  local lb
-  lb=$(cd "${TF_DIR}" && tofu output -raw worker_lb_public_ip 2>/dev/null || echo "")
+  # Every documented service must answer through the public ingress LB (D-INGRESS: master by default).
+  local lb ingress_lb="${INGRESS_LB:-master}"
+  lb=$(cd "${TF_DIR}" && tofu output -raw "${ingress_lb}_lb_public_ip" 2>/dev/null || echo "")
   if [ -z "${lb}" ]; then
-    warn T12 "worker_lb_public_ip unavailable; external reachability skipped"
+    warn T12 "${ingress_lb}_lb_public_ip unavailable; external reachability skipped"
   else
     local bad_hosts="" h code
     for h in $(kubectl get apisixroute -A -o jsonpath='{range .items[*].spec.http[*]}{.match.hosts[*]}{"\n"}{end}' 2>/dev/null | sort -u); do
@@ -3479,7 +3479,7 @@ print(" ".join(out))
         *) bad_hosts="${bad_hosts}${h}=${code} " ;;
       esac
     done
-    [ -z "${bad_hosts}" ] && ok T12 "all service domains reachable through the worker LB" \
+    [ -z "${bad_hosts}" ] && ok T12 "all service domains reachable through the ${ingress_lb} LB" \
       || bad T12 "unreachable: ${bad_hosts}"
   fi
 }

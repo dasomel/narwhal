@@ -190,14 +190,15 @@ case "${AUTH_METHOD}" in
       --cluster="${CLUSTER_NAME}" \
       --user="${CLUSTER_NAME}-oidc"
 
-    WORKER_LB=$(cd "${TF_DIR}" && tofu output -raw worker_lb_public_ip)
+    INGRESS_LB="${INGRESS_LB:-master}"   # D-INGRESS: see scripts/cloud/setup-hosts-kakao.sh
+    INGRESS_LB_IP=$(cd "${TF_DIR}" && tofu output -raw "${INGRESS_LB}_lb_public_ip")
     echo ""
     echo "OIDC authentication configured."
     echo ""
     echo "The browser flow needs ${DOMAIN} to resolve. These names are served by the"
-    echo "worker LB and have no public DNS, so add them to /etc/hosts first:"
+    echo "${INGRESS_LB} LB and have no public DNS, so add them to /etc/hosts first:"
     echo ""
-    echo "  ${WORKER_LB}  keycloak.${DOMAIN}"
+    echo "  ${INGRESS_LB_IP}  keycloak.${DOMAIN}"
     echo ""
     echo "Keycloak realm users (passwords: scripts/test/show-credentials.sh):"
     echo "  admin (cluster-admin) · dev (developer) · view (viewer) · guest (web UI only)"

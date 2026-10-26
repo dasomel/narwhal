@@ -46,11 +46,23 @@ Narwhal의 모든 웹 UI와 OIDC kubectl은 Keycloak realm **`narwhal`** 하나�
 한 번에 전부 보려면 `scripts/test/show-credentials.sh`를 쓴다. SSO 사용자 4명의 비밀번호는
 `Keycloak (IAM)` 섹션의 "Realm 'narwhal' users" 아래에 나온다.
 
-```bash
-# Vagrant
-vagrant ssh master-1 -c "bash /home/vagrant/scripts/test/show-credentials.sh"
+Vagrant:
 
-# Kakao Cloud (master-1에서 실행 — API LB 인증서에 공인 IP SAN이 없어 로컬 kubectl은 터널이 필요)
+```bash
+vagrant ssh master-1 -c "bash /home/vagrant/scripts/test/show-credentials.sh"
+```
+
+Kakao Cloud — Mac의 kubectl이 이미 클러스터에 붙어 있으면(`scripts/cloud/set-config-kakao.sh`가 연
+bastion 터널) 저장소 루트에서:
+
+```bash
+PROVIDER=kakao scripts/test/show-credentials.sh --context kakao-narwhal
+```
+
+터널이 없으면 master-1에서 실행한다 (API LB 인증서에 공인 IP SAN이 없어 터널 없이는 로컬 kubectl이
+붙지 않는다):
+
+```bash
 ssh narwhal-master-1 'sudo env KUBECONFIG=/home/vagrant/.kube/config-local \
   DOMAIN=kakao.narwhal.internal bash /home/vagrant/scripts/test/show-credentials.sh'
 ```
@@ -71,28 +83,28 @@ kubectl get secret keycloak-user-passwords -n iam -o jsonpath='{.data.dev}' | ba
 실행한다 (Kakao는 `ssh narwhal-master-1` 후 `export KUBECONFIG=/home/vagrant/.kube/config-local`,
 kubectl 앞에 `sudo -E`). 비밀번호는 출력하지 않는다.
 
+Mac 터미널(zsh)에 그대로 붙여 넣어도 되도록 썼다. kcadm은 변수(`KC="kubectl exec ..."`)가 아니라
+함수로 감싼다 — zsh는 따옴표 없는 변수를 단어로 쪼개지 않아 `$KC`가 명령 이름 하나로 해석되고,
+대화형 zsh는 `interactivecomments`가 꺼져 있으면 `#` 줄도 명령으로 실행한다. 그래서 블록 안에
+주석을 두지 않았다.
+
+순서: kcadm 함수 정의 → 관리자 자격증명 읽기 → 관리 CLI 로그인(realm `master`) → realm 목록
+(`narwhal`, `master` 두 개여야 한다) → 사용자 목록과 상태 → 사용자별 그룹.
+
 ```bash
-KC="kubectl exec -n iam keycloak-0 -c keycloak -- /opt/keycloak/bin/kcadm.sh"
+kc() { kubectl exec -n iam keycloak-0 -c keycloak -- /opt/keycloak/bin/kcadm.sh "$@"; }
 U=$(kubectl get secret keycloak-initial-admin -n iam -o jsonpath='{.data.username}' | base64 -d)
 P=$(kubectl get secret keycloak-initial-admin -n iam -o jsonpath='{.data.password}' | base64 -d)
-
-# 관리 CLI 로그인 (realm master)
-$KC config credentials --server http://localhost:8080 --realm master --user "$U" --password "$P"
-
-# realm 목록 — narwhal, master 두 개여야 한다
-$KC get realms --fields realm
-
-# 사용자 목록과 상태
-$KC get users -r narwhal --fields username,enabled,emailVerified
-
-# 사용자별 그룹
+kc config credentials --server http://localhost:8080 --realm master --user "$U" --password "$P"
+kc get realms --fields realm
+kc get users -r narwhal --fields username,enabled,emailVerified
 for u in admin dev view guest; do
-  id=$($KC get users -r narwhal -q username=$u -q exact=true --fields id | jq -r '.[0].id')
-  printf '%s: ' "$u"; $KC get "users/$id/groups" -r narwhal --fields name | jq -c '[.[].name]'
+  id=$(kc get users -r narwhal -q username=$u -q exact=true --fields id | jq -r '.[0].id')
+  printf '%s: ' "$u"; kc get "users/$id/groups" -r narwhal --fields name | jq -c '[.[].name]'
 done
 ```
 
-정상 출력 (2026-10-26 Kakao 클러스터에서 확인):
+정상 출력 (2026-10-26 Kakao 클러스터에서 확인, Mac zsh와 bash 둘 다):
 
 ```text
 [{"realm":"narwhal"},{"realm":"master"}]
@@ -119,10 +131,13 @@ guest: ["guest"]
 
 ### kubectl (OIDC)
 
+`set-config.sh oidc`가 kubelogin exec 자격증명을 만들고, `kubectl auth whoami`가 브라우저 로그인 후
+사용자와 그룹을 보여 준다:
+
 ```bash
-./scripts/common/set-config.sh oidc          # kubelogin exec 자격증명 생성
+./scripts/common/set-config.sh oidc
 kubectl config use-context narwhal-oidc
-kubectl auth whoami                          # 브라우저 로그인 후 사용자·그룹 표시
+kubectl auth whoami
 ```
 
 `kubectl auth whoami`의 Groups에 `oidc:developer`처럼 `oidc:` 접두사가 붙어 보이면 정상이다
@@ -147,8 +162,10 @@ kubectl oidc-login get-token \
 
 ## 5. 비밀번호 변경·초기화
 
+§3의 `kc` 함수와 관리 CLI 로그인을 먼저 실행한 뒤:
+
 ```bash
-$KC set-password -r narwhal --username dev --new-password '<새 비밀번호>'
+kc set-password -r narwhal --username dev --new-password '<새 비밀번호>'
 kubectl create secret generic keycloak-user-passwords -n iam \
   --from-literal=admin="$(kubectl get secret keycloak-user-passwords -n iam -o jsonpath='{.data.admin}' | base64 -d)" \
   --from-literal=dev='<새 비밀번호>' \

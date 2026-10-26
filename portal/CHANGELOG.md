@@ -25,8 +25,9 @@ Everything since `portal/v1.1.2` is covered here.
 ### Known issues
 
 - `fast-uri` and `body-parser` are not upgraded yet (narwhal#470). The `fast-uri` fix cleared the
-  7-day lockfile cooling gate on 2026-10-26 22:51Z, after this release was prepared; `body-parser`
-  (GHSA-27r3-jxmh-p828) clears it after 2026-10-29 11:39Z. Both ship in a later patch.
+  7-day lockfile cooling gate on 2026-10-26 22:51Z but is left out on purpose: 1.1.3 ships only the
+  permission management fix, and the lockfile upgrade gets its own reviewed change. `body-parser`
+  (GHSA-27r3-jxmh-p828) clears the gate after 2026-10-29 11:39Z. Both ship in a later patch.
 
 ## [1.1.2] - 2026-10-27
 

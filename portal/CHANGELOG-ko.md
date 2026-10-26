@@ -23,9 +23,10 @@
 
 ### 알려진 문제
 
-- `fast-uri`와 `body-parser`는 아직 올리지 않음 (narwhal#470). `fast-uri` 수정판은 이 릴리스를
-  준비한 뒤인 2026-10-26 22:51Z에 7일 lockfile cooling gate를 지났고, `body-parser`
-  (GHSA-27r3-jxmh-p828)는 2026-10-29 11:39Z 이후 지남. 둘 다 다음 패치에서 반영.
+- `fast-uri`와 `body-parser`는 아직 올리지 않음 (narwhal#470). `fast-uri` 수정판은 2026-10-26
+  22:51Z에 7일 lockfile cooling gate를 지났지만 일부러 뺐음. 1.1.3은 권한 관리 수정만 담고, lockfile
+  업그레이드는 따로 리뷰받는 변경으로 진행함. `body-parser`(GHSA-27r3-jxmh-p828)는 2026-10-29
+  11:39Z 이후 gate를 지남. 둘 다 다음 패치에서 반영.
 
 ## [1.1.2] - 2026-10-27
 

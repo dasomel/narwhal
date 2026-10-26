@@ -31,10 +31,16 @@ function render(groups: unknown[]) {
   }) as never)
   const html = renderToStaticMarkup(<GroupsTable tools={tools} />)
   const access: Record<string, string> = {}
-  for (const m of html.matchAll(/data-access="(\w+)"[^>]*title="([^"/]+) \/ ([^"—]+?)(?: —[^"]*)?"/g)) {
-    access[`${m[2]}/${m[3]}`] = m[1]
+  const disabled: Record<string, boolean> = {}
+  for (const [, attrs] of html.matchAll(/<button([^>]*data-access="[^"]*"[^>]*)>/g)) {
+    const state = /data-access="(\w+)"/.exec(attrs)?.[1] ?? ""
+    const title = /title="([^"/]+) \/ ([^"—]+?)(?: —[^"]*)?"/.exec(attrs)
+    if (!title) continue
+    const key = `${title[1]}/${title[2]}`
+    access[key] = state
+    disabled[key] = /\sdisabled=""/.test(attrs)
   }
-  return access
+  return Object.assign(access, { disabled })
 }
 
 describe("GroupsTable tool access", () => {
@@ -50,11 +56,16 @@ describe("GroupsTable tool access", () => {
     expect(access["viewer/Grafana"]).toBe("role")
     expect(access["viewer/ArgoCD"]).toBe("none")
     expect(access["guest/Grafana"]).toBe("none")
+    // Role defaults are code, not data: their cells must not be toggleable.
+    expect(access.disabled["cluster-admin/OpenBao"]).toBe(true)
+    expect(access.disabled["viewer/Grafana"]).toBe(true)
+    expect(access.disabled["viewer/ArgoCD"]).toBe(false)
   })
 
   it("keeps attribute grants editable on top of the role defaults", () => {
     const access = render([group("developer", { allowed_tools: ["openbao"] })])
     expect(access["developer/OpenBao"]).toBe("granted")
     expect(access["developer/ArgoCD"]).toBe("role")
+    expect(access.disabled["developer/OpenBao"]).toBe(false)
   })
 })

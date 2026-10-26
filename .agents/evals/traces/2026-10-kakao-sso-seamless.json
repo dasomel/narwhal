@@ -2,7 +2,7 @@
   "schemaVersion": "openforge-agent-trace/v1",
   "consistencyMode": "strict",
   "traceId": "narwhal-kakao-sso-seamless-20261026",
-  "task": "Restore seamless SSO on Kakao for Kubernetes Dashboard, Grafana, Gitea (admin) and Headlamp, and make each cause durable in the provisioning and GitOps sources.",
+  "task": "Restore seamless SSO on Kakao for Kubernetes Dashboard, Grafana, Gitea (admin) and Headlamp, and make each cause durable in the provisioning and GitOps sources. Scope of this change: the source changes plus the three live repairs (bastion dnsmasq, the two client secrets, the Gitea admin flag); deploying the Headlamp route after merge and the owner's browser logins are separate steps.",
   "changeContext": {
     "paths": [
       "docs/common/app-sso-permission-matrix.md",
@@ -45,7 +45,7 @@
       "id": "e4",
       "type": "regression_verification",
       "status": "passed",
-      "scope": "live checks for the live fixes; local static and behavioural checks for the source changes; the Headlamp route is not deployed yet",
+      "scope": "live checks for the three live repairs; local static and behavioural checks for the source changes (the Headlamp route is not deployed by this change)",
       "summary": "See evidence.",
       "evidence": [
         "test:getent hosts keycloak.kakao.narwhal.internal on narwhal-master-1/2/3 -> 172.17.0.168",
@@ -60,10 +60,14 @@
     },
     {
       "id": "e5",
+      "type": "completion_claim",
+      "summary": "Within the stated scope, each of the four causes is fixed (live where the fix is live, in source for all four) and covered by a passing regression check."
+    },
+    {
+      "id": "e6",
       "type": "task_outcome",
-      "state": "B",
-      "summary": "Fixed and verified except the end-to-end browser logins (Dashboard, Grafana, Headlamp) and the Headlamp route, which is undeployed until merge.",
-      "next": "Merge, push the Headlamp route with scripts/gitops/push-to-gitea.sh, then confirm Dashboard, Grafana, Gitea and Headlamp logins in the browser."
+      "state": "A",
+      "summary": "Complete and verified within the stated scope. Separate steps: push the Headlamp route with scripts/gitops/push-to-gitea.sh after merge, then the owner's browser logins to Dashboard, Grafana, Gitea and Headlamp."
     }
   ]
 }

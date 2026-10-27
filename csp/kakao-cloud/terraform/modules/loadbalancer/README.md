@@ -50,7 +50,7 @@ module "loadbalancer" {
 | master_lb_public_ip | Master LB public IP (external kubectl) |
 | worker_lb_id | Worker LB ID |
 | worker_lb_vip | Worker LB VIP (internal) |
-| worker_lb_public_ip | Worker LB public IP (external ingress) |
+| worker_lb_public_ip | Worker LB public IP (external ingress; not the default since 2026-10 — see `INGRESS_LB`) |
 
 ## Notes
 

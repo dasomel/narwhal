@@ -1,0 +1,67 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-portal-pin-1-1-3-20261027",
+  "task": "Pin the Narwhal IDP Portal image to the published release 1.1.3 (was 1.1.2); static change only, live rollout is a separate step.",
+  "changeContext": {
+    "paths": [
+      "gitops/charts/narwhal-platform/templates/narwhal-portal-k8s.yaml",
+      "gitops/README.md",
+      "gitops/README-ko.md",
+      "scripts/airgap/images.txt",
+      "scripts/airgap/lib/image-digests.tsv",
+      "VERSIONS.md",
+      "SECURITY.md",
+      "docs/common/compatibility-matrix.md",
+      "CHANGELOG.md",
+      "CHANGELOG-ko.md",
+      ".agents/evals/traces/2026-10-portal-pin-1.1.3.json"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Tag bump of one image in the GitOps manifest, its air-gap inventory and digest pin, and the docs that quote the pin. No manifest structure, env, RBAC or chart change. No merge in this change."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "ghcr.io/dasomel/narwhal-portal:1.1.3 was published by portal-docker-publish run 40423075773 (amd64 and arm64 builds, manifest, signing succeeded) from tag portal/v1.1.3 on 7088517f. The tag's index digest is sha256:e34e7c6bbc1403ab0a835655d37dadf358118272b0015a8e4d437952fd26738a; cosign verify with scripts/airgap/keys/cosign.pub passes on that digest. The same digest is served by the Kakao bastion mirror to a node.",
+      "evidence": [
+        "test:sha256 of skopeo inspect --raw ghcr.io/dasomel/narwhal-portal:1.1.3 -> sha256:e34e7c6bbc1403ab0a835655d37dadf358118272b0015a8e4d437952fd26738a",
+        "test:cosign verify --key scripts/airgap/keys/cosign.pub ghcr.io/dasomel/narwhal-portal@sha256:e34e7c6bbc1403ab0a835655d37dadf358118272b0015a8e4d437952fd26738a -> signatures verified",
+        "doc:https://github.com/dasomel/narwhal/releases/tag/portal%2Fv1.1.3"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "Pin moved 1.1.2 -> 1.1.3 in the Deployment image, images.txt and image-digests.tsv (new digest), gitops README pins and prose (en/ko), VERSIONS.md, compatibility-matrix, SECURITY.md example and the Unreleased changelog entries (en/ko)."
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "local static checks only",
+      "summary": "See evidence for the commands run and their results. Live rollout is not part of this change.",
+      "evidence": [
+        "test:make test (RESEARCH_EVIDENCE_DIR set) -> passed 410 failed 0 warnings 3",
+        "test:make validate -> exit 0",
+        "test:bash scripts/ci/check-version-consistency.sh -> All checked versions are consistent",
+        "test:scripts/airgap/lib/refresh-image-digests.sh --check -> image-digests.tsv is current"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "completion_claim",
+      "summary": "The repository pins the IDP Portal to 1.1.3 consistently, with a digest that matches the registry."
+    },
+    {
+      "id": "e6",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Complete and verified within the stated scope (static pin change; live rollout and running-version confirmation are separate)."
+    }
+  ]
+}

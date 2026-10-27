@@ -9,6 +9,59 @@ English | [한국어](CHANGELOG-ko.md)
 
 ## [Unreleased]
 
+## [1.1.3] - 2026-10-27
+
+Patch release: the permission management table shows the tools each role actually reaches.
+Everything since `portal/v1.1.2` is covered here.
+
+### Fixed
+
+- **Settings > Permission management looked empty (narwhal#479)**: the table showed only each
+  group's `allowed_tools` attribute, while `/api/tools` grants the role defaults from `tools.ts`
+  plus that attribute. On a realm where no group carries the attribute, every cell was a faint
+  "off" icon. Role defaults are now shown checked and locked (they cannot be removed here);
+  attribute grants stay editable.
+
+### Known issues
+
+- `fast-uri` and `body-parser` are not upgraded yet (narwhal#470). The `fast-uri` fix cleared the
+  7-day lockfile cooling gate on 2026-10-26 22:51Z but is left out on purpose: 1.1.3 ships only the
+  permission management fix, and the lockfile upgrade gets its own reviewed change. `body-parser`
+  (GHSA-27r3-jxmh-p828) clears the gate after 2026-10-29 11:39Z. Both ship in a later patch.
+
+## [1.1.2] - 2026-10-27
+
+Patch release: fixes the empty cluster-infrastructure view on production clusters and upgrades
+`zod` and `undici` past published advisories (narwhal#470). Everything since `portal/v1.1.1` is
+covered here.
+
+### Fixed
+
+- **Architecture > Cluster infrastructure showed 0 nodes, pods and namespaces (narwhal#475)**:
+  `/api/cluster` and `/api/domain/clusters` read the in-cluster token only from the `K8S_SA_TOKEN`
+  env, which production does not set (it mounts a projected token file), so they called the API
+  server with an empty bearer, got 403 as `system:anonymous`, and rendered the failures as empty
+  lists. The in-cluster `K8S_API_SERVER` + `K8S_SA_TOKEN` pair now reads the projected token like every
+  other Kubernetes route; any other pairing still reads only its own env, so this pod's token is
+  never sent to another API server.
+
+### Security
+
+- `zod` 4.6.7 (GHSA-mrhx-c7xc-m3w5) and `undici` 7.30.1 (GHSA-xjj6-f33q-929c,
+  GHSA-4qv8-2p9j-2685, GHSA-f72v-6w45-q472), by raising `shadcn` to ^4.22.0 (narwhal#471).
+
+### Changed
+
+- `@opentelemetry/auto-instrumentations-node` 0.81.0 to 0.81.2 (narwhal#469).
+
+### Known issues
+
+- `body-parser` (GHSA-27r3-jxmh-p828, fixed in 2.4.0) and `fast-uri` (GHSA-w74x-v6f9-j3xg,
+  GHSA-wjr9-j795-jxcr, GHSA-xhq7-xmqj-769h, GHSA-333x-w4r6-6crp, fixed in 4.2.3) are not upgraded
+  yet: their fixes are younger than the 7-day lockfile cooling gate (fast-uri clears it after
+  2026-10-26 22:51Z, body-parser after 2026-10-29 11:39Z). They ship in a later patch
+  (narwhal#470).
+
 ## [1.1.1] - 2026-10-23
 
 Security patch release: upgrades Auth.js and several transitive packages past published advisories
@@ -445,7 +498,9 @@ management dashboard built with Next.js 16 and React 19.
   - Skaffold development profile configured for live Hot Module Replacement (HMR) and container
     file syncing.
 
-[Unreleased]: https://github.com/dasomel/narwhal/compare/portal/v1.1.1...HEAD
+[Unreleased]: https://github.com/dasomel/narwhal/compare/portal/v1.1.3...HEAD
+[1.1.3]: https://github.com/dasomel/narwhal/compare/portal/v1.1.2...portal/v1.1.3
+[1.1.2]: https://github.com/dasomel/narwhal/compare/portal/v1.1.1...portal/v1.1.2
 [1.1.1]: https://github.com/dasomel/narwhal/compare/portal/v1.1.0...portal/v1.1.1
 [1.1.0]: https://github.com/dasomel/narwhal/releases/tag/portal/v1.1.0
 [1.0.17]: https://github.com/dasomel/narwhal-portal/compare/v1.0.16...v1.0.17

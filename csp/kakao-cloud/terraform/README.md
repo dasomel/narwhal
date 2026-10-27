@@ -19,8 +19,8 @@ services reachable through the worker LB.
 | Master VMs | 3 | Control-plane (t1i.large, 2 vCPU / 4GB), fixed **private** IPs .10 .11 .12 |
 | Worker VMs | 3 | Data-plane (t1i.xlarge, 4 vCPU / 8GB), fixed **private** IPs .21 .22 .23 |
 | Bastion VM | 1 | SSH jump host, forward proxy, airgap registry (public + private .207) |
-| Master LB | 1 | K8s API (6443) + etcd (2379) |
-| Worker LB | 1 | Ingress HTTP (80) + HTTPS (443) -> NodePort 31080/31443 |
+| Master LB | 1 | K8s API (6443) + etcd (2379) + Ingress 80/443 -> NodePort 31080/31443 (default ingress, D-INGRESS) |
+| Worker LB | 1 | Ingress HTTP (80) + HTTPS (443) -> NodePort 31080/31443 (`INGRESS_LB=worker`; public path dead since 2026-10-23) |
 | Public IPs | 3 | Bastion + 2 LBs. **Cluster nodes have none** |
 
 Nodes are private by design. Everything reaches them through the bastion, and their
@@ -168,7 +168,7 @@ sudo -E env KUBECONFIG=/home/vagrant/.kube/config-local kubectl get nodes
 
 ### Web UIs
 
-`*.kakao.narwhal.internal` has no public DNS; the names are served by the worker LB.
+`*.kakao.narwhal.internal` has no public DNS; the names are served by the master LB's public IP (default `INGRESS_LB=master`).
 The domain differs from Vagrant's `local.narwhal.internal` on purpose — both clusters
 serve the same service names and both resolve only through `/etc/hosts` on your machine,
 so a shared domain would have them overwrite each other's entries.
@@ -183,6 +183,16 @@ Hostnames are read from the cluster's ApisixRoutes, written between
 `# BEGIN narwhal-kakao` markers, and removable with `--remove`. The command also exports
 the platform CA and prints how to trust it — certificates are issued by
 `CN=Narwhal IDP Root CA`, so browsers warn until you do.
+
+`--apply` first checks that the LB answers on 443 from your machine and refuses to write
+a dead address. Both LBs forward 80/443 to the same ingress NodePorts. The default is the
+master LB, because the worker LB's public IP stopped answering from the internet
+(2026-10-23/25). Trade-off: the master ingress target groups have no health monitor, so a
+failed master can cause intermittent failures. To use the worker LB instead:
+
+```bash
+INGRESS_LB=worker scripts/cloud/setup-hosts-kakao.sh --apply
+```
 
 ### Service accounts and passwords
 
@@ -204,10 +214,10 @@ kubectl get secret <name> -n <ns> -o jsonpath='{.data.<key>}' | base64 -d
 ```
 
 Web UIs are behind Keycloak SSO at `https://<service>.kakao.narwhal.internal`, reached
-through the worker LB. Point the hostname at it with `--resolve` or an `/etc/hosts` entry:
+through the master LB (`INGRESS_LB`, default `master`). Point the hostname at it with `--resolve` or an `/etc/hosts` entry:
 
 ```bash
-LB=$(tofu output -raw worker_lb_public_ip)
+LB=$(tofu output -raw master_lb_public_ip)   # worker_lb_public_ip with INGRESS_LB=worker
 curl -sk --resolve "argocd.kakao.narwhal.internal:443:$LB" https://argocd.kakao.narwhal.internal/
 ```
 
@@ -226,7 +236,7 @@ terraform/
     network/           # VPC + Subnet
     security/          # Security Group
     compute/           # Master/Worker VMs (fixed private IPs) + optional public IPs
-    loadbalancer/      # Master LB (6443/2379) + Worker LB (80/443)
+    loadbalancer/      # Master LB (6443/2379 + 80/443) + Worker LB (80/443)
 ```
 
 ## Configuration
@@ -252,14 +262,14 @@ Node IPs are pinned contiguously (`cidrhost` on `subnet_cidr`) so the install sc
 |------|--------|---------|
 | 22 | 0.0.0.0/0 | SSH |
 | 6443 | 0.0.0.0/0 | Kubernetes API |
-| 80, 443 | 0.0.0.0/0 | Ingress via worker LB |
+| 80, 443 | 0.0.0.0/0 | Ingress via master LB (default; worker LB with `INGRESS_LB=worker`) |
 | 2379-2380 | VPC | etcd |
 | 10250, 10251 | VPC | kubelet / scheduler |
 | 111, 2049 | VPC | NFS (rpcbind, nfsd) |
 | 4240, 4244, 8472 | VPC | Cilium health, Hubble, VXLAN |
 | 3128 | VPC | Bastion squid forward proxy |
 | 5000 | VPC | Airgap bootstrap registry |
-| 30000-32767 | VPC | NodePort range |
+| 30000-32767 | 0.0.0.0/0 | NodePort range (LB targets 31080/31443) |
 
 22 and 6443 are open to the internet. They are only reachable through the LBs while the
 nodes stay private; narrow them to your operator address if you turn on

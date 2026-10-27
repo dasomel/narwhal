@@ -483,6 +483,110 @@ spec:
                 X-Content-Type-Options: "nosniff"
                 X-Frame-Options: "SAMEORIGIN"
                 X-XSS-Protection: "1; mode=block"
+    # Zero-click login (D-HEADLAMP-AUTOLOGIN, 2026-10-26): v0.42 always stops at the
+    # /c/<cluster>/login chooser and needs a "Sign In" click although OIDC is its only
+    # auth method (the chart's autoLogin option exists only from v0.46). Inject a script
+    # into the SPA's HTML that sends that route straight to /oidc?cluster=<cluster>; the
+    # Keycloak session answers without a prompt and headlamp-auth-return finishes on /.
+    # The SPA reaches the login route client-side, so the script also follows
+    # history.pushState/replaceState/popstate, not just the first page load. Guard: at
+    # most one automatic redirect per 60 s per tab, so a failing OIDC round trip falls
+    # back to the normal login page instead of looping. Cost: a sign-out that lands on the
+    # login page more than 60 s after the last redirect signs straight back in while the
+    # Keycloak session lives. Escape hatch: delete this route (or upgrade to v0.46+ and
+    # use config.oidc autoLogin instead).
+    - name: headlamp-login-autoredirect
+      priority: 10
+      match:
+        hosts:
+          - headlamp.{{ .Values.baseDomain }}
+        paths:
+          - "/"
+          - "/c/*"
+      upstreams:
+        - name: headlamp
+      plugins:
+        # Conditional headers are dropped and validators stripped: otherwise a browser
+        # holding the pre-injection copy revalidates to a 304 and keeps that copy.
+        - name: proxy-rewrite
+          enable: true
+          config:
+            headers:
+              remove:
+                - Accept-Encoding
+                - If-Modified-Since
+                - If-None-Match
+        - name: serverless-pre-function
+          enable: true
+          config:
+            phase: header_filter
+            functions:
+              - |
+                return function(conf, ctx)
+                  local ct = ngx.header.content_type or ""
+                  if ngx.status == 200 and string.find(ct, "text/html", 1, true) then
+                    ngx.ctx.hl_login_inject = true
+                    ngx.header.content_length = nil
+                    ngx.header["Last-Modified"] = nil
+                    ngx.header["ETag"] = nil
+                    ngx.header["Cache-Control"] = "no-store"
+                  end
+                end
+        - name: serverless-post-function
+          enable: true
+          config:
+            phase: body_filter
+            functions:
+              - |
+                return function(conf, ctx)
+                  if not ngx.ctx.hl_login_inject then return end
+                  local body = ngx.arg[1]
+                  local eof = ngx.arg[2]
+                  if not ngx.ctx.hl_login_buf then ngx.ctx.hl_login_buf = {} end
+                  if body and #body > 0 then
+                    table.insert(ngx.ctx.hl_login_buf, body)
+                    ngx.arg[1] = ''
+                  end
+                  if eof then
+                    local full = table.concat(ngx.ctx.hl_login_buf)
+                    local snip = [==[<script>(function(){try{
+                var K = "narwhal_hl_auto_oidc";
+                function go() {
+                  var p = location.pathname.split("/");
+                  if (p.length < 4 || p[1] !== "c" || p[3] !== "login" || !p[2]) return;
+                  var last = 0;
+                  try { last = +sessionStorage.getItem(K) || 0; } catch (e) {}
+                  if (Date.now() - last < 60000) return;
+                  try { sessionStorage.setItem(K, String(Date.now())); } catch (e) { return; }
+                  location.replace("/oidc?cluster=" + encodeURIComponent(decodeURIComponent(p[2])));
+                }
+                ["pushState", "replaceState"].forEach(function (f) {
+                  var orig = history[f];
+                  history[f] = function () {
+                    var r = orig.apply(this, arguments);
+                    setTimeout(go, 0);
+                    return r;
+                  };
+                });
+                window.addEventListener("popstate", go);
+                go();
+                }catch(e){}})();</script>]==]
+                    local pos = string.find(full, '</body>', 1, true)
+                    if pos then
+                      full = string.sub(full, 1, pos - 1) .. snip .. string.sub(full, pos)
+                    end
+                    ngx.arg[1] = full
+                  end
+                end
+        - name: response-rewrite
+          enable: true
+          config:
+            headers:
+              set:
+                Strict-Transport-Security: "max-age=31536000; includeSubDomains"
+                X-Content-Type-Options: "nosniff"
+                X-Frame-Options: "SAMEORIGIN"
+                X-XSS-Protection: "1; mode=block"
     - name: headlamp
       match:
         hosts:

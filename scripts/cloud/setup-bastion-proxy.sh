@@ -120,6 +120,13 @@ EOF"
 ssh_bastion "sudo sed -i 's/^#\?DNSStubListener=.*/DNSStubListener=yes/' /etc/systemd/resolved.conf 2>/dev/null || true
   sudo grep -q '^resolv-file=' /etc/dnsmasq.conf || echo 'resolv-file=/run/systemd/resolve/resolv.conf' | sudo tee -a /etc/dnsmasq.conf >/dev/null"
 
+# D-DNSMASQ: on 2026-10-16 dnsmasq restarted before 172.17.0.191 was assigned, failed
+# "cannot assign requested address" once and stayed dead for ten days. Every node then lost
+# *.${DOMAIN}, so the apiserver could not fetch Keycloak's JWKS and rejected every OIDC
+# token (Dashboard SSO 401, Headlamp, kubectl OIDC). bind-interfaces cannot become
+# bind-dynamic here: Ubuntu's /etc/dnsmasq.d/ubuntu-fan sets bind-interfaces and dnsmasq
+# refuses both. Wait for network-online and retry instead. Escape hatch: delete the drop-in.
+ssh_bastion "sudo mkdir -p /etc/systemd/system/dnsmasq.service.d && printf '[Unit]\\nWants=network-online.target\\nAfter=network-online.target\\n\\n[Service]\\nRestart=on-failure\\nRestartSec=5s\\n' | sudo tee /etc/systemd/system/dnsmasq.service.d/narwhal.conf >/dev/null && sudo systemctl daemon-reload"
 ssh_bastion "sudo systemctl enable --now dnsmasq && sudo systemctl restart dnsmasq && sleep 2 && systemctl is-active dnsmasq"
 
 echo ""

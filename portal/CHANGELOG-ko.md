@@ -9,6 +9,55 @@
 
 ## [Unreleased]
 
+## [1.1.3] - 2026-10-27
+
+패치 릴리스. 권한 관리 표가 각 역할이 실제로 접근하는 도구를 보여 줌. `portal/v1.1.2` 이후의 모든
+변경을 다룸.
+
+### 수정
+
+- **설정 > 권한 관리 표가 비어 보임 (narwhal#479)**: 표가 그룹의 `allowed_tools` 속성만 보여
+  줬는데, `/api/tools`는 `tools.ts`의 역할 기본값에 그 속성을 더해 권한을 줌. 속성이 있는 그룹이
+  없는 realm에서는 모든 칸이 흐린 "꺼짐" 아이콘이었음. 이제 역할 기본값은 체크·잠금 상태로
+  표시되고(여기서 끌 수 없음), 속성으로 더한 도구만 편집할 수 있음.
+
+### 알려진 문제
+
+- `fast-uri`와 `body-parser`는 아직 올리지 않음 (narwhal#470). `fast-uri` 수정판은 2026-10-26
+  22:51Z에 7일 lockfile cooling gate를 지났지만 일부러 뺐음. 1.1.3은 권한 관리 수정만 담고, lockfile
+  업그레이드는 따로 리뷰받는 변경으로 진행함. `body-parser`(GHSA-27r3-jxmh-p828)는 2026-10-29
+  11:39Z 이후 gate를 지남. 둘 다 다음 패치에서 반영.
+
+## [1.1.2] - 2026-10-27
+
+패치 릴리스. 프로덕션 클러스터에서 클러스터 인프라 화면이 비던 문제를 고치고, `zod`와 `undici`를
+공개된 권고 이후 버전으로 올림(narwhal#470). `portal/v1.1.1` 이후의 모든 변경을 다룸.
+
+### 수정
+
+- **아키텍처 > 클러스터 인프라가 노드·Pod·네임스페이스 0으로 표시됨 (narwhal#475)**:
+  `/api/cluster`와 `/api/domain/clusters`가 in-cluster 토큰을 `K8S_SA_TOKEN` 환경변수에서만
+  읽었는데, 프로덕션은 이 변수 없이 projected token 파일만 마운트함. 그래서 빈 bearer로 API
+  서버를 호출해 `system:anonymous` 403을 받았고, 실패가 빈 목록으로 표시됨. 이제 in-cluster
+  `K8S_API_SERVER` + `K8S_SA_TOKEN` 쌍은 다른 Kubernetes 라우트와 같이 projected token을 읽음.
+  다른 조합은 계속 자기 환경변수만 읽으므로 이 파드의 토큰이 다른 API 서버로 가지 않음.
+
+### 보안
+
+- `shadcn`을 ^4.22.0으로 올려 `zod` 4.6.7(GHSA-mrhx-c7xc-m3w5)과 `undici` 7.30.1
+  (GHSA-xjj6-f33q-929c, GHSA-4qv8-2p9j-2685, GHSA-f72v-6w45-q472) 반영 (narwhal#471).
+
+### 변경
+
+- `@opentelemetry/auto-instrumentations-node` 0.81.0 → 0.81.2 (narwhal#469).
+
+### 알려진 문제
+
+- `body-parser`(GHSA-27r3-jxmh-p828, 2.4.0에서 수정)와 `fast-uri`(GHSA-w74x-v6f9-j3xg,
+  GHSA-wjr9-j795-jxcr, GHSA-xhq7-xmqj-769h, GHSA-333x-w4r6-6crp, 4.2.3에서 수정)는 아직 올리지
+  않음. 수정판이 7일 lockfile cooling gate를 지나지 않았기 때문임(fast-uri는 2026-10-26 22:51Z,
+  body-parser는 2026-10-29 11:39Z 이후). 다음 패치에서 반영 (narwhal#470).
+
 ## [1.1.1] - 2026-10-23
 
 보안 패치 릴리스. Auth.js와 일부 전이 의존성을 공개된 권고 이후 버전으로 올리고(narwhal#459)
@@ -425,7 +474,9 @@ Portal의 첫 번째 공개 릴리스.
     매니페스트(`deploy/kaniko-build-job.yaml`).
   - 실시간 핫 모듈 교체(HMR) 및 컨테이너 파일 동기화를 위해 구성된 Skaffold 개발 프로필.
 
-[Unreleased]: https://github.com/dasomel/narwhal/compare/portal/v1.1.1...HEAD
+[Unreleased]: https://github.com/dasomel/narwhal/compare/portal/v1.1.3...HEAD
+[1.1.3]: https://github.com/dasomel/narwhal/compare/portal/v1.1.2...portal/v1.1.3
+[1.1.2]: https://github.com/dasomel/narwhal/compare/portal/v1.1.1...portal/v1.1.2
 [1.1.1]: https://github.com/dasomel/narwhal/compare/portal/v1.1.0...portal/v1.1.1
 [1.1.0]: https://github.com/dasomel/narwhal/releases/tag/portal/v1.1.0
 [1.0.17]: https://github.com/dasomel/narwhal-portal/compare/v1.0.16...v1.0.17

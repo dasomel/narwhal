@@ -15,12 +15,12 @@ access guarantee.
 | Application | SSO / Keycloak client | App authorization by Keycloak group | Portal link visibility |
 | --- | --- | --- | --- |
 | Argo CD | Native OIDC; `argocd` | `cluster-admin` → ArgoCD `admin`; `developer` → sync only in `tenants/*`, plus app get/log get; `viewer` → readonly; `guest` → `role:none`, with an explicit deny for application get. | `cluster-admin`, `developer` |
-| Gitea | APISIX OIDC; `gitea` | The gateway authenticates the browser session. The cited route has a git/automation bypass; app org/repository permissions remain Gitea ACLs. No group-to-Gitea-role mapping is defined in the cited SSO setup. | `cluster-admin`, `developer` |
+| Gitea | APISIX OIDC; `gitea` | The gateway authenticates the browser session and hands Gitea the username in `X-WEBAUTH-USER` (reverse-proxy auth with auto-registration). That path applies no group mapping: the OAuth source's `--admin-group cluster-admin` and `--group-team-map` act only on Gitea's own OAuth login, which the browser flow does not use. `12-gitea.sh` therefore pre-creates or promotes the seeded `admin` user as a Gitea site admin (D-GITEA-ADMIN); every other user is a plain Gitea user whose org/repository rights are Gitea ACLs, including a `cluster-admin` added in Keycloak later. The route has a git/automation bypass. | `cluster-admin`, `developer` |
 | Harbor | Native OIDC; `harbor` | Keycloak group `cluster-admin` is configured as Harbor's OIDC admin group. Other Harbor project permissions are managed by Harbor; no other group mapping is configured here. | `cluster-admin`, `developer` |
 | Grafana | Native OIDC; `grafana` | `cluster-admin` → Grafana `Admin`; `developer` → `Editor`; all other groups → `Viewer` through `role_attribute_path`. | `cluster-admin`, `developer`, `viewer` |
 | Prometheus | APISIX OIDC; `prometheus` | Gateway login is enforced. No group-specific authorization rule appears in the cited route/configuration. | `cluster-admin` |
 | Alertmanager | APISIX OIDC; `alertmanager` | Gateway login is enforced. No group-specific authorization rule appears in the cited route/configuration. | `cluster-admin` |
-| Headlamp | Native OIDC; `headlamp` | The OIDC token is passed to Kubernetes API; permissions come from Kubernetes RBAC bindings for the token's groups. See the role map below. | `cluster-admin`, `developer` |
+| Headlamp | Native OIDC; `headlamp`; zero-click via the gateway, which sends `/c/<cluster>/login` to `/oidc` (D-HEADLAMP-AUTOLOGIN) | The OIDC token is passed to Kubernetes API; permissions come from Kubernetes RBAC bindings for the token's groups. See the role map below. | `cluster-admin`, `developer` |
 | Kubernetes Dashboard | Public OIDC client with PKCE; `kubernetes-dashboard` | The bootstrap exchanges the user's token for Dashboard login; Kubernetes API permissions come from Kubernetes RBAC bindings for the token's groups. See the role map below. | `cluster-admin`, `developer` |
 | OpenBao | OIDC via `/sso` (direct root visits without a query string are redirected there); `openbao` | OIDC default role receives `default` policy; external group `cluster-admin` maps to the `cluster-admin` policy. The configured policy grants broad `*` path capabilities. | `cluster-admin` |
 | Velero UI | App OAuth plus `/sso` bootstrap (direct `/` without a query string is redirected there); `velero-ui` | The SSO setup configures OAuth, but the cited configuration does not establish a Keycloak-group-to-application-role matrix. | `cluster-admin` |
@@ -46,6 +46,7 @@ Keycloak emits these bare group names in the `groups` claim. Kubernetes API serv
 - Group claim and Kubernetes/Portal role contract: [OIDC/RBAC contract](oidc-rbac-contract.md#2-그룹-매핑-표).
 - Service inventory and SSO integration patterns: [service domains](../kakao/service-domains.md#2-서비스-도메인).
 - Client creation and app configuration: [`11-3-keycloak-clients.sh`](../../scripts/cluster/11-3-keycloak-clients.sh).
+- Gitea site-admin seeding for reverse-proxy logins: [`12-gitea.sh`](../../scripts/cluster/12-gitea.sh).
 - Argo CD group policy: [`13-argocd.sh`](../../scripts/cluster/13-argocd.sh).
 - Kubernetes role bindings: [`rbac-policies.yaml`](../../gitops/resources/rbac-policies.yaml).
 - APISIX gateway authentication routes: [`apisix-routes.yaml`](../../gitops/charts/narwhal-platform/templates/apisix-routes.yaml).

@@ -29,9 +29,9 @@ Kakao에서는 그 방식이 성립하지 않는다:
 브라우저 (오퍼레이터 PC)
   │  https://argocd.kakao.narwhal.internal
   │
-  ├─ /etc/hosts 가 이름 → <worker LB 공인 IP> 로 해석
+  ├─ /etc/hosts 가 이름 → <master LB 공인 IP> 로 해석
   ↓
-worker LB (공인, TCP 443 → NodePort 31443)
+master LB (공인, TCP 443 → NodePort 31443)
   ↓
 worker 노드 3대 (172.16.0.21-23)
   ↓
@@ -43,8 +43,10 @@ APISIX Gateway (platform-system)
 ApisixUpstream → <service>.<namespace>.svc.cluster.local
 ```
 
-`master LB`(공인)는 kubectl 전용(6443)이고 서비스 도메인과 무관하다. 서비스 트래픽은
-**전부 worker LB 하나**를 지난다.
+서비스 트래픽은 기본적으로 **master LB의 80/443 리스너 하나**를 지난다(master 노드의
+NodePort 31080/31443 → APISIX). worker LB 공인 IP가 인터넷에서 응답하지 않아 기본값을 바꿨고
+(`INGRESS_LB=worker`로 되돌릴 수 있다), master ingress 타깃 그룹에는 헬스 모니터가 없다. kubectl용
+6443 리스너는 별개다.
 
 ### 이름은 클러스터 안에서도 해석돼야 한다
 
@@ -95,7 +97,7 @@ kubectl -n kube-system get cm coredns -o jsonpath='{.data.Corefile}' | head -10
 | Narwhal Portal | `portal.` | 클러스터 관리 UI | `devtools/narwhal-portal:3000` | 앱 OIDC (NextAuth) |
 | Gitea | `gitea.` | Git 서버 (GitOps 소스) | `devtools/gitea-http:3000` | 게이트웨이 OIDC (+ git CLI 우회) |
 | Harbor | `harbor.` | 컨테이너 레지스트리 | `devtools/harbor:80` | 앱 OIDC + 로컬 admin |
-| Headlamp | `headlamp.` | Kubernetes UI | `devtools/headlamp:80` | 앱 OIDC |
+| Headlamp | `headlamp.` | Kubernetes UI | `devtools/headlamp:80` | 앱 OIDC + 무클릭 리다이렉트 |
 | K8s Dashboard | `dashboard.` | Kubernetes UI (공식) | `devtools/kubernetes-dashboard-kong-proxy:443` | 제로클릭 SSO (public+PKCE) |
 | Grafana | `grafana.` | 모니터링 대시보드 | `monitoring/prometheus-stack-grafana:80` | 앱 OIDC + 로컬 admin |
 | Prometheus | `prometheus.` | 메트릭 조회 | `monitoring/…-prometheus:9090` | 게이트웨이 OIDC |
@@ -120,8 +122,8 @@ kubectl get apisixroute -A -o jsonpath='{range .items[*].spec.http[*]}{.match.ho
 
 | 방식 | 대상 | 동작 | 실패 시 확인 |
 |------|------|------|--------------|
-| **게이트웨이 OIDC** | Gitea, Prometheus, Alertmanager, Hubble, NFS Quota | APISIX `openid-connect` 플러그인이 로그인 전 트래픽을 Keycloak으로 보낸다. 백엔드는 인증을 모른다 | `platform-system`의 `*-oidc-secret`, 리다이렉트 URI `…/apisix/callback` |
-| **앱 OIDC** | ArgoCD, Grafana, Harbor, Headlamp, Portal | 앱이 직접 OIDC 클라이언트로 동작. APISIX는 전달만 | 앱 자체 설정 + Keycloak 클라이언트 시크릿 |
+| **게이트웨이 OIDC** | Gitea, Prometheus, Alertmanager, Hubble, NFS Quota | APISIX `openid-connect` 플러그인이 로그인 전 트래픽을 Keycloak으로 보낸다. 백엔드는 인증을 모른다. 예외로 Gitea는 사용자 이름을 `X-WEBAUTH-USER` 헤더로 받아 계정을 자동 생성하며, 이 경로에는 그룹 매핑이 없다 | `platform-system`의 `*-oidc-secret`, 리다이렉트 URI `…/apisix/callback` |
+| **앱 OIDC** | ArgoCD, Grafana, Harbor, Headlamp, Portal | 앱이 직접 OIDC 클라이언트로 동작. APISIX는 전달만 하고, ArgoCD·Harbor·Headlamp는 로그인 화면을 건너뛰는 리다이렉트만 더한다 | 앱 자체 설정 + Keycloak 클라이언트 시크릿 |
 | **제로클릭 SSO** | K8s Dashboard, OpenBao, Velero UI | APISIX가 서빙하는 동일 오리진 부트스트랩 페이지(`/sso`, `/sso/callback`)의 브라우저 JS가 code를 교환하고 토큰을 앱에 주입 | `/sso` 라우트, Dashboard는 **public + PKCE** 클라이언트 |
 | **자체** | Keycloak | 자기 자신이 발급자 | `iam/keycloak-initial-admin` |
 
@@ -163,7 +165,7 @@ master LB로 SSH 터널을 열고 `narwhal-kakao` 컨텍스트를 만든다. 자
 
 ```text
 # BEGIN narwhal-kakao
-<worker LB 공인 IP> alertmanager.kakao.narwhal.internal argocd.kakao.narwhal.internal ...
+<master LB 공인 IP> alertmanager.kakao.narwhal.internal argocd.kakao.narwhal.internal ...
 # END narwhal-kakao
 ```
 
@@ -209,7 +211,7 @@ SSO 로그인에는 realm `narwhal`의 시드 계정 `admin` / `dev` / `view` / 
 유용하다:
 
 ```bash
-LB=$(cd csp/kakao-cloud/terraform && tofu output -raw worker_lb_public_ip)
+LB=$(cd csp/kakao-cloud/terraform && tofu output -raw master_lb_public_ip)
 
 curl -sk -o /dev/null -w '%{http_code}\n' \
   --resolve "argocd.kakao.narwhal.internal:443:$LB" \
@@ -219,7 +221,7 @@ curl -sk -o /dev/null -w '%{http_code}\n' \
 전체를 한 번에 훑는다:
 
 ```bash
-LB=$(cd csp/kakao-cloud/terraform && tofu output -raw worker_lb_public_ip)
+LB=$(cd csp/kakao-cloud/terraform && tofu output -raw master_lb_public_ip)
 for h in $(kubectl get apisixroute -A -o jsonpath='{range .items[*].spec.http[*]}{.match.hosts[*]}{"\n"}{end}' | sort -u); do
   code=$(curl -sk -o /dev/null -w '%{http_code}' --resolve "$h:443:$LB" "https://$h/" || echo ERR)
   printf '%-45s %s\n' "$h" "$code"
@@ -255,7 +257,7 @@ curl -sk -o /dev/null -w '%{redirect_url}\n' --max-time 20 \
 |---|---|---|
 | 서비스 도메인 | `*.local.narwhal.internal` | `*.kakao.narwhal.internal` |
 | 이름 해석 | master dnsmasq (또는 `/etc/hosts`) | `/etc/hosts` 전용 |
-| 서비스 진입점 | MetalLB VIP `192.168.56.200` | worker LB 공인 IP |
+| 서비스 진입점 | MetalLB VIP `192.168.56.200` | master LB 공인 IP (기본) |
 | kubectl 컨텍스트 | `narwhal` | `narwhal-kakao` |
 | `/etc/hosts` 마커 | (수동) | `# BEGIN narwhal-kakao` |
 
@@ -291,7 +293,7 @@ grep -A2 'BEGIN narwhal-kakao' /etc/hosts     # 블록이 있는가
 ### 이름은 맞는데 연결이 안 된다
 
 ```bash
-LB=$(cd csp/kakao-cloud/terraform && tofu output -raw worker_lb_public_ip)
+LB=$(cd csp/kakao-cloud/terraform && tofu output -raw master_lb_public_ip)
 nc -vz "$LB" 443                              # LB가 443을 받는가
 
 kubectl -n platform-system get pods -l app.kubernetes.io/name=apisix
@@ -403,7 +405,7 @@ kubectl -n iam exec keycloak-0 -c keycloak -- \
 인증서의 SAN이 이전 도메인일 수 있다. 실제 발급된 이름을 본다:
 
 ```bash
-LB=$(cd csp/kakao-cloud/terraform && tofu output -raw worker_lb_public_ip)
+LB=$(cd csp/kakao-cloud/terraform && tofu output -raw master_lb_public_ip)
 curl -skv --resolve "argocd.kakao.narwhal.internal:443:$LB" \
   https://argocd.kakao.narwhal.internal/ 2>&1 | grep -i 'subject\|subjectAltName'
 ```

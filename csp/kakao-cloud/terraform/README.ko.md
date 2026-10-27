@@ -18,8 +18,8 @@ Kubernetes와 플랫폼 앱은 이후
 | Master VM | 3 | 컨트롤플레인 (t1i.large, 2 vCPU / 4GB), 고정 **사설** IP .10 .11 .12 |
 | Worker VM | 3 | 데이터플레인 (t1i.xlarge, 4 vCPU / 8GB), 고정 **사설** IP .21 .22 .23 |
 | Bastion VM | 1 | SSH 점프 호스트, 포워드 프록시, airgap 레지스트리 (공인 + 사설 .207) |
-| Master LB | 1 | K8s API (6443) + etcd (2379) |
-| Worker LB | 1 | Ingress HTTP (80) + HTTPS (443) → NodePort 31080/31443 |
+| Master LB | 1 | K8s API (6443) + etcd (2379) + Ingress 80/443 → NodePort 31080/31443 (기본 ingress, D-INGRESS) |
+| Worker LB | 1 | Ingress HTTP (80) + HTTPS (443) → NodePort 31080/31443 (`INGRESS_LB=worker`; 2026-10-23부터 공인 경로 불통) |
 | Public IP | 3 | bastion + LB 2개. **클러스터 노드에는 없다** |
 
 노드를 프라이빗으로 두는 것은 의도된 설계다. 접근은 전부 bastion을 경유하고, 노드의 아웃바운드는
@@ -162,7 +162,7 @@ sudo -E env KUBECONFIG=/home/vagrant/.kube/config-local kubectl get nodes
 
 ### 웹 UI
 
-`*.kakao.narwhal.internal`은 공개 DNS가 없고 worker LB가 이름을 서빙한다. Vagrant의
+`*.kakao.narwhal.internal`은 공개 DNS가 없고 master LB 공인 IP가 이름을 서빙한다(기본 `INGRESS_LB=master`). Vagrant의
 `local.narwhal.internal`과 도메인을 다르게 둔 것은 의도적이다 — 두 클러스터가 같은 서비스 이름을
 서빙하고 둘 다 로컬 `/etc/hosts`로만 해석되므로, 도메인이 같으면 서로의 항목을 덮어쓴다.
 
@@ -175,6 +175,15 @@ scripts/cloud/setup-hosts-kakao.sh --apply
 호스트 목록은 클러스터의 ApisixRoute에서 읽고 `# BEGIN narwhal-kakao` 마커 사이에 기록되며
 `--remove`로 되돌린다. 같은 명령이 플랫폼 CA를 내보내고 신뢰 추가 방법을 출력한다 —
 인증서 발급자가 `CN=Narwhal IDP Root CA`라 신뢰 전까지 브라우저가 경고한다.
+
+`--apply`는 먼저 이 머신에서 LB의 443 응답을 확인하고, 응답 없는 주소는 기록하지 않는다.
+두 LB 모두 80/443을 같은 ingress NodePort로 전달한다. worker LB 공인 IP가 인터넷에서
+응답하지 않게 되어(2026-10-23/25) 기본값은 master LB다. 단점: master ingress 타깃 그룹에는
+헬스 모니터가 없어 master 장애 시 간헐적 실패가 날 수 있다. worker LB를 쓰려면:
+
+```bash
+INGRESS_LB=worker scripts/cloud/setup-hosts-kakao.sh --apply
+```
 
 ### 서비스 계정과 비밀번호
 
@@ -195,11 +204,11 @@ OIDC 클라이언트 시크릿을 포함한다. 마지막 "SSH / Node access" �
 kubectl get secret <name> -n <ns> -o jsonpath='{.data.<key>}' | base64 -d
 ```
 
-웹 UI는 `https://<서비스>.kakao.narwhal.internal`에서 Keycloak SSO를 거치며 worker LB로
-들어간다. `--resolve`나 `/etc/hosts`로 호스트명을 LB에 연결한다:
+웹 UI는 `https://<서비스>.kakao.narwhal.internal`에서 Keycloak SSO를 거치며 master LB(`INGRESS_LB`,
+기본 `master`)로 들어간다. `--resolve`나 `/etc/hosts`로 호스트명을 LB에 연결한다:
 
 ```bash
-LB=$(tofu output -raw worker_lb_public_ip)
+LB=$(tofu output -raw master_lb_public_ip)   # INGRESS_LB=worker면 worker_lb_public_ip
 curl -sk --resolve "argocd.kakao.narwhal.internal:443:$LB" https://argocd.kakao.narwhal.internal/
 ```
 
@@ -218,7 +227,7 @@ terraform/
     network/           # VPC + Subnet
     security/          # Security Group
     compute/           # Master/Worker VM (고정 사설 IP) + 선택적 공인 IP
-    loadbalancer/      # Master LB (6443/2379) + Worker LB (80/443)
+    loadbalancer/      # Master LB (6443/2379 + 80/443) + Worker LB (80/443)
 ```
 
 ## 설정
@@ -244,14 +253,14 @@ terraform/
 |------|------|------|
 | 22 | 0.0.0.0/0 | SSH |
 | 6443 | 0.0.0.0/0 | Kubernetes API |
-| 80, 443 | 0.0.0.0/0 | worker LB 경유 Ingress |
+| 80, 443 | 0.0.0.0/0 | master LB 경유 Ingress (기본, `INGRESS_LB=worker`면 worker LB) |
 | 2379-2380 | VPC | etcd |
 | 10250, 10251 | VPC | kubelet / scheduler |
 | 111, 2049 | VPC | NFS (rpcbind, nfsd) |
 | 4240, 4244, 8472 | VPC | Cilium health, Hubble, VXLAN |
 | 3128 | VPC | bastion squid 포워드 프록시 |
 | 5000 | VPC | airgap 부트스트랩 레지스트리 |
-| 30000-32767 | VPC | NodePort 범위 |
+| 30000-32767 | 0.0.0.0/0 | NodePort 범위 (LB 대상 31080/31443) |
 
 22와 6443은 인터넷에 열려 있다. 노드가 프라이빗인 동안에는 LB를 통해서만 닿지만,
 `assign_node_public_ips`를 켠다면 운영자 주소로 좁혀야 한다.

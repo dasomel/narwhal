@@ -69,12 +69,17 @@ echo "Kyverno installed"
 echo "=== Installing Headlamp ==="
 
 cat > /tmp/headlamp-values.yaml << EOF
+image:
+  registry: ghcr.io
+  repository: headlamp-k8s/headlamp
+  tag: v0.46.0
 config:
   oidc:
     # D-authmig: Keycloak OIDC (migrated from Authentik)
     clientID: headlamp
     issuerURL: https://keycloak.${DOMAIN}/realms/narwhal
     scopes: openid,profile,email,groups
+    autoLogin: true
     # clientSecret loaded from headlamp-oidc-secret (created by 11-3-keycloak-clients.sh)
     secret:
       create: false
@@ -82,13 +87,14 @@ config:
     externalSecret:
       enabled: true
       name: headlamp-oidc-secret
+      hasScopes: true
 # OIDC requests use the authenticated user's RBAC. Keep this aligned with the
 # GitOps Application instead of accepting the chart's cluster-admin default.
 clusterRoleBinding:
   clusterRoleName: view
 initContainers:
   - name: ca-bundle
-    image: ghcr.io/headlamp-k8s/headlamp:v0.42.0
+    image: ghcr.io/headlamp-k8s/headlamp:v0.46.0
     command: ['sh', '-c', 'cat /etc/ssl/certs/ca-certificates.crt /narwhal-ca/ca.crt > /combined/ca-certificates.crt']
     volumeMounts:
       - name: narwhal-ca
@@ -127,7 +133,7 @@ for attempt in 1 2 3 4 5; do
     --force-conflicts \
     --namespace devtools \
     --create-namespace \
-    --version 0.42.0 \
+    --version 0.46.0 \
     -f /tmp/headlamp-values.yaml; then
     HEADLAMP_OK=true; break
   fi

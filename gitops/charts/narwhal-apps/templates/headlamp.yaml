@@ -10,9 +10,13 @@ spec:
   source:
     repoURL: http://gitea-http.devtools.svc.cluster.local:3000/api/packages/gitea-admin/helm
     chart: headlamp
-    targetRevision: 0.42.0
+    targetRevision: 0.46.0
     helm:
       valuesObject:
+        image:
+          registry: ghcr.io
+          repository: headlamp-k8s/headlamp
+          tag: v0.46.0
         podLabels:
           istio.io/dataplane-mode: "none"
         # OIDC 모드: 사용자 요청은 사용자 토큰의 RBAC로 수행되므로
@@ -33,6 +37,7 @@ spec:
             clientID: headlamp
             issuerURL: https://keycloak.{{ .Values.baseDomain }}/realms/narwhal
             scopes: openid,profile,email,groups
+            autoLogin: true
             # clientSecret loaded from externalSecret (Option 3)
             # Secret 'headlamp-oidc-secret' is created by scripts/cluster/11-keycloak.sh
             # The secret must contain the same keys as the default OIDC secret:
@@ -43,6 +48,8 @@ spec:
             externalSecret:
               enabled: true
               name: headlamp-oidc-secret
+              # Chart >= 0.43.0 omits -oidc-scopes=$(OIDC_SCOPES) unless hasScopes is true.
+              hasScopes: true
         # Trivy KSV001/003/012/030/104: allowPrivilegeEscalation false, drop ALL caps,
         # seccomp RuntimeDefault. Deep-merges with chart default (runAsNonRoot: true,
         # privileged: false), which already satisfies KSV012 for the main container.
@@ -55,7 +62,7 @@ spec:
             type: RuntimeDefault
         initContainers:
           - name: ca-bundle
-            image: ghcr.io/headlamp-k8s/headlamp:v0.42.0
+            image: ghcr.io/headlamp-k8s/headlamp:v0.46.0
             command: ['sh', '-c', 'cat /etc/ssl/certs/ca-certificates.crt /narwhal-ca/ca.crt > /combined/ca-certificates.crt']
             # Same image as the main container (verified uid=100 non-root live) — safe to
             # force runAsNonRoot here too (Trivy flagged this initContainer separately).

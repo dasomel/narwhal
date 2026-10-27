@@ -195,7 +195,7 @@ kubectl create secret generic keycloak-user-passwords -n iam \
 | Dashboard `/sso/callback`에서 `401 MSG_LOGIN_UNAUTHORIZED_ERROR` (kubectl OIDC·Headlamp도 동일 거부) | apiserver가 Keycloak JWKS를 가져오지 못함: `*.kakao.narwhal.internal` 노드 DNS(bastion dnsmasq `172.17.0.191`)가 다운되어 kube-apiserver 로그에 `get keys failed ... no such host` 기록 | bastion에서 `systemctl status dnsmasq` 확인 및 재시작; 노드: `getent hosts keycloak.kakao.narwhal.internal` (#478 이후 systemd drop-in이 실패 시 자동 재시작) |
 | Grafana `Failed to get token from provider` | `monitoring/grafana-oidc-secret`의 `client_secret`이 빈 값 (이전 11-3이 kcadm 읽기 실패 시 ""를 기록) | 길이 확인: `kubectl -n monitoring get secret grafana-oidc-secret -o jsonpath='{.data.client_secret}' \| base64 -d \| wc -c`; 11-3 재실행 (현재는 fail-closed) 후 Grafana 파드 재생성 |
 | admin으로 Gitea `gitea-admin/narwhal-gitops` 접근 시 404 | Gitea OAuth2 소스(`keycloak`) 미갱신 또는 기존 미연결 로컬 `admin` 계정의 첫 연결 직후(그룹/관리자 동기화는 두 번째 로그인부터 적용) | `11-3-keycloak-clients.sh` 또는 `12-gitea.sh`의 `gitea_upsert_keycloak_source` 실행 확인 후 Gitea에서 한 번 재로그인 (`/user/login` 접속 시 자동 포워딩) |
-| Headlamp가 로그인 페이지에 머무름 | 제로클릭 라우트 누락 | `kubectl -n platform-system get apisixroute headlamp -o jsonpath='{.spec.http[*].name}'`에 `headlamp-login-autoredirect`가 있어야 함 (탭당 60초에 최대 1회 리다이렉트) |
+| Headlamp가 로그인 페이지에 머무름 | `autoLogin` 비활성화 또는 토큰 거부(`oidc-login-attempted.<cluster>`) | `kubectl -n devtools get deploy headlamp -o jsonpath='{.spec.template.spec.containers[0].args}'`에 `-oidc-auto-login=true`가 있는지 확인 (토큰이 401/403으로 거부됐거나 `?logout=true`로 진입한 경우에는 루프 방지를 위해 로그인 화면에 머무름) |
 
 ---
 

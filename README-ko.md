@@ -176,7 +176,7 @@ vagrant destroy -f
 | Harbor | v2.15.x | 컨테이너 레지스트리. 업스트림 소스를 ARM64용으로 재빌드한 `ghcr.io/dasomel/goharbor` — 포크가 아니라 재빌드이며 소스 수정 없음 |
 | OpenBao | v2.5.x | 시크릿 관리 |
 | Kyverno | v1.18.x | 정책 엔진 |
-| Headlamp | v0.42.x | Kubernetes UI |
+| Headlamp | v0.46.x | Kubernetes UI |
 | APISIX | 3.15.x | API Gateway (TLS + OIDC) |
 | SeaweedFS | v4.34.x | 오브젝트 스토리지 (S3) |
 | Velero | v1.18.x | 백업 & 복원 |

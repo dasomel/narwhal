@@ -237,7 +237,7 @@ Keycloak은 플랫폼의 SSO/OIDC 아이덴티티 제공자입니다 — SSO가 
 #### Headlamp
 | 차트 | 버전 | 네임스페이스 |
 |---|---|---|
-| `headlamp` (kubernetes-sigs.github.io/headlamp) | `0.42.0` | `devtools` |
+| `headlamp` (kubernetes-sigs.github.io/headlamp) | `0.46.0` | `devtools` |
 
 클러스터 운영자를 위한 웹 기반 Kubernetes 대시보드/UI로, Keycloak OIDC로 인증됩니다. ztunnel이 SSO 쿠키를 간섭하지 않도록 ambient 메시에서 제외(`istio.io/dataplane-mode: none`)되어 있으며, 프로브 타임아웃 튜닝은 별도의 Kyverno 정책(`headlamp-policy.yaml`)으로 적용됩니다.
 

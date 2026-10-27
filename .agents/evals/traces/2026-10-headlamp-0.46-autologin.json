@@ -1,0 +1,86 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-headlamp-0-46-autologin-20261027",
+  "task": "Upgrade Headlamp v0.42.0 to v0.46.0 and replace the APISIX login-injection and main-tab auth-return workarounds with Headlamp's built-in OIDC auto-login (#491 item 2). Scope of this change: repository chart/image/inventory/SBOM/docs/regression updates; live Gitea chart publish, bastion image mirror and GitOps push are done by the orchestrator after merge.",
+  "changeContext": {
+    "paths": [
+      ".agents/evals/traces/2026-10-headlamp-0.46-autologin.json",
+      "README-ko.md",
+      "README.md",
+      "VERSIONS.md",
+      "docs/common/app-sso-permission-matrix.md",
+      "docs/common/compatibility-matrix.md",
+      "docs/common/lessons-log.md",
+      "docs/common/sso-accounts.md",
+      "docs/kakao/service-domains.md",
+      "gitops/README-ko.md",
+      "gitops/README.md",
+      "gitops/charts/narwhal-apps/templates/headlamp.yaml",
+      "gitops/charts/narwhal-platform/templates/apisix-routes.yaml",
+      "scripts/airgap/images.txt",
+      "scripts/airgap/lib/image-digests.tsv",
+      "scripts/cluster/08-3-security.sh",
+      "scripts/test/lib/check-headlamp-autologin-route.py",
+      "scripts/test/lib/check-headlamp-autologin.py",
+      "scripts/test/lib/check-sbom-inventory-completeness.py",
+      "scripts/test/regression-check-kakao.sh"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Upgrade Headlamp from 0.42.0 to 0.46.0 across GitOps (headlamp.yaml), Phase 2 (08-3-security.sh), air-gap inventory/digests/SBOM and docs; enable config.oidc.autoLogin: true and config.oidc.externalSecret.hasScopes: true; remove the gateway HTML-injection routes (headlamp-login-autoredirect and headlamp-auth-return) and R286; add R288 (check-headlamp-autologin.py --mutation-verify). No live cluster mutations in this worker lane."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "Headlamp v0.42.0 lacked built-in OIDC autoLogin and its main-tab /auth?cluster= return did not redirect, requiring two APISIX HTML-injection routes (headlamp-login-autoredirect and headlamp-auth-return). Upstream v0.46.0 (2026-10-15, PR #7071 and PR #5972) adds config.oidc.autoLogin (-oidc-auto-login, served as oidcAutoLogin in /config and consumed by AuthChooser with ?logout=true and sessionStorage oidc-login-attempted.<cluster> guards plus RP-initiated /encoded-clusters/<cluster>/oidc-logout) and completes non-popup main-tab logins in frontend/src/components/oidcauth/index.tsx via history.replace(returnUrl). Diffing helm template 0.42.0 vs 0.46.0 also showed chart >= 0.43.0 omits -oidc-scopes=$(OIDC_SCOPES) when externalSecret.enabled is true unless config.oidc.externalSecret.hasScopes: true is set.",
+      "evidence": [
+        "doc:https://github.com/kubernetes-sigs/headlamp/releases/tag/v0.46.0",
+        "doc:https://github.com/kubernetes-sigs/headlamp/releases/tag/v0.43.0",
+        "doc:https://github.com/kubernetes-sigs/headlamp/blob/v0.46.0/charts/headlamp/templates/deployment.yaml",
+        "doc:https://github.com/kubernetes-sigs/headlamp/blob/v0.46.0/backend/pkg/config/config.go",
+        "doc:https://github.com/kubernetes-sigs/headlamp/blob/v0.46.0/frontend/src/components/authchooser/index.tsx",
+        "doc:https://github.com/kubernetes-sigs/headlamp/blob/v0.46.0/frontend/src/components/oidcauth/index.tsx",
+        "artifact:ghcr.io/headlamp-k8s/headlamp:v0.46.0 index sha256:8a0ef97527544baa2b35825940ddf4db6e2d09c30cd5aa31fd269ff604cc8b75 (linux/amd64 sha256:fcc6a6b011a8c0adbf4489384588442224c01f74b6f63739e50b089d54b98371, linux/arm64 sha256:79a66608ee1d7d25adde0203c19099f5855f66cf9b60bcfd510fbd88f1c92fe5)"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "Bumped Headlamp chart and main/initContainer image pins to 0.46.0/v0.46.0 across headlamp.yaml, 08-3-security.sh, images.txt, image-digests.tsv, check-sbom-inventory-completeness.py, VERSIONS.md, compatibility-matrix.md and READMEs; enabled config.oidc.autoLogin: true and config.oidc.externalSecret.hasScopes: true in both headlamp.yaml and 08-3-security.sh; removed headlamp-login-autoredirect, headlamp-auth-return, R286 and check-headlamp-autologin-route.py; added R288 (check-headlamp-autologin.py --mutation-verify) and updated SSO/lessons docs."
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "local Helm template diff, version/matrix/airgap/SBOM checks, R288 with 15 mutations, shellcheck, make validate, and full static regression suite (live chart publish, image mirror and GitOps push are done by the orchestrator after merge)",
+      "summary": "See evidence.",
+      "evidence": [
+        "test:helm template headlamp headlamp-upstream/headlamp --version 0.46.0 (GitOps and 08-3 values) -> preserves -oidc-scopes=$(OIDC_SCOPES) and adds -oidc-auto-login=true",
+        "test:python3 scripts/test/lib/check-headlamp-autologin.py --mutation-verify -> OK, 15 mutations caught",
+        "test:python3 scripts/test/lib/check-sbom-inventory-completeness.py --mutation-verify -> PASS (image=100, chart=21, binary=15)",
+        "test:python3 scripts/test/lib/check-compatibility-matrix.py --mutation-verify -> PASS",
+        "test:python3 scripts/verify/upgrade-bundle-check.py --self-test -> PASS",
+        "test:python3 scripts/test/lib/check-upgrade-waves.py --mutation-verify -> PASS (21 modeled components and 44 Argo CD Applications)",
+        "test:python3 scripts/airgap/lib/check-required-charts.py . && python3 scripts/airgap/lib/check-chart-upstream-sources.py -> PASS (20 GitOps charts mapped)",
+        "test:find scripts/ -name '*.sh' -print0 | xargs -0 shellcheck --severity=warning -> exit 0",
+        "test:make validate -> exit 0",
+        "test:RESEARCH_EVIDENCE_DIR=$(mktemp -d) make test -> passed 412 failed 0 warnings 3"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "completion_claim",
+      "summary": "Within the repository scope, Headlamp is upgraded to v0.46.0 with built-in OIDC autoLogin and externalSecret.hasScopes enabled, the gateway HTML-injection workarounds are removed, and R288 plus all 412 static regression checks pass."
+    },
+    {
+      "id": "e6",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Complete and verified within the stated repository scope; the live chart publish, image mirror and GitOps push are done by the orchestrator after merge."
+    }
+  ]
+}

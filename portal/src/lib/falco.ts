@@ -14,8 +14,8 @@ function getLokiUrl(): string {
 }
 
 // Falcosidekick writes the `priority` stream label as the Capitalized name ("Critical") —
-// types.PriorityType.String() in falcosidekick 2.31-2.32, confirmed on a live Falco 0.45.1 ->
-// falcosidekick 2.32.0 capture (see falco.test.ts). It is NOT lowercase, and Loki label matching
+// types.PriorityType.String() in falcosidekick 2.31-2.35, confirmed on a live Falco 0.45.1 ->
+// falcosidekick 2.35.0 capture (see falco.test.ts). It is NOT lowercase, and Loki label matching
 // is case-sensitive, so a lowercase `priority="critical"` selector matches nothing. Match both
 // spellings with an alternation (LOGQL_SAFE_RE rejects the `(?i)` flag) so a future lowercase
 // label does not silently empty the feed either.

@@ -8,7 +8,7 @@ export const KISA_CATALOG: Omit<KisaControl, "status" | "live" | "detail">[] = [
     severity: "Critical",
     standardRefs: ["CIS 1.2.x", "NSA/CISA §7", "ISMS-P 2.11"],
     evidence:
-      "kube-apiserver 3/3에 --audit-log-path/--audit-policy-file 구성됨, /var/log/kubernetes/audit/audit.log 실기록+로테이션(maxage 30/backup 10/size 100). Falco는 2026-07-08 kernel 7.0 비호환으로 비활성화됨(감사 webhook 백엔드 없음은 유지되는 사실).",
+      "kube-apiserver 3/3에 --audit-log-path/--audit-policy-file 구성됨, /var/log/kubernetes/audit/audit.log 실기록+로테이션(maxage 30/backup 10/size 100). Falco 0.45.1은 D-FALCO-045(2026-10-28)로 GitOps에서 전 프로바이더에 활성화되도록 바뀜(syscall 소스만 사용, 감사 webhook(k8saudit) 백엔드는 구성하지 않으므로 감사 webhook 백엔드 없음은 유지되는 사실). 클러스터 반영과 동작은 이 증거에 포함되지 않음.",
     remediation: "감사 로그의 Loki 출하 연계(현재 파일 로컬 보관만)와 감사 정책 커버리지 점검.",
   },
   {
@@ -94,7 +94,7 @@ export const KISA_CATALOG: Omit<KisaControl, "status" | "live" | "detail">[] = [
     evidence:
       "Alertmanager 수신자 미설정 — 알림 룰이 통지로 이어지지 않음.",
     remediation:
-      "수신자(Slack/Email/webhook) 구성+보안 전용 룰(CVE, RBAC 이상탐지). Falco는 2026-07-08 kernel 7.0 비호환으로 비활성화 상태라 대체 시그널 필요.",
+      "수신자(Slack/Email/webhook) 구성+보안 전용 룰(CVE, RBAC 이상탐지). Falco 0.45.1(D-FALCO-045, 2026-10-28)은 GitOps에서 활성화되어 falcosidekick이 critical 이상 런타임 이벤트를 Alertmanager로 보내도록 구성되어 있으나(`/api/v2/alerts`), 수신자가 없으면 통지로 이어지지 않으며 라이브 동작은 검증 전.",
   },
   {
     id: "KISA-NET-01",

@@ -507,15 +507,14 @@ export const CACHE_NAMESPACES: Record<string, CacheNamespaceSpec> = {
     example: "cluster:{clusterId}:infra",
     dimensions: ["cluster"],
     ttlSeconds: 30,
-    owner:
-      "src/app/api/cluster/route.ts (writer) + src/app/(dashboard)/security/page.tsx (reader) — both via clusterCacheKey, src/lib/cluster-registry.ts",
+    owner: "src/app/api/cluster/route.ts via clusterCacheKey, src/lib/cluster-registry.ts",
     invalidation: "prefix purge on cluster registry changes",
     invalidationTriggers: ["cluster.changed"],
     invalidationPatterns: ["cluster:*:infra"],
     cachesPartial: false,
     securitySensitive: true,
     note:
-      "Multi-cluster (portal#21): must not serve cluster A's infra under cluster B's request. Found while writing this contract: security/page.tsx read the literal 'cluster:infra' (pre-#21 shape) and had never matched this writer's clusterCacheKey(clusterId,'infra') key since #21 shipped — a permanent cache miss, fixed here to use the same builder.",
+      "Multi-cluster (portal#21): must not serve cluster A's infra under cluster B's request. Found while writing this contract: security/page.tsx read the literal 'cluster:infra' (pre-#21 shape) and had never matched this writer's clusterCacheKey(clusterId,'infra') key since #21 shipped — a permanent cache miss, fixed here to use the same builder. That reader (the Ubuntu 26.04 Falco gating) was removed with D-FALCO-045; the cluster route is the only user now.",
   },
   "cluster:{id}:domain": {
     example: "cluster:{clusterId}:domain",

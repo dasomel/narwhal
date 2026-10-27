@@ -17,12 +17,13 @@ vi.mock("./config", () => ({
 import { getRuntimeEvents } from "./falco"
 import { assertLogQLSafe } from "./validation"
 
-// Real capture, 2026-10-27: Falco 0.45.1 (modern_ebpf, container plugin 0.7.5, kernel 7.0.14) ->
-// http_output -> falcosidekick 2.32.0 with the exact env the falco chart 9.2.1 renders from
+// Real capture, 2026-10-27 16:48 UTC: Falco 0.45.1 (modern_ebpf, container plugin 0.7.5, kernel 7.0.14) ->
+// http_output -> falcosidekick 2.35.0 with the exact env the falco chart 9.2.1 renders from
 // gitops/charts/narwhal-apps/templates/falco.yaml (LOKI_FORMAT=json) -> POST /loki/api/v1/push to a
-// local stub. A container ran `cat /etc/shadow`. Values are verbatim; only the container id and
-// uuid are as captured. The stream labels are what falcosidekick 2.32.0 outputs/loki.go emits:
-// `priority` is the Capitalized name and `source` is the Falco event source, never "falco".
+// local stub. A container ran `cat /etc/shadow`. Values are verbatim. The stream labels are what
+// falcosidekick's outputs/loki.go emits (byte-identical in 2.32.0 and 2.35.0, and the earlier 2.32.0
+// capture had the same labels, line keys and output_fields keys): `priority` is the Capitalized name
+// and `source` is the Falco event source, never "falco".
 const CAPTURED_STREAM = {
   hostname: "lab-node",
   priority: "Warning",
@@ -30,20 +31,20 @@ const CAPTURED_STREAM = {
   source: "syscall",
   tags: "T1555,container,filesystem,host,maturity_stable,mitre_credential_access",
 }
-const CAPTURED_TS_NS = "1793115020626396615"
+const CAPTURED_TS_NS = "1793119706183083438"
 const CAPTURED_LINE = {
-  uuid: "c061bb70-bdfb-47bf-a767-71954e03ac90",
+  uuid: "ea83afdd-f649-4a51-abeb-7a9fbb991ad5",
   output:
-    "15:30:20.626396615: Warning Sensitive file opened for reading by non-trusted program | file=/etc/shadow gparent=containerd-shim ggparent=initd gggparent=<NA> evt_type=openat user=root user_uid=0 user_loginuid=-1 process=cat proc_exepath=/bin/busybox parent=sh command=cat /etc/shadow terminal=0 container_id=0a3dc3409aa4 container_name=victim container_image_repository=alpine container_image_tag=3.20 k8s_pod_name=<NA> k8s_ns_name=<NA>",
+    "16:48:26.183083438: Warning Sensitive file opened for reading by non-trusted program | file=/etc/shadow gparent=containerd-shim ggparent=initd gggparent=<NA> evt_type=openat user=root user_uid=0 user_loginuid=-1 process=cat proc_exepath=/bin/busybox parent=sh command=cat /etc/shadow terminal=0 container_id=aa198ad825c2 container_name=victim3 container_image_repository=alpine container_image_tag=3.20 k8s_pod_name=<NA> k8s_ns_name=<NA>",
   priority: "Warning",
   rule: "Read sensitive file untrusted",
-  time: "2026-10-27T15:30:20.626396615Z",
+  time: "2026-10-27T16:48:26.183083438Z",
   output_fields: {
-    "container.id": "0a3dc3409aa4",
+    "container.id": "aa198ad825c2",
     "container.image.repository": "alpine",
     "container.image.tag": "3.20",
-    "container.name": "victim",
-    "evt.time": 1793115020626396615,
+    "container.name": "victim3",
+    "evt.time": 1793119706183083438,
     "evt.type": "openat",
     "fd.name": "/etc/shadow",
     "k8s.ns.name": null,
@@ -141,7 +142,7 @@ describe("getRuntimeEvents (Falco -> falcosidekick -> Loki contract)", () => {
       tags: CAPTURED_LINE.tags,
       pod: undefined,
       namespace: undefined,
-      container: "victim",
+      container: "victim3",
       image: "alpine",
     })
   })

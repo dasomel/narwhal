@@ -9,6 +9,19 @@ English | [한국어](CHANGELOG-ko.md)
 
 ## [Unreleased]
 
+### Fixed
+
+- **Runtime Events: the priority filter matched nothing (narwhal#503)**: falcosidekick writes the Loki
+  `priority` label capitalised (`Critical`), but the reader selected the lowercase value, so the
+  priority filter and the critical-alert query matched no stream. The selector now accepts both
+  spellings, and the JSON `null` fields Falco emits for processes outside Kubernetes are treated as
+  absent.
+- **Runtime Events tab hidden on Ubuntu 26.04 (narwhal#503)**: the tab was replaced by an
+  "unavailable on Ubuntu 26.04" notice whenever a node ran 26.04. Falco 0.45.1 is enabled on every
+  provider, so the tab is always shown and the node-OS probe and the
+  `security.runtimeEvents.unavailable2604` text are removed. The KISA control notes no longer say
+  Falco is disabled; they make no claim about a live cluster.
+
 ## [1.1.4] - 2026-10-28
 
 Patch release: the Security page shows vulnerability data again on clusters with many scanned

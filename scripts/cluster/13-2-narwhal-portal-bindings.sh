@@ -712,19 +712,21 @@ fi
 # 3x t1i.large 2vCPU/8GiB 197 KRW/h + 3x t1i.xlarge 4vCPU/16GiB 395 KRW/h = 1776 KRW/h
 # for 18 vCPU / 72 GiB, split CPU:MEM 0.65:0.35 per docs/adr-cost-basis.md in portal/;
 # Block Storage SSD 0.16 KRW/GiB-h; VAT excluded; kakaocloud.com, read 2026-10-26).
+# List prices are per GiB while the portal divides bytes by 1e9, so memory and storage
+# are divided by 1.073741824 (GB = 1e9 bytes); keep CPU 64.13.
 # Vagrant has no billable cost, so it keeps the ADR's placeholder rates and says so.
 # Cost: a flavor or list-price change makes these stale. Escape hatch: every value is
 # overridable via the same-named env var.
 case "${DOMAIN}" in
   kakao.*)
     : "${COST_CPU_HOURLY:=64.13}"
-    : "${COST_MEM_GB_HOURLY:=8.633}"
-    : "${COST_STORAGE_GB_HOURLY:=0.16}"
+    : "${COST_MEM_GB_HOURLY:=8.040}"
+    : "${COST_STORAGE_GB_HOURLY:=0.1490}"
     : "${COST_CURRENCY:=KRW}"
-    : "${COST_PRICING_VERSION:=kakao-cloud-t1i-2026-10-26}"
+    : "${COST_PRICING_VERSION:=kakao-cloud-t1i-2026-10-26-gb}"
     : "${COST_PRICING_EFFECTIVE_DATE:=2026-10-26}"
     : "${COST_PRICING_SOURCE:=kakaocloud.com list price: VM t1i.large 197 KRW/h, t1i.xlarge 395 KRW/h; Block Storage SSD 0.16 KRW/GiB-h (VAT excluded, read 2026-10-26)}"
-    : "${COST_PRICING_SCOPE:=Kakao Cloud narwhal (3x t1i.large + 3x t1i.xlarge), usage-based showback estimate, CPU:MEM 0.65:0.35, per GiB, VAT excluded}"
+    : "${COST_PRICING_SCOPE:=Kakao Cloud narwhal (3x t1i.large + 3x t1i.xlarge), usage-based showback estimate, CPU:MEM 0.65:0.35, per GB (bytes/1e9, as portal/src/lib/cost.ts counts; GiB list prices divided by 1.073741824), VAT excluded}"
     ;;
   *)
     : "${COST_CPU_HOURLY:=0.04}"

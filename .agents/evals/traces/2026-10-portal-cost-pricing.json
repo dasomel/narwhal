@@ -35,7 +35,7 @@
     {
       "id": "e3",
       "type": "bug_fix",
-      "summary": "In 13-2-narwhal-portal-bindings.sh, set provider-specific defaults for all eight COST_* keys (Kakao list prices from kakaocloud.com read 2026-10-26: t1i.large 2 vCPU/8 GiB 197 KRW/h, t1i.xlarge 4 vCPU/16 GiB 395 KRW/h, Block Storage SSD 0.16 KRW/GiB-h, VAT excluded; Vagrant labelled placeholder) and pass them to narwhal-portal-secrets. Added ghcr.io/aquasecurity/node-collector:0.3.1 (sha256:f4702ce4667388f0219d6248d623a7e816231c2d4561d6af01c3ae053e524025) to images.txt, image-digests.tsv, component-licenses.tsv and TRANSIENT_IMAGES in 01-generate-image-list.sh. Added R282 (check-portal-cost-env-seam.py)."
+      "summary": "In 13-2-narwhal-portal-bindings.sh, set provider-specific defaults for all eight COST_* keys (Kakao list prices from kakaocloud.com read 2026-10-26: t1i.large 2 vCPU/8 GiB 197 KRW/h, t1i.xlarge 4 vCPU/16 GiB 395 KRW/h, Block Storage SSD 0.16 KRW/GiB-h, VAT excluded; fixed reviewer unit finding: portal/src/lib/cost.ts divides bytes by 1e9, so memory and storage GiB rates are divided by 1.073741824 to 8.040 KRW/GB-h and 0.1490 KRW/GB-h; Vagrant labelled placeholder) and pass them to narwhal-portal-secrets. Added ghcr.io/aquasecurity/node-collector:0.3.1 (sha256:f4702ce4667388f0219d6248d623a7e816231c2d4561d6af01c3ae053e524025) to images.txt, image-digests.tsv, component-licenses.tsv and TRANSIENT_IMAGES in 01-generate-image-list.sh. Added R282 (check-portal-cost-env-seam.py)."
     },
     {
       "id": "e4",

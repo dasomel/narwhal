@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""R281: every COST_* key portal/src/lib/cost.ts requires is set by 13-2 for both providers.
+"""R282: every COST_* key portal/src/lib/cost.ts requires is set by 13-2 for both providers.
 
 2026-10-26: portal 1.1.1 made getCostPricing fail closed (/api/cost -> 503) unless five
 pricing-metadata keys exist, but 13-2-narwhal-portal-bindings.sh still set only the three

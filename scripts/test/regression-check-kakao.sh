@@ -3139,7 +3139,7 @@ assert sum(1 for l in code if re.search(r"\bexit 3\b", l)) == 1, "exit 3 must ap
     python3 scripts/test/lib/check-velero-volume-policy.py --mutation-verify
   # 2026-10-26: portal 1.1.1 made /api/cost fail closed on five pricing-metadata keys 13-2 never set,
   # so the Kakao cost page loaded forever (D-COST in 13-2).
-  check R281 "13-2 sets every COST_* key portal/src/lib/cost.ts requires, with a default for both kakao.* and Vagrant; 3 mutations caught (D-COST)" \
+  check R282 "13-2 sets every COST_* key portal/src/lib/cost.ts requires, with a default for both kakao.* and Vagrant; 3 mutations caught (D-COST)" \
     python3 scripts/test/lib/check-portal-cost-env-seam.py --mutation-verify
   # 2026-10-26 (Kakao SSO): four separate breaks behind "seamless SSO does not work".
   check R283 "11-3 create_keycloak_client fails closed on an empty client-secret read instead of writing \"\" into app Secrets (behavioural, stubbed kcadm)" \

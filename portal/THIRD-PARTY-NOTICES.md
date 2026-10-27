@@ -29651,7 +29651,7 @@ SOFTWARE.
 
 </details>
 
-### fast-uri@4.2.2
+### fast-uri@4.2.3
 
 - License: `BSD-3-Clause`
 - Author: Vincent Le Goff

@@ -55,6 +55,7 @@ docker.io/otwld/velero-ui:0.10.1	sha256:d52893e4a4976ccc7e4c6830cf8b1d4e5125a1bd
 docker.io/valkey/valkey:8-alpine	sha256:081c2f5cb575efc901aa80ff9cdbd1ec6a301682fd35e1ebb4b0990a4a4a8507	2026-09-28T12:06:18Z	crane digest
 docker.io/velero/velero:v1.18.1	sha256:11459094b1b21ec7c817b08f8067d9e89380835547915cac9c4132ff05b55b90	2026-09-28T12:06:18Z	crane digest
 gcr.io/kaniko-project/executor:v1.24.0	sha256:4e7a52dd1f14872430652bb3b027405b8dfd17c4538751c620ac005741ef9698	2026-09-28T12:06:18Z	portal-pin
+ghcr.io/aquasecurity/node-collector:0.3.1	sha256:f4702ce4667388f0219d6248d623a7e816231c2d4561d6af01c3ae053e524025	2026-10-26T15:20:00Z	crane digest
 ghcr.io/chaos-mesh/chaos-daemon:v2.8.3	sha256:69b1d3c09cfa58df94f5be7e498591f88f5007f6d22ebeeeda1731cb37acd377	2026-09-28T12:06:18Z	crane digest
 ghcr.io/chaos-mesh/chaos-mesh:v2.8.3	sha256:bdb31f3121a2979361c2a12cfb2a7845b7e66dc7589dcde5f9457473b50c707f	2026-09-28T12:06:18Z	crane digest
 ghcr.io/cloudnative-pg/cloudnative-pg:1.29.1	sha256:0dfff19ba7b52ca25851a1010028b6940fff2e233290465af1cfb08a5f3f4661	2026-09-28T12:06:18Z	crane digest

@@ -52,6 +52,7 @@ docker.io/otwld/velero-ui:0.10.1
 docker.io/valkey/valkey:8-alpine
 docker.io/velero/velero:v1.18.1
 gcr.io/kaniko-project/executor:v1.24.0@sha256:4e7a52dd1f14872430652bb3b027405b8dfd17c4538751c620ac005741ef9698
+ghcr.io/aquasecurity/node-collector:0.3.1
 ghcr.io/chaos-mesh/chaos-daemon:v2.8.3
 ghcr.io/chaos-mesh/chaos-mesh:v2.8.3
 ghcr.io/cloudnative-pg/cloudnative-pg:1.29.1

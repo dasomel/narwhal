@@ -1,29 +1,30 @@
 import "server-only"
-import { getK8sApiServer } from "./config"
-import { getK8sBearerToken } from "./k8s-token"
-import { fetchWithPolicy, readJsonWithPolicy } from "./http-client"
-import { K8S_POLICY } from "./k8s-client"
+import { listBounded } from "./k8s-client"
 import { cacheGet, cacheSet } from "./valkey"
 import { cacheKeys, cacheTtl } from "./cache-keys"
 import type { SecuritySummary, WorkloadVulnRow, ImageVulnReport, Vulnerability, Severity, VulnDbFreshness } from "@/types/security"
 
-// --- K8s API helpers (local, avoids circular dep with k8s-client.ts) ---
+// --- K8s bounded pagination helper ---
+//
+// On Kakao (109 VulnerabilityReports), an unbounded list is 10.76 MB and exceeds
+// http-client's 8 MiB DEFAULT_MAX_RESPONSE_BYTES; the largest single report is
+// 343,228 bytes (20 largest together ~4.2 MB). 20 x the largest report stays
+// well under 8 MiB per page, and 50 pages cover up to 1,000 reports.
+const TRIVY_VULNERABILITY_REPORTS_PATH = "/apis/aquasecurity.github.io/v1alpha1/vulnerabilityreports"
+const TRIVY_REPORT_PAGE_LIMIT = 20
+const TRIVY_REPORT_MAX_PAGES = 50
 
-async function trivyK8sFetch<T>(path: string): Promise<T> {
-  const apiServer = getK8sApiServer()
-  const headers: Record<string, string> = { "Content-Type": "application/json" }
-  if (apiServer.startsWith("https://")) {
-    const token = getK8sBearerToken()
-    if (token.length > 0) headers["Authorization"] = `Bearer ${token}`
+async function listVulnerabilityReports(): Promise<TrivyVulnerabilityReport[]> {
+  const { items, truncated, pages } = await listBounded<TrivyVulnerabilityReport>(
+    TRIVY_VULNERABILITY_REPORTS_PATH,
+    { limit: TRIVY_REPORT_PAGE_LIMIT, maxPages: TRIVY_REPORT_MAX_PAGES },
+  )
+  if (truncated) {
+    console.warn(
+      `[trivy] VulnerabilityReports list truncated after ${pages} pages — returning ${items.length} fetched reports`,
+    )
   }
-  const res = await fetchWithPolicy(`${apiServer}${path}`, {
-    headers,
-    // Skip TLS verify is handled at the Node level via NODE_TLS_REJECT_UNAUTHORIZED
-  }, { ...K8S_POLICY, timeoutMs: 60_000 })
-  if (!res.ok) {
-    throw new Error(`K8s API ${res.status} ${res.statusText} for ${path}`)
-  }
-  return readJsonWithPolicy<T>(res)
+  return items
 }
 
 // --- Trivy CRD types ---
@@ -62,10 +63,6 @@ interface TrivyVulnerabilityReport {
     }>
     scanner?: { name: string; vendor: string; version: string }
   }
-}
-
-interface TrivyVulnerabilityReportList {
-  items: TrivyVulnerabilityReport[]
 }
 
 // --- Mapping helpers ---
@@ -168,10 +165,7 @@ export async function getSecuritySummary(): Promise<SecuritySummary> {
   if (cached) return cached
 
   try {
-    const list = await trivyK8sFetch<TrivyVulnerabilityReportList>(
-      "/apis/aquasecurity.github.io/v1alpha1/vulnerabilityreports",
-    )
-    const items = list.items ?? []
+    const items = await listVulnerabilityReports()
 
     const totals = { Critical: 0, High: 0, Medium: 0, Low: 0, Unknown: 0 }
     const imageSet = new Set<string>()
@@ -217,10 +211,8 @@ export async function getWorkloadVulnerabilities(): Promise<WorkloadVulnRow[]> {
   if (cached) return cached
 
   try {
-    const list = await trivyK8sFetch<TrivyVulnerabilityReportList>(
-      "/apis/aquasecurity.github.io/v1alpha1/vulnerabilityreports",
-    )
-    const rows = (list.items ?? []).map(reportToWorkloadRow)
+    const items = await listVulnerabilityReports()
+    const rows = items.map(reportToWorkloadRow)
 
     await cacheSet(cacheKey, rows, cacheTtl("trivyWorkloads"))
     return rows
@@ -236,11 +228,9 @@ export async function getImageVulnReport(image: string): Promise<ImageVulnReport
   if (cached) return cached
 
   try {
-    const list = await trivyK8sFetch<TrivyVulnerabilityReportList>(
-      "/apis/aquasecurity.github.io/v1alpha1/vulnerabilityreports",
-    )
+    const items = await listVulnerabilityReports()
 
-    const item = (list.items ?? []).find((i) => buildImageString(i) === image)
+    const item = items.find((i) => buildImageString(i) === image)
     if (!item) return null
 
     const row = reportToWorkloadRow(item)

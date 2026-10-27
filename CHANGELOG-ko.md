@@ -11,6 +11,25 @@
 
 ### 변경
 
+- **Falco가 모든 프로바이더에서 다시 활성화되고 0.39.2(차트 4.16.0)에서 0.45.1(차트 9.2.1)로 올라감
+  (D-FALCO-045).** 0.39.2의 `modern_ebpf` 프로브가 커널 7.0에서 `scap_init`에 실패해 2026-07-08에
+  비활성화되었다. 0.45.1은 업스트림 커널 7.0 수정(falcosecurity/libs#2997, falcosecurity/libs#3021,
+  falcosecurity/libs#3086, falcosecurity/libs#3119)을 포함하며, 로컬 커널 7.0.14(linuxkit) 실행에서
+  프로브를 열었고 0.39.2는 같은 환경에서 7월과 같은 증상으로 여전히 실패한다. 마이그레이션은
+  breaking이다: 차트는 `falco.grpc`를 거부하고, 컨테이너 메타데이터는 `container` 플러그인에서 오며,
+  falcoctl이 꺼져 룰(falco-rules 5.2.0)과 플러그인은 이미지에 내장된 것을 쓰고 런타임에 아무것도
+  내려받지 않는다. falcosidekick은 서브차트 기본 2.32.0 대신 2.35.0을 쓴다(D-FALCO-SIDEKICK): 2.32.0은
+  falcosecurity/falcosidekick#1366(취약한 Go 모듈, 2.34.0에서 수정)과 falcosecurity/falcosidekick#1390
+  (다중 출력 레이스, 2.35.0에서 수정)을 고치기 전 버전이고, trivy CRITICAL/HIGH가 9/80에서 3/19로
+  준다. Loki에는 JSON 라인(`format: json`)을 쓰고 포털이 이를 파싱하며, 포털의 priority 필터는
+  falcosidekick이 쓰는 대문자 시작 라벨과 일치한다(기존 소문자 셀렉터는 아무것도 매칭하지 못했다).
+  Alertmanager 출력은 `/api/v2/alerts`로 보낸다: 차트 기본값 `/api/v1/alerts`는 Alertmanager 0.27
+  이상에서 410 Gone을 돌려줘(클러스터는 0.33.0 고정) Critical 알림이 모두 버려졌고, 실제
+  Alertmanager v0.33.0에서 Critical 이벤트가 `GET /api/v2/alerts`에 `source=falco`로 보인다. 보안
+  화면은 Ubuntu 26.04에서 런타임 이벤트 탭을 더 이상 숨기지 않고, `14-gitops-bootstrap.sh`도 그곳에서
+  Falco를 제거하지 않는다. 클러스터가 아닌 로컬 Docker 랩(실제 Falco·falcosidekick·Alertmanager)에서
+  확인했으며, 차트 타르볼·이미지 2개·GitOps push는 별도로 클러스터에 반영해야 하고, Ubuntu 26.04 /
+  커널 7.0 Vagrant 박스와 Kubernetes CRI 경로에서의 Falco는 아직 관측되지 않았다.
 - **포털이 `narwhal-portal:1.1.4`로 고정됨 (기존 1.1.0, 중간에 #467·#477·#481이 1.1.1·1.1.2·1.1.3으로
   고정).** 1.1.2는 클러스터 인프라 화면이 비던 문제(#475)를, 1.1.3은 권한 관리 표에 역할 기본 도구가
   보이지 않던 문제(#479)를, 1.1.4는 보안 화면이 비던 문제(#501)를 고치고 `fast-uri`의 권고 4건을

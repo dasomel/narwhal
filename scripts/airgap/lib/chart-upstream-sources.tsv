@@ -19,6 +19,7 @@ base	helm-repo	https://istio-release.storage.googleapis.com/charts
 cert-manager	helm-repo	https://charts.jetstack.io
 chaos-mesh	helm-repo	https://charts.chaos-mesh.org
 cni	helm-repo	https://istio-release.storage.googleapis.com/charts
+falco	helm-repo	https://falcosecurity.github.io/charts
 harbor	helm-repo	https://helm.goharbor.io
 headlamp	helm-repo	https://kubernetes-sigs.github.io/headlamp/
 istiod	helm-repo	https://istio-release.storage.googleapis.com/charts

@@ -38,6 +38,8 @@ chrislusf/seaweedfs	seaweedfs/seaweedfs	Apache-2.0
 docker.gitea.com/gitea	go-gitea/gitea	MIT	
 docker.io/alpine/git	alpinelinux/docker-alpine	MIT	
 docker.io/alpine/k8s	alpinelinux/docker-alpine	MIT	
+docker.io/falcosecurity/falco	falcosecurity/falco	Apache-2.0	
+docker.io/falcosecurity/falcosidekick	falcosecurity/falcosidekick	Apache-2.0	
 docker.io/grafana/alloy	grafana/alloy	Apache-2.0	
 docker.io/grafana/grafana	grafana/grafana	AGPL-3.0	
 docker.io/grafana/loki	grafana/loki	AGPL-3.0	

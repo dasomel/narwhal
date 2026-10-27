@@ -1,19 +1,56 @@
 {{- /*
-Falco DISABLED 2026-07-08 — Ubuntu 26.04 kernel 7.0 incompatibility.
-Falco 0.39.2 (chart 4.16.0) modern_ebpf probe fails `scap_init` on kernel 7.0.0
-("An error occurred in an event source, forcing termination" -> "Initialization
-issues during scap_init") -> DaemonSet CrashLoopBackOff on every node. Verified NOT a
-config problem: BTF present (/sys/kernel/btf/vmlinux), pod privileged, driver already
-modern_ebpf. The only lever is a Falco upgrade, but 0.39->0.43 is a BREAKING migration
-(--cri CLI flag removed; container.* fields moved to a separate container plugin so the
-bundled rules fail to compile; falco.yaml/rules schema changed) AND 0.43.x kernel-7.0
-support is still UNVERIFIED. Disabling stops the crashloop; runtime coverage remains via
-trivy-operator (vuln scan), kyverno (policy), NetworkPolicy, and STRICT mTLS.
-Re-enable: flip the guard below to `{{- if true }}` AFTER completing the Falco 0.43+
-migration (args/config/rules/container-plugin) and confirming scap_init passes on kernel 7.0.
-See docs/common/lessons-log.md 2026-07-08.
+D-FALCO-045 (2026-10-28, owner decision) — Falco 0.45.1 (chart 9.2.1) is ENABLED on every provider.
+
+History: disabled 2026-07-08 because Falco 0.39.2 (libs 0.18.2) modern_ebpf failed `scap_init` on the
+Ubuntu 26.04 / kernel 7.0 Vagrant box (docs/common/lessons-log.md 2026-07-08).
+
+Reason: 0.45.1 (libs 0.26.1, driver 11.0.1) is the first release carrying all the upstream fixes for
+kernel 7.0: falcosecurity/libs#2997 (execve verifier instruction count), falcosecurity/libs#3021
+(sendmmsg/recvmmsg bpf_loop), falcosecurity/libs#3086 (per-CPU auxmap race on preemptible kernels,
+falcosecurity/falco#3955) and falcosecurity/libs#3119 (signal_deliver verifier on newer kernels). Upstream
+reports no such failures on Ubuntu 24.04 / kernel 6.8 (the Kakao nodes); none of this has been observed on
+this repo's nodes yet.
+
+Cost: a privileged DaemonSet on every node, masters included (~300Mi each, see
+docs/common/master-memory-pressure.md). falcoctl is OFF (airgap), so the rules (falco-rules 5.2.0) and the
+container plugin (0.7.5) are the ones baked into the image and change only with an image bump. Kernel 7.0
+(Vagrant) is backed by upstream reports only; it has NOT been observed on this repo's nodes.
+
+Escape hatch: wrap the manifest below in a Helm "if false" guard again and push; ArgoCD prunes the app.
+03-save-helm-charts.sh and check-chart-upstream-sources.py skip a template that carries that guard,
+and they match the guard text ANYWHERE in the file, so never spell it out in a comment here.
+There is no per-OS exclusion any more: 14-gitops-bootstrap.sh used to `rm` this file on Ubuntu 26.04.
+
+Chart 4.16.0 -> 9.2.1 breaking changes handled here (falcosecurity/charts BREAKING-CHANGES.md):
+  - 7.0.0 collectors.containerd/cri/docker removed  -> collectors.containerEngine (container plugin)
+  - 9.0.0 gRPC output + server dropped             -> falco.grpc / falco.grpc_output removed; the chart FAILS
+                                                      TO RENDER if either key is present. falcosidekick now
+                                                      receives events over http_output (set by the chart).
+  - 9.0.0 legacy eBPF + gVisor dropped             -> modern_ebpf only (unchanged here)
+  - k8s_audit_rules.yaml is not in the 0.45.1 image (listed /etc/falco) -> dropped from rules_files
+
+Images come from docker.io: ghcr.io/falcosecurity/{falco,falcosidekick,falcoctl} do not exist (`crane ls`
+-> NAME_UNKNOWN), quay.io answers UNAUTHORIZED, and the only other publisher is public.ecr.aws, which is
+outside the repo's registry order (ghcr.io > registry.k8s.io > quay.io > docker.io).
+Tags are pinned here, not left to chart defaults: falcosidekick's subchart 0.14.1 declares appVersion
+2.31.1 in Chart.yaml, ships image 2.32.0 in values.yaml, and is overridden to 2.35.0 (D-FALCO-SIDEKICK).
+
+D-FALCO-SIDEKICK (2026-10-28) — falcosidekick runs 2.35.0, not the 2.32.0 that subchart 0.14.1 ships.
+Reason: 2.32.0 predates falcosecurity/falcosidekick#1366 (vulnerable Go modules, released in 2.34.0) and
+falcosecurity/falcosidekick#1390 (data race when several outputs are configured, 2.35.0; Loki and
+Alertmanager both are here). trivy
+on the images, 2026-10-28, CRITICAL/HIGH: 2.32.0 9/80, 2.35.0 3/19, 2.35.1 0/1; the 3 CRITICAL left in
+2.35.0 are in github.com/rabbitmq/amqp091-go, whose output is not enabled. 2.35.0 (2026-08-31) is the
+newest release past the 7-day cooling window; 2.35.1 (2026-10-26) becomes eligible on 2026-11-02.
+Contract diffed 2.32.0 -> 2.35.0 (config.go, main.go, handlers.go, types/, outputs/): the Loki output and
+the priority casing are identical, /ping and /healthz are unchanged, new config keys are additive; the
+Alertmanager output gains an `alertname` label (the Falco rule) and reads numeric fields as json.Number,
+nothing else. Lab 2026-10-28 (Falco 0.45.1 -> falcosidekick -> Loki stub + Alertmanager v0.33.0) passes on
+2.35.0.
+Cost: subchart 0.14.1 is released against 2.32.0, so 2.35.0 is an image override without chart-side validation.
+Escape hatch: set falcosidekick.image.tag back to 2.32.0 (alertmanager.endpoint must stay /api/v2/alerts),
+or move to 2.35.1 on or after 2026-11-02 after re-running the lab pipeline and R291.
 */}}
-{{- if false }}
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
@@ -28,41 +65,89 @@ spec:
   source:
     repoURL: http://gitea-http.devtools.svc.cluster.local:3000/api/packages/gitea-admin/helm
     chart: falco
-    targetRevision: 4.16.0
+    targetRevision: 9.2.1
     helm:
       valuesObject:
+        image:
+          # docker.io: none of ghcr.io, registry.k8s.io or quay.io hosts this image (see header).
+          registry: docker.io
+          repository: falcosecurity/falco
+          tag: "0.45.1"
+
         # modern_ebpf: Cilium(eBPF CNI)와 공존 검증된 모드.
         # CO-RE 기반 — 커널 헤더 의존성 없음, kernel module 빌드 불필요.
+        # (driver loader init 컨테이너는 modern_ebpf에서 렌더되지 않는다 — 이미지 1개 절약)
         driver:
           enabled: true
           kind: modern_ebpf
           modernEbpf:
-            # leastPrivileged:false (full privileged) — on Ubuntu 26.04 (kernel 7.0) the
-            # leastPrivileged probe failed scap_init ("error in an event source") opening
-            # the modern BPF ring buffer. Full privilege restores syscall capture.
+            # leastPrivileged:false (full privileged), unchanged. 0.45.1 was not tried with true. The July
+            # note blaming leastPrivileged for the 0.39.2 failure does not hold: 0.39.2 also fails
+            # scap_init on a kernel 7.0.14 VM when run privileged (2026-10-28 lab, lessons-log).
             leastPrivileged: false
 
         # Falco DaemonSet (모든 노드)
         tty: true
+
+        # Container/K8s metadata (Falco >= 0.41): the `container` plugin replaces the old built-in
+        # container engine. It is BAKED INTO the Falco image (/usr/share/falco/plugins/libcontainer.so),
+        # so no falcoctl artifact pull is needed. k8s.ns.name / k8s.pod.name come from the CRI socket
+        # (pod sandbox labels), so k8s-metacollector / k8smeta stay off.
+        # Only the CRI engine on the kubeadm containerd socket is enabled: each enabled engine adds a
+        # hostPath mount of its socket directory to a privileged pod.
         collectors:
           enabled: true
-          containerd:
+          containerEngine:
             enabled: true
-            socket: /run/containerd/containerd.sock
+            engines:
+              docker:
+                enabled: false
+              podman:
+                enabled: false
+              containerd:
+                enabled: false
+              cri:
+                enabled: true
+                sockets: ["/run/containerd/containerd.sock"]
+              lxc:
+                enabled: false
+              libvirt_lxc:
+                enabled: false
+              bpm:
+                enabled: false
+
+        # Airgap: Kakao nodes cannot reach ghcr.io / docker.io, and falcoctl pulls rules and the container
+        # plugin from ghcr.io/falcosecurity at runtime. Both are baked into the image, so the install
+        # init container and the follow sidecar are disabled (also removes the falcoctl image from the
+        # mirror list). Rule updates now arrive with the Falco image bump, not between bumps.
+        falcoctl:
+          artifact:
+            install:
+              enabled: false
+            follow:
+              enabled: false
 
         # Prometheus 메트릭 endpoint
         metrics:
           enabled: true
           interval: 1h
-          outputRule: true
+          # outputRule:false — with true, Falco 0.45.1 emits a "Falco internal: metrics snapshot" event
+          # (priority Informational, source "internal") at start and every `interval`, even with
+          # `priority: notice`; falcosidekick ships it to Loki and the portal feed ({rule=~".+"}) would list
+          # one such row per node per hour. Prometheus scrapes the same counters from the webserver.
+          outputRule: false
           rulesCountersEnabled: true
           resourceUtilizationEnabled: true
           stateCountersEnabled: true
           kernelEventCountersEnabled: true
 
         # ServiceMonitor (Prometheus 자동 수집)
+        # prometheus-stack only selects monitors labelled release=prometheus-stack
+        # (see gitops/resources/istio-telemetry-monitors.yaml); without the label the monitor is never scraped.
         serviceMonitor:
           create: true
+          labels:
+            release: prometheus-stack
 
         falco:
           json_output: true
@@ -70,18 +155,21 @@ spec:
           log_stderr: true
           log_syslog: false
           priority: notice
-          # 기본 룰셋 + Kubernetes 룰
+          # 기본 룰셋 (이미지 번들 falco-rules 5.2.0). k8s_audit_rules.yaml은 0.45.1 이미지에 없다.
           rules_files:
             - /etc/falco/falco_rules.yaml
             - /etc/falco/falco_rules.local.yaml
-            - /etc/falco/k8s_audit_rules.yaml
             - /etc/falco/rules.d
-          # gRPC: Falcosidekick이 이걸 통해 이벤트 수신
-          grpc:
-            enabled: true
-            bind_address: "unix:///run/falco/falco.sock"
-          grpc_output:
-            enabled: true
+          # The portal (portal/src/lib/falco.ts) reads k8s.ns.name, k8s.pod.name, container.name and
+          # container.image.repository from output_fields. Since 0.41 the bundled rules no longer print
+          # %container.info: those keys exist only because the container plugin's suggested output
+          # appends them (observed on 0.45.1 + plugin 0.7.5: output_fields carry container.id/.name/
+          # .image.repository/.image.tag and k8s.ns.name/k8s.pod.name). Keep suggested_output on.
+          append_output:
+            - suggested_output: true
+          # gRPC output/server was dropped in Falco 0.44 (chart 9.0.0): the chart fails to render with
+          # falco.grpc / falco.grpc_output. falcosidekick is fed over http_output, which the chart wires
+          # automatically when falcosidekick.enabled=true.
 
         # 노드 리소스 제약
         resources:
@@ -106,6 +194,12 @@ spec:
         falcosidekick:
           enabled: true
           replicaCount: 1
+          image:
+            # docker.io: none of ghcr.io, registry.k8s.io or quay.io hosts this image (see header).
+            registry: docker.io
+            repository: falcosecurity/falcosidekick
+            # D-FALCO-SIDEKICK (header): the subchart default is 2.32.0.
+            tag: "2.35.0"
           # Web UI 비활성 (portal에서 자체 UI 제공)
           webui:
             enabled: false
@@ -120,6 +214,8 @@ spec:
               memory: 128Mi
           serviceMonitor:
             enabled: true
+            additionalLabels:
+              release: prometheus-stack
           config:
             debug: false
             # 모든 priority 이벤트를 Loki에 적재 → portal에서 LogQL로 조회
@@ -128,15 +224,28 @@ spec:
               user: ""
               tenant: ""
               minimumpriority: "informational"
-              tenantmap: ""
-              # Loki 스트림 라벨: source=falco
-              extralabels: "source,rule,priority,hostname"
+              # REQUIRED by the portal: the default `text` format stores only the output string, and
+              # portal/src/lib/falco.ts JSON.parse()s every Loki line (a text line is silently dropped).
+              format: json
+              # falcosidekick 2.31-2.35 (outputs/loki.go) sets the stream labels rule, source and priority,
+              # plus hostname, tags, k8s_ns_name and k8s_pod_name when present. `source` is the Falco EVENT
+              # source ("syscall"), never the literal "falco", and `priority` is capitalised ("Critical").
+              # The portal selects on {rule=~".+"} and matches both spellings of priority.
+              # extralabels names additional output_fields keys; none are needed.
+              extralabels: ""
             # critical 이상은 Alertmanager로 알림 발사
             alertmanager:
               hostport: "http://prometheus-stack-kube-prom-alertmanager.monitoring.svc.cluster.local:9093"
+              # Chart 0.14.1 passes ALERTMANAGER_ENDPOINT=/api/v1/alerts, which overrides falcosidekick's own
+              # default. Alertmanager removed the v1 API in 0.27.0 and answers 410 Gone (ours is v0.33.0, see
+              # images.txt), so with the chart default every Critical alert is dropped ("AlertManager - 410
+              # Gone"). Checked 2026-10-28 against a real quay.io/prometheus/alertmanager:v0.33.0: v1 -> HTTP
+              # 410, v2 -> POST OK (200) and GET /api/v2/alerts lists the alert with source=falco.
+              endpoint: "/api/v2/alerts"
               minimumpriority: "critical"
               # default labels 자동 매핑 (rule, priority, hostname → labels)
-              expirealert: false
+              # Alertmanager alerts always carry source=falco (hardcoded in falcosidekick
+              # outputs/alertmanager.go); kept explicit as the contract for alert routing.
               extralabels: "source:falco"
 
   destination:
@@ -149,4 +258,3 @@ spec:
     syncOptions:
       - CreateNamespace=true
       - ServerSideApply=true
-{{- end }}

@@ -6,7 +6,7 @@ set -euo pipefail
 #=========================================
 # Validates the FULL SSO chain including:
 # - Keycloak realm, scopes, mappers, clients
-# - Token flows with groups claim per client
+# - Token claims per client (admin evaluate-scopes; password grant must be rejected)
 # - TLS skip-verify for self-signed certs
 # - OIDC configuration in each app
 # - HTTPS endpoints and redirect chains
@@ -29,6 +29,7 @@ fi
 
 DOMAIN="${DOMAIN:-local.narwhal.internal}"
 KEYCLOAK_URL="https://keycloak.${DOMAIN}"
+REALM="${REALM:-narwhal}"   # 11-2-keycloak-config.sh; the old realm name was kubernetes
 PASS_COUNT=0
 FAIL_COUNT=0
 WARN_COUNT=0
@@ -39,21 +40,6 @@ warn() { WARN_COUNT=$((WARN_COUNT + 1)); echo "  WARN  $1"; }
 
 should_run() {
   [ -z "${SECTION_FILTER}" ] || [ "${SECTION_FILTER}" = "$1" ]
-}
-
-# Decode JWT payload (base64url → base64 with proper padding)
-decode_jwt_payload() {
-  local token="$1"
-  local payload
-  payload=$(echo "${token}" | cut -d. -f2)
-  # base64url → base64: replace - with +, _ with /
-  payload="${payload//-/+}"
-  payload="${payload//_//}"
-  # Add padding
-  local mod=$((${#payload} % 4))
-  if [ $mod -eq 2 ]; then payload="${payload}=="; fi
-  if [ $mod -eq 3 ]; then payload="${payload}="; fi
-  echo "${payload}" | base64 -d 2>/dev/null
 }
 
 # Get Keycloak admin token
@@ -67,6 +53,24 @@ get_admin_token() {
     -d "password=${pass}" \
     -d "grant_type=password" 2>/dev/null \
     | python3 -c 'import sys,json; print(json.load(sys.stdin).get("access_token",""))' 2>/dev/null
+}
+
+# Print the access-token payload (JSON) that <clientId> would issue to <username>.
+# Every realm client has directAccessGrantsEnabled=false, so no user token can be
+# minted from a script; Keycloak's admin "evaluate scopes" endpoint builds the same
+# token without a login. Needs ADMIN_TOKEN from get_admin_token.
+example_token() {
+  local client="$1" user="$2" client_uuid user_id
+  client_uuid=$(curl -sk -H "Authorization: Bearer ${ADMIN_TOKEN}" \
+    "${KEYCLOAK_URL}/admin/realms/${REALM}/clients?clientId=${client}" 2>/dev/null \
+    | python3 -c 'import sys,json; d=json.load(sys.stdin); print(d[0]["id"] if d else "")' 2>/dev/null || true)
+  user_id=$(curl -sk -H "Authorization: Bearer ${ADMIN_TOKEN}" \
+    "${KEYCLOAK_URL}/admin/realms/${REALM}/users?username=${user}&exact=true" 2>/dev/null \
+    | python3 -c 'import sys,json; d=json.load(sys.stdin); print(d[0]["id"] if d else "")' 2>/dev/null || true)
+  [ -n "${client_uuid}" ] && [ -n "${user_id}" ] || return 0
+  curl -sk -H "Authorization: Bearer ${ADMIN_TOKEN}" \
+    "${KEYCLOAK_URL}/admin/realms/${REALM}/clients/${client_uuid}/evaluate-scopes/generate-example-access-token?userId=${user_id}&scope=openid" \
+    2>/dev/null
 }
 
 echo "============================================"
@@ -96,7 +100,7 @@ if should_run "keycloak"; then
   fi
 
   OIDC_CODE=$(curl -sk -o /dev/null -w '%{http_code}' \
-    "${KEYCLOAK_URL}/realms/kubernetes/.well-known/openid-configuration" 2>/dev/null || echo "000")
+    "${KEYCLOAK_URL}/realms/${REALM}/.well-known/openid-configuration" 2>/dev/null || echo "000")
   if [ "${OIDC_CODE}" = "200" ]; then
     pass "OIDC Discovery: HTTP ${OIDC_CODE}"
   else
@@ -124,7 +128,7 @@ if should_run "scopes"; then
   else
     # Check 'groups' client scope exists
     GROUPS_SCOPE=$(curl -sk -H "Authorization: Bearer ${ADMIN_TOKEN}" \
-      "${KEYCLOAK_URL}/admin/realms/kubernetes/client-scopes" 2>/dev/null \
+      "${KEYCLOAK_URL}/admin/realms/${REALM}/client-scopes" 2>/dev/null \
       | python3 -c "
 import sys,json
 scopes = json.load(sys.stdin)
@@ -141,7 +145,7 @@ else:
 
       # Check groups mapper in scope
       MAPPER_EXISTS=$(curl -sk -H "Authorization: Bearer ${ADMIN_TOKEN}" \
-        "${KEYCLOAK_URL}/admin/realms/kubernetes/client-scopes/${GROUPS_SCOPE_ID}/protocol-mappers/models" 2>/dev/null \
+        "${KEYCLOAK_URL}/admin/realms/${REALM}/client-scopes/${GROUPS_SCOPE_ID}/protocol-mappers/models" 2>/dev/null \
         | python3 -c "
 import sys,json
 mappers = json.load(sys.stdin)
@@ -161,7 +165,7 @@ else:
 
       # Check groups scope assigned to each client
       CLIENTS_JSON=$(curl -sk -H "Authorization: Bearer ${ADMIN_TOKEN}" \
-        "${KEYCLOAK_URL}/admin/realms/kubernetes/clients" 2>/dev/null)
+        "${KEYCLOAK_URL}/admin/realms/${REALM}/clients" 2>/dev/null)
 
       for client_name in kubernetes argocd grafana gitea harbor headlamp oauth2-proxy; do
         CLIENT_UUID=$(echo "${CLIENTS_JSON}" | python3 -c "
@@ -173,7 +177,7 @@ print(matches[0] if matches else '')
 
         if [ -n "${CLIENT_UUID}" ]; then
           HAS_GROUPS=$(curl -sk -H "Authorization: Bearer ${ADMIN_TOKEN}" \
-            "${KEYCLOAK_URL}/admin/realms/kubernetes/clients/${CLIENT_UUID}/default-client-scopes" 2>/dev/null \
+            "${KEYCLOAK_URL}/admin/realms/${REALM}/clients/${CLIENT_UUID}/default-client-scopes" 2>/dev/null \
             | python3 -c "
 import sys,json
 scopes = json.load(sys.stdin)
@@ -206,18 +210,18 @@ if should_run "clients"; then
     fail "Cannot check clients: admin auth failed"
   else
     REALM_CHECK=$(curl -sk -H "Authorization: Bearer ${ADMIN_TOKEN}" \
-      "${KEYCLOAK_URL}/admin/realms/kubernetes" 2>/dev/null \
+      "${KEYCLOAK_URL}/admin/realms/${REALM}" 2>/dev/null \
       | python3 -c 'import sys,json; print(json.load(sys.stdin).get("realm",""))' 2>/dev/null)
-    if [ "${REALM_CHECK}" = "kubernetes" ]; then
-      pass "Realm 'kubernetes': exists"
+    if [ "${REALM_CHECK}" = "${REALM}" ]; then
+      pass "Realm '${REALM}': exists"
     else
-      fail "Realm 'kubernetes': not found"
+      fail "Realm '${REALM}': not found"
     fi
 
     CLIENTS_JSON=$(curl -sk -H "Authorization: Bearer ${ADMIN_TOKEN}" \
-      "${KEYCLOAK_URL}/admin/realms/kubernetes/clients" 2>/dev/null)
+      "${KEYCLOAK_URL}/admin/realms/${REALM}/clients" 2>/dev/null)
 
-    for client in argocd grafana gitea harbor headlamp oauth2-proxy; do
+    for client in argocd grafana gitea harbor headlamp; do   # oauth2-proxy removed in bc8bce28
       CLIENT_INFO=$(echo "${CLIENTS_JSON}" | python3 -c "
 import sys,json
 clients = json.load(sys.stdin)
@@ -245,7 +249,7 @@ else:
 
     # Users & Groups
     USER_COUNT=$(curl -sk -H "Authorization: Bearer ${ADMIN_TOKEN}" \
-      "${KEYCLOAK_URL}/admin/realms/kubernetes/users" 2>/dev/null \
+      "${KEYCLOAK_URL}/admin/realms/${REALM}/users" 2>/dev/null \
       | python3 -c 'import sys,json; print(len(json.load(sys.stdin)))' 2>/dev/null || echo "0")
     if [ "${USER_COUNT}" -ge 4 ]; then
       pass "Users: ${USER_COUNT} (admin, dev, view, guest)"
@@ -254,7 +258,7 @@ else:
     fi
 
     GROUP_COUNT=$(curl -sk -H "Authorization: Bearer ${ADMIN_TOKEN}" \
-      "${KEYCLOAK_URL}/admin/realms/kubernetes/groups" 2>/dev/null \
+      "${KEYCLOAK_URL}/admin/realms/${REALM}/groups" 2>/dev/null \
       | python3 -c 'import sys,json; print(len(json.load(sys.stdin)))' 2>/dev/null || echo "0")
     if [ "${GROUP_COUNT}" -ge 4 ]; then
       pass "Groups: ${GROUP_COUNT} (cluster-admin, developer, viewer, guest)"
@@ -269,14 +273,16 @@ fi
 # 4. TOKEN FLOWS (with groups scope)
 #=========================================
 if should_run "token"; then
-  echo "--- [4/9] Token Flows (Password Grant) ---"
+  echo "--- [4/9] Token Claims ---"
 
-  # The kubernetes client is public but directAccessGrantsEnabled=false, so a
-  # password grant must be REJECTED rather than minting a token.
-  TOKEN_RESP=$(curl -sk -X POST "${KEYCLOAK_URL}/realms/kubernetes/protocol/openid-connect/token" \
+  # The kubernetes client is public with directAccessGrantsEnabled=false, so a
+  # password grant must be REJECTED rather than minting a token. Send the real
+  # password: with a wrong one, a rejection would prove nothing about the grant.
+  ADMIN_USER_PASS=$(kubectl get secret keycloak-user-passwords -n iam -o jsonpath='{.data.admin}' 2>/dev/null | base64 -d)
+  TOKEN_RESP=$(curl -sk -X POST "${KEYCLOAK_URL}/realms/${REALM}/protocol/openid-connect/token" \
     -d "client_id=kubernetes" \
     -d "username=admin" \
-    -d "password=admin" \
+    --data-urlencode "password=${ADMIN_USER_PASS}" \
     -d "grant_type=password" 2>/dev/null)
 
   ACCESS_TOKEN=$(echo "${TOKEN_RESP}" | python3 -c 'import sys,json; print(json.load(sys.stdin).get("access_token",""))' 2>/dev/null)
@@ -296,48 +302,45 @@ if should_run "token"; then
     esac
   fi
 
-  # Test with argocd client (confidential, with explicit groups scope)
-  ARGOCD_RESP=$(curl -sk -X POST "${KEYCLOAK_URL}/realms/kubernetes/protocol/openid-connect/token" \
-    -d "client_id=argocd" \
-    -d "client_secret=argocd-secret" \
-    -d "username=admin" \
-    -d "password=admin" \
-    -d "grant_type=password" \
-    -d "scope=openid profile email groups" 2>/dev/null)
+  ADMIN_TOKEN=$(get_admin_token)
+  if [ -z "${ADMIN_TOKEN}" ]; then
+    fail "Cannot evaluate token claims: admin auth failed"
+  else
+    # Each seed user's kubernetes-client token: exactly its own group, the issuer
+    # the API server trusts, and the kubernetes audience.
+    for pair in admin:cluster-admin dev:developer view:viewer guest:guest; do
+      user="${pair%%:*}" group="${pair#*:}"
+      CLAIMS=$(example_token kubernetes "${user}" | python3 -c '
+import sys, json
+d = json.load(sys.stdin)
+aud = d.get("aud", [])
+aud = [aud] if isinstance(aud, str) else aud
+print("%s|%s|%s" % (",".join(d.get("groups", [])), d.get("iss", ""), "kubernetes" in aud))' 2>/dev/null || true)
+      if [ -z "${CLAIMS}" ]; then
+        fail "${user}: no example token (client or user missing)"
+        continue
+      fi
+      IFS='|' read -r TOKEN_GROUPS TOKEN_ISS TOKEN_AUD <<< "${CLAIMS}"
+      if [ "${TOKEN_GROUPS}" = "${group}" ]; then
+        pass "${user}: groups=[${group}]"
+      else
+        fail "${user}: groups=[${TOKEN_GROUPS}] (expected [${group}])"
+      fi
+      if [ "${TOKEN_ISS}" = "${KEYCLOAK_URL}/realms/${REALM}" ] && [ "${TOKEN_AUD}" = "True" ]; then
+        pass "${user}: iss=${TOKEN_ISS}, aud has kubernetes"
+      else
+        fail "${user}: iss=${TOKEN_ISS} aud-has-kubernetes=${TOKEN_AUD} (expected ${KEYCLOAK_URL}/realms/${REALM}, True)"
+      fi
+    done
 
-  ARGOCD_TOKEN=$(echo "${ARGOCD_RESP}" | python3 -c 'import sys,json; print(json.load(sys.stdin).get("access_token",""))' 2>/dev/null)
-
-  if [ -n "${ARGOCD_TOKEN}" ]; then
-    SCOPE_IN_TOKEN=$(decode_jwt_payload "${ARGOCD_TOKEN}" \
-      | python3 -c 'import sys,json; print(json.load(sys.stdin).get("scope",""))' 2>/dev/null)
-    if echo "${SCOPE_IN_TOKEN}" | grep -q "groups"; then
+    # argocd requests the groups scope explicitly; it must reach the token.
+    SCOPE_IN_TOKEN=$(example_token argocd admin \
+      | python3 -c 'import sys,json; print(json.load(sys.stdin).get("scope",""))' 2>/dev/null || true)
+    if echo "${SCOPE_IN_TOKEN}" | grep -qw "groups"; then
       pass "argocd client: groups scope in token (${SCOPE_IN_TOKEN})"
     else
       fail "argocd client: groups scope missing from token (${SCOPE_IN_TOKEN})"
     fi
-  else
-    ERROR=$(echo "${ARGOCD_RESP}" | python3 -c 'import sys,json; d=json.load(sys.stdin); print(d.get("error_description",d.get("error","unknown")))' 2>/dev/null)
-    fail "argocd client: ${ERROR}"
-  fi
-
-  # Test developer user
-  DEV_TOKEN=$(curl -sk -X POST "${KEYCLOAK_URL}/realms/kubernetes/protocol/openid-connect/token" \
-    -d "client_id=kubernetes" \
-    -d "username=dev" \
-    -d "password=dev" \
-    -d "grant_type=password" 2>/dev/null \
-    | python3 -c 'import sys,json; print(json.load(sys.stdin).get("access_token",""))' 2>/dev/null)
-
-  if [ -n "${DEV_TOKEN}" ]; then
-    DEV_GROUPS=$(decode_jwt_payload "${DEV_TOKEN}" \
-      | python3 -c 'import sys,json; print(json.load(sys.stdin).get("groups",[]))' 2>/dev/null)
-    if echo "${DEV_GROUPS}" | grep -q "developer"; then
-      pass "dev: groups=[developer]"
-    else
-      fail "dev: groups missing developer — ${DEV_GROUPS}"
-    fi
-  else
-    fail "developer: token failed"
   fi
   echo ""
 fi
@@ -573,36 +576,30 @@ fi
 if should_run "rbac"; then
   echo "--- [8/9] OIDC RBAC (K8s Access Control) ---"
 
-  K8S_CA=/etc/kubernetes/pki/ca.crt
-  K8S_SERVER=https://192.168.56.100:6443
-  OIDC_KC="${KEYCLOAK_URL}/realms/kubernetes/protocol/openid-connect/token"
+  # The API server must trust this realm and client and add the oidc: prefixes
+  # that the RBAC subjects in gitops/resources/rbac-policies.yaml use.
+  APISERVER_CMD=$(kubectl get pods -n kube-system -l component=kube-apiserver \
+    -o jsonpath='{.items[0].spec.containers[0].command}' 2>/dev/null)
+  for flag in "oidc-issuer-url=${KEYCLOAK_URL}/realms/${REALM}" "oidc-client-id=kubernetes" \
+              "oidc-username-claim=preferred_username" "oidc-groups-claim=groups" \
+              "oidc-username-prefix=oidc:" "oidc-groups-prefix=oidc:"; do
+    if echo "${APISERVER_CMD}" | grep -qF -- "\"--${flag}\""; then
+      pass "API server: --${flag}"
+    else
+      fail "API server: --${flag} not set"
+    fi
+  done
 
-  # Helper: get OIDC token for user
-  get_oidc_token() {
-    local user="$1" pass="$2"
-    curl -sk -X POST "${OIDC_KC}" \
-      -d "client_id=kubernetes" \
-      -d "username=${user}" \
-      -d "password=${pass}" \
-      -d "grant_type=password" \
-      -d "scope=openid groups" 2>/dev/null \
-      | python3 -c 'import sys,json; print(json.load(sys.stdin).get("access_token",""))' 2>/dev/null
-  }
-
-  # Helper: run kubectl with OIDC token (no client-cert interference)
-  oidc_kubectl() {
-    local token="$1"; shift
-    KUBECONFIG=/dev/null kubectl --server="${K8S_SERVER}" --certificate-authority="${K8S_CA}" \
-      --token="${token}" "$@" 2>&1
-  }
-
-  # Helper: test can-i and check expected result
+  # No user token can be scripted (password grant is disabled), so impersonate
+  # the identity the API server derives from one: user oidc:<preferred_username>,
+  # groups oidc:<group> plus system:authenticated. Section 4 covers the claims.
   # Note: kubectl may emit warnings (e.g., "resource 'nodes' is not namespace scoped")
   # so we extract only the last line (yes/no) for comparison
   test_rbac() {
-    local label="$1" token="$2" expected="$3"; shift 3
+    local label="$1" user="$2" group="$3" expected="$4"; shift 4
     local raw_result result
-    raw_result=$(oidc_kubectl "${token}" auth can-i "$@" 2>&1)
+    raw_result=$(kubectl auth can-i "$@" --as="oidc:${user}" \
+      --as-group="oidc:${group}" --as-group=system:authenticated 2>&1 || true)   # "no" exits 1; set -e
     result=$(echo "${raw_result}" | tail -1)
     if [ "${result}" = "${expected}" ]; then
       pass "${label}: ${result}"
@@ -611,46 +608,30 @@ if should_run "rbac"; then
     fi
   }
 
-  # Get tokens
-  ADMIN_TOKEN=$(get_oidc_token admin admin)
-  DEV_TOKEN=$(get_oidc_token dev dev)
-  VIEW_TOKEN=$(get_oidc_token view view)
-  GUEST_TOKEN=$(get_oidc_token guest guest)
+  # admin → platform-admin: broad workload access, but no node or RBAC mutation
+  test_rbac "admin get nodes" admin cluster-admin "yes" get nodes
+  test_rbac "admin create pods kube-system" admin cluster-admin "yes" create pods -n kube-system
+  test_rbac "admin delete nodes" admin cluster-admin "no" delete nodes
+  test_rbac "admin create clusterrolebindings" admin cluster-admin "no" create clusterrolebindings
 
-  if [ -z "${ADMIN_TOKEN}" ] || [ -z "${DEV_TOKEN}" ] || [ -z "${VIEW_TOKEN}" ] || [ -z "${GUEST_TOKEN}" ]; then
-    fail "Could not obtain OIDC tokens (admin=${#ADMIN_TOKEN} dev=${#DEV_TOKEN} view=${#VIEW_TOKEN} guest=${#GUEST_TOKEN})"
-  else
-    # Verify whoami (output format varies by kubectl version: table or YAML)
-    WHOAMI_OUTPUT=$(oidc_kubectl "${ADMIN_TOKEN}" auth whoami 2>/dev/null)
-    if echo "${WHOAMI_OUTPUT}" | grep -q "oidc:admin"; then
-      pass "admin whoami: oidc:admin"
-    else
-      ADMIN_USER=$(echo "${WHOAMI_OUTPUT}" | grep -i "username" | head -1)
-      fail "admin whoami: '${ADMIN_USER}' (expected oidc:admin)"
-    fi
+  # dev → developer: cluster-wide read (no nodes, no secrets), writes only in dev
+  test_rbac "dev create pods in dev" dev developer "yes" create pods -n dev
+  test_rbac "dev get pods in devtools" dev developer "yes" get pods -n devtools
+  test_rbac "dev get pods in monitoring" dev developer "yes" get pods -n monitoring
+  test_rbac "dev create pods in kube-system" dev developer "no" create pods -n kube-system
+  test_rbac "dev get secrets in kube-system" dev developer "no" get secrets -n kube-system
+  test_rbac "dev get nodes" dev developer "no" get nodes
 
-    # admin: full cluster access
-    test_rbac "admin get nodes" "${ADMIN_TOKEN}" "yes" get nodes
-    test_rbac "admin create pods kube-system" "${ADMIN_TOKEN}" "yes" create pods -n kube-system
+  # view → platform-viewer: cluster-wide read, including nodes; no writes, no secrets
+  test_rbac "view get pods in dev" view viewer "yes" get pods -n dev
+  test_rbac "view get pods in kube-system" view viewer "yes" get pods -n kube-system
+  test_rbac "view get nodes" view viewer "yes" get nodes
+  test_rbac "view create pods in dev" view viewer "no" create pods -n dev
+  test_rbac "view get secrets in dev" view viewer "no" get secrets -n dev
 
-    # dev: edit in dev, view in devtools/monitoring, NO access elsewhere
-    test_rbac "dev create pods in dev" "${DEV_TOKEN}" "yes" create pods -n dev
-    test_rbac "dev get pods in devtools" "${DEV_TOKEN}" "yes" get pods -n devtools
-    test_rbac "dev get pods in monitoring" "${DEV_TOKEN}" "yes" get pods -n monitoring
-    test_rbac "dev create pods in kube-system" "${DEV_TOKEN}" "no" create pods -n kube-system
-    test_rbac "dev get nodes" "${DEV_TOKEN}" "no" get nodes
-
-    # view: view in dev/devtools/monitoring, NO write, NO access elsewhere
-    test_rbac "view get pods in dev" "${VIEW_TOKEN}" "yes" get pods -n dev
-    test_rbac "view get pods in devtools" "${VIEW_TOKEN}" "yes" get pods -n devtools
-    test_rbac "view create pods in dev" "${VIEW_TOKEN}" "no" create pods -n dev
-    test_rbac "view get pods in kube-system" "${VIEW_TOKEN}" "no" get pods -n kube-system
-    test_rbac "view get nodes" "${VIEW_TOKEN}" "no" get nodes
-
-    # guest: NO access at all
-    test_rbac "guest get pods in dev" "${GUEST_TOKEN}" "no" get pods -n dev
-    test_rbac "guest get nodes" "${GUEST_TOKEN}" "no" get nodes
-  fi
+  # guest: no Kubernetes binding at all
+  test_rbac "guest get pods in dev" guest guest "no" get pods -n dev
+  test_rbac "guest get nodes" guest guest "no" get nodes
   echo ""
 fi
 

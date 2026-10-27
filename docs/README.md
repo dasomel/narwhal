@@ -48,6 +48,7 @@ DNS, 이미지 반입 경로)은 완전히 다르다. 섞어두면 어느 절차
 | [static-pod-manifest-protection.md](./common/static-pod-manifest-protection.md) | Control Plane Static Pod Manifest / HostPath 보호 정책 |
 | [oidc-rbac-contract.md](./common/oidc-rbac-contract.md) | OIDC 그룹 클레임 ↔ Kubernetes RBAC ↔ ArgoCD ↔ Portal 인가 계약 |
 | [app-sso-permission-matrix.md](./common/app-sso-permission-matrix.md) | 애플리케이션 SSO 및 권한 매트릭스 |
+| [sso-accounts.md](./common/sso-accounts.md) | SSO 로그인 계정 확인 — 시드 계정, 비밀번호 위치, kcadm 상태 확인 |
 | [apisix-admin-api.md](./common/apisix-admin-api.md) | APISIX Admin API 신뢰 경계와 접근 가이드 |
 | [apisix-upgrade-sequence.md](./common/apisix-upgrade-sequence.md) | APISIX 업그레이드 순서와 롤백 기준 |
 | [upgrade-orchestration.md](./common/upgrade-orchestration.md) | 업그레이드 오케스트레이션 모델 |
@@ -117,6 +118,7 @@ Terraform 사용법은 문서 디렉토리가 아니라 코드 옆에 있다:
 | 알고 싶은 것 | 어디 |
 |--------------|------|
 | 서비스 URL과 로그인 계정 | Vagrant → [dns-access.md](./vagrant/dns-access.md) · Kakao → [service-domains.md](./kakao/service-domains.md) |
+| SSO 로그인 계정 확인 | [sso-accounts.md](./common/sso-accounts.md) |
 | 비밀번호 실제 값 | `scripts/test/show-credentials.sh` (문서에 적지 않는다 — 클러스터가 생성한다) |
 | kubectl 붙이기 | [kubeconfig.md](./common/kubeconfig.md) · Kakao는 `scripts/cloud/set-config-kakao.sh` |
 | 변경을 클러스터에 반영 | [gitops-push.md](./common/gitops-push.md) — `kubectl apply`는 selfHeal이 되돌린다 |

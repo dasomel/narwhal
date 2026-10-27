@@ -90,19 +90,6 @@ if [ -f /etc/kubernetes/admin.conf ] || systemctl is-active --quiet kubelet 2>/d
   IS_CLUSTER_NODE=true
 fi
 
-# Decode JWT payload (base64url → base64 with proper padding)
-decode_jwt_payload() {
-  local token="$1"
-  local payload
-  payload=$(echo "${token}" | cut -d. -f2)
-  payload="${payload//-/+}"
-  payload="${payload//_//}"
-  local mod=$((${#payload} % 4))
-  if [ $mod -eq 2 ]; then payload="${payload}=="; fi
-  if [ $mod -eq 3 ]; then payload="${payload}="; fi
-  echo "${payload}" | base64 -d 2>/dev/null
-}
-
 # Check pod status in a namespace by label
 check_pods() {
   local ns="$1" label="$2" expected="$3" name="$4"
@@ -691,31 +678,35 @@ if should_run "keycloak"; then
     fail "Keycloak realm 'narwhal': not reachable"
   fi
 
-  # groups client scope (verify via token test if not quick)
+  # groups claim (not in quick mode). Every realm client has
+  # directAccessGrantsEnabled=false, so a password grant cannot mint a user token;
+  # Keycloak's admin "evaluate scopes" endpoint builds the token the kubernetes
+  # client would issue to admin, without a login. kcadm runs inside the pod, so
+  # this works from a workstation too.
   if ! ${QUICK_MODE}; then
-    ADMIN_PASS=$(kubectl get secret keycloak-user-passwords -n iam -o jsonpath='{.data.admin}' 2>/dev/null | base64 -d || echo "")
-    TOKEN_RESP=""
-    if [ -n "${ADMIN_PASS}" ]; then
-      TOKEN_RESP=$(curl -sk -X POST "https://keycloak.${DOMAIN}/realms/narwhal/protocol/openid-connect/token" \
-        -d "grant_type=password" -d "client_id=kubernetes" -d "username=admin" \
-        -d "password=${ADMIN_PASS}" -d "scope=openid groups" 2>/dev/null || echo "")
-    fi
-    if echo "${TOKEN_RESP}" | grep -q "access_token"; then
-      pass "OIDC token grant: success (scope=openid groups)"
-      # Verify groups claim in token
-      ACCESS_TOKEN=$(echo "${TOKEN_RESP}" | python3 -c 'import sys,json; print(json.load(sys.stdin).get("access_token",""))' 2>/dev/null || echo "")
-      if [ -n "${ACCESS_TOKEN}" ]; then
-        GROUPS_CLAIM=$(decode_jwt_payload "${ACCESS_TOKEN}" | python3 -c 'import sys,json; g=json.load(sys.stdin).get("groups",[]); print(",".join(g))' 2>/dev/null || echo "")
-        if echo "${GROUPS_CLAIM}" | grep -q "cluster-admin"; then
-          pass "OIDC groups claim: admin has cluster-admin"
+    KC_ADMIN_USER=$(kubectl get secret keycloak-initial-admin -n iam -o jsonpath='{.data.username}' 2>/dev/null | base64 -d || echo "")
+    KC_ADMIN_PASS=$(kubectl get secret keycloak-initial-admin -n iam -o jsonpath='{.data.password}' 2>/dev/null | base64 -d || echo "")
+    kcadm() { kubectl exec -n iam keycloak-0 -c keycloak -- /opt/keycloak/bin/kcadm.sh "$@" 2>/dev/null; }
+    first_id() { python3 -c 'import sys,json; d=json.load(sys.stdin); print(d[0]["id"] if d else "")' 2>/dev/null || echo ""; }
+    GROUPS_CLAIM=""
+    if [ -n "${KC_ADMIN_PASS}" ] && kcadm config credentials --server http://localhost:8080 \
+         --realm master --user "${KC_ADMIN_USER}" --password "${KC_ADMIN_PASS}" >/dev/null; then
+      K8S_CLIENT_UUID=$(kcadm get clients -r narwhal -q clientId=kubernetes --fields id | first_id)
+      KC_ADMIN_UID=$(kcadm get users -r narwhal -q username=admin -q exact=true --fields id | first_id)
+      if [ -n "${K8S_CLIENT_UUID}" ] && [ -n "${KC_ADMIN_UID}" ]; then
+        GROUPS_CLAIM=$(kcadm get "clients/${K8S_CLIENT_UUID}/evaluate-scopes/generate-example-access-token" \
+          -r narwhal -q "userId=${KC_ADMIN_UID}" -q scope=openid \
+          | python3 -c 'import sys,json; print(",".join(json.load(sys.stdin).get("groups",[])))' 2>/dev/null || echo "")
+        if echo "${GROUPS_CLAIM}" | grep -qw "cluster-admin"; then
+          pass "OIDC groups claim: admin has cluster-admin (kubernetes client)"
         else
-          fail "OIDC groups claim: cluster-admin not found in [${GROUPS_CLAIM}]"
+          fail "OIDC groups claim: cluster-admin not found in [${GROUPS_CLAIM}] (groups client scope missing?)"
         fi
+      else
+        fail "OIDC groups claim: kubernetes client or admin user missing in realm 'narwhal'"
       fi
-    elif echo "${TOKEN_RESP}" | grep -q "invalid_scope"; then
-      fail "OIDC token grant: invalid_scope (groups client scope missing?)"
     else
-      fail "OIDC token grant: failed"
+      fail "OIDC groups claim: Keycloak admin CLI login failed"
     fi
   fi
 

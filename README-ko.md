@@ -450,6 +450,8 @@ vagrant destroy -f
 | `view` | `viewer` | `kubectl get secret keycloak-user-passwords -n iam -o jsonpath='{.data.view}' \| base64 -d` |
 | `guest` | `guest` | `kubectl get secret keycloak-user-passwords -n iam -o jsonpath='{.data.guest}' \| base64 -d` |
 
+계정·그룹 상태 확인과 비밀번호 변경 절차: [docs/common/sso-accounts.md](docs/common/sso-accounts.md).
+
 ## Documentation
 
 문서는 **배포 대상**으로 나뉜다 — 플랫폼 계층은 같지만 노드·로드밸런서·DNS·이미지 반입

@@ -920,13 +920,13 @@ kubectl get svc keycloak-db-rw -n iam
 kubectl run -it --rm curl-test \
   --image=curlimages/curl:latest \
   --restart=Never \
-  -- curl -k https://keycloak.local.narwhal.internal/realms/kubernetes/.well-known/openid-configuration
+  -- curl -k https://keycloak.local.narwhal.internal/realms/narwhal/.well-known/openid-configuration
 
 # 내부 서비스 경유 테스트
 kubectl run -it --rm curl-test \
   --image=curlimages/curl:latest \
   --restart=Never \
-  -- curl http://keycloak-service.iam.svc.cluster.local:8080/realms/kubernetes/.well-known/openid-configuration
+  -- curl http://keycloak-service.iam.svc.cluster.local:8080/realms/narwhal/.well-known/openid-configuration
 ```
 
 #### Step 4: OAuth2-Proxy 재시작
@@ -954,13 +954,13 @@ vagrant ssh master-1 -c "sudo bash /home/vagrant/scripts/cluster/11-4-keycloak-a
 # SSO 통합 테스트 전체 실행
 vagrant ssh master-1 -c "bash /home/vagrant/scripts/test/test-sso.sh"
 
-# OIDC 토큰 발급 테스트
-KEYCLOAK_URL="https://keycloak.local.narwhal.internal"
-vagrant ssh master-1 -c "curl -k -s -X POST \
-  ${KEYCLOAK_URL}/realms/kubernetes/protocol/openid-connect/token \
-  -d 'grant_type=password&client_id=kubernetes&username=admin&password=<pass>' \
-  | jq .access_token"
+# OIDC 로그인 테스트 (호스트에서, 브라우저 로그인) — ROPC는 꺼져 있다
+kubectl oidc-login get-token \
+  --oidc-issuer-url=https://keycloak.local.narwhal.internal/realms/narwhal \
+  --oidc-client-id=kubernetes | jq -r '.status.token' | head -c 20; echo
 ```
+
+계정·그룹 상태 확인은 [SSO 계정 확인 가이드](../common/sso-accounts.md#3-계정과-그룹-상태-확인-kcadm).
 
 ### 알려진 문제: Istio Ambient Mesh Cookie 손상
 

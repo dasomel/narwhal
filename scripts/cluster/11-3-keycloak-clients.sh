@@ -8,7 +8,7 @@ source /home/vagrant/scripts/common/lib.sh
 # Group A - Native SSO (서비스 자체 OIDC/OAuth 설정):
 #   - ArgoCD   → argocd-cm ConfigMap patch
 #   - Grafana  → deployment env var injection (generic_oauth)
-#   - Gitea    → gitea admin auth add-oauth
+#   - Gitea    → gitea_upsert_keycloak_source (lib.sh)
 #   - Harbor   → Harbor API OIDC config
 #   - Headlamp → headlamp-oidc-secret + restart
 #   - OpenBao  → bao OIDC auth method
@@ -253,7 +253,7 @@ echo "  Secret: grafana-oidc-secret in monitoring namespace"
 echo "  NOTE: env var injection removed — managed by ArgoCD/Helm to prevent duplicates"
 
 # -------------------------------------------------------------------------
-# 3. Gitea — gitea admin auth add-oauth
+# 3. Gitea — gitea_upsert_keycloak_source (lib.sh, D-GITEA-OAUTH)
 # -------------------------------------------------------------------------
 echo ""
 echo "=== [3/6] Gitea ==="
@@ -271,24 +271,8 @@ GITEA_POD=$(kubectl get pod -n devtools -l app.kubernetes.io/name=gitea \
   -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
 
 if [ -n "${GITEA_POD}" ]; then
-  # 기존 Keycloak source 삭제 (재실행 안전)
-  kubectl exec -n devtools "${GITEA_POD}" -- \
-    /app/gitea/gitea admin auth delete --name keycloak 2>/dev/null || true
-
-  # add-oauth (lowercase name → URL path에서 사용)
-  kubectl exec -n devtools "${GITEA_POD}" -- \
-    /app/gitea/gitea admin auth add-oauth \
-      --name keycloak \
-      --provider openidConnect \
-      --key gitea \
-      --secret "${GITEA_SECRET}" \
-      --auto-discover-url "${DISCOVERY_URL}" \
-      --skip-local-2fa \
-      --scopes "openid profile email groups" \
-      --group-claim-name groups \
-      --admin-group cluster-admin \
-      2>/dev/null && echo "Gitea OAuth source 'keycloak' created" \
-      || echo "WARN: Gitea OAuth config failed"
+  gitea_upsert_keycloak_source "${GITEA_POD}" "${GITEA_SECRET}" "${DISCOVERY_URL}" \
+    || echo "WARN: Gitea OAuth config failed"
 else
   echo "WARN: Gitea pod not found, skipping"
 fi
@@ -734,7 +718,7 @@ echo ""
 echo "Group A - Native SSO clients:"
 echo "  [OK] ArgoCD     (argocd)     → argocd-cm OIDC + argocd-secret"
 echo "  [OK] Grafana    (grafana)    → prometheus-stack.yaml grafana.ini (Helm)"
-echo "  [OK] Gitea      (gitea)      → gitea admin auth add-oauth (source: keycloak)"
+echo "  [OK] Gitea      (gitea)      → gitea_upsert_keycloak_source (source: keycloak)"
 echo "  [OK] Harbor     (harbor)     → Harbor API OIDC config"
 echo "  [OK] Headlamp   (headlamp)   → headlamp-oidc-secret + restart"
 echo "  [OK] OpenBao    (openbao)    → bao OIDC auth method"

@@ -15,7 +15,7 @@ access guarantee.
 | Application | SSO / Keycloak client | App authorization by Keycloak group | Portal link visibility |
 | --- | --- | --- | --- |
 | Argo CD | Native OIDC; `argocd` | `cluster-admin` → ArgoCD `admin`; `developer` → sync only in `tenants/*`, plus app get/log get; `viewer` → readonly; `guest` → `role:none`, with an explicit deny for application get. | `cluster-admin`, `developer` |
-| Gitea | APISIX OIDC; `gitea` | The gateway authenticates the browser session and hands Gitea the username in `X-WEBAUTH-USER` (reverse-proxy auth with auto-registration). That path applies no group mapping: the OAuth source's `--admin-group cluster-admin` and `--group-team-map` act only on Gitea's own OAuth login, which the browser flow does not use. `12-gitea.sh` therefore pre-creates or promotes the seeded `admin` user as a Gitea site admin (D-GITEA-ADMIN); every other user is a plain Gitea user whose org/repository rights are Gitea ACLs, including a `cluster-admin` added in Keycloak later. The route has a git/automation bypass. | `cluster-admin`, `developer` |
+| Gitea | APISIX OIDC gateway gate + Gitea OAuth2 (`keycloak`, zero-click via `/user/oauth2/keycloak`, D-GITEA-OAUTH) | `cluster-admin` → Gitea site admin (`--admin-group cluster-admin`); `developer` → `narwhal/Developers` team; `viewer` → `narwhal/Viewers` team; `guest` → restricted user (`--restricted-group guest`), re-synced on every OAuth login. `ACCOUNT_LINKING=auto` with `USERNAME=preferred_username` links an existing unlinked local account of the same username on its first OAuth login and applies the group/admin sync from its second login on. The route has a git/automation bypass (`gitea-git-bypass`) and forwards browser `GET /user/login` to `/user/oauth2/keycloak` (`?direct=1` reaches the local password form for `gitea-admin`). | `cluster-admin`, `developer` |
 | Harbor | Native OIDC; `harbor` | Keycloak group `cluster-admin` is configured as Harbor's OIDC admin group. Other Harbor project permissions are managed by Harbor; no other group mapping is configured here. | `cluster-admin`, `developer` |
 | Grafana | Native OIDC; `grafana` | `cluster-admin` → Grafana `Admin`; `developer` → `Editor`; all other groups → `Viewer` through `role_attribute_path`. | `cluster-admin`, `developer`, `viewer` |
 | Prometheus | APISIX OIDC; `prometheus` | Gateway login is enforced. No group-specific authorization rule appears in the cited route/configuration. | `cluster-admin` |
@@ -45,8 +45,8 @@ Keycloak emits these bare group names in the `groups` claim. Kubernetes API serv
 
 - Group claim and Kubernetes/Portal role contract: [OIDC/RBAC contract](oidc-rbac-contract.md#2-그룹-매핑-표).
 - Service inventory and SSO integration patterns: [service domains](../kakao/service-domains.md#2-서비스-도메인).
-- Client creation and app configuration: [`11-3-keycloak-clients.sh`](../../scripts/cluster/11-3-keycloak-clients.sh).
-- Gitea site-admin seeding for reverse-proxy logins: [`12-gitea.sh`](../../scripts/cluster/12-gitea.sh).
+- Client creation and app configuration: [`11-3-keycloak-clients.sh`](../../scripts/cluster/11-3-keycloak-clients.sh) and [`lib.sh`](../../scripts/common/lib.sh) (`gitea_upsert_keycloak_source`).
+- Gitea Helm values and OAuth2 source upsert: [`12-gitea.sh`](../../scripts/cluster/12-gitea.sh).
 - Argo CD group policy: [`13-argocd.sh`](../../scripts/cluster/13-argocd.sh).
 - Kubernetes role bindings: [`rbac-policies.yaml`](../../gitops/resources/rbac-policies.yaml).
 - APISIX gateway authentication routes: [`apisix-routes.yaml`](../../gitops/charts/narwhal-platform/templates/apisix-routes.yaml).

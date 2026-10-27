@@ -75,7 +75,7 @@ Machine clients (Git CLI, ArgoCD Helm chart fetchers, cluster verification probe
    - **Git Smart HTTP**: `\.git(/|$)`, `/info/refs`, `/git-upload-pack`, `/git-receive-pack`
    - **Package Registry**: `^/api/packages/` (ArgoCD Helm index/tarball reads and chart publishing)
    - **Verification Probes**: `^/api/v1/version$`, `^/api/v1/repos/gitea-admin/narwhal-gitops$` (`scripts/test/verify-cluster.sh` readiness checks)
-   - **OAuth / Login**: `^/login/oauth/`, `^/user/login`
+   - **OAuth / Login**: `^/login/oauth/`, `^/user/login` on `gitea-git-bypass` (priority 100, handling `POST /user/login` for the local password form and non-HTML requests). Browser `GET /user/login` is matched first by `gitea-login-forward` (priority 110) and redirected to `/user/oauth2/keycloak` unless `?direct=1` (escape hatch for the local `gitea-admin` password form) or the 60-second `narwhal_gitea_sso_try` loop-guard cookie is present (`D-GITEA-OAUTH`, #491).
 
 2. **Protected API Endpoints**:
    - All other `/api/v1/*` REST endpoints (such as `/api/v1/users`, `/api/v1/admin/*`, `/api/v1/orgs`, and arbitrary repo endpoints) fall through to the default route (`gitea`, priority 0) and MUST authenticate via Keycloak OIDC (302 redirect for unauthenticated browser clients).
@@ -86,7 +86,7 @@ Machine clients (Git CLI, ArgoCD Helm chart fetchers, cluster verification probe
    - **Writes (Authenticated)**: Chart publishing (`scripts/cluster/12-gitea.sh`) requires machine credentials (`gitea-admin` basic auth or personal access token).
 
 4. **Header Stripping & Anti-Spoofing**:
-   - Both bypass and OIDC routes strip incoming `X-WEBAUTH-USER` and `X-Userinfo` via `proxy-rewrite` headers removal to prevent reverse proxy authentication spoofing (#160).
+   - Gitea reverse-proxy authentication is disabled (`ENABLE_REVERSE_PROXY_AUTHENTICATION=false`, `ENABLE_REVERSE_PROXY_AUTO_REGISTRATION=false`), and the `gitea` OIDC route no longer forwards `X-Userinfo`, access tokens, or ID tokens (`set_userinfo_header: false`, `set_access_token_header: false`, `set_id_token_header: false`). As defense in depth (#160, `D-GITEA-OAUTH`), `gitea-git-bypass` and `gitea-login-forward` strip incoming `X-WEBAUTH-USER` and `X-Userinfo` via `proxy-rewrite` headers removal, and the `gitea` route unconditionally clears `X-WEBAUTH-USER` before triggering zero-click redirect to `/user/oauth2/keycloak`.
 
 ## OS Kernel Hardening (CIS Benchmark)
 

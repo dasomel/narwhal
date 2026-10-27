@@ -95,7 +95,7 @@ kubectl -n kube-system get cm coredns -o jsonpath='{.data.Corefile}' | head -10
 | Keycloak | `keycloak.` | IAM / SSO 발급자 | `iam/keycloak-service:8080` | 자체 (admin 콘솔) |
 | ArgoCD | `argocd.` | GitOps CD | `devtools/argocd-server:80` | 앱 OIDC + 무클릭 리다이렉트 |
 | Narwhal Portal | `portal.` | 클러스터 관리 UI | `devtools/narwhal-portal:3000` | 앱 OIDC (NextAuth) |
-| Gitea | `gitea.` | Git 서버 (GitOps 소스) | `devtools/gitea-http:3000` | 게이트웨이 OIDC (+ git CLI 우회) |
+| Gitea | `gitea.` | Git 서버 (GitOps 소스) | `devtools/gitea-http:3000` | 게이트웨이 OIDC 관문 + 앱 OAuth2 (`keycloak`, 무클릭 리다이렉트 + git CLI 우회) |
 | Harbor | `harbor.` | 컨테이너 레지스트리 | `devtools/harbor:80` | 앱 OIDC + 로컬 admin |
 | Headlamp | `headlamp.` | Kubernetes UI | `devtools/headlamp:80` | 앱 OIDC + 무클릭 리다이렉트 |
 | K8s Dashboard | `dashboard.` | Kubernetes UI (공식) | `devtools/kubernetes-dashboard-kong-proxy:443` | 제로클릭 SSO (public+PKCE) |
@@ -122,17 +122,20 @@ kubectl get apisixroute -A -o jsonpath='{range .items[*].spec.http[*]}{.match.ho
 
 | 방식 | 대상 | 동작 | 실패 시 확인 |
 |------|------|------|--------------|
-| **게이트웨이 OIDC** | Gitea, Prometheus, Alertmanager, Hubble, NFS Quota | APISIX `openid-connect` 플러그인이 로그인 전 트래픽을 Keycloak으로 보낸다. 백엔드는 인증을 모른다. 예외로 Gitea는 사용자 이름을 `X-WEBAUTH-USER` 헤더로 받아 계정을 자동 생성하며, 이 경로에는 그룹 매핑이 없다 | `platform-system`의 `*-oidc-secret`, 리다이렉트 URI `…/apisix/callback` |
-| **앱 OIDC** | ArgoCD, Grafana, Harbor, Headlamp, Portal | 앱이 직접 OIDC 클라이언트로 동작. APISIX는 전달만 하고, ArgoCD·Harbor·Headlamp는 로그인 화면을 건너뛰는 리다이렉트만 더한다 | 앱 자체 설정 + Keycloak 클라이언트 시크릿 |
+| **게이트웨이 OIDC** | Prometheus, Alertmanager, Hubble, NFS Quota (및 Gitea 앞단 관문) | APISIX `openid-connect` 플러그인이 로그인 전 트래픽을 Keycloak으로 보낸다. 백엔드는 인증을 모른다. Gitea도 이 게이트웨이 관문을 유지하되 토큰·사용자 헤더는 전달하지 않고 Gitea 자체 OAuth2 로그인으로 넘긴다(D-GITEA-OAUTH) | `platform-system`의 `*-oidc-secret`, 리다이렉트 URI `…/apisix/callback` |
+| **앱 OIDC** | ArgoCD, Gitea, Grafana, Harbor, Headlamp, Portal | 앱이 직접 OIDC/OAuth2 클라이언트로 동작. ArgoCD·Harbor·Headlamp·Gitea는 로그인 화면을 건너뛰는 무클릭 리다이렉트를 더한다(Gitea는 첫 HTML 탐색과 `GET /user/login`을 `/user/oauth2/keycloak`으로 302, 로컬 `gitea-admin`은 `/user/login?direct=1`) | 앱 자체 설정 + Keycloak 클라이언트 시크릿 (`gitea`는 `…/user/oauth2/keycloak/callback` + `gitea_upsert_keycloak_source`) |
 | **제로클릭 SSO** | K8s Dashboard, OpenBao, Velero UI | APISIX가 서빙하는 동일 오리진 부트스트랩 페이지(`/sso`, `/sso/callback`)의 브라우저 JS가 code를 교환하고 토큰을 앱에 주입 | `/sso` 라우트, Dashboard는 **public + PKCE** 클라이언트 |
 | **자체** | Keycloak | 자기 자신이 발급자 | `iam/keycloak-initial-admin` |
 
-두 개의 예외 라우트가 있다:
+예외·보조 라우트가 있다:
 
 - `gitea-git-bypass` (priority 100) — Git 전송(`git clone`/`push`), 패키지 레지스트리(`/api/packages/`),
-  클러스터 검증 API(`/api/v1/version`, `/api/v1/repos/gitea-admin/narwhal-gitops`), OAuth 콜백 경로는 OIDC를
+  클러스터 검증 API(`/api/v1/version`, `/api/v1/repos/gitea-admin/narwhal-gitops`), OAuth 인가·로그인(`POST /user/login` 포함) 경로는 게이트웨이 OIDC를
   **우회**한다. 브라우저가 아닌 git/Helm CLI 및 자동화 프로브는 대화형 OIDC 리다이렉트를 수행할 수 없기 때문이다.
   그 외 모든 Gitea REST API는 OIDC 보호 하에 유지된다(#139).
+- `gitea-login-forward` (priority 110) — 브라우저의 `GET /user/login`을 `/user/oauth2/keycloak`으로 302 리다이렉트해
+  세션 만료 후 Sign In 클릭도 곧바로 Keycloak OAuth2로 보낸다(60초 `narwhal_gitea_sso_try` 루프 가드 포함,
+  로컬 비밀번호 폼은 `/user/login?direct=1` 탈출구 사용, D-GITEA-OAUTH).
 - `argocd-redirect` / `harbor-redirect` — 세션 쿠키가 없는 첫 방문을 SSO 로그인 경로로 302
   시켜 "로그인 버튼 클릭" 한 단계를 없앤다.
 

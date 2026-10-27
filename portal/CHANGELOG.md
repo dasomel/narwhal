@@ -9,7 +9,7 @@ English | [한국어](CHANGELOG-ko.md)
 
 ## [Unreleased]
 
-## [1.1.4] - 2026-10-27
+## [1.1.4] - 2026-10-28
 
 Patch release: the Security page shows vulnerability data again on clusters with many scanned
 images, and `fast-uri` is upgraded past its published advisories (narwhal#470). Everything since

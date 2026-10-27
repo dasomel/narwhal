@@ -95,6 +95,10 @@ assert(r_nav.redirect and r_nav.redirect.code == 302, "first HTML navigate GET m
 assert(r_nav.redirect.url == "/user/oauth2/keycloak?redirect_to=%2Fgitea-admin%2Fnarwhal-gitops%3Ftab%3Dcode", "unexpected redirect url: " .. tostring(r_nav.redirect and r_nav.redirect.url))
 assert(r_nav.cookie == "narwhal_gitea_sso=1; Path=/; Secure; HttpOnly; SameSite=Lax", "unexpected session cookie: " .. tostring(r_nav.cookie))
 
+local r_multi = run_fn(gitea_fn, { method = "GET", uri = "/explore", request_uri = "/explore", headers = { Accept = { "text/html", "application/xhtml+xml" } } })
+assert(r_multi.redirect and r_multi.redirect.url == "/user/oauth2/keycloak?redirect_to=%2Fexplore", "a repeated Accept header must still redirect")
+assert(run_fn(gitea_fn, { method = "GET", uri = "/", headers = { Accept = "text/html", ["Sec-Fetch-Mode"] = { "navigate", "cors" } } }).redirect == nil, "a repeated non-navigate Sec-Fetch-Mode must not redirect")
+
 assert(run_fn(gitea_fn, { method = "POST", uri = "/", headers = html_hdrs }).redirect == nil, "POST must not redirect")
 assert(run_fn(gitea_fn, { method = "GET", uri = "/", headers = { Accept = "application/json" } }).redirect == nil, "non-HTML must not redirect")
 assert(run_fn(gitea_fn, { method = "GET", uri = "/", headers = { Accept = "text/html", ["Sec-Fetch-Mode"] = "cors" } }).redirect == nil, "Sec-Fetch-Mode=cors must not redirect")
@@ -114,6 +118,9 @@ local f_ok = run_fn(forward_fn, {
 assert(f_ok.redirect and f_ok.redirect.code == 302, "GET /user/login must 302")
 assert(f_ok.redirect.url == "/user/oauth2/keycloak?redirect_to=%2Forg%2Frepo", "forward valid redirect_to failed: " .. tostring(f_ok.redirect.url))
 assert(type(f_ok.cookie) == "table" and #f_ok.cookie == 2, "forward must set two cookies")
+
+local f_multi = run_fn(forward_fn, { method = "GET", uri = "/user/login", headers = { Accept = { "text/html", "*/*" } }, args = {} })
+assert(f_multi.redirect and f_multi.redirect.url == "/user/oauth2/keycloak?redirect_to=%2F", "a repeated Accept header must still forward")
 
 assert(run_fn(forward_fn, { method = "GET", uri = "/user/login", headers = html_hdrs, args = { direct = "1" } }).redirect == nil, "direct=1 must pass through")
 assert(run_fn(forward_fn, { method = "GET", uri = "/user/login", headers = { Accept = "application/json" }, args = {} }).redirect == nil, "non-HTML /user/login must pass through")
@@ -182,13 +189,14 @@ def problems(routes_text: str, gitea_sh: str) -> list[str]:
             out.append("gitea route still sets access_token_in_authorization_header")
         for needle, why in (
             ('ngx.req.clear_header("X-WEBAUTH-USER")', "must unconditionally clear X-WEBAUTH-USER"),
+            ('if type(v) == "table" then v = table.concat(v, ",") end', "must join a repeated request header before string checks"),
             ('if ngx.req.get_method() ~= "GET" then return end', "must guard zero-click on GET only"),
             ('string.find(accept, "text/html", 1, true)', "must require Accept to contain text/html"),
-            ('headers["Sec-Fetch-Mode"]', "must inspect Sec-Fetch-Mode"),
+            ('hdr("Sec-Fetch-Mode")', "must inspect Sec-Fetch-Mode"),
             ('sfm ~= "navigate"', "must allow only absent or 'navigate' Sec-Fetch-Mode"),
-            ('headers["Sec-Fetch-Dest"]', "must inspect Sec-Fetch-Dest"),
+            ('hdr("Sec-Fetch-Dest")', "must inspect Sec-Fetch-Dest"),
             ('sfd ~= "document"', "must allow only absent or 'document' Sec-Fetch-Dest"),
-            ('headers["HX-Request"]', "must skip HTMX partial requests (HX-Request)"),
+            ('hdr("HX-Request")', "must skip HTMX partial requests (HX-Request)"),
             ("if ngx.var.cookie_narwhal_gitea_sso then return end", "must check narwhal_gitea_sso marker cookie"),
             ("if string.sub(uri, 1, #p) == p then return end", "must exclude prefix-matched URIs"),
             (
@@ -234,6 +242,7 @@ def problems(routes_text: str, gitea_sh: str) -> list[str]:
             ('Strict-Transport-Security: "max-age=31536000; includeSubDomains"', "must set HSTS header"),
             ('X-Content-Type-Options: "nosniff"', "must set X-Content-Type-Options header"),
             ('if args["direct"] then return end', "must honour the direct query argument escape hatch"),
+            ('if type(v) == "table" then v = table.concat(v, ",") end', "must join a repeated request header before string checks"),
             ('string.find(accept, "text/html", 1, true)', "must pass through when Accept lacks text/html"),
             ("if ngx.var.cookie_narwhal_gitea_sso_try then return end", "must check narwhal_gitea_sso_try loop-guard cookie"),
             (
@@ -345,6 +354,10 @@ def main(argv: list[str]) -> int:
         mutants: dict[str, tuple[str, str]] = {
             "drop the marker-cookie guard": in_gitea(
                 "                  if ngx.var.cookie_narwhal_gitea_sso then return end\n",
+                "",
+            ),
+            "drop the repeated-header join": in_gitea(
+                '                    if type(v) == "table" then v = table.concat(v, ",") end\n',
                 "",
             ),
             "drop the /user/oauth2/ exclusion": in_gitea(

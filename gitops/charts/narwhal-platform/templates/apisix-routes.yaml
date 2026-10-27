@@ -267,7 +267,14 @@ spec:
                   local args = ngx.req.get_uri_args()
                   if args["direct"] then return end
                   local headers = ngx.req.get_headers()
-                  local accept = headers["Accept"] or ""
+                  -- A repeated request header arrives as a table; join it so the string
+                  -- checks below never raise (a Lua error here would answer 500).
+                  local function hdr(name)
+                    local v = headers[name]
+                    if type(v) == "table" then v = table.concat(v, ",") end
+                    return v
+                  end
+                  local accept = hdr("Accept") or ""
                   if not string.find(accept, "text/html", 1, true) then return end
                   if ngx.var.cookie_narwhal_gitea_sso_try then return end
                   local target = "/"
@@ -348,13 +355,20 @@ spec:
                   ngx.req.clear_header("X-WEBAUTH-USER")
                   if ngx.req.get_method() ~= "GET" then return end
                   local headers = ngx.req.get_headers()
-                  local accept = headers["Accept"] or ""
+                  -- A repeated request header arrives as a table; join it so the string
+                  -- checks below never raise (a Lua error here would answer 500).
+                  local function hdr(name)
+                    local v = headers[name]
+                    if type(v) == "table" then v = table.concat(v, ",") end
+                    return v
+                  end
+                  local accept = hdr("Accept") or ""
                   if not string.find(accept, "text/html", 1, true) then return end
-                  local sfm = headers["Sec-Fetch-Mode"]
+                  local sfm = hdr("Sec-Fetch-Mode")
                   if sfm and sfm ~= "" and sfm ~= "navigate" then return end
-                  local sfd = headers["Sec-Fetch-Dest"]
+                  local sfd = hdr("Sec-Fetch-Dest")
                   if sfd and sfd ~= "" and sfd ~= "document" then return end
-                  local hxr = headers["HX-Request"]
+                  local hxr = hdr("HX-Request")
                   if hxr and hxr ~= "" then return end
                   if ngx.var.cookie_narwhal_gitea_sso then return end
                   local uri = ngx.var.uri or ""

@@ -453,11 +453,13 @@ guard_s3_auth_cutover() {
 # source instead of X-WEBAUTH-USER reverse-proxy auth.
 # Reason: once any user links to the source, DeleteSource refuses with ErrSourceInUse (and
 # `gitea admin auth delete` only accepts --id, so the old `delete --name keycloak` never ran
-# and `add-oauth` failed on every re-run with ErrSourceAlreadyExist, leaving rotated client
-# secrets and group maps unapplied). Look up the source ID by exact Name=='keycloak' and
-# update-oauth in place (passing --skip-local-2fa on every update because runUpdateOauth clears
-# TwoFactorPolicy whenever that flag is absent), or add-oauth when absent. Never logs the
-# client secret or discards gitea CLI stderr.
+# and `add-oauth` failed on every re-run with ErrSourceAlreadyExist, so a later secret rotation
+# or group-map change could never be applied). Look up the source ID by exact Name=='keycloak'
+# and update-oauth in place (passing --skip-local-2fa on every update because runUpdateOauth
+# clears TwoFactorPolicy whenever that flag is absent), or add-oauth when absent. Never logs the
+# client secret or discards gitea CLI stderr. --group-team-map-removal makes the team map
+# two-way: on login a user is removed from a mapped team whose group it no longer has (only the
+# teams named in the map are touched), so developer -> viewer in Keycloak drops write access.
 # Cost: two kubectl exec calls per run (auth list + update-oauth/add-oauth); callers keep their
 # existing WARN-and-continue behaviour when Gitea is not ready.
 # Escape hatch: manual `gitea admin auth update-oauth --id <id> ...` inside the Gitea pod.
@@ -472,6 +474,7 @@ gitea_upsert_keycloak_source() {
     --admin-group cluster-admin
     --restricted-group guest
     --group-team-map '{"developer":{"narwhal":["Developers"]},"viewer":{"narwhal":["Viewers"]}}'
+    --group-team-map-removal
     --skip-local-2fa
     --scopes "openid profile email groups"
   )

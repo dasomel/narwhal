@@ -62,6 +62,7 @@ REQUIRED_FLAGS=(
   "--admin-group cluster-admin"
   "--restricted-group guest"
   '--group-team-map {"developer":{"narwhal":["Developers"]},"viewer":{"narwhal":["Viewers"]}}'
+  "--group-team-map-removal"
   "--skip-local-2fa"
   "--scopes openid profile email groups"
 )
@@ -139,6 +140,13 @@ if verify_suite "${tmp}/m3.sh" "${GITEA_SH}" "${KC_SH}" >/dev/null 2>&1; then
   exit 1
 fi
 
+sed 's/--group-team-map-removal//' "${tmp}/helper.sh" > "${tmp}/m5.sh"
+! diff -q "${tmp}/helper.sh" "${tmp}/m5.sh" >/dev/null || { echo "FAIL: m5 anchor drifted"; exit 1; }
+if verify_suite "${tmp}/m5.sh" "${GITEA_SH}" "${KC_SH}" >/dev/null 2>&1; then
+  echo "FAIL: mutant 5 (missing --group-team-map-removal: a demoted user keeps the old team) was not caught"
+  exit 1
+fi
+
 cp "${GITEA_SH}" "${tmp}/m4-12.sh"
 echo 'kubectl exec -n devtools "${GITEA_POD}" -- /app/gitea/gitea admin auth delete --name keycloak' >> "${tmp}/m4-12.sh"
 if verify_suite "${tmp}/helper.sh" "${tmp}/m4-12.sh" "${KC_SH}" >/dev/null 2>&1; then
@@ -146,4 +154,4 @@ if verify_suite "${tmp}/helper.sh" "${tmp}/m4-12.sh" "${KC_SH}" >/dev/null 2>&1;
   exit 1
 fi
 
-echo "OK: gitea_upsert_keycloak_source updates id=7 in place, adds when absent (ignoring keycloak2), fails closed on list error, and is the sole OAuth source writer in 11-3 and 12 (4 mutations caught)"
+echo "OK: gitea_upsert_keycloak_source updates id=7 in place with team-map removal, adds when absent (ignoring keycloak2), fails closed on list error, and is the sole OAuth source writer in 11-3 and 12 (5 mutations caught)"

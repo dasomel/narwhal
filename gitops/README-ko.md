@@ -40,7 +40,7 @@ gitops/
 │   │       ├── seaweedfs.yaml, openbao.yaml, velero.yaml, velero-ui.yaml  # 스토리지/백업
 │   │       ├── trivy-operator.yaml, kyverno.yaml                  # 보안
 │   │       ├── harbor.yaml, headlamp.yaml                         # 레지스트리/UI
-│   │       ├── falco.yaml                                         # 비활성화 (파일 헤더 참고)
+│   │       ├── falco.yaml                                         # 런타임 보안 (Falco 0.45.1 + falcosidekick)
 │   │       ├── narwhal-platform.yaml                               # 메타 앱 -> charts/narwhal-platform
 │   │       └── ghost-pod-reaper.yaml, openbao-unseal.yaml, istiod-pdb.yaml,
 │   │           istio-telemetry-monitors.yaml, headlamp-policy.yaml # 소규모 지원 Application들
@@ -71,7 +71,7 @@ idp-apps (루트, apps/app-of-apps.yaml)
  └─ narwhal-apps (차트, 컴포넌트별 Application)
      ├─ metallb, apisix, cert-manager, istio-*, prometheus-stack, loki, tempo,
      │  k8s-monitoring, seaweedfs, openbao, velero, velero-ui, trivy-operator,
-     │  kyverno, harbor, headlamp, (falco — 비활성화), + 소규모 지원 앱들
+     │  kyverno, harbor, headlamp, falco, + 소규모 지원 앱들
      └─ narwhal-platform (차트, 플랫폼 원시 매니페스트 렌더링)
          └─ keycloak-cr, narwhal-portal-k8s, apisix-routes, apisix-infra,
             istio-ambient-policies, argocd-config
@@ -152,7 +152,7 @@ ambient 데이터 플레인의 노드별 프록시(DaemonSet)로, 메시에 등�
 |---|---|---|
 | `loki` (grafana-community) | `18.4.0` | `monitoring` |
 
-로그 집계 백엔드로 `Monolithic` 배포 모드로 동작하며, S3 호환 오브젝트 스토리지(SeaweedFS, `loki` 버킷)를 청크/룰러/어드민 저장소로 사용합니다. Grafana Alloy와 (활성화 시) Falcosidekick 이벤트로부터 로그를 수집합니다.
+로그 집계 백엔드로 `Monolithic` 배포 모드로 동작하며, S3 호환 오브젝트 스토리지(SeaweedFS, `loki` 버킷)를 청크/룰러/어드민 저장소로 사용합니다. Grafana Alloy와 Falcosidekick 런타임 보안 이벤트(JSON 라인, 포털의 Runtime Events 탭이 읽어 감)로부터 로그를 수집합니다.
 
 #### Tempo
 | 차트 | 버전 | 네임스페이스 |
@@ -207,14 +207,19 @@ kubectl 없이 Velero 백업/복원을 트리거하고 조회할 수 있는 웹 
 
 클러스터의 모든 워크로드와 이미지에 대해 취약점, 설정 오류, 노출된 시크릿, 컴플라이언스를 지속적으로 스캔합니다. 자원이 제한된 워커 노드에 맞게 경량 `Standalone` 모드(스캔 Job마다 Trivy CLI 실행, 공유 서버 없음)로 동작하며, `VulnerabilityReport`/`ConfigAuditReport` 등의 CRD를 통해 포털의 Cluster Security 페이지에 데이터를 제공합니다.
 
+#### Falco
+| 차트 | 버전 | 네임스페이스 |
+|---|---|---|
+| `falco` (falcosecurity) | `9.2.1` (Falco `0.45.1`, falcosidekick `2.32.0`) | `security-system` |
+
+모든 노드(마스터 포함)에서 `modern_ebpf` 드라이버를 쓰는 privileged DaemonSet으로 런타임 보안(시스템콜 수준 위협 탐지)을 수행합니다. Falcosidekick이 이벤트를 Loki(`format: json`, 포털 Runtime Events 탭이 이 형식을 파싱)로, `critical` 이상은 Alertmanager로 전달합니다. 에어갭에서 안전하도록 룰(falco-rules)과 `container` 플러그인을 이미지에 내장하고 falcoctl을 비활성화해 런타임에 아무것도 내려받지 않으며, 룰 갱신은 이미지 교체와 함께 이루어집니다. D-FALCO-045(2026-10-28)로 모든 프로바이더에서 활성화되었고, 커널 7.0(Ubuntu 26.04 Vagrant)은 업스트림 보고로만 뒷받침될 뿐 이 저장소의 노드에서는 아직 관측되지 않았습니다. `templates/falco.yaml` 헤더와 `docs/common/lessons-log.md`(2026-07-08, 2026-10-28)를 참고하세요.
+
 #### Kyverno
 | 차트 | 버전 | 네임스페이스 |
 |---|---|---|
 | `kyverno` (kyverno.github.io) | `3.8.1` | `platform-system` |
 
 Kubernetes 네이티브 정책 엔진으로, 어드미션 시점 및 백그라운드 정책(예: 포털이 생성하는 Job 제한, NetworkPolicy 자동 생성)을 클러스터 전역에 강제합니다. 컨트롤러별(admission/background/cleanup/reports)로 다중 레플리카로 동작해 복원력을 확보하며, fail-closed 방식이므로 자체 어드미션 웹훅의 가용성이 모든 파드 스케줄링의 critical path에 있습니다.
-
-> **Falco**(런타임 보안/시스템콜 수준 위협 탐지)는 `templates/falco.yaml`에 정의되어 있으나 현재 **비활성화**(`{{- if false }}`)되어 있습니다 — Falco 0.39.2의 modern_eBPF 드라이버가 이 클러스터의 Ubuntu 26.04/커널 7.0 노드에서 `scap_init`에 실패하며, 이를 해결할 0.43+ 업그레이드는 breaking 마이그레이션이기 때문입니다. 그동안의 런타임 보호는 Trivy Operator + Kyverno + NetworkPolicy + STRICT mTLS로 대체됩니다. 자세한 내용은 파일 헤더와 `docs/common/lessons-log.md`(2026-07-08)를 참고하세요.
 
 ### 인증·인가 (IAM & SSO)
 
@@ -264,7 +269,7 @@ Narwhal 관리 포털(Next.js)은 이 IDP 전체를 위한 개발자 대상 UI�
 | `istio-system` | 서비스 메시 컨트롤 플레인 및 데이터플레인 (istiod, istio-cni, ztunnel) |
 | `monitoring` | 관측성 스택: Prometheus, Grafana, Alertmanager, Loki, Tempo (메시에서 제외된 포털을 위한 PERMISSIVE mTLS 예외) |
 | `storage` | SeaweedFS, OpenBao, Velero, Velero UI |
-| `security-system` | Trivy Operator (재활성화 시 Falco도 포함) |
+| `security-system` | Trivy Operator, Falco (privileged DaemonSet; Kyverno privileged/host-namespace/host-port 정책에서 제외, PSA는 audit/warn만) |
 | `iam` | Keycloak (의도적으로 메시 미등록) |
 | `devtools` | ArgoCD, Gitea, Harbor, Headlamp, Narwhal Portal (Harbor의 혼합 등록 워크로드에 한정된 PERMISSIVE mTLS 예외) |
 | `database` | CloudNative-PG PostgreSQL 클러스터 (PERMISSIVE mTLS 예외 — 비메시 Keycloak의 plain-TCP 호출) |

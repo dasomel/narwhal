@@ -29,7 +29,7 @@ UNKNOWN_REVIEW = {
     ("chart", "velero@12.0.3"): ("Helm chart license is not mapped by the bundle SBOM", "supply-chain"),
     ("chart", "ztunnel@1.30.1"): ("Helm chart license is not mapped by the bundle SBOM", "supply-chain"),
     ("chart", "apisix@2.13.0"): ("Helm chart license is not mapped by the bundle SBOM", "supply-chain"),
-    ("chart", "falco@4.16.0"): ("Helm chart license is not mapped by the bundle SBOM", "supply-chain"),
+    ("chart", "falco@9.2.1"): ("Helm chart license is not mapped by the bundle SBOM", "supply-chain"),
     ("chart", "harbor@1.19.1"): ("Helm chart license is not mapped by the bundle SBOM", "supply-chain"),
     ("chart", "headlamp@0.46.0"): ("Helm chart license is not mapped by the bundle SBOM", "supply-chain"),
     ("chart", "kube-prometheus-stack@86.2.3"): ("Helm chart license is not mapped by the bundle SBOM", "supply-chain"),

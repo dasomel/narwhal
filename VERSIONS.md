@@ -75,6 +75,8 @@ Components and versions used in this project.
 | cert-manager | v1.20.2 (chart) | TLS certificate automation (container UID/GID now 65532/65532 — PSA check) |
 | OpenBao | v2.5.4 (chart 0.28.3) | Secret management (standalone). ARM64 confirmed on quay.io + docker.io. config: disable_unauthed_rekey_endpoints default→true |
 | Kyverno | v1.18.1 (chart 3.8.1) | Policy management (CVE-2026-4789 / -41323 fixed) |
+| Falco | v0.45.1 (chart 9.2.1) | Runtime security (syscall) on every node via `modern_ebpf`, ENABLED 2026-10-28 (D-FALCO-045; was off since 2026-07-08). `docker.io/falcosecurity/falco:0.45.1` pinned in `falco.yaml`; the rules (falco-rules 5.2.0) and `container` plugin 0.7.5 are baked into the image and falcoctl is off (airgap), so rule updates arrive with an image bump. 0.39→0.45 is breaking (gRPC output dropped 0.44, container plugin 0.41; chart fails to render with `falco.grpc`). Kernel 7.0 (Ubuntu 26.04) is backed by upstream reports only (falcosecurity/falco#3955, falcosecurity/libs#3086), not observed on this repo's nodes |
+| Falcosidekick | 2.32.0 (subchart 0.14.1 of the falco chart) | Falco events → Loki (`format: json`, read by the portal) and Alertmanager. Image `docker.io/falcosecurity/falcosidekick:2.32.0` pinned in `falco.yaml`: the subchart's Chart.yaml still says appVersion 2.31.1 but its values.yaml pins 2.32.0. Not on 2.35.x: 2.35.1 (2026-10-26) is inside the 7-day cooling window and the chart is validated with 2.32.0 |
 
 ## Backup
 

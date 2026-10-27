@@ -11,6 +11,18 @@ English | [한국어](CHANGELOG-ko.md)
 
 ### Changed
 
+- **Falco is enabled again on every provider, upgraded from 0.39.2 (chart 4.16.0) to 0.45.1 (chart
+  9.2.1) (D-FALCO-045).** It was disabled on 2026-07-08 because 0.39.2's `modern_ebpf` probe failed
+  `scap_init` on kernel 7.0. 0.45.1 carries the upstream kernel-7.0 fixes (falcosecurity/libs#2997,
+  #3021, #3086 and #3119, spelled with their repo because a bare number links to this repository); in a
+  local kernel 7.0.14 (linuxkit) run it opened the probe where 0.39.2 still fails with the July signature. The migration is breaking: the chart refuses `falco.grpc`, container metadata comes from
+  the `container` plugin, and falcoctl is off, so the rules (falco-rules 5.2.0) and the plugin are the ones
+  baked into the image and nothing is pulled at runtime. falcosidekick 2.32.0 now writes JSON lines to
+  Loki (`format: json`), which is what the portal parses, and the portal's priority filter matches the
+  Capitalized label falcosidekick writes (the old lowercase selector matched nothing).
+  `14-gitops-bootstrap.sh` no longer removes Falco on Ubuntu 26.04. Static change only: the chart tarball,
+  two images and the GitOps push must still reach a cluster, and Falco on the Ubuntu 26.04 / kernel 7.0
+  Vagrant box has not been observed.
 - **Portal is pinned to `narwhal-portal:1.1.4` (was 1.1.0; 1.1.1, 1.1.2 and 1.1.3 were pinned in
   between by #467, #477 and #481).** 1.1.2 fixes the empty cluster-infrastructure view (#475), 1.1.3
   shows the role-default tools in the permission management table (#479), and 1.1.4 fills the empty

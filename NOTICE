@@ -94,9 +94,9 @@ quietly under-reports is worse than one that admits its edges:
 
   THE IMAGE LIST IS A SNAPSHOT. scripts/airgap/images.txt is regenerated from a
   live cluster, so a component that was not running at that moment is missing
-  from it, and therefore from the bundle and its SBOM. Falco is the current
-  example: its chart is saved, its images are not listed. Treat a missing
-  component as an incomplete inventory, not as evidence it is absent.
+  from it, and therefore from the bundle and its SBOM. Falco was the example
+  until 2026-10-28 (D-FALCO-045 re-enabled it and listed its images). Treat a
+  missing component as an incomplete inventory, not as evidence it is absent.
 
 ================================================================================
 Principal upstream projects
@@ -112,8 +112,6 @@ scripts/airgap/lib/component-licenses.tsv.
     networking and mesh — Apache-2.0 except FRR (GPL-2.0-or-later)
   Argo CD, Kyverno, cert-manager, Trivy Operator, Chaos Mesh, Falco
     delivery, policy and security — Apache-2.0
-    (Falco's chart is in the bundle but its images are not in
-    scripts/airgap/images.txt — see the scope caveat below.)
   Prometheus, Alertmanager, node-exporter, prometheus-operator, Grafana Alloy
     metrics — Apache-2.0
   Grafana, Loki, Tempo

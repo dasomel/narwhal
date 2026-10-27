@@ -1,0 +1,109 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-falco-0-45-1-20261028",
+  "task": "Upgrade Falco from 0.39.2 (chart 4.16.0, disabled since 2026-07-08) to 0.45.1 (chart 9.2.1) and enable it on every provider (owner decision 2026-10-28). Scope of this change: repository chart values, image/chart/inventory/SBOM pins, the portal Loki reader seam, docs and regression updates. The orchestrator does the live chart publish, image mirroring and GitOps push after merge. Falco on the Ubuntu 26.04 / kernel 7.0 Vagrant box is NOT verified.",
+  "changeContext": {
+    "paths": [
+      ".agents/evals/traces/2026-10-falco-0.45.1.json",
+      "CHANGELOG-ko.md",
+      "CHANGELOG.md",
+      "NOTICE",
+      "VERSIONS.md",
+      "docs/common/compatibility-matrix.md",
+      "docs/common/lessons-log.md",
+      "gitops/README-ko.md",
+      "gitops/README.md",
+      "gitops/charts/narwhal-apps/templates/falco.yaml",
+      "portal/src/lib/falco.test.ts",
+      "portal/src/lib/falco.ts",
+      "scripts/airgap/03-save-helm-charts.sh",
+      "scripts/airgap/images.txt",
+      "scripts/airgap/lib/chart-upstream-sources.tsv",
+      "scripts/airgap/lib/component-licenses.tsv",
+      "scripts/airgap/lib/image-digests.tsv",
+      "scripts/cluster/14-gitops-bootstrap.sh",
+      "scripts/test/lib/check-falco.py",
+      "scripts/test/lib/check-sbom-inventory-completeness.py",
+      "scripts/test/regression-check-kakao.sh"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Rewrite the falco Application for chart 9.2.1 / Falco 0.45.1 and remove its if-false guard; keep modern_ebpf, resources and the privileged DaemonSet; make it airgap-safe (falcoctl install and follow off, the container plugin and falco-rules come from the image); bump images.txt, image-digests.tsv, component-licenses.tsv, chart-upstream-sources.tsv, the SBOM review map, VERSIONS.md, the compatibility matrix, both gitops READMEs, NOTICE and CHANGELOGs; drop the Ubuntu 26.04 falco exclusion from 14-gitops-bootstrap.sh; fix the portal Loki reader; add R291 (check-falco.py --mutation-verify). Deliberately left alone: portal security page 26.04 gating, i18n and kisa-controls text that still say Falco is unavailable, 01-generate-image-list.sh, Kyverno and PSA (no change needed). No cluster, ssh, vagrant, helm install or push was used."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "Falco 0.39.2 modern_ebpf fails scap_init on a kernel 7.0.14 VM and 0.45.1 does not. Reproduced 2026-10-27 on a local Docker Desktop VM (Linux 7.0.14-linuxkit aarch64, BTF present): docker.io/falcosecurity/falco-no-driver:0.39.2 run privileged with -o engine.kind=modern_ebpf exits 1 with 'An error occurred in an event source, forcing termination... Error: Initialization issues during scap_init', the same signature as the 2026-07-08 Vagrant failure; docker.io/falcosecurity/falco:0.45.1 on the same VM opens the modern BPF probe. Upstream attributes the 7.0 breakage to libs fixes absent from 0.39.2 (libs 0.18.2) and present in 0.45.1 (libs 0.26.1): #2997 execve verifier count, #3021 sendmmsg bpf_loop, #3086 auxmap race on preemptible kernels (reporters on Ubuntu 26.04 kernels 7.0.0-27 and 7.0.0-28, and on 7.0.0-31, confirm 0.45.0-rc1), #3119 signal_deliver verifier. Seam defects found while reading the portal reader against real output: falcosidekick's Loki priority label is Capitalized (portal selected lowercase), Loki lines are JSON only with loki.format=json (default text is dropped by the portal), source=falco exists only on Alertmanager alerts, metrics.outputRule emits an hourly snapshot event into the portal feed, and the removed collectors.containerd key is silently ignored by chart 9.x.",
+      "evidence": [
+        "doc:https://github.com/falcosecurity/falco/releases/tag/0.45.1",
+        "doc:https://github.com/falcosecurity/falco/releases/tag/0.45.0",
+        "doc:https://github.com/falcosecurity/falco/releases/tag/0.44.0",
+        "doc:https://github.com/falcosecurity/falco/releases/tag/0.41.0",
+        "doc:https://github.com/falcosecurity/falco/issues/3955",
+        "doc:https://github.com/falcosecurity/libs/releases/tag/0.26.0",
+        "doc:https://github.com/falcosecurity/libs/releases/tag/0.26.1",
+        "doc:https://github.com/falcosecurity/libs/pull/2997",
+        "doc:https://github.com/falcosecurity/libs/issues/3118",
+        "doc:https://github.com/falcosecurity/charts/blob/falco-9.2.1/charts/falco/BREAKING-CHANGES.md",
+        "doc:https://github.com/falcosecurity/falcosidekick/blob/2.32.0/outputs/loki.go",
+        "doc:https://github.com/falcosecurity/falcosidekick/blob/2.32.0/outputs/loki_test.go",
+        "doc:https://github.com/falcosecurity/falcosidekick/blob/2.32.0/outputs/alertmanager.go",
+        "doc:https://github.com/falcosecurity/falcosidekick/blob/2.32.0/types/priority.go",
+        "doc:https://github.com/falcosecurity/plugins/blob/plugins/container/v0.7.5/plugins/container/README.md",
+        "doc:https://github.com/argoproj/gitops-engine/blob/5baed5604d2dd970619fc9b91e8d31724662ab3e/pkg/sync/sync_context.go",
+        "artifact:docker.io/falcosecurity/falco:0.45.1 index sha256:69e957f91b3a6beb5c82e2afae33ec3e4479dab2d4421475d288d0cd113cedf6 (linux/amd64 sha256:dc34bb8e231e1afda8eefcf9467992a3912b5b6aed5151d49b4a0544369a9048, linux/arm64 sha256:3c5ccde1c8b50ccc8baf016090a5376d182e08dc8751df2b37d8ff2a13499558); its filesystem lists /usr/share/falco/plugins/libcontainer.so and /etc/falco/falco_rules.yaml",
+        "artifact:docker.io/falcosecurity/falcosidekick:2.32.0 index sha256:1976da72151850aae4436f33a5ed94bdef469f42a9b61c182b4feeb5441fb081 (linux/amd64 sha256:399d95934a67b1c6b57d3e1f678694b3407f89f878e8fd072dba51968fa9745f, linux/arm64 sha256:66f131cb971f234d489bc1169ac5381ab1814b9e155924151b56a2314e8fa62c)",
+        "artifact:falco chart 9.2.1 https://github.com/falcosecurity/charts/releases/download/falco-9.2.1/falco-9.2.1.tgz sha256:726c1fe08c3fd3e2789d4072b34f9eee94ecccad734fee471cc7546124570c6c (equals the digest in https://falcosecurity.github.io/charts/index.yaml)",
+        "test:docker run -d --privileged ... docker.io/falcosecurity/falco-no-driver:0.39.2 /usr/bin/falco -o engine.kind=modern_ebpf on Linux 7.0.14-linuxkit -> exit 1, 'Initialization issues during scap_init'"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "change",
+      "summary": "falco.yaml now targets chart 9.2.1 with explicit image pins (falco 0.45.1, falcosidekick 2.32.0, both docker.io because ghcr.io and quay.io do not host them), modern_ebpf, falcoctl off, collectors.containerEngine with only the CRI engine on /run/containerd/containerd.sock, loki.format json, metrics.outputRule false, and release=prometheus-stack on both ServiceMonitors (Prometheus only selects labelled monitors). The old falco.grpc, falco.grpc_output, collectors.containerd and k8s_audit_rules.yaml entries and the inert loki.tenantmap and alertmanager.expirealert keys are gone. Airgap inventories, SBOM review map, VERSIONS.md and the compatibility matrix carry the same pins; 14-gitops-bootstrap.sh no longer removes falco on Ubuntu 26.04; NOTICE no longer calls Falco an unlisted component."
+    },
+    {
+      "id": "e4",
+      "type": "bug_fix",
+      "summary": "Portal reader seam: portal/src/lib/falco.ts now matches the priority label with an alternation of the Capitalized and lowercase spellings (the lowercase equality matched no falcosidekick stream) and normalises Falco's JSON null fields; falco.test.ts pins the contract with a verbatim Falco 0.45.1 -> falcosidekick 2.32.0 -> Loki capture. R291 (check-falco.py) holds the remaining silent failure modes with 45 mutations, each required to be caught by its own assertion id."
+    },
+    {
+      "id": "e5",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "helm render of the falco Application values through falco chart 9.2.1, R291 with 45 mutations, SBOM/compatibility/airgap/upgrade-wave checks, shellcheck, make validate, portal vitest/tsc/eslint, and a local container lab (Falco 0.45.1 and falcosidekick 2.32.0 on a kernel 7.0.14 VM; not a cluster). NOT covered: Falco on the Ubuntu 26.04 / kernel 7.0 Vagrant box, the Kubernetes CRI path (k8s.* fields stay null in the lab), a multi-hour soak, Kakao kernel 6.8, and the live chart publish, image mirroring and GitOps push (done by the orchestrator after merge).",
+      "summary": "See evidence.",
+      "evidence": [
+        "test:helm template narwhal-apps gitops/charts/narwhal-apps --show-only templates/falco.yaml | yq .spec.source.helm.valuesObject, then helm template falco falco-9.2.1.tgz -n security-system --api-versions monitoring.coreos.com/v1 -> rc 0; 14 resources; images docker.io/falcosecurity/falco:0.45.1 and docker.io/falcosecurity/falcosidekick:2.32.0 plus the falcosidekick helm test hook pod (curlimages/curl, hook test-success, not an Argo CD sync task per gitops-engine); no initContainers; DaemonSet privileged, hostPaths mounted: /run/containerd, /proc (ro), /etc (ro), /sys/kernel (ro); the chart also declares /boot, /lib/modules and /usr as volumes but mounts them nowhere",
+        "test:python3 scripts/test/lib/check-falco.py --mutation-verify -> OK, 45 mutations caught (A1..A10, each by its own id)",
+        "test:python3 scripts/test/lib/check-sbom-inventory-completeness.py --mutation-verify -> PASS (image=102, chart=21, binary=15)",
+        "test:python3 scripts/test/lib/check-compatibility-matrix.py --mutation-verify -> PASS; python3 scripts/test/lib/check-compatibility-pins.py -> PASS (rows=15)",
+        "test:python3 scripts/verify/upgrade-bundle-check.py --self-test -> PASS",
+        "test:python3 scripts/test/lib/check-upgrade-waves.py --mutation-verify -> PASS (21 modeled components and 44 Argo CD Applications)",
+        "test:python3 scripts/airgap/lib/check-required-charts.py . && python3 scripts/airgap/lib/check-chart-upstream-sources.py -> PASS (21 GitOps charts mapped, falco included)",
+        "test:the chart discovery heredoc of scripts/airgap/03-save-helm-charts.sh run offline -> emits helm-repo|https://falcosecurity.github.io/charts|falco|9.2.1",
+        "test:find scripts/ -name '*.sh' -print0 | xargs -0 shellcheck --severity=warning -> exit 0",
+        "test:make validate -> exit 0 (30 files OK)",
+        "test:cd portal && vitest run -> 136 files, 2077 tests passed; tsc --noEmit exit 0; eslint src/lib/falco.ts src/lib/falco.test.ts exit 0; falco.test.ts run against the previous falco.ts -> 2 of 7 fail",
+        "test:docker run Falco 0.45.1 (config = ConfigMap/falco from the render, only http_output.url and the container engine swapped for the lab) --privileged on Linux 7.0.14-linuxkit aarch64 -> 'Opening syscall source with modern BPF probe', 'Loaded plugin container@0.7.5 from /usr/share/falco/plugins/libcontainer.so', container 'cat /etc/shadow' -> rule 'Read sensitive file untrusted' with output_fields container.name, container.image.repository and null k8s.*; the same run with append_output reduced to suggested_output only yields the same keys",
+        "test:falcosidekick 2.32.0 with the env decoded from Secret/falco-falcosidekick (hosts swapped for a stub) -> Loki push labels hostname, priority=Warning, rule, source=syscall, tags with a JSON line; a synthetic Critical event -> Alertmanager labels source=falco, eventsource=syscall, priority=Critical, severity=critical",
+        "test:RESEARCH_EVIDENCE_DIR=$(mktemp -d) make test -> passed 415 failed 0 warnings 3"
+      ]
+    },
+    {
+      "id": "e6",
+      "type": "completion_claim",
+      "summary": "Within the repository scope, Falco is upgraded to 0.45.1 (chart 9.2.1) and enabled on every provider without runtime pulls, the portal reader matches falcosidekick's labels and JSON, and R291 plus all 415 static regression checks pass. Falco on the Ubuntu 26.04 / kernel 7.0 Vagrant box, the Kubernetes CRI path and a soak are not verified."
+    },
+    {
+      "id": "e7",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Complete and verified within the stated repository scope; the live chart publish, image mirroring and GitOps push are done by the orchestrator after merge, and Vagrant kernel 7.0 is not verified."
+    }
+  ]
+}

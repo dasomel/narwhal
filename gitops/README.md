@@ -40,7 +40,7 @@ gitops/
 │   │       ├── seaweedfs.yaml, openbao.yaml, velero.yaml, velero-ui.yaml  # storage/backup
 │   │       ├── trivy-operator.yaml, kyverno.yaml                  # security
 │   │       ├── harbor.yaml, headlamp.yaml                         # registry/UI
-│   │       ├── falco.yaml                                         # DISABLED (see file header)
+│   │       ├── falco.yaml                                         # runtime security (Falco 0.45.1 + falcosidekick)
 │   │       ├── narwhal-platform.yaml                               # meta-app -> charts/narwhal-platform
 │   │       └── ghost-pod-reaper.yaml, openbao-unseal.yaml, istiod-pdb.yaml,
 │   │           istio-telemetry-monitors.yaml, headlamp-policy.yaml # small support Applications
@@ -71,7 +71,7 @@ idp-apps (root, apps/app-of-apps.yaml)
  └─ narwhal-apps (chart, one Application per platform component)
      ├─ metallb, apisix, cert-manager, istio-*, prometheus-stack, loki, tempo,
      │  k8s-monitoring, seaweedfs, openbao, velero, velero-ui, trivy-operator,
-     │  kyverno, harbor, headlamp, (falco — disabled), + small support apps
+     │  kyverno, harbor, headlamp, falco, + small support apps
      └─ narwhal-platform (chart, renders raw platform manifests)
          └─ keycloak-cr, narwhal-portal-k8s, apisix-routes, apisix-infra,
             istio-ambient-policies, argocd-config
@@ -152,7 +152,7 @@ The metrics backbone — Prometheus (7-day retention, `nfs-csi`-backed PVC), Ale
 |---|---|---|
 | `loki` (grafana-community) | `18.4.0` | `monitoring` |
 
-Log aggregation backend, running in `Monolithic` deployment mode with S3-compatible object storage (SeaweedFS, bucket `loki`) as its chunk/ruler/admin store. Ingests logs from Grafana Alloy and, when enabled, Falcosidekick events.
+Log aggregation backend, running in `Monolithic` deployment mode with S3-compatible object storage (SeaweedFS, bucket `loki`) as its chunk/ruler/admin store. Ingests logs from Grafana Alloy and Falcosidekick runtime-security events (JSON lines, read back by the portal's Runtime Events tab).
 
 #### Tempo
 | Chart | Version | Namespace |
@@ -207,14 +207,19 @@ A web UI/API for triggering and inspecting Velero backups/restores without kubec
 
 Continuous vulnerability, misconfiguration, exposed-secret, and compliance scanning for every workload and image on the cluster, running in lightweight `Standalone` mode (Trivy CLI runs per-scan-Job, no shared server) to fit the resource-constrained worker nodes. Feeds the portal's Cluster Security page via `VulnerabilityReport`/`ConfigAuditReport`/etc. CRDs.
 
+#### Falco
+| Chart | Version | Namespace |
+|---|---|---|
+| `falco` (falcosecurity) | `9.2.1` (Falco `0.45.1`, falcosidekick `2.32.0`) | `security-system` |
+
+Runtime security (syscall-level threat detection) on every node, masters included, through the `modern_ebpf` driver in a privileged DaemonSet. Falcosidekick forwards events to Loki (`format: json`, which the portal's Runtime Events tab parses) and, for `critical` and above, to Alertmanager. Falco is airgap-safe: the rules (falco-rules) and the `container` plugin are baked into the image and falcoctl is disabled, so nothing is pulled at runtime; rule updates arrive with an image bump. Enabled on every provider by D-FALCO-045 (2026-10-28); kernel 7.0 (Ubuntu 26.04 Vagrant) is backed by upstream reports only and has not been observed on this repo's nodes. See the header of `templates/falco.yaml` and `docs/common/lessons-log.md` (2026-07-08 and 2026-10-28).
+
 #### Kyverno
 | Chart | Version | Namespace |
 |---|---|---|
 | `kyverno` (kyverno.github.io) | `3.8.1` | `platform-system` |
 
 A Kubernetes-native policy engine enforcing admission-time and background policies (e.g. restricting portal-created Jobs, generating NetworkPolicies) across the cluster. Runs with multiple replicas per controller (admission/background/cleanup/reports) for resilience; it is fail-closed, so its own admission webhook availability is on the critical path for all pod scheduling.
-
-> **Falco** (runtime security / syscall-level threat detection) is defined in `templates/falco.yaml` but currently **disabled** (`{{- if false }}`) — Falco 0.39.2's modern_eBPF driver fails `scap_init` on the Ubuntu 26.04 / kernel 7.0 nodes used by this cluster, and the 0.43+ upgrade needed to fix it is a breaking migration. Runtime coverage in the meantime comes from Trivy Operator + Kyverno + NetworkPolicy + STRICT mTLS. See the file header and `docs/common/lessons-log.md` (2026-07-08) for details.
 
 ### IAM & SSO
 
@@ -264,7 +269,7 @@ The Narwhal management portal (Next.js) — the developer-facing UI for this ent
 | `istio-system` | Service mesh control plane and dataplane (istiod, istio-cni, ztunnel) |
 | `monitoring` | Observability stack: Prometheus, Grafana, Alertmanager, Loki, Tempo (PERMISSIVE mTLS exception for the opted-out portal) |
 | `storage` | SeaweedFS, OpenBao, Velero, Velero UI |
-| `security-system` | Trivy Operator (and, when re-enabled, Falco) |
+| `security-system` | Trivy Operator, Falco (privileged DaemonSet; exempt from the Kyverno privileged/host-namespace/host-port policies, PSA is audit/warn only) |
 | `iam` | Keycloak (intentionally NOT mesh-enrolled) |
 | `devtools` | ArgoCD, Gitea, Harbor, Headlamp, the Narwhal Portal (PERMISSIVE mTLS exception scoped to Harbor's mixed-enrollment workloads) |
 | `database` | CloudNative-PG PostgreSQL clusters (PERMISSIVE mTLS exception — plain-TCP calls from non-mesh Keycloak) |

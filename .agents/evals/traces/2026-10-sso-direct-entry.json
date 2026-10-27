@@ -1,0 +1,62 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-sso-direct-entry-20261027",
+  "task": "Send direct visits to the OpenBao and Velero UI root through the same-origin /sso bootstrap so zero-click Keycloak SSO also works from bookmarks and ClusterDeck links (PR #472). Scope: the two ApisixRoute rules, R281 and the docs; the rules were already deployed to Kakao through Gitea before this trace.",
+  "changeContext": {
+    "paths": [
+      "docs/common/app-sso-permission-matrix.md",
+      "docs/common/lessons-log.md",
+      "gitops/charts/narwhal-platform/templates/apisix-routes.yaml",
+      "scripts/test/lib/check-sso-direct-entry.py",
+      "scripts/test/regression-check-kakao.sh",
+      ".agents/evals/traces/2026-10-sso-direct-entry.json"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Two ApisixRoute rules (openbao-sso-entry for /, /ui, /ui/; velero-ui-sso-entry for /) that 302 to /sso only without a query string, plus R281 (scripts/test/lib/check-sso-direct-entry.py), the SSO permission matrix and a lessons-log row. No chart version, client or RBAC change. Branch brought up to date with main by a merge (no rebase)."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "Before the rules, a direct visit to the app root stopped at the app's own login screen because the zero-click flow only ran via /sso (PR #472 description, kakao APISIX access log).",
+      "evidence": [
+        "doc:https://github.com/dasomel/narwhal/pull/472"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "Added the two entry rules with the same security headers as the catch-all; D-ssoentry-1 records the cost (one Keycloak round trip on a root reload) and the escape hatch (any query string, OpenBao manual token login at /ui/vault/auth?with=token)."
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "live Kakao behaviour of the deployed rules and local static checks of the merged branch",
+      "summary": "See evidence.",
+      "evidence": [
+        "test:curl https://openbao.kakao.narwhal.internal/ , /ui , /ui/ -> 302 to /sso (2026-10-27)",
+        "test:curl https://openbao.kakao.narwhal.internal/?direct -> 307 to /ui/ (passes through to OpenBao); /ui/vault/auth?with=token -> 200",
+        "test:curl https://velero-ui.kakao.narwhal.internal/ -> 302 to /sso; /?state=error&reason=sso -> 200; /dashboard -> 200",
+        "test:diff of the merged apisix-routes.yaml against the copy deployed in the cluster's Gitea -> identical",
+        "test:python3 scripts/test/lib/check-sso-direct-entry.py --mutation-verify -> 10/10 mutations rejected",
+        "test:RESEARCH_EVIDENCE_DIR set make test -> passed 411 failed 0 warnings 3; make validate -> exit 0; helm template narwhal-platform -> exit 0"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "completion_claim",
+      "summary": "Within the stated scope, direct root visits to OpenBao and Velero UI go through /sso on the live cluster, query strings and the manual token path pass through, and R281 guards the path lists."
+    },
+    {
+      "id": "e6",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Complete and verified within the stated scope; merging makes main match what the cluster already runs."
+    }
+  ]
+}

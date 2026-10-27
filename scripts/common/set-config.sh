@@ -151,7 +151,7 @@ case "${AUTH_METHOD}" in
 
     # OIDC Configuration
     # K8s 1.35+ requires HTTPS for OIDC issuer URL
-    OIDC_ISSUER_URL="${OIDC_ISSUER_URL:-https://keycloak.${DOMAIN}/realms/kubernetes}"
+    OIDC_ISSUER_URL="${OIDC_ISSUER_URL:-https://keycloak.${DOMAIN}/realms/narwhal}"
     OIDC_CLIENT_ID="${OIDC_CLIENT_ID:-kubernetes}"
     OIDC_USERNAME="${OIDC_USERNAME:-}"
     OIDC_PASSWORD="${OIDC_PASSWORD:-}"
@@ -196,11 +196,9 @@ case "${AUTH_METHOD}" in
     echo "OIDC authentication configured."
     echo "Use 'kubectl config use-context ${CLUSTER_NAME}-oidc' to use OIDC auth."
     echo ""
-    echo "Available users (Keycloak):"
-    echo "  - admin / admin (cluster-admin)"
-    echo "  - dev / dev (developer)"
-    echo "  - view / view (viewer)"
-    echo "  - guest / guest (guest - web UI only)"
+    echo "Available users (Keycloak realm narwhal):"
+    echo "  - admin (cluster-admin), dev (developer), view (viewer), guest (guest - web UI only)"
+    echo "  Passwords are generated: scripts/test/show-credentials.sh (see docs/common/sso-accounts.md)"
     ;;
 
   token)

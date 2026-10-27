@@ -1,0 +1,68 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-portal-cost-pricing-20261026",
+  "task": "Set all eight COST_* pricing and metadata keys in 13-2-narwhal-portal-bindings.sh for both Kakao and Vagrant providers so portal >= 1.1.1 /api/cost does not fail closed with 503, add ghcr.io/aquasecurity/node-collector:0.3.1 to the air-gap image inventory and TRANSIENT_IMAGES, and add seam check R282. Scope of this change: the in-repo provisioning, air-gap inventory, lessons-log and regression check updates; live Kakao changes (patching narwhal-portal-secrets and recreating the pod, mirroring node-collector:0.3.1 by digest) were applied separately on 2026-10-26.",
+  "changeContext": {
+    "paths": [
+      ".agents/evals/traces/2026-10-portal-cost-pricing.json",
+      "docs/common/lessons-log.md",
+      "scripts/airgap/01-generate-image-list.sh",
+      "scripts/airgap/images.txt",
+      "scripts/airgap/lib/component-licenses.tsv",
+      "scripts/airgap/lib/image-digests.tsv",
+      "scripts/cluster/13-2-narwhal-portal-bindings.sh",
+      "scripts/test/lib/check-portal-cost-env-seam.py",
+      "scripts/test/regression-check-kakao.sh"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Two source gaps behind empty Kakao Portal cost and compliance infra views: 13-2-narwhal-portal-bindings.sh set only the three COST_*_HOURLY keys while portal/src/lib/cost.ts getCostPricing() fails closed (/api/cost -> 503) unless all eight COST_* keys exist; ghcr.io/aquasecurity/node-collector:0.3.1 was missing from scripts/airgap/{images.txt,01-generate-image-list.sh,lib/image-digests.tsv,lib/component-licenses.tsv}. Added seam check R282 and lessons-log entry. No RBAC, chart or portal source changes."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "On live Kakao (2026-10-26), APISIX access log showed 25 of 25 /api/cost requests answered 503, and the portal pod had only the three COST_*_HOURLY keys. Meanwhile, ghcr.io/aquasecurity/node-collector:0.3.1 was in ImagePullBackOff because it was not in the bastion mirror. Locally, check-portal-cost-env-seam.py against origin/main 13-2-narwhal-portal-bindings.sh fails on the five missing COST_* metadata keys and eight missing per-provider defaults.",
+      "evidence": [
+        "runtime:live Kakao APISIX access log (2026-10-26) -> 25 of 25 /api/cost requests answered 503; portal pod had only the three COST_*_HOURLY keys",
+        "runtime:live Kakao trivy-operator node-collector:0.3.1 Job (2026-10-26) -> ImagePullBackOff (not in the bastion mirror)",
+        "test:python3 scripts/test/lib/check-portal-cost-env-seam.py portal/src/lib/cost.ts <(git show origin/main:scripts/cluster/13-2-narwhal-portal-bindings.sh) -> FAIL (5 missing --from-literal keys, 8 missing provider defaults, exit 1)"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "In 13-2-narwhal-portal-bindings.sh, set provider-specific defaults for all eight COST_* keys (Kakao list prices from kakaocloud.com read 2026-10-26: t1i.large 2 vCPU/8 GiB 197 KRW/h, t1i.xlarge 4 vCPU/16 GiB 395 KRW/h, Block Storage SSD 0.16 KRW/GiB-h, VAT excluded; fixed reviewer unit finding: portal/src/lib/cost.ts divides bytes by 1e9, so memory and storage GiB rates are divided by 1.073741824 to 8.040 KRW/GB-h and 0.1490 KRW/GB-h; Vagrant labelled placeholder) and pass them to narwhal-portal-secrets. Added ghcr.io/aquasecurity/node-collector:0.3.1 (sha256:f4702ce4667388f0219d6248d623a7e816231c2d4561d6af01c3ae053e524025) to images.txt, image-digests.tsv, component-licenses.tsv and TRANSIENT_IMAGES in 01-generate-image-list.sh. Added R282 (check-portal-cost-env-seam.py)."
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "local static, mutation and regression suite verification for the repository changes; live Kakao changes were applied and verified separately on 2026-10-26",
+      "summary": "See evidence.",
+      "evidence": [
+        "runtime:live Kakao (2026-10-26) after patching narwhal-portal-secrets with the eight COST_* keys and recreating the pod -> in-repo getCostPricing() under NODE_ENV=production with those values returned configured=true",
+        "runtime:live Kakao (2026-10-26) after mirroring ghcr.io/aquasecurity/node-collector:0.3.1 by digest sha256:f4702ce4667388f0219d6248d623a7e816231c2d4561d6af01c3ae053e524025 -> Job completed with 6 ClusterInfraAssessmentReports",
+        "test:python3 scripts/test/lib/check-portal-cost-env-seam.py --mutation-verify -> OK 8 COST_* keys set by 13-2 for both providers + 3 mutations caught; fails on origin/main 13-2",
+        "test:python3 scripts/test/lib/check-sbom-inventory-completeness.py --mutation-verify -> PASS (image evaluated=100 covered=100 inventory=100 unknown=0); R116 join check -> PASS",
+        "test:bash -n and shellcheck --severity=warning on scripts/cluster/13-2-narwhal-portal-bindings.sh and scripts/airgap/01-generate-image-list.sh -> exit 0",
+        "test:make validate -> exit 0; RESEARCH_EVIDENCE_DIR=$(mktemp -d) make test -> passed 411 failed 0 warnings 3"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "completion_claim",
+      "summary": "Within the stated scope, all eight COST_* keys and the node-collector:0.3.1 air-gap inventory entries are persisted in source and verified by R282, R116, SBOM completeness and the full static regression suite."
+    },
+    {
+      "id": "e6",
+      "type": "task_outcome",
+      "state": "A",
+      "scope": "in-repo provisioning, air-gap inventory and regression suite changes; live changes were applied separately on 2026-10-26",
+      "summary": "Complete and verified within the stated scope; live changes were applied separately on 2026-10-26."
+    }
+  ]
+}

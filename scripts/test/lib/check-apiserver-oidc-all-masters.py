@@ -78,7 +78,7 @@ def problems(sources: dict[str, str]) -> list[str]:
     # 1. Node script (11-4b-apiserver-oidc-node.sh) is the single writer of the 7 flags.
     if "D-APISERVER-OIDC-ALL" not in node_txt:
         out.append("11-4b-apiserver-oidc-node.sh lacks D-APISERVER-OIDC-ALL decision record")
-    yq_m = re.search(r'yq\s+-i\s+"\.spec\.containers\[0\]\.command\s*\+=\s*\[(.*?)\]"', node_code, re.S)
+    yq_m = re.search(r'yq\s+-i\s+"\.spec\.containers\[0\]\.command\s*\+=\s*\[(.*?)\]', node_code, re.S)
     if not yq_m:
         out.append("11-4b-apiserver-oidc-node.sh missing yq .spec.containers[0].command += [...] block")
     else:
@@ -95,7 +95,9 @@ def problems(sources: dict[str, str]) -> list[str]:
         (".kube-apiserver.yaml.oidc.tmp", "must stage to dotfile before atomic mv"),
         ('mv "${stage_file}" "${APISERVER_MANIFEST}"', "must atomically mv staged file over manifest"),
         ("https://127.0.0.1:6443/readyz", "must default READYZ_URL to https://127.0.0.1:6443/readyz"),
-        ('if [ "${ca_changed}" = "true" ]', "must restart static pod when CA changed and flags exist"),
+        ('CA_ANNOTATION="narwhal.dasomel.io/oidc-ca-sha256"', "must record the loaded CA in a manifest annotation"),
+        ('.metadata.annotations.\\"${CA_ANNOTATION}\\" = \\"${ca_sha}\\"', "must write the installed CA sha256 into the annotation"),
+        ('if [ "${loaded_sha}" != "${ca_sha}" ]; then', "must restart kube-apiserver (annotation update) when the recorded CA differs"),
     ):
         if needle not in node_code:
             out.append(f"11-4b-apiserver-oidc-node.sh: {desc} ({needle})")
@@ -263,9 +265,9 @@ def main(argv: list[str]) -> int:
                 'if [ "${backup_dir_real}" = "${manifest_dir}" ]; then\n',
                 'if false; then\n',
             ),
-            "drop CA-changed static pod restart from node script": mutate(
+            "drop the CA-annotation restart from node script": mutate(
                 "node",
-                '  if [ "${ca_changed}" = "true" ]; then\n',
+                '  if [ "${loaded_sha}" != "${ca_sha}" ]; then\n',
                 "  if false; then\n",
             ),
             "reintroduce swallowed || true on scp in 11-4": mutate(
@@ -296,8 +298,8 @@ def main(argv: list[str]) -> int:
             ),
             "drop apply-apiserver-oidc-kakao.sh from stage_phase2 in provision-kakao.sh": mutate(
                 "provision",
-                "    if ! ./scripts/cloud/apply-apiserver-oidc-kakao.sh; then\n",
-                "    if ! true; then\n",
+                '       ./scripts/cloud/apply-apiserver-oidc-kakao.sh; then\n      note "apiserver OIDC propagation',
+                '       true; then\n      note "apiserver OIDC propagation',
             ),
             "drop oidc case branch in provision-kakao.sh": mutate(
                 "provision",

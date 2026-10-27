@@ -7,8 +7,9 @@
 #   3. First valid run installs the CA, writes a .pre-oidc-<UTC> backup OUTSIDE the manifests
 #      directory, leaves no stray files inside manifests/, and adds the exact 7 --oidc-* flags.
 #   4. Second run with the same CA + issuer is an idempotent no-op (still 7 flags, still 1 backup).
-#   5. Rotated CA with flags already present updates the CA and restarts the static pod via
-#      kubelet manifest move-out/move-in.
+#   5. Rotated CA with flags already present updates the CA and the manifest's
+#      narwhal.dasomel.io/oidc-ca-sha256 annotation (content change -> kubelet restart), nothing else.
+#   5b. A manifest from before the annotation (flags, no annotation) gets it once, then is a no-op.
 #   6. Unhealthy readyz fails closed after bounded retries.
 set -euo pipefail
 
@@ -67,6 +68,10 @@ openssl req -x509 -newkey rsa:2048 -nodes \
 : > "${tmp}/empty-ca.crt"
 printf 'not-a-valid-pem-cert\n' > "${tmp}/garbage-ca.crt"
 
+ann() { yq '.metadata.annotations."narwhal.dasomel.io/oidc-ca-sha256" // ""' "${MANIFEST}"; }
+sha() { openssl dgst -sha256 -r "$1" | cut -d' ' -f1; }
+cmds() { yq '.spec.containers[0].command' "$1"; }
+
 run_node_script() {
   local ca_src="$1" readyz_out="${2:-ok}"
   APISERVER_MANIFEST="${MANIFEST}" \
@@ -76,7 +81,6 @@ run_node_script() {
   READYZ_MAX_ATTEMPTS=2 \
   READYZ_SLEEP=0 \
   RESTART_INITIAL_SLEEP=0 \
-  CA_RELOAD_OUT_SLEEP=0 \
   bash "${NODE_SCRIPT}" "${ISSUER_URL}" "${ca_src}"
 }
 
@@ -154,6 +158,10 @@ grep -Fq "Applied 7 OIDC flags" <<<"${out1}" || {
   echo "FAIL: case 3 output missing 'Applied 7 OIDC flags': ${out1}"
   exit 1
 }
+[ "$(ann)" = "$(sha "${tmp}/ca1.crt")" ] || {
+  echo "FAIL: case 3 did not record the CA sha256 annotation (got '$(ann)')"
+  exit 1
+}
 cp "${MANIFEST}" "${tmp}/after-run1.yaml"
 
 # 4. Second run with same CA -> idempotent no-op.
@@ -172,18 +180,35 @@ grep -Fq "no-op" <<<"${out2}" || {
   exit 1
 }
 
-# 5. Rotated CA when flags already exist -> updates CA and restarts static pod via move-out/move-in.
+# 5. Rotated CA when flags already exist -> CA file and the annotation change, nothing else.
 out3="$(run_node_script "${tmp}/ca2.crt" "ok" 2>&1)"
 cmp -s "${tmp}/ca2.crt" "${CA_DEST}" || {
   echo "FAIL: case 5 did not update ${CA_DEST} to rotated CA"
   exit 1
 }
-cmp -s "${MANIFEST}" "${tmp}/after-run1.yaml" || {
-  echo "FAIL: case 5 altered manifest contents during CA reload"
+[ "$(ann)" = "$(sha "${tmp}/ca2.crt")" ] || {
+  echo "FAIL: case 5 did not move the annotation to the rotated CA (got '$(ann)')"
   exit 1
 }
-grep -Fq "CA certificate changed — restarting static pod" <<<"${out3}" || {
-  echo "FAIL: case 5 did not trigger static pod restart on CA change: ${out3}"
+[ "$(cmds "${MANIFEST}")" = "$(cmds "${tmp}/after-run1.yaml")" ] || {
+  echo "FAIL: case 5 changed the command list during CA rotation"
+  exit 1
+}
+grep -Fq "updating narwhal.dasomel.io/oidc-ca-sha256" <<<"${out3}" || {
+  echo "FAIL: case 5 did not report the restart-triggering annotation update: ${out3}"
+  exit 1
+}
+
+# 5b. Pre-annotation manifest (flags, no annotation, same CA) -> annotation added once, then no-op.
+yq -i 'del(.metadata.annotations."narwhal.dasomel.io/oidc-ca-sha256")' "${MANIFEST}"
+out4="$(run_node_script "${tmp}/ca2.crt" "ok" 2>&1)"
+[ "$(ann)" = "$(sha "${tmp}/ca2.crt")" ] || {
+  echo "FAIL: case 5b did not add the annotation to a pre-annotation manifest (got '$(ann)'): ${out4}"
+  exit 1
+}
+out5="$(run_node_script "${tmp}/ca2.crt" "ok" 2>&1)"
+grep -Fq "no-op" <<<"${out5}" || {
+  echo "FAIL: case 5b second run was not a no-op: ${out5}"
   exit 1
 }
 
@@ -194,4 +219,4 @@ if run_node_script "${tmp}/ca1.crt" "unhealthy" >/dev/null 2>&1; then
   exit 1
 fi
 
-echo "OK: 11-4b-apiserver-oidc-node.sh passed 6 behavioural cases (empty CA, invalid PEM, 7-flag apply + external backup, idempotent re-run, CA-rotation static-pod restart, readyz timeout)"
+echo "OK: 11-4b-apiserver-oidc-node.sh passed 7 behavioural cases (empty CA, invalid PEM, 7-flag apply + CA annotation + external backup, idempotent re-run, CA rotation via annotation, pre-annotation manifest, readyz timeout)"

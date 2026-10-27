@@ -411,7 +411,8 @@ stage_phase2() {
     # nodes have no vagrant password and no node-to-node trust; propagate the OIDC CA and
     # the 7 --oidc-* flags from master-1 to master-2..N from the operator host before
     # recording the phase2 sentinel.
-    if ! ./scripts/cloud/apply-apiserver-oidc-kakao.sh; then
+    if ! TF_DIR="${TF_DIR}" STAGE_DIR="${STAGE_DIR}" DOMAIN="${DOMAIN}" NODE_SSH_USER="${SSH_USER}" \
+       ./scripts/cloud/apply-apiserver-oidc-kakao.sh; then
       note "apiserver OIDC propagation to other masters FAILED"; return 1
     fi
     mark_done "${MASTER1}" phase2; note "ok"
@@ -422,7 +423,8 @@ stage_phase2() {
 
 stage_oidc() {
   log "oidc: distribute master-1 OIDC CA and apply kube-apiserver OIDC flags to all masters"
-  if ! ./scripts/cloud/apply-apiserver-oidc-kakao.sh; then
+  if ! TF_DIR="${TF_DIR}" STAGE_DIR="${STAGE_DIR}" DOMAIN="${DOMAIN}" NODE_SSH_USER="${SSH_USER}" \
+       ./scripts/cloud/apply-apiserver-oidc-kakao.sh; then
     note "apiserver OIDC apply FAILED"; return 1
   fi
   note "ok"

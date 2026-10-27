@@ -9,13 +9,15 @@
 #   (no vagrant password and no node-to-node SSH trust), master-2 and master-3 never received
 #   /etc/kubernetes/pki/oidc-ca.crt or the 7 --oidc-* flags, so ~2/3 of in-cluster OIDC
 #   bearer-token requests to the `kubernetes` Service failed with 401 ("invalid bearer token").
-#   When the flags already exist but the CA file changed, the apiserver must restart to reload
-#   the CA: because `crictl` is not on `sudo`'s PATH on Kakao nodes and `touch` does not alter
-#   the Pod spec hash (so kubelet ignores it), we trigger kubelet's static-pod file watcher by
-#   moving the manifest out of the manifests directory to ${APISERVER_BACKUP_DIR} and moving it
-#   back under an EXIT restore trap.
-#   Cost: Sequential static-pod restart + local /readyz wait (~15-45s per control-plane node on
-#   first apply or CA rotation; 0 restarts on an idempotent re-run).
+#   The apiserver reads --oidc-ca-file only at start, so a new CA needs a restart. The manifest
+#   records the CA it was started for in the annotation narwhal.dasomel.io/oidc-ca-sha256; when
+#   that differs from the installed CA, updating it changes the manifest content and kubelet
+#   recreates the static pod (touch alone does not change the pod hash, and crictl is not on
+#   sudo's PATH on Kakao). This also heals a run that died between installing the CA and the
+#   restart, and the manifest never leaves the manifests directory.
+#   Cost: one static-pod restart + local /readyz wait (~15-45 s per control-plane node) on first
+#   apply, on CA rotation, and once on a manifest from before the annotation; 0 restarts on an
+#   idempotent re-run.
 #   Escape hatch: Restore /etc/kubernetes/kube-apiserver.yaml.pre-oidc-<UTC stamp> to
 #   /etc/kubernetes/manifests/kube-apiserver.yaml on the affected node.
 #
@@ -41,7 +43,7 @@ READYZ_CMD="${READYZ_CMD:-}"
 READYZ_MAX_ATTEMPTS="${READYZ_MAX_ATTEMPTS:-60}"
 READYZ_SLEEP="${READYZ_SLEEP:-5}"
 RESTART_INITIAL_SLEEP="${RESTART_INITIAL_SLEEP:-5}"
-CA_RELOAD_OUT_SLEEP="${CA_RELOAD_OUT_SLEEP:-2}"
+CA_ANNOTATION="narwhal.dasomel.io/oidc-ca-sha256"
 
 if [ -z "${OIDC_ISSUER_URL}" ]; then
   echo "ERROR: usage: $0 <issuer_url> [<ca_src>]" >&2
@@ -103,10 +105,8 @@ wait_readyz() {
   return 1
 }
 
-ca_changed=false
 mkdir -p "$(dirname "${OIDC_CA_DEST}")"
 if [ ! -f "${OIDC_CA_DEST}" ] || ! cmp -s "${CA_SRC}" "${OIDC_CA_DEST}"; then
-  ca_changed=true
   if [ "${CA_SRC}" != "${OIDC_CA_DEST}" ]; then
     install -m 0644 "${CA_SRC}" "${OIDC_CA_DEST}"
   fi
@@ -115,6 +115,7 @@ else
   echo "OIDC CA certificate at ${OIDC_CA_DEST} already up to date"
 fi
 openssl x509 -in "${OIDC_CA_DEST}" -noout -subject >/dev/null
+ca_sha="$(openssl dgst -sha256 -r "${OIDC_CA_DEST}" | cut -d' ' -f1)"
 
 REQUIRED_FLAGS=(
   "--oidc-issuer-url=${OIDC_ISSUER_URL}"
@@ -144,7 +145,7 @@ if ! grep -q -- "--oidc-issuer-url" "${APISERVER_MANIFEST}"; then
     \"--oidc-username-prefix=oidc:\",
     \"--oidc-groups-prefix=oidc:\",
     \"--oidc-ca-file=/etc/kubernetes/pki/oidc-ca.crt\"
-  ]" "${stage_file}"
+  ] | .metadata.annotations.\"${CA_ANNOTATION}\" = \"${ca_sha}\"" "${stage_file}"
 
   staged_cmd="$(yq '.spec.containers[0].command[]' "${stage_file}")"
   for flag in "${REQUIRED_FLAGS[@]}"; do
@@ -167,21 +168,13 @@ else
     fi
   done
 
-  if [ "${ca_changed}" = "true" ]; then
-    echo "OIDC flags already present in ${APISERVER_MANIFEST}, but CA certificate changed — restarting static pod via kubelet manifest move-out/move-in..."
-    reload_stage="${APISERVER_BACKUP_DIR}/.kube-apiserver.yaml.ca-reload"
-    restore_manifest() {
-      if [ -f "${reload_stage}" ] && [ ! -f "${APISERVER_MANIFEST}" ]; then
-        mv "${reload_stage}" "${APISERVER_MANIFEST}" || true
-      fi
-    }
-    trap restore_manifest EXIT
-    mv "${APISERVER_MANIFEST}" "${reload_stage}"
-    if [ "${CA_RELOAD_OUT_SLEEP}" -gt 0 ]; then
-      sleep "${CA_RELOAD_OUT_SLEEP}"
-    fi
-    mv "${reload_stage}" "${APISERVER_MANIFEST}"
-    trap - EXIT
+  loaded_sha="$(yq ".metadata.annotations.\"${CA_ANNOTATION}\" // \"\"" "${APISERVER_MANIFEST}")"
+  if [ "${loaded_sha}" != "${ca_sha}" ]; then
+    echo "OIDC flags present but the manifest records CA ${loaded_sha:-<none>} (installed: ${ca_sha:0:12}) — updating ${CA_ANNOTATION} so kubelet restarts kube-apiserver with the installed CA..."
+    stage_file="${manifest_dir}/.kube-apiserver.yaml.oidc.tmp"
+    cp -p "${APISERVER_MANIFEST}" "${stage_file}"
+    yq -i ".metadata.annotations.\"${CA_ANNOTATION}\" = \"${ca_sha}\"" "${stage_file}"
+    mv "${stage_file}" "${APISERVER_MANIFEST}"
     wait_readyz "${RESTART_INITIAL_SLEEP}"
   else
     echo "OIDC flags and CA already configured in ${APISERVER_MANIFEST} — no-op"

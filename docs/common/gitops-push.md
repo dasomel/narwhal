@@ -79,7 +79,7 @@ Why does `push-to-gitea.sh` use `kubectl port-forward` to `localhost:13000` rath
    - Git smart HTTP (`\.git(/|$)`, `/info/refs`, `/git-upload-pack`, `/git-receive-pack`)
    - Package registry (`^/api/packages/` for Helm chart reads/writes)
    - Cluster verification probes (`^/api/v1/version$`, `^/api/v1/repos/gitea-admin/narwhal-gitops$`)
-   - OAuth/login (`^/login/oauth/`, `^/user/login`)
+   - OAuth/login (`^/login/oauth/`, `^/user/login`; browser `GET /user/login` is forwarded to `/user/oauth2/keycloak` by `gitea-login-forward` at priority 110 unless `?direct=1` is set, while `POST /user/login` uses `gitea-git-bypass`, `D-GITEA-OAUTH`)
 3. **Protected REST APIs**: All other Gitea REST APIs (`/api/v1/users`, `/api/v1/admin/*`, etc.) require browser OIDC authentication via Keycloak (priority 0 route). Machine operations requiring Gitea administrative API calls (`14-gitops-bootstrap.sh`, `narwhal-portal`) strictly talk directly to the in-cluster service or use authenticated internal tokens.
 
 ## Verify it actually applied

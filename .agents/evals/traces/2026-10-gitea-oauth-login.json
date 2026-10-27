@@ -1,0 +1,75 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-gitea-oauth-login-20261027",
+  "task": "Switch Gitea browser login from APISIX reverse-proxy auth (X-WEBAUTH-USER) to Gitea's own 'keycloak' OAuth2 source with zero-click sign-in, GET /user/login forwarding, and in-place OAuth source upsert (D-GITEA-OAUTH, #491). Live Kakao rollout (Gitea values, OAuth source update, route push) is done separately by the orchestrator after merge.",
+  "changeContext": {
+    "paths": [
+      ".agents/evals/traces/2026-10-gitea-oauth-login.json",
+      "docs/common/app-sso-permission-matrix.md",
+      "docs/common/gitops-push.md",
+      "docs/common/lessons-log.md",
+      "docs/common/security.md",
+      "docs/common/sso-accounts.md",
+      "docs/kakao/service-domains.md",
+      "gitops/charts/narwhal-platform/templates/apisix-routes.yaml",
+      "gitops/resources/gitea-ingress-policy.yaml",
+      "scripts/cluster/11-3-keycloak-clients.sh",
+      "scripts/cluster/12-gitea.sh",
+      "scripts/common/lib.sh",
+      "scripts/test/lib/check-gitea-oauth-login.py",
+      "scripts/test/lib/check-gitea-oauth-source-upsert.sh",
+      "scripts/test/lib/check-gitea-seed-admin.sh",
+      "scripts/test/regression-check-kakao.sh"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Switch Gitea browser login to Gitea's own 'keycloak' OAuth2 source (D-GITEA-OAUTH, #491): disable reverse-proxy auth and set USERNAME=preferred_username in 12-gitea.sh, retire D-GITEA-ADMIN seed and R285, add gitea_upsert_keycloak_source in scripts/common/lib.sh for 11-3 and 12, update ApisixRoute 'gitea' for zero-click OAuth redirect without forwarding gateway token headers, add 'gitea-login-forward' rule for GET /user/login with 60s loop guard and ?direct=1 escape hatch, update docs and add R287 + R287b."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "Live Gitea 1.26.2 ran ENABLE_REVERSE_PROXY_AUTHENTICATION=true with REVERSE_PROXY_AUTHENTICATION_USER=X-WEBAUTH-USER, which bypasses Gitea's OAuth2 group mappings (--admin-group cluster-admin, --group-team-map, --restricted-group guest). Both 11-3-keycloak-clients.sh and 12-gitea.sh ran `gitea admin auth delete --name keycloak 2>/dev/null || true`, which fails because `auth delete` accepts only `--id` (and DeleteSource returns ErrSourceInUse once any user links to the source), causing `add-oauth` to fail with ErrSourceAlreadyExist on every re-run while discarding stderr. Moreover, [oauth2_client] USERNAME defaults to 'nickname', which Keycloak does not emit, and cmd/admin_auth_oauth.go runUpdateOauth clears TwoFactorPolicy whenever --skip-local-2fa is omitted.",
+      "evidence": [
+        "runtime:gitea admin auth list -> ID 1 Name keycloak Type OAuth2 Enabled true; gitea admin auth delete --help accepts only --id",
+        "doc:Gitea v1.26.2 models/auth/source.go CreateSource returns ErrSourceAlreadyExist for an existing name; with `auth delete --name` a no-op, the scripts' `add-oauth --name keycloak` cannot succeed while source 1 exists, and its stderr is discarded so only 'WARN: Gitea OAuth config failed' is printed",
+        "doc:Gitea v1.26.2 services/auth/source.go DeleteSource (ErrSourceInUse), cmd/admin_auth_oauth.go runUpdateOauth (--skip-local-2fa), routers/web/auth/oauth.go (USERNAME=preferred_username, ACCOUNT_LINKING=auto)",
+        "runtime:live Gitea users 2026-10-27 -> admin (local, source_id 0, is_admin true, created by reverse-proxy auto-registration and promoted by the D-GITEA-ADMIN seed), argocd, gitea-admin, portal-gitops",
+        "runtime:Keycloak realm narwhal client gitea example ID token/userinfo for admin -> preferred_username admin, groups [cluster-admin]; registrationAllowed=false"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "12-gitea.sh sets ENABLE_REVERSE_PROXY_AUTHENTICATION=false, ENABLE_REVERSE_PROXY_AUTO_REGISTRATION=false, and USERNAME=preferred_username (keeping REQUIRE_SIGNIN_VIEW off for anonymous ArgoCD package reads) and removes the D-GITEA-ADMIN seed block. scripts/common/lib.sh defines gitea_upsert_keycloak_source to look up Name=='keycloak' via `gitea admin auth list` and run `update-oauth --id <id>` (with --skip-local-2fa, all group mappings and --group-team-map-removal so a user who leaves a mapped group is removed from its team on the next login) or `add-oauth --name keycloak` without discarding stderr or logging the secret; 11-3 and 12 call it. apisix-routes.yaml disables set_userinfo_header/set_access_token_header/set_id_token_header on route 'gitea', clears X-WEBAUTH-USER unconditionally, joins repeated request headers before string checks, redirects initial browser HTML GET navigations to /user/oauth2/keycloak with session cookie narwhal_gitea_sso=1, and adds rule 'gitea-login-forward' (priority 110, after gitea-git-bypass) to forward browser GET /user/login with 60s narwhal_gitea_sso_try loop guard and ?direct=1 escape hatch."
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "local static, Lua behavioural/syntax, and fake-kubectl regression verification of gitops/charts/narwhal-platform/templates/apisix-routes.yaml, scripts/cluster/12-gitea.sh, scripts/cluster/11-3-keycloak-clients.sh, and scripts/common/lib.sh (live Kakao rollout is performed separately by the orchestrator after merge)",
+      "summary": "All new and existing static/behavioural checks pass.",
+      "evidence": [
+        "test:python3 scripts/test/lib/check-gitea-oauth-login.py --mutation-verify -> OK D-GITEA-OAUTH (Lua behavioural harness incl. repeated Accept headers + 12 mutations caught)",
+        "test:bash scripts/test/lib/check-gitea-oauth-source-upsert.sh -> OK (id=7 update-oauth, keycloak2-only add-oauth, list failure fail-closed + WARN, --group-team-map-removal required, no direct delete/add-oauth in 11-3 or 12; 5 mutations caught)",
+        "test:helm template narwhal-platform gitops/charts/narwhal-platform + luac -p on extracted gitea (41 lines) and gitea-login-forward (29 lines) Lua functions at 1743f28b -> OK",
+        "test:bash -n and shellcheck --severity=warning on 12-gitea.sh, 11-3-keycloak-clients.sh, scripts/common/lib.sh, check-gitea-oauth-source-upsert.sh -> clean (0 warnings)",
+        "test:make validate -> exit 0; RESEARCH_EVIDENCE_DIR=$(mktemp -d) make test -> passed 413 failed 0 warnings 3"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "completion_claim",
+      "summary": "All source, test, documentation, and trace changes for D-GITEA-OAUTH (#491) are complete and verified against static, Lua behavioural/syntax, and fake-kubectl regression suites."
+    },
+    {
+      "id": "e6",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Complete and verified within the repository scope; the live Kakao rollout — Gitea values, OAuth source update, route push — is done separately by the orchestrator after merge."
+    }
+  ]
+}

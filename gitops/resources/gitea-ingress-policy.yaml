@@ -4,9 +4,12 @@
 # Closes the residual gap left open by 492e65a (issue #160): that fix stopped Gitea from
 # trusting a client-supplied X-WEBAUTH-USER at the gateway and narrowed
 # REVERSE_PROXY_TRUSTED_PROXIES from "*" to POD_NETWORK_CIDR — but the CIDR is a second
-# layer, not a boundary, since every pod in the cluster shares it. This is the boundary:
-# only the four workloads that are documented to reach gitea-http directly (bypassing
-# APISIX) may open a connection to it at all.
+# layer, not a boundary, since every pod in the cluster shares it. D-GITEA-OAUTH (#491)
+# subsequently disabled Gitea reverse-proxy authentication altogether
+# (ENABLE_REVERSE_PROXY_AUTHENTICATION=false) in favor of Gitea's own 'keycloak' OAuth2
+# login, and this NetworkPolicy remains the direct-caller boundary: only the four
+# workloads that are documented to reach gitea-http directly (bypassing APISIX) may open a
+# connection to it at all.
 #
 # Sources, each verified against this repo rather than assumed:
 #   1. APISIX gateway      - platform-system, app.kubernetes.io/name=apisix

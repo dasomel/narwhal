@@ -447,3 +447,52 @@ guard_s3_auth_cutover() {
   echo "ERROR: existing SeaweedFS S3 has no -config; Loki/Tempo do not consume their S3 credential Secrets yet. Follow docs/runbooks/seaweedfs-s3-auth.md before enabling auth. Approved immediate cutover only: NARWHAL_ALLOW_S3_AUTH_CUTOVER=true." >&2
   return 1
 }
+
+# gitea_upsert_keycloak_source <gitea_pod> <client_secret> <discovery_url>
+# D-GITEA-OAUTH (2026-10-27, #491): Gitea browser login uses Gitea's own 'keycloak' OAuth2
+# source instead of X-WEBAUTH-USER reverse-proxy auth.
+# Reason: once any user links to the source, DeleteSource refuses with ErrSourceInUse (and
+# `gitea admin auth delete` only accepts --id, so the old `delete --name keycloak` never ran
+# and `add-oauth` failed on every re-run with ErrSourceAlreadyExist, so a later secret rotation
+# or group-map change could never be applied). Look up the source ID by exact Name=='keycloak'
+# and update-oauth in place (passing --skip-local-2fa on every update because runUpdateOauth
+# clears TwoFactorPolicy whenever that flag is absent), or add-oauth when absent. Never logs the
+# client secret or discards gitea CLI stderr. --group-team-map-removal makes the team map
+# two-way: on login a user is removed from a mapped team whose group it no longer has (only the
+# teams named in the map are touched), so developer -> viewer in Keycloak drops write access.
+# Cost: a member added to narwhal/Developers or narwhal/Viewers by hand is removed at their next
+# OAuth login unless they hold the mapped Keycloak group; grant those teams through Keycloak
+# groups (Owners and every unmapped team are left alone).
+# Cost: two kubectl exec calls per run (auth list + update-oauth/add-oauth); callers keep their
+# existing WARN-and-continue behaviour when Gitea is not ready.
+# Escape hatch: manual `gitea admin auth update-oauth --id <id> ...` inside the Gitea pod.
+gitea_upsert_keycloak_source() {
+  local pod="$1" secret="$2" discovery_url="$3" list_out id
+  local -a common_flags=(
+    --provider openidConnect
+    --key gitea
+    --secret "${secret}"
+    --auto-discover-url "${discovery_url}"
+    --group-claim-name groups
+    --admin-group cluster-admin
+    --restricted-group guest
+    --group-team-map '{"developer":{"narwhal":["Developers"]},"viewer":{"narwhal":["Viewers"]}}'
+    --group-team-map-removal
+    --skip-local-2fa
+    --scopes "openid profile email groups"
+  )
+  if ! list_out=$(kubectl exec -n devtools "${pod}" -- /app/gitea/gitea admin auth list); then
+    echo "WARN: could not list Gitea auth sources in ${pod}" >&2
+    return 1
+  fi
+  id=$(awk 'NR > 1 && $2 == "keycloak" && !found { print $1; found = 1 }' <<< "${list_out}")
+  if [ -n "${id}" ]; then
+    kubectl exec -n devtools "${pod}" -- \
+      /app/gitea/gitea admin auth update-oauth --id "${id}" "${common_flags[@]}" \
+      && echo "Gitea OAuth source 'keycloak' updated (id=${id})"
+  else
+    kubectl exec -n devtools "${pod}" -- \
+      /app/gitea/gitea admin auth add-oauth --name keycloak "${common_flags[@]}" \
+      && echo "Gitea OAuth source 'keycloak' created"
+  fi
+}

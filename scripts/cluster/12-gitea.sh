@@ -10,20 +10,17 @@ source /home/vagrant/scripts/common/lib.sh
 GITEA_VERSION="${GITEA_VERSION:-v1.26.2}"
 DOMAIN="${DOMAIN:-local.narwhal.internal}"
 
-# Which peers Gitea will believe when they claim a user in X-WEBAUTH-USER.
-#
-# This was "*", which means every source — Gitea authenticates as whoever the header
-# names, so a wildcard makes the header itself the credential. The gateway now strips
-# the header on both gitea routes (apisix-routes.yaml), and this is the second layer:
-# it keeps anything outside the pod network from being believed even if a route is
-# ever added without that strip.
-#
-# It is NOT a complete boundary on its own — every pod shares this CIDR, so any
-# workload in the cluster still falls inside it. Narrowing further needs an ingress
-# NetworkPolicy on gitea-http, which is not trivial here: ArgoCD, the portal and the
-# Kaniko build jobs all talk to gitea-http directly rather than through APISIX, so
-# the allowlist has to enumerate them. Tracked in issue #160.
-POD_NETWORK_CIDR="${POD_NETWORK_CIDR:-10.244.0.0/16}"
+# D-GITEA-OAUTH (2026-10-27, #491): browser logins use Gitea's own 'keycloak' OAuth2 source
+# (auto-started by APISIX in apisix-routes.yaml) rather than X-WEBAUTH-USER reverse-proxy auth,
+# so Keycloak group claims (cluster-admin -> site admin, developer/viewer -> narwhal teams,
+# guest -> restricted) apply on every login. ENABLE_REVERSE_PROXY_AUTHENTICATION and
+# ENABLE_REVERSE_PROXY_AUTO_REGISTRATION are set to false explicitly so an upgrade overrides
+# any previously persisted true; USERNAME=preferred_username replaces Gitea's 'nickname'
+# default (Keycloak sends no nickname claim). Cost: existing unlinked local accounts with the
+# same username link on their first OAuth login and receive group/admin sync from the second
+# login on; escape hatch: /user/login?direct=1 for the local gitea-admin password form.
+# Direct in-cluster access to gitea-http remains bounded by issue #160's NetworkPolicy
+# (gitops/resources/gitea-ingress-policy.yaml).
 
 echo "=== Installing Gitea ${GITEA_VERSION} ==="
 
@@ -101,12 +98,11 @@ helm upgrade --install gitea "$(chart gitea)" \
   --set gitea.config.server.ROOT_URL=https://gitea.${DOMAIN} \
   --set gitea.config.oauth2_client.ENABLE_AUTO_REGISTRATION=true \
   --set gitea.config.oauth2_client.ACCOUNT_LINKING=auto \
+  --set gitea.config.oauth2_client.USERNAME=preferred_username \
   --set gitea.config.oauth2_client.UPDATE_AVATAR=true \
   --set gitea.config.oauth2_client.OPENID_CONNECT_SCOPES="openid profile email groups" \
-  --set gitea.config.service.ENABLE_REVERSE_PROXY_AUTHENTICATION=true \
-  --set gitea.config.service.ENABLE_REVERSE_PROXY_AUTO_REGISTRATION=true \
-  --set gitea.config.security.REVERSE_PROXY_AUTHENTICATION_USER=X-WEBAUTH-USER \
-  --set gitea.config.security.REVERSE_PROXY_TRUSTED_PROXIES="${POD_NETWORK_CIDR}" \
+  --set gitea.config.service.ENABLE_REVERSE_PROXY_AUTHENTICATION=false \
+  --set gitea.config.service.ENABLE_REVERSE_PROXY_AUTO_REGISTRATION=false \
   --set persistence.enabled=true \
   --set persistence.storageClass=nfs-csi \
   --set persistence.size=10Gi \
@@ -169,85 +165,18 @@ if [ -n "${GITEA_POD}" ]; then
         -d "${team_data}" 2>/dev/null || true
   done
 
-  # D-authmig: Configure Keycloak OAuth2 source (replaced Authentik)
-  # gitea-oidc-secret created by 11-3-keycloak-clients.sh (keycloak client: gitea)
+  # D-authmig / D-GITEA-OAUTH: Configure or update the Keycloak OAuth2 source in place.
+  # gitea-oidc-secret is created by 11-3-keycloak-clients.sh (keycloak client: gitea).
   GITEA_CLIENT_SECRET=$(kubectl get secret gitea-oidc-secret -n devtools \
     -o jsonpath='{.data.client-secret}' 2>/dev/null | base64 -d || echo "")
 
   if [ -z "${GITEA_CLIENT_SECRET}" ]; then
     echo "WARN: gitea-oidc-secret not found in devtools — run 11-3-keycloak-clients.sh first"
   else
-    # Idempotent: remove existing source before re-adding
-    kubectl exec -n devtools "${GITEA_POD}" -- \
-      /app/gitea/gitea admin auth delete --name keycloak 2>/dev/null || true
-
-    kubectl exec -n devtools "${GITEA_POD}" -- \
-      /app/gitea/gitea admin auth add-oauth \
-        --name keycloak \
-        --provider openidConnect \
-        --key gitea \
-        --secret "${GITEA_CLIENT_SECRET}" \
-        --auto-discover-url "${KEYCLOAK_URL}/realms/${KEYCLOAK_REALM}/.well-known/openid-configuration" \
-        --group-claim-name groups \
-        --admin-group cluster-admin \
-        --restricted-group guest \
-        --group-team-map '{"developer":{"narwhal":["Developers"]},"viewer":{"narwhal":["Viewers"]}}' \
-        --skip-local-2fa \
-        --scopes "openid profile email groups" 2>/dev/null \
-      && echo "Gitea OAuth source 'keycloak' created" \
+    gitea_upsert_keycloak_source "${GITEA_POD}" "${GITEA_CLIENT_SECRET}" \
+      "${KEYCLOAK_URL}/realms/${KEYCLOAK_REALM}/.well-known/openid-configuration" \
       || echo "WARN: Gitea OAuth config failed"
   fi
-
-  # D-GITEA-ADMIN (2026-10-26): browser logins reach Gitea through the gateway's
-  # reverse-proxy auth (X-WEBAUTH-USER from the APISIX OIDC session, apisix-routes.yaml).
-  # That path auto-registers the user but applies none of the OAuth source's --admin-group
-  # or --group-team-map mappings above, so the seeded Keycloak cluster-admin user (11-2)
-  # landed as a plain user and got 404 on the private gitea-admin/narwhal-gitops repo.
-  # Pre-create or promote it as a site admin so the reverse-proxy login maps onto that
-  # account, matching cluster-admin's admin role in ArgoCD, Grafana and Harbor. The PATCH
-  # echoes the user's own source_id/login_name back (the API rejects a missing login_name),
-  # so it changes only the admin flag. Cost: only the listed users; a cluster-admin added
-  # in Keycloak later stays a plain Gitea user until promoted.
-  # Escape hatch: GITEA_SEED_ADMIN_USERS="" skips this.
-  read -r -a seed_admins <<< "${GITEA_SEED_ADMIN_USERS-admin}"
-  for seed_user in "${seed_admins[@]}"; do
-    seed_code=$(kubectl exec -n devtools "${GITEA_POD}" -- \
-        curl -s -o /dev/null -w '%{http_code}' -u "gitea-admin:${GITEA_ADMIN_PASS}" \
-          "http://localhost:3000/api/v1/users/${seed_user}" 2>/dev/null || echo "000")
-    case "${seed_code}" in
-      404)
-        kubectl exec -n devtools "${GITEA_POD}" -- \
-          /app/gitea/gitea admin user create --username "${seed_user}" \
-            --email "${seed_user}@${DOMAIN}" --random-password --admin \
-            --must-change-password=false >/dev/null 2>&1 \
-          && echo "Gitea: created site admin '${seed_user}' (the reverse-proxy login maps onto it)" \
-          || echo "WARN: could not create Gitea user '${seed_user}'"
-        ;;
-      200)
-        seed_json=$(kubectl exec -n devtools "${GITEA_POD}" -- \
-            curl -sf -u "gitea-admin:${GITEA_ADMIN_PASS}" \
-              "http://localhost:3000/api/v1/admin/users?q=${seed_user}&limit=50" 2>/dev/null \
-          | jq -c --arg u "${seed_user}" '[.[] | select(.login == $u)][0] // empty' || echo "")
-        if [ -z "${seed_json}" ]; then
-          echo "WARN: Gitea user '${seed_user}' exists but its admin record was not found; not promoted"
-          continue
-        fi
-        seed_body=$(jq -c --arg u "${seed_user}" \
-          '{admin: true, source_id: .source_id, login_name: (if (.login_name // "") == "" then $u else .login_name end)}' \
-          <<< "${seed_json}")
-        kubectl exec -n devtools "${GITEA_POD}" -- \
-          curl -sf -o /dev/null -X PATCH "http://localhost:3000/api/v1/admin/users/${seed_user}" \
-            -H "Content-Type: application/json" \
-            -u "gitea-admin:${GITEA_ADMIN_PASS}" \
-            -d "${seed_body}" \
-          && echo "Gitea: '${seed_user}' is a site admin" \
-          || echo "WARN: could not promote Gitea user '${seed_user}'"
-        ;;
-      *)
-        echo "WARN: could not look up Gitea user '${seed_user}' (HTTP ${seed_code}); not promoted"
-        ;;
-    esac
-  done
 else
   echo "WARN: Gitea pod not found, skipping OAuth2 configuration"
 fi

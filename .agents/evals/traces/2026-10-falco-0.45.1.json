@@ -2,7 +2,7 @@
   "schemaVersion": "openforge-agent-trace/v1",
   "consistencyMode": "strict",
   "traceId": "narwhal-falco-0-45-1-20261028",
-  "task": "Upgrade Falco from 0.39.2 (chart 4.16.0, disabled since 2026-07-08) to 0.45.1 (chart 9.2.1) and enable it on every provider (owner decision 2026-10-28). Scope of this change: repository chart values, image/chart/inventory/SBOM pins, the portal Loki reader seam, docs and regression updates. The orchestrator does the live chart publish, image mirroring and GitOps push after merge. Falco on the Ubuntu 26.04 / kernel 7.0 Vagrant box is NOT verified.",
+  "task": "Upgrade Falco from 0.39.2 (chart 4.16.0, disabled since 2026-07-08) to 0.45.1 (chart 9.2.1) and enable it on every provider (owner decision 2026-10-28), then fix the independent review (FAIL) of PR #503: the Alertmanager v1 endpoint, the falcosidekick version, the portal's Ubuntu 26.04 gating of the Runtime Events tab and two documentation errors. Scope of this change: repository chart values, image/chart/inventory/SBOM pins, the portal Loki reader seam and Runtime Events tab, docs and regression updates. The orchestrator does the live chart publish, image mirroring and GitOps push after merge. Falco on the Ubuntu 26.04 / kernel 7.0 Vagrant box is NOT verified.",
   "changeContext": {
     "paths": [
       ".agents/evals/traces/2026-10-falco-0.45.1.json",
@@ -15,8 +15,14 @@
       "gitops/README-ko.md",
       "gitops/README.md",
       "gitops/charts/narwhal-apps/templates/falco.yaml",
+      "portal/CHANGELOG-ko.md",
+      "portal/CHANGELOG.md",
+      "portal/src/app/(dashboard)/security/page.tsx",
+      "portal/src/lib/cache-keys.ts",
       "portal/src/lib/falco.test.ts",
       "portal/src/lib/falco.ts",
+      "portal/src/lib/i18n.ts",
+      "portal/src/lib/kisa-controls.ts",
       "scripts/airgap/03-save-helm-charts.sh",
       "scripts/airgap/images.txt",
       "scripts/airgap/lib/chart-upstream-sources.tsv",
@@ -32,12 +38,12 @@
     {
       "id": "e1",
       "type": "scope_check",
-      "summary": "Rewrite the falco Application for chart 9.2.1 / Falco 0.45.1 and remove its if-false guard; keep modern_ebpf, resources and the privileged DaemonSet; make it airgap-safe (falcoctl install and follow off, the container plugin and falco-rules come from the image); bump images.txt, image-digests.tsv, component-licenses.tsv, chart-upstream-sources.tsv, the SBOM review map, VERSIONS.md, the compatibility matrix, both gitops READMEs, NOTICE and CHANGELOGs; drop the Ubuntu 26.04 falco exclusion from 14-gitops-bootstrap.sh; fix the portal Loki reader; add R291 (check-falco.py --mutation-verify). Deliberately left alone: portal security page 26.04 gating, i18n and kisa-controls text that still say Falco is unavailable, 01-generate-image-list.sh, Kyverno and PSA (no change needed). No cluster, ssh, vagrant, helm install or push was used."
+      "summary": "Rewrite the falco Application for chart 9.2.1 / Falco 0.45.1 and remove its if-false guard; keep modern_ebpf, resources and the privileged DaemonSet; make it airgap-safe (falcoctl install and follow off, the container plugin and falco-rules come from the image); bump images.txt, image-digests.tsv, component-licenses.tsv, chart-upstream-sources.tsv, the SBOM review map, VERSIONS.md, the compatibility matrix, both gitops READMEs, NOTICE and CHANGELOGs; drop the Ubuntu 26.04 falco exclusion from 14-gitops-bootstrap.sh; fix the portal Loki reader; add R291 (check-falco.py --mutation-verify). Review pass on PR #503: post Alertmanager alerts to /api/v2/alerts, run falcosidekick 2.35.0 instead of the subchart's 2.32.0 (D-FALCO-SIDEKICK), remove the portal's Ubuntu 26.04 gating of the Runtime Events tab with its i18n text and update the KISA control notes, refresh the portal Loki fixture from falcosidekick 2.35.0, correct the lessons-log row about 01-generate-image-list.sh, and fully qualify upstream issue and PR references in the changed Markdown. Deliberately left alone: the falco and falcosidekick resources (the 512Mi limit predates this change and the orchestrator measures live memory), 01-generate-image-list.sh, Kyverno and PSA (no change needed), and portal/scripts/harness-rules.sh, which reports hardcoded Korean 66 against a baseline of 48 both here and at origin/main 23f016c8. No cluster, ssh, vagrant, helm install or push was used."
     },
     {
       "id": "e2",
       "type": "reproduction",
-      "summary": "Falco 0.39.2 modern_ebpf fails scap_init on a kernel 7.0.14 VM and 0.45.1 does not. Reproduced 2026-10-27 on a local Docker Desktop VM (Linux 7.0.14-linuxkit aarch64, BTF present): docker.io/falcosecurity/falco-no-driver:0.39.2 run privileged with -o engine.kind=modern_ebpf exits 1 with 'An error occurred in an event source, forcing termination... Error: Initialization issues during scap_init', the same signature as the 2026-07-08 Vagrant failure; docker.io/falcosecurity/falco:0.45.1 on the same VM opens the modern BPF probe. Upstream attributes the 7.0 breakage to libs fixes absent from 0.39.2 (libs 0.18.2) and present in 0.45.1 (libs 0.26.1): #2997 execve verifier count, #3021 sendmmsg bpf_loop, #3086 auxmap race on preemptible kernels (reporters on Ubuntu 26.04 kernels 7.0.0-27 and 7.0.0-28, and on 7.0.0-31, confirm 0.45.0-rc1), #3119 signal_deliver verifier. Seam defects found while reading the portal reader against real output: falcosidekick's Loki priority label is Capitalized (portal selected lowercase), Loki lines are JSON only with loki.format=json (default text is dropped by the portal), source=falco exists only on Alertmanager alerts, metrics.outputRule emits an hourly snapshot event into the portal feed, and the removed collectors.containerd key is silently ignored by chart 9.x.",
+      "summary": "Falco 0.39.2 modern_ebpf fails scap_init on a kernel 7.0.14 VM and 0.45.1 does not. Reproduced 2026-10-27 on a local Docker Desktop VM (Linux 7.0.14-linuxkit aarch64, BTF present): docker.io/falcosecurity/falco-no-driver:0.39.2 run privileged with -o engine.kind=modern_ebpf exits 1 with 'An error occurred in an event source, forcing termination... Error: Initialization issues during scap_init', the same signature as the 2026-07-08 Vagrant failure; docker.io/falcosecurity/falco:0.45.1 on the same VM opens the modern BPF probe. Upstream attributes the 7.0 breakage to libs fixes absent from 0.39.2 (libs 0.18.2) and present in 0.45.1 (libs 0.26.1): falcosecurity/libs#2997 execve verifier count, falcosecurity/libs#3021 sendmmsg bpf_loop, falcosecurity/libs#3086 auxmap race on preemptible kernels (falcosecurity/falco#3955; reporters on Ubuntu 26.04 kernels 7.0.0-27 and 7.0.0-28, and on 7.0.0-31, confirm 0.45.0-rc1), falcosecurity/libs#3119 signal_deliver verifier. Seam defects found while reading the portal reader against real output: falcosidekick's Loki priority label is Capitalized (portal selected lowercase), Loki lines are JSON only with loki.format=json (default text is dropped by the portal), source=falco exists only on Alertmanager alerts, metrics.outputRule emits an hourly snapshot event into the portal feed, and the removed collectors.containerd key is silently ignored by chart 9.x.",
       "evidence": [
         "doc:https://github.com/falcosecurity/falco/releases/tag/0.45.1",
         "doc:https://github.com/falcosecurity/falco/releases/tag/0.45.0",
@@ -63,44 +69,95 @@
     },
     {
       "id": "e3",
-      "type": "change",
-      "summary": "falco.yaml now targets chart 9.2.1 with explicit image pins (falco 0.45.1, falcosidekick 2.32.0, both docker.io because ghcr.io and quay.io do not host them), modern_ebpf, falcoctl off, collectors.containerEngine with only the CRI engine on /run/containerd/containerd.sock, loki.format json, metrics.outputRule false, and release=prometheus-stack on both ServiceMonitors (Prometheus only selects labelled monitors). The old falco.grpc, falco.grpc_output, collectors.containerd and k8s_audit_rules.yaml entries and the inert loki.tenantmap and alertmanager.expirealert keys are gone. Airgap inventories, SBOM review map, VERSIONS.md and the compatibility matrix carry the same pins; 14-gitops-bootstrap.sh no longer removes falco on Ubuntu 26.04; NOTICE no longer calls Falco an unlisted component."
+      "type": "reproduction",
+      "summary": "Alertmanager v1 endpoint defect, reproduced 2026-10-28 in a local Docker lab against the real quay.io/prometheus/alertmanager:v0.33.0 (the version and digest pinned in images.txt and image-digests.tsv). falcosidekick subchart 0.14.1 renders ALERTMANAGER_ENDPOINT=/api/v1/alerts, which overrides falcosidekick's own default; Alertmanager removed the v1 API in 0.27.0 and answers 410. With that env, falcosidekick (2.32.0 and 2.35.0) logs 'AlertManager - unexpected Response (410)' and 'AlertManager - 410 Gone' for a Critical event and the event never appears in GET /api/v2/alerts, so every Critical alert is dropped. With ALERTMANAGER_ENDPOINT=/api/v2/alerts the same event logs 'AlertManager - POST OK (200)' and GET /api/v2/alerts lists it with source=falco. The portal's own reader already calls ${ALERTMANAGER_URL}/api/v2/alerts on the same Service, and the kube-prometheus-stack Application sets no route prefix.",
+      "evidence": [
+        "test:docker run falcosidekick 2.35.0 --env-file <env decoded from Secret/falco-falcosidekick of the chart 0.14.1 render, ALERTMANAGER_ENDPOINT=/api/v1/alerts, ALERTMANAGER_HOSTPORT swapped to the lab Alertmanager> ; POST of a Critical event to :2801 -> sidekick log '[ERROR] : AlertManager - unexpected Response (410)' and '[ERROR] : AlertManager - 410 Gone'; GET /api/v2/alerts has 0 alerts for that rule",
+        "test:direct POST http://am:9093/api/v1/alerts on quay.io/prometheus/alertmanager:v0.33.0 -> HTTP 410 'The Alertmanager v1 API was deprecated in version 0.16.0 and is removed as of version 0.27.0 - please use the equivalent route in the v2 API'",
+        "artifact:quay.io/prometheus/alertmanager:v0.33.0 sha256:af26fbe4dd1886ac0efd7bd55cd9027da262e105b137a376522b7c14c3626e4a (the lab container's image id equals the digest in scripts/airgap/lib/image-digests.tsv)",
+        "test:the same v1 env on falcosidekick 2.32.0 with a real Falco 0.45.1 Critical event (rule 'Drop and execute new binary in container') -> 'AlertManager - 410 Gone' and GET /api/v2/alerts returns []; observed earlier in this session, before the 2.35.0 re-run above",
+        "test:ALERTMANAGER_ENDPOINT=/api/v2/alerts on falcosidekick 2.35.0, probe event with rule V2Probe -> '[INFO] : AlertManager - POST OK (200)'; GET /api/v2/alerts lists labels alertname=V2Probe, source=falco, priority=Critical, rule=V2Probe",
+        "test:the real Falco 0.45.1 events on Linux 7.0.14-linuxkit through falcosidekick 2.35.0 -> GET /api/v2/alerts lists the real 'Drop and execute new binary in container' event (Critical, source=falco, alertname = rule) and a synthetic Critical event posted by hand",
+        "doc:portal/src/lib/alertmanager.ts line 224 reads ${alertmanagerUrl()}/api/v2/alerts?active=true&silenced=false from the same prometheus-stack-kube-prom-alertmanager Service that falco.yaml targets"
+      ]
     },
     {
       "id": "e4",
-      "type": "bug_fix",
-      "summary": "Portal reader seam: portal/src/lib/falco.ts now matches the priority label with an alternation of the Capitalized and lowercase spellings (the lowercase equality matched no falcosidekick stream) and normalises Falco's JSON null fields; falco.test.ts pins the contract with a verbatim Falco 0.45.1 -> falcosidekick 2.32.0 -> Loki capture. R291 (check-falco.py) holds the remaining silent failure modes with 45 mutations, each required to be caught by its own assertion id."
+      "type": "change",
+      "summary": "falco.yaml now targets chart 9.2.1 with explicit image pins (falco 0.45.1; falcosidekick 2.35.0 as the D-FALCO-SIDEKICK override of the subchart's 2.32.0; both docker.io because ghcr.io and quay.io do not host them), modern_ebpf, falcoctl off, collectors.containerEngine with only the CRI engine on /run/containerd/containerd.sock, loki.format json, alertmanager.endpoint /api/v2/alerts, metrics.outputRule false, and release=prometheus-stack on both ServiceMonitors (Prometheus only selects labelled monitors). The old falco.grpc, falco.grpc_output, collectors.containerd and k8s_audit_rules.yaml entries and the inert loki.tenantmap and alertmanager.expirealert keys are gone; resources are unchanged from origin/main. Airgap inventories (images.txt, image-digests.tsv with the 2.35.0 index digest), SBOM review map, VERSIONS.md and the compatibility matrix carry the same pins; 14-gitops-bootstrap.sh no longer removes falco on Ubuntu 26.04; NOTICE no longer calls Falco an unlisted component."
     },
     {
       "id": "e5",
-      "type": "regression_verification",
-      "status": "passed",
-      "scope": "helm render of the falco Application values through falco chart 9.2.1, R291 with 45 mutations, SBOM/compatibility/airgap/upgrade-wave checks, shellcheck, make validate, portal vitest/tsc/eslint, and a local container lab (Falco 0.45.1 and falcosidekick 2.32.0 on a kernel 7.0.14 VM; not a cluster). NOT covered: Falco on the Ubuntu 26.04 / kernel 7.0 Vagrant box, the Kubernetes CRI path (k8s.* fields stay null in the lab), a multi-hour soak, Kakao kernel 6.8, and the live chart publish, image mirroring and GitOps push (done by the orchestrator after merge).",
-      "summary": "See evidence.",
+      "type": "change",
+      "summary": "D-FALCO-SIDEKICK: falcosidekick runs 2.35.0 instead of the 2.32.0 that subchart 0.14.1 ships. 2.32.0 predates falcosecurity/falcosidekick#1366 (vulnerable Go modules, released in 2.34.0) and falcosecurity/falcosidekick#1390 (race when several outputs are configured, released in 2.35.0; Loki and Alertmanager are both enabled here). 2.35.0 (2026-08-31) is the newest release past the 7-day cooling window; 2.35.1 (2026-10-26) becomes eligible on 2026-11-02. The contract is unchanged for this deployment: outputs/loki.go and types/priority.go are identical in 2.32.0 and 2.35.0, the only alert-payload change is an extra alertname label (the Falco rule), and the rest of outputs/alertmanager.go is json.Number decoding. The old VERSIONS.md reason for 2.32.0 (a cooling window) was wrong and is replaced. Cost: an image override the subchart was not released against. Escape hatch: set the tag back to 2.32.0 (the v2 endpoint stays) or move to 2.35.1 on or after 2026-11-02 after re-running the lab and R291.",
       "evidence": [
-        "test:helm template narwhal-apps gitops/charts/narwhal-apps --show-only templates/falco.yaml | yq .spec.source.helm.valuesObject, then helm template falco falco-9.2.1.tgz -n security-system --api-versions monitoring.coreos.com/v1 -> rc 0; 14 resources; images docker.io/falcosecurity/falco:0.45.1 and docker.io/falcosecurity/falcosidekick:2.32.0 plus the falcosidekick helm test hook pod (curlimages/curl, hook test-success, not an Argo CD sync task per gitops-engine); no initContainers; DaemonSet privileged, hostPaths mounted: /run/containerd, /proc (ro), /etc (ro), /sys/kernel (ro); the chart also declares /boot, /lib/modules and /usr as volumes but mounts them nowhere",
-        "test:python3 scripts/test/lib/check-falco.py --mutation-verify -> OK, 45 mutations caught (A1..A10, each by its own id)",
-        "test:python3 scripts/test/lib/check-sbom-inventory-completeness.py --mutation-verify -> PASS (image=102, chart=21, binary=15)",
-        "test:python3 scripts/test/lib/check-compatibility-matrix.py --mutation-verify -> PASS; python3 scripts/test/lib/check-compatibility-pins.py -> PASS (rows=15)",
-        "test:python3 scripts/verify/upgrade-bundle-check.py --self-test -> PASS",
-        "test:python3 scripts/test/lib/check-upgrade-waves.py --mutation-verify -> PASS (21 modeled components and 44 Argo CD Applications)",
-        "test:python3 scripts/airgap/lib/check-required-charts.py . && python3 scripts/airgap/lib/check-chart-upstream-sources.py -> PASS (21 GitOps charts mapped, falco included)",
-        "test:the chart discovery heredoc of scripts/airgap/03-save-helm-charts.sh run offline -> emits helm-repo|https://falcosecurity.github.io/charts|falco|9.2.1",
-        "test:find scripts/ -name '*.sh' -print0 | xargs -0 shellcheck --severity=warning -> exit 0",
-        "test:make validate -> exit 0 (30 files OK)",
-        "test:cd portal && vitest run -> 136 files, 2077 tests passed; tsc --noEmit exit 0; eslint src/lib/falco.ts src/lib/falco.test.ts exit 0; falco.test.ts run against the previous falco.ts -> 2 of 7 fail",
-        "test:docker run Falco 0.45.1 (config = ConfigMap/falco from the render, only http_output.url and the container engine swapped for the lab) --privileged on Linux 7.0.14-linuxkit aarch64 -> 'Opening syscall source with modern BPF probe', 'Loaded plugin container@0.7.5 from /usr/share/falco/plugins/libcontainer.so', container 'cat /etc/shadow' -> rule 'Read sensitive file untrusted' with output_fields container.name, container.image.repository and null k8s.*; the same run with append_output reduced to suggested_output only yields the same keys",
-        "test:falcosidekick 2.32.0 with the env decoded from Secret/falco-falcosidekick (hosts swapped for a stub) -> Loki push labels hostname, priority=Warning, rule, source=syscall, tags with a JSON line; a synthetic Critical event -> Alertmanager labels source=falco, eventsource=syscall, priority=Critical, severity=critical",
-        "test:RESEARCH_EVIDENCE_DIR=$(mktemp -d) make test -> passed 415 failed 0 warnings 3"
+        "doc:https://github.com/falcosecurity/falcosidekick/releases/tag/2.34.0",
+        "doc:https://github.com/falcosecurity/falcosidekick/releases/tag/2.35.0",
+        "doc:https://github.com/falcosecurity/falcosidekick/releases/tag/2.35.1",
+        "doc:https://github.com/falcosecurity/falcosidekick/blob/2.35.0/outputs/loki.go",
+        "doc:https://github.com/falcosecurity/falcosidekick/blob/2.35.0/outputs/alertmanager.go",
+        "artifact:docker.io/falcosecurity/falcosidekick:2.35.0 index sha256:216ddb75229dcbf78cf57b1cf2140bd1b9092fcd72e4fd20b4d3057395d6765b (linux/amd64 sha256:038c126d867e4d01589352ff483448013b680d7e6a77326bbf7511f19c04ea96, linux/arm64 sha256:08ba6372593606192b7e461164a30eb2cea7bc2359fe30d9b12dbb29d87cb835), equal to the row in scripts/airgap/lib/image-digests.tsv",
+        "artifact:docker.io/falcosecurity/falcosidekick:2.32.0 index sha256:1976da72151850aae4436f33a5ed94bdef469f42a9b61c182b4feeb5441fb081 (the subchart default being replaced)",
+        "test:trivy 0.69.3 image scans, 2026-10-28, CRITICAL/HIGH counts: falcosidekick 2.32.0 9/80 (alpine 3.22.1), 2.35.0 3/19 (alpine 3.22.5), 2.35.1 0/1 (alpine 3.22.7); the amd64 and arm64 scans list the same CRITICAL/HIGH ids for 2.32.0 and 2.35.0; the 3 CRITICAL left in 2.35.0 are CVE-2026-77405, CVE-2026-77408 and CVE-2026-77411 in github.com/rabbitmq/amqp091-go, an output this deployment does not enable",
+        "test:diff of the 2.32.0 and 2.35.0 sources: outputs/loki.go and types/priority.go identical; outputs/alertmanager.go 18 changed lines (json.Number decoding and the alertname label); config.go, main.go and handlers.go differ (42, 17 and 180 changed lines) and were read for the keys and routes this deployment uses",
+        "test:falcosidekick 2.35.0 with the env decoded from Secret/falco-falcosidekick of the final render (hosts swapped for a Loki stub and Alertmanager v0.33.0), fed by Falco 0.45.1 on Linux 7.0.14-linuxkit -> log 'Enabled Outputs: [AlertManager Loki]'; Loki pushes labelled rule, priority (Warning and Critical), source=syscall, hostname with a JSON line whose keys are hostname, output, output_fields, priority, rule, source (the same structure as the 2.32.0 capture); Alertmanager 'POST OK (200)'"
       ]
     },
     {
       "id": "e6",
-      "type": "completion_claim",
-      "summary": "Within the repository scope, Falco is upgraded to 0.45.1 (chart 9.2.1) and enabled on every provider without runtime pulls, the portal reader matches falcosidekick's labels and JSON, and R291 plus all 415 static regression checks pass. Falco on the Ubuntu 26.04 / kernel 7.0 Vagrant box, the Kubernetes CRI path and a soak are not verified."
+      "type": "bug_fix",
+      "summary": "Portal reader seam: portal/src/lib/falco.ts now matches the priority label with an alternation of the Capitalized and lowercase spellings (the lowercase equality matched no falcosidekick stream) and normalises Falco's JSON null fields; falco.test.ts pins the contract with a verbatim Falco 0.45.1 -> falcosidekick 2.35.0 -> Loki capture (container victim3). R291 (check-falco.py) holds the remaining silent failure modes with 50 mutations, each required to be caught by its own assertion id."
     },
     {
       "id": "e7",
+      "type": "bug_fix",
+      "summary": "falcosidekick.config.alertmanager.endpoint is set to /api/v2/alerts in falco.yaml, so Critical alerts reach Alertmanager 0.27 and later instead of being dropped with 410. R291 assertion A6 requires that exact value, and two mutations (endpoint back to /api/v1/alerts, endpoint key removed so the chart default applies) are each caught by A6."
+    },
+    {
+      "id": "e8",
+      "type": "bug_fix",
+      "summary": "The portal Security page no longer hides the Runtime Events tab on Ubuntu 26.04: detectUbuntu2604, the is2604 gating and both security.runtimeEvents.unavailable2604 i18n keys are removed, so the tab is shown on every provider now that Falco is enabled everywhere. kisa-controls.ts no longer says Falco is disabled; it names Falco 0.45.1 and D-FALCO-045 and states that cluster behaviour is not part of the evidence. cache-keys.ts no longer lists the security page as a reader of cluster:{id}:infra (clusterCacheKey(clusterId, 'infra') is now used only by src/app/api/cluster/route.ts). R291 assertion A7 requires that the page has no 26.04 or osImage gating and keeps the runtime TabsTrigger and TabsContent, and two mutations (re-gating on 26.04, dropping the trigger) are each caught by A7."
+    },
+    {
+      "id": "e9",
+      "type": "documentation",
+      "summary": "Documentation corrected after the review: the lessons-log row for 2026-10-28 no longer claims that 01-generate-image-list.sh --live pulls curlimages/curl into the image list (it renders bundled charts at default values, where the falcosidekick subchart is off) and records the Alertmanager v1 endpoint and the falcosidekick bump as failures 7 and 8; every upstream issue or PR reference added in the changed Markdown and the falco.yaml and check-falco.py comments is written as owner/repo#N; the root and portal CHANGELOGs, VERSIONS.md, the compatibility matrix and both gitops READMEs carry the 2.35.0 pin, the v2 endpoint and the tab change.",
+      "evidence": [
+        "test:helm template x falco-9.2.1.tgz (default values, as in 01-generate-image-list.sh) | the generator's hook-image filter -> no image; the same with --set falcosidekick.enabled=true -> curlimages/curl"
+      ]
+    },
+    {
+      "id": "e10",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "helm render of the falco Application values through falco chart 9.2.1, R291 with 50 mutations, SBOM/compatibility/airgap/upgrade-wave checks, shellcheck, make validate, the full static regression suite, portal vitest/tsc/eslint, the changed-lines markdownlint gate, the four agent-trace validators, and a local container lab (Falco 0.45.1, falcosidekick 2.32.0 and 2.35.0, Alertmanager v0.33.0 and a Loki stub on a kernel 7.0.14 VM; not a cluster). NOT covered: Falco on the Ubuntu 26.04 / kernel 7.0 Vagrant box, the Kubernetes CRI path (k8s.* fields stay null in the lab, which used the docker engine), Kakao kernel 6.8, a multi-hour soak, live memory against the 512Mi limit, Argo CD's handling of the falcosidekick helm test hook (read from gitops-engine source only), Prometheus scraping of the labelled ServiceMonitors, the yamllint half of make lint (it covers gitops/apps and gitops/resources, which this change does not touch, and yamllint is not installed), and the live chart publish, image mirroring and GitOps push (done by the orchestrator after merge).",
+      "summary": "See evidence.",
+      "evidence": [
+        "test:helm template narwhal-apps gitops/charts/narwhal-apps --show-only templates/falco.yaml | yq .spec.source.helm.valuesObject, then helm template falco falco-9.2.1.tgz -n security-system --api-versions monitoring.coreos.com/v1 -> rc 0; 14 resources; images docker.io/falcosecurity/falco:0.45.1 and docker.io/falcosecurity/falcosidekick:2.35.0 plus the falcosidekick helm test hook pod (curlimages/curl, hook test-success, not an Argo CD sync task per gitops-engine); Secret/falco-falcosidekick carries ALERTMANAGER_ENDPOINT=/api/v2/alerts, ALERTMANAGER_EXTRALABELS=source:falco and LOKI_FORMAT=json; the render is byte-identical to the one the lab consumed",
+        "test:python3 scripts/test/lib/check-falco.py --mutation-verify -> OK, 50 mutations caught (A1..A10, each by its own id)",
+        "test:python3 scripts/test/lib/check-sbom-inventory-completeness.py --mutation-verify -> PASS (image evaluated=102 covered=102, chart 21/21, binary 15/15 unmutated; mutations rejected)",
+        "test:python3 scripts/test/lib/check-compatibility-matrix.py --mutation-verify -> PASS; python3 scripts/test/lib/check-compatibility-pins.py -> PASS (rows=15, version comparisons=14, warnings=6, all pre-existing VERSIONS.md-only notes)",
+        "test:python3 scripts/verify/upgrade-bundle-check.py --self-test -> rc 0",
+        "test:python3 scripts/test/lib/check-upgrade-waves.py --mutation-verify -> PASS (21 modeled components and 44 Argo CD Applications)",
+        "test:python3 scripts/airgap/lib/check-required-charts.py . && python3 scripts/airgap/lib/check-chart-upstream-sources.py -> PASS (21 GitOps charts mapped, falco included)",
+        "test:the chart discovery heredoc of scripts/airgap/03-save-helm-charts.sh run offline -> emits helm-repo|https://falcosecurity.github.io/charts|falco|9.2.1 among 26 charts",
+        "test:find scripts/ -name '*.sh' -print0 | xargs -0 shellcheck --severity=warning -> exit 0 (123 scripts)",
+        "test:make validate -> exit 0 (30 files OK, Vagrantfile syntax OK)",
+        "test:cd portal && vitest run -> 136 files, 2082 tests passed (falco.test.ts 7 tests against the verbatim 2.35.0 capture); tsc --noEmit exit 0; eslint . exit 0 with 0 errors and no warning in the files this change touches; bash scripts/harness-rules.sh exits 1 on hardcoded Korean 66 against a baseline of 48, the same as at origin/main 23f016c8 (not caused by this change)",
+        "test:docker run Falco 0.45.1 (config = ConfigMap/falco from the render, only http_output.url and the container engine swapped for the lab) --privileged on Linux 7.0.14-linuxkit aarch64 -> 'Opening syscall source with modern BPF probe', 'Loaded plugin container@0.7.5 from /usr/share/falco/plugins/libcontainer.so', container 'cat /etc/shadow' -> rule 'Read sensitive file untrusted' with output_fields container.name, container.image.repository and null k8s.*; the same run with append_output reduced to suggested_output only yields the same keys",
+        "test:falcosidekick 2.35.0 + Alertmanager v0.33.0 lab on the final render env -> 'Enabled Outputs: [AlertManager Loki]', Loki 'POST OK (204)', AlertManager 'POST OK (200)', GET /api/v2/alerts lists the Falco Critical event with source=falco (the v1 endpoint gets 410, see the reproduction event)",
+        "test:RESEARCH_EVIDENCE_DIR=$(mktemp -d) make test -> passed 415 failed 0 warnings 3 (R291 included; the 3 warnings are R19 no bundle, R243-known and R244-known)",
+        "test:python3 scripts/ci/markdownlint-changed.py --base 23f016c8 on HEAD 4c896673 (the commit before this trace) -> 'No markdownlint violations on added/modified active-documentation lines.' (rc 0)",
+        "test:the four agent-trace validators, run as agent-behavior.yml runs them (2026-08-version-consistency bound by bind-verification.py first) against this trace file before its own commit: check-agent-trace-requirement.py -> risk high, traceRequired true, traceChanged true (rc 0); check-agent-trace-evidence.py over 110 traces -> passed true, no failures; gate.py -> 0 regressions (rc 0); evaluate.py -> 4 passed, 0 failed, 1 not applicable (rc 0)"
+      ]
+    },
+    {
+      "id": "e11",
+      "type": "completion_claim",
+      "summary": "Within the repository scope, Falco is upgraded to 0.45.1 (chart 9.2.1) with falcosidekick 2.35.0 and enabled on every provider without runtime pulls, Alertmanager alerts use the v2 API, the portal reader matches falcosidekick's labels and JSON and no longer hides the Runtime Events tab on Ubuntu 26.04, and R291 plus all 415 static regression checks pass. Falco on the Ubuntu 26.04 / kernel 7.0 Vagrant box, the Kubernetes CRI path, live memory and a soak are not verified."
+    },
+    {
+      "id": "e12",
       "type": "task_outcome",
       "state": "A",
       "summary": "Complete and verified within the stated repository scope; the live chart publish, image mirroring and GitOps push are done by the orchestrator after merge, and Vagrant kernel 7.0 is not verified."

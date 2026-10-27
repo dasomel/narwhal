@@ -60,6 +60,7 @@ docker.io/alpine/git:v2.54.0
 docker.io/alpine/k8s:1.31.4
 velero/velero-plugin-for-aws:v1.14.1
 mirror.gcr.io/aquasec/trivy:0.60.0
+ghcr.io/aquasecurity/node-collector:0.3.1
 EOF
 )
 # D1: these build images are consumed by digest-pinned portal Jobs, so use the
@@ -81,6 +82,8 @@ pin_transient_images() {
 # short-lived VulnerabilityReport scan Job, so it only appears in a live pod
 # snapshot while a scan is running — pinned here so it's captured deterministically.
 # Bump the tag when trivy-operator (which selects it) is upgraded.
+# node-collector is the same shape: a per-node Job (InfraAssessment/CIS); missing from the
+# bastion mirror it sat in ImagePullBackOff and the compliance infra/node view stayed 0 (2026-10-26).
 
 # shellcheck source=lib/image-classes.sh
 source "${SCRIPT_DIR}/lib/image-classes.sh"

@@ -706,6 +706,38 @@ else
   fi
 fi
 
+# D-COST: portal >= 1.1.1 answers /api/cost with 503 unless all eight COST_* keys are
+# set (portal/src/lib/cost.ts getCostPricing, "fail closed on unconfigured pricing").
+# Kakao uses the public list price of the flavors it runs (csp/kakao-cloud/terraform:
+# 3x t1i.large 2vCPU/8GiB 197 KRW/h + 3x t1i.xlarge 4vCPU/16GiB 395 KRW/h = 1776 KRW/h
+# for 18 vCPU / 72 GiB, split CPU:MEM 0.65:0.35 per docs/adr-cost-basis.md in portal/;
+# Block Storage SSD 0.16 KRW/GiB-h; VAT excluded; kakaocloud.com, read 2026-10-26).
+# Vagrant has no billable cost, so it keeps the ADR's placeholder rates and says so.
+# Cost: a flavor or list-price change makes these stale. Escape hatch: every value is
+# overridable via the same-named env var.
+case "${DOMAIN}" in
+  kakao.*)
+    : "${COST_CPU_HOURLY:=64.13}"
+    : "${COST_MEM_GB_HOURLY:=8.633}"
+    : "${COST_STORAGE_GB_HOURLY:=0.16}"
+    : "${COST_CURRENCY:=KRW}"
+    : "${COST_PRICING_VERSION:=kakao-cloud-t1i-2026-10-26}"
+    : "${COST_PRICING_EFFECTIVE_DATE:=2026-10-26}"
+    : "${COST_PRICING_SOURCE:=kakaocloud.com list price: VM t1i.large 197 KRW/h, t1i.xlarge 395 KRW/h; Block Storage SSD 0.16 KRW/GiB-h (VAT excluded, read 2026-10-26)}"
+    : "${COST_PRICING_SCOPE:=Kakao Cloud narwhal (3x t1i.large + 3x t1i.xlarge), usage-based showback estimate, CPU:MEM 0.65:0.35, per GiB, VAT excluded}"
+    ;;
+  *)
+    : "${COST_CPU_HOURLY:=0.04}"
+    : "${COST_MEM_GB_HOURLY:=0.005}"
+    : "${COST_STORAGE_GB_HOURLY:=0.0001}"
+    : "${COST_CURRENCY:=USD}"
+    : "${COST_PRICING_VERSION:=placeholder-v0}"
+    : "${COST_PRICING_EFFECTIVE_DATE:=2026-06-12}"
+    : "${COST_PRICING_SOURCE:=placeholder with no cost basis (portal docs/adr-cost-basis.md section 1)}"
+    : "${COST_PRICING_SCOPE:=Vagrant local lab (${DOMAIN}), no billable cost, usage-based showback estimate}"
+    ;;
+esac
+
 kubectl create secret generic narwhal-portal-secrets \
   --namespace devtools \
   "${ARGOCD_TOKEN_ARG[@]}" \
@@ -761,9 +793,14 @@ kubectl create secret generic narwhal-portal-secrets \
   --from-literal=SCORECARD_CONFIGMAP_NAME="narwhal-scorecard-rules" \
   --from-literal=SCORECARD_CONFIGMAP_NAMESPACE="devtools" \
   --from-literal=SERVICE_GRAPH_SOURCE="istio" \
-  --from-literal=COST_CPU_HOURLY="0.04" \
-  --from-literal=COST_MEM_GB_HOURLY="0.005" \
-  --from-literal=COST_STORAGE_GB_HOURLY="0.0001" \
+  --from-literal=COST_CPU_HOURLY="${COST_CPU_HOURLY}" \
+  --from-literal=COST_MEM_GB_HOURLY="${COST_MEM_GB_HOURLY}" \
+  --from-literal=COST_STORAGE_GB_HOURLY="${COST_STORAGE_GB_HOURLY}" \
+  --from-literal=COST_CURRENCY="${COST_CURRENCY}" \
+  --from-literal=COST_PRICING_VERSION="${COST_PRICING_VERSION}" \
+  --from-literal=COST_PRICING_EFFECTIVE_DATE="${COST_PRICING_EFFECTIVE_DATE}" \
+  --from-literal=COST_PRICING_SOURCE="${COST_PRICING_SOURCE}" \
+  --from-literal=COST_PRICING_SCOPE="${COST_PRICING_SCOPE}" \
   --dry-run=client -o json > "${portal_secret_tmp}/desired.json"
 
 if kubectl get secret narwhal-portal-secrets -n devtools --ignore-not-found -o json \

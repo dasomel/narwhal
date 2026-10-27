@@ -55,6 +55,7 @@ docker.io/otwld/velero-ui	otwld/velero-ui	Apache-2.0
 docker.io/valkey/valkey	valkey-io/valkey	BSD-3-Clause	
 docker.io/velero/velero	vmware-tanzu/velero	Apache-2.0	
 gcr.io/kaniko-project/executor	GoogleContainerTools/kaniko	Apache-2.0	
+ghcr.io/aquasecurity/node-collector	aquasecurity/k8s-node-collector	Apache-2.0	
 ghcr.io/chaos-mesh/chaos-daemon	chaos-mesh/chaos-mesh	Apache-2.0	
 ghcr.io/chaos-mesh/chaos-mesh	chaos-mesh/chaos-mesh	Apache-2.0	
 ghcr.io/cloudnative-pg/cloudnative-pg	cloudnative-pg/cloudnative-pg	Apache-2.0	

@@ -19,7 +19,8 @@
 #   join    distribute artifacts, then control-planes serially, then workers
 #   nfs     01-nfs-server (master-1) — re-export without re-running kubeadm init
 #   phase1  04-addons, 05-nfs-quota-agent (master-1)
-#   phase2  06-phase2-start (master-1) — runs the 18 platform scripts itself
+#   phase2  06-phase2-start (master-1) + apply-apiserver-oidc-kakao.sh (all masters)
+#   oidc    apply-apiserver-oidc-kakao.sh (master-1 CA + 7 --oidc-* flags -> master-2..N)
 #
 # Usage (from the repo root):
 #   ./scripts/cloud/provision-kakao.sh all
@@ -57,7 +58,7 @@ DOMAIN="${DOMAIN:-kakao.narwhal.internal}"
 
 cd "$(dirname "$0")/../.."
 
-[ $# -gt 0 ] || { echo "usage: $0 <proxy|registry|base|runtime|mirror|init|join|nfs|phase1|phase2|all>..." >&2; exit 1; }
+[ $# -gt 0 ] || { echo "usage: $0 <proxy|registry|base|runtime|mirror|init|join|nfs|phase1|phase2|oidc|all>..." >&2; exit 1; }
 
 # ── OpenTofu state is the single source of truth for every address ───────────────
 BASTION_IP=$(cd "${TF_DIR}" && tofu output -raw bastion_public_ip)
@@ -403,13 +404,28 @@ stage_phase1() {
 }
 
 stage_phase2() {
-  log "phase2: 06-phase2-start drives the 18 platform scripts"
+  log "phase2: 06-phase2-start drives the 18 platform scripts, then OIDC flags on all masters"
   if stage_done "${MASTER1}" phase2; then note "skip (done)"; return 0; fi
   if run_scripts "${MASTER1}" phase2 cluster/06-phase2-start.sh; then
+    # D-APISERVER-OIDC-ALL: 11-4 skips node-to-node SSH on PROVIDER=kakao because cloud
+    # nodes have no vagrant password and no node-to-node trust; propagate the OIDC CA and
+    # the 7 --oidc-* flags from master-1 to master-2..N from the operator host before
+    # recording the phase2 sentinel.
+    if ! ./scripts/cloud/apply-apiserver-oidc-kakao.sh; then
+      note "apiserver OIDC propagation to other masters FAILED"; return 1
+    fi
     mark_done "${MASTER1}" phase2; note "ok"
   else
     note "FAILED"; tail_log "${MASTER1}" phase2 20; return 1
   fi
+}
+
+stage_oidc() {
+  log "oidc: distribute master-1 OIDC CA and apply kube-apiserver OIDC flags to all masters"
+  if ! ./scripts/cloud/apply-apiserver-oidc-kakao.sh; then
+    note "apiserver OIDC apply FAILED"; return 1
+  fi
+  note "ok"
 }
 
 # ── main ────────────────────────────────────────────────────────────────────────
@@ -440,6 +456,7 @@ for arg in "$@"; do
     join)   run_stage stage_join ;;
     phase1) run_stage stage_phase1 ;;
     phase2) run_stage stage_phase2 ;;
+    oidc)   run_stage stage_oidc ;;
     # The proxy exists so apt and helm can reach the internet from nodes with no public
     # IP. Under AIRGAP=1 every one of those comes from the bundle instead, and standing
     # squid up would quietly restore the egress the run is meant to prove it does not

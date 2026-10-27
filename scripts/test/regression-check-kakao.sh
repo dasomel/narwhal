@@ -3109,6 +3109,10 @@ assert re.search(r"ARGOCD_TOKEN 없이 완료[^\n]*\n\s*exit 3\b", b), "13-2 mus
 code = [l for l in b.splitlines() if not l.lstrip().startswith("#")]
 assert sum(1 for l in code if re.search(r"\bexit 3\b", l)) == 1, "exit 3 must appear exactly once in non-comment 13-2 code"
 '
+  # 2026-10-27 (#491): since #478, 11-3 fails closed on an empty client-secret read; as a
+  # non-critical step that failure only warned and later steps consumed empty Secrets.
+  check R289 "Phase 2 treats 11-3-keycloak-clients.sh as critical and its run loop runs it before 12-gitea.sh; 2 mutations caught (#491)" \
+    python3 scripts/test/lib/check-phase2-critical-11-3.py --mutation-verify
   check R248 "every kakaocloud_public_ip has lifecycle prevent_destroy (D-PUBIP, 2026-10-15); the check fails when a guard is removed" \
     python3 scripts/test/lib/check-kakao-public-ip-guard.py --mutation-verify
 

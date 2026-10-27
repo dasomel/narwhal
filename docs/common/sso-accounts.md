@@ -36,7 +36,7 @@ Narwhal의 모든 웹 UI와 OIDC kubectl은 Keycloak realm **`narwhal`** 하나�
 |------|--------|-----------------------|
 | Keycloak 관리 콘솔 (realm `master`) | Secret의 `username` | `iam/keycloak-initial-admin` `username`·`password` |
 | ArgoCD 로컬 관리자 | `admin` | `devtools/argocd-initial-admin-secret` `password` |
-| Gitea 로컬 관리자 | Secret의 `username` | `devtools/gitea-admin` `username`·`admin-password` |
+| Gitea 로컬 관리자 | `gitea-admin` (12-gitea.sh가 고정) | `devtools/gitea-admin` `admin-password` |
 | Harbor 로컬 관리자 | `admin` | `devtools/harbor-secrets` `HARBOR_ADMIN_PASSWORD` |
 | Grafana 로컬 관리자 | Secret의 `admin-user` | `monitoring/grafana-secrets` `admin-user`·`admin-password` |
 
@@ -54,10 +54,10 @@ vagrant ssh master-1 -c "bash /home/vagrant/scripts/test/show-credentials.sh"
 ```
 
 Kakao Cloud — Mac의 kubectl이 이미 클러스터에 붙어 있으면(`scripts/cloud/set-config-kakao.sh`가 연
-bastion 터널) 저장소 루트에서:
+bastion 터널) 저장소 루트에서(`narwhal-kakao`는 `set-config-kakao.sh`가 기본 생성하는 컨텍스트이며, 다르게 생성했다면 `kubectl config get-contexts`로 확인한 이름을 쓴다):
 
 ```bash
-PROVIDER=kakao scripts/test/show-credentials.sh --context kakao-narwhal
+PROVIDER=kakao scripts/test/show-credentials.sh --context narwhal-kakao
 ```
 
 터널이 없으면 master-1에서 실행한다 (API LB 인증서에 공인 IP SAN이 없어 터널 없이는 로컬 kubectl이

@@ -23,7 +23,7 @@ spec:
         # SA에는 chart 기본값 cluster-admin 대신 읽기 전용 view만 부여.
         clusterRoleBinding:
           clusterRoleName: view
-        # No cpu limit on purpose: throttling makes the (chart-hardcoded) 1s
+        # No cpu limit on purpose: throttling makes the chart's default 1s
         # probe timeout trip under VM load. Probe tuning itself is applied by
         # the headlamp-probe-tuning Kyverno policy (headlamp-policy.yaml).
         resources:

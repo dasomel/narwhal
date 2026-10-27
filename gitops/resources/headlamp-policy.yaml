@@ -7,6 +7,9 @@
 # Kyverno mutates the Deployment at admission, so the tuning survives chart
 # re-renders. The headlamp Application pairs this with ignoreDifferences +
 # RespectIgnoreDifferences so ArgoCD does not fight the mutation.
+# Chart 0.43.0+ exposes probes.* values (0.46.0 renders timeoutSeconds=1, failureThreshold=3
+# by default); this policy stays the one place the tuning lives, because it also covers the
+# direct helm install in 08-3-security.sh.
 apiVersion: kyverno.io/v1
 kind: ClusterPolicy
 metadata:

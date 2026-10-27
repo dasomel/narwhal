@@ -18,6 +18,7 @@
       "gitops/README.md",
       "gitops/charts/narwhal-apps/templates/headlamp.yaml",
       "gitops/charts/narwhal-platform/templates/apisix-routes.yaml",
+      "gitops/resources/headlamp-policy.yaml",
       "scripts/airgap/images.txt",
       "scripts/airgap/lib/image-digests.tsv",
       "scripts/cluster/08-3-security.sh",

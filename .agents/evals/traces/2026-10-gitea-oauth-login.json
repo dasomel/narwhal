@@ -55,7 +55,7 @@
       "evidence": [
         "test:python3 scripts/test/lib/check-gitea-oauth-login.py --mutation-verify -> OK D-GITEA-OAUTH (Lua behavioural harness incl. repeated Accept headers + 12 mutations caught)",
         "test:bash scripts/test/lib/check-gitea-oauth-source-upsert.sh -> OK (id=7 update-oauth, keycloak2-only add-oauth, list failure fail-closed + WARN, --group-team-map-removal required, no direct delete/add-oauth in 11-3 or 12; 5 mutations caught)",
-        "test:helm template narwhal-platform gitops/charts/narwhal-platform + luac -p on extracted gitea (34 lines) and gitea-login-forward (21 lines) Lua functions -> OK",
+        "test:helm template narwhal-platform gitops/charts/narwhal-platform + luac -p on extracted gitea (41 lines) and gitea-login-forward (29 lines) Lua functions at 1743f28b -> OK",
         "test:bash -n and shellcheck --severity=warning on 12-gitea.sh, 11-3-keycloak-clients.sh, scripts/common/lib.sh, check-gitea-oauth-source-upsert.sh -> clean (0 warnings)",
         "test:make validate -> exit 0; RESEARCH_EVIDENCE_DIR=$(mktemp -d) make test -> passed 413 failed 0 warnings 3"
       ]

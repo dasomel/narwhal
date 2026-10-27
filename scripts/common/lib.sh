@@ -460,6 +460,9 @@ guard_s3_auth_cutover() {
 # client secret or discards gitea CLI stderr. --group-team-map-removal makes the team map
 # two-way: on login a user is removed from a mapped team whose group it no longer has (only the
 # teams named in the map are touched), so developer -> viewer in Keycloak drops write access.
+# Cost: a member added to narwhal/Developers or narwhal/Viewers by hand is removed at their next
+# OAuth login unless they hold the mapped Keycloak group; grant those teams through Keycloak
+# groups (Owners and every unmapped team are left alone).
 # Cost: two kubectl exec calls per run (auth list + update-oauth/add-oauth); callers keep their
 # existing WARN-and-continue behaviour when Gitea is not ready.
 # Escape hatch: manual `gitea admin auth update-oauth --id <id> ...` inside the Gitea pod.

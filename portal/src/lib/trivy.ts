@@ -8,8 +8,8 @@ import type { SecuritySummary, WorkloadVulnRow, ImageVulnReport, Vulnerability, 
 //
 // On Kakao (109 VulnerabilityReports), an unbounded list is 10.76 MB and exceeds
 // http-client's 8 MiB DEFAULT_MAX_RESPONSE_BYTES; the largest single report is
-// 343,228 bytes (20 largest together ~4.2 MB). 20 x the largest report stays
-// well under 8 MiB per page, and 50 pages cover up to 1,000 reports.
+// 343,228 bytes (20 largest together ~4.2 MB). Even 20 x the largest report
+// (~6.9 MB, 82% of the cap) fits one page, and 50 pages cover up to 1,000 reports.
 const TRIVY_VULNERABILITY_REPORTS_PATH = "/apis/aquasecurity.github.io/v1alpha1/vulnerabilityreports"
 const TRIVY_REPORT_PAGE_LIMIT = 20
 const TRIVY_REPORT_MAX_PAGES = 50

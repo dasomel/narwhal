@@ -343,4 +343,3 @@ describe("VulnerabilityReport bounded pagination", () => {
     expect(report?.vulnerabilities[0].id).toBe("CVE-2026-0001")
   })
 })
-

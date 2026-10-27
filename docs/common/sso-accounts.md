@@ -24,6 +24,7 @@ Narwhal의 모든 웹 UI와 OIDC kubectl은 Keycloak realm **`narwhal`** 하나�
 - Harbor는 로컬 `admin`과 이름이 겹치므로 `admin`이 **`narwhal-admin`** 으로 온보딩된다
   (`harbor_username` 속성, `oidc_user_claim=harbor_username`). Harbor 관리자 권한은 이름이 아니라
   `oidc_admin_group=cluster-admin`에서 온다.
+- Gitea 브라우저 로그인은 게이트웨이의 reverse-proxy 인증(`X-WEBAUTH-USER`)을 거치며 Keycloak 그룹 매핑이 적용되지 않는다. `scripts/cluster/12-gitea.sh`가 시드 계정 `admin`을 미리 생성하거나 사이트 관리자(site admin)로 승격한다(D-GITEA-ADMIN, PR #478). 이후 Keycloak에 추가된 cluster-admin을 포함해 다른 사용자는 관리자가 승격하기 전까지 일반 사용자로 남는다.
 - APISIX `openid-connect` 플러그인은 **인증만** 한다. 그룹 제한이 없어 위 4명 모두 게이트웨이를
   통과하며, 권한은 각 앱과 Kubernetes RBAC가 적용한다.
 
@@ -191,6 +192,10 @@ kubectl create secret generic keycloak-user-passwords -n iam \
 | Harbor에 `admin` 사용자가 없음 | OIDC `admin`은 `narwhal-admin`으로 온보딩 | Harbor 사용자 목록에서 `narwhal-admin` 확인 |
 | `.well-known/openid-configuration`이 404 | realm 이름을 `kubernetes`로 씀 (옛 이름) | issuer는 `https://keycloak.<DOMAIN>/realms/narwhal` |
 | ROPC curl이 `unauthorized_client` | 비밀번호 grant 비활성화 | §4 kubelogin 사용 |
+| Dashboard `/sso/callback`에서 `401 MSG_LOGIN_UNAUTHORIZED_ERROR` (kubectl OIDC·Headlamp도 동일 거부) | apiserver가 Keycloak JWKS를 가져오지 못함: `*.kakao.narwhal.internal` 노드 DNS(bastion dnsmasq `172.17.0.191`)가 다운되어 kube-apiserver 로그에 `get keys failed ... no such host` 기록 | bastion에서 `systemctl status dnsmasq` 확인 및 재시작; 노드: `getent hosts keycloak.kakao.narwhal.internal` (#478 이후 systemd drop-in이 실패 시 자동 재시작) |
+| Grafana `Failed to get token from provider` | `monitoring/grafana-oidc-secret`의 `client_secret`이 빈 값 (이전 11-3이 kcadm 읽기 실패 시 ""를 기록) | 길이 확인: `kubectl -n monitoring get secret grafana-oidc-secret -o jsonpath='{.data.client_secret}' \| base64 -d \| wc -c`; 11-3 재실행 (현재는 fail-closed) 후 Grafana 파드 재생성 |
+| admin으로 Gitea `gitea-admin/narwhal-gitops` 접근 시 404 | admin이 Gitea 사이트 관리자(site admin)가 아님 | `12-gitea.sh` 재실행 (admin 시드) |
+| Headlamp가 로그인 페이지에 머무름 | 제로클릭 라우트 누락 | `kubectl -n platform-system get apisixroute headlamp -o jsonpath='{.spec.http[*].name}'`에 `headlamp-login-autoredirect`가 있어야 함 (탭당 60초에 최대 1회 리다이렉트) |
 
 ---
 
@@ -198,6 +203,7 @@ kubectl create secret generic keycloak-user-passwords -n iam \
 
 - 사용자·그룹·비밀번호 Secret·`kubernetes` 클라이언트: [`11-2-keycloak-config.sh`](../../scripts/cluster/11-2-keycloak-config.sh)
 - 앱별 OIDC 클라이언트와 Harbor 사용자명 매핑: [`11-3-keycloak-clients.sh`](../../scripts/cluster/11-3-keycloak-clients.sh)
+- Gitea 시드 관리자 생성 및 사이트 관리자 승격: [`12-gitea.sh`](../../scripts/cluster/12-gitea.sh)
 - 비밀번호 일괄 조회: [`show-credentials.sh`](../../scripts/test/show-credentials.sh)
 - 그룹 → RBAC 계약: [oidc-rbac-contract.md](oidc-rbac-contract.md), 앱별 권한: [app-sso-permission-matrix.md](app-sso-permission-matrix.md)
 

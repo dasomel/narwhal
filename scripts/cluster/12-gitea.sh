@@ -22,6 +22,16 @@ DOMAIN="${DOMAIN:-local.narwhal.internal}"
 # Direct in-cluster access to gitea-http remains bounded by issue #160's NetworkPolicy
 # (gitops/resources/gitea-ingress-policy.yaml).
 
+# D-GITEA-CLIENT-IP (2026-10-27, #491 follow-up): which peers Gitea believes about the CLIENT IP.
+# Gitea's ForwardedHeadersHandler (routers/common/middleware.go) takes the client address from
+# X-Forwarded-For only when the connecting peer is in REVERSE_PROXY_TRUSTED_PROXIES, and the
+# default is localhost, so without this every request would appear to come from the APISIX pod
+# (access log, InitialIP of new accounts). Reverse-proxy authentication is off (D-GITEA-OAUTH),
+# so this no longer decides who is signed in, only which address Gitea records. Cost: any pod in
+# the cluster CIDR can claim a client IP in Gitea's logs. Escape hatch: drop the --set below to
+# fall back to localhost-only. Never "*" (R40).
+POD_NETWORK_CIDR="${POD_NETWORK_CIDR:-10.244.0.0/16}"
+
 echo "=== Installing Gitea ${GITEA_VERSION} ==="
 
 # Use local kubeconfig (bypasses VIP) to avoid disruption during master-2 join
@@ -103,6 +113,7 @@ helm upgrade --install gitea "$(chart gitea)" \
   --set gitea.config.oauth2_client.OPENID_CONNECT_SCOPES="openid profile email groups" \
   --set gitea.config.service.ENABLE_REVERSE_PROXY_AUTHENTICATION=false \
   --set gitea.config.service.ENABLE_REVERSE_PROXY_AUTO_REGISTRATION=false \
+  --set gitea.config.security.REVERSE_PROXY_TRUSTED_PROXIES="${POD_NETWORK_CIDR}" \
   --set persistence.enabled=true \
   --set persistence.storageClass=nfs-csi \
   --set persistence.size=10Gi \

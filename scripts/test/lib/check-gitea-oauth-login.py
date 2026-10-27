@@ -298,6 +298,8 @@ def problems(routes_text: str, gitea_sh: str) -> list[str]:
         "--set gitea.config.oauth2_client.ENABLE_AUTO_REGISTRATION=true",
         "--set gitea.config.oauth2_client.UPDATE_AVATAR=true",
         '--set gitea.config.oauth2_client.OPENID_CONNECT_SCOPES="openid profile email groups"',
+        # D-GITEA-CLIENT-IP: client-IP (X-Forwarded-For) trust only; reverse-proxy auth stays off.
+        '--set gitea.config.security.REVERSE_PROXY_TRUSTED_PROXIES="${POD_NETWORK_CIDR}"',
     ):
         if required_set not in sh_code:
             out.append(f"12-gitea.sh missing '{required_set}'")
@@ -305,8 +307,6 @@ def problems(routes_text: str, gitea_sh: str) -> list[str]:
         "ENABLE_REVERSE_PROXY_AUTHENTICATION=true",
         "ENABLE_REVERSE_PROXY_AUTO_REGISTRATION=true",
         "REVERSE_PROXY_AUTHENTICATION_USER",
-        "REVERSE_PROXY_TRUSTED_PROXIES",
-        "POD_NETWORK_CIDR",
         "REQUIRE_SIGNIN_VIEW",
         "GITEA_SEED_ADMIN_USERS",
     ):
@@ -396,6 +396,10 @@ def main(argv: list[str]) -> int:
             ),
             "remove USERNAME=preferred_username": in_sh(
                 "  --set gitea.config.oauth2_client.USERNAME=preferred_username \\\n",
+                "",
+            ),
+            "drop the client-IP trusted proxies": in_sh(
+                '  --set gitea.config.security.REVERSE_PROXY_TRUSTED_PROXIES="${POD_NETWORK_CIDR}" \\\n',
                 "",
             ),
             "add REQUIRE_SIGNIN_VIEW=true": in_sh(

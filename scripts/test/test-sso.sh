@@ -515,13 +515,18 @@ if should_run "apps"; then
   fi
 
   # K8s API Server OIDC (every kube-apiserver pod must carry all 7 flags; D-APISERVER-OIDC-ALL)
+  # One kube-apiserver mirror pod per control-plane node: a master with no mirror pod must FAIL,
+  # not be skipped by the per-pod loop below.
+  CP_NODE_COUNT=$(kubectl get nodes -l node-role.kubernetes.io/control-plane --no-headers 2>/dev/null | grep -c . || true)
   APISERVER_POD_LINES=$(kubectl get pods -n kube-system -l component=kube-apiserver \
     -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.spec.containers[0].command}{"\n"}{end}' 2>/dev/null || true)
   if [ -z "${APISERVER_POD_LINES}" ]; then
     fail "K8s API: no kube-apiserver pods found"
   else
+    APISERVER_POD_COUNT=0
     while IFS=$'\t' read -r pod_name pod_cmd; do
       [ -n "${pod_name}" ] || continue
+      APISERVER_POD_COUNT=$((APISERVER_POD_COUNT + 1))
       missing_flags=""
       for flag in "oidc-issuer-url=${KEYCLOAK_URL}/realms/${REALM}" \
                   "oidc-client-id=kubernetes" \
@@ -540,6 +545,11 @@ if should_run "apps"; then
         fail "K8s API (${pod_name}): missing${missing_flags}"
       fi
     done <<< "${APISERVER_POD_LINES}"
+    if [ "${APISERVER_POD_COUNT}" -eq "${CP_NODE_COUNT}" ]; then
+      pass "K8s API: ${APISERVER_POD_COUNT} kube-apiserver pod(s) for ${CP_NODE_COUNT} control-plane node(s)"
+    else
+      fail "K8s API: ${APISERVER_POD_COUNT} kube-apiserver pod(s) for ${CP_NODE_COUNT} control-plane node(s) (one per node expected)"
+    fi
   fi
   echo ""
 fi
@@ -595,13 +605,18 @@ if should_run "rbac"; then
   # The API server on every control-plane node must trust this realm and client,
   # add the oidc: prefixes that gitops/resources/rbac-policies.yaml subjects use,
   # and verify Keycloak TLS via /etc/kubernetes/pki/oidc-ca.crt (D-APISERVER-OIDC-ALL).
+  # One kube-apiserver mirror pod per control-plane node: a master with no mirror pod must FAIL,
+  # not be skipped by the per-pod loop below.
+  CP_NODE_COUNT=$(kubectl get nodes -l node-role.kubernetes.io/control-plane --no-headers 2>/dev/null | grep -c . || true)
   APISERVER_POD_LINES=$(kubectl get pods -n kube-system -l component=kube-apiserver \
     -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.spec.containers[0].command}{"\n"}{end}' 2>/dev/null || true)
   if [ -z "${APISERVER_POD_LINES}" ]; then
     fail "API server: no kube-apiserver pods found"
   else
+    APISERVER_POD_COUNT=0
     while IFS=$'\t' read -r pod_name pod_cmd; do
       [ -n "${pod_name}" ] || continue
+      APISERVER_POD_COUNT=$((APISERVER_POD_COUNT + 1))
       for flag in "oidc-issuer-url=${KEYCLOAK_URL}/realms/${REALM}" \
                   "oidc-client-id=kubernetes" \
                   "oidc-username-claim=preferred_username" \
@@ -616,6 +631,11 @@ if should_run "rbac"; then
         fi
       done
     done <<< "${APISERVER_POD_LINES}"
+    if [ "${APISERVER_POD_COUNT}" -eq "${CP_NODE_COUNT}" ]; then
+      pass "API server: ${APISERVER_POD_COUNT} kube-apiserver pod(s) for ${CP_NODE_COUNT} control-plane node(s)"
+    else
+      fail "API server: ${APISERVER_POD_COUNT} kube-apiserver pod(s) for ${CP_NODE_COUNT} control-plane node(s) (one per node expected)"
+    fi
   fi
 
   # No user token can be scripted (password grant is disabled), so impersonate

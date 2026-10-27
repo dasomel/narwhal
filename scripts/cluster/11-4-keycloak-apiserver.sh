@@ -157,8 +157,13 @@ fi
 # and no node-to-node trust). Any master failure aborts the run.
 # Reason: all control-plane nodes sit behind the in-cluster `kubernetes` Service; a swallowed
 # master-2/3 failure left 2/3 of apiservers rejecting OIDC bearer tokens with 401.
-# Cost: master-2/3 unreachable or unhealthy during 11-4 now fails Phase 2 immediately.
-# Escape hatch: MASTER_COUNT=1 for a single-master topology.
+# Cost: master-2/3 unreachable or unhealthy during 11-4 now fails Phase 2 immediately. So does an
+# unreachable issuer: the endpoint check above used to warn and skip the OIDC activation and now
+# exits 1, and 11-4 is a CRITICAL_SCRIPTS entry in 06-phase2-start.sh, so Phase 2 stops. That
+# happens when the non-critical 08-6-tls-routes.sh / 10-dnsmasq.sh steps only warned, or when
+# the bastion DNS is down (#478).
+# Escape hatch: MASTER_COUNT=1 for a single-master topology; for an unreachable issuer, fix the
+# cause listed in the error and re-run Phase 2.
 echo "Extracting Keycloak TLS CA certificate from narwhal-root-ca-secret..."
 if kubectl get secret -n platform-system narwhal-root-ca-secret &>/dev/null; then
   kubectl get secret -n platform-system narwhal-root-ca-secret \
@@ -182,18 +187,22 @@ if [ "${PROVIDER:-vagrant}" = "kakao" ]; then
 else
   # Vagrant: propagate CA + run the node script on master-2 and master-3 over sshpass.
   # Master IPs: master-2=192.168.56.11, master-3=192.168.56.12
+  # UserKnownHostsFile=/dev/null is deliberate and only reachable on this disposable local-lab
+  # path (PROVIDER=kakao never gets here; scripts/cloud/lib-ssh.sh pins host keys there): after
+  # `vagrant destroy` a re-created master presents a new host key, and with a stale known_hosts
+  # entry OpenSSH disables password authentication, so sshpass fails and Phase 2 stops.
   MASTER_IPS="${MASTER_IPS:-192.168.56.11 192.168.56.12}"
   MASTER_COUNT="${MASTER_COUNT:-3}"
   IDX=2
   for MASTER_IP in ${MASTER_IPS}; do
     if [ "${IDX}" -gt "${MASTER_COUNT}" ]; then break; fi
     echo "Applying OIDC CA + flags to master-${IDX} (${MASTER_IP})..."
-    if ! sshpass -p "vagrant" scp -o StrictHostKeyChecking=no /etc/kubernetes/pki/oidc-ca.crt \
+    if ! sshpass -p "vagrant" scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null /etc/kubernetes/pki/oidc-ca.crt \
       "vagrant@${MASTER_IP}:/tmp/oidc-ca.crt"; then
       echo "ERROR: Could not copy OIDC CA to master-${IDX} (${MASTER_IP}). Re-run: vagrant ssh master-1 -c 'sudo bash /home/vagrant/scripts/cluster/11-4-keycloak-apiserver.sh'" >&2
       exit 1
     fi
-    if ! sshpass -p "vagrant" ssh -o StrictHostKeyChecking=no "vagrant@${MASTER_IP}" \
+    if ! sshpass -p "vagrant" ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null "vagrant@${MASTER_IP}" \
       "sudo bash /home/vagrant/scripts/cluster/11-4b-apiserver-oidc-node.sh '${OIDC_ISSUER_URL}' /tmp/oidc-ca.crt"; then
       echo "ERROR: Could not apply OIDC flags to master-${IDX} (${MASTER_IP}). Re-run: vagrant ssh master-1 -c 'sudo bash /home/vagrant/scripts/cluster/11-4-keycloak-apiserver.sh'" >&2
       exit 1

@@ -8,6 +8,12 @@ and test-sso.sh inspected only the local manifest or `.items[0]` of kube-apiserv
 master-2 and master-3 had zero `--oidc-*` flags, so ~2/3 of Dashboard/Headlamp/kubectl OIDC
 requests reaching the in-cluster `kubernetes` Service failed with 401 ("invalid bearer token").
 
+Review follow-up (same decision): a restart is confirmed by the kube-apiserver PID changing and
+only then by /readyz (the old process still answers `ok`, so the next master could be restarted
+while this one has not been), both manifest-changing paths write a .pre-oidc backup first, the
+Vagrant sshpass calls ignore a stale known_hosts entry, and every mirror-pod check compares the
+pod count with the master / control-plane node count so a master with no pod FAILS.
+
 Usage: check-apiserver-oidc-all-masters.py [--mutation-verify]
 """
 import re
@@ -98,9 +104,40 @@ def problems(sources: dict[str, str]) -> list[str]:
         ('CA_ANNOTATION="narwhal.dasomel.io/oidc-ca-sha256"', "must record the loaded CA in a manifest annotation"),
         ('.metadata.annotations.\\"${CA_ANNOTATION}\\" = \\"${ca_sha}\\"', "must write the installed CA sha256 into the annotation"),
         ('if [ "${loaded_sha}" != "${ca_sha}" ]; then', "must restart kube-apiserver (annotation update) when the recorded CA differs"),
+        ('if ! grep -qxF -- "${flag}" <<<"${existing_cmd}"; then', "must fail when the manifest has --oidc-issuer-url but lacks a required flag"),
+        ('APISERVER_PID_CMD="${APISERVER_PID_CMD:-pgrep -xo kube-apiserver}"', "must read the kube-apiserver PID through an overridable APISERVER_PID_CMD (default pgrep -xo kube-apiserver)"),
+        ('[ "${new_pid}" != "${old_pid}" ]', "must wait until the kube-apiserver PID differs from the one recorded before the manifest change"),
+        ('while [ -e "${backup_path}" ]; do', "must never overwrite an earlier backup"),
     ):
         if needle not in node_code:
             out.append(f"11-4b-apiserver-oidc-node.sh: {desc} ({needle})")
+
+    # A restart is confirmed by the kube-apiserver PID changing, then by /readyz: the OLD process
+    # still answers `ok` right after the manifest changes, so polling /readyz alone lets the caller
+    # restart the next master while this one has not restarted yet.
+    wait_blk = sh_function_block(node_code, "wait_apiserver_restart")
+    if not wait_blk:
+        out.append("11-4b-apiserver-oidc-node.sh missing wait_apiserver_restart()")
+    else:
+        if "wait_readyz 0" not in wait_blk:
+            out.append("11-4b-apiserver-oidc-node.sh wait_apiserver_restart() must poll readyz after the PID changed (wait_readyz 0)")
+        if 'wait_readyz "${RESTART_INITIAL_SLEEP}"' not in wait_blk:
+            out.append("11-4b-apiserver-oidc-node.sh wait_apiserver_restart() must keep the sleep + readyz wait when no PID was found")
+    # Both paths that change the manifest (first apply, CA/annotation update) must back it up and
+    # record the PID BEFORE the mv, then wait for the restart after it.
+    first_blk = section_block(node_code, 'if ! grep -q -- "--oidc-issuer-url" "${APISERVER_MANIFEST}"; then', "\nelse\n  existing_cmd=")
+    ann_blk = section_block(node_code, 'if [ "${loaded_sha}" != "${ca_sha}" ]; then', '\n  else\n    echo "OIDC flags and CA already configured')
+    for label, blk in (("first-apply", first_blk), ("CA/annotation update", ann_blk)):
+        mv_i = blk.find('mv "${stage_file}" "${APISERVER_MANIFEST}"')
+        if mv_i < 0:
+            out.append(f"11-4b-apiserver-oidc-node.sh {label} path missing the atomic mv")
+            continue
+        if not 0 <= blk.find("backup_manifest") < mv_i:
+            out.append(f"11-4b-apiserver-oidc-node.sh {label} path must write the .pre-oidc backup (backup_manifest) before the mv")
+        if not 0 <= blk.find('old_pid="$(apiserver_pid)"') < mv_i:
+            out.append(f"11-4b-apiserver-oidc-node.sh {label} path must record the kube-apiserver PID before the mv")
+        if blk.find('wait_apiserver_restart "${old_pid}"') <= mv_i:
+            out.append(f"11-4b-apiserver-oidc-node.sh {label} path must wait for the kube-apiserver restart (wait_apiserver_restart) after the mv")
 
     # Neither 11-4 nor apply-apiserver-oidc-kakao.sh may write the flags directly.
     for label, code in (("11-4-keycloak-apiserver.sh", api_code), ("apply-apiserver-oidc-kakao.sh", kakao_code)):
@@ -129,6 +166,11 @@ def problems(sources: dict[str, str]) -> list[str]:
                     out.append(f"11-4-keycloak-apiserver.sh swallows sshpass error: {line.strip()}")
         if 'if ! sshpass -p "vagrant" scp' not in oidc_sec or 'if ! sshpass -p "vagrant" ssh' not in oidc_sec:
             out.append("11-4-keycloak-apiserver.sh Vagrant loop must guard both sshpass scp and sshpass ssh with `if ! ...`")
+        # A re-created master has a new host key; with a stale known_hosts entry OpenSSH disables
+        # password authentication, so sshpass fails and Phase 2 stops. (Local-lab Vagrant path only.)
+        for line in oidc_sec.splitlines():
+            if "sshpass -p" in line and "UserKnownHostsFile=/dev/null" not in line:
+                out.append(f"11-4-keycloak-apiserver.sh sshpass call lacks -o UserKnownHostsFile=/dev/null: {line.strip()}")
 
     # 3. apply-apiserver-oidc-kakao.sh: lib-ssh.sh, master-1 CA read + openssl verify, serial master-2..N apply, mirror pod count check.
     if "D-APISERVER-OIDC-ALL" not in kakao_txt:
@@ -142,9 +184,20 @@ def problems(sources: dict[str, str]) -> list[str]:
         ("11-4b-apiserver-oidc-node.sh", "must run 11-4b-apiserver-oidc-node.sh on each master"),
         ("component=kube-apiserver", "must inspect kube-apiserver mirror pods after applying"),
         ("len(oidc_flags) < 7", "must fail if any kube-apiserver mirror pod has fewer than 7 --oidc-* flags"),
+        ("if len(items) != expected:", "must fail when the kube-apiserver mirror pod count differs from the master count"),
+        ("int(sys.argv[1])", "must take the expected pod count from the master list"),
+        ('"${#MASTERS[@]}"', "must pass the master count to the mirror pod check"),
+        ("mktemp /tmp/oidc-ca.", "must stage the CA under a unique mktemp name on the node"),
+        ("sudo test -f ${NODE_SCRIPT}", "must check every master holds the node script before the first restart"),
+        ("./scripts/cloud/stage-kakao-nodes.sh", "must tell the operator to re-run stage-kakao-nodes.sh when a node lacks the node script"),
     ):
         if needle not in kakao_code:
             out.append(f"apply-apiserver-oidc-kakao.sh: {desc} ({needle})")
+    if "/tmp/oidc-ca.crt" in kakao_code:
+        out.append("apply-apiserver-oidc-kakao.sh stages the CA under the fixed /tmp/oidc-ca.crt (a leftover root-owned file blocks it)")
+    for line in kakao_code.splitlines():
+        if "sudo cat /etc/kubernetes/pki/oidc-ca.crt" in line and "2>/dev/null" in line:
+            out.append(f"apply-apiserver-oidc-kakao.sh hides ssh errors on the master-1 CA read: {line.strip()}")
     for line in kakao_code.splitlines():
         if ("ssh_node" in line or "11-4b-apiserver-oidc-node.sh" in line) and re.search(r"\|\|\s*(true|echo\b)", line):
             out.append(f"apply-apiserver-oidc-kakao.sh swallows failure: {line.strip()}")
@@ -169,7 +222,19 @@ def problems(sources: dict[str, str]) -> list[str]:
     if not re.search(r"^\s*oidc\)\s+run_stage\s+stage_oidc\s*;;", prov_code, re.M):
         out.append("provision-kakao.sh case statement missing `oidc) run_stage stage_oidc ;;`")
 
-    # 5. verify-cluster.sh and test-sso.sh: no .items[0] for kube-apiserver OIDC check, iterate all pods, check all 7 flags.
+    # 5. verify-cluster.sh and test-sso.sh: no .items[0] for kube-apiserver OIDC check, iterate all pods, check all 7 flags,
+    #    and compare the pod count with the control-plane node count (a master with no mirror pod must FAIL).
+    def pod_count_problems(label: str, code: str) -> list[str]:
+        found = []
+        for needle, desc in (
+            ("kubectl get nodes -l node-role.kubernetes.io/control-plane", "does not count the control-plane nodes"),
+            ("APISERVER_POD_COUNT=$((APISERVER_POD_COUNT + 1))", "does not count the kube-apiserver pods it iterates"),
+            ('[ "${APISERVER_POD_COUNT}" -eq "${CP_NODE_COUNT}" ]', "does not compare the kube-apiserver pod count with the control-plane node count"),
+        ):
+            if needle not in code:
+                found.append(f"{label} {desc} ({needle})")
+        return found
+
     verify_sec = section_block(
         verify_txt,
         "# API server OIDC flags on every kube-apiserver pod",
@@ -190,6 +255,7 @@ def problems(sources: dict[str, str]) -> list[str]:
                 out.append(f"verify-cluster.sh missing check for '{tail}'")
         if 'fail "API server OIDC (${pod_name}):' not in v_code:
             out.append("verify-cluster.sh does not fail naming the pod on missing OIDC flags")
+        out.extend(pod_count_problems("verify-cluster.sh", v_code))
 
     sso_cfg_sec = section_block(
         sso_txt,
@@ -217,6 +283,7 @@ def problems(sources: dict[str, str]) -> list[str]:
                 out.append(f"{sec_name} missing check for '{tail}'")
         if "(${pod_name})" not in s_code:
             out.append(f"{sec_name} does not name pod_name in pass/fail output")
+        out.extend(pod_count_problems(sec_name, s_code))
 
     return out
 
@@ -272,9 +339,9 @@ def main(argv: list[str]) -> int:
             ),
             "reintroduce swallowed || true on scp in 11-4": mutate(
                 "apiserver",
-                '    if ! sshpass -p "vagrant" scp -o StrictHostKeyChecking=no /etc/kubernetes/pki/oidc-ca.crt \\\n'
+                '    if ! sshpass -p "vagrant" scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null /etc/kubernetes/pki/oidc-ca.crt \\\n'
                 '      "vagrant@${MASTER_IP}:/tmp/oidc-ca.crt"; then',
-                '    sshpass -p "vagrant" scp -o StrictHostKeyChecking=no /etc/kubernetes/pki/oidc-ca.crt \\\n'
+                '    sshpass -p "vagrant" scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null /etc/kubernetes/pki/oidc-ca.crt \\\n'
                 '      "vagrant@${MASTER_IP}:/tmp/oidc-ca.crt" || true\n'
                 '    if false; then',
             ),
@@ -292,8 +359,8 @@ def main(argv: list[str]) -> int:
             ),
             "swallow node script failure in apply-apiserver-oidc-kakao.sh": mutate(
                 "kakao",
-                '  if ! ssh_node "${ip}" "sudo env PROVIDER=kakao DOMAIN=${DOMAIN} NODE_IP=${ip} bash ${STAGE_DIR}/scripts/cluster/11-4b-apiserver-oidc-node.sh ${OIDC_ISSUER_URL} /tmp/oidc-ca.crt"; then\n',
-                '  ssh_node "${ip}" "sudo env PROVIDER=kakao DOMAIN=${DOMAIN} NODE_IP=${ip} bash ${STAGE_DIR}/scripts/cluster/11-4b-apiserver-oidc-node.sh ${OIDC_ISSUER_URL} /tmp/oidc-ca.crt" || echo "WARN"\n'
+                '  if ! ssh_node "${ip}" "trap \'rm -f ${remote_ca}\' EXIT; sudo env PROVIDER=kakao DOMAIN=${DOMAIN} NODE_IP=${ip} bash ${NODE_SCRIPT} ${OIDC_ISSUER_URL} ${remote_ca}"; then\n',
+                '  ssh_node "${ip}" "trap \'rm -f ${remote_ca}\' EXIT; sudo env PROVIDER=kakao DOMAIN=${DOMAIN} NODE_IP=${ip} bash ${NODE_SCRIPT} ${OIDC_ISSUER_URL} ${remote_ca}" || echo "WARN"\n'
                 '  if false; then\n',
             ),
             "drop apply-apiserver-oidc-kakao.sh from stage_phase2 in provision-kakao.sh": mutate(
@@ -328,6 +395,95 @@ def main(argv: list[str]) -> int:
                 "sso",
                 '                  "oidc-ca-file=/etc/kubernetes/pki/oidc-ca.crt"; do\n',
                 '                  "oidc-groups-prefix=oidc:"; do\n',
+            ),
+            # Restart detection and backups in the node script.
+            "drop the wait after the manifest mv on the CA rotation path": mutate(
+                "node",
+                '    mv "${stage_file}" "${APISERVER_MANIFEST}"\n    wait_apiserver_restart "${old_pid}"\n',
+                '    mv "${stage_file}" "${APISERVER_MANIFEST}"\n',
+            ),
+            "drop readyz polling after the kube-apiserver PID changed": mutate(
+                "node",
+                '      wait_readyz 0 || return 1\n',
+                "",
+            ),
+            "drop the PID-change wait from node script": mutate(
+                "node",
+                '    if [ -n "${new_pid}" ] && [ "${new_pid}" != "${old_pid}" ]; then\n',
+                "    if true; then\n",
+            ),
+            "drop the flag-mismatch check from node script": mutate(
+                "node",
+                '    if ! grep -qxF -- "${flag}" <<<"${existing_cmd}"; then\n',
+                "    if false; then\n",
+            ),
+            "record the PID after the manifest mv on first apply": mutate(
+                "node",
+                '  old_pid="$(apiserver_pid)"\n  mv "${stage_file}" "${APISERVER_MANIFEST}"\n',
+                '  mv "${stage_file}" "${APISERVER_MANIFEST}"\n  old_pid="$(apiserver_pid)"\n',
+            ),
+            "drop the sleep + readyz wait when no PID is found": mutate(
+                "node",
+                '    wait_readyz "${RESTART_INITIAL_SLEEP}" || return 1\n',
+                "",
+            ),
+            "drop the backup before the CA/annotation update": mutate(
+                "node",
+                "    backup_manifest\n    stage_file=",
+                "    stage_file=",
+            ),
+            "let a backup overwrite an earlier one": mutate(
+                "node",
+                '  while [ -e "${backup_path}" ]; do\n',
+                "  while false; do\n",
+            ),
+            # 11-4 Vagrant sshpass path.
+            "drop UserKnownHostsFile=/dev/null from sshpass scp in 11-4": mutate(
+                "apiserver",
+                "scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null /etc/kubernetes",
+                "scp -o StrictHostKeyChecking=no /etc/kubernetes",
+            ),
+            "drop UserKnownHostsFile=/dev/null from sshpass ssh in 11-4": mutate(
+                "apiserver",
+                'ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null "vagrant@${MASTER_IP}"',
+                'ssh -o StrictHostKeyChecking=no "vagrant@${MASTER_IP}"',
+            ),
+            # apply-apiserver-oidc-kakao.sh staging and verification.
+            "drop the pod-count comparison in apply-apiserver-oidc-kakao.sh": mutate(
+                "kakao",
+                "if len(items) != expected:\n",
+                "if False:\n",
+            ),
+            "stage the OIDC CA under a fixed /tmp name in apply-apiserver-oidc-kakao.sh": mutate(
+                "kakao",
+                '\'f="$(mktemp /tmp/oidc-ca.XXXXXX)" && cat > "${f}" && printf "%s" "${f}"\'',
+                '\'cat > /tmp/oidc-ca.crt && printf "%s" /tmp/oidc-ca.crt\'',
+            ),
+            "hide ssh errors on the master-1 CA read in apply-apiserver-oidc-kakao.sh": mutate(
+                "kakao",
+                '> "${tmp}/oidc-ca.crt" || [ ! -s',
+                '> "${tmp}/oidc-ca.crt" 2>/dev/null || [ ! -s',
+            ),
+            "drop the node script preflight in apply-apiserver-oidc-kakao.sh": mutate(
+                "kakao",
+                '"sudo test -f ${NODE_SCRIPT}"',
+                '"true"',
+            ),
+            # verify-cluster.sh and test-sso.sh pod-count comparisons.
+            "drop the pod-count comparison in verify-cluster.sh": mutate(
+                "verify",
+                '    if [ "${APISERVER_POD_COUNT}" -eq "${CP_NODE_COUNT}" ]; then\n',
+                "    if true; then\n",
+            ),
+            "drop the pod-count comparison in test-sso.sh config section": mutate(
+                "sso",
+                '    if [ "${APISERVER_POD_COUNT}" -eq "${CP_NODE_COUNT}" ]; then\n      pass "K8s API: ',
+                '    if true; then\n      pass "K8s API: ',
+            ),
+            "drop the pod-count comparison in test-sso.sh rbac section": mutate(
+                "sso",
+                '    if [ "${APISERVER_POD_COUNT}" -eq "${CP_NODE_COUNT}" ]; then\n      pass "API server: ',
+                '    if true; then\n      pass "API server: ',
             ),
         }
 

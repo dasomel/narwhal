@@ -1,16 +1,27 @@
 #!/bin/bash
 # R290b: behavioural harness for scripts/cluster/11-4b-apiserver-oidc-node.sh (D-APISERVER-OIDC-ALL).
-# Runs the real node script without sudo against a temporary kubeadm-style kube-apiserver.yaml
-# and stubbed readyz:
+# Runs the real node script without sudo against a temporary kubeadm-style kube-apiserver.yaml,
+# a stubbed readyz and a stubbed kube-apiserver PID (APISERVER_PID_CMD). The default PID stub is
+# a simulated kubelet: the PID is a checksum of the manifest, so it changes exactly when the
+# manifest content changes, which is when kubelet recreates the static pod. `date` is stubbed to
+# a fixed stamp so every backup in the run collides on its name.
 #   1. Empty CA file fails closed without touching the manifest or creating a backup.
 #   2. Non-PEM / invalid CA file fails closed without touching the manifest.
 #   3. First valid run installs the CA, writes a .pre-oidc-<UTC> backup OUTSIDE the manifests
 #      directory, leaves no stray files inside manifests/, and adds the exact 7 --oidc-* flags.
 #   4. Second run with the same CA + issuer is an idempotent no-op (still 7 flags, still 1 backup).
 #   5. Rotated CA with flags already present updates the CA and the manifest's
-#      narwhal.dasomel.io/oidc-ca-sha256 annotation (content change -> kubelet restart), nothing else.
-#   5b. A manifest from before the annotation (flags, no annotation) gets it once, then is a no-op.
+#      narwhal.dasomel.io/oidc-ca-sha256 annotation (content change -> kubelet restart), nothing
+#      else, and first writes its own .pre-oidc-<UTC> backup (never overwriting the earlier one).
+#   5b. A manifest from before the annotation (flags, no annotation) gets it once (with a
+#      backup), then is a no-op (no backup).
 #   6. Unhealthy readyz fails closed after bounded retries.
+#   7. A kube-apiserver PID that never changes fails closed after the bounded PID wait on the
+#      first-apply path, even though readyz answers ok at once (the old process still serves).
+#   7b. Same on the CA/annotation update path.
+#   8. A PID that changes only after a few lookups is waited for, and readyz is polled only
+#      after the PID changed.
+#   9. No PID before the change (stub prints nothing) falls back to the sleep + readyz wait.
 set -euo pipefail
 
 if ! command -v yq >/dev/null 2>&1; then
@@ -71,12 +82,32 @@ printf 'not-a-valid-pem-cert\n' > "${tmp}/garbage-ca.crt"
 ann() { yq '.metadata.annotations."narwhal.dasomel.io/oidc-ca-sha256" // ""' "${MANIFEST}"; }
 sha() { openssl dgst -sha256 -r "$1" | cut -d' ' -f1; }
 cmds() { yq '.spec.containers[0].command' "$1"; }
+backup_count() { find "${BACKUP_DIR}" -maxdepth 1 -name 'kube-apiserver.yaml.pre-oidc-*' | wc -l | tr -d ' '; }
+
+# Fixed UTC stamp: every backup of the run asks for the same name, so the never-overwrite suffix
+# (-2, -3, ...) is exercised deterministically rather than only on a same-second race. Any other
+# `date` call passes through to the real one.
+FIXED_STAMP="20260101T000000Z"
+REAL_DATE="$(command -v date)"
+mkdir -p "${tmp}/stubbin"
+cat > "${tmp}/stubbin/date" <<EOF
+#!/bin/bash
+if [ "\$*" = "-u +%Y%m%dT%H%M%SZ" ]; then echo "${FIXED_STAMP}"; else exec "${REAL_DATE}" "\$@"; fi
+EOF
+chmod +x "${tmp}/stubbin/date"
+
+# Simulated kubelet: the kube-apiserver PID follows the manifest content.
+PID_FOLLOWS_MANIFEST="cksum < '${MANIFEST}' | cut -d' ' -f1"
 
 run_node_script() {
-  local ca_src="$1" readyz_out="${2:-ok}"
+  local ca_src="$1" readyz_out="${2:-ok}" pid_cmd="${3:-${PID_FOLLOWS_MANIFEST}}" pid_attempts="${4:-3}"
+  PATH="${tmp}/stubbin:${PATH}" \
   APISERVER_MANIFEST="${MANIFEST}" \
   OIDC_CA_DEST="${CA_DEST}" \
   APISERVER_BACKUP_DIR="${BACKUP_DIR}" \
+  APISERVER_PID_CMD="${pid_cmd}" \
+  PID_CHANGE_MAX_ATTEMPTS="${pid_attempts}" \
+  PID_CHANGE_SLEEP=0 \
   READYZ_CMD="printf '%s' '${readyz_out}'" \
   READYZ_MAX_ATTEMPTS=2 \
   READYZ_SLEEP=0 \
@@ -115,7 +146,8 @@ cmp -s "${tmp}/ca1.crt" "${CA_DEST}" || {
   exit 1
 }
 
-# Only kube-apiserver.yaml may exist inside manifests/ (a backup there starts a second static pod).
+# Only kube-apiserver.yaml may exist inside manifests/ (kubelet keys static pods by
+# namespace/name, so a backup there is a same-name copy that conflicts with the real manifest).
 manifest_entries="$(find "${tmp}/etc/kubernetes/manifests" -mindepth 1 -maxdepth 1)"
 if [ "${manifest_entries}" != "${MANIFEST}" ]; then
   echo "FAIL: case 3 left extra file(s) inside manifests/: ${manifest_entries}"
@@ -130,6 +162,10 @@ if [ "${#backup_files[@]}" -ne 1 ]; then
   echo "FAIL: case 3 expected 1 backup outside manifests/, found ${#backup_files[@]}"
   exit 1
 fi
+[ "${backup_files[0]}" = "${BACKUP_DIR}/kube-apiserver.yaml.pre-oidc-${FIXED_STAMP}" ] || {
+  echo "FAIL: case 3 backup is not named kube-apiserver.yaml.pre-oidc-<UTC stamp>: ${backup_files[0]}"
+  exit 1
+}
 cmp -s "${backup_files[0]}" "${tmp}/original-manifest.yaml" || {
   echo "FAIL: case 3 backup does not match pre-OIDC manifest"
   exit 1
@@ -156,6 +192,10 @@ for expected in \
 done
 grep -Fq "Applied 7 OIDC flags" <<<"${out1}" || {
   echo "FAIL: case 3 output missing 'Applied 7 OIDC flags': ${out1}"
+  exit 1
+}
+grep -Fq "kube-apiserver restarted (pid" <<<"${out1}" || {
+  echo "FAIL: case 3 did not wait for the kube-apiserver PID to change: ${out1}"
   exit 1
 }
 [ "$(ann)" = "$(sha "${tmp}/ca1.crt")" ] || {
@@ -198,17 +238,44 @@ grep -Fq "updating narwhal.dasomel.io/oidc-ca-sha256" <<<"${out3}" || {
   echo "FAIL: case 5 did not report the restart-triggering annotation update: ${out3}"
   exit 1
 }
+grep -Fq "kube-apiserver restarted (pid" <<<"${out3}" || {
+  echo "FAIL: case 5 did not wait for the kube-apiserver PID to change: ${out3}"
+  exit 1
+}
+# The annotation path writes its own backup (the escape hatch must exist on a cluster that already
+# had the flags) and never overwrites the earlier one.
+[ "$(backup_count)" = "2" ] || {
+  echo "FAIL: case 5 expected 2 backups after the annotation update, found $(backup_count)"
+  exit 1
+}
+cmp -s "${BACKUP_DIR}/kube-apiserver.yaml.pre-oidc-${FIXED_STAMP}-2" "${tmp}/after-run1.yaml" || {
+  echo "FAIL: case 5 backup is not the manifest as it was before the annotation update"
+  exit 1
+}
+cmp -s "${BACKUP_DIR}/kube-apiserver.yaml.pre-oidc-${FIXED_STAMP}" "${tmp}/original-manifest.yaml" || {
+  echo "FAIL: case 5 overwrote the earlier backup"
+  exit 1
+}
 
 # 5b. Pre-annotation manifest (flags, no annotation, same CA) -> annotation added once, then no-op.
 yq -i 'del(.metadata.annotations."narwhal.dasomel.io/oidc-ca-sha256")' "${MANIFEST}"
+cp "${MANIFEST}" "${tmp}/before-5b.yaml"
 out4="$(run_node_script "${tmp}/ca2.crt" "ok" 2>&1)"
 [ "$(ann)" = "$(sha "${tmp}/ca2.crt")" ] || {
   echo "FAIL: case 5b did not add the annotation to a pre-annotation manifest (got '$(ann)'): ${out4}"
   exit 1
 }
+cmp -s "${BACKUP_DIR}/kube-apiserver.yaml.pre-oidc-${FIXED_STAMP}-3" "${tmp}/before-5b.yaml" || {
+  echo "FAIL: case 5b did not back up the pre-annotation manifest before adding the annotation (backups: $(backup_count))"
+  exit 1
+}
 out5="$(run_node_script "${tmp}/ca2.crt" "ok" 2>&1)"
 grep -Fq "no-op" <<<"${out5}" || {
   echo "FAIL: case 5b second run was not a no-op: ${out5}"
+  exit 1
+}
+[ "$(backup_count)" = "3" ] || {
+  echo "FAIL: case 5b no-op run wrote a backup (now $(backup_count))"
   exit 1
 }
 
@@ -219,4 +286,105 @@ if run_node_script "${tmp}/ca1.crt" "unhealthy" >/dev/null 2>&1; then
   exit 1
 fi
 
-echo "OK: 11-4b-apiserver-oidc-node.sh passed 7 behavioural cases (empty CA, invalid PEM, 7-flag apply + CA annotation + external backup, idempotent re-run, CA rotation via annotation, pre-annotation manifest, readyz timeout)"
+# State for the restart-detection cases: flags + the ca1 annotation, CA ca1 installed, so a run
+# with ca2 takes the CA/annotation update path.
+with_flags_ca1() {
+  cp "${tmp}/original-manifest.yaml" "${MANIFEST}"
+  run_node_script "${tmp}/ca1.crt" "ok" >/dev/null 2>&1 || {
+    echo "FAIL: setup (first apply with ca1) failed"
+    exit 1
+  }
+}
+
+# 7. The kube-apiserver PID never changes (kubelet has not restarted it): fail closed after the
+#    bounded PID wait although readyz answers ok at once, because the OLD process still serves.
+cp "${tmp}/original-manifest.yaml" "${MANIFEST}"
+if out6="$(run_node_script "${tmp}/ca1.crt" "ok" "echo 4242" 2>&1)"; then
+  echo "FAIL: case 7 (PID unchanged, first apply) succeeded, expected non-zero exit: ${out6}"
+  exit 1
+fi
+grep -Fq "was not restarted by kubelet" <<<"${out6}" || {
+  echo "FAIL: case 7 did not report the missing restart: ${out6}"
+  exit 1
+}
+if grep -Fq "readyz=ok" <<<"${out6}"; then
+  echo "FAIL: case 7 accepted readyz before the kube-apiserver process was replaced: ${out6}"
+  exit 1
+fi
+
+# 7b. The same on the CA/annotation update path.
+with_flags_ca1
+if out7="$(run_node_script "${tmp}/ca2.crt" "ok" "echo 4242" 2>&1)"; then
+  echo "FAIL: case 7b (PID unchanged, annotation update) succeeded, expected non-zero exit: ${out7}"
+  exit 1
+fi
+grep -Fq "updating narwhal.dasomel.io/oidc-ca-sha256" <<<"${out7}" || {
+  echo "FAIL: case 7b did not take the annotation update path: ${out7}"
+  exit 1
+}
+grep -Fq "was not restarted by kubelet" <<<"${out7}" || {
+  echo "FAIL: case 7b did not report the missing restart: ${out7}"
+  exit 1
+}
+if grep -Fq "readyz=ok" <<<"${out7}"; then
+  echo "FAIL: case 7b accepted readyz before the kube-apiserver process was replaced: ${out7}"
+  exit 1
+fi
+
+# 8. The old process stays visible for two lookups after the manifest changed: the script keeps
+#    waiting, and readyz is polled only after the PID has changed (4 lookups in total: 1 before
+#    the change, 3 after it, none once the new PID was seen).
+cat > "${tmp}/pid-delayed.sh" <<EOF
+#!/bin/bash
+n=\$(cat "${tmp}/pid-calls" 2>/dev/null || echo 0)
+n=\$((n + 1))
+echo "\${n}" > "${tmp}/pid-calls"
+if [ "\${n}" -le 3 ]; then echo 4242; else echo 4343; fi
+EOF
+chmod +x "${tmp}/pid-delayed.sh"
+with_flags_ca1
+rm -f "${tmp}/pid-calls"
+if ! out8="$(run_node_script "${tmp}/ca2.crt" "ok" "bash ${tmp}/pid-delayed.sh" 5 2>&1)"; then
+  echo "FAIL: case 8 (PID changes after a delay) failed, expected success: ${out8}"
+  exit 1
+fi
+grep -Fq "Waiting for kubelet to restart kube-apiserver (pid 4242) (2/5)" <<<"${out8}" || {
+  echo "FAIL: case 8 did not keep waiting while the old PID was visible: ${out8}"
+  exit 1
+}
+grep -Fq "kube-apiserver restarted (pid 4242 -> 4343)" <<<"${out8}" || {
+  echo "FAIL: case 8 did not report the PID change: ${out8}"
+  exit 1
+}
+restarted_line="$(grep -n "kube-apiserver restarted (pid" <<<"${out8}" | head -n 1 | cut -d: -f1)"
+ready_line="$(grep -n "readyz=ok" <<<"${out8}" | head -n 1 | cut -d: -f1)"
+if [ -z "${restarted_line}" ] || [ -z "${ready_line}" ] || [ "${restarted_line}" -ge "${ready_line}" ]; then
+  echo "FAIL: case 8 polled readyz before the PID changed (restarted line '${restarted_line}', readyz line '${ready_line}'): ${out8}"
+  exit 1
+fi
+[ "$(cat "${tmp}/pid-calls")" = "4" ] || {
+  echo "FAIL: case 8 expected 4 PID lookups, got $(cat "${tmp}/pid-calls")"
+  exit 1
+}
+
+# 9. No PID before the change (the stub prints nothing, as without pgrep): fall back to the
+#    previous sleep + readyz wait and say so.
+with_flags_ca1
+if ! out9="$(run_node_script "${tmp}/ca2.crt" "ok" "true" 2>&1)"; then
+  echo "FAIL: case 9 (no PID before the change) failed, expected success: ${out9}"
+  exit 1
+fi
+grep -Fq "no kube-apiserver PID found" <<<"${out9}" || {
+  echo "FAIL: case 9 did not report the PID-less fallback: ${out9}"
+  exit 1
+}
+grep -Fq "readyz=ok" <<<"${out9}" || {
+  echo "FAIL: case 9 did not wait for readyz in the fallback: ${out9}"
+  exit 1
+}
+[ "$(ann)" = "$(sha "${tmp}/ca2.crt")" ] || {
+  echo "FAIL: case 9 did not move the annotation to the rotated CA (got '$(ann)')"
+  exit 1
+}
+
+echo "OK: 11-4b-apiserver-oidc-node.sh passed 11 behavioural cases (empty CA, invalid PEM, 7-flag apply + CA annotation + external backup, idempotent re-run, CA rotation via annotation with its own backup, pre-annotation manifest, readyz timeout, PID that never changes on both restart paths, delayed PID change before readyz, no-PID fallback)"

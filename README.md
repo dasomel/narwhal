@@ -196,7 +196,7 @@ a reader trusts is whichever they hit first.
 | Harbor | v2.15.x | Container registry. Upstream source rebuilt for ARM64 as `ghcr.io/dasomel/goharbor` — a rebuild, not a fork; no source changes |
 | OpenBao | v2.5.x | Secret management |
 | Kyverno | v1.18.x | Policy engine |
-| Headlamp | v0.42.x | Kubernetes UI |
+| Headlamp | v0.46.x | Kubernetes UI |
 | APISIX | 3.15.x | API Gateway (TLS + OIDC) |
 | SeaweedFS | v4.34.x | Object storage (S3) |
 | Velero | v1.18.x | Backup & Restore |

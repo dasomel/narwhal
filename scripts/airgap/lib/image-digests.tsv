@@ -72,7 +72,7 @@ ghcr.io/dasomel/narwhal-portal:1.1.3	sha256:e34e7c6bbc1403ab0a835655d37dadf35811
 ghcr.io/dasomel/nfs-quota-agent:v0.5.0	sha256:090901b68cfe6842816783eefd29f19397151c27a12292b262571ade4a6d34de	2026-09-28T12:06:18Z	crane digest
 ghcr.io/dexidp/dex:v2.45.0	sha256:b8469881d3cb3a73001506f0d3aaefecb9c45d2311c1e0f405d8ac538316c59d	2026-09-28T12:06:18Z	crane digest
 ghcr.io/grafana/alloy-operator:1.10.0	sha256:6ee05ccf3b25850aed95392b4d12e8ae80dd76e235d31fd525639a3356ad8b13	2026-09-28T12:06:18Z	crane digest
-ghcr.io/headlamp-k8s/headlamp:v0.42.0	sha256:c9754bae1d799220da0547e51ceee234f6e66ebadc138518ca73e33ecd331e59	2026-09-28T12:06:18Z	crane digest
+ghcr.io/headlamp-k8s/headlamp:v0.46.0	sha256:8a0ef97527544baa2b35825940ddf4db6e2d09c30cd5aa31fd269ff604cc8b75	2026-10-27T07:08:00Z	crane digest
 ghcr.io/jkroepke/kube-webhook-certgen:1.8.3	sha256:8ce13c365c8e9ced0aad5ef350a53c50b7ca5817f99d856b9eec895db1056728	2026-09-28T12:06:18Z	crane digest
 ghcr.io/kube-vip/kube-vip:v1.1.2	sha256:840305b94ef2a89abb3b7fd2b09edfbde690d90052020da4dff90679fe892da2	2026-09-28T12:06:18Z	crane digest
 ghcr.io/kyverno/readiness-checker:v1.18.1	sha256:455400758235cf448dd9be3374ecb9e8bf543ee0c39adc880d25ed28cc7eb69d	2026-09-28T12:06:18Z	crane digest

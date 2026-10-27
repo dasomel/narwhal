@@ -3109,6 +3109,34 @@ assert re.search(r"ARGOCD_TOKEN 없이 완료[^\n]*\n\s*exit 3\b", b), "13-2 mus
 code = [l for l in b.splitlines() if not l.lstrip().startswith("#")]
 assert sum(1 for l in code if re.search(r"\bexit 3\b", l)) == 1, "exit 3 must appear exactly once in non-comment 13-2 code"
 '
+  check R289 "Phase 2 treats 11-3-keycloak-clients.sh as critical and runs it before 12-gitea.sh (#491)" \
+    python3 -c '
+import re, sys
+path = sys.argv[1] if len(sys.argv) > 1 else "scripts/cluster/06-phase2-start.sh"
+s = open(path).read()
+m = re.search(r"CRITICAL_SCRIPTS=\((.*?)\n\)", s, re.S)
+assert m, "CRITICAL_SCRIPTS array missing"
+names = re.findall(r"^\s*\"([^\"]+\.sh)\"", m.group(1), re.M)
+assert "11-3-keycloak-clients.sh" in names, names
+assert names.index("11-3-keycloak-clients.sh") < names.index("12-gitea.sh")
+'
+  local r289_drift_tmp
+  r289_drift_tmp="$(mktemp -d)"
+  cp scripts/cluster/06-phase2-start.sh "${r289_drift_tmp}/06-phase2-start.sh"
+  sed -i.bak '/"11-3-keycloak-clients.sh"/d' "${r289_drift_tmp}/06-phase2-start.sh"
+  rm -f "${r289_drift_tmp}/06-phase2-start.sh.bak"
+  check_not R289b "R289 check catches missing 11-3 in CRITICAL_SCRIPTS (mutated copy without entry, #491)" \
+    python3 -c '
+import re, sys
+path = sys.argv[1] if len(sys.argv) > 1 else "scripts/cluster/06-phase2-start.sh"
+s = open(path).read()
+m = re.search(r"CRITICAL_SCRIPTS=\((.*?)\n\)", s, re.S)
+assert m, "CRITICAL_SCRIPTS array missing"
+names = re.findall(r"^\s*\"([^\"]+\.sh)\"", m.group(1), re.M)
+assert "11-3-keycloak-clients.sh" in names, names
+assert names.index("11-3-keycloak-clients.sh") < names.index("12-gitea.sh")
+' "${r289_drift_tmp}/06-phase2-start.sh"
+  rm -rf "${r289_drift_tmp}"
   check R248 "every kakaocloud_public_ip has lifecycle prevent_destroy (D-PUBIP, 2026-10-15); the check fails when a guard is removed" \
     python3 scripts/test/lib/check-kakao-public-ip-guard.py --mutation-verify
 

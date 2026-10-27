@@ -237,7 +237,7 @@ The platform's private container registry — image storage, vulnerability scann
 #### Headlamp
 | Chart | Version | Namespace |
 |---|---|---|
-| `headlamp` (kubernetes-sigs.github.io/headlamp) | `0.42.0` | `devtools` |
+| `headlamp` (kubernetes-sigs.github.io/headlamp) | `0.46.0` | `devtools` |
 
 A web-based Kubernetes dashboard/UI for cluster operators, authenticated via Keycloak OIDC. Opted out of the ambient mesh (`istio.io/dataplane-mode: none`) to avoid ztunnel interfering with its SSO cookies, with probe-timeout tuning applied separately by a companion Kyverno policy (`headlamp-policy.yaml`).
 

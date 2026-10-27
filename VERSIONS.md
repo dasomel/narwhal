@@ -123,7 +123,7 @@ Velero schedule `includedResources` is the generated readable API inventory; new
 
 | Component | Version | Description |
 |-----------|---------|-------------|
-| Headlamp | v0.42.0 (chart) | Kubernetes UI (path-traversal fix) |
+| Headlamp | v0.46.0 (chart) | Kubernetes UI (built-in OIDC auto-login) |
 
 ## Addons
 

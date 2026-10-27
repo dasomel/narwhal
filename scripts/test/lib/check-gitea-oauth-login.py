@@ -47,12 +47,6 @@ local function pct_encode(s)
   end))
 end
 
-local function pct_decode(s)
-  return (string.gsub(s, "%%(%x%x)", function(h)
-    return string.char(tonumber(h, 16))
-  end))
-end
-
 local function run_fn(fn, spec)
   local cleared = {}
   local set_hdrs = {}
@@ -74,7 +68,6 @@ local function run_fn(fn, spec)
     },
     header = resp_hdrs,
     escape_uri = pct_encode,
-    unescape_uri = pct_decode,
     redirect = function(u, code)
       redirected = { url = u, code = code }
       return redirected
@@ -116,7 +109,7 @@ local f_ok = run_fn(forward_fn, {
   method = "GET",
   uri = "/user/login",
   headers = html_hdrs,
-  args = { redirect_to = "%2Forg%2Frepo" },
+  args = { redirect_to = "/org/repo" },
 })
 assert(f_ok.redirect and f_ok.redirect.code == 302, "GET /user/login must 302")
 assert(f_ok.redirect.url == "/user/oauth2/keycloak?redirect_to=%2Forg%2Frepo", "forward valid redirect_to failed: " .. tostring(f_ok.redirect.url))
@@ -126,7 +119,12 @@ assert(run_fn(forward_fn, { method = "GET", uri = "/user/login", headers = html_
 assert(run_fn(forward_fn, { method = "GET", uri = "/user/login", headers = { Accept = "application/json" }, args = {} }).redirect == nil, "non-HTML /user/login must pass through")
 assert(run_fn(forward_fn, { method = "GET", uri = "/user/login", headers = html_hdrs, args = {}, try_cookie = "1" }).redirect == nil, "try_cookie must stop loop")
 
-for _, bad_rt in ipairs({ "//evil.example/p", "https://evil.example/p", "/\\evil.example", "%2F%2Fevil.example" }) do
+-- get_uri_args() hands over the decoded value; it is escaped exactly once, so Gitea
+-- decodes back to the same string (a literal %2F in a branch path survives).
+local f_pct = run_fn(forward_fn, { method = "GET", uri = "/user/login", headers = html_hdrs, args = { redirect_to = "/org/repo/src/branch/feat%2Fx" } })
+assert(f_pct.redirect and f_pct.redirect.url == "/user/oauth2/keycloak?redirect_to=%2Forg%2Frepo%2Fsrc%2Fbranch%2Ffeat%252Fx", "redirect_to must be escaped once, not decoded twice: " .. tostring(f_pct.redirect and f_pct.redirect.url))
+
+for _, bad_rt in ipairs({ "//evil.example/p", "https://evil.example/p", "/\\evil.example" }) do
   local f_bad = run_fn(forward_fn, { method = "GET", uri = "/user/login", headers = html_hdrs, args = { redirect_to = bad_rt } })
   assert(f_bad.redirect and f_bad.redirect.url == "/user/oauth2/keycloak?redirect_to=%2F", "unsafe redirect_to must fall back to /: " .. bad_rt)
 end
@@ -246,7 +244,6 @@ def problems(routes_text: str, gitea_sh: str) -> list[str]:
                 '"narwhal_gitea_sso=1; Path=/; Secure; HttpOnly; SameSite=Lax"',
                 "must set session marker cookie narwhal_gitea_sso=1",
             ),
-            ("rt = ngx.unescape_uri(rt)", "must decode redirect_to before validating"),
             ('string.sub(rt, 1, 1) == "/"', "must require redirect_to to start with '/'"),
             ('string.sub(rt, 1, 2) ~= "//"', "must reject protocol-relative '//' redirect_to"),
             ('not string.find(rt, "\\\\", 1, true)', "must reject backslash in redirect_to"),
@@ -257,6 +254,8 @@ def problems(routes_text: str, gitea_sh: str) -> list[str]:
         ):
             if needle not in fwd_blk:
                 out.append(f"gitea-login-forward: {why} ({needle})")
+        if "ngx.unescape_uri" in fwd_blk:
+            out.append("gitea-login-forward decodes redirect_to twice (get_uri_args() already decodes once)")
 
     # Optional Lua syntax + behavioural check when lua/luac is installed locally.
     if gitea_blk and fwd_blk and not out:
@@ -368,6 +367,11 @@ def main(argv: list[str]) -> int:
             "drop the try-cookie guard": in_fwd(
                 "                  if ngx.var.cookie_narwhal_gitea_sso_try then return end\n",
                 "",
+            ),
+            "decode redirect_to twice": in_fwd(
+                '                  if type(rt) == "string" then\n',
+                '                  if type(rt) == "string" then\n'
+                '                    rt = ngx.unescape_uri(rt)\n',
             ),
             "drop the direct escape hatch": in_fwd(
                 '                  if args["direct"] then return end\n',

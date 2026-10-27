@@ -35,8 +35,10 @@
       "summary": "Live Gitea 1.26.2 ran ENABLE_REVERSE_PROXY_AUTHENTICATION=true with REVERSE_PROXY_AUTHENTICATION_USER=X-WEBAUTH-USER, which bypasses Gitea's OAuth2 group mappings (--admin-group cluster-admin, --group-team-map, --restricted-group guest). Both 11-3-keycloak-clients.sh and 12-gitea.sh ran `gitea admin auth delete --name keycloak 2>/dev/null || true`, which fails because `auth delete` accepts only `--id` (and DeleteSource returns ErrSourceInUse once any user links to the source), causing `add-oauth` to fail with ErrSourceAlreadyExist on every re-run while discarding stderr. Moreover, [oauth2_client] USERNAME defaults to 'nickname', which Keycloak does not emit, and cmd/admin_auth_oauth.go runUpdateOauth clears TwoFactorPolicy whenever --skip-local-2fa is omitted.",
       "evidence": [
         "runtime:gitea admin auth list -> ID 1 Name keycloak Type OAuth2 Enabled true; gitea admin auth delete --help accepts only --id",
-        "runtime:11-3-keycloak-clients.sh and 12-gitea.sh auth delete --name keycloak + add-oauth -> ErrSourceAlreadyExist ('WARN: Gitea OAuth config failed')",
-        "doc:Gitea v1.26.2 services/auth/source.go DeleteSource (ErrSourceInUse), cmd/admin_auth_oauth.go runUpdateOauth (--skip-local-2fa), routers/web/auth/oauth.go (USERNAME=preferred_username, ACCOUNT_LINKING=auto)"
+        "doc:Gitea v1.26.2 models/auth/source.go CreateSource returns ErrSourceAlreadyExist for an existing name; with `auth delete --name` a no-op, the scripts' `add-oauth --name keycloak` cannot succeed while source 1 exists, and its stderr is discarded so only 'WARN: Gitea OAuth config failed' is printed",
+        "doc:Gitea v1.26.2 services/auth/source.go DeleteSource (ErrSourceInUse), cmd/admin_auth_oauth.go runUpdateOauth (--skip-local-2fa), routers/web/auth/oauth.go (USERNAME=preferred_username, ACCOUNT_LINKING=auto)",
+        "runtime:live Gitea users 2026-10-27 -> admin (local, source_id 0, is_admin true, created by reverse-proxy auto-registration and promoted by the D-GITEA-ADMIN seed), argocd, gitea-admin, portal-gitops",
+        "runtime:Keycloak realm narwhal client gitea example ID token/userinfo for admin -> preferred_username admin, groups [cluster-admin]; registrationAllowed=false"
       ]
     },
     {
@@ -51,7 +53,7 @@
       "scope": "local static, Lua behavioural/syntax, and fake-kubectl regression verification of gitops/charts/narwhal-platform/templates/apisix-routes.yaml, scripts/cluster/12-gitea.sh, scripts/cluster/11-3-keycloak-clients.sh, and scripts/common/lib.sh (live Kakao rollout is performed separately by the orchestrator after merge)",
       "summary": "All new and existing static/behavioural checks pass.",
       "evidence": [
-        "test:python3 scripts/test/lib/check-gitea-oauth-login.py --mutation-verify -> OK D-GITEA-OAUTH (Lua behavioural harness + 10 mutations caught)",
+        "test:python3 scripts/test/lib/check-gitea-oauth-login.py --mutation-verify -> OK D-GITEA-OAUTH (Lua behavioural harness + 11 mutations caught)",
         "test:bash scripts/test/lib/check-gitea-oauth-source-upsert.sh -> OK (id=7 update-oauth, keycloak2-only add-oauth, list failure fail-closed + WARN, no direct delete/add-oauth in 11-3 or 12; 4 mutations caught)",
         "test:helm template narwhal-platform gitops/charts/narwhal-platform + luac -p on extracted gitea (34 lines) and gitea-login-forward (21 lines) Lua functions -> OK",
         "test:bash -n and shellcheck --severity=warning on 12-gitea.sh, 11-3-keycloak-clients.sh, scripts/common/lib.sh, check-gitea-oauth-source-upsert.sh -> clean (0 warnings)",

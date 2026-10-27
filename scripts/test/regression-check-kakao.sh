@@ -3150,7 +3150,7 @@ assert sum(1 for l in code if re.search(r"\bexit 3\b", l)) == 1, "exit 3 must ap
     python3 scripts/test/lib/check-headlamp-autologin-route.py --mutation-verify
   # 2026-10-27 (#491, D-GITEA-OAUTH): Gitea browser login switched from X-WEBAUTH-USER reverse-proxy
   # auth to Gitea's own 'keycloak' OAuth2 source with zero-click redirect and GET /user/login forward.
-  check R287 "Gitea OAuth2 login: reverse-proxy auth disabled, USERNAME=preferred_username, gateway token headers off, zero-click + GET /user/login forward with loop guard and direct escape hatch; 10 mutations caught (D-GITEA-OAUTH, #491)" \
+  check R287 "Gitea OAuth2 login: reverse-proxy auth disabled, USERNAME=preferred_username, gateway token headers off, zero-click + GET /user/login forward with loop guard and direct escape hatch, redirect_to escaped exactly once; 11 mutations caught (D-GITEA-OAUTH, #491)" \
     python3 scripts/test/lib/check-gitea-oauth-login.py --mutation-verify
   check R287b "gitea_upsert_keycloak_source (fake kubectl): updates existing 'keycloak' source in place with --skip-local-2fa, adds when absent (ignoring keycloak2), fails closed on list error, and replaces direct auth delete/add-oauth in 11-3 and 12; 4 mutations caught (D-GITEA-OAUTH, #491)" \
     bash scripts/test/lib/check-gitea-oauth-source-upsert.sh

@@ -271,9 +271,10 @@ spec:
                   if not string.find(accept, "text/html", 1, true) then return end
                   if ngx.var.cookie_narwhal_gitea_sso_try then return end
                   local target = "/"
+                  -- get_uri_args() already decodes once; decoding again would rewrite a
+                  -- legitimate %2F in the target and validate a different string than Gitea gets.
                   local rt = args["redirect_to"]
                   if type(rt) == "string" then
-                    rt = ngx.unescape_uri(rt)
                     if string.sub(rt, 1, 1) == "/" and string.sub(rt, 1, 2) ~= "//" and not string.find(rt, "\\", 1, true) then
                       target = rt
                     end

@@ -11,8 +11,17 @@ English | [한국어](CHANGELOG-ko.md)
 
 ## [1.1.4] - 2026-10-27
 
-Patch release: upgrades `fast-uri` past its published advisories (narwhal#470). Everything since
+Patch release: the Security page shows vulnerability data again on clusters with many scanned
+images, and `fast-uri` is upgraded past its published advisories (narwhal#470). Everything since
 `portal/v1.1.3` is covered here.
+
+### Fixed
+
+- **Security page showed no vulnerabilities (narwhal#501)**: the Trivy reader listed every
+  VulnerabilityReport in one unbounded request. On Kakao, 109 reports came to 10,761,256 bytes, over
+  the client's 8 MiB response cap, and the page fell back to empty results. The summary, the
+  workload table and the image view now page through the list 20 reports at a time (up to 50
+  pages); a truncated list logs a warning and keeps what was fetched.
 
 ### Security
 

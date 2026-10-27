@@ -9,6 +9,23 @@
 
 ## [Unreleased]
 
+## [1.1.4] - 2026-10-27
+
+패치 릴리스. `fast-uri`를 공개된 권고 이후 버전으로 올림(narwhal#470). `portal/v1.1.3` 이후의
+모든 변경을 다룸.
+
+### 보안
+
+- `ajv` 8.20.0 아래의 전이 의존성 `fast-uri`를 4.2.2에서 4.2.3으로 올림(GHSA-w74x-v6f9-j3xg,
+  GHSA-wjr9-j795-jxcr, GHSA-xhq7-xmqj-769h, GHSA-333x-w4r6-6crp) (narwhal#492). 기존 `>=3.1.2`
+  override 범위 안이라 lockfile의 다른 패키지는 바뀌지 않았고, `pnpm audit --prod`에서 `fast-uri`
+  권고가 사라짐.
+
+### 알려진 문제
+
+- `body-parser`(GHSA-27r3-jxmh-p828, 2.4.0에서 수정)는 아직 올리지 않음. 수정판이 2026-10-29
+  11:39Z 이후에 7일 lockfile cooling gate를 지남. 다음 패치에서 반영 (narwhal#470).
+
 ## [1.1.3] - 2026-10-27
 
 패치 릴리스. 권한 관리 표가 각 역할이 실제로 접근하는 도구를 보여 줌. `portal/v1.1.2` 이후의 모든
@@ -474,7 +491,8 @@ Portal의 첫 번째 공개 릴리스.
     매니페스트(`deploy/kaniko-build-job.yaml`).
   - 실시간 핫 모듈 교체(HMR) 및 컨테이너 파일 동기화를 위해 구성된 Skaffold 개발 프로필.
 
-[Unreleased]: https://github.com/dasomel/narwhal/compare/portal/v1.1.3...HEAD
+[Unreleased]: https://github.com/dasomel/narwhal/compare/portal/v1.1.4...HEAD
+[1.1.4]: https://github.com/dasomel/narwhal/compare/portal/v1.1.3...portal/v1.1.4
 [1.1.3]: https://github.com/dasomel/narwhal/compare/portal/v1.1.2...portal/v1.1.3
 [1.1.2]: https://github.com/dasomel/narwhal/compare/portal/v1.1.1...portal/v1.1.2
 [1.1.1]: https://github.com/dasomel/narwhal/compare/portal/v1.1.0...portal/v1.1.1

@@ -208,6 +208,7 @@ kubectl 없이 Velero 백업/복원을 트리거하고 조회할 수 있는 웹 
 클러스터의 모든 워크로드와 이미지에 대해 취약점, 설정 오류, 노출된 시크릿, 컴플라이언스를 지속적으로 스캔합니다. 자원이 제한된 워커 노드에 맞게 경량 `Standalone` 모드(스캔 Job마다 Trivy CLI 실행, 공유 서버 없음)로 동작하며, `VulnerabilityReport`/`ConfigAuditReport` 등의 CRD를 통해 포털의 Cluster Security 페이지에 데이터를 제공합니다.
 
 #### Falco
+
 | 차트 | 버전 | 네임스페이스 |
 |---|---|---|
 | `falco` (falcosecurity) | `9.2.1` (Falco `0.45.1`, falcosidekick `2.32.0`) | `security-system` |

@@ -208,6 +208,7 @@ A web UI/API for triggering and inspecting Velero backups/restores without kubec
 Continuous vulnerability, misconfiguration, exposed-secret, and compliance scanning for every workload and image on the cluster, running in lightweight `Standalone` mode (Trivy CLI runs per-scan-Job, no shared server) to fit the resource-constrained worker nodes. Feeds the portal's Cluster Security page via `VulnerabilityReport`/`ConfigAuditReport`/etc. CRDs.
 
 #### Falco
+
 | Chart | Version | Namespace |
 |---|---|---|
 | `falco` (falcosecurity) | `9.2.1` (Falco `0.45.1`, falcosidekick `2.32.0`) | `security-system` |

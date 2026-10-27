@@ -13,9 +13,15 @@ function getLokiUrl(): string {
   return getDependencyUrl("LOKI_URL", "http://loki.monitoring.svc.cluster.local:3100")
 }
 
-// FalcoEventPriority is Capitalized; Loki label values from Falcosidekick are lowercase
-function toLokiPriority(p: FalcoEventPriority): string {
-  return p.toLowerCase()
+// Falcosidekick writes the `priority` stream label as the Capitalized name ("Critical") —
+// types.PriorityType.String() in falcosidekick 2.31-2.32, confirmed on a live Falco 0.45.1 ->
+// falcosidekick 2.32.0 capture (see falco.test.ts). It is NOT lowercase, and Loki label matching
+// is case-sensitive, so a lowercase `priority="critical"` selector matches nothing. Match both
+// spellings with an alternation (LOGQL_SAFE_RE rejects the `(?i)` flag) so a future lowercase
+// label does not silently empty the feed either.
+function lokiPriorityMatcher(p: FalcoEventPriority): string {
+  const capitalized = capitalizeFirst(p)
+  return `priority=~"${capitalized}|${capitalized.toLowerCase()}"`
 }
 
 function capitalizeFirst(s: string): string {
@@ -23,14 +29,22 @@ function capitalizeFirst(s: string): string {
   return s.charAt(0).toUpperCase() + s.slice(1).toLowerCase()
 }
 
-// Falco JSON line shape (Falco JSON output enabled via falco.json_output: true)
+// Falco emits JSON null (not a missing key) for fields it cannot resolve, e.g. k8s.pod.name for a
+// process outside Kubernetes; treat null and empty as absent.
+function fieldValue(v: string | null | undefined): string | undefined {
+  return typeof v === "string" && v !== "" ? v : undefined
+}
+
+// Falcosidekick Loki line shape: the full Falco event as JSON. This requires the falcosidekick
+// setting loki.format=json (gitops/charts/narwhal-apps/templates/falco.yaml); the default `text`
+// format stores only the output string and every such line is dropped by parseFalcoEvent.
 interface FalcoJsonLine {
   output?: string
   priority?: string
   rule?: string
   time?: string
   source?: string
-  output_fields?: Record<string, string | undefined>
+  output_fields?: Record<string, string | null | undefined>
   hostname?: string
   tags?: string[]
 }
@@ -71,10 +85,10 @@ function parseFalcoEvent(tsNano: string, line: string, streamMeta: Record<string
     output: parsed.output ?? line,
     source: parsed.source ?? "syscall",
     tags: parsed.tags,
-    pod: parsed.output_fields?.["k8s.pod.name"],
-    namespace: parsed.output_fields?.["k8s.ns.name"],
-    container: parsed.output_fields?.["container.name"],
-    image: parsed.output_fields?.["container.image.repository"],
+    pod: fieldValue(parsed.output_fields?.["k8s.pod.name"]),
+    namespace: fieldValue(parsed.output_fields?.["k8s.ns.name"]),
+    container: fieldValue(parsed.output_fields?.["container.name"]),
+    image: fieldValue(parsed.output_fields?.["container.image.repository"]),
   }
 }
 
@@ -127,10 +141,11 @@ export async function getRuntimeEvents(opts: GetRuntimeEventsOpts = {}): Promise
   if (cached) return cached
 
   try {
-    // Falcosidekick `source` label = Falco event source (e.g. "syscall"), not literal "falco".
+    // Falcosidekick `source` label = Falco event source (e.g. "syscall"), not literal "falco" (the
+    // literal source=falco exists only on Alertmanager alerts).
     // Use `rule` label presence as Falco-specific identifier (only Falcosidekick streams have it).
     const logql = priority
-      ? `{rule=~".+", priority="${toLokiPriority(priority)}"}`
+      ? `{rule=~".+", ${lokiPriorityMatcher(priority)}}`
       : `{rule=~".+"}`
 
     const events = await queryLoki(logql, sinceMinutes, limit)

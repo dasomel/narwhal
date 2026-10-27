@@ -15,12 +15,14 @@ The failure modes this pins are the ones found while migrating, each of which is
       socket; the removed collectors.containerd/cri/docker keys are silently ignored by chart 9.x and the
       chart then falls back to six hostPath mounts, so they must stay absent
   A6  falcosidekick contract: Loki lines are JSON (the portal JSON.parse()s every line), Alertmanager keeps
-      source:falco, suggested_output stays on and metrics.outputRule stays off (the snapshot event would
-      appear in the portal feed once per node per hour)
+      source:falco and is posted to /api/v2/alerts (chart 0.14.1 sends /api/v1/alerts, which Alertmanager
+      >= 0.27 answers with 410 Gone, so every Critical alert would be dropped), suggested_output stays on and
+      metrics.outputRule stays off (the snapshot event would appear in the portal feed once per node per hour)
   A7  portal seam: the Loki selector only uses labels falcosidekick always writes (rule, priority), never
       matches priority with a lowercase equality (falcosidekick writes "Critical") and never selects a
       literal source=falco (Loki's `source` label is the Falco event source, "syscall"); every
-      output_fields key the portal reads is one the container plugin's suggested output provides
+      output_fields key the portal reads is one the container plugin's suggested output provides; the
+      security page shows the Runtime Events tab on every node OS (it used to hide it on Ubuntu 26.04)
   A8  the privileged DaemonSet stays admissible: security-system is excluded from the Enforce
       disallow-privileged-containers policy
   A9  14-gitops-bootstrap.sh no longer removes falco.yaml on Ubuntu 26.04
@@ -42,18 +44,22 @@ FILES = {
     "sources": ROOT / "scripts/airgap/lib/chart-upstream-sources.tsv",
     "versions": ROOT / "VERSIONS.md",
     "portal": ROOT / "portal/src/lib/falco.ts",
+    "page": ROOT / "portal/src/app/(dashboard)/security/page.tsx",
     "kyverno": ROOT / "gitops/resources/kyverno-policies.yaml",
     "bootstrap": ROOT / "scripts/cluster/14-gitops-bootstrap.sh",
 }
 
-# falco chart version -> image tags it is validated with. Read from the chart tarball when bumping:
-# falco 9.2.1 Chart.yaml `appVersion: 0.45.1`; its falcosidekick subchart 0.14.1 values.yaml
-# `image.tag: 2.32.0` (that subchart's own Chart.yaml still says appVersion 2.31.1, so do not copy it).
-CHART_PINS = {"9.2.1": {"falco": "0.45.1", "falcosidekick": "2.32.0"}}
+# falco chart version -> image tags pinned for it. falco: the chart's `appVersion: 0.45.1` (Chart.yaml of
+# falco 9.2.1). falcosidekick: NOT the subchart default (0.14.1 values.yaml says image.tag 2.32.0 and its
+# Chart.yaml still says appVersion 2.31.1) but the D-FALCO-SIDEKICK override 2.35.0, which carries
+# falcosecurity/falcosidekick#1366 (vulnerable Go modules) and falcosecurity/falcosidekick#1390
+# (multi-output race).
+CHART_PINS = {"9.2.1": {"falco": "0.45.1", "falcosidekick": "2.35.0"}}
 FALCO_IMAGE = ("docker.io", "falcosecurity/falco")
 SIDEKICK_IMAGE = ("docker.io", "falcosecurity/falcosidekick")
 CHART_SOURCE = "falco\thelm-repo\thttps://falcosecurity.github.io/charts"
 LOKI_HOSTPORT = "http://loki.monitoring.svc.cluster.local:3100"
+ALERTMANAGER_ENDPOINT = "/api/v2/alerts"
 ALERTMANAGER_HOSTPORT = "http://prometheus-stack-kube-prom-alertmanager.monitoring.svc.cluster.local:9093"
 CRI_SOCKET = "/run/containerd/containerd.sock"
 # Observed on 2026-10-27 (Falco 0.45.1 + container plugin 0.7.5, kernel 7.0.14): output_fields of a
@@ -62,7 +68,7 @@ SUGGESTED_FIELDS = {
     "container.id", "container.name", "container.image.repository", "container.image.tag",
     "k8s.ns.name", "k8s.pod.name",
 }
-# Labels falcosidekick 2.31-2.32 (outputs/loki.go) writes on EVERY Loki stream.
+# Labels falcosidekick 2.31-2.35 (outputs/loki.go) writes on EVERY Loki stream.
 SIDEKICK_LABELS = {"rule", "source", "priority"}
 PRIORITY_RANK = {"emergency": 0, "alert": 1, "critical": 2, "error": 3, "warning": 4, "notice": 5,
                  "informational": 6, "debug": 7}
@@ -179,7 +185,7 @@ def problems(texts):
         if not tag or not SEMVER_RE.fullmatch(tag):
             out.append(f"[A2] {name} image tag must be an explicit x.y.z (never latest or empty), got {tag!r}")
         elif pins and tag != pins[name]:
-            out.append(f"[A2] {name} image tag {tag} differs from the {pins[name]} that chart {chart_version} is validated with")
+            out.append(f"[A2] {name} image tag {tag} differs from the {pins[name]} pinned for chart {chart_version} (CHART_PINS)")
         if registry and repo and tag:
             refs[name] = f"{registry}/{repo}:{tag}"
     image_lines = lines_of(texts["images"])
@@ -266,6 +272,8 @@ def problems(texts):
         out.append(f"[A6] loki.minimumpriority {minimum!r} would drop events Falco emits at its priority: notice")
     if alertmanager.get("hostport") != ALERTMANAGER_HOSTPORT:
         out.append(f"[A6] alertmanager.hostport must be {ALERTMANAGER_HOSTPORT}, got {alertmanager.get('hostport')!r}")
+    if alertmanager.get("endpoint") != ALERTMANAGER_ENDPOINT:
+        out.append(f"[A6] alertmanager.endpoint must be {ALERTMANAGER_ENDPOINT} (Alertmanager >= 0.27 answers the chart default /api/v1/alerts with 410 Gone and falcosidekick drops every Critical alert), got {alertmanager.get('endpoint')!r}")
     if "source:falco" not in [p.strip() for p in str(alertmanager.get("extralabels", "")).split(",")]:
         out.append(f"[A6] alertmanager.extralabels must carry source:falco, got {alertmanager.get('extralabels')!r}")
     if falco_cfg.get("json_output") is not True:
@@ -300,6 +308,12 @@ def problems(texts):
         out.append(f"[A7] portal falco.ts: parsed only {len(read_keys)} output_fields keys ({sorted(read_keys)}); parser is stale")
     for key in sorted(read_keys - SUGGESTED_FIELDS - extra_fields):
         out.append(f"[A7] portal reads output_fields[{key!r}] but neither the container plugin's suggested output nor falco.append_output.extra_fields provides it")
+
+    page = strip_ts_comments(texts["page"])
+    if re.search(r"26\.04|osImage|is2604", page):
+        out.append("[A7] portal security page gates on the node OS image (26.04/osImage): Falco runs on every provider since D-FALCO-045, so the Runtime Events tab must not be hidden")
+    if not re.search(r'<TabsTrigger value="runtime">', page) or not re.search(r'<TabsContent value="runtime"[^>]*>\s*<RuntimeEventsFeed', page):
+        out.append("[A7] portal security page must render the Runtime Events tab trigger and its RuntimeEventsFeed content")
 
     # ---- A8 privileged DaemonSet stays admissible
     namespace = destination.get("namespace")
@@ -403,7 +417,7 @@ def mutate_line(text, old_line, new_line):
 def mutants(texts):
     app, portal = texts["app"], texts["portal"]
     ref_falco = "docker.io/falcosecurity/falco:0.45.1"
-    ref_sidekick = "docker.io/falcosecurity/falcosidekick:2.32.0"
+    ref_sidekick = "docker.io/falcosecurity/falcosidekick:2.35.0"
     digest_lines = texts["digests"].split("\n")
     sidekick_digest = next(l for l in digest_lines if l.startswith(ref_sidekick + "\t"))
     falco_digest = next(l for l in digest_lines if l.startswith(ref_falco + "\t"))
@@ -431,8 +445,10 @@ def mutants(texts):
          mutate_line(texts["digests"], falco_digest, falco_digest.replace(":0.45.1", ":0.39.2"))),
         ("A2", "falco image tag differs from the chart's appVersion", "app",
          mutate_block(app, "        image:", 'tag: "0.45.1"', 'tag: "0.45.0"')),
+        ("A2", "falcosidekick tag back to the subchart default 2.32.0", "app",
+         mutate_block(app, "          image:", 'tag: "2.35.0"', 'tag: "2.32.0"')),
         ("A2", "falcosidekick tag back to the Chart.yaml appVersion", "app",
-         mutate_block(app, "          image:", 'tag: "2.32.0"', 'tag: "2.31.1"')),
+         mutate_block(app, "          image:", 'tag: "2.35.0"', 'tag: "2.31.1"')),
         ("A2", "falco image tag becomes latest", "app",
          mutate_block(app, "        image:", 'tag: "0.45.1"', 'tag: "latest"')),
         # A3
@@ -479,6 +495,10 @@ def mutants(texts):
          mutate_block(app, "            loki:", "loki.monitoring.svc", "loki-gateway.monitoring.svc")),
         ("A6", "loki minimumpriority above notice", "app",
          mutate_block(app, "            loki:", 'minimumpriority: "informational"', 'minimumpriority: "critical"')),
+        ("A6", "alertmanager endpoint back to the removed v1 API", "app",
+         mutate_block(app, "            alertmanager:", 'endpoint: "/api/v2/alerts"', 'endpoint: "/api/v1/alerts"')),
+        ("A6", "alertmanager endpoint left to the chart default", "app",
+         mutate_block(app, "            alertmanager:", '              endpoint: "/api/v2/alerts"\n', "")),
         ("A6", "alertmanager source label changed", "app",
          mutate_block(app, "            alertmanager:", 'extralabels: "source:falco"', 'extralabels: "source:other"')),
         ("A6", "alertmanager host wrong", "app",
@@ -500,6 +520,11 @@ def mutants(texts):
          portal.replace('`{rule=~".+"}`', '`{rule=~".+", source="falco"}`', 1)),
         ("A7", "portal selects on a label falcosidekick does not always write", "portal",
          portal.replace('`{rule=~".+"}`', '`{rule=~".+", k8s_ns_name=~".+"}`', 1)),
+        ("A7", "portal security page hides the runtime tab on 26.04 again", "page",
+         texts["page"].replace("export default async function SecurityPage",
+                               'const is2604 = (n: { osImage: string }) => n.osImage.includes("26.04")\n\nexport default async function SecurityPage', 1)),
+        ("A7", "portal security page loses the runtime tab trigger", "page",
+         texts["page"].replace('<TabsTrigger value="runtime">', '<TabsTrigger value="other">', 1)),
         # A8
         ("A8", "security-system no longer excluded from disallow-privileged-containers", "kyverno",
          mutate_doc(texts["kyverno"], "disallow-privileged-containers", kyverno_excl, "")),
@@ -513,7 +538,7 @@ def mutants(texts):
         ("A10", "VERSIONS.md Falco chart drifts", "versions",
          texts["versions"].replace("| Falco | v0.45.1 (chart 9.2.1) |", "| Falco | v0.45.1 (chart 9.2.0) |", 1)),
         ("A10", "VERSIONS.md Falcosidekick drifts", "versions",
-         texts["versions"].replace("| Falcosidekick | 2.32.0 (subchart", "| Falcosidekick | 2.31.1 (subchart", 1)),
+         texts["versions"].replace("| Falcosidekick | 2.35.0 (subchart", "| Falcosidekick | 2.32.0 (subchart", 1)),
     ]
 
 
@@ -524,9 +549,10 @@ def main(argv):
         print(f"FAIL {line}")
     if found:
         return 1
-    print("OK Falco 0.45.1 / chart 9.2.1: rendered Application, pins agree across falco.yaml, images.txt and "
-          "image-digests.tsv, modern_ebpf, no runtime pull, CRI-only container metadata, JSON Loki + source:falco "
-          "Alertmanager, portal seam and Kyverno exclusion hold")
+    print("OK Falco 0.45.1 + falcosidekick 2.35.0 / chart 9.2.1: rendered Application, pins agree across "
+          "falco.yaml, images.txt and image-digests.tsv, modern_ebpf, no runtime pull, CRI-only container "
+          "metadata, JSON Loki + source:falco Alertmanager on the v2 API, portal seam (priority casing, runtime "
+          "tab not gated on the node OS) and Kyverno exclusion hold")
     if "--mutation-verify" not in argv:
         return 0
     cases = mutants(texts)

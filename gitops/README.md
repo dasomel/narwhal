@@ -211,7 +211,7 @@ Continuous vulnerability, misconfiguration, exposed-secret, and compliance scann
 
 | Chart | Version | Namespace |
 |---|---|---|
-| `falco` (falcosecurity) | `9.2.1` (Falco `0.45.1`, falcosidekick `2.32.0`) | `security-system` |
+| `falco` (falcosecurity) | `9.2.1` (Falco `0.45.1`, falcosidekick `2.35.0`) | `security-system` |
 
 Runtime security (syscall-level threat detection) on every node, masters included, through the `modern_ebpf` driver in a privileged DaemonSet. Falcosidekick forwards events to Loki (`format: json`, which the portal's Runtime Events tab parses) and, for `critical` and above, to Alertmanager. Falco is airgap-safe: the rules (falco-rules) and the `container` plugin are baked into the image and falcoctl is disabled, so nothing is pulled at runtime; rule updates arrive with an image bump. Enabled on every provider by D-FALCO-045 (2026-10-28); kernel 7.0 (Ubuntu 26.04 Vagrant) is backed by upstream reports only and has not been observed on this repo's nodes. See the header of `templates/falco.yaml` and `docs/common/lessons-log.md` (2026-07-08 and 2026-10-28).
 

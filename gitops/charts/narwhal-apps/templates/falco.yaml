@@ -5,10 +5,11 @@ History: disabled 2026-07-08 because Falco 0.39.2 (libs 0.18.2) modern_ebpf fail
 Ubuntu 26.04 / kernel 7.0 Vagrant box (docs/common/lessons-log.md 2026-07-08).
 
 Reason: 0.45.1 (libs 0.26.1, driver 11.0.1) is the first release carrying all the upstream fixes for
-kernel 7.0: falcosecurity/libs#2997 (execve verifier instruction count), #3021 (sendmmsg/recvmmsg
-bpf_loop), #3086 (per-CPU auxmap race on preemptible kernels, falcosecurity/falco#3955) and #3119
-(signal_deliver verifier on newer kernels). Upstream reports no such failures on Ubuntu 24.04 / kernel 6.8
-(the Kakao nodes); none of this has been observed on this repo's nodes yet.
+kernel 7.0: falcosecurity/libs#2997 (execve verifier instruction count), falcosecurity/libs#3021
+(sendmmsg/recvmmsg bpf_loop), falcosecurity/libs#3086 (per-CPU auxmap race on preemptible kernels,
+falcosecurity/falco#3955) and falcosecurity/libs#3119 (signal_deliver verifier on newer kernels). Upstream
+reports no such failures on Ubuntu 24.04 / kernel 6.8 (the Kakao nodes); none of this has been observed on
+this repo's nodes yet.
 
 Cost: a privileged DaemonSet on every node, masters included (~300Mi each, see
 docs/common/master-memory-pressure.md). falcoctl is OFF (airgap), so the rules (falco-rules 5.2.0) and the
@@ -31,8 +32,24 @@ Chart 4.16.0 -> 9.2.1 breaking changes handled here (falcosecurity/charts BREAKI
 Images come from docker.io: ghcr.io/falcosecurity/{falco,falcosidekick,falcoctl} do not exist (`crane ls`
 -> NAME_UNKNOWN), quay.io answers UNAUTHORIZED, and the only other publisher is public.ecr.aws, which is
 outside the repo's registry order (ghcr.io > registry.k8s.io > quay.io > docker.io).
-Tags are pinned here, not left to chart defaults: falcosidekick's subchart 0.14.1 declares
-appVersion 2.31.1 in Chart.yaml but its values.yaml/Deployment use image 2.32.0.
+Tags are pinned here, not left to chart defaults: falcosidekick's subchart 0.14.1 declares appVersion
+2.31.1 in Chart.yaml, ships image 2.32.0 in values.yaml, and is overridden to 2.35.0 (D-FALCO-SIDEKICK).
+
+D-FALCO-SIDEKICK (2026-10-28) — falcosidekick runs 2.35.0, not the 2.32.0 that subchart 0.14.1 ships.
+Reason: 2.32.0 predates falcosecurity/falcosidekick#1366 (vulnerable Go modules, released in 2.34.0) and
+falcosecurity/falcosidekick#1390 (data race when several outputs are configured, 2.35.0; Loki and
+Alertmanager both are here). trivy
+on the images, 2026-10-28, CRITICAL/HIGH: 2.32.0 9/80, 2.35.0 3/19, 2.35.1 0/1; the 3 CRITICAL left in
+2.35.0 are in github.com/rabbitmq/amqp091-go, whose output is not enabled. 2.35.0 (2026-08-31) is the
+newest release past the 7-day cooling window; 2.35.1 (2026-10-26) becomes eligible on 2026-11-02.
+Contract diffed 2.32.0 -> 2.35.0 (config.go, main.go, handlers.go, types/, outputs/): the Loki output and
+the priority casing are identical, /ping and /healthz are unchanged, new config keys are additive; the
+Alertmanager output gains an `alertname` label (the Falco rule) and reads numeric fields as json.Number,
+nothing else. Lab 2026-10-28 (Falco 0.45.1 -> falcosidekick -> Loki stub + Alertmanager v0.33.0) passes on
+2.35.0.
+Cost: subchart 0.14.1 is released against 2.32.0, so 2.35.0 is an image override without chart-side validation.
+Escape hatch: set falcosidekick.image.tag back to 2.32.0 (alertmanager.endpoint must stay /api/v2/alerts),
+or move to 2.35.1 on or after 2026-11-02 after re-running the lab pipeline and R291.
 */}}
 apiVersion: argoproj.io/v1alpha1
 kind: Application
@@ -181,7 +198,8 @@ spec:
             # docker.io: none of ghcr.io, registry.k8s.io or quay.io hosts this image (see header).
             registry: docker.io
             repository: falcosecurity/falcosidekick
-            tag: "2.32.0"
+            # D-FALCO-SIDEKICK (header): the subchart default is 2.32.0.
+            tag: "2.35.0"
           # Web UI 비활성 (portal에서 자체 UI 제공)
           webui:
             enabled: false
@@ -209,7 +227,7 @@ spec:
               # REQUIRED by the portal: the default `text` format stores only the output string, and
               # portal/src/lib/falco.ts JSON.parse()s every Loki line (a text line is silently dropped).
               format: json
-              # falcosidekick 2.31-2.32 (outputs/loki.go) sets the stream labels rule, source and priority,
+              # falcosidekick 2.31-2.35 (outputs/loki.go) sets the stream labels rule, source and priority,
               # plus hostname, tags, k8s_ns_name and k8s_pod_name when present. `source` is the Falco EVENT
               # source ("syscall"), never the literal "falco", and `priority` is capitalised ("Critical").
               # The portal selects on {rule=~".+"} and matches both spellings of priority.
@@ -218,6 +236,12 @@ spec:
             # critical 이상은 Alertmanager로 알림 발사
             alertmanager:
               hostport: "http://prometheus-stack-kube-prom-alertmanager.monitoring.svc.cluster.local:9093"
+              # Chart 0.14.1 passes ALERTMANAGER_ENDPOINT=/api/v1/alerts, which overrides falcosidekick's own
+              # default. Alertmanager removed the v1 API in 0.27.0 and answers 410 Gone (ours is v0.33.0, see
+              # images.txt), so with the chart default every Critical alert is dropped ("AlertManager - 410
+              # Gone"). Checked 2026-10-28 against a real quay.io/prometheus/alertmanager:v0.33.0: v1 -> HTTP
+              # 410, v2 -> POST OK (200) and GET /api/v2/alerts lists the alert with source=falco.
+              endpoint: "/api/v2/alerts"
               minimumpriority: "critical"
               # default labels 자동 매핑 (rule, priority, hostname → labels)
               # Alertmanager alerts always carry source=falco (hardcoded in falcosidekick

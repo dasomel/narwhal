@@ -35,7 +35,7 @@ docker.gitea.com/gitea:1.26.2-rootless
 docker.io/alpine/git:v2.54.0@sha256:0b5f57d22181e8b8fbe8ac5ca8754faa0d577f101b9857418f1acc43955ad464
 docker.io/alpine/k8s:1.31.4
 docker.io/falcosecurity/falco:0.45.1
-docker.io/falcosecurity/falcosidekick:2.32.0
+docker.io/falcosecurity/falcosidekick:2.35.0
 docker.io/grafana/alloy:v1.17.0
 docker.io/grafana/grafana:13.0.2
 docker.io/grafana/loki-canary:3.7.3

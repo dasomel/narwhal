@@ -211,7 +211,7 @@ kubectl 없이 Velero 백업/복원을 트리거하고 조회할 수 있는 웹 
 
 | 차트 | 버전 | 네임스페이스 |
 |---|---|---|
-| `falco` (falcosecurity) | `9.2.1` (Falco `0.45.1`, falcosidekick `2.32.0`) | `security-system` |
+| `falco` (falcosecurity) | `9.2.1` (Falco `0.45.1`, falcosidekick `2.35.0`) | `security-system` |
 
 모든 노드(마스터 포함)에서 `modern_ebpf` 드라이버를 쓰는 privileged DaemonSet으로 런타임 보안(시스템콜 수준 위협 탐지)을 수행합니다. Falcosidekick이 이벤트를 Loki(`format: json`, 포털 Runtime Events 탭이 이 형식을 파싱)로, `critical` 이상은 Alertmanager로 전달합니다. 에어갭에서 안전하도록 룰(falco-rules)과 `container` 플러그인을 이미지에 내장하고 falcoctl을 비활성화해 런타임에 아무것도 내려받지 않으며, 룰 갱신은 이미지 교체와 함께 이루어집니다. D-FALCO-045(2026-10-28)로 모든 프로바이더에서 활성화되었고, 커널 7.0(Ubuntu 26.04 Vagrant)은 업스트림 보고로만 뒷받침될 뿐 이 저장소의 노드에서는 아직 관측되지 않았습니다. `templates/falco.yaml` 헤더와 `docs/common/lessons-log.md`(2026-07-08, 2026-10-28)를 참고하세요.
 

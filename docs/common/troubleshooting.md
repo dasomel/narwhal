@@ -27,7 +27,7 @@ jwt[0].issuer.url: Invalid value: "http://...": URL scheme must be https
 
 ```bash
 # HTTPS 엔드포인트 확인
-curl -k https://keycloak.local.narwhal.internal/realms/kubernetes/.well-known/openid-configuration
+curl -k https://keycloak.local.narwhal.internal/realms/narwhal/.well-known/openid-configuration
 # API 서버 로그 확인
 kubectl logs -n kube-system kube-apiserver-master-1 --tail=50
 ```
@@ -315,25 +315,21 @@ kubectl describe node master-1 | grep -A5 Conditions
 
 **토큰 발급 테스트**:
 
-```bash
-# 비밀번호 grant로 토큰 발급
-curl -k -X POST "https://keycloak.local.narwhal.internal/realms/kubernetes/protocol/openid-connect/token" \
-  -d "grant_type=password" \
-  -d "client_id=kubernetes" \
-  -d "client_secret=kubernetes-client-secret" \
-  -d "username=admin" \
-  -d "password=admin" \
-  -d "scope=openid groups"
+> 비밀번호 grant(ROPC)는 모든 Keycloak 클라이언트에서 꺼져 있다(`directAccessGrantsEnabled=false`). 토큰은 kubelogin으로 받는다 — [SSO 계정 확인 가이드](./sso-accounts.md#4-로그인-확인).
 
-# 토큰 디코딩 (groups claim 확인)
-echo "<access_token>" | cut -d. -f2 | base64 -d 2>/dev/null | jq .groups
+```bash
+# kubelogin으로 토큰 발급 후 groups claim 확인 (브라우저 로그인)
+kubectl oidc-login get-token \
+  --oidc-issuer-url=https://keycloak.local.narwhal.internal/realms/narwhal \
+  --oidc-client-id=kubernetes \
+  | jq -r '.status.token' | cut -d. -f2 | tr '_-' '/+' | base64 -d 2>/dev/null | jq .groups
 ```
 
 **Keycloak Pod 진단**:
 
 ```bash
-kubectl logs -n keycloak keycloak-0 --tail=50
-kubectl describe pod -n keycloak keycloak-0
+kubectl logs -n iam keycloak-0 -c keycloak --tail=50
+kubectl describe pod -n iam keycloak-0
 ```
 
 ## 13. VM Clock Skew (시간 동기화 불일치)

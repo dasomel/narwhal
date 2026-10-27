@@ -141,6 +141,13 @@ CRITICAL_SCRIPTS=(
   "08-1-networking.sh"
   "11-keycloak.sh"
   "11-2-keycloak-config.sh"
+  # 11-3 creates per-service Keycloak OIDC clients and K8s Secrets (argocd, grafana, gitea,
+  # harbor, headlamp, openbao, velero-ui, and APISIX proxies). Its client Secrets feed
+  # 12-gitea's OAuth source and the ArgoCD/Grafana/Harbor/OpenBao SSO; a partial run or
+  # client-secret read failure surfaced days later as SSO 401s and empty secrets (#478).
+  # Cost: an 11-3 failure now stops Phase 2 before Gitea and ArgoCD; 11-3 is idempotent,
+  # so re-run Phase 2. Escape hatch: remove this entry from CRITICAL_SCRIPTS.
+  "11-3-keycloak-clients.sh"
   "11-4-keycloak-apiserver.sh"
   # 12 stands up the Gitea that 14 pushes to, and 14 hands ten platform apps to ArgoCD:
   # cert-manager, prometheus-stack, loki, tempo, alloy, gitea, harbor, openbao, kyverno,

@@ -11,11 +11,12 @@ English | [한국어](CHANGELOG-ko.md)
 
 ### Changed
 
-- **Portal is pinned to `narwhal-portal:1.1.3` (was 1.1.0; 1.1.1 and 1.1.2 were pinned in between
-  by #467 and #477).** 1.1.2 fixes the empty cluster-infrastructure view (#475), 1.1.3 shows the
-  role-default tools in the permission management table (#479), and both carry the 1.1.1 security
-  fixes. The image is Cosign-signed with the repository key (index digest `sha256:e34e7c6b…`).
-  Static change only; rolling it out to an existing cluster is a separate step.
+- **Portal is pinned to `narwhal-portal:1.1.4` (was 1.1.0; 1.1.1, 1.1.2 and 1.1.3 were pinned in
+  between by #467, #477 and #481).** 1.1.2 fixes the empty cluster-infrastructure view (#475), 1.1.3
+  shows the role-default tools in the permission management table (#479), and 1.1.4 fills the empty
+  Security page (#501) and upgrades `fast-uri` past four advisories (#492); all carry the 1.1.1
+  security fixes. The image is Cosign-signed with the repository key (index digest
+  `sha256:223fcd9b…`). Static change only; rolling it out to an existing cluster is a separate step.
 
 ## [1.3.0] - 2026-10-22
 

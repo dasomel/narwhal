@@ -718,8 +718,8 @@ spec:
     # D-ssoentry-1: 직접 진입(북마크/ClusterDeck)도 /sso로 보낸다.
     # 이유: 앱 루트 직접 방문이 앱 자체 로그인 화면에서 멈췄다(/sso는 포털 링크로만 도달).
     # 비용: 로그인 상태에서 루트를 새로고침하면 Keycloak 왕복 1회 + OpenBao가 매번 새 OIDC 토큰 발급.
-    # 탈출구: 쿼리스트링을 붙이면(예: /?direct) 그대로 통과. 수동 토큰 로그인
-    # /ui/vault/auth?with=token 은 다른 경로라 영향 없음.
+    # 탈출구: OpenBao의 탈출구는 /ui/?direct (/ui/의 쿼리스트링; OpenBao 자체가 /를 쿼리 없이 /ui/로
+    # 리다이렉트하므로) 또는 수동 토큰 로그인 /ui/vault/auth?with=token.
     # 쿼리 없는 정확 경로(/, /ui, /ui/)만 리다이렉트하고 그 외는 통과 -> 통과 응답에도
     # 보안 헤더가 붙도록 catch-all과 같은 response-rewrite를 둔다.
     - name: openbao-sso-entry

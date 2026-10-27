@@ -30,7 +30,7 @@
     {
       "id": "e3",
       "type": "bug_fix",
-      "summary": "Added the two entry rules with the same security headers as the catch-all; D-ssoentry-1 records the cost (one Keycloak round trip on a root reload) and the escape hatch (any query string, OpenBao manual token login at /ui/vault/auth?with=token)."
+      "summary": "Added the two entry rules with the same security headers as the catch-all; D-ssoentry-1 records the cost (one Keycloak round trip on a root reload) and the escape hatch (for OpenBao /ui/?direct (a query string on /ui/, because OpenBao itself redirects / to /ui/ without the query) or manual token login at /ui/vault/auth?with=token; for Velero UI any query string on / works, e.g. /?direct)."
     },
     {
       "id": "e4",
@@ -40,7 +40,7 @@
       "summary": "See evidence.",
       "evidence": [
         "test:curl https://openbao.kakao.narwhal.internal/ , /ui , /ui/ -> 302 to /sso (2026-10-27)",
-        "test:curl https://openbao.kakao.narwhal.internal/?direct -> 307 to /ui/ (passes through to OpenBao); /ui/vault/auth?with=token -> 200",
+        "test:curl https://openbao.kakao.narwhal.internal/?direct -> 307 /ui/ then 302 /sso (OpenBao drops the query); /ui/?direct -> 200, no redirect; /ui/vault/auth?with=token -> 200",
         "test:curl https://velero-ui.kakao.narwhal.internal/ -> 302 to /sso; /?state=error&reason=sso -> 200; /dashboard -> 200",
         "test:diff of the merged apisix-routes.yaml against the copy deployed in the cluster's Gitea -> identical",
         "test:python3 scripts/test/lib/check-sso-direct-entry.py --mutation-verify -> 10/10 mutations rejected",

@@ -41,7 +41,7 @@ English | [한국어](CHANGELOG-ko.md)
 ### Fixed
 
 - **Falco no longer floods Loki with API-server connections from the platform's own clients
-  (D-FALCO-NOISE).** Twenty hours after the 0.45.1 rollout, live Loki held 47,180 events and 46,900 of them
+  (D-FALCO-NOISE).** Twenty hours after the 0.45.1 rollout, live Loki held 47,180 events and 47,178 of them
   were the bundled NOTICE rule "Contact K8S API Server From Container", all from components whose job is to
   call the API. The rule now carries one appended exception (`customRules`, mounted on
   `/etc/falco/rules.d`) for 8 exact (namespace, image) pairs: velero-ui, narwhal-portal, keycloak-operator,

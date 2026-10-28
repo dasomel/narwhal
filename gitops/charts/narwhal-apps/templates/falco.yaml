@@ -54,7 +54,7 @@ or move to 2.35.1 on or after 2026-11-02 after re-running the lab pipeline and R
 D-FALCO-NOISE (2026-10-28) — the bundled rule "Contact K8S API Server From Container" (NOTICE, line 840 of
 /etc/falco/falco_rules.yaml in the 0.45.1 image) gets ONE appended exception for 8 exact (namespace, image) pairs.
 Reason: live Loki on Kakao, the 20 hours after the 0.45.1 rollout (DaemonSet 6/6, 0 restarts, 41-68Mi; numbers
-supplied with the decision, not re-queried by this change): 47,180 events, 46,900 of them from this rule (about 99%),
+supplied with the decision, not re-queried by this change): 47,180 events, 47,178 of them from this rule (about 99%),
 every one from a platform component whose job is to call the API. Counts per (k8s.ns.name, container.image.repository):
   storage          docker.io/otwld/velero-ui                  43013
   devtools         ghcr.io/dasomel/narwhal-portal              2084

@@ -39,7 +39,7 @@
 ### 수정
 
 - **Falco가 플랫폼 자체 클라이언트의 API 서버 연결로 Loki를 뒤덮지 않음 (D-FALCO-NOISE).** 0.45.1 롤아웃
-  20시간 뒤 라이브 Loki에 이벤트 47,180건이 쌓였고 그중 46,900건이 번들 NOTICE 룰 "Contact K8S API Server
+  20시간 뒤 라이브 Loki에 이벤트 47,180건이 쌓였고 그중 47,178건이 번들 NOTICE 룰 "Contact K8S API Server
   From Container"였으며, 모두 API 호출이 본업인 컴포넌트에서 나왔다. 이 룰에 `customRules`
   (`/etc/falco/rules.d`에 마운트)로 정확한 (네임스페이스, 이미지) 쌍 8개(velero-ui, narwhal-portal,
   keycloak-operator, kyverno, headlamp, Kubernetes dashboard auth·web, cloudnative-pg)에 대한 예외를 하나

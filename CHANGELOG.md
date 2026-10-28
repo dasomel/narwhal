@@ -38,6 +38,21 @@ English | [한국어](CHANGELOG-ko.md)
   security fixes. The image is Cosign-signed with the repository key (index digest
   `sha256:223fcd9b…`). Static change only; rolling it out to an existing cluster is a separate step.
 
+### Fixed
+
+- **Falco no longer floods Loki with API-server connections from the platform's own clients
+  (D-FALCO-NOISE).** Twenty hours after the 0.45.1 rollout, live Loki held 47,180 events and 47,178 of them
+  were the bundled NOTICE rule "Contact K8S API Server From Container", all from components whose job is to
+  call the API. The rule now carries one appended exception (`customRules`, mounted on
+  `/etc/falco/rules.d`) for 8 exact (namespace, image) pairs: velero-ui, narwhal-portal, keycloak-operator,
+  kyverno, headlamp, the Kubernetes dashboard auth and web, and cloudnative-pg. Every other pod still fires,
+  the priority floor is unchanged, and the kube-apiserver audit log still records those clients' writes and
+  their reads of secrets, configmaps, serviceaccounts and RBAC objects (other reads are not audited).
+  Validated with `falco -V` on the real falco:0.45.1 image and in a local lab (the 5 non-docker.io pairs
+  silent, any other namespace or image still flagged; the 3 docker.io pairs are checked for syntax only,
+  because the lab's Docker engine drops the `docker.io/` prefix that CRI keeps); R291 A11 pins the exception. Static change: the DaemonSet rolls on the
+  next sync, and the behaviour on the Kakao cluster has not been observed.
+
 ## [1.3.0] - 2026-10-22
 
 A hardening release. The air-gapped bundle and the offline upgrade bundle now carry an

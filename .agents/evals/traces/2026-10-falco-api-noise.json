@@ -1,0 +1,92 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-falco-api-noise-20261028",
+  "task": "D-FALCO-NOISE: after the Falco 0.45.1 rollout the bundled rule 'Contact K8S API Server From Container' produced all but two of the events in live Loki, all from platform components that are expected to call the API. Add a narrow, appended exception for the 8 exact (k8s.ns.name, container.image.repository) pairs through the chart's customRules, pin it in R291 (A11) and record it in falco.yaml, the CHANGELOGs and the lessons-log. No cluster access and no push: the live counts are supplied by the coordinator, and the behaviour of the exception was checked with the real falco:0.45.1 image in a local Docker lab only.",
+  "changeContext": {
+    "paths": [
+      ".agents/evals/traces/2026-10-falco-api-noise.json",
+      "CHANGELOG-ko.md",
+      "CHANGELOG.md",
+      "docs/common/lessons-log.md",
+      "gitops/README-ko.md",
+      "gitops/README.md",
+      "gitops/charts/narwhal-apps/templates/falco.yaml",
+      "scripts/test/lib/check-falco.py",
+      "scripts/test/regression-check-kakao.sh"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Add ONE appended exception to the bundled rule 'Contact K8S API Server From Container' through the chart's customRules (ConfigMap falco-rules on /etc/falco/rules.d) for the 8 exact (k8s.ns.name, container.image.repository) pairs from the decision D-FALCO-NOISE, with override.exceptions: append; record the decision in falco.yaml; pin it in R291 as assertion A11 with mutations; CHANGELOG EN/KO, a lessons-log row and this trace. Deliberately left alone: the bundled macro user_known_contact_k8s_api_server_activities, falco.priority and loki.minimumpriority (no raised floor), the falco and falcosidekick versions and resources, the portal, and every other rule. No cluster access, no push, no namespace-wide or image-wide wildcard."
+    },
+    {
+      "id": "e2",
+      "type": "external_input",
+      "provenance": "coordinator follow-up message for this task, quoting live Loki queries on the Kakao cluster for the 20 hours after the 0.45.1 rollout (PR 503 squash-merged as 7b9dd98f); not queried by this session",
+      "reviewed": true,
+      "summary": "Supplied, not observed here: DaemonSet 6/6, 0 restarts, 41-68Mi; 47,180 events in 20 h, 47,178 of them the rule 'Contact K8S API Server From Container' (Notice); per (k8s.ns.name, container.image.repository): storage docker.io/otwld/velero-ui 43013, devtools ghcr.io/dasomel/narwhal-portal 2084, iam quay.io/keycloak/keycloak-operator 1807, platform-system reg.kyverno.io/kyverno/kyverno 360, devtools ghcr.io/headlamp-k8s/headlamp 8, devtools docker.io/kubernetesui/dashboard-auth 1, devtools docker.io/kubernetesui/dashboard-web 1, platform-system ghcr.io/cloudnative-pg/cloudnative-pg 1. Cross-checked against the real image: the rule text, its condition, the macro user_known_contact_k8s_api_server_activities = (never_true) and required_engine_version 0.57.0 are as described (see e3). Not verifiable here: every live count. Arithmetic on the supplied numbers: the 8 pair counts sum to 47,275 and the first four alone to 47,264, which is above both the 47,180 total and the 47,178 rule total, so the totals and the pair counts come from different queries; the decision record says so."
+    },
+    {
+      "id": "e3",
+      "type": "reproduction",
+      "summary": "The mechanism was reproduced in a local Docker lab on the real docker.io/falcosecurity/falco:0.45.1 (Linux 7.0.14-linuxkit, modern_ebpf, the falco.yaml the chart renders from the repo values with only http_output off and the docker engine instead of cri). The bundled rule has no exceptions key and its only hook is the never_true macro, so any container that connects to the API-server name fires it: with no rules.d file, 10 lab clients that each connect once to the address kubernetes.default.svc.cluster.local resolves to (an --add-host entry in the Falco container) produce 10 Notice events, one each, with k8s.ns.name taken from the io.kubernetes.pod.namespace label (null without it). That is the event shape the supplied live data describes; the live volume itself was not reproduced.",
+      "evidence": [
+        "artifact:docker.io/falcosecurity/falco:0.45.1 index sha256:69e957f91b3a6beb5c82e2afae33ec3e4479dab2d4421475d288d0cd113cedf6, pulled again for this task and equal to the row in scripts/airgap/lib/image-digests.tsv; falco --version: Falco 0.45.1, libs 0.26.1, plugin API 3.12.0, engine 0.65.0",
+        "test:docker run --rm --entrypoint cat falco:0.45.1 /etc/falco/falco_rules.yaml -> line 28 '- required_engine_version: 0.57.0'; line 840 '- rule: Contact K8S API Server From Container' (priority NOTICE, no exceptions key) with condition 'evt.type=connect and (fd.typechar=4 or fd.typechar=6) and container and k8s_api_server and not k8s_containers and not user_known_contact_k8s_api_server_activities'; macro k8s_api_server = (fd.sip.name=\"kubernetes.default.svc.cluster.local\"); macro user_known_contact_k8s_api_server_activities = (never_true); macro k8s_containers lists fixed images plus k8s.ns.name = \"kube-system\"",
+        "test:lab baseline, Falco 0.45.1 privileged with the rendered config and NO rules.d file, clients run with --label io.kubernetes.pod.namespace and one image per client -> 10 clients, 10 'Contact K8S API Server From Container' Notice events, one per client (ghcr.io/dasomel/narwhal-portal in devtools, quay.io/keycloak/keycloak-operator in iam, reg.kyverno.io/kyverno/kyverno in platform-system, ghcr.io/headlamp-k8s/headlamp in devtools, ghcr.io/cloudnative-pg/cloudnative-pg in platform-system, and five non-matching combinations)"
+      ]
+    },
+    {
+      "id": "e4",
+      "type": "bug_fix",
+      "summary": "falco.yaml gains a top-level customRules value with one file, narwhal-api-noise.yaml: a rule item named exactly 'Contact K8S API Server From Container' with override: {exceptions: append} and one exception, narwhal_platform_api_clients, fields [k8s.ns.name, container.image.repository], comps [=, =], and the 8 reviewed pairs. The chart renders it as ConfigMap falco-rules mounted on /etc/falco/rules.d, which falco.rules_files loads after falco_rules.yaml; checksum/rules makes the DaemonSet roll. The header records D-FALCO-NOISE: the supplied data, the cost (those 8 workloads' API connections are no longer flagged; the kube-apiserver audit policy still records their writes and their reads of secrets, configmaps, serviceaccounts and RBAC objects, other get/list/watch are not audited), what was deliberately not done and the escape hatch. falco.priority, loki.minimumpriority, the bundled macro, versions and resources are unchanged."
+    },
+    {
+      "id": "e5",
+      "type": "bug_fix",
+      "summary": "R291 gets assertion A11 for the exception: exactly one custom item, the bundled rule name exactly, override exactly {exceptions: append} (a replace is a valid file for Falco 0.45.1 but would drop exceptions appended elsewhere), exactly the keys name/fields/comps/values, fields and comps exactly as specified, every value a [namespace, repository] pair of non-empty strings with a Kubernetes namespace name, a registry-qualified repository and no glob character, no duplicate, the set equal to the 8 reviewed pairs; falco.priority stays notice, rules.d loads after the bundled rules, and the exception was validated against falco 0.45.1 only, so an image bump fails A11 until it is re-validated (a rules file Falco cannot load stops it). 19 new mutations, each caught by its own [A11] message; check-falco.py --mutation-verify now catches 69. A rule loader keeps a bare = a string, which PyYAML otherwise cannot construct."
+    },
+    {
+      "id": "e6",
+      "type": "documentation",
+      "summary": "CHANGELOG.md and CHANGELOG-ko.md get an Unreleased Fixed entry, gitops/README.md and README-ko.md one sentence in their Falco paragraph; docs/common/lessons-log.md gets a row (Korean, three columns) with the supplied live numbers and their provenance, the two shortcuts that were avoided, how a bad exception file fails, the validation results, the cost, and the post-deploy check; the R291 description in regression-check-kakao.sh names A11 and 69 mutations."
+    },
+    {
+      "id": "e7",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "helm render of the falco Application and chart 9.2.1 with customRules, falco -V on the real falco:0.45.1 image (bundled rules plus the rules.d file, the rendered config, negative variants), a normal Falco start with a bad file, a local Docker lab of matching and non-matching (namespace, image) clients, R291 with 69 mutations, make validate, the full static regression suite, the changed-lines markdownlint gate and the four agent-trace validators. NOT covered: the Kakao cluster (live event counts after the change, the CRI path that fills k8s.ns.name there, the rolling restart of the 6 DaemonSet pods), the 3 docker.io pairs end to end (the lab's docker engine drops the docker.io/ prefix that containerd/CRI keeps; they were only validated for syntax), the supplied live counts themselves, and any pod that reports a different repository string than the supplied one.",
+      "summary": "See evidence.",
+      "evidence": [
+        "test:helm template narwhal-apps gitops/charts/narwhal-apps --show-only templates/falco.yaml | yq .spec.source.helm.valuesObject, then helm template falco falco-9.2.1.tgz -n security-system --api-versions monitoring.coreos.com/v1 -> rc 0; 15 resources (14 before); the diff against the render of the pre-change values is exactly ConfigMap falco-rules (data narwhal-api-noise.yaml equal to the customRules text), volume rules-volume (configMap falco-rules), a volumeMount /etc/falco/rules.d in the falco container, and checksum/rules changing from e3b0c442... (empty) to 3be21331...; the rendered falco.yaml keeps rules_files [/etc/falco/falco_rules.yaml, /etc/falco/falco_rules.local.yaml, /etc/falco/rules.d], priority notice and json_output true; DaemonSet updateStrategy RollingUpdate",
+        "artifact:falco chart 9.2.1 sha256:726c1fe08c3fd3e2789d4072b34f9eee94ecccad734fee471cc7546124570c6c (cached tarball, checksum recomputed); templates/rules-configmap.yaml builds ConfigMap <fullname>-rules from .Values.customRules and templates/pod-template.tpl mounts it as rules-volume on /etc/falco/rules.d and carries the checksum/rules annotation",
+        "test:falco -V /etc/falco/falco_rules.yaml on the real 0.45.1 image -> 'Ok' (rc 0); with -V narwhal-api-noise.yaml added -> both files 'Ok' (rc 0)",
+        "test:falco -c <rendered falco.yaml, /etc/falco/config.d shadowed by a tmpfs like the chart's emptyDir> -V /etc/falco/falco_rules.yaml -V /etc/falco/falco_rules.local.yaml -V /etc/falco/rules.d/narwhal-api-noise.yaml (kubelet-style ..data symlink layout, file text equal to the rendered customRules) -> JSON falco_load_results: all three successful true with errors [] and warnings [] (rc 0)",
+        "test:falco -V negative variants with the bundled rules loaded first (each rc 1 unless noted): rule name 'Contact K8s API Server From Container' -> LOAD_ERR_VALIDATE 'Rule uses append or override.<key>: append but no rule by that name already exists'; same name without the override key -> LOAD_ERR_YAML_VALIDATE 'Item has no mapping for key enabled'; field k8s.ns.nam -> \"'k8s.ns.nam' is not a supported filter field\"; a one-element tuple -> 'Fields and values lists must have equal length'; one comps entry -> 'Fields and comps lists must have equal length'; the file alone -> 'no rule by that name already exists'; override.exceptions: replace -> Ok (valid, which is why A11 pins append)",
+        "test:Falco 0.45.1 started normally (not -V) with the wrong-case rule name in /etc/falco/rules.d -> container exited with code 1 after logging the LOAD_ERR_VALIDATE error, so a bad exception file stops Falco instead of being ignored",
+        "test:lab with the exception file (rendered rules.d in kubelet layout; Falco log 'Loading rules from' lists /etc/falco/rules.d/narwhal-api-noise.yaml | schema validation: ok): 0 events for the 5 pairs the docker engine can report (ghcr.io/dasomel/narwhal-portal in devtools, quay.io/keycloak/keycloak-operator in iam, reg.kyverno.io/kyverno/kyverno in platform-system, ghcr.io/headlamp-k8s/headlamp in devtools, ghcr.io/cloudnative-pg/cloudnative-pg in platform-system); 1 event each for namespace lab-other with the portal image, devtools with ghcr.io/dasomel/narwhal-portal-clone, storage with the portal image (a mixed pair), the portal image with no k8s labels, and storage with otwld/velero-ui (the docker engine reports that image without the docker.io/ prefix)",
+        "test:python3 scripts/test/lib/check-falco.py --mutation-verify -> OK 69 mutations caught (50 earlier, 19 new, each new one caught by [A11])",
+        "test:make validate -> exit 0 (30 files OK, Vagrantfile syntax OK); helm template narwhal-apps gitops/charts/narwhal-apps -> rc 0",
+        "test:RESEARCH_EVIDENCE_DIR=$(mktemp -d) make test on the tree before the two README sentences and the last two paragraphs of the falco.yaml header comment (docs and comments only) -> passed 415 failed 0 warnings 3 (R291 included)",
+        "test:RESEARCH_EVIDENCE_DIR=$(mktemp -d) make test again on HEAD b5c9667f, which has every code, docs and comment change and lacks only this trace revision -> passed 415 failed 0 warnings 3",
+        "test:make validate -> exit 0 (30 files OK) and python3 scripts/ci/markdownlint-changed.py --base 7b9dd98f -> 'No markdownlint violations on added/modified active-documentation lines.' (rc 0), both on HEAD b5c9667f",
+        "test:coordinator re-run after rebasing the branch onto origin/main 483ea9b6 (#500 merged; the rebase rewrote b5c9667f to 2fd240bf, code unchanged): on 0222498c RESEARCH_EVIDENCE_DIR=$(mktemp -d) make test -> passed 417 failed 0 warnings 3 (R291 PASS); check-falco.py --mutation-verify -> 'OK 69 mutations caught'; make validate rc 0; markdownlint-changed.py --base origin/main -> no violations. The rule count 46,900 in the coordinator's message was an arithmetic slip: the per-namespace query gave 42,927 + 2,094 + 1,802 + 355 = 47,178 of the 47,180 events (the other two: the /etc/shadow probe and the synthetic Critical test); corrected here and in falco.yaml, both CHANGELOGs and the lessons-log row",
+        "test:the four agent-trace validators, run as agent-behavior.yml runs them (2026-08-version-consistency bound by bind-verification.py first) against this trace file before its own commit: check-agent-trace-requirement.py -> risk high, traceRequired true, traceChanged true (rc 0); check-agent-trace-evidence.py over 111 traces -> passed true, no failures; gate.py -> 0 regressions, 5 of 5 behaviors passed (rc 0); evaluate.py -> rc 0"
+      ]
+    },
+    {
+      "id": "e8",
+      "type": "completion_claim",
+      "summary": "Within the repository scope, the bundled rule 'Contact K8S API Server From Container' now has one appended exception for exactly the 8 reviewed (namespace, image) pairs, with the priority floor and every other pod unchanged; the real falco:0.45.1 image accepts the rule files and, in a local lab, stays silent for the 5 matching pairs it can report and still flags a different namespace, a different image, a mixed pair and a pod without k8s labels; R291 A11 and all 415 static regression checks pass. The live effect on Kakao, the 3 docker.io pairs end to end and the CRI path are not verified."
+    },
+    {
+      "id": "e9",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Complete and verified within the stated repository scope; the push, the GitOps sync and the live check (Loki count for the 8 pairs falling, other clients still flagged) belong to the coordinator."
+    }
+  ]
+}

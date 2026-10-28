@@ -3109,6 +3109,11 @@ assert re.search(r"ARGOCD_TOKEN 없이 완료[^\n]*\n\s*exit 3\b", b), "13-2 mus
 code = [l for l in b.splitlines() if not l.lstrip().startswith("#")]
 assert sum(1 for l in code if re.search(r"\bexit 3\b", l)) == 1, "exit 3 must appear exactly once in non-comment 13-2 code"
 '
+  # 2026-10-28 (D-FALCO-045): Falco 0.45.1 (chart 9.2.1) re-enabled on every provider. Every failure mode
+  # found while migrating is silent (JSON vs text Loki lines, Capitalized priority label, removed
+  # collectors keys ignored by the chart, falcoctl pulling from ghcr.io), so each one is pinned here.
+  check R291 "Falco 0.45.1 / chart 9.2.1: Application rendered (no if-false guard), tags agree across falco.yaml, images.txt and image-digests.tsv, modern_ebpf, falcoctl/k8smeta/web UI off and every declared image mirrored, CRI-only container engine, JSON Loki lines + source:falco Alertmanager posted to /api/v2/alerts (v1 is 410 Gone on Alertmanager >= 0.27), portal Loki selector and output_fields keys match falcosidekick/Falco and the security page shows the Runtime Events tab on every node OS, security-system excluded from the Enforce privileged policy, no bootstrap rm on 26.04; 50 mutations caught (D-FALCO-045, D-FALCO-SIDEKICK)" \
+    python3 scripts/test/lib/check-falco.py --mutation-verify
   # 2026-10-27 (#491): since #478, 11-3 fails closed on an empty client-secret read; as a
   # non-critical step that failure only warned and later steps consumed empty Secrets.
   check R289 "Phase 2 treats 11-3-keycloak-clients.sh as critical and its run loop runs it before 12-gitea.sh; 2 mutations caught (#491)" \

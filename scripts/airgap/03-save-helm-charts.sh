@@ -13,9 +13,10 @@ set -euo pipefail
 #      offline, but that registry does not exist yet while this bundle is built.
 #      Only templates with a literal chart + targetRevision are collected; local-path
 #      apps (no chart key — e.g. narwhal-platform.yaml, *-policies.yaml) and
-#      Applications disabled via `{{- if false }}` (e.g. falco.yaml, see its header
-#      for why) are skipped. Files are Helm templates containing `{{ }}` syntax, so
-#      they're regex-scanned, not YAML-parsed.
+#      Applications disabled via `{{- if false }}` (none today; falco.yaml carried it
+#      until D-FALCO-045, 2026-10-28, and its chart is bundled again) are skipped.
+#      Files are Helm templates containing `{{ }}` syntax, so they're regex-scanned,
+#      not YAML-parsed.
 #   2. Bootstrap charts — installed by scripts/cluster/*.sh and
 #      scripts/common/*.sh BEFORE ArgoCD exists (kube-vip, CNI, CNPG, ingress,
 #      monitoring, etc). Parsed from `helm repo add <alias> <url>` plus
@@ -126,7 +127,7 @@ def parse_gitops(root, upstream_sources):
     for path in sorted(glob.glob(os.path.join(tmpl_dir, "*.yaml"))):
         txt = open(path).read()
         if "{{- if false }}" in txt:
-            continue  # Application disabled at the template gate (e.g. falco.yaml)
+            continue  # Application disabled at the template gate
         chart_m = re.search(r"^\s*chart:\s*([^\s#]+)", txt, re.M)
         ver_m = re.search(r"targetRevision:\s*[\"']?([^\"'\s#]+)", txt)
         if not (chart_m and ver_m):

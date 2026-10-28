@@ -133,14 +133,11 @@ if [ ! -d /home/vagrant/configs/gitops ]; then
 fi
 cp -r /home/vagrant/configs/gitops/* .
 
-# Ubuntu 26.04 (Resolute, kernel 7.0): falco 0.39.2 modern_ebpf probe fails scap_init
-# (no kernel 7.0 support yet), so exclude falco from the GitOps apps on 26.04 until a
-# falco release supports it. The app-of-apps then never creates the falco Application.
-. /etc/os-release 2>/dev/null || true
-if [ "${VERSION_ID:-}" = "26.04" ]; then
-  echo "Ubuntu ${VERSION_ID} detected — excluding falco (no kernel 7.0 support yet)"
-  rm -f charts/narwhal-apps/templates/falco.yaml
-fi
+# D-FALCO-045 (2026-10-28): falco is staged on every OS. Until then this block removed
+# charts/narwhal-apps/templates/falco.yaml on Ubuntu 26.04 (kernel 7.0) because Falco 0.39.2
+# could not open the modern BPF probe there; 0.45.1 carries the upstream kernel-7.0 fixes
+# (not yet observed on a Vagrant box). A bootstrap-only `rm` would desync the cluster from
+# the GitOps source, so the single off switch is the Helm "if false" guard in falco.yaml.
 
 # The chart the root Application points at. A warning here used to be the only
 # signal, and the install continued to create idp-apps against a tree that could not

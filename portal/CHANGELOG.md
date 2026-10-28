@@ -9,6 +9,45 @@ English | [한국어](CHANGELOG-ko.md)
 
 ## [Unreleased]
 
+### Fixed
+
+- **Runtime Events: the priority filter matched nothing (narwhal#503)**: falcosidekick writes the Loki
+  `priority` label capitalised (`Critical`), but the reader selected the lowercase value, so the
+  priority filter and the critical-alert query matched no stream. The selector now accepts both
+  spellings, and the JSON `null` fields Falco emits for processes outside Kubernetes are treated as
+  absent.
+- **Runtime Events tab hidden on Ubuntu 26.04 (narwhal#503)**: the tab was replaced by an
+  "unavailable on Ubuntu 26.04" notice whenever a node ran 26.04. Falco 0.45.1 is enabled on every
+  provider, so the tab is always shown and the node-OS probe and the
+  `security.runtimeEvents.unavailable2604` text are removed. The KISA control notes no longer say
+  Falco is disabled; they make no claim about a live cluster.
+
+## [1.1.4] - 2026-10-28
+
+Patch release: the Security page shows vulnerability data again on clusters with many scanned
+images, and `fast-uri` is upgraded past its published advisories (narwhal#470). Everything since
+`portal/v1.1.3` is covered here.
+
+### Fixed
+
+- **Security page showed no vulnerabilities (narwhal#501)**: the Trivy reader listed every
+  VulnerabilityReport in one unbounded request. On Kakao, 109 reports came to 10,761,256 bytes, over
+  the client's 8 MiB response cap, and the page fell back to empty results. The summary, the
+  workload table and the image view now page through the list 20 reports at a time (up to 50
+  pages); a truncated list logs a warning and keeps what was fetched.
+
+### Security
+
+- `fast-uri` 4.2.2 to 4.2.3 (GHSA-w74x-v6f9-j3xg, GHSA-wjr9-j795-jxcr, GHSA-xhq7-xmqj-769h,
+  GHSA-333x-w4r6-6crp), the transitive copy under `ajv` 8.20.0 (narwhal#492). The existing
+  `>=3.1.2` override already allowed it and nothing else in the lockfile moved; `pnpm audit --prod`
+  no longer reports `fast-uri`.
+
+### Known issues
+
+- `body-parser` (GHSA-27r3-jxmh-p828, fixed in 2.4.0) is not upgraded yet: its fix clears the 7-day
+  lockfile cooling gate after 2026-10-29 11:39Z. It ships in the next patch (narwhal#470).
+
 ## [1.1.3] - 2026-10-27
 
 Patch release: the permission management table shows the tools each role actually reaches.
@@ -498,7 +537,8 @@ management dashboard built with Next.js 16 and React 19.
   - Skaffold development profile configured for live Hot Module Replacement (HMR) and container
     file syncing.
 
-[Unreleased]: https://github.com/dasomel/narwhal/compare/portal/v1.1.3...HEAD
+[Unreleased]: https://github.com/dasomel/narwhal/compare/portal/v1.1.4...HEAD
+[1.1.4]: https://github.com/dasomel/narwhal/compare/portal/v1.1.3...portal/v1.1.4
 [1.1.3]: https://github.com/dasomel/narwhal/compare/portal/v1.1.2...portal/v1.1.3
 [1.1.2]: https://github.com/dasomel/narwhal/compare/portal/v1.1.1...portal/v1.1.2
 [1.1.1]: https://github.com/dasomel/narwhal/compare/portal/v1.1.0...portal/v1.1.1

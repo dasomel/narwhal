@@ -37,6 +37,8 @@ chrislusf/seaweedfs:4.34	sha256:6620371e8af8282056685c652d4637265698c9e2c2d59f95
 docker.gitea.com/gitea:1.26.2-rootless	sha256:c5c21a7705a16f2b2369384a3b7d67c5ed761a818bbb0a55187b5cf98cdc2e68	2026-09-28T12:06:18Z	crane digest
 docker.io/alpine/git:v2.54.0	sha256:0b5f57d22181e8b8fbe8ac5ca8754faa0d577f101b9857418f1acc43955ad464	2026-09-28T12:06:18Z	portal-pin
 docker.io/alpine/k8s:1.31.4	sha256:9c4976d47656d78cf53a92b0203fc54ac45eae18a2b45001ac221c27da4c8036	2026-09-28T12:06:18Z	crane digest
+docker.io/falcosecurity/falco:0.45.1	sha256:69e957f91b3a6beb5c82e2afae33ec3e4479dab2d4421475d288d0cd113cedf6	2026-10-27T15:36:48Z	crane digest
+docker.io/falcosecurity/falcosidekick:2.35.0	sha256:216ddb75229dcbf78cf57b1cf2140bd1b9092fcd72e4fd20b4d3057395d6765b	2026-10-27T16:49:49Z	crane digest
 docker.io/grafana/alloy:v1.17.0	sha256:41c41849989b7e054ccbadc17938ee1e5592fe26bfbc56ef3ffc109c0b0b2739	2026-09-28T12:06:18Z	crane digest
 docker.io/grafana/grafana:13.0.2	sha256:5dad0df181cb644a14e13617b913b261a54f7d4fd4510721dba420929f35bea2	2026-09-28T12:06:18Z	crane digest
 docker.io/grafana/loki-canary:3.7.3	sha256:8073c4a5cb70191f4ebf5481704b3a665a92c764de3f03e7f42578aa3b8c2e6a	2026-09-28T12:06:18Z	crane digest
@@ -68,7 +70,7 @@ ghcr.io/dasomel/goharbor/harbor-registryctl:v2.15.1	sha256:1fdf3a1de4b1683da05aa
 ghcr.io/dasomel/goharbor/nginx-photon:v2.15.1	sha256:1060a7ef51152c061415cde866c9657f1f74e758d374b08bc9871735096eb7ef	2026-09-28T12:06:18Z	crane digest
 ghcr.io/dasomel/goharbor/redis-photon:v2.15.1	sha256:4e9f77d2c5c0e6f8ae70acc45f8db7c719710333952ffcaecf6883de4fbb0e25	2026-09-28T12:06:18Z	crane digest
 ghcr.io/dasomel/goharbor/registry-photon:v2.15.1	sha256:baedda128bb9e7eb9df72fa904e4d17d162004b0a2bb12090c682161b4d7e348	2026-09-28T12:06:18Z	crane digest
-ghcr.io/dasomel/narwhal-portal:1.1.3	sha256:e34e7c6bbc1403ab0a835655d37dadf358118272b0015a8e4d437952fd26738a	2026-10-27T00:05:00Z	crane digest
+ghcr.io/dasomel/narwhal-portal:1.1.4	sha256:223fcd9b1a39c499afbc6fd77353c74dab35812b270802159237384634cdacb4	2026-10-27T15:50:00Z	crane digest
 ghcr.io/dasomel/nfs-quota-agent:v0.5.0	sha256:090901b68cfe6842816783eefd29f19397151c27a12292b262571ade4a6d34de	2026-09-28T12:06:18Z	crane digest
 ghcr.io/dexidp/dex:v2.45.0	sha256:b8469881d3cb3a73001506f0d3aaefecb9c45d2311c1e0f405d8ac538316c59d	2026-09-28T12:06:18Z	crane digest
 ghcr.io/grafana/alloy-operator:1.10.0	sha256:6ee05ccf3b25850aed95392b4d12e8ae80dd76e235d31fd525639a3356ad8b13	2026-09-28T12:06:18Z	crane digest

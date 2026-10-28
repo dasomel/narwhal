@@ -11,11 +11,32 @@ English | [한국어](CHANGELOG-ko.md)
 
 ### Changed
 
-- **Portal is pinned to `narwhal-portal:1.1.3` (was 1.1.0; 1.1.1 and 1.1.2 were pinned in between
-  by #467 and #477).** 1.1.2 fixes the empty cluster-infrastructure view (#475), 1.1.3 shows the
-  role-default tools in the permission management table (#479), and both carry the 1.1.1 security
-  fixes. The image is Cosign-signed with the repository key (index digest `sha256:e34e7c6b…`).
-  Static change only; rolling it out to an existing cluster is a separate step.
+- **Falco is enabled again on every provider, upgraded from 0.39.2 (chart 4.16.0) to 0.45.1 (chart
+  9.2.1) (D-FALCO-045).** It was disabled on 2026-07-08 because 0.39.2's `modern_ebpf` probe failed
+  `scap_init` on kernel 7.0. 0.45.1 carries the upstream kernel-7.0 fixes (falcosecurity/libs#2997,
+  falcosecurity/libs#3021, falcosecurity/libs#3086 and falcosecurity/libs#3119); in a local kernel
+  7.0.14 (linuxkit) run it opened the probe where 0.39.2 still fails with the July signature. The
+  migration is breaking: the chart refuses `falco.grpc`, container metadata comes from the `container`
+  plugin, and falcoctl is off, so the rules (falco-rules 5.2.0) and the plugin are the ones baked into
+  the image and nothing is pulled at runtime. falcosidekick is overridden from the subchart's 2.32.0 to
+  2.35.0 (D-FALCO-SIDEKICK): 2.32.0 predates falcosecurity/falcosidekick#1366 (vulnerable Go modules,
+  fixed in 2.34.0) and falcosecurity/falcosidekick#1390 (multi-output race, fixed in 2.35.0), and trivy
+  CRITICAL/HIGH drops from 9/80 to 3/19. It writes JSON lines to Loki (`format: json`), which is what
+  the portal parses, and the portal's priority filter matches the Capitalized label falcosidekick
+  writes (the old lowercase selector matched nothing). The Alertmanager output now posts to
+  `/api/v2/alerts`: the chart default `/api/v1/alerts` gets 410 Gone from Alertmanager 0.27 and later
+  (the cluster pins 0.33.0), so every Critical alert was dropped; against a real Alertmanager v0.33.0
+  the Critical event now shows in `GET /api/v2/alerts` with `source=falco`. The Security page no
+  longer hides the Runtime Events tab on Ubuntu 26.04, and `14-gitops-bootstrap.sh` no longer removes
+  Falco there. Checked in a local Docker lab (real Falco, falcosidekick and Alertmanager), not on a
+  cluster: the chart tarball, two images and the GitOps push must still reach a cluster, and Falco on
+  the Ubuntu 26.04 / kernel 7.0 Vagrant box and on the Kubernetes CRI path has not been observed.
+- **Portal is pinned to `narwhal-portal:1.1.4` (was 1.1.0; 1.1.1, 1.1.2 and 1.1.3 were pinned in
+  between by #467, #477 and #481).** 1.1.2 fixes the empty cluster-infrastructure view (#475), 1.1.3
+  shows the role-default tools in the permission management table (#479), and 1.1.4 fills the empty
+  Security page (#501) and upgrades `fast-uri` past four advisories (#492); all carry the 1.1.1
+  security fixes. The image is Cosign-signed with the repository key (index digest
+  `sha256:223fcd9b…`). Static change only; rolling it out to an existing cluster is a separate step.
 
 ## [1.3.0] - 2026-10-22
 

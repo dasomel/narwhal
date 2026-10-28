@@ -8,25 +8,6 @@ import { SeverityDistributionChart } from "@/components/security/severity-distri
 import { VulnerabilitiesTable } from "@/components/security/vulnerabilities-table"
 import { RuntimeEventsFeed } from "@/components/security/runtime-events-feed"
 import type { SecuritySummary, WorkloadVulnRow } from "@/types/security"
-import type { ClusterInfra } from "@/app/api/cluster/route"
-import { cacheGet } from "@/lib/valkey"
-import { clusterCacheKey, DEFAULT_CLUSTER_ID } from "@/lib/cluster-registry"
-
-async function detectUbuntu2604(): Promise<boolean> {
-  try {
-    // #53: this literally read "cluster:infra", a key /api/cluster/route.ts has never
-    // written since #21 added the cluster_id dimension (clusterCacheKey) — a permanent
-    // cache miss that silently made this check always fall through to `false`. Use the
-    // same builder, pinned to the default cluster this page is scoped to.
-    const cached = await cacheGet<ClusterInfra>(clusterCacheKey(DEFAULT_CLUSTER_ID, "infra"))
-    if (cached) {
-      return cached.nodes.some((n) => n.osImage.includes("26.04"))
-    }
-  } catch {
-    // cache unavailable — fall through
-  }
-  return false
-}
 
 async function fetchSecuritySummary(): Promise<SecuritySummary | null> {
   try {
@@ -84,10 +65,9 @@ export default async function SecurityPage() {
   }
 
   const locale = await getLocale()
-  const [summary, initialVulns, is2604] = await Promise.all([
+  const [summary, initialVulns] = await Promise.all([
     fetchSecuritySummary(),
     fetchWorkloadVulnerabilities(),
-    detectUbuntu2604(),
   ])
 
   const effectiveSummary = summary ?? emptySummary
@@ -141,26 +121,18 @@ export default async function SecurityPage() {
         </div>
       )}
 
-      {/* 5. Tabs: Vulnerabilities | Runtime Events (hidden on Ubuntu 26.04 — Falco unsupported) */}
+      {/* 5. Tabs: Vulnerabilities | Runtime Events (Falco runs on every node since D-FALCO-045) */}
       <Tabs defaultValue="vulnerabilities">
         <TabsList>
           <TabsTrigger value="vulnerabilities">{t(locale, "security.tab.vulnerabilities")}</TabsTrigger>
-          {!is2604 && (
-            <TabsTrigger value="runtime">{t(locale, "security.tab.runtime")}</TabsTrigger>
-          )}
+          <TabsTrigger value="runtime">{t(locale, "security.tab.runtime")}</TabsTrigger>
         </TabsList>
         <TabsContent value="vulnerabilities" className="mt-4">
           <VulnerabilitiesTable initialData={initialVulns} />
         </TabsContent>
-        {is2604 ? (
-          <div className="mt-4 rounded-lg border bg-muted/40 px-4 py-3 text-sm text-muted-foreground">
-            {t(locale, "security.runtimeEvents.unavailable2604")}
-          </div>
-        ) : (
-          <TabsContent value="runtime" className="mt-4">
-            <RuntimeEventsFeed />
-          </TabsContent>
-        )}
+        <TabsContent value="runtime" className="mt-4">
+          <RuntimeEventsFeed />
+        </TabsContent>
       </Tabs>
     </div>
   )

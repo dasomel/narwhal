@@ -27,6 +27,15 @@ The failure modes this pins are the ones found while migrating, each of which is
       disallow-privileged-containers policy
   A9  14-gitops-bootstrap.sh no longer removes falco.yaml on Ubuntu 26.04
   A10 the airgap chart source map and VERSIONS.md carry the same pins
+  A11 2026-10-28 (D-FALCO-NOISE): the one exception appended to the bundled rule "Contact K8S API Server From
+      Container" (47k Notice events in 20 h from 8 platform API clients). It must APPEND (a replace would drop
+      exceptions appended elsewhere; Falco 0.45.1 rejects a bare redefinition), keep the bundled rule name
+      exactly (case-sensitive), use fields [k8s.ns.name, container.image.repository] with comps [=, =], list
+      exactly the 8 fully qualified (namespace, repository) pairs with no glob and no empty value, and be the
+      ONLY custom rule item (a macro override could widen it). falco.priority stays notice and rules.d stays
+      loaded after the bundled rules. The exception was validated against one Falco image: an image bump fails
+      here until the rule name, fields and falco -V result are re-checked, because a rules file Falco cannot
+      load stops it on every node.
 
 Usage: check-falco.py [--mutation-verify]
 """
@@ -62,6 +71,30 @@ LOKI_HOSTPORT = "http://loki.monitoring.svc.cluster.local:3100"
 ALERTMANAGER_ENDPOINT = "/api/v2/alerts"
 ALERTMANAGER_HOSTPORT = "http://prometheus-stack-kube-prom-alertmanager.monitoring.svc.cluster.local:9093"
 CRI_SOCKET = "/run/containerd/containerd.sock"
+# D-FALCO-NOISE. NOISE_RULE is the rule name in /etc/falco/falco_rules.yaml of docker.io/falcosecurity/falco:0.45.1
+# (line 840); Falco matches it case-sensitively. NOISE_VERIFIED_FALCO is the image the exception was validated
+# against with `falco -V /etc/falco/falco_rules.yaml -V <rules.d file>`. The pairs are the exact
+# (k8s.ns.name, container.image.repository) values seen in live Loki on Kakao (CRI reports docker.io images
+# WITH the docker.io prefix).
+NOISE_RULE = "Contact K8S API Server From Container"
+NOISE_FILE = "narwhal-api-noise.yaml"
+NOISE_EXCEPTION = "narwhal_platform_api_clients"
+NOISE_FIELDS = ["k8s.ns.name", "container.image.repository"]
+NOISE_COMPS = ["=", "="]
+NOISE_VERIFIED_FALCO = "0.45.1"
+NOISE_PAIRS = {
+    ("storage", "docker.io/otwld/velero-ui"),
+    ("devtools", "ghcr.io/dasomel/narwhal-portal"),
+    ("iam", "quay.io/keycloak/keycloak-operator"),
+    ("platform-system", "reg.kyverno.io/kyverno/kyverno"),
+    ("devtools", "ghcr.io/headlamp-k8s/headlamp"),
+    ("devtools", "docker.io/kubernetesui/dashboard-auth"),
+    ("devtools", "docker.io/kubernetesui/dashboard-web"),
+    ("platform-system", "ghcr.io/cloudnative-pg/cloudnative-pg"),
+}
+NOISE_NS_RE = re.compile(r"[a-z0-9]([-a-z0-9]*[a-z0-9])?")
+# registry host (must contain a dot: `otwld/velero-ui` is not fully qualified), optional port, path components
+NOISE_REPO_RE = re.compile(r"[a-z0-9]+(?:[.-][a-z0-9]+)*\.[a-z]{2,}(?::[0-9]+)?(?:/[a-z0-9]+(?:[._-][a-z0-9]+)*)+")
 # Observed on 2026-10-27 (Falco 0.45.1 + container plugin 0.7.5, kernel 7.0.14): output_fields of a
 # syscall event carry exactly these container/k8s keys through append_output.suggested_output.
 SUGGESTED_FIELDS = {
@@ -100,6 +133,17 @@ def _unique_mapping(loader, node, deep=False):
 
 
 UniqueLoader.add_constructor(yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG, _unique_mapping)
+
+
+class RuleLoader(UniqueLoader):
+    """UniqueLoader for Falco rule files. PyYAML resolves a bare `=` to the YAML 1.1 `value` type, which SafeLoader
+    cannot construct, but Falco's yaml-cpp reads `comps: [=, =]` as plain strings, so `=` must stay a string."""
+
+
+RuleLoader.yaml_implicit_resolvers = {
+    first: [(tag, regexp) for tag, regexp in resolvers if tag != "tag:yaml.org,2002:value"]
+    for first, resolvers in yaml.SafeLoader.yaml_implicit_resolvers.items()
+}
 
 
 def load_app(text):
@@ -352,6 +396,79 @@ def problems(texts):
             out.append(f"[A10] VERSIONS.md Falco row {falco_row.groups()} differs from app {pins['falco']} / chart {chart_version}")
         if sidekick_row.group(1) != pins["falcosidekick"]:
             out.append(f"[A10] VERSIONS.md Falcosidekick row {sidekick_row.group(1)} differs from {pins['falcosidekick']}")
+
+    # ---- A11 API-server noise exception (D-FALCO-NOISE)
+    if falco_cfg.get("priority") != "notice":
+        out.append(f"[A11] falco.priority must stay notice: a higher floor would hide every NOTICE rule, not only {NOISE_RULE!r}, got {falco_cfg.get('priority')!r}")
+    rules_files = falco_cfg.get("rules_files") or []
+    bundled_rules, rules_dir = "/etc/falco/falco_rules.yaml", "/etc/falco/rules.d"
+    if bundled_rules not in rules_files or rules_dir not in rules_files or rules_files.index(bundled_rules) > rules_files.index(rules_dir):
+        out.append(f"[A11] falco.rules_files must load {bundled_rules} before {rules_dir} (customRules land there, and an override needs the bundled rule loaded first), got {rules_files}")
+    falco_tag = str((values.get("image") or {}).get("tag"))
+    if falco_tag != NOISE_VERIFIED_FALCO:
+        out.append(f"[A11] the exception was validated against falco {NOISE_VERIFIED_FALCO}, the image is {falco_tag}: a rule name or field the new bundle lacks makes Falco refuse to start on every node; re-run falco -V with the bundled rules and the rules.d file, then update NOISE_VERIFIED_FALCO")
+    custom = values.get("customRules")
+    items = []
+    if not isinstance(custom, dict) or sorted(custom) != [NOISE_FILE]:
+        out.append(f"[A11] customRules must hold exactly the file {NOISE_FILE!r} (the chart mounts it on /etc/falco/rules.d), got {sorted(custom) if isinstance(custom, dict) else custom!r}")
+    if isinstance(custom, dict):
+        for fname, content in custom.items():
+            try:
+                parsed = yaml.load(content, Loader=RuleLoader)
+            except yaml.YAMLError as exc:
+                out.append(f"[A11] customRules[{fname!r}] does not parse: {exc}")
+                continue
+            if not isinstance(parsed, list):
+                out.append(f"[A11] customRules[{fname!r}] must be a YAML list of rule objects")
+                continue
+            items.extend(parsed)
+    if len(items) != 1 or not isinstance(items[0], dict):
+        out.append(f"[A11] customRules must hold exactly one item, the exception override of {NOISE_RULE!r}; a second rule, macro or list (for example an override of user_known_contact_k8s_api_server_activities) could widen it, got {len(items)} item(s)")
+        return out
+    item = items[0]
+    if set(item) != {"rule", "exceptions", "override"}:
+        out.append(f"[A11] the exception item must have exactly the keys rule, exceptions and override (condition, priority, enabled or append would redefine or weaken the bundled rule), got {sorted(item)}")
+    if item.get("rule") != NOISE_RULE:
+        out.append(f"[A11] rule must be exactly {NOISE_RULE!r}, the bundled rule's name (case-sensitive: Falco rejects any other name with 'no rule by that name already exists'), got {item.get('rule')!r}")
+    if item.get("override") != {"exceptions": "append"}:
+        out.append(f"[A11] override must be exactly {{exceptions: append}} (replace would drop exceptions appended elsewhere; a bare redefinition is rejected by Falco 0.45.1), got {item.get('override')!r}")
+    exceptions = item.get("exceptions")
+    if not isinstance(exceptions, list) or len(exceptions) != 1 or not isinstance(exceptions[0], dict):
+        out.append(f"[A11] exceptions must hold exactly one exception, got {exceptions!r}")
+        return out
+    exception = exceptions[0]
+    if set(exception) != {"name", "fields", "comps", "values"}:
+        out.append(f"[A11] the exception must have exactly the keys name, fields, comps and values, got {sorted(exception)}")
+    if exception.get("name") != NOISE_EXCEPTION:
+        out.append(f"[A11] exception name must be {NOISE_EXCEPTION!r}, got {exception.get('name')!r}")
+    if exception.get("fields") != NOISE_FIELDS:
+        out.append(f"[A11] exception fields must be exactly {NOISE_FIELDS} (a pair, so a namespace or an image alone never matches), got {exception.get('fields')!r}")
+    if exception.get("comps") != NOISE_COMPS:
+        out.append(f"[A11] exception comps must be exactly {NOISE_COMPS} (exact match, no startswith/contains/glob), got {exception.get('comps')!r}")
+    listed = exception.get("values")
+    pairs = []
+    if not isinstance(listed, list) or not listed:
+        out.append(f"[A11] exception values must be a non-empty list of [namespace, repository] pairs, got {listed!r}")
+    else:
+        for value in listed:
+            if not isinstance(value, list) or len(value) != 2 or not all(isinstance(v, str) for v in value):
+                out.append(f"[A11] every value must be a [namespace, repository] pair of two strings, got {value!r}")
+                continue
+            namespace_name, repository = value
+            if not namespace_name.strip() or not repository.strip():
+                out.append(f"[A11] value {value!r} has an empty namespace or repository: it would exempt every pod that reports no such field")
+            elif re.search(r"[*?\[\]]", namespace_name + repository):
+                out.append(f"[A11] value {value!r} contains a glob character: values must be exact")
+            else:
+                if not NOISE_NS_RE.fullmatch(namespace_name):
+                    out.append(f"[A11] value {value!r}: {namespace_name!r} is not a Kubernetes namespace name")
+                if not NOISE_REPO_RE.fullmatch(repository):
+                    out.append(f"[A11] value {value!r}: {repository!r} is not a fully qualified image repository (registry host with a dot, then path)")
+            pairs.append((namespace_name, repository))
+        if len(pairs) != len(set(pairs)):
+            out.append(f"[A11] exception values list a pair twice: {sorted(p for p in set(pairs) if pairs.count(p) > 1)}")
+        if set(pairs) != NOISE_PAIRS:
+            out.append(f"[A11] exception values differ from the 8 reviewed pairs (NOISE_PAIRS): added {sorted(set(pairs) - NOISE_PAIRS)}, missing {sorted(NOISE_PAIRS - set(pairs))}")
     return out
 
 
@@ -384,6 +501,15 @@ def mutate_block(text, header, old, new):
     if old not in block:
         return text
     return text[:lo] + block.replace(old, new, 1) + text[hi:]
+
+
+def delete_block(text, header):
+    """Remove the YAML block whose first line is exactly `header` (header line included)."""
+    bounds = block_bounds(text, header)
+    if bounds is None:
+        return text
+    lo, hi = bounds
+    return text[:lo] + text[hi:]
 
 
 def mutate_doc(text, name, old, new):
@@ -422,6 +548,10 @@ def mutants(texts):
     sidekick_digest = next(l for l in digest_lines if l.startswith(ref_sidekick + "\t"))
     falco_digest = next(l for l in digest_lines if l.startswith(ref_falco + "\t"))
     kyverno_excl = "                - security-system\n"
+    noise = "        customRules:"
+    noise_override = "              override:\n                exceptions: append\n"
+    noise_pair_indent = "                    "
+    noise_last_pair = noise_pair_indent + "- [platform-system, ghcr.io/cloudnative-pg/cloudnative-pg]\n"
     return [
         # A1
         ("A1", "falco.yaml wrapped in an if-false guard again", "app",
@@ -539,6 +669,49 @@ def mutants(texts):
          texts["versions"].replace("| Falco | v0.45.1 (chart 9.2.1) |", "| Falco | v0.45.1 (chart 9.2.0) |", 1)),
         ("A10", "VERSIONS.md Falcosidekick drifts", "versions",
          texts["versions"].replace("| Falcosidekick | 2.35.0 (subchart", "| Falcosidekick | 2.32.0 (subchart", 1)),
+        # A11
+        ("A11", "exception override replaces instead of appends", "app",
+         mutate_block(app, noise, "exceptions: append", "exceptions: replace")),
+        ("A11", "exception loses its override key", "app",
+         mutate_block(app, noise, noise_override, "")),
+        ("A11", "rule name case drifts from the bundled rule", "app",
+         mutate_block(app, noise, "Contact K8S API Server From Container", "Contact K8s API Server From Container")),
+        ("A11", "exception fields lose the namespace", "app",
+         mutate_block(app, noise, "fields: [k8s.ns.name, container.image.repository]", "fields: [container.image.repository]")),
+        ("A11", "exception comps become a prefix match", "app",
+         mutate_block(app, noise, "comps: [=, =]", "comps: [=, startswith]")),
+        ("A11", "an image-wide glob value", "app",
+         mutate_block(app, noise, "[storage, docker.io/otwld/velero-ui]", "[storage, docker.io/otwld/*]")),
+        ("A11", "a namespace-wide glob value", "app",
+         mutate_block(app, noise, "[iam, quay.io/keycloak/keycloak-operator]", '["*", quay.io/keycloak/keycloak-operator]')),
+        ("A11", "an empty repository value", "app",
+         mutate_block(app, noise, "[platform-system, reg.kyverno.io/kyverno/kyverno]", '[platform-system, ""]')),
+        ("A11", "a repository without its registry", "app",
+         mutate_block(app, noise, "[devtools, ghcr.io/headlamp-k8s/headlamp]", "[devtools, headlamp-k8s/headlamp]")),
+        ("A11", "an extra pair widens the exception", "app",
+         mutate_block(app, noise, noise_last_pair, noise_last_pair + noise_pair_indent + "- [default, docker.io/library/nginx]\n")),
+        ("A11", "a reviewed pair is dropped", "app",
+         mutate_block(app, noise, noise_pair_indent + noise_last_pair.lstrip(" "), "")),
+        ("A11", "a pair is listed twice", "app",
+         mutate_block(app, noise, noise_last_pair, noise_last_pair + noise_last_pair)),
+        ("A11", "a second item overrides the bundled macro", "app",
+         mutate_block(app, noise, noise_override,
+                      noise_override + "            - macro: user_known_contact_k8s_api_server_activities\n"
+                      '              condition: (k8s.ns.name startswith "")\n'
+                      "              override:\n                condition: replace\n")),
+        ("A11", "exception file renamed", "app",
+         mutate_block(app, noise, "narwhal-api-noise.yaml: |-", "other-rules.yaml: |-")),
+        ("A11", "customRules removed", "app", delete_block(app, noise)),
+        ("A11", "falco.priority raised to warning", "app",
+         mutate_block(app, "        falco:", "priority: notice", "priority: warning")),
+        ("A11", "rules.d dropped from rules_files", "app",
+         mutate_block(app, "          rules_files:", "            - /etc/falco/rules.d\n", "")),
+        ("A11", "rules.d loaded before the bundled rules", "app",
+         mutate_block(app, "          rules_files:",
+                      "            - /etc/falco/falco_rules.yaml\n            - /etc/falco/falco_rules.local.yaml\n            - /etc/falco/rules.d\n",
+                      "            - /etc/falco/rules.d\n            - /etc/falco/falco_rules.yaml\n            - /etc/falco/falco_rules.local.yaml\n")),
+        ("A11", "falco image bumped without re-validating the exception", "app",
+         mutate_block(app, "        image:", 'tag: "0.45.1"', 'tag: "0.45.2"')),
     ]
 
 
@@ -552,7 +725,8 @@ def main(argv):
     print("OK Falco 0.45.1 + falcosidekick 2.35.0 / chart 9.2.1: rendered Application, pins agree across "
           "falco.yaml, images.txt and image-digests.tsv, modern_ebpf, no runtime pull, CRI-only container "
           "metadata, JSON Loki + source:falco Alertmanager on the v2 API, portal seam (priority casing, runtime "
-          "tab not gated on the node OS) and Kyverno exclusion hold")
+          "tab not gated on the node OS), Kyverno exclusion and the appended API-server exception (8 exact "
+          "pairs, priority floor unchanged) hold")
     if "--mutation-verify" not in argv:
         return 0
     cases = mutants(texts)

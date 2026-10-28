@@ -50,6 +50,39 @@ nothing else. Lab 2026-10-28 (Falco 0.45.1 -> falcosidekick -> Loki stub + Alert
 Cost: subchart 0.14.1 is released against 2.32.0, so 2.35.0 is an image override without chart-side validation.
 Escape hatch: set falcosidekick.image.tag back to 2.32.0 (alertmanager.endpoint must stay /api/v2/alerts),
 or move to 2.35.1 on or after 2026-11-02 after re-running the lab pipeline and R291.
+
+D-FALCO-NOISE (2026-10-28) — the bundled rule "Contact K8S API Server From Container" (NOTICE, line 840 of
+/etc/falco/falco_rules.yaml in the 0.45.1 image) gets ONE appended exception for 8 exact (namespace, image) pairs.
+Reason: live Loki on Kakao, the 20 hours after the 0.45.1 rollout (DaemonSet 6/6, 0 restarts, 41-68Mi; numbers
+supplied with the decision, not re-queried by this change): 47,180 events, 46,900 of them from this rule (about 99%),
+every one from a platform component whose job is to call the API. Counts per (k8s.ns.name, container.image.repository):
+  storage          docker.io/otwld/velero-ui                  43013
+  devtools         ghcr.io/dasomel/narwhal-portal              2084
+  iam              quay.io/keycloak/keycloak-operator          1807
+  platform-system  reg.kyverno.io/kyverno/kyverno               360
+  devtools         ghcr.io/headlamp-k8s/headlamp                  8
+  devtools         docker.io/kubernetesui/dashboard-auth          1
+  devtools         docker.io/kubernetesui/dashboard-web           1
+  platform-system  ghcr.io/cloudnative-pg/cloudnative-pg          1
+(the totals and the pair counts come from separate queries and do not add up exactly). The bundle's own hook, the
+macro user_known_contact_k8s_api_server_activities, is (never_true), so nothing excluded them.
+Cost: API connections from exactly those 8 pairs are no longer flagged by Falco. The kube-apiserver audit log still
+records them. What is lost is the Falco signal for a hijacked pod that runs in one of those namespaces from one of those
+exact image repositories; every other pod still fires. The block below feeds ConfigMap falco-rules, so editing it changes
+the pod template's checksum/rules and the DaemonSet rolls.
+Not done on purpose: no namespace-wide or image-wide wildcard (every value is a full pair), falco.priority and
+loki.minimumpriority stay put (a higher floor hides every NOTICE rule, not just this one), the bundled macro is untouched.
+Escape hatch: remove the customRules block, or one pair from it, and push; the next sync rolls Falco and the rule fires
+for those clients again. A new platform client that calls the API shows up as this rule's NOTICE events: add its exact
+pair here, to NOISE_PAIRS in R291 (check-falco.py) and to the lessons-log row, after confirming it is expected.
+Image bumps: a rules file Falco cannot load stops it on every node (a wrong-case rule name exits with code 1, checked on
+0.45.1). R291 A11 therefore fails on any falco image tag other than the validated one until `falco -V` with the bundled
+rules and this file is re-run and NOISE_VERIFIED_FALCO is updated.
+Checked 2026-10-28 on the real falco:0.45.1 image in a local lab: `falco -V` accepts the bundled rules plus this file; a
+wrong rule-name case, a missing override, an unknown field or a short tuple is rejected; with the file loaded, clients in
+the 5 pairs whose registry the lab's docker engine reports (ghcr.io, quay.io, reg.kyverno.io) produce no event, while a
+different namespace, a different image, a mixed pair and a pod without k8s labels each still produce one. The 3 docker.io
+pairs were validated for syntax only: the docker engine drops the docker.io prefix, containerd/CRI keeps it.
 */}}
 apiVersion: argoproj.io/v1alpha1
 kind: Application
@@ -170,6 +203,30 @@ spec:
           # gRPC output/server was dropped in Falco 0.44 (chart 9.0.0): the chart fails to render with
           # falco.grpc / falco.grpc_output. falcosidekick is fed over http_output, which the chart wires
           # automatically when falcosidekick.enabled=true.
+
+        # D-FALCO-NOISE (header): one appended exception for the bundled rule below. The chart turns this map into
+        # ConfigMap falco-rules mounted on /etc/falco/rules.d, which falco.rules_files loads after
+        # falco_rules.yaml. `override.exceptions: append` ADDS to the rule's exceptions and fails to load when
+        # no rule has this exact name (case-sensitive); a plain redefinition fails too (falco -V, 0.45.1).
+        # Values are exact (k8s.ns.name, container.image.repository) pairs: no glob, no empty value.
+        customRules:
+          narwhal-api-noise.yaml: |-
+            - rule: Contact K8S API Server From Container
+              exceptions:
+                - name: narwhal_platform_api_clients
+                  fields: [k8s.ns.name, container.image.repository]
+                  comps: [=, =]
+                  values:
+                    - [storage, docker.io/otwld/velero-ui]
+                    - [devtools, ghcr.io/dasomel/narwhal-portal]
+                    - [iam, quay.io/keycloak/keycloak-operator]
+                    - [platform-system, reg.kyverno.io/kyverno/kyverno]
+                    - [devtools, ghcr.io/headlamp-k8s/headlamp]
+                    - [devtools, docker.io/kubernetesui/dashboard-auth]
+                    - [devtools, docker.io/kubernetesui/dashboard-web]
+                    - [platform-system, ghcr.io/cloudnative-pg/cloudnative-pg]
+              override:
+                exceptions: append
 
         # 노드 리소스 제약
         resources:

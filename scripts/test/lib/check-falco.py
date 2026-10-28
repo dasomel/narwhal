@@ -456,7 +456,7 @@ def problems(texts):
                 continue
             namespace_name, repository = value
             if not namespace_name.strip() or not repository.strip():
-                out.append(f"[A11] value {value!r} has an empty namespace or repository: it would exempt every pod that reports no such field")
+                out.append(f"[A11] value {value!r} has an empty namespace or repository: Falco 0.45.1 rejects an empty exception value ('Value must be non-empty') and stops on every node")
             elif re.search(r"[*?\[\]]", namespace_name + repository):
                 out.append(f"[A11] value {value!r} contains a glob character: values must be exact")
             else:

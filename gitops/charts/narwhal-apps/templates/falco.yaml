@@ -54,7 +54,7 @@ or move to 2.35.1 on or after 2026-11-02 after re-running the lab pipeline and R
 D-FALCO-NOISE (2026-10-28) — the bundled rule "Contact K8S API Server From Container" (NOTICE, line 840 of
 /etc/falco/falco_rules.yaml in the 0.45.1 image) gets ONE appended exception for 8 exact (namespace, image) pairs.
 Reason: live Loki on Kakao, the 20 hours after the 0.45.1 rollout (DaemonSet 6/6, 0 restarts, 41-68Mi; numbers
-supplied with the decision, not re-queried by this change): 47,180 events, 47,178 of them from this rule (about 99%),
+supplied with the decision, not re-queried by this change): 47,180 events, 47,178 of them from this rule (all but two),
 every one from a platform component whose job is to call the API. Counts per (k8s.ns.name, container.image.repository):
   storage          docker.io/otwld/velero-ui                  43013
   devtools         ghcr.io/dasomel/narwhal-portal              2084
@@ -66,8 +66,9 @@ every one from a platform component whose job is to call the API. Counts per (k8
   platform-system  ghcr.io/cloudnative-pg/cloudnative-pg          1
 (the totals and the pair counts come from separate queries and do not add up exactly). The bundle's own hook, the
 macro user_known_contact_k8s_api_server_activities, is (never_true), so nothing excluded them.
-Cost: API connections from exactly those 8 pairs are no longer flagged by Falco. The kube-apiserver audit log still
-records them. What is lost is the Falco signal for a hijacked pod that runs in one of those namespaces from one of those
+Cost: API connections from exactly those 8 pairs are no longer flagged by Falco. The kube-apiserver audit policy
+(02-init-cluster.sh) still records their writes and their reads of secrets, configmaps, serviceaccounts and RBAC
+objects, but drops every other get/list/watch, so most of their traffic has no second record. What is lost is the Falco signal for a hijacked pod that runs in one of those namespaces from one of those
 exact image repositories; every other pod still fires. The block below feeds ConfigMap falco-rules, so editing it changes
 the pod template's checksum/rules and the DaemonSet rolls.
 Not done on purpose: no namespace-wide or image-wide wildcard (every value is a full pair), falco.priority and

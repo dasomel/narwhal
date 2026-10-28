@@ -44,8 +44,10 @@
   (`/etc/falco/rules.d`에 마운트)로 정확한 (네임스페이스, 이미지) 쌍 8개(velero-ui, narwhal-portal,
   keycloak-operator, kyverno, headlamp, Kubernetes dashboard auth·web, cloudnative-pg)에 대한 예외를 하나
   추가했다. 그 밖의 파드는 그대로 탐지하고, priority 바닥은 바꾸지 않았으며, kube-apiserver 감사 로그에는
-  이 클라이언트들이 계속 기록된다. 실제 falco:0.45.1 이미지의 `falco -V`와 로컬 랩(일치하는 쌍은 조용하고
-  다른 네임스페이스·이미지는 여전히 탐지)에서 검증했고 R291 A11이 예외를 고정한다. 정적 변경만 포함하며
+  이 클라이언트들의 쓰기와 secrets·configmaps·serviceaccounts·RBAC 객체 읽기가 계속 기록된다(그 밖의 읽기는
+  감사되지 않는다). 실제 falco:0.45.1 이미지의 `falco -V`와 로컬 랩(docker.io가 아닌 5쌍은 조용하고 다른
+  네임스페이스·이미지는 여전히 탐지, docker.io 3쌍은 랩의 Docker 엔진이 CRI와 달리 `docker.io/` 접두사를
+  떼어 문법만 확인)에서 검증했고 R291 A11이 예외를 고정한다. 정적 변경만 포함하며
   DaemonSet은 다음 동기화에서 롤링되고, Kakao 클러스터에서의 동작은 아직 관측되지 않았다.
 
 ## [1.3.0] - 2026-10-22

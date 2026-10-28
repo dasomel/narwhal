@@ -2,7 +2,7 @@
   "schemaVersion": "openforge-agent-trace/v1",
   "consistencyMode": "strict",
   "traceId": "narwhal-falco-api-noise-20261028",
-  "task": "D-FALCO-NOISE: after the Falco 0.45.1 rollout the bundled rule 'Contact K8S API Server From Container' produced about 99% of the events in live Loki, all from platform components that are expected to call the API. Add a narrow, appended exception for the 8 exact (k8s.ns.name, container.image.repository) pairs through the chart's customRules, pin it in R291 (A11) and record it in falco.yaml, the CHANGELOGs and the lessons-log. No cluster access and no push: the live counts are supplied by the coordinator, and the behaviour of the exception was checked with the real falco:0.45.1 image in a local Docker lab only.",
+  "task": "D-FALCO-NOISE: after the Falco 0.45.1 rollout the bundled rule 'Contact K8S API Server From Container' produced all but two of the events in live Loki, all from platform components that are expected to call the API. Add a narrow, appended exception for the 8 exact (k8s.ns.name, container.image.repository) pairs through the chart's customRules, pin it in R291 (A11) and record it in falco.yaml, the CHANGELOGs and the lessons-log. No cluster access and no push: the live counts are supplied by the coordinator, and the behaviour of the exception was checked with the real falco:0.45.1 image in a local Docker lab only.",
   "changeContext": {
     "paths": [
       ".agents/evals/traces/2026-10-falco-api-noise.json",
@@ -42,7 +42,7 @@
     {
       "id": "e4",
       "type": "bug_fix",
-      "summary": "falco.yaml gains a top-level customRules value with one file, narwhal-api-noise.yaml: a rule item named exactly 'Contact K8S API Server From Container' with override: {exceptions: append} and one exception, narwhal_platform_api_clients, fields [k8s.ns.name, container.image.repository], comps [=, =], and the 8 reviewed pairs. The chart renders it as ConfigMap falco-rules mounted on /etc/falco/rules.d, which falco.rules_files loads after falco_rules.yaml; checksum/rules makes the DaemonSet roll. The header records D-FALCO-NOISE: the supplied data, the cost (those 8 workloads' API connections are no longer flagged; the kube-apiserver audit log still records them), what was deliberately not done and the escape hatch. falco.priority, loki.minimumpriority, the bundled macro, versions and resources are unchanged."
+      "summary": "falco.yaml gains a top-level customRules value with one file, narwhal-api-noise.yaml: a rule item named exactly 'Contact K8S API Server From Container' with override: {exceptions: append} and one exception, narwhal_platform_api_clients, fields [k8s.ns.name, container.image.repository], comps [=, =], and the 8 reviewed pairs. The chart renders it as ConfigMap falco-rules mounted on /etc/falco/rules.d, which falco.rules_files loads after falco_rules.yaml; checksum/rules makes the DaemonSet roll. The header records D-FALCO-NOISE: the supplied data, the cost (those 8 workloads' API connections are no longer flagged; the kube-apiserver audit policy still records their writes and their reads of secrets, configmaps, serviceaccounts and RBAC objects, other get/list/watch are not audited), what was deliberately not done and the escape hatch. falco.priority, loki.minimumpriority, the bundled macro, versions and resources are unchanged."
     },
     {
       "id": "e5",

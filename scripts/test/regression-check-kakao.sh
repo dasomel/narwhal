@@ -3163,6 +3163,17 @@ assert sum(1 for l in code if re.search(r"\bexit 3\b", l)) == 1, "exit 3 must ap
     bash scripts/test/lib/check-gitea-oauth-source-upsert.sh
   check R288 "Headlamp >= 0.46.0 version parity across headlamp.yaml, 08-3, images.txt, image-digests.tsv and VERSIONS.md, built-in config.oidc.autoLogin/hasScopes enabled in both value sets, and gateway login-injection routes absent; 15 mutations caught (#491)" \
     python3 scripts/test/lib/check-headlamp-autologin.py --mutation-verify
+  # 2026-10-27 (D-APISERVER-OIDC-ALL): master-2/3 lacked the 7 kube-apiserver --oidc-* flags and CA
+  # on Kakao because 11-4 swallowed its sshpass propagation failure and verify-cluster.sh/test-sso.sh
+  # inspected only the local manifest or .items[0].
+  check R290 "kube-apiserver OIDC on all control-plane nodes: 11-4b-apiserver-oidc-node.sh is sole 7-flag writer, 11-4 and apply-apiserver-oidc-kakao.sh fail closed, provision-kakao.sh wires phase2+oidc, verify-cluster.sh and test-sso.sh iterate all kube-apiserver pods; a restart is confirmed by a kube-apiserver PID change before readyz and a backup is written first on both manifest-changing paths, the Vagrant sshpass calls ignore a stale known_hosts entry, every mirror-pod check compares the pod count with the master count; 30 mutations caught (D-APISERVER-OIDC-ALL)" \
+    python3 scripts/test/lib/check-apiserver-oidc-all-masters.py --mutation-verify
+  if command -v yq >/dev/null 2>&1; then
+    check R290b "11-4b-apiserver-oidc-node.sh behavioural harness, 11 cases (temp kube-apiserver.yaml + stub readyz + stub kube-apiserver PID): empty/invalid CA rejected without touching manifest, first run adds exact 7 --oidc-* flags and writes backup outside manifests/, second run is no-op, rotated CA restarts static pod after its own backup (never overwriting an earlier one), a PID that never changes fails closed after the bounded wait on both restart paths although readyz answers ok, a delayed PID change is waited for before readyz, no PID falls back to sleep + readyz, readyz timeout fails closed (D-APISERVER-OIDC-ALL)" \
+      bash scripts/test/lib/check-apiserver-oidc-node-harness.sh
+  else
+    warn R290b "yq not on PATH; R290b behavioural harness skipped locally"
+  fi
 
   # 2026-10-16 (PR #399): the APISIX Admin API allowlist is detected from the live CNI by
   # resolve_apisix_admin_cidr (lib.sh) and wired by 14 -- NOT taken from POD_NETWORK_CIDR, which

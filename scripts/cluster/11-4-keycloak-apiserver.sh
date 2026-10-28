@@ -120,7 +120,11 @@ echo "=== Configuring API Server for OIDC ==="
 DOMAIN="${DOMAIN:-local.narwhal.internal}"
 # K8s 1.35+ requires HTTPS for --oidc-issuer-url; HTTP causes API server crash
 OIDC_ISSUER_URL="https://keycloak.${DOMAIN}/realms/narwhal"
-APISERVER_MANIFEST="/etc/kubernetes/manifests/kube-apiserver.yaml"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+NODE_OIDC_SCRIPT="${SCRIPT_DIR}/11-4b-apiserver-oidc-node.sh"
+if [ ! -f "${NODE_OIDC_SCRIPT}" ]; then
+  NODE_OIDC_SCRIPT="/home/vagrant/scripts/cluster/11-4b-apiserver-oidc-node.sh"
+fi
 
 # Verify HTTPS OIDC endpoint is reachable before activating
 echo "Verifying OIDC issuer HTTPS endpoint..."
@@ -137,117 +141,72 @@ for attempt in {1..15}; do
 done
 
 if [ "${OIDC_REACHABLE}" = "false" ]; then
-  echo "WARN: OIDC HTTPS endpoint not reachable. Skipping API server OIDC activation."
-  echo "  Possible causes:"
-  echo "    - cert-manager TLS certificate not issued yet"
-  echo "    - APISIX Gateway not routing keycloak.${DOMAIN}"
-  echo "    - DNS not resolving keycloak.${DOMAIN}"
-  echo "  Run scripts in order: 08-1-networking.sh..08-6-tls-routes.sh → 10-dnsmasq.sh → 11-keycloak.sh → 11-2-keycloak-config.sh"
+  echo "ERROR: OIDC HTTPS endpoint not reachable (${OIDC_ISSUER_URL}/.well-known/openid-configuration)." >&2
+  echo "  Possible causes:" >&2
+  echo "    - cert-manager TLS certificate not issued yet" >&2
+  echo "    - APISIX Gateway not routing keycloak.${DOMAIN}" >&2
+  echo "    - DNS not resolving keycloak.${DOMAIN}" >&2
+  echo "  Run scripts in order: 08-1-networking.sh..08-6-tls-routes.sh → 10-dnsmasq.sh → 11-keycloak.sh → 11-2-keycloak-config.sh" >&2
+  exit 1
+fi
+
+# D-APISERVER-OIDC-ALL: extract the Keycloak TLS CA to /tmp/oidc-ca.crt, apply OIDC CA + the
+# 7 --oidc-* flags to master-1 via 11-4b-apiserver-oidc-node.sh, and then propagate to the
+# other masters (via sshpass on Vagrant, or from the operator host via
+# scripts/cloud/apply-apiserver-oidc-kakao.sh on Kakao where nodes have no vagrant password
+# and no node-to-node trust). Any master failure aborts the run.
+# Reason: all control-plane nodes sit behind the in-cluster `kubernetes` Service; a swallowed
+# master-2/3 failure left 2/3 of apiservers rejecting OIDC bearer tokens with 401.
+# Cost: master-2/3 unreachable or unhealthy during 11-4 now fails Phase 2 immediately. So does an
+# unreachable issuer: the endpoint check above used to warn and skip the OIDC activation and now
+# exits 1, and 11-4 is a CRITICAL_SCRIPTS entry in 06-phase2-start.sh, so Phase 2 stops. That
+# happens when the non-critical 08-6-tls-routes.sh / 10-dnsmasq.sh steps only warned, or when
+# the bastion DNS is down (#478).
+# Escape hatch: MASTER_COUNT=1 for a single-master topology; for an unreachable issuer, fix the
+# cause listed in the error and re-run Phase 2.
+echo "Extracting Keycloak TLS CA certificate from narwhal-root-ca-secret..."
+if kubectl get secret -n platform-system narwhal-root-ca-secret &>/dev/null; then
+  kubectl get secret -n platform-system narwhal-root-ca-secret \
+    -o jsonpath='{.data.tls\.crt}' | base64 -d > /tmp/oidc-ca.crt
+  echo "CA cert extracted from narwhal-root-ca-secret"
 else
-  # Migrate from Authentik to Keycloak if Authentik OIDC URL is present
-  if grep -q "authentik" "${APISERVER_MANIFEST}" 2>/dev/null; then
-    echo "Detected Authentik OIDC URL in API server manifest. Migrating to Keycloak..."
-    sudo sed -i "s|https://authentik.${DOMAIN}/application/o/kubernetes/|${OIDC_ISSUER_URL}|g" "${APISERVER_MANIFEST}"
-    echo "Migrated OIDC issuer from Authentik to Keycloak"
+  echo "Fallback: extracting CA from TLS handshake..."
+  openssl s_client -connect "keycloak.${DOMAIN}:443" -showcerts </dev/null 2>/dev/null \
+    | awk '/-----BEGIN CERTIFICATE-----/{c=""} {c=c $0 "\n"} /-----END CERTIFICATE-----/{last=c} END{printf "%s", last}' \
+    > /tmp/oidc-ca.crt
+fi
 
-    # Wait for API server to restart after manifest change
-    sleep 15
-    for i in {1..30}; do
-      if kubectl get nodes &>/dev/null; then
-        echo "API server is ready with Keycloak OIDC"
-        break
-      fi
-      echo "Waiting for API server... ($i/30)"
-      sleep 5
-    done
-  fi
+echo "Applying OIDC CA + flags to master-1..."
+if ! sudo bash "${NODE_OIDC_SCRIPT}" "${OIDC_ISSUER_URL}" /tmp/oidc-ca.crt; then
+  echo "ERROR: Failed to apply OIDC configuration to master-1. Fix the cause above and re-run: sudo bash /home/vagrant/scripts/cluster/11-4-keycloak-apiserver.sh" >&2
+  exit 1
+fi
 
-  # Check if OIDC flags already exist
-  if ! grep -q "oidc-issuer-url" "${APISERVER_MANIFEST}" 2>/dev/null; then
-    # Extract Keycloak TLS CA certificate for API server OIDC validation
-    # Use narwhal-root-ca-secret (the signing CA) rather than parsing TLS handshake,
-    # which may return only the leaf cert depending on openssl version.
-    echo "Extracting Keycloak TLS CA certificate from narwhal-root-ca-secret..."
-    if kubectl get secret -n platform-system narwhal-root-ca-secret &>/dev/null; then
-      kubectl get secret -n platform-system narwhal-root-ca-secret \
-        -o jsonpath='{.data.tls\.crt}' | base64 -d | sudo tee /etc/kubernetes/pki/oidc-ca.crt > /dev/null
-      echo "CA cert extracted from narwhal-root-ca-secret"
-    else
-      # Fallback: extract last cert in chain (root CA) from TLS handshake
-      echo "Fallback: extracting CA from TLS handshake..."
-      openssl s_client -connect "keycloak.${DOMAIN}:443" -showcerts </dev/null 2>/dev/null \
-        | awk '/-----BEGIN CERTIFICATE-----/{c=""} {c=c $0 "\n"} /-----END CERTIFICATE-----/{last=c} END{printf "%s", last}' \
-        | sudo tee /etc/kubernetes/pki/oidc-ca.crt > /dev/null
-    fi
-    # Verify the extracted CA cert is valid
-    openssl x509 -in /etc/kubernetes/pki/oidc-ca.crt -noout -subject 2>/dev/null \
-      && echo "CA cert verified OK" || echo "WARN: CA cert may be invalid"
-
-    # Use yq to safely add OIDC flags to the command array
-    # NOTE: Do NOT quote the URL value with shell quotes - yq handles YAML escaping
-    sudo yq -i ".spec.containers[0].command += [
-      \"--oidc-issuer-url=${OIDC_ISSUER_URL}\",
-      \"--oidc-client-id=kubernetes\",
-      \"--oidc-username-claim=preferred_username\",
-      \"--oidc-groups-claim=groups\",
-      \"--oidc-username-prefix=oidc:\",
-      \"--oidc-groups-prefix=oidc:\",
-      \"--oidc-ca-file=/etc/kubernetes/pki/oidc-ca.crt\"
-    ]" "${APISERVER_MANIFEST}"
-
-    echo "OIDC flags added to API server. Waiting for restart..."
-
-    # Wait for API server to restart (static pod manager detects manifest change)
-    sleep 15
-    for i in {1..30}; do
-      if kubectl get nodes &>/dev/null; then
-        echo "API server is ready with OIDC"
-        break
-      fi
-      echo "Waiting for API server... ($i/30)"
-      sleep 5
-    done
-  else
-    echo "OIDC already configured in API server"
-  fi
-
-  # Apply OIDC CA and flags to master-2 and master-3 via SSH
+if [ "${PROVIDER:-vagrant}" = "kakao" ]; then
+  echo "PROVIDER=kakao: skipping node-to-node SSH; the operator host applies OIDC flags to the other masters via: ./scripts/cloud/apply-apiserver-oidc-kakao.sh (or ./scripts/cloud/provision-kakao.sh oidc)"
+else
+  # Vagrant: propagate CA + run the node script on master-2 and master-3 over sshpass.
   # Master IPs: master-2=192.168.56.11, master-3=192.168.56.12
+  # UserKnownHostsFile=/dev/null is deliberate and only reachable on this disposable local-lab
+  # path (PROVIDER=kakao never gets here; scripts/cloud/lib-ssh.sh pins host keys there): after
+  # `vagrant destroy` a re-created master presents a new host key, and with a stale known_hosts
+  # entry OpenSSH disables password authentication, so sshpass fails and Phase 2 stops.
   MASTER_IPS="${MASTER_IPS:-192.168.56.11 192.168.56.12}"
   MASTER_COUNT="${MASTER_COUNT:-3}"
   IDX=2
   for MASTER_IP in ${MASTER_IPS}; do
     if [ "${IDX}" -gt "${MASTER_COUNT}" ]; then break; fi
     echo "Applying OIDC CA + flags to master-${IDX} (${MASTER_IP})..."
-    # Use sshpass with Vagrant default password (same pattern as 02-join-control-plane.sh:19)
-    # Plain ssh/scp fails because masters have no key trust between them in this Vagrant env
-    sshpass -p "vagrant" scp -o StrictHostKeyChecking=no /etc/kubernetes/pki/oidc-ca.crt \
-      "vagrant@${MASTER_IP}:/tmp/oidc-ca.crt" 2>/dev/null || true
-    sshpass -p "vagrant" ssh -o StrictHostKeyChecking=no "vagrant@${MASTER_IP}" "
-      sudo cp /tmp/oidc-ca.crt /etc/kubernetes/pki/oidc-ca.crt
-      sudo openssl x509 -in /etc/kubernetes/pki/oidc-ca.crt -noout -subject 2>/dev/null \
-        && echo 'CA cert OK on master-${IDX}' || echo 'WARN: CA cert invalid on master-${IDX}'
-      # Migrate from Authentik to Keycloak if needed
-      if sudo grep -q 'authentik' /etc/kubernetes/manifests/kube-apiserver.yaml 2>/dev/null; then
-        sudo sed -i 's|https://authentik.${DOMAIN}/application/o/kubernetes/|${OIDC_ISSUER_URL}|g' /etc/kubernetes/manifests/kube-apiserver.yaml
-        echo 'Migrated OIDC issuer from Authentik to Keycloak on master-${IDX}'
-      elif ! sudo grep -q 'oidc-issuer-url' /etc/kubernetes/manifests/kube-apiserver.yaml 2>/dev/null; then
-        sudo yq -i \".spec.containers[0].command += [
-          \\\"--oidc-issuer-url=${OIDC_ISSUER_URL}\\\",
-          \\\"--oidc-client-id=kubernetes\\\",
-          \\\"--oidc-username-claim=preferred_username\\\",
-          \\\"--oidc-groups-claim=groups\\\",
-          \\\"--oidc-username-prefix=oidc:\\\",
-          \\\"--oidc-groups-prefix=oidc:\\\",
-          \\\"--oidc-ca-file=/etc/kubernetes/pki/oidc-ca.crt\\\"
-        ]\" /etc/kubernetes/manifests/kube-apiserver.yaml
-        echo 'OIDC flags added to master-${IDX}'
-      else
-        # CA file may have been empty on initial run — restart API server to reload it
-        sudo crictl stop \$(sudo crictl ps -q --name kube-apiserver 2>/dev/null) 2>/dev/null || true
-        echo 'OIDC already configured on master-${IDX}, restarted to reload CA'
-      fi
-    " 2>/dev/null || echo "WARN: Could not apply OIDC to master-${IDX} (${MASTER_IP})"
+    if ! sshpass -p "vagrant" scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null /etc/kubernetes/pki/oidc-ca.crt \
+      "vagrant@${MASTER_IP}:/tmp/oidc-ca.crt"; then
+      echo "ERROR: Could not copy OIDC CA to master-${IDX} (${MASTER_IP}). Re-run: vagrant ssh master-1 -c 'sudo bash /home/vagrant/scripts/cluster/11-4-keycloak-apiserver.sh'" >&2
+      exit 1
+    fi
+    if ! sshpass -p "vagrant" ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null "vagrant@${MASTER_IP}" \
+      "sudo bash /home/vagrant/scripts/cluster/11-4b-apiserver-oidc-node.sh '${OIDC_ISSUER_URL}' /tmp/oidc-ca.crt"; then
+      echo "ERROR: Could not apply OIDC flags to master-${IDX} (${MASTER_IP}). Re-run: vagrant ssh master-1 -c 'sudo bash /home/vagrant/scripts/cluster/11-4-keycloak-apiserver.sh'" >&2
+      exit 1
+    fi
     IDX=$((IDX + 1))
   done
 fi

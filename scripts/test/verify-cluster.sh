@@ -645,29 +645,41 @@ if should_run "keycloak"; then
     fail "OIDC HTTPS endpoint: HTTP ${OIDC_CODE} (expected 200)"
   fi
 
-  # API server OIDC flags (requires access to master node manifests)
-  if ${IS_CLUSTER_NODE} && [ -f /etc/kubernetes/manifests/kube-apiserver.yaml ]; then
-    if sudo grep -q "oidc-issuer-url" /etc/kubernetes/manifests/kube-apiserver.yaml 2>/dev/null; then
-      OIDC_URL=$(sudo grep "oidc-issuer-url" /etc/kubernetes/manifests/kube-apiserver.yaml 2>/dev/null | head -1)
-      if echo "${OIDC_URL}" | grep -q "https://"; then
-        pass "API server OIDC: HTTPS configured"
-      else
-        fail "API server OIDC: HTTP detected (must be HTTPS for K8s 1.35+)"
-      fi
-    else
-      warn "API server OIDC: not configured (OIDC HTTPS may not have been reachable during install)"
-    fi
+  # API server OIDC flags on every kube-apiserver pod (D-APISERVER-OIDC-ALL)
+  # One kube-apiserver mirror pod per control-plane node: a master with no mirror pod must FAIL,
+  # not be skipped by the per-pod loop below.
+  CP_NODE_COUNT=$(kubectl get nodes -l node-role.kubernetes.io/control-plane --no-headers 2>/dev/null | grep -c . || true)
+  APISERVER_POD_LINES=$(kubectl get pods -n kube-system -l component=kube-apiserver \
+    -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.spec.containers[0].command}{"\n"}{end}' 2>/dev/null || true)
+  if [ -z "${APISERVER_POD_LINES}" ]; then
+    fail "API server OIDC: no kube-apiserver pods found"
   else
-    # Remote: check via API server flags (kubectl proxy)
-    OIDC_FLAG=$(kubectl get pods -n kube-system -l component=kube-apiserver -o jsonpath='{.items[0].spec.containers[0].command}' 2>/dev/null | grep -o "oidc-issuer-url=[^ ]*" || true)
-    if [ -n "${OIDC_FLAG}" ]; then
-      if echo "${OIDC_FLAG}" | grep -q "https://"; then
-        pass "API server OIDC: HTTPS configured (${OIDC_FLAG})"
+    APISERVER_POD_COUNT=0
+    while IFS=$'\t' read -r pod_name pod_cmd; do
+      [ -n "${pod_name}" ] || continue
+      APISERVER_POD_COUNT=$((APISERVER_POD_COUNT + 1))
+      missing_flags=""
+      for flag in "oidc-issuer-url=https://keycloak.${DOMAIN}/realms/narwhal" \
+                  "oidc-client-id=kubernetes" \
+                  "oidc-username-claim=preferred_username" \
+                  "oidc-groups-claim=groups" \
+                  "oidc-username-prefix=oidc:" \
+                  "oidc-groups-prefix=oidc:" \
+                  "oidc-ca-file=/etc/kubernetes/pki/oidc-ca.crt"; do
+        if ! grep -qF -- "\"--${flag}\"" <<<"${pod_cmd}"; then
+          missing_flags="${missing_flags} --${flag}"
+        fi
+      done
+      if [ -z "${missing_flags}" ]; then
+        pass "API server OIDC (${pod_name}): all 7 --oidc-* flags configured"
       else
-        fail "API server OIDC: HTTP detected (must be HTTPS for K8s 1.35+)"
+        fail "API server OIDC (${pod_name}): missing${missing_flags}"
       fi
+    done <<< "${APISERVER_POD_LINES}"
+    if [ "${APISERVER_POD_COUNT}" -eq "${CP_NODE_COUNT}" ]; then
+      pass "API server OIDC: ${APISERVER_POD_COUNT} kube-apiserver pod(s) for ${CP_NODE_COUNT} control-plane node(s)"
     else
-      warn "API server OIDC: not configured (OIDC HTTPS may not have been reachable during install)"
+      fail "API server OIDC: ${APISERVER_POD_COUNT} kube-apiserver pod(s) for ${CP_NODE_COUNT} control-plane node(s) (one per node expected)"
     fi
   fi
 

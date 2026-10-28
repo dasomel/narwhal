@@ -514,16 +514,42 @@ if should_run "apps"; then
     fail "Headlamp: issuerURL='${HEADLAMP_ISSUER}' (should be https://)"
   fi
 
-  # K8s API Server OIDC
-  if sudo grep -q "oidc-issuer-url" /etc/kubernetes/manifests/kube-apiserver.yaml 2>/dev/null; then
-    OIDC_URL=$(sudo grep "oidc-issuer-url" /etc/kubernetes/manifests/kube-apiserver.yaml 2>/dev/null | head -1)
-    if echo "${OIDC_URL}" | grep -q "https://"; then
-      pass "K8s API: OIDC HTTPS configured"
-    else
-      fail "K8s API: OIDC HTTP (must be HTTPS for K8s 1.35+)"
-    fi
+  # K8s API Server OIDC (every kube-apiserver pod must carry all 7 flags; D-APISERVER-OIDC-ALL)
+  # One kube-apiserver mirror pod per control-plane node: a master with no mirror pod must FAIL,
+  # not be skipped by the per-pod loop below.
+  CP_NODE_COUNT=$(kubectl get nodes -l node-role.kubernetes.io/control-plane --no-headers 2>/dev/null | grep -c . || true)
+  APISERVER_POD_LINES=$(kubectl get pods -n kube-system -l component=kube-apiserver \
+    -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.spec.containers[0].command}{"\n"}{end}' 2>/dev/null || true)
+  if [ -z "${APISERVER_POD_LINES}" ]; then
+    fail "K8s API: no kube-apiserver pods found"
   else
-    warn "K8s API: OIDC not configured"
+    APISERVER_POD_COUNT=0
+    while IFS=$'\t' read -r pod_name pod_cmd; do
+      [ -n "${pod_name}" ] || continue
+      APISERVER_POD_COUNT=$((APISERVER_POD_COUNT + 1))
+      missing_flags=""
+      for flag in "oidc-issuer-url=${KEYCLOAK_URL}/realms/${REALM}" \
+                  "oidc-client-id=kubernetes" \
+                  "oidc-username-claim=preferred_username" \
+                  "oidc-groups-claim=groups" \
+                  "oidc-username-prefix=oidc:" \
+                  "oidc-groups-prefix=oidc:" \
+                  "oidc-ca-file=/etc/kubernetes/pki/oidc-ca.crt"; do
+        if ! grep -qF -- "\"--${flag}\"" <<<"${pod_cmd}"; then
+          missing_flags="${missing_flags} --${flag}"
+        fi
+      done
+      if [ -z "${missing_flags}" ]; then
+        pass "K8s API (${pod_name}): OIDC HTTPS + all 7 flags configured"
+      else
+        fail "K8s API (${pod_name}): missing${missing_flags}"
+      fi
+    done <<< "${APISERVER_POD_LINES}"
+    if [ "${APISERVER_POD_COUNT}" -eq "${CP_NODE_COUNT}" ]; then
+      pass "K8s API: ${APISERVER_POD_COUNT} kube-apiserver pod(s) for ${CP_NODE_COUNT} control-plane node(s)"
+    else
+      fail "K8s API: ${APISERVER_POD_COUNT} kube-apiserver pod(s) for ${CP_NODE_COUNT} control-plane node(s) (one per node expected)"
+    fi
   fi
   echo ""
 fi
@@ -576,19 +602,41 @@ fi
 if should_run "rbac"; then
   echo "--- [8/9] OIDC RBAC (K8s Access Control) ---"
 
-  # The API server must trust this realm and client and add the oidc: prefixes
-  # that the RBAC subjects in gitops/resources/rbac-policies.yaml use.
-  APISERVER_CMD=$(kubectl get pods -n kube-system -l component=kube-apiserver \
-    -o jsonpath='{.items[0].spec.containers[0].command}' 2>/dev/null)
-  for flag in "oidc-issuer-url=${KEYCLOAK_URL}/realms/${REALM}" "oidc-client-id=kubernetes" \
-              "oidc-username-claim=preferred_username" "oidc-groups-claim=groups" \
-              "oidc-username-prefix=oidc:" "oidc-groups-prefix=oidc:"; do
-    if echo "${APISERVER_CMD}" | grep -qF -- "\"--${flag}\""; then
-      pass "API server: --${flag}"
+  # The API server on every control-plane node must trust this realm and client,
+  # add the oidc: prefixes that gitops/resources/rbac-policies.yaml subjects use,
+  # and verify Keycloak TLS via /etc/kubernetes/pki/oidc-ca.crt (D-APISERVER-OIDC-ALL).
+  # One kube-apiserver mirror pod per control-plane node: a master with no mirror pod must FAIL,
+  # not be skipped by the per-pod loop below.
+  CP_NODE_COUNT=$(kubectl get nodes -l node-role.kubernetes.io/control-plane --no-headers 2>/dev/null | grep -c . || true)
+  APISERVER_POD_LINES=$(kubectl get pods -n kube-system -l component=kube-apiserver \
+    -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.spec.containers[0].command}{"\n"}{end}' 2>/dev/null || true)
+  if [ -z "${APISERVER_POD_LINES}" ]; then
+    fail "API server: no kube-apiserver pods found"
+  else
+    APISERVER_POD_COUNT=0
+    while IFS=$'\t' read -r pod_name pod_cmd; do
+      [ -n "${pod_name}" ] || continue
+      APISERVER_POD_COUNT=$((APISERVER_POD_COUNT + 1))
+      for flag in "oidc-issuer-url=${KEYCLOAK_URL}/realms/${REALM}" \
+                  "oidc-client-id=kubernetes" \
+                  "oidc-username-claim=preferred_username" \
+                  "oidc-groups-claim=groups" \
+                  "oidc-username-prefix=oidc:" \
+                  "oidc-groups-prefix=oidc:" \
+                  "oidc-ca-file=/etc/kubernetes/pki/oidc-ca.crt"; do
+        if grep -qF -- "\"--${flag}\"" <<<"${pod_cmd}"; then
+          pass "API server (${pod_name}): --${flag}"
+        else
+          fail "API server (${pod_name}): --${flag} not set"
+        fi
+      done
+    done <<< "${APISERVER_POD_LINES}"
+    if [ "${APISERVER_POD_COUNT}" -eq "${CP_NODE_COUNT}" ]; then
+      pass "API server: ${APISERVER_POD_COUNT} kube-apiserver pod(s) for ${CP_NODE_COUNT} control-plane node(s)"
     else
-      fail "API server: --${flag} not set"
+      fail "API server: ${APISERVER_POD_COUNT} kube-apiserver pod(s) for ${CP_NODE_COUNT} control-plane node(s) (one per node expected)"
     fi
-  done
+  fi
 
   # No user token can be scripted (password grant is disabled), so impersonate
   # the identity the API server derives from one: user oidc:<preferred_username>,

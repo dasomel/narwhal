@@ -36,6 +36,18 @@
   해소하며(#492), 모두 1.1.1의 보안 수정을 포함한다. 이미지는 저장소 키로 Cosign 서명되어 있다
   (index digest `sha256:223fcd9b…`). 정적 변경만 포함하며, 기존 클러스터 롤아웃은 별도 단계이다.
 
+### 수정
+
+- **Falco가 플랫폼 자체 클라이언트의 API 서버 연결로 Loki를 뒤덮지 않음 (D-FALCO-NOISE).** 0.45.1 롤아웃
+  20시간 뒤 라이브 Loki에 이벤트 47,180건이 쌓였고 그중 46,900건이 번들 NOTICE 룰 "Contact K8S API Server
+  From Container"였으며, 모두 API 호출이 본업인 컴포넌트에서 나왔다. 이 룰에 `customRules`
+  (`/etc/falco/rules.d`에 마운트)로 정확한 (네임스페이스, 이미지) 쌍 8개(velero-ui, narwhal-portal,
+  keycloak-operator, kyverno, headlamp, Kubernetes dashboard auth·web, cloudnative-pg)에 대한 예외를 하나
+  추가했다. 그 밖의 파드는 그대로 탐지하고, priority 바닥은 바꾸지 않았으며, kube-apiserver 감사 로그에는
+  이 클라이언트들이 계속 기록된다. 실제 falco:0.45.1 이미지의 `falco -V`와 로컬 랩(일치하는 쌍은 조용하고
+  다른 네임스페이스·이미지는 여전히 탐지)에서 검증했고 R291 A11이 예외를 고정한다. 정적 변경만 포함하며
+  DaemonSet은 다음 동기화에서 롤링되고, Kakao 클러스터에서의 동작은 아직 관측되지 않았다.
+
 ## [1.3.0] - 2026-10-22
 
 보안 강화 중심의 릴리스. 에어갭 번들과 오프라인 업그레이드 번들에 무결성 검증 체인이 추가되어 승격 전에 검사되며,

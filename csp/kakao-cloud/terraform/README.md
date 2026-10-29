@@ -414,19 +414,60 @@ tofu apply -replace=kakaocloud_instance.bastion   # plan shows the public IP "up
 
 ## Cleanup
 
-`kakaocloud_public_ip` resources are guarded by `prevent_destroy` (D-PUBIP), so a plain
-`tofu destroy` fails with `Instance cannot be destroyed`. To tear everything down, drop the
-guard first, either by removing the lifecycle blocks or by releasing the addresses from state:
+### Full teardown: `destroy-all.sh`
 
 ```bash
-# Option A: remove the guards (all five resources), then destroy; the addresses are released
+csp/kakao-cloud/terraform/destroy-all.sh                 # shows the plan, waits for "yes"
+csp/kakao-cloud/terraform/destroy-all.sh -auto-approve   # extra args go to tofu destroy
+```
+
+Run the copy in the checkout that holds the state (`terraform.tfstate`); the script works in its
+own directory. It releases the six `prevent_destroy` guards (D-PUBIP on the bastion, master-LB,
+worker-LB and node public IPs; D-NFS-VOL on the NFS data volume), runs `tofu destroy`, and puts
+the guards back whether the destroy succeeds, is cancelled, fails or is interrupted (Ctrl-C,
+kill) (D-KAKAO-TEARDOWN, R292). A `.bak` left by an earlier run, or a state with no managed
+resources, stops it before anything changes.
+
+**This is irreversible.** Everything in the state goes, data included. The default layout (3
+masters, 3 workers, NFS data volume on) had 55 managed resources (2026-10-29, not counting 5
+data sources).
+
+| Destroyed | Data impact |
+|---|---|
+| 7 VMs: 3 masters, 3 workers, the bastion | etcd (all cluster state), node disks, the bastion's mirror registry (`:5000`) and dnsmasq |
+| 2 load balancers (master, worker) with their listeners, target groups, members and health monitors | none |
+| Public IPs: bastion, master LB, worker LB (and the node IPs if enabled) | released; a rebuild gets new addresses, so DNS and allow lists must follow |
+| The VPC, 2 subnets, 2 security groups | none |
+| The NFS data volume (`nfs_data_volume_size` > 0) | every PVC (databases, Gitea, Loki/Prometheus, SeaweedFS, ...). Velero keeps its backups in the in-cluster SeaweedFS (`seaweedfs-s3.storage`), so they go too |
+| The Kakao keypair and the local `KPAAS_KEYPAIR.pem` | the node SSH key; a rebuild creates a new one |
+
+No backup survives outside the cluster, and the OpenBao snapshot backup is off by default (#431).
+Copy out anything you need first. To keep the addresses or the volume, use option B below.
+
+At the end the script lists what is still in state. When no VM is left it empties
+`kakao_known_hosts`: `lib-ssh.sh` pinned the destroyed VMs' host keys there, and they would clash
+with the rebuilt VMs. Clean up the local leftovers yourself: the cluster context in
+`~/.kube/config`, open SSH tunnels and port-forwards, and any local DNS entries for the service
+domains.
+
+### Manual cleanup
+
+The `kakaocloud_public_ip` resources and the NFS data volume are guarded by `prevent_destroy`
+(D-PUBIP, D-NFS-VOL), so a plain `tofu destroy` fails with `Instance cannot be destroyed`.
+Either drop the guards (option A, what the script does) or take what you want to keep out of
+the state (option B):
+
+```bash
+# Option A: drop the guards (public IPs and the NFS volume), then destroy; the addresses are
+# released and the volume is deleted
 sed -i.bak '/prevent_destroy = true/s/true/false/' bastion.tf modules/compute/main.tf modules/loadbalancer/main.tf
 tofu destroy
 # restore the guards afterwards: mv bastion.tf.bak bastion.tf (and the two module files)
 
-# Option B: keep the addresses outside OpenTofu (they stay allocated and billed until you
-# release them in the Kakao Cloud console: VPC > Public IP)
-tofu state list | grep kakaocloud_public_ip | xargs -n1 tofu state rm
+# Option B: keep the addresses and the NFS volume outside OpenTofu (they stay allocated and
+# billed until you release or delete them in the Kakao Cloud console); the volume is attached
+# with is_delete_on_termination=false, so it survives its VM
+tofu state list | grep -E 'kakaocloud_public_ip|kakaocloud_volume\.nfs_data' | xargs -n1 tofu state rm
 tofu destroy
 ```
 
@@ -434,7 +475,7 @@ tofu destroy
 scaling `master_count` / `worker_count` down while `assign_node_public_ips = true` (the removed
 index's address would be destroyed); use option B for those addresses first.
 
-52 of the 53 resources go in ~15 minutes. **VPC deletion alone can stretch into hours.**
+Most resources go in ~15 minutes. **VPC deletion alone can stretch into hours.**
 
 Measured 2026-07-29: with everything else already gone, the VPC delete printed
 `Still destroying...` for **1h54m** before being interrupted. A later `tofu refresh` still

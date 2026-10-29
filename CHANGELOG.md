@@ -9,6 +9,16 @@ English | [한국어](CHANGELOG-ko.md)
 
 ## [Unreleased]
 
+### Added
+
+- **`csp/kakao-cloud/terraform/destroy-all.sh` tears down the whole Kakao Cloud deployment
+  (D-KAKAO-TEARDOWN).** It releases the six `prevent_destroy` guards (public IPs and the NFS data
+  volume), runs `tofu destroy` and restores the guards on every exit path, including a cancelled
+  or interrupted destroy; R292 exercises it against a stub `tofu`. The terraform README's
+  "Cleanup" section now lists what a full teardown deletes, data included (every PVC and the
+  in-cluster Velero backups go with the NFS volume), and its manual option B now also takes the
+  NFS volume out of state, which the volume's own guard otherwise blocks.
+
 ### Changed
 
 - **Falco is enabled again on every provider, upgraded from 0.39.2 (chart 4.16.0) to 0.45.1 (chart

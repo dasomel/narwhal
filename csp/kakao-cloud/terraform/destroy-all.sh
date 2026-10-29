@@ -9,13 +9,15 @@
 #   public IPs; D-NFS-VOL on the NFS data volume) make a plain `tofu destroy` fail with
 #   "Instance cannot be destroyed". README "Cleanup" option A releases them with sed and restores
 #   them by hand afterwards, and a forgotten restore leaves the next `tofu apply` unguarded. This
-#   script releases them, runs `tofu destroy`, and restores them on every exit path (trap),
-#   including a cancelled, failed or interrupted destroy.
+#   script releases them, runs `tofu destroy`, and restores them from a trap when it ends: after
+#   success, a cancel at the prompt, a failed destroy, Ctrl-C, TERM, HUP or QUIT. Only SIGKILL,
+#   which nothing can catch, leaves the guards released (the .bak pre-check then stops a rerun).
 #   Cost: IRREVERSIBLE. Everything in the state goes, data included (README "Cleanup" lists it):
-#   the VMs (masters, workers, bastion with its mirror registry), both load balancers, the public
-#   IPs (released, so a rebuild gets new addresses), the VPC, subnets and security groups, the
-#   NFS data volume with every PVC (databases, Gitea, Loki/Prometheus, and SeaweedFS, which is
-#   where Velero keeps its backups), the Kakao keypair and the local KPAAS_KEYPAIR.pem.
+#   the VMs with their disks (etcd; the bastion mirror registry; the SeaweedFS object store on a
+#   worker's hostPath, which holds the Velero and CNPG backups and the Loki/Tempo data), both load
+#   balancers, the public IPs (released, so a rebuild gets new addresses), the VPC, subnets and
+#   security groups, the NFS data volume with every NFS-backed PVC, the Kakao keypair and the
+#   local KPAAS_KEYPAIR.pem.
 #   Escape hatch: answer anything but "yes" at the plan prompt; the guards are restored on exit.
 #   To keep the addresses or the data volume, use README "Cleanup" option B instead.
 #
@@ -32,6 +34,9 @@ DATA_RE='(^|\.)data\.'
 
 die() { echo "ERROR: $*" >&2; exit 1; }
 
+# managed_of <state list>: the non-data-source lines (empty when there are none).
+managed_of() { grep -vE "${DATA_RE}" <<<"$1" | grep . || true; }
+
 command -v tofu >/dev/null 2>&1 || die "tofu not found on PATH"
 [ -f terraform.tfstate ] || die "no terraform.tfstate in $(pwd): run the copy in the checkout that holds the state"
 for f in "${GUARDED[@]}"; do
@@ -41,15 +46,15 @@ for f in "${GUARDED[@]}"; do
 done
 
 state="$(tofu state list)"
-managed="$(grep -cvE "${DATA_RE}" <<<"${state}" || true)"
+managed="$(managed_of "${state}" | grep -c . || true)"
 [ "${managed}" -gt 0 ] || die "the state has no managed resources: nothing to destroy"
 guards_before="$(cat "${GUARDED[@]}" | grep -c 'prevent_destroy = true' || true)"
 
 echo "=== About to destroy ${managed} managed resources in $(pwd) ==="
-echo "  VMs:             $(grep -c 'kakaocloud_instance\.' <<<"${state}" || true)"
+echo "  VMs:             $(grep -c 'kakaocloud_instance\.' <<<"${state}" || true) (with their disks: etcd, mirror registry, SeaweedFS backups)"
 echo "  load balancers:  $(grep -c 'kakaocloud_load_balancer\.' <<<"${state}" || true)"
 echo "  public IPs:      $(grep -c 'kakaocloud_public_ip\.' <<<"${state}" || true) (released)"
-echo "  NFS data volume: $(grep -c 'kakaocloud_volume\.' <<<"${state}" || true) (every PVC, including the in-cluster Velero backups)"
+echo "  NFS data volume: $(grep -c 'kakaocloud_volume\.' <<<"${state}" || true) (every NFS-backed PVC)"
 echo "  guards released for this run: ${guards_before}"
 
 restore_guards() {
@@ -61,23 +66,43 @@ restore_guards() {
   done
   echo "prevent_destroy guards restored: $(cat "${GUARDED[@]}" | grep -c 'prevent_destroy = true' || true) of ${guards_before}"
 }
-# bash runs the EXIT trap on Ctrl-C and kill too (R292 case 4 sends SIGTERM mid-destroy).
+# bash already runs the EXIT trap on INT, TERM and HUP; QUIT needs an explicit exit (R292).
 trap restore_guards EXIT
+trap 'exit 131' QUIT
 
 sed -i.bak '/prevent_destroy = true/s/true/false/' "${GUARDED[@]}"
 
 rc=0
 tofu destroy "$@" || rc=$?
 
-left="$(tofu state list 2>/dev/null | grep -vE "${DATA_RE}" || true)"
+if ! after="$(tofu state list 2>&1)"; then
+  echo "WARN: could not read the state after destroy, so nothing is reported or cleared:" >&2
+  echo "${after}" >&2
+  [ "${rc}" -ne 0 ] || rc=1
+  exit "${rc}"
+fi
+left="$(managed_of "${after}")"
 if [ -z "${left}" ]; then
   echo "=== All managed resources destroyed ==="
 else
   echo "=== $(grep -c . <<<"${left}") managed resource(s) still in state ==="
   sed 's/^/  /' <<<"${left}"
   if grep -q 'kakaocloud_vpc\.' <<<"${left}"; then
-    echo "  VPC $(tofu state show module.network.kakaocloud_vpc.vpc 2>/dev/null | grep -m1 provisioning_status | tr -s ' ' || echo 'status unknown')"
-    echo "  A PENDING_DELETE VPC can take hours: wait, then refresh (README \"Cleanup\"); do not apply over it."
+    # The local state is as of the failed delete; refresh (read-only) for the live status.
+    tofu refresh -input=false >/dev/null 2>&1 || true
+    vpc_status="$(tofu state show module.network.kakaocloud_vpc.vpc 2>/dev/null \
+      | sed -nE 's/^    provisioning_status += "([A-Z_]+)"/\1/p' | head -n 1)"
+    case "${vpc_status}" in
+      PENDING_DELETE)
+        echo "  VPC is PENDING_DELETE: the delete was accepted and runs server-side, which can take"
+        echo "  hours. Wait and refresh until it leaves the state (README \"Cleanup\"); do not apply over it." ;;
+      ACTIVE)
+        echo "  VPC is still ACTIVE: the delete was rejected, not queued. This happened right after a"
+        echo "  5m40s subnet delete on 2026-10-29. Wait a few minutes, then rerun this script; if it fails"
+        echo "  again, read the full error and check the VPC in the Kakao Cloud console." ;;
+      *)
+        echo "  VPC status: ${vpc_status:-unknown}" ;;
+    esac
   fi
 fi
 

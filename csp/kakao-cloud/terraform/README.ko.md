@@ -360,24 +360,27 @@ csp/kakao-cloud/terraform/destroy-all.sh -auto-approve   # 추가 인자는 tofu
 
 state(`terraform.tfstate`)가 있는 체크아웃의 스크립트를 실행한다. 스크립트는 자기 디렉터리에서
 돈다. `prevent_destroy` 가드 6개(D-PUBIP: bastion·마스터 LB·워커 LB·노드 공인 IP, D-NFS-VOL: NFS
-데이터 볼륨)를 풀고 `tofu destroy`를 실행한 뒤, 성공·취소·실패·중단(Ctrl-C, kill) 어느 경우에도
-가드를 되돌린다(D-KAKAO-TEARDOWN, R292). 이전 실행이 남긴 `.bak`가 있거나 state에 관리 리소스가
-없으면 아무것도 바꾸지 않고 멈춘다.
+데이터 볼륨)를 풀고 `tofu destroy`를 실행한 뒤, 성공·프롬프트 취소·실패·Ctrl-C·TERM·HUP·QUIT
+어느 경우에도 가드를 되돌린다(D-KAKAO-TEARDOWN, R292). 잡을 수 없는 SIGKILL만 예외이고, 그때 남는
+`.bak`가 다음 실행을 막는다. 이전 실행이 남긴 `.bak`가 있거나 state에 관리 리소스가 없으면 아무것도
+바꾸지 않고 멈춘다.
 
 **되돌릴 수 없다.** state에 있는 것이 데이터까지 모두 사라진다. 기본 구성(마스터 3·워커 3, NFS
 데이터 볼륨 사용)에서 관리 리소스는 55개였다(2026-10-29, 데이터 소스 5개 제외).
 
 | 삭제되는 것 | 데이터 영향 |
 |---|---|
-| VM 7대: 마스터 3, 워커 3, bastion | etcd(클러스터 상태 전부), 노드 디스크, bastion의 미러 레지스트리(`:5000`)와 dnsmasq |
+| VM 7대: 마스터 3, 워커 3, bastion | 노드 디스크가 함께 사라진다. etcd(클러스터 상태 전부), bastion의 미러 레지스트리(`:5000`)와 dnsmasq, 워커 한 대의 hostPath `/ssd/object_store`에 있는 SeaweedFS 객체 저장소(Velero·CNPG 백업, Loki·Tempo 데이터) |
 | 로드밸런서 2개(마스터·워커)와 리스너·타깃 그룹·멤버·헬스 모니터 | 없음 |
 | 공인 IP: bastion, 마스터 LB, 워커 LB(노드 공인 IP를 켰다면 그것까지) | 주소가 반납된다. 재구축하면 주소가 바뀌므로 DNS·허용 목록을 다시 맞춘다 |
 | VPC, 서브넷 2개, 보안그룹 2개 | 없음 |
-| NFS 데이터 볼륨(`nfs_data_volume_size` > 0) | 모든 PVC(데이터베이스, Gitea, Loki·Prometheus, SeaweedFS 등). Velero 백업도 클러스터 안 SeaweedFS(`seaweedfs-s3.storage`)에 있으므로 함께 사라진다 |
+| NFS 데이터 볼륨(`nfs_data_volume_size` > 0) | NFS로 제공되는 모든 PVC(데이터베이스, Gitea, Prometheus, SeaweedFS master·filer 메타데이터 등) |
 | Kakao 키페어와 로컬 `KPAAS_KEYPAIR.pem` | 노드 SSH 키. 재구축할 때 새로 만든다 |
 
-클러스터 밖에 남는 백업은 없다. OpenBao 스냅샷 백업도 기본으로 꺼져 있다(#431). 남겨야 할 데이터는
-먼저 클러스터 밖으로 백업한다. 주소나 볼륨을 남기려면 아래 방법 B를 쓴다.
+클러스터 밖에 남는 백업은 없다. Velero와 CNPG 백업은 클러스터 안 SeaweedFS(`seaweedfs-s3.storage`)에
+있고, 그 객체 데이터는 NFS 볼륨이 아니라 워커의 로컬 디스크에 있다. 그래서 방법 B로 NFS 볼륨을 남겨도
+백업은 남지 않는다. OpenBao 스냅샷 백업도 기본으로 꺼져 있다(#431). 남겨야 할 데이터는 먼저 클러스터
+밖으로 백업한다. 주소나 볼륨을 남기려면 아래 방법 B를 쓴다.
 
 스크립트는 끝에 state에 남은 리소스를 보여 준다. VM이 하나도 남지 않았으면 `kakao_known_hosts`를
 비운다(`lib-ssh.sh`가 고정해 둔 삭제된 VM의 호스트 키가 재구축한 VM과 충돌하므로). 로컬에 남는 것은
@@ -396,17 +399,29 @@ sed -i.bak '/prevent_destroy = true/s/true/false/' bastion.tf modules/compute/ma
 tofu destroy
 # 끝나면 가드 복원: mv bastion.tf.bak bastion.tf (모듈 파일 2개도 동일)
 
-# 방법 B: 주소와 NFS 볼륨을 OpenTofu 밖에 남긴다. Kakao Cloud 콘솔에서 직접 반납·삭제하기
-# 전까지 할당·과금이 유지된다. 볼륨은 is_delete_on_termination=false라 VM이 지워져도 남는다
-tofu state list | grep -E 'kakaocloud_public_ip|kakaocloud_volume\.nfs_data' | xargs -n1 tofu state rm
+# 방법 B: 주소를 OpenTofu 밖에 남긴다. Kakao Cloud 콘솔(VPC > Public IP)에서 직접 반납하기
+# 전까지 할당·과금이 유지된다
+tofu state list | grep kakaocloud_public_ip | xargs -n1 tofu state rm
+# 전체 삭제라면 NFS 볼륨의 가드(D-NFS-VOL)도 destroy를 막는다. 볼륨까지 남기려면 state에서 뺀다.
+# is_delete_on_termination=false라 VM이 지워져도 볼륨은 남고, 콘솔에서 지우기 전까지 과금된다
+tofu state rm 'module.compute.kakaocloud_volume.nfs_data[0]'
 tofu destroy
 ```
 
 운영 중인 클러스터에서 `assign_node_public_ips = false`도 같은 가드에 막히고,
 `assign_node_public_ips = true`일 때 `master_count` / `worker_count`를 줄이는 것도 막힌다
-(제거되는 인덱스의 주소가 destroy되므로). 해당 주소는 먼저 방법 B로 처리한다.
+(제거되는 인덱스의 주소가 destroy되므로). 해당 주소는 먼저 방법 B의 공인 IP 줄로 state에서 뺀다
+(볼륨 줄은 전체 삭제용이다).
 
 대부분의 리소스는 ~15분에 사라진다. **VPC 삭제만 몇 시간 단위로 늘어질 수 있다.**
+
+VPC가 남는 경우는 두 가지다. `provisioning_status`로 구분한다(`destroy-all.sh`는 끝에 refresh해서
+알려 준다).
+
+- `ACTIVE`: 삭제 요청이 거부된 것이다. 2026-10-29 실측으로, 서브넷 삭제(5분 40초) 직후의 VPC 삭제가
+  `Error: delete resource: kakaocloud_vpc`로 실패했고 refresh 뒤에도 VPC는 `ACTIVE`였다. 진행 중인
+  삭제가 없으므로 몇 분 뒤 다시 destroy한다. 재시도 결과는 아직 관측하지 않았다.
+- `PENDING_DELETE`: 삭제가 받아들여져 서버에서 진행 중이다. 아래처럼 기다린다.
 
 2026-07-29 실측: 나머지가 전부 지워진 뒤 VPC 삭제가 **1시간 54분** 동안 `Still destroying...`을
 찍었고, 거기서 중단했다. 이후 `tofu refresh`는 VPC를 여전히 state에 남겨 두는데, 실제 상태를

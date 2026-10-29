@@ -3,17 +3,22 @@
 # Runs the real script in a temporary copy of the terraform directory (the three guarded .tf
 # files copied from the repo, a dummy terraform.tfstate, a non-empty kakao_known_hosts) against
 # a stub `tofu` on PATH. The stub records the destroy arguments and how many guards were
-# released at the moment destroy ran, then succeeds, cancels, leaves a PENDING_DELETE VPC, or
-# sends SIGTERM to the script.
-#   1. Success: every guard is false while destroy runs, extra args reach `tofu destroy`, the
-#      .tf files are byte-identical afterwards, no .bak is left, kakao_known_hosts is cleared.
+# released at the moment destroy ran, then succeeds, cancels, leaves the VPC behind (PENDING_DELETE
+# or ACTIVE), sends SIGTERM or SIGQUIT to the script, or makes the next `state list` fail.
+#   1. Success (data sources stay in state, as after a real destroy + refresh): every guard is
+#      false while destroy runs, extra args reach `tofu destroy`, the .tf files are byte-identical
+#      afterwards, no .bak is left, kakao_known_hosts is cleared.
 #   2. Cancelled at the prompt: exit 1, files byte-identical, no .bak, known_hosts kept (the
 #      VMs still exist).
-#   3. VPC left in PENDING_DELETE: exit 1, the status is printed, files restored, known_hosts
-#      cleared (no VM left).
+#   3. VPC left in PENDING_DELETE: exit 1, the wait advice is printed, files restored,
+#      known_hosts cleared (no VM left).
+#   3b. VPC left ACTIVE (delete rejected): the retry advice is printed, not the wait advice.
 #   4. SIGTERM during destroy: exit 143 and the guards are still restored.
-#   5. A leftover .bak, a missing terraform.tfstate, or a state with only data sources stops
-#      the script before destroy runs, with no file touched.
+#   4b. SIGQUIT during destroy: exit 131 and the guards are still restored.
+#   4c. `state list` failing after destroy: non-zero exit, nothing reported as destroyed,
+#      known_hosts kept, guards restored.
+#   5. A leftover .bak, a missing terraform.tfstate, an empty state or a state with only data
+#      sources stops the script before destroy runs, with no file touched.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../../.." && pwd)"
@@ -42,19 +47,26 @@ cat > "${WORK}/bin/tofu" <<'STUB'
 # Stub tofu: state lives in ${STUB_DIR}/state.txt; behaviour is chosen by ${STUB_MODE}.
 set -u
 case "$1 ${2:-}" in
-  "state list") cat "${STUB_DIR}/state.txt" ;;
-  "state show") echo '  provisioning_status = "PENDING_DELETE"' ;;
+  "state list") [ ! -e "${STUB_DIR}/listfail" ] || { echo "stub: state locked" >&2; exit 1; }
+                cat "${STUB_DIR}/state.txt" ;;
+  "state show") echo '    id                    = "vpc-1"'
+                echo "    provisioning_status   = \"${STUB_VPC_STATUS:-PENDING_DELETE}\""
+                echo '        provisioning_status = "ACTIVE"' ;;
+  refresh*) exit 0 ;;
   destroy*)
     shift
     printf '%s\n' "$*" > "${STUB_DIR}/destroy-args"
     cat bastion.tf modules/compute/main.tf modules/loadbalancer/main.tf \
       | grep -c 'prevent_destroy = false' > "${STUB_DIR}/released" || true
     case "${STUB_MODE}" in
-      ok) : > "${STUB_DIR}/state.txt"; exit 0 ;;
+      ok) grep -E 'data\.' "${STUB_DIR}/state.txt" > "${STUB_DIR}/s" || true
+          mv "${STUB_DIR}/s" "${STUB_DIR}/state.txt"; exit 0 ;;
+      listfail) : > "${STUB_DIR}/state.txt"; touch "${STUB_DIR}/listfail"; exit 0 ;;
       cancel) echo "Destroy cancelled."; exit 1 ;;
       vpc) grep -E 'data\.|kakaocloud_vpc\.' "${STUB_DIR}/state.txt" > "${STUB_DIR}/s" || true
            mv "${STUB_DIR}/s" "${STUB_DIR}/state.txt"; exit 1 ;;
       term) kill -TERM "${PPID}"; sleep 1; exit 1 ;;
+      quit) kill -QUIT "${PPID}"; sleep 1; exit 1 ;;
     esac ;;
   *) echo "stub tofu: unexpected args: $*" >&2; exit 2 ;;
 esac
@@ -117,14 +129,37 @@ setup vpc
 run vpc
 [ "${RC}" -eq 1 ] || fail "vpc: expected exit 1, got ${RC}"
 assert_restored vpc
-grep -q 'PENDING_DELETE' <<<"${OUT}" || fail "vpc: PENDING_DELETE status not reported"
+grep -q 'VPC is PENDING_DELETE' <<<"${OUT}" || fail "vpc: PENDING_DELETE advice not printed"
 [ ! -s "${TF}/kakao_known_hosts" ] || fail "vpc: kakao_known_hosts kept although no VM is left"
+
+# 3b. VPC still ACTIVE (delete rejected)
+setup vpcactive
+STUB_VPC_STATUS=ACTIVE run vpc
+[ "${RC}" -eq 1 ] || fail "vpcactive: expected exit 1, got ${RC}"
+assert_restored vpcactive
+grep -q 'VPC is still ACTIVE' <<<"${OUT}" || fail "vpcactive: retry advice not printed"
+! grep -q 'VPC is PENDING_DELETE' <<<"${OUT}" || fail "vpcactive: PENDING_DELETE advice printed for an ACTIVE VPC"
 
 # 4. SIGTERM while destroy runs
 setup term
 run term
 [ "${RC}" -eq 143 ] || fail "term: expected exit 143, got ${RC}"
 assert_restored term
+
+# 4b. SIGQUIT while destroy runs
+setup quit
+run quit
+[ "${RC}" -eq 131 ] || fail "quit: expected exit 131, got ${RC}"
+assert_restored quit
+
+# 4c. state list fails after destroy
+setup listfail
+run listfail
+[ "${RC}" -ne 0 ] || fail "listfail: exit 0 although the state could not be read"
+assert_restored listfail
+grep -q 'could not read the state' <<<"${OUT}" || fail "listfail: no warning"
+! grep -q 'All managed resources destroyed' <<<"${OUT}" || fail "listfail: reported success without reading the state"
+[ -s "${TF}/kakao_known_hosts" ] || fail "listfail: kakao_known_hosts cleared without reading the state"
 
 # 5a. leftover .bak
 setup bak
@@ -142,7 +177,15 @@ run ok
 [ "${RC}" -ne 0 ] || fail "nostate: ran without terraform.tfstate"
 [ ! -e "${STUB_DIR}/destroy-args" ] || fail "nostate: destroy ran"
 
-# 5c. only data sources in state
+# 5c. empty state
+setup emptystate
+: > "${STUB_DIR}/state.txt"
+run ok
+[ "${RC}" -ne 0 ] || fail "emptystate: ran with an empty state"
+[ ! -e "${STUB_DIR}/destroy-args" ] || fail "emptystate: destroy ran"
+assert_restored emptystate
+
+# 5d. only data sources in state
 setup empty
 grep 'data\.' <<<"${STATE_FULL}" > "${STUB_DIR}/state.txt"
 run ok
@@ -150,4 +193,4 @@ run ok
 [ ! -e "${STUB_DIR}/destroy-args" ] || fail "empty: destroy ran"
 assert_restored empty
 
-echo "OK: destroy-all.sh harness, 7 cases (${guards_in_repo} guards)"
+echo "OK: destroy-all.sh harness, 11 cases (${guards_in_repo} guards)"

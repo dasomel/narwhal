@@ -13,11 +13,13 @@ English | [한국어](CHANGELOG-ko.md)
 
 - **`csp/kakao-cloud/terraform/destroy-all.sh` tears down the whole Kakao Cloud deployment
   (D-KAKAO-TEARDOWN).** It releases the six `prevent_destroy` guards (public IPs and the NFS data
-  volume), runs `tofu destroy` and restores the guards on every exit path, including a cancelled
-  or interrupted destroy; R292 exercises it against a stub `tofu`. The terraform README's
-  "Cleanup" section now lists what a full teardown deletes, data included (every PVC and the
-  in-cluster Velero backups go with the NFS volume), and its manual option B now also takes the
-  NFS volume out of state, which the volume's own guard otherwise blocks.
+  volume), runs `tofu destroy` and restores the guards on every exit it can catch (success, a cancel,
+  a failure, Ctrl-C, TERM, HUP, QUIT; only SIGKILL escapes); R292 exercises it against a stub `tofu`. The terraform README's
+  "Cleanup" section now lists what a full teardown deletes, data included: every NFS-backed PVC
+  with the volume, and the in-cluster Velero and CNPG backups with the worker disk that holds the
+  SeaweedFS object store. It also tells a rejected VPC delete (`ACTIVE`) from a slow one
+  (`PENDING_DELETE`), and the manual option B now says how to keep the NFS volume, whose own
+  guard otherwise blocks a full destroy.
 
 ### Changed
 

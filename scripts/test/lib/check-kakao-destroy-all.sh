@@ -13,6 +13,8 @@
 #   3. VPC left in PENDING_DELETE: exit 1, the wait advice is printed, files restored,
 #      known_hosts cleared (no VM left).
 #   3b. VPC left ACTIVE (delete rejected): the retry advice is printed, not the wait advice.
+#   3c. VPC delete landing late (gone after the refresh): reported as fully destroyed, no abort.
+#   (2 also checks that a cancel prints no VPC advice.)
 #   4. SIGTERM during destroy: exit 143 and the guards are still restored.
 #   4b. SIGQUIT during destroy: exit 131 and the guards are still restored.
 #   4c. `state list` failing after destroy: non-zero exit, nothing reported as destroyed,
@@ -49,10 +51,15 @@ set -u
 case "$1 ${2:-}" in
   "state list") [ ! -e "${STUB_DIR}/listfail" ] || { echo "stub: state locked" >&2; exit 1; }
                 cat "${STUB_DIR}/state.txt" ;;
-  "state show") echo '    id                    = "vpc-1"'
+  "state show") grep -q 'kakaocloud_vpc' "${STUB_DIR}/state.txt" || { echo "stub: no such resource" >&2; exit 1; }
+                echo '    id                    = "vpc-1"'
                 echo "    provisioning_status   = \"${STUB_VPC_STATUS:-PENDING_DELETE}\""
                 echo '        provisioning_status = "ACTIVE"' ;;
-  refresh*) exit 0 ;;
+  refresh*) if [ "${STUB_MODE}" = vpclate ]; then   # the VPC delete landed after destroy gave up
+              grep -v 'kakaocloud_vpc' "${STUB_DIR}/state.txt" > "${STUB_DIR}/s" || true
+              mv "${STUB_DIR}/s" "${STUB_DIR}/state.txt"
+            fi
+            exit 0 ;;
   destroy*)
     shift
     printf '%s\n' "$*" > "${STUB_DIR}/destroy-args"
@@ -63,7 +70,7 @@ case "$1 ${2:-}" in
           mv "${STUB_DIR}/s" "${STUB_DIR}/state.txt"; exit 0 ;;
       listfail) : > "${STUB_DIR}/state.txt"; touch "${STUB_DIR}/listfail"; exit 0 ;;
       cancel) echo "Destroy cancelled."; exit 1 ;;
-      vpc) grep -E 'data\.|kakaocloud_vpc\.' "${STUB_DIR}/state.txt" > "${STUB_DIR}/s" || true
+      vpc|vpclate) grep -E 'data\.|kakaocloud_vpc\.' "${STUB_DIR}/state.txt" > "${STUB_DIR}/s" || true
            mv "${STUB_DIR}/s" "${STUB_DIR}/state.txt"; exit 1 ;;
       term) kill -TERM "${PPID}"; sleep 1; exit 1 ;;
       quit) kill -QUIT "${PPID}"; sleep 1; exit 1 ;;
@@ -123,6 +130,7 @@ run cancel
 [ "${RC}" -eq 1 ] || fail "cancel: expected exit 1, got ${RC}"
 assert_restored cancel
 [ -s "${TF}/kakao_known_hosts" ] || fail "cancel: kakao_known_hosts cleared although the VMs remain"
+! grep -q 'VPC is' <<<"${OUT}" || fail "cancel: VPC advice printed after a cancel"
 
 # 3. VPC stuck in PENDING_DELETE
 setup vpc
@@ -139,6 +147,14 @@ STUB_VPC_STATUS=ACTIVE run vpc
 assert_restored vpcactive
 grep -q 'VPC is still ACTIVE' <<<"${OUT}" || fail "vpcactive: retry advice not printed"
 ! grep -q 'VPC is PENDING_DELETE' <<<"${OUT}" || fail "vpcactive: PENDING_DELETE advice printed for an ACTIVE VPC"
+
+# 3c. VPC delete lands late: destroy fails, but the refresh no longer finds the VPC
+setup vpclate
+run vpclate
+[ "${RC}" -eq 1 ] || fail "vpclate: expected tofu's exit 1, got ${RC}: ${OUT}"
+assert_restored vpclate
+grep -q 'All managed resources destroyed' <<<"${OUT}" || fail "vpclate: late VPC delete not reported as done"
+[ ! -s "${TF}/kakao_known_hosts" ] || fail "vpclate: kakao_known_hosts not cleared"
 
 # 4. SIGTERM while destroy runs
 setup term
@@ -193,4 +209,4 @@ run ok
 [ ! -e "${STUB_DIR}/destroy-args" ] || fail "empty: destroy ran"
 assert_restored empty
 
-echo "OK: destroy-all.sh harness, 11 cases (${guards_in_repo} guards)"
+echo "OK: destroy-all.sh harness, 12 cases (${guards_in_repo} guards)"

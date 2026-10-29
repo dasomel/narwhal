@@ -75,35 +75,44 @@ sed -i.bak '/prevent_destroy = true/s/true/false/' "${GUARDED[@]}"
 rc=0
 tofu destroy "$@" || rc=$?
 
-if ! after="$(tofu state list 2>&1)"; then
+if ! after="$(tofu state list 2>/dev/null)"; then
   echo "WARN: could not read the state after destroy, so nothing is reported or cleared:" >&2
-  echo "${after}" >&2
+  tofu state list >/dev/null || true   # shows tofu's own error on stderr
   [ "${rc}" -ne 0 ] || rc=1
   exit "${rc}"
 fi
 left="$(managed_of "${after}")"
+vpc_status=""
+# Only when the destroy got as far as the VPC (no VM left); after a cancel the VMs are still there.
+if grep -q 'kakaocloud_vpc\.' <<<"${left}" && ! grep -q 'kakaocloud_instance\.' <<<"${left}"; then
+  # The local state is as of the failed delete. Refresh (read-only) for the live status; the
+  # delete may also have landed late, in which case the VPC drops out of the state here.
+  tofu refresh -input=false >/dev/null 2>&1 || true
+  if after="$(tofu state list 2>/dev/null)"; then
+    left="$(managed_of "${after}")"
+  fi
+  if grep -q 'kakaocloud_vpc\.' <<<"${left}"; then
+    vpc_status="$(tofu state show module.network.kakaocloud_vpc.vpc 2>/dev/null \
+      | sed -nE 's/^    provisioning_status += "([A-Z_]+)"/\1/p' | head -n 1 || true)"
+  fi
+fi
 if [ -z "${left}" ]; then
   echo "=== All managed resources destroyed ==="
 else
   echo "=== $(grep -c . <<<"${left}") managed resource(s) still in state ==="
   sed 's/^/  /' <<<"${left}"
-  if grep -q 'kakaocloud_vpc\.' <<<"${left}"; then
-    # The local state is as of the failed delete; refresh (read-only) for the live status.
-    tofu refresh -input=false >/dev/null 2>&1 || true
-    vpc_status="$(tofu state show module.network.kakaocloud_vpc.vpc 2>/dev/null \
-      | sed -nE 's/^    provisioning_status += "([A-Z_]+)"/\1/p' | head -n 1)"
-    case "${vpc_status}" in
-      PENDING_DELETE)
-        echo "  VPC is PENDING_DELETE: the delete was accepted and runs server-side, which can take"
-        echo "  hours. Wait and refresh until it leaves the state (README \"Cleanup\"); do not apply over it." ;;
-      ACTIVE)
-        echo "  VPC is still ACTIVE: the delete was rejected, not queued. This happened right after a"
-        echo "  5m40s subnet delete on 2026-10-29. Wait a few minutes, then rerun this script; if it fails"
-        echo "  again, read the full error and check the VPC in the Kakao Cloud console." ;;
-      *)
-        echo "  VPC status: ${vpc_status:-unknown}" ;;
-    esac
-  fi
+  case "${vpc_status}" in
+    PENDING_DELETE)
+      echo "  VPC is PENDING_DELETE: the delete was accepted and runs server-side, which can take"
+      echo "  hours. Wait and refresh until it leaves the state (README \"Cleanup\"); do not apply over it." ;;
+    ACTIVE)
+      echo "  VPC is still ACTIVE: the delete was rejected, not queued. This happened right after a"
+      echo "  5m40s subnet delete on 2026-10-29. Wait a few minutes, then rerun this script; if it fails"
+      echo "  again, read the full error and check the VPC in the Kakao Cloud console." ;;
+    "") : ;;
+    *)
+      echo "  VPC status: ${vpc_status}" ;;
+  esac
 fi
 
 # lib-ssh.sh pins host keys here; the keys of destroyed VMs would clash with a rebuild's new ones.

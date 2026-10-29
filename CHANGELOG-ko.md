@@ -9,6 +9,16 @@
 
 ## [Unreleased]
 
+### 추가
+
+- **`csp/kakao-cloud/terraform/destroy-all.sh`로 Kakao Cloud 배포 전체를 삭제 (D-KAKAO-TEARDOWN).**
+  `prevent_destroy` 가드 6개(공인 IP와 NFS 데이터 볼륨)를 풀고 `tofu destroy`를 실행한 뒤, 잡을 수 있는
+  모든 종료(성공, 취소, 실패, Ctrl-C, TERM, HUP, QUIT; SIGKILL만 예외)에서 가드를 되돌린다. R292가 stub `tofu`로 동작을 검증한다. terraform README의
+  "정리" 절에 전체 삭제로 사라지는 것을 데이터까지 정리했다. NFS 볼륨과 함께 NFS로 제공되는 모든 PVC가,
+  SeaweedFS 객체 저장소가 있는 워커 디스크와 함께 클러스터 안 Velero·CNPG 백업이 사라진다. 거부된 VPC
+  삭제(`ACTIVE`)와 오래 걸리는 삭제(`PENDING_DELETE`)를 구분하고, 수동 방법 B에는 볼륨 자체의 가드가
+  전체 삭제를 막을 때 NFS 볼륨을 남기는 방법을 적었다.
+
 ### 변경
 
 - **Falco가 모든 프로바이더에서 다시 활성화되고 0.39.2(차트 4.16.0)에서 0.45.1(차트 9.2.1)로 올라감

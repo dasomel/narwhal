@@ -116,3 +116,25 @@ metadata:
 spec:
   mtls:
     mode: PERMISSIVE
+---
+# PeerAuthentication 6/6: Velero server metrics port only (#456).
+#
+# D-velero-scrape (#456): Prometheus opts out of ambient; allow plaintext only on
+# the server metrics port. Cost: one mTLS exception, paired with restricted ingress.
+# Keep Velero enrolled for outbound storage traffic; remove both policies to revert.
+apiVersion: security.istio.io/v1
+kind: PeerAuthentication
+metadata:
+  name: velero-metrics
+  namespace: storage
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: velero
+      app.kubernetes.io/instance: velero
+      name: velero
+  mtls:
+    mode: STRICT
+  portLevelMtls:
+    8085:
+      mode: PERMISSIVE

@@ -1,0 +1,79 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-mirror-pin-check-468-20261031",
+  "task": "#468: pinned images (scripts/airgap/images.txt, image-digests.tsv) were bumped without the running bastion mirror being updated, so reschedules on Kakao (no node egress) would hit ImagePullBackOff. Add the mandatory mirror-by-digest step to the narwhal-version-upgrade skill and the air-gap runbook, and a read-only check that compares the pins with a mirror registry. No bastion or cluster is available.",
+  "changeContext": {
+    "paths": [
+      ".agents/evals/traces/2026-10-mirror-pin-check-468.json",
+      ".agents/skills/narwhal-version-upgrade/SKILL.md",
+      "docs/common/agent-operational-rules.md",
+      "docs/common/lessons-log.md",
+      "portal/docs/lessons-log.md",
+      "portal/scripts/harness-rules.sh",
+      "portal/src/app/(dashboard)/security/page.tsx",
+      "portal/src/app/api/security/summary/route.ts",
+      "portal/src/app/api/security/vulnerabilities/route.ts",
+      "portal/src/components/ui/data-state.tsx",
+      "portal/src/lib/i18n.ts",
+      "portal/src/lib/k8s-client.ts",
+      "portal/src/lib/trivy.test.ts",
+      "portal/src/lib/trivy.ts",
+      "portal/src/types/security.ts",
+      "scripts/airgap/README.md",
+      "scripts/test/check-mirror-pins.py",
+      "scripts/test/lib/check-mirror-pins.py",
+      "scripts/test/regression-check-kakao.sh"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Add step 5 (mirror by digest before the pin goes live) to .agents/skills/narwhal-version-upgrade/SKILL.md, a 'Mirror a pin bump' section to scripts/airgap/README.md, one rule bullet in docs/common/agent-operational-rules.md, scripts/test/check-mirror-pins.py (HEAD-only, timeouts, credentials refused), its R295 stub-registry harness and a lessons-log row. Deliberately left alone: images.txt, image-digests.tsv, 05-load-images.sh and 06-configure-mirrors.sh, and any change to the real mirror (a shared-infrastructure mutation that needs separate approval)."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "Issue #468 and its comments: portal 1.1.1 went ImagePullBackOff on kakao-narwhal because the mirror only had 1.0.16; 1.1.0 ran only from node cache; 5 of 104 images.txt entries (and later valkey:8-alpine) were missing from the mirror; each was fixed by hand with skopeo copy --all --preserve-digests. No check in the repo compares the pins with a mirror (none under scripts/test before this change).",
+      "evidence": [
+        "doc:https://github.com/dasomel/narwhal/issues/468"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "check-mirror-pins.py maps every images.txt ref to the mirror path the way 05-load-images.sh does (scripts/airgap/05-load-images.sh case statement and push_ref without @sha256; /v2/<upstream> roots per 06-configure-mirrors.sh), sends HEAD /v2/<path>/manifests/<tag> with OCI index, manifest list and v2 manifest Accept headers, and reports PRESENT / MISSING / DIGEST-MISMATCH / ERROR; exit 1 on any non-optional failure, kaniko is WARN, --digest-scope pinned compares digests only for @sha256 refs because 05-load-images.sh re-serialises ordinary images."
+    },
+    {
+      "id": "e4",
+      "type": "documentation",
+      "summary": "Skill step 5 and the runbook section give the skopeo command, the node-side HEAD check and the check script; agent-operational-rules.md gains the rule under Images and registries."
+    },
+    {
+      "id": "e5",
+      "type": "review_correction",
+      "summary": "The implementation lane took R296; the coordinator renumbered it to R295, the next free number after R294 (#511)."
+    },
+    {
+      "id": "e6",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "stub-registry harness (path mapping cross-checked against the bash case statement extracted from 05-load-images.sh for every images.txt entry, PRESENT/MISSING/MISMATCH/WARN, HEAD-only, Accept headers, four mapping mutations caught) and the full static suite. NOT covered: a run against the real bastion registry, whether it returns Docker-Content-Digest on HEAD for index/manifest-list types, and which --digest-scope fits the partly skopeo-filled mirror.",
+      "evidence": [
+        "test:python3 scripts/test/lib/check-mirror-pins.py -> 49 checks passed, including 'broken mapping caught' for a bare image without docker.io/library, an org image without docker.io, a digest kept in the tag and a wrong /v2 root"
+      ]
+    },
+    {
+      "id": "e7",
+      "type": "completion_claim",
+      "summary": "The upgrade skill and runbook now require mirroring a pin by digest before it goes live, and a read-only check compares all pins with a mirror; it is proven only against a stub registry."
+    },
+    {
+      "id": "e8",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Complete within repository scope; #468 stays open for a first run against a real bastion mirror."
+    }
+  ]
+}

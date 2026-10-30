@@ -3179,6 +3179,11 @@ assert sum(1 for l in code if re.search(r"\bexit 3\b", l)) == 1, "exit 3 must ap
   check R293 "live suite false-failure guards (#505): TLS, ambient, credentials, retired client, probe and provider" \
     python3 scripts/test/lib/check-live-suite-false-failures.py
 
+  # 2026-10-31 (#468, D-MIRROR-PATH): a pin bump needs the image on the bastion mirror first; the live
+  # check scripts/test/check-mirror-pins.py maps refs to /v2/<repo>/manifests/<tag> like 05-load-images.sh.
+  check R295 "check-mirror-pins.py against a stub registry: PRESENT/MISSING/DIGEST-MISMATCH/optional WARN, HEAD-only with OCI+docker Accept headers, docker.io library+org, ghcr.io, gcr.io and registry.k8s.io paths, mapping equals the 05-load-images.sh case statement for every images.txt entry; 4 broken mappings caught (#468)" \
+    python3 scripts/test/lib/check-mirror-pins.py
+
   check R292 "destroy-all.sh behavioural harness, 12 cases (temp terraform dir + stub tofu): all guards false while destroy runs and restored byte-identical after success, cancel (no VPC advice), VPC left PENDING_DELETE or ACTIVE (each with its own advice) or deleted late, SIGTERM, SIGQUIT and an unreadable state after destroy; extra args reach tofu destroy; kakao_known_hosts cleared only once the state is readable and no VM is left; a leftover .bak, missing tfstate, empty or data-only state stops it before destroy" \
     bash scripts/test/lib/check-kakao-destroy-all.sh
 

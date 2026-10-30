@@ -125,6 +125,26 @@ scp -r -o ProxyJump=ubuntu@"${BASTION}" \
   narwhal-airgap-bundle-amd64 ubuntu@"${MASTER1}":~/
 ```
 
+### Mirror a pin bump (핀 변경 시 bastion 미러 선반영, narwhal#468)
+
+`images.txt` / `image-digests.tsv` 의 핀을 올리면 **GitOps 반영(라이브) 전에** 새 이미지를 bastion 미러에
+digest 로 복사해야 한다. 노드는 상위 레지스트리로 나갈 수 없어, 미러에 없는 핀은 파드가 재스케줄될 때
+`ImagePullBackOff` 가 된다(실행 중 파드는 노드 캐시 덕에 멀쩡해 보인다).
+
+```bash
+# bastion 에서 (경로는 완전 수식 ref: docker.io/library/busybox, docker.io/<org>/<name>, ghcr.io/...)
+skopeo copy --all --preserve-digests \
+  docker://<src>@<digest> docker://<mirror>/<path>@<digest>
+# 노드에서: 200 + 같은 Docker-Content-Digest 여야 한다
+curl -sI -H 'Accept: application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.list.v2+json' \
+  http://<mirror>/v2/<path>/manifests/<tag>
+# 전체 대조 (읽기 전용, HEAD 만): MISSING / DIGEST-MISMATCH 가 있으면 exit 1
+MIRROR=http://<bastion>:5000 python3 scripts/test/check-mirror-pins.py
+```
+
+05-load-images.sh 로 채운 미러는 일반 이미지를 OCI 로 재직렬화해 digest 가 tsv 와 다르므로
+`--digest-scope pinned` 로 `@sha256:` 핀만 digest 대조한다. kaniko 는 선택(개발 도구)이라 WARN 이다.
+
 ### Phase B — 에어갭 내부에서 레지스트리 준비
 
 Kakao Cloud 에서는 번들을 복사해 둔 **master-1 에서 실행**한다(bastion 경유 SSH).

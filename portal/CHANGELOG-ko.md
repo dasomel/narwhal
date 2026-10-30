@@ -9,6 +9,11 @@
 
 ## [Unreleased]
 
+## [1.1.5] - 2026-10-31
+
+패치 릴리스. 쿨링 기간 때문에 보류했던 `body-parser` 권고(narwhal#470)를 해결하고,
+narwhal#503에서 병합한 Portal 리더 수정을 배포함. `portal/v1.1.4` 이후의 모든 변경을 다룸.
+
 ### 수정
 
 - **런타임 이벤트: 우선순위 필터가 아무것도 매칭하지 못함 (narwhal#503)**: falcosidekick은 Loki
@@ -19,6 +24,17 @@
   "Ubuntu 26.04에서 사용할 수 없음" 안내가 나왔음. Falco 0.45.1이 모든 프로바이더에서 활성화되므로
   탭을 항상 보여주고, 노드 OS 판별과 `security.runtimeEvents.unavailable2604` 문구를 제거함. KISA 통제
   메모는 더 이상 Falco가 비활성이라고 하지 않으며, 라이브 클러스터에 대한 주장은 하지 않음.
+
+### 보안
+
+- `body-parser`를 2.3.0에서 2.4.0으로 올려 GHSA-27r3-jxmh-p828을 해결함(narwhal#470,
+  narwhal#505). Express 5.3.0의 기존 `^2.3.0` 범위가 허용하므로 override는 추가하지 않음.
+  필수 의존성 `qs`도 `^6.16.1` 요구를 만족하도록 6.16.0에서 6.16.1로 올림. 두 버전 모두
+  7일 lockfile cooling gate를 통과함.
+- `systeminformation`을 5.33.15에서 5.33.16으로 올려 GHSA-3f7j-7jwc-fxfj(high,
+  `@opentelemetry/instrumentation-host-metrics` 경유, 부모 범위 `^5.31.6`이 허용)를 해결함.
+  5.33.16은 2026-10-19 게시로 cooling gate를 통과했고, 그 뒤의 5.33.17~5.33.19는 아직 통과하지
+  못해 받지 않음. 다른 패키지 버전은 바뀌지 않음.
 
 ## [1.1.4] - 2026-10-28
 
@@ -509,7 +525,8 @@ Portal의 첫 번째 공개 릴리스.
     매니페스트(`deploy/kaniko-build-job.yaml`).
   - 실시간 핫 모듈 교체(HMR) 및 컨테이너 파일 동기화를 위해 구성된 Skaffold 개발 프로필.
 
-[Unreleased]: https://github.com/dasomel/narwhal/compare/portal/v1.1.4...HEAD
+[Unreleased]: https://github.com/dasomel/narwhal/compare/portal/v1.1.5...HEAD
+[1.1.5]: https://github.com/dasomel/narwhal/compare/portal/v1.1.4...portal/v1.1.5
 [1.1.4]: https://github.com/dasomel/narwhal/compare/portal/v1.1.3...portal/v1.1.4
 [1.1.3]: https://github.com/dasomel/narwhal/compare/portal/v1.1.2...portal/v1.1.3
 [1.1.2]: https://github.com/dasomel/narwhal/compare/portal/v1.1.1...portal/v1.1.2

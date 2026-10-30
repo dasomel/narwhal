@@ -25520,7 +25520,7 @@ OTHER DEALINGS IN THE SOFTWARE.
 
 </details>
 
-### body-parser@2.3.0
+### body-parser@2.4.0
 
 - License: `MIT`
 - Homepage: <https://github.com/expressjs/body-parser#readme>
@@ -36822,7 +36822,7 @@ THE SOFTWARE.
 
 </details>
 
-### qs@6.16.0
+### qs@6.16.1
 
 - License: `BSD-3-Clause`
 - Homepage: <https://github.com/ljharb/qs>

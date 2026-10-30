@@ -9,6 +9,11 @@ English | [한국어](CHANGELOG-ko.md)
 
 ## [Unreleased]
 
+## [1.1.5] - 2026-10-31
+
+Patch release: fix the deferred `body-parser` advisory (narwhal#470) and ship the Portal
+reader fixes merged in narwhal#503. Everything since `portal/v1.1.4` is covered here.
+
 ### Fixed
 
 - **Runtime Events: the priority filter matched nothing (narwhal#503)**: falcosidekick writes the Loki
@@ -21,6 +26,17 @@ English | [한국어](CHANGELOG-ko.md)
   provider, so the tab is always shown and the node-OS probe and the
   `security.runtimeEvents.unavailable2604` text are removed. The KISA control notes no longer say
   Falco is disabled; they make no claim about a live cluster.
+
+### Security
+
+- `body-parser` 2.3.0 to 2.4.0 fixes GHSA-27r3-jxmh-p828 (narwhal#470, narwhal#505).
+  Express 5.3.0 already permits it through `^2.3.0`; no override was added. Its required
+  dependency `qs` moves from 6.16.0 to 6.16.1 to satisfy `^6.16.1`. Both versions passed the
+  7-day lockfile cooling gate.
+- `systeminformation` 5.33.15 to 5.33.16 fixes GHSA-3f7j-7jwc-fxfj (high, via
+  `@opentelemetry/instrumentation-host-metrics`, whose `^5.31.6` range allows it). 5.33.16 was
+  published 2026-10-19 and has passed the cooling gate; the newer 5.33.17-5.33.19 have not and
+  are not taken. No other package versions changed.
 
 ## [1.1.4] - 2026-10-28
 
@@ -537,7 +553,8 @@ management dashboard built with Next.js 16 and React 19.
   - Skaffold development profile configured for live Hot Module Replacement (HMR) and container
     file syncing.
 
-[Unreleased]: https://github.com/dasomel/narwhal/compare/portal/v1.1.4...HEAD
+[Unreleased]: https://github.com/dasomel/narwhal/compare/portal/v1.1.5...HEAD
+[1.1.5]: https://github.com/dasomel/narwhal/compare/portal/v1.1.4...portal/v1.1.5
 [1.1.4]: https://github.com/dasomel/narwhal/compare/portal/v1.1.3...portal/v1.1.4
 [1.1.3]: https://github.com/dasomel/narwhal/compare/portal/v1.1.2...portal/v1.1.3
 [1.1.2]: https://github.com/dasomel/narwhal/compare/portal/v1.1.1...portal/v1.1.2

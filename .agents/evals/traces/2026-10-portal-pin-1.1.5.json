@@ -56,7 +56,7 @@
     {
       "id": "e5",
       "type": "completion_claim",
-      "summary": "The repository pins the IDP Portal to 1.1.4 consistently, with a digest that matches the registry."
+      "summary": "The repository pins the IDP Portal to 1.1.5 consistently, with a digest that matches the registry."
     },
     {
       "id": "e6",

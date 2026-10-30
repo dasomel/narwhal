@@ -30,7 +30,11 @@ narwhal#503에서 병합한 Portal 리더 수정을 배포함. `portal/v1.1.4` �
 - `body-parser`를 2.3.0에서 2.4.0으로 올려 GHSA-27r3-jxmh-p828을 해결함(narwhal#470,
   narwhal#505). Express 5.3.0의 기존 `^2.3.0` 범위가 허용하므로 override는 추가하지 않음.
   필수 의존성 `qs`도 `^6.16.1` 요구를 만족하도록 6.16.0에서 6.16.1로 올림. 두 버전 모두
-  7일 lockfile cooling gate를 통과했으며, 다른 패키지 버전은 바뀌지 않음.
+  7일 lockfile cooling gate를 통과함.
+- `systeminformation`을 5.33.15에서 5.33.16으로 올려 GHSA-3f7j-7jwc-fxfj(high,
+  `@opentelemetry/instrumentation-host-metrics` 경유, 부모 범위 `^5.31.6`이 허용)를 해결함.
+  5.33.16은 2026-10-19 게시로 cooling gate를 통과했고, 그 뒤의 5.33.17~5.33.19는 아직 통과하지
+  못해 받지 않음. 다른 패키지 버전은 바뀌지 않음.
 
 ## [1.1.4] - 2026-10-28
 

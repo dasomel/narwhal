@@ -32,7 +32,11 @@ reader fixes merged in narwhal#503. Everything since `portal/v1.1.4` is covered 
 - `body-parser` 2.3.0 to 2.4.0 fixes GHSA-27r3-jxmh-p828 (narwhal#470, narwhal#505).
   Express 5.3.0 already permits it through `^2.3.0`; no override was added. Its required
   dependency `qs` moves from 6.16.0 to 6.16.1 to satisfy `^6.16.1`. Both versions passed the
-  7-day lockfile cooling gate; no other package versions changed.
+  7-day lockfile cooling gate.
+- `systeminformation` 5.33.15 to 5.33.16 fixes GHSA-3f7j-7jwc-fxfj (high, via
+  `@opentelemetry/instrumentation-host-metrics`, whose `^5.31.6` range allows it). 5.33.16 was
+  published 2026-10-19 and has passed the cooling gate; the newer 5.33.17-5.33.19 have not and
+  are not taken. No other package versions changed.
 
 ## [1.1.4] - 2026-10-28
 

@@ -11,6 +11,7 @@ set -uo pipefail
 # Usage:
 #   vagrant ssh master-1 -c "bash /home/vagrant/scripts/test/verify-cluster.sh"
 #   vagrant ssh master-1 -c "bash /home/vagrant/scripts/test/verify-cluster.sh --quick"
+#   PROVIDER=kakao DOMAIN=kakao.narwhal.internal bash scripts/test/verify-cluster.sh
 #   vagrant ssh master-1 -c "bash /home/vagrant/scripts/test/verify-cluster.sh --section nodes"
 
 QUICK_MODE=false
@@ -30,6 +31,9 @@ done
 #   phase2-apps: Platform apps (DB, monitoring, Keycloak, OIDC, GitOps)
 #   full: All checks (default)
 
+# PROVIDER follows show-credentials.sh; cloud callers must set PROVIDER=kakao.
+PROVIDER="${PROVIDER:-vagrant}"
+[ "${PROVIDER}" = "local" ] && PROVIDER="vagrant"
 DOMAIN="${DOMAIN:-local.narwhal.internal}"
 
 # Use local kubeconfig if available (bypasses VIP for reliability)
@@ -40,6 +44,7 @@ fi
 PASS_COUNT=0
 FAIL_COUNT=0
 WARN_COUNT=0
+SKIP_COUNT=0
 RESULTS=""
 
 pass() {
@@ -58,6 +63,12 @@ warn() {
   WARN_COUNT=$((WARN_COUNT + 1))
   RESULTS="${RESULTS}\n  WARN  $1"
   echo "  WARN  $1"
+}
+
+skip() {
+  SKIP_COUNT=$((SKIP_COUNT + 1))
+  RESULTS="${RESULTS}\n  SKIP  $1"
+  echo "  SKIP  $1"
 }
 
 # Stage → section mapping
@@ -176,27 +187,33 @@ fi
 #=========================================
 if should_run "kube-vip"; then
   echo "--- [2/17] kube-vip & VIP ---"
-  KVIP_PODS=$(kubectl get pods -n kube-system -l k8s-app=kube-vip --no-headers 2>/dev/null | grep -c "Running" || true)
-  if [ "${KVIP_PODS}" -ge 3 ]; then
-    pass "kube-vip pods: ${KVIP_PODS} Running"
-  elif [ "${KVIP_PODS}" -ge 1 ]; then
-    warn "kube-vip pods: ${KVIP_PODS} Running (expected 3 for HA)"
+  if [ "${PROVIDER}" = "vagrant" ]; then
+    KVIP_PODS=$(kubectl get pods -n kube-system -l k8s-app=kube-vip --no-headers 2>/dev/null | grep -c "Running" || true)
+    if [ "${KVIP_PODS}" -ge 3 ]; then
+      pass "kube-vip pods: ${KVIP_PODS} Running"
+    elif [ "${KVIP_PODS}" -ge 1 ]; then
+      warn "kube-vip pods: ${KVIP_PODS} Running (expected 3 for HA)"
+    else
+      fail "kube-vip pods: ${KVIP_PODS} Running"
+    fi
+
+    if ping -c 1 -W 2 192.168.56.100 &>/dev/null; then
+      pass "VIP 192.168.56.100: reachable"
+    else
+      fail "VIP 192.168.56.100: unreachable"
+    fi
+
+    # VIP responds to K8s API
+    if kubectl --kubeconfig=/etc/kubernetes/admin.conf get nodes &>/dev/null 2>&1; then
+      pass "VIP API server: responding"
+    else
+      warn "VIP API server: not responding (using config-local)"
+    fi
   else
-    fail "kube-vip pods: ${KVIP_PODS} Running"
+    skip "kube-vip pods: Vagrant-only (PROVIDER=${PROVIDER})"
+    skip "VIP 192.168.56.100: Vagrant-only (PROVIDER=${PROVIDER})"
   fi
 
-  if ping -c 1 -W 2 192.168.56.100 &>/dev/null; then
-    pass "VIP 192.168.56.100: reachable"
-  else
-    fail "VIP 192.168.56.100: unreachable"
-  fi
-
-  # VIP responds to K8s API
-  if kubectl --kubeconfig=/etc/kubernetes/admin.conf get nodes &>/dev/null 2>&1; then
-    pass "VIP API server: responding"
-  else
-    warn "VIP API server: not responding (using config-local)"
-  fi
   echo ""
 fi
 
@@ -432,29 +449,36 @@ fi
 #=========================================
 if should_run "network"; then
   echo "--- [7/17] MetalLB & APISIX ---"
-  check_ready "deployment" "platform-system" "metallb-controller" "MetalLB controller"
+  if [ "${PROVIDER}" = "vagrant" ]; then
+    check_ready "deployment" "platform-system" "metallb-controller" "MetalLB controller"
 
-  METALLB_SPEAKERS=$(kubectl get pods -n platform-system -l app.kubernetes.io/component=speaker --no-headers 2>/dev/null | grep -c "Running" || true)
-  if [ "${METALLB_SPEAKERS}" -ge 1 ]; then
-    pass "MetalLB speakers: ${METALLB_SPEAKERS} Running"
-  else
-    fail "MetalLB speakers: not running"
-  fi
+    METALLB_SPEAKERS=$(kubectl get pods -n platform-system -l app.kubernetes.io/component=speaker --no-headers 2>/dev/null | grep -c "Running" || true)
+    if [ "${METALLB_SPEAKERS}" -ge 1 ]; then
+      pass "MetalLB speakers: ${METALLB_SPEAKERS} Running"
+    else
+      fail "MetalLB speakers: not running"
+    fi
 
-  # MetalLB IPAddressPool
-  POOL_EXISTS=$(kubectl get ipaddresspool default-pool -n platform-system -o jsonpath='{.metadata.name}' 2>/dev/null || echo "")
-  if [ "${POOL_EXISTS}" = "default-pool" ]; then
-    pass "MetalLB IPAddressPool: default-pool exists"
-  else
-    fail "MetalLB IPAddressPool: default-pool not found"
-  fi
+    # MetalLB IPAddressPool
+    POOL_EXISTS=$(kubectl get ipaddresspool default-pool -n platform-system -o jsonpath='{.metadata.name}' 2>/dev/null || echo "")
+    if [ "${POOL_EXISTS}" = "default-pool" ]; then
+      pass "MetalLB IPAddressPool: default-pool exists"
+    else
+      fail "MetalLB IPAddressPool: default-pool not found"
+    fi
 
-  # MetalLB L2Advertisement
-  L2_EXISTS=$(kubectl get l2advertisement default -n platform-system -o jsonpath='{.metadata.name}' 2>/dev/null || echo "")
-  if [ "${L2_EXISTS}" = "default" ]; then
-    pass "MetalLB L2Advertisement: exists"
+    # MetalLB L2Advertisement
+    L2_EXISTS=$(kubectl get l2advertisement default -n platform-system -o jsonpath='{.metadata.name}' 2>/dev/null || echo "")
+    if [ "${L2_EXISTS}" = "default" ]; then
+      pass "MetalLB L2Advertisement: exists"
+    else
+      fail "MetalLB L2Advertisement: not found"
+    fi
   else
-    fail "MetalLB L2Advertisement: not found"
+    skip "MetalLB controller: Vagrant-only (PROVIDER=${PROVIDER})"
+    skip "MetalLB speakers: Vagrant-only (PROVIDER=${PROVIDER})"
+    skip "MetalLB IPAddressPool: Vagrant-only (PROVIDER=${PROVIDER})"
+    skip "MetalLB L2Advertisement: Vagrant-only (PROVIDER=${PROVIDER})"
   fi
 
   # APISIX gateway deployment (label-based, name is helm-rendered)
@@ -479,16 +503,20 @@ if should_run "network"; then
     fail "APISIX Ingress Controller: ${APISIX_IC_R:-0}/${APISIX_IC_D:-0} Ready"
   fi
 
-  # APISIX gateway LoadBalancer IP (resilient: query by type, no hardcoded svc name)
-  APISIX_LB_IP=$(kubectl get svc -n platform-system \
-    -o jsonpath='{range .items[?(@.spec.type=="LoadBalancer")]}{.status.loadBalancer.ingress[0].ip}{"\n"}{end}' \
-    2>/dev/null | grep -v '^$' | head -1 || echo "")
-  if [ "${APISIX_LB_IP}" = "192.168.56.200" ]; then
-    pass "APISIX LoadBalancer IP: ${APISIX_LB_IP}"
-  elif [ -n "${APISIX_LB_IP}" ]; then
-    warn "APISIX LoadBalancer IP: ${APISIX_LB_IP} (expected 192.168.56.200)"
+  if [ "${PROVIDER}" = "vagrant" ]; then
+    # APISIX gateway LoadBalancer IP (resilient: query by type, no hardcoded svc name)
+    APISIX_LB_IP=$(kubectl get svc -n platform-system \
+      -o jsonpath='{range .items[?(@.spec.type=="LoadBalancer")]}{.status.loadBalancer.ingress[0].ip}{"\n"}{end}' \
+      2>/dev/null | grep -v '^$' | head -1 || echo "")
+    if [ "${APISIX_LB_IP}" = "192.168.56.200" ]; then
+      pass "APISIX LoadBalancer IP: ${APISIX_LB_IP}"
+    elif [ -n "${APISIX_LB_IP}" ]; then
+      warn "APISIX LoadBalancer IP: ${APISIX_LB_IP} (expected 192.168.56.200)"
+    else
+      fail "APISIX LoadBalancer IP: not assigned"
+    fi
   else
-    fail "APISIX LoadBalancer IP: not assigned"
+    skip "APISIX LoadBalancer IP: Vagrant-only (PROVIDER=${PROVIDER})"
   fi
 
   # ApisixRoute CRD presence and route count
@@ -528,7 +556,7 @@ if should_run "tls"; then
 
   # Certificate covers wildcard domain
   CERT_DOMAINS=$(kubectl get certificate narwhal-wildcard-tls -n platform-system -o jsonpath='{.spec.dnsNames[*]}' 2>/dev/null || echo "")
-  if echo "${CERT_DOMAINS}" | grep -qF '*.${DOMAIN}'; then
+  if echo "${CERT_DOMAINS}" | grep -F -- "*.${DOMAIN}" >/dev/null; then
     pass "TLS cert wildcard: *.${DOMAIN} included"
   else
     fail "TLS cert wildcard: *.${DOMAIN} not found in [${CERT_DOMAINS}]"
@@ -560,64 +588,71 @@ fi
 #=========================================
 if should_run "dns"; then
   echo "--- [9/17] DNS ---"
-  # dnsmasq service (requires local execution on master node)
-  if ${IS_CLUSTER_NODE}; then
-    if systemctl is-active --quiet dnsmasq 2>/dev/null; then
-      pass "dnsmasq: active"
+  if [ "${PROVIDER}" = "vagrant" ]; then
+    # dnsmasq service (requires local execution on master node)
+    if ${IS_CLUSTER_NODE}; then
+      if systemctl is-active --quiet dnsmasq 2>/dev/null; then
+        pass "dnsmasq: active"
+      else
+        fail "dnsmasq: not active"
+      fi
+
+      # Host DNS resolution (local dnsmasq)
+      HOST_DNS=$(nslookup keycloak.${DOMAIN} 127.0.0.1 2>/dev/null | grep -c "192.168.56.200" || true)
+      HOST_DNS=${HOST_DNS:-0}
+      if [ "${HOST_DNS}" -gt 0 ]; then
+        pass "Host DNS: keycloak.${DOMAIN} -> 192.168.56.200"
+      else
+        fail "Host DNS: keycloak.${DOMAIN} resolution failed"
+      fi
     else
-      fail "dnsmasq: not active"
+      # Remote: check dnsmasq via master node DNS resolution
+      MASTER_IP=$(kubectl get nodes -l node-role.kubernetes.io/control-plane -o jsonpath='{.items[0].status.addresses[?(@.type=="InternalIP")].address}' 2>/dev/null || echo "")
+      if [ -n "${MASTER_IP}" ]; then
+        REMOTE_DNS=$(nslookup keycloak.${DOMAIN} "${MASTER_IP}" 2>/dev/null | grep -c "192.168.56.200" || true)
+        REMOTE_DNS=${REMOTE_DNS:-0}
+        if [ "${REMOTE_DNS}" -gt 0 ]; then
+          pass "dnsmasq: resolving via master ${MASTER_IP}"
+        else
+          fail "dnsmasq: keycloak.${DOMAIN} not resolving via ${MASTER_IP}"
+        fi
+      else
+        warn "dnsmasq: cannot verify (run on master-1 for systemd checks)"
+      fi
     fi
 
-    # Host DNS resolution (local dnsmasq)
-    HOST_DNS=$(nslookup keycloak.${DOMAIN} 127.0.0.1 2>/dev/null | grep -c "192.168.56.200" || true)
-    HOST_DNS=${HOST_DNS:-0}
-    if [ "${HOST_DNS}" -gt 0 ]; then
-      pass "Host DNS: keycloak.${DOMAIN} -> 192.168.56.200"
-    else
-      fail "Host DNS: keycloak.${DOMAIN} resolution failed"
+    # Pod DNS (only if not quick mode)
+    if ! ${QUICK_MODE}; then
+      POD_DNS=$(kubectl run verify-dns-$$ --rm -i --restart=Never --image=busybox:1.36 -- nslookup keycloak.${DOMAIN} 2>/dev/null | grep -c "192.168.56.200" | tr -d '\n' || true)
+      POD_DNS=${POD_DNS:-0}
+      if [ "${POD_DNS}" -gt 0 ]; then
+        pass "Pod DNS: keycloak.${DOMAIN} -> 192.168.56.200"
+      else
+        fail "Pod DNS: keycloak.${DOMAIN} resolution failed (CoreDNS forward rule?)"
+      fi
+
+      # Worker node DNS: schedule a Pod on a worker to verify *.${DOMAIN} resolves
+      WORKER_NODE=$(kubectl get nodes -l '!node-role.kubernetes.io/control-plane' -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
+      if [ -n "${WORKER_NODE}" ]; then
+        WORKER_DNS=$(kubectl run verify-worker-dns-$$ --rm -i --restart=Never \
+          --overrides='{"spec":{"nodeName":"'"${WORKER_NODE}"'"}}' \
+          --image=busybox:1.36 -- nslookup keycloak.${DOMAIN} 2>/dev/null | grep -c "192.168.56.200" | tr -d '\n' || true)
+        WORKER_DNS=${WORKER_DNS:-0}
+        if [ "${WORKER_DNS}" -gt 0 ]; then
+          pass "Worker DNS (${WORKER_NODE}): keycloak.${DOMAIN} -> 192.168.56.200"
+        else
+          fail "Worker DNS (${WORKER_NODE}): keycloak.${DOMAIN} resolution failed"
+        fi
+      else
+        warn "Worker DNS: no worker node found, skipping"
+      fi
     fi
   else
-    # Remote: check dnsmasq via master node DNS resolution
-    MASTER_IP=$(kubectl get nodes -l node-role.kubernetes.io/control-plane -o jsonpath='{.items[0].status.addresses[?(@.type=="InternalIP")].address}' 2>/dev/null || echo "")
-    if [ -n "${MASTER_IP}" ]; then
-      REMOTE_DNS=$(nslookup keycloak.${DOMAIN} "${MASTER_IP}" 2>/dev/null | grep -c "192.168.56.200" || true)
-      REMOTE_DNS=${REMOTE_DNS:-0}
-      if [ "${REMOTE_DNS}" -gt 0 ]; then
-        pass "dnsmasq: resolving via master ${MASTER_IP}"
-      else
-        fail "dnsmasq: keycloak.${DOMAIN} not resolving via ${MASTER_IP}"
-      fi
-    else
-      warn "dnsmasq: cannot verify (run on master-1 for systemd checks)"
-    fi
+    skip "dnsmasq / host DNS on master: Vagrant-only (PROVIDER=${PROVIDER})"
+    skip "Pod DNS -> 192.168.56.200: Vagrant-only (PROVIDER=${PROVIDER})"
+    skip "Worker DNS -> 192.168.56.200: Vagrant-only (PROVIDER=${PROVIDER})"
   fi
 
-  # Pod DNS (only if not quick mode)
-  if ! ${QUICK_MODE}; then
-    POD_DNS=$(kubectl run verify-dns-$$ --rm -i --restart=Never --image=busybox:1.36 -- nslookup keycloak.${DOMAIN} 2>/dev/null | grep -c "192.168.56.200" | tr -d '\n' || true)
-    POD_DNS=${POD_DNS:-0}
-    if [ "${POD_DNS}" -gt 0 ]; then
-      pass "Pod DNS: keycloak.${DOMAIN} -> 192.168.56.200"
-    else
-      fail "Pod DNS: keycloak.${DOMAIN} resolution failed (CoreDNS forward rule?)"
-    fi
-
-    # Worker node DNS: schedule a Pod on a worker to verify *.${DOMAIN} resolves
-    WORKER_NODE=$(kubectl get nodes -l '!node-role.kubernetes.io/control-plane' -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
-    if [ -n "${WORKER_NODE}" ]; then
-      WORKER_DNS=$(kubectl run verify-worker-dns-$$ --rm -i --restart=Never \
-        --overrides='{"spec":{"nodeName":"'"${WORKER_NODE}"'"}}' \
-        --image=busybox:1.36 -- nslookup keycloak.${DOMAIN} 2>/dev/null | grep -c "192.168.56.200" | tr -d '\n' || true)
-      WORKER_DNS=${WORKER_DNS:-0}
-      if [ "${WORKER_DNS}" -gt 0 ]; then
-        pass "Worker DNS (${WORKER_NODE}): keycloak.${DOMAIN} -> 192.168.56.200"
-      else
-        fail "Worker DNS (${WORKER_NODE}): keycloak.${DOMAIN} resolution failed"
-      fi
-    else
-      warn "Worker DNS: no worker node found, skipping"
-    fi
-  fi
   echo ""
 fi
 
@@ -935,13 +970,20 @@ if should_run "gitops"; then
     fail "Gitea HTTP API: HTTP ${GITEA_CODE}"
   fi
 
-  # Gitea narwhal-gitops repo
-  REPO_CODE=$(curl -sk -o /dev/null -w '%{http_code}' "https://gitea.${DOMAIN}/api/v1/repos/gitea-admin/narwhal-gitops" --connect-timeout 5 2>/dev/null || echo "000")
-  if [ "${REPO_CODE}" = "200" ]; then
-    pass "Gitea narwhal-gitops repo: exists"
+  # D-505-GITEA: private repositories hide existence from anonymous callers.
+  # Reuse push-to-gitea.sh's Secret; missing credentials fail before HTTP.
+  GITEA_PW=$(kubectl get secret gitea-admin -n devtools -o jsonpath='{.data.admin-password}' 2>/dev/null | base64 -d) || GITEA_PW=""
+  if [ -z "${GITEA_PW}" ]; then
+    fail "Gitea narwhal-gitops repo: admin credential unavailable"
   else
-    warn "Gitea narwhal-gitops repo: HTTP ${REPO_CODE} (created by 14-gitops-bootstrap.sh)"
+    REPO_CODE=$(curl -sk -u "gitea-admin:${GITEA_PW}" -o /dev/null -w '%{http_code}' "https://gitea.${DOMAIN}/api/v1/repos/gitea-admin/narwhal-gitops" --connect-timeout 5 2>/dev/null || echo "000")
+    if [ "${REPO_CODE}" = "200" ]; then
+      pass "Gitea narwhal-gitops repo: exists"
+    else
+      warn "Gitea narwhal-gitops repo: HTTP ${REPO_CODE} (created by 14-gitops-bootstrap.sh)"
+    fi
   fi
+  unset GITEA_PW
 
   # ArgoCD (namespace: devtools)
   check_ready "deployment" "devtools" "argocd-server" "ArgoCD server"
@@ -1054,15 +1096,18 @@ if should_run "istio"; then
     fail "PeerAuthentication: ${PA_MODE:-not found} (expected STRICT)"
   fi
 
-  # Ambient NS count
-  AMBIENT_NS=$(kubectl get ns -l istio.io/dataplane-mode=ambient --no-headers 2>/dev/null | wc -l | tr -d ' ')
-  if [ "${AMBIENT_NS}" -ge 10 ]; then
-    pass "Ambient namespaces: ${AMBIENT_NS}"
-  elif [ "${AMBIENT_NS}" -ge 1 ]; then
-    warn "Ambient namespaces: ${AMBIENT_NS} (expected >= 10)"
-  else
-    fail "Ambient namespaces: ${AMBIENT_NS} (expected >= 10)"
-  fi
+  # D-505-AMBIENT: mirror 09-istio-ambient.sh's enrollment, pinned by R293.
+  # Checking names catches a missing namespace even when unrelated ones join.
+  # Cost: duplicated list; move to a shared library if more consumers appear.
+  AMBIENT_NAMESPACES=(platform-system devtools monitoring storage database dev)
+  for ns in "${AMBIENT_NAMESPACES[@]}"; do
+    AMBIENT_MODE=$(kubectl get ns "${ns}" -o jsonpath='{.metadata.labels.istio\.io/dataplane-mode}' 2>/dev/null || echo "")
+    if [ "${AMBIENT_MODE}" = "ambient" ]; then
+      pass "Ambient namespace ${ns}: enrolled"
+    else
+      fail "Ambient namespace ${ns}: ${AMBIENT_MODE:-missing} (expected ambient)"
+    fi
+  done
 
   echo ""
 fi
@@ -1157,7 +1202,7 @@ echo ""
 #=========================================
 # SUMMARY
 #=========================================
-TOTAL=$((PASS_COUNT + FAIL_COUNT + WARN_COUNT))
+TOTAL=$((PASS_COUNT + FAIL_COUNT + WARN_COUNT + SKIP_COUNT))
 echo "============================================"
 echo "VERIFICATION SUMMARY"
 echo "============================================"
@@ -1165,6 +1210,7 @@ echo "  Total checks: ${TOTAL}"
 echo "  PASS: ${PASS_COUNT}"
 echo "  FAIL: ${FAIL_COUNT}"
 echo "  WARN: ${WARN_COUNT}"
+echo "  SKIP: ${SKIP_COUNT}"
 echo ""
 
 TOTAL_PODS=$(kubectl get pods -A --no-headers 2>/dev/null | wc -l | tr -d ' ')

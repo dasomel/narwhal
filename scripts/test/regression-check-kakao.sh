@@ -3176,6 +3176,9 @@ assert sum(1 for l in code if re.search(r"\bexit 3\b", l)) == 1, "exit 3 must ap
   fi
   # 2026-10-29 (D-KAKAO-TEARDOWN): full Kakao teardown releases the six prevent_destroy guards,
   # runs tofu destroy and must restore them on every exit path.
+  check R293 "live suite false-failure guards (#505): TLS, ambient, credentials, retired client, probe and provider" \
+    python3 scripts/test/lib/check-live-suite-false-failures.py
+
   check R292 "destroy-all.sh behavioural harness, 12 cases (temp terraform dir + stub tofu): all guards false while destroy runs and restored byte-identical after success, cancel (no VPC advice), VPC left PENDING_DELETE or ACTIVE (each with its own advice) or deleted late, SIGTERM, SIGQUIT and an unreadable state after destroy; extra args reach tofu destroy; kakao_known_hosts cleared only once the state is readable and no VM is left; a leftover .bak, missing tfstate, empty or data-only state stops it before destroy" \
     bash scripts/test/lib/check-kakao-destroy-all.sh
 
@@ -3443,9 +3446,11 @@ print(" ".join(out))
   fi
 
   # In-cluster resolution is what the gateway-OIDC plugin actually depends on.
+  # D-505-PROBE: match the controller mesh opt-out so the waypoint does not
+  # replace its identity at the admin policy. No policy widening is needed.
   local probe="regression-probe-$$"
-  if kubectl -n platform-system run "${probe}" --image=curlimages/curl:8.11.0 --restart=Never \
-      --labels=app.kubernetes.io/name=apisix-ingress-controller \
+  if kubectl -n platform-system run "${probe}" --image=mirror.gcr.io/curlimages/curl:8.21.0 --restart=Never \
+      --labels=app.kubernetes.io/name=apisix-ingress-controller,istio.io/dataplane-mode=none \
       --command -- sleep 120 >/dev/null 2>&1 \
     && kubectl -n platform-system wait --for=condition=Ready "pod/${probe}" --timeout=90s >/dev/null 2>&1; then
 

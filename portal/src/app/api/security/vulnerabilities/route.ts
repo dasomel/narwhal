@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server"
 import { requireRole } from "@/lib/auth"
-import { getWorkloadVulnerabilities, getImageVulnReport } from "@/lib/trivy"
+import { getWorkloadVulnerabilitiesWithMeta, getImageVulnReport } from "@/lib/trivy"
 import type { Severity } from "@/types/security"
 
 export const dynamic = "force-dynamic"
@@ -30,7 +30,9 @@ export async function GET(req: Request) {
     }
 
     // Workload list with optional filters
-    let rows = await getWorkloadVulnerabilities()
+    // #505: the body stays a bare array (existing contract); partial state goes in headers.
+    const list = await getWorkloadVulnerabilitiesWithMeta()
+    let rows = list.rows
 
     if (namespaceParam) {
       rows = rows.filter((r) => r.namespace === namespaceParam)
@@ -44,7 +46,12 @@ export async function GET(req: Request) {
       rows = rows.filter((r) => r.summary[sev] > 0)
     }
 
-    return NextResponse.json(rows)
+    return NextResponse.json(
+      rows,
+      list.partial
+        ? { headers: { "X-Partial-Data": "true", "X-Partial-Reason": list.partialReason ?? "unknown" } }
+        : undefined,
+    )
   } catch (err) {
     console.error("GET /api/security/vulnerabilities error:", err)
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })

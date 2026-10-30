@@ -47,6 +47,9 @@ export interface SecuritySummary {
   scannedWorkloads: number
   lastUpdated: string
   vulnDb?: VulnDbFreshness
+  /** true when the VulnerabilityReport walk ended early; totals are an undercount. */
+  partial?: boolean
+  partialReason?: "max-pages" | "expired" | "error"
 }
 
 export type FalcoEventPriority =

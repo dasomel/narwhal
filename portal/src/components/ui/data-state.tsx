@@ -14,7 +14,7 @@ interface DataStateProps {
   now?: number
   freshnessSeconds?: number
   reason?: string
-  detailKey?: "costUnavailable" | "costPartial"
+  detailKey?: "costUnavailable" | "costPartial" | "securityPartial"
   className?: string
   variant?: "banner" | "inline"
 }
@@ -46,6 +46,7 @@ export function DataState({ state, onRetry, observedAt, now, freshnessSeconds, r
         {reason && <span>{reason}</span>}
         {detailKey === "costUnavailable" && <span>{t("cost.telemetryUnavailable")}</span>}
         {detailKey === "costPartial" && <span>{t("cost.telemetryPartial")}</span>}
+        {detailKey === "securityPartial" && <span>{t("security.partialNotice")}</span>}
       </div>
       {minutes !== undefined && <span className="text-xs text-muted-foreground">{t("dataState.updatedMinutes", { count: String(minutes) })}</span>}
       {onRetry && <Button type="button" size="sm" variant={inline ? "ghost" : "outline"} className={inline ? "h-auto border-0 bg-transparent px-1 py-0 text-xs shadow-none hover:bg-transparent" : undefined} onClick={onRetry}><RefreshCw aria-hidden="true" />{t("common.retry")}</Button>}

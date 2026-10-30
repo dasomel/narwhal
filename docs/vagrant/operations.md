@@ -424,8 +424,20 @@ vagrant ssh master-1
 # 업그레이드 계획 확인
 sudo kubeadm upgrade plan
 
+# 업그레이드 전: kubeadm-config가 OIDC 플래그 7개를 갖고 있는지 확인한다.
+# kubeadm upgrade는 이 ClusterConfiguration에서 kube-apiserver 정적 파드를 다시 만든다.
+# (11-4가 scripts/cluster/11-4c-kubeadm-config-oidc.sh로 기록한다. v1beta4 apiServer.extraArgs는 {name, value} 목록이고,
+#  --oidc-ca-file이 가리키는 /etc/kubernetes/pki/oidc-ca.crt는 kubeadm 기본 pki 마운트 안에 있어 extraVolumes가 필요 없다.)
+kubectl -n kube-system get cm kubeadm-config -o jsonpath='{.data.ClusterConfiguration}' | yq '.apiServer.extraArgs[] | select(.name | test("^oidc-"))'
+# 7개가 없으면: sudo env KUBECONFIG=$HOME/.kube/config-local bash scripts/cluster/11-4c-kubeadm-config-oidc.sh https://keycloak.<DOMAIN>/realms/narwhal
+
 # 업그레이드 적용
 sudo kubeadm upgrade apply v1.36.0
+
+# 각 마스터에서 업그레이드 직후: 재생성된 매니페스트에 플래그가 남았는지 확인한다.
+# 7이 아니면 11-4b-apiserver-oidc-node.sh(또는 Kakao: ./scripts/cloud/provision-kakao.sh oidc)를 다시 실행한다.
+sudo grep -c -- '--oidc-' /etc/kubernetes/manifests/kube-apiserver.yaml
+bash scripts/test/verify-cluster.sh   # 'kubeadm-config OIDC'와 'API server OIDC' 항목이 모두 PASS여야 한다
 
 # kubelet 업그레이드
 sudo apt-mark unhold kubelet kubectl

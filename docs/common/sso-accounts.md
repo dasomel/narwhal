@@ -205,6 +205,7 @@ kubectl create secret generic keycloak-user-passwords -n iam \
 - 사용자·그룹·비밀번호 Secret·`kubernetes` 클라이언트: [`11-2-keycloak-config.sh`](../../scripts/cluster/11-2-keycloak-config.sh)
 - 앱별 OIDC 클라이언트와 Harbor 사용자명 매핑: [`11-3-keycloak-clients.sh`](../../scripts/cluster/11-3-keycloak-clients.sh)
 - kube-apiserver OIDC CA·7개 플래그 적용 및 다중 마스터 전파: [`11-4b-apiserver-oidc-node.sh`](../../scripts/cluster/11-4b-apiserver-oidc-node.sh), [`11-4-keycloak-apiserver.sh`](../../scripts/cluster/11-4-keycloak-apiserver.sh), [`apply-apiserver-oidc-kakao.sh`](../../scripts/cloud/apply-apiserver-oidc-kakao.sh)
+- `kubeadm upgrade`/신규 컨트롤 플레인 조인 시 매니페스트 재생성에서도 OIDC가 유지되도록 `kube-system/kubeadm-config`의 `ClusterConfiguration.apiServer.extraArgs`에 같은 7개 플래그를 기록(백업 후 `data.ClusterConfiguration`만 패치, 실패 시 아무것도 쓰지 않음): [`11-4c-kubeadm-config-oidc.sh`](../../scripts/cluster/11-4c-kubeadm-config-oidc.sh) (`11-4`와 Kakao `apply-apiserver-oidc-kakao.sh`가 1회 호출, `verify-cluster.sh`가 게이트)
 - Gitea Helm 설정(reverse-proxy 인증 비활성화, `USERNAME=preferred_username`) 및 OAuth2 소스 제자리 갱신(`gitea_upsert_keycloak_source`): [`12-gitea.sh`](../../scripts/cluster/12-gitea.sh), [`lib.sh`](../../scripts/common/lib.sh)
 - 비밀번호 일괄 조회: [`show-credentials.sh`](../../scripts/test/show-credentials.sh)
 - 그룹 → RBAC 계약: [oidc-rbac-contract.md](oidc-rbac-contract.md), 앱별 권한: [app-sso-permission-matrix.md](app-sso-permission-matrix.md)

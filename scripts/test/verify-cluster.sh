@@ -718,6 +718,29 @@ if should_run "keycloak"; then
     fi
   fi
 
+  # Upgrade safety (D-KUBEADM-CONFIG-OIDC, #505): kubeadm regenerates the static pod from the
+  # kubeadm-config ClusterConfiguration, so it must carry the same 7 flags as the running pods.
+  # The ConfigMap is compared with the expected flag set (the running pods were checked above).
+  KC_CC=$(kubectl -n kube-system get cm kubeadm-config -o jsonpath='{.data.ClusterConfiguration}' 2>/dev/null || true)
+  if [ -z "${KC_CC}" ] || ! command -v yq >/dev/null 2>&1; then
+    skip "kubeadm-config OIDC: kubeadm-config unreadable or yq missing"
+  else
+    KC_OIDC=$(printf '%s' "${KC_CC}" | yq '(.apiServer.extraArgs // []) | .[] | select(.name | test("^oidc-")) | .name + "=" + (.value | tostring)' 2>/dev/null | LC_ALL=C sort || true)
+    KC_WANT=$(printf '%s\n' \
+      "oidc-ca-file=/etc/kubernetes/pki/oidc-ca.crt" \
+      "oidc-client-id=kubernetes" \
+      "oidc-groups-claim=groups" \
+      "oidc-groups-prefix=oidc:" \
+      "oidc-issuer-url=https://keycloak.${DOMAIN}/realms/narwhal" \
+      "oidc-username-claim=preferred_username" \
+      "oidc-username-prefix=oidc:" | LC_ALL=C sort)
+    if [ "${KC_OIDC}" = "${KC_WANT}" ]; then
+      pass "kubeadm-config OIDC: ClusterConfiguration carries the same 7 --oidc-* flags (survives kubeadm upgrade)"
+    else
+      fail "kubeadm-config OIDC: ClusterConfiguration apiServer.extraArgs lacks or differs on the 7 --oidc-* flags; kubeadm upgrade would drop OIDC. Fix: sudo bash scripts/cluster/11-4c-kubeadm-config-oidc.sh https://keycloak.${DOMAIN}/realms/narwhal"
+    fi
+  fi
+
   # Kubernetes realm existence (check via OIDC well-known)
   if [ "${OIDC_CODE}" = "200" ]; then
     pass "Keycloak realm 'narwhal': reachable (ns=iam)"

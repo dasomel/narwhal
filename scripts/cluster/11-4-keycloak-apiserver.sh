@@ -125,6 +125,10 @@ NODE_OIDC_SCRIPT="${SCRIPT_DIR}/11-4b-apiserver-oidc-node.sh"
 if [ ! -f "${NODE_OIDC_SCRIPT}" ]; then
   NODE_OIDC_SCRIPT="/home/vagrant/scripts/cluster/11-4b-apiserver-oidc-node.sh"
 fi
+KUBEADM_CONFIG_OIDC_SCRIPT="${SCRIPT_DIR}/11-4c-kubeadm-config-oidc.sh"
+if [ ! -f "${KUBEADM_CONFIG_OIDC_SCRIPT}" ]; then
+  KUBEADM_CONFIG_OIDC_SCRIPT="/home/vagrant/scripts/cluster/11-4c-kubeadm-config-oidc.sh"
+fi
 
 # Verify HTTPS OIDC endpoint is reachable before activating
 echo "Verifying OIDC issuer HTTPS endpoint..."
@@ -179,6 +183,20 @@ fi
 echo "Applying OIDC CA + flags to master-1..."
 if ! sudo bash "${NODE_OIDC_SCRIPT}" "${OIDC_ISSUER_URL}" /tmp/oidc-ca.crt; then
   echo "ERROR: Failed to apply OIDC configuration to master-1. Fix the cause above and re-run: sudo bash /home/vagrant/scripts/cluster/11-4-keycloak-apiserver.sh" >&2
+  exit 1
+fi
+
+# D-KUBEADM-CONFIG-OIDC (#505): the manifest edit above is lost when `kubeadm upgrade` regenerates
+# the static pod, and a control plane joined later renders its manifest from kubeadm-config.
+# Persist the same 7 flags in ClusterConfiguration, once per cluster (cluster-admin kubectl is
+# here; the other masters need nothing). The helper writes nothing on any doubt and exits
+# non-zero, which stops Phase 2 so the drift is not silently left in place.
+# Cost: a failure here (unparsable or unexpected kubeadm-config) stops Phase 2 after master-1
+# already runs with OIDC. Escape hatch: re-run this script after fixing the cause; the original
+# ClusterConfiguration is saved to /etc/kubernetes/kubeadm-config.ClusterConfiguration.pre-oidc-*.
+echo "Persisting the OIDC flags in kubeadm-config (survives kubeadm upgrade)..."
+if ! sudo env KUBECONFIG="${KUBECONFIG}" bash "${KUBEADM_CONFIG_OIDC_SCRIPT}" "${OIDC_ISSUER_URL}"; then
+  echo "ERROR: Failed to persist OIDC flags in kube-system/kubeadm-config. Fix the cause above and re-run: sudo bash /home/vagrant/scripts/cluster/11-4-keycloak-apiserver.sh" >&2
   exit 1
 fi
 

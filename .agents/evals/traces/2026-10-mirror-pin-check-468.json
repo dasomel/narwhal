@@ -9,17 +9,6 @@
       ".agents/skills/narwhal-version-upgrade/SKILL.md",
       "docs/common/agent-operational-rules.md",
       "docs/common/lessons-log.md",
-      "portal/docs/lessons-log.md",
-      "portal/scripts/harness-rules.sh",
-      "portal/src/app/(dashboard)/security/page.tsx",
-      "portal/src/app/api/security/summary/route.ts",
-      "portal/src/app/api/security/vulnerabilities/route.ts",
-      "portal/src/components/ui/data-state.tsx",
-      "portal/src/lib/i18n.ts",
-      "portal/src/lib/k8s-client.ts",
-      "portal/src/lib/trivy.test.ts",
-      "portal/src/lib/trivy.ts",
-      "portal/src/types/security.ts",
       "scripts/airgap/README.md",
       "scripts/test/check-mirror-pins.py",
       "scripts/test/lib/check-mirror-pins.py",
@@ -48,12 +37,12 @@
     {
       "id": "e4",
       "type": "documentation",
-      "summary": "Skill step 5 and the runbook section give the skopeo command, the node-side HEAD check and the check script; agent-operational-rules.md gains the rule under Images and registries."
+      "summary": "Skill step 5 and the runbook section give the skopeo command (tagged destination, digest-pinned source), the node-side HEAD check and the check script; agent-operational-rules.md gains the rule under Images and registries."
     },
     {
       "id": "e5",
       "type": "review_correction",
-      "summary": "The implementation lane took R296; the coordinator renumbered it to R295, the next free number after R294 (#511)."
+      "summary": "The implementation lane took R296; the coordinator renumbered it to R295, the next free number after R294 (#511). Independent review (native Sonnet code-reviewer) returned FAIL: the documented skopeo destination docker://<mirror>/<path>@<digest> writes no tag (reproduced by the reviewer against a stub registry: the only manifest PUT was by digest), so the documented tag HEAD check, check-mirror-pins.py and tag-only pins would see 404; the destination is now <path>:<tag> (--preserve-digests keeps the digest). The trace changeContext had listed nine unrelated portal/ paths from a two-dot diff against a newer origin/main; it now lists only this PR's files. The README example also shows --digest-scope pinned for 05-load-images.sh-filled mirrors."
     },
     {
       "id": "e6",

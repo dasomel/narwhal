@@ -132,14 +132,17 @@ digest 로 복사해야 한다. 노드는 상위 레지스트리로 나갈 수 �
 `ImagePullBackOff` 가 된다(실행 중 파드는 노드 캐시 덕에 멀쩡해 보인다).
 
 ```bash
-# bastion 에서 (경로는 완전 수식 ref: docker.io/library/busybox, docker.io/<org>/<name>, ghcr.io/...)
+# bastion 에서 (경로는 완전 수식 ref: docker.io/library/busybox, docker.io/<org>/<name>, ghcr.io/...).
+# 목적지는 반드시 태그(:<tag>)로 쓴다. @<digest> 목적지는 태그를 만들지 않아 아래 태그 조회와 노드의 태그 pull이 404가 된다.
+# --preserve-digests 이므로 태그가 가리키는 manifest digest는 원본과 같다.
 skopeo copy --all --preserve-digests \
-  docker://<src>@<digest> docker://<mirror>/<path>@<digest>
+  docker://<src>@<digest> docker://<mirror>/<path>:<tag>
 # 노드에서: 200 + 같은 Docker-Content-Digest 여야 한다
 curl -sI -H 'Accept: application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.list.v2+json' \
   http://<mirror>/v2/<path>/manifests/<tag>
 # 전체 대조 (읽기 전용, HEAD 만): MISSING / DIGEST-MISMATCH 가 있으면 exit 1
 MIRROR=http://<bastion>:5000 python3 scripts/test/check-mirror-pins.py
+# 05-load-images.sh 로 채운 미러라면: ... check-mirror-pins.py --digest-scope pinned
 ```
 
 05-load-images.sh 로 채운 미러는 일반 이미지를 OCI 로 재직렬화해 digest 가 tsv 와 다르므로

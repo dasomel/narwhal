@@ -77,6 +77,11 @@ check("get secret harbor-secrets -n devtools -o jsonpath='{.data.HARBOR_ADMIN_PA
       and 'Harbor12345' not in sso and sso.count('$(harbor_api ') == 2, 'Harbor API credential wiring')
 clients = re.search(r'for client_name in (.*?); do', sso)[1].split()
 check('oauth2-proxy' not in clients and 'headlamp' in clients, 'retired Keycloak client removed')
+creds = (ROOT / 'scripts/test/show-credentials.sh').read_text()
+for name, text in [('test-sso.sh', sso), ('show-credentials.sh', creds)]:
+  live = [l for l in text.splitlines() if 'oauth2-proxy' in l.lower() and not l.lstrip().startswith('#')
+          and not re.search(r'\s#.*oauth2-proxy', l, re.I)]
+  check(not live, f'{name} has no live oauth2-proxy check')
 probe = block(regression, 'local probe="regression-probe-$$"', '--command -- sleep')
 check('--labels=app.kubernetes.io/name=apisix-ingress-controller,istio.io/dataplane-mode=none' in probe,
       'probe bypasses ambient with controller identity')

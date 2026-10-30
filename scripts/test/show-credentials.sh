@@ -195,7 +195,7 @@ row "gitea"    "gitea / ${GITEA_DB_PASS}"
 # -----------------------------------------------------------------------------
 section "OIDC client secrets (Keycloak → platform-system)"
 # -----------------------------------------------------------------------------
-for svc in hubble prometheus velero-ui nfs-quota-agent oauth2-proxy; do
+for svc in hubble prometheus velero-ui nfs-quota-agent; do
   cs=$(get_secret platform-system "${svc}-oidc-secret" client_secret)
   [[ "${cs}" == "(missing)" || -z "${cs}" ]] && continue
   row "${svc}" "${cs}"

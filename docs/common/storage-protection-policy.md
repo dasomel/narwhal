@@ -63,7 +63,7 @@
 
 ### Velero 진단 메시지 (#422, #431)
 
-- 스케줄 실행 시 `storage/velero-volume-policy` ConfigMap이 없거나 읽을 수 없으면 당일 백업은 `FailedValidation`으로 끝나며 다음 cron까지 재시도하지 않는다. `kubectl -n storage get backups.velero.io`의 phase와 `velero backup describe`로 확인한다. **Velero 실패 알림은 아직 없다(후속 과제).**
+- 스케줄 실행 시 `storage/velero-volume-policy` ConfigMap이 없거나 읽을 수 없으면 당일 백업은 `FailedValidation`으로 끝나며 다음 cron까지 재시도하지 않는다. `kubectl -n storage get backups.velero.io`의 phase와 `velero backup describe`로 확인한다. **#456의 VeleroBackupValidationFailed가 이 실패를 감지한다. 아래 Velero backup alerts 참조(라이브 검증 전).**
 - 정책이 있으면 Velero v1.18.1의 `internal/volumehelper/volume_policy_helper.go` `ShouldPerformFSBackup`은 모든 PVC 볼륨의 PV를 조회한다. 정책에 매칭되지 않는 PVC에 사용 가능한 PV가 없으면(Pending 또는 PV 삭제) 해당 볼륨은 오류가 된다. 기존 경로는 PV를 조회하지 않았다. 2026-10-23 확인 당시 kakao-narwhal의 PVC는 모두 Bound였다.
 
 - `No present log retrieved ... cannot get resource "pods/log"`: velero-server가 PodVolumeBackup 실패 원인을 `storage` 네임스페이스의 node-agent 호스팅 파드 로그에서 읽지 못할 때 남는다. `gitops/resources/velero-server-rbac.yaml`의 `Role/velero-pod-logs`(+ RoleBinding)가 `storage` 한 네임스페이스에서 `pods/log`의 `get`만 `velero-server`에 부여한다(PR #434). 적용 후에도 이 메시지가 남으면 해당 Role/RoleBinding의 sync 상태를 먼저 확인한다. 이 grant는 읽기 전용 진단용이며 백업 대상·쓰기 권한을 넓히지 않는다.
@@ -140,3 +140,59 @@ rg -n 'local-path|local PV|kind: PersistentVolume' scripts gitops/resources gito
 운영 순서·점검·키 교체·문제 해결의 상세는 `docs/runbooks/openbao-snapshot-backup.md`를 따른다(위 정책 표와 다르면 이 절이 우선).
 
 미검증 항목: 실제 스냅샷 생성, 인증 롤 동작과 13-2의 `bao read -field=...` 출력 형식, 클러스터 안에서의 `openssl cms` 암호화(로컬 OpenSSL로만 확인; 이미지의 busybox `od`/`head -c`/`tail -c`도 미실행), Velero 제외 라벨 동작, Velero PodVolumeBackup 완료, 복원 드릴. 스냅샷 신선도 알림도 아직 없다.
+
+
+## Velero backup alerts
+
+#456은 GitOps의 `prometheus-alerts.yaml`에 다음 알림을 추가한다. 현재 증거는 정적 검사와 렌더링뿐이며 라이브 적용은 아직 검증하지 않았다.
+
+| 알림 | 조건 / 심각도 |
+| --- | --- |
+| `VeleroBackupStale` | 스케줄별 마지막 성공이 26시간 초과, 5분 지속 / critical |
+| `VeleroBackupNeverSucceeded` | attempts 시리즈가 있지만 성공 timestamp가 없거나 0인 상태가 26시간 지속 / critical |
+| `VeleroBackupFailed` | 최근 1시간 failure counter 증가, 5분 지속 / warning |
+| `VeleroBackupPartiallyFailed` | 최근 1시간 partial failure counter 증가, 5분 지속 / warning |
+| `VeleroBackupValidationFailed` | 최근 1시간 validation failure counter 증가, 5분 지속 / warning |
+| `VeleroMetricsUnavailable` | Velero target이 없거나 전부 down, 15분 지속 / warning |
+
+차트 키는 [Velero chart 12.0.3 values](https://github.com/vmware-tanzu/helm-charts/blob/velero-12.0.3/charts/velero/values.yaml)의
+`metrics.enabled`, `metrics.serviceMonitor.enabled`, `autodetect`, `additionalLabels`를 확인했다.
+`autodetect: false`는 Argo 렌더 시 CRD discovery 여부와 관계없이 ServiceMonitor를 생성한다. 설치에는 ServiceMonitor CRD가 필요하다.
+`release: prometheus-stack`은 [kube-prometheus-stack 86.2.3 selector](https://github.com/prometheus-community/helm-charts/blob/kube-prometheus-stack-86.2.3/charts/kube-prometheus-stack/templates/prometheus/prometheus.yaml)에 맞춘다.
+Deployment·Service·ServiceMonitor 템플릿을 upstream tag에서 가져와 해당 values로 렌더했다(전체 차트 설치 검증은 아님).
+
+`storage`는 `09-istio-ambient.sh`에서 ambient 등록되고, Prometheus는 `podMetadata`로 mesh를 벗어난다.
+현재 storage AuthorizationPolicy는 없고 NetworkPolicy는 egress 전체 허용뿐이다.
+`network-policies.yaml`의 `velero-metrics` PeerAuthentication은 Velero 서버의 8085만 PERMISSIVE로 설정한다.
+동명의 NetworkPolicy는 monitoring의 `app.kubernetes.io/name=prometheus`,
+`prometheus=prometheus-stack-kube-prom-prometheus` 파드에서 8085(및 모든 ambient 정책이 요구하는 HBONE 15008)로 오는 연결만 허용한다.
+`name: velero`까지 선택해 공통 app label을 가진 `name: node-agent` 파드는 제외한다. 기존 ambient kubelet probe CCNP와 노드 probe 경로는 유지한다.
+다른 storage 워크로드의 mTLS 설정과 Velero의 outbound mesh 연결은 바꾸지 않는다.
+
+메트릭 이름과 `schedule` 라벨은 [Velero v1.18.1 metrics.go](https://github.com/vmware-tanzu/velero/blob/v1.18.1/pkg/metrics/metrics.go)를 확인했다.
+`InitSchedule`은 counter만 초기화하므로 `attempt_total unless last_successful_timestamp > 0`으로 성공 이력이 없는 스케줄을 감지한다.
+InProgress 전용 gauge는 추가하지 않았다. items 개수나 누적 attempt-success 차이는 실행 상태·시작 시각을 보장하지 않으므로 staleness를 시간 상한으로 쓴다.
+초기 설치의 첫 성공 전에는 26시간 유예한다. Prometheus 재시작·수집 공백으로 pending 시간이 초기화될 수 있고,
+첫 scrape 전 발생한 counter 증가나 두 scrape 사이 재시작으로 사라진 증가는 놓칠 수 있다.
+삭제되어 모든 시리즈가 사라진 개별 스케줄은 이 규칙만으로 감지하지 못한다. 일일 스케줄 주기를 바꾸면 26시간 기준도 재검토한다.
+
+진단: `kubectl -n storage get backups.velero.io`로 phase를 보고 `velero backup describe <name> --details -n storage`와
+서버/node-agent 로그, `kubectl -n storage get podvolumebackups.velero.io`를 확인한다.
+FailedValidation은 `velero-volume-policy` 존재/RBAC, PartiallyFailed는 PVC/PV 바인딩·볼륨 오류,
+Stale은 장기 InProgress와 뒤에 대기하는 스케줄을 먼저 확인한다. 성공 백업 및 restore 검증 전에는 오류만 숨기지 않는다.
+
+**OpenBao #443 후속:** `openbao-snapshot`은 아직 recipient 인증서 미등록으로 fail-closed 상태다.
+현재 manifest에 suspend/구성 완료 라벨이 없어 CronJob 성공 시각과 suspend 메트릭만으로 의도적 미구성과 실제 장애를 구별할 수 없다.
+따라서 snapshot 신선도 알림은 추가하지 않았다. 다음 클러스터에서 `kube_cronjob_status_last_successful_time` 노출을 확인하고,
+구성 완료 및 비-suspend 상태를 명시적으로 gate한 뒤 성공 없음/26시간 초과를 감지해야 한다.
+Velero `daily-openbao` 성공은 snapshot 내용의 신선도를 보장하지 않는다.
+
+다음 클러스터의 필수 확인 순서:
+
+1. 승인된 `scripts/gitops/push-to-gitea.sh` 경로로 반영하고 velero/network-policies/prometheus-alerts 앱 Sync 및 CRD/리소스 생성을 확인한다.
+2. 실제 Velero·Prometheus 파드 라벨과 namespace ambient 상태, PeerAuthentication의 8085 예외를 확인한다.
+3. Prometheus에서 Velero `/metrics:8085` target `up=1`, 다섯 schedule의 attempts와 성공 timestamp, 세 failure counter를 확인한다.
+4. 허용된 Prometheus에서 scrape 성공, 다른 monitoring 파드 및 다른 namespace에서 8085 접근 차단을 확인한다. Velero probe·S3 연결·정상 백업도 확인한다.
+5. 격리된 시험 백업으로 Failed/PartiallyFailed/FailedValidation 발생 및 5분 후 alert, 복구 후 해제를 확인한다. 운영 스케줄의 ConfigMap은 삭제하지 않는다.
+6. 시험 규칙/시리즈로 26시간 staleness·성공 이력 없음·target 손실의 pending/firing/resolved와 Alertmanager 실제 수신을 확인한다.
+7. OpenBao recipient 등록 후 Job 성공, staging 파일 신선도, Velero PVB 및 복구를 확인하고 #443 알림 조건을 별도로 적용한다.

@@ -17,6 +17,14 @@ spec:
     targetRevision: 12.0.3
     helm:
       valuesObject:
+        # Chart 12.0.3: additionalLabels selects this monitor in prometheus-stack.
+        metrics:
+          enabled: true
+          serviceMonitor:
+            enabled: true
+            autodetect: false
+            additionalLabels:
+              release: prometheus-stack
         # INCIDENT WORKAROUND (not part of the Trivy hardening pass): the cluster-wide
         # kyverno add-default-securitycontext mutate policy injects pod-level
         # runAsNonRoot:true on any pod lacking an explicit value. The velero image's
@@ -115,7 +123,7 @@ spec:
           # Missing/unreadable storage/velero-volume-policy at schedule time causes
           # FailedValidation for that day's backup; no retry until the next cron.
           # Detect: kubectl -n storage get backups.velero.io; velero backup describe.
-          # No Velero failure alert exists yet (follow-up).
+          # VeleroBackupValidationFailed in prometheus-alerts.yaml detects this (#456).
           # v1.18.1 internal/volumehelper/volume_policy_helper.go ShouldPerformFSBackup
           # looks up every PVC's PV with a policy present, unlike legacy selection:
           # a Pending PVC or deleted PV matching no policy now errors for that volume.

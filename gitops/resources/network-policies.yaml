@@ -1,5 +1,5 @@
 ---
-# NetworkPolicy: 네임스페이스별 egress 정책 (현재 전체 허용)
+# NetworkPolicy: 네임스페이스별 egress 정책 (현재 전체 허용) + Velero metrics ingress
 #
 # 설계 원칙:
 #   - deny-by-default egress는 사용하지 않음 (Cilium deny-by-default 충돌 경험)
@@ -102,3 +102,55 @@ spec:
     - Egress
   egress:
     - {}
+
+---
+# D-velero-scrape (#456): Prometheus opts out of ambient; allow plaintext only on
+# the server metrics port. Cost: one mTLS exception, paired with restricted ingress.
+# Keep Velero enrolled for outbound storage traffic; remove both policies to revert.
+apiVersion: security.istio.io/v1
+kind: PeerAuthentication
+metadata:
+  name: velero-metrics
+  namespace: storage
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: velero
+      app.kubernetes.io/instance: velero
+      name: velero
+  mtls:
+    mode: STRICT
+  portLevelMtls:
+    8085:
+      mode: PERMISSIVE
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: velero-metrics
+  namespace: storage
+  labels:
+    app.kubernetes.io/managed-by: narwhal-gitops
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: velero
+      app.kubernetes.io/instance: velero
+      name: velero
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: prometheus
+              prometheus: prometheus-stack-kube-prom-prometheus
+      ports:
+        - protocol: TCP
+          port: 8085
+        # R200: every port-limited rule in an ambient namespace keeps HBONE open.
+        - protocol: TCP
+          port: 15008

@@ -1,0 +1,75 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-velero-backup-alerts-456-20261031",
+  "task": "#456: no alert exists for Velero backup failure, partial failure, validation failure or staleness, and Prometheus has no velero_* series (no ServiceMonitor). Enable the chart's metrics ServiceMonitor, open only the Prometheus -> velero:8085 path (Prometheus is outside the ambient mesh, storage is ambient STRICT), add a velero-backups PrometheusRule group and pin it in a static check with promtool behaviour cases. No cluster is available; live verification is listed, not claimed.",
+  "changeContext": {
+    "paths": [
+      ".agents/evals/traces/2026-10-velero-backup-alerts-456.json",
+      "docs/common/lessons-log.md",
+      "docs/common/storage-protection-policy.md",
+      "gitops/charts/narwhal-apps/templates/velero.yaml",
+      "gitops/resources/network-policies.yaml",
+      "gitops/resources/prometheus-alerts.yaml",
+      "scripts/test/lib/check-peer-authentication.py",
+      "scripts/test/lib/check-velero-alerts.py",
+      "scripts/test/regression-check-kakao.sh"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Change the velero Application values (metrics.serviceMonitor), add one workload-scoped PeerAuthentication velero-metrics (STRICT, 8085 PERMISSIVE) and one NetworkPolicy velero-metrics (ingress from monitoring Prometheus pods to 8085 plus HBONE 15008 only), add the velero-backups rule group, an allowlist entry in check-peer-authentication.py, R294, docs and a lessons-log row. Deliberately left alone: the namespace-wide storage mTLS posture, node-agent pods (not selected), Velero schedules and RBAC, the OpenBao #443 snapshot freshness alert (it would fire permanently while the CronJob is intentionally unconfigured), and a stuck-InProgress gauge (none reliable; staleness bounds it)."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "Issue #456 records the gap: no velero_backup reference anywhere in gitops/, scripts/ or docs/, and a read-only check on kakao-narwhal (2026-10-23) found 0 velero_* series and no ServiceMonitor/PodMonitor for Velero; #431 shows a backup stuck InProgress that blocked later schedules and was only noticed by a human. On origin/main the repo still has no ServiceMonitor for velero and no velero alert (grep velero_backup gitops/ -> none before this change).",
+      "evidence": [
+        "doc:https://github.com/dasomel/narwhal/issues/456",
+        "doc:https://github.com/dasomel/narwhal/issues/431"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "external_input",
+      "provenance": "upstream sources read by the implementation lane and the coordinator on 2026-10-31: helm chart vmware-tanzu/velero 12.0.3 (helm show values / helm pull), velero pkg/metrics/metrics.go at v1.18.1",
+      "reviewed": true,
+      "summary": "Chart 12.0.3 exposes metrics.enabled and metrics.serviceMonitor.{enabled,autodetect,additionalLabels}; the server metrics port is http-monitoring 8085. Velero 1.18.1 defines velero_backup_attempt_total, velero_backup_success_total, velero_backup_failure_total, velero_backup_partial_failure_total, velero_backup_validation_failure_total and velero_backup_last_successful_timestamp with a schedule label; InitSchedule initialises the counters but not the last-success gauge, hence a separate never-succeeded alert."
+    },
+    {
+      "id": "e4",
+      "type": "bug_fix",
+      "summary": "velero.yaml enables metrics with a ServiceMonitor labelled release: prometheus-stack (autodetect false); network-policies.yaml adds PeerAuthentication velero-metrics (selector app.kubernetes.io/name=velero, app.kubernetes.io/instance=velero, name=velero; STRICT with 8085 PERMISSIVE) and NetworkPolicy velero-metrics (from namespace monitoring pods app.kubernetes.io/name=prometheus, prometheus=prometheus-stack-kube-prom-prometheus, ports 8085 and 15008); prometheus-alerts.yaml adds VeleroBackupStale, VeleroBackupNeverSucceeded, VeleroBackupFailed, VeleroBackupPartiallyFailed, VeleroBackupValidationFailed and VeleroMetricsUnavailable."
+    },
+    {
+      "id": "e5",
+      "type": "review_correction",
+      "summary": "Lane history: the first implementation lane (Codex) stopped at a usage limit with an unreviewed draft; the continuing lane (native Sonnet executor) found the NetworkPolicy lacked HBONE 15008 (R200/R201 failed) and an alert description tripped R243, and fixed both. The coordinator renumbered the new check from R293 to R294 because #510 had already merged R293."
+    },
+    {
+      "id": "e6",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "chart render of the ServiceMonitor from the pinned chart with the repo values, the new R294 check with promtool rule checks and unit cases, the PeerAuthentication allowlist check, and the full static regression suite. NOT covered: any live cluster - Prometheus target up, plaintext scrape through ztunnel with the port-level exception on Istio 1.30.1, other pods blocked from 8085, alerts firing and clearing, Alertmanager delivery.",
+      "evidence": [
+        "test:helm template narwhal-apps gitops/charts/narwhal-apps --show-only templates/velero.yaml | yq .spec.source.helm.valuesObject, then helm template velero velero-12.0.3.tgz -n storage --api-versions monitoring.coreos.com/v1 -> ServiceMonitor velero, labels include release: prometheus-stack, endpoint port http-monitoring interval 30s, selector app.kubernetes.io/name=velero, app.kubernetes.io/instance=velero",
+        "test:python3 scripts/test/lib/check-velero-alerts.py -> 'PASS: R294 monitor, restricted scrape path, 6 alert definitions' and 'PASS: 15 promtool behavior cases'",
+        "test:python3 scripts/test/lib/check-peer-authentication.py -> 'PASS: PeerAuthentication exceptions are allowlisted; 2 known-issue baseline entries'",
+        "test:RESEARCH_EVIDENCE_DIR=$(mktemp -d) make test after rebasing onto origin/main d9b7cec4 (#510 merged) -> passed 420 failed 0 warnings 3"
+      ]
+    },
+    {
+      "id": "e7",
+      "type": "completion_claim",
+      "summary": "In the repository, Velero metrics are scraped through a single workload-scoped port exception paired with a Prometheus-only NetworkPolicy, and six backup alerts are defined and covered by promtool cases. Nothing is verified on a cluster."
+    },
+    {
+      "id": "e8",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Complete within repository scope; #456 stays open until the next cluster shows the target up and an alert firing, and the OpenBao snapshot freshness alert remains a follow-up."
+    }
+  ]
+}

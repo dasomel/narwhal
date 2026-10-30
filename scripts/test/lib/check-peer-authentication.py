@@ -35,6 +35,7 @@ EXCLUDED = "scripts/test/fixtures/"  # path prefix; deliberately bad negative pr
 # (namespace, name) -> exact selector signature: reviewed PERMISSIVE exceptions; the reason lives
 # next to the manifest. A workload entry pins its exact matchLabels (the real Harbor selector).
 ALLOWLIST = {
+    ("storage", "velero-metrics"): 'matchLabels:app.kubernetes.io/instance=velero,matchLabels:app.kubernetes.io/name=velero,matchLabels:name=velero',  # R294 pins port 8085 + ingress
     ("platform-system", "platform-system-permissive"): NS_SCOPE,  # ingress/kyverno/keycloak non-mesh clients
     ("database", "database-permissive"): NS_SCOPE,  # CNPG reached by non-mesh clients
     ("devtools", "harbor-permissive"): 'matchLabels:app=harbor',  # mixed mesh enrollment inside Harbor

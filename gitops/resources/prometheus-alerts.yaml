@@ -289,3 +289,77 @@ spec:
           annotations:
             summary: "istio-cni DaemonSet 미완성"
             description: "istio-cni-node DaemonSet의 Ready 파드 수가 5분 이상 원하는 수에 미달합니다. 새 파드의 ambient mesh 참여가 차단됩니다."
+
+    # D-velero-age (#456): age bounds a stuck InProgress without inventing a gauge.
+    # Counters reset on restart, so attempt-minus-success is not an active-backup count.
+    # Cost: daily schedules get 2h slack; tune 26h if their cadence changes.
+    - name: velero-backups
+      rules:
+        - alert: VeleroBackupStale
+          expr: |
+            (time() - max by (schedule) (velero_backup_last_successful_timestamp{namespace="storage",schedule!=""}) > 26 * 3600)
+            and on (schedule)
+            (max by (schedule) (velero_backup_last_successful_timestamp{namespace="storage",schedule!=""}) > 0)
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Velero 백업 성공 지연: {{ $labels.schedule }}"
+            description: "마지막 성공이 26시간보다 오래되었습니다. InProgress 정체와 대기 중인 백업을 확인하세요."
+            runbook_url: https://github.com/dasomel/narwhal/blob/main/docs/common/storage-protection-policy.md#velero-backup-alerts
+
+        # InitSchedule initializes attempts, but not the last-success gauge (v1.18.1).
+        # D-velero-never: missing/zero success gets 26h grace; restart/scrape gaps can
+        # reset this pending time. Escape hatch: inspect Backup CRs when telemetry is lost.
+        - alert: VeleroBackupNeverSucceeded
+          expr: |
+            max by (schedule) (velero_backup_attempt_total{namespace="storage",schedule!=""})
+            unless on (schedule)
+            (max by (schedule) (velero_backup_last_successful_timestamp{namespace="storage",schedule!=""}) > 0)
+          for: 26h
+          labels:
+            severity: critical
+          annotations:
+            summary: "Velero 백업 성공 기록 없음: {{ $labels.schedule }}"
+            description: "26시간 동안 성공 시각이 없습니다. 스케줄·Backup phase·velero-volume-policy를 확인하세요."
+            runbook_url: https://github.com/dasomel/narwhal/blob/main/docs/common/storage-protection-policy.md#velero-backup-alerts
+
+        - alert: VeleroBackupFailed
+          expr: sum by (schedule) (increase(velero_backup_failure_total{namespace="storage"}[1h])) > 0
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Velero 백업 실패: {{ $labels.schedule }}"
+            description: "최근 1시간 내 Failed 백업이 발생했습니다. Backup 상세와 서버 로그를 확인하세요."
+            runbook_url: https://github.com/dasomel/narwhal/blob/main/docs/common/storage-protection-policy.md#velero-backup-alerts
+
+        - alert: VeleroBackupPartiallyFailed
+          expr: sum by (schedule) (increase(velero_backup_partial_failure_total{namespace="storage"}[1h])) > 0
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Velero 백업 부분 실패: {{ $labels.schedule }}"
+            description: "최근 1시간 내 PartiallyFailed 백업이 발생했습니다. PVC/PV 바인딩과 PodVolumeBackup 오류를 확인하세요."
+            runbook_url: https://github.com/dasomel/narwhal/blob/main/docs/common/storage-protection-policy.md#velero-backup-alerts
+
+        - alert: VeleroBackupValidationFailed
+          expr: sum by (schedule) (increase(velero_backup_validation_failure_total{namespace="storage"}[1h])) > 0
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Velero 백업 검증 실패: {{ $labels.schedule }}"
+            description: "최근 1시간 내 FailedValidation이 발생했습니다. storage/velero-volume-policy의 존재와 접근 권한을 확인하세요. 다음 cron까지 자동 재시도하지 않습니다."
+            runbook_url: https://github.com/dasomel/narwhal/blob/main/docs/common/storage-protection-policy.md#velero-backup-alerts
+
+        - alert: VeleroMetricsUnavailable
+          expr: absent(up{namespace="storage",service="velero"}) or max(up{namespace="storage",service="velero"}) == 0
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Velero 메트릭 수집 불가"
+            description: "ServiceMonitor 선택, 8085 NetworkPolicy와 mTLS 예외 정책, Prometheus target을 확인하세요. 백업 알림의 신뢰성이 저하되었습니다."
+            runbook_url: https://github.com/dasomel/narwhal/blob/main/docs/common/storage-protection-policy.md#velero-backup-alerts

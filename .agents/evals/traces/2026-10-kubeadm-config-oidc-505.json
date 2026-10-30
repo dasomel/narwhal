@@ -10,6 +10,8 @@
       "docs/common/sso-accounts.md",
       "docs/vagrant/operations.md",
       "scripts/cloud/apply-apiserver-oidc-kakao.sh",
+      "scripts/cloud/distribute-join-kakao.sh",
+      "scripts/cluster/02-join-control-plane.sh",
       "scripts/cluster/11-4-keycloak-apiserver.sh",
       "scripts/cluster/11-4c-kubeadm-config-oidc.sh",
       "scripts/test/lib/check-apiserver-oidc-node-harness.sh",
@@ -22,7 +24,7 @@
     {
       "id": "e1",
       "type": "scope_check",
-      "summary": "Add one helper (11-4c-kubeadm-config-oidc.sh) that merges the seven oidc-* entries into apiServer.extraArgs of the kubeadm-config ClusterConfiguration and patches only data.ClusterConfiguration; call it once from 11-4 (hard fail) and from the Kakao master-1 step of apply-apiserver-oidc-kakao.sh; add a verify-cluster.sh gate, the upgrade runbook note, R297 and two #500 LOW follow-ups (R290b flag-mismatch case, a corrected never-two-masters-down comment). Deliberately left alone: 02-init-cluster.sh (Keycloak does not exist at init), the static pod manifests and 11-4b (it stays their only writer), any live object, extraVolumes (the CA sits under the pki directory kubeadm already mounts), and the other #505 items (portal 1.1.5, Trivy paging, Falco, valkey/kong)."
+      "summary": "Add one helper (11-4c-kubeadm-config-oidc.sh) that merges the seven oidc-* entries into apiServer.extraArgs of the kubeadm-config ClusterConfiguration and patches only data.ClusterConfiguration; call it once from 11-4 (hard fail) and from the Kakao master-1 step of apply-apiserver-oidc-kakao.sh; add a verify-cluster.sh gate, the upgrade runbook note, R297 and two #500 LOW follow-ups (R290b flag-mismatch case, a corrected never-two-masters-down comment). Deliberately left alone: 02-init-cluster.sh (Keycloak does not exist at init), the static pod manifests and 11-4b (it stays their only writer), any live object, extraVolumes (the CA sits under the pki directory kubeadm already mounts), and the other #505 items (portal 1.1.5, Trivy paging, Falco, valkey/kong). Added after review: 02-join-control-plane.sh and distribute-join-kakao.sh install/stage oidc-ca.crt before a later control-plane join."
     },
     {
       "id": "e2",
@@ -36,30 +38,35 @@
     {
       "id": "e3",
       "type": "external_input",
-      "provenance": "kubeadm API reference kubeadm.k8s.io/v1beta4 (https://kubernetes.io/docs/reference/config-api/kubeadm-config.v1beta4/), fetched by the coordinator on 2026-10-31 (the implementation lane could not read it and had relied on the repo's own 02-init-cluster.sh, which already renders v1beta4)",
+      "provenance": "two sources: the repo's own 02-init-cluster.sh, which already renders kubeadm.k8s.io/v1beta4 with apiServer.extraArgs as a list of {name, value} (used by the implementation lane, which did not read the reference page), and the kubeadm v1beta4 API reference https://kubernetes.io/docs/reference/config-api/kubeadm-config.v1beta4/ fetched by the coordinator on 2026-10-31: Arg = {name (required), value (required)}; ControlPlaneComponent.extraArgs is []Arg, 'Extra arguments will override existing default arguments. Duplicate extra arguments are allowed.'; extraVolumes is []HostPathMount",
       "reviewed": true,
-      "summary": "In v1beta4 ControlPlaneComponent.extraArgs is a list of {name, value} (v1beta3 used a map), and extraVolumes entries are {name, hostPath, mountPath, readOnly, pathType}. 02-init-cluster.sh uses the list form for the apiserver already, so the helper merges into that list, replaces oidc-* entries and also handles a v1beta3 map; any other apiVersion or shape is refused. The reference states: Arg = {name (required), value (required)}; ControlPlaneComponent.extraArgs is []Arg, 'Extra arguments will override existing default arguments. Duplicate extra arguments are allowed.'; extraVolumes is []HostPathMount {name, hostPath, mountPath, readOnly, pathType}; v1.31 changelog: string/string extraArgs maps were replaced by structured arguments that support duplicates. Because duplicates are allowed, the helper replaces every existing oidc-* entry rather than appending."
+      "summary": "02-init-cluster.sh uses the list form for the apiserver already, so the helper merges into that list, replaces oidc-* entries and also handles a v1beta3 map; any other apiVersion or shape is refused. That a missing --oidc-ca-file is an apiserver startup error comes from the PR review (pkg/kubeapiserver/options/authentication.go), not from a local run."
     },
     {
       "id": "e4",
       "type": "bug_fix",
-      "summary": "scripts/cluster/11-4c-kubeadm-config-oidc.sh reads data.ClusterConfiguration and resourceVersion, refuses unparsable input, an unknown kind or apiVersion, two documents and an unexpected extraArgs shape, replaces only oidc-* entries with the seven flags, proves the merge changed nothing else, backs the original up, patches data.ClusterConfiguration only (pinned to the read resourceVersion), re-reads and requires exactly the seven flags. It refuses to write when a readable local apiserver manifest has no volumeMount covering /etc/kubernetes/pki. 11-4 calls it once and exits 1 on failure; apply-apiserver-oidc-kakao.sh checks it is staged before the first restart and runs it on master-1; verify-cluster.sh compares the ClusterConfiguration flags with the expected seven. R290b gains a flag-mismatch case and the apply script's two-masters-never-down comment is limited to the case where the PID is readable."
+      "summary": "scripts/cluster/11-4c-kubeadm-config-oidc.sh reads data.ClusterConfiguration and resourceVersion, refuses unparsable input, an unknown kind or apiVersion, two documents and an unexpected extraArgs shape, replaces only oidc-* entries with the seven flags, proves the merge changed nothing else, backs the original up, patches data.ClusterConfiguration only (pinned to the read resourceVersion), re-reads and requires exactly the seven flags. It refuses to write when a readable local apiserver manifest has no volumeMount covering /etc/kubernetes/pki. 11-4 calls it once and exits 1 on failure; apply-apiserver-oidc-kakao.sh checks it is staged before the first restart and runs it on master-1; verify-cluster.sh compares the ClusterConfiguration flags with the expected seven. R290b gains a flag-mismatch case and the apply script's two-masters-never-down comment is limited to the case where the PID is readable. Later-joined control planes: 02-join-control-plane.sh reads kubeadm-config from master-1 (unreadable -> refuses), fetches oidc-ca.crt when it references oidc-ca-file, installs it root:root 0644 before kubeadm join and refuses to join without it; on Kakao distribute-join-kakao.sh makes the same decision on the operator host and stages /tmp/oidc-ca.crt or stops. verify-cluster.sh handles the v1beta3 map form and SKIPs with an explicit reason for unknown apiVersion, RBAC/API errors, missing yq or an empty config."
+    },
+    {
+      "id": "e4r",
+      "type": "review_correction",
+      "summary": "Opus review of PR #521 (head 555e3206) = FAIL, HIGH: with --oidc-ca-file in kubeadm-config, a control plane joined later renders an apiserver that cannot start, because kubeadm join copies only kubeadm's own certs and 02-join-control-plane.sh did not copy oidc-ca.crt; the original change claimed the later-join case was fixed, but it turned 'later master lacks OIDC' into 'later master crashloops'. Corrected: the join path installs the CA first and refuses without it (Vagrant and Kakao), R297 pins both with mutations, the helper header, docs and lessons-log now state the prerequisite. LOW findings also fixed: the verify gate handles v1beta3 and reports explicit SKIP reasons."
     },
     {
       "id": "e5",
       "type": "regression_verification",
       "status": "passed",
-      "scope": "Behavioural harness R297 (stub kubectl with a file-backed kubeadm-config, real yq merge on v1beta4 and v1beta3 samples) with 12 mutations, the extended R290b harness, the R290 static check with its mutations, and the full static suite. NOT covered: any live cluster - a real kubeadm upgrade apply|node (or --dry-run) regenerating the manifest from the patched ClusterConfiguration, the real kubeadm-config shape on Kakao and Vagrant, RBAC for the patch, and the verify-cluster.sh gate against a live cluster.",
+      "scope": "Behavioural harness R297 (stub kubectl with a file-backed kubeadm-config, real yq merge on v1beta4 and v1beta3 samples) with 12 mutations, the extended R290b harness, the R290 static check with its mutations, and the full static suite. NOT covered: a real later control-plane join (02-join-control-plane.sh is covered by static wiring checks only, not executed), any live cluster - a real kubeadm upgrade apply|node (or --dry-run) regenerating the manifest from the patched ClusterConfiguration, the real kubeadm-config shape on Kakao and Vagrant, RBAC for the patch, and the verify-cluster.sh gate against a live cluster.",
       "evidence": [
-        "test:bash scripts/test/lib/check-kubeadm-config-oidc-harness.sh -> PASS: R297 kubeadm-config OIDC harness, 16 checks",
-        "test:bash scripts/test/lib/check-kubeadm-config-oidc-harness.sh --mutation-verify -> 12 of 12 mutations caught",
+        "test:bash scripts/test/lib/check-kubeadm-config-oidc-harness.sh -> PASS: R297 kubeadm-config OIDC harness, 17 checks",
+        "test:bash scripts/test/lib/check-kubeadm-config-oidc-harness.sh --mutation-verify -> 19 of 19 mutations caught (12 helper, 7 wiring incl. join CA copy removed and refuse path removed)",
         "test:bash scripts/test/lib/check-apiserver-oidc-node-harness.sh -> OK: 11-4b-apiserver-oidc-node.sh passed 12 behavioural cases"
       ]
     },
     {
       "id": "e6",
       "type": "completion_claim",
-      "summary": "In the repository, the seven OIDC flags are written to the kubeadm-config ClusterConfiguration by one fail-closed, idempotent helper that is wired into both providers and gated by verify-cluster.sh. Nothing is verified on a cluster; a real kubeadm upgrade is the open check."
+      "summary": "In the repository, the seven OIDC flags are written to the kubeadm-config ClusterConfiguration by one fail-closed, idempotent helper wired into both providers and gated by verify-cluster.sh, and a later-joined control plane gets oidc-ca.crt installed before join or refuses to join. Nothing is verified on a cluster; a real kubeadm upgrade and a real later join are the open checks."
     },
     {
       "id": "e7",

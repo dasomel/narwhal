@@ -10,6 +10,10 @@
 #
 #   /home/vagrant/join-control-plane.sh  -> master-2, master-3  as /tmp/join-control-plane.sh
 #   /home/vagrant/encryption-config.yaml -> master-2, master-3  as /tmp/encryption-config.yaml
+#   /etc/kubernetes/pki/oidc-ca.crt      -> master-2, master-3  as /tmp/oidc-ca.crt
+#       only when kubeadm-config references oidc-ca-file (D-KUBEADM-CONFIG-OIDC, #505): a
+#       master joined later renders its apiserver from that config and cannot start without the
+#       CA file. Required but unobtainable -> this script stops before placing anything.
 #   /home/vagrant/join-command.sh        -> workers             as /tmp/join-command.sh
 #
 # The certificate key inside join-control-plane.sh expires with the kubeadm-certs
@@ -69,6 +73,25 @@ for f in join-control-plane.sh join-command.sh encryption-config.yaml; do
   echo "  ${f} ($(wc -c < "${tmp}/${f}") bytes)"
 done
 
+# D-KUBEADM-CONFIG-OIDC (#505): decide here, on the operator host, whether the joining masters
+# need the OIDC CA (nodes cannot ask master-1 themselves). Unreadable config or a missing/invalid
+# CA while the config references it is fatal: nothing has been placed yet.
+OIDC_CA_REQUIRED=false
+if ! cluster_config="$(ssh_node "${MASTER1}" "sudo env KUBECONFIG=/home/vagrant/.kube/config-local kubectl -n kube-system get cm kubeadm-config -o jsonpath='{.data.ClusterConfiguration}'")" \
+  || [ -z "${cluster_config}" ]; then
+  echo "ERROR: cannot read kube-system/kubeadm-config on master-1; cannot tell whether the joining masters need the OIDC CA" >&2
+  exit 1
+fi
+if grep -q 'oidc-ca-file' <<<"${cluster_config}"; then
+  OIDC_CA_REQUIRED=true
+  if ! ssh_node "${MASTER1}" "sudo cat /etc/kubernetes/pki/oidc-ca.crt" > "${tmp}/oidc-ca.crt" 2>/dev/null \
+    || [ ! -s "${tmp}/oidc-ca.crt" ] || ! openssl x509 -in "${tmp}/oidc-ca.crt" -noout -subject >/dev/null 2>&1; then
+    echo "ERROR: kubeadm-config references oidc-ca-file but /etc/kubernetes/pki/oidc-ca.crt on master-1 is missing or not a valid certificate; a joined master would crashloop" >&2
+    exit 1
+  fi
+  echo "  oidc-ca.crt ($(wc -c < "${tmp}/oidc-ca.crt") bytes)"
+fi
+
 place() {
   local ip="$1" src="$2" dest="$3"
   ssh_node "${ip}" "cat > '${dest}' && chmod 0600 '${dest}'" < "${tmp}/${src}"
@@ -78,6 +101,9 @@ for ip in "${MASTERS[@]:1}"; do
   echo "=== control-plane ${ip} ==="
   place "${ip}" join-control-plane.sh /tmp/join-control-plane.sh
   place "${ip}" encryption-config.yaml /tmp/encryption-config.yaml
+  if [ "${OIDC_CA_REQUIRED}" = "true" ]; then
+    place "${ip}" oidc-ca.crt /tmp/oidc-ca.crt
+  fi
   ssh_node "${ip}" "ls -l /tmp/join-control-plane.sh /tmp/encryption-config.yaml | awk '{print \"    \"\$5, \$9}'"
 done
 

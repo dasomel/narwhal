@@ -15,6 +15,8 @@
 #   8. A readable local apiserver manifest without a volumeMount covering /etc/kubernetes/pki is
 #      refused; with the default pki mount it is accepted.
 #   9. --dry-run and a non-https issuer write nothing.
+#   10/11. Wiring (static): 11-4, Kakao step, verify gate, and the later-join CA staging in
+#      02-join-control-plane.sh / distribute-join-kakao.sh (copy before join, refuse without it).
 # Usage: check-kubeadm-config-oidc-harness.sh [helper]   |   --mutation-verify
 #   --mutation-verify runs this harness against broken copies of the helper; each must fail.
 set -euo pipefail
@@ -26,6 +28,22 @@ import os, subprocess, sys, tempfile
 harness = os.path.abspath(sys.argv[1])
 root = os.path.abspath(os.path.join(os.path.dirname(harness), "../../.."))
 helper = open(os.path.join(root, "scripts/cluster/11-4c-kubeadm-config-oidc.sh")).read()
+JOIN = "scripts/cluster/02-join-control-plane.sh"
+DIST = "scripts/cloud/distribute-join-kakao.sh"
+WIRED = [
+    "scripts/cluster/11-4-keycloak-apiserver.sh", "scripts/cloud/apply-apiserver-oidc-kakao.sh",
+    "scripts/test/verify-cluster.sh", "scripts/cluster/02-init-cluster.sh", JOIN, DIST,
+]
+# (name, relative file, exact anchor, replacement): wiring mutations run against a copied tree.
+WIRING_MUTATIONS = [
+    ("join: CA copy removed", JOIN, "sudo install -o root -g root -m 0644 /tmp/oidc-ca.crt", "sudo true /tmp/oidc-ca.crt"),
+    ("join: CA fetch from master-1 removed", JOIN, ":/etc/kubernetes/pki/oidc-ca.crt", ":/etc/kubernetes/pki/other.crt"),
+    ("join: refuse path removed", JOIN, "could not be obtained — this node's apiserver would crashloop after join. Not joining\" >&2\n    exit 1", "could not be obtained\" >&2\n    true"),
+    ("join: unreadable config no longer refused", JOIN, "not joining\" >&2\n    exit 1", "not joining\" >&2\n    true"),
+    ("dist: CA staging removed", DIST, 'place "${ip}" oidc-ca.crt /tmp/oidc-ca.crt', "true"),
+    ("dist: refuse path removed", DIST, "is missing or not a valid certificate; a joined master would crashloop\" >&2\n    exit 1", "is missing\" >&2\n    true"),
+    ("verify: v1beta3 form dropped", "scripts/test/verify-cluster.sh", "kubeadm.k8s.io/v1beta3)", "kubeadm.k8s.io/v1beta9)"),
+]
 
 # (name, exact anchor in the helper, replacement)
 MUTATIONS = [
@@ -65,6 +83,26 @@ with tempfile.TemporaryDirectory() as d:
             rc = 1
         else:
             print(f"OK mutation caught: {name}")
+
+import shutil
+for name, rel, anchor, repl in WIRING_MUTATIONS:
+    with tempfile.TemporaryDirectory() as d:
+        for f in WIRED:
+            os.makedirs(os.path.dirname(os.path.join(d, f)), exist_ok=True)
+            shutil.copy(os.path.join(root, f), os.path.join(d, f))
+        target = os.path.join(d, rel)
+        text = open(target).read()
+        if anchor not in text:
+            print(f"FAIL mutation '{name}' did not apply (anchor drifted)")
+            rc = 1
+            continue
+        open(target, "w").write(text.replace(anchor, repl, 1))
+        r = subprocess.run(["bash", harness], capture_output=True, env=dict(os.environ, R297_ROOT=d))
+        if r.returncode == 0:
+            print(f"FAIL mutation '{name}' was not caught")
+            rc = 1
+        else:
+            print(f"OK mutation caught: {name}")
 sys.exit(rc)
 PYEOF
 fi
@@ -77,6 +115,8 @@ fi
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 HELPER="${1:-${ROOT}/scripts/cluster/11-4c-kubeadm-config-oidc.sh}"
 ISSUER="https://keycloak.kakao.narwhal.internal/realms/narwhal"
+# Wiring checks read the other scripts from here; --mutation-verify points it at a mutated copy.
+WROOT="${R297_ROOT:-${ROOT}}"
 
 tmp="$(mktemp -d)"
 trap 'rm -rf "${tmp}"' EXIT
@@ -291,17 +331,44 @@ ok "9 --dry-run and a non-https issuer write nothing"
 #     Phase 2, the Kakao operator script runs it on master-1, verify-cluster.sh gates on it, and
 #     02-init-cluster.sh still has no active oidc-* extraArgs (Keycloak does not exist at init).
 code() { grep -v '^[[:space:]]*#' "$1"; }
-code "${ROOT}/scripts/cluster/11-4-keycloak-apiserver.sh" | grep 'sudo env KUBECONFIG=.*KUBEADM_CONFIG_OIDC_SCRIPT.*OIDC_ISSUER_URL' >/dev/null \
+code "${WROOT}/scripts/cluster/11-4-keycloak-apiserver.sh" | grep 'sudo env KUBECONFIG=.*KUBEADM_CONFIG_OIDC_SCRIPT.*OIDC_ISSUER_URL' >/dev/null \
   || fail_case "case 10: 11-4 does not call the helper with the issuer"
-code "${ROOT}/scripts/cluster/11-4-keycloak-apiserver.sh" | grep -A3 'KUBEADM_CONFIG_OIDC_SCRIPT}" "${OIDC_ISSUER_URL}"' | grep 'exit 1' >/dev/null \
+code "${WROOT}/scripts/cluster/11-4-keycloak-apiserver.sh" | grep -A3 'KUBEADM_CONFIG_OIDC_SCRIPT}" "${OIDC_ISSUER_URL}"' | grep 'exit 1' >/dev/null \
   || fail_case "case 10: 11-4 does not fail hard when the helper fails"
-code "${ROOT}/scripts/cloud/apply-apiserver-oidc-kakao.sh" | grep 'KUBEADM_CONFIG_SCRIPT} ${OIDC_ISSUER_URL}' >/dev/null \
+code "${WROOT}/scripts/cloud/apply-apiserver-oidc-kakao.sh" | grep 'KUBEADM_CONFIG_SCRIPT} ${OIDC_ISSUER_URL}' >/dev/null \
   || fail_case "case 10: apply-apiserver-oidc-kakao.sh does not run the helper on master-1"
-code "${ROOT}/scripts/test/verify-cluster.sh" | grep 'kubeadm-config OIDC' >/dev/null \
+code "${WROOT}/scripts/test/verify-cluster.sh" | grep 'kubeadm-config OIDC' >/dev/null \
   || fail_case "case 10: verify-cluster.sh has no kubeadm-config OIDC gate"
-if code "${ROOT}/scripts/cluster/02-init-cluster.sh" | grep -E '^[[:space:]]*-?[[:space:]]*(name:[[:space:]]*)?oidc-' >/dev/null; then
+if code "${WROOT}/scripts/cluster/02-init-cluster.sh" | grep -E '^[[:space:]]*-?[[:space:]]*(name:[[:space:]]*)?oidc-' >/dev/null; then
   fail_case "case 10: 02-init-cluster.sh carries active oidc-* extraArgs"
 fi
 ok "10 wiring: 11-4 (hard fail), Kakao master-1 step, verify-cluster gate, init unchanged"
+
+# 11. Later-joined control planes (review of PR #521): the apiserver kubeadm renders from the
+#     patched ClusterConfiguration cannot start without oidc-ca.crt, and kubeadm join does not
+#     copy it. 02-join-control-plane.sh must install it root:root 0644 BEFORE the join and refuse
+#     to join when the config references it but it cannot be had; on Kakao the operator script
+#     stages it and refuses first.
+JOIN="${WROOT}/scripts/cluster/02-join-control-plane.sh"
+DIST="${WROOT}/scripts/cloud/distribute-join-kakao.sh"
+code "${JOIN}" | grep 'install -o root -g root -m 0644 /tmp/oidc-ca.crt' >/dev/null \
+  || fail_case "case 11: 02-join does not install the OIDC CA root:root 0644"
+code "${JOIN}" | grep 'vagrant@.*:/etc/kubernetes/pki/oidc-ca.crt' >/dev/null \
+  || fail_case "case 11: 02-join does not fetch the OIDC CA from master-1"
+code "${JOIN}" | grep -A2 'valid /tmp/oidc-ca.crt could not be obtained' | grep 'exit 1' >/dev/null \
+  || fail_case "case 11: 02-join does not refuse to join without the OIDC CA"
+code "${JOIN}" | grep -A2 'cannot read kube-system/kubeadm-config from master-1' | grep 'exit 1' >/dev/null \
+  || fail_case "case 11: 02-join joins when kubeadm-config is unreadable"
+inst_line="$(code "${JOIN}" | grep -n 'install -o root -g root -m 0644 /tmp/oidc-ca.crt' | head -n 1 | cut -d: -f1)"
+join_line="$(code "${JOIN}" | grep -n 'sudo bash -c "$(cat /tmp/join-control-plane.sh)' | head -n 1 | cut -d: -f1)"
+{ [ -n "${inst_line}" ] && [ -n "${join_line}" ] && [ "${inst_line}" -lt "${join_line}" ]; } \
+  || fail_case "case 11: the OIDC CA is not installed before kubeadm join"
+code "${DIST}" | grep 'place "${ip}" oidc-ca.crt /tmp/oidc-ca.crt' >/dev/null \
+  || fail_case "case 11: distribute-join-kakao.sh does not stage the OIDC CA"
+code "${DIST}" | grep -A2 'references oidc-ca-file but /etc/kubernetes/pki/oidc-ca.crt on master-1 is missing' | grep 'exit 1' >/dev/null \
+  || fail_case "case 11: distribute-join-kakao.sh does not refuse without the OIDC CA"
+code "${WROOT}/scripts/test/verify-cluster.sh" | grep 'kubeadm.k8s.io/v1beta3' >/dev/null \
+  || fail_case "case 11: verify-cluster.sh gate does not handle the v1beta3 map form"
+ok "11 later-joined masters: CA fetched and installed before join, join refused without it (Vagrant and Kakao)"
 
 echo "PASS: R297 kubeadm-config OIDC harness, ${PASS} checks"

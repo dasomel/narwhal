@@ -20,6 +20,12 @@
 #   exits non-zero. Only data.ClusterConfiguration is patched (merge patch pinned to the
 #   resourceVersion that was read), so every other ConfigMap key is untouched. The static pod
 #   manifests are never touched here (11-4b owns them).
+#   Later-joined control planes: kubeadm join copies only kubeadm's own certs, and an apiserver
+#   with --oidc-ca-file pointing at a missing file does not start. Once this script has run, a
+#   joining master therefore needs oidc-ca.crt BEFORE join: 02-join-control-plane.sh fetches it
+#   from master-1 (Kakao: distribute-join-kakao.sh stages it) and refuses to join without it.
+#   Without that step this change would turn "later master lacks OIDC" into "later master
+#   crashloops" (review of PR #521).
 #   Cost: one ConfigMap patch; the running apiservers are not restarted. 0 writes on a re-run.
 #   Escape hatch: the original ClusterConfiguration is saved next to the apiserver backups as
 #   /etc/kubernetes/kubeadm-config.ClusterConfiguration.pre-oidc-<UTC stamp>.yaml; restore with

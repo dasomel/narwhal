@@ -503,20 +503,6 @@ if should_run "apps"; then
     fail "ArgoCD: URL='${ARGOCD_URL}' (should be https://)"
   fi
 
-  # OAuth2-Proxy: OIDC config
-  O2P_CFG=$(kubectl get configmap oauth2-proxy -n iam -o jsonpath='{.data.oauth2_proxy\.cfg}' 2>/dev/null)
-  if echo "${O2P_CFG}" | grep -q "oidc_issuer_url.*https://keycloak"; then
-    pass "OAuth2-Proxy: OIDC issuer HTTPS"
-  else
-    fail "OAuth2-Proxy: OIDC issuer not HTTPS"
-  fi
-
-  if echo "${O2P_CFG}" | grep -q 'redirect_url.*https://'; then
-    pass "OAuth2-Proxy: redirect_url HTTPS"
-  else
-    fail "OAuth2-Proxy: redirect_url not HTTPS"
-  fi
-
   # Headlamp: OIDC issuer
   HEADLAMP_ISSUER=$(kubectl get secret oidc -n devtools -o jsonpath='{.data.issuerURL}' 2>/dev/null | base64 -d 2>/dev/null)
   if echo "${HEADLAMP_ISSUER}" | grep -q "^https://"; then
@@ -571,12 +557,8 @@ fi
 if should_run "endpoints"; then
   echo "--- [7/9] HTTPS Endpoints & SSO Redirects ---"
 
-  for app in argocd grafana gitea keycloak headlamp harbor oauth2-proxy; do
-    if [ "${app}" = "oauth2-proxy" ]; then
-      CODE=$(curl -sk -o /dev/null -w '%{http_code}' "https://${app}.${DOMAIN}/ping" 2>/dev/null || echo "000")
-    else
-      CODE=$(curl -sk -o /dev/null -w '%{http_code}' "https://${app}.${DOMAIN}" 2>/dev/null || echo "000")
-    fi
+  for app in argocd grafana gitea keycloak headlamp harbor; do
+    CODE=$(curl -sk -o /dev/null -w '%{http_code}' "https://${app}.${DOMAIN}" 2>/dev/null || echo "000")
     case "${CODE}" in
       200|301|302|303|307|308)
         pass "https://${app}.${DOMAIN}: HTTP ${CODE}" ;;
@@ -593,16 +575,6 @@ if should_run "endpoints"; then
     pass "ArgoCD SSO redirect: → Keycloak"
   elif [ -n "${ARGOCD_SSO}" ]; then
     warn "ArgoCD SSO redirect: ${ARGOCD_SSO}"
-  fi
-
-  # OAuth2-Proxy SSO redirect test
-  O2P_REDIRECT=$(curl -sk -D- -o /dev/null \
-    "https://oauth2-proxy.${DOMAIN}/oauth2/start?rd=https://headlamp.${DOMAIN}" 2>/dev/null \
-    | grep -i "location:" | head -1 || echo "")
-  if echo "${O2P_REDIRECT}" | grep -q "keycloak.${DOMAIN}"; then
-    pass "OAuth2-Proxy SSO redirect: → Keycloak"
-  else
-    fail "OAuth2-Proxy SSO redirect: unexpected — ${O2P_REDIRECT}"
   fi
   echo ""
 fi
@@ -804,21 +776,6 @@ print('YES' if view else 'NO')
     warn "Harbor: API not reachable, skipping member check"
   fi
 
-  # --- OAuth2-Proxy Group Filter ---
-  echo "  [OAuth2-Proxy Group Filter]"
-
-  O2P_CFG=$(kubectl get configmap oauth2-proxy -n iam -o jsonpath='{.data.oauth2_proxy\.cfg}' 2>/dev/null)
-  if echo "${O2P_CFG}" | grep -q 'allowed_groups.*cluster-admin.*developer.*viewer'; then
-    pass "OAuth2-Proxy: allowed_groups configured"
-  else
-    # Check if allowed_groups exists at all
-    if echo "${O2P_CFG}" | grep -q "allowed_groups"; then
-      pass "OAuth2-Proxy: allowed_groups present"
-    else
-      fail "OAuth2-Proxy: allowed_groups NOT configured (all authenticated users pass through)"
-    fi
-  fi
-
   # --- Gitea Organization & Teams ---
   echo "  [Gitea Organization & Teams]"
 
@@ -871,14 +828,6 @@ print('YES' if view else 'NO')
     fail "Errors Middleware (auth-signin): NOT found in devtools namespace"
   fi
 
-  # Check ExternalName Service exists
-  EXT_SVC=$(kubectl get svc oauth2-proxy-ext -n devtools -o jsonpath='{.spec.type}' 2>/dev/null)
-  if [ "${EXT_SVC}" = "ExternalName" ]; then
-    pass "ExternalName Service (oauth2-proxy-ext): exists"
-  else
-    fail "ExternalName Service (oauth2-proxy-ext): NOT found or wrong type (${EXT_SVC})"
-  fi
-
   # Protected URLs should redirect (302) or return 401 when accessed without cookie
   for protected_app in argocd harbor headlamp grafana gitea openbao hubble; do
     PROT_CODE=$(curl -sk -o /dev/null -w '%{http_code}' \
@@ -907,14 +856,6 @@ print('YES' if view else 'NO')
         warn "${open_app}: HTTP ${OPEN_CODE} (unexpected)" ;;
     esac
   done
-
-  O2P_CODE=$(curl -sk -o /dev/null -w '%{http_code}' \
-    "https://oauth2-proxy.${DOMAIN}/ping" 2>/dev/null || echo "000")
-  if [ "${O2P_CODE}" = "200" ]; then
-    pass "oauth2-proxy: accessible (auth service) → HTTP ${O2P_CODE}"
-  else
-    fail "oauth2-proxy: HTTP ${O2P_CODE} (auth service should be open)"
-  fi
   echo ""
 fi
 

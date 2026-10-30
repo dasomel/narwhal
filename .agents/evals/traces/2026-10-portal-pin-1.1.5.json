@@ -1,0 +1,68 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-portal-pin-1-1-5-20261031",
+  "task": "Pin the Narwhal IDP Portal image to the published release 1.1.5 (was 1.1.4); static change only, live rollout and the bastion mirror / Gitea push are a separate step.",
+  "changeContext": {
+    "paths": [
+      "gitops/charts/narwhal-platform/templates/narwhal-portal-k8s.yaml",
+      "gitops/README.md",
+      "gitops/README-ko.md",
+      "scripts/airgap/images.txt",
+      "scripts/airgap/lib/image-digests.tsv",
+      "VERSIONS.md",
+      "SECURITY.md",
+      "docs/common/compatibility-matrix.md",
+      "CHANGELOG.md",
+      "CHANGELOG-ko.md",
+      ".agents/evals/traces/2026-10-portal-pin-1.1.5.json"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Tag bump of one image in the GitOps manifest, its air-gap inventory and digest pin, and the docs that quote the pin. No manifest structure, env, RBAC or chart change. No merge in this change."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "ghcr.io/dasomel/narwhal-portal:1.1.5 was published by portal-docker-publish run 41142412483 (amd64 and arm64 builds, manifest merge, Sign published image succeeded) from tag portal/v1.1.5 on 00a0c61ca7c4485fe9a8048c1abcab1f43a6f920 (#509); release run 41142878657 succeeded and GitHub release portal/v1.1.5 was published 2026-10-30T23:11:19Z with SBOM and NOTICE assets. The tag's index digest is sha256:a0072e53ca9ebedb1d13233497401a2366e40fe075716831a21f195f5c4e19f9; cosign verify with scripts/airgap/keys/cosign.pub passes on that digest. The image has NOT been mirrored to a cluster bastion in this change.",
+      "evidence": [
+        "test:sha256 of skopeo inspect --raw ghcr.io/dasomel/narwhal-portal:1.1.5 -> sha256:a0072e53ca9ebedb1d13233497401a2366e40fe075716831a21f195f5c4e19f9 (linux/arm64 sha256:21eeea06e69d1d796e80bd542e9c583a5e1bcc269a241e1b9b7f339471f158c6, linux/amd64 sha256:46a6c30f05204f95ec1aea7e063a3ecbfd5aa3957902d93169e6af55f3c63dec)",
+        "test:cosign verify --key scripts/airgap/keys/cosign.pub ghcr.io/dasomel/narwhal-portal@sha256:a0072e53ca9ebedb1d13233497401a2366e40fe075716831a21f195f5c4e19f9 -> The signatures were verified against the specified public key",
+        "doc:https://github.com/dasomel/narwhal/releases/tag/portal%2Fv1.1.5"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "Pin moved 1.1.4 -> 1.1.5 in the Deployment image, images.txt and image-digests.tsv (new digest), gitops README pins and prose (en/ko), VERSIONS.md, compatibility-matrix, SECURITY.md example and the Unreleased changelog entries (en/ko). 1.1.5 brings body-parser 2.4.0, systeminformation 5.33.16, the Falco Runtime Events priority filter fix and the Runtime Events tab on Ubuntu 26.04 nodes (#503)."
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "local static checks only",
+      "summary": "See evidence for the commands run and their results. NOT covered: the bastion mirror copy-by-digest, push-to-gitea and the live rollout, which must happen on the next cluster (the Kakao cluster was torn down 2026-10-29).",
+      "evidence": [
+        "test:RESEARCH_EVIDENCE_DIR=$(mktemp -d) make test -> passed 421 failed 0 warnings 3",
+        "test:make validate -> exit 0",
+        "test:bash scripts/ci/check-version-consistency.sh -> All checked versions are consistent",
+        "test:scripts/airgap/lib/refresh-image-digests.sh --check -> the narwhal-portal:1.1.5 row matches the registry; the only moved row visible in its output is the floating upstream tag kong:3.9 (pre-existing, unrelated to the portal pin)",
+        "test:python3 scripts/ci/markdownlint-changed.py --base origin/main -> No markdownlint violations on added/modified active-documentation lines"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "completion_claim",
+      "summary": "The repository pins the IDP Portal to 1.1.5 consistently, with a digest that matches the registry."
+    },
+    {
+      "id": "e6",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Complete and verified within the stated scope (static pin change; live rollout and running-version confirmation are separate)."
+    }
+  ]
+}

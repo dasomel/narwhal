@@ -14,17 +14,41 @@ const TRIVY_VULNERABILITY_REPORTS_PATH = "/apis/aquasecurity.github.io/v1alpha1/
 const TRIVY_REPORT_PAGE_LIMIT = 20
 const TRIVY_REPORT_MAX_PAGES = 50
 
-async function listVulnerabilityReports(): Promise<TrivyVulnerabilityReport[]> {
-  const { items, truncated, pages } = await listBounded<TrivyVulnerabilityReport>(
+type PartialReason = NonNullable<SecuritySummary["partialReason"]>
+
+interface ReportList {
+  items: TrivyVulnerabilityReport[]
+  partial: boolean
+  partialReason?: PartialReason
+}
+
+// D-TRIVY-RETRY (#505): a page that gets 429/5xx is retried by the shared
+// http-client (Retry-After honoured, full-jitter backoff). 3 attempts, delays
+// capped at 2s => at most ~4s of sleeping per page, so a page cannot hang the
+// request. If it still fails after pages were collected, the walk ends as a
+// flagged partial (partialOnError) instead of dropping everything.
+// D-TRIVY-410 (#505): an expired continue token is handled in listBounded: the
+// list restarts once from the beginning, and a second 410 returns the items so
+// far as partial (reason "expired"). No unbounded restart loop.
+// Partial results are never cached (callers below) so the next request re-walks.
+const TRIVY_PAGE_RETRY = { maxAttempts: 3, baseDelayMs: 250, maxDelayMs: 2_000 } as const
+
+async function listVulnerabilityReports(): Promise<ReportList> {
+  const { items, truncated, reason, pages } = await listBounded<TrivyVulnerabilityReport>(
     TRIVY_VULNERABILITY_REPORTS_PATH,
-    { limit: TRIVY_REPORT_PAGE_LIMIT, maxPages: TRIVY_REPORT_MAX_PAGES },
+    {
+      limit: TRIVY_REPORT_PAGE_LIMIT,
+      maxPages: TRIVY_REPORT_MAX_PAGES,
+      pageRetry: TRIVY_PAGE_RETRY,
+      partialOnError: true,
+    },
   )
   if (truncated) {
     console.warn(
-      `[trivy] VulnerabilityReports list truncated after ${pages} pages — returning ${items.length} fetched reports`,
+      `[trivy] VulnerabilityReports list truncated (${reason}) after ${pages} pages — returning ${items.length} fetched reports`,
     )
   }
-  return items
+  return { items, partial: truncated, partialReason: truncated ? reason : undefined }
 }
 
 // --- Trivy CRD types ---
@@ -165,7 +189,7 @@ export async function getSecuritySummary(): Promise<SecuritySummary> {
   if (cached) return cached
 
   try {
-    const items = await listVulnerabilityReports()
+    const { items, partial, partialReason } = await listVulnerabilityReports()
 
     const totals = { Critical: 0, High: 0, Medium: 0, Low: 0, Unknown: 0 }
     const imageSet = new Set<string>()
@@ -195,9 +219,10 @@ export async function getSecuritySummary(): Promise<SecuritySummary> {
       scannedWorkloads: workloadSet.size,
       lastUpdated: latestTs || new Date().toISOString(),
       vulnDb: computeVulnDbFreshness(latestTs),
+      ...(partial ? { partial, partialReason } : {}),
     }
 
-    await cacheSet(cacheKey, result, cacheTtl("trivySummary"))
+    if (!partial) await cacheSet(cacheKey, result, cacheTtl("trivySummary"))
     return result
   } catch (err) {
     console.warn("[trivy] getSecuritySummary failed:", err instanceof Error ? err.message : err)
@@ -205,21 +230,31 @@ export async function getSecuritySummary(): Promise<SecuritySummary> {
   }
 }
 
-export async function getWorkloadVulnerabilities(): Promise<WorkloadVulnRow[]> {
+export interface WorkloadVulnerabilityList {
+  rows: WorkloadVulnRow[]
+  partial: boolean
+  partialReason?: PartialReason
+}
+
+export async function getWorkloadVulnerabilitiesWithMeta(): Promise<WorkloadVulnerabilityList> {
   const cacheKey = cacheKeys.trivyWorkloads()
   const cached = await cacheGet<WorkloadVulnRow[]>(cacheKey)
-  if (cached) return cached
+  if (cached) return { rows: cached, partial: false }
 
   try {
-    const items = await listVulnerabilityReports()
+    const { items, partial, partialReason } = await listVulnerabilityReports()
     const rows = items.map(reportToWorkloadRow)
 
-    await cacheSet(cacheKey, rows, cacheTtl("trivyWorkloads"))
-    return rows
+    if (!partial) await cacheSet(cacheKey, rows, cacheTtl("trivyWorkloads"))
+    return { rows, partial, partialReason }
   } catch (err) {
     console.warn("[trivy] getWorkloadVulnerabilities failed:", err instanceof Error ? err.message : err)
-    return []
+    return { rows: [], partial: false }
   }
+}
+
+export async function getWorkloadVulnerabilities(): Promise<WorkloadVulnRow[]> {
+  return (await getWorkloadVulnerabilitiesWithMeta()).rows
 }
 
 export async function getImageVulnReport(image: string): Promise<ImageVulnReport | null> {
@@ -228,7 +263,7 @@ export async function getImageVulnReport(image: string): Promise<ImageVulnReport
   if (cached) return cached
 
   try {
-    const items = await listVulnerabilityReports()
+    const { items, partial } = await listVulnerabilityReports()
 
     const item = items.find((i) => buildImageString(i) === image)
     if (!item) return null
@@ -243,7 +278,7 @@ export async function getImageVulnReport(image: string): Promise<ImageVulnReport
       vulnerabilities: reportToVulnerabilities(item),
     }
 
-    await cacheSet(cacheKey, report, cacheTtl("trivyImage"))
+    if (!partial) await cacheSet(cacheKey, report, cacheTtl("trivyImage"))
     return report
   } catch (err) {
     console.warn("[trivy] getImageVulnReport failed:", err instanceof Error ? err.message : err)
@@ -257,11 +292,11 @@ export async function getTopVulnerableImages(limit = 5): Promise<WorkloadVulnRow
   if (cached) return cached
 
   try {
-    const rows = await getWorkloadVulnerabilities()
+    const { rows, partial } = await getWorkloadVulnerabilitiesWithMeta()
     const sorted = [...rows].sort((a, b) => scoreRow(b) - scoreRow(a))
     const result = sorted.slice(0, limit)
 
-    await cacheSet(cacheKey, result, cacheTtl("trivyTopVulnerable"))
+    if (!partial) await cacheSet(cacheKey, result, cacheTtl("trivyTopVulnerable"))
     return result
   } catch (err) {
     console.warn("[trivy] getTopVulnerableImages failed:", err instanceof Error ? err.message : err)

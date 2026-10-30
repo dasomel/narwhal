@@ -6,6 +6,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { SeverityCounters } from "@/components/security/severity-counters"
 import { SeverityDistributionChart } from "@/components/security/severity-distribution-chart"
 import { VulnerabilitiesTable } from "@/components/security/vulnerabilities-table"
+import { DataState } from "@/components/ui/data-state"
 import { RuntimeEventsFeed } from "@/components/security/runtime-events-feed"
 import type { SecuritySummary, WorkloadVulnRow } from "@/types/security"
 
@@ -18,12 +19,12 @@ async function fetchSecuritySummary(): Promise<SecuritySummary | null> {
   }
 }
 
-async function fetchWorkloadVulnerabilities(): Promise<WorkloadVulnRow[]> {
+async function fetchWorkloadVulnerabilities(): Promise<{ rows: WorkloadVulnRow[]; partial: boolean }> {
   try {
-    const { getWorkloadVulnerabilities } = await import("@/lib/trivy")
-    return await getWorkloadVulnerabilities()
+    const { getWorkloadVulnerabilitiesWithMeta } = await import("@/lib/trivy")
+    return await getWorkloadVulnerabilitiesWithMeta()
   } catch {
-    return []
+    return { rows: [], partial: false }
   }
 }
 
@@ -65,12 +66,14 @@ export default async function SecurityPage() {
   }
 
   const locale = await getLocale()
-  const [summary, initialVulns] = await Promise.all([
+  const [summary, vulnList] = await Promise.all([
     fetchSecuritySummary(),
     fetchWorkloadVulnerabilities(),
   ])
 
   const effectiveSummary = summary ?? emptySummary
+  const initialVulns = vulnList.rows
+  const partial = Boolean(summary?.partial) || vulnList.partial
 
   // Top 5 images by total vuln count (server-computed)
   const top5 = [...initialVulns]
@@ -84,6 +87,8 @@ export default async function SecurityPage() {
         <h1 className="text-2xl font-bold text-foreground">{t(locale, "security.title")}</h1>
         <p className="text-muted-foreground text-sm mt-1">{t(locale, "security.subtitle")}</p>
       </div>
+
+      {partial && <DataState state="partial" detailKey="securityPartial" />}
 
       {/* 2. Counter cards */}
       <SeverityCounters summary={effectiveSummary} locale={locale} />

@@ -4,7 +4,7 @@ import { K8S_RECOMMENDED_KERNEL_PARAMS } from "./kernel-params"
 import { assertK8sName, assertK8sNamespace, assertK8sNodeName, safeK8sSegment } from "./validation"
 import { getK8sApiServer } from "./config"
 import { getK8sBearerToken, invalidateK8sBearerToken } from "./k8s-token"
-import { fetchWithPolicy, readJsonWithPolicy } from "./http-client"
+import { fetchWithPolicy, readJsonWithPolicy, type RetryOptions } from "./http-client"
 
 export type { Localized, MaybeLocalized } from "./i18n-utils"
 export { pick } from "./i18n-utils"
@@ -41,7 +41,7 @@ export class K8sCredentialError extends K8sHttpError {
   }
 }
 
-async function k8sFetch<T>(path: string, init?: RequestInit): Promise<T> {
+async function k8sFetch<T>(path: string, init?: RequestInit, retry?: RetryOptions): Promise<T> {
   const apiServer = getK8sApiServer()
   const headers: Record<string, string> = {
     Accept: "application/json",
@@ -54,7 +54,7 @@ async function k8sFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const request = (requestHeaders: Record<string, string>) => fetchWithPolicy(
     url,
     { ...init, headers: requestHeaders },
-    { ...K8S_POLICY, timeoutMs: 60_000 },
+    { ...K8S_POLICY, ...(retry ? { retry } : {}), timeoutMs: 60_000 },
   )
   let res = await request(headers)
   if (res.status === 401) {
@@ -117,6 +117,8 @@ export interface BoundedList<T> {
   items: T[]
   /** true if maxPages was hit before metadata.continue ran out — the list is incomplete. */
   truncated: boolean
+  /** Why the list is incomplete; set whenever `truncated` is true. */
+  reason?: "max-pages" | "expired" | "error"
   pages: number
 }
 
@@ -127,6 +129,18 @@ export interface ListBoundedOptions {
   maxPages?: number
   labelSelector?: string
   fieldSelector?: string
+  /**
+   * D-LIST-RETRY (#505): per-page retry of 429/502/503/504 via the shared
+   * http-client policy (honours Retry-After, jittered backoff). Off by default:
+   * other callers stay single-shot (see K8S_POLICY).
+   */
+  pageRetry?: RetryOptions
+  /**
+   * D-LIST-PARTIAL (#505): when a page fails with a retryable status (429/5xx)
+   * after items were already collected, return them as truncated (reason
+   * "error") instead of throwing. Off by default. A failure on page 1 still throws.
+   */
+  partialOnError?: boolean
 }
 
 export const DEFAULT_LIST_LIMIT = 500
@@ -161,6 +175,7 @@ export async function listBounded<T>(path: string, opts: ListBoundedOptions = {}
     let continueToken: string | undefined
     let pages = 0
     let truncated = false
+    let reason: BoundedList<T>["reason"]
 
     while (pages < maxPages) {
       const params = new URLSearchParams()
@@ -171,7 +186,7 @@ export async function listBounded<T>(path: string, opts: ListBoundedOptions = {}
 
       const sep = path.includes("?") ? "&" : "?"
       try {
-        const data = await k8sFetch<K8sListResponse<T>>(`${path}${sep}${params.toString()}`)
+        const data = await k8sFetch<K8sListResponse<T>>(`${path}${sep}${params.toString()}`, undefined, opts.pageRetry)
         if (!data || !Array.isArray(data.items) || data.items.length > limit
           || (data.metadata !== undefined && (data.metadata === null || typeof data.metadata !== "object" || Array.isArray(data.metadata)))
           || (data.metadata?.continue !== undefined && typeof data.metadata.continue !== "string")) {
@@ -185,6 +200,7 @@ export async function listBounded<T>(path: string, opts: ListBoundedOptions = {}
         if (pages >= maxPages) {
           // More pages exist (continue is set) but we hit the hard cap — the list is incomplete.
           truncated = true
+          reason = "max-pages"
         }
       } catch (err) {
         if (err instanceof K8sHttpError && err.status === 410) {
@@ -192,11 +208,15 @@ export async function listBounded<T>(path: string, opts: ListBoundedOptions = {}
           // (items + pages collected so far) from other failures, which just propagate.
           throw new ListBoundedGoneError<T>(items, pages)
         }
+        if (opts.partialOnError && items.length > 0 && err instanceof K8sHttpError
+          && (err.status === 429 || err.status >= 500)) {
+          return { items, truncated: true, reason: "error", pages }
+        }
         throw err
       }
     }
 
-    return { items, truncated, pages }
+    return { items, truncated, reason, pages }
   }
 
   try {
@@ -210,7 +230,7 @@ export async function listBounded<T>(path: string, opts: ListBoundedOptions = {}
       // Expired again on the restart — report what we have (including pages
       // actually collected during the restart) rather than fail the caller.
       const gone = retryErr as ListBoundedGoneError<T>
-      return { items: gone.items, truncated: true, pages: gone.pages }
+      return { items: gone.items, truncated: true, reason: "expired", pages: gone.pages }
     }
   }
 }

@@ -17,6 +17,7 @@ import {
   computeVulnDbFreshness,
   getSecuritySummary,
   getWorkloadVulnerabilities,
+  getWorkloadVulnerabilitiesWithMeta,
   getImageVulnReport,
 } from "./trivy"
 
@@ -260,42 +261,21 @@ describe("VulnerabilityReport bounded pagination", () => {
     expect(rows).toHaveLength(50)
   })
 
-  it("falls back as before when a page request fails", async () => {
+  it("falls back as before when the first page request fails (nothing to return as partial)", async () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {})
-
-    mockFetch
-      .mockResolvedValueOnce(
-        reportPageResponse(
-          [makeReport({ name: "rep-1", repository: "library/app-1", summary: { criticalCount: 4 } })],
-          "tok-2",
-        ),
-      )
-      .mockResolvedValueOnce(new Response(null, { status: 500 }))
+    mockFetch.mockImplementation(async () => new Response(null, { status: 500 }))
 
     const summary = await getSecuritySummary()
     expect(summary.totals).toEqual({ Critical: 0, High: 0, Medium: 0, Low: 0, Unknown: 0 })
     expect(summary.scannedImages).toBe(0)
     expect(summary.scannedWorkloads).toBe(0)
+    expect(summary.partial).toBeUndefined()
     expect(mockCache.size).toBe(0)
 
-    mockFetch
-      .mockResolvedValueOnce(
-        reportPageResponse([makeReport({ name: "rep-1", repository: "library/app-1" })], "tok-2"),
-      )
-      .mockResolvedValueOnce(new Response(null, { status: 429 }))
-
-    const rows = await getWorkloadVulnerabilities()
-    expect(rows).toEqual([])
+    expect(await getWorkloadVulnerabilities()).toEqual([])
     expect(mockCache.size).toBe(0)
 
-    mockFetch
-      .mockResolvedValueOnce(
-        reportPageResponse([makeReport({ name: "rep-1", repository: "library/app-1" })], "tok-2"),
-      )
-      .mockResolvedValueOnce(new Response(null, { status: 503 }))
-
-    const report = await getImageVulnReport("harbor.local.narwhal.internal/library/app-1:1.0.0")
-    expect(report).toBeNull()
+    expect(await getImageVulnReport("harbor.local.narwhal.internal/library/app-1:1.0.0")).toBeNull()
     expect(mockCache.size).toBe(0)
     expect(warnSpy).toHaveBeenCalledTimes(3)
   })
@@ -341,5 +321,113 @@ describe("VulnerabilityReport bounded pagination", () => {
     expect(report?.summary.High).toBe(2)
     expect(report?.vulnerabilities).toHaveLength(1)
     expect(report?.vulnerabilities[0].id).toBe("CVE-2026-0001")
+  })
+})
+
+describe("VulnerabilityReport 429 / expired-continue handling (#505)", () => {
+  const originalFetch = global.fetch
+  const mockFetch = vi.fn()
+  const page = (n: number, token?: string) =>
+    reportPageResponse(
+      [makeReport({ name: `rep-${n}`, workloadName: `wl-${n}`, repository: `library/img-${n}`, summary: { criticalCount: 1 } })],
+      token,
+    )
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockFetch.mockReset()
+    mockCache.clear()
+    global.fetch = mockFetch
+    vi.useFakeTimers()
+    vi.spyOn(Math, "random").mockReturnValue(0.5)
+    vi.spyOn(console, "warn").mockImplementation(() => {})
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+    global.fetch = originalFetch
+    vi.restoreAllMocks()
+  })
+
+  it("retries a page that gets 429 and returns the full list, not partial, and caches it", async () => {
+    mockFetch
+      .mockResolvedValueOnce(page(1, "tok-1"))
+      .mockResolvedValueOnce(new Response(null, { status: 429 }))
+      .mockResolvedValueOnce(page(2))
+
+    const promise = getWorkloadVulnerabilitiesWithMeta()
+    await vi.runAllTimersAsync()
+    const result = await promise
+
+    expect(result.partial).toBe(false)
+    expect(result.rows).toHaveLength(2)
+    expect(mockFetch).toHaveBeenCalledTimes(3)
+    // the retry re-requests the SAME continue token
+    expect(new URL(mockFetch.mock.calls[2][0] as string).searchParams.get("continue")).toBe("tok-1")
+    expect(mockCache.size).toBe(1)
+  })
+
+  it("flags partial (reason error) and does not cache when 429 persists past the retry budget", async () => {
+    mockFetch
+      .mockResolvedValueOnce(page(1, "tok-1"))
+      .mockImplementation(async () => new Response(null, { status: 429 }))
+
+    const promise = getSecuritySummary()
+    await vi.runAllTimersAsync()
+    const summary = await promise
+
+    expect(mockFetch).toHaveBeenCalledTimes(1 + 3) // first page + 3 attempts
+    expect(summary.partial).toBe(true)
+    expect(summary.partialReason).toBe("error")
+    expect(summary.totals.Critical).toBe(1)
+    expect(mockCache.size).toBe(0)
+  })
+
+  it("honours Retry-After on a 429 before retrying the page", async () => {
+    mockFetch
+      .mockResolvedValueOnce(page(1, "tok-1"))
+      .mockResolvedValueOnce(new Response(null, { status: 429, headers: { "Retry-After": "2" } }))
+      .mockResolvedValueOnce(page(2))
+
+    const promise = getWorkloadVulnerabilitiesWithMeta()
+    await vi.advanceTimersByTimeAsync(1_900)
+    expect(mockFetch).toHaveBeenCalledTimes(2)
+    await vi.advanceTimersByTimeAsync(200)
+    expect(mockFetch).toHaveBeenCalledTimes(3)
+    expect((await promise).rows).toHaveLength(2)
+  })
+
+  it("restarts once on an expired continue token (410) and returns the full list", async () => {
+    mockFetch
+      .mockResolvedValueOnce(page(1, "tok-1"))
+      .mockResolvedValueOnce(new Response(null, { status: 410 }))
+      .mockResolvedValueOnce(page(1, "tok-2"))
+      .mockResolvedValueOnce(page(2))
+
+    const result = await getWorkloadVulnerabilitiesWithMeta()
+    expect(result.partial).toBe(false)
+    expect(result.rows).toHaveLength(2)
+  })
+
+  it("flags partial (reason expired) and does not cache when the restart also hits 410", async () => {
+    mockFetch
+      .mockResolvedValueOnce(page(1, "tok-1"))
+      .mockResolvedValueOnce(new Response(null, { status: 410 }))
+      .mockResolvedValueOnce(page(1, "tok-2"))
+      .mockResolvedValueOnce(new Response(null, { status: 410 }))
+
+    const result = await getWorkloadVulnerabilitiesWithMeta()
+    expect(result.partial).toBe(true)
+    expect(result.partialReason).toBe("expired")
+    expect(result.rows).toHaveLength(1)
+    expect(mockCache.size).toBe(0)
+  })
+
+  it("leaves a normal multi-page walk unflagged", async () => {
+    mockFetch.mockResolvedValueOnce(page(1, "tok-1")).mockResolvedValueOnce(page(2))
+    const summary = await getSecuritySummary()
+    expect(summary.partial).toBeUndefined()
+    expect(summary.scannedImages).toBe(2)
+    expect(mockFetch).toHaveBeenCalledTimes(2)
   })
 })

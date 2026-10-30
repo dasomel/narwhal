@@ -24,7 +24,17 @@
       "type": "external_input",
       "provenance": "GitHub API reads by this session on 2026-10-31: run 40440188219 (PR #482, v2.22.2) and run 40538827725 (v2.22.1) job logs and step timings; step-security/harden-runner release v2.22.3, tag ref, commit 46b06cea and issue #708 with comments",
       "reviewed": true,
-      "summary": "Both 2026-10-27 runs: every step success, Complete job started 'Cleaning up orphan processes' (02:46:35Z / 16:15:19Z) and the job was cancelled at about 20 min (15 min timeout plus cancel grace); the regression gate then failed. v2.22.3 tag -> commit 46b06cea07f9e64621fdf066ba77ac6915163d43 (message 'Merge pull request #711 from step-security/rc-46 / v2.23.0', 2026-10-27T18:23Z); release note 'Fixed unexpected blocking of allowed connections caused by GitHub's DNS resolver and outbound proxy experiment on GitHub-hosted Linux runners'. #708 body: agent records one A record per allowed domain and drops the other IPs (westus2); a comment reports jobs hanging in 'Cleaning up orphan processes' until the job timeout, including runs where every step passed; the maintainer comment of 2026-10-27 says the fix is released in v2.22.3. #708 is still OPEN."
+      "summary": "Both 2026-10-27 runs: the job logs show every main step ran (Browser E2E '7 passed' in 40538827725; Browser E2E success in 40440188219) and every post step completed; the jobs API leaves some step conclusions unset (checkout and Browser E2E in 40538827725, the harden-runner pre/run steps in 40440188219) because the job was later cancelled. Complete job started 'Cleaning up orphan processes' (02:46:35Z / 16:15:19Z) and the job was cancelled at about 20 min (15 min timeout plus cancel grace); the regression gate then failed. v2.22.3 tag -> commit 46b06cea07f9e64621fdf066ba77ac6915163d43 (message 'Merge pull request #711 from step-security/rc-46 / v2.23.0', 2026-10-27T18:23Z); release note 'Fixed unexpected blocking of allowed connections caused by GitHub's DNS resolver and outbound proxy experiment on GitHub-hosted Linux runners'. #708 body: agent records one A record per allowed domain and drops the other IPs (westus2); a comment reports jobs hanging in 'Cleaning up orphan processes' until the job timeout, including runs where every step passed; the maintainer comment of 2026-10-27 says the fix is released in v2.22.3. #708 is still OPEN."
+    },
+    {
+      "id": "e2r",
+      "type": "reproduction",
+      "summary": "Mode 2 observed twice on 2026-10-27, after the job timeout was added: run 40440188219 (PR #482, harden-runner v2.22.2) and run 40538827725 (v2.22.1) stopped at 'Complete job: Cleaning up orphan processes' (logged 02:46:35Z and 16:15:19Z) and were cancelled at about 20 min, which failed the Portal critical regression gate. Mode 1 is the 2026-10-23 checkout failure recorded in #462. The same symptoms on two harden-runner versions show the v2.22.2 bump alone is not a fix.",
+      "evidence": [
+        "ci:https://github.com/dasomel/narwhal/actions/runs/40440188219",
+        "ci:https://github.com/dasomel/narwhal/actions/runs/40538827725",
+        "doc:https://github.com/dasomel/narwhal/issues/462"
+      ]
     },
     {
       "id": "e3",
@@ -39,7 +49,7 @@
     {
       "id": "e5",
       "type": "review_correction",
-      "summary": "Independent review (agy Claude Sonnet 5.5 High) returned FAIL: the comment overclaimed a fix, and the lessons-log described #708 as the same symptom although the reviewer only found the drop symptom in the issue body. Checked against #708 comments: the orphan-cleanup hang is reported there and the maintainer names v2.22.3 as the fix, so the link stands, but the wording was narrowed to what is shown (fix announced, effect on the hang unverified) and the rc-46/v2.23.0 tag-commit message is noted."
+      "summary": "Independent review (agy Claude Sonnet 5.5 High) returned FAIL: the comment overclaimed a fix, and the lessons-log described #708 as the same symptom although the reviewer only found the drop symptom in the issue body. Checked against #708 comments: the orphan-cleanup hang is reported there and the maintainer names v2.22.3 as the fix, so the link stands, but the wording was narrowed to what is shown (fix announced, effect on the hang unverified) and the rc-46/v2.23.0 tag-commit message is noted. A second independent review (native Sonnet code-reviewer) found that gate.py failed on this trace (bug_fix without a reproduction event; the author's local run had hidden the exit code behind a pipe) and that 'every step success' did not match the API step conclusions; the reproduction event e2r and the e2 wording were added."
     },
     {
       "id": "e6",
@@ -50,7 +60,8 @@
         "test:python3 yaml.safe_load on all 9 .github/workflows/portal-*.yml -> ok",
         "test:python3 scripts/ci/check-workflow-workdir.py -> PASS: 9 workflow(s)",
         "test:python3 -m yamllint (Makefile args) .github/workflows/portal-test.yml -> warnings only, no errors",
-        "ci:PR #508 first head dfa9f954 -> every check pass except behavior-contract (missing operational trace), including Portal browser E2E pass"
+        "ci:PR #508 first head dfa9f954 -> every check pass except behavior-contract (missing operational trace), including Portal browser E2E pass",
+        "test:agent-trace validators as agent-behavior.yml runs them, each exit code taken directly (not through a pipe): check-agent-trace-requirement.py rc 0; bind-verification.py (2026-08-version-consistency e4/e5) rc 0; check-agent-trace-evidence.py over every trace rc 0 passed true; gate.py on every trace rc 0"
       ]
     },
     {

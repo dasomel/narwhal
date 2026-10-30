@@ -42,6 +42,17 @@ should_run() {
   [ -z "${SECTION_FILTER}" ] || [ "${SECTION_FILTER}" = "$1" ]
 }
 
+# D-505-HARBOR: use the installed credential for every Harbor API check.
+# A missing Secret fails without trying a default password or logging its value.
+harbor_api() {
+  local password
+  password=$(kubectl get secret harbor-secrets -n devtools -o jsonpath='{.data.HARBOR_ADMIN_PASSWORD}' 2>/dev/null | base64 -d) || password=""
+  if [ -z "${password}" ]; then
+    return 1
+  fi
+  curl -sk --connect-timeout 5 -u "admin:${password}" "$1" 2>/dev/null
+}
+
 # Get Keycloak admin token
 get_admin_token() {
   local user pass
@@ -167,7 +178,7 @@ else:
       CLIENTS_JSON=$(curl -sk -H "Authorization: Bearer ${ADMIN_TOKEN}" \
         "${KEYCLOAK_URL}/admin/realms/${REALM}/clients" 2>/dev/null)
 
-      for client_name in kubernetes argocd grafana gitea harbor headlamp oauth2-proxy; do
+      for client_name in kubernetes argocd grafana gitea harbor headlamp; do
         CLIENT_UUID=$(echo "${CLIENTS_JSON}" | python3 -c "
 import sys,json
 clients = json.load(sys.stdin)
@@ -428,7 +439,7 @@ else:
   # blocks direct pod IP access from the host (connection reset by peer)
   HARBOR_CORE_READY=$(kubectl get pods -n devtools -l app=harbor -l component=core -o jsonpath='{.items[0].status.phase}' 2>/dev/null)
   if [ "${HARBOR_CORE_READY}" = "Running" ]; then
-    HARBOR_CFG=$(curl -sk -u admin:Harbor12345 "https://harbor.${DOMAIN}/api/v2.0/configurations" 2>/dev/null)
+    HARBOR_CFG=$(harbor_api "https://harbor.${DOMAIN}/api/v2.0/configurations") || HARBOR_CFG="{}"
     HARBOR_VERIFY=$(echo "${HARBOR_CFG}" | python3 -c 'import sys,json; print(json.load(sys.stdin).get("oidc_verify_cert",{}).get("value","?"))' 2>/dev/null)
     HARBOR_ENDPOINT=$(echo "${HARBOR_CFG}" | python3 -c 'import sys,json; print(json.load(sys.stdin).get("oidc_endpoint",{}).get("value",""))' 2>/dev/null)
 
@@ -761,7 +772,7 @@ if should_run "acl"; then
   echo "  [Harbor Project Members]"
 
   HARBOR_API="https://harbor.${DOMAIN}/api/v2.0"
-  HARBOR_MEMBERS=$(curl -sk -u "admin:Harbor12345" "${HARBOR_API}/projects/1/members" 2>/dev/null)
+  HARBOR_MEMBERS=$(harbor_api "${HARBOR_API}/projects/1/members") || HARBOR_MEMBERS="[]"
 
   if [ -n "${HARBOR_MEMBERS}" ]; then
     HAS_DEV_GROUP=$(echo "${HARBOR_MEMBERS}" | python3 -c "

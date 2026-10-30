@@ -17,7 +17,10 @@ cd "$(dirname "$0")/.."
 
 # --- baselines (2026-07-25) --------------------------------------------------
 BASE_INLINE_STYLE=47
-BASE_HARDCODED_KO=48
+# 2026-10-31: 48 -> 66. CI counted 0 (see D-KO-COUNT), so 18 hardcoded strings got in
+# unchecked; 66 is the real count on main 64ed65da (macOS BSD grep and the perl count agree).
+# Paying those 18 back is tracked separately; lower this as they are fixed.
+BASE_HARDCODED_KO=66
 
 fail=0
 
@@ -39,9 +42,16 @@ inline_style=$(grep -ro 'style={{' src --include='*.tsx' | wc -l | tr -d ' ')
 
 # i18n: UI text goes through src/lib/i18n.ts. Korean in comments/JSDoc is fine,
 # so comment-leading lines are excluded.
-hardcoded_ko=$(grep -rn '[가-힣]' src --include='*.tsx' 2>/dev/null \
-  | grep -vE '^[^:]+:[0-9]+: *(//|\*|/\*)' \
-  | grep -v 'i18n' | wc -l | tr -d ' ' || true)
+# D-KO-COUNT: match Hangul syllables by code point (U+AC00-U+D7A3) in perl, not with a
+# grep bracket range. GNU grep under C.UTF-8 (the GitHub runner) rejects '[가-힣]' with
+# "Invalid collation character", and the old `2>/dev/null ... || true` turned that error
+# into a count of 0, so CI never enforced this rule; under LANG=C it matched bytes (339).
+# BSD grep on macOS counted correctly, so the number only differed in CI. A perl error
+# now fails the script (pipefail) instead of reading as "no violations".
+hardcoded_ko=$(find src -name '*.tsx' -type f -print0 | sort -z \
+  | xargs -0 perl -CSD -ne 'print "$ARGV:$.:$_" if /[\x{AC00}-\x{D7A3}]/; close ARGV if eof' \
+  | { grep -vE '^[^:]+:[0-9]+: *(//|\*|/\*)' || true; } \
+  | { grep -v 'i18n' || true; } | wc -l | tr -d ' ')
 
 check "inline styles (style={{)" "$inline_style" "$BASE_INLINE_STYLE"
 check "hardcoded Korean (non-comment)" "$hardcoded_ko" "$BASE_HARDCODED_KO"

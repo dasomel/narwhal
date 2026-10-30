@@ -1,0 +1,68 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-harden-runner-2223-462-20261031",
+  "task": "#462: the Portal browser E2E job intermittently fails or hangs under step-security/harden-runner egress-policy block. Pin every harden-runner use to v2.22.3, the release the maintainers name as the fix for allowed connections being dropped (step-security/harden-runner#708). Keep block mode, the allowlists and D-job-timeout. Record a lessons-log row. No cluster involved; the effect can only be observed across CI runs.",
+  "changeContext": {
+    "paths": [
+      ".agents/evals/traces/2026-10-harden-runner-2.22.3-462.json",
+      ".github/workflows/portal-build-check.yml",
+      ".github/workflows/portal-license-and-sbom.yml",
+      ".github/workflows/portal-research-evidence.yml",
+      ".github/workflows/portal-test.yml",
+      "docs/common/lessons-log.md"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Change only the six harden-runner pins (four workflow files), the D-job-timeout comment in portal-test.yml, one lessons-log row and this trace. Deliberately left alone: egress-policy (stays block, no audit fallback), every allowed-endpoints list, timeout-minutes values, other actions, and jobs without a timeout (a possible follow-up). Dependabot #482 (v2.22.2) is superseded, not merged."
+    },
+    {
+      "id": "e2",
+      "type": "external_input",
+      "provenance": "GitHub API reads by this session on 2026-10-31: run 40440188219 (PR #482, v2.22.2) and run 40538827725 (v2.22.1) job logs and step timings; step-security/harden-runner release v2.22.3, tag ref, commit 46b06cea and issue #708 with comments",
+      "reviewed": true,
+      "summary": "Both 2026-10-27 runs: every step success, Complete job started 'Cleaning up orphan processes' (02:46:35Z / 16:15:19Z) and the job was cancelled at about 20 min (15 min timeout plus cancel grace); the regression gate then failed. v2.22.3 tag -> commit 46b06cea07f9e64621fdf066ba77ac6915163d43 (message 'Merge pull request #711 from step-security/rc-46 / v2.23.0', 2026-10-27T18:23Z); release note 'Fixed unexpected blocking of allowed connections caused by GitHub's DNS resolver and outbound proxy experiment on GitHub-hosted Linux runners'. #708 body: agent records one A record per allowed domain and drops the other IPs (westus2); a comment reports jobs hanging in 'Cleaning up orphan processes' until the job timeout, including runs where every step passed; the maintainer comment of 2026-10-27 says the fix is released in v2.22.3. #708 is still OPEN."
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "All six step-security/harden-runner uses moved from ccd8616d (v2.22.1) to 46b06cea (v2.22.3), pinned by full SHA with the version comment."
+    },
+    {
+      "id": "e4",
+      "type": "documentation",
+      "summary": "portal-test.yml D-job-timeout comment now says v2.22.3 is the maintainers' fix for dropped allowed connections and that its effect on the Complete job hang is unverified; lessons-log row records both modes, why #482 is not a fix, the #708 evidence and the discriminator."
+    },
+    {
+      "id": "e5",
+      "type": "review_correction",
+      "summary": "Independent review (agy Claude Sonnet 5.5 High) returned FAIL: the comment overclaimed a fix, and the lessons-log described #708 as the same symptom although the reviewer only found the drop symptom in the issue body. Checked against #708 comments: the orphan-cleanup hang is reported there and the maintainer names v2.22.3 as the fix, so the link stands, but the wording was narrowed to what is shown (fix announced, effect on the hang unverified) and the rc-46/v2.23.0 tag-commit message is noted."
+    },
+    {
+      "id": "e6",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "workflow YAML parse, workflow working-directory check, yamllint on the changed workflow, and the agent-trace validators as agent-behavior.yml runs them. NOT covered: whether the hang stops - that needs repeated CI runs, including on westus2 runners.",
+      "evidence": [
+        "test:python3 yaml.safe_load on all 9 .github/workflows/portal-*.yml -> ok",
+        "test:python3 scripts/ci/check-workflow-workdir.py -> PASS: 9 workflow(s)",
+        "test:python3 -m yamllint (Makefile args) .github/workflows/portal-test.yml -> warnings only, no errors",
+        "ci:PR #508 first head dfa9f954 -> every check pass except behavior-contract (missing operational trace), including Portal browser E2E pass"
+      ]
+    },
+    {
+      "id": "e7",
+      "type": "completion_claim",
+      "summary": "Every harden-runner pin is v2.22.3 with block mode and allowlists unchanged; the documentation matches the upstream evidence. Whether the intermittent hang is gone is not verified."
+    },
+    {
+      "id": "e8",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Complete within repository scope; #462 stays open until CI runs show the hang does not recur."
+    }
+  ]
+}

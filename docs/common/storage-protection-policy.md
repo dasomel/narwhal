@@ -141,10 +141,9 @@ rg -n 'local-path|local PV|kind: PersistentVolume' scripts gitops/resources gito
 
 미검증 항목: 실제 스냅샷 생성, 인증 롤 동작과 13-2의 `bao read -field=...` 출력 형식, 클러스터 안에서의 `openssl cms` 암호화(로컬 OpenSSL로만 확인; 이미지의 busybox `od`/`head -c`/`tail -c`도 미실행), Velero 제외 라벨 동작, Velero PodVolumeBackup 완료, 복원 드릴. 스냅샷 신선도 알림도 아직 없다.
 
-
 ## Velero backup alerts
 
-#456은 GitOps의 `prometheus-alerts.yaml`에 다음 알림을 추가한다. 현재 증거는 정적 검사와 렌더링뿐이며 라이브 적용은 아직 검증하지 않았다.
+이 절의 변경(#456)은 GitOps의 `prometheus-alerts.yaml`에 다음 알림을 추가한다. 현재 증거는 정적 검사와 렌더링뿐이며 라이브 적용은 아직 검증하지 않았다.
 
 | 알림 | 조건 / 심각도 |
 | --- | --- |
@@ -163,7 +162,7 @@ Deployment·Service·ServiceMonitor 템플릿을 upstream tag에서 가져와 �
 
 `storage`는 `09-istio-ambient.sh`에서 ambient 등록되고, Prometheus는 `podMetadata`로 mesh를 벗어난다.
 현재 storage AuthorizationPolicy는 없고 NetworkPolicy는 egress 전체 허용뿐이다.
-`network-policies.yaml`의 `velero-metrics` PeerAuthentication은 Velero 서버의 8085만 PERMISSIVE로 설정한다.
+`narwhal-platform` `istio-ambient-policies.yaml`의 `velero-metrics` PeerAuthentication은 Velero 서버의 8085만 PERMISSIVE로 설정한다.
 동명의 NetworkPolicy는 monitoring의 `app.kubernetes.io/name=prometheus`,
 `prometheus=prometheus-stack-kube-prom-prometheus` 파드에서 8085(및 모든 ambient 정책이 요구하는 HBONE 15008)로 오는 연결만 허용한다.
 `name: velero`까지 선택해 공통 app label을 가진 `name: node-agent` 파드는 제외한다. 기존 ambient kubelet probe CCNP와 노드 probe 경로는 유지한다.

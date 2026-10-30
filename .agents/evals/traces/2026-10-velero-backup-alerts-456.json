@@ -9,6 +9,7 @@
       "docs/common/lessons-log.md",
       "docs/common/storage-protection-policy.md",
       "gitops/charts/narwhal-apps/templates/velero.yaml",
+      "gitops/charts/narwhal-platform/templates/istio-ambient-policies.yaml",
       "gitops/resources/network-policies.yaml",
       "gitops/resources/prometheus-alerts.yaml",
       "scripts/test/lib/check-peer-authentication.py",
@@ -41,12 +42,12 @@
     {
       "id": "e4",
       "type": "bug_fix",
-      "summary": "velero.yaml enables metrics with a ServiceMonitor labelled release: prometheus-stack (autodetect false); network-policies.yaml adds PeerAuthentication velero-metrics (selector app.kubernetes.io/name=velero, app.kubernetes.io/instance=velero, name=velero; STRICT with 8085 PERMISSIVE) and NetworkPolicy velero-metrics (from namespace monitoring pods app.kubernetes.io/name=prometheus, prometheus=prometheus-stack-kube-prom-prometheus, ports 8085 and 15008); prometheus-alerts.yaml adds VeleroBackupStale, VeleroBackupNeverSucceeded, VeleroBackupFailed, VeleroBackupPartiallyFailed, VeleroBackupValidationFailed and VeleroMetricsUnavailable."
+      "summary": "velero.yaml enables metrics with a ServiceMonitor labelled release: prometheus-stack (autodetect false); narwhal-platform istio-ambient-policies.yaml adds PeerAuthentication velero-metrics (6/6, beside the other mesh policies) (selector app.kubernetes.io/name=velero, app.kubernetes.io/instance=velero, name=velero; STRICT with 8085 PERMISSIVE) and network-policies.yaml adds NetworkPolicy velero-metrics (from namespace monitoring pods app.kubernetes.io/name=prometheus, prometheus=prometheus-stack-kube-prom-prometheus, ports 8085 and 15008); prometheus-alerts.yaml adds VeleroBackupStale, VeleroBackupNeverSucceeded, VeleroBackupFailed, VeleroBackupPartiallyFailed, VeleroBackupValidationFailed and VeleroMetricsUnavailable."
     },
     {
       "id": "e5",
       "type": "review_correction",
-      "summary": "Lane history: the first implementation lane (Codex) stopped at a usage limit with an unreviewed draft; the continuing lane (native Sonnet executor) found the NetworkPolicy lacked HBONE 15008 (R200/R201 failed) and an alert description tripped R243, and fixed both. The coordinator renumbered the new check from R293 to R294 because #510 had already merged R293."
+      "summary": "Lane history: the first implementation lane (Codex) stopped at a usage limit with an unreviewed draft; the continuing lane (native Sonnet executor) found the NetworkPolicy lacked HBONE 15008 (R200/R201 failed) and an alert description tripped R243, and fixed both. The coordinator renumbered the new check from R293 to R294 because #510 had already merged R293. On PR #511 CI, kubeconform failed ('could not find schema for PeerAuthentication': gitops/resources has no Istio schemas) and markdownlint flagged MD012/MD018 in storage-protection-policy.md; the Opus reviewer had already noted the placement against the repo convention. The PeerAuthentication moved to the narwhal-platform chart template beside the other five, R294 reads it from there, and the doc lines were fixed. The reviewer also corrected the coordinator's reason for leaving 08-4 unchanged: 08-2 installs prometheus-stack (CRDs included) before 08-4, so the CRD is present; the decision stands because the rules arrive in the same GitOps sync as the values."
     },
     {
       "id": "e6",
@@ -57,7 +58,11 @@
         "test:helm template narwhal-apps gitops/charts/narwhal-apps --show-only templates/velero.yaml | yq .spec.source.helm.valuesObject, then helm template velero velero-12.0.3.tgz -n storage --api-versions monitoring.coreos.com/v1 -> ServiceMonitor velero, labels include release: prometheus-stack, endpoint port http-monitoring interval 30s, selector app.kubernetes.io/name=velero, app.kubernetes.io/instance=velero",
         "test:python3 scripts/test/lib/check-velero-alerts.py -> 'PASS: R294 monitor, restricted scrape path, 6 alert definitions' and 'PASS: 15 promtool behavior cases'",
         "test:python3 scripts/test/lib/check-peer-authentication.py -> 'PASS: PeerAuthentication exceptions are allowlisted; 2 known-issue baseline entries'",
-        "test:RESEARCH_EVIDENCE_DIR=$(mktemp -d) make test after rebasing onto origin/main d9b7cec4 (#510 merged) -> passed 420 failed 0 warnings 3"
+        "test:RESEARCH_EVIDENCE_DIR=$(mktemp -d) make test after rebasing onto origin/main d9b7cec4 (#510 merged) -> passed 420 failed 0 warnings 3",
+        "test:kubeconform -strict -kubernetes-version 1.31.0 with schemas/crds over gitops/resources/*.yaml (as lint.yml) -> 76 resources, Valid 76, Errors 0",
+        "test:helm template narwhal-platform gitops/charts/narwhal-platform -> PeerAuthentications istio-system/default, platform-system/platform-system-permissive, database/database-permissive, devtools/harbor-permissive, monitoring/monitoring-permissive, storage/velero-metrics",
+        "test:python3 scripts/ci/markdownlint-changed.py --base origin/main -> no violations",
+        "test:after the move: check-velero-alerts.py PASS (15 promtool cases), check-peer-authentication.py PASS, RESEARCH_EVIDENCE_DIR=$(mktemp -d) make test -> passed 420 failed 0 warnings 3, make validate 0 FAIL"
       ]
     },
     {

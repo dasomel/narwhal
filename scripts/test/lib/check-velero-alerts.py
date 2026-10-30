@@ -23,10 +23,15 @@ def check():
     assert values['metrics']['serviceMonitor'] == {
         'enabled': True, 'autodetect': False,
         'additionalLabels': {'release': 'prometheus-stack'}}
+    # D-velero-scrape: the PeerAuthentication sits with the other mesh policies (kubeconform has
+    # no Istio schemas for gitops/resources); the NetworkPolicy stays in network-policies.yaml.
     policies = list(yaml.safe_load_all((ROOT / 'gitops/resources/network-policies.yaml').read_text()))
-    selected = [p for p in policies if p['metadata']['name'] == 'velero-metrics']
-    assert len(selected) == 2
-    peer, net = selected
+    nets = [p for p in policies if p and p['metadata']['name'] == 'velero-metrics']
+    assert [p['kind'] for p in nets] == ['NetworkPolicy']
+    mesh = (ROOT / 'gitops/charts/narwhal-platform/templates/istio-ambient-policies.yaml').read_text()
+    peers = [p for p in yaml.safe_load_all(mesh) if p and p['metadata']['name'] == 'velero-metrics']
+    assert len(peers) == 1
+    peer, net = peers[0], nets[0]
     selector = {'matchLabels': {'app.kubernetes.io/name': 'velero', 'app.kubernetes.io/instance': 'velero',
                                  'name': 'velero'}}
     assert peer['metadata']['namespace'] == net['metadata']['namespace'] == 'storage'

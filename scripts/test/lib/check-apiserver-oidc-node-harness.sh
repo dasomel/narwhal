@@ -22,6 +22,8 @@
 #   8. A PID that changes only after a few lookups is waited for, and readyz is polled only
 #      after the PID changed.
 #   9. No PID before the change (stub prints nothing) falls back to the sleep + readyz wait.
+#   10. Flag-mismatch path: --oidc-issuer-url present but a required flag missing (or a different
+#      issuer) fails closed, naming the flag, with the manifest untouched and no backup.
 set -euo pipefail
 
 if ! command -v yq >/dev/null 2>&1; then
@@ -387,4 +389,43 @@ grep -Fq "readyz=ok" <<<"${out9}" || {
   exit 1
 }
 
-echo "OK: 11-4b-apiserver-oidc-node.sh passed 11 behavioural cases (empty CA, invalid PEM, 7-flag apply + CA annotation + external backup, idempotent re-run, CA rotation via annotation with its own backup, pre-annotation manifest, readyz timeout, PID that never changes on both restart paths, delayed PID change before readyz, no-PID fallback)"
+# 10. Flag-mismatch path (#505, LOW from the #500 review): --oidc-issuer-url is present but
+#     another required flag is missing, or the issuer differs. The script must fail closed with
+#     the named flag, leave the manifest byte-identical and write no backup (it never half-fixes).
+with_flags_ca1
+yq -i '.spec.containers[0].command |= map(select(. != "--oidc-groups-claim=groups"))' "${MANIFEST}"
+cp "${MANIFEST}" "${tmp}/mismatch-manifest.yaml"
+backups_before="$(backup_count)"
+if out10="$(run_node_script "${tmp}/ca1.crt" "ok" 2>&1)"; then
+  echo "FAIL: case 10 (missing --oidc-groups-claim) succeeded, expected non-zero exit: ${out10}"
+  exit 1
+fi
+grep -Fq "is missing required flag --oidc-groups-claim=groups" <<<"${out10}" || {
+  echo "FAIL: case 10 did not name the missing flag: ${out10}"
+  exit 1
+}
+cmp -s "${MANIFEST}" "${tmp}/mismatch-manifest.yaml" || {
+  echo "FAIL: case 10 modified the manifest on the mismatch path"
+  exit 1
+}
+[ "$(backup_count)" = "${backups_before}" ] || {
+  echo "FAIL: case 10 wrote a backup on the mismatch path"
+  exit 1
+}
+with_flags_ca1
+yq -i '.spec.containers[0].command |= map(select(. != "--oidc-issuer-url='"${ISSUER_URL}"'")) | .spec.containers[0].command += ["--oidc-issuer-url=https://other.example/realms/x"]' "${MANIFEST}"
+cp "${MANIFEST}" "${tmp}/mismatch-manifest.yaml"
+if out10b="$(run_node_script "${tmp}/ca1.crt" "ok" 2>&1)"; then
+  echo "FAIL: case 10b (different issuer) succeeded, expected non-zero exit: ${out10b}"
+  exit 1
+fi
+grep -Fq "is missing required flag --oidc-issuer-url=${ISSUER_URL}" <<<"${out10b}" || {
+  echo "FAIL: case 10b did not name the expected issuer flag: ${out10b}"
+  exit 1
+}
+cmp -s "${MANIFEST}" "${tmp}/mismatch-manifest.yaml" || {
+  echo "FAIL: case 10b modified the manifest"
+  exit 1
+}
+
+echo "OK: 11-4b-apiserver-oidc-node.sh passed 12 behavioural cases (empty CA, invalid PEM, 7-flag apply + CA annotation + external backup, idempotent re-run, CA rotation via annotation with its own backup, pre-annotation manifest, readyz timeout, PID that never changes on both restart paths, delayed PID change before readyz, no-PID fallback, flag-mismatch fails closed untouched)"

@@ -14,7 +14,9 @@
 # Cost: serial kube-apiserver static-pod restart across master-2..N (~15-30s per master) on
 # the first run or when the CA rotates; no-op on subsequent runs. The node script returns only
 # after the kube-apiserver process was replaced and is ready, so two masters are never down at
-# once. Every master must already hold that script, so a node staged before this change needs
+# once. That guarantee holds only while the node can read the kube-apiserver PID (pgrep present);
+# without a PID the node script falls back to a fixed sleep + /readyz and prints a WARN, which is
+# best effort (the old process may still answer ok), so watch for that WARN. Every master must already hold that script, so a node staged before this change needs
 # `./scripts/cloud/stage-kakao-nodes.sh <node-ip>` first (checked on all masters before the first
 # restart).
 # Escape hatch: restore `/etc/kubernetes/kube-apiserver.yaml.pre-oidc-*` on the target node.
@@ -125,6 +127,19 @@ for ip in "${MASTERS[@]:1}"; do
   idx=$((idx + 1))
 done
 
+# D-KUBEADM-CONFIG-OIDC (#505): the ConfigMap step runs on master-1 (cluster-admin kubeconfig
+# there). Its script must be staged before the first restart for the same half-applied reason.
+KUBEADM_CONFIG_SCRIPT="${STAGE_DIR}/scripts/cluster/11-4c-kubeadm-config-oidc.sh"
+rc=0
+ssh_node "${MASTER1}" "sudo test -f ${KUBEADM_CONFIG_SCRIPT}" || rc=$?
+if [ "${rc}" -eq 1 ]; then
+  echo "ERROR: ${KUBEADM_CONFIG_SCRIPT} is missing on master-1 (${MASTER1}): the node was staged before the kubeadm-config change. Re-run ./scripts/cloud/stage-kakao-nodes.sh ${MASTER1} first, then ./scripts/cloud/apply-apiserver-oidc-kakao.sh" >&2
+  exit 1
+elif [ "${rc}" -ne 0 ]; then
+  echo "ERROR: could not check ${KUBEADM_CONFIG_SCRIPT} on master-1 (${MASTER1}): ssh exit ${rc}" >&2
+  exit 1
+fi
+
 idx=2
 for ip in "${MASTERS[@]:1}"; do
   echo "=== control-plane master-${idx} (${ip}) ==="
@@ -152,6 +167,12 @@ for ip in "${MASTERS[@]:1}"; do
   fi
   idx=$((idx + 1))
 done
+
+echo "=== Persisting the OIDC flags in kube-system/kubeadm-config (survives kubeadm upgrade) ==="
+if ! ssh_node "${MASTER1}" "sudo env KUBECONFIG=${STAGE_DIR}/.kube/config-local bash ${KUBEADM_CONFIG_SCRIPT} ${OIDC_ISSUER_URL}"; then
+  echo "ERROR: 11-4c-kubeadm-config-oidc.sh failed on master-1 (${MASTER1}); kubeadm-config was not changed. Re-run: ./scripts/cloud/apply-apiserver-oidc-kakao.sh" >&2
+  exit 1
+fi
 
 echo "=== Verifying kube-apiserver mirror pod OIDC flag counts ==="
 # The pod count must equal the master count (argv[1]): a master with no kube-apiserver mirror pod

@@ -85,6 +85,56 @@ sudo chmod 600 /etc/kubernetes/enc/encryption-config.yaml
 )
 sudo chown root:root /etc/kubernetes/enc/encryption-key
 sudo chmod 600 /etc/kubernetes/enc/encryption-key
+#=========================================
+# D-KUBEADM-CONFIG-OIDC (#505): stage the OIDC CA BEFORE join.
+# Once 11-4c put --oidc-ca-file=/etc/kubernetes/pki/oidc-ca.crt into the shared
+# ClusterConfiguration, the apiserver kubeadm renders here refuses to start without that file
+# (a missing CA file is a startup error), and kubeadm join copies only kubeadm's own certs.
+# So: when the ClusterConfiguration references oidc-ca-file, fetch the CA from master-1 and
+# refuse to join without it; before 11-4 ran the config does not reference it and nothing is
+# needed. Cost: the join stops (exit 1, nothing joined) if master-1 is unreachable or the CA is
+# unobtainable. Escape hatch: fix the cause and re-run; nothing is changed on the node before
+# the check passes. The flags themselves reach this node's manifest from the ClusterConfiguration.
+# Kakao: no node-to-node SSH, so distribute-join-kakao.sh makes the same decision on the
+# operator host and stages /tmp/oidc-ca.crt only when the config references it.
+#=========================================
+OIDC_CA_DEST="/etc/kubernetes/pki/oidc-ca.crt"
+oidc_ca_required=false
+if [ "${PROVIDER:-vagrant}" = "kakao" ]; then
+  [[ -f /tmp/oidc-ca.crt ]] && oidc_ca_required=true
+else
+  cluster_config=""
+  for i in $(seq 1 $MAX_RETRIES); do
+    if cluster_config="$(sshpass -p "vagrant" ssh -o StrictHostKeyChecking=no "vagrant@${MASTER1_IP}" \
+      "kubectl --kubeconfig=/home/vagrant/.kube/config-local -n kube-system get cm kubeadm-config -o jsonpath='{.data.ClusterConfiguration}'" 2>/dev/null)" \
+      && [ -n "${cluster_config}" ]; then
+      break
+    fi
+    cluster_config=""
+    echo "Waiting for master-1 kubeadm-config... (${i}/${MAX_RETRIES})"
+    sleep $RETRY_INTERVAL
+  done
+  if [ -z "${cluster_config}" ]; then
+    echo "ERROR: cannot read kube-system/kubeadm-config from master-1; cannot tell whether the apiserver needs the OIDC CA — not joining" >&2
+    exit 1
+  fi
+  if grep -q 'oidc-ca-file' <<<"${cluster_config}"; then
+    oidc_ca_required=true
+    echo "Fetching oidc-ca.crt from master-1 (kubeadm-config references oidc-ca-file)..."
+    sshpass -p "vagrant" scp -o StrictHostKeyChecking=no \
+      "vagrant@${MASTER1_IP}:/etc/kubernetes/pki/oidc-ca.crt" /tmp/oidc-ca.crt 2>/dev/null || true
+  fi
+fi
+if [ "${oidc_ca_required}" = "true" ]; then
+  if [[ ! -s /tmp/oidc-ca.crt ]] || ! openssl x509 -in /tmp/oidc-ca.crt -noout -subject >/dev/null 2>&1; then
+    echo "ERROR: kubeadm-config references oidc-ca-file but a valid /tmp/oidc-ca.crt could not be obtained — this node's apiserver would crashloop after join. Not joining" >&2
+    exit 1
+  fi
+  sudo mkdir -p /etc/kubernetes/pki
+  sudo install -o root -g root -m 0644 /tmp/oidc-ca.crt "${OIDC_CA_DEST}"
+  echo "OIDC CA installed at ${OIDC_CA_DEST}"
+fi
+
 cat <<'AUDEOF' | sudo tee /etc/kubernetes/audit/audit-policy.yaml >/dev/null
 apiVersion: audit.k8s.io/v1
 kind: Policy

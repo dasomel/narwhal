@@ -718,6 +718,45 @@ if should_run "keycloak"; then
     fi
   fi
 
+  # Upgrade safety (D-KUBEADM-CONFIG-OIDC, #505): kubeadm regenerates the static pod from the
+  # kubeadm-config ClusterConfiguration, so it must carry the same 7 flags as the running pods.
+  # The ConfigMap is compared with the expected flag set (the running pods were checked above).
+  KC_ERR=""
+  KC_CC=$(kubectl -n kube-system get cm kubeadm-config -o jsonpath='{.data.ClusterConfiguration}' 2>/tmp/verify-kc-err.$$) || KC_ERR=$(head -c 200 /tmp/verify-kc-err.$$ 2>/dev/null || true)
+  rm -f /tmp/verify-kc-err.$$
+  if ! command -v yq >/dev/null 2>&1; then
+    skip "kubeadm-config OIDC: yq not installed, ClusterConfiguration not inspected"
+  elif [ -n "${KC_ERR}" ]; then
+    skip "kubeadm-config OIDC: cannot read kube-system/kubeadm-config (RBAC or API error: ${KC_ERR})"
+  elif [ -z "${KC_CC}" ]; then
+    skip "kubeadm-config OIDC: kube-system/kubeadm-config has no data.ClusterConfiguration"
+  else
+    KC_API=$(printf '%s' "${KC_CC}" | yq '.apiVersion' 2>/dev/null || true)
+    KC_OIDC=""
+    case "${KC_API}" in
+      kubeadm.k8s.io/v1beta4)
+        KC_OIDC=$(printf '%s' "${KC_CC}" | yq '(.apiServer.extraArgs // []) | .[] | select(.name | test("^oidc-")) | .name + "=" + (.value | tostring)' 2>/dev/null | LC_ALL=C sort || true) ;;
+      kubeadm.k8s.io/v1beta3)
+        KC_OIDC=$(printf '%s' "${KC_CC}" | yq '(.apiServer.extraArgs // {}) | to_entries | .[] | select(.key | test("^oidc-")) | .key + "=" + (.value | tostring)' 2>/dev/null | LC_ALL=C sort || true) ;;
+      *) KC_API="" ;;
+    esac
+    KC_WANT=$(printf '%s\n' \
+      "oidc-ca-file=/etc/kubernetes/pki/oidc-ca.crt" \
+      "oidc-client-id=kubernetes" \
+      "oidc-groups-claim=groups" \
+      "oidc-groups-prefix=oidc:" \
+      "oidc-issuer-url=https://keycloak.${DOMAIN}/realms/narwhal" \
+      "oidc-username-claim=preferred_username" \
+      "oidc-username-prefix=oidc:" | LC_ALL=C sort)
+    if [ -z "${KC_API}" ]; then
+      skip "kubeadm-config OIDC: unknown ClusterConfiguration apiVersion, not compared"
+    elif [ "${KC_OIDC}" = "${KC_WANT}" ]; then
+      pass "kubeadm-config OIDC: ClusterConfiguration carries the same 7 --oidc-* flags (survives kubeadm upgrade)"
+    else
+      fail "kubeadm-config OIDC: ClusterConfiguration apiServer.extraArgs lacks or differs on the 7 --oidc-* flags; kubeadm upgrade would drop OIDC. Fix: sudo bash scripts/cluster/11-4c-kubeadm-config-oidc.sh https://keycloak.${DOMAIN}/realms/narwhal"
+    fi
+  fi
+
   # Kubernetes realm existence (check via OIDC well-known)
   if [ "${OIDC_CODE}" = "200" ]; then
     pass "Keycloak realm 'narwhal': reachable (ns=iam)"

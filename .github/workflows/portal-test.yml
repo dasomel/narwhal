@@ -94,6 +94,9 @@ jobs:
     runs-on: ubuntu-latest
     # D-job-timeout (#462): harden-runner block egress intermittently rejects checkout and the
     # job then hangs ~25 min in post steps; normal runs take 1-3 min. Fail fast and rerun instead.
+    # v2.22.3 is the maintainers' fix for allowed connections being dropped (step-security/
+    # harden-runner#708); its effect on the "Complete job" hang is unverified here, and that hang
+    # can only be bounded at job level, so the timeout stays.
     timeout-minutes: 15
     defaults:
       run:
@@ -102,7 +105,7 @@ jobs:
       # Same allowlist rationale as portal-build-check.yml: block egress before checkout so
       # a malicious install/build script cannot reach anything outside package
       # registries and GitHub itself.
-      - uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
+      - uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
         with:
           egress-policy: block
           allowed-endpoints: >
@@ -149,7 +152,7 @@ jobs:
       run:
         working-directory: portal
     steps:
-      - uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
+      - uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
         with:
           egress-policy: block
           allowed-endpoints: >

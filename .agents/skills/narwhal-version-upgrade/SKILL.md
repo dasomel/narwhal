@@ -34,9 +34,10 @@ metadata:
 2. Verify the target release exists, is appropriate for both supported architectures, and identify breaking chart/config/API changes.
 3. Update the canonical version/image/chart references together. A tag change must include the air-gap image inventory when that artifact is preloaded.
 4. Do not use a mutable tag as an upgrade mechanism; GitOps needs a manifest diff.
-5. Render/validate changed Helm/YAML and run relevant repository checks.
-6. If a cluster is available, confirm the application-reported running version rather than inferring it from chart metadata.
-7. Finish with `narwhal-verification` and state any runtime gap.
+5. Mirror the new pin on the bastion registry BEFORE the pin bump goes live (mandatory on air-gapped/Kakao clusters, where nodes have no upstream egress and a reschedule of an unmirrored pin ends in `ImagePullBackOff`): on the bastion, `skopeo copy --all --preserve-digests docker://<src>@<digest> docker://<mirror>/<path>:<tag>`, then confirm from a node that `/v2/<path>/manifests/<tag>` answers 200 with the same `Docker-Content-Digest`. `<path>` is the fully qualified ref (`docker.io/library/busybox`, `docker.io/<org>/<name>`, `ghcr.io/...`). Verify with `MIRROR=http://<bastion>:5000 python3 scripts/test/check-mirror-pins.py` (read-only; fails on MISSING/DIGEST-MISMATCH). Runbook: `scripts/airgap/README.md` ("Mirror a pin bump").
+6. Render/validate changed Helm/YAML and run relevant repository checks.
+7. If a cluster is available, confirm the application-reported running version rather than inferring it from chart metadata.
+8. Finish with `narwhal-verification` and state any runtime gap.
 
 ## Verification
 
@@ -52,5 +53,6 @@ Evidence should cover reference consistency, rendered configuration, build/stati
 
 - `VERSIONS.md`
 - `scripts/airgap/images.txt`
+- `scripts/test/check-mirror-pins.py`
 - `docs/common/agent-operational-rules.md`
 - component provisioning/GitOps sources

@@ -14,6 +14,7 @@ This document owns durable Narwhal-specific operational knowledge that should be
 
 - Never trust a mutable tag on the pre-baked Vagrant box. Pin immutable version tags.
 - ArgoCD deploys manifest diffs, so a re-published mutable tag does not create a GitOps change. Version upgrades must change the manifest tag and update `scripts/airgap/images.txt` where applicable.
+- A pin bump (`images.txt` / `image-digests.tsv`) must reach the bastion mirror by digest BEFORE it goes live; nodes have no upstream egress, so an unmirrored pin is `ImagePullBackOff` on the next reschedule. Procedure and `scripts/test/check-mirror-pins.py`: `scripts/airgap/README.md` ("Mirror a pin bump", #468).
 - Distroless images do not provide a shell. Use an image/tooling path that actually exposes the needed binary instead of assuming `/bin/sh`.
 - Verify the running version from the application's own runtime/API evidence rather than inferring it from chart metadata.
 - Registry preference for new dependencies is `ghcr.io` > `registry.k8s.io` > `quay.io` > `docker.io`; document why Docker Hub is unavoidable when used.

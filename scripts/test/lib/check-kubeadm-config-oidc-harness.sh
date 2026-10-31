@@ -48,10 +48,16 @@ WIRING_MUTATIONS = [
 WIRING_MUTATIONS.extend([
     ("dist: hash comparison removed", DIST,
      'if [ "${copied_ca_sha}" != "${expected_ca_sha}" ]; then', 'if false; then'),
-    ("dist: missing expected hash refusal removed", DIST,
-     'if [[ ! "${expected_ca_sha}" =~ ^[0-9a-f]{64}$ ]]; then', 'if false; then'),
-    ("dist: annotations not required to agree", DIST,
-     '| sort -u || true)"', '| head -1 || true)"'),
+    ("dist: expected hash failure ignored", DIST,
+     'if ! expected_ca_sha="$(oidc_expected_ca_sha)"; then\n    exit 1', 'if ! expected_ca_sha="$(oidc_expected_ca_sha)"; then\n    true'),
+    ("dist: malformed annotation accepted", DIST,
+     "if grep -qvE '^[0-9a-f]{64}$' <<<\"${present}\"; then", "if false; then"),
+    ("dist: disagreement accepted", DIST,
+     'if [ "$(wc -l <<<"${uniq}" | tr -d \' \')" != "1" ]; then', "if false; then"),
+    ("dist: no-annotation accepted", DIST,
+     'if [ -z "${present}" ]; then', "if false; then"),
+    ("dist: context not pinned", DIST,
+     'kubectl --context "${ctx}" --request-timeout=20s', 'kubectl --request-timeout=20s'),
     ("join: switched to local kubectl", JOIN,
      '    if cluster_config="$(sshpass -p "vagrant" ssh -o StrictHostKeyChecking=no "vagrant@${MASTER1_IP}" \\\n      "kubectl --kubeconfig=/home/vagrant/.kube/config-local -n kube-system get cm kubeadm-config -o jsonpath=\'{.data.ClusterConfiguration}\'" 2>/dev/null)" \\',
      '    if cluster_config="$(kubectl -n kube-system get cm kubeadm-config -o jsonpath=\'{.data.ClusterConfiguration}\' 2>/dev/null)" \\'),
@@ -397,21 +403,55 @@ branch = s.index('if grep -q \'oidc-ca-file\' <<<"${cluster_config}"; then')
 # The outer closing fi must follow all hash checks (nested guards are indented).
 branch_end = s.index("\nfi", branch)
 
-query = s.index('ca_annotations="$(kubectl -n kube-system get pods -l component=kube-apiserver')
-assert r'narwhal\.dasomel\.io/oidc-ca-sha256' in s[query:]
-# every annotated apiserver must agree on exactly one 64-hex value (sort -u, then a
-# single-value regex); a legacy master without the annotation is ignored, none at all refuses.
-agree = s.index("expected_ca_sha=\"$(grep -E '^[0-9a-f]{64}$' <<<\"${ca_annotations}\" | sort -u", query)
-missing = s.index('if [[ ! "${expected_ca_sha}" =~ ^[0-9a-f]{64}$ ]]; then', agree)
-assert re.match(r'[^\n]*\n\s*echo [^\n]+\n\s*exit 1\n\s*fi', s[missing:])
-digest = s.index('copied_ca_sha="$(openssl dgst -sha256 -r ', missing)
+func = s.index('oidc_expected_ca_sha() {')
+fbody = s[func:s.index('\n}\n', func)]
+assert 'kubectl --context "${ctx}" --request-timeout=' in fbody, "API read must pin the Kakao context and a timeout"
+assert r'narwhal\.dasomel\.io/oidc-ca-sha256' in fbody
+call = s.index('if ! expected_ca_sha="$(oidc_expected_ca_sha)"; then', branch)
+assert re.match(r'[^\n]*\n\s*exit 1\n\s*fi', s[call:]), "expected-hash failure must stop distribution"
+digest = s.index('copied_ca_sha="$(openssl dgst -sha256 -r ', call)
 assert "| cut -d' ' -f1)" in s[digest:].splitlines()[0]
 comparison = s.index('if [ "${copied_ca_sha}" != "${expected_ca_sha}" ]; then', digest)
 assert re.match(r'[^\n]*\n\s*echo [^\n]+\n\s*exit 1\n\s*fi', s[comparison:])
 mutation = s.index('place()')
-assert branch < query < agree < missing < digest < comparison < branch_end < mutation
-assert s.count("$(kubectl ") == 1, "local API is only required inside OIDC branch"
+assert func < branch < call < digest < comparison < branch_end < mutation
+assert s.count("$(kubectl ") == 1 and "$(kubectl " in fbody, "local API only via oidc_expected_ca_sha"
+assert s.count("oidc_expected_ca_sha)") == 1, "the expected hash is only computed inside the OIDC branch"
 PYHASH
 ok "11 later-joined masters: CA fetched and installed before join, join refused without it (Vagrant and Kakao)"
+
+# Case 12: oidc_expected_ca_sha behaviour against a stub kubectl (the function only, extracted
+# from distribute-join-kakao.sh): pinned context, legacy unannotated master ignored, and
+# refusal on no annotation, a malformed value, disagreement or a kubectl failure.
+c12="$(mktemp -d)"
+sed -n '/^oidc_expected_ca_sha() {/,/^}/p' "${DIST}" > "${c12}/fn.sh"
+[ -s "${c12}/fn.sh" ] || fail_case "case 12: oidc_expected_ca_sha not found in distribute-join-kakao.sh"
+mkdir -p "${c12}/bin"
+cat > "${c12}/bin/kubectl" <<'STUB'
+#!/usr/bin/env bash
+printf '%s\n' "$*" > "${C12_DIR}/args"
+[ "${C12_FAIL:-0}" = 1 ] && exit 1
+printf '%b' "${C12_OUT}"
+STUB
+chmod +x "${c12}/bin/kubectl"
+A="$(printf 'a%.0s' $(seq 64))"; B="$(printf 'b%.0s' $(seq 64))"
+c12_run() {  # expect_rc out [fail] [stderr substring that names the refusal reason]
+  local want=$1 out=$2 fail=${3:-0} why=${4:-} got
+  got=0; C12_DIR="${c12}" C12_OUT="${out}" C12_FAIL="${fail}" PATH="${c12}/bin:${PATH}" \
+    bash -c 'set -euo pipefail; source "$1"; oidc_expected_ca_sha' _ "${c12}/fn.sh" > "${c12}/stdout" 2> "${c12}/stderr" || got=$?
+  [ "$( [ "${got}" = 0 ] && echo 0 || echo 1)" = "${want}" ] || return 1
+  [ -z "${why}" ] || grep -qF -- "${why}" "${c12}/stderr"
+}
+c12_run 0 "${A}\n${A}\n" && [ "$(cat "${c12}/stdout")" = "${A}" ] || fail_case "case 12: agreeing annotations not accepted"
+grep -q -- '--context narwhal-kakao' "${c12}/args" || fail_case "case 12: default context narwhal-kakao not pinned"
+c12_run 0 "\n${A}\n" || fail_case "case 12: legacy unannotated master not ignored"
+c12_run 1 "\n\n" 0 "carries oidc-ca-sha256" || fail_case "case 12: no annotation accepted"
+c12_run 1 "not-a-hash\n" 0 "is not a sha256" || fail_case "case 12: a single malformed annotation accepted"
+c12_run 1 "${A}\nnot-a-hash\n" 0 "is not a sha256" || fail_case "case 12: malformed annotation beside a valid one accepted"
+c12_run 1 "${A}\n${B}\n" 0 "disagree" || fail_case "case 12: disagreeing annotations accepted"
+c12_run 1 "${A}\n" 1 "cannot list kube-apiserver pods" || fail_case "case 12: kubectl failure accepted"
+KAKAO_KUBE_CONTEXT=other c12_run 0 "${A}\n" && grep -q -- '--context other' "${c12}/args" || fail_case "case 12: KAKAO_KUBE_CONTEXT ignored"
+rm -rf "${c12}"
+ok "12 Kakao expected OIDC CA hash: pinned context, legacy master ignored, refuses none/malformed/disagree/kubectl failure"
 
 echo "PASS: R297 kubeadm-config OIDC harness, ${PASS} checks"

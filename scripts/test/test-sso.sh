@@ -809,24 +809,8 @@ print('YES' if view else 'NO')
     warn "Gitea: pod not found, skipping org/team check"
   fi
 
-  # --- URL-Level Blocking (Traefik ForwardAuth) ---
-  echo "  [URL-Level Blocking (ForwardAuth)]"
-
-  # Check ForwardAuth Middleware exists
-  FA_MW=$(kubectl get middleware forwardauth-oauth2 -n devtools -o name 2>/dev/null)
-  if [ -n "${FA_MW}" ]; then
-    pass "ForwardAuth Middleware: exists"
-  else
-    fail "ForwardAuth Middleware: NOT found in devtools namespace"
-  fi
-
-  # Check Errors Middleware exists
-  ERR_MW=$(kubectl get middleware auth-signin -n devtools -o name 2>/dev/null)
-  if [ -n "${ERR_MW}" ]; then
-    pass "Errors Middleware (auth-signin): exists"
-  else
-    fail "Errors Middleware (auth-signin): NOT found in devtools namespace"
-  fi
+  # --- URL-Level Blocking ---
+  echo "  [URL-Level Blocking]"
 
   # Protected URLs should redirect (302) or return 401 when accessed without cookie
   for protected_app in argocd harbor headlamp grafana gitea openbao hubble; do

@@ -82,6 +82,12 @@ for name, text in [('test-sso.sh', sso), ('show-credentials.sh', creds)]:
   live = [l for l in text.splitlines() if 'oauth2-proxy' in l.lower() and not l.lstrip().startswith('#')
           and not re.search(r'\s#.*oauth2-proxy', l, re.I)]
   check(not live, f'{name} has no live oauth2-proxy check')
+# D-519: Guard only retired SSO Middleware checks; unrelated Traefik artifacts
+# stay out of scope. Revisit these names if Middleware resources are reintroduced.
+for retired in ['forwardauth-oauth2', 'auth-signin', 'middlewares.traefik']:
+  live = [l for l in sso.splitlines() if retired in l.lower() and not l.lstrip().startswith('#')
+          and not re.search(r'\s#.*' + re.escape(retired), l, re.I)]
+  check(not live, f'test-sso.sh has no live {retired} check')
 probe = block(regression, 'local probe="regression-probe-$$"', '--command -- sleep')
 check('--labels=app.kubernetes.io/name=apisix-ingress-controller,istio.io/dataplane-mode=none' in probe,
       'probe bypasses ambient with controller identity')

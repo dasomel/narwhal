@@ -76,6 +76,35 @@ done
 # D-KUBEADM-CONFIG-OIDC (#505): decide here, on the operator host, whether the joining masters
 # need the OIDC CA (nodes cannot ask master-1 themselves). Unreadable config or a missing/invalid
 # CA while the config references it is fatal: nothing has been placed yet.
+# Expected OIDC CA hash: the narwhal.dasomel.io/oidc-ca-sha256 annotation 11-4b writes on each
+# kube-apiserver it configured. A master configured before #500 carries none and is ignored;
+# every present value must be a sha256 and all must agree. Prints the hash, or an error to
+# stderr and returns 1 (no kubectl/API, no annotation, a malformed value, disagreement).
+oidc_expected_ca_sha() {
+  local ctx="${KAKAO_KUBE_CONTEXT:-narwhal-kakao}" values present uniq
+  if ! values="$(kubectl --context "${ctx}" --request-timeout=20s -n kube-system \
+    get pods -l component=kube-apiserver \
+    -o jsonpath='{range .items[*]}{.metadata.annotations.narwhal\.dasomel\.io/oidc-ca-sha256}{"\n"}{end}')"; then
+    echo "ERROR: cannot list kube-apiserver pods via context '${ctx}' (kubectl missing, API unreachable or no pod read permission) — not distributing; run scripts/cloud/set-config-kakao.sh or set KAKAO_KUBE_CONTEXT" >&2
+    return 1
+  fi
+  present="$(grep -v '^[[:space:]]*$' <<<"${values}" || true)"
+  if [ -z "${present}" ]; then
+    echo "ERROR: no kube-apiserver in context '${ctx}' carries oidc-ca-sha256 — cannot verify the OIDC CA; re-run 11-4b on a master first — not distributing" >&2
+    return 1
+  fi
+  if grep -qvE '^[0-9a-f]{64}$' <<<"${present}"; then
+    echo "ERROR: a kube-apiserver oidc-ca-sha256 annotation in context '${ctx}' is not a sha256 — not distributing" >&2
+    return 1
+  fi
+  uniq="$(sort -u <<<"${present}")"
+  if [ "$(wc -l <<<"${uniq}" | tr -d ' ')" != "1" ]; then
+    echo "ERROR: kube-apiservers in context '${ctx}' disagree on oidc-ca-sha256 — not distributing" >&2
+    return 1
+  fi
+  printf '%s\n' "${uniq}"
+}
+
 OIDC_CA_REQUIRED=false
 if ! cluster_config="$(ssh_node "${MASTER1}" "sudo env KUBECONFIG=/home/vagrant/.kube/config-local kubectl -n kube-system get cm kubeadm-config -o jsonpath='{.data.ClusterConfiguration}'")" \
   || [ -z "${cluster_config}" ]; then
@@ -84,9 +113,22 @@ if ! cluster_config="$(ssh_node "${MASTER1}" "sudo env KUBECONFIG=/home/vagrant/
 fi
 if grep -q 'oidc-ca-file' <<<"${cluster_config}"; then
   OIDC_CA_REQUIRED=true
+  # D-JOIN-OIDC-CA-HASH (#522): the operator's kubeconfig cluster CA authenticates the
+  # API channel independently of the SSH copy. The context is pinned (KAKAO_KUBE_CONTEXT,
+  # default narwhal-kakao as set-config-kakao.sh names it) so the shared current-context
+  # cannot point this at another cluster. Cost: a reachable API and pod-read permission;
+  # escape hatch: run scripts/cloud/set-config-kakao.sh (or set KAKAO_KUBE_CONTEXT) and retry.
+  if ! expected_ca_sha="$(oidc_expected_ca_sha)"; then
+    exit 1
+  fi
   if ! ssh_node "${MASTER1}" "sudo cat /etc/kubernetes/pki/oidc-ca.crt" > "${tmp}/oidc-ca.crt" 2>/dev/null \
     || [ ! -s "${tmp}/oidc-ca.crt" ] || ! openssl x509 -in "${tmp}/oidc-ca.crt" -noout -subject >/dev/null 2>&1; then
     echo "ERROR: kubeadm-config references oidc-ca-file but /etc/kubernetes/pki/oidc-ca.crt on master-1 is missing or not a valid certificate; a joined master would crashloop" >&2
+    exit 1
+  fi
+  copied_ca_sha="$(openssl dgst -sha256 -r "${tmp}/oidc-ca.crt" | cut -d' ' -f1)"
+  if [ "${copied_ca_sha}" != "${expected_ca_sha}" ]; then
+    echo "ERROR: OIDC CA hash mismatch with master-1 API annotation — not distributing; run scripts/cloud/set-config-kakao.sh and verify the narwhal-kakao context (or your configured Kakao context), then repair the CA/annotation" >&2
     exit 1
   fi
   echo "  oidc-ca.crt ($(wc -c < "${tmp}/oidc-ca.crt") bytes)"

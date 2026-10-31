@@ -45,6 +45,18 @@ WIRING_MUTATIONS = [
     ("verify: v1beta3 form dropped", "scripts/test/verify-cluster.sh", "kubeadm.k8s.io/v1beta3)", "kubeadm.k8s.io/v1beta9)"),
 ]
 
+WIRING_MUTATIONS.extend([
+    ("dist: hash comparison removed", DIST,
+     'if [ "${copied_ca_sha}" != "${expected_ca_sha}" ]; then', 'if false; then'),
+    ("dist: missing expected hash refusal removed", DIST,
+     'if [[ ! "${expected_ca_sha}" =~ ^[0-9a-f]{64}$ ]]; then', 'if false; then'),
+    ("dist: annotations not required to agree", DIST,
+     '| sort -u || true)"', '| head -1 || true)"'),
+    ("join: switched to local kubectl", JOIN,
+     '    if cluster_config="$(sshpass -p "vagrant" ssh -o StrictHostKeyChecking=no "vagrant@${MASTER1_IP}" \\\n      "kubectl --kubeconfig=/home/vagrant/.kube/config-local -n kube-system get cm kubeadm-config -o jsonpath=\'{.data.ClusterConfiguration}\'" 2>/dev/null)" \\',
+     '    if cluster_config="$(kubectl -n kube-system get cm kubeadm-config -o jsonpath=\'{.data.ClusterConfiguration}\' 2>/dev/null)" \\'),
+])
+
 # (name, exact anchor in the helper, replacement)
 MUTATIONS = [
     ("stale-oidc-entries-kept", 'map(select(.name | test("^oidc-") | not))', "map(.)"),
@@ -369,6 +381,37 @@ code "${DIST}" | grep -A2 'references oidc-ca-file but /etc/kubernetes/pki/oidc-
   || fail_case "case 11: distribute-join-kakao.sh does not refuse without the OIDC CA"
 code "${WROOT}/scripts/test/verify-cluster.sh" | grep 'kubeadm.k8s.io/v1beta3' >/dev/null \
   || fail_case "case 11: verify-cluster.sh gate does not handle the v1beta3 map form"
+# Pin the independent API read, whole-file digest and fail-closed guards before mutation.
+python3 - "${JOIN}" "${DIST}" <<'PYHASH' || fail_case "case 11: OIDC CA hash guard missing or after mutation"
+import re, sys
+def code(path):
+    return "".join(line for line in open(path) if not line.lstrip().startswith("#"))
+join = code(sys.argv[1])
+remote = '    if cluster_config="$(sshpass -p "vagrant" ssh -o StrictHostKeyChecking=no "vagrant@${MASTER1_IP}" \\\n      "kubectl --kubeconfig=/home/vagrant/.kube/config-local -n kube-system get cm kubeadm-config -o jsonpath=\'{.data.ClusterConfiguration}\'" 2>/dev/null)" \\'
+assert remote in join, "Vagrant must read kubeadm-config over SSH"
+assert not re.search(r"kubectl\s+-n\s+kube-system\s+get", join), "Vagrant must not require local kubeconfig"
+assert "expected_ca_sha" not in join
+s = code(sys.argv[2])
+assert 'if ! cluster_config="$(ssh_node "${MASTER1}" "sudo env KUBECONFIG=/home/vagrant/.kube/config-local kubectl -n kube-system get cm kubeadm-config -o jsonpath=\'{.data.ClusterConfiguration}\'")" \\' in s, "Kakao must read kubeadm-config over ssh_node"
+branch = s.index('if grep -q \'oidc-ca-file\' <<<"${cluster_config}"; then')
+# The outer closing fi must follow all hash checks (nested guards are indented).
+branch_end = s.index("\nfi", branch)
+
+query = s.index('ca_annotations="$(kubectl -n kube-system get pods -l component=kube-apiserver')
+assert r'narwhal\.dasomel\.io/oidc-ca-sha256' in s[query:]
+# every annotated apiserver must agree on exactly one 64-hex value (sort -u, then a
+# single-value regex); a legacy master without the annotation is ignored, none at all refuses.
+agree = s.index("expected_ca_sha=\"$(grep -E '^[0-9a-f]{64}$' <<<\"${ca_annotations}\" | sort -u", query)
+missing = s.index('if [[ ! "${expected_ca_sha}" =~ ^[0-9a-f]{64}$ ]]; then', agree)
+assert re.match(r'[^\n]*\n\s*echo [^\n]+\n\s*exit 1\n\s*fi', s[missing:])
+digest = s.index('copied_ca_sha="$(openssl dgst -sha256 -r ', missing)
+assert "| cut -d' ' -f1)" in s[digest:].splitlines()[0]
+comparison = s.index('if [ "${copied_ca_sha}" != "${expected_ca_sha}" ]; then', digest)
+assert re.match(r'[^\n]*\n\s*echo [^\n]+\n\s*exit 1\n\s*fi', s[comparison:])
+mutation = s.index('place()')
+assert branch < query < agree < missing < digest < comparison < branch_end < mutation
+assert s.count("$(kubectl ") == 1, "local API is only required inside OIDC branch"
+PYHASH
 ok "11 later-joined masters: CA fetched and installed before join, join refused without it (Vagrant and Kakao)"
 
 echo "PASS: R297 kubeadm-config OIDC harness, ${PASS} checks"

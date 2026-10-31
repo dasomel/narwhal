@@ -93,8 +93,9 @@ sudo chmod 600 /etc/kubernetes/enc/encryption-key
 # So: when the ClusterConfiguration references oidc-ca-file, fetch the CA from master-1 and
 # refuse to join without it; before 11-4 ran the config does not reference it and nothing is
 # needed. Cost: the join stops (exit 1, nothing joined) if master-1 is unreachable or the CA is
-# unobtainable. Escape hatch: fix the cause and re-run; nothing is changed on the node before
-# the check passes. The flags themselves reach this node's manifest from the ClusterConfiguration.
+# unobtainable. Escape hatch: fix the cause and re-run; encryption/audit directories and the
+# encryption config/key above are already installed and are re-runnable; join has not run.
+# The flags themselves reach this node's manifest from the ClusterConfiguration.
 # Kakao: no node-to-node SSH, so distribute-join-kakao.sh makes the same decision on the
 # operator host and stages /tmp/oidc-ca.crt only when the config references it.
 #=========================================
@@ -103,6 +104,12 @@ oidc_ca_required=false
 if [ "${PROVIDER:-vagrant}" = "kakao" ]; then
   [[ -f /tmp/oidc-ca.crt ]] && oidc_ca_required=true
 else
+  # D-JOIN-OIDC-CA-HASH (#522): this SSH channel is already the Vagrant trust root:
+  # /home/vagrant/join-control-plane.sh (bootstrap token and --certificate-key) and
+  # encryption config arrive via sshpass/StrictHostKeyChecking=no from master-1.
+  # A MITM can redirect the whole join; a hash from that same channel adds no defence.
+  # Cost: retain that existing trust boundary; a local kubeconfig requirement breaks
+  # every initial join. The real fix is pinning master-1's SSH host key (out of scope).
   cluster_config=""
   for i in $(seq 1 $MAX_RETRIES); do
     if cluster_config="$(sshpass -p "vagrant" ssh -o StrictHostKeyChecking=no "vagrant@${MASTER1_IP}" \

@@ -13,11 +13,11 @@ function relativeTime(ts: string, tFn: any): string {
   if (!ts) return "—"
   const diff = Date.now() - new Date(ts).getTime()
   const mins = Math.floor(diff / 60000)
-  if (mins < 1) return tFn("audit.justNow") || "방금"
-  if (mins < 60) return tFn("audit.minsAgo", { mins }) || `${mins}m 전`
+  if (mins < 1) return tFn("audit.justNow")
+  if (mins < 60) return tFn("audit.minsAgo", { mins })
   const hrs = Math.floor(mins / 60)
-  if (hrs < 24) return tFn("audit.hrsAgo", { hrs }) || `${hrs}h 전`
-  return tFn("audit.daysAgo", { days: Math.floor(hrs / 24) }) || `${Math.floor(hrs / 24)}d 전`
+  if (hrs < 24) return tFn("audit.hrsAgo", { hrs })
+  return tFn("audit.daysAgo", { days: Math.floor(hrs / 24) })
 }
 
 function StatCard({

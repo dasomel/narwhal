@@ -838,6 +838,8 @@ export const ko = {
   "compliance.kisa.status.fail": "미흡",
   "compliance.kisa.status.warn": "주의",
   "compliance.kisa.status.manual": "수동",
+  "compliance.kisa.statusDetail": "상태 상세",
+  "compliance.kisa.status.all": "전체",
 
   // common expand/collapse + navigation
   "common.viewFullDetails": "상세 보기",
@@ -1999,6 +2001,8 @@ export const en: Record<keyof typeof ko, string> = {
   "compliance.kisa.status.pass": "Pass",
   "compliance.kisa.status.fail": "Fail",
   "compliance.kisa.status.warn": "Warn",
+  "compliance.kisa.statusDetail": "Status details",
+  "compliance.kisa.status.all": "All",
   "compliance.kisa.status.manual": "Manual",
 
   // common expand/collapse + navigation

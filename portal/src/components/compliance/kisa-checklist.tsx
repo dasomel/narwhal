@@ -41,7 +41,7 @@ function ExpandedPanel({ control }: { control: KisaControl }) {
       </div>
       {control.detail && (
         <div>
-          <p className="font-medium text-muted-foreground mb-1">상태 상세</p>
+          <p className="font-medium text-muted-foreground mb-1">{t("compliance.kisa.statusDetail")}</p>
           <p className="text-foreground">{control.detail}</p>
         </div>
       )}
@@ -86,7 +86,7 @@ export function KisaChecklist() {
       {/* Summary row */}
       <div className="flex flex-wrap gap-2 mb-3">
         <SummaryBadge
-          label="전체"
+          label={t("compliance.kisa.status.all")}
           count={summary.total}
           className="bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300"
         />

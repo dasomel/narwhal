@@ -106,13 +106,17 @@ spec:
     # platform-apps: 핵심 플랫폼 컴포넌트 가용성
     # -------------------------------------------------------------------------
     - name: platform-apps
+      # D-DOWN-WORKLOAD: alert on workload availability, not on kube_pod_labels{label_*} joins.
+      # kube-prometheus-stack ships kube-state-metrics with metricLabelsAllowlist: [] and this repo
+      # never sets it, so label_* series do not exist and such a join is always empty (never fires).
+      # `X == 0 or absent(X)` also fires when the workload is deleted; absent() keeps the equality
+      # matcher labels (namespace, workload name). Escape hatch: renaming a workload needs this
+      # expression and R298 updated together.
       rules:
         - alert: KeycloakDown
           expr: |
-            sum by (namespace) (
-              kube_pod_status_ready{condition="true",namespace="iam"}
-              * on (namespace, pod) kube_pod_labels{label_app_kubernetes_io_name="keycloak",namespace="iam"}
-            ) == 0
+            kube_statefulset_status_replicas_ready{namespace="iam",statefulset="keycloak"} == 0
+            or absent(kube_statefulset_status_replicas_ready{namespace="iam",statefulset="keycloak"})
           for: 5m
           labels:
             severity: critical
@@ -122,10 +126,8 @@ spec:
 
         - alert: ArgoCDDown
           expr: |
-            sum by (namespace) (
-              kube_pod_status_ready{condition="true",namespace="devtools"}
-              * on (namespace, pod) kube_pod_labels{label_app_kubernetes_io_name="argocd-server",namespace="devtools"}
-            ) == 0
+            kube_deployment_status_replicas_available{namespace="devtools",deployment="argocd-server"} == 0
+            or absent(kube_deployment_status_replicas_available{namespace="devtools",deployment="argocd-server"})
           for: 5m
           labels:
             severity: critical
@@ -135,10 +137,8 @@ spec:
 
         - alert: HarborDown
           expr: |
-            sum by (namespace) (
-              kube_pod_status_ready{condition="true",namespace="devtools"}
-              * on (namespace, pod) kube_pod_labels{label_app_kubernetes_io_component="core",label_app_kubernetes_io_instance="harbor",namespace="devtools"}
-            ) == 0
+            kube_deployment_status_replicas_available{namespace="devtools",deployment="harbor-core"} == 0
+            or absent(kube_deployment_status_replicas_available{namespace="devtools",deployment="harbor-core"})
           for: 5m
           labels:
             severity: critical
@@ -148,10 +148,8 @@ spec:
 
         - alert: GiteaDown
           expr: |
-            sum by (namespace) (
-              kube_pod_status_ready{condition="true",namespace="devtools"}
-              * on (namespace, pod) kube_pod_labels{label_app_kubernetes_io_name="gitea",namespace="devtools"}
-            ) == 0
+            kube_deployment_status_replicas_available{namespace="devtools",deployment="gitea"} == 0
+            or absent(kube_deployment_status_replicas_available{namespace="devtools",deployment="gitea"})
           for: 5m
           labels:
             severity: critical
@@ -159,18 +157,16 @@ spec:
             summary: "Gitea 다운 (namespace: devtools)"
             description: "namespace=devtools에서 Ready 상태인 Gitea pod가 5분 이상 없습니다. Git 저장소에 접근할 수 없습니다."
 
-        - alert: TraefikDown
+        - alert: ApisixDown
           expr: |
-            sum by (namespace) (
-              kube_pod_status_ready{condition="true",namespace="platform-system"}
-              * on (namespace, pod) kube_pod_labels{label_app_kubernetes_io_name="traefik",namespace="platform-system"}
-            ) == 0
+            kube_deployment_status_replicas_available{namespace="platform-system",deployment="apisix"} == 0
+            or absent(kube_deployment_status_replicas_available{namespace="platform-system",deployment="apisix"})
           for: 5m
           labels:
             severity: critical
           annotations:
-            summary: "Traefik 다운 (namespace: platform-system)"
-            description: "namespace=platform-system에서 Ready 상태인 Traefik pod가 5분 이상 없습니다. 모든 인그레스 트래픽이 차단되었습니다."
+            summary: "APISIX 게이트웨이 다운 (namespace: platform-system)"
+            description: "namespace=platform-system에서 가용한 APISIX 게이트웨이 pod가 5분 이상 없습니다. 모든 인그레스 트래픽이 차단되었습니다."
 
         - alert: ArgoCDAppOutOfSync
           expr: |

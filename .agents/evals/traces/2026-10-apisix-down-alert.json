@@ -1,0 +1,63 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-down-alerts-workload-20261031",
+  "task": "TraefikDown watches traefik pods that no longer exist, and all five platform *Down alerts join kube_pod_labels{label_*}, which kube-state-metrics does not export (empty metricLabelsAllowlist), so none can fire. Replace them with workload-availability alerts that also fire when the workload is gone, and add ApisixDown for the real gateway. No cluster is available; live verification is listed, not claimed.",
+  "changeContext": {
+    "paths": [
+      ".agents/evals/traces/2026-10-apisix-down-alert.json",
+      "docs/common/lessons-log.md",
+      "gitops/resources/prometheus-alerts.yaml",
+      "scripts/test/lib/check-down-alerts.py",
+      "scripts/test/regression-check-kakao.sh"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Rewrite the KeycloakDown, ArgoCDDown, HarborDown, GiteaDown expressions and replace TraefikDown with ApisixDown in prometheus-alerts.yaml (name, severity, for and annotations kept), add R298 (check-down-alerts.py with 20 promtool cases) and a lessons-log row. Deliberately left alone: kube-state-metrics configuration (no allowlist added), other alerts, the live cluster."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "On origin/main gitops/resources/prometheus-alerts.yaml lines 110-173 define five Down alerts as sum by (namespace) (kube_pod_status_ready * on (namespace, pod) kube_pod_labels{label_app_kubernetes_io_*=...}) == 0. kube-prometheus-stack 86.2.3 bundles kube-state-metrics whose values.yaml has `metricLabelsAllowlist: []` (line 393 of charts/kube-state-metrics/values.yaml), and the repo never overrides it (grep metricLabels/kube-state-metrics in gitops/ finds nothing), so kube_pod_labels has no label_* series, the join is an empty vector and no comparison with 0 yields a sample: none of the five can fire. TraefikDown additionally selects a replaced component (scripts/cluster/08-1-networking.sh:74).",
+      "evidence": [
+        "doc:https://github.com/dasomel/narwhal/blob/main/gitops/resources/prometheus-alerts.yaml"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "external_input",
+      "provenance": "helm pull and helm template on 2026-10-31: apisix chart 2.13.0 rendered with the repo valuesObject, apisix-ingress-controller chart 0.14.1 (the version scripts/cluster/08-1-networking.sh installs), kube-prometheus-stack 86.2.3 and its kube-state-metrics subchart values",
+      "reviewed": true,
+      "summary": "Workload names from renders and repo evidence: apisix chart 2.13.0 with the repo valuesObject -> Deployment apisix (platform-system); harbor chart 1.19.1 -> Deployment harbor-core (devtools); gitea chart 12.6.0 -> Deployment gitea (devtools; scripts/cluster/12-gitea.sh); argocd-server Deployment (13-2-narwhal-portal-bindings.sh rollout status deploy/argocd-server, devtools); Keycloak CR keycloak in iam (keycloak-cr.yaml) whose operator StatefulSet is keycloak (pod keycloak-0 used by 11-2-keycloak-config.sh). The Keycloak StatefulSet name is derived from the operator convention and the keycloak-0 pod name, not rendered."
+    },
+    {
+      "id": "e4",
+      "type": "bug_fix",
+      "summary": "Each Down alert becomes `<available metric>{namespace,workload} == 0 or absent(<same selector>)` using kube_deployment_status_replicas_available (kube_statefulset_status_replicas_ready for Keycloak), for 5m, severity critical, with a D-DOWN-WORKLOAD comment. absent() keeps the namespace and workload labels so the alert fires when the workload is deleted. ApisixDown is new and its text says the gateway has no available pod. R298 pins all five and rejects kube_pod_labels label_* joins and traefik."
+    },
+    {
+      "id": "e5",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "static rule shape for all five alerts, promtool check rules and 20 promtool behaviour cases (available, zero, absent, same name in another namespace, per alert), and the full static suite. NOT covered: any live cluster - rule loaded by Prometheus, kube-state-metrics exporting these series, the Keycloak StatefulSet name on a real operator, alerts firing, Alertmanager delivery.",
+      "evidence": [
+        "test:helm template of apisix 2.13.0 (repo valuesObject), harbor 1.19.1 and gitea 12.6.0 -> Deployments apisix, harbor-core, gitea",
+        "test:python3 scripts/test/lib/check-down-alerts.py -> 'PASS: R298 5 Down alerts use workload availability + absent(), no label joins, no Traefik' and 'PASS: 20 promtool behavior cases'"
+      ]
+    },
+    {
+      "id": "e6",
+      "type": "completion_claim",
+      "summary": "In the repository, the five platform Down alerts watch workload availability and fire when the workload is zero or gone, covered by promtool cases. Nothing is verified on a cluster."
+    },
+    {
+      "id": "e7",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Complete within repository scope; live rule load and firing remain to be shown on a cluster, including that kube-state-metrics exports the deployment/statefulset series."
+    }
+  ]
+}

@@ -1,0 +1,57 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-up-bundle-chart-preflight-20261102",
+  "task": "A local Vagrant build ran scripts/up.sh for ~40 minutes and failed in Phase 2 because the operator's airgap bundle charts/ predated the falco 9.2.1 / headlamp 0.46.0 pins. Make up.sh fail early, offline, naming the missing chart-version files and the fix. No cluster or vagrant was used; live verification is listed, not claimed.",
+  "changeContext": {
+    "paths": [
+      ".agents/evals/traces/2026-11-up-bundle-chart-preflight.json",
+      "docs/common/lessons-log.md",
+      "scripts/airgap/03-save-helm-charts.sh",
+      "scripts/airgap/check-bundle.sh",
+      "scripts/airgap/lib/check-chart-upstream-sources.py",
+      "scripts/airgap/lib/discover-charts.py",
+      "scripts/test/lib/check-bundle-chart-preflight.sh",
+      "scripts/test/regression-check-kakao.sh"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Move the chart pin discovery out of 03-save-helm-charts.sh into scripts/airgap/lib/discover-charts.py (identical output, plus a --gitops-only mode), call it from check-bundle.sh (which up.sh already runs before vagrant up) to require <chart>-<version>.tgz for every GitOps pin, add R300 and a lessons-log row. Deliberately left alone: 09-verify-bundle-completeness.sh (images), the bootstrap-chart name-level glob, Vagrantfile bundle mount logic, the Kakao path, and any live cluster."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "On 2026-11-02 up.sh Phase 2 failed in 14-gitops-bootstrap.sh with 'ArgoCD chart resolution did not stabilize within 10 minutes'; falco and headlamp reported chart not found in the Gitea Helm registry. The mounted bundle charts/ (2026-09-29) lacked falco-9.2.1.tgz and headlamp-0.46.0.tgz; re-running 03-save-helm-charts.sh fixed it. check-bundle.sh globbed <chart>-*.tgz so a stale version passed. Reproduced here: check-bundle.sh against a bundle with a stale falco file reports no pin error before the change and 'Missing chart pin: charts/falco-9.2.1.tgz' after it."
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "check-bundle.sh now runs discover-charts.py --gitops-only and fails with 'Missing chart pin: charts/<chart>-<version>.tgz' plus the 03-save-helm-charts.sh fix command. NARWHAL_SKIP_BUNDLE_PREFLIGHT=1 skips only this version check (D-BUNDLE-PIN-VERSION). 03 now calls the same helper, so download and check share one definition (D-BUNDLE-PIN-SHARED); check-chart-upstream-sources.py (R90) was pointed at the helper."
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "discovery output equivalence, the real check-bundle.sh against complete, missing-pin and stale-version temp bundles, the escape hatch, two mutations (version block removed, up.sh call removed), and the full static regression suite. NOT covered: a real scripts/up.sh run, vagrant, or a cluster.",
+      "evidence": [
+        "test:old heredoc vs scripts/airgap/lib/discover-charts.py on the same tree -> stdout and stderr byte-identical, 26 pins",
+        "test:bash scripts/test/lib/check-bundle-chart-preflight.sh -> 'R300 ok: bundle preflight (pass, missing, stale, escape hatch, 2 mutations)'",
+        "test:python3 scripts/airgap/lib/check-chart-upstream-sources.py -> 'chart upstream source check passed: 21 GitOps charts mapped'"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "completion_claim",
+      "summary": "In the repository, up.sh aborts before any vagrant up when the mounted bundle lacks any GitOps chart pin at its pinned version, offline and with a message naming the files and the fix. Nothing is verified through a real up.sh run."
+    },
+    {
+      "id": "e6",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Complete within repository scope; an end-to-end up.sh run on a stale bundle is the remaining live check."
+    }
+  ]
+}

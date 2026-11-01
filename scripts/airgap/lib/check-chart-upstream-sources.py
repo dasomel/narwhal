@@ -80,8 +80,14 @@ def main():
     if stale:
         errors.append(f"source map entries without a GitOps chart: {', '.join(stale)}")
 
+    # Discovery lives in lib/discover-charts.py (shared with check-bundle.sh); 03 must feed it the map.
     bundler = (REPO_ROOT / "scripts/airgap/03-save-helm-charts.sh").read_text()
-    if "chart-upstream-sources.tsv" not in bundler or "upstream_sources[chart]" not in bundler:
+    discovery = (REPO_ROOT / "scripts/airgap/lib/discover-charts.py").read_text()
+    if (
+        "chart-upstream-sources.tsv" not in bundler
+        or "lib/discover-charts.py" not in bundler
+        or "upstream_sources[chart]" not in discovery
+    ):
         errors.append("03-save-helm-charts.sh does not resolve GitOps charts through the source map")
 
     if errors:

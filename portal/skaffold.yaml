@@ -49,9 +49,13 @@ build:
         registryCertificate:
           harbor.local.narwhal.internal: /kaniko/ssl/certs/narwhal/ca.crt
 
+# D-PORTAL-DEV-FROM-CHART: the manifest is generated from the GitOps chart by
+# scripts/dev-cluster.sh (`make dev-cluster` / `pnpm dev:cluster`); there is no
+# hand-kept copy. Plain `skaffold dev` without the wrapper fails here because the
+# file does not exist yet - that is intended (a stale manifest must never deploy).
 manifests:
   rawYaml:
-    - ../narwhal/gitops/resources/narwhal-portal-k8s.yaml
+    - deploy/.generated/skaffold-dev-portal.yaml
 
 deploy:
   kubectl:
@@ -73,12 +77,8 @@ profiles:
   - name: dev
     activation:
       - command: dev
-    # Dev-only manifest: same as gitops/resources/narwhal-portal-k8s.yaml minus the
-    # security-system Role/RoleBinding (cross-ns objects the kubectl deployer can't
-    # apply under a single defaultNamespace; they already exist via ArgoCD).
-    manifests:
-      rawYaml:
-        - deploy/skaffold-dev-portal.yaml
+    # Manifest: the generated chart Deployment only (top-level manifests); Valkey,
+    # Service, secrets and RBAC stay ArgoCD-managed and are not applied by skaffold.
     build:
       # Local Docker build on the Mac (ample memory) — in-cluster kaniko OOMs on the
       # small VM nodes when snapshotting node_modules. Pushes to Harbor; dev pod pulls.

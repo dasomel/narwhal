@@ -1,0 +1,69 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-portal-live-dev-from-chart-20261102",
+  "task": "Owner request: run the IDP portal in the local Vagrant cluster as a DEV build with live editing. The documented skaffold path was broken: portal/deploy/skaffold-dev-portal.yaml was a stale hand copy of the chart Deployment (missing Valkey creds, token volumes, securityContext) that ArgoCD selfHeal would revert, skaffold.yaml pointed at a deleted ../narwhal path, ignoreDifferences covered only image/resources, and the chart 512Mi limit OOMs next dev. Generate the dev Deployment from the chart at run time and change only image, resources and a startupProbe. No cluster is available; live verification is listed, not claimed.",
+  "changeContext": {
+    "paths": [
+      ".agents/evals/traces/2026-11-portal-live-dev-from-chart.json",
+      "docs/common/lessons-log.md",
+      "gitops/charts/narwhal-platform/templates/argocd-config.yaml",
+      "portal/.gitignore",
+      "portal/Makefile",
+      "portal/deploy/skaffold-dev-portal.yaml",
+      "portal/docs/LIVE-DEV-container-reload.md",
+      "portal/docs/local-dev.md",
+      "portal/package.json",
+      "portal/scripts/dev-cluster.sh",
+      "portal/skaffold.yaml",
+      "scripts/test/lib/check-portal-dev-from-chart.py",
+      "scripts/test/regression-check-kakao.sh"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Replace the hand-kept dev manifest with portal/scripts/dev-cluster.sh, which renders the chart Deployment as ArgoCD does (narwhal-apps valuesObject for narwhal-platform -> helm template narwhal-platform) and changes exactly container narwhal-portal image (harbor dev repo, skaffold tags it dev-*), resources (requests memory 1Gi, limits cpu 1 / memory 3Gi) and startupProbe (/api/health/live, 5s x 60). Add .startupProbe to the :dev- guarded ignoreDifferences, repoint skaffold.yaml, delete the stale copy, add make dev-cluster / pnpm dev:cluster, update the live-dev docs, add R299 and a lessons-log row. Deliberately left alone: the Valkey Deployment, Service, secrets and RBAC (ArgoCD-managed, never applied by skaffold), the debug profile's kaniko build, the other ignoreDifferences entries, and any live cluster."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "On origin/main the dev manifest differs from the chart: diffing portal/deploy/skaffold-dev-portal.yaml against the helm-rendered Deployment shows no VALKEY_USERNAME/VALKEY_PASSWORD, K8S_SA_TOKEN_FILE, openbao-token or k8s-api-token volumes and no pod/container securityContext; portal/skaffold.yaml:54 references ../narwhal/gitops/resources/narwhal-portal-k8s.yaml which does not exist in the monorepo; argocd-config.yaml ignores only .image and .resources.",
+      "evidence": [
+        "doc:portal/docs/LIVE-DEV-container-reload.md",
+        "doc:gitops/charts/narwhal-platform/templates/argocd-config.yaml"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "dev-cluster.sh --render-only emits only Deployment narwhal-portal; diff against the chart render shows exactly image, resources.requests.memory, resources.limits.{cpu,memory} and the added startupProbe. The script refuses a kube context other than narwhal (KUBE_CONTEXT) and a baseDomain other than local.narwhal.internal, and checks helm/yq/skaffold/kubectl first. argocd-config.yaml gains the .startupProbe path behind the same :dev- guard."
+    },
+    {
+      "id": "e4",
+      "type": "review_correction",
+      "summary": "The first mutation set had a no-op mutation (deleting the pod securityContext inside the container-scoped yq update did nothing); R299 mutation verification reported it as surviving, so it was replaced by a pod-level delete after the container update plus a container-level delete. All 7 mutations are now caught."
+    },
+    {
+      "id": "e5",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "chart render, generator output, deep compare against the chart Deployment, ignoreDifferences field set, 7 mutations, and the static suite. NOT covered: any live cluster - Harbor push and node pull, skaffold file sync and Next HMR, the dev pod surviving the first compile under the startupProbe, memory fit on a 6GB worker, ArgoCD leaving the dev Deployment alone (Synced) and a manual Sync reverting it.",
+      "evidence": [
+        "test:python3 scripts/test/lib/check-portal-dev-from-chart.py --mutation-verify -> PASS ... 7 mutations caught"
+      ]
+    },
+    {
+      "id": "e6",
+      "type": "completion_claim",
+      "summary": "In the repository, the portal live-dev manifest is generated from the chart with exactly three changed container fields that the ArgoCD ignoreDifferences list mirrors. Nothing is verified on a cluster."
+    },
+    {
+      "id": "e7",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Complete within repository scope; live HMR, ArgoCD non-revert and memory remain to be verified when the local cluster is up."
+    }
+  ]
+}

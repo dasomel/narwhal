@@ -149,21 +149,24 @@ kubectl -n devtools get secret idp-portal-secrets
 ### 일반 개발 (HMR)
 
 ```bash
-pnpm run dev:skaffold
-# = skaffold dev (dev 프로필 자동 활성)
+cd portal
+make dev-cluster          # = pnpm run dev:cluster = scripts/dev-cluster.sh
 ```
+
+`dev:skaffold`(래퍼 없는 `skaffold dev`)는 생성된 매니페스트가 없으면 일부러 실패한다.
+전체 절차(Harbor 로그인, 메모리, 종료·원복)는 [LIVE-DEV-container-reload.md](LIVE-DEV-container-reload.md) 경로 B.
 
 실행 흐름:
 
-1. Kaniko Pod이 `Dockerfile.dev` 기반으로 빌드
-2. Harbor(`harbor.local.narwhal.internal/library/idp-portal:dev-...`)에 push
-3. `gitops/resources/idp-portal-k8s.yaml`을 적용 → Deployment 이미지 교체
-4. `idp-portal` Service 3000 → `localhost:3000` port-forward
+1. `scripts/dev-cluster.sh`가 GitOps 차트에서 `narwhal-portal` Deployment만 렌더 (image/resources/startupProbe만 변경)
+2. 로컬 Docker가 `Dockerfile.dev`를 빌드해 Harbor(`harbor.local.narwhal.internal/library/narwhal-portal:dev-...`)에 push
+3. 생성된 Deployment만 적용 → 이미지 교체 (Valkey/Service/Secret은 ArgoCD 관리 그대로)
+4. `narwhal-portal` Service 3000 → `localhost:3000` port-forward
 5. `src/**`, `public/**`, `next.config.ts` 변경 감지 → 컨테이너 `/app`으로 파일 동기화 → Next.js HMR
 
 브라우저: **http://localhost:3000**
 
-종료: `Ctrl+C` (Skaffold가 정리 여부 확인)
+종료: `Ctrl+C` (`--cleanup=false`라 배포는 유지됨 - 원복은 LIVE-DEV 문서 참고)
 
 ### 디버깅 (Node Inspector)
 

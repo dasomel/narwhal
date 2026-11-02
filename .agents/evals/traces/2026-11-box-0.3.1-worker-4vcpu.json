@@ -1,0 +1,78 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-box-031-worker-4vcpu-20261102",
+  "task": "Owner request (2026-11-01/02): move the local Vagrant cluster to the latest kube-ready-box OS (then 0.3.1) and test the existing implementation on it. Pin dasomel/ubuntu-26.04-xfs 0.3.1 from the kube-ready-box GitHub Pages catalog, raise worker vCPU after a full build ran out of CPU requests, and document the arm64 vmware_desktop-only constraint.",
+  "changeContext": {
+    "paths": [
+      ".agents/evals/traces/2026-11-box-0.3.1-worker-4vcpu.json",
+      "README-ko.md",
+      "README.md",
+      "VERSIONS.md",
+      "Vagrantfile",
+      "docs/common/compatibility-matrix.md",
+      "docs/common/lessons-log.md"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Change Vagrantfile (box 0.1.0 -> 0.3.1 with box_url catalog; WORKER_CPUS default 4 with a validated NARWHAL_WORKER_CPUS override), VERSIONS.md and compatibility-matrix box rows, README/README-ko requirements (arm64 vmware_desktop only, 40GB RAM, 18 vCPU) and one lessons-log row. Deliberately left alone: master sizing, memory, the VirtualBox provider block (kept for older boxes), the airgap bundle contents."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "First full build on box 0.3.0 with 2-vCPU workers (2026-11-02): up.sh exit 0 after Phase 2 attempt 2, but worker CPU requests were 97-99% (about 15% actual), keycloak-0 (600m) stayed Pending with 'Insufficient cpu', and the Falco DaemonSet was Pending on two workers. Giving Falco system-node-critical made it preempt keycloak-0 (event Preempted) and SSO went down; reverted in Gitea.",
+      "evidence": [
+        "runtime:kubectl describe node narwhal-worker-1/2/3 -> cpu requests 1990m (99%), 1995m (99%), 1940m (97%); kubectl top nodes 12-15% CPU",
+        "runtime:kubectl -n iam describe pod keycloak-0 -> FailedScheduling 0/6 nodes are available: 3 Insufficient cpu"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "external_input",
+      "provenance": "kube-ready-box release v0.3.1 (gh release view v0.3.1 -R dasomel/kube-ready-box) and the catalog https://dasomel.github.io/kube-ready-box/boxes/ubuntu-26.04-xfs.json, read 2026-11-02",
+      "reviewed": true,
+      "summary": "0.3.1 (2026-11-01T17:45Z): Ubuntu-only rebuild of the arm64 vmware_desktop boxes; installer GRUB args removed, leftover installer kernels purged; ubuntu-26.04-xfs kernel 7.0.0-42-generic. The catalog lists 0.3.1 and 0.3.0 vmware_desktop/arm64 with sha256 checksums and GitHub release URLs; Vagrant Cloud stopped accepting versions on 2026-10-01."
+    },
+    {
+      "id": "e4",
+      "type": "bug_fix",
+      "summary": "Vagrantfile pins box_version 0.3.1 and box_url to the catalog (D-BOX-CATALOG); WORKER_CPUS = Integer(ENV.fetch('NARWHAL_WORKER_CPUS','4'), exception: false) with an abort for non-positive or non-integer input (D-WORKER-CPUS)."
+    },
+    {
+      "id": "e5",
+      "type": "documentation",
+      "summary": "VERSIONS.md / compatibility-matrix box rows -> v0.3.1; README/README-ko requirements say arm64 vmware_desktop only, 40GB+ RAM, 18 vCPU and the override; lessons-log row with the discriminator that priority only moves the victim on a requests-full cluster."
+    },
+    {
+      "id": "e6",
+      "type": "review_correction",
+      "summary": "Independent review (native Sonnet code-reviewer) returned FAIL on 785daccc: behavior-contract required an operational trace (VERSIONS.md is high-risk), README still advertised VirtualBox and had no host CPU/RAM requirement, and NARWHAL_WORKER_CPUS was unvalidated. Added this trace, the README requirements and the input validation."
+    },
+    {
+      "id": "e7",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "full destroy and rebuild on box 0.3.1 with 4-vCPU workers, plus static checks. NOT covered: VirtualBox or amd64 hosts (no box exists), a 2-vCPU-worker regression run after this change.",
+      "evidence": [
+        "runtime:vagrant destroy -f; PROVIDER=vmware_desktop ./scripts/up.sh -> up.sh exit 0, 'Phase 2 complete (attempt 1)' (log .omc/logs/up-20261102-0755-031.log)",
+        "runtime:kubectl get nodes -> 6 Ready, workers capacity cpu 4, masters 2, Ubuntu 26.04.1 LTS, kernel 7.0.0-42-generic, v1.35.7; falco DaemonSet 6/6; keycloak-0 1/1 Running",
+        "test:ruby -c Vagrantfile -> Syntax OK; NARWHAL_WORKER_CPUS=abc -> abort with message; =3 -> 3",
+        "test:bash scripts/ci/check-version-consistency.sh -> All checked versions are consistent"
+      ]
+    },
+    {
+      "id": "e8",
+      "type": "completion_claim",
+      "summary": "The local cluster builds on kube-ready-box 0.3.1 with 4-vCPU workers in one Phase 2 attempt, and the docs state the arm64 vmware_desktop-only constraint and host sizing."
+    },
+    {
+      "id": "e9",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Complete for the local Vagrant path; VirtualBox/amd64 hosts remain without a current box."
+    }
+  ]
+}

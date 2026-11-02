@@ -76,7 +76,8 @@ MASTER_MEMORY = 6144    # 6GB - control plane + DaemonSets headroom
 # full platform was up on 2026-11-02: Keycloak (600m) could not schedule and the Falco DaemonSet
 # fought it for the last 100m. 4 vCPU gives headroom; 3 masters x 2 + 3 workers x 4 = 18 vCPU, an
 # overcommit that is fine on a 14-core host because actual use is low. Override with NARWHAL_WORKER_CPUS.
-WORKER_CPUS = Integer(ENV.fetch("NARWHAL_WORKER_CPUS", "4"))
+WORKER_CPUS = Integer(ENV.fetch("NARWHAL_WORKER_CPUS", "4"), exception: false)
+abort "NARWHAL_WORKER_CPUS must be a positive integer (got #{ENV['NARWHAL_WORKER_CPUS'].inspect})" unless WORKER_CPUS && WORKER_CPUS >= 1
 WORKER_MEMORY = 6144    # 6GB - platform apps
 
 #=========================================

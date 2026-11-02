@@ -100,8 +100,9 @@ the Kubernetes prerequisites pre-installed.
 ## Requirements
 
 - [Vagrant](https://developer.hashicorp.com/vagrant/install) 2.4+
-- [VirtualBox](https://www.virtualbox.org/wiki/Downloads) 7.1+ or [VMware Fusion](https://www.vmware.com/products/fusion.html) (development is done on Fusion; no minimum version has been established)
-- 32GB+ RAM (40GB+ recommended)
+- [VMware Fusion](https://www.vmware.com/products/fusion.html) on an **Apple Silicon (arm64)** host, with the `vagrant-vmware-desktop` plugin. The base box (kube-ready-box 0.3.x) is published for **arm64 `vmware_desktop` only**; VirtualBox and amd64 hosts have no current box (the Vagrantfile's VirtualBox block stays for older boxes).
+- 40GB+ RAM: 3 masters x 6GB + 3 workers x 6GB = 36GB for the VMs
+- 18 vCPU for the VMs (3 masters x 2 + 3 workers x 4); a 12+ core host is fine because actual use is low. Override the worker size with `NARWHAL_WORKER_CPUS` (default 4; 2 runs out of CPU requests once the full platform is up)
 - 30GB+ Disk per VM (recommended for full IDP deployment)
 
 ### VirtualBox Disk Expansion

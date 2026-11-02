@@ -6,7 +6,7 @@ IMAGE      := $(REGISTRY)/$(REPO)
 TAG_VER    := $(IMAGE):v$(VERSION)
 TAG_LATEST := $(IMAGE):latest
 
-.PHONY: build push login all
+.PHONY: build push login all dev-cluster
 
 ## 이미지 빌드 (버전 태그 + latest)
 build:
@@ -16,6 +16,10 @@ build:
 		-t $(TAG_LATEST) \
 		.
 	@echo "Built: $(TAG_VER)"
+
+## 클러스터 라이브 개발 (차트에서 dev 매니페스트 생성 + skaffold dev HMR)
+dev-cluster:
+	bash scripts/dev-cluster.sh
 
 ## Harbor 로그인
 login:

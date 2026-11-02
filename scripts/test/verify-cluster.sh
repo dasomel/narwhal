@@ -1138,7 +1138,7 @@ if should_run "istio"; then
   # D-505-AMBIENT: mirror 09-istio-ambient.sh's enrollment, pinned by R293.
   # Checking names catches a missing namespace even when unrelated ones join.
   # Cost: duplicated list; move to a shared library if more consumers appear.
-  AMBIENT_NAMESPACES=(platform-system devtools monitoring storage database dev)
+  AMBIENT_NAMESPACES=(platform-system devtools monitoring storage database)
   for ns in "${AMBIENT_NAMESPACES[@]}"; do
     AMBIENT_MODE=$(kubectl get ns "${ns}" -o jsonpath='{.metadata.labels.istio\.io/dataplane-mode}' 2>/dev/null || echo "")
     if [ "${AMBIENT_MODE}" = "ambient" ]; then
@@ -1147,6 +1147,15 @@ if should_run "istio"; then
       fail "Ambient namespace ${ns}: ${AMBIENT_MODE:-missing} (expected ambient)"
     fi
   done
+
+  # D-DEV-OPTOUT: gitops/resources/dev-namespace.yaml opts dev out of the mesh
+  # on purpose (SSO cookies); R293 ties this to the yaml.
+  DEV_MODE=$(kubectl get ns dev -o jsonpath='{.metadata.labels.istio\.io/dataplane-mode}' 2>/dev/null || echo "")
+  if [ "${DEV_MODE}" = "ambient" ]; then
+    fail "Namespace dev: ambient (GitOps opts it out: dataplane-mode none)"
+  else
+    pass "Namespace dev: not ambient (${DEV_MODE:-unlabeled})"
+  fi
 
   echo ""
 fi

@@ -38,6 +38,13 @@ pass() { PASS_COUNT=$((PASS_COUNT + 1)); echo "  PASS  $1"; }
 fail() { FAIL_COUNT=$((FAIL_COUNT + 1)); echo "  FAIL  $1"; }
 warn() { WARN_COUNT=$((WARN_COUNT + 1)); echo "  WARN  $1"; }
 
+# D-LIVE-ABORT: under set -e a failing command (e.g. a missing Secret in a
+# `$(kubectl ... | base64 -d)` assignment) used to end the run silently and skip
+# every later check. Guard such calls with `|| true`; this trap is the backstop
+# that makes any remaining abort loud.
+set -E
+trap 'echo "  FAIL  ABORTED at line ${LINENO}: unexpected command failure, later checks were skipped"' ERR
+
 should_run() {
   [ -z "${SECTION_FILTER}" ] || [ "${SECTION_FILTER}" = "$1" ]
 }
@@ -56,8 +63,8 @@ harbor_api() {
 # Get Keycloak admin token
 get_admin_token() {
   local user pass
-  user=$(kubectl get secret keycloak-initial-admin -n iam -o jsonpath='{.data.username}' 2>/dev/null | base64 -d)
-  pass=$(kubectl get secret keycloak-initial-admin -n iam -o jsonpath='{.data.password}' 2>/dev/null | base64 -d)
+  user=$(kubectl get secret keycloak-initial-admin -n iam -o jsonpath='{.data.username}' 2>/dev/null | base64 -d) || true
+  pass=$(kubectl get secret keycloak-initial-admin -n iam -o jsonpath='{.data.password}' 2>/dev/null | base64 -d) || true
   curl -sk -X POST "${KEYCLOAK_URL}/realms/master/protocol/openid-connect/token" \
     -d "client_id=admin-cli" \
     -d "username=${user}" \
@@ -118,7 +125,7 @@ if should_run "keycloak"; then
     fail "OIDC Discovery: HTTP ${OIDC_CODE}"
   fi
 
-  ADMIN_TOKEN=$(get_admin_token)
+  ADMIN_TOKEN=$(get_admin_token) || true
   if [ -n "${ADMIN_TOKEN}" ]; then
     pass "Admin API: authenticated"
   else
@@ -133,7 +140,7 @@ fi
 if should_run "scopes"; then
   echo "--- [2/9] Client Scopes & Mappers ---"
 
-  ADMIN_TOKEN=$(get_admin_token)
+  ADMIN_TOKEN=$(get_admin_token) || true
   if [ -z "${ADMIN_TOKEN}" ]; then
     fail "Cannot check scopes: admin auth failed"
   else
@@ -148,10 +155,10 @@ if matches:
     print(f'EXISTS|{matches[0][\"id\"]}')
 else:
     print('MISSING')
-" 2>/dev/null)
+" 2>/dev/null) || true
 
     if echo "${GROUPS_SCOPE}" | grep -q "^EXISTS"; then
-      GROUPS_SCOPE_ID=$(echo "${GROUPS_SCOPE}" | cut -d'|' -f2)
+      GROUPS_SCOPE_ID=$(echo "${GROUPS_SCOPE}" | cut -d'|' -f2) || true
       pass "'groups' client scope: exists (${GROUPS_SCOPE_ID})"
 
       # Check groups mapper in scope
@@ -166,7 +173,7 @@ if gm:
     print(f'EXISTS|claim={claim}')
 else:
     print('MISSING')
-" 2>/dev/null)
+" 2>/dev/null) || true
 
       if echo "${MAPPER_EXISTS}" | grep -q "^EXISTS"; then
         pass "'groups' mapper: $(echo "${MAPPER_EXISTS}" | cut -d'|' -f2)"
@@ -176,7 +183,7 @@ else:
 
       # Check groups scope assigned to each client
       CLIENTS_JSON=$(curl -sk -H "Authorization: Bearer ${ADMIN_TOKEN}" \
-        "${KEYCLOAK_URL}/admin/realms/${REALM}/clients" 2>/dev/null)
+        "${KEYCLOAK_URL}/admin/realms/${REALM}/clients" 2>/dev/null) || true
 
       for client_name in kubernetes argocd grafana gitea harbor headlamp; do
         CLIENT_UUID=$(echo "${CLIENTS_JSON}" | python3 -c "
@@ -184,7 +191,7 @@ import sys,json
 clients = json.load(sys.stdin)
 matches = [c['id'] for c in clients if c['clientId'] == '${client_name}']
 print(matches[0] if matches else '')
-" 2>/dev/null)
+" 2>/dev/null) || true
 
         if [ -n "${CLIENT_UUID}" ]; then
           HAS_GROUPS=$(curl -sk -H "Authorization: Bearer ${ADMIN_TOKEN}" \
@@ -193,7 +200,7 @@ print(matches[0] if matches else '')
 import sys,json
 scopes = json.load(sys.stdin)
 print('YES' if any(s['name'] == 'groups' for s in scopes) else 'NO')
-" 2>/dev/null)
+" 2>/dev/null) || true
           if [ "${HAS_GROUPS}" = "YES" ]; then
             pass "${client_name}: groups scope assigned"
           else
@@ -216,13 +223,13 @@ fi
 if should_run "clients"; then
   echo "--- [3/9] Clients & Redirect URIs ---"
 
-  ADMIN_TOKEN=$(get_admin_token)
+  ADMIN_TOKEN=$(get_admin_token) || true
   if [ -z "${ADMIN_TOKEN}" ]; then
     fail "Cannot check clients: admin auth failed"
   else
     REALM_CHECK=$(curl -sk -H "Authorization: Bearer ${ADMIN_TOKEN}" \
       "${KEYCLOAK_URL}/admin/realms/${REALM}" 2>/dev/null \
-      | python3 -c 'import sys,json; print(json.load(sys.stdin).get("realm",""))' 2>/dev/null)
+      | python3 -c 'import sys,json; print(json.load(sys.stdin).get("realm",""))' 2>/dev/null) || true
     if [ "${REALM_CHECK}" = "${REALM}" ]; then
       pass "Realm '${REALM}': exists"
     else
@@ -230,7 +237,7 @@ if should_run "clients"; then
     fi
 
     CLIENTS_JSON=$(curl -sk -H "Authorization: Bearer ${ADMIN_TOKEN}" \
-      "${KEYCLOAK_URL}/admin/realms/${REALM}/clients" 2>/dev/null)
+      "${KEYCLOAK_URL}/admin/realms/${REALM}/clients" 2>/dev/null) || true
 
     for client in argocd grafana gitea harbor headlamp; do   # oauth2-proxy removed in bc8bce28
       CLIENT_INFO=$(echo "${CLIENTS_JSON}" | python3 -c "
@@ -244,13 +251,13 @@ if matches:
     print(f'EXISTS|https={has_https}|{redirects}')
 else:
     print('MISSING')
-" 2>/dev/null)
+" 2>/dev/null) || true
 
       if echo "${CLIENT_INFO}" | grep -q "^EXISTS"; then
         if echo "${CLIENT_INFO}" | grep -q "https=True"; then
           pass "Client '${client}': HTTPS redirect URIs OK"
         else
-          REDIRECTS=$(echo "${CLIENT_INFO}" | sed 's/^EXISTS|[^|]*|//')
+          REDIRECTS=$(echo "${CLIENT_INFO}" | sed 's/^EXISTS|[^|]*|//') || true
           fail "Client '${client}': no HTTPS redirect for ${DOMAIN} — ${REDIRECTS}"
         fi
       else
@@ -289,16 +296,16 @@ if should_run "token"; then
   # The kubernetes client is public with directAccessGrantsEnabled=false, so a
   # password grant must be REJECTED rather than minting a token. Send the real
   # password: with a wrong one, a rejection would prove nothing about the grant.
-  ADMIN_USER_PASS=$(kubectl get secret keycloak-user-passwords -n iam -o jsonpath='{.data.admin}' 2>/dev/null | base64 -d)
+  ADMIN_USER_PASS=$(kubectl get secret keycloak-user-passwords -n iam -o jsonpath='{.data.admin}' 2>/dev/null | base64 -d) || true
   TOKEN_RESP=$(curl -sk -X POST "${KEYCLOAK_URL}/realms/${REALM}/protocol/openid-connect/token" \
     -d "client_id=kubernetes" \
     -d "username=admin" \
     --data-urlencode "password=${ADMIN_USER_PASS}" \
-    -d "grant_type=password" 2>/dev/null)
+    -d "grant_type=password" 2>/dev/null) || true
 
-  ACCESS_TOKEN=$(echo "${TOKEN_RESP}" | python3 -c 'import sys,json; print(json.load(sys.stdin).get("access_token",""))' 2>/dev/null)
-  ERROR_CODE=$(echo "${TOKEN_RESP}" | python3 -c 'import sys,json; print(json.load(sys.stdin).get("error","unknown"))' 2>/dev/null)
-  ERROR_DESC=$(echo "${TOKEN_RESP}" | python3 -c 'import sys,json; print(json.load(sys.stdin).get("error_description",""))' 2>/dev/null)
+  ACCESS_TOKEN=$(echo "${TOKEN_RESP}" | python3 -c 'import sys,json; print(json.load(sys.stdin).get("access_token",""))' 2>/dev/null) || true
+  ERROR_CODE=$(echo "${TOKEN_RESP}" | python3 -c 'import sys,json; print(json.load(sys.stdin).get("error","unknown"))' 2>/dev/null) || true
+  ERROR_DESC=$(echo "${TOKEN_RESP}" | python3 -c 'import sys,json; print(json.load(sys.stdin).get("error_description",""))' 2>/dev/null) || true
 
   if [ -n "${ACCESS_TOKEN}" ]; then
     fail "kubernetes client: password grant unexpectedly succeeded"
@@ -313,7 +320,7 @@ if should_run "token"; then
     esac
   fi
 
-  ADMIN_TOKEN=$(get_admin_token)
+  ADMIN_TOKEN=$(get_admin_token) || true
   if [ -z "${ADMIN_TOKEN}" ]; then
     fail "Cannot evaluate token claims: admin auth failed"
   else
@@ -414,7 +421,7 @@ for k,v in d.items():
     break
 else:
   print("NOT_FOUND")
-' 2>/dev/null)
+' 2>/dev/null) || true
       if [ "${GRAFANA_SECRET}" = "FOUND" ]; then
         pass "Grafana: tls_skip_verify_insecure in secret"
       else
@@ -427,7 +434,7 @@ else:
 
   # Headlamp: combined CA cert mounted (v0.40.0 has no -oidc-skip-issuer-tls-verify flag)
   # initContainer merges system bundle + custom CA → /etc/ssl/certs/ca-certificates.crt
-  HEADLAMP_CA_MOUNT=$(kubectl get deploy headlamp -n devtools -o jsonpath='{.spec.template.spec.containers[0].volumeMounts[?(@.mountPath=="/etc/ssl/certs/ca-certificates.crt")].name}' 2>/dev/null)
+  HEADLAMP_CA_MOUNT=$(kubectl get deploy headlamp -n devtools -o jsonpath='{.spec.template.spec.containers[0].volumeMounts[?(@.mountPath=="/etc/ssl/certs/ca-certificates.crt")].name}' 2>/dev/null) || true
   if [ "${HEADLAMP_CA_MOUNT}" = "combined-certs" ]; then
     pass "Headlamp: combined CA bundle mounted at /etc/ssl/certs/ca-certificates.crt (volume: combined-certs)"
   else
@@ -437,11 +444,11 @@ else:
   # Harbor: oidc_verify_cert + HTTPS endpoint
   # NOTE: Use external HTTPS endpoint instead of pod IP — Istio ambient mesh
   # blocks direct pod IP access from the host (connection reset by peer)
-  HARBOR_CORE_READY=$(kubectl get pods -n devtools -l app=harbor -l component=core -o jsonpath='{.items[0].status.phase}' 2>/dev/null)
+  HARBOR_CORE_READY=$(kubectl get pods -n devtools -l app=harbor -l component=core -o jsonpath='{.items[0].status.phase}' 2>/dev/null) || true
   if [ "${HARBOR_CORE_READY}" = "Running" ]; then
     HARBOR_CFG=$(harbor_api "https://harbor.${DOMAIN}/api/v2.0/configurations") || HARBOR_CFG="{}"
-    HARBOR_VERIFY=$(echo "${HARBOR_CFG}" | python3 -c 'import sys,json; print(json.load(sys.stdin).get("oidc_verify_cert",{}).get("value","?"))' 2>/dev/null)
-    HARBOR_ENDPOINT=$(echo "${HARBOR_CFG}" | python3 -c 'import sys,json; print(json.load(sys.stdin).get("oidc_endpoint",{}).get("value",""))' 2>/dev/null)
+    HARBOR_VERIFY=$(echo "${HARBOR_CFG}" | python3 -c 'import sys,json; print(json.load(sys.stdin).get("oidc_verify_cert",{}).get("value","?"))' 2>/dev/null) || true
+    HARBOR_ENDPOINT=$(echo "${HARBOR_CFG}" | python3 -c 'import sys,json; print(json.load(sys.stdin).get("oidc_endpoint",{}).get("value",""))' 2>/dev/null) || true
 
     if [ "${HARBOR_VERIFY}" = "False" ]; then
       pass "Harbor: oidc_verify_cert=false"
@@ -459,7 +466,7 @@ else:
   fi
 
   # Gitea: check if auth source exists
-  GITEA_POD=$(kubectl get pod -n devtools -l app.kubernetes.io/name=gitea -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
+  GITEA_POD=$(kubectl get pod -n devtools -l app.kubernetes.io/name=gitea -o jsonpath='{.items[0].metadata.name}' 2>/dev/null) || true
   if [ -n "${GITEA_POD}" ]; then
     GITEA_AUTH=$(kubectl exec -n devtools "${GITEA_POD}" -c gitea -- gitea admin auth list 2>/dev/null | { grep -ci "keycloak\|openid" || true; })
     if [ "${GITEA_AUTH}" -ge 1 ]; then
@@ -480,14 +487,14 @@ if should_run "apps"; then
   echo "--- [6/9] App OIDC Configuration ---"
 
   # ArgoCD: server.insecure + OIDC config
-  INSECURE=$(kubectl get configmap argocd-cmd-params-cm -n devtools -o jsonpath='{.data.server\.insecure}' 2>/dev/null)
+  INSECURE=$(kubectl get configmap argocd-cmd-params-cm -n devtools -o jsonpath='{.data.server\.insecure}' 2>/dev/null) || true
   if [ "${INSECURE}" = "true" ]; then
     pass "ArgoCD: server.insecure=true (cmd-params-cm)"
   else
     fail "ArgoCD: server.insecure='${INSECURE}' (should be true)"
   fi
 
-  OIDC_CFG=$(kubectl get configmap argocd-cm -n devtools -o jsonpath='{.data.oidc\.config}' 2>/dev/null)
+  OIDC_CFG=$(kubectl get configmap argocd-cm -n devtools -o jsonpath='{.data.oidc\.config}' 2>/dev/null) || true
   if echo "${OIDC_CFG}" | grep -q "https://keycloak"; then
     pass "ArgoCD: OIDC issuer HTTPS"
   elif echo "${OIDC_CFG}" | grep -q "keycloak"; then
@@ -496,7 +503,7 @@ if should_run "apps"; then
     fail "ArgoCD: OIDC not configured"
   fi
 
-  ARGOCD_URL=$(kubectl get configmap argocd-cm -n devtools -o jsonpath='{.data.url}' 2>/dev/null)
+  ARGOCD_URL=$(kubectl get configmap argocd-cm -n devtools -o jsonpath='{.data.url}' 2>/dev/null) || true
   if echo "${ARGOCD_URL}" | grep -q "^https://"; then
     pass "ArgoCD: URL=${ARGOCD_URL}"
   else
@@ -504,7 +511,7 @@ if should_run "apps"; then
   fi
 
   # Headlamp: OIDC issuer
-  HEADLAMP_ISSUER=$(kubectl get secret oidc -n devtools -o jsonpath='{.data.issuerURL}' 2>/dev/null | base64 -d 2>/dev/null)
+  HEADLAMP_ISSUER=$(kubectl get secret headlamp-oidc-secret -n devtools -o jsonpath='{.data.OIDC_ISSUER_URL}' 2>/dev/null | base64 -d 2>/dev/null) || true
   if echo "${HEADLAMP_ISSUER}" | grep -q "^https://"; then
     pass "Headlamp: issuerURL=${HEADLAMP_ISSUER}"
   else
@@ -672,24 +679,24 @@ fi
 if should_run "acl"; then
   echo "--- [9/9] App-Level Access Control ---"
 
-  ADMIN_TOKEN=$(get_admin_token)
+  ADMIN_TOKEN=$(get_admin_token) || true
 
   # --- ArgoCD RBAC ---
   echo "  [ArgoCD RBAC]"
 
   # Get ArgoCD admin password for API auth
-  ARGOCD_PASS=$(kubectl -n devtools get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" 2>/dev/null | base64 -d 2>/dev/null)
+  ARGOCD_PASS=$(kubectl -n devtools get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" 2>/dev/null | base64 -d 2>/dev/null) || true
   ARGOCD_API="https://argocd.${DOMAIN}"
 
   # ArgoCD session token for admin (local admin)
   ARGOCD_SESSION=$(curl -sk -X POST "${ARGOCD_API}/api/v1/session" \
     -H "Content-Type: application/json" \
     -d "{\"username\":\"admin\",\"password\":\"${ARGOCD_PASS}\"}" 2>/dev/null \
-    | python3 -c 'import sys,json; print(json.load(sys.stdin).get("token",""))' 2>/dev/null)
+    | python3 -c 'import sys,json; print(json.load(sys.stdin).get("token",""))' 2>/dev/null) || true
 
   if [ -n "${ARGOCD_SESSION}" ]; then
     # Check RBAC policy has guest→role:none
-    RBAC_CSV=$(kubectl get configmap argocd-rbac-cm -n devtools -o jsonpath='{.data.policy\.csv}' 2>/dev/null)
+    RBAC_CSV=$(kubectl get configmap argocd-rbac-cm -n devtools -o jsonpath='{.data.policy\.csv}' 2>/dev/null) || true
     if echo "${RBAC_CSV}" | grep -q "g, guest, role:none"; then
       pass "ArgoCD RBAC: guest → role:none configured"
     else
@@ -752,14 +759,14 @@ import sys,json
 members = json.load(sys.stdin)
 dev = [m for m in members if m.get('entity_type') == 'g' and m.get('entity_name','') == 'developer']
 print('YES' if dev else 'NO')
-" 2>/dev/null)
+" 2>/dev/null) || true
 
     HAS_VIEW_GROUP=$(echo "${HARBOR_MEMBERS}" | python3 -c "
 import sys,json
 members = json.load(sys.stdin)
 view = [m for m in members if m.get('entity_type') == 'g' and m.get('entity_name','') == 'viewer']
 print('YES' if view else 'NO')
-" 2>/dev/null)
+" 2>/dev/null) || true
 
     if [ "${HAS_DEV_GROUP}" = "YES" ]; then
       pass "Harbor: developer group → project member"
@@ -779,12 +786,12 @@ print('YES' if view else 'NO')
   # --- Gitea Organization & Teams ---
   echo "  [Gitea Organization & Teams]"
 
-  GITEA_POD=$(kubectl get pod -n devtools -l app.kubernetes.io/name=gitea -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
+  GITEA_POD=$(kubectl get pod -n devtools -l app.kubernetes.io/name=gitea -o jsonpath='{.items[0].metadata.name}' 2>/dev/null) || true
   if [ -n "${GITEA_POD}" ]; then
     # Check narwhal org exists
     ORG_CHECK=$(kubectl exec -n devtools "${GITEA_POD}" -- \
       curl -sf "http://localhost:3000/api/v1/orgs/narwhal" -u "gitea-admin:gitea-admin" 2>/dev/null \
-      | python3 -c 'import sys,json; print(json.load(sys.stdin).get("username",""))' 2>/dev/null)
+      | python3 -c 'import sys,json; print(json.load(sys.stdin).get("username",""))' 2>/dev/null) || true
 
     if [ "${ORG_CHECK}" = "narwhal" ]; then
       pass "Gitea: narwhal organization exists"
@@ -801,7 +808,7 @@ print('YES' if view else 'NO')
     fi
 
     # Check restricted-group setting via auth source
-    GITEA_AUTH_ID=$(echo "${GITEA_AUTH_LIST}" | grep -i "keycloak" | awk '{print $1}' 2>/dev/null)
+    GITEA_AUTH_ID=$(echo "${GITEA_AUTH_LIST}" | grep -i "keycloak" | awk '{print $1}' 2>/dev/null) || true
     if [ -n "${GITEA_AUTH_ID}" ]; then
       pass "Gitea: OAuth2 source ID=${GITEA_AUTH_ID}"
     fi

@@ -45,14 +45,42 @@ for answer, expected in [('*.test.internal', 'PASS'), ('x.test.internal', 'FAIL'
   check(out.startswith(expected), f'literal wildcard {answer}')
 
 check(names(verify) == names(install), 'ambient list matches installer')
+# D-DEV-OPTOUT: the namespace label is owned by gitops/resources/dev-namespace.yaml;
+# derive dev's mode from it instead of hard-coding, and fail if the lists disagree.
+dev_doc = [d for d in (ROOT / 'gitops/resources/dev-namespace.yaml').read_text().split('\n---')
+           if re.search(r'^kind: Namespace$', d, re.M) and re.search(r'^  name: dev$', d, re.M)][0]
+dev_mode = re.search(r'^\s+istio\.io/dataplane-mode:\s*"?(\w+)', dev_doc, re.M)[1]
+gitops_ambient = set()
+for f in (ROOT / 'gitops').rglob('*.yaml'):
+  for d in re.split(r'^---$', f.read_text(), flags=re.M):
+    if re.search(r'^kind: Namespace$', d, re.M) and re.search(r'^    istio\.io/dataplane-mode:\s*"?ambient', d, re.M):
+      gitops_ambient.add(re.search(r'^  name:\s*(\S+)', d, re.M)[1])
+check(('dev' in names(install)) == (dev_mode == 'ambient') == ('dev' in names(verify)),
+      f'dev enrollment agrees with dev-namespace.yaml (mode={dev_mode})')
+check(gitops_ambient <= set(names(install)), 'gitops ambient namespaces are enrolled by the installer')
 ambient = 'AMBIENT_NAMESPACES=' + block(verify, '  AMBIENT_NAMESPACES=', '\n\n')
-for missing in ['', 'dev', 'platform-system']:
+for missing in ['', 'platform-system']:
   out = run(ambient, f'''kubectl() {{
   if [ "$3" = "{missing}" ]; then return 1; fi
   echo ambient
 }}''')
-  check(out.count('PASS') == (5 if missing else 6) and
+  check(out.count('PASS') == (4 if missing else 5) and
         out.count('FAIL') == (1 if missing else 0), f'ambient missing={missing or "none"}')
+devcheck = 'DEV_MODE=' + block(verify, '  DEV_MODE=', '\n\n')
+for answer, expected in [('ambient', 'FAIL'), ('none', 'PASS'), ('', 'PASS')]:
+  out = run(devcheck, f"kubectl() {{ echo '{answer}'; }}")
+  check(out.startswith(expected), f'dev not ambient answer={answer or "unlabeled"}')
+
+# D-LIVE-ABORT: a `$(... | base64 -d)` assignment under set -e/pipefail ends the
+# run silently when the Secret is missing; require a guard on each, plus the
+# ERR-trap sentinel as backstop.
+bare = [l for l in sso.splitlines() if re.search(r'=\$\(.*\| *base64 -d', l) and '||' not in l]
+check(not bare, 'test-sso.sh has no unguarded kubectl|base64 assignment')
+check(re.search(r"^trap '.*ABORTED at line.*' ERR$", sso, re.M) and re.search(r'^set -E$', sso, re.M),
+      'test-sso.sh has an ABORTED sentinel ERR trap')
+check('get secret oidc ' not in sso and
+      "get secret headlamp-oidc-secret -n devtools -o jsonpath='{.data.OIDC_ISSUER_URL}'" in sso,
+      'Headlamp issuer read from headlamp-oidc-secret')
 
 gitea = 'GITEA_PW=' + block(verify, '  GITEA_PW=', '\n\n')
 for available in [True, False]:

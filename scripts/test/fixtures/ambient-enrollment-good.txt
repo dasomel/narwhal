@@ -4,5 +4,4 @@ AMBIENT_NAMESPACES=(
   monitoring
   storage
   database
-  dev
 )

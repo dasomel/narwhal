@@ -143,9 +143,9 @@ done
 echo "Harbor installed"
 
 #=========================================
-# Harbor: Project Group Members
+# Harbor: Offline Security DB Project
 #=========================================
-echo "Configuring Harbor project group members..."
+echo "Configuring Harbor offline security DB project..."
 
 # Wait for Harbor to be ready before API calls
 echo "Waiting for Harbor core pod..."
@@ -170,20 +170,6 @@ done
 
 if [ "${HARBOR_HEALTH}" = "200" ]; then
   HARBOR_API="http://${HARBOR_CORE_IP}/api/v2.0"
-  # Add developer group → project Developer role (roleId=2)
-  curl -sk -X POST "${HARBOR_API}/projects/1/members" \
-    -H "Content-Type: application/json" \
-    -u "admin:${HARBOR_ADMIN_PASS}" \
-    -d '{"role_id":2,"member_group":{"group_name":"developer","group_type":3}}' 2>/dev/null || true
-  echo "Harbor: developer group → project Developer"
-
-  # Add viewer group → project Guest role (roleId=3)
-  curl -sk -X POST "${HARBOR_API}/projects/1/members" \
-    -H "Content-Type: application/json" \
-    -u "admin:${HARBOR_ADMIN_PASS}" \
-    -d '{"role_id":3,"member_group":{"group_name":"viewer","group_type":3}}' 2>/dev/null || true
-  echo "Harbor: viewer group → project Guest"
-
   # trivy-db project (narwhal#48): scripts/airgap/lib/push-security-db.sh lands the
   # offline-fetched Trivy DB/Java DB/checks bundle here, and
   # gitops/resources/trivy-operator.yaml points dbRegistry/javaDbRegistry/
@@ -201,7 +187,7 @@ if [ "${HARBOR_HEALTH}" = "200" ]; then
     -d '{"project_name":"trivy-db","metadata":{"public":"true"}}' 2>/dev/null || true
   echo "Harbor: trivy-db project ensured (public, for narwhal#48 offline vulnerability DB)"
 else
-  echo "WARN: Harbor API not available, skipping project member setup"
+  echo "WARN: Harbor API not available, skipping offline security DB project setup"
 fi
 
 echo "=== Registry Apps Installation Complete ==="

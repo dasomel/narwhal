@@ -3,6 +3,7 @@
 from pathlib import Path
 import re
 import subprocess
+import sys
 
 ROOT = Path(__file__).resolve().parents[3]
 verify = (ROOT / 'scripts/test/verify-cluster.sh').read_text()
@@ -142,4 +143,100 @@ check_ready() { echo UNEXPECTED; }
 check('PROVIDER="${PROVIDER:-vagrant}"' in verify and
       '[ "${PROVIDER}" = "local" ] && PROVIDER="vagrant"' in verify and
       'echo "  SKIP: ${SKIP_COUNT}"' in verify, 'provider convention and SKIP accounting')
+# Keep these contracts independently evaluable against origin/main: one failure
+# must not mask the other stale checks.
+def sso_contracts(sso_text, registry_text, clients_text):
+  redirect = re.search(r'for protected_app in (.*?); do', sso_text)[1].split()
+  member_pos = clients_text.find('/projects/1/members')
+  mode_pos = clients_text.find('"${HARBOR_AUTH_MODE}" != "oidc_auth"')
+  return [
+    ('Gitea uses installed credential', 'gitea-admin:gitea-admin' not in sso_text and
+     "get secret gitea-admin -n devtools -o jsonpath='{.data.admin-password}'" in sso_text),
+    ('Gitea checks both teams', 'for team in Developers Viewers; do' in sso_text and
+     '/orgs/narwhal/teams' in sso_text),
+    ('Headlamp uses API gate instead of redirect', 'headlamp' not in redirect and
+     '/clusters/main/api/v1/namespaces' in sso_text and '401|403) pass "Headlamp:' in sso_text),
+    ('Harbor members follow verified auth mode', '/projects/1/members' not in registry_text and
+     0 < mode_pos < member_pos and clients_text.index('-X PUT') < mode_pos),
+    ('Harbor member HTTP errors fail', member_pos >= 0 and
+     "HTTP_CODE=${MEMBER_RESPONSE##*$'\\n'}" in clients_text and
+     '201|409)' in clients_text and 'exit 1 ;;' in clients_text and
+     '|| true' not in block(clients_text, 'for group_role in', '\n      done')),
+  ]
+
+registry_path = 'scripts/cluster/08-5-registry.sh'
+clients_path = 'scripts/cluster/11-3-keycloak-clients.sh'
+registry_text = (ROOT / registry_path).read_text()
+clients_text = (ROOT / clients_path).read_text()
+for name, valid in sso_contracts(sso, registry_text, clients_text):
+  check(valid, name)
+
+# Optional baseline proof uses local Git objects only, never the cluster/network.
+if '--prove-origin-main' in sys.argv:
+  def baseline(path):
+    return subprocess.check_output(['git', 'show', f'origin/main:{path}'], cwd=ROOT, text=True)
+  for name, valid in sso_contracts(baseline('scripts/test/test-sso.sh'),
+                                   baseline(registry_path), baseline(clients_path)):
+    check(not valid, f'origin/main rejected: {name}')
+
+gitea_helper = 'gitea_api() {' + block(sso, 'gitea_api() {', '\n}\n') + '\n}\n'
+for available in [True, False]:
+  out = run(gitea_helper + '\nif gitea_api /orgs/narwhal; then echo PASS; else echo FAIL; fi',
+            '''GITEA_POD=gitea
+kubectl() {
+  if [ "$1" = get ]; then ''' + ('printf c2VudGluZWw=' if available else 'return 1') + ''';
+  else [[ "$*" == *'gitea-admin:sentinel'* ]]; fi
+}''')
+  check(out.strip() == ('PASS' if available else 'FAIL'), f'Gitea SSO credential available={available}')
+teams = 'GITEA_TEAMS=' + block(sso, '    GITEA_TEAMS=', '\n\n')
+for answer, passes in [('[{"name":"Developers"},{"name":"Viewers"}]', 2),
+                       ('[{"name":"Developers"}]', 1), ('[]', 0), ('invalid', 0)]:
+  out = run(teams, f"gitea_api() {{ echo '{answer}'; }}")
+  check(out.count('PASS') == passes and out.count('FAIL') == 2 - passes,
+        f'Gitea teams response={answer}')
+headlamp = 'HEADLAMP_API_CODE=' + block(sso, '  HEADLAMP_API_CODE=', '\n\n')
+for code in ['401', '403', '200', '302', '500', '000']:
+  out = run(headlamp, f'DOMAIN=test.internal\ncurl() {{ echo {code}; }}')
+  check(out.startswith('PASS' if code in ['401', '403'] else 'FAIL'), f'Headlamp API HTTP {code}')
+
+# Execute the actual provisioning block with shell functions replacing all I/O.
+# Exercise re-runs and failure before either POST; no real credentials are used.
+harbor_start = clients_text.index('      HTTP_CODE=$(curl -sk --max-time 30')
+harbor_setup = clients_text[harbor_start:clients_text.index('\n    else', harbor_start)]
+for put, mode, member, expected in [('200', 'oidc_auth', '201', True),
+                                    ('200', 'oidc_auth', '409', True),
+                                    ('500', 'oidc_auth', '201', False),
+                                    ('200', 'db_auth', '201', False),
+                                    ('200', 'oidc_auth', '400', False),
+                                    ('200', 'oidc_auth', '401', False),
+                                    ('200', 'oidc_auth', '500', False),
+                                    ('200', 'oidc_auth', '000', False)]:
+  setup = f'''set -euo pipefail
+exec 3>&1
+HARBOR_API=http://unused
+HARBOR_ADMIN_PASS=sentinel
+HARBOR_SECRET=client-secret
+ISSUER_URL=http://unused
+curl() {{
+  case "$*" in
+    *'-X PUT'*) printf '{put}' ;;
+    *'-X POST'*) echo POST >&3; printf 'sentinel client-secret error body\\n{member}';
+      [ '{member}' != 000 ] ;;
+    *) printf '{{"auth_mode":{{"value":"{mode}"}}}}' ;;
+  esac
+}}
+'''
+  result = subprocess.run(['bash', '-c', setup + harbor_setup], text=True, capture_output=True)
+  out = result.stdout + result.stderr
+  check((result.returncode == 0) == expected and 'sentinel' not in out and 'client-secret' not in out,
+        f'Harbor PUT={put} mode={mode} member={member}')
+  if put != '200' or mode != 'oidc_auth':
+    check('POST' not in out,
+          'Harbor rejects config failure before members')
+  elif not expected:
+    check(f'HTTP {member}' in out and ('error body' in out or 'Transport failure' in out),
+          f'Harbor reports member failure {member}')
+  else:
+    check(out.count('POST') == 2 and 'developer group' in out and 'viewer group' in out,
+          'Harbor registers both groups')
 print(f'{count} passed, 0 failed')

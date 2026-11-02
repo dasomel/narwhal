@@ -3188,7 +3188,7 @@ assert sum(1 for l in code if re.search(r"\bexit 3\b", l)) == 1, "exit 3 must ap
   fi
   # 2026-10-29 (D-KAKAO-TEARDOWN): full Kakao teardown releases the six prevent_destroy guards,
   # runs tofu destroy and must restore them on every exit path.
-  check R293 "live suite false-failure guards (#505): TLS, ambient, credentials, retired client, probe and provider" \
+  check R293 "live suite false-failure guards (#505): TLS, ambient, credentials, retired client, probe, provider and the #519 gateway group login (4 hosts, NOFORM fails)" \
     python3 scripts/test/lib/check-live-suite-false-failures.py
 
   # 2026-10-31 (#468, D-MIRROR-PATH): a pin bump needs the image on the bastion mirror first; the live

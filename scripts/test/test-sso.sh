@@ -103,6 +103,32 @@ example_token() {
     2>/dev/null
 }
 
+# D-GATEWAY-LIVE-LOGIN (#519): Keycloak authorization-code login with curl, one function for
+# every gateway check. Needs a fresh cookie jar per call (a shared jar carries the Keycloak
+# SSO cookie, so the form would be skipped). The password goes to curl on stdin, never argv.
+# Prints the HTTP status the app returned after the login, or NOFORM when the Keycloak login
+# form cannot be parsed (the caller must fail on that, never pass).
+gateway_login() {
+  local jar="$1" user="$2" password="$3" url="$4" page action
+  page=$(curl -sk -L --connect-timeout 5 --max-time 20 -c "${jar}" -b "${jar}" "${url}" 2>/dev/null) || page=""
+  action=$(printf '%s' "${page}" | python3 -c '
+import sys, re, html
+p = sys.stdin.read()
+m = re.search(r"<form[^>]+action=\"([^\"]+)\"", p)
+print(html.unescape(m.group(1)) if m and "name=\"username\"" in p and "name=\"password\"" in p else "")
+' 2>/dev/null) || action=""
+  if [ -z "${action}" ]; then
+    echo "NOFORM"
+    return 0
+  fi
+  KC_U="${user}" KC_P="${password}" python3 -c '
+import os, urllib.parse
+print(urllib.parse.urlencode({"username": os.environ["KC_U"], "password": os.environ["KC_P"], "credentialId": ""}), end="")
+' 2>/dev/null \
+    | curl -sk -L --connect-timeout 5 --max-time 30 -c "${jar}" -b "${jar}" -o /dev/null \
+        -w '%{http_code}' --data-binary @- "${action}" 2>/dev/null || echo "000"
+}
+
 echo "============================================"
 echo "SSO Integration Test Suite v2"
 echo "============================================"
@@ -861,6 +887,61 @@ print('YES' if view else 'NO')
     401|403) pass "Headlamp: unauthenticated API blocked (HTTP ${HEADLAMP_API_CODE})" ;;
     *) fail "Headlamp: unauthenticated API expected 401/403, got HTTP ${HEADLAMP_API_CODE}" ;;
   esac
+
+  # --- Gateway admin-only routes (#519, D-GATEWAY-ADMIN-GROUP) ---
+  # hubble, prometheus, alertmanager and nfs-quota-agent are restricted to Keycloak group
+  # cluster-admin. Bearer tokens do not work on these routes (session cookie only), so each
+  # user logs in through the authorization-code flow. Passwords: Secret iam/keycloak-user-passwords.
+  echo "  [Gateway admin-only routes]"
+  GW_TMP=$(mktemp -d)
+  trap 'rm -rf "${GW_TMP:-}"' EXIT
+  GW_FORGED=$(printf '{"groups":["cluster-admin"],"preferred_username":"view"}' | base64 | tr -d '\n') || GW_FORGED=""
+  GW_ADMIN_PW=$(kubectl get secret keycloak-user-passwords -n iam -o jsonpath='{.data.admin}' 2>/dev/null | base64 -d 2>/dev/null) || GW_ADMIN_PW=""
+  GW_VIEW_PW=$(kubectl get secret keycloak-user-passwords -n iam -o jsonpath='{.data.view}' 2>/dev/null | base64 -d 2>/dev/null) || GW_VIEW_PW=""
+  if [ -z "${GW_ADMIN_PW}" ] || [ -z "${GW_VIEW_PW}" ]; then
+    fail "Gateway admin-only: Secret iam/keycloak-user-passwords has no admin/view password"
+  else
+    for gw_host in hubble prometheus alertmanager nfs-quota; do
+      gw_url="https://${gw_host}.${DOMAIN}/"
+
+      GW_NOSESSION=$(curl -sk -o /dev/null --connect-timeout 5 --max-time 15 \
+        -w '%{http_code} %{redirect_url}' "${gw_url}" 2>/dev/null) || GW_NOSESSION="000 "
+      case "${GW_NOSESSION}" in
+        "302 ${KEYCLOAK_URL}/"*) pass "${gw_host}: no session -> 302 to Keycloak" ;;
+        *) fail "${gw_host}: no session expected 302 to ${KEYCLOAK_URL}, got ${GW_NOSESSION%% *}" ;;
+      esac
+
+      GW_ADMIN_CODE=$(gateway_login "${GW_TMP}/${gw_host}-admin.jar" admin "${GW_ADMIN_PW}" "${gw_url}") || GW_ADMIN_CODE="000"
+      case "${GW_ADMIN_CODE}" in
+        NOFORM) fail "${gw_host}: admin login form not found, cannot verify" ;;
+        403) fail "${gw_host}: admin (cluster-admin) got HTTP 403" ;;
+        2??|3??) pass "${gw_host}: admin (cluster-admin) -> HTTP ${GW_ADMIN_CODE}" ;;
+        *) fail "${gw_host}: admin expected 2xx/3xx, got HTTP ${GW_ADMIN_CODE}" ;;
+      esac
+
+      GW_VIEW_CODE=$(gateway_login "${GW_TMP}/${gw_host}-view.jar" view "${GW_VIEW_PW}" "${gw_url}") || GW_VIEW_CODE="000"
+      case "${GW_VIEW_CODE}" in
+        NOFORM) fail "${gw_host}: view login form not found, cannot verify" ;;
+        403) pass "${gw_host}: view (no cluster-admin) -> HTTP 403" ;;
+        *) fail "${gw_host}: view expected 403, got HTTP ${GW_VIEW_CODE}" ;;
+      esac
+
+      # The viewer session replays with a client-supplied X-Userinfo claiming cluster-admin;
+      # the strip-then-check pair must ignore it.
+      if [ "${GW_VIEW_CODE}" = "NOFORM" ] || [ ! -s "${GW_TMP}/${gw_host}-view.jar" ]; then
+        fail "${gw_host}: forged X-Userinfo not tested, no viewer session"
+      else
+        GW_FORGED_CODE=$(curl -sk -o /dev/null --connect-timeout 5 --max-time 20 \
+          -b "${GW_TMP}/${gw_host}-view.jar" -H "X-Userinfo: ${GW_FORGED}" \
+          -w '%{http_code}' "${gw_url}" 2>/dev/null) || GW_FORGED_CODE="000"
+        if [ "${GW_FORGED_CODE}" = "403" ]; then
+          pass "${gw_host}: view + forged X-Userinfo (cluster-admin) -> HTTP 403"
+        else
+          fail "${gw_host}: view + forged X-Userinfo expected 403, got HTTP ${GW_FORGED_CODE}"
+        fi
+      fi
+    done
+  fi
 
   # Auth services should remain accessible (not protected by ForwardAuth)
   # shellcheck disable=SC2043  # single-item loop kept intentionally for easy extension

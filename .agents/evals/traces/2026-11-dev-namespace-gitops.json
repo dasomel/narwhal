@@ -1,0 +1,61 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-dev-namespace-gitops-20261102",
+  "task": "gitops/resources/dev-namespace.yaml (Namespace dev with istio.io/dataplane-mode: none, ResourceQuota dev-quota, LimitRange dev-limits) is included by no ArgoCD Application, so the label, quota and limits never reach the cluster. R203 hid this with an unverified exemption. Give the file a per-file owning Application and make the ownership checker enforce it. No live sync is performed in this lane.",
+  "changeContext": {
+    "paths": [
+      ".agents/evals/traces/2026-11-dev-namespace-gitops.json",
+      "docs/common/lessons-log.md",
+      "docs/common/upgrade-waves.json",
+      "gitops/charts/narwhal-apps/templates/dev-namespace.yaml",
+      "gitops/resources/dev-namespace.yaml",
+      "scripts/test/lib/check-dev-namespace.py",
+      "scripts/test/lib/check-gitops-resource-ownership.py",
+      "scripts/test/regression-check-kakao.sh"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Add the dev-namespace Application (per-file include, ServerSideApply, wave 0), put the Namespace in sync-wave -1 so it precedes the quota and limits, drop the R203 exemption, add R301, register the Application as bootstrap configuration in upgrade-waves.json and add a lessons-log row. Deliberately left alone: the tenants path (reserved for portal-requested team namespaces), the dev RBAC in rbac-policies.yaml, scripts/cluster/11-4-keycloak-apiserver.sh which still creates the namespace first, and the live cluster."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "Owner-provided live diagnosis on 2026-11-02: namespace dev exists (created by 11-4 via client-side apply) with only kubernetes.io/metadata.name, no ArgoCD tracking, no dataplane-mode label, no dev-quota or dev-limits. The tenants Application reads resources/tenants, which holds only a README. On origin/main the new ownership checker reports 'resources lack an Application owner: dev-namespace.yaml'.",
+      "evidence": [
+        "doc:owner live diagnosis 2026-11-02 (dev namespace without tracking, label, quota or limits)",
+        "test:new check-gitops-resource-ownership.py run against a git archive of origin/main -> 'resources lack an Application owner: dev-namespace.yaml', exit 1"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "New Application dev-namespace (project platform, path resources, include dev-namespace.yaml, automated prune+selfHeal, ServerSideApply) in narwhal-apps; Namespace dev annotated sync-wave -1; the false 'tenants generates namespaces' exemption removed from R203 and a mutation case added; R301 pins a single owner, three unique objects, label, and Namespace-before-quota-and-RBAC ordering."
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "static ownership and ordering checks and the full static regression suite. NOT covered: live sync, ArgoCD adoption of the existing dev namespace, the label taking effect, and quota/limits admission, which the coordinator will run. Live sync on the local cluster was run by the coordinator after the lane (evidence above).",
+      "evidence": [
+        "test:python3 scripts/test/lib/check-gitops-resource-ownership.py --mutation-verify -> 'PASS: every GitOps resource has an Application owner; mutation detected', exit 0",
+        "test:python3 scripts/test/lib/check-dev-namespace.py -> 'PASS: R301 one SSA owner, 3 unique objects, Namespace before quota/limits and RBAC', exit 0",
+        "runtime:scripts/gitops/push-to-gitea.sh charts/narwhal-apps/templates/dev-namespace.yaml resources/dev-namespace.yaml on the local cluster (2026-11-03) -> Application dev-namespace Synced/Healthy; ns dev labels istio.io/dataplane-mode=none, app.kubernetes.io/managed-by=narwhal-gitops, argocd.argoproj.io/managed-by=devtools; resourcequota/dev-quota (requests.memory 0/8Gi, limits.memory 0/16Gi, pods 0/50) and limitrange/dev-limits created"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "completion_claim",
+      "summary": "In the repository, dev-namespace.yaml has exactly one owning Application with Namespace-first ordering and the checker fails without an owner. Nothing is verified on a cluster."
+    },
+    {
+      "id": "e6",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Complete within repository scope; live adoption of namespace dev is for the coordinator."
+    }
+  ]
+}

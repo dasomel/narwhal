@@ -15,7 +15,6 @@ TEMPLATES = ROOT / "gitops/charts/narwhal-apps/templates"
 EXCLUSIONS = {
     "alertmanager-config.yaml": "prometheus-stack renders config from chart values",
     "cnpg-backup.yaml": "narwhal-db Application owns the CNPG backup configuration",
-    "dev-namespace.yaml": "tenants Application generates namespaces from tenant definitions",
     "gitea-db.yaml": "gitea Application installs the database bootstrap Job",
     "grafana-datasources.yaml": "k8s-monitoring Application installs datasource config",
     "harbor-db.yaml": "harbor Application installs the database bootstrap Job",
@@ -58,6 +57,9 @@ def main():
             (copied / "ambient-kubelet-probes-ccnp.yaml").unlink()
             if "ambient-kubelet-probes-ccnp.yaml" not in uncovered(copied):
                 raise SystemExit("removing the probe Application was not detected")
+            (copied / "dev-namespace.yaml").unlink()
+            if "dev-namespace.yaml" not in uncovered(copied):
+                raise SystemExit("removing the dev Application was not detected")
     print("PASS: every GitOps resource has an Application owner; mutation detected")
 
 

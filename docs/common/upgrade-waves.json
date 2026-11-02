@@ -32,6 +32,7 @@
     "grafana-dashboards": "Dashboard configuration owned with the observability stack.",
     "headlamp-policy": "Network policy configuration, not a separately upgraded component.",
     "trivy-operator": "Security add-on; no component-specific upgrade contract.",
+    "dev-namespace": "Bootstrap namespace, quota and limits, not platform component runtime.",
     "tenants": "Tenant bootstrap configuration, not platform component runtime.",
     "kyverno": "Policy engine is deployed but has no upgrade-specific model in the pilot.",
     "openbao-unseal": "Unseal configuration job owned with OpenBao.",

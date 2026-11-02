@@ -1,0 +1,31 @@
+# D-DEV-OWNER: keep bootstrap dev in the per-file Application convention.
+# tenants/README.md reserves that path for portal-requested team namespaces;
+# dev has no team owner. Cost: one small Application; move only if dev adopts
+# that team contract. Keep RBAC in its existing owner (rbac-policies).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: dev-namespace
+  namespace: devtools
+  annotations:
+    # Bootstrap dev before the RBAC Application binds roles in it.
+    argocd.argoproj.io/sync-wave: "0"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: platform
+  source:
+    repoURL: {{ .Values.repoURL }}
+    targetRevision: HEAD
+    path: resources
+    directory:
+      include: "dev-namespace.yaml"
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: devtools
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - ServerSideApply=true

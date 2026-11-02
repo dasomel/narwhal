@@ -2147,6 +2147,8 @@ PYEOF
     python3 -c 'import re,pathlib; s=pathlib.Path("scripts/cluster/13-argocd.sh").read_text(); i=s.index("appended TCP 15008"); j=s.index("one or more restricted rules lack TCP 15008"); assert re.search(r"policy=\"\$\(kubectl get \"networkpolicy/\$policy_name\"", s[i:j]), "no re-read between patch and post-check"'
   check R203 "every GitOps resource has a reconciling Application (Narwhal#235)" \
     python3 scripts/test/lib/check-gitops-resource-ownership.py --mutation-verify
+  check R301 "dev namespace has one SSA owner, unique objects and namespace-first ordering" \
+    python3 scripts/test/lib/check-dev-namespace.py
 
   check R204 "Velero Helm paths explicitly disable chart-managed broad RBAC (Narwhal#226)" \
     python3 scripts/test/lib/check-velero-rbac.py --gitops-values gitops/charts/narwhal-apps/templates/velero.yaml --script-values scripts/cluster/08-4-storage.sh

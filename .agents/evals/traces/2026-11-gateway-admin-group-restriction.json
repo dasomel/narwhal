@@ -1,0 +1,73 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-gateway-admin-group-restriction-20261103",
+  "task": "#519 item 2 (owner-approved 2026-11-03): hubble, prometheus, alertmanager and nfs-quota-agent routes use APISIX openid-connect for login only, so any Keycloak realm user reaches them (Alertmanager allows silences). Restrict exactly these routes to Keycloak group cluster-admin at the gateway with a spoof-proof check, document it, pin it with R302, verify live on the local cluster.",
+  "changeContext": {
+    "paths": [
+      ".agents/evals/traces/2026-11-gateway-admin-group-restriction.json",
+      "README.md",
+      "docs/common/app-sso-permission-matrix.md",
+      "docs/common/lessons-log.md",
+      "docs/kakao/service-domains.md",
+      "gitops/charts/narwhal-platform/templates/_helpers.tpl",
+      "gitops/charts/narwhal-platform/templates/apisix-routes.yaml",
+      "scripts/test/lib/check-gateway-admin-group.py",
+      "scripts/test/regression-check-kakao.sh"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Add helper narwhal-platform.gatewayAdminOnly (serverless-pre-function strips client X-Userinfo at priority 10000; serverless-post-function at -2000 reads the X-Userinfo that openid-connect (2599) set from the verified session and returns 403 unless groups contains cluster-admin) and include it in the 4 routes only; docs, R302 with 6 mutations, lessons-log row. Deliberately left alone: gitea (login-only, own group mapping), Velero UI, Portal, Headlamp/Dashboard/Argo CD/Harbor/Grafana (native OIDC), Keycloak client scopes, the shared hubble client of nfs-quota-agent, and the lessons-log/other findings of #519."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "Before the change, on the local cluster a viewer/developer session reached the four hosts (matrix rows said 'gateway login is enforced, no group rule'); origin/main routes carry only openid-connect and response-rewrite.",
+      "evidence": [
+        "doc:https://github.com/dasomel/narwhal/issues/519"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "external_input",
+      "provenance": "APISIX 3.15.0 plugin source read inside the running apisix pod (/usr/local/apisix/apisix/plugins/openid-connect.lua) and Context7 /apache/apisix docs, 2026-11-03",
+      "reviewed": true,
+      "summary": "openid-connect rewrite phase sets X-Userinfo via core.request.set_header from response.user (verified session) when set_userinfo_header is true; it does not itself strip a client value if the plugin sets none, hence the pre-function strip. claim_schema was rejected: it answers 401, not 403."
+    },
+    {
+      "id": "e4",
+      "type": "bug_fix",
+      "summary": "_helpers.tpl defines narwhal-platform.gatewayAdminOnly; apisix-routes.yaml includes it after openid-connect in hubble, prometheus, alertmanager, nfs-quota-agent; matrix/README/kakao service-domains updated; check-gateway-admin-group.py registered as R302."
+    },
+    {
+      "id": "e5",
+      "type": "review_correction",
+      "summary": "No review correction yet; independent review is pending (Narwhal merge gate)."
+    },
+    {
+      "id": "e6",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "static R302 (+6 mutations), helm render of the 4 routes, and a live check on the local disposable cluster via a curl authorization-code login against Keycloak per test user (bearer tokens are not accepted by these routes: bearer_only false, session cookie). NOT covered: kakao cluster, browsers, users in other groups beyond admin/dev/view/guest.",
+      "evidence": [
+        "test:python3 scripts/test/lib/check-gateway-admin-group.py --mutation-verify -> PASS: R302 mutation-verify, 6 mutations caught",
+        "test:live local cluster after push-to-gitea.sh and narwhal-platform Synced/Healthy: admin -> 200 on hubble, prometheus, alertmanager, nfs-quota; dev, view, guest -> 403 body '403 Forbidden: Keycloak group cluster-admin required' on all four",
+        "test:live: request without session -> 302 to keycloak; forged X-Userinfo with groups cluster-admin and no session -> 302; viewer session plus forged X-Userinfo -> 403; admin plus forged -> 200"
+      ]
+    },
+    {
+      "id": "e7",
+      "type": "completion_claim",
+      "summary": "In the repository, Velero metrics are scraped through a single workload-scoped port exception paired with a Prometheus-only NetworkPolicy, and six backup alerts are defined and covered by promtool cases. Nothing is verified on a cluster."
+    },
+    {
+      "id": "e8",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Complete within repository scope; #456 stays open until the next cluster shows the target up and an alert firing, and the OpenBao snapshot freshness alert remains a follow-up."
+    }
+  ]
+}

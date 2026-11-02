@@ -461,10 +461,12 @@ vagrant destroy -f
 ### SSO User Accounts
 
 **Authentication and authorization are separate here.** The APISIX `openid-connect` plugin only
-proves who you are; it applies no group restriction, so every user in the `narwhal` realm reaches
-the application. What each user may then _do_ is enforced by the application itself and by
-Kubernetes RBAC, per the mapping above. The table describes authorization; the sentence below
-describes the gateway:
+proves who you are, so by itself every user in the `narwhal` realm reaches the application. Gitea
+stays login-only (it maps groups itself); Hubble, Prometheus, Alertmanager and NFS Quota add a
+gateway check that only members of the Keycloak group `cluster-admin` pass (others get HTTP 403).
+What each user may then _do_ elsewhere is enforced by the application itself and by Kubernetes
+RBAC, per the mapping above. The table describes authorization; the sentence below describes the
+gateway:
 
 | User | Group | Password Verification |
 |---------|-----------------|------------------------|

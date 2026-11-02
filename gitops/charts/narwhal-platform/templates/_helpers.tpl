@@ -12,7 +12,7 @@ openid-connect route to Keycloak group cluster-admin (D-GATEWAY-ADMIN-GROUP).
 Usage (route plugins list, after openid-connect):
   {{- include "narwhal-platform.gatewayAdminOnly" . | nindent 8 }}
 Why two plugins: openid-connect (priority 2599) overwrites X-Userinfo with the
-base64 JSON of the id-token claims of the verified session (set_userinfo_header);
+base64 JSON of the Keycloak userinfo response for the verified session (set_userinfo_header);
 serverless-pre-function (priority 10000) runs BEFORE it and strips any
 client-supplied X-Userinfo, serverless-post-function (priority -2000) runs AFTER it
 and reads only what the plugin set. An unauthenticated request never reaches the

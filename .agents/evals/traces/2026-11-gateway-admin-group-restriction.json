@@ -61,13 +61,13 @@
     {
       "id": "e7",
       "type": "completion_claim",
-      "summary": "In the repository, Velero metrics are scraped through a single workload-scoped port exception paired with a Prometheus-only NetworkPolicy, and six backup alerts are defined and covered by promtool cases. Nothing is verified on a cluster."
+      "summary": "In the repository and on the local cluster (applied via push-to-gitea, ArgoCD Synced), the hubble, prometheus, alertmanager and nfs-quota-agent ApisixRoutes return 403 to sessions outside Keycloak group cluster-admin and 200 to cluster-admin; unauthenticated requests are still redirected to Keycloak, and a forged X-Userinfo header does not bypass the check. R302 pins the restriction statically. The Kakao cluster and real browsers are not verified."
     },
     {
       "id": "e8",
       "type": "task_outcome",
       "state": "A",
-      "summary": "Complete within repository scope; #456 stays open until the next cluster shows the target up and an alert firing, and the OpenBao snapshot freshness alert remains a follow-up."
+      "summary": "Complete for #519 item 2 within repository and local-cluster scope; the other #519 items are outside this change. Follow-up (LOW): R302 renders only the narwhal-platform chart, so an openid-connect route added in another chart or via plugin_config_name is not covered."
     }
   ]
 }

@@ -27,10 +27,12 @@
 cd portal
 
 # (최초 1회) harbor 로그인 — admin / devtools/harbor-secrets 의 HARBOR_ADMIN_PASSWORD
+
 PASS=$(kubectl -n devtools get secret harbor-secrets -o jsonpath='{.data.HARBOR_ADMIN_PASSWORD}' | base64 -d)
 echo "$PASS" | docker login harbor.local.narwhal.internal -u admin --password-stdin
 
 # 빌드 → push → 롤아웃
+
 docker build -f Dockerfile -t harbor.local.narwhal.internal/library/narwhal-portal:latest .
 docker push harbor.local.narwhal.internal/library/narwhal-portal:latest   # imagePullPolicy: Always
 kubectl -n devtools rollout restart deploy/narwhal-portal
@@ -51,8 +53,10 @@ kubectl -n devtools rollout status  deploy/narwhal-portal --timeout=220s
 ```bash
 cd portal                      # 모노레포의 portal/ (옛 narwhal-portal 레포 아님)
 # (최초 1회) Harbor 로그인 - 위 A 절의 docker login. 로컬 빌드 이미지를 push 한다.
+
 make dev-cluster               # = pnpm run dev:cluster
 # 종료: Ctrl+C (--cleanup=false 라 배포 유지)
+
 ```
 
 `scripts/dev-cluster.sh`(D-PORTAL-DEV-FROM-CHART)는 손으로 유지하는 사본 대신 **GitOps 차트에서
@@ -65,6 +69,7 @@ Secret, RBAC는 건드리지 않는다(ArgoCD 관리). kube context가 `narwhal`
 정적 검증은 narwhal R299.
 
 스크립트가 시작 시 하는 일:
+
 1. **argocd-cm 프리플라이트**: 라이브 `apps_Deployment` 값이 차트와 다르면 `kubectl patch cm argocd-cm`으로
    패치한다. argocd-config.yaml의 ConfigMap self-ignore가 이 키를 덮어서 git 수정은 기존 클러스터에
    닿지 않기 때문이다. ArgoCD 문서는 application-controller 재시작을 resource exclusions/custom labels에만
@@ -73,6 +78,7 @@ Secret, RBAC는 건드리지 않는다(ArgoCD 관리). kube context가 `narwhal`
    skaffold에 `--insecure-registry=harbor.local.narwhal.internal`을 붙이고 경고한다. skaffold의 digest 조회는
    Mac 키체인을 쓰므로(옛 클러스터의 'Narwhal IDP Root CA'가 남아 있으면 x509) 이 플래그는 **digest 조회에만**
    영향이 있고 `docker push`는 계속 `~/.docker/certs.d`로 검증한다. 정식 해결:
+
    ```bash
    mkdir -p ~/.docker/certs.d/harbor.local.narwhal.internal
    kubectl -n platform-system get secret narwhal-root-ca-secret -o jsonpath='{.data.ca\.crt}' | base64 -d \
@@ -103,9 +109,12 @@ requests 1Gi를 점유하므로 다른 무거운 워크로드와 같은 노드�
 | deploy가 cross-ns RBAC에서 실패 / 사본 드리프트 | 차트 전체를 적용하면 security-system Role 등 다른 객체가 섞이고, 손 사본은 차트와 어긋남(Valkey 인증·projected token 누락) | 차트에서 Deployment 하나만 생성 (`scripts/dev-cluster.sh`, `skaffold.yaml` 기본 manifests) |
 
 런타임 선행(클러스터 상태, 코드 아님):
+
 ```bash
 # harbor 로그인 (위 A 참고)
+
 # harbor route client-control 0 (etcd, 100MB 해제) — docs/archive/RELEASE-TODO-gitea-permanence.md 참고
+
 ```
 
 ### ✅ (해결됨 2026-06-10) ArgoCD selfHeal 원복 — argocd-cm ignoreDifferences
@@ -116,6 +125,7 @@ requests 1Gi를 점유하므로 다른 무거운 워크로드와 같은 노드�
 
 **해결**: argocd-cm에 시스템 레벨 `ignoreDifferences`를 추가해 skaffold dev가 바꾸는 필드만
 ArgoCD diff에서 제외 — selfHeal은 켜진 채로 dev 배포가 유지되고 앱은 Synced로 남는다.
+
 - `apps_Deployment`: `managedFieldsManagers: [narwhal-portal-dev]` (jq 가드 아님 - 위 "왜 field manager인가")
 - `all`: `skaffold.dev/run-id`, `app.kubernetes.io/managed-by` 라벨
 - 런타임 patch 적용 + narwhal 로컬 커밋 `ab51121`(`gitops/resources/argocd-config.yaml`) —
@@ -125,13 +135,17 @@ ArgoCD diff에서 제외 — selfHeal은 켜진 채로 dev 배포가 유지되�
 `/app/src`에 즉시 반영, 포털 200 응답.
 
 ### 라이브 종료 후 prod 환원
+
 `dev-cluster.sh`는 종료(Ctrl+C 포함) 시 trap으로 자동 복원한다. 수동/강제 종료 후에는:
+
 ```bash
 bash scripts/dev-cluster.sh --restore
 ```
+
 `--restore`는 차트(git)의 Deployment(핀 이미지)를 `--field-manager=argocd-controller --force-conflicts`로
 server-side apply해 소유권을 돌려주고, `narwhal-portal-dev`가 단독 소유한 필드(startupProbe, skaffold 라벨)는
 빈 apply로 해제한 뒤 ArgoCD hard refresh를 요청한다. 확인:
+
 ```bash
 kubectl -n devtools get deploy narwhal-portal -o jsonpath='{.spec.template.spec.containers[0].image}'  # 핀 태그
 ```
@@ -139,9 +153,11 @@ kubectl -n devtools get deploy narwhal-portal -o jsonpath='{.spec.template.spec.
 ---
 
 ## 빠른 sync 동작 검증
+
 ```bash
 echo "export const __t=1" > src/__synctest.ts   # skaffold dev 가 떠 있을 때
 # skaffold 로그에 "Syncing 1 files" + 에러 없이 "Watching for changes" → OK
+
 POD=$(kubectl -n devtools get pods -l app=narwhal-portal --no-headers | grep 1/1 | awk '{print $1}' | head -1)
 kubectl -n devtools exec "$POD" -- cat /app/src/__synctest.ts   # 내용 보이면 sync 성공
 rm -f src/__synctest.ts
@@ -150,6 +166,7 @@ rm -f src/__synctest.ts
 ---
 
 ## 관련 문서
+
 - `docs/archive/RELEASE-TODO-gitea-permanence.md` — 런타임 패치(client-control 0, selfHeal off)의 gitea 영구화
 - `docs/local-dev.md` — kubeconfig / kaniko secret 셋업
 - `docs/adr-skaffold-dev-workflow.md` — Skaffold+Kaniko 워크플로 ADR

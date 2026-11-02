@@ -80,7 +80,7 @@ count — is how this project is maintained.
 | Offline install | 104 container images, 27 Helm charts, binaries, remote manifests and OS packages, bundled per architecture |
 | Integrated components | 35 GitOps-managed applications |
 
-Built on the [dasomel/ubuntu-26.04-xfs](https://app.vagrantup.com/dasomel/boxes/ubuntu-26.04-xfs)
+Built on the [dasomel/ubuntu-26.04-xfs](https://dasomel.github.io/kube-ready-box/boxes/ubuntu-26.04-xfs.json)
 box (XFS, project quota), produced by
 [kube-ready-box](https://github.com/dasomel/kube-ready-box) — a Packer build with Ubuntu 26.04 and
 the Kubernetes prerequisites pre-installed.

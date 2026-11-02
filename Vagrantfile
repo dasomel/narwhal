@@ -72,7 +72,11 @@ NFS_SHARE_PATH = "/srv/nfs/k8s"      # NFS export path
 #=========================================
 MASTER_CPUS = 2
 MASTER_MEMORY = 6144    # 6GB - control plane + DaemonSets headroom
-WORKER_CPUS = 2
+# D-WORKER-CPUS: 2 vCPU workers ran out of CPU *requests* (97-99% requested, ~15% used) once the
+# full platform was up on 2026-11-02: Keycloak (600m) could not schedule and the Falco DaemonSet
+# fought it for the last 100m. 4 vCPU gives headroom; 3 masters x 2 + 3 workers x 4 = 18 vCPU, an
+# overcommit that is fine on a 14-core host because actual use is low. Override with NARWHAL_WORKER_CPUS.
+WORKER_CPUS = Integer(ENV.fetch("NARWHAL_WORKER_CPUS", "4"))
 WORKER_MEMORY = 6144    # 6GB - platform apps
 
 #=========================================
@@ -84,7 +88,13 @@ DISK_SIZE_GB = 30  # GB
 Vagrant.configure("2") do |config|
   # Base Box (XFS for project quota support)
   config.vm.box = "dasomel/ubuntu-26.04-xfs"
-  config.vm.box_version = "0.1.0"
+  config.vm.box_version = "0.3.1"
+  # D-BOX-CATALOG: kube-ready-box left Vagrant Cloud (HCP Vagrant stopped taking new versions on
+  # 2026-10-01 and deletes hosted boxes on 2026-12-31); 0.3.0+ is served as GitHub Release assets
+  # through this catalog, which carries the sha256 so `vagrant box add/update` still verify it.
+  # 0.3.x ships arm64 vmware_desktop only (no VirtualBox, no amd64). 0.3.1 = 0.3.0 + installer GRUB
+  # args removed and leftover installer kernels purged (same kernel 7.0.0-42).
+  config.vm.box_url = "https://dasomel.github.io/kube-ready-box/boxes/ubuntu-26.04-xfs.json"
   config.vm.box_check_update = true
 
   # Disk size plugin (VirtualBox only)

@@ -149,7 +149,7 @@ Velero schedule `includedResources` is the generated readable API inventory; new
 | Vagrant | 2.4+      | VM management |
 | VirtualBox | 7.1+      | Virtualization provider |
 | VMware Fusion | 26H1      | Virtualization provider (alternative) |
-| Ubuntu | 26.04 LTS | Base OS (dasomel/ubuntu-26.04-xfs v0.1.0, Resolute, kernel 7.0) |
+| Ubuntu | 26.04 LTS | Base OS (dasomel/ubuntu-26.04-xfs v0.3.1, Resolute, kernel 7.0.0-42; vmware_desktop arm64 from the kube-ready-box GitHub Pages catalog) |
 
 ## Frozen this cycle (airgap refresh 2026-06-15)
 

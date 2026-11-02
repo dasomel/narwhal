@@ -62,7 +62,7 @@ Narwhal은 통합 과정에서 발생한 실패를 폐기하지 않습니다. �
 | 오프라인 설치 | 컨테이너 이미지 104개, Helm 차트 27개, 바이너리·원격 매니페스트·OS 패키지를 아키텍처별 번들로 제공 |
 | 통합 컴포넌트 | GitOps로 관리되는 애플리케이션 35개 |
 
-[dasomel/ubuntu-26.04-xfs](https://app.vagrantup.com/dasomel/boxes/ubuntu-26.04-xfs) Box 기반(XFS
+[dasomel/ubuntu-26.04-xfs](https://dasomel.github.io/kube-ready-box/boxes/ubuntu-26.04-xfs.json) Box 기반(XFS
 파일시스템, Project Quota 지원)이며, 이 Box는 Ubuntu 26.04와 Kubernetes 사전 요구사항을 미리 설치한
 Packer 빌드 [kube-ready-box](https://github.com/dasomel/kube-ready-box)의 산출물입니다.
 

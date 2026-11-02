@@ -21,7 +21,7 @@
 | 계층 / 컴포넌트 | 현재 선언 pin | Direct source / 비고 | 상태 |
 |---|---|---|---|
 | Kubernetes | `v1.35.7`; kubeadm/kubelet/kubectl도 `K8S_PATCH_VERSION`(`v1.35.7`)으로 설치됨 (`VERSIONS.md`의 kubeadm/kubelet/kubectl 행도 v1.35.7로 정정되었고 `check-version-consistency.sh`가 함께 검사한다) | `Vagrantfile`의 `K8S_PATCH_VERSION`, `scripts/common/03-k8s-install.sh`, `scripts/cluster/02-init-cluster.sh`. control plane과 node 도구 patch가 서로 다르게 선언됨 | pinned; skew 별도 gate 필요 |
-| OS | Ubuntu `26.04 LTS`; Vagrant box `v0.1.0` | `Vagrantfile`의 box 및 `box_version` pin; Kakao 노드 OS가 이 값과 같다는 보장은 없음 | pinned (Vagrant) |
+| OS | Ubuntu `26.04 LTS`; Vagrant box `v0.3.1` (vmware_desktop arm64, GitHub Pages catalog) | `Vagrantfile`의 box 및 `box_version` pin; Kakao 노드 OS가 이 값과 같다는 보장은 없음 | pinned (Vagrant) |
 | containerd | Ubuntu 24.04는 `1.7.x` 시도, 26.04는 distro default `2.x` | `scripts/common/02-containerd.sh`는 `CONTAINERD_VERSION` 미설정 시 저장소 기본값을 설치하고 실제 설치 버전을 출력. 고정 patch가 아님 | unpinned runtime version |
 | CNI | Cilium `v1.19.4`; CLI `v0.19.4`; Hubble `v1.19.4` | `scripts/cluster/03-cni-install.sh`; `CNI_PLUGIN`은 기본 `cilium`, 스크립트에는 Calico 대체 pin도 존재 | pinned (기본 경로) |
 | APISIX / ingress | APISIX app `3.15.0`, chart `2.13.0`; Ingress Controller `1.8.0` | GitOps `apisix.yaml`, ingress controller 세부는 `VERSIONS.md` 및 관련 manifests | pinned; controller 2.x는 major break 사유로 frozen |

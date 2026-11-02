@@ -211,8 +211,10 @@ AMBIENT_NAMESPACES=(
   monitoring
   storage
   database
-  dev
 )
+# NOTE: 'dev' excluded: gitops/resources/dev-namespace.yaml owns its label and
+# opts it out (istio.io/dataplane-mode: none, SSO cookies); ArgoCD would revert
+# an ambient label anyway.
 # NOTE: 'iam' excluded — Keycloak in iam namespace must be reachable
 # from APISIX (cross-namespace plain HTTP). ztunnel ambient intercept blocks
 # inbound plain HTTP even when pods have istio.io/dataplane-mode=none label,

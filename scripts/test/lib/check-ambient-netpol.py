@@ -12,7 +12,7 @@ import sys
 import yaml
 
 ROOT = pathlib.Path(__file__).resolve().parents[3]
-AMBIENT = {"database", "devtools", "monitoring", "platform-system", "storage", "dev"}
+AMBIENT = {"database", "devtools", "monitoring", "platform-system", "storage"}
 CCNP_NAME = "allow-ambient-kubelet-probes"
 
 

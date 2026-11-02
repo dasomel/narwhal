@@ -330,7 +330,7 @@ if [ -n "${HARBOR_ADMIN_PASS}" ]; then
     done
 
     if [ "${HARBOR_READY}" = "true" ]; then
-      curl -sk -u "admin:${HARBOR_ADMIN_PASS}" \
+      HTTP_CODE=$(curl -sk --max-time 30 -o /dev/null -w '%{http_code}' -u "admin:${HARBOR_ADMIN_PASS}" \
         -X PUT "${HARBOR_API}/configurations" \
         -H "Content-Type: application/json" \
         -d "{
@@ -346,16 +346,54 @@ if [ -n "${HARBOR_ADMIN_PASS}" ]; then
           \"oidc_auto_onboard\": true,
           \"oidc_user_claim\": \"harbor_username\",
           \"primary_auth_mode\": true
-        }" 2>/dev/null && echo "Harbor OIDC configured" \
-        || echo "WARN: Harbor OIDC API call failed"
+        }" 2>/dev/null) || HTTP_CODE="000"
+      if [ "${HTTP_CODE}" != "200" ]; then
+        echo "ERROR: Harbor OIDC configuration failed (HTTP ${HTTP_CODE})" >&2
+        exit 1
+      fi
+      HARBOR_AUTH_MODE=$(curl -fsk --max-time 30 -u "admin:${HARBOR_ADMIN_PASS}" \
+        "${HARBOR_API}/configurations" 2>/dev/null | jq -r '.auth_mode.value') || HARBOR_AUTH_MODE=""
+      if [ "${HARBOR_AUTH_MODE}" != "oidc_auth" ]; then
+        echo "ERROR: Harbor OIDC auth_mode verification failed" >&2
+        exit 1
+      fi
+      echo "Harbor OIDC configured and verified"
+
+      # D-HARBOR-GROUP-ORDER: OIDC members require verified oidc_auth; pay one
+      # readback before POSTs. If auth mode changes, move this gate with the setup.
+      for group_role in developer:2 viewer:3; do
+        GROUP_NAME=${group_role%:*}
+        ROLE_ID=${group_role#*:}
+        MEMBER_RESPONSE=$(curl -sk --max-time 30 -w '\n%{http_code}' \
+          -X POST "${HARBOR_API}/projects/1/members" \
+          -H "Content-Type: application/json" \
+          -u "admin:${HARBOR_ADMIN_PASS}" \
+          -d "{\"role_id\":${ROLE_ID},\"member_group\":{\"group_name\":\"${GROUP_NAME}\",\"group_type\":3}}" \
+          2>/dev/null) || MEMBER_RESPONSE=$'Transport failure\n000'
+        HTTP_CODE=${MEMBER_RESPONSE##*$'\n'}
+        MEMBER_BODY=${MEMBER_RESPONSE%$'\n'*}
+        case "${HTTP_CODE}" in
+          201|409) echo "Harbor: ${GROUP_NAME} group → library role ${ROLE_ID} (HTTP ${HTTP_CODE})" ;;
+          *)
+            # API errors are useful, but never echo credentials even if reflected.
+            MEMBER_BODY=${MEMBER_BODY//"${HARBOR_ADMIN_PASS}"/[REDACTED]}
+            MEMBER_BODY=${MEMBER_BODY//"${HARBOR_SECRET}"/[REDACTED]}
+            printf 'ERROR: Harbor group %s registration failed (HTTP %s): %s\n' \
+              "${GROUP_NAME}" "${HTTP_CODE}" "${MEMBER_BODY}" >&2
+            exit 1 ;;
+        esac
+      done
     else
-      echo "WARN: Harbor API not available, skipping OIDC config"
+      echo "ERROR: Harbor API not available for OIDC config" >&2
+      exit 1
     fi
   else
-    echo "WARN: Harbor core service not found"
+    echo "ERROR: Harbor core service not found" >&2
+    exit 1
   fi
 else
-  echo "WARN: Harbor admin password not found, skipping"
+  echo "ERROR: Harbor admin password not found" >&2
+  exit 1
 fi
 
 # -------------------------------------------------------------------------

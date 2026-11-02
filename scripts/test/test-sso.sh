@@ -60,6 +60,18 @@ harbor_api() {
   curl -sk --connect-timeout 5 -u "admin:${password}" "$1" 2>/dev/null
 }
 
+# D-GITEA-SSO-CREDENTIAL: reuse the installed admin Secret, with no fallback;
+# keep the pod-local API path so gateway OIDC cannot intercept basic auth.
+gitea_api() {
+  local password
+  password=$(kubectl get secret gitea-admin -n devtools -o jsonpath='{.data.admin-password}' 2>/dev/null | base64 -d) || password=""
+  if [ -z "${password}" ]; then
+    return 1
+  fi
+  kubectl exec -n devtools "${GITEA_POD}" -- \
+    curl -sf --max-time 10 "http://localhost:3000/api/v1$1" -u "gitea-admin:${password}" 2>/dev/null
+}
+
 # Get Keycloak admin token
 get_admin_token() {
   local user pass
@@ -789,8 +801,7 @@ print('YES' if view else 'NO')
   GITEA_POD=$(kubectl get pod -n devtools -l app.kubernetes.io/name=gitea -o jsonpath='{.items[0].metadata.name}' 2>/dev/null) || true
   if [ -n "${GITEA_POD}" ]; then
     # Check narwhal org exists
-    ORG_CHECK=$(kubectl exec -n devtools "${GITEA_POD}" -- \
-      curl -sf "http://localhost:3000/api/v1/orgs/narwhal" -u "gitea-admin:gitea-admin" 2>/dev/null \
+    ORG_CHECK=$(gitea_api /orgs/narwhal \
       | python3 -c 'import sys,json; print(json.load(sys.stdin).get("username",""))' 2>/dev/null) || true
 
     if [ "${ORG_CHECK}" = "narwhal" ]; then
@@ -798,6 +809,15 @@ print('YES' if view else 'NO')
     else
       fail "Gitea: narwhal organization NOT found"
     fi
+
+    GITEA_TEAMS=$(gitea_api '/orgs/narwhal/teams?limit=100') || GITEA_TEAMS="[]"
+    for team in Developers Viewers; do
+      if echo "${GITEA_TEAMS}" | jq -e --arg team "${team}" 'any(.[]; .name == $team)' >/dev/null 2>&1; then
+        pass "Gitea: narwhal/${team} team exists"
+      else
+        fail "Gitea: narwhal/${team} team NOT found"
+      fi
+    done
 
     # Check OAuth2 source has group-team-map
     GITEA_AUTH_LIST=$(kubectl exec -n devtools "${GITEA_POD}" -c gitea -- gitea admin auth list 2>/dev/null || true)
@@ -820,7 +840,7 @@ print('YES' if view else 'NO')
   echo "  [URL-Level Blocking]"
 
   # Protected URLs should redirect (302) or return 401 when accessed without cookie
-  for protected_app in argocd harbor headlamp grafana gitea openbao hubble; do
+  for protected_app in argocd harbor grafana gitea openbao hubble; do
     PROT_CODE=$(curl -sk -o /dev/null -w '%{http_code}' \
       "https://${protected_app}.${DOMAIN}/" 2>/dev/null || echo "000")
     case "${PROT_CODE}" in
@@ -832,6 +852,15 @@ print('YES' if view else 'NO')
         warn "${protected_app}: unauthenticated → HTTP ${PROT_CODE} (unexpected)" ;;
     esac
   done
+
+  # D-HEADLAMP-API-GATE: native OIDC serves a public SPA shell; test its API
+  # instead. Revisit this path if Headlamp's configured cluster name changes.
+  HEADLAMP_API_CODE=$(curl -sk --max-time 10 -o /dev/null -w '%{http_code}' \
+    "https://headlamp.${DOMAIN}/clusters/main/api/v1/namespaces" 2>/dev/null) || HEADLAMP_API_CODE="000"
+  case "${HEADLAMP_API_CODE}" in
+    401|403) pass "Headlamp: unauthenticated API blocked (HTTP ${HEADLAMP_API_CODE})" ;;
+    *) fail "Headlamp: unauthenticated API expected 401/403, got HTTP ${HEADLAMP_API_CODE}" ;;
+  esac
 
   # Auth services should remain accessible (not protected by ForwardAuth)
   # shellcheck disable=SC2043  # single-item loop kept intentionally for easy extension

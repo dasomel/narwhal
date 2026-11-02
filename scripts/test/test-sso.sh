@@ -106,8 +106,9 @@ example_token() {
 # D-GATEWAY-LIVE-LOGIN (#519): Keycloak authorization-code login with curl, one function for
 # every gateway check. Needs a fresh cookie jar per call (a shared jar carries the Keycloak
 # SSO cookie, so the form would be skipped). The password goes to curl on stdin, never argv.
-# Prints the HTTP status the app returned after the login, or NOFORM when the Keycloak login
-# form cannot be parsed (the caller must fail on that, never pass).
+# Prints "<final HTTP status> <final URL>" after the login, or NOFORM when the Keycloak login
+# form cannot be parsed (the caller must fail on that, never pass). Callers must check the final
+# URL: a wrong password re-renders the Keycloak login page with HTTP 200 (review of #536).
 gateway_login() {
   local jar="$1" user="$2" password="$3" url="$4" page action
   page=$(curl -sk -L --connect-timeout 5 --max-time 20 -c "${jar}" -b "${jar}" "${url}" 2>/dev/null) || page=""
@@ -126,7 +127,7 @@ import os, urllib.parse
 print(urllib.parse.urlencode({"username": os.environ["KC_U"], "password": os.environ["KC_P"], "credentialId": ""}), end="")
 ' 2>/dev/null \
     | curl -sk -L --connect-timeout 5 --max-time 30 -c "${jar}" -b "${jar}" -o /dev/null \
-        -w '%{http_code}' --data-binary @- "${action}" 2>/dev/null || echo "000"
+        -w '%{http_code} %{url_effective}' --data-binary @- "${action}" 2>/dev/null || echo "000 -"
 }
 
 echo "============================================"
@@ -911,19 +912,22 @@ print('YES' if view else 'NO')
         *) fail "${gw_host}: no session expected 302 to ${KEYCLOAK_URL}, got ${GW_NOSESSION%% *}" ;;
       esac
 
-      GW_ADMIN_CODE=$(gateway_login "${GW_TMP}/${gw_host}-admin.jar" admin "${GW_ADMIN_PW}" "${gw_url}") || GW_ADMIN_CODE="000"
-      case "${GW_ADMIN_CODE}" in
+      # The result must come from the app host: a failed login ends on the Keycloak page (200).
+      GW_ADMIN_RES=$(gateway_login "${GW_TMP}/${gw_host}-admin.jar" admin "${GW_ADMIN_PW}" "${gw_url}") || GW_ADMIN_RES="000 -"
+      GW_ADMIN_CODE="${GW_ADMIN_RES%% *}"
+      case "${GW_ADMIN_RES}" in
         NOFORM) fail "${gw_host}: admin login form not found, cannot verify" ;;
-        403) fail "${gw_host}: admin (cluster-admin) got HTTP 403" ;;
-        2??|3??) pass "${gw_host}: admin (cluster-admin) -> HTTP ${GW_ADMIN_CODE}" ;;
-        *) fail "${gw_host}: admin expected 2xx/3xx, got HTTP ${GW_ADMIN_CODE}" ;;
+        "2"??" ${gw_url}"*) pass "${gw_host}: admin (cluster-admin) -> HTTP ${GW_ADMIN_CODE} from the app" ;;
+        "403 "*) fail "${gw_host}: admin (cluster-admin) got HTTP 403" ;;
+        *) fail "${gw_host}: admin expected 2xx from ${gw_url}, got HTTP ${GW_ADMIN_CODE} (${GW_ADMIN_RES#* })" ;;
       esac
 
-      GW_VIEW_CODE=$(gateway_login "${GW_TMP}/${gw_host}-view.jar" view "${GW_VIEW_PW}" "${gw_url}") || GW_VIEW_CODE="000"
-      case "${GW_VIEW_CODE}" in
+      GW_VIEW_RES=$(gateway_login "${GW_TMP}/${gw_host}-view.jar" view "${GW_VIEW_PW}" "${gw_url}") || GW_VIEW_RES="000 -"
+      GW_VIEW_CODE="${GW_VIEW_RES%% *}"
+      case "${GW_VIEW_RES}" in
         NOFORM) fail "${gw_host}: view login form not found, cannot verify" ;;
-        403) pass "${gw_host}: view (no cluster-admin) -> HTTP 403" ;;
-        *) fail "${gw_host}: view expected 403, got HTTP ${GW_VIEW_CODE}" ;;
+        "403 ${gw_url}"*) pass "${gw_host}: view (no cluster-admin) -> HTTP 403 from the gateway" ;;
+        *) fail "${gw_host}: view expected 403 from ${gw_url}, got HTTP ${GW_VIEW_CODE} (${GW_VIEW_RES#* })" ;;
       esac
 
       # The viewer session replays with a client-supplied X-Userinfo claiming cluster-admin;

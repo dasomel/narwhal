@@ -194,6 +194,23 @@ for answer, passes in [('[{"name":"Developers"},{"name":"Viewers"}]', 2),
   out = run(teams, f"gitea_api() {{ echo '{answer}'; }}")
   check(out.count('PASS') == passes and out.count('FAIL') == 2 - passes,
         f'Gitea teams response={answer}')
+# D-GATEWAY-LIVE-LOGIN (#519): the gateway group check covers all four hosts and the four
+# cases, never passes when the login form is unparseable, and cleans its cookie jars. The
+# admin/view result must come from the app URL: a wrong password ends on the Keycloak page with
+# HTTP 200, which a status-only check would pass (review of #536).
+check('for gw_host in hubble prometheus alertmanager nfs-quota; do' in sso and
+      'NOFORM) fail "${gw_host}: admin' in sso and 'NOFORM) fail "${gw_host}: view' in sso and
+      'X-Userinfo: ${GW_FORGED}' in sso and 'trap \'rm -rf "${GW_TMP:-}"\' EXIT' in sso and
+      '"403 ${gw_url}"*) pass "${gw_host}: view' in sso and
+      '"2"??" ${gw_url}"*) pass "${gw_host}: admin' in sso and
+      "%{http_code} %{url_effective}' --data-binary" in sso and
+      '2??|3??) pass "${gw_host}: admin' not in sso, 'gateway admin-group live check shape')
+login = 'gateway_login() {' + block(sso, 'gateway_login() {', '\n}\n') + '\n}\n'
+for page, expected in [('<html>no form</html>', 'NOFORM'), ('<form action="x"><input name="username"></form>', 'NOFORM')]:
+  out = run(login + '\ngateway_login /dev/null u p https://x/',
+            f"curl() {{ printf '%s' '{page}'; }}")
+  check(out.strip() == expected, f'gateway_login unparseable form -> {expected}')
+
 headlamp = 'HEADLAMP_API_CODE=' + block(sso, '  HEADLAMP_API_CODE=', '\n\n')
 for code in ['401', '403', '200', '302', '500', '000']:
   out = run(headlamp, f'DOMAIN=test.internal\ncurl() {{ echo {code}; }}')

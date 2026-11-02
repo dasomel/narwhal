@@ -738,6 +738,7 @@ spec:
               secret: "$env://HUBBLE_OIDC_SESSION_SECRET"
               cookie:
                 lifetime: 300
+        {{- include "narwhal-platform.gatewayAdminOnly" . | nindent 8 }}
         - name: response-rewrite
           enable: true
           config:
@@ -793,6 +794,7 @@ spec:
               secret: "$env://PROMETHEUS_OIDC_SESSION_SECRET"
               cookie:
                 lifetime: 300
+        {{- include "narwhal-platform.gatewayAdminOnly" . | nindent 8 }}
         - name: response-rewrite
           enable: true
           config:
@@ -848,6 +850,7 @@ spec:
               secret: "$env://ALERTMANAGER_OIDC_SESSION_SECRET"
               cookie:
                 lifetime: 300
+        {{- include "narwhal-platform.gatewayAdminOnly" . | nindent 8 }}
         - name: response-rewrite
           enable: true
           config:
@@ -1077,6 +1080,7 @@ spec:
               secret: "$env://HUBBLE_OIDC_SESSION_SECRET"
               cookie:
                 lifetime: 300
+        {{- include "narwhal-platform.gatewayAdminOnly" . | nindent 8 }}
         - name: response-rewrite
           enable: true
           config:

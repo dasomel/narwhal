@@ -24,7 +24,7 @@
     {
       "id": "e1",
       "type": "scope_check",
-      "summary": "Replace the hand-kept dev manifest with portal/scripts/dev-cluster.sh, which renders the chart Deployment as ArgoCD does (narwhal-apps valuesObject for narwhal-platform -> helm template narwhal-platform) and changes exactly container narwhal-portal image (harbor dev repo, skaffold tags it dev-*), resources (requests memory 1Gi, limits cpu 1 / memory 3Gi) and startupProbe (/api/health/live, 5s x 60). Add .startupProbe to the :dev- guarded ignoreDifferences, repoint skaffold.yaml, delete the stale copy, add make dev-cluster / pnpm dev:cluster, update the live-dev docs, add R299 and a lessons-log row. Deliberately left alone: the Valkey Deployment, Service, secrets and RBAC (ArgoCD-managed, never applied by skaffold), the debug profile's kaniko build, the other ignoreDifferences entries, and any live cluster."
+      "summary": "Replace the hand-kept dev manifest with portal/scripts/dev-cluster.sh, which renders the chart Deployment as ArgoCD does (narwhal-apps valuesObject for narwhal-platform -> helm template narwhal-platform) and changes exactly container narwhal-portal image (harbor dev repo, skaffold tags it dev-*), resources (requests memory 1Gi, limits cpu 1 / memory 3Gi) and startupProbe (/api/health/live, 5s x 60). Ignore fields owned by field manager narwhal-portal-dev in argocd-cm (D-PORTAL-DEV-FIELD-MANAGER, replacing the first-draft :dev- jq guard), repoint skaffold.yaml, delete the stale copy, add make dev-cluster / pnpm dev:cluster, update the live-dev docs, add R299 and a lessons-log row. Deliberately left alone: the Valkey Deployment, Service, secrets and RBAC (ArgoCD-managed, never applied by skaffold), the debug profile's kaniko build, the other ignoreDifferences entries, and any live cluster."
     },
     {
       "id": "e2",
@@ -38,20 +38,23 @@
     {
       "id": "e3",
       "type": "bug_fix",
-      "summary": "dev-cluster.sh --render-only emits only Deployment narwhal-portal; diff against the chart render shows exactly image, resources.requests.memory, resources.limits.{cpu,memory} and the added startupProbe. The script refuses a kube context other than narwhal (KUBE_CONTEXT) and a baseDomain other than local.narwhal.internal, and checks helm/yq/skaffold/kubectl first. argocd-config.yaml gains the .startupProbe path behind the same :dev- guard."
+      "summary": "dev-cluster.sh --render-only emits only Deployment narwhal-portal; diff against the chart render shows exactly image, resources and the added startupProbe. The script refuses a kube context other than narwhal and a baseDomain other than local.narwhal.internal, patches the live argocd-cm apps_Deployment key when it differs from the chart (the ConfigMap self-ignore means git edits never reach a running cluster), probes Harbor TLS and adds skaffold --insecure-registry only when system trust fails, and --restore (also an EXIT/INT trap) re-applies the git Deployment as argocd-controller, releases narwhal-portal-dev with an empty apply, and requests an ArgoCD refresh. argocd-config.yaml apps_Deployment is exactly managedFieldsManagers: [narwhal-portal-dev]; skaffold's dev deploy applies with --server-side --force-conflicts --field-manager=narwhal-portal-dev."
     },
     {
       "id": "e4",
       "type": "review_correction",
-      "summary": "The first mutation set had a no-op mutation (deleting the pod securityContext inside the container-scoped yq update did nothing); R299 mutation verification reported it as surviving, so it was replaced by a pod-level delete after the container update plus a container-level delete. All 7 mutations are now caught."
+      "summary": "The first mutation set had a no-op mutation (deleting the pod securityContext inside the container-scoped yq update did nothing); R299 mutation verification reported it as surviving, so it was replaced by a pod-level delete after the container update plus a container-level delete. All 7 mutations are now caught. Second correction from the live test on the local cluster (2026-11-02): ArgoCD v3.4.4 applies jqPathExpressions to both target and live, so the first-draft select(.image | test(\":dev-\")) guard matched nothing on the git target (image 1.1.5) but removed .image/.resources/.startupProbe from live; the permanent asymmetric diff made selfHeal revert the dev Deployment within about 1-30 s (reproduced twice). The argocd-cm ConfigMap self-ignore also hides edits to that key from existing clusters. A jq-free managedFieldsManagers: [narwhal-portal-dev] plus a server-side apply as that manager held the image 90 s+ with the app Synced. skaffold's digest lookup on the Mac failed x509 against a stale keychain CA although docker push worked; --insecure-registry fixed it.",
+      "evidence": [
+        "test:live 2026-11-02 on the local cluster by the coordinator: jq-guard variant reverted within 1-30 s (x2); managedFieldsManagers variant held image 90 s+, app Synced"
+      ]
     },
     {
       "id": "e5",
       "type": "regression_verification",
       "status": "passed",
-      "scope": "chart render, generator output, deep compare against the chart Deployment, ignoreDifferences field set, 7 mutations, and the static suite. NOT covered: any live cluster - Harbor push and node pull, skaffold file sync and Next HMR, the dev pod surviving the first compile under the startupProbe, memory fit on a 6GB worker, ArgoCD leaving the dev Deployment alone (Synced) and a manual Sync reverting it.",
+      "scope": "chart render, generator output, deep compare against the chart Deployment, ignoreDifferences field set, 7 mutations, and the static suite. NOT covered: any live cluster - Harbor push and node pull, skaffold file sync and Next HMR, the dev pod surviving the first compile under the startupProbe, memory fit on a 6GB worker, the restore path (--restore / exit trap) returning ownership so a git pin bump shows OutOfSync again, and whether an application-controller restart is needed after patching argocd-cm (ArgoCD docs only require it for resource exclusions and custom labels; the live test restarted it, the script does not unless ARGOCD_RESTART_CONTROLLER=1).",
       "evidence": [
-        "test:python3 scripts/test/lib/check-portal-dev-from-chart.py --mutation-verify -> PASS ... 7 mutations caught"
+        "test:python3 scripts/test/lib/check-portal-dev-from-chart.py --mutation-verify -> PASS ... 10 mutations caught"
       ]
     },
     {

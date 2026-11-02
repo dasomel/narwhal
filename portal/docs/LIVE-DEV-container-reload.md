@@ -62,7 +62,28 @@ make dev-cluster               # = pnpm run dev:cluster
 `startupProbe`(`/api/health/live`, 5s x 60 - 첫 컴파일 동안 liveness 보류). Valkey, Service,
 Secret, RBAC는 건드리지 않는다(ArgoCD 관리). kube context가 `narwhal`(로컬)이 아니면 거부한다
 (`KUBE_CONTEXT`로 변경). 생성만 확인: `bash scripts/dev-cluster.sh --render-only`.
-정적 검증은 narwhal R299 (차트 Deployment와의 deep compare + ignoreDifferences 일치).
+정적 검증은 narwhal R299.
+
+스크립트가 시작 시 하는 일:
+1. **argocd-cm 프리플라이트**: 라이브 `apps_Deployment` 값이 차트와 다르면 `kubectl patch cm argocd-cm`으로
+   패치한다. argocd-config.yaml의 ConfigMap self-ignore가 이 키를 덮어서 git 수정은 기존 클러스터에
+   닿지 않기 때문이다. ArgoCD 문서는 application-controller 재시작을 resource exclusions/custom labels에만
+   요구하므로 기본은 재시작 없음; 그래도 dev Deployment가 되돌려지면 `ARGOCD_RESTART_CONTROLLER=1`.
+2. **Harbor TLS 프로브**: `curl https://harbor.local.narwhal.internal/v2/`가 시스템 신뢰로 실패하면
+   skaffold에 `--insecure-registry=harbor.local.narwhal.internal`을 붙이고 경고한다. skaffold의 digest 조회는
+   Mac 키체인을 쓰므로(옛 클러스터의 'Narwhal IDP Root CA'가 남아 있으면 x509) 이 플래그는 **digest 조회에만**
+   영향이 있고 `docker push`는 계속 `~/.docker/certs.d`로 검증한다. 정식 해결:
+   ```bash
+   mkdir -p ~/.docker/certs.d/harbor.local.narwhal.internal
+   kubectl -n platform-system get secret narwhal-root-ca-secret -o jsonpath='{.data.ca\.crt}' | base64 -d \
+     > ~/.docker/certs.d/harbor.local.narwhal.internal/ca.crt   # 이후 Docker Desktop 재시작
+   ```
+
+**왜 field manager인가 (D-PORTAL-DEV-FIELD-MANAGER)**: skaffold는 `--field-manager=narwhal-portal-dev`로
+server-side apply하고, argocd-cm은 jq 경로 없이 `managedFieldsManagers: [narwhal-portal-dev]`만 둔다.
+이전 `select(.image | test(":dev-"))` jq 가드는 ArgoCD가 jq를 target과 live **양쪽**에 적용하기 때문에 git target
+(핀 이미지)에서는 아무것도 선택하지 않고 live에서만 필드를 지워 diff가 영구 비대칭이 되어 selfHeal이 수 초 내
+되돌렸다. 비용: 그 매니저가 소유한 필드는 소유권이 돌아오기 전까지 ArgoCD에 보이지 않는다 -> 세션 후 `--restore`.
 
 **메모리 예산**: `next dev`는 ~3Gi 필요(차트의 512Mi는 OOMKilled). 워커 6GB 기준 포털 pod가
 requests 1Gi를 점유하므로 다른 무거운 워크로드와 같은 노드에 몰리지 않게 한다.
@@ -95,22 +116,24 @@ requests 1Gi를 점유하므로 다른 무거운 워크로드와 같은 노드�
 
 **해결**: argocd-cm에 시스템 레벨 `ignoreDifferences`를 추가해 skaffold dev가 바꾸는 필드만
 ArgoCD diff에서 제외 — selfHeal은 켜진 채로 dev 배포가 유지되고 앱은 Synced로 남는다.
-- `apps_Deployment`: narwhal-portal 컨테이너의 `image`/`resources`/`startupProbe` (`:dev-` 이미지일 때만; dev-cluster.sh가 바꾸는 필드와 정확히 일치)
+- `apps_Deployment`: `managedFieldsManagers: [narwhal-portal-dev]` (jq 가드 아님 - 위 "왜 field manager인가")
 - `all`: `skaffold.dev/run-id`, `app.kubernetes.io/managed-by` 라벨
 - 런타임 patch 적용 + narwhal 로컬 커밋 `ab51121`(`gitops/resources/argocd-config.yaml`) —
   gitea 반영 전 argocd-cm 재생성 시 재적용 필요 (`docs/archive/RELEASE-TODO-gitea-permanence.md` 참고)
 
-검증(2026-06-10): dev 이미지 배포 후 90초+ 유지, `narwhal-portal` 앱 Synced, file-sync로
+검증(2026-06-10, jq 가드 방식 - 이후 2026-11-02 라이브에서 selfHeal이 되돌리는 것이 확인되어 field manager 방식으로 대체됨; 2026-11-02 field manager 방식은 이미지 90초+ 유지, Synced): dev 이미지 배포 후 90초+ 유지, `narwhal-portal` 앱 Synced, file-sync로
 `/app/src`에 즉시 반영, 포털 200 응답.
 
 ### 라이브 종료 후 prod 환원
-ArgoCD가 `:dev-` 이미지일 때 image/resources/startupProbe diff를 무시하므로 **자동 환원되지 않는다**.
-둘 중 하나로 명시적 환원 (ArgoCD 수동 Sync가 차트의 핀 이미지로 되돌린다):
+`dev-cluster.sh`는 종료(Ctrl+C 포함) 시 trap으로 자동 복원한다. 수동/강제 종료 후에는:
 ```bash
-# 방법 1: 최신 prod 재배포 (권장 — 위 A 절차: build → push → rollout restart)
-# 방법 2: ArgoCD 수동 Sync (포털 incident Sync 버튼 또는 argocd CLI)
-#   — sync는 RespectIgnoreDifferences가 없어서 git 매니페스트(:latest)로 덮어쓴다
-kubectl -n devtools get deploy narwhal-portal -o jsonpath='{.spec.template.spec.containers[0].image}'  # :latest 확인
+bash scripts/dev-cluster.sh --restore
+```
+`--restore`는 차트(git)의 Deployment(핀 이미지)를 `--field-manager=argocd-controller --force-conflicts`로
+server-side apply해 소유권을 돌려주고, `narwhal-portal-dev`가 단독 소유한 필드(startupProbe, skaffold 라벨)는
+빈 apply로 해제한 뒤 ArgoCD hard refresh를 요청한다. 확인:
+```bash
+kubectl -n devtools get deploy narwhal-portal -o jsonpath='{.spec.template.spec.containers[0].image}'  # 핀 태그
 ```
 
 ---

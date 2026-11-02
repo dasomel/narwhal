@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
 """R299: the portal live-dev manifest is the chart Deployment plus image/resources/startupProbe only.
 
-D-PORTAL-DEV-FROM-CHART. Renders the chart as ArgoCD would, runs
+D-PORTAL-DEV-FROM-CHART, D-PORTAL-DEV-FIELD-MANAGER. Renders the chart as ArgoCD would, runs
 portal/scripts/dev-cluster.sh --render-only and asserts (1) the generated Deployment equals
-the chart Deployment after deleting the three allowed container fields, (2) the set of
-fields that differ is exactly those three, (3) argocd-config.yaml ignoreDifferences covers
-exactly those fields behind the :dev- guard. --mutation-verify proves the check fails when
-the generator drops/changes another field or the ignore list widens/narrows.
+the chart Deployment after deleting the three allowed container fields, (2) the fields that
+differ are exactly those three, (3) argocd-cm apps_Deployment is exactly
+managedFieldsManagers: [narwhal-portal-dev] with no jq paths (a jq guard on a live-only value
+is asymmetric target-vs-live), (4) skaffold dev applies as that field manager, (5)
+dev-cluster.sh keeps the argocd-cm preflight and the restore trap. --mutation-verify proves
+each assertion fails when broken.
 """
 
 import os
@@ -21,6 +23,7 @@ import yaml
 
 REPO = Path(__file__).resolve().parents[3]
 ALLOWED = {"image", "resources", "startupProbe"}
+MANAGER = "narwhal-portal-dev"
 SCRIPT = "portal/scripts/dev-cluster.sh"
 ARGO = "gitops/charts/narwhal-platform/templates/argocd-config.yaml"
 
@@ -69,30 +72,34 @@ def check(root):
     if chart != dev:
         fails.append("Deployment differs from the chart outside the narwhal-portal container")
     cm = next(d for d in yaml.safe_load_all(argo) if d and d.get("kind") == "ConfigMap" and d["metadata"]["name"] == "argocd-cm")
-    paths = yaml.safe_load(cm["data"]["resource.customizations.ignoreDifferences.apps_Deployment"])["jqPathExpressions"]
-    guard = r'^\.spec\.template\.spec\.containers\[\] \| select\(\.name == "narwhal-portal"\) \| select\(\.image \| test\(":dev-"\)\) \| \.(\w+)$'
-    got = set()
-    for p in paths:
-        m = re.match(guard, p)
-        if not m:
-            fails.append(f"ignoreDifferences path not behind the :dev- guard: {p}")
-        else:
-            got.add(m.group(1))
-    if got != ALLOWED:
-        fails.append(f"ignoreDifferences fields {sorted(got)} != {sorted(ALLOWED)}")
+    ign = yaml.safe_load(cm["data"]["resource.customizations.ignoreDifferences.apps_Deployment"])
+    if ign != {"managedFieldsManagers": [MANAGER]}:
+        fails.append(f"apps_Deployment ignoreDifferences must be exactly managedFieldsManagers: [{MANAGER}], got {ign}")
+    skaffold = yaml.safe_load(Path(root, "portal/skaffold.yaml").read_text())
+    dev = next(p for p in skaffold["profiles"] if p["name"] == "dev")
+    flags = dev.get("deploy", {}).get("kubectl", {}).get("flags", {}).get("apply", [])
+    if f"--field-manager={MANAGER}" not in flags or "--server-side" not in flags:
+        fails.append(f"skaffold dev profile apply flags lack --server-side/--field-manager={MANAGER}: {flags}")
+    sh = Path(root, SCRIPT).read_text()
+    for need in ("trap on_exit EXIT", "--field-manager=argocd-controller", "patch configmap argocd-cm", "--restore"):
+        if need not in sh:
+            fails.append(f"{SCRIPT} lacks {need!r}")
     return fails
 
 
 def mutation_verify():
     muts = [
-        (SCRIPT, "    )\n' \"${tmp}/rendered.yaml\"", "    )\n  | del(.spec.template.spec.securityContext)\n' \"${tmp}/rendered.yaml\""),
+        (SCRIPT, "    )\n' \"${tmp}/git-deployment.yaml\"", "    )\n  | del(.spec.template.spec.securityContext)\n' \"${tmp}/git-deployment.yaml\""),
         (SCRIPT, "| .resources.limits.cpu = \"1\"", "| .resources.limits.cpu = \"1\" | del(.securityContext)"),
         (SCRIPT, "| .resources.limits.cpu = \"1\"", "| .resources.limits.cpu = \"1\" | .imagePullPolicy = \"Always\""),
-        (SCRIPT, "select(.kind == \"Deployment\" and .metadata.name == \"narwhal-portal\")\n  |",
-         "select(.kind == \"Deployment\" and .metadata.name == \"narwhal-portal\")\n  | del(.spec.template.spec.volumes)\n  |"),
-        (ARGO, "| .startupProbe\n", "| .livenessProbe\n"),
-        (ARGO, "    - .spec.template.spec.containers[] | select(.name == \"narwhal-portal\") | select(.image | test(\":dev-\")) | .startupProbe\n", ""),
-        (ARGO, "select(.image | test(\":dev-\")) | .resources", "| .resources"),
+        (SCRIPT, "yq '\n  (.spec.template.spec.containers[]", "yq '\n  del(.spec.template.spec.volumes) | (.spec.template.spec.containers[]"),
+        (ARGO, "    managedFieldsManagers:\n    - narwhal-portal-dev\n", "    managedFieldsManagers:\n    - narwhal-portal-dev\n    - kube-controller-manager\n"),
+        (ARGO, "    managedFieldsManagers:\n    - narwhal-portal-dev\n", "    jqPathExpressions:\n    - .spec.template.spec.containers[] | select(.image | test(\":dev-\")) | .image\n"),
+        (ARGO, "    - narwhal-portal-dev\n", "    - narwhal-portal-other\n"),
+        ("portal/skaffold.yaml", "            - --field-manager=narwhal-portal-dev\n", ""),
+        (SCRIPT, "trap on_exit EXIT", "trap - EXIT"),
+        (SCRIPT, "--field-manager=argocd-controller", "--field-manager=kubectl"),
+        (SCRIPT, "patch configmap argocd-cm", "get configmap argocd-cm"),
     ]
     surv = []
     for rel, old, new in muts:
@@ -100,6 +107,7 @@ def mutation_verify():
             root = Path(tmp, "r")
             shutil.copytree(REPO / "gitops", root / "gitops")
             shutil.copytree(REPO / "portal/scripts", root / "portal/scripts")
+            shutil.copy(REPO / "portal/skaffold.yaml", root / "portal/skaffold.yaml")
             f = root / rel
             text = f.read_text()
             if old not in text:
@@ -122,8 +130,8 @@ def main():
     for f in fails:
         print(f"FAIL: {f}")
     if not fails:
-        print("PASS: portal dev manifest = chart Deployment + image/resources/startupProbe; ignoreDifferences covers exactly those"
-              + ("; 7 mutations caught" if "--mutation-verify" in sys.argv else ""))
+        print("PASS: portal dev manifest = chart Deployment + image/resources/startupProbe; argocd-cm ignores only field manager narwhal-portal-dev"
+              + ("; 10 mutations caught" if "--mutation-verify" in sys.argv else ""))
     return 1 if fails else 0
 
 

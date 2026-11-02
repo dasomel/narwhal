@@ -47,22 +47,24 @@ data:
     jqPathExpressions:
     - .metadata.finalizers[] | select(. == "pre-delete-finalizer.argocd.argoproj.io" or . == "pre-delete-finalizer.argocd.argoproj.io/cleanup")
     - .metadata.annotations."kubectl.kubernetes.io/last-applied-configuration"
-  # Live dev (skaffold dev) support: portal/scripts/dev-cluster.sh renders the
-  # chart Deployment and changes EXACTLY image (skaffold tags it dev-*), resources
-  # (next dev needs ~3Gi) and startupProbe (liveness waits for the first compile),
-  # plus skaffold-injected labels. This list must equal that set, nothing broader
-  # (R299 pins both sides; D-PORTAL-DEV-FROM-CHART). Ignoring these fields
-  # stops selfHeal from instantly reverting the dev deployment (which silently killed HMR). CONDITIONAL on the live image being a :dev-*
-  # tag: the original unconditional image ignore made every GitOps SemVer pin
-  # bump invisible (app stayed Synced on a stale image; bumps only landed by
-  # piggybacking on unrelated syncs — see docs/common/lessons-log.md 2026-07-13). With the
-  # select() guard the paths only exist while a dev image is actually running,
-  # so prod pin bumps diff normally and dev sessions stay protected.
+  # Live dev (skaffold dev) support, D-PORTAL-DEV-FIELD-MANAGER: portal/scripts/dev-cluster.sh
+  # applies the dev Deployment server-side as field manager narwhal-portal-dev, and
+  # ArgoCD ignores every field THAT manager owns (image, resources, startupProbe,
+  # skaffold labels). Cost: while that manager owns a field, ArgoCD cannot see a git
+  # change to it; `dev-cluster.sh --restore` (also run on exit) hands ownership back to
+  # argocd-controller, so prod pin bumps are visible again after a dev session and were
+  # never hidden before one.
+  # Why not a jq guard: ArgoCD applies jqPathExpressions to BOTH target and live. The
+  # earlier `select(.image | test(":dev-"))` matched nothing on the git target (pinned
+  # SemVer) but removed the fields from live, so the diff was permanently asymmetric and
+  # selfHeal reverted the dev Deployment within seconds (proved live 2026-11-02). A guard
+  # conditioned on a live-only value is always asymmetric. (The even older unconditional
+  # image ignore hid pin bumps, see docs/common/lessons-log.md 2026-07-13.)
+  # The ConfigMap self-ignore below covers this key, so editing it here never reaches a
+  # running cluster; dev-cluster.sh patches the live argocd-cm when it differs.
   resource.customizations.ignoreDifferences.apps_Deployment: |
-    jqPathExpressions:
-    - .spec.template.spec.containers[] | select(.name == "narwhal-portal") | select(.image | test(":dev-")) | .image
-    - .spec.template.spec.containers[] | select(.name == "narwhal-portal") | select(.image | test(":dev-")) | .resources
-    - .spec.template.spec.containers[] | select(.name == "narwhal-portal") | select(.image | test(":dev-")) | .startupProbe
+    managedFieldsManagers:
+    - narwhal-portal-dev
   resource.customizations.ignoreDifferences.all: |
     jqPathExpressions:
     - .metadata.labels."skaffold.dev/run-id"

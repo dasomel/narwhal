@@ -2,43 +2,56 @@
 # Live-dev the IDP portal in the local Vagrant cluster (skaffold dev + Next HMR).
 #
 # D-PORTAL-DEV-FROM-CHART: the dev Deployment is NOT a hand-kept copy. It is the
-# chart Deployment rendered exactly as ArgoCD renders it (narwhal-apps' valuesObject
-# for narwhal-platform -> helm template narwhal-platform), with ONLY three container
+# chart Deployment rendered exactly as ArgoCD would (narwhal-apps' valuesObject for
+# narwhal-platform -> helm template narwhal-platform), with ONLY three container
 # fields changed: image (skaffold tags it dev-*), resources (next dev needs ~3Gi, the
-# chart's 512Mi OOMs) and a startupProbe (liveness only starts after the first
-# compile). argocd-config.yaml ignoreDifferences must list exactly these three
-# (.image/.resources/.startupProbe, guarded by :dev-); R299 pins both sides.
+# chart's 512Mi OOMs) and a startupProbe (liveness waits for the first compile).
 # Valkey, Service, secrets and RBAC stay ArgoCD-managed and are never applied here.
 #
-# Usage: portal/scripts/dev-cluster.sh [--render-only [FILE]] [skaffold dev args...]
-#   --render-only  write the manifest (default portal/deploy/.generated/...) and exit
-# Env: KUBE_CONTEXT (default narwhal), NARWHAL_ROOT (repo root, default derived).
+# D-PORTAL-DEV-FIELD-MANAGER: skaffold applies it server-side as field manager
+# narwhal-portal-dev and argocd-cm ignores fields that manager owns (a jq guard on
+# ":dev-" is asymmetric target-vs-live and selfHeal reverted it). Ownership is handed
+# back to argocd-controller by --restore, which also runs on exit/Ctrl+C.
+#
+# Usage:
+#   portal/scripts/dev-cluster.sh [skaffold dev args...]   dev session
+#   portal/scripts/dev-cluster.sh --restore                git Deployment back, ArgoCD refresh
+#   portal/scripts/dev-cluster.sh --render-only [FILE]     write the dev manifest and exit
+# Env: KUBE_CONTEXT (default narwhal), NARWHAL_ROOT (repo root, default derived),
+#      ARGOCD_RESTART_CONTROLLER=1 (restart application-controller after patching argocd-cm).
 set -euo pipefail
 
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="${NARWHAL_ROOT:-$(cd "${SELF_DIR}/../.." && pwd)}"
 PORTAL_DIR="${ROOT}/portal"
 OUT="${PORTAL_DIR}/deploy/.generated/skaffold-dev-portal.yaml"
-DEV_IMAGE="harbor.local.narwhal.internal/library/narwhal-portal"
+HARBOR="harbor.local.narwhal.internal"
+DEV_IMAGE="${HARBOR}/library/narwhal-portal"
+DEV_MANAGER="narwhal-portal-dev"
+CM_KEY="resource.customizations.ignoreDifferences.apps_Deployment"
 KUBE_CONTEXT="${KUBE_CONTEXT:-narwhal}"
 
-render_only=false
-if [ "${1:-}" = "--render-only" ]; then
-  render_only=true
-  shift
-  if [ $# -gt 0 ] && [ "${1#-}" = "$1" ]; then
-    OUT="$1"
+mode=dev
+case "${1:-}" in
+  --restore) mode=restore; shift ;;
+  --render-only)
+    mode=render
     shift
-  fi
-fi
+    if [ $# -gt 0 ] && [ "${1#-}" = "$1" ]; then
+      OUT="$1"
+      shift
+    fi
+    ;;
+esac
 
 need=(helm yq)
-$render_only || need+=(skaffold kubectl)
+[ "${mode}" = render ] || need+=(kubectl)
+[ "${mode}" = dev ] && need+=(skaffold curl)
 for tool in "${need[@]}"; do
   command -v "${tool}" >/dev/null 2>&1 || { echo "ERROR: ${tool} not found on PATH" >&2; exit 1; }
 done
 
-if ! $render_only; then
+if [ "${mode}" != render ]; then
   ctx="$(kubectl config current-context 2>/dev/null || true)"
   if [ "${ctx}" != "${KUBE_CONTEXT}" ]; then
     echo "ERROR: kube context is '${ctx}', expected the local cluster '${KUBE_CONTEXT}'." >&2
@@ -58,34 +71,97 @@ helm template narwhal-apps "${ROOT}/gitops/charts/narwhal-apps" \
 
 base_domain="$(yq '.baseDomain' "${tmp}/values.yaml")"
 if [ "${base_domain}" != "local.narwhal.internal" ]; then
-  echo "ERROR: baseDomain is '${base_domain}'; portal/skaffold.yaml pushes to harbor.local.narwhal.internal" >&2
+  echo "ERROR: baseDomain is '${base_domain}'; portal/skaffold.yaml pushes to ${HARBOR}" >&2
   exit 1
 fi
 
-helm template narwhal-platform "${ROOT}/gitops/charts/narwhal-platform" \
-  -f "${tmp}/values.yaml" --show-only templates/narwhal-portal-k8s.yaml \
-  >"${tmp}/rendered.yaml"
+render_chart() { # $1 = template file under templates/
+  helm template narwhal-platform "${ROOT}/gitops/charts/narwhal-platform" \
+    -f "${tmp}/values.yaml" --show-only "templates/$1"
+}
 
+# The git version of the Deployment (what ArgoCD wants).
+render_chart narwhal-portal-k8s.yaml \
+  | yq 'select(.kind == "Deployment" and .metadata.name == "narwhal-portal")' >"${tmp}/git-deployment.yaml"
+if [ ! -s "${tmp}/git-deployment.yaml" ]; then
+  echo "ERROR: chart has no Deployment narwhal-portal" >&2
+  exit 1
+fi
+
+restore() {
+  echo "Restoring ArgoCD ownership of Deployment narwhal-portal ..."
+  # 1) argocd-controller re-takes every field the git version sets (image 1.1.5, resources).
+  kubectl apply --server-side --force-conflicts --field-manager=argocd-controller -f "${tmp}/git-deployment.yaml"
+  # 2) an empty apply as the dev manager releases what only it owned (startupProbe, skaffold labels).
+  printf 'apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: narwhal-portal\n  namespace: devtools\n' \
+    | kubectl apply --server-side --force-conflicts --field-manager="${DEV_MANAGER}" -f -
+  kubectl -n devtools annotate application narwhal-platform argocd.argoproj.io/refresh=hard --overwrite >/dev/null \
+    || echo "WARN: ArgoCD refresh request failed; it will notice on its next poll" >&2
+  echo "Restored. Git changes to the portal Deployment are visible to ArgoCD again."
+}
+
+if [ "${mode}" = restore ]; then
+  restore
+  exit 0
+fi
+
+# Dev Deployment = git Deployment with exactly image/resources/startupProbe changed.
 mkdir -p "$(dirname "${OUT}")"
-# Only the Deployment; the three fields below are the complete set of changes.
 IMAGE="${DEV_IMAGE}" yq '
-  select(.kind == "Deployment" and .metadata.name == "narwhal-portal")
-  | (.spec.template.spec.containers[] | select(.name == "narwhal-portal")) |= (
+  (.spec.template.spec.containers[] | select(.name == "narwhal-portal")) |= (
       .image = strenv(IMAGE)
       | .resources.requests.memory = "1Gi"
       | .resources.limits.memory = "3Gi"
       | .resources.limits.cpu = "1"
       | .startupProbe = {"httpGet": {"path": .livenessProbe.httpGet.path, "port": .livenessProbe.httpGet.port}, "periodSeconds": 5, "failureThreshold": 60}
     )
-' "${tmp}/rendered.yaml" >"${OUT}"
-
-if [ ! -s "${OUT}" ]; then
-  echo "ERROR: chart has no Deployment narwhal-portal; nothing generated" >&2
-  exit 1
-fi
+' "${tmp}/git-deployment.yaml" >"${OUT}"
 echo "Generated ${OUT}"
+[ "${mode}" = render ] && exit 0
 
-$render_only && exit 0
+# Preflight 1: argocd-cm must carry the managedFieldsManagers ignore. The key sits in
+# the ConfigMap self-ignore of argocd-config.yaml, so git edits never reach a running
+# cluster and the live value has to be patched here.
+want="$(render_chart argocd-config.yaml \
+  | yq "select(.kind == \"ConfigMap\" and .metadata.name == \"argocd-cm\") | .data[\"${CM_KEY}\"]")"
+have="$(kubectl -n devtools get configmap argocd-cm -o json | yq -p=json ".data[\"${CM_KEY}\"] // \"\"")"
+if [ "${want}" != "${have}" ]; then
+  echo "argocd-cm ${CM_KEY} differs from the chart; patching the live ConfigMap ..."
+  patch="$(WANT="${want}" yq -n -o=json ".data[\"${CM_KEY}\"] = strenv(WANT)")"
+  kubectl -n devtools patch configmap argocd-cm --type merge -p "${patch}"
+  # The ArgoCD docs only call for a controller restart for resource exclusions and custom
+  # labels, not ignoreDifferences (argo-cd.readthedocs.io declarative-setup, diffing), so
+  # no restart by default. If ArgoCD still reverts the dev Deployment, re-run with
+  # ARGOCD_RESTART_CONTROLLER=1.
+  if [ "${ARGOCD_RESTART_CONTROLLER:-0}" = 1 ]; then
+    kubectl -n devtools rollout restart statefulset/argocd-application-controller
+    kubectl -n devtools rollout status statefulset/argocd-application-controller --timeout=120s
+  fi
+fi
+
+# Preflight 2: skaffold's digest lookup runs on this Mac and uses the macOS keychain,
+# while `docker push` trusts ~/.docker/certs.d/<harbor>/ca.crt. A stale cluster CA in the
+# keychain fails x509 for skaffold only. Harbor answers 401 on /v2/ without auth, so
+# only the curl exit code (TLS) matters, not the HTTP status.
+extra=()
+if ! curl -sS -o /dev/null "https://${HARBOR}/v2/" 2>"${tmp}/curl.err"; then
+  echo "WARN: TLS to ${HARBOR} not trusted by system trust: $(cat "${tmp}/curl.err")" >&2
+  echo "WARN: adding --insecure-registry=${HARBOR} to skaffold. This affects only skaffold's" >&2
+  echo "      digest lookup; docker push still verifies via ~/.docker/certs.d. To fix properly:" >&2
+  echo "      mkdir -p ~/.docker/certs.d/${HARBOR} && kubectl -n platform-system get secret narwhal-root-ca-secret \\" >&2
+  echo "        -o jsonpath='{.data.ca\\.crt}' | base64 -d > ~/.docker/certs.d/${HARBOR}/ca.crt   # then restart Docker Desktop" >&2
+  extra+=("--insecure-registry=${HARBOR}")
+fi
+
+on_exit() {
+  status=$?
+  trap - EXIT INT TERM
+  restore || echo "WARN: restore failed; run: portal/scripts/dev-cluster.sh --restore" >&2
+  rm -rf "${tmp}"
+  exit "${status}"
+}
+trap on_exit EXIT
+trap 'exit 130' INT TERM
 
 cd "${PORTAL_DIR}"
-exec skaffold dev -p dev --cleanup=false --status-check=true "$@"
+skaffold dev -p dev --cleanup=false --status-check=true ${extra[@]+"${extra[@]}"} "$@"

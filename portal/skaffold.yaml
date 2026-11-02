@@ -99,6 +99,16 @@ profiles:
                 dest: /app
               - src: "next.config.ts"
                 dest: /app
+    # D-PORTAL-DEV-FIELD-MANAGER: ArgoCD ignores fields owned by this manager
+    # (argocd-config.yaml apps_Deployment); dev-cluster.sh --restore hands them back.
+    deploy:
+      kubectl:
+        defaultNamespace: devtools
+        flags:
+          apply:
+            - --server-side
+            - --force-conflicts
+            - --field-manager=narwhal-portal-dev
 
   # IntelliJ / VS Code debugger attach on localhost:9229
   - name: debug

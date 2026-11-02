@@ -3305,7 +3305,7 @@ PYEOF'
     bash scripts/test/lib/check-verify-backup-qualified.sh
   check R294 "Velero ServiceMonitor, restricted 8085 scrape path and backup alerts (#456; promtool behavior cases when installed)" \
     python3 scripts/test/lib/check-velero-alerts.py
-  check R299 "portal live-dev manifest is generated from the chart (portal/scripts/dev-cluster.sh --render-only): equals the chart Deployment except image/resources/startupProbe, only that Deployment is emitted, argocd-config ignoreDifferences covers exactly those three behind the :dev- guard; 7 mutations caught (D-PORTAL-DEV-FROM-CHART)" \
+  check R299 "portal live-dev manifest is generated from the chart (portal/scripts/dev-cluster.sh --render-only): equals the chart Deployment except image/resources/startupProbe, only that Deployment is emitted, argocd-cm apps_Deployment is exactly managedFieldsManagers [narwhal-portal-dev] (no :dev- jq guard), skaffold dev applies as that field manager, dev-cluster.sh keeps the argocd-cm preflight and restore trap; 10 mutations caught (D-PORTAL-DEV-FROM-CHART, D-PORTAL-DEV-FIELD-MANAGER)" \
     python3 scripts/test/lib/check-portal-dev-from-chart.py --mutation-verify
   check R298 "Keycloak/ArgoCD/Harbor/Gitea/APISIX Down alerts use workload availability or absent() (no empty kube_pod_labels joins, no Traefik); promtool cases when available (D-DOWN-WORKLOAD)" \
     python3 scripts/test/lib/check-down-alerts.py

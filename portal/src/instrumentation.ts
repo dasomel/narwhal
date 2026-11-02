@@ -30,9 +30,8 @@ export async function register() {
       }
     }
 
-    const { NodeSDK, tracing, resources } = await import(
-      "@opentelemetry/sdk-node"
-    )
+    const { NodeSDK } = await import("@opentelemetry/sdk-node")
+    const { resourceFromAttributes } = await import("@opentelemetry/resources")
     const { OTLPTraceExporter } = await import(
       "@opentelemetry/exporter-trace-otlp-http"
     )
@@ -48,11 +47,11 @@ export async function register() {
     })
 
     const sdk = new NodeSDK({
-      resource: resources.resourceFromAttributes({
+      resource: resourceFromAttributes({
         [ATTR_SERVICE_NAME]: process.env.OTEL_SERVICE_NAME ?? "idp-portal",
         [ATTR_SERVICE_VERSION]: process.env.npm_package_version ?? "0.1.0",
       }),
-      spanProcessor: new tracing.BatchSpanProcessor(exporter),
+      traceExporter: exporter,
       instrumentations: [
         getNodeAutoInstrumentations({
           "@opentelemetry/instrumentation-fs": { enabled: false },

@@ -318,14 +318,18 @@ if [ -n "${HARBOR_ADMIN_PASS}" ]; then
   if [ -n "${HARBOR_CORE_IP}" ]; then
     HARBOR_API="http://${HARBOR_CORE_IP}/api/v2.0"
     HARBOR_READY=false
-    for attempt in $(seq 1 10); do
+    # D-HARBOR-READY-WAIT: this step now fails Phase 2 when Harbor is not reachable (it used to
+    # WARN and silently skip the OIDC + group setup). 08-5 is not critical, so a slow Harbor start
+    # must not be mistaken for a missing one: wait up to 6 min (36 x 10 s) before failing; up.sh
+    # then retries Phase 2. Escape hatch: shorten via HARBOR_READY_ATTEMPTS.
+    for attempt in $(seq 1 "${HARBOR_READY_ATTEMPTS:-36}"); do
       HTTP_CODE=$(curl -sk --max-time 5 -o /dev/null -w '%{http_code}' \
         "${HARBOR_API}/systeminfo" 2>/dev/null || echo "000")
       if [ "${HTTP_CODE}" = "200" ]; then
         HARBOR_READY=true
         break
       fi
-      echo "  Harbor API not ready (HTTP ${HTTP_CODE}), attempt ${attempt}/10..."
+      echo "  Harbor API not ready (HTTP ${HTTP_CODE}), attempt ${attempt}/${HARBOR_READY_ATTEMPTS:-36}..."
       sleep 10
     done
 

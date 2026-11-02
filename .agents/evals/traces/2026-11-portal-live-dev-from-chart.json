@@ -43,7 +43,7 @@
     {
       "id": "e4",
       "type": "review_correction",
-      "summary": "The first mutation set had a no-op mutation (deleting the pod securityContext inside the container-scoped yq update did nothing); R299 mutation verification reported it as surviving, so it was replaced by a pod-level delete after the container update plus a container-level delete. All 7 mutations are now caught. Second correction from the live test on the local cluster (2026-11-02): ArgoCD v3.4.4 applies jqPathExpressions to both target and live, so the first-draft select(.image | test(\":dev-\")) guard matched nothing on the git target (image 1.1.5) but removed .image/.resources/.startupProbe from live; the permanent asymmetric diff made selfHeal revert the dev Deployment within about 1-30 s (reproduced twice). The argocd-cm ConfigMap self-ignore also hides edits to that key from existing clusters. A jq-free managedFieldsManagers: [narwhal-portal-dev] plus a server-side apply as that manager held the image 90 s+ with the app Synced. skaffold's digest lookup on the Mac failed x509 against a stale keychain CA although docker push worked; --insecure-registry fixed it.",
+      "summary": "The first mutation set had a no-op mutation (deleting the pod securityContext inside the container-scoped yq update did nothing); R299 mutation verification reported it as surviving, so it was replaced by a pod-level delete after the container update plus a container-level delete. All 7 mutations are now caught. Second correction from the live test on the local cluster (2026-11-02): ArgoCD v3.4.4 applies jqPathExpressions to both target and live, so the first-draft select(.image | test(\":dev-\")) guard matched nothing on the git target (image 1.1.5) but removed .image/.resources/.startupProbe from live; the permanent asymmetric diff made selfHeal revert the dev Deployment within about 1-30 s (reproduced twice). The argocd-cm ConfigMap self-ignore also hides edits to that key from existing clusters. A jq-free managedFieldsManagers: [narwhal-portal-dev] plus a server-side apply as that manager held the image 90 s+ with the app Synced. skaffold's digest lookup on the Mac failed x509 against a stale keychain CA although docker push worked; --insecure-registry fixed it. Live testing then showed the jq-guard ignore was asymmetric and selfHeal reverted the dev Deployment; the design moved to managedFieldsManagers (D-PORTAL-DEV-FIELD-MANAGER) with an argocd-cm hot-patch preflight, a Harbor TLS fallback and a restore trap. Independent review of 28eb024b (native Sonnet) then found this trace still described the pre-live state (no cluster, 7 mutations) and that restore() did not stop after a failed first apply; both corrected.",
       "evidence": [
         "test:live 2026-11-02 on the local cluster by the coordinator: jq-guard variant reverted within 1-30 s (x2); managedFieldsManagers variant held image 90 s+, app Synced"
       ]
@@ -52,21 +52,27 @@
       "id": "e5",
       "type": "regression_verification",
       "status": "passed",
-      "scope": "chart render, generator output, deep compare against the chart Deployment, ignoreDifferences field set, 7 mutations, and the static suite. NOT covered: any live cluster - Harbor push and node pull, skaffold file sync and Next HMR, the dev pod surviving the first compile under the startupProbe, memory fit on a 6GB worker, the restore path (--restore / exit trap) returning ownership so a git pin bump shows OutOfSync again, and whether an application-controller restart is needed after patching argocd-cm (ArgoCD docs only require it for resource exclusions and custom labels; the live test restarted it, the script does not unless ARGOCD_RESTART_CONTROLLER=1).",
+      "scope": "static: chart render diff, R299 with 10 mutations, full static suite, trace validators. LIVE on the local cluster (box 0.3.1, 2026-11-02): ArgoCD non-revert, HMR, restore. NOT covered: the argocd-cm hot-patch WITHOUT an application-controller restart (in the manual field-manager test the controller was restarted after patching; in the scripted end-to-end run the live key already matched the chart, so no patch happened), browser SSO login against the dev pod, a 3Gi dev pod on a 2-vCPU worker.",
       "evidence": [
-        "test:python3 scripts/test/lib/check-portal-dev-from-chart.py --mutation-verify -> PASS ... 10 mutations caught"
+        "test:python3 scripts/test/lib/check-portal-dev-from-chart.py --mutation-verify -> PASS ... 10 mutations caught",
+        "runtime:jq-guard design (706d13ca) on the live cluster: ArgoCD v3.4.4 self-healed the dev Deployment back to 1.1.5 within ~30 s (op 2026-11-02T00:29:55Z) - asymmetric normalization of select(.image|test(':dev-'))",
+        "runtime:argocd-cm apps_Deployment = managedFieldsManagers [narwhal-portal-dev] + kubectl apply --server-side --field-manager=narwhal-portal-dev -> dev image held 90 s, app Synced (manual test, controller restarted after the patch)",
+        "runtime:KUBE_CONTEXT=narwhal bash portal/scripts/dev-cluster.sh -> Harbor TLS probe warned and added --insecure-registry (macOS keychain held an older cluster CA), build+push+deploy, 'Deployments stabilized', dev image held 120 s, narwhal-platform Synced, ready 1/1",
+        "runtime:edit src/app/api/health/live/route.ts (add hmrProbe) -> skaffold 'Syncing 1 files', https://portal.local.narwhal.internal/api/health/live returned hmrProbe within 2 s, pid unchanged (37), restartCount 0; revert removed it",
+        "runtime:stop the session -> trap 'Restoring ArgoCD ownership' -> image ghcr.io/dasomel/narwhal-portal:1.1.5, image field owned by argocd-controller, app Synced/Healthy, portal 200",
+        "test:python3 scripts/test/lib/check-portal-dev-from-chart.py --mutation-verify -> 10 mutations caught"
       ]
     },
     {
       "id": "e6",
       "type": "completion_claim",
-      "summary": "In the repository, the portal live-dev manifest is generated from the chart with exactly three changed container fields that the ArgoCD ignoreDifferences list mirrors. Nothing is verified on a cluster."
+      "summary": "On the local cluster a dev portal generated from the chart stays deployed under ArgoCD selfHeal, file saves reach it by HMR within seconds, and exiting hands the Deployment back to argocd-controller at the git image."
     },
     {
       "id": "e7",
       "type": "task_outcome",
       "state": "A",
-      "summary": "Complete within repository scope; live HMR, ArgoCD non-revert and memory remain to be verified when the local cluster is up."
+      "summary": "Complete and verified live for the API path; browser SSO against the dev pod and the no-restart hot-patch path remain unverified."
     }
   ]
 }

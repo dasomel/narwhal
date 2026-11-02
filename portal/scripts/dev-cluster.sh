@@ -91,17 +91,26 @@ fi
 restore() {
   echo "Restoring ArgoCD ownership of Deployment narwhal-portal ..."
   # 1) argocd-controller re-takes every field the git version sets (image 1.1.5, resources).
-  kubectl apply --server-side --force-conflicts --field-manager=argocd-controller -f "${tmp}/git-deployment.yaml"
+  # Step 2 runs only if step 1 succeeded: releasing the dev manager's fields while argocd-controller
+  # does not own image yet would leave the Deployment with no owner for it (restore() runs under
+  # `restore ||`, so set -e is off here and each step must check its own exit code).
+  if ! kubectl apply --server-side --force-conflicts --field-manager=argocd-controller -f "${tmp}/git-deployment.yaml"; then
+    echo "ERROR: could not re-apply the git Deployment as argocd-controller; dev fields left as they are. Retry: bash scripts/dev-cluster.sh --restore" >&2
+    return 1
+  fi
   # 2) an empty apply as the dev manager releases what only it owned (startupProbe, skaffold labels).
-  printf 'apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: narwhal-portal\n  namespace: devtools\n' \
-    | kubectl apply --server-side --force-conflicts --field-manager="${DEV_MANAGER}" -f -
+  if ! printf 'apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: narwhal-portal\n  namespace: devtools\n' \
+    | kubectl apply --server-side --force-conflicts --field-manager="${DEV_MANAGER}" -f -; then
+    echo "ERROR: could not release ${DEV_MANAGER}'s fields; retry: bash scripts/dev-cluster.sh --restore" >&2
+    return 1
+  fi
   kubectl -n devtools annotate application narwhal-platform argocd.argoproj.io/refresh=hard --overwrite >/dev/null \
     || echo "WARN: ArgoCD refresh request failed; it will notice on its next poll" >&2
   echo "Restored. Git changes to the portal Deployment are visible to ArgoCD again."
 }
 
 if [ "${mode}" = restore ]; then
-  restore
+  restore || exit 1
   exit 0
 fi
 

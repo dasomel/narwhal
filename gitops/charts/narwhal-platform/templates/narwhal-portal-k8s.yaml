@@ -45,6 +45,14 @@ rules:
   - apiGroups: [cert-manager.io]
     resources: [certificates, clusterissuers]
     verbs: [get, list, watch]
+  # D-CERT-RENEW-ISSUING: Settings -> Certificates "renew" sets the Issuing condition via PUT
+  # certificates/status (what `cmctl renew` does). Intentional minimal widening, approved for this
+  # fix: status subresource only, so spec is never writable; cluster-wide because the portal lists
+  # certificates cluster-wide and the route is cluster-admin gated. Escape hatch: delete this rule
+  # (renew then 403s and `cmctl renew` is the manual path).
+  - apiGroups: [cert-manager.io]
+    resources: [certificates/status]
+    verbs: [update]
   - apiGroups: [kyverno.io]
     resources: [clusterpolicies, policies]
     verbs: [get, list, watch]

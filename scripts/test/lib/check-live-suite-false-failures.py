@@ -205,6 +205,19 @@ check('for gw_host in hubble prometheus alertmanager nfs-quota; do' in sso and
       '"2"??" ${gw_url}"*) pass "${gw_host}: admin' in sso and
       "%{http_code} %{url_effective}' --data-binary" in sso and
       '2??|3??) pass "${gw_host}: admin' not in sso, 'gateway admin-group live check shape')
+# D-ARGOCD-LIVE-RBAC: the guest/viewer ArgoCD live login must fail on NOFORM or a missing
+# session (empty list alone proves nothing), fail on guest apps > 0, and the viewer must be
+# denied sync.
+check('ArgoCD ${argo_user}: login form not found, cannot verify' in sso and
+      'no ArgoCD session after Keycloak login' in sso and
+      '/api/v1/session/userinfo' in sso and
+      'fail "ArgoCD guest: application list returned ${ARGO_COUNT} apps (matrix: deny)"' in sso and
+      'fail "ArgoCD view: sync expected 403' in sso and
+      'for argo_user in guest view; do' in sso, 'ArgoCD live login check shape')
+check('for h_user in admin dev; do' in sso and 'admin_role_in_auth=true, sysadmin-only /users HTTP 200' in sso and
+      'Grafana admin: server admin and org Admin' in sso and
+      'Keycloak console ${k_user}: no token from the console login, cannot verify' in sso and
+      'Keycloak console ${k_user}: login form not found, cannot verify' in sso, 'admin top-role live check shape')
 login = 'gateway_login() {' + block(sso, 'gateway_login() {', '\n}\n') + '\n}\n'
 for page, expected in [('<html>no form</html>', 'NOFORM'), ('<form action="x"><input name="username"></form>', 'NOFORM')]:
   out = run(login + '\ngateway_login /dev/null u p https://x/',
@@ -220,6 +233,27 @@ for code in ['401', '403', '200', '302', '500', '000']:
 # Exercise re-runs and failure before either POST; no real credentials are used.
 harbor_start = clients_text.index('      HTTP_CODE=$(curl -sk --max-time 30')
 harbor_setup = clients_text[harbor_start:clients_text.index('\n    else', harbor_start)]
+# D-HARBOR-OIDC-TRUST: the PUT must enable oidc_verify_cert, and only after Harbor itself
+# pinged the issuer with verification on; a failed ping stops before the PUT and the members.
+check('\\"oidc_verify_cert\\": true' in harbor_setup and 'oidc_verify_cert\\": false' not in harbor_setup,
+      'Harbor OIDC PUT enables oidc_verify_cert')
+for ping in ['500', '000']:
+  setup = f'''set -euo pipefail
+exec 3>&1
+HARBOR_API=http://unused
+HARBOR_ADMIN_PASS=sentinel
+HARBOR_SECRET=client-secret
+ISSUER_URL=http://unused
+curl() {{
+  case "$*" in
+    *'/system/oidc/ping'*) printf '{ping}' ;;
+    *) echo UNEXPECTED >&3; printf '200' ;;
+  esac
+}}
+'''
+  result = subprocess.run(['bash', '-c', setup + harbor_setup], text=True, capture_output=True)
+  check(result.returncode != 0 and 'UNEXPECTED' not in result.stdout and 'does not trust' in result.stderr,
+        f'Harbor OIDC ping={ping} fails before PUT and members')
 for put, mode, member, expected in [('200', 'oidc_auth', '201', True),
                                     ('200', 'oidc_auth', '409', True),
                                     ('500', 'oidc_auth', '201', False),
@@ -236,6 +270,7 @@ HARBOR_SECRET=client-secret
 ISSUER_URL=http://unused
 curl() {{
   case "$*" in
+    *'/system/oidc/ping'*) printf '200' ;;
     *'-X PUT'*) printf '{put}' ;;
     *'-X POST'*) echo POST >&3; printf 'sentinel client-secret error body\\n{member}';
       [ '{member}' != 000 ] ;;

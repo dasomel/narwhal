@@ -367,6 +367,9 @@ fi
 # component is unhealthy is what makes the portal's dashboards useful, and reading
 # cannot change anything.
 #
+# policy.default stays empty (D-ARGOCD-NO-DEFAULT): ArgoCD retries a denied request with
+# the default role, so role:readonly defeated the guest deny (2026-11-04 SSO sweep).
+#
 # The explanation lives HERE and not inside policy.csv. Two reasons: the heredoc below
 # is unquoted so it can interpolate ${DOMAIN}, which means backticks in it would be
 # executed by the shell and their output substituted into the policy; and prose inside
@@ -381,7 +384,7 @@ metadata:
     app.kubernetes.io/name: argocd-rbac-cm
     app.kubernetes.io/part-of: argocd
 data:
-  policy.default: role:readonly
+  policy.default: ""
   policy.csv: |
     p, role:developer, applications, sync, tenants/*, allow
     p, role:developer, applications, get, */*, allow

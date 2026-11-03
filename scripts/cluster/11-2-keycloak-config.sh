@@ -178,6 +178,14 @@ for group_name in cluster-admin developer viewer guest; do
   GROUP_IDS["${group_name}"]="${GROUP_ID}"
 done
 
+# D-ADMIN-FULL (owner 2026-11-04): a cluster-admin member is a full realm administrator in the
+# Keycloak console of this realm (realm-management/realm-admin). Master-realm access stays with
+# keycloak-initial-admin. Cost: any cluster-admin member can change every client, user and
+# group of the realm. Escape: remove this role mapping from the group.
+kc_exec add-roles -r "${REALM}" --gname cluster-admin \
+  --cclientid realm-management --rolename realm-admin
+echo "  -> group 'cluster-admin' holds realm-management/realm-admin"
+
 #=========================================
 # 5. Users 생성 (emailVerified: true 필수)
 #=========================================

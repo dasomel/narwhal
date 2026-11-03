@@ -18,6 +18,9 @@ spec:
           tls:
             enabled: false
         externalURL: https://harbor.{{ .Values.baseDomain }}
+        # D-HARBOR-OIDC-TRUST: core/jobservice trust the Narwhal CA (secret key ca.crt, created in
+        # devtools by 08-5/08-6) so oidc_verify_cert=true works against the private-CA Keycloak.
+        caBundleSecretName: narwhal-ca-cert
         # Admin password loaded from existingSecret
         # Secret 'harbor-secrets' is created by scripts/cluster/08-5-registry.sh
         # Required key: HARBOR_ADMIN_PASSWORD

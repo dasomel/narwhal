@@ -1,0 +1,81 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-sso-sweep-defects-20261104",
+  "task": "Fix the defects of the 2026-11-04 full SSO sweep on the local cluster: Argo CD guest not denied (policy.default role:readonly), Harbor oidc_verify_cert=false, developer 'cluster-wide read' matrix wording, test-sso coverage gaps; investigate the :9443 issuer seen by OpenBao at first provision.",
+  "changeContext": {
+    "paths": [
+      ".agents/evals/traces/2026-11-sso-sweep-defects.json",
+      "docs/common/app-sso-permission-matrix.md",
+      "docs/common/lessons-log.md",
+      "docs/common/oidc-rbac-contract.md",
+      "gitops/charts/narwhal-apps/templates/harbor.yaml",
+      "gitops/charts/narwhal-apps/templates/prometheus-stack.yaml",
+      "gitops/charts/narwhal-platform/templates/argocd-config.yaml",
+      "scripts/cluster/08-5-registry.sh",
+      "scripts/cluster/11-2-keycloak-config.sh",
+      "scripts/cluster/11-3-keycloak-clients.sh",
+      "scripts/cluster/13-argocd.sh",
+      "scripts/test/lib/check-argocd-developer-sync-scope.py",
+      "scripts/test/lib/check-live-suite-false-failures.py",
+      "scripts/test/test-sso.sh"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Empty policy.default in the argocd-rbac-cm GitOps ConfigMap and in 13-argocd.sh, update R246; add caBundleSecretName narwhal-ca-cert to the harbor GitOps app and 08-5, ping-gate and enable oidc_verify_cert in 11-3; fix matrix/contract wording; test-sso guest/viewer Argo CD live login, Harbor verify=true, dev list namespaces; R293 harness cases; lessons-log rows. Deliberately left alone: the 11-keycloak.sh bootstrap hostname form (:9443 finding is report-only), Harbor sysadmin_flag, tenant-scope developer sync (no tenant app exists to test), Kubernetes Dashboard checks (test-sso has none), kakao cluster. Added scope (owner 2026-11-04, cluster-admin gets full rights in every SSO app): Grafana GrafanaAdmin, Keycloak narwhal-realm realm-admin for group cluster-admin, admin top-role live checks. Deliberately not changed: Velero UI (non-admin groups already have manage-all through the missing policy file, owner decision pending), Kubernetes platform-admin RBAC (widening needs an owner decision)."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "Before the change on the local cluster: guest session listed 46 Argo CD apps and GET returned 200; argocd-rbac-cm policy.default was role:readonly; Harbor configurations showed oidc_verify_cert false and harbor-core had no CA volume.",
+      "evidence": [
+        "test:live local cluster 2026-11-04 curl authorization-code login as guest -> GET /api/v1/applications 46 items, GET /api/v1/applications/<app> 200"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "external_input",
+      "provenance": "Harbor chart 1.19.1 (helm pull) templates/_helpers.tpl and core-dpl.yaml, APISIX nginx.conf read inside the running apisix pod, 2026-11-04",
+      "reviewed": true,
+      "summary": "caBundleSecretName mounts secret key ca.crt into core and jobservice trust store; APISIX sets X-Forwarded-Port to $server_port (9443), which Keycloak uses for the issuer when the CR has no full-URL hostname and strict false."
+    },
+    {
+      "id": "e4",
+      "type": "bug_fix",
+      "summary": "argocd-config.yaml and 13-argocd.sh: policy.default empty; harbor.yaml and 08-5-registry.sh: caBundleSecretName; 11-3-keycloak-clients.sh: oidc/ping with verify_cert true before PUT oidc_verify_cert true; check-argocd-developer-sync-scope.py, check-live-suite-false-failures.py and test-sso.sh updated; docs and lessons-log updated."
+    },
+    {
+      "id": "e5",
+      "type": "review_correction",
+      "summary": "No review correction yet; independent review is pending (Narwhal merge gate)."
+    },
+    {
+      "id": "e6",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "static R246 (+57 mutations), R293 harness (74 checks), bash scripts/test/test-sso.sh in full, and live logins on the local disposable cluster after push-to-gitea.sh. NOT covered: a fresh provision (08-5 seeding of narwhal-ca-cert and the 11-3 ping gate ran only as unit harness, not on a clean install), the kakao cluster, developer sync inside tenants/* (no tenant app).",
+      "evidence": [
+        "test:python3 scripts/test/lib/check-argocd-developer-sync-scope.py --mutation-verify -> PASS: rejected all 57 mutations",
+        "test:python3 scripts/test/lib/check-live-suite-false-failures.py -> 74 passed, 0 failed",
+        "test:live after push-to-gitea: guest 0 apps, GET 403; viewer 46 apps, GET 200, sync 403; developer sync platform app 403; admin sync 200",
+        "test:live Harbor: oidc/ping verify_cert true -> 200, oidc_verify_cert True; admin and dev /c/oidc/login -> users/current 200; admin list users 200, dev 403",
+        "test:bash scripts/test/test-sso.sh -> Total 141, PASS 141, FAIL 0, WARN 0 (after rebase onto origin/main with #544 and #545)",
+        "test:live admin top role: Harbor admin_role_in_auth true and /users 200 (dev 403); Grafana isGrafanaAdmin true, org Admin; Argo CD sync 200; Keycloak narwhal console admin realm API 200, dev 403 (PKCE login to security-admin-console); Gitea admin is site admin, OpenBao group cluster-admin -> policy cluster-admin (*, sudo)"
+      ]
+    },
+    {
+      "id": "e7",
+      "type": "completion_claim",
+      "summary": "On the local cluster (applied via push-to-gitea, harbor and narwhal-platform Synced) Argo CD guest is denied, viewer/developer/admin keep their matrix permissions, and Harbor verifies the Keycloak certificate with a trusted CA while OIDC login still works. The :9443 cause is identified but not fixed. Fresh-provision ordering for Harbor trust is unverified."
+    },
+    {
+      "id": "e8",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Complete for defects 1-4 within repository and local-cluster scope; defect 5 is an investigation with a proposed follow-up (align 11-keycloak.sh CR hostname with the GitOps form)."
+    }
+  ]
+}

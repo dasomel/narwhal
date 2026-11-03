@@ -481,9 +481,17 @@ if [ -n "${OPENBAO_POD}" ]; then
     kubectl get secret narwhal-ca-cert -n devtools -o jsonpath='{.data.ca\.crt}' \
       | base64 -d \
       | kubectl exec -i -n storage "${OPENBAO_POD}" -- /bin/sh -c 'cat > /tmp/kc-ca.pem'
-    kubectl exec -n storage "${OPENBAO_POD}" -- \
+    # D-OPENBAO-OIDC-FAILCLOSED: `bao write auth/oidc/config` validates the discovery URL, so it is
+    # rejected while Keycloak still advertises a different issuer (seen once at first provision:
+    # issuer ...:9443 vs ...). The old `&& echo ok || echo WARN` swallowed that, Phase 2 went on,
+    # and /sso failed with 'could not load configuration' until someone noticed. Retry for the
+    # issuer to settle, then abort 11-3 (it is a CRITICAL_SCRIPTS member; re-run is idempotent).
+    OPENBAO_OIDC_OK=false
+    for attempt in $(seq 1 6); do
+      if kubectl exec -n storage "${OPENBAO_POD}" -- \
       env BAO_TOKEN="${OPENBAO_ROOT_TOKEN}" BAO_ADDR="https://127.0.0.1:8200" BAO_SKIP_VERIFY="true" \
       /bin/sh -c "
+        set -e
         bao auth enable oidc 2>/dev/null || true
         # UI 비로그인 화면에 OIDC 탭을 기본 노출 (portal ?with=oidc 딥링크와 함께 1클릭 SSO)
         bao auth tune -listing-visibility=unauth oidc/
@@ -515,8 +523,18 @@ if [ -n "${OPENBAO_POD}" ]; then
         GID=\$(bao read -format=json identity/group/name/cluster-admin | sed -n 's/.*\"id\": \"\([^\"]*\)\".*/\1/p' | head -1)
         bao write identity/group-alias name=cluster-admin mount_accessor=\$ACCESSOR canonical_id=\$GID 2>/dev/null || true
         rm -f /tmp/kc-ca.pem
-      " && echo "OpenBao OIDC configured" \
-      || echo "WARN: OpenBao OIDC config failed"
+      "; then
+        OPENBAO_OIDC_OK=true
+        break
+      fi
+      echo "  OpenBao OIDC attempt ${attempt}/6 failed, waiting 10s..."
+      sleep 10
+    done
+    if [ "${OPENBAO_OIDC_OK}" != "true" ]; then
+      echo "ERROR: OpenBao OIDC config failed after 6 attempts (auth/oidc/config not set; /sso would fail)"
+      exit 1
+    fi
+    echo "OpenBao OIDC configured"
   else
     echo "WARN: OpenBao root token not found, skipping"
   fi

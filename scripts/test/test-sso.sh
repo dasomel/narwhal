@@ -594,6 +594,22 @@ if should_run "apps"; then
       fail "K8s API: ${APISERVER_POD_COUNT} kube-apiserver pod(s) for ${CP_NODE_COUNT} control-plane node(s) (one per node expected)"
     fi
   fi
+
+  # D-OPENBAO-OIDC-CONFIG: a live OpenBao without auth/oidc/config made /sso fail with
+  # "could not load configuration" while every other check here passed. auth_url needs no
+  # token and exercises config + default role + Keycloak discovery in one call.
+  OPENBAO_AUTH_URL=$(curl -sk --max-time 10 -X POST "https://openbao.${DOMAIN}/v1/auth/oidc/oidc/auth_url" \
+    -H 'Content-Type: application/json' \
+    -d "{\"role\":\"default\",\"redirect_uri\":\"https://openbao.${DOMAIN}/sso/callback\"}" 2>/dev/null \
+    | python3 -c 'import sys,json; print(json.load(sys.stdin).get("data",{}).get("auth_url",""))' 2>/dev/null) || OPENBAO_AUTH_URL=""
+  case "${OPENBAO_AUTH_URL}" in
+    "${KEYCLOAK_URL}/realms/${REALM}/protocol/openid-connect/auth?"*)
+      pass "OpenBao: auth/oidc/config set, auth_url points at Keycloak realm ${REALM}" ;;
+    "")
+      fail "OpenBao: auth_url returned no URL (auth/oidc/config or role missing; /sso would fail)" ;;
+    *)
+      fail "OpenBao: auth_url does not point at ${KEYCLOAK_URL}/realms/${REALM}" ;;
+  esac
   echo ""
 fi
 

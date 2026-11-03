@@ -164,7 +164,7 @@ export function GroupsTable({ tools }: { tools: PlatformTool[] }) {
           <table className="w-full text-sm border-collapse">
             <thead>
               <tr className="bg-muted/50 border-b border-border">
-                <th className="py-3 px-4 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider sticky left-0 bg-muted/50 z-20 min-w-[160px] border-r border-border">
+                <th className="py-3 px-4 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider sticky left-0 bg-[color-mix(in_oklab,var(--card),var(--muted)_50%)] z-20 min-w-[160px] border-r border-border">
                   {t("groups.name")}
                 </th>
                 <th className="py-3 px-3 text-center text-xs font-semibold text-muted-foreground uppercase tracking-wider min-w-[60px] border-r border-border/50">
@@ -181,7 +181,7 @@ export function GroupsTable({ tools }: { tools: PlatformTool[] }) {
                     </div>
                   </th>
                 ))}
-                <th className="py-3 px-4 text-center text-xs font-semibold text-muted-foreground uppercase tracking-wider sticky right-0 bg-muted/50 z-20 border-l border-border min-w-[70px]">
+                <th className="py-3 px-4 text-center text-xs font-semibold text-muted-foreground uppercase tracking-wider sticky right-0 bg-[color-mix(in_oklab,var(--card),var(--muted)_50%)] z-20 border-l border-border min-w-[70px]">
                   {t("common.save")}
                 </th>
               </tr>
@@ -196,12 +196,18 @@ export function GroupsTable({ tools }: { tools: PlatformTool[] }) {
                 return (
                   <Fragment key={group.pk}>
                     <tr
+                      // Sticky cells need an opaque bg (translucent tints let scrolled columns show
+                      // through), so --row-bg is the solid equivalent of each row state's tint.
                       className={`border-b border-border/50 transition-colors ${
-                        isDirty ? "bg-narwhal-warning/5" : idx % 2 === 0 ? "bg-card" : "bg-muted/20"
-                      } hover:bg-muted/30`}
+                        isDirty
+                          ? "bg-narwhal-warning/5 [--row-bg:color-mix(in_oklab,var(--card),var(--narwhal-warning)_5%)]"
+                          : idx % 2 === 0
+                            ? "bg-card [--row-bg:var(--card)]"
+                            : "bg-muted/20 [--row-bg:color-mix(in_oklab,var(--card),var(--muted)_20%)]"
+                      } hover:bg-muted/30 hover:[--row-bg:color-mix(in_oklab,var(--card),var(--muted)_30%)]`}
                     >
                       {/* Group name */}
-                      <td className="py-3 px-4 sticky left-0 bg-inherit z-10 border-r border-border">
+                      <td className="py-3 px-4 sticky left-0 bg-(--row-bg) z-10 border-r border-border">
                         <div className="flex flex-col">
                           <span className="font-medium text-foreground text-sm">{group.name}</span>
                           {group.is_superuser && (
@@ -261,7 +267,7 @@ export function GroupsTable({ tools }: { tools: PlatformTool[] }) {
                       })}
 
                       {/* Save button */}
-                      <td className="py-3 px-4 text-center sticky right-0 bg-inherit z-10 border-l border-border">
+                      <td className="py-3 px-4 text-center sticky right-0 bg-(--row-bg) z-10 border-l border-border">
                         {isDirty ? (
                           <Button
                             size="sm"

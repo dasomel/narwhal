@@ -169,7 +169,8 @@ export function computeVulnDbFreshness(lastSyncIso?: string): VulnDbFreshness {
     status,
     dbRegistry:
       process.env.TRIVY_DB_REGISTRY ||
-      `harbor.${process.env.CLUSTER_BASE_DOMAIN ?? process.env.NEXT_PUBLIC_CLUSTER_BASE_DOMAIN ?? "local.narwhal.internal"}/library/trivy-db`,
+      // Display only; must match trivy-operator.yaml dbRegistry + dbRepository (never /library/).
+      "harbor.devtools.svc.cluster.local/trivy-db/aquasecurity/trivy-db",
   }
 }
 

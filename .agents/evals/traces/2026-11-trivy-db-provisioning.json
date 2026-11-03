@@ -1,0 +1,70 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-trivy-db-provisioning-20261104",
+  "task": "Owner-approved (dasomel) load of the Trivy security DB into the local Harbor, plus why provisioning left it empty and the repo fix. Live-verified on the local arm64 cluster; portal API check listed as not claimed where not done.",
+  "changeContext": {
+    "paths": [
+      ".agents/evals/traces/2026-11-trivy-db-provisioning.json",
+      "docs/common/lessons-log.md",
+      "portal/src/lib/trivy.ts",
+      "scripts/airgap/README.md",
+      "scripts/airgap/lib/push-security-db.sh",
+      "scripts/cluster/08-5-registry.sh",
+      "scripts/cluster/13-2-narwhal-portal-bindings.sh",
+      "scripts/test/lib/check-security-db-provisioning.py",
+      "scripts/test/regression-check-kakao.sh"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Fix push-security-db.sh (auth, https endpoint, CA), add a repo_count WARN to 08-5, correct the display-only TRIVY_DB_REGISTRY, add R303/R304, lessons-log row. Deliberately left alone: auto-loading the DB from up.sh (needs internet and a promotion approval), trivy-operator.yaml, node-collector image mirroring, the Kakao path."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "Harbor project trivy-db repo_count 0; scan Jobs NOT_FOUND on trivy-db/aquasecurity/trivy-db:2. Running the unmodified push-security-db.sh against a port-forward failed with 'server gave HTTP response to HTTPS client'; the script has no credential at all.",
+      "evidence": [
+        "cluster:narwhal devtools harbor",
+        "scripts/airgap/lib/push-security-db.sh"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "push-security-db.sh logs in with the harbor-secrets admin credential into a 0600 authfile, supports --ca-cert/--kube-context, defaults to harbor.${DOMAIN}; 08-5 warns when trivy-db has <3 repos; 13-2 TRIVY_DB_REGISTRY and the portal default now equal trivy-operator.yaml dbRegistry+dbRepository."
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "summary": "check-security-db-provisioning.py: clean control passes and 5 mutations are caught; fixed script pushed all 3 artifacts to the live Harbor (Pushed: 3, Failed: 0).",
+      "evidence": [
+        "scripts/test/lib/check-security-db-provisioning.py --mutation-verify",
+        "cluster:narwhal harbor trivy-db repo_count 3"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "verification",
+      "summary": "Scope: local Vagrant cluster only. Live: scan Jobs pull the DB from Harbor and VulnerabilityReports rise from 0. Not verified here: InfraAssessmentReports, portal API as admin, node-collector image pull on the nodes.",
+      "scope": "scripts/airgap push path and 08-5 warning on the local cluster",
+      "evidence": [
+        "cluster:narwhal vulnerabilityreports"
+      ]
+    },
+    {
+      "id": "e6",
+      "type": "completion_claim",
+      "summary": "DB loaded and push path repaired within the verified scope; infra reports and portal check outstanding."
+    },
+    {
+      "id": "e7",
+      "type": "task_outcome",
+      "state": "B",
+      "summary": "Partially verified; remaining checks listed in e5",
+      "next": "Confirm InfraAssessmentReports and portal security API"
+    }
+  ]
+}

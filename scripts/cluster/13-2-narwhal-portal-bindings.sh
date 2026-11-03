@@ -785,7 +785,7 @@ kubectl create secret generic narwhal-portal-secrets \
   --from-literal=TUNING_JOB_IMAGE="harbor.${DOMAIN}/library/tuning-job:latest" \
   --from-literal=TUNING_JOB_NAMESPACE="devtools" \
   --from-literal=TUNING_JOB_SERVICE_ACCOUNT="narwhal-tuning-job" \
-  --from-literal=TRIVY_DB_REGISTRY="harbor.${DOMAIN}/library/trivy-db" \
+  --from-literal=TRIVY_DB_REGISTRY="harbor.devtools.svc.cluster.local/trivy-db/aquasecurity/trivy-db" \
   --from-literal=LIVE_INGEST_SECRET="${LIVE_INGEST_SECRET}" \
   --from-literal=LIVE_INGEST_LINK_HOSTS="" \
   --from-literal=LIVE_STREAM_DEGRADED="false" \

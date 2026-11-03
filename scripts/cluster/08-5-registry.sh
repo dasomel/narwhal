@@ -183,8 +183,8 @@ done
 
 if [ "${HARBOR_HEALTH}" = "200" ]; then
   HARBOR_API="http://${HARBOR_CORE_IP}/api/v2.0"
-  # trivy-db project (narwhal#48): scripts/airgap/lib/push-security-db.sh lands the
-  # offline-fetched Trivy DB/Java DB/checks bundle here, and
+  # trivy-db project (narwhal#48): this only creates the EMPTY project. The operator-run
+  # scripts/airgap/lib/push-security-db.sh lands the offline-fetched Trivy DB/Java DB/checks bundle here, and
   # gitops/resources/trivy-operator.yaml points dbRegistry/javaDbRegistry/
   # policiesBundle.registry at harbor.devtools.svc.cluster.local/trivy-db/... instead
   # of ghcr.io — that is the actual fix for #48's "scan Job pulls the DB live from the
@@ -199,6 +199,29 @@ if [ "${HARBOR_HEALTH}" = "200" ]; then
     -u "admin:${HARBOR_ADMIN_PASS}" \
     -d '{"project_name":"trivy-db","metadata":{"public":"true"}}' 2>/dev/null || true
   echo "Harbor: trivy-db project ensured (public, for narwhal#48 offline vulnerability DB)"
+
+  # D-SECDB-EMPTY-WARN: creating the project does NOT load the DB. Nothing in Phase 2 / up.sh
+  # pushes it (push-security-db.sh is the operator-run airgap flow, and a Harbor that was
+  # just installed is always empty), so until someone runs it trivy-operator's scan Jobs hit
+  # `trivy-db/aquasecurity/trivy-db ... NOT_FOUND`, VulnerabilityReports and
+  # InfraAssessmentReports stay at 0 and the Portal Security/Compliance pages are empty with
+  # no error anywhere. Say so here, loudly, with the exact commands. Warn, not fail: Harbor
+  # and every other component are healthy, and fetching needs internet this step may not have.
+  SECDB_REPOS=$(curl -s --max-time 10 -u "admin:${HARBOR_ADMIN_PASS}" \
+    "${HARBOR_API}/projects?name=trivy-db" 2>/dev/null \
+    | python3 -c 'import json,sys
+try:
+    print(sum(p.get("repo_count", 0) for p in json.load(sys.stdin) if p.get("name") == "trivy-db"))
+except Exception:
+    print(-1)' 2>/dev/null || echo -1)
+  if [ "${SECDB_REPOS:--1}" != "-1" ] && [ "${SECDB_REPOS}" -lt 3 ] 2>/dev/null; then
+    echo "WARN: Harbor project trivy-db has ${SECDB_REPOS}/3 repositories (trivy-db, trivy-java-db, trivy-checks)."
+    echo "WARN: Security Dashboard and Compliance infra data stay EMPTY until the security DB is loaded."
+    echo "WARN: On a machine with internet and the cluster DNS (see scripts/airgap/README.md, vulnerability DB section):"
+    echo "WARN:   scripts/airgap/lib/fetch-security-db.sh   --bundle <dir>"
+    echo "WARN:   scripts/airgap/lib/promote-security-db.sh --bundle <dir> --approved-by <name>"
+    echo "WARN:   scripts/airgap/lib/push-security-db.sh    --bundle <dir> --ca-cert <narwhal ca.crt> --kube-context <ctx>"
+  fi
 else
   echo "WARN: Harbor API not available, skipping offline security DB project setup"
 fi

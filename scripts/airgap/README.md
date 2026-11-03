@@ -225,7 +225,12 @@ containerd `config_path = "/etc/containerd/certs.d"`를 이용하므로 이미�
   --approved-by "<name>"
 
 # 3. 에어갭 내부에서, Harbor가 뜬 뒤 (harbor.devtools.svc.cluster.local 도달 가능한 곳에서)
-./scripts/airgap/lib/push-security-db.sh --bundle ./narwhal-airgap-bundle-amd64
+# 로컬 Vagrant 포함, push 는 Harbor 외부 URL(https harbor.<domain>) + admin 자격증명이 필요하다
+# (harbor-secrets 에서 읽음, 출력 안 함). 클러스터 CA 는 narwhal-ca-cert Secret 의 ca.crt.
+# plain-HTTP port-forward / in-cluster Service 로는 토큰 realm 이 https 라 실패한다.
+# 번들 아치와 무관: DB 는 단일 매니페스트 OCI 아티팩트라 amd64/arm64 어디서 받아도 같다.
+./scripts/airgap/lib/push-security-db.sh --bundle ./narwhal-airgap-bundle-amd64 \
+  --ca-cert ./narwhal-ca.crt --kube-context <ctx>
 
 # freshness/staleness 확인 (SLO 7일 — 근거는 스크립트 헤더 주석)
 python3 scripts/airgap/lib/check-security-db-freshness.py \
@@ -233,8 +238,10 @@ python3 scripts/airgap/lib/check-security-db-freshness.py \
 ```
 
 대상 목록은 `scripts/airgap/security-db.txt` (images.txt와 별도 파일 — 이유는 그 파일 헤더 참고).
-Harbor `trivy-db` 프로젝트(public, 무인증 pull) 부트스트랩은 `scripts/cluster/08-5-registry.sh`가
-Harbor 설치의 일부로 수행한다.
+Harbor `trivy-db` 프로젝트(public, 무인증 pull) **생성**은 `scripts/cluster/08-5-registry.sh`가
+Harbor 설치의 일부로 수행하지만 **내용은 비어 있다** — up.sh/Phase 2 어디에서도 push 하지 않으므로
+위 fetch → promote → push 를 한 번 실행해야 Security Dashboard / Compliance infra 데이터가 생긴다.
+08-5 는 프로젝트가 비어 있으면 `WARN` 으로 이 사실을 알린다 (D-SECDB-EMPTY-WARN).
 
 ## 주의사항
 

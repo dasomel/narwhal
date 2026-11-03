@@ -20534,7 +20534,7 @@ limitations under the License.
 
 </details>
 
-### @tanstack/query-core@5.103.2
+### @tanstack/query-core@5.105.0
 
 - License: `MIT`
 - Author: tannerlinsley
@@ -20568,7 +20568,7 @@ SOFTWARE.
 
 </details>
 
-### @tanstack/react-query@5.103.2
+### @tanstack/react-query@5.105.0
 
 - License: `MIT`
 - Author: tannerlinsley

@@ -727,25 +727,55 @@ export async function invalidateCertificatesCache(): Promise<void> {
   await cacheDel(cacheKeys.k8sCerts())
 }
 
+export interface KyvernoRule {
+  name: string
+  type: string
+  /** validate.message, truncated; null when the rule has none. */
+  message: string | null
+  /** Kyverno 1.13+ per-rule validate.failureAction; null when unset. */
+  failureAction: string | null
+  matchKinds: string[]
+  excludeKinds: string[]
+  excludeNamespaces: string[]
+}
+
 export interface KyvernoPolicy {
   name: string
   namespace: string | null
   scope: "cluster" | "namespace"
   background: boolean
+  /** spec.validationFailureAction, else the rules' failureAction ("Mixed" when they differ), else "Audit". */
   validationFailureAction: string
   ready: boolean
   rulesCount: number
-  rules: Array<{ name: string; type: string }>
+  rules: KyvernoRule[]
+  // policies.kyverno.io/* annotations; null when absent.
+  title: string | null
+  description: string | null
+  category: string | null
+  severity: string | null
+}
+
+interface PolicyResourceFilter {
+  kinds?: string[]
+  namespaces?: string[]
+}
+interface PolicyMatchBlock {
+  resources?: PolicyResourceFilter
+  any?: Array<{ resources?: PolicyResourceFilter }>
+  all?: Array<{ resources?: PolicyResourceFilter }>
 }
 
 interface PolicyItem {
-  metadata: { name: string; namespace?: string }
+  metadata: { name: string; namespace?: string; annotations?: Record<string, string> }
   spec: {
     background?: boolean
     validationFailureAction?: string
     rules?: Array<{
       name: string
-      validate?: unknown
+      match?: PolicyMatchBlock
+      exclude?: PolicyMatchBlock
+      validate?: { message?: string; failureAction?: string }
       mutate?: unknown
       generate?: unknown
       verifyImages?: unknown
@@ -760,20 +790,50 @@ interface PolicyList {
   items: PolicyItem[]
 }
 
-function mapPolicy(item: PolicyItem, scope: "cluster" | "namespace"): KyvernoPolicy {
-  const rules = (item.spec.rules ?? []).map((r) => ({
+const MAX_POLICY_TEXT = 2000
+
+// match/exclude come as legacy `resources`, or `any`/`all` lists of them.
+function filterResources(block?: PolicyMatchBlock): PolicyResourceFilter[] {
+  if (!block) return []
+  return [block.resources, ...(block.any ?? []).map((f) => f.resources), ...(block.all ?? []).map((f) => f.resources)]
+    .filter((r): r is PolicyResourceFilter => !!r)
+}
+
+function uniq(values: string[]): string[] {
+  return [...new Set(values)]
+}
+
+function annotation(item: PolicyItem, key: string): string | null {
+  const v = item.metadata.annotations?.[`policies.kyverno.io/${key}`]?.trim()
+  return v ? v.slice(0, MAX_POLICY_TEXT) : null
+}
+
+export function mapPolicy(item: PolicyItem, scope: "cluster" | "namespace"): KyvernoPolicy {
+  const rules: KyvernoRule[] = (item.spec.rules ?? []).map((r) => ({
     name: r.name,
     type: r.validate ? "validate" : r.mutate ? "mutate" : r.generate ? "generate" : r.verifyImages ? "verifyImages" : "unknown",
+    message: r.validate?.message?.trim().slice(0, MAX_POLICY_TEXT) || null,
+    failureAction: r.validate?.failureAction ?? null,
+    matchKinds: uniq(filterResources(r.match).flatMap((f) => f.kinds ?? [])),
+    excludeKinds: uniq(filterResources(r.exclude).flatMap((f) => f.kinds ?? [])),
+    excludeNamespaces: uniq(filterResources(r.exclude).flatMap((f) => f.namespaces ?? [])),
   }))
+  // Kyverno 1.13+ moved the action to validate.failureAction per rule.
+  const ruleActions = uniq(rules.flatMap((r) => (r.failureAction ? [r.failureAction] : [])))
+  const action = item.spec.validationFailureAction ?? (ruleActions.length > 1 ? "Mixed" : ruleActions[0] ?? "Audit")
   return {
     name: item.metadata.name,
     namespace: item.metadata.namespace ?? null,
     scope,
     background: item.spec.background ?? true,
-    validationFailureAction: item.spec.validationFailureAction ?? "Audit",
+    validationFailureAction: action,
     ready: item.status?.conditions?.some((c) => c.type === "Ready" && c.status === "True") ?? false,
     rulesCount: rules.length,
     rules,
+    title: annotation(item, "title"),
+    description: annotation(item, "description"),
+    category: annotation(item, "category"),
+    severity: annotation(item, "severity"),
   }
 }
 

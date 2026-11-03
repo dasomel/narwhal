@@ -38,6 +38,7 @@ metadata:
 6. Render/validate changed Helm/YAML and run relevant repository checks.
 7. If a cluster is available, confirm the application-reported running version rather than inferring it from chart metadata.
 8. Finish with `narwhal-verification` and state any runtime gap.
+9. A portal-requested upgrade arrives as an issue generated from the portal's Settings > OSS updates tab (end-to-end flow: `docs/common/oss-update-process.md`). Run `node portal/scripts/gen-oss-versions.mjs` after editing `VERSIONS.md`; `version-check` CI enforces it with `--check`.
 
 ## Verification
 
@@ -55,4 +56,6 @@ Evidence should cover reference consistency, rendered configuration, build/stati
 - `scripts/airgap/images.txt`
 - `scripts/test/check-mirror-pins.py`
 - `docs/common/agent-operational-rules.md`
+- `docs/common/oss-update-process.md`
+- `portal/scripts/gen-oss-versions.mjs`
 - component provisioning/GitOps sources

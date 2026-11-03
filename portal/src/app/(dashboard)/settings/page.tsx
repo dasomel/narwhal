@@ -7,6 +7,7 @@ import { CertsTable } from "@/components/settings/certs-table"
 import { PoliciesTable } from "@/components/settings/policies-table"
 import { EffectivePermissions } from "@/components/settings/effective-permissions"
 import { GroupsTable } from "@/components/settings/groups-table"
+import { OssUpdatesTable } from "@/components/settings/oss-updates-table"
 import { PLATFORM_TOOLS } from "@/lib/tools"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { t } from "@/lib/i18n"
@@ -78,6 +79,7 @@ export default async function SettingsPage() {
           <TabsTrigger value="certs">{t(locale, "settings.tabCerts")}</TabsTrigger>
           <TabsTrigger value="policies">{t(locale, "settings.tabPolicies")}</TabsTrigger>
           <TabsTrigger value="permissions">{t(locale, "settings.tabPermissions")}</TabsTrigger>
+          <TabsTrigger value="oss-updates">{t(locale, "settings.tabOssUpdates")}</TabsTrigger>
         </TabsList>
         <TabsContent value="routes" className="mt-4"><RoutesTable /></TabsContent>
         <TabsContent value="users" className="mt-4"><UsersTable /></TabsContent>
@@ -85,6 +87,7 @@ export default async function SettingsPage() {
         <TabsContent value="certs" className="mt-4"><CertsTable /></TabsContent>
         <TabsContent value="policies" className="mt-4"><PoliciesTable /></TabsContent>
         <TabsContent value="permissions" className="mt-4"><EffectivePermissions /></TabsContent>
+        <TabsContent value="oss-updates" className="mt-4"><OssUpdatesTable /></TabsContent>
       </Tabs>
     </div>
   )

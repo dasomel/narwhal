@@ -14,7 +14,7 @@ Components and versions used in this project.
 | Component | Version | Description |
 |-----------|---------|-------------|
 | Kubernetes | v1.35.7 | Container orchestration. **Not the newest minor** — 1.36 is current upstream (1.36.2, 2026-06-09). 1.35 stays on a supported branch until 2027-02-28; the platform deliberately trails one minor so the 35 integrated components have released compatible versions. Branch latest is 1.35.7 |
-| containerd | 1.7.x (24.04) / repo default 2.x (26.04, 2.3.x LTS available) | Container runtime (Ubuntu apt; 02-containerd.sh pins 1.7.* then falls back to repo default) |
+| containerd | 1.7.x (24.04) / repo default 2.x (26.04: 2.2.2 live 2026-11-03, 2.3.x LTS available) | Container runtime (Ubuntu apt; 02-containerd.sh pins 1.7.* then falls back to repo default) |
 | kubeadm | v1.35.7 | Cluster bootstrap tool |
 | kubelet | v1.35.7 | Node agent |
 | kubectl | v1.35.7 | CLI tool |
@@ -75,7 +75,7 @@ Components and versions used in this project.
 | cert-manager | v1.20.2 (chart) | TLS certificate automation (container UID/GID now 65532/65532 — PSA check) |
 | OpenBao | v2.5.4 (chart 0.28.3) | Secret management (standalone). ARM64 confirmed on quay.io + docker.io. config: disable_unauthed_rekey_endpoints default→true |
 | Kyverno | v1.18.1 (chart 3.8.1) | Policy management (CVE-2026-4789 / -41323 fixed) |
-| Falco | v0.45.1 (chart 9.2.1) | Runtime security (syscall) on every node via `modern_ebpf`, ENABLED 2026-10-28 (D-FALCO-045; was off since 2026-07-08). `docker.io/falcosecurity/falco:0.45.1` pinned in `falco.yaml`; the rules (falco-rules 5.2.0) and `container` plugin 0.7.5 are baked into the image and falcoctl is off (airgap), so rule updates arrive with an image bump. 0.39→0.45 is breaking (gRPC output dropped 0.44, container plugin 0.41; chart fails to render with `falco.grpc`). Kernel 7.0 (Ubuntu 26.04) is backed by upstream reports only (falcosecurity/falco#3955, falcosecurity/libs#3086), not observed on this repo's nodes |
+| Falco | v0.45.1 (chart 9.2.1) | Runtime security (syscall) on every node via `modern_ebpf`, ENABLED 2026-10-28 (D-FALCO-045; was off since 2026-07-08). `docker.io/falcosecurity/falco:0.45.1` pinned in `falco.yaml`; the rules (falco-rules 5.2.0) and `container` plugin 0.7.5 are baked into the image and falcoctl is off (airgap), so rule updates arrive with an image bump. 0.39→0.45 is breaking (gRPC output dropped 0.44, container plugin 0.41; chart fails to render with `falco.grpc`). Kernel 7.0 (Ubuntu 26.04): upstream fixes falcosecurity/falco#3955, falcosecurity/libs#3086; observed 2026-11-03 on box 0.3.1 (kernel 7.0.0-42 arm64): 6/6 Ready, only the expected arm64 startup warning for the missing `open`/`creat` TOCTOU tracepoints (no coverage loss, see `falco.yaml`) |
 | Falcosidekick | 2.35.0 (subchart 0.14.1 of the falco chart) | Falco events → Loki (`format: json`, read by the portal) and Alertmanager (`endpoint: /api/v2/alerts`: the chart's default `/api/v1/alerts` gets 410 Gone from Alertmanager >= 0.27, ours is v0.33.0, so every Critical alert would be dropped). Image `docker.io/falcosecurity/falcosidekick:2.35.0` is pinned in `falco.yaml` over the subchart's 2.32.0 default (D-FALCO-SIDEKICK): 2.32.0 predates the vulnerable Go-module fix (falcosecurity/falcosidekick#1366, in 2.34.0) and the multi-output race fix (falcosecurity/falcosidekick#1390, in 2.35.0); trivy 2026-10-28 CRITICAL/HIGH 9/80 → 3/19 (the 3 left are in amqp091-go, whose RabbitMQ output is unused). 2.35.1 (2026-10-26, 0/1) is still inside the 7-day cooling window until 2026-11-02. The subchart's Chart.yaml still says appVersion 2.31.1 |
 
 ## Backup
@@ -147,8 +147,8 @@ Velero schedule `includedResources` is the generated readable API inventory; new
 | Component | Version   | Description |
 |-----------|-----------|-------------|
 | Vagrant | 2.4+      | VM management |
-| VirtualBox | 7.1+      | Virtualization provider |
-| VMware Fusion | 26H1      | Virtualization provider (alternative) |
+| VirtualBox | 7.1+      | Not validated on box 0.3.x: the 0.3.1 catalog lists a `virtualbox` amd64 build, but this repo has only run the arm64 `vmware_desktop` box (0.3.0 had no VirtualBox build) |
+| VMware Fusion | 26H1      | Virtualization provider (validated local path: Apple Silicon arm64, box 0.3.1) |
 | Ubuntu | 26.04 LTS | Base OS (dasomel/ubuntu-26.04-xfs v0.3.1, Resolute, kernel 7.0.0-42; vmware_desktop arm64 from the kube-ready-box GitHub Pages catalog) |
 
 ## Frozen this cycle (airgap refresh 2026-06-15)

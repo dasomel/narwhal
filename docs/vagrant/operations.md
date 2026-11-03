@@ -929,6 +929,45 @@ vagrant ssh master-1 -c "bash /home/vagrant/scripts/test/test-sso.sh \
 
 ---
 
+## 11. 베이스 box 보관과 복원 (D-BOX-CATALOG)
+
+`dasomel/ubuntu-26.04-xfs`는 GitHub Pages 카탈로그(Vagrantfile의 `box_url`)가 가리키는 GitHub Release 자산에서 받아 온다. Vagrant Cloud는 2026-12-31에 호스팅 box를 삭제하고, 카탈로그는 `dasomel.github.io` 한 경로(`cne.io.kr`로 리디렉션)에 의존하므로, 클러스터를 다시 만들 수 있도록 캐시된 box의 로컬 사본을 한 벌 두는 것을 권장한다. 사본은 수 GB이니 저장소 밖에 둔다.
+
+### 사본 만들기
+
+```bash
+vagrant box list | grep ubuntu-26.04-xfs            # 캐시 확인: (vmware_desktop, 0.3.1, (arm64))
+mkdir -p ~/box-backup && cd ~/box-backup            # 저장소 밖에서 실행 (cwd에 Vagrantfile이 있으면 package.name이 출력명을 바꿀 수 있음)
+vagrant box repackage dasomel/ubuntu-26.04-xfs vmware_desktop 0.3.1   # ./package.box 생성
+shasum -a 256 package.box | tee package.box.sha256
+```
+
+`repackage`는 압축 해제된 캐시 디렉터리를 다시 `tar.gz`로 묶는다(Vagrant 2.4.9 소스: `bsdtar -czf`). 그래서 이 해시는 **카탈로그의 sha256(원본 자산 `ubuntu-26.04-xfs-vmware`의 해시)과 일치하지 않는 것이 정상**이다. 사본의 무결성은 위에서 기록한 자체 해시로 확인하고, 카탈로그 값은 원본 자산을 직접 받아 비교할 때만 쓴다.
+
+```bash
+curl -fsSL https://dasomel.github.io/kube-ready-box/boxes/ubuntu-26.04-xfs.json | jq -r '.versions[] | select(.version=="0.3.1") | .providers[] | "\(.name) \(.architecture) \(.checksum)"'
+curl -fL -o ubuntu-26.04-xfs-vmware-0.3.1.box https://github.com/dasomel/kube-ready-box/releases/download/v0.3.1/ubuntu-26.04-xfs-vmware
+shasum -a 256 ubuntu-26.04-xfs-vmware-0.3.1.box     # 카탈로그 vmware_desktop(arm64) 값과 같아야 한다
+```
+
+원본 자산을 받아 두면 이것이 카탈로그 해시로 검증되는 가장 믿을 만한 사본이다.
+
+### 사본에서 복원
+
+`.box` 파일을 바로 `vagrant box add --name dasomel/ubuntu-26.04-xfs package.box` 하면 버전이 `0`으로 등록되어 Vagrantfile의 `box_version = "0.3.1"`을 만족하지 못하고, `--box-version`은 로컬 파일에서 거부된다(Vagrant 2.4.9에서 확인). 버전을 지키려면 로컬 메타데이터 JSON을 거친다.
+
+```bash
+cat > box-meta.json <<EOF
+{"name":"dasomel/ubuntu-26.04-xfs","versions":[{"version":"0.3.1","providers":[{"name":"vmware_desktop","url":"file://$PWD/package.box","checksum_type":"sha256","checksum":"$(cut -d' ' -f1 package.box.sha256)","architecture":"arm64","default_architecture":true}]}]}
+EOF
+vagrant box add --name dasomel/ubuntu-26.04-xfs box-meta.json   # 'Successfully added box ... (v0.3.1)' 확인
+vagrant box list | grep ubuntu-26.04-xfs
+```
+
+원본 자산을 복원할 때는 `url`을 그 파일로, `checksum`을 카탈로그 값으로 바꾼다. Vagrantfile의 `box_url`은 그대로 두어도 된다. 이 절차 중 메타데이터 JSON 복원과 버전 `0` 동작은 임시 `VAGRANT_HOME`의 작은 가짜 box로 확인했고, 실제 2GB급 box의 `repackage`는 실행하지 않았다.
+
+---
+
 ## 관련 문서
 
 - [architecture.md](../common/architecture.md) - 아키텍처 개요

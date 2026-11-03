@@ -8,13 +8,21 @@ Reason: 0.45.1 (libs 0.26.1, driver 11.0.1) is the first release carrying all th
 kernel 7.0: falcosecurity/libs#2997 (execve verifier instruction count), falcosecurity/libs#3021
 (sendmmsg/recvmmsg bpf_loop), falcosecurity/libs#3086 (per-CPU auxmap race on preemptible kernels,
 falcosecurity/falco#3955) and falcosecurity/libs#3119 (signal_deliver verifier on newer kernels). Upstream
-reports no such failures on Ubuntu 24.04 / kernel 6.8 (the Kakao nodes); none of this has been observed on
-this repo's nodes yet.
+reports no such failures on Ubuntu 24.04 / kernel 6.8 (the Kakao nodes).
+
+Observed 2026-11-03 (box 0.3.1, Ubuntu 26.04.1, kernel 7.0.0-42 arm64, Falco 0.45.1 / libs 0.26.1): all
+6 Vagrant nodes Ready, none of the failures above (scap_init, verifier) occurred. Each node prints, once at
+startup, two WARNINGs: "libpman: failure while attaching TOCTOU mitigation program for 'creat'" and for
+'open' (errno 2). Cause: arm64 has no open/creat syscalls (only openat/openat2, asm-generic unistd), so
+/sys/kernel/tracing/events/syscalls has no sys_enter_open or sys_enter_creat to attach to (checked on a node).
+libs treats ENOENT there as non-fatal by design (userspace/libpman/src/sc_set.c ignore_and_log_enoent), so it is
+expected on arm64 and not a kernel 7.0 regression. Coverage impact: none, since no arm64 process can issue
+those syscalls; the openat/openat2/connect TOCTOU programs attach without a warning. master-3 shows no
+warning only because its log now starts mid-stream (startup lines rotated out); its tracefs lacks the same events.
 
 Cost: a privileged DaemonSet on every node, masters included (~300Mi each, see
 docs/common/master-memory-pressure.md). falcoctl is OFF (airgap), so the rules (falco-rules 5.2.0) and the
-container plugin (0.7.5) are the ones baked into the image and change only with an image bump. Kernel 7.0
-(Vagrant) is backed by upstream reports only; it has NOT been observed on this repo's nodes.
+container plugin (0.7.5) are the ones baked into the image and change only with an image bump.
 
 Escape hatch: wrap the manifest below in a Helm "if false" guard again and push; ArgoCD prunes the app.
 03-save-helm-charts.sh and check-chart-upstream-sources.py skip a template that carries that guard,

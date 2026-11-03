@@ -1,0 +1,74 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-box-031-followups-20261103",
+  "task": "Follow-ups of the base box 0.3.1 impact analysis (PR #531): (1) root-cause the Falco TOCTOU attach warning on the local cluster and replace the 'not observed on this repo's nodes' comment in falco.yaml with what is observed; (2) make VERSIONS.md, architecture.md, the READMEs and the Vagrantfile comment consistent with box 0.3.1; (3) document how to keep and restore a local copy of the cached box before Vagrant Cloud deletes hosted boxes on 2026-12-31.",
+  "changeContext": {
+    "paths": [
+      ".agents/evals/traces/2026-11-box-031-followups.json",
+      "README-ko.md",
+      "README.md",
+      "VERSIONS.md",
+      "Vagrantfile",
+      "docs/common/architecture.md",
+      "docs/common/lessons-log.md",
+      "docs/vagrant/operations.md",
+      "gitops/charts/narwhal-apps/templates/falco.yaml"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Comment-only change in gitops/charts/narwhal-apps/templates/falco.yaml (escape-hatch paragraph and its guard-text warning untouched, no manifest line changed); doc and comment fixes in VERSIONS.md, architecture.md, README.md, README-ko.md and the Vagrantfile comment; new section 11 in docs/vagrant/operations.md; one lessons-log row. Deliberately left alone: the VirtualBox provider blocks of the Vagrantfile (removing provider support is a design change), docs/vagrant/dns-access.md (a Windows network-adapter filter, not a box claim), the 3 pre-existing make test warnings, and any live push."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "On the local cluster (context narwhal), Falco 0.45.1 modern_ebpf is 6/6 Ready on kernel 7.0.0-42 arm64 and 5 of 6 pod logs carry two startup WARNINGs 'libpman: failure while attaching TOCTOU mitigation program for creat/open (errno 2)'. master-3's log starts mid-stream at an event line (396 lines, no startup lines). On a node, /sys/kernel/tracing/events/syscalls lists sys_enter_openat and sys_enter_openat2 but no sys_enter_open or sys_enter_creat, on both master-3 and master-1.",
+      "evidence": [
+        "test:kubectl --context narwhal -n security-system logs <falco pod> -c falco -> libpman TOCTOU warning for 'creat' and 'open' on 5 of 6 pods",
+        "test:kubectl exec falco-ddztf and falco-vshjc -c falco -- ls /sys/kernel/tracing/events/syscalls -> no sys_enter_open, no sys_enter_creat"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "external_input",
+      "provenance": "falcosecurity/libs tag 0.26.1 (the libs version of Falco 0.45.1): userspace/libpman/src/sc_set.c ignore_and_log_enoent and driver/modern_bpf/programs/attached/events/toctou_mitigation/README.md, read via raw.githubusercontent.com and the GitHub API on 2026-11-03; Vagrant 2.4.9 source plugins/commands/box/command/repackage.rb and lib/vagrant/box.rb read from the local install; kube-ready-box catalog JSON and release v0.3.1 asset list fetched with curl and gh on 2026-11-03",
+      "reviewed": true,
+      "summary": "libs logs the TOCTOU warning from ignore_and_log_enoent, which turns ENOENT into a non-fatal warning; the tracepoint programs attach to syscalls/sys_enter_<syscall>, which does not exist where the syscall does not exist (arm64 asm-generic has no open/creat). The same file records the unavailability once (open_ttm_unavailable, creat_ttm_unavailable). No open upstream issue was found for this warning. The 0.3.1 catalog and release v0.3.1 list a virtualbox amd64 build for ubuntu-26.04-xfs (sha256 796ba6fa...), so the PR #531 statement that 0.3.x has no VirtualBox or amd64 box is wrong for 0.3.1; 0.3.0 was vmware_desktop arm64 only."
+    },
+    {
+      "id": "e4",
+      "type": "bug_fix",
+      "summary": "falco.yaml comment now records the 2026-11-03 observation (box 0.3.1, kernel 7.0.0-42, 6/6 Ready, the arm64 open/creat TOCTOU warning, its cause and no coverage loss) and VERSIONS.md line for Falco matches; VERSIONS.md VirtualBox row is marked not validated on box 0.3.x and VMware Fusion is the validated path; architecture.md diagram says VMware Desktop arm64, containerd v2.2 and Ubuntu 26.04 (Kakao 24.04) at unchanged width; README.md, README-ko.md and the Vagrantfile comment no longer claim there is no VirtualBox box (0.3.1 lists one, this repo has not run it); operations.md section 11 documents repackage, own-hash and original-asset checksum, and metadata-JSON restore; lessons-log row added."
+    },
+    {
+      "id": "e5",
+      "type": "review_correction",
+      "summary": "No review correction yet; independent review is pending (Narwhal merge gate). Self-found correction during authoring: the task brief expected repackage output to match the catalog sha256, but repackage re-tars the extracted directory, so the doc says the hash differs and gives the original-asset download as the catalog comparison."
+    },
+    {
+      "id": "e6",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "make test (static suite), make validate and shellcheck from make lint; yamllint is not installed on this host so the yamllint half of make lint was not run. The restore procedure was exercised with a tiny fake box in a throwaway VAGRANT_HOME (metadata JSON add gives v0.3.1; a bare .box gives v0; --box-version is refused for a local file). NOT covered: a real repackage of the multi-GB box, any live push of falco.yaml (comment only), VirtualBox on any host.",
+      "evidence": [
+        "test:RESEARCH_EVIDENCE_DIR=$(mktemp -d) make test -> exit 0, passed 427 failed 0 warnings 3",
+        "test:make validate -> exit 0",
+        "test:make lint -> shellcheck ran clean, then exit 127 'yamllint: command not found'"
+      ]
+    },
+    {
+      "id": "e7",
+      "type": "completion_claim",
+      "summary": "In the repository, the Falco TOCTOU warning is documented as an expected, non-fatal arm64 startup warning (no open/creat syscalls, so no sys_enter_open/creat tracepoint) with no detection coverage loss, and falco.yaml no longer says kernel 7.0 was not observed; the box docs state that VMware Fusion arm64 is the only validated path and that the 0.3.1 VirtualBox amd64 build is unvalidated; docs/vagrant/operations.md section 11 describes keeping and restoring the cached box. The Falco root cause was read live on the local cluster and from libs 0.26.1 source; no manifest changed, so nothing was pushed or applied. A real repackage and a restore of the actual box were not run."
+    },
+    {
+      "id": "e8",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Complete within repository scope for the three tasks, with the brief's premise corrected by evidence (0.3.1 does list a VirtualBox amd64 build). Follow-ups: the Vagrantfile VirtualBox blocks are kept and need an owner decision (validate against the 0.3.1 amd64 box or drop provider support); dns-access.md still names VirtualBox adapters; a real box backup and a restore drill are not done; the 3 make test warnings and a missing yamllint on this host are untouched."
+    }
+  ]
+}

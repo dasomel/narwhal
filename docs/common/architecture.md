@@ -45,7 +45,7 @@ component, identity, storage and GitOps sections expand their respective concern
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                           Host Machine (macOS)                              │
 │                                                                             │
-│  Vagrant + VMware Desktop / VirtualBox                                      │
+│  Vagrant + VMware Desktop (Apple Silicon arm64)                             │
 │                                                                             │
 │  ┌──────────────────┐  ┌──────────────────┐  ┌──────────────────┐           │
 │  │ narwhal-master-1 │  │ narwhal-master-2 │  │ narwhal-master-3 │           │
@@ -201,8 +201,8 @@ component, identity, storage and GitOps sections expand their respective concern
 │  └──────────────┘  └──────────────┘  └────────────────────┘  │
 ├──────────────────────────────────────────────────────────────┤
 │                  Kubernetes v1.35                            │
-│              containerd v1.7 | Ubuntu 24.04 LTS              │
-│             Vagrant VMs (VMware Desktop / VirtualBox)        │
+│       containerd v2.2 | Ubuntu 26.04 LTS (Kakao: 24.04)      │
+│            Vagrant VMs (VMware Desktop, arm64)               │
 └──────────────────────────────────────────────────────────────┘
 ```
 

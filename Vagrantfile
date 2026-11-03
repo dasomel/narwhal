@@ -93,7 +93,9 @@ Vagrant.configure("2") do |config|
   # D-BOX-CATALOG: kube-ready-box left Vagrant Cloud (HCP Vagrant stopped taking new versions on
   # 2026-10-01 and deletes hosted boxes on 2026-12-31); 0.3.0+ is served as GitHub Release assets
   # through this catalog, which carries the sha256 so `vagrant box add/update` still verify it.
-  # 0.3.x ships arm64 vmware_desktop only (no VirtualBox, no amd64). 0.3.1 = 0.3.0 + installer GRUB
+  # 0.3.0 shipped arm64 vmware_desktop only; the 0.3.1 catalog also lists a virtualbox amd64 build that
+  # this repo has never run, so the validated path is vmware_desktop on arm64 (the virtualbox blocks below
+  # are unvalidated on 0.3.x). 0.3.1 = 0.3.0 + installer GRUB
   # args removed and leftover installer kernels purged (same kernel 7.0.0-42).
   config.vm.box_url = "https://dasomel.github.io/kube-ready-box/boxes/ubuntu-26.04-xfs.json"
   config.vm.box_check_update = true

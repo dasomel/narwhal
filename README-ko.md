@@ -81,14 +81,14 @@ Packer 빌드 [kube-ready-box](https://github.com/dasomel/kube-ready-box)의 산
 ## Requirements
 
 - [Vagrant](https://developer.hashicorp.com/vagrant/install) 2.4+
-- **Apple Silicon(arm64)** 호스트의 [VMware Fusion](https://www.vmware.com/products/fusion.html)과 `vagrant-vmware-desktop` 플러그인. 베이스 box(kube-ready-box 0.3.x)는 **arm64 `vmware_desktop`만** 배포되므로 VirtualBox·amd64 호스트용 최신 box는 없습니다(Vagrantfile의 VirtualBox 블록은 이전 box용으로 남겨 둠).
+- **Apple Silicon(arm64)** 호스트의 [VMware Fusion](https://www.vmware.com/products/fusion.html)과 `vagrant-vmware-desktop` 플러그인. 베이스 box(kube-ready-box 0.3.x)는 **arm64 `vmware_desktop`만** 배포됩니다(0.3.0). 0.3.1 카탈로그에는 `virtualbox` amd64 빌드도 올라 있지만 이 저장소는 실행해 본 적이 없으므로, 검증된 로컬 경로는 arm64의 VMware Fusion뿐입니다(Vagrantfile의 VirtualBox 블록은 그 빌드와 이전 box용으로 남겨 둠).
 - 40GB+ RAM: VM 합계 마스터 3대 x 6GB + 워커 3대 x 6GB = 36GB
 - VM 합계 18 vCPU(마스터 3대 x 2 + 워커 3대 x 4). 실사용이 낮아 12코어 이상 호스트면 충분합니다. 워커 크기는 `NARWHAL_WORKER_CPUS`로 바꿀 수 있습니다(기본 4, 2로는 전체 플랫폼에서 CPU requests가 부족)
 - VM당 30GB+ Disk (IDP 전체 배포 권장)
 
 ### VirtualBox 디스크 확장
 
-VirtualBox에서 디스크 크기를 자동으로 확장하려면 `vagrant-disksize` 플러그인을 설치하세요:
+이 절은 VirtualBox 프로바이더에만 해당하며 검증된 VMware Fusion 경로에는 적용되지 않습니다. VirtualBox에서 디스크 크기를 자동으로 확장하려면 `vagrant-disksize` 플러그인을 설치하세요:
 
 ```bash
 vagrant plugin install vagrant-disksize

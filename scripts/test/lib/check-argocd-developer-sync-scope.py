@@ -32,7 +32,7 @@ GITOPS_GROUPS = {
     "g, guest, role:none",
 }
 BOOTSTRAP_GROUPS = GITOPS_GROUPS - {"g, narwhal-portal, role:portal-reader"}
-EXPECTED_POLICY_DEFAULT = "policy.default: role:readonly"
+EXPECTED_POLICY_DEFAULT = 'policy.default: ""'
 EXPECTED_SCOPES = "scopes: '[groups]'"
 
 
@@ -194,7 +194,7 @@ def structural_problems(gitops_text: str, bootstrap_text: str) -> list[str]:
         if not isinstance(data, dict) or set(data) != EXPECTED_DATA_KEYS:
             found.append(f"{source}: parsed data keys {sorted(data) if isinstance(data, dict) else data!r} != {sorted(EXPECTED_DATA_KEYS)}")
             continue
-        if data["policy.default"] != "role:readonly" or data["scopes"] != "[groups]":
+        if data["policy.default"] != "" or data["scopes"] != "[groups]":
             found.append(f"{source}: parsed policy.default/scopes differ from reviewed values")
         csv = [", ".join(f.strip() for f in ln.split(",")) for ln in str(data["policy.csv"]).splitlines() if ln.strip()]
         if sorted(csv) != sorted(EXPECTED_LINES[source]):
@@ -248,7 +248,7 @@ def structural_cases(gitops_text: str, bootstrap_text: str) -> dict:
     )
     flow_data = (
         'data: {policy.csv: "p, role:developer, applications, sync, */*, allow", '
-        'policy.default: "role:readonly", scopes: "[groups]"}'
+        'policy.default: "", scopes: "[groups]"}'
     )
 
     def swap(text: str, old: str, new: str) -> str:
@@ -430,12 +430,12 @@ def mutation_verify(gitops_text: str, bootstrap_text: str) -> None:
             gitops_text, after(bootstrap_text, anchor_line, "\n    p, role:admin, *, *, */*, allow"),
             "policy lines differ"),
         "policy.override.csv developer */* (GitOps)": (
-            after(gitops_text, "  policy.default: role:readonly",
+            after(gitops_text, '  policy.default: ""',
                   "\n  policy.override.csv: |\n    p, role:developer, applications, sync, */*, allow"),
             bootstrap_text, "policy csv keys"),
         "policy.override.csv developer */* (bootstrap)": (
             gitops_text,
-            after(bootstrap_text, "  policy.default: role:readonly",
+            after(bootstrap_text, '  policy.default: ""',
                   "\n  policy.override.csv: |\n    p, role:developer, applications, sync, */*, allow"),
             "policy csv keys"),
         "argocd-rbac-cm declared twice after --- (GitOps)": (

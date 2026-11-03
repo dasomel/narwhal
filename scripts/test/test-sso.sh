@@ -489,10 +489,11 @@ else:
     HARBOR_VERIFY=$(echo "${HARBOR_CFG}" | python3 -c 'import sys,json; print(json.load(sys.stdin).get("oidc_verify_cert",{}).get("value","?"))' 2>/dev/null) || true
     HARBOR_ENDPOINT=$(echo "${HARBOR_CFG}" | python3 -c 'import sys,json; print(json.load(sys.stdin).get("oidc_endpoint",{}).get("value",""))' 2>/dev/null) || true
 
-    if [ "${HARBOR_VERIFY}" = "False" ]; then
-      pass "Harbor: oidc_verify_cert=false"
+    # D-HARBOR-OIDC-TRUST: core trusts the Narwhal CA (caBundleSecretName), so verification stays on.
+    if [ "${HARBOR_VERIFY}" = "True" ]; then
+      pass "Harbor: oidc_verify_cert=true"
     else
-      fail "Harbor: oidc_verify_cert=${HARBOR_VERIFY} (need false for self-signed)"
+      fail "Harbor: oidc_verify_cert=${HARBOR_VERIFY} (need true; core trusts the Narwhal CA)"
     fi
 
     if echo "${HARBOR_ENDPOINT}" | grep -q "^https://"; then
@@ -707,13 +708,15 @@ if should_run "rbac"; then
   test_rbac "admin delete nodes" admin cluster-admin "no" delete nodes
   test_rbac "admin create clusterrolebindings" admin cluster-admin "no" create clusterrolebindings
 
-  # dev → developer: cluster-wide read (no nodes, no secrets), writes only in dev
+  # dev → developer: read-only across namespaces for a fixed resource list (no nodes, namespaces,
+  # secrets), writes only in dev; see docs/common/app-sso-permission-matrix.md
   test_rbac "dev create pods in dev" dev developer "yes" create pods -n dev
   test_rbac "dev get pods in devtools" dev developer "yes" get pods -n devtools
   test_rbac "dev get pods in monitoring" dev developer "yes" get pods -n monitoring
   test_rbac "dev create pods in kube-system" dev developer "no" create pods -n kube-system
   test_rbac "dev get secrets in kube-system" dev developer "no" get secrets -n kube-system
   test_rbac "dev get nodes" dev developer "no" get nodes
+  test_rbac "dev list namespaces" dev developer "no" list namespaces
 
   # view → platform-viewer: cluster-wide read, including nodes; no writes, no secrets
   test_rbac "view get pods in dev" view viewer "yes" get pods -n dev
@@ -772,6 +775,162 @@ if should_run "acl"; then
   else
     warn "ArgoCD: cannot get session token, skipping RBAC checks"
   fi
+
+  # D-ARGOCD-LIVE-RBAC: the ConfigMap lines above do not prove enforcement. A non-empty
+  # policy.default is retried after a deny and gave guest read access to every app (2026-11-04
+  # SSO sweep), so log in as real users through Keycloak and ask the API. A login that did not
+  # produce an ArgoCD session fails; an empty list only counts when userinfo proves the session.
+  echo "  [ArgoCD live login]"
+  ARGO_TMP=$(mktemp -d)
+  ARGO_BASE="https://argocd.${DOMAIN}"
+  for argo_user in guest view; do
+    ARGO_PW=$(kubectl get secret keycloak-user-passwords -n iam -o jsonpath="{.data.${argo_user}}" 2>/dev/null | base64 -d 2>/dev/null) || ARGO_PW=""
+    if [ -z "${ARGO_PW}" ]; then
+      fail "ArgoCD ${argo_user}: Secret iam/keycloak-user-passwords has no ${argo_user} password"
+      continue
+    fi
+    ARGO_JAR="${ARGO_TMP}/${argo_user}.jar"
+    ARGO_RES=$(gateway_login "${ARGO_JAR}" "${argo_user}" "${ARGO_PW}" "${ARGO_BASE}/auth/login?return_url=${ARGO_BASE}/") || ARGO_RES="000 -"
+    if [ "${ARGO_RES}" = "NOFORM" ]; then
+      fail "ArgoCD ${argo_user}: login form not found, cannot verify"
+      continue
+    fi
+    ARGO_LOGGED=$(curl -sk --connect-timeout 5 --max-time 15 -b "${ARGO_JAR}" "${ARGO_BASE}/api/v1/session/userinfo" 2>/dev/null \
+      | python3 -c 'import sys,json; print(json.load(sys.stdin).get("loggedIn", False))' 2>/dev/null) || ARGO_LOGGED=""
+    if [ "${ARGO_LOGGED}" != "True" ]; then
+      fail "ArgoCD ${argo_user}: no ArgoCD session after Keycloak login (${ARGO_RES%% *}), cannot verify"
+      continue
+    fi
+    ARGO_COUNT=$(curl -sk --connect-timeout 5 --max-time 20 -b "${ARGO_JAR}" "${ARGO_BASE}/api/v1/applications" 2>/dev/null \
+      | python3 -c 'import sys,json; print(len(json.load(sys.stdin).get("items") or []))' 2>/dev/null) || ARGO_COUNT="ERR"
+    ARGO_GET=$(curl -sk --connect-timeout 5 --max-time 15 -o /dev/null -w '%{http_code}' -b "${ARGO_JAR}" \
+      "${ARGO_BASE}/api/v1/applications/narwhal-platform" 2>/dev/null) || ARGO_GET="000"
+    ARGO_SYNC=$(curl -sk --connect-timeout 5 --max-time 15 -o /dev/null -w '%{http_code}' -b "${ARGO_JAR}" \
+      -X POST -H 'Content-Type: application/json' -d '{"dryRun":true}' \
+      "${ARGO_BASE}/api/v1/applications/narwhal-platform/sync" 2>/dev/null) || ARGO_SYNC="000"
+    case "${argo_user}" in
+      guest)
+        if [ "${ARGO_COUNT}" = "0" ]; then
+          pass "ArgoCD guest: application list is empty"
+        else
+          fail "ArgoCD guest: application list returned ${ARGO_COUNT} apps (matrix: deny)"
+        fi
+        case "${ARGO_GET}" in
+          403|404) pass "ArgoCD guest: single application GET -> HTTP ${ARGO_GET}" ;;
+          *) fail "ArgoCD guest: single application GET expected 403/404, got HTTP ${ARGO_GET}" ;;
+        esac ;;
+      view)
+        if [ "${ARGO_COUNT}" != "ERR" ] && [ "${ARGO_COUNT}" -ge 1 ] 2>/dev/null; then
+          pass "ArgoCD view: application list returns ${ARGO_COUNT} apps"
+        else
+          fail "ArgoCD view: application list expected apps, got '${ARGO_COUNT}'"
+        fi
+        if [ "${ARGO_GET}" = "200" ]; then
+          pass "ArgoCD view: single application GET -> HTTP 200"
+        else
+          fail "ArgoCD view: single application GET expected 200, got HTTP ${ARGO_GET}"
+        fi
+        if [ "${ARGO_SYNC}" = "403" ]; then
+          pass "ArgoCD view: sync denied -> HTTP 403"
+        else
+          fail "ArgoCD view: sync expected 403, got HTTP ${ARGO_SYNC}"
+        fi ;;
+    esac
+  done
+  rm -rf "${ARGO_TMP}"
+
+  # D-ADMIN-FULL (owner 2026-11-04): a cluster-admin login holds the top role in every app that
+  # has its own role model. Real Keycloak logins; NOFORM or a missing session fails.
+  echo "  [Admin top role in apps]"
+  ADM_TMP=$(mktemp -d)
+  ADM_PW=$(kubectl get secret keycloak-user-passwords -n iam -o jsonpath='{.data.admin}' 2>/dev/null | base64 -d 2>/dev/null) || ADM_PW=""
+  DEV_PW=$(kubectl get secret keycloak-user-passwords -n iam -o jsonpath='{.data.dev}' 2>/dev/null | base64 -d 2>/dev/null) || DEV_PW=""
+  if [ -z "${ADM_PW}" ] || [ -z "${DEV_PW}" ]; then
+    fail "Admin top role: Secret iam/keycloak-user-passwords has no admin/dev password"
+  else
+    # Harbor: group admin shows as admin_role_in_auth (sysadmin_flag stays false by Harbor design);
+    # the proof is a sysadmin-only API.
+    for h_user in admin dev; do
+      H_PW="${ADM_PW}"; [ "${h_user}" = "dev" ] && H_PW="${DEV_PW}"
+      H_RES=$(gateway_login "${ADM_TMP}/h-${h_user}.jar" "${h_user}" "${H_PW}" "https://harbor.${DOMAIN}/c/oidc/login") || H_RES="000 -"
+      if [ "${H_RES}" = "NOFORM" ]; then fail "Harbor ${h_user}: login form not found, cannot verify"; continue; fi
+      H_ROLE=$(curl -sk --max-time 15 -b "${ADM_TMP}/h-${h_user}.jar" "https://harbor.${DOMAIN}/api/v2.0/users/current" 2>/dev/null \
+        | python3 -c 'import sys,json; print(json.load(sys.stdin).get("admin_role_in_auth", False))' 2>/dev/null) || H_ROLE=""
+      H_USERS=$(curl -sk --max-time 15 -o /dev/null -w '%{http_code}' -b "${ADM_TMP}/h-${h_user}.jar" "https://harbor.${DOMAIN}/api/v2.0/users" 2>/dev/null) || H_USERS="000"
+      if [ "${h_user}" = "admin" ]; then
+        if [ "${H_ROLE}" = "True" ] && [ "${H_USERS}" = "200" ]; then
+          pass "Harbor admin: admin_role_in_auth=true, sysadmin-only /users HTTP 200"
+        else
+          fail "Harbor admin: expected admin_role_in_auth=true and /users 200, got '${H_ROLE}' / ${H_USERS}"
+        fi
+      elif [ "${H_ROLE}" = "False" ] && [ "${H_USERS}" = "403" ]; then
+        pass "Harbor dev: not an admin (/users HTTP 403)"
+      else
+        fail "Harbor dev: expected admin_role_in_auth=false and /users 403, got '${H_ROLE}' / ${H_USERS}"
+      fi
+    done
+
+    # Grafana: server admin (GrafanaAdmin) and org Admin.
+    G_RES=$(gateway_login "${ADM_TMP}/g.jar" admin "${ADM_PW}" "https://grafana.${DOMAIN}/login/generic_oauth") || G_RES="000 -"
+    if [ "${G_RES}" = "NOFORM" ]; then
+      fail "Grafana admin: login form not found, cannot verify"
+    else
+      G_SERVER=$(curl -sk --max-time 15 -b "${ADM_TMP}/g.jar" "https://grafana.${DOMAIN}/api/user" 2>/dev/null \
+        | python3 -c 'import sys,json; print(json.load(sys.stdin).get("isGrafanaAdmin", False))' 2>/dev/null) || G_SERVER=""
+      G_ORG=$(curl -sk --max-time 15 -b "${ADM_TMP}/g.jar" "https://grafana.${DOMAIN}/api/user/orgs" 2>/dev/null \
+        | python3 -c 'import sys,json; print(",".join(o["role"] for o in json.load(sys.stdin)))' 2>/dev/null) || G_ORG=""
+      if [ "${G_SERVER}" = "True" ] && [ "${G_ORG}" = "Admin" ]; then
+        pass "Grafana admin: server admin and org Admin"
+      else
+        fail "Grafana admin: expected isGrafanaAdmin=true and org Admin, got '${G_SERVER}' / '${G_ORG}'"
+      fi
+    fi
+
+    # Argo CD: role:admin can sync.
+    A_RES=$(gateway_login "${ADM_TMP}/a.jar" admin "${ADM_PW}" "https://argocd.${DOMAIN}/auth/login?return_url=https://argocd.${DOMAIN}/") || A_RES="000 -"
+    if [ "${A_RES}" = "NOFORM" ]; then
+      fail "ArgoCD admin: login form not found, cannot verify"
+    else
+      A_SYNC=$(curl -sk --max-time 15 -o /dev/null -w '%{http_code}' -b "${ADM_TMP}/a.jar" -X POST -H 'Content-Type: application/json' \
+        -d '{"dryRun":true}' "https://argocd.${DOMAIN}/api/v1/applications/narwhal-platform/sync" 2>/dev/null) || A_SYNC="000"
+      if [ "${A_SYNC}" = "200" ]; then
+        pass "ArgoCD admin: sync of a platform app allowed (HTTP 200)"
+      else
+        fail "ArgoCD admin: sync expected 200, got HTTP ${A_SYNC}"
+      fi
+    fi
+
+    # Keycloak realm console: authorization code + PKCE for security-admin-console, then the
+    # realm admin API. A non-admin (dev) must get 403 on the same call.
+    KC_VER=$(python3 -c 'import secrets; print(secrets.token_urlsafe(48))' 2>/dev/null) || KC_VER=""
+    KC_CHAL=$(python3 -c 'import sys,hashlib,base64; print(base64.urlsafe_b64encode(hashlib.sha256(sys.argv[1].encode()).digest()).rstrip(b"=").decode())' "${KC_VER}" 2>/dev/null) || KC_CHAL=""
+    KC_RU="${KEYCLOAK_URL}/admin/${REALM}/console/"
+    for k_user in admin dev; do
+      K_PW="${ADM_PW}"; [ "${k_user}" = "dev" ] && K_PW="${DEV_PW}"
+      K_RES=$(gateway_login "${ADM_TMP}/k-${k_user}.jar" "${k_user}" "${K_PW}" \
+        "${KEYCLOAK_URL}/realms/${REALM}/protocol/openid-connect/auth?client_id=security-admin-console&redirect_uri=${KC_RU}&response_type=code&scope=openid&response_mode=query&code_challenge=${KC_CHAL}&code_challenge_method=S256") || K_RES="000 -"
+      if [ "${K_RES}" = "NOFORM" ]; then fail "Keycloak console ${k_user}: login form not found, cannot verify"; continue; fi
+      K_CODE=$(printf '%s' "${K_RES}" | python3 -c 'import sys,urllib.parse as p; u=sys.stdin.read().split(" ",1)[-1]; print(p.parse_qs(p.urlparse(u).query).get("code",[""])[0])' 2>/dev/null) || K_CODE=""
+      K_TOKEN=""
+      if [ -n "${K_CODE}" ]; then
+        K_TOKEN=$(curl -sk --max-time 20 -X POST "${KEYCLOAK_URL}/realms/${REALM}/protocol/openid-connect/token" \
+          -d grant_type=authorization_code -d client_id=security-admin-console -d "code=${K_CODE}" \
+          --data-urlencode "redirect_uri=${KC_RU}" -d "code_verifier=${KC_VER}" 2>/dev/null \
+          | python3 -c 'import sys,json; print(json.load(sys.stdin).get("access_token",""))' 2>/dev/null) || K_TOKEN=""
+      fi
+      if [ -z "${K_TOKEN}" ]; then fail "Keycloak console ${k_user}: no token from the console login, cannot verify"; continue; fi
+      K_API=$(curl -sk --max-time 15 -o /dev/null -w '%{http_code}' -H "Authorization: Bearer ${K_TOKEN}" \
+        "${KEYCLOAK_URL}/admin/realms/${REALM}/clients" 2>/dev/null) || K_API="000"
+      if [ "${k_user}" = "admin" ] && [ "${K_API}" = "200" ]; then
+        pass "Keycloak console admin: realm admin API HTTP 200 (realm-admin)"
+      elif [ "${k_user}" = "dev" ] && [ "${K_API}" = "403" ]; then
+        pass "Keycloak console dev: realm admin API HTTP 403"
+      else
+        fail "Keycloak console ${k_user}: realm admin API got HTTP ${K_API}"
+      fi
+    done
+  fi
+  rm -rf "${ADM_TMP}"
 
   # --- Grafana Role Mapping ---
   echo "  [Grafana Role Mapping]"

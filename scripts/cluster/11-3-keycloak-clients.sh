@@ -334,6 +334,16 @@ if [ -n "${HARBOR_ADMIN_PASS}" ]; then
     done
 
     if [ "${HARBOR_READY}" = "true" ]; then
+      # D-HARBOR-OIDC-TRUST: enable oidc_verify_cert only when Harbor core really trusts the
+      # issuer (CA from caBundleSecretName). Fail closed instead of leaving verification off.
+      HTTP_CODE=$(curl -sk --max-time 30 -o /dev/null -w '%{http_code}' -u "admin:${HARBOR_ADMIN_PASS}" \
+        -X POST "${HARBOR_API}/system/oidc/ping" \
+        -H "Content-Type: application/json" \
+        -d "{\"url\": \"${ISSUER_URL}\", \"verify_cert\": true}" 2>/dev/null) || HTTP_CODE="000"
+      if [ "${HTTP_CODE}" != "200" ]; then
+        echo "ERROR: Harbor core does not trust the Keycloak issuer TLS (ping HTTP ${HTTP_CODE}); check caBundleSecretName/narwhal-ca-cert" >&2
+        exit 1
+      fi
       HTTP_CODE=$(curl -sk --max-time 30 -o /dev/null -w '%{http_code}' -u "admin:${HARBOR_ADMIN_PASS}" \
         -X PUT "${HARBOR_API}/configurations" \
         -H "Content-Type: application/json" \
@@ -346,7 +356,7 @@ if [ -n "${HARBOR_ADMIN_PASS}" ]; then
           \"oidc_scope\": \"openid,profile,email,groups\",
           \"oidc_admin_group\": \"cluster-admin\",
           \"oidc_groups_claim\": \"groups\",
-          \"oidc_verify_cert\": false,
+          \"oidc_verify_cert\": true,
           \"oidc_auto_onboard\": true,
           \"oidc_user_claim\": \"harbor_username\",
           \"primary_auth_mode\": true

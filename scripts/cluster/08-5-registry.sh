@@ -79,6 +79,18 @@ spec:
       targetPort: 5432
 EOF
 
+# D-HARBOR-OIDC-TRUST: Harbor core must trust the Narwhal CA so 11-3 can enable
+# oidc_verify_cert. 08-6 later overwrites this secret with narwhal+k8s CA; seeding it here
+# keeps harbor-core from sitting in ContainerCreating on a missing secret until 08-6 runs.
+if ! kubectl get secret narwhal-ca-cert -n devtools >/dev/null 2>&1; then
+  HARBOR_CA=$(kubectl get secret narwhal-wildcard-tls -n platform-system -o jsonpath='{.data.ca\.crt}' 2>/dev/null | base64 -d || true)
+  if [ -z "${HARBOR_CA}" ]; then
+    echo "ERROR: no CA in narwhal-wildcard-tls (platform-system); Harbor cannot trust Keycloak TLS." >&2
+    exit 1
+  fi
+  kubectl create secret generic narwhal-ca-cert --from-literal=ca.crt="${HARBOR_CA}" -n devtools
+fi
+
 HARBOR_OK=false
 for attempt in 1 2 3 4 5; do
   if helm upgrade --install harbor "$(chart harbor)" \
@@ -91,6 +103,7 @@ for attempt in 1 2 3 4 5; do
     --set existingSecretAdminPassword=harbor-secrets \
     --set existingSecretAdminPasswordKey=HARBOR_ADMIN_PASSWORD \
     --set existingSecretSecretKey=harbor-shared-secrets \
+    --set caBundleSecretName=narwhal-ca-cert \
     --set core.existingSecret=harbor-shared-secrets \
     --set jobservice.existingSecret=harbor-shared-secrets \
     --set-string 'jobservice.podAnnotations.backup\.velero\.io/backup-volumes-excludes=job-logs' \

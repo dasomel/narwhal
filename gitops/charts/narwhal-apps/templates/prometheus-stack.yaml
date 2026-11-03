@@ -112,7 +112,8 @@ spec:
               # self-signed cert 환경 (narwhal-ca). 실제 CA cert ca_file로 교체 가능
               tls_skip_verify_insecure: true
               allow_assign_grafana_admin: true
-              role_attribute_path: contains(groups[*], 'cluster-admin') && 'Admin' || contains(groups[*], 'developer') && 'Editor' || 'Viewer'
+              # D-ADMIN-FULL: cluster-admin is a Grafana server admin (allow_assign_grafana_admin above), not just org Admin.
+              role_attribute_path: contains(groups[*], 'cluster-admin') && 'GrafanaAdmin' || contains(groups[*], 'developer') && 'Editor' || 'Viewer'
         # Trivy KSV001/003/030/104 on node-exporter (verified container-level via
         # helm template). Not forcing runAsNonRoot: already non-root by chart default
         # (uid 65534, live-verified), so KSV012 isn't flagged.

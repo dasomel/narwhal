@@ -22,7 +22,7 @@ apiserver-side 변환이며, 토큰 자체에는 절대 포함되지 않는다. 
 | Keycloak 원본 클레임 (`groups`) | apiserver 변환 후 RBAC 서브젝트 | ClusterRole | Portal `UserRole` |
 | --- | --- | --- | --- |
 | `cluster-admin` | `oidc:cluster-admin` | `platform-admin` (내장 `cluster-admin` 아님) | `cluster-admin` |
-| `developer` | `oidc:developer` | `developer` (cluster-wide read-only) + `developer-workload-admin`(네임스페이스별 RoleBinding, ClusterRoleBinding 없음) | `developer` |
+| `developer` | `oidc:developer` | `developer` (모든 네임스페이스 read-only, 단 namespaces/nodes/secrets 제외) + `developer-workload-admin`(네임스페이스별 RoleBinding, ClusterRoleBinding 없음) | `developer` |
 | `viewer` | `oidc:viewer` | `platform-viewer` | `viewer` |
 | `guest` | *(바인딩 없음)* | *(K8s RBAC 권한 0)* | `guest` |
 

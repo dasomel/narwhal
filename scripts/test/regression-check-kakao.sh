@@ -2149,7 +2149,7 @@ PYEOF
     python3 scripts/test/lib/check-gitops-resource-ownership.py --mutation-verify
   check R301 "dev namespace has one SSA owner, unique objects and namespace-first ordering" \
     python3 scripts/test/lib/check-dev-namespace.py
-  check R302 "every APISIX openid-connect route is login-only allowlisted (gitea) or restricted to Keycloak group cluster-admin via the shared strip-then-check pair; hubble, prometheus, alertmanager and nfs-quota-agent carry it; 6 mutations caught (D-GATEWAY-ADMIN-GROUP, #519)" \
+  check R302 "every APISIX openid-connect route is login-only allowlisted (gitea) or restricted to Keycloak group cluster-admin via the shared strip-then-check pair; hubble, prometheus, alertmanager and nfs-quota-agent carry it; scans every chart, raw manifest, plugin config and global rule; 13 mutations caught (D-GATEWAY-ADMIN-GROUP, D-GATEWAY-ADMIN-ALL-SOURCES, #519)" \
     python3 scripts/test/lib/check-gateway-admin-group.py --mutation-verify
 
   check R204 "Velero Helm paths explicitly disable chart-managed broad RBAC (Narwhal#226)" \

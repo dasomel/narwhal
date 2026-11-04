@@ -7,7 +7,10 @@ vi.mock("@/lib/argocd", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/argocd")>()
   return { ...actual, getArgoApps: vi.fn() }
 })
-vi.mock("@/lib/gitea", () => ({ getCommitTimestamp: vi.fn() }))
+vi.mock("@/lib/gitea", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/gitea")>()
+  return { ...actual, getCommitTimestamp: vi.fn() }
+})
 vi.mock("@/lib/valkey", () => ({ cacheGet: vi.fn(), cacheSet: vi.fn() }))
 vi.mock("@/lib/k8s-client", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/k8s-client")>()
@@ -41,8 +44,8 @@ function fakeApp(name: string, project: string, namespace: string, revision: str
   }
 }
 
-const platformApp = fakeApp("platform-app", "platform", "platform-system", "platform-revision")
-const frontendApp = fakeApp("frontend-app", "apps", "frontend-app", "frontend-revision")
+const platformApp = fakeApp("platform-app", "platform", "platform-system", "aaaaaaa1111")
+const frontendApp = fakeApp("frontend-app", "apps", "frontend-app", "bbbbbbb2222")
 
 beforeEach(() => {
   const cache = new Map<string, unknown>()
@@ -114,8 +117,8 @@ describe("GET /api/governance/dora — deployment outcome semantics (#32)", () =
         // operationState.phase is absent -> even the latest entry has no
         // definite outcome evidence.
         history: [
-          { id: 1, revision: "older-rev", deployedAt: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString() },
-          { id: 2, revision: "latest-rev", deployedAt: new Date(Date.now() - 60 * 60 * 1000).toISOString() },
+          { id: 1, revision: "1111111aaaa", deployedAt: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString() },
+          { id: 2, revision: "2222222bbbb", deployedAt: new Date(Date.now() - 60 * 60 * 1000).toISOString() },
         ],
       },
     }
@@ -143,8 +146,8 @@ describe("GET /api/governance/dora — deployment outcome semantics (#32)", () =
         health: { status: "Degraded" },
         operationState: { phase: "Failed" },
         history: [
-          { id: 1, revision: "older-rev", deployedAt: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString() },
-          { id: 2, revision: "latest-rev", deployedAt: new Date(Date.now() - 60 * 60 * 1000).toISOString() },
+          { id: 1, revision: "1111111aaaa", deployedAt: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString() },
+          { id: 2, revision: "2222222bbbb", deployedAt: new Date(Date.now() - 60 * 60 * 1000).toISOString() },
         ],
       },
     }
@@ -159,7 +162,7 @@ describe("GET /api/governance/dora — deployment outcome semantics (#32)", () =
     expect(body.unknownOutcomeDeploys).toBe(1)
     // 1 known outcome, 1 failed -> 100%, not diluted by the unknown entry.
     expect(body.changeFailureRate).toBe(100)
-    const latest = body.recent.find((d: { revision: string }) => d.revision === "latest-".slice(0, 7))
+    const latest = body.recent.find((d: { revision: string }) => d.revision === "2222222")
     expect(latest).toBeTruthy()
     expect(latest.status).toBe("Failed")
   })
@@ -176,5 +179,27 @@ describe("GET /api/governance/dora — deployment outcome semantics (#32)", () =
     expect(body.mttrSource).toBe("alert-episode-duration")
     expect(body.evidenceWindow.start).toBeTruthy()
     expect(body.evidenceWindow.end).toBeTruthy()
+  })
+})
+
+describe("GET /api/governance/dora — only git SHAs are looked up (Gitea SSO-redirect fix)", () => {
+  it("never sends a Helm chart version to Gitea and marks that app's lead time as not applicable", async () => {
+    vi.mocked(auth).mockResolvedValue(platformTeamSession as never)
+    vi.mocked(getArgoApps).mockResolvedValue([
+      fakeApp("platform-app", "platform", "platform-system", "aaaaaaa1111"),
+      fakeApp("chart-app", "platform", "platform-system", "86.2.3"),
+      fakeApp("chart-v-app", "platform", "platform-system", "v1.20.2"),
+    ])
+    vi.mocked(getCommitTimestamp).mockClear()
+
+    const body = await (await GET()).json()
+
+    expect(vi.mocked(getCommitTimestamp).mock.calls.map(([sha]) => sha)).toEqual(["aaaaaaa1111"])
+    const byApp = Object.fromEntries(body.perApp.map((a: { app: string }) => [a.app, a]))
+    expect(byApp["platform-app"].leadTimeApplicable).toBe(true)
+    expect(byApp["platform-app"].leadTimeHours).not.toBeNull()
+    expect(byApp["chart-app"].leadTimeApplicable).toBe(false)
+    expect(byApp["chart-app"].leadTimeHours).toBeNull()
+    expect(byApp["chart-v-app"].leadTimeApplicable).toBe(false)
   })
 })

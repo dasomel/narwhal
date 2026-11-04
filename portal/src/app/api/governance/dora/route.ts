@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server"
 import { auth } from "@/lib/auth"
 import { getArgoApps } from "@/lib/argocd"
-import { getCommitTimestamp } from "@/lib/gitea"
+import { getCommitTimestamp, isGitSha } from "@/lib/gitea"
 import { cacheGet, cacheSet } from "@/lib/valkey"
 import { cacheKeys, cacheTtl } from "@/lib/cache-keys"
 import { appVisible, getEffectiveScope } from "@/lib/scope"
@@ -35,6 +35,10 @@ export interface DoraPerApp {
   deploys: number
   lastDeployedAt: string | null
   leadTimeHours: number | null
+  // false when none of the app's revisions in the window is a git commit (Helm
+  // chart-sourced Argo apps record a chart version): lead time is not applicable,
+  // which is different from "applicable but unknown" (null with this true).
+  leadTimeApplicable: boolean
 }
 
 export const DORA_METRIC_DEFINITION_VERSION = "dora-v2-2026-09-18"
@@ -190,8 +194,10 @@ export async function GET() {
     // Sort deployments: newest first
     deployments.sort((a, b) => b.deployedAtMs - a.deployedAtMs)
 
-    // Parallel fetch unique commit SHAs from Gitea
-    const uniqueShas = Array.from(new Set(deployments.map(d => d.revision)))
+    // Parallel fetch unique commit SHAs from Gitea. Chart-sourced apps record a Helm
+    // chart version (86.2.3, v1.20.2) as the revision; that is not a commit, so it is
+    // never sent to Gitea.
+    const uniqueShas = Array.from(new Set(deployments.map(d => d.revision).filter(isGitSha)))
     const commitTimeMap: Record<string, string | null> = {}
     await Promise.all(
       uniqueShas.map(async sha => {
@@ -208,6 +214,7 @@ export async function GET() {
       lastDeployedAt: string | null
       leadTimeSumMs: number
       leadTimeCount: number
+      hasGitRevision: boolean
     }> = {}
 
     let totalLeadTimeSumMs = 0
@@ -249,10 +256,12 @@ export async function GET() {
           lastDeployedAt: null,
           leadTimeSumMs: 0,
           leadTimeCount: 0,
+          hasGitRevision: false,
         }
       }
       const stats = appStatsMap[d.app]
       stats.deploys++
+      if (isGitSha(d.revision)) stats.hasGitRevision = true
       if (stats.lastDeployedAtMs === null || d.deployedAtMs > stats.lastDeployedAtMs) {
         stats.lastDeployedAtMs = d.deployedAtMs
         stats.lastDeployedAt = d.deployedAt
@@ -282,6 +291,7 @@ export async function GET() {
         deploys: stats.deploys,
         lastDeployedAt: stats.lastDeployedAt,
         leadTimeHours,
+        leadTimeApplicable: stats.hasGitRevision,
       }
     })
 

@@ -112,14 +112,32 @@ section() { printf '\n%s== %s%s\n' "${BOLD}" "$1" "${RESET}"; }
 # check <id> <description> <command...> — pass when the command succeeds
 check() {
   local id="$1" desc="$2"; shift 2
-  if "$@" >/dev/null 2>&1; then ok "${id}" "${desc}"; else bad "${id}" "${desc}"; fi
+  local output
+  output=$(mktemp) || return 1
+  # D2: capture once so failures retain diagnostics without rerunning side effects.
+  # Cost: one temp file per check; remove capture if disk use becomes a constraint.
+  if "$@" >"${output}" 2>&1; then
+    ok "${id}" "${desc}"
+  else
+    bad "${id}" "${desc}"
+    cat "${output}" >&2
+  fi
+  rm -f "${output}"
 }
 
 # check_not <id> <description> <command...> — pass when the command FAILS.
 # Used for "this pattern must be absent", where a match means the bug is back.
 check_not() {
   local id="$1" desc="$2"; shift 2
-  if "$@" >/dev/null 2>&1; then bad "${id}" "${desc}"; else ok "${id}" "${desc}"; fi
+  local output
+  output=$(mktemp) || return 1
+  if "$@" >"${output}" 2>&1; then
+    bad "${id}" "${desc}"
+    cat "${output}" >&2
+  else
+    ok "${id}" "${desc}"
+  fi
+  rm -f "${output}"
 }
 
 #=========================================

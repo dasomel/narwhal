@@ -1,0 +1,72 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-velero-ui-cluster-admin-20261104",
+  "task": "Owner decision 2026-11-04: restrict Velero UI to Keycloak group cluster-admin. POLICY_FILE_PATH was set but no file was mounted, so velero-ui 0.10.1 granted manage all to every authenticated user (guest included). Enforce with the app's own policy file, close the unguarded bulk download at the gateway, verify live, pin and document.",
+  "changeContext": {
+    "paths": [
+      ".agents/evals/traces/2026-11-velero-ui-cluster-admin.json",
+      "docs/common/app-sso-permission-matrix.md",
+      "docs/common/lessons-log.md",
+      "gitops/charts/narwhal-apps/templates/velero-ui.yaml",
+      "gitops/charts/narwhal-platform/templates/apisix-routes.yaml",
+      "scripts/test/lib/check-live-suite-false-failures.py",
+      "scripts/test/test-sso.sh"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Mechanism: velero-ui policy file via chart configuration.policies (ConfigMap at /policies/policies.csv) with the single line g,cluster-admin,manage,all, plus a gateway rule answering 403 for POST /api/backups/download. Gateway gatewayAdminOnly/R302 not applicable: the route uses app-native OAuth, no APISIX openid-connect. Deliberately left alone: /api/stats and /api/form/* (no policy check upstream), other apps, Keycloak clients."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "Before the change every logged-in user had manage all; the running Deployment had POLICY_FILE_PATH but no policies volume, and the ConfigMap held only comments.",
+      "evidence": [
+        "doc:https://github.com/dasomel/narwhal/issues/548"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "external_input",
+      "provenance": "otwld/velero-ui tag v0.10.1 source read via gh api: casl-ability.factory.ts, auth.service.ts, oauth.strategy.ts, jwt-auth.guard.ts, controllers, chart templates; 2026-11-04",
+      "reviewed": true,
+      "summary": "Policy lines are g,<group>,<action>,<subject>; groups come from the userinfo claim named by OAUTH_GROUP_CLAIM; with no valid line the app falls back to u,*,manage,all; POST /api/backups/download, /api/stats and /api/form/* carry no CheckPolicies."
+    },
+    {
+      "id": "e4",
+      "type": "bug_fix",
+      "summary": "velero-ui.yaml enables configuration.policies; apisix-routes.yaml adds velero-ui-block-bulk-download; test-sso.sh gains velero_ui_token and a Velero UI cluster-admin block; R293 pins the exact policy, the gateway rule and the live-check shape; matrix and lessons-log updated."
+    },
+    {
+      "id": "e5",
+      "type": "review_correction",
+      "summary": "No review correction yet; independent review is pending (Narwhal merge gate)."
+    },
+    {
+      "id": "e6",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "Local disposable cluster after push-to-gitea.sh with velero-ui and narwhal-platform Synced/Healthy; static suite. NOT covered: Kakao cluster, browsers, users beyond admin/dev/view/guest.",
+      "evidence": [
+        "test:live: admin list 200, create 201 (real tiny backup, deleted via API, no leftovers), delete 200; view, dev, guest list/create/delete -> 403; bulk download 403 for all four; no session -> 401, root -> 302 /sso",
+        "test:test-sso.sh --section=acl -> 52 pass, 0 fail, 0 warn",
+        "test:python3 scripts/test/lib/check-live-suite-false-failures.py -> 78 passed, 0 failed",
+        "test:RESEARCH_EVIDENCE_DIR=$(mktemp -d) make test -> exit 0 (an earlier run with 6 failures was a full disk)"
+      ]
+    },
+    {
+      "id": "e7",
+      "type": "completion_claim",
+      "summary": "In the repository and on the local cluster, Velero UI policy-checked APIs allow only Keycloak group cluster-admin; other users get 403; bulk download is closed for everyone; unauthenticated users are still sent to login. Kakao and browsers not verified. OPEN: /api/stats and /api/form/* (including secret names) answer any logged-in user."
+    },
+    {
+      "id": "e8",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Complete for the cluster-admin restriction within repository and local-cluster scope. Follow-up (MEDIUM): /api/stats and /api/form/* have no upstream policy check; close at the gateway or upstream in a separate change."
+    }
+  ]
+}

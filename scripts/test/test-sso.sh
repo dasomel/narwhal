@@ -130,6 +130,33 @@ print(urllib.parse.urlencode({"username": os.environ["KC_U"], "password": os.env
         -w '%{http_code} %{url_effective}' --data-binary @- "${action}" 2>/dev/null || echo "000 -"
 }
 
+# D-VELERO-UI-ADMIN-ONLY: Velero UI has app-native OAuth, so the gateway never sees the user. Log in
+# at Keycloak with redirect_uri /login, take the code from the redirect (no -L) and trade it at
+# /api/auth/oauth for the app JWT. Prints the JWT, or nothing when any step fails (callers fail on
+# empty, never pass). The password goes to curl on stdin, never argv.
+velero_ui_token() {
+  local user="$1" password="$2" jar page action loc code
+  jar=$(mktemp "${GW_TMP:-/tmp}/vu.XXXXXX") || return 0
+  page=$(curl -sk -L --connect-timeout 5 --max-time 20 -c "${jar}" -b "${jar}" \
+    "${KEYCLOAK_URL}/realms/${REALM}/protocol/openid-connect/auth?client_id=velero-ui&redirect_uri=https%3A%2F%2Fvelero-ui.${DOMAIN}%2Flogin&response_type=code&scope=openid%20profile%20email%20groups&state=t" 2>/dev/null) || page=""
+  action=$(printf '%s' "${page}" | python3 -c '
+import sys, re, html
+p = sys.stdin.read()
+m = re.search(r"<form[^>]+action=\"([^\"]+)\"", p)
+print(html.unescape(m.group(1)) if m and "name=\"username\"" in p and "name=\"password\"" in p else "")
+' 2>/dev/null) || action=""
+  [ -n "${action}" ] || return 0
+  loc=$(KC_U="${user}" KC_P="${password}" python3 -c '
+import os, urllib.parse
+print(urllib.parse.urlencode({"username": os.environ["KC_U"], "password": os.environ["KC_P"], "credentialId": ""}), end="")
+' 2>/dev/null | curl -sk --connect-timeout 5 --max-time 30 -c "${jar}" -b "${jar}" -o /dev/null \
+    -w '%{redirect_url}' --data-binary @- "${action}" 2>/dev/null) || loc=""
+  code=$(printf '%s' "${loc}" | sed -n 's/.*[?&]code=\([^&]*\).*/\1/p')
+  [ -n "${code}" ] || return 0
+  curl -sk --connect-timeout 5 --max-time 20 "https://velero-ui.${DOMAIN}/api/auth/oauth?code=${code}&state=t" 2>/dev/null \
+    | python3 -c 'import sys, json; print(json.load(sys.stdin)["access_token"])' 2>/dev/null || true
+}
+
 echo "============================================"
 echo "SSO Integration Test Suite v2"
 echo "============================================"
@@ -1121,6 +1148,39 @@ print('YES' if view else 'NO')
       fi
     done
   fi
+
+  # --- Velero UI: cluster-admin only (D-VELERO-UI-ADMIN-ONLY) ---
+  # The app enforces a policy file (g,cluster-admin,manage,all). Users without it log in but every
+  # policy-checked API answers 403. An empty body makes the admin create answer 400 (validation,
+  # after the policy check) so the check creates nothing. POST /api/backups/download has no app
+  # policy and is closed at the gateway for everyone.
+  echo "  [Velero UI cluster-admin only]"
+  VU_BASE="https://velero-ui.${DOMAIN}/api"
+  vu_expect() { if [ "$1" = "$2" ]; then pass "$3"; else fail "$4"; fi; }
+  VU_NOSESSION=$(curl -sk -o /dev/null --connect-timeout 5 --max-time 15 -w '%{http_code}' "${VU_BASE}/backups" 2>/dev/null) || VU_NOSESSION="000"
+  vu_expect "${VU_NOSESSION}" 401 "velero-ui: no session -> HTTP 401" "velero-ui: no session expected 401, got HTTP ${VU_NOSESSION}"
+  for vu_user in admin view dev guest; do
+    VU_PW=$(kubectl get secret keycloak-user-passwords -n iam -o jsonpath="{.data.${vu_user}}" 2>/dev/null | base64 -d 2>/dev/null) || VU_PW=""
+    VU_TOKEN=""
+    [ -z "${VU_PW}" ] || VU_TOKEN=$(velero_ui_token "${vu_user}" "${VU_PW}") || VU_TOKEN=""
+    if [ -z "${VU_TOKEN}" ]; then
+      fail "velero-ui: ${vu_user} login/token exchange failed, cannot verify"
+      continue
+    fi
+    VU_LIST=$(curl -sk -o /dev/null --connect-timeout 5 --max-time 30 -H "Authorization: Bearer ${VU_TOKEN}" -w '%{http_code}' "${VU_BASE}/backups" 2>/dev/null) || VU_LIST="000"
+    VU_CREATE=$(curl -sk -o /dev/null --connect-timeout 5 --max-time 30 -H "Authorization: Bearer ${VU_TOKEN}" -H 'Content-Type: application/json' -X POST -d '{}' -w '%{http_code}' "${VU_BASE}/backups" 2>/dev/null) || VU_CREATE="000"
+    VU_DELETE=$(curl -sk -o /dev/null --connect-timeout 5 --max-time 30 -H "Authorization: Bearer ${VU_TOKEN}" -X DELETE -w '%{http_code}' "${VU_BASE}/backups/narwhal-authz-probe-does-not-exist" 2>/dev/null) || VU_DELETE="000"
+    VU_DL=$(curl -sk -o /dev/null --connect-timeout 5 --max-time 30 -H "Authorization: Bearer ${VU_TOKEN}" -H 'Content-Type: application/json' -X POST -d '[]' -w '%{http_code}' "${VU_BASE}/backups/download" 2>/dev/null) || VU_DL="000"
+    if [ "${vu_user}" = "admin" ]; then
+      vu_expect "${VU_LIST}" 200 "velero-ui: admin list backups -> HTTP 200" "velero-ui: admin list expected 200, got HTTP ${VU_LIST}"
+      vu_expect "${VU_CREATE}" 400 "velero-ui: admin create passes the policy (empty body -> HTTP 400)" "velero-ui: admin create expected 400, got HTTP ${VU_CREATE}"
+    else
+      vu_expect "${VU_LIST}" 403 "velero-ui: ${vu_user} list backups -> HTTP 403" "velero-ui: ${vu_user} list expected 403, got HTTP ${VU_LIST}"
+      vu_expect "${VU_CREATE}" 403 "velero-ui: ${vu_user} create backup -> HTTP 403" "velero-ui: ${vu_user} create expected 403, got HTTP ${VU_CREATE}"
+      vu_expect "${VU_DELETE}" 403 "velero-ui: ${vu_user} delete backup -> HTTP 403" "velero-ui: ${vu_user} delete expected 403, got HTTP ${VU_DELETE}"
+    fi
+    vu_expect "${VU_DL}" 403 "velero-ui: ${vu_user} bulk download -> HTTP 403 (closed at the gateway)" "velero-ui: ${vu_user} bulk download expected 403, got HTTP ${VU_DL}"
+  done
 
   # Auth services should remain accessible (not protected by ForwardAuth)
   # shellcheck disable=SC2043  # single-item loop kept intentionally for easy extension

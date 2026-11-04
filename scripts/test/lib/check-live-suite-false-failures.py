@@ -224,6 +224,22 @@ for page, expected in [('<html>no form</html>', 'NOFORM'), ('<form action="x"><i
             f"curl() {{ printf '%s' '{page}'; }}")
   check(out.strip() == expected, f'gateway_login unparseable form -> {expected}')
 
+# D-VELERO-UI-ADMIN-ONLY: velero-ui falls back to `manage all` for everyone when no policy loads, so
+# the chart must mount a policy with exactly one valid group line for cluster-admin and no wildcard
+# (`*`) or user line, the gateway must close the unguarded bulk download, and the live check must
+# cover the four users, fail on an empty token and create nothing.
+vu_app = (ROOT / 'gitops/charts/narwhal-apps/templates/velero-ui.yaml').read_text()
+vu_routes = (ROOT / 'gitops/charts/narwhal-platform/templates/apisix-routes.yaml').read_text()
+vu_pol = re.search(r'policies:\n\s+enabled: true\n\s+value: \|\n((?: {14}\S[^\n]*\n)+)', vu_app)
+vu_lines = [l.strip() for l in vu_pol.group(1).splitlines() if l.strip() and not l.strip().startswith('#')] if vu_pol else []
+check(vu_lines == ['g,cluster-admin,manage,all'], 'velero-ui policy is exactly g,cluster-admin,manage,all')
+check('name: velero-ui-block-bulk-download' in vu_routes and '"/api/backups/download"' in vu_routes,
+      'velero-ui bulk download closed at the gateway')
+check('for vu_user in admin view dev guest; do' in sso and
+      'fail "velero-ui: ${vu_user} login/token exchange failed, cannot verify"' in sso and
+      'vu_expect "${VU_CREATE}" 400' in sso and 'vu_expect "${VU_DELETE}" 403' in sso and
+      'vu_expect "${VU_LIST}" 403' in sso, 'velero-ui live check shape')
+
 headlamp = 'HEADLAMP_API_CODE=' + block(sso, '  HEADLAMP_API_CODE=', '\n\n')
 for code in ['401', '403', '200', '302', '500', '000']:
   out = run(headlamp, f'DOMAIN=test.internal\ncurl() {{ echo {code}; }}')

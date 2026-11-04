@@ -40,16 +40,13 @@
   Falco를 제거하지 않는다. 클러스터가 아닌 로컬 Docker 랩(실제 Falco·falcosidekick·Alertmanager)에서
   확인했으며, 차트 타르볼·이미지 2개·GitOps push는 별도로 클러스터에 반영해야 하고, Ubuntu 26.04 /
   커널 7.0 Vagrant 박스와 Kubernetes CRI 경로에서의 Falco는 아직 관측되지 않았다.
-- **포털이 `narwhal-portal:1.1.5`로 고정됨 (기존 1.1.0, 중간에 #467·#477·#481·#502가 1.1.1~1.1.4로
-  고정).** 1.1.2는 클러스터 인프라 화면이 비던 문제(#475)를, 1.1.3은 권한 관리 표에 역할 기본 도구가
-  보이지 않던 문제(#479)를, 1.1.4는 보안 화면이 비던 문제(#501)를 고치고 `fast-uri`의 권고 4건을
-  해소하며(#492), 1.1.5는 `body-parser`를 2.4.0(GHSA-27r3-jxmh-p828)으로, `systeminformation`을
-  5.33.16(GHSA-3f7j-7jwc-fxfj)으로 올리고 Falco 런타임 이벤트의 우선순위 필터가 falcosidekick의 대문자
-  시작 라벨과 일치하게 하며 Ubuntu 26.04 노드에서 런타임 이벤트 탭을 보이게 한다(#503). 모두 1.1.1의
-  보안 수정을 포함한다. 이미지는 저장소 키로 Cosign 서명되어 있다 (index digest
-  `sha256:a0072e53…`). 정적 변경만 포함하며, 이미지는 아직 클러스터 bastion에 미러링되거나 Gitea에
-  push되지 않았다. 고정을 실제로 적용하기 전에 이 작업이 필요하다(`scripts/airgap/README.md`의 "Mirror
-  a pin bump"). 클러스터 롤아웃은 별도 단계이다.
+- **포털이 `narwhal-portal:1.1.6`으로 고정됨 (기존 1.1.0, 중간에 #467·#477·#481·#502·#520이 1.1.1~1.1.5로
+  고정).** 1.1.6은 인증서 갱신을 잘못된 `spec` 패치 대신 `cmctl` 방식으로 수행하고(#549), Kyverno 액션과
+  규칙을 설명하며(#547), 설정의 OSS 업데이트 탭(#552)과 보안의 Trivy DB 카드(#554)를 추가하고, 게이트웨이
+  SSO를 지나 Gitea API에 접근하며 Helm 소스 앱의 리드 타임을 N/A로 표시하고(#556), 비용 서비스 분석에서 모든
+  파드를 귀속시킨다(#559). 1.1.5 이하의 수정을 모두 포함한다. 이미지는 저장소 키로 Cosign 서명되어 있다
+  (index digest `sha256:6297c5ab…`). 클러스터 bastion에서 이 고정을 적용하기 전에 digest로 미러링해야 한다
+  (`scripts/airgap/README.md`의 "Mirror a pin bump"). 로컬 Vagrant 클러스터는 ghcr.io에서 직접 pull한다.
 
 ### 수정
 

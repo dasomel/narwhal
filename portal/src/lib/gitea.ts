@@ -80,7 +80,7 @@ export class GiteaError extends Error {
 export class GiteaGatewayRedirectError extends GiteaError {
   constructor(detail: string) {
     super(
-      `Gitea API returned ${detail} (likely an SSO redirect) — check GITEA_URL: it must reach Gitea directly (in-cluster Service), not the SSO-fronted gateway host`,
+      `Gitea API returned ${detail} (likely an SSO redirect) — check that the gitea-portal-api gateway rule is live and that GITEA_URL is the gateway host (the in-cluster hop is plaintext and not used)`,
       502,
     )
     this.name = "GiteaGatewayRedirectError"

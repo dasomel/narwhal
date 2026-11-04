@@ -293,6 +293,6 @@ describe("gitea API behind an SSO-fronted gateway", () => {
     mockFetch.mockResolvedValueOnce(new Response("<html>", { status: 200, headers: { "content-type": "text/html; charset=utf-8" } }))
     await expect(
       requestTenantNamespace({ namespace: "dev-alpha", team: "team-a", requestedBy: "alice" }),
-    ).rejects.toThrow(/check GITEA_URL/)
+    ).rejects.toThrow(/gitea-portal-api gateway rule is live/)
   })
 })

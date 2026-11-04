@@ -18,6 +18,8 @@ ROOT = Path(__file__).resolve().parents[3]
 CHART = ROOT / "gitops/charts/narwhal-platform"
 REPO = "/api/v1/repos/gitea-admin/narwhal-gitops/"
 ALLOWED_PATHS = {REPO + "git/commits/*", REPO + "contents/*", REPO + "pulls"}
+TOKEN_REGEX = "^token [0-9a-f]{40}$"
+GITEA_HOST = "gitea." + yaml.safe_load((CHART / "values.yaml").read_text())["baseDomain"]
 
 
 def render():
@@ -44,11 +46,13 @@ def errors(r):
         errs.append(f"paths must be a subset of {sorted(ALLOWED_PATHS)}, got {sorted(paths)}")
     if not set(m.get("methods", [])) or not set(m["methods"]) <= {"GET", "POST"}:
         errs.append(f"methods must be a non-empty subset of GET/POST, got {m.get('methods')}")
+    if m.get("hosts") != [GITEA_HOST]:
+        errs.append(f"hosts must be exactly [{GITEA_HOST!r}], got {m.get('hosts')}")
     hdr = [e for e in m.get("exprs", []) if e.get("subject", {}).get("scope") == "Header"
            and e["subject"].get("name") == "Authorization" and e.get("op") == "RegexMatch"
-           and e.get("value", "").startswith("^token ") and e["value"].endswith("$")]
+           and e.get("value") == TOKEN_REGEX]
     if not hdr:
-        errs.append("no anchored Authorization '^token ...$' header condition")
+        errs.append(f"no Authorization RegexMatch header condition with value exactly {TOKEN_REGEX!r}")
     plugins = {p["name"]: p for p in r.get("plugins", [])}
     if "openid-connect" in plugins:
         errs.append("rule must not itself enable openid-connect (it is the OIDC bypass)")
@@ -66,6 +70,10 @@ def mutation_verify(r):
     m = copy.deepcopy(r); m["match"].pop("methods"); muts["no methods"] = m
     m = copy.deepcopy(r); m["match"]["exprs"] = []; muts["no header condition"] = m
     m = copy.deepcopy(r); m["match"]["exprs"][0]["value"] = "^token "; muts["unanchored header"] = m
+    m = copy.deepcopy(r); m["match"]["exprs"][0]["value"] = "^token .*$"; muts["loose token regex"] = m
+    m = copy.deepcopy(r); m["match"]["exprs"][0]["op"] = "Equal"; muts["wrong header op"] = m
+    m = copy.deepcopy(r); m["match"].pop("hosts"); muts["no hosts"] = m
+    m = copy.deepcopy(r); m["match"]["hosts"] = ["*.local.narwhal.internal"]; muts["wrong hosts"] = m
     m = copy.deepcopy(r); m["plugins"] = [p for p in m["plugins"] if p["name"] != "proxy-rewrite"]; muts["no header strip"] = m
     m = copy.deepcopy(r); m["plugins"].append({"name": "openid-connect", "enable": True}); muts["oidc on bypass"] = m
     missed = [n for n, x in muts.items() if not errors(x)]

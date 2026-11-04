@@ -1,0 +1,299 @@
+{
+  "source": "VERSIONS.md",
+  "rows": [
+    {
+      "component": "Kubernetes",
+      "section": "Core Components",
+      "version": "1.35.7",
+      "chartVersion": null
+    },
+    {
+      "component": "containerd",
+      "section": "Core Components",
+      "version": "1.7",
+      "chartVersion": null
+    },
+    {
+      "component": "kubeadm",
+      "section": "Core Components",
+      "version": "1.35.7",
+      "chartVersion": null
+    },
+    {
+      "component": "kubelet",
+      "section": "Core Components",
+      "version": "1.35.7",
+      "chartVersion": null
+    },
+    {
+      "component": "kubectl",
+      "section": "Core Components",
+      "version": "1.35.7",
+      "chartVersion": null
+    },
+    {
+      "component": "Cilium",
+      "section": "Networking",
+      "version": "1.19.4",
+      "chartVersion": null
+    },
+    {
+      "component": "Cilium CLI",
+      "section": "Networking",
+      "version": "0.19.4",
+      "chartVersion": null
+    },
+    {
+      "component": "APISIX",
+      "section": "Networking",
+      "version": "3.15.0",
+      "chartVersion": "2.13.0"
+    },
+    {
+      "component": "APISIX Ingress Controller",
+      "section": "Networking",
+      "version": "1.8.0",
+      "chartVersion": null
+    },
+    {
+      "component": "etcd (APISIX)",
+      "section": "Networking",
+      "version": "3.5.31",
+      "chartVersion": null
+    },
+    {
+      "component": "MetalLB",
+      "section": "Networking",
+      "version": "0.16.1",
+      "chartVersion": "0.16.1"
+    },
+    {
+      "component": "Gateway API CRDs",
+      "section": "Networking",
+      "version": "1.5.1",
+      "chartVersion": null
+    },
+    {
+      "component": "Hubble",
+      "section": "Networking",
+      "version": "1.19.4",
+      "chartVersion": null
+    },
+    {
+      "component": "Hubble CLI",
+      "section": "Networking",
+      "version": "1.19.4",
+      "chartVersion": null
+    },
+    {
+      "component": "kube-vip",
+      "section": "Networking",
+      "version": "1.1.2",
+      "chartVersion": null
+    },
+    {
+      "component": "Istio",
+      "section": "Service Mesh",
+      "version": "1.30.1",
+      "chartVersion": null
+    },
+    {
+      "component": "ztunnel",
+      "section": "Service Mesh",
+      "version": "1.30.1",
+      "chartVersion": null
+    },
+    {
+      "component": "istio-cni",
+      "section": "Service Mesh",
+      "version": "1.30.1",
+      "chartVersion": null
+    },
+    {
+      "component": "csi-driver-nfs",
+      "section": "Storage",
+      "version": "4.13.2",
+      "chartVersion": "4.13.2"
+    },
+    {
+      "component": "nfs-quota-agent",
+      "section": "Storage",
+      "version": "0.5.0",
+      "chartVersion": null
+    },
+    {
+      "component": "SeaweedFS",
+      "section": "Storage",
+      "version": "4.34",
+      "chartVersion": "4.34.0"
+    },
+    {
+      "component": "CloudNative-PG",
+      "section": "Database",
+      "version": "1.29.1",
+      "chartVersion": "0.28.3"
+    },
+    {
+      "component": "PostgreSQL",
+      "section": "Database",
+      "version": "18.3",
+      "chartVersion": null
+    },
+    {
+      "component": "Keycloak",
+      "section": "Identity & Access",
+      "version": "26.5.7",
+      "chartVersion": null
+    },
+    {
+      "component": "Keycloak Operator",
+      "section": "Identity & Access",
+      "version": "26.5.7",
+      "chartVersion": null
+    },
+    {
+      "component": "cert-manager",
+      "section": "Security",
+      "version": "1.20.2",
+      "chartVersion": "1.20.2"
+    },
+    {
+      "component": "OpenBao",
+      "section": "Security",
+      "version": "2.5.4",
+      "chartVersion": "0.28.3"
+    },
+    {
+      "component": "Kyverno",
+      "section": "Security",
+      "version": "1.18.1",
+      "chartVersion": "3.8.1"
+    },
+    {
+      "component": "Falco",
+      "section": "Security",
+      "version": "0.45.1",
+      "chartVersion": "9.2.1"
+    },
+    {
+      "component": "Falcosidekick",
+      "section": "Security",
+      "version": "2.35.0",
+      "chartVersion": "0.14.1"
+    },
+    {
+      "component": "Velero",
+      "section": "Backup",
+      "version": "1.18.1",
+      "chartVersion": "12.0.3"
+    },
+    {
+      "component": "velero-plugin-for-aws",
+      "section": "Backup",
+      "version": "1.14.1",
+      "chartVersion": null
+    },
+    {
+      "component": "velero-ui",
+      "section": "Backup",
+      "version": "0.10.1",
+      "chartVersion": "0.14.0"
+    },
+    {
+      "component": "Prometheus",
+      "section": "Observability",
+      "version": "86.2.3",
+      "chartVersion": "86.2.3"
+    },
+    {
+      "component": "Loki",
+      "section": "Observability",
+      "version": "3.7.3",
+      "chartVersion": "18.4.0"
+    },
+    {
+      "component": "Grafana Alloy (k8s-monitoring)",
+      "section": "Observability",
+      "version": "4.2.0",
+      "chartVersion": "4.2.0"
+    },
+    {
+      "component": "Tempo",
+      "section": "Observability",
+      "version": "2.9.0",
+      "chartVersion": "2.2.3"
+    },
+    {
+      "component": "Gitea",
+      "section": "Git / GitOps",
+      "version": "1.26.2",
+      "chartVersion": "12.6.0"
+    },
+    {
+      "component": "ArgoCD",
+      "section": "Git / GitOps",
+      "version": "3.4.4",
+      "chartVersion": null
+    },
+    {
+      "component": "Harbor",
+      "section": "Registry",
+      "version": "2.15.1",
+      "chartVersion": "1.19.1"
+    },
+    {
+      "component": "IDP Portal",
+      "section": "IDP Portal",
+      "version": "1.1.5",
+      "chartVersion": null
+    },
+    {
+      "component": "Next.js",
+      "section": "IDP Portal",
+      "version": "16.4.2",
+      "chartVersion": null
+    },
+    {
+      "component": "NextAuth.js",
+      "section": "IDP Portal",
+      "version": "5.0.0",
+      "chartVersion": null
+    },
+    {
+      "component": "Headlamp",
+      "section": "Dashboard",
+      "version": "0.46.0",
+      "chartVersion": "0.46.0"
+    },
+    {
+      "component": "Helm",
+      "section": "Addons",
+      "version": "4.2.1",
+      "chartVersion": null
+    },
+    {
+      "component": "metrics-server",
+      "section": "Addons",
+      "version": "0.8.1",
+      "chartVersion": "3.13.1"
+    },
+    {
+      "component": "Vagrant",
+      "section": "Base Infrastructure",
+      "version": "2.4",
+      "chartVersion": null
+    },
+    {
+      "component": "VirtualBox",
+      "section": "Base Infrastructure",
+      "version": "7.1",
+      "chartVersion": null
+    },
+    {
+      "component": "Ubuntu",
+      "section": "Base Infrastructure",
+      "version": "26.04",
+      "chartVersion": null
+    }
+  ]
+}

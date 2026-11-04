@@ -1,0 +1,73 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-portal-oss-updates-20261104",
+  "task": "Owner request: an OSS updates menu and process for the IDP portal, scoped to a status view plus a request flow. The portal never changes the cluster; the upgrade still goes PR -> independent review -> GitOps. Declared versions come from VERSIONS.md via a committed generated snapshot, running versions from Argo CD and Trivy (existing portal access), upstream latest from an opt-in public GitHub lookup that is off by default (air-gap). The request flow generates issue text with the narwhal-version-upgrade checklist (no tracker credential in this change) and records an audit event. High-risk paths touched: .github/workflows/version-check.yml (one added sync-check step and two path filters) and .agents/skills/narwhal-version-upgrade/SKILL.md. No live cluster was available; live verification is listed, not claimed.",
+  "changeContext": {
+    "paths": [
+      ".agents/evals/traces/2026-11-portal-oss-updates.json",
+      ".agents/skills/narwhal-version-upgrade/SKILL.md",
+      ".github/workflows/version-check.yml",
+      "docs/common/oss-update-process.md",
+      "portal/scripts/gen-oss-versions.mjs",
+      "portal/src/data/oss-versions.generated.json",
+      "portal/src/lib/oss-updates/**",
+      "portal/src/app/api/settings/oss-updates/**",
+      "portal/src/components/settings/oss-updates-table.tsx",
+      "portal/src/lib/cache-keys.ts",
+      "portal/src/lib/i18n.ts"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Add a read-only Settings tab (cluster-admin gate shared with every Settings tab) and one POST that only generates issue text and writes an audit event. Deliberately left alone: RBAC and the chart (Argo CD and Trivy are already read by the portal), every credential (no GitHub/Gitea token is read or required), Dependabot config, check-version-consistency.sh, the live cluster, and the portal's GitOps pin. The only workflow change is one extra step in version-check.yml running node portal/scripts/gen-oss-versions.mjs --check, plus the two paths that feed it, so a VERSIONS.md-only PR cannot desync the snapshot."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "No portal surface shows declared vs running vs upstream versions, cooling, or a request path; version bumps start from ad-hoc research and the 7-day cooling rule lives only in a lockfile script and skill prose. The portal image builds from portal/ alone, so it cannot read VERSIONS.md at runtime.",
+      "evidence": [
+        "doc:.agents/skills/narwhal-version-upgrade/SKILL.md",
+        "doc:docs/common/oss-update-process.md"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "Implemented: generator + committed JSON with --check (D: committed snapshot over runtime read); status service joining catalog, Argo targetRevision, Trivy image tags/CVEs and optional GitHub releases (flag OSS_UPDATES_UPSTREAM, default off, failures cached 10 min as unknown, 6 h on success); cooling gate (409) and idempotent request (14 day Valkey claim) with an oss.update.request audit operation; KO/EN i18n; process doc linked from the skill and the tab."
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "portal unit/route/component tests for version math, air-gap no-egress, upstream failure degradation, auth gates, validation, cooling, idempotency and audit; i18n parity and cache-key contract tests; generated-JSON sync test",
+      "evidence": [
+        "test:cd portal && pnpm typecheck && pnpm lint && pnpm test && pnpm build -> pass",
+        "test:bash portal/scripts/harness-rules.sh -> OK, hardcoded Korean 0"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "verification",
+      "status": "passed",
+      "scope": "Rendered the tab in a local next dev with AUTH_MOCK (browser, Playwright/Chromium): mocked connected data (cooling, drift, held minor, major gap), the real API in air-gap mode (24 rows, every upstream/running/CVE cell unknown, page usable), and the request dialog replaying a duplicate. NOT covered: a real cluster (Argo CD application list, Trivy reports), GitHub lookup against the real API from a connected cluster, Valkey-backed idempotency across replicas, a screen reader pass.",
+      "evidence": [
+        "runtime:browser screenshots /tmp/oss-shots/oss-updates-connected-mock.png, oss-updates-airgap-real-api.png, oss-updates-request-dialog.png",
+        "test:GET /api/settings/oss-updates -> 200 upstreamLookup=disabled argocd=unavailable trivy=unavailable rows=24"
+      ]
+    },
+    {
+      "id": "e6",
+      "type": "completion_claim",
+      "summary": "A cluster-admin can see declared/running/upstream state with cooling and gaps, and generate an audited, de-duplicated upgrade request; nothing mutates the cluster, and with upstream lookup off the page degrades to unknown."
+    },
+    {
+      "id": "e7",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Complete and verified locally; live-cluster data sources, connected upstream lookup and token mode remain unverified/unimplemented."
+    }
+  ]
+}

@@ -7,6 +7,8 @@ on:
       - 'scripts/**'
       - 'gitops/**'
       - 'Vagrantfile'
+      - 'portal/scripts/gen-oss-versions.mjs'
+      - 'portal/src/data/oss-versions.generated.json'
       - '.github/workflows/version-check.yml'
 
 concurrency:
@@ -24,3 +26,5 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Check version consistency
         run: bash scripts/ci/check-version-consistency.sh
+      - name: Check portal OSS versions snapshot
+        run: node portal/scripts/gen-oss-versions.mjs --check

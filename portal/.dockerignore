@@ -35,3 +35,6 @@ coverage/
 # 인증서 비밀키 — 절대 이미지에 포함 금지
 certs/*.key
 *.pem
+# versions-sync.test.ts imports scripts/gen-oss-versions.mjs, which is excluded above;
+# the image build typechecks every .ts, so keep this repo-only test out of the context.
+src/lib/oss-updates/versions-sync.test.ts

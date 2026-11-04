@@ -274,6 +274,9 @@ export const cacheKeys = {
   healthDependencies: () => "health:dependencies",
   healthSummary: () => "health:summary",
   liveK8sInformerLease: () => "live:k8s-informer:lease",
+
+  // OSS updates view: upstream release list per GitHub repo (public, unauthenticated lookup).
+  ossUpstreamReleases: (repo: string) => join("oss-updates", "upstream", repo),
 } as const
 
 /**
@@ -1046,6 +1049,23 @@ export const CACHE_NAMESPACES: Record<string, CacheNamespaceSpec> = {
     securitySensitive: false,
     unscopedReason: { code: "cluster-wide-state", detail: "Same redacted aggregate for every authenticated user; contains no per-user data." },
   },
+  "oss-updates:upstream": {
+    example: "oss-updates:upstream:{owner/repo}",
+    dimensions: ["query"],
+    ttlSeconds: 21600,
+    owner: "src/lib/oss-updates/upstream.ts",
+    ownerPath: "src/app/api/settings/oss-updates/route.ts",
+    invalidation:
+      "TTL only (6h). Public GitHub release metadata, identical for every caller. A failed lookup is stored for a " +
+      "short 10 min as an explicit 'unknown' marker (not a partial release list) so an unreachable GitHub does not " +
+      "re-run a timeout per component on every page load. The lookup itself is off unless OSS_UPDATES_UPSTREAM=true.",
+    cachesPartial: false,
+    securitySensitive: false,
+    unscopedReason: {
+      code: "admin-only-route",
+      detail: "requireRole('cluster-admin')-gated; the value is public upstream release data, never per-caller.",
+    },
+  },
   "live:k8s-informer:lease": {
     example: "live:k8s-informer:lease",
     dimensions: [],
@@ -1248,6 +1268,7 @@ export const BUILDER_CHECKS: Record<keyof typeof cacheKeys, BuilderCheck> = {
   healthDependencies: { registryKey: "health:dependencies", ttlSeconds: 10, args: [], dimensionArgIndex: {} },
   healthSummary: { registryKey: "health:summary", ttlSeconds: 20, args: [], dimensionArgIndex: {} },
   liveK8sInformerLease: { registryKey: "live:k8s-informer:lease", ttlSeconds: 15, args: [], dimensionArgIndex: {} },
+  ossUpstreamReleases: { registryKey: "oss-updates:upstream", ttlSeconds: 21600, args: ["owner/repo-1"], dimensionArgIndex: { query: 0 } },
 }
 
 /**

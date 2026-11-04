@@ -1,0 +1,56 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-kyverno-policy-descriptions-20261105",
+  "task": "Add the standard policies.kyverno.io annotations (title/category/severity/subject/description) to the 8 ClusterPolicies that lacked them (disallow-privileged-containers, disallow-host-namespaces, disallow-host-ports, require-labels, disallow-latest-tag, restrict-image-registries, add-default-securitycontext, headlamp-probe-tuning) so the Portal policy detail panel shows real descriptions. Annotations only: no rule, spec, match/exclude or action change.",
+  "changeContext": {
+    "paths": [
+      ".agents/evals/traces/2026-11-kyverno-policy-descriptions.json",
+      "gitops/resources/headlamp-policy.yaml",
+      "gitops/resources/kyverno-policies.yaml"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Only metadata.annotations of 8 ClusterPolicies change (git diff is additions only). Each description was written from the policy's own rules, match/exclude and validationFailureAction (Enforce for privileged, host-namespaces, host-ports, latest-tag; Audit for require-labels and restrict-image-registries; mutate for add-default-securitycontext and headlamp-probe-tuning). Deliberately left alone: all spec fields, the 3 already-annotated policies, the Portal, and the live cluster (no apply; the orchestrator pushes to Gitea)."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "Before the change the 8 policies carried only title (and for some a category) and no description, so the Portal policy detail panel had nothing to show; verify-image-signatures, restrict-tuning-job-admission, tuning-job-control-plane-node-guard and narwhal-portal-job-restrictions already carried descriptions."
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "Added severity, subject and description (plus category for require-labels and disallow-latest-tag, Best Practices) in gitops/resources/kyverno-policies.yaml and gitops/resources/headlamp-policy.yaml. Noted accurately in descriptions: disallow-latest-tag does not match untagged images, restrict-image-registries checks containers only (not init/ephemeral), add-default-securitycontext only adds seccompProfile when absent and does not inject runAsNonRoot."
+    },
+    {
+      "id": "e4",
+      "type": "review_correction",
+      "summary": "No review correction yet; independent review is pending (Narwhal merge gate)."
+    },
+    {
+      "id": "e5",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "YAML parse of both files, server-side dry-run apply against the local narwhal cluster, make validate and make test. NOT covered: a live apply, and the Portal rendering of the new fields.",
+      "evidence": [
+        "test:kubectl --context narwhal apply --dry-run=server -f gitops/resources/kyverno-policies.yaml and headlamp-policy.yaml -> all 11 ClusterPolicies 'configured (server dry run)'",
+        "test:python yaml.safe_load_all of both files -> every edited policy has title, category, severity, subject, description"
+      ]
+    },
+    {
+      "id": "e6",
+      "type": "completion_claim",
+      "summary": "In the repository, the 8 ClusterPolicies carry accurate standard Kyverno annotations and the manifests are accepted by a server-side dry-run on the local cluster. Not applied live and not rendered in the Portal."
+    },
+    {
+      "id": "e7",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Complete within repository scope; live rollout is the orchestrator's push to Gitea."
+    }
+  ]
+}

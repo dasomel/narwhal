@@ -1006,6 +1006,43 @@ spec:
                 X-Content-Type-Options: "nosniff"
                 X-Frame-Options: "SAMEORIGIN"
                 X-XSS-Protection: "1; mode=block"
+    # D-VELERO-UI-ADMIN-ONLY: velero-ui 0.10.1 puts no policy check on POST /api/backups/download,
+    # so any logged-in user (guest included) gets a download URL for a backup. The gateway has no
+    # user identity here (app-native OAuth), so the endpoint is closed for everyone; the policy-
+    # checked GET /api/backups/:name/download stays. Cost: no bulk download in the UI.
+    # Escape hatch: delete this rule once upstream adds the check.
+    - name: velero-ui-block-bulk-download
+      priority: 10
+      match:
+        hosts:
+          - velero-ui.{{ .Values.baseDomain }}
+        # The APISIX path match is case-sensitive, so a path prefix is bypassed by /API/backups/...;
+        # match every path and decide on the case-insensitive regex below.
+        paths:
+          - "/*"
+        methods:
+          - POST
+        # Express matches non-strict and case-insensitive, so /api/backups/download/, /Api/Backups/Download
+        # and (after nginx merges slashes) //api//backups//download reach the same handler.
+        exprs:
+          - subject:
+              scope: Path
+            op: RegexMatchCaseInsensitive
+            value: "^/+api/+backups/+download/*$"
+      upstreams:
+        - name: velero-ui
+      plugins:
+        - name: serverless-pre-function
+          enable: true
+          config:
+            phase: rewrite
+            functions:
+              - |
+                return function(conf, ctx)
+                  ngx.status = 403
+                  ngx.say("403 Forbidden: bulk backup download is disabled")
+                  return ngx.exit(403)
+                end
     - name: velero-ui
       match:
         hosts:

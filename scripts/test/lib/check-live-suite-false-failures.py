@@ -224,6 +224,46 @@ for page, expected in [('<html>no form</html>', 'NOFORM'), ('<form action="x"><i
             f"curl() {{ printf '%s' '{page}'; }}")
   check(out.strip() == expected, f'gateway_login unparseable form -> {expected}')
 
+# D-VELERO-UI-ADMIN-ONLY: velero-ui falls back to `manage all` for everyone when no policy loads, so
+# the chart must mount a policy with exactly one valid group line for cluster-admin and no wildcard
+# (`*`) or user line, the gateway must close the unguarded bulk download, and the live check must
+# cover the four users, fail on an empty token and create nothing.
+vu_app = (ROOT / 'gitops/charts/narwhal-apps/templates/velero-ui.yaml').read_text()
+vu_routes = (ROOT / 'gitops/charts/narwhal-platform/templates/apisix-routes.yaml').read_text()
+vu_pol = re.search(r'policies:\n\s+enabled: true\n\s+value: \|\n((?: {14}\S[^\n]*\n)+)', vu_app)
+vu_lines = [l.strip() for l in vu_pol.group(1).splitlines() if l.strip() and not l.strip().startswith('#')] if vu_pol else []
+check(vu_lines == ['g,cluster-admin,manage,all'], 'velero-ui policy is exactly g,cluster-admin,manage,all')
+vu_rule = block(vu_routes, 'name: velero-ui-block-bulk-download', 'name: velero-ui\n')
+check('RegexMatchCaseInsensitive' in vu_rule and '"^/+api/+backups/+download/*$"' in vu_rule and
+      '- "/*"' in vu_rule and '/api/backups/*' not in vu_rule and
+      '- POST' in vu_rule and 'priority: 10' in vu_rule,
+      'velero-ui bulk download closed at the gateway, trailing slash and case variants included')
+# The regex must accept the exact path, a trailing slash and any case, and nothing else.
+vu_re = re.compile(r'^/+api/+backups/+download/*$', re.I)
+check(all(vu_re.match(u) for u in ['/api/backups/download', '/api/backups/download/', '/api/backups/Download', '/API/backups/download',
+                                   '/Api/Backups/Download', '/api/BACKUPS/download', '/API/BACKUPS/DOWNLOAD//', '//api//backups//download']) and
+      not any(vu_re.match(u) for u in ['/api/backups/downloads', '/api/backups/x/download', '/api/backups']),
+      'velero-ui bulk download regex covers the variants and only them')
+# D-VELERO-UI-JWT-KEY: the session JWT key must come from a Secret the provisioning generates, never the
+# upstream literal; auth must be OAuth-only so noAuthRequired() cannot open the API.
+vu_env = re.findall(r'- name: AUTH_SECRET_PASSPHRASE\n((?: {12,}\S[^\n]*\n)*)', vu_app)
+check(len(vu_env) == 1 and re.match(r'\s+valueFrom:\n\s+secretKeyRef:\n\s+name: velero-ui-oauth\n\s+key: passphrase\n?$', vu_env[0]) is not None and
+      not re.search(r'^\s+value:', vu_env[0], re.M),
+      'velero-ui JWT key comes from secretKeyRef velero-ui-oauth/passphrase, no literal value')
+check(re.search(r'- name: OAUTH_AUTH_ENABLED\n\s+value: "true"', vu_app) is not None and
+      re.search(r'- name: BASIC_AUTH_ENABLED\n\s+value: "false"', vu_app) is not None,
+      'velero-ui auth is OAuth-only (all-providers-off would make the API public)')
+vu_gen = block(clients_text, 'VU_TMP=$(mktemp -d)', 'echo "  secret \'velero-ui-oauth\' created')
+check('openssl rand -base64 32' in vu_gen and '--from-file=passphrase="${VU_TMP}/passphrase"' in vu_gen and
+      '--from-file=client_secret="${VU_TMP}/client_secret"' in vu_gen and '--from-literal' not in vu_gen and
+      'jsonpath=\'{.data.passphrase}\'' in vu_gen and "grep -q 'NotFound'" in vu_gen and 'exit 1' in vu_gen and
+      'chmod 600' in vu_gen and "trap 'rm -rf" in vu_gen and 'echo "${VELERO_UI_PASSPHRASE}"' not in vu_gen,
+      '11-3 generates the velero-ui passphrase once (only on NotFound), passes it via 0600 files not argv and never prints it')
+check('for vu_user in admin view dev guest; do' in sso and
+      'fail "velero-ui: ${vu_user} login/token exchange failed, cannot verify"' in sso and
+      'vu_expect "${VU_CREATE}" 400' in sso and 'vu_expect "${VU_DELETE}" 403' in sso and
+      'vu_expect "${VU_LIST}" 403' in sso, 'velero-ui live check shape')
+
 headlamp = 'HEADLAMP_API_CODE=' + block(sso, '  HEADLAMP_API_CODE=', '\n\n')
 for code in ['401', '403', '200', '302', '500', '000']:
   out = run(headlamp, f'DOMAIN=test.internal\ncurl() {{ echo {code}; }}')

@@ -35,6 +35,18 @@ spec:
             secretPassPhrase:
               existingSecret: "velero-ui-oauth"
               key: "passphrase"
+          # D-VELERO-UI-ADMIN-ONLY: only Keycloak group cluster-admin may use the UI. The app
+          # grants `manage all` to every user when no policy file loads (casl-ability.factory.ts
+          # onModuleInit), so the file is mounted from a ConfigMap (a missing ConfigMap keeps the
+          # pod in ContainerCreating = fail closed) and holds one valid group line and no `*`
+          # wildcard line. Groups come from the userinfo `groups` claim (OAUTH_GROUP_CLAIM). Other
+          # users log in with zero permissions and get HTTP 403 from the API.
+          # Escape hatch: add `g,<group>,<action>,<subject>` lines (lines the app cannot parse
+          # are skipped; a file with no valid line re-opens the app to everyone, R293 pins this).
+          policies:
+            enabled: true
+            value: |
+              g,cluster-admin,manage,all
 
         # privileged 명시 + kyverno add-default-securitycontext가 주입하는
         # runAsNonRoot: true에 대응해 숫자 UID 명시 (이미지 USER가 'node'라
@@ -95,6 +107,14 @@ spec:
               secretKeyRef:
                 name: velero-ui-oauth
                 key: client_secret
+          # D-VELERO-UI-JWT-KEY: chart 0.14.0 never wires secretPassPhrase into the pod, and the app
+          # falls back to the public literal 'this is the secret pass phrase' for the JWT key, so the
+          # env is set here from the secret 11-3 generates (openssl rand). R293 pins it.
+          - name: AUTH_SECRET_PASSPHRASE
+            valueFrom:
+              secretKeyRef:
+                name: velero-ui-oauth
+                key: passphrase
           - name: OAUTH_OAUTH_SCOPE
             value: "openid profile email groups"
           - name: OAUTH_GROUP_CLAIM

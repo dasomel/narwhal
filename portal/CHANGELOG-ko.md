@@ -38,6 +38,10 @@
 
 ### 수정
 
+- **비용: 서비스 분해가 비어 있음 (narwhal#559)**: `kube_pod_labels`의 `app.kubernetes.io/instance`로만
+  묶었는데 kube-state-metrics가 그 지표를 내보내지 않아 모든 워크로드가 제외됐다. 이제 instance, name, app,
+  k8s-app, 소유 워크로드, 파드 이름 순으로 귀속하고(대체 기준 행은 추정으로 표시), 남는 것은 보이는
+  "(미분류)" 행에 모으며 행 합계가 클러스터 총액과 같다. 같은 PR의 kube-state-metrics 라벨 allowlist가 필요하다.
 - **인증서: 갱신이 항상 실패함 (narwhal#549)**: 포털이 `spec.renewBefore: "1s"`를 패치했으나
   cert-manager 웹훅이 5분 미만을 거부했고, 포털 ServiceAccount는 인증서 `get`만 가능했음. 이제
   `cmctl renew`와 같이 `/status` 서브리소스로 `Issuing` 조건을 `True`(`ManuallyTriggered`)로

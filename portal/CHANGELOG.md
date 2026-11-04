@@ -40,6 +40,12 @@ Everything since `portal/v1.1.5` is covered here.
 
 ### Fixed
 
+- **Cost: the service breakdown was empty (narwhal#559)**: it grouped pods only by
+  `app.kubernetes.io/instance` from `kube_pod_labels`, which kube-state-metrics did not export, so every
+  workload was excluded. Pods are now attributed by instance, name, app, k8s-app, owner workload or
+  pod-name stem (fallback rows are marked as estimated), anything left lands in a visible
+  "(unclassified)" row, and row totals equal the cluster total. Needs the kube-state-metrics
+  label allowlist from the same PR.
 - **Certificates: renew always failed (narwhal#549)**: the portal patched `spec.renewBefore: "1s"`,
   which the cert-manager webhook rejects (minimum 5 minutes), and its ServiceAccount could only `get`
   certificates. Renewal now works as `cmctl renew` does: set the `Issuing` condition to `True`

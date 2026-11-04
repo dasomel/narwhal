@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { formatLeadTime } from "@/lib/dora-duration"
 import { useT } from "@/lib/i18n-client"
 import { DataState } from "@/components/ui/data-state"
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts"
@@ -124,8 +125,8 @@ export function DoraMetricsWidget() {
         />
         <StatCard
           title={t("dora.leadTime")}
-          value={data.leadTimeHours !== null ? data.leadTimeHours.toFixed(1) : "—"}
-          unit={data.leadTimeHours !== null ? t("dora.leadTimeUnit") : ""}
+          value={formatLeadTime(data, t)}
+          unit=""
           desc={t("dora.leadTimeDesc")}
           status={leadStatus}
         />
@@ -205,8 +206,8 @@ export function DoraMetricsWidget() {
                         <TableCell className="py-2 text-xs text-muted-foreground font-mono">{appItem.namespace}</TableCell>
                         <TableCell className="py-2 text-center text-xs tabular-nums font-medium">{appItem.deploys}</TableCell>
                         <TableCell className="py-2 text-right text-xs tabular-nums text-muted-foreground">
-                          {appItem.leadTimeHours !== null ? (
-                            `${appItem.leadTimeHours.toFixed(1)}h`
+                          {(appItem.leadTimeMinutes ?? appItem.leadTimeHours) !== null ? (
+                            formatLeadTime(appItem, t)
                           ) : appItem.leadTimeApplicable === false ? (
                             <span title={t("dora.leadTimeHelmHint")}>{t("dora.leadTimeHelm")}</span>
                           ) : (

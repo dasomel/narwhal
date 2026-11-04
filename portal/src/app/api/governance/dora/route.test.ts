@@ -203,3 +203,51 @@ describe("GET /api/governance/dora — only git SHAs are looked up (Gitea SSO-re
     expect(byApp["chart-v-app"].leadTimeApplicable).toBe(false)
   })
 })
+
+describe("GET /api/governance/dora — minute precision", () => {
+  it("preserves fractional minutes and weighted averages through the cache", async () => {
+    vi.mocked(auth).mockResolvedValue(platformTeamSession as never)
+    const first = fakeApp("first", "platform", "platform-system", "aaaaaaa1111")
+    const second = fakeApp("second", "platform", "platform-system", "bbbbbbb2222")
+    const deployedAt = first.status.history![0].deployedAt
+    second.status.history![0].deployedAt = deployedAt
+    first.status.history!.push({ id: 2, revision: "ccccccc3333", deployedAt })
+    vi.mocked(getArgoApps).mockResolvedValue([first, second])
+    const durations: Record<string, number> = { aaaaaaa1111: 30000, bbbbbbb2222: 150000, ccccccc3333: 90000 }
+    vi.mocked(getCommitTimestamp).mockImplementation(async (sha) => new Date(Date.parse(deployedAt) - durations[sha]).toISOString())
+
+    const body = await (await GET()).json()
+    expect(body.leadTimeMinutes).toBe(1.5)
+    expect(body.leadTimeHours).toBe(0) // legacy rounding retained
+    expect(body.perApp.find((a: { app: string }) => a.app === "first").leadTimeMinutes).toBe(1)
+    expect(body.perApp.find((a: { app: string }) => a.app === "second").leadTimeMinutes).toBe(2.5)
+    expect(await (await GET()).json()).toEqual(body)
+  })
+
+  it.each([
+    [30000, 0.5],
+    [0, 0],
+    [-30000, 0],
+    [null, null],
+    [NaN, null],
+  ])("handles elapsed milliseconds %s as minutes %s", async (elapsed, expected) => {
+    vi.mocked(auth).mockResolvedValue(platformTeamSession as never)
+    const app = fakeApp("platform-app", "platform", "platform-system", "aaaaaaa1111")
+    vi.mocked(getArgoApps).mockResolvedValue([app])
+    const deployedAtMs = Date.parse(app.status.history![0].deployedAt)
+    vi.mocked(getCommitTimestamp).mockResolvedValue(elapsed === null ? null : Number.isNaN(elapsed) ? "invalid" : new Date(deployedAtMs - elapsed).toISOString())
+    const body = await (await GET()).json()
+    expect(body.leadTimeMinutes).toBe(expected)
+    expect(body.perApp[0].leadTimeMinutes).toBe(expected)
+    expect(body.perApp[0].leadTimeApplicable).toBe(true)
+    expect(body.leadTimeHours).toBe(expected === null ? null : 0)
+  })
+
+  it("keeps Helm apps inapplicable with null minutes", async () => {
+    vi.mocked(auth).mockResolvedValue(platformTeamSession as never)
+    vi.mocked(getArgoApps).mockResolvedValue([fakeApp("chart", "platform", "platform-system", "86.2.3")])
+    const body = await (await GET()).json()
+    expect(body.leadTimeMinutes).toBeNull()
+    expect(body.perApp[0]).toMatchObject({ leadTimeMinutes: null, leadTimeHours: null, leadTimeApplicable: false })
+  })
+})

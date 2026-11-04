@@ -1,0 +1,61 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-portal-cert-renew-20261104",
+  "task": "Owner report: Settings -> Certificates renew fails. portal renewCertificate merge-patched spec.renewBefore to 1s; the cert-manager webhook rejects it (renewBefore must be greater than 5m0s), it would not trigger renewal anyway, GitOps selfHeal would revert the drift, and the portal ServiceAccount had no patch/update on certificates; the error was swallowed into a bare 500. Switch to the cmctl renew mechanism (Issuing condition on the status subresource) with a minimal RBAC grant.",
+  "changeContext": {
+    "paths": [
+      ".agents/evals/traces/2026-11-portal-cert-renew.json",
+      "gitops/charts/narwhal-platform/templates/narwhal-portal-k8s.yaml",
+      "portal/docs/lessons-log.md",
+      "portal/src/app/api/settings/certs/renew/route.test.ts",
+      "portal/src/app/api/settings/certs/renew/route.ts",
+      "portal/src/lib/k8s-client.renew.test.ts",
+      "portal/src/lib/k8s-client.ts"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "renewCertificate GETs the Certificate, upserts the Issuing condition (status True, reason ManuallyTriggered, observedGeneration, lastTransitionTime) preserving other conditions, and PUTs /status exactly as cmctl pkg/renew/renew.go (v2.6.2) does with UpdateStatus; one re-read on 409. Never writes spec. ClusterRole narwhal-portal gets only update on cert-manager.io certificates/status (D-CERT-RENEW-ISSUING). The route authz gate (requireRole cluster-admin), idempotency and audit are unchanged; k8s 403/404/409/422 now map to meaningful responses and the error status is logged without bodies. Deliberately left alone: pre-existing behaviour that a failed renewal leaves the Idempotency-Key claim pending, and the post-renewal read-back pending/converged logic."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "Server dry-run of the old merge patch against the live cluster returned spec.renewBefore: Invalid value: 1000000000: certificate renewBefore must be greater than 5m0s; kubectl auth can-i showed the portal SA could get but not patch/update certificates.",
+      "evidence": [
+        "runtime:kubectl --context narwhal apply --dry-run=server of spec.renewBefore 1s -> webhook rejection",
+        "doc:portal/src/lib/k8s-client.ts"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "Implemented the status-subresource renewal in portal/src/lib/k8s-client.ts, mapped k8s errors in the route, added the certificates/status update rule to the portal ClusterRole, and added k8s-client.renew.test.ts plus route.test.ts cases asserting a PUT to /status with an Issuing condition, other conditions kept, spec byte-equal, and 403/404/422 mapping."
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "unit and static: pnpm typecheck, lint, test, build; LIVE on the local cluster (2026-11-04): RBAC applied via scripts/gitops/push-to-gitea.sh, renewal executed with the portal SA identity. NOT covered: the in-cluster portal pod itself (the dev image push to Harbor failed twice with a 502 on the NFS-backed registry, so the route was exercised from a local build with AUTH_MOCK against kubectl proxy impersonating system:serviceaccount:devtools:narwhal-portal), the real Keycloak login path, the 403-from-k8s mapping live.",
+      "evidence": [
+        "runtime:kubectl auth can-i update certificates --subresource=status as the portal SA -> yes; update/patch certificates -> no",
+        "runtime:POST /api/settings/certs/renew as cluster-admin -> 200; CertificateRequest narwhal-wildcard-tls-3 created, Ready=True, secret notBefore 2026-11-03T16:09:27Z -> 2026-11-03T16:11:41Z; first run 2026-11-01T23:57:15Z -> 2026-11-03T16:09:27Z",
+        "runtime:viewer session -> 403, unauthenticated -> 401, unknown certificate -> 404, repeated Idempotency-Key -> duplicate:true",
+        "test:pnpm test -> 2097 passed"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "completion_claim",
+      "summary": "Settings -> Certificates renew triggers a real cert-manager re-issuance through the status subresource, with the portal ServiceAccount limited to update on certificates/status."
+    },
+    {
+      "id": "e6",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Complete and verified against the live cluster with the portal SA identity; the in-pod route and Keycloak login remain unverified."
+    }
+  ]
+}

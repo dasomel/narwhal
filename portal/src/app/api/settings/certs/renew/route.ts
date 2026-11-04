@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server"
 import { requireRole, getActorId } from "@/lib/auth"
-import { getCertificate, renewCertificate } from "@/lib/k8s-client"
+import { getCertificate, renewCertificate, K8sHttpError } from "@/lib/k8s-client"
 import { ValidationError, toValidationErrorBody } from "@/lib/validation"
 import { beginOperation, completeOperation, failOperation } from "@/lib/operation-context"
 import { claimIdempotencyKey, fulfillIdempotencyKey, getIdempotencyStore } from "@/lib/idempotency"
@@ -102,16 +102,23 @@ export async function POST(req: Request) {
     description: `namespace=${target.namespace}; issuer=${before.issuer}; notAfter=${before.notAfter ?? "unknown"}`,
   })
 
-  let ok: boolean
   try {
-    ok = await renewCertificate(target.name, target.namespace)
+    await renewCertificate(target.name, target.namespace)
   } catch (err) {
     await failOperation(ctx, `Certificate renewal failed: ${target.name}`, (err as Error).message)
+    if (err instanceof K8sHttpError) {
+      // 403: portal SA lacks update on certificates/status; 404: deleted since the check;
+      // 409: status write conflict survived one retry; 422: rejected by cert-manager.
+      const mapped: Record<number, string> = {
+        403: "Portal service account is not permitted to trigger certificate renewal",
+        404: "Certificate not found",
+        409: "Certificate changed during renewal; retry",
+        422: "Certificate renewal rejected by cert-manager",
+      }
+      const error = mapped[err.status]
+      return NextResponse.json({ error: error ?? "Renewal failed" }, { status: error ? err.status : 500 })
+    }
     throw err
-  }
-  if (!ok) {
-    await failOperation(ctx, `Certificate renewal failed: ${target.name}`, "renewCertificate returned false")
-    return NextResponse.json({ error: "Renewal failed" }, { status: 500 })
   }
 
   await invalidateFor("certificate.renewed", { namespace: target.namespace, name: target.name })

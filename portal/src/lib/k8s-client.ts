@@ -539,23 +539,60 @@ export interface NamespaceResourceUsage {
 // "the renewal call itself failed" (500, safe to retry). Validation errors now
 // propagate — the route catches ValidationError the same way other mutation
 // routes do (e.g. PATCH /api/settings/users/[pk]).
-export async function renewCertificate(name: string, namespace: string): Promise<boolean> {
+// D-CERT-RENEW-ISSUING: renewal triggers re-issuance the way `cmctl renew` does
+// (cert-manager/cmctl pkg/renew/renew.go, v2.6.2, against cert-manager v1.20.x):
+// set the `Issuing` condition (reason ManuallyTriggered) on the status subresource
+// and cert-manager's issuing controller does the rest. cmctl GETs the Certificate,
+// upserts the condition via apiutil.SetCertificateCondition and calls UpdateStatus
+// (PUT .../status), so the other conditions survive and a stale resourceVersion
+// yields 409 instead of a clobber. Never PATCH spec.renewBefore: the webhook
+// rejects <5m, it would not trigger renewal, and GitOps selfHeal reverts spec drift.
+// Cost: ClusterRole narwhal-portal gets `update` on certificates/status (cluster-wide,
+// as the portal lists certificates cluster-wide). Escape hatch: drop that rule; the
+// route then answers 403 and renewal falls back to `cmctl renew`.
+// Failures propagate as K8sHttpError (status preserved) for the route to map.
+interface RenewableCertificate {
+  metadata: { generation?: number }
+  status?: { conditions?: Array<Record<string, unknown>> }
+}
+
+export async function renewCertificate(name: string, namespace: string): Promise<void> {
   assertK8sNamespace(namespace)
   assertK8sName(name, "certificate")
+  const path = `/apis/cert-manager.io/v1/namespaces/${safeK8sSegment(namespace)}/certificates/${safeK8sSegment(name)}`
   try {
-    await k8sFetch(
-      `/apis/cert-manager.io/v1/namespaces/${safeK8sSegment(namespace)}/certificates/${safeK8sSegment(name)}`,
-      {
-        method: "PATCH",
-        headers: { "Content-Type": "application/merge-patch+json" },
-        body: JSON.stringify({
-          spec: { renewBefore: "1s" },
-        }),
-      },
-    )
-    return true
-  } catch {
-    return false
+    for (let attempt = 0; ; attempt++) {
+      const crt = await k8sFetch<RenewableCertificate>(path)
+      const current = crt.status?.conditions ?? []
+      const existing = current.find((c) => c.type === "Issuing")
+      const issuing = {
+        type: "Issuing",
+        status: "True",
+        reason: "ManuallyTriggered",
+        message: "Certificate re-issuance manually triggered by narwhal-portal",
+        observedGeneration: crt.metadata.generation ?? 0,
+        // cmctl keeps lastTransitionTime when the condition status did not change.
+        lastTransitionTime: existing?.status === "True" && existing.lastTransitionTime
+          ? existing.lastTransitionTime
+          : new Date().toISOString(),
+      }
+      const conditions = existing ? current.map((c) => (c === existing ? issuing : c)) : [...current, issuing]
+      try {
+        await k8sFetch(`${path}/status`, {
+          method: "PUT",
+          body: JSON.stringify({ ...crt, status: { ...crt.status, conditions } }),
+        })
+        return
+      } catch (err) {
+        // 409: resourceVersion moved under us (cert-manager wrote status); re-read once.
+        if (err instanceof K8sHttpError && err.status === 409 && attempt < 1) continue
+        throw err
+      }
+    }
+  } catch (err) {
+    // Status and path only — never the request/response body or the token.
+    console.warn("[k8s] Certificate renew failed:", (err as Error).message)
+    throw err
   }
 }
 

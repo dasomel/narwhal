@@ -9,6 +9,11 @@ vi.mock("@/lib/k8s-client", () => ({
   getCertificate: vi.fn(),
   invalidateCertificatesCache: vi.fn().mockResolvedValue(undefined),
   renewCertificate: vi.fn(),
+  K8sHttpError: class K8sHttpError extends Error {
+    constructor(public readonly status: number) {
+      super(`K8s API ${status}`)
+    }
+  },
 }))
 vi.mock("@/lib/operation-context", () => ({
   beginOperation: vi.fn().mockResolvedValue({}),
@@ -18,7 +23,7 @@ vi.mock("@/lib/operation-context", () => ({
 vi.mock("@/lib/cache-invalidation", () => ({ invalidateFor: vi.fn().mockResolvedValue(undefined) }))
 
 const { requireRole } = await import("@/lib/auth")
-const { getCertificate, renewCertificate } = await import("@/lib/k8s-client")
+const { getCertificate, renewCertificate, K8sHttpError } = await import("@/lib/k8s-client")
 const { invalidateFor } = await import("@/lib/cache-invalidation")
 const { beginOperation, completeOperation, failOperation } = await import("@/lib/operation-context")
 const { POST } = await import("./route")
@@ -48,7 +53,7 @@ function req(body: unknown, headers?: Record<string, string>) {
 beforeEach(() => {
   vi.clearAllMocks()
   vi.mocked(getCertificate).mockResolvedValue(cert)
-  vi.mocked(renewCertificate).mockResolvedValue(true)
+  vi.mocked(renewCertificate).mockResolvedValue(undefined)
 })
 
 describe("POST /api/settings/certs/renew — auth boundary", () => {
@@ -98,10 +103,19 @@ describe("POST /api/settings/certs/renew — failed renewal", () => {
     vi.mocked(requireRole).mockResolvedValue({ session: adminSession } as never)
   })
 
-  it("500s and emits operation.failed when renewCertificate returns false", async () => {
-    vi.mocked(renewCertificate).mockResolvedValue(false)
+  it("500s and emits operation.failed on a non-mapped k8s error", async () => {
+    vi.mocked(renewCertificate).mockRejectedValue(new K8sHttpError(500, "x"))
     const res = await POST(req({ name: "narwhal-tls", namespace: "platform-system" }))
     expect(res.status).toBe(500)
+    expect(failOperation).toHaveBeenCalled()
+    expect(invalidateFor).not.toHaveBeenCalled()
+  })
+
+  it.each([403, 404, 422])("maps a k8s %i to the same status with a meaningful message", async (status) => {
+    vi.mocked(renewCertificate).mockRejectedValue(new K8sHttpError(status, "x"))
+    const res = await POST(req({ name: "narwhal-tls", namespace: "platform-system" }))
+    expect(res.status).toBe(status)
+    expect((await res.json()).error).not.toBe("Renewal failed")
     expect(failOperation).toHaveBeenCalled()
     expect(invalidateFor).not.toHaveBeenCalled()
   })
@@ -170,8 +184,8 @@ describe("POST /api/settings/certs/renew — idempotency", () => {
 
   it("rejects a concurrent request sharing an in-flight Idempotency-Key instead of re-renewing", async () => {
     let releaseFirst!: () => void
-    const gate = new Promise<boolean>((resolve) => {
-      releaseFirst = () => resolve(true)
+    const gate = new Promise<void>((resolve) => {
+      releaseFirst = () => resolve()
     })
     vi.mocked(renewCertificate).mockReturnValueOnce(gate)
 

@@ -237,6 +237,28 @@ python3 scripts/airgap/lib/check-security-db-freshness.py \
   ./narwhal-airgap-bundle-amd64/security-db/promoted/manifest.json
 ```
 
+### 보안 데이터 소스 인벤토리 (2026-11-05, Trivy 0.60.0 / trivy-operator 0.25.0)
+
+런타임에 온라인으로 가져오는 소스는 위 3개가 전부다. 나머지는 미러 대상이 아니다.
+
+| 소스 | 소비자 | 가져오는 곳 | 에어갭 | 조치 |
+|---|---|---|---|---|
+| trivy-db:2 | scan Job (`trivy image`) | Harbor `trivy-db` (미러) | 동작 | 미러됨, SLO 7일 |
+| trivy-java-db:1 | scan Job | Harbor (미러) | 동작 | 미러됨, SLO 7일 |
+| trivy-checks:1 | trivy-operator `policies.bundle.oci.ref` | Harbor (미러) | 동작, 단 `useBuiltinRegoPolicies=false`라 현재 로드되지 않음(임베디드 정책 사용) | 미러됨, 버전 고정(업스트림이 :1을 2025-10-09에 동결, :2는 신규 Trivy용), 나이 SLO 없음 |
+| VEX Hub / VEX repo | 없음 (`--vex repo`는 opt-in, operator 0.25.0에 설정 항목 없음) | - | 해당 없음 | 조치 없음 |
+| SBOM 소스 oci/rekor | 없음 (`trivy.sbomSources` 빈 값) | - | 해당 없음 | 조치 없음 |
+| Kyverno 서명 검증 | `verify-image-signatures` | 정적 공개키, `rekor.ignoreTlog: true` | TUF/Rekor 조회 없음 | 조치 없음 |
+| Falco 룰 | falco DaemonSet | 이미지에 내장 (falco-rules 5.2.0), falcoctl off | 영향 없음 | 이미지 핀으로 버전 관리 |
+| KISA/CIS/NSA/PSS 컴플라이언스 | ClusterComplianceReport | 저장소 YAML + operator 차트 | 영향 없음 | 조치 없음 |
+| OSS 업데이트 upstream | Portal `oss-updates/upstream.ts` | GitHub Releases API | 기본 OFF (`OSS_UPDATES_UPSTREAM`) | 조치 없음 (OCI 아티팩트 아님) |
+
+별개 사실: scan Job의 *대상 이미지* pull(`docker.io/...`)은 Trivy가 직접 레지스트리에서 받으므로 에어갭에서
+실패할 수 있다. 이는 보안 DB가 아니라 스캔 대상 이미지 문제이므로 이 목록과 무관하다.
+
+Portal 보안 페이지의 "Trivy DB 상태" 카드는 `portal/src/lib/trivy-db-sources.ts`의 목록(= `security-db.txt`와
+R304가 일치를 강제)을 순회하며 소스별 태그/나이/상태/SLO/소비자를 보여준다.
+
 대상 목록은 `scripts/airgap/security-db.txt` (images.txt와 별도 파일 — 이유는 그 파일 헤더 참고).
 Harbor `trivy-db` 프로젝트(public, 무인증 pull) **생성**은 `scripts/cluster/08-5-registry.sh`가
 Harbor 설치의 일부로 수행하지만 **내용은 비어 있다** — up.sh/Phase 2 어디에서도 push 하지 않으므로

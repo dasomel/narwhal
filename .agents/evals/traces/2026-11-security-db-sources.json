@@ -1,0 +1,75 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-security-db-sources-20261105",
+  "task": "Owner-approved (dasomel) check of whether the airgap security-DB set misses a database, refresh of all three artifacts into the local Harbor, and a data-driven Portal freshness card. Live-verified on the local arm64 cluster; Kakao cluster not verified.",
+  "changeContext": {
+    "paths": [
+      ".agents/evals/traces/2026-11-security-db-sources.json",
+      "docs/common/lessons-log.md",
+      "portal/src/app/api/security/trivy-db/route.test.ts",
+      "portal/src/components/security/trivy-db-status-card.test.tsx",
+      "portal/src/components/security/trivy-db-status-card.tsx",
+      "portal/src/lib/i18n.ts",
+      "portal/src/lib/trivy-db-sources.ts",
+      "portal/src/lib/trivy-db-status.test.ts",
+      "portal/src/lib/trivy-db-status.ts",
+      "portal/src/types/security.ts",
+      "scripts/airgap/README.md",
+      "scripts/airgap/security-db.txt",
+      "scripts/test/lib/check-security-db-provisioning.py"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Inventory runtime security data sources, refresh trivy-db/trivy-java-db/trivy-checks, make the Portal card and API iterate one source list with per-source consumer and SLO, extend R303/R304 with a drift check. Deliberately left alone: trivy-operator.yaml (already points at Harbor, no GitOps push needed), regression-check-kakao.sh (another PR touches it, so the R303 description text is stale), scan-target image pulls from docker.io."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "Portal card showed trivy-checks stale. Upstream ghcr.io/aquasecurity/trivy-checks:1 has created=2025-10-09 and the same digest a55ef4122a16 as Harbor, so no refresh can clear it; Trivy 0.60.0 pkg/policy BundleVersion = 1, and the operator ConfigMap has useBuiltinRegoPolicies=false so nothing loads the bundle.",
+      "evidence": [
+        "cluster:narwhal security-system trivy-operator-trivy-config",
+        "skopeo inspect --raw docker://ghcr.io/aquasecurity/trivy-checks:1"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "external_input",
+      "provenance": "trivy-operator v0.25.0 pkg/policy/policy.go and trivy v0.60.0 pkg/policy/policy.go read from raw.githubusercontent.com, plus trivy image --help of the local 0.69.3 binary for the opt-in --vex flag",
+      "reviewed": true,
+      "summary": "No other online data source is consumed by the pinned scanners; VEX and rekor SBOM sources are opt-in and unset."
+    },
+    {
+      "id": "e4",
+      "type": "bug_fix",
+      "summary": "portal/src/lib/trivy-db-sources.ts holds the single source list (name, repository, tag, consumer, sloDays) and the copyable commands; trivy-db-status.ts, the API payload and the card iterate it; sloDays null gives status pinned. R303/R304 fail when security-db.txt, the list and the trivy-operator Harbor paths differ (4 new mutations). README inventory table, security-db.txt notes, lessons-log row."
+    },
+    {
+      "id": "e5",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "portal gates, static R303/R304 with mutations, make test, live refresh and live scan on the local cluster. NOT covered: Kakao cluster, admin-session call of the deployed 1.1.6 portal, GitOps push (no gitops change).",
+      "evidence": [
+        "test:cd portal && pnpm typecheck && pnpm test -> 151 files, 2205 tests passed; pnpm build ok; harness-rules.sh rc 0",
+        "test:python3 scripts/test/lib/check-security-db-provisioning.py --mutation-verify -> clean control passes, 11 mutations caught",
+        "test:RESEARCH_EVIDENCE_DIR=tmp make test -> rc 0",
+        "test:live local cluster: fetch 3/0, promote --approved-by dasomel, push-security-db.sh -> Pushed: 3, Failed: 0, check-security-db-freshness.py rc 0",
+        "test:live local cluster: deleted one VulnerabilityReport, trivy-operator rescanned it at 23:09:42Z with no scan-job error"
+      ]
+    },
+    {
+      "id": "e6",
+      "type": "completion_claim",
+      "summary": "All three mirrored sources are refreshed in Harbor, trivy-checks is shown as pinned instead of stale, and the Portal card and API are driven by one list guarded by R303/R304. No missing database was found."
+    },
+    {
+      "id": "e7",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Complete within repository and local-cluster scope; the deployed portal 1.1.6 still serves the old payload until the next portal release."
+    }
+  ]
+}

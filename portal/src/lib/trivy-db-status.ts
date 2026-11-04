@@ -4,6 +4,7 @@ import { cacheGet, cacheSet } from "./valkey"
 import { cacheKeys, cacheTtl } from "./cache-keys"
 import { fetchWithPolicy, readJsonWithPolicy } from "./http-client"
 import { computeVulnDbFreshness, getSecuritySummary } from "./trivy"
+import { TRIVY_DB_SLO_DAYS, TRIVY_DB_SOURCES, type TrivyDbSource } from "./trivy-db-sources"
 import type {
   TrivyDbArtifact,
   TrivyDbArtifactStatus,
@@ -20,7 +21,8 @@ import type {
 // private the calls return 401/403 and the card shows "unknown" (Harbor unreadable)
 // instead of guessing "missing". Escape hatch: add a read-only robot account then.
 //
-// D-TRIVYDB-SLO: 7 days, same as scripts/airgap/lib/check-security-db-freshness.py.
+// D-TRIVYDB-SLO: 7 days for rolling feeds, same as scripts/airgap/lib/check-security-db-freshness.py;
+// per-source value and the versioned (null) case live in trivy-db-sources.ts.
 // Age is measured from the OCI `created` annotation (upstream build time) when present,
 // else Harbor push_time. That check measures intake time; this one measures the data the
 // scanner would actually load, so it can read a few hours older than the script.
@@ -28,21 +30,11 @@ import type {
 // The portal never runs the update: fetching needs internet and promotion needs a named
 // approver (see scripts/airgap/README.md). The UI only prints the commands.
 
-export const TRIVY_DB_SLO_DAYS = 7
-
-// Must match trivy-operator.yaml (dbRepository / javaDbRepository / policiesBundle) and
-// scripts/airgap/security-db.txt.
-const TRIVY_DB_ARTIFACTS = [
-  { repository: "aquasecurity/trivy-db", tag: "2" },
-  { repository: "aquasecurity/trivy-java-db", tag: "1" },
-  { repository: "aquasecurity/trivy-checks", tag: "1" },
-] as const
-
 const HARBOR_PROJECT = "trivy-db"
 const SCANNER_NAMESPACE = "security-system"
 const SCAN_JOB_PREFIX = "scan-vulnerabilityreport"
 const DAY_MS = 86_400_000
-const ORDER: Record<TrivyDbArtifactStatus, number> = { fresh: 0, stale: 1, unknown: 2, missing: 3 }
+const ORDER: Record<TrivyDbArtifactStatus, number> = { fresh: 0, pinned: 0, stale: 1, unknown: 2, missing: 3 }
 
 interface HarborArtifact {
   digest?: string
@@ -62,16 +54,18 @@ function validTime(iso: string | undefined): string | undefined {
 }
 
 export function classifyArtifact(
-  base: { repository: string; tag: string },
+  source: TrivyDbSource,
   found: HarborArtifact | null,
   now: number,
 ): TrivyDbArtifact {
+  const base = { name: source.name, consumer: source.consumer, sloDays: source.sloDays, repository: source.repository, tag: source.tag }
   if (!found) return { ...base, status: "missing" }
   const pushedAt = validTime(found.push_time)
   const createdAt = validTime(found.annotations?.["org.opencontainers.image.created"])
   const ref = createdAt ?? pushedAt
   const ageDays = ref === undefined ? undefined : Math.max(0, Math.floor((now - Date.parse(ref)) / DAY_MS))
-  const status: TrivyDbArtifactStatus = ageDays === undefined ? "unknown" : ageDays > TRIVY_DB_SLO_DAYS ? "stale" : "fresh"
+  const status: TrivyDbArtifactStatus =
+    ageDays === undefined ? "unknown" : source.sloDays === null ? "pinned" : ageDays > source.sloDays ? "stale" : "fresh"
   return { ...base, status, pushedAt, createdAt, ageDays, digest: found.digest?.slice(0, 19) }
 }
 
@@ -112,13 +106,13 @@ export async function getTrivyDbStatus(): Promise<TrivyDbStatus> {
   const now = Date.now()
   let harborReachable = true
   const artifacts = await Promise.all(
-    TRIVY_DB_ARTIFACTS.map(async (base): Promise<TrivyDbArtifact> => {
+    TRIVY_DB_SOURCES.map(async (source): Promise<TrivyDbArtifact> => {
       try {
-        return classifyArtifact(base, await readHarborArtifact(base.repository, base.tag), now)
+        return classifyArtifact(source, await readHarborArtifact(source.repository, source.tag), now)
       } catch (err) {
         harborReachable = false
-        console.warn(`[trivy-db] Harbor read failed for ${base.repository}:`, err instanceof Error ? err.message : err)
-        return { ...base, status: "unknown" }
+        console.warn(`[trivy-db] Harbor read failed for ${source.repository}:`, err instanceof Error ? err.message : err)
+        return { name: source.name, consumer: source.consumer, sloDays: source.sloDays, repository: source.repository, tag: source.tag, status: "unknown" }
       }
     }),
   )

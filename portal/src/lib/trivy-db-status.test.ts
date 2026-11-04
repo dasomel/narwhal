@@ -15,6 +15,7 @@ vi.mock("./trivy", () => ({
 import { getEvents } from "./k8s-client"
 import { getSecuritySummary } from "./trivy"
 import { classifyArtifact, getTrivyDbStatus } from "./trivy-db-status"
+import { TRIVY_DB_SOURCES } from "./trivy-db-sources"
 
 const NOW = Date.parse("2026-11-04T00:00:00Z")
 const daysAgo = (n: number) => new Date(NOW - n * 86_400_000).toISOString()
@@ -40,7 +41,8 @@ function harbor(byRepo: Record<string, Response | Error>) {
 const ok = (items: unknown[]) => new Response(JSON.stringify(items), { status: 200 })
 
 describe("classifyArtifact", () => {
-  const base = { repository: "aquasecurity/trivy-db", tag: "2" }
+  const base = TRIVY_DB_SOURCES[0]
+  const pinned = TRIVY_DB_SOURCES[2]
   it("is missing when nothing is found", () => {
     expect(classifyArtifact(base, null, NOW).status).toBe("missing")
   })
@@ -52,6 +54,15 @@ describe("classifyArtifact", () => {
   it("treats exactly the SLO as fresh and one day past as stale", () => {
     expect(classifyArtifact(base, artifact("2", 7), NOW).status).toBe("fresh")
     expect(classifyArtifact(base, artifact("2", 8), NOW).status).toBe("stale")
+  })
+  it("carries name, consumer and SLO from the source list", () => {
+    expect(classifyArtifact(base, artifact("2", 1), NOW)).toMatchObject({ name: "trivy-db", consumer: "vulnScan", sloDays: 7 })
+  })
+  it("never ages a versioned source: trivy-checks:1 is pinned however old, missing when absent", () => {
+    expect(pinned.sloDays).toBeNull()
+    const a = classifyArtifact(pinned, artifact("1", 3, 392), NOW)
+    expect(a).toMatchObject({ status: "pinned", ageDays: 392, sloDays: null })
+    expect(classifyArtifact(pinned, null, NOW).status).toBe("missing")
   })
   it("is unknown when no valid timestamp exists", () => {
     expect(classifyArtifact(base, { tags: [{ name: "2" }], push_time: "garbage" }, NOW).status).toBe("unknown")
@@ -71,12 +82,20 @@ describe("getTrivyDbStatus", () => {
   })
   afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); vi.resetAllMocks() })
 
+  it("reads every source in the list, in order, with the pinned one not blocking fresh", async () => {
+    harbor({ "trivy-db": ok([artifact("2", 1, 1)]), "trivy-java-db": ok([artifact("1", 1, 2)]), "trivy-checks": ok([artifact("1", 1, 392)]) })
+    const s = await getTrivyDbStatus()
+    expect(s.artifacts.map((a) => a.name)).toEqual(TRIVY_DB_SOURCES.map((x) => x.name))
+    expect(s.artifacts.map((a) => a.status)).toEqual(["fresh", "fresh", "pinned"])
+    expect(s.overall).toBe("fresh")
+  })
+
   it("reports fresh when all three artifacts are within the SLO", async () => {
     harbor({ "trivy-db": ok([artifact("2", 1, 1)]), "trivy-java-db": ok([artifact("1", 1, 2)]), "trivy-checks": ok([artifact("1", 1)]) })
     const s = await getTrivyDbStatus()
     expect(s.overall).toBe("fresh")
     expect(s.harborReachable).toBe(true)
-    expect(s.artifacts.map((a) => a.status)).toEqual(["fresh", "fresh", "fresh"])
+    expect(s.artifacts.map((a) => a.status)).toEqual(["fresh", "fresh", "pinned"])
     expect(s.scanner.state).toBe("ok")
   })
 
@@ -91,7 +110,7 @@ describe("getTrivyDbStatus", () => {
     harbor({ "trivy-db": ok([artifact("1", 1)]), "trivy-checks": ok([artifact("1", 1)]) })
     const s = await getTrivyDbStatus()
     expect(s.overall).toBe("missing")
-    expect(s.artifacts.map((a) => a.status)).toEqual(["missing", "missing", "fresh"])
+    expect(s.artifacts.map((a) => a.status)).toEqual(["missing", "missing", "pinned"])
   })
 
   it("flags failing scans when the last failure is newer than the newest report", async () => {

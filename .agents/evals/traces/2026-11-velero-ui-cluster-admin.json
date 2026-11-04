@@ -44,7 +44,7 @@
     {
       "id": "e5",
       "type": "review_correction",
-      "summary": "First independent review done (Opus security review, see e9); corrections in e10. A re-review of the new head is pending (Narwhal merge gate)."
+      "summary": "First independent review done (Opus security review, see e9); corrections in e10. Re-review of head aba6ecfa found the uppercase-prefix bypass of the download block (HIGH), a red Markdown Lint and three LOW items; corrections in e12, verification in e13. A final re-review of the new head is pending (Narwhal merge gate)."
     },
     {
       "id": "e6",
@@ -80,6 +80,25 @@
         "test:live: admin list 200, create 201 (tiny backup, then deleted via API, none left); view, dev, guest list/create/delete -> 403",
         "test:live: POST /api/backups/download, /download/, /Download -> 403 for admin, view, dev and guest",
         "test:python3 scripts/test/lib/check-live-suite-false-failures.py -> 82 passed, 0 failed"
+      ]
+    },
+    {
+      "id": "e12",
+      "type": "review_correction",
+      "summary": "Re-review of aba6ecfa. HIGH: route paths /api/backups/* is case-sensitive, so POST /API/backups/download, /Api/Backups/Download and /api/BACKUPS/download reached the handler (live 201 with a download URL); the rule now matches paths /* plus a Path expr RegexMatchCaseInsensitive ^/+api/+backups/+download/*$ (POST, priority 10), R293 and test-sso.sh pin the case, trailing-slash, query, %44ownload, %2F, doubled-slash and ; variants. Markdown Lint: the unescaped pipe in server|ui split a code span (MD056, MD038), now escaped. LOW: 11-3 passes passphrase and client_secret via 0600 --from-file temp files with an EXIT trap instead of argv; the passphrase is regenerated only when the Secret is NotFound and any other kubectl error aborts; the R293 pin now checks the AUTH_SECRET_PASSPHRASE env entry is a secretKeyRef with no literal value. Gitea copy was diffed first and only the velero block was added on top of Gitea's file, so gitea-portal-api (another lane) was kept."
+    },
+    {
+      "id": "e13",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "Local disposable cluster after push-to-gitea.sh of apisix-routes.yaml; narwhal-platform Synced/Healthy, velero-ui-block-bulk-download and gitea-portal-api both live. NOT covered: Kakao cluster, browsers.",
+      "evidence": [
+        "test:live: POST /api/backups/download in /API, /Api/Backups/Download, /api/BACKUPS, trailing slash, ?x=1, %44ownload, %2F and doubled-slash forms -> 403 for admin, view, dev and guest; the ;x=1 form -> 404 (no handler, never 2xx)",
+        "test:live: admin list 200, create 201 (probe backup deleted, none left); no velero DownloadRequest left in storage",
+        "test:bash scripts/test/test-sso.sh --section=acl -> 103 passed, 0 failed, 0 warnings",
+        "test:RESEARCH_EVIDENCE_DIR=$(mktemp -d) make test -> passed 429, failed 0, warnings 3, exit 0",
+        "test:python3 scripts/test/lib/check-live-suite-false-failures.py -> 82 passed, 0 failed",
+        "test:markdownlint-cli 0.49.1 --config .markdownlint.json on docs/common/app-sso-permission-matrix.md and lessons-log.md -> exit 0; scripts/ci/markdownlint-changed.py -> exit 0"
       ]
     },
     {

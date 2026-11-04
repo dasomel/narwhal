@@ -666,15 +666,30 @@ kc_exec update "clients/${VELERO_UI_CLIENT_ID}" -r "${REALM}" \
 # to a public literal when it is unset, so anyone could mint a `manage all` token. The key is
 # generated once and kept on re-runs (a new key would log every session out); the deployment reads
 # it through secretKeyRef (velero-ui.yaml). Never printed, never committed.
-VELERO_UI_PASSPHRASE=$(kubectl get secret velero-ui-oauth -n storage -o jsonpath='{.data.passphrase}' 2>/dev/null \
-  | base64 -d 2>/dev/null) || VELERO_UI_PASSPHRASE=""
-[ -n "${VELERO_UI_PASSPHRASE}" ] || VELERO_UI_PASSPHRASE=$(openssl rand -base64 32)
+# Only a missing secret (NotFound) may mint a new key; any other API error aborts, otherwise a
+# transient failure would rotate the key and log every session out. A secret without the key
+# (jsonpath empty, rc 0) is also regenerated. Values travel via 0600 temp files, never argv.
+VU_TMP=$(mktemp -d)
+trap 'rm -rf "${VU_TMP}"' EXIT
+chmod 700 "${VU_TMP}"
+if VU_GET_ERR=$(kubectl get secret velero-ui-oauth -n storage -o jsonpath='{.data.passphrase}' 2>&1 >"${VU_TMP}/b64"); then
+  base64 -d <"${VU_TMP}/b64" >"${VU_TMP}/passphrase" 2>/dev/null || : >"${VU_TMP}/passphrase"
+elif printf '%s' "${VU_GET_ERR}" | grep -q 'NotFound'; then
+  : >"${VU_TMP}/passphrase"
+else
+  echo "  ERROR: cannot read secret velero-ui-oauth (not NotFound), refusing to regenerate the JWT key: ${VU_GET_ERR}" >&2
+  exit 1
+fi
+[ -s "${VU_TMP}/passphrase" ] || openssl rand -base64 32 | tr -d '\n' >"${VU_TMP}/passphrase"
+printf '%s' "${VELERO_UI_CLIENT_SECRET}" >"${VU_TMP}/client_secret"
+chmod 600 "${VU_TMP}"/*
 
 kubectl create secret generic velero-ui-oauth \
   --namespace storage \
-  --from-literal=client_secret="${VELERO_UI_CLIENT_SECRET}" \
-  --from-literal=passphrase="${VELERO_UI_PASSPHRASE}" \
+  --from-file=client_secret="${VU_TMP}/client_secret" \
+  --from-file=passphrase="${VU_TMP}/passphrase" \
   --dry-run=client -o yaml | kubectl apply -f -
+rm -rf "${VU_TMP}"
 echo "  secret 'velero-ui-oauth' created in storage"
 
 # -------------------------------------------------------------------------

@@ -1170,10 +1170,15 @@ print('YES' if view else 'NO')
     VU_LIST=$(curl -sk -o /dev/null --connect-timeout 5 --max-time 30 -H "Authorization: Bearer ${VU_TOKEN}" -w '%{http_code}' "${VU_BASE}/backups" 2>/dev/null) || VU_LIST="000"
     VU_CREATE=$(curl -sk -o /dev/null --connect-timeout 5 --max-time 30 -H "Authorization: Bearer ${VU_TOKEN}" -H 'Content-Type: application/json' -X POST -d '{}' -w '%{http_code}' "${VU_BASE}/backups" 2>/dev/null) || VU_CREATE="000"
     VU_DELETE=$(curl -sk -o /dev/null --connect-timeout 5 --max-time 30 -H "Authorization: Bearer ${VU_TOKEN}" -X DELETE -w '%{http_code}' "${VU_BASE}/backups/narwhal-authz-probe-does-not-exist" 2>/dev/null) || VU_DELETE="000"
-    # Express routes non-strict and case-insensitive: the trailing-slash and upper-case variants hit the same handler.
-    for vu_dl_path in download download/ Download; do
-      VU_DL=$(curl -sk -o /dev/null --connect-timeout 5 --max-time 30 -H "Authorization: Bearer ${VU_TOKEN}" -H 'Content-Type: application/json' -X POST -d '[]' -w '%{http_code}' "${VU_BASE}/backups/${vu_dl_path}" 2>/dev/null) || VU_DL="000"
-      vu_expect "${VU_DL}" 403 "velero-ui: ${vu_user} bulk download /backups/${vu_dl_path} -> HTTP 403 (closed at the gateway)" "velero-ui: ${vu_user} bulk download /backups/${vu_dl_path} expected 403, got HTTP ${VU_DL}"
+    # Express routes non-strict and case-insensitive: trailing-slash, upper-case prefix, encoded and
+    # query-string variants hit the same handler. --path-as-is keeps curl from normalising them away.
+    for vu_dl_path in /api/backups/download /api/backups/download/ /api/backups/Download /API/backups/download \
+      /Api/Backups/Download /api/BACKUPS/download '/api/backups/download?x=1' /api/backups/%44ownload \
+      /api/backups%2Fdownload //api//backups//download '/api/backups/download;x=1'; do
+      VU_DL=$(curl -sk --path-as-is -o /dev/null --connect-timeout 5 --max-time 30 -H "Authorization: Bearer ${VU_TOKEN}" -H 'Content-Type: application/json' -X POST -d '[]' -w '%{http_code}' "https://velero-ui.${DOMAIN}${vu_dl_path}" 2>/dev/null) || VU_DL="000"
+      # `;` is not a path delimiter for Express, so that variant has no handler (404); it must never be a 2xx.
+      case "${vu_dl_path}" in *';'*) [ "${VU_DL}" != 404 ] || VU_DL=403 ;; esac
+      vu_expect "${VU_DL}" 403 "velero-ui: ${vu_user} bulk download ${vu_dl_path} -> HTTP 403 (closed at the gateway)" "velero-ui: ${vu_user} bulk download ${vu_dl_path} expected 403, got HTTP ${VU_DL}"
     done
     if [ "${vu_user}" = "admin" ]; then
       vu_expect "${VU_LIST}" 200 "velero-ui: admin list backups -> HTTP 200" "velero-ui: admin list expected 200, got HTTP ${VU_LIST}"

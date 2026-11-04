@@ -2147,6 +2147,11 @@ PYEOF
     python3 -c 'import re,pathlib; s=pathlib.Path("scripts/cluster/13-argocd.sh").read_text(); i=s.index("appended TCP 15008"); j=s.index("one or more restricted rules lack TCP 15008"); assert re.search(r"policy=\"\$\(kubectl get \"networkpolicy/\$policy_name\"", s[i:j]), "no re-read between patch and post-check"'
   check R203 "every GitOps resource has a reconciling Application (Narwhal#235)" \
     python3 scripts/test/lib/check-gitops-resource-ownership.py --mutation-verify
+  check R303 "trivy-db provisioning: push-security-db.sh authenticates over verified https to harbor.<domain>, 08-5 warns when the trivy-db project is empty, portal TRIVY_DB_REGISTRY matches trivy-operator.yaml; 5 mutations caught (D-SECDB-EMPTY-WARN, D-SECDB-PUSH-ENDPOINT)" \
+    python3 scripts/test/lib/check-security-db-provisioning.py --mutation-verify
+  check R304 "trivy-db provisioning invariants hold on the real tree" \
+    python3 scripts/test/lib/check-security-db-provisioning.py
+
   check R301 "dev namespace has one SSA owner, unique objects and namespace-first ordering" \
     python3 scripts/test/lib/check-dev-namespace.py
   check R302 "every APISIX openid-connect route is login-only allowlisted (gitea) or restricted to Keycloak group cluster-admin via the shared strip-then-check pair; hubble, prometheus, alertmanager and nfs-quota-agent carry it; scans every chart, raw manifest, plugin config and global rule; 13 mutations caught (D-GATEWAY-ADMIN-GROUP, D-GATEWAY-ADMIN-ALL-SOURCES, #519)" \

@@ -1,0 +1,75 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-trivy-db-provisioning-20261104",
+  "task": "Owner-approved (dasomel) load of the Trivy security DB into the local Harbor, plus why provisioning left it empty and the repo fix. Live-verified on the local arm64 cluster; portal API check listed as not claimed where not done.",
+  "changeContext": {
+    "paths": [
+      ".agents/evals/traces/2026-11-trivy-db-provisioning.json",
+      "docs/common/lessons-log.md",
+      "portal/src/lib/trivy.ts",
+      "scripts/airgap/README.md",
+      "scripts/airgap/lib/push-security-db.sh",
+      "scripts/cluster/08-5-registry.sh",
+      "scripts/cluster/13-2-narwhal-portal-bindings.sh",
+      "scripts/test/lib/check-security-db-provisioning.py",
+      "scripts/test/regression-check-kakao.sh"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Fix push-security-db.sh (auth, https endpoint, CA), add a repo_count WARN to 08-5, correct the display-only TRIVY_DB_REGISTRY, add R303/R304, lessons-log row. Deliberately left alone: auto-loading the DB from up.sh (needs internet and a promotion approval), trivy-operator.yaml, node-collector image mirroring, the Kakao path."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "Harbor project trivy-db repo_count 0; scan Jobs NOT_FOUND on trivy-db/aquasecurity/trivy-db:2. Running the unmodified push-security-db.sh against a port-forward failed with 'server gave HTTP response to HTTPS client'; the script has no credential at all.",
+      "evidence": [
+        "cluster:narwhal devtools harbor",
+        "scripts/airgap/lib/push-security-db.sh"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "external_input",
+      "provenance": "Harbor token-realm behavior observed live on the local cluster 2026-11-04: the registry token realm is https://harbor.<domain>/service/token, so a plain-HTTP push endpoint fails with 'server gave HTTP response to HTTPS client'",
+      "reviewed": true,
+      "summary": "The push endpoint must be Harbor's external https URL with the Narwhal CA, not the in-cluster Service."
+    },
+    {
+      "id": "e4",
+      "type": "bug_fix",
+      "summary": "push-security-db.sh logs in with the harbor-secrets admin credential into a 0600 authfile (xtrace suppressed around the credential), supports --ca-cert/--kube-context, defaults to harbor.${DOMAIN}; 08-5 warns when trivy-db has <3 repos; 13-2 TRIVY_DB_REGISTRY and the portal default now equal trivy-operator.yaml dbRegistry+dbRepository."
+    },
+    {
+      "id": "e5",
+      "type": "review_correction",
+      "summary": "Independent review of PR #550 found the trace lacked typed passed evidence, the push script leaked the password under set -x, R303 did not require --authfile on every Harbor skopeo call, and the header comment was stale; all four fixed."
+    },
+    {
+      "id": "e6",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "static R303 (+ mutations), make test, and a live push of the promoted artifacts to Harbor on the local Vagrant cluster. NOT covered: Kakao cluster, InfraAssessmentReports, harbor-core liveness (other lane).",
+      "evidence": [
+        "test:python3 scripts/test/lib/check-security-db-provisioning.py --mutation-verify -> clean control passes, all mutations caught",
+        "test:live local cluster: push-security-db.sh -> Pushed: 3, Failed: 0; Harbor trivy-db project repo_count 3",
+        "test:live local cluster: trivy-operator VulnerabilityReports 0 before, > 0 after the push",
+        "test:make test (RESEARCH_EVIDENCE_DIR=tmp) -> static regression suite passed"
+      ]
+    },
+    {
+      "id": "e7",
+      "type": "completion_claim",
+      "summary": "In the repository and on the local cluster, push-security-db.sh loads the promoted Trivy DB into Harbor's trivy-db project (repo_count 3) and VulnerabilityReports rise above 0; 08-5 warns on an empty project; R303 pins the auth, TLS and endpoint invariants. InfraAssessmentReports and harbor-core liveness are out of scope for this PR (another lane); the Kakao cluster is not verified."
+    },
+    {
+      "id": "e8",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Complete for the trivy-db provisioning scope of PR #550 within repository and local-cluster scope; InfraAssessmentReports=0 and harbor-core liveness are tracked in a separate lane."
+    }
+  ]
+}

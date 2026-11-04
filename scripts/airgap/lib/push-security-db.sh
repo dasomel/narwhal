@@ -13,10 +13,10 @@ set -euo pipefail
 # Job's network namespace; it never goes through containerd, so it never sees that
 # mirror. It needs an endpoint reachable over the ordinary pod network instead — a
 # real Kubernetes Service. Harbor already runs one: `harbor.devtools.svc.cluster.local`
-# on port 80 (confirmed against gitops/charts/narwhal-platform/templates/apisix-routes.yaml,
-# the ApisixUpstream backing the public harbor.<domain> route — same Service, just
-# reached from inside the cluster instead of through APISIX/ingress). That is the
-# registry gitops/resources/trivy-operator.yaml's dbRegistry/javaDbRegistry/
+# on port 80, which is where Trivy PULLS from anonymously (confirmed against gitops/charts/narwhal-platform/templates/apisix-routes.yaml,
+# the ApisixUpstream backing the public harbor.<domain> route). This script PUSHES to
+# the external https URL instead (D-SECDB-PUSH-ENDPOINT below). The pull registry is the
+# one gitops/resources/trivy-operator.yaml's dbRegistry/javaDbRegistry/
 # policiesBundle.registry now point at.
 #
 # WHY A PUBLIC PROJECT, NOT A ROBOT-ACCOUNT SECRET: this repo's rules (docs/common/agent-operational-rules.md) forbid
@@ -38,21 +38,20 @@ set -euo pipefail
 # with a second, redundant credential path.
 #
 # USAGE:
-#   push-security-db.sh [--bundle <dir>] [--registry harbor.devtools.svc.cluster.local]
-#                        [--project trivy-db]
+#   push-security-db.sh [--bundle <dir>] [--registry harbor.<domain>] [--project trivy-db]
+#                        [--ca-cert <ca.crt>] [--kube-context <ctx>]
 #
-# Run this from wherever harbor.devtools.svc.cluster.local resolves and is reachable
-# — inside the cluster network (e.g. master-1, or `kubectl port-forward` to a local
-# port and pass --registry localhost:<port>).
+# Run this from wherever harbor.<domain> resolves and is reachable over https (a workstation
+# on the cluster DNS, or master-1). Local Vagrant: `--ca-cert` = the narwhal-ca-cert Secret's
+# ca.crt, `--kube-context narwhal`. A plain-HTTP port-forward does NOT work (see D-SECDB-PUSH-ENDPOINT).
 #
 # VERIFIED (2026-08-25): fetch -> promote -> push -> pull round-tripped end to end
 # against a throwaway local `docker run registry:2` (skopeo copy oci:... docker://...,
-# same TLS-disabled path this script uses) — the pulled-back manifest was byte-identical
+# an earlier plain-HTTP, unauthenticated variant of this script) — the pulled-back manifest was byte-identical
 # to the original ghcr.io/aquasecurity/trivy-db:2 manifest (same config + layer digests).
-# NOT verified against the real Harbor endpoint or from inside the cluster network — the
-# Kakao Cloud cluster this script targets is currently destroyed (see narwhal#48 issue
-# comment), so harbor.devtools.svc.cluster.local reachability and the `trivy-db` project's
-# existence/public visibility are unverified live.
+# Since then (2026-11-04) the push is authenticated and https (admin credential in a 0600
+# authfile, optional --ca-cert) and was run against the real Harbor on the local Vagrant
+# cluster. The Kakao Cloud cluster is destroyed, so that path is unverified live.
 # =============================================================================
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -60,14 +59,29 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/../00-config.sh"
 
 BUNDLE="${AIRGAP_BUNDLE_DIR}"
-SECDB_REGISTRY="${AIRGAP_SECURITY_DB_REGISTRY:-harbor.devtools.svc.cluster.local}"
+# D-SECDB-PUSH-ENDPOINT: the push endpoint must be Harbor's EXTERNAL URL (harbor.<domain>,
+# https + the Narwhal CA), not the in-cluster Service. Harbor's registry token realm is built
+# from its externalURL (https://harbor.<domain>/service/token), so a plain-HTTP push to the
+# Service or to a port-forward gets "http: server gave HTTP response to HTTPS client" the
+# moment skopeo follows the realm. (Trivy still PULLS from the in-cluster Service,
+# anonymously, via the public project — only this push needs the token flow.)
+SECDB_REGISTRY="${AIRGAP_SECURITY_DB_REGISTRY:-harbor.${DOMAIN}}"
 SECDB_PROJECT="${AIRGAP_SECURITY_DB_PROJECT:-trivy-db}"
+# Optional: CA bundle (PEM) that signed the Harbor cert. Needed on a workstation that does
+# not already trust the Narwhal root CA (the equivalent of Docker's certs.d/<host>/ca.crt).
+SECDB_CA_CERT="${AIRGAP_SECURITY_DB_CA_CERT:-}"
+# Optional: kubectl context used to read the Harbor admin password from the harbor-secrets
+# Secret when HARBOR_ADMIN_PASSWORD is not exported. The password is never printed or put on
+# a command line (it goes to a 0600 authfile via --password-stdin).
+SECDB_KUBE_CONTEXT="${AIRGAP_SECURITY_DB_KUBE_CONTEXT:-}"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --bundle)   BUNDLE="$2"; shift 2 ;;
     --registry) SECDB_REGISTRY="$2"; shift 2 ;;
     --project)  SECDB_PROJECT="$2"; shift 2 ;;
+    --ca-cert)  SECDB_CA_CERT="$2"; shift 2 ;;
+    --kube-context) SECDB_KUBE_CONTEXT="$2"; shift 2 ;;
     *) echo "Unknown arg: $1" >&2; exit 1 ;;
   esac
 done
@@ -91,7 +105,43 @@ if ! python3 "${SCRIPT_DIR}/check-security-db-freshness.py" "${MANIFEST}"; then
   exit 1
 fi
 
-TLS_OPT="--dest-tls-verify=false"
+# Keep the credential out of xtrace (`bash -x` prints expanded assignments and arguments);
+# the previous xtrace state is restored right after the login.
+case "$-" in *x*) XTRACE_WAS_ON=1; set +x ;; *) XTRACE_WAS_ON=0 ;; esac
+# Push credential: env first, else the same harbor-secrets Secret 08-5-registry.sh reads.
+HARBOR_PW="${HARBOR_ADMIN_PASSWORD:-}"
+if [[ -z "${HARBOR_PW}" ]] && command -v kubectl >/dev/null 2>&1; then
+  HARBOR_PW="$(kubectl ${SECDB_KUBE_CONTEXT:+--context "${SECDB_KUBE_CONTEXT}"} get secret harbor-secrets -n devtools \
+    -o jsonpath='{.data.HARBOR_ADMIN_PASSWORD}' 2>/dev/null | base64 -d 2>/dev/null || true)"
+fi
+if [[ -z "${HARBOR_PW}" ]]; then
+  [[ "${XTRACE_WAS_ON}" -eq 1 ]] && set -x
+  echo "ERROR: no Harbor admin credential. Export HARBOR_ADMIN_PASSWORD or make kubectl able to read" >&2
+  echo "       secret devtools/harbor-secrets (--kube-context). Anonymous push is not possible:" >&2
+  echo "       a public Harbor project only allows anonymous PULL." >&2
+  exit 1
+fi
+AUTHFILE="$(mktemp)"; CERTDIR="$(mktemp -d)"
+trap 'rm -rf "${AUTHFILE}" "${CERTDIR}"' EXIT
+chmod 600 "${AUTHFILE}"
+echo "{}" > "${AUTHFILE}"   # skopeo login rejects a zero-byte authfile
+LOGIN_CERT=(); COPY_CERT=()   # empty-array safe expansions below (macOS bash 3.2 + set -u)
+if [[ -n "${SECDB_CA_CERT}" ]]; then
+  [[ -f "${SECDB_CA_CERT}" ]] || { echo "ERROR: --ca-cert ${SECDB_CA_CERT} not found" >&2; exit 1; }
+  # `skopeo copy --dest-cert-dir` wants the certs.d layout <dir>/<host[:port]>/ca.crt, while
+  # `skopeo login --cert-dir` wants the host directory itself.
+  mkdir -p "${CERTDIR}/${SECDB_REGISTRY}"
+  cp "${SECDB_CA_CERT}" "${CERTDIR}/${SECDB_REGISTRY}/ca.crt"
+  LOGIN_CERT=(--cert-dir "${CERTDIR}/${SECDB_REGISTRY}"); COPY_CERT=(--dest-cert-dir "${CERTDIR}")
+fi
+if ! printf '%s' "${HARBOR_PW}" | skopeo login ${LOGIN_CERT[@]+"${LOGIN_CERT[@]}"} \
+     --authfile "${AUTHFILE}" -u admin --password-stdin "${SECDB_REGISTRY}" >/dev/null 2>&1; then
+  [[ "${XTRACE_WAS_ON}" -eq 1 ]] && set -x
+  echo "ERROR: Harbor login to ${SECDB_REGISTRY} failed (bad credential, untrusted CA -> pass --ca-cert, or unreachable)." >&2
+  exit 1
+fi
+unset HARBOR_PW
+[[ "${XTRACE_WAS_ON}" -eq 1 ]] && set -x
 
 ok=0; fail=0
 while IFS= read -r name; do
@@ -115,10 +165,10 @@ for a in doc['artifacts']:
   dst="${SECDB_REGISTRY}/${SECDB_PROJECT}/${repo_path}:${tag}"
 
   echo "[push] ${name} -> ${dst}"
-  if skopeo copy ${TLS_OPT} --retry-times 3 --quiet "oci:${src}:${tag}" "docker://${dst}"; then
+  if skopeo copy --authfile "${AUTHFILE}" ${COPY_CERT[@]+"${COPY_CERT[@]}"} --retry-times 3 --quiet "oci:${src}:${tag}" "docker://${dst}"; then
     ok=$((ok + 1))
   else
-    echo "[FAIL] ${name} -> ${dst} (is the '${SECDB_PROJECT}' Harbor project created and public? see scripts/cluster/08-5-registry.sh)" >&2
+    echo "[FAIL] ${name} -> ${dst} (check the '${SECDB_PROJECT}' Harbor project exists - scripts/cluster/08-5-registry.sh - and that the push endpoint/CA are right; a very large blob can also trip Harbor's liveness probe on a small VM: re-run, the push is idempotent)" >&2
     fail=$((fail + 1))
   fi
 done < <(python3 -c "

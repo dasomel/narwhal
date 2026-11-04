@@ -228,6 +228,7 @@ export const cacheKeys = {
 
   trivySummary: () => "security:summary",
   trivyWorkloads: () => "security:workloads",
+  trivyDbStatus: () => "security:trivy-db",
   trivyImage: (image: string) => join("security", "image", image),
   trivyTopVulnerable: (limit: number) => join("security", "top-vulnerable", limit),
 
@@ -683,6 +684,16 @@ export const CACHE_NAMESPACES: Record<string, CacheNamespaceSpec> = {
     cachesPartial: false,
     securitySensitive: false,
     unscopedReason: { code: "cluster-wide-state", detail: "Cluster-wide vulnerability data, not per-caller." },
+  },
+  "security:trivy-db": {
+    example: "security:trivy-db",
+    dimensions: [],
+    ttlSeconds: 60,
+    owner: "src/lib/trivy-db-status.ts",
+    invalidation: "TTL only",
+    cachesPartial: false,
+    securitySensitive: false,
+    unscopedReason: { code: "cluster-wide-state", detail: "Cluster-wide scanner DB status, not per-caller." },
   },
   "security:workloads": {
     example: "security:workloads",
@@ -1204,6 +1215,7 @@ export const BUILDER_CHECKS: Record<keyof typeof cacheKeys, BuilderCheck> = {
 
   trivySummary: { registryKey: "security:summary", ttlSeconds: 60, args: [], dimensionArgIndex: {} },
   trivyWorkloads: { registryKey: "security:workloads", ttlSeconds: 60, args: [], dimensionArgIndex: {} },
+  trivyDbStatus: { registryKey: "security:trivy-db", ttlSeconds: 60, args: [], dimensionArgIndex: {} },
   trivyImage: { registryKey: "security:image", ttlSeconds: 60, args: ["img-1"], dimensionArgIndex: { query: 0 } },
   trivyTopVulnerable: { registryKey: "security:top-vulnerable", ttlSeconds: 60, args: [10], dimensionArgIndex: { query: 0 } },
 

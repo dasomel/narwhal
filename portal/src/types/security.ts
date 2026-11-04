@@ -41,6 +41,43 @@ export interface VulnDbFreshness {
   dbRegistry?: string
 }
 
+export type TrivyDbArtifactStatus = "fresh" | "stale" | "missing" | "unknown"
+
+export interface TrivyDbArtifact {
+  /** Harbor repository under the trivy-db project, e.g. "aquasecurity/trivy-db". */
+  repository: string
+  /** Tag the scanner is configured to pull (trivy-db:2, trivy-java-db:1, trivy-checks:1). */
+  tag: string
+  status: TrivyDbArtifactStatus
+  /** Harbor push_time of the tagged artifact. */
+  pushedAt?: string
+  /** OCI org.opencontainers.image.created annotation (upstream build time) when present. */
+  createdAt?: string
+  /** Whole days since createdAt, else pushedAt. */
+  ageDays?: number
+  digest?: string
+}
+
+export type TrivyScannerState = "ok" | "failing" | "no-reports"
+
+export interface TrivyDbStatus {
+  observedAt: string
+  sloDays: number
+  /** false when Harbor could not be read: every artifact is then "unknown", not "missing". */
+  harborReachable: boolean
+  overall: TrivyDbArtifactStatus
+  dbRegistry: string
+  artifacts: TrivyDbArtifact[]
+  scanner: {
+    state: TrivyScannerState
+    reportCount: number
+    newestReportAt: string | null
+    /** Scan-job failure events still retained by Kubernetes (events expire, so this is a floor). */
+    recentScanFailures: number
+    lastFailureAt: string | null
+  }
+}
+
 export interface SecuritySummary {
   totals: SeverityCounts
   scannedImages: number

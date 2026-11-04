@@ -7,6 +7,7 @@ import { SeverityCounters } from "@/components/security/severity-counters"
 import { SeverityDistributionChart } from "@/components/security/severity-distribution-chart"
 import { VulnerabilitiesTable } from "@/components/security/vulnerabilities-table"
 import { DataState } from "@/components/ui/data-state"
+import { TrivyDbStatusCard } from "@/components/security/trivy-db-status-card"
 import { RuntimeEventsFeed } from "@/components/security/runtime-events-feed"
 import type { SecuritySummary, WorkloadVulnRow } from "@/types/security"
 
@@ -92,6 +93,9 @@ export default async function SecurityPage() {
 
       {/* 2. Counter cards */}
       <SeverityCounters summary={effectiveSummary} locale={locale} />
+
+      {/* 2b. Scanner DB presence/freshness (cluster-admin only, read-only) */}
+      <TrivyDbStatusCard />
 
       {/* 3. Severity distribution chart */}
       <SeverityDistributionChart summary={effectiveSummary} />

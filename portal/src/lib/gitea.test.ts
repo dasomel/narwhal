@@ -10,6 +10,7 @@ import {
   tenantPath,
   requestTenantNamespace,
   getCommitTimestamp,
+  isGitSha,
   getGiteaToken,
   GiteaCredentialError,
   GiteaError,
@@ -96,7 +97,7 @@ describe("gitea credential handling", () => {
     delete process.env.GITEA_TOKEN
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {})
 
-    await expect(getCommitTimestamp("sha123")).resolves.toBeNull()
+    await expect(getCommitTimestamp("abc1230")).resolves.toBeNull()
     expect(mockFetch).not.toHaveBeenCalled()
     expect(errorSpy).toHaveBeenCalledWith(
       expect.stringContaining("check GITEA_TOKEN"),
@@ -111,10 +112,10 @@ describe("gitea credential handling", () => {
       json: async () => ({ commit: { committer: { date: "2026-01-01T00:00:00Z" } } }),
     })
 
-    await getCommitTimestamp("sha123")
+    await getCommitTimestamp("abc1230")
 
     expect(mockFetch).toHaveBeenCalledWith(
-      expect.stringContaining("/api/v1/repos/gitea-admin/narwhal-gitops/git/commits/sha123"),
+      expect.stringContaining("/api/v1/repos/gitea-admin/narwhal-gitops/git/commits/abc1230"),
       expect.objectContaining({
         headers: { Authorization: "token token-1" },
       })
@@ -126,10 +127,10 @@ describe("gitea credential handling", () => {
       json: async () => ({ commit: { committer: { date: "2026-01-02T00:00:00Z" } } }),
     })
 
-    await getCommitTimestamp("sha456")
+    await getCommitTimestamp("def4560")
 
     expect(mockFetch).toHaveBeenLastCalledWith(
-      expect.stringContaining("/api/v1/repos/gitea-admin/narwhal-gitops/git/commits/sha456"),
+      expect.stringContaining("/api/v1/repos/gitea-admin/narwhal-gitops/git/commits/def4560"),
       expect.objectContaining({
         headers: { Authorization: "token token-2" },
       })
@@ -154,7 +155,7 @@ describe("gitea credential handling", () => {
     mockFetch.mockResolvedValueOnce({ ok: false, status: 401 })
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {})
 
-    await expect(getCommitTimestamp("sha123")).resolves.toBeNull()
+    await expect(getCommitTimestamp("abc1230")).resolves.toBeNull()
     expect(errorSpy).toHaveBeenCalledWith(
       expect.stringContaining("check GITEA_TOKEN"),
       expect.anything(),
@@ -201,7 +202,7 @@ describe("gitea credential handling", () => {
     process.env.GITEA_TOKEN = "some-token"
     mockFetch.mockResolvedValueOnce({ ok: false, status: 500 })
 
-    const ts = await getCommitTimestamp("sha123")
+    const ts = await getCommitTimestamp("abc1230")
     expect(ts).toBeNull()
   })
 
@@ -224,5 +225,74 @@ describe("gitea credential handling", () => {
     expect(thrownError).toBeInstanceOf(GiteaCredentialError)
     expect(thrownError?.message).not.toContain(secretToken)
     expect(thrownError?.message).toContain("GITEA_TOKEN")
+  })
+})
+
+describe("gitea API behind an SSO-fronted gateway", () => {
+  const originalEnv = { ...process.env }
+  const originalFetch = global.fetch
+  const mockFetch = vi.fn()
+
+  beforeEach(() => {
+    process.env = { ...originalEnv }
+    process.env.GITEA_URL = "https://gitea.local:3000"
+    process.env.GITEA_TOKEN = "tok"
+    global.fetch = mockFetch
+    mockFetch.mockReset()
+    vi.mocked(cacheGet).mockResolvedValue(null)
+    vi.mocked(cacheSet).mockResolvedValue(undefined as never)
+  })
+
+  afterEach(() => {
+    process.env = originalEnv
+    global.fetch = originalFetch
+    vi.restoreAllMocks()
+  })
+
+  it("isGitSha accepts 7-40 hex chars and rejects Helm chart versions", () => {
+    expect(isGitSha("abc1234")).toBe(true)
+    expect(isGitSha("a".repeat(40))).toBe(true)
+    expect(isGitSha("a".repeat(41))).toBe(false)
+    expect(isGitSha("abc123")).toBe(false)
+    for (const v of ["86.2.3", "0.14.0", "v1.20.2", "HEAD", "main"]) expect(isGitSha(v)).toBe(false)
+  })
+
+  it("does not call Gitea for a non-SHA revision", async () => {
+    await expect(getCommitTimestamp("86.2.3")).resolves.toBeNull()
+    expect(mockFetch).not.toHaveBeenCalled()
+  })
+
+  it("requests with redirect: manual so a cross-host redirect is never followed", async () => {
+    mockFetch.mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ commit: { committer: { date: "2026-01-02T00:00:00Z" } } }) })
+    await getCommitTimestamp("abc1234")
+    expect(mockFetch).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ redirect: "manual" }))
+  })
+
+  it("treats a 302 to Keycloak as a clear gateway error, logs the host only, and returns null", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {})
+    mockFetch.mockResolvedValueOnce(
+      new Response(null, { status: 302, headers: { location: "https://keycloak.local/realms/x/auth?state=SECRET&nonce=N" } }),
+    )
+    await expect(getCommitTimestamp("def5678")).resolves.toBeNull()
+    const msg = String(errorSpy.mock.calls.flat().join(" "))
+    expect(msg).toContain("likely an SSO redirect")
+    expect(msg).toContain("keycloak.local")
+    expect(msg).not.toContain("SECRET")
+    expect(msg).not.toContain("tok")
+  })
+
+  it("treats a 200 text/html response as a gateway error, not a JSON SyntaxError", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {})
+    vi.spyOn(console, "error").mockImplementation(() => {})
+    mockFetch.mockResolvedValueOnce(new Response("<!DOCTYPE html>", { status: 200, headers: { "content-type": "text/html" } }))
+    await expect(getCommitTimestamp("1234abc")).resolves.toBeNull()
+    expect(warnSpy.mock.calls.flat().join(" ")).not.toContain("SyntaxError")
+  })
+
+  it("the write path throws a GiteaError naming GITEA_URL when it gets HTML", async () => {
+    mockFetch.mockResolvedValueOnce(new Response("<html>", { status: 200, headers: { "content-type": "text/html; charset=utf-8" } }))
+    await expect(
+      requestTenantNamespace({ namespace: "dev-alpha", team: "team-a", requestedBy: "alice" }),
+    ).rejects.toThrow(/check GITEA_URL/)
   })
 })

@@ -68,6 +68,8 @@ export interface DoraPerApp {
   deploys: number
   lastDeployedAt: string | null
   leadTimeHours: number | null   // avg commit->deploy for this app's recent deploys
+  // false for Helm chart-sourced apps (no git revision); absent in pre-fix cached payloads
+  leadTimeApplicable?: boolean
 }
 
 export interface DoraMetrics {

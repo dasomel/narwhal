@@ -958,7 +958,12 @@ export const ko = {
   "cost.gb": "GB",
   "cost.telemetryUnavailable": "Prometheus에서 텔레메트리를 가져올 수 없습니다. 아래 값은 실제 비용이 아니라 조회 실패 상태입니다.",
   "cost.telemetryPartial": "일부 메트릭 조회에 실패했습니다 — 아래 비용은 실제보다 낮게 집계될 수 있습니다.",
-  "cost.unlabeledWorkloadsExclusion": "라벨 없는 워크로드 {count}개가 제외됨 (약 {hourly}/h)",
+  "cost.fallbackAttributionNotice": "워크로드 {count}개(약 {hourly}/h)는 app.kubernetes.io/instance 라벨이 없어 추정으로 귀속했습니다. 정확한 귀속을 위해 app.kubernetes.io/instance / name 라벨을 추가하세요.",
+  "cost.unclassified": "(미분류)",
+  "cost.podCount": "pod {count}개",
+  "cost.estimatedHint": "추정: instance 라벨이 없어 다른 식별자로 귀속",
+  "cost.byOwner": "추정: 소유 워크로드 ({kind})",
+  "cost.bySource": "추정: {source} 라벨",
   "cost.exclusionsUnavailable": "제외 항목 집계 불가 — 일부 조회가 실패했습니다.",
 
   // scorecard page additions
@@ -2230,7 +2235,12 @@ export const en: Record<keyof typeof ko, string> = {
   "cost.gb": "GB",
   "cost.telemetryUnavailable": "Telemetry could not be retrieved from Prometheus. The values below reflect a query failure, not actual cost.",
   "cost.telemetryPartial": "Some metric queries failed — the cost below may be underestimated.",
-  "cost.unlabeledWorkloadsExclusion": "{count} unlabeled workload(s) excluded (~{hourly}/h)",
+  "cost.fallbackAttributionNotice": "{count} workload(s) (~{hourly}/h) have no app.kubernetes.io/instance label and were attributed by fallback. Add app.kubernetes.io/instance / name labels for accurate attribution.",
+  "cost.unclassified": "(Unclassified)",
+  "cost.podCount": "{count} pod(s)",
+  "cost.estimatedHint": "Estimated: no instance label, attributed by another identifier",
+  "cost.byOwner": "Estimated: owner {kind}",
+  "cost.bySource": "Estimated: {source} label",
   "cost.exclusionsUnavailable": "Exclusion totals unavailable — some queries failed.",
 
   // scorecard page additions

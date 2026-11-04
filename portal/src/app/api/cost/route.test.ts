@@ -359,7 +359,7 @@ describe("GET /api/cost — scope enforcement", () => {
     expect(res.status).toBe(200)
     const body = await res.json()
     expect(body.exclusions.storageExcludedFromServiceScope).toBe(true)
-    expect(body.exclusions.unlabeledWorkloads).toBeDefined()
+    expect(body.exclusions.attribution).toBeDefined()
     expect(body.telemetry.state).toBe("ok")
   })
 })

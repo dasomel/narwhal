@@ -28,19 +28,27 @@ interface CostItem {
   storage: { gb: number; hourly: number }
   totalHourly: number
   totalMonthly: number
+  source?: "instance" | "name" | "app" | "k8s-app" | "owner" | "pod" | "unclassified"
+  name?: string
+  namespace?: string
+  kind?: string
+  pods?: number
 }
 
 // portal#64 AC3/AC4: structured mirrors of CostExclusions/CostTelemetry in
 // src/lib/cost.ts, so this table can show exclusions and render an "unavailable"
 // telemetry state distinctly from a genuinely empty result.
-interface UnlabeledWorkloadsExclusion {
+interface AttributionExclusion {
   computable: boolean
-  count: number | null
-  hourly: number | null
+  fallbackWorkloads: number | null
+  fallbackPods: number | null
+  fallbackHourly: number | null
+  unclassifiedPods: number | null
+  unclassifiedHourly: number | null
 }
 
 interface CostExclusions {
-  unlabeledWorkloads?: UnlabeledWorkloadsExclusion
+  attribution?: AttributionExclusion
   storageExcludedFromServiceScope?: boolean
 }
 
@@ -171,13 +179,13 @@ export function CostBreakdownTable() {
             Codex 리뷰 #4: computable===false를 조용히 숨기지 않고 명시적으로
             "집계 불가"라고 알린다 — 이전에는 그 조회 실패가 화면에서 사라져서
             제외 항목이 실제로는 0인 것처럼 보였다. */}
-        {scopeView === "service" && data?.exclusions?.unlabeledWorkloads && (
-          data.exclusions.unlabeledWorkloads.computable ? (
-            (data.exclusions.unlabeledWorkloads.count ?? 0) > 0 && (
-              <p className="mt-1 text-xs text-muted-foreground">
-                {t("cost.unlabeledWorkloadsExclusion", {
-                  count: String(data.exclusions.unlabeledWorkloads.count),
-                  hourly: `$${(data.exclusions.unlabeledWorkloads.hourly ?? 0).toFixed(4)}`,
+        {scopeView === "service" && data?.exclusions?.attribution && (
+          data.exclusions.attribution.computable ? (
+            (data.exclusions.attribution.fallbackWorkloads ?? 0) > 0 && (
+              <p className="mt-1 text-xs text-yellow-700 dark:text-yellow-400">
+                {t("cost.fallbackAttributionNotice", {
+                  count: String(data.exclusions.attribution.fallbackWorkloads),
+                  hourly: `$${(data.exclusions.attribution.fallbackHourly ?? 0).toFixed(4)}`,
                 })}
               </p>
             )
@@ -274,12 +282,38 @@ export function CostBreakdownTable() {
                       <Badge variant="outline" className="text-xs">
                         {scopeView === "namespace" ? t("cost.namespaceShort") : t("cost.serviceShort")}
                       </Badge>
-                      <Link
-                        href={scopeView === "service" ? `/catalog/${item.id}?tab=cost` : `/catalog?namespace=${encodeURIComponent(item.id)}`}
-                        className="rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                      >
-                        {item.id}
-                      </Link>
+                      {item.source === "unclassified" ? (
+                        <span>
+                          {t("cost.unclassified")}
+                          {item.pods !== undefined && ` · ${t("cost.podCount", { count: String(item.pods) })}`}
+                        </span>
+                      ) : scopeView === "service" && (item.source === undefined || item.source === "instance") ? (
+                        <Link
+                          href={`/catalog/${item.id}?tab=cost`}
+                          className="rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                        >
+                          {item.id}
+                        </Link>
+                      ) : scopeView === "service" ? (
+                        <span>
+                          {item.namespace ? `${item.namespace}/` : ""}
+                          {item.name ?? item.id}
+                        </span>
+                      ) : (
+                        <Link
+                          href={`/catalog?namespace=${encodeURIComponent(item.id)}`}
+                          className="rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                        >
+                          {item.id}
+                        </Link>
+                      )}
+                      {scopeView === "service" && item.source && item.source !== "instance" && item.source !== "unclassified" && (
+                        <Badge variant="secondary" className="text-[10px] font-normal" title={t("cost.estimatedHint")}>
+                          {item.source === "owner"
+                            ? t("cost.byOwner", { kind: item.kind ?? "" })
+                            : t("cost.bySource", { source: item.source })}
+                        </Badge>
+                      )}
                     </div>
                   </TableCell>
                   <TableCell className="text-right text-xs text-indigo-600 dark:text-indigo-400">

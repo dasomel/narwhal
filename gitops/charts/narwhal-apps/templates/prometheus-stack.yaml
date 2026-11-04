@@ -23,6 +23,14 @@ spec:
           enabled: false
         kubeEtcd:
           enabled: false
+        # D-COST-LABELS: kube-state-metrics ships metricLabelsAllowlist: [] so kube_pod_labels had
+        # no label_* series. The portal Cost page attributes pods by instance -> name -> app ->
+        # k8s-app before falling back to the owner workload; export only those four pod labels
+        # (low cardinality, 4 label keys on pods). Escape hatch: removing this restores the empty
+        # allowlist and the portal silently uses the owner-workload fallback.
+        kube-state-metrics:
+          metricLabelsAllowlist:
+            - pods=[app.kubernetes.io/instance,app.kubernetes.io/name,app,k8s-app]
         prometheus:
           prometheusSpec:
             podMetadata:

@@ -32,8 +32,15 @@ OP = "gitops/charts/narwhal-apps/templates/trivy-operator.yaml"
 def check(root: Path) -> list[str]:
     errs = []
     push = (root / PUSH).read_text()
-    if "--authfile" not in push or "skopeo login" not in push:
-        errs.append(f"{PUSH}: no authenticated push (skopeo login + --authfile); a public project only allows anonymous pull")
+    # Every skopeo copy/login/inspect must carry --authfile (continuations joined, comments stripped).
+    code = "\n".join(l for l in re.sub(r"\\\n", " ", push).splitlines() if not l.lstrip().startswith("#"))
+    code = re.sub(r"[ \t]+#[^\n]*", "", code)
+    calls = re.findall(r"skopeo (?:copy|login|inspect)\b[^\n]*", code)
+    if not any(c.startswith("skopeo login") for c in calls):
+        errs.append(f"{PUSH}: no skopeo login; a public project only allows anonymous pull")
+    for c in calls:
+        if "--authfile" not in c:
+            errs.append(f"{PUSH}: skopeo call without --authfile (anonymous Harbor access): {c[:60]}")
     if "--dest-tls-verify=false" in push:
         errs.append(f"{PUSH}: disables TLS verification; use --ca-cert (certs.d layout) instead")
     m = re.search(r'^SECDB_REGISTRY="\$\{AIRGAP_SECURITY_DB_REGISTRY:-(.*)\}"$', push, re.M)
@@ -62,6 +69,8 @@ def mutate(root: Path, rel: str, old: str, new: str):
 def mutation_verify(root: Path) -> int:
     cases = [
         ("anonymous push", PUSH, '--authfile "${AUTHFILE}"', ""),
+        ("copy without authfile", PUSH, 'skopeo copy --authfile "${AUTHFILE}" ', "skopeo copy "),
+        ("login without authfile", PUSH, '     --authfile "${AUTHFILE}" -u admin', "     -u admin"),
         ("tls disabled", PUSH, "skopeo copy ", "skopeo copy --dest-tls-verify=false "),
         ("in-cluster default endpoint", PUSH, "harbor.${DOMAIN}}", "harbor.devtools.svc.cluster.local}"),
         ("no empty-project warning", REG, "repo_count", "repos"),

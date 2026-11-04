@@ -13,10 +13,10 @@ set -euo pipefail
 # Job's network namespace; it never goes through containerd, so it never sees that
 # mirror. It needs an endpoint reachable over the ordinary pod network instead — a
 # real Kubernetes Service. Harbor already runs one: `harbor.devtools.svc.cluster.local`
-# on port 80 (confirmed against gitops/charts/narwhal-platform/templates/apisix-routes.yaml,
-# the ApisixUpstream backing the public harbor.<domain> route — same Service, just
-# reached from inside the cluster instead of through APISIX/ingress). That is the
-# registry gitops/resources/trivy-operator.yaml's dbRegistry/javaDbRegistry/
+# on port 80, which is where Trivy PULLS from anonymously (confirmed against gitops/charts/narwhal-platform/templates/apisix-routes.yaml,
+# the ApisixUpstream backing the public harbor.<domain> route). This script PUSHES to
+# the external https URL instead (D-SECDB-PUSH-ENDPOINT below). The pull registry is the
+# one gitops/resources/trivy-operator.yaml's dbRegistry/javaDbRegistry/
 # policiesBundle.registry now point at.
 #
 # WHY A PUBLIC PROJECT, NOT A ROBOT-ACCOUNT SECRET: this repo's rules (docs/common/agent-operational-rules.md) forbid
@@ -47,12 +47,11 @@ set -euo pipefail
 #
 # VERIFIED (2026-08-25): fetch -> promote -> push -> pull round-tripped end to end
 # against a throwaway local `docker run registry:2` (skopeo copy oci:... docker://...,
-# same TLS-disabled path this script uses) — the pulled-back manifest was byte-identical
+# an earlier plain-HTTP, unauthenticated variant of this script) — the pulled-back manifest was byte-identical
 # to the original ghcr.io/aquasecurity/trivy-db:2 manifest (same config + layer digests).
-# NOT verified against the real Harbor endpoint or from inside the cluster network — the
-# Kakao Cloud cluster this script targets is currently destroyed (see narwhal#48 issue
-# comment), so harbor.devtools.svc.cluster.local reachability and the `trivy-db` project's
-# existence/public visibility are unverified live.
+# Since then (2026-11-04) the push is authenticated and https (admin credential in a 0600
+# authfile, optional --ca-cert) and was run against the real Harbor on the local Vagrant
+# cluster. The Kakao Cloud cluster is destroyed, so that path is unverified live.
 # =============================================================================
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -106,6 +105,9 @@ if ! python3 "${SCRIPT_DIR}/check-security-db-freshness.py" "${MANIFEST}"; then
   exit 1
 fi
 
+# Keep the credential out of xtrace (`bash -x` prints expanded assignments and arguments);
+# the previous xtrace state is restored right after the login.
+case "$-" in *x*) XTRACE_WAS_ON=1; set +x ;; *) XTRACE_WAS_ON=0 ;; esac
 # Push credential: env first, else the same harbor-secrets Secret 08-5-registry.sh reads.
 HARBOR_PW="${HARBOR_ADMIN_PASSWORD:-}"
 if [[ -z "${HARBOR_PW}" ]] && command -v kubectl >/dev/null 2>&1; then
@@ -113,6 +115,7 @@ if [[ -z "${HARBOR_PW}" ]] && command -v kubectl >/dev/null 2>&1; then
     -o jsonpath='{.data.HARBOR_ADMIN_PASSWORD}' 2>/dev/null | base64 -d 2>/dev/null || true)"
 fi
 if [[ -z "${HARBOR_PW}" ]]; then
+  [[ "${XTRACE_WAS_ON}" -eq 1 ]] && set -x
   echo "ERROR: no Harbor admin credential. Export HARBOR_ADMIN_PASSWORD or make kubectl able to read" >&2
   echo "       secret devtools/harbor-secrets (--kube-context). Anonymous push is not possible:" >&2
   echo "       a public Harbor project only allows anonymous PULL." >&2
@@ -133,10 +136,12 @@ if [[ -n "${SECDB_CA_CERT}" ]]; then
 fi
 if ! printf '%s' "${HARBOR_PW}" | skopeo login ${LOGIN_CERT[@]+"${LOGIN_CERT[@]}"} \
      --authfile "${AUTHFILE}" -u admin --password-stdin "${SECDB_REGISTRY}" >/dev/null 2>&1; then
+  [[ "${XTRACE_WAS_ON}" -eq 1 ]] && set -x
   echo "ERROR: Harbor login to ${SECDB_REGISTRY} failed (bad credential, untrusted CA -> pass --ca-cert, or unreachable)." >&2
   exit 1
 fi
 unset HARBOR_PW
+[[ "${XTRACE_WAS_ON}" -eq 1 ]] && set -x
 
 ok=0; fail=0
 while IFS= read -r name; do

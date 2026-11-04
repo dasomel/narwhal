@@ -1,0 +1,100 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-harbor-probes-resources-20261105",
+  "task": "Finish already-live Harbor probe and resource change on latest origin/main, inspect local usage and last terminations, record decision/evidence, validate and commit. Compliance infra already has cluster-scoped data and needs no fix.",
+  "changeContext": {
+    "paths": [
+      "gitops/charts/narwhal-apps/templates/harbor.yaml",
+      "docs/common/lessons-log.md",
+      ".agents/evals/traces/2026-11-harbor-probes-resources.json"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Finish the already-live Harbor probe/resources fix on origin/main. Preserve CA/OIDC from #548. Only Harbor values, its decision comment, lessons and this trace change. No portal/Trivy behavior change, deployment, push, PR or review status."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "Caller-established incident: scan DB pull burst, harbor-core 11 liveness restarts with chart 1s probes and BestEffort QoS; ping does no DB/Redis work and NFS fsync 3-15ms. Caller observed 0 restarts during an earlier ~5min partial scan wave after the fix. These historical observations were supplied, not rerun by this lane."
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "D-HARBOR-PROBES: core startup/liveness/readiness and registry/registryctl liveness/readiness timeoutSeconds 5, liveness failureThreshold 6, readiness failureThreshold 3; requests total 300m/384Mi and memory-only limits total 1536Mi for core, jobservice, registry and registryctl. Cost and GitOps rollback documented. CPU contention is the leading explanation, not a proven exclusive cause."
+    },
+    {
+      "id": "e4",
+      "type": "verification",
+      "status": "passed",
+      "scope": "Read-only local cluster narwhal, devtools namespace, 2026-11-05; current idle usage and retained pod state only. No new scan load was generated.",
+      "evidence": [
+        "runtime:kubectl --context narwhal get pods -n devtools -o json: core/jobservice/registry/registryctl Ready, Burstable, restartCount 0, pod creation 2026-11-04T14:51:31Z (~8h old); lastState empty",
+        "runtime:kubectl --context narwhal top pods -n devtools --containers: CPU 5/5/1/2m, memory 50/16/21/10Mi (core/jobservice/registry/registryctl)",
+        "runtime:kubectl --context narwhal top nodes: workers CPU 487-733m, memory 3349-3678Mi; allocatable 4 CPUs/5410120Ki per worker; 300m/384Mi requests are 7.5% CPU/~7.3% allocatable memory of one worker",
+        "runtime:kubectl --context narwhal get applications -A: harbor Synced/Healthy",
+        "runtime:jobservice --previous returns previous terminated container not found; no retained jobservice pod events. Earlier deleted pod OOM status unavailable; 256Mi limit remains provisional for peak load.",
+        "runtime:kubectl --context narwhal describe node narwhal-worker-3: allocated requests 1615m (40%) CPU and 3352Mi (63%) memory including Harbor; memory limits 11176Mi (211%) are overcommitted, so simultaneous peaks remain a node-pressure risk despite reasonable requests"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "Render local apps Application and pinned Harbor 1.19.1 chart, compare resources and three probe fields against live containers, normalize API omission of initialDelaySeconds=0; no cluster mutation.",
+      "evidence": [
+        "test:helm template narwhal-apps gitops/charts/narwhal-apps --show-only templates/harbor.yaml; helm template harbor harbor-1.19.1.tgz --namespace devtools -f extracted-values; Python assertions PASS for 4 containers, caBundleSecretName preserved",
+        "artifact:/tmp/harbor-pr-evidence/check-render.py"
+      ]
+    },
+    {
+      "id": "e8",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "Exact applicable shell validators from .github/workflows/agent-behavior.yml, including pinned canonical OpenForge action executed locally (GitHub checkout/Dependabot-only branch not applicable). Separate make validate and chart render checks.",
+      "evidence": [
+        "test:workflow 11 applicable validator steps exit=0; CI helpers Ran 120 tests, OK; all 132 operational traces gated with no regressions",
+        "test:canonical OpenForge action at 36b2474951a228338e21196afdeb3fd97d523704 and local gate semantically equivalent, exit=0",
+        "test:make validate exit=0 (Vagrantfile Syntax OK and all GitOps YAML parsed)",
+        "artifact:/tmp/harbor-pr-evidence/workflow-results.json",
+        "artifact:/tmp/harbor-pr-evidence/validate.log"
+      ]
+    },
+    {
+      "id": "e9",
+      "type": "scope_check",
+      "evidence": [
+        "test:PATH=/tmp/harbor-pr-evidence/lint-venv/bin:$PATH make lint -> exit=2 (yamllint exit=1)",
+        "test:6 line-length errors: gitops/resources/ghost-pod-reaper.yaml:111 and gitops/resources/velero-server-rbac.yaml:3,25,69,125,173; git diff origin/main -- both files is empty",
+        "artifact:/tmp/harbor-pr-evidence/lint.log"
+      ],
+      "summary": "Additional make lint: shellcheck passed; yamllint installed in temporary venv after missing local executable. Six pre-existing line-length errors in unchanged origin/main files; not fixed outside scope. This is an explicit outstanding repository baseline defect, outside the requested Harbor acceptance checks; no repository-wide lint-clean claim is made.",
+      "commandExitCode": 2
+    },
+    {
+      "id": "e10",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "Full requested static regression suite on the final Harbor YAML; research evidence redirected to a fresh temporary directory. Live-cluster half/e2e not run.",
+      "commandExitCode": 0,
+      "evidence": [
+        "test:RESEARCH_EVIDENCE_DIR=$(mktemp -d) make test -> exit=0; RESULT passed 430 failed 0 warnings 3; 624490 ms",
+        "artifact:/tmp/harbor-pr-evidence/test.log"
+      ]
+    },
+    {
+      "id": "e6",
+      "type": "completion_claim",
+      "summary": "Harbor overrides match the running local cluster. Historical jobservice CrashLoop cause, full scan-wave peak capacity, Kakao cluster and end-to-end image push/pull are not verified. No claim of full load stability. Independent review remains pending. Additional make lint failed on 6 existing errors in unchanged files; the repository is not lint-clean."
+    },
+    {
+      "id": "e7",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Repository change prepared for a PR within requested scope; no remote mutation authorized. Runtime limits verified only against current usage and retained pod state. Separate pre-existing lint failures remain in ghost-pod-reaper.yaml and velero-server-rbac.yaml; no whole-repository clean claim."
+    }
+  ]
+}

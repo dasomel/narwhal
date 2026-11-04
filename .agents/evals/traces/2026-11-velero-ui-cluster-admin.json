@@ -10,6 +10,7 @@
       "docs/common/lessons-log.md",
       "gitops/charts/narwhal-apps/templates/velero-ui.yaml",
       "gitops/charts/narwhal-platform/templates/apisix-routes.yaml",
+      "scripts/cluster/11-3-keycloak-clients.sh",
       "scripts/test/lib/check-live-suite-false-failures.py",
       "scripts/test/test-sso.sh"
     ]
@@ -43,7 +44,7 @@
     {
       "id": "e5",
       "type": "review_correction",
-      "summary": "No review correction yet; independent review is pending (Narwhal merge gate)."
+      "summary": "First independent review done (Opus security review, see e9); corrections in e10. A re-review of the new head is pending (Narwhal merge gate)."
     },
     {
       "id": "e6",
@@ -58,9 +59,33 @@
       ]
     },
     {
+      "id": "e9",
+      "type": "external_input",
+      "provenance": "Opus security review of PR #553 against otwld/velero-ui v0.10.1 source (app.config.ts, auth, controllers); 2026-11-04",
+      "reviewed": true,
+      "summary": "CRITICAL: JWT key falls back to the public default (AUTH_SECRET_PASSPHRASE unset). HIGH: bulk-download block bypassable via /download/ and /Download. MEDIUM: all auth providers off makes noAuthRequired() public. Unprotected and documented: /api/stats/*, /api/form/*, /api/settings/velero/server|ui, stub DELETE plugins, /api/config; CORS reflects any origin."
+    },
+    {
+      "id": "e10",
+      "type": "review_correction",
+      "summary": "D-VELERO-UI-JWT-KEY: AUTH_SECRET_PASSPHRASE from secretKeyRef velero-ui-oauth/passphrase (velero-ui.yaml), generated once by 11-3 with openssl rand -base64 32 and kept on re-run; gateway rule is a case-insensitive regex with optional trailing slash; R293 pins both plus OAUTH_AUTH_ENABLED=true and BASIC_AUTH_ENABLED=false; matrix and lessons-log list the open endpoints. /api/form/secrets and config-maps are used by the admin storage-location credential forms, so they are documented, not blocked."
+    },
+    {
+      "id": "e11",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "Local disposable cluster after the secret block and push-to-gitea.sh; velero-ui and narwhal-platform Synced/Healthy. NOT covered: Kakao cluster, browsers.",
+      "evidence": [
+        "test:live: HS256 JWT forged with the old public default key and manage-all permissions -> GET /api/backups HTTP 401",
+        "test:live: admin list 200, create 201 (tiny backup, then deleted via API, none left); view, dev, guest list/create/delete -> 403",
+        "test:live: POST /api/backups/download, /download/, /Download -> 403 for admin, view, dev and guest",
+        "test:python3 scripts/test/lib/check-live-suite-false-failures.py -> 82 passed, 0 failed"
+      ]
+    },
+    {
       "id": "e7",
       "type": "completion_claim",
-      "summary": "In the repository and on the local cluster, Velero UI policy-checked APIs allow only Keycloak group cluster-admin; other users get 403; bulk download is closed for everyone; unauthenticated users are still sent to login. Kakao and browsers not verified. OPEN: /api/stats and /api/form/* (including secret names) answer any logged-in user."
+      "summary": "In the repository and on the local cluster, Velero UI policy-checked APIs allow only Keycloak group cluster-admin; other users get 403; bulk download is closed for everyone; unauthenticated users are still sent to login. Kakao and browsers not verified. OPEN: /api/stats and /api/form/* (including secret names) answer any logged-in user. Review follow-up: JWT key is now a generated secret and the download block covers the case and slash variants; the other unprotected endpoints are documented."
     },
     {
       "id": "e8",

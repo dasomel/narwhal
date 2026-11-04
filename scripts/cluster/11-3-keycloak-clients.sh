@@ -662,9 +662,18 @@ kc_exec update "clients/${VELERO_UI_CLIENT_ID}" -r "${REALM}" \
   -s "redirectUris=[\"https://velero-ui.${DOMAIN}/apisix/callback\",\"https://velero-ui.${DOMAIN}/login\"]" 2>/dev/null \
   && echo "  velero-ui redirectUris: /apisix/callback + /login"
 
+# D-VELERO-UI-JWT-KEY: velero-ui signs its session JWT with AUTH_SECRET_PASSPHRASE and falls back
+# to a public literal when it is unset, so anyone could mint a `manage all` token. The key is
+# generated once and kept on re-runs (a new key would log every session out); the deployment reads
+# it through secretKeyRef (velero-ui.yaml). Never printed, never committed.
+VELERO_UI_PASSPHRASE=$(kubectl get secret velero-ui-oauth -n storage -o jsonpath='{.data.passphrase}' 2>/dev/null \
+  | base64 -d 2>/dev/null) || VELERO_UI_PASSPHRASE=""
+[ -n "${VELERO_UI_PASSPHRASE}" ] || VELERO_UI_PASSPHRASE=$(openssl rand -base64 32)
+
 kubectl create secret generic velero-ui-oauth \
   --namespace storage \
   --from-literal=client_secret="${VELERO_UI_CLIENT_SECRET}" \
+  --from-literal=passphrase="${VELERO_UI_PASSPHRASE}" \
   --dry-run=client -o yaml | kubectl apply -f -
 echo "  secret 'velero-ui-oauth' created in storage"
 

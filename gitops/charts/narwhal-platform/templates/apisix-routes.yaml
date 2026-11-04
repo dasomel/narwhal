@@ -966,9 +966,16 @@ spec:
         hosts:
           - velero-ui.{{ .Values.baseDomain }}
         paths:
-          - "/api/backups/download"
+          - "/api/backups/*"
         methods:
           - POST
+        # Express matches non-strict and case-insensitive, so /api/backups/download/ and
+        # /api/backups/Download reach the same handler; an exact path would be bypassable.
+        exprs:
+          - subject:
+              scope: Path
+            op: RegexMatchCaseInsensitive
+            value: "^/api/backups/download/*$"
       upstreams:
         - name: velero-ui
       plugins:

@@ -107,6 +107,14 @@ spec:
               secretKeyRef:
                 name: velero-ui-oauth
                 key: client_secret
+          # D-VELERO-UI-JWT-KEY: chart 0.14.0 never wires secretPassPhrase into the pod, and the app
+          # falls back to the public literal 'this is the secret pass phrase' for the JWT key, so the
+          # env is set here from the secret 11-3 generates (openssl rand). R293 pins it.
+          - name: AUTH_SECRET_PASSPHRASE
+            valueFrom:
+              secretKeyRef:
+                name: velero-ui-oauth
+                key: passphrase
           - name: OAUTH_OAUTH_SCOPE
             value: "openid profile email groups"
           - name: OAUTH_GROUP_CLAIM

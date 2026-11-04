@@ -67,6 +67,8 @@ export interface DoraPerApp {
   namespace: string
   deploys: number
   lastDeployedAt: string | null
+  // Optional only for cached responses produced before minute precision was added.
+  leadTimeMinutes?: number | null
   leadTimeHours: number | null   // avg commit->deploy for this app's recent deploys
   // false for Helm chart-sourced apps (no git revision); absent in pre-fix cached payloads
   leadTimeApplicable?: boolean
@@ -77,6 +79,8 @@ export interface DoraMetrics {
   metricDefinitionVersion: string
   deployFrequency: number        // per day
   totalDeploys: number
+  // Optional only for cached responses produced before minute precision was added.
+  leadTimeMinutes?: number | null
   leadTimeHours: number | null   // REAL lead time: gitea commit ts -> argocd deployedAt (avg)
   // % of deployments with a KNOWN outcome that failed; null when no
   // deployment in the window has outcome evidence (distinct from 0%).

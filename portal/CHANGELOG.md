@@ -9,6 +9,70 @@ English | [한국어](CHANGELOG-ko.md)
 
 ## [Unreleased]
 
+## [1.1.6] - 2026-11-05
+
+Minor-feature patch release: the Settings and Security pages gain the OSS updates tab, the Trivy DB
+card and the Kyverno policy explanations, and several fixes reach the cluster that 1.1.5 still lacks.
+Everything since `portal/v1.1.5` is covered here.
+
+### Added
+
+- **Settings: OSS updates tab (narwhal#552)**: shows each component's declared version (a committed
+  snapshot of `VERSIONS.md`), the running version (Argo CD `targetRevision` plus the image tags and CVEs
+  Trivy already reports) and the upstream latest. Versions younger than 7 days are marked as cooling and
+  cannot be requested (409). The request button opens an upgrade issue carrying the
+  `narwhal-version-upgrade` checklist; the portal never changes the cluster. The upstream lookup is
+  public GitHub releases, off unless `OSS_UPDATES_UPSTREAM=true`, cached for 6 hours (10 minutes after
+  a failure), and shows "unknown" when off or failing.
+- **Security: Trivy DB status card (narwhal#554)**: cluster-admin only and read-only. Shows trivy-db,
+  trivy-java-db and trivy-checks in the Harbor `trivy-db` project with tag, age and fresh / stale /
+  missing status against the 7-day SLO, plus scanner health (report count, newest report, recent
+  `BackoffLimitExceeded` events). A stale or missing DB shows the copyable airgap update commands. Harbor
+  is read anonymously; the optional `HARBOR_URL` defaults to
+  `http://harbor-core.devtools.svc.cluster.local`. The new `GET /api/security/trivy-db` backs it.
+- **Settings: Kyverno policy explanations and detail panel (narwhal#547)**: a legend explains Enforce
+  (blocked at admission) and Audit (allowed, recorded in a PolicyReport). The action now comes from each
+  rule's `validate.failureAction` (Kyverno 1.13+) and shows `Mixed` when rules disagree. Clicking a policy
+  name opens a panel with description, category, severity, scope, action, background setting and
+  per-rule details. The policy API gains backward-compatible fields.
+- **Local dev cluster**: `make dev-cluster` / `pnpm dev:cluster` runs a live-edit portal build in the
+  local cluster, generated from the chart (narwhal#529). Development tooling only.
+
+### Fixed
+
+- **Certificates: renew always failed (narwhal#549)**: the portal patched `spec.renewBefore: "1s"`,
+  which the cert-manager webhook rejects (minimum 5 minutes), and its ServiceAccount could only `get`
+  certificates. Renewal now works as `cmctl renew` does: set the `Issuing` condition to `True`
+  (`ManuallyTriggered`) through the `/status` subresource, retrying once on a 409; the spec is never
+  written. The `narwhal-portal` ClusterRole gains only `update` on `certificates/status`, which needs
+  the GitOps chart change to be live. Errors are logged with status and path, and Kubernetes
+  403/404/409/422 map to their own responses instead of a bare 500.
+- **Governance: DORA lead time always showed "—" (narwhal#556)**: Gitea API calls through the gateway
+  were redirected to the Keycloak login, so commit timestamps never parsed. A narrow APISIX rule,
+  `gitea-portal-api`, now lets only GET/POST on the `narwhal-gitops` commit, contents and pulls paths
+  with a `token <40 hex>` Authorization header reach Gitea. The same redirect also broke the namespace
+  request PR flow. Apps sourced from a Helm chart version now show "N/A (Helm chart)" instead of "—".
+  A redirect or HTML answer is logged once as a likely SSO redirect (narwhal#557 corrects its hint to
+  check the `gitea-portal-api` rule and `GITEA_URL`).
+- **Security: partial Trivy results (narwhal#505, narwhal#514)**: a mid-walk 429 or expired continue
+  token no longer ends the vulnerability report walk silently. Pages retry up to 3 times honouring
+  `Retry-After`; if later pages still fail the page shows a partial-data notice, the APIs set
+  `X-Partial-Data`, and partial results are never cached.
+- **Settings: permission matrix sticky columns see-through (narwhal#546)**: the group-name, header and
+  Save columns are opaque while the matrix scrolls horizontally.
+- **Security: Trivy DB display path (narwhal#550)**: the Trivy DB registry shown in the portal now
+  matches `trivy-operator.yaml` instead of a nonexistent `/library/trivy-db` path.
+- **Hardcoded Korean (narwhal#512, narwhal#513, narwhal#527)**: ten untranslated UI strings in the DORA
+  metrics, resource drawer and KISA checklist now use the `ko`/`en` message keys.
+
+### Changed
+
+- OpenTelemetry moves to SDK 3.0: `auto-instrumentations-node` 0.82.0, `sdk-node` and
+  `exporter-trace-otlp-http` 0.300.0, with `@opentelemetry/resources` 3.0.0 (narwhal#487). `shadcn`
+  4.23.0 (narwhal#540); dev tooling `@tanstack/react-query-devtools` 5.105.0, `eslint-config-next`
+  16.4.3, `vite` 8.3.5 (narwhal#517). The unused `hono` and `@hono/node-server` overrides are removed
+  (narwhal#543).
+
 ## [1.1.5] - 2026-10-31
 
 Patch release: fix the deferred `body-parser` advisory (narwhal#470) and ship the Portal
@@ -553,7 +617,8 @@ management dashboard built with Next.js 16 and React 19.
   - Skaffold development profile configured for live Hot Module Replacement (HMR) and container
     file syncing.
 
-[Unreleased]: https://github.com/dasomel/narwhal/compare/portal/v1.1.5...HEAD
+[Unreleased]: https://github.com/dasomel/narwhal/compare/portal/v1.1.6...HEAD
+[1.1.6]: https://github.com/dasomel/narwhal/compare/portal/v1.1.5...portal/v1.1.6
 [1.1.5]: https://github.com/dasomel/narwhal/compare/portal/v1.1.4...portal/v1.1.5
 [1.1.4]: https://github.com/dasomel/narwhal/compare/portal/v1.1.3...portal/v1.1.4
 [1.1.3]: https://github.com/dasomel/narwhal/compare/portal/v1.1.2...portal/v1.1.3

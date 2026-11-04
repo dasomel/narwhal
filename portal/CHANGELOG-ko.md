@@ -9,6 +9,66 @@
 
 ## [Unreleased]
 
+## [1.1.6] - 2026-11-05
+
+기능이 더해진 패치 릴리스. 설정·보안 화면에 OSS 업데이트 탭, Trivy DB 카드, Kyverno 정책 설명이
+추가되고, 1.1.5에는 없던 여러 수정이 클러스터에 반영됨. `portal/v1.1.5` 이후의 모든 변경을 다룸.
+
+### 추가
+
+- **설정: OSS 업데이트 탭 (narwhal#552)**: 구성요소별 선언 버전(`VERSIONS.md`를 커밋한 스냅샷), 실행
+  버전(Argo CD `targetRevision`과 Trivy가 이미 보고하는 이미지 태그·CVE), 업스트림 최신 버전을 보여
+  줌. 게시 7일 미만 버전은 쿨링 중으로 표시하고 요청할 수 없음(409). 요청 버튼은
+  `narwhal-version-upgrade` 체크리스트가 담긴 업그레이드 이슈를 만들며, 포털은 클러스터를 직접
+  바꾸지 않음. 업스트림 조회는 공개 GitHub 릴리스이며 `OSS_UPDATES_UPSTREAM=true`일 때만 켜지고 6시간
+  (실패 시 10분) 캐시하며, 꺼져 있거나 실패하면 "알 수 없음"으로 표시함.
+- **보안: Trivy DB 상태 카드 (narwhal#554)**: cluster-admin 전용 읽기 화면. Harbor `trivy-db`
+  프로젝트의 trivy-db, trivy-java-db, trivy-checks에 대해 태그, 경과 시간, 7일 SLO 기준
+  최신/오래됨/없음 상태를 보여주고, 스캐너 상태(리포트 수, 최신 리포트 시각, 최근
+  `BackoffLimitExceeded` 이벤트)도 보여줌. 오래됐거나 없으면 복사 가능한 에어갭 갱신 명령을 안내함.
+  Harbor는 익명으로 읽으며 선택 환경변수 `HARBOR_URL`의 기본값은
+  `http://harbor-core.devtools.svc.cluster.local`임. `GET /api/security/trivy-db`가 이를 제공함.
+- **설정: Kyverno 정책 설명과 상세 패널 (narwhal#547)**: 범례가 Enforce(admission 시 차단)와
+  Audit(허용하되 PolicyReport에 기록)를 설명함. 동작은 이제 규칙별 `validate.failureAction`
+  (Kyverno 1.13+)에서 가져오며 규칙끼리 다르면 `Mixed`로 표시함. 정책 이름을 누르면 설명, 분류, 심각도,
+  적용 범위, 동작, 백그라운드 설정, 규칙별 상세가 담긴 패널이 열림. 정책 API에는 하위 호환 필드가
+  추가됨.
+- **로컬 개발 클러스터**: `make dev-cluster` / `pnpm dev:cluster`가 로컬 클러스터에서 실시간 편집
+  포털 빌드를 차트로부터 생성해 실행함(narwhal#529). 개발 도구에 한정됨.
+
+### 수정
+
+- **인증서: 갱신이 항상 실패함 (narwhal#549)**: 포털이 `spec.renewBefore: "1s"`를 패치했으나
+  cert-manager 웹훅이 5분 미만을 거부했고, 포털 ServiceAccount는 인증서 `get`만 가능했음. 이제
+  `cmctl renew`와 같이 `/status` 서브리소스로 `Issuing` 조건을 `True`(`ManuallyTriggered`)로
+  설정하고 409면 한 번 재시도하며, spec은 쓰지 않음. `narwhal-portal` ClusterRole에는
+  `certificates/status`의 `update`만 추가되며, 이는 GitOps 차트 변경이 반영되어야 함. 오류는
+  상태와 경로만 로그에 남기고, Kubernetes 403/404/409/422는 일괄 500 대신 각각의 응답으로 매핑됨.
+- **거버넌스: DORA 리드타임이 항상 "—"로 표시됨 (narwhal#556)**: 게이트웨이를 통한 Gitea API 호출이
+  Keycloak 로그인으로 리다이렉트되어 커밋 시각을 읽지 못했음. 이제 좁은 APISIX 규칙
+  `gitea-portal-api`가 `narwhal-gitops`의 커밋·contents·pulls 경로에 대한 GET/POST 중
+  `token <40자리 hex>` Authorization 헤더가 있는 요청만 Gitea로 통과시킴. 같은 리다이렉트로 네임스페이스
+  요청 PR 흐름도 깨져 있었음. Helm 차트 버전을 소스로 쓰는 앱은 "—" 대신 "N/A (Helm chart)"로 표시함.
+  리다이렉트나 HTML 응답은 SSO 리다이렉트 가능성으로 한 번 로그에 남기며, 안내 문구는
+  `gitea-portal-api` 규칙과 `GITEA_URL`을 확인하라고 안내하도록 고침(narwhal#557).
+- **보안: Trivy 결과 일부만 반환 (narwhal#505, narwhal#514)**: 조회 중 429나 만료된 continue 토큰이
+  리포트 조회를 조용히 끝내지 않음. 페이지당 최대 3회 재시도하며 `Retry-After`를 따르고, 이후에도
+  실패하면 화면에 부분 데이터 안내를 띄우고 API는 `X-Partial-Data`를 설정하며 부분 결과는 캐시하지
+  않음.
+- **설정: 권한 표 고정 열 비침 (narwhal#546)**: 표를 가로로 스크롤할 때 그룹 이름, 헤더, 저장 열이
+  불투명하게 유지됨.
+- **보안: Trivy DB 표시 경로 (narwhal#550)**: 포털이 보여주는 Trivy DB 레지스트리가 존재하지 않는
+  `/library/trivy-db` 대신 `trivy-operator.yaml`과 일치함.
+- **한글 하드코딩 (narwhal#512, narwhal#513, narwhal#527)**: DORA 지표, 리소스 상세, KISA 점검표의
+  번역되지 않은 UI 문자열 10개가 `ko`/`en` 메시지 키를 쓰도록 바뀜.
+
+### 변경
+
+- OpenTelemetry를 SDK 3.0으로 올림: `auto-instrumentations-node` 0.82.0, `sdk-node`와
+  `exporter-trace-otlp-http` 0.300.0, `@opentelemetry/resources` 3.0.0(narwhal#487). `shadcn` 4.23.0
+  (narwhal#540), 개발 도구 `@tanstack/react-query-devtools` 5.105.0, `eslint-config-next` 16.4.3,
+  `vite` 8.3.5(narwhal#517). 쓰이지 않는 `hono`, `@hono/node-server` override를 제거함(narwhal#543).
+
 ## [1.1.5] - 2026-10-31
 
 패치 릴리스. 쿨링 기간 때문에 보류했던 `body-parser` 권고(narwhal#470)를 해결하고,
@@ -525,7 +585,8 @@ Portal의 첫 번째 공개 릴리스.
     매니페스트(`deploy/kaniko-build-job.yaml`).
   - 실시간 핫 모듈 교체(HMR) 및 컨테이너 파일 동기화를 위해 구성된 Skaffold 개발 프로필.
 
-[Unreleased]: https://github.com/dasomel/narwhal/compare/portal/v1.1.5...HEAD
+[Unreleased]: https://github.com/dasomel/narwhal/compare/portal/v1.1.6...HEAD
+[1.1.6]: https://github.com/dasomel/narwhal/compare/portal/v1.1.5...portal/v1.1.6
 [1.1.5]: https://github.com/dasomel/narwhal/compare/portal/v1.1.4...portal/v1.1.5
 [1.1.4]: https://github.com/dasomel/narwhal/compare/portal/v1.1.3...portal/v1.1.4
 [1.1.3]: https://github.com/dasomel/narwhal/compare/portal/v1.1.2...portal/v1.1.3

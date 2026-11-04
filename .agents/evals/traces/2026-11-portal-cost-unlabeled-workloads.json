@@ -1,0 +1,68 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-portal-cost-unlabeled-workloads-20261105",
+  "task": "Portal Cost service tab grouped only by label_app_kubernetes_io_instance, which kube_pod_labels does not export at all (kube-state-metrics metricLabelsAllowlist empty), so all 168 pods were excluded. Attribute pods by instance -> name -> app -> k8s-app -> owner workload -> pod-name stem with a visible (unclassified) bucket, and export those four pod labels from kube-state-metrics. The kube-state-metrics allowlist was pushed to Gitea with scripts/gitops/push-to-gitea.sh and applied by ArgoCD.",
+  "changeContext": {
+    "paths": [
+      ".agents/evals/traces/2026-11-portal-cost-unlabeled-workloads.json",
+      "gitops/charts/narwhal-apps/templates/prometheus-stack.yaml",
+      "portal/src/components/cost/cost-breakdown-table.tsx",
+      "portal/src/lib/cost-attribution.test.ts",
+      "portal/src/lib/cost-attribution.ts",
+      "portal/src/lib/cost.test.ts",
+      "portal/src/lib/cost.ts",
+      "portal/src/lib/i18n.ts",
+      "portal/src/app/api/cost/route.test.ts"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "New pure attribution module and pod-level service queries in portal/src/lib, UI badges and fallback banner, KO/EN i18n, tests, and one kube-state-metrics metricLabelsAllowlist entry in the prometheus-stack Application values. Deliberately left alone: the per-service detail route (still keyed on the instance label), namespace/cluster scopes, stale D-DOWN-WORKLOAD comment wording in prometheus-alerts.yaml."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "Live Prometheus on the narwhal context: count(kube_pod_labels) is empty, kube-state-metrics args carry no --metric-labels-allowlist, kube_pod_owner has 178 series (owner_is_controller=true) and kube_replicaset_owner 137, so only owner and pod-name levels are available until the allowlist ships.",
+      "evidence": [
+        "test:kubectl --context narwhal -n monitoring get deploy prometheus-stack-kube-state-metrics args; curl Prometheus /api/v1/query count(kube_pod_labels) -> []"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "external_input",
+      "provenance": "kube-state-metrics v2.19.1 --metric-labels-allowlist syntax (resource=[label,...]) as exposed by the kube-prometheus-stack 86.2.3 kube-state-metrics subchart value metricLabelsAllowlist; live kube_pod_owner/kube_replicaset_owner label sets read from the narwhal cluster Prometheus on 2026-11-05",
+      "reviewed": true,
+      "summary": "Allowlist entry pods=[app.kubernetes.io/instance,app.kubernetes.io/name,app,k8s-app] yields kube_pod_labels label_app_kubernetes_io_instance, label_app_kubernetes_io_name, label_app, label_k8s_app. Not rendered with helm template here; first live scrape is the check."
+    },
+    {
+      "id": "e4",
+      "type": "bug_fix",
+      "summary": "getCost(service) now queries per-pod cpu/mem plus kube_pod_labels, kube_pod_owner and kube_replicaset_owner and attributes in cost-attribution.ts; the instance row id is unchanged, fallback rows are keyed source:namespace/name so they never merge with instance rows; pods without a pod label go to one unclassified row; exclusions.attribution replaces exclusions.unlabeledWorkloads. Allowlist pods=[app.kubernetes.io/instance,app.kubernetes.io/name,app,k8s-app] added to prometheus-stack values (D-COST-LABELS)."
+    },
+    {
+      "id": "e5",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "pnpm typecheck, lint (0 errors), test (151 files), build, harness-rules; attribution chain run against live Prometheus before (owner/pod levels only: 168 pods -> 88 rows, 0 unclassified) and after the allowlist (instance 119, name 30, k8s-app 6, app 3 label series; top rows attributed by instance/name/owner/pod); prometheus-stack Synced/Healthy with --metric-labels-allowlist on kube-state-metrics; page rendered locally with pnpm dev. NOT covered: the new portal build running in the cluster (live portal is v1.1.5), real-user browser auth.",
+      "evidence": [
+        "test:pnpm typecheck && pnpm lint && pnpm test && pnpm build in portal/",
+        "test:tsx script running the five PromQL queries against Prometheus port-forward",
+        "test:kubectl -n devtools get app prometheus-stack -> Synced/Healthy; kube-state-metrics args include --metric-labels-allowlist=pods=[...]; Prometheus series kube_pod_labels has label_app_kubernetes_io_instance/name, label_app, label_k8s_app"
+      ]
+    },
+    {
+      "id": "e6",
+      "type": "completion_claim",
+      "summary": "Portal attribution chain is implemented and verified locally against live Prometheus data, and the kube-state-metrics allowlist is live (ArgoCD Synced/Healthy)."
+    },
+    {
+      "id": "e7",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Complete: code verified locally, allowlist applied live. The new portal build is not deployed (live portal v1.1.5)."
+    }
+  ]
+}

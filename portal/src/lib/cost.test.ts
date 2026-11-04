@@ -449,74 +449,104 @@ describe("cost exclusions and telemetry (Portal #64 AC3/AC4)", () => {
     vi.restoreAllMocks()
   })
 
-  // cpuByServiceQuery/memByServiceQuery join kube_pod_labels; cpuByNamespaceQuery/
-  // memByNamespaceQuery don't; unlabeledWorkloadCountQuery adds "unless on(pod" on
-  // top of kube_pod_labels. Route on those distinguishing substrings so each of the
-  // 5 concurrent queries in getCost("service") gets its own deterministic fixture.
+  // Service scope fetches per-pod usage plus kube_pod_labels / kube_pod_owner /
+  // kube_replicaset_owner. Route on the metric name so each concurrent query gets
+  // its own deterministic fixture.
   function routedFetch(overrides: Record<string, unknown[]>) {
     return vi.fn(async (url: string) => {
-      // "unless on(pod, namespace)" contains a space/paren that encodeURIComponent
-      // percent-encodes in the request URL — match on the plain word instead.
-      if (url.includes("unless")) return jsonResponse(overrides.count ?? [])
-      if (url.includes("container_cpu_usage_seconds_total") && url.includes("kube_pod_labels")) {
-        return jsonResponse(overrides.labeledCpu ?? [])
-      }
-      if (url.includes("container_cpu_usage_seconds_total")) return jsonResponse(overrides.totalCpu ?? [])
-      if (url.includes("container_memory_working_set_bytes") && url.includes("kube_pod_labels")) {
-        return jsonResponse(overrides.labeledMem ?? [])
-      }
-      if (url.includes("container_memory_working_set_bytes")) return jsonResponse(overrides.totalMem ?? [])
-      if (url.includes("kubelet_volume_stats_used_bytes")) return jsonResponse(overrides.storage ?? [])
+      const decoded = decodeURIComponent(url)
+      if (decoded.includes("kube_replicaset_owner")) return jsonResponse(overrides.rsOwner ?? [])
+      if (decoded.includes("kube_pod_owner")) return jsonResponse(overrides.owner ?? [])
+      if (decoded.includes("kube_pod_labels")) return jsonResponse(overrides.labels ?? [])
+      if (decoded.includes("container_cpu_usage_seconds_total")) return jsonResponse(overrides.cpu ?? [])
+      if (decoded.includes("container_memory_working_set_bytes")) return jsonResponse(overrides.mem ?? [])
       return jsonResponse([])
     })
   }
 
-  it("AC3: getCost('service') computes unlabeled workload count/cost from labeled vs total totals", async () => {
+  it("service scope attributes unlabeled pods by fallback and keeps totals consistent", async () => {
     vi.stubGlobal("fetch", routedFetch({
-      labeledCpu: [{ metric: { namespace: "platform-system", label_app_kubernetes_io_instance: "svc-a" }, value: [0, "1"] }],
-      totalCpu: [{ metric: { namespace: "platform-system" }, value: [0, "3"] }],
-      labeledMem: [{ metric: { namespace: "platform-system", label_app_kubernetes_io_instance: "svc-a" }, value: [0, "1000000000"] }],
-      totalMem: [{ metric: { namespace: "platform-system" }, value: [0, "3000000000"] }],
-      count: [{ metric: { namespace: "platform-system" }, value: [0, "3"] }],
+      cpu: [
+        { metric: { namespace: "platform-system", pod: "web-1" }, value: [0, "1"] },
+        { metric: { namespace: "platform-system", pod: "api-7d9f8c6b5-x2k4q" }, value: [0, "2"] },
+        { metric: { namespace: "platform-system", pod: "" }, value: [0, "0.5"] },
+      ],
+      mem: [
+        { metric: { namespace: "platform-system", pod: "web-1" }, value: [0, "1000000000"] },
+        { metric: { namespace: "platform-system", pod: "api-7d9f8c6b5-x2k4q" }, value: [0, "2000000000"] },
+        { metric: { namespace: "platform-system", pod: "" }, value: [0, "500000000"] },
+      ],
+      labels: [{ metric: { namespace: "platform-system", pod: "web-1", label_app_kubernetes_io_instance: "web" }, value: [0, "1"] }],
+      owner: [{ metric: { namespace: "platform-system", pod: "api-7d9f8c6b5-x2k4q", owner_kind: "ReplicaSet", owner_name: "api-7d9f8c6b5" }, value: [0, "1"] }],
+      rsOwner: [{ metric: { namespace: "platform-system", replicaset: "api-7d9f8c6b5", owner_kind: "Deployment", owner_name: "api" }, value: [0, "1"] }],
     }))
-    const session = { groups: ["developer"], teams: ["platform-team"] }
-    const scope = await getEffectiveScope(session)
+    const scope = await getEffectiveScope({ groups: ["developer"], teams: ["platform-team"] })
 
     const result = await getCost("service", scope)
 
     expect(result.telemetry.state).toBe("ok")
-    expect(result.exclusions?.storageExcludedFromServiceScope).toBe(true)
-    expect(result.exclusions?.unlabeledWorkloads).toEqual({
+    const bySource = Object.fromEntries(result.items.map((i) => [i.source, i]))
+    expect(bySource.instance.id).toBe("web")
+    expect(bySource.owner).toMatchObject({ name: "api", kind: "Deployment", namespace: "platform-system", pods: 1 })
+    expect(bySource.unclassified).toMatchObject({ pods: 1, totalHourly: 0.0225 })
+    const sum = result.items.reduce((s, i) => s + i.totalHourly, 0)
+    // 3.5 cores * 0.04 + 3.5 GB * 0.005 = 0.1575
+    expect(sum).toBeCloseTo(0.1575, 3)
+    expect(result.exclusions?.attribution).toEqual({
       computable: true,
-      count: 3,
-      cpu: 2, // 3 total - 1 labeled
-      memoryGb: 2, // 3GB total - 1GB labeled
-      hourly: 0.09, // 2*0.04 (cpuHourly) + 2*0.005 (memGbHourly)
+      fallbackWorkloads: 1,
+      fallbackPods: 1,
+      fallbackHourly: 0.09,
+      unclassifiedPods: 1,
+      unclassifiedHourly: 0.0225,
     })
   })
 
-  it("AC3: getCost('service') keeps the legacy notice + telemetry empty when no labeled workloads exist (missing labels)", async () => {
+  it("service scope still attributes via owner when kube_pod_labels is empty (no KSM allowlist)", async () => {
+    vi.stubGlobal("fetch", routedFetch({
+      cpu: [{ metric: { namespace: "iam", pod: "keycloak-0" }, value: [0, "1"] }],
+      mem: [{ metric: { namespace: "iam", pod: "keycloak-0" }, value: [0, "1000000000"] }],
+      owner: [{ metric: { namespace: "iam", pod: "keycloak-0", owner_kind: "StatefulSet", owner_name: "keycloak" }, value: [0, "1"] }],
+    }))
+    const scope = await getEffectiveScope({ groups: ["developer"], teams: ["platform-team"] })
+    scope.all = true
+
+    const result = await getCost("service", scope)
+
+    expect(result.items).toHaveLength(1)
+    expect(result.items[0]).toMatchObject({ source: "owner", kind: "StatefulSet", name: "keycloak" })
+  })
+
+  it("service scope returns the empty notice and no rows when no usage exists", async () => {
     vi.stubGlobal("fetch", routedFetch({}))
-    const session = { groups: ["developer"], teams: ["platform-team"] }
-    const scope = await getEffectiveScope(session)
+    const scope = await getEffectiveScope({ groups: ["developer"], teams: ["platform-team"] })
 
     const result = await getCost("service", scope)
 
     expect(result.items).toEqual([])
-    expect(result.notice).toContain("label_app_kubernetes_io_instance")
-    // 크리틱 리뷰(Codex) #1: 두 core 쿼리(cpu/mem-by-service) 모두 fulfilled인데
-    // 결과가 비어 있으므로 "ok"가 아니라 "empty" — 쿼리는 성공했지만 값이 없다는
-    // 뜻이지 장애는 아니다. exclusions는 emptiness와 무관하게(설령 그 자체) 계속
-    // 계산된다 — 아래에서 확인.
     expect(result.telemetry.state).toBe("empty")
-    // No labeled data and no total data either -> nothing to subtract from.
-    expect(result.exclusions?.unlabeledWorkloads).toEqual({
-      computable: true,
-      count: 0,
-      cpu: 0,
-      memoryGb: 0,
-      hourly: 0,
-    })
+    expect(result.exclusions?.attribution).toMatchObject({ computable: true, fallbackWorkloads: 0, unclassifiedPods: 0 })
+  })
+
+  it("service scope marks attribution computable=false and skips caching when the owner query fails", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+      const decoded = decodeURIComponent(url)
+      if (decoded.includes("kube_pod_owner")) throw new Error("Prometheus query failed: 500")
+      if (decoded.includes("container_cpu_usage_seconds_total")) {
+        return jsonResponse([{ metric: { namespace: "platform-system", pod: "web-1" }, value: [0, "1"] }])
+      }
+      if (decoded.includes("container_memory_working_set_bytes")) {
+        return jsonResponse([{ metric: { namespace: "platform-system", pod: "web-1" }, value: [0, "1000000000"] }])
+      }
+      return jsonResponse([])
+    }))
+    const scope = await getEffectiveScope({ groups: ["developer"], teams: ["platform-team"] })
+
+    const result = await getCost("service", scope)
+
+    expect(result.telemetry.state).toBe("ok")
+    expect(result.exclusions?.attribution?.computable).toBe(false)
+    expect(cacheSet).not.toHaveBeenCalled()
   })
 
   it("AC3: getCost('namespace') reports total unallocated storage once in exclusions (not duplicated per item)", async () => {
@@ -679,153 +709,47 @@ describe("cost exclusions and telemetry (Portal #64 AC3/AC4)", () => {
     expect(cacheSet).not.toHaveBeenCalled()
   })
 
-  it("크리틱 리뷰 #2: unlabeledWorkloadCountQuery excludes out-of-scope namespace counts for a non-admin caller", async () => {
+  it("service scope excludes out-of-scope namespaces from rows and attribution counts", async () => {
     vi.stubGlobal("fetch", routedFetch({
-      labeledCpu: [],
-      totalCpu: [],
-      labeledMem: [],
-      totalMem: [],
-      count: [
-        { metric: { namespace: "platform-system" }, value: [0, "2"] }, // in scope
-        { metric: { namespace: "frontend-app" }, value: [0, "5"] }, // out of scope for platform-team
+      cpu: [
+        { metric: { namespace: "platform-system", pod: "a-0" }, value: [0, "1"] },
+        { metric: { namespace: "frontend-app", pod: "b-0" }, value: [0, "5"] },
+      ],
+      mem: [
+        { metric: { namespace: "platform-system", pod: "a-0" }, value: [0, "1000000000"] },
+        { metric: { namespace: "frontend-app", pod: "b-0" }, value: [0, "5000000000"] },
       ],
     }))
-    const session = { groups: ["developer"], teams: ["platform-team"] }
-    const scope = await getEffectiveScope(session)
+    const scope = await getEffectiveScope({ groups: ["developer"], teams: ["platform-team"] })
 
     const result = await getCost("service", scope)
 
-    // Only the visible namespace's count contributes; the other team's 5 must not leak.
-    expect(result.exclusions?.unlabeledWorkloads).toEqual({
-      computable: true,
-      count: 2,
-      cpu: 0,
-      memoryGb: 0,
-      hourly: 0,
-    })
+    expect(result.items).toHaveLength(1)
+    expect(result.items[0].namespace).toBe("platform-system")
+    expect(result.exclusions?.attribution).toMatchObject({ fallbackWorkloads: 1, fallbackPods: 1 })
   })
 
-  it("크리틱 리뷰 #3: labeled CPU accumulates (not overwrites) when a service spans multiple namespaces", async () => {
-    // "monitoring" matches platform-team's role-filter mapping but only becomes
-    // resolved/visible if it actually exists in the namespace list.
+  it("service scope accumulates cpu for one instance label spanning multiple namespaces", async () => {
     vi.mocked(getNamespaces).mockResolvedValueOnce([
       ...testNamespaces,
       { name: "monitoring", status: "Active", labels: {}, createdAt: "2026-01-01T00:00:00Z" },
     ])
     vi.stubGlobal("fetch", routedFetch({
-      labeledCpu: [
-        { metric: { namespace: "platform-system", label_app_kubernetes_io_instance: "svc-a" }, value: [0, "1"] },
-        { metric: { namespace: "monitoring", label_app_kubernetes_io_instance: "svc-a" }, value: [0, "2"] },
+      cpu: [
+        { metric: { namespace: "platform-system", pod: "a-0" }, value: [0, "1"] },
+        { metric: { namespace: "monitoring", pod: "a-0" }, value: [0, "2"] },
       ],
-      totalCpu: [
-        { metric: { namespace: "platform-system" }, value: [0, "1"] },
-        { metric: { namespace: "monitoring" }, value: [0, "2"] },
+      labels: [
+        { metric: { namespace: "platform-system", pod: "a-0", label_app_kubernetes_io_instance: "svc-a" }, value: [0, "1"] },
+        { metric: { namespace: "monitoring", pod: "a-0", label_app_kubernetes_io_instance: "svc-a" }, value: [0, "1"] },
       ],
     }))
-    const session = { groups: ["developer"], teams: ["platform-team"] }
-    const scope = await getEffectiveScope(session)
+    const scope = await getEffectiveScope({ groups: ["developer"], teams: ["platform-team"] })
 
     const result = await getCost("service", scope)
 
-    // If cpuMap still overwrote instead of accumulating, this would be 2 (last write wins).
-    const svcA = result.items.find((i) => i.id === "svc-a")
-    expect(svcA?.cpu.cores).toBe(3)
-    // Fully attributed to the (now correctly summed) service — nothing left "unlabeled".
-    expect(result.exclusions?.unlabeledWorkloads).toEqual({
-      computable: true,
-      count: 0,
-      cpu: 0,
-      memoryGb: 0,
-      hourly: 0,
-    })
-  })
-
-  it("크리틱 리뷰 #3: unlabeled cpu/mem is clamped per namespace, not only on the grand total", async () => {
-    // platform-system: total(1) < labeled(2) due to query timing skew -> would go
-    // negative if summed into one grand total before clamping, silently canceling
-    // out monitoring's genuine unlabeled amount. Per-namespace clamping keeps both.
-    vi.mocked(getNamespaces).mockResolvedValueOnce([
-      ...testNamespaces,
-      { name: "monitoring", status: "Active", labels: {}, createdAt: "2026-01-01T00:00:00Z" },
-    ])
-    vi.stubGlobal("fetch", routedFetch({
-      labeledCpu: [
-        { metric: { namespace: "platform-system", label_app_kubernetes_io_instance: "svc-a" }, value: [0, "2"] },
-      ],
-      totalCpu: [
-        { metric: { namespace: "platform-system" }, value: [0, "1"] },
-        { metric: { namespace: "monitoring" }, value: [0, "5"] },
-      ],
-    }))
-    const session = { groups: ["developer"], teams: ["platform-team"] }
-    const scope = await getEffectiveScope(session)
-
-    const result = await getCost("service", scope)
-
-    // Grand-total-first would compute max(0, (1+5) - 2) = 4; per-namespace clamping
-    // computes max(0, 1-2)=0 for platform-system + max(0, 5-0)=5 for monitoring = 5.
-    expect(result.exclusions?.unlabeledWorkloads?.cpu).toBe(5)
-  })
-
-  it("크리틱 리뷰 #3: a workload labeled exactly 'unknown' is treated as unlabeled consistently", async () => {
-    vi.stubGlobal("fetch", routedFetch({
-      labeledCpu: [
-        { metric: { namespace: "platform-system", label_app_kubernetes_io_instance: "unknown" }, value: [0, "3"] },
-      ],
-      totalCpu: [{ metric: { namespace: "platform-system" }, value: [0, "3"] }],
-      count: [{ metric: { namespace: "platform-system" }, value: [0, "1"] }],
-    }))
-    const session = { groups: ["developer"], teams: ["platform-team"] }
-    const scope = await getEffectiveScope(session)
-
-    const result = await getCost("service", scope)
-
-    // "unknown"-labeled workload contributes no item and no labeled cost, so its
-    // full cpu shows up as unlabeled — consistent with the count query, which is
-    // asked to also treat label_app_kubernetes_io_instance="unknown" as unlabeled.
-    expect(result.items).toEqual([])
-    expect(result.exclusions?.unlabeledWorkloads).toEqual({
-      computable: true,
-      count: 1,
-      cpu: 3,
-      memoryGb: 0,
-      hourly: 0.12,
-    })
-  })
-
-  it("크리틱 리뷰 #5: service scope marks unlabeledWorkloads.computable=false when an aux query fails (core still ok)", async () => {
-    vi.stubGlobal("fetch", vi.fn(async (url: string) => {
-      if (url.includes("unless")) throw new Error("Prometheus query failed: 500") // count query
-      if (url.includes("container_cpu_usage_seconds_total") && url.includes("kube_pod_labels")) {
-        return jsonResponse([{ metric: { namespace: "platform-system", label_app_kubernetes_io_instance: "svc-a" }, value: [0, "1"] }])
-      }
-      // mem-by-service must also resolve non-empty, or the two core queries
-      // (cpu ok, mem empty) would themselves classify as "partial" (Codex 리뷰 #1)
-      // and mask what this test actually exercises: aux-only failure.
-      if (url.includes("container_memory_working_set_bytes") && url.includes("kube_pod_labels")) {
-        return jsonResponse([{ metric: { namespace: "platform-system", label_app_kubernetes_io_instance: "svc-a" }, value: [0, "2000000000"] }])
-      }
-      return jsonResponse([])
-    }))
-    const session = { groups: ["developer"], teams: ["platform-team"] }
-    const scope = await getEffectiveScope(session)
-
-    const result = await getCost("service", scope)
-
-    // Core items are unaffected by the aux query failure.
-    expect(result.telemetry.state).toBe("ok")
-    expect(result.items).toEqual([{
-      id: "svc-a",
-      cpu: { cores: 1, hourly: 0.04 },
-      memory: { gb: 2, hourly: 0.01 },
-      storage: { gb: 0, hourly: 0 },
-      totalHourly: 0.05,
-      totalMonthly: 36.5,
-    }])
-    expect(result.exclusions?.unlabeledWorkloads).toEqual({ computable: false, count: null, cpu: null, memoryGb: null, hourly: null })
-    // Codex 리뷰 #4: core는 ok지만 exclusions가 computable=false면 캐시하지 않는다 —
-    // 그렇지 않으면 "집계 불가"가 TTL 동안 실제 값처럼 굳어버린다.
-    expect(cacheSet).not.toHaveBeenCalled()
+    expect(result.items.find((i) => i.id === "svc-a")?.cpu.cores).toBe(3)
+    expect(result.exclusions?.attribution).toMatchObject({ fallbackWorkloads: 0, unclassifiedPods: 0 })
   })
 
   it("AC4: getCostByService reports telemetry.state='unavailable' distinctly from a 200+notice-only response shape", async () => {
@@ -888,32 +812,32 @@ describe("cost exclusions and telemetry (Portal #64 AC3/AC4)", () => {
     expect(cacheSet).not.toHaveBeenCalled()
   })
 
-  it("Codex 리뷰 #4: getCost('service') does not cache a computable=false exclusions result, so a later successful call re-fetches", async () => {
-    let countQueryShouldFail = true
+  it("Codex 리뷰 #4: getCost('service') does not cache a computable=false attribution, so a later successful call re-fetches", async () => {
+    let ownerQueryShouldFail = true
     vi.stubGlobal("fetch", vi.fn(async (url: string) => {
-      if (url.includes("unless")) {
-        if (countQueryShouldFail) throw new Error("Prometheus query failed: 500")
-        return jsonResponse([{ metric: { namespace: "platform-system" }, value: [0, "1"] }])
+      const decoded = decodeURIComponent(url)
+      if (decoded.includes("kube_pod_owner")) {
+        if (ownerQueryShouldFail) throw new Error("Prometheus query failed: 500")
+        return jsonResponse([])
       }
-      if (url.includes("container_cpu_usage_seconds_total") && url.includes("kube_pod_labels")) {
-        return jsonResponse([{ metric: { namespace: "platform-system", label_app_kubernetes_io_instance: "svc-a" }, value: [0, "1"] }])
+      if (decoded.includes("container_cpu_usage_seconds_total")) {
+        return jsonResponse([{ metric: { namespace: "platform-system", pod: "a-0" }, value: [0, "1"] }])
       }
-      if (url.includes("container_memory_working_set_bytes") && url.includes("kube_pod_labels")) {
-        return jsonResponse([{ metric: { namespace: "platform-system", label_app_kubernetes_io_instance: "svc-a" }, value: [0, "2000000000"] }])
+      if (decoded.includes("container_memory_working_set_bytes")) {
+        return jsonResponse([{ metric: { namespace: "platform-system", pod: "a-0" }, value: [0, "2000000000"] }])
       }
       return jsonResponse([])
     }))
-    const session = { groups: ["developer"], teams: ["platform-team"] }
-    const scope = await getEffectiveScope(session)
+    const scope = await getEffectiveScope({ groups: ["developer"], teams: ["platform-team"] })
 
     const first = await getCost("service", scope)
     expect(first.telemetry.state).toBe("ok")
-    expect(first.exclusions?.unlabeledWorkloads?.computable).toBe(false)
+    expect(first.exclusions?.attribution?.computable).toBe(false)
     expect(cacheSet).not.toHaveBeenCalled()
 
-    countQueryShouldFail = false
+    ownerQueryShouldFail = false
     const second = await getCost("service", scope)
-    expect(second.exclusions?.unlabeledWorkloads?.computable).toBe(true)
+    expect(second.exclusions?.attribution?.computable).toBe(true)
     expect(cacheSet).toHaveBeenCalled()
   })
 })

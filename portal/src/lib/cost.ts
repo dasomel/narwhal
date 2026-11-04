@@ -19,6 +19,7 @@ import type { TelemetryStatus, EvidenceSource } from "./prometheus"
 // contract additively (see costTelemetryToDependencyStatus below) without changing
 // CostResult/CostTrendResult's own shape.
 import { fromTelemetryStatus, type DependencyStatus } from "./dependency-health"
+import { attributePods, podKey, type AttributionSource, type PodLabels, type PodOwner, type PodUsage } from "./cost-attribution"
 
 function prometheusUrl(): string {
   return getDependencyUrl("PROMETHEUS_URL", "http://localhost:9090")
@@ -161,6 +162,12 @@ export interface CostItem {
   storage: { gb: number; hourly: number }
   totalHourly: number
   totalMonthly: number
+  // service scope 전용: 귀속 근거. source!=="instance"이면 라벨이 아닌 fallback 추정이다.
+  source?: AttributionSource
+  name?: string
+  namespace?: string
+  kind?: string
+  pods?: number
 }
 
 export interface TopPod {
@@ -351,12 +358,14 @@ export function costTelemetryToDependencyStatus(telemetry: CostTelemetry): Depen
   }
 }
 
-export interface UnlabeledWorkloadsExclusion {
+// 서비스 탭 귀속 요약 — fallback으로 귀속된 워크로드 수/비용과 (미분류) 행 규모.
+export interface AttributionExclusion {
   computable: boolean
-  count: number | null
-  cpu: number | null
-  memoryGb: number | null
-  hourly: number | null
+  fallbackWorkloads: number | null
+  fallbackPods: number | null
+  fallbackHourly: number | null
+  unclassifiedPods: number | null
+  unclassifiedHourly: number | null
 }
 
 // portal#64 크리틱 리뷰 #6: 이전에는 매 namespace CostItem에 storage와 완전히 동일한
@@ -371,7 +380,7 @@ export interface UnallocatedStorageExclusion {
 }
 
 export interface CostExclusions {
-  unlabeledWorkloads?: UnlabeledWorkloadsExclusion
+  attribution?: AttributionExclusion
   storageExcludedFromServiceScope?: boolean
   unallocatedStorage?: UnallocatedStorageExclusion
 }
@@ -473,15 +482,26 @@ function timeoutNotice(settled: PromiseSettledResult<unknown>[], timeoutMs = PRO
 // "쿼리 실패/타임아웃"이라고 잘못 알리게 된다.
 const EMPTY_NOTICE = "Prometheus 쿼리는 성공했지만 반환된 데이터가 없습니다. 스크레이프 상태를 확인하세요."
 
-// label_app_kubernetes_io_instance가 없는(또는 "unknown"인 — 아래 getCost 참고)
-// workload(pod) 개수를 namespace별로 반환한다. 이전 버전은 count(...)로 전체를
-// 스칼라 하나로 뭉개 caller의 effScope와 무관하게 다른 team의 namespace까지 센
-// pod 수를 노출했다 — count by (namespace)로 바꿔 getCost의 다른 쿼리들과 동일하게
-// JS에서 namespaceVisible로 필터링한 뒤 합산한다 (portal#64 크리틱 리뷰 #2).
-// kube_pod_labels 쪽 matcher에 "unknown"도 빼서, 코드에서 svc==="unknown"을
-// unlabeled로 취급하는 것과 일관되게 만든다 (크리틱 리뷰 #3).
-function unlabeledWorkloadCountQuery(): string {
-  return `count by (namespace) (count by (pod, namespace) (container_cpu_usage_seconds_total{container!="POD",container!=""}) unless on(pod, namespace) count by (pod, namespace) (kube_pod_labels{label_app_kubernetes_io_instance!="",label_app_kubernetes_io_instance!="unknown"}))`
+// 서비스 탭 귀속용 pod 단위 쿼리 (체인은 cost-attribution.ts). 라벨 쿼리는
+// kube-state-metrics 라벨 allowlist에 없는 라벨을 빈 값으로 돌려줄 뿐 실패하지 않는다.
+function podCpuQuery(): string {
+  return `sum by (namespace, pod) (rate(container_cpu_usage_seconds_total{container!="POD",container!=""}[1h]))`
+}
+
+function podMemQuery(): string {
+  return `sum by (namespace, pod) (container_memory_working_set_bytes{container!="POD",container!=""})`
+}
+
+function podLabelsQuery(): string {
+  return `max by (namespace, pod, label_app_kubernetes_io_instance, label_app_kubernetes_io_name, label_app, label_k8s_app) (kube_pod_labels)`
+}
+
+function podOwnerQuery(): string {
+  return `max by (namespace, pod, owner_kind, owner_name) (kube_pod_owner{owner_is_controller="true"})`
+}
+
+function replicaSetOwnerQuery(): string {
+  return `max by (namespace, replicaset, owner_kind, owner_name) (kube_replicaset_owner)`
 }
 
 // ---------------------------------------------------------------------------
@@ -618,20 +638,17 @@ export async function getCost(
   }
 
   // scope === "service"
+  // D1 (cost-attribution.ts): pod 단위로 조회해 instance → name → app → k8s-app → owner
+  // → pod stem 순서로 귀속한다. 앞 두 쿼리(cpu/mem)만 telemetry에 반영하고, 나머지 세 개는
+  // 귀속 정밀도 전용이라 실패하면 attribution.computable=false로만 드러낸다 (캐시 제외).
   const settled = await Promise.allSettled([
-    queryVector(cpuByServiceQuery()),
-    queryVector(memByServiceQuery()),
-    queryVector(cpuByNamespaceQuery()),
-    queryVector(memByNamespaceQuery()),
-    queryVector(unlabeledWorkloadCountQuery()),
+    queryVector(podCpuQuery()),
+    queryVector(podMemQuery()),
+    queryVector(podLabelsQuery()),
+    queryVector(podOwnerQuery()),
+    queryVector(replicaSetOwnerQuery()),
   ])
-  const [cpuSettled, memSettled, totalCpuSettled, totalMemSettled, countSettled] = settled
-  // portal#64 AC4: telemetry.state는 items 계산에 실제로 쓰이는 앞의 두 쿼리(cpu/mem
-  // by service)만 반영한다 — 나머지 3개는 exclusions 계산 전용 보조 쿼리라 그 실패는
-  // exclusions.unlabeledWorkloads.computable=false로만 나타나야 하고, 정상 계산된
-  // items를 "partial"로 오염시키면 안 된다. (service scope의 "전부 empty"는 라벨이
-  // 아예 없는 정상 상태일 수 있어 cluster/namespace와 달리 조기 반환하지 않는다 —
-  // 아래 items.length===0 분기가 이미 그 의미 있는 notice/exclusions를 만든다.)
+  const [cpuSettled, memSettled, labelsSettled, ownerSettled, rsOwnerSettled] = settled
   const telemetry = combineTelemetry(
     [vectorStatus(cpuSettled), vectorStatus(memSettled)],
     queriedAt,
@@ -641,114 +658,88 @@ export async function getCost(
     return { items: [], notice: timeoutNotice([cpuSettled, memSettled]), telemetry }
   }
   const nsVisible = (ns: string | undefined) => !!ns && namespaceVisible(ns, effScope)
-  // labeled(단, "unknown"은 미분류로 취급 — unlabeledWorkloadCountQuery의
-  // label_app_kubernetes_io_instance!="unknown"과 동일 기준, 크리틱 리뷰 #3)한 pod의
-  // cpu/mem을 service별(cpuMap/memMap, items 계산용)과 namespace별
-  // (labeledCpuByNs/labeledMemByNs, 아래 unlabeled 근사용) 양쪽으로 동시에 누적한다.
-  // 이전 버전은 cpuMap을 set()으로 덮어써 같은 service 이름이 여러 namespace에
-  // 걸쳐 있으면 cpu가 과소집계됐다 — mem과 동일하게 누적(+=)으로 고친다.
-  const cpuRes = cpuSettled.status === "fulfilled" ? cpuSettled.value : []
-  const memRes = memSettled.status === "fulfilled" ? memSettled.value : []
-  const cpuMap = new Map<string, number>()
-  const memMap = new Map<string, number>()
-  const labeledCpuByNs = new Map<string, number>()
-  const labeledMemByNs = new Map<string, number>()
-  for (const r of cpuRes) {
-    const svc = r.metric.label_app_kubernetes_io_instance
-    const ns = r.metric.namespace
-    if (!svc || svc === "unknown" || svc === "" || !nsVisible(ns)) continue
-    const val = parseFloat(r.value[1])
-    cpuMap.set(svc, (cpuMap.get(svc) ?? 0) + val)
-    labeledCpuByNs.set(ns as string, (labeledCpuByNs.get(ns as string) ?? 0) + val)
+  const fulfilled = (s: PromiseSettledResult<PromVectorResult[]>) => (s.status === "fulfilled" ? s.value : [])
+
+  const usageMap = new Map<string, PodUsage>()
+  const usageOf = (r: PromVectorResult): PodUsage | null => {
+    const namespace = r.metric.namespace
+    if (!namespace || !nsVisible(namespace)) return null
+    const pod = r.metric.pod ?? ""
+    const key = podKey(namespace, pod)
+    const cur = usageMap.get(key) ?? { namespace, pod, cpu: 0, memBytes: 0 }
+    usageMap.set(key, cur)
+    return cur
   }
-  for (const r of memRes) {
-    const svc = r.metric.label_app_kubernetes_io_instance
-    const ns = r.metric.namespace
-    if (!svc || svc === "unknown" || svc === "" || !nsVisible(ns)) continue
-    const val = parseFloat(r.value[1])
-    memMap.set(svc, (memMap.get(svc) ?? 0) + val)
-    labeledMemByNs.set(ns as string, (labeledMemByNs.get(ns as string) ?? 0) + val)
+  for (const r of fulfilled(cpuSettled)) {
+    const u = usageOf(r)
+    if (u) u.cpu += parseFloat(r.value[1])
   }
-  const services = new Set([...cpuMap.keys(), ...memMap.keys()])
-  const items: CostItem[] = []
-  for (const svc of services) {
-    // service scope: storage는 PVC를 service에 매핑하기 어려우므로 0으로 처리
-    items.push(calcItem(svc, cpuMap.get(svc) ?? 0, memMap.get(svc) ?? 0, 0, unitPrices))
+  for (const r of fulfilled(memSettled)) {
+    const u = usageOf(r)
+    if (u) u.memBytes += parseFloat(r.value[1])
   }
 
-  // portal#64 AC3: unlabeled workload 비용을 namespace별 "전체 - labeled"로 근사한
-  // 뒤 합산한다. 하나의 grand total로 뺀 뒤 한 번만 클램프하면, 어떤 namespace의
-  // 음수 오차(서로 다른 origin의 PromQL 간 부동소수점/타이밍 차이)가 다른
-  // namespace의 진짜 unlabeled 값을 상쇄해버릴 수 있어 namespace 단위로 먼저
-  // Math.max(0, ...)한 뒤 더한다 (크리틱 리뷰 #3). 5개 쿼리 중 하나라도 실패하면
-  // 왜곡된 값을 보여줄 수 있어 computable=false로 전부 null 처리한다.
-  let unlabeledWorkloads: UnlabeledWorkloadsExclusion
-  if (
-    cpuSettled.status === "fulfilled" &&
-    memSettled.status === "fulfilled" &&
-    totalCpuSettled.status === "fulfilled" &&
-    totalMemSettled.status === "fulfilled" &&
-    countSettled.status === "fulfilled"
-  ) {
-    const totalCpuByNs = new Map<string, number>()
-    for (const r of totalCpuSettled.value) {
-      const ns = r.metric.namespace
-      if (nsVisible(ns)) totalCpuByNs.set(ns as string, (totalCpuByNs.get(ns as string) ?? 0) + parseFloat(r.value[1]))
-    }
-    const totalMemByNs = new Map<string, number>()
-    for (const r of totalMemSettled.value) {
-      const ns = r.metric.namespace
-      if (nsVisible(ns)) totalMemByNs.set(ns as string, (totalMemByNs.get(ns as string) ?? 0) + parseFloat(r.value[1]))
-    }
-    const allNamespaces = new Set([
-      ...totalCpuByNs.keys(),
-      ...totalMemByNs.keys(),
-      ...labeledCpuByNs.keys(),
-      ...labeledMemByNs.keys(),
-    ])
-    let unlabeledCpu = 0
-    let unlabeledMemBytes = 0
-    for (const ns of allNamespaces) {
-      unlabeledCpu += Math.max(0, (totalCpuByNs.get(ns) ?? 0) - (labeledCpuByNs.get(ns) ?? 0))
-      unlabeledMemBytes += Math.max(0, (totalMemByNs.get(ns) ?? 0) - (labeledMemByNs.get(ns) ?? 0))
-    }
-    const unlabeledMemGb = unlabeledMemBytes / 1e9
-    const unlabeledHourly = unlabeledCpu * unitPrices.cpuHourly + unlabeledMemGb * unitPrices.memGbHourly
-    // unlabeledWorkloadCountQuery는 이제 count by (namespace) — 다른 쿼리들과 동일하게
-    // effScope로 가시성 필터링한 뒤 합산한다 (크리틱 리뷰 #2: 이전에는 caller의 scope와
-    // 무관하게 전체 카운트를 스칼라 하나로 노출했다).
-    const count = countSettled.value
-      .filter((r) => nsVisible(r.metric.namespace))
-      .reduce((s, r) => s + parseFloat(r.value[1]), 0)
-    unlabeledWorkloads = {
-      computable: true,
-      count: Math.round(count),
-      cpu: Math.round(unlabeledCpu * 1000) / 1000,
-      memoryGb: Math.round(unlabeledMemGb * 1000) / 1000,
-      hourly: Math.round(unlabeledHourly * 10000) / 10000,
-    }
-  } else {
-    unlabeledWorkloads = { computable: false, count: null, cpu: null, memoryGb: null, hourly: null }
+  const labels = new Map<string, PodLabels>()
+  for (const r of fulfilled(labelsSettled)) {
+    const m = r.metric
+    if (!m.namespace || !m.pod) continue
+    labels.set(podKey(m.namespace, m.pod), {
+      instance: m.label_app_kubernetes_io_instance,
+      name: m.label_app_kubernetes_io_name,
+      app: m.label_app,
+      k8sApp: m.label_k8s_app,
+    })
   }
+  const owners = new Map<string, PodOwner>()
+  for (const r of fulfilled(ownerSettled)) {
+    const m = r.metric
+    if (m.namespace && m.pod && m.owner_kind && m.owner_name) {
+      owners.set(podKey(m.namespace, m.pod), { kind: m.owner_kind, name: m.owner_name })
+    }
+  }
+  const replicaSetOwners = new Map<string, PodOwner>()
+  for (const r of fulfilled(rsOwnerSettled)) {
+    const m = r.metric
+    if (m.namespace && m.replicaset && m.owner_kind && m.owner_name) {
+      replicaSetOwners.set(podKey(m.namespace, m.replicaset), { kind: m.owner_kind, name: m.owner_name })
+    }
+  }
+
+  const groups = attributePods({ usage: [...usageMap.values()], labels, owners, replicaSetOwners })
+  const items: CostItem[] = groups.map((g) => ({
+    // service scope: storage는 PVC를 service에 매핑하기 어려우므로 0으로 처리
+    ...calcItem(g.id, g.cpu, g.memBytes, 0, unitPrices),
+    source: g.source,
+    name: g.name,
+    namespace: g.namespace,
+    kind: g.kind,
+    pods: g.pods,
+  }))
+  const fallback = items.filter((i) => i.source !== "instance" && i.source !== "unclassified")
+  const unclassified = items.find((i) => i.source === "unclassified")
+  const sumHourly = (xs: CostItem[]) => Math.round(xs.reduce((s, i) => s + i.totalHourly, 0) * 10000) / 10000
+  const attributionComputable =
+    labelsSettled.status === "fulfilled" && ownerSettled.status === "fulfilled" && rsOwnerSettled.status === "fulfilled"
+  const attribution: AttributionExclusion = attributionComputable
+    ? {
+        computable: true,
+        fallbackWorkloads: fallback.length,
+        fallbackPods: fallback.reduce((s, i) => s + (i.pods ?? 0), 0),
+        fallbackHourly: sumHourly(fallback),
+        unclassifiedPods: unclassified?.pods ?? 0,
+        unclassifiedHourly: unclassified?.totalHourly ?? 0,
+      }
+    : { computable: false, fallbackWorkloads: null, fallbackPods: null, fallbackHourly: null, unclassifiedPods: null, unclassifiedHourly: null }
   const exclusions: CostExclusions = {
-    unlabeledWorkloads,
+    attribution,
     storageExcludedFromServiceScope: true,
   }
-  // Codex 리뷰 #4: telemetry.state==="ok"는 core(cpu/mem-by-service) 쿼리만 보므로
-  // 보조(exclusions) 쿼리가 실패해도 여기까지는 "ok"로 도달한다 — computable=false로
-  // degraded된 exclusions를 그대로 5분 캐시하면 아래 UI가 그 동안 계속 "집계 불가"를
-  // 실제 값처럼 보여준다(또는 조용히 숨긴다). computable할 때만 캐시해 다음 호출이
-  // 재조회하도록 한다.
-  const exclusionsComputable = unlabeledWorkloads.computable
+  // degraded 귀속(보조 쿼리 실패)은 캐시하지 않아 다음 호출이 재조회하도록 한다.
+  const cacheable = telemetry.state === "ok" && attributionComputable
 
   if (items.length === 0) {
-    const result: CostResult = {
-      items: [],
-      notice: "label_app_kubernetes_io_instance 라벨이 없는 워크로드는 표시되지 않습니다. kube_pod_labels 메트릭 수집 여부를 확인하세요.",
-      telemetry,
-      exclusions,
-    }
-    if (telemetry.state === "ok" && exclusionsComputable) await cacheSet(cacheKey, result, cacheTtl("costV2"))
+    const result: CostResult = { items: [], notice: EMPTY_NOTICE, telemetry, exclusions }
+    if (cacheable) await cacheSet(cacheKey, result, cacheTtl("costV2"))
     return result
   }
   items.sort((a, b) => b.totalHourly - a.totalHourly)
@@ -758,7 +749,7 @@ export async function getCost(
     telemetry,
     exclusions,
   }
-  if (telemetry.state === "ok" && exclusionsComputable) await cacheSet(cacheKey, result, cacheTtl("costV2"))
+  if (cacheable) await cacheSet(cacheKey, result, cacheTtl("costV2"))
   return result
 }
 

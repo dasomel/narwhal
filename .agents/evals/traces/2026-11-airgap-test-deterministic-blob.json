@@ -1,0 +1,75 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-airgap-test-deterministic-blob-20261105",
+  "task": "#560: remove filesystem-order dependence from the OCI inventory corruption test and expose unexpected regression-check diagnostics without rerunning commands. Commit locally; no push, PR or review status.",
+  "changeContext": {
+    "paths": [
+      ".agents/evals/traces/2026-11-airgap-test-deterministic-blob.json",
+      "docs/common/lessons-log.md",
+      "scripts/airgap/tests/test_oci_inventory.py",
+      "scripts/test/regression-check-kakao.sh"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Change only the inventory test, check/check_not helpers, lessons-log and this trace. Grep found exactly one iterdir occurrence in scripts/airgap/tests. Verifier layer hashing, image inputs, GitOps, cluster, release and remote state are deliberately untouched. HEAD started at origin/main 50d7d787f0479efa123b10804c29a06d74f716bc."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "Patched pathlib.Path.iterdir in the parent test process to put the layer or the index-referenced manifest first. The unmodified test fails with AssertionError: 0 != 1 under layer-first and passes under manifest-first. Each run executes the actual verifier subprocess against a disposable layout.",
+      "evidence": [
+        "test:TZ=UTC LC_ALL=C python3 /tmp/narwhal-560-evidence/prove.py -> old layer-first FAIL (AssertionError: 0 != 1); old manifest-first PASS"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "external_input",
+      "provenance": "User-provided #560 diagnosis and requested scope; repository AGENTS.md, docs/common/agent-operational-rules.md, .agents/skills/narwhal-verification/SKILL.md, .agents/evals/risk-policy.json and .github/workflows/agent-behavior.yml read locally on 2026-11-05.",
+      "reviewed": true,
+      "summary": "Confirmed hash_it=False for layers, Layout.blob descriptor addressing, and the high-risk trace requirement. The helper called check_fail in the request is named check_not in this checkout. CLAUDE.md adds only Claude-specific agents/commands/hooks locations and ralph PROMPT.md guidance; no additional applicable code rule."
+    },
+    {
+      "id": "e4",
+      "type": "bug_fix",
+      "summary": "D1 reads index.json manifests[0] and resolves it through Layout.blob, preserving same-size corruption and the hashes-to-sha256 assertion. D2 captures each check/check_not invocation once in mktemp, prints captured stdout+stderr to stderr only on an unexpected result and deletes the file. Passing output and PASS/FAIL counting are retained."
+    },
+    {
+      "id": "e5",
+      "type": "review_correction",
+      "summary": "Local diff review only; no independent reviewer or review status. ShellCheck exits 1 with 69 pre-existing diagnostics, identical code/level/message multiplicities on HEAD and the changed script (SC2016=55, SC2329=1, SC2012=3, SC2015=6, SC1091=1, SC2086=2, SC2029=1). No unrelated cleanup."
+    },
+    {
+      "id": "e6",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "Offline test determinism and helper diagnostics only; ShellCheck baseline comparison confirms no new findings, not a clean full-script lint. No live cluster or external registry behavior is claimed.",
+      "evidence": [
+        "test:TZ=UTC LC_ALL=C python3 /tmp/narwhal-560-evidence/prove.py -> new layer-first PASS; new manifest-first PASS; old layer-first FAIL / manifest-first PASS",
+        "test:temporary extracted check/check_not probes with command exits 0 and 7 -> all 4 expected outcomes, runs=1 each, temp files=0; unexpected stderr contains probe-stdout and probe-stderr; expected outcomes have empty stderr; probes deleted",
+        "test:TZ=UTC LC_ALL=C python3 -m unittest discover -s scripts/airgap/tests -v -> 3 runs, each 82 tests OK; exits 0/0/0",
+        "test:shellcheck scripts/test/regression-check-kakao.sh -> exit 1; comparison with HEAD -> same 69 diagnostics, no new findings",
+        "test:python3 -m unittest discover -s scripts/ci/tests -v -> 120 tests OK, exit 0",
+        "test:workflow behavior specs, check-mutable-inputs.py, evaluate.py reference trace, bind-verification.py version consistency and gate.py bound version trace -> exit 0 each",
+        "test:RESEARCH_EVIDENCE_DIR=$(mktemp -d) make test -> exit 0; passed 430, failed 0, warnings 3; R82g PASS and R86c PASS; evidence written outside repository",
+        "test:workflow check-agent-trace-requirement.py --policy .agents/evals/risk-policy.json --changed-files /tmp/narwhal-560-evidence/changed-files.txt -> exit 0 (high-risk trace required and present)",
+        "test:workflow check-agent-trace-evidence.py with changed paths and all operational traces -> exit 0; evaluate.py new trace -> exit 0; gate.py --baseline .agents/evals/baseline.eval.json -> all 132 operational traces exit 0, including this trace",
+        "test:git diff --check -> exit 0; docs/common/lessons-log.md trailing newline preserved"
+      ]
+    },
+    {
+      "id": "e7",
+      "type": "completion_claim",
+      "summary": "The inventory corruption test now selects a hashed manifest independently of directory order; regression helpers retain unexpected command output with one execution and temporary-file cleanup. Offline proofs pass. Existing ShellCheck findings and size-only layer verification remain; no cluster verification is needed for this test-only defect."
+    },
+    {
+      "id": "e8",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Scoped test/helper fix verified offline: 82 unit tests passed three times, full static regression 430 PASS / 0 FAIL / 3 WARN and local workflow validators exit 0. Commit locally only; no remote mutation or independent review status. Existing ShellCheck findings and verifier size-only layer policy remain outside #560. The three static warnings are no local bundle and the two baselined PeerAuthentication/ingress gaps; live cluster and remote reusable-action equivalence are not exercised."
+    }
+  ]
+}

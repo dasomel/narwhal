@@ -55,6 +55,7 @@
 
 | Date | Mistake | Fix |
 |------|---------|-----|
+| 2026-11-05 | #560: OCI inventory corruption test used the first `blobs/sha256` directory entry. Ubuntu could select a layer (size-only verified), so same-size corruption passed and R82g/R86c failed together with `AssertionError: 0 != 1`; regression helpers hid the diagnostic. | D1: select `index.json`'s first manifest descriptor via `Layout.blob`, preserving same-size corruption and the hash-error assertion. Forced layer-first/manifest-first order: old FAIL/PASS, new PASS/PASS. D2: `check`/`check_not` capture each command once to a temporary file, print stdout+stderr only for unexpected results, then delete it. Four helper probes verified counters, single execution, quiet passes and cleanup. Discriminator: do not infer a blob's verification policy from filesystem order. Layer hashing policy is unchanged; rollback is reverting the test/helper change. |
 | 2026-10-31 | #505 item 6: TLS wildcard 검사가 작은따옴표 안의 ${DOMAIN}을 그대로 검색해 항상 실패했다. | D-505: 큰따옴표 확장과 grep -F로 별표·점을 리터럴로 비교한다. R293은 정상·다른 문자·미확장 문자열을 구분한다. |
 | 2026-10-31 | #505 item 6: Ambient 검사가 10개 이상을 요구했지만 09-istio-ambient.sh는 6개를 등록한다. | D-505-AMBIENT: 설계의 6개 이름 각각을 검사하고 R293이 installer 목록과 일치를 고정한다. 다른 namespace가 추가되어도 누락을 숨기지 않는다. |
 | 2026-10-31 | #505 item 6: private narwhal-gitops 저장소를 익명 API로 검사하면 존재해도 404가 난다. | D-505-GITEA: push-to-gitea.sh와 같은 devtools/gitea-admin의 admin-password로 인증한다. Secret 누락은 HTTP 호출 전 FAIL, 비밀번호는 출력하지 않는다. |

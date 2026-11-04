@@ -157,7 +157,10 @@ class InventoryTests(unittest.TestCase):
         self.assertEqual(self.verify().returncode, 0)
         lay = Layout.__new__(Layout)
         lay.dir = self.b / 'oci' / 'docker.io_x_z_2'
-        blob = next((lay.dir / 'blobs' / 'sha256').iterdir())
+        # D1: select a hashed descriptor; layers are size-only checked. One index
+        # read avoids filesystem order dependence; use its config if this changes.
+        top = json.loads((lay.dir / 'index.json').read_text())['manifests'][0]
+        blob = lay.blob(top)
         blob.write_bytes(b'x' * blob.stat().st_size)
         self.assertRejected('hashes to sha256')
 

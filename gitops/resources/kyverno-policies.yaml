@@ -6,6 +6,13 @@ metadata:
   annotations:
     policies.kyverno.io/title: Disallow Privileged Containers
     policies.kyverno.io/category: Pod Security Standards (Baseline)
+    policies.kyverno.io/severity: high
+    policies.kyverno.io/subject: Pod
+    policies.kyverno.io/description: >-
+      Blocks Pods whose containers, init containers or ephemeral containers set
+      securityContext.privileged to true (Enforce: the request is denied at admission).
+      Excludes kube-system, istio-system, platform-system, devtools, security-system,
+      chaos-testing and nfs-quota-agent, whose workloads need privileged mode.
 spec:
   validationFailureAction: Enforce
   background: true
@@ -60,6 +67,13 @@ metadata:
   annotations:
     policies.kyverno.io/title: Disallow Host Namespaces
     policies.kyverno.io/category: Pod Security Standards (Baseline)
+    policies.kyverno.io/severity: high
+    policies.kyverno.io/subject: Pod
+    policies.kyverno.io/description: >-
+      Blocks Pods that set hostNetwork, hostPID or hostIPC to true (Enforce: the request is
+      denied at admission). Excludes kube-system, istio-system, platform-system, devtools,
+      security-system, chaos-testing, nfs-quota-agent, and the prometheus node-exporter
+      workload in monitoring.
 spec:
   validationFailureAction: Enforce
   background: true
@@ -113,6 +127,12 @@ metadata:
   annotations:
     policies.kyverno.io/title: Disallow Host Ports
     policies.kyverno.io/category: Pod Security Standards (Baseline)
+    policies.kyverno.io/severity: high
+    policies.kyverno.io/subject: Pod
+    policies.kyverno.io/description: >-
+      Blocks Pods whose containers declare a non-zero hostPort (Enforce: the request is
+      denied at admission). Excludes kube-system, istio-system, platform-system, devtools,
+      security-system and the prometheus node-exporter workload in monitoring.
 spec:
   validationFailureAction: Enforce
   background: true
@@ -153,6 +173,13 @@ metadata:
   name: require-labels
   annotations:
     policies.kyverno.io/title: Require Labels
+    policies.kyverno.io/category: Best Practices
+    policies.kyverno.io/severity: low
+    policies.kyverno.io/subject: Pod
+    policies.kyverno.io/description: >-
+      Requires every Pod to carry the app.kubernetes.io/name label. Audit only: violations
+      are reported in policy reports and the Pod is still admitted. Excludes kube-system,
+      istio-system, platform-system, devtools and security-system.
 spec:
   validationFailureAction: Audit
   background: true
@@ -185,6 +212,14 @@ metadata:
   name: disallow-latest-tag
   annotations:
     policies.kyverno.io/title: Disallow Latest Tag
+    policies.kyverno.io/category: Best Practices
+    policies.kyverno.io/severity: medium
+    policies.kyverno.io/subject: Pod
+    policies.kyverno.io/description: >-
+      Blocks Pods whose containers, init containers or ephemeral containers use an image
+      ending in :latest (Enforce: the request is denied at admission). Images with no tag
+      at all are not matched by this check. Excludes kube-system, istio-system,
+      platform-system, devtools and security-system.
 spec:
   # narwhal#52 D2-A: Audit -> Enforce. The pre-merge CI gate
   # (scripts/gitops/check-no-mutable-tags.py, R65/R66) already blocks the same
@@ -231,6 +266,13 @@ metadata:
   annotations:
     policies.kyverno.io/title: Restrict Image Registries
     policies.kyverno.io/category: Best Practices
+    policies.kyverno.io/severity: medium
+    policies.kyverno.io/subject: Pod
+    policies.kyverno.io/description: >-
+      Requires the images of a Pod's containers to come from ghcr.io, registry.k8s.io,
+      quay.io or docker.io. Audit only: violations are reported in policy reports and the
+      Pod is still admitted. Init and ephemeral containers are not checked. Excludes
+      kube-system, istio-system, platform-system, devtools and security-system.
 spec:
   validationFailureAction: Audit
   background: true
@@ -264,6 +306,13 @@ metadata:
   annotations:
     policies.kyverno.io/title: Add Default SecurityContext
     policies.kyverno.io/category: Best Practices
+    policies.kyverno.io/severity: medium
+    policies.kyverno.io/subject: Pod
+    policies.kyverno.io/description: >-
+      Mutates Pods at admission to add a pod-level seccompProfile of type RuntimeDefault
+      when none is set; an existing seccompProfile is left untouched. It does not inject
+      runAsNonRoot. Excludes kube-system, istio-system, platform-system, devtools and
+      security-system.
 spec:
   background: false
   rules:

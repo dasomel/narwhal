@@ -17,6 +17,13 @@ metadata:
   annotations:
     policies.kyverno.io/title: Headlamp Probe Tuning
     policies.kyverno.io/category: Reliability
+    policies.kyverno.io/severity: low
+    policies.kyverno.io/subject: Deployment
+    policies.kyverno.io/description: >-
+      Mutates the headlamp Deployment in devtools at admission to relax the headlamp
+      container's probes: liveness timeoutSeconds 5, periodSeconds 15, failureThreshold 6;
+      readiness timeoutSeconds 5, periodSeconds 10, failureThreshold 6. Works around the
+      chart hardcoding 1 s probe timeouts that make the pod restart under VM load.
 spec:
   background: false
   rules:

@@ -43,17 +43,15 @@ English | [한국어](CHANGELOG-ko.md)
   Falco there. Checked in a local Docker lab (real Falco, falcosidekick and Alertmanager), not on a
   cluster: the chart tarball, two images and the GitOps push must still reach a cluster, and Falco on
   the Ubuntu 26.04 / kernel 7.0 Vagrant box and on the Kubernetes CRI path has not been observed.
-- **Portal is pinned to `narwhal-portal:1.1.5` (was 1.1.0; 1.1.1 to 1.1.4 were pinned in between by
-  #467, #477, #481 and #502).** 1.1.2 fixes the empty cluster-infrastructure view (#475), 1.1.3
-  shows the role-default tools in the permission management table (#479), 1.1.4 fills the empty
-  Security page (#501) and upgrades `fast-uri` past four advisories (#492), and 1.1.5 upgrades
-  `body-parser` to 2.4.0 (GHSA-27r3-jxmh-p828) and `systeminformation` to 5.33.16
-  (GHSA-3f7j-7jwc-fxfj), makes the Falco Runtime Events priority filter match falcosidekick's
-  capitalised label, and shows the Runtime Events tab on Ubuntu 26.04 nodes (#503); all carry the
-  1.1.1 security fixes. The image is Cosign-signed with the repository key (index digest
-  `sha256:a0072e53…`). Static change only: the image has not been mirrored to a cluster bastion or
-  pushed to Gitea, which must happen before the pin goes live (`scripts/airgap/README.md`, "Mirror
-  a pin bump"); rolling it out to a cluster is a separate step.
+- **Portal is pinned to `narwhal-portal:1.1.6` (was 1.1.0; 1.1.1 to 1.1.5 were pinned in between by
+  #467, #477, #481, #502 and #520).** 1.1.6 renews certificates the way `cmctl` does instead of an
+  invalid `spec` patch (#549), explains Kyverno actions and rules (#547), adds the Settings OSS updates
+  tab (#552) and the Security Trivy DB card (#554), reaches the Gitea API past the gateway SSO and shows
+  N/A lead time for Helm-sourced apps (#556), and attributes every pod in the cost service breakdown
+  (#559); all carry the 1.1.5 and earlier fixes. The image is Cosign-signed with the repository key
+  (index digest `sha256:6297c5ab…`). Mirror it to a cluster bastion by digest before the pin goes live
+  there (`scripts/airgap/README.md`, "Mirror a pin bump"); the local Vagrant cluster pulls from ghcr.io
+  directly.
 
 ### Fixed
 

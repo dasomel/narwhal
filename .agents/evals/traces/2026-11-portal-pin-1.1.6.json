@@ -1,0 +1,69 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-portal-pin-1-1-6-20261105",
+  "task": "Pin the Narwhal IDP Portal image to the published release 1.1.6 (was 1.1.5) and roll it out to the local Vagrant cluster; the repository change is static, the rollout is verified separately.",
+  "changeContext": {
+    "paths": [
+      "gitops/charts/narwhal-platform/templates/narwhal-portal-k8s.yaml",
+      "gitops/README.md",
+      "gitops/README-ko.md",
+      "scripts/airgap/images.txt",
+      "scripts/airgap/lib/image-digests.tsv",
+      "VERSIONS.md",
+      "SECURITY.md",
+      "docs/common/compatibility-matrix.md",
+      "CHANGELOG.md",
+      "CHANGELOG-ko.md",
+      ".agents/evals/traces/2026-10-portal-pin-1.1.6.json",
+      "portal/src/data/oss-versions.generated.json"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Tag bump of one image in the GitOps manifest, its air-gap inventory and digest pin, the docs that quote the pin, and the committed OSS-updates snapshot regenerated from VERSIONS.md. No manifest structure, env, RBAC or chart change. No merge in this change; the pin was deployed to the local Vagrant cluster by pushing the one-line manifest change to Gitea."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "ghcr.io/dasomel/narwhal-portal:1.1.6 was published from tag portal/v1.1.6 on e91fc6b0 (#558): amd64 and arm64 builds, manifest merge and signing succeeded. Re-checked 2026-11-04T22:09:40Z: the tag resolves to index digest sha256:6297c5abcf52952198eebc5385e258b9844b515879ddee5e9f00c1170e504b6d and cosign verify with scripts/airgap/keys/cosign.pub passes on it. The local Vagrant nodes pull ghcr.io directly (the running 1.1.5 pod's imageID was a ghcr.io digest ref), so no Harbor mirror copy was made; a cluster whose nodes cannot reach ghcr.io must mirror by digest first (scripts/airgap/README.md, Mirror a pin bump).",
+      "evidence": [
+        "test:crane digest ghcr.io/dasomel/narwhal-portal:1.1.6 -> sha256:6297c5abcf52952198eebc5385e258b9844b515879ddee5e9f00c1170e504b6d",
+        "test:cosign verify --key scripts/airgap/keys/cosign.pub ghcr.io/dasomel/narwhal-portal@sha256:6297c5abcf52952198eebc5385e258b9844b515879ddee5e9f00c1170e504b6d -> signature verified",
+        "doc:https://github.com/dasomel/narwhal/releases/tag/portal%2Fv1.1.6"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "Pin moved 1.1.5 -> 1.1.6 in the Deployment image, images.txt and image-digests.tsv (new digest), gitops README pins and prose (en/ko), VERSIONS.md, compatibility-matrix, SECURITY.md example and the Unreleased changelog entries (en/ko); portal/src/data/oss-versions.generated.json regenerated with gen-oss-versions.mjs because VERSIONS.md changed. 1.1.6 brings certificate renew via cmctl-style issuing (#549), Kyverno explanations (#547), the OSS updates tab (#552), the Trivy DB card (#554), Gitea API through the gateway and N/A lead time for Helm apps (#556), and the cost service breakdown attribution (#559)."
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "local static checks only",
+      "summary": "Local static checks plus live verification on the local Vagrant cluster after Argo CD synced the pin: the devtools/narwhal-portal pod runs 1.1.6 (digest 6297c5ab) and is Ready, narwhal-platform is Synced and Healthy, an admin session sees the new endpoints, a viewer gets 403, and a certificate renew creates a new CertificateRequest that becomes Ready.",
+      "evidence": [
+        "test:RESEARCH_EVIDENCE_DIR=$(mktemp -d) make test -> passed 430 failed 0 warnings 3",
+        "test:make validate -> exit 0",
+        "test:bash scripts/test/test-sso.sh (KUBECONFIG for the narwhal context) -> 197 passed, 0 failed, 0 warnings",
+        "test:bash scripts/test/verify-cluster.sh (KUBECONFIG for the narwhal context) -> 127 passed, 1 failed, 1 warning; the failure is two transient security-system scan-vulnerabilityreport pods in Init at the moment of the check",
+        "test:POST /api/settings/certs/renew as admin for platform-system/narwhal-wildcard-tls -> 200 success, new CertificateRequest narwhal-wildcard-tls-4 approved and ready, Certificate Ready True; the same POST as viewer -> 403"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "completion_claim",
+      "summary": "The repository pins the IDP Portal to 1.1.6 consistently with a digest that matches the registry, and the local cluster runs that image."
+    },
+    {
+      "id": "e6",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Complete within the stated scope: static pin change and local-cluster rollout. Not covered: any Kakao or other bastion-mirrored cluster."
+    }
+  ]
+}

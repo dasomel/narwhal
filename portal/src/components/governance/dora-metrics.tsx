@@ -205,7 +205,13 @@ export function DoraMetricsWidget() {
                         <TableCell className="py-2 text-xs text-muted-foreground font-mono">{appItem.namespace}</TableCell>
                         <TableCell className="py-2 text-center text-xs tabular-nums font-medium">{appItem.deploys}</TableCell>
                         <TableCell className="py-2 text-right text-xs tabular-nums text-muted-foreground">
-                          {appItem.leadTimeHours !== null ? `${appItem.leadTimeHours.toFixed(1)}h` : "—"}
+                          {appItem.leadTimeHours !== null ? (
+                            `${appItem.leadTimeHours.toFixed(1)}h`
+                          ) : appItem.leadTimeApplicable === false ? (
+                            <span title={t("dora.leadTimeHelmHint")}>{t("dora.leadTimeHelm")}</span>
+                          ) : (
+                            "—"
+                          )}
                         </TableCell>
                       </TableRow>
                     ))}

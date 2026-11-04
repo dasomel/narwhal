@@ -1,0 +1,83 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-portal-gitea-api-sso-redirect-20261104",
+  "task": "Fix Governance DORA lead time empty on every row: the portal's token-authenticated Gitea API calls were redirected to the Keycloak login by the gateway OIDC route; add visible failure, SHA filtering and the route exception.",
+  "changeContext": {
+    "paths": [
+      ".agents/evals/traces/2026-11-portal-gitea-api-sso-redirect.json",
+      "docs/common/lessons-log.md",
+      "gitops/charts/narwhal-platform/templates/apisix-routes.yaml",
+      "portal/src/app/api/governance/dora/route.test.ts",
+      "portal/src/app/api/governance/dora/route.ts",
+      "portal/src/components/governance/dora-metrics.tsx",
+      "portal/src/components/governance/types.ts",
+      "portal/src/lib/gitea.test.ts",
+      "portal/src/lib/gitea.ts",
+      "portal/src/lib/i18n.ts",
+      "scripts/test/lib/check-gitea-portal-api-route.py",
+      "scripts/test/regression-check-kakao.sh"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Callers of GITEA_URL are DORA (getCommitTimestamp) and the namespace-request PR flow (requestTenantNamespace); health probes only GET the root. Deliberately left alone: GITEA_URL value, assertHttpsInProduction, 14-gitops-bootstrap.sh, the existing bypass regex."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "From the portal pod the external GITEA_URL answered a token API call with 302 text/html to keycloak; portal logs showed SyntaxError Unexpected token '<' per commit and per Helm chart version.",
+      "evidence": [
+        "cluster:narwhal devtools narwhal-portal logs",
+        "runtime:portal pod fetch redirect manual => 302 text/html"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "external_input",
+      "provenance": "Live observation 2026-11-04: portal and gitea pods have istio.io/dataplane-mode=none, ztunnel lists them as protocol TCP (not HBONE), Cilium encryption Disabled",
+      "reviewed": true,
+      "summary": "The in-cluster http Service hop is plaintext, so pointing GITEA_URL at it would break the portal#39 guarantee; the fix keeps TLS to the gateway and narrows the gateway instead."
+    },
+    {
+      "id": "e4",
+      "type": "bug_fix",
+      "summary": "Rule gitea-portal-api in gitea-git-bypass: no OIDC only for GET/POST on git/commits/*, contents/*, pulls of gitea-admin/narwhal-gitops with an Authorization 'token <40 hex>' header; gitea.ts uses redirect manual and reports HTML/3xx as one throttled SSO-redirect error; DORA only looks up git SHAs and shows N/A (Helm chart); R305 pins the rule with 8 mutations; lessons-log row."
+    },
+    {
+      "id": "e5",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "portal unit tests, typecheck, lint, build, static regression suite incl. R130-R133 and R305",
+      "evidence": [
+        "test:pnpm typecheck && pnpm lint && pnpm test -> 150 files, 2186 tests passed, build exit 0",
+        "test:python3 scripts/test/lib/check-gitea-portal-api-route.py --mutation-verify -> 8 mutations caught",
+        "test:make test (RESEARCH_EVIDENCE_DIR=tmp) -> passed 430 failed 0"
+      ]
+    },
+    {
+      "id": "e6",
+      "type": "verification",
+      "status": "passed",
+      "scope": "live narwhal cluster: route pushed with push-to-gitea.sh, narwhal-platform Synced Healthy; calls made from the portal pod to the external host. NOT covered: the new portal image (needs a portal release) and an authenticated DORA UI render.",
+      "summary": "token GET git/commits 200 JSON; no header, Bearer, other repo, /users and the commit list stay 302 to Keycloak; bogus token 401; browser GET / 302 to Keycloak; anonymous repo meta 404 as before; POST pulls 422 and POST contents 403 from Gitea itself.",
+      "evidence": [
+        "runtime:portal pod fetch matrix against https://gitea.local.narwhal.internal",
+        "cluster:narwhal narwhal-platform Synced Healthy with gitea-portal-api in the live ApisixRoute"
+      ]
+    },
+    {
+      "id": "e7",
+      "type": "completion_claim",
+      "summary": "The gateway now serves the portal's token Gitea API calls and nothing wider; portal code reports the failure clearly and filters non-SHA revisions. The portal code reaches the live pod only with a portal release."
+    },
+    {
+      "id": "e8",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Gateway fix live and verified; portal changes tested offline and awaiting a release."
+    }
+  ]
+}

@@ -74,6 +74,51 @@ export class GiteaError extends Error {
   }
 }
 
+// GITEA_URL pointed at the gateway-fronted host: APISIX openid-connect answers a
+// token-authenticated API call with a redirect to the Keycloak login page (200 text/html
+// once fetch follows it), which used to surface as a JSON SyntaxError per call.
+export class GiteaGatewayRedirectError extends GiteaError {
+  constructor(detail: string) {
+    super(
+      `Gitea API returned ${detail} (likely an SSO redirect) — check GITEA_URL: it must reach Gitea directly (in-cluster Service), not the SSO-fronted gateway host`,
+      502,
+    )
+    this.name = "GiteaGatewayRedirectError"
+  }
+}
+
+// Only the host of the Location header is reported: the query string of an OIDC
+// authorize URL carries state/nonce and must not land in logs.
+function assertJsonApiResponse(res: Response): void {
+  const headers = res.headers
+  const location = headers?.get?.("location")
+  if (res.status >= 300 && res.status < 400) {
+    let host = "an unknown host"
+    try {
+      if (location) host = new URL(location, "http://placeholder.invalid").host
+    } catch {
+      /* keep the generic text */
+    }
+    throw new GiteaGatewayRedirectError(`a redirect (HTTP ${res.status}) to ${host}`)
+  }
+  if (/text\/html/i.test(headers?.get?.("content-type") ?? "")) {
+    throw new GiteaGatewayRedirectError("HTML")
+  }
+}
+
+// DORA fans getCommitTimestamp out per revision, so one misconfiguration would log the
+// same line dozens of times per request; one line per minute is enough to act on.
+let lastGatewayRedirectLogAt = 0
+function logGatewayRedirect(err: GiteaGatewayRedirectError): void {
+  const now = Date.now()
+  if (now - lastGatewayRedirectLogAt < 60_000) return
+  lastGatewayRedirectLogAt = now
+  console.error(`[gitea] ${err.message}`)
+}
+
+/** An Argo CD history revision is a commit only if it looks like a git SHA; Helm chart versions (86.2.3, v1.20.2) are not. */
+export const isGitSha = (revision: string): boolean => /^[0-9a-f]{7,40}$/i.test(revision)
+
 async function api<T>(path: string, init: RequestInit): Promise<T> {
   const token = getGiteaToken()
   // Every current caller of this helper is a POST that creates a commit or a
@@ -84,6 +129,7 @@ async function api<T>(path: string, init: RequestInit): Promise<T> {
     `${getGiteaUrl()}/api/v1${path}`,
     {
       ...init,
+      redirect: "manual",
       headers: {
         "Content-Type": "application/json",
         Authorization: `token ${token}`,
@@ -92,6 +138,7 @@ async function api<T>(path: string, init: RequestInit): Promise<T> {
     },
     { timeoutMs: 10000, retry: false }
   )
+  assertJsonApiResponse(res)
   if (res.status === 401) {
     throw new GiteaCredentialError(
       `Gitea request rejected (HTTP ${res.status}): check GITEA_TOKEN`
@@ -245,7 +292,7 @@ export async function requestTenantNamespace(req: TenantRequest): Promise<Tenant
  * found"; requestTenantNamespace (a write) still throws GiteaCredentialError.
  */
 export async function getCommitTimestamp(sha: string): Promise<string | null> {
-  if (!sha) return null
+  if (!sha || !isGitSha(sha)) return null
   const cacheKey = `dora:commit:${sha}`
   try {
     const cached = await cacheGet<string>(cacheKey)
@@ -266,9 +313,11 @@ export async function getCommitTimestamp(sha: string): Promise<string | null> {
       {
         next: { revalidate: 0 },
         headers: token ? { Authorization: `token ${token}` } : {},
+        redirect: "manual",
       },
       { timeoutMs: 5000 }
     )
+    assertJsonApiResponse(res)
 
     if (res.status === 401) {
       throw new GiteaCredentialError(
@@ -294,6 +343,10 @@ export async function getCommitTimestamp(sha: string): Promise<string | null> {
   } catch (err) {
     if (err instanceof GiteaCredentialError) {
       console.error("[gitea] credential rejected/missing — check GITEA_TOKEN", `commit ${sha}`)
+      return null
+    }
+    if (err instanceof GiteaGatewayRedirectError) {
+      logGatewayRedirect(err)
       return null
     }
     console.warn(`[gitea] Error fetching commit ${sha}:`, err)

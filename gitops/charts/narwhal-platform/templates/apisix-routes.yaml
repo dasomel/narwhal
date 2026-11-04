@@ -299,6 +299,57 @@ spec:
               set:
                 Strict-Transport-Security: "max-age=31536000; includeSubDomains"
                 X-Content-Type-Options: "nosniff"
+    # D-GITEA-PORTAL-API (2026-11-04): the portal calls the Gitea REST API with its machine
+    # token (GITEA_TOKEN) over the external https host, and the catch-all gitea route's
+    # openid-connect answered that with a Keycloak login redirect, so DORA lead time was empty
+    # for every row and namespace-request PRs could not be opened. This rule lets exactly those
+    # calls through without OIDC: the three portal paths on the one GitOps repo, and only when
+    # the request carries a Gitea-shaped `Authorization: token <40 hex>` header. Gitea then
+    # authenticates the token itself (an invalid token gets 401 even on public data; the repo
+    # is private, so anonymous gets 404). Anything else under /api/v1 (no header, other repos,
+    # users, admin, tokens) still hits the OIDC route, so R130/R132 hold and browsers keep SSO.
+    # Why not the in-cluster http Service: portal and gitea pods are istio.io/dataplane-mode=none
+    # and Cilium encryption is off, so that hop is plaintext and would carry the token in clear
+    # (narwhal-portal#39); here the token rides TLS to the gateway.
+    # Cost: the gateway forwards token-bearing API calls for this repo from any source, so
+    # brute-forcing a 160-bit token is the residual exposure (same as git push over basic auth
+    # on gitea-git-bypass). Escape hatch: delete this rule; the portal then fails visibly
+    # ("Gitea API returned ... SSO redirect") instead of showing empty metrics.
+    - name: gitea-portal-api
+      priority: 105
+      match:
+        hosts:
+          - gitea.{{ .Values.baseDomain }}
+        paths:
+          - "/api/v1/repos/gitea-admin/narwhal-gitops/git/commits/*"
+          - "/api/v1/repos/gitea-admin/narwhal-gitops/contents/*"
+          - "/api/v1/repos/gitea-admin/narwhal-gitops/pulls"
+        methods:
+          - GET
+          - POST
+        exprs:
+          - subject:
+              scope: Header
+              name: Authorization
+            op: RegexMatch
+            value: "^token [0-9a-f]{40}$"
+      upstreams:
+        - name: gitea-http
+      plugins:
+        - name: proxy-rewrite
+          enable: true
+          config:
+            headers:
+              remove:
+                - "X-WEBAUTH-USER"
+                - "X-Userinfo"
+        - name: response-rewrite
+          enable: true
+          config:
+            headers:
+              set:
+                Strict-Transport-Security: "max-age=31536000; includeSubDomains"
+                X-Content-Type-Options: "nosniff"
 ---
 # Gitea (APISIX openid-connect gateway gate + zero-click Gitea OAuth2 login; D-GITEA-OAUTH)
 # D-GITEA-OAUTH (2026-10-27, #491): browser login uses Gitea's own 'keycloak' OAuth2 source

@@ -2152,6 +2152,8 @@ PYEOF
   check R304 "trivy-db provisioning invariants hold on the real tree" \
     python3 scripts/test/lib/check-security-db-provisioning.py
 
+  check R305 "gateway lets only the portal's machine-token Gitea API calls (3 paths on narwhal-gitops, GET/POST, token header) skip OIDC; 8 mutations caught (D-GITEA-PORTAL-API)" \
+    python3 scripts/test/lib/check-gitea-portal-api-route.py --mutation-verify
   check R301 "dev namespace has one SSA owner, unique objects and namespace-first ordering" \
     python3 scripts/test/lib/check-dev-namespace.py
   check R302 "every APISIX openid-connect route is login-only allowlisted (gitea) or restricted to Keycloak group cluster-admin via the shared strip-then-check pair; hubble, prometheus, alertmanager and nfs-quota-agent carry it; scans every chart, raw manifest, plugin config and global rule; 13 mutations caught (D-GATEWAY-ADMIN-GROUP, D-GATEWAY-ADMIN-ALL-SOURCES, #519)" \

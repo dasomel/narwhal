@@ -35,6 +35,7 @@ export interface DoraPerApp {
   deploys: number
   lastDeployedAt: string | null
   leadTimeHours: number | null
+  leadTimeMinutes: number | null
   // false when none of the app's revisions in the window is a git commit (Helm
   // chart-sourced Argo apps record a chart version): lead time is not applicable,
   // which is different from "applicable but unknown" (null with this true).
@@ -49,6 +50,7 @@ export interface DoraMetrics {
   deployFrequency: number
   totalDeploys: number
   leadTimeHours: number | null
+  leadTimeMinutes: number | null
   // % of deployments with a KNOWN outcome (Succeeded|Failed) that failed.
   // null when no deployment in the window has outcome evidence — distinct
   // from 0%, which means "known outcomes, zero of them failed".
@@ -270,8 +272,10 @@ export async function GET() {
       const commitDateStr = commitTimeMap[d.revision]
       if (commitDateStr) {
         const commitTimeMs = new Date(commitDateStr).getTime()
-        const leadTimeMs = d.deployedAtMs - commitTimeMs
-        if (leadTimeMs >= 0) {
+        // D2: Clamp clock skew to a measured zero; invalid timestamps remain unknown.
+        // Cost: skew is hidden in the duration; drop skewed samples here if that policy changes.
+        const leadTimeMs = Math.max(0, d.deployedAtMs - commitTimeMs)
+        if (Number.isFinite(leadTimeMs)) {
           stats.leadTimeSumMs += leadTimeMs
           stats.leadTimeCount++
           totalLeadTimeSumMs += leadTimeMs
@@ -291,6 +295,7 @@ export async function GET() {
         deploys: stats.deploys,
         lastDeployedAt: stats.lastDeployedAt,
         leadTimeHours,
+        leadTimeMinutes: stats.leadTimeCount > 0 ? stats.leadTimeSumMs / stats.leadTimeCount / 60000 : null,
         leadTimeApplicable: stats.hasGitRevision,
       }
     })
@@ -337,6 +342,10 @@ export async function GET() {
       deployFrequency,
       totalDeploys: deployments.length,
       leadTimeHours,
+      // D1: Add precise minutes while preserving legacy hours and the v2 cache contract.
+      // Cost: old cached values stay rounded until TTL expiry; UI falls back to hours.
+      // Escape hatch: remove the additive field once all consumers use a versioned replacement.
+      leadTimeMinutes: totalLeadTimeCount > 0 ? totalLeadTimeSumMs / totalLeadTimeCount / 60000 : null,
       changeFailureRate,
       knownOutcomeDeploys: knownOutcomeCount,
       unknownOutcomeDeploys: deployments.length - knownOutcomeCount,
@@ -370,6 +379,7 @@ export async function GET() {
       deployFrequency: 0,
       totalDeploys: 0,
       leadTimeHours: null,
+      leadTimeMinutes: null,
       changeFailureRate: null,
       knownOutcomeDeploys: 0,
       unknownOutcomeDeploys: 0,

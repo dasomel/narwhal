@@ -1,0 +1,69 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-portal-pin-1-1-7-20261105",
+  "task": "Pin the Narwhal IDP Portal image to the published release 1.1.7 (was 1.1.6) and roll it out to the local Vagrant cluster; the repository change is static, the rollout is verified separately.",
+  "changeContext": {
+    "paths": [
+      "gitops/charts/narwhal-platform/templates/narwhal-portal-k8s.yaml",
+      "gitops/README.md",
+      "gitops/README-ko.md",
+      "scripts/airgap/images.txt",
+      "scripts/airgap/lib/image-digests.tsv",
+      "VERSIONS.md",
+      "SECURITY.md",
+      "docs/common/compatibility-matrix.md",
+      "CHANGELOG.md",
+      "CHANGELOG-ko.md",
+      ".agents/evals/traces/2026-11-portal-pin-1.1.7.json",
+      "portal/src/data/oss-versions.generated.json"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Tag bump of one image in the GitOps manifest, its air-gap inventory and digest pin, the docs that quote the pin, and the committed OSS-updates snapshot regenerated from VERSIONS.md. No manifest structure, env, RBAC or chart change. No merge in this change; the pin was deployed to the local Vagrant cluster by pushing the one-line manifest change to Gitea."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "ghcr.io/dasomel/narwhal-portal:1.1.7 was published from tag portal/v1.1.7 on 945a852e (#579): amd64 and arm64 builds, manifest merge and signing succeeded. Re-checked 2026-11-05T14:52:08Z: the tag resolves to index digest sha256:cccdbddb2fce106dbe2366599ec199d8656242f347c91ec0381587d316b78f36 and cosign verify with scripts/airgap/keys/cosign.pub passes on it. The local Vagrant nodes pull ghcr.io directly (the running 1.1.6 pod's imageID was a ghcr.io digest ref), so no Harbor mirror copy was made; a cluster whose nodes cannot reach ghcr.io must mirror by digest first (scripts/airgap/README.md, Mirror a pin bump).",
+      "evidence": [
+        "test:crane digest ghcr.io/dasomel/narwhal-portal:1.1.7 -> sha256:cccdbddb2fce106dbe2366599ec199d8656242f347c91ec0381587d316b78f36",
+        "test:cosign verify --key scripts/airgap/keys/cosign.pub ghcr.io/dasomel/narwhal-portal@sha256:cccdbddb2fce106dbe2366599ec199d8656242f347c91ec0381587d316b78f36 -> signature verified",
+        "doc:https://github.com/dasomel/narwhal/releases/tag/portal%2Fv1.1.7"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "Pin moved 1.1.6 -> 1.1.7 in the Deployment image, images.txt and image-digests.tsv (new digest), gitops README pins and prose (en/ko), VERSIONS.md, compatibility-matrix, SECURITY.md example and the Unreleased changelog entries (en/ko); portal/src/data/oss-versions.generated.json regenerated with gen-oss-versions.mjs because VERSIONS.md changed. 1.1.7 preserves DORA lead time minute precision (#566), lists every mirrored security data source on the Trivy DB status card with trivy-checks shown as pinned (#570), ships the Pretendard font OFL license in the portal image (#572), and bumps @opentelemetry/semantic-conventions to 1.44.0 (#538)."
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "local static checks only",
+      "summary": "Local static checks plus live verification on the local Vagrant cluster after Argo CD synced the pin: the devtools/narwhal-portal pod runs 1.1.7 (digest cccdbddb) and is Ready, narwhal-platform is Synced and Healthy.",
+      "evidence": [
+        "test:RESEARCH_EVIDENCE_DIR=$(mktemp -d) make test -> passed 432 failed 0 warnings 3",
+        "test:make validate -> exit 0",
+        "test:bash scripts/ci/check-version-consistency.sh -> exit 0",
+        "test:kubectl --context narwhal get pod -n devtools -l app=narwhal-portal -> Running, 1/1 Ready, image ghcr.io/dasomel/narwhal-portal:1.1.7, digest sha256:cccdbddb2fce106dbe2366599ec199d8656242f347c91ec0381587d316b78f36",
+        "test:kubectl --context narwhal get application -n devtools narwhal-platform -> Synced, Healthy"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "completion_claim",
+      "summary": "The repository pins the IDP Portal to 1.1.7 consistently with a digest that matches the registry, and the local cluster runs that image."
+    },
+    {
+      "id": "e6",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Complete within the stated scope: static pin change and local-cluster rollout. Not covered: any Kakao or other bastion-mirrored cluster."
+    }
+  ]
+}

@@ -40,12 +40,12 @@
   Falco를 제거하지 않는다. 클러스터가 아닌 로컬 Docker 랩(실제 Falco·falcosidekick·Alertmanager)에서
   확인했으며, 차트 타르볼·이미지 2개·GitOps push는 별도로 클러스터에 반영해야 하고, Ubuntu 26.04 /
   커널 7.0 Vagrant 박스와 Kubernetes CRI 경로에서의 Falco는 아직 관측되지 않았다.
-- **포털이 `narwhal-portal:1.1.6`으로 고정됨 (기존 1.1.0, 중간에 #467·#477·#481·#502·#520이 1.1.1~1.1.5로
-  고정).** 1.1.6은 인증서 갱신을 잘못된 `spec` 패치 대신 `cmctl` 방식으로 수행하고(#549), Kyverno 액션과
-  규칙을 설명하며(#547), 설정의 OSS 업데이트 탭(#552)과 보안의 Trivy DB 카드(#554)를 추가하고, 게이트웨이
-  SSO를 지나 Gitea API에 접근하며 Helm 소스 앱의 리드 타임을 N/A로 표시하고(#556), 비용 서비스 분석에서 모든
-  파드를 귀속시킨다(#559). 1.1.5 이하의 수정을 모두 포함한다. 이미지는 저장소 키로 Cosign 서명되어 있다
-  (index digest `sha256:6297c5ab…`). 클러스터 bastion에서 이 고정을 적용하기 전에 digest로 미러링해야 한다
+- **포털이 `narwhal-portal:1.1.7`로 고정됨 (기존 1.1.0, 중간에 #467·#477·#481·#502·#520·#561이 1.1.1~1.1.6으로
+  고정).** 1.1.7은 DORA 리드타임에 분 단위 정밀도를 표시하고(#566), Trivy DB 상태 카드에 미러링된 모든
+  보안 데이터 소스를 나열하며 trivy-checks를 고정(pinned) 상태로 표시하고(#570), Pretendard 폰트의 OFL
+  라이선스를 포털 이미지에 포함하며(#572), `@opentelemetry/semantic-conventions`를 1.44.0으로
+  올린다(#538). 1.1.6 이하의 수정을 모두 포함한다. 이미지는 저장소 키로 Cosign 서명되어 있다
+  (index digest `sha256:cccdbddb…`). 클러스터 bastion에서 이 고정을 적용하기 전에 digest로 미러링해야 한다
   (`scripts/airgap/README.md`의 "Mirror a pin bump"). 로컬 Vagrant 클러스터는 ghcr.io에서 직접 pull한다.
 
 ### 수정

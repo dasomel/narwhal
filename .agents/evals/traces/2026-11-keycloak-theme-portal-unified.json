@@ -22,6 +22,9 @@
       "gitops/charts/narwhal-platform/keycloak-theme/narwhal/login/messages/messages_en.properties",
       "gitops/charts/narwhal-platform/keycloak-theme/narwhal/login/messages/messages_ko.properties",
       "gitops/charts/narwhal-platform/keycloak-theme/narwhal/login/resources/css/narwhal.css",
+      "gitops/charts/narwhal-platform/keycloak-theme/narwhal/login/resources/fonts/OFL.txt",
+      "gitops/charts/narwhal-platform/keycloak-theme/narwhal/login/resources/fonts/Pretendard-Bold.subset.woff2",
+      "gitops/charts/narwhal-platform/keycloak-theme/narwhal/login/resources/fonts/Pretendard-Regular.subset.woff2",
       "gitops/charts/narwhal-platform/keycloak-theme/narwhal/login/resources/fonts/PretendardVariable-subset.woff2",
       "gitops/charts/narwhal-platform/keycloak-theme/narwhal/login/resources/img/favicon.ico",
       "gitops/charts/narwhal-platform/keycloak-theme/narwhal/login/resources/img/narwhal-dark.svg",
@@ -41,10 +44,13 @@
       "gitops/resources/keycloak-theme/narwhal/login/template.ftl",
       "gitops/resources/keycloak-theme/narwhal/login/theme.properties",
       "gitops/resources/kyverno-policies.yaml",
+      "portal/Dockerfile",
+      "portal/NOTICE",
       "portal/THIRD-PARTY-NOTICES.md",
       "portal/package.json",
       "portal/pnpm-lock.yaml",
       "portal/src/app/api/security/trivy-db/route.test.ts",
+      "portal/src/app/fonts/OFL.txt",
       "portal/src/components/security/trivy-db-status-card.test.tsx",
       "portal/src/components/security/trivy-db-status-card.tsx",
       "portal/src/lib/i18n.ts",
@@ -131,6 +137,69 @@
       "type": "task_outcome",
       "state": "A",
       "summary": "Complete within repository and local-cluster scope; independent review pending (Narwhal merge gate); not pushed, no PR opened."
+    },
+    {
+      "id": "e10",
+      "type": "external_input",
+      "provenance": "pretendard@1.3.9 published dist/web/static/woff2-subset/Pretendard-{Regular,Bold}.subset.woff2 and dist/web/variable/woff2/PretendardVariable.woff2 downloaded from cdn.jsdelivr.net/npm/pretendard@1.3.9; current orioncactus/pretendard LICENSE retrieved through gh api 2026-11-05",
+      "reviewed": true,
+      "summary": "All three local font SHA-256 hashes match published upstream bytes. Both OFL.txt files equal the retrieved complete license, including Pretendard, Source, Inter and M PLUS 1 Reserved Font Names. The v1.3.9 tag LICENSE has fewer attribution headers; the current upstream license preserves the full list."
+    },
+    {
+      "id": "e11",
+      "type": "reproduction",
+      "summary": "PR #572 review: the self-made Pretendard subset retained the reserved family name and omitted OFL. Live pre-existing Gitea keycloak-theme/narwhal/narwhal/** files survived individual-file copying, doubled rendered assets and caused a >1 MiB ConfigMap rejection on the first fix push. Local render could not see those remote-only stale files. Baseline f52e117d restored immediately before the 5-minute limit, stale nested files removed, old-revision Argo retry terminated, and the unready pod recreated to let StatefulSet rollback converge to Ready/Synced/Healthy."
+    },
+    {
+      "id": "e12",
+      "type": "bug_fix",
+      "summary": "D1: R306 renders the chart with values derived from app-of-apps (or accepts --rendered for live Argo values), validates every Keycloak configMap item against its own rendered ConfigMap, requires exact theme keys and <1 MiB serialized size, and provides removed-key mutations for text and binary maps. Replace self-made font with unmodified upstream Regular/Bold, ship OFL beside fonts, add Portal OFL/NOTICE and explicit runner COPY. The temporary delivery adapter reuses push-to-gitea credential handling, copies 18 individual files, prunes only stale theme files, verifies the actual Gitea candidate render equals local bytes/spec, and runs server dry-run as argocd-controller before commit/push. No repository push helper change or credential output."
+    },
+    {
+      "id": "e13",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "Font licensing, rendered ConfigMap delivery, static regression, Portal compilation",
+      "evidence": [
+        "test:RESEARCH_EVIDENCE_DIR=$(mktemp -d) make test -> exit 0; 431 passed, 0 failed, 3 known warnings (no airgap bundle, R243-known, R244-known)",
+        "test:make validate -> exit 0; Ruby Syntax OK and 30 YAML OK",
+        "test:python3 scripts/test/lib/check-keycloak-theme.py --rendered /tmp/narwhal-font-license-evidence/gitea-rendered.yaml --mutation-verify -> PASS; removed text and binary key mutations both rejected",
+        "test:remove OFL.txt / append one byte to Regular font, invoke R306 -> each exits 1 with the expected diagnostic; originals restored",
+        "test:portal/: pnpm install --frozen-lockfile && pnpm typecheck && pnpm build -> exit 0, Next.js production build complete",
+        "test:python3 -m unittest discover -s scripts/ci/tests -> 120 tests OK",
+        "test:trace requirement, evidence correlation and baseline gate validators -> exit 0; 5/5 behaviors pass, 0 regressions"
+      ]
+    },
+    {
+      "id": "e14",
+      "type": "verification",
+      "status": "passed",
+      "scope": "Live local narwhal cluster font-license fix, Gitea revision 04439ab83959e9529a53986fb117874f44bcc986",
+      "evidence": [
+        "runtime:Keycloak updated pod 62e817e7-c40f-4ac3-bd1a-39520e6c0740 Ready within 5 minutes; checksum afa2e99fee5a877488066674661007e8cf22d781d5a6e958da83474291f39b97; ArgoCD Synced/Healthy",
+        "runtime:Live ConfigMaps exact keys and bytes equal live-values local render, no stale font or nested keys. Serialized sizes: text 46725 bytes, binary 721083 bytes",
+        "runtime:bash scripts/test/test-sso.sh --section=acl via exported kubectl function forcing --context narwhal -> 103 PASS, 0 FAIL, 0 WARN, exit 0",
+        "runtime:Playwright Chromium light/dark login screenshots visually inspected; Regular/Bold both loaded and HTTP 200; CDP CSS.getPlatformFontsForNode confirms title uses custom Pretendard-Bold (23 glyphs)",
+        "artifact:/tmp/narwhal-font-license-evidence/login-light.png",
+        "artifact:/tmp/narwhal-font-license-evidence/login-dark.png",
+        "artifact:/tmp/narwhal-font-license-evidence/browser-fonts.json"
+      ]
+    },
+    {
+      "id": "e15",
+      "type": "limitation",
+      "summary": "Docker image build not executed: Colima is stopped and docker info cannot reach its socket. .github/workflows/portal-build-check.yml docker-build job builds portal/ in CI; its result is not claimed here. Portal image has not been released or deployed. No GitHub push, PR mutation, review status or merge. Firefox/Safari and production/Kakao cluster not exercised. Root/portal CLAUDE.md only add Claude-specific specialist routing/workflow locations beyond AGENTS.md."
+    },
+    {
+      "id": "e16",
+      "type": "completion_claim",
+      "summary": "Font-license repair implemented and verified in the repository and local Keycloak runtime. Theme fonts are upstream-unmodified with OFL, Portal license delivery is explicit, and rendered projection keys/budget are checked before live publication. Docker build remains delegated to existing CI; no image-build success claimed."
+    },
+    {
+      "id": "e17",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Complete within repository/local-Keycloak scope; Docker build and Portal image rollout remain unverified as explicitly recorded. Local commit authorized; no GitHub push/PR/review status/merge."
     }
   ]
 }

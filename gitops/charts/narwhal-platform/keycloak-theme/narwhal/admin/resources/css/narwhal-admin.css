@@ -7,20 +7,27 @@
    #22d3ee (dark), neutral chrome from the Portal dark palette.
    ========================================================================== */
 
-/* Pretendard Variable, the Portal's face. The subset is shipped once, in the login theme of the
-   same name; a failed load falls through to the console's own font. */
+/* Pretendard, the Portal's face (unmodified upstream subsets, SIL OFL 1.1). The files are shipped
+   once, in the login theme of the same name; a failed load falls through to the console's own font. */
 @font-face {
-  font-family: "Pretendard Variable";
+  font-family: "Pretendard";
   font-style: normal;
-  font-weight: 400 700;
+  font-weight: 400;
   font-display: swap;
-  src: url("../../../login/narwhal/fonts/PretendardVariable-subset.woff2") format("woff2");
+  src: url("../../../login/narwhal/fonts/Pretendard-Regular.subset.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Pretendard";
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("../../../login/narwhal/fonts/Pretendard-Bold.subset.woff2") format("woff2");
 }
 
 :root {
-  --pf-v5-global--FontFamily--text: "Pretendard Variable", "RedHatText", "Overpass", overpass, helvetica, arial, sans-serif;
-  --pf-v5-global--FontFamily--heading: "Pretendard Variable", "RedHatDisplay", "Overpass", overpass, helvetica, arial, sans-serif;
-  --pf-v5-global--FontFamily--sans-serif: "Pretendard Variable", "RedHatText", "Overpass", overpass, helvetica, arial, sans-serif;
+  --pf-v5-global--FontFamily--text: Pretendard, "RedHatText", "Overpass", overpass, helvetica, arial, sans-serif;
+  --pf-v5-global--FontFamily--heading: Pretendard, "RedHatDisplay", "Overpass", overpass, helvetica, arial, sans-serif;
+  --pf-v5-global--FontFamily--sans-serif: Pretendard, "RedHatText", "Overpass", overpass, helvetica, arial, sans-serif;
 
   /* Accent: --narwhal-detail (#0e7490) is the Portal token that clears AA for text and for white
      text on a filled button (5.4:1); --narwhal-accent (#0891b2) is 3.7:1 and is not used for text. */

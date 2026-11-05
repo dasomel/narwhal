@@ -10,15 +10,24 @@
    7 buttons, 8 alerts, 9 other pages, 10 motion + small screens.
    ========================================================================== */
 
-/* 1. Font: Pretendard Variable, the Portal's face. Subset (Latin, KS X 1001 Hangul, punctuation),
-      weight axis 400-700, from portal/src/app/fonts/PretendardVariable.woff2 (SIL OFL 1.1). Glyphs
-      outside the subset fall back to the system Korean face listed in --nw-font. */
+/* 1. Font: Pretendard, the Portal's face, as published upstream (pretendard@1.3.9, SIL OFL 1.1,
+      license text in ../fonts/OFL.txt). The files are the unmodified static web subsets
+      (Latin + KS X 1001 Hangul), not re-subset by us: the OFL reserves the name "Pretendard" for
+      unmodified builds. Regular serves 400-500, Bold 600-700. Glyphs outside the subset fall back to
+      the system Korean face listed in --nw-font. */
 @font-face {
-  font-family: "Pretendard Variable";
+  font-family: "Pretendard";
   font-style: normal;
-  font-weight: 400 700;
+  font-weight: 400;
   font-display: swap;
-  src: url("../fonts/PretendardVariable-subset.woff2") format("woff2");
+  src: url("../fonts/Pretendard-Regular.subset.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Pretendard";
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("../fonts/Pretendard-Bold.subset.woff2") format("woff2");
 }
 
 /* 2. Portal tokens: values copied from portal/src/app/globals.css, light default, dark override.
@@ -56,7 +65,7 @@
 
   /* Theme-local additions (not in the Portal): derived from Portal tokens only. */
   --nw-radius-xl: calc(var(--radius) * 1.4); /* Portal Card: rounded-xl */
-  --nw-font: "Pretendard Variable", Pretendard, system-ui, -apple-system, "Apple SD Gothic Neo",
+  --nw-font: Pretendard, system-ui, -apple-system, "Apple SD Gothic Neo",
     "Noto Sans KR", "Malgun Gothic", sans-serif;
   --nw-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
   /* Accent for text and focus. --narwhal-accent (#0891b2) is 3.7:1 on white, below AA for text;

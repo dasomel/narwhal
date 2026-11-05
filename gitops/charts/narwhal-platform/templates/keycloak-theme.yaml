@@ -2,7 +2,7 @@
 # (keycloak-cr.yaml) at /opt/keycloak/themes/narwhal. Source of truth is the chart's
 # keycloak-theme/narwhal/ tree; nothing here is hand-maintained.
 #   keycloak-theme-narwhal         text files (theme.properties, ftl, css, js, svg, messages)
-#   keycloak-theme-narwhal-assets  binary files (Pretendard subset woff2, favicon.ico)
+#   keycloak-theme-narwhal-assets  binary files (Pretendard upstream subset woff2, favicon.ico)
 # Split in two so each stays under the 1 MiB object limit with room to grow.
 apiVersion: v1
 kind: ConfigMap

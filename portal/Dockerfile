@@ -55,6 +55,8 @@ COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 # (1.0.17 빌드 기준 node_modules 631개 -> .next/standalone 3개). 그래서 빌드 산출물에
 # 기대지 않고 여기서 명시적으로 넣는다. THIRD-PARTY-NOTICES.md는 pnpm run notices로 생성.
 COPY LICENSE NOTICE THIRD-PARTY-NOTICES.md ./
+# Pretendard (src/app/fonts) is bundled unmodified; the SIL OFL 1.1 text must travel with it.
+COPY src/app/fonts/OFL.txt ./OFL-Pretendard.txt
 USER nextjs
 EXPOSE 3000
 ENV PORT=3000

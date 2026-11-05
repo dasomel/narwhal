@@ -1,0 +1,21 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-worker-disk-growth-20261105",
+  "task": "Local worker-3 vmdk grew to 292G while the guest used 43G. Find the writer, cut its rewrite rate, record the lesson.",
+  "changeContext": {
+    "paths": [
+      ".agents/evals/traces/2026-11-worker-disk-growth.json",
+      "docs/common/lessons-log.md",
+      "gitops/charts/narwhal-apps/templates/trivy-operator.yaml"
+    ]
+  },
+  "events": [
+    {"id": "e1", "type": "scope_check", "summary": "Change only trivy-operator scannerReportTTL. Deliberately left alone: operator OOMKill, kubelet image GC, node disk shrink or rebuild, Harbor, other apps."},
+    {"id": "e2", "type": "reproduction", "summary": "Guest used 43G vs host vmdk 292G; Prometheus 3d max guest usage ~47G on all nodes; node_disk_written 517GiB on worker-3 vs 53-128GiB elsewhere; top container_fs_writes writer is security-system scan-vulnerabilityreport pods.", "evidence": ["repo:gitops/charts/narwhal-apps/templates/trivy-operator.yaml"]},
+    {"id": "e3", "type": "bug_fix", "summary": "scannerReportTTL 24h (chart default) to 168h so reports are not rescanned daily, each rescan re-downloading the Trivy DB to node disk."},
+    {"id": "e4", "type": "verification", "summary": "make test run in the worktree; live effect to be confirmed via trivy-operator-config OPERATOR_SCANNER_REPORT_TTL.", "scope": "trivy-operator Application values", "evidence": ["repo:docs/common/lessons-log.md"]},
+    {"id": "e5", "type": "completion_claim", "summary": "Rewrite rate reduced; host space not reclaimed (needs disk rebuild, not approved)."},
+    {"id": "e6", "type": "task_outcome", "state": "B", "summary": "Prevention applied; reclaim not done"}
+  ]
+}

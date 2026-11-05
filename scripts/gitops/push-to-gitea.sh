@@ -106,6 +106,13 @@ COMMIT_MSG="${1:-chore: sync gitops from narwhal repo}"
 shift || true
 PATHS=("$@")   # optional list of paths relative to gitops/ ; empty = mirror all
 
+# Refuse paths containing '..' or absolute paths
+for p in "${PATHS[@]}"; do
+  if [[ -z "${p}" || "${p}" = /* || "${p}" == *".."* || "${p}" == "." ]]; then
+    die "path must be relative to gitops/ and cannot contain '..': ${p}"
+  fi
+done
+
 if [[ "${MODE}" != "rollback" ]]; then
   [ -d "${GITOPS_DIR}" ] || die "gitops source not found at ${GITOPS_DIR}. Set GITOPS_DIR to the gitops/ tree you want mirrored."
 fi
@@ -241,15 +248,29 @@ if [[ "${MODE}" == "rollback" ]]; then
 else
   #--- copy changed file(s) from gitops/ into the gitea repo root ------------
   if [[ ${#PATHS[@]} -eq 0 ]]; then
+    # D-MIRROR-ALL-NONDESTRUCTIVE: mirror-all mode remains additive (does not delete untracked Gitea files).
+    # Reason: Gitea repo root holds files that exist only in Gitea and not in gitops/, notably portal-managed
+    # tenant namespace manifests (resources/tenants/*) merged via pull requests. Deleting them would trigger
+    # ArgoCD automated pruning and delete tenant namespaces.
+    # Cost: deletions under gitops/ are not propagated when mirror-all is run without paths.
+    # Escape hatch: pass specific directory or file paths to push-to-gitea.sh to mirror/delete them, or delete explicitly via git.
     log "mirroring ALL of gitops/ -> gitea repo root"
     cp -r "${GITOPS_DIR}/." .
   else
     for rel in "${PATHS[@]}"; do
+      rel="${rel%/}"
       src="${GITOPS_DIR}/${rel}"
       [[ -e "${src}" ]] || die "${src} does not exist"
-      mkdir -p "$(dirname "${rel}")"
-      cp -r "${src}" "${rel}"
-      log "copied gitops/${rel} -> ${rel}"
+      if [[ -d "${src}" ]]; then
+        rm -rf "${rel}"
+        mkdir -p "$(dirname "${rel}")"
+        cp -R "${src}" "${rel}"
+        log "mirrored directory gitops/${rel} -> ${rel}"
+      else
+        mkdir -p "$(dirname "${rel}")"
+        cp -r "${src}" "${rel}"
+        log "copied gitops/${rel} -> ${rel}"
+      fi
     done
   fi
   git add -A

@@ -1,0 +1,708 @@
+/* ==========================================================================
+   Narwhal IDP login theme: one product with the Portal.
+   Skin only. Markup, field/button macros and PatternFly v5 come from keycloak.v2, so every
+   Keycloak page (login, error, page-expired, update password/profile, OTP, WebAuthn, logout, ...)
+   picks this up through the PatternFly tokens mapped in section 3.
+
+   Source of truth: portal/src/app/globals.css (tokens, radius), portal/src/app/fonts (Pretendard),
+   portal/src/components/ui/{card,button,input}.tsx (shapes), portal/src/app/login (card layout).
+   Sections: 1 font, 2 Portal tokens, 3 PatternFly mapping, 4 page + brand, 5 card, 6 form,
+   7 buttons, 8 alerts, 9 other pages, 10 motion + small screens.
+   ========================================================================== */
+
+/* 1. Font: Pretendard, the Portal's face, as published upstream (pretendard@1.3.9, SIL OFL 1.1,
+      license text in ../fonts/OFL.txt). The files are the unmodified static web subsets
+      (Latin + KS X 1001 Hangul), not re-subset by us: the OFL reserves the name "Pretendard" for
+      unmodified builds. Regular serves 400-500, Bold 600-700. Glyphs outside the subset fall back to
+      the system Korean face listed in --nw-font. */
+@font-face {
+  font-family: "Pretendard";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("../fonts/Pretendard-Regular.subset.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Pretendard";
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("../fonts/Pretendard-Bold.subset.woff2") format("woff2");
+}
+
+/* 2. Portal tokens: values copied from portal/src/app/globals.css, light default, dark override.
+      The Portal does not redefine --narwhal-wave/body/belly/detail in .dark; neither do we. */
+:root {
+  --narwhal-accent: #0891b2;
+  --narwhal-accent-soft: rgba(8, 145, 178, 0.1);
+  --narwhal-wave: #06b6d4;
+  --narwhal-body: #0891b2;
+  --narwhal-belly: #67e8f9;
+  --narwhal-detail: #0e7490;
+  --narwhal-horn: #64748b;
+  --narwhal-success: #16a34a;
+  --narwhal-warning: #ca8a04;
+  --narwhal-danger: #dc2626;
+  --narwhal-text-mono: #475569;
+
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.145 0 0);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.145 0 0);
+  --primary: oklch(0.205 0 0);
+  --primary-foreground: oklch(0.985 0 0);
+  --secondary: oklch(0.97 0 0);
+  --secondary-foreground: oklch(0.205 0 0);
+  --muted: oklch(0.97 0 0);
+  --muted-foreground: oklch(0.50 0 0);
+  --accent: oklch(0.97 0 0);
+  --accent-foreground: oklch(0.205 0 0);
+  --destructive: oklch(0.577 0.245 27.325);
+  --border: oklch(0.922 0 0);
+  --input: oklch(0.922 0 0);
+  --ring: oklch(0.708 0 0);
+  --radius: 0.625rem;
+
+  /* Theme-local additions (not in the Portal): derived from Portal tokens only. */
+  --nw-radius-xl: calc(var(--radius) * 1.4); /* Portal Card: rounded-xl */
+  --nw-font: Pretendard, system-ui, -apple-system, "Apple SD Gothic Neo",
+    "Noto Sans KR", "Malgun Gothic", sans-serif;
+  --nw-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  /* Accent for text and focus. --narwhal-accent (#0891b2) is 3.7:1 on white, below AA for text;
+     the Portal's own --narwhal-detail (#0e7490) is 5.4:1. Dark mode uses the dark accent. */
+  --nw-link: var(--narwhal-detail);
+  --nw-link-hover: oklch(0.145 0 0);
+  --nw-focus: var(--narwhal-detail);
+  --nw-focus-ring: rgba(14, 116, 144, 0.28);
+  --nw-ring-card: color-mix(in oklab, var(--foreground) 10%, transparent); /* ring-1 foreground/10 */
+  --nw-brand-img: url("../img/narwhal-light.svg");
+  color-scheme: light;
+}
+
+html.nw-dark {
+  --narwhal-accent: #22d3ee;
+  --narwhal-accent-soft: rgba(34, 211, 238, 0.15);
+  --narwhal-horn: #f1f5f9;
+  --narwhal-success: #4ade80;
+  --narwhal-warning: #facc15;
+  --narwhal-danger: #f87171;
+  --narwhal-text-mono: #cbd5e1;
+
+  --background: oklch(0.145 0 0);
+  --foreground: oklch(0.985 0 0);
+  --card: oklch(0.205 0 0);
+  --card-foreground: oklch(0.985 0 0);
+  --primary: oklch(0.922 0 0);
+  --primary-foreground: oklch(0.205 0 0);
+  --secondary: oklch(0.269 0 0);
+  --secondary-foreground: oklch(0.985 0 0);
+  --muted: oklch(0.269 0 0);
+  --muted-foreground: oklch(0.708 0 0);
+  --accent: oklch(0.269 0 0);
+  --accent-foreground: oklch(0.985 0 0);
+  --destructive: oklch(0.704 0.191 22.216);
+  --border: oklch(1 0 0 / 10%);
+  --input: oklch(1 0 0 / 15%);
+  --ring: oklch(0.556 0 0);
+
+  --nw-link: var(--narwhal-accent);
+  --nw-link-hover: oklch(0.985 0 0);
+  --nw-focus: var(--narwhal-accent);
+  --nw-focus-ring: rgba(34, 211, 238, 0.3);
+  --nw-brand-img: url("../img/narwhal-dark.svg");
+  color-scheme: dark;
+}
+
+/* 3. PatternFly v5 mapping. Setting the global tokens re-skins every PF component the stock pages
+      use (alerts, tiles, data lists, clipboard, panels) without per-page CSS. */
+html:root,
+html.pf-v5-theme-dark:root {
+  --pf-v5-global--FontFamily--text: var(--nw-font);
+  --pf-v5-global--FontFamily--heading: var(--nw-font);
+  --pf-v5-global--FontFamily--sans-serif: var(--nw-font);
+  --pf-v5-global--FontFamily--monospace: var(--nw-mono);
+  --pf-v5-global--FontFamily--text--vf: var(--nw-font);
+  --pf-v5-global--FontFamily--heading--vf: var(--nw-font);
+
+  --pf-v5-global--BackgroundColor--100: var(--card);
+  --pf-v5-global--BackgroundColor--200: var(--muted);
+  --pf-v5-global--BackgroundColor--light-100: var(--card);
+  --pf-v5-global--BackgroundColor--light-200: var(--muted);
+  --pf-v5-global--BackgroundColor--light-300: var(--muted);
+  --pf-v5-global--Color--100: var(--foreground);
+  --pf-v5-global--Color--200: var(--muted-foreground);
+  --pf-v5-global--Color--300: var(--muted-foreground);
+  --pf-v5-global--BorderColor--100: var(--border);
+  --pf-v5-global--BorderColor--200: var(--input);
+  --pf-v5-global--BorderColor--300: var(--input);
+
+  --pf-v5-global--primary-color--100: var(--nw-link);
+  --pf-v5-global--primary-color--200: var(--nw-link-hover);
+  --pf-v5-global--active-color--100: var(--nw-link);
+  --pf-v5-global--link--Color: var(--nw-link);
+  --pf-v5-global--link--Color--hover: var(--nw-link-hover);
+  --pf-v5-global--link--TextDecoration: none;
+  --pf-v5-global--link--TextDecoration--hover: underline;
+  --pf-v5-global--danger-color--100: var(--narwhal-danger);
+  --pf-v5-global--danger-color--200: var(--narwhal-danger);
+  --pf-v5-global--success-color--100: var(--narwhal-success);
+  --pf-v5-global--success-color--200: var(--narwhal-success);
+  --pf-v5-global--warning-color--100: var(--narwhal-warning);
+  --pf-v5-global--warning-color--200: var(--narwhal-warning);
+  --pf-v5-global--info-color--100: var(--nw-link);
+  --pf-v5-global--info-color--200: var(--nw-link);
+  --pf-v5-global--BorderRadius--sm: calc(var(--radius) * 0.6);
+  --pf-v5-global--BorderRadius--lg: var(--radius);
+  --pf-v5-global--FontSize--md: 0.9375rem;
+}
+
+/* 4. Page and brand. Portal login: plain --background, one centered card (max-w-md). The mascot and
+      wordmark sit above the card; the card itself is only the form. */
+html.login-pf {
+  background: var(--background);
+}
+
+html.login-pf body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--nw-font);
+  font-size: 0.9375rem;
+  -webkit-font-smoothing: antialiased;
+  min-height: 100dvh;
+  height: auto;
+}
+
+html.login-pf .pf-v5-c-login {
+  min-height: 100dvh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem 1rem;
+  background: transparent;
+}
+
+html.login-pf .pf-v5-c-login__container {
+  display: grid;
+  grid-template-columns: minmax(0, 28rem);
+  grid-template-areas: "header" "main";
+  justify-content: center;
+  width: 100%;
+  max-width: 28rem;
+  padding-inline: 0;
+  row-gap: 1.25rem;
+}
+
+html.login-pf .pf-v5-c-login {
+  --pf-v5-c-login__header--MarginBottom: 0;
+  --pf-v5-c-login__header--c-brand--MarginBottom: 0;
+  --pf-v5-c-login__main--MarginBottom: 0;
+}
+
+html.login-pf .pf-v5-c-login__header {
+  padding: 0;
+  margin: 0;
+}
+
+html.login-pf #kc-header-wrapper {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+  /* Portal CardTitle on the login page: text-2xl font-bold tracking-tight */
+  font-size: 1.5rem;
+  font-weight: 700;
+  letter-spacing: -0.025em;
+  line-height: 1.2;
+  text-transform: none;
+  white-space: normal;
+  color: var(--foreground) !important; /* keycloak.v2 styles.css forces light text with !important */
+  text-align: center;
+}
+
+/* The Portal's healthy narwhal (portal/src/components/narwhal/narwhal.tsx), decorative. */
+html.login-pf #kc-header-wrapper::before {
+  content: "";
+  display: block;
+  width: 6.5rem;
+  aspect-ratio: 202 / 76;
+  background: var(--nw-brand-img) center / contain no-repeat;
+  transform-origin: center;
+  animation: narwhal-breath 3s ease-in-out infinite; /* Portal keyframes (globals.css) */
+}
+
+@keyframes narwhal-breath {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.02); }
+}
+
+/* 5. Card: Portal Card = rounded-xl, bg-card, ring-1 ring-foreground/10, no shadow. */
+html.login-pf .pf-v5-c-login__main {
+  background: var(--card);
+  color: var(--card-foreground);
+  border: 0;
+  border-radius: var(--nw-radius-xl);
+  box-shadow: 0 0 0 1px var(--nw-ring-card);
+  margin: 0;
+  overflow: hidden;
+}
+
+html.login-pf .pf-v5-c-login__main-header {
+  border-top: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: 0.75rem;
+  padding: 1.5rem 1.5rem 0;
+}
+
+html.login-pf .pf-v5-c-login__main-header .pf-v5-c-title {
+  font-size: 1.125rem;
+  font-weight: 600;
+  letter-spacing: -0.011em;
+  line-height: 1.35;
+  color: var(--card-foreground);
+  margin: 0;
+}
+
+html.login-pf .pf-v5-c-login__main-body {
+  padding: 1.25rem 1.5rem 1.5rem;
+}
+
+html.login-pf .pf-v5-c-login__main-footer {
+  padding: 0 1.5rem 1.5rem;
+}
+
+html.login-pf .pf-v5-c-login__main-footer:empty,
+html.login-pf .pf-v5-c-login__main-footer:not(:has(*)) {
+  display: none;
+}
+
+html.login-pf .pf-v5-c-login__main-footer-band {
+  background: var(--muted);
+  border-radius: var(--radius);
+  padding: 0.75rem 1rem;
+  margin-block-start: 1rem;
+  font-size: 0.875rem;
+  color: var(--muted-foreground);
+  text-align: center;
+}
+
+/* Language switch: a compact input, same control language as the form. */
+html.login-pf .pf-v5-c-login__main-header-utilities {
+  margin: 0;
+}
+
+html.login-pf .pf-v5-c-login__main-header-utilities .pf-v5-c-form-control {
+  min-height: 2rem;
+  font-size: 0.8125rem;
+  color: var(--muted-foreground);
+}
+
+/* 6. Form controls: Portal Input = h-8 rounded-lg border-input, dark bg-input/30. The login form
+      uses h-10 (2.5rem) for touch comfort; same radius and colors. */
+html.login-pf .pf-v5-c-form {
+  --pf-v5-c-form--GridGap: 1rem;
+  --pf-v5-c-form__group--m-action--MarginTop: 0.25rem;
+  gap: 1rem;
+}
+
+html.login-pf .pf-v5-c-form__label-text {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--foreground);
+}
+
+html.login-pf .pf-v5-c-form__group-label {
+  padding-bottom: 0.375rem;
+}
+
+html.login-pf .pf-v5-c-form-control {
+  --pf-v5-c-form-control--Color: var(--foreground);
+  --pf-v5-c-form-control--BackgroundColor: transparent;
+  --pf-v5-c-form-control--PaddingLeft: 0.75rem;
+  --pf-v5-c-form-control--PaddingRight: 0.75rem;
+  --pf-v5-c-form-control--PaddingTop: 0.5rem;
+  --pf-v5-c-form-control--PaddingBottom: 0.5rem;
+  min-height: 2.5rem;
+  border: 1px solid var(--input);
+  border-radius: var(--radius);
+  background: transparent;
+  font-size: 1rem;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+html.nw-dark.login-pf .pf-v5-c-form-control {
+  background: color-mix(in oklab, var(--input) 30%, transparent); /* dark:bg-input/30 */
+}
+
+html.login-pf .pf-v5-c-form-control::before,
+html.login-pf .pf-v5-c-form-control::after {
+  display: none; /* PF draws the border with pseudo-elements; we draw it on the box */
+}
+
+html.login-pf .pf-v5-c-form-control > :is(input, select, textarea) {
+  color: var(--foreground);
+  font: inherit;
+  outline: none;
+}
+
+html.login-pf .pf-v5-c-form-control input::placeholder {
+  color: var(--muted-foreground);
+}
+
+html.login-pf .pf-v5-c-form-control:focus-within {
+  border-color: var(--nw-focus);
+  box-shadow: 0 0 0 3px var(--nw-focus-ring);
+}
+
+html.login-pf .pf-v5-c-form-control.pf-m-readonly,
+html.login-pf .pf-v5-c-form-control:has(input[readonly]) {
+  background: var(--muted);
+}
+
+html.login-pf .pf-v5-c-form-control.pf-m-error,
+html.login-pf .pf-v5-c-form-control:has(> [aria-invalid="true"]) {
+  border-color: var(--destructive);
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--destructive) 20%, transparent);
+}
+
+/* Password field = input + show/hide button, drawn as one control. */
+html.login-pf .pf-v5-c-input-group {
+  gap: 0;
+  border: 1px solid var(--input);
+  border-radius: var(--radius);
+  background: transparent;
+  overflow: hidden;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+html.nw-dark.login-pf .pf-v5-c-input-group {
+  background: color-mix(in oklab, var(--input) 30%, transparent);
+}
+
+html.login-pf .pf-v5-c-input-group:focus-within {
+  border-color: var(--nw-focus);
+  box-shadow: 0 0 0 3px var(--nw-focus-ring);
+}
+
+html.login-pf .pf-v5-c-input-group:has([aria-invalid="true"]) {
+  border-color: var(--destructive);
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--destructive) 20%, transparent);
+}
+
+html.login-pf .pf-v5-c-input-group .pf-v5-c-form-control {
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  background: transparent;
+}
+
+html.login-pf .pf-v5-c-input-group .pf-v5-c-button.pf-m-control {
+  background: transparent;
+  color: var(--muted-foreground);
+  border: 0;
+  border-radius: 0;
+  min-width: 2.5rem;
+}
+
+html.login-pf .pf-v5-c-input-group .pf-v5-c-button.pf-m-control:hover {
+  color: var(--foreground);
+  background: var(--muted);
+}
+
+html.login-pf .pf-v5-c-input-group .pf-v5-c-button.pf-m-control::after {
+  display: none;
+}
+
+html.login-pf .pf-v5-c-input-group .pf-v5-c-button.pf-m-control:focus-visible {
+  outline: 2px solid var(--nw-focus);
+  outline-offset: -2px;
+}
+
+/* keycloak.v2 renders an empty helper row when there is no "forgot password" link or remember-me. */
+html.login-pf .pf-v5-c-form__helper-text:not(:has(.pf-v5-c-helper-text__item)) {
+  display: none;
+}
+
+/* Helper row under password: "Forgot password?" and remember-me. */
+html.login-pf .pf-v5-c-form__helper-text {
+  margin-top: 0.5rem;
+}
+
+html.login-pf .pf-v5-c-helper-text {
+  gap: 0.75rem;
+  font-size: 0.875rem;
+}
+
+html.login-pf .pf-v5-c-helper-text__item-text {
+  font-size: 0.875rem;
+  color: var(--muted-foreground);
+}
+
+html.login-pf .pf-v5-c-helper-text__item-text.pf-m-error,
+html.login-pf .pf-v5-c-helper-text__item.pf-m-error .pf-v5-c-helper-text__item-text {
+  color: var(--destructive);
+}
+
+html.login-pf .pf-v5-c-form-control__icon.pf-m-status {
+  color: var(--destructive);
+}
+
+html.login-pf .pf-v5-c-check {
+  align-items: center;
+  gap: 0.5rem;
+}
+
+html.login-pf .pf-v5-c-check__input {
+  accent-color: var(--nw-focus);
+  width: 1rem;
+  height: 1rem;
+}
+
+html.login-pf .pf-v5-c-check__label {
+  font-size: 0.875rem;
+  color: var(--foreground);
+}
+
+/* Links: accent, underlined on hover; always underlined for keyboard focus visibility. */
+html.login-pf a:not(.pf-v5-c-button) {
+  color: var(--nw-link);
+  text-underline-offset: 3px;
+  border-radius: 2px;
+}
+
+html.login-pf a:not(.pf-v5-c-button):hover {
+  color: var(--nw-link-hover);
+  text-decoration: underline;
+}
+
+html.login-pf :is(a, button, input, select, summary, [tabindex]):focus-visible {
+  outline: 2px solid var(--nw-focus);
+  outline-offset: 2px;
+}
+
+html.login-pf .pf-v5-c-form-control > input:focus-visible,
+html.login-pf .pf-v5-c-form-control > select:focus-visible {
+  outline: none; /* the wrapper shows the focus ring */
+}
+
+/* 7. Buttons: Portal Button = rounded-lg, text-sm font-medium. default = primary, outline = secondary. */
+html.login-pf .pf-v5-c-button {
+  --pf-v5-c-button--BorderRadius: var(--radius);
+  --pf-v5-c-button--FontSize: 0.875rem;
+  --pf-v5-c-button--FontWeight: 500;
+  border-radius: var(--radius);
+  min-height: 2.5rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  transition: background-color 0.15s, color 0.15s, border-color 0.15s;
+}
+
+html.login-pf .pf-v5-c-button.pf-m-primary {
+  background: var(--primary);
+  color: var(--primary-foreground);
+  border: 1px solid transparent;
+}
+
+html.login-pf .pf-v5-c-button.pf-m-primary:hover {
+  background: color-mix(in oklab, var(--primary) 80%, transparent); /* [a]:hover:bg-primary/80 */
+  color: var(--primary-foreground);
+}
+
+html.login-pf .pf-v5-c-button.pf-m-primary:active {
+  transform: translateY(1px); /* active:translate-y-px */
+}
+
+html.login-pf .pf-v5-c-button.pf-m-primary:disabled,
+html.login-pf .pf-v5-c-button.pf-m-primary[aria-disabled="true"] {
+  opacity: 0.5;
+}
+
+html.login-pf .pf-v5-c-button.pf-m-secondary {
+  background: var(--background);
+  color: var(--foreground);
+  border: 1px solid var(--border);
+}
+
+html.nw-dark.login-pf .pf-v5-c-button.pf-m-secondary {
+  background: color-mix(in oklab, var(--input) 30%, transparent);
+  border-color: var(--input);
+}
+
+html.login-pf .pf-v5-c-button.pf-m-secondary:hover {
+  background: var(--muted);
+  color: var(--foreground);
+}
+
+html.login-pf .pf-v5-c-button.pf-m-primary::after,
+html.login-pf .pf-v5-c-button.pf-m-secondary::after {
+  display: none; /* PF's pseudo-element border is replaced by the real border above */
+}
+
+html.login-pf .pf-v5-c-button.pf-m-link {
+  color: var(--nw-link);
+  min-height: 0;
+}
+
+html.login-pf .pf-v5-c-form__actions {
+  margin-top: 0.5rem;
+}
+
+/* 8. Alerts: Portal semantic colors on a tinted, ringed box. */
+html.login-pf .pf-v5-c-alert {
+  --nw-alert: var(--nw-link);
+  margin: 0 0 1rem;
+  padding: 0.75rem 1rem;
+  border: 1px solid color-mix(in oklab, var(--nw-alert) 35%, transparent);
+  border-radius: var(--radius);
+  background: color-mix(in oklab, var(--nw-alert) 10%, var(--card));
+  color: var(--foreground);
+  display: flex;
+  gap: 0.625rem;
+  align-items: flex-start;
+  box-shadow: none;
+}
+
+html.login-pf .pf-v5-c-alert::before {
+  display: none; /* PF's left accent bar */
+}
+
+html.login-pf .pf-v5-c-alert.pf-m-danger { --nw-alert: var(--narwhal-danger); }
+html.login-pf .pf-v5-c-alert.pf-m-success { --nw-alert: var(--narwhal-success); }
+html.login-pf .pf-v5-c-alert.pf-m-warning { --nw-alert: var(--narwhal-warning); }
+
+html.login-pf .pf-v5-c-alert__icon {
+  color: var(--nw-alert);
+  padding: 0;
+  margin: 0.125rem 0 0;
+}
+
+html.login-pf .pf-v5-c-alert__title {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--foreground);
+  padding: 0;
+}
+
+/* 9. Other pages ------------------------------------------------------------ */
+
+/* error, page-expired, info: .instruction paragraphs inside #kc-error-message and friends */
+html.login-pf .instruction,
+html.login-pf .nw-note {
+  margin: 0 0 1rem;
+  font-size: 0.9375rem;
+  line-height: 1.6;
+  color: var(--muted-foreground);
+}
+
+html.login-pf #kc-error-message p:last-child,
+html.login-pf #kc-info-message p:last-child,
+html.login-pf #instruction1 {
+  margin-bottom: 0;
+}
+
+html.login-pf #kc-info-message .pf-v5-c-button,
+html.login-pf #kc-error-message .pf-v5-c-button {
+  width: 100%;
+}
+
+/* Plain "Back to application" style links rendered by pages we do not override */
+html.login-pf #kc-error-message a,
+html.login-pf #instruction1 a {
+  font-weight: 500;
+}
+
+/* Authenticator selection and OTP app picker (PF data-list and tile) */
+html.login-pf .pf-v5-c-data-list {
+  border-radius: var(--radius);
+  overflow: hidden;
+  border: 1px solid var(--border);
+}
+
+html.login-pf .pf-v5-c-data-list__item {
+  background: var(--card);
+  border-color: var(--border);
+}
+
+html.login-pf .pf-v5-c-data-list__item.pf-m-clickable:hover {
+  background: var(--muted);
+}
+
+html.login-pf .pf-v5-c-tile {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+html.login-pf .pf-v5-c-tile.pf-m-selected {
+  border-color: var(--nw-focus);
+  box-shadow: 0 0 0 3px var(--nw-focus-ring);
+}
+
+/* Codes: recovery codes, TOTP secret, clipboard */
+html.login-pf code,
+html.login-pf pre,
+html.login-pf #kc-totp-secret-key,
+html.login-pf #kc-recovery-codes-list {
+  font-family: var(--nw-mono);
+  color: var(--narwhal-text-mono);
+}
+
+html.login-pf #kc-totp-secret-key,
+html.login-pf pre {
+  background: var(--muted);
+  border-radius: var(--radius);
+  padding: 0.5rem 0.75rem;
+}
+
+html.login-pf hr {
+  border-color: var(--border);
+}
+
+html.login-pf .pf-v5-c-panel {
+  background: var(--card);
+  border-radius: var(--radius);
+  box-shadow: 0 0 0 1px var(--nw-ring-card);
+}
+
+/* Identity provider buttons (none configured today; keep them on-brand if added) */
+html.login-pf #kc-social-providers svg:not(.google) {
+  filter: none;
+  color: var(--foreground);
+}
+
+/* 10. Motion and small screens --------------------------------------------- */
+@media (prefers-reduced-motion: reduce) {
+  html.login-pf #kc-header-wrapper::before {
+    animation: none;
+  }
+  html.login-pf *,
+  html.login-pf *::before,
+  html.login-pf *::after {
+    transition-duration: 0.01ms !important;
+  }
+}
+
+@media (max-width: 480px) {
+  html.login-pf .pf-v5-c-login {
+    align-items: flex-start;
+    padding: 1.5rem 0.75rem;
+  }
+  html.login-pf .pf-v5-c-login__main-header {
+    padding: 1.25rem 1.125rem 0;
+  }
+  html.login-pf .pf-v5-c-login__main-body {
+    padding: 1rem 1.125rem 1.25rem;
+  }
+  html.login-pf .pf-v5-c-login__main-footer {
+    padding: 0 1.125rem 1.25rem;
+  }
+}
+
+@media (forced-colors: active) {
+  html.login-pf .pf-v5-c-login__main,
+  html.login-pf .pf-v5-c-form-control,
+  html.login-pf .pf-v5-c-input-group {
+    border: 1px solid CanvasText;
+  }
+}

@@ -1,0 +1,205 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-keycloak-theme-portal-unified-20261105",
+  "task": "Owner decision 2026-11-05: unify the Keycloak login screen with the Portal (Portal tokens, Pretendard, card style, mascot, cookie dark/light sync) and brand the Keycloak admin console through officially supported admin theme properties and CSS only (no Keycloakify). Cover every page users reach, deliver through the existing ConfigMap mount (extended where it could not carry the admin theme), apply live and verify with a browser.",
+  "changeContext": {
+    "paths": [
+      ".agents/evals/traces/2026-11-airgap-test-deterministic-blob.json",
+      ".agents/evals/traces/2026-11-harbor-probes-resources.json",
+      ".agents/evals/traces/2026-11-keycloak-theme-portal-unified.json",
+      ".agents/evals/traces/2026-11-kyverno-policy-descriptions.json",
+      ".agents/evals/traces/2026-11-security-db-sources.json",
+      "docs/common/lessons-log.md",
+      "gitops/README-ko.md",
+      "gitops/README.md",
+      "gitops/charts/narwhal-apps/templates/harbor.yaml",
+      "gitops/charts/narwhal-platform/keycloak-theme/narwhal/admin/resources/css/narwhal-admin.css",
+      "gitops/charts/narwhal-platform/keycloak-theme/narwhal/admin/resources/img/favicon.svg",
+      "gitops/charts/narwhal-platform/keycloak-theme/narwhal/admin/resources/img/logo.svg",
+      "gitops/charts/narwhal-platform/keycloak-theme/narwhal/admin/theme.properties",
+      "gitops/charts/narwhal-platform/keycloak-theme/narwhal/login/info.ftl",
+      "gitops/charts/narwhal-platform/keycloak-theme/narwhal/login/messages/messages_en.properties",
+      "gitops/charts/narwhal-platform/keycloak-theme/narwhal/login/messages/messages_ko.properties",
+      "gitops/charts/narwhal-platform/keycloak-theme/narwhal/login/resources/css/narwhal.css",
+      "gitops/charts/narwhal-platform/keycloak-theme/narwhal/login/resources/fonts/OFL.txt",
+      "gitops/charts/narwhal-platform/keycloak-theme/narwhal/login/resources/fonts/Pretendard-Bold.subset.woff2",
+      "gitops/charts/narwhal-platform/keycloak-theme/narwhal/login/resources/fonts/Pretendard-Regular.subset.woff2",
+      "gitops/charts/narwhal-platform/keycloak-theme/narwhal/login/resources/fonts/PretendardVariable-subset.woff2",
+      "gitops/charts/narwhal-platform/keycloak-theme/narwhal/login/resources/img/favicon.ico",
+      "gitops/charts/narwhal-platform/keycloak-theme/narwhal/login/resources/img/narwhal-dark.svg",
+      "gitops/charts/narwhal-platform/keycloak-theme/narwhal/login/resources/img/narwhal-light.svg",
+      "gitops/charts/narwhal-platform/keycloak-theme/narwhal/login/resources/js/narwhal.js",
+      "gitops/charts/narwhal-platform/keycloak-theme/narwhal/login/theme.properties",
+      "gitops/charts/narwhal-platform/templates/_helpers.tpl",
+      "gitops/charts/narwhal-platform/templates/keycloak-cr.yaml",
+      "gitops/charts/narwhal-platform/templates/keycloak-theme.yaml",
+      "gitops/resources/headlamp-policy.yaml",
+      "gitops/resources/keycloak-theme/narwhal/login/info.ftl",
+      "gitops/resources/keycloak-theme/narwhal/login/login.ftl",
+      "gitops/resources/keycloak-theme/narwhal/login/logout-confirm.ftl",
+      "gitops/resources/keycloak-theme/narwhal/login/messages/messages_en.properties",
+      "gitops/resources/keycloak-theme/narwhal/login/messages/messages_ko.properties",
+      "gitops/resources/keycloak-theme/narwhal/login/resources/css/narwhal.css",
+      "gitops/resources/keycloak-theme/narwhal/login/template.ftl",
+      "gitops/resources/keycloak-theme/narwhal/login/theme.properties",
+      "gitops/resources/kyverno-policies.yaml",
+      "portal/Dockerfile",
+      "portal/NOTICE",
+      "portal/THIRD-PARTY-NOTICES.md",
+      "portal/package.json",
+      "portal/pnpm-lock.yaml",
+      "portal/src/app/api/security/trivy-db/route.test.ts",
+      "portal/src/app/fonts/OFL.txt",
+      "portal/src/components/security/trivy-db-status-card.test.tsx",
+      "portal/src/components/security/trivy-db-status-card.tsx",
+      "portal/src/lib/i18n.ts",
+      "portal/src/lib/trivy-db-sources.ts",
+      "portal/src/lib/trivy-db-status.test.ts",
+      "portal/src/lib/trivy-db-status.ts",
+      "portal/src/types/security.ts",
+      "scripts/airgap/README.md",
+      "scripts/airgap/security-db.txt",
+      "scripts/airgap/tests/test_oci_inventory.py",
+      "scripts/cluster/11-2-keycloak-config.sh",
+      "scripts/test/lib/check-keycloak-theme.py",
+      "scripts/test/lib/check-security-db-provisioning.py",
+      "scripts/test/regression-check-kakao.sh",
+      "scripts/test/t2/keycloak.sh"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Authoritative source found: the ConfigMap embedded in keycloak-cr.yaml, mounted with eight subPath mounts; gitops/resources/keycloak-theme/ was an unreferenced hand-synced mirror (no Application, script or test used it) and is deleted. Changed: login theme (skin over keycloak.v2), new admin theme, chart delivery (two ConfigMaps from the chart's keycloak-theme/ tree, one directory mount, checksum pod annotation), 11-2 adminTheme/loginTheme on narwhal and master, T2 assertion, R306, docs. Deliberately left alone: Keycloak version, realm users/clients, the Portal, Kakao cluster, quick-theme (not in 26.5 docs), Keycloakify."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "Before: the old login theme replaced template.ftl with a PatternFly-free copy and listed only login/logout-confirm/info, so error, page-expired, update-password/profile, OTP and WebAuthn pages kept PatternFly class names with no PatternFly CSS; fonts were system fonts; the palette (Aurora Glacial) matched no Portal token; the admin console was stock Keycloak.",
+      "evidence": [
+        "doc:https://www.keycloak.org/ui-customization/themes"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "external_input",
+      "provenance": "Keycloak 26.5.7 jars read from the running pod (keycloak-themes, keycloak-themes-vendor, keycloak-admin-ui): keycloak.v2 login template.ftl/theme.properties/styles.css, PatternFly v5 CSS, admin index.ftl and console bundle; plus keycloak.org/ui-customization/themes (theme types, theme.properties keys, master realm admin theme, caching), 2026-11-05",
+      "reviewed": true,
+      "summary": "Admin index.ftl reads properties logo, logoUrl, favIcon, favIconType, title, description, styles, scripts, darkMode; the console bundle resolves the masthead brand from environment.logo; the admin theme of the master realm applies at /admin/master/console/; docs: to set the theme for the master admin console set the Admin console theme on the master realm; themes are cached until restart. No quick theme or theme editor exists in the 26.5 docs.",
+      "evidence": [
+        "doc:https://www.keycloak.org/ui-customization/themes"
+      ]
+    },
+    {
+      "id": "e4",
+      "type": "change",
+      "summary": "Login: theme.properties parent=keycloak.v2, styles=css/styles.css css/narwhal.css, scripts=js/narwhal.js, darkMode=false; narwhal.css copies the Portal tokens (globals.css light and dark) and maps PatternFly global tokens; Pretendard Variable subset (303 KB woff2, SIL OFL) shipped in the theme; Portal mascot as brand mark; narwhal.js reads the narwhal-theme cookie before first paint and keeps the Enter/IME handling; info.ftl keeps the logout auto-redirect. Admin: theme.properties (parent keycloak.v2, logo, favIcon, title, styles) and narwhal-admin.css with PatternFly tokens only. Delivery: keycloak-theme.yaml renders two ConfigMaps from keycloak-theme/narwhal/ (text and binary), keycloak-cr.yaml mounts one directory and carries checksum/keycloak-theme so Keycloak rolls on any theme change. Deviations from Portal tokens, all for AA: links and focus use --narwhal-detail (5.4:1) in light instead of --narwhal-accent (3.7:1)."
+    },
+    {
+      "id": "e5",
+      "type": "bug_fix",
+      "summary": "Defects closed by the new theme, each seen in the live pages: (1) pages the old theme did not override (error, update password/profile, OTP setup) rendered with unstyled PatternFly classes, now inherited from keycloak.v2 and skinned by tokens; (2) keycloak.v2 defines no alert icon classes, so alerts showed an empty icon slot, now kcFeedback*Icon are set in theme.properties; (3) an empty helper row left a gap above Sign in; (4) the login hardcoded 'Redirecting to portal login...' English text, now a KO/EN message; (5) the unreferenced mirror under gitops/resources/keycloak-theme that could drift from the deployed ConfigMap is removed."
+    },
+    {
+      "id": "e6",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "Repository static suite, offline Helm render and server-side dry-run",
+      "evidence": [
+        "test:RESEARCH_EVIDENCE_DIR=$(mktemp -d) make test -> exit 0, 431 PASS lines including R88, R89 (CR still yq-parsable) and new R306",
+        "test:make validate -> exit 0, 30 OK",
+        "test:python3 scripts/test/lib/check-keycloak-theme.py -> PASS; with --narwhal-detail changed by one hex digit it FAILs naming the token",
+        "test:python3 -m unittest discover -s scripts/ci/tests -> 120 tests OK",
+        "test:kubectl apply --dry-run=server --server-side of both ConfigMaps and the Keycloak CR -> accepted"
+      ]
+    },
+    {
+      "id": "e7",
+      "type": "live_verification",
+      "status": "observed",
+      "scope": "Local disposable narwhal cluster (context narwhal), Keycloak 26.5.7; NOT the Kakao cluster",
+      "summary": "Pushed the 14 theme files and 3 chart templates with push-to-gitea.sh (path mode; the live CR spec equalled the origin/main render, so no unrelated drift was published); ArgoCD narwhal-platform Synced/Healthy; Keycloak pod rolled once by the checksum annotation and re-pushing identical content did not roll it; realms narwhal and master set to loginTheme=narwhal and adminTheme=narwhal with the 11-2 commands. Playwright screenshots of the real pages: login light/dark/mobile/ko, invalid-password, logout-confirm, error, update password, OTP setup, update profile, admin console master and narwhal clients (light and dark), Portal login card side by side. Temporary users used for the required-action pages were deleted.",
+      "evidence": [
+        "runtime:test-sso.sh --section=acl -> 103 PASS, 0 FAIL (real logins through the themed form via gateway_login)",
+        "runtime:test-sso.sh --section=apps -> 9 PASS; --section=keycloak -> 4 PASS",
+        "runtime:/admin/narwhal/console/ and /admin/master/console/ serve /resources/<v>/admin/narwhal/ favicon, css and logo; Pretendard woff2 and favicon.ico answer 200"
+      ]
+    },
+    {
+      "id": "e8",
+      "type": "completion_claim",
+      "summary": "In the repository and on the local cluster, the login theme matches the Portal tokens, font, card and mascot in light and dark with cookie sync, the covered pages render themed, and the admin console is branded (logo, favicon, title, accent, Portal neutrals) through supported properties and tokens. Not verified: Kakao, login-otp and reset-credentials pages (no OTP credential, reset disabled in the realm), page-expired page (could not be triggered), Firefox/Safari, screen readers, Keycloak upgrade behaviour."
+    },
+    {
+      "id": "e9",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Complete within repository and local-cluster scope; independent review pending (Narwhal merge gate); not pushed, no PR opened."
+    },
+    {
+      "id": "e10",
+      "type": "external_input",
+      "provenance": "pretendard@1.3.9 published dist/web/static/woff2-subset/Pretendard-{Regular,Bold}.subset.woff2 and dist/web/variable/woff2/PretendardVariable.woff2 downloaded from cdn.jsdelivr.net/npm/pretendard@1.3.9; current orioncactus/pretendard LICENSE retrieved through gh api 2026-11-05",
+      "reviewed": true,
+      "summary": "All three local font SHA-256 hashes match published upstream bytes. Both OFL.txt files equal the retrieved complete license, including Pretendard, Source, Inter and M PLUS 1 Reserved Font Names. The v1.3.9 tag LICENSE has fewer attribution headers; the current upstream license preserves the full list."
+    },
+    {
+      "id": "e11",
+      "type": "reproduction",
+      "summary": "PR #572 review: the self-made Pretendard subset retained the reserved family name and omitted OFL. Live pre-existing Gitea keycloak-theme/narwhal/narwhal/** files survived individual-file copying, doubled rendered assets and caused a >1 MiB ConfigMap rejection on the first fix push. Local render could not see those remote-only stale files. Baseline f52e117d restored immediately before the 5-minute limit, stale nested files removed, old-revision Argo retry terminated, and the unready pod recreated to let StatefulSet rollback converge to Ready/Synced/Healthy."
+    },
+    {
+      "id": "e12",
+      "type": "bug_fix",
+      "summary": "D1: R306 renders the chart with values derived from app-of-apps (or accepts --rendered for live Argo values), validates every Keycloak configMap item against its own rendered ConfigMap, requires exact theme keys and <1 MiB serialized size, and provides removed-key mutations for text and binary maps. Replace self-made font with unmodified upstream Regular/Bold, ship OFL beside fonts, add Portal OFL/NOTICE and explicit runner COPY. The temporary delivery adapter reuses push-to-gitea credential handling, copies 18 individual files, prunes only stale theme files, verifies the actual Gitea candidate render equals local bytes/spec, and runs server dry-run as argocd-controller before commit/push. No repository push helper change or credential output."
+    },
+    {
+      "id": "e13",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "Font licensing, rendered ConfigMap delivery, static regression, Portal compilation",
+      "evidence": [
+        "test:RESEARCH_EVIDENCE_DIR=$(mktemp -d) make test -> exit 0; 431 passed, 0 failed, 3 known warnings (no airgap bundle, R243-known, R244-known)",
+        "test:make validate -> exit 0; Ruby Syntax OK and 30 YAML OK",
+        "test:python3 scripts/test/lib/check-keycloak-theme.py --rendered /tmp/narwhal-font-license-evidence/gitea-rendered.yaml --mutation-verify -> PASS; removed text and binary key mutations both rejected",
+        "test:remove OFL.txt / append one byte to Regular font, invoke R306 -> each exits 1 with the expected diagnostic; originals restored",
+        "test:portal/: pnpm install --frozen-lockfile && pnpm typecheck && pnpm build -> exit 0, Next.js production build complete",
+        "test:python3 -m unittest discover -s scripts/ci/tests -> 120 tests OK",
+        "test:trace requirement, evidence correlation and baseline gate validators -> exit 0; 5/5 behaviors pass, 0 regressions"
+      ]
+    },
+    {
+      "id": "e14",
+      "type": "verification",
+      "status": "passed",
+      "scope": "Live local narwhal cluster font-license fix, Gitea revision 04439ab83959e9529a53986fb117874f44bcc986",
+      "evidence": [
+        "runtime:Keycloak updated pod 62e817e7-c40f-4ac3-bd1a-39520e6c0740 Ready within 5 minutes; checksum afa2e99fee5a877488066674661007e8cf22d781d5a6e958da83474291f39b97; ArgoCD Synced/Healthy",
+        "runtime:Live ConfigMaps exact keys and bytes equal live-values local render, no stale font or nested keys. Serialized sizes: text 46725 bytes, binary 721083 bytes",
+        "runtime:bash scripts/test/test-sso.sh --section=acl via exported kubectl function forcing --context narwhal -> 103 PASS, 0 FAIL, 0 WARN, exit 0",
+        "runtime:Playwright Chromium light/dark login screenshots visually inspected; Regular/Bold both loaded and HTTP 200; CDP CSS.getPlatformFontsForNode confirms title uses custom Pretendard-Bold (23 glyphs)",
+        "artifact:/tmp/narwhal-font-license-evidence/login-light.png",
+        "artifact:/tmp/narwhal-font-license-evidence/login-dark.png",
+        "artifact:/tmp/narwhal-font-license-evidence/browser-fonts.json"
+      ]
+    },
+    {
+      "id": "e15",
+      "type": "limitation",
+      "summary": "Docker image build not executed: Colima is stopped and docker info cannot reach its socket. .github/workflows/portal-build-check.yml docker-build job builds portal/ in CI; its result is not claimed here. Portal image has not been released or deployed. No GitHub push, PR mutation, review status or merge. Firefox/Safari and production/Kakao cluster not exercised. Root/portal CLAUDE.md only add Claude-specific specialist routing/workflow locations beyond AGENTS.md."
+    },
+    {
+      "id": "e16",
+      "type": "completion_claim",
+      "summary": "Font-license repair implemented and verified in the repository and local Keycloak runtime. Theme fonts are upstream-unmodified with OFL, Portal license delivery is explicit, and rendered projection keys/budget are checked before live publication. Docker build remains delegated to existing CI; no image-build success claimed."
+    },
+    {
+      "id": "e17",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Complete within repository/local-Keycloak scope; Docker build and Portal image rollout remain unverified as explicitly recorded. Local commit authorized; no GitHub push/PR/review status/merge."
+    }
+  ]
+}

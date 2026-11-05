@@ -3347,6 +3347,9 @@ PYEOF'
   # 2026-10-25: direct visits to the OpenBao/Velero UI root stopped at the app login screen; only the portal link reached /sso.
   check R281 "openbao-sso-entry (/, /ui, /ui/) and velero-ui-sso-entry (/) redirect to /sso only when the query string is empty, outrank the catch-all and keep the security headers; 10 mutations each rejected (D-ssoentry-1)" \
     python3 scripts/test/lib/check-sso-direct-entry.py --mutation-verify
+  # 2026-11-05: the Keycloak login screen and admin console were restyled to match the Portal (login CSS copies the Portal tokens; admin = branding only).
+  check R306 "Keycloak login theme mirrors the Portal tokens (globals.css light+dark), login/admin themes extend keycloak.v2, delivered as one directory mount with a checksum roll, 11-2 sets loginTheme+adminTheme on narwhal and master (D-KC-THEME-TOKENS)" \
+    python3 scripts/test/lib/check-keycloak-theme.py
 }
 
 #=========================================

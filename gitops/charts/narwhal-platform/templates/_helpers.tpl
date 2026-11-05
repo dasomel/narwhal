@@ -58,3 +58,29 @@ Escape hatch: delete this include from the route.
           end
         end
 {{- end -}}
+
+{{/*
+narwhal-platform.keycloakThemeIsBinary: "true" for theme files that must go in a ConfigMap's
+binaryData (fonts, icons); everything else is text. Usage: include ... "keycloak-theme/x.woff2"
+*/}}
+{{- define "narwhal-platform.keycloakThemeIsBinary" -}}
+{{- if or (hasSuffix ".woff2" .) (hasSuffix ".ico" .) -}}true{{- end -}}
+{{- end -}}
+
+{{/*
+narwhal-platform.keycloakThemeKey: ConfigMap key for a theme file. Keys cannot contain "/", so
+"narwhal/login/theme.properties" becomes "narwhal__login__theme.properties"; the Keycloak CR
+is projected back to its real path by the literal items list in keycloak-cr.yaml.
+*/}}
+{{- define "narwhal-platform.keycloakThemeKey" -}}
+{{- . | trimPrefix "keycloak-theme/" | replace "/" "__" -}}
+{{- end -}}
+
+{{/* narwhal-platform.keycloakThemeSum: hash of every theme file, used to roll Keycloak on change. */}}
+{{- define "narwhal-platform.keycloakThemeSum" -}}
+{{- $all := "" -}}
+{{- range $path, $_ := .Files.Glob "keycloak-theme/narwhal/**" }}
+{{- $all = printf "%s%s\n%s\n" $all $path ($.Files.Get $path) -}}
+{{- end -}}
+{{- $all | sha256sum -}}
+{{- end -}}

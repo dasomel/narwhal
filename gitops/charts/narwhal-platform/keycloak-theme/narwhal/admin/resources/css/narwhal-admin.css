@@ -1,0 +1,68 @@
+/* ==========================================================================
+   Narwhal IDP admin console: branding only.
+   Supported surface only: the console's PatternFly v5 global tokens, set on :root. No console
+   selector, class or DOM structure is targeted, so a Keycloak upgrade cannot break this file
+   (an unknown token is simply ignored).
+   Values are the Portal's (portal/src/app/globals.css): accent #0891b2 / #0e7490 (light),
+   #22d3ee (dark), neutral chrome from the Portal dark palette.
+   ========================================================================== */
+
+/* Pretendard, the Portal's face (unmodified upstream subsets, SIL OFL 1.1). The files are shipped
+   once, in the login theme of the same name; a failed load falls through to the console's own font. */
+@font-face {
+  font-family: "Pretendard";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("../../../login/narwhal/fonts/Pretendard-Regular.subset.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Pretendard";
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("../../../login/narwhal/fonts/Pretendard-Bold.subset.woff2") format("woff2");
+}
+
+:root {
+  --pf-v5-global--FontFamily--text: Pretendard, "RedHatText", "Overpass", overpass, helvetica, arial, sans-serif;
+  --pf-v5-global--FontFamily--heading: Pretendard, "RedHatDisplay", "Overpass", overpass, helvetica, arial, sans-serif;
+  --pf-v5-global--FontFamily--sans-serif: Pretendard, "RedHatText", "Overpass", overpass, helvetica, arial, sans-serif;
+
+  /* Accent: --narwhal-detail (#0e7490) is the Portal token that clears AA for text and for white
+     text on a filled button (5.4:1); --narwhal-accent (#0891b2) is 3.7:1 and is not used for text. */
+  --pf-v5-global--primary-color--100: #0e7490;
+  --pf-v5-global--primary-color--200: #155e75;
+  --pf-v5-global--primary-color--light-100: #67e8f9;
+  --pf-v5-global--active-color--100: #0e7490;
+  --pf-v5-global--link--Color: #0e7490;
+  --pf-v5-global--link--Color--hover: #155e75;
+  --pf-v5-global--link--Color--dark: #22d3ee;
+  --pf-v5-global--link--Color--dark--hover: #67e8f9;
+  --pf-v5-global--info-color--100: #0e7490;
+  --pf-v5-global--info-color--200: #155e75;
+
+  /* Chrome: Portal dark neutrals instead of PatternFly's blue-grey (masthead, sidebar). */
+  --pf-v5-global--BackgroundColor--dark-100: oklch(0.145 0 0);
+  --pf-v5-global--BackgroundColor--dark-200: oklch(0.205 0 0);
+  --pf-v5-global--BackgroundColor--dark-300: oklch(0.269 0 0);
+  --pf-v5-global--BackgroundColor--dark-400: oklch(0.269 0 0);
+
+  --pf-v5-global--BorderRadius--sm: 0.375rem;
+  --pf-v5-global--BorderRadius--lg: 0.625rem;
+}
+
+:root.pf-v5-theme-dark {
+  --pf-v5-global--primary-color--100: #22d3ee;
+  --pf-v5-global--primary-color--200: #67e8f9;
+  /* Dark-mode primary buttons read --300 (fill) and --400 (label), not --100. */
+  --pf-v5-global--primary-color--300: #22d3ee;
+  --pf-v5-global--primary-color--400: oklch(0.145 0 0);
+  --pf-v5-global--active-color--100: #22d3ee;
+  --pf-v5-global--link--Color: #22d3ee;
+  --pf-v5-global--link--Color--hover: #67e8f9;
+  --pf-v5-global--info-color--100: #22d3ee;
+  --pf-v5-global--info-color--200: #67e8f9;
+  --pf-v5-global--BackgroundColor--100: oklch(0.145 0 0);
+  --pf-v5-global--BackgroundColor--200: oklch(0.205 0 0);
+}

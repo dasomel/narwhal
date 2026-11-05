@@ -86,7 +86,8 @@ render_contract() {
   assert_yq '.spec.unsupported.podTemplate.spec.containers[] | select(.name == "keycloak") | .livenessProbe.httpGet.path' '/health/live' "${keycloak_cr}"
   assert_yq '.spec.unsupported.podTemplate.spec.containers[] | select(.name == "keycloak") | .readinessProbe.httpGet.path' '/health/ready' "${keycloak_cr}"
   assert_yq '.spec.unsupported.podTemplate.spec.containers[] | select(.name == "keycloak") | .startupProbe.httpGet.path' '/health/started' "${keycloak_cr}"
-  assert_yq '.spec.unsupported.podTemplate.spec.containers[] | select(.name == "keycloak") | .volumeMounts[] | select(.mountPath == "/opt/keycloak/themes/narwhal/login/theme.properties") | .mountPath' '/opt/keycloak/themes/narwhal/login/theme.properties' "${keycloak_cr}"
+  assert_yq '.spec.unsupported.podTemplate.spec.containers[] | select(.name == "keycloak") | .volumeMounts[] | select(.mountPath == "/opt/keycloak/themes/narwhal") | .mountPath' '/opt/keycloak/themes/narwhal' "${keycloak_cr}"
+  assert_yq '.spec.unsupported.podTemplate.spec.volumes[] | select(.name == "keycloak-theme-narwhal") | .projected.sources | length' '2' "${keycloak_cr}"
 
   chaos_file="${REPO_ROOT}/tests/chaos/experiments/keycloak-kill.yaml"
   assert_yq '.spec.selector.namespaces[0]' "${catalog_namespace}" "${chaos_file}"

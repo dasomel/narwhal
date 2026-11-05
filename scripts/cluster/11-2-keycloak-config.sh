@@ -82,9 +82,16 @@ else
   echo "  -> realm '${REALM}' already exists, skipping"
 fi
 
-echo "=== Updating realm loginTheme to 'narwhal' ==="
-kc_exec update "realms/${REALM}" -s "loginTheme=narwhal"
-echo "  -> realm '${REALM}' loginTheme updated to 'narwhal'"
+echo "=== Updating realm loginTheme/adminTheme to 'narwhal' ==="
+kc_exec update "realms/${REALM}" -s "loginTheme=narwhal" -s "adminTheme=narwhal"
+echo "  -> realm '${REALM}' loginTheme and adminTheme updated to 'narwhal'"
+
+# The admin console always loads at /admin/master/console/ and takes its admin theme from the
+# master realm; its sign-in page takes the master realm's login theme. Both are set so the console
+# and its sign-in match the narwhal realm (re-running only re-applies the same values).
+echo "=== Updating realm 'master' loginTheme/adminTheme to 'narwhal' ==="
+kc_exec update "realms/master" -s "loginTheme=narwhal" -s "adminTheme=narwhal"
+echo "  -> realm 'master' loginTheme and adminTheme updated to 'narwhal'"
 
 #=========================================
 # 2-1. User Profile: unmanaged attribute 허용

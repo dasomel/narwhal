@@ -9,6 +9,35 @@ English | [한국어](CHANGELOG-ko.md)
 
 ## [Unreleased]
 
+## [1.1.7] - 2026-11-05
+
+Patch release: DORA lead time preserves minute precision, the Trivy DB status card lists every mirrored
+security data source with trivy-checks shown as pinned, the Pretendard font OFL license ships in the
+portal container image, and `@opentelemetry/semantic-conventions` is bumped to 1.44.0. The only other change
+under `portal/` since `portal/v1.1.6` is the OSS version snapshot regenerated for the 1.1.6 pin (#561).
+
+### Added
+
+- **Security: Trivy DB card lists every mirrored source (narwhal#570)**: the API, the status card and the
+  copyable airgap update commands are now driven by a single source list
+  (`portal/src/lib/trivy-db-sources.ts`) covering consumer, tag and per-source SLO. Sources without an age
+  SLO (such as `trivy-checks:1`, which upstream froze on 2025-10-09) render as "pinned" rather than "stale".
+
+### Fixed
+
+- **Governance: DORA lead time rounded to 0 hours (narwhal#566)**: on 1.1.6, git-sourced apps displayed a
+  lead time of "0 h" because the API rounded push-to-sync durations to 0.1 hours. The API now exposes
+  `leadTimeMinutes` alongside the backward-compatible `leadTimeHours`, and the summary card and per-app table
+  format durations with minute precision (`<1 min`, `N min`, `N h M min`). A real 0 is formatted
+  differently from null (which still denotes "N/A" for Helm-sourced apps).
+
+### Changed
+
+- **Packaging: Pretendard OFL license shipped in portal image (narwhal#572)**: the container image now
+  copies `src/app/fonts/OFL.txt` to `/app/OFL-Pretendard.txt` alongside the bundled Pretendard font files to
+  fulfill SIL Open Font License 1.1 redistribution terms, and font provenance is recorded in `NOTICE`.
+- Bump `@opentelemetry/semantic-conventions` from 1.43.0 to 1.44.0 (narwhal#538).
+
 ## [1.1.6] - 2026-11-05
 
 Minor-feature patch release: the Settings and Security pages gain the OSS updates tab, the Trivy DB
@@ -623,7 +652,8 @@ management dashboard built with Next.js 16 and React 19.
   - Skaffold development profile configured for live Hot Module Replacement (HMR) and container
     file syncing.
 
-[Unreleased]: https://github.com/dasomel/narwhal/compare/portal/v1.1.6...HEAD
+[Unreleased]: https://github.com/dasomel/narwhal/compare/portal/v1.1.7...HEAD
+[1.1.7]: https://github.com/dasomel/narwhal/compare/portal/v1.1.6...portal/v1.1.7
 [1.1.6]: https://github.com/dasomel/narwhal/compare/portal/v1.1.5...portal/v1.1.6
 [1.1.5]: https://github.com/dasomel/narwhal/compare/portal/v1.1.4...portal/v1.1.5
 [1.1.4]: https://github.com/dasomel/narwhal/compare/portal/v1.1.3...portal/v1.1.4

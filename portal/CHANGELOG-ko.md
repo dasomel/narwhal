@@ -9,6 +9,34 @@
 
 ## [Unreleased]
 
+## [1.1.7] - 2026-11-05
+
+패치 릴리스. DORA 리드타임에 분 단위 정밀도를 표시하고, Trivy DB 상태 카드에 미러링된 모든 보안
+데이터 소스를 나열하며 trivy-checks를 고정(pinned) 상태로 표시함. Pretendard 폰트의 OFL 라이선스를
+포털 컨테이너 이미지에 포함하고, `@opentelemetry/semantic-conventions`를 1.44.0으로 올림.
+`portal/v1.1.6` 이후 `portal/`의 그 밖의 변경은 1.1.6 핀(#561)에 맞춰 다시 생성한 OSS 버전 스냅샷뿐임.
+
+### 추가
+
+- **보안: Trivy DB 카드에 미러링된 모든 데이터 소스 표시 (narwhal#570)**: 상태 API, 카드 및 복사 가능한
+  에어갭 갱신 명령이 소비자, 태그, 소스별 SLO가 정의된 단일 소스 목록(`portal/src/lib/trivy-db-sources.ts`)을
+  기반으로 동작함. 사용 기한 SLO가 없는 소스(업스트림에서 2025-10-09에 동결된 `trivy-checks:1` 등)는
+  "오래됨(stale)" 대신 "고정(pinned)"으로 표시함.
+
+### 수정
+
+- **거버넌스: DORA 리드타임이 0시간으로 반올림됨 (narwhal#566)**: 1.1.6에서 Git 기반 앱의 리드타임이 0.1시간
+  단위로 반올림되어 항상 "0시간"으로 표시되었음. API가 하위 호환성을 유지하는 `leadTimeHours` 외에
+  `leadTimeMinutes`를 함께 반환하고, 요약 카드와 앱별 표에서 분 단위 정밀도(`<1분`, `N분`, `N시간 M분`)로
+  표시하도록 포맷터를 적용함. 실제 0분은 null(Helm 기반 앱의 "N/A")과 구분하여 표시함.
+
+### 변경
+
+- **패키징: Pretendard OFL 라이선스를 포털 이미지에 포함 (narwhal#572)**: SIL Open Font License 1.1 재배포
+  조건을 충족하기 위해 컨테이너 이미지가 번들된 Pretendard 폰트 파일과 함께 `src/app/fonts/OFL.txt`를
+  `/app/OFL-Pretendard.txt`로 복사하며, 폰트 출처를 `NOTICE`에 기록함.
+- `@opentelemetry/semantic-conventions`를 1.43.0에서 1.44.0으로 올림 (narwhal#538).
+
 ## [1.1.6] - 2026-11-05
 
 기능이 더해진 패치 릴리스. 설정·보안 화면에 OSS 업데이트 탭, Trivy DB 카드, Kyverno 정책 설명이
@@ -589,7 +617,8 @@ Portal의 첫 번째 공개 릴리스.
     매니페스트(`deploy/kaniko-build-job.yaml`).
   - 실시간 핫 모듈 교체(HMR) 및 컨테이너 파일 동기화를 위해 구성된 Skaffold 개발 프로필.
 
-[Unreleased]: https://github.com/dasomel/narwhal/compare/portal/v1.1.6...HEAD
+[Unreleased]: https://github.com/dasomel/narwhal/compare/portal/v1.1.7...HEAD
+[1.1.7]: https://github.com/dasomel/narwhal/compare/portal/v1.1.6...portal/v1.1.7
 [1.1.6]: https://github.com/dasomel/narwhal/compare/portal/v1.1.5...portal/v1.1.6
 [1.1.5]: https://github.com/dasomel/narwhal/compare/portal/v1.1.4...portal/v1.1.5
 [1.1.4]: https://github.com/dasomel/narwhal/compare/portal/v1.1.3...portal/v1.1.4

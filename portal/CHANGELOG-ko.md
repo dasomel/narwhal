@@ -14,7 +14,7 @@
 패치 릴리스. DORA 리드타임에 분 단위 정밀도를 표시하고, Trivy DB 상태 카드에 미러링된 모든 보안
 데이터 소스를 나열하며 trivy-checks를 고정(pinned) 상태로 표시함. Pretendard 폰트의 OFL 라이선스를
 포털 컨테이너 이미지에 포함하고, `@opentelemetry/semantic-conventions`를 1.44.0으로 올림.
-`portal/v1.1.6` 이후의 모든 변경을 다룸.
+`portal/v1.1.6` 이후 `portal/`의 그 밖의 변경은 1.1.6 핀(#561)에 맞춰 다시 생성한 OSS 버전 스냅샷뿐임.
 
 ### 추가
 

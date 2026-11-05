@@ -13,8 +13,8 @@ English | [한국어](CHANGELOG-ko.md)
 
 Patch release: DORA lead time preserves minute precision, the Trivy DB status card lists every mirrored
 security data source with trivy-checks shown as pinned, the Pretendard font OFL license ships in the
-portal container image, and `@opentelemetry/semantic-conventions` is bumped to 1.44.0. Everything since
-`portal/v1.1.6` is covered here.
+portal container image, and `@opentelemetry/semantic-conventions` is bumped to 1.44.0. The only other change
+under `portal/` since `portal/v1.1.6` is the OSS version snapshot regenerated for the 1.1.6 pin (#561).
 
 ### Added
 

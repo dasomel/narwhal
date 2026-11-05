@@ -71,6 +71,28 @@ spec:
             tag: v2.15.1
           podLabels:
             istio.io/dataplane-mode: "none"
+          # D-HARBOR-PROBES (2026-11-04): chart 1.19.1 defaults (timeoutSeconds 1, liveness/readiness
+          # failureThreshold 2) plus BestEffort QoS (no resources) made harbor-core restart 11x and
+          # 502 pushes when a scan-Job burst loaded the node. /api/v2.0/ping does no DB/Redis work, so
+          # node CPU contention is the leading cause. Raising the timeouts
+          # alone would only mask that: requests give the pods a CPU share. No CPU limit on purpose
+          # (throttling risks probe timeouts). Cost: 300m CPU/384Mi requested across four containers,
+          # 1536Mi total memory limits, and slower liveness recovery (~60s). Escape hatch: revert
+          # D-HARBOR-PROBES overrides here via GitOps; retune limits if OOMKilled is observed.
+          startupProbe:
+            timeoutSeconds: 5
+          livenessProbe:
+            timeoutSeconds: 5
+            failureThreshold: 6
+          readinessProbe:
+            timeoutSeconds: 5
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              memory: 512Mi
           # OIDC config is set via Harbor API by 11-3-keycloak-clients.sh (stored in Harbor DB)
           # CONFIG_OVERWRITE_JSON env var is NOT set — API-based config survives restarts via DB
         jobservice:
@@ -83,15 +105,47 @@ spec:
           image:
             repository: ghcr.io/dasomel/goharbor/harbor-jobservice
             tag: v2.15.1
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              memory: 256Mi
         registry:
           registry:
             image:
               repository: ghcr.io/dasomel/goharbor/registry-photon
               tag: v2.15.1
+            # D-HARBOR-PROBES: same starvation as harbor-core (registry probes failed at the same
+            # time on the same node; NFS 8MB fsync writes measured 3-15ms, so storage is not the cause).
+            livenessProbe:
+              timeoutSeconds: 5
+              failureThreshold: 6
+            readinessProbe:
+              timeoutSeconds: 5
+              failureThreshold: 3
+            resources:
+              requests:
+                cpu: 100m
+                memory: 128Mi
+              limits:
+                memory: 512Mi
           controller:
             image:
               repository: ghcr.io/dasomel/goharbor/harbor-registryctl
               tag: v2.15.1
+            livenessProbe:
+              timeoutSeconds: 5
+              failureThreshold: 6
+            readinessProbe:
+              timeoutSeconds: 5
+              failureThreshold: 3
+            resources:
+              requests:
+                cpu: 50m
+                memory: 64Mi
+              limits:
+                memory: 256Mi
         portal:
           image:
             repository: ghcr.io/dasomel/goharbor/harbor-portal

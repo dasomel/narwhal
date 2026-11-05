@@ -95,6 +95,14 @@ spec:
           metricsExposedSecretInfo: true
           # 12시간 주기 재스캔 (Vagrant 환경 부하 고려)
           scanJobTTL: 12h
+          # D-SCAN-REPORT-TTL (2026-11-05): chart default scannerReportTTL=24h expires every
+          # VulnerabilityReport daily, so ~114 reports were rescanned ~3x in 3 days and each Standalone
+          # scan Job re-downloads the ~1GB Trivy DB onto node disk (worker-3: ~300 scan pods, ~517GiB
+          # written in 3d while guest usage never exceeded ~47GiB; the sparse vmdk grew to 292G and
+          # never shrinks). 168h cuts that rewrite ~7x. Cost: a report can be up to 7d stale; the DB
+          # is mirrored via Harbor (airgap) so it rarely changes faster than that. Escape hatch: set
+          # back to 24h. Reports are still regenerated on any workload revision change.
+          scannerReportTTL: 168h
           # NOTE: chart 0.27.0 does NOT honor `operator.resources` (the operator container
           # runs with no resource limits — verified live), so this block is inert. Left as
           # documentation of intent; the operator is lightweight even with all scanners on.

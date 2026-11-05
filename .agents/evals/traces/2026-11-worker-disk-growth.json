@@ -1,0 +1,55 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-worker-disk-growth-20261105",
+  "task": "Local worker-3 vmdk grew to 292G while the guest used 43G. Find the writer, cut its rewrite rate, record the lesson.",
+  "changeContext": {
+    "paths": [
+      ".agents/evals/traces/2026-11-worker-disk-growth.json",
+      "docs/common/lessons-log.md",
+      "gitops/charts/narwhal-apps/templates/trivy-operator.yaml"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Change only trivy-operator scannerReportTTL. Deliberately left alone: operator OOMKill, kubelet image GC, node disk shrink or rebuild, Harbor, other apps."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "Guest used 43G vs host vmdk 292G; Prometheus 3d max guest usage ~47G on all nodes; node_disk_written 517GiB on worker-3 vs 53-128GiB elsewhere; top container_fs_writes writer is security-system scan-vulnerabilityreport pods.",
+      "evidence": [
+        "repo:gitops/charts/narwhal-apps/templates/trivy-operator.yaml"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "scannerReportTTL 24h (chart default) to 168h so reports are not rescanned daily, each rescan re-downloading the Trivy DB to node disk."
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "trivy-operator Application values and the static regression suite on the local Vagrant cluster. NOT covered: host vmdk reclaim (needs node rebuild, not approved), trivy-operator OOM and per-Job DB download (separate lane), Kakao cluster.",
+      "evidence": [
+        "test:RESEARCH_EVIDENCE_DIR=tmp make test -> passed 430, failed 0",
+        "test:live local cluster: ConfigMap security-system/trivy-operator-config OPERATOR_SCANNER_REPORT_TTL=168h after push-to-gitea (confirmed by the author lane and independently by the PR #574 reviewer)",
+        "repo:gitops/charts/narwhal-apps/templates/trivy-operator.yaml"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "completion_claim",
+      "summary": "In the repository and on the local cluster, trivy-operator scannerReportTTL is 168h, so VulnerabilityReports are refreshed weekly instead of daily and the daily re-download of the ~1 GB Trivy DB onto node disk stops. Host vmdk space already written is not reclaimed; that needs a node rebuild and is out of scope."
+    },
+    {
+      "id": "e6",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Complete for the rewrite-rate prevention scope of this PR within repository and local-cluster scope; host reclaim (owner decision) and the per-Job DB download / operator OOM are tracked separately."
+    }
+  ]
+}

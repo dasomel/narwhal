@@ -23,7 +23,7 @@ run_suite() {
   trap 'rm -rf "${tmp}"' EXIT
 
   local bare="${tmp}/remote.git"
-  git init --bare -q "${bare}"
+  git init --bare -q --initial-branch=main "${bare}"
 
   local gitops="${tmp}/gitops"
   mkdir -p "${gitops}/resources/mytheme" "${gitops}/apps"
@@ -102,7 +102,7 @@ run_suite() {
 
   # 5. Refuse top-level directories that hold Gitea-only content (D-REFUSE-GITEA-ONLY-DIRS)
   local top
-  for top in "resources" "resources/" "resources/tenants"; do
+  for top in "resources" "resources/" "resources//" "./resources" "resources/tenants" "resources//tenants/"; do
     if env "${env_common[@]}" "${BASH_BIN}" "${target_script}" "refuse top" "${top}" >"${tmp}/out" 2>&1; then
       echo "push-to-gitea.sh accepted Gitea-only directory '${top}'" >&2
       return 1

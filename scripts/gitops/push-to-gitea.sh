@@ -129,7 +129,12 @@ if [[ ${#PATHS[@]} -gt 0 ]]; then
     if [[ -z "${p}" || "${p}" = /* || "${p}" == *".."* || "${p}" == "." ]]; then
       die "path must be relative to gitops/ and cannot contain '..': ${p}"
     fi
-    norm="${p#./}"; norm="${norm%/}"
+    # Collapse repeated slashes first (portable; bash 3.2 pattern substitution mangles `//`),
+    # then strip leading ./ and trailing / so `resources//`, `./resources` and
+    # `resources//tenants/` cannot slip past the refusal below.
+    norm="$(printf '%s' "${p}" | tr -s '/')"
+    while [[ "${norm}" == ./* ]]; do norm="${norm#./}"; done
+    while [[ "${norm}" == */ ]]; do norm="${norm%/}"; done
     case "${norm}" in
       resources|resources/tenants)
         die "refusing to mirror '${p}': it would delete Gitea-only content (resources/tenants/*, portal-managed tenant manifests) and ArgoCD would prune the tenant namespaces. Pass specific files or subdirectories instead."

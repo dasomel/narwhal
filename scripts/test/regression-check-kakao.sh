@@ -2172,6 +2172,8 @@ PYEOF
 
   check R305 "gateway lets only the portal's machine-token Gitea API calls (3 paths on narwhal-gitops, GET/POST, token header) skip OIDC; 8 mutations caught (D-GITEA-PORTAL-API)" \
     python3 scripts/test/lib/check-gitea-portal-api-route.py --mutation-verify
+  check R307 "ambient kubelet-probe race after node restart (#576): istio-cni enableAmbientDetectionRetry true in the GitOps Application and the 09 bootstrap values, verify-cluster.sh counts ztunnel probe rejections only for src=node CiliumInternalIP dst=pod (behavioral against a ztunnel log fixture) and scans the unfiltered not-ready list; 9 mutations caught (D-576-DETECTION-RETRY, D-576-PROBE-DENY)" \
+    python3 scripts/test/lib/check-ambient-probe-race.py --mutation-verify
   check R301 "dev namespace has one SSA owner, unique objects and namespace-first ordering" \
     python3 scripts/test/lib/check-dev-namespace.py
   check R302 "every APISIX openid-connect route is login-only allowlisted (gitea) or restricted to Keycloak group cluster-admin via the shared strip-then-check pair; hubble, prometheus, alertmanager and nfs-quota-agent carry it; scans every chart, raw manifest, plugin config and global rule; 13 mutations caught (D-GATEWAY-ADMIN-GROUP, D-GATEWAY-ADMIN-ALL-SOURCES, #519)" \

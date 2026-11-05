@@ -275,6 +275,26 @@ kubectl get cm cilium-config -n kube-system -o yaml | grep -E "cni-exclusive|soc
 - Istio 1.28은 K8s 1.35 미지원 → Istio 1.29.x 사용 필수
 - 네임스페이스에 ambient 라벨 누락 → `kubectl label ns <ns> istio.io/dataplane-mode=ambient`
 
+### 10.1 Probe denied by ztunnel (노드 재시작 후 `Running 0/1`)
+
+**증상**: 노드/클러스터 재시작 뒤 mesh 네임스페이스의 파드가 `Running`이지만 `0/1`로 남고 restart가 쌓인다 (#576: `storage/seaweedfs-volume-0`, `storage/openbao-agent-injector`). 파드 안에서는 `127.0.0.1`/파드 IP `/healthz`가 200인데 kubelet probe만 `connection reset by peer`/`EOF`.
+
+**진단** (`verify-cluster.sh --section=podhealth`가 같은 판별을 자동화한다):
+
+```bash
+# 1. Running 이지만 not-Ready (STATUS 열만 보면 놓친다)
+kubectl --context narwhal get pods -A --no-headers | awk '$4=="Running"{split($3,a,"/"); if(a[1]!=a[2]) print}'
+# 2. 그 파드 노드의 ztunnel 이 probe 를 거부했는가: src 는 노드 CiliumInternalIP, dst 는 파드 IP
+kubectl --context narwhal get ciliumnode <node> -o jsonpath='{.spec.addresses[?(@.type=="CiliumInternalIP")].ip}'
+kubectl --context narwhal -n istio-system logs <ztunnel-on-node> --since=30m | grep 'istio_converted_static_strict' | grep 'dst.addr=<pod-ip>:'
+```
+
+`src.identity`가 없고 `src.addr`가 노드 CiliumInternalIP이면 kubelet probe의 SNAT(169.254.7.127) 예외를 잃은 파드다. 파드 자신의 아웃바운드 HBONE가 정상이면(`src.identity` 있음) redirect가 아니라 probe 예외만 빠진 경우로, 2026-07-29 행(redirect 상실)과 구분된다.
+
+**복구**: `kubectl --context narwhal delete pod -n <ns> <pod>` — istio-cni가 CNI ADD로 다시 등록한다 (`dataplane-mode: none` opt-out으로 가리지 않는다). headless DNS를 잃은 소비자(예: `seaweedfs-s3`)는 파드가 Ready가 된 뒤에도 `no such host`가 남으면 재시작한다.
+
+**재발 방지**: istio-cni `ambient.enableAmbientDetectionRetry=true` (R307 고정). 이 값이 있어도 재발하면 위 진단의 ztunnel/istio-cni-node 로그(`cni-agent ... pod ... does not appear to have any assigned IPs`)와 노드 journal의 CNI ADD 시각을 lessons-log #576 행과 대조한다.
+
 ## 11. 메모리 압박
 
 **증상**: Pod eviction, API 서버 느려짐

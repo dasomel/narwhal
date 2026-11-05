@@ -133,6 +133,9 @@ profile: ambient
 cni:
   ambient:
     enabled: true
+    # D-576-DETECTION-RETRY: keep in sync with gitops/charts/narwhal-apps/templates/istio-cni.yaml
+    # (R306); retry the pod lookup so a reboot-time API blip cannot leave a pod un-enrolled (#576).
+    enableAmbientDetectionRetry: true
 tolerations:
   - key: node-role.kubernetes.io/control-plane
     operator: Exists

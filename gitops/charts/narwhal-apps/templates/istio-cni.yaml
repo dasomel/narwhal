@@ -19,6 +19,14 @@ spec:
         cni:
           ambient:
             enabled: true
+            # D-576-DETECTION-RETRY: after a node reboot kubelet recreates sandboxes before the
+            # API server is reachable from the CNI plugin; with the default (false) the plugin
+            # swallows the pod lookup error, treats the pod as non-ambient and never reports its
+            # new IP, so the kubelet-probe ipset misses it and ztunnel STRICT rejects the probes
+            # (#576). true makes the plugin retry (30 x 1s) and fail CNI ADD so kubelet retries.
+            # Cost: pod start in a mesh namespace blocks up to 30s per attempt while the API server
+            # is unreachable. Escape hatch: set false (the pre-#576 behavior).
+            enableAmbientDetectionRetry: true
         tolerations:
           - key: node-role.kubernetes.io/control-plane
             operator: Exists

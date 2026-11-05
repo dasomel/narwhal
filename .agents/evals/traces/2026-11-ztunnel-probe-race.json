@@ -1,0 +1,52 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-issue-576-ztunnel-probe-race-20261105",
+  "task": "Diagnose #576 (kubelet probes to storage/seaweedfs-volume-0 and openbao-agent-injector rejected by ztunnel istio_converted_static_strict after node restarts) and ship the smallest durable fix: istio-cni enableAmbientDetectionRetry plus a verify-cluster detection and runbook. No live cluster mutation.",
+  "changeContext": {
+    "paths": [
+      ".agents/evals/traces/2026-11-ztunnel-probe-race.json",
+      "gitops/charts/narwhal-apps/templates/istio-cni.yaml"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "One GitOps value (cni.ambient.enableAmbientDetectionRetry) mirrored in the 09-istio-ambient.sh bootstrap values, a verify-cluster podhealth detection, R307, lessons-log row and troubleshooting 10.1. Deliberately left alone: the live cluster (no helm/Gitea push, no node reboot), Cilium CCNP allow-ambient-kubelet-probes, istioOwnedCNIConfig, dataplane-mode none opt-outs, the broad grep -v openbao in verify-cluster (reported only)."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "Not reproduced (needs a node reboot). Reconstructed from retained logs: worker-1 reboot 12:20Z; cilium-cni released RunPodSandbox 12:21:31Z; seaweedfs-volume-0 sandbox returned 12:21:43.3Z; istio-cni agent socket opened 12:21:44.08Z with 'pod seaweedfs-volume-0 does not appear to have any assigned IPs, not syncing with ipset'; pod never got 'adding pod to the mesh' that boot; its outbound was meshed (HBONE identity) while ztunnel rejected probes with src=node CiliumInternalIP 10.244.4.38 (219 denials to dst 10.244.4.230). Istio 1.30.1 plugin.go swallows isAmbientPod errors when ENABLE_AMBIENT_DETECTION_RETRY=false and informers.go reconcilePod is a no-op for an already-enrolled pod. The plugin's own error line is not retained, so that step is inferred."
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "Set cni.ambient.enableAmbientDetectionRetry: true (helm template of cni 1.30.1 renders ENABLE_AMBIENT_DETECTION_RETRY: \"true\"). Added ambient_probe_denials() and a podhealth scan in verify-cluster.sh, runbook and lessons-log row."
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "Static regression suite and the new R307 check (behavioral function test against a ztunnel log fixture, 9 mutations caught). NOT covered: a live rollout of the setting, a real node reboot, positive live detection on a genuinely denied pod.",
+      "evidence": [
+        "test:RESEARCH_EVIDENCE_DIR=$(mktemp -d) make test -> passed 431 failed 0 warnings 3 (R307 PASS)",
+        "test:python3 scripts/test/lib/check-ambient-probe-race.py --mutation-verify -> 9 mutations caught",
+        "test:ambient_probe_denials against the real worker-1 ztunnel log -> 219 for pod 10.244.4.230 / host 10.244.4.38, 0 for wrong host, other pod and empty log",
+        "test:verify-cluster.sh --section=podhealth against the narwhal context -> new check runs and passes on the healthy cluster"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "completion_claim",
+      "summary": "In the repository, the retry setting, detection, runbook and regression check are in place. Not rolled out live and not proven to prevent a recurrence; the mechanism is strongly supported but one link is inferred."
+    },
+    {
+      "id": "e6",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Complete within repository scope; live rollout (push istio-cni.yaml to Gitea) and independent review remain."
+    }
+  ]
+}

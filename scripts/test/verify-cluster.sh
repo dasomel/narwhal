@@ -71,6 +71,16 @@ skip() {
   echo "  SKIP  $1"
 }
 
+# D-576-PROBE-DENY: count ztunnel inbound rejections of a node-originated kubelet probe.
+# Args: <ztunnel log file> <pod IP> <node CiliumInternalIP>. A probe that lost its
+# 169.254.7.127 SNAT arrives from the node's cilium_host IP and hits mesh-wide STRICT, so
+# src == host IP + dst == pod + istio_converted_static_strict is the discriminator. A genuine
+# plaintext client has another src; a healthy probe never reaches ztunnel. Pinned by R307.
+ambient_probe_denials() {
+  grep -F "src.addr=${3}:" "${1}" | grep -F "dst.addr=${2}:" \
+    | grep -F 'direction="inbound"' | grep -F "istio_converted_static_strict" | grep -c . || true
+}
+
 # Stage → section mapping
 PHASE1_SECTIONS="nodes kube-vip etcd cilium core"
 PHASE2_INFRA_SECTIONS="nodes network tls dns"
@@ -1188,6 +1198,34 @@ if should_run "podhealth"; then
   else
     NOTREADY_COUNT=$(echo "${NOTREADY_FILTERED}" | wc -l | tr -d ' ')
     fail "${NOTREADY_COUNT} running pods with containers not ready"
+  fi
+
+  # D-576-PROBE-DENY: a Running-but-not-Ready pod whose kubelet probes ztunnel rejects lost its
+  # probe exemption (ipset/redirect) at a node restart; it stays not-Ready until re-enrolled.
+  # Scans NOTREADY_PODS, not NOTREADY_FILTERED: the openbao exclusion above would hide
+  # openbao-agent-injector, one of the two pods #576 hit. A sealed openbao-0 has no denials, so it
+  # stays quiet. Cost: one ztunnel log read per not-ready pod. Remedy: delete the pod (the
+  # istio-cni re-enrolls it); see docs/common/troubleshooting.md "Probe denied by ztunnel".
+  PROBE_DENY_FOUND=0
+  PROBE_DENY_LOG=$(mktemp)
+  while read -r pd_ns pd_pod _; do
+    [ -n "${pd_pod}" ] || continue
+    pd_ip=$(kubectl get pod -n "${pd_ns}" "${pd_pod}" -o jsonpath='{.status.podIP}' 2>/dev/null || true)
+    pd_node=$(kubectl get pod -n "${pd_ns}" "${pd_pod}" -o jsonpath='{.spec.nodeName}' 2>/dev/null || true)
+    [ -n "${pd_ip}" ] && [ -n "${pd_node}" ] || continue
+    pd_host=$(kubectl get ciliumnode "${pd_node}" -o jsonpath='{.spec.addresses[?(@.type=="CiliumInternalIP")].ip}' 2>/dev/null || true)
+    pd_zt=$(kubectl get pods -n istio-system -l app=ztunnel --field-selector "spec.nodeName=${pd_node}" -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)
+    [ -n "${pd_host}" ] && [ -n "${pd_zt}" ] || continue
+    kubectl logs -n istio-system "${pd_zt}" --since=30m > "${PROBE_DENY_LOG}" 2>/dev/null || true
+    pd_n=$(ambient_probe_denials "${PROBE_DENY_LOG}" "${pd_ip}" "${pd_host}")
+    if [ "${pd_n:-0}" -gt 0 ]; then
+      PROBE_DENY_FOUND=$((PROBE_DENY_FOUND + 1))
+      fail "${pd_ns}/${pd_pod}: ztunnel rejected ${pd_n} kubelet probe(s) in 30m (istio_converted_static_strict); fix: kubectl delete pod -n ${pd_ns} ${pd_pod}"
+    fi
+  done <<< "${NOTREADY_PODS}"
+  rm -f "${PROBE_DENY_LOG}"
+  if [ "${PROBE_DENY_FOUND}" -eq 0 ]; then
+    pass "No not-ready pod has kubelet probes rejected by ztunnel"
   fi
 
   # Failed Helm releases

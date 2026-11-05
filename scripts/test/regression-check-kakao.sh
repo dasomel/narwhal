@@ -3355,6 +3355,9 @@ PYEOF'
   # 2026-11-05: push-to-gitea.sh nested directory paths on existing targets and never deleted removed files.
   check R308 "push-to-gitea.sh mirrors directory paths without nesting, propagates deletions, keeps single-file path support, refuses '..' paths and Gitea-only top-level directories, and runs mirror-all/--tag/--rollback under /bin/bash; 3 mutations caught (D-GITOPS-PUSH-DIRS, D-MIRROR-ALL-NONDESTRUCTIVE, D-EMPTY-ARRAY-GUARD, D-REFUSE-GITEA-ONLY-DIRS)" \
     bash scripts/test/lib/check-push-to-gitea-dirs.sh
+  # 2026-11-06: sparse linked-clone vmdks never shrink (worker-3 298G on disk, 43G used); recreating a worker is the only reclaim.
+  check R309 "VM disk growth guards: NodeDiskWriteRateHigh (>20 GB/day over 6h, workers only, runbook anchor; promtool cases), check-vm-disk.sh gap/abs/free thresholds and --strict, warn-only up.sh hook, runbook order data-check -> drain -> destroy; 10 mutations caught (D-VM-DISK-GUARD)" \
+    python3 scripts/test/lib/check-vm-disk-guards.py --mutation-verify
 }
 
 #=========================================

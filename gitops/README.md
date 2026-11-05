@@ -45,20 +45,21 @@ gitops/
 │   │       └── ghost-pod-reaper.yaml, openbao-unseal.yaml, istiod-pdb.yaml,
 │   │           istio-telemetry-monitors.yaml, headlamp-policy.yaml # small support Applications
 │   └── narwhal-platform/          # Platform-owned raw manifests (one chart, six templates)
+│       ├── keycloak-theme/            # Keycloak login + admin theme sources (rendered by keycloak-theme.yaml)
 │       └── templates/
-│           ├── keycloak-cr.yaml           # Keycloak CR + login theme ConfigMap
+│           ├── keycloak-cr.yaml           # Keycloak CR (mounts the themes)
+│           ├── keycloak-theme.yaml        # Theme ConfigMaps rendered from keycloak-theme/
 │           ├── narwhal-portal-k8s.yaml    # Portal Deployment/Service/RBAC/Valkey
 │           ├── apisix-routes.yaml         # ApisixRoute/ApisixUpstream definitions
 │           ├── apisix-infra.yaml          # APISIX's own etcd + supporting infra
 │           ├── istio-ambient-policies.yaml# PeerAuthentication (mTLS) policies
 │           └── argocd-config.yaml         # ArgoCD OIDC/RBAC/diff-ignore configuration
 └── resources/                     # Extra raw-YAML resources referenced by "small support" apps above
-    ├── keycloak-theme/            # Custom Narwhal Keycloak login theme assets
     ├── network-policies.yaml, rbac-policies.yaml, kyverno-policies.yaml, ...
     └── ...
 ```
 
-`apps/` holds the single root Application. `charts/narwhal-apps` is a thin Helm chart whose only job is to template out one ArgoCD `Application` per platform component (mostly pointing at third-party Helm charts). `charts/narwhal-platform` is a second Helm chart that templates the manifests Narwhal itself owns and authors (Keycloak CR, the portal, APISIX routing, mesh policy, ArgoCD config) — these aren't upstream charts, they're first-party YAML. `resources/` holds extra standalone YAML (NetworkPolicies, RBAC, Kyverno policies, the Keycloak theme, etc.) that small "support" Applications in `narwhal-apps` point at via `directory.include`.
+`apps/` holds the single root Application. `charts/narwhal-apps` is a thin Helm chart whose only job is to template out one ArgoCD `Application` per platform component (mostly pointing at third-party Helm charts). `charts/narwhal-platform` is a second Helm chart that templates the manifests Narwhal itself owns and authors (Keycloak CR, the portal, APISIX routing, mesh policy, ArgoCD config) — these aren't upstream charts, they're first-party YAML. `resources/` holds extra standalone YAML (NetworkPolicies, RBAC, Kyverno policies, etc.) that small "support" Applications in `narwhal-apps` point at via `directory.include`.
 
 ---
 
@@ -227,9 +228,10 @@ A Kubernetes-native policy engine enforcing admission-time and background polici
 #### Keycloak
 | Manifest | Managed by | Namespace |
 |---|---|---|
-| `keycloak-cr.yaml` (Keycloak CR + login theme) | Keycloak Operator (installed by `scripts/cluster/11-keycloak.sh`) | `iam` |
+| `keycloak-cr.yaml` (Keycloak CR) | Keycloak Operator (installed by `scripts/cluster/11-keycloak.sh`) | `iam` |
+| `keycloak-theme.yaml` (login + admin theme ConfigMaps, rendered from `keycloak-theme/`) | Mounted by the Keycloak CR; realm `loginTheme`/`adminTheme` set by `scripts/cluster/11-2-keycloak-config.sh` | `iam` |
 
-Keycloak is the platform's Single Sign-On / OIDC Identity Provider — every SSO-integrated app (ArgoCD, Grafana, Harbor, Headlamp, OpenBao, velero-ui, Gitea, the K8s API server itself, and the portal) authenticates against it. It's not deployed via a generic Helm chart but as a `Keycloak` CR reconciled by the upstream Keycloak Operator, with a custom Narwhal-branded login theme (`keycloak-theme-narwhal` ConfigMap, bilingual EN/KO messages) mounted in. CPU/memory requests must live under `spec.resources` (the Operator ignores resources set under `unsupported.podTemplate`), while health-probe tuning goes the opposite way, through `unsupported.podTemplate`.
+Keycloak is the platform's Single Sign-On / OIDC Identity Provider — every SSO-integrated app (ArgoCD, Grafana, Harbor, Headlamp, OpenBao, velero-ui, Gitea, the K8s API server itself, and the portal) authenticates against it. It's not deployed via a generic Helm chart but as a `Keycloak` CR reconciled by the upstream Keycloak Operator, with Portal-unified login and admin-console themes (`keycloak-theme-narwhal` + `keycloak-theme-narwhal-assets` ConfigMaps rendered from `charts/narwhal-platform/keycloak-theme/`, bilingual EN/KO messages) mounted in as one directory; the Keycloak pod rolls automatically when a theme file changes. CPU/memory requests must live under `spec.resources` (the Operator ignores resources set under `unsupported.podTemplate`), while health-probe tuning goes the opposite way, through `unsupported.podTemplate`.
 
 ### Registry & Developer UI
 

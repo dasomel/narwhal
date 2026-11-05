@@ -45,15 +45,16 @@ gitops/
 │   │       └── ghost-pod-reaper.yaml, openbao-unseal.yaml, istiod-pdb.yaml,
 │   │           istio-telemetry-monitors.yaml, headlamp-policy.yaml # 소규모 지원 Application들
 │   └── narwhal-platform/          # 플랫폼이 직접 소유하는 원시 매니페스트 (차트 1개, 템플릿 6개)
+│       ├── keycloak-theme/            # Keycloak 로그인/관리자 테마 소스 (keycloak-theme.yaml이 렌더링)
 │       └── templates/
-│           ├── keycloak-cr.yaml           # Keycloak CR + 로그인 테마 ConfigMap
+│           ├── keycloak-cr.yaml           # Keycloak CR (테마 마운트)
+│           ├── keycloak-theme.yaml        # keycloak-theme/ 에서 렌더링되는 테마 ConfigMap
 │           ├── narwhal-portal-k8s.yaml    # 포털 Deployment/Service/RBAC/Valkey
 │           ├── apisix-routes.yaml         # ApisixRoute/ApisixUpstream 정의
 │           ├── apisix-infra.yaml          # APISIX 자체 etcd + 지원 인프라
 │           ├── istio-ambient-policies.yaml# PeerAuthentication(mTLS) 정책
 │           └── argocd-config.yaml         # ArgoCD OIDC/RBAC/diff-ignore 설정
 └── resources/                     # 위 "소규모 지원" 앱들이 참조하는 추가 원시 YAML
-    ├── keycloak-theme/            # Narwhal 전용 Keycloak 로그인 테마 자산
     ├── network-policies.yaml, rbac-policies.yaml, kyverno-policies.yaml, ...
     └── ...
 ```
@@ -229,7 +230,7 @@ Kubernetes 네이티브 정책 엔진으로, 어드미션 시점 및 백그라�
 |---|---|---|
 | `keycloak-cr.yaml` (Keycloak CR + 로그인 테마) | Keycloak Operator (`scripts/cluster/11-keycloak.sh`로 설치) | `iam` |
 
-Keycloak은 플랫폼의 SSO/OIDC 아이덴티티 제공자입니다 — SSO가 연동된 모든 애플리케이션(ArgoCD, Grafana, Harbor, Headlamp, OpenBao, velero-ui, Gitea, Kubernetes API 서버 자체, 그리고 포털)이 이를 통해 인증합니다. 일반 Helm 차트가 아니라 업스트림 Keycloak Operator가 조정(reconcile)하는 `Keycloak` CR로 배포되며, Narwhal 브랜딩이 적용된 커스텀 로그인 테마(`keycloak-theme-narwhal` ConfigMap, 한/영 이중언어 메시지)가 마운트되어 있습니다. CPU/메모리 요청은 반드시 `spec.resources`에 있어야 하며(Operator가 `unsupported.podTemplate` 아래의 resources는 무시함), 헬스 프로브 튜닝은 반대로 `unsupported.podTemplate`을 통해 적용됩니다.
+Keycloak은 플랫폼의 SSO/OIDC 아이덴티티 제공자입니다 — SSO가 연동된 모든 애플리케이션(ArgoCD, Grafana, Harbor, Headlamp, OpenBao, velero-ui, Gitea, Kubernetes API 서버 자체, 그리고 포털)이 이를 통해 인증합니다. 일반 Helm 차트가 아니라 업스트림 Keycloak Operator가 조정(reconcile)하는 `Keycloak` CR로 배포되며, 포털과 통일된 로그인·관리 콘솔 테마(`charts/narwhal-platform/keycloak-theme/`에서 렌더링되는 `keycloak-theme-narwhal`, `keycloak-theme-narwhal-assets` ConfigMap, 한/영 이중언어 메시지)가 디렉터리 하나로 마운트되며, 테마 파일이 바뀌면 Keycloak 파드가 자동으로 롤링됩니다. CPU/메모리 요청은 반드시 `spec.resources`에 있어야 하며(Operator가 `unsupported.podTemplate` 아래의 resources는 무시함), 헬스 프로브 튜닝은 반대로 `unsupported.podTemplate`을 통해 적용됩니다.
 
 ### 레지스트리 및 개발자 UI
 

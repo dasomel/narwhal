@@ -23,6 +23,11 @@
 # USAGE:
 #   scripts/gitops/push-to-gitea.sh "commit message" [path-under-gitops ...]
 #
+#   A DIRECTORY path is mirrored exactly (removed in the clone, then copied), so files
+#   deleted under it in gitops/ are deleted in Gitea too. `resources` and `resources/tenants`
+#   are refused: Gitea holds portal-managed tenant manifests there (resources/tenants/*)
+#   that do not exist in gitops/. Pass specific files or subdirectories instead.
+#
 #   # Push everything under gitops/ (full mirror):
 #   scripts/gitops/push-to-gitea.sh "fix(portal-rbac): grant metrics.k8s.io read"
 #
@@ -105,6 +110,38 @@ esac
 COMMIT_MSG="${1:-chore: sync gitops from narwhal repo}"
 shift || true
 PATHS=("$@")   # optional list of paths relative to gitops/ ; empty = mirror all
+
+# Refuse paths containing '..' or absolute paths.
+# D-EMPTY-ARRAY-GUARD: the loop is guarded by a length test because bash 3.2 (macOS
+# default) aborts `"${PATHS[@]}"` on an empty array under `set -u` ("unbound variable"),
+# which would break mirror-all, --tag and --rollback before any work. Cost: one extra test.
+# Escape hatch: none needed; every other PATHS expansion is already inside a non-empty branch.
+#
+# D-REFUSE-GITEA-ONLY-DIRS: a directory path is mirrored exactly (`rm -rf` + copy in the
+# clone), so passing `resources` or `resources/tenants` would delete Gitea-only content
+# (portal-managed tenant manifests resources/tenants/*, merged via PRs) and ArgoCD pruning
+# would then delete the tenant namespaces. Existing callers/docs only pass files or deeper
+# directories, so refusing these two ancestors breaks no legitimate use.
+# Cost: a deliberate full-directory mirror of them is blocked. Escape hatch: pass the specific
+# subdirectories/files, or edit the Gitea repo directly with git.
+if [[ ${#PATHS[@]} -gt 0 ]]; then
+  for p in "${PATHS[@]}"; do
+    if [[ -z "${p}" || "${p}" = /* || "${p}" == *".."* || "${p}" == "." ]]; then
+      die "path must be relative to gitops/ and cannot contain '..': ${p}"
+    fi
+    # Collapse repeated slashes first (portable; bash 3.2 pattern substitution mangles `//`),
+    # then strip leading ./ and trailing / so `resources//`, `./resources` and
+    # `resources//tenants/` cannot slip past the refusal below.
+    norm="$(printf '%s' "${p}" | tr -s '/')"
+    while [[ "${norm}" == ./* ]]; do norm="${norm#./}"; done
+    while [[ "${norm}" == */ ]]; do norm="${norm%/}"; done
+    case "${norm}" in
+      resources|resources/tenants)
+        die "refusing to mirror '${p}': it would delete Gitea-only content (resources/tenants/*, portal-managed tenant manifests) and ArgoCD would prune the tenant namespaces. Pass specific files or subdirectories instead."
+        ;;
+    esac
+  done
+fi
 
 if [[ "${MODE}" != "rollback" ]]; then
   [ -d "${GITOPS_DIR}" ] || die "gitops source not found at ${GITOPS_DIR}. Set GITOPS_DIR to the gitops/ tree you want mirrored."
@@ -241,15 +278,29 @@ if [[ "${MODE}" == "rollback" ]]; then
 else
   #--- copy changed file(s) from gitops/ into the gitea repo root ------------
   if [[ ${#PATHS[@]} -eq 0 ]]; then
+    # D-MIRROR-ALL-NONDESTRUCTIVE: mirror-all mode remains additive (does not delete untracked Gitea files).
+    # Reason: Gitea repo root holds files that exist only in Gitea and not in gitops/, notably portal-managed
+    # tenant namespace manifests (resources/tenants/*) merged via pull requests. Deleting them would trigger
+    # ArgoCD automated pruning and delete tenant namespaces.
+    # Cost: deletions under gitops/ are not propagated when mirror-all is run without paths.
+    # Escape hatch: pass specific directory or file paths to push-to-gitea.sh to mirror/delete them, or delete explicitly via git.
     log "mirroring ALL of gitops/ -> gitea repo root"
     cp -r "${GITOPS_DIR}/." .
   else
     for rel in "${PATHS[@]}"; do
+      rel="${rel%/}"
       src="${GITOPS_DIR}/${rel}"
       [[ -e "${src}" ]] || die "${src} does not exist"
-      mkdir -p "$(dirname "${rel}")"
-      cp -r "${src}" "${rel}"
-      log "copied gitops/${rel} -> ${rel}"
+      if [[ -d "${src}" ]]; then
+        rm -rf "${rel}"
+        mkdir -p "$(dirname "${rel}")"
+        cp -R "${src}" "${rel}"
+        log "mirrored directory gitops/${rel} -> ${rel}"
+      else
+        mkdir -p "$(dirname "${rel}")"
+        cp -r "${src}" "${rel}"
+        log "copied gitops/${rel} -> ${rel}"
+      fi
     done
   fi
   git add -A

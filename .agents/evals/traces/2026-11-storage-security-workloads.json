@@ -1,0 +1,68 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-storage-security-workloads-20261105",
+  "task": "Diagnose seaweedfs-volume-0, openbao-agent-injector and trivy-operator on the local disposable cluster; repair live and persist the trivy-operator change through GitOps.",
+  "changeContext": {
+    "paths": [
+      "gitops/charts/narwhal-apps/templates/trivy-operator.yaml",
+      "docs/common/lessons-log.md",
+      ".agents/evals/traces/2026-11-storage-security-workloads.json"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Only trivy-operator.yaml (ClientServer + operator resources), the lessons-log rows and this trace change. The seaweedfs and injector fix was a live pod deletion with no repo change. No push, PR or review status. Not touched: kopia/Velero config, docker.io scan-image pull failures, Java DB settings."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "volume-0 and injector Running 0/1 with 9 and 14 restarts; ztunnel logged policy rejection istio_converted_static_strict for kubelet probe sources; volume data was healthy (35 volumes loaded, 5% disk used); kopia-maintain Jobs failed with unexpected EOF; trivy-operator BestEffort, 33 OOMKilled.",
+      "evidence": [
+        "runtime:kubectl --context narwhal describe pod/logs, ztunnel logs on worker-1 and worker-3",
+        "runtime:kubectl --context narwhal get deploy trivy-operator resources={}"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "D-TRIVY-OPERATOR-MEM and D-TRIVY-SERVER: top-level resources 100m/384Mi with 1Gi memory limit; builtInTrivyServer true with emptyDir cache. The inert operator.resources block was removed. Rollback: builtInTrivyServer false and mode Standalone."
+    },
+    {
+      "id": "e4",
+      "type": "verification",
+      "status": "passed",
+      "scope": "Live local cluster narwhal, about 20 minutes after the fixes: pods Ready with 0 restarts, kopia-maintain Jobs Complete, a tiny Velero Backup Completed and was deleted, VulnerabilityReports still produced. Not run: a long soak and OOM observation of the new limits.",
+      "evidence": [
+        "runtime:kubectl --context narwhal get pods -n storage: seaweedfs-volume-0, openbao-agent-injector 1/1 restarts 0",
+        "runtime:kubectl --context narwhal get jobs -n storage: devtools and storage kopia-maintain Complete 1/1",
+        "runtime:Backup verify-sw-20261105 phase Completed errors 0, then deleted via DeleteBackupRequest",
+        "runtime:trivy-server downloaded the DB once; Harbor registry log shows 0 trivy-java-db GETs during scan Jobs"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "Static regression suite on the final tree; live half not run.",
+      "commandExitCode": 0,
+      "evidence": [
+        "test:RESEARCH_EVIDENCE_DIR=$(mktemp -d) make test -> exit=0; RESULT passed 430 failed 0 warnings 3",
+        "test:helm template of the trivy-operator values renders StatefulSet trivy-server and trivy.mode ClientServer"
+      ]
+    },
+    {
+      "id": "e6",
+      "type": "completion_claim",
+      "summary": "The three workloads are healthy on the local cluster. Not verified: why seaweedfs-s3 kept failing DNS lookups until restarted, why the two pods lost probe enrollment, and whether the new operator limit prevents OOM over days. Scan Jobs for docker.io images still fail with UNAUTHORIZED. Independent review pending."
+    },
+    {
+      "id": "e7",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Branch fix/storage-security-workloads committed locally, not pushed; live Gitea copy of trivy-operator.yaml already updated."
+    }
+  ]
+}

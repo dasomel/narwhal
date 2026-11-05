@@ -39,10 +39,25 @@ spec:
             runAsUser: 10000
             runAsGroup: 10000
             runAsNonRoot: true
-        # Standalone mode — Trivy CLI runs inside scan Job pods, no shared server.
-        # 자원 제약 환경(Worker 6GB)에서 Server 모드보다 가볍고 격리도 높음.
+        # D-TRIVY-SERVER: ClientServer via the chart's built-in server. Standalone made
+        # every scan Job download the ~1GB trivy-db into its own emptyDir (500+ GiB of
+        # writes on one worker in a day, plus harbor pull bursts); the single trivy-server
+        # pod now holds the DB once and scan Jobs only upload layer metadata to it.
+        # builtInTrivyServer forces mode=ClientServer + serverURL (see operator: below).
+        # Escape hatch: builtInTrivyServer=false, mode=Standalone.
         trivy:
-          mode: Standalone
+          mode: ClientServer
+          # emptyDir, not the default nfs-csi PVC: the DB is a re-downloadable cache
+          # (one pull from Harbor per server restart) and must not be Velero-backed up.
+          storageClassEnabled: false
+          server:
+            resources:
+              requests:
+                cpu: 100m
+                memory: 512Mi
+              limits:
+                cpu: 500m
+                memory: 1536Mi
           ignoreUnfixed: false
           severity: "CRITICAL,HIGH,MEDIUM,LOW,UNKNOWN"
           timeout: "10m0s"
@@ -74,12 +89,11 @@ spec:
           failEntriesLimit: 10
           cron: "0 */6 * * *"
         operator:
+          builtInTrivyServer: true
           scanJobsConcurrentLimit: 2 # was 3: fewer concurrent scan Jobs => lower peak
           # node CPU (combined with 300m scan cap = ~600m peak
           # vs 1500m before) to protect co-located workloads
           scanJobTimeout: 10m
-          # 빌트인 Trivy 서버 비활성 (Standalone 모드)
-          builtInTrivyServer: false
           # 자동 스캔 활성
           vulnerabilityScannerEnabled: true
           # Compliance scanners ENABLED (사용자 결정 2026-07-08): feed the portal
@@ -103,16 +117,17 @@ spec:
           # is mirrored via Harbor (airgap) so it rarely changes faster than that. Escape hatch: set
           # back to 24h. Reports are still regenerated on any workload revision change.
           scannerReportTTL: 168h
-          # NOTE: chart 0.27.0 does NOT honor `operator.resources` (the operator container
-          # runs with no resource limits — verified live), so this block is inert. Left as
-          # documentation of intent; the operator is lightweight even with all scanners on.
-          resources:
-            requests:
-              cpu: 100m
-              memory: 128Mi
-            limits:
-              cpu: 500m
-              memory: 256Mi
+        # D-TRIVY-OPERATOR-MEM: the operator ran BestEffort (no requests/limits) and was
+        # OOMKilled 33x/22h under node memory pressure (workers 5.4GB, 53-71% used). The
+        # chart reads the TOP-LEVEL `resources` (templates/deployment.yaml); the old
+        # `operator.resources` block was inert. Steady state is ~330Mi, so a 384Mi
+        # request makes it Burstable and the 1Gi limit contains it.
+        resources:
+          requests:
+            cpu: 100m
+            memory: 384Mi
+          limits:
+            memory: 1Gi
         # Prometheus 자동 수집 (prometheus-stack 의 ServiceMonitor selector 매칭됨)
         serviceMonitor:
           enabled: true

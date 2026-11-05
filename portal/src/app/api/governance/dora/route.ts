@@ -304,17 +304,18 @@ export async function GET() {
     const perAppSlice = perApp.slice(0, 15)
 
     const dailyDeploys: { date: string; count: number }[] = []
+    const nowDate = new Date(now)
     for (let i = 6; i >= 0; i--) {
-      const d = new Date(now - i * 24 * 60 * 60 * 1000)
-      const month = String(d.getMonth() + 1).padStart(2, "0")
-      const date = String(d.getDate()).padStart(2, "0")
+      const d = new Date(Date.UTC(nowDate.getUTCFullYear(), nowDate.getUTCMonth(), nowDate.getUTCDate() - i))
+      const month = String(d.getUTCMonth() + 1).padStart(2, "0")
+      const date = String(d.getUTCDate()).padStart(2, "0")
       dailyDeploys.push({ date: `${month}-${date}`, count: 0 })
     }
 
     for (const d of deployments) {
       const deployDate = new Date(d.deployedAtMs)
-      const month = String(deployDate.getMonth() + 1).padStart(2, "0")
-      const date = String(deployDate.getDate()).padStart(2, "0")
+      const month = String(deployDate.getUTCMonth() + 1).padStart(2, "0")
+      const date = String(deployDate.getUTCDate()).padStart(2, "0")
       const dateStr = `${month}-${date}`
 
       const day = dailyDeploys.find(day => day.date === dateStr)

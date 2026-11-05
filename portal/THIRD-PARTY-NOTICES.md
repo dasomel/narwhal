@@ -18947,7 +18947,7 @@ Apache License
 
 </details>
 
-### @opentelemetry/semantic-conventions@1.43.0
+### @opentelemetry/semantic-conventions@1.44.0
 
 - License: `Apache-2.0`
 - Author: OpenTelemetry Authors

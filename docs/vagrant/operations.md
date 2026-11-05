@@ -986,10 +986,12 @@ vagrant box list | grep ubuntu-26.04-xfs
 vmdk를 줄이는 방법은 없고, 노드를 지우고 다시 만드는 것이 유일한 회수 경로다. 한 번에 한 노드씩, 이 순서를 지킨다.
 
 1. **노드 로컬 데이터 확인.** 재생성하면 노드 디스크의 모든 것이 사라진다. NFS PV는 master-1에 있어 영향이 없지만 아래는 노드에만 있다.
+
    ```bash
    kubectl get nodes -l narwhal.io/seaweedfs-volume=true      # SeaweedFS 볼륨 서버(hostPath /ssd/object_store, Velero 백업 저장소)
    kubectl get pods -A -o wide --field-selector spec.nodeName=<node>   # emptyDir와 hostPath를 쓰는 pod 확인
    ```
+
    `narwhal.io/seaweedfs-volume=true` 라벨이 붙은 노드는 `/ssd/object_store`를 먼저 다른 곳에 복사하고 재생성 뒤에 되돌려야 한다. 이 라벨은 08-4가 한 번만 붙이고 옮기지 않는다(D-sw-pin). 복사 없이 재생성하면 Velero 저장소가 사라진다.
 2. **drain.** `kubectl cordon <node>` 후 `kubectl drain <node> --ignore-daemonsets --delete-emptydir-data`. CNPG 인스턴스와 etcd 정족수(master)에 영향이 없는지 먼저 본다. 마스터는 이 절차 대상이 아니다.
 3. **삭제와 재생성.** `vagrant destroy -f <vm>` 다음 `./scripts/up.sh`(맨 `vagrant up`은 Phase 2 경로가 아니다). 새 노드는 새 linked clone이므로 크기가 처음으로 돌아간다.

@@ -176,7 +176,7 @@ export function DoraMetricsWidget() {
                     contentStyle={{ fontSize: 12, borderRadius: 8, border: "1px solid #e2e8f0" }}
                     formatter={(value) => [`${value} ${t("dora.totalDeploysUnit") || ""}`]}
                   />
-                  <Bar dataKey="count" name={t("dora.totalDeploys")} fill="#6366f1" radius={[3, 3, 0, 0]} maxBarSize={40} isAnimationActive={false} />
+                  <Bar dataKey="count" name={t("dora.totalDeploys")} fill="#6366f1" radius={[3, 3, 0, 0]} maxBarSize={40} />
                 </BarChart>
               </ResponsiveContainer>
             </CardContent>

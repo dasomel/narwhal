@@ -19,9 +19,9 @@ function status(overall: TrivyDbStatus["overall"], extra: Partial<TrivyDbStatus>
     overall,
     dbRegistry: "harbor.devtools.svc.cluster.local/trivy-db/aquasecurity/trivy-db",
     artifacts: [
-      { repository: "aquasecurity/trivy-db", tag: "2", status: overall, ageDays: 1, createdAt: "2026-11-03T13:22:26Z" },
-      { repository: "aquasecurity/trivy-java-db", tag: "1", status: "fresh", ageDays: 2 },
-      { repository: "aquasecurity/trivy-checks", tag: "1", status: "fresh", ageDays: 2 },
+      { name: "trivy-db", consumer: "vulnScan", sloDays: 7, repository: "aquasecurity/trivy-db", tag: "2", status: overall, ageDays: 1, createdAt: "2026-11-03T13:22:26Z" },
+      { name: "trivy-java-db", consumer: "javaScan", sloDays: 7, repository: "aquasecurity/trivy-java-db", tag: "1", status: "fresh", ageDays: 2 },
+      { name: "trivy-checks", consumer: "configAudit", sloDays: null, repository: "aquasecurity/trivy-checks", tag: "1", status: "pinned", ageDays: 392 },
     ],
     scanner: { state: "ok", reportCount: 7, newestReportAt: "2026-11-03T23:00:00Z", recentScanFailures: 0, lastFailureAt: null },
     ...extra,
@@ -41,6 +41,14 @@ describe("TrivyDbStatusCard", () => {
     expect(html).toContain("trivy-checks:1")
     expect(html).toContain("security.trivyDb.status.fresh")
     expect(html).not.toContain("security.trivyDb.fix.title")
+  })
+
+  it("lists every source with its consumer, SLO and a pinned badge for the versioned one", () => {
+    const html = render(status("fresh"))
+    for (const c of ["vulnScan", "javaScan", "configAudit"]) expect(html).toContain(`security.trivyDb.consumer.${c}`)
+    expect(html).toContain("security.trivyDb.slo.days")
+    expect(html).toContain("security.trivyDb.slo.versioned")
+    expect(html).toContain("security.trivyDb.status.pinned")
   })
 
   it.each(["stale", "missing"] as const)("shows the copyable manual procedure when %s", (overall) => {

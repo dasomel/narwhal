@@ -14,7 +14,7 @@ const status = (overall: TrivyDbStatus["overall"], harborReachable = true): Triv
   harborReachable,
   overall,
   dbRegistry: "harbor.devtools.svc.cluster.local/trivy-db/aquasecurity/trivy-db",
-  artifacts: [{ repository: "aquasecurity/trivy-db", tag: "2", status: overall }],
+  artifacts: [{ name: "trivy-db", consumer: "vulnScan", sloDays: 7, repository: "aquasecurity/trivy-db", tag: "2", status: overall }],
   scanner: { state: "ok", reportCount: 7, newestReportAt: null, recentScanFailures: 0, lastFailureAt: null },
 })
 

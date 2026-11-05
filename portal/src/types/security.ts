@@ -41,9 +41,16 @@ export interface VulnDbFreshness {
   dbRegistry?: string
 }
 
-export type TrivyDbArtifactStatus = "fresh" | "stale" | "missing" | "unknown"
+/** "pinned" = present, but the source has no age SLO (versioned upstream line). */
+export type TrivyDbArtifactStatus = "fresh" | "pinned" | "stale" | "missing" | "unknown"
 
 export interface TrivyDbArtifact {
+  /** Source name in scripts/airgap/security-db.txt, e.g. "trivy-db". */
+  name: string
+  /** Scanner component that reads it: "vulnScan" | "javaScan" | "configAudit". */
+  consumer: "vulnScan" | "javaScan" | "configAudit"
+  /** Age limit in days; null when the source is versioned rather than rolling. */
+  sloDays: number | null
   /** Harbor repository under the trivy-db project, e.g. "aquasecurity/trivy-db". */
   repository: string
   /** Tag the scanner is configured to pull (trivy-db:2, trivy-java-db:1, trivy-checks:1). */

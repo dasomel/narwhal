@@ -21,6 +21,19 @@
 # compliance.reportType=all and configAuditScannerEnabled=true, both of which make
 # the operator fetch policiesBundle at scan/reconcile time — same live-pull problem
 # as the vulnerability DB, just for policies instead of CVEs.
+# COMPLETENESS (inventoried 2026-11-05, Trivy 0.60.0 / trivy-operator 0.25.0 live config): these three
+# are every data source the scanners pull online at runtime. Not listed on purpose: VEX Hub / VEX repo
+# (opt-in `--vex repo`, trivy-operator 0.25.0 exposes no knob and the scan Job never passes it),
+# SBOM sources oci/rekor (trivy.sbomSources is empty), Kyverno verify-image-signatures (static
+# public keys, rekor.ignoreTlog=true, no TUF fetch), Falco rules (baked into the falco image, falcoctl
+# off), KISA/CIS/NSA/PSS compliance specs (in-repo ClusterComplianceReport YAML, checks referenced by
+# AVD id). Table: scripts/airgap/README.md. A new source needs a line here AND an entry in
+# portal/src/lib/trivy-db-sources.ts; check-security-db-provisioning.py (R304) fails on drift.
+#
+# trivy-checks:1 is a VERSIONED line, not a rolling feed: it is the newest bundle major Trivy 0.60.0
+# supports (BundleVersion = 1) and upstream froze it (created 2025-10-09; :2 is for newer Trivy). Its
+# age therefore never improves on refresh; the Portal card shows it as "pinned", not stale. It is also
+# only loaded when trivy.useBuiltinRegoPolicies=true, which is false today (embedded policies are used).
 trivy-db	ghcr.io/aquasecurity/trivy-db:2
 trivy-java-db	ghcr.io/aquasecurity/trivy-java-db:1
 trivy-checks	ghcr.io/aquasecurity/trivy-checks:1

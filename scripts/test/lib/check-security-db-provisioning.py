@@ -12,6 +12,10 @@ the Portal Security/Compliance pages are silently empty. Invariants kept here:
      push-security-db.sh remediation.
   3. The portal's display-only TRIVY_DB_REGISTRY (13-2) equals trivy-operator.yaml's
      dbRegistry/dbRepository, derived from the file, never a second hardcoded copy.
+  4. D-SECDB-SOURCES-SEAM: security-db.txt, the portal's source list (trivy-db-sources.ts) and the
+     Harbor paths trivy-operator.yaml pulls (dbRepository, javaDbRepository, policiesBundle) name the
+     same set of repositories and tags, so a new source cannot be mirrored but invisible in the
+     Portal card, or shown there but never fetched.
 
 `--mutation-verify` proves each invariant fails when broken (on temp copies).
 """
@@ -27,6 +31,9 @@ PUSH = "scripts/airgap/lib/push-security-db.sh"
 REG = "scripts/cluster/08-5-registry.sh"
 BIND = "scripts/cluster/13-2-narwhal-portal-bindings.sh"
 OP = "gitops/charts/narwhal-apps/templates/trivy-operator.yaml"
+LIST = "scripts/airgap/security-db.txt"
+SOURCES = "portal/src/lib/trivy-db-sources.ts"
+FILES = (PUSH, REG, BIND, OP, LIST, SOURCES)
 
 
 def check(root: Path) -> list[str]:
@@ -56,6 +63,29 @@ def check(root: Path) -> list[str]:
     bm = re.search(r'TRIVY_DB_REGISTRY="([^"]*)"', (root / BIND).read_text())
     if not bm or bm.group(1) != want:
         errs.append(f"{BIND}: TRIVY_DB_REGISTRY={bm.group(1) if bm else None!r} must equal {want!r} (trivy-operator.yaml)")
+
+    # name -> "org/repo:tag" from the three places that must agree.
+    listed = {}
+    for line in (root / LIST).read_text().splitlines():
+        if line.strip() and not line.startswith("#"):
+            name, ref = line.split("\t")
+            listed[name] = ref.split("/", 1)[1]
+    ts = (root / SOURCES).read_text()
+    portal = {
+        m[0]: f"{m[1]}:{m[2]}"
+        for m in re.findall(r'name: "([^"]+)", repository: "([^"]+)", tag: "([^"]+)"', ts)
+    }
+    if listed != portal:
+        errs.append(f"{SOURCES}: sources {portal} != {LIST} {listed}")
+    top = yaml.safe_load((root / OP).read_text())["spec"]["source"]["helm"]["valuesObject"]
+    pb = top["policiesBundle"]
+    # Tags are Trivy's business for the two DBs (it appends :2 / :1); only the checks bundle is tagged here.
+    pulled = {vals["dbRepository"], vals["javaDbRepository"], pb["repository"]}
+    mirrored = {f"trivy-db/{ref.rsplit(':', 1)[0]}" for ref in listed.values()}
+    if pulled != mirrored:
+        errs.append(f"{OP}: pulled repositories {sorted(pulled)} != mirrored in {LIST} {sorted(mirrored)}")
+    if listed.get("trivy-checks") != f"{pb['repository'].removeprefix('trivy-db/')}:{pb['tag']}":
+        errs.append(f"{OP}: policiesBundle tag {pb['tag']!r} != {LIST} trivy-checks {listed.get('trivy-checks')!r}")
     return errs
 
 
@@ -74,11 +104,15 @@ def mutation_verify(root: Path) -> int:
         ("tls disabled", PUSH, "skopeo copy ", "skopeo copy --dest-tls-verify=false "),
         ("in-cluster default endpoint", PUSH, "harbor.${DOMAIN}}", "harbor.devtools.svc.cluster.local}"),
         ("no empty-project warning", REG, "repo_count", "repos"),
+        ("source missing from the portal list", SOURCES, 'name: "trivy-java-db", repository: "aquasecurity/trivy-java-db", tag: "1"', 'name: "trivy-java-db-x", repository: "aquasecurity/trivy-java-db", tag: "1"'),
+        ("portal tag drift", SOURCES, 'repository: "aquasecurity/trivy-db", tag: "2"', 'repository: "aquasecurity/trivy-db", tag: "3"'),
+        ("operator pulls an unmirrored repository", OP, "trivy-db/aquasecurity/trivy-java-db", "trivy-db/aquasecurity/trivy-java-db2"),
+        ("operator checks tag drift", OP, 'tag: "1"', 'tag: "2"'),
         ("library/ display path", BIND, "harbor.devtools.svc.cluster.local/trivy-db/aquasecurity/trivy-db", "harbor.${DOMAIN}/library/trivy-db"),
     ]
     with tempfile.TemporaryDirectory() as tmp:
         base = Path(tmp)
-        for rel in (PUSH, REG, BIND, OP):
+        for rel in FILES:
             (base / rel).parent.mkdir(parents=True, exist_ok=True)
             shutil.copy(root / rel, base / rel)
         if check(base):
@@ -87,7 +121,7 @@ def mutation_verify(root: Path) -> int:
         for name, rel, old, new in cases:
             case = Path(tmp) / "case"
             shutil.rmtree(case, ignore_errors=True)
-            for r in (PUSH, REG, BIND, OP):
+            for r in FILES:
                 (case / r).parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy(root / r, case / r)
             mutate(case, rel, old, new)

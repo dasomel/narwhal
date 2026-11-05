@@ -3004,7 +3004,7 @@ the full license text.
 
 </details>
 
-### @next/env@16.4.2
+### @next/env@16.4.3
 
 - License: `MIT`
 - Author: Next.js Team
@@ -33015,7 +33015,7 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 </details>
 
-### next@16.4.2
+### next@16.4.3
 
 - License: `MIT`
 - Homepage: <https://nextjs.org>

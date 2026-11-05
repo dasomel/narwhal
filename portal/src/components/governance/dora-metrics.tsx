@@ -249,18 +249,28 @@ export function DoraMetricsWidget() {
                           {relativeTime(deploy.deployedAt, t)}
                         </TableCell>
                         <TableCell className="py-2 text-right text-xs">
-                          <Badge
-                            variant="outline"
-                            className={`text-[10px] font-semibold px-2 py-0.5 ${
-                              deploy.status === "Succeeded"
-                                ? "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/45 dark:text-emerald-400 dark:border-emerald-800/40"
-                                : deploy.status === "Failed"
-                                ? "bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/45 dark:text-rose-400 dark:border-rose-800/40"
-                                : "bg-muted text-muted-foreground border-border"
-                            }`}
-                          >
-                            {deploy.status}
-                          </Badge>
+                          {deploy.status === "Succeeded" ? (
+                            <Badge
+                              variant="outline"
+                              className="text-[10px] font-semibold px-2 py-0.5 bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/45 dark:text-emerald-400 dark:border-emerald-800/40"
+                            >
+                              {deploy.status}
+                            </Badge>
+                          ) : deploy.status === "Failed" ? (
+                            <Badge
+                              variant="outline"
+                              className="text-[10px] font-semibold px-2 py-0.5 bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/45 dark:text-rose-400 dark:border-rose-800/40"
+                            >
+                              {deploy.status}
+                            </Badge>
+                          ) : (
+                            <span
+                              className="text-muted-foreground cursor-help"
+                              title={t("dora.statusUnknownHint")}
+                            >
+                              —
+                            </span>
+                          )}
                         </TableCell>
                       </TableRow>
                     ))}

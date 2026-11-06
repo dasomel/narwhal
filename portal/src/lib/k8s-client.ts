@@ -547,9 +547,10 @@ export interface NamespaceResourceUsage {
 // (PUT .../status), so the other conditions survive and a stale resourceVersion
 // yields 409 instead of a clobber. Never PATCH spec.renewBefore: the webhook
 // rejects <5m, it would not trigger renewal, and GitOps selfHeal reverts spec drift.
-// Cost: ClusterRole narwhal-portal gets `update` on certificates/status (cluster-wide,
-// as the portal lists certificates cluster-wide). Escape hatch: drop that rule; the
-// route then answers 403 and renewal falls back to `cmctl renew`.
+// Cost (D-CERT-RENEW-NS, #562): `update` on certificates/status is a namespaced Role +
+// RoleBinding in each namespace holding Certificates (devtools, platform-system, storage),
+// not cluster-wide; a Certificate in another namespace renews 403 until a Role is added there.
+// Escape hatch: drop the Roles; the route then answers 403 and renewal falls back to `cmctl renew`.
 // Failures propagate as K8sHttpError (status preserved) for the route to map.
 interface RenewableCertificate {
   metadata: { generation?: number }

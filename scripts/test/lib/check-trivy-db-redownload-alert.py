@@ -37,6 +37,7 @@ def static(root):
     expr = ' '.join(rule['expr'].split())
     assert 'container_fs_writes_bytes_total{namespace="security-system",container="trivy-server"}[3h]' in expr, expr
     assert expr.endswith('> 6e9'), expr
+    assert expr.startswith('max by (pod) (increase('), 'per-device series must not be summed: ' + expr
     assert rule['labels']['severity'] == 'warning' and rule['for'] == '10m'
     docs = (root / FILES[1]).read_text()
     assert docs.count(HEADING + '\n') == 1, 'runbook heading'
@@ -55,23 +56,28 @@ def behavior(rule):
         print('SKIP: promtool unavailable; R316 behavior cases not run')
         return
 
-    def series(pod, downloads_at_min, minutes=360):
+    def series(pod, downloads_at_min, minutes=360, device='/dev/dm-0'):
         vals, total = [], 0
         for m in range(minutes):
             if m in downloads_at_min:
                 total += DOWNLOAD
             vals.append(str(total))
         return {'series': 'container_fs_writes_bytes_total{namespace="security-system",'
-                          f'container="trivy-server",pod="{pod}"}}', 'values': ' '.join(vals)}
+                          f'container="trivy-server",pod="{pod}",device="{device}"}}', 'values': ' '.join(vals)}
 
     def case(name, s, firing):
         exp = [{'exp_labels': {'pod': 'trivy-server-0', 'severity': 'warning'}}] if firing else []
-        return {'name': name, 'interval': '1m', 'input_series': [s],
+        return {'name': name, 'interval': '1m', 'input_series': s if isinstance(s, list) else [s],
                 'alert_rule_test': [{'eval_time': '5h', 'alertname': ALERT, 'exp_alerts': exp}]}
 
     cases = [
         case('stale mirror: hourly download', series('trivy-server-0', set(range(5, 360, 60))), True),
         case('healthy: one download at start', series('trivy-server-0', {5}), False),
+        # live cAdvisor exposes the same counter for dm-0 and the nvme0n1 under it
+        case('healthy: one download, two device series', [series('trivy-server-0', {5}),
+             series('trivy-server-0', {5}, device='/dev/nvme0n1')], False),
+        case('stale mirror, two device series', [series('trivy-server-0', set(range(5, 360, 60))),
+             series('trivy-server-0', set(range(5, 360, 60)), device='/dev/nvme0n1')], True),
         case('idle scans, nothing written', series('trivy-server-0', set()), False),
     ]
     with tempfile.TemporaryDirectory() as tmp:
@@ -90,6 +96,7 @@ def check(root):
 
 
 MUTATIONS = [
+    ('max by (pod) -> sum by (pod)', FILES[0], 'max by (pod) (increase(', 'sum by (pod) (increase('),
     ('threshold 6e9 -> 60e9', FILES[0], '[3h])) > 6e9', '[3h])) > 60e9'),
     ('window 3h -> 5m', FILES[0], 'container="trivy-server"}[3h]', 'container="trivy-server"}[5m]'),
     ('container selector dropped', FILES[0], ',container="trivy-server"}[3h]', '}[3h]'),

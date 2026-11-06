@@ -390,11 +390,13 @@ spec:
     # Cost: fires after the second wasted download, not before the first; an undercount when a
     # container restart hides the first sample. Escape hatch: tune 6e9/3h with the download size,
     # or remove the group; the fix is the refresh procedure in scripts/airgap/README.md.
+    # cAdvisor reports the same writes once per block device (the LVM dm-0 and the nvme0n1
+    # under it), so `max by (pod)` collapses them; `sum` would double one ~3.9e9 download past 6e9.
     - name: security-db
       rules:
         - alert: TrivyServerDbRedownloading
           expr: |
-            sum by (pod) (increase(container_fs_writes_bytes_total{namespace="security-system",container="trivy-server"}[3h])) > 6e9
+            max by (pod) (increase(container_fs_writes_bytes_total{namespace="security-system",container="trivy-server"}[3h])) > 6e9
           for: 10m
           labels:
             severity: warning

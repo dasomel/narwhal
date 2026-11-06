@@ -1,0 +1,59 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-kyverno-policies-ignorediff-20261106",
+  "task": "Issue #571: the kyverno-policies Argo CD Application ignored whole rule bodies, annotations and validationFailureAction, so real policy edits never auto-synced. Narrow ignoreDifferences to the fields Kyverno defaults.",
+  "changeContext": {
+    "paths": [
+      ".agents/evals/traces/2026-11-kyverno-policies-ignorediff.json",
+      "docs/common/lessons-log.md",
+      "gitops/charts/narwhal-apps/templates/kyverno-policies.yaml",
+      "gitops/resources/kyverno-policies.yaml",
+      "scripts/test/lib/check-kyverno-ignorediff.py",
+      "scripts/test/regression-check-kakao.sh"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Change only the kyverno-policies Application ignoreDifferences and one explicit validationFailureAction in resources/kyverno-policies.yaml. Deliberately left alone: the same broad list in headlamp-policy and narwhal-platform templates, the global argocd-cm kyverno entry, policy content, live cluster (read-only get and server-side dry-run diff only), Gitea."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "Live Application kyverno-policies carried 14 ignore paths (whole rule match/exclude/validate/mutate/generate/verifyImages, validationFailureAction, background, failurePolicy, metadata annotations and labels). Autogen rules are in .status.autogen on Kyverno 1.18, not in spec. kubectl diff --server-side of the repo manifest against the 10 live policies differed only in the argocd tracking-id annotation; a field walk found only Kyverno defaults plus an implicit validationFailureAction Audit on add-default-securitycontext.",
+      "evidence": [
+        "repo:gitops/charts/narwhal-apps/templates/kyverno-policies.yaml",
+        "repo:gitops/resources/kyverno-policies.yaml"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "D-KYV-IGNORE-NARROW: ignore list reduced to admission, emitWarning, rules[].skipBackgroundRequests, validate.allowExistingViolations, verifyImages useCache and signatureAlgorithm; add-default-securitycontext sets validationFailureAction Audit explicitly."
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "Static model of Argo diff (R312): defaults give no diff, annotation/rule/match/background/validationFailureAction edits stay visible, 10 mutations caught; kubectl diff --server-side shows no spec change against live. NOT covered: Argo CD reporting Synced after deployment, a sync loop check on the live controller.",
+      "evidence": [
+        "test:python3 scripts/test/lib/check-kyverno-ignorediff.py --mutation-verify -> kyverno-policies ignoreDifferences ok",
+        "test:make test -> R312 pass",
+        "repo:scripts/test/lib/check-kyverno-ignorediff.py"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "completion_claim",
+      "summary": "In the repository the Application ignores only Kyverno-defaulted fields, pinned by R312. Not deployed: needs push-to-gitea, and the live Application still has the old list until then."
+    },
+    {
+      "id": "e6",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Complete for the repository scope; headlamp-policy and narwhal-platform still carry the broad list (follow-up)."
+    }
+  ]
+}

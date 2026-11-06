@@ -1,0 +1,59 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-loki-canary-disabled-20261106",
+  "task": "Issue #587: loki-canary DaemonSet runs on every node although loki.yaml sets lokiCanary.enabled: false. Find correct key in chart 18.4.0 (top-level lokiCanary.enabled: false), ensure canary is removed and nothing depends on it, pin with R315.",
+  "changeContext": {
+    "paths": [
+      ".agents/evals/traces/2026-11-loki-canary-disabled.json",
+      "docs/common/lessons-log.md",
+      "gitops/charts/narwhal-apps/templates/loki.yaml",
+      "scripts/cluster/08-2-monitoring.sh",
+      "scripts/test/lib/check-loki-canary-disabled.py",
+      "scripts/test/regression-check-kakao.sh"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Change only lokiCanary.enabled configuration in loki.yaml and 08-2-monitoring.sh to top-level, add regression check R315 with mutation verify, lessons-log row, and trace. Deliberately left alone: other monitoring components (prometheus, tempo, alloy), anti-affinity selectors (already scoped by component=single-binary), images.txt (retaining bundle pin), live cluster (read-only)."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "Chart 18.4.0 (grafana-community/loki) controls canary via top-level lokiCanary.enabled, while loki.yaml and 08-2-monitoring.sh nested it under monitoring.lokiCanary.enabled. helm template with as-is values renders kind: DaemonSet test-loki-canary on every node due to chart default enabled: true.",
+      "evidence": [
+        "repo:gitops/charts/narwhal-apps/templates/loki.yaml",
+        "repo:scripts/cluster/08-2-monitoring.sh"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "D-LOKI-CANARY-DISABLE: moved lokiCanary.enabled: false to top-level valuesObject in loki.yaml and 08-2-monitoring.sh, removing invalid monitoring: block. Verified no alerts or dashboards reference loki-canary, and PR #586 anti-affinity explicitly targets component=single-binary."
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "Static: R315 parses loki.yaml and 08-2-monitoring.sh; 6 mutations (nested under monitoring, enabled true, omitted in both files) are caught; helm template with chart 18.4.0 confirms zero canary DaemonSet, Service, or ServiceAccount rendered; full make validate/test.",
+      "evidence": [
+        "test:python3 scripts/test/lib/check-loki-canary-disabled.py --mutation-verify -> PASS: 6 mutations rejected",
+        "test:make test -> R315 pass",
+        "repo:scripts/test/lib/check-loki-canary-disabled.py"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "completion_claim",
+      "summary": "In the repository loki.yaml and 08-2-monitoring.sh properly disable lokiCanary at the top level, helm template confirms all canary resources disappear, and R315 pins the contract with 6 mutation tests. Live DaemonSet pruning requires push-to-gitea and ArgoCD sync."
+    },
+    {
+      "id": "e6",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Complete for repository scope; verified with helm template and static regression suite R315."
+    }
+  ]
+}

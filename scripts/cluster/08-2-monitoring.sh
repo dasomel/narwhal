@@ -122,9 +122,9 @@ chunksCache:
   enabled: false
 resultsCache:
   enabled: false
-monitoring:
-  lokiCanary:
-    enabled: false
+# D-LOKI-CANARY-DISABLE: top-level key in chart 18.4.0 (not under monitoring)
+lokiCanary:
+  enabled: false
 test:
   enabled: false
 LOKIVALUES

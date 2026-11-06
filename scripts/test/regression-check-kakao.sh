@@ -3361,6 +3361,9 @@ PYEOF'
   # 2026-11-06: node OOM during a Velero backup killed BestEffort weed (filer) and failed every PVB.
   check R310 "backup storage path survives node memory pressure: seaweedfs master/volume/filer/s3 have cpu+memory requests and a memory limit (Burstable), velero-node-agent-config keeps podLabels and sets loadConcurrency.globalConfig=1 and podResources (D-sw-qos, D-datapath-qos)" \
     python3 scripts/test/lib/check-backup-path-qos.py
+  # 2026-11-06: prometheus, tempo and loki all landed on worker-3 (~5.3GiB allocatable); the kernel OOM killer took prometheus-0 16 times in ~3h, BestEffort loki before it.
+  check R311 "loki and its loki-sc-rules sidecar have cpu+memory requests and a memory limit (Burstable); prometheus, tempo and loki carry preferred (not required) hostname pod anti-affinity against the other two, the loki term scoped by component so loki-canary does not match, chart soft podAntiAffinity disabled for prometheus; 7 mutations caught (D-MON-QOS-LOKI, D-MON-SPREAD)" \
+    python3 scripts/test/lib/check-monitoring-spread.py --mutation-verify
 }
 
 #=========================================

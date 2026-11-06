@@ -52,6 +52,49 @@ spec:
                 memory: 1Gi
               limits:
                 memory: 2Gi
+            # D-MON-SPREAD: prometheus, loki and tempo each carry the same preferred (never required)
+            # pod anti-affinity against the other two (one term each: name=prometheus,
+            # name=loki + component=single-binary, name=tempo; the loki-canary DaemonSet also carries
+            # name=loki, so a bare name=loki term would repel every node), topologyKey
+            # kubernetes.io/hostname, so the scheduler prefers three different workers. 2026-11-06 all
+            # three landed on worker-3 (~5.3GiB allocatable) and the kernel OOM killer took prometheus-0 16
+            # times in ~3h. Preferred, not required: with fewer fit nodes they still schedule. Cost: none
+            # at steady state. It only applies when a pod is (re)scheduled, so a running pod stays until
+            # it is deleted. Escape hatch: delete this block.
+            # The chart's own `podAntiAffinity: soft` only matches prometheus replicas, and it
+            # renders a second podAntiAffinity key next to `affinity`, so it is disabled and the
+            # whole rule lives under `affinity`.
+            podAntiAffinity: ""
+            affinity:
+              podAntiAffinity:
+                preferredDuringSchedulingIgnoredDuringExecution:
+                  - weight: 100
+                    podAffinityTerm:
+                      topologyKey: kubernetes.io/hostname
+                      labelSelector:
+                        matchExpressions:
+                          - key: app.kubernetes.io/name
+                            operator: In
+                            values: [prometheus]
+                  - weight: 100
+                    podAffinityTerm:
+                      topologyKey: kubernetes.io/hostname
+                      labelSelector:
+                        matchExpressions:
+                          - key: app.kubernetes.io/name
+                            operator: In
+                            values: [loki]
+                          - key: app.kubernetes.io/component
+                            operator: In
+                            values: [single-binary]
+                  - weight: 100
+                    podAffinityTerm:
+                      topologyKey: kubernetes.io/hostname
+                      labelSelector:
+                        matchExpressions:
+                          - key: app.kubernetes.io/name
+                            operator: In
+                            values: [tempo]
             # Discover all PrometheusRules regardless of release label
             ruleSelector: {}
             ruleNamespaceSelector: {}

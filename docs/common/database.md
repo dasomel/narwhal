@@ -24,6 +24,9 @@ Narwhal 프로젝트는 CloudNative-PG Operator를 사용하여 단일 통합 Po
 - Primary 장애 시 Replica가 자동으로 Primary로 승격
 - CNPG Operator가 etcd 스타일 리더 선출 관리
 - WAL 스트리밍 복제로 데이터 동기화
+- 인스턴스 2개는 `affinity.podAntiAffinityType: required` (topologyKey `kubernetes.io/hostname`)로 서로 다른 워커에만 스케줄된다 (D-CNPG-AA-REQUIRED, #564). 같은 노드 공존으로 노드 장애/드레인 때 DB 전체가 멈추고 WAL 아카이빙이 막히던 문제를 막는다.
+  - 비용: 워커 1대 드레인 시 쫓겨난 파드는 나머지 워커 중 상대 인스턴스가 없는 노드(3대 중 1대)로만 갈 수 있다. 그 노드에 requests 여유가 없거나 워커가 2대 이상 내려가 있으면 파드는 Pending으로 남는다(단일 인스턴스, HA 없음). 한 노드에 몰아넣지 않는 것이 의도된 동작이며, 용량 확보 또는 uncordon으로 해소한다.
+  - 롤아웃: 기존 파드는 즉시 쫓겨나지 않는다. 스펙 변경 시 CNPG가 replica를 먼저, primary를 마지막에 롤링 재시작한다(`primaryUpdateMethod: restart`, 제자리 재시작). 되돌리기: 값을 `preferred`로 변경.
 
 ## 데이터베이스 목록
 

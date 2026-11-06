@@ -29,6 +29,16 @@ spec:
         # existing data must be chowned first: scripts/cluster/nfs-root-squash-align.sh.
         # Logs move from root-owned hostPath to emptyDir (fsGroup applies there; hostPath is
         # root:root 0755 and unwritable by uid 1000). Escape hatch: revert this block.
+        # D-sw-qos (2026-11-06): all four components had `resources: {}` = BestEffort
+        # (oom_score_adj 1000), so a node-level OOM during a Velero backup killed weed
+        # (filer, 4 restarts) before anything else, S3 returned 500 and every PVB failed. Requests
+        # (about 2x observed idle: filer 93Mi, master 26Mi, volume 30Mi, s3 41Mi) make them
+        # Burstable; the memory limit is a ceiling several times idle so upload spikes do not OOM
+        # the pod itself (filer/s3 spike during uploads). No cpu limit (throttling stalls S3).
+        # Cost: ~0.4Gi of requested memory on a 5.3GiB-allocatable worker; the volume server is
+        # pinned (D-sw-pin) so its node carries its request. Escape hatch: revert the `resources`
+        # blocks (back to BestEffort). Keys verified against chart 4.34.0 values.yaml
+        # (master/volume/filer/s3 `resources`).
         master:
           enabled: true
           replicas: 1
@@ -51,6 +61,12 @@ spec:
             type: persistentVolumeClaim
             size: 1Gi
             storageClass: nfs-csi
+          resources:
+            requests:
+              cpu: 25m
+              memory: 64Mi
+            limits:
+              memory: 256Mi
           containerSecurityContext:
             enabled: true
             allowPrivilegeEscalation: false
@@ -75,6 +91,12 @@ spec:
             type: persistentVolumeClaim
             size: 50Gi
             storageClass: nfs-csi
+          resources:
+            requests:
+              cpu: 25m
+              memory: 64Mi
+            limits:
+              memory: 512Mi
           containerSecurityContext:
             enabled: true
             allowPrivilegeEscalation: false
@@ -104,6 +126,12 @@ spec:
           # file below. Nothing uses it (every client targets seaweedfs-s3:8333 = the s3 Deployment).
           s3:
             enabled: false
+          resources:
+            requests:
+              cpu: 50m
+              memory: 192Mi
+            limits:
+              memory: 1Gi
           containerSecurityContext:
             enabled: true
             allowPrivilegeEscalation: false
@@ -129,6 +157,12 @@ spec:
           # remove this and the ignoreDifferences entry below.
           podAnnotations:
             narwhal.io/s3-config-source: seaweedfs-s3-config
+          resources:
+            requests:
+              cpu: 25m
+              memory: 96Mi
+            limits:
+              memory: 512Mi
           containerSecurityContext:
             enabled: true
             allowPrivilegeEscalation: false

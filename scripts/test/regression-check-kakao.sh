@@ -3358,6 +3358,9 @@ PYEOF'
   # 2026-11-06: sparse linked-clone vmdks never shrink (worker-3 298G on disk, 43G used); recreating a worker is the only reclaim.
   check R309 "VM disk growth guards: NodeDiskWriteRateHigh (>20 GB/day over 6h, workers only, runbook anchor; promtool cases), check-vm-disk.sh gap/abs/free thresholds and --strict, warn-only up.sh hook, runbook order data-check -> drain -> destroy; 10 mutations caught (D-VM-DISK-GUARD)" \
     python3 scripts/test/lib/check-vm-disk-guards.py --mutation-verify
+  # 2026-11-06: node OOM during a Velero backup killed BestEffort weed (filer) and failed every PVB.
+  check R310 "backup storage path survives node memory pressure: seaweedfs master/volume/filer/s3 have cpu+memory requests and a memory limit (Burstable), velero-node-agent-config keeps podLabels and sets loadConcurrency.globalConfig=1 and podResources (D-sw-qos, D-datapath-qos)" \
+    python3 scripts/test/lib/check-backup-path-qos.py
 }
 
 #=========================================

@@ -43,12 +43,10 @@ English | [한국어](CHANGELOG-ko.md)
   Falco there. Checked in a local Docker lab (real Falco, falcosidekick and Alertmanager), not on a
   cluster: the chart tarball, two images and the GitOps push must still reach a cluster, and Falco on
   the Ubuntu 26.04 / kernel 7.0 Vagrant box and on the Kubernetes CRI path has not been observed.
-- **Portal is pinned to `narwhal-portal:1.1.7` (was 1.1.0; 1.1.1 to 1.1.6 were pinned in between by
-  #467, #477, #481, #502, #520 and #561).** 1.1.7 preserves DORA lead time minute precision (#566),
-  lists every mirrored security data source on the Trivy DB status card with trivy-checks shown as pinned
-  (#570), ships the Pretendard font OFL license in the portal image (#572), and bumps
-  `@opentelemetry/semantic-conventions` to 1.44.0 (#538); all carry the 1.1.6 and earlier fixes. The
-  image is Cosign-signed with the repository key (index digest `sha256:cccdbddb…`). Mirror it to a
+- **Portal is pinned to `narwhal-portal:1.1.8` (was 1.1.0; 1.1.1 to 1.1.7 were pinned in between by
+  #467, #477, #481, #502, #520, #561 and #580).** 1.1.8 shows "—" instead of "Unknown" in the DORA
+  history rows (#581) and bumps Next.js to 16.4.3 (#486); all carry the 1.1.7 and earlier fixes. The
+  image is Cosign-signed with the repository key (index digest `sha256:500c334e…`). Mirror it to a
   cluster bastion by digest before the pin goes live there (`scripts/airgap/README.md`, "Mirror a pin
   bump"); the local Vagrant cluster pulls from ghcr.io directly.
 

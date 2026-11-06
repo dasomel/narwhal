@@ -22,6 +22,16 @@ spec:
         targetNamespaces: ""
         excludeNamespaces: "kube-system,kube-public,kube-node-lease,trivy-system,istio-system"
         trivyOperator:
+          # D-SCAN-SKIP-VELERO-EPHEMERAL (2026-11-06): Velero creates short-lived workloads with
+          # unique names, and the operator treats each one as a new workload and scans the velero
+          # image again: a kopia maintenance Job per repository about every 5 min
+          # (`velero.io/repo-name`, 23 scan Jobs in 24h) and a velero-data-mover Pod per
+          # PodVolumeBackup/Restore (`velero.io/pod-volume-backup`, `velero.io/pod-volume-restore`,
+          # container named by a UUID; ~10 scan Jobs in 24h, 2-4 GiB of writes each). The same
+          # image is still scanned through the velero Deployment and the node-agent DaemonSet,
+          # so no deployed image loses coverage. Only resources carrying one of these label keys
+          # are skipped. Escape hatch: delete the line.
+          skipResourceByLabels: velero.io/repo-name,velero.io/pod-volume-backup,velero.io/pod-volume-restore
           scanJobPodTemplatePodSecurityContext:
             runAsNonRoot: true
             runAsUser: 10000
@@ -47,9 +57,16 @@ spec:
         # Escape hatch: builtInTrivyServer=false, mode=Standalone.
         trivy:
           mode: ClientServer
-          # emptyDir, not the default nfs-csi PVC: the DB is a re-downloadable cache
-          # (one pull from Harbor per server restart) and must not be Velero-backed up.
-          storageClassEnabled: false
+          # D-TRIVY-SERVER-CACHE-PVC (2026-11-06): the emptyDir of D-TRIVY-SERVER made every
+          # trivy-server restart re-download the DB (two restarts in ~1h while Harbor was still
+          # starting = ~7 GiB of container writes in 3h). A nfs-csi PVC keeps the DB across
+          # restarts. It stays a cache, so Velero must not back it up (the pod annotation under
+          # operator.serverAdditionalAnnotations; the schedules use defaultVolumesToFsBackup).
+          # Escape hatch: storageClassEnabled=false. The StatefulSet volumeClaimTemplates field
+          # is immutable, so flipping this needs `kubectl delete sts trivy-server` (cache only).
+          storageClassEnabled: true
+          storageClassName: nfs-csi
+          storageSize: 5Gi
           server:
             resources:
               requests:
@@ -94,6 +111,15 @@ spec:
           # node CPU (combined with 300m scan cap = ~600m peak
           # vs 1500m before) to protect co-located workloads
           scanJobTimeout: 10m
+          # D-SCAN-RETRY (2026-11-06): chart default scanJobsRetryDelay=30s retries a failed scan
+          # Job every 30s. Failures here are not transient on that scale: docker.io images hit the
+          # anonymous Hub rate limit (TOOMANYREQUESTS/UNAUTHORIZED, per-IP 6h window) and Harbor
+          # 502s at startup. A scan Job has one container per workload image, so every retry also
+          # re-pulls and re-writes the layers of the siblings that succeeded (loki + loki-sc-rules,
+          # grafana + 2 sidecars) and burns more of the Hub quota. 6h matches the Hub window; a
+          # missing report is delayed at most 6h, well inside scannerReportTTL (168h).
+          # Escape hatch: delete the line (30s default).
+          scanJobsRetryDelay: 6h
           # 자동 스캔 활성
           vulnerabilityScannerEnabled: true
           # Compliance scanners ENABLED (사용자 결정 2026-07-08): feed the portal
@@ -117,6 +143,9 @@ spec:
           # is mirrored via Harbor (airgap) so it rarely changes faster than that. Escape hatch: set
           # back to 24h. Reports are still regenerated on any workload revision change.
           scannerReportTTL: 168h
+          # The trivy-server pod is a cache: keep Velero fs-backup off its PVC (see trivy.storageClassEnabled).
+          serverAdditionalAnnotations:
+            backup.velero.io/backup-volumes-excludes: data
         # D-TRIVY-OPERATOR-MEM: the operator ran BestEffort (no requests/limits) and was
         # OOMKilled 33x/22h under node memory pressure (workers 5.4GB, 53-71% used). The
         # chart reads the TOP-LEVEL `resources` (templates/deployment.yaml); the old

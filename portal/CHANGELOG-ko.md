@@ -9,6 +9,24 @@
 
 ## [Unreleased]
 
+## [1.1.8] - 2026-11-06
+
+패치 릴리스. Argo CD가 phase를 기록하지 않은 DORA 최근 배포 행을 "Unknown" 뱃지 대신 대시로 표시하고,
+`next`를 16.4.3으로 올림. `portal/v1.1.7` 이후 `portal/`의 그 밖의 변경은 1.1.7 핀(#580)에 맞춰 다시 생성한
+OSS 버전 스냅샷과, 이제 gitops에 있는 네임스페이스 단위 인증서 갱신 RBAC를 설명하도록 고친
+`portal/src/lib/k8s-client.ts`의 주석(#592)뿐임.
+
+### 수정
+
+- **거버넌스: DORA 이력 행이 "Unknown"으로 표시됨 (narwhal#581)**: Argo CD는 최근 작업의 결과만
+  `status.operationState.phase`에 기록하고 이전 `status.history` 항목에는 상태 필드가 없어, 최근 배포 표가
+  실제 상태처럼 보이는 "Unknown" 뱃지를 표시했음. 이제 해당 행은 Argo CD 필드 제약을 설명하는 툴팁(KO/EN)과
+  함께 "—"로 표시하며, Succeeded와 Failed는 기존 뱃지를 유지함.
+
+### 변경
+
+- `next`를 16.4.2에서 16.4.3으로 올림 (next-react 그룹, narwhal#486).
+
 ## [1.1.7] - 2026-11-05
 
 패치 릴리스. DORA 리드타임에 분 단위 정밀도를 표시하고, Trivy DB 상태 카드에 미러링된 모든 보안
@@ -617,7 +635,8 @@ Portal의 첫 번째 공개 릴리스.
     매니페스트(`deploy/kaniko-build-job.yaml`).
   - 실시간 핫 모듈 교체(HMR) 및 컨테이너 파일 동기화를 위해 구성된 Skaffold 개발 프로필.
 
-[Unreleased]: https://github.com/dasomel/narwhal/compare/portal/v1.1.7...HEAD
+[Unreleased]: https://github.com/dasomel/narwhal/compare/portal/v1.1.8...HEAD
+[1.1.8]: https://github.com/dasomel/narwhal/compare/portal/v1.1.7...portal/v1.1.8
 [1.1.7]: https://github.com/dasomel/narwhal/compare/portal/v1.1.6...portal/v1.1.7
 [1.1.6]: https://github.com/dasomel/narwhal/compare/portal/v1.1.5...portal/v1.1.6
 [1.1.5]: https://github.com/dasomel/narwhal/compare/portal/v1.1.4...portal/v1.1.5

@@ -380,3 +380,30 @@ spec:
             summary: "Velero 메트릭 수집 불가"
             description: "ServiceMonitor 선택, 8085 NetworkPolicy와 mTLS 예외 정책, Prometheus target을 확인하세요. 백업 알림의 신뢰성이 저하되었습니다."
             runbook_url: https://github.com/dasomel/narwhal/blob/main/docs/common/storage-protection-policy.md#velero-backup-alerts
+
+    # D-SECDB-STALE (#585): once the Harbor mirror's trivy-db:2 passes its NextUpdate, trivy-server
+    # re-downloads the same DB every hour (2026-11-06: 3.67 GiB of container writes per download in
+    # cAdvisor, 38 GiB/day to the NFS server). No exporter publishes the mirror age or the DB
+    # NextUpdate (live Prometheus has no trivy_* series; the Portal's Trivy DB card reads Harbor
+    # directly), so the repeated download itself is the signal: scans write ~0 to this container,
+    # a healthy refresh or restart is one download, two within 3h means the mirror is stale.
+    # Cost: fires after the second wasted download, not before the first; an undercount when a
+    # container restart hides the first sample. Escape hatch: tune 6e9/3h with the download size,
+    # or remove the group; the fix is the refresh procedure in scripts/airgap/README.md.
+    # cAdvisor reports the same writes once per block device (the LVM dm-0 and the nvme0n1
+    # under it), so `max by (pod)` collapses them; `sum` would double one ~3.9e9 download past 6e9.
+    - name: security-db
+      rules:
+        - alert: TrivyServerDbRedownloading
+          expr: |
+            max by (pod) (increase(container_fs_writes_bytes_total{namespace="security-system",container="trivy-server"}[3h])) > 6e9
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "trivy-server가 취약점 DB를 반복 다운로드 중: {{ $labels.pod }}"
+            description: >-
+              최근 3시간 동안 {{ $labels.pod }}의 컨테이너 쓰기가 {{ $value | humanize1024 }}B입니다(DB 1회 다운로드 약 3.7GiB).
+              Harbor 미러의 trivy-db:2가 NextUpdate를 넘겨 같은 DB를 매시간 받고 있을 가능성이 큽니다.
+              Portal 보안 페이지의 Trivy DB 상태 카드로 미러 나이를 확인하고 fetch, promote, push로 미러를 갱신하세요.
+            runbook_url: https://github.com/dasomel/narwhal/blob/main/scripts/airgap/README.md#보안-db-갱신-절차와-낡은-미러-경보-d-secdb-stale

@@ -968,6 +968,37 @@ vagrant box list | grep ubuntu-26.04-xfs
 
 ---
 
+## 12. VM 디스크 증가와 회수 (D-VM-DISK-GUARD)
+
+### 왜 줄지 않는가
+
+각 VM 디스크는 성장형 sparse linked clone이다. 게스트가 한 번이라도 쓴 블록은 호스트에 계속 할당된 채 남는다. NVMe 가상 디스크는 discard(`DISC-GRAN 0`)를 받지 않아 `fstrim`이 호스트 블록을 풀지 못하고, linked clone은 `vmware-toolbox-cmd disk shrink`가 비활성이라 줄일 수 없다. 빈 공간을 0으로 채우는 방법도 0 블록이 그대로 할당되어 오히려 커진다(6GiB를 쓰자 호스트 디렉터리가 2.6GiB 늘었음). 그래서 게스트 `df`가 43G인데 호스트 vmdk가 298G가 될 수 있다(worker-3, 2026-11-05).
+
+커지는 속도는 쓰기 총량이 아니라 **새로 할당되는 블록**이 정한다. 2026-11-06 측정에서 control-plane은 하루 27~54GB(etcd WAL + master-1의 NFS 쓰기)를 쓰지만 같은 블록을 덮어써 vmdk가 9~25G에 머물렀고, worker-2는 평소 하루 약 11GB인데 스캔/재스케줄 폭주 한 시간에 44GB를 써서 35G에서 82G로 커졌다.
+
+### 조기 발견
+
+- 호스트: `scripts/ops/check-vm-disk.sh`가 VM별 호스트 vmdk 디렉터리 크기와 게스트 `df` 사용량을 비교한다. 차이가 30GB 이상이거나 vmdk가 120GB 이상이면, 또는 호스트 여유 공간이 40GB 미만이면 `[WARN]`을 낸다(`VM_DISK_WARN_GAP_GB`, `VM_DISK_WARN_ABS_GB`, `VM_DISK_MIN_FREE_GB`로 조정, `--strict`면 종료 코드 1). `scripts/up.sh`가 시작할 때 경고 전용으로 실행한다.
+- 클러스터: 워커의 6시간 평균 디스크 쓰기가 하루 20GB를 넘으면 `NodeDiskWriteRateHigh`가 울린다. 쓰기 주체는 `topk(15, sum by (namespace,pod,container) (rate(container_fs_writes_bytes_total[1h])))`로 찾는다.
+
+### 회수 절차: 워커를 재생성한다
+
+vmdk를 줄이는 방법은 없고, 노드를 지우고 다시 만드는 것이 유일한 회수 경로다. 한 번에 한 노드씩, 이 순서를 지킨다.
+
+1. **노드 로컬 데이터 확인.** 재생성하면 노드 디스크의 모든 것이 사라진다. NFS PV는 master-1에 있어 영향이 없지만 아래는 노드에만 있다.
+
+   ```bash
+   kubectl get nodes -l narwhal.io/seaweedfs-volume=true      # SeaweedFS 볼륨 서버(hostPath /ssd/object_store, Velero 백업 저장소)
+   kubectl get pods -A -o wide --field-selector spec.nodeName=<node>   # emptyDir와 hostPath를 쓰는 pod 확인
+   ```
+
+   `narwhal.io/seaweedfs-volume=true` 라벨이 붙은 노드는 `/ssd/object_store`를 먼저 다른 곳에 복사하고 재생성 뒤에 되돌려야 한다. 이 라벨은 08-4가 한 번만 붙이고 옮기지 않는다(D-sw-pin). 복사 없이 재생성하면 Velero 저장소가 사라진다.
+2. **drain.** `kubectl cordon <node>` 후 `kubectl drain <node> --ignore-daemonsets --delete-emptydir-data`. CNPG 인스턴스와 etcd 정족수(master)에 영향이 없는지 먼저 본다. 마스터는 이 절차 대상이 아니다.
+3. **삭제와 재생성.** `vagrant destroy -f <vm>` 다음 `./scripts/up.sh`(맨 `vagrant up`은 Phase 2 경로가 아니다). 새 노드는 새 linked clone이므로 크기가 처음으로 돌아간다.
+4. **확인.** `kubectl get nodes`가 모두 Ready이고 cordon이 없으며, `scripts/ops/check-vm-disk.sh`에 경고가 없고, 1단계에서 복사한 데이터를 되돌렸는지 확인한다. 노드가 새로 만들어진 직후 한동안은 이미지 pull과 스캔 폭주로 쓰기가 크므로 `NodeDiskWriteRateHigh`가 잠시 울릴 수 있다.
+
+---
+
 ## 관련 문서
 
 - [architecture.md](../common/architecture.md) - 아키텍처 개요

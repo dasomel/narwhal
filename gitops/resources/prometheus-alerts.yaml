@@ -102,6 +102,27 @@ spec:
             summary: "노드 루트 디스크 사용률 높음: {{ $labels.instance }}"
             description: "인스턴스 {{ $labels.instance }}의 루트 파일시스템 사용률이 10분 이상 85%를 초과합니다. 현재값: {{ $value | humanize }}%"
 
+        # D-VM-DISK-WRITE-RATE: Vagrant/VMware VM disks are sparse linked clones that never shrink, so a
+        # sustained write rate is what grows the host vmdk while guest `df` stays flat (worker-3: 298G
+        # on disk, 43G used). Measured 2026-11-06: worker steady median 8-27 GB/day, bursts (scan waves,
+        # reschedules after a drain) 40-140 GB/h; control planes write 27-54 GB/day (etcd WAL + NFS)
+        # but overwrite in place and their vmdks stayed 9-25G, so they are excluded to keep this
+        # signal meaningful. 20 GB/day averaged over 6h fires on a real burst, not on the baseline.
+        - alert: NodeDiskWriteRateHigh
+          expr: |
+            sum by (instance) (rate(node_disk_written_bytes_total{device=~"nvme[0-9]+n[0-9]+|sd[a-z]+|vd[a-z]+"}[6h])) * 86400 > 20e9
+            unless on (instance) node_uname_info{nodename=~".*master.*"}
+          for: 30m
+          labels:
+            severity: warning
+          annotations:
+            summary: "노드 디스크 쓰기량 과다: {{ $labels.instance }}"
+            description: >-
+              인스턴스 {{ $labels.instance }}의 6시간 평균 디스크 쓰기가 하루 20GB를 넘는 속도입니다(현재 {{ $value | humanize1024 }}B/일).
+              sparse linked-clone vmdk는 한 번 커지면 줄지 않으므로 container_fs_writes_bytes_total을 pod별로 확인해
+              쓰기 주체(Trivy 스캔 Job, 이미지 pull 등)를 찾으세요.
+            runbook_url: https://github.com/dasomel/narwhal/blob/main/docs/vagrant/operations.md#12-vm-디스크-증가와-회수-d-vm-disk-guard
+
     # -------------------------------------------------------------------------
     # platform-apps: 핵심 플랫폼 컴포넌트 가용성
     # -------------------------------------------------------------------------

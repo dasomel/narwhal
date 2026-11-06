@@ -1,0 +1,62 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-vm-disk-growth-guards-20261106",
+  "task": "Local worker VM disks (sparse linked clones) keep growing after #574/#575. Measure the writers, change only what the evidence justifies, and add guards that catch growth early.",
+  "changeContext": {
+    "paths": [
+      ".agents/evals/traces/2026-11-vm-disk-growth-guards.json",
+      "docs/common/lessons-log.md",
+      "docs/vagrant/operations.md",
+      "gitops/resources/prometheus-alerts.yaml",
+      "scripts/ops/check-vm-disk.sh",
+      "scripts/test/lib/check-vm-disk-guards.py",
+      "scripts/test/regression-check-kakao.sh",
+      "scripts/up.sh"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Add guards only: one PrometheusRule alert, a host-side advisory check, a runbook section and an R-check. Deliberately left alone: Trivy, kopia/Velero, retention, log rotation (no writer large enough to justify a change), any VM destroy/recreate (another lane owns it), Kakao cluster."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "Prometheus over 72h: worker steady median 8-27 GB/day but single hours of 44-144 GB; control planes 27-54 GB/day (etcd, NFS) with vmdks of 9-25G; worker-2 host vmdk 82G vs guest 44G used. Journals 118-310M, pod logs 25-72M, kopia-maintain hourly.",
+      "evidence": [
+        "repo:gitops/resources/prometheus-alerts.yaml",
+        "repo:scripts/ops/check-vm-disk.sh"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "NodeDiskWriteRateHigh (6h average above 20 GB/day for 30m, workers only), check-vm-disk.sh (vmdk dir vs guest df, host free space, run warn-only by up.sh) and the operations.md section 12 reclaim runbook."
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "Static regression suite, promtool behavior cases for the alert, the check script against live VMs (flags worker-2 at 82G vs 44G, others OK) and the rule loaded in the live Prometheus after push-to-gitea. NOT covered: a real alert firing on a sustained worker burst, Kakao, any VM reclaim.",
+      "evidence": [
+        "test:RESEARCH_EVIDENCE_DIR=tmp make test -> passed 434, failed 0",
+        "test:python3 scripts/test/lib/check-vm-disk-guards.py --mutation-verify -> 10 mutations caught, 4 promtool cases passed",
+        "test:live local cluster: Prometheus /api/v1/rules lists NodeDiskWriteRateHigh after push-to-gitea",
+        "repo:scripts/test/lib/check-vm-disk-guards.py"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "completion_claim",
+      "summary": "In the repository and on the local cluster the growth guards exist and are pinned by R309. Disk growth itself is not stopped: steady worker writes remain and the vmdk can only be reclaimed by recreating the node."
+    },
+    {
+      "id": "e6",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Complete for the guard scope within repository and local-cluster scope; growth itself is not eliminated, no other writer was changed, and Trivy scan Job layer writes and install-cni attribution remain unmeasured."
+    }
+  ]
+}

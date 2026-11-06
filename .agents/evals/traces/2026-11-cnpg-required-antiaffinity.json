@@ -1,0 +1,59 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-cnpg-required-antiaffinity-20261106",
+  "task": "narwhal-db (CNPG) instances landed on the same worker because podAntiAffinityType was the default preferred (#564). Make hostname anti-affinity required for every CNPG Cluster in the repo.",
+  "changeContext": {
+    "paths": [
+      ".agents/evals/traces/2026-11-cnpg-required-antiaffinity.json",
+      "docs/common/database.md",
+      "docs/common/lessons-log.md",
+      "gitops/resources/narwhal-db.yaml",
+      "scripts/cluster/07-cnpg.sh",
+      "scripts/test/lib/check-cnpg-antiaffinity.py",
+      "scripts/test/regression-check-kakao.sh"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Change only spec.affinity of the two CNPG Cluster definitions (gitops/resources/narwhal-db.yaml, the 07-cnpg.sh bootstrap manifest). Deliberately left alone: instances count, PDB, primaryUpdateStrategy, Pooler, backups, worker capacity, live cluster (read-only kubectl get), Gitea."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "Live (context narwhal, read-only 2026-11-06): 3 untainted workers, 3 masters tainted control-plane:NoSchedule, one Cluster narwhal-db with instances 2, spec.affinity.podAntiAffinityType preferred, primaryUpdateMethod restart, PDB narwhal-db-primary minAvailable 1. Instances currently on worker-3 and worker-1. Issue #564 records both on worker-1 after the 2026-11-04 restart.",
+      "evidence": [
+        "repo:gitops/resources/narwhal-db.yaml",
+        "repo:scripts/cluster/07-cnpg.sh"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "D-CNPG-AA-REQUIRED: podAntiAffinityType required and topologyKey kubernetes.io/hostname in both Cluster definitions; the bootstrap heredoc already had an affinity key (tolerations), so the fields were merged into it rather than adding a duplicate key. Docs: database.md HA section states that a single-worker drain leaves the pod Pending when the third worker has no free requests or a second worker is down."
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "Static: R313 parses every postgresql.cnpg.io Cluster under gitops/ plus the 07-cnpg.sh heredoc; 7 mutations are rejected; full make lint/validate/test. NOT covered: a live rollout, CNPG's actual rollout of an affinity change, a drain with the pod Pending.",
+      "evidence": [
+        "test:python3 scripts/test/lib/check-cnpg-antiaffinity.py --mutation-verify -> PASS: 7 mutations rejected",
+        "repo:scripts/test/lib/check-cnpg-antiaffinity.py"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "completion_claim",
+      "summary": "In the repository both CNPG Cluster definitions require hostname anti-affinity, pinned by R313. Not deployed; behavior on a live rollout or drain is not demonstrated."
+    },
+    {
+      "id": "e6",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Complete for the repository scope; not deployed, no live rollout or drain test."
+    }
+  ]
+}

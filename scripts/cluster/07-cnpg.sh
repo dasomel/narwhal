@@ -218,8 +218,11 @@ spec:
         immediateCheckpoint: false
     retentionPolicy: "30d"
 
-  # Tolerations for disk pressure
+  # D-CNPG-AA-REQUIRED (#564): required hostname anti-affinity, see gitops/resources/narwhal-db.yaml
+  # (ArgoCD owns the live Cluster). Plus tolerations for disk pressure.
   affinity:
+    podAntiAffinityType: required
+    topologyKey: kubernetes.io/hostname
     tolerations:
       - key: node.kubernetes.io/disk-pressure
         operator: Exists

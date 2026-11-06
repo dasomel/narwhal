@@ -3364,6 +3364,9 @@ PYEOF'
   # 2026-11-06: prometheus, tempo and loki all landed on worker-3 (~5.3GiB allocatable); the kernel OOM killer took prometheus-0 16 times in ~3h, BestEffort loki before it.
   check R311 "loki and its loki-sc-rules sidecar have cpu+memory requests and a memory limit (Burstable); prometheus, tempo and loki carry preferred (not required) hostname pod anti-affinity against the other two, the loki term scoped by component so loki-canary does not match, chart soft podAntiAffinity disabled for prometheus; 7 mutations caught (D-MON-QOS-LOKI, D-MON-SPREAD)" \
     python3 scripts/test/lib/check-monitoring-spread.py --mutation-verify
+  # 2026-11-06: both narwhal-db instances on worker-1 (preferred anti-affinity); a worker drain blocked WAL archiving. R312 is taken by a parallel lane.
+  check R313 "every CNPG Cluster (gitops/resources/narwhal-db.yaml and the 07-cnpg.sh bootstrap manifest) sets affinity.podAntiAffinityType=required with topologyKey kubernetes.io/hostname and no more than 3 instances; 7 mutations caught (D-CNPG-AA-REQUIRED)" \
+    python3 scripts/test/lib/check-cnpg-antiaffinity.py --mutation-verify
 }
 
 #=========================================

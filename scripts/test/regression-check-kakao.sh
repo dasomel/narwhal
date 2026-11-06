@@ -3382,6 +3382,9 @@ PYEOF'
   # 2026-11-06 (#585): a stale Harbor trivy-db:2 mirror made trivy-server re-download the same DB hourly (~38 GiB/day to NFS).
   check R316 "TrivyServerDbRedownloading alerts on >6e9 trivy-server container writes in 3h (container_fs_writes_bytes_total; no trivy_* series exist), its runbook anchor resolves and lists fetch -> promote --approved-by -> push --ca-cert --kube-context narwhal; promtool cases (stale fires, healthy/idle do not); 6 mutations caught (D-SECDB-STALE)" \
     python3 scripts/test/lib/check-trivy-db-redownload-alert.py --mutation-verify
+  # 2026-11-06 (#563): velero-ui 0.10.1 endpoints with no upstream policy check, reachable by any logged-in user.
+  check R319 "velero-ui gateway: DELETE /api/settings/velero/plugins/:name (unused upstream stub) is closed for everyone (case-insensitive regex, slash variants, priority 10), POST bulk download rule kept, and no rule closes the paths the UI needs (/api/stats*, /api/form/*, /api/settings/velero/server|ui|plugins, /api/config); permission matrix records the decision; 9 mutations caught (D-VELERO-UI-563)" \
+    python3 scripts/test/lib/check-velero-ui-endpoints.py --mutation-verify
 }
 
 #=========================================

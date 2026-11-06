@@ -1,0 +1,65 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-velero-ui-endpoints-563-20261106",
+  "task": "Issue #563: velero-ui 0.10.1 endpoints without an upstream policy check (/api/stats, /api/form/*, /api/settings/velero/*, /api/config). Decide per endpoint between gateway block, admin check and allow without widening access or breaking the cluster-admin UI pages.",
+  "changeContext": {
+    "paths": [
+      ".agents/evals/traces/2026-11-velero-ui-endpoints-563.json",
+      "docs/common/app-sso-permission-matrix.md",
+      "docs/common/lessons-log.md",
+      "gitops/charts/narwhal-platform/templates/apisix-routes.yaml",
+      "scripts/test/lib/check-velero-ui-endpoints.py",
+      "scripts/test/regression-check-kakao.sh"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Change only the velero-ui ApisixRoute (one new 403 rule) and docs/pins. Deliberately left alone: the policy file, the bulk-download rule, Keycloak clients, CORS, other apps, live cluster, Gitea."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "Issue #563 read: velero-ui 0.10.1 controllers for stats, form, settings (server, ui, plugins DELETE) and the public config carry no @CheckPolicies; DELETE /api/settings/velero/plugins/:name is reachable by any logged-in user (it returns {} and removes nothing). Confirmed from the v0.10.1 controller source, not against the live cluster.",
+      "evidence": [
+        "doc:https://github.com/dasomel/narwhal/issues/563",
+        "repo:gitops/charts/narwhal-platform/templates/apisix-routes.yaml"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "external_input",
+      "provenance": "otwld/velero-ui tag v0.10.1 source read via gh api: app-config, form, settings, stats, health controllers, main.ts, auth.service.ts, oauth.strategy.ts and the Vue composables/components that call them; 2026-11-06",
+      "reviewed": true,
+      "summary": "stats/form/settings server|ui carry no CheckPolicies and are called by the Dashboard, the create/restore/schedule/location forms and the Settings page; config is @Public and called before login; DELETE plugins/:name returns {} and has no UI caller; the session JWT carries permissions but is signed with a runtime-generated key the gateway does not hold."
+    },
+    {
+      "id": "e4",
+      "type": "bug_fix",
+      "summary": "D-VELERO-UI-563: velero-ui-block-plugin-delete (DELETE, case-insensitive regex, priority 10, 403 for everyone). Other endpoints stay open: no gateway identity on an app-native OAuth route, and blocking breaks cluster-admin pages. Access is not widened: one path newly closed, nothing opened."
+    },
+    {
+      "id": "e5",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "Static: R319 parses the Helm-template routes as text, checks the new rule and the kept bulk-download rule, asserts no rule closes any UI path, and rejects 9 mutations. NOT covered: live gateway behavior, a browser session, an APISIX regex edge case on the live cluster.",
+      "evidence": [
+        "test:python3 scripts/test/lib/check-velero-ui-endpoints.py --mutation-verify -> PASS: 9 mutations rejected",
+        "repo:scripts/test/lib/check-velero-ui-endpoints.py"
+      ]
+    },
+    {
+      "id": "e6",
+      "type": "completion_claim",
+      "summary": "In the repository the plugin DELETE stub is closed at the gateway and the remaining unguarded endpoints are documented as a deliberate, pinned decision. The exposure to non-admin Keycloak users on stats/form/settings/config remains; removing it needs a Keycloak client group restriction or an upstream fix."
+    },
+    {
+      "id": "e7",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Complete for the repository scope: the stub endpoint is closed and the open endpoints are a documented, pinned decision. Not deployed or verified live; the Keycloak-side group restriction and an upstream fix remain open options, not claimed here."
+    }
+  ]
+}

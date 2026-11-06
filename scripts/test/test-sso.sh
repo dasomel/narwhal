@@ -157,6 +157,76 @@ print(urllib.parse.urlencode({"username": os.environ["KC_U"], "password": os.env
     | python3 -c 'import sys, json; print(json.load(sys.stdin)["access_token"])' 2>/dev/null || true
 }
 
+# D-DASHBOARD-FORBIDDEN-IN-200 (#551): Kubernetes Dashboard (api 1.14.0, modules/common/errors/handler.go)
+# treats a Forbidden from the apiserver as a NON-critical error: a list endpoint such as
+# /api/v1/pod/<ns> answers HTTP 200 with the usual list plus "errors":[{"ErrStatus":{"status":"Failure",
+# "message":"pods is forbidden: User ...","reason":"Forbidden","code":403}}] so the SPA can show a warning.
+# A status-only check therefore reads a denied user as allowed. Reads the body on stdin, takes the HTTP
+# status as $1 and prints DENIED (401/403, or 200 whose errors[] holds a Forbidden), ALLOWED (200 with no
+# Forbidden error) or UNKNOWN (anything else, including a body that is not JSON); callers fail on UNKNOWN.
+dashboard_verdict() {
+  local code="$1"
+  case "${code}" in
+    401|403) cat >/dev/null; echo DENIED; return 0 ;;
+    200) ;;
+    *) cat >/dev/null; echo UNKNOWN; return 0 ;;
+  esac
+  python3 -c '
+import sys, json
+try:
+  d = json.load(sys.stdin)
+except Exception:
+  print("UNKNOWN"); sys.exit(0)
+if not isinstance(d, dict):
+  print("UNKNOWN"); sys.exit(0)
+errs = d.get("errors") or []
+if not isinstance(errs, list):
+  errs = [errs]
+for e in errs:
+  st = e.get("ErrStatus", e) if isinstance(e, dict) else {}
+  if not isinstance(st, dict):
+    st = {}
+  if st.get("code") == 403 or st.get("reason") == "Forbidden" or "forbidden" in json.dumps(e).lower():
+    print("DENIED"); sys.exit(0)
+print("ALLOWED")
+' 2>/dev/null || echo UNKNOWN
+}
+
+# D-DASHBOARD-LIVE-TOKEN (#551): the Dashboard takes a Bearer id_token only, so log in at Keycloak with
+# the public PKCE client kubernetes-dashboard (redirect /sso/callback, no -L on the login POST), trade
+# the code at the token endpoint and print the id_token. Prints nothing when any step fails (callers
+# fail on empty, never pass). The password goes to curl on stdin, never argv.
+dashboard_token() {
+  local user="$1" password="$2" jar ver chal ru page action loc code
+  jar=$(mktemp "${KD_TMP:-/tmp}/kd.XXXXXX") || return 0
+  ver=$(python3 -c 'import secrets; print(secrets.token_urlsafe(48))' 2>/dev/null) || return 0
+  chal=$(python3 -c 'import sys,hashlib,base64; print(base64.urlsafe_b64encode(hashlib.sha256(sys.argv[1].encode()).digest()).rstrip(b"=").decode())' "${ver}" 2>/dev/null) || return 0
+  ru="https://dashboard.${DOMAIN}/sso/callback"
+  page=$(curl -sk -L --connect-timeout 5 --max-time 20 -c "${jar}" -b "${jar}" -G \
+    --data-urlencode "client_id=kubernetes-dashboard" --data-urlencode "redirect_uri=${ru}" \
+    --data-urlencode "response_type=code" --data-urlencode "scope=openid profile email groups" \
+    --data-urlencode "state=t" --data-urlencode "code_challenge=${chal}" --data-urlencode "code_challenge_method=S256" \
+    "${KEYCLOAK_URL}/realms/${REALM}/protocol/openid-connect/auth" 2>/dev/null) || page=""
+  action=$(printf '%s' "${page}" | python3 -c '
+import sys, re, html
+p = sys.stdin.read()
+m = re.search(r"<form[^>]+action=\"([^\"]+)\"", p)
+print(html.unescape(m.group(1)) if m and "name=\"username\"" in p and "name=\"password\"" in p else "")
+' 2>/dev/null) || action=""
+  [ -n "${action}" ] || return 0
+  loc=$(KC_U="${user}" KC_P="${password}" python3 -c '
+import os, urllib.parse
+print(urllib.parse.urlencode({"username": os.environ["KC_U"], "password": os.environ["KC_P"], "credentialId": ""}), end="")
+' 2>/dev/null | curl -sk --connect-timeout 5 --max-time 30 -c "${jar}" -b "${jar}" -o /dev/null \
+    -w '%{redirect_url}' --data-binary @- "${action}" 2>/dev/null) || loc=""
+  code=$(printf '%s' "${loc}" | sed -n 's/.*[?&]code=\([^&]*\).*/\1/p')
+  [ -n "${code}" ] || return 0
+  curl -sk --connect-timeout 5 --max-time 20 -X POST "${KEYCLOAK_URL}/realms/${REALM}/protocol/openid-connect/token" \
+    -d grant_type=authorization_code -d client_id=kubernetes-dashboard -d "code=${code}" \
+    --data-urlencode "redirect_uri=${ru}" -d "code_verifier=${ver}" 2>/dev/null \
+    | python3 -c 'import sys, json; print(json.load(sys.stdin)["id_token"])' 2>/dev/null || true
+}
+
 echo "============================================"
 echo "SSO Integration Test Suite v2"
 echo "============================================"
@@ -958,6 +1028,32 @@ if should_run "acl"; then
     done
   fi
   rm -rf "${ADM_TMP}"
+
+  # --- Kubernetes Dashboard: forbidden arrives inside HTTP 200 (#551, D-DASHBOARD-FORBIDDEN-IN-200) ---
+  # The Dashboard api answers a list the user may not read with HTTP 200 and errors[].ErrStatus.code
+  # 403, so only the body tells allowed from denied. admin (platform-admin) must be allowed;
+  # guest (no ClusterRoleBinding) must be denied. UNKNOWN (no token, non-JSON, other status) fails.
+  echo "  [Kubernetes Dashboard forbidden-in-200]"
+  KD_TMP=$(mktemp -d)
+  for kd_user in admin guest; do
+    KD_PW=$(kubectl get secret keycloak-user-passwords -n iam -o jsonpath="{.data.${kd_user}}" 2>/dev/null | base64 -d 2>/dev/null) || KD_PW=""
+    KD_TOKEN=""
+    [ -z "${KD_PW}" ] || KD_TOKEN=$(dashboard_token "${kd_user}" "${KD_PW}") || KD_TOKEN=""
+    if [ -z "${KD_TOKEN}" ]; then
+      fail "Dashboard ${kd_user}: login/token exchange failed, cannot verify"
+      continue
+    fi
+    KD_RES=$(curl -sk --connect-timeout 5 --max-time 30 -H "Authorization: Bearer ${KD_TOKEN}" \
+      -w '\n%{http_code}' "https://dashboard.${DOMAIN}/api/v1/pod/default" 2>/dev/null) || KD_RES=$'\n000'
+    KD_CODE="${KD_RES##*$'\n'}"
+    KD_VERDICT=$(printf '%s' "${KD_RES%$'\n'*}" | dashboard_verdict "${KD_CODE}") || KD_VERDICT="UNKNOWN"
+    case "${kd_user}:${KD_VERDICT}" in
+      admin:ALLOWED) pass "Dashboard admin: pod list allowed (HTTP ${KD_CODE}, no Forbidden error)" ;;
+      guest:DENIED) pass "Dashboard guest: pod list denied (HTTP ${KD_CODE})" ;;
+      *) fail "Dashboard ${kd_user}: pod list verdict ${KD_VERDICT} (HTTP ${KD_CODE}), expected $([ "${kd_user}" = admin ] && echo ALLOWED || echo DENIED)" ;;
+    esac
+  done
+  rm -rf "${KD_TMP}"
 
   # --- Grafana Role Mapping ---
   echo "  [Grafana Role Mapping]"

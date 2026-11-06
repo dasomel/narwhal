@@ -122,9 +122,12 @@ spec:
           enabled: false
         resultsCache:
           enabled: false
-        monitoring:
-          lokiCanary:
-            enabled: false
+        # D-LOKI-CANARY-DISABLE: in chart 18.4.0 (grafana-community/loki), lokiCanary is a top-level key;
+        # nesting under monitoring caused Helm to default enabled: true and deploy the canary DaemonSet to every node.
+        # Cost: no synthetic log push/query canary testing Loki ingestion latency.
+        # Escape hatch: set lokiCanary.enabled: true.
+        lokiCanary:
+          enabled: false
         test:
           enabled: false
   destination:

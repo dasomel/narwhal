@@ -1,0 +1,58 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-portal-cert-rbac-ns-20261106",
+  "task": "Issue #562: the portal certificate renew grant (certificates/status update) was cluster-wide in ClusterRole narwhal-portal. Narrow it to the namespaces that hold Certificates.",
+  "changeContext": {
+    "paths": [
+      ".agents/evals/traces/2026-11-portal-cert-rbac-ns.json",
+      "docs/common/lessons-log.md",
+      "gitops/charts/narwhal-platform/templates/narwhal-portal-k8s.yaml",
+      "portal/src/lib/k8s-client.ts",
+      "scripts/test/lib/check-portal-cert-renew-rbac.py",
+      "scripts/test/regression-check-kakao.sh"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Move only the certificates/status update grant from the ClusterRole to per-namespace Roles + RoleBindings. Nothing is widened: same verb and subresource, same single subject, fewer namespaces. Deliberately left alone: cluster-wide read of certificates/clusterissuers, the renew implementation and route (path is already namespaced), portal image pin, live cluster (read-only get only), Gitea."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "kubectl --context narwhal get certificates -A lists 4 Certificates in 3 namespaces: devtools/narwhal-portal-valkey-tls, platform-system/narwhal-root-ca and narwhal-wildcard-tls, storage/openbao-tls. renewCertificate in portal/src/lib/k8s-client.ts PUTs /apis/cert-manager.io/v1/namespaces/<ns>/certificates/<name>/status, so a namespaced Role suffices; the route already maps k8s 403 to a clear error.",
+      "evidence": [
+        "repo:gitops/charts/narwhal-platform/templates/narwhal-portal-k8s.yaml",
+        "repo:portal/src/lib/k8s-client.ts"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "D-CERT-RENEW-NS: removed the certificates/status rule from ClusterRole narwhal-portal; added Role+RoleBinding narwhal-portal-cert-renew in devtools, platform-system and storage granting only update on certificates/status to ServiceAccount devtools/narwhal-portal. Comment in k8s-client.ts updated; no behavior change."
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "Static: R318 parses the chart template; 7 mutations (cluster-wide rule restored, wildcard, missing Role, widened resource/verb/subject, extra namespace) are rejected; the check fails on the pre-change file. NOT covered: live application and a real renew after sync, a Certificate in a namespace outside the three.",
+      "evidence": [
+        "test:python3 scripts/test/lib/check-portal-cert-renew-rbac.py --mutation-verify -> PASS 7 mutations rejected",
+        "repo:scripts/test/lib/check-portal-cert-renew-rbac.py"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "completion_claim",
+      "summary": "In the repository the portal can update certificates/status only in devtools, platform-system and storage, pinned by R318. Not applied live: needs push-to-gitea and a sync, then kubectl auth can-i --subresource=status per namespace."
+    },
+    {
+      "id": "e6",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Complete for the repository scope; not deployed, live renew after sync unverified."
+    }
+  ]
+}

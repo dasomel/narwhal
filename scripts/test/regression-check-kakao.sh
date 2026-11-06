@@ -3367,6 +3367,9 @@ PYEOF'
   # 2026-11-06 (#551, D-HARBOR-CA-ROTATE): harbor-core reads caBundleSecretName only at start, so a rotated CA left Harbor OIDC failing closed.
   check R317 "08-6 rolls harbor-core only when devtools/narwhal-ca-cert ca.crt changed (stub kubectl: changed restarts and waits, unchanged re-run, first install and missing Deployment do not, failed restart warns without aborting 08-6), procedure in operations.md, argocd-config g-lines comment points above; unconditional-restart mutation caught (D-HARBOR-CA-ROTATE)" \
     python3 scripts/test/lib/check-harbor-ca-rotate.py
+  # 2026-11-06 (#585): a stale Harbor trivy-db:2 mirror made trivy-server re-download the same DB hourly (~38 GiB/day to NFS).
+  check R316 "TrivyServerDbRedownloading alerts on >6e9 trivy-server container writes in 3h (container_fs_writes_bytes_total; no trivy_* series exist), its runbook anchor resolves and lists fetch -> promote --approved-by -> push --ca-cert --kube-context narwhal; promtool cases (stale fires, healthy/idle do not); 6 mutations caught (D-SECDB-STALE)" \
+    python3 scripts/test/lib/check-trivy-db-redownload-alert.py --mutation-verify
 }
 
 #=========================================

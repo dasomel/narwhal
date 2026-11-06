@@ -1043,6 +1043,45 @@ spec:
                   ngx.say("403 Forbidden: bulk backup download is disabled")
                   return ngx.exit(403)
                 end
+    # D-VELERO-UI-563: velero-ui 0.10.1 DELETE /api/settings/velero/plugins/:name has no policy check
+    # and is an upstream stub (returns {} and removes nothing); the UI never calls it (the Settings
+    # plugin list only GETs /plugins). Closed for everyone as defense in depth against the stub
+    # gaining behavior in a later release. Cost: none today. Escape hatch: delete this rule once
+    # upstream adds @CheckPolicies. The other unguarded endpoints stay open on purpose (see
+    # docs/common/app-sso-permission-matrix.md): the gateway has no user identity on this route
+    # (app-native OAuth, the JWT key lives only in a runtime Secret), so blocking /api/stats,
+    # /api/form/* or /api/settings/velero/{server,ui} would break the cluster-admin Dashboard, the
+    # create/restore/schedule/location forms and the Settings page; /api/config is public by design
+    # (OAuth client id and URLs) and the login page needs it before any session exists.
+    - name: velero-ui-block-plugin-delete
+      priority: 10
+      match:
+        hosts:
+          - velero-ui.{{ .Values.baseDomain }}
+        # Path match is case-sensitive; match every path and decide on the case-insensitive regex.
+        paths:
+          - "/*"
+        methods:
+          - DELETE
+        exprs:
+          - subject:
+              scope: Path
+            op: RegexMatchCaseInsensitive
+            value: "^/+api/+settings/+velero/+plugins/+.+$"
+      upstreams:
+        - name: velero-ui
+      plugins:
+        - name: serverless-pre-function
+          enable: true
+          config:
+            phase: rewrite
+            functions:
+              - |
+                return function(conf, ctx)
+                  ngx.status = 403
+                  ngx.say("403 Forbidden: plugin removal is disabled")
+                  return ngx.exit(403)
+                end
     - name: velero-ui
       match:
         hosts:

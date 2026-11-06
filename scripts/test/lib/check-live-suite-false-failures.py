@@ -331,4 +331,35 @@ curl() {{
   else:
     check(out.count('POST') == 2 and 'developer group' in out and 'viewer group' in out,
           'Harbor registers both groups')
+# D-DASHBOARD-FORBIDDEN-IN-200 (#551): Dashboard api 1.14.0 answers a forbidden list with HTTP 200 and
+# errors[].ErrStatus.code 403 (modules/common/errors/handler.go nonCriticalErrors), so the live check
+# must read the body. Pin the verdict on the real shape, the plain 401/403 and the fail-closed cases.
+forbidden_body = ('{"listMeta":{"totalItems":0},"errors":[{"ErrStatus":{"metadata":{},"status":"Failure",'
+                  '"message":"pods is forbidden: User \\"oidc:guest\\" cannot list resource \\"pods\\"",'
+                  '"reason":"Forbidden","code":403}}],"pods":[]}')
+verdict_fn = 'dashboard_verdict() {' + block(sso, 'dashboard_verdict() {', '\n}\n') + '\n}\n'
+
+
+def verdict(code, body, fn=verdict_fn):
+  return subprocess.run(['bash', '-c', fn + '\ndashboard_verdict "$1" <<<"$2"', '_', code, body],
+                        text=True, capture_output=True).stdout.strip()
+
+
+for code, body, expected in [('200', forbidden_body, 'DENIED'),
+                             ('200', '{"listMeta":{"totalItems":1},"errors":[],"pods":[{}]}', 'ALLOWED'),
+                             ('200', '{"pods":[]}', 'ALLOWED'),
+                             ('200', '{"errors":[{"ErrStatus":{"reason":"Forbidden"}}]}', 'DENIED'),
+                             ('200', '{"errors":["services is forbidden"]}', 'DENIED'),
+                             ('403', 'x', 'DENIED'), ('401', '', 'DENIED'),
+                             ('500', forbidden_body, 'UNKNOWN'), ('200', '<html>login</html>', 'UNKNOWN'),
+                             ('000', '', 'UNKNOWN')]:
+  check(verdict(code, body) == expected, f'dashboard verdict HTTP {code} {body[:24]!r} -> {expected}')
+# Mutation: a status-only verdict (the bug) reads the forbidden body as allowed.
+status_only = verdict_fn.replace('st.get("code") == 403 or st.get("reason") == "Forbidden" or "forbidden" in json.dumps(e).lower()', 'False')
+check(status_only != verdict_fn and verdict('200', forbidden_body, status_only) == 'ALLOWED',
+      'mutation: dropping the body check is caught (forbidden-in-200 reads as ALLOWED)')
+check('/api/v1/pod/default' in sso and 'admin:ALLOWED)' in sso and 'guest:DENIED)' in sso and
+      'dashboard_token "${kd_user}" "${KD_PW}"' in sso and 'client_id=kubernetes-dashboard' in sso and
+      'code_challenge_method=S256' in sso and 'Dashboard ${kd_user}: login/token exchange failed, cannot verify' in sso and
+      '| dashboard_verdict "${KD_CODE}"' in sso, 'Dashboard live check shape: admin allowed, guest denied, empty token fails')
 print(f'{count} passed, 0 failed')

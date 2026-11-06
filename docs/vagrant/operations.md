@@ -702,6 +702,12 @@ vagrant ssh master-1 -c "kubectl exec -n headlamp \
 - Go 앱은 자동으로 `/etc/ssl/certs/` 디렉토리 스캔하여 인식
 - `SSL_CERT_FILE` 환경 변수 설정 금지 (시스템 CA 번들 대체됨)
 
+**CA 교체 시 Harbor 재시작 (#551, D-HARBOR-CA-ROTATE)**: harbor-core 는 `caBundleSecretName`(`narwhal-ca-cert`)을 기동 시에만 읽습니다. CA 가 교체되면 재시작 전까지 Harbor OIDC 로그인이 실패(fail closed)합니다. `scripts/cluster/08-6-tls-routes.sh` 는 `devtools/narwhal-ca-cert` 의 `ca.crt` 가 실제로 바뀌었고 `harbor-core` 가 있을 때만 `rollout restart` 를 수행합니다(재실행해도 변경이 없으면 재시작하지 않음). 08-6 을 거치지 않고 Secret 을 직접 바꿨다면 수동으로 실행합니다.
+
+```bash
+kubectl -n devtools rollout restart deployment/harbor-core
+```
+
 ---
 
 ## 9. 백업 확인 및 복구 (Velero)

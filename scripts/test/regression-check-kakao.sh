@@ -3215,7 +3215,7 @@ assert sum(1 for l in code if re.search(r"\bexit 3\b", l)) == 1, "exit 3 must ap
   fi
   # 2026-10-29 (D-KAKAO-TEARDOWN): full Kakao teardown releases the six prevent_destroy guards,
   # runs tofu destroy and must restore them on every exit path.
-  check R293 "live suite false-failure guards (#505): TLS, ambient, credentials, retired client, probe, provider and the #519 gateway group login (4 hosts, NOFORM fails)" \
+  check R293 "live suite false-failure guards (#505): TLS, ambient, credentials, retired client, probe, provider and the #519 gateway group login (4 hosts, NOFORM fails); Dashboard forbidden-in-200 verdict (HTTP 200 with errors[].ErrStatus 403 is DENIED, status-only mutation caught, #551)" \
     python3 scripts/test/lib/check-live-suite-false-failures.py
 
   # 2026-10-31 (#468, D-MIRROR-PATH): a pin bump needs the image on the bastion mirror first; the live
@@ -3364,6 +3364,21 @@ PYEOF'
   # 2026-11-06: prometheus, tempo and loki all landed on worker-3 (~5.3GiB allocatable); the kernel OOM killer took prometheus-0 16 times in ~3h, BestEffort loki before it.
   check R311 "loki and its loki-sc-rules sidecar have cpu+memory requests and a memory limit (Burstable); prometheus, tempo and loki carry preferred (not required) hostname pod anti-affinity against the other two, the loki term scoped by component so loki-canary does not match, chart soft podAntiAffinity disabled for prometheus; 7 mutations caught (D-MON-QOS-LOKI, D-MON-SPREAD)" \
     python3 scripts/test/lib/check-monitoring-spread.py --mutation-verify
+  # 2026-11-06 (#551, D-HARBOR-CA-ROTATE): harbor-core reads caBundleSecretName only at start, so a rotated CA left Harbor OIDC failing closed.
+  check R317 "08-6 rolls harbor-core only when devtools/narwhal-ca-cert ca.crt changed (stub kubectl: changed restarts and waits, unchanged re-run, first install and missing Deployment do not, failed restart warns without aborting 08-6), procedure in operations.md, argocd-config g-lines comment points above; unconditional-restart mutation caught (D-HARBOR-CA-ROTATE)" \
+    python3 scripts/test/lib/check-harbor-ca-rotate.py
+  # 2026-11-06 (#562): the portal certificate renew grant (certificates/status update) was cluster-wide.
+  check R318 "portal certificates/status update is granted only by narwhal-portal-cert-renew Roles in devtools, platform-system and storage (the namespaces holding Certificates), bound to the portal SA alone, never by the ClusterRole; 7 mutations caught (D-CERT-RENEW-NS)" \
+    python3 scripts/test/lib/check-portal-cert-renew-rbac.py --mutation-verify
+  # 2026-11-06 (#587): loki-canary DaemonSet ran on every node because lokiCanary was nested under monitoring: in loki.yaml and 08-2.
+  check R315 "loki-canary DaemonSet is disabled via top-level lokiCanary.enabled=false in loki.yaml and 08-2-monitoring.sh (not under monitoring); 6 mutations caught (D-LOKI-CANARY-DISABLE, #587)" \
+    python3 scripts/test/lib/check-loki-canary-disabled.py --mutation-verify
+  # 2026-11-06: both narwhal-db instances on worker-1 (preferred anti-affinity); a worker drain blocked WAL archiving. R312 is taken by a parallel lane.
+  check R313 "every CNPG Cluster (gitops/resources/narwhal-db.yaml and the 07-cnpg.sh bootstrap manifest) sets affinity.podAntiAffinityType=required with topologyKey kubernetes.io/hostname and no more than 3 instances; 7 mutations caught (D-CNPG-AA-REQUIRED)" \
+    python3 scripts/test/lib/check-cnpg-antiaffinity.py --mutation-verify
+  # 2026-11-06 (#571): the kyverno-policies Application ignored whole rule bodies, annotations and validationFailureAction, so real policy edits never auto-synced.
+  check R312 "kyverno-policies ignoreDifferences lists only Kyverno-defaulted fields (admission, emitWarning, skipBackgroundRequests, allowExistingViolations, verifyImages useCache/signatureAlgorithm); defaults then produce no diff while rule, match, annotation, validationFailureAction and background edits stay visible; every ClusterPolicy sets validationFailureAction explicitly; 10 mutations caught (D-KYV-IGNORE-NARROW)" \
+    python3 scripts/test/lib/check-kyverno-ignorediff.py --mutation-verify
   # 2026-11-06 (#585): a stale Harbor trivy-db:2 mirror made trivy-server re-download the same DB hourly (~38 GiB/day to NFS).
   check R316 "TrivyServerDbRedownloading alerts on >6e9 trivy-server container writes in 3h (container_fs_writes_bytes_total; no trivy_* series exist), its runbook anchor resolves and lists fetch -> promote --approved-by -> push --ca-cert --kube-context narwhal; promtool cases (stale fires, healthy/idle do not); 6 mutations caught (D-SECDB-STALE)" \
     python3 scripts/test/lib/check-trivy-db-redownload-alert.py --mutation-verify

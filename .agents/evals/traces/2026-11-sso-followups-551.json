@@ -1,0 +1,62 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-sso-followups-551-20261106",
+  "task": "Issue #551: make the SSO live suite treat a Kubernetes Dashboard HTTP 200 carrying a Forbidden error as denied, restart harbor-core when the CA Secret rotates, and fix the argocd-config g-lines comment.",
+  "changeContext": {
+    "paths": [
+      ".agents/evals/traces/2026-11-sso-followups-551.json",
+      "docs/common/lessons-log.md",
+      "docs/vagrant/operations.md",
+      "gitops/charts/narwhal-platform/templates/argocd-config.yaml",
+      "scripts/cluster/08-6-tls-routes.sh",
+      "scripts/test/lib/check-harbor-ca-rotate.py",
+      "scripts/test/lib/check-live-suite-false-failures.py",
+      "scripts/test/regression-check-kakao.sh",
+      "scripts/test/test-sso.sh"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Change only test-sso.sh (new Dashboard verdict and live check), 08-6 (guarded harbor-core restart after the CA Secret apply), one comment line in argocd-config.yaml, docs and checks. Deliberately left alone: the ArgoCD policy lines themselves, harbor.yaml values, Keycloak clients, the Dashboard chart, the live cluster (read-only), Gitea."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "Dashboard api 1.14.0 source (modules/common/errors/handler.go) classifies Forbidden as non-critical, so list endpoints return HTTP 200 with errors[].ErrStatus.code 403. Live probe was read-only and unauthenticated only (401 without a token); a denied-user body was not captured live. harbor-core reads caBundleSecretName at start only (chart value in harbor.yaml, Secret written by 08-6).",
+      "evidence": [
+        "repo:gitops/charts/narwhal-apps/templates/harbor.yaml",
+        "repo:scripts/cluster/08-6-tls-routes.sh"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "D-DASHBOARD-FORBIDDEN-IN-200: dashboard_verdict parses errors[] and dashboard_token logs in through the public PKCE client; admin must be ALLOWED and guest DENIED. D-HARBOR-CA-ROTATE: 08-6 compares narwhal-ca-cert before and after the apply and rolls harbor-core only on change. Comment at argocd-config.yaml now says the g-lines are above."
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "Static and stubbed: R293 executes dashboard_verdict on the forbidden-in-200 shape, plain 401/403, allowed and unparseable bodies and a status-only mutation; R317 runs the real 08-6 block against a stub kubectl (changed, unchanged, first install, no Deployment, failed restart) and an unconditional-restart mutation. NOT covered: the live Keycloak login in dashboard_token, a real denied Dashboard response, a real CA rotation and harbor-core restart.",
+      "evidence": [
+        "test:python3 scripts/test/lib/check-live-suite-false-failures.py -> 94 passed, 0 failed",
+        "test:python3 scripts/test/lib/check-harbor-ca-rotate.py -> 8 passed, 0 failed",
+        "repo:scripts/test/lib/check-harbor-ca-rotate.py"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "completion_claim",
+      "summary": "In the repository the Dashboard forbidden-in-200 verdict and the harbor-core restart on CA change exist and are pinned by R293 and R317. Neither has run against the live cluster."
+    },
+    {
+      "id": "e6",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Complete for the repository scope; not deployed and not run live."
+    }
+  ]
+}

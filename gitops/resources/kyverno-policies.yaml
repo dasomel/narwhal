@@ -314,6 +314,9 @@ metadata:
       runAsNonRoot. Excludes kube-system, istio-system, platform-system, devtools and
       security-system.
 spec:
+  # Explicit: Kyverno defaults it to Audit for a mutate-only policy, and the Application
+  # no longer ignores validationFailureAction (D-KYV-IGNORE-NARROW, #571).
+  validationFailureAction: Audit
   background: false
   rules:
     - name: add-default-seccomp

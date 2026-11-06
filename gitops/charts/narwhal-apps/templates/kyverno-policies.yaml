@@ -25,22 +25,35 @@ spec:
       selfHeal: true
     syncOptions:
       - ServerSideApply=true
-  # Kyverno injects autogen rules — suppress ArgoCD drift on ClusterPolicy.
+  # D-KYV-IGNORE-NARROW (#571): ignore ONLY the fields the Kyverno admission webhook defaults
+  # into a live ClusterPolicy, so every other change (rules, match/exclude, validate, mutate,
+  # verifyImages, validationFailureAction, background, annotations, labels) auto-syncs.
+  # History: commit 2695d675 (2026-08-28) ignored whole .spec.rules[].match/exclude/validate/
+  # mutate/generate, .spec.validationFailureAction and .metadata.annotations/labels on the
+  # theory that "Kyverno injects autogen rules". On the live cluster (Kyverno 1.18) autogen
+  # goes to .status.autogen, which Argo CD never diffs, and the manifests in
+  # resources/kyverno-policies.yaml equal the live spec except for the defaults below (checked
+  # 2026-11-06 with `kubectl diff --server-side`: only the argocd tracking-id annotation
+  # differed). The broad list hid real edits; on 2026-11-05 annotation changes needed a manual
+  # sync. The first four entries duplicate argocd-cm
+  # resource.customizations.ignoreDifferences.kyverno.io_ClusterPolicy (narwhal-platform
+  # chart) so this app stays correct if that global entry is changed; the verifyImages
+  # entries cover defaults Kyverno fills in (useCache, signatureAlgorithm sha256).
+  # Cost: a git change to one of these fields is invisible to Argo CD (e.g. signatureAlgorithm
+  # sha384 would need a manual sync). Escape hatch: set the value in the manifest and remove
+  # the entry. validationFailureAction is NOT ignored: every policy sets it explicitly in git.
+  # Guard: scripts/test/lib/check-kyverno-ignorediff.py (R312). RespectIgnoreDifferences is not
+  # used: Server-Side Apply leaves fields Kyverno owns alone, so a sync does not revert them.
   ignoreDifferences:
     - group: kyverno.io
       kind: ClusterPolicy
       jqPathExpressions:
-        - .spec.rules[].match
-        - .spec.rules[].exclude
-        - .spec.rules[].validate
-        - .spec.rules[].verifyImages
-        - .spec.rules[].mutate
-        - .spec.rules[].generate
-        - .spec.rules[].skipBackgroundRequests
-        - .spec.background
         - .spec.admission
         - .spec.emitWarning
-        - .spec.failurePolicy
-        - .spec.validationFailureAction
-        - .metadata.annotations
-        - .metadata.labels
+        - .spec.rules[].skipBackgroundRequests
+        - .spec.rules[].validate.allowExistingViolations
+        - .spec.rules[].verifyImages[].useCache
+        - .spec.rules[].verifyImages[].attestors[].entries[].signatureAlgorithm
+        - .spec.rules[].verifyImages[].attestors[].entries[].keys.signatureAlgorithm
+        - .spec.rules[].verifyImages[].attestations[].attestors[].entries[].signatureAlgorithm
+        - .spec.rules[].verifyImages[].attestations[].attestors[].entries[].keys.signatureAlgorithm

@@ -3367,6 +3367,12 @@ PYEOF'
   # 2026-11-06: both narwhal-db instances on worker-1 (preferred anti-affinity); a worker drain blocked WAL archiving. R312 is taken by a parallel lane.
   check R313 "every CNPG Cluster (gitops/resources/narwhal-db.yaml and the 07-cnpg.sh bootstrap manifest) sets affinity.podAntiAffinityType=required with topologyKey kubernetes.io/hostname and no more than 3 instances; 7 mutations caught (D-CNPG-AA-REQUIRED)" \
     python3 scripts/test/lib/check-cnpg-antiaffinity.py --mutation-verify
+  # 2026-11-06 (#571): the kyverno-policies Application ignored whole rule bodies, annotations and validationFailureAction, so real policy edits never auto-synced.
+  check R312 "kyverno-policies ignoreDifferences lists only Kyverno-defaulted fields (admission, emitWarning, skipBackgroundRequests, allowExistingViolations, verifyImages useCache/signatureAlgorithm); defaults then produce no diff while rule, match, annotation, validationFailureAction and background edits stay visible; every ClusterPolicy sets validationFailureAction explicitly; 10 mutations caught (D-KYV-IGNORE-NARROW)" \
+    python3 scripts/test/lib/check-kyverno-ignorediff.py --mutation-verify
+  # 2026-11-06 (#585): a stale Harbor trivy-db:2 mirror made trivy-server re-download the same DB hourly (~38 GiB/day to NFS).
+  check R316 "TrivyServerDbRedownloading alerts on >6e9 trivy-server container writes in 3h (container_fs_writes_bytes_total; no trivy_* series exist), its runbook anchor resolves and lists fetch -> promote --approved-by -> push --ca-cert --kube-context narwhal; promtool cases (stale fires, healthy/idle do not); 6 mutations caught (D-SECDB-STALE)" \
+    python3 scripts/test/lib/check-trivy-db-redownload-alert.py --mutation-verify
 }
 
 #=========================================

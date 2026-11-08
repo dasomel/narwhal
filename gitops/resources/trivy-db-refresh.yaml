@@ -164,7 +164,7 @@ spec:
                       return 1
                     fi
                     skopeo copy --preserve-digests --retry-times 3 --quiet \
-                      --dest-cert-dir "${CERT_ROOT}" "docker://${src}" "docker://${dst}"
+                      --dest-cert-dir "${CERT_ROOT}/${HARBOR_REGISTRY}" "docker://${src}" "docker://${dst}"
                     have=$(manifest_digest --cert-dir "${CERT_ROOT}/${HARBOR_REGISTRY}" "docker://${dst}") || have=""
                     if [ "${have}" != "${want}" ]; then
                       echo "[FAIL] ${name}: mirror digest ${have:-none} != source ${want} after the copy" >&2

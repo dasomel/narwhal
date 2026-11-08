@@ -25,6 +25,7 @@ Behavior:
 """
 
 import json
+import base64
 import os
 import re
 import shutil
@@ -141,9 +142,12 @@ def static(root):
 
     reg = (root / REG).read_text()
     assert "SECDB_KEEP=2" in reg, "retention keep count"
-    for need in ("--from-literal=registry=", "--from-literal=username=", "--from-literal=password=", "-n security-system"):
+    for need in ('"registry":base64.b64encode', '"username":base64.b64encode', '"password":base64.b64encode', '"namespace":"security-system"'):
         assert need in reg, f"08-5 Secret lost {need}"
     assert "read_secret_field trivy-db-refresh security-system password" in reg, "08-5 must reuse an existing robot secret"
+    assert 'secret = created.get("secret")' in reg, "08-5 must persist Harbor's generated create response secret"
+    assert 'kubectl apply -f -' in reg and 'HARBOR_ROBOT_SECRET_VALUE' in reg, "robot Secret must be applied from stdin"
+    assert '--dest-cert-dir "${CERT_ROOT}/${HARBOR_REGISTRY}"' in text, "skopeo CA dir must directly contain ca.crt"
 
     rules = yaml.safe_load((root / ALERTS).read_text())
     found = {r["alert"]: r for g in rules["spec"]["groups"] for r in g["rules"] if r.get("alert", "").startswith("TrivyDbRefresh")}
@@ -294,9 +298,14 @@ class FakeHarbor(BaseHTTPRequestHandler):
             return self._send(200, s["robots"])
         if (method, path) == ("POST", "/robots"):
             s["robots"].append({"id": 7, "name": "robot$trivy-db+" + body["name"]})
-            return self._send(201, {"id": 7})
+            return self._send(201, {"id": 7, "secret": "HarborGenerated-Secret9"})
         if method == "PATCH" and path == "/robots/7":
-            return self._send(200, {})
+            s["robot_secret"] = body["secret"]
+            return self._send(200, {"secret": ""})
+        if path == "/service/token":
+            auth = self.headers.get("Authorization", "")
+            valid = auth == "Basic " + base64.b64encode((s["robots"][0]["name"] + ":" + s.get("robot_secret", "HarborGenerated-Secret9")).encode()).decode()
+            return self._send(200 if valid else 401, {})
         if (method, path) == ("POST", "/retentions"):
             s["retention"] = True
             return self._send(201, {})
@@ -328,8 +337,9 @@ def harbor_run(code, state, reset):
     th = threading.Thread(target=srv.serve_forever, daemon=True)
     th.start()
     try:
-        env = dict(os.environ, HARBOR_API=f"http://127.0.0.1:{srv.server_port}", HARBOR_ADMIN_PASS="adminpw",
-                   SECDB_KEEP="2", SECDB_ROBOT_PW=PASSWORD, SECDB_ROBOT_RESET="1" if reset else "0")
+        env = dict(os.environ, HARBOR_API=f"http://127.0.0.1:{srv.server_port}/api/v2.0",
+                   HARBOR_REGISTRY=f"127.0.0.1:{srv.server_port}", HARBOR_ADMIN_PASS="adminpw",
+                   SECDB_KEEP="2", SECDB_ROBOT_PW=PASSWORD, SECDB_ROBOT_HAS_SECRET="1" if not reset else "0")
         p = subprocess.run([sys.executable, "-I", "-c", code], env=env, capture_output=True, text=True, timeout=60)
     finally:
         srv.shutdown()
@@ -346,6 +356,7 @@ def harbor_behavior(root):
     p = harbor_run(code, st, reset=True)
     assert p.returncode == 0 and "ROBOT_USER=robot$trivy-db+trivy-db-refresh" in p.stdout, (p.stdout, p.stderr)
     assert PASSWORD not in p.stdout + p.stderr, "robot secret printed"
+    assert "ROBOT_SECRET=HarborGenerated-Secret9" in p.stdout, "create response secret must be returned for Secret storage"
     post = [c for c in st["calls"] if c[:2] == ("POST", "/robots")]
     assert len(post) == 1, "robot must be created once"
     b = post[0][2]
@@ -367,16 +378,19 @@ def harbor_behavior(root):
     # an existing GC schedule is not overwritten.
     st["calls"].clear()
     st["gc"] = {"schedule": {"type": "Weekly", "cron": "0 0 0 * * 0"}}
+    st["robot_secret"] = PASSWORD
     p = harbor_run(code, st, reset=False)
     assert p.returncode == 0, p.stderr
     methods = [(c[0], c[1]) for c in st["calls"]]
     assert ("POST", "/robots") not in methods and not any(m == "PATCH" for m, _ in methods), ("re-run must not touch the robot", methods)
     assert ("PUT", "/retentions/9") in methods and ("POST", "/retentions") not in methods, methods
     assert not any(c[1] == "/system/gc/schedule" and c[0] != "GET" for c in st["calls"]), "existing GC schedule overwritten"
+    assert not any(m == "PATCH" for m, _ in methods), "valid stored secret must not rotate"
 
     # Secret lost, robot still in Harbor: its secret is reset, not duplicated.
     st["calls"].clear()
-    p = harbor_run(code, st, reset=True)
+    st["robot_secret"] = "OldSecret-Pw9"
+    p = harbor_run(code, st, reset=False)
     methods = [(c[0], c[1]) for c in st["calls"]]
     assert p.returncode == 0 and ("PATCH", "/robots/7") in methods and ("POST", "/robots") not in methods, methods
 
@@ -474,7 +488,7 @@ MUTATIONS = [
     ("copy no longer preserves digests", CRON, " --preserve-digests", ""),
     ("approver is not auto-refresh", CRON, "APPROVED_BY=auto-refresh", "APPROVED_BY=admin"),
     ("current mirror is copied again", CRON, 'if [ "${have}" = "${want}" ]; then', "if false; then"),
-    ("TLS verification disabled", CRON, '--dest-cert-dir "${CERT_ROOT}"', "--dest-tls-verify=false"),
+    ("TLS verification disabled", CRON, '--dest-cert-dir "${CERT_ROOT}/${HARBOR_REGISTRY}"', "--dest-tls-verify=false"),
     ("runs as root", CRON, "runAsNonRoot: true", "runAsNonRoot: false"),
     ("writable root filesystem", CRON, "readOnlyRootFilesystem: true", "readOnlyRootFilesystem: false"),
     ("image unpinned", CRON, "@sha256:2b7d76dde38c5924e1945348840c58786fc192201f2fd545832e58b53d26f7b8", ""),
@@ -491,7 +505,9 @@ MUTATIONS = [
     ("retention ignores untagged", REG, 'json.dumps({"untagged": True})', 'json.dumps({"untagged": False})'),
     ("GC overwrites an existing schedule", REG, 'if gtype == "None":', "if True:"),
     ("GC deletes untagged system-wide", REG, '"delete_untagged": False}})', '"delete_untagged": True}})'),
-    ("robot secret reset on every run", REG, "elif RESET:", "else:"),
+    ("robot secret reset on every run", REG, "elif found and not created_robot:", "elif found:"),
+    ("create response secret discarded", REG, 'secret = created.get("secret") or ""', 'secret = PW'),
+    ("skopeo CA dir points at parent", CRON, '--dest-cert-dir "${CERT_ROOT}/${HARBOR_REGISTRY}"', '--dest-cert-dir "${CERT_ROOT}"'),
     ("robot secret printed", REG, 'print("ROBOT_USER=" + found[0]["name"])', 'print("ROBOT_USER=" + found[0]["name"] + PW)'),
     ("08-6 skips security-system", TLS, "storage security-system; do", "storage; do"),
     ("stale threshold 36h -> 360h", ALERTS, "> 129600)", "> 1296000)"),

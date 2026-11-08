@@ -154,6 +154,20 @@ def static(root):
         assert rule["labels"]["severity"] == "warning"
         assert SEL in " ".join(rule["expr"].split()), "alert must select the trivy-db-refresh CronJob"
         assert rule["annotations"]["runbook_url"].endswith("/scripts/airgap/README.md#" + slug(RUNBOOK_HEADING)), "runbook anchor"
+
+    failed = found["TrivyDbRefreshFailed"]
+    assert re.search(r"\b1h\b", str(failed.get("for", ""))), f"TrivyDbRefreshFailed for window: {failed.get('for')}"
+    failed_expr = " ".join(failed["expr"].split())
+    assert re.search(
+        rf'max\(kube_cronjob_status_last_schedule_time\{{{re.escape(SEL)}\}}\)\s*>\s*max\(kube_cronjob_status_last_successful_time\{{{re.escape(SEL)}\}}\)',
+        failed_expr,
+    ), f"TrivyDbRefreshFailed expr comparison: {failed_expr}"
+
+    stale = found["TrivyDbRefreshStale"]
+    assert re.search(r"\b30m\b", str(stale.get("for", ""))), f"TrivyDbRefreshStale for window: {stale.get('for')}"
+    stale_expr = " ".join(stale["expr"].split())
+    assert re.search(r">\s*\b129600\b", stale_expr), f"TrivyDbRefreshStale 36h threshold: {stale_expr}"
+    assert re.search(r">\s*\b43200\b", stale_expr), f"TrivyDbRefreshStale 12h threshold: {stale_expr}"
     return job, found
 
 

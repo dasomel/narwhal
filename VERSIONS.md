@@ -110,6 +110,7 @@ Velero schedule `includedResources` is the generated readable API inventory; new
 | Component | Version | Description |
 |-----------|---------|-------------|
 | Harbor | v2.15.1 (chart 1.19.1) — pinned by immutable tag since 2026-07-07 (an earlier `:latest`-tracking policy caused a stale-layer ARM64 exec-format bug on a pre-baked Vagrant box; see lessons-log) | Container registry (ARM64: ghcr.io/dasomel/goharbor, multi-arch amd64+arm64). `gitops/charts/narwhal-apps/templates/harbor.yaml` and `scripts/airgap/lib/image-digests.tsv` both pin the 6 versioned components (core, jobservice, registry-photon, registryctl, portal, nginx-photon) to `v2.15.1`; redis-photon has no v2.15.2 (stays v2.15.1) and harbor-exporter has no clean multi-arch v2.15.x tag, so it stays disabled rather than pinned to `:latest` |
+| skopeo (trivy-db-refresh) | v1.22.2 | `quay.io/skopeo/stable:v1.22.2` (tag + index digest) in `gitops/resources/trivy-db-refresh.yaml`, the CronJob that mirrors `ghcr.io/aquasecurity/trivy-db:2` and `trivy-java-db:1` into Harbor `trivy-db` every 6h (D-SECDB-AUTO, #585; not rendered for provider kakao). Fedora based, amd64+arm64, bash and coreutils present (layers listed 2026-11-08). v1.22.2 is from 2026-09-18; v1.22.3 (2026-11-04) was still inside the 7-day cooling window |
 
 ## IDP Portal
 

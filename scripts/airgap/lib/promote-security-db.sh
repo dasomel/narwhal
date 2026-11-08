@@ -56,6 +56,16 @@ SECDB_DIR="${BUNDLE}/security-db"
 LOG_FILE="${SECDB_DIR}/promotion-log.jsonl"
 mkdir -p "${SECDB_DIR}"
 
+# D-SECDB-BOUND (#585): this directory holds at most three DB sets (staged, promoted,
+# promoted-previous), about 1.2 GB each (trivy-db 139 MB + trivy-java-db 995 MB measured
+# 2026-11-08). promoted-previous is exactly ONE rollback step: a promote deletes the old
+# promoted-previous before moving promoted into its place, and a rollback swaps the two, so
+# repeated promotions never accumulate. The promotion log is append-only on purpose (it is the
+# approval record, a few hundred bytes per entry) and is not rotated. Not changed: a rollback
+# killed between its moves leaves .promoted-swap-tmp, but that directory then holds the only copy of
+# a set, so removing it automatically would destroy data; inspect it by hand. Keeping N>1 previous
+# sets would cost 1.2 GB each.
+
 log_entry() {
   # $1=action $2=digests-json-or-null
   python3 - "$1" "$2" "${APPROVED_BY}" "${LOG_FILE}" <<'PYEOF'

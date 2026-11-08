@@ -65,7 +65,8 @@ if [ -n "${CA_CERT}" ]; then
   # after the apply and roll harbor-core only when ca.crt really changed. Cost: one core restart per
   # rotation. Escape hatch: kubectl -n devtools rollout restart deployment/harbor-core by hand.
   CA_BEFORE=$(kubectl get secret narwhal-ca-cert -n devtools -o jsonpath='{.data.ca\.crt}' 2>/dev/null || true)
-  for ns in devtools iam monitoring storage; do
+  # security-system: the trivy-db-refresh CronJob verifies Harbor's TLS with it (D-SECDB-AUTO, #585).
+  for ns in devtools iam monitoring storage security-system; do
     kubectl create namespace "${ns}" --dry-run=client -o yaml | kubectl apply -f - 2>/dev/null
     kubectl create secret generic narwhal-ca-cert \
       --from-literal=ca.crt="$(printf '%s\n%s\n' "$(echo "${CA_CERT}" | base64 -d)" "${K8S_CA}")" \

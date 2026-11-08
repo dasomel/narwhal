@@ -107,6 +107,7 @@ quay.io/prometheus-operator/prometheus-operator:v0.91.0	sha256:9e53e13139218aca7
 quay.io/prometheus/alertmanager:v0.33.0	sha256:af26fbe4dd1886ac0efd7bd55cd9027da262e105b137a376522b7c14c3626e4a	2026-09-28T12:06:18Z	crane digest
 quay.io/prometheus/node-exporter:v1.11.1-distroless	sha256:6112664fd761bb964d8a2d3d0119d6c8402618a89edbb3a43c8f7b4090fb53c9	2026-09-28T12:06:18Z	crane digest
 quay.io/prometheus/prometheus:v3.12.0-distroless	sha256:f39df5334dee301b885f77e0ff1159f5d8a43bf9db518f885544594799a1e3c2	2026-09-28T12:06:18Z	crane digest
+quay.io/skopeo/stable:v1.22.2	sha256:2b7d76dde38c5924e1945348840c58786fc192201f2fd545832e58b53d26f7b8	2026-11-08T05:40:00Z	crane digest
 reg.kyverno.io/kyverno/background-controller:v1.18.1	sha256:33a19d2ae18ee0b8e650172f65985f35acd8909d6eeca4032465cca1ba022831	2026-09-28T12:06:18Z	crane digest
 reg.kyverno.io/kyverno/cleanup-controller:v1.18.1	sha256:e9b3342264c82ae35f4fe3abd0e563e613bb54eae6ca493134f0fd4cbacfc0d1	2026-09-28T12:06:18Z	crane digest
 reg.kyverno.io/kyverno/kyverno-cli:v1.18.1	sha256:b7e272572d244ddec0b83469f7200ba883555bf69de4b294cee52a197c8c6590	2026-09-28T12:06:18Z	crane digest

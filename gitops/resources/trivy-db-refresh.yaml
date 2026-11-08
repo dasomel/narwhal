@@ -1,0 +1,210 @@
+# Automatic refresh of the Harbor trivy-db mirror (#585, owner decision 2026-11-08).
+#
+# Copies ghcr.io/aquasecurity/trivy-db:2 and trivy-java-db:1 into the Harbor project trivy-db that
+# trivy-server pulls from (trivy-operator.yaml dbRepository/javaDbRepository). Rendered only where
+# the cluster has egress to ghcr.io (templates/trivy-db-refresh.yaml is gated off for provider
+# kakao); airgap installs keep the manual fetch -> promote --approved-by -> push flow in
+# scripts/airgap/README.md.
+#
+# D-SECDB-AUTO: this job is the promotion gate for clusters with egress. The manual flow asks a
+#   human to approve each staged DB (promote-security-db.sh --approved-by <name>). Here the owner
+#   decided on 2026-11-08 that a DB published by upstream on the SAME tag is pre-approved, so the
+#   approver is recorded as `auto-refresh` in a JSON audit line per artifact (stdout, so Loki keeps
+#   it; the workstation promotion-log.jsonl does not exist in the cluster). The sanity gates of the
+#   manual flow are kept: a layer-size floor (fetch-security-db.sh min_size_for), digest equality
+#   after the copy (fetch-security-db.sh pre/post digest) and TLS verified against the Narwhal CA.
+#   Not replicated: promoted-previous rollback (the previous artifact stays in Harbor until
+#   retention removes it; roll back with the manual flow). Cost: a poisoned upstream tag would be
+#   mirrored without a human look. Escape hatch: set securityDbAutoRefresh.enabled=false in the
+#   narwhal-apps values (or delete this Application) and use the manual flow.
+# D-SECDB-AUTO-TAGS: only trivy-db:2 and trivy-java-db:1 are refreshed. trivy-checks:1 is a frozen
+#   line upstream (security-db.txt), so it stays a one-time push by the manual flow.
+# D-SECDB-AUTO-CRED: the push credential is a Harbor ROBOT account (project trivy-db, push+pull on
+#   repository only), created by scripts/cluster/08-5-registry.sh and stored in Secret
+#   security-system/trivy-db-refresh (keys: registry, username, password). Never the admin
+#   credential, never in git. The CA comes from security-system/narwhal-ca-cert (08-6).
+# D-SECDB-AUTO-SCHEDULE: every 6 hours, matching upstream's publish cadence. Trivy only replaces its
+#   DB once the loaded one passed NextUpdate, so a frequent mirror refresh does not make
+#   trivy-server download more; a refresh that finds the mirror current copies nothing (two
+#   manifest reads), so the extra runs are cheap. Cost: the mirror can lag upstream by up to 6h.
+# D-SECDB-AUTO-IMAGE: quay.io/skopeo/stable (skopeo is the tool the manual flow uses; the image is
+#   multi-arch amd64+arm64, Fedora based with bash and coreutils, verified by listing its layers).
+#   Pinned by tag AND index digest (scripts/airgap/lib/image-digests.tsv); v1.22.2 is from
+#   2026-09-18, outside the 7-day cooling window (v1.22.3 was 4 days old when written).
+# D-SECDB-AUTO-STORAGE: the push is streamed (no full copy on node disk) and leaves the previous
+#   artifact untagged in Harbor; the retention policy and GC schedule that 08-5 creates for the
+#   project bound that (keep 2 per repository).
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: trivy-db-refresh
+  namespace: security-system
+  labels:
+    app.kubernetes.io/name: trivy-db-refresh
+    app.kubernetes.io/part-of: trivy-operator
+# The job only talks to ghcr.io and Harbor; it needs no Kubernetes API access at all.
+automountServiceAccountToken: false
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: trivy-db-refresh
+  namespace: security-system
+  labels:
+    app.kubernetes.io/name: trivy-db-refresh
+    app.kubernetes.io/part-of: trivy-operator
+spec:
+  schedule: "17 */6 * * *"
+  timeZone: "Etc/UTC"
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 3600
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      activeDeadlineSeconds: 1800
+      ttlSecondsAfterFinished: 172800
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: trivy-db-refresh
+            # Plain TLS to Harbor through the gateway; ztunnel adds nothing here.
+            istio.io/dataplane-mode: none
+            velero.io/exclude-from-backup: "true"
+        spec:
+          restartPolicy: Never
+          serviceAccountName: trivy-db-refresh
+          automountServiceAccountToken: false
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 10001
+            runAsGroup: 10001
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: refresh
+              image: quay.io/skopeo/stable:v1.22.2@sha256:2b7d76dde38c5924e1945348840c58786fc192201f2fd545832e58b53d26f7b8
+              imagePullPolicy: IfNotPresent
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: ["ALL"]
+              env:
+                - name: HOME
+                  value: /tmp
+                - name: TMPDIR
+                  value: /var/tmp
+                - name: HARBOR_REGISTRY
+                  valueFrom:
+                    secretKeyRef:
+                      name: trivy-db-refresh
+                      key: registry
+                - name: HARBOR_USERNAME
+                  valueFrom:
+                    secretKeyRef:
+                      name: trivy-db-refresh
+                      key: username
+                - name: HARBOR_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: trivy-db-refresh
+                      key: password
+              command:
+                - /usr/bin/bash
+                - -c
+                - |
+                  set -euo pipefail
+                  umask 077
+                  APPROVED_BY=auto-refresh
+                  CERT_ROOT=/tmp/certs
+                  export REGISTRY_AUTH_FILE=/tmp/auth.json
+
+                  audit() {
+                    # $1=name $2=action $3=source $4=digest. One JSON line per artifact on stdout.
+                    printf '{"event":"secdb-auto-refresh","name":"%s","action":"%s","approved_by":"%s","source":"%s","digest":"sha256:%s","at":"%s"}\n' \
+                      "$1" "$2" "${APPROVED_BY}" "$3" "$4" "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+                  }
+
+                  manifest_digest() {
+                    # sha256 of the raw manifest, same method as fetch-security-db.sh. Empty on any error.
+                    local raw
+                    raw=$(skopeo inspect --raw "$@") || return 1
+                    printf '%s' "${raw}" | sha256sum | cut -d' ' -f1
+                  }
+
+                  # TLS stays verified: Harbor's token realm is https://harbor.<domain>
+                  # (D-SECDB-PUSH-ENDPOINT in push-security-db.sh), trusted through the Narwhal CA.
+                  mkdir -p "${CERT_ROOT}/${HARBOR_REGISTRY}"
+                  cp /etc/narwhal-ca/ca.crt "${CERT_ROOT}/${HARBOR_REGISTRY}/ca.crt"
+                  echo '{}' > "${REGISTRY_AUTH_FILE}"
+                  printf '%s' "${HARBOR_PASSWORD}" | skopeo login --cert-dir "${CERT_ROOT}/${HARBOR_REGISTRY}" \
+                    -u "${HARBOR_USERNAME}" --password-stdin "${HARBOR_REGISTRY}" >/dev/null
+                  unset HARBOR_PASSWORD
+
+                  refresh() {
+                    # $1=name $2=source ref $3=destination ref $4=layer-size floor in bytes
+                    local name="$1" src="$2" dst="$3" floor="$4" want have size=0 n sizes
+                    want=$(manifest_digest --retry-times 3 "docker://${src}") || want=""
+                    if [ -z "${want}" ]; then
+                      echo "[FAIL] ${name}: cannot read the manifest of ${src}" >&2
+                      return 1
+                    fi
+                    have=$(manifest_digest --cert-dir "${CERT_ROOT}/${HARBOR_REGISTRY}" "docker://${dst}" 2>/dev/null) || have=""
+                    if [ "${have}" = "${want}" ]; then
+                      audit "${name}" skipped-current "${src}" "${want}"
+                      return 0
+                    fi
+                    sizes=$(skopeo inspect --raw "docker://${src}" | grep -Eo '"size": *[0-9]+' | grep -Eo '[0-9]+$' || true)
+                    for n in ${sizes}; do size=$((size + n)); done
+                    if [ "${size}" -lt "${floor}" ]; then
+                      echo "[FAIL] ${name}: source is ${size}B, under the ${floor}B sanity floor; not mirrored" >&2
+                      audit "${name}" rejected-size "${src}" "${want}"
+                      return 1
+                    fi
+                    skopeo copy --preserve-digests --retry-times 3 --quiet \
+                      --dest-cert-dir "${CERT_ROOT}/${HARBOR_REGISTRY}" "docker://${src}" "docker://${dst}"
+                    have=$(manifest_digest --cert-dir "${CERT_ROOT}/${HARBOR_REGISTRY}" "docker://${dst}") || have=""
+                    if [ "${have}" != "${want}" ]; then
+                      echo "[FAIL] ${name}: mirror digest ${have:-none} != source ${want} after the copy" >&2
+                      audit "${name}" rejected-digest "${src}" "${want}"
+                      return 1
+                    fi
+                    audit "${name}" promoted "${src}" "${want}"
+                  }
+
+                  fail=0
+                  refresh trivy-db ghcr.io/aquasecurity/trivy-db:2 \
+                    "${HARBOR_REGISTRY}/trivy-db/aquasecurity/trivy-db:2" 20000000 || fail=$((fail + 1))
+                  refresh trivy-java-db ghcr.io/aquasecurity/trivy-java-db:1 \
+                    "${HARBOR_REGISTRY}/trivy-db/aquasecurity/trivy-java-db:1" 100000000 || fail=$((fail + 1))
+                  echo "trivy-db-refresh finished, failures: ${fail}"
+                  [ "${fail}" -eq 0 ]
+              resources:
+                requests:
+                  cpu: 50m
+                  memory: 128Mi
+                  ephemeral-storage: 256Mi
+                limits:
+                  cpu: 500m
+                  memory: 512Mi
+                  ephemeral-storage: 4Gi
+              volumeMounts:
+                - name: tmp
+                  mountPath: /tmp
+                - name: var-tmp
+                  mountPath: /var/tmp
+                - name: narwhal-ca
+                  mountPath: /etc/narwhal-ca
+                  readOnly: true
+          volumes:
+            - name: tmp
+              emptyDir:
+                sizeLimit: 64Mi
+            - name: var-tmp
+              emptyDir:
+                sizeLimit: 3Gi
+            - name: narwhal-ca
+              secret:
+                secretName: narwhal-ca-cert

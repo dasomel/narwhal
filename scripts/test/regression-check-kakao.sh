@@ -3388,6 +3388,9 @@ PYEOF'
   # 2026-11-08 (#585): owner decision: refresh the Trivy DB mirror automatically where the cluster has egress, and bound Harbor/PVC/workstation storage.
   check R322 "Trivy DB mirror auto refresh (#585): digest-pinned skopeo CronJob (non-root, read-only root, no API token, robot credential from Secret trivy-db-refresh, Narwhal CA, TLS verified) copies only trivy-db:2 and trivy-java-db:1 (stub-skopeo behavior: current mirror copies nothing, stale one is copied with --preserve-digests as auto-refresh, size floor and post-copy digest enforced, password never in argv/log), Application gated off for kakao and enabled=false (helm render), 08-5 robot scoped to trivy-db push+pull plus retention keep-2 incl. untagged and GC only when none exists (fake Harbor API: idempotent re-run), 08-6 CA to security-system, fetch prunes dropped names, TrivyDbRefreshFailed/Stale promtool cases; 30 mutations caught (D-SECDB-AUTO, D-SECDB-AUTO-ROBOT, D-SECDB-BOUND)" \
     python3 scripts/test/lib/check-trivy-db-auto-refresh.py --mutation-verify
+  # 2026-11-08 (D-WORKER-MEMORY): workers 6GB -> 8GB after the 2026-11-06 node OOMs at ~5.3GiB allocatable.
+  check R323 "worker VM memory is 8GB everywhere: Vagrantfile WORKER_MEMORY=8192 (MASTER_MEMORY stays 6144), README/README-ko config, VM table and 42GB RAM requirement, architecture.md, operations.md, troubleshooting.md, SessionStart hook and agent text; no live doc says worker 6GB; the apply procedure (cordon/drain, halt + up --no-provision, uncordon, CNPG required anti-affinity #590) is documented; 9 mutations caught (D-WORKER-MEMORY)" \
+    python3 scripts/test/lib/check-worker-memory.py --mutation-verify
 }
 
 #=========================================

@@ -78,7 +78,12 @@ MASTER_MEMORY = 6144    # 6GB - control plane + DaemonSets headroom
 # overcommit that is fine on a 14-core host because actual use is low. Override with NARWHAL_WORKER_CPUS.
 WORKER_CPUS = Integer(ENV.fetch("NARWHAL_WORKER_CPUS", "4"), exception: false)
 abort "NARWHAL_WORKER_CPUS must be a positive integer (got #{ENV['NARWHAL_WORKER_CPUS'].inspect})" unless WORKER_CPUS && WORKER_CPUS >= 1
-WORKER_MEMORY = 6144    # 6GB - platform apps
+# D-WORKER-MEMORY (owner decision 2026-11-08): workers 6GB -> 8GB. At 6GB a worker had ~5.3GiB
+# allocatable and prometheus/tempo/loki/seaweedfs co-located on one node hit the kernel OOM killer
+# (2026-11-06, see lessons-log). Cost: +6GB host RAM for 3 workers (3x6 + 3x8 = 42GB of VMs on a
+# 64GiB host); masters stay 6GB. memsize is applied at VM start, so an existing cluster needs a
+# halt/up per worker (docs/vagrant/operations.md "Worker memory 8GB"). Escape hatch: set 6144.
+WORKER_MEMORY = 8192    # 8GB - platform apps
 
 #=========================================
 # Disk Configuration

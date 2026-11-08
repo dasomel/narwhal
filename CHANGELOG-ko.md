@@ -40,11 +40,11 @@
   Falco를 제거하지 않는다. 클러스터가 아닌 로컬 Docker 랩(실제 Falco·falcosidekick·Alertmanager)에서
   확인했으며, 차트 타르볼·이미지 2개·GitOps push는 별도로 클러스터에 반영해야 하고, Ubuntu 26.04 /
   커널 7.0 Vagrant 박스와 Kubernetes CRI 경로에서의 Falco는 아직 관측되지 않았다.
-- **포털이 `narwhal-portal:1.1.8`로 고정됨 (기존 1.1.0, 중간에 #467·#477·#481·#502·#520·#561·#580이 1.1.1~1.1.7로
-  고정).** 1.1.8은 DORA 이력 행에서 "Unknown" 대신 "—"를 표시하고(#581) Next.js를 16.4.3으로
-  올린다(#486). 1.1.7 이하의 수정을 모두 포함한다. 이미지는 저장소 키로 Cosign 서명되어 있다
-  (index digest `sha256:500c334e…`). 클러스터 bastion에서 이 고정을 적용하기 전에 digest로 미러링해야 한다
-  (`scripts/airgap/README.md`의 "Mirror a pin bump"). 로컬 Vagrant 클러스터는 ghcr.io에서 직접 pull한다.
+- **포털이 `narwhal-portal:1.1.9`로 고정됨 (기존 1.1.0, 중간에 #467·#477·#481·#502·#520·#561·#580·#596이 1.1.1~1.1.8로
+  고정).** 1.1.9는 `lucide-react`를 1.66.0으로 올리고(#539) OSS 버전 목록에 `skopeo` 이미지를
+  추가한다(#603). 사용자에게 보이는 기능 변경은 없다. 1.1.8 이하의 수정을 모두 포함한다. 이미지는 저장소 키로
+  Cosign 서명되어 있다(index digest `sha256:72a1f4f4…`). 클러스터 bastion에서 이 고정을 적용하기 전에 digest로
+  미러링해야 한다(`scripts/airgap/README.md`의 "Mirror a pin bump"). 로컬 Vagrant 클러스터는 ghcr.io에서 직접 pull한다.
 
 ### 수정
 

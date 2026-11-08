@@ -7,8 +7,12 @@ client role velero-ui/login + Deny access) follows it as a REQUIRED sibling, so 
 the gate. The role is mapped to the cluster-admin group, the flow is bound to velero-ui only, and the
 script is rerun safe. The script is parsed as text. --mutation-verify re-runs the check on broken copies.
 """
+import json
+import os
 import re
+import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 SCRIPT = Path("scripts/cluster/11-3-keycloak-clients.sh")
@@ -41,11 +45,54 @@ def check_sso(sso):
     return errors
 
 
+def check_config_lookup_runtime(text):
+    """Exercise completeness verification with Keycloak execution/config IDs kept distinct."""
+    section = block(text)
+    if section is None or "vu_flow_complete()" not in section:
+        return False
+    start = section.index("vu_flow_complete()")
+    function_end = section.index("\n}\n", start) + 3
+    function = section[start:function_end]
+    outputs = {
+        "root": [{"displayName": "fixture-auth", "requirement": "REQUIRED"}, {"displayName": "fixture-gate", "requirement": "CONDITIONAL"}],
+        "auth": [{"providerId": "auth-cookie", "displayName": "Cookie", "requirement": "ALTERNATIVE"}, {"displayName": "fixture-forms", "requirement": "ALTERNATIVE"}],
+        "forms": [{"providerId": "auth-username-password-form", "displayName": "Username", "requirement": "REQUIRED"}, {"displayName": "fixture-otp", "requirement": "CONDITIONAL"}],
+        "otp": [{"providerId": "conditional-user-configured", "displayName": "Configured", "requirement": "REQUIRED"}, {"providerId": "auth-otp-form", "displayName": "OTP", "requirement": "REQUIRED"}],
+        "gate": [{"providerId": "conditional-user-role", "displayName": "User Role", "requirement": "REQUIRED", "id": "exec-condition-71", "authenticationConfig": "cfg-condition-19"},
+                 {"providerId": "deny-access-authenticator", "displayName": "Deny", "requirement": "REQUIRED", "id": "exec-deny-84", "authenticationConfig": "cfg-deny-32"}],
+        "cfg-condition-19": {"config": {"condUserRole": "velero-ui.login", "negate": "true"}},
+        "cfg-deny-32": {"config": {"denyErrorMessage": "restricted to cluster-admin"}},
+    }
+    with tempfile.TemporaryDirectory() as temp:
+        root = Path(temp)
+        for name, payload in outputs.items():
+            (root / name).write_text(json.dumps(payload))
+        stub = '''kc_exec() {
+  case "$2" in
+    authentication/flows/fixture/executions) cat "$FIXTURE/root" ;;
+    authentication/flows/fixture-auth/executions) cat "$FIXTURE/auth" ;;
+    authentication/flows/fixture-forms/executions) cat "$FIXTURE/forms" ;;
+    authentication/flows/fixture-otp/executions) cat "$FIXTURE/otp" ;;
+    authentication/flows/fixture-gate/executions) cat "$FIXTURE/gate" ;;
+    authentication/config/*) cat "$FIXTURE/${2#authentication/config/}" ;;
+    *) return 1 ;;
+  esac
+}
+'''
+        script = f"set -e\nREALM=fixture\nVU_ROLE=login\n{stub}\n{function}\nvu_flow_complete fixture\n"
+        result = subprocess.run(["bash", "-c", script], env={**os.environ, "FIXTURE": str(root)}, capture_output=True, text=True)
+        if result.returncode:
+            print(result.stderr, file=sys.stderr)
+        return result.returncode == 0
+
+
 def check(text, doc, sso=""):
     b = block(text)
     if b is None:
         return ["11-3 lacks the D-VELERO-UI-LOGIN-563 section"]
     errors = []
+    if not check_config_lookup_runtime(text):
+        errors.append("vu_flow_complete must resolve configs through distinct authenticationConfig IDs")
     must = {
         "client role is created on velero-ui": r'clients/\$\{VELERO_UI_CLIENT_ID\}/roles" -r "\$\{REALM\}" -s "name=\$\{VU_ROLE\}"',
         "role is mapped to the cluster-admin group only": r'add-roles -r "\$\{REALM\}" --gname cluster-admin --cclientid velero-ui --rolename "\$\{VU_ROLE\}"',
@@ -131,6 +178,8 @@ def check(text, doc, sso=""):
 
 def mutate(name, text):
     b = block(text)
+    if name == "execution id used for config lookup":
+        return text.replace(b, b.replace(' | .authenticationConfig] | if length == 1 then .[0] else error("deny missing, unconfigured, or wrong requirement") end', ' | .id] | if length == 1 then .[0] else error("deny missing or wrong requirement") end', 1))
     if name == "no negate":
         return text.replace(b, b.replace(" -s config.negate=true", ""))
     if name == "negate missing from completeness check":
@@ -197,7 +246,7 @@ def mutate_sso(name, sso):
     raise KeyError(name)
 
 
-MUTATIONS = ["no negate", "negate missing from completeness check", "deny removed", "Deny Access DISABLED accepted",
+MUTATIONS = ["execution id used for config lookup", "no negate", "negate missing from completeness check", "deny removed", "Deny Access DISABLED accepted",
              "masked requirement update failure", "gate becomes a cookie alternative", "role not mapped to group",
              "wrong role in condition", "flow not bound", "realm browser flow rebound", "flow created unconditionally",
              "role created unconditionally", "unbind before rebuild", "lookup failure masked", "rebuild reuses bound alias",

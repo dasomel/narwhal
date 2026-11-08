@@ -746,7 +746,7 @@ vu_flow_complete() {
     ([.[] | select(.providerId == "conditional-user-configured" and .requirement == "REQUIRED")] | length == 1)
     and ([.[] | select(.providerId == "auth-otp-form" and .requirement == "REQUIRED")] | length == 1)' <<<"${otp}" >/dev/null || return 1
   cond_id=$(jq -er '[.[] | select(.providerId == "conditional-user-role" and .requirement == "REQUIRED") | .authenticationConfig] | if length == 1 then .[0] else error("condition missing or wrong requirement") end' <<<"${gate}") || return 1
-  deny_id=$(jq -er '[.[] | select(.providerId == "deny-access-authenticator" and .requirement == "REQUIRED")] | if length == 1 then .[0].id else error("deny missing or wrong requirement") end' <<<"${gate}") || return 1
+  deny_id=$(jq -er '[.[] | select(.providerId == "deny-access-authenticator" and .requirement == "REQUIRED") | .authenticationConfig] | if length == 1 then .[0] else error("deny missing, unconfigured, or wrong requirement") end' <<<"${gate}") || return 1
   cond_config=$(kc_exec get "authentication/config/${cond_id}" -r "${REALM}") || return 1
   deny_config=$(kc_exec get "authentication/config/${deny_id}" -r "${REALM}") || return 1
   jq -e --arg role "velero-ui.${VU_ROLE}" '.config["condUserRole"] == $role and .config["negate"] == "true"' <<<"${cond_config}" >/dev/null || return 1

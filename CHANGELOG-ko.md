@@ -63,7 +63,7 @@
   `cluster-admin` 전용 로그인 흐름을 `velero-ui` 클라이언트에 연결한다(#599). `11-2`는 `narwhal`과 `master`
   realm의 `loginTheme`·`adminTheme`을 `narwhal`로 설정하며, 관리 콘솔 브랜딩에 필요하다(#572).
 - **예전 스크립트로 미러링된 Gitea 디렉터리를 다시 push (#578).** 이 릴리스 이전의
-  `push-to-gitea.sh <dir>`은 이미 있는 디렉터리를 중첩시키고(`<dir>/narwhal/narwhal/...`) 삭제를
+  `push-to-gitea.sh <dir>`은 이미 있는 디렉터리를 중첩시키고(`<dir>/<basename>/...`) 삭제를
   전파하지 않았다. 해당 경로에 대해 다시 실행하면 이제 Gitea 사본이 정확히 교체된다.
 
 ### 추가

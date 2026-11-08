@@ -68,7 +68,7 @@ Velero backups, VM disk growth). Several changes need an operator action on an e
   `velero-ui` client (#599). `11-2` sets `loginTheme` and `adminTheme` to `narwhal` on the `narwhal` and
   `master` realms, which the admin console branding needs (#572).
 - **Re-push Gitea directories that were mirrored with the old script (#578).** Before this release,
-  `push-to-gitea.sh <dir>` nested an existing directory (`<dir>/narwhal/narwhal/...`) and
+  `push-to-gitea.sh <dir>` nested an existing directory (`<dir>/<basename>/...`) and
   never propagated deletions. Running it again for that path now replaces the Gitea copy exactly.
 
 ### Added

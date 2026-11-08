@@ -89,6 +89,13 @@ def check(t):
             or not re.search(r'NFS_DISK_RECORDED = NFS_VMDK_IN_VMDIR \|\| File\.exist\?\(NFS_VMDK_ABS\)', vf) \
             or 'disk_meta' not in vf or 'nfs-data*' not in vf:
         errors.append('Vagrantfile: guard refusing NARWHAL_NFS_DISK_GB=0 when the narwhal-nfs.vmdk exists is missing (boot would export the stale root copy)')
+    dtrig = re.search(r'master\.trigger\.after :destroy do.*?\n        end\n', vf, re.S)
+    if not dtrig or 'machine.state.id == :not_created' not in dtrig.group(0):
+        errors.append('Vagrantfile: destroy cleanup trigger must delete only when machine.state.id == :not_created (after-triggers run even when destroy is declined)')
+    if len(re.findall(r'next unless machine\.provider_name == :vmware_desktop', vf)) < 2:
+        errors.append('Vagrantfile: both NFS triggers must be limited to provider_name == :vmware_desktop')
+    if not re.search(r'NFS_VMDK_VMX = NFS_VMDK_IN_VMDIR \? NFS_VMDK_NAME : NFS_VMDK_ABS', vf):
+        errors.append('Vagrantfile: NFS_VMDK_VMX must keep the bare name when the vmdk is in the VM dir (live machine)')
     prov = re.search(r'scripts/cluster/01-nfs-server\.sh",\n\s+env: \{(.*?)\}', vf, re.S)
     if not prov or '"NFS_DATA_DEVICE" => NFS_DATA_DEVICE' not in prov.group(1):
         errors.append('Vagrantfile: 01-nfs-server.sh must receive NFS_DATA_DEVICE')
@@ -126,6 +133,10 @@ MUTATIONS = {
     'config.vm.disk reintroduced on vmware': ('vf', '      master.vm.provider "virtualbox" do |vb|', '      master.vm.disk :disk, size: "200GB", name: "nfs-data", vmware_desktop__bus_type: "nvme"\n      master.vm.provider "virtualbox" do |vb|'),
     'attach for every master': ('vf', 'if i == 1 && NFS_DISK_GB > 0\n          vmware.vmx', 'if NFS_DISK_GB > 0\n          vmware.vmx'),
     'vmdk renamed': ('vf', 'NFS_VMDK_NAME = "narwhal-nfs.vmdk"', 'NFS_VMDK_NAME = "nfs-data.vmdk"'),
+    'always absolute path (detaches live disk)': ('vf', 'NFS_VMDK_VMX = NFS_VMDK_IN_VMDIR ? NFS_VMDK_NAME : NFS_VMDK_ABS', 'NFS_VMDK_VMX = NFS_VMDK_ABS'),
+    'destroy guard removed': ('vf', '            next unless machine.state.id == :not_created\n', ''),
+    'provider condition dropped': ('vf', '            next unless machine.provider_name == :vmware_desktop\n            target', '            target'),
+    'destroy provider condition dropped': ('vf', '            next unless machine.provider_name == :vmware_desktop\n            # Vagrant runs', '            # Vagrant runs'),
     'create trigger removed': ('vf', 'master.trigger.before [:up, :reload] do', 'master.trigger.before [:destroy] do'),
     'create not idempotent': ('vf', 'next if File.exist?(target)', 'next if false'),
     'vdiskmanager type changed': ('vf', '"-a", "lsilogic", "-t", "0", target)', '"-a", "lsilogic", target)'),

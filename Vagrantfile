@@ -107,8 +107,9 @@ NFS_DISK_RECORDED = NFS_VMDK_IN_VMDIR || File.exist?(NFS_VMDK_ABS) ||
                     Dir.glob(File.join(NFS_MACHINE_DIR, "disk_meta")).any? { |f| File.read(f).include?("nfs-data") } ||
                     !Dir.glob(File.join(NFS_MACHINE_DIR, "*/nfs-data*")).empty?
 if NFS_DISK_GB == 0 && NFS_DISK_RECORDED && ENV["NARWHAL_NFS_DISK_ALLOW_DELETE"] != "yes-delete-the-nfs-disk"
-  abort "REFUSING: NARWHAL_NFS_DISK_GB=0 but master-1 already has the NFS data disk (#{NFS_VMDK_NAME}); booting without it would " \
-        "export the stale root-disk copy of every PV. Unset NARWHAL_NFS_DISK_GB. Only if the data is already gone: " \
+  abort "REFUSING: NARWHAL_NFS_DISK_GB=0 but master-1 already has the NFS data disk (#{NFS_VMDK_NAME}); 0 stops this Vagrantfile from creating/attaching it: " \
+        "a new or recreated VM would boot without the disk and export the stale root-disk copy of every PV, and an existing VM's " \
+        "vmx may keep or lose the attach depending on its state. Unset NARWHAL_NFS_DISK_GB. Only if the data is already gone: " \
         "NARWHAL_NFS_DISK_ALLOW_DELETE=yes-delete-the-nfs-disk."
 end
 # "auto": 01-nfs-server.sh picks the single blank non-OS disk (no /dev/sdb guessing; fstab uses the UUID).
@@ -290,6 +291,9 @@ Vagrant.configure("2") do |config|
           trigger.name = "NFS data vmdk cleanup"
           trigger.ruby do |_env, machine|
             next unless machine.provider_name == :vmware_desktop
+            # Vagrant runs after-triggers even when the user answers N to the destroy prompt: delete only
+            # once the machine is really gone. Never touches a vmdk inside the VM dir (destroy owns that).
+            next unless machine.state.id == :not_created
             FileUtils.rm_rf(File.dirname(NFS_VMDK_ABS))
           end
         end

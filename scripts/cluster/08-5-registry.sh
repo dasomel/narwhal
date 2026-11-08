@@ -268,24 +268,34 @@ robots = call("GET", f"/robots?q={q}&page_size=100") or []
 found = [r for r in robots if r["name"].endswith("+" + ROBOT)]
 secret = PW
 created_robot = False
+ROBOT_DESC = "trivy-db mirror auto refresh (gitops/resources/trivy-db-refresh.yaml)"
+ROBOT_PERMS = [{"kind": "project", "namespace": PROJECT, "access": [
+    {"resource": "repository", "action": "push"},
+    {"resource": "repository", "action": "pull"}]}]
 if not found:
     created = call("POST", "/robots", {
         "name": ROBOT, "level": "project", "duration": -1, "disable": False, "secret": PW,
-        "description": "trivy-db mirror auto refresh (gitops/resources/trivy-db-refresh.yaml)",
-        "permissions": [{"kind": "project", "namespace": PROJECT, "access": [
-            {"resource": "repository", "action": "push"},
-            {"resource": "repository", "action": "pull"}]}]})
+        "description": ROBOT_DESC, "permissions": ROBOT_PERMS})
     secret = created.get("secret") or ""
     created_robot = True
     robots = call("GET", f"/robots?q={q}&page_size=100") or []
     found = [r for r in robots if r["name"].endswith("+" + ROBOT)]
 if not found:
     raise SystemExit("robot account not found after create")
+if found and not created_robot:
+    # D-SECDB-ROBOT-PERMS: an existing robot may have been widened by hand; PUT (Harbor v2.15.1 UpdateRobot,
+    # name/level must match) pins it back to repository push+pull on trivy-db. Cost: one PUT per run.
+    call("PUT", f"/robots/{found[0]['id']}", {
+        "name": found[0]["name"], "level": "project", "duration": -1, "disable": False,
+        "description": ROBOT_DESC, "permissions": ROBOT_PERMS})
 if found and HAS_SECRET:
     # Verify the persisted credential with Harbor's registry auth endpoint before deciding to rotate.
+    # D-SECDB-TOKEN-NOSCOPE: no scope here. With a scope, Harbor v2.15.1 downgrades a failed robot login
+    # to anonymous and trivy-db is public, so a wrong secret would still get 200. Without a scope a wrong
+    # secret is 401 (same path as docker login).
     user = found[0]["name"]
     harbor_base = API_BASE
-    req = urllib.request.Request(harbor_base + "/service/token?service=harbor-registry&scope=repository:trivy-db/aquasecurity/trivy-db:pull", headers={
+    req = urllib.request.Request(harbor_base + "/service/token?service=harbor-registry", headers={
         "Authorization": "Basic " + base64.b64encode((user + ":" + PW).encode()).decode()})
     try:
         urllib.request.urlopen(req, timeout=15).close()

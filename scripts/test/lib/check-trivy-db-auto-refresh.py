@@ -297,7 +297,10 @@ class FakeHarbor(BaseHTTPRequestHandler):
         if (method, path) == ("GET", "/service/token"):
             auth = self.headers.get("Authorization", "")
             valid = auth == "Basic " + base64.b64encode((s["robots"][0]["name"] + ":" + s["robot_secret"]).encode()).decode()
-            return self._send(200 if valid else 401, {})
+            # Real Harbor v2.15.1: a failed robot login falls through to anonymous; a scoped request for a
+            # public project (trivy-db) then gets an anonymous token (200), only an unscoped one is 401.
+            scoped = "scope=" in urllib.parse.urlsplit(self.path).query
+            return self._send(200 if valid or scoped else 401, {})
         if not path.startswith("/api/v2.0/"):
             return self._send(404, {})
         path = path[len("/api/v2.0"):]
@@ -307,12 +310,18 @@ class FakeHarbor(BaseHTTPRequestHandler):
         if (method, path) == ("GET", "/robots"):
             return self._send(200, s["robots"])
         if (method, path) == ("POST", "/robots"):
-            s["robots"].append({"id": 7, "name": "robot$trivy-db+" + body["name"]})
+            s["robots"].append({"id": 7, "name": "robot$trivy-db+" + body["name"], "permissions": body["permissions"]})
             s["robot_secret"] = "HarborGenerated-Secret9"
             return self._send(201, {"id": 7, "secret": s["robot_secret"]})
         if method == "PATCH" and path == "/robots/7":
             s["robot_secret"] = body["secret"]
             return self._send(200, {"secret": ""})
+        if method == "PUT" and path == "/robots/7":
+            # UpdateRobot: name and level must match the stored robot.
+            if body["name"] != s["robots"][0]["name"] or body["level"] != "project":
+                return self._send(400, {})
+            s["robots"][0]["permissions"] = body["permissions"]
+            return self._send(200, {})
         if (method, path) == ("POST", "/retentions"):
             s["retention"] = True
             return self._send(201, {})
@@ -393,6 +402,19 @@ def harbor_behavior(root):
     assert ("PUT", "/retentions/9") in methods and ("POST", "/retentions") not in methods, methods
     assert not any(c[1] == "/system/gc/schedule" and c[0] != "GET" for c in st["calls"]), "existing GC schedule overwritten"
     assert not any(m == "PATCH" for m, _ in methods), "valid stored secret must not rotate"
+
+    # Permissions widened by hand: every re-run pins the robot back to repository push+pull on trivy-db.
+    st["calls"].clear()
+    st["robot_secret"] = PASSWORD
+    st["robots"][0]["permissions"] = [{"kind": "project", "namespace": "trivy-db", "access": [{"resource": "*", "action": "*"}]}]
+    p = harbor_run(code, st, reset=False)
+    assert p.returncode == 0, p.stderr
+    puts = [c[2] for c in st["calls"] if c[:2] == ("PUT", "/robots/7")]
+    assert len(puts) == 1 and puts[0]["name"] == "robot$trivy-db+trivy-db-refresh", puts
+    perms = st["robots"][0]["permissions"]
+    assert len(perms) == 1 and perms[0]["namespace"] == "trivy-db" and \
+        sorted((a["resource"], a["action"]) for a in perms[0]["access"]) == [("repository", "pull"), ("repository", "push")], perms
+    assert not any(c[0] in ("PATCH", "POST") and c[1] == "/robots" or c[0] == "PATCH" for c in st["calls"]), "valid secret must not rotate"
 
     # Secret lost, robot still in Harbor: its secret is reset, not duplicated.
     st["calls"].clear()
@@ -530,6 +552,11 @@ MUTATIONS = [
     ("create response secret discarded", REG, 'secret = created.get("secret") or ""', 'secret = PW'),
     ("Harbor REST calls use unprefixed base", REG, 'API + path, method=method,', 'API_BASE + path, method=method,'),
     ("skopeo CA dir points at parent", CRON, '--dest-cert-dir "${CERT_ROOT}/${HARBOR_REGISTRY}"', '--dest-cert-dir "${CERT_ROOT}"'),
+    ("credential check asks for a public scope", REG, '"/service/token?service=harbor-registry"',
+     '"/service/token?service=harbor-registry&scope=repository:trivy-db/aquasecurity/trivy-db:pull"'),
+    ("existing robot permissions not reconciled", REG, "if found and not created_robot:\n    # D-SECDB-ROBOT-PERMS", "if False:\n    # D-SECDB-ROBOT-PERMS"),
+    ("reconcile widens permissions", REG, '    call("PUT", f"/robots/{found[0][\'id\']}", {\n        "name": found[0]["name"], "level": "project", "duration": -1, "disable": False,\n        "description": ROBOT_DESC, "permissions": ROBOT_PERMS})',
+     '    call("PUT", f"/robots/{found[0][\'id\']}", {\n        "name": found[0]["name"], "level": "project", "duration": -1, "disable": False,\n        "description": ROBOT_DESC, "permissions": [{"kind": "project", "namespace": PROJECT, "access": [{"resource": "*", "action": "*"}]}]})'),
     ("robot secret printed", REG, 'print("ROBOT_USER=" + found[0]["name"])', 'print("ROBOT_USER=" + found[0]["name"] + PW)'),
     ("08-6 skips security-system", TLS, "storage security-system; do", "storage; do"),
     ("stale threshold 36h -> 360h", ALERTS, "> 129600)", "> 1296000)"),

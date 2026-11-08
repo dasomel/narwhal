@@ -1,0 +1,79 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-trivy-db-auto-refresh-585-20261108",
+  "task": "Owner decision 2026-11-08 on #585: refresh the Harbor trivy-db mirror automatically where the cluster has egress (airgap keeps the manual promote gate), and keep Harbor, the trivy-server PVC and the workstation bundle from growing without bound.",
+  "changeContext": {
+    "paths": [
+      ".agents/evals/traces/2026-11-trivy-db-auto-refresh-585.json",
+      "VERSIONS.md",
+      "docs/common/lessons-log.md",
+      "docs/common/upgrade-waves.json",
+      "gitops/charts/narwhal-apps/templates/trivy-db-refresh.yaml",
+      "gitops/charts/narwhal-apps/values.yaml",
+      "gitops/resources/prometheus-alerts.yaml",
+      "gitops/resources/trivy-db-refresh.yaml",
+      "scripts/airgap/README.md",
+      "scripts/airgap/images.txt",
+      "scripts/airgap/lib/component-licenses.tsv",
+      "scripts/airgap/lib/fetch-security-db.sh",
+      "scripts/airgap/lib/image-digests.tsv",
+      "scripts/airgap/lib/promote-security-db.sh",
+      "scripts/cluster/08-5-registry.sh",
+      "scripts/cluster/08-6-tls-routes.sh",
+      "scripts/test/lib/check-trivy-db-auto-refresh.py",
+      "scripts/test/regression-check-kakao.sh"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Add a CronJob mirror refresh, its Harbor robot/retention/GC provisioning, two alerts and workstation-bundle pruning. Deliberately left alone: the manual fetch/promote/push flow and its approval gate (still the only path for airgap and provider kakao), trivy-checks (frozen upstream, manual push), trivy-operator values, Kyverno policies (security-system is already excluded from the image-signature, registry and latest-tag rules), the live cluster (read-only kubectl/port-forward and anonymous Harbor GETs only, nothing applied), Gitea, the promotion log (append-only on purpose) and .promoted-swap-tmp (can hold the only copy of a set)."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "Live read-only 2026-11-08: trivy-server metadata.json UpdatedAt 2026-11-06T01:07 NextUpdate 2026-11-07T01:07 (mirror stale); Harbor trivy-db/trivy-java-db each hold 3 artifacts (2 untagged, 139 MB and 995 MB) and project trivy-db has no retention_id; trivy-server PVC holds db/trivy.db 1.6G of 5G plus fanal.db 2 MiB with /tmp an empty emptyDir; kube-state-metrics exposes kube_cronjob_status_last_successful_time.",
+      "evidence": [
+        "repo:gitops/charts/narwhal-apps/templates/trivy-operator.yaml",
+        "repo:scripts/cluster/08-5-registry.sh"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "D-SECDB-AUTO: skopeo CronJob every 6h, digest-pinned image, non-root, robot credential from Secret trivy-db-refresh, TLS verified with narwhal-ca-cert, current-mirror skip, size floor, post-copy digest check, approved_by=auto-refresh audit line; Application gated off for kakao and securityDbAutoRefresh.enabled=false. D-SECDB-AUTO-ROBOT/RETENTION: 08-5 creates the project-scoped robot, a keep-2 retention policy including untagged, and a GC schedule only when none exists. D-SECDB-AUTO-ALERT: TrivyDbRefreshFailed and TrivyDbRefreshStale. D-SECDB-BOUND: fetch prunes staged names that left the list. 08-6 distributes the CA to security-system. quay.io/skopeo/stable v1.22.2 added to images.txt, image-digests.tsv and VERSIONS.md (v1.22.3 was inside the 7-day cooling window).",
+      "evidence": [
+        "repo:gitops/resources/trivy-db-refresh.yaml",
+        "repo:gitops/charts/narwhal-apps/templates/trivy-db-refresh.yaml",
+        "repo:gitops/resources/prometheus-alerts.yaml",
+        "repo:scripts/cluster/08-5-registry.sh",
+        "repo:scripts/cluster/08-6-tls-routes.sh",
+        "repo:scripts/airgap/lib/fetch-security-db.sh"
+      ]
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "Static and behavioral, no cluster: R322 runs the CronJob script against a stub skopeo, the 08-5 Harbor block against a fake Harbor API (idempotent re-run, scoped robot, keep-2 retention, GC only when none), the fetch prune loop, helm template (vagrant renders, kakao and enabled=false do not) and promtool cases for both alerts; 30 mutations are rejected. NOT covered: a real CronJob run, the real Harbor 2.15.1 API (endpoints checked against the upstream v2.14.0 swagger), Kyverno admission, the image running as uid 10001, ArgoCD sync, Prometheus loading the rules.",
+      "evidence": [
+        "test:python3 scripts/test/lib/check-trivy-db-auto-refresh.py --mutation-verify -> PASS: 30 mutations rejected",
+        "repo:scripts/test/lib/check-trivy-db-auto-refresh.py",
+        "repo:scripts/test/regression-check-kakao.sh"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "completion_claim",
+      "summary": "In the repository the mirror refresh, its credential provisioning, retention/GC, alerts and the storage-bound documentation are in place and pinned by R322. That the mirror actually refreshes and that Harbor retention and GC reclaim space on the live cluster is not demonstrated; it needs push-to-gitea, re-running 08-5 (robot Secret, retention, GC) and a first Job run."
+    },
+    {
+      "id": "e6",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Complete for the repository scope; not deployed, no live CronJob run, no Harbor mutation."
+    }
+  ]
+}

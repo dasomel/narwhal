@@ -241,7 +241,8 @@ python3 scripts/airgap/lib/check-security-db-freshness.py \
 
 미러의 `trivy-db:2`가 `NextUpdate`를 넘기면 trivy-server는 마지막 다운로드 후 1시간마다 **같은 DB를 다시** 받는다
 (1회 약 1.6GiB, cAdvisor 쓰기 기준 약 3.7GiB, 하루 수십 GiB가 NFS 서버 디스크에 쌓임, #585). 업스트림 DB는 약 6~24시간마다
-새로 나오므로 미러는 주기적으로 갱신해야 한다. 자동 갱신은 하지 않는다: promote는 사람이 승인하는 게이트다.
+새로 나오므로 미러는 주기적으로 갱신해야 한다. 에어갭에서는 자동 갱신하지 않는다: promote는 사람이 승인하는 게이트다.
+ghcr.io로 나갈 수 있는 클러스터(로컬 Vagrant)는 아래 "보안 DB 자동 갱신"이 이 절차를 대신한다.
 
 감지: `TrivyServerDbRedownloading`(`gitops/resources/prometheus-alerts.yaml`)이 trivy-server 컨테이너 쓰기가 3시간에 6GB를
 넘으면 울린다(다운로드 2회 이상). 미러 나이를 직접 재는 메트릭은 없다. Portal 보안 페이지의 "Trivy DB 상태" 카드(Harbor를
@@ -258,6 +259,48 @@ python3 scripts/airgap/lib/check-security-db-freshness.py \
 
 push 뒤 trivy-server는 다음 시간 주기에 새 DB를 한 번 받고 멈춘다. 서둘러 반영하려면 `kubectl -n security-system delete pod trivy-server-0`
 (캐시 PVC는 유지, 새 DB를 1회 받음). 경보는 3시간 창이 지나면 해소된다.
+
+### 보안 DB 자동 갱신 (D-SECDB-AUTO)
+
+결정(소유자, 2026-11-08, #585): ghcr.io로 나갈 수 있는 클러스터는 미러를 자동으로 갱신하고, 에어갭 설치는 위 수동 승인 게이트를
+그대로 쓴다.
+
+- **무엇**: `gitops/resources/trivy-db-refresh.yaml`의 CronJob `security-system/trivy-db-refresh`가 6시간마다
+  `ghcr.io/aquasecurity/trivy-db:2`, `trivy-java-db:1`을 Harbor `trivy-db` 프로젝트로 복사한다(`trivy-checks:1`은 업스트림이
+  동결해서 수동 1회 push로 둔다). 6시간 주기는 업스트림 발행 주기와 같다. 트리비는 로드된 DB가 `NextUpdate`(발행 후 24시간)를
+  넘길 때만 새로 받으므로 미러를 자주 갱신해도 trivy-server의 다운로드는 늘지 않는다.
+- **신선도 검사**: 소스와 미러의 매니페스트 sha256이 같으면 아무것도 복사하지 않고 `skipped-current`로 끝난다.
+  다르면 레이어 크기 하한(trivy-db 20MB, java-db 100MB: `fetch-security-db.sh`와 같은 값)을 확인하고
+  `skopeo copy --preserve-digests`로 복사한 뒤 미러의 다이제스트가 소스와 같은지 다시 읽어 확인한다.
+- **승인 기록**: 수동 게이트의 `--approved-by`에 해당하는 값은 `auto-refresh`다. 아티팩트마다 JSON 한 줄
+  (`{"event":"secdb-auto-refresh","name":...,"action":"promoted|skipped-current|rejected-*","approved_by":"auto-refresh",...}`)을
+  Job 로그(stdout, Loki에 남음)에 쓴다. 수동 흐름의 `promotion-log.jsonl`은 워크스테이션 파일이라 클러스터에는 없다.
+  수동 게이트와 다른 점: 사람의 눈을 거치지 않고, `promoted-previous` 롤백 디렉터리가 없다(이전 아티팩트는 retention이 지울 때까지
+  Harbor에 남는다. 되돌리려면 수동 흐름을 쓴다).
+- **자격 증명**: Harbor 로봇 계정(프로젝트 `trivy-db` 범위의 repository push+pull만)을 `scripts/cluster/08-5-registry.sh`가
+  만들고 Secret `security-system/trivy-db-refresh`(registry, username, password)에 저장한다. git에는 없다. 로테이션: 그 Secret을
+  지우고 08-5를 다시 실행한다. CA는 `security-system/narwhal-ca-cert`(08-6이 배포)이고 TLS 검증은 끄지 않는다.
+- **끄는 법**: 에어갭(provider `kakao`)에서는 Application이 렌더되지 않는다. 다른 에어갭 설치는 narwhal-apps 값
+  `securityDbAutoRefresh.enabled=false`.
+- **첫 실행**: 새 클러스터는 다음 6시간 경계(UTC 00/06/12/18시 17분)까지 미러가 비어 있다. 바로 채우려면:
+  `kubectl -n security-system create job --from=cronjob/trivy-db-refresh trivy-db-refresh-first` (Secret이 먼저 있어야 한다.
+  없으면 08-5를 다시 실행). 결과: `kubectl -n security-system logs job/trivy-db-refresh-first`.
+- **경보**: `TrivyDbRefreshFailed`(최근 실행이 1시간 뒤에도 성공하지 못함), `TrivyDbRefreshStale`(36시간 성공 없음, 또는 생성 12시간
+  뒤에도 성공 없음). 둘 다 CronJob이 없는 클러스터에서는 시리즈가 없어 조용하다. 에어갭은 기존 `TrivyServerDbRedownloading`이 맡는다.
+
+#### 저장소 증가 상한 (#585)
+
+- **Harbor `trivy-db` 프로젝트**: 이동 태그(`2`, `1`)를 다시 push하면 이전 아티팩트가 태그 없이 남는다(2026-11-08 라이브:
+  리포지터리마다 3개, trivy-db 139MB, java-db 995MB, retention 정책 없음). 08-5가 프로젝트 retention 정책(리포지터리별 최근 push
+  2개 유지, 태그 없는 아티팩트 포함, 매일 03:30 UTC)과 시스템 GC 일정(매일 05:00 UTC, `delete_untagged` 끔, 이미 일정이 있으면 건드리지
+  않음)을 멱등으로 만든다. 상한은 리포지터리당 약 2개, 합쳐 약 2.3GB + GC 대기분이다. 되돌리기: Harbor UI에서 정책/일정을 지운다.
+- **trivy-server 캐시 PVC (5Gi)**: Trivy가 DB를 제자리에서 교체한다. 라이브 증거(2026-11-08): `/home/scanner/.cache/trivy/db`는
+  `trivy.db` 1.6GiB 한 파일과 `metadata.json`뿐이고 `trivy.db`의 mtime이 마지막 교체 시각으로 갱신된다. 다운로드 임시 영역은 PVC가 아니라
+  emptyDir `/tmp`(비어 있음). PVC 사용량은 1.6G/5G(31%)다. 유일하게 이론상 증가하는 것은 스캔 레이어 캐시 `fanal/fanal.db`(2MiB,
+  eviction 없음)인데 새 레이어가 생길 때만 늘고 이미지당 수 KB~수백 KB라 5Gi 여유(3.4G) 안에서 사실상 상한이 있다.
+- **워크스테이션 번들**(`fetch/promote-security-db.sh`): `security-db/`는 최대 세 세트(staged, promoted, promoted-previous, 세트당 약
+  1.2GB)다. promote는 이전 `promoted-previous`를 지우고 교체하므로 쌓이지 않고, fetch는 목록에서 빠진 이름의 `staged/` 디렉터리를
+  지운다(D-SECDB-BOUND). 승인 로그는 추가 전용이며 줄당 수백 바이트라 회전하지 않는다.
 
 ### 보안 데이터 소스 인벤토리 (2026-11-05, Trivy 0.60.0 / trivy-operator 0.25.0)
 

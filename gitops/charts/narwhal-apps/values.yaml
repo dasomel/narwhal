@@ -22,3 +22,11 @@ apisixNodePorts:
 # repoURL is the Gitea internal URL for apps that source from the GitOps repo
 repoURL: http://gitea-http.devtools.svc.cluster.local:3000/gitea-admin/narwhal-gitops.git
 
+
+# D-SECDB-AUTO (#585): in-cluster CronJob that keeps the Harbor trivy-db mirror current from
+# ghcr.io. Needs egress to ghcr.io, so it is never rendered for provider kakao (airgap) whatever
+# this says. Set false on any other airgap install and use the manual fetch -> promote -> push
+# flow (scripts/airgap/README.md). The push credential is the Harbor robot account that
+# scripts/cluster/08-5-registry.sh stores in security-system/trivy-db-refresh.
+securityDbAutoRefresh:
+  enabled: true

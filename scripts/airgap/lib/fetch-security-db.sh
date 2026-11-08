@@ -76,6 +76,21 @@ fi
 STAGED_DIR="${BUNDLE}/security-db/staged"
 mkdir -p "${STAGED_DIR}"
 
+# D-SECDB-BOUND (#585): staged/ must not grow without bound. A name is replaced in place below
+# (`rm -rf "${dest}"` before every copy), so the only way it grows is a directory for a name that
+# was removed from the list; prune those first. Worst case on disk for the whole security-db
+# tree is three sets (staged, promoted, promoted-previous), about 1.2 GB each with trivy-java-db
+# (promote-security-db.sh keeps exactly one rollback step). Escape hatch: delete this loop.
+listed_names=" $(grep -v '^#' "${LIST_FILE}" | cut -f1 | tr '\n' ' ' || true) "
+for stale_dir in "${STAGED_DIR}"/*/; do
+  [[ -d "${stale_dir}" ]] || continue
+  stale_name="$(basename "${stale_dir}")"
+  case "${listed_names}" in
+    *" ${stale_name} "*) ;;
+    *) echo "[prune] staged/${stale_name} (not in ${LIST_FILE})"; rm -rf "${stale_dir}" ;;
+  esac
+done
+
 # Sanity floor per artifact, in bytes — well under the smallest real fetch measured
 # 2026-08-25 (trivy-checks ~170KB, trivy-db ~114MB, trivy-java-db ~955MB), so a hit
 # means something is badly wrong (redirect page, empty body, auth challenge body),

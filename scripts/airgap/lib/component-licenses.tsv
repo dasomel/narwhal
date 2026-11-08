@@ -107,6 +107,7 @@ quay.io/prometheus-operator/prometheus-operator	prometheus-operator/prometheus-o
 quay.io/prometheus/alertmanager	prometheus/alertmanager	Apache-2.0	
 quay.io/prometheus/node-exporter	prometheus/node_exporter	Apache-2.0	
 quay.io/prometheus/prometheus	prometheus/prometheus	Apache-2.0	
+quay.io/skopeo/stable	containers/skopeo	Apache-2.0	
 reg.kyverno.io/kyverno/background-controller	kyverno/kyverno	Apache-2.0	
 reg.kyverno.io/kyverno/cleanup-controller	kyverno/kyverno	Apache-2.0	
 reg.kyverno.io/kyverno/kyverno	kyverno/kyverno	Apache-2.0	

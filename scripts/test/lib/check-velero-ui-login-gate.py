@@ -83,6 +83,19 @@ def check(text, doc, sso=""):
         errors.append("a rebuild must use a fresh alias, not the bound flow's alias")
     if not re.search(r"set \+e\n\s*\( set -e; vu_build_flow \)\n\s*VU_BUILD_RC=\$\?\n\s*set -e", code):
         errors.append("the build must run in a set -e subshell as a plain command (errexit is off inside if/||)")
+    if not re.search(r'if ! kc_exec update "authentication/flows/\$\{parent\}/executions".*?; then\n\s+echo "ERROR: could not set .* requirement', code, re.S):
+        errors.append("each execution requirement update must explicitly propagate kcadm failure")
+    for fragment, what in [
+        ('requirement == "REQUIRED"', "REQUIRED auth sub-flow"),
+        ('requirement == "CONDITIONAL"', "CONDITIONAL gate sub-flow"),
+        ('requirement == "ALTERNATIVE"', "ALTERNATIVE cookie/forms entries"),
+        ('requirement == "REQUIRED"', "REQUIRED gate entries"),
+        ('"deny-access-authenticator" and .requirement == "REQUIRED"', "Deny access REQUIRED"),
+        ('.config["condUserRole"] == $role and .config["negate"] == "true"', "negated velero-ui.login role condition"),
+        ('deny-access-authenticator', "Deny access authenticator"),
+    ]:
+        if fragment not in code:
+            errors.append(f"flow completeness must verify {what}")
     if not re.search(r'if \[ "\$\{VU_BUILD_RC\}" -ne 0 \]; then\n(?:(?!\n\s*fi\n).)*?\n\s+exit 1\n\s*fi\n', code, re.S):
         errors.append("a failed build must exit non-zero")
     if "vu_flow_complete \"${VU_FLOW}\" ||" not in code:
@@ -120,8 +133,16 @@ def mutate(name, text):
     b = block(text)
     if name == "no negate":
         return text.replace(b, b.replace(" -s config.negate=true", ""))
+    if name == "negate missing from completeness check":
+        return text.replace(b, b.replace('and .config["negate"] == "true"', ""))
     if name == "deny removed":
         return text.replace(b, b.replace("execution deny-access-authenticator REQUIRED", "execution auth-cookie REQUIRED"))
+    if name == "Deny Access DISABLED accepted":
+        return text.replace(b, b.replace('"deny-access-authenticator" and .requirement == "REQUIRED"', '"deny-access-authenticator" and .requirement == "DISABLED"'))
+    if name == "masked requirement update failure":
+        return text.replace(b, re.sub(
+            r'  if ! kc_exec update ("authentication/flows/\$\{parent\}/executions".*? >/dev/null); then\n.*?\n  fi\n  echo "\$\{exec_id\}"',
+            r'  kc_exec update \1 >/dev/null\n  echo "${exec_id}"', b, count=1, flags=re.S))
     if name == "gate becomes a cookie alternative":
         return text.replace(b, b.replace('vu_add_execution "${VU_FLOW}" flow "${VU_FLOW}-gate"', 'vu_add_execution "${VU_FLOW}-auth" flow "${VU_FLOW}-gate"'))
     if name == "role not mapped to group":
@@ -176,7 +197,8 @@ def mutate_sso(name, sso):
     raise KeyError(name)
 
 
-MUTATIONS = ["no negate", "deny removed", "gate becomes a cookie alternative", "role not mapped to group",
+MUTATIONS = ["no negate", "negate missing from completeness check", "deny removed", "Deny Access DISABLED accepted",
+             "masked requirement update failure", "gate becomes a cookie alternative", "role not mapped to group",
              "wrong role in condition", "flow not bound", "realm browser flow rebound", "flow created unconditionally",
              "role created unconditionally", "unbind before rebuild", "lookup failure masked", "rebuild reuses bound alias",
              "build outside set -e subshell", "build failure continues", "old flows deleted before bind",

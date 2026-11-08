@@ -695,33 +695,61 @@ echo "  group 'cluster-admin' holds velero-ui/${VU_ROLE}"
 vu_add_execution() {
   local parent="$1" kind="$2" name="$3" requirement="$4" exec_id
   if [ "${kind}" = "flow" ]; then
-    kc_exec create "authentication/flows/${parent}/executions/flow" -r "${REALM}" \
-      -s "alias=${name}" -s type=basic-flow -s "description=${VU_FLOW} (D-VELERO-UI-LOGIN-563)" >/dev/null
+    if ! kc_exec create "authentication/flows/${parent}/executions/flow" -r "${REALM}" \
+      -s "alias=${name}" -s type=basic-flow -s "description=${VU_FLOW} (D-VELERO-UI-LOGIN-563)" >/dev/null; then
+      echo "ERROR: could not create sub-flow '${name}' under '${parent}'" >&2
+      return 1
+    fi
     exec_id=$(kc_exec get "authentication/flows/${parent}/executions" -r "${REALM}" \
-      | jq -r ".[] | select(.displayName==\"${name}\") | .id")
+      | jq -r ".[] | select(.displayName==\"${name}\") | .id") || return 1
   else
-    kc_exec create "authentication/flows/${parent}/executions/execution" -r "${REALM}" \
-      -s "provider=${name}" >/dev/null
+    if ! kc_exec create "authentication/flows/${parent}/executions/execution" -r "${REALM}" \
+      -s "provider=${name}" >/dev/null; then
+      echo "ERROR: could not create execution '${name}' under '${parent}'" >&2
+      return 1
+    fi
     exec_id=$(kc_exec get "authentication/flows/${parent}/executions" -r "${REALM}" \
-      | jq -r "[.[] | select(.providerId==\"${name}\")] | last | .id")
+      | jq -r "[.[] | select(.providerId==\"${name}\")] | last | .id") || return 1
   fi
   if [ -z "${exec_id}" ] || [ "${exec_id}" = "null" ]; then
     echo "ERROR: execution '${name}' not found in flow '${parent}' after creating it" >&2
     return 1
   fi
-  kc_exec update "authentication/flows/${parent}/executions" -r "${REALM}" \
-    -b "{\"id\":\"${exec_id}\",\"requirement\":\"${requirement}\"}" >/dev/null
+  if ! kc_exec update "authentication/flows/${parent}/executions" -r "${REALM}" \
+    -b "{\"id\":\"${exec_id}\",\"requirement\":\"${requirement}\"}" >/dev/null; then
+    echo "ERROR: could not set '${name}' requirement to '${requirement}' in flow '${parent}'" >&2
+    return 1
+  fi
   echo "${exec_id}"
 }
 
 # A flow (alias $1) is complete when its gate sub-flow has the role condition (with config) and Deny
 # access. A failed lookup returns non-zero, which only ever causes a rebuild, never an unbind.
 vu_flow_complete() {
-  local gate_json
-  gate_json=$(kc_exec get "authentication/flows/$1-gate/executions" -r "${REALM}" 2>/dev/null) || return 1
-  echo "${gate_json}" | jq -e '
-    ([.[].providerId] | (index("conditional-user-role") != null) and (index("deny-access-authenticator") != null))
-    and ([.[] | select(.providerId=="conditional-user-role") | .authenticationConfig] | first != null)' >/dev/null 2>&1
+  local flow="$1" top auth forms otp gate cond_id deny_id cond_config deny_config
+  top=$(kc_exec get "authentication/flows/${flow}/executions" -r "${REALM}") || return 1
+  auth=$(kc_exec get "authentication/flows/${flow}-auth/executions" -r "${REALM}") || return 1
+  forms=$(kc_exec get "authentication/flows/${flow}-forms/executions" -r "${REALM}") || return 1
+  otp=$(kc_exec get "authentication/flows/${flow}-otp/executions" -r "${REALM}") || return 1
+  gate=$(kc_exec get "authentication/flows/${flow}-gate/executions" -r "${REALM}") || return 1
+  jq -e --arg flow "${flow}" '
+    ([.[] | select(.displayName == ($flow + "-auth") and .requirement == "REQUIRED")] | length == 1)
+    and ([.[] | select(.displayName == ($flow + "-gate") and .requirement == "CONDITIONAL")] | length == 1)' <<<"${top}" >/dev/null || return 1
+  jq -e '
+    ([.[] | select(.providerId == "auth-cookie" and .requirement == "ALTERNATIVE")] | length == 1)
+    and ([.[] | select((.displayName | endswith("-forms")) and .requirement == "ALTERNATIVE")] | length == 1)' <<<"${auth}" >/dev/null || return 1
+  jq -e '
+    ([.[] | select(.providerId == "auth-username-password-form" and .requirement == "REQUIRED")] | length == 1)
+    and ([.[] | select((.displayName | endswith("-otp")) and .requirement == "CONDITIONAL")] | length == 1)' <<<"${forms}" >/dev/null || return 1
+  jq -e '
+    ([.[] | select(.providerId == "conditional-user-configured" and .requirement == "REQUIRED")] | length == 1)
+    and ([.[] | select(.providerId == "auth-otp-form" and .requirement == "REQUIRED")] | length == 1)' <<<"${otp}" >/dev/null || return 1
+  cond_id=$(jq -er '[.[] | select(.providerId == "conditional-user-role" and .requirement == "REQUIRED") | .authenticationConfig] | if length == 1 then .[0] else error("condition missing or wrong requirement") end' <<<"${gate}") || return 1
+  deny_id=$(jq -er '[.[] | select(.providerId == "deny-access-authenticator" and .requirement == "REQUIRED")] | if length == 1 then .[0].id else error("deny missing or wrong requirement") end' <<<"${gate}") || return 1
+  cond_config=$(kc_exec get "authentication/config/${cond_id}" -r "${REALM}") || return 1
+  deny_config=$(kc_exec get "authentication/config/${deny_id}" -r "${REALM}") || return 1
+  jq -e --arg role "velero-ui.${VU_ROLE}" '.config["condUserRole"] == $role and .config["negate"] == "true"' <<<"${cond_config}" >/dev/null || return 1
+  jq -e '.config["denyErrorMessage"] != null' <<<"${deny_config}" >/dev/null || return 1
 }
 
 # Build the whole flow tree under alias ${VU_FLOW}; run as a plain command inside a `set -e` subshell.
@@ -762,7 +790,7 @@ if [ -n "${VU_BOUND_ALIAS}" ] && vu_flow_complete "${VU_BOUND_ALIAS}"; then
   echo "  authentication flow '${VU_FLOW}' already bound and complete"
 else
   VU_FLOW="${VU_FLOW_PREFIX}-$(date +%s)"
-  # The subshell is a plain command (not in an if/|| context), so `set -e` is live inside it.
+  # Explicit rc capture is required: errexit inside command substitutions is not reliable.
   set +e
   ( set -e; vu_build_flow )
   VU_BUILD_RC=$?

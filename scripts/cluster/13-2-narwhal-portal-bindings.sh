@@ -37,10 +37,12 @@ kc_exec() {
 
 wait_for_keycloak() {
   echo "Keycloak 준비 대기..."
-  local KC_ADMIN_PASS KC_ADMIN_USER
-  KC_ADMIN_PASS=$(kubectl get secret keycloak-initial-admin -n iam \
+  local KC_ADMIN_PASS KC_ADMIN_USER KC_ADMIN_SECRET=keycloak-initial-admin
+  # D-KC-ADMIN-573: permanent admin when 11-1 has created it, else the bootstrap admin.
+  kubectl get secret keycloak-admin -n iam >/dev/null 2>&1 && KC_ADMIN_SECRET=keycloak-admin
+  KC_ADMIN_PASS=$(kubectl get secret "${KC_ADMIN_SECRET}" -n iam \
     -o jsonpath='{.data.password}' | base64 -d)
-  KC_ADMIN_USER=$(kubectl get secret keycloak-initial-admin -n iam \
+  KC_ADMIN_USER=$(kubectl get secret "${KC_ADMIN_SECRET}" -n iam \
     -o jsonpath='{.data.username}' | base64 -d)
   for attempt in $(seq 1 24); do
     if kc_exec config credentials \

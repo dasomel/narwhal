@@ -34,7 +34,7 @@ Narwhal의 모든 웹 UI와 OIDC kubectl은 Keycloak realm **`narwhal`** 하나�
 
 | 용도 | 사용자 | Secret (`ns/name` 키) |
 |------|--------|-----------------------|
-| Keycloak 관리 콘솔 (realm `master`) | Secret의 `username` | `iam/keycloak-initial-admin` `username`·`password` |
+| Keycloak 관리 콘솔 (realm `master`) | `platform-admin` | `iam/keycloak-admin` `username`·`password` (`11-1-keycloak-admin.sh`, D-KC-ADMIN-573). 임시 `temp-admin`(`iam/keycloak-initial-admin`)은 삭제되며 그 Secret은 operator 소유라 남는다 |
 | ArgoCD 로컬 관리자 | `admin` | `devtools/argocd-initial-admin-secret` `password` |
 | Gitea 로컬 관리자 | `gitea-admin` (12-gitea.sh가 고정) | `devtools/gitea-admin` `admin-password` |
 | Harbor 로컬 관리자 | `admin` | `devtools/harbor-secrets` `HARBOR_ADMIN_PASSWORD` |
@@ -94,8 +94,8 @@ Mac 터미널(zsh)에 그대로 붙여 넣어도 되도록 썼다. kcadm은 변�
 
 ```bash
 kc() { kubectl exec -n iam keycloak-0 -c keycloak -- /opt/keycloak/bin/kcadm.sh "$@"; }
-U=$(kubectl get secret keycloak-initial-admin -n iam -o jsonpath='{.data.username}' | base64 -d)
-P=$(kubectl get secret keycloak-initial-admin -n iam -o jsonpath='{.data.password}' | base64 -d)
+U=$(kubectl get secret keycloak-admin -n iam -o jsonpath='{.data.username}' | base64 -d)
+P=$(kubectl get secret keycloak-admin -n iam -o jsonpath='{.data.password}' | base64 -d)
 kc config credentials --server http://localhost:8080 --realm master --user "$U" --password "$P"
 kc get realms --fields realm
 kc get users -r narwhal --fields username,enabled,emailVerified

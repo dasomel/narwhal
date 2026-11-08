@@ -1023,6 +1023,31 @@ vmdk를 줄이는 방법은 없고, 노드를 지우고 다시 만드는 것이 
 
 ---
 
+## 14. 호스트 슬립과 메시 인증서 (D-MESH-CERT-TTL)
+
+호스트(Mac)가 슬립하면 VM이 멈추고 VM의 monotonic 시계도 멈춘다. wall clock은 깨어난 뒤 NTP로 보정되지만, Istio ambient의 인증서 갱신 타이머는 monotonic 기준이라 정지가 길면 인증서가 이미 만료된 뒤에 갱신을 시도한다(2026-11-07: ztunnel 6개와 waypoint 3개의 인증서 만료, CNPG Ready=False, WAL 아카이빙이 약 20시간 실패, #600).
+
+**예방 1: 클러스터가 도는 동안 호스트를 깨워 둔다.** 터미널에서 `caffeinate -dimsu &`(디스플레이, 유휴, 디스크, 시스템 슬립 방지, AC 전원 가정)를 띄우거나, 상시 운영 호스트면 `sudo pmset -a sleep 0`으로 시스템 슬립을 끈다. `scripts/up.sh`는 호스트 슬립이 켜져 있고 `caffeinate`가 없으면 경고 한 줄을 출력한다(경고만 하고 중단하지 않는다). 노트북 덮개를 닫으면 `caffeinate`로도 슬립한다(클램셸 조건은 별도).
+
+**예방 2: 인증서 TTL을 168h로 늘렸다.** ztunnel `SECRET_TTL`, waypoint `meshConfig.defaultConfig.proxyMetadata.SECRET_TTL`, istiod `DEFAULT_WORKLOAD_CERT_TTL`/`MAX_WORKLOAD_CERT_TTL`(168h/720h). 갱신은 TTL의 약 절반에서 일어나므로 인증서에는 항상 약 84시간 이상 남아 있어, 약 3.5일보다 짧은 슬립은 스스로 복구된다. 대가는 탈취된 workload 키의 유효 기간이 1일에서 7일로 늘어난 것이다. 근거와 소스 위치는 `gitops/charts/narwhal-apps/templates/istiod.yaml`의 D-MESH-CERT-TTL, 고정은 R324. 적용은 ArgoCD sync(또는 `09-istio-ambient.sh` 재실행) **뒤에** 아래 복구 절차로 파드를 재시작해야 새 TTL로 발급된다.
+
+**탐지.** `IstioWaypointCertExpiringSoon`(waypoint 인증서 잔여 24시간 미만 또는 만료)과 `CNPGInstanceNotReady`. ztunnel 만료는 직접 메트릭이 없고 Loki 알림 규칙도 구성되어 있지 않아, 위 두 경보로 간접 탐지한다. WAL 아카이빙 실패 경보는 CNPG 메트릭 수집이 꺼져 있어(`enablePodMonitor: false`) 아직 없다.
+
+**복구(슬립 뒤 증상이 보일 때).** 노드가 모두 Ready인지 먼저 본 뒤 ztunnel을 롤링하고, 이어서 waypoint를 재시작한다.
+
+```bash
+kubectl --context narwhal -n istio-system rollout restart daemonset/ztunnel
+kubectl --context narwhal -n istio-system rollout status daemonset/ztunnel --timeout=300s
+for ns in $(kubectl --context narwhal get deploy -A -l gateway.networking.k8s.io/gateway-name=waypoint -o jsonpath='{range .items[*]}{.metadata.namespace}{"\n"}{end}' | sort -u); do
+  kubectl --context narwhal -n "$ns" rollout restart deployment/waypoint
+done
+kubectl --context narwhal -n database get cluster narwhal-db   # Cluster in healthy state
+```
+
+만료가 오래 방치됐다면 CNPG 인스턴스(`narwhal-db-N`)와 velero-server도 메시가 돌아온 뒤 재시작이 필요할 수 있다. 재시작 뒤 waypoint가 새 TTL로 렌더링됐는지 `kubectl --context narwhal -n monitoring get deploy waypoint -o yaml | grep -A1 SECRET_TTL`로 확인한다(없으면 Deployment가 아직 옛 템플릿이므로 istiod를 재시작해 Gateway를 다시 조정시킨다). 확인: `istio_agent_cert_expiry_seconds`가 약 604800(7일)에 가까운지, ztunnel 로그에 `certificate expired`가 더 나오지 않는지 본다.
+
+---
+
 ## 관련 문서
 
 - [architecture.md](../common/architecture.md) - 아키텍처 개요

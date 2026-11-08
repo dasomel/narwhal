@@ -16,6 +16,29 @@ spec:
     helm:
       valuesObject:
         profile: ambient
+        # D-MESH-CERT-TTL (#600): workload certificate TTL 24h -> 168h (7d). The VM's monotonic clock stops while
+        # the host sleeps, so the cert refresh timer (about half of the TTL) did not fire before the wall-clock
+        # expiry: ztunnel and waypoint certs expired (2026-11-07), CNPG lost the mesh and WAL archiving failed ~20h.
+        # The CLIENT chooses the TTL, so the knob lives on the clients, not only on istiod (Istio 1.30.1):
+        #   * ztunnel requests SECRET_TTL (istio/ztunnel src/config.rs:59,806, default 24h; caclient.rs:148
+        #     sends it as validity_duration) -> ztunnel chart `env.SECRET_TTL`.
+        #   * waypoint istio-proxy (pilot-agent) reads SECRET_TTL (pilot/cmd/pilot-agent/options/options.go:76,
+        #     default 24h); the waypoint template renders meshConfig.defaultConfig.proxyMetadata as container
+        #     env (manifests/charts/istio-control/istio-discovery/files/waypoint.yaml:173-177) -> set below.
+        #   * istiod DEFAULT_WORKLOAD_CERT_TTL (pilot/pkg/bootstrap/istio_ca.go:89, applies only when a client
+        #     sends a non-positive TTL) and MAX_WORKLOAD_CERT_TTL (istio_ca.go:94, default 90d, upper bound for requested TTLs).
+        # Cost: a stolen workload key is usable for up to 7d instead of 1d (mTLS identities, no human creds);
+        # clients renew at about half the TTL, so a cert always has >= ~84h of wall-clock life left and any host
+        # sleep shorter than ~3.5d is survived; longer sleeps still need the restart in docs/vagrant/operations.md section 14.
+        # Escape hatch: set the three values back to 24h and restart ztunnel and the waypoint Deployments.
+        # Kept in sync with scripts/cluster/09-istio-ambient.sh; pinned by R324.
+        env:
+          DEFAULT_WORKLOAD_CERT_TTL: 168h
+          MAX_WORKLOAD_CERT_TTL: 720h
+        meshConfig:
+          defaultConfig:
+            proxyMetadata:
+              SECRET_TTL: 168h
         replicaCount: 2
         autoscaleEnabled: false
         global:

@@ -63,6 +63,16 @@ echo "Installing istiod (ambient profile)..."
 
 cat > /tmp/istiod-values.yaml << 'EOF'
 profile: ambient
+# D-MESH-CERT-TTL (#600): workload cert TTL 24h -> 168h so a host sleep does not expire ztunnel/waypoint
+# certs (VM monotonic clock stops during sleep). Source lines, cost and escape hatch: the same block in
+# gitops/charts/narwhal-apps/templates/istiod.yaml. Keep in sync; pinned by R324.
+env:
+  DEFAULT_WORKLOAD_CERT_TTL: 168h
+  MAX_WORKLOAD_CERT_TTL: 720h
+meshConfig:
+  defaultConfig:
+    proxyMetadata:
+      SECRET_TTL: 168h
 replicaCount: 2
 # autoscaleEnabled must be false, else the chart's HPA overrides replicaCount back to 1 (SPOF)
 autoscaleEnabled: false
@@ -167,6 +177,9 @@ kubectl rollout status daemonset/istio-cni-node -n istio-system --timeout=180s |
 echo "Installing ztunnel..."
 
 cat > /tmp/ztunnel-values.yaml << 'EOF'
+# D-MESH-CERT-TTL (#600): ztunnel requests this TTL (default 24h); see istiod values above. Pinned by R324.
+env:
+  SECRET_TTL: 168h
 resources:
   requests:
     cpu: 50m

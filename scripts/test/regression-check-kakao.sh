@@ -3397,6 +3397,12 @@ PYEOF'
   # 2026-11-08 (D-WORKER-MEMORY): workers 6GB -> 8GB after the 2026-11-06 node OOMs at ~5.3GiB allocatable.
   check R323 "worker VM memory is 8GB everywhere: Vagrantfile WORKER_MEMORY=8192 (MASTER_MEMORY stays 6144), README/README-ko config, VM table and 42GB RAM requirement, architecture.md, operations.md, troubleshooting.md, SessionStart hook and agent text; no live doc says worker 6GB; the apply procedure (cordon/drain, halt + up --no-provision, uncordon, CNPG required anti-affinity #590) is documented; 9 mutations caught (D-WORKER-MEMORY)" \
     python3 scripts/test/lib/check-worker-memory.py --mutation-verify
+  # 2026-11-08 (D-CNPG-MON, D-CNPG-MON-INGRESS, D-CNPG-HEALTH-ALERT, D-CNPG-WAL-ARCHIVE-ALERT, #600, PR #601, PR #602): CNPG metrics scraping, NetPol ingress allow, and WAL archiving alerts
+  check R326 "CNPG metrics scraping enabled (narwhal-db.yaml, 07-cnpg.sh, prometheus-stack.yaml, 08-2-monitoring.sh), database-prometheus-ingress allows Prometheus to narwhal-db only on 9187/15008 (database-ingress-policy.yaml), CNPGClusterNotHealthy evaluated without absent(), CNPGMetricsUnavailable (15m window), CNPGWALArchivingFailing (failed_count increasing or stalled > 1800s exact threshold); 7 promtool behavior cases, 18 mutations caught (D-CNPG-MON, D-CNPG-MON-INGRESS, D-CNPG-HEALTH-ALERT, D-CNPG-WAL-ARCHIVE-ALERT)" \
+    python3 scripts/test/lib/check-cnpg-monitoring-alerts.py --mutation-verify
+  # 2026-11-08 (#600): host sleep froze the VMs' monotonic clock, so 24h ztunnel/waypoint workload certs expired (CNPG down, WAL archiving failed ~20h).
+  check R324 "mesh workload cert TTL is 168h on every client that chooses it (ztunnel env.SECRET_TTL, waypoint meshConfig.defaultConfig.proxyMetadata.SECRET_TTL) and on istiod (DEFAULT/MAX_WORKLOAD_CERT_TTL, MAX >= requested), identical in the gitops Applications and 09-istio-ambient.sh, with the cited source lines; IstioWaypointCertExpiringSoon (istio_agent_cert_expiry_seconds < 24h, waypoint job) and CNPGInstanceNotReady (kube_pod_status_ready, instance pods only) pass promtool cases; host-sleep runbook (caffeinate, ztunnel before waypoint restart) and warn-only up.sh check; 16 mutations caught (D-MESH-CERT-TTL)" \
+    python3 scripts/test/lib/check-mesh-cert-ttl.py --mutation-verify
 }
 
 #=========================================

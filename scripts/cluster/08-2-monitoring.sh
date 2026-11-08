@@ -49,6 +49,7 @@ for attempt in 1 2 3 4 5; do
     --set grafana.persistence.storageClassName=nfs-csi \
     --set grafana.persistence.size=5Gi \
     --set prometheus.prometheusSpec.retention=7d \
+    --set prometheus.prometheusSpec.podMonitorSelectorNilUsesHelmValues=false \
     --set prometheus.prometheusSpec.storageSpec.volumeClaimTemplate.spec.storageClassName=nfs-csi \
     --set prometheus.prometheusSpec.storageSpec.volumeClaimTemplate.spec.resources.requests.storage=10Gi \
     --set alertmanager.alertmanagerSpec.storage.volumeClaimTemplate.spec.storageClassName=nfs-csi \

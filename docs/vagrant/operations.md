@@ -1017,7 +1017,7 @@ vmdk를 줄이는 방법은 없고, 노드를 지우고 다시 만드는 것이 
 4. **uncordon.** `kubectl uncordon <worker>`.
 5. **확인.** `kubectl get node <worker> -o jsonpath='{.status.allocatable.memory}'`가 약 7.3GiB(이전 약 5.3GiB)이고, 노드가 Ready이며, 이 워커에 있던 Pod이 Running으로 돌아왔는지 본다. 그 뒤에 다음 워커로 간다.
 
-**CNPG required anti-affinity 주의(#590).** `narwhal-db`는 `podAntiAffinityType=required`(R313)라 인스턴스 3개가 워커 3대에 하나씩 놓인다. 워커 한 대를 비우면 그 노드의 인스턴스는 다른 두 워커에 자리가 없어 **Pending으로 남고**, 노드가 돌아올 때까지 인스턴스가 2개로 운영된다(failover는 정상이지만 여유가 없다). 그래서 (1) 워커를 동시에 두 대 이상 내리지 않고, (2) PodDisruptionBudget 때문에 drain이 멈추면 해당 인스턴스가 primary인지 `kubectl cnpg status`로 보고 switchover 후에 진행하며, (3) uncordon 뒤 해당 인스턴스가 Running/streaming으로 돌아온 것을 확인하고 다음 워커로 간다.
+**CNPG required anti-affinity 주의(#590).** `narwhal-db`는 인스턴스 2개에 `podAntiAffinityType=required`(R313)라 두 인스턴스가 항상 서로 다른 워커에 있다. 비우려는 워커에 인스턴스가 있으면, 쫓겨난 인스턴스는 인스턴스가 없는 남은 한 워커로만 갈 수 있고, 그 워커에 requests 여유가 없으면 **Pending으로 남는다**. 그래서 (1) drain **전에** `kubectl -n database get cluster narwhal-db -o jsonpath='{.status.currentPrimary}'`와 Pod의 노드를 보고, 그 워커에 primary가 있으면 먼저 `kubectl cnpg promote narwhal-db <다른 인스턴스> -n database`로 switchover한다(건강한 primary가 drain으로 쫓겨나 재배치를 기다리는 일을 피한다). (2) 워커를 동시에 두 대 이상 내리지 않는다. (3) uncordon 뒤 `kubectl -n database get cluster narwhal-db`가 `Cluster in healthy state`이고 두 인스턴스가 Running인지 확인하고 다음 워커로 간다.
 
 롤백은 Vagrantfile을 6144로 되돌리고 같은 절차를 반복한다. 호스트 RAM이 모자라면 이 절차를 하지 말고 6144를 유지한다.
 

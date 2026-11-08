@@ -180,12 +180,12 @@ Velero backups, VM disk growth). Several changes need an operator action on an e
   Falco there. Checked in a local Docker lab (real Falco, falcosidekick and Alertmanager), not on a
   cluster: the chart tarball, two images and the GitOps push must still reach a cluster, and Falco on
   the Ubuntu 26.04 / kernel 7.0 Vagrant box and on the Kubernetes CRI path has not been observed.
-- **Portal is pinned to `narwhal-portal:1.1.8` (was 1.1.0; 1.1.1 to 1.1.7 were pinned in between by
-  #467, #477, #481, #502, #520, #561 and #580).** 1.1.8 shows "—" instead of "Unknown" in the DORA
-  history rows (#581) and bumps Next.js to 16.4.3 (#486); all carry the 1.1.7 and earlier fixes. The
-  image is Cosign-signed with the repository key (index digest `sha256:500c334e…`). Mirror it to a
-  cluster bastion by digest before the pin goes live there (`scripts/airgap/README.md`, "Mirror a pin
-  bump"); the local Vagrant cluster pulls from ghcr.io directly.
+- **Portal is pinned to `narwhal-portal:1.1.9` (was 1.1.0; 1.1.1 to 1.1.8 were pinned in between by
+  #467, #477, #481, #502, #520, #561, #580 and #596; 1.1.9 is #608).** 1.1.9 bumps `lucide-react` to 1.66.0 (#539) and
+  lists the `skopeo` image in the OSS versions list (#603), with no user-facing feature change; all carry
+  the 1.1.8 and earlier fixes. The image is Cosign-signed with the repository key (index digest
+  `sha256:72a1f4f4…`). Mirror it to a cluster bastion by digest before the pin goes live there
+  (`scripts/airgap/README.md`, "Mirror a pin bump"); the local Vagrant cluster pulls from ghcr.io directly.
 - **Worker VMs have 8GB of memory and 4 vCPU, on base box 0.3.1 (D-WORKER-MEMORY, #597, #531).** Worker
   allocatable memory was about 5.3GiB and nodes hit the kernel OOM killer repeatedly on 2026-11-05 and
   06. `WORKER_MEMORY` is now 8192; the VM total grows from 36GB to 42GB on a 64GiB host (R323). Box

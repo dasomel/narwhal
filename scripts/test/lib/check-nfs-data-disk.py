@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """R327 (D-NFS-VMDK, D-CNPG-RESTART-AMP, D-CNPG-RESOURCES, D-CNPG-APPDB): NFS on its own disk, CNPG tolerant of stalls.
 
-Pins (1) the Vagrantfile attaches a second disk to master-1 only and passes NFS_DATA_DEVICE to
+Pins (1) the Vagrantfile attaches a second disk to master-1 only via vmx keys + a vdiskmanager trigger (never config.vm.disk) and passes NFS_DATA_DEVICE to
 01-nfs-server.sh, (2) 01-nfs-server.sh resolves "auto" without guessing a device name and still refuses
 to mount over live data, (3) narwhal-db.yaml and 07-cnpg.sh both carry the same liveness probe tolerance,
 memory limit with requests and no CPU limit, and a bootstrap database that exists ('narwhal'),
@@ -71,13 +71,31 @@ def check(t):
     vf = t['vf']
     if not re.search(r'NFS_DISK_GB\s*=\s*Integer\(ENV\.fetch\("NARWHAL_NFS_DISK_GB",\s*"\d+"\)', vf):
         errors.append('Vagrantfile: NFS_DISK_GB constant missing')
-    if not re.search(r'if i == 1 && NFS_DISK_GB > 0\n(?:\s*#.*\n)*\s+master\.vm\.disk :disk, size: "#\{NFS_DISK_GB\}GB", name: "nfs-data"', vf):
-        errors.append('Vagrantfile: master-1 must attach the nfs-data disk (config.vm.disk, i == 1 only)')
-    if 'vmware_desktop__bus_type: "nvme"' not in vf:
-        errors.append('Vagrantfile: nfs-data disk must set vmware_desktop__bus_type: "nvme" (box OS disk is nvme0)')
+    if re.search(r'^\s*\w+\.vm\.disk :disk[^\n]*nvme', vf, re.M) or re.search(r'master\.vm\.disk\b', vf):
+        errors.append('Vagrantfile: config.vm.disk on master must not return (vagrant-vmware-desktop 3.0.5 get_disk crashes: File.extname(nil))')
+    vmw = re.search(r'master\.vm\.provider "vmware_desktop" do \|vmware\|\n(.*?)\n      end\n', vf, re.S)
+    body = vmw.group(1) if vmw else ''
+    if not re.search(r'if i == 1 && NFS_DISK_GB > 0\n(?:\s*#.*\n)*\s+vmware\.vmx\["nvme0:1\.present"\] = "TRUE"\n\s+vmware\.vmx\["nvme0:1\.fileName"\] = NFS_VMDK_VMX\n', body):
+        errors.append('Vagrantfile: master-1 vmware block must set nvme0:1.present=TRUE and nvme0:1.fileName (i == 1 only)')
+    if 'NFS_VMDK_NAME = "narwhal-nfs.vmdk"' not in vf:
+        errors.append('Vagrantfile: vmdk name must stay narwhal-nfs.vmdk (live vmx references it)')
+    if not re.search(r'master\.trigger\.before \[:up, :reload\] do', vf) \
+            or not re.search(r'system\(tool, "-c", "-s", "#\{NFS_DISK_GB\}GB", "-a", "lsilogic", "-t", "0", target\)', vf) \
+            or 'next if File.exist?(target)' not in vf:
+        errors.append('Vagrantfile: before up/reload trigger creating the vmdk with vmware-vdiskmanager (idempotent) is missing')
+    if 'NFS_VM_DIR' not in vf or 'File.dirname(File.read(id_file).strip)' not in vf:
+        errors.append('Vagrantfile: VM dir must be resolved from .vagrant/machines/master-1/vmware_desktop/id')
     if not re.search(r'if NFS_DISK_GB == 0 && NFS_DISK_RECORDED && ENV\["NARWHAL_NFS_DISK_ALLOW_DELETE"\] != "yes-delete-the-nfs-disk"\n\s+abort', vf) \
+            or not re.search(r'NFS_DISK_RECORDED = NFS_VMDK_IN_VMDIR \|\| File\.exist\?\(NFS_VMDK_ABS\)', vf) \
             or 'disk_meta' not in vf or 'nfs-data*' not in vf:
-        errors.append('Vagrantfile: guard refusing NARWHAL_NFS_DISK_GB=0 once nfs-data is recorded is missing (cleanup_disks would delete it)')
+        errors.append('Vagrantfile: guard refusing NARWHAL_NFS_DISK_GB=0 when the narwhal-nfs.vmdk exists is missing (boot would export the stale root copy)')
+    dtrig = re.search(r'master\.trigger\.after :destroy do.*?\n        end\n', vf, re.S)
+    if not dtrig or 'machine.state.id == :not_created' not in dtrig.group(0):
+        errors.append('Vagrantfile: destroy cleanup trigger must delete only when machine.state.id == :not_created (after-triggers run even when destroy is declined)')
+    if len(re.findall(r'next unless machine\.provider_name == :vmware_desktop', vf)) < 2:
+        errors.append('Vagrantfile: both NFS triggers must be limited to provider_name == :vmware_desktop')
+    if not re.search(r'NFS_VMDK_VMX = NFS_VMDK_IN_VMDIR \? NFS_VMDK_NAME : NFS_VMDK_ABS', vf):
+        errors.append('Vagrantfile: NFS_VMDK_VMX must keep the bare name when the vmdk is in the VM dir (live machine)')
     prov = re.search(r'scripts/cluster/01-nfs-server\.sh",\n\s+env: \{(.*?)\}', vf, re.S)
     if not prov or '"NFS_DATA_DEVICE" => NFS_DATA_DEVICE' not in prov.group(1):
         errors.append('Vagrantfile: 01-nfs-server.sh must receive NFS_DATA_DEVICE')
@@ -97,7 +115,8 @@ def check(t):
     ops = t['ops']
     for needle in ('## 15. NFS export 전용 디스크 (D-NFS-VMDK)', '## 16. 호스트 부하 규칙',
                    'project -s -p ${path} ${id}', 'nfs-xfs-migration.md', 'snapshot save', 'vagrant halt master-1',
-                   'NARWHAL_NFS_DISK_GB=0', '롤링 재부팅', 'vmware-vdiskmanager -U', 'NARWHAL_NFS_DISK_ALLOW_DELETE', '(`/export/...`)'):
+                   'NARWHAL_NFS_DISK_GB=0', '롤링 재부팅', 'vmware-vdiskmanager" -c -s', 'nvme0n1', '`/dev/nvme0n2`로 밀린다', 'nvme0:1.fileName',
+                   'sudo test -d "$path"', '--type json', '부팅 때 자동으로 시작', 'NARWHAL_NFS_DISK_ALLOW_DELETE', '(`/export/...`)'):
         if needle not in ops:
             errors.append(f'operations.md: missing {needle!r}')
     if "project -s' /srv/nfs/k8s" in ops or re.search(r'xfs_quota -x -c .project -s. ', ops):
@@ -109,8 +128,19 @@ def check(t):
 
 
 MUTATIONS = {
-    'disk attach removed': ('vf', 'master.vm.disk :disk, size: "#{NFS_DISK_GB}GB", name: "nfs-data"', '# no disk'),
-    'disk attached to every master': ('vf', 'if i == 1 && NFS_DISK_GB > 0', 'if NFS_DISK_GB > 0'),
+    'vmx attach key removed': ('vf', 'vmware.vmx["nvme0:1.present"] = "TRUE"', '# no attach'),
+    'vmx fileName key removed': ('vf', 'vmware.vmx["nvme0:1.fileName"] = NFS_VMDK_VMX', '# no filename'),
+    'config.vm.disk reintroduced on vmware': ('vf', '      master.vm.provider "virtualbox" do |vb|', '      master.vm.disk :disk, size: "200GB", name: "nfs-data", vmware_desktop__bus_type: "nvme"\n      master.vm.provider "virtualbox" do |vb|'),
+    'attach for every master': ('vf', 'if i == 1 && NFS_DISK_GB > 0\n          vmware.vmx', 'if NFS_DISK_GB > 0\n          vmware.vmx'),
+    'vmdk renamed': ('vf', 'NFS_VMDK_NAME = "narwhal-nfs.vmdk"', 'NFS_VMDK_NAME = "nfs-data.vmdk"'),
+    'always absolute path (detaches live disk)': ('vf', 'NFS_VMDK_VMX = NFS_VMDK_IN_VMDIR ? NFS_VMDK_NAME : NFS_VMDK_ABS', 'NFS_VMDK_VMX = NFS_VMDK_ABS'),
+    'destroy guard removed': ('vf', '            next unless machine.state.id == :not_created\n', ''),
+    'provider condition dropped': ('vf', '            next unless machine.provider_name == :vmware_desktop\n            target', '            target'),
+    'destroy provider condition dropped': ('vf', '            next unless machine.provider_name == :vmware_desktop\n            # Vagrant runs', '            # Vagrant runs'),
+    'create trigger removed': ('vf', 'master.trigger.before [:up, :reload] do', 'master.trigger.before [:destroy] do'),
+    'create not idempotent': ('vf', 'next if File.exist?(target)', 'next if false'),
+    'vdiskmanager type changed': ('vf', '"-a", "lsilogic", "-t", "0", target)', '"-a", "lsilogic", target)'),
+    'vm dir not from id file': ('vf', 'File.dirname(File.read(id_file).strip)', 'nil'),
     'NFS_DATA_DEVICE not passed': ('vf', '"NFS_DATA_DEVICE" => NFS_DATA_DEVICE,', ''),
     'device guess /dev/sdb': ('vf', 'NFS_DATA_DEVICE = NFS_DISK_GB > 0 ? "auto" : ""', 'NFS_DATA_DEVICE = "/dev/sdb"'),
     'auto accepts several disks': ('nfs', '-ne 1', '-lt 1'),
@@ -127,8 +157,12 @@ MUTATIONS = {
     'runbook quota restore dropped': ('ops', 'project -s -p', 'project -p'),
     'runbook bare project -s returns': ('ops', 'head -3 /etc/projects', "sudo xfs_quota -x -c 'project -s' /srv/nfs/k8s\nhead -3 /etc/projects"),
     'runbook loses /export mapping': ('ops', '(`/export/...`)', '(paths)'),
-    'nvme bus dropped': ('vf', ', vmware_desktop__bus_type: "nvme"', ''),
     'delete guard removed': ('vf', 'if NFS_DISK_GB == 0 && NFS_DISK_RECORDED', 'if false && NFS_DISK_RECORDED'),
+    'guard ignores the vmdk file': ('vf', 'NFS_DISK_RECORDED = NFS_VMDK_IN_VMDIR || File.exist?(NFS_VMDK_ABS) ||', 'NFS_DISK_RECORDED = false ||'),
+    'runbook loses sudo test -d': ('ops', 'sudo test -d "$path"', 'test -d "$path"'),
+    'runbook loses nfs-server autostart note': ('ops', '부팅 때 자동으로 시작', '부팅 때 시작'),
+    'runbook loses json patch': ('ops', '--type json', '--type merge'),
+    'runbook loses nvme0n2': ('ops', '`/dev/nvme0n2`로 밀린다', '`/dev/sdb`로 밀린다'),
     'delete guard override widened': ('vf', 'ENV["NARWHAL_NFS_DISK_ALLOW_DELETE"] != "yes-delete-the-nfs-disk"', 'false'),
     'wrong ArgoCD claim returns': ('sh', 'applied to the live Cluster by 14-gitops-bootstrap.sh; no Argo Application owns it', 'ArgoCD owns the live Cluster'),
     'host-load rule dropped': ('ops', '## 16. 호스트 부하 규칙', '## 16. 기타'),

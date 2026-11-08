@@ -1054,9 +1054,13 @@ kubectl --context narwhal -n database get cluster narwhal-db   # Cluster in heal
 
 ### 새 클러스터
 
-`Vagrantfile`의 `NFS_DISK_GB`(기본 200, `NARWHAL_NFS_DISK_GB`로 변경, 디스크를 붙이기 전에만 `0`으로 예전 배치를 쓸 수 있다)가 master-1에 `nfs-data` 디스크를 붙이고 `NFS_DATA_DEVICE=auto`를 `01-nfs-server.sh`에 넘긴다. `auto`는 파티션도 마운트도 없고 파일시스템이 없는(또는 라벨 `narwhal-nfs`인 XFS) 디스크가 **정확히 1개**일 때만 그 디스크를 쓰고, 0개나 2개 이상이면 추측하지 않고 실패한다. 디스크는 NVMe 버스(`vmware_desktop__bus_type: "nvme"`, 박스의 OS 디스크와 같은 버스)에 붙는 성장형(sparse) 디스크라 200은 상한이지 예약이 아니다. **NVMe 버스 부착은 실제 VM에서 아직 확인하지 않았고, 소유자가 실행하는 아래 4단계에서 처음 확인된다.** 4단계 `lsblk`에 새 디스크가 보이지 않으면 5단계로 가지 말고 중단한다.
+`Vagrantfile`의 `NFS_DISK_GB`(기본 200, `NARWHAL_NFS_DISK_GB`로 변경, 디스크를 붙이기 전에만 `0`으로 예전 배치를 쓸 수 있다)가 디스크 크기를 정하고 `NFS_DATA_DEVICE=auto`를 `01-nfs-server.sh`에 넘긴다. `auto`는 파티션도 마운트도 없고 파일시스템이 없는(또는 라벨 `narwhal-nfs`인 XFS) 디스크가 **정확히 1개**일 때만 그 디스크를 쓰고, 0개나 2개 이상이면 추측하지 않고 실패한다.
 
-**이전 뒤에는 `NARWHAL_NFS_DISK_GB=0`을 절대 쓰지 않는다.** vagrant-vmware-desktop 3.0.5는 부팅할 때마다 디스크 정리를 돌려, Vagrantfile에서 빠진 디스크를 `vmware-vdiskmanager -U`로 **삭제**한다. 0으로 두고 master-1을 올리면 PV 17개가 든 디스크가 사라진다. 그래서 `Vagrantfile`은 master-1에 `nfs-data` 디스크가 기록돼 있으면(`.vagrant/machines/master-1/*/disk_meta` 또는 머신 디렉터리의 `nfs-data*`) 0을 거부하고 중단한다(R327). 데이터가 이미 없어진 클러스터를 `destroy`할 때만 `NARWHAL_NFS_DISK_ALLOW_DELETE=yes-delete-the-nfs-disk`로 우회한다. 디스크 이름 `nfs-data`도 바꾸지 않는다(이름이 바뀌면 옛 디스크가 같은 방식으로 삭제된다). 포맷은 XFS(`prjquota`), fstab은 UUID로 쓰므로 `/dev/sdX` 이름에 의존하지 않는다.
+**vmware_desktop에서는 `config.vm.disk`를 쓰지 않는다(D-NFS-VMDK-VMX).** vagrant-vmware-desktop 3.0.5의 디스크 처리(`cap/disk.rb` `get_disk`)가 이 박스의 vmx에서 `File.extname(nil)`로 죽어 master-1 부팅이 전부 깨졌다(2026-11-08). 대신 master-1의 `before [:up, :reload]` 트리거가 호스트에서 `vmware-vdiskmanager -c -s <N>GB -a lsilogic -t 0 narwhal-nfs.vmdk`로 성장형(sparse) vmdk를 만들고(이미 있으면 건드리지 않는다), provider vmx 키 `nvme0:1.present = "TRUE"`와 `nvme0:1.fileName = "narwhal-nfs.vmdk"`가 NVMe 버스(박스의 OS 디스크 `nvme0:0`과 같은 버스)에 붙인다. 기존 머신은 VM 디렉터리(`.vagrant/machines/master-1/vmware_desktop/<uuid>/`) 안의 파일을 쓰고, 첫 `up`처럼 VM 디렉터리가 아직 없으면 `.vagrant/narwhal-nfs/narwhal-nfs.vmdk` 절대 경로를 쓴다(`destroy` 뒤 트리거가 지운다). 플러그인의 디스크 정리는 `disk_meta`가 비어 있어 아무것도 지우지 않으므로 이 디스크를 삭제할 수 없다. 200은 상한이지 예약이 아니며 크기는 만들 때만 적용된다(이후 변경은 무시). VirtualBox는 `config.vm.disk`(vdi)를 그대로 쓰며 이 변경에서 실행해 보지 않았다.
+
+**게스트에서는 새 디스크가 `/dev/nvme0n1`로 보이고 OS 디스크가 `/dev/nvme0n2`로 밀린다.** 루트가 UUID 기반 LVM이라 문제없다. 그래도 장치 이름을 하드코딩하지 말고 `lsblk`로 확인한다.
+
+**이미 디스크가 붙은 머신에서 `NARWHAL_NFS_DISK_GB=0`을 쓰면 `Vagrantfile`이 거부하고 중단한다(R327).** 디스크 없이 부팅하면 루트 디스크에 남은 PV 옛 복사본을 export하게 된다. 판단 기준은 VM 디렉터리(또는 절대 경로)의 `narwhal-nfs.vmdk`, 머신 디렉터리의 `nfs-data*`, `disk_meta`의 `nfs-data`다. 데이터가 이미 없어진 클러스터를 `destroy`할 때만 `NARWHAL_NFS_DISK_ALLOW_DELETE=yes-delete-the-nfs-disk`로 우회한다. 디스크 이름 `narwhal-nfs.vmdk`는 바꾸지 않는다(라이브 vmx가 이 이름을 가리킨다). 포맷은 XFS(`prjquota`), fstab은 UUID로 쓰므로 장치 이름에 의존하지 않는다.
 
 ### 기존 클러스터 이전 (소유자 실행 점검 작업)
 
@@ -1076,20 +1080,23 @@ kubectl --context narwhal -n database get cluster narwhal-db   # Cluster in heal
      ```
 
      그 파일을 호스트로 복사해 둔다(`vagrant ssh master-1 -c 'sudo cat /var/lib/etcd/snapshot-pre-nfs-disk.db' > ...`).
-3. **쓰기 중단.** `nfs-xfs-migration.md` 3단계를 그대로 한다(hostPath 사전 확인, ArgoCD autosync 중지, 정해진 순서로 scale down, CNPG hibernate, 클라이언트 0 확인). 마지막에 master-1에서 `sudo systemctl stop nfs-server`.
-4. **디스크 붙이기.** 호스트에서 최신 `Vagrantfile`을 받은 뒤:
+3. **쓰기 중단.** `nfs-xfs-migration.md` 3단계를 그대로 한다(hostPath 사전 확인, ArgoCD autosync 중지, 정해진 순서로 scale down, CNPG hibernate, 클라이언트 0 확인). 마지막에 master-1에서 `sudo systemctl stop nfs-server`. **`nfs-server`는 부팅 때 자동으로 시작되므로**(4단계 재부팅 뒤 옛 루트 디스크 복사본을 다시 export한다) 4단계에서 올라온 직후 다시 `sudo systemctl stop nfs-server`를 한다.
+4. **디스크 붙이기.** 호스트에서 최신 `Vagrantfile`을 받은 뒤 VM을 끄고, 가장 간단한 방법은 `vagrant up master-1 --no-provision`(트리거가 vmdk를 만들고 vmx 키가 붙인다)이다. 수동으로 똑같이 하려면 VM이 꺼진 상태에서 VM 디렉터리(`dirname $(cat .vagrant/machines/master-1/vmware_desktop/id)`)에서:
 
    ```bash
    vagrant halt master-1
-   vagrant up master-1 --no-provision    # Vagrantfile의 config.vm.disk가 nfs-data vmdk를 만들어 vmx에 붙인다
+   "/Applications/VMware Fusion.app/Contents/Library/vmware-vdiskmanager" -c -s 200GB -a lsilogic -t 0 narwhal-nfs.vmdk
+   printf '%s\n' 'nvme0:1.present = "TRUE"' 'nvme0:1.fileName = "narwhal-nfs.vmdk"' >> ubuntu-26.04-vmware-arm64.vmx
+   vagrant up master-1 --no-provision
    vagrant ssh master-1 -c 'lsblk -dpo NAME,SIZE,TYPE,FSTYPE,LABEL'   # 새 빈 디스크(FSTYPE 비어 있음)를 확인
+   vagrant ssh master-1 -c 'sudo systemctl stop nfs-server'            # 부팅 때 자동 시작됨: 옛 복사본을 export하지 않게 즉시 멈춘다
    ```
 
-   `--no-provision`을 빼면 프로비저닝 스크립트가 다시 돈다. 노드가 Ready로 돌아오고 etcd 멤버가 복귀할 때까지 기다린다(`kubectl get nodes`, etcd 로그).
+   새 디스크는 `/dev/nvme0n1`, OS 디스크는 `/dev/nvme0n2`로 보인다(루트는 UUID 기반 LVM이라 정상). `--no-provision`을 빼면 프로비저닝 스크립트가 다시 돈다. 노드가 Ready로 돌아오고 etcd 멤버가 복귀할 때까지 기다린다(`kubectl get nodes`, etcd 로그).
 5. **포맷과 복사(master-1).** `DEV`는 4단계에서 확인한 빈 디스크다. 이미 파일시스템이 있으면 중단한다.
 
    ```bash
-   DEV=/dev/sdb      # 4단계 lsblk 결과로 정한다. 추측하지 않는다.
+   DEV=/dev/nvme0n1  # 4단계 lsblk 결과로 정한다(새 디스크는 FSTYPE이 비어 있다). 추측하지 않는다.
    test -z "$(sudo blkid -p -o value -s TYPE "$DEV")" || { echo "filesystem exists, stop"; false; }
    sudo mkfs.xfs -L narwhal-nfs "$DEV"
    sudo mkdir -p /mnt/nfs-new && sudo mount -o prjquota "$DEV" /mnt/nfs-new
@@ -1102,14 +1109,15 @@ kubectl --context narwhal -n database get cluster narwhal-db   # Cluster in heal
 7. **프로젝트 쿼터 복원.** `nfs-quota-agent`는 프로젝트 쿼터(`prjquota`)로 PV 용량을 강제한다. rsync는 XFS 프로젝트 ID와 쿼터 한도를 복사하지 않는다(ID는 inode, 한도는 파일시스템의 쿼터 메타데이터에 있다). `/etc/projects`와 `/etc/projid`는 루트 디스크에 남아 있으므로 ID는 다시 입히고, 한도는 agent가 다시 적용하는지 확인한다. **주의: 호스트의 `/etc/projects`에는 agent 컨테이너 기준 경로(`/export/...`)가 들어 있다.** agent는 `/srv/nfs/k8s`를 컨테이너의 `/export`로 마운트하고(`05-nfs-quota-agent.sh`의 `nfsExport.hostPath`와 `nfsBasePath=/export`) `/etc/projects`와 `/etc/projid`를 hostPath로 공유한다. 그래서 호스트에서 인자 없는 `xfs_quota -c 'project -s'`를 쓰면 없는 경로를 찾아 실패한다. 경로를 명시적으로 바꿔서 한 항목씩 적용한다.
 
    ```bash
+   # export 루트는 nobody 소유 0750이라 일반 사용자는 들어가지 못한다: 존재 확인은 반드시 sudo test -d
    head -3 /etc/projects     # 먼저 형식(<id>:<경로>)과 /export 접두사를 눈으로 확인한다
    sed 's|^\([0-9]*\):/export|\1:/srv/nfs/k8s|' /etc/projects | while IFS=: read -r id path; do
-     [ -n "$id" ] && sudo xfs_quota -x -c "project -s -p ${path} ${id}" /srv/nfs/k8s
+     [ -n "$id" ] && sudo test -d "$path" && sudo xfs_quota -x -c "project -s -p ${path} ${id}" /srv/nfs/k8s
    done
    sudo systemctl start nfs-server && sudo exportfs -v
    ```
 
-   agent를 되살린 뒤 `sudo xfs_quota -x -c 'report -p -h' /srv/nfs/k8s`에서 PV마다 한도가 보여야 한다. 한도가 비어 있으면 agent Pod를 재시작하고 로그가 applied인지 본다. 위 명령은 05 스크립트와 라이브 DaemonSet의 마운트(`/export`, `/etc/projects`, `/etc/projid`)를 읽고 쓴 것이며 아직 실행해 검증하지 않았고, 한도 재적용 동작도 마찬가지다. 그래서 8단계 검증에서 쿼터 초과 쓰기 테스트(`nfs-xfs-migration.md` 6단계)를 반드시 한다.
+   agent를 되살린 뒤 `sudo xfs_quota -x -c 'report -p -h' /srv/nfs/k8s`에서 PV마다 한도가 보여야 한다. 한도가 비어 있으면 agent Pod를 재시작하고 로그가 applied인지 본다. 위 명령은 05 스크립트와 라이브 DaemonSet의 마운트(`/export`, `/etc/projects`, `/etc/projid`)를 읽고 쓴 것이며 아직 실행해 검증하지 않았고, 한도 재적용 동작도 마찬가지다. `test -d`를 sudo 없이 쓰면 0750 루트 때문에 모든 항목이 건너뛰어지므로 반드시 `sudo test -d`다. **quota agent DaemonSet을 멈추려고 `nodeSelector` 키를 추가했다면 복구할 때 주의한다:** merge patch(`kubectl patch --type merge`)는 추가한 키를 지우지 않고 그대로 둔다. 키 제거는 JSON patch로 한다(`kubectl -n <ns> patch ds <name> --type json -p '[{"op":"remove","path":"/spec/template/spec/nodeSelector/<key>"}]'`, 키 안의 `/`는 `~1`). 복구 뒤 `kubectl get ds`의 DESIRED가 노드 수와 같은지 확인한다. 그래서 8단계 검증에서 쿼터 초과 쓰기 테스트(`nfs-xfs-migration.md` 6단계)를 반드시 한다.
 8. **복구와 검증.** `nfs-xfs-migration.md` 5, 6단계의 역순 복구와 검증을 한다. 추가로 모든 PV가 실제로 마운트되는지(`kubectl get pv`가 전부 Bound이고 NFS를 쓰는 Pod가 Running), 그리고 etcd 효과를 본다.
 
    ```promql
@@ -1119,7 +1127,7 @@ kubectl --context narwhal -n database get cluster narwhal-db   # Cluster in heal
    부하 시점의 p99를 이전 값과 비교한다. 개선이 없으면 병목은 호스트 SSD다.
 9. **롤백.** `nfs-xfs-migration.md` 7단계. 디스크를 떼는 것은 필요 없고, fstab 줄과 `RequiresMountsFor` drop-in을 되돌려 루트의 예전 복사본을 쓰면 된다(전환 뒤 쓰인 데이터는 먼저 되돌려 복사). 예전 복사본은 며칠 검증한 뒤에 지운다. 루트 vmdk는 줄어들지 않으므로(섹션 12) 지워도 호스트 공간은 돌아오지 않는다.
 
-**이전하지 않으면.** 새 `Vagrantfile`을 받은 상태에서 master-1을 `halt`/`up`하면 빈 디스크가 붙기만 하고(포맷과 마운트는 하지 않음) NFS는 예전 루트 디스크에서 계속 나간다. `01-nfs-server.sh`를 `--provision`으로 다시 돌리면 `auto`가 빈 디스크를 찾았더라도 `/srv/nfs/k8s`가 비어 있지 않아 마운트를 거부하고 실패한다(데이터를 덮지 않으려는 설계). 이전을 미루려면 새 `Vagrantfile`을 받지 말고 옛 버전으로 두는 것이 안전하다. `NARWHAL_NFS_DISK_GB=0`은 디스크를 한 번도 붙이지 않은 클러스터에서만 쓸 수 있고, 한 번 붙은 뒤에는 위 경고대로 Vagrantfile이 거부한다.
+**이전하지 않으면.** 새 `Vagrantfile`을 받은 상태에서 master-1을 `halt`/`up`하면 트리거가 빈 vmdk를 만들어 붙이기만 하고(포맷과 마운트는 하지 않음) NFS는 예전 루트 디스크에서 계속 나간다. `01-nfs-server.sh`를 `--provision`으로 다시 돌리면 `auto`가 빈 디스크를 찾았더라도 `/srv/nfs/k8s`가 비어 있지 않아 마운트를 거부하고 실패한다(데이터를 덮지 않으려는 설계). 이전을 미루려면 새 `Vagrantfile`을 받지 말고 옛 버전으로 두거나 `NARWHAL_NFS_DISK_GB=0`으로 올린다(디스크가 아직 없을 때만 가능하고, 있으면 거부된다).
 
 ---
 

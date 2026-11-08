@@ -13,14 +13,18 @@
 
 패치 릴리스. 의존성 업데이트와 OSS 버전 목록 항목 1개 추가 외에 사용자에게 보이는 기능 변경은 없음.
 `lucide-react`를 1.66.0으로 올렸고, OSS 버전 페이지에 Trivy DB 미러 갱신 작업이 쓰는 `skopeo`
-(trivy-db-refresh) 이미지가 추가됨(#603). `portal/v1.1.8` 이후 `portal/`의 그 밖의 변경은 worker VM 메모리
-8GB를 반영한 `portal/docs/local-dev.md` 문구 수정(#597)뿐임.
+(trivy-db-refresh) 이미지가 추가됨(#603). `portal/v1.1.8` 이후 `portal/`의 그 밖의 변경은 1.1.8 pin에서 다시
+생성한 OSS 스냅샷(#596), `lucide-react` 업데이트에 맞춰 다시 생성한 서드파티 고지(#539), worker VM 메모리 8GB를
+반영한 `portal/docs/local-dev.md` 문구 수정(#597)임.
 
 ### 변경
 
 - `lucide-react`를 1.58.0에서 1.66.0으로 올림 (narwhal#539).
 - OSS 버전 스냅샷(`src/data/oss-versions.generated.json`)의 Registry 섹션에 `skopeo (trivy-db-refresh)` 1.22.2
   항목이 추가됨 (narwhal#603).
+- 1.1.8 pin에 맞춰 OSS 버전 스냅샷을 다시 생성함: IDP Portal 1.1.7 -> 1.1.8, Next.js 16.4.2 -> 16.4.3
+  (narwhal#596).
+- `lucide-react` 1.66.0에 맞춰 `THIRD-PARTY-NOTICES.md`를 다시 생성함 (narwhal#539).
 
 ## [1.1.8] - 2026-11-06
 

@@ -15,6 +15,10 @@ spec:
     targetRevision: 1.30.1
     helm:
       valuesObject:
+        # D-MESH-CERT-TTL (#600): ztunnel requests this TTL for its workload certs (default 24h). 168h survives a
+        # host sleep of a few days; rationale, source lines, cost and escape hatch: istiod.yaml. Pinned by R324.
+        env:
+          SECRET_TTL: 168h
         resources:
           requests:
             cpu: 50m

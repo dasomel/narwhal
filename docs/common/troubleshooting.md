@@ -295,6 +295,16 @@ kubectl --context narwhal -n istio-system logs <ztunnel-on-node> --since=30m | g
 
 **재발 방지**: istio-cni `ambient.enableAmbientDetectionRetry=true` (R307 고정). 이 값이 있어도 재발하면 위 진단의 ztunnel/istio-cni-node 로그(`cni-agent ... pod ... does not appear to have any assigned IPs`)와 노드 journal의 CNI ADD 시각을 lessons-log #576 행과 대조한다.
 
+### 10.2 호스트 슬립 뒤 메시 인증서 만료 (ztunnel/waypoint, #600)
+
+**증상**: Mac이 슬립했다 깬 뒤 CNPG `narwhal-db`가 Ready=False, WAL 아카이빙 실패, alloy-logs에서 waypoint로 가는 전송 실패, velero-server 인증서 오류. istiod에는 CSR/서명 오류가 없다.
+
+**원인**: 호스트가 슬립하면 VM이 멈추고 VM의 monotonic 시계도 멈춘다. 인증서 갱신 타이머(TTL의 약 절반)는 monotonic 기준이라, 정지 시간이 남은 갱신 시각보다 길면 wall clock 기준 만료 뒤에야 갱신을 시도한다. ztunnel은 만료 인증서로 istiod와 HBONE를 맺지 못한다.
+
+**진단**: waypoint는 `IstioWaypointCertExpiringSoon` 경보 또는 Prometheus `istio_agent_cert_expiry_seconds`(음수면 이미 만료). ztunnel에는 만료 메트릭이 없으므로 `kubectl --context narwhal -n istio-system logs ds/ztunnel --since=1h | grep -i 'certificate expired'`로 본다.
+
+**복구**: 운영 가이드 [14절](../vagrant/operations.md#14-호스트-슬립과-메시-인증서-d-mesh-cert-ttl)의 재시작 절차(ztunnel DaemonSet, waypoint Deployment). **재발 방지**: workload 인증서 TTL을 168h로 늘렸고(D-MESH-CERT-TTL, R324), 클러스터가 도는 동안 호스트를 깨워 둔다(`caffeinate -dimsu`).
+
 ## 11. 메모리 압박
 
 **증상**: Pod eviction, API 서버 느려짐

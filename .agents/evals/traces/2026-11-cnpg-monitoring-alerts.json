@@ -1,0 +1,66 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-cnpg-monitoring-alerts-20261108",
+  "task": "CNPG WAL archiving failure ran ~20h unnoticed (#600, PR #601). Enable CNPG metrics scraping in narwhal-db Cluster and kube-prometheus-stack PodMonitor discovery across all namespaces. Fix CNPGClusterNotHealthy to fire on collector unhealthy without absent(), add CNPGMetricsUnavailable for missing metrics, and add CNPGWALArchivingFailing for failed_count increase or stalled archival > 1800s. Pin with R326 promtool cases and mutations.",
+  "changeContext": {
+    "paths": [
+      ".agents/evals/traces/2026-11-cnpg-monitoring-alerts.json",
+      "docs/common/lessons-log.md",
+      "gitops/charts/narwhal-apps/templates/prometheus-stack.yaml",
+      "gitops/resources/database-ingress-policy.yaml",
+      "gitops/resources/narwhal-db.yaml",
+      "gitops/resources/prometheus-alerts.yaml",
+      "scripts/cluster/07-cnpg.sh",
+      "scripts/cluster/08-2-monitoring.sh",
+      "scripts/test/lib/check-cnpg-monitoring-alerts.py",
+      "scripts/test/regression-check-kakao.sh"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Change only monitoring.enablePodMonitor in narwhal-db.yaml (minimal diff, avoiding other lanes' probe/resource edits), sync scripts/cluster/07-cnpg.sh, set podMonitorSelectorNilUsesHelmValues: false in prometheus-stack.yaml and 08-2-monitoring.sh, fix CNPGClusterNotHealthy and add CNPGMetricsUnavailable/CNPGWALArchivingFailing in prometheus-alerts.yaml. Deliberately left alone: postgresql parameters, storage/resources/affinity in narwhal-db.yaml, live cluster (read-only kubectl context narwhal only), git push/PR/merge."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "narwhal-db.yaml had monitoring.enablePodMonitor: false and kube-prometheus-stack had podMonitorSelectorNilUsesHelmValues: true with matchLabels: {release: prometheus-stack}, so CNPG exporter port 9187 was never scraped. CNPGClusterNotHealthy combined cnpg_collector_up == 0 with absent(), causing constant false firing with empty $labels.cluster_name while real WAL archival failures went unnoticed for ~20h.",
+      "evidence": [
+        "repo:gitops/resources/narwhal-db.yaml",
+        "repo:gitops/resources/prometheus-alerts.yaml",
+        "repo:gitops/charts/narwhal-apps/templates/prometheus-stack.yaml"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "D-CNPG-MON: enablePodMonitor: true in narwhal-db.yaml and 07-cnpg.sh, podMonitorSelectorNilUsesHelmValues: false and empty podMonitorSelector/podMonitorNamespaceSelector in prometheus-stack.yaml and 08-2-monitoring.sh. D-CNPG-MON-INGRESS: database-prometheus-ingress selects only cnpg.io/cluster=narwhal-db and allows the named monitoring Prometheus instance on TCP 9187/15008; baseline default-deny remains unchanged. D-CNPG-HEALTH-ALERT: CNPGClusterNotHealthy evaluates strictly on cnpg_collector_up == 0 for 5m, missing metrics handled by CNPGMetricsUnavailable for 15m. D-CNPG-WAL-ARCHIVE-ALERT: CNPGWALArchivingFailing evaluates increase of cnpg_pg_stat_archiver_failed_count[5m] > 0 or seconds_since_last_archival > 1800 with last_archived_time > 0 for 5m (exact threshold match with word boundary). Official CNPG 1.29 docs URL cited in comments."
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "Repository verification: make test passed 445 checks, 0 failures, 3 existing warnings (airgap bundle absent and baselined mTLS/isolation gaps), exit 0. R326 passed 7 promtool behavior cases and rejected 18 mutations, including destination widening, lost Prometheus instance label and OR-split source peers. Ambient NetworkPolicy mutations, make validate, bash -n and git diff --check passed. ShellCheck passed. Changed YAML lint passed; full YAML lint has 6 pre-existing line-length errors in unchanged ghost-pod-reaper.yaml and velero-server-rbac.yaml. No live deployment, scrape reachability or alert delivery was verified.",
+      "evidence": [
+        "test:python3 scripts/test/lib/check-cnpg-monitoring-alerts.py --mutation-verify -> 7 promtool cases passed, 18 mutations rejected",
+        "test:python3 scripts/test/lib/check-ambient-netpol.py --mutation-verify -> PASS",
+        "test:make validate -> exit 0",
+        "repo:scripts/test/lib/check-cnpg-monitoring-alerts.py",
+        "test:RESEARCH_EVIDENCE_DIR=<temporary-directory> nice -n 15 make test -> exit 0, passed 445, failed 0, warnings 3"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "completion_claim",
+      "summary": "Repository definitions enable CNPG metrics scraping and WAL-archive alerts, pin the destination to narwhal-db, and are verified by R326 and the full static suite. Live scrape and alert delivery require GitOps publication and separate runtime verification."
+    },
+    {
+      "id": "e6",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Complete for the repository correction and regression scope. Existing lint findings remain outside scope; publication, independent review and live deployment/alert delivery are not claimed."
+    }
+  ]
+}

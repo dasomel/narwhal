@@ -98,6 +98,10 @@ spec:
             # Discover all PrometheusRules regardless of release label
             ruleSelector: {}
             ruleNamespaceSelector: {}
+            # D-CNPG-MON (#600): Discover PodMonitors across all namespaces (e.g. CNPG in database)
+            podMonitorSelectorNilUsesHelmValues: false
+            podMonitorSelector: {}
+            podMonitorNamespaceSelector: {}
             storageSpec:
               volumeClaimTemplate:
                 spec:

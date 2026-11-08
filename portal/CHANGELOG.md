@@ -9,6 +9,20 @@ English | [한국어](CHANGELOG-ko.md)
 
 ## [Unreleased]
 
+## [1.1.9] - 2026-11-09
+
+Patch release with no user-facing feature change beyond a dependency bump and one new entry in the OSS
+versions list. `lucide-react` is bumped to 1.66.0, and the OSS versions page lists the `skopeo`
+(trivy-db-refresh) image used by the Trivy DB mirror refresh job (#603). The only other change under
+`portal/` since `portal/v1.1.8` is a documentation wording update in `portal/docs/local-dev.md` for the 8GB
+worker VM memory (#597).
+
+### Changed
+
+- Bump `lucide-react` from 1.58.0 to 1.66.0 (narwhal#539).
+- OSS version snapshot (`src/data/oss-versions.generated.json`) gained the `skopeo (trivy-db-refresh)` 1.22.2
+  entry in the Registry section (narwhal#603).
+
 ## [1.1.8] - 2026-11-06
 
 Patch release: DORA recent-deployment rows without a recorded Argo CD phase show a dash instead of an
@@ -671,7 +685,8 @@ management dashboard built with Next.js 16 and React 19.
   - Skaffold development profile configured for live Hot Module Replacement (HMR) and container
     file syncing.
 
-[Unreleased]: https://github.com/dasomel/narwhal/compare/portal/v1.1.8...HEAD
+[Unreleased]: https://github.com/dasomel/narwhal/compare/portal/v1.1.9...HEAD
+[1.1.9]: https://github.com/dasomel/narwhal/compare/portal/v1.1.8...portal/v1.1.9
 [1.1.8]: https://github.com/dasomel/narwhal/compare/portal/v1.1.7...portal/v1.1.8
 [1.1.7]: https://github.com/dasomel/narwhal/compare/portal/v1.1.6...portal/v1.1.7
 [1.1.6]: https://github.com/dasomel/narwhal/compare/portal/v1.1.5...portal/v1.1.6

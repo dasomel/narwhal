@@ -9,6 +9,19 @@
 
 ## [Unreleased]
 
+## [1.1.9] - 2026-11-09
+
+패치 릴리스. 의존성 업데이트와 OSS 버전 목록 항목 1개 추가 외에 사용자에게 보이는 기능 변경은 없음.
+`lucide-react`를 1.66.0으로 올렸고, OSS 버전 페이지에 Trivy DB 미러 갱신 작업이 쓰는 `skopeo`
+(trivy-db-refresh) 이미지가 추가됨(#603). `portal/v1.1.8` 이후 `portal/`의 그 밖의 변경은 worker VM 메모리
+8GB를 반영한 `portal/docs/local-dev.md` 문구 수정(#597)뿐임.
+
+### 변경
+
+- `lucide-react`를 1.58.0에서 1.66.0으로 올림 (narwhal#539).
+- OSS 버전 스냅샷(`src/data/oss-versions.generated.json`)의 Registry 섹션에 `skopeo (trivy-db-refresh)` 1.22.2
+  항목이 추가됨 (narwhal#603).
+
 ## [1.1.8] - 2026-11-06
 
 패치 릴리스. Argo CD가 phase를 기록하지 않은 DORA 최근 배포 행을 "Unknown" 뱃지 대신 대시로 표시하고,
@@ -635,7 +648,8 @@ Portal의 첫 번째 공개 릴리스.
     매니페스트(`deploy/kaniko-build-job.yaml`).
   - 실시간 핫 모듈 교체(HMR) 및 컨테이너 파일 동기화를 위해 구성된 Skaffold 개발 프로필.
 
-[Unreleased]: https://github.com/dasomel/narwhal/compare/portal/v1.1.8...HEAD
+[Unreleased]: https://github.com/dasomel/narwhal/compare/portal/v1.1.9...HEAD
+[1.1.9]: https://github.com/dasomel/narwhal/compare/portal/v1.1.8...portal/v1.1.9
 [1.1.8]: https://github.com/dasomel/narwhal/compare/portal/v1.1.7...portal/v1.1.8
 [1.1.7]: https://github.com/dasomel/narwhal/compare/portal/v1.1.6...portal/v1.1.7
 [1.1.6]: https://github.com/dasomel/narwhal/compare/portal/v1.1.5...portal/v1.1.6

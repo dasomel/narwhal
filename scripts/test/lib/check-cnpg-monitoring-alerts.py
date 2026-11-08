@@ -8,17 +8,16 @@ Validates:
 3. CNPG alerts in gitops/resources/prometheus-alerts.yaml:
    - CNPGClusterNotHealthy evaluated on cnpg_collector_up == 0 without absent()
    - CNPGMetricsUnavailable alerting on absent() for 15m window
-   - CNPGWALArchivingFailing alerting on failed_count increase or stalled archival > 1800s (exact threshold)
+   - CNPGWALArchivingFailing alerting on nonzero .ready backlog for 30m (exact expression and window)
    - Decisions and official CNPG 1.29 docs URL recorded in comments
 4. NetworkPolicy database-prometheus-ingress in gitops/resources/database-ingress-policy.yaml:
    - Prometheus ingress allow from namespace monitoring (app.kubernetes.io/name=prometheus)
    - Scoped strictly to TCP 9187 (+ ambient HBONE 15008 per R200)
    - D-CNPG-MON-INGRESS comment recorded
-5. promtool behavior cases for all alerts (healthy, collector down, absent metrics, failed archival, stalled archival).
+5. promtool behavior cases for all alerts (healthy, collector down, absent metrics, pending backlog, sustained backlog, backlog cleared).
 6. Mutation verification catching regressions across all 6 files.
 """
 
-import re
 import shutil
 import subprocess
 import sys
@@ -106,20 +105,13 @@ def static(root):
 
     wal = by_alert['CNPGWALArchivingFailing']
     w_expr = ' '.join(wal['expr'].split())
-    assert 'cnpg_pg_stat_archiver_failed_count{namespace="database"}' in w_expr, f'failed_count missing in wal expr: {w_expr}'
-    # Exact threshold comparison with word boundary (\b) so > 180000 fails (P2, PR #602)
-    assert re.search(
-        r'cnpg_pg_stat_archiver_seconds_since_last_archival\{namespace="database"\}\s*>\s*1800\b',
-        w_expr,
-    ), f'seconds_since_last_archival > 1800 missing or threshold not exact in wal expr: {w_expr}'
-    assert re.search(
-        r'time\(\)\s*-\s*cnpg_pg_stat_archiver_last_archived_time\{namespace="database"\}\s*>\s*1800\b',
-        w_expr,
-    ), f'time() - last_archived_time > 1800 missing or threshold not exact in wal expr: {w_expr}'
-    assert 'cnpg_pg_stat_archiver_last_archived_time{namespace="database"}' in w_expr, (
-        f'last_archived_time missing in wal expr: {w_expr}'
-    )
-    assert wal['for'] == '5m'
+    # D2: CI has no promtool. Pin the entire predicate so selector, operator,
+    # threshold and extra branches cannot silently drift. Cost: formatting is
+    # normalized only; escape hatch: update this contract with behavior cases.
+    assert w_expr == (
+        'cnpg_collector_pg_wal_archive_status{namespace="database",value="ready"} > 0'
+    ), f'unexpected WAL backlog expr: {w_expr}'
+    assert wal['for'] == '30m'
     assert wal['labels']['severity'] == 'critical'
 
     # 6. database-ingress-policy.yaml (P1, #600, PR #602)
@@ -230,103 +222,34 @@ def behavior(rule_spec):
                 }
             ]
         },
-        {
-            'name': 'healthy WAL archival',
-            'interval': '1m',
-            'input_series': [
-                {
-                    'series': 'cnpg_pg_stat_archiver_failed_count{namespace="database",pod="narwhal-db-1"}',
-                    'values': '0+0x30'
-                },
-                {
-                    'series': 'cnpg_pg_stat_archiver_seconds_since_last_archival{namespace="database",pod="narwhal-db-1"}',
-                    'values': '60+0x30'
-                },
-                {
-                    'series': 'cnpg_pg_stat_archiver_last_archived_time{namespace="database",pod="narwhal-db-1"}',
-                    'values': '1700000000+0x30'
-                }
-            ],
-            'alert_rule_test': [
-                {'eval_time': '20m', 'alertname': 'CNPGWALArchivingFailing', 'exp_alerts': []}
-            ]
-        },
-        {
-            'name': 'WAL archiving failed_count increasing',
-            'interval': '1m',
-            'input_series': [
-                {
-                    'series': 'cnpg_pg_stat_archiver_failed_count{namespace="database",pod="narwhal-db-1"}',
-                    'values': '0 0 0 0 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20'
-                },
-                {
-                    'series': 'cnpg_pg_stat_archiver_seconds_since_last_archival{namespace="database",pod="narwhal-db-1"}',
-                    'values': '60+0x25'
-                },
-                {
-                    'series': 'cnpg_pg_stat_archiver_last_archived_time{namespace="database",pod="narwhal-db-1"}',
-                    'values': '1700000000+0x25'
-                }
-            ],
-            'alert_rule_test': [
-                {
-                    'eval_time': '15m',
-                    'alertname': 'CNPGWALArchivingFailing',
-                    'exp_alerts': [
-                        {'exp_labels': {'namespace': 'database', 'pod': 'narwhal-db-1', 'severity': 'critical'}}
-                    ]
-                }
-            ]
-        },
-        {
-            'name': 'WAL archiving stalled > 1800s',
-            'interval': '1m',
-            'input_series': [
-                {
-                    'series': 'cnpg_pg_stat_archiver_failed_count{namespace="database",pod="narwhal-db-1"}',
-                    'values': '0+0x30'
-                },
-                {
-                    'series': 'cnpg_pg_stat_archiver_seconds_since_last_archival{namespace="database",pod="narwhal-db-1"}',
-                    'values': '1900+0x30'
-                },
-                {
-                    'series': 'cnpg_pg_stat_archiver_last_archived_time{namespace="database",pod="narwhal-db-1"}',
-                    'values': '1700000000+0x30'
-                }
-            ],
-            'alert_rule_test': [
-                {
-                    'eval_time': '10m',
-                    'alertname': 'CNPGWALArchivingFailing',
-                    'exp_alerts': [
-                        {'exp_labels': {'namespace': 'database', 'pod': 'narwhal-db-1', 'severity': 'critical'}}
-                    ]
-                }
-            ]
-        },
-        {
-            'name': 'uninitialized last_archived_time (-1)',
-            'interval': '1m',
-            'input_series': [
-                {
-                    'series': 'cnpg_pg_stat_archiver_failed_count{namespace="database",pod="narwhal-db-1"}',
-                    'values': '0+0x30'
-                },
-                {
-                    'series': 'cnpg_pg_stat_archiver_seconds_since_last_archival{namespace="database",pod="narwhal-db-1"}',
-                    'values': '-1+0x30'
-                },
-                {
-                    'series': 'cnpg_pg_stat_archiver_last_archived_time{namespace="database",pod="narwhal-db-1"}',
-                    'values': '-1+0x30'
-                }
-            ],
-            'alert_rule_test': [
-                {'eval_time': '20m', 'alertname': 'CNPGWALArchivingFailing', 'exp_alerts': []}
-            ]
-        }
     ]
+    # Sustained backlog detects a stuck single segment as well as growth.
+    for name, values, eval_time, firing, namespace, value in [
+        ('no backlog', '0+0x45', '40m', False, 'database', 'ready'),
+        ('backlog pending', '1+0x45', '29m', False, 'database', 'ready'),
+        ('single stuck WAL', '1+0x45', '30m', True, 'database', 'ready'),
+        ('growing backlog', '1+1x45', '35m', True, 'database', 'ready'),
+        ('backlog cleared', '1+0x20 0+0x24', '40m', False, 'database', 'ready'),
+        ('brief backlog resets timer', '1+0x20 0 1+0x23', '40m', False, 'database', 'ready'),
+        ('archived WAL only', '10+0x45', '40m', False, 'database', 'done'),
+        ('other namespace', '1+0x45', '40m', False, 'other', 'ready'),
+        ('missing backlog metric', None, '40m', False, 'database', 'ready'),
+    ]:
+        labels = {'namespace': namespace, 'pod': 'narwhal-db-1', 'value': value}
+        series_labels = ','.join(f'{k}="{v}"' for k, v in labels.items())
+        test_cases.append({
+            'name': name,
+            'interval': '1m',
+            'input_series': [] if values is None else [{
+                'series': f'cnpg_collector_pg_wal_archive_status{{{series_labels}}}',
+                'values': values,
+            }],
+            'alert_rule_test': [{
+                'eval_time': eval_time,
+                'alertname': 'CNPGWALArchivingFailing',
+                'exp_alerts': [{'exp_labels': {**labels, 'severity': 'critical'}}] if firing else [],
+            }],
+        })
 
     with tempfile.TemporaryDirectory() as tmp:
         t = Path(tmp)
@@ -377,17 +300,29 @@ MUTATIONS = [
         'cnpg_collector_up{namespace="database"} == 0',
         'cnpg_collector_up{namespace="database"} == 0 or absent(cnpg_collector_up{namespace="database"})',
     ),
+    *[
+        (f'WAL predicate: {name}', FILES[4],
+         'cnpg_collector_pg_wal_archive_status{namespace="database",value="ready"} > 0', expr)
+        for name, expr in [
+            ('unavailable SQL metric', 'cnpg_pg_stat_archiver_failed_count{namespace="database"} > 0'),
+            ('wrong metric', 'cnpg_collector_pg_wal{namespace="database",value="ready"} > 0'),
+            ('wrong namespace', 'cnpg_collector_pg_wal_archive_status{namespace="other",value="ready"} > 0'),
+            ('missing namespace', 'cnpg_collector_pg_wal_archive_status{value="ready"} > 0'),
+            ('done files', 'cnpg_collector_pg_wal_archive_status{namespace="database",value="done"} > 0'),
+            ('zero fires', 'cnpg_collector_pg_wal_archive_status{namespace="database",value="ready"} >= 0'),
+            ('single segment ignored', 'cnpg_collector_pg_wal_archive_status{namespace="database",value="ready"} > 1'),
+            ('extra branch', 'cnpg_collector_pg_wal_archive_status{namespace="database",value="ready"} > 0 or vector(1)'),
+        ]
+    ],
     (
-        'CNPGWALArchivingFailing metric rename failed_count',
-        FILES[4],
-        'cnpg_pg_stat_archiver_failed_count{namespace="database"}',
-        'cnpg_pg_stat_archiver_failed_total{namespace="database"}',
+        'WAL window 30m -> 3m', FILES[4],
+        'value="ready"} > 0\n          for: 30m',
+        'value="ready"} > 0\n          for: 3m',
     ),
     (
-        'CNPGWALArchivingFailing threshold 1800 -> 180000',
-        FILES[4],
-        'cnpg_pg_stat_archiver_seconds_since_last_archival{namespace="database"} > 1800',
-        'cnpg_pg_stat_archiver_seconds_since_last_archival{namespace="database"} > 180000',
+        'WAL severity critical -> warning', FILES[4],
+        'for: 30m\n          labels:\n            severity: critical',
+        'for: 30m\n          labels:\n            severity: warning',
     ),
     (
         'missing official docs URL',

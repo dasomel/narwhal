@@ -47,6 +47,15 @@ cd "$(dirname "$0")/.."
 # nearly full host before spending a run on it (never aborts: the check itself is advisory).
 bash scripts/ops/check-vm-disk.sh || true
 
+# D-MESH-CERT-TTL (#600): warn-only. A sleeping host freezes the VMs' monotonic clock, so ztunnel/waypoint
+# workload certs can expire (CNPG down, WAL archiving failed ~20h). macOS only; never aborts.
+if [ "$(uname -s)" = "Darwin" ] && command -v pmset >/dev/null 2>&1; then
+  host_sleep=$(pmset -g 2>/dev/null | awk '$1 == "sleep" { print $2; exit }' || true)
+  if [ -n "${host_sleep}" ] && [ "${host_sleep}" != "0" ] && ! pgrep -x caffeinate >/dev/null 2>&1; then
+    say "WARN: host sleep is enabled (pmset sleep ${host_sleep}); run 'caffeinate -dimsu &' while the cluster runs (docs/vagrant/operations.md section 14)."
+  fi
+fi
+
 # vm_state <name>: prints vagrant's state word for one VM (running|not_created|...).
 vm_state() {
   vagrant status "$1" 2>/dev/null \

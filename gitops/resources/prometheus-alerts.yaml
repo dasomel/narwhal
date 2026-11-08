@@ -281,6 +281,22 @@ spec:
             summary: "CNPG 연결 수 높음: {{ $labels.pod }}"
             description: "CNPG 파드 {{ $labels.pod }}의 활성 연결이 max_connections의 80%를 5분 이상 초과합니다. 현재값: {{ $value | humanize }}%"
 
+        # D-CNPG-POD-READY (#600): CNPG metrics are not scraped here (narwhal-db.yaml monitoring.enablePodMonitor=false,
+        # live 2026-11-08: zero cnpg_* series), so the alert above cannot see an instance that is up but NotReady.
+        # kube-state-metrics pod readiness works today. Instance pods are named <cluster>-<N> (poolers and jobs
+        # have other suffixes). Cost: matches any StatefulSet-style `-N` pod in `database`. Escape hatch: delete.
+        # A WAL-archiving alert (cnpg_pg_stat_archiver_*) needs enablePodMonitor plus a Prometheus ingress rule in
+        # database-ingress-policy.yaml; not done here (design change), so archiving failure is still unalerted.
+        - alert: CNPGInstanceNotReady
+          expr: |
+            kube_pod_status_ready{namespace="database",condition="true",pod=~".+-[0-9]+"} == 0
+          for: 10m
+          labels:
+            severity: critical
+          annotations:
+            summary: "CNPG 인스턴스 NotReady: {{ $labels.pod }}"
+            description: "namespace=database의 CNPG 인스턴스 {{ $labels.pod }}가 10분 이상 Ready가 아닙니다. 복제와 WAL 아카이빙이 멈췄을 수 있습니다. `kubectl -n database get cluster`와 인스턴스 로그를 확인하세요. 호스트 슬립 뒤라면 docs/vagrant/operations.md 14절(메시 인증서 만료)을 보세요."
+
     # -------------------------------------------------------------------------
     # certificates: cert-manager 인증서 만료 및 상태
     # -------------------------------------------------------------------------
@@ -308,6 +324,28 @@ spec:
           annotations:
             summary: "인증서 Ready 아님: {{ $labels.name }} ({{ $labels.namespace }})"
             description: "namespace={{ $labels.namespace }}의 인증서 {{ $labels.name }}가 15분 이상 Ready=False 상태입니다. cert-manager 로그를 확인하세요."
+
+    # -------------------------------------------------------------------------
+    # mesh-certs: Istio ambient workload 인증서 만료 (호스트 슬립, #600)
+    # -------------------------------------------------------------------------
+    # D-MESH-CERT-ALERT (#600): istio_agent_cert_expiry_seconds is exported by pilot-agent in the waypoints
+    # (job istio-system/istio-waypoints, labels namespace/pod/resource_name; verified live 2026-11-08, ~84000s
+    # on a 24h cert). ztunnel exports NO cert-expiry series (checked: only istio_xds_*, istio_tcp_*, istio_dns_*,
+    # workload_manager_*), and no Loki alerting is configured (ruler has no alertmanager_url, no rule ConfigMaps),
+    # so an expired ztunnel cert is detected only indirectly, by the waypoint alert and CNPGInstanceNotReady.
+    # Threshold 24h: with SECRET_TTL=168h (D-MESH-CERT-TTL) a healthy cert never drops under ~84h, so 24h means
+    # renewal has been failing for days; an already-expired cert reports a negative value and fires too.
+    - name: mesh-certs
+      rules:
+        - alert: IstioWaypointCertExpiringSoon
+          expr: |
+            istio_agent_cert_expiry_seconds{job="istio-system/istio-waypoints"} < 24 * 3600
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "waypoint 인증서 만료 임박/만료: {{ $labels.namespace }}/{{ $labels.pod }}"
+            description: "waypoint {{ $labels.namespace }}/{{ $labels.pod }}의 workload 인증서가 24시간 이내에 만료되거나 이미 만료됐습니다(갱신 실패, 보통 호스트 슬립). ztunnel도 같은 이유로 만료됐을 수 있습니다. 복구: ztunnel DaemonSet과 waypoint Deployment를 재시작하세요(docs/vagrant/operations.md 14절). 남은 시간: {{ $value | humanizeDuration }}"
 
     # -------------------------------------------------------------------------
     # reboot-recovery: VM 리부트 후 복구 감시

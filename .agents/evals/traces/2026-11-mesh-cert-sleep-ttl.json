@@ -1,0 +1,64 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-mesh-cert-sleep-ttl-20261108",
+  "task": "Istio ambient workload certs (TTL 24h) expired after the Mac slept and nothing alerted (#600). Lengthen the cert TTL on the clients that choose it, add expiry and CNPG readiness alerts, document keeping the host awake, and warn from up.sh.",
+  "changeContext": {
+    "paths": [
+      ".agents/evals/traces/2026-11-mesh-cert-sleep-ttl.json",
+      "docs/common/lessons-log.md",
+      "docs/common/troubleshooting.md",
+      "docs/vagrant/operations.md",
+      "gitops/charts/narwhal-apps/templates/istiod.yaml",
+      "gitops/charts/narwhal-apps/templates/ztunnel.yaml",
+      "gitops/resources/prometheus-alerts.yaml",
+      "scripts/cluster/09-istio-ambient.sh",
+      "scripts/test/lib/check-mesh-cert-ttl.py",
+      "scripts/test/regression-check-kakao.sh",
+      "scripts/up.sh"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Change only the istiod/ztunnel Helm values (and their 09-istio-ambient.sh copies), the prometheus-alerts rules, the docs and the warn-only up.sh check. Deliberately left alone: the live cluster (read-only kubectl), CNPG monitoring (enablePodMonitor) and its network policy, Loki ruler configuration, the Istio version, root CA handling."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "Live read-only 2026-11-08: istio_agent_cert_expiry_seconds exists for the 3 waypoints (job istio-system/istio-waypoints, ~84000s left on a 24h cert); zero cnpg_* series because narwhal-db.yaml sets monitoring.enablePodMonitor=false; ztunnel exports no cert-expiry series; the Loki ruler has no alertmanager_url and no rule ConfigMaps exist; mesh config proxyMetadata holds only ISTIO_META_ENABLE_HBONE.",
+      "evidence": [
+        "repo:gitops/resources/narwhal-db.yaml",
+        "repo:gitops/resources/prometheus-alerts.yaml"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "D-MESH-CERT-TTL: SECRET_TTL=168h for ztunnel (ztunnel src/config.rs:59,806; caclient.rs:148) and waypoints (pilot-agent options.go:76 via meshConfig.defaultConfig.proxyMetadata, waypoint.yaml:173-177), istiod DEFAULT_WORKLOAD_CERT_TTL=168h and MAX_WORKLOAD_CERT_TTL=720h (istio_ca.go:89,94), all at tag 1.30.1; helm template of istiod 1.30.1 shows the env and a deep-merged proxyMetadata that keeps ISTIO_META_ENABLE_HBONE. D-MESH-CERT-ALERT: IstioWaypointCertExpiringSoon. D-CNPG-POD-READY: CNPGInstanceNotReady."
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "Static: R324 compares gitops and the 09-istio-ambient.sh heredocs, checks MAX >= requested TTLs, runs 7 promtool cases for the two alerts and rejects 16 single-defect mutations. NOT covered: a real host sleep, a live sync of the Applications, whether the waypoint Deployment re-renders with the new env after a restart, WAL-archiving alerts, any ztunnel expiry alert.",
+      "evidence": [
+        "test:python3 scripts/test/lib/check-mesh-cert-ttl.py --mutation-verify -> 7 promtool cases pass, 16 mutations caught",
+        "test:make test -> R324 pass",
+        "repo:scripts/test/lib/check-mesh-cert-ttl.py"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "completion_claim",
+      "summary": "In the repository the cert TTL is 168h in both install paths, the two alerts exist and behave under promtool, the runbook and up.sh warning exist, all pinned by R324. The live cluster still issues 24h certs until the Applications sync and ztunnel/waypoints restart; ztunnel expiry and WAL-archiving failure remain unalerted."
+    },
+    {
+      "id": "e6",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Complete for the repository scope; not deployed, host sleep not reproduced, ztunnel/WAL alerts not possible without further design changes."
+    }
+  ]
+}

@@ -9,6 +9,68 @@ English | [한국어](CHANGELOG-ko.md)
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-11-09
+
+A stabilisation release after the 1.3.0 hardening. The local cluster was reworked after node-level
+out-of-memory kills, host-disk growth and an etcd/NFS I/O incident (worker VMs with 8GB, a dedicated
+NFS data disk, far fewer Trivy scan writes, QoS and spreading for the backup path and the monitoring
+stack). Keycloak, Velero UI and the gateway admin UIs are now tied to the `cluster-admin` group, and new
+alerts cover failures that went unseen (CNPG WAL archiving, mesh certificates, a stale Trivy DB mirror,
+Velero backups, VM disk growth). Several changes need an operator action on an existing cluster; read
+**Upgrade notes** first.
+
+### Upgrade notes
+
+- **Worker VM memory is 8GB (#597).** `WORKER_MEMORY` goes from 6144 to 8192 (masters stay at 6GB), so
+  the host needs about 42GB for the VMs (README: 48GB+ RAM). A running VM keeps its old `memsize`, so
+  an existing cluster needs a rolling restart, one worker at a time: cordon and drain, `vagrant halt
+  <worker> && vagrant up <worker> --no-provision`, uncordon, then check that allocatable memory is
+  about 7.3GiB before the next worker. Because `narwhal-db` now requires anti-affinity (#590), check
+  where the CNPG primary runs before each drain, switch it over if it is on that worker, and never take
+  down two workers at once. Full procedure and rollback: `docs/vagrant/operations.md` section 13.
+- **NFS export moves to a dedicated disk on master-1 (#605, #606); existing clusters need an owner-run
+  maintenance window.** Moving the export needs master-1 powered off to attach the disk, and every
+  NFS-backed workload stops meanwhile. The estimate is 30 to 60 minutes for under 100GB of data and was
+  not measured. Take the Velero backup, a CNPG logical dump and an etcd snapshot first, then follow
+  `docs/vagrant/operations.md` section 15 (it reuses steps 3 to 7 of
+  `docs/runbooks/nfs-xfs-migration.md`). **Never set `NARWHAL_NFS_DISK_GB=0` on a machine that already
+  has the disk:** the Vagrantfile aborts, because booting without it would export the stale copy left
+  on the root disk. A new cluster gets the disk (default 200GB) automatically.
+- **Keycloak: migrate to the permanent master-realm admin (#598).** A fresh install does this in
+  Phase 2. An existing cluster runs `scripts/cluster/11-1-keycloak-admin.sh` once on master-1; it
+  creates `platform-admin`, stores the credentials in `iam/keycloak-admin`, checks that the new account
+  can call the admin API and only then deletes `temp-admin`. It is idempotent. Until you migrate, the
+  scripts fall back to `iam/keycloak-initial-admin`. Steps and recovery:
+  `docs/runbooks/keycloak-permanent-admin.md`.
+- **Restart ztunnel and the waypoints to get the 168h mesh certificate TTL (#601).** The new TTL is
+  requested by the clients, so certificates issued before the sync keep the old 24h lifetime until
+  `kubectl -n istio-system rollout restart daemonset/ztunnel` and a rollout restart of each `waypoint`
+  Deployment. Verify that `istio_agent_cert_expiry_seconds` is close to 604800. Steps:
+  `docs/vagrant/operations.md` section 14.
+- **Apply `gitops/resources/narwhal-db.yaml` by hand (#590, #602, #605).** No Argo CD Application owns
+  the CNPG `Cluster`; `14-gitops-bootstrap.sh` applies it, so a push to Gitea and a sync do not change
+  the live object. Run `kubectl apply -f gitops/resources/narwhal-db.yaml` to get required hostname
+  anti-affinity, the longer liveness and isolation checks, explicit memory requests and limits, and
+  the PodMonitor. The CNPG instances restart in a rolling fashion. First confirm the two instances run
+  on different workers, otherwise one stays Pending.
+- **Delete the `trivy-server` StatefulSet before Argo CD syncs the new chart (#584).** Its cache moved
+  from an `emptyDir` to a 5Gi `nfs-csi` PVC, and `volumeClaimTemplates` is immutable:
+  `kubectl -n security-system delete sts trivy-server` (and clear any pending sync retry). The old
+  cache held nothing worth keeping.
+- **Reschedule Prometheus, Tempo and Loki once (#586).** The new preferred anti-affinity only applies
+  when a pod is scheduled. Delete `tempo-0`, `loki-0` and the Prometheus pod one at a time and check
+  placement with `kubectl -n monitoring get pod -o wide`. Tempo and Loki run without persistence, so
+  un-flushed data is lost, as in an OOM restart.
+- **Re-run `08-5-registry.sh`, `11-2-keycloak-config.sh` and `11-3-keycloak-clients.sh` on an existing
+  cluster.** `08-5` creates the
+  Harbor robot account and the retention and GC settings the Trivy DB refresh uses (#603). `11-3`
+  generates the Velero UI JWT signing key (#555) and binds the `cluster-admin`-only login flow to the
+  `velero-ui` client (#599). `11-2` sets `loginTheme` and `adminTheme` to `narwhal` on the `narwhal` and
+  `master` realms, which the admin console branding needs (#572).
+- **Re-push Gitea directories that were mirrored with the old script (#578).** Before this release,
+  `push-to-gitea.sh <dir>` nested an existing directory (`<dir>/<basename>/...`) and
+  never propagated deletions. Running it again for that path now replaces the Gitea copy exactly.
+
 ### Added
 
 - **`csp/kakao-cloud/terraform/destroy-all.sh` tears down the whole Kakao Cloud deployment
@@ -20,6 +82,88 @@ English | [한국어](CHANGELOG-ko.md)
   SeaweedFS object store. It also tells a rejected VPC delete (`ACTIVE`) from a slow one
   (`PENDING_DELETE`), and the manual option B now says how to keep the NFS volume, whose own
   guard otherwise blocks a full destroy.
+- **A dedicated NFS data disk on master-1 (D-NFS-VMDK, #605, #606).** etcd and the NFS-backed PVs (17 per the incident report)
+  shared one VMDK, and an NFS write burst pushed etcd WAL fsync past 8 seconds (2026-11-08), which
+  produced API timeouts, CNPG liveness restarts and a failover. The Vagrantfile now attaches a sparse
+  200GB disk (`NARWHAL_NFS_DISK_GB`) and `01-nfs-server.sh` formats it XFS with `prjquota` and mounts it
+  by UUID; `NFS_DATA_DEVICE=auto` picks a disk only when exactly one has no partition, mount or
+  filesystem, and fails otherwise. On vmware_desktop the disk is attached with `nvme0:1` vmx keys and
+  a `before up/reload` trigger that runs `vmware-vdiskmanager`, because `config.vm.disk` crashes
+  `vagrant up master-1` on vagrant-vmware-desktop 3.0.5 (#606); VirtualBox uses `vm.disk`. Booting with
+  `NARWHAL_NFS_DISK_GB=0` once the disk exists is refused (R327). The migration runbook is
+  `docs/vagrant/operations.md` section 15; see Upgrade notes. Not verified: a fresh `vagrant up` or
+  `reload`, the auto device pick on a new cluster, VirtualBox, and whether etcd fsync improves (both
+  VMDKs sit on the same host SSD).
+- **Alert and host check for VM disk growth (D-VM-DISK-GUARD, #582).** Worker-3's vmdk reached 298GiB
+  on the host while the guest used 43G, because a growable linked-clone vmdk never gives freed blocks
+  back and the NVMe has no discard. `NodeDiskWriteRateHigh` fires when a worker's 6h average write
+  rate stays above 20GB/day for 30 minutes. `scripts/ops/check-vm-disk.sh` compares each VM's host
+  vmdk directory with the guest `df` and warns at a 30G gap, a vmdk of 120G or more, or under 40G of
+  host free space (`--strict` exits 1); `scripts/up.sh` runs it warn-only. The reclaim runbook is
+  `docs/vagrant/operations.md` section 12 (R309). Not verified: that the alert fires on a real burst.
+- **Permanent Keycloak master-realm admin (D-KC-ADMIN-573, #598).** The new critical Phase 2 step
+  `11-1-keycloak-admin.sh` creates `platform-admin` with only the realm role `admin` (the same rights
+  as `temp-admin`), stores it in `iam/keycloak-admin` without printing it, proves the login against
+  `get realms/master`, and only then deletes `temp-admin` (it refuses if both names are equal).
+  `11-2`, `11-3`, `13-2`, `test-sso.sh`, `verify-cluster.sh` and `show-credentials.sh` read
+  `keycloak-admin` first and fall back to `keycloak-initial-admin`; the portal and the operator do not
+  use it. Runbook: `docs/runbooks/keycloak-permanent-admin.md` (R321). Not verified: a real run of
+  `11-1`, and that `temp-admin` does not return after a Keycloak pod restart.
+- **The Trivy DB mirror refreshes itself, with bounded Harbor storage (D-SECDB-AUTO, #603).** The
+  CronJob `trivy-db-refresh` runs every 6 hours, copies only `trivy-db:2` and `trivy-java-db:1` into the
+  Harbor `trivy-db` project with a digest-pinned skopeo 1.22.2, skips an already current mirror and
+  records the approver as `auto-refresh`. It uses a Harbor robot account scoped to that project (created
+  by `08-5`). `08-5` also sets a retention rule that keeps the 2 newest artifacts per repository
+  (untagged included) and a GC schedule. Egress-less clusters (Kakao) keep the manual
+  fetch, promote and push gate. New alerts: `TrivyDbRefreshFailed` and `TrivyDbRefreshStale` (R322).
+  The earlier manual path was also fixed (#550): `push-security-db.sh` now logs in over HTTPS with the
+  Harbor admin credential, and `08-5` warns with the exact commands when `trivy-db` holds fewer than
+  3 repositories (the Security dashboard and the Compliance infra view had shown no data). Not verified:
+  a real CronJob run and the Harbor API calls.
+- **Alert when `trivy-server` keeps re-downloading a stale mirrored DB (D-SECDB-STALE, #588).**
+  `TrivyServerDbRedownloading` fires when its filesystem writes grow by more than 6e9 bytes in 3 hours,
+  that is two or more downloads, because the live cluster exports no `trivy_*` metrics (R316). The
+  refresh procedure is in `scripts/airgap/README.md`.
+- **Velero metrics and backup alerts (#511).** Prometheus held no `velero_*` series. The Velero chart's
+  ServiceMonitor is on, a `velero-metrics` PeerAuthentication makes only port 8085 permissive for the
+  server pod, and a NetworkPolicy admits only the `monitoring` Prometheus pods to that port. Alerts
+  fire on failed, partially failed and stale backups.
+- **CNPG monitoring and alerts (D-CNPG-MON, #602, #604).** WAL archiving failed for about 20 hours
+  without notice because `monitoring.enablePodMonitor` was off. `narwhal-db` now enables the PodMonitor
+  and Prometheus selects PodMonitors in all namespaces. New alerts: a WAL archive backlog
+  (`cnpg_collector_pg_wal_archive_status{value="ready"}` positive for 30 minutes, critical),
+  `CNPGMetricsUnavailable` (15 minutes), `CNPGInstanceNotReady` and `IstioWaypointCertExpiringSoon`
+  (certificate under 24 hours left, #601). The first WAL alert used `cnpg_pg_stat_archiver_*`, a series
+  the live cluster never had, so it could not fire; #604 switched to the metric that was observed
+  live (R324, R326). `CNPGClusterNotHealthy`, which always fired because of `absent()`, is fixed.
+- **The portal lists OSS updates and the Trivy DB state.** Settings gets an OSS updates tab with the
+  declared (a committed snapshot of `VERSIONS.md`, checked by `version-check.yml`), running and
+  upstream versions, a 7-day cooling rule and a request flow that generates the upgrade issue text; the portal
+  never changes the cluster (#552). The Security dashboard gets a cluster-admin-only Trivy DB card with
+  tag, age and fresh, stale or missing status against the 7-day SLO (#554), which lists every mirrored
+  source and shows trivy-checks as pinned (#570). The Kyverno policy table explains Enforce and Audit
+  and opens a detail panel with the description, category, severity and per-rule scope (#547).
+- **Live-edit portal in the local cluster (#529).** The dev Deployment is generated from the chart and
+  kept by a field manager, so Argo CD no longer reverts the dev image within 30 seconds, instead of the
+  hand-copied `skaffold dev` manifest that had gone stale.
+- **The air-gap flow requires mirroring a pin by digest before it goes live (#468, #515).** Kakao
+  nodes have no upstream egress, so a bumped pin whose image is missing from the bastion mirror hit
+  `ImagePullBackOff` on the next reschedule. The `narwhal-version-upgrade` skill, `scripts/airgap/README.md`
+  ("Mirror a pin bump") and the agent rules now require `skopeo copy --all --preserve-digests` and a
+  node-side manifest HEAD, and `scripts/test/check-mirror-pins.py` checks the mirror read-only.
+- **`check-bundle.sh` requires the exact chart version (D-BUNDLE-PIN-VERSION, #528).** A bundle that held
+  only an older `falco` or `headlamp` chart passed, and a local `up.sh` failed in
+  `14-gitops-bootstrap` after about 40 minutes. It now stops before any `vagrant up` and names each
+  missing `<chart>-<version>.tgz`.
+- **Keycloak login theme unified with the portal, branded admin console (#572).** The login theme is now a
+  skin over `keycloak.v2` that copies the portal tokens and ships Pretendard (OFL licence), and the admin
+  console gets the same branding. The theme source moved into the `narwhal-platform` chart
+  (`gitops/charts/narwhal-platform/keycloak-theme`) and renders as two ConfigMaps with a checksum
+  annotation, so any theme change rolls Keycloak; `gitops/resources/keycloak-theme` was removed. R306
+  checks that the ConfigMap keys match what the Keycloak CR mounts.
+- **The `dev` namespace is under GitOps (D-DEV-OWNER, #534).** The new Application `dev-namespace`
+  applies `dev-namespace.yaml` (mesh opt-out, `dev-quota`, `dev-limits`, RBAC); live, `dev` had no
+  label, quota or limits. R301 checks ownership and sync-wave order.
 
 ### Changed
 
@@ -44,11 +188,130 @@ English | [한국어](CHANGELOG-ko.md)
   cluster: the chart tarball, two images and the GitOps push must still reach a cluster, and Falco on
   the Ubuntu 26.04 / kernel 7.0 Vagrant box and on the Kubernetes CRI path has not been observed.
 - **Portal is pinned to `narwhal-portal:1.1.9` (was 1.1.0; 1.1.1 to 1.1.8 were pinned in between by
-  #467, #477, #481, #502, #520, #561, #580 and #596).** 1.1.9 bumps `lucide-react` to 1.66.0 (#539) and
+  #467, #477, #481, #502, #520, #561, #580 and #596; 1.1.9 is #608).** 1.1.9 bumps `lucide-react` to 1.66.0 (#539) and
   lists the `skopeo` image in the OSS versions list (#603), with no user-facing feature change; all carry
   the 1.1.8 and earlier fixes. The image is Cosign-signed with the repository key (index digest
   `sha256:72a1f4f4…`). Mirror it to a cluster bastion by digest before the pin goes live there
   (`scripts/airgap/README.md`, "Mirror a pin bump"); the local Vagrant cluster pulls from ghcr.io directly.
+- **Worker VMs have 8GB of memory and 4 vCPU, on base box 0.3.1 (D-WORKER-MEMORY, #597, #531).** Worker
+  allocatable memory was about 5.3GiB and nodes hit the kernel OOM killer repeatedly on 2026-11-05 and
+  06. `WORKER_MEMORY` is now 8192; the VM total grows from 36GB to 42GB on a 64GiB host (R323). Box
+  `dasomel/ubuntu-26.04-xfs` moves from 0.1.0 to 0.3.1 (Ubuntu 26.04.1, kernel 7.0.0-42), resolved
+  from the kube-ready-box GitHub Pages catalog with a sha256 because Vagrant Cloud stops hosting
+  boxes on 2026-12-31 (D-BOX-CATALOG); 0.3.x ships arm64 `vmware_desktop` only. See Upgrade notes.
+- **Trivy scans write far less to node disk (#574, #575, #584).** A daily report expiry (`scannerReportTTL` 24h) re-scanned about 114 reports,
+  and every scan Job downloaded the roughly 1GB Trivy DB; worker-3 wrote 517GiB in 3 days. Now
+  `scannerReportTTL` is 168h, the operator runs with `builtInTrivyServer: true` (scan Jobs query the
+  server instead of pulling the DB), and the operator has real resources (requests 100m/384Mi, limit
+  1Gi; chart 0.27.0 ignored the old `operator.resources` key and the operator was OOMKilled 33 times in
+  22 hours). `operator.scanJobsRetryDelay` is 6h, so scans that hit the docker.io anonymous quota no
+  longer retry every 30 seconds, Velero's ephemeral workloads (kopia maintenance Jobs, data-path pods)
+  are skipped by label, and the server cache is a 5Gi `nfs-csi` PVC excluded from Velero. Live, 66
+  minutes after the change the scan Jobs wrote nothing and `VulnerabilityReport`s grew from 94 to 114;
+  24 hours have not been measured. Disk already written to a vmdk cannot be reclaimed in place.
+- **The backup path survives node memory pressure (D-sw-qos, D-datapath-qos, #583).** On 2026-11-06
+  worker-3 hit a global OOM during a Velero backup and killed the BestEffort `weed` filer, so S3
+  returned 500 and PodVolumeBackups failed. SeaweedFS master, volume, filer and s3 now have cpu and
+  memory requests and memory limits, and `velero-node-agent-config` sets `loadConcurrency.globalConfig: 1`
+  and `podResources`. Schedules, volume policies and backed-up volumes are unchanged (R310). Not
+  deployed against a live backup run.
+- **Prometheus, Tempo and Loki are spread across workers and Loki is Burstable (D-MON-QOS-LOKI,
+  D-MON-SPREAD, #586).** Prometheus was OOMKilled 16 times in about 3 hours while all three sat on
+  worker-3, and Loki had no requests or limits. Loki gets requests 100m/256Mi with a 768Mi limit (its
+  rules sidecar 10m/64Mi, limit 192Mi), and each of the three gets a preferred (weight 100, never
+  required) hostname pod anti-affinity. Retention, storage and scrape config are unchanged (R311).
+  See Upgrade notes. Not verified: real placement after the reschedule.
+- **Mesh workload certificates live 168 hours (D-MESH-CERT-TTL, #601).** A sleeping host freezes the
+  VMs and the renewal timers, and on 2026-11-07 six ztunnels and three waypoints ran with expired
+  certificates, CNPG went not Ready and WAL archiving failed for about 20 hours. The TTL is chosen by
+  the client, so `SECRET_TTL` is 168h for ztunnel and, through `meshConfig.defaultConfig.proxyMetadata`,
+  for waypoints, with `MAX_WORKLOAD_CERT_TTL` 720h on istiod; GitOps and `09-istio-ambient.sh` agree.
+  The cost is that a stolen workload key stays valid for 7 days instead of 1. `up.sh` warns when
+  host sleep is on. Docs: `docs/vagrant/operations.md` section 14, `docs/common/troubleshooting.md`
+  10.2. Not alerted: ztunnel certificate expiry (no metric, and the Loki ruler has no
+  `alertmanager_url`).
+- **Narwhal's CNPG cluster requires anti-affinity and tolerates probe stalls (D-CNPG-AA-REQUIRED,
+  D-CNPG-RESTART-AMP, D-CNPG-RESOURCES, D-CNPG-APPDB, #590, #605).** Both `narwhal-db` instances once
+  ran on worker-1, so a worker drain blocked WAL archiving. `podAntiAffinityType` is now `required`
+  on `kubernetes.io/hostname`. The cost: draining one worker leaves the displaced instance only the
+  third worker, and it stays Pending if that worker has no free requests or two workers are down
+  (`docs/common/database.md`). Liveness waits about 120 seconds, the isolation check is 5 seconds, memory
+  requests and limits are explicit (no CPU limit), and `bootstrap.initdb` is `narwhal`/`narwhal` like
+  the live database; the repo still said `authentik`, which does not exist and made every default
+  monitoring query fail with `database "authentik" does not exist`. `narwhal-db.yaml` and `07-cnpg.sh`
+  change together (R313). The remaining default-query errors on a live cluster have not been
+  re-checked.
+- **`kyverno-policies` ignores only the fields Kyverno defaults (D-KYV-IGNORE-NARROW, #589).** The old
+  `ignoreDifferences` hid rule bodies, `validationFailureAction`, annotations and labels because
+  Kyverno was assumed to inject autogen rules into the spec; Kyverno 1.18 writes them to
+  `.status.autogen`, which Argo CD does not compare. Ten live policies differed from git only in
+  the Argo tracking annotation. Only `admission`, `emitWarning`, `skipBackgroundRequests`,
+  `allowExistingViolations` and the verifyImages `useCache` and `signatureAlgorithm` stay ignored, and
+  `add-default-securitycontext` states `Audit` explicitly (already live). `headlamp-policy` and the
+  `narwhal-platform` template keep the broad lists. Eight ClusterPolicies gained the standard title,
+  description, category and severity annotations (#569).
+- **Harbor tolerates scan bursts (#567).** Probes and resource requests were added so Harbor
+  components are not restarted or starved while Trivy scans run.
+- **The portal's certificate renewal RBAC is namespace-scoped (D-CERT-RENEW-NS, #592).** `update` on
+  `certificates/status` moved from the `narwhal-portal` ClusterRole to a Role and RoleBinding in
+  `devtools`, `platform-system` and `storage`, the namespaces that hold Certificates (R318). A
+  Certificate in any other namespace gets a 403, which the portal shows as not permitted; add a Role
+  there.
+- **Gitea browser login uses Gitea's own Keycloak OAuth2 source (D-GITEA-OAUTH, #496, #498).** Groups
+  now map on every login (`cluster-admin` to site admin, `developer` to `narwhal/Developers`, `viewer` to
+  `narwhal/Viewers`, `guest` restricted) and removed memberships are dropped; reverse-proxy
+  authentication is off. `REVERSE_PROXY_TRUSTED_PROXIES` is kept for client-IP trust only
+  (D-GITEA-CLIENT-IP). The old `gitea admin auth delete --name` never ran (the flag does not exist), so
+  re-runs failed silently; the helper now updates the source in place.
+- **Headlamp is upgraded from v0.42.0 to v0.46.0 with the built-in OIDC auto-login (#497).** It replaces
+  the gateway script injection from #478.
+- **Gateway admin UIs and Velero UI follow the `cluster-admin` group.** Hubble, Prometheus, Alertmanager and
+  the NFS quota agent return 403 to every Keycloak user outside `cluster-admin` (before, any realm
+  user, a viewer included, could create Alertmanager silences; #535). Velero UI login itself is
+  limited to `cluster-admin` by a `velero-ui/login` client role and a dedicated `velero-ui-browser`
+  authentication flow (D-VELERO-UI-LOGIN-563, #599); the flow is bound to that client only because a
+  gate inside a copied browser flow is skipped by SSO cookie sessions. Direct visits to the OpenBao and
+  Velero UI root redirect to `/sso` when there is no query string (#472). Admin
+  top rights: Grafana `GrafanaAdmin` and Keycloak `realm-admin` for `cluster-admin`; the permission
+  matrix now states that developer cannot list namespaces or nodes (#548).
+- **Kakao external ingress goes through the master load balancer (D-INGRESS, #473).** The worker LB
+  public IP stopped answering from the internet while the cluster was unchanged; the master LB
+  forwards 80/443 to the same APISIX NodePorts and all 14 domains answered through it. Its target
+  groups have no health monitor, so a failed master can cause intermittent failures; `INGRESS_LB=worker`
+  returns to the old path. `setup-hosts-kakao.sh --apply` probes port 443 first (`SKIP_PROBE=1`
+  overrides).
+- **Kube-apiserver OIDC is applied on every control-plane node and survives kubeadm upgrades (#500,
+  #521, #523, #495).** Only master-1 had the seven `--oidc-*` flags, so Dashboard, Headlamp and kubectl
+  tokens failed whenever the Service reached master-2 or master-3 (401). `11-4b` writes them on each
+  node (atomic move, bounded `readyz` wait), `11-4c` merges them into the `kubeadm-config`
+  `ClusterConfiguration` so `kubeadm upgrade` keeps them, `distribute-join-kakao.sh` compares the CA
+  hash before a control plane joins, and `11-3-keycloak-clients.sh` is a critical Phase 2 step.
+- **Portal changes since 1.1.1 (#475, #479, #501, #514, #546, #547, #549, #556, #559, #566, #581).**
+  Architecture and cluster pages authenticate with the projected SA token; the permission table shows
+  role-default tools; the Security page paginates `VulnerabilityReport`s (a single response was
+  10.7MB and exceeded the 8MiB limit) and retries on 429, marking partial results; the matrix's
+  sticky columns are opaque; DORA lead time keeps minute precision and older history rows show a dash
+  because Argo CD records a phase only for the latest operation; lead time reads Gitea through the
+  new `gitea-portal-api` gateway rule (token-authenticated GET and POST on three paths only; R305)
+  and shows N/A for Helm-sourced apps; the Cost service breakdown attributes every pod
+  (kube-state-metrics now exports pod labels). Releases 1.1.6 to 1.1.9 were cut in this period;
+  1.1.9 carries the lucide-react bump, the `skopeo` entry in the OSS list and the 8GB wording
+  (#607).
+- **`push-to-gitea.sh <dir>` mirrors a directory exactly and propagates deletions (D-GITOPS-PUSH-DIRS,
+  #578).** On 2026-11-05 it nested an existing destination, which left Keycloak unable to mount its
+  theme for 12 hours. It now removes the destination in the clone and copies, and refuses `..` and
+  absolute paths. Mirror-all mode stays additive on purpose, because the Gitea repository also holds
+  resources that exist only there (R308). Not exercised against a live Gitea.
+- **Operator docs follow the 1.3.0 behaviour (#451, #452, #541).** The disaster-recovery procedure no
+  longer promises "no data loss": it lists, per data set, the copy to take outside the cluster before
+  `vagrant destroy` and what is not restored (the five volumes excluded from Velero; the in-cluster
+  SeaweedFS is not an external backup). The release notices and indexes, the Velero commands in
+  `operations.md` and the OS and containerd statements were corrected. The Falco arm64 TOCTOU warning
+  (`libpman` cannot attach `creat` and `open`, which arm64 lacks) is documented as benign, because
+  the `openat`, `openat2` and `connect` programs attach.
+- **Portal browser E2E jobs time out after 15 minutes and `harden-runner` is pinned to v2.22.3
+  (D-job-timeout, #465, #508).** A blocked-egress checkout had hung a job for about 25 minutes twice;
+  the egress policy and allowlists are unchanged and a timeout still fails the gate.
 
 ### Fixed
 
@@ -64,6 +327,98 @@ English | [한국어](CHANGELOG-ko.md)
   silent, any other namespace or image still flagged; the 3 docker.io pairs are checked for syntax only,
   because the lab's Docker engine drops the `docker.io/` prefix that CRI keeps); R291 A11 pins the exception. Static change: the DaemonSet rolls on the
   next sync, and the behaviour on the Kakao cluster has not been observed.
+- **Istio-cni retries ambient enrolment, and the verify script flags ztunnel-denied kubelet probes
+  (D-576-DETECTION-RETRY, D-576-PROBE-DENY, #576, #577).** After node restarts ztunnel rejected the
+  kubelet probes of `storage/seaweedfs-volume-0` and `storage/openbao-agent-injector` (policy
+  `istio_converted_static_strict`), because the istio-cni agent can miss a pod that starts during node
+  boot. The volume pod's headless DNS record dropped, kopia failed with `unexpected EOF` and Velero
+  backups were at risk. `enableAmbientDetectionRetry: true` is set in the Application and in
+  `09-istio-ambient.sh`; `verify-cluster.sh` reports the rejections; `troubleshooting.md` has the
+  recovery step (R307). Not exercised on a real node reboot.
+- **Platform `*Down` alerts can fire (D-DOWN-WORKLOAD, #525, #526).** KeycloakDown, ArgoCDDown,
+  HarborDown, GiteaDown and TraefikDown joined `kube_pod_labels` series that did not exist
+  (kube-state-metrics exported no pod labels), so none of them could fire, and TraefikDown watched a
+  component APISIX had replaced. They now check workload availability.
+- **The `loki-canary` DaemonSet is disabled (D-LOKI-CANARY-DISABLE, #587, #591).** `lokiCanary` is a
+  top-level key in the chart; the nested `monitoring.lokiCanary.enabled: false` was ignored and a
+  canary ran on every node (R315).
+- **Phase 2 stops when OpenBao OIDC is not persisted (#544).** `auth/oidc/config` was rejected at
+  first provision with an issuer mismatch (`...:9443/realms/narwhal`), the failure was swallowed by
+  `&& echo ok || echo WARN`, and OpenBao SSO then failed with `could not load configuration`. The block
+  now runs under `set -e`, retries 6 times 10 seconds apart and exits 1; `test-sso.sh` asks OpenBao
+  for an `auth_url` and passes only on the Keycloak realm URL. The cause of the `:9443` issuer, the
+  bootstrap Keycloak CR (hostname without scheme, `strict: false`), is not fixed.
+- **Seamless SSO on Kakao and in the SSO checks (#478, #494, #548, #533, #593).** The bastion dnsmasq
+  now restarts on failure and waits for the network (nodes could not resolve the Keycloak issuer for the
+  apiserver); an empty Keycloak client-secret read now fails the script instead of writing an empty
+  Secret (the cause of the empty `grafana-oidc-secret` and `gitea-oidc-secret`). Argo CD
+  `policy.default` is empty so a guest is denied (it could list 46 applications), Harbor verifies the
+  OIDC certificate, and the Harbor `developer` and `viewer` groups are mapped after OIDC is on (before,
+  the mapping ran under `db_auth`, was rejected silently, and those users had no project access).
+  `test-sso.sh` treats a Dashboard API 403 inside an HTTP 200 as denied, and `08-6-tls-routes.sh`
+  restarts `harbor-core` only when the CA actually changed. A new `docs/common/sso-accounts.md`
+  documents the seed accounts and troubleshooting.
+- **Portal certificate renewal works (D-CERT-RENEW-ISSUING, #549).** Settings, Certificates, renew
+  always failed: the portal patched `spec.renewBefore: "1s"`, which the cert-manager webhook rejects
+  below 5 minutes, and could only `get` certificates. It now sets `Issuing=True` with reason
+  `ManuallyTriggered` through `PUT /status`, as `cmctl renew` does, and the ClusterRole got only
+  `update` on `certificates/status` (narrowed to three namespaces by #592).
+- **Velero schedules skip `emptyDir` volumes (#422, #455).** On kakao-narwhal 107 of 115
+  PodVolumeBackups were `emptyDir` volumes and took about 9,770 seconds of the backup window; a
+  `velero-volume-policy` ConfigMap now skips them.
+- **The Cost page prices Kakao (#493).** Portal 1.1.1 and later returns 503 unless eight `COST_*`
+  keys exist, and `13-2-narwhal-portal-bindings.sh` set only three; it now sets all eight per provider.
+  `node-collector` is tracked in the air-gap inventory.
+- **Live test suites stop reporting false failures (#510, #518, #524, #530, #536).** Dead checks for
+  oauth2-proxy and Traefik ForwardAuth are removed, the wildcard TLS check expands, the ambient
+  namespace list matches what `09` enrols (`dev` is deliberately not ambient), and a Keycloak login
+  form that cannot be parsed fails instead of passing. `test-sso.sh --section=acl` gained 16 live checks
+  for the four gateway admin UIs.
+
+### Security
+
+- **Velero UI no longer signs sessions with a public key or hands every user manage-all (#555,
+  #594, #599).** The app fell back to the upstream hard-coded JWT passphrase because
+  `AUTH_SECRET_PASSPHRASE` was never set, so anyone could mint a token; `11-3` now generates a key with
+  `openssl rand -base64 32` into `velero-ui-oauth` (a token forged with the old key gets 401). With
+  `POLICY_FILE_PATH` set but no policy file, every logged-in user, guest included, could create and
+  delete backups; the policy is now `g,cluster-admin,manage,all` and a missing file blocks pod start.
+  The gateway returns 403 for `POST /api/backups/download` (no upstream policy check, and a guest got a
+  real download URL; bulk download is lost) and for `DELETE /api/settings/velero/plugins/:name` (an
+  upstream stub that the UI never calls). Because the app does its own OAuth, the real boundary is the
+  `cluster-admin`-only login flow (#599): `/api/stats/*`, `/api/form/*`, `/api/settings/velero/*` and
+  `/api/config` stay callable by anyone who can log in, upstream CORS still reflects any origin, and
+  `docs/common/app-sso-permission-matrix.md` records the endpoint exposure.
+- **Gateway admin UIs refuse users outside `cluster-admin` (#535, #536, #545).** A shared
+  `gatewayAdminOnly` helper strips a client-supplied `X-Userinfo` before `openid-connect` and checks the
+  group afterwards. R302 now renders every chart, raw manifest, plugin config and global rule, and
+  catches a route in another chart without the restriction.
+- **Portal dependencies moved past published advisories.** Auth.js (`next-auth` 5.0.0-beta.32,
+  `@auth/core` 0.41.3) for two critical advisories on the Keycloak login path, including auth checks that
+  fail open on configuration errors (#461); `zod` 4.6.7 and `undici` 7.30.1 (#471); `fast-uri` 4.2.3
+  (#492); and the unused `hono` overrides are removed (#543).
+- **Keycloak no longer keeps a temporary bootstrap admin (#598)** and Harbor now verifies the OIDC
+  certificate (#548); see Added and Fixed.
+
+### Known issues
+
+- **Host disk already grown cannot be reclaimed in place (#574, #582).** A vmdk written once stays
+  allocated and the linked clone cannot shrink; only recreating the worker VM returns the space
+  (`docs/vagrant/operations.md` section 12). A worker such as worker-2 can still grow from Trivy scan
+  writes (18 of 21GB per 24 hours of container writes were measured after #574 and #575, before #584).
+- **Trivy scan Jobs for `docker.io/*` images fail with UNAUTHORIZED** on the anonymous pull quota
+  (velero, busybox and dashboard images, #575), and each scan Job still writes the Java DB.
+- **Unverified on a live cluster:** the Trivy refresh CronJob and Harbor retention (#603), the Keycloak
+  `11-1` migration (#598), the NFS disk attach on a fresh `vagrant up` (#606), the ambient detection
+  retry on a node reboot (#577), the Harbor CA restart (#593), the Dashboard forbidden-in-200 check
+  (#593), the monitoring placement after the reschedule (#586), and the backup path under memory
+  pressure (#583).
+- **Mesh certificate expiry has no alert for ztunnel** (#601), and the 168h TTL widens the lifetime of
+  a stolen workload key from 1 to 7 days.
+- **Draining a worker can leave a CNPG instance Pending** if the one remaining free worker has no room
+  for it, or if two workers are down (#590).
+- **Headlamp and Kubernetes Dashboard keep the `platform-admin` binding;** widening it to the built-in
+  `cluster-admin` waits on an owner decision (#548).
 
 ## [1.3.0] - 2026-10-22
 
@@ -730,7 +1085,8 @@ First stable release — validated by consecutive zero-fix, from-scratch clean i
 - Topology: single node → 3m+3w (Master NoSchedule, platform apps running on Workers)
 - NFS StorageClass: hierarchical subDir + optimized mountOptions
 
-[Unreleased]: https://github.com/dasomel/narwhal/compare/v1.3.0...HEAD
+[Unreleased]: https://github.com/dasomel/narwhal/compare/v1.4.0...HEAD
+[1.4.0]: https://github.com/dasomel/narwhal/compare/v1.3.0...v1.4.0
 [1.3.0]: https://github.com/dasomel/narwhal/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/dasomel/narwhal/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/dasomel/narwhal/compare/v1.0.0...v1.1.0

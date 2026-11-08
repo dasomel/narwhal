@@ -9,6 +9,63 @@
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-11-09
+
+1.3.0 하드닝 이후의 안정화 릴리스. 노드 수준 OOM 종료, 호스트 디스크 증가, etcd/NFS I/O 사고 이후 로컬
+클러스터를 다시 손봤다(8GB 워커 VM, 전용 NFS 데이터 디스크, 크게 줄어든 Trivy 스캔 쓰기량, 백업 경로와
+모니터링 스택의 QoS와 분산 배치). Keycloak, Velero UI, 게이트웨이 관리자 UI는 이제 `cluster-admin` 그룹에
+묶이고, 그동안 눈에 띄지 않던 장애(CNPG WAL 아카이빙, 메시 인증서, 오래된 Trivy DB 미러, Velero 백업, VM
+디스크 증가)에 대한 경보가 추가되었다. 기존 클러스터에서 운영자 조치가 필요한 변경이 여러 개 있으므로
+먼저 **업그레이드 참고**를 읽을 것.
+
+### 업그레이드 참고
+
+- **워커 VM 메모리가 8GB (#597).** `WORKER_MEMORY`가 6144에서 8192로 오르고(마스터는 6GB 유지) VM 합계가
+  약 42GB라 호스트 RAM 48GB 이상이 필요하다(README). 실행 중인 VM은 예전 `memsize`를 유지하므로 기존
+  클러스터는 워커를 한 대씩 롤링 재시작해야 한다: cordon과 drain, `vagrant halt <worker> && vagrant up
+  <worker> --no-provision`, uncordon, 할당 가능 메모리가 약 7.3GiB인지 확인한 뒤 다음 워커. `narwhal-db`가
+  이제 anti-affinity를 필수로 요구하므로(#590) drain 전에 CNPG primary 위치를 확인하고 그 워커에 있으면
+  먼저 switchover하며, 워커 두 대를 동시에 내리지 않는다. 전체 절차와 롤백:
+  `docs/vagrant/operations.md` 13절.
+- **NFS export가 master-1의 전용 디스크로 이동 (#605, #606). 기존 클러스터는 소유자가 직접 수행하는 점검
+  작업이 필요하다.** 디스크를 붙이려면 master-1을 꺼야 하고 그동안 NFS를 쓰는 모든 워크로드가 멈춘다.
+  100GB 미만이면 30~60분으로 추정하며 측정하지 않았다. 먼저 Velero 백업, CNPG 논리 덤프, etcd 스냅샷을
+  받고 `docs/vagrant/operations.md` 15절을 따른다(`docs/runbooks/nfs-xfs-migration.md`의 3~7단계를 재사용).
+  **디스크가 이미 있는 머신에서 `NARWHAL_NFS_DISK_GB=0`을 쓰지 말 것:** 디스크 없이 부팅하면 루트
+  디스크에 남은 옛 복사본을 export하므로 Vagrantfile이 중단한다. 새 클러스터는 디스크(기본 200GB)를
+  자동으로 받는다.
+- **Keycloak: 영구 master realm 관리자로 이전 (#598).** 새로 설치하면 Phase 2에서 자동으로 한다. 기존
+  클러스터는 master-1에서 `scripts/cluster/11-1-keycloak-admin.sh`를 한 번 실행한다. `platform-admin`을
+  만들고 자격증명을 `iam/keycloak-admin`에 저장하며, 새 계정이 관리 API를 호출할 수 있는지 확인한 뒤에만
+  `temp-admin`을 삭제한다. 다시 실행해도 결과가 같다. 이전하기 전까지 스크립트는
+  `iam/keycloak-initial-admin`으로 폴백한다. 절차와 복구: `docs/runbooks/keycloak-permanent-admin.md`.
+- **168h 메시 인증서 TTL을 받으려면 ztunnel과 waypoint를 재시작 (#601).** 새 TTL은 클라이언트가 요청하므로
+  동기화 전에 발급된 인증서는 `kubectl -n istio-system rollout restart daemonset/ztunnel`과 각 `waypoint`
+  Deployment의 rollout restart 전까지 예전 24h 수명을 유지한다. `istio_agent_cert_expiry_seconds`가 604800에
+  가까운지 확인한다. 절차: `docs/vagrant/operations.md` 14절.
+- **`gitops/resources/narwhal-db.yaml`을 수동으로 적용 (#590, #602, #605).** CNPG `Cluster`는 어떤 Argo CD
+  Application도 소유하지 않고 `14-gitops-bootstrap.sh`가 적용하므로, Gitea에 push하고 동기화해도 라이브
+  객체는 바뀌지 않는다. `kubectl apply -f gitops/resources/narwhal-db.yaml`을 실행하면 호스트명 기준 필수
+  anti-affinity, 더 긴 liveness와 isolation 점검, 명시적 메모리 requests/limits, PodMonitor가 적용된다.
+  CNPG 인스턴스는 롤링 재시작된다. 먼저 두 인스턴스가 서로 다른 워커에 있는지 확인하지 않으면 하나가
+  Pending으로 남는다.
+- **새 차트를 Argo CD가 동기화하기 전에 `trivy-server` StatefulSet을 삭제 (#584).** 캐시가 `emptyDir`에서
+  5Gi `nfs-csi` PVC로 바뀌었고 `volumeClaimTemplates`는 변경할 수 없다:
+  `kubectl -n security-system delete sts trivy-server`(걸려 있는 동기화 재시도도 비운다). 이전 캐시에는
+  잃어도 되는 데이터만 있었다.
+- **Prometheus, Tempo, Loki를 한 번 재스케줄 (#586).** 새 preferred anti-affinity는 파드가 스케줄될 때만
+  적용된다. `tempo-0`, `loki-0`, Prometheus 파드를 한 번에 하나씩 삭제하고 `kubectl -n monitoring get pod
+  -o wide`로 배치를 확인한다. Tempo와 Loki는 영속 저장소 없이 돌므로 flush되지 않은 데이터는 OOM 재시작과
+  마찬가지로 사라진다.
+- **기존 클러스터에서 `08-5-registry.sh`, `11-2-keycloak-config.sh`, `11-3-keycloak-clients.sh`를 다시
+  실행.** `08-5`는 Trivy DB 갱신이
+  쓰는 Harbor robot 계정과 보존·GC 설정을 만든다(#603). `11-3`은 Velero UI JWT 서명 키를 생성하고(#555)
+  `cluster-admin` 전용 로그인 흐름을 `velero-ui` 클라이언트에 연결한다(#599). `11-2`는 `narwhal`과 `master`
+  realm의 `loginTheme`·`adminTheme`을 `narwhal`로 설정하며, 관리 콘솔 브랜딩에 필요하다(#572).
+- **예전 스크립트로 미러링된 Gitea 디렉터리를 다시 push (#578).** 이 릴리스 이전의
+  `push-to-gitea.sh <dir>`은 이미 있는 디렉터리를 중첩시키고(`<dir>/<basename>/...`) 삭제를
+  전파하지 않았다. 해당 경로에 대해 다시 실행하면 이제 Gitea 사본이 정확히 교체된다.
+
 ### 추가
 
 - **`csp/kakao-cloud/terraform/destroy-all.sh`로 Kakao Cloud 배포 전체를 삭제 (D-KAKAO-TEARDOWN).**
@@ -18,6 +75,79 @@
   SeaweedFS 객체 저장소가 있는 워커 디스크와 함께 클러스터 안 Velero·CNPG 백업이 사라진다. 거부된 VPC
   삭제(`ACTIVE`)와 오래 걸리는 삭제(`PENDING_DELETE`)를 구분하고, 수동 방법 B에는 볼륨 자체의 가드가
   전체 삭제를 막을 때 NFS 볼륨을 남기는 방법을 적었다.
+- **master-1의 전용 NFS 데이터 디스크 (D-NFS-VMDK, #605, #606).** etcd와 NFS PV(사고 보고 기준 17개)가 VMDK
+  하나를 같이 써서, NFS 쓰기 폭주 때 etcd WAL fsync가 8초를 넘겼고(2026-11-08) API 타임아웃, CNPG liveness
+  재시작, failover가 이어졌다. Vagrantfile이 이제 sparse 200GB 디스크(`NARWHAL_NFS_DISK_GB`)를 붙이고
+  `01-nfs-server.sh`가 이를 XFS(`prjquota`)로 포맷해 UUID로 마운트한다. `NFS_DATA_DEVICE=auto`는 파티션·마운트·
+  파일시스템이 없는 디스크가 정확히 하나일 때만 고르고 아니면 실패한다. vmware_desktop에서는 `nvme0:1` vmx
+  키와 `vmware-vdiskmanager`를 실행하는 `before up/reload` 트리거로 붙인다. `config.vm.disk`가
+  vagrant-vmware-desktop 3.0.5에서 `vagrant up master-1`을 깨뜨리기 때문이다(#606). VirtualBox는 `vm.disk`를
+  쓴다. 디스크가 이미 있는데 `NARWHAL_NFS_DISK_GB=0`으로 부팅하는 것은 거부된다(R327). 이전 런북은
+  `docs/vagrant/operations.md` 15절이며 업그레이드 참고를 볼 것. 확인하지 못한 것: 새 `vagrant up`/`reload`,
+  새 클러스터의 auto 디스크 선택, VirtualBox, etcd fsync가 실제로 개선되는지(두 VMDK가 같은 호스트 SSD에
+  있다).
+- **VM 디스크 증가 경보와 호스트 점검 (D-VM-DISK-GUARD, #582).** 게스트가 43G를 쓰는데 worker-3의 vmdk가
+  호스트에서 298GiB에 이르렀다. 성장형 linked clone vmdk는 해제된 블록을 돌려주지 않고 NVMe는 discard를
+  받지 않기 때문이다. `NodeDiskWriteRateHigh`는 워커의 6시간 평균 쓰기율이 30분 동안 20GB/일을 넘으면
+  울린다. `scripts/ops/check-vm-disk.sh`는 VM별 호스트 vmdk 디렉터리와 게스트 `df`를 비교해 차이가 30G,
+  vmdk가 120G 이상, 호스트 여유가 40G 미만이면 경고한다(`--strict`는 exit 1). `scripts/up.sh`는 경고만 하는
+  모드로 실행한다. 회수 런북은 `docs/vagrant/operations.md` 12절(R309). 확인하지 못한 것: 실제 폭주에서
+  경보가 울리는지.
+- **영구 Keycloak master realm 관리자 (D-KC-ADMIN-573, #598).** 새 critical Phase 2 단계
+  `11-1-keycloak-admin.sh`가 realm role `admin`만 가진 `platform-admin`(`temp-admin`과 같은 권한)을 만들고
+  `iam/keycloak-admin`에 출력 없이 저장하며, `get realms/master`로 로그인을 확인한 뒤에만 `temp-admin`을
+  삭제한다(두 이름이 같으면 거부). `11-2`, `11-3`, `13-2`, `test-sso.sh`, `verify-cluster.sh`,
+  `show-credentials.sh`는 `keycloak-admin`을 먼저 읽고 `keycloak-initial-admin`으로 폴백한다. 포털과
+  operator는 쓰지 않는다. 런북: `docs/runbooks/keycloak-permanent-admin.md`(R321). 확인하지 못한 것: `11-1`의
+  실제 실행, Keycloak 파드 재시작 뒤 `temp-admin`이 다시 생기지 않는지.
+- **Trivy DB 미러가 스스로 갱신되고 Harbor 저장 공간에 상한이 있음 (D-SECDB-AUTO, #603).** CronJob
+  `trivy-db-refresh`가 6시간마다 돌며 `trivy-db:2`와 `trivy-java-db:1`만 digest를 고정한 skopeo 1.22.2로
+  Harbor `trivy-db` 프로젝트에 복사하고, 이미 최신이면 건너뛰며, 승인자를 `auto-refresh`로 기록한다. 이
+  프로젝트로 권한이 한정된 Harbor robot 계정을 쓴다(`08-5`가 생성). `08-5`는 저장소마다 최신 2개(untagged
+  포함)만 남기는 보존 규칙과 GC 일정도 설정한다. egress가 없는 클러스터(Kakao)는 수동 fetch, promote, push
+  게이트를 그대로 쓴다. 새 경보: `TrivyDbRefreshFailed`, `TrivyDbRefreshStale`(R322). 수동 경로도
+  고쳤다(#550): `push-security-db.sh`가 이제 Harbor 관리자 자격증명으로 HTTPS 로그인하고, `08-5`는
+  `trivy-db`에 저장소가 3개 미만이면 정확한 명령과 함께 경고한다(보안 대시보드와 컴플라이언스 인프라 화면이
+  빈 상태였다). 확인하지 못한 것: 실제 CronJob 실행과 Harbor API 호출.
+- **`trivy-server`가 오래된 미러 DB를 계속 다시 받으면 경보 (D-SECDB-STALE, #588).**
+  `TrivyServerDbRedownloading`은 3시간 동안 파일시스템 쓰기량이 6e9바이트를 넘게 늘어날 때, 즉 다운로드가
+  2회 이상일 때 울린다. 라이브 클러스터가 `trivy_*` 지표를 내지 않기 때문이다(R316). 갱신 절차는
+  `scripts/airgap/README.md`에 있다.
+- **Velero 지표와 백업 경보 (#511).** Prometheus에 `velero_*` 시계열이 없었다. Velero 차트의 ServiceMonitor를
+  켜고, `velero-metrics` PeerAuthentication이 서버 파드의 8085 포트만 PERMISSIVE로 두며, NetworkPolicy는
+  `monitoring`의 Prometheus 파드만 그 포트에 들인다. 실패, 부분 실패, 오래된 백업에 경보가 울린다.
+- **CNPG 모니터링과 경보 (D-CNPG-MON, #602, #604).** `monitoring.enablePodMonitor`가 꺼져 있어 WAL 아카이빙이
+  약 20시간 실패해도 아무도 몰랐다. `narwhal-db`가 이제 PodMonitor를 켜고 Prometheus는 모든 네임스페이스의
+  PodMonitor를 선택한다. 새 경보: WAL 아카이브 적체(`cnpg_collector_pg_wal_archive_status{value="ready"}`가
+  30분 동안 양수, critical), `CNPGMetricsUnavailable`(15분), `CNPGInstanceNotReady`,
+  `IstioWaypointCertExpiringSoon`(인증서 잔여 24시간 미만, #601). 첫 WAL 경보는 라이브에 없는
+  `cnpg_pg_stat_archiver_*` 시계열을 써서 울릴 수 없었고, #604가 라이브에서 확인한 지표로 바꿨다(R324,
+  R326). `absent()` 때문에 항상 울리던 `CNPGClusterNotHealthy`도 고쳤다.
+- **포털의 OSS 업데이트와 Trivy DB 상태 표시.** 설정에 OSS 업데이트 탭이 생겼다: 선언된 버전(`VERSIONS.md`의
+  커밋된 스냅샷, `version-check.yml`이 검사), 실행 중인 버전, 업스트림 버전, 7일 cooling 규칙, 업그레이드
+  이슈 본문을 만들어 주는 요청 흐름이 있으며 포털은 클러스터를 바꾸지 않는다(#552). 보안 대시보드에는
+  cluster-admin 전용 Trivy DB 카드가 생겨 태그, 나이, 7일 SLO 기준 fresh/stale/missing을 보여 주고(#554),
+  미러된 모든 소스를 나열하며 trivy-checks를 고정으로 표시한다(#570). Kyverno 정책 표는 Enforce와 Audit을
+  설명하고, 설명·분류·심각도·규칙별 범위를 보여 주는 상세 패널을 연다(#547).
+- **로컬 클러스터의 라이브 편집 포털 (#529).** dev Deployment를 차트에서 생성하고 field manager로 유지하므로
+  Argo CD가 30초 안에 dev 이미지를 되돌리지 않는다. 낡은 수동 복사본 `skaffold dev` 매니페스트를 대체한다.
+- **에어갭 흐름이 고정 버전을 라이브로 올리기 전에 digest 미러링을 요구 (#468, #515).** Kakao 노드는 업스트림
+  egress가 없어서 bastion 미러에 이미지가 없는 채로 핀을 올리면 다음 재스케줄에서 `ImagePullBackOff`가
+  났다. `narwhal-version-upgrade` 스킬, `scripts/airgap/README.md`("Mirror a pin bump"), 에이전트 규칙이 이제
+  `skopeo copy --all --preserve-digests`와 노드 쪽 manifest HEAD를 요구하고,
+  `scripts/test/check-mirror-pins.py`가 미러를 읽기 전용으로 점검한다.
+- **`check-bundle.sh`가 정확한 차트 버전을 요구 (D-BUNDLE-PIN-VERSION, #528).** 예전 `falco`나 `headlamp`
+  차트만 있는 번들이 통과해 로컬 `up.sh`가 약 40분 뒤 `14-gitops-bootstrap`에서 실패했다. 이제 `vagrant up`
+  이전에 멈추고 빠진 `<chart>-<version>.tgz`를 하나씩 알려 준다.
+- **Keycloak 로그인 테마를 포털과 통일, 관리 콘솔 브랜딩 (#572).** 로그인 테마는 이제 `keycloak.v2` 위의
+  스킨으로 포털 토큰을 그대로 가져오고 Pretendard(OFL 라이선스)를 포함하며, 관리 콘솔에도 같은 브랜딩이
+  적용된다. 테마 소스는 `narwhal-platform` 차트(`gitops/charts/narwhal-platform/keycloak-theme`)로 옮겨져
+  ConfigMap 두 개와 체크섬 어노테이션으로 렌더링되므로 테마가 바뀌면 Keycloak이 롤링된다.
+  `gitops/resources/keycloak-theme`은 제거했다. R306은 ConfigMap 키가 Keycloak CR이 마운트하는 키와
+  일치하는지 검사한다.
+- **`dev` 네임스페이스가 GitOps 관리 아래로 (D-DEV-OWNER, #534).** 새 Application `dev-namespace`가
+  `dev-namespace.yaml`(메시 제외, `dev-quota`, `dev-limits`, RBAC)을 적용한다. 라이브의 `dev`에는 라벨, 쿼터,
+  limits가 없었다. R301이 소유권과 sync-wave 순서를 검사한다.
 
 ### 변경
 
@@ -41,10 +171,117 @@
   확인했으며, 차트 타르볼·이미지 2개·GitOps push는 별도로 클러스터에 반영해야 하고, Ubuntu 26.04 /
   커널 7.0 Vagrant 박스와 Kubernetes CRI 경로에서의 Falco는 아직 관측되지 않았다.
 - **포털이 `narwhal-portal:1.1.9`로 고정됨 (기존 1.1.0, 중간에 #467·#477·#481·#502·#520·#561·#580·#596이 1.1.1~1.1.8로
-  고정).** 1.1.9는 `lucide-react`를 1.66.0으로 올리고(#539) OSS 버전 목록에 `skopeo` 이미지를
+  고정, 1.1.9는 #608).** 1.1.9는 `lucide-react`를 1.66.0으로 올리고(#539) OSS 버전 목록에 `skopeo` 이미지를
   추가한다(#603). 사용자에게 보이는 기능 변경은 없다. 1.1.8 이하의 수정을 모두 포함한다. 이미지는 저장소 키로
   Cosign 서명되어 있다(index digest `sha256:72a1f4f4…`). 클러스터 bastion에서 이 고정을 적용하기 전에 digest로
   미러링해야 한다(`scripts/airgap/README.md`의 "Mirror a pin bump"). 로컬 Vagrant 클러스터는 ghcr.io에서 직접 pull한다.
+- **워커 VM이 메모리 8GB, vCPU 4개, 베이스 box 0.3.1 (D-WORKER-MEMORY, #597, #531).** 워커 할당 가능 메모리가
+  약 5.3GiB였고 2026-11-05~06에 노드가 커널 OOM killer에 반복해서 당했다. `WORKER_MEMORY`가 8192가 되었고
+  64GiB 호스트에서 VM 합계는 36GB에서 42GB가 된다(R323). box `dasomel/ubuntu-26.04-xfs`는 0.1.0에서
+  0.3.1(Ubuntu 26.04.1, 커널 7.0.0-42)로 올라가며, Vagrant Cloud가 2026-12-31에 box 호스팅을 끝내므로
+  sha256이 있는 kube-ready-box GitHub Pages 카탈로그에서 받는다(D-BOX-CATALOG). 0.3.x는 arm64
+  `vmware_desktop`만 제공한다. 업그레이드 참고를 볼 것.
+- **Trivy 스캔이 노드 디스크에 쓰는 양이 크게 줄었음 (#574, #575, #584).** 매일 리포트가 만료되어
+  (`scannerReportTTL` 24h) 약 114개를 다시 스캔했고 스캔 Job마다 약 1GB의 Trivy DB를 받아서 worker-3이 3일
+  동안 517GiB를 썼다. 이제 `scannerReportTTL`은 168h, operator는 `builtInTrivyServer: true`(스캔 Job이 DB를
+  받지 않고 서버에 질의)로 돌며, operator에 실제 리소스(requests 100m/384Mi, limit 1Gi)를 준다. 차트
+  0.27.0은 예전 `operator.resources` 키를 무시했고 operator는 22시간에 33번 OOMKilled되었다.
+  `operator.scanJobsRetryDelay`는 6h라서 docker.io 익명 쿼터에 걸린 스캔이 30초마다 재시도하지 않고,
+  Velero 임시 워크로드(kopia maintain Job, 데이터 경로 파드)는 라벨로 스캔에서 제외되며, 서버 캐시는
+  Velero 백업에서 제외된 5Gi `nfs-csi` PVC다. 라이브에서 변경 66분 뒤 스캔 Job의 쓰기는 0이었고
+  `VulnerabilityReport`는 94개에서 114개로 늘었다. 24시간 측정은 하지 않았다. 이미 vmdk에 쓰인 공간은 제자리에서
+  회수할 수 없다.
+- **백업 경로가 노드 메모리 압박에서 살아남음 (D-sw-qos, D-datapath-qos, #583).** 2026-11-06 worker-3이 Velero
+  백업 중 전역 OOM에 빠져 BestEffort `weed` filer가 죽었고 S3가 500을 돌려주어 PodVolumeBackup이 실패했다.
+  SeaweedFS master, volume, filer, s3에 cpu·메모리 requests와 메모리 limits를 주고,
+  `velero-node-agent-config`는 `loadConcurrency.globalConfig: 1`과 `podResources`를 설정한다. 스케줄, 볼륨
+  정책, 백업 대상 볼륨은 그대로다(R310). 실제 백업 실행에 배포해 보지는 않았다.
+- **Prometheus, Tempo, Loki를 워커에 분산하고 Loki를 Burstable로 (D-MON-QOS-LOKI, D-MON-SPREAD, #586).**
+  셋이 모두 worker-3에 있는 동안 Prometheus가 약 3시간에 16번 OOMKilled되었고 Loki에는 requests와 limits가
+  없었다. Loki는 requests 100m/256Mi, limit 768Mi(규칙 사이드카 10m/64Mi, limit 192Mi)를 받고, 셋 모두
+  preferred(weight 100, required 아님) 호스트명 파드 anti-affinity를 받는다. 보존, 저장 크기, 스크레이프
+  설정은 그대로다(R311). 업그레이드 참고를 볼 것. 확인하지 못한 것: 재스케줄 뒤 실제 배치.
+- **메시 워크로드 인증서 수명이 168시간 (D-MESH-CERT-TTL, #601).** 호스트가 슬립하면 VM과 갱신 타이머가
+  멈추고, 2026-11-07에 ztunnel 6개와 waypoint 3개가 만료된 인증서로 돌아 CNPG가 Ready가 아니게 되었으며
+  WAL 아카이빙이 약 20시간 실패했다. TTL은 클라이언트가 정하므로 ztunnel의 `SECRET_TTL`을 168h로,
+  waypoint에는 `meshConfig.defaultConfig.proxyMetadata`로 같은 값을, istiod의 `MAX_WORKLOAD_CERT_TTL`을
+  720h로 두었고 GitOps와 `09-istio-ambient.sh`가 일치한다. 대가는 탈취된 워크로드 키의 유효 기간이 1일에서
+  7일이 되는 것이다. `up.sh`는 호스트 슬립이 켜져 있으면 경고한다. 문서: `docs/vagrant/operations.md` 14절,
+  `docs/common/troubleshooting.md` 10.2. ztunnel 인증서 만료는 경보가 없다(지표가 없고 Loki ruler에
+  `alertmanager_url`이 없다).
+- **Narwhal의 CNPG 클러스터가 anti-affinity를 필수로 요구하고 probe 지연을 견딤 (D-CNPG-AA-REQUIRED,
+  D-CNPG-RESTART-AMP, D-CNPG-RESOURCES, D-CNPG-APPDB, #590, #605).** `narwhal-db`의 두 인스턴스가 한때 모두
+  worker-1에 있어 워커 drain이 WAL 아카이빙을 막았다. `podAntiAffinityType`이 이제 `kubernetes.io/hostname`
+  기준 `required`다. 대가: 워커 하나를 drain하면 쫓겨난 인스턴스가 갈 곳은 세 번째 워커뿐이고, 그 워커에
+  requests 여유가 없거나 워커 두 대가 내려가 있으면 Pending으로 남는다(`docs/common/database.md`). liveness는
+  약 120초를 기다리고 isolation 점검은 5초이며 메모리 requests와 limits를 명시했고(CPU limit 없음),
+  `bootstrap.initdb`는 라이브 DB와 같은 `narwhal`/`narwhal`이다. 저장소에는 존재하지 않는 `authentik`이
+  남아 있어 CNPG 기본 모니터링 쿼리가 `database "authentik" does not exist`로 모두 실패했다. `narwhal-db.yaml`과
+  `07-cnpg.sh`를 함께 바꾼다(R313). 라이브 클러스터의 기본 쿼리 오류가 남아 있는지는 다시 확인하지 않았다.
+- **`kyverno-policies`가 Kyverno가 채우는 필드만 무시 (D-KYV-IGNORE-NARROW, #589).** 예전
+  `ignoreDifferences`는 Kyverno가 autogen 규칙을 spec에 주입한다고 가정해 규칙 본문,
+  `validationFailureAction`, annotations, labels를 숨겼다. Kyverno 1.18은 이를 `.status.autogen`에 쓰고 Argo
+  CD는 status를 비교하지 않는다. 라이브 정책 10개는 git과 Argo tracking annotation만 달랐다. 이제
+  `admission`, `emitWarning`, `skipBackgroundRequests`, `allowExistingViolations`, verifyImages의 `useCache`와
+  `signatureAlgorithm`만 무시하고, `add-default-securitycontext`는 `Audit`을 명시한다(라이브도 이미 Audit).
+  `headlamp-policy`와 `narwhal-platform` 템플릿에는 같은 광범위한 목록이 남아 있다. ClusterPolicy 8개에 표준
+  title, description, category, severity annotation을 추가했다(#569).
+- **Harbor가 스캔 폭주를 견딤 (#567).** Trivy 스캔이 도는 동안 Harbor 구성 요소가 재시작되거나 굶지 않도록
+  probe와 리소스 requests를 추가했다.
+- **포털의 인증서 갱신 RBAC이 네임스페이스로 한정됨 (D-CERT-RENEW-NS, #592).** `certificates/status`의
+  `update`를 `narwhal-portal` ClusterRole에서 빼고 Certificate가 있는 `devtools`, `platform-system`, `storage`
+  세 네임스페이스의 Role과 RoleBinding으로 옮겼다(R318). 다른 네임스페이스의 Certificate는 갱신할 때 403이
+  나며 포털은 이를 권한 없음으로 보여 준다. 그 네임스페이스에 Role을 추가하면 된다.
+- **Gitea 브라우저 로그인이 Gitea 자체 Keycloak OAuth2 소스를 사용 (D-GITEA-OAUTH, #496, #498).** 이제 로그인할
+  때마다 그룹이 매핑되고(`cluster-admin`은 사이트 관리자, `developer`는 `narwhal/Developers`, `viewer`는
+  `narwhal/Viewers`, `guest`는 제한), 제거된 멤버십은 빠지며, 리버스 프록시 인증은 꺼졌다.
+  `REVERSE_PROXY_TRUSTED_PROXIES`는 클라이언트 IP 신뢰용으로만 유지한다(D-GITEA-CLIENT-IP). 예전
+  `gitea admin auth delete --name`은 그런 플래그가 없어 실행되지 않았고 재실행이 조용히 실패했다. 이제 헬퍼가
+  소스를 제자리에서 갱신한다.
+- **Headlamp를 v0.42.0에서 v0.46.0으로 올리고 내장 OIDC 자동 로그인 사용 (#497).** #478의 게이트웨이 스크립트
+  주입을 대체한다.
+- **게이트웨이 관리자 UI와 Velero UI가 `cluster-admin` 그룹을 따름.** Hubble, Prometheus, Alertmanager, NFS
+  quota agent는 `cluster-admin` 밖의 모든 Keycloak 사용자에게 403을 돌려준다(예전에는 viewer를 포함한 모든
+  realm 사용자가 Alertmanager silence를 만들 수 있었다, #535). Velero UI 로그인 자체는 `velero-ui/login`
+  client role과 전용 `velero-ui-browser` 인증 흐름으로 `cluster-admin`에 한정된다(D-VELERO-UI-LOGIN-563,
+  #599). 복사한 browser 흐름 안의 게이트는 SSO 쿠키 세션이 건너뛰므로 이 흐름은 해당 클라이언트에만
+  연결한다. OpenBao와 Velero UI 루트에 직접 들어가면 쿼리 문자열이 없을 때 `/sso`로 리다이렉트한다(#472).
+  관리자 최상위 권한: `cluster-admin`은 Grafana `GrafanaAdmin`과 Keycloak `realm-admin`을 받고, 권한
+  매트릭스는 developer가 네임스페이스나 노드를 조회할 수 없다고 정정했다(#548).
+- **Kakao 외부 ingress가 master 로드밸런서를 경유 (D-INGRESS, #473).** 클러스터는 그대로인데 worker LB 공인
+  IP가 인터넷에서 응답하지 않게 되었다. master LB는 같은 APISIX NodePort로 80/443을 전달하고 14개 도메인이
+  모두 응답했다. master ingress 타깃 그룹에는 health monitor가 없어 master가 죽으면 간헐적 실패가 날 수
+  있다. `INGRESS_LB=worker`로 예전 경로로 돌아간다. `setup-hosts-kakao.sh --apply`는 먼저 443 포트를
+  점검한다(`SKIP_PROBE=1`로 우회).
+- **kube-apiserver OIDC가 모든 컨트롤 플레인 노드에 적용되고 kubeadm 업그레이드에도 유지됨 (#500, #521, #523,
+  #495).** master-1에만 `--oidc-*` 플래그 7개가 있어서 Service가 master-2나 master-3으로 가면 Dashboard,
+  Headlamp, kubectl 토큰이 401로 실패했다. `11-4b`가 노드마다 플래그를 쓰고(원자적 이동, 제한된 `readyz`
+  대기), `11-4c`가 `kubeadm-config`의 `ClusterConfiguration`에 병합해 `kubeadm upgrade`가 유지하며,
+  `distribute-join-kakao.sh`는 컨트롤 플레인이 합류하기 전에 CA 해시를 비교하고,
+  `11-3-keycloak-clients.sh`는 critical Phase 2 단계다.
+- **1.1.1 이후 포털 변경 (#475, #479, #501, #514, #546, #547, #549, #556, #559, #566, #581).** 아키텍처와 클러스터
+  페이지가 projected SA 토큰으로 인증하고, 권한 표가 역할 기본 도구를 보여 주며, 보안 페이지가
+  `VulnerabilityReport`를 페이지 단위로 가져오고(한 응답이 10.7MB로 8MiB 한도를 넘었다) 429에서 재시도하며
+  부분 결과를 표시하고, 매트릭스의 sticky 열이 불투명해지고, DORA 리드타임이 분 단위 정밀도를 유지하며
+  Argo CD가 최신 작업에만 phase를 기록하므로 오래된 이력 행은 대시로 표시되고, 리드타임은 새
+  `gitea-portal-api` 게이트웨이 규칙(토큰 인증된 GET과 POST, 세 경로만, R305)으로 Gitea를 읽고 Helm 소스 앱은
+  N/A로 표시하며, 비용 서비스 분석이 모든 파드를 귀속시킨다(kube-state-metrics가 이제 파드 라벨을 내보낸다).
+  이 기간에 1.1.6~1.1.9가 릴리스되었고 1.1.9는 lucide-react 업데이트, OSS 목록의 `skopeo` 항목, 8GB 문구를
+  담고 있다(#607).
+- **`push-to-gitea.sh <dir>`이 디렉터리를 정확히 미러링하고 삭제를 전파 (D-GITOPS-PUSH-DIRS, #578).**
+  2026-11-05에 이 스크립트가 이미 있는 대상을 중첩시켜 Keycloak이 12시간 동안 테마를 마운트하지 못했다.
+  이제 clone 안의 대상을 지운 뒤 복사하며 `..`와 절대 경로는 거부한다. 경로 없는 mirror-all 모드는 Gitea
+  저장소에만 있는 리소스가 있으므로 의도적으로 추가 전용으로 남겼다(R308). 라이브 Gitea에서는 실행해 보지
+  않았다.
+- **운영 문서를 1.3.0 동작에 맞춤 (#451, #452, #541).** 재해 복구 절차가 더 이상 "데이터 손실 없이"를
+  약속하지 않고, `vagrant destroy` 전에 클러스터 밖에 받아 둘 사본과 복원되지 않는 것(Velero에서 제외된 5개
+  볼륨, 클러스터 내부 SeaweedFS는 외부 백업이 아님)을 데이터별로 적는다. 릴리스 안내와 색인,
+  `operations.md`의 Velero 명령, OS와 containerd 서술을 바로잡았다. Falco arm64 TOCTOU 경고(arm64에는
+  `creat`와 `open`이 없어 `libpman`이 붙이지 못함)는 `openat`, `openat2`, `connect` 프로그램이 붙으므로
+  무해하다고 문서화했다.
+- **포털 브라우저 E2E 잡이 15분 뒤 종료되고 `harden-runner`가 v2.22.3으로 고정 (D-job-timeout, #465, #508).**
+  차단된 egress 때문에 checkout이 두 번 약 25분 멈췄다. egress 정책과 허용 목록은 그대로이고 타임아웃은
+  여전히 게이트를 실패시킨다.
 
 ### 수정
 
@@ -59,6 +296,92 @@
   네임스페이스·이미지는 여전히 탐지, docker.io 3쌍은 랩의 Docker 엔진이 CRI와 달리 `docker.io/` 접두사를
   떼어 문법만 확인)에서 검증했고 R291 A11이 예외를 고정한다. 정적 변경만 포함하며
   DaemonSet은 다음 동기화에서 롤링되고, Kakao 클러스터에서의 동작은 아직 관측되지 않았다.
+- **istio-cni가 ambient 등록을 재시도하고 verify 스크립트가 ztunnel에 거부된 kubelet probe를 표시
+  (D-576-DETECTION-RETRY, D-576-PROBE-DENY, #576, #577).** 노드 재시작 뒤 ztunnel이
+  `storage/seaweedfs-volume-0`과 `storage/openbao-agent-injector`의 kubelet probe를 거부했다(정책
+  `istio_converted_static_strict`). istio-cni 에이전트가 노드 부팅 중 시작한 파드를 놓칠 수 있기 때문이다.
+  volume 파드의 headless DNS 레코드가 빠져 kopia가 `unexpected EOF`로 실패했고 Velero 백업이 위험해졌다.
+  Application과 `09-istio-ambient.sh`에 `enableAmbientDetectionRetry: true`를 설정했고,
+  `verify-cluster.sh`가 거부를 보고하며, `troubleshooting.md`에 복구 단계가 있다(R307). 실제 노드 재부팅에서는
+  실행해 보지 않았다.
+- **플랫폼 `*Down` 경보가 울릴 수 있게 됨 (D-DOWN-WORKLOAD, #525, #526).** KeycloakDown, ArgoCDDown,
+  HarborDown, GiteaDown, TraefikDown은 존재하지 않는 `kube_pod_labels` 시계열(kube-state-metrics가 파드
+  라벨을 내보내지 않았다)과 조인해서 어느 것도 울릴 수 없었고, TraefikDown은 APISIX로 대체된 컴포넌트를
+  보고 있었다. 이제 워크로드 가용성을 확인한다.
+- **`loki-canary` DaemonSet 비활성화 (D-LOKI-CANARY-DISABLE, #587, #591).** `lokiCanary`는 차트의 최상위
+  키인데 중첩된 `monitoring.lokiCanary.enabled: false`가 무시되어 모든 노드에서 canary가 돌았다(R315).
+- **OpenBao OIDC가 저장되지 않으면 Phase 2가 멈춤 (#544).** 최초 프로비저닝에서 `auth/oidc/config`가 issuer
+  불일치(`...:9443/realms/narwhal`)로 거부되었고 `&& echo ok || echo WARN`이 실패를 삼켜 OpenBao SSO가
+  `could not load configuration`으로 실패했다. 이제 블록이 `set -e`로 돌며 10초 간격 6회 재시도 뒤 exit
+  1하고, `test-sso.sh`는 OpenBao에 `auth_url`을 요청해 Keycloak realm URL일 때만 통과한다. `:9443` issuer의
+  원인인 bootstrap Keycloak CR(스킴 없는 hostname, `strict: false`)은 고치지 않았다.
+- **Kakao의 매끄러운 SSO와 SSO 점검 (#478, #494, #548, #533, #593).** bastion dnsmasq가 실패하면 다시
+  시작하고 네트워크를 기다린다(노드가 apiserver용 Keycloak issuer를 해석하지 못했다). 비어 있는 Keycloak
+  클라이언트 시크릿 읽기는 이제 빈 Secret을 쓰지 않고 스크립트를 실패시킨다(`grafana-oidc-secret`과
+  `gitea-oidc-secret`이 비었던 원인). Argo CD `policy.default`를 비워 guest가 거부되고(예전에는 애플리케이션
+  46개를 볼 수 있었다), Harbor가 OIDC 인증서를 검증하며, Harbor `developer`와 `viewer` 그룹은 OIDC가 켜진 뒤
+  매핑된다(예전에는 `db_auth`에서 실행되어 조용히 거부되었고 그 사용자는 프로젝트 접근이 없었다).
+  `test-sso.sh`는 HTTP 200 안에 담긴 Dashboard API 403을 거부로 판정하고, `08-6-tls-routes.sh`는 CA가
+  실제로 바뀐 때만 `harbor-core`를 재시작한다. 새 `docs/common/sso-accounts.md`가 시드 계정과 문제 해결을
+  설명한다.
+- **포털 인증서 갱신이 동작 (D-CERT-RENEW-ISSUING, #549).** 설정, 인증서, 갱신이 항상 실패했다. 포털이
+  cert-manager 웹훅이 5분 미만을 거부하는 `spec.renewBefore: "1s"`를 패치했고 인증서를 `get`만 할 수 있었다.
+  이제 `cmctl renew`처럼 `PUT /status`로 reason `ManuallyTriggered`의 `Issuing=True`를 설정하고,
+  ClusterRole에는 `certificates/status`의 `update`만 추가했다(#592가 네임스페이스 세 곳으로 좁힘).
+- **Velero 스케줄이 `emptyDir` 볼륨을 건너뜀 (#422, #455).** kakao-narwhal에서 PodVolumeBackup 115개 중
+  107개가 `emptyDir` 볼륨이었고 백업 창에서 약 9,770초를 썼다. 이제 `velero-volume-policy` ConfigMap이
+  이를 건너뛴다.
+- **Kakao에서 Cost 페이지가 가격을 계산 (#493).** 포털 1.1.1 이상은 `COST_*` 키 8개가 없으면 503을 돌려주는데
+  `13-2-narwhal-portal-bindings.sh`는 3개만 설정했다. 이제 프로바이더별로 8개를 모두 설정한다.
+  `node-collector`는 에어갭 인벤토리에서 추적한다.
+- **라이브 테스트 스위트가 거짓 실패를 보고하지 않음 (#510, #518, #524, #530, #536).** oauth2-proxy와 Traefik
+  ForwardAuth의 죽은 점검을 제거하고, 와일드카드 TLS 점검이 올바르게 확장되며, ambient 네임스페이스
+  목록이 `09`가 등록하는 것과 일치하고(`dev`는 의도적으로 ambient가 아님), 파싱할 수 없는 Keycloak 로그인
+  폼은 통과가 아니라 실패한다. `test-sso.sh --section=acl`에 게이트웨이 관리자 UI 4개에 대한 라이브 점검
+  16개를 추가했다.
+
+### 보안
+
+- **Velero UI가 공개된 키로 세션에 서명하거나 모두에게 manage-all을 주지 않음 (#555, #594, #599).** 앱이
+  `AUTH_SECRET_PASSPHRASE`가 설정되지 않아 업스트림의 하드코딩된 JWT passphrase로 폴백했으므로 누구나 토큰을
+  만들 수 있었다. 이제 `11-3`이 `openssl rand -base64 32`로 키를 만들어 `velero-ui-oauth`에 넣는다(예전 키로
+  위조한 토큰은 401). `POLICY_FILE_PATH`는 있는데 정책 파일이 없어서 guest를 포함한 로그인 사용자 누구나
+  백업을 만들고 삭제할 수 있었다. 정책은 이제 `g,cluster-admin,manage,all`이고 파일이 없으면 파드가
+  시작하지 않는다. 게이트웨이는 `POST /api/backups/download`(업스트림에 정책 점검이 없고 guest가 실제 다운로드
+  URL을 받았다. 일괄 다운로드는 사라짐)와 `DELETE /api/settings/velero/plugins/:name`(UI가 호출하지 않는
+  업스트림 stub)에 403을 돌려준다. 앱이 자체 OAuth를 쓰므로 실제 경계는 `cluster-admin` 전용 로그인
+  흐름(#599)이다. `/api/stats/*`, `/api/form/*`, `/api/settings/velero/*`, `/api/config`는 로그인할 수 있는
+  사람이면 누구나 호출할 수 있고, 업스트림 CORS는 여전히 모든 origin을 반사하며,
+  `docs/common/app-sso-permission-matrix.md`에 엔드포인트 노출을 기록했다.
+- **게이트웨이 관리자 UI가 `cluster-admin` 밖의 사용자를 거부 (#535, #536, #545).** 공용 `gatewayAdminOnly`
+  헬퍼가 `openid-connect` 앞에서 클라이언트가 보낸 `X-Userinfo`를 지우고 뒤에서 그룹을 확인한다. R302는 이제
+  모든 차트, raw 매니페스트, plugin config, global rule을 렌더링해 다른 차트에서 제한이 없는 라우트를
+  잡는다.
+- **포털 의존성을 공개된 권고 이후 버전으로 올림.** Keycloak 로그인 경로의 Auth.js(`next-auth`
+  5.0.0-beta.32, `@auth/core` 0.41.3)에서 설정 오류 시 인증 점검이 fail open되는 것을 포함한 critical
+  권고 두 건(#461), `zod` 4.6.7과 `undici` 7.30.1(#471), `fast-uri` 4.2.3(#492)을 반영했고 쓰이지 않는 `hono`
+  override를 제거했다(#543).
+- **Keycloak이 임시 bootstrap 관리자를 더 이상 유지하지 않고 (#598), Harbor가 OIDC 인증서를 검증한다
+  (#548).** 추가와 수정 항목을 볼 것.
+
+### 알려진 이슈
+
+- **이미 커진 호스트 디스크는 제자리에서 회수할 수 없음 (#574, #582).** 한 번 쓰인 vmdk는 할당된 채로 남고
+  linked clone은 줄일 수 없다. 워커 VM을 다시 만들어야 공간이 돌아온다(`docs/vagrant/operations.md` 12절).
+  worker-2처럼 Trivy 스캔 쓰기로 계속 커질 수 있다(#574·#575 이후, #584 이전에 컨테이너 쓰기 24시간 21GB 중
+  18GB가 측정되었다).
+- **`docker.io/*` 이미지의 Trivy 스캔 Job이 UNAUTHORIZED로 실패**한다(익명 pull 쿼터; velero, busybox,
+  dashboard 이미지, #575). 스캔 Job마다 Java DB도 여전히 쓴다.
+- **라이브 클러스터에서 확인하지 못한 것:** Trivy 갱신 CronJob과 Harbor 보존(#603), Keycloak `11-1` 이전(#598),
+  새 `vagrant up`에서의 NFS 디스크 연결(#606), 노드 재부팅에서의 ambient 감지 재시도(#577), Harbor CA
+  재시작(#593), Dashboard의 200 안 forbidden 점검(#593), 재스케줄 뒤 모니터링 배치(#586), 메모리 압박에서의
+  백업 경로(#583).
+- **ztunnel 인증서 만료에는 경보가 없고** (#601), 168h TTL은 탈취된 워크로드 키의 수명을 1일에서 7일로
+  늘린다.
+- **워커를 drain하면 CNPG 인스턴스가 Pending으로 남을 수 있다.** 남은 여유 워커에 자리가 없거나 워커 두 대가
+  내려가 있는 경우다(#590).
+- **Headlamp와 Kubernetes Dashboard는 `platform-admin` 바인딩을 유지한다.** 내장 `cluster-admin`으로 넓히는
+  것은 소유자 결정을 기다린다(#548).
 
 ## [1.3.0] - 2026-10-22
 
@@ -620,12 +943,14 @@ Vagrant (arm64) 및 Kakao Cloud (amd64) 환경 모두에서 에어갭이 "이미
 - DNS HA: 모든 master 노드에 dnsmasq, CoreDNS forward 설정
 
 ### 변경
+
 - 3 CNPG 클러스터 → 통합 `narwhal-db` (HA failover, ExternalName 서비스)
 - 개별 스크립트 → kube-ready-box 기반 공통 스크립트 분리
 - 토폴로지: 단일 노드 → 3m+3w (Master NoSchedule, Worker에서 플랫폼 앱 실행)
 - NFS StorageClass: 계층적 subDir + 최적화된 mountOptions
 
-[Unreleased]: https://github.com/dasomel/narwhal/compare/v1.3.0...HEAD
+[Unreleased]: https://github.com/dasomel/narwhal/compare/v1.4.0...HEAD
+[1.4.0]: https://github.com/dasomel/narwhal/compare/v1.3.0...v1.4.0
 [1.3.0]: https://github.com/dasomel/narwhal/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/dasomel/narwhal/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/dasomel/narwhal/compare/v1.0.0...v1.1.0

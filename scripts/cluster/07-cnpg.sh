@@ -165,13 +165,14 @@ spec:
     size: 20Gi
     storageClass: nfs-csi
 
+  # D-CNPG-RESOURCES: kept in sync with gitops/resources/narwhal-db.yaml (applied to the live Cluster by 14-gitops-bootstrap.sh; no Argo Application owns it).
+  # No CPU limit: CFS throttling delays /healthz and turns a busy moment into a liveness failure.
   resources:
     requests:
       memory: "512Mi"
       cpu: "250m"
     limits:
       memory: "1Gi"
-      cpu: "1"
 
   # PostgreSQL tuning (optimized for 3-app unified workload)
   postgresql:
@@ -201,6 +202,18 @@ spec:
   monitoring:
     enablePodMonitor: true
 
+  # D-CNPG-RESTART-AMP: tolerant liveness (~120s instead of ~30s), readiness stays default. Rationale,
+  # cost and escape hatch: gitops/resources/narwhal-db.yaml (kept in sync).
+  probes:
+    liveness:
+      periodSeconds: 10
+      timeoutSeconds: 10
+      failureThreshold: 12
+      isolationCheck:
+        enabled: true
+        connectionTimeout: 5000
+        requestTimeout: 5000
+
   backup:
     barmanObjectStore:
       destinationPath: s3://cnpg-backup/
@@ -220,7 +233,7 @@ spec:
     retentionPolicy: "30d"
 
   # D-CNPG-AA-REQUIRED (#564): required hostname anti-affinity, see gitops/resources/narwhal-db.yaml
-  # (ArgoCD owns the live Cluster). Plus tolerations for disk pressure.
+  # (applied to the live Cluster by 14-gitops-bootstrap.sh). Plus tolerations for disk pressure.
   affinity:
     podAntiAffinityType: required
     topologyKey: kubernetes.io/hostname

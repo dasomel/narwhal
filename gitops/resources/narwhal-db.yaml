@@ -25,10 +25,20 @@ spec:
     annotations:
       backup.velero.io/backup-volumes-excludes: pgdata
 
+  # D-CNPG-APPDB: the application database must be one that exists. CNPG's default monitoring queries
+  # (cnpg_pg_database_*, pg_stat_*, ...) connect to bootstrap.initdb.database, and the live cluster was
+  # created by 07-cnpg.sh with 'narwhal' (git log -S: this file kept 'authentik' from 94b72c37 and was
+  # never updated by a301deb1, which only fixed the scripts). 14-gitops-bootstrap.sh then applied 'authentik' (kubectl apply, no Argo
+  # Application owns this Cluster) into the live spec, a database that does not exist: every default query failed with SQLSTATE 3D000 (R326 notes
+  # it, the WAL alert had to use the built-in collector). initdb runs only at cluster creation, so on the
+  # live cluster this edit changes only the monitoring target (server dry-run accepted by the webhook
+  # 2026-11-08). A fresh GitOps-only bootstrap now also creates 'narwhal' owned by 'narwhal', matching
+  # narwhal-db-credentials.username and 07-cnpg.sh. Escape hatch: revert, or set
+  # spec.monitoring.customQueriesConfigMap with an explicit target.
   bootstrap:
     initdb:
-      database: authentik
-      owner: authentik
+      database: narwhal
+      owner: narwhal
       dataChecksums: true
       secret:
         name: narwhal-db-credentials
@@ -44,6 +54,19 @@ spec:
     size: 20Gi
     storageClass: nfs-csi
 
+  # D-CNPG-RESOURCES: the live postgres container had NO requests/limits (BestEffort), so the scheduler
+  # ignored it and it was the first OOM/eviction victim. Same values as scripts/cluster/07-cnpg.sh.
+  # Memory limit 1Gi is ~4x shared_buffers (256MB) plus work_mem x connections headroom; no CPU limit,
+  # because CFS throttling of the postgres or instance-manager process delays /healthz and would turn
+  # a busy moment into a liveness failure. Cost: 512Mi/250m reserved per instance on two workers; a
+  # worker without that free leaves the instance Pending (see D-CNPG-AA-REQUIRED).
+  resources:
+    requests:
+      memory: "512Mi"
+      cpu: "250m"
+    limits:
+      memory: "1Gi"
+
   postgresql:
     parameters:
       shared_buffers: "256MB"
@@ -55,6 +78,28 @@ spec:
   # D-CNPG-MON (#600): enable PodMonitor so Prometheus scrapes CNPG metrics (exporter port 9187)
   monitoring:
     enablePodMonitor: true
+
+  # D-CNPG-RESTART-AMP (#600 incident, 2026-11-08): with master-1 etcd/NFS I/O stalled the apiserver timed
+  # out; the default liveness (3 failures x 10s, isolationCheck 1s) restarted healthy postgres containers
+  # and failed the DB over, which amplified a storage stall into an outage. Kept in sync with
+  # scripts/cluster/07-cnpg.sh. Fields: spec.probes.liveness (CNPG 1.29 CRD; it supersedes the older
+  # livenessProbeTimeout, so that one is not set). Docs: https://cloudnative-pg.io/documentation/current/instance_manager/
+  # Liveness tolerates ~120s (12 x 10s, 10s timeout, isolationCheck 5s) instead of ~30s. Readiness and
+  # startup stay default, so a slow instance still leaves the -rw/-ro Services quickly.
+  # Cost: a truly hung instance manager is restarted after ~2 min instead of ~30s, and a primary that has
+  # lost the apiserver is demoted later. Escape hatch: delete this probes block to return to the defaults.
+  # Rollout: only when 14-gitops-bootstrap.sh (kubectl apply) is next run; no Argo Application syncs this Cluster. The
+  # change rolls the instances (replicas first, primaryUpdateStrategy unsupervised, primaryUpdateMethod restart:
+  # the primary restarts in place, no switchover).
+  probes:
+    liveness:
+      periodSeconds: 10
+      timeoutSeconds: 10
+      failureThreshold: 12
+      isolationCheck:
+        enabled: true
+        connectionTimeout: 5000
+        requestTimeout: 5000
 
   # D-CNPG-AA-REQUIRED (#564): required hostname anti-affinity, so the two instances never share a node
   # (2026-11-04/06: both on worker-1, one stall failed over the DB and a drain blocked WAL archiving).

@@ -122,12 +122,27 @@ spec:
           port: 5432
         - protocol: TCP
           port: 15008
-    # 6. Prometheus (monitoring) - scrape CNPG metrics exporter (:9187).
-    # D-CNPG-MON-INGRESS (#600, PR #602): Prometheus scrapes CNPG metrics exporter.
-    # Narrowly scoped: from namespace monitoring (app.kubernetes.io/name=prometheus),
-    # to narwhal-db pods (cnpg.io/cluster=narwhal-db), TCP 9187 only (+ ambient HBONE 15008 per R200).
-    # Cost: exposes exporter port 9187 to Prometheus pods in monitoring namespace.
-    # Escape hatch: remove this rule or disable enablePodMonitor in narwhal-db.yaml.
+---
+# 6. Prometheus (monitoring) - scrape CNPG metrics exporter (:9187).
+# D-CNPG-MON-INGRESS (#600, PR #602): Prometheus scrapes CNPG metrics exporter.
+# Narrowly scoped: from namespace monitoring (app.kubernetes.io/name=prometheus),
+# to narwhal-db pods (cnpg.io/cluster=narwhal-db), TCP 9187 only (+ ambient HBONE 15008 per R200).
+# Cost: exposes exporter port 9187 to Prometheus pods in monitoring namespace.
+# Escape hatch: remove this rule or disable enablePodMonitor in narwhal-db.yaml.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: database-prometheus-ingress
+  namespace: database
+  labels:
+    app.kubernetes.io/managed-by: narwhal-gitops
+spec:
+  podSelector:
+    matchLabels:
+      cnpg.io/cluster: narwhal-db
+  policyTypes:
+    - Ingress
+  ingress:
     - from:
         - namespaceSelector:
             matchLabels:

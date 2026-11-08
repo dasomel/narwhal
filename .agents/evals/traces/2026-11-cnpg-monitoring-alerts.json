@@ -36,29 +36,31 @@
     {
       "id": "e3",
       "type": "bug_fix",
-      "summary": "D-CNPG-MON: enablePodMonitor: true in narwhal-db.yaml and 07-cnpg.sh, podMonitorSelectorNilUsesHelmValues: false and empty podMonitorSelector/podMonitorNamespaceSelector in prometheus-stack.yaml and 08-2-monitoring.sh. D-CNPG-MON-INGRESS: database-default-deny-ingress allows Prometheus ingress on TCP 9187/15008. D-CNPG-HEALTH-ALERT: CNPGClusterNotHealthy evaluates strictly on cnpg_collector_up == 0 for 5m, missing metrics handled by CNPGMetricsUnavailable for 15m. D-CNPG-WAL-ARCHIVE-ALERT: CNPGWALArchivingFailing evaluates increase of cnpg_pg_stat_archiver_failed_count[5m] > 0 or seconds_since_last_archival > 1800 with last_archived_time > 0 for 5m (exact threshold match with word boundary). Official CNPG 1.29 docs URL cited in comments."
+      "summary": "D-CNPG-MON: enablePodMonitor: true in narwhal-db.yaml and 07-cnpg.sh, podMonitorSelectorNilUsesHelmValues: false and empty podMonitorSelector/podMonitorNamespaceSelector in prometheus-stack.yaml and 08-2-monitoring.sh. D-CNPG-MON-INGRESS: database-prometheus-ingress selects only cnpg.io/cluster=narwhal-db and allows the named monitoring Prometheus instance on TCP 9187/15008; baseline default-deny remains unchanged. D-CNPG-HEALTH-ALERT: CNPGClusterNotHealthy evaluates strictly on cnpg_collector_up == 0 for 5m, missing metrics handled by CNPGMetricsUnavailable for 15m. D-CNPG-WAL-ARCHIVE-ALERT: CNPGWALArchivingFailing evaluates increase of cnpg_pg_stat_archiver_failed_count[5m] > 0 or seconds_since_last_archival > 1800 with last_archived_time > 0 for 5m (exact threshold match with word boundary). Official CNPG 1.29 docs URL cited in comments."
     },
     {
       "id": "e4",
       "type": "regression_verification",
       "status": "passed",
-      "scope": "Static and promtool unit tests: R326 checks all 6 files, verifies 7 promtool behavior cases, and catches 15 mutations. Full make test, make validate, and make lint passed. NOT covered: live cluster push and live trigger of WAL archiving alert (read-only cluster discipline).",
+      "scope": "Repository verification: make test passed 445 checks, 0 failures, 3 existing warnings (airgap bundle absent and baselined mTLS/isolation gaps), exit 0. R326 passed 7 promtool behavior cases and rejected 18 mutations, including destination widening, lost Prometheus instance label and OR-split source peers. Ambient NetworkPolicy mutations, make validate, bash -n and git diff --check passed. ShellCheck passed. Changed YAML lint passed; full YAML lint has 6 pre-existing line-length errors in unchanged ghost-pod-reaper.yaml and velero-server-rbac.yaml. No live deployment, scrape reachability or alert delivery was verified.",
       "evidence": [
-        "test:python3 scripts/test/lib/check-cnpg-monitoring-alerts.py --mutation-verify -> 7 promtool cases passed, 15 mutations rejected",
-        "test:make test -> R326 pass",
-        "repo:scripts/test/lib/check-cnpg-monitoring-alerts.py"
+        "test:python3 scripts/test/lib/check-cnpg-monitoring-alerts.py --mutation-verify -> 7 promtool cases passed, 18 mutations rejected",
+        "test:python3 scripts/test/lib/check-ambient-netpol.py --mutation-verify -> PASS",
+        "test:make validate -> exit 0",
+        "repo:scripts/test/lib/check-cnpg-monitoring-alerts.py",
+        "test:RESEARCH_EVIDENCE_DIR=<temporary-directory> nice -n 15 make test -> exit 0, passed 445, failed 0, warnings 3"
       ]
     },
     {
       "id": "e5",
       "type": "completion_claim",
-      "summary": "In the repository CNPG metrics scraping is enabled, Prometheus selects PodMonitors across all namespaces, CNPGClusterNotHealthy is fixed without absent(), and WAL archiving failure alerts are active, pinned by R326. Live alerting in Prometheus requires push-to-gitea and ArgoCD sync."
+      "summary": "Repository definitions enable CNPG metrics scraping and WAL-archive alerts, pin the destination to narwhal-db, and are verified by R326 and the full static suite. Live scrape and alert delivery require GitOps publication and separate runtime verification."
     },
     {
       "id": "e6",
       "type": "task_outcome",
       "state": "A",
-      "summary": "Complete for repository scope; not deployed to live cluster, no live WAL archive failure induced."
+      "summary": "Complete for the repository correction and regression scope. Existing lint findings remain outside scope; publication, independent review and live deployment/alert delivery are not claimed."
     }
   ]
 }

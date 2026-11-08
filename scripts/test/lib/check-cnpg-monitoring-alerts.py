@@ -10,7 +10,7 @@ Validates:
    - CNPGMetricsUnavailable alerting on absent() for 15m window
    - CNPGWALArchivingFailing alerting on failed_count increase or stalled archival > 1800s (exact threshold)
    - Decisions and official CNPG 1.29 docs URL recorded in comments
-4. NetworkPolicy database-default-deny-ingress in gitops/resources/database-ingress-policy.yaml:
+4. NetworkPolicy database-prometheus-ingress in gitops/resources/database-ingress-policy.yaml:
    - Prometheus ingress allow from namespace monitoring (app.kubernetes.io/name=prometheus)
    - Scoped strictly to TCP 9187 (+ ambient HBONE 15008 per R200)
    - D-CNPG-MON-INGRESS comment recorded
@@ -132,25 +132,36 @@ def static(root):
         'database-default-deny-ingress must be in database namespace'
     )
 
-    prom_rules = []
-    for r in db_netpol.get('spec', {}).get('ingress', []):
-        for peer in r.get('from', []) or []:
-            ns_match = peer.get('namespaceSelector', {}).get('matchLabels', {})
-            pod_match = peer.get('podSelector', {}).get('matchLabels', {})
-            if (
-                ns_match.get('kubernetes.io/metadata.name') == 'monitoring'
-                and pod_match.get('app.kubernetes.io/name') == 'prometheus'
-            ):
-                prom_rules.append(r)
-    assert len(prom_rules) == 1, (
-        f'expected exactly 1 prometheus ingress rule in database-default-deny-ingress, found {len(prom_rules)}'
+    policies = [p for p in netpol_docs if p.get('metadata', {}).get('name') == 'database-prometheus-ingress']
+    assert len(policies) == 1, 'expected exactly one database-prometheus-ingress policy'
+    policy = policies[0]
+    assert policy['metadata'].get('namespace') == 'database'
+    spec = policy.get('spec', {})
+    assert spec.get('podSelector') == {'matchLabels': {'cnpg.io/cluster': 'narwhal-db'}}, (
+        'Prometheus ingress must target narwhal-db pods only'
     )
-    rule = prom_rules[0]
-    ports = rule.get('ports', [])
-    port_numbers = {p.get('port') for p in ports if p.get('protocol', 'TCP') == 'TCP'}
-    assert 9187 in port_numbers, 'TCP 9187 missing in prometheus ingress ports'
-    assert 15008 in port_numbers, 'TCP 15008 (ambient HBONE per R200) missing in prometheus ingress ports'
-    assert port_numbers == {9187, 15008}, f'unexpected ports allowed for prometheus: {port_numbers}'
+    assert spec.get('policyTypes') == ['Ingress']
+    rules = spec.get('ingress', [])
+    assert len(rules) == 1, 'expected exactly one Prometheus ingress rule'
+    rule = rules[0]
+    assert rule.get('from') == [{
+        'namespaceSelector': {'matchLabels': {'kubernetes.io/metadata.name': 'monitoring'}},
+        'podSelector': {'matchLabels': {
+            'app.kubernetes.io/name': 'prometheus',
+            'prometheus': 'prometheus-stack-kube-prom-prometheus',
+        }},
+    }], 'Prometheus namespace and pod selectors must be combined in one peer'
+    assert rule.get('ports') == [
+        {'protocol': 'TCP', 'port': 9187},
+        {'protocol': 'TCP', 'port': 15008},
+    ], 'Prometheus ingress must allow only TCP 9187 and ambient HBONE 15008'
+    # D-CNPG-MON-SCOPE: NetworkPolicies add permissions; a broad duplicate would
+    # bypass the target selector. Cost: pin this baseline; escape: review new peers.
+    assert not any(
+        peer.get('namespaceSelector', {}).get('matchLabels', {}).get('kubernetes.io/metadata.name') == 'monitoring'
+        for r in db_netpol.get('spec', {}).get('ingress', [])
+        for peer in r.get('from', [])
+    ), 'baseline policy must not also grant namespace-wide Prometheus ingress'
 
     return alerts_yaml['spec']
 
@@ -425,6 +436,24 @@ MUTATIONS = [
         FILES[5],
         'port: 9187\n        - protocol: TCP\n          port: 15008',
         'port: 9187\n        - protocol: TCP\n          port: 5432\n        - protocol: TCP\n          port: 15008',
+    ),
+    (
+        'database-ingress-policy target widened to all database pods',
+        FILES[5],
+        'podSelector:\n    matchLabels:\n      cnpg.io/cluster: narwhal-db',
+        'podSelector: {}',
+    ),
+    (
+        'database-ingress-policy Prometheus instance selector removed',
+        FILES[5],
+        '              prometheus: prometheus-stack-kube-prom-prometheus\n',
+        '',
+    ),
+    (
+        'database-ingress-policy namespace and pod peers split (OR)',
+        FILES[5],
+        'kubernetes.io/metadata.name: monitoring\n          podSelector:',
+        'kubernetes.io/metadata.name: monitoring\n        - podSelector:',
     ),
 ]
 

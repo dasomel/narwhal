@@ -28,8 +28,8 @@ spec:
   # D-CNPG-APPDB: the application database must be one that exists. CNPG's default monitoring queries
   # (cnpg_pg_database_*, pg_stat_*, ...) connect to bootstrap.initdb.database, and the live cluster was
   # created by 07-cnpg.sh with 'narwhal' (git log -S: this file kept 'authentik' from 94b72c37 and was
-  # never updated by a301deb1, which only fixed the scripts). ArgoCD then synced 'authentik' into the
-  # live spec, a database that does not exist: every default query failed with SQLSTATE 3D000 (R326 notes
+  # never updated by a301deb1, which only fixed the scripts). 14-gitops-bootstrap.sh then applied 'authentik' (kubectl apply, no Argo
+  # Application owns this Cluster) into the live spec, a database that does not exist: every default query failed with SQLSTATE 3D000 (R326 notes
   # it, the WAL alert had to use the built-in collector). initdb runs only at cluster creation, so on the
   # live cluster this edit changes only the monitoring target (server dry-run accepted by the webhook
   # 2026-11-08). A fresh GitOps-only bootstrap now also creates 'narwhal' owned by 'narwhal', matching
@@ -88,7 +88,9 @@ spec:
   # startup stay default, so a slow instance still leaves the -rw/-ro Services quickly.
   # Cost: a truly hung instance manager is restarted after ~2 min instead of ~30s, and a primary that has
   # lost the apiserver is demoted later. Escape hatch: delete this probes block to return to the defaults.
-  # Rollout: changing probes/resources rolls the instances (replica first, primary restart in place).
+  # Rollout: only when 14-gitops-bootstrap.sh (kubectl apply) is next run; no Argo Application syncs this Cluster. The
+  # change rolls the instances (replicas first, primaryUpdateStrategy unsupervised, primaryUpdateMethod restart:
+  # the primary restarts in place, no switchover).
   probes:
     liveness:
       periodSeconds: 10

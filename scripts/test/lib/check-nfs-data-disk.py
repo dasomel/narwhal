@@ -71,8 +71,13 @@ def check(t):
     vf = t['vf']
     if not re.search(r'NFS_DISK_GB\s*=\s*Integer\(ENV\.fetch\("NARWHAL_NFS_DISK_GB",\s*"\d+"\)', vf):
         errors.append('Vagrantfile: NFS_DISK_GB constant missing')
-    if not re.search(r'if i == 1 && NFS_DISK_GB > 0\n\s+master\.vm\.disk :disk, size: "#\{NFS_DISK_GB\}GB", name: "nfs-data"', vf):
+    if not re.search(r'if i == 1 && NFS_DISK_GB > 0\n(?:\s*#.*\n)*\s+master\.vm\.disk :disk, size: "#\{NFS_DISK_GB\}GB", name: "nfs-data"', vf):
         errors.append('Vagrantfile: master-1 must attach the nfs-data disk (config.vm.disk, i == 1 only)')
+    if 'vmware_desktop__bus_type: "nvme"' not in vf:
+        errors.append('Vagrantfile: nfs-data disk must set vmware_desktop__bus_type: "nvme" (box OS disk is nvme0)')
+    if not re.search(r'if NFS_DISK_GB == 0 && NFS_DISK_RECORDED && ENV\["NARWHAL_NFS_DISK_ALLOW_DELETE"\] != "yes-delete-the-nfs-disk"\n\s+abort', vf) \
+            or 'disk_meta' not in vf or 'nfs-data*' not in vf:
+        errors.append('Vagrantfile: guard refusing NARWHAL_NFS_DISK_GB=0 once nfs-data is recorded is missing (cleanup_disks would delete it)')
     prov = re.search(r'scripts/cluster/01-nfs-server\.sh",\n\s+env: \{(.*?)\}', vf, re.S)
     if not prov or '"NFS_DATA_DEVICE" => NFS_DATA_DEVICE' not in prov.group(1):
         errors.append('Vagrantfile: 01-nfs-server.sh must receive NFS_DATA_DEVICE')
@@ -91,10 +96,15 @@ def check(t):
     check_cluster('07-cnpg.sh', cluster_from_script(t['sh']), errors)
     ops = t['ops']
     for needle in ('## 15. NFS export 전용 디스크 (D-NFS-VMDK)', '## 16. 호스트 부하 규칙',
-                   'project -s', 'nfs-xfs-migration.md', 'snapshot save', 'vagrant halt master-1',
-                   'NARWHAL_NFS_DISK_GB=0', '롤링 재부팅'):
+                   'project -s -p ${path} ${id}', 'nfs-xfs-migration.md', 'snapshot save', 'vagrant halt master-1',
+                   'NARWHAL_NFS_DISK_GB=0', '롤링 재부팅', 'vmware-vdiskmanager -U', 'NARWHAL_NFS_DISK_ALLOW_DELETE', '(`/export/...`)'):
         if needle not in ops:
             errors.append(f'operations.md: missing {needle!r}')
+    if "project -s' /srv/nfs/k8s" in ops or re.search(r'xfs_quota -x -c .project -s. ', ops):
+        errors.append('operations.md: bare xfs_quota project -s (host /etc/projects holds /export paths) must not return')
+    for key in ('db', 'sh'):
+        if re.search(r'ArgoCD owns the live Cluster', t[key]):
+            errors.append(f'{key}: wrong claim that ArgoCD owns the live narwhal-db Cluster')
     return errors
 
 
@@ -114,7 +124,13 @@ MUTATIONS = {
     'script liveness shortened': ('sh', 'failureThreshold: 12', 'failureThreshold: 3'),
     'script cpu limit back': ('sh', '      memory: "1Gi"\n', '      memory: "1Gi"\n      cpu: "1"\n'),
     'script requests removed': ('sh', '      cpu: "250m"\n', ''),
-    'runbook quota restore dropped': ('ops', 'project -s', 'project'),
+    'runbook quota restore dropped': ('ops', 'project -s -p', 'project -p'),
+    'runbook bare project -s returns': ('ops', 'head -3 /etc/projects', "sudo xfs_quota -x -c 'project -s' /srv/nfs/k8s\nhead -3 /etc/projects"),
+    'runbook loses /export mapping': ('ops', '(`/export/...`)', '(paths)'),
+    'nvme bus dropped': ('vf', ', vmware_desktop__bus_type: "nvme"', ''),
+    'delete guard removed': ('vf', 'if NFS_DISK_GB == 0 && NFS_DISK_RECORDED', 'if false && NFS_DISK_RECORDED'),
+    'delete guard override widened': ('vf', 'ENV["NARWHAL_NFS_DISK_ALLOW_DELETE"] != "yes-delete-the-nfs-disk"', 'false'),
+    'wrong ArgoCD claim returns': ('sh', 'applied to the live Cluster by 14-gitops-bootstrap.sh; no Argo Application owns it', 'ArgoCD owns the live Cluster'),
     'host-load rule dropped': ('ops', '## 16. 호스트 부하 규칙', '## 16. 기타'),
 }
 

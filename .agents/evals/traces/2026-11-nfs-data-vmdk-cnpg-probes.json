@@ -38,13 +38,13 @@
     {
       "id": "e3",
       "type": "bug_fix",
-      "summary": "D-NFS-VMDK: config.vm.disk nfs-data on master-1 (vmware_desktop plugin 3.0.5 disk capability reads as growable vmdk, scsi bus) and NFS_DATA_DEVICE=auto, resolved to exactly one blank non-OS disk, fstab by UUID, existing refusal to mount over live data kept. D-CNPG-RESTART-AMP: probes.liveness 12 x 10s, timeout 10s, isolationCheck 5s, readiness default. D-CNPG-RESOURCES: requests 512Mi/250m, memory limit 1Gi, no CPU limit (CFS throttling would delay /healthz). D-CNPG-APPDB: bootstrap database/owner narwhal in narwhal-db.yaml so the default monitoring queries target an existing database. operations.md section 15 (owner-run migration incl. XFS project-ID restore) and 16 (host load)."
+      "summary": "D-NFS-VMDK: config.vm.disk nfs-data on master-1 (vmware_desktop plugin 3.0.5 disk capability: growable vmdk; bus set to nvme via vmware_desktop__bus_type to match the box's nvme0 OS disk, because the plugin default is scsi/lsilogic and scsi0.present is FALSE on arm64 Fusion) and NFS_DATA_DEVICE=auto, resolved to exactly one blank non-OS disk, fstab by UUID, existing refusal to mount over live data kept. D-CNPG-RESTART-AMP: probes.liveness 12 x 10s, timeout 10s, isolationCheck 5s, readiness default. D-CNPG-RESOURCES: requests 512Mi/250m, memory limit 1Gi, no CPU limit (CFS throttling would delay /healthz). D-NFS-VMDK-GUARD: the Vagrantfile aborts NARWHAL_NFS_DISK_GB=0 once master-1 has recorded nfs-data, because vagrant-vmware-desktop 3.0.5 cleanup_disks deletes (vmware-vdiskmanager -U) a disk missing from the config; the guard was exercised with plain ruby on the extracted lines (refuse, override passes, 200 passes), not through vagrant. D-CNPG-APPDB: bootstrap database/owner narwhal in narwhal-db.yaml so the default monitoring queries target an existing database. operations.md section 15 (owner-run migration incl. XFS project-ID restore) and 16 (host load)."
     },
     {
       "id": "e4",
       "type": "regression_verification",
       "status": "passed",
-      "scope": "Static: R327 parses the Vagrantfile, 01-nfs-server.sh, the narwhal-db.yaml Cluster and the 07-cnpg.sh heredoc Cluster and rejects 17 single-defect mutations; ruby -c Vagrantfile; bash -n on both scripts; a server-side dry-run of the new Cluster manifest against the live CNPG webhook and CRD was accepted (nothing persisted). NOT covered: a real vagrant up with the second disk, the auto resolver on a real guest, the rsync migration and quota restore, the instance rolling restart, whether the longer liveness actually prevents a restart in a stall, any etcd fsync improvement.",
+      "scope": "Static: R327 parses the Vagrantfile, 01-nfs-server.sh, the narwhal-db.yaml Cluster and the 07-cnpg.sh heredoc Cluster and rejects 17 single-defect mutations; ruby -c Vagrantfile; bash -n on both scripts; a server-side dry-run of the new Cluster manifest against the live CNPG webhook and CRD was accepted (nothing persisted). NOT covered: the NVMe attach on a real VM (unverified until the owner-run migration step 4), a real vagrant up with the second disk, the auto resolver on a real guest, the rsync migration and quota restore, the instance rolling restart, whether the longer liveness actually prevents a restart in a stall, any etcd fsync improvement.",
       "evidence": [
         "test:python3 scripts/test/lib/check-nfs-data-disk.py --mutation-verify -> PASS 17 mutations rejected",
         "test:ruby -c Vagrantfile -> Syntax OK",
@@ -54,7 +54,7 @@
     {
       "id": "e5",
       "type": "completion_claim",
-      "summary": "In the repository a fresh cluster gets a separate NFS disk and a stall-tolerant CNPG cluster whose monitoring target exists, pinned by R327, and the existing-cluster migration is documented as an owner-run runbook. Nothing is deployed: the live cluster still shares one VMDK, the bootstrap-database and probe changes reach it only after push-to-gitea and ArgoCD sync (which rolls both instances), and the same-host-SSD limit means the etcd benefit is unmeasured."
+      "summary": "In the repository a fresh cluster gets a separate NFS disk and a stall-tolerant CNPG cluster whose monitoring target exists, pinned by R327, and the existing-cluster migration is documented as an owner-run runbook. Nothing is deployed: the live cluster still shares one VMDK, the bootstrap-database and probe changes reach it only when 14-gitops-bootstrap.sh next applies narwhal-db.yaml by kubectl apply (no Argo Application owns the Cluster; the apply rolls both instances, primary restarting in place), and the same-host-SSD limit means the etcd benefit is unmeasured."
     },
     {
       "id": "e6",

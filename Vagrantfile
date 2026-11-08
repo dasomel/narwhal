@@ -72,10 +72,23 @@ NFS_SHARE_PATH = "/srv/nfs/k8s"      # NFS export path
 # I/O queues in the guest, but both files still sit on the same host SSD, so this reduces the coupling
 # (queue depth, fsync ordering inside one guest FS); it does not isolate host I/O.
 # The disk is a growable (sparse) vmdk/vdi: the host only allocates what is written, a ceiling not a
-# reservation. Escape hatch: NARWHAL_NFS_DISK_GB=0 keeps the export on the root disk (old layout).
+# reservation. NARWHAL_NFS_DISK_GB=0 keeps the export on the root disk (old layout) and is only for a
+# cluster that never got the disk. It is DANGEROUS afterwards: vagrant-vmware-desktop 3.0.5 runs
+# cleanup_disks on every boot and `vmware-vdiskmanager -U` deletes a disk that is no longer in the
+# Vagrantfile (cap/disk.rb, driver/base.rb remove_disk), i.e. the disk holding all PVs. The guard below
+# refuses 0 once master-1 has recorded the disk. Also never rename the disk ("nfs-data") for the same reason.
 # 200 is a ceiling: the 17 PVs hold well under 100GB, and a vmdk never shrinks (operations.md section 12).
 NFS_DISK_GB = Integer(ENV.fetch("NARWHAL_NFS_DISK_GB", "200"), exception: false)
 abort "NARWHAL_NFS_DISK_GB must be an integer >= 0 (got #{ENV['NARWHAL_NFS_DISK_GB'].inspect})" unless NFS_DISK_GB && NFS_DISK_GB >= 0
+# D-NFS-VMDK-GUARD: refuse to drop the disk from the config once it exists (marker: the name in
+# .vagrant/machines/master-1/*/disk_meta, or an nfs-data* file in the machine dir). The second variable is a
+# deliberate, separate act: it exists for `vagrant destroy` of a cluster whose data is already gone.
+NFS_DISK_RECORDED = Dir.glob(File.join(__dir__, ".vagrant/machines/master-1/*/disk_meta")).any? { |f| File.read(f).include?("nfs-data") } ||
+                    !Dir.glob(File.join(__dir__, ".vagrant/machines/master-1/*/*/nfs-data*")).empty?
+if NFS_DISK_GB == 0 && NFS_DISK_RECORDED && ENV["NARWHAL_NFS_DISK_ALLOW_DELETE"] != "yes-delete-the-nfs-disk"
+  abort "REFUSING: NARWHAL_NFS_DISK_GB=0 would make vagrant-vmware-desktop DELETE master-1's nfs-data disk (all PVs live there). " \
+        "Keep NFS_DISK_GB > 0. Only if the data is already gone: NARWHAL_NFS_DISK_ALLOW_DELETE=yes-delete-the-nfs-disk."
+end
 # "auto": 01-nfs-server.sh picks the single blank non-OS disk (no /dev/sdb guessing; fstab uses the UUID).
 NFS_DATA_DEVICE = NFS_DISK_GB > 0 ? "auto" : ""
 
@@ -212,7 +225,11 @@ Vagrant.configure("2") do |config|
       # entry, VirtualBox a vdi. Attached on the next `vagrant up` of an existing VM, which must be
       # powered off first (docs/vagrant/operations.md section 15).
       if i == 1 && NFS_DISK_GB > 0
-        master.vm.disk :disk, size: "#{NFS_DISK_GB}GB", name: "nfs-data"
+        # NVMe bus to match the box's OS disk (nvme0); the plugin default is scsi (lsilogic), and
+        # scsi0.present is FALSE on arm64 Fusion. Option name from vagrant-vmware-desktop 3.0.5
+        # cap/disk.rb (provider_config[:vmware_desktop][:bus_type], Vagrant `vmware_desktop__bus_type`).
+        # NOT yet verified on a real VM: first proven during the owner-run migration (operations.md 15).
+        master.vm.disk :disk, size: "#{NFS_DISK_GB}GB", name: "nfs-data", vmware_desktop__bus_type: "nvme"
       end
 
       master.vm.provider "virtualbox" do |vb|

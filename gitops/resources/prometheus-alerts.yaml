@@ -204,17 +204,58 @@ spec:
     # -------------------------------------------------------------------------
     - name: database
       rules:
+        # D-CNPG-HEALTH-ALERT (#600): CNPGClusterNotHealthy fires when an instance collector reports failure (cnpg_collector_up == 0).
+        # Previously combined with absent(), which permanently fired when PodMonitor was disabled or initializing,
+        # and stripped all instance labels ($labels.cluster_name was empty). Metric absence is separated into
+        # CNPGMetricsUnavailable with a 15m window and warning severity.
+        # Docs: https://cloudnative-pg.io/documentation/1.29/monitoring/
         - alert: CNPGClusterNotHealthy
           expr: |
             cnpg_collector_up{namespace="database"} == 0
-            or
-            absent(cnpg_collector_up{namespace="database"})
           for: 5m
           labels:
             severity: critical
           annotations:
-            summary: "CNPG 클러스터 비정상: {{ $labels.cluster_name }}"
-            description: "namespace=database의 CNPG 클러스터 {{ $labels.cluster_name }}가 5분 이상 Healthy 상태가 아닙니다."
+            summary: "CNPG 인스턴스 비정상: {{ $labels.pod }}"
+            description: "namespace=database의 CNPG 인스턴스 {{ $labels.pod }}가 5분 이상 비정상(cnpg_collector_up == 0) 상태입니다."
+
+        # D-CNPG-HEALTH-ALERT (#600): Warn when CNPG metrics are completely absent for 15m.
+        # Decoupled from CNPGClusterNotHealthy to avoid false positives during scrape initialization.
+        # Docs: https://cloudnative-pg.io/documentation/1.29/monitoring/
+        - alert: CNPGMetricsUnavailable
+          expr: |
+            absent(cnpg_collector_up{namespace="database"})
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "CNPG 메트릭 수집 불가"
+            description: "namespace=database의 CNPG 메트릭(cnpg_collector_up)이 15분 이상 수집되지 않습니다. PodMonitor 설정 및 Prometheus scrape target을 확인하십시오."
+
+        # D-CNPG-WAL-ARCHIVE-ALERT (#600, PR #601): Alert when WAL archiving fails or stalls.
+        # Catches (1) postgres archiver errors (cnpg_pg_stat_archiver_failed_count increasing) and
+        # (2) stalled archiving exceeding 1800s (30m, 6x normal 300s archive_timeout) once initialized.
+        # Metrics defined in CNPG default monitoring ConfigMap (pg_stat_archiver query).
+        # Docs: https://cloudnative-pg.io/documentation/1.29/monitoring/
+        - alert: CNPGWALArchivingFailing
+          expr: |
+            increase(cnpg_pg_stat_archiver_failed_count{namespace="database"}[5m]) > 0
+            or
+            (
+              (
+                cnpg_pg_stat_archiver_seconds_since_last_archival{namespace="database"} > 1800
+                or
+                (time() - cnpg_pg_stat_archiver_last_archived_time{namespace="database"} > 1800)
+              )
+              and
+              cnpg_pg_stat_archiver_last_archived_time{namespace="database"} > 0
+            )
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "CNPG WAL 아카이빙 실패: {{ $labels.pod }}"
+            description: "CNPG 파드 {{ $labels.pod }}의 WAL 아카이빙 실패가 증가하거나 마지막 아카이빙 후 30분 이상 경과했습니다. S3 백업 대상(SeaweedFS) 연결 및 자격 증명을 확인하세요."
 
         - alert: CNPGReplicationLag
           expr: |

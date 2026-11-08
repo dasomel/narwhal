@@ -52,8 +52,9 @@ spec:
       max_connections: "200"
       max_wal_size: "1GB"
 
+  # D-CNPG-MON (#600): enable PodMonitor so Prometheus scrapes CNPG metrics (exporter port 9187)
   monitoring:
-    enablePodMonitor: false
+    enablePodMonitor: true
 
   # D-CNPG-AA-REQUIRED (#564): required hostname anti-affinity, so the two instances never share a node
   # (2026-11-04/06: both on worker-1, one stall failed over the DB and a drain blocked WAL archiving).

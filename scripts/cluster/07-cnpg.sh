@@ -197,6 +197,7 @@ spec:
       log_connections: "on"
       log_disconnections: "on"
 
+  # D-CNPG-MON (#600): enable PodMonitor kept in sync with gitops/resources/narwhal-db.yaml
   monitoring:
     enablePodMonitor: true
 

@@ -407,3 +407,43 @@ spec:
               Harbor 미러의 trivy-db:2가 NextUpdate를 넘겨 같은 DB를 매시간 받고 있을 가능성이 큽니다.
               Portal 보안 페이지의 Trivy DB 상태 카드로 미러 나이를 확인하고 fetch, promote, push로 미러를 갱신하세요.
             runbook_url: https://github.com/dasomel/narwhal/blob/main/scripts/airgap/README.md#보안-db-갱신-절차와-낡은-미러-경보-d-secdb-stale
+        # D-SECDB-AUTO-ALERT (#585): the in-cluster refresh (gitops/resources/trivy-db-refresh.yaml)
+        # is a CronJob every 6h, and a run that finds the mirror already current also succeeds, so
+        # kube-state-metrics' last-successful-time is the mirror-freshness signal. Both alerts are
+        # silent where the CronJob does not exist (airgap installs use the manual flow, which
+        # TrivyServerDbRedownloading above covers): no series, no result.
+        # Failed: the latest scheduled run has not succeeded one hour after it started (the Job
+        # deadline is 30m, so a healthy run is long done). Stale: no success for 36h (6 missed runs),
+        # or the CronJob is over 12h old and has never succeeded (a first run that cannot push).
+        # Cost: Failed stays up until the next good run (up to 6h). Escape hatch: remove these two
+        # rules with the CronJob.
+        - alert: TrivyDbRefreshFailed
+          expr: |
+            max(kube_cronjob_status_last_schedule_time{namespace="security-system",cronjob="trivy-db-refresh"})
+              > max(kube_cronjob_status_last_successful_time{namespace="security-system",cronjob="trivy-db-refresh"})
+          for: 1h
+          labels:
+            severity: warning
+          annotations:
+            summary: "Trivy DB 미러 자동 갱신 실패"
+            description: >-
+              trivy-db-refresh 최근 실행이 시작 1시간 뒤에도 성공하지 못했습니다. `kubectl -n security-system logs job/<최근 job>`에서
+              ghcr.io 연결, Harbor 로봇 계정(Secret trivy-db-refresh), CA(narwhal-ca-cert)를 확인하세요.
+              미러가 낡으면 trivy-server가 같은 DB를 매시간 다시 받습니다.
+            runbook_url: https://github.com/dasomel/narwhal/blob/main/scripts/airgap/README.md#보안-db-자동-갱신-d-secdb-auto
+        - alert: TrivyDbRefreshStale
+          expr: |
+            (time() - max(kube_cronjob_status_last_successful_time{namespace="security-system",cronjob="trivy-db-refresh"}) > 129600)
+            or
+            ((time() - max(kube_cronjob_created{namespace="security-system",cronjob="trivy-db-refresh"}) > 43200)
+              unless on() kube_cronjob_status_last_successful_time{namespace="security-system",cronjob="trivy-db-refresh"})
+          for: 30m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Trivy DB 미러 자동 갱신이 36시간 넘게 성공하지 못함"
+            description: >-
+              trivy-db-refresh가 36시간 동안 성공하지 못했거나, 생성 12시간 뒤에도 한 번도 성공하지 못했습니다.
+              Harbor trivy-db 미러가 낡아 가는 중입니다. Secret trivy-db-refresh(08-5가 만든 로봇 계정)가 있는지,
+              Job 로그가 무엇을 말하는지 확인하세요.
+            runbook_url: https://github.com/dasomel/narwhal/blob/main/scripts/airgap/README.md#보안-db-자동-갱신-d-secdb-auto

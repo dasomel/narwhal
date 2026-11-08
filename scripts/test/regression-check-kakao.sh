@@ -3385,6 +3385,9 @@ PYEOF'
   # 2026-11-06 (#563): velero-ui 0.10.1 endpoints with no upstream policy check, reachable by any logged-in user.
   check R319 "velero-ui gateway: DELETE /api/settings/velero/plugins/:name (unused upstream stub) is closed for everyone (case-insensitive regex, slash variants, priority 10), POST bulk download rule kept, and no rule closes the paths the UI needs (/api/stats*, /api/form/*, /api/settings/velero/server|ui|plugins, /api/config); permission matrix records the decision; 9 mutations caught (D-VELERO-UI-563)" \
     python3 scripts/test/lib/check-velero-ui-endpoints.py --mutation-verify
+  # 2026-11-08 (#585): owner decision: refresh the Trivy DB mirror automatically where the cluster has egress, and bound Harbor/PVC/workstation storage.
+  check R322 "Trivy DB mirror auto refresh (#585): digest-pinned skopeo CronJob (non-root, read-only root, no API token, robot credential from Secret trivy-db-refresh, Narwhal CA, TLS verified) copies only trivy-db:2 and trivy-java-db:1 (stub-skopeo behavior: current mirror copies nothing, stale one is copied with --preserve-digests as auto-refresh, size floor and post-copy digest enforced, password never in argv/log), Application gated off for kakao and enabled=false (helm render), 08-5 robot scoped to trivy-db push+pull plus retention keep-2 incl. untagged and GC only when none exists (fake Harbor API: idempotent re-run), 08-6 CA to security-system, fetch prunes dropped names, TrivyDbRefreshFailed/Stale promtool cases; 30 mutations caught (D-SECDB-AUTO, D-SECDB-AUTO-ROBOT, D-SECDB-BOUND)" \
+    python3 scripts/test/lib/check-trivy-db-auto-refresh.py --mutation-verify
 }
 
 #=========================================

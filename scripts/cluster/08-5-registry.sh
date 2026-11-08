@@ -200,6 +200,128 @@ if [ "${HARBOR_HEALTH}" = "200" ]; then
     -d '{"project_name":"trivy-db","metadata":{"public":"true"}}' 2>/dev/null || true
   echo "Harbor: trivy-db project ensured (public, for narwhal#48 offline vulnerability DB)"
 
+  # D-SECDB-AUTO-ROBOT (#585): the in-cluster refresh CronJob (gitops/resources/trivy-db-refresh.yaml)
+  # pushes with a Harbor ROBOT account scoped to this one project (repository push+pull, nothing
+  # else), never the admin credential. The robot secret lives only in the Secret
+  # security-system/trivy-db-refresh (keys registry, username, password), never in git.
+  # Idempotent: an existing robot with an existing Secret is left alone; a missing Secret gets a new
+  # robot secret (PATCH); a missing robot is created. No expiry (duration -1); rotate by deleting
+  # that Secret and re-running this script. Warn, not fail: Harbor itself is healthy without it, and
+  # airgap installs (provider kakao) never render the CronJob.
+  # D-SECDB-AUTO-RETENTION: every push of a moving tag (trivy-db:2, trivy-java-db:1) leaves the
+  # previous artifact untagged in Harbor (live 2026-11-08: 3 artifacts each, 139 MB + 995 MB, and the
+  # project had no retention policy). A project retention policy keeps the 2 most recently pushed
+  # artifacts per repository, untagged ones included, and the system GC reclaims their blobs. Keep
+  # 2 = the current DB plus one rollback step. GC is system-wide: it is created only when no
+  # schedule exists (an operator's schedule is not overwritten) and never with delete_untagged, so it
+  # cannot touch other projects' untagged artifacts. Cost: one extra copy of each DB (~1.2 GB).
+  # Escape hatch: delete the retention policy / GC schedule in the Harbor UI (re-running this script
+  # recreates the retention policy).
+  DOMAIN="${DOMAIN:-local.narwhal.internal}"
+  SECDB_KEEP=2
+  ensure_namespace security-system >/dev/null
+  SECDB_ROBOT_RESET=1
+  SECDB_ROBOT_PW=""
+  if SECDB_ROBOT_PW=$(read_secret_field trivy-db-refresh security-system password) && [ -n "${SECDB_ROBOT_PW}" ]; then
+    SECDB_ROBOT_RESET=0
+  else
+    # Harbor wants upper, lower and a digit in a robot secret; generate_password does not guarantee it.
+    SECDB_ROBOT_PW="$(generate_password)Aa1"
+  fi
+  if SECDB_ROBOT_OUT=$(HARBOR_API="${HARBOR_API}" HARBOR_ADMIN_PASS="${HARBOR_ADMIN_PASS}" \
+      SECDB_KEEP="${SECDB_KEEP}" SECDB_ROBOT_PW="${SECDB_ROBOT_PW}" SECDB_ROBOT_RESET="${SECDB_ROBOT_RESET}" \
+      python3 - <<'PYEOF'
+import base64, json, os, sys, urllib.error, urllib.parse, urllib.request
+
+API = os.environ["HARBOR_API"]
+AUTH = "Basic " + base64.b64encode(("admin:" + os.environ["HARBOR_ADMIN_PASS"]).encode()).decode()
+PROJECT, ROBOT = "trivy-db", "trivy-db-refresh"
+KEEP = int(os.environ["SECDB_KEEP"])
+PW = os.environ["SECDB_ROBOT_PW"]
+RESET = os.environ["SECDB_ROBOT_RESET"] == "1"
+
+
+def call(method, path, body=None):
+    # Errors never echo the request body (it can carry the robot secret).
+    req = urllib.request.Request(
+        API + path, method=method,
+        data=json.dumps(body).encode() if body is not None else None,
+        headers={"Authorization": AUTH, "Content-Type": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=30) as r:
+            raw = r.read()
+            return json.loads(raw) if raw else None
+    except urllib.error.HTTPError as e:
+        raise SystemExit(f"{method} {path}: HTTP {e.code}")
+
+
+project = call("GET", "/projects/" + PROJECT)
+pid = project["project_id"]
+
+# 1. Robot account: project level, repository push+pull only.
+q = urllib.parse.quote(f"Level=project,ProjectID={pid}", safe="")
+robots = call("GET", f"/robots?q={q}&page_size=100") or []
+found = [r for r in robots if r["name"].endswith("+" + ROBOT)]
+if not found:
+    call("POST", "/robots", {
+        "name": ROBOT, "level": "project", "duration": -1, "disable": False, "secret": PW,
+        "description": "trivy-db mirror auto refresh (gitops/resources/trivy-db-refresh.yaml)",
+        "permissions": [{"kind": "project", "namespace": PROJECT, "access": [
+            {"resource": "repository", "action": "push"},
+            {"resource": "repository", "action": "pull"}]}]})
+    robots = call("GET", f"/robots?q={q}&page_size=100") or []
+    found = [r for r in robots if r["name"].endswith("+" + ROBOT)]
+elif RESET:
+    call("PATCH", f"/robots/{found[0]['id']}", {"secret": PW})
+if not found:
+    raise SystemExit("robot account not found after create")
+print("ROBOT_USER=" + found[0]["name"])
+
+# 2. Retention: keep the KEEP most recently pushed artifacts per repository, untagged included.
+policy = {
+    "algorithm": "or",
+    "rules": [{
+        "disabled": False, "action": "retain", "template": "latestPushedK",
+        "params": {"latestPushedK": KEEP},
+        "tag_selectors": [{"kind": "doublestar", "decoration": "matches", "pattern": "**",
+                           "extras": json.dumps({"untagged": True})}],
+        "scope_selectors": {"repository": [{"kind": "doublestar", "decoration": "repoMatches", "pattern": "**"}]},
+    }],
+    "trigger": {"kind": "Schedule", "settings": {"cron": "0 30 3 * * *"}},
+    "scope": {"level": "project", "ref": pid},
+}
+rid = (project.get("metadata") or {}).get("retention_id")
+if rid:
+    call("PUT", f"/retentions/{rid}", policy)
+else:
+    call("POST", "/retentions", policy)
+print(f"RETENTION=keep-{KEEP}")
+
+# 3. GC (system-wide): create a daily schedule only when none exists; never delete_untagged.
+gc = call("GET", "/system/gc/schedule") or {}
+gtype = ((gc.get("schedule") or {}).get("type") or "None")
+if gtype == "None":
+    call("POST", "/system/gc/schedule", {
+        "schedule": {"type": "Custom", "cron": "0 0 5 * * *"},
+        "parameters": {"delete_untagged": False}})
+    print("GC=created")
+else:
+    print("GC=kept-existing-" + gtype)
+PYEOF
+  ); then
+    SECDB_ROBOT_USER=$(printf '%s\n' "${SECDB_ROBOT_OUT}" | sed -n 's/^ROBOT_USER=//p')
+    kubectl create secret generic trivy-db-refresh -n security-system \
+      --from-literal=registry="harbor.${DOMAIN}" \
+      --from-literal=username="${SECDB_ROBOT_USER}" \
+      --from-literal=password="${SECDB_ROBOT_PW}" \
+      --dry-run=client -o yaml | kubectl apply -f - >/dev/null
+    echo "Harbor: trivy-db robot account + Secret security-system/trivy-db-refresh ensured"
+    echo "Harbor: $(printf '%s\n' "${SECDB_ROBOT_OUT}" | grep -E '^(RETENTION|GC)=' | tr '\n' ' ')(project trivy-db)"
+  else
+    echo "WARN: Harbor trivy-db robot account / retention / GC setup failed; the in-cluster DB auto refresh cannot push until this is re-run (D-SECDB-AUTO-ROBOT)"
+  fi
+  unset SECDB_ROBOT_PW SECDB_ROBOT_OUT
+
   # D-SECDB-EMPTY-WARN: creating the project does NOT load the DB. Nothing in Phase 2 / up.sh
   # pushes it (push-security-db.sh is the operator-run airgap flow, and a Harbor that was
   # just installed is always empty), so until someone runs it trivy-operator's scan Jobs hit
@@ -217,6 +339,7 @@ except Exception:
   if [ "${SECDB_REPOS:--1}" != "-1" ] && [ "${SECDB_REPOS}" -lt 3 ] 2>/dev/null; then
     echo "WARN: Harbor project trivy-db has ${SECDB_REPOS}/3 repositories (trivy-db, trivy-java-db, trivy-checks)."
     echo "WARN: Security Dashboard and Compliance infra data stay EMPTY until the security DB is loaded."
+    echo "WARN: With egress to ghcr.io the trivy-db-refresh CronJob fills it at the next 6h mark (first run now: kubectl -n security-system create job --from=cronjob/trivy-db-refresh trivy-db-refresh-first)."
     echo "WARN: On a machine with internet and the cluster DNS (see scripts/airgap/README.md, vulnerability DB section):"
     echo "WARN:   scripts/airgap/lib/fetch-security-db.sh   --bundle <dir>"
     echo "WARN:   scripts/airgap/lib/promote-security-db.sh --bundle <dir> --approved-by <name>"

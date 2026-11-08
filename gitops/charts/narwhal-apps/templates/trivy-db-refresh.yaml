@@ -1,0 +1,36 @@
+{{- if and .Values.securityDbAutoRefresh.enabled (ne .Values.provider "kakao") }}
+{{- /*
+D-SECDB-AUTO (#585): the automatic Trivy DB mirror refresh needs egress to ghcr.io. Kakao Cloud
+nodes have none (airgap), so nothing is rendered there and the manual fetch -> promote
+--approved-by -> push flow stays the gate. Other airgap installs set
+securityDbAutoRefresh.enabled=false. Rendering nothing also prunes the CronJob.
+*/}}
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: trivy-db-refresh
+  namespace: devtools
+  annotations:
+    # After trivy-operator (wave 4) so the security-system namespace exists.
+    argocd.argoproj.io/sync-wave: "5"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: platform
+  source:
+    repoURL: {{ .Values.repoURL }}
+    targetRevision: HEAD
+    path: resources
+    directory:
+      include: "trivy-db-refresh.yaml"
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: security-system
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+{{- end }}

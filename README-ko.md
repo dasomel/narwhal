@@ -82,7 +82,7 @@ Packer 빌드 [kube-ready-box](https://github.com/dasomel/kube-ready-box)의 산
 
 - [Vagrant](https://developer.hashicorp.com/vagrant/install) 2.4+
 - **Apple Silicon(arm64)** 호스트의 [VMware Fusion](https://www.vmware.com/products/fusion.html)과 `vagrant-vmware-desktop` 플러그인. 베이스 box(kube-ready-box 0.3.x)는 **arm64 `vmware_desktop`만** 배포됩니다(0.3.0). 0.3.1 카탈로그에는 `virtualbox` amd64 빌드도 올라 있지만 이 저장소는 실행해 본 적이 없으므로, 검증된 로컬 경로는 arm64의 VMware Fusion뿐입니다(Vagrantfile의 VirtualBox 블록은 그 빌드와 이전 box용으로 남겨 둠).
-- 40GB+ RAM: VM 합계 마스터 3대 x 6GB + 워커 3대 x 6GB = 36GB
+- 48GB+ RAM: VM 합계 마스터 3대 x 6GB + 워커 3대 x 8GB = 42GB
 - VM 합계 18 vCPU(마스터 3대 x 2 + 워커 3대 x 4). 실사용이 낮아 12코어 이상 호스트면 충분합니다. 워커 크기는 `NARWHAL_WORKER_CPUS`로 바꿀 수 있습니다(기본 4, 2로는 전체 플랫폼에서 CPU requests가 부족)
 - VM당 30GB+ Disk (IDP 전체 배포 권장)
 
@@ -127,7 +127,7 @@ vagrant destroy -f
 ├──────────────────┬─────────────┬─────────────────┤
 │  master-1        │  master-2/3 │ worker-1/2/3    │
 │  192.168.56.10   │  .11 / .12  │ .21 / .22 / .23 │
-│  2 CPU, 6GB      │  2 CPU, 6GB │ 2 CPU, 6GB      │
+│  2 CPU, 6GB      │  2 CPU, 6GB │ 2 CPU, 8GB      │
 │  NFS, dnsmasq    │  dnsmasq    │                 │
 └──────────────────┴─────────────┴─────────────────┘
           │                │            │
@@ -407,7 +407,7 @@ K8S_VERSION = "1.35"           # Kubernetes version
 MASTER_COUNT = 3               # Master nodes (HA, 1 fault tolerance)
 WORKER_COUNT = 3               # Worker nodes
 MASTER_MEMORY = 6144           # Master RAM (MB) - control-plane + DaemonSets headroom
-WORKER_MEMORY = 6144           # Worker RAM (MB) - platform apps run here
+WORKER_MEMORY = 8192           # Worker RAM (MB) - platform apps run here
 VIP_ADDRESS = "192.168.56.100" # Control plane VIP
 ```
 

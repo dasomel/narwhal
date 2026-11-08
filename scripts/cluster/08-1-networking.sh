@@ -319,7 +319,7 @@ echo "=== Installing APISIX Ingress Controller ==="
 
 # D-ic-mem: 256Mi limit OOMKilled the IC at startup (full resource sync, 17 routes/14 upstreams/192 svc+ing
 # objects; steady state is ~83Mi). 512Mi limit gives the sync peak headroom; request 256Mi keeps the scheduler
-# honest. Escape hatch: raise both here; do not drop the limit (worker nodes are 6GB).
+# honest. Escape hatch: raise both here; do not drop the limit (worker nodes are 8GB).
 APISIX_INGRESS_CONTROLLER_OK=false
 for attempt in 1 2 3 4 5; do
   if helm upgrade --install apisix-ingress-controller "$(chart apisix-ingress-controller)" \

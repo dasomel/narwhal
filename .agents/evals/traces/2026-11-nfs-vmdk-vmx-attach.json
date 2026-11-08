@@ -1,0 +1,59 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-nfs-vmdk-vmx-attach-20261108",
+  "task": "PR #605 attached the NFS data disk with config.vm.disk, which crashes vagrant-vmware-desktop 3.0.5 (cap/disk.rb get_disk, File.extname(nil)) on every master-1 boot. Reproduce the hand-made working setup (vdiskmanager vmdk + nvme0:1 vmx keys) in the Vagrantfile and keep the boot guard.",
+  "changeContext": {
+    "paths": [
+      ".agents/evals/traces/2026-11-nfs-vmdk-vmx-attach.json",
+      "Vagrantfile",
+      "docs/common/lessons-log.md",
+      "docs/vagrant/operations.md",
+      "scripts/test/lib/check-nfs-data-disk.py",
+      "scripts/test/regression-check-kakao.sh"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Change only how master-1 gets its NFS data disk on vmware_desktop (vmx keys plus a before up/reload vdiskmanager trigger), the NARWHAL_NFS_DISK_GB=0 guard, operations.md section 15, the lessons-log row and R327. Deliberately left alone: live VMs and the main checkout's .vagrant, 01-nfs-server.sh, gitops, the quota agent, VirtualBox behavior beyond moving config.vm.disk into its provider override."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "2026-11-08 live: vagrant up master-1 crashed in cap/disk.rb:129 extname with nil. The owner migrated by hand with vmware-vdiskmanager -c -s 200GB -a lsilogic -t 0 narwhal-nfs.vmdk and nvme0:1.present/fileName in the vmx; the live vmx shows nvme0:1 with narwhal-nfs.vmdk and disk_meta is {}, so the plugin cleanup is a no-op.",
+      "evidence": [
+        "repo:Vagrantfile",
+        "repo:docs/vagrant/operations.md"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "D-NFS-VMDK-VMX: vmware no longer uses config.vm.disk; trigger creates the vmdk if missing, provider vmx keys attach it; VM dir resolved from .vagrant/machines/master-1/vmware_desktop/id (bare file name for an existing machine, .vagrant/narwhal-nfs absolute path for a first up). Guard now refuses NARWHAL_NFS_DISK_GB=0 when the vmdk exists."
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "Static: ruby -c and vagrant validate on the Vagrantfile; a ruby harness evaluating the constants/guard against a fake layout (new machine, VM without disk, live layout with default, live with 0 refused, override accepted, bad value); R327 with 34 mutations including config.vm.disk reintroduced and the guard ignoring the vmdk. NOT covered: a real vagrant up (new cluster first boot with the absolute path, reload), VirtualBox override.vm.disk, vdiskmanager invocation.",
+      "evidence": [
+        "test:python3 scripts/test/lib/check-nfs-data-disk.py --mutation-verify -> PASS: 34 mutations rejected",
+        "test:ruby harness -> live layout default ok narwhal-nfs.vmdk, 0 aborts",
+        "repo:scripts/test/lib/check-nfs-data-disk.py"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "completion_claim",
+      "summary": "In the repository the Vagrantfile reproduces the owner's working vmx setup and the live machine boots with the default (no env var) by static evaluation of the guard against the live layout. A real boot of a new or existing machine with this Vagrantfile has not been run."
+    },
+    {
+      "id": "e6",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Complete for the repository scope; not run against a real VM, VirtualBox path unverified."
+    }
+  ]
+}

@@ -72,22 +72,44 @@ NFS_SHARE_PATH = "/srv/nfs/k8s"      # NFS export path
 # I/O queues in the guest, but both files still sit on the same host SSD, so this reduces the coupling
 # (queue depth, fsync ordering inside one guest FS); it does not isolate host I/O.
 # The disk is a growable (sparse) vmdk/vdi: the host only allocates what is written, a ceiling not a
-# reservation. NARWHAL_NFS_DISK_GB=0 keeps the export on the root disk (old layout) and is only for a
-# cluster that never got the disk. It is DANGEROUS afterwards: vagrant-vmware-desktop 3.0.5 runs
-# cleanup_disks on every boot and `vmware-vdiskmanager -U` deletes a disk that is no longer in the
-# Vagrantfile (cap/disk.rb, driver/base.rb remove_disk), i.e. the disk holding all PVs. The guard below
-# refuses 0 once master-1 has recorded the disk. Also never rename the disk ("nfs-data") for the same reason.
-# 200 is a ceiling: the 17 PVs hold well under 100GB, and a vmdk never shrinks (operations.md section 12).
+# reservation. 200 is a ceiling: the 17 PVs hold well under 100GB, and a vmdk never shrinks
+# (operations.md section 12). The size only applies when the disk is created; it is never resized here.
+# D-NFS-VMDK-VMX (2026-11-08, live): on vmware_desktop NOT config.vm.disk. vagrant-vmware-desktop 3.0.5
+# crashes in cap/disk.rb get_disk (File.extname(nil)) on this box's vmx, which breaks every master-1 boot.
+# Instead a before-up trigger creates narwhal-nfs.vmdk with vmware-vdiskmanager (-a lsilogic -t 0, growable
+# single file) and provider vmx keys attach it as nvme0:1 (the box OS disk is nvme0:0; the guest then sees
+# the data disk as nvme0n1 and the OS disk as nvme0n2, root is LVM by UUID so that is harmless).
+# Plugin cleanup_disks is a no-op because no disk is in config (disk_meta stays {}), so it cannot delete it.
+# Cost: no automatic cleanup; escape hatch: delete the vmdk by hand. NARWHAL_NFS_DISK_GB=0 = do not
+# create/attach (cluster that never had the disk).
+require "fileutils"
 NFS_DISK_GB = Integer(ENV.fetch("NARWHAL_NFS_DISK_GB", "200"), exception: false)
 abort "NARWHAL_NFS_DISK_GB must be an integer >= 0 (got #{ENV['NARWHAL_NFS_DISK_GB'].inspect})" unless NFS_DISK_GB && NFS_DISK_GB >= 0
-# D-NFS-VMDK-GUARD: refuse to drop the disk from the config once it exists (marker: the name in
-# .vagrant/machines/master-1/*/disk_meta, or an nfs-data* file in the machine dir). The second variable is a
-# deliberate, separate act: it exists for `vagrant destroy` of a cluster whose data is already gone.
-NFS_DISK_RECORDED = Dir.glob(File.join(__dir__, ".vagrant/machines/master-1/*/disk_meta")).any? { |f| File.read(f).include?("nfs-data") } ||
-                    !Dir.glob(File.join(__dir__, ".vagrant/machines/master-1/*/*/nfs-data*")).empty?
+NFS_VMDK_NAME = "narwhal-nfs.vmdk"  # never rename: the live master-1 vmx references this name
+# Where the vmdk lives. Existing machine: its VM dir (dirname of the vmx recorded in .vagrant/.../id), referenced
+# by bare file name. Otherwise (first `up`, the VM dir does not exist yet) an absolute path under .vagrant/,
+# stable across later boots because the VM dir never gains the file.
+NFS_MACHINE_DIR = File.join(__dir__, ".vagrant/machines/master-1/vmware_desktop")
+NFS_VM_DIR = begin
+  id_file = File.join(NFS_MACHINE_DIR, "id")
+  File.exist?(id_file) ? File.dirname(File.read(id_file).strip) : nil
+rescue StandardError
+  nil
+end
+NFS_VMDK_IN_VMDIR = !NFS_VM_DIR.nil? && File.exist?(File.join(NFS_VM_DIR, NFS_VMDK_NAME))
+NFS_VMDK_ABS = File.join(__dir__, ".vagrant/narwhal-nfs", NFS_VMDK_NAME)
+NFS_VMDK_VMX = NFS_VMDK_IN_VMDIR ? NFS_VMDK_NAME : NFS_VMDK_ABS
+# D-NFS-VMDK-GUARD: NARWHAL_NFS_DISK_GB=0 on a machine that already has the disk would boot without it and
+# export the stale root-disk copy of the PVs. Marker: the vmdk in the VM dir or the absolute path, nfs-data*
+# in the machine dir, or the name in disk_meta (config.vm.disk era). The second variable is a deliberate,
+# separate act (e.g. the data is already gone).
+NFS_DISK_RECORDED = NFS_VMDK_IN_VMDIR || File.exist?(NFS_VMDK_ABS) ||
+                    Dir.glob(File.join(NFS_MACHINE_DIR, "disk_meta")).any? { |f| File.read(f).include?("nfs-data") } ||
+                    !Dir.glob(File.join(NFS_MACHINE_DIR, "*/nfs-data*")).empty?
 if NFS_DISK_GB == 0 && NFS_DISK_RECORDED && ENV["NARWHAL_NFS_DISK_ALLOW_DELETE"] != "yes-delete-the-nfs-disk"
-  abort "REFUSING: NARWHAL_NFS_DISK_GB=0 would make vagrant-vmware-desktop DELETE master-1's nfs-data disk (all PVs live there). " \
-        "Keep NFS_DISK_GB > 0. Only if the data is already gone: NARWHAL_NFS_DISK_ALLOW_DELETE=yes-delete-the-nfs-disk."
+  abort "REFUSING: NARWHAL_NFS_DISK_GB=0 but master-1 already has the NFS data disk (#{NFS_VMDK_NAME}); booting without it would " \
+        "export the stale root-disk copy of every PV. Unset NARWHAL_NFS_DISK_GB. Only if the data is already gone: " \
+        "NARWHAL_NFS_DISK_ALLOW_DELETE=yes-delete-the-nfs-disk."
 end
 # "auto": 01-nfs-server.sh picks the single blank non-OS disk (no /dev/sdb guessing; fstab uses the UUID).
 NFS_DATA_DEVICE = NFS_DISK_GB > 0 ? "auto" : ""
@@ -220,18 +242,6 @@ Vagrant.configure("2") do |config|
       master.vm.hostname = "#{CLUSTER_NAME}-master-#{i}"
       master.vm.network "private_network", ip: master_ip
 
-      # D-NFS-VMDK: second disk for the NFS export, master-1 only (the NFS server). Core Vagrant disk
-      # config; the vmware_desktop plugin (>= 3.0, tested 3.0.5) writes a growable vmdk plus the vmx
-      # entry, VirtualBox a vdi. Attached on the next `vagrant up` of an existing VM, which must be
-      # powered off first (docs/vagrant/operations.md section 15).
-      if i == 1 && NFS_DISK_GB > 0
-        # NVMe bus to match the box's OS disk (nvme0); the plugin default is scsi (lsilogic), and
-        # scsi0.present is FALSE on arm64 Fusion. Option name from vagrant-vmware-desktop 3.0.5
-        # cap/disk.rb (provider_config[:vmware_desktop][:bus_type], Vagrant `vmware_desktop__bus_type`).
-        # NOT yet verified on a real VM: first proven during the owner-run migration (operations.md 15).
-        master.vm.disk :disk, size: "#{NFS_DISK_GB}GB", name: "nfs-data", vmware_desktop__bus_type: "nvme"
-      end
-
       master.vm.provider "virtualbox" do |vb|
         vb.name = "#{CLUSTER_NAME}-master-#{i}"
         vb.cpus = MASTER_CPUS
@@ -244,6 +254,45 @@ Vagrant.configure("2") do |config|
         vmware.vmx["numvcpus"] = MASTER_CPUS
         vmware.vmx["memsize"] = MASTER_MEMORY
         vmware.linked_clone = true
+        # D-NFS-VMDK-VMX: second disk for the NFS export, master-1 only (the NFS server); see the constants above.
+        # Attach is the vmx keys below; the vmdk itself is created by the trigger after this block.
+        if i == 1 && NFS_DISK_GB > 0
+          vmware.vmx["nvme0:1.present"] = "TRUE"
+          vmware.vmx["nvme0:1.fileName"] = NFS_VMDK_VMX
+        end
+      end
+
+      if i == 1 && NFS_DISK_GB > 0
+        # VirtualBox keeps core Vagrant disk config (vdi). NOT verified (no VirtualBox host); vmware does not use it.
+        master.vm.provider "virtualbox" do |_vb, override|
+          override.vm.disk :disk, size: "#{NFS_DISK_GB}GB", name: "nfs-data"
+        end
+
+        # Create the vmdk before the VM powers on (up and reload both boot it). Idempotent: an existing file is
+        # never touched. Runs on the host; ruby block so it needs no shell quoting and works per provider.
+        master.trigger.before [:up, :reload] do |trigger|
+          trigger.name = "NFS data vmdk"
+          trigger.ruby do |_env, machine|
+            next unless machine.provider_name == :vmware_desktop
+            target = NFS_VMDK_IN_VMDIR ? File.join(NFS_VM_DIR, NFS_VMDK_NAME) : NFS_VMDK_ABS
+            next if File.exist?(target)
+            tool = ["/Applications/VMware Fusion.app/Contents/Library/vmware-vdiskmanager"].find { |t| File.executable?(t) } ||
+                   "vmware-vdiskmanager"
+            FileUtils.mkdir_p(File.dirname(target))
+            machine.ui.info("Creating #{NFS_DISK_GB}GB growable NFS data disk #{target}")
+            ok = system(tool, "-c", "-s", "#{NFS_DISK_GB}GB", "-a", "lsilogic", "-t", "0", target)
+            abort "vmware-vdiskmanager failed (#{tool}); cannot create #{target}" unless ok
+          end
+        end
+
+        # The absolute-path vmdk is outside the VM dir, so destroy would otherwise leave it behind.
+        master.trigger.after :destroy do |trigger|
+          trigger.name = "NFS data vmdk cleanup"
+          trigger.ruby do |_env, machine|
+            next unless machine.provider_name == :vmware_desktop
+            FileUtils.rm_rf(File.dirname(NFS_VMDK_ABS))
+          end
+        end
       end
 
       # Common provisioning (all masters)

@@ -61,12 +61,14 @@ Velero backups, VM disk growth). Several changes need an operator action on an e
   when a pod is scheduled. Delete `tempo-0`, `loki-0` and the Prometheus pod one at a time and check
   placement with `kubectl -n monitoring get pod -o wide`. Tempo and Loki run without persistence, so
   un-flushed data is lost, as in an OOM restart.
-- **Re-run `08-5-registry.sh` and `11-3-keycloak-clients.sh` on an existing cluster.** `08-5` creates the
+- **Re-run `08-5-registry.sh`, `11-2-keycloak-config.sh` and `11-3-keycloak-clients.sh` on an existing
+  cluster.** `08-5` creates the
   Harbor robot account and the retention and GC settings the Trivy DB refresh uses (#603). `11-3`
   generates the Velero UI JWT signing key (#555) and binds the `cluster-admin`-only login flow to the
-  `velero-ui` client (#599).
+  `velero-ui` client (#599). `11-2` sets `loginTheme` and `adminTheme` to `narwhal` on the `narwhal` and
+  `master` realms, which the admin console branding needs (#572).
 - **Re-push Gitea directories that were mirrored with the old script (#578).** Before this release,
-  `push-to-gitea.sh <dir>` nested an existing directory (`keycloak-theme/narwhal/narwhal/...`) and
+  `push-to-gitea.sh <dir>` nested an existing directory (`<dir>/narwhal/narwhal/...`) and
   never propagated deletions. Running it again for that path now replaces the Gitea copy exactly.
 
 ### Added
@@ -153,7 +155,12 @@ Velero backups, VM disk growth). Several changes need an operator action on an e
   only an older `falco` or `headlamp` chart passed, and a local `up.sh` failed in
   `14-gitops-bootstrap` after about 40 minutes. It now stops before any `vagrant up` and names each
   missing `<chart>-<version>.tgz`.
-- **Keycloak login theme unified with the portal, branded admin console (#572).**
+- **Keycloak login theme unified with the portal, branded admin console (#572).** The login theme is now a
+  skin over `keycloak.v2` that copies the portal tokens and ships Pretendard (OFL licence), and the admin
+  console gets the same branding. The theme source moved into the `narwhal-platform` chart
+  (`gitops/charts/narwhal-platform/keycloak-theme`) and renders as two ConfigMaps with a checksum
+  annotation, so any theme change rolls Keycloak; `gitops/resources/keycloak-theme` was removed. R306
+  checks that the ConfigMap keys match what the Keycloak CR mounts.
 - **The `dev` namespace is under GitOps (D-DEV-OWNER, #534).** The new Application `dev-namespace`
   applies `dev-namespace.yaml` (mesh opt-out, `dev-quota`, `dev-limits`, RBAC); live, `dev` had no
   label, quota or limits. R301 checks ownership and sync-wave order.

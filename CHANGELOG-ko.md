@@ -57,11 +57,13 @@
   적용된다. `tempo-0`, `loki-0`, Prometheus 파드를 한 번에 하나씩 삭제하고 `kubectl -n monitoring get pod
   -o wide`로 배치를 확인한다. Tempo와 Loki는 영속 저장소 없이 돌므로 flush되지 않은 데이터는 OOM 재시작과
   마찬가지로 사라진다.
-- **기존 클러스터에서 `08-5-registry.sh`와 `11-3-keycloak-clients.sh`를 다시 실행.** `08-5`는 Trivy DB 갱신이
+- **기존 클러스터에서 `08-5-registry.sh`, `11-2-keycloak-config.sh`, `11-3-keycloak-clients.sh`를 다시
+  실행.** `08-5`는 Trivy DB 갱신이
   쓰는 Harbor robot 계정과 보존·GC 설정을 만든다(#603). `11-3`은 Velero UI JWT 서명 키를 생성하고(#555)
-  `cluster-admin` 전용 로그인 흐름을 `velero-ui` 클라이언트에 연결한다(#599).
+  `cluster-admin` 전용 로그인 흐름을 `velero-ui` 클라이언트에 연결한다(#599). `11-2`는 `narwhal`과 `master`
+  realm의 `loginTheme`·`adminTheme`을 `narwhal`로 설정하며, 관리 콘솔 브랜딩에 필요하다(#572).
 - **예전 스크립트로 미러링된 Gitea 디렉터리를 다시 push (#578).** 이 릴리스 이전의
-  `push-to-gitea.sh <dir>`은 이미 있는 디렉터리를 중첩시키고(`keycloak-theme/narwhal/narwhal/...`) 삭제를
+  `push-to-gitea.sh <dir>`은 이미 있는 디렉터리를 중첩시키고(`<dir>/narwhal/narwhal/...`) 삭제를
   전파하지 않았다. 해당 경로에 대해 다시 실행하면 이제 Gitea 사본이 정확히 교체된다.
 
 ### 추가
@@ -137,7 +139,12 @@
 - **`check-bundle.sh`가 정확한 차트 버전을 요구 (D-BUNDLE-PIN-VERSION, #528).** 예전 `falco`나 `headlamp`
   차트만 있는 번들이 통과해 로컬 `up.sh`가 약 40분 뒤 `14-gitops-bootstrap`에서 실패했다. 이제 `vagrant up`
   이전에 멈추고 빠진 `<chart>-<version>.tgz`를 하나씩 알려 준다.
-- **Keycloak 로그인 테마를 포털과 통일, 관리 콘솔 브랜딩 (#572).**
+- **Keycloak 로그인 테마를 포털과 통일, 관리 콘솔 브랜딩 (#572).** 로그인 테마는 이제 `keycloak.v2` 위의
+  스킨으로 포털 토큰을 그대로 가져오고 Pretendard(OFL 라이선스)를 포함하며, 관리 콘솔에도 같은 브랜딩이
+  적용된다. 테마 소스는 `narwhal-platform` 차트(`gitops/charts/narwhal-platform/keycloak-theme`)로 옮겨져
+  ConfigMap 두 개와 체크섬 어노테이션으로 렌더링되므로 테마가 바뀌면 Keycloak이 롤링된다.
+  `gitops/resources/keycloak-theme`은 제거했다. R306은 ConfigMap 키가 Keycloak CR이 마운트하는 키와
+  일치하는지 검사한다.
 - **`dev` 네임스페이스가 GitOps 관리 아래로 (D-DEV-OWNER, #534).** 새 Application `dev-namespace`가
   `dev-namespace.yaml`(메시 제외, `dev-quota`, `dev-limits`, RBAC)을 적용한다. 라이브의 `dev`에는 라벨, 쿼터,
   limits가 없었다. R301이 소유권과 sync-wave 순서를 검사한다.
@@ -936,6 +943,7 @@ Vagrant (arm64) 및 Kakao Cloud (amd64) 환경 모두에서 에어갭이 "이미
 - DNS HA: 모든 master 노드에 dnsmasq, CoreDNS forward 설정
 
 ### 변경
+
 - 3 CNPG 클러스터 → 통합 `narwhal-db` (HA failover, ExternalName 서비스)
 - 개별 스크립트 → kube-ready-box 기반 공통 스크립트 분리
 - 토폴로지: 단일 노드 → 3m+3w (Master NoSchedule, Worker에서 플랫폼 앱 실행)

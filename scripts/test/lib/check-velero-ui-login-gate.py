@@ -13,6 +13,7 @@ from pathlib import Path
 
 SCRIPT = Path("scripts/cluster/11-3-keycloak-clients.sh")
 DOC = Path("docs/common/app-sso-permission-matrix.md")
+SSO = Path("scripts/test/test-sso.sh")
 
 
 def block(text):
@@ -24,7 +25,23 @@ def block(text):
     return text[start:end if end != -1 else len(text)]
 
 
-def check(text, doc):
+def check_sso(sso):
+    """Live suite: non-admins must be denied on the Keycloak Deny access page; a session for them is a FAIL."""
+    errors = []
+    if "KC_LOGIN_DENIED" not in sso or "restricted to the cluster-admin group" not in sso:
+        errors.append("test-sso.sh does not positively detect the Keycloak Deny access page")
+    if '[ -z "${loc}" ] && grep -q' not in sso:
+        errors.append("test-sso.sh denial detection must require no redirect AND the deny message")
+    if not re.search(r'elif \[ -n "\$\{VU_TOKEN\}" \]; then\n\s+fail "velero-ui: \$\{vu_user\} obtained a velero-ui session', sso):
+        errors.append("test-sso.sh must FAIL a non-admin that obtains a velero-ui session")
+    if not re.search(r'login denied by Keycloak[^\n]*\n\s+continue', sso):
+        errors.append("test-sso.sh must PASS a denied non-admin and skip the in-app checks for it")
+    if not re.search(r'fail "velero-ui: .*login failed but not with the Keycloak access-denied page[^\n]*\n\s+continue', sso):
+        errors.append("test-sso.sh must FAIL (not pass) an undetected login failure")
+    return errors
+
+
+def check(text, doc, sso=""):
     b = block(text)
     if b is None:
         return ["11-3 lacks the D-VELERO-UI-LOGIN-563 section"]
@@ -71,6 +88,7 @@ def check(text, doc):
     row = next((l for l in doc.splitlines() if l.startswith("| Velero UI |")), "")
     if "D-VELERO-UI-LOGIN-563" not in row or "velero-ui-browser" not in row:
         errors.append("permission matrix Velero UI row does not record D-VELERO-UI-LOGIN-563 and the velero-ui-browser flow")
+    errors += check_sso(sso)
     return sorted(set(errors))
 
 
@@ -104,23 +122,41 @@ def mutate(name, text):
     raise KeyError(name)
 
 
+def mutate_sso(name, sso):
+    if name == "sso: denial not detected":
+        return sso.replace("KC_LOGIN_DENIED", "KC_X")
+    if name == "sso: any failure counts as denied":
+        return sso.replace('[ -z "${loc}" ] && grep -q', 'true || grep -q')
+    if name == "sso: session for non-admin passes":
+        return sso.replace('obtained a velero-ui session', 'obtained a velero-ui session (ok)').replace('elif [ -n "${VU_TOKEN}" ]; then\n        fail', 'elif [ -n "${VU_TOKEN}" ]; then\n        pass')
+    if name == "sso: undetected failure passes":
+        return sso.replace('fail "velero-ui: ${vu_user} login failed but not', 'pass "velero-ui: ${vu_user} login failed but not')
+    raise KeyError(name)
+
+
 MUTATIONS = ["no negate", "deny removed", "gate becomes a cookie alternative", "role not mapped to group",
              "wrong role in condition", "flow not bound", "realm browser flow rebound", "flow created unconditionally",
-             "role created unconditionally", "half-built flow not rebuilt", "gate before auth", "OTP rule dropped"]
+             "role created unconditionally", "half-built flow not rebuilt", "gate before auth", "OTP rule dropped",
+             "sso: denial not detected", "sso: any failure counts as denied", "sso: session for non-admin passes",
+             "sso: undetected failure passes"]
 
 
 def main():
-    text, doc = SCRIPT.read_text(), DOC.read_text()
-    errors = check(text, doc)
+    text, doc, sso = SCRIPT.read_text(), DOC.read_text(), SSO.read_text()
+    errors = check(text, doc, sso)
     if errors:
         print("\n".join(errors))
         return 1
     if "--mutation-verify" in sys.argv:
         for m in MUTATIONS:
-            if not check(mutate(m, text), doc):
+            if m.startswith("sso:"):
+                bad = check(text, doc, mutate_sso(m, sso))
+            else:
+                bad = check(mutate(m, text), doc, sso)
+            if not bad:
                 print(f"FAIL: mutation not rejected: {m}")
                 return 1
-        if not check(text, doc.replace("D-VELERO-UI-LOGIN-563", "")):
+        if not check(text, doc.replace("D-VELERO-UI-LOGIN-563", ""), sso):
             print("FAIL: mutation not rejected: matrix without decision id")
             return 1
         print(f"PASS: {len(MUTATIONS) + 1} mutations rejected")

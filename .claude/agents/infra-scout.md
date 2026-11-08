@@ -30,7 +30,7 @@ Always verify when researching new components/versions:
 4. K8s 1.35 compatibility
 5. Breaking changes from previous version
 6. Dependencies (CRD, Operator, DB, etc.)
-7. Resource requirements (must fit Worker 6GB environment)
+7. Resource requirements (must fit Worker 8GB environment)
 8. Alternative images (if official image is AMD64 only)
 
 ## Output Format

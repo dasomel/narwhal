@@ -3385,6 +3385,9 @@ PYEOF'
   # 2026-11-06 (#563): velero-ui 0.10.1 endpoints with no upstream policy check, reachable by any logged-in user.
   check R319 "velero-ui gateway: DELETE /api/settings/velero/plugins/:name (unused upstream stub) is closed for everyone (case-insensitive regex, slash variants, priority 10), POST bulk download rule kept, and no rule closes the paths the UI needs (/api/stats*, /api/form/*, /api/settings/velero/server|ui|plugins, /api/config); permission matrix records the decision; 9 mutations caught (D-VELERO-UI-563)" \
     python3 scripts/test/lib/check-velero-ui-endpoints.py --mutation-verify
+  # 2026-11-08 (D-WORKER-MEMORY): workers 6GB -> 8GB after the 2026-11-06 node OOMs at ~5.3GiB allocatable.
+  check R323 "worker VM memory is 8GB everywhere: Vagrantfile WORKER_MEMORY=8192 (MASTER_MEMORY stays 6144), README/README-ko config, VM table and 42GB RAM requirement, architecture.md, operations.md, troubleshooting.md, SessionStart hook and agent text; no live doc says worker 6GB; the apply procedure (cordon/drain, halt + up --no-provision, uncordon, CNPG required anti-affinity #590) is documented; 9 mutations caught (D-WORKER-MEMORY)" \
+    python3 scripts/test/lib/check-worker-memory.py --mutation-verify
 }
 
 #=========================================

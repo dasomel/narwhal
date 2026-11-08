@@ -3385,6 +3385,9 @@ PYEOF'
   # 2026-11-06 (#563): velero-ui 0.10.1 endpoints with no upstream policy check, reachable by any logged-in user.
   check R319 "velero-ui gateway: DELETE /api/settings/velero/plugins/:name (unused upstream stub) is closed for everyone (case-insensitive regex, slash variants, priority 10), POST bulk download rule kept, and no rule closes the paths the UI needs (/api/stats*, /api/form/*, /api/settings/velero/server|ui|plugins, /api/config); permission matrix records the decision; 9 mutations caught (D-VELERO-UI-563)" \
     python3 scripts/test/lib/check-velero-ui-endpoints.py --mutation-verify
+  # 2026-11-08 (#573): the Keycloak master realm ran on the operator's temporary bootstrap admin (temp-admin).
+  check R321 "Keycloak master realm permanent admin: 11-1 creates platform-admin with only the master role admin, keeps its Secret iam/keycloak-admin (created only when absent, never echoed), deletes temp-admin only after login plus a master-realm admin API call succeeded and never on a name clash, is critical AND in the Phase 2 execution loop between 11 and 11-2, never puts the password on argv (stdin manifest, KC_CLI_PASSWORD via stdin), and every kcadm consumer prefers keycloak-admin; 21 mutations caught (D-KC-ADMIN-573)" \
+    python3 scripts/test/lib/check-keycloak-permanent-admin.py --mutation-verify
   # 2026-11-08 (D-WORKER-MEMORY): workers 6GB -> 8GB after the 2026-11-06 node OOMs at ~5.3GiB allocatable.
   check R323 "worker VM memory is 8GB everywhere: Vagrantfile WORKER_MEMORY=8192 (MASTER_MEMORY stays 6144), README/README-ko config, VM table and 42GB RAM requirement, architecture.md, operations.md, troubleshooting.md, SessionStart hook and agent text; no live doc says worker 6GB; the apply procedure (cordon/drain, halt + up --no-provision, uncordon, CNPG required anti-affinity #590) is documented; 9 mutations caught (D-WORKER-MEMORY)" \
     python3 scripts/test/lib/check-worker-memory.py --mutation-verify

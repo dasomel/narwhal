@@ -532,7 +532,7 @@ vagrant ssh master-1 -c "kubectl get pods -A -o wide | grep worker-3"
 
 - Master CPU: 2 cores, Memory: 4GB (control-plane only, NoSchedule taint)
 - Worker CPU: 2 cores (Vagrantfile에서 조정 가능)
-- Worker Memory: 6GB (Vagrantfile에서 조정 가능)
+- Worker Memory: 8GB (Vagrantfile `WORKER_MEMORY`에서 조정 가능, 2026-11-08 전에는 6GB. 기존 클러스터 적용은 아래 "Worker 메모리 8GB 적용")
 
 ---
 
@@ -1002,6 +1002,24 @@ vmdk를 줄이는 방법은 없고, 노드를 지우고 다시 만드는 것이 
 2. **drain.** `kubectl cordon <node>` 후 `kubectl drain <node> --ignore-daemonsets --delete-emptydir-data`. CNPG 인스턴스와 etcd 정족수(master)에 영향이 없는지 먼저 본다. 마스터는 이 절차 대상이 아니다.
 3. **삭제와 재생성.** `vagrant destroy -f <vm>` 다음 `./scripts/up.sh`(맨 `vagrant up`은 Phase 2 경로가 아니다). 새 노드는 새 linked clone이므로 크기가 처음으로 돌아간다.
 4. **확인.** `kubectl get nodes`가 모두 Ready이고 cordon이 없으며, `scripts/ops/check-vm-disk.sh`에 경고가 없고, 1단계에서 복사한 데이터를 되돌렸는지 확인한다. 노드가 새로 만들어진 직후 한동안은 이미지 pull과 스캔 폭주로 쓰기가 크므로 `NodeDiskWriteRateHigh`가 잠시 울릴 수 있다.
+
+---
+
+## 13. Worker 메모리 8GB 적용 (D-WORKER-MEMORY)
+
+2026-11-08 결정으로 `WORKER_MEMORY`가 6144에서 8192로 올랐다(마스터는 6GB 유지). 새로 만드는 클러스터는 그대로 8GB다. 이미 떠 있는 클러스터는 VM의 `memsize`가 **VM이 시작될 때** 적용되므로, Vagrantfile만 바꾸고는 반영되지 않고 워커를 한 대씩 껐다 켜야 한다. 호스트 RAM은 VM 합계 42GB(마스터 3x6 + 워커 3x8)가 필요하다.
+
+**한 번에 한 대만 한다.** 다음 워커는 앞 워커가 Ready이고 CNPG가 정상일 때 시작한다.
+
+1. **사전 확인.** `kubectl get nodes`가 모두 Ready이고 `kubectl get cluster -A`의 CNPG 인스턴스가 모두 정상인지, 이 워커가 `narwhal.io/seaweedfs-volume=true` 노드이면 그 데이터는 `halt`로는 사라지지 않지만 드레인 동안 Velero 백업이 실패할 수 있으므로 백업 시각을 피한다.
+2. **cordon과 drain.** `kubectl cordon <worker>` 후 `kubectl drain <worker> --ignore-daemonsets --delete-emptydir-data`.
+3. **재시작.** `vagrant halt <worker> && vagrant up <worker> --no-provision`. `--no-provision`이 없으면 프로비저닝 스크립트가 다시 돈다.
+4. **uncordon.** `kubectl uncordon <worker>`.
+5. **확인.** `kubectl get node <worker> -o jsonpath='{.status.allocatable.memory}'`가 약 7.3GiB(이전 약 5.3GiB)이고, 노드가 Ready이며, 이 워커에 있던 Pod이 Running으로 돌아왔는지 본다. 그 뒤에 다음 워커로 간다.
+
+**CNPG required anti-affinity 주의(#590).** `narwhal-db`는 인스턴스 2개에 `podAntiAffinityType=required`(R313)라 두 인스턴스가 항상 서로 다른 워커에 있다. 비우려는 워커에 인스턴스가 있으면, 쫓겨난 인스턴스는 인스턴스가 없는 남은 한 워커로만 갈 수 있고, 그 워커에 requests 여유가 없으면 **Pending으로 남는다**. 그래서 (1) drain **전에** `kubectl -n database get cluster narwhal-db -o jsonpath='{.status.currentPrimary}'`와 Pod의 노드를 보고, 그 워커에 primary가 있으면 먼저 `kubectl cnpg promote narwhal-db <다른 인스턴스> -n database`로 switchover한다(건강한 primary가 drain으로 쫓겨나 재배치를 기다리는 일을 피한다). (2) 워커를 동시에 두 대 이상 내리지 않는다. (3) uncordon 뒤 `kubectl -n database get cluster narwhal-db`가 `Cluster in healthy state`이고 두 인스턴스가 Running인지 확인하고 다음 워커로 간다.
+
+롤백은 Vagrantfile을 6144로 되돌리고 같은 절차를 반복한다. 호스트 RAM이 모자라면 이 절차를 하지 말고 6144를 유지한다.
 
 ---
 

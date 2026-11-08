@@ -3388,6 +3388,9 @@ PYEOF'
   # 2026-11-08 (#563 owner decision): velero-ui login limited to the cluster-admin group via a client-bound Keycloak browser flow.
   check R320 "11-3 gates velero-ui login: client role velero-ui/login mapped to cluster-admin, client-only browser flow (REQUIRED cookie-or-password sub-flow, CONDITIONAL negated-role + Deny access gate as its sibling so an SSO cookie cannot skip it) bound via authenticationFlowBindingOverrides, rerun safe, realm browser flow untouched; permission matrix records it; 17 mutations caught, incl. the live-suite denial shape (D-VELERO-UI-LOGIN-563)" \
     python3 scripts/test/lib/check-velero-ui-login-gate.py --mutation-verify
+  # 2026-11-08 (D-WORKER-MEMORY): workers 6GB -> 8GB after the 2026-11-06 node OOMs at ~5.3GiB allocatable.
+  check R323 "worker VM memory is 8GB everywhere: Vagrantfile WORKER_MEMORY=8192 (MASTER_MEMORY stays 6144), README/README-ko config, VM table and 42GB RAM requirement, architecture.md, operations.md, troubleshooting.md, SessionStart hook and agent text; no live doc says worker 6GB; the apply procedure (cordon/drain, halt + up --no-provision, uncordon, CNPG required anti-affinity #590) is documented; 9 mutations caught (D-WORKER-MEMORY)" \
+    python3 scripts/test/lib/check-worker-memory.py --mutation-verify
 }
 
 #=========================================

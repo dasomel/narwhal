@@ -35,7 +35,7 @@ spec:
         # (about 2x observed idle: filer 93Mi, master 26Mi, volume 30Mi, s3 41Mi) make them
         # Burstable; the memory limit is a ceiling several times idle so upload spikes do not OOM
         # the pod itself (filer/s3 spike during uploads). No cpu limit (throttling stalls S3).
-        # Cost: ~0.4Gi of requested memory on a 5.3GiB-allocatable worker; the volume server is
+        # Cost: ~0.4Gi of requested memory on a worker (~5.3GiB allocatable at the former 6GB, ~7.3GiB at 8GB); the volume server is
         # pinned (D-sw-pin) so its node carries its request. Escape hatch: revert the `resources`
         # blocks (back to BestEffort). Keys verified against chart 4.34.0 values.yaml
         # (master/volume/filer/s3 `resources`).

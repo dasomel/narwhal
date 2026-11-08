@@ -662,6 +662,93 @@ kc_exec update "clients/${VELERO_UI_CLIENT_ID}" -r "${REALM}" \
   -s "redirectUris=[\"https://velero-ui.${DOMAIN}/apisix/callback\",\"https://velero-ui.${DOMAIN}/login\"]" 2>/dev/null \
   && echo "  velero-ui redirectUris: /apisix/callback + /login"
 
+# D-VELERO-UI-LOGIN-563 (owner 2026-11-08, #563): only cluster-admin members may LOG IN to velero-ui.
+# velero-ui 0.10.1 has no policy check on /api/stats, /api/form/* and /api/settings/velero/server|ui,
+# so any realm user with a session could call them. Keycloak 26 has no per-client group allowlist, so
+# the gate is a client-bound browser flow: the client role velero-ui/login is mapped to the
+# cluster-admin group, and the flow ends in "Condition - user role (negated) + Deny access".
+# The gate is a REQUIRED sibling of the cookie/forms alternatives, so an existing SSO cookie
+# session cannot skip it. Bound to velero-ui ONLY (authenticationFlowBindingOverrides.browser);
+# the realm browser flow, other clients, direct grant and service accounts are untouched.
+# Cost: a non-admin gets "Access denied" at login (and loses velero-ui, which showed them nothing
+# usable anyway); the flow has no IdP redirector (the realm has no IdPs) and keeps the default OTP rule.
+# Escape: kc update clients/<id> -s 'authenticationFlowBindingOverrides={}' (unbind), or remove the
+# velero-ui/login role from the cluster-admin group's mappings to deny everyone.
+VU_FLOW="velero-ui-browser"
+VU_ROLE="login"
+
+VU_EXISTING_ROLE=$(kc_exec get "clients/${VELERO_UI_CLIENT_ID}/roles" -r "${REALM}" 2>/dev/null \
+  | jq -r ".[] | select(.name==\"${VU_ROLE}\") | .name" || echo "")
+if [ -z "${VU_EXISTING_ROLE}" ]; then
+  kc_exec create "clients/${VELERO_UI_CLIENT_ID}/roles" -r "${REALM}" -s "name=${VU_ROLE}" \
+    -s "description=Allowed to log in to velero-ui (mapped to the cluster-admin group, D-VELERO-UI-LOGIN-563)"
+fi
+kc_exec add-roles -r "${REALM}" --gname cluster-admin --cclientid velero-ui --rolename "${VU_ROLE}"
+echo "  group 'cluster-admin' holds velero-ui/${VU_ROLE}"
+
+# Add an execution or a sub-flow to flow $1 with the given requirement; prints the new execution id.
+vu_add_execution() {
+  local parent="$1" kind="$2" name="$3" requirement="$4" exec_id
+  if [ "${kind}" = "flow" ]; then
+    kc_exec create "authentication/flows/${parent}/executions/flow" -r "${REALM}" \
+      -s "alias=${name}" -s type=basic-flow -s "description=${VU_FLOW} (D-VELERO-UI-LOGIN-563)" >/dev/null
+    exec_id=$(kc_exec get "authentication/flows/${parent}/executions" -r "${REALM}" \
+      | jq -r ".[] | select(.displayName==\"${name}\") | .id")
+  else
+    kc_exec create "authentication/flows/${parent}/executions/execution" -r "${REALM}" \
+      -s "provider=${name}" >/dev/null
+    exec_id=$(kc_exec get "authentication/flows/${parent}/executions" -r "${REALM}" \
+      | jq -r "[.[] | select(.providerId==\"${name}\")] | last | .id")
+  fi
+  kc_exec update "authentication/flows/${parent}/executions" -r "${REALM}" \
+    -b "{\"id\":\"${exec_id}\",\"requirement\":\"${requirement}\"}" >/dev/null
+  echo "${exec_id}"
+}
+
+# The flow is complete when its gate sub-flow has the role condition (with config) and Deny access.
+vu_flow_complete() {
+  local gate_json
+  gate_json=$(kc_exec get "authentication/flows/${VU_FLOW}-gate/executions" -r "${REALM}" 2>/dev/null || echo "[]")
+  echo "${gate_json}" | jq -e '
+    ([.[].providerId] | (index("conditional-user-role") != null) and (index("deny-access-authenticator") != null))
+    and ([.[] | select(.providerId=="conditional-user-role") | .authenticationConfig] | first != null)' >/dev/null 2>&1
+}
+
+VU_FLOW_ID=$(kc_exec get authentication/flows -r "${REALM}" 2>/dev/null \
+  | jq -r ".[] | select(.alias==\"${VU_FLOW}\") | .id" || echo "")
+if [ -n "${VU_FLOW_ID}" ] && ! vu_flow_complete; then
+  # half-built by an interrupted run: unbind, delete, rebuild
+  kc_exec update "clients/${VELERO_UI_CLIENT_ID}" -r "${REALM}" -s 'authenticationFlowBindingOverrides={}' >/dev/null
+  kc_exec delete "authentication/flows/${VU_FLOW_ID}" -r "${REALM}"
+  VU_FLOW_ID=""
+fi
+if [ -z "${VU_FLOW_ID}" ]; then
+  kc_exec create authentication/flows -r "${REALM}" -s "alias=${VU_FLOW}" -s providerId=basic-flow \
+    -s topLevel=true -s builtIn=false -s "description=velero-ui login restricted to cluster-admin (D-VELERO-UI-LOGIN-563)" >/dev/null
+  # REQUIRED auth sub-flow = the standard cookie-or-password alternatives
+  vu_add_execution "${VU_FLOW}" flow "${VU_FLOW}-auth" REQUIRED >/dev/null
+  vu_add_execution "${VU_FLOW}-auth" execution auth-cookie ALTERNATIVE >/dev/null
+  vu_add_execution "${VU_FLOW}-auth" flow "${VU_FLOW}-forms" ALTERNATIVE >/dev/null
+  vu_add_execution "${VU_FLOW}-forms" execution auth-username-password-form REQUIRED >/dev/null
+  vu_add_execution "${VU_FLOW}-forms" flow "${VU_FLOW}-otp" CONDITIONAL >/dev/null
+  vu_add_execution "${VU_FLOW}-otp" execution conditional-user-configured REQUIRED >/dev/null
+  vu_add_execution "${VU_FLOW}-otp" execution auth-otp-form REQUIRED >/dev/null
+  # CONDITIONAL gate: user lacks velero-ui/login -> Deny access
+  vu_add_execution "${VU_FLOW}" flow "${VU_FLOW}-gate" CONDITIONAL >/dev/null
+  VU_COND_ID=$(vu_add_execution "${VU_FLOW}-gate" execution conditional-user-role REQUIRED)
+  VU_DENY_ID=$(vu_add_execution "${VU_FLOW}-gate" execution deny-access-authenticator REQUIRED)
+  kc_exec create "authentication/executions/${VU_COND_ID}/config" -r "${REALM}" \
+    -s "alias=${VU_FLOW}-not-cluster-admin" -s "config.condUserRole=velero-ui.${VU_ROLE}" -s config.negate=true >/dev/null
+  kc_exec create "authentication/executions/${VU_DENY_ID}/config" -r "${REALM}" \
+    -s "alias=${VU_FLOW}-deny" -s "config.denyErrorMessage=Velero UI is restricted to the cluster-admin group." >/dev/null
+  VU_FLOW_ID=$(kc_exec get authentication/flows -r "${REALM}" \
+    | jq -r ".[] | select(.alias==\"${VU_FLOW}\") | .id")
+  echo "  authentication flow '${VU_FLOW}' created"
+fi
+kc_exec update "clients/${VELERO_UI_CLIENT_ID}" -r "${REALM}" \
+  -s "authenticationFlowBindingOverrides={\"browser\":\"${VU_FLOW_ID}\"}" >/dev/null
+echo "  velero-ui browser flow bound to '${VU_FLOW}' (login: cluster-admin only)"
+
 # D-VELERO-UI-JWT-KEY: velero-ui signs its session JWT with AUTH_SECRET_PASSPHRASE and falls back
 # to a public literal when it is unset, so anyone could mint a `manage all` token. The key is
 # generated once and kept on re-runs (a new key would log every session out); the deployment reads

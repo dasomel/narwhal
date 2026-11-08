@@ -3385,6 +3385,9 @@ PYEOF'
   # 2026-11-06 (#563): velero-ui 0.10.1 endpoints with no upstream policy check, reachable by any logged-in user.
   check R319 "velero-ui gateway: DELETE /api/settings/velero/plugins/:name (unused upstream stub) is closed for everyone (case-insensitive regex, slash variants, priority 10), POST bulk download rule kept, and no rule closes the paths the UI needs (/api/stats*, /api/form/*, /api/settings/velero/server|ui|plugins, /api/config); permission matrix records the decision; 9 mutations caught (D-VELERO-UI-563)" \
     python3 scripts/test/lib/check-velero-ui-endpoints.py --mutation-verify
+  # 2026-11-08 (#563 owner decision): velero-ui login limited to the cluster-admin group via a client-bound Keycloak browser flow.
+  check R320 "11-3 gates velero-ui login: client role velero-ui/login mapped to cluster-admin, client-only browser flow (REQUIRED cookie-or-password sub-flow, CONDITIONAL negated-role + Deny access gate as its sibling so an SSO cookie cannot skip it) bound via authenticationFlowBindingOverrides, rerun safe, realm browser flow untouched; permission matrix records it; 13 mutations caught (D-VELERO-UI-LOGIN-563)" \
+    python3 scripts/test/lib/check-velero-ui-login-gate.py --mutation-verify
 }
 
 #=========================================

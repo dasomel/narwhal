@@ -1,0 +1,58 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-velero-ui-login-cluster-admin-20261108",
+  "task": "Issue #563 owner decision: restrict login to the velero-ui Keycloak client to members of the cluster-admin group so other realm users get no velero-ui session and cannot reach its endpoints without an upstream policy check.",
+  "changeContext": {
+    "paths": [
+      ".agents/evals/traces/2026-11-velero-ui-login-cluster-admin.json",
+      "docs/common/app-sso-permission-matrix.md",
+      "docs/common/lessons-log.md",
+      "scripts/cluster/11-3-keycloak-clients.sh",
+      "scripts/test/lib/check-velero-ui-login-gate.py",
+      "scripts/test/regression-check-kakao.sh"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Change only the velero-ui client provisioning in 11-3 (client role, group mapping, client-bound browser flow). Deliberately left alone: the realm browser flow, every other client, direct grant and service accounts, the APISIX routes and gateway rules (#594), the app policy file, the live Keycloak (read-only kcadm get only), Gitea."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "Live read-only on context narwhal: realm browser flow is the built-in one, velero-ui has authenticationFlowBindingOverrides {} , no direct grant, no service account; authenticator providers include conditional-user-role and deny-access-authenticator but no group condition; the groups are cluster-admin, developer, viewer, guest.",
+      "evidence": [
+        "repo:scripts/cluster/11-3-keycloak-clients.sh",
+        "repo:docs/common/app-sso-permission-matrix.md"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "D-VELERO-UI-LOGIN-563: role velero-ui/login mapped to cluster-admin; flow velero-ui-browser (REQUIRED cookie-or-password sub-flow, CONDITIONAL negated-role + Deny access gate as its sibling so an SSO cookie cannot skip it) bound only to velero-ui; rerun safe."
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "Static: R320 parses 11-3 and the matrix row; 13 mutations (no negate, deny removed, gate inside the cookie alternatives, role mapped to another group, wrong role, flow unbound, realm browser flow rebound, unconditional create of flow or role, no rebuild, gate before auth, OTP dropped, matrix without id) are rejected. NOT covered: the kcadm sequence against a real Keycloak and a denied login of a non-admin.",
+      "evidence": [
+        "test:python3 scripts/test/lib/check-velero-ui-login-gate.py --mutation-verify -> PASS: 13 mutations rejected",
+        "repo:scripts/test/lib/check-velero-ui-login-gate.py"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "completion_claim",
+      "summary": "In the repository 11-3 provisions the cluster-admin-only login gate for velero-ui and R320 pins its structure. That a non-admin is actually denied and the admin still logs in is not demonstrated; it needs a live 11-3 run (owner-approved) and a login test with a non-admin user."
+    },
+    {
+      "id": "e6",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Complete for the repository scope; not applied to the live Keycloak, kcadm sequence unexercised."
+    }
+  ]
+}

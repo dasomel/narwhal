@@ -6,6 +6,7 @@ HOST_NETWORK_CIDR="${HOST_NETWORK_CIDR:-192.168.56.0/24}"
 POD_NETWORK_CIDR="${POD_NETWORK_CIDR:-10.244.0.0/16}"
 # Optional dedicated data device (Kakao: /dev/disk/by-id/virtio-<volume id[0:20]>, set by
 # scripts/cloud/provision-kakao.sh). Empty/unset keeps the share on the root filesystem.
+# "auto" (Vagrant, D-NFS-VMDK): resolved below to the one blank whole disk that is not the OS disk.
 NFS_DATA_DEVICE="${NFS_DATA_DEVICE:-}"
 
 echo "=== NFS Server Installation ==="
@@ -15,12 +16,41 @@ echo "Share Path: ${NFS_SHARE_PATH}"
 sudo apt-get update
 sudo apt-get install -y nfs-kernel-server quota quotatool
 
-# Dedicated XFS data volume (only when NFS_DATA_DEVICE is set; Vagrant leaves it unset).
+# Dedicated XFS data volume (only when NFS_DATA_DEVICE is set: Kakao by-id path, Vagrant "auto").
 # XFS project quota can only be enabled at the initial mount, so the export lives on its
 # own prjquota-mounted filesystem. D-NFS-VOL safety rules, in order of risk:
 #  - never mkfs a device that already carries a filesystem (data loss);
 #  - never mount over a non-empty share path: moving live data is a runbook
 #    (docs/runbooks/nfs-xfs-migration.md), not something a provisioning script may do.
+if [ "${NFS_DATA_DEVICE}" = "auto" ]; then
+  # D-NFS-VMDK: the second Vagrant disk has no stable by-id on VMware, so pick it by property
+  # instead of guessing /dev/sdb: a whole disk with no partitions, no mountpoint and either no
+  # filesystem or our own label (re-run before the mount came back). Zero or several candidates
+  # is an error, never a guess. Already-mounted share: reuse that device (idempotent re-run).
+  share_src=$(findmnt -rno SOURCE --mountpoint "${NFS_SHARE_PATH}" 2>/dev/null || true)
+  if [ -n "${share_src}" ]; then
+    NFS_DATA_DEVICE="${share_src}"
+  else
+    candidates=()
+    while read -r cand; do
+      [ -n "${cand}" ] || continue
+      [ "$(lsblk -nr -o NAME "${cand}" | wc -l)" -eq 1 ] || continue
+      [ -z "$(lsblk -nr -o MOUNTPOINT "${cand}" | tr -d '[:space:]')" ] || continue
+      cand_fs=$(sudo blkid -p -o value -s TYPE "${cand}" || true)
+      cand_label=$(sudo blkid -p -o value -s LABEL "${cand}" || true)
+      if [ -z "${cand_fs}" ] || { [ "${cand_fs}" = "xfs" ] && [ "${cand_label}" = "narwhal-nfs" ]; }; then
+        candidates+=("${cand}")
+      fi
+    done < <(lsblk -dnpr -o NAME,TYPE | awk '$2=="disk" {print $1}')
+    if [ "${#candidates[@]}" -ne 1 ]; then
+      echo "ERROR: NFS_DATA_DEVICE=auto found ${#candidates[@]} candidate disks (${candidates[*]:-none}), expected 1." >&2
+      echo "       Attach the NFS disk (Vagrantfile NFS_DISK_GB, docs/vagrant/operations.md section 15) or set an explicit device." >&2
+      exit 1
+    fi
+    NFS_DATA_DEVICE="${candidates[0]}"
+  fi
+fi
+
 if [ -n "${NFS_DATA_DEVICE}" ]; then
   echo "Dedicated NFS data device: ${NFS_DATA_DEVICE}"
   for _ in $(seq 1 60); do

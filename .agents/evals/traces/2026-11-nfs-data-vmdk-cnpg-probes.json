@@ -1,0 +1,66 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-nfs-data-vmdk-cnpg-probes-20261108",
+  "task": "etcd and all nfs-csi PVs shared master-1's one VMDK; an NFS write burst stalled etcd WAL fsync (>8s), the apiserver timed out and CNPG restarted and failed over. Put the NFS export on its own virtual disk, make CNPG tolerant of a stall (liveness, resources), and fix the CNPG monitoring target database that does not exist.",
+  "changeContext": {
+    "paths": [
+      ".agents/evals/traces/2026-11-nfs-data-vmdk-cnpg-probes.json",
+      "Vagrantfile",
+      "docs/common/lessons-log.md",
+      "docs/vagrant/operations.md",
+      "gitops/resources/narwhal-db.yaml",
+      "scripts/cluster/01-nfs-server.sh",
+      "scripts/cluster/07-cnpg.sh",
+      "scripts/test/lib/check-nfs-data-disk.py",
+      "scripts/test/regression-check-kakao.sh"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Change only: the Vagrantfile second disk for master-1 plus NFS_DATA_DEVICE=auto, its resolution in 01-nfs-server.sh, CNPG probes/resources/bootstrap database in narwhal-db.yaml and 07-cnpg.sh, the operations.md migration and host-load sections, R327. Deliberately left alone: the live cluster and VMs (read-only kubectl plus one server-side dry-run that persists nothing), failoverDelay, Postgres parameters, Kakao NFS volume path, the existing nfs-xfs-migration runbook, authentik-db-rw ExternalName Service, prometheus-alerts.yaml.",
+      "evidence": [
+        "repo:Vagrantfile",
+        "repo:scripts/cluster/01-nfs-server.sh"
+      ]
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "Read-only live checks 2026-11-08: narwhal-db spec.resources is {} (BestEffort); probes.liveness is the default (failureThreshold 3, period 10, isolationCheck 1000ms); psql -l lists gitea, harbor, keycloak, narwhal, postgres and no authentik, while spec.bootstrap.initdb.database is authentik and the instance log shows the cnpg_metrics_exporter failing to connect to database authentik. git log -S: gitops/resources/narwhal-db.yaml kept authentik from 94b72c37; a301deb1 changed the scripts only. The shared-VMDK incident facts (17 PVs, etcd fsync >8s) come from the incident report, not re-measured here.",
+      "evidence": [
+        "repo:gitops/resources/narwhal-db.yaml",
+        "repo:scripts/cluster/07-cnpg.sh"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "D-NFS-VMDK: config.vm.disk nfs-data on master-1 (vmware_desktop plugin 3.0.5 disk capability reads as growable vmdk, scsi bus) and NFS_DATA_DEVICE=auto, resolved to exactly one blank non-OS disk, fstab by UUID, existing refusal to mount over live data kept. D-CNPG-RESTART-AMP: probes.liveness 12 x 10s, timeout 10s, isolationCheck 5s, readiness default. D-CNPG-RESOURCES: requests 512Mi/250m, memory limit 1Gi, no CPU limit (CFS throttling would delay /healthz). D-CNPG-APPDB: bootstrap database/owner narwhal in narwhal-db.yaml so the default monitoring queries target an existing database. operations.md section 15 (owner-run migration incl. XFS project-ID restore) and 16 (host load)."
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "Static: R327 parses the Vagrantfile, 01-nfs-server.sh, the narwhal-db.yaml Cluster and the 07-cnpg.sh heredoc Cluster and rejects 17 single-defect mutations; ruby -c Vagrantfile; bash -n on both scripts; a server-side dry-run of the new Cluster manifest against the live CNPG webhook and CRD was accepted (nothing persisted). NOT covered: a real vagrant up with the second disk, the auto resolver on a real guest, the rsync migration and quota restore, the instance rolling restart, whether the longer liveness actually prevents a restart in a stall, any etcd fsync improvement.",
+      "evidence": [
+        "test:python3 scripts/test/lib/check-nfs-data-disk.py --mutation-verify -> PASS 17 mutations rejected",
+        "test:ruby -c Vagrantfile -> Syntax OK",
+        "repo:scripts/test/lib/check-nfs-data-disk.py"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "completion_claim",
+      "summary": "In the repository a fresh cluster gets a separate NFS disk and a stall-tolerant CNPG cluster whose monitoring target exists, pinned by R327, and the existing-cluster migration is documented as an owner-run runbook. Nothing is deployed: the live cluster still shares one VMDK, the bootstrap-database and probe changes reach it only after push-to-gitea and ArgoCD sync (which rolls both instances), and the same-host-SSD limit means the etcd benefit is unmeasured."
+    },
+    {
+      "id": "e6",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Complete for the repository scope; not deployed, migration not run, the quota-limit re-application after rsync is unverified."
+    }
+  ]
+}

@@ -165,13 +165,14 @@ spec:
     size: 20Gi
     storageClass: nfs-csi
 
+  # D-CNPG-RESOURCES: kept in sync with gitops/resources/narwhal-db.yaml (ArgoCD owns the live Cluster).
+  # No CPU limit: CFS throttling delays /healthz and turns a busy moment into a liveness failure.
   resources:
     requests:
       memory: "512Mi"
       cpu: "250m"
     limits:
       memory: "1Gi"
-      cpu: "1"
 
   # PostgreSQL tuning (optimized for 3-app unified workload)
   postgresql:
@@ -200,6 +201,18 @@ spec:
   # D-CNPG-MON (#600): enable PodMonitor kept in sync with gitops/resources/narwhal-db.yaml
   monitoring:
     enablePodMonitor: true
+
+  # D-CNPG-RESTART-AMP: tolerant liveness (~120s instead of ~30s), readiness stays default. Rationale,
+  # cost and escape hatch: gitops/resources/narwhal-db.yaml (kept in sync).
+  probes:
+    liveness:
+      periodSeconds: 10
+      timeoutSeconds: 10
+      failureThreshold: 12
+      isolationCheck:
+        enabled: true
+        connectionTimeout: 5000
+        requestTimeout: 5000
 
   backup:
     barmanObjectStore:

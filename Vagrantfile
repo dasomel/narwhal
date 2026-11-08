@@ -66,6 +66,18 @@ VIP_INTERFACE = "eth1"          # Private network interface
 #=========================================
 NFS_SERVER_IP = "#{MASTER_IP_BASE}0"  # NFS server runs on master-1
 NFS_SHARE_PATH = "/srv/nfs/k8s"      # NFS export path
+# D-NFS-VMDK (owner decision 2026-11-08): the NFS export lives on its OWN virtual disk, not on master-1's
+# root disk. 2026-11-08: all 17 nfs-csi PVs shared one VMDK with etcd, an NFS write burst pushed the etcd
+# WAL fsync past 8s, the apiserver timed out and CNPG restarted/failed over. Two VMDKs are two separate
+# I/O queues in the guest, but both files still sit on the same host SSD, so this reduces the coupling
+# (queue depth, fsync ordering inside one guest FS); it does not isolate host I/O.
+# The disk is a growable (sparse) vmdk/vdi: the host only allocates what is written, a ceiling not a
+# reservation. Escape hatch: NARWHAL_NFS_DISK_GB=0 keeps the export on the root disk (old layout).
+# 200 is a ceiling: the 17 PVs hold well under 100GB, and a vmdk never shrinks (operations.md section 12).
+NFS_DISK_GB = Integer(ENV.fetch("NARWHAL_NFS_DISK_GB", "200"), exception: false)
+abort "NARWHAL_NFS_DISK_GB must be an integer >= 0 (got #{ENV['NARWHAL_NFS_DISK_GB'].inspect})" unless NFS_DISK_GB && NFS_DISK_GB >= 0
+# "auto": 01-nfs-server.sh picks the single blank non-OS disk (no /dev/sdb guessing; fstab uses the UUID).
+NFS_DATA_DEVICE = NFS_DISK_GB > 0 ? "auto" : ""
 
 #=========================================
 # Resource Configuration
@@ -195,6 +207,14 @@ Vagrant.configure("2") do |config|
       master.vm.hostname = "#{CLUSTER_NAME}-master-#{i}"
       master.vm.network "private_network", ip: master_ip
 
+      # D-NFS-VMDK: second disk for the NFS export, master-1 only (the NFS server). Core Vagrant disk
+      # config; the vmware_desktop plugin (>= 3.0, tested 3.0.5) writes a growable vmdk plus the vmx
+      # entry, VirtualBox a vdi. Attached on the next `vagrant up` of an existing VM, which must be
+      # powered off first (docs/vagrant/operations.md section 15).
+      if i == 1 && NFS_DISK_GB > 0
+        master.vm.disk :disk, size: "#{NFS_DISK_GB}GB", name: "nfs-data"
+      end
+
       master.vm.provider "virtualbox" do |vb|
         vb.name = "#{CLUSTER_NAME}-master-#{i}"
         vb.cpus = MASTER_CPUS
@@ -244,6 +264,7 @@ Vagrant.configure("2") do |config|
         master.vm.provision "shell", path: "scripts/cluster/01-nfs-server.sh",
           env: {
             "NFS_SHARE_PATH" => NFS_SHARE_PATH,
+            "NFS_DATA_DEVICE" => NFS_DATA_DEVICE,
             "POD_NETWORK_CIDR" => POD_NETWORK_CIDR,
             "DOMAIN" => BASE_DOMAIN
           }

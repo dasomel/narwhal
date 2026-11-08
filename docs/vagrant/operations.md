@@ -1048,6 +1048,77 @@ kubectl --context narwhal -n database get cluster narwhal-db   # Cluster in heal
 
 ---
 
+## 15. NFS export 전용 디스크 (D-NFS-VMDK)
+
+2026-11-08 소유자 결정: NFS export(`/srv/nfs/k8s`)를 master-1의 루트 디스크가 아닌 **별도 가상 디스크**에 둔다. 사고(2026-11-08)에서 nfs-csi PV 17개가 etcd와 같은 VMDK를 공유했고, NFS 쓰기 폭주로 etcd WAL fsync가 8초를 넘겨 apiserver 타임아웃과 CNPG 재시작/failover가 났다. 디스크를 둘로 나눠도 두 VMDK 파일은 같은 호스트 SSD에 있으므로, 게스트 안의 I/O 큐와 파일시스템 fsync 순서 결합이 끊어질 뿐 호스트 I/O가 격리되는 것은 아니다. 이 효과는 아직 측정하지 않았다.
+
+### 새 클러스터
+
+`Vagrantfile`의 `NFS_DISK_GB`(기본 200, `NARWHAL_NFS_DISK_GB`로 변경, `0`이면 예전 배치)가 master-1에 `nfs-data` 디스크를 붙이고 `NFS_DATA_DEVICE=auto`를 `01-nfs-server.sh`에 넘긴다. `auto`는 파티션도 마운트도 없고 파일시스템이 없는(또는 라벨 `narwhal-nfs`인 XFS) 디스크가 **정확히 1개**일 때만 그 디스크를 쓰고, 0개나 2개 이상이면 추측하지 않고 실패한다. 디스크는 성장형(sparse)이라 200은 상한이지 예약이 아니다. 포맷은 XFS(`prjquota`), fstab은 UUID로 쓰므로 `/dev/sdX` 이름에 의존하지 않는다.
+
+### 기존 클러스터 이전 (소유자 실행 점검 작업)
+
+**소유자 승인과 점검 시간이 필요하다.** master-1은 etcd 멤버이자 모든 PV의 NFS 서버라서, 디스크를 붙이려면 VM을 끄는 동안 NFS를 쓰는 모든 워크로드가 멈춘다(VMware는 실행 중인 VM에 디스크를 붙일 수 없다). 예상 중단 시간은 복사할 데이터 양에 달렸고 측정하지 않았다. 데이터가 100GB 미만이라면 쓰기 중단부터 복구까지 30~60분 정도로 추정한다(`sudo du -sx /srv/nfs/k8s`로 먼저 크기를 확인하고, 크면 늘려 잡는다). 쓰기를 모두 멈춘 뒤 한 번만 복사하므로 사전 online 복사 단계는 없다.
+
+**원칙: 이 절차는 `docs/runbooks/nfs-xfs-migration.md`의 3~7단계(쓰기 중단 순서, hostPath 사전 확인, 복구 순서, 검증, 롤백)와 같다.** 같은 순서를 두 곳에 복제하지 않으므로, 아래는 이 변경에 고유한 부분(디스크 붙이기)만 적고 나머지는 그 문서를 따른다.
+
+1. **사전 확인.** 섹션 16(호스트 부하)을 지킨다. `kubectl get nodes`가 모두 Ready이고, master-2/3의 etcd가 건강한지(`kubectl -n kube-system get pods -l component=etcd`) 본다. master-1이 꺼져도 etcd는 3개 중 2개로 정족수를 유지하고 VIP(kube-vip)가 apiserver를 다른 마스터로 넘긴다. 이 중 하나라도 불안하면 하지 않는다. `scripts/ops/check-vm-disk.sh`로 호스트 여유 공간을 본다.
+2. **백업(쓰기 중단 전, 모두 클러스터 밖에 보관).**
+   - Velero: 섹션 9의 수동 백업을 만들고 `Completed`를 확인한다. CNPG pgdata는 Velero fs-backup에서 제외돼 있으므로(D-pvb-exclude) 별도로 논리 덤프를 받는다: `kubectl -n database exec <primary> -c postgres -- pg_dumpall -U postgres | gzip > narwhal-db-$(date +%F).sql.gz`(호스트에서 실행하고 비밀번호는 출력하지 않는다).
+   - etcd 스냅샷(master-1의 etcd Pod에서):
+     ```bash
+     kubectl -n kube-system exec etcd-narwhal-master-1 -- etcdctl --endpoints=https://127.0.0.1:2379 \
+       --cacert=/etc/kubernetes/pki/etcd/ca.crt --cert=/etc/kubernetes/pki/etcd/server.crt \
+       --key=/etc/kubernetes/pki/etcd/server.key snapshot save /var/lib/etcd/snapshot-pre-nfs-disk.db
+     ```
+     그 파일을 호스트로 복사해 둔다(`vagrant ssh master-1 -c 'sudo cat /var/lib/etcd/snapshot-pre-nfs-disk.db' > ...`).
+3. **쓰기 중단.** `nfs-xfs-migration.md` 3단계를 그대로 한다(hostPath 사전 확인, ArgoCD autosync 중지, 정해진 순서로 scale down, CNPG hibernate, 클라이언트 0 확인). 마지막에 master-1에서 `sudo systemctl stop nfs-server`.
+4. **디스크 붙이기.** 호스트에서 최신 `Vagrantfile`을 받은 뒤:
+   ```bash
+   vagrant halt master-1
+   vagrant up master-1 --no-provision    # Vagrantfile의 config.vm.disk가 nfs-data vmdk를 만들어 vmx에 붙인다
+   vagrant ssh master-1 -c 'lsblk -dpo NAME,SIZE,TYPE,FSTYPE,LABEL'   # 새 빈 디스크(FSTYPE 비어 있음)를 확인
+   ```
+   `--no-provision`을 빼면 프로비저닝 스크립트가 다시 돈다. 노드가 Ready로 돌아오고 etcd 멤버가 복귀할 때까지 기다린다(`kubectl get nodes`, etcd 로그).
+5. **포맷과 복사(master-1).** `DEV`는 4단계에서 확인한 빈 디스크다. 이미 파일시스템이 있으면 중단한다.
+   ```bash
+   DEV=/dev/sdb      # 4단계 lsblk 결과로 정한다. 추측하지 않는다.
+   test -z "$(sudo blkid -p -o value -s TYPE "$DEV")" || { echo "filesystem exists, stop"; false; }
+   sudo mkfs.xfs -L narwhal-nfs "$DEV"
+   sudo mkdir -p /mnt/nfs-new && sudo mount -o prjquota "$DEV" /mnt/nfs-new
+   sudo rsync -aHAX --numeric-ids --sparse --info=progress2 /srv/nfs/k8s/ /mnt/nfs-new/
+   sudo rsync -aHAXn --numeric-ids --sparse --delete --itemize-changes /srv/nfs/k8s/ /mnt/nfs-new/   # 아무것도 출력하지 않아야 함
+   sudo umount /mnt/nfs-new
+   ```
+6. **전환.** `nfs-xfs-migration.md` 4단계의 마운트 블록(UUID fstab 줄, `RequiresMountsFor`, `mount /srv/nfs/k8s`)을 그대로 실행하고 `findmnt -no FSTYPE,OPTIONS /srv/nfs/k8s`가 `xfs`와 `prjquota`를 보이는지 확인한다. 예전 루트 디스크의 데이터는 마운트 아래에 롤백용으로 남는다.
+7. **프로젝트 쿼터 복원.** `nfs-quota-agent`는 프로젝트 쿼터(`prjquota`)로 PV 용량을 강제한다. rsync는 XFS 프로젝트 ID와 쿼터 한도를 복사하지 않는다(ID는 inode, 한도는 파일시스템의 쿼터 메타데이터에 있다). `/etc/projects`와 `/etc/projid`는 루트 디스크에 남아 있으므로 ID는 다시 입히고, 한도는 agent가 다시 적용하는지 확인한다.
+   ```bash
+   sudo xfs_quota -x -c 'project -s' /srv/nfs/k8s      # /etc/projects의 경로에 /etc/projid의 ID를 다시 설정
+   sudo systemctl start nfs-server && sudo exportfs -v
+   ```
+   agent를 되살린 뒤 `sudo xfs_quota -x -c 'report -p -h' /srv/nfs/k8s`에서 PV마다 한도가 보여야 한다. 한도가 비어 있으면 agent Pod를 재시작하고 로그가 applied인지 본다. 이 재적용 동작은 문서와 스크립트만 읽고 쓴 것이며 실제로 검증하지 않았다. 그래서 8단계 검증에서 쿼터 초과 쓰기 테스트(`nfs-xfs-migration.md` 6단계)를 반드시 한다.
+8. **복구와 검증.** `nfs-xfs-migration.md` 5, 6단계의 역순 복구와 검증을 한다. 추가로 모든 PV가 실제로 마운트되는지(`kubectl get pv`가 전부 Bound이고 NFS를 쓰는 Pod가 Running), 그리고 etcd 효과를 본다.
+   ```promql
+   histogram_quantile(0.99, sum by (le, instance) (rate(etcd_disk_wal_fsync_duration_seconds_bucket[5m])))
+   ```
+   부하 시점의 p99를 이전 값과 비교한다. 개선이 없으면 병목은 호스트 SSD다.
+9. **롤백.** `nfs-xfs-migration.md` 7단계. 디스크를 떼는 것은 필요 없고, fstab 줄과 `RequiresMountsFor` drop-in을 되돌려 루트의 예전 복사본을 쓰면 된다(전환 뒤 쓰인 데이터는 먼저 되돌려 복사). 예전 복사본은 며칠 검증한 뒤에 지운다. 루트 vmdk는 줄어들지 않으므로(섹션 12) 지워도 호스트 공간은 돌아오지 않는다.
+
+**이전하지 않으면.** 새 `Vagrantfile`을 받은 상태에서 master-1을 `halt`/`up`하면 빈 디스크가 붙기만 하고(포맷과 마운트는 하지 않음) NFS는 예전 루트 디스크에서 계속 나간다. `01-nfs-server.sh`를 `--provision`으로 다시 돌리면 `auto`가 빈 디스크를 찾았더라도 `/srv/nfs/k8s`가 비어 있지 않아 마운트를 거부하고 실패한다(데이터를 덮지 않으려는 설계). 이전을 미루려면 `NARWHAL_NFS_DISK_GB=0`으로 `vagrant`를 실행한다.
+
+---
+
+## 16. 호스트 부하 규칙
+
+VM 6대(마스터 3 x 6GB, 워커 3 x 8GB)가 호스트 한 대의 CPU, 메모리, SSD를 나눠 쓴다. 호스트가 바쁘면 게스트의 etcd fsync와 CNPG liveness가 먼저 늦어진다(섹션 15의 사고).
+
+- **동시에 하지 않는다.** 롤링 재부팅/재시작(워커 메모리 섹션 13, 인증서 복구 섹션 14, 마스터 작업), 전체 테스트(`make test`, `make e2e`, `scripts/test/*` 라이브 검사), 이미지 대량 pull/빌드, 다른 VM이나 컨테이너(다른 클러스터, Docker Desktop, 다른 Vagrant 환경)는 한 번에 하나만 한다.
+- **점검 전에 호스트 부하를 본다.** `uptime`의 1분 load average, `sysctl -n hw.ncpu`로 얻는 코어 수(경험칙: load가 코어 수의 절반 미만), `sysctl vm.swapusage`(swap이 늘고 있지 않을 것), `scripts/ops/check-vm-disk.sh`(호스트 여유 공간). 이 기준은 측정으로 정한 값이 아니라 경험칙이다.
+- **클러스터 쪽도 본다.** `kubectl top nodes`, `kubectl -n database get cluster narwhal-db`(Cluster in healthy state), 그리고 etcd fsync p99(섹션 15의 쿼리)가 평소 수준인지 확인한 뒤 시작한다.
+- **한 단계 끝나면 가라앉는 것을 확인하고 다음으로 간다.** 노드나 Pod 재시작 직후에는 이미지 pull과 재동기화로 부하가 한동안 높다.
+
+---
+
 ## 관련 문서
 
 - [architecture.md](../common/architecture.md) - 아키텍처 개요

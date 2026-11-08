@@ -38,9 +38,9 @@
       "id": "e4",
       "type": "regression_verification",
       "status": "passed",
-      "scope": "Static: R320 parses 11-3 and the matrix row; 17 mutations (test-sso denial shape x4, no negate, deny removed, gate inside the cookie alternatives, role mapped to another group, wrong role, flow unbound, realm browser flow rebound, unconditional create of flow or role, no rebuild, gate before auth, OTP dropped, matrix without id) are rejected. NOT covered: the kcadm sequence against a real Keycloak and a denied login of a non-admin.",
+      "scope": "Static: R320 parses 11-3 and the matrix row; 24 mutations (fail-closed ordering x8, test-sso denial shape x4, no negate, deny removed, gate inside the cookie alternatives, role mapped to another group, wrong role, flow unbound, realm browser flow rebound, unconditional create of flow or role, no rebuild, gate before auth, OTP dropped, matrix without id) are rejected. NOT covered: the kcadm sequence against a real Keycloak and a denied login of a non-admin.",
       "evidence": [
-        "test:python3 scripts/test/lib/check-velero-ui-login-gate.py --mutation-verify -> PASS: 17 mutations rejected",
+        "test:python3 scripts/test/lib/check-velero-ui-login-gate.py --mutation-verify -> PASS: 24 mutations rejected",
         "repo:scripts/test/lib/check-velero-ui-login-gate.py"
       ]
     },

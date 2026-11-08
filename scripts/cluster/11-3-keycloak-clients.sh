@@ -674,11 +674,16 @@ kc_exec update "clients/${VELERO_UI_CLIENT_ID}" -r "${REALM}" \
 # usable anyway); the flow has no IdP redirector (the realm has no IdPs) and keeps the default OTP rule.
 # Escape: kc update clients/<id> -s 'authenticationFlowBindingOverrides={}' (unbind), or remove the
 # velero-ui/login role from the cluster-admin group's mappings to deny everyone.
-VU_FLOW="velero-ui-browser"
+VU_FLOW_PREFIX="velero-ui-browser"
+VU_FLOW="${VU_FLOW_PREFIX}"
 VU_ROLE="login"
 
-VU_EXISTING_ROLE=$(kc_exec get "clients/${VELERO_UI_CLIENT_ID}/roles" -r "${REALM}" 2>/dev/null \
-  | jq -r ".[] | select(.name==\"${VU_ROLE}\") | .name" || echo "")
+# Fail closed (D-VELERO-UI-LOGIN-563-FAILCLOSED): the existing binding is never removed. A lookup that
+# fails aborts the script (no `|| echo ""` fallback that would read as "not found"); a new flow is built
+# under a fresh alias, verified, bound, and only then are the old flows deleted. Any failure before the
+# bind leaves the previous binding (or, on a first run, the unchanged client) in place and exits non-zero.
+VU_EXISTING_ROLES=$(kc_exec get "clients/${VELERO_UI_CLIENT_ID}/roles" -r "${REALM}")
+VU_EXISTING_ROLE=$(echo "${VU_EXISTING_ROLES}" | jq -r ".[] | select(.name==\"${VU_ROLE}\") | .name")
 if [ -z "${VU_EXISTING_ROLE}" ]; then
   kc_exec create "clients/${VELERO_UI_CLIENT_ID}/roles" -r "${REALM}" -s "name=${VU_ROLE}" \
     -s "description=Allowed to log in to velero-ui (mapped to the cluster-admin group, D-VELERO-UI-LOGIN-563)"
@@ -700,29 +705,27 @@ vu_add_execution() {
     exec_id=$(kc_exec get "authentication/flows/${parent}/executions" -r "${REALM}" \
       | jq -r "[.[] | select(.providerId==\"${name}\")] | last | .id")
   fi
+  if [ -z "${exec_id}" ] || [ "${exec_id}" = "null" ]; then
+    echo "ERROR: execution '${name}' not found in flow '${parent}' after creating it" >&2
+    return 1
+  fi
   kc_exec update "authentication/flows/${parent}/executions" -r "${REALM}" \
     -b "{\"id\":\"${exec_id}\",\"requirement\":\"${requirement}\"}" >/dev/null
   echo "${exec_id}"
 }
 
-# The flow is complete when its gate sub-flow has the role condition (with config) and Deny access.
+# A flow (alias $1) is complete when its gate sub-flow has the role condition (with config) and Deny
+# access. A failed lookup returns non-zero, which only ever causes a rebuild, never an unbind.
 vu_flow_complete() {
   local gate_json
-  gate_json=$(kc_exec get "authentication/flows/${VU_FLOW}-gate/executions" -r "${REALM}" 2>/dev/null || echo "[]")
+  gate_json=$(kc_exec get "authentication/flows/$1-gate/executions" -r "${REALM}" 2>/dev/null) || return 1
   echo "${gate_json}" | jq -e '
     ([.[].providerId] | (index("conditional-user-role") != null) and (index("deny-access-authenticator") != null))
     and ([.[] | select(.providerId=="conditional-user-role") | .authenticationConfig] | first != null)' >/dev/null 2>&1
 }
 
-VU_FLOW_ID=$(kc_exec get authentication/flows -r "${REALM}" 2>/dev/null \
-  | jq -r ".[] | select(.alias==\"${VU_FLOW}\") | .id" || echo "")
-if [ -n "${VU_FLOW_ID}" ] && ! vu_flow_complete; then
-  # half-built by an interrupted run: unbind, delete, rebuild
-  kc_exec update "clients/${VELERO_UI_CLIENT_ID}" -r "${REALM}" -s 'authenticationFlowBindingOverrides={}' >/dev/null
-  kc_exec delete "authentication/flows/${VU_FLOW_ID}" -r "${REALM}"
-  VU_FLOW_ID=""
-fi
-if [ -z "${VU_FLOW_ID}" ]; then
+# Build the whole flow tree under alias ${VU_FLOW}; run as a plain command inside a `set -e` subshell.
+vu_build_flow() {
   kc_exec create authentication/flows -r "${REALM}" -s "alias=${VU_FLOW}" -s providerId=basic-flow \
     -s topLevel=true -s builtIn=false -s "description=velero-ui login restricted to cluster-admin (D-VELERO-UI-LOGIN-563)" >/dev/null
   # REQUIRED auth sub-flow = the standard cookie-or-password alternatives
@@ -735,19 +738,61 @@ if [ -z "${VU_FLOW_ID}" ]; then
   vu_add_execution "${VU_FLOW}-otp" execution auth-otp-form REQUIRED >/dev/null
   # CONDITIONAL gate: user lacks velero-ui/login -> Deny access
   vu_add_execution "${VU_FLOW}" flow "${VU_FLOW}-gate" CONDITIONAL >/dev/null
-  VU_COND_ID=$(vu_add_execution "${VU_FLOW}-gate" execution conditional-user-role REQUIRED)
-  VU_DENY_ID=$(vu_add_execution "${VU_FLOW}-gate" execution deny-access-authenticator REQUIRED)
-  kc_exec create "authentication/executions/${VU_COND_ID}/config" -r "${REALM}" \
+  local cond_id deny_id
+  cond_id=$(vu_add_execution "${VU_FLOW}-gate" execution conditional-user-role REQUIRED)
+  deny_id=$(vu_add_execution "${VU_FLOW}-gate" execution deny-access-authenticator REQUIRED)
+  kc_exec create "authentication/executions/${cond_id}/config" -r "${REALM}" \
     -s "alias=${VU_FLOW}-not-cluster-admin" -s "config.condUserRole=velero-ui.${VU_ROLE}" -s config.negate=true >/dev/null
-  kc_exec create "authentication/executions/${VU_DENY_ID}/config" -r "${REALM}" \
+  kc_exec create "authentication/executions/${deny_id}/config" -r "${REALM}" \
     -s "alias=${VU_FLOW}-deny" -s "config.denyErrorMessage=Velero UI is restricted to the cluster-admin group." >/dev/null
+  vu_flow_complete "${VU_FLOW}" || { echo "ERROR: flow '${VU_FLOW}' is incomplete after building it" >&2; return 1; }
+}
+
+# Strict lookups: a failure here aborts the script (set -e) with the binding untouched.
+VU_FLOWS_JSON=$(kc_exec get authentication/flows -r "${REALM}")
+VU_CLIENT_JSON=$(kc_exec get "clients/${VELERO_UI_CLIENT_ID}" -r "${REALM}")
+VU_BOUND_ID=$(echo "${VU_CLIENT_JSON}" | jq -r '.authenticationFlowBindingOverrides.browser // ""')
+VU_BOUND_ALIAS=""
+if [ -n "${VU_BOUND_ID}" ]; then
+  VU_BOUND_ALIAS=$(echo "${VU_FLOWS_JSON}" | jq -r --arg id "${VU_BOUND_ID}" '.[] | select(.id==$id) | .alias')
+fi
+
+if [ -n "${VU_BOUND_ALIAS}" ] && vu_flow_complete "${VU_BOUND_ALIAS}"; then
+  VU_FLOW="${VU_BOUND_ALIAS}"
+  echo "  authentication flow '${VU_FLOW}' already bound and complete"
+else
+  VU_FLOW="${VU_FLOW_PREFIX}-$(date +%s)"
+  # The subshell is a plain command (not in an if/|| context), so `set -e` is live inside it.
+  set +e
+  ( set -e; vu_build_flow )
+  VU_BUILD_RC=$?
+  set -e
+  if [ "${VU_BUILD_RC}" -ne 0 ]; then
+    VU_PARTIAL_ID=$(kc_exec get authentication/flows -r "${REALM}" 2>/dev/null \
+      | jq -r ".[] | select(.alias==\"${VU_FLOW}\") | .id" 2>/dev/null || true)
+    [ -z "${VU_PARTIAL_ID}" ] || kc_exec delete "authentication/flows/${VU_PARTIAL_ID}" -r "${REALM}" >/dev/null 2>&1 || true
+    echo "ERROR: building the velero-ui login flow failed; the existing velero-ui binding is unchanged (D-VELERO-UI-LOGIN-563-FAILCLOSED)" >&2
+    exit 1
+  fi
   VU_FLOW_ID=$(kc_exec get authentication/flows -r "${REALM}" \
     | jq -r ".[] | select(.alias==\"${VU_FLOW}\") | .id")
-  echo "  authentication flow '${VU_FLOW}' created"
+  if [ -z "${VU_FLOW_ID}" ]; then
+    echo "ERROR: built flow '${VU_FLOW}' not found; binding unchanged" >&2
+    exit 1
+  fi
+  kc_exec update "clients/${VELERO_UI_CLIENT_ID}" -r "${REALM}" \
+    -s "authenticationFlowBindingOverrides={\"browser\":\"${VU_FLOW_ID}\"}" >/dev/null
+  echo "  authentication flow '${VU_FLOW}' built, verified and bound"
+  # Only now remove the superseded flows (best effort: a leftover unbound flow is harmless).
+  echo "${VU_FLOWS_JSON}" | jq -r --arg p "${VU_FLOW_PREFIX}" \
+    '.[] | select((.alias == $p) or (.alias | test("^" + $p + "-[0-9]+$"))) | .id' \
+    | while read -r old_id; do
+      [ -n "${old_id}" ] && [ "${old_id}" != "${VU_FLOW_ID}" ] || continue
+      kc_exec delete "authentication/flows/${old_id}" -r "${REALM}" >/dev/null 2>&1 \
+        || echo "  WARN: could not delete superseded flow ${old_id}" >&2
+    done
 fi
-kc_exec update "clients/${VELERO_UI_CLIENT_ID}" -r "${REALM}" \
-  -s "authenticationFlowBindingOverrides={\"browser\":\"${VU_FLOW_ID}\"}" >/dev/null
-echo "  velero-ui browser flow bound to '${VU_FLOW}' (login: cluster-admin only)"
+echo "  velero-ui browser flow '${VU_FLOW}' active (login: cluster-admin only)"
 
 # D-VELERO-UI-JWT-KEY: velero-ui signs its session JWT with AUTH_SECRET_PASSPHRASE and falls back
 # to a public literal when it is unset, so anyone could mint a `manage all` token. The key is

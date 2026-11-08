@@ -67,13 +67,37 @@ def check(text, doc, sso=""):
     # the gate must not sit in the cookie alternatives: top-level parent only
     if not re.search(r'vu_add_execution "\$\{VU_FLOW\}" flow "\$\{VU_FLOW\}-gate" CONDITIONAL', b):
         errors.append("gate sub-flow must be a direct child of the top-level flow")
-    # rerun safety: lookup before create, role check before create, half-built flow is rebuilt
-    if 'select(.alias==\\"${VU_FLOW}\\")' not in b or '[ -z "${VU_FLOW_ID}" ]' not in b:
-        errors.append("flow creation is not guarded by an alias lookup (rerun safety)")
-    if 'select(.name==\\"${VU_ROLE}\\")' not in b or '[ -z "${VU_EXISTING_ROLE}" ]' not in b:
+    # D-VELERO-UI-LOGIN-563-FAILCLOSED: the binding is never removed before a verified replacement is bound.
+    code = "\n".join(l for l in b.splitlines() if not l.lstrip().startswith("#"))
+    if "authenticationFlowBindingOverrides={}" in code:
+        errors.append("the velero-ui binding must never be cleared (unbind opens login to every realm user)")
+    if re.search(r'kc_exec delete "authentication/flows/\$\{VU_FLOW_ID\}"', code):
+        errors.append("the flow being bound must never be deleted")
+    for var in ("VU_FLOWS_JSON", "VU_CLIENT_JSON", "VU_EXISTING_ROLES"):
+        m = re.search(rf"^{var}=\$\((.*?)\)\s*$", code, re.M)
+        if not m:
+            errors.append(f"strict lookup {var} missing")
+        elif "||" in m.group(1) or "2>/dev/null" in m.group(1):
+            errors.append(f"lookup {var} must fail the script on error (no || / 2>/dev/null fallback that reads as not found)")
+    if 'VU_FLOW="${VU_FLOW_PREFIX}-$(date +%s)"' not in code:
+        errors.append("a rebuild must use a fresh alias, not the bound flow's alias")
+    if not re.search(r"set \+e\n\s*\( set -e; vu_build_flow \)\n\s*VU_BUILD_RC=\$\?\n\s*set -e", code):
+        errors.append("the build must run in a set -e subshell as a plain command (errexit is off inside if/||)")
+    if not re.search(r'if \[ "\$\{VU_BUILD_RC\}" -ne 0 \]; then\n(?:(?!\n\s*fi\n).)*?\n\s+exit 1\n\s*fi\n', code, re.S):
+        errors.append("a failed build must exit non-zero")
+    if "vu_flow_complete \"${VU_FLOW}\" ||" not in code:
+        errors.append("the built flow must be verified before it is bound")
+    bind = code.find('-s "authenticationFlowBindingOverrides=')
+    rcchk = code.find('"${VU_BUILD_RC}" -ne 0')
+    olddel = code.find('"WARN: could not delete superseded flow') if False else code.find("superseded flow")
+    if not (0 <= rcchk < bind < olddel):
+        errors.append("order must be: build+verify, bind, then delete the superseded flows")
+    if 'if [ -n "${VU_BOUND_ALIAS}" ] && vu_flow_complete "${VU_BOUND_ALIAS}"' not in code:
+        errors.append("a bound, complete flow must be left alone (rerun safety)")
+    if 'select(.name==\\"${VU_ROLE}\\")' not in code or '[ -z "${VU_EXISTING_ROLE}" ]' not in code:
         errors.append("role creation is not guarded by a lookup (rerun safety)")
-    if "vu_flow_complete" not in b or "authenticationFlowBindingOverrides={}" not in b:
-        errors.append("half-built flow is not unbound and rebuilt")
+    if "vu_flow_complete()" in code and "|| return 1" not in code:
+        errors.append("a failed completeness lookup must read as incomplete, never complete")
     # must not touch the realm browser flow or other clients
     if re.search(r"realms/\$\{REALM\}\"?[^\n]*browserFlow|browserFlow=", b):
         errors.append("the realm browser flow binding must not change")
@@ -109,11 +133,29 @@ def mutate(name, text):
     if name == "realm browser flow rebound":
         return text.replace(b, b + '\nkc_exec update "realms/${REALM}" -s browserFlow="${VU_FLOW}"\n')
     if name == "flow created unconditionally":
-        return text.replace(b, b.replace('if [ -z "${VU_FLOW_ID}" ]; then', "if true; then"))
+        return text.replace(b, b.replace('if [ -n "${VU_BOUND_ALIAS}" ] && vu_flow_complete "${VU_BOUND_ALIAS}"; then', "if false; then"))
     if name == "role created unconditionally":
         return text.replace(b, b.replace('if [ -z "${VU_EXISTING_ROLE}" ]; then', "if true; then"))
-    if name == "half-built flow not rebuilt":
-        return text.replace(b, b.replace("authenticationFlowBindingOverrides={}", "authenticationFlowBindingOverrides=keep"))
+    if name == "unbind before rebuild":
+        return text.replace(b, b.replace("  set +e\n", "  kc_exec update \"clients/${VELERO_UI_CLIENT_ID}\" -r \"${REALM}\" -s 'authenticationFlowBindingOverrides={}'\n  set +e\n"))
+    if name == "lookup failure masked":
+        return text.replace(b, b.replace('VU_FLOWS_JSON=$(kc_exec get authentication/flows -r "${REALM}")', 'VU_FLOWS_JSON=$(kc_exec get authentication/flows -r "${REALM}" 2>/dev/null || echo "[]")'))
+    if name == "rebuild reuses bound alias":
+        return text.replace(b, b.replace('VU_FLOW="${VU_FLOW_PREFIX}-$(date +%s)"', 'VU_FLOW="${VU_BOUND_ALIAS:-$VU_FLOW_PREFIX}"'))
+    if name == "build outside set -e subshell":
+        return text.replace(b, b.replace("( set -e; vu_build_flow )", "if ! vu_build_flow; then :; fi"))
+    if name == "build failure continues":
+        return text.replace(b, b.replace("    exit 1\n  fi\n  VU_FLOW_ID", "    :\n  fi\n  VU_FLOW_ID"))
+    if name == "old flows deleted before bind":
+        i = b.index("  # Only now remove the superseded flows")
+        j = b.index("fi\necho \"  velero-ui browser flow")
+        tail = b[i:j]
+        k = b.index("  kc_exec update \"clients/${VELERO_UI_CLIENT_ID}\" -r \"${REALM}\" \\\n    -s \"authenticationFlowBindingOverrides")
+        return text.replace(b, b[:k] + tail + b[k:i] + b[j:])
+    if name == "bound flow deleted":
+        return text.replace(b, b.replace('  echo "  authentication flow', '  kc_exec delete "authentication/flows/${VU_FLOW_ID}" -r "${REALM}"\n  echo "  authentication flow'))
+    if name == "built flow not verified":
+        return text.replace(b, b.replace('  vu_flow_complete "${VU_FLOW}" || { echo "ERROR: flow \'${VU_FLOW}\' is incomplete after building it" >&2; return 1; }\n', ''))
     if name == "gate before auth":
         g = '  # CONDITIONAL gate'
         return text.replace(b, b.replace('  # REQUIRED auth sub-flow', '  vu_add_execution "${VU_FLOW}" flow "${VU_FLOW}-gate" CONDITIONAL >/dev/null\n  # REQUIRED auth sub-flow'))
@@ -136,7 +178,9 @@ def mutate_sso(name, sso):
 
 MUTATIONS = ["no negate", "deny removed", "gate becomes a cookie alternative", "role not mapped to group",
              "wrong role in condition", "flow not bound", "realm browser flow rebound", "flow created unconditionally",
-             "role created unconditionally", "half-built flow not rebuilt", "gate before auth", "OTP rule dropped",
+             "role created unconditionally", "unbind before rebuild", "lookup failure masked", "rebuild reuses bound alias",
+             "build outside set -e subshell", "build failure continues", "old flows deleted before bind",
+             "bound flow deleted", "built flow not verified", "gate before auth", "OTP rule dropped",
              "sso: denial not detected", "sso: any failure counts as denied", "sso: session for non-admin passes",
              "sso: undetected failure passes"]
 

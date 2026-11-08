@@ -94,8 +94,11 @@ fi
 # -----------------------------------------------------------------------------
 section "Keycloak (IAM) — https://keycloak.${DOMAIN}"
 # -----------------------------------------------------------------------------
-KC_ADMIN_USER=$(get_secret iam keycloak-initial-admin username)
-KC_ADMIN_PASS=$(get_secret iam keycloak-initial-admin password)
+# D-KC-ADMIN-573: permanent admin when 11-1 has created it, else the bootstrap admin.
+KC_ADMIN_SECRET=keycloak-initial-admin
+kubectl get secret keycloak-admin -n iam >/dev/null 2>&1 && KC_ADMIN_SECRET=keycloak-admin
+KC_ADMIN_USER=$(get_secret iam "${KC_ADMIN_SECRET}" username)
+KC_ADMIN_PASS=$(get_secret iam "${KC_ADMIN_SECRET}" password)
 row "Admin user"     "${KC_ADMIN_USER}"
 row "Admin password" "${KC_ADMIN_PASS}"
 echo ""

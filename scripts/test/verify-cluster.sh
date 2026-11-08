@@ -780,8 +780,11 @@ if should_run "keycloak"; then
   # client would issue to admin, without a login. kcadm runs inside the pod, so
   # this works from a workstation too.
   if ! ${QUICK_MODE}; then
-    KC_ADMIN_USER=$(kubectl get secret keycloak-initial-admin -n iam -o jsonpath='{.data.username}' 2>/dev/null | base64 -d || echo "")
-    KC_ADMIN_PASS=$(kubectl get secret keycloak-initial-admin -n iam -o jsonpath='{.data.password}' 2>/dev/null | base64 -d || echo "")
+    # D-KC-ADMIN-573: permanent admin when 11-1 has created it, else the bootstrap admin.
+    KC_ADMIN_SECRET=keycloak-initial-admin
+    kubectl get secret keycloak-admin -n iam >/dev/null 2>&1 && KC_ADMIN_SECRET=keycloak-admin
+    KC_ADMIN_USER=$(kubectl get secret "${KC_ADMIN_SECRET}" -n iam -o jsonpath='{.data.username}' 2>/dev/null | base64 -d || echo "")
+    KC_ADMIN_PASS=$(kubectl get secret "${KC_ADMIN_SECRET}" -n iam -o jsonpath='{.data.password}' 2>/dev/null | base64 -d || echo "")
     kcadm() { kubectl exec -n iam keycloak-0 -c keycloak -- /opt/keycloak/bin/kcadm.sh "$@" 2>/dev/null; }
     first_id() { python3 -c 'import sys,json; d=json.load(sys.stdin); print(d[0]["id"] if d else "")' 2>/dev/null || echo ""; }
     GROUPS_CLAIM=""

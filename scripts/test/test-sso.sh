@@ -74,9 +74,11 @@ gitea_api() {
 
 # Get Keycloak admin token
 get_admin_token() {
-  local user pass
-  user=$(kubectl get secret keycloak-initial-admin -n iam -o jsonpath='{.data.username}' 2>/dev/null | base64 -d) || true
-  pass=$(kubectl get secret keycloak-initial-admin -n iam -o jsonpath='{.data.password}' 2>/dev/null | base64 -d) || true
+  local user pass secret=keycloak-initial-admin
+  # D-KC-ADMIN-573: permanent admin when 11-1 has created it, else the bootstrap admin.
+  kubectl get secret keycloak-admin -n iam >/dev/null 2>&1 && secret=keycloak-admin
+  user=$(kubectl get secret "${secret}" -n iam -o jsonpath='{.data.username}' 2>/dev/null | base64 -d) || true
+  pass=$(kubectl get secret "${secret}" -n iam -o jsonpath='{.data.password}' 2>/dev/null | base64 -d) || true
   curl -sk -X POST "${KEYCLOAK_URL}/realms/master/protocol/openid-connect/token" \
     -d "client_id=admin-cli" \
     -d "username=${user}" \
@@ -149,10 +151,18 @@ print(html.unescape(m.group(1)) if m and "name=\"username\"" in p and "name=\"pa
   loc=$(KC_U="${user}" KC_P="${password}" python3 -c '
 import os, urllib.parse
 print(urllib.parse.urlencode({"username": os.environ["KC_U"], "password": os.environ["KC_P"], "credentialId": ""}), end="")
-' 2>/dev/null | curl -sk --connect-timeout 5 --max-time 30 -c "${jar}" -b "${jar}" -o /dev/null \
+' 2>/dev/null | curl -sk --connect-timeout 5 --max-time 30 -c "${jar}" -b "${jar}" -o "${jar}.body" \
     -w '%{redirect_url}' --data-binary @- "${action}" 2>/dev/null) || loc=""
   code=$(printf '%s' "${loc}" | sed -n 's/.*[?&]code=\([^&]*\).*/\1/p')
-  [ -n "${code}" ] || return 0
+  if [ -z "${code}" ]; then
+    # D-VELERO-UI-LOGIN-563: the Deny access authenticator ends the flow on a Keycloak error page
+    # carrying its message, with no redirect and no code. Only that page counts as a denial; any
+    # other failure prints nothing (the caller fails on empty).
+    if [ -z "${loc}" ] && grep -q 'restricted to the cluster-admin group' "${jar}.body" 2>/dev/null; then
+      printf 'KC_LOGIN_DENIED'
+    fi
+    return 0
+  fi
   curl -sk --connect-timeout 5 --max-time 20 "https://velero-ui.${DOMAIN}/api/auth/oauth?code=${code}&state=t" 2>/dev/null \
     | python3 -c 'import sys, json; print(json.load(sys.stdin)["access_token"])' 2>/dev/null || true
 }
@@ -217,10 +227,18 @@ print(html.unescape(m.group(1)) if m and "name=\"username\"" in p and "name=\"pa
   loc=$(KC_U="${user}" KC_P="${password}" python3 -c '
 import os, urllib.parse
 print(urllib.parse.urlencode({"username": os.environ["KC_U"], "password": os.environ["KC_P"], "credentialId": ""}), end="")
-' 2>/dev/null | curl -sk --connect-timeout 5 --max-time 30 -c "${jar}" -b "${jar}" -o /dev/null \
+' 2>/dev/null | curl -sk --connect-timeout 5 --max-time 30 -c "${jar}" -b "${jar}" -o "${jar}.body" \
     -w '%{redirect_url}' --data-binary @- "${action}" 2>/dev/null) || loc=""
   code=$(printf '%s' "${loc}" | sed -n 's/.*[?&]code=\([^&]*\).*/\1/p')
-  [ -n "${code}" ] || return 0
+  if [ -z "${code}" ]; then
+    # D-VELERO-UI-LOGIN-563: the Deny access authenticator ends the flow on a Keycloak error page
+    # carrying its message, with no redirect and no code. Only that page counts as a denial; any
+    # other failure prints nothing (the caller fails on empty).
+    if [ -z "${loc}" ] && grep -q 'restricted to the cluster-admin group' "${jar}.body" 2>/dev/null; then
+      printf 'KC_LOGIN_DENIED'
+    fi
+    return 0
+  fi
   curl -sk --connect-timeout 5 --max-time 20 -X POST "${KEYCLOAK_URL}/realms/${REALM}/protocol/openid-connect/token" \
     -d grant_type=authorization_code -d client_id=kubernetes-dashboard -d "code=${code}" \
     --data-urlencode "redirect_uri=${ru}" -d "code_verifier=${ver}" 2>/dev/null \
@@ -1259,6 +1277,20 @@ print('YES' if view else 'NO')
     VU_PW=$(kubectl get secret keycloak-user-passwords -n iam -o jsonpath="{.data.${vu_user}}" 2>/dev/null | base64 -d 2>/dev/null) || VU_PW=""
     VU_TOKEN=""
     [ -z "${VU_PW}" ] || VU_TOKEN=$(velero_ui_token "${vu_user}" "${VU_PW}") || VU_TOKEN=""
+    # D-VELERO-UI-LOGIN-563: only cluster-admin may obtain a velero-ui session; Keycloak must deny the
+    # others on its Deny access page. A non-admin that gets a session is a FAIL. The in-app 403 checks
+    # below run only for users that can log in (a regression of the gate would still be caught by them).
+    if [ "${vu_user}" != "admin" ]; then
+      if [ "${VU_TOKEN}" = "KC_LOGIN_DENIED" ]; then
+        pass "velero-ui: ${vu_user} login denied by Keycloak (Access denied page, no code)"
+        continue
+      elif [ -n "${VU_TOKEN}" ]; then
+        fail "velero-ui: ${vu_user} obtained a velero-ui session, the cluster-admin login gate is not effective"
+      else
+        fail "velero-ui: ${vu_user} login failed but not with the Keycloak access-denied page, cannot verify the gate"
+        continue
+      fi
+    fi
     if [ -z "${VU_TOKEN}" ]; then
       fail "velero-ui: ${vu_user} login/token exchange failed, cannot verify"
       continue

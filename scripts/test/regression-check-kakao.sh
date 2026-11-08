@@ -3388,6 +3388,9 @@ PYEOF'
   # 2026-11-08 (#573): the Keycloak master realm ran on the operator's temporary bootstrap admin (temp-admin).
   check R321 "Keycloak master realm permanent admin: 11-1 creates platform-admin with only the master role admin, keeps its Secret iam/keycloak-admin (created only when absent, never echoed), deletes temp-admin only after login plus a master-realm admin API call succeeded and never on a name clash, runs as a critical Phase 2 step between 11 and 11-2, and every kcadm consumer prefers keycloak-admin; 16 mutations caught (D-KC-ADMIN-573)" \
     python3 scripts/test/lib/check-keycloak-permanent-admin.py --mutation-verify
+  # 2026-11-08 (D-WORKER-MEMORY): workers 6GB -> 8GB after the 2026-11-06 node OOMs at ~5.3GiB allocatable.
+  check R323 "worker VM memory is 8GB everywhere: Vagrantfile WORKER_MEMORY=8192 (MASTER_MEMORY stays 6144), README/README-ko config, VM table and 42GB RAM requirement, architecture.md, operations.md, troubleshooting.md, SessionStart hook and agent text; no live doc says worker 6GB; the apply procedure (cordon/drain, halt + up --no-provision, uncordon, CNPG required anti-affinity #590) is documented; 9 mutations caught (D-WORKER-MEMORY)" \
+    python3 scripts/test/lib/check-worker-memory.py --mutation-verify
 }
 
 #=========================================

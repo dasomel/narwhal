@@ -101,7 +101,7 @@ the Kubernetes prerequisites pre-installed.
 
 - [Vagrant](https://developer.hashicorp.com/vagrant/install) 2.4+
 - [VMware Fusion](https://www.vmware.com/products/fusion.html) on an **Apple Silicon (arm64)** host, with the `vagrant-vmware-desktop` plugin. The base box (kube-ready-box 0.3.x) is published for **arm64 `vmware_desktop` only** in 0.3.0; the 0.3.1 catalog also lists a `virtualbox` amd64 build that this repo has not run, so VMware Fusion on arm64 is the only validated local path (the Vagrantfile's VirtualBox blocks stay for it and older boxes).
-- 40GB+ RAM: 3 masters x 6GB + 3 workers x 6GB = 36GB for the VMs
+- 48GB+ RAM: 3 masters x 6GB + 3 workers x 8GB = 42GB for the VMs
 - 18 vCPU for the VMs (3 masters x 2 + 3 workers x 4); a 12+ core host is fine because actual use is low. Override the worker size with `NARWHAL_WORKER_CPUS` (default 4; 2 runs out of CPU requests once the full platform is up)
 - 30GB+ Disk per VM (recommended for full IDP deployment)
 
@@ -146,7 +146,7 @@ vagrant destroy -f
 ├──────────────────┬─────────────┬─────────────────┤
 │  master-1        │  master-2/3 │ worker-1/2/3    │
 │  192.168.56.10   │  .11 / .12  │ .21 / .22 / .23 │
-│  2 CPU, 6GB      │  2 CPU, 6GB │ 2 CPU, 6GB      │
+│  2 CPU, 6GB      │  2 CPU, 6GB │ 2 CPU, 8GB      │
 │  NFS, dnsmasq    │  dnsmasq    │                 │
 └──────────────────┴─────────────┴─────────────────┘
          │                │            │
@@ -428,7 +428,7 @@ K8S_VERSION = "1.35"           # Kubernetes version
 MASTER_COUNT = 3               # Master nodes (HA, 1 fault tolerance)
 WORKER_COUNT = 3               # Worker nodes
 MASTER_MEMORY = 6144           # Master RAM (MB) - control-plane + DaemonSets headroom
-WORKER_MEMORY = 6144           # Worker RAM (MB) - platform apps run here
+WORKER_MEMORY = 8192           # Worker RAM (MB) - platform apps run here
 VIP_ADDRESS = "192.168.56.100" # Control plane VIP
 ```
 

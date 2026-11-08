@@ -1,0 +1,70 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-worker-memory-8g-20261108",
+  "task": "Owner decision 2026-11-08: raise worker VM memory from 6GB to 8GB (masters stay 6GB) and make every document and assertion of worker memory agree.",
+  "changeContext": {
+    "paths": [
+      ".agents/evals/traces/2026-11-worker-memory-8g.json",
+      ".claude/agents/infra-scout.md",
+      ".claude/hooks/session-start.sh",
+      "README-ko.md",
+      "README.md",
+      "Vagrantfile",
+      "docs/common/architecture.md",
+      "docs/common/lessons-log.md",
+      "docs/common/troubleshooting.md",
+      "docs/vagrant/operations.md",
+      "gitops/charts/narwhal-apps/templates/seaweedfs.yaml",
+      "gitops/charts/narwhal-apps/templates/trivy-operator.yaml",
+      "portal/docs/local-dev.md",
+      "scripts/cluster/08-1-networking.sh",
+      "scripts/test/lib/check-worker-memory.py",
+      "scripts/test/regression-check-kakao.sh"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Change WORKER_MEMORY 6144 -> 8192 in the Vagrantfile, the READMEs, architecture/operations/troubleshooting docs, the SessionStart hook and infra-scout text, and comments that state worker 6GB (trivy-operator, 08-1-networking, seaweedfs, portal local-dev). Add the apply procedure to operations.md and R323. Deliberately left alone: all resource requests/limits, the historical 5.3GiB incident comments (prometheus, tempo, loki, velero, which describe what happened at 6GB), docs/archive, MASTER_MEMORY, the master-1 6GB troubleshooting line, the live VMs and cluster, Gitea."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "grep for 6144, 6GB and 6 GiB in Vagrantfile, README*, docs, scripts, .claude, gitops and portal/docs listed the worker-memory copies; Vagrantfile line 81 was WORKER_MEMORY = 6144 and the READMEs, architecture.md, the hook and troubleshooting.md repeated it.",
+      "evidence": [
+        "repo:Vagrantfile",
+        "repo:docs/common/architecture.md",
+        "repo:.claude/hooks/session-start.sh"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "D-WORKER-MEMORY: WORKER_MEMORY = 8192 with the reason, cost (+6GB host RAM, 42GB of VMs) and escape hatch; docs and hook agree; operations.md section 13 documents the per-worker cordon, drain, halt, up --no-provision, uncordon, check sequence and the CNPG required anti-affinity caveat (#590). Comment-only edits in two GitOps templates and one script; no rendered manifest changes."
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "Static: R323 (check-worker-memory.py) asserts the Vagrantfile value, MASTER_MEMORY unchanged, README/README-ko, architecture, operations, troubleshooting, hook, scout, no stale worker 6GB wording, and the apply procedure; 9 mutations are caught. NOT covered: a live worker restart, the 8GB memsize actually applied by vmware, node allocatable after restart.",
+      "evidence": [
+        "test:python3 scripts/test/lib/check-worker-memory.py --mutation-verify -> worker memory 8GB ok; PASS: 9 mutations rejected",
+        "repo:scripts/test/lib/check-worker-memory.py",
+        "repo:scripts/test/regression-check-kakao.sh"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "completion_claim",
+      "summary": "In the repository new clusters get 8GB workers and the docs describe how to move an existing cluster. No live VM was changed and the procedure has not been run."
+    },
+    {
+      "id": "e6",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Complete for the repository scope; applying it to the running cluster is a separate owner-run step."
+    }
+  ]
+}

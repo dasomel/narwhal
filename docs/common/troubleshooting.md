@@ -159,7 +159,7 @@ crictl rmi --prune
 kubectl delete pods --field-selector=status.phase=Failed -A
 ```
 
-**리소스 조정**: Worker 메모리는 최소 6GB (platform apps 실행), Master는 4GB (control-plane only, NoSchedule taint), CNPG는 1 인스턴스 + 1 PgBouncer로 운영
+**리소스 조정**: Worker 메모리는 8GB (platform apps 실행), Master는 4GB (control-plane only, NoSchedule taint), CNPG는 1 인스턴스 + 1 PgBouncer로 운영
 
 ## 7. ArgoCD 동기화 실패
 
@@ -312,7 +312,7 @@ kubectl describe node master-1 | grep -A5 Conditions
 
 **대응**:
 
-- Worker 메모리 6GB 미만이면 Vagrantfile에서 증가 (platform apps는 worker에서 실행)
+- Worker 메모리 8GB 미만이면 Vagrantfile에서 증가 (platform apps는 worker에서 실행)
 - CNPG 인스턴스 수 축소 (2 → 1)
 - 불필요한 앱 스케일 다운: `kubectl scale deployment <name> --replicas=0 -n <ns>`
 - 디스크 압력 toleration 추가: `node.kubernetes.io/disk-pressure:NoSchedule`

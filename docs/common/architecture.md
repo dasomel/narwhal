@@ -65,7 +65,7 @@ component, identity, storage and GitOps sections expand their respective concern
 │  │ narwhal-worker-1  │  │ narwhal-worker-2  │  │ narwhal-worker-3  │        │
 │  │ 192.168.56.21     │  │ 192.168.56.22     │  │ 192.168.56.23     │        │
 │  │ worker            │  │ worker            │  │ worker            │        │
-│  │ 2 CPU / 6GB RAM   │  │ 2 CPU / 6GB RAM   │  │ 2 CPU / 6GB RAM   │        │
+│  │ 2 CPU / 8GB RAM   │  │ 2 CPU / 8GB RAM   │  │ 2 CPU / 8GB RAM   │        │
 │  └───────────────────┘  └───────────────────┘  └───────────────────┘        │
 │                                                                             │
 │  LB:  192.168.56.200 (MetalLB → APISIX)                                     │
@@ -80,9 +80,9 @@ component, identity, storage and GitOps sections expand their respective concern
 | narwhal-master-1 | 192.168.56.10 | control-plane (NoSchedule), NFS Server, dnsmasq | 2 | 4 GiB |
 | narwhal-master-2 | 192.168.56.11 | control-plane (NoSchedule), dnsmasq | 2 | 4 GiB |
 | narwhal-master-3 | 192.168.56.12 | control-plane (NoSchedule), dnsmasq | 2 | 4 GiB |
-| narwhal-worker-1 | 192.168.56.21 | worker | 2 | 6 GiB |
-| narwhal-worker-2 | 192.168.56.22 | worker | 2 | 6 GiB |
-| narwhal-worker-3 | 192.168.56.23 | worker | 2 | 6 GiB |
+| narwhal-worker-1 | 192.168.56.21 | worker | 2 | 8 GiB |
+| narwhal-worker-2 | 192.168.56.22 | worker | 2 | 8 GiB |
+| narwhal-worker-3 | 192.168.56.23 | worker | 2 | 8 GiB |
 
 ### Network
 

@@ -25,12 +25,12 @@
 
 클린설치(클러스터 재생성) 직후에는 Harbor의 kaniko 레이어 캐시(`library/narwhal-portal-cache`)가
 비어 있어, 첫 `skaffold run` / `dev:skaffold`가 node_modules 전체를 스냅샷합니다
-(피크 ~3.5–3.9GB anon RSS). worker VM이 6GB(`WORKER_MEMORY`)이고 기본 워크로드가 ~2.5GB를
+(피크 ~3.5–3.9GB anon RSS). worker VM이 8GB(`WORKER_MEMORY`, 2026-11-08 전에는 6GB)이고 기본 워크로드가 ~2.5GB를
 쓰므로, 첫 풀빌드 kaniko Pod이 **전역 OOM(dmesg `constraint=CONSTRAINT_NONE`)** 으로 죽어
 `narwhal-portal` Pod이 `ImagePullBackOff`에 머뭅니다.
 
 > **중요**: 이건 worker RAM이 부족해서가 아니라 *캐시가 없는 첫 풀빌드*만 무겁기 때문입니다.
-> 캐시가 한 번 채워지면 이후 빌드는 증분이라 6GB worker에서 정상 동작합니다. 따라서 **RAM 영구
+> 캐시가 한 번 채워지면 이후 빌드는 증분이라 8GB worker(이전 6GB)에서 정상 동작합니다. 따라서 **RAM 영구
 > 증설은 불필요**하고, 첫 빌드 한 번만 worker 한 대를 비워서 통과시키면 됩니다.
 
 ```bash

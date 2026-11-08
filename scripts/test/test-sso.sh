@@ -74,9 +74,11 @@ gitea_api() {
 
 # Get Keycloak admin token
 get_admin_token() {
-  local user pass
-  user=$(kubectl get secret keycloak-initial-admin -n iam -o jsonpath='{.data.username}' 2>/dev/null | base64 -d) || true
-  pass=$(kubectl get secret keycloak-initial-admin -n iam -o jsonpath='{.data.password}' 2>/dev/null | base64 -d) || true
+  local user pass secret=keycloak-initial-admin
+  # D-KC-ADMIN-573: permanent admin when 11-1 has created it, else the bootstrap admin.
+  kubectl get secret keycloak-admin -n iam >/dev/null 2>&1 && secret=keycloak-admin
+  user=$(kubectl get secret "${secret}" -n iam -o jsonpath='{.data.username}' 2>/dev/null | base64 -d) || true
+  pass=$(kubectl get secret "${secret}" -n iam -o jsonpath='{.data.password}' 2>/dev/null | base64 -d) || true
   curl -sk -X POST "${KEYCLOAK_URL}/realms/master/protocol/openid-connect/token" \
     -d "client_id=admin-cli" \
     -d "username=${user}" \

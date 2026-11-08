@@ -37,9 +37,10 @@ kc_exec() {
 #=========================================
 echo "=== Logging in to Keycloak admin CLI ==="
 
-KC_ADMIN_PASS=$(kubectl get secret keycloak-initial-admin -n iam \
+KC_ADMIN_SECRET=$(keycloak_admin_secret)
+KC_ADMIN_PASS=$(kubectl get secret "${KC_ADMIN_SECRET}" -n iam \
   -o jsonpath='{.data.password}' | base64 -d)
-KC_ADMIN_USER=$(kubectl get secret keycloak-initial-admin -n iam \
+KC_ADMIN_USER=$(kubectl get secret "${KC_ADMIN_SECRET}" -n iam \
   -o jsonpath='{.data.username}' | base64 -d)
 
 LOGIN_OK=false
@@ -187,7 +188,7 @@ done
 
 # D-ADMIN-FULL (owner 2026-11-04): a cluster-admin member is a full realm administrator in the
 # Keycloak console of this realm (realm-management/realm-admin). Master-realm access stays with
-# keycloak-initial-admin. Cost: any cluster-admin member can change every client, user and
+# keycloak-admin (11-1, D-KC-ADMIN-573). Cost: any cluster-admin member can change every client, user and
 # group of the realm. Escape: remove this role mapping from the group.
 kc_exec add-roles -r "${REALM}" --gname cluster-admin \
   --cclientid realm-management --rolename realm-admin
@@ -394,8 +395,8 @@ echo "=========================================="
 echo "Keycloak Configuration Summary"
 echo "=========================================="
 echo "Admin UI:    https://keycloak.${DOMAIN}"
-echo "Admin user:  admin"
-echo "Admin pass:  kubectl get secret keycloak-initial-admin -n iam -o jsonpath='{.data.password}' | base64 -d"
+echo "Admin user:  master realm admin from secret ${KC_ADMIN_SECRET} (permanent: keycloak-admin, 11-1)"
+echo "Admin pass:  kubectl get secret ${KC_ADMIN_SECRET} -n iam -o jsonpath='{.data.password}' | base64 -d"
 echo ""
 echo "Realm:       ${REALM}"
 echo "Issuer URL:  ${ISSUER_URL}"

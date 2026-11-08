@@ -1,0 +1,63 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-keycloak-permanent-admin-573-20261108",
+  "task": "Issue #573: replace the Keycloak master-realm temporary bootstrap admin (temp-admin) with a permanent admin, switch every kcadm consumer, delete temp-admin only after the new credential is verified, and keep fresh installs and re-runs working.",
+  "changeContext": {
+    "paths": [
+      ".agents/evals/traces/2026-11-keycloak-permanent-admin-573.json",
+      "docs/common/lessons-log.md",
+      "docs/runbooks/keycloak-permanent-admin.md",
+      "scripts/cluster/06-phase2-start.sh",
+      "scripts/cluster/11-1-keycloak-admin.sh",
+      "scripts/cluster/11-2-keycloak-config.sh",
+      "scripts/cluster/11-3-keycloak-clients.sh",
+      "scripts/cluster/13-2-narwhal-portal-bindings.sh",
+      "scripts/common/lib.sh",
+      "scripts/test/lib/check-keycloak-permanent-admin.py",
+      "scripts/test/regression-check-kakao.sh"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Change only the master-realm admin credential: new 11-1 script, its Phase 2 wiring, the consumers that log in with kcadm, docs and runbook. Deliberately left alone: the live Keycloak and cluster (no mutation), the Keycloak CR and operator-owned Secret keycloak-initial-admin, realm narwhal users and clients, Portal code, permissions beyond the master realm role admin."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "Consumers of keycloak-initial-admin found by grep: 11-2, 11-3, 13-2 (kcadm login), test-sso.sh, verify-cluster.sh, show-credentials.sh. The Keycloak operator does not read it after bootstrap; the Portal does not use it (its Keycloak access is a realm client).",
+      "evidence": [
+        "repo:scripts/cluster/11-2-keycloak-config.sh",
+        "repo:scripts/test/test-sso.sh"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "D-KC-ADMIN-573: one permanent user platform-admin with only the master realm role admin (same rights as temp-admin), Secret iam/keycloak-admin created only when absent, temp-admin deleted only after login plus a master-realm admin API call succeeded. Consumers prefer keycloak-admin and fall back to keycloak-initial-admin so an unmigrated cluster keeps working."
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "Static: R321 reads 11-1, 06-phase2-start.sh, lib.sh and the six consumers; 21 mutations (widened role, delete before verify, guard removal, echoed password, password back on argv, xtrace, 11-1 missing from the execution loop or misordered, consumer reverting to the bootstrap secret) are caught. Also run by hand: 11-1 against a local Keycloak 26.5.7 container (kubectl shim, no Kubernetes): migrate then re-run, temp-admin deleted, platform-admin logs in, and temp-admin did not come back after a container restart. NOT covered: a real Kubernetes/operator cluster, a fresh up.sh, the recovery Pod in the runbook.",
+      "evidence": [
+        "test:python3 scripts/test/lib/check-keycloak-permanent-admin.py --mutation-verify -> 21 mutations caught",
+        "repo:scripts/test/lib/check-keycloak-permanent-admin.py"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "completion_claim",
+      "summary": "In the repository the permanent admin flow and consumer switch are in place and pinned by R321. Not deployed and not run against Keycloak; the existing cluster is migrated by the runbook docs/runbooks/keycloak-permanent-admin.md."
+    },
+    {
+      "id": "e6",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Complete for the repository scope; live migration and the no-recreate-after-restart check remain for the operator."
+    }
+  ]
+}

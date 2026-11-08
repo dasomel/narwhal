@@ -102,6 +102,27 @@ spec:
             summary: "노드 루트 디스크 사용률 높음: {{ $labels.instance }}"
             description: "인스턴스 {{ $labels.instance }}의 루트 파일시스템 사용률이 10분 이상 85%를 초과합니다. 현재값: {{ $value | humanize }}%"
 
+        # D-VM-DISK-WRITE-RATE: Vagrant/VMware VM disks are sparse linked clones that never shrink, so a
+        # sustained write rate is what grows the host vmdk while guest `df` stays flat (worker-3: 298G
+        # on disk, 43G used). Measured 2026-11-06: worker steady median 8-27 GB/day, bursts (scan waves,
+        # reschedules after a drain) 40-140 GB/h; control planes write 27-54 GB/day (etcd WAL + NFS)
+        # but overwrite in place and their vmdks stayed 9-25G, so they are excluded to keep this
+        # signal meaningful. 20 GB/day averaged over 6h fires on a real burst, not on the baseline.
+        - alert: NodeDiskWriteRateHigh
+          expr: |
+            sum by (instance) (rate(node_disk_written_bytes_total{device=~"nvme[0-9]+n[0-9]+|sd[a-z]+|vd[a-z]+"}[6h])) * 86400 > 20e9
+            unless on (instance) node_uname_info{nodename=~".*master.*"}
+          for: 30m
+          labels:
+            severity: warning
+          annotations:
+            summary: "노드 디스크 쓰기량 과다: {{ $labels.instance }}"
+            description: >-
+              인스턴스 {{ $labels.instance }}의 6시간 평균 디스크 쓰기가 하루 20GB를 넘는 속도입니다(현재 {{ $value | humanize1024 }}B/일).
+              sparse linked-clone vmdk는 한 번 커지면 줄지 않으므로 container_fs_writes_bytes_total을 pod별로 확인해
+              쓰기 주체(Trivy 스캔 Job, 이미지 pull 등)를 찾으세요.
+            runbook_url: https://github.com/dasomel/narwhal/blob/main/docs/vagrant/operations.md#12-vm-디스크-증가와-회수-d-vm-disk-guard
+
     # -------------------------------------------------------------------------
     # platform-apps: 핵심 플랫폼 컴포넌트 가용성
     # -------------------------------------------------------------------------
@@ -359,3 +380,30 @@ spec:
             summary: "Velero 메트릭 수집 불가"
             description: "ServiceMonitor 선택, 8085 NetworkPolicy와 mTLS 예외 정책, Prometheus target을 확인하세요. 백업 알림의 신뢰성이 저하되었습니다."
             runbook_url: https://github.com/dasomel/narwhal/blob/main/docs/common/storage-protection-policy.md#velero-backup-alerts
+
+    # D-SECDB-STALE (#585): once the Harbor mirror's trivy-db:2 passes its NextUpdate, trivy-server
+    # re-downloads the same DB every hour (2026-11-06: 3.67 GiB of container writes per download in
+    # cAdvisor, 38 GiB/day to the NFS server). No exporter publishes the mirror age or the DB
+    # NextUpdate (live Prometheus has no trivy_* series; the Portal's Trivy DB card reads Harbor
+    # directly), so the repeated download itself is the signal: scans write ~0 to this container,
+    # a healthy refresh or restart is one download, two within 3h means the mirror is stale.
+    # Cost: fires after the second wasted download, not before the first; an undercount when a
+    # container restart hides the first sample. Escape hatch: tune 6e9/3h with the download size,
+    # or remove the group; the fix is the refresh procedure in scripts/airgap/README.md.
+    # cAdvisor reports the same writes once per block device (the LVM dm-0 and the nvme0n1
+    # under it), so `max by (pod)` collapses them; `sum` would double one ~3.9e9 download past 6e9.
+    - name: security-db
+      rules:
+        - alert: TrivyServerDbRedownloading
+          expr: |
+            max by (pod) (increase(container_fs_writes_bytes_total{namespace="security-system",container="trivy-server"}[3h])) > 6e9
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "trivy-server가 취약점 DB를 반복 다운로드 중: {{ $labels.pod }}"
+            description: >-
+              최근 3시간 동안 {{ $labels.pod }}의 컨테이너 쓰기가 {{ $value | humanize1024 }}B입니다(DB 1회 다운로드 약 3.7GiB).
+              Harbor 미러의 trivy-db:2가 NextUpdate를 넘겨 같은 DB를 매시간 받고 있을 가능성이 큽니다.
+              Portal 보안 페이지의 Trivy DB 상태 카드로 미러 나이를 확인하고 fetch, promote, push로 미러를 갱신하세요.
+            runbook_url: https://github.com/dasomel/narwhal/blob/main/scripts/airgap/README.md#보안-db-갱신-절차와-낡은-미러-경보-d-secdb-stale

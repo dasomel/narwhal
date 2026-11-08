@@ -50,6 +50,66 @@ spec:
           replicas: 1
           persistence:
             enabled: false
+          # D-MON-QOS-LOKI: the chart ships `resources: {}`, which made loki BestEffort
+          # (oom_score_adj 1000, first victim of the node OOM killer, killed more than once).
+          # Live use 2026-11-06 was loki ~127Mi, so the request is ~2x that and the limit leaves
+          # room for query/compaction spikes. persistence is off, so an OOM restart loses
+          # un-flushed data (same as before). No cpu limit (throttling trips probes on VM load).
+          # Cost: 256Mi extra requested memory. Escape hatch: revert the block.
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              memory: 768Mi
+          # D-MON-SPREAD: prometheus, loki and tempo each carry the same preferred (never required)
+          # pod anti-affinity against the other two (one term each: name=prometheus,
+          # name=loki + component=single-binary, name=tempo; the loki-canary DaemonSet also carries
+          # name=loki, so a bare name=loki term would repel every node), topologyKey
+          # kubernetes.io/hostname, so the scheduler prefers three different workers. 2026-11-06 all
+          # three landed on worker-3 (~5.3GiB allocatable) and the kernel OOM killer took prometheus-0 16
+          # times in ~3h. Preferred, not required: with fewer fit nodes they still schedule. Cost: none
+          # at steady state. It only applies when a pod is (re)scheduled, so a running pod stays until
+          # it is deleted. Escape hatch: delete this block.
+          affinity:
+            podAntiAffinity:
+              preferredDuringSchedulingIgnoredDuringExecution:
+                - weight: 100
+                  podAffinityTerm:
+                    topologyKey: kubernetes.io/hostname
+                    labelSelector:
+                      matchExpressions:
+                        - key: app.kubernetes.io/name
+                          operator: In
+                          values: [prometheus]
+                - weight: 100
+                  podAffinityTerm:
+                    topologyKey: kubernetes.io/hostname
+                    labelSelector:
+                      matchExpressions:
+                        - key: app.kubernetes.io/name
+                          operator: In
+                          values: [loki]
+                        - key: app.kubernetes.io/component
+                          operator: In
+                          values: [single-binary]
+                - weight: 100
+                  podAffinityTerm:
+                    topologyKey: kubernetes.io/hostname
+                    labelSelector:
+                      matchExpressions:
+                        - key: app.kubernetes.io/name
+                          operator: In
+                          values: [tempo]
+        # D-MON-QOS-LOKI: loki-sc-rules sidecar (chart top-level `sidecar.resources`, applies to the
+        # single-binary pod) used ~72Mi; same BestEffort problem. Request ~= use, limit ~2.5x.
+        sidecar:
+          resources:
+            requests:
+              cpu: 10m
+              memory: 64Mi
+            limits:
+              memory: 192Mi
         read:
           replicas: 0
         write:
@@ -62,9 +122,12 @@ spec:
           enabled: false
         resultsCache:
           enabled: false
-        monitoring:
-          lokiCanary:
-            enabled: false
+        # D-LOKI-CANARY-DISABLE: in chart 18.4.0 (grafana-community/loki), lokiCanary is a top-level key;
+        # nesting under monitoring caused Helm to default enabled: true and deploy the canary DaemonSet to every node.
+        # Cost: no synthetic log push/query canary testing Loki ingestion latency.
+        # Escape hatch: set lokiCanary.enabled: true.
+        lokiCanary:
+          enabled: false
         test:
           enabled: false
   destination:

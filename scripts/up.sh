@@ -43,6 +43,10 @@ SETTLE_DELAY="${SETTLE_DELAY:-90}"
 
 cd "$(dirname "$0")/.."
 
+# D-VM-DISK-GUARD: warn-only. Sparse linked-clone vmdks never shrink, so surface a grown VM or a
+# nearly full host before spending a run on it (never aborts: the check itself is advisory).
+bash scripts/ops/check-vm-disk.sh || true
+
 # vm_state <name>: prints vagrant's state word for one VM (running|not_created|...).
 vm_state() {
   vagrant status "$1" 2>/dev/null \

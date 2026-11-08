@@ -3215,7 +3215,7 @@ assert sum(1 for l in code if re.search(r"\bexit 3\b", l)) == 1, "exit 3 must ap
   fi
   # 2026-10-29 (D-KAKAO-TEARDOWN): full Kakao teardown releases the six prevent_destroy guards,
   # runs tofu destroy and must restore them on every exit path.
-  check R293 "live suite false-failure guards (#505): TLS, ambient, credentials, retired client, probe, provider and the #519 gateway group login (4 hosts, NOFORM fails)" \
+  check R293 "live suite false-failure guards (#505): TLS, ambient, credentials, retired client, probe, provider and the #519 gateway group login (4 hosts, NOFORM fails); Dashboard forbidden-in-200 verdict (HTTP 200 with errors[].ErrStatus 403 is DENIED, status-only mutation caught, #551)" \
     python3 scripts/test/lib/check-live-suite-false-failures.py
 
   # 2026-10-31 (#468, D-MIRROR-PATH): a pin bump needs the image on the bastion mirror first; the live
@@ -3355,6 +3355,36 @@ PYEOF'
   # 2026-11-05: push-to-gitea.sh nested directory paths on existing targets and never deleted removed files.
   check R308 "push-to-gitea.sh mirrors directory paths without nesting, propagates deletions, keeps single-file path support, refuses '..' paths and Gitea-only top-level directories, and runs mirror-all/--tag/--rollback under /bin/bash; 3 mutations caught (D-GITOPS-PUSH-DIRS, D-MIRROR-ALL-NONDESTRUCTIVE, D-EMPTY-ARRAY-GUARD, D-REFUSE-GITEA-ONLY-DIRS)" \
     bash scripts/test/lib/check-push-to-gitea-dirs.sh
+  # 2026-11-06: sparse linked-clone vmdks never shrink (worker-3 298G on disk, 43G used); recreating a worker is the only reclaim.
+  check R309 "VM disk growth guards: NodeDiskWriteRateHigh (>20 GB/day over 6h, workers only, runbook anchor; promtool cases), check-vm-disk.sh gap/abs/free thresholds and --strict, warn-only up.sh hook, runbook order data-check -> drain -> destroy; 10 mutations caught (D-VM-DISK-GUARD)" \
+    python3 scripts/test/lib/check-vm-disk-guards.py --mutation-verify
+  # 2026-11-06: node OOM during a Velero backup killed BestEffort weed (filer) and failed every PVB.
+  check R310 "backup storage path survives node memory pressure: seaweedfs master/volume/filer/s3 have cpu+memory requests and a memory limit (Burstable), velero-node-agent-config keeps podLabels and sets loadConcurrency.globalConfig=1 and podResources (D-sw-qos, D-datapath-qos)" \
+    python3 scripts/test/lib/check-backup-path-qos.py
+  # 2026-11-06: prometheus, tempo and loki all landed on worker-3 (~5.3GiB allocatable); the kernel OOM killer took prometheus-0 16 times in ~3h, BestEffort loki before it.
+  check R311 "loki and its loki-sc-rules sidecar have cpu+memory requests and a memory limit (Burstable); prometheus, tempo and loki carry preferred (not required) hostname pod anti-affinity against the other two, the loki term scoped by component so loki-canary does not match, chart soft podAntiAffinity disabled for prometheus; 7 mutations caught (D-MON-QOS-LOKI, D-MON-SPREAD)" \
+    python3 scripts/test/lib/check-monitoring-spread.py --mutation-verify
+  # 2026-11-06 (#551, D-HARBOR-CA-ROTATE): harbor-core reads caBundleSecretName only at start, so a rotated CA left Harbor OIDC failing closed.
+  check R317 "08-6 rolls harbor-core only when devtools/narwhal-ca-cert ca.crt changed (stub kubectl: changed restarts and waits, unchanged re-run, first install and missing Deployment do not, failed restart warns without aborting 08-6), procedure in operations.md, argocd-config g-lines comment points above; unconditional-restart mutation caught (D-HARBOR-CA-ROTATE)" \
+    python3 scripts/test/lib/check-harbor-ca-rotate.py
+  # 2026-11-06 (#562): the portal certificate renew grant (certificates/status update) was cluster-wide.
+  check R318 "portal certificates/status update is granted only by narwhal-portal-cert-renew Roles in devtools, platform-system and storage (the namespaces holding Certificates), bound to the portal SA alone, never by the ClusterRole; 7 mutations caught (D-CERT-RENEW-NS)" \
+    python3 scripts/test/lib/check-portal-cert-renew-rbac.py --mutation-verify
+  # 2026-11-06 (#587): loki-canary DaemonSet ran on every node because lokiCanary was nested under monitoring: in loki.yaml and 08-2.
+  check R315 "loki-canary DaemonSet is disabled via top-level lokiCanary.enabled=false in loki.yaml and 08-2-monitoring.sh (not under monitoring); 6 mutations caught (D-LOKI-CANARY-DISABLE, #587)" \
+    python3 scripts/test/lib/check-loki-canary-disabled.py --mutation-verify
+  # 2026-11-06: both narwhal-db instances on worker-1 (preferred anti-affinity); a worker drain blocked WAL archiving. R312 is taken by a parallel lane.
+  check R313 "every CNPG Cluster (gitops/resources/narwhal-db.yaml and the 07-cnpg.sh bootstrap manifest) sets affinity.podAntiAffinityType=required with topologyKey kubernetes.io/hostname and no more than 3 instances; 7 mutations caught (D-CNPG-AA-REQUIRED)" \
+    python3 scripts/test/lib/check-cnpg-antiaffinity.py --mutation-verify
+  # 2026-11-06 (#571): the kyverno-policies Application ignored whole rule bodies, annotations and validationFailureAction, so real policy edits never auto-synced.
+  check R312 "kyverno-policies ignoreDifferences lists only Kyverno-defaulted fields (admission, emitWarning, skipBackgroundRequests, allowExistingViolations, verifyImages useCache/signatureAlgorithm); defaults then produce no diff while rule, match, annotation, validationFailureAction and background edits stay visible; every ClusterPolicy sets validationFailureAction explicitly; 10 mutations caught (D-KYV-IGNORE-NARROW)" \
+    python3 scripts/test/lib/check-kyverno-ignorediff.py --mutation-verify
+  # 2026-11-06 (#585): a stale Harbor trivy-db:2 mirror made trivy-server re-download the same DB hourly (~38 GiB/day to NFS).
+  check R316 "TrivyServerDbRedownloading alerts on >6e9 trivy-server container writes in 3h (container_fs_writes_bytes_total; no trivy_* series exist), its runbook anchor resolves and lists fetch -> promote --approved-by -> push --ca-cert --kube-context narwhal; promtool cases (stale fires, healthy/idle do not); 6 mutations caught (D-SECDB-STALE)" \
+    python3 scripts/test/lib/check-trivy-db-redownload-alert.py --mutation-verify
+  # 2026-11-06 (#563): velero-ui 0.10.1 endpoints with no upstream policy check, reachable by any logged-in user.
+  check R319 "velero-ui gateway: DELETE /api/settings/velero/plugins/:name (unused upstream stub) is closed for everyone (case-insensitive regex, slash variants, priority 10), POST bulk download rule kept, and no rule closes the paths the UI needs (/api/stats*, /api/form/*, /api/settings/velero/server|ui|plugins, /api/config); permission matrix records the decision; 9 mutations caught (D-VELERO-UI-563)" \
+    python3 scripts/test/lib/check-velero-ui-endpoints.py --mutation-verify
 }
 
 #=========================================

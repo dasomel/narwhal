@@ -55,7 +55,19 @@ spec:
   monitoring:
     enablePodMonitor: false
 
+  # D-CNPG-AA-REQUIRED (#564): required hostname anti-affinity, so the two instances never share a node
+  # (2026-11-04/06: both on worker-1, one stall failed over the DB and a drain blocked WAL archiving).
+  # Checked 2026-11-06: 3 untainted workers, 3 control-plane nodes tainted NoSchedule, instances: 2.
+  # Cost: a rescheduled instance needs a worker that does not host the other instance. Single-worker drain
+  # on 3 workers: the evicted pod goes to the third worker, but only if it has CPU/memory requests free;
+  # if not, or if a second worker is down/cordoned, the pod stays Pending (one instance, no HA) instead of
+  # co-locating. Pending is the intended outcome, not a bug: fix capacity or uncordon.
+  # Rollout: anti-affinity only applies at schedule time, existing pods are not evicted
+  # (IgnoredDuringExecution); CNPG rolls replicas first and the primary last (primaryUpdateMethod
+  # restart, in place, no switchover). Escape hatch: set podAntiAffinityType back to preferred.
   affinity:
+    podAntiAffinityType: required
+    topologyKey: kubernetes.io/hostname
     tolerations:
       - key: node.kubernetes.io/disk-pressure
         operator: Exists

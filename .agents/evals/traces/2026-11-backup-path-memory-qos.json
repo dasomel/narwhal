@@ -1,0 +1,59 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-backup-path-memory-qos-20261106",
+  "task": "A node-level OOM during a Velero backup killed BestEffort SeaweedFS (filer) and failed every PodVolumeBackup. Make the backup storage path Burstable and bound Velero data-path concurrency and memory.",
+  "changeContext": {
+    "paths": [
+      ".agents/evals/traces/2026-11-backup-path-memory-qos.json",
+      "docs/common/lessons-log.md",
+      "gitops/charts/narwhal-apps/templates/seaweedfs.yaml",
+      "gitops/charts/narwhal-apps/templates/velero.yaml",
+      "scripts/test/lib/check-backup-path-qos.py",
+      "scripts/test/regression-check-kakao.sh"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Change only resources for seaweedfs master/volume/filer/s3 and the velero-node-agent-config JSON (loadConcurrency, podResources). Deliberately left alone: backup schedules, volume policies, which volumes are backed up, the node-agent DaemonSet resources, worker RAM, live cluster (read-only kubectl top/get only), Gitea."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "2026-11-06 ~00:38-01:00Z on worker-3: dmesg OOM kills of weed (rss 93MB, oom_score_adj 1000), BestEffort controller and prometheus; filer restarted 4 times; PVBs failed with the bucket storage-config internal error. Live idle usage: filer 93Mi, master 26Mi, volume 30Mi, s3 41Mi.",
+      "evidence": [
+        "repo:gitops/charts/narwhal-apps/templates/seaweedfs.yaml",
+        "repo:gitops/charts/narwhal-apps/templates/velero.yaml"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "D-sw-qos: requests and memory limits on the four SeaweedFS components (chart 4.34.0 keys, helm template renders all four). D-datapath-qos: loadConcurrency.globalConfig 1 and podResources in velero-node-agent-config (field names from the Velero v1.18 docs)."
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "Static: R310 parses seaweedfs.yaml and the node-agent ConfigMap JSON; a mutation removing loadConcurrency is caught; helm template of chart 4.34.0 with the rendered values shows requests/limits on all four components; full make lint/validate/test. NOT covered: a real node OOM with the new QoS, a live backup run, the node-agent DaemonSet resources.",
+      "evidence": [
+        "test:python3 scripts/test/lib/check-backup-path-qos.py -> backup path QoS ok; mutation without loadConcurrency exits 1",
+        "test:make test -> R310 pass",
+        "repo:scripts/test/lib/check-backup-path-qos.py"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "completion_claim",
+      "summary": "In the repository the SeaweedFS pods are Burstable and the Velero data-path config is bounded, pinned by R310. Whether backups now survive node memory pressure on the live cluster is not demonstrated; it needs push-to-gitea and a backup run."
+    },
+    {
+      "id": "e6",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Complete for the repository scope; not deployed, no live backup run, node-agent DaemonSet resources and worker memory overcommit remain unchanged."
+    }
+  ]
+}

@@ -179,6 +179,6 @@ data:
     g, guest, role:none
   # D-ARGOCD-NO-DEFAULT: empty default role. ArgoCD retries a denied request with the
   # default role, so role:readonly here overrode the guest deny and let guest list/get
-  # every app (found by the 2026-11-04 SSO sweep). Only the g-lines below grant access.
+  # every app (found by the 2026-11-04 SSO sweep). Only the g-lines above grant access.
   policy.default: ""
   scopes: '[groups]'

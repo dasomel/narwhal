@@ -59,6 +59,12 @@ CA_CERT=$(kubectl get secret narwhal-wildcard-tls -n platform-system -o jsonpath
 # additive (other consumers still trust the narwhal CA for Keycloak/etc).
 K8S_CA=$(cat /etc/kubernetes/pki/ca.crt 2>/dev/null || echo "")
 if [ -n "${CA_CERT}" ]; then
+  # D-HARBOR-CA-ROTATE (#551): harbor-core reads caBundleSecretName only at start, so a rotated CA
+  # leaves Harbor OIDC login failing closed until it restarts. GitOps owns the harbor Deployment but
+  # the Secret is made here, so a checksum annotation is not available; compare the Secret before and
+  # after the apply and roll harbor-core only when ca.crt really changed. Cost: one core restart per
+  # rotation. Escape hatch: kubectl -n devtools rollout restart deployment/harbor-core by hand.
+  CA_BEFORE=$(kubectl get secret narwhal-ca-cert -n devtools -o jsonpath='{.data.ca\.crt}' 2>/dev/null || true)
   for ns in devtools iam monitoring storage; do
     kubectl create namespace "${ns}" --dry-run=client -o yaml | kubectl apply -f - 2>/dev/null
     kubectl create secret generic narwhal-ca-cert \
@@ -66,6 +72,18 @@ if [ -n "${CA_CERT}" ]; then
       -n "${ns}" --dry-run=client -o yaml | kubectl apply -f -
   done
   echo "CA cert (narwhal + k8s) distributed to SSO namespaces"
+  CA_AFTER=$(kubectl get secret narwhal-ca-cert -n devtools -o jsonpath='{.data.ca\.crt}' 2>/dev/null || true)
+  # A first install has no previous Secret (CA_BEFORE empty) and harbor-core starts with the new one.
+  if [ -n "${CA_BEFORE}" ] && [ "${CA_BEFORE}" != "${CA_AFTER}" ] \
+    && kubectl get deployment harbor-core -n devtools >/dev/null 2>&1; then
+    echo "narwhal-ca-cert changed; restarting harbor-core so it reloads the CA bundle..."
+    if kubectl rollout restart deployment/harbor-core -n devtools \
+      && kubectl rollout status deployment/harbor-core -n devtools --timeout=180s; then
+      echo "harbor-core restarted"
+    else
+      echo "WARN: harbor-core restart did not finish; run: kubectl -n devtools rollout restart deployment/harbor-core" >&2
+    fi
+  fi
 else
   echo "WARN: narwhal-wildcard-tls CA cert not found, SSO apps may not verify Keycloak TLS"
 fi

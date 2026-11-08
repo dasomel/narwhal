@@ -1,0 +1,55 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-trivy-scan-writes-20261106",
+  "task": "Find and cut the remaining Trivy scan-Job disk writes on the local cluster after #574 (scannerReportTTL) and #575 (built-in trivy-server).",
+  "changeContext": {
+    "paths": [
+      ".agents/evals/traces/2026-11-trivy-scan-writes.json",
+      "docs/common/lessons-log.md",
+      "gitops/charts/narwhal-apps/templates/trivy-operator.yaml"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Change only trivy-operator values: scanJobsRetryDelay, skipResourceByLabels, trivy-server PVC + Velero exclude annotation. Deliberately left alone: the Java DB download inside each scan Job (the chart cannot share or persist it), the stale Harbor trivy-db mirror, docker.io images (not excluded, not mirrored), Prometheus OOM, the Kakao cluster."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "cAdvisor/Prometheus container_fs_writes_bytes_total (container!=\"\"): 24h scan Jobs ~56 GiB, trivy-server ~18 GiB. Scan targets: velero kopia-maintenance Jobs 23 scans/24h, velero-data-mover Pods (UUID-named container) ~10, keycloak 5 (Java DB + image, ~5 GiB each), dashboard-api/auth 8+8 failing on docker.io TOOMANYREQUESTS with OPERATOR_SCAN_JOB_RETRY_AFTER=30s. trivy-server log: `Updating DB` hourly and DB metadata NextUpdate 2026-11-05T19:02Z already past, so the stale Harbor mirror is re-downloaded (1.6 GiB) every hour.",
+      "evidence": [
+        "repo:gitops/charts/narwhal-apps/templates/trivy-operator.yaml"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "operator.scanJobsRetryDelay 30s to 6h; trivyOperator.skipResourceByLabels velero.io/repo-name,velero.io/pod-volume-backup,velero.io/pod-volume-restore; trivy.storageClassEnabled true on nfs-csi 5Gi with operator.serverAdditionalAnnotations backup.velero.io/backup-volumes-excludes=data. All four keys verified against chart 0.27.0 values.yaml and `helm template`."
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "local Vagrant cluster, trivy-operator Application values applied with push-to-gitea.sh. NOT covered: the hourly stale-DB re-download (still happens, now on the NFS server disk), per-Job Java DB download, Kakao cluster, a full 24h window (measured 66 min).",
+      "evidence": [
+        "test:RESEARCH_EVIDENCE_DIR=tmp make test -> passed 433, failed 0",
+        "test:live: operator env OPERATOR_SCAN_JOB_RETRY_AFTER=6h; ConfigMap trivy-operator skipResourceByLabels set; PVC data-trivy-server-0 Bound nfs-csi; deleting trivy-server-0 restarted without `Need to update DB`; VulnerabilityReports 94 to 114 and kubernetes-dashboard-api/loki-sc-rules reports present; no scan Job created 00:41Z-01:35Z while kopia Jobs ran at 00:37Z and 01:12Z",
+        "repo:gitops/charts/narwhal-apps/templates/trivy-operator.yaml"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "completion_claim",
+      "summary": "Velero ephemeral-workload scans and the 30s failed-scan retry loop are gone and trivy-server keeps its DB across restarts, on the local cluster. Remaining writers (hourly DB refresh, Java DB per keycloak-class scan) are documented, not fixed."
+    },
+    {
+      "id": "e6",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Complete for the scoped causes (Velero ephemeral scans, 30s retry loop, restart re-download) within repository and local-cluster scope, measured over 66 min; the hourly stale-mirror DB refresh and the per-Job Java DB are documented as open and tracked separately."
+    }
+  ]
+}

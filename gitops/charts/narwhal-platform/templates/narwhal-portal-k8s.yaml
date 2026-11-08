@@ -45,14 +45,8 @@ rules:
   - apiGroups: [cert-manager.io]
     resources: [certificates, clusterissuers]
     verbs: [get, list, watch]
-  # D-CERT-RENEW-ISSUING: Settings -> Certificates "renew" sets the Issuing condition via PUT
-  # certificates/status (what `cmctl renew` does). Intentional minimal widening, approved for this
-  # fix: status subresource only, so spec is never writable; cluster-wide because the portal lists
-  # certificates cluster-wide and the route is cluster-admin gated. Escape hatch: delete this rule
-  # (renew then 403s and `cmctl renew` is the manual path).
-  - apiGroups: [cert-manager.io]
-    resources: [certificates/status]
-    verbs: [update]
+  # D-CERT-RENEW-ISSUING / D-CERT-RENEW-NS (#562): certificates/status `update` is NOT here any
+  # more; it is granted per namespace by the narwhal-portal-cert-renew Roles below.
   - apiGroups: [kyverno.io]
     resources: [clusterpolicies, policies]
     verbs: [get, list, watch]
@@ -156,6 +150,99 @@ roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
   name: narwhal-portal-logs
+subjects:
+  - kind: ServiceAccount
+    name: narwhal-portal
+    namespace: devtools
+---
+# D-CERT-RENEW-NS (#562): Settings -> Certificates "renew" (PUT certificates/status, what `cmctl
+# renew` does) is granted only in the namespaces that hold Certificates: devtools
+# (narwhal-portal-valkey-tls), platform-system (narwhal-root-ca, narwhal-wildcard-tls) and storage
+# (openbao-tls); verified with `kubectl --context narwhal get certificates -A` 2026-11-06. Status
+# subresource only, so spec is never writable; reads stay cluster-wide in the ClusterRole above.
+# Cost: a Certificate created in a new namespace is listed but its renew answers 403 (the route maps
+# it to "not permitted") until a Role + RoleBinding is added there (copy one of these three).
+# Escape hatch: delete these Roles (renew 403s everywhere; `cmctl renew` is the manual path).
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: narwhal-portal-cert-renew
+  namespace: devtools
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+rules:
+  - apiGroups: [cert-manager.io]
+    resources: [certificates/status]
+    verbs: [update]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: narwhal-portal-cert-renew
+  namespace: devtools
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: narwhal-portal-cert-renew
+subjects:
+  - kind: ServiceAccount
+    name: narwhal-portal
+    namespace: devtools
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: narwhal-portal-cert-renew
+  namespace: platform-system
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+rules:
+  - apiGroups: [cert-manager.io]
+    resources: [certificates/status]
+    verbs: [update]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: narwhal-portal-cert-renew
+  namespace: platform-system
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: narwhal-portal-cert-renew
+subjects:
+  - kind: ServiceAccount
+    name: narwhal-portal
+    namespace: devtools
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: narwhal-portal-cert-renew
+  namespace: storage
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+rules:
+  - apiGroups: [cert-manager.io]
+    resources: [certificates/status]
+    verbs: [update]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: narwhal-portal-cert-renew
+  namespace: storage
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: narwhal-portal-cert-renew
 subjects:
   - kind: ServiceAccount
     name: narwhal-portal
@@ -338,7 +425,7 @@ spec:
         - name: narwhal-portal
           # 불변 태그 고정 — :latest는 매니페스트 diff가 없어 ArgoCD가 재배포하지
           # 않는다(2026-07-07 실수 로그). 업그레이드 = 태그 범프.
-          image: ghcr.io/dasomel/narwhal-portal:1.1.7
+          image: ghcr.io/dasomel/narwhal-portal:1.1.8
           imagePullPolicy: IfNotPresent
           securityContext:
             allowPrivilegeEscalation: false

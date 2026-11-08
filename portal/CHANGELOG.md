@@ -9,6 +9,25 @@ English | [한국어](CHANGELOG-ko.md)
 
 ## [Unreleased]
 
+## [1.1.8] - 2026-11-06
+
+Patch release: DORA recent-deployment rows without a recorded Argo CD phase show a dash instead of an
+"Unknown" badge, and `next` is bumped to 16.4.3. The only other changes under `portal/` since
+`portal/v1.1.7` are the OSS version snapshot regenerated for the 1.1.7 pin (#580) and a comment update in
+`portal/src/lib/k8s-client.ts` describing the namespaced cert-renew RBAC that now lives in gitops (#592).
+
+### Fixed
+
+- **Governance: DORA history rows labelled "Unknown" (narwhal#581)**: Argo CD records
+  `status.operationState.phase` only for the latest operation, and older `status.history` entries have no
+  status field, so the recent-deployments table showed an "Unknown" badge that read like a real status.
+  Those rows now render "—" with a tooltip (KO/EN) citing the Argo CD field constraint; Succeeded and Failed
+  keep their badges.
+
+### Changed
+
+- Bump `next` from 16.4.2 to 16.4.3 (next-react group, narwhal#486).
+
 ## [1.1.7] - 2026-11-05
 
 Patch release: DORA lead time preserves minute precision, the Trivy DB status card lists every mirrored
@@ -652,7 +671,8 @@ management dashboard built with Next.js 16 and React 19.
   - Skaffold development profile configured for live Hot Module Replacement (HMR) and container
     file syncing.
 
-[Unreleased]: https://github.com/dasomel/narwhal/compare/portal/v1.1.7...HEAD
+[Unreleased]: https://github.com/dasomel/narwhal/compare/portal/v1.1.8...HEAD
+[1.1.8]: https://github.com/dasomel/narwhal/compare/portal/v1.1.7...portal/v1.1.8
 [1.1.7]: https://github.com/dasomel/narwhal/compare/portal/v1.1.6...portal/v1.1.7
 [1.1.6]: https://github.com/dasomel/narwhal/compare/portal/v1.1.5...portal/v1.1.6
 [1.1.5]: https://github.com/dasomel/narwhal/compare/portal/v1.1.4...portal/v1.1.5

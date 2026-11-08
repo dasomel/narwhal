@@ -1,0 +1,58 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-trivy-db-stale-redownload-alert-20261106",
+  "task": "Issue #585: a stale Harbor trivy-db mirror makes trivy-server re-download the same DB hourly. Add an alert on the repeated download and document the refresh procedure; evaluate skip-db-update without implementing it.",
+  "changeContext": {
+    "paths": [
+      ".agents/evals/traces/2026-11-trivy-db-stale-redownload-alert.json",
+      "docs/common/lessons-log.md",
+      "gitops/resources/prometheus-alerts.yaml",
+      "scripts/airgap/README.md",
+      "scripts/test/lib/check-trivy-db-redownload-alert.py",
+      "scripts/test/regression-check-kakao.sh"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Add one PrometheusRule alert, one README runbook section, R316. Deliberately left alone: auto-refresh of the mirror (promote is a human approval gate), TRIVY_SKIP_DB_UPDATE or any trivy-operator value, the Portal card, the live cluster (read-only Prometheus queries and kubectl get/logs/exec --help only), Gitea."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "Live Prometheus (kubectl --context narwhal port-forward, read-only): no trivy_* metric names exist; container_fs_writes_bytes_total{container=trivy-server} steps by 3.67 GiB per DB download (3.68 -> 7.33 GiB across the last 4h) and is flat otherwise. trivy-server logs show hourly 'Updating DB... Downloading vulnerability DB'.",
+      "evidence": [
+        "repo:gitops/resources/prometheus-alerts.yaml",
+        "repo:portal/src/lib/trivy-db-status.ts"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "D-SECDB-STALE: TrivyServerDbRedownloading fires on increase(container_fs_writes_bytes_total{namespace=security-system,container=trivy-server}[3h]) > 6e9 for 10m (two downloads in 3h). Runbook section in scripts/airgap/README.md with the fetch, promote --approved-by, push --ca-cert --kube-context narwhal order."
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "Static: R316 parses the rule and README anchor/order; promtool cases (stale mirror fires, single download and idle do not); 6 mutations caught. NOT covered: the rule loaded in the live Prometheus, a real stale-mirror firing.",
+      "evidence": [
+        "test:python3 scripts/test/lib/check-trivy-db-redownload-alert.py --mutation-verify -> PASS 3 promtool cases, 6 mutations rejected",
+        "repo:scripts/test/lib/check-trivy-db-redownload-alert.py"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "completion_claim",
+      "summary": "In the repository the alert and runbook exist and are pinned by R316. Whether it fires on the live cluster is not demonstrated; it needs push-to-gitea and ArgoCD sync."
+    },
+    {
+      "id": "e6",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Complete for the repository scope (option 3 alert plus runbook); option 2 evaluated only, not implemented; not deployed."
+    }
+  ]
+}

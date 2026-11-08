@@ -1,0 +1,61 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-monitoring-memory-spread-20261106",
+  "task": "worker-3 hit repeated kernel global OOM (prometheus-0 killed 16 times in ~3h) because prometheus, tempo and loki were all scheduled on it and loki was BestEffort. Make loki Burstable and make the three prefer different workers.",
+  "changeContext": {
+    "paths": [
+      ".agents/evals/traces/2026-11-monitoring-memory-spread.json",
+      "docs/common/lessons-log.md",
+      "gitops/charts/narwhal-apps/templates/loki.yaml",
+      "gitops/charts/narwhal-apps/templates/prometheus-stack.yaml",
+      "gitops/charts/narwhal-apps/templates/tempo.yaml",
+      "scripts/test/lib/check-monitoring-spread.py",
+      "scripts/test/regression-check-kakao.sh"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Change only loki singleBinary/sidecar resources and preferred hostname pod anti-affinity on prometheus, tempo and loki. Deliberately left alone: retention, storage sizes, scrape config, prometheus and tempo resources, the loki-canary DaemonSet (monitoring.lokiCanary.enabled false does not control it in chart 18.4.0), worker RAM, live cluster (read-only kubectl get only), Gitea, node-level scheduling policy."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "2026-11-06 worker-3 (77% usage, 5.3GiB allocatable): prometheus-0 OOM-killed 16 times in ~3h by the kernel killer, not its 2Gi limit; prometheus (1.25Gi), tempo-0 (593Mi) and loki-0 (loki 127Mi + loki-sc-rules 72Mi, resources {} = BestEffort) all on worker-3 while worker-2 was at 53%. Live labels: loki-canary DaemonSet pods carry app.kubernetes.io/name=loki on every node.",
+      "evidence": [
+        "repo:gitops/charts/narwhal-apps/templates/loki.yaml",
+        "repo:gitops/charts/narwhal-apps/templates/tempo.yaml",
+        "repo:gitops/charts/narwhal-apps/templates/prometheus-stack.yaml"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "D-MON-QOS-LOKI: loki singleBinary.resources (100m/256Mi, limit 768Mi) and sidecar.resources (10m/64Mi, limit 192Mi). D-MON-SPREAD: one preferred (weight 100) hostname anti-affinity term per other pod on prometheus (prometheusSpec.affinity with podAntiAffinity disabled), tempo (affinity) and loki (singleBinary.affinity); the loki term also requires component=single-binary so loki-canary does not match."
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "Static: R311 parses the three Application templates; 7 mutations (no limit, BestEffort sidecar, missing/dropped/required anti-affinity, canary-matching loki term, chart soft anti-affinity left on) are rejected; helm template of loki 18.4.0, tempo 2.2.3 and kube-prometheus-stack 86.2.3 with the rendered values shows the requests/limits on loki and loki-sc-rules and the three-term preferred podAntiAffinity on each of the three pods (loki also keeps the chart's own required self term); full make validate/test. NOT covered: real scheduler placement after a pod delete, a real node OOM with the new QoS.",
+      "evidence": [
+        "test:python3 scripts/test/lib/check-monitoring-spread.py --mutation-verify -> PASS: 7 mutations rejected",
+        "test:make test -> R311 pass",
+        "repo:scripts/test/lib/check-monitoring-spread.py"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "completion_claim",
+      "summary": "In the repository loki and loki-sc-rules are Burstable and the three monitoring pods prefer different workers, pinned by R311. Anti-affinity only applies when a pod is rescheduled; whether they actually land on different workers is not demonstrated and needs push-to-gitea, a sync and deleting tempo-0, loki-0 and the prometheus pod one at a time."
+    },
+    {
+      "id": "e6",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Complete for the repository scope; not deployed, no live placement or OOM verification, worker memory overcommit unchanged."
+    }
+  ]
+}

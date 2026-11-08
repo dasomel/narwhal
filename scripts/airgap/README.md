@@ -237,6 +237,28 @@ python3 scripts/airgap/lib/check-security-db-freshness.py \
   ./narwhal-airgap-bundle-amd64/security-db/promoted/manifest.json
 ```
 
+### 보안 DB 갱신 절차와 낡은 미러 경보 (D-SECDB-STALE)
+
+미러의 `trivy-db:2`가 `NextUpdate`를 넘기면 trivy-server는 마지막 다운로드 후 1시간마다 **같은 DB를 다시** 받는다
+(1회 약 1.6GiB, cAdvisor 쓰기 기준 약 3.7GiB, 하루 수십 GiB가 NFS 서버 디스크에 쌓임, #585). 업스트림 DB는 약 6~24시간마다
+새로 나오므로 미러는 주기적으로 갱신해야 한다. 자동 갱신은 하지 않는다: promote는 사람이 승인하는 게이트다.
+
+감지: `TrivyServerDbRedownloading`(`gitops/resources/prometheus-alerts.yaml`)이 trivy-server 컨테이너 쓰기가 3시간에 6GB를
+넘으면 울린다(다운로드 2회 이상). 미러 나이를 직접 재는 메트릭은 없다. Portal 보안 페이지의 "Trivy DB 상태" 카드(Harbor를
+읽음)에서 나이와 stale 여부를 확인한다.
+
+갱신 절차(인터넷 가능한 곳에서 fetch, 승인 후 promote, 클러스터 CA로 push):
+
+```bash
+./scripts/airgap/lib/fetch-security-db.sh --bundle <bundle-dir>
+./scripts/airgap/lib/promote-security-db.sh --bundle <bundle-dir> --approved-by "<name>"
+./scripts/airgap/lib/push-security-db.sh --bundle <bundle-dir> \
+  --ca-cert <narwhal ca.crt> --kube-context narwhal
+```
+
+push 뒤 trivy-server는 다음 시간 주기에 새 DB를 한 번 받고 멈춘다. 서둘러 반영하려면 `kubectl -n security-system delete pod trivy-server-0`
+(캐시 PVC는 유지, 새 DB를 1회 받음). 경보는 3시간 창이 지나면 해소된다.
+
 ### 보안 데이터 소스 인벤토리 (2026-11-05, Trivy 0.60.0 / trivy-operator 0.25.0)
 
 런타임에 온라인으로 가져오는 소스는 위 3개가 전부다. 나머지는 미러 대상이 아니다.

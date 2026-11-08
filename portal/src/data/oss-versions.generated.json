@@ -244,13 +244,13 @@
     {
       "component": "IDP Portal",
       "section": "IDP Portal",
-      "version": "1.1.7",
+      "version": "1.1.8",
       "chartVersion": null
     },
     {
       "component": "Next.js",
       "section": "IDP Portal",
-      "version": "16.4.2",
+      "version": "16.4.3",
       "chartVersion": null
     },
     {

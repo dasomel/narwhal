@@ -42,9 +42,9 @@
       "id": "e4",
       "type": "regression_verification",
       "status": "passed",
-      "scope": "Static: R321 reads 11-1, 06-phase2-start.sh, lib.sh and the six consumers; 16 mutations (widened role, delete before verify, guard removal, echoed password, xtrace, missing wiring, consumer reverting to the bootstrap secret) are caught. NOT covered: any run of 11-1 against a real Keycloak, fresh up.sh, re-run on a migrated cluster, temp-admin not returning after a pod restart.",
+      "scope": "Static: R321 reads 11-1, 06-phase2-start.sh, lib.sh and the six consumers; 21 mutations (widened role, delete before verify, guard removal, echoed password, password back on argv, xtrace, 11-1 missing from the execution loop or misordered, consumer reverting to the bootstrap secret) are caught. Also run by hand: 11-1 against a local Keycloak 26.5.7 container (kubectl shim, no Kubernetes): migrate then re-run, temp-admin deleted, platform-admin logs in, and temp-admin did not come back after a container restart. NOT covered: a real Kubernetes/operator cluster, a fresh up.sh, the recovery Pod in the runbook.",
       "evidence": [
-        "test:python3 scripts/test/lib/check-keycloak-permanent-admin.py --mutation-verify -> 16 mutations caught",
+        "test:python3 scripts/test/lib/check-keycloak-permanent-admin.py --mutation-verify -> 21 mutations caught",
         "repo:scripts/test/lib/check-keycloak-permanent-admin.py"
       ]
     },

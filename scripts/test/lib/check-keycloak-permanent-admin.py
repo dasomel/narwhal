@@ -6,7 +6,9 @@ Static contract for scripts/cluster/11-1-keycloak-admin.sh and its consumers:
   - its Secret is created only when absent and the password is never echoed;
   - temp-admin is deleted only after the new login AND a master-realm admin API call succeeded, and
     never when the two usernames are equal;
-  - 11-1 runs as a critical Phase 2 step before 11-2;
+  - 11-1 is in the Phase 2 critical list AND in the execution loop (the loop is what runs scripts), after
+    11-keycloak.sh and before 11-2;
+  - the password never reaches argv in 11-1 (stdin manifest for the Secret, KC_CLI_PASSWORD via stdin for kcadm);
   - every kcadm consumer picks the Secret through keycloak_admin_secret / the keycloak-admin check
     and no consumer reads keycloak-initial-admin directly for the login.
 --mutation-verify re-runs the check on broken copies and requires each to fail.
@@ -42,7 +44,7 @@ def check(src):
     if not re.search(r'PERM_USER="platform-admin"', s):
         errs.append("permanent username is not platform-admin")
     # Secret created only when absent, from generate_password.
-    m = re.search(r'if ! secret_exists "\$\{PERM_SECRET\}" iam; then\n\s+kubectl create secret generic "\$\{PERM_SECRET\}"[^\n]*\n[^\n]*\n[^\n]*generate_password', s)
+    m = re.search(r'if ! secret_exists "\$\{PERM_SECRET\}" iam; then\n(?:[^\n]*\n){0,3}\s+NEW_PASS=\$\(generate_password\)\n\s+kubectl create -f -', s)
     if not m:
         errs.append("keycloak-admin Secret must be created only when absent, with generate_password")
     # Never print the password value.
@@ -76,6 +78,20 @@ def check(src):
         errs.append("11-1 is not a critical Phase 2 script")
     elif not names.index("11-keycloak.sh") < names.index("11-1-keycloak-admin.sh") < names.index("11-2-keycloak-config.sh"):
         errs.append("11-1 must run after 11-keycloak.sh and before 11-2")
+    m = re.search(r'^for script in ([^;]+); do$', p, re.M)
+    loop = re.findall(r'"([^"]+\.sh)"', m.group(1)) if m else []
+    if "11-1-keycloak-admin.sh" not in loop:
+        errs.append("11-1 is not in the Phase 2 execution loop (a fresh up.sh would never run it)")
+    elif not loop.index("11-keycloak.sh") < loop.index("11-1-keycloak-admin.sh") < loop.index("11-2-keycloak-config.sh"):
+        errs.append("execution loop must run 11-1 after 11-keycloak.sh and before 11-2")
+    # No password on argv: kcadm gets it through stdin -> KC_CLI_PASSWORD, the Secret through a stdin manifest.
+    code = "\n".join(l for l in s.splitlines() if not l.lstrip().startswith("#"))
+    if re.search(r"--(new-)?password\b", code):
+        errs.append("11-1 passes a password flag on the command line")
+    if "--from-literal" in code:
+        errs.append("11-1 builds a Secret with --from-literal (password on kubectl argv)")
+    if "KC_CLI_PASSWORD" not in code or "kubectl exec -i" not in code:
+        errs.append("11-1 must pass the kcadm password via stdin into KC_CLI_PASSWORD")
     if "keycloak_admin_secret()" not in src[LIB] or "keycloak-initial-admin" not in src[LIB] or "keycloak-admin" not in src[LIB]:
         errs.append("lib.sh keycloak_admin_secret missing")
     for f in LIB_CONSUMERS:
@@ -121,10 +137,15 @@ def mutations():
         "same-name guard removed": rep(NEW, '"${BOOT_USER}" = "${PERM_USER}"', '"x" = "y"'),
         "failed verification no longer aborts": rep(NEW, 'keeping ${BOOT_USER}." >&2\n    exit 1', 'keeping ${BOOT_USER}." >&2'),
         "verification skips the admin API": rep(NEW, "kc_login \"${PERM_USER}\" \"${PERM_PASS}\" && kc_can_administer; then\n      VERIFIED", "kc_login \"${PERM_USER}\" \"${PERM_PASS}\"; then\n      VERIFIED"),
-        "secret created unconditionally": rep(NEW, 'if ! secret_exists "${PERM_SECRET}" iam; then\n  kubectl create', 'if true; then\n  kubectl create'),
+        "secret created unconditionally": rep(NEW, 'if ! secret_exists "${PERM_SECRET}" iam; then\n', 'if true; then\n'),
         "password echoed": rep(NEW, 'echo "  -> secret iam/${PERM_SECRET} created"', 'echo "  -> secret iam/${PERM_SECRET} created ${PERM_PASS}"'),
         "xtrace enabled": rep(NEW, "set -euo pipefail", "set -euxo pipefail"),
         "11-1 not critical": rep(PHASE2, '  "11-1-keycloak-admin.sh"\n', ""),
+        "11-1 missing from the execution loop": rep(PHASE2, '"11-keycloak.sh" "11-1-keycloak-admin.sh" "11-2-keycloak-config.sh"', '"11-keycloak.sh" "11-2-keycloak-config.sh"'),
+        "11-1 after 11-2 in the execution loop": rep(PHASE2, '"11-keycloak.sh" "11-1-keycloak-admin.sh" "11-2-keycloak-config.sh"', '"11-keycloak.sh" "11-2-keycloak-config.sh" "11-1-keycloak-admin.sh"'),
+        "kcadm login back on --password argv": rep(NEW, '--user "$1" >/dev/null 2>&1', '--user "$1" --password "$2" >/dev/null 2>&1'),
+        "set-password back on --new-password argv": rep(NEW, 'set-password -r master --userid "${PERM_ID}" >/dev/null', 'set-password -r master --userid "${PERM_ID}" --new-password "${PERM_PASS}" >/dev/null'),
+        "Secret back on --from-literal": rep(NEW, 'kubectl create -f - >/dev/null <<MANIFEST', 'kubectl create secret generic x --from-literal=password="${NEW_PASS}" >/dev/null <<MANIFEST'),
         "11-1 after 11-2": rep(PHASE2, '  "11-1-keycloak-admin.sh"\n  "11-2-keycloak-config.sh"\n', '  "11-2-keycloak-config.sh"\n  "11-1-keycloak-admin.sh"\n'),
         "lib helper removed": rep(LIB, "keycloak_admin_secret()", "keycloak_admin_secret_x()"),
         "11-2 reads the bootstrap secret": rep(LIB_CONSUMERS[0], 'kubectl get secret "${KC_ADMIN_SECRET}" -n iam', "kubectl get secret keycloak-initial-admin -n iam"),

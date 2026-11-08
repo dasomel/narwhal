@@ -46,9 +46,60 @@ Not demonstrated by the static suite: after a Keycloak pod restart the operator 
 
 ## Recovery
 
-- `keycloak-admin` lost or password out of sync and `temp-admin` already deleted: add a one-time admin
-  from the pod, then re-run 11-1 (it logs in with the new bootstrap user only if it is named in
-  `keycloak-initial-admin`, so pick that username):
-  `kubectl --context narwhal -n iam exec -it keycloak-0 -c keycloak -- /opt/keycloak/bin/kc.sh bootstrap-admin user --username temp-admin --password:env KC_NEW_PW`
-  (set `KC_NEW_PW` and update `keycloak-initial-admin` `password` to the same value), then run 11-1.
-- Rollback to the temporary admin is not offered: `temp-admin` is by design not kept.
+Case: `keycloak-admin` is lost or out of sync and `temp-admin` is already deleted, so 11-1 cannot log in.
+Follow the [Keycloak bootstrap-admin recovery](https://www.keycloak.org/server/bootstrap-admin-recovery):
+all Keycloak nodes must be stopped, then `kc.sh bootstrap-admin user` creates a one-time admin from a
+password environment variable (never on the command line). With the operator that means scaling the
+`Keycloak` CR to zero, running the command in a one-off Pod against the same database, and scaling back.
+Not run against a live cluster; rehearse the Pod on a throwaway Keycloak first.
+
+```bash
+# 1. Stop GitOps from scaling Keycloak back up, then stop Keycloak (brief SSO outage).
+kubectl --context narwhal -n argocd get application narwhal-platform -o jsonpath='{.spec.syncPolicy.automated}'   # expect prune and selfHeal true
+kubectl --context narwhal -n argocd patch application narwhal-platform --type merge -p '{"spec":{"syncPolicy":{"automated":null}}}'
+kubectl --context narwhal -n iam patch keycloak keycloak --type merge -p '{"spec":{"instances":0}}'
+kubectl --context narwhal -n iam wait --for=delete pod/keycloak-0 --timeout=300s
+
+# 2. Put a new one-time password into the Secret the Pod reads (value never printed or put in argv).
+NEWPW=$(openssl rand -base64 18 | tr -d '=/+')
+printf '%s' "$NEWPW" | kubectl --context narwhal -n iam create secret generic keycloak-recovery-admin \
+  --from-file=password=/dev/stdin --dry-run=client -o yaml | kubectl --context narwhal -n iam apply -f -
+unset NEWPW
+
+# 3. One-off Pod: same image and database as Keycloak, password only through the environment.
+IMG=$(kubectl --context narwhal -n iam get keycloak keycloak -o jsonpath='{.status.image}' 2>/dev/null)
+[ -n "$IMG" ] || IMG=quay.io/keycloak/keycloak:26.5.7   # match KEYCLOAK_VERSION in scripts/cluster/11-keycloak.sh
+kubectl --context narwhal -n iam apply -f - <<EOF
+apiVersion: v1
+kind: Pod
+metadata:
+  name: keycloak-bootstrap-recovery
+  namespace: iam
+spec:
+  restartPolicy: Never
+  containers:
+    - name: kc
+      image: ${IMG}
+      command: ["/opt/keycloak/bin/kc.sh", "bootstrap-admin", "user", "--username", "temp-admin", "--password:env", "KC_NEW_PW", "--no-prompt"]
+      env:
+        - { name: KC_DB, value: postgres }
+        - { name: KC_DB_URL, value: "jdbc:postgresql://narwhal-db-rw.database.svc.cluster.local:5432/keycloak?sslmode=disable" }
+        - { name: KC_DB_USERNAME, valueFrom: { secretKeyRef: { name: keycloak-db-secret, key: username } } }
+        - { name: KC_DB_PASSWORD, valueFrom: { secretKeyRef: { name: keycloak-db-secret, key: password } } }
+        - { name: KC_NEW_PW, valueFrom: { secretKeyRef: { name: keycloak-recovery-admin, key: password } } }
+EOF
+kubectl --context narwhal -n iam wait --for=jsonpath='{.status.phase}'=Succeeded pod/keycloak-bootstrap-recovery --timeout=300s
+kubectl --context narwhal -n iam logs keycloak-bootstrap-recovery | tail -3
+
+# 4. Clean up, start Keycloak, restore GitOps.
+kubectl --context narwhal -n iam delete pod keycloak-bootstrap-recovery
+kubectl --context narwhal -n iam patch keycloak keycloak --type merge -p '{"spec":{"instances":1}}'
+kubectl --context narwhal -n argocd patch application narwhal-platform --type merge -p '{"spec":{"syncPolicy":{"automated":{"prune":true,"selfHeal":true}}}}'
+```
+
+Then make 11-1 able to log in with the one-time admin: write its password into `keycloak-initial-admin`
+(`password` key, `username` `temp-admin`), run 11-1 (it recreates `platform-admin` from `keycloak-admin`
+and deletes `temp-admin` again), and finally `kubectl --context narwhal -n iam delete secret keycloak-recovery-admin`.
+The restore command assumes the `prune` and `selfHeal` values shown by the first check.
+
+Rollback to the temporary admin is not offered: `temp-admin` is by design not kept.

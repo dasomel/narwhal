@@ -27,6 +27,8 @@ source /home/vagrant/scripts/common/lib.sh
 #         다시 만든다). 무해: KC 는 master realm 에 관리자가 있으면 부트스트랩 계정을 만들지
 #         않는다.
 #
+#   D-KC-ADMIN-ARGV: 비밀번호는 argv 에 올리지 않는다 (kc_exec_pw, Secret 은 stdin 매니페스트).
+#
 # NOTE: 재실행 안전. 영구 관리자가 이미 동작하고 temp-admin 이 없으면 아무것도 바꾸지 않는다.
 #       Secret 값은 출력하지 않는다.
 
@@ -44,10 +46,24 @@ kc_exec() {
     /opt/keycloak/bin/kcadm.sh "$@"
 }
 
+# kc_exec_pw <password> <kcadm args...>: D-KC-ADMIN-ARGV. 비밀번호를 호스트나 컨테이너의 argv(ps,
+# /proc/<pid>/cmdline)에 올리지 않는다. 비밀번호는 kubectl exec -i 의 stdin 으로 들어가
+# 컨테이너 셸이 읽어 KC_CLI_PASSWORD 환경변수로 kcadm 에 넘긴다. kcadm 26.5.7 에서 확인:
+# `config credentials` 는 --password 없이 KC_CLI_PASSWORD 로 로그인하고 (stdin 파이프만으로는
+# "Console is not active" 로 실패한다), `set-password` 는 KC_CLI_PASSWORD 를 새 비밀번호로 쓴다.
+# 비용: 컨테이너 안 kcadm 프로세스 환경(/proc/<pid>/environ, 같은 uid만 읽음)에는 남는다.
+# 11-2/11-3/13-2/scripts/test 의 기존 `--password` argv 로그인은 이 변경 범위 밖이다.
+kc_exec_pw() {
+  local pw="$1"
+  shift
+  printf '%s\n' "${pw}" | kubectl exec -i -n iam keycloak-0 -c keycloak -- \
+    sh -c 'IFS= read -r KC_CLI_PASSWORD && export KC_CLI_PASSWORD && exec /opt/keycloak/bin/kcadm.sh "$@"' sh "$@"
+}
+
 # kc_login <user> <password>: kcadm master-realm 로그인 (한 번 시도, 출력 없음)
 kc_login() {
-  kc_exec config credentials --server http://localhost:8080 --realm master \
-    --user "$1" --password "$2" >/dev/null 2>&1
+  kc_exec_pw "$2" config credentials --server http://localhost:8080 --realm master \
+    --user "$1" >/dev/null 2>&1
 }
 
 # kc_can_administer: 현재 kcadm 세션이 master realm 관리 API 를 실제로 호출할 수 있는지
@@ -100,9 +116,21 @@ echo "  -> logged in with the ${SESSION} admin"
 # 2. 영구 관리자 Secret (없을 때만 생성, 덮어쓰지 않음)
 #=========================================
 if ! secret_exists "${PERM_SECRET}" iam; then
-  kubectl create secret generic "${PERM_SECRET}" -n iam \
-    --from-literal=username="${PERM_USER}" \
-    --from-literal=password="$(generate_password)" >/dev/null
+  # 매니페스트를 stdin 으로 넘겨 비밀번호가 kubectl argv 에 오르지 않게 한다 (generate_password 는
+  # [A-Za-z0-9] 24자라 YAML 인용이 필요 없다).
+  NEW_PASS=$(generate_password)
+  kubectl create -f - >/dev/null <<MANIFEST
+apiVersion: v1
+kind: Secret
+metadata:
+  name: ${PERM_SECRET}
+  namespace: iam
+type: Opaque
+stringData:
+  username: ${PERM_USER}
+  password: "${NEW_PASS}"
+MANIFEST
+  unset NEW_PASS
   echo "  -> secret iam/${PERM_SECRET} created"
 fi
 PERM_PASS=$(read_secret_field "${PERM_SECRET}" iam password)
@@ -136,7 +164,7 @@ if [ "${SESSION}" = "bootstrap" ]; then
     echo "ERROR: user '${PERM_USER}' not found after create." >&2
     exit 1
   fi
-  kc_exec set-password -r master --userid "${PERM_ID}" --new-password "${PERM_PASS}" >/dev/null
+  kc_exec_pw "${PERM_PASS}" set-password -r master --userid "${PERM_ID}" >/dev/null
   kc_exec update "users/${PERM_ID}" -r master -s enabled=true >/dev/null
   kc_exec add-roles -r master --uusername "${PERM_USER}" --rolename admin >/dev/null
   echo "  -> password synced from secret, realm role 'admin' granted"

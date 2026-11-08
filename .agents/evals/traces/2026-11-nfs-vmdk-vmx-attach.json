@@ -37,9 +37,9 @@
       "id": "e4",
       "type": "regression_verification",
       "status": "passed",
-      "scope": "Static: ruby -c and vagrant validate on the Vagrantfile; a ruby harness evaluating the constants/guard against a fake layout (new machine, VM without disk, live layout with default, live with 0 refused, override accepted, bad value); R327 with 34 mutations including config.vm.disk reintroduced and the guard ignoring the vmdk. NOT covered: a real vagrant up (new cluster first boot with the absolute path, reload), VirtualBox override.vm.disk, vdiskmanager invocation.",
+      "scope": "Static: ruby -c and vagrant validate on the Vagrantfile; a ruby harness evaluating the constants/guard against a fake layout (new machine, VM without disk, live layout with default, live with 0 refused, override accepted, bad value); R327 with 38 mutations including config.vm.disk reintroduced and the guard ignoring the vmdk. NOT covered: a real vagrant up (new cluster first boot with the absolute path, reload), VirtualBox override.vm.disk, vdiskmanager invocation.",
       "evidence": [
-        "test:python3 scripts/test/lib/check-nfs-data-disk.py --mutation-verify -> PASS: 34 mutations rejected",
+        "test:python3 scripts/test/lib/check-nfs-data-disk.py --mutation-verify -> PASS: 38 mutations rejected",
         "test:ruby harness -> live layout default ok narwhal-nfs.vmdk, 0 aborts",
         "repo:scripts/test/lib/check-nfs-data-disk.py"
       ]

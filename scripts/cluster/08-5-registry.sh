@@ -233,10 +233,10 @@ if [ "${HARBOR_HEALTH}" = "200" ]; then
       python3 - <<'PYEOF'
 import base64, json, os, sys, urllib.error, urllib.parse, urllib.request
 
-API = os.environ["HARBOR_API"]
-API_BASE = API.rstrip("/")
-if API_BASE.endswith("/api/v2.0"):
-    API_BASE = API_BASE[:-len("/api/v2.0")]
+# D1 (D-SECDB-API-BASE): keep the REST prefix; only token auth uses the origin.
+# Cost: two bases; escape: update both if Harbor changes its API routing.
+API = os.environ["HARBOR_API"].rstrip("/")
+API_BASE = API[:-len("/api/v2.0")] if API.endswith("/api/v2.0") else API
 REGISTRY = os.environ["HARBOR_REGISTRY"]
 AUTH = "Basic " + base64.b64encode(("admin:" + os.environ["HARBOR_ADMIN_PASS"]).encode()).decode()
 PROJECT, ROBOT = "trivy-db", "trivy-db-refresh"
@@ -248,7 +248,7 @@ HAS_SECRET = os.environ["SECDB_ROBOT_HAS_SECRET"] == "1"
 def call(method, path, body=None):
     # Errors never echo the request body (it can carry the robot secret).
     req = urllib.request.Request(
-        API_BASE + path, method=method,
+        API + path, method=method,
         data=json.dumps(body).encode() if body is not None else None,
         headers={"Authorization": AUTH, "Content-Type": "application/json"})
     try:

@@ -16,7 +16,7 @@ Behavior:
     source and a digest mismatch after the copy fail without hiding the other artifact, and the password
     never reaches argv or the log;
   * the 08-5 Harbor block runs against a fake Harbor API: robot scoped to project trivy-db with repository
-    push+pull only, created once and left alone on a re-run, secret reset only when the Secret is missing,
+    push+pull only, created once and left alone on a re-run, secret reset when the Secret is missing or invalid,
     retention keeps 2 per repository including untagged, GC created only when none exists and never with
     delete_untagged;
   * the fetch-security-db.sh prune loop removes only directories that left the list;
@@ -292,20 +292,27 @@ class FakeHarbor(BaseHTTPRequestHandler):
         path = urllib.parse.urlsplit(self.path).path
         body = self._body()
         s["calls"].append((method, path, body))
+        # D2: token auth is origin-rooted; reject all other unprefixed routes.
+        # Cost: explicit route split; escape: revise with Harbor's upstream contract.
+        if (method, path) == ("GET", "/service/token"):
+            auth = self.headers.get("Authorization", "")
+            valid = auth == "Basic " + base64.b64encode((s["robots"][0]["name"] + ":" + s["robot_secret"]).encode()).decode()
+            return self._send(200 if valid else 401, {})
+        if not path.startswith("/api/v2.0/"):
+            return self._send(404, {})
+        path = path[len("/api/v2.0"):]
+        s["calls"][-1] = (method, path, body)
         if (method, path) == ("GET", "/projects/trivy-db"):
             return self._send(200, {"project_id": 2, "metadata": ({"retention_id": "9"} if s["retention"] else {})})
         if (method, path) == ("GET", "/robots"):
             return self._send(200, s["robots"])
         if (method, path) == ("POST", "/robots"):
             s["robots"].append({"id": 7, "name": "robot$trivy-db+" + body["name"]})
-            return self._send(201, {"id": 7, "secret": "HarborGenerated-Secret9"})
+            s["robot_secret"] = "HarborGenerated-Secret9"
+            return self._send(201, {"id": 7, "secret": s["robot_secret"]})
         if method == "PATCH" and path == "/robots/7":
             s["robot_secret"] = body["secret"]
             return self._send(200, {"secret": ""})
-        if path == "/service/token":
-            auth = self.headers.get("Authorization", "")
-            valid = auth == "Basic " + base64.b64encode((s["robots"][0]["name"] + ":" + s.get("robot_secret", "HarborGenerated-Secret9")).encode()).decode()
-            return self._send(200 if valid else 401, {})
         if (method, path) == ("POST", "/retentions"):
             s["retention"] = True
             return self._send(201, {})
@@ -390,9 +397,23 @@ def harbor_behavior(root):
     # Secret lost, robot still in Harbor: its secret is reset, not duplicated.
     st["calls"].clear()
     st["robot_secret"] = "OldSecret-Pw9"
-    p = harbor_run(code, st, reset=False)
+    p = harbor_run(code, st, reset=True)
     methods = [(c[0], c[1]) for c in st["calls"]]
     assert p.returncode == 0 and ("PATCH", "/robots/7") in methods and ("POST", "/robots") not in methods, methods
+
+    assert ("GET", "/service/token") not in methods, "missing Secret must rotate without authentication"
+    assert st["robot_secret"] == PASSWORD and "ROBOT_SECRET=" + PASSWORD in p.stdout, (p.stdout, p.stderr)
+    patches = [c[2] for c in st["calls"] if c[:2] == ("PATCH", "/robots/7")]
+    assert patches == [{"secret": PASSWORD}], patches
+
+    # Stored Secret no longer matches Harbor: a real 401 must trigger the same refresh.
+    st["calls"].clear()
+    st["robot_secret"] = "OldSecret-Pw9"
+    p = harbor_run(code, st, reset=False)
+    methods = [(c[0], c[1]) for c in st["calls"]]
+    assert p.returncode == 0 and ("GET", "/service/token") in methods and ("PATCH", "/robots/7") in methods, (methods, p.stderr)
+    assert ("POST", "/robots") not in methods, methods
+    assert st["robot_secret"] == PASSWORD and "ROBOT_SECRET=" + PASSWORD in p.stdout, (p.stdout, p.stderr)
 
 
 # ---------------------------------------------------------------- behavior: fetch prune, helm, promtool
@@ -507,6 +528,7 @@ MUTATIONS = [
     ("GC deletes untagged system-wide", REG, '"delete_untagged": False}})', '"delete_untagged": True}})'),
     ("robot secret reset on every run", REG, "elif found and not created_robot:", "elif found:"),
     ("create response secret discarded", REG, 'secret = created.get("secret") or ""', 'secret = PW'),
+    ("Harbor REST calls use unprefixed base", REG, 'API + path, method=method,', 'API_BASE + path, method=method,'),
     ("skopeo CA dir points at parent", CRON, '--dest-cert-dir "${CERT_ROOT}/${HARBOR_REGISTRY}"', '--dest-cert-dir "${CERT_ROOT}"'),
     ("robot secret printed", REG, 'print("ROBOT_USER=" + found[0]["name"])', 'print("ROBOT_USER=" + found[0]["name"] + PW)'),
     ("08-6 skips security-system", TLS, "storage security-system; do", "storage; do"),

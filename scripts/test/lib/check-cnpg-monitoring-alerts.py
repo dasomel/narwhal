@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""R326 (D-CNPG-MON, D-CNPG-HEALTH-ALERT, D-CNPG-WAL-ARCHIVE-ALERT, #600, PR #601).
+"""R326 (D-CNPG-MON, D-CNPG-MON-INGRESS, D-CNPG-HEALTH-ALERT, D-CNPG-WAL-ARCHIVE-ALERT, #600, PR #601, PR #602).
 
 Validates:
 1. CNPG metrics scraping enabled in gitops/resources/narwhal-db.yaml and scripts/cluster/07-cnpg.sh.
@@ -8,12 +8,17 @@ Validates:
 3. CNPG alerts in gitops/resources/prometheus-alerts.yaml:
    - CNPGClusterNotHealthy evaluated on cnpg_collector_up == 0 without absent()
    - CNPGMetricsUnavailable alerting on absent() for 15m window
-   - CNPGWALArchivingFailing alerting on failed_count increase or stalled archival > 1800s
+   - CNPGWALArchivingFailing alerting on failed_count increase or stalled archival > 1800s (exact threshold)
    - Decisions and official CNPG 1.29 docs URL recorded in comments
-4. promtool behavior cases for all alerts (healthy, collector down, absent metrics, failed archival, stalled archival).
-5. Mutation verification catching regressions across all 5 files.
+4. NetworkPolicy database-default-deny-ingress in gitops/resources/database-ingress-policy.yaml:
+   - Prometheus ingress allow from namespace monitoring (app.kubernetes.io/name=prometheus)
+   - Scoped strictly to TCP 9187 (+ ambient HBONE 15008 per R200)
+   - D-CNPG-MON-INGRESS comment recorded
+5. promtool behavior cases for all alerts (healthy, collector down, absent metrics, failed archival, stalled archival).
+6. Mutation verification catching regressions across all 6 files.
 """
 
+import re
 import shutil
 import subprocess
 import sys
@@ -30,6 +35,7 @@ FILES = [
     'gitops/charts/narwhal-apps/templates/prometheus-stack.yaml',
     'scripts/cluster/08-2-monitoring.sh',
     'gitops/resources/prometheus-alerts.yaml',
+    'gitops/resources/database-ingress-policy.yaml',
 ]
 
 DOCS_URL = 'https://cloudnative-pg.io/documentation/1.29/monitoring/'
@@ -101,14 +107,50 @@ def static(root):
     wal = by_alert['CNPGWALArchivingFailing']
     w_expr = ' '.join(wal['expr'].split())
     assert 'cnpg_pg_stat_archiver_failed_count{namespace="database"}' in w_expr, f'failed_count missing in wal expr: {w_expr}'
-    assert 'cnpg_pg_stat_archiver_seconds_since_last_archival{namespace="database"} > 1800' in w_expr, (
-        f'seconds_since_last_archival > 1800 missing in wal expr: {w_expr}'
-    )
+    # Exact threshold comparison with word boundary (\b) so > 180000 fails (P2, PR #602)
+    assert re.search(
+        r'cnpg_pg_stat_archiver_seconds_since_last_archival\{namespace="database"\}\s*>\s*1800\b',
+        w_expr,
+    ), f'seconds_since_last_archival > 1800 missing or threshold not exact in wal expr: {w_expr}'
+    assert re.search(
+        r'time\(\)\s*-\s*cnpg_pg_stat_archiver_last_archived_time\{namespace="database"\}\s*>\s*1800\b',
+        w_expr,
+    ), f'time() - last_archived_time > 1800 missing or threshold not exact in wal expr: {w_expr}'
     assert 'cnpg_pg_stat_archiver_last_archived_time{namespace="database"}' in w_expr, (
         f'last_archived_time missing in wal expr: {w_expr}'
     )
     assert wal['for'] == '5m'
     assert wal['labels']['severity'] == 'critical'
+
+    # 6. database-ingress-policy.yaml (P1, #600, PR #602)
+    netpol_text = (root / FILES[5]).read_text()
+    assert 'D-CNPG-MON-INGRESS' in netpol_text, 'D-CNPG-MON-INGRESS comment missing in database-ingress-policy.yaml'
+    netpol_docs = [d for d in yaml.safe_load_all(netpol_text) if isinstance(d, dict) and d.get('kind') == 'NetworkPolicy']
+    db_netpol = next((p for p in netpol_docs if p.get('metadata', {}).get('name') == 'database-default-deny-ingress'), None)
+    assert db_netpol is not None, 'database-default-deny-ingress NetworkPolicy not found'
+    assert db_netpol.get('metadata', {}).get('namespace') == 'database', (
+        'database-default-deny-ingress must be in database namespace'
+    )
+
+    prom_rules = []
+    for r in db_netpol.get('spec', {}).get('ingress', []):
+        for peer in r.get('from', []) or []:
+            ns_match = peer.get('namespaceSelector', {}).get('matchLabels', {})
+            pod_match = peer.get('podSelector', {}).get('matchLabels', {})
+            if (
+                ns_match.get('kubernetes.io/metadata.name') == 'monitoring'
+                and pod_match.get('app.kubernetes.io/name') == 'prometheus'
+            ):
+                prom_rules.append(r)
+    assert len(prom_rules) == 1, (
+        f'expected exactly 1 prometheus ingress rule in database-default-deny-ingress, found {len(prom_rules)}'
+    )
+    rule = prom_rules[0]
+    ports = rule.get('ports', [])
+    port_numbers = {p.get('port') for p in ports if p.get('protocol', 'TCP') == 'TCP'}
+    assert 9187 in port_numbers, 'TCP 9187 missing in prometheus ingress ports'
+    assert 15008 in port_numbers, 'TCP 15008 (ambient HBONE per R200) missing in prometheus ingress ports'
+    assert port_numbers == {9187, 15008}, f'unexpected ports allowed for prometheus: {port_numbers}'
 
     return alerts_yaml['spec']
 
@@ -353,6 +395,36 @@ MUTATIONS = [
         FILES[4],
         'labels:\n            severity: critical\n          annotations:\n            summary: "CNPG 인스턴스 비정상',
         'labels:\n            severity: warning\n          annotations:\n            summary: "CNPG 인스턴스 비정상',
+    ),
+    (
+        'database-ingress-policy missing D-CNPG-MON-INGRESS',
+        FILES[5],
+        '# D-CNPG-MON-INGRESS',
+        '# D-MUTATED',
+    ),
+    (
+        'database-ingress-policy wrong port 9187 -> 9188',
+        FILES[5],
+        'port: 9187',
+        'port: 9188',
+    ),
+    (
+        'database-ingress-policy wrong namespace monitoring -> devtools',
+        FILES[5],
+        'kubernetes.io/metadata.name: monitoring',
+        'kubernetes.io/metadata.name: devtools',
+    ),
+    (
+        'database-ingress-policy wrong pod label prometheus -> alertmanager',
+        FILES[5],
+        'app.kubernetes.io/name: prometheus',
+        'app.kubernetes.io/name: alertmanager',
+    ),
+    (
+        'database-ingress-policy widened ports with 5432',
+        FILES[5],
+        'port: 9187\n        - protocol: TCP\n          port: 15008',
+        'port: 9187\n        - protocol: TCP\n          port: 5432\n        - protocol: TCP\n          port: 15008',
     ),
 ]
 

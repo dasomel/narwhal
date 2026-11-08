@@ -32,13 +32,14 @@
 #   5. Gitea - devtools namespace, via `gitea-db-rw` ExternalName Service
 #      (narwhal-db.yaml, scripts/cluster/12-gitea.sh) - matches
 #      app.kubernetes.io/name=gitea (same selector gitea-ingress-policy.yaml already uses).
+#   6. Prometheus - monitoring namespace, app.kubernetes.io/name=prometheus
+#      (scripts/cluster/08-2-monitoring.sh, gitops/charts/narwhal-apps/templates/prometheus-stack.yaml) -
+#      scrapes CNPG metrics exporter on TCP 9187 on narwhal-db pods (cnpg.io/cluster=narwhal-db).
 #
 # NOT allowed here (checked, not assumed): narwhal-portal does not talk to Postgres
 # directly (no narwhal-db/DATABASE_URL reference in gitops/charts/narwhal-platform's
-# portal manifest); CNPG monitoring is off (`monitoring.enablePodMonitor: false` in
-# narwhal-db.yaml), so no Prometheus ingress rule is needed today - add one if that
-# flag ever flips to true. Backups go outward over the barman S3 endpoint (egress,
-# not covered here), so no ingress rule from `storage` is needed either.
+# portal manifest). Backups go outward over the barman S3 endpoint (egress, not
+# covered here), so no ingress rule from `storage` is needed either.
 #
 # Live verification (2026-09-28, narwhal#235): with the ambient probe CCNP and the
 # per-rule TCP 15008 allowances applied, and every mitigation removed, CNPG reported
@@ -119,5 +120,24 @@ spec:
       ports:
         - protocol: TCP
           port: 5432
+        - protocol: TCP
+          port: 15008
+    # 6. Prometheus (monitoring) - scrape CNPG metrics exporter (:9187).
+    # D-CNPG-MON-INGRESS (#600, PR #602): Prometheus scrapes CNPG metrics exporter.
+    # Narrowly scoped: from namespace monitoring (app.kubernetes.io/name=prometheus),
+    # to narwhal-db pods (cnpg.io/cluster=narwhal-db), TCP 9187 only (+ ambient HBONE 15008 per R200).
+    # Cost: exposes exporter port 9187 to Prometheus pods in monitoring namespace.
+    # Escape hatch: remove this rule or disable enablePodMonitor in narwhal-db.yaml.
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: prometheus
+              prometheus: prometheus-stack-kube-prom-prometheus
+      ports:
+        - protocol: TCP
+          port: 9187
         - protocol: TCP
           port: 15008

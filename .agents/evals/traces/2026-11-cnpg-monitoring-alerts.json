@@ -8,6 +8,7 @@
       ".agents/evals/traces/2026-11-cnpg-monitoring-alerts.json",
       "docs/common/lessons-log.md",
       "gitops/charts/narwhal-apps/templates/prometheus-stack.yaml",
+      "gitops/resources/database-ingress-policy.yaml",
       "gitops/resources/narwhal-db.yaml",
       "gitops/resources/prometheus-alerts.yaml",
       "scripts/cluster/07-cnpg.sh",
@@ -35,15 +36,15 @@
     {
       "id": "e3",
       "type": "bug_fix",
-      "summary": "D-CNPG-MON: enablePodMonitor: true in narwhal-db.yaml and 07-cnpg.sh, podMonitorSelectorNilUsesHelmValues: false and empty podMonitorSelector/podMonitorNamespaceSelector in prometheus-stack.yaml and 08-2-monitoring.sh. D-CNPG-HEALTH-ALERT: CNPGClusterNotHealthy evaluates strictly on cnpg_collector_up == 0 for 5m, missing metrics handled by CNPGMetricsUnavailable for 15m. D-CNPG-WAL-ARCHIVE-ALERT: CNPGWALArchivingFailing evaluates increase of cnpg_pg_stat_archiver_failed_count[5m] > 0 or seconds_since_last_archival > 1800 with last_archived_time > 0 for 5m. Official CNPG 1.29 docs URL cited in comments."
+      "summary": "D-CNPG-MON: enablePodMonitor: true in narwhal-db.yaml and 07-cnpg.sh, podMonitorSelectorNilUsesHelmValues: false and empty podMonitorSelector/podMonitorNamespaceSelector in prometheus-stack.yaml and 08-2-monitoring.sh. D-CNPG-MON-INGRESS: database-default-deny-ingress allows Prometheus ingress on TCP 9187/15008. D-CNPG-HEALTH-ALERT: CNPGClusterNotHealthy evaluates strictly on cnpg_collector_up == 0 for 5m, missing metrics handled by CNPGMetricsUnavailable for 15m. D-CNPG-WAL-ARCHIVE-ALERT: CNPGWALArchivingFailing evaluates increase of cnpg_pg_stat_archiver_failed_count[5m] > 0 or seconds_since_last_archival > 1800 with last_archived_time > 0 for 5m (exact threshold match with word boundary). Official CNPG 1.29 docs URL cited in comments."
     },
     {
       "id": "e4",
       "type": "regression_verification",
       "status": "passed",
-      "scope": "Static and promtool unit tests: R326 checks all 5 files, verifies 7 promtool behavior cases, and catches 10 mutations. Full make test, make validate, and make lint passed. NOT covered: live cluster push and live trigger of WAL archiving alert (read-only cluster discipline).",
+      "scope": "Static and promtool unit tests: R326 checks all 6 files, verifies 7 promtool behavior cases, and catches 15 mutations. Full make test, make validate, and make lint passed. NOT covered: live cluster push and live trigger of WAL archiving alert (read-only cluster discipline).",
       "evidence": [
-        "test:python3 scripts/test/lib/check-cnpg-monitoring-alerts.py --mutation-verify -> 7 promtool cases passed, 10 mutations rejected",
+        "test:python3 scripts/test/lib/check-cnpg-monitoring-alerts.py --mutation-verify -> 7 promtool cases passed, 15 mutations rejected",
         "test:make test -> R326 pass",
         "repo:scripts/test/lib/check-cnpg-monitoring-alerts.py"
       ]

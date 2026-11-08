@@ -3388,8 +3388,8 @@ PYEOF'
   # 2026-11-08 (D-WORKER-MEMORY): workers 6GB -> 8GB after the 2026-11-06 node OOMs at ~5.3GiB allocatable.
   check R323 "worker VM memory is 8GB everywhere: Vagrantfile WORKER_MEMORY=8192 (MASTER_MEMORY stays 6144), README/README-ko config, VM table and 42GB RAM requirement, architecture.md, operations.md, troubleshooting.md, SessionStart hook and agent text; no live doc says worker 6GB; the apply procedure (cordon/drain, halt + up --no-provision, uncordon, CNPG required anti-affinity #590) is documented; 9 mutations caught (D-WORKER-MEMORY)" \
     python3 scripts/test/lib/check-worker-memory.py --mutation-verify
-  # 2026-11-08 (D-CNPG-MON, D-CNPG-HEALTH-ALERT, D-CNPG-WAL-ARCHIVE-ALERT, #600, PR #601): CNPG metrics scraping and WAL archiving alerts
-  check R326 "CNPG metrics scraping enabled (narwhal-db.yaml, 07-cnpg.sh, prometheus-stack.yaml, 08-2-monitoring.sh), CNPGClusterNotHealthy evaluated without absent(), CNPGMetricsUnavailable (15m window), CNPGWALArchivingFailing (failed_count increasing or stalled > 1800s); 7 promtool behavior cases, 10 mutations caught (D-CNPG-MON, D-CNPG-HEALTH-ALERT, D-CNPG-WAL-ARCHIVE-ALERT)" \
+  # 2026-11-08 (D-CNPG-MON, D-CNPG-MON-INGRESS, D-CNPG-HEALTH-ALERT, D-CNPG-WAL-ARCHIVE-ALERT, #600, PR #601, PR #602): CNPG metrics scraping, NetPol ingress allow, and WAL archiving alerts
+  check R326 "CNPG metrics scraping enabled (narwhal-db.yaml, 07-cnpg.sh, prometheus-stack.yaml, 08-2-monitoring.sh), database-default-deny-ingress allows Prometheus on 9187/15008 (database-ingress-policy.yaml), CNPGClusterNotHealthy evaluated without absent(), CNPGMetricsUnavailable (15m window), CNPGWALArchivingFailing (failed_count increasing or stalled > 1800s exact threshold); 7 promtool behavior cases, 15 mutations caught (D-CNPG-MON, D-CNPG-MON-INGRESS, D-CNPG-HEALTH-ALERT, D-CNPG-WAL-ARCHIVE-ALERT)" \
     python3 scripts/test/lib/check-cnpg-monitoring-alerts.py --mutation-verify
 }
 

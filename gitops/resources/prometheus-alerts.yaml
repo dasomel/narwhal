@@ -232,30 +232,21 @@ spec:
             summary: "CNPG 메트릭 수집 불가"
             description: "namespace=database의 CNPG 메트릭(cnpg_collector_up)이 15분 이상 수집되지 않습니다. PodMonitor 설정 및 Prometheus scrape target을 확인하십시오."
 
-        # D-CNPG-WAL-ARCHIVE-ALERT (#600, PR #601): Alert when WAL archiving fails or stalls.
-        # Catches (1) postgres archiver errors (cnpg_pg_stat_archiver_failed_count increasing) and
-        # (2) stalled archiving exceeding 1800s (30m, 6x normal 300s archive_timeout) once initialized.
-        # Metrics defined in CNPG default monitoring ConfigMap (pg_stat_archiver query).
+        # D1 / D-CNPG-WAL-ARCHIVE-ALERT: use the built-in collector, observed live on 2026-11-08.
+        # Default SQL queries fail against the missing bootstrap DB authentik (SQLSTATE 3D000).
+        # A .ready WAL segment awaits archiving; backlog must stay nonzero for 30m (6x archive_timeout).
+        # Cost: sustained busy archival can also keep a backlog; query-based failure counts are unavailable.
+        # Escape hatch: restore SQL metrics with an explicit existing target DB, then reconsider the rule.
         # Docs: https://cloudnative-pg.io/documentation/1.29/monitoring/
         - alert: CNPGWALArchivingFailing
           expr: |
-            increase(cnpg_pg_stat_archiver_failed_count{namespace="database"}[5m]) > 0
-            or
-            (
-              (
-                cnpg_pg_stat_archiver_seconds_since_last_archival{namespace="database"} > 1800
-                or
-                (time() - cnpg_pg_stat_archiver_last_archived_time{namespace="database"} > 1800)
-              )
-              and
-              cnpg_pg_stat_archiver_last_archived_time{namespace="database"} > 0
-            )
-          for: 5m
+            cnpg_collector_pg_wal_archive_status{namespace="database",value="ready"} > 0
+          for: 30m
           labels:
             severity: critical
           annotations:
-            summary: "CNPG WAL 아카이빙 실패: {{ $labels.pod }}"
-            description: "CNPG 파드 {{ $labels.pod }}의 WAL 아카이빙 실패가 증가하거나 마지막 아카이빙 후 30분 이상 경과했습니다. S3 백업 대상(SeaweedFS) 연결 및 자격 증명을 확인하세요."
+            summary: "CNPG WAL 아카이빙 지연: {{ $labels.pod }}"
+            description: "CNPG 파드 {{ $labels.pod }}의 아카이빙 대기 WAL(.ready)이 30분 동안 해소되지 않았습니다. S3 백업 대상(SeaweedFS) 연결, 자격 증명 및 아카이빙 처리량을 확인하세요."
 
         - alert: CNPGReplicationLag
           expr: |
@@ -281,12 +272,9 @@ spec:
             summary: "CNPG 연결 수 높음: {{ $labels.pod }}"
             description: "CNPG 파드 {{ $labels.pod }}의 활성 연결이 max_connections의 80%를 5분 이상 초과합니다. 현재값: {{ $value | humanize }}%"
 
-        # D-CNPG-POD-READY (#600): CNPG metrics are not scraped here (narwhal-db.yaml monitoring.enablePodMonitor=false,
-        # live 2026-11-08: zero cnpg_* series), so the alert above cannot see an instance that is up but NotReady.
+        # D-CNPG-POD-READY (#600): pod readiness also catches an instance that is up but NotReady.
         # kube-state-metrics pod readiness works today. Instance pods are named <cluster>-<N> (poolers and jobs
         # have other suffixes). Cost: matches any StatefulSet-style `-N` pod in `database`. Escape hatch: delete.
-        # A WAL-archiving alert (cnpg_pg_stat_archiver_*) needs enablePodMonitor plus a Prometheus ingress rule in
-        # database-ingress-policy.yaml; not done here (design change), so archiving failure is still unalerted.
         - alert: CNPGInstanceNotReady
           expr: |
             kube_pod_status_ready{namespace="database",condition="true",pod=~".+-[0-9]+"} == 0

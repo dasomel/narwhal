@@ -1,0 +1,57 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-cnpg-archiver-metrics-20261108",
+  "task": "Switch the WAL archiving alert to the observed cnpg_collector_pg_wal_archive_status{value=\"ready\"} backlog metric because default queries fail on the missing bootstrap database 'authentik'. Pin with R326 promtool cases and mutations.",
+  "changeContext": {
+    "paths": [
+      ".agents/evals/traces/2026-11-cnpg-archiver-metrics.json",
+      "docs/common/lessons-log.md",
+      "gitops/resources/prometheus-alerts.yaml",
+      "scripts/test/lib/check-cnpg-monitoring-alerts.py"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Change only the WAL archiving alert in gitops/resources/prometheus-alerts.yaml, update R326 check-cnpg-monitoring-alerts.py test cases and mutations, and document decision D1 in docs/common/lessons-log.md. Deliberately left alone: database-ingress-policy, bootstrap initdb configuration, other alert rules in prometheus-alerts.yaml, live cluster state, git push/PR/merge."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "PR #602 took WAL archiving alert metric names (cnpg_pg_stat_archiver_failed_count and seconds_since_last_archival) from documentation without live verification. On the live cluster, bootstrap.initdb.database=authentik points to a non-existent database, causing CNPG 1.29.1 exporter default user queries to fail with 'database \"authentik\" does not exist (SQLSTATE 3D000)'. Even with cnpg_collector_up=1, SQL query metrics fail and the WAL archiving alert stayed silent.",
+      "evidence": [
+        "repo:gitops/resources/prometheus-alerts.yaml",
+        "repo:docs/common/lessons-log.md"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "D1 / D-CNPG-WAL-ARCHIVE-ALERT: switch CNPGWALArchivingFailing alert rule to cnpg_collector_pg_wal_archive_status{namespace=\"database\",value=\"ready\"} > 0 for 30m with critical severity. This observed exporter metric does not depend on SQL query execution and detects both growing backlogs and single stuck WAL segments. Updated R326 promtool test cases and 26 mutation checks, and documented decision D1 in lessons-log.md."
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "Repository verification: R326 promtool behavior cases and mutation checks passed. Alert rule expression, 30m window, and critical severity pinned. Sustained backlog, pending, single stuck WAL, growing backlog, cleared backlog, reset timer, done-only status, other namespace, and missing metric cases verified. 26 mutations rejected. No live cluster change, failure injection, or alert delivery was verified.",
+      "evidence": [
+        "test:python3 scripts/test/lib/check-cnpg-monitoring-alerts.py --mutation-verify -> 12 promtool behavior cases passed, 26 mutations rejected",
+        "repo:gitops/resources/prometheus-alerts.yaml",
+        "repo:scripts/test/lib/check-cnpg-monitoring-alerts.py"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "completion_claim",
+      "summary": "Repository alert definition switched to observed ready WAL backlog metric cnpg_collector_pg_wal_archive_status{value=\"ready\"} and verified by R326 promtool suite and mutation coverage. Live alert delivery and default query restoration require separate operational verification."
+    },
+    {
+      "id": "e6",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Complete for the repository alert rule update and test verification. SQL default query errors and live cluster verification remain outside scope."
+    }
+  ]
+}

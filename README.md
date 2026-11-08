@@ -233,7 +233,7 @@ DNS Configuration: Configure the client's DNS to `192.168.56.10` or add entries 
 | Grafana | <https://grafana.local.narwhal.internal> | Keycloak SSO (or the generated local admin) |
 | Gitea | <https://gitea.local.narwhal.internal> | gitea-admin / see show-credentials.sh or Keycloak SSO |
 | Harbor | <https://harbor.local.narwhal.internal> | admin / see show-credentials.sh or Keycloak SSO |
-| Keycloak | <https://keycloak.local.narwhal.internal> | temp-admin / (auto-generated) |
+| Keycloak | <https://keycloak.local.narwhal.internal> | platform-admin / (auto-generated, `iam/keycloak-admin`) |
 | Headlamp | <https://headlamp.local.narwhal.internal> | Keycloak SSO |
 | OpenBao | <https://openbao.local.narwhal.internal> | root token (`bao operator init`) |
 | Hubble | <https://hubble.local.narwhal.internal> | - |

@@ -3385,6 +3385,9 @@ PYEOF'
   # 2026-11-06 (#563): velero-ui 0.10.1 endpoints with no upstream policy check, reachable by any logged-in user.
   check R319 "velero-ui gateway: DELETE /api/settings/velero/plugins/:name (unused upstream stub) is closed for everyone (case-insensitive regex, slash variants, priority 10), POST bulk download rule kept, and no rule closes the paths the UI needs (/api/stats*, /api/form/*, /api/settings/velero/server|ui|plugins, /api/config); permission matrix records the decision; 9 mutations caught (D-VELERO-UI-563)" \
     python3 scripts/test/lib/check-velero-ui-endpoints.py --mutation-verify
+  # 2026-11-08 (#573): the Keycloak master realm ran on the operator's temporary bootstrap admin (temp-admin).
+  check R321 "Keycloak master realm permanent admin: 11-1 creates platform-admin with only the master role admin, keeps its Secret iam/keycloak-admin (created only when absent, never echoed), deletes temp-admin only after login plus a master-realm admin API call succeeded and never on a name clash, runs as a critical Phase 2 step between 11 and 11-2, and every kcadm consumer prefers keycloak-admin; 16 mutations caught (D-KC-ADMIN-573)" \
+    python3 scripts/test/lib/check-keycloak-permanent-admin.py --mutation-verify
 }
 
 #=========================================

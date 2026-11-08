@@ -140,6 +140,11 @@ CRITICAL_SCRIPTS=(
   "07-cnpg.sh"
   "08-1-networking.sh"
   "11-keycloak.sh"
+  # 11-1 replaces the operator's temporary master-realm admin (temp-admin) with a permanent one
+  # (D-KC-ADMIN-573, #573) and deletes temp-admin only after the new login is verified. 11-2/11-3
+  # then log in with it. Idempotent; failure stops Phase 2 so no later script runs on a half-
+  # switched admin. Escape hatch: remove this entry; consumers fall back to keycloak-initial-admin.
+  "11-1-keycloak-admin.sh"
   "11-2-keycloak-config.sh"
   # 11-3 creates per-service Keycloak OIDC clients and K8s Secrets (argocd, grafana, gitea,
   # harbor, headlamp, openbao, velero-ui, and APISIX proxies). Its client Secrets feed

@@ -213,7 +213,7 @@ DNS 설정: 클라이언트 DNS를 `192.168.56.10`으로 지정하거나 `/etc/h
 | Grafana | https://grafana.local.narwhal.internal | Keycloak SSO (또는 생성된 로컬 admin) |
 | Gitea | https://gitea.local.narwhal.internal | Keycloak SSO (또는 생성된 gitea-admin) |
 | Harbor | https://harbor.local.narwhal.internal | admin / see show-credentials.sh 또는 Keycloak SSO |
-| Keycloak | https://keycloak.local.narwhal.internal | temp-admin / (자동생성) |
+| Keycloak | https://keycloak.local.narwhal.internal | platform-admin / (자동생성, `iam/keycloak-admin`) |
 | Headlamp | https://headlamp.local.narwhal.internal | Keycloak SSO |
 | OpenBao | https://openbao.local.narwhal.internal | root token (`bao operator init`) |
 | Hubble | https://hubble.local.narwhal.internal | - |

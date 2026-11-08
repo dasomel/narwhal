@@ -41,9 +41,10 @@ kc_exec() {
 #=========================================
 echo "=== Logging in to Keycloak admin CLI ==="
 
-KC_ADMIN_PASS=$(kubectl get secret keycloak-initial-admin -n iam \
+KC_ADMIN_SECRET=$(keycloak_admin_secret)
+KC_ADMIN_PASS=$(kubectl get secret "${KC_ADMIN_SECRET}" -n iam \
   -o jsonpath='{.data.password}' | base64 -d)
-KC_ADMIN_USER=$(kubectl get secret keycloak-initial-admin -n iam \
+KC_ADMIN_USER=$(kubectl get secret "${KC_ADMIN_SECRET}" -n iam \
   -o jsonpath='{.data.username}' | base64 -d)
 
 LOGIN_OK=false

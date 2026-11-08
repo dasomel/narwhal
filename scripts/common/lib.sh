@@ -44,6 +44,21 @@ read_secret_field() {
   fi
 }
 
+# keycloak_admin_secret: name of the Secret holding the Keycloak master-realm admin that
+# kcadm automation logs in with. D-KC-ADMIN-573: the permanent admin (iam/keycloak-admin,
+# written by 11-1-keycloak-admin.sh) once it exists, else the operator's temporary bootstrap
+# admin (iam/keycloak-initial-admin) so a cluster not yet migrated keeps working. Fails closed
+# on any kubectl error other than NotFound.
+keycloak_admin_secret() {
+  local rc=0
+  secret_exists keycloak-admin iam || rc=$?
+  case "${rc}" in
+    0) echo keycloak-admin ;;
+    1) echo keycloak-initial-admin ;;
+    *) return 1 ;;
+  esac
+}
+
 # --- SeaweedFS S3 identities (D-s3auth, 2026-10-16) ---------------------------------------
 # One identity per client (loki, tempo, velero, cnpg), each scoped to its own bucket. The four
 # client Secrets are the single source of truth; storage/seaweedfs-s3-config (the server JSON,

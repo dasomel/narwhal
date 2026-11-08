@@ -140,6 +140,11 @@ CRITICAL_SCRIPTS=(
   "07-cnpg.sh"
   "08-1-networking.sh"
   "11-keycloak.sh"
+  # 11-1 replaces the operator's temporary master-realm admin (temp-admin) with a permanent one
+  # (D-KC-ADMIN-573, #573) and deletes temp-admin only after the new login is verified. 11-2/11-3
+  # then log in with it. Idempotent; failure stops Phase 2 so no later script runs on a half-
+  # switched admin. Escape hatch: remove this entry; consumers fall back to keycloak-initial-admin.
+  "11-1-keycloak-admin.sh"
   "11-2-keycloak-config.sh"
   # 11-3 creates per-service Keycloak OIDC clients and K8s Secrets (argocd, grafana, gitea,
   # harbor, headlamp, openbao, velero-ui, and APISIX proxies). Its client Secrets feed
@@ -166,9 +171,9 @@ CRITICAL_SCRIPTS=(
 )
 PORTAL_BINDINGS_DEGRADED_RC=3
 
-# Run all scripts in order (07→08-1~08-6→09→10→11-keycloak,11-2,11-3,11-4→12→13→14)
+# Run all scripts in order (07→08-1~08-6→09→10→11-keycloak,11-1,11-2,11-3,11-4→12→13→14)
 # Critical scripts will abort Phase 2 on failure; non-critical will warn and continue
-for script in "07-cnpg.sh" "08-1-networking.sh" "08-2-monitoring.sh" "08-3-security.sh" "08-4-storage.sh" "08-5-registry.sh" "08-6-tls-routes.sh" "09-istio-ambient.sh" "10-dnsmasq.sh" "11-keycloak.sh" "11-2-keycloak-config.sh" "11-3-keycloak-clients.sh" "11-4-keycloak-apiserver.sh" "12-gitea.sh" "13-argocd.sh" "13-2-narwhal-portal-bindings.sh" "14-gitops-bootstrap.sh" "15-narwhal-portal.sh"; do
+for script in "07-cnpg.sh" "08-1-networking.sh" "08-2-monitoring.sh" "08-3-security.sh" "08-4-storage.sh" "08-5-registry.sh" "08-6-tls-routes.sh" "09-istio-ambient.sh" "10-dnsmasq.sh" "11-keycloak.sh" "11-1-keycloak-admin.sh" "11-2-keycloak-config.sh" "11-3-keycloak-clients.sh" "11-4-keycloak-apiserver.sh" "12-gitea.sh" "13-argocd.sh" "13-2-narwhal-portal-bindings.sh" "14-gitops-bootstrap.sh" "15-narwhal-portal.sh"; do
   echo "============================================"
   # Determine if this script is critical
   is_critical=false

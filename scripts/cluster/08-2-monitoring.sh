@@ -40,6 +40,16 @@ for attempt in 1 2 3 4 5; do
     --namespace monitoring \
     --create-namespace \
     --version 86.2.3 \
+    --set kubeProxy.enabled=false \
+    --set kubeEtcd.enabled=true \
+    --set kubeEtcd.service.port=2381 \
+    --set kubeEtcd.service.targetPort=2381 \
+    --set kubeEtcd.service.selector.component=etcd \
+    --set kubeEtcd.serviceMonitor.scheme=http \
+    --set-string kubeEtcd.serviceMonitor.bearerTokenFile= \
+    --set-json 'alertmanager.alertmanagerSpec.alertmanagerConfigSelector={"matchLabels":{"narwhal.io/notification-channels":"true"}}' \
+    --set-json 'alertmanager.alertmanagerSpec.alertmanagerConfigNamespaceSelector={"matchLabels":{"kubernetes.io/metadata.name":"monitoring"}}' \
+    --set alertmanager.alertmanagerSpec.alertmanagerConfigMatcherStrategy.type=None \
     --set grafana.assertNoLeakedSecrets=false \
     --set grafana.admin.existingSecret=grafana-secrets \
     --set grafana.admin.userKey=admin-user \

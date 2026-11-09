@@ -581,3 +581,36 @@ data:
           type: k8s-resource
           kind: NetworkPolicy
           minCount: 1
+---
+# D610-5: owner-requested (#610) notification settings need writes to exactly two
+# pre-created monitoring objects. Cost: portal SA can read channel credentials and
+# replace routing; API must require cluster-admin. No create/delete/list permission.
+# Escape: remove this RoleBinding to disable channel editing without deleting settings.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: narwhal-portal-notification-channels
+  namespace: monitoring
+rules:
+  - apiGroups: [""]
+    resources: [secrets]
+    resourceNames: [narwhal-notification-channels]
+    verbs: [get, update, patch]
+  - apiGroups: [monitoring.coreos.com]
+    resources: [alertmanagerconfigs]
+    resourceNames: [narwhal-notification-channels]
+    verbs: [get, update, patch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: narwhal-portal-notification-channels
+  namespace: monitoring
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: narwhal-portal-notification-channels
+subjects:
+  - kind: ServiceAccount
+    name: narwhal-portal
+    namespace: devtools

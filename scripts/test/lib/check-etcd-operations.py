@@ -19,7 +19,8 @@ RULES = {
     "tls-server-key": ("scripts/verify/etcd-encryption-check.sh", "--key=/etc/kubernetes/pki/etcd/server.key", "| TLS/접근 |", "`server.key`"),
     "secret-encryption-init": ("scripts/cluster/02-init-cluster.sh", "EncryptionConfiguration", "| 암호화와 키 |", "API 서버 Secret 암호화를 설정"),
     "secret-encryption-join": ("scripts/cluster/02-join-control-plane.sh", "install -o root -g root -m 600 /tmp/encryption-config.yaml /etc/kubernetes/enc/encryption-config.yaml", "| 암호화와 키 |", "같은 encryption config를 새 master에 복사"),
-    "etcd-monitor-disabled": ("gitops/charts/narwhal-apps/templates/prometheus-stack.yaml", "kubeEtcd:\n          enabled: false", "| 모니터링 |", "`kubeEtcd.enabled: false`"),
+    "etcd-monitor-enabled": ("gitops/charts/narwhal-apps/templates/prometheus-stack.yaml", "kubeEtcd:\n          enabled: true", "| 모니터링 |", "`kubeEtcd.enabled: true`"),
+    "etcd-monitor-port": ("gitops/charts/narwhal-apps/templates/prometheus-stack.yaml", "port: 2381", "| 모니터링 |", "2381"),
 }
 BACKUP_ANCHOR = "| 정비/백업 |"
 BACKUP_CLAIM = "control-plane etcd의 자동 compaction/defrag/member replace 또는 snapshot 주기 설정이 없다"

@@ -1,0 +1,71 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-notification-channels-gitops-20261109",
+  "task": "Issue #610 GitOps lane: owner-authorized scoped notification settings, all-namespace routing, portal API network path and kubeadm etcd metrics gap #525. No live changes, no push, no make test.",
+  "changeContext": {
+    "paths": [
+      ".agents/evals/traces/2026-11-notification-channels-610.json",
+      "docs/common/lessons-log.md",
+      "docs/common/notification-channels.md",
+      "gitops/charts/narwhal-apps/templates/notification-channels.yaml",
+      "gitops/charts/narwhal-apps/templates/prometheus-stack.yaml",
+      "gitops/charts/narwhal-platform/templates/narwhal-portal-k8s.yaml",
+      "gitops/resources/network-policies.yaml",
+      "gitops/resources/notification-channels.yaml",
+      "scripts/cluster/02-init-cluster.sh",
+      "scripts/cluster/08-2-monitoring.sh",
+      "scripts/test/lib/check-notification-channels.py",
+      "scripts/test/regression-check-kakao.sh"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Read AGENTS.md, operational rules, shared w10-610 contract and issue. Restrict all writes to assigned worktree. D610-1..6 document ownership, permission widening, node metrics exposure, cost and escape hatches. Leave portal implementation, release pins, existing unused narwhal-alert-routing object, alert expressions and other lanes alone. CLAUDE.md contains only AGENTS bridge and Claude-only tooling locations; no additional project requirements."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "Read-only kubectl --context narwhal -n kube-system get pod etcd-narwhal-master-1 -o yaml observed --listen-metrics-urls=http://127.0.0.1:2381; Git had kubeEtcd.enabled=false and no notification config selection. Read-only monitoring policy inventory showed only monitoring-egress, no AuthorizationPolicy; existing monitoring-permissive admits opted-out portal plaintext.",
+      "evidence": [
+        "runtime:kubectl read-only master-1 pod: loopback-only HTTP 2381",
+        "repo:gitops/charts/narwhal-apps/templates/prometheus-stack.yaml"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "Create disabled Secret/config in dedicated resource Application, exact name/namespace field ignores plus RespectIgnoreDifferences; portal Role only get/update/patch resourceNames and RoleBinding. Select notification label in monitoring with MatcherStrategy None in both values paths. Explicit portal egress to named Alertmanager on 9093/15008; no new ambient ALLOW needed or existing senders would be denied. Enable etcd component selector HTTP 2381 with no bearer token, persist kubeadm listen-metrics-urls on 0.0.0.0 for joins. Runbook requires host firewall restriction and sequential existing-master rollout plus kubeadm-config persistence."
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "Offline only. R334 validates rendered local charts, disabled objects, selectors, matcher None, RBAC and Argo ignores; 23 negative mutations rejected. make validate, bash -n, git diff --check exit 0. Pinned kube-prometheus-stack 86.2.3/operator v0.91.0 helm template for both script args and Argo values proves CRD field/None enum support, parity, etcd component Service selector/2381 port and HTTP/no bearer token. No live writes, network/API path, actual alert delivery, selfHeal round trip or etcd scrape success tested; owner rollout remains required. make test explicitly not run. Ambient NetworkPolicy mutation guard passed. Workflow behavior spec validation, mutable-input guard, reference evaluation, version binding/gate and correlation using all existing traces passed (workspace-local output paths only). The additional whole CI helper suite and historical trace gate loop were interrupted as out-of-scope host work, not reported as passed; no GitHub reusable-action execution/equivalence claimed.",
+      "evidence": [
+        "test:python3 scripts/test/lib/check-notification-channels.py --mutation-verify -> exit 0, R334 PASS, 23 mutations rejected",
+        "test:make validate -> exit 0, Syntax OK and all resource YAML OK",
+        "test:python3 tmp/610/verify-render.py -> exit 0, pinned CRD and script/Argo parity PASS",
+        "test:bash -n scripts/cluster/02-init-cluster.sh scripts/cluster/08-2-monitoring.sh scripts/test/regression-check-kakao.sh -> exit 0",
+        "test:git diff --check -> exit 0",
+        "test:python3 scripts/test/lib/check-ambient-netpol.py --mutation-verify -> exit 0",
+        "test:python3 scripts/ci/check-agent-trace-requirement.py --policy .agents/evals/risk-policy.json --changed-files tmp/610/changed-files.txt --report-out tmp/610/agent-risk-result.json -> exit 0, high risk trace required and changed",
+        "test:python3 scripts/ci/check-agent-trace-evidence.py with all repository traces plus bound version trace -> exit 0, passed true",
+        "test:python3 .agents/evals/gate.py --trace .agents/evals/traces/2026-11-notification-channels-610.json --baseline .agents/evals/baseline.eval.json -> exit 0, regressions 0"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "completion_claim",
+      "summary": "Repository GitOps implementation and offline checks complete; runtime acceptance explicitly deferred to owner-run rollout. Credentials never stored in Git or printed."
+    },
+    {
+      "id": "e6",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Complete for assigned GitOps repository scope. Remaining risks: all-interface unauthenticated etcd metrics needs host firewall; force sync/data retention and portal access/delivery need runtime tests; existing installation stays unchanged until owner rollout."
+    }
+  ]
+}

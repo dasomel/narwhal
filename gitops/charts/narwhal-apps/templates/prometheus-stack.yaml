@@ -13,16 +13,21 @@ spec:
     targetRevision: 86.2.3
     helm:
       valuesObject:
-        # Cilium runs in kube-proxy-replacement mode → there is NO kube-proxy to scrape,
-        # so the default KubeProxyDown alert was a permanent false positive. And the kubeadm
-        # etcd metrics endpoint isn't exposed to Prometheus on this cluster, so the etcd scrape
-        # fails and etcdInsufficientMembers fires even though the 3-member etcd is healthy
-        # (apiserver/quorum fine). Disable both component monitors to clear the noise.
-        # (Real etcd monitoring can be re-enabled later with etcd client-cert plumbing.)
+        # D610-1: Cilium replaces kube-proxy; kubeadm etcd exposes HTTP metrics on 2381.
+        # Cost: unauthenticated metrics on the node network; restrict host firewall to Prometheus.
+        # Escape: disable kubeEtcd and restore loopback-only listen-metrics-urls (runbook).
         kubeProxy:
           enabled: false
         kubeEtcd:
-          enabled: false
+          enabled: true
+          service:
+            port: 2381
+            targetPort: 2381
+            selector:
+              component: etcd
+          serviceMonitor:
+            scheme: http
+            bearerTokenFile: ""
         # D-COST-LABELS: kube-state-metrics ships metricLabelsAllowlist: [] so kube_pod_labels had
         # no label_* series. The portal Cost page attributes pods by instance -> name -> app ->
         # k8s-app before falling back to the owner workload; export only those four pod labels
@@ -183,6 +188,8 @@ spec:
               type: RuntimeDefault
         alertmanager:
           alertmanagerSpec:
+            # D610-2: owner-requested cross-namespace notification routing; only the labelled
+            # monitoring config is trusted. Cost: its routes see all alerts. Escape: use OnNamespace.
             storage:
               volumeClaimTemplate:
                 spec:
@@ -190,6 +197,14 @@ spec:
                   resources:
                     requests:
                       storage: 5Gi
+            alertmanagerConfigSelector:
+              matchLabels:
+                narwhal.io/notification-channels: "true"
+            alertmanagerConfigNamespaceSelector:
+              matchLabels:
+                kubernetes.io/metadata.name: monitoring
+            alertmanagerConfigMatcherStrategy:
+              type: None
   destination:
     server: https://kubernetes.default.svc
     namespace: monitoring

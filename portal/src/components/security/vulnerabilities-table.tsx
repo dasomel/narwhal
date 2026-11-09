@@ -171,13 +171,21 @@ export function VulnerabilitiesTable({ initialData }: Props) {
     return params.toString()
   }, [severity, namespace])
 
-  const { data: rows = [], isLoading, isError, refetch } = useQuery<WorkloadVulnRow[]>({
+  const { data: result = { rows: initialData ?? [], partial: false }, isLoading, isError, refetch } = useQuery<{ rows: WorkloadVulnRow[]; partial: boolean }>({
     queryKey: ["security-vulnerabilities", severity, namespace],
-    queryFn: () =>
-      fetch(`/api/security/vulnerabilities?${queryParamStr}`).then((r) => r.json()),
-    initialData: severity === "all" && namespace === "all" ? initialData : undefined,
+    queryFn: async () => {
+      const response = await fetch(`/api/security/vulnerabilities?${queryParamStr}`)
+      return {
+        rows: await response.json() as WorkloadVulnRow[],
+        partial: response.headers.get("X-Partial-Data") === "true",
+      }
+    },
+    initialData: severity === "all" && namespace === "all" && initialData
+      ? { rows: initialData, partial: false }
+      : undefined,
     staleTime: 60_000,
   })
+  const rows = result.rows
 
   const allNamespaces = useMemo(() => {
     const source = initialData && initialData.length > 0 ? initialData : rows
@@ -245,6 +253,7 @@ export function VulnerabilitiesTable({ initialData }: Props) {
 
   return (
     <>
+      {result.partial && <DataState state="partial" detailKey="securityPartial" />}
       <div className="flex flex-wrap items-center gap-3 mb-3">
         <Select
           value={severity}

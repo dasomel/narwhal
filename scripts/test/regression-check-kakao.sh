@@ -2169,6 +2169,8 @@ PYEOF
     python3 scripts/test/lib/check-security-db-provisioning.py --mutation-verify
   check R304 "trivy-db provisioning invariants hold on the real tree" \
     python3 scripts/test/lib/check-security-db-provisioning.py
+  check R335 "Trivy partial state survives client refetch and is shown from API headers or initial server data; header-removal mutation rejected" \
+    python3 scripts/test/lib/check-trivy-partial-ui.py --mutation-verify
 
   check R305 "gateway lets only the portal's machine-token Gitea API calls (3 paths on narwhal-gitops, GET/POST, token header) skip OIDC; 8 mutations caught (D-GITEA-PORTAL-API)" \
     python3 scripts/test/lib/check-gitea-portal-api-route.py --mutation-verify

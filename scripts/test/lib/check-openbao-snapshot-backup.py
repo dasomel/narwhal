@@ -321,10 +321,11 @@ def check():
             problems.append(f"encrypt script lacks the exact guard line {line!r}")
     if "set +e" in script or script.splitlines()[0].strip() != "set -eu":
         problems.append("encrypt script must start with `set -eu` and never `set +e`")
-    for env_name, want in (("RECIPIENT_FPR", ""), ("KEEP", "7")):
-        envs = {e["name"]: e.get("value") for e in pod["containers"][0].get("env", [])}
-        if envs.get(env_name) != want:
-            problems.append(f"encrypt container env {env_name} must be {want!r} in Git (RECIPIENT_FPR is set by editing it)")
+    envs = {e["name"]: e.get("value") for e in pod["containers"][0].get("env", [])}
+    if envs.get("KEEP") != "7":
+        problems.append("encrypt container env KEEP must be '7' in Git")
+    if not re.fullmatch(r"[0-9A-F]{2}(:[0-9A-F]{2}){31}", envs.get("RECIPIENT_FPR") or ""):
+        problems.append("encrypt container env RECIPIENT_FPR must be a pinned SHA-256 fingerprint (32 colon-separated uppercase hex bytes)")
     cres = pod["containers"][0]["resources"]["limits"]
     if cres.get("memory") not in ("128Mi", "256Mi"):
         problems.append("encrypt memory limit is sized for -stream (128Mi/256Mi); revisit the sizing comment before changing")
@@ -523,7 +524,7 @@ MUTATIONS = (
     (BACKUP, "| sort -r \\", "| sort \\"),
     (BACKUP, "                  trap 'rc=$?; [ \"${rc}\" -eq 0 ] || rm -f \"${PLAIN}\"' EXIT\n", "                  # trap removed\n"),
     (BACKUP, '[ "${FPR}" = "${WANT}" ] || fail', '[ "${FPR}" = "${WANT}" ] || echo'),
-    (BACKUP, "                - name: RECIPIENT_FPR\n                  value: \"\"\n", "                - name: RECIPIENT_FPR\n                  value: \"AA\"\n"),
+    (BACKUP, 'value: "6E:DD:44:9F:F9:BB:CA:DE:7E:F6:9A:FF:C4:8B:13:38:46:97:EB:C7:31:6A:25:39:05:9C:23:F3:76:7C:24:A7"', 'value: ""'),
     (BACKUP, 'echo "WARNING: RECIPIENT_FPR is empty;', 'echo "note: RECIPIENT_FPR is empty;'),
     (BACKUP, 'optional: false\n', "optional: true\n"),
     (BACKUP, 'command -v openssl >/dev/null 2>&1 || fail "openssl not found in image"', "true"),

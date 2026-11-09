@@ -1,0 +1,57 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-image-digest-refresh-532-20261109",
+  "task": "Refresh moved image digests in image-digests.tsv (busybox 1.38.0, valkey:8-alpine, kong 3.9) and update all references across gitops and tests (#532, #611)",
+  "changeContext": {
+    "paths": [
+      "scripts/airgap/lib/image-digests.tsv",
+      "gitops/resources/openbao-backup.yaml",
+      "scripts/test/lib/check-openbao-snapshot-backup.py",
+      ".agents/evals/traces/2026-11-image-digest-refresh-532.json"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Refresh moved image digests for busybox:1.38.0, valkey:8-alpine, and kong:3.9 in image-digests.tsv, align openbao-backup.yaml pin and snapshot backup test expectations, and record trace evidence."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "check-openbao-snapshot-backup failed after valkey digest refresh: encrypt image digest in openbao-backup.yaml must match scripts/airgap/lib/image-digests.tsv",
+      "evidence": [
+        "test:python3 scripts/test/lib/check-openbao-snapshot-backup.py -> 'encrypt image digest must match scripts/airgap/lib/image-digests.tsv'"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "Updated valkey:8-alpine pin in openbao-backup.yaml and check-openbao-snapshot-backup.py to sha256:2602ace2be6569bc2bbb06f873776516ab9089821525be34f4305c67eb9db02a matching image-digests.tsv."
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "image digests, openbao backup manifest, mirror pins and version consistency",
+      "summary": "check-openbao-snapshot-backup exits 0, check-mirror-pins passed 49 checks, and check-version-consistency confirmed all versions match.",
+      "evidence": [
+        "test:python3 scripts/test/lib/check-openbao-snapshot-backup.py -> exit 0",
+        "test:python3 scripts/test/lib/check-mirror-pins.py -> 49 checks passed",
+        "test:bash scripts/ci/check-version-consistency.sh -> exit 0 All checked versions are consistent"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "completion_claim",
+      "summary": "The digest table and all image references in gitops and tests match current digests and pass verification."
+    },
+    {
+      "id": "e6",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Complete and verified within the stated scope (digest refresh, manifest pin alignment, and trace verification; no cluster rollout)"
+    }
+  ]
+}

@@ -46,5 +46,17 @@
     "line": 4,
     "sha256": "431551ee8b65c10e11b50fe06192dd6805c37fc3abadffb4b7f37d25d0e8160b",
     "reason": "revision unreachable: 96af64ec was a commit on the squash-merged #455 branch (fix/velero-skip-emptydir-volumes, deleted); the measurement is genuine"
+  },
+  {
+    "file": "2026-10.jsonl",
+    "line": 11,
+    "sha256": "5f9ed3cb3745e8d118590d3d80cc1e9f65003c729b9f8f18a83a9ad752712b47",
+    "reason": "recovered local-only record (from unpushed commit 30a79a32e); revision 60b722e6f is a branch commit not reachable from main (squash-merged), so it cannot be resolved in CI. Preserved verbatim."
+  },
+  {
+    "file": "2026-10.jsonl",
+    "line": 15,
+    "sha256": "733845ca80d2153bbdf60127bd2d1189a5cf47142543477cb248282d0c840b0b",
+    "reason": "recovered local-only record (from stash); revision 68a057048 is a branch commit not reachable from main (squash-merged), so it cannot be resolved in CI. Preserved verbatim."
   }
 ]

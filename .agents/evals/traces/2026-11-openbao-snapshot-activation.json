@@ -1,0 +1,59 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-openbao-snapshot-activation-20261110",
+  "task": "The OpenBao raft snapshot CronJob shipped in #443 without its activation steps ever being run, so no snapshot succeeded for weeks. Pin the recipient certificate fingerprint in Git as runbook step 3.3 after the owner completed live steps 3.1 and 3.2.",
+  "changeContext": {
+    "paths": [
+      ".agents/evals/traces/2026-11-openbao-snapshot-activation.json",
+      "docs/common/lessons-log.md",
+      "docs/common/storage-protection-policy.md",
+      "docs/runbooks/openbao-snapshot-backup.md",
+      "gitops/resources/openbao-backup.yaml",
+      "scripts/test/lib/check-openbao-snapshot-backup.py"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Change only the RECIPIENT_FPR env value, its format assertion and mutation, and the runbook/policy/lessons records. Deliberately left alone: the live cluster (no kubectl, no push-to-gitea), the CronJob schedule and script, suspend (stays unset), the unrelated ~/.narwhal/openbao-portal-auth.json Permission denied seen in the 13-2 run (known follow-up)."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "Live 2026-11-09 read-only: Job openbao-snapshot-29903310 DeadlineExceeded, CronJob without lastSuccessfulTime, no recipient ConfigMap and no openbao-backup Role. Owner then ran 13-2 (policy and role openbao-backup written and verified) and applied the recipient certificate ConfigMap (expires 2036-11-06).",
+      "evidence": [
+        "repo:docs/runbooks/openbao-snapshot-backup.md",
+        "repo:gitops/resources/openbao-backup.yaml"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "D-fpr: RECIPIENT_FPR pinned to the owner-supplied SHA-256 fingerprint (6E:DD:44:9F:...:7C:24:A7). The static check now requires a 32-byte colon-separated uppercase hex fingerprint instead of an empty value."
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "Static: check-openbao-snapshot-backup.py and its mutation run (a mutation resetting RECIPIENT_FPR to empty is caught). NOT covered: the fingerprint matching the live ConfigMap certificate, a live Job run, the encrypted snapshot appearing, restore.",
+      "evidence": [
+        "test:python3 scripts/test/lib/check-openbao-snapshot-backup.py -> exit 0",
+        "test:python3 scripts/test/lib/check-openbao-snapshot-backup.py --mutation-verify -> exit 0",
+        "repo:scripts/test/lib/check-openbao-snapshot-backup.py"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "completion_claim",
+      "summary": "In the repository the recipient fingerprint is pinned and statically checked. Backups are not yet working on the live cluster: the change still needs push-to-gitea (3.4) and a first manual Job with a snapshot file (3.5)."
+    },
+    {
+      "id": "e6",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Complete for the repository scope; not deployed, no live Job run, fingerprint-to-ConfigMap match unverified."
+    }
+  ]
+}

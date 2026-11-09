@@ -182,10 +182,11 @@ spec:
                   value: /tmp
                 - name: KEEP
                   value: "7"
-                # Optional pin (D-fpr): SHA-256 fingerprint of the recipient certificate, as printed by
-                # scripts/ops/openbao-backup-keygen.sh. Empty = no pin (the job logs a WARNING).
+                # Pin (D-fpr): SHA-256 fingerprint of the recipient certificate, as printed by
+                # scripts/ops/openbao-backup-keygen.sh. Pinned 2026-11-10 (cert expires 2036-11-06).
+                # Empty would mean no pin (the job logs a WARNING).
                 - name: RECIPIENT_FPR
-                  value: ""
+                  value: "6E:DD:44:9F:F9:BB:CA:DE:7E:F6:9A:FF:C4:8B:13:38:46:97:EB:C7:31:6A:25:39:05:9C:23:F3:76:7C:24:A7"
               command:
                 - /bin/sh
                 - -ec

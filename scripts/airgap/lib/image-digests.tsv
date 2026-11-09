@@ -70,7 +70,7 @@ ghcr.io/dasomel/goharbor/harbor-registryctl:v2.15.1	sha256:1fdf3a1de4b1683da05aa
 ghcr.io/dasomel/goharbor/nginx-photon:v2.15.1	sha256:1060a7ef51152c061415cde866c9657f1f74e758d374b08bc9871735096eb7ef	2026-09-28T12:06:18Z	crane digest
 ghcr.io/dasomel/goharbor/redis-photon:v2.15.1	sha256:4e9f77d2c5c0e6f8ae70acc45f8db7c719710333952ffcaecf6883de4fbb0e25	2026-09-28T12:06:18Z	crane digest
 ghcr.io/dasomel/goharbor/registry-photon:v2.15.1	sha256:baedda128bb9e7eb9df72fa904e4d17d162004b0a2bb12090c682161b4d7e348	2026-09-28T12:06:18Z	crane digest
-ghcr.io/dasomel/narwhal-portal:1.1.9	sha256:72a1f4f4adda77d96258ab1981f67b500f3072f8cedec598ec6f8a17d8d295cc	2026-11-08T15:46:00Z	crane digest
+ghcr.io/dasomel/narwhal-portal:1.1.10	sha256:93427574aeb111ca94393b796ad61d1cde115c3e38e31786c242112e44662cc9	2026-11-09T19:32:06Z	crane digest
 ghcr.io/dasomel/nfs-quota-agent:v0.5.0	sha256:090901b68cfe6842816783eefd29f19397151c27a12292b262571ade4a6d34de	2026-09-28T12:06:18Z	crane digest
 ghcr.io/dexidp/dex:v2.45.0	sha256:b8469881d3cb3a73001506f0d3aaefecb9c45d2311c1e0f405d8ac538316c59d	2026-09-28T12:06:18Z	crane digest
 ghcr.io/grafana/alloy-operator:1.10.0	sha256:6ee05ccf3b25850aed95392b4d12e8ae80dd76e235d31fd525639a3356ad8b13	2026-09-28T12:06:18Z	crane digest

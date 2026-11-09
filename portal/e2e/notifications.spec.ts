@@ -1,10 +1,18 @@
-import { expect, test } from "@playwright/test"
+import { expect, test, type Page } from "@playwright/test"
 const fixture = process.env.PLAYWRIGHT_E2E_FIXTURE_URL ?? "http://127.0.0.1:3199"
+
+// Same D2 as auth-boundary.spec.ts: prime the anonymous CSRF cookie before the
+// login page mounts, or SessionProvider's parallel requests race signIn and the
+// login lands on /login?error=MissingCSRF.
+async function login(page: Page, label: string, callbackUrl: string) {
+  expect((await page.request.get("/api/auth/csrf")).status()).toBe(200)
+  await page.goto(`/login?callbackUrl=${encodeURIComponent(callbackUrl)}`)
+  await page.getByRole("button", { name: `${label}으로 로그인`, exact: true }).click()
+}
 
 test("admin reads suppressed alerts, saves redacted channels, sends a bounded test and clears credentials", async ({ page, request }) => {
   await request.post(`${fixture}/__test/notifications`)
-  await page.goto("/alerts")
-  await page.getByRole("button", { name: "Cluster Admin으로 로그인" }).click()
+  await login(page, "Cluster Admin", "/alerts")
   await expect(page.getByRole("heading", { name: "경보", exact: true })).toBeVisible()
   await expect(page.getByRole("cell", { name: "FixtureDiskFull", exact: true })).toBeVisible()
   await expect(page.getByRole("cell", { name: "suppressed 무음 처리됨 억제됨" })).toBeVisible()
@@ -38,15 +46,13 @@ test("admin reads suppressed alerts, saves redacted channels, sends a bounded te
 
 test("Alertmanager failure renders degraded, never an empty healthy list", async ({ page, request }) => {
   await request.post(`${fixture}/__test/notifications?unreachable`)
-  await page.goto("/alerts")
-  await page.getByRole("button", { name: "Cluster Admin으로 로그인" }).click()
+  await login(page, "Cluster Admin", "/alerts")
   await expect(page.getByRole("alert").filter({ hasText: "Alertmanager에 연결할 수 없습니다" })).toBeVisible()
   await expect(page.getByText("✓ 활성 알럿 없음")).toHaveCount(0)
 })
 
 test("developer cannot read alerts or invoke settings and test APIs", async ({ page }) => {
-  await page.goto("/alerts")
-  await page.getByRole("button", { name: "Developer으로 로그인", exact: true }).click()
+  await login(page, "Developer", "/alerts")
   await expect(page).toHaveURL(/\/$/)
   await expect(page.getByRole("link", { name: "경보", exact: true })).toHaveCount(0)
   expect((await page.request.get("/api/alerts/firing")).status()).toBe(403)

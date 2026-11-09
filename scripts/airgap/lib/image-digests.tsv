@@ -51,10 +51,10 @@ docker.io/kubernetesui/dashboard-auth:1.4.0	sha256:53e9917898bf98ff2de91f7f9bded
 docker.io/kubernetesui/dashboard-metrics-scraper:1.2.2	sha256:5154b68252bd601cf85092b6413cb9db224af1ef89cb53009d2070dfccd30775	2026-09-28T12:06:18Z	crane digest
 docker.io/kubernetesui/dashboard-web:1.7.0	sha256:cc7c31bd2d8470e3590dcb20fe980769b43054b31a5c5c0da606e9add898d85d	2026-09-28T12:06:18Z	crane digest
 docker.io/library/busybox:1.36	sha256:73aaf090f3d85aa34ee199857f03fa3a95c8ede2ffd4cc2cdb5b94e566b11662	2026-09-28T12:06:18Z	crane digest
-docker.io/library/busybox:1.38.0	sha256:fd7dc98638c8e305f4dc34e979f1c0fdfdcaeb0fbf8fcff77ae834b6da3d7e6e	2026-09-28T12:06:18Z	crane digest
+docker.io/library/busybox:1.38.0	sha256:a46257e06c82ad85242d0d38077d0a52d9896389ca60a1a59d3463db586e5fa4	2026-11-09T14:23:27Z	crane digest
 docker.io/library/registry:2	sha256:a3d8aaa63ed8681a604f1dea0aa03f100d5895b6a58ace528858a7b332415373	2026-09-28T12:06:18Z	crane digest
 docker.io/otwld/velero-ui:0.10.1	sha256:d52893e4a4976ccc7e4c6830cf8b1d4e5125a1bdcac38f7c1f65f201479bffc3	2026-09-28T12:06:18Z	crane digest
-docker.io/valkey/valkey:8-alpine	sha256:081c2f5cb575efc901aa80ff9cdbd1ec6a301682fd35e1ebb4b0990a4a4a8507	2026-09-28T12:06:18Z	crane digest
+docker.io/valkey/valkey:8-alpine	sha256:2602ace2be6569bc2bbb06f873776516ab9089821525be34f4305c67eb9db02a	2026-11-09T14:23:27Z	crane digest
 docker.io/velero/velero:v1.18.1	sha256:11459094b1b21ec7c817b08f8067d9e89380835547915cac9c4132ff05b55b90	2026-09-28T12:06:18Z	crane digest
 gcr.io/kaniko-project/executor:v1.24.0	sha256:4e7a52dd1f14872430652bb3b027405b8dfd17c4538751c620ac005741ef9698	2026-09-28T12:06:18Z	portal-pin
 ghcr.io/aquasecurity/node-collector:0.3.1	sha256:f4702ce4667388f0219d6248d623a7e816231c2d4561d6af01c3ae053e524025	2026-10-26T15:20:00Z	crane digest
@@ -78,7 +78,7 @@ ghcr.io/headlamp-k8s/headlamp:v0.46.0	sha256:8a0ef97527544baa2b35825940ddf4db6e2
 ghcr.io/jkroepke/kube-webhook-certgen:1.8.3	sha256:8ce13c365c8e9ced0aad5ef350a53c50b7ca5817f99d856b9eec895db1056728	2026-09-28T12:06:18Z	crane digest
 ghcr.io/kube-vip/kube-vip:v1.1.2	sha256:840305b94ef2a89abb3b7fd2b09edfbde690d90052020da4dff90679fe892da2	2026-09-28T12:06:18Z	crane digest
 ghcr.io/kyverno/readiness-checker:v1.18.1	sha256:455400758235cf448dd9be3374ecb9e8bf543ee0c39adc880d25ed28cc7eb69d	2026-09-28T12:06:18Z	crane digest
-kong:3.9	sha256:aa4a4687b1330e427ad0d3b27a0606b833894297c78abf1a212edc9ba73c8620	2026-10-19T13:14:05Z	crane digest
+kong:3.9	sha256:c1f5fbb80cd666b4b29b4e97875ecd64d93b01b23fb3083bc3e424b3bad5fdd5	2026-11-09T14:23:27Z	crane digest
 mirror.gcr.io/aquasec/trivy-operator:0.25.0	sha256:886761b8b4c0f431407257ab614516a08b88c887619400c9606134f504844a52	2026-09-28T12:06:18Z	crane digest
 mirror.gcr.io/aquasec/trivy:0.60.0	sha256:91c3a842834563a6860dbaec5af7c1949df5caf988f9632ef5cbb0a5cd59d8f8	2026-09-28T12:06:18Z	crane digest
 mirror.gcr.io/chrislusf/seaweedfs:4.40	sha256:52194fba4fecd0083c842158b3a902ba6e04a63619b2b0efcd08007bdb6a4602	2026-09-28T12:06:18Z	crane digest

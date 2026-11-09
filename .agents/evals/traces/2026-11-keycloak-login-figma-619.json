@@ -1,0 +1,61 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-keycloak-login-figma-619-20261110",
+  "task": "Issue #619: implement the localized Figma login split layout in the Keycloak login skin while preserving keycloak.v2 inheritance and other login-theme pages.",
+  "changeContext": {
+    "paths": [
+      ".agents/evals/traces/2026-11-keycloak-login-figma-619.json",
+      "gitops/charts/narwhal-platform/keycloak-theme/narwhal/login/resources/css/narwhal.css",
+      "gitops/charts/narwhal-platform/keycloak-theme/narwhal/login/resources/js/narwhal.js",
+      "gitops/charts/narwhal-platform/keycloak-theme/narwhal/login/messages/messages_en.properties",
+      "gitops/charts/narwhal-platform/keycloak-theme/narwhal/login/messages/messages_ko.properties",
+      "scripts/test/lib/check-keycloak-login-split.py",
+      "scripts/test/regression-check-kakao.sh",
+      "docs/common/lessons-log.md"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Only the login skin and its R339 static regression guard are in scope. Keep parent=keycloak.v2; no login.ftl/template.ftl override, admin theme, portal, config delivery template, or live cluster mutation. The existing chart globs files into the theme ConfigMap, projects the complete login tree as one directory and rolls Keycloak using checksum/keycloak-theme. Plan: fix the CSS/JS and locale copy, strengthen R339, inspect light/dark/mobile renders, run R339/R306 with mutations and repository checks, record evidence and commit only scoped files. CLAUDE.md adds only Claude-specific hooks/commands and missing PROMPT.md guidance; these do not govern this Codex task."
+    },
+    {
+      "id": "e2",
+      "type": "external_input",
+      "provenance": "gh issue view 619 --comments, login-figma-spec.md, Figma source URL https://www.figma.com/design/Zg2T4x6slnstMJrkcEswah, inspected 2026-11-10",
+      "reviewed": true,
+      "summary": "Reference requires a 44vw/640px left brand panel, 400px left-aligned form, localized ko/en brand headline/tagline, dark palette, <=900px compact header and reduced-motion handling."
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "D1/D2: a login-only JS guard creates one headline p and one tagline p with localized data attributes on those same nodes. JS newline escapes become real line breaks with pre-line CSS; Keycloak retains the only h1. Desktop realm header remains accessible through clipping. A gapless grid centers the 400px form in the right panel; <=900px restores the realm wordmark as a 44px mascot plus 18px bold text with symmetric 24px gutters. Login-only controls are 44px high. Existing non-login card/header styling is preserved, including narrow-screen layout. No FTL override added or changed (existing info.ftl is untouched)."
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "Static, Helm and local Chromium rendering of captured live Keycloak HTML. No deployment, credential submission or live authentication flow was performed.",
+      "evidence": [
+        "python3 scripts/test/lib/check-keycloak-login-split.py: PASS R339; all 13 mutations rejected, including missing copy, literal newline, duplicate h1/header copy, non-login leakage, asymmetric panel, realm visibility, title size, mascot size, gutters and lost pre-line.",
+        "python3 scripts/test/lib/check-keycloak-theme.py --mutation-verify: PASS R306; 2 removed-key mutations caught; Portal token parity, upstream fonts/OFL, Helm-rendered ConfigMap keys/budget and directory mount/checksum verified.",
+        "Render command: NODE_PATH=/Users/m/Documents/IdeaProjects/20.dasomel/narwhal-wt/619-login-portal/portal/node_modules node render.cjs /Users/m/Documents/IdeaProjects/20.dasomel/narwhal-wt/619-login-kc/login-en.html /Users/m/Documents/IdeaProjects/20.dasomel/narwhal-wt/619-login-kc/gitops/charts/narwhal-platform/keycloak-theme/narwhal/login /tmp/kc619-v4. Output: light errors: none; dark errors: none; mobile errors: none.",
+        "Opened and visually inspected v2, v3 and final v4 light/dark/mobile PNGs. Final /tmp/kc619-v4-light.png (1440x900): large mascot above visible two-line English headline and muted tagline, waves and footnote; one 28px page title without the duplicate realm; unboxed form centered in the right panel. /tmp/kc619-v4-dark.png: same layout, navy brand panel, light text, dark controls and light primary button via html.nw-dark. /tmp/kc619-v4-mobile.png (390x844): brand panel hidden, compact 44px mascot + 18px bold Narwhal IDP row, title below, 342px form with x=24 and 24px right gutter. Password-eye square ignored as instructed (file font artifact). PNGs are temporary and excluded from the commit.",
+        "NODE_PATH=/Users/m/Documents/IdeaProjects/20.dasomel/narwhal-wt/619-login-portal/portal/node_modules node /tmp/kc619-browser.cjs: PASS geometry at 320/390/900/901/1440/1920px, one h1, exactly two copy nodes, no horizontal overflow. Desktop 1440: brand width 633.59375, form x=836.796875, width=400, equal ~203.2px side spaces inside right panel. At 1920: brand capped at 640. At 390: form x=24,width=342, compact mascot CSS width=44px. At 320: form width=272, no overflow.",
+        "Korean brand render /tmp/kc619-v3-ko.png inspected: 하나의 포털에서 / 플랫폼 전체를 다룹니다 appears on two lines with the Korean tagline below. Locale chosen from document lang; the captured English server-rendered form remains English in this local locale test.",
+        "Non-login fixture (same captured HTML with credential-form ID replaced): computed geometry/padding/font/shadow parity against HEAD assets PASS at 390 and 1440px; no brand injected. Reduced-motion transition override retained; compact wordmark animation disabled.",
+        "node --check gitops/charts/narwhal-platform/keycloak-theme/narwhal/login/resources/js/narwhal.js: exit 0. git diff --check: exit 0. make validate: exit 0 (Vagrantfile Syntax OK and all GitOps YAML OK).",
+        "make lint initially could not find yamllint. uv run --with yamllint --no-project make lint: shellcheck passed; YAML lint fails only in unchanged files: ghost-pod-reaper.yaml:111, prometheus-alerts.yaml:286,336, velero-server-rbac.yaml:3,25,69,125,173 (existing >200-character lines), plus existing warnings. Unrelated files left unchanged.",
+        "make test: exit 0; passed 453, failed 0, warnings 3; duration 627843 ms. Warnings: R19 no airgap bundle (skipped); R243-known/R244-known existing PeerAuthentication and ingress-isolation baselines. Local stdout saved to /tmp/kc619-test.log. The generated research-evidence append is copied to /tmp/kc619-research-evidence.jsonl, excluded from this focused commit; trace records its result."
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "task_outcome",
+      "state": "completed",
+      "summary": "All five requested defects corrected and inspected in final light/dark/mobile renders. R339 and R306 mutation checks, six viewport geometry checks, non-login HEAD parity, JS syntax, make validate and all 453 static regression checks passed. Repository lint still fails on eight existing YAML long-line errors in four unchanged files. Scoped files are ready for the authorized local commit; no push or deployment. Remaining limit: captured-HTML evidence does not prove post-deployment cache rollout or live authentication."
+    }
+  ]
+}

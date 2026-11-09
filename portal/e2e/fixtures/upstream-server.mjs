@@ -1,3 +1,4 @@
+import { notificationFixture } from "./notification-server.mjs"
 import { createServer } from "node:http"
 
 const port = 3199
@@ -52,8 +53,12 @@ async function readBody(req) {
   }
 }
 
+const handleNotifications = notificationFixture()
+
 const server = createServer(async (req, res) => {
   const url = new URL(req.url ?? "/", `http://127.0.0.1:${port}`)
+
+  if (await handleNotifications(req, res, url, sendJson)) return
 
   if (url.pathname === "/health") {
     res.writeHead(204)

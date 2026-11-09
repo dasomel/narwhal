@@ -27,7 +27,7 @@ describe("Nav", () => {
       .map(([_, attributes]) => attributes)
       .filter((attributes) => attributes.includes("text-sm"))
 
-    expect(menuLinks).toHaveLength(13)
+    expect(menuLinks).toHaveLength(14)
     for (const attributes of menuLinks) {
       expect(attributes).toContain("whitespace-nowrap")
       expect(attributes).toContain("shrink-0")

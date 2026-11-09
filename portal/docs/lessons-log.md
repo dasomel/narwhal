@@ -15,6 +15,7 @@
 
 ### Documentation / Release Mistakes
 | Date | Mistake | Fix |
+| 2026-11-09 | narwhal#610: Alertmanager의 무음 경보 제외 조회와 연결 실패 시 빈 목록 반환을 설정 화면에 재사용하면 억제된 발화 경보와 장애가 모두 정상으로 보인다 | 전용 firing 조회에서 silenced/inhibited를 포함하고 degraded를 명시한다. Secret과 AlertmanagerConfig의 두 쓰기는 원자적이지 않으므로 resourceVersion 충돌 검사와 부분 적용 안내를 제공하며 자격값은 응답하지 않는다 |
 |------|---------|-----|
 | 2026-10-31 | `scripts/harness-rules.sh`의 하드코딩 한국어 ratchet이 CI에서 0건으로 집계돼 사실상 꺼져 있었다(CI 로그 2026-10-27: `0 (baseline 48) — improved`). macOS에서는 66건(기준 48)으로 FAIL. 원인: GNU grep은 GitHub runner의 `C.UTF-8`에서 `[가-힣]` 범위를 `Invalid collation character`로 거부했고, `2>/dev/null … \|\| true`가 그 오류를 '위반 0건'으로 바꿨다. `LANG=` (POSIX)에서는 바이트로 매칭해 339건이었다. 그 사이 18건이 검사 없이 들어왔다 | D-KO-COUNT: perl이 코드포인트(U+AC00–U+D7A3)로 세고, 오류는 pipefail로 스크립트를 실패시킨다. macOS와 Ubuntu 24.04(`C.UTF-8`, `LANG=`) 모두 66건, 한국어 문자열 1줄을 추가하면 Ubuntu에서 `67 (baseline 66)` FAIL, 한국어 주석은 집계 안 됨을 확인했다. 기준선은 실제 값 66으로 기록했다(48을 유지하면 모든 portal PR이 막힌다). 18건 상환은 별도 이슈. 판별자: **ratchet이 '개선됨'이나 0을 보고하면 먼저 그 검사가 오류를 삼키는지 본다. 로케일에 따라 정규식 범위가 달라지는 검사는 CI와 같은 이미지에서 양성·음성을 각각 확인한다.** |
 | 2026-10-31 | narwhal#470/#505: body-parser 2.4.0의 cooling gate가 열렸지만 `pnpm update body-parser --depth 10 --lockfile-only`는 무관한 optional 의존성과 미성숙 qs 6.17.1까지 바꿨다. 판별자: 대상 패키지가 성숙했어도 새 필수 의존성의 최소 버전과 게시일을 별도로 확인해야 한다 | D-BODY-PARSER-240: Express의 ^2.3.0 범위 안에서 override 없이 body-parser 2.4.0과 필수 qs 최소 버전 6.16.1만 잠근다. 비용은 pnpm 재해상 diff를 좁혀 검토하는 것; 범위가 막히면 override 대신 부모 업그레이드를 별도 검토한다. 무관한 버전·libc 메타데이터는 보존하고 두 새 버전의 7일 cooling, frozen install, notices 및 audit을 검증한다 |

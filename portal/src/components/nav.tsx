@@ -54,6 +54,7 @@ export function NavVersion({ label }: { label: string }) {
 // WO-D16 Role Mapping: UI role 'viewer' maps to OIDC group 'oidc:viewer', which binds to the Kubernetes ClusterRole 'platform-viewer'.
 const menuItems: MenuItem[] = [
   { href: "/", labelKey: "nav.home", roles: ["cluster-admin", "developer", "viewer"] },
+  { href: "/alerts", labelKey: "nav.alerts", roles: ["cluster-admin"] },
   { href: "/status", labelKey: "nav.status", roles: ["cluster-admin", "developer", "viewer", "guest"] },
   { href: "/my-apps", labelKey: "nav.myApps", roles: ["developer", "cluster-admin"] },
   { href: "/catalog", labelKey: "nav.catalog", roles: ["cluster-admin", "developer", "viewer"] },

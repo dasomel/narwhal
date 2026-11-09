@@ -1,6 +1,7 @@
 import { auth } from "@/lib/auth"
 import type { UserRole } from "@/lib/auth"
 import { redirect } from "next/navigation"
+import { NotificationChannels } from "@/components/settings/notification-channels"
 import { UsersTable } from "@/components/settings/users-table"
 import { RoutesTable } from "@/components/settings/routes-table"
 import { CertsTable } from "@/components/settings/certs-table"
@@ -73,6 +74,7 @@ export default async function SettingsPage() {
 
       <Tabs defaultValue="routes">
         <TabsList>
+          <TabsTrigger value="notifications">{t(locale, "notifications.title")}</TabsTrigger>
           <TabsTrigger value="routes">{t(locale, "settings.tabRoutes")}</TabsTrigger>
           <TabsTrigger value="users">{t(locale, "settings.tabUsers")}</TabsTrigger>
           <TabsTrigger value="groups">{t(locale, "settings.tabGroups")}</TabsTrigger>
@@ -81,6 +83,7 @@ export default async function SettingsPage() {
           <TabsTrigger value="permissions">{t(locale, "settings.tabPermissions")}</TabsTrigger>
           <TabsTrigger value="oss-updates">{t(locale, "settings.tabOssUpdates")}</TabsTrigger>
         </TabsList>
+        <TabsContent value="notifications" className="mt-4"><NotificationChannels /></TabsContent>
         <TabsContent value="routes" className="mt-4"><RoutesTable /></TabsContent>
         <TabsContent value="users" className="mt-4"><UsersTable /></TabsContent>
         <TabsContent value="groups" className="mt-4"><GroupsTable tools={PLATFORM_TOOLS} /></TabsContent>

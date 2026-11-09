@@ -12,6 +12,18 @@
 | Velero | `gitops/charts/narwhal-apps/templates/velero.yaml`은 백업 위치를 `seaweedfs-s3.storage.svc.cluster.local:8333`의 `velero` 버킷으로 지정, `uploaderType: kopia`, `defaultVolumesToFsBackup: true`, `snapshotsEnabled: false`, node-agent 활성화를 선언한다. 다섯 스케줄은 `storage/velero-volume-policy`로 `emptyDir` 데이터를 제외하며, PVC는 기존 제외 어노테이션을 적용한 기본 fs-backup을 유지한다(#422). | PVC 파일시스템 백업 경로는 설정되어 있지만 CSI 스냅샷 기반 일관성 그룹은 활성화되지 않았다. 저장소 위치와 보호 대상이 같은 클러스터 장애 영역을 공유하므로 이 설정만으로 클러스터/사이트 재해 복구를 주장할 수 없다. |
 | 스케줄 | 같은 Velero 설정의 `daily-full`은 매일 02:00, `daily-databases`는 01:00, `daily-gitea` 03:00, `daily-harbor` 04:00, `daily-openbao` 05:00이며 각각 TTL 7일 또는 14일이다. `gitops/resources/cnpg-backup.yaml`은 `narwhal-db-daily` ScheduledBackup을 매일 02:00 UTC (CNPG는 초 필드가 앞서는 6필드 cron이므로 `0 0 2 * * *`), `barmanObjectStore`, cluster `narwhal-db`, target `prefer-standby`로 선언한다. | 스케줄 선언은 성공한 백업, 백업 신선도, 복구 가능성을 증명하지 않는다. 실제 RPO는 마지막 검증 성공 시각과 장애 시각의 차이로 측정해야 한다. |
 
+### PVC별 보호 현황 (2026-11-09, `kubectl --context narwhal` 읽기 전용 조회)
+
+| PVC / workload | Velero fs-backup 제외 | 대체 보호와 실제 증거 | 판정 |
+|---|---|---|---|
+| `database/narwhal-db-{1,2}/pgdata` | 예 (`pgdata`) | CNPG barmanObjectStore가 SeaweedFS S3에 base backup + WAL을 보냄. `Backup` CR `narwhal-db-backup-20261109020000` 완료, 직전 11/07도 완료; 11/08 건너뜀/CR 없음. | CNPG 경로 최근 성공. 복원 드릴과 WAL 연속성은 미검증. |
+| `storage/openbao-0/data` | 예 (`data`) | `openbao-snapshot` raft snapshot → CMS 암호문 PVC → `daily-openbao` Velero. Job `openbao-snapshot-29903310`은 11/09 04:30Z `DeadlineExceeded`; CronJob `lastSuccessfulTime` 없음. 운영자 수신자 ConfigMap 및 `openbao-backup` Role/RoleBinding도 없었다. 같은 날 Velero `velero-daily-openbao-20261109050043`는 `Completed`이나 raft 스냅샷 성공을 뜻하지 않는다. | **보호 공백(2026-11-09 시점)**: 사전조건이 없어 스냅샷이 한 번도 성공하지 못했다. 2026-11-10 활성화 단계 3.1-3.3 완료(아래 OpenBao #443 후속), 첫 성공 Job 확인 전까지는 성공으로 보지 않는다. |
+| `devtools/gitea` (`gitea-shared-storage`의 `data`) | 예 (`data`) | 별도 Gitea dump CronJob 없음. Velero `velero-daily-gitea-20261109030043` `Completed` (11/09 03:00:43–03:03:55Z); 11/07·08은 `PartiallyFailed`(각 errors=2). | PVC 단위 최근 성공은 있으나 앱 일관성 dump/복원 검증 없음. |
+| `storage/seaweedfs-master` `data-storage` | 예 (`data-storage`) | 대체 앱 백업 없음. SeaweedFS 볼륨 서버 `hostPath`는 이 PVC와 다른 저장소다. | **보호 공백**. |
+| `devtools/harbor-jobservice` `job-logs` | 예 (`job-logs`) | 로그 데이터 별도 백업 없음. 11/09 `daily-harbor` Velero 백업은 `Completed`. | **보호 공백**. |
+
+`Completed`는 작업 성공이지 restore/일관성 증거가 아니다. Gitea PVC는 최근 성공도 있지만 직전 부분 실패가 있다. CNPG는 실제 Backup CR 완료를 확인했고 OpenBao 리소스/PVC 백업 성공과 raft 스냅샷 성공을 분리해 판정한다.
+
 `docs/common/database.md`의 설명은 CNPG Barman Full Backup/WAL 및 Velero PVC 보호를 요약한다. 구체적인 현재 스케줄과 스냅샷 비활성 상태는 위 GitOps 설정을 기준으로 판정한다. 이 문서와 설정이 충돌하면 실행 가능한 선언을 우선한다.
 
 ## 2. 보호 모드와 일관성 그룹
@@ -110,7 +122,7 @@ rg -n 'local-path|local PV|kind: PersistentVolume' scripts gitops/resources gito
 | 암호화 (D-cms, D-oaep) | initContainer(bao)가 스냅샷을 메모리 emptyDir `work`(256Mi)에 저장하고, 메인 컨테이너가 `openssl cms -encrypt -binary -aes-256-cbc -outform DER -stream ... -keyopt rsa_padding_mode:oaep`로 수신자 **인증서(공개키)** 에 암호화해 PVC에 임시 파일로 쓴 뒤 `openbao-<ts>.snap.cms`로 원자적 rename하고 평문을 삭제한다. 평문은 NFS PVC에 쓰이지 않는다. 세션 키는 RSA-OAEP로 감싼다. 개인키는 운영자가 클러스터 밖(오프라인)에 보관하며 Secret/ConfigMap/백업 어디에도 없다. `-stream`을 쓰지 않으면 입력의 약 5배 메모리를 쓴다(30MB 입력에서 약 170MiB 대 5.5MiB 측정). 암호문 형식 검사는 전체 파싱(약 5배 메모리) 대신 DER 선두의 envelopedData 헤더와 끝의 EOC만 확인하므로 복호 가능성 자체는 검증하지 않는다. |
 | 평문 보호 (D-plaintext) | Job 파드는 라벨 `velero.io/exclude-from-backup: "true"`와 어노테이션 `backup.velero.io/backup-volumes-excludes: work`로 Velero에서 제외한다(`daily-openbao`가 `defaultVolumesToFsBackup`이고 Velero 지연이 길 수 있어 겹침이 가능하다). 정기 스케줄의 `emptyDir` skip 정책도 적용되지만 수동 백업을 위해 이 제외 설정은 유지한다. `work`는 256Mi로 제한되어 더 큰 스냅샷은 쓰기 실패(ENOSPC)로 Job이 실패한다. 메모리 한도(initContainer 512Mi, 암호화 128Mi) 초과로 OOM이 나도 Job이 실패해 `kubectl get jobs -n storage`에 남는다. **신선도 알림은 아직 없다(후속 과제): `last-success` 표식 파일만 있다.** |
 | 수신자 인증서 | ConfigMap `storage/openbao-backup-recipient`의 `recipient.pem`. `scripts/ops/openbao-backup-keygen.sh [--no-passphrase] <개인키 경로>`가 로컬에서 RSA-4096 자체서명 인증서(기본 10년)를 만들고 **인증서만** 적용한다. 개인키는 기본적으로 패스프레이즈로 암호화되며(`--no-passphrase`로만 해제), 지정 경로에만 0600으로 쓰고 출력하지 않으며 덮어쓰기를 거부한다. Job은 인증서가 없음/비어 있음/형식 오류/만료(24시간 이내 만료 포함)/RSA 3072비트 미만/개인키 포함/PEM 블록이 둘 이상이면 **실패하고 아무것도 쓰지 않는다**(평문 폴백 없음). 인증서가 만료되면 백업이 멈추므로 갱신 전에 새 키로 스크립트를 다시 실행하고, 이전 스냅샷 복호화용으로 이전 개인키를 보관한다. |
-| 인증서 고정 (D-fpr) | ConfigMap을 쓸 수 있는 주체가 수신자 인증서를 바꿔 이후 스냅샷을 읽을 수 있다. CronJob env `RECIPIENT_FPR`(Git/Argo로만 변경)에 키젠 스크립트가 출력한 SHA-256 지문을 넣으면 불일치 시 Job이 실패한다. 비어 있으면 Job 로그에 WARNING만 남기고 고정하지 않는다(기본값은 비어 있음). 운영 환경에서는 설정해야 한다. |
+| 인증서 고정 (D-fpr) | ConfigMap을 쓸 수 있는 주체가 수신자 인증서를 바꿔 이후 스냅샷을 읽을 수 있다. CronJob env `RECIPIENT_FPR`(Git/Argo로만 변경)에 키젠 스크립트가 출력한 SHA-256 지문을 넣으면 불일치 시 Job이 실패한다. 로컬 클러스터는 2026-11-10부터 고정했다. 비어 있으면 Job 로그에 WARNING만 남기고 고정하지 않는다. |
 | 이미지 (D-image) | 암호화 컨테이너는 이미 에어갭 목록에 있는 `docker.io/valkey/valkey:8-alpine`(다이제스트 핀, amd64+arm64, Alpine 3.24, OpenSSL 3.5.8, `cms` 포함)를 재사용한다. 새 이미지는 추가하지 않았다. Job은 `command -v openssl`과 `openssl cms -help` 가드가 실패하면 중단한다. |
 | 보관 위치 (D-location) | PVC `openbao-snapshots`(nfs-csi, RWX)의 `raft/` 디렉터리. 최신 7개 유지, `last-success`(타임스탬프+파일명)가 신선도 표식이다. 별도 장애 도메인 사본은 후속 과제이며 이번 범위가 아니다. |
 | Velero 전달 (D-holder) | fs-backup은 실행 중인 파드의 볼륨만 읽으므로 상시 파드 `openbao-snapshot-holder`가 PVC를 읽기 전용으로 마운트한다. 이 볼륨은 제외 목록에 없다. |
@@ -180,10 +192,7 @@ InProgress 전용 gauge는 추가하지 않았다. items 개수나 누적 attemp
 FailedValidation은 `velero-volume-policy` 존재/RBAC, PartiallyFailed는 PVC/PV 바인딩·볼륨 오류,
 Stale은 장기 InProgress와 뒤에 대기하는 스케줄을 먼저 확인한다. 성공 백업 및 restore 검증 전에는 오류만 숨기지 않는다.
 
-**OpenBao #443 후속:** `openbao-snapshot`은 아직 recipient 인증서 미등록으로 fail-closed 상태다.
-현재 manifest에 suspend/구성 완료 라벨이 없어 CronJob 성공 시각과 suspend 메트릭만으로 의도적 미구성과 실제 장애를 구별할 수 없다.
-따라서 snapshot 신선도 알림은 추가하지 않았다. 다음 클러스터에서 `kube_cronjob_status_last_successful_time` 노출을 확인하고,
-구성 완료 및 비-suspend 상태를 명시적으로 gate한 뒤 성공 없음/26시간 초과를 감지해야 한다.
+**OpenBao #443 후속:** 활성화 단계가 한 번도 실행되지 않은 채 CronJob만 배포되어(#443) 스냅샷이 수 주간 조용히 실패했다(`lastSuccessfulTime` 없음). 로컬 클러스터는 2026-11-10에 활성화했다: 3.1(13-2의 `openbao-backup` 정책/롤), 3.2(수신자 키 쌍은 클러스터 밖에서 생성, 인증서만 ConfigMap `storage/openbao-backup-recipient`, 만료 2036-11-06), 3.3(`RECIPIENT_FPR` 고정)을 마쳤고 개인키는 소유자가 클러스터 밖에 보관한다. 남은 단계는 배포(3.4)와 첫 수동 Job(3.5) 확인이다. 신선도 알림은 `kube_cronjob_status_last_successful_time` 노출을 확인한 뒤 성공 없음/26시간 초과를 감지하도록 추가해야 한다.
 Velero `daily-openbao` 성공은 snapshot 내용의 신선도를 보장하지 않는다.
 
 다음 클러스터의 필수 확인 순서:

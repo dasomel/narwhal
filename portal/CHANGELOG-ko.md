@@ -9,10 +9,22 @@
 
 ## [Unreleased]
 
+## [1.1.10] - 2026-11-10
+
+경보 및 알림 채널 설정을 추가하고, Trivy 재조회 후에도 부분 결과를 유지하며, OSS 버전 스냅샷에 1.1.9 Portal pin을 기록한 패치 릴리스.
+
 ### 추가
 
 - 심각도 필터·억제 상태·연결 저하 안내를 제공하는 경보 화면과 메뉴 추가 (narwhal#610).
 - cluster-admin 전용 Slack/Mattermost·SMTP 알림 설정, 비밀값 교체·삭제, 채널 활성화 및 5분 테스트 경보 추가. GitOps 소유 리소스만 갱신하며 저장된 값은 반환하지 않음 (narwhal#610).
+
+### 수정
+
+- Trivy 데이터를 재조회한 뒤에도 부분 결과 안내 표시를 유지 (narwhal#615).
+
+### 변경
+
+- 1.1.9 GitOps pin에 맞춰 OSS 버전 스냅샷의 Portal 버전을 1.1.9로 갱신 (narwhal#608).
 
 ## [1.1.9] - 2026-11-09
 
@@ -657,7 +669,8 @@ Portal의 첫 번째 공개 릴리스.
     매니페스트(`deploy/kaniko-build-job.yaml`).
   - 실시간 핫 모듈 교체(HMR) 및 컨테이너 파일 동기화를 위해 구성된 Skaffold 개발 프로필.
 
-[Unreleased]: https://github.com/dasomel/narwhal/compare/portal/v1.1.9...HEAD
+[Unreleased]: https://github.com/dasomel/narwhal/compare/portal/v1.1.10...HEAD
+[1.1.10]: https://github.com/dasomel/narwhal/compare/portal/v1.1.9...portal/v1.1.10
 [1.1.9]: https://github.com/dasomel/narwhal/compare/portal/v1.1.8...portal/v1.1.9
 [1.1.8]: https://github.com/dasomel/narwhal/compare/portal/v1.1.7...portal/v1.1.8
 [1.1.7]: https://github.com/dasomel/narwhal/compare/portal/v1.1.6...portal/v1.1.7

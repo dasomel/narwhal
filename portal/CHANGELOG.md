@@ -9,10 +9,23 @@ English | [한국어](CHANGELOG-ko.md)
 
 ## [Unreleased]
 
+## [1.1.10] - 2026-11-10
+
+Patch release adding alerts and notification channel settings, preserving partial Trivy results on refetch,
+and recording the 1.1.9 Portal pin in the OSS versions snapshot.
+
 ### Added
 
 - Alerts page with severity filtering, suppression state, degraded upstream handling and navigation (narwhal#610).
 - Cluster-admin notification settings for Slack/Mattermost and SMTP, write-only credentials, channel toggles and a five-minute test alert. Existing GitOps-owned resources are updated only; stored values are never returned (narwhal#610).
+
+### Fixed
+
+- Keep the partial-results notice visible after Trivy data is refetched (narwhal#615).
+
+### Changed
+
+- Update the OSS versions snapshot to Portal 1.1.9 for the 1.1.9 GitOps pin (narwhal#608).
 
 ## [1.1.9] - 2026-11-09
 
@@ -694,7 +707,8 @@ management dashboard built with Next.js 16 and React 19.
   - Skaffold development profile configured for live Hot Module Replacement (HMR) and container
     file syncing.
 
-[Unreleased]: https://github.com/dasomel/narwhal/compare/portal/v1.1.9...HEAD
+[Unreleased]: https://github.com/dasomel/narwhal/compare/portal/v1.1.10...HEAD
+[1.1.10]: https://github.com/dasomel/narwhal/compare/portal/v1.1.9...portal/v1.1.10
 [1.1.9]: https://github.com/dasomel/narwhal/compare/portal/v1.1.8...portal/v1.1.9
 [1.1.8]: https://github.com/dasomel/narwhal/compare/portal/v1.1.7...portal/v1.1.8
 [1.1.7]: https://github.com/dasomel/narwhal/compare/portal/v1.1.6...portal/v1.1.7

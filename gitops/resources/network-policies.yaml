@@ -136,3 +136,34 @@ spec:
         # R200: every port-limited rule in an ambient namespace keeps HBONE open.
         - protocol: TCP
           port: 15008
+---
+# D610-6: explicit portal -> Alertmanager API path, including HBONE for mesh callers.
+# monitoring has no ingress deny/AuthorizationPolicy; monitoring-permissive already
+# admits the portal's ambient opt-out plaintext. Do not add a new ALLOW policy there:
+# it would implicitly deny existing Prometheus/APISIX/Falco callers.
+# Cost: currently redundant with devtools-egress allow-all. Escape: remove this policy;
+# retain it when narrowing that baseline so notification GET/POST stays reachable.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: narwhal-portal-alertmanager-egress
+  namespace: devtools
+spec:
+  podSelector:
+    matchLabels:
+      app: narwhal-portal
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: alertmanager
+              alertmanager: prometheus-stack-kube-prom-alertmanager
+      ports:
+        - protocol: TCP
+          port: 9093
+        - protocol: TCP
+          port: 15008

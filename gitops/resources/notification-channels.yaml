@@ -1,0 +1,28 @@
+# D610-4: GitOps owns object identity; portal owns data/spec after bootstrap.
+# Cost: selfHeal cannot repair those fields. Escape: clear settings in the portal,
+# then remove the two exact ignoreDifferences entries before restoring Git ownership.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: narwhal-notification-channels
+  namespace: monitoring
+  labels:
+    narwhal.io/notification-channels: "true"
+type: Opaque
+---
+apiVersion: monitoring.coreos.com/v1alpha1
+kind: AlertmanagerConfig
+metadata:
+  name: narwhal-notification-channels
+  namespace: monitoring
+  labels:
+    narwhal.io/notification-channels: "true"
+spec:
+  route:
+    receiver: 'null'
+    groupBy: [alertname, namespace]
+    groupWait: 30s
+    groupInterval: 5m
+    repeatInterval: 4h
+  receivers:
+    - name: 'null'

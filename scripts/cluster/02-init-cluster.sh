@@ -168,6 +168,14 @@ apiServer:
 #     value: "groups"
 #   - name: oidc-groups-prefix
 #     value: "oidc:"
+# D610-3: kubeadm joins inherit this ClusterConfiguration; scrape etcd HTTP metrics,
+# not the client TLS API (2379). Cost: node-network metrics exposure; firewall 2381.
+# Escape: restore http://127.0.0.1:2381 and disable kubeEtcd (notification-channels runbook).
+etcd:
+  local:
+    extraArgs:
+      - name: listen-metrics-urls
+        value: "http://0.0.0.0:2381"
 controllerManager:
   extraArgs:
     # bind-address 0.0.0.0 so Prometheus (running off the control-plane node) can scrape

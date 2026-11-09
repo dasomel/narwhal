@@ -45,6 +45,7 @@
     "chaos-mesh": "Chaos testing add-on; no component-specific upgrade contract.",
     "rbac-policies": "RBAC configuration, not a separately upgraded component.",
     "prometheus-alerts": "Prometheus alerts owned with the observability stack.",
+    "notification-channels": "Notification channel configuration owned with the observability stack.",
     "istiod-pdb": "Istiod availability policy owned with the Istio component.",
     "apisix-admin-ingress-policy": "Network policy configuration, not a separately upgraded component.",
     "network-policies": "Network policy configuration, not a separately upgraded component.",

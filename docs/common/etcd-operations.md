@@ -9,7 +9,7 @@
 | 토폴로지 | `scripts/cluster/02-init-cluster.sh`의 `MASTER_COUNT` 기본값은 3이며 `scripts/cluster/02-join-control-plane.sh`가 `kubeadm join --control-plane`으로 추가 노드를 붙인다. `docs/common/architecture.md`는 3-member etcd, quorum 2/3을 기술한다. | 현재 표준은 stacked etcd 3개 멤버다. 5-member까지의 production 요구는 **PROPOSED**이며 현재 자동 검증되지 않는다. |
 | TLS/접근 | `scripts/test/verify-cluster.sh`와 `scripts/verify/etcd-encryption-check.sh`는 `https://127.0.0.1:2379`, `/etc/kubernetes/pki/etcd/ca.crt`, `server.crt`/`server.key`로 로컬에서 `etcdctl`을 실행한다. | 저장소 검증 경로는 TLS를 사용하지만 외부 접근 제한 및 모든 peer/client 플래그의 런타임 감사는 확인되지 않는다. |
 | 암호화와 키 | `scripts/cluster/02-init-cluster.sh`는 API 서버 Secret 암호화를 설정하고, `scripts/cluster/02-join-control-plane.sh`는 같은 encryption config를 새 master에 복사한다. | 저장 데이터 암호화는 etcd peer TLS와 다른 통제다. 해당 키 수명주기는 `docs/common/compliance-hardening.md` 및 `scripts/ops/rotate-etcd-encryption-key.sh` 범위다. |
-| 모니터링 | `gitops/charts/narwhal-apps/templates/prometheus-stack.yaml`에서 `kubeEtcd.enabled: false`이며, etcd metrics endpoint가 Prometheus에 노출되지 않는다고 주석에 적혀 있다. | 현재 Prometheus SLI/경보가 갖춰졌다고 간주하지 않는다. 아래 지표와 임계값은 **PROPOSED**다. |
+| 모니터링 | `gitops/charts/narwhal-apps/templates/prometheus-stack.yaml`에서 `kubeEtcd.enabled: true`이며, kubeadm etcd HTTP 메트릭(포트 2381, scheme http, bearerTokenFile 없음)을 `component: etcd` ServiceMonitor로 스크랩한다. 신규 마스터는 `scripts/cluster/02-init-cluster.sh`의 `listen-metrics-urls: "http://0.0.0.0:2381"` 설정을 상속하며, 기존 마스터는 호스트 방화벽 제한 후 `/etc/kubernetes/manifests/etcd.yaml`의 `--listen-metrics-urls=http://0.0.0.0:2381` 순차 교체 및 `kubeadm-config` 갱신 롤아웃 절차(`docs/common/notification-channels.md`)를 거친다. | GitOps에서 `kubeEtcd.enabled: true` 및 2381 HTTP 수집이 활성화되었으나, 기존 마스터는 쿼럼 유지를 위한 순차 재시작 롤아웃 전까지 메트릭 수집이 동작하지 않는다. 호스트 방화벽으로 노드 네트워크 노출을 제한해야 한다. |
 | 정비/백업 | 확인한 `scripts/cluster/` 및 `scripts/ops/`에는 control-plane etcd의 자동 compaction/defrag/member replace 또는 snapshot 주기 설정이 없다. | 아래 일정·절차는 **PROPOSED** 운영 기준이다. Velero 백업은 etcd snapshot의 대체물이 아니다. |
 
 ## 결정 및 운영 기준
@@ -28,6 +28,8 @@
 - `server.crt`를 peer 인증에 사용한다고 가정하지 않는다. kubeadm이 생성한 실제 static Pod manifest 및 인증서 역할을 대조한다. client cert/CA 개인키는 root 소유 최소권한 경로로 제한하고, 복사·회전은 승인된 PKI 절차로 기록한다. API 저장 Secret 암호화 키와 etcd CA/transport key는 별개의 자산이다.
 
 ### D3 — 관측과 성능 SLO
+
+kubeadm etcd는 `--listen-metrics-urls=http://0.0.0.0:2381`로 비인증 HTTP 메트릭을 노출하며, Prometheus는 `kubeEtcd.enabled: true` 및 `component: etcd` ServiceMonitor(`scheme: http`, bearerTokenFile 없음)를 통해 2381 포트에서 메트릭을 수집한다. 기존 마스터는 호스트 방화벽 2381 제한 선행 후 매니페스트 순차 수정 및 `kubeadm-config` 갱신 롤아웃을 수행해야 한다(`docs/common/notification-channels.md`).
 
 **PROPOSED:** etcd metrics를 인증된 경로로 수집할 때 아래 항목을 endpoint/member별로 보존한다. 메트릭을 외부에 노출하기 위해 client TLS/접근 경계를 낮춰서는 안 된다.
 
@@ -76,4 +78,4 @@ etcd 정비 및 복구 evidence bundle은 **PROPOSED**로 다음 필드를 가�
 
 ## 수행 전 확인 명령과 제한
 
-현재 검증 스크립트가 사용하는 경로는 master에서 `kubectl exec -n kube-system <etcd-pod> -- etcdctl ...`이며, 기본 TLS 재료 경로는 `/etc/kubernetes/pki/etcd/`이다. `etcdctl`은 host 설치를 전제로 하지 않는다(정적 Pod 안에서 실행; `scripts/test/verify-cluster.sh`, `docs/common/lessons-log.md`). 명령 실행 시 먼저 static Pod manifest의 실제 endpoint와 인증서 역할을 확인한다. 이 문서는 아직 존재하지 않는 metrics endpoint, 스케줄러, backup 클라이언트, 네임스페이스를 구현 사실로 전제하지 않는다.
+현재 검증 스크립트가 사용하는 경로는 master에서 `kubectl exec -n kube-system <etcd-pod> -- etcdctl ...`이며, 기본 TLS 재료 경로는 `/etc/kubernetes/pki/etcd/`이다. `etcdctl`은 host 설치를 전제로 하지 않는다(정적 Pod 안에서 실행; `scripts/test/verify-cluster.sh`, `docs/common/lessons-log.md`). 명령 실행 시 먼저 static Pod manifest의 실제 endpoint와 인증서 역할을 확인한다. 이 문서는 아직 존재하지 않는 스케줄러, backup 클라이언트, 네임스페이스를 구현 사실로 전제하지 않는다(etcd metrics는 2381 HTTP 엔드포인트로 GitOps 설정되었으며 기존 마스터 라이브 롤아웃은 `notification-channels.md`를 따른다).

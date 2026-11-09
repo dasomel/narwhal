@@ -16,7 +16,7 @@ ignore entries only when intentionally returning data/spec ownership to Git.
 D610-5 grants only get/update/patch for those resourceNames in monitoring, bound to
 `devtools/narwhal-portal`. Portal API authorization must enforce cluster-admin.
 Secret key names and channel completeness/routing behavior are defined by the shared
-#610 lane contract; this lane does not implement portal API validation or delivery.
+issue #610 lane contract; this lane does not implement portal API validation or delivery.
 
 D610-6: the explicit portal egress policy allows the exact Alertmanager pods on TCP
 9093 (+15008 HBONE). Existing devtools allow-all egress remains. Read-only inspection

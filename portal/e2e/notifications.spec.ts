@@ -1,0 +1,62 @@
+import { expect, test, type Page } from "@playwright/test"
+const fixture = process.env.PLAYWRIGHT_E2E_FIXTURE_URL ?? "http://127.0.0.1:3199"
+
+// Same D2 as auth-boundary.spec.ts: prime the anonymous CSRF cookie before the
+// login page mounts, or SessionProvider's parallel requests race signIn and the
+// login lands on /login?error=MissingCSRF.
+async function login(page: Page, label: string, callbackUrl: string) {
+  expect((await page.request.get("/api/auth/csrf")).status()).toBe(200)
+  await page.goto(`/login?callbackUrl=${encodeURIComponent(callbackUrl)}`)
+  await page.getByRole("button", { name: `${label}으로 로그인`, exact: true }).click()
+}
+
+test("admin reads suppressed alerts, saves redacted channels, sends a bounded test and clears credentials", async ({ page, request }) => {
+  await request.post(`${fixture}/__test/notifications`)
+  await login(page, "Cluster Admin", "/alerts")
+  await expect(page.getByRole("heading", { name: "경보", exact: true })).toBeVisible()
+  await expect(page.getByRole("cell", { name: "FixtureDiskFull", exact: true })).toBeVisible()
+  await expect(page.getByRole("cell", { name: "suppressed 무음 처리됨 억제됨" })).toBeVisible()
+  await page.getByLabel("심각도").selectOption("info")
+  await expect(page.getByRole("cell", { name: "FixtureDiskFull", exact: true })).toHaveCount(0)
+  await page.getByLabel("심각도").selectOption("")
+  await page.goto("/settings")
+  await page.getByRole("tab", { name: "알림 채널", exact: true }).click()
+  await expect(page.getByLabel("Webhook URL (HTTPS)")).toBeEnabled()
+  await page.getByLabel("Slack / Mattermost 활성화").check()
+  await page.getByLabel("Webhook URL (HTTPS)").fill("https://hooks.example.com/e2e-private")
+  await page.locator("#slack_channel").fill("#test")
+  await page.getByRole("button", { name: "저장", exact: true }).click()
+  await expect(page.getByText("설정이 저장되었습니다.", { exact: false })).toBeVisible()
+  await expect(page.getByLabel("Webhook URL (HTTPS)")).toHaveValue("")
+  const status = await (await page.request.get("/api/settings/notification-channels")).json()
+  expect(status.configured.slack_webhook_url).toBe(true)
+  expect(JSON.stringify(status)).not.toContain("e2e-private")
+  await page.getByRole("button", { name: "테스트 경보 보내기" }).click()
+  await expect(page.getByText("Alertmanager가 테스트 경보를 받았습니다.", { exact: false })).toBeVisible()
+  await page.getByLabel("Slack / Mattermost 활성화").uncheck()
+  await page.locator('label[for="slack_webhook_url"]').locator("..").getByRole("checkbox", { name: "삭제" }).check()
+  await page.getByRole("button", { name: "저장", exact: true }).click()
+  await expect.poll(async () => (await (await page.request.get("/api/settings/notification-channels")).json()).configured.slack_webhook_url).toBe(false)
+  const state = await (await request.get(`${fixture}/__test/notifications`)).json()
+  expect(state.config.spec.receivers).toEqual([{ name: "null" }])
+  expect(state.writes.map((write: { method: string }) => write.method)).toEqual(["PUT", "PATCH", "PUT", "PATCH"])
+  expect(state.tests[0].labels).toEqual({ alertname: "NarwhalNotificationTest", severity: "info" })
+  expect(Date.parse(state.tests[0].endsAt) - Date.parse(state.tests[0].startsAt)).toBe(300_000)
+})
+
+test("Alertmanager failure renders degraded, never an empty healthy list", async ({ page, request }) => {
+  await request.post(`${fixture}/__test/notifications?unreachable`)
+  await login(page, "Cluster Admin", "/alerts")
+  await expect(page.getByRole("alert").filter({ hasText: "Alertmanager에 연결할 수 없습니다" })).toBeVisible()
+  await expect(page.getByText("✓ 활성 알럿 없음")).toHaveCount(0)
+})
+
+test("developer cannot read alerts or invoke settings and test APIs", async ({ page }) => {
+  await login(page, "Developer", "/alerts")
+  await expect(page).toHaveURL(/\/$/)
+  await expect(page.getByRole("link", { name: "경보", exact: true })).toHaveCount(0)
+  expect((await page.request.get("/api/alerts/firing")).status()).toBe(403)
+  expect((await page.request.get("/api/settings/notification-channels")).status()).toBe(403)
+  expect((await page.request.put("/api/settings/notification-channels", { data: {} })).status()).toBe(403)
+  expect((await page.request.post("/api/alerts/test")).status()).toBe(403)
+})

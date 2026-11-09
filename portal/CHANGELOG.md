@@ -9,6 +9,11 @@ English | [한국어](CHANGELOG-ko.md)
 
 ## [Unreleased]
 
+### Added
+
+- Alerts page with severity filtering, suppression state, degraded upstream handling and navigation (narwhal#610).
+- Cluster-admin notification settings for Slack/Mattermost and SMTP, write-only credentials, channel toggles and a five-minute test alert. Existing GitOps-owned resources are updated only; stored values are never returned (narwhal#610).
+
 ## [1.1.9] - 2026-11-09
 
 Patch release with no user-facing feature change beyond a dependency bump and one new entry in the OSS

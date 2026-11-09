@@ -2393,3 +2393,32 @@ export async function getAllPodsForDistribution(): Promise<BoundedList<K8sPodFor
     return { items: [], truncated: true, pages: 0 }
   }
 }
+
+// D3 (#610): fixed-name helpers preserve the GitOps/RBAC get/update/patch-only
+// boundary. Cost: no generic secret editor; add a separately reviewed helper if
+// another resource is needed. GitOps creates both objects before Portal use.
+const notificationSecretPath = "/api/v1/namespaces/monitoring/secrets/narwhal-notification-channels"
+const notificationConfigPath = "/apis/monitoring.coreos.com/v1alpha1/namespaces/monitoring/alertmanagerconfigs/narwhal-notification-channels"
+
+export async function getNotificationResources() {
+  const [secret, config] = await Promise.all([
+    k8sFetch<import("@/types/notification-channels").NotificationSecret>(notificationSecretPath),
+    k8sFetch<import("@/types/notification-channels").NotificationConfig>(notificationConfigPath),
+  ])
+  return { secret, config }
+}
+
+export async function updateNotificationSecret(secret: import("@/types/notification-channels").NotificationSecret) {
+  await k8sFetch(notificationSecretPath, { method: "PUT", body: JSON.stringify(secret) })
+}
+
+export async function patchNotificationConfig(resourceVersion: string, spec: unknown) {
+  await k8sFetch(notificationConfigPath, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json-patch+json" },
+    body: JSON.stringify([
+      { op: "test", path: "/metadata/resourceVersion", value: resourceVersion },
+      { op: "add", path: "/spec", value: spec },
+    ]),
+  })
+}

@@ -40,13 +40,13 @@ test("Alertmanager failure renders degraded, never an empty healthy list", async
   await request.post(`${fixture}/__test/notifications?unreachable`)
   await page.goto("/alerts")
   await page.getByRole("button", { name: "Cluster Admin으로 로그인" }).click()
-  await expect(page.getByRole("alert")).toContainText("Alertmanager에 연결할 수 없습니다")
+  await expect(page.getByRole("alert").filter({ hasText: "Alertmanager에 연결할 수 없습니다" })).toBeVisible()
   await expect(page.getByText("✓ 활성 알럿 없음")).toHaveCount(0)
 })
 
 test("developer cannot read alerts or invoke settings and test APIs", async ({ page }) => {
   await page.goto("/alerts")
-  await page.getByRole("button", { name: "Developer으로 로그인" }).click()
+  await page.getByRole("button", { name: "Developer으로 로그인", exact: true }).click()
   await expect(page).toHaveURL(/\/$/)
   await expect(page.getByRole("link", { name: "경보", exact: true })).toHaveCount(0)
   expect((await page.request.get("/api/alerts/firing")).status()).toBe(403)

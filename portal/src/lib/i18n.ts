@@ -67,6 +67,8 @@ export const ko = {
   "login.loginAs": "{label}으로 로그인",
   "login.keycloak": "Keycloak으로 로그인",
   "login.redirecting": "로그인 페이지로 이동 중…",
+  "login.headline": "하나의 포털에서\n플랫폼 전체를 다룹니다",
+  "login.tagline": "서비스 카탈로그, 배포, 관측, 보안 정책을 SSO 한 번으로.",
 
   // dashboard
   "dashboard.title": "대시보드",
@@ -1397,6 +1399,8 @@ export const en: Record<keyof typeof ko, string> = {
   "login.loginAs": "Login as {label}",
   "login.keycloak": "Login with Keycloak",
   "login.redirecting": "Redirecting to sign-in…",
+  "login.headline": "One portal for\nthe whole platform",
+  "login.tagline": "Catalog, deploys, observability and policy behind one SSO.",
 
   // dashboard
   "dashboard.title": "Dashboard",

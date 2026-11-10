@@ -120,6 +120,13 @@ def main():
         assert t_light[name] == p_light[name], f'light {name}: theme {t_light[name]} != portal {p_light[name]}'
         assert t_dark[name] == p_dark[name], f'dark {name}: theme {t_dark[name]} != portal {p_dark[name]}'
 
+    # D-KC-BELUGA: retain Portal neutrals; the local login aliases carry the intentional skin.
+    assert t_light['--nw-surface'] == '#f3f7f9'
+    assert t_dark['--nw-surface'] == 'var(--background)'
+    assert t_light['--nw-primary'] == 'var(--narwhal-detail)'
+    contours = THEME / 'login/resources/img/contours.svg'
+    assert contours.is_file() and 'xmlns="http&#58;//www.w3.org/2000/svg"' in contours.read_text()
+
     login_props = (THEME / 'login/theme.properties').read_text()
     assert re.search(r'^parent=keycloak\.v2$', login_props, re.M), 'login theme must extend keycloak.v2'
     assert re.search(r'^darkMode=false$', login_props, re.M), 'cookie sync owns dark mode (darkMode=false)'

@@ -6,7 +6,7 @@
 
    Source of truth: https://www.figma.com/design/Zg2T4x6slnstMJrkcEswah (login layout),
    portal/src/app/globals.css (tokens, radius), portal/src/app/fonts (Pretendard),
-   portal/src/components/ui/{card,button,input}.tsx (shapes), login frame: Figma source above.
+   portal/src/components/ui/{card,button,input}.tsx (shapes), login panel: Beluga deep-sea treatment (#638).
    Sections: 1 font, 2 Portal tokens, 3 PatternFly mapping, 4 page + brand, 5 card, 6 form,
    7 buttons, 8 alerts, 9 other pages, 10 motion + small screens.
    ========================================================================== */
@@ -64,7 +64,13 @@
   --ring: oklch(0.708 0 0);
   --radius: 0.625rem;
 
-  /* Theme-local additions (not in the Portal): derived from Portal tokens only. */
+  /* D-KC-BELUGA: local skin tokens preserve Portal token parity. Cost: a login-specific
+     surface and button palette; escape: remove these aliases to return to Portal defaults. */
+  --nw-surface: #f3f7f9;
+  --nw-control: #ffffff;
+  --nw-primary: var(--narwhal-detail);
+  --nw-primary-hover: #0b5f75;
+  --nw-panel-ice: #f3f7f9;
   --nw-radius-xl: calc(var(--radius) * 1.4); /* Portal Card: rounded-xl */
   --nw-font: Pretendard, system-ui, -apple-system, "Apple SD Gothic Neo",
     "Noto Sans KR", "Malgun Gothic", sans-serif;
@@ -81,6 +87,8 @@
 }
 
 html.nw-dark {
+  --nw-surface: var(--background);
+  --nw-control: color-mix(in oklab, var(--input) 30%, transparent);
   --narwhal-accent: #22d3ee;
   --narwhal-accent-soft: rgba(34, 211, 238, 0.15);
   --narwhal-horn: #f1f5f9;
@@ -160,11 +168,11 @@ html.pf-v5-theme-dark:root {
 /* 4. Page and brand. The sign-in page gets a Figma split layout; other Keycloak pages retain a
       centered, bounded content column. narwhal.js supplies localized decorative brand content. */
 html.login-pf {
-  background: var(--background);
+  background: var(--nw-surface);
 }
 
 html.login-pf body {
-  background: var(--background);
+  background: var(--nw-surface);
   color: var(--foreground);
   font-family: var(--nw-font);
   font-size: 0.9375rem;
@@ -185,7 +193,7 @@ html.login-pf .pf-v5-c-login {
 html.login-pf.nw-split .pf-v5-c-login__container {
   position: relative;
   display: grid;
-  grid-template-columns: clamp(22.5rem, 44vw, 40rem) minmax(0, 1fr);
+  grid-template-columns: clamp(22.5rem, 42vw, 40rem) minmax(0, 1fr);
   grid-template-areas: "brand header" "brand main" "brand footer";
   align-content: center;
   align-items: center;
@@ -220,34 +228,22 @@ html.login-pf .nw-login-brand {
   grid-area: brand;
   position: fixed;
   inset: 0 auto 0 0;
-  width: clamp(22.5rem, 44vw, 40rem);
+  width: clamp(22.5rem, 42vw, 40rem);
   min-height: 100dvh;
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
-  justify-content: space-between;
-  padding: 3.5rem 4rem;
+  justify-content: flex-start;
+  padding: 3.5rem;
   overflow: hidden;
-  border-right: 1px solid color-mix(in oklab, var(--nw-link) 18%, transparent);
-  background: linear-gradient(145deg, #f0f9ff, #e0f2fe);
-  color: #0f172a;
-}
-
-html.nw-dark.login-pf .nw-login-brand {
-  background: linear-gradient(145deg, #0f172a, #0e2738);
-  color: #f8fafc;
-}
-
-html.login-pf .nw-login-brand::after {
-  content: "";
-  position: absolute;
-  inset: 47% -12% auto 12%;
-  height: 46%;
-  pointer-events: none;
-  opacity: 0.28;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='720' height='420' viewBox='0 0 720 420' fill='none'%3E%3Cg stroke='%2306b6d4' stroke-width='1.2'%3E%3Cpath d='M-40 28C120 -10 180 78 330 40S540 8 760 46'/%3E%3Cpath d='M-40 74C120 36 180 124 330 86S540 54 760 92'/%3E%3Cpath d='M-40 120C120 82 180 170 330 132S540 100 760 138'/%3E%3Cpath d='M-40 166C120 128 180 216 330 178S540 146 760 184'/%3E%3Cpath d='M-40 212C120 174 180 262 330 224S540 192 760 230'/%3E%3Cpath d='M-40 258C120 220 180 308 330 270S540 238 760 276'/%3E%3Cpath d='M-40 304C120 266 180 354 330 316S540 284 760 322'/%3E%3Cpath d='M-40 350C120 312 180 400 330 362S540 330 760 368'/%3E%3Cpath d='M-40 396C120 358 180 446 330 408S540 376 760 414'/%3E%3C/g%3E%3C/svg%3E");
-  background-position: center;
-  background-size: cover;
+  /* D-KC-BELUGA: both modes use the same dark panel and dark mascot. Cost: a fixed
+     panel palette; escape: change this one background stack. Contours stay local. */
+  --nw-brand-img: url("../img/narwhal-dark.svg");
+  background:
+    url("../img/contours.svg") center / cover no-repeat,
+    radial-gradient(120% 90% at 20% 15%, #163b4b 0%, #0e2a36 60%);
+  background-color: #0e2a36;
+  color: var(--nw-panel-ice);
 }
 
 html.login-pf .nw-login-brand-top,
@@ -256,11 +252,11 @@ html.login-pf .nw-login-brand-footnote { position: relative; z-index: 1; }
 
 html.login-pf .nw-login-brand-top { display: flex; align-items: center; gap: 0.625rem; font-size: 1.125rem; font-weight: 700; }
 html.login-pf .nw-login-brand-top::before { content: ""; width: 2.75rem; aspect-ratio: 202 / 76; background: var(--nw-brand-img) center / contain no-repeat; }
-html.login-pf .nw-login-brand-copy { max-width: 34rem; }
-html.login-pf .nw-login-brand-mascot { width: min(16.25rem, 72%); aspect-ratio: 202 / 76; margin-bottom: 1.25rem; background: var(--nw-brand-img) left center / contain no-repeat; }
-html.login-pf .nw-login-brand .nw-login-copy-headline { margin: 0 0 1.25rem; font-size: 2.25rem; line-height: 1.34; letter-spacing: -0.015em; font-weight: 700; white-space: pre-line; }
-html.login-pf .nw-login-brand .nw-login-copy-tagline { margin: 0; font-size: 1rem; line-height: 1.5; color: color-mix(in oklab, currentColor 68%, transparent); }
-html.login-pf .nw-login-brand-footnote { font-size: 0.8125rem; font-weight: 500; letter-spacing: 0.02em; color: color-mix(in oklab, currentColor 68%, transparent); }
+html.login-pf .nw-login-brand-copy { max-width: 34rem; margin-top: auto; padding-top: 3rem; }
+html.login-pf .nw-login-brand-mascot { display: none; }
+html.login-pf .nw-login-brand .nw-login-copy-headline { margin: 0 0 1.25rem; font-size: clamp(2rem, 3vw, 2.75rem); line-height: 1.12; letter-spacing: -0.035em; font-weight: 700; white-space: pre-line; }
+html.login-pf .nw-login-brand .nw-login-copy-tagline { margin: 0; max-width: 28rem; font-size: 1rem; line-height: 1.5; color: #c4d9e1; }
+html.login-pf .nw-login-brand-footnote { margin-top: 3rem; font-size: 0.8125rem; font-weight: 500; letter-spacing: 0.02em; color: #c4d9e1; }
 
 html.login-pf.nw-split .pf-v5-c-login__container .pf-v5-c-login__main-header-utilities {
   position: absolute;
@@ -312,7 +308,7 @@ html.login-pf #kc-header-wrapper::before {
 }
 
 /* D2: keep Keycloak's realm label in the accessibility tree without a duplicate visual
-   heading. Cost: a clipped desktop header; <=900px restores it as the wordmark. Escape:
+   heading. Cost: a clipped header; the aside supplies the visible wordmark at all sizes. Escape:
    remove this scoped rule if upstream provides a dedicated compact-brand slot. */
 html.login-pf.nw-split .pf-v5-c-login__container #kc-header {
   position: absolute;
@@ -378,15 +374,15 @@ html.login-pf .pf-v5-c-login__main-footer-band {
 /* 5. Form surface: intentionally unboxed in the Figma layout. */
 html.login-pf.nw-split .pf-v5-c-login__container .pf-v5-c-login__main {
   grid-area: main;
-  justify-self: center;
-  width: min(100%, 25rem);
+  justify-self: start;
+  width: min(calc(100% - clamp(4rem, 12vw, 14rem)), 25rem);
   background: transparent;
   color: var(--card-foreground);
   border: 0;
   border-radius: 0;
   box-shadow: none;
-  margin: 0;
-  overflow: hidden;
+  margin: 0 0 0 clamp(2rem, 6vw, 7rem);
+  overflow: visible;
 }
 
 html.login-pf.nw-split .pf-v5-c-login__container .pf-v5-c-login__main-header {
@@ -432,6 +428,22 @@ html.login-pf #kc-form-login :is(.pf-v5-c-form-control, .pf-v5-c-button.pf-m-pri
   min-height: 2.75rem;
 }
 
+/* D-KC-BELUGA: page-id scopes the helper without a template fork. Cost: generated
+   text is visual help; labels remain sufficient. Escape: upstream message slot when available. */
+html.login-pf body[data-page-id="login-login"] #kc-page-title::after {
+  content: "Sign in with your Narwhal account.";
+  display: block;
+  margin-top: 0.75rem;
+  font-size: 0.9375rem;
+  font-weight: 400;
+  line-height: 1.5;
+  letter-spacing: 0;
+  color: var(--muted-foreground);
+}
+html.login-pf:lang(ko) body[data-page-id="login-login"] #kc-page-title::after {
+  content: "Narwhal 계정으로 로그인합니다.";
+}
+
 /* Language switch: a compact input, same control language as the form. */
 html.login-pf .pf-v5-c-login__main-header-utilities {
   margin: 0;
@@ -471,7 +483,7 @@ html.login-pf .pf-v5-c-form-control {
   min-height: 2.5rem;
   border: 1px solid var(--input);
   border-radius: var(--radius);
-  background: transparent;
+  background: var(--nw-control);
   font-size: 1rem;
   transition: border-color 0.15s, box-shadow 0.15s;
 }
@@ -516,7 +528,7 @@ html.login-pf .pf-v5-c-input-group {
   gap: 0;
   border: 1px solid var(--input);
   border-radius: var(--radius);
-  background: transparent;
+  background: var(--nw-control);
   overflow: hidden;
   transition: border-color 0.15s, box-shadow 0.15s;
 }
@@ -535,6 +547,12 @@ html.login-pf .pf-v5-c-input-group:has([aria-invalid="true"]) {
   box-shadow: 0 0 0 3px color-mix(in oklab, var(--destructive) 20%, transparent);
 }
 
+/* D-KC-BELUGA: PF puts its dark divider on the item pseudo-element, not the eye
+   button. Cost: remove the divider inside this unified field; escape: drop this rule. */
+html.login-pf .pf-v5-c-input-group__item::after {
+  display: none;
+}
+
 html.login-pf .pf-v5-c-input-group .pf-v5-c-form-control {
   border: 0;
   border-radius: 0;
@@ -543,6 +561,9 @@ html.login-pf .pf-v5-c-input-group .pf-v5-c-form-control {
 }
 
 html.login-pf .pf-v5-c-input-group .pf-v5-c-button.pf-m-control {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   background: transparent;
   color: var(--muted-foreground);
   border: 0;
@@ -553,6 +574,20 @@ html.login-pf .pf-v5-c-input-group .pf-v5-c-button.pf-m-control {
 html.login-pf .pf-v5-c-input-group .pf-v5-c-button.pf-m-control:hover {
   color: var(--foreground);
   background: var(--muted);
+}
+
+/* The stock Font Awesome webfont can fail to load independently of the form CSS.
+   D-KC-BELUGA: draw both toggle states locally; cost: two tiny masks, escape: upstream SVG icon. */
+html.login-pf [data-password-toggle] i {
+  display: inline-block;
+  width: 1rem;
+  height: 1rem;
+  font-size: 0;
+  background: currentColor;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http%3A//www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='none' stroke='black' stroke-width='2' d='M2 12s3-7 10-7 10 7 10 7-3 7-10 7S2 12 2 12Z'/%3E%3Ccircle cx='12' cy='12' r='3'/%3E%3C/svg%3E") center / contain no-repeat;
+}
+html.login-pf [data-password-toggle] i.fa-eye-slash {
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http%3A//www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='none' stroke='black' stroke-width='2' d='M2 12s3-7 10-7 10 7 10 7-3 7-10 7S2 12 2 12Z M3 3l18 18'/%3E%3Ccircle cx='12' cy='12' r='3'/%3E%3C/svg%3E");
 }
 
 html.login-pf .pf-v5-c-input-group .pf-v5-c-button.pf-m-control::after {
@@ -644,14 +679,14 @@ html.login-pf .pf-v5-c-button {
 }
 
 html.login-pf .pf-v5-c-button.pf-m-primary {
-  background: var(--primary);
-  color: var(--primary-foreground);
+  background: var(--nw-primary);
+  color: #ffffff;
   border: 1px solid transparent;
 }
 
 html.login-pf .pf-v5-c-button.pf-m-primary:hover {
-  background: color-mix(in oklab, var(--primary) 80%, transparent); /* [a]:hover:bg-primary/80 */
-  color: var(--primary-foreground);
+  background: var(--nw-primary-hover);
+  color: #ffffff;
 }
 
 html.login-pf .pf-v5-c-button.pf-m-primary:active {
@@ -828,42 +863,32 @@ html.login-pf #kc-social-providers svg:not(.google) {
 
 @media (max-width: 900px) {
   html.login-pf.nw-split .pf-v5-c-login__container {
-    grid-template-columns: minmax(0, 25rem);
-    grid-template-areas: "header" "main" "footer";
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: "brand" "main" "footer";
     justify-content: center;
-    align-content: center;
+    align-content: start;
     min-height: 100dvh;
-    padding: 1.5rem;
-    row-gap: 0.75rem;
+    padding: 0 1.5rem 3rem;
+    row-gap: 0;
   }
   html.login-pf.nw-split .pf-v5-c-login__container .nw-login-brand {
-    display: none;
+    position: relative;
+    inset: auto;
+    width: calc(100% + 3rem);
+    min-height: 120px;
+    margin-inline: -1.5rem;
+    padding: 0 1.5rem;
+    justify-content: center;
+  }
+  html.login-pf.nw-split .nw-login-brand-copy,
+  html.login-pf.nw-split .nw-login-brand-footnote { display: none; }
+  html.login-pf.nw-split .pf-v5-c-login__container .pf-v5-c-login__main {
+    margin: 2rem 0 0;
+    justify-self: center;
+    max-width: 25rem;
   }
   html.login-pf.nw-split .pf-v5-c-login__container .pf-v5-c-login__main-header-utilities {
     position: static;
-  }
-  html.login-pf.nw-split .pf-v5-c-login__container #kc-header {
-    position: static;
-    width: 100%;
-    height: auto;
-    overflow: visible;
-    clip-path: none;
-    white-space: normal;
-  }
-  html.login-pf.nw-split .pf-v5-c-login__container #kc-header-wrapper {
-    flex-direction: row;
-    align-items: center;
-    gap: 0.625rem;
-    font-size: 1.125rem;
-    font-weight: 700;
-  }
-  html.login-pf.nw-split .pf-v5-c-login__container #kc-header-wrapper::before {
-    content: "";
-    flex: 0 0 2.75rem;
-    width: 2.75rem;
-    animation: none;
-    height: 2.75rem;
-    background: var(--nw-brand-img) center / contain no-repeat;
   }
   html.login-pf.nw-split .pf-v5-c-login__container #kc-header-wrapper,
   html.login-pf.nw-split .pf-v5-c-login__container .pf-v5-c-login__main,

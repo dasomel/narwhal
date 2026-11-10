@@ -208,4 +208,5 @@ Authoritative login design in Figma:
 - File: <https://www.figma.com/design/Zg2T4x6slnstMJrkcEswah> (frames 3:9 light, 3:76 dark)
 - Variables: collection 'Narwhal Tokens' mirrors `globals.css`
 - Typography: Figma uses Noto Sans KR as a stand-in for Pretendard
+- Keycloak login panel follows the Beluga deep-sea contour panel treatment (#638).
 

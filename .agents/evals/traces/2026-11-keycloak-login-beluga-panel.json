@@ -1,0 +1,97 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-keycloak-login-beluga-panel-638-20261110",
+  "task": "Issue #638 / D-KC-BELUGA: restyle only the Keycloak login skin with a Beluga deep-sea contour panel while retaining Narwhal identity, cookie sync, ES5/IME handling and keycloak.v2 inheritance. Local commit only; no deployment, push or PR.",
+  "changeContext": {
+    "paths": [
+      ".agents/evals/traces/2026-11-keycloak-login-beluga-panel.json",
+      "docs/common/lessons-log.md",
+      "gitops/charts/narwhal-platform/keycloak-theme/narwhal/login/resources/css/narwhal.css",
+      "gitops/charts/narwhal-platform/keycloak-theme/narwhal/login/resources/img/contours.svg",
+      "gitops/charts/narwhal-platform/templates/keycloak-cr.yaml",
+      "portal/DESIGN.md",
+      "scripts/test/lib/check-keycloak-login-split.py",
+      "scripts/test/lib/check-keycloak-theme.py",
+      "scripts/test/regression-check-kakao.sh"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Plan: read rules and Beluga CSS/SVG; change login CSS, copy contours and list it in the existing CR directory projection; update R339/R306 and DESIGN.md Figma note; render and inspect all nine PNGs, run requested checks and Agent Behavior validators, then commit locally. Admin theme, Portal implementation, JS, FTL templates, realm settings, versions and live cluster state remain untouched. Root CLAUDE.md adds Claude-only tooling/PROMPT guidance; portal/CLAUDE.md adds Claude specialist routing, neither applicable to this CSS-only lane."
+    },
+    {
+      "id": "e2",
+      "type": "external_input",
+      "provenance": "gh issue view 638; user-provided beluga-ref-light.png and now-light.png; read-only source /Users/m/Documents/IdeaProjects/20.dasomel/beluga/gitops/charts/beluga-platform/files/keycloak-theme/beluga/login/resources/{css/beluga.css,img/contours.svg}; AGENTS.md, docs/common/agent-operational-rules.md and .agents/skills/narwhal-verification/SKILL.md, inspected 2026-11-10",
+      "reviewed": true,
+      "summary": "Owner authorizes a dark panel in both modes, Narwhal top wordmark and unchanged bilingual bottom copy, ice form, page-scoped helper, teal button, intentional eye toggle and <=900px 120px band. Copy contours with character-reference xmlns; no templates, new :has(), JS modernization, admin or Portal implementation edits."
+    },
+    {
+      "id": "e3",
+      "type": "reproduction",
+      "summary": "Initial captured-HTML renders showed the old light wave panel and black primary. First restyle render exposed a Font Awesome missing-glyph square in both modes; button pseudo-element suppression alone does not target the PF item divider. login-ko.html was actually lang=en, corrected only in the untracked local fixture. The file-origin render cannot execute the upstream passwordVisibility ES module due to CORS, so interaction was verified separately via browser route fulfillment on the Keycloak origin. Contrast calculation found original bright contour stroke could reduce muted panel text below AA.",
+      "evidence": [
+        "artifact:beluga-ref-light.png",
+        "artifact:now-light.png",
+        "artifact:/tmp/kc638-browser.log"
+      ]
+    },
+    {
+      "id": "e4",
+      "type": "bug_fix",
+      "summary": "D-KC-BELUGA comments document reason/cost/escape in CSS: dark radial panel with copied bathymetry (stroke retinted #5f8b99 for contrast), dark SVG mascot, bottom-anchored localized copy, 42vw panel, 400px left-aligned form, ice surface with unchanged dark Portal neutrals, credential-page-only EN/KO helper and #0e7490 primary/#0b5f75 hover with white text. 120px mobile band reuses aside wordmark with 24px form gutters. Remove input-group item divider; draw both eye states as CSS SVG masks and center them. New SVG is listed in existing ConfigMap projection; no ownership or permission change. R339 adds missing-contour/black-button/light-panel mutations; R306 preserves Portal token parity and asserts local skin aliases/SVG namespace. Record actual icon/contrast lesson."
+    },
+    {
+      "id": "e5",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "Local static/Helm and Chromium rendering of captured HTML; not a deployed Keycloak or real authentication test",
+      "evidence": [
+        "test:python3 scripts/test/lib/check-keycloak-login-split.py -> PASS R339; all 16 mutations rejected including missing contour, black primary and light panel",
+        "test:python3 scripts/test/lib/check-keycloak-theme.py -> PASS R306; also --mutation-verify -> PASS, 2 removed-key mutations caught",
+        "test:make validate -> exit 0, Vagrantfile Syntax OK and GitOps YAML OK; helm template gitops/charts/narwhal-platform >/dev/null -> exit 0",
+        "test:git diff --check and node --check gitops/charts/narwhal-platform/keycloak-theme/narwhal/login/resources/js/narwhal.js -> exit 0",
+        "artifact:MANDATORY render loop executed for login-en/login-ko/err using NODE_PATH=/Users/m/Documents/IdeaProjects/20.dasomel/narwhal/portal/node_modules node render.cjs <fixture> <theme> /tmp/kc638-<fixture>; every round all nine -light/-dark/-mobile PNGs opened and compared with beluga-ref-light.png. Final 9 render outputs: errors none. Final panel is dark in both modes, copy at bottom, top wordmark, quieter contours, teal button; mobile full-width dark 120px band; error page retains bounded card with no login helper.",
+        "artifact:/tmp/kc638-login-en-light.png; /tmp/kc638-login-en-dark.png; /tmp/kc638-login-en-mobile.png",
+        "artifact:/tmp/kc638-login-ko-light.png; /tmp/kc638-login-ko-dark.png; /tmp/kc638-login-ko-mobile.png (lang=ko fixture; server-rendered title/labels still English)",
+        "artifact:/tmp/kc638-err-light.png; /tmp/kc638-err-dark.png; /tmp/kc638-err-mobile.png",
+        "test:NODE_PATH=/Users/m/Documents/IdeaProjects/20.dasomel/narwhal/portal/node_modules node /tmp/kc638-browser.cjs -> exit 0: 320/390/900/901/1440/1920px in both modes (12 combinations), no horizontal overflow, 120px band, 24px phone gutters, desktop form 400px (x=691.1875 at 1440), one h1, item divider none, eye centered, upstream password toggle changes type/text and eye-slash class, Enter focuses password and IME Enter preserves username focus. Browser route serves local assets and captured HTML without mutating server.",
+        "test:WCAG sRGB contrast: white/teal 5.36:1; white/hover 7.22:1; panel heading/lightest gradient 11.06:1; panel muted/lightest gradient 8.15:1; muted/strongest retinted contour composite (#355d6c = #5f8b99 at .42 over #163b4b) 4.89:1. Log /tmp/kc638-browser.log"
+      ]
+    },
+    {
+      "id": "e6",
+      "type": "limitation",
+      "summary": "make lint initially exits 2: yamllint missing (shellcheck passed). uv run --with yamllint --no-project make lint exits 2 on 8 existing line-length errors in unchanged ghost-pod-reaper.yaml:111, prometheus-alerts.yaml:286,336, velero-server-rbac.yaml:3,25,69,125,173; logs /tmp/kc638-lint.log and /tmp/kc638-lint-full.log. No unrelated fixes. make test deliberately not run. No live cluster mutation, login submission, deployed cache/rollout verification, Firefox/Safari, screen reader or actual OTP/info/update-password page renders; shared inherited CSS retained and error page inspected. No push or PR."
+    },
+    {
+      "id": "e6v",
+      "type": "verification",
+      "status": "passed",
+      "scope": "Local validators run verbatim from .github/workflows/agent-behavior.yml; separate from repository lint and live-cluster evidence",
+      "evidence": [
+        "test:Validate behavior specs; check-mutable-inputs.py; evaluate.py reference-trace; python3 -m unittest discover -s scripts/ci/tests -v -> exit 0, 120 tests OK",
+        "test:check-agent-trace-requirement.py --policy .agents/evals/risk-policy.json --changed-files /tmp/agent-changed-files.txt --report-out /tmp/agent-risk-result.json -> exit 0; high risk and traceChanged true",
+        "test:bind-verification.py with --event-id e4 --event-id e5 -- bash scripts/ci/check-version-consistency.sh and local gate.py against .agents/evals/baseline.eval.json -> exit 0",
+        "test:check-agent-trace-evidence.py with the exact workflow trace loop -> exit 0, passed true and failures empty",
+        "test:Gate operational traces against trusted baseline workflow block -> exit 0 for bound version trace and remaining 170 trace files (171 total including the new #638 trace); 0 regressions",
+        "artifact:/tmp/kc638-agent-behavior.log",
+        "policy:The GitHub-hosted canonical reusable-action canary/equivalence is not executed locally; all local validator run blocks above are copied verbatim from the workflow. No CI remote execution claimed."
+      ]
+    },
+    {
+      "id": "e7",
+      "type": "completion_claim",
+      "summary": "Scoped login restyle is implemented and verified by the requested R339/R306 checks, Helm/validate and captured-HTML visual/interaction evidence. Repository-wide lint remains blocked by existing unchanged YAML errors; no claim of a green lint, live deployment or authentication. Authorized local commit only."
+    },
+    {
+      "id": "e8",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Repository skin scope complete with nine final PNGs inspected and twelve viewport/mode interaction checks passed; disclosed pre-existing lint errors and live/cross-browser coverage gaps remain outside this task."
+    }
+  ]
+}

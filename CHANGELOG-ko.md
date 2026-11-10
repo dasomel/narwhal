@@ -9,10 +9,11 @@
 
 ## [Unreleased]
 
-- **포털이 `narwhal-portal:1.1.11`으로 고정됨 (기존 1.1.9).** 1.1.10은 경보 페이지와 알림 채널 설정을
+- **포털이 `narwhal-portal:1.1.12`으로 고정됨 (기존 1.1.9).** 1.1.10은 경보 페이지와 알림 채널 설정을
   추가하고(#610, #614), Trivy 데이터를 다시 가져온 뒤에도 부분 결과 안내를 표시한다(#505, #615).
   1.1.11은 Figma 분할 레이아웃 로그인(#619, #620)을 적용해 새 Keycloak 로그인 테마(#621)와 맞춘다.
-  이미지는 저장소 키로 Cosign 서명되어 있다(index digest `sha256:368a6261…`). 클러스터 bastion에서 이
+  1.1.12는 Figma 앱 셸(그룹형 사이드바), 대시보드, 빈 상태 디자인을 적용한다(#624, #634).
+  이미지는 저장소 키로 Cosign 서명되어 있다(index digest `sha256:c265043f…`). 클러스터 bastion에서 이
   고정을 적용하기 전에 digest로 미러링해야 한다(`scripts/airgap/README.md`의 "Mirror a pin bump").
   로컬 Vagrant 클러스터는 ghcr.io에서 직접 pull한다.
 

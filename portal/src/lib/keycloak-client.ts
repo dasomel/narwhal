@@ -271,7 +271,8 @@ async function fetchAllPages<T>(
  * Keycloak-derived Valkey cache keys and invalidation helpers.
  *
  * Cache layers & TTLs:
- * - `keycloak:users`: raw Keycloak user list (TTL 300s / 5m). Invalidated on user create/update.
+ * - `keycloak:users`: users enriched with group memberships and active-session timestamps (TTL 60s / 1m).
+ *   Invalidated on user create/update and group membership changes; skipped when memberships are partial.
  * - `keycloak:groups`: raw Keycloak group summary list (TTL 60s / 1m). Invalidated on group attribute updates.
  * - `keycloak:groups-detailed`: groups with resolved user IDs and attributes (TTL 60s / 1m).
  *   Never cached when member fetch is partial. Invalidated on membership and group attribute changes.
@@ -310,7 +311,64 @@ export async function getUsers(): Promise<KeycloakUser[]> {
     "Keycloak API"
   )
   const users = data.map(mapUser)
-  await cacheSet(KEYCLOAK_CACHE_KEYS.users, users, 300)
+  let groups: KeycloakGroupDetailed[] = []
+  let groupsComplete = true
+  try {
+    groups = await getGroupsDetailed()
+    groupsComplete = groups.every((group) => !group.membersPartial)
+  } catch (error) {
+    groupsComplete = false
+    console.warn("Keycloak user groups could not be resolved", error)
+  }
+
+  if (groupsComplete) {
+    const memberships = new Map<string, Array<{ pk: string; name: string }>>()
+    for (const group of groups) {
+      for (const userId of group.users) {
+        const membership = memberships.get(userId) ?? []
+        membership.push({ pk: group.pk, name: group.name })
+        memberships.set(userId, membership)
+      }
+    }
+    for (const user of users) user.groups_obj = memberships.get(user.pk) ?? []
+  } else {
+    // D1: a partial group inventory could omit a membership for any user, so
+    // leave every projection undefined and uncached; retry on the next read.
+    // Cost: repeated group reads while Keycloak is degraded. Escape hatch:
+    // restore authoritative group reads and the normal users cache resumes.
+  }
+
+  let sessionFailures = 0
+  let nextUser = 0
+  const readSessionBatch = async () => {
+    while (nextUser < users.length) {
+      const index = nextUser++
+      const user = users[index]
+      try {
+        const res = await kcFetch(
+          `${getKeycloakInternalUrl()}/admin/realms/${KEYCLOAK_REALM}/users/${encodeURIComponent(user.pk)}/sessions`
+        )
+        if (!res.ok) throw new Error(`HTTP ${res.status}`)
+        const sessions = await readJsonWithPolicy<Array<{ start?: unknown }>>(res)
+        const starts = sessions
+          .map((session) => Number(session.start))
+          .filter((start) => Number.isFinite(start) && start > 0)
+        user.last_login = starts.length > 0 ? new Date(Math.max(...starts)).toISOString() : null
+      } catch {
+        user.last_login = null
+        sessionFailures++
+      }
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(5, users.length) }, () => readSessionBatch()))
+  if (sessionFailures > 0) {
+    console.warn(`Keycloak sessions unavailable for ${sessionFailures} user(s); last_login set to null`)
+  }
+
+  // D2: session-derived timestamps are volatile, so keep this enriched list
+  // for 60s instead of the former 300s. Cost: more Keycloak list/group/session
+  // traffic; escape hatch: tune this TTL if provider load or freshness needs change.
+  if (groupsComplete) await cacheSet(KEYCLOAK_CACHE_KEYS.users, users, 60)
   return users
 }
 

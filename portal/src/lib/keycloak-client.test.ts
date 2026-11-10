@@ -100,11 +100,13 @@ describe("keycloak-client pagination and methods", () => {
       .mockResolvedValueOnce(jsonResponse(page1))
       .mockResolvedValueOnce(jsonResponse(page2))
       .mockResolvedValueOnce(jsonResponse(page3))
+      .mockResolvedValueOnce(jsonResponse([]))
+    for (let i = 0; i < 250; i++) mockFetch.mockResolvedValueOnce(jsonResponse([]))
 
     const users = await getUsers()
 
     expect(users).toHaveLength(250)
-    expect(mockFetch).toHaveBeenCalledTimes(3)
+    expect(mockFetch).toHaveBeenCalledTimes(254)
     const call0Url = mockFetch.mock.calls[0][0] as string
     const call1Url = mockFetch.mock.calls[1][0] as string
     const call2Url = mockFetch.mock.calls[2][0] as string
@@ -114,7 +116,7 @@ describe("keycloak-client pagination and methods", () => {
     expect(call2Url).toContain("/admin/realms/narwhal/users?first=200&max=100")
     expect(users[0].pk).toBe("u-0")
     expect(users[249].pk).toBe("u-249")
-    expect(cacheSet).toHaveBeenCalledWith(KEYCLOAK_CACHE_KEYS.users, users, 300)
+    expect(cacheSet).toHaveBeenCalledWith(KEYCLOAK_CACHE_KEYS.users, users, 60)
   })
 
   it("stops after fetching second page when first page has exactly 100 users and second page is empty", async () => {
@@ -129,11 +131,13 @@ describe("keycloak-client pagination and methods", () => {
     mockFetch
       .mockResolvedValueOnce(jsonResponse(page1))
       .mockResolvedValueOnce(jsonResponse(page2))
+      .mockResolvedValueOnce(jsonResponse([]))
+    for (let i = 0; i < 100; i++) mockFetch.mockResolvedValueOnce(jsonResponse([]))
 
     const users = await getUsers()
 
     expect(users).toHaveLength(100)
-    expect(mockFetch).toHaveBeenCalledTimes(2)
+    expect(mockFetch).toHaveBeenCalledTimes(103)
     const call0Url = mockFetch.mock.calls[0][0] as string
     const call1Url = mockFetch.mock.calls[1][0] as string
     expect(call0Url).toContain("/admin/realms/narwhal/users?first=0&max=100")
@@ -169,6 +173,62 @@ describe("keycloak-client pagination and methods", () => {
     const users = await getUsers()
     expect(users).toEqual(cachedUsers)
     expect(mockFetch).not.toHaveBeenCalled()
+  })
+
+  it("adds group memberships and the newest active session start to each user", async () => {
+    mockFetch.mockImplementation(async (url: string) => {
+      if (url.includes("/users?first=")) return jsonResponse([
+        { id: "u1", username: "one", enabled: true },
+        { id: "u2", username: "two", enabled: true },
+        { id: "u3", username: "three", enabled: true },
+      ])
+      if (url.includes("/groups?first=")) return jsonResponse([
+        { id: "g1", name: "Admins" },
+        { id: "g2", name: "Editors" },
+      ])
+      if (url.includes("/groups/g1/members?first=")) return jsonResponse([{ id: "u1" }, { id: "u2" }])
+      if (url.includes("/groups/g2/members?first=")) return jsonResponse([{ id: "u1" }])
+      if (url.endsWith("/users/u1/sessions")) return jsonResponse([{ start: 1000 }, { start: 3000 }, { start: 2000 }])
+      if (url.endsWith("/users/u2/sessions")) return jsonResponse([{ start: 2000 }])
+      if (url.endsWith("/users/u3/sessions")) return jsonResponse([])
+      throw new Error(`unexpected fetch to ${url}`)
+    })
+
+    const users = await getUsers()
+    expect(users.map((user) => [user.pk, user.groups_obj, user.last_login])).toEqual([
+      ["u1", [{ pk: "g1", name: "Admins" }, { pk: "g2", name: "Editors" }], new Date(3000).toISOString()],
+      ["u2", [{ pk: "g1", name: "Admins" }], new Date(2000).toISOString()],
+      ["u3", [], null],
+    ])
+    expect(cacheSet).toHaveBeenCalledWith(KEYCLOAK_CACHE_KEYS.users, users, 60)
+  })
+
+  it.each([403, 500])("keeps the user list when a session request returns %i", async (status) => {
+    mockFetch.mockImplementation(async (url: string) => {
+      if (url.includes("/users?first=")) return jsonResponse([{ id: "u1", username: "one" }])
+      if (url.includes("/groups?first=")) return jsonResponse([])
+      if (url.endsWith("/users/u1/sessions")) return new Response("", { status })
+      throw new Error(`unexpected fetch to ${url}`)
+    })
+    const warning = vi.spyOn(console, "warn").mockImplementation(() => undefined)
+    const users = await getUsers()
+    expect(users).toHaveLength(1)
+    expect(users[0].last_login).toBeNull()
+    expect(warning).toHaveBeenCalledTimes(1)
+    warning.mockRestore()
+  })
+
+  it("leaves group projections undefined and does not cache users when any group membership is partial", async () => {
+    mockFetch.mockImplementation(async (url: string) => {
+      if (url.includes("/users?first=")) return jsonResponse([{ id: "u1", username: "one" }])
+      if (url.includes("/groups?first=")) return jsonResponse([{ id: "g1", name: "Group" }])
+      if (url.includes("/groups/g1/members?first=")) return new Response("", { status: 503 })
+      if (url.endsWith("/users/u1/sessions")) return jsonResponse([])
+      throw new Error(`unexpected fetch to ${url}`)
+    })
+    const users = await getUsers()
+    expect(users[0].groups_obj).toBeUndefined()
+    expect(cacheSet).not.toHaveBeenCalledWith(KEYCLOAK_CACHE_KEYS.users, expect.anything(), expect.anything())
   })
 
   it("paginates getGroups across multiple pages", async () => {
@@ -459,11 +519,13 @@ describe("getKeycloakAdminToken — token provider", () => {
         tokenCalls += 1
         return jsonResponse({ access_token: `tok-${tokenCalls}`, expires_in: 3600 })
       }
-      if (url.includes("/admin/realms/narwhal/users")) {
+      if (url.includes("/admin/realms/narwhal/users?")) {
         // First attempt (tok-1) is rejected; only the retry (tok-2, post force-refresh) succeeds.
         if (tokenCalls < 2) return { ok: false, status: 401 }
         return jsonResponse([])
       }
+      if (url.includes("/admin/realms/narwhal/groups?")) return jsonResponse([])
+      if (url.endsWith("/sessions")) return jsonResponse([])
       throw new Error(`unexpected fetch to ${url}`)
     })
 

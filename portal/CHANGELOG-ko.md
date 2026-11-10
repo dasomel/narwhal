@@ -9,6 +9,20 @@
 
 ## [Unreleased]
 
+## [1.1.12] - 2026-11-10
+
+Figma 앱 셸, 대시보드, 빈 상태 디자인을 적용하고 OSS 버전 스냅샷에 1.1.11 Portal pin을 기록한 패치 릴리스.
+
+### 변경
+
+- 상단 내비게이션을 그룹형 왼쪽 사이드바(개요, 딜리버리, 거버넌스, 시작하기)로 바꾸고 마스코트 워드마크, 활성 강조 막대,
+  사용자 카드를 추가. 56px 상단 바에 경로, ⌘K 검색, 상태 표시, 언어, 테마를 배치. 1024px 미만에서는 사이드바가 드로어로
+  열린다. 역할별 메뉴 노출은 그대로 (narwhal#624, narwhal#634).
+- 대시보드에 아이콘·미터가 있는 KPI 카드, 구간 선택, 영역 차트, ArgoCD 상태 배지와 동기화 막대, 심각도 표시가 있는
+  경보 목록을 적용. 데이터가 없는 카드는 0 기준 문구 대신 "데이터 없음"을 표시 (narwhal#624, narwhal#634).
+- 공용 빈 상태·오류 상태에 마스코트, 점선 프레임, 설명, 다시 시도 버튼을 적용 (narwhal#624, narwhal#634).
+- 1.1.11 GitOps pin에 맞춰 OSS 버전 스냅샷의 Portal 버전을 1.1.11로 갱신 (narwhal#623).
+
 ## [1.1.11] - 2026-11-10
 
 Figma 로그인 디자인을 적용하고, OSS 버전 스냅샷에 1.1.10 Portal pin을 기록한 패치 릴리스.
@@ -679,7 +693,8 @@ Portal의 첫 번째 공개 릴리스.
     매니페스트(`deploy/kaniko-build-job.yaml`).
   - 실시간 핫 모듈 교체(HMR) 및 컨테이너 파일 동기화를 위해 구성된 Skaffold 개발 프로필.
 
-[Unreleased]: https://github.com/dasomel/narwhal/compare/portal/v1.1.11...HEAD
+[Unreleased]: https://github.com/dasomel/narwhal/compare/portal/v1.1.12...HEAD
+[1.1.12]: https://github.com/dasomel/narwhal/compare/portal/v1.1.11...portal/v1.1.12
 [1.1.11]: https://github.com/dasomel/narwhal/compare/portal/v1.1.10...portal/v1.1.11
 [1.1.10]: https://github.com/dasomel/narwhal/compare/portal/v1.1.9...portal/v1.1.10
 [1.1.9]: https://github.com/dasomel/narwhal/compare/portal/v1.1.8...portal/v1.1.9

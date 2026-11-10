@@ -9,6 +9,22 @@ English | [한국어](CHANGELOG-ko.md)
 
 ## [Unreleased]
 
+## [1.1.12] - 2026-11-10
+
+Patch release applying the Figma app shell, dashboard and empty-state designs, and recording the 1.1.11 Portal
+pin in the OSS versions snapshot.
+
+### Changed
+
+- The top navigation becomes a grouped left sidebar (Overview, Delivery, Governance, Get started) with the mascot
+  wordmark, an active accent bar and a user card; a 56px top bar holds the breadcrumb, ⌘K search, health pill,
+  language and theme. Below 1024px the sidebar opens as a drawer. Role gating is unchanged (narwhal#624, narwhal#634).
+- The dashboard uses KPI cards with an icon chip and meter, a segmented time range, area charts, ArgoCD status
+  pills with a stacked sync bar and alert rows with a severity stripe; cards without data show "No data" instead
+  of zero-based labels (narwhal#624, narwhal#634).
+- Shared empty and error states show the mascot in a dashed frame with a description and retry (narwhal#624, narwhal#634).
+- Update the Portal version in the OSS versions snapshot to 1.1.11 to match the GitOps pin (narwhal#623).
+
 ## [1.1.11] - 2026-11-10
 
 Patch release applying the Figma login design and recording the 1.1.10 Portal pin in the OSS versions snapshot.
@@ -718,7 +734,8 @@ management dashboard built with Next.js 16 and React 19.
   - Skaffold development profile configured for live Hot Module Replacement (HMR) and container
     file syncing.
 
-[Unreleased]: https://github.com/dasomel/narwhal/compare/portal/v1.1.11...HEAD
+[Unreleased]: https://github.com/dasomel/narwhal/compare/portal/v1.1.12...HEAD
+[1.1.12]: https://github.com/dasomel/narwhal/compare/portal/v1.1.11...portal/v1.1.12
 [1.1.11]: https://github.com/dasomel/narwhal/compare/portal/v1.1.10...portal/v1.1.11
 [1.1.10]: https://github.com/dasomel/narwhal/compare/portal/v1.1.9...portal/v1.1.10
 [1.1.9]: https://github.com/dasomel/narwhal/compare/portal/v1.1.8...portal/v1.1.9

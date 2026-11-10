@@ -11,7 +11,7 @@ CSS = THEME / 'resources/css/narwhal.css'
 JS = THEME / 'resources/js/narwhal.js'
 MESSAGES = {lang: (THEME / f'messages/messages_{lang}.properties').read_text()
             for lang in ('en', 'ko')}
-SPLIT = 'html.login-pf .pf-v5-c-login__container:has(#kc-form-login)'
+SPLIT = 'html.login-pf.nw-split .pf-v5-c-login__container'
 
 
 def rule(css, selector):
@@ -38,7 +38,8 @@ def assert_contract(css, js, messages):
     assert js.count('document.createElement("p")') == 2
     assert 'document.createElement("h1")' not in js, 'Keycloak already owns the h1'
     assert 'header.appendChild' not in js, 'brand copy must not be duplicated in realm header'
-    assert 'querySelector(".pf-v5-c-login__container:has(#kc-form-login)")' in js, 'brand must be login-only'
+    assert 'getElementById("kc-form-login")' in js and 'classList.add("nw-split")' in js, 'brand must be login-only'
+    assert ':has(' not in js and ':has(#kc-form-login)' not in css, 'no :has() dependency (old browsers abort narwhal.js)'
     assert 'if (login && header)' in js
     assert 'white-space: pre-line' in rule(css, 'html.login-pf .nw-login-brand .nw-login-copy-headline')
     layout = rule(css, SPLIT)
@@ -61,7 +62,7 @@ def assert_contract(css, js, messages):
     assert 'flex-direction: row' in wordmark and 'font-size: 1.125rem' in wordmark
     assert 'flex: 0 0 2.75rem' in rule(mobile, SPLIT + ' #kc-header-wrapper::before')
     assert 'width: 100%' in rule(mobile, SPLIT + ' .pf-v5-c-login__main-footer')
-    assert '.pf-v5-c-login__container:not(:has(#kc-form-login))' in css
+    assert 'html.login-pf:not(.nw-split) .pf-v5-c-login__container' in css
     assert 'prefers-reduced-motion: reduce' in css and 'animation: none' in css
     assert 'html.nw-dark' in css
 
@@ -74,7 +75,7 @@ def mutation_verify(css, js):
         ('missing brand copy', css, js.replace('headline.setAttribute("data-en"', 'missing.setAttribute("data-en"', 1)),
         ('duplicate h1', css, js.replace('document.createElement("p")', 'document.createElement("h1")', 1)),
         ('duplicate header copy', css, js.replace('copy.appendChild(headline)', 'header.appendChild(headline)', 1)),
-        ('non-login leak', css, js.replace('.pf-v5-c-login__container:has(#kc-form-login)', '.pf-v5-c-login__container', 1)),
+        ('non-login leak', css, js.replace('getElementById("kc-form-login")', 'querySelector(".pf-v5-c-login__container")', 1)),
         ('asymmetric panel', css.replace('padding: 3rem 0', 'padding: 3rem 4rem', 1), js),
         ('realm visible', css.replace('clip-path: inset(50%)', 'clip-path: none', 1), js),
         ('title size', css.replace('font-size: 1.75rem', 'font-size: 1.125rem', 1), js),

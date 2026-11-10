@@ -19,7 +19,10 @@ document.addEventListener("DOMContentLoaded", function () {
   // D1: select bundled copy by the document language. Cost: duplicate four short strings in JS
   // and message bundles; R339 pins their parity. Escape hatch: switch back to server-rendered
   // message data attributes if Keycloak exposes a stable login-header hook.
-  var login = document.querySelector(".pf-v5-c-login__container:has(#kc-form-login)");
+  // D2: no CSS has-selector here or in the CSS. Browsers without it would throw on querySelector and abort
+  // this whole handler (including the IME Enter fix below); html.nw-split is the CSS hook instead.
+  var loginForm = document.getElementById("kc-form-login");
+  var login = loginForm && loginForm.closest ? loginForm.closest(".pf-v5-c-login__container") : null;
   var header = document.getElementById("kc-header-wrapper");
   if (login && header) {
     var brand = document.createElement("aside");
@@ -52,6 +55,7 @@ document.addEventListener("DOMContentLoaded", function () {
     brand.appendChild(copy);
     brand.appendChild(footnote);
     login.insertBefore(brand, login.firstChild);
+    document.documentElement.classList.add("nw-split");
     var language = document.documentElement.lang.toLowerCase().indexOf("ko") === 0 ? "ko" : "en";
     Array.prototype.forEach.call(document.querySelectorAll(".nw-login-copy"), function (node) {
       node.textContent = node.getAttribute("data-" + language);

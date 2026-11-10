@@ -182,7 +182,7 @@ html.login-pf .pf-v5-c-login {
   background: transparent;
 }
 
-html.login-pf .pf-v5-c-login__container:has(#kc-form-login) {
+html.login-pf.nw-split .pf-v5-c-login__container {
   position: relative;
   display: grid;
   grid-template-columns: clamp(22.5rem, 44vw, 40rem) minmax(0, 1fr);
@@ -199,13 +199,13 @@ html.login-pf .pf-v5-c-login__container:has(#kc-form-login) {
   row-gap: 0;
 }
 
-html.login-pf .pf-v5-c-login:not(:has(#kc-form-login)) {
+html.login-pf:not(.nw-split) .pf-v5-c-login {
   align-items: center;
   justify-content: center;
   padding: 2rem 1rem;
 }
 
-html.login-pf .pf-v5-c-login__container:not(:has(#kc-form-login)) {
+html.login-pf:not(.nw-split) .pf-v5-c-login__container {
   display: grid;
   grid-template-columns: minmax(0, 28rem);
   grid-template-areas: "header" "main";
@@ -262,7 +262,7 @@ html.login-pf .nw-login-brand .nw-login-copy-headline { margin: 0 0 1.25rem; fon
 html.login-pf .nw-login-brand .nw-login-copy-tagline { margin: 0; font-size: 1rem; line-height: 1.5; color: color-mix(in oklab, currentColor 68%, transparent); }
 html.login-pf .nw-login-brand-footnote { font-size: 0.8125rem; font-weight: 500; letter-spacing: 0.02em; color: color-mix(in oklab, currentColor 68%, transparent); }
 
-html.login-pf .pf-v5-c-login__container:has(#kc-form-login) .pf-v5-c-login__main-header-utilities {
+html.login-pf.nw-split .pf-v5-c-login__container .pf-v5-c-login__main-header-utilities {
   position: absolute;
   top: 1.5rem;
   right: 1.5rem;
@@ -314,7 +314,7 @@ html.login-pf #kc-header-wrapper::before {
 /* D2: keep Keycloak's realm label in the accessibility tree without a duplicate visual
    heading. Cost: a clipped desktop header; <=900px restores it as the wordmark. Escape:
    remove this scoped rule if upstream provides a dedicated compact-brand slot. */
-html.login-pf .pf-v5-c-login__container:has(#kc-form-login) #kc-header {
+html.login-pf.nw-split .pf-v5-c-login__container #kc-header {
   position: absolute;
   width: 1px;
   height: 1px;
@@ -376,7 +376,7 @@ html.login-pf .pf-v5-c-login__main-footer-band {
 }
 
 /* 5. Form surface: intentionally unboxed in the Figma layout. */
-html.login-pf .pf-v5-c-login__container:has(#kc-form-login) .pf-v5-c-login__main {
+html.login-pf.nw-split .pf-v5-c-login__container .pf-v5-c-login__main {
   grid-area: main;
   justify-self: center;
   width: min(100%, 25rem);
@@ -389,7 +389,7 @@ html.login-pf .pf-v5-c-login__container:has(#kc-form-login) .pf-v5-c-login__main
   overflow: hidden;
 }
 
-html.login-pf .pf-v5-c-login__container:has(#kc-form-login) .pf-v5-c-login__main-header {
+html.login-pf.nw-split .pf-v5-c-login__container .pf-v5-c-login__main-header {
   border-top: 0;
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -398,7 +398,7 @@ html.login-pf .pf-v5-c-login__container:has(#kc-form-login) .pf-v5-c-login__main
   padding: 0 0 1rem;
 }
 
-html.login-pf .pf-v5-c-login__container:has(#kc-form-login) .pf-v5-c-login__main-header .pf-v5-c-title {
+html.login-pf.nw-split .pf-v5-c-login__container .pf-v5-c-login__main-header .pf-v5-c-title {
   font-size: 1.75rem;
   font-weight: 700;
   text-align: left;
@@ -408,11 +408,11 @@ html.login-pf .pf-v5-c-login__container:has(#kc-form-login) .pf-v5-c-login__main
   margin: 0;
 }
 
-html.login-pf .pf-v5-c-login__container:has(#kc-form-login) .pf-v5-c-login__main-body {
+html.login-pf.nw-split .pf-v5-c-login__container .pf-v5-c-login__main-body {
   padding: 0;
 }
 
-html.login-pf .pf-v5-c-login__container:has(#kc-form-login) .pf-v5-c-login__main-footer {
+html.login-pf.nw-split .pf-v5-c-login__container .pf-v5-c-login__main-footer {
   grid-area: footer;
   justify-self: center;
   width: min(100%, 25rem);
@@ -423,8 +423,8 @@ html.login-pf .pf-v5-c-login__container:has(#kc-form-login) .pf-v5-c-login__main
   color: var(--muted-foreground);
 }
 
-html.login-pf .pf-v5-c-login__container:has(#kc-form-login) .pf-v5-c-login__main-footer:empty,
-html.login-pf .pf-v5-c-login__container:has(#kc-form-login) .pf-v5-c-login__main-footer:not(:has(*)) {
+html.login-pf.nw-split .pf-v5-c-login__container .pf-v5-c-login__main-footer:empty,
+html.login-pf.nw-split .pf-v5-c-login__container .pf-v5-c-login__main-footer:not(:has(*)) {
   display: none;
 }
 
@@ -827,7 +827,7 @@ html.login-pf #kc-social-providers svg:not(.google) {
 }
 
 @media (max-width: 900px) {
-  html.login-pf .pf-v5-c-login__container:has(#kc-form-login) {
+  html.login-pf.nw-split .pf-v5-c-login__container {
     grid-template-columns: minmax(0, 25rem);
     grid-template-areas: "header" "main" "footer";
     justify-content: center;
@@ -836,13 +836,13 @@ html.login-pf #kc-social-providers svg:not(.google) {
     padding: 1.5rem;
     row-gap: 0.75rem;
   }
-  html.login-pf .pf-v5-c-login__container:has(#kc-form-login) .nw-login-brand {
+  html.login-pf.nw-split .pf-v5-c-login__container .nw-login-brand {
     display: none;
   }
-  html.login-pf .pf-v5-c-login__container:has(#kc-form-login) .pf-v5-c-login__main-header-utilities {
+  html.login-pf.nw-split .pf-v5-c-login__container .pf-v5-c-login__main-header-utilities {
     position: static;
   }
-  html.login-pf .pf-v5-c-login__container:has(#kc-form-login) #kc-header {
+  html.login-pf.nw-split .pf-v5-c-login__container #kc-header {
     position: static;
     width: 100%;
     height: auto;
@@ -850,14 +850,14 @@ html.login-pf #kc-social-providers svg:not(.google) {
     clip-path: none;
     white-space: normal;
   }
-  html.login-pf .pf-v5-c-login__container:has(#kc-form-login) #kc-header-wrapper {
+  html.login-pf.nw-split .pf-v5-c-login__container #kc-header-wrapper {
     flex-direction: row;
     align-items: center;
     gap: 0.625rem;
     font-size: 1.125rem;
     font-weight: 700;
   }
-  html.login-pf .pf-v5-c-login__container:has(#kc-form-login) #kc-header-wrapper::before {
+  html.login-pf.nw-split .pf-v5-c-login__container #kc-header-wrapper::before {
     content: "";
     flex: 0 0 2.75rem;
     width: 2.75rem;
@@ -865,26 +865,26 @@ html.login-pf #kc-social-providers svg:not(.google) {
     height: 2.75rem;
     background: var(--nw-brand-img) center / contain no-repeat;
   }
-  html.login-pf .pf-v5-c-login__container:has(#kc-form-login) #kc-header-wrapper,
-  html.login-pf .pf-v5-c-login__container:has(#kc-form-login) .pf-v5-c-login__main,
-  html.login-pf .pf-v5-c-login__container:has(#kc-form-login) .pf-v5-c-login__main-footer {
+  html.login-pf.nw-split .pf-v5-c-login__container #kc-header-wrapper,
+  html.login-pf.nw-split .pf-v5-c-login__container .pf-v5-c-login__main,
+  html.login-pf.nw-split .pf-v5-c-login__container .pf-v5-c-login__main-footer {
     width: 100%;
     min-width: 0;
   }
 }
 
 @media (max-width: 480px) {
-  html.login-pf .pf-v5-c-login:not(:has(#kc-form-login)) {
+  html.login-pf:not(.nw-split) .pf-v5-c-login {
     align-items: flex-start;
     padding: 1.5rem 0.75rem;
   }
-  html.login-pf .pf-v5-c-login:not(:has(#kc-form-login)) .pf-v5-c-login__main-header {
+  html.login-pf:not(.nw-split) .pf-v5-c-login .pf-v5-c-login__main-header {
     padding: 1.25rem 1.125rem 0;
   }
-  html.login-pf .pf-v5-c-login:not(:has(#kc-form-login)) .pf-v5-c-login__main-body {
+  html.login-pf:not(.nw-split) .pf-v5-c-login .pf-v5-c-login__main-body {
     padding: 1rem 1.125rem 1.25rem;
   }
-  html.login-pf .pf-v5-c-login:not(:has(#kc-form-login)) .pf-v5-c-login__main-footer {
+  html.login-pf:not(.nw-split) .pf-v5-c-login .pf-v5-c-login__main-footer {
     padding: 0 1.125rem 1.25rem;
   }
 }

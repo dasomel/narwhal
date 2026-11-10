@@ -17,7 +17,7 @@ cd "$(dirname "$0")/.."
 
 # --- baselines (2026-07-25) --------------------------------------------------
 # #640: static graph dimensions moved to classes; unused SVG fallback removed.
-BASE_INLINE_STYLE=43
+BASE_INLINE_STYLE=42
 # 2026-10-31: 48 -> 66. CI counted 0 (see D-KO-COUNT), so 18 hardcoded strings got in
 # unchecked; 66 is the real count on main 64ed65da (macOS BSD grep and the perl count agree).
 # #512: the 66 were almost all Korean comments (the old filter only skipped lines that start

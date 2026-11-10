@@ -43,7 +43,7 @@ export function DataState({ state, onRetry, observedAt, now, freshnessSeconds, r
   if (framed) {
     const failed = state !== "empty"
     return (
-      <div className={`flex min-h-32 flex-col items-center justify-center gap-2 rounded-lg border border-dashed bg-muted/50 px-4 py-4 text-center ${className ?? ""}`}>
+      <div className={`flex min-h-32 w-full flex-col items-center justify-center gap-2 rounded-lg border border-dashed bg-muted/50 px-4 py-4 text-center ${className ?? ""}`}>
         {failed
           ? <AlertTriangle aria-hidden="true" className="size-6 text-destructive" />
           : <div className="opacity-85"><Narwhal state="healthy" size={64} /></div>}

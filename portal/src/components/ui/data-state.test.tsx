@@ -9,7 +9,7 @@ vi.mock("@/lib/i18n-client", () => ({
       "dataState.partial": "Some data is available.",
       "dataState.stale": "Data is stale.",
       "dataState.empty": "No data to display.",
-      "dataState.emptyDescription": "There is no data to show yet.",
+      "dataState.emptyDescription": "Values will appear here once they are collected.",
       "dataState.errorDescription": "Please try again in a moment.",
       "dataState.unavailable": "The data provider is unavailable.",
       "dataState.unauthorized": "You are not authorized to access this data.",
@@ -80,7 +80,7 @@ describe("DataState", () => {
     const tree = DataState({ state: "empty" })
     const frame = find(tree, (element) => element.props.className?.includes("border-dashed"))
     expect(frame).toBeDefined()
-    expect(text(frame!)).toContain("There is no data to show yet.")
+    expect(text(frame!)).toContain("Values will appear here once they are collected.")
     expect(find(frame!, (element) => typeof element.type === "function" && element.type.name === "Narwhal")?.props.size).toBe(64)
   })
 

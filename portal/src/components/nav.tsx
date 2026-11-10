@@ -127,10 +127,10 @@ export function Nav() {
               <Sidebar onNavigate={() => setOpen(false)} />
             </SheetContent>
           </Sheet>
-          <div aria-label={t("shell.breadcrumb")} className="flex min-w-0 items-center gap-2 text-xs sm:text-sm">
+          <nav aria-label={t("shell.breadcrumb")} className="flex min-w-0 items-center gap-2 text-xs sm:text-sm">
             {group && <><span className="hidden text-muted-foreground sm:inline">{t(group.labelKey)}</span><span aria-hidden="true" className="hidden text-muted-foreground sm:inline">/</span></>}
-            <span className="truncate font-medium">{item ? t(item.labelKey) : t("shell.brand")}</span>
-          </div>
+            <span aria-current="page" className="truncate font-medium">{item ? t(item.labelKey) : t("shell.brand")}</span>
+          </nav>
         </div>
         <div className="flex shrink-0 items-center gap-2 sm:gap-3">
           <button type="button" aria-label={t("search.hint")}

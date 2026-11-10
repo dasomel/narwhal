@@ -200,3 +200,12 @@ contrast-sensitive elements so the linter can check them.
 - Add a token to only one of globals.css / DESIGN.md (drift).
 - Change `narwhal-body`/`-belly`/`-detail`/`-wave` per theme.
 - Treat this file as the compiled source — globals.css is what ships.
+
+## Figma source
+
+Authoritative login design in Figma:
+
+- File: <https://www.figma.com/design/Zg2T4x6slnstMJrkcEswah> (frames 3:9 light, 3:76 dark)
+- Variables: collection 'Narwhal Tokens' mirrors `globals.css`
+- Typography: Figma uses Noto Sans KR as a stand-in for Pretendard
+

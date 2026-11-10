@@ -3354,6 +3354,8 @@ PYEOF'
   # 2026-11-05: the Keycloak login screen and admin console were restyled to match the Portal (login CSS copies the Portal tokens; admin = branding only).
   check R306 "Keycloak login theme mirrors the Portal tokens (globals.css light+dark), login/admin themes extend keycloak.v2, delivered as one directory mount with a checksum roll, 11-2 sets loginTheme+adminTheme on narwhal and master (D-KC-THEME-TOKENS)" \
     python3 scripts/test/lib/check-keycloak-theme.py
+  check R339 "Keycloak Figma login: single bilingual copy with real newline, centered 400px form, accessible clipped realm, 28px title, <=900px 44px wordmark and 24px gutters; 13 mutations caught (D-KC-LOGIN-FIGMA)" \
+    python3 scripts/test/lib/check-keycloak-login-split.py
   # 2026-11-05: push-to-gitea.sh nested directory paths on existing targets and never deleted removed files.
   check R308 "push-to-gitea.sh mirrors directory paths without nesting, propagates deletions, keeps single-file path support, refuses '..' paths and Gitea-only top-level directories, and runs mirror-all/--tag/--rollback under /bin/bash; 3 mutations caught (D-GITOPS-PUSH-DIRS, D-MIRROR-ALL-NONDESTRUCTIVE, D-EMPTY-ARRAY-GUARD, D-REFUSE-GITEA-ONLY-DIRS)" \
     bash scripts/test/lib/check-push-to-gitea-dirs.sh

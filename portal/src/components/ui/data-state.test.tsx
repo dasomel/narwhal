@@ -9,6 +9,8 @@ vi.mock("@/lib/i18n-client", () => ({
       "dataState.partial": "Some data is available.",
       "dataState.stale": "Data is stale.",
       "dataState.empty": "No data to display.",
+      "dataState.emptyDescription": "There is no data to show yet.",
+      "dataState.errorDescription": "Please try again in a moment.",
       "dataState.unavailable": "The data provider is unavailable.",
       "dataState.unauthorized": "You are not authorized to access this data.",
       "dataState.error": "Could not load data.",
@@ -31,13 +33,15 @@ function text(node: ReactNode | Element): string {
   if (typeof node === "string" || typeof node === "number") return String(node)
   if (Array.isArray(node)) return node.map(text).join("")
   if (!isElement(node)) return ""
+  if (typeof node.type === "function" && node.type.name === "Narwhal") return ""
   if (typeof node.type === "function") return text((node.type as (props: Record<string, any>) => ReactNode)(node.props))
   return text(node.props.children)
 }
-function find(node: ReactNode, predicate: (element: Element) => boolean): Element | undefined {
+function find(node: ReactNode | Element, predicate: (element: Element) => boolean): Element | undefined {
   if (Array.isArray(node)) return node.map((child) => find(child, predicate)).find(Boolean)
   if (!isElement(node)) return undefined
   if (predicate(node)) return node
+  if (typeof node.type === "function" && node.type.name === "Narwhal") return undefined
   if (typeof node.type === "function") return find((node.type as (props: Record<string, any>) => ReactNode)(node.props), predicate)
   return find(node.props.children, predicate)
 }
@@ -66,6 +70,24 @@ describe("DataState", () => {
   it("calls onRetry from its retry button", () => {
     const onRetry = vi.fn()
     const tree = DataState({ state: "error", onRetry })
+    const button = find(tree, (element) => element.props.type === "button")
+    expect(button).toBeDefined()
+    button!.props.onClick()
+    expect(onRetry).toHaveBeenCalledOnce()
+  })
+
+  it("renders the shared empty state frame with mascot and description", () => {
+    const tree = DataState({ state: "empty" })
+    const frame = find(tree, (element) => element.props.className?.includes("border-dashed"))
+    expect(frame).toBeDefined()
+    expect(text(frame!)).toContain("There is no data to show yet.")
+    expect(find(frame!, (element) => typeof element.type === "function" && element.type.name === "Narwhal")?.props.size).toBe(64)
+  })
+
+  it("uses the shared danger frame and keeps retry available for failures", () => {
+    const onRetry = vi.fn()
+    const tree = DataState({ state: "unavailable", onRetry })
+    expect(text(tree)).toContain("Please try again in a moment.")
     const button = find(tree, (element) => element.props.type === "button")
     expect(button).toBeDefined()
     button!.props.onClick()

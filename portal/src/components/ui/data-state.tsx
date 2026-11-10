@@ -4,6 +4,7 @@ import { AlertTriangle, CheckCircle2, CircleHelp, Info, LoaderCircle, LockKeyhol
 import type { DependencyState } from "@/lib/dependency-health"
 import { useT } from "@/lib/i18n-client"
 import { Button } from "@/components/ui/button"
+import { Narwhal } from "@/components/narwhal/narwhal"
 
 export type DataStateValue = DependencyState | "loading" | "error"
 
@@ -38,6 +39,28 @@ export function DataState({ state, onRetry, observedAt, now, freshnessSeconds, r
   const minutes = age === undefined ? undefined : Math.floor(age / 60)
 
   const inline = variant === "inline"
+  const framed = !inline && (state === "empty" || state === "stale" || state === "unauthorized" || state === "unavailable" || state === "error")
+  if (framed) {
+    const failed = state !== "empty"
+    return (
+      <div className={`flex min-h-32 flex-col items-center justify-center gap-2 rounded-lg border border-dashed bg-muted/50 px-4 py-4 text-center ${className ?? ""}`}>
+        {failed
+          ? <AlertTriangle aria-hidden="true" className="size-6 text-destructive" />
+          : <div className="opacity-85"><Narwhal state="healthy" size={64} /></div>}
+        <div role={content.role} className="space-y-1">
+          <p className={`text-sm font-medium ${failed ? "text-destructive" : "text-foreground"}`}>{content.label}</p>
+          <p className="text-xs text-muted-foreground">
+            {reason ?? (failed ? t("dataState.errorDescription") : t("dataState.emptyDescription"))}
+            {detailKey === "costUnavailable" && <> {t("cost.telemetryUnavailable")}</>}
+            {detailKey === "costPartial" && <> {t("cost.telemetryPartial")}</>}
+            {detailKey === "securityPartial" && <> {t("security.partialNotice")}</>}
+          </p>
+        </div>
+        {minutes !== undefined && <span className="text-xs text-muted-foreground">{t("dataState.updatedMinutes", { count: String(minutes) })}</span>}
+        {onRetry && <Button type="button" size="sm" variant="outline" onClick={onRetry}><RefreshCw aria-hidden="true" />{t("common.retry")}</Button>}
+      </div>
+    )
+  }
   return (
     <div className={`flex ${inline ? "items-center gap-1.5 whitespace-nowrap text-xs" : "flex-wrap items-center gap-2 rounded-md border px-3 py-2 text-sm"} ${inline ? (state === "unavailable" || state === "error" || state === "unauthorized" ? "text-destructive" : "text-foreground") : (state === "unavailable" || state === "error" || state === "unauthorized" ? "border-destructive/40 bg-destructive/10 text-destructive" : "border-border bg-muted/30 text-foreground")} ${className ?? ""}`}>
       <div role={content.role} className="flex items-center gap-2">

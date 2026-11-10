@@ -105,6 +105,7 @@ export function ServiceMapView({ initialNamespace, focusService }: Props) {
         <div className={`flex items-center gap-1 rounded-lg bg-muted p-1 ${live ? "opacity-40 pointer-events-none" : ""}`}>
           {WINDOW_OPTIONS.map((opt) => (
             <button
+              type="button"
               key={opt.value}
               onClick={() => setWindow(opt.value)}
               className={`px-3 py-1 text-xs rounded-md transition-colors ${

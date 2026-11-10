@@ -50,7 +50,7 @@ export function PlatformArchitecture() {
   return <Card data-testid="onboarding-architecture" className="min-w-0 gap-4 overflow-hidden rounded-xl">
     <CardHeader className="gap-3">
       <div className="flex items-start gap-3"><span className="grid size-9 shrink-0 place-items-center rounded-lg bg-narwhal-accent/10 text-narwhal-accent"><Layers3 className="size-4" aria-hidden="true" /></span><div><CardTitle className="text-base">{t("arch.title")}</CardTitle><p className="mt-1 text-sm text-muted-foreground">{text("description")}</p></div></div>
-      <div className="flex flex-wrap gap-2" aria-label={text("legend")}>
+      <div className="flex flex-wrap gap-2" role="group" aria-label={text("legend")}>
         {Object.keys(STATUS).map(value => { const status = value as keyof typeof STATUS; return <span key={status} className="inline-flex items-center gap-1.5 rounded-full border border-border px-2.5 py-1 text-xs text-muted-foreground"><span className={`size-2 rounded-full ${STATUS[status]}`} aria-hidden="true" />{statusText(status)}</span> })}
       </div>
     </CardHeader>

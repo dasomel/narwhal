@@ -113,6 +113,8 @@ spec:
                         path: "login/resources/css/narwhal.css"
                       - key: "narwhal__login__resources__fonts__OFL.txt"
                         path: "login/resources/fonts/OFL.txt"
+                      - key: "narwhal__login__resources__img__contours.svg"
+                        path: "login/resources/img/contours.svg"
                       - key: "narwhal__login__resources__img__narwhal-dark.svg"
                         path: "login/resources/img/narwhal-dark.svg"
                       - key: "narwhal__login__resources__img__narwhal-light.svg"

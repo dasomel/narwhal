@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""R339: Figma login split, single localized copy, accessible realm and compact wordmark."""
+"""R339: Beluga login panel, single localized copy, accessible realm and compact wordmark."""
 
 import re
 import sys
@@ -43,10 +43,11 @@ def assert_contract(css, js, messages):
     assert 'if (login && header)' in js
     assert 'white-space: pre-line' in rule(css, 'html.login-pf .nw-login-brand .nw-login-copy-headline')
     layout = rule(css, SPLIT)
-    assert 'grid-template-columns: clamp(22.5rem, 44vw, 40rem) minmax(0, 1fr)' in layout
-    assert 'padding: 3rem 0' in layout and 'column-gap: 0' in layout, 'right panel must have symmetric space'
+    assert 'grid-template-columns: clamp(22.5rem, 42vw, 40rem) minmax(0, 1fr)' in layout
+    assert 'padding: 3rem 0' in layout and 'column-gap: 0' in layout, 'right panel must retain balanced vertical padding'
     main = rule(css, SPLIT + ' .pf-v5-c-login__main')
-    assert 'justify-self: center' in main and 'width: min(100%, 25rem)' in main
+    assert 'justify-self: start' in main and 'width: min(calc(100% - clamp(4rem, 12vw, 14rem)), 25rem)' in main
+    assert 'margin: 0 0 0 clamp(2rem, 6vw, 7rem)' in main
     assert 'box-shadow: none' in main and 'border-radius: 0' in main
     realm = rule(css, SPLIT + ' #kc-header')
     assert 'clip-path: inset(50%)' in realm and 'display: none' not in realm, 'realm must remain accessible'
@@ -55,16 +56,33 @@ def assert_contract(css, js, messages):
         assert declaration in title, f'title: {declaration}'
     assert '@media (max-width: 900px)' in css
     mobile = css.split('@media (max-width: 900px)', 1)[1]
-    assert 'display: none' in rule(mobile, SPLIT + ' .nw-login-brand')
-    assert 'padding: 1.5rem' in rule(mobile, SPLIT)
-    assert 'clip-path: none' in rule(mobile, SPLIT + ' #kc-header')
-    wordmark = rule(mobile, SPLIT + ' #kc-header-wrapper')
-    assert 'flex-direction: row' in wordmark and 'font-size: 1.125rem' in wordmark
-    assert 'flex: 0 0 2.75rem' in rule(mobile, SPLIT + ' #kc-header-wrapper::before')
+    band = rule(mobile, SPLIT + ' .nw-login-brand')
+    assert 'min-height: 120px' in band and 'justify-content: center' in band
+    assert 'display: none' not in band
+    assert 'padding: 0 1.5rem 3rem' in rule(mobile, SPLIT)
+    assert 'padding: 0 1.5rem' in band
+    assert 'flex: 0 0 2.75rem' not in mobile, 'mobile must reuse the small dark-panel wordmark'
     assert 'width: 100%' in rule(mobile, SPLIT + ' .pf-v5-c-login__main-footer')
     assert 'html.login-pf:not(.nw-split) .pf-v5-c-login__container' in css
     assert 'prefers-reduced-motion: reduce' in css and 'animation: none' in css
     assert 'html.nw-dark' in css
+    panel = rule(css, 'html.login-pf .nw-login-brand')
+    assert 'url("../img/contours.svg") center / cover no-repeat' in panel
+    assert 'radial-gradient' in panel and 'background-color: #0e2a36' in panel
+    assert 'color: var(--nw-panel-ice)' in panel
+    assert '--nw-brand-img: url("../img/narwhal-dark.svg")' in panel
+    assert 'margin-top: auto' in rule(css, 'html.login-pf .nw-login-brand-copy')
+    assert 'font-size: 1.125rem' in rule(css, 'html.login-pf .nw-login-brand-top')
+    assert 'width: 2.75rem' in rule(css, 'html.login-pf .nw-login-brand-top::before')
+    assert '--nw-primary: var(--narwhal-detail)' in rule(css, ':root')
+    assert 'background: var(--nw-primary)' in rule(css, 'html.login-pf .pf-v5-c-button.pf-m-primary')
+    assert 'color: #ffffff' in rule(css, 'html.login-pf .pf-v5-c-button.pf-m-primary')
+    assert 'background: var(--nw-primary-hover)' in rule(css, 'html.login-pf .pf-v5-c-button.pf-m-primary:hover')
+    assert 'display: none' in rule(css, 'html.login-pf .pf-v5-c-input-group__item::after')
+    assert 'mask:' in rule(css, 'html.login-pf [data-password-toggle] i')
+    assert 'mask-image:' in rule(css, 'html.login-pf [data-password-toggle] i.fa-eye-slash')
+    assert 'Sign in with your Narwhal account.' in rule(css, 'html.login-pf body[data-page-id="login-login"] #kc-page-title::after')
+    assert 'Narwhal 계정으로 로그인합니다.' in rule(css, 'html.login-pf:lang(ko) body[data-page-id="login-login"] #kc-page-title::after')
 
 
 def mutation_verify(css, js):
@@ -79,8 +97,11 @@ def mutation_verify(css, js):
         ('asymmetric panel', css.replace('padding: 3rem 0', 'padding: 3rem 4rem', 1), js),
         ('realm visible', css.replace('clip-path: inset(50%)', 'clip-path: none', 1), js),
         ('title size', css.replace('font-size: 1.75rem', 'font-size: 1.125rem', 1), js),
-        ('oversized mascot', css.replace('flex: 0 0 2.75rem', 'flex: 0 0 6.5rem', 1), js),
-        ('lost mobile gutter', css.replace('    padding: 1.5rem;', '    padding: 0;', 1), js),
+        ('oversized band', css.replace('min-height: 120px', 'min-height: 240px', 1), js),
+        ('lost mobile gutter', css.replace('    padding: 0 1.5rem 3rem;', '    padding: 0;', 1), js),
+        ('missing contours', css.replace('../img/contours.svg', '../img/missing.svg'), js),
+        ('black primary', css.replace('--nw-primary: var(--narwhal-detail)', '--nw-primary: #171717'), js),
+        ('light panel', css.replace('#0e2a36', '#f0f9ff').replace('#163b4b', '#e0f2fe'), js),
         ('lost line break', css.replace('white-space: pre-line', 'white-space: normal', 1), js),
     ]
     for name, mut_css, mut_js in changes:
@@ -97,7 +118,7 @@ def main():
     css, js = CSS.read_text(), JS.read_text()
     assert_contract(css, js, MESSAGES)
     mutation_verify(css, js)
-    print('PASS: R339 single localized brand, split centering, accessible realm, 28px title, 44px compact wordmark, 24px gutters; 13 mutations rejected')
+    print('PASS: R339 Beluga dark contour panel, teal primary, single localized brand, left-aligned 400px form, accessible realm, 120px mobile band, 24px gutters; 16 mutations rejected')
 
 
 if __name__ == '__main__':

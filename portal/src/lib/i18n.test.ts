@@ -158,7 +158,8 @@ describe("i18n dictionary completeness", () => {
     // calls t() with a literal key (t("resources.stat.cpuUsageScoped") etc.), not a
     // variable — see that file's isScopedBasis comment for why.
     // #624 adds two typed group/page breadcrumb lookups beyond the sidebar labels.
-    const BASELINE_DYNAMIC_SKIPPED = 49
+    // #640 removes the SVG translate( false positive and uses literal status keys.
+    const BASELINE_DYNAMIC_SKIPPED = 47
     expect(dynamicMatches).toBe(BASELINE_DYNAMIC_SKIPPED)
   })
 

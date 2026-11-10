@@ -26,6 +26,23 @@ describe("ClusterInfraView data states", () => {
     expect(html).not.toContain("dataState.empty")
   })
 
+  it("renders node cards, readiness text, and absent telemetry without inventing usage", () => {
+    vi.mocked(useQuery).mockReturnValue(queryResult({ ...truncatedInfra, nodes: [{
+      name: "worker-a", status: "NotReady", roles: ["worker"],
+      cpu: { total: 4, used: null, percent: null },
+      memory: { totalGi: 8, usedGi: 2, percent: 25 },
+      pods: { running: 1, total: 2 }, kubeletVersion: "v1.35.2",
+    }] }))
+    const html = renderToStaticMarkup(<ClusterInfraView />)
+    expect(html).toContain('href="/nodes/worker-a"')
+    expect(html).toContain("NotReady")
+    expect(html).toContain("worker")
+    expect(html).toContain("arch640.noTelemetry")
+    expect(html).toContain('aria-valuenow="25"')
+    expect(html).not.toContain("<table")
+    expect(html).not.toContain('aria-valuenow="0"')
+  })
+
   it("keeps summary data visible with a partial response banner", () => {
     vi.mocked(useQuery).mockReturnValue(queryResult(truncatedInfra))
     const html = renderToStaticMarkup(<ClusterInfraView />)

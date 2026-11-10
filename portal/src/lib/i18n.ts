@@ -1354,6 +1354,14 @@ export const ko = {
   "shell.openMenu": "메뉴 열기",
   "shell.breadcrumb": "현재 위치",
   "shell.searchPlaceholder": "서비스, 앱, 문서 검색",
+  // Architecture content (#640)
+  "arch640.title": "아키텍처",
+  "arch640.description": "클러스터 인프라와 서비스 연결 상태를 한눈에 확인합니다.",
+  "arch640.view": "아키텍처 보기",
+  "arch640.connections": "서비스 연결 그래프",
+  "arch640.noTelemetry": "사용량 데이터 없음",
+  "arch640.capacity": "전체 {value}",
+  "arch640.status": "상태",
 } as const
 
 export const en: Record<keyof typeof ko, string> = {
@@ -2707,6 +2715,15 @@ export const en: Record<keyof typeof ko, string> = {
   "shell.openMenu": "Open menu",
   "shell.breadcrumb": "Breadcrumb",
   "shell.searchPlaceholder": "Search services, apps, docs",
+
+  // Architecture content (#640)
+  "arch640.title": "Architecture",
+  "arch640.description": "Explore cluster infrastructure and service connectivity at a glance.",
+  "arch640.view": "Architecture view",
+  "arch640.connections": "Service connections",
+  "arch640.noTelemetry": "Usage data unavailable",
+  "arch640.capacity": "Capacity {value}",
+  "arch640.status": "Status",
 
 }
 

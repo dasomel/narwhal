@@ -204,7 +204,8 @@ contrast-sensitive elements so the linter can check them.
 ## Figma source
 
 Authoritative login design in Figma:
-- File: https://www.figma.com/design/Zg2T4x6slnstMJrkcEswah (frames 3:9 light, 3:76 dark)
+
+- File: <https://www.figma.com/design/Zg2T4x6slnstMJrkcEswah> (frames 3:9 light, 3:76 dark)
 - Variables: collection 'Narwhal Tokens' mirrors `globals.css`
 - Typography: Figma uses Noto Sans KR as a stand-in for Pretendard
 

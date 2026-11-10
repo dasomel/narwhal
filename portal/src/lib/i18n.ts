@@ -73,6 +73,13 @@ export const ko = {
   // dashboard
   "dashboard.title": "대시보드",
   "dashboard.description": "Narwhal 클러스터 실시간 현황",
+  "dashboard.timeRange": "시간 범위",
+  "dashboard.nodeAverage": "{count} 노드 평균",
+  "dashboard.noData": "데이터 없음",
+  "dashboard.allReady": "모두 Ready",
+  "dashboard.running": "실행 중",
+  "dashboard.runningPodsTrend": "Running Pods 추이",
+  "dashboard.minutesAgo": "{count}분 전",
 
   // cluster metrics
   "metrics.cpu": "CPU 사용률",
@@ -223,6 +230,8 @@ export const ko = {
   "dataState.partial": "일부 데이터만 제공됩니다.",
   "dataState.stale": "데이터가 오래되었습니다.",
   "dataState.empty": "표시할 데이터가 없습니다.",
+  "dataState.emptyDescription": "수집된 값이 생기면 여기에 표시됩니다.",
+  "dataState.errorDescription": "잠시 후 다시 시도해 주세요.",
   "dataState.unavailable": "데이터 제공자를 사용할 수 없습니다.",
   "dataState.unauthorized": "데이터에 접근할 권한이 없습니다.",
   "dataState.error": "데이터를 불러오지 못했습니다.",
@@ -1332,6 +1341,19 @@ export const ko = {
   "ossUpdates.errorCooling": "해당 버전은 아직 쿨링 기간(7일) 중입니다.",
   "ossUpdates.errorGeneric": "요청을 처리하지 못했습니다.",
   "ossUpdates.refreshed": "기준 시각: {time}",
+
+  // App shell (#624)
+  "shell.brand": "Narwhal IDP",
+  "shell.overview": "개요",
+  "shell.delivery": "딜리버리",
+  "shell.governance": "거버넌스",
+  "shell.getStarted": "시작하기",
+  "shell.live": "라이브",
+  "shell.guest": "게스트",
+  "shell.navigation": "주 탐색",
+  "shell.openMenu": "메뉴 열기",
+  "shell.breadcrumb": "현재 위치",
+  "shell.searchPlaceholder": "서비스, 앱, 문서 검색",
 } as const
 
 export const en: Record<keyof typeof ko, string> = {
@@ -1405,6 +1427,13 @@ export const en: Record<keyof typeof ko, string> = {
   // dashboard
   "dashboard.title": "Dashboard",
   "dashboard.description": "Narwhal cluster real-time status",
+  "dashboard.timeRange": "Time range",
+  "dashboard.nodeAverage": "{count} node average",
+  "dashboard.noData": "No data",
+  "dashboard.allReady": "All Ready",
+  "dashboard.running": "Running",
+  "dashboard.runningPodsTrend": "Running Pods trend",
+  "dashboard.minutesAgo": "{count} minutes ago",
 
   // cluster metrics
   "metrics.cpu": "CPU Usage",
@@ -1555,6 +1584,8 @@ export const en: Record<keyof typeof ko, string> = {
   "dataState.partial": "Some data is available.",
   "dataState.stale": "Data is stale.",
   "dataState.empty": "No data to display.",
+  "dataState.emptyDescription": "Values will appear here once they are collected.",
+  "dataState.errorDescription": "Please try again in a moment.",
   "dataState.unavailable": "The data provider is unavailable.",
   "dataState.unauthorized": "You are not authorized to access this data.",
   "dataState.error": "Could not load data.",
@@ -2664,6 +2695,19 @@ export const en: Record<keyof typeof ko, string> = {
   "ossUpdates.errorCooling": "That version is still inside the 7-day cooling window.",
   "ossUpdates.errorGeneric": "The request could not be processed.",
   "ossUpdates.refreshed": "As of: {time}",
+  // App shell (#624)
+  "shell.brand": "Narwhal IDP",
+  "shell.overview": "Overview",
+  "shell.delivery": "Delivery",
+  "shell.governance": "Governance",
+  "shell.getStarted": "Get started",
+  "shell.live": "Live",
+  "shell.guest": "Guest",
+  "shell.navigation": "Main navigation",
+  "shell.openMenu": "Open menu",
+  "shell.breadcrumb": "Breadcrumb",
+  "shell.searchPlaceholder": "Search services, apps, docs",
+
 }
 
 export type TranslationKey = keyof typeof ko

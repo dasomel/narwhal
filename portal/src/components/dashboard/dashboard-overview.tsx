@@ -33,7 +33,7 @@ export function buildKpiModels(m: KpiData | undefined, t: (key: TranslationKey, 
   const allReady = !nodesUnavailable && m.nodes.ready === m.nodes.total
   return [
     { title: t("metrics.cpu"), value: cpuUnavailable ? "—" : `${Math.round(m?.cpu ?? 0)}%`, detail: cpuUnavailable ? t("dashboard.noData") : t("dashboard.nodeAverage", { count: m?.nodes?.total ?? 0 }), percent: m?.cpu, unavailable: cpuUnavailable, icon: Cpu },
-    { title: t("metrics.memory"), value: memoryUnavailable ? "—" : `${Math.round(m?.memory ?? 0)}%`, detail: memoryUnavailable ? t("dashboard.noData") : `${((m?.memory ?? 0) * 0.48).toFixed(1)} / 48 GiB`, percent: m?.memory, unavailable: memoryUnavailable, icon: MemoryStick },
+    { title: t("metrics.memory"), value: memoryUnavailable ? "—" : `${Math.round(m?.memory ?? 0)}%`, detail: memoryUnavailable ? t("dashboard.noData") : t("dashboard.nodeAverage", { count: m?.nodes?.total ?? 0 }), percent: m?.memory, unavailable: memoryUnavailable, icon: MemoryStick },
     { title: t("metrics.nodes"), value: nodesUnavailable ? "—" : `${m?.nodes?.ready ?? 0} / ${m?.nodes?.total ?? 0}`, detail: nodesUnavailable ? t("dashboard.noData") : allReady ? t("dashboard.allReady") : `${(m?.nodes?.total ?? 0) - (m?.nodes?.ready ?? 0)} NotReady`, percent: m?.nodes?.total == null ? undefined : (m.nodes.total ? (m.nodes.ready ?? 0) / m.nodes.total * 100 : 0), unavailable: nodesUnavailable, icon: Database },
     { title: t("metrics.pods"), value: podsUnavailable ? "—" : `${m?.pods?.running ?? 0}`, detail: podsUnavailable ? t("dashboard.noData") : t("dashboard.running"), percent: m?.pods?.total == null ? undefined : (m.pods.total ? (m.pods.running ?? 0) / m.pods.total * 100 : 0), unavailable: podsUnavailable, icon: Layers3 },
   ]

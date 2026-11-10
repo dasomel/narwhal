@@ -9,6 +9,16 @@
 
 ## [Unreleased]
 
+## [1.1.11] - 2026-11-10
+
+Figma 로그인 디자인을 적용하고, OSS 버전 스냅샷에 1.1.10 Portal pin을 기록한 패치 릴리스.
+
+### 변경
+
+- `/login`을 Figma 분할 레이아웃으로 개편: 브랜드 패널(마스코트, 헤드라인, 태그라인, 물결 장식)과 리다이렉트
+  스피너 또는 mock 역할 선택을 담는 왼쪽 정렬 400px 열. 900px 이하에서는 작은 워드마크만 표시 (narwhal#619, narwhal#620).
+- 1.1.10 GitOps pin에 맞춰 OSS 버전 스냅샷의 Portal 버전을 1.1.10으로 갱신 (narwhal#618).
+
 ## [1.1.10] - 2026-11-10
 
 경보 및 알림 채널 설정을 추가하고, Trivy 재조회 후에도 부분 결과를 유지하며, OSS 버전 스냅샷에 1.1.9 Portal pin을 기록한 패치 릴리스.
@@ -669,7 +679,8 @@ Portal의 첫 번째 공개 릴리스.
     매니페스트(`deploy/kaniko-build-job.yaml`).
   - 실시간 핫 모듈 교체(HMR) 및 컨테이너 파일 동기화를 위해 구성된 Skaffold 개발 프로필.
 
-[Unreleased]: https://github.com/dasomel/narwhal/compare/portal/v1.1.10...HEAD
+[Unreleased]: https://github.com/dasomel/narwhal/compare/portal/v1.1.11...HEAD
+[1.1.11]: https://github.com/dasomel/narwhal/compare/portal/v1.1.10...portal/v1.1.11
 [1.1.10]: https://github.com/dasomel/narwhal/compare/portal/v1.1.9...portal/v1.1.10
 [1.1.9]: https://github.com/dasomel/narwhal/compare/portal/v1.1.8...portal/v1.1.9
 [1.1.8]: https://github.com/dasomel/narwhal/compare/portal/v1.1.7...portal/v1.1.8

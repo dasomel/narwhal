@@ -6,6 +6,7 @@ import { Cpu, Database, Layers3, MemoryStick } from "lucide-react"
 import { Card } from "@/components/ui/card"
 import { DataState } from "@/components/ui/data-state"
 import { useT } from "@/lib/i18n-client"
+import type { TranslationKey } from "@/lib/i18n"
 import type { ArgoCDResponse } from "@/types/api"
 
 type Metrics = {
@@ -21,6 +22,23 @@ const ranges = [{ label: "1h", minutes: 60 }, { label: "3h", minutes: 180 }, { l
 const meterWidths = ["w-0", "w-1/12", "w-2/12", "w-3/12", "w-4/12", "w-5/12", "w-6/12", "w-7/12", "w-8/12", "w-9/12", "w-10/12", "w-11/12", "w-full"]
 const barWidths = ["w-0", "w-1/12", "w-2/12", "w-3/12", "w-4/12", "w-5/12", "w-6/12", "w-7/12", "w-8/12", "w-9/12", "w-10/12", "w-11/12", "w-full"]
 
+type KpiData = { cpu: number | null; memory: number | null; nodes: { total: number | null; ready: number | null }; pods: { total: number | null; running: number | null } }
+type KpiModel = { title: string; value: string; detail: string; percent?: number | null; unavailable: boolean; icon: typeof Cpu }
+
+export function buildKpiModels(m: KpiData | undefined, t: (key: TranslationKey, values?: Record<string, string | number>) => string): KpiModel[] {
+  const cpuUnavailable = m?.cpu == null
+  const memoryUnavailable = m?.memory == null
+  const nodesUnavailable = m?.nodes?.total == null || m?.nodes?.ready == null
+  const podsUnavailable = m?.pods?.running == null
+  const allReady = !nodesUnavailable && m.nodes.ready === m.nodes.total
+  return [
+    { title: t("metrics.cpu"), value: cpuUnavailable ? "—" : `${Math.round(m?.cpu ?? 0)}%`, detail: cpuUnavailable ? t("dashboard.noData") : t("dashboard.nodeAverage", { count: m?.nodes?.total ?? 0 }), percent: m?.cpu, unavailable: cpuUnavailable, icon: Cpu },
+    { title: t("metrics.memory"), value: memoryUnavailable ? "—" : `${Math.round(m?.memory ?? 0)}%`, detail: memoryUnavailable ? t("dashboard.noData") : `${((m?.memory ?? 0) * 0.48).toFixed(1)} / 48 GiB`, percent: m?.memory, unavailable: memoryUnavailable, icon: MemoryStick },
+    { title: t("metrics.nodes"), value: nodesUnavailable ? "—" : `${m?.nodes?.ready ?? 0} / ${m?.nodes?.total ?? 0}`, detail: nodesUnavailable ? t("dashboard.noData") : allReady ? t("dashboard.allReady") : `${(m?.nodes?.total ?? 0) - (m?.nodes?.ready ?? 0)} NotReady`, percent: m?.nodes?.total == null ? undefined : (m.nodes.total ? (m.nodes.ready ?? 0) / m.nodes.total * 100 : 0), unavailable: nodesUnavailable, icon: Database },
+    { title: t("metrics.pods"), value: podsUnavailable ? "—" : `${m?.pods?.running ?? 0}`, detail: podsUnavailable ? t("dashboard.noData") : t("dashboard.running"), percent: m?.pods?.total == null ? undefined : (m.pods.total ? (m.pods.running ?? 0) / m.pods.total * 100 : 0), unavailable: podsUnavailable, icon: Layers3 },
+  ]
+}
+
 function useJson<T>(key: unknown[], url: string, interval = 30_000) {
   return useQuery<T>({ queryKey: key, queryFn: async () => {
     const response = await fetch(url)
@@ -29,11 +47,11 @@ function useJson<T>(key: unknown[], url: string, interval = 30_000) {
   }, refetchInterval: interval })
 }
 
-function Kpi({ title, value, detail, percent, icon: Icon }: { title: string; value: string; detail: string; percent?: number | null; icon: typeof Cpu }) {
+function Kpi({ title, value, detail, percent, unavailable, icon: Icon }: KpiModel) {
   return <Card className="p-5 rounded-xl">
     <div className="flex items-center gap-2.5"><span className="grid size-8 place-items-center rounded-lg bg-narwhal-accent/10 text-narwhal-accent"><Icon className="size-4" /></span><span className="text-[13px] text-muted-foreground">{title}</span></div>
     <div className="mt-3 flex items-baseline gap-2"><strong className="text-3xl leading-9 font-bold">{value}</strong><span className="text-xs text-muted-foreground">{detail}</span></div>
-    {percent !== undefined && <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-muted"><div className={`h-full rounded-full bg-narwhal-accent ${meterWidths[Math.round(Math.min(100, Math.max(0, percent ?? 0)) / 100 * 12)]}`} role="meter" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.min(100, Math.max(0, percent ?? 0))} /></div>}
+    {percent !== undefined && <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-muted">{!unavailable && <div className={`h-full rounded-full bg-narwhal-accent ${meterWidths[Math.round(Math.min(100, Math.max(0, percent ?? 0)) / 100 * 12)]}`} role="meter" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.min(100, Math.max(0, percent ?? 0))} />}</div>}
   </Card>
 }
 
@@ -46,7 +64,7 @@ function Chart({ metric, minutes, title, compact = false }: { metric: string; mi
   return <div className={compact ? "h-full" : "rounded-xl border border-border bg-card p-5 min-w-0"}>
     {!compact && <div className="flex items-center justify-between"><h2 className="text-sm font-medium">{title}</h2><span className="font-mono text-[11px] text-muted-foreground">Last {minutes / 60}h</span></div>}
     <div className={compact ? "h-full" : "mt-3 h-[120px]"}>
-      {isLoading && !data ? <DataState variant="inline" state="loading" onRetry={() => { void refetch() }} /> : isError && !data ? <DataState variant="inline" state="unavailable" onRetry={() => { void refetch() }} /> : points.length === 0 ? <div className="flex h-full items-center justify-center"><DataState variant="inline" state={isError ? "stale" : "empty"} onRetry={() => { void refetch() }} /></div> : <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="h-full w-full" role="img" aria-label={title}>
+      {isLoading && !data ? <DataState state="loading" onRetry={() => { void refetch() }} /> : isError && !data ? <DataState state="unavailable" onRetry={() => { void refetch() }} /> : points.length === 0 ? <div className="flex h-full items-center justify-center"><DataState state={isError ? "stale" : "empty"} onRetry={() => { void refetch() }} /></div> : <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="h-full w-full" role="img" aria-label={title}>
         <polygon points={`0,100 ${coords} 100,100`} fill="var(--narwhal-accent)" fillOpacity=".12" />
         <polyline points={coords} fill="none" stroke="var(--narwhal-accent)" strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
       </svg>}
@@ -63,12 +81,7 @@ export function DashboardOverview({ title, description }: { title: string; descr
   const alertsQuery = useJson<Alert[]>(["alerts"], "/api/alerts", 15_000)
   const m = metrics.data
   const alerts = alertsQuery.data ?? []
-  const cards = [
-    { title: t("metrics.cpu"), value: m?.cpu == null ? "—" : `${Math.round(m.cpu)}%`, detail: t("dashboard.nodeAverage", { count: m?.nodes?.total ?? 0 }), percent: m?.cpu, icon: Cpu },
-    { title: t("metrics.memory"), value: m?.memory == null ? "—" : `${Math.round(m.memory)}%`, detail: m?.memory == null ? "—" : `${(m.memory * 0.48).toFixed(1)} / 48 GiB`, percent: m?.memory, icon: MemoryStick },
-    { title: t("metrics.nodes"), value: `${m?.nodes?.ready ?? "—"} / ${m?.nodes?.total ?? "—"}`, detail: t("dashboard.allReady"), percent: m?.nodes?.total ? (m.nodes.ready ?? 0) / m.nodes.total * 100 : undefined, icon: Database },
-    { title: t("metrics.pods"), value: `${m?.pods?.running ?? "—"}`, detail: t("dashboard.running"), percent: m?.pods?.total ? (m.pods.running ?? 0) / m.pods.total * 100 : undefined, icon: Layers3 },
-  ]
+  const cards = buildKpiModels(m, t)
   return <div className="space-y-6">
     <header className="flex flex-wrap items-end justify-between gap-4">
       <div><h1 className="text-[26px] font-bold tracking-[-.01em]">{title}</h1><p className="mt-1 text-sm text-muted-foreground">{description}</p></div>

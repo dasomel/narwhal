@@ -9,10 +9,11 @@ English | [한국어](CHANGELOG-ko.md)
 
 ## [Unreleased]
 
-- **Portal is pinned to `narwhal-portal:1.1.10` (was 1.1.9).** 1.1.10 adds the alerts page and
+- **Portal is pinned to `narwhal-portal:1.1.11` (was 1.1.9).** 1.1.10 adds the alerts page and
   notification channel settings (#610, #614), and keeps the partial-results notice visible after
-  Trivy data is refetched (#505, #615). The image is Cosign-signed with the repository key (index
-  digest `sha256:93427574…`). Mirror it to a cluster bastion by digest before the pin goes live there
+  Trivy data is refetched (#505, #615); 1.1.11 applies the Figma split-layout login (#619, #620), which
+  matches the new Keycloak login theme (#621). The image is Cosign-signed with the repository key (index
+  digest `sha256:368a6261…`). Mirror it to a cluster bastion by digest before the pin goes live there
   (`scripts/airgap/README.md`, "Mirror a pin bump"); the local Vagrant cluster pulls from ghcr.io directly.
 
 ## [1.4.0] - 2026-11-09

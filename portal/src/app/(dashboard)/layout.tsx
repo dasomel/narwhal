@@ -6,7 +6,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     <div className="min-h-screen bg-background">
       <Nav />
       <CommandPalette />
-      <main className="container mx-auto px-6 py-8 max-w-7xl">{children}</main>
+      <main className="px-4 py-7 sm:px-8 lg:ml-60">
+        <div className="mx-auto max-w-7xl">{children}</div>
+      </main>
     </div>
   )
 }

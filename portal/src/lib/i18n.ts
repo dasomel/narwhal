@@ -1332,6 +1332,19 @@ export const ko = {
   "ossUpdates.errorCooling": "해당 버전은 아직 쿨링 기간(7일) 중입니다.",
   "ossUpdates.errorGeneric": "요청을 처리하지 못했습니다.",
   "ossUpdates.refreshed": "기준 시각: {time}",
+
+  // App shell (#624)
+  "shell.brand": "Narwhal IDP",
+  "shell.overview": "개요",
+  "shell.delivery": "딜리버리",
+  "shell.governance": "거버넌스",
+  "shell.getStarted": "시작하기",
+  "shell.live": "라이브",
+  "shell.guest": "게스트",
+  "shell.navigation": "주 탐색",
+  "shell.openMenu": "메뉴 열기",
+  "shell.breadcrumb": "현재 위치",
+  "shell.searchPlaceholder": "서비스, 앱, 문서 검색",
 } as const
 
 export const en: Record<keyof typeof ko, string> = {
@@ -2664,6 +2677,19 @@ export const en: Record<keyof typeof ko, string> = {
   "ossUpdates.errorCooling": "That version is still inside the 7-day cooling window.",
   "ossUpdates.errorGeneric": "The request could not be processed.",
   "ossUpdates.refreshed": "As of: {time}",
+  // App shell (#624)
+  "shell.brand": "Narwhal IDP",
+  "shell.overview": "Overview",
+  "shell.delivery": "Delivery",
+  "shell.governance": "Governance",
+  "shell.getStarted": "Get started",
+  "shell.live": "Live",
+  "shell.guest": "Guest",
+  "shell.navigation": "Main navigation",
+  "shell.openMenu": "Open menu",
+  "shell.breadcrumb": "Breadcrumb",
+  "shell.searchPlaceholder": "Search services, apps, docs",
+
 }
 
 export type TranslationKey = keyof typeof ko

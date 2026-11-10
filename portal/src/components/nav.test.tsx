@@ -18,10 +18,10 @@ beforeEach(() => {
 })
 afterEach(() => vi.unstubAllEnvs())
 
-import { getOverflowNavItems, getVisibleNavItemCount, getVisibleNavItems, Nav, NavVersion } from "./nav"
+import { getVisibleNavGroups, getVisibleNavItems, Nav, NavVersion } from "./nav"
 
 describe("Nav", () => {
-  it("keeps all navigation labels on one line and accounts for the real header conditions", () => {
+  it("renders grouped sidebar links, account, breadcrumb and top-bar controls", () => {
     const html = renderToString(<Nav />)
     const menuLinks = [...html.matchAll(/<a\b([^>]*)>/g)]
       .map(([_, attributes]) => attributes)
@@ -35,16 +35,22 @@ describe("Nav", () => {
     expect(html).toContain('role="status">모든 시스템 정상</span>')
     expect(html).toContain("admin narwhal")
     expect(html).toContain('aria-label="nav.more"')
-    expect(html).toContain('class="whitespace-nowrap">search.hint</span>')
+    expect(html).toContain('aria-expanded="false"')
+    expect(html).toContain('aria-current="page"')
+    expect(html).toContain("shell.searchPlaceholder")
+    for (const key of ["shell.overview", "shell.delivery", "shell.governance", "shell.getStarted"]) {
+      expect(html).toContain(key)
+    }
   })
 
-  it("moves every item that does not fit into the reachable More menu", () => {
-    const count = getVisibleNavItemCount([70, 70, 90, 90], 180, 80, 4)
-    const items = getVisibleNavItems("cluster-admin")
-    const overflow = getOverflowNavItems(items, count)
-    expect(count).toBe(1)
-    expect(overflow.map(({ href }) => href)).toEqual(items.slice(1).map(({ href }) => href))
-    expect(items.slice(0, count).concat(overflow)).toEqual(items)
+  it("retains role restrictions and removes empty groups", () => {
+    expect(getVisibleNavGroups("guest").map((group) => group.labelKey)).toEqual(["shell.overview"])
+    expect(getVisibleNavItems("guest").map((item) => item.href)).toEqual(["/status", "/live"])
+    for (const href of ["/settings", "/security", "/alerts", "/compliance", "/my-apps"]) {
+      expect(getVisibleNavItems("viewer").map((item) => item.href)).not.toContain(href)
+    }
+    expect(getVisibleNavItems("developer").some((item) => item.href === "/my-apps")).toBe(true)
+    expect(getVisibleNavItems("cluster-admin")).toHaveLength(14)
   })
 })
 

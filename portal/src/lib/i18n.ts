@@ -157,14 +157,14 @@ export const ko = {
   "users.username": "사용자명",
   "users.email": "이메일",
   "users.groups": "권한",
-  "users.lastLogin": "마지막 로그인",
+  "users.lastLogin": "최근 세션 시작",
   "users.status": "상태",
   "users.action": "액션",
   "users.active": "활성",
   "users.inactive": "비활성",
   "users.activate": "활성화",
   "users.deactivate": "비활성화",
-  "users.never": "없음",
+  "users.never": "활성 세션 없음",
 
   // groups table
   "groups.title": "권한 관리",
@@ -1511,14 +1511,14 @@ export const en: Record<keyof typeof ko, string> = {
   "users.username": "Username",
   "users.email": "Email",
   "users.groups": "Groups",
-  "users.lastLogin": "Last Login",
+  "users.lastLogin": "Latest Session Start",
   "users.status": "Status",
   "users.action": "Action",
   "users.active": "Active",
   "users.inactive": "Inactive",
   "users.activate": "Activate",
   "users.deactivate": "Deactivate",
-  "users.never": "Never",
+  "users.never": "No active session",
 
   // groups table
   "groups.title": "Permission Management",

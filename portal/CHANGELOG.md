@@ -9,6 +9,17 @@ English | [한국어](CHANGELOG-ko.md)
 
 ## [Unreleased]
 
+## [1.1.11] - 2026-11-10
+
+Patch release applying the Figma login design and recording the 1.1.10 Portal pin in the OSS versions snapshot.
+
+### Changed
+
+- `/login` uses the Figma split layout: a brand panel (mascot, headline, tagline, contour waves) beside a
+  left-aligned 400px column for the redirect spinner or the mock role picker; below 900px only a compact
+  wordmark remains (narwhal#619, narwhal#620).
+- Update the Portal version in the OSS versions snapshot to 1.1.10 to match the GitOps pin (narwhal#618).
+
 ## [1.1.10] - 2026-11-10
 
 Patch release adding alerts and notification channel settings, preserving partial Trivy results on refetch,
@@ -707,7 +718,8 @@ management dashboard built with Next.js 16 and React 19.
   - Skaffold development profile configured for live Hot Module Replacement (HMR) and container
     file syncing.
 
-[Unreleased]: https://github.com/dasomel/narwhal/compare/portal/v1.1.10...HEAD
+[Unreleased]: https://github.com/dasomel/narwhal/compare/portal/v1.1.11...HEAD
+[1.1.11]: https://github.com/dasomel/narwhal/compare/portal/v1.1.10...portal/v1.1.11
 [1.1.10]: https://github.com/dasomel/narwhal/compare/portal/v1.1.9...portal/v1.1.10
 [1.1.9]: https://github.com/dasomel/narwhal/compare/portal/v1.1.8...portal/v1.1.9
 [1.1.8]: https://github.com/dasomel/narwhal/compare/portal/v1.1.7...portal/v1.1.8

@@ -73,6 +73,12 @@ export const ko = {
   // dashboard
   "dashboard.title": "대시보드",
   "dashboard.description": "Narwhal 클러스터 실시간 현황",
+  "dashboard.timeRange": "시간 범위",
+  "dashboard.nodeAverage": "{count} 노드 평균",
+  "dashboard.allReady": "모두 Ready",
+  "dashboard.running": "실행 중",
+  "dashboard.runningPodsTrend": "Running Pods 추이",
+  "dashboard.minutesAgo": "{count}분 전",
 
   // cluster metrics
   "metrics.cpu": "CPU 사용률",
@@ -1418,6 +1424,12 @@ export const en: Record<keyof typeof ko, string> = {
   // dashboard
   "dashboard.title": "Dashboard",
   "dashboard.description": "Narwhal cluster real-time status",
+  "dashboard.timeRange": "Time range",
+  "dashboard.nodeAverage": "{count} node average",
+  "dashboard.allReady": "All Ready",
+  "dashboard.running": "Running",
+  "dashboard.runningPodsTrend": "Running Pods trend",
+  "dashboard.minutesAgo": "{count} minutes ago",
 
   // cluster metrics
   "metrics.cpu": "CPU Usage",

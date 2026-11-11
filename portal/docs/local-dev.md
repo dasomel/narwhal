@@ -348,15 +348,16 @@ Istio ambient mesh가 쿠키를 손상시킴. 매니페스트 pod label `istio.i
 
 Inventory of this tree (2026-11-12). `covered` means an offline regression exists,
 not that live behavior was verified. Paths below are relative to `portal/` except
-`.github/`. This update adds tenant-derived view/cache and rendered navigation tests;
+explicitly repo-root-relative paths (`portal/package.json` and `.github/`).
+This update adds tenant-derived view/cache and rendered navigation tests;
 production/auth/RBAC behavior is unchanged.
 
 | Acceptance criterion | Covering tests / CI | Status |
 |---|---|---|
-| Deterministic test / E2E / typecheck / lint commands | `package.json`, `vitest.config.ts`, `playwright.config.ts`; `.github/workflows/portal-test.yml` | partial — commands/fixtures exist; default auth-test startup timeout observed below |
+| Deterministic test / E2E / typecheck / lint commands | repo-root `portal/package.json:20-23` (scripts); `vitest.config.ts`, `playwright.config.ts`; repo-root `.github/workflows/portal-test.yml` | partial — commands/fixtures exist; default auth-test startup timeout observed below |
 | Critical authz boundaries and negative cases | `src/lib/auth.test.ts`, `auth.fail-closed.test.ts`, `role-filter.test.ts`; `src/app/api/catalog/route.test.ts`, `catalog/[name]/route.test.ts`, `my-apps/route.test.ts`, `settings/users/route.test.ts`; `src/components/nav.test.tsx`; `e2e/auth-boundary.spec.ts` | partial — mapped-team boundaries covered; label-only developer leak below; real OIDC remains external |
 | Canonical event / idempotency / operation state | `src/types/event-envelope*.test.ts`; `src/lib/idempotency.test.ts`, `operation-context.test.ts`; `src/app/api/events/ingest/route.test.ts`, `events/operation-e2e.test.ts` | covered |
-| Browser login → effective permissions → scoped view → approved mutation → verified result | `e2e/team-scoped-catalog-mutation.spec.ts`, `admin-catalog-mutation.spec.ts`, `auth-boundary.spec.ts`; `e2e/fixtures/` | partial — full sequence with development login and provider read-back fixtures; real IdP/provider result needs live verification |
+| Browser login → effective permissions → scoped view → approved mutation → verified result | `e2e/team-scoped-catalog-mutation.spec.ts`, `admin-catalog-mutation.spec.ts`, `auth-boundary.spec.ts`; `e2e/fixtures/` | partial — development login, scoped view and fixture-backed sync/read-back asserted; effective permissions fetched by API (admin also asserts rendered scope); approved-mutation flow has no assertion; real IdP/provider result needs live verification |
 | Failure injection: timeout / 5xx / Valkey outage / stale cache | `src/lib/dependency-health.failure-injection.test.ts`, `http-client.test.ts`, `valkey.test.ts`, `live-outage-recovery.test.ts`; `src/app/api/health/dependencies/route.cache.test.ts` | covered — injected failures, not real service outages |
 | Replica / failover / informer event duplication | `src/lib/live-k8s-informer.test.ts`, `k8s-event-resync.test.ts`, `live-outage-recovery.test.ts`, `live-stream.test.ts` | partial — lease takeover, watch retry, replay and duplicates simulated; real multi-Pod failover needs cluster |
 | CI blocks merge on critical regression failure | `.github/workflows/portal-test.yml`; `scripts/check-regression-results.mjs`, `check-regression-results.node.mjs` | partial — fail-closed workflow exists; owner must confirm required branch-protection context `Portal gate` |
@@ -382,18 +383,26 @@ Required-coverage detail from the issue (same status convention):
 | Template preview / apply after #358 | `src/lib/service-templates.test.ts`, `domain/service-template-provisioning.test.ts`; `src/app/api/templates/route.test.ts` | partial — preview/provisioning contract tests exist; owner must reconcile #358 workflow and approve real apply evidence |
 | Production configuration validation | `src/lib/config.test.ts`, `build-credential-guard.test.ts`, `valkey-security.test.ts`, `openbao.tls.test.ts` | covered — offline configuration guards |
 
-`portal-test.yml` runs on every PR. A change filter runs typecheck/lint/Vitest and
+The repo-root workflow `.github/workflows/portal-test.yml` runs on every PR.
+A change filter runs typecheck/lint/Vitest and
 Playwright for `portal/` or portal-workflow changes; unrelated PRs explicitly skip
-heavy jobs. `Portal gate` always runs and rejects failed/cancelled prerequisites or
-an unreadable filter. `Portal critical regression gate` checks both suite outcomes;
-`node --test scripts/check-regression-results.node.mjs` exercises failure cases.
-Build and styling checks also exist in `.github/workflows/portal-build-check.yml`
-and `portal-harness-rules.yml`; they do not prove production identity or providers.
+heavy jobs. `Portal critical regression gate` (`regression-gate`) checks both suite
+outcomes for relevant changes and passes intentional skips for unrelated changes;
+it fails if the change filter failed. `node --test scripts/check-regression-results.node.mjs`
+exercises failure cases. `Portal gate` (`portal-gate`) always runs and aggregates
+the change filter, both suites and `Portal critical regression gate`: the filter
+and critical gate must succeed, and the suites must succeed for relevant changes
+or be skipped for unrelated changes. Failed/cancelled prerequisites or an unreadable
+filter are rejected. `Portal gate` is the single intended required branch-protection
+context; `Portal critical regression gate` is its prerequisite detail job.
+Build and styling checks also exist in repo-root `.github/workflows/portal-build-check.yml`
+and `.github/workflows/portal-harness-rules.yml`; they do not prove production identity or providers.
 
 Remaining evidence/decisions: live Keycloak login and first-visit CSRF race;
 real provider mutation/read-back; real multi-replica informer/Valkey failover;
 second-cluster visibility; owner confirmation of branch protection and #358 apply
-scope. Current policy also intentionally permits namespace-less cluster alerts for
+scope. The unmapped-team developer case described below has no regression test yet.
+Current policy also intentionally permits namespace-less cluster alerts for
 scoped sessions (`src/lib/scope.ts`) and all namespaces for unteamed developer/viewer
 roles (`config/role-filter.json`); stricter tenant defaults require an owner decision.
 
@@ -401,11 +410,17 @@ Observed defect (test-only investigation; failing probe removed as requested): w
 `groups=["developer"]`, `teams=["tenant-a-team"]` absent from `teamMappings`, and
 namespaces `tenant-a` / `tenant-b` labeled `narwhal.io/team=tenant-a-team` /
 `tenant-b-team`, `/api/my-apps` returned both namespace names instead of only
-`tenant-a`. `src/lib/role-filter.ts:404` falls back to the developer wildcard in
-`config/role-filter.json:4` when no static team mapping matches; resolution becomes
-all-namespace before labels can restrict it. This is distinct from an unteamed
-role default and leaves label-only tenant isolation **missing**. Owner/auth changes
-are needed; no production fix or failing/skipped test is included here.
+`tenant-a`. After the cluster-admin override (`src/lib/role-filter.ts:378-381`),
+`getVisibilityScope` checks static team mappings first (`src/lib/role-filter.ts:383-401`).
+If none match, even when the user has team claims, it returns the highest-priority
+held role's configured default (`src/lib/role-filter.ts:370`, `src/lib/role-filter.ts:403-415`). Whether
+that exposes other teams depends on the configured developer role default. The
+shipped `config/role-filter.json:4` sets developer namespaces to `["*"]` and
+ArgoCD projects to `[]`; `resolveNamespaceScope` then returns all namespaces before
+checking team labels (`src/lib/role-filter.ts:100-114`). The same role-default
+fallback applies to unteamed users; label-only tenant isolation remains **missing**
+for this configuration. Owner/auth changes are needed; no production fix or
+failing/skipped test is included here.
 
 Local verification caveat: `pnpm test -- --maxWorkers=4 --testTimeout=30000`
 passes a literal `--` to Vitest with this pnpm version, leaving the timeout at 5s.

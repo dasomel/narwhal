@@ -48,4 +48,10 @@ for old, new in [
     except AssertionError:
         continue
     raise AssertionError(f'undetected mutation: {old}')
+# The portal service account needs view-events or the LOGIN lookup is refused (403)
+# and the user list silently stays on the session fallback.
+bindings = (ROOT / 'scripts/cluster/13-2-narwhal-portal-bindings.sh').read_text()
+roles = re.findall(r'^\s*for role in ([a-z\- ]+); do$', bindings, re.M)
+assert any('view-events' in line.split() for line in roles), \
+    'portal admin service account must be granted realm-management/view-events'
 print('PASS: R340 user events enabled, 30-day retention, existing realms; 4 mutations caught')

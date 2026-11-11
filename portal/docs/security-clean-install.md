@@ -72,7 +72,7 @@ curl -s "$KEYCLOAK_ISSUER/.well-known/openid-configuration" | jq .issuer
 3. `Service Accounts Enabled`: ON
 4. `Standard Flow Enabled`: OFF, `Direct Access Grants Enabled`: OFF (ROPC 차단)
 5. Save → Service Account Roles 탭
-6. Client Roles → `realm-management` 선택 → `realm-admin` (또는 최소: `manage-users`, `query-users`, `view-realm`, `view-users`) 할당
+6. Client Roles → `realm-management` 선택 → `realm-admin` (또는 최소: `manage-users`, `query-users`, `view-realm`, `view-users`, `view-events`) 할당
 7. Credentials 탭 → Secret 복사
 
 **`.env.local`:**

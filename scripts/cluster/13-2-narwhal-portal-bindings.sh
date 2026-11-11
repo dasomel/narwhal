@@ -182,7 +182,10 @@ for c in clients:
         break
 " || echo "")
     if [ -n "${sa_user_id}" ] && [ -n "${realm_mgmt_id}" ]; then
-      for role in view-users query-users manage-users view-realm; do
+      # D-647-VIEW-EVENTS: view-events lets the portal read LOGIN events for the user
+      # list's last login (read-only). Cost: the SA can read all realm user events.
+      # Escape hatch: drop the role; the portal falls back to active-session start.
+      for role in view-users query-users manage-users view-realm view-events; do
         kc_exec add-roles -r "${REALM}" \
           --uid "${sa_user_id}" \
           --cclientid realm-management \

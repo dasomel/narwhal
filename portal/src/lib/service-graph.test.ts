@@ -61,6 +61,54 @@ describe("service graph workload evidence", () => {
     expect(graph.hiddenOneOffCount).toBe(0)
     expect(graph.edges).toHaveLength(2)
   })
+  it.each([
+    { namespace: undefined, live: "none", complete: true, hidden: true, status: undefined },
+    { namespace: undefined, live: "controller", complete: true, hidden: false, status: "degraded" },
+    { namespace: undefined, live: "pod", complete: true, hidden: false, status: "down" },
+    { namespace: undefined, live: "owner", complete: true, hidden: false, status: "healthy" },
+    { namespace: undefined, live: "identity", complete: true, hidden: false, status: "unknown" },
+    { namespace: undefined, live: "none", complete: false, hidden: false, status: "unknown" },
+    { namespace: "jobs", live: "controller", complete: true, hidden: true, status: undefined },
+    { namespace: "services", live: "controller", complete: true, hidden: false, status: "degraded" },
+    { namespace: "jobs", live: "controller", complete: false, hidden: true, status: undefined },
+  ])("handles Job collision: $namespace / $live / complete=$complete", async ({ namespace, live, complete, hidden, status }) => {
+    vi.mocked(getWorkloadSnapshot).mockResolvedValue({
+      complete,
+      hidden: [{ namespace: "jobs", name: "worker" }],
+      workloads: live === "controller" || live === "identity" ? [{
+        namespace: "services", kind: "Deployment", name: "worker",
+        ...(live === "controller" ? { status: "degraded" as const } : {}),
+      }] : [],
+      livePods: live === "pod" || live === "owner" ? [{
+        namespace: "services", name: live === "pod" ? "worker" : "worker-1",
+        ownerNames: live === "owner" ? ["worker"] : [],
+        status: live === "pod" ? "down" : "healthy",
+      }] : [],
+    })
+    vi.stubGlobal("fetch", vi.fn(async () => Response.json({ status: "success", data: { result: [1, 2].map(() => ({
+      metric: { source_workload: "app", destination_workload: "worker",
+        ...(namespace ? { destination_workload_namespace: namespace } : {}),
+      }, value: [1, "2"],
+    })) } })))
+    const graph = await getServiceGraph("1h")
+    expect(graph.hiddenOneOffCount).toBe(hidden ? 1 : 0)
+    expect(graph.edges).toHaveLength(hidden ? 0 : 2)
+    const worker = graph.nodes.find((n) => n.id === "unmapped-pods:worker")
+    expect(Boolean(worker)).toBe(!hidden)
+    expect(worker?.status).toBe(status)
+  })
+  it("retains namespace-less telemetry with only a live controller", async () => {
+    vi.mocked(getWorkloadSnapshot).mockResolvedValue({ complete: true, hidden: [], workloads: [
+      { namespace: "services", kind: "Deployment", name: "worker", status: "down" },
+    ] })
+    vi.stubGlobal("fetch", vi.fn(async () => Response.json({ status: "success", data: { result: [{
+      metric: { source_workload: "app", destination_workload: "worker" }, value: [1, "2"],
+    }] } })))
+    const graph = await getServiceGraph("1h")
+    expect(graph.hiddenOneOffCount).toBe(0)
+    expect(graph.edges).toHaveLength(1)
+    expect(graph.nodes.find((n) => n.id === "unmapped-pods:worker")?.status).toBe("down")
+  })
   it.each(["ns", "other", undefined])("matches controller identity within known namespaces (%s)", async (namespace) => {
     vi.mocked(getWorkloadSnapshot).mockResolvedValue({ complete: true, hidden: [], workloads: [
       { namespace: namespace ?? "other", kind: "Deployment", name: "worker" },

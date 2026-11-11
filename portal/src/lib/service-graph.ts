@@ -4,6 +4,7 @@
  * SERVICE_GRAPH_SOURCE=istio|hubble|both 환경변수로 소스 선택.
  * Prometheus 미응답 시 빈 그래프 + notice를 반환 (graceful degradation).
  */
+import { getWorkloadSnapshot, workloadStatus, livePodStatus, type WorkloadStatus } from "./workload-health"
 import { cacheGet, cacheSet } from "./valkey"
 import { cacheKeys, cacheTtl } from "./cache-keys"
 import { getArgoApps } from "./argocd"
@@ -35,7 +36,7 @@ export function isAllowedWindow(v: unknown): v is GraphWindow {
 export interface ServiceNode {
   id: string
   namespace: string
-  status: "healthy" | "degraded" | "unknown"
+  status: "healthy" | "degraded" | "down" | "unknown"
   scoreTier?: ScoreTier
 }
 
@@ -60,6 +61,7 @@ export interface ServiceGraphResult {
   namespaces?: string[]
   // requestRate의 단위 판별용: l7=req/s, l4=bytes/s (UI가 단위를 맞춰 표시)
   metricKind?: "l7" | "l4" | "hubble" | "mixed"
+  hiddenOneOffCount?: number
   notice?: string
 }
 
@@ -144,7 +146,7 @@ async function buildNodeStatusMap(): Promise<Map<string, "healthy" | "degraded" 
   const apps = await getArgoApps()
   const map = new Map<string, "healthy" | "degraded" | "unknown">()
   for (const app of apps) {
-    const health = app.status.health.status
+    const health = app.status?.health?.status
     if (health === "Healthy") map.set(app.metadata.name, "healthy")
     else if (health === "Degraded") map.set(app.metadata.name, "degraded")
     else map.set(app.metadata.name, "unknown")
@@ -376,7 +378,10 @@ export async function getServiceGraph(
   const generatedAt = new Date().toISOString()
 
   // 워크로드 → 서비스 매핑, 노드 상태 맵 동시 로드
-  const [serviceMap, statusMap] = await Promise.all([buildWorkloadToServiceMap(), buildNodeStatusMap()])
+  const [serviceMap, statusMap, snapshot] = await Promise.all([
+    buildWorkloadToServiceMap(), buildNodeStatusMap(),
+    getWorkloadSnapshot().catch(() => ({ complete: false, workloads: [], hidden: [] })),
+  ])
 
   let rawEdges: RawEdge[] | null = null
   let metricKind: "l7" | "l4" | "hubble" | "mixed" = "l7"
@@ -446,12 +451,31 @@ export async function getServiceGraph(
   const nodeIds = new Set<string>()
   const nodeNs = new Map<string, string>()
   const edges: ServiceEdge[] = []
+  const nodeWorkloads = new Map<string, Array<{ name: string; namespace?: string }>>()
 
+  // D4 (#646): retain known Job/completed-pod filtering; infer deleted unmapped
+  // one-offs only with complete, nonempty controller evidence and no matching live
+  // operator/standalone pod or owner. Cost: 30s staleness; escape hatch: incomplete/
+  // empty snapshots retain unknowns. Live Job pods remain explicitly hidden.
+  const hidden = new Set<string>()
+  const isHidden = (name: string, ns?: string) => snapshot.hidden.some((pod) => pod.name === name && (!ns || pod.namespace === ns))
+    || (snapshot.complete && snapshot.workloads.length > 0
+      && resolveWorkload(name, serviceMap) === `unmapped-pods:${name}`
+      && !snapshot.workloads.some((w) => w.name === name && (!ns || w.namespace === ns))
+      && !livePodStatus(snapshot, name, ns))
   for (const e of nsFiltered) {
+    const endpoints = [[e.source, e.sourceNamespace], [e.destination, e.destinationNamespace]] as const
+    for (const [name, ns] of endpoints) if (isHidden(name, ns)) hidden.add(`${ns ?? ""}/${name}`)
+    if (endpoints.some(([name, ns]) => isHidden(name, ns))) continue
     const srcId = resolveWorkload(e.source, serviceMap)
     const dstId = resolveWorkload(e.destination, serviceMap)
 
     if (!srcId || !dstId) continue
+    for (const [id, name, ns] of [[srcId, e.source, e.sourceNamespace], [dstId, e.destination, e.destinationNamespace]] as const) {
+      const workloads = nodeWorkloads.get(id) ?? []
+      workloads.push({ name, namespace: ns })
+      nodeWorkloads.set(id, workloads)
+    }
     if (srcId === dstId) continue // self-call 제외
 
     nodeIds.add(srcId)
@@ -469,11 +493,22 @@ export async function getServiceGraph(
     })
   }
 
+  // D5 (#646): resolve health from raw controller identities before service aliases.
+  // Cost: merged nodes use worst readiness; escape hatch: id/ArgoCD fallback.
+  const statusRank: Record<WorkloadStatus, number> = { healthy: 1, degraded: 2, down: 3 }
+  const controllerStatus = (id: string) => (nodeWorkloads.get(id) ?? []).reduce<WorkloadStatus | undefined>((worst, w) => {
+    const status = workloadStatus(snapshot, w.name, w.namespace)
+    return status && (!worst || statusRank[status] > statusRank[worst]) ? status : worst
+  }, undefined)
+  const podStatus = (id: string) => (nodeWorkloads.get(id) ?? []).reduce<WorkloadStatus | undefined>((worst, w) => {
+    const status = livePodStatus(snapshot, w.name, w.namespace)
+    return status && (!worst || statusRank[status] > statusRank[worst]) ? status : worst
+  }, undefined)
   const nodes: ServiceNode[] = Array.from(nodeIds).map((id) => ({
     id,
     // 메트릭 라벨 기반 실제 ns. 라벨이 없는 소스(hubble 등)는 "unknown".
     namespace: nodeNs.get(id) ?? "unknown",
-    status: statusMap.get(id) ?? "unknown",
+    status: controllerStatus(id) ?? workloadStatus(snapshot, id.replace(/^unmapped-pods:/, ""), nodeNs.get(id)) ?? podStatus(id) ?? livePodStatus(snapshot, id.replace(/^unmapped-pods:/, ""), nodeNs.get(id)) ?? statusMap.get(id) ?? "unknown",
   }))
 
   const result: ServiceGraphResult = {
@@ -481,6 +516,7 @@ export async function getServiceGraph(
     generatedAt,
     nodes,
     edges,
+    hiddenOneOffCount: hidden.size,
     namespaces: allNamespaces,
     metricKind,
   }

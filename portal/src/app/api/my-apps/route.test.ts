@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import type { ArgoApp } from "@/lib/argocd"
+import type { MyAppsResponse } from "@/types/my-apps"
 import type { NamespaceInfo } from "@/lib/k8s-client"
 
 // portal#53 AC-4: /api/my-apps keys its cache by `user` AND `scope` (cacheKeys.myApps,
@@ -128,5 +129,70 @@ describe("GET /api/my-apps — scope enforcement", () => {
     const res = await GET()
     expect(res.status).toBe(401)
     expect(getArgoApps).not.toHaveBeenCalled()
+  })
+})
+
+// D1 (#359): keep scope and response builders real to catch leaks in derived views.
+// Cost: provider/cache fixtures only; use browser/live evidence for session/provider behavior.
+describe("GET /api/my-apps — tenant-derived views", () => {
+  it("isolates alerts, timeline and hero after an admin cache is warmed for the same user", async () => {
+    const timestamp = "2026-01-01T00:00:00Z"
+    vi.mocked(getArgoApps).mockResolvedValue([platformApp, frontendApp].map((app) => ({
+      ...app,
+      status: {
+        ...app.status,
+        history: [{ id: 1, revision: "abcdef123", deployedAt: timestamp }],
+        operationState: { phase: "Succeeded", finishedAt: timestamp },
+      },
+    })))
+    vi.mocked(getAlerts).mockResolvedValue([
+      { labels: { namespace: "platform-system", alertname: "platform-warning", severity: "warning" },
+        annotations: { summary: "platform summary" }, status: { state: "active" }, startsAt: timestamp },
+      { labels: { namespace: "frontend-app", alertname: "frontend-critical", severity: "critical" },
+        annotations: { summary: "frontend private summary" }, status: { state: "active" }, startsAt: timestamp },
+    ])
+    vi.mocked(auth).mockResolvedValue({
+      groups: ["cluster-admin"], teams: [], user: { sub: "user-a", role: "cluster-admin" },
+    } as never)
+    const admin = await (await GET()).json() as MyAppsResponse
+    expect(admin.scopedApps).toHaveLength(2)
+    expect(admin.scopedAlerts).toHaveLength(2)
+    expect(admin.hero.mascot).toBe("critical")
+
+    vi.mocked(auth).mockResolvedValue(platformUserA as never)
+    for (let read = 0; read < 2; read++) {
+      const response = await GET()
+      expect(response.status).toBe(200)
+      const body = await response.json() as MyAppsResponse
+      expect(body.scopedApps.map((app) => app.name)).toEqual(["platform-app"])
+      expect(body.scopedAlerts.map((alert) => alert.labels.alertname)).toEqual(["platform-warning"])
+      expect(body.scopedEvents.map((event) => event.title).sort()).toEqual([
+        "platform-app", "platform-app", "platform-warning",
+      ])
+      expect(body.hero.mascot).toBe("warning")
+      expect(body.hero.incidents.map((incident) => incident.title)).toEqual(["platform-warning"])
+      expect(JSON.stringify(body)).not.toContain("frontend")
+    }
+    // Admin miss, tenant miss, then tenant hit: the second read exercises the cache.
+    expect(getArgoApps).toHaveBeenCalledTimes(2)
+    expect(getAlerts).toHaveBeenCalledTimes(2)
+    expect(cacheSet).toHaveBeenCalledTimes(2)
+  })
+
+  it("returns empty derived views for an unmapped guest without reading providers", async () => {
+    vi.mocked(auth).mockResolvedValue({
+      groups: ["guest"], teams: [], user: { sub: "guest-user", role: "guest" },
+    } as never)
+    const response = await GET()
+    expect(response.status).toBe(200)
+    const body = await response.json() as MyAppsResponse
+    expect(body.scope.hasMapping).toBe(false)
+    expect(body.scope.namespaces).toEqual([])
+    expect(body.scopedApps).toEqual([])
+    expect(body.scopedAlerts).toEqual([])
+    expect(body.scopedEvents).toEqual([])
+    expect(body.hero.incidents).toEqual([])
+    expect(getArgoApps).not.toHaveBeenCalled()
+    expect(getAlerts).not.toHaveBeenCalled()
   })
 })

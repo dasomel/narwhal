@@ -1,9 +1,10 @@
 import { renderToString } from "react-dom/server"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
-vi.mock("next-auth/react", () => ({
-  useSession: () => ({ data: { user: { name: "admin narwhal", role: "cluster-admin" } } }),
+const session = vi.hoisted(() => ({
+  user: { name: "admin narwhal", role: "cluster-admin" },
 }))
+vi.mock("next-auth/react", () => ({ useSession: () => ({ data: session }) }))
 vi.mock("next/navigation", () => ({ usePathname: () => "/" }))
 vi.mock("@/lib/i18n-client", () => ({
   useT: () => (key: string) => key,
@@ -13,6 +14,7 @@ vi.mock("@/components/theme-toggle", () => ({ ThemeToggle: () => null }))
 vi.mock("@/components/dependency-health-indicator", () => ({ DependencyHealthIndicator: () => <span role="status">모든 시스템 정상</span> }))
 
 beforeEach(() => {
+  session.user.role = "cluster-admin"
   vi.stubEnv("APP_VERSION", "1.0.17")
   vi.stubEnv("APP_COMMIT", "abcdef1234567")
 })
@@ -41,6 +43,16 @@ describe("Nav", () => {
     for (const key of ["shell.overview", "shell.delivery", "shell.governance", "shell.getStarted"]) {
       expect(html).toContain(key)
     }
+  })
+
+  it.each(["developer", "viewer", "guest"])("hides admin settings in the rendered %s navigation", (role) => {
+    const adminHtml = renderToString(<Nav />)
+    expect(adminHtml).toContain('href="/settings"')
+    session.user.role = role
+    const html = renderToString(<Nav />)
+    expect(html).toContain('href="/status"')
+    expect(html).not.toContain('href="/settings"')
+    expect(html).not.toContain("nav.settings")
   })
 
   it("retains role restrictions and removes empty groups", () => {

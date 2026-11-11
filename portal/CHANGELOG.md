@@ -9,6 +9,25 @@ English | [한국어](CHANGELOG-ko.md)
 
 ## [Unreleased]
 
+## [1.1.13] - 2026-11-11
+
+Patch release that applies the dashboard design language to the Architecture page and the onboarding platform
+figure, and fixes the Settings user list showing no groups and no last login.
+
+### Changed
+
+- Architecture page: infra and service views use the dashboard cards, meters and tokens. Services are grouped by
+  observed namespace; the connection graph, filters, live overlay and selection detail are kept (narwhal#640,
+  narwhal#642).
+- Onboarding: the platform architecture figure is redrawn as five labelled layers of icon, role and status cards,
+  with a stacked layer list on narrow screens. Missing status data shows as unknown (narwhal#640, narwhal#642).
+
+### Fixed
+
+- Settings user list showed `—` for every user's groups and "Never" for last login. Groups now come from Keycloak
+  group memberships, and the time column shows the newest active session start (relabelled "Latest Session Start";
+  the realm keeps no login history). The enriched list is cached for 60 seconds (narwhal#641, narwhal#643).
+
 ## [1.1.12] - 2026-11-10
 
 Patch release applying the Figma app shell, dashboard and empty-state designs, and recording the 1.1.11 Portal
@@ -734,7 +753,8 @@ management dashboard built with Next.js 16 and React 19.
   - Skaffold development profile configured for live Hot Module Replacement (HMR) and container
     file syncing.
 
-[Unreleased]: https://github.com/dasomel/narwhal/compare/portal/v1.1.12...HEAD
+[Unreleased]: https://github.com/dasomel/narwhal/compare/portal/v1.1.13...HEAD
+[1.1.13]: https://github.com/dasomel/narwhal/compare/portal/v1.1.12...portal/v1.1.13
 [1.1.12]: https://github.com/dasomel/narwhal/compare/portal/v1.1.11...portal/v1.1.12
 [1.1.11]: https://github.com/dasomel/narwhal/compare/portal/v1.1.10...portal/v1.1.11
 [1.1.10]: https://github.com/dasomel/narwhal/compare/portal/v1.1.9...portal/v1.1.10

@@ -202,6 +202,7 @@ export interface KeycloakUser {
   name: string
   is_active: boolean
   last_login: string | null
+  last_login_source: "event" | "session" | null
   groups_obj?: Array<{ pk: string; name: string }>
 }
 
@@ -238,6 +239,7 @@ function mapUser(raw: Record<string, unknown>): KeycloakUser {
     name,
     is_active: (raw.enabled as boolean) ?? true,
     last_login: null,
+    last_login_source: null,
   }
 }
 
@@ -271,7 +273,7 @@ async function fetchAllPages<T>(
  * Keycloak-derived Valkey cache keys and invalidation helpers.
  *
  * Cache layers & TTLs:
- * - `keycloak:users`: users enriched with group memberships and active-session timestamps (TTL 60s / 1m).
+ * - `keycloak:users`: users enriched with group memberships and login timestamps/sources (TTL 60s / 1m).
  *   Invalidated on user create/update and group membership changes; skipped when memberships are partial.
  * - `keycloak:groups`: raw Keycloak group summary list (TTL 60s / 1m). Invalidated on group attribute updates.
  * - `keycloak:groups-detailed`: groups with resolved user IDs and attributes (TTL 60s / 1m).
@@ -303,7 +305,7 @@ export async function invalidateKeycloakCaches(
 
 export async function getUsers(): Promise<KeycloakUser[]> {
   const cached = await cacheGet<KeycloakUser[]>(KEYCLOAK_CACHE_KEYS.users)
-  if (cached) return cached
+  if (cached?.every((user) => user.last_login_source !== undefined)) return cached
 
   const data = await fetchAllPages<Record<string, unknown>>(
     `${getKeycloakInternalUrl()}/admin/realms/${KEYCLOAK_REALM}/users`,
@@ -340,27 +342,49 @@ export async function getUsers(): Promise<KeycloakUser[]> {
 
   let sessionFailures = 0
   let nextUser = 0
-  const readSessionBatch = async () => {
+  // D-647-LOGIN: prefer retained LOGIN events; cost: one extra request per user
+  // without history. Escape hatch: session fallback remains available if events
+  // are disabled, expired or unavailable. Both reads share the five-worker bound.
+  const readLoginBatch = async () => {
     while (nextUser < users.length) {
       const index = nextUser++
       const user = users[index]
+      try {
+        const query = new URLSearchParams({ type: "LOGIN", user: user.pk, max: "1", direction: "desc" })
+        const res = await kcFetch(
+          `${getKeycloakInternalUrl()}/admin/realms/${KEYCLOAK_REALM}/events?${query}`
+        )
+        if (!res.ok) throw new Error(`HTTP ${res.status}`)
+        const events = await readJsonWithPolicy<unknown>(res)
+        const event = Array.isArray(events) ? events[0] : undefined
+        const time = event?.time
+        if (event?.type === "LOGIN" && event?.userId === user.pk &&
+          typeof time === "number" && time > 0 && Number.isFinite(new Date(time).getTime())) {
+          user.last_login = new Date(time).toISOString()
+          user.last_login_source = "event"
+          continue
+        }
+      } catch {
+        // Event failures are isolated per user; try the active session below.
+      }
       try {
         const res = await kcFetch(
           `${getKeycloakInternalUrl()}/admin/realms/${KEYCLOAK_REALM}/users/${encodeURIComponent(user.pk)}/sessions`
         )
         if (!res.ok) throw new Error(`HTTP ${res.status}`)
-        const sessions = await readJsonWithPolicy<Array<{ start?: unknown }>>(res)
-        const starts = sessions
-          .map((session) => Number(session.start))
-          .filter((start) => Number.isFinite(start) && start > 0)
+        const sessions = await readJsonWithPolicy<unknown>(res)
+        const starts = (Array.isArray(sessions) ? sessions : [])
+          .map((session) => session?.start)
+          .filter((start): start is number => typeof start === "number" && start > 0 && Number.isFinite(new Date(start).getTime()))
         user.last_login = starts.length > 0 ? new Date(Math.max(...starts)).toISOString() : null
+        user.last_login_source = user.last_login ? "session" : null
       } catch {
         user.last_login = null
         sessionFailures++
       }
     }
   }
-  await Promise.all(Array.from({ length: Math.min(5, users.length) }, () => readSessionBatch()))
+  await Promise.all(Array.from({ length: Math.min(5, users.length) }, () => readLoginBatch()))
   if (sessionFailures > 0) {
     console.warn(`Keycloak sessions unavailable for ${sessionFailures} user(s); last_login set to null`)
   }

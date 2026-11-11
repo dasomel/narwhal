@@ -61,6 +61,7 @@ describe("keycloak-client pagination and methods", () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
+    mockFetch.mockReset()
     global.fetch = mockFetch
     vi.mocked(cacheGet).mockResolvedValue(null)
     vi.mocked(cacheSet).mockResolvedValue(undefined as never)
@@ -101,12 +102,12 @@ describe("keycloak-client pagination and methods", () => {
       .mockResolvedValueOnce(jsonResponse(page2))
       .mockResolvedValueOnce(jsonResponse(page3))
       .mockResolvedValueOnce(jsonResponse([]))
-    for (let i = 0; i < 250; i++) mockFetch.mockResolvedValueOnce(jsonResponse([]))
+    for (let i = 0; i < 500; i++) mockFetch.mockResolvedValueOnce(jsonResponse([]))
 
     const users = await getUsers()
 
     expect(users).toHaveLength(250)
-    expect(mockFetch).toHaveBeenCalledTimes(254)
+    expect(mockFetch).toHaveBeenCalledTimes(504)
     const call0Url = mockFetch.mock.calls[0][0] as string
     const call1Url = mockFetch.mock.calls[1][0] as string
     const call2Url = mockFetch.mock.calls[2][0] as string
@@ -132,12 +133,12 @@ describe("keycloak-client pagination and methods", () => {
       .mockResolvedValueOnce(jsonResponse(page1))
       .mockResolvedValueOnce(jsonResponse(page2))
       .mockResolvedValueOnce(jsonResponse([]))
-    for (let i = 0; i < 100; i++) mockFetch.mockResolvedValueOnce(jsonResponse([]))
+    for (let i = 0; i < 200; i++) mockFetch.mockResolvedValueOnce(jsonResponse([]))
 
     const users = await getUsers()
 
     expect(users).toHaveLength(100)
-    expect(mockFetch).toHaveBeenCalledTimes(103)
+    expect(mockFetch).toHaveBeenCalledTimes(203)
     const call0Url = mockFetch.mock.calls[0][0] as string
     const call1Url = mockFetch.mock.calls[1][0] as string
     expect(call0Url).toContain("/admin/realms/narwhal/users?first=0&max=100")
@@ -162,6 +163,7 @@ describe("keycloak-client pagination and methods", () => {
         name: "Cached",
         is_active: true,
         last_login: null,
+        last_login_source: null,
       },
     ]
     vi.mocked(cacheGet).mockImplementation(async (key: string) => {
@@ -173,6 +175,14 @@ describe("keycloak-client pagination and methods", () => {
     const users = await getUsers()
     expect(users).toEqual(cachedUsers)
     expect(mockFetch).not.toHaveBeenCalled()
+  })
+
+  it("refreshes legacy session-only cache entries that lack a source", async () => {
+    vi.mocked(cacheGet).mockImplementation(async (key: string) => key === KEYCLOAK_CACHE_KEYS.users
+      ? [{ pk: "legacy", last_login: new Date(1000).toISOString() }] : null)
+    mockFetch.mockResolvedValue(jsonResponse([]))
+    expect(await getUsers()).toEqual([])
+    expect(mockFetch).toHaveBeenCalled()
   })
 
   it("adds group memberships and the newest active session start to each user", async () => {
@@ -188,6 +198,7 @@ describe("keycloak-client pagination and methods", () => {
       ])
       if (url.includes("/groups/g1/members?first=")) return jsonResponse([{ id: "u1" }, { id: "u2" }])
       if (url.includes("/groups/g2/members?first=")) return jsonResponse([{ id: "u1" }])
+      if (url.includes("/events?")) return jsonResponse([])
       if (url.endsWith("/users/u1/sessions")) return jsonResponse([{ start: 1000 }, { start: 3000 }, { start: 2000 }])
       if (url.endsWith("/users/u2/sessions")) return jsonResponse([{ start: 2000 }])
       if (url.endsWith("/users/u3/sessions")) return jsonResponse([])
@@ -207,6 +218,7 @@ describe("keycloak-client pagination and methods", () => {
     mockFetch.mockImplementation(async (url: string) => {
       if (url.includes("/users?first=")) return jsonResponse([{ id: "u1", username: "one" }])
       if (url.includes("/groups?first=")) return jsonResponse([])
+      if (url.includes("/events?")) return jsonResponse([])
       if (url.endsWith("/users/u1/sessions")) return new Response("", { status })
       throw new Error(`unexpected fetch to ${url}`)
     })
@@ -214,6 +226,7 @@ describe("keycloak-client pagination and methods", () => {
     const users = await getUsers()
     expect(users).toHaveLength(1)
     expect(users[0].last_login).toBeNull()
+    expect(users[0].last_login_source).toBeNull()
     expect(warning).toHaveBeenCalledTimes(1)
     warning.mockRestore()
   })
@@ -223,12 +236,97 @@ describe("keycloak-client pagination and methods", () => {
       if (url.includes("/users?first=")) return jsonResponse([{ id: "u1", username: "one" }])
       if (url.includes("/groups?first=")) return jsonResponse([{ id: "g1", name: "Group" }])
       if (url.includes("/groups/g1/members?first=")) return new Response("", { status: 503 })
+      if (url.includes("/events?")) return jsonResponse([])
       if (url.endsWith("/users/u1/sessions")) return jsonResponse([])
       throw new Error(`unexpected fetch to ${url}`)
     })
     const users = await getUsers()
     expect(users[0].groups_obj).toBeUndefined()
     expect(cacheSet).not.toHaveBeenCalledWith(KEYCLOAK_CACHE_KEYS.users, expect.anything(), expect.anything())
+  })
+
+  it("uses the latest LOGIN event even after logout, without querying sessions", async () => {
+    mockFetch.mockImplementation(async (url: string) => {
+      if (url.includes("/users?first=")) return jsonResponse([{ id: "u/1", username: "one" }])
+      if (url.includes("/groups?first=")) return jsonResponse([])
+      const query = new URL(url).searchParams
+      expect(query.get("type")).toBe("LOGIN")
+      expect(query.get("user")).toBe("u/1")
+      expect(query.get("max")).toBe("1")
+      expect(query.get("direction")).toBe("desc")
+      return jsonResponse([{ type: "LOGIN", userId: "u/1", time: 3000 }])
+    })
+    const [user] = await getUsers()
+    expect([user.last_login, user.last_login_source]).toEqual([new Date(3000).toISOString(), "event"])
+    expect(mockFetch.mock.calls.some(([url]) => String(url).endsWith("/sessions"))).toBe(false)
+  })
+
+  it.each([
+    [], null, {}, [null], [{ time: "3000" }],
+    [{ type: "LOGIN", userId: "u1", time: 1e20 }],
+    [{ type: "LOGIN", userId: "u1", time: -1 }],
+    [{ type: "LOGIN_ERROR", userId: "u1", time: 3000 }],
+    [{ type: "LOGIN", userId: "other", time: 3000 }],
+  ].map((payload) => [payload]))("falls back to a session for missing or malformed event payload %j", async (payload) => {
+    mockFetch.mockImplementation(async (url: string) => {
+      if (url.includes("/users?first=")) return jsonResponse([{ id: "u1", username: "one" }])
+      if (url.includes("/groups?first=")) return jsonResponse([])
+      if (url.includes("/events?")) return jsonResponse(payload)
+      return jsonResponse([null, { start: "9000" }, { start: 1e20 }, { start: 1000 }, { start: 2000 }])
+    })
+    const [user] = await getUsers()
+    expect([user.last_login, user.last_login_source]).toEqual([new Date(2000).toISOString(), "session"])
+  })
+
+  it.each([403, 500, "network", "json"])("isolates event failure %s and falls back per user", async (failure) => {
+    mockFetch.mockImplementation(async (url: string) => {
+      if (url.includes("/users?first=")) return jsonResponse([
+        { id: "u1", username: "one" }, { id: "u2", username: "two" },
+      ])
+      if (url.includes("/groups?first=")) return jsonResponse([])
+      if (url.includes("/events?")) {
+        if (new URL(url).searchParams.get("user") === "u2") {
+          return jsonResponse([{ type: "LOGIN", userId: "u2", time: 3000 }])
+        }
+        if (failure === "network") throw new Error("offline")
+        if (failure === "json") return new Response("{")
+        return new Response("", { status: typeof failure === "number" ? failure : 500 })
+      }
+      return jsonResponse([{ start: 2000 }])
+    })
+    const users = await getUsers()
+    expect(users.map((user) => user.last_login_source)).toEqual(["session", "event"])
+  })
+
+  it.each([[], null, {}, [null, { start: true }, { start: -1 }, { start: "bad" }]].map((payload) => [payload]))(
+    "returns no record when neither source has a valid timestamp: %j", async (sessions) => {
+      mockFetch.mockImplementation(async (url: string) => {
+        if (url.includes("/users?first=")) return jsonResponse([{ id: "u1", username: "one" }])
+        if (url.endsWith("/sessions")) return jsonResponse(sessions)
+        return jsonResponse([])
+      })
+      const [user] = await getUsers()
+      expect([user.last_login, user.last_login_source]).toEqual([null, null])
+    }
+  )
+
+  it("bounds combined event/session requests to five workers", async () => {
+    let active = 0
+    let peak = 0
+    mockFetch.mockImplementation(async (url: string) => {
+      if (url.includes("/users?first=")) return jsonResponse(
+        Array.from({ length: 12 }, (_, i) => ({ id: `u${i}`, username: `user${i}` }))
+      )
+      if (url.includes("/groups?first=")) return jsonResponse([])
+      active++
+      peak = Math.max(peak, active)
+      await new Promise((resolve) => setTimeout(resolve, 1))
+      active--
+      return jsonResponse([])
+    })
+    expect(await getUsers()).toHaveLength(12)
+    expect(peak).toBe(5)
+    expect(active).toBe(0)
   })
 
   it("paginates getGroups across multiple pages", async () => {

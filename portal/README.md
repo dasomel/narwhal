@@ -23,6 +23,8 @@ Served in-cluster at **https://portal.local.narwhal.internal** via the cluster's
   grid (`architecture/`, `templates/`, `tools/`)
 - **Settings** — users, routes, certificates, policies
 
+The user list shows **Last Login** from the latest Keycloak `LOGIN` event. If no event is available or the request fails, it shows the latest active session start with a `Session` hint; if neither exists, it shows `No record`. The list is cached for up to 60 seconds. `scripts/cluster/11-2-keycloak-config.sh` configures user events (`LOGIN`, `LOGIN_ERROR`, `LOGOUT`) with 30-day retention (2592000 seconds), including existing realms. Admin event settings are unchanged. Only events occurring after this is applied are recorded; login history survives logout within the retention window.
+
 Routes live under `src/app/(dashboard)/`; backing API routes under `src/app/api/`.
 
 ## Screenshots

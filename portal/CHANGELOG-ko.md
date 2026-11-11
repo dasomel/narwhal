@@ -9,6 +9,24 @@
 
 ## [Unreleased]
 
+## [1.1.13] - 2026-11-11
+
+아키텍처 페이지와 온보딩 플랫폼 아키텍처 그림에 대시보드 디자인을 적용하고, 설정 사용자 목록에서 권한과 마지막 로그인이
+비어 보이던 문제를 고친 패치 릴리스.
+
+### 변경
+
+- 아키텍처 페이지: 인프라·서비스 뷰에 대시보드 카드, 미터, 토큰을 적용. 서비스는 관측된 네임스페이스별로 묶고 연결
+  그래프, 필터, 실시간 오버레이, 선택 상세는 유지 (narwhal#640, narwhal#642).
+- 온보딩: 플랫폼 아키텍처 그림을 아이콘·역할·상태 카드로 구성한 5개 레이어로 다시 그리고, 좁은 화면에서는 레이어
+  목록으로 표시. 상태 데이터가 없으면 "알 수 없음"으로 표시 (narwhal#640, narwhal#642).
+
+### 수정
+
+- 설정 사용자 목록에서 모든 사용자의 권한이 `—`, 마지막 로그인이 "없음"으로 표시되던 문제. 권한은 Keycloak 그룹
+  멤버십에서 가져오고, 시각 열은 가장 최근 활성 세션의 시작 시각을 표시한다(열 이름을 "최근 세션 시작"으로 변경. 렐름에
+  로그인 이력이 없기 때문). 보강된 목록은 60초 동안 캐시 (narwhal#641, narwhal#643).
+
 ## [1.1.12] - 2026-11-10
 
 Figma 앱 셸, 대시보드, 빈 상태 디자인을 적용하고 OSS 버전 스냅샷에 1.1.11 Portal pin을 기록한 패치 릴리스.
@@ -693,7 +711,8 @@ Portal의 첫 번째 공개 릴리스.
     매니페스트(`deploy/kaniko-build-job.yaml`).
   - 실시간 핫 모듈 교체(HMR) 및 컨테이너 파일 동기화를 위해 구성된 Skaffold 개발 프로필.
 
-[Unreleased]: https://github.com/dasomel/narwhal/compare/portal/v1.1.12...HEAD
+[Unreleased]: https://github.com/dasomel/narwhal/compare/portal/v1.1.13...HEAD
+[1.1.13]: https://github.com/dasomel/narwhal/compare/portal/v1.1.12...portal/v1.1.13
 [1.1.12]: https://github.com/dasomel/narwhal/compare/portal/v1.1.11...portal/v1.1.12
 [1.1.11]: https://github.com/dasomel/narwhal/compare/portal/v1.1.10...portal/v1.1.11
 [1.1.10]: https://github.com/dasomel/narwhal/compare/portal/v1.1.9...portal/v1.1.10

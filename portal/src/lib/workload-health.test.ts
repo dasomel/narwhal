@@ -3,7 +3,7 @@ vi.mock("./valkey", () => ({ cacheGet: vi.fn(), cacheSet: vi.fn() }))
 vi.mock("./k8s-client", () => ({ listBounded: vi.fn() }))
 import { cacheGet, cacheSet } from "./valkey"
 import { listBounded } from "./k8s-client"
-import { getWorkloadSnapshot, readiness, workloadStatus } from "./workload-health"
+import { getWorkloadSnapshot, livePodStatus, readiness, workloadStatus } from "./workload-health"
 
 beforeEach(() => { vi.resetAllMocks() })
 describe("workload readiness", () => {
@@ -26,6 +26,38 @@ describe("workload readiness", () => {
     expect(listBounded).toHaveBeenCalledTimes(4)
     expect(cacheSet).toHaveBeenCalledWith("architecture:workloads", snapshot, 30)
   })
+  it("records only live operator/standalone pods and uses Pod Ready conditions", async () => {
+    const pod = (name: string, phase: string, kind?: string, ready?: string) => ({
+      metadata: { name, namespace: "database", ownerReferences: kind ? [{ kind, name: "narwhal-db" }] : [] },
+      status: { phase, conditions: ready ? [{ type: "Ready", status: ready }] : [] },
+    })
+    vi.mocked(listBounded).mockImplementation(async (path) => ({ truncated: false, pages: 1, items: path.endsWith("pods") ? [
+      pod("narwhal-db-1", "Running", "Cluster", "True"),
+      pod("narwhal-db-2", "Running", "Cluster", "False"),
+      pod("standalone", "Pending"),
+      pod("backup", "Running", "Job", "True"),
+      ...["ReplicaSet", "StatefulSet", "DaemonSet"].map((kind) => pod(kind, "Running", kind, "True")),
+      pod("completed", "Succeeded", "Cluster", "True"),
+      pod("unknown", "Unknown"),
+    ] : [] }))
+    const snapshot = await getWorkloadSnapshot()
+    expect(snapshot.livePods).toEqual([
+      { namespace: "database", name: "narwhal-db-1", ownerNames: ["narwhal-db"], status: "healthy" },
+      { namespace: "database", name: "narwhal-db-2", ownerNames: ["narwhal-db"], status: "down" },
+      { namespace: "database", name: "standalone", ownerNames: [], status: "down" },
+    ])
+    expect(livePodStatus(snapshot, "narwhal-db-1", "database")).toBe("healthy")
+    expect(livePodStatus(snapshot, "narwhal-db", "database")).toBe("down")
+    expect(livePodStatus(snapshot, "narwhal-db", "other")).toBeUndefined()
+    expect(livePodStatus(snapshot, "narwhal-db")).toBe("down")
+    expect(snapshot.hidden).toContainEqual({ namespace: "database", name: "backup" })
+  })
+  it("refreshes legacy cached snapshots without live pod evidence", async () => {
+    vi.mocked(cacheGet).mockResolvedValue({ complete: true, workloads: [], hidden: [] })
+    vi.mocked(listBounded).mockResolvedValue({ truncated: false, pages: 1, items: [] })
+    expect((await getWorkloadSnapshot()).livePods).toEqual([])
+    expect(listBounded).toHaveBeenCalledTimes(4)
+  })
   it("returns no health on API failure, empty lists or malformed resources", async () => {
     vi.mocked(listBounded).mockRejectedValueOnce(new Error("403"))
       .mockResolvedValue({ truncated: false, pages: 1, items: [null, {}, { metadata: { name: "bad", namespace: "ns" }, spec: { replicas: "bad" } }] } as never)
@@ -34,7 +66,7 @@ describe("workload readiness", () => {
     expect(partial.workloads.every((w) => w.status === undefined)).toBe(true)
     expect(cacheSet).not.toHaveBeenCalled()
     vi.mocked(listBounded).mockResolvedValue({ truncated: false, pages: 1, items: [] })
-    expect(await getWorkloadSnapshot()).toEqual({ complete: true, workloads: [], hidden: [] })
+    expect(await getWorkloadSnapshot()).toEqual({ complete: true, workloads: [], livePods: [], hidden: [] })
   })
   it("marks truncated lists incomplete and does not cache them", async () => {
     vi.mocked(listBounded).mockResolvedValue({ truncated: false, pages: 1, items: [] })
@@ -50,7 +82,7 @@ describe("workload readiness", () => {
     expect(workloadStatus(snapshot, "sleeping", "ns")).toBeUndefined()
   })
   it("serves cached evidence without any cluster list", async () => {
-    const snapshot = { complete: true, workloads: [], hidden: [] }
+    const snapshot = { complete: true, workloads: [], livePods: [], hidden: [] }
     vi.mocked(cacheGet).mockResolvedValue(snapshot)
     expect(await getWorkloadSnapshot()).toBe(snapshot)
     expect(listBounded).not.toHaveBeenCalled()

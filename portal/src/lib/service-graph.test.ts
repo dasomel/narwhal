@@ -88,6 +88,36 @@ describe("service graph workload evidence", () => {
     expect(graph.nodes.find((n) => n.id === "app")?.status).toBe(worst)
     expect(graph.hiddenOneOffCount).toBe(0)
   })
+  it.each([
+    ["narwhal-db-1", "database", "healthy"],
+    ["narwhal-db-1", "database", "down"],
+    ["narwhal-db", "database", "healthy"],
+    ["narwhal-db", undefined, "down"],
+    ["narwhal-db", "other", "healthy"],
+  ] as const)("retains live CNPG endpoint %s in %s with status %s", async (name, namespace, status) => {
+    vi.mocked(getWorkloadSnapshot).mockResolvedValue({ complete: true, hidden: [], workloads: [
+      { namespace: "ns", kind: "Deployment", name: "app", status: "healthy" },
+    ], livePods: [{ namespace: "database", name: "narwhal-db-1", ownerNames: ["narwhal-db"], status }] })
+    vi.stubGlobal("fetch", vi.fn(async () => Response.json({ status: "success", data: { result: [{
+      metric: { source_workload: "app", destination_workload: name, destination_workload_namespace: namespace ?? "" }, value: [1, "2"],
+    }] } })))
+    const graph = await getServiceGraph("1h")
+    expect(graph.hiddenOneOffCount).toBe(namespace === "other" ? 1 : 0)
+    expect(graph.nodes.find((n) => n.id === `unmapped-pods:${name}`)?.status).toBe(namespace === "other" ? undefined : status)
+  })
+  it("uses worst live pod health before ArgoCD, but after controller health", async () => {
+    const snapshot = { complete: true, hidden: [], workloads: [], livePods: [
+      { namespace: "ns", name: "app-1", ownerNames: ["app"], status: "healthy" as const },
+      { namespace: "ns", name: "app-2", ownerNames: ["app"], status: "down" as const },
+      { namespace: "ns", name: "worker", ownerNames: [], status: "healthy" as const },
+    ] }
+    vi.mocked(getWorkloadSnapshot).mockResolvedValue(snapshot)
+    expect((await getServiceGraph("1h")).nodes.find((n) => n.id === "app")?.status).toBe("down")
+    vi.mocked(getWorkloadSnapshot).mockResolvedValue({ ...snapshot, workloads: [
+      { namespace: "ns", kind: "Deployment", name: "app", status: "healthy" },
+    ] })
+    expect((await getServiceGraph("1h")).nodes.find((n) => n.id === "app")?.status).toBe("healthy")
+  })
   it("falls back to ArgoCD then unknown when Kubernetes fails", async () => {
     vi.mocked(getWorkloadSnapshot).mockRejectedValue(new Error("403"))
     const graph = await getServiceGraph("1h")

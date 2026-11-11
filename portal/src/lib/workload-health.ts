@@ -7,11 +7,13 @@ export type WorkloadKind = "Deployment" | "StatefulSet" | "DaemonSet"
 interface Resource {
   metadata?: { name?: string; namespace?: string; ownerReferences?: Array<{ kind?: string; name?: string }> }
   spec?: { replicas?: number }
-  status?: { readyReplicas?: number; desiredNumberScheduled?: number; numberReady?: number; phase?: string }
+  status?: { readyReplicas?: number; desiredNumberScheduled?: number; numberReady?: number; phase?: string; conditions?: Array<{ type?: string; status?: string }> }
 }
 export interface WorkloadSnapshot {
   complete: boolean
   workloads: Array<{ namespace: string; kind: WorkloadKind; name: string; status?: WorkloadStatus }>
+  // Optional for callers holding pre-D7 snapshots; cache reads require this field.
+  livePods?: Array<{ namespace: string; name: string; ownerNames: string[]; status: "healthy" | "down" }>
   hidden: Array<{ namespace: string; name: string }>
 }
 
@@ -27,8 +29,8 @@ export function readiness(desired: unknown, ready: unknown): WorkloadStatus | un
 export async function getWorkloadSnapshot(): Promise<WorkloadSnapshot> {
   const key = cacheKeys.architectureWorkloads()
   const cached = await cacheGet<WorkloadSnapshot>(key)
-  if (cached) return cached
-  const snapshot: WorkloadSnapshot = { complete: false, workloads: [], hidden: [] }
+  if (cached && Array.isArray(cached.livePods)) return cached
+  const snapshot: WorkloadSnapshot = { complete: false, workloads: [], livePods: [], hidden: [] }
   const kinds = ["Deployment", "StatefulSet", "DaemonSet"] as const
   const results = await Promise.allSettled([
     ...["deployments", "statefulsets", "daemonsets"].map((resource) => listBounded<Resource>(`/apis/apps/v1/${resource}`)),
@@ -49,6 +51,14 @@ export async function getWorkloadSnapshot(): Promise<WorkloadSnapshot> {
           if (job) for (const owner of owners || []) {
             if (owner?.kind === "Job" && owner.name) snapshot.hidden.push({ namespace, name: owner.name })
           }
+        } else if (["Running", "Pending"].includes(item.status?.phase ?? "")
+          && !owners?.some((owner) => ["ReplicaSet", "StatefulSet", "DaemonSet"].includes(owner?.kind ?? ""))) {
+          // D7 (#646): keep operator/standalone evidence from the existing Pod list.
+          // Cost: small cached identities; escape hatch: controller-owned pods stay omitted.
+          snapshot.livePods!.push({ namespace, name,
+            ownerNames: (owners ?? []).flatMap((owner) => owner?.name ? [owner.name] : []),
+            status: item.status?.conditions?.some((condition) => condition.type === "Ready" && condition.status === "True") ? "healthy" : "down",
+          })
         }
         continue
       }
@@ -73,4 +83,10 @@ export function workloadStatus(snapshot: WorkloadSnapshot, name: string, namespa
   const matches = snapshot.workloads.filter((w) => w.name === name && (!namespace || w.namespace === namespace) && (!kind || w.kind === kind))
   // Ambiguous namespace-free telemetry must not borrow another service's health.
   return matches.length === 1 ? matches[0].status : undefined
+}
+
+export function livePodStatus(snapshot: WorkloadSnapshot, name: string, namespace?: string) {
+  const matches = (snapshot.livePods ?? []).filter((pod) => (!namespace || pod.namespace === namespace)
+    && (pod.name === name || pod.ownerNames.includes(name)))
+  return matches.some((pod) => pod.status === "down") ? "down" : matches.length ? "healthy" : undefined
 }

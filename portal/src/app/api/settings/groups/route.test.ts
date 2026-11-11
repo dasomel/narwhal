@@ -60,6 +60,7 @@ const user1: KeycloakUser = {
   name: "Alice",
   is_active: true,
   last_login: null,
+  last_login_source: null,
 }
 
 const user2: KeycloakUser = {
@@ -69,6 +70,7 @@ const user2: KeycloakUser = {
   name: "Bob",
   is_active: true,
   last_login: null,
+  last_login_source: null,
 }
 
 const initialGroup: KeycloakGroupDetailed = {

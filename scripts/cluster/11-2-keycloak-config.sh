@@ -83,6 +83,15 @@ else
   echo "  -> realm '${REALM}' already exists, skipping"
 fi
 
+# D-647-EVENTS: retain login history after logout; cost: 30 days of user-event
+# storage. Escape hatch: change this retention here and re-run provisioning.
+# Apply outside realm creation so existing realms converge too; admin events stay unchanged.
+echo "=== Configuring realm user events (30-day retention) ==="
+kc_exec update "realms/${REALM}/events/config" \
+  -s 'eventsEnabled=true' \
+  -s 'eventsExpiration=2592000' \
+  -s 'enabledEventTypes=["LOGIN","LOGIN_ERROR","LOGOUT"]'
+
 echo "=== Updating realm loginTheme/adminTheme to 'narwhal' ==="
 kc_exec update "realms/${REALM}" -s "loginTheme=narwhal" -s "adminTheme=narwhal"
 echo "  -> realm '${REALM}' loginTheme and adminTheme updated to 'narwhal'"

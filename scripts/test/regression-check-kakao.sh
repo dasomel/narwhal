@@ -3354,6 +3354,8 @@ PYEOF'
   # 2026-11-05: the Keycloak login screen and admin console were restyled to match the Portal (login CSS copies the Portal tokens; admin = branding only).
   check R306 "Keycloak login theme mirrors the Portal tokens (globals.css light+dark), login/admin themes extend keycloak.v2, delivered as one directory mount with a checksum roll, 11-2 sets loginTheme+adminTheme on narwhal and master (D-KC-THEME-TOKENS)" \
     python3 scripts/test/lib/check-keycloak-theme.py
+  check R340 "Keycloak retains LOGIN/LOGIN_ERROR/LOGOUT for 30 days on existing realms without changing admin events (#647); 4 mutations caught" \
+    python3 scripts/test/lib/check-keycloak-user-events.py
   check R339 "Keycloak Beluga login: dark contour panel, teal primary, single bilingual copy, left-aligned 400px form, accessible realm, <=900px 120px band and 24px gutters; 16 mutations caught (D-KC-BELUGA)" \
     python3 scripts/test/lib/check-keycloak-login-split.py
   # 2026-11-05: push-to-gitea.sh nested directory paths on existing targets and never deleted removed files.

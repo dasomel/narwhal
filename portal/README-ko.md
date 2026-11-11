@@ -23,6 +23,8 @@
   그리드 (`architecture/`, `templates/`, `tools/`)
 - **Settings** — 사용자, 라우트, 인증서, 정책
 
+사용자 목록의 **최근 로그인**은 Keycloak의 최신 `LOGIN` 이벤트 시각입니다. 이벤트가 없거나 조회에 실패하면 최신 활성 세션 시작을 `세션` 표시와 함께 보여주고, 둘 다 없으면 `기록 없음`으로 표시합니다. 목록은 최대 60초 캐시됩니다. `scripts/cluster/11-2-keycloak-config.sh`는 기존 realm에도 사용자 이벤트(`LOGIN`, `LOGIN_ERROR`, `LOGOUT`)를 30일(2592000초) 보존하도록 설정합니다. 관리자 이벤트 설정은 변경하지 않습니다. 적용 이후 발생한 이벤트만 기록되며, 로그아웃 후에도 보존 기간 내 로그인 기록은 남습니다.
+
 라우트는 `src/app/(dashboard)/` 아래에 위치하며, 이를 지원하는 API 라우트는 `src/app/api/` 아래에 위치합니다.
 
 ## Screenshots

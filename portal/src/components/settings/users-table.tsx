@@ -7,21 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { useT, useLocale } from "@/lib/i18n-client"
 import { DataState } from "@/components/ui/data-state"
-
-interface UserGroup {
-  pk: string
-  name: string
-}
-
-interface User {
-  pk: number
-  username: string
-  email: string
-  name: string
-  is_active: boolean
-  last_login: string | null
-  groups_obj?: UserGroup[]
-}
+import type { KeycloakUser } from "@/lib/keycloak-client"
 
 const groupColors: Record<string, string> = {
   "cluster-admin": "bg-narwhal-danger/15 text-narwhal-danger",
@@ -36,13 +22,13 @@ export function UsersTable() {
   const qc = useQueryClient()
   const t = useT()
   const locale = useLocale()
-  const { data: users, isLoading, isError, refetch } = useQuery<User[]>({
+  const { data: users, isLoading, isError, refetch } = useQuery<KeycloakUser[]>({
     queryKey: ["settings-users"],
     queryFn: () => fetch("/api/settings/users").then((r) => r.json()),
   })
 
   const toggleMutation = useMutation({
-    mutationFn: async ({ pk, isActive }: { pk: number; isActive: boolean }) => {
+    mutationFn: async ({ pk, isActive }: { pk: string; isActive: boolean }) => {
       await fetch(`/api/settings/users/${pk}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -101,6 +87,9 @@ export function UsersTable() {
                 </td>
                 <td className="py-2.5 text-muted-foreground text-xs">
                   {user.last_login ? new Date(user.last_login).toLocaleString(locale === "ko" ? "ko-KR" : "en-US") : t("users.never")}
+                  {user.last_login && user.last_login_source === "session" && (
+                    <span className="ml-1 text-muted-foreground">({t("users.session")})</span>
+                  )}
                 </td>
                 <td className="py-2.5">
                   <Badge className={user.is_active ? "bg-narwhal-success/15 text-narwhal-success" : "bg-muted text-muted-foreground"}>

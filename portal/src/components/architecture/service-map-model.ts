@@ -23,6 +23,7 @@ export function statusColor(status: string): string {
   switch (status) {
     case "healthy":
       return "var(--narwhal-success)"
+    case "down":
     case "degraded":
       return "var(--narwhal-danger)"
     default:
@@ -73,7 +74,7 @@ export function summarizeServices(data: ServiceGraphResponse) {
   return {
     services: data.nodes.length,
     healthy: data.nodes.filter((node) => node.status === "healthy").length,
-    degraded: data.nodes.filter((node) => node.status === "degraded").length,
+    degraded: data.nodes.filter((node) => (node.status === "degraded" || node.status === "down")).length,
     namespaces: new Set(data.nodes.map((node) => node.namespace).filter((ns) => ns && ns !== "unknown")).size,
   }
 }

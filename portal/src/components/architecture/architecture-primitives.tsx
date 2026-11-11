@@ -18,8 +18,8 @@ export function SummaryCard({ label, value, icon, sub }: { label: string; value:
 
 export function ServiceStatus({ status, badge = false }: { status: string; badge?: boolean }) {
   const t = useT()
-  const color = status === "healthy" ? "bg-narwhal-success" : status === "degraded" ? "bg-narwhal-danger" : "bg-muted-foreground"
-  const label = status === "healthy" ? t("arch.healthy") : status === "degraded" ? t("arch.degraded") : t("arch.unknown")
+  const color = status === "healthy" ? "bg-narwhal-success" : (status === "degraded" || status === "down") ? "bg-narwhal-danger" : "bg-muted-foreground"
+  const label = status === "healthy" ? t("arch.healthy") : status === "degraded" ? t("arch.degraded") : status === "down" ? t("arch.offline") : t("arch.unknown")
   return <span className={`inline-flex items-center gap-1.5 text-xs ${badge ? "rounded-full border border-border px-2 py-1" : "text-muted-foreground"}`}><span aria-hidden="true" className={`size-2 shrink-0 rounded-full ${color}`} />{label}</span>
 }
 

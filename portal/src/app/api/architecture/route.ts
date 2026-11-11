@@ -2,6 +2,7 @@ import { NextResponse } from "next/server"
 import { auth } from "@/lib/auth"
 import { cacheGet, cacheSet } from "@/lib/valkey"
 import { cacheKeys, cacheTtl } from "@/lib/cache-keys"
+import { getWorkloadSnapshot, workloadStatus, type WorkloadKind } from "@/lib/workload-health"
 import { getArgoApps } from "@/lib/argocd"
 
 export const dynamic = "force-dynamic"
@@ -25,9 +26,6 @@ export interface ArchitectureData {
   edges: ArchEdge[]
 }
 
-// Health source = ArgoCD application health (the cluster's own reconciler), which is
-// authoritative. The previous approach HTTP-pinged external ingress hosts (*.local.narwhal.internal)
-// from inside the pod — those are unreachable in-cluster, so most nodes showed offline/unknown.
 function mapArgoHealth(h?: string): ArchNode["status"] {
   switch (h) {
     case "Healthy":
@@ -43,25 +41,32 @@ function mapArgoHealth(h?: string): ArchNode["status"] {
   }
 }
 
-// Architecture node id -> candidate ArgoCD Application name(s) (first match wins).
+// D3 (#646): explicit workload identities match cluster charts/provisioning. Cost:
+// names track releases; escape hatch: ArgoCD fallback only for existing apps.
+const NODE_WORKLOAD: Record<string, [string, WorkloadKind, string]> = {
+  portal: ["devtools", "Deployment", "narwhal-portal"],
+  keycloak: ["iam", "StatefulSet", "keycloak"],
+  apisix: ["platform-system", "Deployment", "apisix"],
+  argocd: ["devtools", "Deployment", "argocd-server"],
+  gitea: ["devtools", "Deployment", "gitea"],
+  harbor: ["devtools", "Deployment", "harbor-core"],
+  grafana: ["monitoring", "Deployment", "prometheus-stack-grafana"],
+  prometheus: ["monitoring", "StatefulSet", "prometheus-prometheus-stack-kube-prom-prometheus"],
+  alertmanager: ["monitoring", "StatefulSet", "alertmanager-prometheus-stack-kube-prom-alertmanager"],
+  headlamp: ["devtools", "Deployment", "headlamp"],
+  hubble: ["kube-system", "Deployment", "hubble-ui"],
+  openbao: ["storage", "StatefulSet", "openbao"],
+  "velero-ui": ["storage", "Deployment", "velero-ui"],
+  cnpg: ["platform-system", "Deployment", "cnpg-cloudnative-pg"],
+  seaweedfs: ["storage", "StatefulSet", "seaweedfs-master"],
+  istio: ["istio-system", "Deployment", "istiod"],
+  cilium: ["kube-system", "DaemonSet", "cilium"],
+}
 const NODE_APP: Record<string, string[]> = {
-  portal: ["narwhal-portal"],
-  keycloak: ["keycloak"],
-  apisix: ["apisix"],
-  argocd: ["argocd-config"],
-  gitea: ["gitea"],
-  harbor: ["harbor"],
-  grafana: ["prometheus-stack"],
-  prometheus: ["prometheus-stack"],
-  alertmanager: ["prometheus-stack"],
-  headlamp: ["headlamp"],
-  hubble: ["cilium"],
-  openbao: ["openbao"],
-  "velero-ui": ["velero-ui", "velero"],
-  cnpg: ["cnpg", "cloudnative-pg"],
-  seaweedfs: ["seaweedfs"],
-  istio: ["istiod", "istio-base"],
-  cilium: ["cilium"],
+  apisix: ["apisix"], harbor: ["harbor"], grafana: ["prometheus-stack"],
+  prometheus: ["prometheus-stack"], alertmanager: ["prometheus-stack"],
+  headlamp: ["headlamp"], openbao: ["openbao"], "velero-ui": ["velero-ui", "velero"],
+  seaweedfs: ["seaweedfs"], istio: ["istiod", "istio-base"],
 }
 
 const ARCHITECTURE_NODES: Omit<ArchNode, "status" | "responseMs">[] = [
@@ -123,17 +128,18 @@ export async function GET() {
   const cached = await cacheGet<ArchitectureData>(cacheKey)
   if (cached) return NextResponse.json(cached)
 
-  const apps = await getArgoApps()
+  const [apps, snapshot] = await Promise.all([getArgoApps(), getWorkloadSnapshot().catch(() => ({ workloads: [], hidden: [] }))])
   const healthByName = new Map(apps.map((a) => [a.metadata.name, a.status?.health?.status]))
   const argoReachable = apps.length > 0
 
   function resolveStatus(id: string): ArchNode["status"] {
     // "developer" is the human actor (always present).
     if (id === "developer") return "healthy"
-    // k8s = control plane, gitea = the GitOps source ArgoCD pulls from. Neither is an
-    // ArgoCD app; if ArgoCD returned apps then both are serving → healthy.
-    if (id === "k8s" || id === "gitea") return argoReachable ? "healthy" : "unknown"
-    for (const appName of NODE_APP[id] ?? [id]) {
+    if (id === "k8s") return argoReachable ? "healthy" : "unknown"
+    const target = NODE_WORKLOAD[id]
+    const status = target && workloadStatus(snapshot, target[2], target[0], target[1])
+    if (status) return status === "down" ? "offline" : status
+    for (const appName of NODE_APP[id] ?? []) {
       if (healthByName.has(appName)) return mapArgoHealth(healthByName.get(appName))
     }
     return "unknown"

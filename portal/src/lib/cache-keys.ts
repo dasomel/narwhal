@@ -164,6 +164,7 @@ export const cacheKeys = {
   // pre-existing key keeps that as a bare trailing colon rather than collapsing it.
   traces: (service: string) => `traces:${service}`,
   toolsHealth: (role: string) => join("tools", "health", role),
+  architectureWorkloads: () => "architecture:workloads",
   architectureTopology: () => "architecture:topology",
 
   k8sPods: (namespace: string, app: string | undefined) => join("k8s", "pods", namespace, app ?? "all"),
@@ -331,6 +332,16 @@ export const CACHE_NAMESPACES: Record<string, CacheNamespaceSpec> = {
     cachesPartial: false,
     securitySensitive: true,
     note: "Tool visibility/health differs by role — role must stay in the key.",
+  },
+  "architecture:workloads": {
+    example: "architecture:workloads",
+    dimensions: [],
+    ttlSeconds: 30,
+    owner: "src/lib/workload-health.ts",
+    invalidation: "TTL only",
+    cachesPartial: false,
+    securitySensitive: false,
+    unscopedReason: { code: "cluster-wide-state", detail: "Cluster-wide workload evidence, same for every authenticated caller." },
   },
   "architecture:topology": {
     example: "architecture:topology",
@@ -1159,6 +1170,7 @@ export const BUILDER_CHECKS: Record<keyof typeof cacheKeys, BuilderCheck> = {
   routesList: { registryKey: "api:routes-list", ttlSeconds: 60, args: [], dimensionArgIndex: {} },
   traces: { registryKey: "traces", ttlSeconds: 15, args: ["svc-1"], dimensionArgIndex: { query: 0 } },
   toolsHealth: { registryKey: "tools:health", ttlSeconds: 30, args: ["role-1"], dimensionArgIndex: { role: 0 } },
+  architectureWorkloads: { registryKey: "architecture:workloads", ttlSeconds: 30, args: [], dimensionArgIndex: {} },
   architectureTopology: { registryKey: "architecture:topology", ttlSeconds: 30, args: [], dimensionArgIndex: {} },
 
   k8sPods: { registryKey: "k8s:pods", ttlSeconds: 10, args: ["ns-1", "app-1"], dimensionArgIndex: { namespace: 0 } },

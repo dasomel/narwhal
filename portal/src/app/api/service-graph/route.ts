@@ -11,7 +11,7 @@ export interface ServiceGraphResponse {
   nodes: Array<{
     id: string
     namespace: string
-    status: "healthy" | "degraded" | "unknown"
+    status: "healthy" | "degraded" | "down" | "unknown"
     scoreTier?: "gold" | "silver" | "bronze" | "none"
   }>
   edges: Array<{
@@ -27,6 +27,7 @@ export interface ServiceGraphResponse {
   namespaces?: string[]
   // requestRate 단위 판별: l7=req/s, l4=bytes/s
   metricKind?: "l7" | "l4" | "hubble" | "mixed"
+  hiddenOneOffCount?: number
   notice?: string
 }
 
@@ -67,6 +68,7 @@ export async function GET(req: NextRequest) {
       generatedAt: result.generatedAt,
       nodes: result.nodes,
       edges: result.edges,
+      hiddenOneOffCount: result.hiddenOneOffCount ?? 0,
       ...(result.namespaces ? { namespaces: result.namespaces } : {}),
       ...(result.metricKind ? { metricKind: result.metricKind } : {}),
       ...(result.notice ? { notice: result.notice } : {}),

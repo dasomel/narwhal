@@ -19,6 +19,13 @@ describe("architecture capacity telemetry", () => {
     expect(renderToStaticMarkup(<CapacityMeter label="CPU" percent={123} capacity="4 CPU" />)).toContain('aria-valuenow="100"')
   })
 
+  it("renders zero-ready workloads as offline", () => {
+    const html = renderToStaticMarkup(<ServiceStatus status="down" />)
+    expect(html).toContain("arch.offline")
+    expect(html).toContain("bg-narwhal-danger")
+    expect(html).not.toContain("arch.unknown")
+  })
+
   it("pairs unknown health with a text label instead of implying healthy", () => {
     const html = renderToStaticMarkup(<ServiceStatus status="unknown" />)
     expect(html).toContain("arch.unknown")

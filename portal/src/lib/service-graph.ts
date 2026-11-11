@@ -4,6 +4,7 @@
  * SERVICE_GRAPH_SOURCE=istio|hubble|both 환경변수로 소스 선택.
  * Prometheus 미응답 시 빈 그래프 + notice를 반환 (graceful degradation).
  */
+import { getWorkloadSnapshot, workloadStatus } from "./workload-health"
 import { cacheGet, cacheSet } from "./valkey"
 import { cacheKeys, cacheTtl } from "./cache-keys"
 import { getArgoApps } from "./argocd"
@@ -35,7 +36,7 @@ export function isAllowedWindow(v: unknown): v is GraphWindow {
 export interface ServiceNode {
   id: string
   namespace: string
-  status: "healthy" | "degraded" | "unknown"
+  status: "healthy" | "degraded" | "down" | "unknown"
   scoreTier?: ScoreTier
 }
 
@@ -60,6 +61,7 @@ export interface ServiceGraphResult {
   namespaces?: string[]
   // requestRate의 단위 판별용: l7=req/s, l4=bytes/s (UI가 단위를 맞춰 표시)
   metricKind?: "l7" | "l4" | "hubble" | "mixed"
+  hiddenOneOffCount?: number
   notice?: string
 }
 
@@ -144,7 +146,7 @@ async function buildNodeStatusMap(): Promise<Map<string, "healthy" | "degraded" 
   const apps = await getArgoApps()
   const map = new Map<string, "healthy" | "degraded" | "unknown">()
   for (const app of apps) {
-    const health = app.status.health.status
+    const health = app.status?.health?.status
     if (health === "Healthy") map.set(app.metadata.name, "healthy")
     else if (health === "Degraded") map.set(app.metadata.name, "degraded")
     else map.set(app.metadata.name, "unknown")
@@ -376,7 +378,10 @@ export async function getServiceGraph(
   const generatedAt = new Date().toISOString()
 
   // 워크로드 → 서비스 매핑, 노드 상태 맵 동시 로드
-  const [serviceMap, statusMap] = await Promise.all([buildWorkloadToServiceMap(), buildNodeStatusMap()])
+  const [serviceMap, statusMap, snapshot] = await Promise.all([
+    buildWorkloadToServiceMap(), buildNodeStatusMap(),
+    getWorkloadSnapshot().catch(() => ({ workloads: [], hidden: [] })),
+  ])
 
   let rawEdges: RawEdge[] | null = null
   let metricKind: "l7" | "l4" | "hubble" | "mixed" = "l7"
@@ -447,7 +452,15 @@ export async function getServiceGraph(
   const nodeNs = new Map<string, string>()
   const edges: ServiceEdge[] = []
 
+  // D4 (#646): hide both Job pod names and Job workload aliases from telemetry.
+  // Cost: historical deleted pods cannot be classified; escape hatch: retain unknown
+  // entries rather than guessing from names. Count distinct hidden telemetry entries.
+  const hidden = new Set<string>()
+  const isHidden = (name: string, ns?: string) => snapshot.hidden.some((pod) => pod.name === name && (!ns || pod.namespace === ns))
   for (const e of nsFiltered) {
+    const endpoints = [[e.source, e.sourceNamespace], [e.destination, e.destinationNamespace]] as const
+    for (const [name, ns] of endpoints) if (isHidden(name, ns)) hidden.add(`${ns ?? ""}/${name}`)
+    if (endpoints.some(([name, ns]) => isHidden(name, ns))) continue
     const srcId = resolveWorkload(e.source, serviceMap)
     const dstId = resolveWorkload(e.destination, serviceMap)
 
@@ -473,7 +486,7 @@ export async function getServiceGraph(
     id,
     // 메트릭 라벨 기반 실제 ns. 라벨이 없는 소스(hubble 등)는 "unknown".
     namespace: nodeNs.get(id) ?? "unknown",
-    status: statusMap.get(id) ?? "unknown",
+    status: workloadStatus(snapshot, id.replace(/^unmapped-pods:/, ""), nodeNs.get(id)) ?? statusMap.get(id) ?? "unknown",
   }))
 
   const result: ServiceGraphResult = {
@@ -481,6 +494,7 @@ export async function getServiceGraph(
     generatedAt,
     nodes,
     edges,
+    hiddenOneOffCount: hidden.size,
     namespaces: allNamespaces,
     metricKind,
   }

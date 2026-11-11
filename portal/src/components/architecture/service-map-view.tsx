@@ -189,6 +189,8 @@ export function ServiceMapView({ initialNamespace, focusService }: Props) {
         </div>
       </div>
 
+      {data && (data.hiddenOneOffCount ?? 0) > 0 && <p className="text-xs text-muted-foreground">{t("svcMap.hiddenOneOff", { count: data.hiddenOneOffCount ?? 0 })}</p>}
+
       {/* notice 배너 (Prometheus 미응답 등) */}
       {data?.notice && (
         <div className="rounded border border-narwhal-warning/30 bg-narwhal-warning/10 px-4 py-2 text-xs text-narwhal-warning">

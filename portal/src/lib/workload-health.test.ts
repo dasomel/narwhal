@@ -7,7 +7,7 @@ import { getWorkloadSnapshot, readiness, workloadStatus } from "./workload-healt
 
 beforeEach(() => { vi.resetAllMocks() })
 describe("workload readiness", () => {
-  it.each([[3, 3, "healthy"], [3, 1, "degraded"], [3, 0, "down"], [0, 0, "healthy"],
+  it.each([[3, 3, "healthy"], [3, 1, "degraded"], [3, 0, "down"], [0, 0, undefined], [0, 1, undefined],
     [undefined, 0, undefined], [1, -1, undefined], [1, NaN, undefined], ["1", 1, undefined]])("maps %s/%s to %s", (desired, ready, expected) => {
     expect(readiness(desired, ready)).toBe(expected)
   })
@@ -21,20 +21,36 @@ describe("workload readiness", () => {
     expect(workloadStatus(snapshot, "app", "devtools", "Deployment")).toBe("degraded")
     expect(workloadStatus(snapshot, "app", "devtools", "DaemonSet")).toBe("healthy")
     expect(workloadStatus(snapshot, "app")).toBeUndefined()
+    expect(snapshot.complete).toBe(true)
     expect(snapshot.hidden.map((p) => p.name)).toEqual(["backup-pod", "backup", "completed"])
     expect(listBounded).toHaveBeenCalledTimes(4)
     expect(cacheSet).toHaveBeenCalledWith("architecture:workloads", snapshot, 30)
   })
-  it("returns no evidence on API failure, empty lists or malformed resources", async () => {
+  it("returns no health on API failure, empty lists or malformed resources", async () => {
     vi.mocked(listBounded).mockRejectedValueOnce(new Error("403"))
       .mockResolvedValue({ truncated: false, pages: 1, items: [null, {}, { metadata: { name: "bad", namespace: "ns" }, spec: { replicas: "bad" } }] } as never)
-    expect(await getWorkloadSnapshot()).toEqual({ workloads: [], hidden: [] })
+    const partial = await getWorkloadSnapshot()
+    expect(partial.complete).toBe(false)
+    expect(partial.workloads.every((w) => w.status === undefined)).toBe(true)
     expect(cacheSet).not.toHaveBeenCalled()
     vi.mocked(listBounded).mockResolvedValue({ truncated: false, pages: 1, items: [] })
-    expect(await getWorkloadSnapshot()).toEqual({ workloads: [], hidden: [] })
+    expect(await getWorkloadSnapshot()).toEqual({ complete: true, workloads: [], hidden: [] })
+  })
+  it("marks truncated lists incomplete and does not cache them", async () => {
+    vi.mocked(listBounded).mockResolvedValue({ truncated: false, pages: 1, items: [] })
+      .mockResolvedValueOnce({ truncated: true, pages: 1, items: [] })
+    expect((await getWorkloadSnapshot()).complete).toBe(false)
+    expect(cacheSet).not.toHaveBeenCalled()
+  })
+  it("retains scaled-to-zero controller identity without a serving status", async () => {
+    vi.mocked(listBounded).mockResolvedValue({ truncated: false, pages: 1, items: [] })
+      .mockResolvedValueOnce({ truncated: false, pages: 1, items: [{ metadata: { name: "sleeping", namespace: "ns" }, spec: { replicas: 0 } }] })
+    const snapshot = await getWorkloadSnapshot()
+    expect(snapshot.workloads).toEqual([{ name: "sleeping", namespace: "ns", kind: "Deployment" }])
+    expect(workloadStatus(snapshot, "sleeping", "ns")).toBeUndefined()
   })
   it("serves cached evidence without any cluster list", async () => {
-    const snapshot = { workloads: [], hidden: [] }
+    const snapshot = { complete: true, workloads: [], hidden: [] }
     vi.mocked(cacheGet).mockResolvedValue(snapshot)
     expect(await getWorkloadSnapshot()).toBe(snapshot)
     expect(listBounded).not.toHaveBeenCalled()

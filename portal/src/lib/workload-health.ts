@@ -10,12 +10,13 @@ interface Resource {
   status?: { readyReplicas?: number; desiredNumberScheduled?: number; numberReady?: number; phase?: string }
 }
 export interface WorkloadSnapshot {
-  workloads: Array<{ namespace: string; kind: WorkloadKind; name: string; status: WorkloadStatus }>
+  complete: boolean
+  workloads: Array<{ namespace: string; kind: WorkloadKind; name: string; status?: WorkloadStatus }>
   hidden: Array<{ namespace: string; name: string }>
 }
 
 export function readiness(desired: unknown, ready: unknown): WorkloadStatus | undefined {
-  if (typeof desired !== "number" || !Number.isSafeInteger(desired) || desired < 0
+  if (typeof desired !== "number" || !Number.isSafeInteger(desired) || desired <= 0
     || typeof ready !== "number" || !Number.isSafeInteger(ready) || ready < 0) return undefined
   if (ready >= desired) return "healthy"
   return ready > 0 ? "degraded" : "down"
@@ -27,7 +28,7 @@ export async function getWorkloadSnapshot(): Promise<WorkloadSnapshot> {
   const key = cacheKeys.architectureWorkloads()
   const cached = await cacheGet<WorkloadSnapshot>(key)
   if (cached) return cached
-  const snapshot: WorkloadSnapshot = { workloads: [], hidden: [] }
+  const snapshot: WorkloadSnapshot = { complete: false, workloads: [], hidden: [] }
   const kinds = ["Deployment", "StatefulSet", "DaemonSet"] as const
   const results = await Promise.allSettled([
     ...["deployments", "statefulsets", "daemonsets"].map((resource) => listBounded<Resource>(`/apis/apps/v1/${resource}`)),
@@ -54,12 +55,15 @@ export async function getWorkloadSnapshot(): Promise<WorkloadSnapshot> {
       const daemon = index === 2
       const status = readiness(daemon ? item.status?.desiredNumberScheduled : item.spec?.replicas,
         (daemon ? item.status?.numberReady : item.status?.readyReplicas) ?? 0)
-      if (status) snapshot.workloads.push({ namespace, name, kind: kinds[index], status })
+      // D6 (#646): retain non-serving controller identities to avoid one-off filtering.
+      // Cost: status is optional; escape hatch: existing id/ArgoCD/unknown fallback.
+      snapshot.workloads.push({ namespace, name, kind: kinds[index], ...(status ? { status } : {}) })
     }
   })
   // D2 (#646): preserve the cache contract: partial/failed lists are not cached.
   // Cost: retry during outages; escape hatch: a separately designed failure backoff.
-  if (results.every((result) => result.status === "fulfilled" && !result.value.truncated)) {
+  snapshot.complete = results.every((result) => result.status === "fulfilled" && !result.value.truncated)
+  if (snapshot.complete) {
     await cacheSet(key, snapshot, cacheTtl("architectureWorkloads"))
   }
   return snapshot

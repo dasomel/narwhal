@@ -11,10 +11,10 @@ import { GET } from "./route"
 beforeEach(() => {
   vi.resetAllMocks()
   vi.mocked(getArgoApps).mockResolvedValue([])
-  vi.mocked(getWorkloadSnapshot).mockResolvedValue({ workloads: [], hidden: [] })
+  vi.mocked(getWorkloadSnapshot).mockResolvedValue({ complete: false, workloads: [], hidden: [] })
 })
 it("resolves actual workload identities, including nodes without Argo applications", async () => {
-  vi.mocked(getWorkloadSnapshot).mockResolvedValue({ hidden: [], workloads: [
+  vi.mocked(getWorkloadSnapshot).mockResolvedValue({ complete: false, hidden: [], workloads: [
     { namespace: "devtools", kind: "Deployment", name: "narwhal-portal", status: "healthy" },
     { namespace: "iam", kind: "StatefulSet", name: "keycloak", status: "degraded" },
     { namespace: "devtools", kind: "Deployment", name: "argocd-server", status: "down" },

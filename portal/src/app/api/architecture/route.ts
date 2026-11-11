@@ -128,7 +128,7 @@ export async function GET() {
   const cached = await cacheGet<ArchitectureData>(cacheKey)
   if (cached) return NextResponse.json(cached)
 
-  const [apps, snapshot] = await Promise.all([getArgoApps(), getWorkloadSnapshot().catch(() => ({ workloads: [], hidden: [] }))])
+  const [apps, snapshot] = await Promise.all([getArgoApps(), getWorkloadSnapshot().catch(() => ({ complete: false, workloads: [], hidden: [] }))])
   const healthByName = new Map(apps.map((a) => [a.metadata.name, a.status?.health?.status]))
   const argoReachable = apps.length > 0
 

@@ -456,13 +456,20 @@ export async function getServiceGraph(
   // D4 (#646): retain known Job/completed-pod filtering; infer deleted unmapped
   // one-offs only with complete, nonempty controller evidence and no matching live
   // operator/standalone pod or owner. Cost: 30s staleness; escape hatch: incomplete/
-  // empty snapshots retain unknowns. Live Job pods remain explicitly hidden.
+  // empty snapshots retain unknowns. Namespaced live Job pods remain explicitly hidden.
   const hidden = new Set<string>()
-  const isHidden = (name: string, ns?: string) => snapshot.hidden.some((pod) => pod.name === name && (!ns || pod.namespace === ns))
-    || (snapshot.complete && snapshot.workloads.length > 0
-      && resolveWorkload(name, serviceMap) === `unmapped-pods:${name}`
-      && !snapshot.workloads.some((w) => w.name === name && (!ns || w.namespace === ns))
-      && !livePodStatus(snapshot, name, ns))
+  const isHidden = (name: string, ns?: string) => {
+    // D8: without a namespace, a Job name alone cannot exclude a live service.
+    // Cost: retain ambiguous/partial evidence; escape hatch: namespace-labelled telemetry.
+    if (!ns && (!snapshot.complete
+      || snapshot.workloads.some((w) => w.name === name)
+      || livePodStatus(snapshot, name))) return false
+    return snapshot.hidden.some((pod) => pod.name === name && (!ns || pod.namespace === ns))
+      || (snapshot.complete && snapshot.workloads.length > 0
+        && resolveWorkload(name, serviceMap) === `unmapped-pods:${name}`
+        && !snapshot.workloads.some((w) => w.name === name && (!ns || w.namespace === ns))
+        && !livePodStatus(snapshot, name, ns))
+  }
   for (const e of nsFiltered) {
     const endpoints = [[e.source, e.sourceNamespace], [e.destination, e.destinationNamespace]] as const
     for (const [name, ns] of endpoints) if (isHidden(name, ns)) hidden.add(`${ns ?? ""}/${name}`)

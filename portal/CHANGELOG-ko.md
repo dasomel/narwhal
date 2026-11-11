@@ -9,6 +9,22 @@
 
 ## [Unreleased]
 
+## [1.1.14] - 2026-11-11
+
+아키텍처 페이지의 잘못된 "알 수 없음" 상태와 일회성 Job 노이즈를 고치고, 설정 사용자 목록에 실제 최근 로그인을
+표시하는 패치 릴리스입니다.
+
+### Fixed
+
+- 아키텍처 페이지와 온보딩 플랫폼 그림에서 IDP Portal, Keycloak, ArgoCD를 포함한 대부분의 서비스가 "알 수 없음"으로
+  표시되었습니다. 상태를 Deployment/StatefulSet/DaemonSet 준비 상태(다음으로 실행 중인 파드 준비 상태)에서 가져오고,
+  ArgoCD 애플리케이션 상태는 폴백으로 사용합니다 (narwhal#646, narwhal#649).
+- 서비스 탭이 일회성 워크로드(백업·유지보수 Job 파드)를 서비스로 나열했습니다. 이제 숨기고, 숨긴 개수를 탭에
+  표시합니다 (narwhal#646, narwhal#649).
+- 설정 사용자 목록에서 로그아웃하면 최근 로그인 값이 사라졌습니다. 이제 가장 최근의 Keycloak LOGIN 이벤트를
+  표시하고("최근 로그인" 컬럼), 이벤트가 없으면 가장 최근 활성 세션 시작 시각으로 대체하며 세션 출처임을 표시합니다.
+  realm 사용자 이벤트가 필요하며, 프로비저닝 스크립트가 30일 보존으로 활성화합니다 (narwhal#647, narwhal#648).
+
 ## [1.1.13] - 2026-11-11
 
 아키텍처 페이지와 온보딩 플랫폼 아키텍처 그림에 대시보드 디자인을 적용하고, 설정 사용자 목록에서 권한과 마지막 로그인이
@@ -711,7 +727,8 @@ Portal의 첫 번째 공개 릴리스.
     매니페스트(`deploy/kaniko-build-job.yaml`).
   - 실시간 핫 모듈 교체(HMR) 및 컨테이너 파일 동기화를 위해 구성된 Skaffold 개발 프로필.
 
-[Unreleased]: https://github.com/dasomel/narwhal/compare/portal/v1.1.13...HEAD
+[Unreleased]: https://github.com/dasomel/narwhal/compare/portal/v1.1.14...HEAD
+[1.1.14]: https://github.com/dasomel/narwhal/compare/portal/v1.1.13...portal/v1.1.14
 [1.1.13]: https://github.com/dasomel/narwhal/compare/portal/v1.1.12...portal/v1.1.13
 [1.1.12]: https://github.com/dasomel/narwhal/compare/portal/v1.1.11...portal/v1.1.12
 [1.1.11]: https://github.com/dasomel/narwhal/compare/portal/v1.1.10...portal/v1.1.11

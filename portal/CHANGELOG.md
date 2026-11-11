@@ -9,6 +9,22 @@ English | [한국어](CHANGELOG-ko.md)
 
 ## [Unreleased]
 
+## [1.1.14] - 2026-11-11
+
+Patch release that fixes wrong "unknown" statuses and one-off Job noise on the Architecture page, and shows the
+real last login in the Settings user list.
+
+### Fixed
+
+- Architecture page and onboarding platform figure showed "unknown" for most services, including IDP Portal,
+  Keycloak and ArgoCD. Status now comes from Deployment/StatefulSet/DaemonSet readiness (then live pod readiness),
+  with ArgoCD application health as the fallback (narwhal#646, narwhal#649).
+- Services tab listed one-off workloads (backup and maintenance Job pods) as services. They are hidden, and the
+  number hidden is shown on the tab (narwhal#646, narwhal#649).
+- Settings user list lost the last login after logout. It now shows the newest Keycloak LOGIN event (column
+  "Last Login"), falling back to the newest active session start, which is marked as session-sourced. This needs
+  realm user events, which the provisioning script now enables with 30-day retention (narwhal#647, narwhal#648).
+
 ## [1.1.13] - 2026-11-11
 
 Patch release that applies the dashboard design language to the Architecture page and the onboarding platform
@@ -753,7 +769,8 @@ management dashboard built with Next.js 16 and React 19.
   - Skaffold development profile configured for live Hot Module Replacement (HMR) and container
     file syncing.
 
-[Unreleased]: https://github.com/dasomel/narwhal/compare/portal/v1.1.13...HEAD
+[Unreleased]: https://github.com/dasomel/narwhal/compare/portal/v1.1.14...HEAD
+[1.1.14]: https://github.com/dasomel/narwhal/compare/portal/v1.1.13...portal/v1.1.14
 [1.1.13]: https://github.com/dasomel/narwhal/compare/portal/v1.1.12...portal/v1.1.13
 [1.1.12]: https://github.com/dasomel/narwhal/compare/portal/v1.1.11...portal/v1.1.12
 [1.1.11]: https://github.com/dasomel/narwhal/compare/portal/v1.1.10...portal/v1.1.11

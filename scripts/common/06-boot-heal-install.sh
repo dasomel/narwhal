@@ -120,6 +120,10 @@ SyslogIdentifier=narwhal-cluster-heal
 WantedBy=multi-user.target
 EOF
 
+  # Persist only the single override; default HA service stays unchanged.
+  if [ "${NARWHAL_TOPOLOGY:-ha}" = "single" ]; then
+    sed -i '/^Type=oneshot/a Environment=NARWHAL_TOPOLOGY=single' "${SYSTEMD_DIR}/narwhal-cluster-heal.service"
+  fi
   systemctl daemon-reload
   systemctl enable narwhal-cluster-heal.service
   echo "narwhal-cluster-heal.service enabled"

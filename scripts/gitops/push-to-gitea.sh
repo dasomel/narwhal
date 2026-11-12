@@ -64,6 +64,9 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 # configs/ — so a cloud run, which has to execute where the kubeconfig lives, passes
 # GITOPS_DIR=/home/vagrant/configs/gitops explicitly.
 GITOPS_DIR="${GITOPS_DIR:-${REPO_ROOT}/gitops}"
+# Resolve the local recorded profile; remote/cloud callers can pass it explicitly.
+# shellcheck source=scripts/common/lib-topology.sh
+source "${REPO_ROOT}/scripts/common/lib-topology.sh"
 
 GITEA_NS="devtools"
 GITEA_SVC="gitea-http"
@@ -303,6 +306,7 @@ else
       fi
     done
   fi
+  bash "${REPO_ROOT}/scripts/gitops/apply-topology.sh" "$PWD"
   git add -A
 fi
 

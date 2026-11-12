@@ -125,11 +125,18 @@ cilium_health_gate
 #=========================================
 # During Phase 1, taint was removed so DaemonSets could schedule on master-only cluster.
 # Now that workers are available, re-apply taint to keep platform apps on workers.
-echo "Applying control-plane NoSchedule taint to master nodes..."
-for node in $(kubectl get nodes -l node-role.kubernetes.io/control-plane --no-headers -o custom-columns=NAME:.metadata.name); do
-  kubectl taint nodes "${node}" node-role.kubernetes.io/control-plane:NoSchedule --overwrite 2>/dev/null || true
-done
-echo "Control-plane taint applied. Platform apps will schedule on workers only."
+# D-SINGLE-NODE: retain Phase 1's schedulable control plane when it is the workload node.
+# Cost: workload/control-plane contention; escape hatch: use the default HA topology.
+if [ "${NARWHAL_TOPOLOGY:-ha}" = "single" ]; then
+  echo "Single topology: keeping the control plane schedulable."
+  kubectl taint nodes --all node-role.kubernetes.io/control-plane:NoSchedule- 2>/dev/null || true
+else
+  echo "Applying control-plane NoSchedule taint to master nodes..."
+  for node in $(kubectl get nodes -l node-role.kubernetes.io/control-plane --no-headers -o custom-columns=NAME:.metadata.name); do
+    kubectl taint nodes "${node}" node-role.kubernetes.io/control-plane:NoSchedule --overwrite 2>/dev/null || true
+  done
+  echo "Control-plane taint applied. Platform apps will schedule on workers only."
+fi
 echo ""
 
 # Phase 2 scripts

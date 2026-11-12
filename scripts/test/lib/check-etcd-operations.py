@@ -11,7 +11,7 @@ DOC = "docs/common/etcd-operations.md"
 # Rule tuples: source path, required source text, doc anchor, claim text on that line.
 RULES = {
     "master-default": ("scripts/cluster/02-init-cluster.sh", 'MASTER_COUNT="${MASTER_COUNT:-3}"', "| 토폴로지 |", "MASTER_COUNT` 기본값은 3"),
-    "vagrant-count": ("Vagrantfile", "MASTER_COUNT = 3", "| 토폴로지 |", "MASTER_COUNT` 기본값은 3"),
+    "vagrant-count": ("Vagrantfile", 'MASTER_COUNT = TOPOLOGY == "single" ? 1 : 3', "| 토폴로지 |", "MASTER_COUNT` 기본값은 3"),
     "control-plane-join": ("scripts/cluster/02-join-control-plane.sh", "kubeadm join --control-plane", "| 토폴로지 |", "`kubeadm join --control-plane`"),
     "tls-verification": ("scripts/test/verify-cluster.sh", "--endpoints=https://127.0.0.1:2379", "| TLS/접근 |", "`https://127.0.0.1:2379`"),
     "tls-cert-path": ("scripts/verify/etcd-encryption-check.sh", "--cacert=/etc/kubernetes/pki/etcd/ca.crt", "| TLS/접근 |", "`/etc/kubernetes/pki/etcd/ca.crt`"),

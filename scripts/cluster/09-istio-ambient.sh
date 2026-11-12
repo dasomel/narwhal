@@ -117,6 +117,10 @@ affinity:
           topologyKey: kubernetes.io/hostname
 EOF
 
+if [ "${NARWHAL_TOPOLOGY:-ha}" = single ]; then
+  yq -i '.replicaCount = 1' /tmp/istiod-values.yaml
+fi
+
 helm upgrade --install istiod "$(chart istiod)" \
   --force-conflicts \
   --namespace istio-system \

@@ -215,6 +215,12 @@ authorization:
 readOnlyPort: 0
 EOF
 
+# D-SINGLE-NODE-PODS: all platform pods share one kubelet; default 110 is too small.
+# Cost: higher pod density; escape hatch: ha retains the upstream kubelet default.
+if [ "${NARWHAL_TOPOLOGY:-ha}" = single ]; then
+  yq -i '(select(.kind == "KubeletConfiguration") | .maxPods) = 200' /tmp/kubeadm-config.yaml
+fi
+
 # On cloud the Kakao LB owns the VIP (no local L2 interface binding); leave empty.
 if [ "${PROVIDER:-vagrant}" = "kakao" ]; then
   VIP_INTERFACE=""
@@ -282,7 +288,7 @@ sudo cp -f /etc/kubernetes/admin.conf /root/.kube/config
 
 # Remove control-plane NoSchedule taint so platform apps can run on master
 # During initial provisioning, no workers exist yet. All pods must schedule on master.
-# Workers will handle the workload once they join; master keeps the taint removed for dev env.
+# Phase 2 restores it for HA; single keeps this node schedulable on every provision.
 echo "Removing control-plane NoSchedule taint for dev environment..."
 kubectl taint nodes --all node-role.kubernetes.io/control-plane- 2>/dev/null || true
 

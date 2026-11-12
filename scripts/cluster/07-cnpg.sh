@@ -243,6 +243,8 @@ spec:
         effect: NoSchedule
 EOF
 
+bash /home/vagrant/scripts/gitops/apply-topology.sh --cnpg "${CLUSTER_MANIFEST}"
+
 # Create unified PostgreSQL cluster (retry for webhook readiness)
 CLUSTER_CREATED=false
 for attempt in {1..15}; do
@@ -468,7 +470,7 @@ echo "=========================================="
 echo "PostgreSQL Unified Cluster: narwhal-db"
 echo "=========================================="
 echo "Namespace: database"
-echo "Instances: 2 (HA: 1 primary + 1 replica)"
+echo "Instances: ${SPEC_INSTANCES} (${NARWHAL_TOPOLOGY:-ha} topology)"
 echo "PgBouncer: 1 pooler pod (transaction mode)"
 echo ""
 echo "Databases:"

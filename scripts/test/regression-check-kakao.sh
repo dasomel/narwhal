@@ -3355,6 +3355,8 @@ PYEOF'
   check R306 "Keycloak login theme mirrors the Portal tokens (globals.css light+dark), login/admin themes extend keycloak.v2, delivered as one directory mount with a checksum roll, 11-2 sets loginTheme+adminTheme on narwhal and master (D-KC-THEME-TOKENS)" \
     python3 scripts/test/lib/check-keycloak-theme.py
   # 2026-11-12: show-credentials.sh read Secrets from whatever kubectl context was current.
+  check R342 "Vagrant HA/single definitions, empty/record resolution, sizing, guards and staged GitOps/CNPG/Helm profile execute offline; mutations caught (D-SINGLE-NODE)" \
+    python3 scripts/test/lib/check-single-node-topology.py
   check R341 "show-credentials.sh refuses a non-Narwhal kubectl context (current or --context) before any Secret read, via ClusterIssuer narwhal-ca-issuer, naming the context and how to pass --context/KUBECONFIG; stub-kubectl run, 3 mutations caught (D-CRED-CONTEXT)" \
     python3 scripts/test/lib/check-show-credentials-context-guard.py
   check R340 "Keycloak retains LOGIN/LOGIN_ERROR/LOGOUT for 30 days on existing realms without changing admin events (#647); 4 mutations caught" \
@@ -3462,7 +3464,9 @@ run_runtime() {
 
   local n
   n=$(kubectl get nodes --no-headers 2>/dev/null | awk '$2=="Ready"' | wc -l | tr -d ' ')
-  [ "${n}" = "6" ] && ok T01 "6/6 nodes Ready" || bad T01 "only ${n}/6 nodes Ready"
+  # shellcheck source=scripts/common/lib-topology.sh
+  source scripts/common/lib-topology.sh
+  [ "${n}" = "${TOPOLOGY_NODES}" ] && ok T01 "${n}/${TOPOLOGY_NODES} nodes Ready" || bad T01 "only ${n}/${TOPOLOGY_NODES} nodes Ready"
 
   # containerd 1.7.x + runc 1.3.4 is the AppArmor cascade pairing.
   local cr

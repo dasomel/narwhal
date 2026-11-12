@@ -3354,6 +3354,9 @@ PYEOF'
   # 2026-11-05: the Keycloak login screen and admin console were restyled to match the Portal (login CSS copies the Portal tokens; admin = branding only).
   check R306 "Keycloak login theme mirrors the Portal tokens (globals.css light+dark), login/admin themes extend keycloak.v2, delivered as one directory mount with a checksum roll, 11-2 sets loginTheme+adminTheme on narwhal and master (D-KC-THEME-TOKENS)" \
     python3 scripts/test/lib/check-keycloak-theme.py
+  # 2026-11-12: show-credentials.sh read Secrets from whatever kubectl context was current.
+  check R341 "show-credentials.sh refuses a non-Narwhal kubectl context (current or --context) before any Secret read, via ClusterIssuer narwhal-ca-issuer, naming the context and how to pass --context/KUBECONFIG; stub-kubectl run, 3 mutations caught (D-CRED-CONTEXT)" \
+    python3 scripts/test/lib/check-show-credentials-context-guard.py
   check R340 "Keycloak retains LOGIN/LOGIN_ERROR/LOGOUT for 30 days on existing realms without changing admin events (#647); 4 mutations caught" \
     python3 scripts/test/lib/check-keycloak-user-events.py
   check R339 "Keycloak Beluga login: dark contour panel, teal primary, single bilingual copy, left-aligned 400px form, accessible realm, <=900px 120px band and 24px gutters; 16 mutations caught (D-KC-BELUGA)" \

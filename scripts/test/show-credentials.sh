@@ -91,6 +91,26 @@ if ! kubectl get --raw /readyz >/dev/null 2>&1; then
   exit 1
 fi
 
+# D-CRED-CONTEXT: positively identify a Narwhal cluster before the first Secret
+# read. Without --context this script uses the current kubectl context, and a
+# reachable /readyz only proves *a* cluster answers: on a workstation whose global
+# context is another cluster it would print that cluster's secrets under Narwhal
+# headings. Signal: ClusterIssuer narwhal-ca-issuer, a cluster-scoped object
+# created by 08-1-networking.sh (same name 08-1 and R-checks already rely on), so
+# the probe itself reads no Secret. Cost: one extra API call; a half-provisioned
+# cluster without 08-1 is refused. Escape hatch: none by flag on purpose (a bypass
+# flag is how the wrong cluster gets printed); select the right context instead.
+NARWHAL_CLUSTER_MARKER="clusterissuer/narwhal-ca-issuer"
+if ! kubectl get "${NARWHAL_CLUSTER_MARKER}" >/dev/null 2>&1; then
+  _used="${CONTEXT:-$(command kubectl config current-context 2>/dev/null || true)}"
+  echo ""
+  echo "${YELLOW}Refusing to read Secrets: context '${_used:-<none>}' is not a Narwhal cluster${RESET}"
+  echo "${YELLOW}(${NARWHAL_CLUSTER_MARKER} not found).${RESET}"
+  echo "  Pass the Narwhal context:  $0 --context <narwhal-context>"
+  echo "  or select it first:        KUBECONFIG=<narwhal-kubeconfig> $0"
+  exit 1
+fi
+
 # -----------------------------------------------------------------------------
 section "Keycloak (IAM) — https://keycloak.${DOMAIN}"
 # -----------------------------------------------------------------------------

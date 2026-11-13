@@ -1,0 +1,68 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-portal-pin-1-1-15-20261114",
+  "task": "Pin the published Portal 1.1.15 image and matching air-gap digest; no runtime rollout is claimed by this trace.",
+  "changeContext": {
+    "paths": [
+      "gitops/charts/narwhal-platform/templates/narwhal-portal-k8s.yaml",
+      "gitops/README.md",
+      "gitops/README-ko.md",
+      "scripts/airgap/images.txt",
+      "scripts/airgap/lib/image-digests.tsv",
+      "VERSIONS.md",
+      "SECURITY.md",
+      "docs/common/compatibility-matrix.md",
+      "CHANGELOG.md",
+      "CHANGELOG-ko.md",
+      ".agents/evals/traces/2026-11-portal-pin-1.1.15.json",
+      "portal/src/data/oss-versions.generated.json"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Codex gpt-6-luna prepared the pin; the continuation lane verified registry metadata and completed the trace. Only version references, generated version data and changelog prose change; no RBAC or deployment structure change."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "Portal release portal/v1.1.15 is published at 66c4e869a5260c7ad28e07fe2d95b56ef109fe7d. crane resolves the index digest, linux amd64 and arm64 manifests exist, and cosign verifies using the repository public key. Local Vagrant nodes pull GHCR directly; air-gapped clusters must mirror by digest before rollout.",
+      "evidence": [
+        "test:crane digest ghcr.io/dasomel/narwhal-portal:1.1.15 -> sha256:88466fb253ff09b4b087bfa132171e6d9bade6ca1d4d792c19fa5d9e5e1c679e",
+        "test:crane manifest ghcr.io/dasomel/narwhal-portal:1.1.15 -> linux/amd64 and linux/arm64",
+        "test:cosign verify --key scripts/airgap/keys/cosign.pub ghcr.io/dasomel/narwhal-portal@sha256:88466fb253ff09b4b087bfa132171e6d9bade6ca1d4d792c19fa5d9e5e1c679e -> exit 0; signature verified"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "Move pin 1.1.14 -> 1.1.15 in GitOps, air-gap inventory and digest, generated OSS versions and accompanying documentation. Portal 1.1.15 preserves ambiguous namespace-less service telemetry (narwhal#653)."
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "Local static pin consistency, YAML validation and regression suite; no runtime rollout.",
+      "summary": "make test passed 458 checks with zero failures and three warnings (no local bundle, two existing policy baselines). make validate, version consistency and generated versions checks passed. ShellCheck passed; make lint failed on eight baseline YAML line-length errors identical on unchanged main.",
+      "evidence": [
+        "test:make test -> passed 458 failed 0 warnings 3; exit 0",
+        "test:make validate -> exit 0",
+        "test:bash scripts/ci/check-version-consistency.sh -> exit 0",
+        "test:node portal/scripts/gen-oss-versions.mjs --check -> in sync"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "completion_claim",
+      "summary": "The 1.1.15 pin and digest match the published signed multi-architecture image. No cluster rollout is claimed; independent review and CI are required before merge."
+    },
+    {
+      "id": "e6",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Static pin change complete; air-gapped bastion mirroring and live application verification remain outside this trace."
+    }
+  ]
+}

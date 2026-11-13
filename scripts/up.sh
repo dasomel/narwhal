@@ -34,14 +34,16 @@ PHASE2_MARKER="/var/lib/narwhal/phase2-complete"
 say() { echo "[$(date '+%Y-%m-%dT%H:%M:%S%z')] $*"; }
 
 MAX_ATTEMPTS="${MAX_ATTEMPTS:-6}"
-EXPECTED_NODES="${EXPECTED_NODES:-6}"
-ALL_VMS="master-1 master-2 master-3 worker-1 worker-2 worker-3"
+# shellcheck source=scripts/common/lib-topology.sh
+source "$(dirname "$0")/common/lib-topology.sh"
+EXPECTED_NODES="${EXPECTED_NODES:-${TOPOLOGY_NODES}}"
 # Seconds to wait between attempts — lets the VMware Fusion SSH key-replacement
 # race settle. Some VMs become SSH-able only a couple of minutes after boot;
 # without this delay the retry budget burns out while they're still racing.
 SETTLE_DELAY="${SETTLE_DELAY:-90}"
 
 cd "$(dirname "$0")/.."
+check_topology_machines
 
 # D-VM-DISK-GUARD: warn-only. Sparse linked-clone vmdks never shrink, so surface a grown VM or a
 # nearly full host before spending a run on it (never aborts: the check itself is advisory).

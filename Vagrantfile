@@ -50,10 +50,36 @@ AIRGAP_REGISTRY = ENV.fetch("AIRGAP_REGISTRY", "192.168.56.1:5001")
 #=========================================
 # Node Configuration
 #=========================================
-MASTER_COUNT = 3
+# D-SINGLE-NODE: the 6-VM fleet reserves 18 vCPU/42GB and starves the local host (#660).
+# Cost: single cannot verify HA/quorum, failover, joins, drain or multi-node scheduling.
+# Escape hatch: destroy the recorded topology before selecting ha.
+# D-SINGLE-NODE-RECORD: bare reload/up must retain the created fleet's topology.
+# Cost: local state; escape hatch: destroy all machines, then select another topology.
+TOPOLOGY_RECORD = File.join(__dir__, ".vagrant/narwhal-topology")
+CREATED_IDS = Dir.glob(File.join(__dir__, ".vagrant/machines/*/*/id")).select { |f| !File.read(f).strip.empty? }
+File.delete(TOPOLOGY_RECORD) if CREATED_IDS.empty? && File.exist?(TOPOLOGY_RECORD)
+RECORDED_TOPOLOGY = File.exist?(TOPOLOGY_RECORD) ? File.read(TOPOLOGY_RECORD).strip : nil
+REQUESTED_TOPOLOGY = ENV["NARWHAL_TOPOLOGY"].to_s
+if !REQUESTED_TOPOLOGY.empty? && RECORDED_TOPOLOGY && REQUESTED_TOPOLOGY != RECORDED_TOPOLOGY
+  abort "REFUSING: requested topology #{REQUESTED_TOPOLOGY}, recorded topology #{RECORDED_TOPOLOGY}. " \
+        "Destroy all machines using the recorded topology, then switch topology."
+end
+TOPOLOGY = REQUESTED_TOPOLOGY.empty? ? (RECORDED_TOPOLOGY || "ha") : REQUESTED_TOPOLOGY
+abort "NARWHAL_TOPOLOGY must be ha or single (got #{TOPOLOGY.inspect})" unless %w[ha single].include?(TOPOLOGY)
+MASTER_COUNT = TOPOLOGY == "single" ? 1 : 3
 MASTER_IP_BASE = "192.168.56.1"  # master-1: .10, master-2: .11, master-3: .12
 WORKER_IP_BASE = "192.168.56.2"  # worker-1: .21, worker-2: .22, worker-3: .23
-WORKER_COUNT = 3
+WORKER_COUNT = TOPOLOGY == "single" ? 0 : 3
+DEFINED_MACHINES = (1..MASTER_COUNT).map { |i| "master-#{i}" } + (1..WORKER_COUNT).map { |i| "worker-#{i}" }
+# D-SINGLE-NODE-GUARD: provider id files mark created machines, unlike leftover empty dirs.
+# Refuse hidden machines; cost: explicit cleanup; escape hatch: select their original topology.
+UNDEFINED_MACHINES = Dir.glob(File.join(__dir__, ".vagrant/machines/*/*/id")).select { |f|
+  !File.read(f).strip.empty?
+}.map { |f| File.basename(File.dirname(File.dirname(f))) }.uniq.sort - DEFINED_MACHINES
+unless UNDEFINED_MACHINES.empty?
+  abort "REFUSING: NARWHAL_TOPOLOGY=#{TOPOLOGY} does not define created machines: #{UNDEFINED_MACHINES.join(', ')}. " \
+        "Destroy them using their original topology or switch topology."
+end
 
 #=========================================
 # kube-vip Configuration
@@ -118,6 +144,10 @@ NFS_DATA_DEVICE = NFS_DISK_GB > 0 ? "auto" : ""
 #=========================================
 # Resource Configuration
 #=========================================
+SINGLE_CPUS = Integer(ENV.fetch("NARWHAL_SINGLE_CPUS", "10"), exception: false)
+SINGLE_MEMORY = Integer(ENV.fetch("NARWHAL_SINGLE_MEMORY_MB", "24576"), exception: false)
+abort "NARWHAL_SINGLE_CPUS must be a positive integer (got #{ENV['NARWHAL_SINGLE_CPUS'].inspect})" unless SINGLE_CPUS && SINGLE_CPUS >= 1
+abort "NARWHAL_SINGLE_MEMORY_MB must be a positive integer (got #{ENV['NARWHAL_SINGLE_MEMORY_MB'].inspect})" unless SINGLE_MEMORY && SINGLE_MEMORY >= 1
 MASTER_CPUS = 2
 MASTER_MEMORY = 6144    # 6GB - control plane + DaemonSets headroom
 # D-WORKER-CPUS: 2 vCPU workers ran out of CPU *requests* (97-99% requested, ~15% used) once the
@@ -167,6 +197,14 @@ Vagrant.configure("2") do |config|
     trigger.name = "Graceful Kubernetes Shutdown"
     trigger.info = "Stopping kubelet gracefully before VM halt..."
     trigger.run_remote = {inline: "systemctl stop kubelet && sleep 3 || true"}
+  end
+
+  config.trigger.before [:up, :reload] do |trigger|
+    trigger.name = "Record Narwhal topology"
+    trigger.ruby do |_env, _machine|
+      FileUtils.mkdir_p(File.dirname(TOPOLOGY_RECORD))
+      File.write(TOPOLOGY_RECORD, "#{TOPOLOGY}\n")
+    end
   end
 
   # Disable default shared folder
@@ -245,15 +283,15 @@ Vagrant.configure("2") do |config|
 
       master.vm.provider "virtualbox" do |vb|
         vb.name = "#{CLUSTER_NAME}-master-#{i}"
-        vb.cpus = MASTER_CPUS
-        vb.memory = MASTER_MEMORY
+        vb.cpus = TOPOLOGY == "single" ? SINGLE_CPUS : MASTER_CPUS
+        vb.memory = TOPOLOGY == "single" ? SINGLE_MEMORY : MASTER_MEMORY
         vb.linked_clone = true
       end
 
       master.vm.provider "vmware_desktop" do |vmware|
         vmware.vmx["displayName"] = "#{CLUSTER_NAME}-master-#{i}"
-        vmware.vmx["numvcpus"] = MASTER_CPUS
-        vmware.vmx["memsize"] = MASTER_MEMORY
+        vmware.vmx["numvcpus"] = TOPOLOGY == "single" ? SINGLE_CPUS : MASTER_CPUS
+        vmware.vmx["memsize"] = TOPOLOGY == "single" ? SINGLE_MEMORY : MASTER_MEMORY
         vmware.linked_clone = true
         # D-NFS-VMDK-VMX: second disk for the NFS export, master-1 only (the NFS server); see the constants above.
         # Attach is the vmx keys below; the vmdk itself is created by the trigger after this block.
@@ -317,7 +355,8 @@ Vagrant.configure("2") do |config|
         env: { "DOMAIN" => BASE_DOMAIN, "AIRGAP" => AIRGAP, "AIRGAP_REGISTRY" => AIRGAP_REGISTRY }
       master.vm.provision "shell", path: "scripts/common/03-k8s-install.sh",
         env: { "K8S_VERSION" => K8S_VERSION, "K8S_PATCH_VERSION" => K8S_PATCH_VERSION, "DOMAIN" => BASE_DOMAIN, "AIRGAP" => AIRGAP }
-      master.vm.provision "shell", path: "scripts/common/06-boot-heal-install.sh"
+      master.vm.provision "boot-heal", type: "shell", path: "scripts/common/06-boot-heal-install.sh",
+        env: { "NARWHAL_TOPOLOGY" => TOPOLOGY }
 
       # kube-vip (all masters — static pod manifest before kubeadm)
       master.vm.provision "shell", path: "scripts/cluster/00-kube-vip.sh",
@@ -342,6 +381,7 @@ Vagrant.configure("2") do |config|
           env: {
             "VIP_ADDRESS" => VIP_ADDRESS,
             "MASTER_COUNT" => MASTER_COUNT,
+            "NARWHAL_TOPOLOGY" => TOPOLOGY,
             "MASTER_IP_BASE" => MASTER_IP_BASE,
             "POD_NETWORK_CIDR" => POD_NETWORK_CIDR,
             "SERVICE_CIDR" => SERVICE_CIDR,
@@ -349,7 +389,7 @@ Vagrant.configure("2") do |config|
             "K8S_PATCH_VERSION" => K8S_PATCH_VERSION
           }
         master.vm.provision "shell", path: "scripts/cluster/03-cni-install.sh",
-          env: { "MASTER_IP" => VIP_ADDRESS, "DOMAIN" => BASE_DOMAIN }
+          env: { "MASTER_IP" => VIP_ADDRESS, "DOMAIN" => BASE_DOMAIN, "NARWHAL_TOPOLOGY" => TOPOLOGY }
         master.vm.provision "shell", path: "scripts/cluster/04-addons.sh",
           env: {
             "NFS_SERVER_IP" => NFS_SERVER_IP,
@@ -373,6 +413,7 @@ Vagrant.configure("2") do |config|
             "MASTER_IP" => master_ip,
             "MASTER_IP_BASE" => MASTER_IP_BASE,
             "MASTER_COUNT" => MASTER_COUNT,
+            "NARWHAL_TOPOLOGY" => TOPOLOGY,
             "METALLB_IP" => "192.168.56.200",
             "DOMAIN" => BASE_DOMAIN
           }
@@ -441,7 +482,8 @@ Vagrant.configure("2") do |config|
         env: { "DOMAIN" => BASE_DOMAIN, "AIRGAP" => AIRGAP, "AIRGAP_REGISTRY" => AIRGAP_REGISTRY }
       worker.vm.provision "shell", path: "scripts/common/03-k8s-install.sh",
         env: { "K8S_VERSION" => K8S_VERSION, "K8S_PATCH_VERSION" => K8S_PATCH_VERSION, "DOMAIN" => BASE_DOMAIN, "AIRGAP" => AIRGAP }
-      worker.vm.provision "shell", path: "scripts/common/06-boot-heal-install.sh"
+      worker.vm.provision "boot-heal", type: "shell", path: "scripts/common/06-boot-heal-install.sh",
+        env: { "NARWHAL_TOPOLOGY" => TOPOLOGY }
 
       # Worker provisioning (join via VIP)
       worker.vm.provision "shell", path: "scripts/cluster/02-join-worker.sh",

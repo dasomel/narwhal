@@ -132,6 +132,7 @@ if [ ! -d /home/vagrant/configs/gitops ]; then
   exit 1
 fi
 cp -r /home/vagrant/configs/gitops/* .
+bash "/home/vagrant/scripts/gitops/apply-topology.sh" "$PWD"
 
 # D-FALCO-045 (2026-10-28): falco is staged on every OS. Until then this block removed
 # charts/narwhal-apps/templates/falco.yaml on Ubuntu 26.04 (kernel 7.0) because Falco 0.39.2
@@ -428,7 +429,7 @@ fi
 
 # Apply unified narwhal-db resource
 if [[ -f "/home/vagrant/configs/gitops/resources/narwhal-db.yaml" ]]; then
-  kubectl apply -f /home/vagrant/configs/gitops/resources/narwhal-db.yaml
+  kubectl apply -f "${PWD}/resources/narwhal-db.yaml"
 else
   echo "WARN: narwhal-db.yaml not found, skipping"
 fi

@@ -22,6 +22,12 @@ run_suite() {
   # Clean up temp dir on exit of run_suite
   trap 'rm -rf "${tmp}"' EXIT
 
+  # The publisher refreshes ArgoCD after a local push: never use the host kubeconfig.
+  mkdir -p "${tmp}/bin"
+  printf '#!/bin/sh\nexit 0\n' > "${tmp}/bin/kubectl"
+  chmod +x "${tmp}/bin/kubectl"
+  local PATH="${tmp}/bin:${PATH}"
+
   local bare="${tmp}/remote.git"
   git init --bare -q --initial-branch=main "${bare}"
 
@@ -144,10 +150,24 @@ run_suite() {
 # Run clean verification against actual script
 run_suite "${SCRIPT}" || fail "suite failed on clean push-to-gitea.sh"
 
+# Mutation copies keep the real dependency paths; a missing helper is not a caught mutation.
+copy_mutant() {
+  cp "${SCRIPT}" "$1"
+  python3 - "$1" "${ROOT}" <<'PYCODE'
+import sys
+from pathlib import Path
+path = Path(sys.argv[1])
+text = path.read_text()
+start = text.index('REPO_ROOT=')
+end = text.index('\n', start)
+path.write_text(text[:start] + 'REPO_ROOT="' + sys.argv[2] + '"' + text[end:])
+PYCODE
+}
+
 # Mutation 1: Bug 1 & 2 regression (reintroduce cp -r without rm -rf)
 mut1="$(mktemp -d)"
 trap 'rm -rf "${mut1}"' EXIT
-cp "${SCRIPT}" "${mut1}/push-to-gitea.sh"
+copy_mutant "${mut1}/push-to-gitea.sh"
 # Replace directory mirror logic with old buggy cp -r
 python3 -c "
 with open('${mut1}/push-to-gitea.sh') as f:
@@ -173,7 +193,7 @@ fi
 # Mutation 2: Remove '..' and absolute path refusal check
 mut2="$(mktemp -d)"
 trap 'rm -rf "${mut1}" "${mut2}"' EXIT
-cp "${SCRIPT}" "${mut2}/push-to-gitea.sh"
+copy_mutant "${mut2}/push-to-gitea.sh"
 python3 -c "
 with open('${mut2}/push-to-gitea.sh') as f:
     s = f.read()
@@ -195,7 +215,7 @@ mut3_note="3 mutations caught"
 if [[ "$("${BASH_BIN}" -c 'echo "${BASH_VERSINFO[0]}"')" -lt 4 ]]; then
   mut3="$(mktemp -d)"
   trap 'rm -rf "${mut1}" "${mut2}" "${mut3}"' EXIT
-  cp "${SCRIPT}" "${mut3}/push-to-gitea.sh"
+  copy_mutant "${mut3}/push-to-gitea.sh"
   python3 -c "
 with open('${mut3}/push-to-gitea.sh') as f:
     s = f.read()

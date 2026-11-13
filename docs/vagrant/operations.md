@@ -1151,3 +1151,94 @@ VM 6대(마스터 3 x 6GB, 워커 3 x 8GB)가 호스트 한 대의 CPU, 메모�
 - [troubleshooting.md](../common/troubleshooting.md) - 트러블슈팅 가이드
 - [../VERSIONS.md](../../VERSIONS.md) - 컴포넌트 버전 관리
 - [../README.md](../../README.md) - 프로젝트 개요
+
+## 17. Single-node local topology (D-SINGLE-NODE)
+
+The default remains `NARWHAL_TOPOLOGY=ha`: three 2-vCPU/6144-MB
+masters and three 4-vCPU/8192-MB workers. Release and HA verification must use it.
+
+For a fresh disposable local cluster:
+
+```bash
+NARWHAL_TOPOLOGY=single ./scripts/up.sh
+# Optional overrides: NARWHAL_SINGLE_CPUS=10 NARWHAL_SINGLE_MEMORY_MB=24576
+```
+
+Only master-1 is defined, with defaults 10 vCPU/24576 MB (the local host budget
+ceiling). Both sizing overrides must be positive integers. Cilium installs one
+operator replica; the single kubelet allows 200 pods instead of the default 110.
+
+`NARWHAL_TOPOLOGY` accepts `ha` or `single`; unset/empty uses
+`.vagrant/narwhal-topology` while nonempty provider `id` files exist, otherwise
+`ha`. The Vagrantfile writes this record before up/reload, so later bare
+`vagrant up` or `vagrant reload` retains single. `scripts/up.sh` resolves the
+same record and exports the result. A contradictory explicit value aborts,
+naming the requested and recorded topology. Created machines absent from the
+selected definition also cause an abort; empty leftover machine directories
+are harmless.
+
+To switch topology, back up data as needed, destroy **all** machines using the
+recorded topology, then run `NARWHAL_TOPOLOGY=ha ./scripts/up.sh` (or `single`).
+After the final provider ID disappears the record is ignored by the shell
+resolver and automatically removed at the next Vagrantfile evaluation.
+Do not delete ID files to bypass the guards. This is a fresh-cluster workflow,
+not an in-place conversion of Kubernetes Nodes or etcd membership.
+
+IPs, the API VIP, MetalLB range, domain and master-1 NFS disk remain unchanged.
+Do not run HA and single fleets concurrently: they share those addresses.
+The existing NFS disk guard still applies; never set
+`NARWHAL_NFS_DISK_GB=0` to bypass topology checks (see section 15).
+kube-vip retains its post-init static Pod and leader election; one member can
+hold the lease, but there is no failover peer. Phase 1 removes the control-plane
+taint as before; Phase 2 keeps it removed only in single. The reboot healer also
+waits for one Ready node instead of the HA threshold of five.
+
+The single workload profile uses the existing GitOps **staged copy** path:
+`scripts/gitops/apply-topology.sh` changes the CNPG bootstrap manifest and the
+copied Gitea tree, never the checked-in HA manifests. CNPG runs one instance;
+cert-manager controller/webhook/cainjector, all four Kyverno controllers and
+istiod run one replica each. Bootstrap and later `push-to-gitea.sh` publications
+apply the same transformation, so reconciliation reads the single settings
+from Git. This is not a temporary live patch. PDBs are retained: istiod,
+cert-manager and chart-generated budgets can block drain of the last Ready pod.
+SeaweedFS keeps its existing master-1 label fallback. Preferred anti-affinity
+and spreads without `minDomains > 1` do not require a second eligible node.
+
+Capacity is an **estimate**, not a measurement of a single boot. Starting from
+the supplied HA measurement (10.4 CPU / 19 GiB requests, 188 pods), subtract only
+manifest-proven savings: one CNPG instance (250m/512Mi), one istiod
+(100m/256Mi), and five copies each of Falco (100m/200Mi) and ztunnel
+(50m/64Mi). This gives a conservative baseline-adjusted **9.30 CPU / 16.96 GiB**;
+it deliberately omits further savings from two control planes, other
+DaemonSets, three cert-manager replicas and five Kyverno replicas. The old
+8-vCPU default cannot cover that estimate. At 10 vCPU/24 GiB, the nominal
+margin is 0.70 CPU / 7.04 GiB before host services and kubelet reservations;
+this does not prove the live scheduler can fit every Pod.
+Offline rendering of the locally available pinned child charts found no
+additional required placement across nodes. No persistent Pending Pod is
+expected from the audited topology constraints after the profile is applied.
+Startup PVC/image/admission waits, insufficient allocatable resources and
+operator-created workloads still need a live boot to check. The chart-only subtotal is not a
+whole-platform total: operator-created Pods, bootstrap-only releases,
+LimitRange defaults, init/upgrade/scan Jobs and actual use can change demand.
+The local pinned child-chart render subtotal is 1.835 CPU / 3.824 GiB across
+44 Pods (one copy per DaemonSet, test hooks excluded); it excludes those sources
+and therefore cannot replace the baseline-adjusted estimate above.
+The 200-pod limit exceeds even the supplied 188-pod HA count; live allocatable
+CPU/memory, Pod count and startup peaks still need checking.
+
+Single can exercise local provisioning and service development. It cannot
+verify HA/etcd quorum, kube-vip failover, control-plane or worker join, drain,
+or multi-node scheduling. The idempotent `boot-heal` provisioner records topology
+in root-owned `/etc/narwhal-topology` (0644). Guest verification, reboot healing,
+Phase 2 and GitOps publication use it when the host record is unavailable; an
+explicit contradictory environment value is refused. No live node-count inference
+is used. To refresh an already-provisioned VM after updating the synced scripts:
+
+```bash
+vagrant provision master-1 --provision-with boot-heal
+vagrant ssh master-1 -c "bash /home/vagrant/scripts/test/verify-cluster.sh"
+```
+
+Static R342 executes the Vagrant DSL, topology resolver, staged GitOps profile
+and Helm rendering without booting; it is not evidence of successful live startup.

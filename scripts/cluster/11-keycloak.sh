@@ -143,9 +143,14 @@ spec:
       key: password
   http:
     httpEnabled: true
+  # D-KC-BOOTSTRAP-ISSUER: same form as the GitOps CR (narwhal-platform keycloak-cr.yaml). A bare
+  # hostname with strict: false let Keycloak take the port from APISIX's X-Forwarded-Port (9443),
+  # so the issuer was ...:9443 until ArgoCD replaced the CR, and 11-3 (which runs before GitOps)
+  # failed closed at the Harbor OIDC ping on every fresh provision.
+  # Cost: pin the public URL at bootstrap; escape hatch: change both CR sources together.
   hostname:
-    hostname: keycloak.${DOMAIN}
-    strict: false
+    hostname: https://keycloak.${DOMAIN}
+    strict: true
   proxy:
     headers: xforwarded
   ingress:

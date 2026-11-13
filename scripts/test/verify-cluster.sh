@@ -14,6 +14,9 @@ set -uo pipefail
 #   PROVIDER=kakao DOMAIN=kakao.narwhal.internal bash scripts/test/verify-cluster.sh
 #   vagrant ssh master-1 -c "bash /home/vagrant/scripts/test/verify-cluster.sh --section nodes"
 
+# shellcheck source=scripts/common/lib-topology.sh
+source "$(dirname "$0")/../common/lib-topology.sh"
+
 QUICK_MODE=false
 SECTION_FILTER=""
 STAGE_FILTER=""
@@ -155,10 +158,10 @@ if should_run "nodes"; then
   READY_COUNT=$(kubectl get nodes --no-headers 2>/dev/null | grep -c " Ready" || true)
   NOTREADY=$(kubectl get nodes --no-headers 2>/dev/null | grep -v " Ready" || echo "")
 
-  if [ "${NODE_COUNT}" -ge 6 ]; then
+  if [ "${NODE_COUNT}" -ge "${TOPOLOGY_NODES}" ]; then
     pass "Node count: ${NODE_COUNT}"
   else
-    fail "Node count: ${NODE_COUNT} (expected >= 6)"
+    fail "Node count: ${NODE_COUNT} (expected >= ${TOPOLOGY_NODES})"
   fi
 
   if [ "${READY_COUNT}" = "${NODE_COUNT}" ]; then
@@ -169,10 +172,10 @@ if should_run "nodes"; then
 
   # Check master nodes have control-plane role
   MASTER_COUNT=$(kubectl get nodes --no-headers 2>/dev/null | grep -c "control-plane" || true)
-  if [ "${MASTER_COUNT}" -ge 3 ]; then
+  if [ "${MASTER_COUNT}" -ge "${TOPOLOGY_MASTERS}" ]; then
     pass "Control plane nodes: ${MASTER_COUNT}"
   else
-    fail "Control plane nodes: ${MASTER_COUNT} (expected >= 3)"
+    fail "Control plane nodes: ${MASTER_COUNT} (expected >= ${TOPOLOGY_MASTERS})"
   fi
 
   # Check control-plane taint (should be NoSchedule after Phase 2)
@@ -182,7 +185,13 @@ if should_run "nodes"; then
       TAINTED_MASTERS=$((TAINTED_MASTERS + 1))
     fi
   done
-  if [ "${TAINTED_MASTERS}" -ge "${MASTER_COUNT}" ]; then
+  if [ "${NARWHAL_TOPOLOGY:-ha}" = "single" ]; then
+    if [ "${TAINTED_MASTERS}" -eq 0 ]; then
+      pass "Single control plane schedulable"
+    else
+      fail "Single control plane has NoSchedule taint"
+    fi
+  elif [ "${TAINTED_MASTERS}" -ge "${MASTER_COUNT}" ]; then
     pass "Control-plane taint: ${TAINTED_MASTERS}/${MASTER_COUNT} masters tainted"
   elif [ "${TAINTED_MASTERS}" -ge 1 ]; then
     warn "Control-plane taint: ${TAINTED_MASTERS}/${MASTER_COUNT} masters tainted"
@@ -199,10 +208,10 @@ if should_run "kube-vip"; then
   echo "--- [2/17] kube-vip & VIP ---"
   if [ "${PROVIDER}" = "vagrant" ]; then
     KVIP_PODS=$(kubectl get pods -n kube-system -l k8s-app=kube-vip --no-headers 2>/dev/null | grep -c "Running" || true)
-    if [ "${KVIP_PODS}" -ge 3 ]; then
+    if [ "${KVIP_PODS}" -ge "${TOPOLOGY_MASTERS}" ]; then
       pass "kube-vip pods: ${KVIP_PODS} Running"
     elif [ "${KVIP_PODS}" -ge 1 ]; then
-      warn "kube-vip pods: ${KVIP_PODS} Running (expected 3 for HA)"
+      warn "kube-vip pods: ${KVIP_PODS} Running (expected ${TOPOLOGY_MASTERS} for ${NARWHAL_TOPOLOGY:-ha})"
     else
       fail "kube-vip pods: ${KVIP_PODS} Running"
     fi
@@ -244,10 +253,10 @@ if should_run "etcd"; then
   else
     ETCD_MEMBERS=0
   fi
-  if [ "${ETCD_MEMBERS}" -ge 3 ]; then
+  if [ "${ETCD_MEMBERS}" -ge "${TOPOLOGY_MASTERS}" ]; then
     pass "etcd members: ${ETCD_MEMBERS}"
   else
-    fail "etcd members: ${ETCD_MEMBERS} (expected >= 3)"
+    fail "etcd members: ${ETCD_MEMBERS} (expected >= ${TOPOLOGY_MASTERS})"
   fi
 
   # etcd health check
@@ -272,7 +281,7 @@ fi
 #=========================================
 if should_run "cilium"; then
   echo "--- [4/17] Cilium CNI ---"
-  check_pods "kube-system" "k8s-app=cilium" 6 "cilium agents"
+  check_pods "kube-system" "k8s-app=cilium" "${TOPOLOGY_NODES}" "cilium agents"
   CILIUM_OP_NAME=$(kubectl get deployment -n kube-system -l app.kubernetes.io/name=cilium-operator -o jsonpath='{.items[0].metadata.name}' 2>/dev/null \
     || kubectl get deployment -n kube-system -l name=cilium-operator -o jsonpath='{.items[0].metadata.name}' 2>/dev/null \
     || echo "cilium-operator")
@@ -653,6 +662,8 @@ if should_run "dns"; then
         else
           fail "Worker DNS (${WORKER_NODE}): keycloak.${DOMAIN} resolution failed"
         fi
+      elif [ "${NARWHAL_TOPOLOGY}" = single ]; then
+        skip "Worker DNS: single topology has no worker node (Pod DNS checked above)"
       else
         warn "Worker DNS: no worker node found, skipping"
       fi
@@ -870,10 +881,10 @@ if should_run "monitoring"; then
 
   # node-exporter DaemonSet
   NE_PODS=$(kubectl get pods -n monitoring -l app.kubernetes.io/name=prometheus-node-exporter --no-headers 2>/dev/null | grep -c "Running" || true)
-  if [ "${NE_PODS}" -ge 6 ]; then
+  if [ "${NE_PODS}" -ge "${TOPOLOGY_NODES}" ]; then
     pass "node-exporter: ${NE_PODS} Running"
   elif [ "${NE_PODS}" -ge 1 ]; then
-    warn "node-exporter: ${NE_PODS} Running (expected >= 6)"
+    warn "node-exporter: ${NE_PODS} Running (expected >= ${TOPOLOGY_NODES})"
   else
     fail "node-exporter: not running"
   fi
@@ -983,10 +994,10 @@ if should_run "platform"; then
 
   # Velero node-agent DaemonSet (namespace: storage, label name=node-agent)
   VELERO_NA=$(kubectl get pods -n storage -l name=node-agent --no-headers 2>/dev/null | grep -c "Running" || true)
-  if [ "${VELERO_NA}" -ge 6 ]; then
+  if [ "${VELERO_NA}" -ge "${TOPOLOGY_NODES}" ]; then
     pass "Velero node-agent: ${VELERO_NA} Running"
   elif [ "${VELERO_NA}" -ge 1 ]; then
-    warn "Velero node-agent: ${VELERO_NA} Running (expected >= 6)"
+    warn "Velero node-agent: ${VELERO_NA} Running (expected >= ${TOPOLOGY_NODES})"
   else
     fail "Velero node-agent: not running"
   fi
@@ -1122,20 +1133,20 @@ if should_run "istio"; then
 
   # istio-cni DaemonSet
   ISTIO_CNI=$(kubectl get pods -n istio-system -l k8s-app=istio-cni-node --no-headers 2>/dev/null | grep -c "Running" || true)
-  if [ "${ISTIO_CNI}" -ge 6 ]; then
+  if [ "${ISTIO_CNI}" -ge "${TOPOLOGY_NODES}" ]; then
     pass "istio-cni: ${ISTIO_CNI} Running"
   elif [ "${ISTIO_CNI}" -ge 1 ]; then
-    warn "istio-cni: ${ISTIO_CNI} Running (expected >= 6)"
+    warn "istio-cni: ${ISTIO_CNI} Running (expected >= ${TOPOLOGY_NODES})"
   else
     fail "istio-cni: not running"
   fi
 
   # ztunnel DaemonSet
   ZTUNNEL=$(kubectl get pods -n istio-system -l app=ztunnel --no-headers 2>/dev/null | grep -c "Running" || true)
-  if [ "${ZTUNNEL}" -ge 6 ]; then
+  if [ "${ZTUNNEL}" -ge "${TOPOLOGY_NODES}" ]; then
     pass "ztunnel: ${ZTUNNEL} Running"
   elif [ "${ZTUNNEL}" -ge 1 ]; then
-    warn "ztunnel: ${ZTUNNEL} Running (expected >= 6)"
+    warn "ztunnel: ${ZTUNNEL} Running (expected >= ${TOPOLOGY_NODES})"
   else
     fail "ztunnel: not running"
   fi

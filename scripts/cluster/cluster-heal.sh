@@ -1,6 +1,9 @@
 #!/bin/bash
 set -euo pipefail
 
+# shellcheck source=scripts/common/lib-topology.sh
+source /home/vagrant/scripts/common/lib-topology.sh
+
 # narwhal-cluster-heal: master-1 cluster-level post-reboot recovery
 # Runs as narwhal-cluster-heal.service (oneshot, master-1 only) on every boot.
 # Best-effort: always exits 0; controllers recreate deleted pods.
@@ -67,17 +70,25 @@ fi
 #=========================================
 # Wait for >= 5 of 6 nodes Ready (bounded)
 #=========================================
-log "Waiting for cluster quorum (>=5/6 nodes Ready, up to 300s)..."
+# D-SINGLE-NODE: avoid a guaranteed five-minute wait on each single-node reboot.
+# Cost: no quorum validation in single; escape hatch: the default HA service environment.
+HEAL_READY=5
+HEAL_NODES=6
+if [ "${NARWHAL_TOPOLOGY:-ha}" = "single" ]; then
+  HEAL_READY=1
+  HEAL_NODES=1
+fi
+log "Waiting for cluster quorum (>=${HEAL_READY}/${HEAL_NODES} nodes Ready, up to 300s)..."
 QUORUM=false
 for i in $(seq 1 30); do
   READY_COUNT=$(kubectl get nodes --no-headers 2>/dev/null \
     | grep -c " Ready " || true)
-  if [[ "${READY_COUNT}" -ge 5 ]]; then
+  if [[ "${READY_COUNT}" -ge "${HEAL_READY}" ]]; then
     QUORUM=true
     log "Quorum reached: ${READY_COUNT} nodes Ready"
     break
   fi
-  log "  attempt ${i}/30 — ${READY_COUNT}/6 nodes Ready, sleeping 10s..."
+  log "  attempt ${i}/30 — ${READY_COUNT}/${HEAL_NODES} nodes Ready, sleeping 10s..."
   sleep 10
 done
 

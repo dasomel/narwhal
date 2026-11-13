@@ -78,7 +78,7 @@ def verify(t):
         assert not (d and d.get("kind") == "Secret"), "narwhal-db.yaml must not own any Secret"
     assert not re.search(r"^\s*(ACCESS_KEY_ID|ACCESS_SECRET_KEY):", t["db"], re.M), "no inline cnpg keys in GitOps"
     assert "get secret cnpg-s3-credentials -n database" in t["s14"] and \
-        t["s14"].index("get secret cnpg-s3-credentials") < t["s14"].index("kubectl apply -f /home/vagrant/configs/gitops/resources/narwhal-db.yaml"), "14 guards the Secret"
+        t["s14"].index("get secret cnpg-s3-credentials") < t["s14"].index('kubectl apply -f "${PWD}/resources/narwhal-db.yaml"'), "14 guards the Secret before applying the staged profile"
     for name in ("loki", "tempo", "sw"):
         assert not re.search(r"(accessKeyId|secretAccessKey|access_key|secret_key):\s*admin\b", t[name]), f"{name} inline admin"
 

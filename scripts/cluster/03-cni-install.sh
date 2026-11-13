@@ -96,8 +96,15 @@ case "${CNI_PLUGIN}" in
       local_chart=$(chart cilium) || return 1
       rm -rf /tmp/cilium-chart && mkdir -p /tmp/cilium-chart
       tar xzf "${local_chart}" -C /tmp/cilium-chart
+      # D-SINGLE-NODE: Cilium operators require distinct hosts; one replica on one node.
+      # Cost: no operator redundancy; escape hatch: HA keeps the chart defaults.
+      local topology_args=()
+      if [ "${NARWHAL_TOPOLOGY:-ha}" = "single" ]; then
+        topology_args=(--set operator.replicas=1)
+      fi
       cilium install --version "${CILIUM_VERSION}" \
       --chart-directory /tmp/cilium-chart/cilium \
+      "${topology_args[@]+"${topology_args[@]}"}" \
       --set kubeProxyReplacement=true \
       --set k8sServiceHost="${K8S_API_SERVER}" \
       --set k8sServicePort=6443 \

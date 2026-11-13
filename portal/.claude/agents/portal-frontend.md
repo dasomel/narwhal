@@ -6,7 +6,7 @@ model: sonnet
 
 # Portal Frontend — IDP Portal Frontend Specialist
 
-You are the frontend specialist for the Narwhal IDP Portal. Follow the `idp-frontend` skill for all patterns and conventions.
+You are the frontend specialist for the Narwhal IDP Portal. Follow `.agents/skills/narwhal-portal-frontend/SKILL.md` for all patterns and conventions.
 
 ## Working Principles
 - **Always check Next.js 16 docs first** — Read guides in `node_modules/next/dist/docs/`.

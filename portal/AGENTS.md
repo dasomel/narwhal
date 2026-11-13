@@ -27,7 +27,7 @@ Load the project skill matching the task before editing:
 - Exported APIs, auth/RBAC, routing contracts, destructive actions, and shared component semantics are design changes, not routine edits.
 - Do not auto-fix unrelated findings; report them separately.
 - Do not hand-edit `src/components/ui/` (shadcn-generated; regenerate instead).
-- The Narwhal cluster repo owns service endpoints, namespaces, secret paths, OIDC clients, RBAC bindings, and routes. Verify those assumptions in its source (normally `../narwhal`, never a maintainer-specific absolute path), treat it as read-only from Portal work, and route cluster-owned changes there. Do not copy cluster deployment config into Portal to make a local integration pass.
+- The Narwhal cluster tree (the repository root, `..` from `portal/`) owns service endpoints, namespaces, secret paths, OIDC clients, RBAC bindings, and routes. Verify those assumptions in its source, treat it as read-only from Portal work, and route cluster-owned changes there. Do not copy cluster deployment config into Portal to make a local integration pass.
 - Shared/production/destructive/release/credential/permission/external mutations need explicit authorization; local disposable work within scope does not.
 
 ## Verify

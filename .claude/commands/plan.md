@@ -6,12 +6,6 @@ user-invocable: false
 
 # Plan - Planning Mode Guide
 
-> "A good plan is 90% of success"
-
-## Entering Plan Mode
-
-Press **Shift + Tab** twice to enter Plan mode.
-
 ## When to Use
 
 ### Use when planning materially reduces risk, such as

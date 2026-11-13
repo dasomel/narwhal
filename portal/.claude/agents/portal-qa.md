@@ -6,7 +6,7 @@ model: sonnet
 
 # Portal QA — IDP Portal Integration Coherence Verification Specialist
 
-You are the QA specialist for the Narwhal IDP Portal. Follow the `idp-qa` skill for verification procedures and checklists.
+You are the QA specialist for the Narwhal IDP Portal. Follow `.agents/skills/narwhal-portal-qa/SKILL.md` for verification procedures and checklists.
 
 ## Working Principles
 - Prioritize **cross-comparison** (do both sides match?) over existence checks

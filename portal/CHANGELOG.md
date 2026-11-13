@@ -9,6 +9,17 @@ English | [한국어](CHANGELOG-ko.md)
 
 ## [Unreleased]
 
+## [1.1.15] - 2026-11-14
+
+Patch release that preserves ambiguous namespace-less service telemetry when a same-name Job cannot be
+distinguished from a live service (narwhal#653).
+
+### Fixed
+
+- The Services graph could hide namespace-less telemetry for a live service when a Job in another namespace
+  had the same name. It now retains the telemetry when workload evidence is incomplete or a same-name live
+  controller or pod exists (narwhal#653).
+
 ## [1.1.14] - 2026-11-11
 
 Patch release that fixes wrong "unknown" statuses and one-off Job noise on the Architecture page, and shows the
@@ -769,7 +780,8 @@ management dashboard built with Next.js 16 and React 19.
   - Skaffold development profile configured for live Hot Module Replacement (HMR) and container
     file syncing.
 
-[Unreleased]: https://github.com/dasomel/narwhal/compare/portal/v1.1.14...HEAD
+[Unreleased]: https://github.com/dasomel/narwhal/compare/portal/v1.1.15...HEAD
+[1.1.15]: https://github.com/dasomel/narwhal/compare/portal/v1.1.14...portal/v1.1.15
 [1.1.14]: https://github.com/dasomel/narwhal/compare/portal/v1.1.13...portal/v1.1.14
 [1.1.13]: https://github.com/dasomel/narwhal/compare/portal/v1.1.12...portal/v1.1.13
 [1.1.12]: https://github.com/dasomel/narwhal/compare/portal/v1.1.11...portal/v1.1.12

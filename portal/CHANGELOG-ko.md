@@ -9,6 +9,17 @@
 
 ## [Unreleased]
 
+## [1.1.15] - 2026-11-14
+
+같은 이름의 Job과 실행 중인 서비스를 구분할 수 없는 경우 네임스페이스 없는 서비스 telemetry를 보존하는 패치 릴리스입니다
+(narwhal#653).
+
+### Fixed
+
+- 다른 네임스페이스의 같은 이름 Job 때문에 실행 중인 서비스의 네임스페이스 없는 telemetry가 서비스 그래프에서 숨겨질 수
+  있었습니다. 워크로드 정보가 불완전하거나 같은 이름의 실행 중인 컨트롤러 또는 파드가 있으면 이제 telemetry를 유지합니다
+  (narwhal#653).
+
 ## [1.1.14] - 2026-11-11
 
 아키텍처 페이지의 잘못된 "알 수 없음" 상태와 일회성 Job 노이즈를 고치고, 설정 사용자 목록에 실제 최근 로그인을
@@ -727,7 +738,8 @@ Portal의 첫 번째 공개 릴리스.
     매니페스트(`deploy/kaniko-build-job.yaml`).
   - 실시간 핫 모듈 교체(HMR) 및 컨테이너 파일 동기화를 위해 구성된 Skaffold 개발 프로필.
 
-[Unreleased]: https://github.com/dasomel/narwhal/compare/portal/v1.1.14...HEAD
+[Unreleased]: https://github.com/dasomel/narwhal/compare/portal/v1.1.15...HEAD
+[1.1.15]: https://github.com/dasomel/narwhal/compare/portal/v1.1.14...portal/v1.1.15
 [1.1.14]: https://github.com/dasomel/narwhal/compare/portal/v1.1.13...portal/v1.1.14
 [1.1.13]: https://github.com/dasomel/narwhal/compare/portal/v1.1.12...portal/v1.1.13
 [1.1.12]: https://github.com/dasomel/narwhal/compare/portal/v1.1.11...portal/v1.1.12

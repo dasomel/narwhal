@@ -230,7 +230,7 @@ Kubernetes 네이티브 정책 엔진으로, 어드미션 시점 및 백그라�
 |---|---|---|
 | `keycloak-cr.yaml` (Keycloak CR + 로그인 테마) | Keycloak Operator (`scripts/cluster/11-keycloak.sh`로 설치) | `iam` |
 
-Keycloak은 플랫폼의 SSO/OIDC 아이덴티티 제공자입니다 — SSO가 연동된 모든 애플리케이션(ArgoCD, Grafana, Harbor, Headlamp, OpenBao, velero-ui, Gitea, Kubernetes API 서버 자체, 그리고 포털)이 이를 통해 인증합니다. 일반 Helm 차트가 아니라 업스트림 Keycloak Operator가 조정(reconcile)하는 `Keycloak` CR로 배포되며, 포털과 통일된 로그인·관리 콘솔 테마(`charts/narwhal-platform/keycloak-theme/`에서 렌더링되는 `keycloak-theme-narwhal`, `keycloak-theme-narwhal-assets` ConfigMap, 한/영 이중언어 메시지)가 디렉터리 하나로 마운트되며, 테마 파일이 바뀌면 Keycloak 파드가 자동으로 롤링됩니다. CPU/메모리 요청은 반드시 `spec.resources`에 있어야 하며(Operator가 `unsupported.podTemplate` 아래의 resources는 무시함), 헬스 프로브 튜닝은 반대로 `unsupported.podTemplate`을 통해 적용됩니다.
+Keycloak은 플랫폼의 SSO/OIDC 아이덴티티 제공자입니다 — SSO가 연동된 모든 애플리케이션(ArgoCD, Grafana, Harbor, Headlamp, OpenBao, velero-ui, Gitea, Kubernetes API 서버 자체, 그리고 포털)이 이를 통해 인증합니다. 일반 Helm 차트가 아니라 업스트림 Keycloak Operator가 조정(reconcile)하는 `Keycloak` CR로 배포되며, split-layout 로그인 테마와 포털에 맞춘 관리 콘솔 테마(`charts/narwhal-platform/keycloak-theme/`에서 렌더링되는 `keycloak-theme-narwhal`, `keycloak-theme-narwhal-assets` ConfigMap, 한/영 이중언어 메시지)가 디렉터리 하나로 마운트되며, 테마 파일이 바뀌면 Keycloak 파드가 자동으로 롤링됩니다 (#621, #639). CPU/메모리 요청은 반드시 `spec.resources`에 있어야 하며(Operator가 `unsupported.podTemplate` 아래의 resources는 무시함), 헬스 프로브 튜닝은 반대로 `unsupported.podTemplate`을 통해 적용됩니다. 포털 서비스 계정은 사용자 로그인 이력 조회를 위해 `realm-management/view-events` 역할을 가집니다 (#652).
 
 ### 레지스트리 및 개발자 UI
 
@@ -255,7 +255,7 @@ Keycloak은 플랫폼의 SSO/OIDC 아이덴티티 제공자입니다 — SSO가 
 |---|---|---|
 | `narwhal-portal-k8s.yaml` (Deployment/Service/RBAC/Valkey) | `ghcr.io/dasomel/narwhal-portal:1.1.15` (공개 GHCR, SemVer 고정) | `devtools` |
 
-Narwhal 관리 포털(Next.js)은 이 IDP 전체를 위한 개발자 대상 UI입니다 — 클러스터 아키텍처 뷰, ArgoCD 앱 상태, 보안/취약점 리포트, 노드 메트릭, 로그/트레이스, 백업 상태, 그리고 컴포넌트 "스코어카드"(ArgoCD 동기화 상태, 이미지 출처, PDB/NetworkPolicy 존재 여부 점검)를 제공합니다. 최소 권한 `ServiceAccount`(클러스터 전역 읽기 전용 RBAC + 자체 셀프서비스 Job을 위한 네임스페이스 한정 Role), 전용 Valkey 캐시 Deployment와 함께 배포되며, 내부 루트 CA가 `NODE_EXTRA_CA_CERTS`로 마운트되어 Keycloak/ArgoCD/OpenBao/K8s API로의 서버측 호출이 클러스터 TLS를 신뢰하도록 되어 있습니다. 이미지 태그는 불변 SemVer 고정 값(`:latest` 아님)이라 ArgoCD가 업그레이드를 실제 매니페스트 diff로 감지할 수 있습니다.
+Narwhal 관리 포털(Next.js)은 이 IDP 전체를 위한 개발자 대상 UI입니다 — 워크로드 준비 상태를 반영하는 클러스터 아키텍처 뷰, ArgoCD 앱 상태, 발화 경보와 cluster-admin 알림 채널 설정, 보안/취약점 리포트, 노드 메트릭, 로그/트레이스, 백업 상태, 그리고 컴포넌트 "스코어카드"(ArgoCD 동기화 상태, 이미지 출처, PDB/NetworkPolicy 존재 여부 점검)를 제공합니다. 최소 권한 `ServiceAccount`(클러스터 전역 읽기 전용 RBAC + 자체 셀프서비스 Job을 위한 네임스페이스 한정 Role), 전용 Valkey 캐시 Deployment와 함께 배포되며, 내부 루트 CA가 `NODE_EXTRA_CA_CERTS`로 마운트되어 Keycloak/ArgoCD/OpenBao/K8s API로의 서버측 호출이 클러스터 TLS를 신뢰하도록 되어 있습니다. 이미지 태그는 불변 SemVer 고정 값(`:latest` 아님)이라 ArgoCD가 업그레이드를 실제 매니페스트 diff로 감지할 수 있습니다.
 
 ---
 

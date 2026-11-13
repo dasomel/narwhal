@@ -13,13 +13,14 @@
 ## Key Features
 
 - **Dashboard** — 클러스터 헬스, ArgoCD 앱 상태, 경고/알림 (`src/app/(dashboard)/page.tsx`)
+- **Alerts** — 발화 경보와 cluster-admin 알림 채널 설정 ([기능 안내](docs/features/notification-channels.md), narwhal#612, #614)
 - **Onboarding** — kubeconfig 발급, 시작 가이드 (`onboarding/`)
 - **Catalog / My Apps** — 배포된 서비스 카탈로그, 사용자별 앱 뷰 (`catalog/`, `my-apps/`)
 - **Nodes** — 클러스터 노드 인벤토리 및 상태 (`nodes/`)
 - **Cost** — 비용 시각화/가시성 (`cost/`)
 - **Compliance / Security / Governance** — 정책, RBAC, 감사(audit) 뷰 (`compliance/`,
   `security/`, `governance/`)
-- **Architecture / Templates / Tools** — 서비스 그래프, 템플릿(scaffolding templates), 플랫폼 도구
+- **Architecture** — 워크로드 준비 상태, 서비스 그래프 및 인프라 뷰 (narwhal#642, #649); **Templates / Tools** — 템플릿(scaffolding templates)과 플랫폼 도구
   그리드 (`architecture/`, `templates/`, `tools/`)
 - **Settings** — 사용자, 라우트, 인증서, 정책
 

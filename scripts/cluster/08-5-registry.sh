@@ -228,10 +228,11 @@ if [ "${HARBOR_HEALTH}" = "200" ]; then
     # Harbor wants upper, lower and a digit in a robot secret; generate_password does not guarantee it.
     SECDB_ROBOT_PW="$(generate_password)Aa1"
   fi
-  if SECDB_ROBOT_OUT=$(HARBOR_API="${HARBOR_API}" HARBOR_REGISTRY="${HARBOR_REGISTRY}" HARBOR_ADMIN_PASS="${HARBOR_ADMIN_PASS}" \
+  SECDB_RC=0
+  SECDB_ROBOT_OUT=$(HARBOR_API="${HARBOR_API}" HARBOR_REGISTRY="${HARBOR_REGISTRY}" HARBOR_ADMIN_PASS="${HARBOR_ADMIN_PASS}" \
       SECDB_KEEP="${SECDB_KEEP}" SECDB_ROBOT_PW="${SECDB_ROBOT_PW}" SECDB_ROBOT_HAS_SECRET="${SECDB_ROBOT_HAS_SECRET}" \
       python3 - <<'PYEOF'
-import base64, json, os, sys, urllib.error, urllib.parse, urllib.request
+import base64, json, os, sys, time, urllib.error, urllib.parse, urllib.request
 
 # D1 (D-SECDB-API-BASE): keep the REST prefix; only token auth uses the origin.
 # Cost: two bases; escape: update both if Harbor changes its API routing.
@@ -244,19 +245,40 @@ KEEP = int(os.environ["SECDB_KEEP"])
 PW = os.environ["SECDB_ROBOT_PW"]
 HAS_SECRET = os.environ["SECDB_ROBOT_HAS_SECRET"] == "1"
 
+# D-SECDB-RETENTION-RETRY: right after helm install, harbor-core answers /systeminfo while
+# jobservice (and its nfs-csi PVC) can still be starting, causing transient 5xx on /retentions
+# and /system/gc/schedule. Retry 5xx (never 4xx) with bounded backoff totaling 180s
+# (5+10+15+30+60+60s, 6 retries / 7 attempts); if retention/GC still fail, keep the robot
+# Secret and warn specifically about retention/GC so Trivy DB auto-refresh is unblocked.
+# Cost: at most 180s backoff per call (540s across retention + GC GET + GC POST),
+# plus network time (30s socket timeout per HTTP attempt); success stops retries early.
+# Escape hatch: export SECDB_RETRY_DELAYS="" to skip retries, re-run 08-5-registry.sh later,
+# or configure retention/GC in the Harbor UI.
+_raw_delays = os.environ.get("SECDB_RETRY_DELAYS")
+RETRY_DELAYS = (5, 10, 15, 30, 60, 60) if _raw_delays is None else tuple(
+    max(0.0, float(x)) for x in _raw_delays.split(",") if x.strip()
+)
 
-def call(method, path, body=None):
+
+def call(method, path, body=None, retry_5xx=False):
     # Errors never echo the request body (it can carry the robot secret).
-    req = urllib.request.Request(
-        API + path, method=method,
-        data=json.dumps(body).encode() if body is not None else None,
-        headers={"Authorization": AUTH, "Content-Type": "application/json"})
-    try:
-        with urllib.request.urlopen(req, timeout=30) as r:
-            raw = r.read()
-            return json.loads(raw) if raw else None
-    except urllib.error.HTTPError as e:
-        raise SystemExit(f"{method} {path}: HTTP {e.code}")
+    delays = RETRY_DELAYS if retry_5xx else ()
+    for attempt in range(len(delays) + 1):
+        req = urllib.request.Request(
+            API + path, method=method,
+            data=json.dumps(body).encode() if body is not None else None,
+            headers={"Authorization": AUTH, "Content-Type": "application/json"})
+        try:
+            with urllib.request.urlopen(req, timeout=30) as r:
+                raw = r.read()
+                return json.loads(raw) if raw else None
+        except urllib.error.HTTPError as e:
+            if 500 <= e.code < 600 and attempt < len(delays):
+                delay = delays[attempt]
+                print(f"{method} {path}: HTTP {e.code}, retrying in {delay:g}s ({attempt + 1}/{len(delays)})", file=sys.stderr)
+                time.sleep(delay)
+                continue
+            raise SystemExit(f"{method} {path}: HTTP {e.code}")
 
 
 project = call("GET", "/projects/" + PROJECT)
@@ -317,41 +339,57 @@ if not secret:
     raise SystemExit("Harbor did not return a robot secret")
 print("ROBOT_SECRET=" + secret)
 print("ROBOT_USER=" + found[0]["name"])
+sys.stdout.flush()
+
+failed = []
 
 # 2. Retention: keep the KEEP most recently pushed artifacts per repository, untagged included.
-policy = {
-    "algorithm": "or",
-    "rules": [{
-        "disabled": False, "action": "retain", "template": "latestPushedK",
-        "params": {"latestPushedK": KEEP},
-        "tag_selectors": [{"kind": "doublestar", "decoration": "matches", "pattern": "**",
-                           "extras": json.dumps({"untagged": True})}],
-        "scope_selectors": {"repository": [{"kind": "doublestar", "decoration": "repoMatches", "pattern": "**"}]},
-    }],
-    "trigger": {"kind": "Schedule", "settings": {"cron": "0 30 3 * * *"}},
-    "scope": {"level": "project", "ref": pid},
-}
-rid = (project.get("metadata") or {}).get("retention_id")
-if rid:
-    call("PUT", f"/retentions/{rid}", policy)
-else:
-    call("POST", "/retentions", policy)
-print(f"RETENTION=keep-{KEEP}")
+try:
+    policy = {
+        "algorithm": "or",
+        "rules": [{
+            "disabled": False, "action": "retain", "template": "latestPushedK",
+            "params": {"latestPushedK": KEEP},
+            "tag_selectors": [{"kind": "doublestar", "decoration": "matches", "pattern": "**",
+                               "extras": json.dumps({"untagged": True})}],
+            "scope_selectors": {"repository": [{"kind": "doublestar", "decoration": "repoMatches", "pattern": "**"}]},
+        }],
+        "trigger": {"kind": "Schedule", "settings": {"cron": "0 30 3 * * *"}},
+        "scope": {"level": "project", "ref": pid},
+    }
+    rid = (project.get("metadata") or {}).get("retention_id")
+    if rid:
+        call("PUT", f"/retentions/{rid}", policy, retry_5xx=True)
+    else:
+        call("POST", "/retentions", policy, retry_5xx=True)
+    print(f"RETENTION=keep-{KEEP}")
+except SystemExit as e:
+    print(f"WARN: retention setup failed: {e}", file=sys.stderr)
+    failed.append("retention")
 
 # 3. GC (system-wide): create a daily schedule only when none exists; never delete_untagged.
-gc = call("GET", "/system/gc/schedule") or {}
-gtype = ((gc.get("schedule") or {}).get("type") or "None")
-if gtype == "None":
-    call("POST", "/system/gc/schedule", {
-        "schedule": {"type": "Custom", "cron": "0 0 5 * * *"},
-        "parameters": {"delete_untagged": False}})
-    print("GC=created")
-else:
-    print("GC=kept-existing-" + gtype)
+try:
+    gc = call("GET", "/system/gc/schedule", retry_5xx=True) or {}
+    gtype = ((gc.get("schedule") or {}).get("type") or "None")
+    if gtype == "None":
+        call("POST", "/system/gc/schedule", {
+            "schedule": {"type": "Custom", "cron": "0 0 5 * * *"},
+            "parameters": {"delete_untagged": False}}, retry_5xx=True)
+        print("GC=created")
+    else:
+        print("GC=kept-existing-" + gtype)
+except SystemExit as e:
+    print(f"WARN: GC setup failed: {e}", file=sys.stderr)
+    failed.append("GC")
+
+if failed:
+    print("FAILED=" + ",".join(failed))
+    raise SystemExit(2)
 PYEOF
-  ); then
-    SECDB_ROBOT_USER=$(printf '%s\n' "${SECDB_ROBOT_OUT}" | sed -n 's/^ROBOT_USER=//p')
-    SECDB_ROBOT_SECRET=$(printf '%s\n' "${SECDB_ROBOT_OUT}" | sed -n 's/^ROBOT_SECRET=//p')
+  ) || SECDB_RC=$?
+  SECDB_ROBOT_USER=$(printf '%s\n' "${SECDB_ROBOT_OUT}" | sed -n 's/^ROBOT_USER=//p')
+  SECDB_ROBOT_SECRET=$(printf '%s\n' "${SECDB_ROBOT_OUT}" | sed -n 's/^ROBOT_SECRET=//p')
+  if [ -n "${SECDB_ROBOT_USER}" ] && [ -n "${SECDB_ROBOT_SECRET}" ]; then
     HARBOR_REGISTRY_VALUE="${HARBOR_REGISTRY}" HARBOR_ROBOT_USER_VALUE="${SECDB_ROBOT_USER}" \
       HARBOR_ROBOT_SECRET_VALUE="${SECDB_ROBOT_SECRET}" python3 - <<'PYEOF' | kubectl apply -f - >/dev/null
 import base64, json, os
@@ -364,11 +402,18 @@ manifest = {"apiVersion":"v1", "kind":"Secret", "metadata":{"name":"trivy-db-ref
 print(json.dumps(manifest))
 PYEOF
     echo "Harbor: trivy-db robot account + Secret security-system/trivy-db-refresh ensured"
-    echo "Harbor: $(printf '%s\n' "${SECDB_ROBOT_OUT}" | grep -E '^(RETENTION|GC)=' | tr '\n' ' ')(project trivy-db)"
+    SECDB_BOUND_SUMMARY=$(printf '%s\n' "${SECDB_ROBOT_OUT}" | grep -E '^(RETENTION|GC)=' | tr '\n' ' ' || true)
+    if [ -n "${SECDB_BOUND_SUMMARY}" ]; then
+      echo "Harbor: ${SECDB_BOUND_SUMMARY}(project trivy-db)"
+    fi
+    if [ "${SECDB_RC}" -ne 0 ]; then
+      SECDB_FAILED=$(printf '%s\n' "${SECDB_ROBOT_OUT}" | sed -n 's/^FAILED=//p')
+      echo "WARN: Harbor trivy-db ${SECDB_FAILED:-retention/GC} setup failed after retries (Secret security-system/trivy-db-refresh was still written); re-run 08-5-registry.sh to converge (D-SECDB-RETENTION-RETRY)"
+    fi
   else
     echo "WARN: Harbor trivy-db robot account / retention / GC setup failed; the in-cluster DB auto refresh cannot push until this is re-run (D-SECDB-AUTO-ROBOT)"
   fi
-  unset SECDB_ROBOT_PW SECDB_ROBOT_OUT SECDB_ROBOT_SECRET
+  unset SECDB_ROBOT_PW SECDB_ROBOT_OUT SECDB_ROBOT_SECRET SECDB_RC SECDB_BOUND_SUMMARY SECDB_FAILED
 
   # D-SECDB-EMPTY-WARN: creating the project does NOT load the DB. Nothing in Phase 2 / up.sh
   # pushes it (push-security-db.sh is the operator-run airgap flow, and a Harbor that was

@@ -66,8 +66,8 @@ Verdict: [APPROVED | NEEDS_FIX | BLOCKED]
 ```
 
 ## Error Handling
-- If shellcheck not installed, attempt installation (`brew install shellcheck`)
-- If yq not installed, warn and fall back to basic parsing
+
+- If shellcheck or yq is not installed, report that check as FAIL (a missing validator is not a skip) and name the missing tool
 - If file inaccessible, mark SKIP and note in report
 
 ## Collaboration

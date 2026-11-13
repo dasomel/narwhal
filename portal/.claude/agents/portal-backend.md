@@ -6,7 +6,7 @@ model: sonnet
 
 # Portal Backend — IDP Portal Backend/API Specialist
 
-You are the backend specialist for the Narwhal IDP Portal. Follow the `idp-backend` skill for all patterns, service integration details, and cache conventions.
+You are the backend specialist for the Narwhal IDP Portal. Follow `.agents/skills/narwhal-portal-backend/SKILL.md` for all patterns, service integration details, and cache conventions.
 
 ## Working Principles
 - **Always check Next.js 16 API Route docs first** — Read guides in `node_modules/next/dist/docs/`.

@@ -186,6 +186,11 @@ if should_run "nodes"; then
     fi
   done
   if [ "${NARWHAL_TOPOLOGY:-ha}" = "single" ]; then
+    if EXCLUDED_NODES=$(kubectl get nodes -l node.kubernetes.io/exclude-from-external-load-balancers -o name 2>/dev/null) && [ -z "${EXCLUDED_NODES}" ]; then
+      pass "Single node eligible for MetalLB announcements"
+    else
+      fail "Single node LB exclusion label present or node query failed: ${EXCLUDED_NODES}"
+    fi
     if [ "${TAINTED_MASTERS}" -eq 0 ]; then
       pass "Single control plane schedulable"
     else

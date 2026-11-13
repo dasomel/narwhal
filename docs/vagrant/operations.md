@@ -1192,6 +1192,9 @@ kube-vip retains its post-init static Pod and leader election; one member can
 hold the lease, but there is no failover peer. Phase 1 removes the control-plane
 taint as before; Phase 2 keeps it removed only in single. The reboot healer also
 waits for one Ready node instead of the HA threshold of five.
+In single, provisioning and reboot healing remove
+`node.kubernetes.io/exclude-from-external-load-balancers` so MetalLB can announce
+the gateway IP to the host; HA retains the control-plane exclusion label.
 
 The single workload profile uses the existing GitOps **staged copy** path:
 `scripts/gitops/apply-topology.sh` changes the CNPG bootstrap manifest and the

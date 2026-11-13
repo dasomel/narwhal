@@ -1,6 +1,9 @@
 #!/bin/bash
 set -euo pipefail
 
+# shellcheck source=scripts/common/lib-topology.sh
+source /home/vagrant/scripts/common/lib-topology.sh
+
 VIP_ADDRESS="${VIP_ADDRESS:-192.168.56.100}"
 MASTER_COUNT="${MASTER_COUNT:-3}"
 MASTER_IP_BASE="${MASTER_IP_BASE:-192.168.56.1}"
@@ -291,6 +294,12 @@ sudo cp -f /etc/kubernetes/admin.conf /root/.kube/config
 # Phase 2 restores it for HA; single keeps this node schedulable on every provision.
 echo "Removing control-plane NoSchedule taint for dev environment..."
 kubectl taint nodes --all node-role.kubernetes.io/control-plane- 2>/dev/null || true
+
+# D-SINGLE-LB-ANNOUNCE: the sole control plane must announce MetalLB IPs to the host.
+# Cost: control-plane LB traffic in single; escape hatch: use HA with worker announcers.
+if [ "${NARWHAL_TOPOLOGY:-ha}" = "single" ]; then
+  kubectl label nodes --all node.kubernetes.io/exclude-from-external-load-balancers-
+fi
 
 # Cloud uses the Kakao LB as the control-plane VIP; kube-vip (L2/ARP) is skipped.
 # The block below (manifest + VIP-reachability wait) only applies to Vagrant.

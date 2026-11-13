@@ -50,6 +50,8 @@ def check(root: Path) -> list[str]:
             errs.append(f"{PUSH}: skopeo call without --authfile (anonymous Harbor access): {c[:60]}")
     if "--dest-tls-verify=false" in push:
         errs.append(f"{PUSH}: disables TLS verification; use --ca-cert (certs.d layout) instead")
+    if 'COPY_CERT=(--dest-cert-dir "${CERTDIR}/${SECDB_REGISTRY}")' not in code:
+        errs.append(f"{PUSH}: copy CA directory must directly contain ca.crt, not the certs.d parent")
     m = re.search(r'^SECDB_REGISTRY="\$\{AIRGAP_SECURITY_DB_REGISTRY:-(.*)\}"$', push, re.M)
     if not m or "svc.cluster.local" in m.group(1) or "${DOMAIN}" not in m.group(1):
         errs.append(f"{PUSH}: default push registry must be harbor.${{DOMAIN}} (https token realm), got {m.group(1) if m else None}")
@@ -98,6 +100,7 @@ def mutate(root: Path, rel: str, old: str, new: str):
 
 def mutation_verify(root: Path) -> int:
     cases = [
+        ("copy CA points at parent", PUSH, '--dest-cert-dir "${CERTDIR}/${SECDB_REGISTRY}"', '--dest-cert-dir "${CERTDIR}"'),
         ("anonymous push", PUSH, '--authfile "${AUTHFILE}"', ""),
         ("copy without authfile", PUSH, 'skopeo copy --authfile "${AUTHFILE}" ', "skopeo copy "),
         ("login without authfile", PUSH, '     --authfile "${AUTHFILE}" -u admin', "     -u admin"),

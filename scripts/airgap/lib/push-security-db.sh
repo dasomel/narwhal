@@ -128,11 +128,12 @@ echo "{}" > "${AUTHFILE}"   # skopeo login rejects a zero-byte authfile
 LOGIN_CERT=(); COPY_CERT=()   # empty-array safe expansions below (macOS bash 3.2 + set -u)
 if [[ -n "${SECDB_CA_CERT}" ]]; then
   [[ -f "${SECDB_CA_CERT}" ]] || { echo "ERROR: --ca-cert ${SECDB_CA_CERT} not found" >&2; exit 1; }
-  # `skopeo copy --dest-cert-dir` wants the certs.d layout <dir>/<host[:port]>/ca.crt, while
-  # `skopeo login --cert-dir` wants the host directory itself.
+  # Both `skopeo login --cert-dir` and `skopeo copy --dest-cert-dir` read *.crt straight from the
+  # directory given; a certs.d parent (<dir>/<host>/ca.crt) is not searched (skopeo 1.24.1, 2026-11-14:
+  # the copy failed "certificate is not trusted" once the CA was not also in the OS trust store).
   mkdir -p "${CERTDIR}/${SECDB_REGISTRY}"
   cp "${SECDB_CA_CERT}" "${CERTDIR}/${SECDB_REGISTRY}/ca.crt"
-  LOGIN_CERT=(--cert-dir "${CERTDIR}/${SECDB_REGISTRY}"); COPY_CERT=(--dest-cert-dir "${CERTDIR}")
+  LOGIN_CERT=(--cert-dir "${CERTDIR}/${SECDB_REGISTRY}"); COPY_CERT=(--dest-cert-dir "${CERTDIR}/${SECDB_REGISTRY}")
 fi
 if ! printf '%s' "${HARBOR_PW}" | skopeo login ${LOGIN_CERT[@]+"${LOGIN_CERT[@]}"} \
      --authfile "${AUTHFILE}" -u admin --password-stdin "${SECDB_REGISTRY}" >/dev/null 2>&1; then

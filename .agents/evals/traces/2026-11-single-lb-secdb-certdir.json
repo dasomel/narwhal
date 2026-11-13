@@ -1,0 +1,52 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-pr-664-single-lb-secdb-certdir-20261114",
+  "task": "While importing the Trivy DBs into the live single-node Vagrant cluster, fix two defects: MetalLB not announcing the LB IP on NARWHAL_TOPOLOGY=single, and push-security-db.sh not honouring --ca-cert for skopeo copy.",
+  "changeContext": {
+    "paths": [
+      ".agents/evals/traces/2026-11-single-lb-secdb-certdir.json",
+      "scripts/airgap/lib/push-security-db.sh",
+      "scripts/cluster/02-init-cluster.sh"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "single-only removal of node.kubernetes.io/exclude-from-external-load-balancers in 02-init-cluster.sh, 06-phase2-start.sh and cluster-heal.sh; one argument in push-security-db.sh; R344, an R303 mutation, a verify-cluster check, operations.md and two lessons-log rows. Left alone: ha behaviour, the host kubeconfig and keychain, the airgap bundle contents (R19, issue #663)."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "Measured on the live single cluster: host ARP for 192.168.56.200 incomplete and https to harbor.local.narwhal.internal timing out while in-guest access worked; the node carried the exclusion label. Separately, push-security-db.sh --ca-cert failed 0/3 with 'certificate is not trusted' at skopeo copy although login succeeded; skopeo inspect trusted the CA with a flat cert dir and not with a certs.d parent (skopeo 1.24.1)."
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "Remove the label when the topology is single (init, Phase 2, heal); pass ${CERTDIR}/${SECDB_REGISTRY} as --dest-cert-dir."
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "Static suite including R344 and R303; the label-removal command and the patched push script run by hand against the live cluster. NOT covered: a fresh single provision with the changed scripts, an ha provision.",
+      "evidence": [
+        "test:make test -> passed 458 failed 0 warnings 3",
+        "test:kubectl label node narwhal-master-1 node.kubernetes.io/exclude-from-external-load-balancers- -> host ARP resolved, Harbor /v2/ 401 from the host",
+        "test:push-security-db.sh --ca-cert with the fix -> Pushed: 3 | Failed: 0"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "completion_claim",
+      "summary": "Both fixes are in the repository and their effect was measured on the live cluster by hand; the provisioning path that applies the label removal automatically is covered only statically."
+    },
+    {
+      "id": "e6",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Complete within the verified scope; independent review pending."
+    }
+  ]
+}

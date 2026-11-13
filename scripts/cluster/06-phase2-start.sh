@@ -131,6 +131,8 @@ cilium_health_gate
 # D-SINGLE-NODE: retain Phase 1's schedulable control plane when it is the workload node.
 # Cost: workload/control-plane contention; escape hatch: use the default HA topology.
 if [ "${NARWHAL_TOPOLOGY:-ha}" = "single" ]; then
+  # D-SINGLE-LB-ANNOUNCE: converge the init policy on Phase 2 re-provision too.
+  kubectl label nodes --all node.kubernetes.io/exclude-from-external-load-balancers-
   echo "Single topology: keeping the control plane schedulable."
   kubectl taint nodes --all node-role.kubernetes.io/control-plane:NoSchedule- 2>/dev/null || true
 else

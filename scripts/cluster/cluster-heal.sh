@@ -67,6 +67,14 @@ if [[ "${API_OK}" == "false" ]]; then
   exit 0
 fi
 
+# D-SINGLE-LB-ANNOUNCE: restore the sole workload/MetalLB node after reboot.
+# Cost: control-plane LB traffic in single; escape hatch: HA with worker announcers.
+if [ "${NARWHAL_TOPOLOGY:-ha}" = "single" ]; then
+  kubectl taint nodes --all node-role.kubernetes.io/control-plane:NoSchedule- 2>/dev/null || true
+  kubectl label nodes --all node.kubernetes.io/exclude-from-external-load-balancers- \
+    || log "WARN: could not restore single-node LoadBalancer announcements"
+fi
+
 #=========================================
 # Wait for >= 5 of 6 nodes Ready (bounded)
 #=========================================

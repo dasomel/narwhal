@@ -355,7 +355,7 @@ Vagrant.configure("2") do |config|
         env: { "DOMAIN" => BASE_DOMAIN, "AIRGAP" => AIRGAP, "AIRGAP_REGISTRY" => AIRGAP_REGISTRY }
       master.vm.provision "shell", path: "scripts/common/03-k8s-install.sh",
         env: { "K8S_VERSION" => K8S_VERSION, "K8S_PATCH_VERSION" => K8S_PATCH_VERSION, "DOMAIN" => BASE_DOMAIN, "AIRGAP" => AIRGAP }
-      master.vm.provision "shell", path: "scripts/common/06-boot-heal-install.sh",
+      master.vm.provision "boot-heal", type: "shell", path: "scripts/common/06-boot-heal-install.sh",
         env: { "NARWHAL_TOPOLOGY" => TOPOLOGY }
 
       # kube-vip (all masters — static pod manifest before kubeadm)
@@ -482,7 +482,8 @@ Vagrant.configure("2") do |config|
         env: { "DOMAIN" => BASE_DOMAIN, "AIRGAP" => AIRGAP, "AIRGAP_REGISTRY" => AIRGAP_REGISTRY }
       worker.vm.provision "shell", path: "scripts/common/03-k8s-install.sh",
         env: { "K8S_VERSION" => K8S_VERSION, "K8S_PATCH_VERSION" => K8S_PATCH_VERSION, "DOMAIN" => BASE_DOMAIN, "AIRGAP" => AIRGAP }
-      worker.vm.provision "shell", path: "scripts/common/06-boot-heal-install.sh"
+      worker.vm.provision "boot-heal", type: "shell", path: "scripts/common/06-boot-heal-install.sh",
+        env: { "NARWHAL_TOPOLOGY" => TOPOLOGY }
 
       # Worker provisioning (join via VIP)
       worker.vm.provision "shell", path: "scripts/cluster/02-join-worker.sh",

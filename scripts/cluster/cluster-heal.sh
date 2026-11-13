@@ -1,6 +1,9 @@
 #!/bin/bash
 set -euo pipefail
 
+# shellcheck source=scripts/common/lib-topology.sh
+source /home/vagrant/scripts/common/lib-topology.sh
+
 # narwhal-cluster-heal: master-1 cluster-level post-reboot recovery
 # Runs as narwhal-cluster-heal.service (oneshot, master-1 only) on every boot.
 # Best-effort: always exits 0; controllers recreate deleted pods.

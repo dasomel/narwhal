@@ -36,7 +36,7 @@ def publication(source, path, tree, target, topology):
         snippet = snippet[:snippet.rfind('\nfi')]
     command(['bash', '-ec', 'PATHS=(); log() { :; }; git() { :; };\n' + snippet],
             cwd=target, env=dict(os.environ, NARWHAL_TOPOLOGY=topology,
-                                 GITOPS_DIR=str(tree), REPO_ROOT=str(ROOT)))
+                                 GITOPS_DIR=str(tree), REPO_ROOT=str(HELPER.parents[2])))
 
 
 def check_publication(compare_head=False):
@@ -70,7 +70,8 @@ def check(helper_source):
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
         helper = root / 'apply-topology.sh'
-        helper.write_text(helper_source)
+        helper.write_text(helper_source.replace('$(dirname "$0")/../common/lib-topology.sh',
+                                                str(HELPER.parent.parent / 'common/lib-topology.sh')))
         tree = root / 'gitops'
         shutil.copytree(ROOT / 'gitops', tree)
         before = {str(p.relative_to(tree)): p.read_bytes() for p in tree.rglob('*') if p.is_file()}
@@ -107,7 +108,7 @@ def check(helper_source):
         assert all((tree / p).read_bytes() == data for p, data in after.items())
 
 
-def main():
+def check_all():
     check_publication(compare_head='--compare-head' in sys.argv)
     # Execute the real kubelet override against a temporary multi-document config.
     init = (ROOT / 'scripts/cluster/02-init-cluster.sh').read_text()
@@ -141,6 +142,25 @@ def main():
     for path in ('scripts/cluster/14-gitops-bootstrap.sh', 'scripts/gitops/push-to-gitea.sh'):
         assert 'apply-topology.sh" "$PWD"' in (ROOT / path).read_text(), path
     print('ok: staged HA bytes unchanged; bootstrap/published single CNPG=1; Helm replicas; 3 mutations caught')
+
+
+def main():
+    # Execute production helper/resolver in a disposable checkout, with no live host IDs.
+    global HELPER
+    original = HELPER
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        HELPER = root / 'scripts/gitops/apply-topology.sh'
+        HELPER.parent.mkdir(parents=True)
+        HELPER.write_text(original.read_text())
+        lib = root / 'scripts/common/lib-topology.sh'
+        lib.parent.mkdir(parents=True)
+        lib.write_text((ROOT / 'scripts/common/lib-topology.sh').read_text().replace(
+            '/etc/narwhal-topology', str(root / 'guest-topology')))
+        try:
+            check_all()
+        finally:
+            HELPER = original
 
 
 if __name__ == '__main__':

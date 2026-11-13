@@ -132,6 +132,8 @@ def check(src):
             provision = next(p for p in node['provisions'] if p.get('path', '').endswith(script))
             assert provision['env'].get('NARWHAL_TOPOLOGY') == 'single'
             assert provision['env']['MASTER_COUNT'] == 1
+        boot = next(p for p in node['provisions'] if p.get('path', '').endswith('06-boot-heal-install.sh'))
+        assert boot['env']['NARWHAL_TOPOLOGY'] == 'single'
         cni = next(p for p in node['provisions'] if p.get('path', '').endswith('03-cni-install.sh'))
         assert cni['env'].get('NARWHAL_TOPOLOGY') == 'single'
         assert node['providers']['vmware_desktop']['nvme0:1.present'] == 'TRUE'
@@ -152,6 +154,68 @@ def check(src):
                 [('worker-1', 'virtualbox', '')])  # empty residual id is not created
     proc = run(src, {'NARWHAL_NFS_DISK_GB': '0'}, nfs=True)
     assert proc.returncode != 0 and 'NFS data disk' in proc.stderr, 'NFS guard weakened'
+
+
+def check_guest(source):
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        lib = root / 'scripts/common/lib-topology.sh'
+        lib.parent.mkdir(parents=True)
+        record = root / 'guest-topology'
+        lib.write_text(source.replace('/etc/narwhal-topology', str(record)))
+        clean = {k: v for k, v in os.environ.items() if k != 'NARWHAL_TOPOLOGY'}
+
+        def shell(code, topology=None):
+            env = dict(clean)
+            if topology is not None:
+                env['NARWHAL_TOPOLOGY'] = topology
+            return subprocess.run(['bash', '-ec', code], env=env, cwd=root,
+                                  capture_output=True, text=True, timeout=10)
+
+        resolve = f'source "{lib}"; printf "%s|%s" "$TOPOLOGY_NODES" "$TOPOLOGY_MASTERS"'
+        assert shell(resolve).stdout == '6|3'
+        for recorded, count in [('single', '1|1'), ('ha', '6|3')]:
+            record.write_text(recorded + '\n')
+            for topology in (None, '', recorded):
+                proc = shell(resolve, topology)
+                assert proc.returncode == 0 and proc.stdout == count, proc.stderr
+            proc = shell(resolve, 'ha' if recorded == 'single' else 'single')
+            assert proc.returncode != 0 and f'recorded topology {recorded}' in proc.stderr
+        record.write_text('invalid\n')
+        assert shell(resolve).returncode != 0
+        record.unlink()
+        # Execute the actual installer prefix twice, without installing units or touching /etc.
+        installer = (ROOT / 'scripts/common/06-boot-heal-install.sh').read_text()
+        prefix = installer.split('echo "=== Boot-Heal Install ==="', 1)[0]
+        prefix = prefix.replace('/home/vagrant/scripts/common/lib-topology.sh', str(lib))
+        prefix = prefix.replace('/etc/narwhal-topology', str(record))
+        for _ in range(2):
+            proc = shell('chown() { printf "%s" "$*"; };\n' + prefix, 'single')
+            assert proc.returncode == 0, proc.stderr
+            assert record.read_text() == 'single\n' and record.stat().st_mode & 0o777 == 0o644
+            assert proc.stdout == f'root:root {record}'
+        assert shell(prefix, 'ha').returncode != 0
+        assert record.read_text() == 'single\n'
+        # Guest entrypoints must resolve before doing work (including installed healer).
+        for name in ('scripts/cluster/cluster-heal.sh', 'scripts/cluster/06-phase2-start.sh',
+                     'scripts/common/06-boot-heal-install.sh', 'scripts/test/verify-cluster.sh',
+                     'scripts/gitops/push-to-gitea.sh', 'scripts/gitops/apply-topology.sh'):
+            source_text = (ROOT / name).read_text()
+            line = next(line for line in source_text.splitlines()
+                        if line.startswith('source ') and 'lib-topology.sh' in line)
+            line = line.replace('/home/vagrant/scripts/common/lib-topology.sh', str(lib))
+            entrypoint = root / name
+            entrypoint.parent.mkdir(parents=True, exist_ok=True)
+            code = f'REPO_ROOT="{root}"; ' + line + '; printf "%s" "$NARWHAL_TOPOLOGY"'
+            proc = subprocess.run(['bash', '-ec', code, str(entrypoint)], env=clean,
+                                  capture_output=True, text=True, timeout=10)
+            assert proc.returncode == 0 and proc.stdout == 'single', (name, proc.stderr)
+        # An active host fleet takes precedence over a guest fallback.
+        path = root / '.vagrant/machines/master-1/virtualbox/id'
+        path.parent.mkdir(parents=True)
+        path.write_text('fake-id')
+        (root / '.vagrant/narwhal-topology').write_text('ha\n')
+        assert shell(resolve).stdout == '6|3'
 
 
 def check_shell():
@@ -200,6 +264,12 @@ def check_shell():
                               env=dict(os.environ, NARWHAL_TOPOLOGY=topology),
                               capture_output=True, text=True, timeout=10)
         assert proc.returncode == 0 and proc.stdout == expected
+    # Keep the driver-prefix check independent of this checkout's live host record.
+    isolated = tempfile.TemporaryDirectory()
+    isolated_lib = Path(isolated.name) / 'scripts/common/lib-topology.sh'
+    isolated_lib.parent.mkdir(parents=True)
+    driver = driver.replace(str(ROOT / 'scripts/common/lib-topology.sh'), str(isolated_lib))
+    isolated_lib.write_text((ROOT / 'scripts/common/lib-topology.sh').read_text())
     phase2 = (ROOT / 'scripts/cluster/06-phase2-start.sh').read_text()
     taint = phase2[phase2.index('# D-SINGLE-NODE:'):phase2.index('# Phase 2 scripts')]
     for topology, expected, count in [('ha', 'master-1 master-2 master-3 worker-1 worker-2 worker-3', '6'),
@@ -215,12 +285,26 @@ def check_shell():
         if topology == 'single':
             assert 'control-plane:NoSchedule-' in proc.stdout
             assert '--overwrite' not in proc.stdout
+    isolated.cleanup()
 
 
 def main():
     src = (ROOT / 'Vagrantfile').read_text()
     check(src)
     check_shell()
+    resolver = (ROOT / 'scripts/common/lib-topology.sh').read_text()
+    check_guest(resolver)
+    for name, old, new in [
+        ('guest-record-read', 'recorded_topology="$(cat /etc/narwhal-topology)"', 'recorded_topology=""'),
+        ('guest-contradiction', '[ "${NARWHAL_TOPOLOGY}" != "${recorded_topology}" ]', 'false'),
+    ]:
+        assert old in resolver, name
+        try:
+            check_guest(resolver.replace(old, new))
+        except AssertionError:
+            continue
+        raise AssertionError(f'mutation survived: {name}')
+    print('ok: guest record resolution, conflicts, installer rerun/mode/owner command; 2 mutations caught')
     mutations = [
         ('empty-ha', 'REQUESTED_TOPOLOGY.empty? ? (RECORDED_TOPOLOGY || "ha")', 'false ? (RECORDED_TOPOLOGY || "ha")'),
         ('record-read', 'File.read(TOPOLOGY_RECORD).strip : nil', '"ha" : nil'),

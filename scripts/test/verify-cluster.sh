@@ -662,6 +662,8 @@ if should_run "dns"; then
         else
           fail "Worker DNS (${WORKER_NODE}): keycloak.${DOMAIN} resolution failed"
         fi
+      elif [ "${NARWHAL_TOPOLOGY}" = single ]; then
+        skip "Worker DNS: single topology has no worker node (Pod DNS checked above)"
       else
         warn "Worker DNS: no worker node found, skipping"
       fi

@@ -1,6 +1,9 @@
 #!/bin/bash
 set -euo pipefail
 
+# shellcheck source=scripts/common/lib-topology.sh
+source /home/vagrant/scripts/common/lib-topology.sh
+
 echo "============================================"
 echo "Phase 2: Platform Apps Installation"
 echo "============================================"
@@ -17,7 +20,7 @@ rm -f "${PHASE2_MARKER}"
 export KUBECONFIG=/home/vagrant/.kube/config-local
 
 # Export MASTER_COUNT for downstream scripts (10-dnsmasq.sh, etc.)
-export MASTER_COUNT="${MASTER_COUNT:-3}"
+export MASTER_COUNT="${MASTER_COUNT:-${TOPOLOGY_MASTERS}}"
 export MASTER_IP_BASE="${MASTER_IP_BASE:-192.168.56.1}"
 
 # Source BASE_DOMAIN from cluster.env if DOMAIN is not already set (e.g. non-Vagrant run).

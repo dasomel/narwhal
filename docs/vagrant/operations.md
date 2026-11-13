@@ -1229,11 +1229,15 @@ CPU/memory, Pod count and startup peaks still need checking.
 
 Single can exercise local provisioning and service development. It cannot
 verify HA/etcd quorum, kube-vip failover, control-plane or worker join, drain,
-or multi-node scheduling. Run verification scripts with the topology explicitly
-inside the guest (host environment is not automatically passed through SSH):
+or multi-node scheduling. The idempotent `boot-heal` provisioner records topology
+in root-owned `/etc/narwhal-topology` (0644). Guest verification, reboot healing,
+Phase 2 and GitOps publication use it when the host record is unavailable; an
+explicit contradictory environment value is refused. No live node-count inference
+is used. To refresh an already-provisioned VM after updating the synced scripts:
 
 ```bash
-vagrant ssh master-1 -c 'NARWHAL_TOPOLOGY=single bash /home/vagrant/scripts/test/verify-cluster.sh'
+vagrant provision master-1 --provision-with boot-heal
+vagrant ssh master-1 -c "bash /home/vagrant/scripts/test/verify-cluster.sh"
 ```
 
 Static R342 executes the Vagrant DSL, topology resolver, staged GitOps profile

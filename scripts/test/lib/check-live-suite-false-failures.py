@@ -277,7 +277,7 @@ harbor_setup = clients_text[harbor_start:clients_text.index('\n    else', harbor
 # pinged the issuer with verification on; a failed ping stops before the PUT and the members.
 check('\\"oidc_verify_cert\\": true' in harbor_setup and 'oidc_verify_cert\\": false' not in harbor_setup,
       'Harbor OIDC PUT enables oidc_verify_cert')
-for ping in ['500', '000']:
+for ping in ['400', '500', '000']:
   setup = f'''set -euo pipefail
 exec 3>&1
 HARBOR_API=http://unused
@@ -292,7 +292,7 @@ curl() {{
 }}
 '''
   result = subprocess.run(['bash', '-c', setup + harbor_setup], text=True, capture_output=True)
-  check(result.returncode != 0 and 'UNEXPECTED' not in result.stdout and 'does not trust' in result.stderr,
+  check(result.returncode != 0 and 'UNEXPECTED' not in result.stdout and f'OIDC ping failed (HTTP {ping}): issuer mismatch or untrusted TLS; see harbor-core logs' in result.stderr,
         f'Harbor OIDC ping={ping} fails before PUT and members')
 for put, mode, member, expected in [('200', 'oidc_auth', '201', True),
                                     ('200', 'oidc_auth', '409', True),

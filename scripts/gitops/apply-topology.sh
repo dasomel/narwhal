@@ -2,6 +2,9 @@
 # Transform only a staged GitOps copy (or a temporary CNPG bootstrap manifest).
 set -euo pipefail
 
+# shellcheck source=scripts/common/lib-topology.sh
+source "$(dirname "$0")/../common/lib-topology.sh"
+
 # D-SINGLE-NODE-GITOPS: persist the profile in the same copied tree Gitea/ArgoCD read.
 # Cost: single loses replica redundancy; escape hatch: rebuild with ha (byte-for-byte no-op).
 # Reuse at bootstrap AND later publication so selfHeal cannot restore the HA replicas.

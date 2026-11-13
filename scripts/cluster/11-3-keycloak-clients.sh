@@ -342,7 +342,7 @@ if [ -n "${HARBOR_ADMIN_PASS}" ]; then
         -H "Content-Type: application/json" \
         -d "{\"url\": \"${ISSUER_URL}\", \"verify_cert\": true}" 2>/dev/null) || HTTP_CODE="000"
       if [ "${HTTP_CODE}" != "200" ]; then
-        echo "ERROR: Harbor core does not trust the Keycloak issuer TLS (ping HTTP ${HTTP_CODE}); check caBundleSecretName/narwhal-ca-cert" >&2
+        echo "ERROR: OIDC ping failed (HTTP ${HTTP_CODE}): issuer mismatch or untrusted TLS; see harbor-core logs" >&2
         exit 1
       fi
       HTTP_CODE=$(curl -sk --max-time 30 -o /dev/null -w '%{http_code}' -u "admin:${HARBOR_ADMIN_PASS}" \

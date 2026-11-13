@@ -3355,6 +3355,8 @@ PYEOF'
   check R306 "Keycloak login theme mirrors the Portal tokens (globals.css light+dark), login/admin themes extend keycloak.v2, delivered as one directory mount with a checksum roll, 11-2 sets loginTheme+adminTheme on narwhal and master (D-KC-THEME-TOKENS)" \
     python3 scripts/test/lib/check-keycloak-theme.py
   # 2026-11-12: show-credentials.sh read Secrets from whatever kubectl context was current.
+  check R343 "Keycloak bootstrap/GitOps canonical hostname and strict agree before OIDC discovery; 2 mutations caught (D-KC-BOOTSTRAP-ISSUER)" \
+    python3 scripts/test/lib/check-keycloak-bootstrap-issuer.py
   check R342 "Vagrant HA/single definitions, empty/record resolution, sizing, guards and staged GitOps/CNPG/Helm profile execute offline; mutations caught (D-SINGLE-NODE)" \
     python3 scripts/test/lib/check-single-node-topology.py
   check R341 "show-credentials.sh refuses a non-Narwhal kubectl context (current or --context) before any Secret read, via ClusterIssuer narwhal-ca-issuer, naming the context and how to pass --context/KUBECONFIG; stub-kubectl run, 3 mutations caught (D-CRED-CONTEXT)" \

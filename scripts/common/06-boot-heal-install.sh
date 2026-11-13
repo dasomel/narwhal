@@ -6,6 +6,14 @@ set -euo pipefail
 # then fire automatically on every subsequent boot.
 # Idempotent: safe to run more than once.
 
+# D-GUEST-TOPOLOGY: persist before installing units, including on re-provision.
+# Cost: a root-owned file; escape hatch: destroy/rebuild with the selected topology.
+# shellcheck source=scripts/common/lib-topology.sh
+source /home/vagrant/scripts/common/lib-topology.sh
+printf '%s\n' "${NARWHAL_TOPOLOGY}" > /etc/narwhal-topology
+chown root:root /etc/narwhal-topology
+chmod 0644 /etc/narwhal-topology
+
 echo "=== Boot-Heal Install ==="
 
 SCRIPTS_DIR="/home/vagrant/scripts"

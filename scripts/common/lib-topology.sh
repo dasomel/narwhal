@@ -13,6 +13,11 @@ recorded_topology=""
 if [ "${topology_created}" = true ] && [ -f "${TOPOLOGY_RECORD}" ]; then
   recorded_topology="$(cat "${TOPOLOGY_RECORD}")"
 fi
+# D-GUEST-TOPOLOGY: SSH/systemd do not inherit the host environment or provider IDs.
+# Cost: one provisioned guest record; escape hatch: rebuild to change topology.
+if [ -z "${recorded_topology}" ] && [ -f /etc/narwhal-topology ]; then
+  recorded_topology="$(cat /etc/narwhal-topology)"
+fi
 if [ -n "${NARWHAL_TOPOLOGY:-}" ] && [ -n "${recorded_topology}" ] && [ "${NARWHAL_TOPOLOGY}" != "${recorded_topology}" ]; then
   echo "REFUSING: requested topology ${NARWHAL_TOPOLOGY}, recorded topology ${recorded_topology}. Destroy all machines using the recorded topology, then switch topology." >&2
   exit 1

@@ -66,6 +66,7 @@ Verdict: [APPROVED | NEEDS_FIX | BLOCKED]
 ```
 
 ## Error Handling
+
 - If shellcheck or yq is not installed, report that check as FAIL (a missing validator is not a skip) and name the missing tool
 - If file inaccessible, mark SKIP and note in report
 

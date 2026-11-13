@@ -26,7 +26,7 @@
 
 ## 3. 활성화 절차
 
-**활성화 기록(로컬 클러스터, 2026-11-10):** 3.1-3.3을 마쳤다. 3.1은 13-2 실행 로그의 `openbao-backup policy written and verified`와 `OpenBao Kubernetes auth role 'openbao-backup' 설정 및 검증 완료`로 확인했고, 3.2는 키 쌍을 클러스터 밖에서 생성해 인증서만 ConfigMap `storage/openbao-backup-recipient`로 적용했다(만료 2036-11-06, 개인키는 소유자가 클러스터 밖에 보관). 3.3은 지문 `6E:DD:44:9F:F9:BB:CA:DE:7E:F6:9A:FF:C4:8B:13:38:46:97:EB:C7:31:6A:25:39:05:9C:23:F3:76:7C:24:A7`을 `RECIPIENT_FPR`로 고정했다. 3.4(배포)와 3.5(첫 수동 Job)는 이 변경 병합 후 수행한다. 알려진 후속(이번에 고치지 않음): 같은 13-2 실행에서 `~/.narwhal/openbao-portal-auth.json: Permission denied`가 로그 424행에 나왔다(백업 정책/롤 생성과는 무관).
+**활성화 기록(로컬 클러스터, 2026-11-10; #613):** 3.1-3.3을 마쳤다. 3.1은 13-2 실행 로그의 `openbao-backup policy written and verified`와 `OpenBao Kubernetes auth role 'openbao-backup' 설정 및 검증 완료`로 확인했고, 3.2는 키 쌍을 클러스터 밖에서 생성해 인증서만 ConfigMap `storage/openbao-backup-recipient`로 적용했다(만료 2036-11-06, 개인키는 소유자가 클러스터 밖에 보관). 3.3은 지문 `6E:DD:44:9F:F9:BB:CA:DE:7E:F6:9A:FF:C4:8B:13:38:46:97:EB:C7:31:6A:25:39:05:9C:23:F3:76:7C:24:A7`을 `RECIPIENT_FPR`로 고정했다. GitOps manifest는 이제 지문과 암호화 백업을 활성화한다. 이번 커밋에 앞서 기록된 3.4(배포)와 3.5(첫 수동 Job)는 당시 수행 예정이었다. 백업이 활성 상태라는 사실만으로 성공한 snapshot Job이나 복구 드릴이 확인된 것은 아니다. 알려진 후속: 같은 13-2 실행에서 `~/.narwhal/openbao-portal-auth.json: Permission denied`가 로그 424행에 나왔다(백업 정책/롤 생성과는 무관).
 
 `docs/common/storage-protection-policy.md` 8절 "기존 클러스터 적용 순서"와 같은 순서이다. 새 CronJob은 1~2단계가 끝나기 전까지 실패한다(롤이 없거나 ConfigMap이 없어 파드가 시작되지 않음). 표시: **[읽기]** = 클러스터를 바꾸지 않음, **[변경]** = 클러스터를 변경함.
 

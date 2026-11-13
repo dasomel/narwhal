@@ -24,7 +24,7 @@
 
 `Completed`는 작업 성공이지 restore/일관성 증거가 아니다. Gitea PVC는 최근 성공도 있지만 직전 부분 실패가 있다. CNPG는 실제 Backup CR 완료를 확인했고 OpenBao 리소스/PVC 백업 성공과 raft 스냅샷 성공을 분리해 판정한다.
 
-`docs/common/database.md`의 설명은 CNPG Barman Full Backup/WAL 및 Velero PVC 보호를 요약한다. 구체적인 현재 스케줄과 스냅샷 비활성 상태는 위 GitOps 설정을 기준으로 판정한다. 이 문서와 설정이 충돌하면 실행 가능한 선언을 우선한다.
+`docs/common/database.md`의 설명은 CNPG Barman Full Backup/WAL 및 Velero PVC 보호를 요약한다. 구체적인 현재 스케줄과 OpenBao 암호화 스냅샷 설정은 위 GitOps 설정을 기준으로 판정한다. 이 문서와 설정이 충돌하면 실행 가능한 선언을 우선한다.
 
 ## 2. 보호 모드와 일관성 그룹
 
@@ -192,7 +192,7 @@ InProgress 전용 gauge는 추가하지 않았다. items 개수나 누적 attemp
 FailedValidation은 `velero-volume-policy` 존재/RBAC, PartiallyFailed는 PVC/PV 바인딩·볼륨 오류,
 Stale은 장기 InProgress와 뒤에 대기하는 스케줄을 먼저 확인한다. 성공 백업 및 restore 검증 전에는 오류만 숨기지 않는다.
 
-**OpenBao #443 후속:** 활성화 단계가 한 번도 실행되지 않은 채 CronJob만 배포되어(#443) 스냅샷이 수 주간 조용히 실패했다(`lastSuccessfulTime` 없음). 로컬 클러스터는 2026-11-10에 활성화했다: 3.1(13-2의 `openbao-backup` 정책/롤), 3.2(수신자 키 쌍은 클러스터 밖에서 생성, 인증서만 ConfigMap `storage/openbao-backup-recipient`, 만료 2036-11-06), 3.3(`RECIPIENT_FPR` 고정)을 마쳤고 개인키는 소유자가 클러스터 밖에 보관한다. 남은 단계는 배포(3.4)와 첫 수동 Job(3.5) 확인이다. 신선도 알림은 `kube_cronjob_status_last_successful_time` 노출을 확인한 뒤 성공 없음/26시간 초과를 감지하도록 추가해야 한다.
+**OpenBao #443 후속(#613):** 이전에는 CronJob만 배포했고, 전제조건이 없어 스냅샷이 수 주간 실패했다(`lastSuccessfulTime` 없음). 로컬 클러스터는 2026-11-10에 활성화 3.1–3.3을 마쳤다: 정책/롤, ConfigMap `storage/openbao-backup-recipient`의 수신자 인증서(만료 2036-11-06, 개인키는 클러스터 밖에 보관), `RECIPIENT_FPR` 고정. GitOps에는 지문과 암호화 백업 리소스가 설정돼 있다. 첫 성공 snapshot Job과 복원 드릴은 확인되지 않았다. 신선도 알림은 `kube_cronjob_status_last_successful_time` 노출 확인 후 성공 없음/26시간 초과를 감지하도록 추가해야 한다.
 Velero `daily-openbao` 성공은 snapshot 내용의 신선도를 보장하지 않는다.
 
 다음 클러스터의 필수 확인 순서:

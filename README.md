@@ -87,7 +87,7 @@ the Kubernetes prerequisites pre-installed.
 
 ## Features
 
-- **Kubernetes v1.35** - Supported upstream release branch, HA control plane (3 masters, tolerates 1 failure)
+- **Kubernetes v1.35** - Supported upstream release branch; default local profile is HA (3 control planes + 3 workers, tolerates 1 control-plane failure). A single-node local profile is available for development, without HA guarantees.
 - **GitOps** - ArgoCD + Gitea (App-of-Apps pattern)
 - **SSO** - Keycloak OIDC (via APISIX openid-connect plugin, App integration: ArgoCD, Grafana, Gitea, Harbor, Headlamp)
 - **Observability** - Prometheus, Grafana, Loki, Tempo, Hubble
@@ -101,8 +101,8 @@ the Kubernetes prerequisites pre-installed.
 
 - [Vagrant](https://developer.hashicorp.com/vagrant/install) 2.4+
 - [VMware Fusion](https://www.vmware.com/products/fusion.html) on an **Apple Silicon (arm64)** host, with the `vagrant-vmware-desktop` plugin. The base box (kube-ready-box 0.3.x) is published for **arm64 `vmware_desktop` only** in 0.3.0; the 0.3.1 catalog also lists a `virtualbox` amd64 build that this repo has not run, so VMware Fusion on arm64 is the only validated local path (the Vagrantfile's VirtualBox blocks stay for it and older boxes).
-- 48GB+ RAM: 3 masters x 6GB + 3 workers x 8GB = 42GB for the VMs
-- 18 vCPU for the VMs (3 masters x 2 + 3 workers x 4); a 12+ core host is fine because actual use is low. Override the worker size with `NARWHAL_WORKER_CPUS` (default 4; 2 runs out of CPU requests once the full platform is up)
+- 48GB+ RAM: 3 masters x 6GB + 3 workers x 8GB = 42GB for the HA VMs. Single-node development profile: 10 vCPU / 24GB by default; see [Vagrant operations](docs/vagrant/operations.md#17-single-node-local-topology-d-single-node).
+- HA profile uses 18 vCPU (3 masters x 2 + 3 workers x 4); host CPU contention depends on concurrent workloads (#660). Override the worker size with `NARWHAL_WORKER_CPUS` (default 4; 2 runs out of CPU requests once the full platform is up).
 - 30GB+ Disk per VM (recommended for full IDP deployment)
 
 ### VirtualBox Disk Expansion
@@ -398,7 +398,7 @@ by selfHeal, and a local commit alone is invisible to ArgoCD.
 |--------|--------|---------|----------|
 | PostgreSQL | CNPG barman (base backup + WAL archive) | SeaweedFS S3 (`s3://cnpg-backup/narwhal-db`) | Daily 02:00 UTC |
 | PVC | Velero Kopia (five owner-only volumes excluded, see below) | SeaweedFS S3 | Daily 02:00 |
-| OpenBao | Encrypted raft snapshot collected by Velero (`daily-openbao`) | PVC `openbao-snapshots` | Daily 04:30 UTC; **not enabled by default** |
+| OpenBao | Encrypted raft snapshot collected by Velero (`daily-openbao`) | PVC `openbao-snapshots` | Daily 04:30 UTC; recipient fingerprint and backup resources configured in GitOps (#613) |
 
 Under NFS `root_squash` Velero cannot read owner-only volumes, so five are excluded from its
 fs-backup and are **not protected by Velero**: OpenBao `data`, CNPG `pgdata`, Gitea `data`, Harbor

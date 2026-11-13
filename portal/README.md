@@ -13,13 +13,14 @@ Served in-cluster at **https://portal.local.narwhal.internal** via the cluster's
 ## Key Features
 
 - **Dashboard** — cluster health, ArgoCD app status, alerts (`src/app/(dashboard)/page.tsx`)
+- **Alerts** — firing alerts and cluster-admin notification channel settings ([feature guide](docs/features/notification-channels.md), narwhal#612, #614)
 - **Onboarding** — kubeconfig issuance, getting-started guide (`onboarding/`)
 - **Catalog / My Apps** — deployed service catalog, per-user app view (`catalog/`, `my-apps/`)
 - **Nodes** — cluster node inventory and status (`nodes/`)
 - **Cost** — cost visibility (`cost/`)
 - **Compliance / Security / Governance** — policy, RBAC, and audit views (`compliance/`,
   `security/`, `governance/`)
-- **Architecture / Templates / Tools** — service graph, scaffolding templates, platform tools
+- **Architecture** — workload readiness, service graph and infrastructure view (narwhal#642, #649); **Templates / Tools** — scaffolding templates and platform tools
   grid (`architecture/`, `templates/`, `tools/`)
 - **Settings** — users, routes, certificates, policies
 

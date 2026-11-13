@@ -68,7 +68,7 @@ Packer 빌드 [kube-ready-box](https://github.com/dasomel/kube-ready-box)의 산
 
 ## Features
 
-- **Kubernetes v1.35** - 업스트림 지원 릴리스 브랜치, HA Control Plane (3 masters, 1대 장애 허용)
+- **Kubernetes v1.35** - 업스트림 지원 릴리스 브랜치. 기본 로컬 프로파일은 HA(컨트롤 플레인 3대 + 워커 3대, 컨트롤 플레인 1대 장애 허용)이며, HA를 보장하지 않는 개발용 single-node 프로파일도 제공합니다.
 - **GitOps** - ArgoCD + Gitea (App-of-Apps 패턴)
 - **SSO** - Keycloak OIDC (APISIX openid-connect plugin 경유, 앱 연동: ArgoCD, Grafana, Gitea, Harbor, Headlamp)
 - **Observability** - Prometheus, Grafana, Loki, Tempo, Hubble
@@ -82,8 +82,8 @@ Packer 빌드 [kube-ready-box](https://github.com/dasomel/kube-ready-box)의 산
 
 - [Vagrant](https://developer.hashicorp.com/vagrant/install) 2.4+
 - **Apple Silicon(arm64)** 호스트의 [VMware Fusion](https://www.vmware.com/products/fusion.html)과 `vagrant-vmware-desktop` 플러그인. 베이스 box(kube-ready-box 0.3.x)는 **arm64 `vmware_desktop`만** 배포됩니다(0.3.0). 0.3.1 카탈로그에는 `virtualbox` amd64 빌드도 올라 있지만 이 저장소는 실행해 본 적이 없으므로, 검증된 로컬 경로는 arm64의 VMware Fusion뿐입니다(Vagrantfile의 VirtualBox 블록은 그 빌드와 이전 box용으로 남겨 둠).
-- 48GB+ RAM: VM 합계 마스터 3대 x 6GB + 워커 3대 x 8GB = 42GB
-- VM 합계 18 vCPU(마스터 3대 x 2 + 워커 3대 x 4). 실사용이 낮아 12코어 이상 호스트면 충분합니다. 워커 크기는 `NARWHAL_WORKER_CPUS`로 바꿀 수 있습니다(기본 4, 2로는 전체 플랫폼에서 CPU requests가 부족)
+- 48GB+ RAM: HA VM 합계 마스터 3대 x 6GB + 워커 3대 x 8GB = 42GB. 개발용 single-node 프로파일 기본값은 10 vCPU / 24GB입니다. [Vagrant 운영 문서](docs/vagrant/operations.md#17-single-node-local-topology-d-single-node)를 참고하세요.
+- HA 프로파일은 VM 합계 18 vCPU(마스터 3대 x 2 + 워커 3대 x 4)를 사용합니다. 호스트의 CPU 경합은 동시 실행 워크로드에 따라 달라집니다(#660). HA 워커 크기는 `NARWHAL_WORKER_CPUS`로 바꿀 수 있습니다(기본 4, 2로는 전체 플랫폼에서 CPU requests가 부족).
 - VM당 30GB+ Disk (IDP 전체 배포 권장)
 
 ### VirtualBox 디스크 확장
@@ -377,7 +377,7 @@ by selfHeal, and a local commit alone is invisible to ArgoCD.
 |--------|--------|---------|----------|
 | PostgreSQL | CNPG barman (base backup + WAL archive) | SeaweedFS S3 (`s3://cnpg-backup/narwhal-db`) | Daily 02:00 UTC |
 | PVC | Velero Kopia (five owner-only volumes excluded, see below) | SeaweedFS S3 | Daily 02:00 |
-| OpenBao | Encrypted raft snapshot collected by Velero (`daily-openbao`) | PVC `openbao-snapshots` | Daily 04:30 UTC; **not enabled by default** |
+| OpenBao | Encrypted raft snapshot collected by Velero (`daily-openbao`) | PVC `openbao-snapshots` | 매일 04:30 UTC; 수신자 지문과 백업 리소스를 GitOps에 설정 (#613) |
 
 Under NFS `root_squash` Velero cannot read owner-only volumes, so five are excluded from its
 fs-backup and are **not protected by Velero**: OpenBao `data`, CNPG `pgdata`, Gitea `data`, Harbor

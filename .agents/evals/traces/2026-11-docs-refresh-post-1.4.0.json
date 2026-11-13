@@ -23,6 +23,11 @@
       "summary": "Documentation-only refresh covering HA/single sizing, Portal Alerts and Architecture, Keycloak theme/events and configured OpenBao backup prerequisites. No code, manifest, image pin, RBAC, credential or live-cluster change belongs to this PR."
     },
     {
+      "id": "e0",
+      "type": "reproduction",
+      "summary": "Read origin/main README prerequisites: only the HA 48GB/42GB VM requirement is listed, while Vagrantfile supports single 10 CPU/24GB. Its backup table says OpenBao is not enabled by default, but gitops/resources/openbao-backup.yaml already pins RECIPIENT_FPR after #613. Portal README lists Architecture as a service graph and omits a separate Alerts item although the Alerts route and readiness producer are present."
+    },
+    {
       "id": "e2",
       "type": "bug_fix",
       "summary": "Correct stale HA-only README requirements and disabled-backup wording; distinguish configured snapshot resources from successful snapshot/restore evidence. Match Portal and GitOps feature summaries to merged changes. Remove duplicate incident rows and unsupported measured-host-capacity wording from the draft."
@@ -32,7 +37,7 @@
       "type": "regression_verification",
       "status": "passed",
       "scope": "Documentation diff and targeted README sizing regression only; full-suite results and live provisioning are not asserted by this trace.",
-      "summary": "Changed-line Markdown gate passed on the committed documentation; the corrected README satisfies R323. ShellCheck passed, while make lint has eight baseline YAML line-length errors identical on unchanged main. The author sandbox full suite failed R295/R322/R323; R323 is corrected and separately checked. A separate unrestricted full static suite is still running.",
+      "summary": "Changed-line Markdown gate passed on the committed documentation; the corrected README satisfies R323. ShellCheck passed, while make lint has eight baseline YAML line-length errors identical on unchanged main. The author sandbox full suite failed R295/R322/R323; R323 is corrected and separately checked. A separate unrestricted full static suite in the companion pin worktree later passed 458 checks with zero failures and three warnings; that run is not claimed as a full run of this documentation branch.",
       "evidence": [
         "test:git diff --check -> exit 0",
         "test:python3 scripts/ci/markdownlint-changed.py --base origin/main -> exit 0 after commit",

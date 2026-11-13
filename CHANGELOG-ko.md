@@ -9,6 +9,62 @@
 
 ## [Unreleased]
 
+## [1.5.0] - 2026-11-14
+
+기본 HA 토폴로지에 단일 노드 로컬 개발 프로파일을 추가하고, 개편된 Portal 1.1.15와
+알림 채널·인증·암호화 백업 연동을 배포한다.
+
+### 업그레이드 참고
+
+- **로컬 토폴로지를 명시한다(#662, #664).** 기본은 HA(컨트롤 플레인 3대 + 워커 3대)다.
+  `NARWHAL_TOPOLOGY=single ./scripts/up.sh`는 10 vCPU / 24GB 개발 VM 한 대와 CNPG 인스턴스
+  하나, 축소된 복제 수를 사용하며 HA를 제공하지 않는다. 전환하려면 데이터를 백업하고 기존
+  VM 전체를 먼저 파기한다. 두 프로파일은 IP·VIP·NFS 경로를 공유한다.
+  `docs/vagrant/operations.md` 17절 참조. 전체 파기는 로컬 NFS 디스크와 PV 데이터도 삭제한다.
+- **기존 Keycloak 연동:** 문서의 Phase 2 경로로 `11-2-keycloak-config.sh`와
+  `11-3-keycloak-clients.sh`를 재실행해 사용자 로그인 이벤트 30일 보존과 Portal 서비스 계정의
+  `view-events` 권한을 적용한다(#648, #652). 보존하지 않은 과거 로그인은 복원할 수 없다.
+  새 설치는 GitOps 시작 전부터 정규 HTTPS hostname을 써서 내부 `:9443` issuer 불일치를
+  방지한다(#662).
+- **OpenBao 암호화에는 운영자가 보관하는 키가 필요하다(#613).** GitOps는 수신자 지문을
+  고정한다. 공개 수신자 인증서와 인증 전제조건은 클러스터에 있어야 하며 개인키는 오프라인에
+  둔다. CronJob 설정이나 Velero `daily-openbao` 성공만으로 최신 raft snapshot과 복원 성공을
+  입증할 수 없다. 재구축 후 `docs/runbooks/openbao-snapshot-backup.md`에 따라 각각 검증한다.
+- **새 Harbor에는 보안 DB가 필요하다.** `trivy-db-refresh` Job을 확인하고 누락된 산출물은
+  `scripts/airgap/README.md`의 fetch → promote(`--approved-by <운영자>`) → push 절차로
+  반입한다. `push-security-db.sh --ca-cert`는 이제 `skopeo copy`에 올바른 인증서 디렉터리를
+  전달한다(#664).
+
+### 추가 및 변경
+
+- 호스트와 게스트 `/etc/narwhal-topology`에 토폴로지를 기록해 환경변수 없이도 게스트 검증과
+  재부팅 복구가 프로파일을 판별한다(#662). single 프로비저닝·복구는 컨트롤 플레인의 외부 LB
+  제외 라벨을 제거해 MetalLB가 gateway IP를 광고하게 한다. HA는 라벨을 유지한다(#664).
+- Portal 관리 Alertmanager receiver로 알림 채널 설정과 발화 경보 조회를 지원한다(#612, #614).
+  Keycloak 로그인은 분할 레이아웃과 Beluga 심해 패널을 사용한다(#621, #639).
+- Portal 사용자 목록은 실제 그룹과 보존된 로그인 이벤트를 읽고 이력이 없으면 세션으로
+  대체한다(#643, #648). Architecture 상태는 워크로드 준비 상태를 사용하며 일회성 Job을
+  숨기되 식별이 모호한 namespace 없는 telemetry는 보존한다(#649, #653).
+- `show-credentials.sh`는 첫 Secret 조회 전에 Narwhal 클러스터인지 확인해 다른 kubectl
+  컨텍스트를 거부한다(#661). 주간 GitHub Actions 증거 백필과 테넌트 뷰 회귀 검증을 추가하고
+  (#616, #654), 에이전트 문서의 낡은 경로를 정리했다(#665).
+- 이동한 busybox·valkey·kong 태그의 에어갭 다이제스트를 갱신했다(#611). 기존 생성 번들은
+  현재 이미지 목록으로 다시 만들고 검증해야 한다(#663).
+
+### 알려진 한계
+
+- **테넌트 조회 범위(#659):** 팀 매핑이 없는 개발자는 developer 역할의 기본 namespace 범위를
+  사용하며, 배포 설정의 기본값은 넓다. 테넌트를 격리하려면 `roleDefaults`를 명시적으로 좁히고
+  팀 매핑을 설정해야 한다. 이 릴리즈는 해당 기본 정책 문제를 고치지 않는다. 쓰기 권한과
+  읽기 가시성은 서로 다른 범위 규칙을 사용한다.
+- API 연결 장애 뒤 Keycloak Operator가 계속 NotReady일 수 있다(#656). 로컬 etcd 리더 변경의 원인으로 호스트 CPU
+  경합이 의심된다(#660). 프로비저닝 중 무거운 호스트 테스트의 동시
+  실행을 피하고 기존 장애 기록을 참고한다.
+- 전체 백업 성공은 #657에서 추적 중이다. `PartiallyFailed`를 실패로 취급하고 전체 백업과
+  복원 경로를 검증한다. 새 클러스터가 정상이라는 사실만으로 기존 장애를 종결하지 않는다.
+
+### Portal 이미지
+
 - **포털이 `narwhal-portal:1.1.15`으로 고정됨 (기존 1.1.9).** 1.1.10은 경보 페이지와 알림 채널 설정을
   추가하고(#610, #614), Trivy 데이터를 다시 가져온 뒤에도 부분 결과 안내를 표시한다(#505, #615).
   1.1.11은 Figma 분할 레이아웃 로그인(#619, #620)을 적용해 새 Keycloak 로그인 테마(#621)와 맞춘다.
@@ -961,7 +1017,8 @@ Vagrant (arm64) 및 Kakao Cloud (amd64) 환경 모두에서 에어갭이 "이미
 - 토폴로지: 단일 노드 → 3m+3w (Master NoSchedule, Worker에서 플랫폼 앱 실행)
 - NFS StorageClass: 계층적 subDir + 최적화된 mountOptions
 
-[Unreleased]: https://github.com/dasomel/narwhal/compare/v1.4.0...HEAD
+[Unreleased]: https://github.com/dasomel/narwhal/compare/v1.5.0...HEAD
+[1.5.0]: https://github.com/dasomel/narwhal/compare/v1.4.0...v1.5.0
 [1.4.0]: https://github.com/dasomel/narwhal/compare/v1.3.0...v1.4.0
 [1.3.0]: https://github.com/dasomel/narwhal/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/dasomel/narwhal/compare/v1.1.0...v1.2.0

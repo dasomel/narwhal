@@ -1,0 +1,54 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-docs-refresh-post-1-4-0-20261114",
+  "task": "Refresh documentation against merged implementation since v1.4.0; no runtime changes or live success claims.",
+  "changeContext": {
+    "paths": [
+      "README-ko.md",
+      "README.md",
+      "docs/common/lessons-log.md",
+      "docs/common/storage-protection-policy.md",
+      "docs/runbooks/openbao-snapshot-backup.md",
+      "gitops/README-ko.md",
+      "gitops/README.md",
+      "portal/README-ko.md",
+      "portal/README.md"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Documentation-only refresh covering HA/single sizing, Portal Alerts and Architecture, Keycloak theme/events and configured OpenBao backup prerequisites. No code, manifest, image pin, RBAC, credential or live-cluster change belongs to this PR."
+    },
+    {
+      "id": "e2",
+      "type": "bug_fix",
+      "summary": "Correct stale HA-only README requirements and disabled-backup wording; distinguish configured snapshot resources from successful snapshot/restore evidence. Match Portal and GitOps feature summaries to merged changes. Remove duplicate incident rows and unsupported measured-host-capacity wording from the draft."
+    },
+    {
+      "id": "e3",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "Documentation diff and targeted README sizing regression only; full-suite results and live provisioning are not asserted by this trace.",
+      "summary": "Changed-line Markdown gate passed on the committed documentation; the corrected README satisfies R323. ShellCheck passed, while make lint has eight baseline YAML line-length errors identical on unchanged main. The author sandbox full suite failed R295/R322/R323; R323 is corrected and separately checked. A separate unrestricted full static suite is still running.",
+      "evidence": [
+        "test:git diff --check -> exit 0",
+        "test:python3 scripts/ci/markdownlint-changed.py --base origin/main -> exit 0 after commit",
+        "test:python3 scripts/test/lib/check-worker-memory.py -> worker memory 8GB ok"
+      ]
+    },
+    {
+      "id": "e4",
+      "type": "completion_claim",
+      "summary": "Documentation reflects inspected source defaults and features. This PR provides no cluster, browser, backup-success or restore-drill evidence."
+    },
+    {
+      "id": "e5",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Documentation alignment is complete within scope; independent review and CI remain merge gates."
+    }
+  ]
+}

@@ -164,7 +164,7 @@ kubectl wait --for=condition=Ready pod -l app.kubernetes.io/name=gitea -n devtoo
 GITEA_POD=$(kubectl get pod -n devtools -l app.kubernetes.io/name=gitea \
   --field-selector=status.phase=Running \
   -o jsonpath='{range .items[*]}{.metadata.name}{" "}{.metadata.deletionTimestamp}{"\n"}{end}' 2>/dev/null \
-  | awk 'NF == 1 { print; exit }' || echo "")
+  | awk 'NF == 1 { print $1; exit }' || echo "")
 
 if [ -n "${GITEA_POD}" ]; then
   # Create narwhal organization for group→team mapping

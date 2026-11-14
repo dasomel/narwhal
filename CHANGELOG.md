@@ -9,6 +9,91 @@ English | [한국어](CHANGELOG-ko.md)
 
 ## [Unreleased]
 
+## [1.5.0] - 2026-11-14
+
+Adds a single-node local development profile alongside the default HA topology, ships the redesigned
+Portal through 1.1.15, and updates notification-channel, identity and encrypted-backup integration.
+
+### Upgrade notes
+
+- **Local topology is explicit (#662, #664).** HA remains the default (3 control planes + 3 workers).
+  `NARWHAL_TOPOLOGY=single ./scripts/up.sh` creates one 10-vCPU / 24GB development VM with one CNPG
+  instance and reduced replicas; it provides no HA. To switch, back up data and destroy the entire
+  old fleet first. Both profiles share IPs, VIP and the NFS data path. See
+  `docs/vagrant/operations.md` section 17. Full teardown deletes the local NFS data disk and PV data.
+- **Existing Keycloak integrations:** re-run `11-2-keycloak-config.sh` and `11-3-keycloak-clients.sh`
+  through the documented Phase 2 path to enable 30-day user login events and grant the Portal
+  service account `view-events` (#648, #652). Older logins cannot be reconstructed from events
+  that were never retained. The bootstrap issuer now uses the canonical HTTPS hostname before
+  GitOps starts, preventing an internal `:9443` issuer mismatch on fresh installations (#662).
+- **OpenBao encryption needs operator-held key material (#613).** The recipient fingerprint is
+  pinned in GitOps; the public recipient certificate and auth prerequisites must exist in the
+  cluster, while the private key stays offline. A configured CronJob or a successful Velero
+  `daily-openbao` backup does not prove a fresh raft snapshot or successful restore. Follow
+  `docs/runbooks/openbao-snapshot-backup.md` and verify both separately after rebuilding a cluster.
+- **Fresh Harbor needs the security databases.** Verify the `trivy-db-refresh` job and populate
+  missing artifacts with the fetch → promote (`--approved-by <operator>`) → push procedure in
+  `scripts/airgap/README.md`. `push-security-db.sh --ca-cert` now passes the correct certificate
+  directory to `skopeo copy` (#664).
+  The `trivy-db-refresh` CronJob runs every 6 hours, so `trivy-server` stays in CrashLoopBackOff
+  on a new cluster until its first run; start one with
+  `kubectl -n security-system create job --from=cronjob/trivy-db-refresh <name>`.
+
+### Added and changed
+
+- Single-node profile selection is recorded on the host and in `/etc/narwhal-topology`; guest
+  verification and reboot healing resolve that profile without requiring an environment variable
+  (#662). Single provisioning/healing removes the control-plane external-LB exclusion label so
+  MetalLB can advertise the gateway IP; HA keeps the label (#664).
+- Portal-managed Alertmanager receivers support notification-channel settings and the firing-alert
+  view (#612, #614). Keycloak login uses the split layout and Beluga deep-sea panel (#621, #639).
+- The Portal user list reads groups and retained login events, with session fallback when history
+  is unavailable (#643, #648). Architecture health uses workload readiness and excludes one-off
+  Jobs while preserving ambiguous namespace-less telemetry (#649, #653).
+- `show-credentials.sh` identifies a Narwhal cluster before its first Secret read, refusing unrelated
+  kubectl contexts (#661). Weekly GitHub Actions evidence backfill and expanded tenant-view
+  regression coverage were added (#616, #654); stale agent-document paths were corrected (#665).
+- Air-gap digests were refreshed for moved busybox, valkey and kong tags (#611). Existing generated
+  bundles must be rebuilt and verified against the current image inventory (#663).
+
+### Fixed
+
+- Harbor's trivy-db retention and GC calls retry transient HTTP 5xx (bounded, never 4xx), and the
+  robot Secret `security-system/trivy-db-refresh` is written even if retention/GC finally fail
+  (#670). A fresh HA install had lost the Secret to a single `POST /retentions` 500, leaving
+  `trivy-server` without a database; the fresh single install then hit three 500s and recovered.
+- Gitea OAuth2, the `narwhal` organization and its teams are configured after the Recreate rollout
+  completes, and the pod lookup skips terminating pods (#671). A fresh single install had skipped
+  the step because no Gitea pod existed yet, failing four SSO checks.
+
+### Verification
+
+Fresh installs from this release line on the local Vagrant cluster (2026-11-14):
+
+- HA 3+3: 6 nodes Ready, 48/48 ArgoCD applications Synced/Healthy, `verify-cluster.sh` FAIL 0,
+  `test-sso.sh` 160/160. Provisioning needed manual recovery (apt lists lock on two masters, a
+  duplicate NAT address on master-2) and the Trivy Secret was restored by hand before #670.
+- Single: provisioned in one unattended `up.sh` run (about 38 minutes), 48/48 applications
+  Synced/Healthy, `verify-cluster.sh` FAIL 0, gateway reachable over HTTPS from the host (#664).
+  `test-sso.sh` passed 144/144 after re-running the fixed `12-gitea.sh` (#671); the #671 fix itself
+  has not yet been exercised by a full fresh install.
+- `verify-cluster.sh` reports one WARN on both topologies: its VIP API probe reads admin.conf as
+  the `vagrant` user; the VIP `/healthz` endpoint returned 200.
+
+### Known limitations
+
+- **Tenant visibility (#659):** an unmapped developer team falls back to the developer role's
+  namespace defaults, which are broad in the shipped config. Explicitly narrow `roleDefaults` and
+  configure team mappings before using the Portal for isolated tenants. This release does not fix
+  that default-policy issue; write authorization and read visibility use different scope rules.
+- Keycloak Operator readiness can remain unhealthy after an API connectivity interruption (#656).
+  Local host CPU contention is a suspected cause of etcd leader changes (#660); avoid concurrent heavy host-side
+  test runs during provisioning and consult the existing incident guidance.
+- Full-backup completion is still tracked in #657. Treat `PartiallyFailed` as a failure and verify
+  the complete backup and restore path; fresh-cluster health alone does not close that incident.
+
+### Portal image
+
 - **Portal is pinned to `narwhal-portal:1.1.15` (was 1.1.9).** 1.1.10 adds the alerts page and
   notification channel settings (#610, #614), and keeps the partial-results notice visible after
   Trivy data is refetched (#505, #615); 1.1.11 applies the Figma split-layout login (#619, #620), which
@@ -1097,7 +1182,8 @@ First stable release — validated by consecutive zero-fix, from-scratch clean i
 - Topology: single node → 3m+3w (Master NoSchedule, platform apps running on Workers)
 - NFS StorageClass: hierarchical subDir + optimized mountOptions
 
-[Unreleased]: https://github.com/dasomel/narwhal/compare/v1.4.0...HEAD
+[Unreleased]: https://github.com/dasomel/narwhal/compare/v1.5.0...HEAD
+[1.5.0]: https://github.com/dasomel/narwhal/compare/v1.4.0...v1.5.0
 [1.4.0]: https://github.com/dasomel/narwhal/compare/v1.3.0...v1.4.0
 [1.3.0]: https://github.com/dasomel/narwhal/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/dasomel/narwhal/compare/v1.1.0...v1.2.0

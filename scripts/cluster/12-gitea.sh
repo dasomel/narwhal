@@ -147,15 +147,24 @@ kubectl patch deployment gitea -n devtools --type='json' \
   -p='[{"op": "replace", "path": "/spec/strategy", "value": {"type": "Recreate"}},
        {"op": "add", "path": "/spec/template/metadata/labels/istio.io~1dataplane-mode", "value": "none"}]' 2>/dev/null || true
 
+# D-GITEA-ROLLOUT-WAIT: the Recreate patch removes the old pod before creating its replacement.
+# Cost: OAuth setup can wait up to 600s; escape hatch: the existing non-fatal warning path remains.
+kubectl rollout status deployment/gitea -n devtools --timeout=600s || true
+
 # Configure Keycloak OAuth2 provider via API
 echo "Configuring Gitea OAuth2 provider..."
 sleep 10
 
 # Wait for Gitea to be ready
-kubectl wait --for=condition=Ready pod -l app.kubernetes.io/name=gitea -n devtools --timeout=300s || true
+kubectl wait --for=condition=Ready pod -l app.kubernetes.io/name=gitea -n devtools \
+  --field-selector=status.phase=Running --timeout=300s || true
 
 # Create OAuth2 source via Gitea API
-GITEA_POD=$(kubectl get pod -n devtools -l app.kubernetes.io/name=gitea -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
+# A terminating pod still reports phase Running; skip any pod with a deletionTimestamp.
+GITEA_POD=$(kubectl get pod -n devtools -l app.kubernetes.io/name=gitea \
+  --field-selector=status.phase=Running \
+  -o jsonpath='{range .items[*]}{.metadata.name}{" "}{.metadata.deletionTimestamp}{"\n"}{end}' 2>/dev/null \
+  | awk 'NF == 1 { print $1; exit }' || echo "")
 
 if [ -n "${GITEA_POD}" ]; then
   # Create narwhal organization for group→team mapping

@@ -3357,6 +3357,8 @@ PYEOF'
   # 2026-11-12: show-credentials.sh read Secrets from whatever kubectl context was current.
   check R343 "Keycloak bootstrap/GitOps canonical hostname and strict agree before OIDC discovery; 2 mutations caught (D-KC-BOOTSTRAP-ISSUER)" \
     python3 scripts/test/lib/check-keycloak-bootstrap-issuer.py
+  check R345 "12-gitea.sh waits for the patched Deployment rollout before Ready wait and selects a Running pod; removal mutation caught (D-GITEA-ROLLOUT-WAIT)" \
+    python3 scripts/test/lib/check-gitea-rollout-wait.py
   check R344 "Single-only MetalLB exclusion removal converges in init, Phase 2 and heal; removal/HA mutations caught (D-SINGLE-LB-ANNOUNCE)" \
     python3 scripts/test/lib/check-single-lb-announce.py
   check R342 "Vagrant HA/single definitions, empty/record resolution, sizing, guards and staged GitOps/CNPG/Helm profile execute offline; mutations caught (D-SINGLE-NODE)" \

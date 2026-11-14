@@ -160,8 +160,11 @@ kubectl wait --for=condition=Ready pod -l app.kubernetes.io/name=gitea -n devtoo
   --field-selector=status.phase=Running --timeout=300s || true
 
 # Create OAuth2 source via Gitea API
+# A terminating pod still reports phase Running; skip any pod with a deletionTimestamp.
 GITEA_POD=$(kubectl get pod -n devtools -l app.kubernetes.io/name=gitea \
-  --field-selector=status.phase=Running -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
+  --field-selector=status.phase=Running \
+  -o jsonpath='{range .items[*]}{.metadata.name}{" "}{.metadata.deletionTimestamp}{"\n"}{end}' 2>/dev/null \
+  | awk 'NF == 1 { print; exit }' || echo "")
 
 if [ -n "${GITEA_POD}" ]; then
   # Create narwhal organization for group→team mapping

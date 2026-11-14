@@ -35,6 +35,9 @@ Portal through 1.1.15, and updates notification-channel, identity and encrypted-
   missing artifacts with the fetch → promote (`--approved-by <operator>`) → push procedure in
   `scripts/airgap/README.md`. `push-security-db.sh --ca-cert` now passes the correct certificate
   directory to `skopeo copy` (#664).
+  The `trivy-db-refresh` CronJob runs every 6 hours, so `trivy-server` stays in CrashLoopBackOff
+  on a new cluster until its first run; start one with
+  `kubectl -n security-system create job --from=cronjob/trivy-db-refresh <name>`.
 
 ### Added and changed
 
@@ -52,6 +55,30 @@ Portal through 1.1.15, and updates notification-channel, identity and encrypted-
   regression coverage were added (#616, #654); stale agent-document paths were corrected (#665).
 - Air-gap digests were refreshed for moved busybox, valkey and kong tags (#611). Existing generated
   bundles must be rebuilt and verified against the current image inventory (#663).
+
+### Fixed
+
+- Harbor's trivy-db retention and GC calls retry transient HTTP 5xx (bounded, never 4xx), and the
+  robot Secret `security-system/trivy-db-refresh` is written even if retention/GC finally fail
+  (#670). A fresh HA install had lost the Secret to a single `POST /retentions` 500, leaving
+  `trivy-server` without a database; the fresh single install then hit three 500s and recovered.
+- Gitea OAuth2, the `narwhal` organization and its teams are configured after the Recreate rollout
+  completes, and the pod lookup skips terminating pods (#671). A fresh single install had skipped
+  the step because no Gitea pod existed yet, failing four SSO checks.
+
+### Verification
+
+Fresh installs from this release line on the local Vagrant cluster (2026-11-14):
+
+- HA 3+3: 6 nodes Ready, 48/48 ArgoCD applications Synced/Healthy, `verify-cluster.sh` FAIL 0,
+  `test-sso.sh` 160/160. Provisioning needed manual recovery (apt lists lock on two masters, a
+  duplicate NAT address on master-2) and the Trivy Secret was restored by hand before #670.
+- Single: provisioned in one unattended `up.sh` run (about 38 minutes), 48/48 applications
+  Synced/Healthy, `verify-cluster.sh` FAIL 0, gateway reachable over HTTPS from the host (#664).
+  `test-sso.sh` passed 144/144 after re-running the fixed `12-gitea.sh` (#671); the #671 fix itself
+  has not yet been exercised by a full fresh install.
+- `verify-cluster.sh` reports one WARN on both topologies: its VIP API probe reads admin.conf as
+  the `vagrant` user; the VIP `/healthz` endpoint returned 200.
 
 ### Known limitations
 

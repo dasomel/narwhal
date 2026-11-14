@@ -34,6 +34,9 @@
   `scripts/airgap/README.md`의 fetch → promote(`--approved-by <운영자>`) → push 절차로
   반입한다. `push-security-db.sh --ca-cert`는 이제 `skopeo copy`에 올바른 인증서 디렉터리를
   전달한다(#664).
+  `trivy-db-refresh` CronJob은 6시간마다 돌기 때문에 새 클러스터에서는 첫 실행 전까지
+  `trivy-server`가 CrashLoopBackOff이다. `kubectl -n security-system create job
+  --from=cronjob/trivy-db-refresh <이름>`으로 한 번 실행한다.
 
 ### 추가 및 변경
 
@@ -50,6 +53,29 @@
   (#616, #654), 에이전트 문서의 낡은 경로를 정리했다(#665).
 - 이동한 busybox·valkey·kong 태그의 에어갭 다이제스트를 갱신했다(#611). 기존 생성 번들은
   현재 이미지 목록으로 다시 만들고 검증해야 한다(#663).
+
+### 수정
+
+- Harbor trivy-db 보존·GC 호출이 일시적 HTTP 5xx를 제한적으로 재시도하고(4xx는 재시도하지 않음),
+  보존·GC가 끝내 실패해도 robot Secret `security-system/trivy-db-refresh`를 기록한다(#670). 새 HA
+  설치에서는 `POST /retentions` 500 한 번으로 Secret이 빠져 `trivy-server`에 DB가 없었고, 새
+  single 설치에서는 500이 세 번 난 뒤 재시도로 복구됐다.
+- Gitea OAuth2, `narwhal` 조직과 팀 구성을 Recreate 롤아웃 완료 뒤에 수행하고, 파드 조회에서
+  종료 중인 파드를 제외한다(#671). 새 single 설치에서 Gitea 파드가 아직 없어 이 단계가 건너뛰어져
+  SSO 검사 4건이 실패했었다.
+
+### 검증
+
+로컬 Vagrant 클러스터에서 이 릴리즈 라인으로 새로 설치했다(2026-11-14).
+
+- HA 3+3: 노드 6개 Ready, ArgoCD 앱 48/48 Synced/Healthy, `verify-cluster.sh` FAIL 0,
+  `test-sso.sh` 160/160. 프로비저닝 중 수동 복구가 필요했다(마스터 2대의 apt lists 잠금,
+  master-2의 NAT 주소 중복). Trivy Secret은 #670 전에 수동으로 복구했다.
+- single: 무인 `up.sh` 1회(약 38분)로 설치, 앱 48/48 Synced/Healthy, `verify-cluster.sh` FAIL 0,
+  호스트에서 HTTPS로 gateway 접속 확인(#664). `test-sso.sh`는 수정된 `12-gitea.sh`(#671)를 다시
+  실행한 뒤 144/144 통과했다. #671 수정 자체는 아직 전체 신규 설치로 검증하지 않았다.
+- `verify-cluster.sh`는 두 토폴로지 모두 WARN 1건을 낸다. VIP API 점검이 `vagrant` 사용자로
+  admin.conf를 읽기 때문이며, VIP `/healthz`는 200을 반환했다.
 
 ### 알려진 한계
 

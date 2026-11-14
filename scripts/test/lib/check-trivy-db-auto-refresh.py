@@ -142,6 +142,8 @@ def static(root):
 
     reg = (root / REG).read_text()
     assert "SECDB_KEEP=2" in reg, "retention keep count"
+    assert "D-SECDB-RETENTION-RETRY" in reg, "08-5 must document bounded retention/GC retry (D-SECDB-RETENTION-RETRY)"
+    assert "(5, 10, 15, 30, 60, 60)" in reg, "08-5 retention/GC retry backoff must stay bounded at 180s"
     for need in ('"registry":base64.b64encode', '"username":base64.b64encode', '"password":base64.b64encode', '"namespace":"security-system"'):
         assert need in reg, f"08-5 Secret lost {need}"
     assert "read_secret_field trivy-db-refresh security-system password" in reg, "08-5 must reuse an existing robot secret"
@@ -305,6 +307,9 @@ class FakeHarbor(BaseHTTPRequestHandler):
             return self._send(404, {})
         path = path[len("/api/v2.0"):]
         s["calls"][-1] = (method, path, body)
+        seq = s.get("inject", {}).get((method, path))
+        if seq:
+            return self._send(seq.pop(0), {"errors": [{"code": "UNKNOWN", "message": "injected"}]})
         if (method, path) == ("GET", "/projects/trivy-db"):
             return self._send(200, {"project_id": 2, "metadata": ({"retention_id": "9"} if s["retention"] else {})})
         if (method, path) == ("GET", "/robots"):
@@ -347,7 +352,14 @@ def harbor_python(root):
     return blocks[0]
 
 
-def harbor_run(code, state, reset):
+def harbor_bash_block(root):
+    reg = (root / REG).read_text()
+    m = re.search(r'(  DOMAIN="\$\{DOMAIN:-local\.narwhal\.internal\}".*?  unset SECDB_ROBOT_PW[^\n]*\n)', reg, re.S)
+    assert m, "08-5 Harbor bash block missing"
+    return m.group(1)
+
+
+def harbor_run(code, state, reset, extra_env=None):
     FakeHarbor.state = state
     srv = HTTPServer(("127.0.0.1", 0), FakeHarbor)
     th = threading.Thread(target=srv.serve_forever, daemon=True)
@@ -356,10 +368,48 @@ def harbor_run(code, state, reset):
         env = dict(os.environ, HARBOR_API=f"http://127.0.0.1:{srv.server_port}/api/v2.0",
                    HARBOR_REGISTRY=f"127.0.0.1:{srv.server_port}", HARBOR_ADMIN_PASS="adminpw",
                    SECDB_KEEP="2", SECDB_ROBOT_PW=PASSWORD, SECDB_ROBOT_HAS_SECRET="1" if not reset else "0")
+        if extra_env:
+            env.update(extra_env)
         p = subprocess.run([sys.executable, "-I", "-c", code], env=env, capture_output=True, text=True, timeout=60)
     finally:
         srv.shutdown()
+        srv.server_close()
     return p
+
+
+def harbor_bash_run(root, state, extra_env=None):
+    block = harbor_bash_block(root)
+    FakeHarbor.state = state
+    srv = HTTPServer(("127.0.0.1", 0), FakeHarbor)
+    th = threading.Thread(target=srv.serve_forever, daemon=True)
+    th.start()
+    try:
+        with tempfile.TemporaryDirectory() as tmp:
+            t = Path(tmp)
+            bindir = t / "bin"
+            bindir.mkdir()
+            applied = t / "applied.json"
+            kubectl = bindir / "kubectl"
+            kubectl.write_text(f"#!/bin/bash\nif [ \"$1\" = apply ] && [ \"$2\" = -f ] && [ \"$3\" = - ]; then\n  cat > \"{applied}\"\nfi\n")
+            kubectl.chmod(0o755)
+            wrapper = (
+                "set -euo pipefail\n"
+                "ensure_namespace() { :; }\n"
+                "read_secret_field() { return 1; }\n"
+                f"generate_password() {{ printf '%s' '{PASSWORD[:-3]}'; }}\n"
+                + block
+            )
+            env = dict(os.environ, PATH=f"{bindir}:{os.environ['PATH']}",
+                       HARBOR_API=f"http://127.0.0.1:{srv.server_port}/api/v2.0",
+                       HARBOR_ADMIN_PASS="adminpw", DOMAIN="example.test")
+            if extra_env:
+                env.update(extra_env)
+            p = subprocess.run(["bash", "-c", wrapper], env=env, capture_output=True, text=True, timeout=60)
+            secret_doc = json.loads(applied.read_text()) if applied.exists() else None
+            return p, secret_doc
+    finally:
+        srv.shutdown()
+        srv.server_close()
 
 
 def harbor_behavior(root):
@@ -436,6 +486,67 @@ def harbor_behavior(root):
     assert p.returncode == 0 and ("GET", "/service/token") in methods and ("PATCH", "/robots/7") in methods, (methods, p.stderr)
     assert ("POST", "/robots") not in methods, methods
     assert st["robot_secret"] == PASSWORD and "ROBOT_SECRET=" + PASSWORD in p.stdout, (p.stdout, p.stderr)
+
+    # D-SECDB-RETENTION-RETRY: transient 5xx on retention/GC recovers with bounded backoff.
+    retry_env = {"SECDB_RETRY_DELAYS": "0.01,0.01,0.01"}
+    st = fresh(inject={("POST", "/retentions"): [500, 503]})
+    p = harbor_run(code, st, reset=True, extra_env=retry_env)
+    assert p.returncode == 0 and "RETENTION=keep-2" in p.stdout and "GC=created" in p.stdout, (p.stdout, p.stderr)
+    assert [c[:2] for c in st["calls"]].count(("POST", "/retentions")) == 3 and st["retention"] is True, st["calls"]
+
+    # Transient 5xx on existing retention PUT and both GC calls also recovers.
+    st["calls"].clear()
+    st["gc"] = {}
+    st["robot_secret"] = PASSWORD
+    st["inject"] = {("PUT", "/retentions/9"): [502], ("GET", "/system/gc/schedule"): [503], ("POST", "/system/gc/schedule"): [500]}
+    p = harbor_run(code, st, reset=False, extra_env=retry_env)
+    assert p.returncode == 0 and "RETENTION=keep-2" in p.stdout and "GC=created" in p.stdout, (p.stdout, p.stderr)
+    methods = [c[:2] for c in st["calls"]]
+    assert methods.count(("PUT", "/retentions/9")) == 2 and methods.count(("GET", "/system/gc/schedule")) == 2 and methods.count(("POST", "/system/gc/schedule")) == 2, methods
+
+    # Persistent 5xx on retention exhausts retries, does not swallow the error, still outputs robot creds and runs GC.
+    st = fresh(inject={("POST", "/retentions"): [500] * 10})
+    p = harbor_run(code, st, reset=True, extra_env=retry_env)
+    assert p.returncode != 0, "persistent retention failure must not exit 0"
+    assert "ROBOT_USER=robot$trivy-db+trivy-db-refresh" in p.stdout and "ROBOT_SECRET=HarborGenerated-Secret9" in p.stdout, p.stdout
+    assert "GC=created" in p.stdout, ("GC must still run after retention failure", p.stdout)
+    assert [c[:2] for c in st["calls"]].count(("POST", "/retentions")) == 4, st["calls"]
+    assert "HTTP 500" in p.stderr and PASSWORD not in p.stderr and "HarborGenerated-Secret9" not in p.stderr, p.stderr
+
+    # 4xx on retention/GC must never be retried.
+    st = fresh(inject={("POST", "/retentions"): [400, 201]})
+    p = harbor_run(code, st, reset=True, extra_env=retry_env)
+    assert p.returncode != 0 and [c[:2] for c in st["calls"]].count(("POST", "/retentions")) == 1, (p.returncode, st["calls"])
+    assert "ROBOT_USER=robot$trivy-db+trivy-db-refresh" in p.stdout and "GC=created" in p.stdout, p.stdout
+    assert "HTTP 400" in p.stderr and "retrying" not in p.stderr, p.stderr
+
+    # Persistent 5xx on GC still keeps robot creds and retention.
+    st = fresh(inject={("GET", "/system/gc/schedule"): [503] * 10})
+    p = harbor_run(code, st, reset=True, extra_env=retry_env)
+    assert p.returncode != 0 and [c[:2] for c in st["calls"]].count(("GET", "/system/gc/schedule")) == 4, st["calls"]
+    assert "ROBOT_USER=robot$trivy-db+trivy-db-refresh" in p.stdout and "RETENTION=keep-2" in p.stdout, p.stdout
+
+    # Bash block: when retention still fails after retries, Secret trivy-db-refresh is still applied and warned specifically.
+    st = fresh(inject={("POST", "/retentions"): [500] * 10})
+    p, secret_doc = harbor_bash_run(root, st, extra_env=retry_env)
+    assert p.returncode == 0, (p.stdout, p.stderr)
+    assert secret_doc is not None and secret_doc["metadata"] == {"name": "trivy-db-refresh", "namespace": "security-system"}, secret_doc
+    assert base64.b64decode(secret_doc["data"]["username"]).decode() == "robot$trivy-db+trivy-db-refresh"
+    assert base64.b64decode(secret_doc["data"]["password"]).decode() == "HarborGenerated-Secret9"
+    assert "Secret security-system/trivy-db-refresh ensured" in p.stdout and "GC=created" in p.stdout and "WARN:" in p.stdout and "retention" in p.stdout, p.stdout
+    assert "D-SECDB-AUTO-ROBOT" not in p.stdout and "HarborGenerated-Secret9" not in p.stdout + p.stderr and PASSWORD not in p.stdout + p.stderr, (p.stdout, p.stderr)
+
+    # Bash block: when both retention and GC fail, Secret is still applied without pipefail on empty summary.
+    st = fresh(inject={("POST", "/retentions"): [500] * 10, ("GET", "/system/gc/schedule"): [500] * 10})
+    p, secret_doc = harbor_bash_run(root, st, extra_env=retry_env)
+    assert p.returncode == 0 and secret_doc is not None, (p.returncode, p.stdout, p.stderr)
+    assert "Secret security-system/trivy-db-refresh ensured" in p.stdout and "retention,GC" in p.stdout, p.stdout
+
+    # Bash block: if the robot step itself fails, the Secret is NOT created and D-SECDB-AUTO-ROBOT warns.
+    st = fresh(inject={("GET", "/projects/trivy-db"): [500]})
+    p, secret_doc = harbor_bash_run(root, st, extra_env=retry_env)
+    assert p.returncode == 0 and secret_doc is None, (p.returncode, secret_doc)
+    assert "D-SECDB-AUTO-ROBOT" in p.stdout and "Secret security-system/trivy-db-refresh ensured" not in p.stdout, p.stdout
 
 
 # ---------------------------------------------------------------- behavior: fetch prune, helm, promtool
@@ -547,7 +658,17 @@ MUTATIONS = [
     ("retention keeps nothing", REG, "SECDB_KEEP=2", "SECDB_KEEP=0"),
     ("retention ignores untagged", REG, 'json.dumps({"untagged": True})', 'json.dumps({"untagged": False})'),
     ("GC overwrites an existing schedule", REG, 'if gtype == "None":', "if True:"),
-    ("GC deletes untagged system-wide", REG, '"delete_untagged": False}})', '"delete_untagged": True}})'),
+    ("GC deletes untagged system-wide", REG, '"delete_untagged": False}', '"delete_untagged": True}'),
+    ("retention post does not retry 5xx", REG, 'call("POST", "/retentions", policy, retry_5xx=True)', 'call("POST", "/retentions", policy)'),
+    ("retention put does not retry 5xx", REG, 'call("PUT", f"/retentions/{rid}", policy, retry_5xx=True)', 'call("PUT", f"/retentions/{rid}", policy)'),
+    ("GC get does not retry 5xx", REG, 'call("GET", "/system/gc/schedule", retry_5xx=True)', 'call("GET", "/system/gc/schedule")'),
+    ("GC post does not retry 5xx", REG, '"parameters": {"delete_untagged": False}}, retry_5xx=True)', '"parameters": {"delete_untagged": False}})'),
+    ("4xx retried on retention/GC", REG, 'if 500 <= e.code < 600 and attempt < len(delays):', 'if 400 <= e.code < 600 and attempt < len(delays):'),
+    ("retry delays zeroed out", REG, "(5, 10, 15, 30, 60, 60)", "()"),
+    ("retention failure aborts Secret creation", REG, 'if [ -n "${SECDB_ROBOT_USER}" ] && [ -n "${SECDB_ROBOT_SECRET}" ]; then', 'if [ "${SECDB_RC}" -eq 0 ] && [ -n "${SECDB_ROBOT_USER}" ] && [ -n "${SECDB_ROBOT_SECRET}" ]; then'),
+    ("retention failure stops GC step", REG, 'except SystemExit as e:\n    print(f"WARN: retention setup failed: {e}", file=sys.stderr)', 'except KeyError as e:\n    print(f"WARN: retention setup failed: {e}", file=sys.stderr)'),
+    ("retention/GC failure swallows Python exit code", REG, 'raise SystemExit(2)', 'pass'),
+    ("retention/GC warning leaks robot secret", REG, 'echo "WARN: Harbor trivy-db ${SECDB_FAILED:-retention/GC}', 'echo "WARN: ${SECDB_ROBOT_SECRET} Harbor trivy-db ${SECDB_FAILED:-retention/GC}'),
     ("robot secret reset on every run", REG, "elif found and not created_robot:", "elif found:"),
     ("create response secret discarded", REG, 'secret = created.get("secret") or ""', 'secret = PW'),
     ("Harbor REST calls use unprefixed base", REG, 'API + path, method=method,', 'API_BASE + path, method=method,'),

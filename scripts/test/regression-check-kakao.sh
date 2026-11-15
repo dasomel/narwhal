@@ -3360,6 +3360,8 @@ PYEOF'
     python3 scripts/test/lib/check-keycloak-bootstrap-issuer.py
   check R347 "R19 helper compares image sets, not counts: identical passes, equal-count swap and missing-only fail with names (#663)" \
     bash scripts/test/lib/self-test-airgap-bundle-image-set.sh
+  check R348 "keycloak-operator livenessProbe patches /q/health/ready (30s*6=180s, timeout 10s), keeps port/scheme/startupProbe, is idempotent and container-index/name safe; 4 mutations caught (D-KC-OPERATOR-LIVENESS)" \
+    python3 scripts/test/lib/check-keycloak-operator-liveness.py
   check R345 "12-gitea.sh waits for the patched Deployment rollout and selects a Running, non-terminating Gitea pod by name; all 3 mutations caught (D-GITEA-ROLLOUT-WAIT)" \
     python3 scripts/test/lib/check-gitea-rollout-wait.py
   check R344 "Single-only MetalLB exclusion removal converges in init, Phase 2 and heal; removal/HA mutations caught (D-SINGLE-LB-ANNOUNCE)" \

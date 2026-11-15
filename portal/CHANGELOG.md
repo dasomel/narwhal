@@ -9,6 +9,13 @@ English | [한국어](CHANGELOG-ko.md)
 
 ## [Unreleased]
 
+### Fixed
+
+- Non-admin users (`developer`, `viewer`) without a matching `teamMappings` entry in `config/role-filter.json`
+  previously fell back to `roleDefaults` (`["*"]`), exposing every namespace across tenants and bypassing
+  `narwhal.io/team` label-only isolation. Visibility scope now fails closed (`[]`) when no team mapping or
+  `narwhal.io/team` namespace label matches, while preserving label-only namespace ownership (`narwhal#659`).
+
 ## [1.1.15] - 2026-11-14
 
 Patch release that preserves ambiguous namespace-less service telemetry when a same-name Job cannot be

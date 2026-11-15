@@ -29,9 +29,11 @@ const { GET } = await import("./route")
 const platformTeamSession = { groups: ["developer"], teams: ["platform-team"], user: { role: "developer" } }
 const frontendTeamSession = { groups: ["developer"], teams: ["frontend-team"], user: { role: "developer" } }
 const clusterAdminSession = { groups: ["cluster-admin"], teams: [], user: { role: "cluster-admin" } }
-// No team mapping and no role-default group — getVisibilityScope() falls through to
-// hasMapping:false with zero namespaces, the "scope cannot be established" case.
+// narwhal#659: a developer with an unmapped team (or no team at all) now fails closed in
+// getVisibilityScope() -> hasMapping:false with zero namespaces.
 const unscopedSession = { groups: ["unmapped-group"], teams: [], user: { role: "developer" } }
+const unmappedDeveloperSession = { groups: ["developer"], teams: ["unmapped-team"], user: { role: "developer" } }
+const teamlessDeveloperSession = { groups: ["developer"], teams: [], user: { role: "developer" } }
 
 const namespaces: NamespaceInfo[] = [
   { name: "platform-system", status: "Active", labels: {}, createdAt: "2026-01-01T00:00:00Z" },
@@ -139,11 +141,13 @@ describe("GET /api/events — scope enforcement", () => {
   })
 
   it("denies a non-admin caller with no scope mapping (default-deny, empty timeline)", async () => {
-    vi.mocked(auth).mockResolvedValue(unscopedSession as never)
-    const res = await GET(req())
-    expect(res.status).toBe(200)
-    const body = await res.json()
-    expect(body).toEqual([])
+    for (const session of [unscopedSession, unmappedDeveloperSession, teamlessDeveloperSession]) {
+      vi.mocked(auth).mockResolvedValue(session as never)
+      const res = await GET(req())
+      expect(res.status).toBe(200)
+      const body = await res.json()
+      expect(body).toEqual([])
+    }
   })
 
   it("filters Alertmanager alerts by structured namespace label, not text", async () => {

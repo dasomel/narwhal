@@ -73,7 +73,7 @@ and works, and the failure at 16:34:22 came after the last rewrite. They are not
 
 ## Fixes and follow-ups
 
-- **Done (this PR):** the pre-flight retries the readiness probe and reports kubectl's real error,
+- **Done (this PR):** the pre-flight retries the readiness probe and classifies kubectl's error (the raw message is not printed because it can carry a credential),
   separating unreachable, stale CA (x509), credentials, and "API up but not ready (etcd slow)"
   (D-CRED-PREFLIGHT-DIAG), with a regression check.
 - **Operator guidance:** while the local cluster is used, avoid running a second large VM (colima

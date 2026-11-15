@@ -93,15 +93,15 @@ if [ "${READY_OK}" -ne 1 ]; then
   # D-CRED-PREFLIGHT-DIAG: classify the probe failure so transient API health
   # issues do not send operators to VM/network recovery. Cost: up to two 5s
   # waits; escape hatch: inspect /readyz?verbose or refresh the selected context.
-  # Never echo a credential: mask userinfo in URLs and bearer/token values before printing.
-  READY_ERROR=$(printf '%s\n' "${READY_RAW}" | tail -n 1 \
-    | sed -E 's#(://)[^/@[:space:]]+@#\1***@#g; s#([Bb]earer )[^[:space:]"]+#\1***#g; s#((token|password|secret)"?[=:] *"?)[^[:space:]"&,]+#\1***#gI' \
-    || true)
+  # Never echo kubectl's stderr: an exec-plugin, proxy or auth error can carry a credential, and
+  # masking it is whack-a-mole (quoted, multi-word values). Classify on the raw text, print only the
+  # class, and point at the command that shows the detail in the operator's own terminal.
+  READY_ERROR=$(printf '%s\n' "${READY_RAW}" | tail -n 1)
   SERVER=$(command kubectl config view --minify ${CONTEXT:+--context "${CONTEXT}"} \
     -o jsonpath='{.clusters[0].cluster.server}' 2>/dev/null)
   echo ""
   echo "${YELLOW}The cluster API${SERVER:+ at ${SERVER}} did not pass the readiness probe — nothing to read.${RESET}"
-  echo "  kubectl: ${READY_ERROR:-no error detail}"
+  echo "  (kubectl's message is not printed; run: kubectl get --raw /readyz)"
   # Order matters: a timeout after the TCP connect (Client.Timeout / context deadline)
   # is what an etcd stall looks like (2026-11-15 RCA), so it is not reported as a down VM.
   case "${READY_ERROR}" in

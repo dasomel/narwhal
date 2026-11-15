@@ -20,8 +20,10 @@ def check(src):
     assert 'context deadline' not in unreachable and 'Client.Timeout' not in unreachable, \
         'a post-connect timeout (etcd stall) must not be classified as an unreachable VM'
     assert 'ubuntu@<bastion>' in src, 'kakao bastion tunnel hint missing'
-    assert '***@' in src and 'earer )' in src, 'kubectl error must be masked before printing'
-    assert '"?[=:] *"?' in src, 'quoted token/password values must be masked'
+    for line in src.splitlines():
+        if line.lstrip().startswith(('echo', 'printf')) and ('READY_ERROR' in line or 'READY_RAW' in line) \
+                and "'%s\\n' \"${READY_RAW}\" | tail" not in line:
+            raise AssertionError('kubectl stderr must never be printed: ' + line.strip())
     assert '*"no such host"*' in src and '*"must be logged in"*' in src, 'DNS and login-required errors must be classified'
 
 
@@ -35,8 +37,7 @@ def main():
         'not-ready-removed': src.replace('is not ready or too slow', 'API error'),
         'deadline-as-unreachable': src.replace('*"connection refused"*|', '*"connection refused"*|*"context deadline exceeded"*|', 1),
         'kakao-hint-removed': src.replace('ubuntu@<bastion>', 'the bastion'),
-        'masking-removed': src.replace('***@', '@'),
-        'quoted-values-unmasked': src.replace('"?[=:] *"?', '[=:] *'),
+        'stderr-echoed': src.replace('  echo "  (kubectl\'s message is not printed', '  echo "  kubectl: ${READY_ERROR}"\n  echo "  (kubectl\'s message is not printed', 1),
         'dns-unclassified': src.replace('*"no such host"*|', ''),
     }
     for name, mutated in mutations.items():

@@ -74,22 +74,56 @@ echo "${BOLD}Narwhal Cluster Credentials${RESET}"
 echo "Generated: $(date '+%Y-%m-%d %H:%M:%S %Z')"
 echo "Provider: ${PROVIDER}   Domain: ${DOMAIN}${CONTEXT:+   Context: ${CONTEXT}}"
 
-# Reach the API once before the ~25 secret lookups. Per-call --request-timeout
+# Reach the API before the ~25 secret lookups. Per-call --request-timeout
 # is not enough on its own: against a halted cluster kubectl still retries API
 # discovery, so one lookup costs ~15s and the full run took over five minutes to
-# print nothing but "(missing)". Measured against a down Vagrant cluster.
-if ! kubectl get --raw /readyz >/dev/null 2>&1; then
+# print nothing but "(missing)". Keep retrying brief transient API readiness
+# failures (such as etcd stalls) without turning a down cluster into a long wait.
+READY_ERR=$(mktemp)
+READY_OK=0
+for attempt in 1 2 3; do
+  if kubectl get --raw /readyz >/dev/null 2>"${READY_ERR}"; then
+    READY_OK=1
+    break
+  fi
+  [ "${attempt}" -eq 3 ] || sleep "${READY_RETRY_SLEEP:-5}"
+done
+if [ "${READY_OK}" -ne 1 ]; then
+  # D-CRED-PREFLIGHT-DIAG: classify the probe failure so transient API health
+  # issues do not send operators to VM/network recovery. Cost: up to two 5s
+  # waits; escape hatch: inspect /readyz?verbose or refresh the selected context.
+  READY_ERROR=$(tail -n 1 "${READY_ERR}" 2>/dev/null || true)
+  rm -f "${READY_ERR}"
   SERVER=$(command kubectl config view --minify ${CONTEXT:+--context "${CONTEXT}"} \
     -o jsonpath='{.clusters[0].cluster.server}' 2>/dev/null)
   echo ""
-  echo "${YELLOW}Cannot reach the cluster API${SERVER:+ at ${SERVER}} — nothing to read.${RESET}"
-  case "${PROVIDER}" in
-    kakao) echo "  The API LB certificate has no public-IP SAN, so a bastion tunnel is required:"
-           echo "    ssh -f -N -L 6443:<api-lb-private>:6443 ubuntu@<bastion>" ;;
-    *)     echo "  Are the VMs running?  vagrant status" ;;
+  echo "${YELLOW}The cluster API${SERVER:+ at ${SERVER}} did not pass the readiness probe — nothing to read.${RESET}"
+  echo "  kubectl: ${READY_ERROR:-no error detail}"
+  # Order matters: a timeout after the TCP connect (Client.Timeout / context deadline)
+  # is what an etcd stall looks like (2026-11-15 RCA), so it is not reported as a down VM.
+  case "${READY_ERROR}" in
+    *x509*|*"certificate signed by unknown authority"*)
+      if [ "${PROVIDER}" = "kakao" ]; then
+        echo "  The API LB certificate has no public-IP SAN, so a bastion tunnel is required:"
+        echo "    ssh -f -N -L 6443:<api-lb-private>:6443 ubuntu@<bastion>"
+      else
+        echo "  The kubeconfig CA does not match the cluster (it may have been rebuilt); refresh the context."
+      fi ;;
+    *Unauthorized*|*Forbidden*|*unauthorized*|*forbidden*)
+      echo "  The API rejected these credentials; refresh the selected context's credentials." ;;
+    *"connection refused"*|*"was refused"*|*"no route to host"*|*"network is unreachable"*|*"dial tcp"*"i/o timeout"*)
+      case "${PROVIDER}" in
+        kakao) echo "  Cannot reach the API. A bastion tunnel is required:"
+               echo "    ssh -f -N -L 6443:<api-lb-private>:6443 ubuntu@<bastion>" ;;
+        *)     echo "  Cannot reach the cluster API. Are the VMs running?  vagrant status" ;;
+      esac ;;
+    *)
+      echo "  The API answered but is not ready or too slow (etcd may be stalling); retry in a minute,"
+      echo "  or inspect: kubectl get --raw '/readyz?verbose'   (docs/vagrant/rca-2026-11-15-show-credentials-api.md)" ;;
   esac
   exit 1
 fi
+rm -f "${READY_ERR}"
 
 # D-CRED-CONTEXT: positively identify a Narwhal cluster before the first Secret
 # read. Without --context this script uses the current kubectl context, and a

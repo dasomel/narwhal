@@ -24,7 +24,7 @@ def check(src):
         if line.lstrip().startswith(('echo', 'printf')) and ('READY_ERROR' in line or 'READY_RAW' in line) \
                 and "'%s\\n' \"${READY_RAW}\" | tail" not in line:
             raise AssertionError('kubectl stderr must never be printed: ' + line.strip())
-    assert '*"no such host"*' in src and '*"must be logged in"*' in src, 'DNS and login-required errors must be classified'
+    assert '*"no such host"*' in src and '*"must be logged in"*' in src and '*"exec plugin"*' in src, 'DNS and login-required errors must be classified'
 
 
 def main():
@@ -39,6 +39,7 @@ def main():
         'kakao-hint-removed': src.replace('ubuntu@<bastion>', 'the bastion'),
         'stderr-echoed': src.replace('  echo "  (kubectl\'s message is not printed', '  echo "  kubectl: ${READY_ERROR}"\n  echo "  (kubectl\'s message is not printed', 1),
         'dns-unclassified': src.replace('*"no such host"*|', ''),
+        'exec-plugin-unclassified': src.replace('|*"exec plugin"*', ''),
     }
     for name, mutated in mutations.items():
         try:
@@ -46,7 +47,7 @@ def main():
         except AssertionError:
             continue
         raise SystemExit(f'mutation not caught: {name}')
-    print('ok: readiness retry and diagnostics present; 9 mutations caught')
+    print(f'ok: readiness retry and diagnostics present; {len(mutations)} mutations caught')
 
 
 if __name__ == '__main__':

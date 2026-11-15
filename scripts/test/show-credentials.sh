@@ -112,7 +112,7 @@ if [ "${READY_OK}" -ne 1 ]; then
       else
         echo "  The kubeconfig CA does not match the cluster (it may have been rebuilt); refresh the context."
       fi ;;
-    *Unauthorized*|*Forbidden*|*unauthorized*|*forbidden*|*"must be logged in"*)
+    *Unauthorized*|*Forbidden*|*unauthorized*|*forbidden*|*"must be logged in"*|*"exec plugin"*|*"getting credentials"*)
       echo "  The API rejected these credentials; refresh the selected context's credentials." ;;
     *"connection refused"*|*"was refused"*|*"no route to host"*|*"network is unreachable"*|*"no such host"*|*"dial tcp"*"i/o timeout"*)
       case "${PROVIDER}" in

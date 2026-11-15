@@ -65,7 +65,7 @@ jobs:
       # allowlist. `pnpm install --frozen-lockfile` below only needs the npm registry
       # and GitHub itself; a real exfiltration attempt fails closed instead of quietly
       # succeeding. audit mode intentionally off: block is the point of this gate.
-      - uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
+      - uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
         with:
           egress-policy: block
           allowed-endpoints: >

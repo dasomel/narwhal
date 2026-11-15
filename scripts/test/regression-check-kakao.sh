@@ -1627,7 +1627,7 @@ PYEOF
   # meant a Mac checking the arm64 (Vagrant) bundle while the Kakao work was all amd64 —
   # so amd64 could drift arbitrarily far from images.txt and this still reported on the
   # wrong one. AIRGAP_BUNDLE_DIR still pins a single bundle when you want that.
-  local bundle bundles=() want have layouts stale bad19=""
+  local bundle bundles=() want bad19=""
   if [ -n "${AIRGAP_BUNDLE_DIR:-}" ]; then
     bundles=("${AIRGAP_BUNDLE_DIR}")
   else
@@ -1640,15 +1640,14 @@ PYEOF
   else
     want=$(grep -cvE '^\s*(#|$)' scripts/airgap/images.txt)
     for bundle in "${bundles[@]}"; do
-      have=$(grep -cvE '^\s*$' "${bundle}/manifest.txt" 2>/dev/null || echo 0)
-      layouts=$(find "${bundle}/oci" -maxdepth 4 -name index.json | wc -l | tr -d ' ')
-      [ "${want}" = "${have}" ] && [ "${want}" = "${layouts}" ] \
-        || bad19="${bad19}${bundle##*-}(manifest=${have} oci=${layouts}) "
+      if ! diff19=$(bash scripts/test/lib/check-airgap-bundle-image-set.sh scripts/airgap/images.txt "${bundle}" 2>&1); then
+        bad19="${bad19}${bundle##*-}: ${diff19}; "
+      fi
     done
     if [ -z "${bad19}" ]; then
       ok R19 "bundle complete: ${want} images in list, manifest and oci (${#bundles[@]} bundle(s))"
     else
-      bad R19 "bundle counts disagree with images.txt=${want}: ${bad19}"
+      bad R19 "bundle differs from images.txt=${want}: ${bad19}"
     fi
 
     # R20 below inspects one bundle's bootstrap tar; the first is enough.
@@ -3359,6 +3358,8 @@ PYEOF'
   # 2026-11-12: show-credentials.sh read Secrets from whatever kubectl context was current.
   check R343 "Keycloak bootstrap/GitOps canonical hostname and strict agree before OIDC discovery; 2 mutations caught (D-KC-BOOTSTRAP-ISSUER)" \
     python3 scripts/test/lib/check-keycloak-bootstrap-issuer.py
+  check R347 "R19 helper compares image sets, not counts: identical passes, equal-count swap and missing-only fail with names (#663)" \
+    bash scripts/test/lib/self-test-airgap-bundle-image-set.sh
   check R345 "12-gitea.sh waits for the patched Deployment rollout and selects a Running, non-terminating Gitea pod by name; all 3 mutations caught (D-GITEA-ROLLOUT-WAIT)" \
     python3 scripts/test/lib/check-gitea-rollout-wait.py
   check R344 "Single-only MetalLB exclusion removal converges in init, Phase 2 and heal; removal/HA mutations caught (D-SINGLE-LB-ANNOUNCE)" \

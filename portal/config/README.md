@@ -36,28 +36,31 @@ Nothing needs a deploy in between: both sources resolve at every request.
 `frontend-team` maps `frontend-*`, and no such namespace exists in this platform.
 Treat the file as an example to replace, not as configuration to preserve.
 
-## `roleDefaults` is the open decision
+## Unmapped non-admin users fail closed
 
-```json
-"developer": { "namespaces": ["*"], "argocdProjects": [] }
-```
+Visibility is resolved in code (`D-PORTAL-UNMAPPED-SCOPE`, narwhal#659):
+`cluster-admin` sees everything; other users see matching `teamMappings` patterns
+and namespaces owned by their teams through `narwhal.io/team`. Without either,
+`developer` and `viewer` see an empty portal, including users with no team claims.
+Ask a platform administrator to add a team mapping or namespace ownership label.
 
-`["*"]` means every namespace, which makes the scope filter a **no-op** for anyone
-holding the `developer` or `viewer` role — the code filters, the policy does not.
-Only `guest` is actually narrowed today.
+The shipped `roleDefaults` values remain unchanged (including developer/viewer
+`namespaces: ["*"]`) for configuration compatibility and diagnostics. They no
+longer grant non-admin visibility, even when explicitly set to a non-empty scope.
+Changing these values cannot bypass the unmapped-team policy.
 
-Tightening it is an operational decision, not a code change, and it has a real cost:
-set it to `[]` and any user without a team mapping or a labelled namespace sees an
-empty portal. Decide it per environment. Tracked on narwhal-portal#15.
+Write authorization remains separate: `getUserScope` uses only static mappings;
+ArgoCD mutation authorization also checks namespace ownership. Visibility scope
+must not be reused to grant writes.
 
 ## Shape
 
 | Key | Meaning |
 |---|---|
-| `roleDefaults.<role>` | Fallback scope for a role, used when no team mapping matches |
+| `roleDefaults.<role>` | Retained configuration/diagnostic values; ignored by non-admin visibility resolution |
 | `teamMappings[].group` | Keycloak group, matched against the user's teams |
 | `teamMappings[].namespaces` | Legacy patterns. `*` suffix is a prefix match; `*` alone is everything |
 | `teamMappings[].argocdProjects` | ArgoCD projects the team may see. No wildcard-by-label equivalent |
 
-Precedence: `cluster-admin` sees everything; otherwise a matching team mapping wins;
-otherwise the highest-priority role's default; otherwise nothing.
+Precedence: `cluster-admin` sees everything; otherwise matching static mappings
+plus team-owned namespace labels; otherwise nothing (fail-closed).

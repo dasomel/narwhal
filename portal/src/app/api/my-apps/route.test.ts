@@ -195,4 +195,44 @@ describe("GET /api/my-apps — tenant-derived views", () => {
     expect(getArgoApps).not.toHaveBeenCalled()
     expect(getAlerts).not.toHaveBeenCalled()
   })
+
+  it.each(["developer", "viewer"])("scopes a label-only %s team to its namespace (narwhal#659)", async (role) => {
+    vi.mocked(auth).mockResolvedValue({
+      groups: [role], teams: ["tenant-a-team"], user: { sub: "dev-tenant-a", role },
+    } as never)
+    vi.mocked(getNamespaces).mockResolvedValue([
+      { name: "tenant-a", status: "Active", createdAt: "2026-01-01T00:00:00Z", labels: { "narwhal.io/team": "tenant-a-team" } },
+      { name: "tenant-b", status: "Active", createdAt: "2026-01-01T00:00:00Z", labels: { "narwhal.io/team": "tenant-b-team" } },
+    ])
+    vi.mocked(getArgoApps).mockResolvedValue([
+      fakeApp("app-a", "default", "tenant-a"),
+      fakeApp("app-b", "default", "tenant-b"),
+    ])
+
+    const response = await GET()
+    expect(response.status).toBe(200)
+    const body = await response.json() as MyAppsResponse
+    expect(body.scope.hasMapping).toBe(true)
+    expect(body.scope.namespaces).toEqual(["tenant-a"])
+    expect(body.scopedApps.map((a) => a.name)).toEqual(["app-a"])
+  })
+
+  it("fails closed for a developer with an unmapped team and no matching namespace label (narwhal#659)", async () => {
+    vi.mocked(auth).mockResolvedValue({
+      groups: ["developer"], teams: ["unmapped-team"], user: { sub: "dev-unmapped", role: "developer" },
+    } as never)
+    vi.mocked(getNamespaces).mockResolvedValue([
+      { name: "tenant-a", status: "Active", createdAt: "2026-01-01T00:00:00Z", labels: { "narwhal.io/team": "tenant-a-team" } },
+    ])
+    vi.mocked(getArgoApps).mockResolvedValue([
+      fakeApp("app-a", "default", "tenant-a"),
+    ])
+
+    const response = await GET()
+    expect(response.status).toBe(200)
+    const body = await response.json() as MyAppsResponse
+    expect(body.scope.hasMapping).toBe(false)
+    expect(body.scope.namespaces).toEqual([])
+    expect(body.scopedApps).toEqual([])
+  })
 })

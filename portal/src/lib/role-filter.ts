@@ -71,7 +71,7 @@ export function namespaceOwnedBy(ns: LabelledNamespace, teams: string[]): boolea
 }
 
 export interface ResolvedNamespaceScope {
-  /** Every namespace, present and future — cluster-admin, or a roleDefault of ["*"]. */
+  /** Every namespace, present and future — cluster-admin or an explicit team wildcard. */
   all: boolean
   names: Set<string>
   /** How each name got in, for the "why can I see this" question. */
@@ -364,11 +364,12 @@ export function getUserScope(groups: string[]): UserScope & { hasMapping: boolea
   }
 }
 
-// VISIBILITY scope (my-apps + events SSE stream — read-only "what you can SEE").
-// Precedence: cluster-admin -> everything; else matching team mappings (custom B);
-// else the highest-priority role's default scope (A); else (guest) -> none.
-const ROLE_PRIORITY = ["cluster-admin", "developer", "viewer"] as const
-
+// VISIBILITY scope: cluster-admin -> everything; matching teams -> mapped scope;
+// otherwise empty. Namespace labels are resolved separately by resolveNamespaceScope.
+// D-PORTAL-UNMAPPED-SCOPE: Never use role defaults for unmapped non-admins: broad
+// defaults expose other tenants (narwhal#659). Cost: unmapped developers see an
+// empty portal until a team mapping is added. Escape hatch: map the team in
+// config/role-filter.json or label its namespaces with narwhal.io/team=<team>.
 export function getVisibilityScope(
   roleGroups: string[],
   teamGroups: string[] = [],
@@ -400,20 +401,5 @@ export function getVisibilityScope(
     }
   }
 
-  // 3. Role default (A) for the highest-priority role held.
-  const defaults = config.roleDefaults ?? {}
-  for (const role of ROLE_PRIORITY) {
-    if (roleGroups.includes(role) && defaults[role]) {
-      const d = defaults[role]
-      return {
-        groups: [role],
-        namespaces: [...d.namespaces],
-        argocdProjects: [...d.argocdProjects],
-        hasMapping: d.namespaces.length > 0 || d.argocdProjects.length > 0,
-      }
-    }
-  }
-
-  // 4. guest / no mapping.
   return { groups: [], namespaces: [], argocdProjects: [], hasMapping: false }
 }

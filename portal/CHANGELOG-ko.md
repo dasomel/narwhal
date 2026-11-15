@@ -9,6 +9,13 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- `config/role-filter.json`의 `teamMappings`에 일치하는 팀이 없는 비관리자(`developer`, `viewer`)가
+  `roleDefaults`(`["*"]`)로 폴백되어 전체 네임스페이스가 노출되고 `narwhal.io/team` 라벨 단독 격리가
+  우회되던 문제를 수정했습니다. 이제 매핑된 팀이나 `narwhal.io/team` 라벨이 없으면 빈 가시성 범위(`[]`,
+  fail-closed)를 반환하며, 라벨 단독 소유권 해석은 그대로 유지합니다 (`narwhal#659`).
+
 ## [1.1.15] - 2026-11-14
 
 같은 이름의 Job과 실행 중인 서비스를 구분할 수 없는 경우 네임스페이스 없는 서비스 telemetry를 보존하는 패치 릴리스입니다

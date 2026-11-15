@@ -16,14 +16,14 @@ import {
 import { DEFAULT_CLUSTER_ID } from "@/types/cluster"
 
 export interface EffectiveScope {
-  /** Every namespace — cluster-admin, or a roleDefault of ["*"]. */
+  /** Every namespace — cluster-admin or an explicit team wildcard. */
   all: boolean
   namespaces: Set<string>
   argocdProjects: string[]
   /**
    * Whether the caller has ANY scope — not whether they have a config entry.
    *
-   * getVisibilityScope's own hasMapping means "matched a teamMapping or roleDefault",
+   * getVisibilityScope's own hasMapping means "matched a teamMapping or cluster-admin",
    * which under the label model is the wrong question: a team can own namespaces
    * through narwhal.io/team with nothing in role-filter.json, and routes that gate on
    * the config answer would show those users an empty page while their namespaces sat
@@ -58,8 +58,9 @@ export async function getEffectiveScope(session: ScopeSession, clusterId: string
   const scope = getVisibilityScope(groups, teams)
 
   // A caller with no mapping and no team sees nothing, and asking the API for the
-  // namespace list to prove that is wasted work.
-  if (!scope.hasMapping && scope.namespaces.length === 0) {
+  // namespace list to prove that is wasted work. Teams without static mappings
+  // still need label resolution (D-PORTAL-UNMAPPED-SCOPE).
+  if (!scope.hasMapping && scope.namespaces.length === 0 && teams.length === 0) {
     const empty = { all: false, names: new Set<string>(), byLabel: new Set<string>(), byPattern: new Set<string>() }
     return {
       all: false,

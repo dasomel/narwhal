@@ -401,26 +401,16 @@ and `.github/workflows/portal-harness-rules.yml`; they do not prove production i
 Remaining evidence/decisions: live Keycloak login and first-visit CSRF race;
 real provider mutation/read-back; real multi-replica informer/Valkey failover;
 second-cluster visibility; owner confirmation of branch protection and #358 apply
-scope. The unmapped-team developer case described below has no regression test yet.
-Current policy also intentionally permits namespace-less cluster alerts for
-scoped sessions (`src/lib/scope.ts`) and all namespaces for unteamed developer/viewer
-roles (`config/role-filter.json`); stricter tenant defaults require an owner decision.
-
-Observed defect (test-only investigation; failing probe removed as requested): with
-`groups=["developer"]`, `teams=["tenant-a-team"]` absent from `teamMappings`, and
-namespaces `tenant-a` / `tenant-b` labeled `narwhal.io/team=tenant-a-team` /
-`tenant-b-team`, `/api/my-apps` returned both namespace names instead of only
-`tenant-a`. After the cluster-admin override (`src/lib/role-filter.ts:378-381`),
-`getVisibilityScope` checks static team mappings first (`src/lib/role-filter.ts:383-401`).
-If none match, even when the user has team claims, it returns the highest-priority
-held role's configured default (`src/lib/role-filter.ts:370`, `src/lib/role-filter.ts:403-415`). Whether
-that exposes other teams depends on the configured developer role default. The
-shipped `config/role-filter.json:4` sets developer namespaces to `["*"]` and
-ArgoCD projects to `[]`; `resolveNamespaceScope` then returns all namespaces before
-checking team labels (`src/lib/role-filter.ts:100-114`). The same role-default
-fallback applies to unteamed users; label-only tenant isolation remains **missing**
-for this configuration. Owner/auth changes are needed; no production fix or
-failing/skipped test is included here.
+scope. Current policy intentionally permits namespace-less cluster alerts for
+scoped sessions (`src/lib/scope.ts`). Non-admin visibility now fails closed
+(`D-PORTAL-UNMAPPED-SCOPE`, narwhal#659): `getVisibilityScope` ignores role defaults
+and returns an empty scope when no static team mapping matches. `getEffectiveScope`
+still resolves `narwhal.io/team` namespace labels for callers with team claims.
+Without a static mapping or matching label, developers and viewers (including
+teamless users) receive an empty scope. Shipped `roleDefaults` remain unchanged;
+setting them cannot reopen visibility. Write authorization remains separate.
+Regression coverage: `src/lib/role-filter.visibility.test.ts` and
+`src/app/api/my-apps/route.test.ts`.
 
 Local verification caveat: `pnpm test -- --maxWorkers=4 --testTimeout=30000`
 passes a literal `--` to Vitest with this pnpm version, leaving the timeout at 5s.

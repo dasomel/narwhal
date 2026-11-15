@@ -14,10 +14,13 @@ def check(src):
         'stale kubeconfig CA branch missing'
     assert 'is not ready or too slow' in src and '/readyz?verbose' in src, \
         'API-not-ready branch missing'
-    unreachable = src[src.index('*"connection refused"*'):src.index(')', src.index('*"connection refused"*'))]
+    start = src.find('*"connection refused"*')
+    assert start != -1, 'unreachable branch missing'
+    unreachable = src[start:src.find(')', start)]
     assert 'context deadline' not in unreachable and 'Client.Timeout' not in unreachable, \
         'a post-connect timeout (etcd stall) must not be classified as an unreachable VM'
     assert 'ubuntu@<bastion>' in src, 'kakao bastion tunnel hint missing'
+    assert '***@' in src and 'earer )' in src, 'kubectl error must be masked before printing'
 
 
 def main():
@@ -30,6 +33,7 @@ def main():
         'not-ready-removed': src.replace('is not ready or too slow', 'API error'),
         'deadline-as-unreachable': src.replace('*"connection refused"*|', '*"connection refused"*|*"context deadline exceeded"*|', 1),
         'kakao-hint-removed': src.replace('ubuntu@<bastion>', 'the bastion'),
+        'masking-removed': src.replace('***@', '@'),
     }
     for name, mutated in mutations.items():
         try:
@@ -37,7 +41,7 @@ def main():
         except AssertionError:
             continue
         raise SystemExit(f'mutation not caught: {name}')
-    print('ok: readiness retry and diagnostics present; 6 mutations caught')
+    print('ok: readiness retry and diagnostics present; 7 mutations caught')
 
 
 if __name__ == '__main__':

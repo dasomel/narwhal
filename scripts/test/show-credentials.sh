@@ -79,7 +79,7 @@ echo "Provider: ${PROVIDER}   Domain: ${DOMAIN}${CONTEXT:+   Context: ${CONTEXT}
 # discovery, so one lookup costs ~15s and the full run took over five minutes to
 # print nothing but "(missing)". Keep retrying brief transient API readiness
 # failures (such as etcd stalls) without turning a down cluster into a long wait.
-READY_ERR=$(mktemp)
+READY_ERR=$(mktemp 2>/dev/null || echo /dev/null)
 READY_OK=0
 for attempt in 1 2 3; do
   if kubectl get --raw /readyz >/dev/null 2>"${READY_ERR}"; then
@@ -92,7 +92,10 @@ if [ "${READY_OK}" -ne 1 ]; then
   # D-CRED-PREFLIGHT-DIAG: classify the probe failure so transient API health
   # issues do not send operators to VM/network recovery. Cost: up to two 5s
   # waits; escape hatch: inspect /readyz?verbose or refresh the selected context.
-  READY_ERROR=$(tail -n 1 "${READY_ERR}" 2>/dev/null || true)
+  # Never echo a credential: mask userinfo in URLs and bearer/token values before printing.
+  READY_ERROR=$(tail -n 1 "${READY_ERR}" 2>/dev/null \
+    | sed -E 's#(://)[^/@[:space:]]+@#\1***@#g; s#([Bb]earer )[^[:space:]"]+#\1***#g; s#((token|password|secret)[=:] *)[^[:space:]"&]+#\1***#gI' \
+    || true)
   rm -f "${READY_ERR}"
   SERVER=$(command kubectl config view --minify ${CONTEXT:+--context "${CONTEXT}"} \
     -o jsonpath='{.clusters[0].cluster.server}' 2>/dev/null)

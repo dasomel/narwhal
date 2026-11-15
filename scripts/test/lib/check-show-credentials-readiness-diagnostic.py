@@ -21,6 +21,8 @@ def check(src):
         'a post-connect timeout (etcd stall) must not be classified as an unreachable VM'
     assert 'ubuntu@<bastion>' in src, 'kakao bastion tunnel hint missing'
     assert '***@' in src and 'earer )' in src, 'kubectl error must be masked before printing'
+    assert '"?[=:] *"?' in src, 'quoted token/password values must be masked'
+    assert '*"no such host"*' in src and '*"must be logged in"*' in src, 'DNS and login-required errors must be classified'
 
 
 def main():
@@ -34,6 +36,8 @@ def main():
         'deadline-as-unreachable': src.replace('*"connection refused"*|', '*"connection refused"*|*"context deadline exceeded"*|', 1),
         'kakao-hint-removed': src.replace('ubuntu@<bastion>', 'the bastion'),
         'masking-removed': src.replace('***@', '@'),
+        'quoted-values-unmasked': src.replace('"?[=:] *"?', '[=:] *'),
+        'dns-unclassified': src.replace('*"no such host"*|', ''),
     }
     for name, mutated in mutations.items():
         try:
@@ -41,7 +45,7 @@ def main():
         except AssertionError:
             continue
         raise SystemExit(f'mutation not caught: {name}')
-    print('ok: readiness retry and diagnostics present; 7 mutations caught')
+    print('ok: readiness retry and diagnostics present; 9 mutations caught')
 
 
 if __name__ == '__main__':

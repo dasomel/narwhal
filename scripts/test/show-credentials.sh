@@ -95,7 +95,7 @@ if [ "${READY_OK}" -ne 1 ]; then
   # waits; escape hatch: inspect /readyz?verbose or refresh the selected context.
   # Never echo a credential: mask userinfo in URLs and bearer/token values before printing.
   READY_ERROR=$(printf '%s\n' "${READY_RAW}" | tail -n 1 \
-    | sed -E 's#(://)[^/@[:space:]]+@#\1***@#g; s#([Bb]earer )[^[:space:]"]+#\1***#g; s#((token|password|secret)[=:] *)[^[:space:]"&]+#\1***#gI' \
+    | sed -E 's#(://)[^/@[:space:]]+@#\1***@#g; s#([Bb]earer )[^[:space:]"]+#\1***#g; s#((token|password|secret)"?[=:] *"?)[^[:space:]"&,]+#\1***#gI' \
     || true)
   SERVER=$(command kubectl config view --minify ${CONTEXT:+--context "${CONTEXT}"} \
     -o jsonpath='{.clusters[0].cluster.server}' 2>/dev/null)
@@ -112,9 +112,9 @@ if [ "${READY_OK}" -ne 1 ]; then
       else
         echo "  The kubeconfig CA does not match the cluster (it may have been rebuilt); refresh the context."
       fi ;;
-    *Unauthorized*|*Forbidden*|*unauthorized*|*forbidden*)
+    *Unauthorized*|*Forbidden*|*unauthorized*|*forbidden*|*"must be logged in"*)
       echo "  The API rejected these credentials; refresh the selected context's credentials." ;;
-    *"connection refused"*|*"was refused"*|*"no route to host"*|*"network is unreachable"*|*"dial tcp"*"i/o timeout"*)
+    *"connection refused"*|*"was refused"*|*"no route to host"*|*"network is unreachable"*|*"no such host"*|*"dial tcp"*"i/o timeout"*)
       case "${PROVIDER}" in
         kakao) echo "  Cannot reach the API. A bastion tunnel is required:"
                echo "    ssh -f -N -L 6443:<api-lb-private>:6443 ubuntu@<bastion>" ;;

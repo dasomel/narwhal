@@ -43,8 +43,11 @@ apiserver warn/error lines per minute show a periodic pattern: 16:25 = 74, 16:30
   No leader changes (single member).
 - **Guest disk latency spikes without guest load.** Average write latency per write (max over guest
   disks): 16:24 = 403 ms, 16:26 = 498 ms, 16:27 = 957 ms, 16:41 = 1281 ms; most other minutes 1–10 ms.
-  Total guest writes in 16:24–16:44 were only ~722 MB (~0.6 MB/s; top writers etcd 560 MB,
-  istio-cni-node 209 MB, kube-apiserver 110 MB). Guest load1 stayed 1.2–5.2 on 10 vCPU, iowait share
+  Total guest block-device writes in 16:24–16:44 were only ~722 MB (~0.6 MB/s,
+  `node_disk_written_bytes_total` on the root device). Per-container cAdvisor write counters for the
+  same window (etcd 560 MB, istio-cni-node 209 MB, kube-apiserver 110 MB) sum to more than that because
+  they count filesystem writes before page-cache coalescing; they rank writers, they do not add up to
+  device writes. Guest load1 stayed 1.2–5.2 on 10 vCPU, iowait share
   ≤ 0.14, IO pressure ≤ 0.30.
 - **Host contention at the time of analysis (snapshot, not the incident minute).** A second VM, colima
   `beluga` (10 CPU / 24 GiB), was running beside the Narwhal VM (10 vCPU / 24 GiB) on the 14-core /
@@ -58,9 +61,10 @@ apiserver warn/error lines per minute show a periodic pattern: 16:25 = 74, 16:30
    for short windows while the guest itself was nearly idle on IO. The stall originates below the guest
    — host storage contention from concurrent workloads (a second 10-CPU VM, VMware, real-time antivirus
    scanning). The exact host process at 16:34 was not captured.
-2. **Propagation (measured):** etcd backend commits blocked for up to ≥ 8 s → kube-apiserver requests to
-   etcd hit `DeadlineExceeded` → `/readyz` (which includes the etcd check) was not ok or exceeded the
-   script's 10 s request timeout. The same stalls explain the controller-manager/scheduler lease losses.
+2. **Propagation:** etcd backend commits blocked for up to ≥ 8 s and kube-apiserver logged etcd
+   `DeadlineExceeded` / timeout errors in the incident minute (both measured). That the 16:34:22 probe
+   failed for this reason is inferred: the script discarded kubectl's stderr, so whether `/readyz`
+   returned not-ok or exceeded the 10 s request timeout was not recorded. The same stalls explain the controller-manager/scheduler lease losses.
 3. **Misdiagnosis (measured, fixed):** `show-credentials.sh` discarded kubectl's stderr and printed
    "Cannot reach … Are the VMs running?" for every failure, so a not-ready API looked like a stopped VM.
 

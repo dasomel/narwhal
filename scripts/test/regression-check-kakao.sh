@@ -2171,7 +2171,7 @@ PYEOF
     python3 scripts/test/lib/check-security-db-provisioning.py
   check R335 "Trivy partial state survives client refetch and is shown from API headers or initial server data; header-removal mutation rejected" \
     python3 scripts/test/lib/check-trivy-partial-ui.py --mutation-verify
-  check R346 "show-credentials retries readiness and classifies kubectl pre-flight errors (post-connect timeout = not ready, kakao tunnel hint kept, credentials masked); 7 mutations caught (D-CRED-PREFLIGHT-DIAG)" \
+  check R346 "show-credentials retries readiness and classifies kubectl pre-flight errors (post-connect timeout = not ready, kakao tunnel hint kept, credentials masked incl. quoted values, DNS/login classified); 9 mutations caught (D-CRED-PREFLIGHT-DIAG)" \
     python3 scripts/test/lib/check-show-credentials-readiness-diagnostic.py
 
   check R305 "gateway lets only the portal's machine-token Gitea API calls (3 paths on narwhal-gitops, GET/POST, token header) skip OIDC; 8 mutations caught (D-GITEA-PORTAL-API)" \

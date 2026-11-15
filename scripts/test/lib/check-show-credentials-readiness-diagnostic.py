@@ -9,7 +9,7 @@ SCRIPT = ROOT / 'scripts/test/show-credentials.sh'
 
 def check(src):
     assert 'for attempt in 1 2 3' in src, 'readiness probe must have three bounded attempts'
-    assert '2>"${READY_ERR}"' in src, 'probe stderr must be captured for diagnosis'
+    assert 'READY_RAW=$(kubectl get --raw /readyz 2>&1 >/dev/null)' in src, 'probe stderr must be captured for diagnosis'
     assert 'x509' in src and 'certificate signed by unknown authority' in src, \
         'stale kubeconfig CA branch missing'
     assert 'is not ready or too slow' in src and '/readyz?verbose' in src, \
@@ -28,7 +28,7 @@ def main():
     check(src)
     mutations = {
         'retry-removed': src.replace('for attempt in 1 2 3; do', 'for attempt in 1; do'),
-        'stderr-hidden': src.replace('2>"${READY_ERR}"', '2>/dev/null'),
+        'stderr-hidden': src.replace('READY_RAW=$(kubectl get --raw /readyz 2>&1 >/dev/null)', 'READY_RAW=$(kubectl get --raw /readyz >/dev/null 2>&1)'),
         'x509-removed': src.replace('certificate signed by unknown authority', 'certificate error'),
         'not-ready-removed': src.replace('is not ready or too slow', 'API error'),
         'deadline-as-unreachable': src.replace('*"connection refused"*|', '*"connection refused"*|*"context deadline exceeded"*|', 1),

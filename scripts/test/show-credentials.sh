@@ -79,10 +79,11 @@ echo "Provider: ${PROVIDER}   Domain: ${DOMAIN}${CONTEXT:+   Context: ${CONTEXT}
 # discovery, so one lookup costs ~15s and the full run took over five minutes to
 # print nothing but "(missing)". Keep retrying brief transient API readiness
 # failures (such as etcd stalls) without turning a down cluster into a long wait.
-READY_ERR=$(mktemp 2>/dev/null || echo /dev/null)
 READY_OK=0
+READY_RAW=""
 for attempt in 1 2 3; do
-  if kubectl get --raw /readyz >/dev/null 2>"${READY_ERR}"; then
+  # stderr only (stdout discarded); no temp file, so no cleanup path can leak or fail.
+  if READY_RAW=$(kubectl get --raw /readyz 2>&1 >/dev/null); then
     READY_OK=1
     break
   fi
@@ -93,10 +94,9 @@ if [ "${READY_OK}" -ne 1 ]; then
   # issues do not send operators to VM/network recovery. Cost: up to two 5s
   # waits; escape hatch: inspect /readyz?verbose or refresh the selected context.
   # Never echo a credential: mask userinfo in URLs and bearer/token values before printing.
-  READY_ERROR=$(tail -n 1 "${READY_ERR}" 2>/dev/null \
+  READY_ERROR=$(printf '%s\n' "${READY_RAW}" | tail -n 1 \
     | sed -E 's#(://)[^/@[:space:]]+@#\1***@#g; s#([Bb]earer )[^[:space:]"]+#\1***#g; s#((token|password|secret)[=:] *)[^[:space:]"&]+#\1***#gI' \
     || true)
-  rm -f "${READY_ERR}"
   SERVER=$(command kubectl config view --minify ${CONTEXT:+--context "${CONTEXT}"} \
     -o jsonpath='{.clusters[0].cluster.server}' 2>/dev/null)
   echo ""
@@ -126,7 +126,7 @@ if [ "${READY_OK}" -ne 1 ]; then
   esac
   exit 1
 fi
-rm -f "${READY_ERR}"
+unset READY_RAW READY_ERROR
 
 # D-CRED-CONTEXT: positively identify a Narwhal cluster before the first Secret
 # read. Without --context this script uses the current kubectl context, and a

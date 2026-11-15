@@ -108,6 +108,56 @@ kubectl apply -f "$(manifest keycloak-keycloakrealmimports.k8s.keycloak.org-v1.y
 # 2. Operator RBAC + Deployment (namespaced to iam)
 kubectl apply -n iam -f "$(manifest keycloak-kubernetes.yml)"
 
+# D-KC-OPERATOR-LIVENESS: upstream keycloak-kubernetes.yml probes /q/health/live for liveness,
+# which stays 200 even when the operator's controller informer dies after an API-server blip,
+# leaving iam/keycloak-operator NotReady (0/1) indefinitely without kubelet restarting it (#656).
+# Point livenessProbe at /q/health/ready (keeping existing port/scheme and startupProbe) with
+# conservative thresholds (periodSeconds 30 * failureThreshold 6 = ~3m continuously not ready,
+# timeoutSeconds 10) so brief API hiccups do not restart the operator.
+# Cost: the operator pod restarts ~3 min after losing its informer (brief reconciliation pause);
+# Escape hatch: drop this patch or patch livenessProbe.httpGet.path back to /q/health/live.
+OPERATOR_CONTAINERS=$(kubectl get deployment keycloak-operator -n iam \
+  -o jsonpath='{range .spec.template.spec.containers[*]}{.name}{"\t"}{.image}{"\n"}{end}' 2>/dev/null || true)
+OPERATOR_CONTAINER=""
+while IFS=$'\t' read -r cname cimage; do
+  [ -n "${cname}" ] || continue
+  if [ "${cname}" = "keycloak-operator" ]; then
+    OPERATOR_CONTAINER="${cname}"
+    break
+  fi
+  if [[ "${cimage}" == *keycloak-operator* ]] && [ -z "${OPERATOR_CONTAINER}" ]; then
+    OPERATOR_CONTAINER="${cname}"
+  fi
+done <<< "${OPERATOR_CONTAINERS}"
+if [ -n "${OPERATOR_CONTAINER}" ]; then
+  kubectl patch deployment keycloak-operator -n iam --type=strategic -p "$(cat <<PATCHEOF
+{
+  "spec": {
+    "template": {
+      "spec": {
+        "containers": [
+          {
+            "name": "${OPERATOR_CONTAINER}",
+            "livenessProbe": {
+              "httpGet": {
+                "path": "/q/health/ready"
+              },
+              "periodSeconds": 30,
+              "failureThreshold": 6,
+              "timeoutSeconds": 10
+            }
+          }
+        ]
+      }
+    }
+  }
+}
+PATCHEOF
+)" || echo "WARN: keycloak-operator livenessProbe patch failed; keeping upstream probe"
+else
+  echo "WARN: keycloak-operator container not found in deployment/keycloak-operator; skipping livenessProbe patch"
+fi
+
 echo "Waiting for Keycloak Operator deployment..."
 kubectl rollout status deployment/keycloak-operator -n iam --timeout=180s
 

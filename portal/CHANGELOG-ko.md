@@ -9,12 +9,29 @@
 
 ## [Unreleased]
 
+## [1.1.16] - 2026-11-16
+
+팀 매핑이 없는 비관리자 접근 범위를 제한하고, 상위 보안 수정이 포함된 의존성 업데이트를 반영한 패치 릴리스입니다
+(narwhal#659, narwhal#673).
+
 ### Fixed
 
 - `config/role-filter.json`의 `teamMappings`에 일치하는 팀이 없는 비관리자(`developer`, `viewer`)가
   `roleDefaults`(`["*"]`)로 폴백되어 전체 네임스페이스가 노출되고 `narwhal.io/team` 라벨 단독 격리가
   우회되던 문제를 수정했습니다. 이제 매핑된 팀이나 `narwhal.io/team` 라벨이 없으면 빈 가시성 범위(`[]`,
   fail-closed)를 반환하며, 라벨 단독 소유권 해석은 그대로 유지합니다 (`narwhal#659`).
+
+- **운영자 참고:** 업그레이드 후 팀에 `teamMappings` 항목도 없고 `narwhal.io/team` 라벨이 지정된 네임스페이스도 없는
+  developer와 viewer는 포털이 비어 보입니다. 먼저 팀 매핑을 추가하거나 네임스페이스에 라벨을 지정하세요.
+
+### 보안
+
+- 상위 보안 수정이 포함된 `next`와 `eslint-config-next`를 16.4.3에서 16.4.5로 업데이트했습니다. 또한
+  `@opentelemetry/sdk-node`, `@opentelemetry/exporter-trace-otlp-http`를 0.301.0으로,
+  `@opentelemetry/auto-instrumentations-node`를 0.83.0으로, `@opentelemetry/resources`를 3.1.0으로,
+  `@opentelemetry/semantic-conventions`를 1.45.0으로, `@tanstack/react-query`를 5.107.1로,
+  `lucide-react`를 1.70.0으로 업데이트했습니다. 개발 도구: `@playwright/test` 1.65.0, `tailwindcss` 4.3.5,
+  `vite` 8.3.6, `@vitejs/plugin-react` 6.2.1 (narwhal#673).
 
 ## [1.1.15] - 2026-11-14
 
@@ -745,7 +762,8 @@ Portal의 첫 번째 공개 릴리스.
     매니페스트(`deploy/kaniko-build-job.yaml`).
   - 실시간 핫 모듈 교체(HMR) 및 컨테이너 파일 동기화를 위해 구성된 Skaffold 개발 프로필.
 
-[Unreleased]: https://github.com/dasomel/narwhal/compare/portal/v1.1.15...HEAD
+[Unreleased]: https://github.com/dasomel/narwhal/compare/portal/v1.1.16...HEAD
+[1.1.16]: https://github.com/dasomel/narwhal/compare/portal/v1.1.15...portal/v1.1.16
 [1.1.15]: https://github.com/dasomel/narwhal/compare/portal/v1.1.14...portal/v1.1.15
 [1.1.14]: https://github.com/dasomel/narwhal/compare/portal/v1.1.13...portal/v1.1.14
 [1.1.13]: https://github.com/dasomel/narwhal/compare/portal/v1.1.12...portal/v1.1.13

@@ -9,12 +9,29 @@ English | [한국어](CHANGELOG-ko.md)
 
 ## [Unreleased]
 
+## [1.1.16] - 2026-11-16
+
+Patch release that fails closed for unmapped non-admin teams and updates dependencies, including upstream security fixes
+(narwhal#659, narwhal#673).
+
 ### Fixed
 
 - Non-admin users (`developer`, `viewer`) without a matching `teamMappings` entry in `config/role-filter.json`
   previously fell back to `roleDefaults` (`["*"]`), exposing every namespace across tenants and bypassing
   `narwhal.io/team` label-only isolation. Visibility scope now fails closed (`[]`) when no team mapping or
   `narwhal.io/team` namespace label matches, while preserving label-only namespace ownership (`narwhal#659`).
+
+- **Operator note:** After upgrading, developers and viewers whose team has neither a `teamMappings` entry nor a
+  `narwhal.io/team`-labelled namespace see an empty portal. Add a team mapping or label a namespace first.
+
+### Security
+
+- Updated `next` and `eslint-config-next` from 16.4.3 to 16.4.5, including upstream security fixes. Also updated
+  `@opentelemetry/sdk-node` and `@opentelemetry/exporter-trace-otlp-http` to 0.301.0,
+  `@opentelemetry/auto-instrumentations-node` to 0.83.0, `@opentelemetry/resources` to 3.1.0,
+  `@opentelemetry/semantic-conventions` to 1.45.0, `@tanstack/react-query` to 5.107.1 and `lucide-react` to 1.70.0.
+  Dev tooling: `@playwright/test` 1.65.0, `tailwindcss` 4.3.5, `vite` 8.3.6 and `@vitejs/plugin-react` 6.2.1
+  (narwhal#673).
 
 ## [1.1.15] - 2026-11-14
 
@@ -787,7 +804,8 @@ management dashboard built with Next.js 16 and React 19.
   - Skaffold development profile configured for live Hot Module Replacement (HMR) and container
     file syncing.
 
-[Unreleased]: https://github.com/dasomel/narwhal/compare/portal/v1.1.15...HEAD
+[Unreleased]: https://github.com/dasomel/narwhal/compare/portal/v1.1.16...HEAD
+[1.1.16]: https://github.com/dasomel/narwhal/compare/portal/v1.1.15...portal/v1.1.16
 [1.1.15]: https://github.com/dasomel/narwhal/compare/portal/v1.1.14...portal/v1.1.15
 [1.1.14]: https://github.com/dasomel/narwhal/compare/portal/v1.1.13...portal/v1.1.14
 [1.1.13]: https://github.com/dasomel/narwhal/compare/portal/v1.1.12...portal/v1.1.13

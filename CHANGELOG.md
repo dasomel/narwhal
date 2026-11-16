@@ -11,12 +11,7 @@ English | [한국어](CHANGELOG-ko.md)
 
 - **Scope Kyverno signature Audit to the signed portal repository (#683).** Include `devtools`, exclude unsigned third-party/Narwhal images, and accept tag references without digest mutation; CycloneDX checks remain. Live check: third-party violations stopped, and Kyverno now reports the portal signature as not found — Cosign v3 stores it as an OCI referrer that Kyverno 1.18.1 does not verify (#684); Audit only.
 
-- **Portal is pinned to `narwhal-portal:1.1.16` (was 1.1.15).** Unmapped non-admin teams now see an
-  empty visibility scope (#659, #677); add a team mapping or `narwhal.io/team` label before upgrading.
-  The release also updates Next.js to 16.4.5 and dependencies (#673). Post-1.5.0 fixes include
-  show-credentials pre-flight diagnosis (#674), Keycloak Operator liveness (#676), and R19 names
-  bundle drift (#675). The image was signed by the publish workflow with Cosign v3.1.4 and the signature verifies
-  against the repository public key (index digest `sha256:00e7fdd1…`). No live rollout or in-cluster signature verification is claimed.
+- **Portal is pinned to `narwhal-portal:1.1.17` (was 1.1.15 in released v1.5.0; 1.1.16 was an intermediate pin).** Accounts with an empty scope, including guests, are denied at `/access-denied` with `403 ACCESS_NOT_GRANTED` (#686). Developers and viewers no longer see fleet-wide data (#678, #687). Add team mappings or `narwhal.io/team` labels before upgrading. The image was published for amd64 and arm64, and Cosign v3.1.4 verification with the repository public key and transparency log passed. In-cluster Kyverno verification is known to fail for Portal images (narwhal#684); no live rollout is claimed.
 
 ## [1.5.0] - 2026-11-14
 

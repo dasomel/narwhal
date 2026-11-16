@@ -1,0 +1,70 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-portal-pin-1-1-17-20261117",
+  "task": "Pin the published Portal 1.1.17 image and matching air-gap digest; live rollout is out of scope for this change and not claimed. In-cluster Kyverno verification is known to fail for Portal images (narwhal#684).",
+  "changeContext": {
+    "paths": [
+      "gitops/charts/narwhal-platform/templates/narwhal-portal-k8s.yaml",
+      "gitops/README.md",
+      "gitops/README-ko.md",
+      "scripts/airgap/images.txt",
+      "scripts/airgap/lib/image-digests.tsv",
+      "VERSIONS.md",
+      "SECURITY.md",
+      "docs/common/compatibility-matrix.md",
+      "CHANGELOG.md",
+      "CHANGELOG-ko.md",
+      ".agents/evals/traces/2026-11-portal-pin-1.1.17.json",
+      "portal/src/data/oss-versions.generated.json"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Scope: update the Portal image pin, matching air-gap digest, generated OSS version data and documentation; no RBAC or deployment structure change. Trace content is reported for the orchestrator to write."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "Portal release portal/v1.1.17 is published at 4b80c5d2f8e4e317bc9039de55d61e2aab21f979. Publish workflow run 43906357742 succeeded (build amd64, build arm64, merge manifest, sign). Registry digest and signature details were supplied by the orchestrator; local live rollout is not claimed. In-cluster Kyverno verification is known to fail for Portal images (narwhal#684).",
+      "evidence": [
+        "orchestrator: portal/v1.1.17 -> commit 4b80c5d2f8e4e317bc9039de55d61e2aab21f979; GitHub release published",
+        "orchestrator: workflow run 43906357742 succeeded for build amd64, build arm64, merge manifest and sign",
+        "orchestrator: image ghcr.io/dasomel/narwhal-portal:1.1.17; digest sha256:9c61ca75203664024a8026757ac708d6718a59a6edd2f1fbcb84cf0f6cb34f7e",
+        "orchestrator, measured 2026-11-16T16:26:25Z: crane digest returned the digest above; cosign verify v3.1.4 with the repository public key and transparency log passed"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "Move pin 1.1.15 -> 1.1.17 in GitOps, air-gap inventory and digest, generated OSS versions and documentation; 1.1.16 was an intermediate pin. Release changes deny accounts with an empty scope, including guests, at /access-denied with 403 ACCESS_NOT_GRANTED (#686), and prevent developers/viewers from seeing fleet-wide data (#678, #687). Add team mappings or narwhal.io/team labels before upgrading."
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "Local static pin consistency, YAML validation and regression suite; no runtime rollout.",
+      "summary": "make test passed 467 checks with zero failures and three warnings. make validate, version consistency, generated versions and changed-line markdown lint passed. Live rollout is not part of this event; in-cluster Kyverno verification is known to fail for Portal images (narwhal#684).",
+      "evidence": [
+        "test:make test -> passed 467 failed 0 warnings 3; exit 0",
+        "test:make validate -> exit 0",
+        "test:bash scripts/ci/check-version-consistency.sh -> exit 0",
+        "test:node portal/scripts/gen-oss-versions.mjs --check -> in sync",
+        "test:python3 scripts/ci/markdownlint-changed.py --base origin/main -> no violations"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "completion_claim",
+      "summary": "No live rollout is claimed. In-cluster Kyverno verification is known to fail for Portal images (narwhal#684)."
+    },
+    {
+      "id": "e6",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Static pin change; make test (467 passed, 0 failed), make validate, version consistency, generated versions and changed-line markdown lint passed. Live rollout is outside this change and not claimed; in-cluster Kyverno verification is known to fail for Portal images (narwhal#684)."
+    }
+  ]
+}

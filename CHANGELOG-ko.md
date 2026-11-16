@@ -9,6 +9,8 @@
 
 ## [Unreleased]
 
+- **Kyverno 서명 Audit 대상을 서명 경로가 있는 포털 저장소로 한정함(#683).** `devtools`를 포함하고 미서명 타사·Narwhal 이미지는 제외하며 digest 변환 없이 태그를 허용한다. CycloneDX 검사는 유지한다. 라이브 확인: 타사 이미지 위반은 멈췄고, Kyverno는 포털 서명을 찾지 못한다고 보고한다. Cosign v3가 서명을 OCI referrer로 저장하는데 Kyverno 1.18.1이 이를 검증하지 못한다(#684). Audit 전용이다.
+
 - **포털을 `narwhal-portal:1.1.16`으로 고정함 (기존 1.1.15).** 매핑되지 않은 비관리자 팀은 이제 빈
   가시성 범위를 보게 된다(#659, #677). 업그레이드 전에 팀 매핑 또는 `narwhal.io/team` 라벨을 추가한다.
   Next.js를 16.4.5로 올리고 의존성을 업데이트한다(#673). 1.5.0 이후 수정에는 show-credentials 사전

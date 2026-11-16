@@ -18,7 +18,7 @@
 | narwhal 외부 컴포넌트 커밋 고정 | `nfs-quota-agent` 커밋 SHA 고정 | `scripts/airgap/07-save-binaries.sh` (커밋 `386ac455d5f9e609d39e8e42c295db6a362917cc` 고정) |
 | narwhal 정적 정밀 검사 | 동적/가변 다운로드 및 미고정 설치 금지 | `scripts/test/regression-check-kakao.sh --static` (CI `regression-static` 작업에서 `R50`~`R54` 검사) |
 | narwhal 컨테이너 이미지 태그 | admission 차원에서 `*:latest` 태그 사용 금지 (narwhal#52 D2-A: 2026-09-06부터 `Enforce`) | `gitops/resources/kyverno-policies.yaml` (`disallow-latest-tag` 정책, `validationFailureAction: Enforce`); 머지 전 단계는 `scripts/gitops/check-no-mutable-tags.py` (R65/R66)가 이미 담당 |
-| narwhal 컨테이너 이미지 서명/attestation | admission 시점 Cosign 이미지 서명 및 CycloneDX SBOM attestation 검증 | `gitops/resources/kyverno-policies.yaml` (`verify-image-signatures` Audit 정책, `required: false`, narwhal#35 선행 전까지 유지; 키는 `scripts/airgap/keys/cosign.pub`과 R75c로 동기화) 및 `scripts/airgap/10-verify-image-signatures.sh`. **한계**: 이 스크립트는 `sbom.cdx.json` 존재와 manifest 줄 수만 확인하며 `cosign verify`를 실행하지 않는다(`--key`는 안내 메시지만 출력). 실제 서명 검증 증적은 `cosign verify --key scripts/airgap/keys/cosign.pub --insecure-ignore-tlog=true ghcr.io/dasomel/narwhal-portal@sha256:16e228757febda1b7649ce2ee79908f30a70ba41648943987fe26831d88ac30a`(portal/v1.1.0, rc=0)뿐이며 Enforce 전환·번들 이미지 서명 검증은 미구현 |
+| narwhal 컨테이너 이미지 서명/attestation | `ghcr.io/dasomel/narwhal-portal`의 태그·sha256 digest 참조만 Cosign 서명 및 CycloneDX SBOM attestation을 Audit 검사. `devtools` 포함, `kube-system`·`istio-system`·`platform-system`·`security-system` 제외. 타사 이미지·nfs-quota-agent·Harbor 미러는 대상 아님 | `gitops/resources/kyverno-policies.yaml` (`verify-image-signatures` Audit 정책, `required: false`, narwhal#35 선행 전까지 유지; 키는 `scripts/airgap/keys/cosign.pub`과 R75c로 동기화) 및 `scripts/airgap/10-verify-image-signatures.sh`. **한계**: 이 스크립트는 `sbom.cdx.json` 존재와 manifest 줄 수만 확인하며 `cosign verify`를 실행하지 않는다(`--key`는 안내 메시지만 출력). 기존 문서에 기록된 외부 서명 검증 증적은 `cosign verify --key scripts/airgap/keys/cosign.pub --insecure-ignore-tlog=true ghcr.io/dasomel/narwhal-portal@sha256:16e228757febda1b7649ce2ee79908f30a70ba41648943987fe26831d88ac30a`(portal/v1.1.0, rc=0)이며 이번 변경의 실행 증적은 아니다. 클러스터 내 서명 검증은 현재 실패하며(2026-11-16 실측 `no signatures found`, narwhal#684) Enforce 전환·번들 이미지 서명 검증은 미구현 |
 | narwhal 에어갭 이미지 resolved-digest 아티팩트 | 태그가 아니라 이미지가 실제로 가리키는 다이제스트를 커밋해, 레지스트리 쪽에서 태그가 재푸시되어도(태그 이동) 감지 | `scripts/airgap/lib/image-digests.tsv` (images.txt의 모든 라인에 대해 `crane digest`로 resolve한 upstream index digest 1행씩; in-cluster 빌드 이미지만 `UNRESOLVED` + 사유), `scripts/airgap/lib/refresh-image-digests.sh --check`로 드리프트 감지, `scripts/airgap/09-verify-bundle-completeness.sh`가 번들 완전성 게이트에 조인 검사로 통합 |
 | narwhal 에어갭 빌드-헬퍼 이미지 고정 | kaniko executor·alpine/git은 `portal/deploy/kaniko-build-job.yaml`과 같은 이미지를 같은 태그로 고정해야 함(둘 중 하나만 바뀌면 번들과 배포가 서로 다른 빌더를 씀) | `scripts/airgap/images.txt` + `scripts/airgap/01-generate-image-list.sh`(TRANSIENT_IMAGES) 고정 태그, `scripts/test/check-kaniko-tag-portal-contract.sh` + `regression-check-kakao.sh`의 `R114`~`R117b` |
 | narwhal-portal npm 쿨링 기간 | 신규 도입 패키지 배포 후 7일 미만 경과 시 CI 실패 | `portal/scripts/check-lockfile-cooling.mjs` (`pnpm-lock.yaml`과 베이스 커밋 비교, npm registry API 조회, `COOLING_EXCEPTIONS` 사유 필수, CI `.github/workflows/license-and-sbom.yml`의 `cooling` 작업) |
@@ -33,8 +33,8 @@
 - `R52`: 버전을 명시하지 않은 글로벌 `npm install` 사용 금지
 - `R53`: 에어갭 다운로드의 체크섬 검증 수행
 - `R54`: 체크섬 행 누락 시 스킵하지 않고 즉시 실패 처리
-- `R74`: Kyverno `verify-image-signatures` ClusterPolicy 존재 및 구조 검증
-- `R75`: Kyverno 이미지 서명 정책 제거/변조 시 정적 검사 실패 검증
+- `R74`: Kyverno `verify-image-signatures`의 포털 전용 범위·devtools 포함·Audit·태그 호환 설정·키·CycloneDX 구조 검증
+- `R75`~`R75i`: 정책 제거·키 오타/드리프트·Rekor 설정·전체 이미지 와일드카드·devtools 제외·Enforce 전환·digest 요구·required 변경을 변이로 거부
 - `R76`: `scripts/airgap/10-verify-image-signatures.sh` 에어갭 서명 게이트 스크립트 실행 권한 검증
 - `R114`/`R114b`: `images.txt`/`TRANSIENT_IMAGES`에 문서화되지 않은 `:latest` 태그가 없는지, 재도입 시 검출되는지 검증 (narwhal#52)
 - `R115`/`R115b`: Kyverno `disallow-latest-tag`가 `Enforce`인지, `Audit`로 되돌려질 시 검출되는지 검증 (narwhal#52)
@@ -93,7 +93,10 @@ Sigstore Cosign은 Keyless(Fulcio OIDC + Rekor 투명성 로그) 및 Static Publ
 - **Keyless 방식의 한계 (Air-gapped 환경)**: Keyless 검증은 pod admission 또는 image verification 시점에 Rekor 투명성 로그(`rekor.sigstore.dev`) 및 Fulcio CA 조회가 기본 필요하다. 외부 인터넷이 차단된 공공/금융 에어갭 환경에서는 별도의 내부 Rekor/Fulcio 스택을 구축하여 운영하지 않는 한 Keyless 검증이 차단된다.
 - **채택안 (Static Public Key / Trusted Authority)**: 에어갭 및 오프라인 검증이 필수인 Narwhal 클러스터 특성에 맞추어, **고정 공개키(Static Public Key) / 신뢰 x509 CA 기반 검증 모델**을 기본으로 채택한다.
 - **D-REKOR (Rekor 투명성 로그 처리)**: CI(`portal-docker-publish.yml`)는 공개 이미지이므로 서명을 공개 Rekor에 계속 업로드해 온라인 소비자에게 투명성을 제공한다. 대신 **모든 오프라인 검증자는 tlog를 건너뛴다**: Kyverno key attestor(서명·CycloneDX attestation 모두)에 `rekor.ignoreTlog: true`, `ctlog.ignoreSCT: true`를 설정하고, 오프라인 `cosign verify`는 `--insecure-ignore-tlog=true`를 쓴다(예: `portal/docs/cosign-signing-setup.md` §5). 비용: 오프라인 검증은 고정 공개키에만 의존한다. 탈출구: 클러스터가 Rekor에 도달할 수 있게 되면 ignore 플래그를 제거한다. R74/R75d가 플래그 유지 여부를 검사한다.
-- **Admission 정책 (Kyverno Audit Mode)**: `gitops/resources/kyverno-policies.yaml`에 `verify-image-signatures` ClusterPolicy를 도입하여, admission 시점 Cosign 이미지 서명 및 CycloneDX SBOM attestation 존재 여부를 `Audit` 모드로 기록한다.
+- **Admission 정책 (Kyverno Audit Mode)**: `gitops/resources/kyverno-policies.yaml`에 `verify-image-signatures` ClusterPolicy를 도입하여, `ghcr.io/dasomel/narwhal-portal:*` 및 `ghcr.io/dasomel/narwhal-portal@sha256:*`만 admission 시점 Cosign 서명 및 CycloneDX SBOM attestation 검사 대상으로 삼는다. `devtools`를 포함하되 `kube-system`, `istio-system`, `platform-system`, `security-system`은 제외한다. 현재 포털은 `devtools`에서 실행되므로 다른 제외가 대상을 숨기지 않는다. `validationFailureAction: Audit`, `required: false`를 유지한다(narwhal#683).
+- **D-KYVERNO-VERIFY-SCOPE (범위·태그 호환)**: 이 저장소의 고정 키 서명 경로는 `.github/workflows/portal-docker-publish.yml`의 포털뿐이다. nfs-quota-agent와 `ghcr.io/dasomel/goharbor/*`는 이 키로 서명하는 워크플로가 없어 제외한다. `mutateDigest: false`를 유지하고 `verifyDigest: false`로 바꾼다. [Kyverno 1.18 공식 의미](https://release-1-18-0.kyverno.io/docs/policy-types/cluster-policy/verify-images/overview/)상 `verifyDigest: true`는 digest 참조를 요구하므로 태그로 고정한 포털에 거짓 실패를 만든다. 서명·attestation 검사는 유지하지만 이미지 digest 고정을 강제하지 않는 비용이 있다. 탈출구: 서명 경로를 갖춘 이미지에만 범위를 확장하고 digest 변환을 채택할 때 두 digest 설정을 함께 켠다.
+- **라이브 실측(2026-11-16, single, Kyverno v1.18.1)**: 범위 변경 후 타사 이미지 위반은 0건이 됐고 Kyverno가 포털을 처음 검사했다. 결과는 1.1.16·1.1.15 모두 `no signatures found` **실패**다. Cosign v3가 서명을 OCI referrer 번들로만 저장하고 레거시 `.sig` 태그가 없어 현재 검증 설정이 찾지 못한다(검증기 설정 7종 시도, 모두 실패). 클러스터 밖 `cosign verify --key`(v3.1.4)는 통과한다. 따라서 클러스터 내 서명 검증은 현재 동작하지 않으며 narwhal#684에서 추적한다. Audit 모드라 배포는 막지 않는다.
+- **미검증 경계**: 현재 포털 게시 워크플로는 `cosign sign`만 실행하며 `cosign attest`로 CycloneDX 증명을 게시하지 않는다. 기존 CycloneDX 검사 블록은 유지하므로 서명이 유효해도 attestation 누락으로 Audit 실패할 수 있다. 클러스터 내 서명·attestation 성공을 이번 정적 변경만으로 주장하지 않는다.
 
 ### 2) Promotion & Verification Pipeline
 
@@ -104,7 +107,7 @@ Sigstore Cosign은 Keyless(Fulcio OIDC + Rekor 투명성 로그) 및 Static Publ
 1. **Build & Scan**: 이미지 빌드 후 Trivy 취약점/라이선스 검사 수행.
 2. **Cosign Sign & Attest**: `cosign sign`으로 서명 생성 및 `cosign attest --type cyclonedx`로 SBOM 증명 첨부.
 3. **Harbor Internal Registry**: 검증된 이미지를 Harbor 레지스트리로 promote.
-4. **GitOps & Kyverno Admission**: ArgoCD 배포 시 Kyverno `verify-image-signatures` 정책 및 에어갭 사전 검사 `10-verify-image-signatures.sh`로 서명/증명 무결성 확인.
+4. **GitOps & Kyverno Admission**: ArgoCD 배포 시 위 범위의 포털만 Kyverno `verify-image-signatures`로 Audit 검사한다. 위 단계 2·3은 목표 경로이며 현재 포털 워크플로에는 Cosign 서명만 구현되어 있다. `10-verify-image-signatures.sh`는 파일 존재·줄 수 검사여서 암호학적 서명/증명 검증 증적이 아니다.
 
 ## SBOM 취약점 correlation identity (#53)
 

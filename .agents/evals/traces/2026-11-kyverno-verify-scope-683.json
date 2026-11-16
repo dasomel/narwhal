@@ -1,0 +1,62 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-kyverno-verify-scope-683-20261116",
+  "task": "Scope the Kyverno verify-image-signatures Audit policy to the signed portal image and include devtools (narwhal#683).",
+  "changeContext": {
+    "paths": [
+      "gitops/resources/kyverno-policies.yaml",
+      "scripts/test/lib/check-kyverno-signed-image-policy.py",
+      "scripts/test/regression-check-kakao.sh",
+      "docs/common/supply-chain-policy.md",
+      "docs/common/lessons-log.md",
+      "CHANGELOG.md",
+      "CHANGELOG-ko.md",
+      ".agents/evals/traces/2026-11-kyverno-verify-scope-683.json"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Scope: one ClusterPolicy rule (imageReferences, namespace exclusion, verifyDigest), its regression check and documentation. Audit mode and required=false unchanged; no RBAC or Enforce change."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "On the local single cluster the policy excluded devtools, the portal pod carried no kyverno.io/verify-images annotation, and third-party images accumulated PolicyViolation events.",
+      "evidence": [
+        "orchestrator, live 2026-11-16: 24 of 100 pods annotated, portal pod not annotated; 618 verify-image-signatures PolicyViolation events (e.g. storage/velero)",
+        "orchestrator: policy source excluded kube-system, istio-system, platform-system, devtools, security-system with imageReferences [\"*\"]"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "imageReferences narrowed to ghcr.io/dasomel/narwhal-portal (tag and digest forms), devtools removed from the exclusion, verifyDigest false for the tag-pinned image; R74/R75 mutations extended; documentation states the measured live result."
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "Static regression suite and policy check; live behaviour recorded separately in e5.",
+      "summary": "make test passed 467 checks with zero failures and three warnings; the policy check and its mutations pass; changed-line markdown lint clean.",
+      "evidence": [
+        "test:make test -> passed 467 failed 0 warnings 3; exit 0",
+        "test:python3 scripts/test/lib/check-kyverno-signed-image-policy.py -> exit 0",
+        "test:python3 scripts/ci/markdownlint-changed.py --base origin/main -> no violations"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "completion_claim",
+      "summary": "Live on the local single cluster with this policy: no new verify-image-signatures violations for third-party images; Kyverno now evaluates the portal and reports 'no signatures found' for 1.1.15 and 1.1.16, because Cosign v3 stores the signature as an OCI referrer that Kyverno 1.18.1 did not verify in seven tested configurations (narwhal#684). In-cluster signature verification success is NOT claimed."
+    },
+    {
+      "id": "e6",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Policy scope corrected and verified statically and live; the signature-format mismatch it exposed is tracked in narwhal#684 and remains open."
+    }
+  ]
+}

@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth"
 import { cacheGet, cacheSet } from "@/lib/valkey"
 import { cacheKeys, cacheTtl } from "@/lib/cache-keys"
 import { getDependencyUrl } from "@/lib/config"
+import { requireSessionAccess } from "@/lib/scope"
 
 export const dynamic = "force-dynamic"
 
@@ -26,6 +27,8 @@ export interface TraceEntry {
 export async function GET(req: Request) {
   const session = await auth()
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  const denied = await requireSessionAccess(session)
+  if (denied) return denied
 
   const { searchParams } = new URL(req.url)
   const service = searchParams.get("service") ?? ""

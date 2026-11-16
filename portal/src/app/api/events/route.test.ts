@@ -140,13 +140,12 @@ describe("GET /api/events — scope enforcement", () => {
     expect(titles).toContain("frontend-app")
   })
 
-  it("denies a non-admin caller with no scope mapping (default-deny, empty timeline)", async () => {
+  it("denies a non-admin caller with no scope mapping with 403 ACCESS_NOT_GRANTED", async () => {
     for (const session of [unscopedSession, unmappedDeveloperSession, teamlessDeveloperSession]) {
       vi.mocked(auth).mockResolvedValue(session as never)
       const res = await GET(req())
-      expect(res.status).toBe(200)
-      const body = await res.json()
-      expect(body).toEqual([])
+      expect(res.status).toBe(403)
+      expect(await res.json()).toEqual({ error: "Forbidden", code: "ACCESS_NOT_GRANTED" })
     }
   })
 

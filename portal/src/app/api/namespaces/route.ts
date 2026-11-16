@@ -2,7 +2,7 @@ import { NextResponse } from "next/server"
 import { auth, requireRole } from "@/lib/auth"
 import { getNamespacesForScope } from "@/lib/k8s-client"
 import { GiteaError, GiteaCredentialError, isGiteaConfigured, requestTenantNamespace } from "@/lib/gitea"
-import { getEffectiveScope, namespaceVisible } from "@/lib/scope"
+import { namespaceVisible, requireEffectiveScope } from "@/lib/scope"
 import { resolveNamespaceOwner } from "@/lib/namespace-ownership"
 import { beginOperation, completeOperation, failOperation } from "@/lib/operation-context"
 import { invalidateFor } from "@/lib/cache-invalidation"
@@ -28,7 +28,9 @@ export async function GET() {
   // portal#52: getNamespacesForScope fetches per-namespace instead of the
   // cluster-wide LIST + filter below SMALL_SCOPE_NAMESPACE_THRESHOLD — most
   // callers here own a handful of namespaces, so this is the common path.
-  const scope = await getEffectiveScope(session)
+  const scoped = await requireEffectiveScope(session)
+  if ("denied" in scoped) return scoped.denied
+  const { scope } = scoped
   const namespaces = await getNamespacesForScope(scope)
   return NextResponse.json(namespaces.filter((ns) => namespaceVisible(ns.name, scope)))
 }
@@ -37,7 +39,7 @@ export async function POST(req: Request) {
   const gate = await requireRole("cluster-admin", "developer")
   if ("error" in gate) {
     return NextResponse.json(
-      { error: gate.error === "unauthorized" ? "Unauthorized" : "Forbidden" },
+      { error: gate.error === "unauthorized" ? "Unauthorized" : "Forbidden", ...(gate.code ? { code: gate.code } : {}) },
       { status: gate.error === "unauthorized" ? 401 : 403 }
     )
   }

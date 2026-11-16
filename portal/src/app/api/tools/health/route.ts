@@ -4,6 +4,7 @@ import { cacheGet, cacheSet } from "@/lib/valkey"
 import { cacheKeys, cacheTtl } from "@/lib/cache-keys"
 import { auth } from "@/lib/auth"
 import type { UserRole } from "@/lib/auth"
+import { requireSessionAccess } from "@/lib/scope"
 
 export const dynamic = "force-dynamic"
 
@@ -22,6 +23,8 @@ async function checkHealth(url: string): Promise<"healthy" | "degraded" | "offli
 export async function GET() {
   const session = await auth()
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  const denied = await requireSessionAccess(session)
+  if (denied) return denied
 
   const role = session.user.role
   const cacheKey = cacheKeys.toolsHealth(role)

@@ -4,7 +4,7 @@ import { getPodDetail, PodDetail } from "@/lib/k8s-client"
 import { cacheGet, cacheSet } from "@/lib/valkey"
 import { cacheKeys, cacheTtl } from "@/lib/cache-keys"
 import { ValidationError, toValidationErrorBody, assertK8sNamespace } from "@/lib/validation"
-import { getEffectiveScope, namespaceVisible } from "@/lib/scope"
+import { namespaceVisible, requireEffectiveScope } from "@/lib/scope"
 
 export const dynamic = "force-dynamic"
 
@@ -60,7 +60,9 @@ export async function GET(req: NextRequest) {
     throw err
   }
 
-  const scope = await getEffectiveScope(session)
+  const scoped = await requireEffectiveScope(session)
+  if ("denied" in scoped) return scoped.denied
+  const { scope } = scoped
   if (!namespaceVisible(namespace, scope)) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 })
   }

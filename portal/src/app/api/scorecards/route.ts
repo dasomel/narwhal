@@ -37,7 +37,7 @@ export async function GET(req: NextRequest) {
   const gate = await requireRole("cluster-admin", "developer", "viewer")
   if ("error" in gate) {
     return NextResponse.json(
-      { error: gate.error === "unauthorized" ? "Unauthorized" : "Forbidden" },
+      { error: gate.error === "unauthorized" ? "Unauthorized" : "Forbidden", ...(gate.code ? { code: gate.code } : {}) },
       { status: gate.error === "unauthorized" ? 401 : 403 },
     )
   }

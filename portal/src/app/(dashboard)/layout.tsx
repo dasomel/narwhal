@@ -1,7 +1,17 @@
+import { redirect } from "next/navigation"
 import { Nav } from "@/components/nav"
 import { CommandPalette } from "@/components/command-palette"
+import { auth } from "@/lib/auth"
+import { hasSessionAccess } from "@/lib/scope"
 
-export default function DashboardLayout({ children }: { children: React.ReactNode }) {
+export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
+  // D-PORTAL-UNMAPPED-DENY: gate every dashboard route in one place before the
+  // app shell mounts; unmapped non-admins redirect to /access-denied instead of
+  // rendering navigation or triggering tenant data fetches.
+  const session = await auth()
+  if (!session) redirect("/login")
+  if (!(await hasSessionAccess(session))) redirect("/access-denied")
+
   return (
     <div className="min-h-screen bg-background">
       <Nav />

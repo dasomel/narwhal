@@ -1,6 +1,6 @@
 import { auth } from "@/lib/auth"
 import { compareLiveEventIds, connectLiveClient, disconnectLiveClient, subscribeLiveWithReplay } from "@/lib/live-stream"
-import { getEffectiveScope } from "@/lib/scope"
+import { requireEffectiveScope } from "@/lib/scope"
 import { isEventFiltered } from "@/lib/event-visibility"
 import type { LiveEvent } from "@/types/live"
 import type { UserRole } from "@/lib/auth"
@@ -29,7 +29,9 @@ export async function GET(request: Request) {
   const role: UserRole = session.user.role ?? "guest"
   const groups: string[] = session.groups ?? []
   const teams: string[] = session.teams ?? []
-  const scope = await getEffectiveScope({ groups, teams })
+  const scoped = await requireEffectiveScope({ groups, teams, user: { role } })
+  if ("denied" in scoped) return scoped.denied
+  const { scope } = scoped
   const lastEventId = request.headers.get("Last-Event-ID") ?? null
 
   let cancelStream: (() => void) | undefined

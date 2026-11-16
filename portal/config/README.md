@@ -38,11 +38,15 @@ Treat the file as an example to replace, not as configuration to preserve.
 
 ## Unmapped non-admin users fail closed
 
-Visibility is resolved in code (`D-PORTAL-UNMAPPED-SCOPE`, narwhal#659):
-`cluster-admin` sees everything; other users see matching `teamMappings` patterns
-and namespaces owned by their teams through `narwhal.io/team`. Without either,
-`developer` and `viewer` see an empty portal, including users with no team claims.
-Ask a platform administrator to add a team mapping or namespace ownership label.
+Visibility is resolved in code (`D-PORTAL-UNMAPPED-SCOPE`, narwhal#659;
+`D-PORTAL-UNMAPPED-DENY`, follow-up): `cluster-admin` sees everything; other
+users see matching `teamMappings` patterns and namespaces owned by their teams
+through `narwhal.io/team`. Without either, non-admin users (including users with
+no team claims, `guest`, or unrecognized groups) are redirected to
+`/access-denied` without rendering portal navigation and receive `403`
+(`code: "ACCESS_NOT_GRANTED"`) from data APIs until a platform administrator
+adds a team mapping or namespace ownership label (label changes propagate within
+the 30-second `k8s:namespaces` Valkey cache window).
 
 The shipped `roleDefaults` values remain unchanged (including developer/viewer
 `namespaces: ["*"]`) for configuration compatibility and diagnostics. They no

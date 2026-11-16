@@ -71,7 +71,7 @@ export async function POST(req: Request) {
   const gate = await requireRole("cluster-admin", "developer")
   if ("error" in gate) {
     return NextResponse.json(
-      { error: gate.error === "unauthorized" ? "Unauthorized" : "Forbidden" },
+      { error: gate.error === "unauthorized" ? "Unauthorized" : "Forbidden", ...(gate.code ? { code: gate.code } : {}) },
       { status: gate.error === "unauthorized" ? 401 : 403 }
     )
   }
@@ -183,7 +183,7 @@ export async function DELETE(req: Request) {
   const gate = await requireRole("cluster-admin", "developer")
   if ("error" in gate) {
     return NextResponse.json(
-      { error: gate.error === "unauthorized" ? "Unauthorized" : "Forbidden" },
+      { error: gate.error === "unauthorized" ? "Unauthorized" : "Forbidden", ...(gate.code ? { code: gate.code } : {}) },
       { status: gate.error === "unauthorized" ? 401 : 403 }
     )
   }

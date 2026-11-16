@@ -1,12 +1,15 @@
 import { NextResponse } from "next/server"
 import { getAlerts } from "@/lib/alertmanager"
 import { auth } from "@/lib/auth"
+import { requireSessionAccess } from "@/lib/scope"
 
 export const dynamic = "force-dynamic"
 
 export async function GET(request: Request) {
   const session = await auth()
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  const denied = await requireSessionAccess(session)
+  if (denied) return denied
 
   try {
     const { searchParams } = new URL(request.url)

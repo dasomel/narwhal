@@ -13,10 +13,13 @@ const TICK_MS = 2_000
 export async function GET(req: NextRequest) {
   const gate = await requireRole("cluster-admin", "developer", "viewer")
   if ("error" in gate) {
-    return new Response(JSON.stringify({ error: gate.error === "unauthorized" ? "Unauthorized" : "Forbidden" }), {
-      status: gate.error === "unauthorized" ? 401 : 403,
-      headers: { "Content-Type": "application/json" },
-    })
+    return new Response(
+      JSON.stringify({ error: gate.error === "unauthorized" ? "Unauthorized" : "Forbidden", ...(gate.code ? { code: gate.code } : {}) }),
+      {
+        status: gate.error === "unauthorized" ? 401 : 403,
+        headers: { "Content-Type": "application/json" },
+      },
+    )
   }
 
   const serviceMap = await buildWorkloadToServiceMap()

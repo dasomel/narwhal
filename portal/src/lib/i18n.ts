@@ -70,6 +70,13 @@ export const ko = {
   "login.headline": "하나의 포털에서\n플랫폼 전체를 다룹니다",
   "login.tagline": "서비스 카탈로그, 배포, 관측, 보안 정책을 SSO 한 번으로.",
 
+  // access denied
+  "accessDenied.title": "포털 접근 권한이 없습니다",
+  "accessDenied.description": "현재 계정에 매핑된 팀이나 소유 네임스페이스가 없어 포털을 사용할 수 없습니다.",
+  "accessDenied.hint": "플랫폼 관리자에게 팀 매핑 또는 네임스페이스(narwhal.io/team) 할당을 요청하세요.",
+  "accessDenied.accountLabel": "로그인된 계정",
+  "accessDenied.signOut": "로그아웃",
+
   // dashboard
   "dashboard.title": "대시보드",
   "dashboard.description": "Narwhal 클러스터 실시간 현황",
@@ -1458,6 +1465,13 @@ export const en: Record<keyof typeof ko, string> = {
   "login.redirecting": "Redirecting to sign-in…",
   "login.headline": "One portal for\nthe whole platform",
   "login.tagline": "Catalog, deploys, observability and policy behind one SSO.",
+
+  // access denied
+  "accessDenied.title": "Access not granted",
+  "accessDenied.description": "Your account has no team mapping or owned namespaces, so portal access is not available.",
+  "accessDenied.hint": "Contact a platform administrator to assign a team mapping or namespace (narwhal.io/team).",
+  "accessDenied.accountLabel": "Signed-in account",
+  "accessDenied.signOut": "Sign out",
 
   // dashboard
   "dashboard.title": "Dashboard",

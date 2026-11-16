@@ -403,14 +403,21 @@ real provider mutation/read-back; real multi-replica informer/Valkey failover;
 second-cluster visibility; owner confirmation of branch protection and #358 apply
 scope. Current policy intentionally permits namespace-less cluster alerts for
 scoped sessions (`src/lib/scope.ts`). Non-admin visibility now fails closed
-(`D-PORTAL-UNMAPPED-SCOPE`, narwhal#659): `getVisibilityScope` ignores role defaults
-and returns an empty scope when no static team mapping matches. `getEffectiveScope`
-still resolves `narwhal.io/team` namespace labels for callers with team claims.
-Without a static mapping or matching label, developers and viewers (including
-teamless users) receive an empty scope. Shipped `roleDefaults` remain unchanged;
-setting them cannot reopen visibility. Write authorization remains separate.
-Regression coverage: `src/lib/role-filter.visibility.test.ts` and
-`src/app/api/my-apps/route.test.ts`.
+(`D-PORTAL-UNMAPPED-SCOPE`, narwhal#659; `D-PORTAL-UNMAPPED-DENY`, follow-up):
+`getVisibilityScope` ignores role defaults and returns an empty scope when no
+static team mapping matches. `getEffectiveScope` still resolves `narwhal.io/team`
+namespace labels for callers with team claims (backed by the 30-second
+`k8s:namespaces` Valkey cache). Without a static mapping or matching label,
+authenticated non-admins (including teamless users, `guest`, and unrecognized
+groups) are redirected by `(dashboard)/layout.tsx` to `/access-denied` (with
+sign-out and no app shell or tenant fetches) and receive `403`
+(`ACCESS_NOT_GRANTED`) from data APIs via `requireEffectiveScope` /
+`requireSessionAccess` / `requireRole`. Session, sign-out, and health endpoints
+remain reachable. Shipped `roleDefaults` remain unchanged; setting them cannot
+reopen visibility. Write authorization remains separate. Regression coverage:
+`src/lib/role-filter.visibility.test.ts`, `src/lib/scope.access.test.ts`,
+`src/lib/auth.test.ts`, `src/app/api/my-apps/route.test.ts`,
+`src/app/api/catalog/route.test.ts`, and `src/app/api/hero/route.test.ts`.
 
 Local verification caveat: `pnpm test -- --maxWorkers=4 --testTimeout=30000`
 passes a literal `--` to Vitest with this pnpm version, leaving the timeout at 5s.

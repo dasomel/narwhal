@@ -61,6 +61,7 @@ const platformApp = fakeApp("platform-app", "platform", "platform-system")
 const frontendApp = fakeApp("frontend-app", "apps", "frontend-app")
 
 beforeEach(() => {
+  vi.clearAllMocks()
   vi.mocked(getNamespaces).mockResolvedValue(namespaces)
   vi.mocked(getArgoApps).mockResolvedValue([platformApp, frontendApp])
 })
@@ -99,6 +100,18 @@ describe("GET /api/catalog — scope enforcement", () => {
     vi.mocked(auth).mockResolvedValue(null as never)
     const res = await GET()
     expect(res.status).toBe(401)
+  })
+
+  it("403s an unmapped developer with ACCESS_NOT_GRANTED without reading ArgoCD", async () => {
+    vi.mocked(auth).mockResolvedValue({
+      groups: ["developer"],
+      teams: ["unmapped-team"],
+      user: { role: "developer" },
+    } as never)
+    const res = await GET()
+    expect(res.status).toBe(403)
+    expect(await res.json()).toEqual({ error: "Forbidden", code: "ACCESS_NOT_GRANTED" })
+    expect(getArgoApps).not.toHaveBeenCalled()
   })
 })
 

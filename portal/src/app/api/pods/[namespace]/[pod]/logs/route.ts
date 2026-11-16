@@ -11,7 +11,7 @@ import {
   ValidationError,
   toValidationErrorBody,
 } from "@/lib/validation"
-import { getEffectiveScope, namespaceVisible } from "@/lib/scope"
+import { namespaceVisible, requireEffectiveScope } from "@/lib/scope"
 
 export const dynamic = "force-dynamic"
 
@@ -52,7 +52,9 @@ export async function GET(
   // route, but not WHICH namespace's logs they may read — a developer/viewer
   // could pull pod logs (env var dumps, stack traces) from any namespace by
   // naming it directly. Same gate as /api/k8s/pods and /api/pods.
-  const scope = await getEffectiveScope(session)
+  const scoped = await requireEffectiveScope(session)
+  if ("denied" in scoped) return scoped.denied
+  const { scope } = scoped
   if (!namespaceVisible(namespace, scope)) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 })
   }

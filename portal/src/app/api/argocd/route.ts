@@ -1,18 +1,21 @@
 import { NextResponse } from "next/server"
 import { getArgoApps } from "@/lib/argocd"
 import { auth } from "@/lib/auth"
-import { appVisible, getEffectiveScope } from "@/lib/scope"
+import { appVisible, requireEffectiveScope } from "@/lib/scope"
 import type { ArgoCDResponse, ArgoCDApp } from "@/types/api"
 
 export const dynamic = "force-dynamic"
 
-export async function GET(): Promise<NextResponse<ArgoCDResponse | { error: string }>> {
+export async function GET(): Promise<NextResponse<ArgoCDResponse | { error: string; code?: string }>> {
   const session = await auth()
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
 
+  const scoped = await requireEffectiveScope(session)
+  if ("denied" in scoped) return scoped.denied
+  const { scope } = scoped
+
   try {
     const rawApps = await getArgoApps()
-    const scope = await getEffectiveScope(session)
 
     const apps: ArgoCDApp[] = rawApps
       .filter((app) =>

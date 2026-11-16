@@ -4,7 +4,7 @@ import { getArgoAppsOrThrow } from "@/lib/argocd"
 import { getAlerts } from "@/lib/alertmanager"
 import { cacheGet, cacheSet } from "@/lib/valkey"
 import { cacheKeys, cacheTtl } from "@/lib/cache-keys"
-import { appVisible, getEffectiveScope } from "@/lib/scope"
+import { appVisible, requireEffectiveScope } from "@/lib/scope"
 import { findOwnershipMismatch, getTeamMappings, type OwnershipMismatch } from "@/lib/role-filter"
 
 export const dynamic = "force-dynamic"
@@ -35,7 +35,9 @@ export async function GET() {
   // documented: caching a scope-filtered response under a single key leaks the
   // first requester's (or here, an entirely unfiltered) result to everyone after.
   // Scoping the key, not just the response, is what makes this safe to cache at all.
-  const scope = await getEffectiveScope(session)
+  const scoped = await requireEffectiveScope(session)
+  if ("denied" in scoped) return scoped.denied
+  const { scope } = scoped
   const cacheKey = cacheKeys.governanceScorecard(scope.fingerprint)
   const cached = await cacheGet<ScorecardItem[]>(cacheKey)
   if (cached) return NextResponse.json(cached)

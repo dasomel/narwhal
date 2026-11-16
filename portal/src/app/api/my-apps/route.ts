@@ -4,7 +4,7 @@ import { getArgoApps } from "@/lib/argocd"
 import { getAlerts } from "@/lib/alertmanager"
 import { cacheGet, cacheSet } from "@/lib/valkey"
 import { cacheKeys, cacheTtl } from "@/lib/cache-keys"
-import { alertVisible, appVisible, getEffectiveScope, type EffectiveScope } from "@/lib/scope"
+import { alertVisible, appVisible, requireEffectiveScope, type EffectiveScope } from "@/lib/scope"
 import type { ArgoCDApp, HeroIncident, HeroAction, HeroMode, MascotState } from "@/types/api"
 import type { TimelineEvent } from "@/app/api/events/route"
 import type { MyAppsResponse, MyAppsAlert } from "@/types/my-apps"
@@ -227,7 +227,7 @@ function buildScopedEvents(
 // Route handler
 // ---------------------------------------------------------------------------
 
-export async function GET(): Promise<NextResponse<MyAppsResponse | { error: string }>> {
+export async function GET(): Promise<NextResponse<MyAppsResponse | { error: string; code?: string }>> {
   const session = await auth()
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
 
@@ -238,7 +238,9 @@ export async function GET(): Promise<NextResponse<MyAppsResponse | { error: stri
     "unknown"
   const sessionGroups: string[] = session.groups ?? []
   const sessionTeams: string[] = session.teams ?? []
-  const scope = await getEffectiveScope({ groups: sessionGroups, teams: sessionTeams })
+  const scoped = await requireEffectiveScope({ groups: sessionGroups, teams: sessionTeams, user: session.user })
+  if ("denied" in scoped) return scoped.denied
+  const { scope } = scoped
   const cacheKey = cacheKeys.myApps(userSub, scope.fingerprint)
 
   // Try cache first

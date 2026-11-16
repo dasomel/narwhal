@@ -1,12 +1,15 @@
 import { NextResponse } from "next/server"
 import { auth } from "@/lib/auth"
 import { generateKubeconfig } from "@/lib/kubeconfig"
+import { requireSessionAccess } from "@/lib/scope"
 
 export const dynamic = "force-dynamic"
 
 export async function GET() {
   const session = await auth()
   if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  const denied = await requireSessionAccess(session)
+  if (denied) return denied
 
   const username = session.user.name ?? session.user.email ?? "user"
   // K8s OIDC uses the 'kubernetes' provider, separate from the portal's own OIDC provider

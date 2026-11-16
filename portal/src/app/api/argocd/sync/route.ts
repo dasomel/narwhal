@@ -22,7 +22,7 @@ export async function POST(
   const gate = await requireRole("cluster-admin", "developer")
   if ("error" in gate) {
     return NextResponse.json(
-      { ok: false, error: gate.error === "unauthorized" ? "Unauthorized" : "Forbidden" },
+      { ok: false, error: gate.error === "unauthorized" ? "Unauthorized" : "Forbidden", ...(gate.code ? { code: gate.code } : {}) },
       { status: gate.error === "unauthorized" ? 401 : 403 }
     )
   }

@@ -3,6 +3,7 @@ import type { NextAuthConfig, Session } from "next-auth"
 import type { JWT } from "next-auth/jwt"
 import Credentials from "next-auth/providers/credentials"
 import { getTeamMappings } from "./role-filter"
+import { ACCESS_NOT_GRANTED_CODE, hasSessionAccess } from "./scope"
 import { assertHttpsInProduction } from "./config"
 
 // H-8: AUTH_MOCK production guard — module-load-time check
@@ -305,13 +306,19 @@ export const config: NextAuthConfig = {
 
 export const { handlers, auth, signIn, signOut } = NextAuth(config)
 
-export type RoleGate = { session: Session } | { error: "unauthorized" | "forbidden" }
+export type RoleGate = { session: Session } | { error: "unauthorized" | "forbidden"; code?: string }
 
 export async function requireRole(...roles: UserRole[]): Promise<RoleGate> {
   const session = await auth()
   if (!session) return { error: "unauthorized" }
   const role = session.user.role
   if (!role || !roles.includes(role)) return { error: "forbidden" }
+  // D-PORTAL-UNMAPPED-DENY: deny non-admin callers with an empty effective scope
+  // on data/mutation routes; guest-inclusive endpoints (e.g. /api/health/summary)
+  // remain reachable so the denied page and health indicators keep working.
+  if (!roles.includes("guest") && !(await hasSessionAccess(session))) {
+    return { error: "forbidden", code: ACCESS_NOT_GRANTED_CODE }
+  }
   return { session }
 }
 

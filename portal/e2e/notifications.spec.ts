@@ -52,7 +52,7 @@ test("Alertmanager failure renders degraded, never an empty healthy list", async
 })
 
 test("developer cannot read alerts or invoke settings and test APIs", async ({ page }) => {
-  await login(page, "Developer", "/alerts")
+  await login(page, "Platform Team Developer", "/alerts")
   await expect(page).toHaveURL(/\/$/)
   await expect(page.getByRole("link", { name: "경보", exact: true })).toHaveCount(0)
   expect((await page.request.get("/api/alerts/firing")).status()).toBe(403)

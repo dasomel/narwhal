@@ -5,14 +5,19 @@ import { describe, expect, it, vi } from "vitest"
 // environment (pre-existing, unrelated to this change: reproduces with a bare
 // `node -e "import('next/server')"` too). These modules aren't exercised by the
 // pure-function tests below, so stub them out rather than loading the real thing.
+const mockAuth = vi.fn()
 vi.mock("next-auth", () => ({
-  default: () => ({ handlers: {}, auth: vi.fn(), signIn: vi.fn(), signOut: vi.fn() }),
+  default: () => ({ handlers: {}, auth: mockAuth, signIn: vi.fn(), signOut: vi.fn() }),
 }))
 vi.mock("next-auth/providers/credentials", () => ({
   default: (opts: unknown) => opts,
 }))
+vi.mock("./k8s-client", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./k8s-client")>()
+  return { ...actual, getNamespaces: vi.fn(async () => []) }
+})
 
-const { classifyGroupClaim, getRoleFromGroups, sanitizeGroups, unknownGroups } = await import(
+const { classifyGroupClaim, getRoleFromGroups, requireRole, sanitizeGroups, unknownGroups } = await import(
   "./auth"
 )
 
@@ -59,4 +64,36 @@ describe("getRoleFromGroups", () => {
   })
   it("cluster-admin outranks a lower role present in the same list", () =>
     expect(getRoleFromGroups(["developer", "cluster-admin"])).toBe("cluster-admin"))
+})
+
+describe("requireRole effective scope gate (D-PORTAL-UNMAPPED-DENY)", () => {
+  it("denies a teamless/unmapped developer with ACCESS_NOT_GRANTED", async () => {
+    mockAuth.mockResolvedValue({
+      groups: ["developer"],
+      teams: [],
+      user: { role: "developer" },
+    })
+    expect(await requireRole("cluster-admin", "developer")).toEqual({
+      error: "forbidden",
+      code: "ACCESS_NOT_GRANTED",
+    })
+  })
+
+  it("allows a mapped developer and cluster-admin", async () => {
+    const mapped = { groups: ["developer"], teams: ["platform-team"], user: { role: "developer" } }
+    mockAuth.mockResolvedValue(mapped)
+    expect(await requireRole("cluster-admin", "developer")).toEqual({ session: mapped })
+
+    const admin = { groups: ["cluster-admin"], teams: [], user: { role: "cluster-admin" } }
+    mockAuth.mockResolvedValue(admin)
+    expect(await requireRole("cluster-admin")).toEqual({ session: admin })
+  })
+
+  it("keeps guest-inclusive health summary role checks reachable", async () => {
+    const guest = { groups: ["guest"], teams: [], user: { role: "guest" } }
+    mockAuth.mockResolvedValue(guest)
+    expect(await requireRole("cluster-admin", "developer", "viewer", "guest")).toEqual({
+      session: guest,
+    })
+  })
 })

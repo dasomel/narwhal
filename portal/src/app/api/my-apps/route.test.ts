@@ -179,19 +179,13 @@ describe("GET /api/my-apps — tenant-derived views", () => {
     expect(cacheSet).toHaveBeenCalledTimes(2)
   })
 
-  it("returns empty derived views for an unmapped guest without reading providers", async () => {
+  it("returns 403 ACCESS_NOT_GRANTED for an unmapped guest without reading providers", async () => {
     vi.mocked(auth).mockResolvedValue({
       groups: ["guest"], teams: [], user: { sub: "guest-user", role: "guest" },
     } as never)
     const response = await GET()
-    expect(response.status).toBe(200)
-    const body = await response.json() as MyAppsResponse
-    expect(body.scope.hasMapping).toBe(false)
-    expect(body.scope.namespaces).toEqual([])
-    expect(body.scopedApps).toEqual([])
-    expect(body.scopedAlerts).toEqual([])
-    expect(body.scopedEvents).toEqual([])
-    expect(body.hero.incidents).toEqual([])
+    expect(response.status).toBe(403)
+    expect(await response.json()).toEqual({ error: "Forbidden", code: "ACCESS_NOT_GRANTED" })
     expect(getArgoApps).not.toHaveBeenCalled()
     expect(getAlerts).not.toHaveBeenCalled()
   })
@@ -217,7 +211,7 @@ describe("GET /api/my-apps — tenant-derived views", () => {
     expect(body.scopedApps.map((a) => a.name)).toEqual(["app-a"])
   })
 
-  it("fails closed for a developer with an unmapped team and no matching namespace label (narwhal#659)", async () => {
+  it("returns 403 ACCESS_NOT_GRANTED for a developer with an unmapped team and no matching namespace label (D-PORTAL-UNMAPPED-DENY)", async () => {
     vi.mocked(auth).mockResolvedValue({
       groups: ["developer"], teams: ["unmapped-team"], user: { sub: "dev-unmapped", role: "developer" },
     } as never)
@@ -229,10 +223,9 @@ describe("GET /api/my-apps — tenant-derived views", () => {
     ])
 
     const response = await GET()
-    expect(response.status).toBe(200)
-    const body = await response.json() as MyAppsResponse
-    expect(body.scope.hasMapping).toBe(false)
-    expect(body.scope.namespaces).toEqual([])
-    expect(body.scopedApps).toEqual([])
+    expect(response.status).toBe(403)
+    expect(await response.json()).toEqual({ error: "Forbidden", code: "ACCESS_NOT_GRANTED" })
+    expect(getArgoApps).not.toHaveBeenCalled()
+    expect(getAlerts).not.toHaveBeenCalled()
   })
 })

@@ -9,6 +9,22 @@
 
 ## [Unreleased]
 
+## [1.1.17] - 2026-11-17
+
+팀 매핑이나 라벨 네임스페이스가 없는 계정의 포털 접근을 차단하고 사용자별 네임스페이스로 데이터를 제한하며,
+클러스터 전체 신호는 클러스터 관리자로 한정하는 패치 릴리스입니다 (narwhal#659 후속, #686, #678, #687).
+
+### 운영자 참고 / 동작 변경
+
+- 팀 매핑도 없고 `narwhal.io/team` 라벨이 지정된 네임스페이스도 없는 계정은 게스트를 포함해 더 이상 포털에 접근할 수
+  없습니다. `/access-denied`로 이동하며 데이터 API는 `403 ACCESS_NOT_GRANTED`를 반환합니다 (narwhal#659 후속, #686).
+  업그레이드 전에 팀 매핑을 추가하거나 네임스페이스에 라벨을 지정하세요.
+- developer와 viewer는 더 이상 클러스터 전체 데이터를 볼 수 없습니다 (narwhal#678, #687). 경보, 인시던트, 트레이스,
+  서비스 그래프, 클러스터 개요는 각자의 네임스페이스로 제한됩니다. 네임스페이스가 없는(노드/클러스터) 경보,
+  워크로드 분포, 실시간 플로우 스트림은 클러스터 관리자만 볼 수 있으며, 네임스페이스 리소스 속성이 없는 트레이스는
+  비관리자에게 숨겨집니다.
+- 새 설정은 필요하지 않으며 클러스터 관리자 동작은 변경되지 않습니다.
+
 ### 변경
 
 - 유효 가시성 범위가 빈 비관리자 사용자(일치하는 `teamMappings` 항목과 `narwhal.io/team` 라벨 네임스페이스가 모두
@@ -799,7 +815,8 @@ Portal의 첫 번째 공개 릴리스.
     매니페스트(`deploy/kaniko-build-job.yaml`).
   - 실시간 핫 모듈 교체(HMR) 및 컨테이너 파일 동기화를 위해 구성된 Skaffold 개발 프로필.
 
-[Unreleased]: https://github.com/dasomel/narwhal/compare/portal/v1.1.16...HEAD
+[Unreleased]: https://github.com/dasomel/narwhal/compare/portal/v1.1.17...HEAD
+[1.1.17]: https://github.com/dasomel/narwhal/compare/portal/v1.1.16...portal/v1.1.17
 [1.1.16]: https://github.com/dasomel/narwhal/compare/portal/v1.1.15...portal/v1.1.16
 [1.1.15]: https://github.com/dasomel/narwhal/compare/portal/v1.1.14...portal/v1.1.15
 [1.1.14]: https://github.com/dasomel/narwhal/compare/portal/v1.1.13...portal/v1.1.14

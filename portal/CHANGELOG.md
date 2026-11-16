@@ -9,6 +9,21 @@ English | [한국어](CHANGELOG-ko.md)
 
 ## [Unreleased]
 
+## [1.1.17] - 2026-11-17
+
+Patch release that denies portal access to users without a team mapping or labelled namespace and scopes tenant data
+to each caller, while reserving cluster-wide signals for cluster admins (narwhal#659 follow-up, #686, #678, #687).
+
+### Operator notes / behaviour changes
+
+- Accounts with no team mapping and no `narwhal.io/team`-labelled namespace, including guests, can no longer access the
+  portal. They land on `/access-denied`, and data APIs return `403 ACCESS_NOT_GRANTED` (narwhal#659 follow-up, #686).
+  Add a team mapping or label a namespace before upgrading.
+- Developers and viewers no longer see fleet-wide data (narwhal#678, #687). Alerts, incidents, traces, the service graph,
+  and cluster overview are limited to their own namespaces. Namespace-less (node/cluster) alerts, workload distribution,
+  and the live flow stream are cluster-admin only; traces without a namespace resource attribute are hidden from non-admins.
+- No new configuration is required. Cluster-admin behaviour is unchanged.
+
 ### Changed
 
 - Non-admin users whose effective visibility scope is empty (no matching `teamMappings` entry and no
@@ -846,7 +861,8 @@ management dashboard built with Next.js 16 and React 19.
   - Skaffold development profile configured for live Hot Module Replacement (HMR) and container
     file syncing.
 
-[Unreleased]: https://github.com/dasomel/narwhal/compare/portal/v1.1.16...HEAD
+[Unreleased]: https://github.com/dasomel/narwhal/compare/portal/v1.1.17...HEAD
+[1.1.17]: https://github.com/dasomel/narwhal/compare/portal/v1.1.16...portal/v1.1.17
 [1.1.16]: https://github.com/dasomel/narwhal/compare/portal/v1.1.15...portal/v1.1.16
 [1.1.15]: https://github.com/dasomel/narwhal/compare/portal/v1.1.14...portal/v1.1.15
 [1.1.14]: https://github.com/dasomel/narwhal/compare/portal/v1.1.13...portal/v1.1.14

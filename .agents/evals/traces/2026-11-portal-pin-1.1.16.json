@@ -64,7 +64,7 @@
       "id": "e6",
       "type": "task_outcome",
       "state": "A",
-      "summary": "Static pin change; make validate and focused static checks passed. Markdown lint result pending. Live rollout and in-cluster signature verification remain pending."
+      "summary": "Static pin change; make test (462 passed, 0 failed), make validate, version consistency, generated versions and changed-line markdown lint passed. Live rollout and in-cluster signature verification are outside this change and not claimed."
     }
   ]
 }

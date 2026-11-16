@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server"
 import { requireRole } from "@/lib/auth"
+import { roleGateErrorResponse } from "@/lib/role-gate-response"
 import {
   AlertmanagerCredentialError,
   AlertmanagerForbiddenError,
@@ -69,12 +70,7 @@ function validateMatchers(input: unknown): SilenceMatcher[] | null {
 
 export async function POST(req: Request) {
   const gate = await requireRole("cluster-admin", "developer")
-  if ("error" in gate) {
-    return NextResponse.json(
-      { error: gate.error === "unauthorized" ? "Unauthorized" : "Forbidden", ...(gate.code ? { code: gate.code } : {}) },
-      { status: gate.error === "unauthorized" ? 401 : 403 }
-    )
-  }
+  if ("error" in gate) return roleGateErrorResponse(gate)
   const { session } = gate
 
   const body = await req.json().catch(() => null)
@@ -181,12 +177,7 @@ export async function POST(req: Request) {
 
 export async function DELETE(req: Request) {
   const gate = await requireRole("cluster-admin", "developer")
-  if ("error" in gate) {
-    return NextResponse.json(
-      { error: gate.error === "unauthorized" ? "Unauthorized" : "Forbidden", ...(gate.code ? { code: gate.code } : {}) },
-      { status: gate.error === "unauthorized" ? 401 : 403 }
-    )
-  }
+  if ("error" in gate) return roleGateErrorResponse(gate)
   const { session } = gate
 
   const { searchParams } = new URL(req.url)

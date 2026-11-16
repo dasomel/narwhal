@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server"
 import { requireRole, getActorId } from "@/lib/auth"
+import { roleGateErrorResponse } from "@/lib/role-gate-response"
 import { getCertificate, renewCertificate, K8sHttpError } from "@/lib/k8s-client"
 import { ValidationError, toValidationErrorBody } from "@/lib/validation"
 import { beginOperation, completeOperation, failOperation } from "@/lib/operation-context"
@@ -10,12 +11,7 @@ export const dynamic = "force-dynamic"
 
 export async function POST(req: Request) {
   const gate = await requireRole("cluster-admin")
-  if ("error" in gate) {
-    return NextResponse.json(
-      { error: gate.error === "unauthorized" ? "Unauthorized" : "Forbidden" },
-      { status: gate.error === "unauthorized" ? 401 : 403 }
-    )
-  }
+  if ("error" in gate) return roleGateErrorResponse(gate)
   const { session } = gate
 
   const body = await req.json().catch(() => null)

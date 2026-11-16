@@ -8,8 +8,8 @@ export const dynamic = "force-dynamic"
 export async function GET() {
   const session = await auth()
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
-  if (!canReadAlerts(session)) return NextResponse.json({ error: "Forbidden" }, { status: 403 })
   const denied = await requireSessionAccess(session)
   if (denied) return denied
+  if (!canReadAlerts(session)) return NextResponse.json({ error: "Forbidden" }, { status: 403 })
   return NextResponse.json(await getFiringAlerts(), { headers: { "Cache-Control": "no-store" } })
 }

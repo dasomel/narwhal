@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server"
 import { requireRole, getActorId } from "@/lib/auth"
+import { roleGateErrorResponse } from "@/lib/role-gate-response"
 import { claimIdempotencyKey, getIdempotencyStore } from "@/lib/idempotency"
 import { beginOperation, completeOperation } from "@/lib/operation-context"
 import { OSS_COMPONENTS } from "@/lib/oss-updates/catalog"
@@ -21,12 +22,7 @@ const TARGET_RE = /^v?\d{1,4}\.\d{1,4}(?:\.\d{1,4})?$/
 // generates the issue text; a human files it. No credential is read here by design.
 export async function POST(req: Request) {
   const gate = await requireRole("cluster-admin")
-  if ("error" in gate) {
-    return NextResponse.json(
-      { error: gate.error === "unauthorized" ? "Unauthorized" : "Forbidden" },
-      { status: gate.error === "unauthorized" ? 401 : 403 },
-    )
-  }
+  if ("error" in gate) return roleGateErrorResponse(gate)
   const { session } = gate
 
   const body = (await req.json().catch(() => null)) as { component?: unknown; target?: unknown } | null

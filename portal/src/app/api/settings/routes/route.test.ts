@@ -9,7 +9,7 @@ vi.mock("@/lib/cache-invalidation", () => ({ invalidateFor: vi.fn().mockResolved
 const { requireAdmin } = await import("@/lib/auth")
 const { toggleRoute } = await import("@/lib/apisix-client")
 const { invalidateFor } = await import("@/lib/cache-invalidation")
-const { PATCH } = await import("./route")
+const { GET, PATCH } = await import("./route")
 
 beforeEach(() => {
   vi.clearAllMocks()
@@ -29,5 +29,22 @@ describe("PATCH /api/settings/routes", () => {
     const req = new NextRequest("http://localhost/api/settings/routes", { method: "PATCH", body: JSON.stringify({ id: "route-1", enable: false }) })
     expect((await PATCH(req)).status).toBe(500)
     expect(invalidateFor).not.toHaveBeenCalled()
+  })
+
+  it("preserves ACCESS_NOT_GRANTED code on gate failure and omits it on ordinary forbidden", async () => {
+    vi.mocked(requireAdmin).mockResolvedValue({ error: "forbidden", code: "ACCESS_NOT_GRANTED" } as never)
+    const denied = await GET()
+    expect(denied.status).toBe(403)
+    expect(await denied.json()).toEqual({ error: "Forbidden", code: "ACCESS_NOT_GRANTED" })
+
+    const patchReq = new NextRequest("http://localhost/api/settings/routes", { method: "PATCH", body: JSON.stringify({}) })
+    const patchDenied = await PATCH(patchReq)
+    expect(patchDenied.status).toBe(403)
+    expect(await patchDenied.json()).toEqual({ error: "Forbidden", code: "ACCESS_NOT_GRANTED" })
+
+    vi.mocked(requireAdmin).mockResolvedValue({ error: "forbidden" } as never)
+    const plainForbidden = await PATCH(patchReq)
+    expect(plainForbidden.status).toBe(403)
+    expect(await plainForbidden.json()).toEqual({ error: "Forbidden" })
   })
 })

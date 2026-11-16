@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server"
 import { requireRole } from "@/lib/auth"
+import { roleGateErrorResponse } from "@/lib/role-gate-response"
 import { loadRules, getRulesRaw } from "@/lib/scorecard"
 
 export const dynamic = "force-dynamic"
@@ -15,12 +16,7 @@ export interface ScorecardRulesResponse {
 
 export async function GET() {
   const gate = await requireRole("cluster-admin", "developer", "viewer")
-  if ("error" in gate) {
-    return NextResponse.json(
-      { error: gate.error === "unauthorized" ? "Unauthorized" : "Forbidden", ...(gate.code ? { code: gate.code } : {}) },
-      { status: gate.error === "unauthorized" ? 401 : 403 },
-    )
-  }
+  if ("error" in gate) return roleGateErrorResponse(gate)
 
   try {
     const [rulesDoc, rawData] = await Promise.all([loadRules(), getRulesRaw()])

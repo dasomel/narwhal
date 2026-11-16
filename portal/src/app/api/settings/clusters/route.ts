@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { requireAdmin } from "@/lib/auth"
+import { roleGateErrorResponse } from "@/lib/role-gate-response"
 import { invalidateFor } from "@/lib/cache-invalidation"
 import { ValidationError, toValidationErrorBody } from "@/lib/validation"
 import {
@@ -32,14 +33,9 @@ function toListItem(cluster: Cluster): ClusterListItem {
   return { ...cluster, credentialsConfigured: resolveClusterCredentials(cluster) !== null }
 }
 
-function adminGateResponse(result: { error: "unauthorized" | "forbidden" }) {
-  const status = result.error === "unauthorized" ? 401 : 403
-  return NextResponse.json({ error: result.error === "unauthorized" ? "Unauthorized" : "Forbidden" }, { status })
-}
-
 export async function GET() {
   const result = await requireAdmin()
-  if ("error" in result) return adminGateResponse(result)
+  if ("error" in result) return roleGateErrorResponse(result)
   try {
     const clusters = await listClusters()
     const body: ClusterListResponse = { clusters: clusters.map(toListItem) }
@@ -52,7 +48,7 @@ export async function GET() {
 
 export async function POST(req: NextRequest) {
   const result = await requireAdmin()
-  if ("error" in result) return adminGateResponse(result)
+  if ("error" in result) return roleGateErrorResponse(result)
   try {
     const body = (await req.json().catch(() => null)) as ClusterRegistrationInput | null
     if (!body || typeof body !== "object") {
@@ -72,7 +68,7 @@ export async function POST(req: NextRequest) {
 
 export async function DELETE(req: NextRequest) {
   const result = await requireAdmin()
-  if ("error" in result) return adminGateResponse(result)
+  if ("error" in result) return roleGateErrorResponse(result)
   try {
     const id = req.nextUrl.searchParams.get("id")
     if (!id) {

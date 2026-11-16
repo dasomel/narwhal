@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { requireRole } from "@/lib/auth"
+import { roleGateErrorResponse } from "@/lib/role-gate-response"
 import { getArgoApps, appToCatalogService } from "@/lib/argocd"
 import { evaluateAll, loadRules } from "@/lib/scorecard"
 import { appVisible, getEffectiveScope } from "@/lib/scope"
@@ -35,12 +36,7 @@ export interface ScorecardListResponse {
 
 export async function GET(req: NextRequest) {
   const gate = await requireRole("cluster-admin", "developer", "viewer")
-  if ("error" in gate) {
-    return NextResponse.json(
-      { error: gate.error === "unauthorized" ? "Unauthorized" : "Forbidden", ...(gate.code ? { code: gate.code } : {}) },
-      { status: gate.error === "unauthorized" ? 401 : 403 },
-    )
-  }
+  if ("error" in gate) return roleGateErrorResponse(gate)
 
   const { searchParams } = req.nextUrl
   const ownerFilter = searchParams.get("owner") ?? undefined

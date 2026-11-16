@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server"
 import { requireRole } from "@/lib/auth"
+import { roleGateErrorResponse } from "@/lib/role-gate-response"
 import { queryRange } from "@/lib/prometheus"
 import { assertK8sNodeName, ValidationError } from "@/lib/validation"
 
@@ -11,12 +12,7 @@ export const dynamic = "force-dynamic"
 // could pull per-node CPU/memory/disk/network history.
 export async function GET(req: Request) {
   const gate = await requireRole("cluster-admin", "developer", "viewer")
-  if ("error" in gate) {
-    return NextResponse.json(
-      { error: gate.error === "unauthorized" ? "Unauthorized" : "Forbidden", ...(gate.code ? { code: gate.code } : {}) },
-      { status: gate.error === "unauthorized" ? 401 : 403 }
-    )
-  }
+  if ("error" in gate) return roleGateErrorResponse(gate)
 
   const { searchParams } = new URL(req.url)
   const metric = searchParams.get("metric") ?? "cpu"

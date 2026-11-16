@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server"
 import { requireRole } from "@/lib/auth"
+import { roleGateErrorResponse } from "@/lib/role-gate-response"
 import { buildWorkloadToServiceMap, resolveWorkload } from "@/lib/service-graph"
 import { startFlowStream } from "@/lib/hubble-stream"
 
@@ -12,15 +13,7 @@ const TICK_MS = 2_000
 
 export async function GET(req: NextRequest) {
   const gate = await requireRole("cluster-admin", "developer", "viewer")
-  if ("error" in gate) {
-    return new Response(
-      JSON.stringify({ error: gate.error === "unauthorized" ? "Unauthorized" : "Forbidden", ...(gate.code ? { code: gate.code } : {}) }),
-      {
-        status: gate.error === "unauthorized" ? 401 : 403,
-        headers: { "Content-Type": "application/json" },
-      },
-    )
-  }
+  if ("error" in gate) return roleGateErrorResponse(gate)
 
   const serviceMap = await buildWorkloadToServiceMap()
   const encoder = new TextEncoder()

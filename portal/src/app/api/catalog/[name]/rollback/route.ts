@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server"
 import { requireRole } from "@/lib/auth"
+import { roleGateErrorResponse } from "@/lib/role-gate-response"
 import {
   assertAppAccessible,
   ArgoCDCredentialError,
@@ -19,12 +20,7 @@ export const dynamic = "force-dynamic"
 
 export async function POST(req: Request, { params }: { params: Promise<{ name: string }> }) {
   const gate = await requireRole("cluster-admin")
-  if ("error" in gate) {
-    return NextResponse.json(
-      { error: gate.error === "unauthorized" ? "Unauthorized" : "Forbidden: cluster-admin only" },
-      { status: gate.error === "unauthorized" ? 401 : 403 }
-    )
-  }
+  if ("error" in gate) return roleGateErrorResponse(gate, { forbiddenMessage: "Forbidden: cluster-admin only" })
   const { session } = gate
 
   const { name } = await params

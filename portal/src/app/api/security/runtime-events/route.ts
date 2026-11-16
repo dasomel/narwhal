@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server"
 import { requireRole } from "@/lib/auth"
+import { roleGateErrorResponse } from "@/lib/role-gate-response"
 import { getRuntimeEvents } from "@/lib/falco"
 import type { FalcoEventPriority } from "@/types/security"
 
@@ -18,12 +19,7 @@ const VALID_PRIORITIES: FalcoEventPriority[] = [
 
 export async function GET(req: Request) {
   const gate = await requireRole("cluster-admin")
-  if ("error" in gate) {
-    return NextResponse.json(
-      { error: gate.error === "unauthorized" ? "Unauthorized" : "Forbidden" },
-      { status: gate.error === "unauthorized" ? 401 : 403 }
-    )
-  }
+  if ("error" in gate) return roleGateErrorResponse(gate)
 
   try {
     const { searchParams } = new URL(req.url)

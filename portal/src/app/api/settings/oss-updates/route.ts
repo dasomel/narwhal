@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server"
 import { requireRole } from "@/lib/auth"
+import { roleGateErrorResponse } from "@/lib/role-gate-response"
 import { getOssUpdateStatus } from "@/lib/oss-updates/status"
 
 export const dynamic = "force-dynamic"
@@ -9,11 +10,6 @@ export const dynamic = "force-dynamic"
 // no RBAC change), upstream from an opt-in public lookup. Nothing here mutates the cluster.
 export async function GET() {
   const gate = await requireRole("cluster-admin")
-  if ("error" in gate) {
-    return NextResponse.json(
-      { error: gate.error === "unauthorized" ? "Unauthorized" : "Forbidden" },
-      { status: gate.error === "unauthorized" ? 401 : 403 },
-    )
-  }
+  if ("error" in gate) return roleGateErrorResponse(gate)
   return NextResponse.json(await getOssUpdateStatus())
 }

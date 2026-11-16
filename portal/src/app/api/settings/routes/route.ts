@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { getRoutes, toggleRoute } from "@/lib/apisix-client"
 import { requireAdmin } from "@/lib/auth"
+import { roleGateErrorResponse } from "@/lib/role-gate-response"
 import { cacheGet, cacheSet } from "@/lib/valkey"
 import { cacheKeys, cacheTtl } from "@/lib/cache-keys"
 import { invalidateFor } from "@/lib/cache-invalidation"
@@ -9,10 +10,7 @@ export const dynamic = "force-dynamic"
 
 export async function GET() {
   const result = await requireAdmin()
-  if ("error" in result) {
-    const status = result.error === "unauthorized" ? 401 : 403
-    return NextResponse.json({ error: result.error === "unauthorized" ? "Unauthorized" : "Forbidden" }, { status })
-  }
+  if ("error" in result) return roleGateErrorResponse(result)
   try {
     const cached = await cacheGet<any[]>(cacheKeys.routesList())
     if (cached) return NextResponse.json(cached)
@@ -29,10 +27,7 @@ export async function GET() {
 
 export async function PATCH(req: NextRequest) {
   const result = await requireAdmin()
-  if ("error" in result) {
-    const status = result.error === "unauthorized" ? 401 : 403
-    return NextResponse.json({ error: result.error === "unauthorized" ? "Unauthorized" : "Forbidden" }, { status })
-  }
+  if ("error" in result) return roleGateErrorResponse(result)
   try {
     const { id, enable } = await req.json()
     if (!id || typeof id !== "string" || typeof enable !== "boolean") {

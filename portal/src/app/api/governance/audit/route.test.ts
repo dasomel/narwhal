@@ -59,5 +59,13 @@ describe("governance operational event routes", () => {
       expect((await getEvents()).status).toBe(status)
       expect((await getAudit()).status).toBe(status)
     }
+
+    vi.mocked(requireRole).mockResolvedValue({ error: "forbidden", code: "ACCESS_NOT_GRANTED" } as never)
+    const eventsRes = await getEvents()
+    const auditRes = await getAudit()
+    expect(eventsRes.status).toBe(403)
+    expect(auditRes.status).toBe(403)
+    expect(await eventsRes.json()).toEqual({ error: "Forbidden", code: "ACCESS_NOT_GRANTED" })
+    expect(await auditRes.json()).toEqual({ error: "Forbidden", code: "ACCESS_NOT_GRANTED" })
   })
 })

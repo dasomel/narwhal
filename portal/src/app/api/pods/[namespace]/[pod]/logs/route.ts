@@ -32,11 +32,6 @@ export async function GET(
   const session = await auth()
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
 
-  const role = session.user?.role
-  if (!role || !ALLOWED_ROLES.includes(role)) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 })
-  }
-
   const { namespace, pod } = await params
   try {
     assertK8sNamespace(namespace)
@@ -48,13 +43,18 @@ export async function GET(
     throw err
   }
 
-  // portal#33: the role check above (ALLOWED_ROLES) gates WHO may hit this
-  // route, but not WHICH namespace's logs they may read — a developer/viewer
-  // could pull pod logs (env var dumps, stack traces) from any namespace by
-  // naming it directly. Same gate as /api/k8s/pods and /api/pods.
+  // portal#33: check effective scope before ALLOWED_ROLES so empty-scope callers
+  // receive ACCESS_NOT_GRANTED rather than a generic 403, then enforce role and
+  // per-namespace visibility (which returns plain 403 without ACCESS_NOT_GRANTED).
   const scoped = await requireEffectiveScope(session)
   if ("denied" in scoped) return scoped.denied
   const { scope } = scoped
+
+  const role = session.user?.role
+  if (!role || !ALLOWED_ROLES.includes(role)) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 })
+  }
+
   if (!namespaceVisible(namespace, scope)) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 })
   }

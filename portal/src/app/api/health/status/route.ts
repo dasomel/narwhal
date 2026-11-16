@@ -2,6 +2,7 @@ import { NextResponse } from "next/server"
 import { validateRuntimeConfig } from "@/lib/config"
 import { getValkey } from "@/lib/valkey"
 import { requireRole } from "@/lib/auth"
+import { roleGateErrorResponse } from "@/lib/role-gate-response"
 
 export const dynamic = "force-dynamic"
 
@@ -62,12 +63,7 @@ async function probeValkey(): Promise<DependencyState> {
 // fan-out — /ready's only outbound call is a single bounded Valkey ping.
 export async function GET() {
   const gate = await requireRole("cluster-admin")
-  if ("error" in gate) {
-    return NextResponse.json(
-      { error: gate.error === "unauthorized" ? "Unauthorized" : "Forbidden" },
-      { status: gate.error === "unauthorized" ? 401 : 403 },
-    )
-  }
+  if ("error" in gate) return roleGateErrorResponse(gate)
 
   const config = validateRuntimeConfig()
 

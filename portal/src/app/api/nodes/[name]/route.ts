@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server"
 import { requireRole } from "@/lib/auth"
+import { roleGateErrorResponse } from "@/lib/role-gate-response"
 import { getNodeDetail } from "@/lib/k8s-client"
 import { getNodeMetrics, getNodePodCount } from "@/lib/prometheus"
 import { assertK8sNodeName, ValidationError, toValidationErrorBody } from "@/lib/validation"
@@ -17,12 +18,7 @@ export async function GET(
   // /api/scorecards and /api/service-graph for other non-tenant-scoped reads.
   // This route previously accepted any authenticated session including guest.
   const gate = await requireRole("cluster-admin", "developer", "viewer")
-  if ("error" in gate) {
-    return NextResponse.json(
-      { error: gate.error === "unauthorized" ? "Unauthorized" : "Forbidden", ...(gate.code ? { code: gate.code } : {}) },
-      { status: gate.error === "unauthorized" ? 401 : 403 }
-    )
-  }
+  if ("error" in gate) return roleGateErrorResponse(gate)
 
   const { name } = await params
   try {

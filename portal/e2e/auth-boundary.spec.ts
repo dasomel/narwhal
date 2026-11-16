@@ -15,11 +15,11 @@ test("rejects unauthenticated mutation requests", async ({ request }) => {
   expect(await response.json()).toEqual({ error: "Unauthorized" })
 })
 
-for (const { label, role, namespaceStatus, namespaceCode, routesStatus } of [
-  { label: "Viewer", role: "viewer", namespaceStatus: 403, namespaceCode: undefined, routesStatus: 403 },
-  { label: "Developer", role: "developer", namespaceStatus: 403, namespaceCode: "ACCESS_NOT_GRANTED", routesStatus: 403 },
-  { label: "Platform Team Developer", role: "developer", namespaceStatus: 400, namespaceCode: undefined, routesStatus: 403 },
-  { label: "Cluster Admin", role: "cluster-admin", namespaceStatus: 400, namespaceCode: undefined, routesStatus: 400 },
+for (const { label, role, namespaceStatus, namespaceCode, routesStatus, routesCode } of [
+  { label: "Viewer", role: "viewer", namespaceStatus: 403, namespaceCode: "ACCESS_NOT_GRANTED", routesStatus: 403, routesCode: "ACCESS_NOT_GRANTED" },
+  { label: "Developer", role: "developer", namespaceStatus: 403, namespaceCode: "ACCESS_NOT_GRANTED", routesStatus: 403, routesCode: "ACCESS_NOT_GRANTED" },
+  { label: "Platform Team Developer", role: "developer", namespaceStatus: 400, namespaceCode: undefined, routesStatus: 403, routesCode: undefined },
+  { label: "Cluster Admin", role: "cluster-admin", namespaceStatus: 400, namespaceCode: undefined, routesStatus: 400, routesCode: undefined },
 ]) {
   test(`${label} session enforces mutation permissions`, async ({ page }) => {
     // D1: Use the real mock-provider login and session cookie, not intercepted API
@@ -48,6 +48,7 @@ for (const { label, role, namespaceStatus, namespaceCode, routesStatus } of [
     expect(routes.status()).toBe(routesStatus)
     expect(await routes.json()).toEqual({
       error: routesStatus === 403 ? "Forbidden" : "Invalid input: id (string) and enable (boolean) required",
+      ...(routesCode ? { code: routesCode } : {}),
     })
   })
 }

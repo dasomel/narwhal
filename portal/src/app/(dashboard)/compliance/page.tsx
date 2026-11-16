@@ -1,5 +1,4 @@
-import { auth } from "@/lib/auth"
-import { redirect } from "next/navigation"
+import { requireDashboardAccess } from "@/lib/dashboard-access"
 import { getLocale } from "@/lib/i18n-server"
 import { t } from "@/lib/i18n"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -35,8 +34,7 @@ const emptySummary: ComplianceSummary = {
 }
 
 export default async function CompliancePage() {
-  const session = await auth()
-  if (!session) redirect("/login")
+  const session = await requireDashboardAccess()
 
   if (session.user?.role !== "cluster-admin") {
     const locale = await getLocale()

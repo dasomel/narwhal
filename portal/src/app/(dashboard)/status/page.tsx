@@ -1,12 +1,11 @@
-import { auth, hasRole } from "@/lib/auth"
-import { redirect } from "next/navigation"
+import { hasRole } from "@/lib/auth"
+import { requireDashboardAccess } from "@/lib/dashboard-access"
 import { getLocale } from "@/lib/i18n-server"
 import { t } from "@/lib/i18n"
 import { StatusView } from "@/components/status/status-view"
 
 export default async function StatusPage() {
-  const session = await auth()
-  if (!session) redirect("/login")
+  const session = await requireDashboardAccess()
 
   const locale = await getLocale()
   const isOperator = hasRole(session, "cluster-admin", "developer")

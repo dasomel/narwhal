@@ -85,6 +85,31 @@ beforeEach(() => {
 })
 
 describe("GET /api/my-apps — scope enforcement", () => {
+  it.each([
+    ["unmapped developer", "developer", [], false],
+    ["unmapped viewer", "viewer", [], false],
+    ["guest", "guest", [], false],
+    ["label-only team", "developer", ["tenant-a-team"], true],
+    ["mapped team", "developer", ["platform-team"], true],
+    ["cluster-admin", "cluster-admin", [], true],
+  ] as const)("applies the access gate to %s", async (_label, role, teams, allowed) => {
+    vi.mocked(auth).mockResolvedValue({
+      groups: [role], teams, user: { sub: "matrix-user", role },
+    } as never)
+    vi.mocked(getNamespaces).mockResolvedValue([
+      { name: "tenant-a", status: "Active", createdAt: "2026-01-01T00:00:00Z", labels: { "narwhal.io/team": "tenant-a-team" } },
+      { name: "platform-system", status: "Active", createdAt: "2026-01-01T00:00:00Z", labels: {} },
+    ])
+
+    const response = await GET()
+    expect(response.status).toBe(allowed ? 200 : 403)
+    if (!allowed) {
+      expect(await response.json()).toEqual({ error: "Forbidden", code: "ACCESS_NOT_GRANTED" })
+      expect(getArgoApps).not.toHaveBeenCalled()
+      expect(getAlerts).not.toHaveBeenCalled()
+    }
+  })
+
   it("does not leak platform-team's apps to the SAME user on frontend-team, and never serves platform-team's cached entry to it", async () => {
     const platformScope = await getEffectiveScope({ groups: platformUserA.groups, teams: platformUserA.teams })
     const frontendScope = await getEffectiveScope({ groups: frontendUserA.groups, teams: frontendUserA.teams })
@@ -179,19 +204,13 @@ describe("GET /api/my-apps — tenant-derived views", () => {
     expect(cacheSet).toHaveBeenCalledTimes(2)
   })
 
-  it("returns empty derived views for an unmapped guest without reading providers", async () => {
+  it("returns 403 ACCESS_NOT_GRANTED for an unmapped guest without reading providers", async () => {
     vi.mocked(auth).mockResolvedValue({
       groups: ["guest"], teams: [], user: { sub: "guest-user", role: "guest" },
     } as never)
     const response = await GET()
-    expect(response.status).toBe(200)
-    const body = await response.json() as MyAppsResponse
-    expect(body.scope.hasMapping).toBe(false)
-    expect(body.scope.namespaces).toEqual([])
-    expect(body.scopedApps).toEqual([])
-    expect(body.scopedAlerts).toEqual([])
-    expect(body.scopedEvents).toEqual([])
-    expect(body.hero.incidents).toEqual([])
+    expect(response.status).toBe(403)
+    expect(await response.json()).toEqual({ error: "Forbidden", code: "ACCESS_NOT_GRANTED" })
     expect(getArgoApps).not.toHaveBeenCalled()
     expect(getAlerts).not.toHaveBeenCalled()
   })
@@ -217,7 +236,7 @@ describe("GET /api/my-apps — tenant-derived views", () => {
     expect(body.scopedApps.map((a) => a.name)).toEqual(["app-a"])
   })
 
-  it("fails closed for a developer with an unmapped team and no matching namespace label (narwhal#659)", async () => {
+  it("returns 403 ACCESS_NOT_GRANTED for a developer with an unmapped team and no matching namespace label (D-PORTAL-UNMAPPED-DENY)", async () => {
     vi.mocked(auth).mockResolvedValue({
       groups: ["developer"], teams: ["unmapped-team"], user: { sub: "dev-unmapped", role: "developer" },
     } as never)
@@ -229,10 +248,9 @@ describe("GET /api/my-apps — tenant-derived views", () => {
     ])
 
     const response = await GET()
-    expect(response.status).toBe(200)
-    const body = await response.json() as MyAppsResponse
-    expect(body.scope.hasMapping).toBe(false)
-    expect(body.scope.namespaces).toEqual([])
-    expect(body.scopedApps).toEqual([])
+    expect(response.status).toBe(403)
+    expect(await response.json()).toEqual({ error: "Forbidden", code: "ACCESS_NOT_GRANTED" })
+    expect(getArgoApps).not.toHaveBeenCalled()
+    expect(getAlerts).not.toHaveBeenCalled()
   })
 })

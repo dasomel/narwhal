@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server"
 import { requireRole } from "@/lib/auth"
+import { roleGateErrorResponse } from "@/lib/role-gate-response"
 import { getTrivyDbStatus } from "@/lib/trivy-db-status"
 
 export const dynamic = "force-dynamic"
@@ -8,12 +9,7 @@ export const dynamic = "force-dynamic"
 // (scan failures, registry path). It never triggers an update.
 export async function GET(_req: Request) {
   const gate = await requireRole("cluster-admin")
-  if ("error" in gate) {
-    return NextResponse.json(
-      { error: gate.error === "unauthorized" ? "Unauthorized" : "Forbidden" },
-      { status: gate.error === "unauthorized" ? 401 : 403 }
-    )
-  }
+  if ("error" in gate) return roleGateErrorResponse(gate)
 
   try {
     return NextResponse.json(await getTrivyDbStatus())

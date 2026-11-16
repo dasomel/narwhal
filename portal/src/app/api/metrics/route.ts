@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { getClusterMetrics, getNodeMetrics } from "@/lib/prometheus"
 import { requireRole } from "@/lib/auth"
+import { roleGateErrorResponse } from "@/lib/role-gate-response"
 
 export const dynamic = "force-dynamic"
 
@@ -22,12 +23,7 @@ export const dynamic = "force-dynamic"
 // exception.
 export async function GET() {
   const gate = await requireRole("cluster-admin", "developer", "viewer")
-  if ("error" in gate) {
-    return NextResponse.json(
-      { error: gate.error === "unauthorized" ? "Unauthorized" : "Forbidden" },
-      { status: gate.error === "unauthorized" ? 401 : 403 }
-    )
-  }
+  if ("error" in gate) return roleGateErrorResponse(gate)
 
   try {
     const [metrics, nodeMetrics] = await Promise.all([

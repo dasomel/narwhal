@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server"
 import { requireRole } from "@/lib/auth"
+import { roleGateErrorResponse } from "@/lib/role-gate-response"
 import { evaluatePvcExpansion, parseStorageQuantity, type StorageClassFacts } from "@/lib/domain/storage"
 import { getPersistentVolumeClaim, getResourceQuotas, getStorageClass, K8sHttpError } from "@/lib/k8s-client"
 import { getEffectiveScope, namespaceVisible } from "@/lib/scope"
@@ -74,12 +75,7 @@ function quotaHeadroom(raw: unknown, className: string | null): string | null {
 
 export async function POST(req: Request) {
   const gate = await requireRole("cluster-admin", "developer")
-  if ("error" in gate) {
-    return NextResponse.json(
-      { error: gate.error === "unauthorized" ? "Unauthorized" : "Forbidden" },
-      { status: gate.error === "unauthorized" ? 401 : 403 },
-    )
-  }
+  if ("error" in gate) return roleGateErrorResponse(gate)
 
   let body
   try {

@@ -1,13 +1,12 @@
 import { redirect } from "next/navigation"
-import { auth } from "@/lib/auth"
+import { requireDashboardAccess } from "@/lib/dashboard-access"
 import { canReadAlerts } from "@/lib/alert-access"
 import { getLocale } from "@/lib/i18n-server"
 import { t } from "@/lib/i18n"
 import { FiringAlerts } from "@/components/alerts/firing-alerts"
 
 export default async function AlertsPage() {
-  const session = await auth()
-  if (!session) redirect("/login")
+  const session = await requireDashboardAccess()
   if (!canReadAlerts(session)) redirect("/")
   const locale = await getLocale()
   return <div className="space-y-6">

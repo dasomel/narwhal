@@ -5,6 +5,7 @@
 // Kubernetes API. This module is the seam: it fetches the namespace list (cached, so
 // this is not an extra round trip) and hands back the resolved answer.
 
+import { NextResponse } from "next/server"
 import { getNamespaces } from "./k8s-client"
 import {
   getVisibilityScope,
@@ -50,6 +51,86 @@ export interface EffectiveScope {
 export interface ScopeSession {
   groups?: string[]
   teams?: string[]
+  user?: { role?: string }
+}
+
+export const ACCESS_NOT_GRANTED_CODE = "ACCESS_NOT_GRANTED" as const
+
+export interface AccessDeniedBody {
+  error: string
+  code: typeof ACCESS_NOT_GRANTED_CODE
+}
+
+// D-PORTAL-UNMAPPED-DENY: Non-admin users with an empty effective scope must not
+// see portal screens or read data APIs (owner decision 2026-11-16, follow-up to
+// narwhal#659). Cost: callers with team claims but no static argocdProjects
+// resolve through getEffectiveScope() -> getNamespaces() (cached 30s in Valkey
+// under k8s:namespaces), so newly added narwhal.io/team labels can take up to 30s
+// to grant access (and role-filter.json updates require a process reload); admin
+// and teamless callers decide without hitting Kubernetes. Escape hatch: map the
+// team in config/role-filter.json or label a namespace with narwhal.io/team. If the
+// Kubernetes namespace list cannot be read, label-only teams are denied (fail closed)
+// until it recovers.
+export function hasEffectiveAccess(
+  scope: Pick<EffectiveScope, "all" | "hasMapping" | "namespaces" | "argocdProjects">,
+): boolean {
+  return Boolean(scope.all || scope.hasMapping || scope.namespaces.size > 0 || scope.argocdProjects.length > 0)
+}
+
+function normalizeScopeGroups(session: ScopeSession): string[] {
+  if (session.groups !== undefined) return session.groups
+  return session.user?.role ? [session.user.role] : []
+}
+
+export async function resolveEffectiveAccess(
+  session: ScopeSession,
+  clusterId: string = DEFAULT_CLUSTER_ID,
+): Promise<{ allowed: true; scope?: EffectiveScope } | { allowed: false }> {
+  const groups = normalizeScopeGroups(session)
+  const teams = session.teams ?? []
+  const vis = getVisibilityScope(groups, teams)
+
+  if (vis.namespaces.includes("*")) return { allowed: true }
+  if (!vis.hasMapping && teams.length === 0) return { allowed: false }
+  if (vis.hasMapping && vis.argocdProjects.length > 0) return { allowed: true }
+
+  const scope = await getEffectiveScope({ groups, teams }, clusterId)
+  return hasEffectiveAccess(scope) ? { allowed: true, scope } : { allowed: false }
+}
+
+export async function hasSessionAccess(
+  session: ScopeSession | null | undefined,
+  clusterId: string = DEFAULT_CLUSTER_ID,
+): Promise<boolean> {
+  if (!session) return false
+  return (await resolveEffectiveAccess(session, clusterId)).allowed
+}
+
+export function accessDeniedResponse(): NextResponse<AccessDeniedBody> {
+  return NextResponse.json<AccessDeniedBody>(
+    { error: "Forbidden", code: ACCESS_NOT_GRANTED_CODE },
+    { status: 403 },
+  )
+}
+
+export async function requireSessionAccess(
+  session: ScopeSession | null | undefined,
+  clusterId: string = DEFAULT_CLUSTER_ID,
+): Promise<NextResponse<AccessDeniedBody> | null> {
+  if (await hasSessionAccess(session, clusterId)) return null
+  return accessDeniedResponse()
+}
+
+export async function requireEffectiveScope(
+  session: ScopeSession,
+  clusterId: string = DEFAULT_CLUSTER_ID,
+): Promise<{ scope: EffectiveScope } | { denied: NextResponse<AccessDeniedBody> }> {
+  const scope = await getEffectiveScope(
+    { groups: normalizeScopeGroups(session), teams: session.teams ?? [] },
+    clusterId,
+  )
+  if (!hasEffectiveAccess(scope)) return { denied: accessDeniedResponse() }
+  return { scope }
 }
 
 export async function getEffectiveScope(session: ScopeSession, clusterId: string = DEFAULT_CLUSTER_ID): Promise<EffectiveScope> {

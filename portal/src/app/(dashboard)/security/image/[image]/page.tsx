@@ -1,5 +1,4 @@
-import { auth } from "@/lib/auth"
-import { redirect } from "next/navigation"
+import { requireDashboardAccess } from "@/lib/dashboard-access"
 import { getLocale } from "@/lib/i18n-server"
 import { t } from "@/lib/i18n"
 import { Badge } from "@/components/ui/badge"
@@ -29,8 +28,7 @@ async function fetchDetail(imageStr: string): Promise<ImageVulnReport | null> {
 }
 
 export default async function ImageVulnDetailPage({ params }: Props) {
-  const session = await auth()
-  if (!session) redirect("/login")
+  const session = await requireDashboardAccess()
 
   const locale = await getLocale()
 

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server"
 import { requireAdmin } from "@/lib/auth"
+import { roleGateErrorResponse } from "@/lib/role-gate-response"
 import { getNamespaces } from "@/lib/k8s-client"
 import { findOrphanedNamespacePatterns } from "@/lib/role-filter"
 
@@ -15,10 +16,7 @@ export interface RoleMappingPreflightResponse {
 // (namespace patterns only, not argocdProjects).
 export async function GET() {
   const gate = await requireAdmin()
-  if ("error" in gate) {
-    const status = gate.error === "unauthorized" ? 401 : 403
-    return NextResponse.json({ error: gate.error === "unauthorized" ? "Unauthorized" : "Forbidden" }, { status })
-  }
+  if ("error" in gate) return roleGateErrorResponse(gate)
 
   try {
     const namespaces = await getNamespaces()

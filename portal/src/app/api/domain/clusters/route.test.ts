@@ -26,7 +26,7 @@ const { listClusters, getCluster, resolveClusterCredentials } = await import("@/
 const { probeClusterHealth } = await import("@/lib/domain/cluster")
 const { GET } = await import("./route")
 
-const session = { user: { role: "developer" } }
+const session = { groups: ["developer"], teams: ["platform-team"], user: { role: "developer" } }
 
 function fakeCluster(id: string): Cluster {
   return {

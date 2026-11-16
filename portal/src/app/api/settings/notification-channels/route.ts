@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server"
 import { requireRole } from "@/lib/auth"
+import { roleGateErrorResponse } from "@/lib/role-gate-response"
 import { ChannelSaveError, getNotificationChannels, saveNotificationChannels } from "@/lib/notification-channels"
 import { ChannelValidationError, parseChannelInput } from "@/lib/notification-channel-validation"
 
@@ -8,7 +9,7 @@ const json = (body: unknown, status = 200) => NextResponse.json(body, { status, 
 
 export async function GET() {
   const gate = await requireRole("cluster-admin")
-  if ("error" in gate) return json({ error: gate.error }, gate.error === "unauthorized" ? 401 : 403)
+  if ("error" in gate) return roleGateErrorResponse(gate, { headers: { "Cache-Control": "no-store" } })
   try {
     return json(await getNotificationChannels())
   } catch {
@@ -18,7 +19,7 @@ export async function GET() {
 
 export async function PUT(request: Request) {
   const gate = await requireRole("cluster-admin")
-  if ("error" in gate) return json({ error: gate.error }, gate.error === "unauthorized" ? 401 : 403)
+  if ("error" in gate) return roleGateErrorResponse(gate, { headers: { "Cache-Control": "no-store" } })
   let input
   try { input = parseChannelInput(await request.json()) } catch { return json({ error: "Invalid notification channel settings" }, 400) }
   try {

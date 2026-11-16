@@ -8,6 +8,7 @@
 
 import { NextRequest, NextResponse } from "next/server"
 import { requireRole } from "@/lib/auth"
+import { roleGateErrorResponse } from "@/lib/role-gate-response"
 import { getArgoApp } from "@/lib/argocd"
 import { CostPricingConfigurationError, getCostPricing, getCostTrend } from "@/lib/cost"
 import { appVisible, getEffectiveScope, namespaceVisible } from "@/lib/scope"
@@ -33,12 +34,7 @@ export interface CostTrendResponse {
 
 export async function GET(req: NextRequest) {
   const gate = await requireRole("cluster-admin", "developer", "viewer")
-  if ("error" in gate) {
-    return NextResponse.json(
-      { error: gate.error === "unauthorized" ? "Unauthorized" : "Forbidden" },
-      { status: gate.error === "unauthorized" ? 401 : 403 }
-    )
-  }
+  if ("error" in gate) return roleGateErrorResponse(gate)
 
   try {
     const scope = req.nextUrl.searchParams.get("scope") ?? "cluster"

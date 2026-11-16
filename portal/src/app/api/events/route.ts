@@ -4,7 +4,7 @@ import { getArgoApps } from "@/lib/argocd"
 import { getAlerts } from "@/lib/alertmanager"
 import { cacheGet, cacheSet } from "@/lib/valkey"
 import { cacheKeys, cacheTtl } from "@/lib/cache-keys"
-import { alertVisible, appVisible, getEffectiveScope } from "@/lib/scope"
+import { alertVisible, appVisible, requireEffectiveScope } from "@/lib/scope"
 
 export const dynamic = "force-dynamic"
 
@@ -41,7 +41,9 @@ export async function GET(request: Request) {
   // handed to anyone with a session. Deploy history names services, revisions and
   // when they last changed; alerts name what is failing and where. Both are scoped
   // in /api/my-apps already, so this route was the way around that.
-  const scope = await getEffectiveScope(session)
+  const scoped = await requireEffectiveScope(session)
+  if ("denied" in scoped) return scoped.denied
+  const { scope } = scoped
 
   // The cache key has to carry the scope. It was the single literal
   // "events:timeline" holding a fully-rendered result, so once filtering exists,

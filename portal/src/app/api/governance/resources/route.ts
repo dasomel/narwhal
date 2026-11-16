@@ -3,7 +3,7 @@ import { auth } from "@/lib/auth"
 import { queryVector, getClusterMetrics } from "@/lib/prometheus"
 import { getNamespaces, getAllPodsMinimal } from "@/lib/k8s-client"
 import { cacheGetWithMeta, cacheSet } from "@/lib/valkey"
-import { getEffectiveScope, namespaceVisible } from "@/lib/scope"
+import { namespaceVisible, requireEffectiveScope } from "@/lib/scope"
 import { cacheKeys, cacheTtl } from "@/lib/cache-keys"
 
 export const dynamic = "force-dynamic"
@@ -76,7 +76,9 @@ export async function GET() {
   // requireRole("cluster-admin")), so the response must be filtered to the caller's
   // effective scope the same way scorecard/dora do. The cache key carries the scope
   // fingerprint so a scoped result never leaks to a different caller.
-  const scope = await getEffectiveScope(session)
+  const scoped = await requireEffectiveScope(session)
+  if ("denied" in scoped) return scoped.denied
+  const { scope } = scoped
   const cacheKey = cacheKeys.governanceResourcesV3(scope.fingerprint)
   try {
     const cached = await cacheGetWithMeta<ResourcesResponseV2>(cacheKey)

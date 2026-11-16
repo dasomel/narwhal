@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server"
 import { requireRole } from "@/lib/auth"
+import { roleGateErrorResponse } from "@/lib/role-gate-response"
 import { getDependencyHealthSnapshot } from "@/lib/dependency-health"
 import { getLiveK8sInformerStatus } from "@/lib/live-k8s-informer"
 import { getLiveStreamMetrics } from "@/lib/live-stream"
@@ -26,12 +27,7 @@ const PROBE_TIMEOUT_MS = 1500
 // stays a thin gate + passthrough.
 export async function GET() {
   const gate = await requireRole("cluster-admin")
-  if ("error" in gate) {
-    return NextResponse.json(
-      { error: gate.error === "unauthorized" ? "Unauthorized" : "Forbidden" },
-      { status: gate.error === "unauthorized" ? 401 : 403 }
-    )
-  }
+  if ("error" in gate) return roleGateErrorResponse(gate)
 
   const snapshot = await getDependencyHealthSnapshot({ timeoutMs: PROBE_TIMEOUT_MS })
 

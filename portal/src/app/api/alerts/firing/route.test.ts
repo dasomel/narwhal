@@ -6,9 +6,18 @@ import { getFiringAlerts } from "@/lib/firing-alerts"
 import { GET } from "./route"
 beforeEach(() => vi.resetAllMocks())
 describe("firing alerts RBAC", () => {
-  it.each(["developer", "viewer", "guest"])("denies %s without contacting Alertmanager", async (role) => {
-    vi.mocked(auth).mockResolvedValue({ user: { role } } as never)
-    expect((await GET()).status).toBe(403)
+  it.each(["developer", "viewer", "guest"])("denies unmapped %s with ACCESS_NOT_GRANTED before contacting Alertmanager", async (role) => {
+    vi.mocked(auth).mockResolvedValue({ groups: [role], teams: [], user: { role } } as never)
+    const res = await GET()
+    expect(res.status).toBe(403)
+    expect(await res.json()).toEqual({ error: "Forbidden", code: "ACCESS_NOT_GRANTED" })
+    expect(getFiringAlerts).not.toHaveBeenCalled()
+  })
+  it("denies mapped non-admin with plain 403 without ACCESS_NOT_GRANTED", async () => {
+    vi.mocked(auth).mockResolvedValue({ groups: ["developer"], teams: ["platform-team"], user: { role: "developer" } } as never)
+    const res = await GET()
+    expect(res.status).toBe(403)
+    expect(await res.json()).toEqual({ error: "Forbidden" })
     expect(getFiringAlerts).not.toHaveBeenCalled()
   })
   it("denies unauthenticated callers", async () => {

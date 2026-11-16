@@ -4,6 +4,7 @@ import { pushEvent, recordLiveEventAccepted, recordLiveEventDuplicate } from "@/
 import { assertHttpUrl, ValidationError } from "@/lib/validation"
 import { claimIdempotencyKey, getIdempotencyStore } from "@/lib/idempotency"
 import { auth } from "@/lib/auth"
+import { requireSessionAccess } from "@/lib/scope"
 import {
   authenticateProducer,
   getRateLimiter,
@@ -401,6 +402,10 @@ export async function GET(request: Request) {
 
   if (!session && (!authRes || !authRes.authenticated)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  }
+  if (session && (!authRes || !authRes.authenticated)) {
+    const denied = await requireSessionAccess(session)
+    if (denied) return denied
   }
 
   return NextResponse.json(getIngestMetrics())

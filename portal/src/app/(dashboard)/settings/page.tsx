@@ -1,5 +1,5 @@
-import { auth } from "@/lib/auth"
 import type { UserRole } from "@/lib/auth"
+import { requireDashboardAccess } from "@/lib/dashboard-access"
 import { redirect } from "next/navigation"
 import { NotificationChannels } from "@/components/settings/notification-channels"
 import { UsersTable } from "@/components/settings/users-table"
@@ -31,8 +31,8 @@ const roleBadge: Record<UserRole, string> = {
 }
 
 export default async function SettingsPage() {
-  const session = await auth()
-  if (session?.user?.role !== "cluster-admin") {
+  const session = await requireDashboardAccess()
+  if (session.user?.role !== "cluster-admin") {
     redirect("/")
   }
   const locale = await getLocale()

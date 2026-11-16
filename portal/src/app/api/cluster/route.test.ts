@@ -1,7 +1,21 @@
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import { NextRequest } from "next/server"
 
-vi.mock("@/lib/auth", () => ({ requireRole: vi.fn() }))
+const mockAuth = vi.hoisted(() => vi.fn())
+const mockGetNamespaces = vi.hoisted(() => vi.fn())
+
+// Drive the real requireRole() -> hasSessionAccess() -> getEffectiveScope() chain;
+// stub only NextAuth's module-load wrapper and the upstream namespace list.
+vi.mock("next-auth", () => ({
+  default: () => ({ handlers: {}, auth: mockAuth, signIn: vi.fn(), signOut: vi.fn() }),
+}))
+vi.mock("next-auth/providers/credentials", () => ({
+  default: (opts: unknown) => opts,
+}))
+vi.mock("@/lib/k8s-client", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/k8s-client")>()
+  return { ...actual, getNamespaces: mockGetNamespaces }
+})
 vi.mock("@/lib/valkey", () => ({ cacheGet: vi.fn(), cacheGetWithMeta: vi.fn(), cacheSet: vi.fn() }))
 // clusterCacheKey/DEFAULT_CLUSTER_ID are left real (see the leak test below) — only the
 // registry lookups and credential resolution are mocked.
@@ -10,10 +24,11 @@ vi.mock("@/lib/cluster-registry", async (importOriginal) => {
   return { ...actual, getCluster: vi.fn(), resolveClusterCredentials: vi.fn() }
 })
 
-import { requireRole } from "@/lib/auth"
-import { cacheGetWithMeta, cacheSet } from "@/lib/valkey"
-import { getCluster, resolveClusterCredentials } from "@/lib/cluster-registry"
-import { GET } from "./route"
+const { cacheGetWithMeta, cacheSet } = await import("@/lib/valkey")
+const { getCluster, resolveClusterCredentials } = await import("@/lib/cluster-registry")
+const { GET } = await import("./route")
+
+const adminSession = { groups: ["cluster-admin"], teams: [], user: { role: "cluster-admin" } }
 
 const req = (clusterId?: string) =>
   new NextRequest(`http://localhost/api/cluster${clusterId ? `?cluster_id=${clusterId}` : ""}`)
@@ -22,24 +37,60 @@ describe("GET /api/cluster role gate (portal#33)", () => {
   beforeEach(() => {
     vi.clearAllMocks()
     globalThis.fetch = vi.fn() as unknown as typeof fetch
+    mockGetNamespaces.mockResolvedValue([
+      { name: "tenant-a", status: "Active", createdAt: "2026-01-01T00:00:00Z", labels: { "narwhal.io/team": "tenant-a-team" } },
+      { name: "platform-system", status: "Active", createdAt: "2026-01-01T00:00:00Z", labels: {} },
+    ])
+  })
+
+  it.each([
+    ["unmapped developer", "developer", [], false],
+    ["unmapped viewer", "viewer", [], false],
+    ["guest", "guest", [], false],
+    ["label-only team", "developer", ["tenant-a-team"], true],
+    ["mapped team", "developer", ["platform-team"], true],
+    ["cluster-admin", "cluster-admin", [], true],
+  ] as const)("returns the expected route response for %s", async (_label, role, teams, allowed) => {
+    mockAuth.mockResolvedValue({ groups: [role], teams, user: { role } })
+    if (allowed) {
+      vi.mocked(getCluster).mockResolvedValue({ id: "default" } as never)
+      vi.mocked(resolveClusterCredentials).mockReturnValue({ apiServer: "https://cluster", token: "" } as never)
+      vi.mocked(cacheGetWithMeta).mockResolvedValueOnce({
+        value: {
+          nodes: [], controlPlane: [], namespaces: [],
+          summary: { totalNodes: 0, readyNodes: 0, totalPods: 0, totalNamespaces: 0, truncated: false },
+        } as never,
+        cachedAt: "2026-09-27T00:00:00.000Z",
+        ageSeconds: 0,
+      })
+    }
+
+    const response = await GET(req())
+    expect(response.status).toBe(allowed ? 200 : 403)
+    if (!allowed) {
+      expect(await response.json()).toEqual({ error: "Forbidden", code: "ACCESS_NOT_GRANTED" })
+      expect(getCluster).not.toHaveBeenCalled()
+    }
   })
 
   it("returns 401 without a session and never touches the cluster", async () => {
-    vi.mocked(requireRole).mockResolvedValue({ error: "unauthorized" } as never)
+    mockAuth.mockResolvedValue(null)
     const res = await GET(req())
     expect(res.status).toBe(401)
+    expect(await res.json()).toEqual({ error: "Unauthorized" })
     expect(fetch).not.toHaveBeenCalled()
   })
 
-  it("returns 403 for a role outside the viewer set", async () => {
-    vi.mocked(requireRole).mockResolvedValue({ error: "forbidden" } as never)
+  it("returns plain 403 without ACCESS_NOT_GRANTED for a scoped role outside the viewer set", async () => {
+    mockAuth.mockResolvedValue({ groups: ["guest"], teams: ["platform-team"], user: { role: "guest" } })
     const res = await GET(req())
     expect(res.status).toBe(403)
+    expect(await res.json()).toEqual({ error: "Forbidden" })
     expect(fetch).not.toHaveBeenCalled()
   })
 
   it("returns a cached cluster response with its original capture time", async () => {
-    vi.mocked(requireRole).mockResolvedValue({ session: {} } as never)
+    mockAuth.mockResolvedValue(adminSession)
     vi.mocked(getCluster).mockResolvedValue({ id: "default" } as never)
     vi.mocked(resolveClusterCredentials).mockReturnValue({ apiServer: "https://cluster", token: "" } as never)
     const cached = {
@@ -53,7 +104,7 @@ describe("GET /api/cluster role gate (portal#33)", () => {
   })
 
   it("marks a provider response as live", async () => {
-    vi.mocked(requireRole).mockResolvedValue({ session: {} } as never)
+    mockAuth.mockResolvedValue(adminSession)
     vi.mocked(getCluster).mockResolvedValue({ id: "default" } as never)
     vi.mocked(resolveClusterCredentials).mockReturnValue({ apiServer: "https://cluster", token: "" } as never)
     vi.mocked(cacheGetWithMeta).mockResolvedValueOnce(null)
@@ -78,7 +129,7 @@ describe("GET /api/cluster — cross-cluster cache isolation (portal#53 AC-4)", 
   beforeEach(() => {
     vi.clearAllMocks()
     cache.clear()
-    vi.mocked(requireRole).mockResolvedValue({ session: {} } as never)
+    mockAuth.mockResolvedValue(adminSession)
     vi.mocked(cacheGetWithMeta).mockImplementation(async (key: string) => {
       const value = cache.get(key)
       return value === undefined ? null : { value, cachedAt: "2026-09-27T00:00:00.000Z", ageSeconds: 0 }

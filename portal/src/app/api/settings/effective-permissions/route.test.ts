@@ -76,4 +76,34 @@ describe("GET /api/settings/effective-permissions", () => {
     const body = await res.json()
     expect(body.claims.groupClaimStatus).toBe("ok")
   })
+
+  it("returns an unmapped guest's own diagnosis without cluster-wide configuration or namespace owners", async () => {
+    vi.mocked(auth).mockResolvedValue({
+      user: { name: "Guest", email: "guest@example.test", role: "guest" },
+      groups: ["guest"], teams: ["unknown-team"], groupClaimStatus: "unknown_groups",
+    } as never)
+    vi.mocked(getNamespaces).mockResolvedValue([
+      { name: "private-ns", status: "Active", createdAt: "2026-01-01T00:00:00Z", labels: { "narwhal.io/team": "private-team" } },
+    ])
+
+    const body = await (await GET()).json()
+    expect(body.claims).toMatchObject({ groups: ["guest"], teams: ["unknown-team"], roles: [], mappedTeams: [], unmappedClaims: ["unknown-team"], fellBackToGuest: true })
+    expect(body.namespaces).toEqual([])
+    expect(body.allNamespaces).toBe(false)
+    expect(body.argocdProjects).toEqual([])
+    expect(body.configured).toEqual({ teams: [], roleDefaults: {} })
+    expect(JSON.stringify(body)).not.toContain("private-team")
+  })
+
+  it("keeps configured mappings visible to cluster-admin", async () => {
+    vi.mocked(auth).mockResolvedValue({
+      user: { name: "Admin", email: "admin@example.test", role: "cluster-admin" },
+      groups: ["cluster-admin"], teams: [],
+    } as never)
+    vi.mocked(getNamespaces).mockResolvedValue([])
+
+    const body = await (await GET()).json()
+    expect(body.configured.teams.length).toBeGreaterThan(0)
+    expect(Object.keys(body.configured.roleDefaults).length).toBeGreaterThan(0)
+  })
 })

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { auth } from "@/lib/auth"
 import { getGroupsDetailed } from "@/lib/keycloak-client"
+import { requireSessionAccess } from "@/lib/scope"
 import { getToolsForRole, PLATFORM_TOOLS } from "@/lib/tools"
 
 export const dynamic = "force-dynamic"
@@ -10,6 +11,8 @@ export async function GET() {
   if (!session) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
+  const denied = await requireSessionAccess(session)
+  if (denied) return denied
 
   const userGroups = session.groups ?? []
   const role = session.user.role ?? "guest"

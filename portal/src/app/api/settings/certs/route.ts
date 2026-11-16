@@ -1,17 +1,13 @@
 import { NextResponse } from "next/server"
 import { getCertificates } from "@/lib/k8s-client"
 import { requireRole } from "@/lib/auth"
+import { roleGateErrorResponse } from "@/lib/role-gate-response"
 
 export const dynamic = "force-dynamic"
 
 export async function GET() {
   const gate = await requireRole("cluster-admin")
-  if ("error" in gate) {
-    return NextResponse.json(
-      { error: gate.error === "unauthorized" ? "Unauthorized" : "Forbidden" },
-      { status: gate.error === "unauthorized" ? 401 : 403 }
-    )
-  }
+  if ("error" in gate) return roleGateErrorResponse(gate)
 
   try {
     return NextResponse.json(await getCertificates())

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { requireRole } from "@/lib/auth"
+import { roleGateErrorResponse } from "@/lib/role-gate-response"
 import { cacheGetWithMeta, cacheSet } from "@/lib/valkey"
 import { getCluster, resolveClusterCredentials, clusterCacheKey, DEFAULT_CLUSTER_ID } from "@/lib/cluster-registry"
 
@@ -111,12 +112,7 @@ export async function GET(request: NextRequest) {
   // carries the same role gate as /api/metrics and /api/nodes — guest sessions
   // only ever had it hidden client-side.
   const gate = await requireRole("cluster-admin", "developer", "viewer")
-  if ("error" in gate) {
-    return NextResponse.json(
-      { error: gate.error === "unauthorized" ? "Unauthorized" : "Forbidden" },
-      { status: gate.error === "unauthorized" ? 401 : 403 }
-    )
-  }
+  if ("error" in gate) return roleGateErrorResponse(gate)
 
   // portal#21 pilot: this route now resolves an explicit cluster instead of
   // reading process-global K8S_API_SERVER/K8S_SA_TOKEN directly. Defaulting to

@@ -9,6 +9,14 @@ English | [한국어](CHANGELOG-ko.md)
 
 ## [Unreleased]
 
+### Changed
+
+- Non-admin users whose effective visibility scope is empty (no matching `teamMappings` entry and no
+  `narwhal.io/team`-labelled namespace) are now redirected after sign-in to a dedicated `/access-denied` screen
+  without navigation or tenant data fetches, and portal data/action APIs respond with HTTP `403`
+  (`code: "ACCESS_NOT_GRANTED"`) while session, sign-out, and health endpoints remain reachable (`D-PORTAL-UNMAPPED-DENY`,
+  follow-up to narwhal#659).
+
 ## [1.1.16] - 2026-11-16
 
 Patch release that fails closed for unmapped non-admin teams and updates dependencies, including upstream security fixes

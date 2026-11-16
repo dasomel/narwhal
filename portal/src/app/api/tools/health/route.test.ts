@@ -16,8 +16,8 @@ const { auth } = await import("@/lib/auth")
 const { cacheGet, cacheSet } = await import("@/lib/valkey")
 const { GET } = await import("./route")
 
-const adminSession = { user: { role: "cluster-admin" } }
-const viewerSession = { user: { role: "viewer" } }
+const adminSession = { groups: ["cluster-admin"], teams: [], user: { role: "cluster-admin" } }
+const viewerSession = { groups: ["viewer"], teams: ["frontend-team"], user: { role: "viewer" } }
 
 beforeEach(() => {
   vi.clearAllMocks()
@@ -54,6 +54,14 @@ describe("GET /api/tools/health — role scope enforcement", () => {
     vi.mocked(auth).mockResolvedValue(null as never)
     const res = await GET()
     expect(res.status).toBe(401)
+    expect(fetch).not.toHaveBeenCalled()
+  })
+
+  it("403s an unmapped viewer with ACCESS_NOT_GRANTED", async () => {
+    vi.mocked(auth).mockResolvedValue({ groups: ["viewer"], teams: [], user: { role: "viewer" } } as never)
+    const res = await GET()
+    expect(res.status).toBe(403)
+    expect(await res.json()).toEqual({ error: "Forbidden", code: "ACCESS_NOT_GRANTED" })
     expect(fetch).not.toHaveBeenCalled()
   })
 })

@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server"
 import { auth, requireRole } from "@/lib/auth"
+import { roleGateErrorResponse } from "@/lib/role-gate-response"
 import { TEMPLATES, type ServiceTemplate } from "@/lib/service-templates"
 import { validateProvisioningRequest } from "@/lib/domain/service-template-provisioning"
+import { requireSessionAccess } from "@/lib/scope"
 
 export const dynamic = "force-dynamic"
 
@@ -10,17 +12,14 @@ export type { ServiceTemplate }
 export async function GET() {
   const session = await auth()
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  const denied = await requireSessionAccess(session)
+  if (denied) return denied
   return NextResponse.json(TEMPLATES)
 }
 
 export async function POST(req: Request) {
   const gate = await requireRole("cluster-admin", "developer")
-  if ("error" in gate) {
-    return NextResponse.json(
-      { error: gate.error === "unauthorized" ? "Unauthorized" : "Forbidden" },
-      { status: gate.error === "unauthorized" ? 401 : 403 }
-    )
-  }
+  if ("error" in gate) return roleGateErrorResponse(gate)
 
   const { session } = gate
   let body: unknown

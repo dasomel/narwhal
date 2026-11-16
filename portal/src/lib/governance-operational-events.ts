@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server"
 import { requireRole } from "@/lib/auth"
+import { roleGateErrorResponse } from "@/lib/role-gate-response"
 import { getEventsBounded } from "@/lib/k8s-client"
 import { cacheGetWithMeta, cacheSet } from "@/lib/valkey"
 import { cacheKeys, cacheTtl } from "@/lib/cache-keys"
@@ -30,11 +31,7 @@ export interface OperationalEventsResponse {
 
 export async function getOperationalEventsResponse(): Promise<NextResponse> {
   const gate = await requireRole("cluster-admin")
-  if ("error" in gate) {
-    return NextResponse.json({ error: gate.error === "unauthorized" ? "Unauthorized" : "Forbidden" }, {
-      status: gate.error === "unauthorized" ? 401 : 403,
-    })
-  }
+  if ("error" in gate) return roleGateErrorResponse(gate)
 
   const key = cacheKeys.governanceOperationalEventsV3()
   try {

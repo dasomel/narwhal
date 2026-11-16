@@ -9,7 +9,7 @@ import { Info, LayoutGrid, BarChart3, Database, Activity, Cpu, Clock, Globe } fr
 import { getLocale } from "@/lib/i18n-server"
 import { t as translate } from "@/lib/i18n"
 import type { TranslationKey, Locale } from "@/lib/i18n"
-import { auth } from "@/lib/auth"
+import { requireDashboardAccess } from "@/lib/dashboard-access"
 
 async function getNodeData(name: string) {
   const [detail, metrics, podCount, pods] = await Promise.all([
@@ -89,9 +89,10 @@ export default async function NodeDetailPage({
   params: Promise<{ name: string }>
   searchParams: Promise<{ tab?: string }>
 }) {
+  const session = await requireDashboardAccess()
   const [{ name }, sp] = await Promise.all([params, searchParams])
   const initialTab: TabValue = VALID_TABS.includes(sp.tab as TabValue) ? (sp.tab as TabValue) : "overview"
-  const [data, locale, session] = await Promise.all([getNodeData(name), getLocale(), auth()])
+  const [data, locale] = await Promise.all([getNodeData(name), getLocale()])
   const t = (key: TranslationKey) => translate(locale, key)
   const userRole = session?.user?.role
 

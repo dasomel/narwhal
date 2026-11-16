@@ -4,7 +4,7 @@ import { getArgoApps } from "@/lib/argocd"
 import { getCommitTimestamp, isGitSha } from "@/lib/gitea"
 import { cacheGet, cacheSet } from "@/lib/valkey"
 import { cacheKeys, cacheTtl } from "@/lib/cache-keys"
-import { appVisible, getEffectiveScope } from "@/lib/scope"
+import { appVisible, requireEffectiveScope } from "@/lib/scope"
 import { assertPromQLSafe } from "@/lib/validation"
 import { getDependencyUrl } from "@/lib/config"
 
@@ -139,7 +139,9 @@ export async function GET() {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 
-  const scope = await getEffectiveScope(session)
+  const scoped = await requireEffectiveScope(session)
+  if ("denied" in scoped) return scoped.denied
+  const { scope } = scoped
   // v2 prefix: response shape changed (nullable changeFailureRate, outcome
   // evidence fields) — keep old cached v1 payloads from being served as-is.
   const cacheKey = cacheKeys.governanceDoraV2(scope.fingerprint)

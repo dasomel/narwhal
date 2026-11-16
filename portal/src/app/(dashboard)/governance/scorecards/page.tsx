@@ -1,12 +1,11 @@
-import { auth } from "@/lib/auth"
 import { redirect } from "next/navigation"
+import { requireDashboardAccess } from "@/lib/dashboard-access"
 import { ScorecardsTable } from "@/components/governance/scorecards-table"
 import { getLocale } from "@/lib/i18n-server"
 import { t } from "@/lib/i18n"
 
 export default async function ScorecardsPage() {
-  const session = await auth()
-  if (!session) redirect("/login")
+  const session = await requireDashboardAccess()
 
   const role = session.user.role
   if (role === "guest") redirect("/onboarding")

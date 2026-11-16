@@ -4,7 +4,7 @@ const metrics = { connectedClients: 0, disconnectCleanups: 0 }
 const streamState = { failSetup: false }
 
 vi.mock("@/lib/auth", () => ({ auth: vi.fn(async () => ({ user: { role: "admin" }, groups: [], teams: [] })) }))
-vi.mock("@/lib/scope", () => ({ getEffectiveScope: vi.fn(async () => ({})) }))
+vi.mock("@/lib/scope", () => ({ requireEffectiveScope: vi.fn(async () => ({ scope: {} })) }))
 vi.mock("@/lib/event-visibility", () => ({ isEventFiltered: vi.fn(() => false) }))
 vi.mock("@/lib/live-stream", () => ({
   compareLiveEventIds: vi.fn(() => 1),

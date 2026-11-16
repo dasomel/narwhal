@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { getUsers, createUser, getGroups, addUserToGroup } from "@/lib/keycloak-client"
 import type { KeycloakUser } from "@/lib/keycloak-client"
 import { requireAdmin, getActorId, ALLOWED_GROUPS, type UserRole } from "@/lib/auth"
+import { roleGateErrorResponse } from "@/lib/role-gate-response"
 import { beginOperation, completeOperation, failOperation } from "@/lib/operation-context"
 import { claimIdempotencyKey, fulfillIdempotencyKey, getIdempotencyStore } from "@/lib/idempotency"
 import { invalidateFor } from "@/lib/cache-invalidation"
@@ -23,10 +24,7 @@ function validationError(message: string, field: string) {
 
 export async function GET() {
   const result = await requireAdmin()
-  if ("error" in result) {
-    const status = result.error === "unauthorized" ? 401 : 403
-    return NextResponse.json({ error: result.error === "unauthorized" ? "Unauthorized" : "Forbidden" }, { status })
-  }
+  if ("error" in result) return roleGateErrorResponse(result)
   try {
     // getUsers() (src/lib/keycloak-client.ts) owns the "keycloak:users" cache
     // and its own invalidation on create/update — this route used to layer a
@@ -43,10 +41,7 @@ export async function GET() {
 
 export async function POST(req: NextRequest) {
   const result = await requireAdmin()
-  if ("error" in result) {
-    const status = result.error === "unauthorized" ? 401 : 403
-    return NextResponse.json({ error: result.error === "unauthorized" ? "Unauthorized" : "Forbidden" }, { status })
-  }
+  if ("error" in result) return roleGateErrorResponse(result)
   const session = result.session
 
   const body = await req.json().catch(() => null)

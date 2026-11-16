@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server"
 import { auth } from "@/lib/auth"
+import { requireSessionAccess } from "@/lib/scope"
 import { cacheGet, cacheSet } from "@/lib/valkey"
 import { cacheKeys, cacheTtl } from "@/lib/cache-keys"
 import { getNodeMetrics } from "@/lib/prometheus"
@@ -63,6 +64,8 @@ export async function GET() {
   if (!session) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
+  const denied = await requireSessionAccess(session)
+  if (denied) return denied
 
   const cacheKey = cacheKeys.governanceDistributionV2()
   try {

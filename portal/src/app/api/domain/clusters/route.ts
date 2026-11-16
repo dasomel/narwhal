@@ -19,6 +19,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { randomUUID } from "crypto"
 import { auth } from "@/lib/auth"
+import { requireSessionAccess } from "@/lib/scope"
 import { cacheGet, cacheSet } from "@/lib/valkey"
 import { listClusters, getCluster, resolveClusterCredentials, clusterCacheKey } from "@/lib/cluster-registry"
 import {
@@ -95,6 +96,8 @@ function fixtureResponse(correlationId: string, now: Date): ClusterDomainListRes
 export async function GET(request: NextRequest) {
   const session = await auth()
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  const denied = await requireSessionAccess(session)
+  if (denied) return denied
 
   const now = new Date()
   const correlationId = readCorrelationId(request)

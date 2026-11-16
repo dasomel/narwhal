@@ -9,6 +9,7 @@ import {
 } from "@/lib/keycloak-client"
 import type { KeycloakUser } from "@/lib/keycloak-client"
 import { requireAdmin } from "@/lib/auth"
+import { roleGateErrorResponse } from "@/lib/role-gate-response"
 import { cacheGet, cacheSet } from "@/lib/valkey"
 import { invalidateFor } from "@/lib/cache-invalidation"
 
@@ -16,10 +17,7 @@ export const dynamic = "force-dynamic"
 
 export async function GET() {
   const result = await requireAdmin()
-  if ("error" in result) {
-    const status = result.error === "unauthorized" ? 401 : 403
-    return NextResponse.json({ error: result.error === "unauthorized" ? "Unauthorized" : "Forbidden" }, { status })
-  }
+  if ("error" in result) return roleGateErrorResponse(result)
   try {
     const cached = await cacheGet<object[]>(KEYCLOAK_CACHE_KEYS.groupsEnriched)
     if (cached) return NextResponse.json(cached)
@@ -50,10 +48,7 @@ export async function GET() {
 
 export async function PATCH(req: NextRequest) {
   const result = await requireAdmin()
-  if ("error" in result) {
-    const status = result.error === "unauthorized" ? 401 : 403
-    return NextResponse.json({ error: result.error === "unauthorized" ? "Unauthorized" : "Forbidden" }, { status })
-  }
+  if ("error" in result) return roleGateErrorResponse(result)
   try {
     const { groupPk, userPk, attributes, action } = await req.json()
     if (!groupPk || !["add", "remove", "update-attributes"].includes(action)) {

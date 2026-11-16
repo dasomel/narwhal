@@ -57,10 +57,11 @@ afterEach(() => {
 })
 
 describe("GET /api/pods/[namespace]/[pod]/logs — scope enforcement", () => {
-  it("403s a cross-namespace log request outside the caller's team scope", async () => {
+  it("403s a cross-namespace log request outside the caller's team scope without ACCESS_NOT_GRANTED", async () => {
     vi.mocked(auth).mockResolvedValue(frontendTeamSession as never)
     const res = await GET(req("platform-system"), params("platform-system"))
     expect(res.status).toBe(403)
+    expect(await res.json()).toEqual({ error: "Forbidden" })
     expect(fetchSpy).not.toHaveBeenCalled()
   })
 
@@ -84,10 +85,11 @@ describe("GET /api/pods/[namespace]/[pod]/logs — scope enforcement", () => {
     expect(res.status).toBe(200)
   })
 
-  it("403s a caller with no team mapping and no role default (unscoped non-admin)", async () => {
+  it("403s a caller with no team mapping and no role default (unscoped non-admin) with ACCESS_NOT_GRANTED", async () => {
     vi.mocked(auth).mockResolvedValue(unscopedSession as never)
     const res = await GET(req("platform-system"), params("platform-system"))
     expect(res.status).toBe(403)
+    expect(await res.json()).toEqual({ error: "Forbidden", code: "ACCESS_NOT_GRANTED" })
     expect(fetchSpy).not.toHaveBeenCalled()
   })
 

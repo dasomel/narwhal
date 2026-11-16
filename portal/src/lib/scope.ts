@@ -68,7 +68,9 @@ export interface AccessDeniedBody {
 // under k8s:namespaces), so newly added narwhal.io/team labels can take up to 30s
 // to grant access (and role-filter.json updates require a process reload); admin
 // and teamless callers decide without hitting Kubernetes. Escape hatch: map the
-// team in config/role-filter.json or label a namespace with narwhal.io/team.
+// team in config/role-filter.json or label a namespace with narwhal.io/team. If the
+// Kubernetes namespace list cannot be read, label-only teams are denied (fail closed)
+// until it recovers.
 export function hasEffectiveAccess(
   scope: Pick<EffectiveScope, "all" | "hasMapping" | "namespaces" | "argocdProjects">,
 ): boolean {

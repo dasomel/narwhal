@@ -85,6 +85,31 @@ beforeEach(() => {
 })
 
 describe("GET /api/my-apps — scope enforcement", () => {
+  it.each([
+    ["unmapped developer", "developer", [], false],
+    ["unmapped viewer", "viewer", [], false],
+    ["guest", "guest", [], false],
+    ["label-only team", "developer", ["tenant-a-team"], true],
+    ["mapped team", "developer", ["platform-team"], true],
+    ["cluster-admin", "cluster-admin", [], true],
+  ] as const)("applies the access gate to %s", async (_label, role, teams, allowed) => {
+    vi.mocked(auth).mockResolvedValue({
+      groups: [role], teams, user: { sub: "matrix-user", role },
+    } as never)
+    vi.mocked(getNamespaces).mockResolvedValue([
+      { name: "tenant-a", status: "Active", createdAt: "2026-01-01T00:00:00Z", labels: { "narwhal.io/team": "tenant-a-team" } },
+      { name: "platform-system", status: "Active", createdAt: "2026-01-01T00:00:00Z", labels: {} },
+    ])
+
+    const response = await GET()
+    expect(response.status).toBe(allowed ? 200 : 403)
+    if (!allowed) {
+      expect(await response.json()).toEqual({ error: "Forbidden", code: "ACCESS_NOT_GRANTED" })
+      expect(getArgoApps).not.toHaveBeenCalled()
+      expect(getAlerts).not.toHaveBeenCalled()
+    }
+  })
+
   it("does not leak platform-team's apps to the SAME user on frontend-team, and never serves platform-team's cached entry to it", async () => {
     const platformScope = await getEffectiveScope({ groups: platformUserA.groups, teams: platformUserA.teams })
     const frontendScope = await getEffectiveScope({ groups: frontendUserA.groups, teams: frontendUserA.teams })

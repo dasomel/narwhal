@@ -312,13 +312,14 @@ export async function requireRole(...roles: UserRole[]): Promise<RoleGate> {
   const session = await auth()
   if (!session) return { error: "unauthorized" }
   const role = session.user.role
-  if (!role || !roles.includes(role)) return { error: "forbidden" }
   // D-PORTAL-UNMAPPED-DENY: deny non-admin callers with an empty effective scope
   // on data/mutation routes; guest-inclusive endpoints (e.g. /api/health/summary)
-  // remain reachable so the denied page and health indicators keep working.
+  // remain reachable so the denied page and health indicators keep working. If the
+  // namespace list cannot be read, label-only teams fail closed (see scope.ts).
   if (!roles.includes("guest") && !(await hasSessionAccess(session))) {
     return { error: "forbidden", code: ACCESS_NOT_GRANTED_CODE }
   }
+  if (!role || !roles.includes(role)) return { error: "forbidden" }
   return { session }
 }
 

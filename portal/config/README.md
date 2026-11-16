@@ -48,6 +48,8 @@ no team claims, `guest`, or unrecognized groups) are redirected to
 adds a team mapping or namespace ownership label (label changes propagate within
 the 30-second `k8s:namespaces` Valkey cache window).
 
+If the Kubernetes namespace list cannot be read, label-only teams are denied (fail closed) until it recovers.
+
 The shipped `roleDefaults` values remain unchanged (including developer/viewer
 `namespaces: ["*"]`) for configuration compatibility and diagnostics. They no
 longer grant non-admin visibility, even when explicitly set to a non-empty scope.

@@ -2,7 +2,7 @@ import { NextResponse } from "next/server"
 import { auth } from "@/lib/auth"
 import { getNamespaces } from "@/lib/k8s-client"
 import { configuredMappings, diagnoseClaims, TEAM_LABEL } from "@/lib/role-filter"
-import { getEffectiveScope } from "@/lib/scope"
+import { getEffectiveScope, hasSessionAccess } from "@/lib/scope"
 
 export const dynamic = "force-dynamic"
 
@@ -10,6 +10,9 @@ export interface EffectivePermissions {
   identity: { name: string | null; email: string | null; role: string }
   /** Keycloak group claims, split by what the portal did with each. */
   claims: {
+    /** The caller's own raw role/group and team claims for diagnosis. */
+    groups: string[]
+    teams: string[]
     roles: string[]
     mappedTeams: string[]
     unmappedClaims: string[]
@@ -56,17 +59,18 @@ export async function GET() {
 
   const groups = session.groups ?? []
   const teams = session.teams ?? []
-  const namespaces = await getNamespaces()
-  const scope = await getEffectiveScope(session)
+  const hasAccess = await hasSessionAccess(session)
+  const namespaces = hasAccess ? await getNamespaces() : []
+  const scope = hasAccess ? await getEffectiveScope(session) : null
   const diagnosis = diagnoseClaims(groups, teams, namespaces)
-  const configured = configuredMappings()
+  const configured = hasAccess ? configuredMappings() : { teams: [], roleDefaults: {} }
 
   const labelOwner = new Map(namespaces.map((n) => [n.name, n.labels?.[TEAM_LABEL] ?? null]))
-  const inScope = [...scope.namespaces].sort().map((name) => ({
+  const inScope = [...(scope?.namespaces ?? [])].sort().map((name) => ({
     name,
-    via: scope.all
+    via: scope?.all
       ? ("all" as const)
-      : scope.resolved.byLabel.has(name)
+      : scope?.resolved.byLabel.has(name)
         ? ("label" as const)
         : ("pattern" as const),
     owner: labelOwner.get(name) ?? null,
@@ -78,10 +82,10 @@ export async function GET() {
       email: session.user.email ?? null,
       role: session.user.role ?? "guest",
     },
-    claims: { ...diagnosis, groupClaimStatus: session.groupClaimStatus ?? "no_groups" },
+    claims: { groups, teams, ...diagnosis, groupClaimStatus: session.groupClaimStatus ?? "no_groups" },
     namespaces: inScope,
-    allNamespaces: scope.all,
-    argocdProjects: scope.argocdProjects,
+    allNamespaces: scope?.all ?? false,
+    argocdProjects: scope?.argocdProjects ?? [],
     configured: {
       teams: configured.teams,
       roleDefaults: configured.roleDefaults as EffectivePermissions["configured"]["roleDefaults"],

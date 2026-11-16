@@ -79,6 +79,18 @@ describe("requireRole effective scope gate (D-PORTAL-UNMAPPED-DENY)", () => {
     })
   })
 
+  it("uses ACCESS_NOT_GRANTED when an unmapped guest is excluded by the route role list", async () => {
+    mockAuth.mockResolvedValue({
+      groups: ["guest"],
+      teams: [],
+      user: { role: "guest" },
+    })
+    expect(await requireRole("cluster-admin", "developer", "viewer")).toEqual({
+      error: "forbidden",
+      code: "ACCESS_NOT_GRANTED",
+    })
+  })
+
   it("allows a mapped developer and cluster-admin", async () => {
     const mapped = { groups: ["developer"], teams: ["platform-team"], user: { role: "developer" } }
     mockAuth.mockResolvedValue(mapped)

@@ -24,6 +24,34 @@ describe("GET /api/cluster role gate (portal#33)", () => {
     globalThis.fetch = vi.fn() as unknown as typeof fetch
   })
 
+  it.each([
+    ["unmapped developer", false],
+    ["unmapped viewer", false],
+    ["guest", false],
+    ["label-only team", true],
+    ["mapped team", true],
+    ["cluster-admin", true],
+  ] as const)("returns the expected route response for %s", async (_label, allowed) => {
+    if (allowed) {
+      vi.mocked(requireRole).mockResolvedValue({ session: {} } as never)
+      vi.mocked(getCluster).mockResolvedValue({ id: "default" } as never)
+      vi.mocked(cacheGetWithMeta).mockResolvedValueOnce({
+        value: {
+          nodes: [], controlPlane: [], namespaces: [],
+          summary: { totalNodes: 0, readyNodes: 0, totalPods: 0, totalNamespaces: 0, truncated: false },
+        } as never,
+        cachedAt: "2026-09-27T00:00:00.000Z",
+        ageSeconds: 0,
+      })
+    } else {
+      vi.mocked(requireRole).mockResolvedValue({ error: "forbidden", code: "ACCESS_NOT_GRANTED" } as never)
+    }
+
+    const response = await GET(req())
+    expect(response.status).toBe(allowed ? 200 : 403)
+    if (!allowed) expect(await response.json()).toEqual({ error: "Forbidden", code: "ACCESS_NOT_GRANTED" })
+  })
+
   it("returns 401 without a session and never touches the cluster", async () => {
     vi.mocked(requireRole).mockResolvedValue({ error: "unauthorized" } as never)
     const res = await GET(req())

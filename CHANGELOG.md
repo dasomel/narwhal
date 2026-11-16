@@ -9,6 +9,13 @@ English | [한국어](CHANGELOG-ko.md)
 
 ## [Unreleased]
 
+- **Portal is pinned to `narwhal-portal:1.1.16` (was 1.1.15).** Unmapped non-admin teams now see an
+  empty visibility scope (#659, #677); add a team mapping or `narwhal.io/team` label before upgrading.
+  The release also updates Next.js to 16.4.5 and dependencies (#673). Post-1.5.0 fixes include
+  show-credentials pre-flight diagnosis (#674), Keycloak Operator liveness (#676), and R19 names
+  bundle drift (#675). The image was signed by the publish workflow with Cosign v3.1.4 and the signature verifies
+  against the repository public key (index digest `sha256:00e7fdd1…`). No live rollout or in-cluster signature verification is claimed.
+
 ## [1.5.0] - 2026-11-14
 
 Adds a single-node local development profile alongside the default HA topology, ships the redesigned

@@ -1,0 +1,70 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-portal-pin-1-1-16-20261116",
+  "task": "Pin the published Portal 1.1.16 image and matching air-gap digest; live rollout and in-cluster signature verification are out of scope for this change and not claimed.",
+  "changeContext": {
+    "paths": [
+      "gitops/charts/narwhal-platform/templates/narwhal-portal-k8s.yaml",
+      "gitops/README.md",
+      "gitops/README-ko.md",
+      "scripts/airgap/images.txt",
+      "scripts/airgap/lib/image-digests.tsv",
+      "VERSIONS.md",
+      "SECURITY.md",
+      "docs/common/compatibility-matrix.md",
+      "CHANGELOG.md",
+      "CHANGELOG-ko.md",
+      ".agents/evals/traces/2026-11-portal-pin-1.1.16.json",
+      "portal/src/data/oss-versions.generated.json"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Scope: update the Portal image pin, matching air-gap digest, generated OSS version data and documentation; no RBAC or deployment structure change."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "Portal release portal/v1.1.16 is published at 0249e5ce9bf80e975babb9e56214b767e7b34bd0. Publish workflow run 43773811032 succeeded (amd64, arm64, merged manifest and signing). Registry index digest and signature details were supplied by the orchestrator; local live rollout and in-cluster Kyverno verification remain pending. No bastion exists; Kakao cluster destroyed 2026-10-29.",
+      "evidence": [
+        "orchestrator: portal/v1.1.16 -> commit 0249e5ce9bf80e975babb9e56214b767e7b34bd0; GitHub release published, not draft",
+        "orchestrator: workflow run 43773811032 succeeded for amd64, arm64, manifest merge and signing",
+        "orchestrator: ghcr.io/dasomel/narwhal-portal:1.1.16 index digest sha256:00e7fdd1cacebdccc00d90adb48f1fecd3f18ee6778103a21cecd7563a907d65; signed using cosign-installer v4.1.3 (Cosign v3.1.4)",
+        "orchestrator, measured 2026-11-15T23:27Z: crane digest equals the index digest above; cosign v3.1.4 verify with the repository public key (kyverno-policies.yaml) passed, with and without the transparency log"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "Move pin 1.1.15 -> 1.1.16 in GitOps, air-gap inventory and digest, generated OSS versions and documentation. Release changes include empty visibility scope for unmapped non-admin teams (#659, #677), Next.js 16.4.5 and dependency updates (#673). Add a team mapping or narwhal.io/team label before upgrading."
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "Local static pin consistency, YAML validation and regression suite; no runtime rollout.",
+      "summary": "make test passed 462 checks with zero failures and three warnings. make validate, version consistency and generated versions checks passed. Changed-line markdown lint clean. Live rollout and in-cluster Kyverno verification are not part of this event.",
+      "evidence": [
+        "test:make test -> passed 462 failed 0 warnings 3; exit 0",
+        "test:make validate -> exit 0",
+        "test:bash scripts/ci/check-version-consistency.sh -> exit 0",
+        "test:node portal/scripts/gen-oss-versions.mjs --check -> in sync",
+        "test:python3 scripts/ci/markdownlint-changed.py --base origin/main -> no violations"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "completion_claim",
+      "summary": "No live rollout or in-cluster signature verification is claimed; bastion mirroring is unavailable because no bastion exists."
+    },
+    {
+      "id": "e6",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Static pin change; make test (462 passed, 0 failed), make validate, version consistency, generated versions and changed-line markdown lint passed. Live rollout and in-cluster signature verification are outside this change and not claimed."
+    }
+  ]
+}

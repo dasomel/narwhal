@@ -250,13 +250,13 @@
     {
       "component": "IDP Portal",
       "section": "IDP Portal",
-      "version": "1.1.15",
+      "version": "1.1.16",
       "chartVersion": null
     },
     {
       "component": "Next.js",
       "section": "IDP Portal",
-      "version": "16.4.3",
+      "version": "16.4.5",
       "chartVersion": null
     },
     {

@@ -354,7 +354,7 @@ metadata:
     policies.kyverno.io/title: Verify Image Signatures & Attestations
     policies.kyverno.io/category: Supply Chain Security
     policies.kyverno.io/description: >-
-      Verifies Cosign image signatures and CycloneDX/SPDX SBOM attestations on container images.
+      Audits Cosign signatures and CycloneDX SBOM attestations for ghcr.io/dasomel/narwhal-portal.
       Introduced in Audit mode to log verification results without blocking workloads in air-gapped environments.
 spec:
   validationFailureAction: Audit
@@ -373,13 +373,18 @@ spec:
                 - kube-system
                 - istio-system
                 - platform-system
-                - devtools
                 - security-system
       verifyImages:
         - imageReferences:
-            - "*"
+            # D-KYVERNO-VERIFY-SCOPE: only portal has a signing workflow for this key.
+            # Cost: nfs-quota-agent/Harbor mirrors remain unverified; devtools is included.
+            # Escape hatch: expand only after signing those images with this key.
+            - "ghcr.io/dasomel/narwhal-portal:*"
+            - "ghcr.io/dasomel/narwhal-portal@sha256:*"
           mutateDigest: false
-          verifyDigest: true
+          # Portal uses tags: do not require a digest while mutation is disabled in Audit.
+          # Cost: no digest pinning; enable both digest settings when adopting mutation.
+          verifyDigest: false
           required: false
           attestors:
             - count: 1

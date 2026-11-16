@@ -9,6 +9,8 @@ English | [한국어](CHANGELOG-ko.md)
 
 ## [Unreleased]
 
+- **Scope Kyverno signature Audit to the signed portal repository (#683).** Include `devtools`, exclude unsigned third-party/Narwhal images, and accept tag references without digest mutation; CycloneDX checks remain. Live check: third-party violations stopped, and Kyverno now reports the portal signature as not found — Cosign v3 stores it as an OCI referrer that Kyverno 1.18.1 does not verify (#684); Audit only.
+
 - **Portal is pinned to `narwhal-portal:1.1.16` (was 1.1.15).** Unmapped non-admin teams now see an
   empty visibility scope (#659, #677); add a team mapping or `narwhal.io/team` label before upgrading.
   The release also updates Next.js to 16.4.5 and dependencies (#673). Post-1.5.0 fixes include

@@ -3,7 +3,7 @@
 
 Validates that gitops/resources/kyverno-policies.yaml contains a ClusterPolicy named
 'verify-image-signatures' that configures `verifyImages` with Cosign/x509 public key attestors,
-SBOM attestation predicate validation, and enabled digest verification.
+SBOM attestation predicate validation, and tag-compatible Audit scope (narwhal#683).
 """
 import sys
 from pathlib import Path
@@ -33,8 +33,8 @@ def main() -> int:
 
     spec = policy.get("spec", {})
     mode = spec.get("validationFailureAction")
-    if mode not in ("Audit", "Enforce"):
-        print(f"VIOLATION: validationFailureAction must be 'Audit' or 'Enforce', got {mode!r}", file=sys.stderr)
+    if mode != "Audit":
+        print(f"VIOLATION: validationFailureAction must remain 'Audit', got {mode!r}", file=sys.stderr)
         return 1
 
     rules = spec.get("rules", [])
@@ -52,9 +52,29 @@ def main() -> int:
         print(f"VIOLATION: 'verifyImages' list is empty in rule {verify_images_rule.get('name')!r}", file=sys.stderr)
         return 1
 
+    if len(rules) != 1 or len(configs) != 1:
+        print("VIOLATION: expected one signature rule and one verifyImages configuration", file=sys.stderr)
+        return 1
+
+    # D-KYVERNO-VERIFY-SCOPE: pin the signed repository and namespace coverage; widening
+    # creates unsigned-image noise. Cost: new signed images require an explicit update.
+    # Escape hatch: extend this contract alongside a reviewed signing workflow.
+    if verify_images_rule.get("match") != {"any": [{"resources": {"kinds": ["Pod"]}}]}:
+        print("VIOLATION: signature rule must match Pods without additional restrictions", file=sys.stderr)
+        return 1
+    expected_exclude = {"any": [{"resources": {"namespaces": [
+        "kube-system", "istio-system", "platform-system", "security-system",
+    ]}}]}
+    if verify_images_rule.get("exclude") != expected_exclude:
+        print("VIOLATION: signature namespace exclusions must preserve devtools coverage", file=sys.stderr)
+        return 1
+
     cfg = configs[0]
-    if cfg.get("verifyDigest") is not True:
-        print(f"VIOLATION: verifyDigest must be true in verifyImages configuration", file=sys.stderr)
+    if cfg.get("imageReferences") != ["ghcr.io/dasomel/narwhal-portal:*", "ghcr.io/dasomel/narwhal-portal@sha256:*"]:
+        print("VIOLATION: imageReferences must cover only narwhal-portal tags and digests", file=sys.stderr)
+        return 1
+    if any(cfg.get(field) is not False for field in ("mutateDigest", "verifyDigest", "required")):
+        print("VIOLATION: tag-compatible Audit requires mutateDigest/verifyDigest/required false", file=sys.stderr)
         return 1
 
     if not cfg.get("attestors"):
@@ -63,6 +83,10 @@ def main() -> int:
 
     if not cfg.get("attestations"):
         print(f"VIOLATION: attestations (SBOM predicate verification) missing in verifyImages configuration", file=sys.stderr)
+        return 1
+
+    if [a.get("predicateType") for a in cfg["attestations"]] != ["https://cyclonedx.org/schema/1.4"]:
+        print("VIOLATION: CycloneDX 1.4 attestation predicate must be preserved", file=sys.stderr)
         return 1
 
     attestors = [

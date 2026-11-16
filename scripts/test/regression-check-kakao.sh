@@ -1780,7 +1780,7 @@ PYEOF
     scripts/verify/security-db-bundle-check.sh --self-test
 
   # narwhal#35: Kyverno verify-image-signatures policy configures Cosign public key
-  # signature verification, SBOM attestation predicate checking, and digest validation.
+  # signature verification, SBOM attestation predicate checking, and tag-compatible Audit scope.
   check R74 "Kyverno verify-image-signatures ClusterPolicy is present and valid (2026-08-25)" \
     python3 scripts/test/lib/check-kyverno-signed-image-policy.py
 
@@ -1802,6 +1802,26 @@ with open(f"{tmp}/kyverno-policies-key-drift.yaml", "w") as f:
     f.write(text.replace("MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE9IgOjh5", "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEAAAAAAA", 1))
 with open(f"{tmp}/kyverno-policies-tlog-required.yaml", "w") as f:
     f.write(text.replace("ignoreTlog: true", "ignoreTlog: false", 1))
+# Scope mutations use YAML so only this policy changes (other policies stay Enforce).
+import copy
+import yaml
+policies = list(yaml.safe_load_all(text))
+policy = next(p for p in policies if p.get("metadata", {}).get("name") == "verify-image-signatures")
+for name in ("wide-images", "exclude-devtools", "enforce", "tag-digest", "required"):
+    mutated = copy.deepcopy(policy)
+    rule = mutated["spec"]["rules"][0]
+    if name == "wide-images":
+        rule["verifyImages"][0]["imageReferences"] = ["*"]
+    elif name == "exclude-devtools":
+        rule["exclude"]["any"][0]["resources"]["namespaces"].append("devtools")
+    elif name == "enforce":
+        mutated["spec"]["validationFailureAction"] = "Enforce"
+    elif name == "tag-digest":
+        rule["verifyImages"][0]["verifyDigest"] = True
+    else:
+        rule["verifyImages"][0]["required"] = True
+    with open(f"{tmp}/kyverno-policies-{name}.yaml", "w") as f:
+        yaml.safe_dump(mutated, f)
 PYEOF
   check_not R75 "check-kyverno-signed-image-policy.py catches a removed verify-image-signatures policy (2026-08-25)" \
     python3 scripts/test/lib/check-kyverno-signed-image-policy.py "${kyverno_signed_img_tmp}/kyverno-policies.yaml"
@@ -1811,6 +1831,16 @@ PYEOF
     python3 scripts/test/lib/check-kyverno-signed-image-policy.py "${kyverno_signed_img_tmp}/kyverno-policies-key-drift.yaml"
   check_not R75d "check-kyverno-signed-image-policy.py catches a key attestor that no longer skips the Rekor tlog (air-gap D-REKOR, 2026-10-15)" \
     python3 scripts/test/lib/check-kyverno-signed-image-policy.py "${kyverno_signed_img_tmp}/kyverno-policies-tlog-required.yaml"
+  check_not R75e "signature policy rejects wildcard image scope (#683)" \
+    python3 scripts/test/lib/check-kyverno-signed-image-policy.py "${kyverno_signed_img_tmp}/kyverno-policies-wide-images.yaml"
+  check_not R75f "signature policy rejects devtools exclusion (#683)" \
+    python3 scripts/test/lib/check-kyverno-signed-image-policy.py "${kyverno_signed_img_tmp}/kyverno-policies-exclude-devtools.yaml"
+  check_not R75g "signature policy stays Audit, never Enforce (#683)" \
+    python3 scripts/test/lib/check-kyverno-signed-image-policy.py "${kyverno_signed_img_tmp}/kyverno-policies-enforce.yaml"
+  check_not R75h "signature policy accepts tag references without digest mutation (#683)" \
+    python3 scripts/test/lib/check-kyverno-signed-image-policy.py "${kyverno_signed_img_tmp}/kyverno-policies-tag-digest.yaml"
+  check_not R75i "signature policy keeps required false (#683)" \
+    python3 scripts/test/lib/check-kyverno-signed-image-policy.py "${kyverno_signed_img_tmp}/kyverno-policies-required.yaml"
   rm -rf "${kyverno_signed_img_tmp}"
 
   # narwhal#35: 10-verify-image-signatures.sh exists as the air-gap image signature gate.

@@ -1257,6 +1257,7 @@ export const ko = {
   "distribution.drilldown.col.node": "노드",
   "distribution.drilldown.action.viewList": "목록 보기 →",
   "distribution.drilldown.empty": "컨트롤플레인 노드에 배치된 사용자 워크로드 파드가 없습니다.",
+  "distribution.forbidden": "cluster-admin 권한이 필요합니다",
 
   // platform status
   "status.pageTitle": "플랫폼 상태",
@@ -2653,6 +2654,7 @@ export const en: Record<keyof typeof ko, string> = {
   "distribution.drilldown.col.node": "Node",
   "distribution.drilldown.action.viewList": "View List →",
   "distribution.drilldown.empty": "No user workload pods are scheduled on control-plane nodes.",
+  "distribution.forbidden": "cluster-admin role required",
 
   // platform status
   "status.pageTitle": "Platform Status",

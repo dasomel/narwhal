@@ -136,6 +136,49 @@ const server = createServer(async (req, res) => {
     return
   }
 
+  if (url.pathname === "/api/v1/nodes" && req.method === "GET") {
+    sendJson(res, 200, {
+      metadata: { resourceVersion: "1" },
+      items: [{
+        metadata: { name: "worker-e2e-1", creationTimestamp: now },
+        status: {
+          conditions: [{ type: "Ready", status: "True" }],
+          allocatable: { cpu: "4", memory: "8Gi" },
+          nodeInfo: { kubeletVersion: "v1.35.2", osImage: "Ubuntu" },
+        },
+      }],
+    })
+    return
+  }
+
+  if (url.pathname === "/api/v1/namespaces/kube-system/pods" && req.method === "GET") {
+    sendJson(res, 200, {
+      metadata: { resourceVersion: "1" },
+      items: [{
+        metadata: { name: "kube-apiserver-cp1", namespace: "kube-system", creationTimestamp: now },
+        spec: { nodeName: "worker-e2e-1" },
+        status: { phase: "Running", containerStatuses: [{ restartCount: 0 }] },
+      }],
+    })
+    return
+  }
+
+  if (url.pathname === "/api/v1/pods" && req.method === "GET") {
+    sendJson(res, 200, {
+      metadata: { resourceVersion: "1" },
+      items: [{
+        metadata: { name: "portal-e2e-pod", namespace: "platform-e2e", creationTimestamp: now },
+        spec: { nodeName: "worker-e2e-1" },
+        status: { phase: "Running" },
+      }, {
+        metadata: { name: "frontend-e2e-pod", namespace: "frontend-e2e", creationTimestamp: now },
+        spec: { nodeName: "worker-e2e-1" },
+        status: { phase: "Running" },
+      }],
+    })
+    return
+  }
+
   if (url.pathname === "/api/v2/alerts" && req.method === "GET") {
     sendJson(res, 200, [])
     return

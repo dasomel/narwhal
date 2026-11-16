@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { requireRole } from "@/lib/auth"
 import { roleGateErrorResponse } from "@/lib/role-gate-response"
+import { getEffectiveScope } from "@/lib/scope"
 import { getServiceGraph, isAllowedWindow } from "@/lib/service-graph"
 import { ValidationError, toValidationErrorBody } from "@/lib/validation"
 
@@ -57,7 +58,8 @@ export async function GET(req: NextRequest) {
       minRate = parsed
     }
 
-    const result = await getServiceGraph(windowParam, namespaceParam, minRate)
+    const scope = await getEffectiveScope(gate.session)
+    const result = await getServiceGraph(windowParam, namespaceParam, minRate, scope)
 
     const response: ServiceGraphResponse = {
       window: result.window,

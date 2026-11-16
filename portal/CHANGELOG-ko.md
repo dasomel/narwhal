@@ -15,6 +15,23 @@
   없는 경우)는 로그인 후 내비게이션이나 테넌트 데이터 조회 없이 전용 `/access-denied` 안내 화면(관리자 문의 및
   로그아웃 제공)으로 이동하며, 포털 데이터·작업 API는 HTTP `403`(`code: "ACCESS_NOT_GRANTED"`)을 반환합니다.
   세션·로그아웃·헬스 엔드포인트는 계속 접근할 수 있습니다(`D-PORTAL-UNMAPPED-DENY`, narwhal#659 후속).
+- **포털 읽기/스트림 API 테넌트 스코프 및 관리자 전용 경계 강화 (narwhal#678):**
+  - `GET /api/alerts`, `GET /api/hero`, `GET /api/status`, `GET /api/events`(및 `/api/my-apps`)가 공통
+    `alertVisible` 규칙(`D-PORTAL-TENANT-SCOPE-678`)을 공유해 developer·viewer에게는 유효 네임스페이스에 속한
+    경보만 표시하고, 네임스페이스 없는(노드/클러스터 수준) 경보는 `cluster-admin`에게만 노출합니다.
+  - `GET /api/hero`는 ArgoCD 앱·경보·노드 압박 인시던트(관리자 전용)를 스코프로 걸러 건수·마스코트 상태를 재계산하며,
+    `GET /api/status`는 플랫폼 핵심 구성요소 상태는 유지하되 Alertmanager `incidents`만 스코프 필터링합니다.
+  - `GET /api/traces`는 ArgoCD/Kubernetes 워크로드 정보로 서비스의 네임스페이스를 해석해 비관리자가 타 테넌트
+    또는 네임스페이스 미확인 서비스를 조회하면 `403`으로 차단하고, 전체 조회 시에도 유효 범위 내 서비스 트레이스만
+    반환합니다.
+  - `GET /api/cluster`는 비관리자에게 전체 집계(`summary`)와 유효 범위 내 `namespaces` 목록만 반환하고 노드별
+    목록(`nodes: []`)·컨트롤플레인 파드 목록(`controlPlane: []`)은 비웁니다(`ClusterInfraView`에서도 해당 패널을
+    숨깁니다).
+  - `GET /api/service-graph` 및 `GET /api/service-graph/[svc]`는 양쪽 끝이 모두 유효 범위 내인 엣지·노드와
+    범위 내 `namespaces` 드롭다운만 반환하며, 범위 외 `[svc]` 조회는 `403`을 반환합니다.
+  - `GET /api/governance/distribution` 및 `GET /api/service-graph/stream`(SSE)을 `cluster-admin` 전용으로
+    제한했습니다(developer·viewer는 `403`). `DistributionView`는 관리자 권한 안내를 표시하고 `ServiceMapView`는
+    비관리자에게 실시간 스트림 토글을 숨깁니다.
 
 ## [1.1.16] - 2026-11-16
 

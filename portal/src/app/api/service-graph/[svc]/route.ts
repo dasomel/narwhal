@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from "next/server"
 import { requireRole } from "@/lib/auth"
 import { roleGateErrorResponse } from "@/lib/role-gate-response"
+import { getEffectiveScope } from "@/lib/scope"
 import { getServiceDependencies, isAllowedWindow } from "@/lib/service-graph"
+import { buildServiceNamespaceMap, isServiceInScope } from "@/lib/service-namespace"
 import { ValidationError, toValidationErrorBody, assertK8sName } from "@/lib/validation"
 
 export const dynamic = "force-dynamic"
@@ -41,7 +43,15 @@ export async function GET(
       throw new ValidationError("window must be one of: 1h, 1d, 7d, 30d", "window")
     }
 
-    const result = await getServiceDependencies(svc, windowParam)
+    const scope = await getEffectiveScope(gate.session)
+    if (!scope.all) {
+      const serviceMap = await buildServiceNamespaceMap()
+      if (!isServiceInScope(svc, serviceMap, scope)) {
+        return NextResponse.json({ error: "Forbidden" }, { status: 403 })
+      }
+    }
+
+    const result = await getServiceDependencies(svc, windowParam, scope)
 
     const response: ServiceGraphDetailResponse = {
       serviceId: result.serviceId,

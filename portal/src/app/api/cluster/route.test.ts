@@ -174,3 +174,89 @@ describe("GET /api/cluster — cross-cluster cache isolation (portal#53 AC-4)", 
     expect(cachedBodyA.summary.totalNodes).toBe(1)
   })
 })
+
+describe("GET /api/cluster — tenant scope (narwhal#678)", () => {
+  const cache = new Map<string, unknown>()
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    cache.clear()
+    mockGetNamespaces.mockResolvedValue([
+      { name: "team-a-ns", status: "Active", createdAt: "2026-01-01T00:00:00Z", labels: { "narwhal.io/team": "team-a" } },
+      { name: "team-b-ns", status: "Active", createdAt: "2026-01-01T00:00:00Z", labels: { "narwhal.io/team": "team-b" } },
+    ])
+    vi.mocked(cacheGetWithMeta).mockImplementation(async (key: string) => {
+      const value = cache.get(key)
+      return value === undefined ? null : { value, cachedAt: "2026-11-17T00:00:00.000Z", ageSeconds: 0 }
+    })
+    vi.mocked(cacheSet).mockImplementation(async (key: string, value: unknown) => {
+      cache.set(key, value)
+    })
+    vi.mocked(getCluster).mockResolvedValue({ id: "default" } as never)
+    vi.mocked(resolveClusterCredentials).mockReturnValue({ apiServer: "https://cluster.example", token: "" } as never)
+    globalThis.fetch = vi.fn(async (url: string) => {
+      if (url.includes("/api/v1/nodes")) {
+        return Response.json({
+          items: [
+            {
+              metadata: { name: "worker-secret-01", creationTimestamp: "2026-01-01T00:00:00Z" },
+              status: { conditions: [{ type: "Ready", status: "True" }], allocatable: { cpu: "4", memory: "8Gi" }, nodeInfo: { kubeletVersion: "v1.35.2", osImage: "Ubuntu" } },
+            },
+          ],
+        })
+      }
+      if (url.includes("/api/v1/namespaces/kube-system/pods")) {
+        return Response.json({
+          items: [
+            { metadata: { name: "kube-apiserver-cp1", namespace: "kube-system", creationTimestamp: "2026-01-01T00:00:00Z" }, spec: {}, status: { phase: "Running", containerStatuses: [{ restartCount: 0 }] } },
+          ],
+        })
+      }
+      if (url.includes("/api/v1/pods")) {
+        return Response.json({
+          items: [
+            { metadata: { name: "pod-a-1", namespace: "team-a-ns", creationTimestamp: "2026-01-01T00:00:00Z" }, spec: { nodeName: "worker-secret-01" }, status: { phase: "Running" } },
+            { metadata: { name: "pod-b-1", namespace: "team-b-ns", creationTimestamp: "2026-01-01T00:00:00Z" }, spec: { nodeName: "worker-secret-01" }, status: { phase: "Running" } },
+          ],
+        })
+      }
+      if (url.includes("/api/v1/namespaces")) {
+        return Response.json({
+          items: [
+            { metadata: { name: "team-a-ns" }, status: { phase: "Active" } },
+            { metadata: { name: "team-b-ns" }, status: { phase: "Active" } },
+          ],
+        })
+      }
+      return Response.json({ items: [] })
+    }) as unknown as typeof fetch
+  })
+
+  it("shows cluster-admin full nodes, controlPlane, and all namespaces", async () => {
+    mockAuth.mockResolvedValue(adminSession)
+    const body = await (await GET(req())).json()
+    expect(body.nodes).toHaveLength(1)
+    expect(body.controlPlane).toHaveLength(1)
+    expect(body.namespaces.map((n: { name: string }) => n.name)).toEqual(["team-a-ns", "team-b-ns"])
+    expect(body.summary).toMatchObject({ totalNodes: 1, readyNodes: 1, totalPods: 2, totalNamespaces: 2 })
+  })
+
+  it.each(["developer", "viewer"] as const)("returns aggregates and in-scope namespaces only for %s, hiding nodes/controlPlane/team-b", async (role) => {
+    // Warm admin cache first
+    mockAuth.mockResolvedValue(adminSession)
+    await GET(req())
+
+    mockAuth.mockResolvedValue({ groups: [role], teams: ["team-a"], user: { role } })
+    const res = await GET(req())
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.summary).toMatchObject({ totalNodes: 1, readyNodes: 1, totalPods: 2, totalNamespaces: 2 })
+    expect(body.nodes).toEqual([])
+    expect(body.controlPlane).toEqual([])
+    expect(body.namespaces).toEqual([{ name: "team-a-ns", podCount: 1, status: "Active" }])
+    const serialized = JSON.stringify(body)
+    expect(serialized).not.toContain("team-b")
+    expect(serialized).not.toContain("worker-secret-01")
+    expect(serialized).not.toContain("kube-apiserver")
+  })
+})

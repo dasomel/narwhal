@@ -66,6 +66,12 @@ const frontendAlert = {
   status: { state: "active" },
   startsAt: "2026-08-20T00:00:00Z",
 }
+const clusterWideAlert = {
+  labels: { alertname: "NodeDiskPressure", severity: "critical", instance: "worker-1" },
+  annotations: { summary: "node disk pressure" },
+  status: { state: "active" },
+  startsAt: "2026-08-20T00:00:00Z",
+}
 
 function req() {
   return new Request("http://localhost/api/events")
@@ -158,5 +164,28 @@ describe("GET /api/events — scope enforcement", () => {
     const titles = body.map((e: { title: string }) => e.title)
     expect(titles).toContain("FrontendDown")
     expect(titles).not.toContain("PlatformDown")
+  })
+
+  it("hides namespace-less alerts from non-admins and shows them to cluster-admin", async () => {
+    vi.mocked(getAlerts).mockResolvedValue([platformAlert, frontendAlert, clusterWideAlert] as never)
+
+    vi.mocked(auth).mockResolvedValue(frontendTeamSession as never)
+    const devRes = await GET(req())
+    expect(devRes.status).toBe(200)
+    const devBody = await devRes.json()
+    expect(devBody.map((e: { title: string }) => e.title)).not.toContain("NodeDiskPressure")
+    expect(JSON.stringify(devBody)).not.toContain("platform-app")
+
+    vi.mocked(auth).mockResolvedValue({ groups: ["viewer"], teams: ["frontend-team"], user: { role: "viewer" } } as never)
+    const viewerRes = await GET(req())
+    expect(viewerRes.status).toBe(200)
+    const viewerBody = await viewerRes.json()
+    expect(viewerBody.map((e: { title: string }) => e.title)).not.toContain("NodeDiskPressure")
+
+    vi.mocked(auth).mockResolvedValue(clusterAdminSession as never)
+    const adminRes = await GET(req())
+    expect(adminRes.status).toBe(200)
+    const adminBody = await adminRes.json()
+    expect(adminBody.map((e: { title: string }) => e.title)).toContain("NodeDiskPressure")
   })
 })

@@ -55,13 +55,13 @@ export function ClusterInfraView() {
 
   return <div className="min-w-0 space-y-6">
     {isError ? <DataState state="error" onRetry={() => { void refetch() }} /> : validData.summary.truncated ? <DataState state="partial" /> : null}
-    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+    <div className={`grid grid-cols-1 gap-4 sm:grid-cols-2 ${cpTotal > 0 ? "xl:grid-cols-4" : "xl:grid-cols-3"}`}>
       <SummaryCard icon={Server} label={t("arch.nodes")} value={`${validData.summary.readyNodes}/${validData.summary.totalNodes}`} sub={t("arch.ready")} />
       <SummaryCard icon={Box} label={t("arch.pods")} value={validData.summary.totalPods} />
       <SummaryCard icon={Layers} label={t("arch.namespaces")} value={validData.summary.totalNamespaces} />
-      <SummaryCard icon={Cpu} label={t("arch.controlPlane")} value={`${cpReady}/${cpTotal}`} sub={t("arch.running")} />
+      {cpTotal > 0 && <SummaryCard icon={Cpu} label={t("arch.controlPlane")} value={`${cpReady}/${cpTotal}`} sub={t("arch.running")} />}
     </div>
-    <section className="space-y-4">
+    {(validData.nodes.length > 0 || validData.summary.totalNodes === 0) && <section className="space-y-4">
       <h2 className="text-sm font-medium">{t("arch.nodes")}</h2>
       {validData.nodes.length === 0 ? <DataState state="empty" onRetry={() => { void refetch() }} /> : <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
         {validData.nodes.map((node) => <Card key={node.name} className="min-w-0 rounded-xl p-5">
@@ -78,7 +78,7 @@ export function ClusterInfraView() {
           </dl>
         </Card>)}
       </div>}
-    </section>
+    </section>}
       {/* 섹션 3: 네임스페이스 그리드 */}
       <div className="rounded-xl border border-border bg-card p-5">
         <div className="flex flex-wrap items-center justify-between gap-3 mb-4">

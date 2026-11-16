@@ -3,6 +3,7 @@ import { requireRole } from "@/lib/auth"
 import { roleGateErrorResponse } from "@/lib/role-gate-response"
 import { cacheGetWithMeta, cacheSet } from "@/lib/valkey"
 import { getCluster, resolveClusterCredentials, clusterCacheKey, DEFAULT_CLUSTER_ID } from "@/lib/cluster-registry"
+import { getEffectiveScope, namespaceVisible, type EffectiveScope } from "@/lib/scope"
 
 export const dynamic = "force-dynamic"
 
@@ -107,6 +108,16 @@ function calcAge(creationTimestamp: string): string {
   return `${Math.floor(seconds / 86400)}d`
 }
 
+function redactClusterInfra(infra: ClusterInfra, scope: EffectiveScope): ClusterInfra {
+  if (scope.all) return infra
+  return {
+    ...infra,
+    nodes: [],
+    controlPlane: [],
+    namespaces: infra.namespaces.filter((ns) => namespaceVisible(ns.name, scope)),
+  }
+}
+
 export async function GET(request: NextRequest) {
   // portal#33 follow-up: this is a fleet-wide node/pod/namespace dump, so it
   // carries the same role gate as /api/metrics and /api/nodes — guest sessions
@@ -133,11 +144,16 @@ export async function GET(request: NextRequest) {
   }
   const token = credentials?.token ?? ""
 
-  const cacheKey = clusterCacheKey(clusterId, "infra")
-  const cached = await cacheGetWithMeta<ClusterInfra>(cacheKey)
-  if (cached) return NextResponse.json({ ...cached.value, freshness: { source: "cache", observedAt: cached.cachedAt } })
-
   try {
+    const scope = await getEffectiveScope(gate.session, clusterId)
+    const cacheKey = clusterCacheKey(clusterId, scope.all ? "infra" : `infra:${scope.fingerprint}`)
+    const cached = await cacheGetWithMeta<ClusterInfra>(cacheKey)
+    if (cached) {
+      return NextResponse.json(
+        redactClusterInfra({ ...cached.value, freshness: { source: "cache", observedAt: cached.cachedAt } }, scope),
+      )
+    }
+
     type NodeList = {
       items: Array<{
         metadata: { name: string; labels?: Record<string, string>; creationTimestamp: string }
@@ -273,7 +289,7 @@ export async function GET(request: NextRequest) {
     const readyNodes = nodes.filter((n) => n.status === "Ready").length
     const totalPods = allPods.length
 
-    const result: ClusterInfra = {
+    const result: ClusterInfra = redactClusterInfra({
       freshness: { source: "live", observedAt: new Date().toISOString() },
       nodes,
       controlPlane,
@@ -287,7 +303,7 @@ export async function GET(request: NextRequest) {
           (allPodsResult.status === "fulfilled" && allPodsResult.value.truncated) ||
           (namespacesResult.status === "fulfilled" && namespacesResult.value.truncated),
       },
-    }
+    }, scope)
 
     await cacheSet(cacheKey, result, 30)
     return NextResponse.json(result)

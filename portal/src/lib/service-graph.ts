@@ -12,6 +12,7 @@ import type { ScoreTier } from "./argocd"
 import { getDependencyUrl } from "./config"
 import { fetchWithPolicy, readJsonWithPolicy } from "./http-client"
 import { PROM_POLICY } from "./prometheus"
+import { namespaceVisible, type EffectiveScope } from "./scope"
 
 function prometheusUrl(): string {
   return getDependencyUrl("PROMETHEUS_URL", "http://localhost:9090")
@@ -369,8 +370,12 @@ export async function getServiceGraph(
   window: GraphWindow,
   namespace?: string,
   minRate: number = MIN_RATE,
+  scope?: EffectiveScope,
 ): Promise<ServiceGraphResult> {
-  const cacheKey = cacheKeys.serviceGraphCluster(window, namespace)
+  const isScoped = Boolean(scope && !scope.all)
+  const cacheKey = isScoped
+    ? cacheKeys.serviceGraphClusterScoped(scope!.fingerprint, window, namespace)
+    : cacheKeys.serviceGraphCluster(window, namespace)
   const cached = await cacheGet<ServiceGraphResult>(cacheKey)
   if (cached) return cached
 
@@ -431,7 +436,20 @@ export async function getServiceGraph(
   }
 
   // minRate 필터 추가 적용
-  const filtered = rawEdges.filter((e) => e.requestRate >= minRate)
+  const rateFiltered = rawEdges.filter((e) => e.requestRate >= minRate)
+
+  // D-PORTAL-TENANT-SCOPE-678: non-admins see only edges where BOTH endpoints
+  // carry an explicit namespace in their effective scope (drop cross-tenant and
+  // namespace-less edges rather than leaking out-of-scope peer names).
+  const filtered = isScoped
+    ? rateFiltered.filter(
+        (e) =>
+          Boolean(e.sourceNamespace) &&
+          Boolean(e.destinationNamespace) &&
+          namespaceVisible(e.sourceNamespace!, scope!) &&
+          namespaceVisible(e.destinationNamespace!, scope!),
+      )
+    : rateFiltered
 
   // 전체 네임스페이스 목록 (ns 필터 적용 전 기준 — 드롭다운용)
   const allNamespaces = Array.from(
@@ -539,12 +557,16 @@ export async function getServiceGraph(
 export async function getServiceDependencies(
   serviceId: string,
   window: GraphWindow,
+  scope?: EffectiveScope,
 ): Promise<ServiceDependenciesResult> {
-  const cacheKey = cacheKeys.serviceGraphSvc(serviceId, window)
+  const isScoped = Boolean(scope && !scope.all)
+  const cacheKey = isScoped
+    ? cacheKeys.serviceGraphSvcScoped(scope!.fingerprint, serviceId, window)
+    : cacheKeys.serviceGraphSvc(serviceId, window)
   const cached = await cacheGet<ServiceDependenciesResult>(cacheKey)
   if (cached) return cached
 
-  const graph = await getServiceGraph(window)
+  const graph = await getServiceGraph(window, undefined, MIN_RATE, scope)
 
   if (graph.notice && graph.edges.length === 0) {
     const result: ServiceDependenciesResult = {

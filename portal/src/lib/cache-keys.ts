@@ -163,6 +163,7 @@ export const cacheKeys = {
   // `join` intentionally not used — `service` is "" for "all services" and the
   // pre-existing key keeps that as a bare trailing colon rather than collapsing it.
   traces: (service: string) => `traces:${service}`,
+  tracesScoped: (scopeFingerprint: string, service: string) => `traces:scoped:${scopeFingerprint}:${service}`,
   toolsHealth: (role: string) => join("tools", "health", role),
   architectureWorkloads: () => "architecture:workloads",
   architectureTopology: () => "architecture:topology",
@@ -197,7 +198,7 @@ export const cacheKeys = {
 
   kisaComplianceList: () => "compliance:kisa:list",
 
-  heroSummary: () => "hero:summary",
+  heroSummary: (scopeFingerprint: string) => join("hero", "summary", scopeFingerprint),
 
   costV2: (scope: "cluster" | "namespace" | "service", scopeFingerprint: string, pricingKey: string) =>
     join("cost", "v2", scope, scopeFingerprint, pricingKey),
@@ -226,6 +227,7 @@ export const cacheKeys = {
   promCluster: (clusterId: string) => join("promcluster", clusterId),
 
   platformStatus: () => "status:platform",
+  platformStatusScoped: (scopeFingerprint: string) => join("status", "platform", "scoped", scopeFingerprint),
 
   trivySummary: () => "security:summary",
   trivyWorkloads: () => "security:workloads",
@@ -254,7 +256,11 @@ export const cacheKeys = {
   complianceSummary: () => "compliance:summary",
 
   serviceGraphCluster: (window: string, namespace: string | undefined) => join("graph", "cluster", window, namespace ?? "all"),
+  serviceGraphClusterScoped: (scopeFingerprint: string, window: string, namespace: string | undefined) =>
+    join("graph", "cluster", "scoped", scopeFingerprint, window, namespace ?? "all"),
   serviceGraphSvc: (serviceId: string, window: string) => join("graph", "svc", serviceId, window),
+  serviceGraphSvcScoped: (scopeFingerprint: string, serviceId: string, window: string) =>
+    join("graph", "svc", "scoped", scopeFingerprint, serviceId, window),
 
   k8sCniPlugin: () => "k8s:cni-plugin",
   k8sKubeletConfig: (nodeName: string) => join("k8s", "kubelet-config", nodeName),
@@ -321,7 +327,18 @@ export const CACHE_NAMESPACES: Record<string, CacheNamespaceSpec> = {
     invalidation: "TTL only",
     cachesPartial: false,
     securitySensitive: false,
-    unscopedReason: { code: "cluster-wide-state", detail: "Tempo trace search results, not per-caller; `service` is a query filter, not an identity." },
+    unscopedReason: { code: "cluster-wide-state", detail: "Cluster-admin Tempo trace search results; non-admin callers use traces:scoped:{scopeFingerprint}:{service}." },
+  },
+  "traces:scoped": {
+    example: "traces:scoped:{scopeFingerprint}:{service}",
+    dimensions: ["scope", "query"],
+    ttlSeconds: 15,
+    owner: "src/app/api/traces/route.ts",
+    invalidation: "prefix purge on IAM or namespace changes; TTL otherwise",
+    invalidationTriggers: ["iam.changed", "namespace.changed"],
+    invalidationPatterns: ["traces:scoped:*"],
+    cachesPartial: false,
+    securitySensitive: true,
   },
   "tools:health": {
     example: "tools:health:{role}",
@@ -455,10 +472,11 @@ export const CACHE_NAMESPACES: Record<string, CacheNamespaceSpec> = {
     dimensions: [],
     ttlSeconds: 15,
     owner: "src/app/api/governance/distribution/route.ts",
+    ownerPath: "src/app/api/governance/distribution/route.ts",
     invalidation: "TTL only",
     cachesPartial: false,
     securitySensitive: false,
-    unscopedReason: { code: "cluster-wide-state", detail: "auth()-gated (not admin-specific) global cluster resource view, identical for every authenticated caller." },
+    unscopedReason: { code: "admin-only-route", detail: "requireAdmin()-gated; identical cluster-wide distribution view for every cluster-admin." },
   },
   "governance:operational-events:v2": {
     example: "governance:operational-events:v2",
@@ -525,7 +543,7 @@ export const CACHE_NAMESPACES: Record<string, CacheNamespaceSpec> = {
     owner: "src/app/api/cluster/route.ts via clusterCacheKey, src/lib/cluster-registry.ts",
     invalidation: "prefix purge on cluster registry changes",
     invalidationTriggers: ["cluster.changed"],
-    invalidationPatterns: ["cluster:*:infra"],
+    invalidationPatterns: ["cluster:*:infra*"],
     cachesPartial: false,
     securitySensitive: true,
     note:
@@ -573,14 +591,15 @@ export const CACHE_NAMESPACES: Record<string, CacheNamespaceSpec> = {
     unscopedReason: { code: "cluster-wide-state", detail: "Cluster-wide KISA control status, not per-caller." },
   },
   "hero:summary": {
-    example: "hero:summary",
-    dimensions: [],
+    example: "hero:summary:{scopeFingerprint}",
+    dimensions: ["scope"],
     ttlSeconds: 10,
     owner: "src/lib/hero.ts",
-    invalidation: "TTL only",
+    invalidation: "prefix purge on IAM, namespace, or ArgoCD app changes; TTL otherwise",
+    invalidationTriggers: ["iam.changed", "namespace.changed", "argocd.app.changed"],
+    invalidationPatterns: ["hero:summary:*"],
     cachesPartial: false,
-    securitySensitive: false,
-    unscopedReason: { code: "cluster-wide-state", detail: "Cluster-wide dashboard summary, not per-caller." },
+    securitySensitive: true,
   },
   "cost:v2": {
     example: "cost:v2:{scope}:{scopeFingerprint}:{pricingKey}",
@@ -684,7 +703,18 @@ export const CACHE_NAMESPACES: Record<string, CacheNamespaceSpec> = {
     invalidation: "TTL only",
     cachesPartial: false,
     securitySensitive: false,
-    unscopedReason: { code: "cluster-wide-state", detail: "Cluster-wide platform status, not per-caller." },
+    unscopedReason: { code: "cluster-wide-state", detail: "Cluster-admin/unfiltered platform status cache; non-admins use status:platform:scoped:{scopeFingerprint}." },
+  },
+  "status:platform:scoped": {
+    example: "status:platform:scoped:{scopeFingerprint}",
+    dimensions: ["scope"],
+    ttlSeconds: 15,
+    owner: "src/lib/platform-status.ts",
+    invalidation: "prefix purge on IAM or alert silence changes; TTL otherwise",
+    invalidationTriggers: ["iam.changed", "alert.silence.changed"],
+    invalidationPatterns: ["status:platform:scoped:*"],
+    cachesPartial: false,
+    securitySensitive: true,
   },
   "security:summary": {
     example: "security:summary",
@@ -794,7 +824,7 @@ export const CACHE_NAMESPACES: Record<string, CacheNamespaceSpec> = {
     securitySensitive: false,
     unscopedReason: {
       code: "downstream-filtered",
-      detail: "Cluster-wide Alertmanager feed; per-caller filtering happens downstream in my-apps/events, which carry their own scope dimension.",
+      detail: "Cluster-wide Alertmanager feed; per-caller filtering happens downstream in alerts/hero/status/my-apps/events via alertVisible.",
     },
   },
   "compliance:config-audit:list": {
@@ -897,8 +927,19 @@ export const CACHE_NAMESPACES: Record<string, CacheNamespaceSpec> = {
     invalidationPatterns: ["graph:cluster:*"],
     cachesPartial: false,
     securitySensitive: false,
-    unscopedReason: { code: "cluster-wide-state", detail: "Cluster-wide service dependency graph, not per-caller." },
+    unscopedReason: { code: "cluster-wide-state", detail: "Cluster-admin service dependency graph; non-admins use graph:cluster:scoped:{scopeFingerprint}:{window}:{namespace|all}." },
     note: "Real TTL at the call site is a ternary (5s for the \"1m\" window, 60s otherwise), not this fixed number — see BUILDER_CHECKS.serviceGraphCluster and the call site comment in src/lib/service-graph.ts.",
+  },
+  "graph:cluster:scoped": {
+    example: "graph:cluster:scoped:{scopeFingerprint}:{window}:{namespace|all}",
+    dimensions: ["scope", "query"],
+    ttlSeconds: 60,
+    owner: "src/lib/service-graph.ts",
+    invalidation: "prefix purge on namespace or IAM changes",
+    invalidationTriggers: ["namespace.changed", "iam.changed"],
+    invalidationPatterns: ["graph:cluster:scoped:*"],
+    cachesPartial: false,
+    securitySensitive: true,
   },
   "graph:svc": {
     example: "graph:svc:{serviceId}:{window}",
@@ -910,7 +951,18 @@ export const CACHE_NAMESPACES: Record<string, CacheNamespaceSpec> = {
     invalidationPatterns: ["graph:svc:*"],
     cachesPartial: false,
     securitySensitive: false,
-    unscopedReason: { code: "cluster-wide-state", detail: "Cluster-wide service dependency graph, not per-caller." },
+    unscopedReason: { code: "cluster-wide-state", detail: "Cluster-admin service dependency detail; non-admins use graph:svc:scoped:{scopeFingerprint}:{serviceId}:{window}." },
+  },
+  "graph:svc:scoped": {
+    example: "graph:svc:scoped:{scopeFingerprint}:{serviceId}:{window}",
+    dimensions: ["scope", "query"],
+    ttlSeconds: 60,
+    owner: "src/lib/service-graph.ts",
+    invalidation: "prefix purge on namespace or IAM changes",
+    invalidationTriggers: ["namespace.changed", "iam.changed"],
+    invalidationPatterns: ["graph:svc:scoped:*"],
+    cachesPartial: false,
+    securitySensitive: true,
   },
   "k8s:cni-plugin": {
     example: "k8s:cni-plugin",
@@ -1169,6 +1221,7 @@ export const BUILDER_CHECKS: Record<keyof typeof cacheKeys, BuilderCheck> = {
   myApps: { registryKey: "my-apps", ttlSeconds: 15, args: ["user-1", "fp-1"], dimensionArgIndex: { user: 0, scope: 1 } },
   routesList: { registryKey: "api:routes-list", ttlSeconds: 60, args: [], dimensionArgIndex: {} },
   traces: { registryKey: "traces", ttlSeconds: 15, args: ["svc-1"], dimensionArgIndex: { query: 0 } },
+  tracesScoped: { registryKey: "traces:scoped", ttlSeconds: 15, args: ["fp-1", "svc-1"], dimensionArgIndex: { scope: 0, query: 1 } },
   toolsHealth: { registryKey: "tools:health", ttlSeconds: 30, args: ["role-1"], dimensionArgIndex: { role: 0 } },
   architectureWorkloads: { registryKey: "architecture:workloads", ttlSeconds: 30, args: [], dimensionArgIndex: {} },
   architectureTopology: { registryKey: "architecture:topology", ttlSeconds: 30, args: [], dimensionArgIndex: {} },
@@ -1199,7 +1252,7 @@ export const BUILDER_CHECKS: Record<keyof typeof cacheKeys, BuilderCheck> = {
 
   kisaComplianceList: { registryKey: "compliance:kisa:list", ttlSeconds: 60, args: [], dimensionArgIndex: {} },
 
-  heroSummary: { registryKey: "hero:summary", ttlSeconds: 10, args: [], dimensionArgIndex: {} },
+  heroSummary: { registryKey: "hero:summary", ttlSeconds: 10, args: ["fp-1"], dimensionArgIndex: { scope: 0 } },
 
   costV2: { registryKey: "cost:v2", ttlSeconds: 300, args: ["cluster", "fp-1", "price-1"], dimensionArgIndex: { query: 0, scope: 1 } },
   costServiceV2: {
@@ -1224,6 +1277,7 @@ export const BUILDER_CHECKS: Record<keyof typeof cacheKeys, BuilderCheck> = {
   promCluster: { registryKey: "prom:cluster", ttlSeconds: 15, args: ["primary"], dimensionArgIndex: { cluster: 0 } },
 
   platformStatus: { registryKey: "status:platform", ttlSeconds: 15, args: [], dimensionArgIndex: {} },
+  platformStatusScoped: { registryKey: "status:platform:scoped", ttlSeconds: 15, args: ["fp-1"], dimensionArgIndex: { scope: 0 } },
 
   trivySummary: { registryKey: "security:summary", ttlSeconds: 60, args: [], dimensionArgIndex: {} },
   trivyWorkloads: { registryKey: "security:workloads", ttlSeconds: 60, args: [], dimensionArgIndex: {} },
@@ -1274,7 +1328,9 @@ export const BUILDER_CHECKS: Record<keyof typeof cacheKeys, BuilderCheck> = {
   // migrated builder `cacheTtl()` deliberately does NOT cover; see the call site
   // in src/lib/service-graph.ts for the inline ternary this intentionally leaves alone.
   serviceGraphCluster: { registryKey: "graph:cluster", ttlSeconds: 60, args: ["1m", "ns-1"], dimensionArgIndex: { query: 0 } },
+  serviceGraphClusterScoped: { registryKey: "graph:cluster:scoped", ttlSeconds: 60, args: ["fp-1", "1m", "ns-1"], dimensionArgIndex: { scope: 0, query: 1 } },
   serviceGraphSvc: { registryKey: "graph:svc", ttlSeconds: 60, args: ["svc-1", "1m"], dimensionArgIndex: { query: 0 } },
+  serviceGraphSvcScoped: { registryKey: "graph:svc:scoped", ttlSeconds: 60, args: ["fp-1", "svc-1", "1m"], dimensionArgIndex: { scope: 0, query: 1 } },
 
   k8sCniPlugin: { registryKey: "k8s:cni-plugin", ttlSeconds: 60, args: [], dimensionArgIndex: {} },
   k8sKubeletConfig: { registryKey: "k8s:kubelet-config", ttlSeconds: 60, args: ["node-1"], dimensionArgIndex: { query: 0 } },

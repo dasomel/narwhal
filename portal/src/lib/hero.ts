@@ -7,6 +7,7 @@ import { getK8sApiServer } from "./config"
 import { getK8sBearerToken } from "./k8s-token"
 import { fetchWithPolicy, readJsonWithPolicy } from "./http-client"
 import { K8S_POLICY } from "./k8s-client"
+import { alertVisible, appVisible, type EffectiveScope } from "./scope"
 import type {
   HeroResponse,
   HeroIncident,
@@ -249,20 +250,28 @@ function formatSyncedAgo(isoTimestamp: string | null): string | null {
 // Main aggregator
 // ---------------------------------------------------------------------------
 
-export async function buildHeroResponse(): Promise<HeroResponse> {
+export async function buildHeroResponse(scope: EffectiveScope): Promise<HeroResponse> {
   // Fan out in parallel — cache failures handled inside each fetcher
   const [alertsResult, appsResult, metricsResult, pressureResult] =
     await Promise.allSettled([
       getAlerts(),
       getArgoApps(),
       getClusterMetrics(),
-      getNodePressureNodes(),
+      scope.all ? getNodePressureNodes() : Promise.resolve([]),
     ])
 
-  const alerts = alertsResult.status === "fulfilled" ? alertsResult.value : []
-  const apps = appsResult.status === "fulfilled" ? appsResult.value : []
+  const rawAlerts = alertsResult.status === "fulfilled" ? alertsResult.value : []
+  const rawApps = appsResult.status === "fulfilled" ? appsResult.value : []
+  const alerts = rawAlerts.filter((a) => alertVisible(a.labels, scope))
+  const apps = rawApps.filter((a) =>
+    appVisible(
+      a.spec.project ?? "default",
+      a.spec.destination?.namespace ?? a.metadata.namespace ?? "default",
+      scope,
+    ),
+  )
   const metrics = metricsResult.status === "fulfilled" ? metricsResult.value : null
-  const pressureNodes = pressureResult.status === "fulfilled" ? pressureResult.value : []
+  const pressureNodes = scope.all && pressureResult.status === "fulfilled" ? pressureResult.value : []
 
   // Threshold logic
   const criticalAlerts = alerts.filter((a) => a.labels.severity === "critical")
@@ -364,14 +373,15 @@ export async function buildHeroResponse(): Promise<HeroResponse> {
   }
 }
 
-export async function getHeroResponse(): Promise<HeroResponse> {
-  const cached = await cacheGet<HeroResponse>(cacheKeys.heroSummary())
+export async function getHeroResponse(scope: EffectiveScope): Promise<HeroResponse> {
+  const cacheKey = cacheKeys.heroSummary(scope.fingerprint)
+  const cached = await cacheGet<HeroResponse>(cacheKey)
   if (cached) return cached
 
-  const hero = await buildHeroResponse()
+  const hero = await buildHeroResponse(scope)
 
   // Cache failure is non-fatal — cacheSet swallows errors internally
-  await cacheSet(cacheKeys.heroSummary(), hero, cacheTtl("heroSummary"))
+  await cacheSet(cacheKey, hero, cacheTtl("heroSummary"))
 
   return hero
 }

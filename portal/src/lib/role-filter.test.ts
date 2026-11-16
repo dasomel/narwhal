@@ -94,9 +94,11 @@ describe("alertMatchesScope", () => {
   it("namespaced alert in scope", () => expect(alertMatchesScope({ namespace: "monitoring" }, team)).toBe(true))
   it("namespaced alert out of scope", () => expect(alertMatchesScope({ namespace: "iam" }, team)).toBe(false))
   it("exported_namespace is honoured", () => expect(alertMatchesScope({ exported_namespace: "iam" }, team)).toBe(false))
-  // Documented fail-open: cluster-wide alerts have no namespace label.
-  it("cluster-wide alert is visible to a scoped user", () => expect(alertMatchesScope({}, team)).toBe(true))
-  it("cluster-wide alert is visible to a guest too", () => expect(alertMatchesScope({}, guest)).toBe(true))
+  it("cluster-wide alert is visible only to wildcard admin scope", () => {
+    expect(alertMatchesScope({}, admin)).toBe(true)
+    expect(alertMatchesScope({}, team)).toBe(false)
+    expect(alertMatchesScope({}, guest)).toBe(false)
+  })
 })
 
 describe("scopeFingerprint", () => {

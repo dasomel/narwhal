@@ -2,6 +2,7 @@
 
 import { useQuery } from "@tanstack/react-query"
 import { useEffect, useMemo, useState } from "react"
+import { useSession } from "next-auth/react"
 import type { ServiceGraphResponse } from "@/app/api/service-graph/route"
 import type { TranslationKey } from "@/lib/i18n"
 import { useT } from "@/lib/i18n-client"
@@ -23,18 +24,21 @@ const WINDOW_OPTIONS: { value: GraphWindow; key: TranslationKey }[] = [
 
 export function ServiceMapView({ initialNamespace, focusService }: Props) {
   const t = useT()
+  const { data: session } = useSession()
+  const isAdmin = session?.user?.role === "cluster-admin"
   const [window, setWindow] = useState<GraphWindow>("7d")
   const [namespace, setNamespace] = useState(initialNamespace ?? "")
   const [errorThreshold, setErrorThreshold] = useState(5) // % 단위
   const [selectedId, setSelectedId] = useState<string | null>(null)
-  // 실시간 모드: 최근 1분 순간 rate를 5초마다 폴링 (Prometheus 스크레이프 주기상 준실시간)
+  // 실시간 모드: 최근 1분 순간 rate를 5초마다 폴링 (cluster-admin 전용 SSE 포함)
   const [live, setLive] = useState(false)
-  const effWindow: GraphWindow = live ? "1m" : window
+  const isLive = isAdmin && live
+  const effWindow: GraphWindow = isLive ? "1m" : window
 
-  // hubble-relay 흐름 스트림 (SSE) — 실시간 모드에서 엣지 활동 오버레이 (⚡ flows/s)
+  // hubble-relay 흐름 스트림 (SSE) — cluster-admin 전용 실시간 모드에서 엣지 활동 오버레이 (⚡ flows/s)
   const [liveFlows, setLiveFlows] = useState<Map<string, number>>(new Map())
   useEffect(() => {
-    if (!live) {
+    if (!isLive) {
       setLiveFlows(new Map())
       return
     }
@@ -50,7 +54,7 @@ export function ServiceMapView({ initialNamespace, focusService }: Props) {
     // 오류 시 EventSource가 자동 재연결 — 그동안 오버레이만 비움
     es.onerror = () => setLiveFlows(new Map())
     return () => es.close()
-  }, [live])
+  }, [isLive])
 
   const queryKey = ["service-graph", effWindow, namespace]
   const { data, isLoading, isError, refetch } = useQuery<ServiceGraphResponse>({
@@ -63,8 +67,8 @@ export function ServiceMapView({ initialNamespace, focusService }: Props) {
         return r.json()
       })
     },
-    refetchInterval: live ? 5_000 : 60_000,
-    staleTime: live ? 0 : 30_000,
+    refetchInterval: isLive ? 5_000 : 60_000,
+    staleTime: isLive ? 0 : 30_000,
   })
 
   // 에러율 임계 슬라이더 기반 엣지 필터
@@ -102,14 +106,14 @@ export function ServiceMapView({ initialNamespace, focusService }: Props) {
       {/* 컨트롤 바 */}
       <div className="flex flex-wrap items-center gap-3">
         {/* 윈도 셀렉터 (실시간 모드 중에는 잠금) */}
-        <div className={`flex items-center gap-1 rounded-lg bg-muted p-1 ${live ? "opacity-40 pointer-events-none" : ""}`}>
+        <div className={`flex items-center gap-1 rounded-lg bg-muted p-1 ${isLive ? "opacity-40 pointer-events-none" : ""}`}>
           {WINDOW_OPTIONS.map((opt) => (
             <button
               type="button"
               key={opt.value}
               onClick={() => setWindow(opt.value)}
               className={`px-3 py-1 text-xs rounded-md transition-colors ${
-                !live && window === opt.value
+                !isLive && window === opt.value
                   ? "bg-card text-foreground shadow-sm"
                   : "text-muted-foreground hover:text-foreground"
               }`}
@@ -119,25 +123,27 @@ export function ServiceMapView({ initialNamespace, focusService }: Props) {
           ))}
         </div>
 
-        {/* 실시간 토글 */}
-        <button
-          type="button"
-          onClick={() => setLive((v) => !v)}
-          title={t("svcMap.liveHint")}
-          className={`flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs font-semibold transition-colors ${
-            live
-              ? "border-narwhal-danger/60 bg-narwhal-danger/10 text-narwhal-danger"
-              : "border-border text-muted-foreground hover:text-foreground"
-          }`}
-        >
-          <span className={`inline-block w-2 h-2 rounded-full ${live ? "bg-narwhal-danger animate-pulse" : "bg-muted-foreground/50"}`} />
-          {t("svcMap.live")}
-          {live && data?.generatedAt && (
-            <span className="font-mono font-normal text-narwhal-danger">
-              {new Date(data.generatedAt).toLocaleTimeString("en-GB", { hour12: false })}
-            </span>
-          )}
-        </button>
+        {/* 실시간 토글 (cluster-admin 전용 SSE 스트림) */}
+        {isAdmin && (
+          <button
+            type="button"
+            onClick={() => setLive((v) => !v)}
+            title={t("svcMap.liveHint")}
+            className={`flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs font-semibold transition-colors ${
+              isLive
+                ? "border-narwhal-danger/60 bg-narwhal-danger/10 text-narwhal-danger"
+                : "border-border text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            <span className={`inline-block w-2 h-2 rounded-full ${isLive ? "bg-narwhal-danger animate-pulse" : "bg-muted-foreground/50"}`} />
+            {t("svcMap.live")}
+            {isLive && data?.generatedAt && (
+              <span className="font-mono font-normal text-narwhal-danger">
+                {new Date(data.generatedAt).toLocaleTimeString("en-GB", { hour12: false })}
+              </span>
+            )}
+          </button>
+        )}
 
         {/* 네임스페이스 필터 (sticky 목록 — 빈 응답에도 유지) */}
         {nsOptions.length > 0 && (
@@ -215,7 +221,7 @@ export function ServiceMapView({ initialNamespace, focusService }: Props) {
           <details className="min-w-0 rounded-xl border border-border bg-card p-5">
             <summary className="cursor-pointer text-sm font-medium">{t("arch640.connections")} <span className="ml-2 text-xs text-muted-foreground">{filteredData.edges.length}</span></summary>
             <div className="mt-4 overflow-x-auto">
-              <ReactFlowMap data={filteredData} focusService={focusService} selectedId={selectedId} onSelect={setSelectedId} liveFlows={live ? liveFlows : undefined} />
+              <ReactFlowMap data={filteredData} focusService={focusService} selectedId={selectedId} onSelect={setSelectedId} liveFlows={isLive ? liveFlows : undefined} />
             </div>
           </details>
           {/* 통계 */}

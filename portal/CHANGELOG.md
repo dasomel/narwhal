@@ -16,6 +16,25 @@ English | [한국어](CHANGELOG-ko.md)
   without navigation or tenant data fetches, and portal data/action APIs respond with HTTP `403`
   (`code: "ACCESS_NOT_GRANTED"`) while session, sign-out, and health endpoints remain reachable (`D-PORTAL-UNMAPPED-DENY`,
   follow-up to narwhal#659).
+- **Tenant scoping & admin-only enforcement across portal read/stream APIs (narwhal#678):**
+  - `GET /api/alerts`, `GET /api/hero`, `GET /api/status`, and `GET /api/events` (plus `/api/my-apps`) now filter
+    alerts through the shared `alertVisible` policy (`D-PORTAL-TENANT-SCOPE-678`): developers and viewers see only
+    alerts matching their effective namespaces, while namespace-less (node/cluster-level) alerts are restricted to
+    `cluster-admin`.
+  - `GET /api/hero` filters ArgoCD applications, alerts, and node-pressure incidents (admin-only) and recomputes
+    incident counters and mascot state from the caller's filtered set; `GET /api/status` retains platform/core
+    component health while scoping Alertmanager `incidents`.
+  - `GET /api/traces` resolves `service` to namespaces via ArgoCD/Kubernetes workload evidence and denies out-of-scope
+    or unresolvable services (`403`) for non-admins, filtering untargeted searches to in-scope services only.
+  - `GET /api/cluster` returns cluster aggregates (`summary`) and in-scope `namespaces` only for non-admins, redacting
+    per-node (`nodes: []`) and control-plane (`controlPlane: []`) lists (`ClusterInfraView` hides those panels when
+    redacted).
+  - `GET /api/service-graph` and `GET /api/service-graph/[svc]` restrict nodes, edges (dropped unless both ends are in
+    scope), and `namespaces` dropdown values to the caller's effective namespaces, returning `403` for out-of-scope
+    `[svc]`.
+  - `GET /api/governance/distribution` and `GET /api/service-graph/stream` (SSE) are now `cluster-admin` only (`403`
+    for `developer` and `viewer`); `DistributionView` shows an admin-required message and `ServiceMapView` hides the
+    live stream toggle for non-admins.
 
 ## [1.1.16] - 2026-11-16
 

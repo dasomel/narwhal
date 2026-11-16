@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server"
-import { auth } from "@/lib/auth"
-import { requireSessionAccess } from "@/lib/scope"
+import { requireAdmin } from "@/lib/auth"
+import { roleGateErrorResponse } from "@/lib/role-gate-response"
 import { cacheGet, cacheSet } from "@/lib/valkey"
 import { cacheKeys, cacheTtl } from "@/lib/cache-keys"
 import { getNodeMetrics } from "@/lib/prometheus"
@@ -60,12 +60,8 @@ export interface DistributionResponse {
 }
 
 export async function GET() {
-  const session = await auth()
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
-  }
-  const denied = await requireSessionAccess(session)
-  if (denied) return denied
+  const gate = await requireAdmin()
+  if ("error" in gate) return roleGateErrorResponse(gate)
 
   const cacheKey = cacheKeys.governanceDistributionV2()
   try {

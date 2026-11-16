@@ -401,8 +401,11 @@ and `.github/workflows/portal-harness-rules.yml`; they do not prove production i
 Remaining evidence/decisions: live Keycloak login and first-visit CSRF race;
 real provider mutation/read-back; real multi-replica informer/Valkey failover;
 second-cluster visibility; owner confirmation of branch protection and #358 apply
-scope. Current policy intentionally permits namespace-less cluster alerts for
-scoped sessions (`src/lib/scope.ts`). Non-admin visibility now fails closed
+scope. Namespace-less (node/cluster-level) alerts are restricted to `cluster-admin`
+via `alertVisible` (`D-PORTAL-TENANT-SCOPE-678` in `src/lib/scope.ts`, narwhal#678);
+scoped non-admin users see only alerts carrying an in-scope `namespace` or
+`exported_namespace` label across `/api/alerts`, `/api/hero`, `/api/status`,
+`/api/events`, and `/api/my-apps`. Non-admin visibility now fails closed
 (`D-PORTAL-UNMAPPED-SCOPE`, narwhal#659; `D-PORTAL-UNMAPPED-DENY`, follow-up):
 `getVisibilityScope` ignores role defaults and returns an empty scope when no
 static team mapping matches. `getEffectiveScope` still resolves `narwhal.io/team`

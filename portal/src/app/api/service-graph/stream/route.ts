@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server"
-import { requireRole } from "@/lib/auth"
+import { requireAdmin } from "@/lib/auth"
 import { roleGateErrorResponse } from "@/lib/role-gate-response"
 import { buildWorkloadToServiceMap, resolveWorkload } from "@/lib/service-graph"
 import { startFlowStream } from "@/lib/hubble-stream"
@@ -12,7 +12,7 @@ export const dynamic = "force-dynamic"
 const TICK_MS = 2_000
 
 export async function GET(req: NextRequest) {
-  const gate = await requireRole("cluster-admin", "developer", "viewer")
+  const gate = await requireAdmin()
   if ("error" in gate) return roleGateErrorResponse(gate)
 
   const serviceMap = await buildWorkloadToServiceMap()

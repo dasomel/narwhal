@@ -2,7 +2,7 @@ import { NextResponse } from "next/server"
 import { auth } from "@/lib/auth"
 import { getArgoApp } from "@/lib/argocd"
 import { getAlerts } from "@/lib/alertmanager"
-import { appVisible, requireEffectiveScope } from "@/lib/scope"
+import { alertVisible, appVisible, requireEffectiveScope } from "@/lib/scope"
 
 export const dynamic = "force-dynamic"
 
@@ -30,10 +30,11 @@ export async function GET(_req: Request, { params }: { params: Promise<{ name: s
       return NextResponse.json({ error: "Not found" }, { status: 404 })
     }
 
+    const appNs = app.spec.destination?.namespace
     const relatedAlerts = alerts.filter(
       (a) =>
-        a.labels.namespace === app.spec.destination?.namespace ||
-        a.labels.app === name
+        alertVisible(a.labels, scope) &&
+        ((Boolean(appNs) && a.labels.namespace === appNs) || a.labels.app === name),
     )
 
     return NextResponse.json({

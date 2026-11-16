@@ -46,8 +46,8 @@ export async function GET(req: NextRequest) {
           if (!srcW || !dstW) return
           // waypoint Envoy 경유 구간은 원 흐름과 이중 집계되므로 제외
           if (srcW === "waypoint" || dstW === "waypoint") return
-          const srcId = resolveWorkload(srcW, serviceMap)
-          const dstId = resolveWorkload(dstW, serviceMap)
+          const srcId = resolveWorkload(srcW, serviceMap, flow.source?.namespace ?? undefined, true)
+          const dstId = resolveWorkload(dstW, serviceMap, flow.destination?.namespace ?? undefined, true)
           if (!srcId || !dstId || srcId === dstId) return
           const key = `${srcId}|${dstId}`
           buckets.set(key, (buckets.get(key) ?? 0) + 1)

@@ -4,7 +4,7 @@ import { getArgoAppsOrThrow } from "@/lib/argocd"
 import { getAlerts } from "@/lib/alertmanager"
 import { cacheGet, cacheSet } from "@/lib/valkey"
 import { cacheKeys, cacheTtl } from "@/lib/cache-keys"
-import { appVisible, requireEffectiveScope } from "@/lib/scope"
+import { alertVisible, appVisible, requireEffectiveScope } from "@/lib/scope"
 import { findOwnershipMismatch, getTeamMappings, type OwnershipMismatch } from "@/lib/role-filter"
 
 export const dynamic = "force-dynamic"
@@ -70,9 +70,12 @@ export async function GET() {
       // and are NOT real problems. They carry a namespace label, so counting them flagged
       // every app sharing that namespace (e.g. all `storage`-ns apps: openbao, seaweedfs,
       // velero, velero-ui) with a phantom "1 active alert".
+      const destNs = app.spec.destination?.namespace
       const relatedAlerts = alerts.filter(
         (a) =>
-          a.labels.namespace === app.spec.destination?.namespace &&
+          alertVisible(a.labels, scope) &&
+          Boolean(destNs) &&
+          a.labels.namespace === destNs &&
           a.labels.severity !== "none" &&
           a.labels.alertname !== "Watchdog" &&
           a.labels.alertname !== "InfoInhibitor",

@@ -23,7 +23,9 @@ const { getNamespaces } = await import("@/lib/k8s-client")
 const { GET } = await import("./route")
 
 const platformTeamSession = { groups: ["developer"], teams: ["platform-team"], user: { role: "developer" } }
+const platformViewerSession = { groups: ["viewer"], teams: ["platform-team"], user: { role: "viewer" } }
 const frontendTeamSession = { groups: ["developer"], teams: ["frontend-team"], user: { role: "developer" } }
+const adminSession = { groups: ["cluster-admin"], teams: [], user: { role: "cluster-admin" } }
 
 const namespaces: NamespaceInfo[] = [
   { name: "platform-system", status: "Active", labels: {}, createdAt: "2026-01-01T00:00:00Z" },
@@ -65,5 +67,48 @@ describe("GET /api/catalog/[name] — scope enforcement", () => {
     vi.mocked(auth).mockResolvedValue(null as never)
     const res = await GET(new Request("http://localhost/api/catalog/platform-app"), params("platform-app"))
     expect(res.status).toBe(401)
+  })
+
+  it.each([
+    ["developer", platformTeamSession],
+    ["viewer", platformViewerSession],
+  ] as const)("hides cross-tenant alerts with matching labels.app and namespace-less node alerts from %s", async (_role, session) => {
+    vi.mocked(getAlerts).mockResolvedValue([
+      {
+        labels: { alertname: "OwnAlert", namespace: "platform-system", app: "platform-app", severity: "warning" },
+        annotations: { summary: "own alert" },
+        status: { state: "active" },
+        startsAt: "2026-11-17T00:00:00Z",
+      },
+      {
+        labels: { alertname: "TeamBLeak", namespace: "team-b-ns", app: "platform-app", severity: "critical" },
+        annotations: { summary: "team-b secret annotation" },
+        status: { state: "active" },
+        startsAt: "2026-11-17T00:00:00Z",
+      },
+      {
+        labels: { alertname: "NodeLeak", app: "platform-app", instance: "worker-02", severity: "critical" },
+        annotations: { summary: "node-level annotation" },
+        status: { state: "active" },
+        startsAt: "2026-11-17T00:00:00Z",
+      },
+    ] as never)
+
+    vi.mocked(auth).mockResolvedValue(session as never)
+    const res = await GET(new Request("http://localhost/api/catalog/platform-app"), params("platform-app"))
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.alerts.map((a: { labels: { alertname: string } }) => a.labels.alertname)).toEqual(["OwnAlert"])
+    const serialized = JSON.stringify(body)
+    expect(serialized).not.toContain("team-b")
+    expect(serialized).not.toContain("TeamBLeak")
+    expect(serialized).not.toContain("NodeLeak")
+    expect(serialized).not.toContain("worker-02")
+
+    vi.mocked(auth).mockResolvedValue(adminSession as never)
+    const adminRes = await GET(new Request("http://localhost/api/catalog/platform-app"), params("platform-app"))
+    expect(adminRes.status).toBe(200)
+    const adminBody = await adminRes.json()
+    expect(adminBody.alerts).toHaveLength(3)
   })
 })

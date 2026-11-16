@@ -24,14 +24,24 @@ English | [한국어](CHANGELOG-ko.md)
   - `GET /api/hero` filters ArgoCD applications, alerts, and node-pressure incidents (admin-only) and recomputes
     incident counters and mascot state from the caller's filtered set; `GET /api/status` retains platform/core
     component health while scoping Alertmanager `incidents`.
-  - `GET /api/traces` resolves `service` to namespaces via ArgoCD/Kubernetes workload evidence and denies out-of-scope
-    or unresolvable services (`403`) for non-admins, filtering untargeted searches to in-scope services only.
+  - `GET /api/traces` scopes queries and post-filters results by each trace's own OpenTelemetry namespace resource
+    attribute (`k8s.namespace.name` / `service.namespace`) rather than `service.name`, re-filters cached trace
+    records against the caller's current scope on every read, denies traces with unknown/missing namespace to
+    non-admins, and fails closed (`403`) on `?service=` queries when ownership evidence is incomplete
+    (`snapshot.complete: false` or provider failure).
   - `GET /api/cluster` returns cluster aggregates (`summary`) and in-scope `namespaces` only for non-admins, redacting
     per-node (`nodes: []`) and control-plane (`controlPlane: []`) lists (`ClusterInfraView` hides those panels when
     redacted).
-  - `GET /api/service-graph` and `GET /api/service-graph/[svc]` restrict nodes, edges (dropped unless both ends are in
-    scope), and `namespaces` dropdown values to the caller's effective namespaces, returning `403` for out-of-scope
-    `[svc]`.
+  - `GET /api/service-graph` and `GET /api/service-graph/[svc]` key Istio error-rate and p95 latency aggregation and
+    L7/L4 deduplication by `(sourceNamespace, source, destinationNamespace, destination)`, namespace-qualify ArgoCD app
+    mapping and status fallbacks (no cross-tenant name/status bleed), deny Hubble/namespace-less edges to non-admins,
+    re-filter cached graph nodes/edges against current scope on read, and return `403` for out-of-scope, ambiguous, or
+    incomplete-ownership `[svc]`.
+  - `GET /api/catalog/[name]` and `GET /api/governance/scorecard` now enforce the shared `alertVisible` predicate on
+    related alerts (hiding cross-namespace `labels.app` matches and namespace-less node alerts from non-admins).
+  - **Signals without namespace (denied to non-admins):** OpenTelemetry traces lacking `k8s.namespace.name` /
+    `service.namespace`, Hubble-derived service-graph edges without namespace labels, and namespace-less Alertmanager
+    alerts remain visible to `cluster-admin` only and are denied (fail closed) to `developer` and `viewer`.
   - `GET /api/governance/distribution` and `GET /api/service-graph/stream` (SSE) are now `cluster-admin` only (`403`
     for `developer` and `viewer`); `DistributionView` shows an admin-required message and `ServiceMapView` hides the
     live stream toggle for non-admins.

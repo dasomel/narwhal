@@ -131,4 +131,27 @@ describe("GET /api/governance/scorecard — ownership mismatch flag", () => {
     const entry = body.find((s: { service: string }) => s.service === "platform-app")
     expect(entry.ownershipMismatch).toBeNull()
   })
+
+  it("applies alertVisible so out-of-scope or namespace-less alerts never affect a non-admin app alert score", async () => {
+    vi.mocked(auth).mockResolvedValue(platformTeamSession as never)
+    const appWithoutDestNs: ArgoApp = {
+      metadata: { name: "no-dest-ns-app" },
+      spec: { project: "platform" },
+      status: { sync: { status: "Synced" }, health: { status: "Healthy" }, resources: [] },
+    }
+    vi.mocked(getArgoAppsOrThrow).mockResolvedValue([platformApp, appWithoutDestNs])
+    vi.mocked(getAlerts).mockResolvedValue([
+      {
+        labels: { alertname: "NodeAlertNoNs", severity: "critical" },
+        annotations: {},
+        status: { state: "active" },
+        startsAt: "2026-11-17T00:00:00Z",
+      },
+    ] as never)
+
+    const res = await GET()
+    const body = await res.json()
+    const entry = body.find((s: { service: string }) => s.service === "no-dest-ns-app")
+    expect(entry.scores.alerting).toBe(100)
+  })
 })

@@ -114,4 +114,114 @@ describe("GET /api/service-graph — tenant scope", () => {
     expect(serialized).not.toContain("svc-b1")
     expect(serialized).not.toContain("svc-b2")
   })
+
+  it.each(["developer", "viewer"] as const)("does not blend team-b errorRate/p95LatencyMs into team-a edge with identical workload pair for %s", async (role) => {
+    process.env.SERVICE_GRAPH_SOURCE = "istio"
+    vi.mocked(getWorkloadSnapshot).mockResolvedValue({
+      complete: true,
+      workloads: [
+        { namespace: "team-a-ns", kind: "Deployment", name: "web", status: "healthy" },
+        { namespace: "team-a-ns", kind: "Deployment", name: "api", status: "healthy" },
+        { namespace: "team-b-ns", kind: "Deployment", name: "web", status: "healthy" },
+        { namespace: "team-b-ns", kind: "Deployment", name: "api", status: "healthy" },
+      ],
+      livePods: [],
+      hidden: [],
+    })
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = decodeURIComponent(String(input))
+      if (url.includes("response_code=~")) {
+        return Response.json({
+          status: "success",
+          data: {
+            result: [
+              // Without `by (... source_workload_namespace, destination_workload_namespace)`,
+              // Prometheus aggregates both namespaces into one unlabelled series or blends team-b's errors.
+              url.includes("source_workload_namespace")
+                ? { metric: { source_workload: "web", source_workload_namespace: "team-b-ns", destination_workload: "api", destination_workload_namespace: "team-b-ns" }, value: [1, "5"] }
+                : { metric: { source_workload: "web", destination_workload: "api" }, value: [1, "5"] },
+            ],
+          },
+        })
+      }
+      if (url.includes("histogram_quantile")) {
+        return Response.json({
+          status: "success",
+          data: {
+            result: url.includes("source_workload_namespace")
+              ? [
+                  { metric: { source_workload: "web", source_workload_namespace: "team-a-ns", destination_workload: "api", destination_workload_namespace: "team-a-ns" }, value: [1, "0.015"] },
+                  { metric: { source_workload: "web", source_workload_namespace: "team-b-ns", destination_workload: "api", destination_workload_namespace: "team-b-ns" }, value: [1, "0.999"] },
+                ]
+              : [
+                  { metric: { source_workload: "web", destination_workload: "api" }, value: [1, "0.999"] },
+                ],
+          },
+        })
+      }
+      if (url.includes("istio_tcp_sent_bytes_total")) {
+        return Response.json({ status: "success", data: { result: [] } })
+      }
+      return Response.json({
+        status: "success",
+        data: {
+          result: [
+            { metric: { source_workload: "web", source_workload_namespace: "team-a-ns", destination_workload: "api", destination_workload_namespace: "team-a-ns" }, value: [1, "10"] },
+            { metric: { source_workload: "web", source_workload_namespace: "team-b-ns", destination_workload: "api", destination_workload_namespace: "team-b-ns" }, value: [1, "10"] },
+          ],
+        },
+      })
+    }))
+
+    mockAuth.mockResolvedValue({ groups: [role], teams: ["team-a"], user: { role } })
+    const res = await GET(new NextRequest("http://localhost/api/service-graph?window=1h"))
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.edges).toHaveLength(1)
+    expect(body.edges[0]).toMatchObject({
+      source: "unmapped-pods:web",
+      destination: "unmapped-pods:api",
+      errorRate: 0,
+      p95LatencyMs: 15,
+    })
+    expect(JSON.stringify(body)).not.toContain("team-b")
+  })
+
+  it.each(["developer", "viewer"] as const)("does not resolve team-a workload team-b-secret-deadbeef to team-b ArgoCD app or inherit its degraded status for %s", async (role) => {
+    vi.mocked(getArgoApps).mockResolvedValue([
+      {
+        metadata: { name: "team-b-secret" },
+        spec: { project: "default", destination: { namespace: "team-b-ns" } },
+        status: { sync: { status: "Synced" }, health: { status: "Degraded" } },
+      },
+      makeApp("svc-a1", "team-a-ns"),
+    ])
+    vi.mocked(getWorkloadSnapshot).mockResolvedValue({
+      complete: true,
+      workloads: [
+        { namespace: "team-a-ns", kind: "Deployment", name: "svc-a1", status: "healthy" },
+        { namespace: "team-a-ns", kind: "Deployment", name: "team-b-secret-deadbeef", status: "healthy" },
+      ],
+      livePods: [],
+      hidden: [],
+    })
+    vi.stubGlobal("fetch", vi.fn(async () => Response.json({
+      status: "success",
+      data: {
+        result: [
+          { metric: { source_workload: "svc-a1", source_workload_namespace: "team-a-ns", destination_workload: "team-b-secret-deadbeef", destination_workload_namespace: "team-a-ns" }, value: [1, "5"] },
+        ],
+      },
+    })))
+
+    mockAuth.mockResolvedValue({ groups: [role], teams: ["team-a"], user: { role } })
+    const res = await GET(new NextRequest("http://localhost/api/service-graph?window=1h"))
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    const targetNode = body.nodes.find((n: { id: string }) => n.id.includes("team-b-secret"))
+    expect(targetNode?.id).toBe("unmapped-pods:team-b-secret-deadbeef")
+    expect(targetNode?.status).toBe("healthy")
+    expect(body.nodes.some((n: { id: string }) => n.id === "team-b-secret")).toBe(false)
+    expect(body.nodes.some((n: { status: string }) => n.status === "degraded")).toBe(false)
+  })
 })

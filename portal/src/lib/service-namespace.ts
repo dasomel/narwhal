@@ -1,25 +1,31 @@
-import { getArgoApps } from "./argocd"
+import { getArgoAppsOrThrow } from "./argocd"
 import { namespaceVisible, type EffectiveScope } from "./scope"
 import { getWorkloadSnapshot } from "./workload-health"
+
+export interface ServiceOwnershipMap {
+  complete: boolean
+  services: Map<string, Set<string>>
+}
 
 /**
  * Resolves known service/workload names to Kubernetes namespace(s) using the
  * same ArgoCD Application + Kubernetes workload snapshot sources used by
- * service-graph.
+ * service-graph. Marks `complete: false` if any provider fails or truncates
+ * so callers fail closed for non-admins.
  */
-export async function buildServiceNamespaceMap(): Promise<Map<string, Set<string>>> {
+export async function buildServiceNamespaceMap(): Promise<ServiceOwnershipMap> {
   const [appsResult, snapshotResult] = await Promise.allSettled([
-    getArgoApps(),
+    getArgoAppsOrThrow(),
     getWorkloadSnapshot(),
   ])
 
-  const map = new Map<string, Set<string>>()
+  const services = new Map<string, Set<string>>()
   const add = (name: string | undefined, ns: string | undefined) => {
     if (!name || !ns) return
-    let set = map.get(name)
+    let set = services.get(name)
     if (!set) {
       set = new Set<string>()
-      map.set(name, set)
+      services.set(name, set)
     }
     set.add(ns)
   }
@@ -29,6 +35,9 @@ export async function buildServiceNamespaceMap(): Promise<Map<string, Set<string
       add(app.metadata.name, app.spec.destination?.namespace ?? app.metadata.namespace)
     }
   }
+
+  const snapshotComplete =
+    snapshotResult.status === "fulfilled" && snapshotResult.value.complete === true
 
   if (snapshotResult.status === "fulfilled") {
     const snapshot = snapshotResult.value
@@ -43,7 +52,10 @@ export async function buildServiceNamespaceMap(): Promise<Map<string, Set<string
     }
   }
 
-  return map
+  return {
+    complete: appsResult.status === "fulfilled" && snapshotComplete,
+    services,
+  }
 }
 
 export function resolveServiceNamespaces(
@@ -62,11 +74,12 @@ export function resolveServiceNamespaces(
 
 export function isServiceInScope(
   service: string,
-  map: Map<string, Set<string>>,
+  ownership: ServiceOwnershipMap,
   scope: EffectiveScope,
 ): boolean {
   if (scope.all) return true
-  const namespaces = resolveServiceNamespaces(service, map)
+  if (!ownership.complete) return false
+  const namespaces = resolveServiceNamespaces(service, ownership.services)
   if (!namespaces || namespaces.size === 0) return false
   for (const ns of namespaces) {
     if (!namespaceVisible(ns, scope)) return false
@@ -74,12 +87,33 @@ export function isServiceInScope(
   return true
 }
 
+/**
+ * True when ownership is complete and at least one namespace owning `service`
+ * is visible to the caller. Used where downstream queries and post-filters
+ * further isolate results by namespace (e.g. Tempo traces).
+ */
+export function hasServiceInScope(
+  service: string,
+  ownership: ServiceOwnershipMap,
+  scope: EffectiveScope,
+): boolean {
+  if (scope.all) return true
+  if (!ownership.complete) return false
+  const namespaces = resolveServiceNamespaces(service, ownership.services)
+  if (!namespaces || namespaces.size === 0) return false
+  for (const ns of namespaces) {
+    if (namespaceVisible(ns, scope)) return true
+  }
+  return false
+}
+
 export function getInScopeServiceNames(
-  map: Map<string, Set<string>>,
+  ownership: ServiceOwnershipMap,
   scope: EffectiveScope,
 ): Set<string> {
+  if (!ownership.complete) return new Set<string>()
   const allowed = new Set<string>()
-  for (const [service, namespaces] of map.entries()) {
+  for (const [service, namespaces] of ownership.services.entries()) {
     if (namespaces.size === 0) continue
     let allVisible = true
     for (const ns of namespaces) {

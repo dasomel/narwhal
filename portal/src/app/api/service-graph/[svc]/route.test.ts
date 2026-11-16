@@ -18,7 +18,7 @@ vi.mock("@/lib/k8s-client", async (importOriginal) => {
 })
 vi.mock("@/lib/argocd", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/argocd")>()
-  return { ...actual, getArgoApps: vi.fn() }
+  return { ...actual, getArgoApps: vi.fn(), getArgoAppsOrThrow: vi.fn() }
 })
 vi.mock("@/lib/workload-health", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/workload-health")>()
@@ -26,7 +26,7 @@ vi.mock("@/lib/workload-health", async (importOriginal) => {
 })
 vi.mock("@/lib/valkey", () => ({ cacheGet: vi.fn(), cacheSet: vi.fn() }))
 
-const { getArgoApps } = await import("@/lib/argocd")
+const { getArgoApps, getArgoAppsOrThrow } = await import("@/lib/argocd")
 const { getWorkloadSnapshot } = await import("@/lib/workload-health")
 const { cacheGet, cacheSet } = await import("@/lib/valkey")
 const { GET } = await import("./route")
@@ -63,6 +63,11 @@ describe("GET /api/service-graph/[svc] — tenant scope", () => {
       cache.set(k, v)
     })
     vi.mocked(getArgoApps).mockResolvedValue([
+      makeApp("svc-a1", "team-a-ns"),
+      makeApp("svc-a2", "team-a-ns"),
+      makeApp("svc-b1", "team-b-ns"),
+    ])
+    vi.mocked(getArgoAppsOrThrow).mockResolvedValue([
       makeApp("svc-a1", "team-a-ns"),
       makeApp("svc-a2", "team-a-ns"),
       makeApp("svc-b1", "team-b-ns"),
@@ -111,5 +116,43 @@ describe("GET /api/service-graph/[svc] — tenant scope", () => {
     expect(deniedRes.status).toBe(403)
     const deniedBody = await deniedRes.json()
     expect(deniedBody.code).toBeUndefined()
+  })
+
+  it("denies ambiguous service names across namespaces and incomplete ownership snapshots with 403", async () => {
+    vi.mocked(getArgoAppsOrThrow).mockResolvedValue([
+      makeApp("checkout", "team-a-ns"),
+      makeApp("checkout", "team-b-ns"),
+    ])
+    vi.mocked(getWorkloadSnapshot).mockResolvedValue({
+      complete: true,
+      workloads: [
+        { namespace: "team-a-ns", kind: "Deployment", name: "checkout", status: "healthy" },
+        { namespace: "team-b-ns", kind: "Deployment", name: "checkout", status: "healthy" },
+      ],
+      livePods: [],
+      hidden: [],
+    })
+    mockAuth.mockResolvedValue({ groups: ["developer"], teams: ["team-a"], user: { role: "developer" } })
+    expect((await req("checkout")).status).toBe(403)
+
+    // Now B's workload drops out because the snapshot is incomplete (B's lookup failed)
+    vi.mocked(getArgoAppsOrThrow).mockResolvedValue([makeApp("checkout", "team-a-ns")])
+    vi.mocked(getWorkloadSnapshot).mockResolvedValue({
+      complete: false,
+      workloads: [{ namespace: "team-a-ns", kind: "Deployment", name: "checkout", status: "healthy" }],
+      livePods: [],
+      hidden: [],
+    })
+    expect((await req("checkout")).status).toBe(403)
+
+    // ArgoCD provider failure also fails closed
+    vi.mocked(getArgoAppsOrThrow).mockRejectedValue(new Error("argocd down"))
+    vi.mocked(getWorkloadSnapshot).mockResolvedValue({
+      complete: true,
+      workloads: [{ namespace: "team-a-ns", kind: "Deployment", name: "checkout", status: "healthy" }],
+      livePods: [],
+      hidden: [],
+    })
+    expect((await req("checkout")).status).toBe(403)
   })
 })

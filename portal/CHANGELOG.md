@@ -24,11 +24,16 @@ English | [한국어](CHANGELOG-ko.md)
   - `GET /api/hero` filters ArgoCD applications, alerts, and node-pressure incidents (admin-only) and recomputes
     incident counters and mascot state from the caller's filtered set; `GET /api/status` retains platform/core
     component health while scoping Alertmanager `incidents`.
-  - `GET /api/traces` scopes queries and post-filters results by each trace's own OpenTelemetry namespace resource
-    attribute (`k8s.namespace.name` / `service.namespace`) rather than `service.name`, re-filters cached trace
-    records against the caller's current scope on every read, denies traces with unknown/missing namespace to
-    non-admins, and fails closed (`403`) on `?service=` queries when ownership evidence is incomplete
-    (`snapshot.complete: false` or provider failure).
+  - `GET /api/traces` scopes queries and post-filters results by each span's own OpenTelemetry namespace resource
+    attribute (`k8s.namespace.name` / `service.namespace`) rather than `service.name`, projects non-admin rows strictly
+    from the caller's matched in-scope span(s) (`serviceName`, `operationName`, `startTime`, `duration`, and in-scope
+    `spanCount` — never foreign root-span metadata, retaining only `traceID` for traces the caller participated in),
+    re-filters and re-projects cached span records against the caller's current scope on every read, denies traces with
+    unknown/missing namespace to non-admins, and fails closed (`403`) on `?service=` queries when ownership evidence is
+    incomplete (`snapshot.complete: false` or provider failure).
+  - Scope cache fingerprints (`scopeFingerprint`) now include `all`, sorted resolved namespaces, sorted `argocdProjects`,
+    and role class (`admin` / `non-admin`), and app/project-filtered cached routes (`/api/events`, `/api/my-apps`,
+    `/api/governance/scorecard`) validate/re-filter cached records against the caller's current scope on read.
   - `GET /api/cluster` returns cluster aggregates (`summary`) and in-scope `namespaces` only for non-admins, redacting
     per-node (`nodes: []`) and control-plane (`controlPlane: []`) lists (`ClusterInfraView` hides those panels when
     redacted).

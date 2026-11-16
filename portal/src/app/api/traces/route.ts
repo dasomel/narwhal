@@ -29,9 +29,18 @@ export interface TraceEntry {
   spanCount: number
 }
 
-interface CachedTraceRecord {
-  entry: TraceEntry
-  namespaces: string[]
+interface ExtractedScopedSpan {
+  namespace: string
+  serviceName: string
+  operationName: string
+  startTimeNs: string | null
+  durationNs: string | null
+  durationMs: number | null
+}
+
+interface CachedScopedTrace {
+  traceID: string
+  spans: ExtractedScopedSpan[]
 }
 
 type TempoAttrValue = { stringValue?: string }
@@ -39,12 +48,18 @@ type TempoAttr = { key?: string; value?: TempoAttrValue | string }
 type TempoAttrs = TempoAttr[] | Record<string, string | undefined>
 
 interface TempoSpan {
+  spanID?: string
+  name?: string
+  startTimeUnixNano?: string
+  durationNanos?: string | number
+  durationMs?: number
   attributes?: TempoAttrs
   resource?: { attributes?: TempoAttrs }
 }
 
 interface TempoSpanSet {
   spans?: TempoSpan[]
+  matched?: number
   attributes?: TempoAttrs
 }
 
@@ -81,42 +96,160 @@ function readNamespaceFromAttrs(attrs: TempoAttrs | undefined): string | undefin
   return readAttrString(attrs, "k8s.namespace.name") ?? readAttrString(attrs, "service.namespace")
 }
 
-function extractTraceNamespaces(trace: TempoSearchTrace): string[] {
-  const found = new Set<string>()
-  const add = (ns: string | undefined) => {
-    if (ns) found.add(ns)
+function normalizeNanoString(raw: string | number | undefined): string | undefined {
+  if (typeof raw === "number") {
+    return Number.isFinite(raw) && raw >= 0 ? String(Math.trunc(raw)) : undefined
   }
+  if (typeof raw === "string") {
+    const trimmed = raw.trim()
+    if (/^\d+$/.test(trimmed)) return trimmed
+  }
+  return undefined
+}
 
-  add(readNamespaceFromAttrs(trace.resource?.attributes))
-  add(readNamespaceFromAttrs(trace.attributes))
+const NS_PER_MS = BigInt(1_000_000)
+const HALF_MS_NS = BigInt(500_000)
 
-  const sets: TempoSpanSet[] = [
-    ...(trace.spanSets ?? []),
-    ...(trace.spanSet ? [trace.spanSet] : []),
-  ]
+function nanoToMsFloor(nsStr: string | null): number {
+  if (!nsStr) return 0
+  return Number(BigInt(nsStr) / NS_PER_MS)
+}
+
+function nanoToMsRounded(nsStr: string | null): number {
+  if (!nsStr) return 0
+  return Number((BigInt(nsStr) + HALF_MS_NS) / NS_PER_MS)
+}
+
+// D-PORTAL-TENANT-SCOPE-678 (M1): For non-admins, extract per-span metadata from
+// Tempo's matched spanSets only and never read trace-level rootServiceName,
+// rootTraceName, durationMs, startTimeUnixNano, or spanSet.matched, because those
+// belong to the root span / whole trace and leak foreign tenant operations when
+// an in-scope service appears as a child span under another tenant's root.
+// Trace ID policy: `traceID` is kept when at least one in-scope span matched
+// because the caller's own service participated in that trace, while all other
+// columns (serviceName, operationName, startTime, duration, spanCount) are
+// projected exclusively from the caller's in-scope spans.
+function extractScopedSpans(trace: TempoSearchTrace): ExtractedScopedSpan[] {
+  const sets = trace.spanSets?.length ? trace.spanSets : trace.spanSet ? [trace.spanSet] : []
+  const seenSpanIds = new Set<string>()
+  const spans: ExtractedScopedSpan[] = []
+
   for (const spanSet of sets) {
-    add(readNamespaceFromAttrs(spanSet.attributes))
     for (const span of spanSet.spans ?? []) {
-      add(readNamespaceFromAttrs(span.resource?.attributes) ?? readNamespaceFromAttrs(span.attributes))
+      if (typeof span.spanID === "string" && span.spanID.length > 0) {
+        if (seenSpanIds.has(span.spanID)) continue
+        seenSpanIds.add(span.spanID)
+      }
+      const namespace =
+        readNamespaceFromAttrs(span.resource?.attributes) ??
+        readNamespaceFromAttrs(span.attributes) ??
+        readNamespaceFromAttrs(spanSet.attributes) ??
+        readNamespaceFromAttrs(trace.resource?.attributes) ??
+        readNamespaceFromAttrs(trace.attributes)
+      if (!namespace) continue
+
+      const serviceName =
+        readAttrString(span.resource?.attributes, "service.name") ??
+        readAttrString(span.attributes, "service.name") ??
+        readAttrString(spanSet.attributes, "service.name") ??
+        ""
+
+      const operationName =
+        typeof span.name === "string" && span.name.trim()
+          ? span.name.trim()
+          : readAttrString(span.attributes, "span:name") ??
+            readAttrString(span.attributes, "name") ??
+            readAttrString(span.attributes, "span.name") ??
+            ""
+
+      spans.push({
+        namespace,
+        serviceName,
+        operationName,
+        startTimeNs: normalizeNanoString(span.startTimeUnixNano) ?? null,
+        durationNs: normalizeNanoString(span.durationNanos) ?? null,
+        durationMs: typeof span.durationMs === "number" && Number.isFinite(span.durationMs) ? span.durationMs : null,
+      })
     }
   }
 
-  return Array.from(found)
+  return spans
 }
 
-function traceVisible(namespaces: string[], scope: EffectiveScope): boolean {
-  if (scope.all) return true
-  return namespaces.length > 0 && namespaces.every((ns) => namespaceVisible(ns, scope))
+function pickEarliestSpan(spans: ExtractedScopedSpan[]): ExtractedScopedSpan {
+  let earliest = spans[0]
+  let earliestNs = earliest.startTimeNs !== null ? BigInt(earliest.startTimeNs) : null
+
+  for (let i = 1; i < spans.length; i++) {
+    const candidate = spans[i]
+    if (candidate.startTimeNs === null) continue
+    const candidateNs = BigInt(candidate.startTimeNs)
+    if (earliestNs === null || candidateNs < earliestNs) {
+      earliest = candidate
+      earliestNs = candidateNs
+    }
+  }
+
+  return earliest
 }
 
-function isValidCachedTraces(value: unknown): value is CachedTraceRecord[] {
+function projectScopedTrace(record: CachedScopedTrace, scope: EffectiveScope): TraceEntry | null {
+  const visibleSpans = record.spans.filter((s) => Boolean(s.namespace) && namespaceVisible(s.namespace, scope))
+  if (visibleSpans.length === 0) return null
+
+  const earliest = pickEarliestSpan(visibleSpans)
+  return {
+    traceID: record.traceID,
+    serviceName: earliest.serviceName,
+    operationName: earliest.operationName,
+    duration: earliest.durationNs !== null ? nanoToMsRounded(earliest.durationNs) : earliest.durationMs ?? 0,
+    startTime: nanoToMsFloor(earliest.startTimeNs),
+    spanCount: visibleSpans.length,
+  }
+}
+
+function projectAdminTrace(t: TempoSearchTrace): TraceEntry {
+  return {
+    traceID: t.traceID,
+    serviceName: t.rootServiceName ?? "",
+    operationName: t.rootTraceName ?? "",
+    duration: t.durationMs ?? 0,
+    startTime: Math.floor(Number(t.startTimeUnixNano) / 1000000),
+    spanCount: t.spanSets?.[0]?.spans?.length ?? t.spanSet?.spans?.length ?? 0,
+  }
+}
+
+function isValidAdminTraces(value: unknown): value is TraceEntry[] {
   if (!Array.isArray(value)) return false
   return value.every(
     (item) =>
       typeof item === "object" &&
       item !== null &&
-      typeof (item as CachedTraceRecord).entry?.traceID === "string" &&
-      Array.isArray((item as CachedTraceRecord).namespaces),
+      typeof (item as TraceEntry).traceID === "string" &&
+      typeof (item as TraceEntry).serviceName === "string" &&
+      typeof (item as TraceEntry).operationName === "string" &&
+      typeof (item as TraceEntry).duration === "number" &&
+      typeof (item as TraceEntry).startTime === "number" &&
+      typeof (item as TraceEntry).spanCount === "number",
+  )
+}
+
+function isValidCachedScopedTraces(value: unknown): value is CachedScopedTrace[] {
+  if (!Array.isArray(value)) return false
+  return value.every(
+    (item) =>
+      typeof item === "object" &&
+      item !== null &&
+      typeof (item as CachedScopedTrace).traceID === "string" &&
+      Array.isArray((item as CachedScopedTrace).spans) &&
+      (item as CachedScopedTrace).spans.every(
+        (s) =>
+          typeof s === "object" &&
+          s !== null &&
+          typeof s.namespace === "string" &&
+          typeof s.serviceName === "string" &&
+          typeof s.operationName === "string",
+      ),
   )
 }
 
@@ -152,9 +285,13 @@ export async function GET(req: Request) {
 
     const cacheKey = scope.all ? cacheKeys.traces(service) : cacheKeys.tracesScoped(scope.fingerprint, service)
     const cached = await cacheGet<unknown>(cacheKey)
-    if (isValidCachedTraces(cached)) {
-      const visible = scope.all ? cached : cached.filter((r) => traceVisible(r.namespaces, scope))
-      return NextResponse.json(visible.map((r) => r.entry))
+    if (scope.all) {
+      if (isValidAdminTraces(cached)) return NextResponse.json(cached)
+    } else if (isValidCachedScopedTraces(cached)) {
+      const projected = cached
+        .map((r) => projectScopedTrace(r, scope))
+        .filter((e): e is TraceEntry => e !== null)
+      return NextResponse.json(projected)
     }
 
     // D-PORTAL-TENANT-SCOPE-678: Traces are scoped by their own OTel namespace
@@ -172,7 +309,7 @@ export async function GET(req: Request) {
         clauses.push(`(resource.k8s.namespace.name=~"^(${nsPattern})$" || resource.service.namespace=~"^(${nsPattern})$")`)
       }
       const filter = clauses.length > 0 ? `{${clauses.join(" && ")}}` : "{}"
-      query = `${filter} | select(resource.k8s.namespace.name, resource.service.namespace)`
+      query = `${filter} | select(resource.k8s.namespace.name, resource.service.namespace, resource.service.name)`
     }
 
     const res = await fetch(
@@ -182,24 +319,24 @@ export async function GET(req: Request) {
     if (!res.ok) return NextResponse.json([])
 
     const data = await res.json() as { traces?: TempoSearchTrace[] }
-    let records: CachedTraceRecord[] = (data.traces ?? []).map((t) => ({
-      entry: {
-        traceID: t.traceID,
-        serviceName: t.rootServiceName ?? "",
-        operationName: t.rootTraceName ?? "",
-        duration: t.durationMs ?? 0,
-        startTime: Math.floor(Number(t.startTimeUnixNano) / 1000000),
-        spanCount: t.spanSets?.[0]?.spans?.length ?? t.spanSet?.spans?.length ?? 0,
-      },
-      namespaces: extractTraceNamespaces(t),
-    }))
-
-    if (!scope.all) {
-      records = records.filter((r) => traceVisible(r.namespaces, scope))
+    if (scope.all) {
+      const entries = (data.traces ?? []).map(projectAdminTrace)
+      await cacheSet(cacheKey, entries, cacheTtl("traces"))
+      return NextResponse.json(entries)
     }
 
-    await cacheSet(cacheKey, records, cacheTtl(scope.all ? "traces" : "tracesScoped"))
-    return NextResponse.json(records.map((r) => r.entry))
+    const records: CachedScopedTrace[] = (data.traces ?? [])
+      .map((t) => ({
+        traceID: t.traceID,
+        spans: extractScopedSpans(t).filter((s) => namespaceVisible(s.namespace, scope)),
+      }))
+      .filter((r) => r.spans.length > 0)
+
+    await cacheSet(cacheKey, records, cacheTtl("tracesScoped"))
+    const projected = records
+      .map((r) => projectScopedTrace(r, scope))
+      .filter((e): e is TraceEntry => e !== null)
+    return NextResponse.json(projected)
   } catch (err) {
     console.error("[api/traces]", err)
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })

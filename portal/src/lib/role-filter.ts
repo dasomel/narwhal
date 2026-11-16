@@ -172,17 +172,37 @@ export function alertMatchesScope(
 // before; a route that resolves a real per-request cluster_id can pass it
 // through once one exists to route between. A resolved namespace set may be appended
 // by API callers whose cache must retire immediately after live label-scope changes.
+// narwhal#678 (M2): `all`, sorted `argocdProjects`, and `roleClass` ("admin" vs
+// "non-admin") join the canonical input so every dimension that governs visibility
+// (including project grant revocations where claims and namespaces stay unchanged)
+// produces a distinct fingerprint.
+export interface ScopeFingerprintExtras {
+  all?: boolean
+  argocdProjects?: Iterable<string>
+  roleClass?: "admin" | "non-admin"
+}
+
 export function scopeFingerprint(
   groups: string[],
   teams: string[],
   clusterId: string = DEFAULT_CLUSTER_ID,
   resolvedNamespaces?: Iterable<string>,
+  extras?: ScopeFingerprintExtras,
 ): string {
+  const sortedGroups = [...groups].sort()
+  const sortedTeams = [...teams].sort()
+  const sortedNamespaces = resolvedNamespaces ? [...resolvedNamespaces].sort() : null
+  const all = extras?.all ?? false
+  const sortedProjects = extras?.argocdProjects ? [...extras.argocdProjects].sort() : []
+  const roleClass = extras?.roleClass ?? (sortedGroups.includes("cluster-admin") ? "admin" : "non-admin")
   const canonical = JSON.stringify([
-    [...groups].sort(),
-    [...teams].sort(),
+    sortedGroups,
+    sortedTeams,
     clusterId,
-    resolvedNamespaces ? [...resolvedNamespaces].sort() : null,
+    sortedNamespaces,
+    all,
+    sortedProjects,
+    roleClass,
   ])
   return createHash("sha256").update(canonical).digest("hex").slice(0, 32)
 }

@@ -26,6 +26,23 @@ export interface ScorecardItem {
   ownershipMismatch: OwnershipMismatch | null
 }
 
+interface CachedScorecardRecord {
+  item: ScorecardItem
+  project: string
+}
+
+function isValidCachedScorecards(value: unknown): value is CachedScorecardRecord[] {
+  if (!Array.isArray(value)) return false
+  return value.every(
+    (entry) =>
+      typeof entry === "object" &&
+      entry !== null &&
+      typeof (entry as CachedScorecardRecord).project === "string" &&
+      typeof (entry as CachedScorecardRecord).item?.service === "string" &&
+      typeof (entry as CachedScorecardRecord).item?.namespace === "string",
+  )
+}
+
 export async function GET() {
   const session = await auth()
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
@@ -39,8 +56,13 @@ export async function GET() {
   if ("denied" in scoped) return scoped.denied
   const { scope } = scoped
   const cacheKey = cacheKeys.governanceScorecard(scope.fingerprint)
-  const cached = await cacheGet<ScorecardItem[]>(cacheKey)
-  if (cached) return NextResponse.json(cached)
+  const cached = await cacheGet<unknown>(cacheKey)
+  if (isValidCachedScorecards(cached)) {
+    const visible = cached
+      .filter((r) => appVisible(r.project, r.item.namespace, scope))
+      .map((r) => r.item)
+    return NextResponse.json(visible)
+  }
 
   try {
     const [allApps, alerts] = await Promise.all([getArgoAppsOrThrow(), getAlerts()])
@@ -49,7 +71,7 @@ export async function GET() {
     )
     const teamMappings = getTeamMappings()
 
-    const scorecards: ScorecardItem[] = apps.map((app) => {
+    const records: CachedScorecardRecord[] = apps.map((app) => {
       const details: string[] = []
       let gitops = 0
       let health = 0
@@ -95,17 +117,20 @@ export async function GET() {
       const namespace = app.spec.destination?.namespace ?? "default"
 
       return {
-        service: app.metadata.name,
-        namespace,
-        scores: { gitops, health, alerting, resources, overall },
-        details,
-        ownershipMismatch: findOwnershipMismatch(project, namespace, teamMappings),
+        project,
+        item: {
+          service: app.metadata.name,
+          namespace,
+          scores: { gitops, health, alerting, resources, overall },
+          details,
+          ownershipMismatch: findOwnershipMismatch(project, namespace, teamMappings),
+        },
       }
     })
 
-    scorecards.sort((a, b) => a.scores.overall - b.scores.overall)
-    await cacheSet(cacheKey, scorecards, cacheTtl("governanceScorecard"))
-    return NextResponse.json(scorecards)
+    records.sort((a, b) => a.item.scores.overall - b.item.scores.overall)
+    await cacheSet(cacheKey, records, cacheTtl("governanceScorecard"))
+    return NextResponse.json(records.map((r) => r.item))
   } catch (err) {
     console.error("[governance/scorecard]", err)
     return NextResponse.json({ error: "ArgoCD connection failed" }, { status: 503 })

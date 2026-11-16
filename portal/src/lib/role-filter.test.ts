@@ -121,6 +121,39 @@ describe("scopeFingerprint", () => {
 
   it("is a sha256 prefix, not a 32-bit rolling hash", () =>
     expect(scopeFingerprint(["developer"], [])).toMatch(/^[0-9a-f]{32}$/))
+
+  it("changes when argocdProjects, all flag, roleClass, or resolvedNamespaces differ", () => {
+    const base = scopeFingerprint(["developer"], ["team-a"], "default", ["team-a-ns"], {
+      all: false,
+      argocdProjects: ["beta"],
+      roleClass: "non-admin",
+    })
+    const revokedProject = scopeFingerprint(["developer"], ["team-a"], "default", ["team-a-ns"], {
+      all: false,
+      argocdProjects: ["alpha"],
+      roleClass: "non-admin",
+    })
+    const allFlag = scopeFingerprint(["developer"], ["team-a"], "default", ["team-a-ns"], {
+      all: true,
+      argocdProjects: ["beta"],
+      roleClass: "non-admin",
+    })
+    const adminClass = scopeFingerprint(["developer"], ["team-a"], "default", ["team-a-ns"], {
+      all: false,
+      argocdProjects: ["beta"],
+      roleClass: "admin",
+    })
+    const diffNs = scopeFingerprint(["developer"], ["team-a"], "default", ["team-a-ns", "team-c-ns"], {
+      all: false,
+      argocdProjects: ["beta"],
+      roleClass: "non-admin",
+    })
+
+    expect(revokedProject).not.toBe(base)
+    expect(allFlag).not.toBe(base)
+    expect(adminClass).not.toBe(base)
+    expect(diffNs).not.toBe(base)
+  })
 })
 
 const ns = (name: string, team?: string): LabelledNamespace => ({

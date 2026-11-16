@@ -21,10 +21,15 @@
     경보만 표시하고, 네임스페이스 없는(노드/클러스터 수준) 경보는 `cluster-admin`에게만 노출합니다.
   - `GET /api/hero`는 ArgoCD 앱·경보·노드 압박 인시던트(관리자 전용)를 스코프로 걸러 건수·마스코트 상태를 재계산하며,
     `GET /api/status`는 플랫폼 핵심 구성요소 상태는 유지하되 Alertmanager `incidents`만 스코프 필터링합니다.
-  - `GET /api/traces`는 `service.name` 대신 트레이스 자체의 OpenTelemetry 네임스페이스 속성(`k8s.namespace.name` /
-    `service.namespace`)으로 쿼리·사후 필터링하고, 캐시 적중 시마다 호출자의 현재 스코프로 재필터링하며, 네임스페이스가
-    없는 트레이스는 비관리자에게 차단합니다. `?service=` 조회는 소유권 스냅샷이 불완전(`snapshot.complete: false` 또는
-    조회 실패)하면 `403`으로 fail-closed 차단합니다.
+  - `GET /api/traces`는 `service.name` 대신 각 span 자체의 OpenTelemetry 네임스페이스 속성(`k8s.namespace.name` /
+    `service.namespace`)으로 쿼리·사후 필터링하고, 비관리자 응답 행은 호출자의 유효 네임스페이스에 속한 span들만으로
+    투영합니다(`serviceName`·`operationName`·`startTime`·`duration`·범위 내 `spanCount`를 가장 이른 범위 내 span에서
+    산출하고 타 테넌트 루트 span 메타데이터는 노출하지 않으며 참여 트레이스의 `traceID`만 유지). 또한 캐시 읽기마다
+    호출자의 현재 스코프로 재필터링·재투영하고, 네임스페이스가 없는 트레이스는 비관리자에게 차단하며, `?service=`
+    조회는 소유권 스냅샷이 불완전(`snapshot.complete: false` 또는 조회 실패)하면 `403`으로 fail-closed 차단합니다.
+  - 스코프 캐시 지문(`scopeFingerprint`)이 `all` 플래그, 정렬된 해석 네임스페이스, 정렬된 `argocdProjects`, 역할
+    클래스(`admin`/`non-admin`)까지 포함하도록 확장했으며, 앱/프로젝트로 필터링하는 캐시 라우트(`/api/events`,
+    `/api/my-apps`, `/api/governance/scorecard`)도 캐시 읽기 시 현재 스코프로 재검증·재필터링합니다.
   - `GET /api/cluster`는 비관리자에게 전체 집계(`summary`)와 유효 범위 내 `namespaces` 목록만 반환하고 노드별
     목록(`nodes: []`)·컨트롤플레인 파드 목록(`controlPlane: []`)은 비웁니다(`ClusterInfraView`에서도 해당 패널을
     숨깁니다).

@@ -227,6 +227,16 @@ function buildScopedEvents(
 // Route handler
 // ---------------------------------------------------------------------------
 
+function sameStringSet(a: Iterable<string>, b: Iterable<string>): boolean {
+  const setA = new Set(a)
+  const setB = new Set(b)
+  if (setA.size !== setB.size) return false
+  for (const item of setA) {
+    if (!setB.has(item)) return false
+  }
+  return true
+}
+
 export async function GET(): Promise<NextResponse<MyAppsResponse | { error: string; code?: string }>> {
   const session = await auth()
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
@@ -243,9 +253,21 @@ export async function GET(): Promise<NextResponse<MyAppsResponse | { error: stri
   const { scope } = scoped
   const cacheKey = cacheKeys.myApps(userSub, scope.fingerprint)
 
-  // Try cache first
+  // Try cache first, verifying cached scope matches current scope before serving
   const cached = await cacheGet<MyAppsResponse>(cacheKey)
-  if (cached) return NextResponse.json(cached)
+  if (
+    cached &&
+    cached.scope &&
+    cached.scope.hasMapping === scope.hasMapping &&
+    sameStringSet(cached.scope.namespaces, scope.namespaces) &&
+    sameStringSet(cached.scope.argocdProjects, scope.argocdProjects)
+  ) {
+    return NextResponse.json({
+      ...cached,
+      scopedApps: cached.scopedApps.filter((a) => appVisible(a.project, a.namespace, scope)),
+      scopedAlerts: cached.scopedAlerts.filter((a) => alertVisible(a.labels, scope)),
+    })
+  }
 
   // What the client gets. namespaces is now the RESOLVED list rather than the config
   // patterns — concrete names are what a "why can I see this" question needs, and a

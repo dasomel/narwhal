@@ -4,7 +4,7 @@ import { getArgoApps } from "@/lib/argocd"
 import { getAlerts } from "@/lib/alertmanager"
 import { cacheGet, cacheSet } from "@/lib/valkey"
 import { cacheKeys, cacheTtl } from "@/lib/cache-keys"
-import { alertVisible, appVisible, requireEffectiveScope } from "@/lib/scope"
+import { alertVisible, appVisible, requireEffectiveScope, type EffectiveScope } from "@/lib/scope"
 
 export const dynamic = "force-dynamic"
 
@@ -15,6 +15,59 @@ export interface TimelineEvent {
   description: string
   timestamp: string
   severity: "info" | "warning" | "error" | "success"
+}
+
+type CachedTimelineRecord =
+  | {
+      kind: "app"
+      project: string
+      namespace: string
+      event: TimelineEvent
+    }
+  | {
+      kind: "alert"
+      labels: Record<string, string | undefined>
+      event: TimelineEvent
+    }
+
+function isValidTimelineEvent(value: unknown): value is TimelineEvent {
+  if (typeof value !== "object" || value === null) return false
+  const e = value as TimelineEvent
+  return (
+    typeof e.id === "string" &&
+    typeof e.type === "string" &&
+    typeof e.title === "string" &&
+    typeof e.description === "string" &&
+    typeof e.timestamp === "string" &&
+    typeof e.severity === "string"
+  )
+}
+
+function isValidCachedTimeline(value: unknown): value is CachedTimelineRecord[] {
+  if (!Array.isArray(value)) return false
+  return value.every((item) => {
+    if (typeof item !== "object" || item === null) return false
+    const rec = item as CachedTimelineRecord
+    if (!isValidTimelineEvent(rec.event)) return false
+    if (rec.kind === "app") {
+      return typeof rec.project === "string" && typeof rec.namespace === "string"
+    }
+    if (rec.kind === "alert") {
+      return typeof rec.labels === "object" && rec.labels !== null
+    }
+    return false
+  })
+}
+
+function projectTimeline(records: CachedTimelineRecord[], scope: EffectiveScope): TimelineEvent[] {
+  return records
+    .filter((rec) =>
+      rec.kind === "app"
+        ? appVisible(rec.project, rec.namespace, scope)
+        : alertVisible(rec.labels, scope),
+    )
+    .map((rec) => rec.event)
+    .slice(0, 50)
 }
 
 export async function GET(request: Request) {
@@ -51,45 +104,54 @@ export async function GET(request: Request) {
   // a narrower defect than no filtering at all, and a much harder one to notice.
   const cacheKey = cacheKeys.eventsTimeline(scope.fingerprint)
   if (!sinceDate) {
-    const cached = await cacheGet<TimelineEvent[]>(cacheKey)
-    if (cached) return NextResponse.json(cached)
+    const cached = await cacheGet<unknown>(cacheKey)
+    if (isValidCachedTimeline(cached)) {
+      return NextResponse.json(projectTimeline(cached, scope))
+    }
   }
 
   try {
     const [apps, alerts] = await Promise.all([getArgoApps(), getAlerts()])
 
-    const events: TimelineEvent[] = []
+    const records: CachedTimelineRecord[] = []
 
     // ArgoCD deploy history
     for (const app of apps) {
-      const inScope = appVisible(
-        app.spec.project ?? "default",
-        app.spec.destination?.namespace ?? app.metadata.namespace ?? "default",
-        scope,
-      )
-      if (!inScope) continue
+      const project = app.spec.project ?? "default"
+      const namespace = app.spec.destination?.namespace ?? app.metadata.namespace ?? "default"
+      if (!appVisible(project, namespace, scope)) continue
 
       for (const h of app.status.history ?? []) {
-        events.push({
-          id: `deploy-${app.metadata.name}-${h.id}`,
-          type: "deploy",
-          title: `${app.metadata.name}`,
-          description: `Deployed revision ${h.revision?.slice(0, 7) ?? "unknown"}`,
-          timestamp: h.deployedAt,
-          severity: "success",
+        records.push({
+          kind: "app",
+          project,
+          namespace,
+          event: {
+            id: `deploy-${app.metadata.name}-${h.id}`,
+            type: "deploy",
+            title: `${app.metadata.name}`,
+            description: `Deployed revision ${h.revision?.slice(0, 7) ?? "unknown"}`,
+            timestamp: h.deployedAt,
+            severity: "success",
+          },
         })
       }
 
       // Sync status events
       if (app.status.operationState?.finishedAt) {
         const phase = app.status.operationState.phase ?? ""
-        events.push({
-          id: `sync-${app.metadata.name}`,
-          type: "sync",
-          title: `${app.metadata.name}`,
-          description: `Sync ${phase.toLowerCase()}: ${app.status.operationState.message ?? ""}`.trim(),
-          timestamp: app.status.operationState.finishedAt,
-          severity: phase === "Succeeded" ? "info" : phase === "Failed" ? "error" : "warning",
+        records.push({
+          kind: "app",
+          project,
+          namespace,
+          event: {
+            id: `sync-${app.metadata.name}`,
+            type: "sync",
+            title: `${app.metadata.name}`,
+            description: `Sync ${phase.toLowerCase()}: ${app.status.operationState.message ?? ""}`.trim(),
+            timestamp: app.status.operationState.finishedAt,
+            severity: phase === "Succeeded" ? "info" : phase === "Failed" ? "error" : "warning",
+          },
         })
       }
     }
@@ -98,32 +160,34 @@ export async function GET(request: Request) {
     alerts
       .filter((alert) => alertVisible(alert.labels, scope))
       .forEach((alert, idx) => {
-        events.push({
-          id: `alert-${alert.labels.alertname}-${alert.startsAt}-${idx}`,
-          type: "alert",
-          title: alert.labels.alertname ?? "Alert",
-          description: alert.annotations.summary ?? alert.annotations.description ?? "",
-          timestamp: alert.startsAt,
-          severity: alert.labels.severity === "critical" ? "error" : "warning",
+        records.push({
+          kind: "alert",
+          labels: alert.labels,
+          event: {
+            id: `alert-${alert.labels.alertname}-${alert.startsAt}-${idx}`,
+            type: "alert",
+            title: alert.labels.alertname ?? "Alert",
+            description: alert.annotations.summary ?? alert.annotations.description ?? "",
+            timestamp: alert.startsAt,
+            severity: alert.labels.severity === "critical" ? "error" : "warning",
+          },
         })
-    })
+      })
 
     // Sort descending by timestamp
-    events.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+    records.sort((a, b) => new Date(b.event.timestamp).getTime() - new Date(a.event.timestamp).getTime())
 
     // Apply since filter after sort
     const filtered = sinceDate
-      ? events.filter((e) => new Date(e.timestamp).getTime() > sinceDate!.getTime())
-      : events
-
-    const result = filtered.slice(0, 50)
+      ? records.filter((r) => new Date(r.event.timestamp).getTime() > sinceDate!.getTime())
+      : records
 
     // Only cache the unfiltered result
     if (!sinceDate) {
-      await cacheSet(cacheKey, result, cacheTtl("eventsTimeline"))
+      await cacheSet(cacheKey, records, cacheTtl("eventsTimeline"))
     }
 
-    return NextResponse.json(result)
+    return NextResponse.json(projectTimeline(filtered, scope))
   } catch (err) {
     console.error("[api/events]", err)
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })

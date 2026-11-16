@@ -14,9 +14,10 @@
  * Two primitives are NOT reinvented here — they already own a dimension each
  * and are reused as-is:
  * - `EffectiveScope.fingerprint` (src/lib/scope.ts, built by
- *   `scopeFingerprint` in src/lib/role-filter.ts) folds groups/teams/cluster
- *   and, where resolved, the visible-namespace set into one opaque string —
- *   this is the "authorization scope" dimension.
+ *   `scopeFingerprint` in src/lib/role-filter.ts) folds groups/teams/cluster,
+ *   `all` flag, resolved namespaces, sorted `argocdProjects`, and role class
+ *   (`admin` vs `non-admin`) into one opaque string — this is the
+ *   "authorization scope" dimension.
  * - `clusterCacheKey` (src/lib/cluster-registry.ts) already builds
  *   `cluster:{cluster_id}:{resource}` per the issue's own key shape — this is
  *   the "cluster" dimension for the two multi-cluster-aware routes.

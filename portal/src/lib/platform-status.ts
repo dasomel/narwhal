@@ -3,6 +3,7 @@ import { cacheKeys, cacheTtl } from "./cache-keys"
 import { getArgoAppsOrThrow } from "./argocd"
 import { getAlertsOrThrow } from "./alertmanager"
 import { getNodeReadiness, getControlPlaneHealth, type ControlPlanePodHealth } from "./k8s-client"
+import { alertVisible, type EffectiveScope } from "./scope"
 import type { PlatformStatus, StatusComponent, StatusIncident, ComponentStatus } from "@/types/api"
 
 // ---------------------------------------------------------------------------
@@ -153,18 +154,33 @@ function isPlatformStatus(value: unknown): value is PlatformStatus {
 // callers share one in-flight aggregation instead. The slot is cleared in finally,
 // so a failure is never retained beyond the call that produced it.
 let inFlight: Promise<PlatformStatus> | null = null
+const scopedInFlight = new Map<string, Promise<PlatformStatus>>()
 
-export function getPlatformStatus(): Promise<PlatformStatus> {
-  if (!inFlight) {
-    inFlight = aggregatePlatformStatus().finally(() => {
-      inFlight = null
-    })
+export function getPlatformStatus(scope?: EffectiveScope): Promise<PlatformStatus> {
+  if (!scope || scope.all) {
+    if (!inFlight) {
+      inFlight = aggregatePlatformStatus(scope).finally(() => {
+        inFlight = null
+      })
+    }
+    return inFlight
   }
-  return inFlight
+
+  const key = scope.fingerprint
+  let pending = scopedInFlight.get(key)
+  if (!pending) {
+    pending = aggregatePlatformStatus(scope).finally(() => {
+      scopedInFlight.delete(key)
+    })
+    scopedInFlight.set(key, pending)
+  }
+  return pending
 }
 
-async function aggregatePlatformStatus(): Promise<PlatformStatus> {
-  const cached = await cacheGet<unknown>(cacheKeys.platformStatus())
+async function aggregatePlatformStatus(scope?: EffectiveScope): Promise<PlatformStatus> {
+  const isScoped = Boolean(scope && !scope.all)
+  const cacheKey = isScoped ? cacheKeys.platformStatusScoped(scope!.fingerprint) : cacheKeys.platformStatus()
+  const cached = await cacheGet<unknown>(cacheKey)
   if (isPlatformStatus(cached)) return cached
 
   // D1 (#53): getArgoApps/getAlerts swallow failure into [] (their READ contract,
@@ -235,7 +251,8 @@ async function aggregatePlatformStatus(): Promise<PlatformStatus> {
   }
 
   const componentIds = components.map((c) => c.id)
-  const incidents: StatusIncident[] = alerts.map((a, idx) => ({
+  const visibleAlerts = isScoped ? alerts.filter((a) => alertVisible(a.labels, scope!)) : alerts
+  const incidents: StatusIncident[] = visibleAlerts.map((a, idx) => ({
     id: `alert-${a.labels.alertname ?? "unknown"}-${idx}`,
     severity: a.labels.severity === "critical" ? "critical" : "warning",
     title: a.labels.alertname ?? "Alert",
@@ -269,7 +286,11 @@ async function aggregatePlatformStatus(): Promise<PlatformStatus> {
   // cachesPartial is false for this namespace (cache-keys.ts): an answer built
   // with a provider missing must not be served again for the TTL as if complete.
   if (unavailable.length === 0) {
-    await cacheSet(cacheKeys.platformStatus(), result, cacheTtl("platformStatus"))
+    await cacheSet(
+      cacheKey,
+      result,
+      cacheTtl(isScoped ? "platformStatusScoped" : "platformStatus"),
+    )
   }
   return result
 }

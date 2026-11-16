@@ -50,4 +50,19 @@ describe("ClusterInfraView data states", () => {
     expect(html).toContain("1/1")
     expect(html).toContain("10")
   })
+
+  it("hides controlPlane card and node grid in aggregates-only scoped mode", () => {
+    vi.mocked(useQuery).mockReturnValue(queryResult({
+      nodes: [],
+      controlPlane: [],
+      namespaces: [{ name: "team-a", podCount: 3, status: "Active" }],
+      summary: { totalNodes: 3, readyNodes: 3, totalPods: 25, totalNamespaces: 6, truncated: false },
+    }))
+    const html = renderToStaticMarkup(<ClusterInfraView />)
+    expect(html).toContain("3/3")
+    expect(html).toContain("25")
+    expect(html).toContain("team-a")
+    expect(html).not.toContain("arch.controlPlane")
+    expect(html).not.toContain("dataState.empty")
+  })
 })

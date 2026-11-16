@@ -66,6 +66,12 @@ const frontendAlert = {
   status: { state: "active" },
   startsAt: "2026-08-20T00:00:00Z",
 }
+const clusterWideAlert = {
+  labels: { alertname: "NodeDiskPressure", severity: "critical", instance: "worker-1" },
+  annotations: { summary: "node disk pressure" },
+  status: { state: "active" },
+  startsAt: "2026-08-20T00:00:00Z",
+}
 
 function req() {
   return new Request("http://localhost/api/events")
@@ -158,5 +164,121 @@ describe("GET /api/events — scope enforcement", () => {
     const titles = body.map((e: { title: string }) => e.title)
     expect(titles).toContain("FrontendDown")
     expect(titles).not.toContain("PlatformDown")
+  })
+
+  it("hides namespace-less alerts from non-admins and shows them to cluster-admin", async () => {
+    vi.mocked(getAlerts).mockResolvedValue([platformAlert, frontendAlert, clusterWideAlert] as never)
+
+    vi.mocked(auth).mockResolvedValue(frontendTeamSession as never)
+    const devRes = await GET(req())
+    expect(devRes.status).toBe(200)
+    const devBody = await devRes.json()
+    expect(devBody.map((e: { title: string }) => e.title)).not.toContain("NodeDiskPressure")
+    expect(JSON.stringify(devBody)).not.toContain("platform-app")
+
+    vi.mocked(auth).mockResolvedValue({ groups: ["viewer"], teams: ["frontend-team"], user: { role: "viewer" } } as never)
+    const viewerRes = await GET(req())
+    expect(viewerRes.status).toBe(200)
+    const viewerBody = await viewerRes.json()
+    expect(viewerBody.map((e: { title: string }) => e.title)).not.toContain("NodeDiskPressure")
+
+    vi.mocked(auth).mockResolvedValue(clusterAdminSession as never)
+    const adminRes = await GET(req())
+    expect(adminRes.status).toBe(200)
+    const adminBody = await adminRes.json()
+    expect(adminBody.map((e: { title: string }) => e.title)).toContain("NodeDiskPressure")
+  })
+})
+
+describe("GET /api/events — project revocation cache isolation (M2)", () => {
+  it("invalidates cache across restart and re-filters cached events when an argocdProject grant is revoked with unchanged namespaces/claims", async () => {
+    const sharedCache = new Map<string, unknown>()
+    let activeProjects = ["alpha", "beta"]
+
+    const setupRoute = async () => {
+      vi.resetModules()
+      vi.doMock("fs", async (importOriginal) => {
+        const actual = await importOriginal<typeof import("fs")>()
+        const mockedReadFileSync = ((...args: Parameters<typeof actual.readFileSync>) => {
+          if (String(args[0]).endsWith("role-filter.json")) {
+            return JSON.stringify({
+              teamMappings: [
+                { group: "team-a", namespaces: ["team-a-ns"], argocdProjects: activeProjects },
+              ],
+            })
+          }
+          return actual.readFileSync(...args)
+        }) as typeof actual.readFileSync
+        return {
+          ...actual,
+          default: { ...actual, readFileSync: mockedReadFileSync },
+          readFileSync: mockedReadFileSync,
+        }
+      })
+      vi.doMock("@/lib/auth", () => ({
+        auth: vi.fn().mockResolvedValue({ groups: ["developer"], teams: ["team-a"], user: { role: "developer" } }),
+      }))
+      vi.doMock("@/lib/argocd", async (importOriginal) => {
+        const actual = await importOriginal<typeof import("@/lib/argocd")>()
+        return {
+          ...actual,
+          getArgoApps: vi.fn().mockResolvedValue([
+            fakeApp("team-a-app", "alpha", "team-a-ns"),
+            fakeApp("team-b-secret", "beta", "team-b-ns"),
+          ]),
+        }
+      })
+      vi.doMock("@/lib/alertmanager", () => ({ getAlerts: vi.fn().mockResolvedValue([]) }))
+      vi.doMock("@/lib/valkey", () => ({
+        cacheGet: vi.fn(async (key: string) => sharedCache.get(key) ?? null),
+        cacheSet: vi.fn(async (key: string, value: unknown) => {
+          sharedCache.set(key, value)
+        }),
+      }))
+      vi.doMock("@/lib/k8s-client", async (importOriginal) => {
+        const actual = await importOriginal<typeof import("@/lib/k8s-client")>()
+        return {
+          ...actual,
+          getNamespaces: vi.fn().mockResolvedValue([
+            { name: "team-a-ns", status: "Active", labels: {}, createdAt: "2026-01-01T00:00:00Z" },
+            { name: "team-b-ns", status: "Active", labels: {}, createdAt: "2026-01-01T00:00:00Z" },
+          ]),
+        }
+      })
+      return import("./route")
+    }
+
+    try {
+      // 1. Before revocation: beta is granted -> cache warmed with team-a-app & team-b-secret
+      const routeBefore = await setupRoute()
+      const resBefore = await routeBefore.GET(req())
+      expect(resBefore.status).toBe(200)
+      const beforeTitles = (await resBefore.json()).map((e: { title: string }) => e.title)
+      expect(beforeTitles).toContain("team-a-app")
+      expect(beforeTitles).toContain("team-b-secret")
+      expect(sharedCache.size).toBe(1)
+      const oldPayload = Array.from(sharedCache.values())[0]
+
+      // 2. Revoke beta -> alpha only (same claims, same namespaces), simulate restart with warm Valkey
+      activeProjects = ["alpha"]
+      const routeAfter = await setupRoute()
+      const resAfter = await routeAfter.GET(req())
+      expect(resAfter.status).toBe(200)
+      const afterBody = await resAfter.json()
+      expect(afterBody.map((e: { title: string }) => e.title)).toEqual(["team-a-app"])
+      expect(JSON.stringify(afterBody)).not.toContain("team-b-secret")
+      expect(sharedCache.size).toBe(2)
+
+      // 3. Even if the old cached payload were served via key collision, re-filtering on read must drop team-b-secret
+      const { cacheGet } = await import("@/lib/valkey")
+      vi.mocked(cacheGet).mockResolvedValueOnce(oldPayload as never)
+      const resForcedHit = await routeAfter.GET(req())
+      expect(resForcedHit.status).toBe(200)
+      const forcedBody = await resForcedHit.json()
+      expect(forcedBody.map((e: { title: string }) => e.title)).toEqual(["team-a-app"])
+      expect(JSON.stringify(forcedBody)).not.toContain("team-b-secret")
+    } finally {
+      vi.doUnmock("fs")
+    }
   })
 })

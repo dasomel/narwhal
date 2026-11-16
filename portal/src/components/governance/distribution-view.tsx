@@ -2,6 +2,7 @@
 
 import { useState } from "react"
 import { useQuery } from "@tanstack/react-query"
+import { useSession } from "next-auth/react"
 import Link from "next/link"
 import { useT } from "@/lib/i18n-client"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -40,6 +41,9 @@ const severityStyles = {
 
 export function DistributionView() {
   const t = useT()
+  const { data: session } = useSession()
+  const role = session?.user?.role ?? "guest"
+  const isAdmin = role === "cluster-admin"
   const [isDrilldownOpen, setIsDrilldownOpen] = useState(false)
   const [selectedPodForDrawer, setSelectedPodForDrawer] = useState<{ namespace: string; pod: string } | null>(null)
 
@@ -50,7 +54,18 @@ export function DistributionView() {
       return r.json()
     }),
     refetchInterval: 30_000,
+    enabled: isAdmin,
   })
+
+  if (!isAdmin) {
+    return (
+      <Card className="p-5">
+        <div className="h-24 flex items-center justify-center text-sm text-muted-foreground">
+          {t("distribution.forbidden")}
+        </div>
+      </Card>
+    )
+  }
 
   if (isLoading) {
     return (

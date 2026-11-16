@@ -12,6 +12,7 @@ import type { ScoreTier } from "./argocd"
 import { getDependencyUrl } from "./config"
 import { fetchWithPolicy, readJsonWithPolicy } from "./http-client"
 import { PROM_POLICY } from "./prometheus"
+import { namespaceVisible, type EffectiveScope } from "./scope"
 
 function prometheusUrl(): string {
   return getDependencyUrl("PROMETHEUS_URL", "http://localhost:9090")
@@ -110,30 +111,63 @@ async function queryPrometheus(promql: string, timeoutMs = 10000): Promise<Vecto
 // 워크로드 → 서비스 ID 매핑
 // ---------------------------------------------------------------------------
 
-/**
- * ArgoCD application name과 매핑:
- * - app.kubernetes.io/instance 라벨 우선
- * - fallback: app.kubernetes.io/name
- * - 매핑 실패 시 "unmapped-pods" 그룹
- */
-export async function buildWorkloadToServiceMap(): Promise<Map<string, string>> {
-  const apps = await getArgoApps()
-  const appNames = new Set(apps.map((a) => a.metadata.name))
-  // 워크로드 이름이 ArgoCD app name과 직접 일치하는 경우를 맵으로 구성
-  const map = new Map<string, string>()
-  for (const name of appNames) {
-    map.set(name, name)
-  }
-  return map
+export interface WorkloadServiceMap {
+  byNamespace: Map<string, Map<string, string>>
+  unnamespaced: Map<string, string>
 }
 
-export function resolveWorkload(workload: string, serviceMap: Map<string, string>): string {
+export interface NodeStatusMap {
+  byNamespace: Map<string, Map<string, "healthy" | "degraded" | "unknown">>
+  unnamespaced: Map<string, "healthy" | "degraded" | "unknown">
+}
+
+/**
+ * ArgoCD application name과 매핑 (destination.namespace 기준 격리):
+ * - 동일 이름의 타 테넌트 앱에 워크로드가 매핑되지 않도록 (namespace, name)으로 분리
+ * - 매핑 실패 시 "unmapped-pods" 그룹
+ */
+export async function buildWorkloadToServiceMap(): Promise<WorkloadServiceMap> {
+  const apps = await getArgoApps()
+  const byNamespace = new Map<string, Map<string, string>>()
+  const unnamespaced = new Map<string, string>()
+
+  for (const app of apps) {
+    const name = app.metadata.name
+    const ns = app.spec?.destination?.namespace
+    if (ns) {
+      let nsMap = byNamespace.get(ns)
+      if (!nsMap) {
+        nsMap = new Map<string, string>()
+        byNamespace.set(ns, nsMap)
+      }
+      nsMap.set(name, name)
+    } else {
+      unnamespaced.set(name, name)
+    }
+  }
+  return { byNamespace, unnamespaced }
+}
+
+export function resolveWorkload(
+  workload: string,
+  serviceMap: WorkloadServiceMap,
+  namespace?: string,
+  allowUnnamespaced = false,
+): string {
   if (SYSTEM_WORKLOADS.has(workload)) return ""
-  // ArgoCD app 이름과 직접 매핑 시도
-  if (serviceMap.has(workload)) return serviceMap.get(workload)!
-  // 워크로드 이름에서 deployment suffix 제거 시도 (e.g., my-app-7d9f5 → my-app)
   const withoutHash = workload.replace(/-[0-9a-f]{5,10}$/, "")
-  if (serviceMap.has(withoutHash)) return serviceMap.get(withoutHash)!
+
+  if (namespace) {
+    const nsMap = serviceMap.byNamespace.get(namespace)
+    if (nsMap?.has(workload)) return nsMap.get(workload)!
+    if (nsMap?.has(withoutHash)) return nsMap.get(withoutHash)!
+  }
+
+  if (allowUnnamespaced) {
+    if (serviceMap.unnamespaced.has(workload)) return serviceMap.unnamespaced.get(workload)!
+    if (serviceMap.unnamespaced.has(withoutHash)) return serviceMap.unnamespaced.get(withoutHash)!
+  }
+
   // 매핑 실패 → unmapped-pods 그룹
   return `unmapped-pods:${workload}`
 }
@@ -142,16 +176,28 @@ export function resolveWorkload(workload: string, serviceMap: Map<string, string
 // ArgoCD 상태 기반 노드 health 결정
 // ---------------------------------------------------------------------------
 
-async function buildNodeStatusMap(): Promise<Map<string, "healthy" | "degraded" | "unknown">> {
+async function buildNodeStatusMap(): Promise<NodeStatusMap> {
   const apps = await getArgoApps()
-  const map = new Map<string, "healthy" | "degraded" | "unknown">()
+  const byNamespace = new Map<string, Map<string, "healthy" | "degraded" | "unknown">>()
+  const unnamespaced = new Map<string, "healthy" | "degraded" | "unknown">()
+
   for (const app of apps) {
     const health = app.status?.health?.status
-    if (health === "Healthy") map.set(app.metadata.name, "healthy")
-    else if (health === "Degraded") map.set(app.metadata.name, "degraded")
-    else map.set(app.metadata.name, "unknown")
+    const mapped: "healthy" | "degraded" | "unknown" =
+      health === "Healthy" ? "healthy" : health === "Degraded" ? "degraded" : "unknown"
+    const ns = app.spec?.destination?.namespace
+    if (ns) {
+      let nsMap = byNamespace.get(ns)
+      if (!nsMap) {
+        nsMap = new Map<string, "healthy" | "degraded" | "unknown">()
+        byNamespace.set(ns, nsMap)
+      }
+      nsMap.set(app.metadata.name, mapped)
+    } else {
+      unnamespaced.set(app.metadata.name, mapped)
+    }
   }
-  return map
+  return { byNamespace, unnamespaced }
 }
 
 // ---------------------------------------------------------------------------
@@ -181,11 +227,11 @@ function buildIstioRateQuery(window: GraphWindow): string {
 }
 
 function buildIstioErrorRateQuery(window: GraphWindow): string {
-  return `sum by (source_workload, destination_workload) (rate(istio_requests_total{response_code=~"5..",source_workload!="unknown",destination_workload!="unknown"}[${window}]))`
+  return `sum by (source_workload, destination_workload, source_workload_namespace, destination_workload_namespace) (rate(istio_requests_total{response_code=~"5..",source_workload!="unknown",destination_workload!="unknown"}[${window}]))`
 }
 
 function buildIstiop95LatencyQuery(window: GraphWindow): string {
-  return `histogram_quantile(0.95, sum by (source_workload, destination_workload, le) (rate(istio_request_duration_milliseconds_bucket{source_workload!="unknown",destination_workload!="unknown"}[${window}])))`
+  return `histogram_quantile(0.95, sum by (source_workload, destination_workload, source_workload_namespace, destination_workload_namespace, le) (rate(istio_request_duration_milliseconds_bucket{source_workload!="unknown",destination_workload!="unknown"}[${window}])))`
 }
 
 // ---------------------------------------------------------------------------
@@ -244,13 +290,18 @@ async function buildEdgesFromIstio(window: GraphWindow): Promise<RawEdge[] | nul
 
   if (!rateResults) return null
 
-  // 에러율 맵 구성: source:destination → errorRate
+  const edgeKey = (src: string, dst: string, srcNs = "", dstNs = "") =>
+    `${srcNs}\0${src}\0${dstNs}\0${dst}`
+
+  // 에러율 맵 구성: (sourceNs, source, destNs, destination) → errorRate
   const errorMap = new Map<string, number>()
   if (errorResults) {
     for (const r of errorResults) {
       const src = r.metric["source_workload"] ?? ""
       const dst = r.metric["destination_workload"] ?? ""
-      if (src && dst) errorMap.set(`${src}:${dst}`, r.value)
+      const srcNs = r.metric["source_workload_namespace"] ?? ""
+      const dstNs = r.metric["destination_workload_namespace"] ?? ""
+      if (src && dst) errorMap.set(edgeKey(src, dst, srcNs, dstNs), r.value)
     }
   }
 
@@ -260,9 +311,11 @@ async function buildEdgesFromIstio(window: GraphWindow): Promise<RawEdge[] | nul
     for (const r of latencyResults) {
       const src = r.metric["source_workload"] ?? ""
       const dst = r.metric["destination_workload"] ?? ""
+      const srcNs = r.metric["source_workload_namespace"] ?? ""
+      const dstNs = r.metric["destination_workload_namespace"] ?? ""
       if (src && dst) {
         // Prometheus는 초 단위로 반환 → ms로 변환
-        latencyMap.set(`${src}:${dst}`, r.value * 1000)
+        latencyMap.set(edgeKey(src, dst, srcNs, dstNs), r.value * 1000)
       }
     }
   }
@@ -271,6 +324,8 @@ async function buildEdgesFromIstio(window: GraphWindow): Promise<RawEdge[] | nul
   for (const r of rateResults) {
     const src = r.metric["source_workload"] ?? ""
     const dst = r.metric["destination_workload"] ?? ""
+    const srcNs = r.metric["source_workload_namespace"] ?? ""
+    const dstNs = r.metric["destination_workload_namespace"] ?? ""
     const dstService = r.metric["destination_service_name"] ?? ""
 
     // 노이즈 필터
@@ -280,7 +335,7 @@ async function buildEdgesFromIstio(window: GraphWindow): Promise<RawEdge[] | nul
     if (isHealthCheckPath(r.metric)) continue
     if (r.value < MIN_RATE) continue
 
-    const key = `${src}:${dst}`
+    const key = edgeKey(src, dst, srcNs, dstNs)
     const totalRate = r.value
     const errRate = errorMap.get(key) ?? 0
     const errorRate = totalRate > 0 ? Math.min(errRate / totalRate, 1) : 0
@@ -289,8 +344,8 @@ async function buildEdgesFromIstio(window: GraphWindow): Promise<RawEdge[] | nul
     edges.push({
       source: src,
       destination: dst,
-      sourceNamespace: r.metric["source_workload_namespace"] || undefined,
-      destinationNamespace: r.metric["destination_workload_namespace"] || undefined,
+      sourceNamespace: srcNs || undefined,
+      destinationNamespace: dstNs || undefined,
       kind: "l7",
       requestRate: r.value,
       errorRate,
@@ -369,10 +424,24 @@ export async function getServiceGraph(
   window: GraphWindow,
   namespace?: string,
   minRate: number = MIN_RATE,
+  scope?: EffectiveScope,
 ): Promise<ServiceGraphResult> {
-  const cacheKey = cacheKeys.serviceGraphCluster(window, namespace)
+  const isScoped = Boolean(scope && !scope.all)
+  const cacheKey = isScoped
+    ? cacheKeys.serviceGraphClusterScoped(scope!.fingerprint, window, namespace)
+    : cacheKeys.serviceGraphCluster(window, namespace)
   const cached = await cacheGet<ServiceGraphResult>(cacheKey)
-  if (cached) return cached
+  if (cached) {
+    if (!isScoped) return cached
+    const allowedNodes = cached.nodes.filter((n) => n.namespace !== "unknown" && namespaceVisible(n.namespace, scope!))
+    const allowedIds = new Set(allowedNodes.map((n) => n.id))
+    return {
+      ...cached,
+      nodes: allowedNodes,
+      edges: cached.edges.filter((e) => allowedIds.has(e.source) && allowedIds.has(e.destination)),
+      ...(cached.namespaces ? { namespaces: cached.namespaces.filter((ns) => namespaceVisible(ns, scope!)) } : {}),
+    }
+  }
 
   const source = process.env.SERVICE_GRAPH_SOURCE ?? "istio"
   const generatedAt = new Date().toISOString()
@@ -396,8 +465,10 @@ export async function getServiceGraph(
     } else {
       const l7e = l7 ?? []
       const l4e = l4 ?? []
-      const covered = new Set(l7e.map((e) => `${e.source}|${e.destination}`))
-      rawEdges = [...l7e, ...l4e.filter((e) => !covered.has(`${e.source}|${e.destination}`))]
+      const edgeIdentity = (e: RawEdge) =>
+        `${e.sourceNamespace ?? ""}\0${e.source}\0${e.destinationNamespace ?? ""}\0${e.destination}`
+      const covered = new Set(l7e.map(edgeIdentity))
+      rawEdges = [...l7e, ...l4e.filter((e) => !covered.has(edgeIdentity(e)))]
       metricKind = l7e.length === 0 ? "l4" : rawEdges.length > l7e.length ? "mixed" : "l7"
     }
   } else if (source === "istio-tcp") {
@@ -431,7 +502,20 @@ export async function getServiceGraph(
   }
 
   // minRate 필터 추가 적용
-  const filtered = rawEdges.filter((e) => e.requestRate >= minRate)
+  const rateFiltered = rawEdges.filter((e) => e.requestRate >= minRate)
+
+  // D-PORTAL-TENANT-SCOPE-678: non-admins see only edges where BOTH endpoints
+  // carry an explicit namespace in their effective scope (drop cross-tenant and
+  // namespace-less edges rather than leaking out-of-scope peer names).
+  const filtered = isScoped
+    ? rateFiltered.filter(
+        (e) =>
+          Boolean(e.sourceNamespace) &&
+          Boolean(e.destinationNamespace) &&
+          namespaceVisible(e.sourceNamespace!, scope!) &&
+          namespaceVisible(e.destinationNamespace!, scope!),
+      )
+    : rateFiltered
 
   // 전체 네임스페이스 목록 (ns 필터 적용 전 기준 — 드롭다운용)
   const allNamespaces = Array.from(
@@ -457,6 +541,7 @@ export async function getServiceGraph(
   // one-offs only with complete, nonempty controller evidence and no matching live
   // operator/standalone pod or owner. Cost: 30s staleness; escape hatch: incomplete/
   // empty snapshots retain unknowns. Namespaced live Job pods remain explicitly hidden.
+  const allowUnnamespaced = !isScoped
   const hidden = new Set<string>()
   const isHidden = (name: string, ns?: string) => {
     // D8: without a namespace, a Job name alone cannot exclude a live service.
@@ -466,7 +551,7 @@ export async function getServiceGraph(
       || livePodStatus(snapshot, name))) return false
     return snapshot.hidden.some((pod) => pod.name === name && (!ns || pod.namespace === ns))
       || (snapshot.complete && snapshot.workloads.length > 0
-        && resolveWorkload(name, serviceMap) === `unmapped-pods:${name}`
+        && resolveWorkload(name, serviceMap, ns, allowUnnamespaced) === `unmapped-pods:${name}`
         && !snapshot.workloads.some((w) => w.name === name && (!ns || w.namespace === ns))
         && !livePodStatus(snapshot, name, ns))
   }
@@ -474,8 +559,8 @@ export async function getServiceGraph(
     const endpoints = [[e.source, e.sourceNamespace], [e.destination, e.destinationNamespace]] as const
     for (const [name, ns] of endpoints) if (isHidden(name, ns)) hidden.add(`${ns ?? ""}/${name}`)
     if (endpoints.some(([name, ns]) => isHidden(name, ns))) continue
-    const srcId = resolveWorkload(e.source, serviceMap)
-    const dstId = resolveWorkload(e.destination, serviceMap)
+    const srcId = resolveWorkload(e.source, serviceMap, e.sourceNamespace, allowUnnamespaced)
+    const dstId = resolveWorkload(e.destination, serviceMap, e.destinationNamespace, allowUnnamespaced)
 
     if (!srcId || !dstId) continue
     for (const [id, name, ns] of [[srcId, e.source, e.sourceNamespace], [dstId, e.destination, e.destinationNamespace]] as const) {
@@ -511,12 +596,37 @@ export async function getServiceGraph(
     const status = livePodStatus(snapshot, w.name, w.namespace)
     return status && (!worst || statusRank[status] > statusRank[worst]) ? status : worst
   }, undefined)
-  const nodes: ServiceNode[] = Array.from(nodeIds).map((id) => ({
-    id,
-    // 메트릭 라벨 기반 실제 ns. 라벨이 없는 소스(hubble 등)는 "unknown".
-    namespace: nodeNs.get(id) ?? "unknown",
-    status: controllerStatus(id) ?? workloadStatus(snapshot, id.replace(/^unmapped-pods:/, ""), nodeNs.get(id)) ?? podStatus(id) ?? livePodStatus(snapshot, id.replace(/^unmapped-pods:/, ""), nodeNs.get(id)) ?? statusMap.get(id) ?? "unknown",
-  }))
+  const argoStatus = (id: string) => {
+    for (const w of nodeWorkloads.get(id) ?? []) {
+      if (w.namespace) {
+        const s = statusMap.byNamespace.get(w.namespace)?.get(id)
+        if (s) return s
+      }
+    }
+    const ns = nodeNs.get(id)
+    if (ns) {
+      const s = statusMap.byNamespace.get(ns)?.get(id)
+      if (s) return s
+    }
+    if (allowUnnamespaced) return statusMap.unnamespaced.get(id)
+    return undefined
+  }
+  const nodes: ServiceNode[] = Array.from(nodeIds).map((id) => {
+    const ns = nodeNs.get(id)
+    const rawName = id.replace(/^unmapped-pods:/, "")
+    return {
+      id,
+      // 메트릭 라벨 기반 실제 ns. 라벨이 없는 소스(hubble 등)는 "unknown".
+      namespace: ns ?? "unknown",
+      status:
+        controllerStatus(id)
+        ?? ((allowUnnamespaced || ns) ? workloadStatus(snapshot, rawName, ns) : undefined)
+        ?? podStatus(id)
+        ?? ((allowUnnamespaced || ns) ? livePodStatus(snapshot, rawName, ns) : undefined)
+        ?? argoStatus(id)
+        ?? "unknown",
+    }
+  })
 
   const result: ServiceGraphResult = {
     window,
@@ -539,12 +649,16 @@ export async function getServiceGraph(
 export async function getServiceDependencies(
   serviceId: string,
   window: GraphWindow,
+  scope?: EffectiveScope,
 ): Promise<ServiceDependenciesResult> {
-  const cacheKey = cacheKeys.serviceGraphSvc(serviceId, window)
+  const isScoped = Boolean(scope && !scope.all)
+  const cacheKey = isScoped
+    ? cacheKeys.serviceGraphSvcScoped(scope!.fingerprint, serviceId, window)
+    : cacheKeys.serviceGraphSvc(serviceId, window)
   const cached = await cacheGet<ServiceDependenciesResult>(cacheKey)
   if (cached) return cached
 
-  const graph = await getServiceGraph(window)
+  const graph = await getServiceGraph(window, undefined, MIN_RATE, scope)
 
   if (graph.notice && graph.edges.length === 0) {
     const result: ServiceDependenciesResult = {

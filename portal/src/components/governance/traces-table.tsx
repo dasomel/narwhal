@@ -55,6 +55,8 @@ function SortHeader({ label, sortKey, current, dir, onToggle, className }: SortH
   )
 }
 
+class TracesForbiddenError extends Error {}
+
 export function TracesTable() {
   const t = useT()
   const [serviceInput, setServiceInput] = useState("")
@@ -62,12 +64,16 @@ export function TracesTable() {
   const [sortKey, setSortKey] = useState<SortKey>("startTime")
   const [sortDir, setSortDir] = useState<SortDir>("desc")
 
-  const { data = [], isLoading, isError, refetch } = useQuery<TraceEntry[]>({
+  const { data = [], isLoading, isError, error, refetch } = useQuery<TraceEntry[]>({
     queryKey: ["governance-traces", service],
-    queryFn: () =>
-      fetch(`/api/traces${service ? `?service=${encodeURIComponent(service)}` : ""}`).then((r) =>
-        r.json()
-      ),
+    queryFn: async () => {
+      const r = await fetch(`/api/traces${service ? `?service=${encodeURIComponent(service)}` : ""}`)
+      if (r.status === 403) throw new TracesForbiddenError()
+      if (!r.ok) throw new Error(String(r.status))
+      const json = await r.json()
+      return Array.isArray(json) ? json : []
+    },
+    retry: (failureCount, err) => !(err instanceof TracesForbiddenError) && failureCount < 2,
     refetchInterval: 30_000,
   })
 
@@ -113,6 +119,8 @@ export function TracesTable() {
       </div>
       {isLoading ? (
         <DataState state="loading" onRetry={() => { void refetch() }} />
+      ) : error instanceof TracesForbiddenError ? (
+        <DataState state="unauthorized" />
       ) : isError ? (
         <DataState state="unavailable" onRetry={() => { void refetch() }} />
       ) : data.length === 0 ? (

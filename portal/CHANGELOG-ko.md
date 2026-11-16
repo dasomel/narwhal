@@ -15,6 +15,36 @@
   없는 경우)는 로그인 후 내비게이션이나 테넌트 데이터 조회 없이 전용 `/access-denied` 안내 화면(관리자 문의 및
   로그아웃 제공)으로 이동하며, 포털 데이터·작업 API는 HTTP `403`(`code: "ACCESS_NOT_GRANTED"`)을 반환합니다.
   세션·로그아웃·헬스 엔드포인트는 계속 접근할 수 있습니다(`D-PORTAL-UNMAPPED-DENY`, narwhal#659 후속).
+- **포털 읽기/스트림 API 테넌트 스코프 및 관리자 전용 경계 강화 (narwhal#678):**
+  - `GET /api/alerts`, `GET /api/hero`, `GET /api/status`, `GET /api/events`(및 `/api/my-apps`)가 공통
+    `alertVisible` 규칙(`D-PORTAL-TENANT-SCOPE-678`)을 공유해 developer·viewer에게는 유효 네임스페이스에 속한
+    경보만 표시하고, 네임스페이스 없는(노드/클러스터 수준) 경보는 `cluster-admin`에게만 노출합니다.
+  - `GET /api/hero`는 ArgoCD 앱·경보·노드 압박 인시던트(관리자 전용)를 스코프로 걸러 건수·마스코트 상태를 재계산하며,
+    `GET /api/status`는 플랫폼 핵심 구성요소 상태는 유지하되 Alertmanager `incidents`만 스코프 필터링합니다.
+  - `GET /api/traces`는 `service.name` 대신 각 span 자체의 OpenTelemetry 네임스페이스 속성(`k8s.namespace.name` /
+    `service.namespace`)으로 쿼리·사후 필터링하고, 비관리자 응답 행은 호출자의 유효 네임스페이스에 속한 span들만으로
+    투영합니다(`serviceName`·`operationName`·`startTime`·`duration`·범위 내 `spanCount`를 가장 이른 범위 내 span에서
+    산출하고 타 테넌트 루트 span 메타데이터는 노출하지 않으며 참여 트레이스의 `traceID`만 유지). 또한 캐시 읽기마다
+    호출자의 현재 스코프로 재필터링·재투영하고, 네임스페이스가 없는 트레이스는 비관리자에게 차단하며, `?service=`
+    조회는 소유권 스냅샷이 불완전(`snapshot.complete: false` 또는 조회 실패)하면 `403`으로 fail-closed 차단합니다.
+  - 스코프 캐시 지문(`scopeFingerprint`)이 `all` 플래그, 정렬된 해석 네임스페이스, 정렬된 `argocdProjects`, 역할
+    클래스(`admin`/`non-admin`)까지 포함하도록 확장했으며, 앱/프로젝트로 필터링하는 캐시 라우트(`/api/events`,
+    `/api/my-apps`, `/api/governance/scorecard`)도 캐시 읽기 시 현재 스코프로 재검증·재필터링합니다.
+  - `GET /api/cluster`는 비관리자에게 전체 집계(`summary`)와 유효 범위 내 `namespaces` 목록만 반환하고 노드별
+    목록(`nodes: []`)·컨트롤플레인 파드 목록(`controlPlane: []`)은 비웁니다(`ClusterInfraView`에서도 해당 패널을
+    숨깁니다).
+  - `GET /api/service-graph` 및 `GET /api/service-graph/[svc]`는 Istio 오류율·p95 지연 집계 및 L7/L4 중복 제거를
+    양쪽 `(namespace, workload)` 쌍으로 분리하고, ArgoCD 앱 매핑과 상태 fallback을 네임스페이스로 한정해 타 테넌트
+    앱 이름/상태 혼입을 차단하며, 캐시 읽기 시 현재 스코프로 재필터링하고, 범위 외·모호한 이름·불완전 소유권 `[svc]`
+    조회는 `403`을 반환합니다.
+  - `GET /api/catalog/[name]`과 `GET /api/governance/scorecard`의 연관 경보 필터에도 공통 `alertVisible` 규칙을 적용해
+    `labels.app`만 같은 타 네임스페이스 경보와 네임스페이스 없는 노드 경보를 비관리자에게 차단했습니다.
+  - **네임스페이스 부재로 비관리자에게 차단되는 신호:** `k8s.namespace.name`·`service.namespace` 속성이 없는 OTel
+    트레이스, 네임스페이스 라벨이 없는 Hubble 기반 서비스 그래프 엣지, 네임스페이스 없는 Alertmanager 경보는
+    `cluster-admin`에게만 노출되며 `developer`·`viewer`에게는 fail-closed로 차단됩니다.
+  - `GET /api/governance/distribution` 및 `GET /api/service-graph/stream`(SSE)을 `cluster-admin` 전용으로
+    제한했습니다(developer·viewer는 `403`). `DistributionView`는 관리자 권한 안내를 표시하고 `ServiceMapView`는
+    비관리자에게 실시간 스트림 토글을 숨깁니다.
 
 ## [1.1.16] - 2026-11-16
 

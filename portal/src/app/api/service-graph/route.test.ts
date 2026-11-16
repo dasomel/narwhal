@@ -1,0 +1,227 @@
+import { beforeEach, describe, expect, it, vi } from "vitest"
+import { NextRequest } from "next/server"
+import type { NamespaceInfo } from "@/lib/k8s-client"
+import type { ArgoApp } from "@/lib/argocd"
+
+const mockAuth = vi.hoisted(() => vi.fn())
+const mockGetNamespaces = vi.hoisted(() => vi.fn())
+
+vi.mock("next-auth", () => ({
+  default: () => ({ handlers: {}, auth: mockAuth, signIn: vi.fn(), signOut: vi.fn() }),
+}))
+vi.mock("next-auth/providers/credentials", () => ({
+  default: (opts: unknown) => opts,
+}))
+vi.mock("@/lib/k8s-client", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/k8s-client")>()
+  return { ...actual, getNamespaces: mockGetNamespaces }
+})
+vi.mock("@/lib/argocd", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/argocd")>()
+  return { ...actual, getArgoApps: vi.fn() }
+})
+vi.mock("@/lib/workload-health", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/workload-health")>()
+  return { ...actual, getWorkloadSnapshot: vi.fn() }
+})
+vi.mock("@/lib/valkey", () => ({ cacheGet: vi.fn(), cacheSet: vi.fn() }))
+
+const { getArgoApps } = await import("@/lib/argocd")
+const { getWorkloadSnapshot } = await import("@/lib/workload-health")
+const { cacheGet, cacheSet } = await import("@/lib/valkey")
+const { GET } = await import("./route")
+
+const namespaces: NamespaceInfo[] = [
+  { name: "team-a-ns", status: "Active", labels: { "narwhal.io/team": "team-a" }, createdAt: "2026-01-01T00:00:00Z" },
+  { name: "team-b-ns", status: "Active", labels: { "narwhal.io/team": "team-b" }, createdAt: "2026-01-01T00:00:00Z" },
+]
+
+function makeApp(name: string, namespace: string): ArgoApp {
+  return {
+    metadata: { name },
+    spec: { project: "default", destination: { namespace } },
+    status: { sync: { status: "Synced" }, health: { status: "Healthy" } },
+  }
+}
+
+describe("GET /api/service-graph — tenant scope", () => {
+  const cache = new Map<string, unknown>()
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    cache.clear()
+    process.env.SERVICE_GRAPH_SOURCE = "istio-tcp"
+    mockGetNamespaces.mockResolvedValue(namespaces)
+    vi.mocked(cacheGet).mockImplementation(async (k: string) => cache.get(k) ?? null)
+    vi.mocked(cacheSet).mockImplementation(async (k: string, v: unknown) => {
+      cache.set(k, v)
+    })
+    vi.mocked(getArgoApps).mockResolvedValue([
+      makeApp("svc-a1", "team-a-ns"),
+      makeApp("svc-a2", "team-a-ns"),
+      makeApp("svc-b1", "team-b-ns"),
+    ])
+    vi.mocked(getWorkloadSnapshot).mockResolvedValue({
+      complete: true,
+      workloads: [
+        { namespace: "team-a-ns", kind: "Deployment", name: "svc-a1", status: "healthy" },
+        { namespace: "team-a-ns", kind: "Deployment", name: "svc-a2", status: "healthy" },
+        { namespace: "team-b-ns", kind: "Deployment", name: "svc-b1", status: "healthy" },
+        { namespace: "team-b-ns", kind: "Deployment", name: "svc-b2", status: "healthy" },
+      ],
+      livePods: [],
+      hidden: [],
+    })
+    vi.stubGlobal("fetch", vi.fn(async () => Response.json({
+      status: "success",
+      data: {
+        result: [
+          // Both ends in team-a -> included for team-a
+          { metric: { source_workload: "svc-a1", source_workload_namespace: "team-a-ns", destination_workload: "svc-a2", destination_workload_namespace: "team-a-ns" }, value: [1, "5"] },
+          // Cross-tenant edge -> dropped for team-a
+          { metric: { source_workload: "svc-a1", source_workload_namespace: "team-a-ns", destination_workload: "svc-b1", destination_workload_namespace: "team-b-ns" }, value: [1, "3"] },
+          // Out-of-scope edge -> dropped for team-a
+          { metric: { source_workload: "svc-b1", source_workload_namespace: "team-b-ns", destination_workload: "svc-b2", destination_workload_namespace: "team-b-ns" }, value: [1, "4"] },
+        ],
+      },
+    })))
+  })
+
+  it("shows cluster-admin all nodes, cross-tenant edges, and all namespaces", async () => {
+    mockAuth.mockResolvedValue({ groups: ["cluster-admin"], teams: [], user: { role: "cluster-admin" } })
+    const res = await GET(new NextRequest("http://localhost/api/service-graph?window=1h"))
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.edges).toHaveLength(3)
+    expect(body.namespaces).toEqual(["team-a-ns", "team-b-ns"])
+  })
+
+  it.each(["developer", "viewer"] as const)("limits %s to in-scope nodes, both-ends-in-scope edges, and in-scope namespaces", async (role) => {
+    // Warm admin cache first
+    mockAuth.mockResolvedValue({ groups: ["cluster-admin"], teams: [], user: { role: "cluster-admin" } })
+    await GET(new NextRequest("http://localhost/api/service-graph?window=1h"))
+
+    mockAuth.mockResolvedValue({ groups: [role], teams: ["team-a"], user: { role } })
+    const res = await GET(new NextRequest("http://localhost/api/service-graph?window=1h"))
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.nodes.map((n: { id: string }) => n.id).sort()).toEqual(["svc-a1", "svc-a2"])
+    expect(body.edges).toHaveLength(1)
+    expect(body.edges[0]).toMatchObject({ source: "svc-a1", destination: "svc-a2" })
+    expect(body.namespaces).toEqual(["team-a-ns"])
+    const serialized = JSON.stringify(body)
+    expect(serialized).not.toContain("team-b")
+    expect(serialized).not.toContain("svc-b1")
+    expect(serialized).not.toContain("svc-b2")
+  })
+
+  it.each(["developer", "viewer"] as const)("does not blend team-b errorRate/p95LatencyMs into team-a edge with identical workload pair for %s", async (role) => {
+    process.env.SERVICE_GRAPH_SOURCE = "istio"
+    vi.mocked(getWorkloadSnapshot).mockResolvedValue({
+      complete: true,
+      workloads: [
+        { namespace: "team-a-ns", kind: "Deployment", name: "web", status: "healthy" },
+        { namespace: "team-a-ns", kind: "Deployment", name: "api", status: "healthy" },
+        { namespace: "team-b-ns", kind: "Deployment", name: "web", status: "healthy" },
+        { namespace: "team-b-ns", kind: "Deployment", name: "api", status: "healthy" },
+      ],
+      livePods: [],
+      hidden: [],
+    })
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = decodeURIComponent(String(input))
+      if (url.includes("response_code=~")) {
+        return Response.json({
+          status: "success",
+          data: {
+            result: [
+              // Without `by (... source_workload_namespace, destination_workload_namespace)`,
+              // Prometheus aggregates both namespaces into one unlabelled series or blends team-b's errors.
+              url.includes("source_workload_namespace")
+                ? { metric: { source_workload: "web", source_workload_namespace: "team-b-ns", destination_workload: "api", destination_workload_namespace: "team-b-ns" }, value: [1, "5"] }
+                : { metric: { source_workload: "web", destination_workload: "api" }, value: [1, "5"] },
+            ],
+          },
+        })
+      }
+      if (url.includes("histogram_quantile")) {
+        return Response.json({
+          status: "success",
+          data: {
+            result: url.includes("source_workload_namespace")
+              ? [
+                  { metric: { source_workload: "web", source_workload_namespace: "team-a-ns", destination_workload: "api", destination_workload_namespace: "team-a-ns" }, value: [1, "0.015"] },
+                  { metric: { source_workload: "web", source_workload_namespace: "team-b-ns", destination_workload: "api", destination_workload_namespace: "team-b-ns" }, value: [1, "0.999"] },
+                ]
+              : [
+                  { metric: { source_workload: "web", destination_workload: "api" }, value: [1, "0.999"] },
+                ],
+          },
+        })
+      }
+      if (url.includes("istio_tcp_sent_bytes_total")) {
+        return Response.json({ status: "success", data: { result: [] } })
+      }
+      return Response.json({
+        status: "success",
+        data: {
+          result: [
+            { metric: { source_workload: "web", source_workload_namespace: "team-a-ns", destination_workload: "api", destination_workload_namespace: "team-a-ns" }, value: [1, "10"] },
+            { metric: { source_workload: "web", source_workload_namespace: "team-b-ns", destination_workload: "api", destination_workload_namespace: "team-b-ns" }, value: [1, "10"] },
+          ],
+        },
+      })
+    }))
+
+    mockAuth.mockResolvedValue({ groups: [role], teams: ["team-a"], user: { role } })
+    const res = await GET(new NextRequest("http://localhost/api/service-graph?window=1h"))
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.edges).toHaveLength(1)
+    expect(body.edges[0]).toMatchObject({
+      source: "unmapped-pods:web",
+      destination: "unmapped-pods:api",
+      errorRate: 0,
+      p95LatencyMs: 15,
+    })
+    expect(JSON.stringify(body)).not.toContain("team-b")
+  })
+
+  it.each(["developer", "viewer"] as const)("does not resolve team-a workload team-b-secret-deadbeef to team-b ArgoCD app or inherit its degraded status for %s", async (role) => {
+    vi.mocked(getArgoApps).mockResolvedValue([
+      {
+        metadata: { name: "team-b-secret" },
+        spec: { project: "default", destination: { namespace: "team-b-ns" } },
+        status: { sync: { status: "Synced" }, health: { status: "Degraded" } },
+      },
+      makeApp("svc-a1", "team-a-ns"),
+    ])
+    vi.mocked(getWorkloadSnapshot).mockResolvedValue({
+      complete: true,
+      workloads: [
+        { namespace: "team-a-ns", kind: "Deployment", name: "svc-a1", status: "healthy" },
+        { namespace: "team-a-ns", kind: "Deployment", name: "team-b-secret-deadbeef", status: "healthy" },
+      ],
+      livePods: [],
+      hidden: [],
+    })
+    vi.stubGlobal("fetch", vi.fn(async () => Response.json({
+      status: "success",
+      data: {
+        result: [
+          { metric: { source_workload: "svc-a1", source_workload_namespace: "team-a-ns", destination_workload: "team-b-secret-deadbeef", destination_workload_namespace: "team-a-ns" }, value: [1, "5"] },
+        ],
+      },
+    })))
+
+    mockAuth.mockResolvedValue({ groups: [role], teams: ["team-a"], user: { role } })
+    const res = await GET(new NextRequest("http://localhost/api/service-graph?window=1h"))
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    const targetNode = body.nodes.find((n: { id: string }) => n.id.includes("team-b-secret"))
+    expect(targetNode?.id).toBe("unmapped-pods:team-b-secret-deadbeef")
+    expect(targetNode?.status).toBe("healthy")
+    expect(body.nodes.some((n: { id: string }) => n.id === "team-b-secret")).toBe(false)
+    expect(body.nodes.some((n: { status: string }) => n.status === "degraded")).toBe(false)
+  })
+})

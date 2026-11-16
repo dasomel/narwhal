@@ -94,9 +94,11 @@ describe("alertMatchesScope", () => {
   it("namespaced alert in scope", () => expect(alertMatchesScope({ namespace: "monitoring" }, team)).toBe(true))
   it("namespaced alert out of scope", () => expect(alertMatchesScope({ namespace: "iam" }, team)).toBe(false))
   it("exported_namespace is honoured", () => expect(alertMatchesScope({ exported_namespace: "iam" }, team)).toBe(false))
-  // Documented fail-open: cluster-wide alerts have no namespace label.
-  it("cluster-wide alert is visible to a scoped user", () => expect(alertMatchesScope({}, team)).toBe(true))
-  it("cluster-wide alert is visible to a guest too", () => expect(alertMatchesScope({}, guest)).toBe(true))
+  it("cluster-wide alert is visible only to wildcard admin scope", () => {
+    expect(alertMatchesScope({}, admin)).toBe(true)
+    expect(alertMatchesScope({}, team)).toBe(false)
+    expect(alertMatchesScope({}, guest)).toBe(false)
+  })
 })
 
 describe("scopeFingerprint", () => {
@@ -119,6 +121,39 @@ describe("scopeFingerprint", () => {
 
   it("is a sha256 prefix, not a 32-bit rolling hash", () =>
     expect(scopeFingerprint(["developer"], [])).toMatch(/^[0-9a-f]{32}$/))
+
+  it("changes when argocdProjects, all flag, roleClass, or resolvedNamespaces differ", () => {
+    const base = scopeFingerprint(["developer"], ["team-a"], "default", ["team-a-ns"], {
+      all: false,
+      argocdProjects: ["beta"],
+      roleClass: "non-admin",
+    })
+    const revokedProject = scopeFingerprint(["developer"], ["team-a"], "default", ["team-a-ns"], {
+      all: false,
+      argocdProjects: ["alpha"],
+      roleClass: "non-admin",
+    })
+    const allFlag = scopeFingerprint(["developer"], ["team-a"], "default", ["team-a-ns"], {
+      all: true,
+      argocdProjects: ["beta"],
+      roleClass: "non-admin",
+    })
+    const adminClass = scopeFingerprint(["developer"], ["team-a"], "default", ["team-a-ns"], {
+      all: false,
+      argocdProjects: ["beta"],
+      roleClass: "admin",
+    })
+    const diffNs = scopeFingerprint(["developer"], ["team-a"], "default", ["team-a-ns", "team-c-ns"], {
+      all: false,
+      argocdProjects: ["beta"],
+      roleClass: "non-admin",
+    })
+
+    expect(revokedProject).not.toBe(base)
+    expect(allFlag).not.toBe(base)
+    expect(adminClass).not.toBe(base)
+    expect(diffNs).not.toBe(base)
+  })
 })
 
 const ns = (name: string, team?: string): LabelledNamespace => ({

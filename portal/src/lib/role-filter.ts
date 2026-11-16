@@ -132,21 +132,15 @@ export function projectMatchesScope(project: string, patterns: string[]): boolea
 // tenancy from different directions: a team owns namespaces, and ArgoCD projects
 // are scoped to namespaces. Requiring both would hide an app from the team that
 // owns it whenever only one of the two was configured.
-// Alerts carry their namespace in a label, or carry none at all when they are
-// cluster-wide. A namespace-less alert is currently shown to everyone with any
-// scope — that is a deliberate fail-open, because node and control-plane alerts
-// have no namespace and hiding them from every scoped user would leave the
-// timeline blind to exactly the failures that matter most.
-//
-// It is also the weakest point in the scoping story, and it lives here rather than
-// inline in each route so the default-deny decision tracked on #12 can be made in
-// one place instead of three.
+// Aligned with D-PORTAL-TENANT-SCOPE-678 (scope.ts alertVisible): namespace-less
+// alerts are visible only to wildcard (cluster-admin) scope.
 export function alertMatchesScope(
   labels: Record<string, string | undefined>,
   scope: Pick<UserScope, "namespaces">,
 ): boolean {
+  if (scope.namespaces.includes("*")) return true
   const ns = labels.namespace ?? labels.exported_namespace ?? ""
-  return !ns || namespaceMatchesScope(ns, scope.namespaces)
+  return Boolean(ns) && namespaceMatchesScope(ns, scope.namespaces)
 }
 
 // Stable fingerprint of a caller's effective scope, for cache keys.
@@ -178,17 +172,37 @@ export function alertMatchesScope(
 // before; a route that resolves a real per-request cluster_id can pass it
 // through once one exists to route between. A resolved namespace set may be appended
 // by API callers whose cache must retire immediately after live label-scope changes.
+// narwhal#678 (M2): `all`, sorted `argocdProjects`, and `roleClass` ("admin" vs
+// "non-admin") join the canonical input so every dimension that governs visibility
+// (including project grant revocations where claims and namespaces stay unchanged)
+// produces a distinct fingerprint.
+export interface ScopeFingerprintExtras {
+  all?: boolean
+  argocdProjects?: Iterable<string>
+  roleClass?: "admin" | "non-admin"
+}
+
 export function scopeFingerprint(
   groups: string[],
   teams: string[],
   clusterId: string = DEFAULT_CLUSTER_ID,
   resolvedNamespaces?: Iterable<string>,
+  extras?: ScopeFingerprintExtras,
 ): string {
+  const sortedGroups = [...groups].sort()
+  const sortedTeams = [...teams].sort()
+  const sortedNamespaces = resolvedNamespaces ? [...resolvedNamespaces].sort() : null
+  const all = extras?.all ?? false
+  const sortedProjects = extras?.argocdProjects ? [...extras.argocdProjects].sort() : []
+  const roleClass = extras?.roleClass ?? (sortedGroups.includes("cluster-admin") ? "admin" : "non-admin")
   const canonical = JSON.stringify([
-    [...groups].sort(),
-    [...teams].sort(),
+    sortedGroups,
+    sortedTeams,
     clusterId,
-    resolvedNamespaces ? [...resolvedNamespaces].sort() : null,
+    sortedNamespaces,
+    all,
+    sortedProjects,
+    roleClass,
   ])
   return createHash("sha256").update(canonical).digest("hex").slice(0, 32)
 }

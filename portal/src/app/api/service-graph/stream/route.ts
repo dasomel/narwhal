@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server"
-import { requireRole } from "@/lib/auth"
+import { requireAdmin } from "@/lib/auth"
 import { roleGateErrorResponse } from "@/lib/role-gate-response"
 import { buildWorkloadToServiceMap, resolveWorkload } from "@/lib/service-graph"
 import { startFlowStream } from "@/lib/hubble-stream"
@@ -12,7 +12,7 @@ export const dynamic = "force-dynamic"
 const TICK_MS = 2_000
 
 export async function GET(req: NextRequest) {
-  const gate = await requireRole("cluster-admin", "developer", "viewer")
+  const gate = await requireAdmin()
   if ("error" in gate) return roleGateErrorResponse(gate)
 
   const serviceMap = await buildWorkloadToServiceMap()
@@ -46,8 +46,8 @@ export async function GET(req: NextRequest) {
           if (!srcW || !dstW) return
           // waypoint Envoy 경유 구간은 원 흐름과 이중 집계되므로 제외
           if (srcW === "waypoint" || dstW === "waypoint") return
-          const srcId = resolveWorkload(srcW, serviceMap)
-          const dstId = resolveWorkload(dstW, serviceMap)
+          const srcId = resolveWorkload(srcW, serviceMap, flow.source?.namespace ?? undefined, true)
+          const dstId = resolveWorkload(dstW, serviceMap, flow.destination?.namespace ?? undefined, true)
           if (!srcId || !dstId || srcId === dstId) return
           const key = `${srcId}|${dstId}`
           buckets.set(key, (buckets.get(key) ?? 0) + 1)

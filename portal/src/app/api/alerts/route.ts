@@ -1,17 +1,19 @@
 import { NextResponse } from "next/server"
 import { getAlerts } from "@/lib/alertmanager"
 import { auth } from "@/lib/auth"
-import { requireSessionAccess } from "@/lib/scope"
+import { alertVisible, requireEffectiveScope } from "@/lib/scope"
 
 export const dynamic = "force-dynamic"
 
 export async function GET(request: Request) {
   const session = await auth()
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
-  const denied = await requireSessionAccess(session)
-  if (denied) return denied
 
   try {
+    const scoped = await requireEffectiveScope(session)
+    if ("denied" in scoped) return scoped.denied
+    const { scope } = scoped
+
     const { searchParams } = new URL(request.url)
     const severityParam = searchParams.get("severity")
 
@@ -30,7 +32,7 @@ export async function GET(request: Request) {
       )
     }
 
-    const alerts = await getAlerts()
+    const alerts = (await getAlerts()).filter((a) => alertVisible(a.labels, scope))
 
     const filtered = severityFilter
       ? alerts.filter((a) => a.labels.severity === severityFilter)

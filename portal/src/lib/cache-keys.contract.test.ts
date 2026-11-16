@@ -260,6 +260,18 @@ describe("cross-user/team/cluster cache leakage", () => {
     expect(cacheKeys.eventsTimeline("fp-team-a")).not.toBe(cacheKeys.eventsTimeline("fp-team-b"))
   })
 
+  it("hero, status, traces, and service-graph scoped keys differ per scope fingerprint", () => {
+    expect(cacheKeys.heroSummary("fp-team-a")).not.toBe(cacheKeys.heroSummary("fp-team-b"))
+    expect(cacheKeys.platformStatusScoped("fp-team-a")).not.toBe(cacheKeys.platformStatusScoped("fp-team-b"))
+    expect(cacheKeys.tracesScoped("fp-team-a", "svc")).not.toBe(cacheKeys.tracesScoped("fp-team-b", "svc"))
+    expect(cacheKeys.serviceGraphClusterScoped("fp-team-a", "7d", undefined)).not.toBe(
+      cacheKeys.serviceGraphClusterScoped("fp-team-b", "7d", undefined),
+    )
+    expect(cacheKeys.serviceGraphSvcScoped("fp-team-a", "svc", "7d")).not.toBe(
+      cacheKeys.serviceGraphSvcScoped("fp-team-b", "svc", "7d"),
+    )
+  })
+
   it("cost:v2 / cost:service:v2 / cost:trend:v2 keys differ per scope fingerprint", () => {
     expect(cacheKeys.costV2("cluster", "fp-a", "price-1")).not.toBe(cacheKeys.costV2("cluster", "fp-b", "price-1"))
     expect(cacheKeys.costServiceV2("fp-a", "ns", "svc", "price-1")).not.toBe(cacheKeys.costServiceV2("fp-b", "ns", "svc", "price-1"))
@@ -305,7 +317,7 @@ describe("cacheKeys builders reproduce the pre-existing key strings byte-for-byt
     expect(cacheKeys.falcoEvents(undefined, 60, 100)).toBe("falco:events:all:60:100")
     expect(cacheKeys.falcoCritical()).toBe("falco:critical")
     expect(cacheKeys.kisaComplianceList()).toBe("compliance:kisa:list")
-    expect(cacheKeys.heroSummary()).toBe("hero:summary")
+    expect(cacheKeys.heroSummary("fp")).toBe("hero:summary:fp")
     expect(cacheKeys.costV2("cluster", "fp", "price")).toBe("cost:v2:cluster:fp:price")
     expect(cacheKeys.costServiceV2("fp", "ns", "svc", "price")).toBe("cost:service:v2:fp:ns:svc:price")
     expect(cacheKeys.costTrendV2("namespace", "fp", "ns", "id", 7, "price")).toBe("cost:trend:v2:namespace:fp:ns:id:7:price")

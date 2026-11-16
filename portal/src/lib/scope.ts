@@ -137,6 +137,7 @@ export async function getEffectiveScope(session: ScopeSession, clusterId: string
   const groups = session.groups ?? []
   const teams = session.teams ?? []
   const scope = getVisibilityScope(groups, teams)
+  const roleClass: "admin" | "non-admin" = groups.includes("cluster-admin") ? "admin" : "non-admin"
 
   // A caller with no mapping and no team sees nothing, and asking the API for the
   // namespace list to prove that is wasted work. Teams without static mappings
@@ -148,7 +149,11 @@ export async function getEffectiveScope(session: ScopeSession, clusterId: string
       namespaces: empty.names,
       argocdProjects: scope.argocdProjects,
       hasMapping: false,
-      fingerprint: scopeFingerprint(groups, teams, clusterId),
+      fingerprint: scopeFingerprint(groups, teams, clusterId, [], {
+        all: false,
+        argocdProjects: scope.argocdProjects,
+        roleClass,
+      }),
       resolved: empty,
       clusterId,
     }
@@ -161,14 +166,19 @@ export async function getEffectiveScope(session: ScopeSession, clusterId: string
     namespaces: resolved.names,
     argocdProjects: scope.argocdProjects,
     hasMapping: resolved.all || resolved.names.size > 0 || scope.argocdProjects.length > 0,
-    // D2: resolved namespace labels can change while claims do not. Include the
-    // resolved set to retire scoped cache entries at the next namespace refresh; a
-    // provider scope revision could replace the current 30-second cache window.
+    // D2: resolved namespace labels and project mappings can change while claims
+    // do not. Fold every visibility dimension (all, sorted namespaces, sorted
+    // argocdProjects, roleClass) into the fingerprint to retire stale cache entries.
     fingerprint: scopeFingerprint(
       groups,
       teams,
       clusterId,
       resolved.all ? ["*"] : resolved.names,
+      {
+        all: resolved.all,
+        argocdProjects: scope.argocdProjects,
+        roleClass,
+      },
     ),
     resolved,
     clusterId,
@@ -191,15 +201,19 @@ export function appVisible(project: string, namespace: string, scope: EffectiveS
   return projectMatchesScope(project, scope.argocdProjects) || namespaceVisible(namespace, scope)
 }
 
-/**
- * Alerts carry their namespace in a label, or none at all when cluster-wide.
- *
- * A namespace-less alert stays visible to everyone: node and control-plane alerts have
- * no namespace, and hiding them from every scoped user would blind the timeline to the
- * failures that matter most. This is the weakest point in the scoping story and it is
- * deliberate; the default-deny decision is tracked on #12.
- */
+// D-PORTAL-TENANT-SCOPE-678: Alerts without a namespace label (node/cluster-level)
+// are visible to cluster-admin (scope.all) only; non-admins see only alerts whose
+// namespace or exported_namespace belongs to their effective namespaces.
+// Reason: node/cluster-level alerts expose node names, host IPs, and cluster-wide
+// internals across tenants; fail closed so non-admins cannot read another tenant's
+// or cluster-level alert metadata via /api/alerts, /api/hero, /api/status, /api/events,
+// or /api/my-apps.
+// Cost: scoped developers/viewers do not see cluster-wide/node alerts without a
+// namespace label.
+// Escape hatch: attach a tenant `namespace` label on alert rules intended for teams,
+// or grant `cluster-admin` where cluster-wide alert visibility is required.
 export function alertVisible(labels: Record<string, string | undefined>, scope: EffectiveScope): boolean {
+  if (scope.all) return true
   const ns = labels.namespace ?? labels.exported_namespace ?? ""
-  return !ns || namespaceVisible(ns, scope)
+  return Boolean(ns) && namespaceVisible(ns, scope)
 }

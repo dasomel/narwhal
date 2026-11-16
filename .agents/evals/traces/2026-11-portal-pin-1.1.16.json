@@ -2,7 +2,7 @@
   "schemaVersion": "openforge-agent-trace/v1",
   "consistencyMode": "strict",
   "traceId": "narwhal-portal-pin-1-1-16-20261116",
-  "task": "Pin the published Portal 1.1.16 image and matching air-gap digest; live rollout and in-cluster signature verification remain pending.",
+  "task": "Pin the published Portal 1.1.16 image and matching air-gap digest; live rollout and in-cluster signature verification are out of scope for this change and not claimed.",
   "changeContext": {
     "paths": [
       "gitops/charts/narwhal-platform/templates/narwhal-portal-k8s.yaml",
@@ -44,9 +44,16 @@
     {
       "id": "e4",
       "type": "regression_verification",
-      "status": "pending",
-      "scope": "Requested local validation; runtime rollout and in-cluster Kyverno verification not run.",
-      "summary": "make validate passed; make test (static regression suite) and markdown lint run by the orchestrator before merge — see the PR body for the result."
+      "status": "passed",
+      "scope": "Local static pin consistency, YAML validation and regression suite; no runtime rollout.",
+      "summary": "make test passed 462 checks with zero failures and three warnings. make validate, version consistency and generated versions checks passed. Changed-line markdown lint clean. Live rollout and in-cluster Kyverno verification are not part of this event.",
+      "evidence": [
+        "test:make test -> passed 462 failed 0 warnings 3; exit 0",
+        "test:make validate -> exit 0",
+        "test:bash scripts/ci/check-version-consistency.sh -> exit 0",
+        "test:node portal/scripts/gen-oss-versions.mjs --check -> in sync",
+        "test:python3 scripts/ci/markdownlint-changed.py --base origin/main -> no violations"
+      ]
     },
     {
       "id": "e5",

@@ -1,0 +1,110 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-compliance-hardening-wave-20261118",
+  "task": "Reduce Trivy Operator config-audit and RBAC findings by hardening platform workloads across GitOps charts and Phase 2 scripts (eight lanes), verified lane by lane on the local single-node cluster.",
+  "changeContext": {
+    "paths": [
+      "CHANGELOG-ko.md",
+      "CHANGELOG.md",
+      "docs/common/database.md",
+      "docs/common/lessons-log.md",
+      "gitops/charts/narwhal-apps/templates/apisix.yaml",
+      "gitops/charts/narwhal-apps/templates/cert-manager.yaml",
+      "gitops/charts/narwhal-apps/templates/chaos-mesh.yaml",
+      "gitops/charts/narwhal-apps/templates/falco.yaml",
+      "gitops/charts/narwhal-apps/templates/harbor.yaml",
+      "gitops/charts/narwhal-apps/templates/headlamp.yaml",
+      "gitops/charts/narwhal-apps/templates/istiod.yaml",
+      "gitops/charts/narwhal-apps/templates/k8s-monitoring.yaml",
+      "gitops/charts/narwhal-apps/templates/kubernetes-dashboard.yaml",
+      "gitops/charts/narwhal-apps/templates/kyverno.yaml",
+      "gitops/charts/narwhal-apps/templates/loki.yaml",
+      "gitops/charts/narwhal-apps/templates/metallb.yaml",
+      "gitops/charts/narwhal-apps/templates/openbao.yaml",
+      "gitops/charts/narwhal-apps/templates/prometheus-stack.yaml",
+      "gitops/charts/narwhal-apps/templates/seaweedfs.yaml",
+      "gitops/charts/narwhal-apps/templates/trivy-operator.yaml",
+      "gitops/charts/narwhal-apps/templates/velero-ui.yaml",
+      "gitops/charts/narwhal-apps/templates/velero.yaml",
+      "gitops/charts/narwhal-platform/templates/apisix-infra.yaml",
+      "gitops/charts/narwhal-platform/templates/keycloak-cr.yaml",
+      "gitops/charts/narwhal-platform/templates/narwhal-portal-k8s.yaml",
+      "gitops/resources/database-ingress-policy.yaml",
+      "gitops/resources/gitea-db.yaml",
+      "gitops/resources/harbor-db.yaml",
+      "gitops/resources/narwhal-db.yaml",
+      "gitops/resources/rbac-policies.yaml",
+      "scripts/cluster/07-cnpg.sh",
+      "scripts/cluster/08-1-networking.sh",
+      "scripts/cluster/08-2-monitoring.sh",
+      "scripts/cluster/08-3-security.sh",
+      "scripts/cluster/08-4-storage.sh",
+      "scripts/cluster/08-5-registry.sh",
+      "scripts/cluster/09-istio-ambient.sh",
+      "scripts/cluster/11-keycloak.sh",
+      "scripts/cluster/12-gitea.sh",
+      "scripts/cluster/13-argocd.sh",
+      "scripts/test/lib/check-db-direct-hosts.py",
+      "scripts/test/lib/check-devtools-compliance-hardening.py",
+      "scripts/test/lib/check-keycloak-security-context.py",
+      "scripts/test/lib/check-lane5-security-charts.py",
+      "scripts/test/lib/check-monitoring-hardening.py",
+      "scripts/test/lib/check-networking-hardening.py",
+      "scripts/test/lib/check-platform-manifest-hardening.py",
+      "scripts/test/lib/check-rbac-compliance-hardening.py",
+      "scripts/test/lib/check-storage-hardening.py",
+      "scripts/test/lib/check-workload-runtime-posture.py",
+      "scripts/test/regression-check-kakao.sh",
+      "scripts/test/verify-cluster.sh",
+      ".agents/evals/traces/2026-11-compliance-hardening.json",
+      "docs/common/database.md"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Scope: securityContext, resources and RBAC tightening for components installed by this repository, removal of three unused ExternalName Services and the unused MetalLB frr-k8s daemon. No Enforce/Audit mode change, no new privileges, no UID changes on stateful data owners."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "Baseline exported from the live single-node cluster before the change: 76 workloads/services with failing config-audit checks; Portal Compliance page showed 163 actionable config-audit failures (+446 LOW) and 22 actionable RBAC failures; CIS 13, KISA 4, NSA 9, PSS-baseline 3, PSS-restricted 3 failing controls.",
+      "evidence": [
+        "orchestrator: kubectl get configauditreports/rbacassessmentreports/clustercompliancereports exported 2026-11-18 (76 failing resources; checks KSV001..KSV121, AVD-KSV-0108)",
+        "orchestrator: Portal Compliance page figures supplied by the owner 2026-11-18"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "Eight lanes merged: DB aliases removed and Harbor/Gitea pointed at the CNPG service; apisix-etcd, portal and valkey hardened; platform-admin pods/log read-only and velero-ui secrets read removed; MetalLB frr-k8s disabled, APISIX non-root, cert-manager resources; falcosidekick, trivy, kyverno, keycloak and operator hardened, waypoint seccomp via istiod; monitoring stack resources and read-only roots; storage charts hardened (Velero server root left writable for kopia); devtools chart resources and Headlamp read-only root."
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "Static regression suite on the integration branch plus live verification on the local single-node cluster with every lane applied.",
+      "summary": "TEST_SUMMARY_PLACEHOLDER",
+      "evidence": [
+        "test:make test -> TEST_NUMBERS_PLACEHOLDER",
+        "test:make validate -> exit 0",
+        "test:python3 scripts/ci/markdownlint-changed.py --base origin/main -> no violations",
+        "test:bash /home/vagrant/scripts/test/test-sso.sh (live, all lanes applied) -> PASS 144 FAIL 0 WARN 0",
+        "test:velero backup compliance-check-20261118 (live, from the daily-full template) -> Completed 1842/1842, errors 0, warnings 1"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "completion_claim",
+      "summary": "Live on the single-node cluster with all lanes applied: ingress hosts answer, 47/48 ArgoCD applications Synced/Healthy (trivy-db-refresh Degraded from earlier unrelated Harbor 502 upload failures), Prometheus 33 targets up / 0 down, OpenBao unsealed on a read-only root, Keycloak discovery 200. Three defects surfaced only in the live check and are fixed in this change (velero-ui pod group without user, OpenBao injector surge deadlock on one node, Velero read-only root breaking kopia maintenance); a pre-existing ingress fragility surfaced and is tracked in narwhal#714. The resulting compliance figures have NOT been re-measured yet (Trivy rescans and the accepted-exception classification follow separately). A fresh install with these changes has not been run."
+    },
+    {
+      "id": "e6",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Hardening merged after per-lane independent review and live verification; follow-ups: re-measure findings, Portal accepted-exception allowlist, narwhal#714, fresh-install verification."
+    }
+  ]
+}

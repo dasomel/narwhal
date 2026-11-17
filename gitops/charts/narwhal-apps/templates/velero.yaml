@@ -25,23 +25,16 @@ spec:
             autodetect: false
             additionalLabels:
               release: prometheus-stack
-        # INCIDENT WORKAROUND (not part of the Trivy hardening pass): the cluster-wide
-        # kyverno add-default-securitycontext mutate policy injects pod-level
-        # runAsNonRoot:true on any pod lacking an explicit value. The velero image's
-        # default USER is 'cnb' (non-numeric, Cloud Native Buildpacks) so kubelet can't
-        # verify non-root -> CreateContainerConfigError on every new velero/node-agent
-        # pod (hit on rollout/reschedule, unrelated to any values here). Explicitly
-        # opt out so kyverno's mutation is a no-op, matching the documented fix pattern
-        # (mistakes log 2026-07-10) until a real fix lands in kyverno-policies
-        # (out of this chart's scope).
+        # Image USER `cnb:cnb` resolves to UID 1002 / GID 1000 in docker.io/velero/velero:v1.18.1
+        # (/etc/passwd: cnb:x:1002:1000::/home/cnb:/sbin/nologin; /home/cnb owned 1002:1000).
+        # Setting numeric runAsUser/runAsGroup satisfies kubelet's runAsNonRoot check (KSV012)
+        # without fsGroup so initContainer velero-plugin-for-aws (UID 65532) can still write /target.
         podSecurityContext:
-          runAsNonRoot: false
-        # Trivy KSV001/003 (verified container-level via helm template, retried now
-        # that the kyverno runAsNonRoot auto-injection is gone -- see the incident
-        # workaround above). No seccompProfile here: kyverno's add-default-seccomp
-        # mutate now injects it cluster-wide for the storage namespace (not
-        # excluded), so setting it here would just duplicate. Not forcing
-        # runAsNonRoot (KSV012): image USER is 'cnb' (non-numeric), still unverifiable.
+          runAsNonRoot: true
+          runAsUser: 1002
+          runAsGroup: 1000
+        # Trivy KSV001/003/012 (verified container-level via helm template). No seccompProfile here:
+        # kyverno's add-default-seccomp mutate injects it cluster-wide for the storage namespace.
         # readOnlyRootFilesystem is deliberately NOT set (KSV014 accepted): Velero's kopia
         # repository client writes its config under $HOME (/home/cnb/udmrepo), and the repo
         # maintenance Jobs inherit this securityContext. With a read-only root every
@@ -50,6 +43,9 @@ spec:
         # a full backup and a restore.
         containerSecurityContext:
           allowPrivilegeEscalation: false
+          runAsNonRoot: true
+          runAsUser: 1002
+          runAsGroup: 1000
           capabilities:
             drop:
               - ALL

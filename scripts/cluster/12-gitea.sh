@@ -131,6 +131,9 @@ helm upgrade --install gitea "$(chart gitea)" \
   --set containerSecurityContext.allowPrivilegeEscalation=false \
   --set containerSecurityContext.capabilities.drop[0]=ALL \
   --set containerSecurityContext.seccompProfile.type=RuntimeDefault \
+  --set containerSecurityContext.runAsNonRoot=true \
+  --set containerSecurityContext.runAsUser=1000 \
+  --set containerSecurityContext.runAsGroup=1000 \
   --set resources.requests.cpu=100m \
   --set resources.requests.memory=256Mi \
   --set resources.limits.cpu=500m \

@@ -3476,6 +3476,9 @@ PYEOF'
     python3 scripts/test/lib/check-lane5-security-charts.py --mutation-verify
   check R359 "Keycloak operator & CR securityContext (allowPrivilegeEscalation=false, runAsNonRoot=true, runAsUser=1000, drop ALL, RuntimeDefault; readOnlyRootFilesystem left unset pending live mount proof) with bootstrap/GitOps parity and idempotent stub-kubectl verification; 8 mutations caught" \
     python3 scripts/test/lib/check-keycloak-security-context.py --mutation-verify
+  # 2026-11-18 (D-MON-HARDENING): prometheus-stack, k8s-monitoring, loki resource requests/limits, readOnlyRootFilesystem, NET_RAW drop, and bootstrap parity
+  check R360 "monitoring stack compliance hardening: prometheus-node-exporter, kube-state-metrics, prometheusOperator, alertmanager, grafana (main + sidecars) have resources and readOnlyRootFilesystem where safe; alloy-logs configReloader synchronized, NET_RAW dropped, /tmp mounted; loki sidecar limits.cpu set; bootstrap parity in 08-2; 21 mutations caught (D-MON-HARDENING)" \
+    python3 scripts/test/lib/check-monitoring-hardening.py --mutation-verify
 }
 
 #=========================================

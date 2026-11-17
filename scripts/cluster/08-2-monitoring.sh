@@ -64,6 +64,17 @@ for attempt in 1 2 3 4 5; do
     --set prometheus.prometheusSpec.storageSpec.volumeClaimTemplate.spec.resources.requests.storage=10Gi \
     --set alertmanager.alertmanagerSpec.storage.volumeClaimTemplate.spec.storageClassName=nfs-csi \
     --set alertmanager.alertmanagerSpec.storage.volumeClaimTemplate.spec.resources.requests.storage=5Gi \
+    --set-json 'alertmanager.alertmanagerSpec.resources={"requests":{"cpu":"25m","memory":"64Mi"},"limits":{"cpu":"200m","memory":"256Mi"}}' \
+    --set-json 'prometheus-node-exporter.resources={"requests":{"cpu":"50m","memory":"64Mi"},"limits":{"cpu":"200m","memory":"128Mi"}}' \
+    --set-json 'prometheus-node-exporter.containerSecurityContext={"allowPrivilegeEscalation":false,"readOnlyRootFilesystem":true,"capabilities":{"drop":["ALL"]},"seccompProfile":{"type":"RuntimeDefault"}}' \
+    --set-json 'kube-state-metrics.resources={"requests":{"cpu":"25m","memory":"64Mi"},"limits":{"cpu":"200m","memory":"256Mi"}}' \
+    --set-json 'prometheusOperator.resources={"requests":{"cpu":"50m","memory":"128Mi"},"limits":{"cpu":"250m","memory":"256Mi"}}' \
+    --set-json 'prometheusOperator.prometheusConfigReloader.resources={"requests":{"cpu":"10m","memory":"32Mi"},"limits":{"cpu":"100m","memory":"64Mi"}}' \
+    --set-json 'grafana.resources={"requests":{"cpu":"50m","memory":"128Mi"},"limits":{"cpu":"250m","memory":"512Mi"}}' \
+    --set-json 'grafana.containerSecurityContext={"allowPrivilegeEscalation":false,"readOnlyRootFilesystem":true,"capabilities":{"drop":["ALL"]},"seccompProfile":{"type":"RuntimeDefault"}}' \
+    --set-json 'grafana.extraEmptyDirMounts=[{"name":"tmp","mountPath":"/tmp"}]' \
+    --set-json 'grafana.sidecar.resources={"requests":{"cpu":"25m","memory":"64Mi"},"limits":{"cpu":"100m","memory":"128Mi"}}' \
+    --set-json 'grafana.sidecar.securityContext={"allowPrivilegeEscalation":false,"readOnlyRootFilesystem":true,"capabilities":{"drop":["ALL"]},"seccompProfile":{"type":"RuntimeDefault"}}' \
     --set prometheus-node-exporter.tolerations[0].key=node-role.kubernetes.io/control-plane \
     --set prometheus-node-exporter.tolerations[0].operator=Exists \
     --set prometheus-node-exporter.tolerations[0].effect=NoSchedule; then
@@ -121,6 +132,20 @@ singleBinary:
     enabled: true
     storageClass: nfs-csi
     size: 10Gi
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      memory: 768Mi
+sidecar:
+  resources:
+    requests:
+      cpu: 10m
+      memory: 64Mi
+    limits:
+      cpu: 100m
+      memory: 192Mi
 read:
   replicas: 0
 write:
@@ -180,10 +205,101 @@ destinations:
 collectors:
   alloy-logs:
     presets: [small, daemonset, filesystem-log-reader]
+    alloy:
+      mounts:
+        extra:
+          - name: tmp
+            mountPath: /tmp
+      securityContext:
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        capabilities:
+          drop:
+            - ALL
+          add:
+            - CHOWN
+            - DAC_OVERRIDE
+            - FOWNER
+            - FSETID
+            - KILL
+            - SETGID
+            - SETUID
+            - SETPCAP
+            - NET_BIND_SERVICE
+            - SYS_CHROOT
+            - MKNOD
+            - AUDIT_WRITE
+            - SETFCAP
+        seccompProfile:
+          type: RuntimeDefault
+      configReloader:
+        resources:
+          requests:
+            cpu: 10m
+            memory: 32Mi
+          limits:
+            cpu: 100m
+            memory: 64Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          runAsNonRoot: true
+          runAsUser: 65534
+          capabilities:
+            drop:
+              - ALL
+          seccompProfile:
+            type: RuntimeDefault
+    controller:
+      volumes:
+        extra:
+          - name: tmp
+            emptyDir: {}
+    configReloader:
+      resources:
+        requests:
+          cpu: 10m
+          memory: 32Mi
+        limits:
+          cpu: 100m
+          memory: 64Mi
+      securityContext:
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        runAsNonRoot: true
+        runAsUser: 65534
+        capabilities:
+          drop:
+            - ALL
+        seccompProfile:
+          type: RuntimeDefault
 podLogsViaLoki:
   enabled: true
   collector: alloy-logs
   destinations: []
+alloy-operator:
+  podSecurityContext:
+    runAsNonRoot: true
+    runAsUser: 4242
+    runAsGroup: 4242
+    fsGroup: 4242
+    seccompProfile:
+      type: RuntimeDefault
+  securityContext:
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    capabilities:
+      drop:
+        - ALL
+    seccompProfile:
+      type: RuntimeDefault
+  resources:
+    requests:
+      cpu: 25m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi
 K8SMONVALUES
 
 K8S_MONITORING_OK=false

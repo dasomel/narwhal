@@ -23,12 +23,24 @@ admissionController:
   container:
     extraArgs:
       webhookTimeout: 5
+    resources:
+      limits:
+        cpu: 500m
 backgroundController:
   replicas: 1
+  resources:
+    limits:
+      cpu: 300m
 cleanupController:
   replicas: 1
+  resources:
+    limits:
+      cpu: 200m
 reportsController:
   replicas: 1
+  resources:
+    limits:
+      cpu: 300m
 config:
   webhooks:
     namespaceSelector:

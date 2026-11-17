@@ -41,6 +41,9 @@ spec:
               SECRET_TTL: 168h
         replicaCount: 2
         autoscaleEnabled: false
+        gateways:
+          seccompProfile:
+            type: RuntimeDefault
         global:
           defaultPodDisruptionBudget:
             enabled: false

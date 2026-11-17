@@ -9,7 +9,7 @@ English | [한국어](CHANGELOG-ko.md)
 
 ## [Unreleased]
 
-- **Harden Security & IAM workloads (`falcosidekick`, `trivy-operator`, `trivy-server`, `kyverno`, `keycloak`, `keycloak-operator`, and `devtools`/`monitoring` `waypoint` seccomp).** Adds non-root/capability/seccomp/CPU-limit defaults verified against the bundled Helm charts and Keycloak CRD, keeps `KSV014` (`readOnlyRootFilesystem`) unset on Keycloak until writable paths are live-tested, and adds an Audit Kyverno mutate rule for `istio-waypoint` Pods (R358/R359; offline-verified only, live cluster rollout pending).
+- **Harden Security & IAM workloads (`falcosidekick`, `trivy-operator`, `trivy-server`, `kyverno`, `keycloak`, `keycloak-operator`, and `waypoint` seccomp via istiod).** Adds non-root/capability/seccomp/CPU-limit defaults verified against the bundled Helm charts and Keycloak CRD, achieves bootstrap/GitOps parity for `kyverno` limits in `08-3-security.sh` and `istiod` `gateways.seccompProfile.type: RuntimeDefault` in `09-istio-ambient.sh` and `istiod.yaml`, and keeps `KSV014` (`readOnlyRootFilesystem`) unset on Keycloak until writable paths are live-tested (R358/R359; offline-verified only, live cluster rollout pending).
 
 - **Scope Kyverno signature Audit to the signed portal repository (#683).** Include `devtools`, exclude unsigned third-party/Narwhal images, and accept tag references without digest mutation; CycloneDX checks remain. Live check: third-party violations stopped, and Kyverno now reports the portal signature as not found — Cosign v3 stores it as an OCI referrer that Kyverno 1.18.1 does not verify (#684); Audit only.
 

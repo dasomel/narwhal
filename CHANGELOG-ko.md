@@ -9,7 +9,7 @@
 
 ## [Unreleased]
 
-- **Security & IAM 워크로드(`falcosidekick`, `trivy-operator`, `trivy-server`, `kyverno`, `keycloak`, `keycloak-operator`, `devtools`/`monitoring` `waypoint` seccomp) 보안 컨텍스트 및 CPU 제한 강화.** 번들 Helm 차트와 Keycloak CRD로 검증된 non-root·capability·seccomp·`limits.cpu` 설정을 적용하고(Keycloak `KSV014` `readOnlyRootFilesystem`은 쓰기 경로 라이브 검증 전까지 보류), `istio-waypoint` Pod용 Audit Kyverno mutate 규칙을 추가했다(R358/R359; 오프라인 검증만 완료, 라이브 클러스터 검증 대기).
+- **Security & IAM 워크로드(`falcosidekick`, `trivy-operator`, `trivy-server`, `kyverno`, `keycloak`, `keycloak-operator`, istiod 기반 `waypoint` seccomp) 보안 컨텍스트 및 CPU 제한 강화.** 번들 Helm 차트와 Keycloak CRD로 검증된 non-root·capability·seccomp·`limits.cpu` 설정을 적용하고, `08-3-security.sh`와 GitOps 간 `kyverno` CPU 제한 패리티 및 `09-istio-ambient.sh`와 `istiod.yaml` 간 `gateways.seccompProfile.type: RuntimeDefault` 패리티를 맞췄다(Keycloak `KSV014` `readOnlyRootFilesystem`은 쓰기 경로 라이브 검증 전까지 보류; R358/R359; 오프라인 검증만 완료, 라이브 클러스터 검증 대기).
 
 - **Kyverno 서명 Audit 대상을 서명 경로가 있는 포털 저장소로 한정함(#683).** `devtools`를 포함하고 미서명 타사·Narwhal 이미지는 제외하며 digest 변환 없이 태그를 허용한다. CycloneDX 검사는 유지한다. 라이브 확인: 타사 이미지 위반은 멈췄고, Kyverno는 포털 서명을 찾지 못한다고 보고한다. Cosign v3가 서명을 OCI referrer로 저장하는데 Kyverno 1.18.1이 이를 검증하지 못한다(#684). Audit 전용이다.
 

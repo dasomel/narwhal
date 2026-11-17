@@ -358,6 +358,13 @@ server:
         seccompProfile:
           type: RuntimeDefault
 injector:
+  # In-place rollout: the chart's per-node anti-affinity deadlocks a surge on one node
+  # (same setting as gitops/charts/narwhal-apps/templates/openbao.yaml).
+  strategy: |
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
   resources:
     requests:
       cpu: 25m

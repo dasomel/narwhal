@@ -9,6 +9,17 @@ English | [한국어](CHANGELOG-ko.md)
 
 ## [Unreleased]
 
+## [1.1.18] - 2026-11-18
+
+Patch release that separates reviewed, non-actionable compliance findings from actionable ones on the Compliance page
+and shows the result of a certificate renewal request (narwhal#713, narwhal#716).
+
+### Operator notes / behaviour changes
+
+- Compliance counters now show actionable findings; reviewed exceptions are still listed, labelled as accepted with a
+  reason. The exception list is fixed in code and documented in `docs/common/compliance-hardening.md`; anything not
+  listed stays actionable. No configuration is required.
+
 ### Added
 
 - **Reviewed Config Audit & RBAC compliance allowlist (`src/lib/compliance-accepted.ts`, `src/lib/compliance.ts`, `src/components/compliance/*`, `docs/common/compliance-hardening.md`):**
@@ -874,7 +885,8 @@ management dashboard built with Next.js 16 and React 19.
   - Skaffold development profile configured for live Hot Module Replacement (HMR) and container
     file syncing.
 
-[Unreleased]: https://github.com/dasomel/narwhal/compare/portal/v1.1.17...HEAD
+[Unreleased]: https://github.com/dasomel/narwhal/compare/portal/v1.1.18...HEAD
+[1.1.18]: https://github.com/dasomel/narwhal/compare/portal/v1.1.17...portal/v1.1.18
 [1.1.17]: https://github.com/dasomel/narwhal/compare/portal/v1.1.16...portal/v1.1.17
 [1.1.16]: https://github.com/dasomel/narwhal/compare/portal/v1.1.15...portal/v1.1.16
 [1.1.15]: https://github.com/dasomel/narwhal/compare/portal/v1.1.14...portal/v1.1.15

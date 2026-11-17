@@ -9,6 +9,17 @@
 
 ## [Unreleased]
 
+## [1.1.18] - 2026-11-18
+
+Compliance 화면에서 검토를 마친 조치 불가 항목과 조치 대상 항목을 구분하고, 인증서 갱신 요청의 결과를 표시하는 패치
+릴리스입니다 (narwhal#713, narwhal#716).
+
+### 운영자 참고 / 동작 변경
+
+- Compliance 카운터는 조치 대상 항목을 표시합니다. 검토를 마친 예외는 목록에 그대로 남고 사유와 함께 수용됨으로
+  표시됩니다. 예외 목록은 코드에 고정되어 있으며 `docs/common/compliance-hardening.md`에 문서화되어 있습니다. 목록에
+  없는 항목은 조치 대상으로 유지됩니다. 별도 설정은 필요하지 않습니다.
+
 ### 추가
 
 - **Config Audit 및 RBAC 검토 완료 예외(Risk-accepted / Upstream) 분류 (`src/lib/compliance-accepted.ts`, `src/lib/compliance.ts`, `src/components/compliance/*`, `docs/common/compliance-hardening.md`):**
@@ -828,7 +839,8 @@ Portal의 첫 번째 공개 릴리스.
     매니페스트(`deploy/kaniko-build-job.yaml`).
   - 실시간 핫 모듈 교체(HMR) 및 컨테이너 파일 동기화를 위해 구성된 Skaffold 개발 프로필.
 
-[Unreleased]: https://github.com/dasomel/narwhal/compare/portal/v1.1.17...HEAD
+[Unreleased]: https://github.com/dasomel/narwhal/compare/portal/v1.1.18...HEAD
+[1.1.18]: https://github.com/dasomel/narwhal/compare/portal/v1.1.17...portal/v1.1.18
 [1.1.17]: https://github.com/dasomel/narwhal/compare/portal/v1.1.16...portal/v1.1.17
 [1.1.16]: https://github.com/dasomel/narwhal/compare/portal/v1.1.15...portal/v1.1.16
 [1.1.15]: https://github.com/dasomel/narwhal/compare/portal/v1.1.14...portal/v1.1.15

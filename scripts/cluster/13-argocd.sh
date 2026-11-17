@@ -176,6 +176,12 @@ patch_resources() {
     -p="[{\"op\": \"add\", \"path\": \"/spec/template/spec/containers/0/resources\", \"value\": {\"requests\": {\"cpu\": \"${cpu_req}\", \"memory\": \"${mem_req}\"}, \"limits\": {\"cpu\": \"${cpu_lim}\", \"memory\": \"${mem_lim}\"}}}]"
 }
 
+patch_init_resources() {
+  local kind="$1" name="$2" idx="$3" cpu_req="$4" mem_req="$5" cpu_lim="$6" mem_lim="$7"
+  kubectl patch "$kind" "$name" -n devtools --type='json' \
+    -p="[{\"op\": \"add\", \"path\": \"/spec/template/spec/initContainers/${idx}/resources\", \"value\": {\"requests\": {\"cpu\": \"${cpu_req}\", \"memory\": \"${mem_req}\"}, \"limits\": {\"cpu\": \"${cpu_lim}\", \"memory\": \"${mem_lim}\"}}}]"
+}
+
 # application-controller carries the reconcile loop for every Application - by far the
 # largest consumer, and the one that was actually being OOM-killed.
 patch_resources statefulset argocd-application-controller 250m 512Mi 1000m 2Gi
@@ -187,6 +193,11 @@ patch_resources deployment  argocd-applicationset-controller 50m 128Mi 500m 512M
 patch_resources deployment  argocd-redis                   50m  64Mi  200m 256Mi
 patch_resources deployment  argocd-notifications-controller 25m 64Mi  200m 256Mi
 patch_resources deployment  argocd-dex-server              25m  64Mi  100m 128Mi
+
+# Set resource requests/limits on initContainers (Trivy KSV011/015/016/018)
+patch_init_resources deployment argocd-repo-server 0 10m 32Mi 100m 64Mi
+patch_init_resources deployment argocd-redis       0 10m 32Mi 100m 64Mi
+patch_init_resources deployment argocd-dex-server  0 10m 32Mi 100m 64Mi
 
 # Fix Istio ambient mesh + kubelet health probe conflict
 # In ambient mode, ztunnel intercepts ALL inbound pod traffic including kubelet probes.

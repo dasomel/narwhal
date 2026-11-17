@@ -51,10 +51,11 @@ spec:
               # Chart >= 0.43.0 omits -oidc-scopes=$(OIDC_SCOPES) unless hasScopes is true.
               hasScopes: true
         # Trivy KSV001/003/012/030/104: allowPrivilegeEscalation false, drop ALL caps,
-        # seccomp RuntimeDefault. Deep-merges with chart default (runAsNonRoot: true,
-        # privileged: false), which already satisfies KSV012 for the main container.
+        # seccomp RuntimeDefault, readOnlyRootFilesystem true. Deep-merges with chart
+        # default (runAsNonRoot: true, privileged: false), satisfying KSV012/014.
         securityContext:
           allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
           capabilities:
             drop:
               - ALL
@@ -68,6 +69,7 @@ spec:
             # force runAsNonRoot here too (Trivy flagged this initContainer separately).
             securityContext:
               allowPrivilegeEscalation: false
+              readOnlyRootFilesystem: true
               runAsNonRoot: true
               runAsUser: 100
               capabilities:
@@ -75,6 +77,13 @@ spec:
                   - ALL
               seccompProfile:
                 type: RuntimeDefault
+            resources:
+              requests:
+                cpu: 10m
+                memory: 16Mi
+              limits:
+                cpu: 100m
+                memory: 64Mi
             volumeMounts:
               - name: narwhal-ca
                 mountPath: /narwhal-ca

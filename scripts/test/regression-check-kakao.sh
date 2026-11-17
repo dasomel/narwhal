@@ -3479,6 +3479,8 @@ PYEOF'
   # 2026-11-18 (D-MON-HARDENING): prometheus-stack, k8s-monitoring, loki resource requests/limits, readOnlyRootFilesystem, NET_RAW drop, and bootstrap parity
   check R360 "monitoring stack compliance hardening: prometheus-node-exporter, kube-state-metrics, prometheusOperator, alertmanager, grafana (main + sidecars) have resources and readOnlyRootFilesystem where safe; alloy-logs configReloader synchronized, NET_RAW dropped, /tmp mounted; loki sidecar limits.cpu set; bootstrap parity in 08-2; 21 mutations caught (D-MON-HARDENING)" \
     python3 scripts/test/lib/check-monitoring-hardening.py --mutation-verify
+  check R362 "Storage charts (seaweedfs, openbao, velero, velero-ui) compliance hardening (non-root, emptyDir logs/tmp, readOnlyRootFilesystem, resources) and 08-4-storage.sh parity; 17 mutations caught" \
+    python3 scripts/test/lib/check-storage-hardening.py --mutation-verify
 }
 
 #=========================================

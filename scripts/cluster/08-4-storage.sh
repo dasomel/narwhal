@@ -42,6 +42,97 @@ ensure_s3_identities || { echo "ERROR: cannot ensure the SeaweedFS S3 identities
 
 # D-pvb-exclude (#431): the seaweedfs-master 'data-storage' volume is excluded from Velero fs-backup (root_squash
 # makes the PodVolumeBackup Cancel and hang the Backup); it is NOT protected by Velero.
+cat > /tmp/seaweedfs-values.yaml <<'EOF'
+master:
+  resources:
+    requests:
+      cpu: 25m
+      memory: 64Mi
+    limits:
+      memory: 256Mi
+  extraVolumes: |
+    - name: tmp
+      emptyDir: {}
+  extraVolumeMounts: |
+    - name: tmp
+      mountPath: /tmp
+  containerSecurityContext:
+    enabled: true
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    capabilities:
+      drop:
+        - ALL
+    seccompProfile:
+      type: RuntimeDefault
+volume:
+  resources:
+    requests:
+      cpu: 25m
+      memory: 64Mi
+    limits:
+      memory: 512Mi
+  extraVolumes: |
+    - name: tmp
+      emptyDir: {}
+  extraVolumeMounts: |
+    - name: tmp
+      mountPath: /tmp
+  containerSecurityContext:
+    enabled: true
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    capabilities:
+      drop:
+        - ALL
+    seccompProfile:
+      type: RuntimeDefault
+filer:
+  resources:
+    requests:
+      cpu: 50m
+      memory: 192Mi
+    limits:
+      memory: 1Gi
+  extraVolumes: |
+    - name: tmp
+      emptyDir: {}
+  extraVolumeMounts: |
+    - name: tmp
+      mountPath: /tmp
+  containerSecurityContext:
+    enabled: true
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    capabilities:
+      drop:
+        - ALL
+    seccompProfile:
+      type: RuntimeDefault
+s3:
+  resources:
+    requests:
+      cpu: 25m
+      memory: 96Mi
+    limits:
+      memory: 512Mi
+  extraVolumes: |
+    - name: tmp
+      emptyDir: {}
+  extraVolumeMounts: |
+    - name: tmp
+      mountPath: /tmp
+  containerSecurityContext:
+    enabled: true
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    capabilities:
+      drop:
+        - ALL
+    seccompProfile:
+      type: RuntimeDefault
+EOF
+
 SEAWEEDFS_OK=false
 for attempt in 1 2 3 4 5; do
   if helm upgrade --install seaweedfs "$(chart seaweedfs)" \
@@ -49,6 +140,7 @@ for attempt in 1 2 3 4 5; do
     --namespace storage \
     --create-namespace \
     --version 4.34.0 \
+    -f /tmp/seaweedfs-values.yaml \
     --set global.storageClass=nfs-csi \
     --set master.enabled=true \
     --set master.replicas=1 \
@@ -56,6 +148,7 @@ for attempt in 1 2 3 4 5; do
     --set master.data.size=1Gi \
     --set master.data.storageClass=nfs-csi \
     --set master.podSecurityContext.enabled=true \
+    --set master.podSecurityContext.runAsNonRoot=true \
     --set master.podSecurityContext.runAsUser=1000 \
     --set master.podSecurityContext.runAsGroup=1000 \
     --set master.podSecurityContext.fsGroup=1000 \
@@ -74,6 +167,7 @@ for attempt in 1 2 3 4 5; do
     --set filer.data.size=5Gi \
     --set filer.data.storageClass=nfs-csi \
     --set filer.podSecurityContext.enabled=true \
+    --set filer.podSecurityContext.runAsNonRoot=true \
     --set filer.podSecurityContext.runAsUser=1000 \
     --set filer.podSecurityContext.runAsGroup=1000 \
     --set filer.podSecurityContext.fsGroup=1000 \
@@ -82,12 +176,20 @@ for attempt in 1 2 3 4 5; do
     --set filer.s3.enabled=false \
     --set s3.enabled=true \
     --set s3.enableAuth=true \
-    --set s3.existingConfigSecret=seaweedfs-s3-config; then
+    --set s3.existingConfigSecret=seaweedfs-s3-config \
+    --set s3.podSecurityContext.enabled=true \
+    --set s3.podSecurityContext.runAsNonRoot=true \
+    --set s3.podSecurityContext.runAsUser=1000 \
+    --set s3.podSecurityContext.runAsGroup=1000 \
+    --set s3.podSecurityContext.fsGroup=1000 \
+    --set s3.podSecurityContext.fsGroupChangePolicy=OnRootMismatch \
+    --set s3.logs.type=emptyDir; then
     SEAWEEDFS_OK=true; break
   fi
   echo "SeaweedFS install attempt ${attempt}/5 failed, waiting 15s..."
   sleep 15
 done
+rm -f /tmp/seaweedfs-values.yaml
 if [ "${SEAWEEDFS_OK}" != true ]; then
   echo "ERROR: SeaweedFS install failed after 5 attempts." >&2
   exit 1
@@ -230,10 +332,46 @@ server:
     - name: userconfig-openbao-tls
       secret:
         secretName: openbao-tls
+    - name: tmp
+      emptyDir: {}
   volumeMounts:
     - name: userconfig-openbao-tls
       mountPath: /openbao/tls
       readOnly: true
+    - name: tmp
+      mountPath: /tmp
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  statefulSet:
+    securityContext:
+      container:
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        capabilities:
+          drop:
+            - ALL
+        seccompProfile:
+          type: RuntimeDefault
+injector:
+  resources:
+    requests:
+      cpu: 25m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 128Mi
+  securityContext:
+    container:
+      allowPrivilegeEscalation: false
+      readOnlyRootFilesystem: true
+      capabilities:
+        drop:
+          - ALL
 ui:
   enabled: true
 EOF
@@ -352,9 +490,39 @@ cat > /tmp/velero-values.yaml << EOF
 rbac:
   create: false
   clusterAdministrator: false
+podSecurityContext:
+  runAsNonRoot: false
+# No readOnlyRootFilesystem: kopia writes its repo config under \$HOME (see velero.yaml).
+containerSecurityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+      - ALL
+resources:
+  requests:
+    cpu: 50m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
 initContainers:
   - name: velero-plugin-for-aws
     image: velero/velero-plugin-for-aws:v1.14.1
+    securityContext:
+      runAsNonRoot: true
+      runAsUser: 65532
+      allowPrivilegeEscalation: false
+      readOnlyRootFilesystem: true
+      capabilities:
+        drop:
+          - ALL
+    resources:
+      requests:
+        cpu: 10m
+        memory: 32Mi
+      limits:
+        cpu: 100m
+        memory: 64Mi
     volumeMounts:
       - mountPath: /target
         name: plugins
@@ -389,7 +557,16 @@ kubectl:
 deployNodeAgent: true
 nodeAgent:
   podVolumePath: /var/lib/kubelet/pods
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
   privileged: true
+  podSecurityContext:
+    runAsNonRoot: false
   # D-datapath-labels (#422): mirrors gitops/charts/narwhal-apps/templates/velero.yaml (see comment there).
   extraArgs:
     - --node-agent-configmap=velero-node-agent-config

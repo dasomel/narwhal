@@ -3294,7 +3294,8 @@ assert sum(1 for l in code if re.search(r"\bexit 3\b", l)) == 1, "exit 3 must ap
 t=open("scripts/cluster/08-1-networking.sh").read()
 g=open("gitops/charts/narwhal-apps/templates/apisix.yaml").read()
 def mi(v): return int(v[:-2])*(1024 if v.endswith("Gi") else 1)
-f=[re.search(r"resources\.limits\.memory=(\d+(?:Mi|Gi))",t),re.search(r"resources\.requests\.memory=(\d+(?:Mi|Gi))",t)]
+ic=t[t.index("Install separately."):]  # the IC helm flags; earlier --set resources.* lines belong to other charts
+f=[re.search(r"resources\.limits\.memory=(\d+(?:Mi|Gi))",ic),re.search(r"resources\.requests\.memory=(\d+(?:Mi|Gi))",ic)]
 v=re.search(r"ingressController:.*?limits:\s*cpu: \S+\s*memory: (\d+(?:Mi|Gi))",t,re.S)
 gr=re.search(r"ingressController:.*?requests:\s*cpu:\s*\S+\s*memory: (\d+(?:Mi|Gi))",g,re.S)
 gl=re.search(r"ingressController:.*?limits:\s*cpu:\s*\S+\s*memory: (\d+(?:Mi|Gi))",g,re.S)

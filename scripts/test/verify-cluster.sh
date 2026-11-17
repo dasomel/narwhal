@@ -454,17 +454,14 @@ if should_run "database"; then
     fi
   fi
 
-  # ExternalName services for cross-namespace access
-  for svc_entry in "harbor-db-rw:devtools" "gitea-db-rw:devtools"; do
-    SVC_NAME="${svc_entry%%:*}"
-    SVC_NS="${svc_entry##*:}"
-    SVC_TYPE=$(kubectl get svc "${SVC_NAME}" -n "${SVC_NS}" -o jsonpath='{.spec.type}' 2>/dev/null || echo "")
-    if [ "${SVC_TYPE}" = "ExternalName" ]; then
-      pass "ExternalName svc ${SVC_NAME} (${SVC_NS}): exists"
-    else
-      fail "ExternalName svc ${SVC_NAME} (${SVC_NS}): ${SVC_TYPE:-not found}"
-    fi
-  done
+  # Consumers connect directly to the CNPG-owned read-write Service.
+  DB_SVC_TYPE=$(kubectl get svc narwhal-db-rw -n database -o jsonpath='{.spec.type}' 2>/dev/null || echo "")
+  DB_ENDPOINTS=$(kubectl get endpointslice -n database -l kubernetes.io/service-name=narwhal-db-rw -o jsonpath='{.items[*].endpoints[?(@.conditions.ready==true)].addresses[*]}' 2>/dev/null || echo "")
+  if [ "${DB_SVC_TYPE}" = "ClusterIP" ] && [ -n "${DB_ENDPOINTS}" ]; then
+    pass "Direct DB service narwhal-db-rw.database.svc.cluster.local: ready endpoints"
+  else
+    fail "Direct DB service: type=${DB_SVC_TYPE:-not found}, ready endpoints=${DB_ENDPOINTS:-none}"
+  fi
   echo ""
 fi
 

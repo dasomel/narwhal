@@ -29,7 +29,7 @@ spec:
         database:
           type: external
           external:
-            host: harbor-db-rw
+            host: narwhal-db-rw.database.svc.cluster.local
             port: 5432
             username: harbor
             # DB password loaded from existingSecret

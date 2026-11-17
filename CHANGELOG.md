@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 English | [한국어](CHANGELOG-ko.md)
 
 ## [Unreleased]
+- Connect Harbor/Gitea directly to CNPG, retire three DB ExternalName aliases, and bound CNPG operator resources (requests 50m/128Mi; limits 300m/256Mi).
 
 - **Scope Kyverno signature Audit to the signed portal repository (#683).** Include `devtools`, exclude unsigned third-party/Narwhal images, and accept tag references without digest mutation; CycloneDX checks remain. Live check: third-party violations stopped, and Kyverno now reports the portal signature as not found — Cosign v3 stores it as an OCI referrer that Kyverno 1.18.1 does not verify (#684); Audit only.
 

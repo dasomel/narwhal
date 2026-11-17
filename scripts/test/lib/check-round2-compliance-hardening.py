@@ -13,7 +13,8 @@ Pins:
    wait-apisix-admin and apisix-ingress-controller containers.
 4. storage/velero (velero.yaml & 08-4-storage.sh): pod & container runAsNonRoot=true,
    runAsUser=1002, runAsGroup=1000 (real cnb UID/GID), no fsGroup (keeps /target writable
-   for velero-plugin-for-aws UID 65532), no readOnlyRootFilesystem, nodeAgent untouched.
+   for velero-plugin-for-aws UID 65532), readOnlyRootFilesystem=true with /home/cnb emptyDir
+   (round 3 D-velero-rofs; chart mounts tmpdir at /tmp), nodeAgent untouched.
 5. Offline helm template renders when narwhal-airgap-bundle-*/charts is present.
 """
 import argparse
@@ -149,8 +150,14 @@ def _verify_velero(velero_yaml: str, storage_sh: str) -> None:
         assert csc.get("runAsNonRoot") is True, f"{label} velero containerSecurityContext.runAsNonRoot"
         assert csc.get("runAsUser") == 1002, f"{label} velero containerSecurityContext.runAsUser"
         assert csc.get("runAsGroup") == 1000, f"{label} velero containerSecurityContext.runAsGroup"
-        assert csc.get("readOnlyRootFilesystem") is not True, f"{label} velero must not set readOnlyRootFilesystem"
+        assert csc.get("readOnlyRootFilesystem") is True, f"{label} velero readOnlyRootFilesystem must be true"
         assert (csc.get("capabilities") or {}).get("drop") == ["ALL"], f"{label} velero drop ALL"
+        vols = {v["name"]: v for v in (vals.get("extraVolumes") or []) if isinstance(v, dict)}
+        mounts = {m["mountPath"]: m["name"] for m in (vals.get("extraVolumeMounts") or []) if isinstance(m, dict)}
+        assert "/tmp" not in mounts, f"{label} velero must not duplicate /tmp mount"
+        assert "/home/cnb" in mounts and vols.get(mounts["/home/cnb"], {}).get("emptyDir") == {}, (
+            f"{label} velero must mount emptyDir at /home/cnb"
+        )
 
         na_psc = (vals.get("nodeAgent") or {}).get("podSecurityContext") or {}
         assert na_psc.get("runAsNonRoot") is False, f"{label} nodeAgent must remain runAsNonRoot: false"
@@ -292,7 +299,9 @@ def verify_helm_renders(root: Path) -> bool:
     assert vc["securityContext"]["runAsNonRoot"] is True
     assert vc["securityContext"]["runAsUser"] == 1002
     assert vc["securityContext"]["runAsGroup"] == 1000
-    assert "readOnlyRootFilesystem" not in vc["securityContext"]
+    assert vc["securityContext"]["readOnlyRootFilesystem"] is True
+    vm_paths = [m["mountPath"] for m in vc["volumeMounts"]]
+    assert vm_paths.count("/home/cnb") == 1 and vm_paths.count("/tmp") == 1, vm_paths
     return True
 
 

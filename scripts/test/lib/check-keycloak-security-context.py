@@ -20,6 +20,7 @@ START_MARKER = "# D-KC-OPERATOR-LIVENESS:"
 END_MARKER = 'echo "Waiting for Keycloak Operator deployment..."'
 
 STUB_KUBECTL = r'''#!/usr/bin/env python3
+import copy
 import json
 import os
 import sys
@@ -35,6 +36,15 @@ def deep_merge(dst, src):
             deep_merge(dst[k], v)
         else:
             dst[k] = v
+
+def strategic_merge_list(dst_list, src_list, merge_key):
+    for item in src_list:
+        key_val = item.get(merge_key)
+        match = next((x for x in dst_list if x.get(merge_key) == key_val), None)
+        if match is not None:
+            deep_merge(match, item)
+        else:
+            dst_list.append(copy.deepcopy(item))
 
 if args[:3] == ["get", "deployment", "keycloak-operator"]:
     if "-o" in args:
@@ -55,11 +65,20 @@ if args[:3] == ["patch", "deployment", "keycloak-operator"]:
             patch_str = a.split("=", 1)[1]
     assert patch_str is not None, f"missing -p in {args}"
     patch_obj = json.loads(patch_str)
-    containers = dep["spec"]["template"]["spec"]["containers"]
-    for pc in patch_obj["spec"]["template"]["spec"]["containers"]:
+    pod_spec = dep["spec"]["template"]["spec"]
+    patch_pod_spec = patch_obj["spec"]["template"]["spec"]
+    if "volumes" in patch_pod_spec:
+        pod_spec.setdefault("volumes", [])
+        strategic_merge_list(pod_spec["volumes"], patch_pod_spec["volumes"], "name")
+    containers = pod_spec["containers"]
+    for pc in patch_pod_spec["containers"]:
         match = next((c for c in containers if c.get("name") == pc.get("name")), None)
         assert match is not None, f"missing container {pc.get('name')}"
-        deep_merge(match, pc)
+        pc_copy = copy.deepcopy(pc)
+        if "volumeMounts" in pc_copy:
+            match.setdefault("volumeMounts", [])
+            strategic_merge_list(match["volumeMounts"], pc_copy.pop("volumeMounts"), "mountPath")
+        deep_merge(match, pc_copy)
     state_path.write_text(json.dumps(dep))
     sys.exit(0)
 
@@ -67,7 +86,7 @@ raise AssertionError(f"unexpected kubectl args: {args}")
 '''
 
 
-def _assert_container_sc(sc: dict, where: str, errs: list[str]) -> None:
+def _assert_container_sc(sc: dict, where: str, errs: list[str], require_ro_rootfs: bool = False) -> None:
     if not isinstance(sc, dict):
         errs.append(f"{where}: securityContext missing")
         return
@@ -81,8 +100,22 @@ def _assert_container_sc(sc: dict, where: str, errs: list[str]) -> None:
         errs.append(f"{where}: securityContext.capabilities.drop must include ALL")
     if (sc.get("seccompProfile") or {}).get("type") != "RuntimeDefault":
         errs.append(f"{where}: securityContext.seccompProfile.type must be RuntimeDefault")
-    if sc.get("readOnlyRootFilesystem") is True:
-        errs.append(f"{where}: readOnlyRootFilesystem must stay unset until writable mounts are live-proven")
+    if require_ro_rootfs:
+        if sc.get("readOnlyRootFilesystem") is not True:
+            errs.append(f"{where}: securityContext.readOnlyRootFilesystem must be true")
+    elif sc.get("readOnlyRootFilesystem") is True:
+        errs.append(f"{where}: readOnlyRootFilesystem must stay unset (stock image re-augments at start)")
+
+
+def _assert_tmp_mount(pod_spec: dict, container: dict, where: str, errs: list[str]) -> None:
+    vols = [v for v in (pod_spec.get("volumes") or []) if isinstance(v, dict)]
+    tmp_vols = [v for v in vols if v.get("name") == "tmp"]
+    if len(tmp_vols) != 1 or tmp_vols[0].get("emptyDir") != {}:
+        errs.append(f"{where}: spec.volumes must contain exactly one 'tmp' emptyDir volume")
+    mounts = [m for m in (container.get("volumeMounts") or []) if isinstance(m, dict)]
+    tmp_mounts = [m for m in mounts if m.get("mountPath") == "/tmp"]
+    if len(tmp_mounts) != 1 or tmp_mounts[0].get("name") != "tmp":
+        errs.append(f"{where}: container volumeMounts must contain exactly one /tmp mount backed by 'tmp'")
 
 
 def _extract_operator_block(sh_text: str) -> str:
@@ -119,13 +152,15 @@ def check(sh_text: str, cr_text: str, run_stub: bool = True) -> list[str]:
     else:
         patch_json = m_patch.group(1).replace("${OPERATOR_CONTAINER}", "keycloak-operator")
         patch_obj = json.loads(patch_json)
-        op_c = patch_obj["spec"]["template"]["spec"]["containers"][0]
-        _assert_container_sc(op_c.get("securityContext"), "11-keycloak.sh:keycloak-operator", errs)
+        patch_spec = patch_obj["spec"]["template"]["spec"]
+        op_c = patch_spec["containers"][0]
+        _assert_container_sc(op_c.get("securityContext"), "11-keycloak.sh:keycloak-operator", errs, require_ro_rootfs=True)
+        _assert_tmp_mount(patch_spec, op_c, "11-keycloak.sh:keycloak-operator", errs)
         if (op_c.get("livenessProbe") or {}).get("httpGet", {}).get("path") != "/q/health/ready":
             errs.append("11-keycloak.sh: keycloak-operator livenessProbe path must remain /q/health/ready")
 
     if run_stub and not errs:
-        dep = {
+        dep_fresh = {
             "apiVersion": "apps/v1",
             "kind": "Deployment",
             "metadata": {"name": "keycloak-operator", "namespace": "iam"},
@@ -135,13 +170,32 @@ def check(sh_text: str, cr_text: str, run_stub: bool = True) -> list[str]:
                  "livenessProbe": {"httpGet": {"path": "/q/health/live", "port": 8080, "scheme": "HTTP"}}},
             ]}}},
         }
+        dep_existing_vol = {
+            "apiVersion": "apps/v1",
+            "kind": "Deployment",
+            "metadata": {"name": "keycloak-operator", "namespace": "iam"},
+            "spec": {"template": {"spec": {
+                "volumes": [
+                    {"name": "tmp", "emptyDir": {}},
+                    {"name": "extra", "emptyDir": {}},
+                ],
+                "containers": [
+                    {"name": "keycloak-operator", "image": "quay.io/keycloak/keycloak-operator:26.5.7",
+                     "volumeMounts": [
+                         {"name": "tmp", "mountPath": "/tmp"},
+                         {"name": "extra", "mountPath": "/extra"},
+                     ],
+                     "livenessProbe": {"httpGet": {"path": "/q/health/live", "port": 8080, "scheme": "HTTP"}}},
+                ],
+            }}},
+        }
         with tempfile.TemporaryDirectory() as td:
             td_path = Path(td)
             kb = td_path / "kubectl"
             kb.write_text(STUB_KUBECTL)
             kb.chmod(0o755)
             sf = td_path / "state.json"
-            sf.write_text(json.dumps(dep))
+            sf.write_text(json.dumps(dep_fresh))
             env = dict(os.environ, PATH=f"{td_path}:{os.environ['PATH']}", R359_STATE=str(sf))
             proc = subprocess.run(
                 ["bash", "-c", "set -euo pipefail\n" + block + "\n" + block],
@@ -151,9 +205,28 @@ def check(sh_text: str, cr_text: str, run_stub: bool = True) -> list[str]:
                 errs.append(f"11-keycloak.sh operator patch stub run failed: {proc.stderr}")
             else:
                 res = json.loads(sf.read_text())
-                if res["spec"]["template"]["spec"]["containers"][0] != {"name": "istio-proxy", "image": "istio/proxyv2:1.30.1"}:
+                res_spec = res["spec"]["template"]["spec"]
+                if res_spec["containers"][0] != {"name": "istio-proxy", "image": "istio/proxyv2:1.30.1"}:
                     errs.append("11-keycloak.sh operator patch touched sidecar container")
-                _assert_container_sc(res["spec"]["template"]["spec"]["containers"][1].get("securityContext"), "stub-result:keycloak-operator", errs)
+                op_res = res_spec["containers"][1]
+                _assert_container_sc(op_res.get("securityContext"), "stub-result:keycloak-operator", errs, require_ro_rootfs=True)
+                _assert_tmp_mount(res_spec, op_res, "stub-result:keycloak-operator", errs)
+
+            sf.write_text(json.dumps(dep_existing_vol))
+            proc2 = subprocess.run(
+                ["bash", "-c", "set -euo pipefail\n" + block],
+                env=env, capture_output=True, text=True, timeout=10,
+            )
+            if proc2.returncode != 0:
+                errs.append(f"11-keycloak.sh operator patch failed with pre-existing volumes: {proc2.stderr}")
+            else:
+                res2_spec = json.loads(sf.read_text())["spec"]["template"]["spec"]
+                _assert_container_sc(res2_spec["containers"][0].get("securityContext"), "stub-existing-vol:keycloak-operator", errs, require_ro_rootfs=True)
+                _assert_tmp_mount(res2_spec, res2_spec["containers"][0], "stub-existing-vol:keycloak-operator", errs)
+                if [v["name"] for v in res2_spec["volumes"]] != ["tmp", "extra"]:
+                    errs.append(f"11-keycloak.sh operator patch clobbered/duplicated volumes: {res2_spec['volumes']}")
+                if [m["mountPath"] for m in res2_spec["containers"][0]["volumeMounts"]] != ["/tmp", "/extra"]:
+                    errs.append(f"11-keycloak.sh operator patch clobbered/duplicated mounts: {res2_spec['containers'][0]['volumeMounts']}")
 
     # 2. Bootstrap & GitOps Keycloak CR parity
     boot_cr = _extract_bootstrap_cr(sh_text)
@@ -181,6 +254,9 @@ def main() -> int:
         sh_mutations = [
             ('"allowPrivilegeEscalation": false', '"allowPrivilegeEscalation": true'),
             ('"runAsNonRoot": true', '"runAsNonRoot": false'),
+            ('"readOnlyRootFilesystem": true', '"readOnlyRootFilesystem": false'),
+            ('"mountPath": "/tmp"', '"mountPath": "/var/tmp"'),
+            ('"name": "tmp"', '"name": "other"'),
             ('"drop": ["ALL"]', '"drop": []'),
             ("            securityContext:\n              allowPrivilegeEscalation: false", "            securityContext:\n              allowPrivilegeEscalation: true"),
             ("              runAsUser: 1000", "              runAsUser: 0"),

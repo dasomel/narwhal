@@ -501,12 +501,20 @@ podSecurityContext:
   runAsNonRoot: true
   runAsUser: 1002
   runAsGroup: 1000
-# No readOnlyRootFilesystem: kopia writes its repo config under \$HOME (see velero.yaml).
+# D-velero-rofs (KSV014): read-only root with a writable home (see velero.yaml).
+# Chart mounts its own tmpdir emptyDir at /tmp when readOnlyRootFilesystem=true; do not add a second /tmp mount.
+extraVolumes:
+  - name: velero-home
+    emptyDir: {}
+extraVolumeMounts:
+  - name: velero-home
+    mountPath: /home/cnb
 containerSecurityContext:
   allowPrivilegeEscalation: false
   runAsNonRoot: true
   runAsUser: 1002
   runAsGroup: 1000
+  readOnlyRootFilesystem: true
   capabilities:
     drop:
       - ALL

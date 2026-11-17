@@ -1,8 +1,11 @@
+import { en, type TranslationKey } from "./i18n"
 import type { AcceptedClass } from "@/types/compliance"
 
 export const COMPLIANCE_EXCEPTIONS_DOC_ANCHOR = "docs/common/compliance-hardening.md#risk-accepted-exceptions"
 
 export type WorkloadKind = "ReplicaSet" | "DaemonSet" | "StatefulSet"
+
+export type AcceptedReasonKey = Extract<TranslationKey, `compliance.acceptedReason.${string}`>
 
 export interface AcceptedConfigAuditRule {
   namespace: string
@@ -10,6 +13,7 @@ export interface AcceptedConfigAuditRule {
   name: string
   checks: ReadonlySet<string>
   class: AcceptedClass
+  reasonKey: AcceptedReasonKey
   reason: string
   docAnchor: string
 }
@@ -21,12 +25,14 @@ export interface AcceptedRbacRule {
   roleName: string
   checks: ReadonlySet<string>
   class: AcceptedClass
+  reasonKey: AcceptedReasonKey
   reason: string
   docAnchor: string
 }
 
 export interface AcceptedMatch {
   class: AcceptedClass
+  reasonKey: AcceptedReasonKey
   reason: string
   docAnchor: string
 }
@@ -50,12 +56,10 @@ export function normalizeCheckId(raw: string): string {
 /**
  * Strips the single Kubernetes pod-template-hash suffix from a ReplicaSet name so
  * rollout-induced hash changes stay matched without loosening name matching to substrings.
- * Requires either at least one digit in the 6-10 char suffix or Kubernetes' consonant-only
- * SafeEncodeString alphabet (8-10 chars) so real hyphenated suffixes like "-controller"
- * or "-cainjector" are never stripped.
+ * Matches only the Kubernetes SafeEncodeString alphabet (no vowels, no 0/1/3, 5-10 chars)
+ * so standalone names like "-abc12345" or hyphenated words like "-controller" are never stripped.
  */
-const REPLICASET_HASH_SUFFIX_RE =
-  /^(.+)-((?=[a-z0-9]*[0-9])[a-z0-9]{6,10}|[bcdfghjklmnpqrstvwxz]{8,10})$/
+const REPLICASET_HASH_SUFFIX_RE = /^(.+)-([bcdfghjklmnpqrstvwxz2456789]{5,10})$/
 
 export function normalizeWorkloadName(kind: string, name: string): string {
   if (kind !== "ReplicaSet") return name
@@ -73,7 +77,7 @@ function configRule(
   name: string,
   ids: readonly string[],
   cls: AcceptedClass,
-  reason: string,
+  reasonKey: AcceptedReasonKey,
 ): AcceptedConfigAuditRule {
   return {
     namespace,
@@ -81,7 +85,8 @@ function configRule(
     name,
     checks: checksSet(ids),
     class: cls,
-    reason,
+    reasonKey,
+    reason: en[reasonKey],
     docAnchor: COMPLIANCE_EXCEPTIONS_DOC_ANCHOR,
   }
 }
@@ -92,7 +97,7 @@ function rbacRule(
   roleName: string,
   ids: readonly string[],
   cls: AcceptedClass,
-  reason: string,
+  reasonKey: AcceptedReasonKey,
 ): AcceptedRbacRule {
   return {
     namespace,
@@ -100,15 +105,16 @@ function rbacRule(
     roleName,
     checks: checksSet(ids),
     class: cls,
-    reason,
+    reasonKey,
+    reason: en[reasonKey],
     docAnchor: COMPLIANCE_EXCEPTIONS_DOC_ANCHOR,
   }
 }
 
 /**
- * Reviewed per-workload, per-check Config Audit exceptions reconciled from the hardening lanes
- * (.omc/live/compliance/accept-tables.md). Exact match on (namespace, kind, normalized name,
- * normalized check ID); any unlisted check or workload stays actionable (fail closed).
+ * Reviewed per-workload, per-check Config Audit exceptions. Exact match on
+ * (namespace, kind, normalized name, normalized check ID); any unlisted check or
+ * workload stays actionable (fail closed).
  *
  * Adding or expanding an entry requires documented justification and review in
  * docs/common/compliance-hardening.md#risk-accepted-exceptions.
@@ -121,7 +127,7 @@ export const ACCEPTED_CONFIG_AUDIT_RULES: readonly AcceptedConfigAuditRule[] = [
     "chaos-daemon",
     ["KSV001", "KSV003", "KSV010", "KSV012", "KSV017", "KSV020", "KSV021", "KSV022", "KSV023", "KSV106", "KSV121"],
     "accept",
-    "Requires privileged, hostPID, /sys and containerd.sock hostPath, root UID 0, and capabilities to inject pod netns and I/O faults",
+    "compliance.acceptedReason.chaosDaemonAccept",
   ),
   configRule(
     "chaos-testing",
@@ -129,7 +135,7 @@ export const ACCEPTED_CONFIG_AUDIT_RULES: readonly AcceptedConfigAuditRule[] = [
     "chaos-daemon",
     ["KSV014"],
     "upstream",
-    "Upstream chaos-mesh 2.8.3 DaemonSet template does not expose readOnlyRootFilesystem",
+    "compliance.acceptedReason.chaosDaemonReadOnlyRootFs",
   ),
   configRule(
     "chaos-testing",
@@ -137,7 +143,7 @@ export const ACCEPTED_CONFIG_AUDIT_RULES: readonly AcceptedConfigAuditRule[] = [
     "chaos-controller-manager",
     ["KSV020", "KSV021"],
     "accept",
-    "Uses upstream chaos-mesh image default non-root UID/GID",
+    "compliance.acceptedReason.chaosControllerUid",
   ),
   configRule(
     "chaos-testing",
@@ -145,7 +151,7 @@ export const ACCEPTED_CONFIG_AUDIT_RULES: readonly AcceptedConfigAuditRule[] = [
     "chaos-controller-manager",
     ["KSV001", "KSV003", "KSV012", "KSV014", "KSV106"],
     "upstream",
-    "Upstream chaos-mesh 2.8.3 controller-manager template does not expose containerSecurityContext",
+    "compliance.acceptedReason.chaosControllerSecurityContext",
   ),
 
   // devtools
@@ -155,7 +161,7 @@ export const ACCEPTED_CONFIG_AUDIT_RULES: readonly AcceptedConfigAuditRule[] = [
     "argocd-applicationset-controller",
     ["KSV020", "KSV021"],
     "accept",
-    "Uses upstream ArgoCD image non-root UID/GID 999",
+    "compliance.acceptedReason.argocdUid999",
   ),
   configRule(
     "devtools",
@@ -163,7 +169,7 @@ export const ACCEPTED_CONFIG_AUDIT_RULES: readonly AcceptedConfigAuditRule[] = [
     "argocd-dex-server",
     ["KSV020", "KSV021"],
     "accept",
-    "Uses upstream ArgoCD dex-server and copyutil non-root UID/GID 999",
+    "compliance.acceptedReason.argocdCopyutilUid999",
   ),
   configRule(
     "devtools",
@@ -171,7 +177,7 @@ export const ACCEPTED_CONFIG_AUDIT_RULES: readonly AcceptedConfigAuditRule[] = [
     "argocd-notifications-controller",
     ["KSV020", "KSV021"],
     "accept",
-    "Uses upstream ArgoCD image non-root UID/GID 999",
+    "compliance.acceptedReason.argocdUid999",
   ),
   configRule(
     "devtools",
@@ -179,7 +185,7 @@ export const ACCEPTED_CONFIG_AUDIT_RULES: readonly AcceptedConfigAuditRule[] = [
     "argocd-redis",
     ["KSV020", "KSV021"],
     "accept",
-    "Uses upstream Valkey 8 Alpine image default UID/GID 999",
+    "compliance.acceptedReason.valkey8Uid999",
   ),
   configRule(
     "devtools",
@@ -187,7 +193,7 @@ export const ACCEPTED_CONFIG_AUDIT_RULES: readonly AcceptedConfigAuditRule[] = [
     "argocd-repo-server",
     ["KSV020", "KSV021"],
     "accept",
-    "Uses upstream ArgoCD repo-server and copyutil non-root UID/GID 999",
+    "compliance.acceptedReason.argocdRepoCopyutilUid999",
   ),
   configRule(
     "devtools",
@@ -195,7 +201,7 @@ export const ACCEPTED_CONFIG_AUDIT_RULES: readonly AcceptedConfigAuditRule[] = [
     "argocd-server",
     ["KSV020", "KSV021"],
     "accept",
-    "Uses upstream ArgoCD image non-root UID/GID 999",
+    "compliance.acceptedReason.argocdUid999",
   ),
   configRule(
     "devtools",
@@ -203,15 +209,15 @@ export const ACCEPTED_CONFIG_AUDIT_RULES: readonly AcceptedConfigAuditRule[] = [
     "gitea",
     ["KSV020", "KSV021"],
     "accept",
-    "Uses upstream Gitea rootless image default git UID/GID 1000",
+    "compliance.acceptedReason.giteaUid1000",
   ),
   configRule(
     "devtools",
     "ReplicaSet",
     "gitea",
-    ["KSV012", "KSV014"],
+    ["KSV014"],
     "upstream",
-    "Gitea rootless requires writable paths for SSH host keys, LevelDB queues, and git hooks; readOnlyRootFilesystem unsupported",
+    "compliance.acceptedReason.giteaReadOnlyRootFs",
   ),
   configRule(
     "devtools",
@@ -219,7 +225,7 @@ export const ACCEPTED_CONFIG_AUDIT_RULES: readonly AcceptedConfigAuditRule[] = [
     "harbor-core",
     ["KSV011", "KSV020", "KSV021"],
     "accept",
-    "Uses Harbor Photon OS UID/GID 10000; omits CPU limit to prevent probe timeouts/502 during scan job bursts (D-HARBOR-PROBES)",
+    "compliance.acceptedReason.harborCoreProbes",
   ),
   configRule(
     "devtools",
@@ -227,7 +233,7 @@ export const ACCEPTED_CONFIG_AUDIT_RULES: readonly AcceptedConfigAuditRule[] = [
     "harbor-core",
     ["KSV014"],
     "upstream",
-    "Harbor Photon OS image and chart 1.19.1 template do not support readOnlyRootFilesystem",
+    "compliance.acceptedReason.harborPhotonReadOnlyRootFs",
   ),
   configRule(
     "devtools",
@@ -235,7 +241,7 @@ export const ACCEPTED_CONFIG_AUDIT_RULES: readonly AcceptedConfigAuditRule[] = [
     "harbor-jobservice",
     ["KSV011", "KSV020", "KSV021"],
     "accept",
-    "Uses Harbor Photon OS UID/GID 10000; omits CPU limit to prevent throttling during job execution (D-HARBOR-PROBES)",
+    "compliance.acceptedReason.harborJobserviceProbes",
   ),
   configRule(
     "devtools",
@@ -243,7 +249,7 @@ export const ACCEPTED_CONFIG_AUDIT_RULES: readonly AcceptedConfigAuditRule[] = [
     "harbor-jobservice",
     ["KSV014"],
     "upstream",
-    "Harbor Photon OS image and chart 1.19.1 template do not support readOnlyRootFilesystem",
+    "compliance.acceptedReason.harborPhotonReadOnlyRootFs",
   ),
   configRule(
     "devtools",
@@ -251,7 +257,7 @@ export const ACCEPTED_CONFIG_AUDIT_RULES: readonly AcceptedConfigAuditRule[] = [
     "harbor-nginx",
     ["KSV020", "KSV021"],
     "accept",
-    "Uses Harbor Photon OS UID/GID 10000",
+    "compliance.acceptedReason.harborPhotonUid10000",
   ),
   configRule(
     "devtools",
@@ -259,7 +265,7 @@ export const ACCEPTED_CONFIG_AUDIT_RULES: readonly AcceptedConfigAuditRule[] = [
     "harbor-nginx",
     ["KSV014"],
     "upstream",
-    "Nginx temporary writes and Harbor chart 1.19.1 template do not support readOnlyRootFilesystem",
+    "compliance.acceptedReason.harborNginxReadOnlyRootFs",
   ),
   configRule(
     "devtools",
@@ -267,7 +273,7 @@ export const ACCEPTED_CONFIG_AUDIT_RULES: readonly AcceptedConfigAuditRule[] = [
     "harbor-portal",
     ["KSV020", "KSV021"],
     "accept",
-    "Uses Harbor Photon OS UID/GID 10000",
+    "compliance.acceptedReason.harborPhotonUid10000",
   ),
   configRule(
     "devtools",
@@ -275,7 +281,7 @@ export const ACCEPTED_CONFIG_AUDIT_RULES: readonly AcceptedConfigAuditRule[] = [
     "harbor-portal",
     ["KSV014"],
     "upstream",
-    "Nginx-based web UI and Harbor chart 1.19.1 template do not support readOnlyRootFilesystem",
+    "compliance.acceptedReason.harborPortalReadOnlyRootFs",
   ),
   configRule(
     "devtools",
@@ -283,7 +289,7 @@ export const ACCEPTED_CONFIG_AUDIT_RULES: readonly AcceptedConfigAuditRule[] = [
     "harbor-registry",
     ["KSV011", "KSV020", "KSV021"],
     "accept",
-    "Uses Harbor Photon OS UID/GID 10000; omits CPU limit to prevent probe timeouts on large image pushes (D-HARBOR-PROBES)",
+    "compliance.acceptedReason.harborRegistryProbes",
   ),
   configRule(
     "devtools",
@@ -291,7 +297,7 @@ export const ACCEPTED_CONFIG_AUDIT_RULES: readonly AcceptedConfigAuditRule[] = [
     "harbor-registry",
     ["KSV014"],
     "upstream",
-    "Harbor registry/registryctl chart 1.19.1 template does not support readOnlyRootFilesystem",
+    "compliance.acceptedReason.harborRegistryReadOnlyRootFs",
   ),
   configRule(
     "devtools",
@@ -299,7 +305,7 @@ export const ACCEPTED_CONFIG_AUDIT_RULES: readonly AcceptedConfigAuditRule[] = [
     "headlamp",
     ["KSV011", "KSV020", "KSV021"],
     "accept",
-    "Uses upstream Headlamp hardcoded UID 100/GID 101; omits CPU limit to avoid 1s probe timeouts under VM load",
+    "compliance.acceptedReason.headlampUidAndProbes",
   ),
   configRule(
     "devtools",
@@ -307,7 +313,7 @@ export const ACCEPTED_CONFIG_AUDIT_RULES: readonly AcceptedConfigAuditRule[] = [
     "kubernetes-dashboard-api",
     ["KSV020", "KSV021"],
     "accept",
-    "Uses Kubernetes Dashboard 7.14.0 chart default UID 1001/GID 2001",
+    "compliance.acceptedReason.k8sDashboardUid",
   ),
   configRule(
     "devtools",
@@ -315,7 +321,7 @@ export const ACCEPTED_CONFIG_AUDIT_RULES: readonly AcceptedConfigAuditRule[] = [
     "kubernetes-dashboard-auth",
     ["KSV020", "KSV021"],
     "accept",
-    "Uses Kubernetes Dashboard 7.14.0 chart default UID 1001/GID 2001",
+    "compliance.acceptedReason.k8sDashboardUid",
   ),
   configRule(
     "devtools",
@@ -323,7 +329,7 @@ export const ACCEPTED_CONFIG_AUDIT_RULES: readonly AcceptedConfigAuditRule[] = [
     "kubernetes-dashboard-kong",
     ["KSV020", "KSV021"],
     "accept",
-    "Uses Kong 2.52.0 chart default UID/GID 1000",
+    "compliance.acceptedReason.k8sDashboardKongUid",
   ),
   configRule(
     "devtools",
@@ -331,7 +337,7 @@ export const ACCEPTED_CONFIG_AUDIT_RULES: readonly AcceptedConfigAuditRule[] = [
     "kubernetes-dashboard-metrics-scraper",
     ["KSV020", "KSV021"],
     "accept",
-    "Uses Kubernetes Dashboard 7.14.0 chart default UID 1001/GID 2001",
+    "compliance.acceptedReason.k8sDashboardUid",
   ),
   configRule(
     "devtools",
@@ -339,7 +345,7 @@ export const ACCEPTED_CONFIG_AUDIT_RULES: readonly AcceptedConfigAuditRule[] = [
     "kubernetes-dashboard-web",
     ["KSV020", "KSV021"],
     "accept",
-    "Uses Kubernetes Dashboard 7.14.0 chart default UID 1001/GID 2001",
+    "compliance.acceptedReason.k8sDashboardUid",
   ),
   configRule(
     "devtools",
@@ -347,7 +353,7 @@ export const ACCEPTED_CONFIG_AUDIT_RULES: readonly AcceptedConfigAuditRule[] = [
     "narwhal-portal",
     ["KSV020", "KSV021"],
     "accept",
-    "Portal image fixes non-root nextjs:nodejs UID/GID 1001 in portal/Dockerfile",
+    "compliance.acceptedReason.portalUid1001",
   ),
   configRule(
     "devtools",
@@ -355,7 +361,7 @@ export const ACCEPTED_CONFIG_AUDIT_RULES: readonly AcceptedConfigAuditRule[] = [
     "narwhal-portal-valkey",
     ["KSV020", "KSV021"],
     "accept",
-    "Relies on upstream valkey:8-alpine default non-root UID/GID 999",
+    "compliance.acceptedReason.valkey8DefaultUid",
   ),
   configRule(
     "devtools",
@@ -363,7 +369,7 @@ export const ACCEPTED_CONFIG_AUDIT_RULES: readonly AcceptedConfigAuditRule[] = [
     "waypoint",
     ["KSV020", "KSV021"],
     "accept",
-    "Istio ambient waypoint proxy requires fixed non-root UID/GID 1337",
+    "compliance.acceptedReason.waypointUid1337",
   ),
   configRule(
     "devtools",
@@ -371,7 +377,7 @@ export const ACCEPTED_CONFIG_AUDIT_RULES: readonly AcceptedConfigAuditRule[] = [
     "argocd-application-controller",
     ["KSV020", "KSV021"],
     "accept",
-    "Uses upstream ArgoCD image non-root UID/GID 999",
+    "compliance.acceptedReason.argocdUid999",
   ),
   configRule(
     "devtools",
@@ -379,7 +385,7 @@ export const ACCEPTED_CONFIG_AUDIT_RULES: readonly AcceptedConfigAuditRule[] = [
     "harbor-redis",
     ["KSV020", "KSV021"],
     "accept",
-    "Uses Redis image default UID/GID 999",
+    "compliance.acceptedReason.harborRedisUid999",
   ),
   configRule(
     "devtools",
@@ -387,7 +393,7 @@ export const ACCEPTED_CONFIG_AUDIT_RULES: readonly AcceptedConfigAuditRule[] = [
     "harbor-redis",
     ["KSV014"],
     "upstream",
-    "Harbor chart 1.19.1 redis StatefulSet template does not expose readOnlyRootFilesystem",
+    "compliance.acceptedReason.harborRedisReadOnlyRootFs",
   ),
 
   // iam
@@ -395,17 +401,17 @@ export const ACCEPTED_CONFIG_AUDIT_RULES: readonly AcceptedConfigAuditRule[] = [
     "iam",
     "ReplicaSet",
     "keycloak-operator",
-    ["KSV014", "KSV020", "KSV021"],
+    ["KSV020", "KSV021"],
     "accept",
-    "Uses upstream keycloak-operator:26.5.7 UID 1000; KSV014 deferred pending Quarkus /tmp emptyDir live validation",
+    "compliance.acceptedReason.keycloakOperatorUid1000",
   ),
   configRule(
     "iam",
     "StatefulSet",
     "keycloak",
-    ["KSV014", "KSV020", "KSV021"],
+    ["KSV020", "KSV021"],
     "accept",
-    "Uses upstream keycloak:26.5.7 UID 1000; KSV014 deferred pending /opt/keycloak/data and $HOME/.keycloak live validation",
+    "compliance.acceptedReason.keycloakUid1000",
   ),
 
   // monitoring
@@ -415,7 +421,7 @@ export const ACCEPTED_CONFIG_AUDIT_RULES: readonly AcceptedConfigAuditRule[] = [
     "k8s-monitoring-alloy-logs",
     ["KSV012", "KSV020", "KSV021", "KSV023"],
     "accept",
-    "Requires root UID 0, recommended UID/GID ownership, and /var/log hostPath to collect node and pod logs",
+    "compliance.acceptedReason.alloyLogsAccept",
   ),
   configRule(
     "monitoring",
@@ -423,7 +429,7 @@ export const ACCEPTED_CONFIG_AUDIT_RULES: readonly AcceptedConfigAuditRule[] = [
     "k8s-monitoring-alloy-logs",
     ["KSV118"],
     "upstream",
-    "Upstream chart schema does not expose DaemonSet pod-level securityContext",
+    "compliance.acceptedReason.alloyLogsPodSecurityContext",
   ),
   configRule(
     "monitoring",
@@ -431,7 +437,7 @@ export const ACCEPTED_CONFIG_AUDIT_RULES: readonly AcceptedConfigAuditRule[] = [
     "prometheus-stack-prometheus-node-exporter",
     ["KSV009", "KSV010", "KSV023", "KSV121"],
     "accept",
-    "Requires hostNetwork, hostPID, and root/proc/sys hostPath mounts to collect host metrics",
+    "compliance.acceptedReason.nodeExporterAccept",
   ),
   configRule(
     "monitoring",
@@ -439,7 +445,7 @@ export const ACCEPTED_CONFIG_AUDIT_RULES: readonly AcceptedConfigAuditRule[] = [
     "k8s-monitoring-alloy-operator",
     ["KSV020", "KSV021"],
     "accept",
-    "Relies on upstream image fixed non-root UID/GID 4242",
+    "compliance.acceptedReason.alloyOperatorUid4242",
   ),
   configRule(
     "monitoring",
@@ -447,7 +453,7 @@ export const ACCEPTED_CONFIG_AUDIT_RULES: readonly AcceptedConfigAuditRule[] = [
     "prometheus-stack-grafana",
     ["KSV020", "KSV021"],
     "accept",
-    "Relies on upstream Grafana UID 472 and NFS persistent volume file ownership",
+    "compliance.acceptedReason.grafanaUid472",
   ),
   configRule(
     "monitoring",
@@ -455,7 +461,7 @@ export const ACCEPTED_CONFIG_AUDIT_RULES: readonly AcceptedConfigAuditRule[] = [
     "waypoint",
     ["KSV020", "KSV021"],
     "accept",
-    "Istio ambient waypoint proxy requires fixed non-root UID/GID 1337",
+    "compliance.acceptedReason.waypointUid1337",
   ),
   configRule(
     "monitoring",
@@ -463,7 +469,7 @@ export const ACCEPTED_CONFIG_AUDIT_RULES: readonly AcceptedConfigAuditRule[] = [
     "alertmanager-prometheus-stack-kube-prom-alertmanager",
     ["KSV020", "KSV021"],
     "accept",
-    "Relies on upstream Alertmanager UID 1000 and config-reloader UID 65534",
+    "compliance.acceptedReason.alertmanagerUid",
   ),
   configRule(
     "monitoring",
@@ -471,7 +477,7 @@ export const ACCEPTED_CONFIG_AUDIT_RULES: readonly AcceptedConfigAuditRule[] = [
     "loki",
     ["KSV011"],
     "accept",
-    "Omits main CPU limit intentionally to prevent CFS throttling timeouts on ingest/queries (D-MON-QOS-LOKI)",
+    "compliance.acceptedReason.lokiCpuLimit",
   ),
   configRule(
     "monitoring",
@@ -479,7 +485,7 @@ export const ACCEPTED_CONFIG_AUDIT_RULES: readonly AcceptedConfigAuditRule[] = [
     "prometheus-prometheus-stack-kube-prom-prometheus",
     ["KSV011", "KSV020", "KSV021"],
     "accept",
-    "Relies on Prometheus UID 1000/reloader UID 65534; omits CPU limit to avoid TSDB compaction probe timeouts (D-MON-QOS)",
+    "compliance.acceptedReason.prometheusUidAndCpuLimit",
   ),
 
   // platform-system
@@ -489,7 +495,7 @@ export const ACCEPTED_CONFIG_AUDIT_RULES: readonly AcceptedConfigAuditRule[] = [
     "metallb-speaker",
     ["KSV009", "KSV012", "KSV020", "KSV021", "KSV022", "KSV106", "KSV119"],
     "accept",
-    "Requires hostNetwork, NET_RAW/NET_ADMIN, and UID/GID 0 raw socket access for L2 ARP/NDP announcements",
+    "compliance.acceptedReason.metallbSpeakerAccept",
   ),
   configRule(
     "platform-system",
@@ -497,15 +503,7 @@ export const ACCEPTED_CONFIG_AUDIT_RULES: readonly AcceptedConfigAuditRule[] = [
     "apisix",
     ["KSV020", "KSV021"],
     "accept",
-    "Uses upstream APISIX image fixed UID/GID 636",
-  ),
-  configRule(
-    "platform-system",
-    "ReplicaSet",
-    "apisix",
-    ["KSV014"],
-    "upstream",
-    "Dynamically generates /usr/local/apisix/conf/nginx.conf at startup; emptyDir shadows packaged assets without initContainer copy",
+    "compliance.acceptedReason.apisixUid636",
   ),
   configRule(
     "platform-system",
@@ -513,7 +511,7 @@ export const ACCEPTED_CONFIG_AUDIT_RULES: readonly AcceptedConfigAuditRule[] = [
     "apisix-ingress-controller",
     ["KSV020", "KSV021"],
     "accept",
-    "Uses upstream image UID/GID 65532",
+    "compliance.acceptedReason.apisixControllerUid65532",
   ),
   configRule(
     "platform-system",
@@ -521,7 +519,7 @@ export const ACCEPTED_CONFIG_AUDIT_RULES: readonly AcceptedConfigAuditRule[] = [
     "apisix-ingress-controller",
     ["KSV011", "KSV015", "KSV016", "KSV018"],
     "upstream",
-    "Upstream chart 0.14.1 template does not expose resources fields for initContainers",
+    "compliance.acceptedReason.apisixControllerInitResources",
   ),
   configRule(
     "platform-system",
@@ -529,7 +527,7 @@ export const ACCEPTED_CONFIG_AUDIT_RULES: readonly AcceptedConfigAuditRule[] = [
     "cert-manager",
     ["KSV020", "KSV021"],
     "accept",
-    "Uses upstream cert-manager controller UID 1000/GID 65532",
+    "compliance.acceptedReason.certManagerUid",
   ),
   configRule(
     "platform-system",
@@ -537,7 +535,7 @@ export const ACCEPTED_CONFIG_AUDIT_RULES: readonly AcceptedConfigAuditRule[] = [
     "cert-manager-cainjector",
     ["KSV020", "KSV021"],
     "accept",
-    "Uses upstream cert-manager cainjector UID 1000/GID 65532",
+    "compliance.acceptedReason.certManagerCainjectorUid",
   ),
   configRule(
     "platform-system",
@@ -545,7 +543,7 @@ export const ACCEPTED_CONFIG_AUDIT_RULES: readonly AcceptedConfigAuditRule[] = [
     "cert-manager-webhook",
     ["KSV020", "KSV021"],
     "accept",
-    "Uses upstream cert-manager webhook UID 1000/GID 65532",
+    "compliance.acceptedReason.certManagerWebhookUid",
   ),
   configRule(
     "platform-system",
@@ -553,7 +551,7 @@ export const ACCEPTED_CONFIG_AUDIT_RULES: readonly AcceptedConfigAuditRule[] = [
     "metallb-controller",
     ["KSV021"],
     "accept",
-    "Uses upstream MetalLB controller nobody GID 65534",
+    "compliance.acceptedReason.metallbControllerGid",
   ),
   configRule(
     "platform-system",
@@ -561,15 +559,7 @@ export const ACCEPTED_CONFIG_AUDIT_RULES: readonly AcceptedConfigAuditRule[] = [
     "waypoint",
     ["KSV020", "KSV021"],
     "accept",
-    "Istio ambient waypoint proxy requires fixed non-root UID/GID 1337",
-  ),
-  configRule(
-    "platform-system",
-    "ReplicaSet",
-    "waypoint",
-    ["KSV030", "KSV104"],
-    "upstream",
-    "Kyverno excludes platform-system webhooks to prevent self-lockout; istiod gateways.seccompProfile is outside lane scope",
+    "compliance.acceptedReason.waypointUid1337",
   ),
 
   // security-system
@@ -577,9 +567,9 @@ export const ACCEPTED_CONFIG_AUDIT_RULES: readonly AcceptedConfigAuditRule[] = [
     "security-system",
     "DaemonSet",
     "falco",
-    ["KSV001", "KSV003", "KSV012", "KSV014", "KSV017", "KSV020", "KSV021", "KSV023", "KSV030", "KSV104", "KSV106", "KSV121"],
+    ["KSV001", "KSV003", "KSV012", "KSV017", "KSV020", "KSV021", "KSV023", "KSV030", "KSV104", "KSV106", "KSV121"],
     "accept",
-    "Requires privileged, root, hostPath (/boot,/etc,/proc,/usr,containerd.sock), and disabled seccomp for modern_ebpf instrumentation",
+    "compliance.acceptedReason.falcoAccept",
   ),
   configRule(
     "security-system",
@@ -587,7 +577,7 @@ export const ACCEPTED_CONFIG_AUDIT_RULES: readonly AcceptedConfigAuditRule[] = [
     "falco-falcosidekick",
     ["KSV020", "KSV021"],
     "accept",
-    "Keeps upstream falco 9.2.1 / falcosidekick 0.14.1 default UID/GID 1234",
+    "compliance.acceptedReason.falcosidekickUid",
   ),
   configRule(
     "security-system",
@@ -595,7 +585,7 @@ export const ACCEPTED_CONFIG_AUDIT_RULES: readonly AcceptedConfigAuditRule[] = [
     "trivy-operator",
     ["KSV020", "KSV021"],
     "accept",
-    "Keeps upstream trivy-operator:0.25.0 default UID/GID 10000",
+    "compliance.acceptedReason.trivyOperatorUid",
   ),
   configRule(
     "security-system",
@@ -603,7 +593,7 @@ export const ACCEPTED_CONFIG_AUDIT_RULES: readonly AcceptedConfigAuditRule[] = [
     "trivy-server",
     ["KSV021"],
     "accept",
-    "Upstream chart sets fsGroup 65534 with runAsUser 65534 and omits runAsGroup",
+    "compliance.acceptedReason.trivyServerGid",
   ),
 
   // storage
@@ -611,9 +601,9 @@ export const ACCEPTED_CONFIG_AUDIT_RULES: readonly AcceptedConfigAuditRule[] = [
     "storage",
     "DaemonSet",
     "node-agent",
-    ["KSV001", "KSV003", "KSV012", "KSV014", "KSV020", "KSV021", "KSV023", "KSV105", "KSV106"],
+    ["KSV001", "KSV003", "KSV012", "KSV020", "KSV021", "KSV023", "KSV105", "KSV106"],
     "accept",
-    "Requires privileged/UID 0 and /var/lib/kubelet hostPath mounts for kopia fs-backup",
+    "compliance.acceptedReason.veleroNodeAgentAccept",
   ),
   configRule(
     "storage",
@@ -621,7 +611,7 @@ export const ACCEPTED_CONFIG_AUDIT_RULES: readonly AcceptedConfigAuditRule[] = [
     "openbao-agent-injector",
     ["KSV020", "KSV021"],
     "accept",
-    "Uses upstream OpenBao image/chart default UID/GID 100/1000",
+    "compliance.acceptedReason.openbaoInjectorUid",
   ),
   configRule(
     "storage",
@@ -629,7 +619,7 @@ export const ACCEPTED_CONFIG_AUDIT_RULES: readonly AcceptedConfigAuditRule[] = [
     "seaweedfs-s3",
     ["KSV011", "KSV020", "KSV021"],
     "accept",
-    "Omits CPU limit to prevent S3 upload throttling (D-sw-qos) and uses seaweed UID/GID 1000",
+    "compliance.acceptedReason.seaweedfsS3",
   ),
   configRule(
     "storage",
@@ -637,7 +627,7 @@ export const ACCEPTED_CONFIG_AUDIT_RULES: readonly AcceptedConfigAuditRule[] = [
     "velero",
     ["KSV012", "KSV020", "KSV021"],
     "accept",
-    "Upstream velero:v1.18.1 non-numeric USER cnb (GID 65532) fails CreateContainerConfigError with runAsNonRoot: true",
+    "compliance.acceptedReason.veleroNonNumericUser",
   ),
   configRule(
     "storage",
@@ -645,7 +635,7 @@ export const ACCEPTED_CONFIG_AUDIT_RULES: readonly AcceptedConfigAuditRule[] = [
     "velero-ui",
     ["KSV020", "KSV021"],
     "accept",
-    "Uses upstream node image UID/GID 1000",
+    "compliance.acceptedReason.veleroUiUid",
   ),
   configRule(
     "storage",
@@ -653,7 +643,7 @@ export const ACCEPTED_CONFIG_AUDIT_RULES: readonly AcceptedConfigAuditRule[] = [
     "openbao",
     ["KSV020", "KSV021"],
     "accept",
-    "Uses upstream OpenBao UID/GID 100/1000 matching raft PVC ownership",
+    "compliance.acceptedReason.openbaoUid",
   ),
   configRule(
     "storage",
@@ -661,7 +651,7 @@ export const ACCEPTED_CONFIG_AUDIT_RULES: readonly AcceptedConfigAuditRule[] = [
     "seaweedfs-filer",
     ["KSV011", "KSV020", "KSV021"],
     "accept",
-    "Omits CPU limit to prevent upload throttling (D-sw-qos) and uses seaweed UID/GID 1000",
+    "compliance.acceptedReason.seaweedfsStateful",
   ),
   configRule(
     "storage",
@@ -669,7 +659,7 @@ export const ACCEPTED_CONFIG_AUDIT_RULES: readonly AcceptedConfigAuditRule[] = [
     "seaweedfs-master",
     ["KSV011", "KSV020", "KSV021"],
     "accept",
-    "Omits CPU limit to prevent upload throttling (D-sw-qos) and uses seaweed UID/GID 1000",
+    "compliance.acceptedReason.seaweedfsStateful",
   ),
   configRule(
     "storage",
@@ -677,7 +667,7 @@ export const ACCEPTED_CONFIG_AUDIT_RULES: readonly AcceptedConfigAuditRule[] = [
     "seaweedfs-volume",
     ["KSV011", "KSV012", "KSV020", "KSV021", "KSV023"],
     "accept",
-    "Requires root and hostPath for existing root-owned /ssd/object_store data; omits CPU limit (D-sw-qos) with UID/GID <= 10000",
+    "compliance.acceptedReason.seaweedfsVolume",
   ),
 ]
 
@@ -693,7 +683,7 @@ export const ACCEPTED_RBAC_RULES: readonly AcceptedRbacRule[] = [
     "platform-admin",
     ["KSV041", "KSV048", "KSV049", "KSV053", "KSV056"],
     "accept",
-    "Administrative privileges required by OIDC platform-admin role",
+    "compliance.acceptedReason.rbacPlatformAdmin",
   ),
   rbacRule(
     "",
@@ -701,7 +691,7 @@ export const ACCEPTED_RBAC_RULES: readonly AcceptedRbacRule[] = [
     "developer-workload-admin",
     ["KSV048", "KSV049", "KSV053", "KSV056"],
     "accept",
-    "Developer workload management privileges scoped solely via dev RoleBinding",
+    "compliance.acceptedReason.rbacDeveloperWorkloadAdmin",
   ),
   rbacRule(
     "devtools",
@@ -709,7 +699,7 @@ export const ACCEPTED_RBAC_RULES: readonly AcceptedRbacRule[] = [
     "narwhal-portal-jobs",
     ["KSV048"],
     "accept",
-    "Tuning and Kaniko build Jobs guarded by Kyverno admission policies",
+    "compliance.acceptedReason.rbacPortalJobs",
   ),
   rbacRule(
     "monitoring",
@@ -717,7 +707,7 @@ export const ACCEPTED_RBAC_RULES: readonly AcceptedRbacRule[] = [
     "narwhal-portal-notification-channels",
     ["KSV113"],
     "accept",
-    "Scoped to a single Secret name with get/update/patch verbs only",
+    "compliance.acceptedReason.rbacPortalNotificationChannels",
   ),
 ]
 
@@ -749,7 +739,12 @@ export function matchConfigAuditException(
   const normalizedCheck = normalizeCheckId(checkId)
   for (const rule of rules) {
     if (rule.checks.has(normalizedCheck)) {
-      return { class: rule.class, reason: rule.reason, docAnchor: rule.docAnchor }
+      return {
+        class: rule.class,
+        reasonKey: rule.reasonKey,
+        reason: rule.reason,
+        docAnchor: rule.docAnchor,
+      }
     }
   }
   return null
@@ -765,7 +760,12 @@ export function matchRbacException(
   const normalizedCheck = normalizeCheckId(checkId)
   for (const rule of rules) {
     if (rule.checks.has(normalizedCheck)) {
-      return { class: rule.class, reason: rule.reason, docAnchor: rule.docAnchor }
+      return {
+        class: rule.class,
+        reasonKey: rule.reasonKey,
+        reason: rule.reason,
+        docAnchor: rule.docAnchor,
+      }
     }
   }
   return null

@@ -24,6 +24,7 @@ export interface AuditCheck {
   /** Set when a failing check is covered by system/built-in acceptance or a reviewed exception. */
   accepted?: boolean
   acceptedClass?: AcceptedClass
+  acceptedReasonKey?: string
   acceptedReason?: string
   acceptedDocAnchor?: string
 }

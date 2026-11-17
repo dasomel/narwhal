@@ -1,6 +1,7 @@
 import fs from "node:fs"
 import path from "node:path"
 import { describe, expect, it } from "vitest"
+import { en, ko } from "./i18n"
 import {
   ACCEPTED_CONFIG_AUDIT_RULES,
   ACCEPTED_RBAC_RULES,
@@ -78,10 +79,21 @@ describe("normalizeWorkloadName", () => {
     expect(normalizeWorkloadName("ReplicaSet", "cert-manager-cainjector-7b66d49b8")).toBe(
       "cert-manager-cainjector",
     )
+    expect(normalizeWorkloadName("ReplicaSet", "harbor-core-bcdfg")).toBe("harbor-core")
     expect(normalizeWorkloadName("ReplicaSet", "cert-manager-cainjector")).toBe("cert-manager-cainjector")
     expect(normalizeWorkloadName("ReplicaSet", "apisix-ingress-controller")).toBe("apisix-ingress-controller")
     expect(normalizeWorkloadName("DaemonSet", "metallb-speaker")).toBe("metallb-speaker")
+    expect(normalizeWorkloadName("DaemonSet", "harbor-core-b569bd8dd")).toBe("harbor-core-b569bd8dd")
+    expect(normalizeWorkloadName("Deployment", "harbor-core-b569bd8dd")).toBe("harbor-core-b569bd8dd")
     expect(normalizeWorkloadName("StatefulSet", "seaweedfs-volume")).toBe("seaweedfs-volume")
+  })
+
+  it("does not strip standalone-looking suffixes containing vowels or 0/1/3 or wrong length", () => {
+    expect(normalizeWorkloadName("ReplicaSet", "harbor-core-abc12345")).toBe("harbor-core-abc12345")
+    expect(normalizeWorkloadName("ReplicaSet", "harbor-core-12345678")).toBe("harbor-core-12345678")
+    expect(normalizeWorkloadName("ReplicaSet", "harbor-core-00000000")).toBe("harbor-core-00000000")
+    expect(normalizeWorkloadName("ReplicaSet", "harbor-core-abcd")).toBe("harbor-core-abcd")
+    expect(normalizeWorkloadName("ReplicaSet", "harbor-core-bcdfghjklmn")).toBe("harbor-core-bcdfghjklmn")
   })
 })
 
@@ -92,13 +104,30 @@ describe("matchConfigAuditException", () => {
     expect(m1?.class).toBe("accept")
     expect(m1?.reason).toMatch(/privileged/i)
 
-    const m2 = matchConfigAuditException("devtools", "ReplicaSet", "harbor-core-999888777a", "KSV014")
+    const m2 = matchConfigAuditException("devtools", "ReplicaSet", "harbor-core-999888777b", "KSV014")
     expect(m2).not.toBeNull()
     expect(m2?.class).toBe("upstream")
 
     const m3 = matchConfigAuditException("devtools", "ReplicaSet", "narwhal-portal-74b459c658", "KSV020")
     expect(m3).not.toBeNull()
     expect(m3?.class).toBe("accept")
+  })
+
+  it("does NOT accept a standalone-looking ReplicaSet suffix like abc12345", () => {
+    expect(matchConfigAuditException("devtools", "ReplicaSet", "harbor-core-abc12345", "KSV014")).toBeNull()
+    expect(matchConfigAuditException("devtools", "ReplicaSet", "harbor-core-b569bd8dd", "KSV014")).not.toBeNull()
+  })
+
+  it("keeps removed deferred, out-of-scope, and mismatched-reason checks actionable", () => {
+    expect(matchConfigAuditException("iam", "ReplicaSet", "keycloak-operator-74b459c658", "KSV014")).toBeNull()
+    expect(matchConfigAuditException("iam", "StatefulSet", "keycloak", "KSV014")).toBeNull()
+    expect(matchConfigAuditException("platform-system", "ReplicaSet", "waypoint-74b459c658", "KSV030")).toBeNull()
+    expect(matchConfigAuditException("platform-system", "ReplicaSet", "waypoint-74b459c658", "KSV104")).toBeNull()
+    expect(matchConfigAuditException("devtools", "ReplicaSet", "gitea-6cf86848f7", "KSV012")).toBeNull()
+    expect(matchConfigAuditException("devtools", "ReplicaSet", "gitea-6cf86848f7", "KSV014")).not.toBeNull()
+    expect(matchConfigAuditException("platform-system", "ReplicaSet", "apisix-6c89749f58", "KSV014")).toBeNull()
+    expect(matchConfigAuditException("security-system", "DaemonSet", "falco", "KSV014")).toBeNull()
+    expect(matchConfigAuditException("storage", "DaemonSet", "node-agent", "KSV014")).toBeNull()
   })
 
   it("fails closed when a NEW check ID appears on an allowlisted workload", () => {
@@ -171,5 +200,21 @@ describe("allowlist integrity and docs parity", () => {
       reason: r.reason,
     }))
     expect(docRbacRows).toEqual(codeRbacRows)
+  })
+
+  it("provides en and ko translations in i18n.ts for every accepted reason key", () => {
+    const extraKeys = [
+      "compliance.acceptedReason.systemNamespace",
+      "compliance.acceptedReason.k8sBuiltinRole",
+      "compliance.acceptedReason.upstreamRbacRole",
+    ] as const
+    for (const key of extraKeys) {
+      expect(en[key].trim().length).toBeGreaterThan(0)
+      expect(ko[key]).toMatch(/[\uAC00-\uD7A3]/)
+    }
+    for (const rule of [...ACCEPTED_CONFIG_AUDIT_RULES, ...ACCEPTED_RBAC_RULES]) {
+      expect(en[rule.reasonKey]).toBe(rule.reason)
+      expect(ko[rule.reasonKey]).toMatch(/[\uAC00-\uD7A3]/)
+    }
   })
 })

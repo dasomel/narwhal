@@ -1,6 +1,6 @@
 import { requireDashboardAccess } from "@/lib/dashboard-access"
 import { getLocale } from "@/lib/i18n-server"
-import { t } from "@/lib/i18n"
+import { t, translateAcceptedReason } from "@/lib/i18n"
 import { translateTitle, translateRemediation } from "@/lib/check-translations"
 import { Badge } from "@/components/ui/badge"
 import type { RbacAuditDetail, Severity } from "@/types/compliance"
@@ -138,10 +138,10 @@ export default async function RbacAuditDetailPage({ params }: Props) {
               {check.description && (
                 <p className="text-xs text-muted-foreground mt-1">{check.description}</p>
               )}
-              {!check.success && check.accepted && check.acceptedReason && (
+              {!check.success && check.accepted && (check.acceptedReasonKey || check.acceptedReason) && (
                 <div className="mt-2 rounded bg-background/60 p-2 text-xs border border-border text-muted-foreground">
                   <span className="font-medium text-foreground">{t(locale, "compliance.check.acceptedReason")}: </span>
-                  {check.acceptedReason}
+                  {translateAcceptedReason(locale, check.acceptedReasonKey, check.acceptedReason)}
                 </div>
               )}
               {!check.success && check.remediation && (

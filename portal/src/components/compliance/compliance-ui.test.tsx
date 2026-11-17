@@ -1,6 +1,22 @@
 import { describe, expect, it, vi } from "vitest"
 import { renderToStaticMarkup } from "react-dom/server"
 
+const mockGetConfigAuditDetail = vi.hoisted(() => vi.fn())
+const mockGetRbacAuditDetail = vi.hoisted(() => vi.fn())
+const mockGetLocale = vi.hoisted(() => vi.fn(async () => "ko" as const))
+
+vi.mock("server-only", () => ({}))
+vi.mock("@/lib/dashboard-access", () => ({
+  requireDashboardAccess: vi.fn(async () => ({ user: { role: "cluster-admin" } })),
+}))
+vi.mock("@/lib/i18n-server", () => ({
+  getLocale: mockGetLocale,
+}))
+vi.mock("@/lib/compliance", () => ({
+  getConfigAuditDetail: mockGetConfigAuditDetail,
+  getRbacAuditDetail: mockGetRbacAuditDetail,
+}))
+
 vi.mock("@tanstack/react-query", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@tanstack/react-query")>()
   return {
@@ -11,6 +27,7 @@ vi.mock("@tanstack/react-query", async (importOriginal) => {
 
 import { useQuery } from "@tanstack/react-query"
 import { LocaleProvider } from "@/lib/i18n-client"
+import { ko, translateAcceptedReason } from "@/lib/i18n"
 import type {
   ComplianceSummary,
   ConfigAuditDetail,
@@ -21,6 +38,8 @@ import type {
 import { FailureCounters } from "./failure-counters"
 import { ConfigAuditTable, ExpandedConfigPanel } from "./config-audit-table"
 import { ExpandedRbacPanel, RbacAuditTable } from "./rbac-audit-table"
+import ConfigAuditDetailPage from "@/app/(dashboard)/compliance/config-audit/[ns]/[name]/page"
+import RbacAuditDetailPage from "@/app/(dashboard)/compliance/rbac-audit/[ns]/[name]/page"
 
 describe("Compliance UI accepted exceptions", () => {
   it("FailureCounters shows accepted count alongside actionable count in ko and en", () => {
@@ -117,6 +136,7 @@ describe("Compliance UI accepted exceptions", () => {
           success: false,
           accepted: true,
           acceptedClass: "accept",
+          acceptedReasonKey: "compliance.acceptedReason.portalUid1001",
           acceptedReason: "Portal image fixes non-root nextjs:nodejs UID/GID 1001 in portal/Dockerfile",
         },
         {
@@ -147,6 +167,14 @@ describe("Compliance UI accepted exceptions", () => {
     expect(html).toContain("Accepted")
     expect(html).toContain("Portal image fixes non-root nextjs:nodejs UID/GID 1001 in portal/Dockerfile")
     expect(html.indexOf("KSV014")).toBeLessThan(html.indexOf("KSV020"))
+
+    const koHtml = renderToStaticMarkup(
+      <LocaleProvider locale="ko">
+        <ExpandedConfigPanel namespace="devtools" name="narwhal-portal-74b459c658" />
+      </LocaleProvider>,
+    )
+    expect(koHtml).toContain(ko["compliance.acceptedReason.portalUid1001"])
+    expect(koHtml).not.toContain("Portal image fixes non-root")
   })
 
   it("RbacAuditTable and ExpandedRbacPanel surface accepted exception badges and reasons", () => {
@@ -202,6 +230,7 @@ describe("Compliance UI accepted exceptions", () => {
           success: false,
           accepted: true,
           acceptedClass: "accept",
+          acceptedReasonKey: "compliance.acceptedReason.rbacPlatformAdmin",
           acceptedReason: "Administrative privileges required by OIDC platform-admin role",
         },
         {
@@ -230,5 +259,74 @@ describe("Compliance UI accepted exceptions", () => {
     expect(panelHtml).toContain("KSV041")
     expect(panelHtml).toContain("Administrative privileges required by OIDC platform-admin role")
     expect(panelHtml.indexOf("KSV042")).toBeLessThan(panelHtml.indexOf("KSV041"))
+
+    const koPanelHtml = renderToStaticMarkup(
+      <LocaleProvider locale="ko">
+        <ExpandedRbacPanel namespace="" name="platform-admin" />
+      </LocaleProvider>,
+    )
+    expect(koPanelHtml).toContain(ko["compliance.acceptedReason.rbacPlatformAdmin"])
+    expect(koPanelHtml).not.toContain("Administrative privileges required")
+  })
+
+  it("ConfigAuditDetailPage and RbacAuditDetailPage translate accepted reasons in ko locale", async () => {
+    mockGetLocale.mockResolvedValue("ko")
+    mockGetConfigAuditDetail.mockResolvedValue({
+      namespace: "devtools",
+      kind: "ReplicaSet",
+      name: "narwhal-portal-74b459c658",
+      summary: { Critical: 0, High: 0, Medium: 0, Low: 1 },
+      accepted: false,
+      checks: [
+        {
+          id: "KSV020",
+          title: "Runs with UID <= 10000",
+          severity: "Low",
+          success: false,
+          accepted: true,
+          acceptedClass: "accept",
+          acceptedReasonKey: "compliance.acceptedReason.portalUid1001",
+          acceptedReason: "Portal image fixes non-root nextjs:nodejs UID/GID 1001 in portal/Dockerfile",
+        },
+      ],
+    })
+    mockGetRbacAuditDetail.mockResolvedValue({
+      namespace: "",
+      kind: "ClusterRole",
+      name: "platform-admin",
+      summary: { Critical: 1, High: 0, Medium: 0, Low: 0 },
+      accepted: true,
+      checks: [
+        {
+          id: "KSV041",
+          title: "Manage secrets",
+          severity: "Critical",
+          success: false,
+          accepted: true,
+          acceptedClass: "accept",
+          acceptedReasonKey: "compliance.acceptedReason.rbacPlatformAdmin",
+          acceptedReason: "Administrative privileges required by OIDC platform-admin role",
+        },
+      ],
+    })
+
+    const configPageEl = await ConfigAuditDetailPage({
+      params: Promise.resolve({ ns: "devtools", name: "narwhal-portal-74b459c658" }),
+    })
+    const configPageHtml = renderToStaticMarkup(configPageEl)
+    expect(configPageHtml).toContain(ko["compliance.acceptedReason.portalUid1001"])
+    expect(configPageHtml).not.toContain("Portal image fixes non-root")
+
+    const rbacPageEl = await RbacAuditDetailPage({
+      params: Promise.resolve({ ns: "", name: "platform-admin" }),
+    })
+    const rbacPageHtml = renderToStaticMarkup(rbacPageEl)
+    expect(rbacPageHtml).toContain(ko["compliance.acceptedReason.rbacPlatformAdmin"])
+    expect(rbacPageHtml).not.toContain("Administrative privileges required")
+
+    expect(translateAcceptedReason("ko", "compliance.acceptedReason.systemNamespace", "fallback")).toBe(
+      ko["compliance.acceptedReason.systemNamespace"],
+    )
+    expect(translateAcceptedReason("ko", undefined, "fallback")).toBe("fallback")
   })
 })

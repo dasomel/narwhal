@@ -133,10 +133,14 @@ describe("compliance accepted exceptions", () => {
     mockReadJsonWithPolicy.mockReset()
   })
 
-  it("treats chaos-mesh and kubernetes-dashboard as upstream RBAC roles", () => {
+  it("treats exact chaos-mesh and kubernetes-dashboard chart roles as upstream RBAC roles without over-matching authored roles", () => {
     expect(isAcceptedRbacRole("chaos-mesh-chaos-controller-manager-control-plane")).toBe(true)
     expect(isAcceptedRbacRole("chaos-mesh-chaos-controller-manager-target-namespace")).toBe(true)
+    expect(isAcceptedRbacRole("kubernetes-dashboard-api")).toBe(true)
     expect(isAcceptedRbacRole("kubernetes-dashboard-web")).toBe(true)
+    expect(isAcceptedRbacRole("kubernetes-dashboard-metrics-scraper")).toBe(true)
+    expect(isAcceptedRbacRole("platform-admin-chaos-mesh")).toBe(false)
+    expect(isAcceptedRbacRole("developer-kubernetes-dashboard-admin")).toBe(false)
     expect(isAcceptedRbacRole("platform-admin")).toBe(false)
     expect(isAcceptedRbacRole("platform-admin-extra")).toBe(false)
     expect(isAcceptedRbacRole("velero-ui-custom-role")).toBe(false)
@@ -160,7 +164,7 @@ describe("compliance accepted exceptions", () => {
           makeCar({
             namespace: "devtools",
             kind: "ReplicaSet",
-            name: "harbor-core-99a8b7c6d",
+            name: "harbor-core-99b8c7d6f",
             checks: [
               { checkID: "AVD-KSV-0014", severity: "HIGH", success: false },
               { checkID: "KSV011", severity: "LOW", success: false },
@@ -215,7 +219,7 @@ describe("compliance accepted exceptions", () => {
     expect(byName.get("cilium")?.accepted).toBe(true)
     expect(byName.get("cilium")?.acceptedScope).toBe("system")
 
-    const harborCore = byName.get("harbor-core-99a8b7c6d")!
+    const harborCore = byName.get("harbor-core-99b8c7d6f")!
     expect(harborCore.accepted).toBe(true)
     expect(harborCore.actionableSummary).toEqual({ Critical: 0, High: 0, Medium: 0, Low: 0 })
     expect(harborCore.acceptedSummary).toEqual({ Critical: 0, High: 1, Medium: 0, Low: 2 })
@@ -247,6 +251,7 @@ describe("compliance accepted exceptions", () => {
     expect(ksv014?.accepted).toBe(false)
     expect(ksv020?.accepted).toBe(true)
     expect(ksv020?.acceptedClass).toBe("accept")
+    expect(ksv020?.acceptedReasonKey).toBe("compliance.acceptedReason.portalUid1001")
     expect(ksv020?.acceptedReason).toBeTruthy()
   })
 
@@ -370,6 +375,9 @@ describe("compliance accepted exceptions", () => {
     const paDetail = await getRbacAuditDetail("", "platform-admin")
     expect(paDetail?.checks.find((c) => c.id === "KSV042")?.accepted).toBe(false)
     expect(paDetail?.checks.find((c) => c.id === "KSV041")?.accepted).toBe(true)
+    expect(paDetail?.checks.find((c) => c.id === "KSV041")?.acceptedReasonKey).toBe(
+      "compliance.acceptedReason.rbacPlatformAdmin",
+    )
     expect(paDetail?.checks.find((c) => c.id === "KSV041")?.acceptedReason).toBeTruthy()
 
     const summary = await getComplianceSummary()
@@ -386,5 +394,115 @@ describe("compliance accepted exceptions", () => {
     expect(summary.totalRbacFailures).toEqual({ Critical: 1, High: 0, Medium: 2, Low: 0 })
     // - accepted: jobs (M:1) + notif (M:1) + k8s-dash (M:1) + platform-admin (C:1,H:2,M:2) + dev-workload (H:2,M:2) + chaos-mesh (C:1)
     expect(summary.acceptedRbacFailures).toEqual({ Critical: 2, High: 4, Medium: 7, Low: 0 })
+  })
+
+  it("fails closed when summary counts exceed checks[] (e.g. Critical 1 / High 1 with only one accepted High check)", async () => {
+    installK8sMock({
+      "/apis/aquasecurity.github.io/v1alpha1/configauditreports": {
+        items: [
+          {
+            metadata: {
+              name: "replicaset-harbor-core-b569bd8dd",
+              namespace: "devtools",
+              creationTimestamp: "2026-11-18T00:00:00Z",
+              labels: {
+                "trivy-operator.resource.kind": "ReplicaSet",
+                "trivy-operator.resource.name": "harbor-core-b569bd8dd",
+              },
+            },
+            report: {
+              summary: { criticalCount: 1, highCount: 1, mediumCount: 0, lowCount: 0 },
+              checks: [{ checkID: "KSV014", title: "Root FS", severity: "HIGH", success: false }],
+            },
+          },
+          // Also verify checks > summary mismatch is not accepted
+          {
+            metadata: {
+              name: "replicaset-harbor-nginx-67d8f97945",
+              namespace: "devtools",
+              creationTimestamp: "2026-11-18T00:00:00Z",
+              labels: {
+                "trivy-operator.resource.kind": "ReplicaSet",
+                "trivy-operator.resource.name": "harbor-nginx-67d8f97945",
+              },
+            },
+            report: {
+              summary: { criticalCount: 0, highCount: 1, mediumCount: 0, lowCount: 0 },
+              checks: [
+                { checkID: "KSV014", title: "Root FS", severity: "HIGH", success: false },
+                { checkID: "KSV014", title: "Root FS", severity: "HIGH", success: false },
+              ],
+            },
+          },
+          // Standalone-looking ReplicaSet suffix abc12345 stays actionable
+          makeCar({
+            namespace: "devtools",
+            kind: "ReplicaSet",
+            name: "harbor-core-abc12345",
+            checks: [{ checkID: "KSV014", severity: "HIGH", success: false }],
+          }),
+        ],
+      },
+      "/apis/aquasecurity.github.io/v1alpha1/rbacassessmentreports": {
+        items: [
+          {
+            metadata: {
+              name: "hash-narwhal-portal-jobs",
+              namespace: "devtools",
+              creationTimestamp: "2026-11-18T00:00:00Z",
+              labels: {
+                "trivy-operator.resource.kind": "Role",
+                "trivy-operator.resource.name": "narwhal-portal-jobs",
+              },
+              ownerReferences: [{ kind: "Role", name: "narwhal-portal-jobs" }],
+            },
+            report: {
+              summary: { criticalCount: 1, highCount: 0, mediumCount: 1, lowCount: 0 },
+              checks: [{ checkID: "KSV048", title: "Manage workloads", severity: "MEDIUM", success: false }],
+            },
+          },
+        ],
+      },
+      "/apis/aquasecurity.github.io/v1alpha1/clusterrbacassessmentreports": {
+        items: [
+          makeRbac({
+            kind: "ClusterRole",
+            roleName: "platform-admin-chaos-mesh",
+            checks: [{ checkID: "KSV041", severity: "CRITICAL", success: false }],
+          }),
+          makeRbac({
+            kind: "ClusterRole",
+            roleName: "developer-kubernetes-dashboard-admin",
+            checks: [{ checkID: "KSV041", severity: "CRITICAL", success: false }],
+          }),
+        ],
+      },
+    })
+
+    const carRows = await getConfigAuditList()
+    const harborMismatch = carRows.find((r) => r.name === "harbor-core-b569bd8dd")!
+    expect(harborMismatch.accepted).toBe(false)
+    expect(harborMismatch.actionableSummary).toEqual({ Critical: 1, High: 0, Medium: 0, Low: 0 })
+    expect(harborMismatch.acceptedSummary).toEqual({ Critical: 0, High: 1, Medium: 0, Low: 0 })
+
+    const harborOvercount = carRows.find((r) => r.name === "harbor-nginx-67d8f97945")!
+    expect(harborOvercount.accepted).toBe(false)
+
+    const standaloneRs = carRows.find((r) => r.name === "harbor-core-abc12345")!
+    expect(standaloneRs.accepted).toBe(false)
+    expect(standaloneRs.actionableSummary).toEqual({ Critical: 0, High: 1, Medium: 0, Low: 0 })
+
+    const rbacRows = await getRbacAuditList()
+    const rbacMismatch = rbacRows.find((r) => r.name === "narwhal-portal-jobs")!
+    expect(rbacMismatch.accepted).toBe(false)
+    expect(rbacMismatch.actionableSummary).toEqual({ Critical: 1, High: 0, Medium: 0, Low: 0 })
+    expect(rbacMismatch.acceptedSummary).toEqual({ Critical: 0, High: 0, Medium: 1, Low: 0 })
+
+    expect(rbacRows.find((r) => r.name === "platform-admin-chaos-mesh")?.accepted).toBe(false)
+    expect(rbacRows.find((r) => r.name === "developer-kubernetes-dashboard-admin")?.accepted).toBe(false)
+
+    const summary = await getComplianceSummary()
+    expect(summary.totalConfigAuditFailures).toEqual({ Critical: 1, High: 1, Medium: 0, Low: 0 })
+    expect(summary.totalRbacFailures).toEqual({ Critical: 3, High: 0, Medium: 0, Low: 0 })
   })
 })

@@ -2,6 +2,7 @@
 import { useState, useMemo, useCallback, Fragment } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { useT, useLocale } from "@/lib/i18n-client"
+import { translateAcceptedReason } from "@/lib/i18n"
 import { DataState } from "@/components/ui/data-state"
 import { translateTitle, translateRemediation } from "@/lib/check-translations"
 import { Card } from "@/components/ui/card"
@@ -138,10 +139,10 @@ export function ExpandedRbacPanel({
                       )}
                     </div>
                     <p className="mt-1 font-medium text-foreground">{translateTitle("ksv", check.id, check.title, locale)}</p>
-                    {check.accepted && check.acceptedReason && (
+                    {check.accepted && (check.acceptedReasonKey || check.acceptedReason) && (
                       <p className="mt-1 text-muted-foreground">
                         <span className="font-medium">{t("compliance.check.acceptedReason")}: </span>
-                        {check.acceptedReason}
+                        {translateAcceptedReason(locale, check.acceptedReasonKey, check.acceptedReason)}
                       </p>
                     )}
                     {check.remediation && (

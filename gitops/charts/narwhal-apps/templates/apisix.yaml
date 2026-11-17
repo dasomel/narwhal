@@ -78,24 +78,31 @@ spec:
               secretKeyRef:
                 name: velero-ui-oidc-secret
                 key: session_secret
-        # Trivy KSV001/003/104 on the apisix container. NOTE: this chart's
-        # deployment.yaml template reads `.Values.securityContext` (TOP-LEVEL, sibling
-        # of `apisix:` below), NOT `apisix.securityContext` -- verified by reading the
-        # chart source. No runAsNonRoot here (KSV012 left unfixed): the live image
-        # config USER is the non-numeric string "apisix" (resolves to numeric uid 636
-        # at runtime via NSS, confirmed functionally non-root, but kubelet's static
-        # admission check can't verify a non-numeric USER and rejects
-        # runAsNonRoot:true -- this broke the gateway on the first hardening attempt,
-        # reverted). seccompProfile is explicit here (not covered by kyverno's
-        # add-default-seccomp mutate -- platform-system is in that policy's exclude
-        # list).
+        # Trivy KSV001/003/012/104 on the apisix container. NOTE: this chart's
+        # deployment.yaml template reads `.Values.securityContext` and `.Values.resources`
+        # (TOP-LEVEL, sibling of `apisix:` below), NOT `apisix.securityContext` or
+        # `apisix.resources` -- verified by reading the chart source.
+        # runAsNonRoot: true + runAsUser: 636: resolves non-numeric USER "apisix"
+        # so kubelet verifies non-root without CreateContainerConfigError (D-NETWORKING-HARDENING).
+        # readOnlyRootFilesystem is kept disabled because APISIX dynamically writes
+        # nginx.conf into /usr/local/apisix/conf at startup and mounting raw emptyDir
+        # masks bundled mime.types / config-default.yaml.
         securityContext:
           allowPrivilegeEscalation: false
+          runAsNonRoot: true
+          runAsUser: 636
           capabilities:
             drop:
               - ALL
           seccompProfile:
             type: RuntimeDefault
+        resources:
+          requests:
+            cpu: 100m
+            memory: 256Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
         # apisix.image.tag override removed: chart 2.13.0's Deployment template does NOT
         # wire this key -- the live pod always runs the chart's top-level `image:`
         # default (apache/apisix:3.15.0-ubuntu). A "-debian" override here was dead
@@ -107,13 +114,6 @@ spec:
             istio.io/dataplane-mode: "none"
           # Mount Narwhal root CA so openid-connect plugin can verify Keycloak TLS
           # (Vuln 3 — replaces ssl_verify=false in 11-3/11-5 routes).
-          resources:
-            requests:
-              cpu: 100m
-              memory: 256Mi
-            limits:
-              cpu: 500m
-              memory: 512Mi
           ssl:
             enabled: true
             containerPort: 9443

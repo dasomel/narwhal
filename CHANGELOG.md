@@ -9,6 +9,8 @@ English | [한국어](CHANGELOG-ko.md)
 
 ## [Unreleased]
 
+- **Persist node file permissions across reinstallation:** wire `scripts/cluster/harden-node-files.sh` into provisioning (`02-init-cluster.sh`, `02-join-control-plane.sh`, `02-join-worker.sh`, `03-cni-install.sh`) non-fatally and idempotently to enforce CIS 1.1.9, 1.1.12, 4.1.1, 4.1.7, 4.1.9 (R368; clean install pending).
+
 - **Upgrade note for the hardening above:** rolling out `apisix-etcd` restarts it and, because its data lives in an `emptyDir`, drops every APISIX route; ingress keeps working only until the next APISIX restart (#714). After applying, force a resync by touching the APISIX custom resources (`kubectl annotate apisixupstreams,apisixtlses,apisixroutes -A --all narwhal.io/resync=$(date +%s) --overwrite`) and confirm the ingress hosts answer; if the ingress controller restarted while etcd was empty and resources report `ResourceSyncAborted`, run `scripts/cluster/lib/recover-apisix-resource-sync.sh platform-system` as well. `keycloak` and `openbao-0` restart once (OpenBao is `OnDelete`: delete the pod to pick up the new template; auto-unseal follows). The retired `harbor-db-rw`, `gitea-db-rw` and `authentik-db-rw` Services are not pruned by ArgoCD on existing clusters — delete them after Harbor and Gitea report the direct database host.
 - Hardened DevTools components for Trivy compliance: added Headlamp readOnlyRootFilesystem and ca-bundle resources, Kong resources, Chaos Mesh CPU limits, Harbor portal/nginx/redis resources, Gitea resources, and ArgoCD initContainer resources (KSV014 -1, KSV011/015/016/018 -48+).
 - Connect Harbor/Gitea directly to CNPG, retire three DB ExternalName aliases, and bound CNPG operator resources (requests 50m/128Mi; limits 300m/256Mi).

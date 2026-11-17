@@ -302,6 +302,16 @@ echo "Waiting for kube-vip to start..."
 sleep 10
 fi  # end kube-vip block (Vagrant only)
 
+# Harden node file permissions (CIS 1.1.9, 1.1.12, 4.1.1, 4.1.7, 4.1.9).
+# Non-fatal: failures must not block provisioning.
+HARDEN_SCRIPT="${STAGE_DIR:-/home/vagrant}/scripts/cluster/harden-node-files.sh"
+if [ ! -f "${HARDEN_SCRIPT}" ]; then
+  HARDEN_SCRIPT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/harden-node-files.sh"
+fi
+if [ -f "${HARDEN_SCRIPT}" ]; then
+  bash "${HARDEN_SCRIPT}" || echo "WARN: harden-node-files.sh reported issues, continuing..."
+fi
+
 echo "=== Control Plane Join Done ==="
 # Informational only, so it must not decide the exit status — the already-joined branch
 # above gets this right with `|| true` and this one did not. It reported failure on a node

@@ -41,7 +41,7 @@ Static Pod의 실행 원본은 API object가 아니라 노드의 kubelet manifes
 | 통제 | 현재 repo에서 관찰한 동작 | 판정 |
 |---|---|---|
 | Manifest 파일 mode | `scripts/cluster/harden-node-files.sh`가 `/etc/kubernetes/manifests/*.yaml`에 `chmod 600` 실행. 디렉터리 자체와 소유자/그룹은 바꾸지 않음. 오류는 non-fatal 처리될 수 있음. | 부분 적용 |
-| 적용 시점 | `docs/common/compliance-hardening.md`는 live 적용이며 fresh install 후 자동 재적용되지 않는다고 명시. 초기화/조인 스크립트에서 hardening 스크립트 호출은 확인되지 않음. | 지속성 미보장 |
+| 적용 시점 | 초기화/조인 스크립트(`02-init-cluster.sh`, `02-join-control-plane.sh`, `02-join-worker.sh`) 및 CNI 설치(`03-cni-install.sh`)에서 `harden-node-files.sh`를 non-fatal 및 멱등 호출하도록 프로비저닝 경로에 연동함. 단, clean install을 통한 전체 런타임 검증은 아직 수행되지 않음(현재 세션 제약). | 프로비저닝 연동 (클린인스톨 검증 대기) |
 | 소유권 및 디렉터리 | manifest 파일 `root:root`, 디렉터리 mode/owner를 검증·설정하는 검사 없음. | 미구현 |
 | SELinux/AppArmor | manifest 경로 context baseline/검증 또는 control-plane static Pod 전용 profile 없음. | 미구현 |
 | API hostPath admission | `gitops/resources/narwhal-portal-policy.yaml`은 portal SA의 hostPath를 제한하지만 control-plane 정책은 아님. static Pod 자체에도 적용되지 않음. | 범위 제한 |

@@ -65,4 +65,14 @@ echo "Node name: ${NODE_NAME}, Node IP: ${NODE_IP}"
 # Join cluster with explicit node-name to prevent VMware NAT interface hostname
 sudo bash /tmp/join-command.sh --node-name "${NODE_NAME}"
 
+# Harden node file permissions (CIS 1.1.9, 1.1.12, 4.1.1, 4.1.7, 4.1.9).
+# Non-fatal: failures must not block provisioning.
+HARDEN_SCRIPT="${STAGE_DIR:-/home/vagrant}/scripts/cluster/harden-node-files.sh"
+if [ ! -f "${HARDEN_SCRIPT}" ]; then
+  HARDEN_SCRIPT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/harden-node-files.sh"
+fi
+if [ -f "${HARDEN_SCRIPT}" ]; then
+  bash "${HARDEN_SCRIPT}" || echo "WARN: harden-node-files.sh reported issues, continuing..."
+fi
+
 echo "=== Cluster Join Done ==="

@@ -9,6 +9,8 @@
 
 ## [Unreleased]
 
+- **재설치 시 노드 파일 권한 유지:** `scripts/cluster/harden-node-files.sh`를 프로비저닝 경로(`02-init-cluster.sh`, `02-join-control-plane.sh`, `02-join-worker.sh`, `03-cni-install.sh`)에 non-fatal 및 멱등 호출로 연동하여 CIS 1.1.9, 1.1.12, 4.1.1, 4.1.7, 4.1.9 준수를 영속화함(R368; 클린 인스톨 검증 대기).
+
 - **위 하드닝의 업그레이드 참고:** `apisix-etcd`를 롤아웃하면 재시작되고, 데이터가 `emptyDir`에 있어 APISIX 라우트가 모두 사라진다. 인그레스는 다음 APISIX 재시작 전까지만 동작한다(#714). 적용 후 APISIX 커스텀 리소스를 건드려 재동기화하고(`kubectl annotate apisixupstreams,apisixtlses,apisixroutes -A --all narwhal.io/resync=$(date +%s) --overwrite`) 인그레스 호스트 응답을 확인한다. etcd가 빈 상태에서 인그레스 컨트롤러가 재시작돼 리소스가 `ResourceSyncAborted`로 남으면 `scripts/cluster/lib/recover-apisix-resource-sync.sh platform-system`도 실행한다. `keycloak`과 `openbao-0`은 한 번 재시작한다(OpenBao는 `OnDelete`라 파드를 삭제해야 새 템플릿이 적용되며 자동 unseal이 뒤따른다). 기존 클러스터에서 `harbor-db-rw`·`gitea-db-rw`·`authentik-db-rw` Service는 ArgoCD가 정리하지 않으므로 Harbor와 Gitea가 직접 DB 호스트를 쓰는 것을 확인한 뒤 삭제한다.
 - DevTools 컴포넌트 컴플라이언스 하드닝: Headlamp readOnlyRootFilesystem 및 ca-bundle 리소스, Kong 리소스, Chaos Mesh CPU 한도, Harbor portal/nginx/redis 리소스, Gitea 리소스, ArgoCD initContainers 리소스를 추가함(KSV014 -1건, KSV011/015/016/018 -48+건).
 - Harbor/Gitea를 CNPG에 직접 연결하고 DB ExternalName 별칭 3개를 제거하며 CNPG 오퍼레이터 리소스를 설정함(요청 50m/128Mi, 제한 300m/256Mi).

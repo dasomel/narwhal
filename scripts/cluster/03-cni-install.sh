@@ -183,4 +183,15 @@ esac
 echo "Waiting for node to be ready..."
 kubectl wait --for=condition=Ready node --all --timeout=300s
 
+# Harden node file permissions (CIS 1.1.9, 1.1.12, 4.1.1, 4.1.7, 4.1.9).
+# Non-fatal: failures must not block provisioning. Runs after Cilium is ready
+# so that /etc/cni/net.d conflist files are hardened to 600.
+HARDEN_SCRIPT="${STAGE_DIR:-/home/vagrant}/scripts/cluster/harden-node-files.sh"
+if [ ! -f "${HARDEN_SCRIPT}" ]; then
+  HARDEN_SCRIPT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/harden-node-files.sh"
+fi
+if [ -f "${HARDEN_SCRIPT}" ]; then
+  bash "${HARDEN_SCRIPT}" || echo "WARN: harden-node-files.sh reported issues, continuing..."
+fi
+
 echo "=== CNI Plugin Installation Done ==="

@@ -9,6 +9,7 @@
 
 ## Mistakes Log (Compounding Engineering)
 
+| 2026-11-18 | `scripts/cluster/harden-node-files.sh`가 프로비저닝 스크립트에서 호출되지 않아 재설치 직후 ca.crt, kubelet config.yaml, kubelet.service, /var/lib/etcd의 권한이 644/root:root로 남아 Trivy 인프라 컴플라이언스 결함(KCV0075, KCV0069, KCV0077, KCV0056, KCV0059)이 발생했다. | D-NODE-HARDENING: `02-init-cluster.sh`, `02-join-control-plane.sh`, `02-join-worker.sh`, `03-cni-install.sh`(Cilium conflist 준비 후)에 `harden-node-files.sh`를 non-fatal 멱등 호출로 연동했다. R368(`check-node-hardening.py`, 10변이)과 R227(`check-static-pod-hostpaths.py`)로 프로비저닝 호출 강제 및 변이 거부를 오프라인 검증했다. 단, 클린 인스톨 실측 및 컨테이너 스캐너 제한(KCV0056/KCV0059)은 라이브 검증 필요 상태로 문서화했다. |
 | 2026-11-18 | Trivy RBAC 검사에서 `platform-admin`의 `pods/log`에 `delete`가 섞여 KSV042가 발생했고, Velero UI Role은 UI가 참조하지 않는 storage 전체 Secret을 읽을 수 있었다. chart는 `rbac.create: false`이며 UI는 `velero-ui-oauth`를 환경 변수로 직접 참조하고, S3 runbook은 `velero-s3-credentials`를 Velero 서버용으로 기록한다. | D-RBAC-COMPLIANCE: 로그 권한을 get/list/watch 규칙으로 분리하고 Velero UI Role에서 secrets를 제거했다. R354는 두 권한 경계를 고정하고 delete/Secret 재추가 변이를 잡는다. 비용: UI가 Secret 목록을 표시하려는 미확인 기능은 제한된다. 탈출구: 라이브 기능 확인 실패 시 실제 필요한 Secret 및 키를 특정한 별도 설계로 재평가한다. developer-workload-admin은 dev RoleBinding에만 묶인 기존 ClusterRole을 유지한다. |
 
 > Add entries here whenever Claude makes a mistake. The same mistake will not be repeated.

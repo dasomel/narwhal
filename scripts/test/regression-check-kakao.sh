@@ -3390,6 +3390,8 @@ PYEOF'
     python3 scripts/test/lib/check-keycloak-bootstrap-issuer.py
   check R347 "R19 helper compares image sets, not counts: identical passes, equal-count swap and missing-only fail with names (#663)" \
     bash scripts/test/lib/self-test-airgap-bundle-image-set.sh
+  check R350 "DB direct FQDN in bootstrap/GitOps, no ExternalName creation, CNPG operator budget and existing network path; 4 endpoint cases and 8 mutations (2026-11-18, D1/D2)" \
+    python3 scripts/test/lib/check-db-direct-hosts.py --mutation-verify
   check R348 "keycloak-operator livenessProbe patches /q/health/ready (30s*6=180s, timeout 10s), keeps port/scheme/startupProbe, is idempotent and container-index/name safe; 4 mutations caught (D-KC-OPERATOR-LIVENESS)" \
     python3 scripts/test/lib/check-keycloak-operator-liveness.py
   check R345 "12-gitea.sh waits for the patched Deployment rollout and selects a Running, non-terminating Gitea pod by name; all 3 mutations caught (D-GITEA-ROLLOUT-WAIT)" \

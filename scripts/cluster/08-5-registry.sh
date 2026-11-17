@@ -19,7 +19,7 @@ echo "=== Installing Harbor ==="
 echo "Waiting for PostgreSQL (narwhal-db) to be ready..."
 kubectl wait --for=condition=Ready cluster/narwhal-db -n database --timeout=300s || true
 
-# Create namespace first to apply ExternalName service
+# Create namespace before Harbor credentials and Helm installation
 kubectl create namespace devtools --dry-run=client -o yaml | kubectl apply -f -
 
 # Harbor admin credentials — build harbor-secrets (used by GitOps YAML)
@@ -64,21 +64,6 @@ else
   echo "Harbor DB credentials secret already exists"
 fi
 
-# Apply ExternalName service to connect to narwhal-db from devtools namespace
-cat <<EOF | kubectl apply -f -
-apiVersion: v1
-kind: Service
-metadata:
-  name: harbor-db-rw
-  namespace: devtools
-spec:
-  type: ExternalName
-  externalName: narwhal-db-rw.database.svc.cluster.local
-  ports:
-    - port: 5432
-      targetPort: 5432
-EOF
-
 # D-HARBOR-OIDC-TRUST: Harbor core must trust the Narwhal CA so 11-3 can enable
 # oidc_verify_cert. 08-6 later overwrites this secret with narwhal+k8s CA; seeding it here
 # keeps harbor-core from sitting in ContainerCreating on a missing secret until 08-6 runs.
@@ -108,7 +93,7 @@ for attempt in 1 2 3 4 5; do
     --set jobservice.existingSecret=harbor-shared-secrets \
     --set-string 'jobservice.podAnnotations.backup\.velero\.io/backup-volumes-excludes=job-logs' \
     --set database.type=external \
-    --set database.external.host=harbor-db-rw \
+    --set database.external.host=narwhal-db-rw.database.svc.cluster.local \
     --set database.external.port=5432 \
     --set database.external.username=harbor \
     --set database.external.existingSecret=harbor-db-credentials \

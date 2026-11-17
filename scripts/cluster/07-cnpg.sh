@@ -42,11 +42,17 @@ done
 # Add CNPG Helm repo (retry for transient DNS timeouts, e.g. cloudnative-pg.github.io lookup failure)
 
 # Install CNPG Operator (no --wait: avoids atomic rollback on timeout)
+# D1: Bound operator resources (chart 0.28.3 resources -> manager); cost: 50m/128Mi
+# reserved, 300m/256Mi ceiling. Escape: tune these values if reconciliation is throttled.
 retry helm upgrade --install cnpg "$(chart cloudnative-pg)" \
   --force-conflicts \
   --namespace platform-system \
   --create-namespace \
   --version "${CNPG_CHART_VERSION}" \
+  --set resources.requests.cpu=50m \
+  --set resources.requests.memory=128Mi \
+  --set resources.limits.cpu=300m \
+  --set resources.limits.memory=256Mi \
   --timeout 5m || echo "WARN: CNPG operator install timed out, waiting manually..."
 
 # Wait for operator pod to be ready (must be running before creating CRs)
@@ -430,39 +436,10 @@ spec:
     name: narwhal-db
 EOF
 
-#=========================================
-# Create cross-namespace service aliases
-#=========================================
-echo "=== Creating cross-namespace service aliases ==="
-
-# D-authmig: authentik-db-rw ExternalName service removed (Authentik SSO removed)
-# ExternalName services so apps can use short names within their namespaces
-kubectl create namespace devtools --dry-run=client -o yaml | kubectl apply -f -
-cat <<EOF | kubectl apply -f -
-apiVersion: v1
-kind: Service
-metadata:
-  name: harbor-db-rw
-  namespace: devtools
-spec:
-  type: ExternalName
-  externalName: narwhal-db-rw.database.svc.cluster.local
-  ports:
-    - port: 5432
-EOF
-
-cat <<EOF | kubectl apply -f -
-apiVersion: v1
-kind: Service
-metadata:
-  name: gitea-db-rw
-  namespace: devtools
-spec:
-  type: ExternalName
-  externalName: narwhal-db-rw.database.svc.cluster.local
-  ports:
-    - port: 5432
-EOF
+# D2: Consumers use the existing CNPG -rw FQDN; avoid ExternalName findings.
+# Cost: consumers depend on the database namespace name. Escape: restore aliases
+# before reverting consumer hosts. Existing live aliases are deleted only after
+# consumer rollout + login/write verification; never delete them during bootstrap.
 
 echo "=== CNPG Unified PostgreSQL HA Cluster Ready ==="
 echo ""
@@ -486,10 +463,6 @@ echo ""
 echo "Connection (direct, bypassing pooler):"
 echo "  Host: narwhal-db-rw.database.svc.cluster.local"
 echo "  Port: 5432"
-echo ""
-echo "Cross-namespace aliases (ExternalName):"
-echo "  devtools ns: harbor-db-rw:5432   -> narwhal-db-rw.database.svc.cluster.local"
-echo "  devtools ns: gitea-db-rw:5432    -> narwhal-db-rw.database.svc.cluster.local"
 echo ""
 kubectl get cluster -n database
 kubectl get pooler -n database

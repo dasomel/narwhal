@@ -101,7 +101,7 @@ helm upgrade --install gitea "$(chart gitea)" \
   --set postgresql.enabled=false \
   --set postgresql-ha.enabled=false \
   --set gitea.config.database.DB_TYPE=postgres \
-  --set gitea.config.database.HOST=gitea-db-rw:5432 \
+  --set gitea.config.database.HOST=narwhal-db-rw.database.svc.cluster.local:5432 \
   --set gitea.config.database.NAME=gitea \
   --set gitea.config.database.USER=gitea \
   --set gitea.config.database.PASSWD="${GITEA_DB_PASS}" \

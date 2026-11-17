@@ -2,5 +2,5 @@
 # See narwhal-db.yaml for the consolidated PostgreSQL configuration
 # This file is kept for reference only
 #
-# Harbor connects via ExternalName service:
-#   harbor-db-rw.devtools.svc → narwhal-db-rw.database.svc.cluster.local
+# Harbor connects directly to the CNPG read-write service:
+#   narwhal-db-rw.database.svc.cluster.local:5432

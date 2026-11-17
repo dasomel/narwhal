@@ -11,6 +11,7 @@
 
 - DevTools 컴포넌트 컴플라이언스 하드닝: Headlamp readOnlyRootFilesystem 및 ca-bundle 리소스, Kong 리소스, Chaos Mesh CPU 한도, Harbor portal/nginx/redis 리소스, Gitea 리소스, ArgoCD initContainers 리소스를 추가함(KSV014 -1건, KSV011/015/016/018 -48+건).
 - Harbor/Gitea를 CNPG에 직접 연결하고 DB ExternalName 별칭 3개를 제거하며 CNPG 오퍼레이터 리소스를 설정함(요청 50m/128Mi, 제한 300m/256Mi).
+- **자체 매니페스트 플랫폼 워크로드(`apisix-etcd`, `narwhal-portal`, `narwhal-portal-valkey`) 보안 컨텍스트를 강화함.** `apisix-etcd`에 `uid/gid/fsGroup: 10001`, `RuntimeDefault` seccomp, `allowPrivilegeEscalation: false`, `drop: [ALL]`, `readOnlyRootFilesystem: true`를 적용하고, `narwhal-portal-valkey`와 `narwhal-portal`(`runAsGroup/fsGroup: 1001`, `/tmp`·`/app/.next/cache` 쓰기 가능 `emptyDir`)에 `readOnlyRootFilesystem: true`를 설정했다. `check-workload-runtime-posture.py`(`platform-system:missingSeccomp` 2→1)를 갱신하고 `R352` 정적 회귀 검사를 추가했다(라이브 롤아웃은 미확인).
 
 - **Kyverno 서명 Audit 대상을 서명 경로가 있는 포털 저장소로 한정함(#683).** `devtools`를 포함하고 미서명 타사·Narwhal 이미지는 제외하며 digest 변환 없이 태그를 허용한다. CycloneDX 검사는 유지한다. 라이브 확인: 타사 이미지 위반은 멈췄고, Kyverno는 포털 서명을 찾지 못한다고 보고한다. Cosign v3가 서명을 OCI referrer로 저장하는데 Kyverno 1.18.1이 이를 검증하지 못한다(#684). Audit 전용이다.
 

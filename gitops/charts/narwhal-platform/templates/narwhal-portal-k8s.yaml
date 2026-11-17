@@ -304,6 +304,7 @@ spec:
             - containerPort: 6379
           securityContext:
             allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
             capabilities:
               drop: [ALL]
           resources:
@@ -409,12 +410,14 @@ spec:
         istio.io/dataplane-mode: "none"
     spec:
       serviceAccountName: narwhal-portal
-      # PSS/CIS hardening: the image already runs as uid 1001 (nextjs), so enforce
-      # non-root + drop all caps + no privilege escalation. readOnlyRootFilesystem is
-      # NOT set — the Next.js standalone server writes to its cache/tmp at runtime.
+      # PSS/CIS hardening: the image runs as uid/gid 1001 (nextjs:nodejs, portal/Dockerfile),
+      # so enforce non-root + readOnlyRootFilesystem + drop all caps + no privilege escalation.
+      # Next.js standalone writable dirs (/tmp, /app/.next/cache) are mounted as emptyDir.
       securityContext:
         runAsNonRoot: true
         runAsUser: 1001
+        runAsGroup: 1001
+        fsGroup: 1001
         seccompProfile:
           type: RuntimeDefault
       tolerations:
@@ -429,6 +432,7 @@ spec:
           imagePullPolicy: IfNotPresent
           securityContext:
             allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
             capabilities:
               drop: [ALL]
           ports:
@@ -470,6 +474,10 @@ spec:
             - name: k8s-api-token
               mountPath: /var/run/secrets/kubernetes.io/serviceaccount-k8s-api
               readOnly: true
+            - name: tmp
+              mountPath: /tmp
+            - name: next-cache
+              mountPath: /app/.next/cache
           resources:
             requests:
               cpu: 100m
@@ -528,6 +536,10 @@ spec:
                   path: token
                   expirationSeconds: 3600
                   audience: https://kubernetes.default.svc.cluster.local
+        - name: tmp
+          emptyDir: {}
+        - name: next-cache
+          emptyDir: {}
 ---
 apiVersion: v1
 kind: Service

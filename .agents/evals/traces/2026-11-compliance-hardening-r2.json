@@ -41,10 +41,10 @@
       "type": "regression_verification",
       "status": "passed",
       "scope": "Static validation, shellcheck/bash -n, markdownlint-changed, offline helm template renders, and targeted regression checks (R311, R356, R359, R362, R364, R366) on the branch without cluster access.",
-      "summary": "make validate, shellcheck, bash -n, markdownlint-changed, git diff --check and the targeted regression checks including R366 (13 mutations + 4 offline chart renders) passed. The orchestrator then applied the four changes to the local single-node cluster and verified them.",
+      "summary": "make validate, shellcheck, bash -n, markdownlint-changed, git diff --check and the targeted regression checks including R366 (15 mutations + 4 offline chart renders) passed. The orchestrator then applied the four changes to the local single-node cluster and verified them.",
       "evidence": [
         "test:make validate -> exit 0",
-        "test:python3 scripts/test/lib/check-round2-compliance-hardening.py --mutation-verify -> PASS (13 mutations rejected)",
+        "test:python3 scripts/test/lib/check-round2-compliance-hardening.py --mutation-verify -> PASS (15 mutations rejected)",
         "test:python3 scripts/test/lib/check-storage-hardening.py --mutation-verify -> PASS (17 mutations rejected)",
         "test:shellcheck & bash -n on changed scripts -> exit 0",
         "test:python3 scripts/ci/markdownlint-changed.py --base origin/main -> exit 0",

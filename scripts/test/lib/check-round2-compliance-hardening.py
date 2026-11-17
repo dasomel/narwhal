@@ -101,6 +101,11 @@ def _verify_tempo(tempo_yaml: str, mon_sh: str) -> None:
         "--set tempo.securityContext.readOnlyRootFilesystem=true",
         "--set 'tempo.securityContext.capabilities.drop[0]=ALL'",
         "--set securityContext.seccompProfile.type=RuntimeDefault",
+        # Bootstrap persistence must match tempo.yaml (D-tempo-persist): the claim is the only
+        # writable /var/tempo under a read-only root, and claim templates are immutable.
+        "--set persistence.enabled=true",
+        "--set persistence.storageClassName=nfs-csi",
+        "--set persistence.size=10Gi",
         "--set extraVolumes[0].name=tmp",
         "--set-json 'extraVolumes[0].emptyDir={}'",
         "--set tempo.extraVolumeMounts[0].name=tmp",
@@ -159,12 +164,13 @@ def verify(root: Path) -> None:
     _verify_velero(texts["velero_yaml"], texts["storage_sh"])
 
 
-def verify_helm_renders(root: Path) -> None:
+def verify_helm_renders(root: Path) -> bool:
+    """Render the bundled charts; False when no chart bundle is present (e.g. CI)."""
     bundles = sorted(glob.glob(str(root / "narwhal-airgap-bundle-*/charts/tempo-2.2.3.tgz")))
     if not bundles:
         bundles = sorted(glob.glob(str(root.parents[2] / "narwhal-airgap-bundle-*/charts/tempo-2.2.3.tgz")))
     if not bundles:
-        return
+        return False
     charts_dir = Path(bundles[0]).parent
 
     # 1. Gitea offline render
@@ -287,6 +293,7 @@ def verify_helm_renders(root: Path) -> None:
     assert vc["securityContext"]["runAsUser"] == 1002
     assert vc["securityContext"]["runAsGroup"] == 1000
     assert "readOnlyRootFilesystem" not in vc["securityContext"]
+    return True
 
 
 def mutation_verify(root: Path) -> int:
@@ -298,6 +305,8 @@ def mutation_verify(root: Path) -> int:
         ("tempo_yaml", "allowPrivilegeEscalation: false", "allowPrivilegeEscalation: true"),
         ("tempo_yaml", "readOnlyRootFilesystem: true", "readOnlyRootFilesystem: false"),
         ("tempo_yaml", "mountPath: /tmp", "mountPath: /var/tmp"),
+        ("mon_sh", "--set persistence.enabled=true", "--set persistence.enabled=false"),
+        ("mon_sh", "--set persistence.storageClassName=nfs-csi", "--set persistence.storageClassName=other"),
         ("mon_sh", "--set tempo.securityContext.readOnlyRootFilesystem=true", "--set tempo.securityContext.readOnlyRootFilesystem=false"),
         ("mon_sh", "--set tempo.extraVolumeMounts[0].mountPath=/tmp", "--set tempo.extraVolumeMounts[0].mountPath=/var/tmp"),
         ("net_sh", "--set securityContext.runAsGroup=65532", "--set securityContext.runAsGroup=0"),
@@ -330,12 +339,13 @@ def main() -> int:
     args = parser.parse_args()
 
     verify(args.root)
-    verify_helm_renders(args.root)
+    rendered = verify_helm_renders(args.root)
+    renders = "offline helm renders" if rendered else "offline helm renders SKIPPED (no chart bundle)"
     if args.mutation_verify:
         caught = mutation_verify(args.root)
-        print(f"PASS: R366 round-2 compliance hardening + offline helm renders ({caught} mutations rejected)")
+        print(f"PASS: R366 round-2 compliance hardening + {renders} ({caught} mutations rejected)")
     else:
-        print("PASS: R366 round-2 compliance hardening + offline helm renders")
+        print(f"PASS: R366 round-2 compliance hardening + {renders}")
     return 0
 
 

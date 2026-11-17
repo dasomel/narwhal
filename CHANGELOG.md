@@ -9,6 +9,8 @@ English | [한국어](CHANGELOG-ko.md)
 
 ## [Unreleased]
 
+- **Hardened `storage` workloads (`seaweedfs`, `openbao`, `velero`, `velero-ui`) across GitOps and `scripts/cluster/08-4-storage.sh` (R362):** set `seaweedfs-s3` non-root (`uid 1000`) with `emptyDir` logs, `runAsNonRoot: true` on `seaweedfs-master`/`filer`, `readOnlyRootFilesystem: true` + `/tmp` `emptyDir` across all four storage apps (preserving `seaweedfs-volume` and Velero `node-agent` host/UID contracts), and conservative CPU/memory requests/limits on `openbao`, `openbao-agent-injector`, `velero`, `velero-plugin-for-aws`, and `node-agent` (offline `helm template` and static parity verified; live rollout pending).
+
 - **Scope Kyverno signature Audit to the signed portal repository (#683).** Include `devtools`, exclude unsigned third-party/Narwhal images, and accept tag references without digest mutation; CycloneDX checks remain. Live check: third-party violations stopped, and Kyverno now reports the portal signature as not found — Cosign v3 stores it as an OCI referrer that Kyverno 1.18.1 does not verify (#684); Audit only.
 
 - **Portal is pinned to `narwhal-portal:1.1.17` (was 1.1.15 in released v1.5.0; 1.1.16 was an intermediate pin).** Accounts with an empty scope, including guests, are denied at `/access-denied` with `403 ACCESS_NOT_GRANTED` (#686). Developers and viewers no longer see fleet-wide data (#678, #687). Add team mappings or `narwhal.io/team` labels before upgrading. The image was published for amd64 and arm64, and Cosign v3.1.4 verification with the repository public key and transparency log passed. In-cluster Kyverno verification is known to fail for Portal images (narwhal#684); no live rollout is claimed.

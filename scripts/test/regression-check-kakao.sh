@@ -3460,6 +3460,8 @@ PYEOF'
   # 2026-11-08 (D-NFS-VMDK, D-CNPG-RESTART-AMP, D-CNPG-RESOURCES, D-CNPG-APPDB): NFS export on its own disk so etcd and the PVs stop sharing one VMDK; CNPG tolerates a stall.
   check R327 "NFS export has its own disk: Vagrantfile attaches narwhal-nfs.vmdk to master-1 only via vmware vmx keys nvme0:1.present/fileName plus a before up/reload vmware-vdiskmanager trigger (never config.vm.disk: vagrant-vmware-desktop 3.0.5 get_disk crashes), NARWHAL_NFS_DISK_GB=0 refused once the vmdk exists and passes NFS_DATA_DEVICE=auto to 01-nfs-server.sh, which resolves exactly one blank non-OS disk (no /dev/sdX guess) and still refuses to mount over live data; narwhal-db.yaml and 07-cnpg.sh both carry liveness >= 90s tolerance with isolationCheck 5s, default readiness, memory requests and limit with no CPU limit, and bootstrap database/owner narwhal (monitoring target exists); operations.md sections 15 (migration, /export-aware quota restore, never-0 warning) and 16 (host load); runbook nvme0n1/nvme0n2, nfs-server autostart, sudo test -d, JSON-patch nodeSelector restore; 38 mutations caught" \
     python3 scripts/test/lib/check-nfs-data-disk.py --mutation-verify
+  check R362 "Storage charts (seaweedfs, openbao, velero, velero-ui) compliance hardening (non-root, emptyDir logs/tmp, readOnlyRootFilesystem, resources) and 08-4-storage.sh parity; 17 mutations caught" \
+    python3 scripts/test/lib/check-storage-hardening.py --mutation-verify
 }
 
 #=========================================

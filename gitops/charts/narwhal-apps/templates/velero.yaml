@@ -44,18 +44,37 @@ spec:
         # runAsNonRoot (KSV012): image USER is 'cnb' (non-numeric), still unverifiable.
         containerSecurityContext:
           allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
           capabilities:
             drop:
               - ALL
+        resources:
+          requests:
+            cpu: 50m
+            memory: 128Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
         initContainers:
           - name: velero-plugin-for-aws
             image: velero/velero-plugin-for-aws:v1.14.1
-            # Trivy also flags this initContainer (KSV001/003) separately.
+            # Trivy also flags this initContainer (KSV001/003/012/014) separately.
+            # Image USER is numeric 65532:65532 (verified via crane config) and only writes /target.
             securityContext:
+              runAsNonRoot: true
+              runAsUser: 65532
               allowPrivilegeEscalation: false
+              readOnlyRootFilesystem: true
               capabilities:
                 drop:
                   - ALL
+            resources:
+              requests:
+                cpu: 10m
+                memory: 32Mi
+              limits:
+                cpu: 100m
+                memory: 64Mi
             volumeMounts:
               - mountPath: /target
                 name: plugins
@@ -94,6 +113,13 @@ spec:
         deployNodeAgent: true
         nodeAgent:
           podVolumePath: /var/lib/kubelet/pods
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
           # D-datapath-labels (#422): Kyverno require-labels (Audit) flags the data-path/hosting pods Velero
           # creates in storage because they carry no app.kubernetes.io/name. Velero 1.18 applies the
           # node-agent-config `podLabels` to DataUpload/DataDownload/PodVolumeBackup/PodVolumeRestore pods

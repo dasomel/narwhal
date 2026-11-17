@@ -74,28 +74,56 @@ spec:
               storage "raft" {
                 path = "/openbao/data"
               }
-          # Mount the existing server TLS cert (openbao-tls) for the listener above.
+          # Mount the existing server TLS cert (openbao-tls) for the listener above,
+          # plus /tmp emptyDir because the chart wrapper renders /tmp/storageconfig.hcl.
           volumes:
             - name: userconfig-openbao-tls
               secret:
                 secretName: openbao-tls
+            - name: tmp
+              emptyDir: {}
           volumeMounts:
             - name: userconfig-openbao-tls
               mountPath: /openbao/tls
               readOnly: true
+            - name: tmp
+              mountPath: /tmp
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
           statefulSet:
-            # Trivy KSV003 (verified container-level via helm template). Only touching
+            # Trivy KSV003/KSV014 (verified container-level via helm template). Only touching
             # .container, not .pod — leaving .pod unset preserves the chart's own
             # non-root default (already verified live: uid=100 openbao, numeric, no
             # kyverno non-root-injection risk).
             securityContext:
               container:
                 allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
                 capabilities:
                   drop:
                     - ALL
                 seccompProfile:
                   type: RuntimeDefault
+        injector:
+          resources:
+            requests:
+              cpu: 25m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+          securityContext:
+            container:
+              allowPrivilegeEscalation: false
+              readOnlyRootFilesystem: true
+              capabilities:
+                drop:
+                  - ALL
         ui:
           enabled: true
   destination:

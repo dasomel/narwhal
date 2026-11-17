@@ -44,6 +44,7 @@ spec:
           replicas: 1
           podSecurityContext:
             enabled: true
+            runAsNonRoot: true
             runAsUser: 1000
             runAsGroup: 1000
             fsGroup: 1000
@@ -67,9 +68,16 @@ spec:
               memory: 64Mi
             limits:
               memory: 256Mi
+          extraVolumes: |
+            - name: tmp
+              emptyDir: {}
+          extraVolumeMounts: |
+            - name: tmp
+              mountPath: /tmp
           containerSecurityContext:
             enabled: true
             allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
             capabilities:
               drop:
                 - ALL
@@ -97,9 +105,16 @@ spec:
               memory: 64Mi
             limits:
               memory: 512Mi
+          extraVolumes: |
+            - name: tmp
+              emptyDir: {}
+          extraVolumeMounts: |
+            - name: tmp
+              mountPath: /tmp
           containerSecurityContext:
             enabled: true
             allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
             capabilities:
               drop:
                 - ALL
@@ -110,6 +125,7 @@ spec:
           replicas: 1
           podSecurityContext:
             enabled: true
+            runAsNonRoot: true
             runAsUser: 1000
             runAsGroup: 1000
             fsGroup: 1000
@@ -132,9 +148,16 @@ spec:
               memory: 192Mi
             limits:
               memory: 1Gi
+          extraVolumes: |
+            - name: tmp
+              emptyDir: {}
+          extraVolumeMounts: |
+            - name: tmp
+              mountPath: /tmp
           containerSecurityContext:
             enabled: true
             allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
             capabilities:
               drop:
                 - ALL
@@ -149,6 +172,21 @@ spec:
           enabled: true
           enableAuth: true
           existingConfigSecret: seaweedfs-s3-config
+          podSecurityContext:
+            enabled: true
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            fsGroup: 1000
+            fsGroupChangePolicy: OnRootMismatch
+          logs:
+            type: emptyDir
+          extraVolumes: |
+            - name: tmp
+              emptyDir: {}
+          extraVolumeMounts: |
+            - name: tmp
+              mountPath: /tmp
           # D-s3ops-1b (#419): the ignored roll marker narwhal.io/s3-config-sha256 was the only pod
           # template annotation, so Argo CD's normalized live state kept an empty `annotations: {}`
           # that the desired manifest lacked and the Application read OutOfSync. One static
@@ -166,6 +204,7 @@ spec:
           containerSecurityContext:
             enabled: true
             allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
             capabilities:
               drop:
                 - ALL

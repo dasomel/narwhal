@@ -9,6 +9,8 @@
 
 ## Mistakes Log (Compounding Engineering)
 
+| 2026-11-18 | Trivy RBAC 검사에서 `platform-admin`의 `pods/log`에 `delete`가 섞여 KSV042가 발생했고, Velero UI Role은 UI가 참조하지 않는 storage 전체 Secret을 읽을 수 있었다. chart는 `rbac.create: false`이며 UI는 `velero-ui-oauth`를 환경 변수로 직접 참조하고, S3 runbook은 `velero-s3-credentials`를 Velero 서버용으로 기록한다. | D-RBAC-COMPLIANCE: 로그 권한을 get/list/watch 규칙으로 분리하고 Velero UI Role에서 secrets를 제거했다. R354는 두 권한 경계를 고정하고 delete/Secret 재추가 변이를 잡는다. 비용: UI가 Secret 목록을 표시하려는 미확인 기능은 제한된다. 탈출구: 라이브 기능 확인 실패 시 실제 필요한 Secret 및 키를 특정한 별도 설계로 재평가한다. developer-workload-admin은 dev RoleBinding에만 묶인 기존 ClusterRole을 유지한다. |
+
 > Add entries here whenever Claude makes a mistake. The same mistake will not be repeated.
 > Rules that generalize across incidents graduate into `docs/common/agent-operational-rules.md`.
 

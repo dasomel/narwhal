@@ -445,6 +445,11 @@ assert aescbc and (not identity or aescbc.start() < identity.start()), "identity
   check_not R38 "no ClusterRoleBinding grants developer-workload-admin (2026-08-20)" \
     bash -c "awk '/^kind: ClusterRoleBinding\$/,/^---/' gitops/resources/rbac-policies.yaml | grep -q 'developer-workload-admin'"
 
+  # 2026-11-18: platform-admin may read pod logs but must not delete them; the Velero UI
+  # uses env Secret refs and must not list/get storage namespace Secrets via its Role.
+  check R354 "platform-admin pods/log is read-only and velero-ui Role excludes Secrets" \
+    python3 scripts/test/lib/check-rbac-compliance-hardening.py --mutation-verify
+
   # 2026-08-20: Gitea authenticates as whoever X-WEBAUTH-USER names, and the APISIX
   # bypass route (git + /api/v1/ + /api/packages/, deliberately no OIDC) did not strip
   # it — so the header was the credential, from anywhere that reaches the public host.

@@ -6,7 +6,7 @@ Pins:
    runAsGroup=1000 across all 4 containers; readOnlyRootFilesystem remains unset.
 2. monitoring/tempo (tempo.yaml & 08-2-monitoring.sh): tempo.securityContext
    allowPrivilegeEscalation=false, readOnlyRootFilesystem=true, drop ALL; pod seccomp
-   RuntimeDefault; GitOps mounts /var/tempo + /tmp emptyDir (persistence=false) and
+   RuntimeDefault; GitOps mounts a /tmp emptyDir next to the chart's /var/tempo storage claim (persistence=true, same as 08-2) and
    08-2 mounts /tmp emptyDir alongside PVC /var/tempo (persistence=true).
 3. platform-system/apisix-ingress-controller (08-1-networking.sh): runAsNonRoot=true,
    runAsUser=65532, runAsGroup=65532, readOnlyRootFilesystem=true on both
@@ -78,10 +78,16 @@ def _verify_tempo(tempo_yaml: str, mon_sh: str) -> None:
     psc = vals.get("securityContext") or {}
     assert (psc.get("seccompProfile") or {}).get("type") == "RuntimeDefault", "tempo.yaml: pod seccompProfile missing"
 
-    assert (vals.get("persistence") or {}).get("enabled") is False, "tempo.yaml: persistence.enabled must remain false"
+    pers = vals.get("persistence") or {}
+    assert pers.get("enabled") is True and pers.get("storageClassName") == "nfs-csi" and pers.get("size") == "10Gi", (
+        "tempo.yaml: persistence must match the bootstrap install (enabled, nfs-csi, 10Gi)"
+    )
     vols = {v["name"]: v for v in (vals.get("extraVolumes") or []) if isinstance(v, dict)}
     mounts = {m["mountPath"]: m["name"] for m in ((vals.get("tempo") or {}).get("extraVolumeMounts") or []) if isinstance(m, dict)}
-    for mp in ("/var/tempo", "/tmp"):
+    # The chart mounts its own `storage` volume at /var/tempo; a second mount there is rejected
+    # by the API server (duplicate mountPath), so GitOps must add /tmp only.
+    assert "/var/tempo" not in mounts, "tempo.yaml: must not duplicate the chart's /var/tempo mount"
+    for mp in ("/tmp",):
         assert mp in mounts, f"tempo.yaml: missing extraVolumeMount {mp}"
         vname = mounts[mp]
         assert vols.get(vname, {}).get("emptyDir") == {}, f"tempo.yaml: volume {vname} for {mp} must be emptyDir"
@@ -208,7 +214,8 @@ def verify_helm_renders(root: Path) -> None:
     assert tc["securityContext"]["capabilities"]["drop"] == ["ALL"]
     assert tspec["securityContext"]["seccompProfile"]["type"] == "RuntimeDefault"
     assert tspec["securityContext"]["runAsNonRoot"] is True
-    assert {"/var/tempo", "/tmp"}.issubset({m["mountPath"] for m in tc["volumeMounts"]})
+    gitops_paths = [m["mountPath"] for m in tc["volumeMounts"]]
+    assert gitops_paths.count("/var/tempo") == 1 and gitops_paths.count("/tmp") == 1, gitops_paths
 
     # 2b. Tempo offline render (08-2 bootstrap parity with persistence=true)
     out = subprocess.run(
@@ -290,7 +297,6 @@ def mutation_verify(root: Path) -> int:
         ("gitea_sh", "--set containerSecurityContext.runAsGroup=1000", "--set containerSecurityContext.runAsGroup=0"),
         ("tempo_yaml", "allowPrivilegeEscalation: false", "allowPrivilegeEscalation: true"),
         ("tempo_yaml", "readOnlyRootFilesystem: true", "readOnlyRootFilesystem: false"),
-        ("tempo_yaml", "mountPath: /var/tempo", "mountPath: /var/other"),
         ("tempo_yaml", "mountPath: /tmp", "mountPath: /var/tmp"),
         ("mon_sh", "--set tempo.securityContext.readOnlyRootFilesystem=true", "--set tempo.securityContext.readOnlyRootFilesystem=false"),
         ("mon_sh", "--set tempo.extraVolumeMounts[0].mountPath=/tmp", "--set tempo.extraVolumeMounts[0].mountPath=/var/tmp"),

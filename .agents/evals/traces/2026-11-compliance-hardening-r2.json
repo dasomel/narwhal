@@ -34,32 +34,36 @@
     {
       "id": "e3",
       "type": "bug_fix",
-      "summary": "Added containerSecurityContext runAsNonRoot/1000:1000 in 12-gitea.sh; enabled tempo.securityContext (allowPrivilegeEscalation=false, readOnlyRootFilesystem=true, drop ALL) with /var/tempo and /tmp emptyDirs in tempo.yaml and /tmp emptyDir parity in 08-2-monitoring.sh; added runAsGroup=65532 to apisix-ingress-controller in 08-1-networking.sh; set Velero server runAsNonRoot=true with UID 1002 / GID 1000 (omitting fsGroup so velero-plugin-for-aws UID 65532 keeps /target write access) in velero.yaml and 08-4-storage.sh; left keycloak and keycloak-operator KSV014 unset and classified as upstream."
+      "summary": "Added containerSecurityContext runAsNonRoot/1000:1000 in 12-gitea.sh; enabled tempo.securityContext (allowPrivilegeEscalation=false, readOnlyRootFilesystem=true, drop ALL) with a /tmp emptyDir in tempo.yaml (GitOps persistence aligned with the bootstrap 10Gi nfs-csi claim at /var/tempo, D-tempo-persist) and /tmp emptyDir parity in 08-2-monitoring.sh; added runAsGroup=65532 to apisix-ingress-controller in 08-1-networking.sh; set Velero server runAsNonRoot=true with UID 1002 / GID 1000 (omitting fsGroup so velero-plugin-for-aws UID 65532 keeps /target write access) in velero.yaml and 08-4-storage.sh; left keycloak and keycloak-operator KSV014 unset and classified as upstream."
     },
     {
       "id": "e4",
       "type": "regression_verification",
       "status": "passed",
       "scope": "Static validation, shellcheck/bash -n, markdownlint-changed, offline helm template renders, and targeted regression checks (R311, R356, R359, R362, R364, R366) on the branch without cluster access.",
-      "summary": "make validate, shellcheck, bash -n, markdownlint-changed, git diff --check, and all targeted regression checks including R366 (14 mutations + 4 offline chart renders) passed. Live cluster apply and verification are delegated to the orchestrator.",
+      "summary": "make validate, shellcheck, bash -n, markdownlint-changed, git diff --check and the targeted regression checks including R366 (13 mutations + 4 offline chart renders) passed. The orchestrator then applied the four changes to the local single-node cluster and verified them.",
       "evidence": [
         "test:make validate -> exit 0",
-        "test:python3 scripts/test/lib/check-round2-compliance-hardening.py --mutation-verify -> PASS (14 mutations rejected)",
+        "test:python3 scripts/test/lib/check-round2-compliance-hardening.py --mutation-verify -> PASS (13 mutations rejected)",
         "test:python3 scripts/test/lib/check-storage-hardening.py --mutation-verify -> PASS (17 mutations rejected)",
         "test:shellcheck & bash -n on changed scripts -> exit 0",
-        "test:python3 scripts/ci/markdownlint-changed.py --base origin/main -> exit 0"
+        "test:python3 scripts/ci/markdownlint-changed.py --base origin/main -> exit 0",
+        "test:kubectl rollout status sts/tempo + wget /ready in tempo-0 -> ready, restarts 0, ArgoCD tempo Synced/Healthy (orchestrator, measured 2026-11-18)",
+        "test:velero Backup from the velero-daily-full template after runAsUser 1002 -> Completed 1758/1758 (orchestrator, measured 2026-11-18)",
+        "test:helm upgrade gitea --reuse-values + rollout status -> 4 containers runAsNonRoot/1000, /api/healthz pass (orchestrator, measured 2026-11-18)",
+        "test:helm upgrade apisix-ingress-controller --reuse-values -> pod Running, 17/17 ApisixRoutes ResourcesSynced, ingress hosts respond (orchestrator, measured 2026-11-18)"
       ]
     },
     {
       "id": "e5",
       "type": "completion_claim",
-      "summary": "Offline chart renders, static validation, and regression checks pass; live cluster rollout, pod readiness, functional checks, and Trivy re-audit remain for the orchestrator."
+      "summary": "Offline chart renders, static validation, regression checks and the local live rollout pass; a clean install with these changes has not been run."
     },
     {
       "id": "e6",
       "type": "task_outcome",
       "state": "A",
-      "summary": "Round-2 compliance fixes committed on fix/compliance-round2 (no push); live verification runbook and ACCEPT/UPSTREAM table provided."
+      "summary": "Round-2 compliance fixes applied to the local cluster and verified; keycloak and keycloak-operator KSV014 stay unfixed (upstream)."
     }
   ]
 }

@@ -433,6 +433,16 @@ JOIN_CMD=$(kubeadm token create --print-join-command --kubeconfig "${LOCAL_KUBEC
 echo "${JOIN_CMD} --control-plane --certificate-key ${CERT_KEY} --ignore-preflight-errors=all" > /home/vagrant/join-control-plane.sh
 chmod +x /home/vagrant/join-control-plane.sh
 
+# Harden node file permissions (CIS 1.1.9, 1.1.12, 4.1.1, 4.1.7, 4.1.9).
+# Non-fatal: failures must not block provisioning.
+HARDEN_SCRIPT="${STAGE_DIR:-/home/vagrant}/scripts/cluster/harden-node-files.sh"
+if [ ! -f "${HARDEN_SCRIPT}" ]; then
+  HARDEN_SCRIPT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/harden-node-files.sh"
+fi
+if [ -f "${HARDEN_SCRIPT}" ]; then
+  bash "${HARDEN_SCRIPT}" || echo "WARN: harden-node-files.sh reported issues, continuing..."
+fi
+
 echo "=== Cluster Initialization Done ==="
 echo "Worker join command: /home/vagrant/join-command.sh"
 echo "Control plane join command: /home/vagrant/join-control-plane.sh"

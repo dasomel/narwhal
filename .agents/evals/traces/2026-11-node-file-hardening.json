@@ -1,0 +1,80 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-node-file-hardening-20261118",
+  "task": "Persist CIS node file permission hardening across reinstall by wiring scripts/cluster/harden-node-files.sh into 02-init-cluster.sh, 02-join-control-plane.sh, 02-join-worker.sh, and 03-cni-install.sh non-fatally and idempotently, pinned by regression checks R368 and updated R227.",
+  "changeContext": {
+    "paths": [
+      "CHANGELOG-ko.md",
+      "CHANGELOG.md",
+      "docs/common/compliance-hardening.md",
+      "docs/common/lessons-log.md",
+      "docs/common/static-pod-manifest-protection.md",
+      "scripts/cluster/02-init-cluster.sh",
+      "scripts/cluster/02-join-control-plane.sh",
+      "scripts/cluster/02-join-worker.sh",
+      "scripts/cluster/03-cni-install.sh",
+      "scripts/test/lib/check-node-hardening.py",
+      "scripts/test/lib/check-static-pod-hostpaths.py",
+      "scripts/test/regression-check-kakao.sh",
+      ".agents/evals/traces/2026-11-node-file-hardening.json"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Scope: wire existing scripts/cluster/harden-node-files.sh into provisioning scripts (02-init, 02-join-cp, 02-join-worker, 03-cni-install) non-fatally and safely across Vagrant, Kakao and local checkout paths; update check-static-pod-hostpaths.py contract; add R368 check; update documentation. No helper created, no harden-node-files.sh modification, no portal change."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "Measured by orchestrator on local single-node cluster 2026-11-18: fresh node had 644 on ca.crt, /var/lib/kubelet/config.yaml, kubelet.service and drop-ins, and root:root on /var/lib/etcd; Trivy reported KCV0075 (CRITICAL), KCV0069, KCV0077, KCV0056 (HIGH), KCV0059 (LOW). Manual execution of harden-node-files.sh fixed on-disk state while node stayed Ready.",
+      "evidence": [
+        "orchestrator: measured findings KCV0075, KCV0069, KCV0077, KCV0056, KCV0059 on clean install",
+        "orchestrator: manual execution of harden-node-files.sh fixed on-disk permissions"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "Wired harden-node-files.sh into 02-init-cluster.sh, 03-cni-install.sh (after Cilium/node Ready), 02-join-control-plane.sh, and 02-join-worker.sh non-fatally and idempotently. Join scripts use harden_joined_node() to wait boundedly (CNI_WAIT_TIMEOUT:-180s, CNI_WAIT_INTERVAL:-5s, CNI_CONF_DIR:-/etc/cni/net.d) for a regular CNI config file before hardening (logging a WARN naming CIS 1.1.9 on timeout and continuing non-fatally) and still run on already-joined kubelet.conf re-runs. Upgraded check-node-hardening.py (R368) to check active lines, staged/script-dir path resolution, 30 mutations, and join wait/timeout/fallback behavioural tests."
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "check-static-pod-hostpaths.py --mutation-verify (R227), check-node-hardening.py --mutation-verify (R368: 30 mutations + join wait/timeout/fallback behavioural tests), make validate, shellcheck -S warning and bash -n on changed scripts, markdownlint-changed.py --base origin/main, git diff --check, and check-kubeadm-config-oidc-harness.sh (+ --mutation-verify).",
+      "summary": "make validate passed; check-static-pod-hostpaths.py passed with 9 mutation/fixture checks; check-node-hardening.py passed with 30 mutation checks and behavioural wait/timeout/fallback tests on both join scripts; shellcheck and bash -n reported 0 warnings; markdownlint-changed.py reported 0 violations; git diff --check reported clean diff; check-kubeadm-config-oidc-harness.sh passed.",
+      "evidence": [
+        "test:make validate -> exit 0",
+        "test:python3 scripts/test/lib/check-node-hardening.py --mutation-verify -> exit 0 (30 mutations + behavioural wait/timeout/fallback tests)",
+        "test:python3 scripts/test/lib/check-static-pod-hostpaths.py --mutation-verify -> exit 0",
+        "test:shellcheck -S warning scripts/cluster/02-init-cluster.sh scripts/cluster/02-join-control-plane.sh scripts/cluster/02-join-worker.sh scripts/cluster/03-cni-install.sh scripts/test/regression-check-kakao.sh -> exit 0",
+        "test:bash -n scripts/cluster/02-init-cluster.sh scripts/cluster/02-join-control-plane.sh scripts/cluster/02-join-worker.sh scripts/cluster/03-cni-install.sh scripts/test/regression-check-kakao.sh -> exit 0",
+        "test:python3 scripts/ci/markdownlint-changed.py --base origin/main -> no violations",
+        "test:git diff --check -> exit 0"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "completion_claim",
+      "summary": "Node file permission hardening is now persisted into the provisioning path across all node types and Cilium readiness. Clean install validation remains pending a live cluster re-installation.",
+      "evidence": [
+        "artifact:scripts/cluster/02-init-cluster.sh",
+        "artifact:scripts/cluster/02-join-control-plane.sh",
+        "artifact:scripts/cluster/02-join-worker.sh",
+        "artifact:scripts/cluster/03-cni-install.sh",
+        "artifact:scripts/test/lib/check-node-hardening.py",
+        "artifact:scripts/test/lib/check-static-pod-hostpaths.py",
+        "artifact:scripts/test/regression-check-kakao.sh"
+      ]
+    },
+    {
+      "id": "e6",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Node file hardening is wired into provisioning on every node type and pinned by R368; the orchestrator ran the unchanged script on the local node (Ready, etcd Running, three of five Trivy node findings gone). A clean install with the wiring has not been run."
+    }
+  ]
+}

@@ -125,10 +125,10 @@ def check_bootstrap(root):
         raise AssertionError("manifest directory/ownership hardening appeared; update documented contract")
     for name in ("02-init-cluster.sh", "02-join-control-plane.sh"):
         source = (root / "scripts/cluster" / name).read_text()
-        if "harden-node-files.sh" in source:
-            raise AssertionError(f"{name} unexpectedly invokes harden-node-files.sh")
+        if "harden-node-files.sh" not in source:
+            raise AssertionError(f"{name} must invoke harden-node-files.sh")
         if re.search(r"\b(chmod|chown)\b[^\n]*/etc/kubernetes/manifests", source):
-            raise AssertionError(f"{name} changes manifest permissions or ownership")
+            raise AssertionError(f"{name} changes manifest permissions or ownership directly")
 
 
 def mutation_check(root):
@@ -227,6 +227,44 @@ def mutation_check(root):
             print("PASS: manifest-directory chmod mutation was rejected")
         else:
             raise AssertionError("manifest-directory chmod mutation was accepted")
+
+    for name in ("02-init-cluster.sh", "02-join-control-plane.sh"):
+        with tempfile.TemporaryDirectory() as tmp:
+            mutated = Path(tmp)
+            (mutated / "scripts/cluster").mkdir(parents=True)
+            (mutated / "scripts/cluster/harden-node-files.sh").write_text(
+                (root / "scripts/cluster/harden-node-files.sh").read_text()
+            )
+            for sname in ("02-init-cluster.sh", "02-join-control-plane.sh"):
+                stext = (root / "scripts/cluster" / sname).read_text()
+                if sname == name:
+                    stext = stext.replace("harden-node-files.sh", "unrelated-script.sh")
+                (mutated / "scripts/cluster" / sname).write_text(stext)
+            try:
+                check_bootstrap(mutated)
+            except AssertionError:
+                print(f"PASS: {name} missing harden-node-files mutation was rejected")
+            else:
+                raise AssertionError(f"{name} missing harden-node-files mutation was accepted")
+
+    with tempfile.TemporaryDirectory() as tmp:
+        mutated = Path(tmp)
+        (mutated / "scripts/cluster").mkdir(parents=True)
+        (mutated / "scripts/cluster/harden-node-files.sh").write_text(
+            (root / "scripts/cluster/harden-node-files.sh").read_text()
+        )
+        (mutated / "scripts/cluster/02-join-control-plane.sh").write_text(
+            (root / "scripts/cluster/02-join-control-plane.sh").read_text()
+        )
+        (mutated / "scripts/cluster/02-init-cluster.sh").write_text(
+            (root / "scripts/cluster/02-init-cluster.sh").read_text() + "\nchmod 755 /etc/kubernetes/manifests\n"
+        )
+        try:
+            check_bootstrap(mutated)
+        except AssertionError:
+            print("PASS: direct manifest chmod in 02-init-cluster.sh mutation was rejected")
+        else:
+            raise AssertionError("direct manifest chmod in 02-init-cluster.sh mutation was accepted")
 
 
 def main():

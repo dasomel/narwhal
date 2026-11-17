@@ -133,17 +133,34 @@ describe("compliance accepted exceptions", () => {
     mockReadJsonWithPolicy.mockReset()
   })
 
-  it("treats exact chaos-mesh and kubernetes-dashboard chart roles as upstream RBAC roles without over-matching authored roles", () => {
-    expect(isAcceptedRbacRole("chaos-mesh-chaos-controller-manager-control-plane")).toBe(true)
-    expect(isAcceptedRbacRole("chaos-mesh-chaos-controller-manager-target-namespace")).toBe(true)
-    expect(isAcceptedRbacRole("kubernetes-dashboard-api")).toBe(true)
-    expect(isAcceptedRbacRole("kubernetes-dashboard-web")).toBe(true)
-    expect(isAcceptedRbacRole("kubernetes-dashboard-metrics-scraper")).toBe(true)
-    expect(isAcceptedRbacRole("platform-admin-chaos-mesh")).toBe(false)
-    expect(isAcceptedRbacRole("developer-kubernetes-dashboard-admin")).toBe(false)
-    expect(isAcceptedRbacRole("platform-admin")).toBe(false)
-    expect(isAcceptedRbacRole("platform-admin-extra")).toBe(false)
-    expect(isAcceptedRbacRole("velero-ui-custom-role")).toBe(false)
+  it("treats exact chaos-mesh and kubernetes-dashboard chart roles as upstream RBAC roles only for matching (namespace, kind, name) triples", () => {
+    expect(isAcceptedRbacRole("chaos-mesh-chaos-controller-manager-control-plane", "chaos-testing", "Role")).toBe(true)
+    expect(isAcceptedRbacRole("chaos-mesh-chaos-controller-manager-target-namespace", "", "ClusterRole")).toBe(true)
+    expect(isAcceptedRbacRole("chaos-mesh-chaos-controller-manager-target-namespace", undefined, "ClusterRole")).toBe(true)
+    expect(isAcceptedRbacRole("kubernetes-dashboard-api", "devtools", "Role")).toBe(true)
+    expect(isAcceptedRbacRole("kubernetes-dashboard-web", "devtools", "Role")).toBe(true)
+    expect(isAcceptedRbacRole("kubernetes-dashboard-metrics-scraper", "", "ClusterRole")).toBe(true)
+    expect(isAcceptedRbacRole("kubernetes-dashboard-metrics-scraper", undefined, "ClusterRole")).toBe(true)
+
+    // Wrong namespace, wrong kind, or unknown namespace/kind fail closed
+    expect(isAcceptedRbacRole("kubernetes-dashboard-api", "dev", "Role")).toBe(false)
+    expect(isAcceptedRbacRole("kubernetes-dashboard-web", "", "ClusterRole")).toBe(false)
+    expect(isAcceptedRbacRole("kubernetes-dashboard-web", undefined, "ClusterRole")).toBe(false)
+    expect(isAcceptedRbacRole("kubernetes-dashboard-api", "", "Role")).toBe(false)
+    expect(isAcceptedRbacRole("kubernetes-dashboard-api", undefined, undefined)).toBe(false)
+    expect(isAcceptedRbacRole("kubernetes-dashboard-api", "devtools", "Unknown")).toBe(false)
+    expect(isAcceptedRbacRole("kubernetes-dashboard-metrics-scraper", "devtools", "ClusterRole")).toBe(false)
+    expect(isAcceptedRbacRole("chaos-mesh-chaos-controller-manager-control-plane", "dev", "Role")).toBe(false)
+    expect(isAcceptedRbacRole("chaos-mesh-chaos-controller-manager-target-namespace", "chaos-testing", "Role")).toBe(false)
+
+    // Authored roles & pre-existing built-in/substring behaviour
+    expect(isAcceptedRbacRole("platform-admin-chaos-mesh", "", "ClusterRole")).toBe(false)
+    expect(isAcceptedRbacRole("developer-kubernetes-dashboard-admin", "", "ClusterRole")).toBe(false)
+    expect(isAcceptedRbacRole("platform-admin", "", "ClusterRole")).toBe(false)
+    expect(isAcceptedRbacRole("platform-admin-extra", "", "ClusterRole")).toBe(false)
+    expect(isAcceptedRbacRole("velero-ui-custom-role", "storage", "Role")).toBe(false)
+    expect(isAcceptedRbacRole("system:discovery")).toBe(true)
+    expect(isAcceptedRbacRole("cert-manager-cainjector")).toBe(true)
   })
 
   it("splits Config Audit rows into actionable vs accepted per check and handles ReplicaSet hash suffixes", async () => {
@@ -504,5 +521,75 @@ describe("compliance accepted exceptions", () => {
     const summary = await getComplianceSummary()
     expect(summary.totalConfigAuditFailures).toEqual({ Critical: 1, High: 1, Medium: 0, Low: 0 })
     expect(summary.totalRbacFailures).toEqual({ Critical: 3, High: 0, Medium: 0, Low: 0 })
+  })
+
+  it("keeps unlisted CRITICAL findings actionable when an exact RBAC role name appears in a wrong namespace or kind", async () => {
+    installK8sMock({
+      "/apis/aquasecurity.github.io/v1alpha1/rbacassessmentreports": {
+        items: [
+          makeRbac({
+            namespace: "devtools",
+            kind: "Role",
+            roleName: "kubernetes-dashboard-api",
+            checks: [{ checkID: "KSV049", severity: "MEDIUM", success: false }],
+          }),
+          makeRbac({
+            namespace: "dev",
+            kind: "Role",
+            roleName: "kubernetes-dashboard-api",
+            checks: [{ checkID: "KSV042", severity: "CRITICAL", success: false }],
+          }),
+          // Unknown resource kind label/ownerRef must also fail closed
+          {
+            metadata: {
+              name: "hash-unknown-kind",
+              namespace: "devtools",
+              creationTimestamp: "2026-11-18T00:00:00Z",
+              labels: { "trivy-operator.resource.name": "kubernetes-dashboard-web" },
+            },
+            report: {
+              summary: { criticalCount: 1, highCount: 0, mediumCount: 0, lowCount: 0 },
+              checks: [{ checkID: "KSV042", title: "RBAC KSV042", severity: "CRITICAL", success: false }],
+            },
+          },
+        ],
+      },
+      "/apis/aquasecurity.github.io/v1alpha1/clusterrbacassessmentreports": {
+        items: [
+          makeRbac({
+            kind: "ClusterRole",
+            roleName: "kubernetes-dashboard-web",
+            checks: [{ checkID: "KSV042", severity: "CRITICAL", success: false }],
+          }),
+        ],
+      },
+    })
+
+    const rows = await getRbacAuditList()
+    const devtoolsApi = rows.find((r) => r.namespace === "devtools" && r.name === "kubernetes-dashboard-api")!
+    expect(devtoolsApi.accepted).toBe(true)
+    expect(devtoolsApi.actionableSummary).toEqual({ Critical: 0, High: 0, Medium: 0, Low: 0 })
+    expect(devtoolsApi.acceptedSummary).toEqual({ Critical: 0, High: 0, Medium: 1, Low: 0 })
+
+    const devApi = rows.find((r) => r.namespace === "dev" && r.name === "kubernetes-dashboard-api")!
+    expect(devApi.accepted).toBe(false)
+    expect(devApi.actionableSummary).toEqual({ Critical: 1, High: 0, Medium: 0, Low: 0 })
+    expect(devApi.acceptedSummary).toEqual({ Critical: 0, High: 0, Medium: 0, Low: 0 })
+
+    const clusterWeb = rows.find((r) => r.kind === "ClusterRole" && r.name === "kubernetes-dashboard-web")!
+    expect(clusterWeb.accepted).toBe(false)
+    expect(clusterWeb.actionableSummary).toEqual({ Critical: 1, High: 0, Medium: 0, Low: 0 })
+
+    const unknownKindWeb = rows.find((r) => r.kind === "Unknown" && r.name === "kubernetes-dashboard-web")!
+    expect(unknownKindWeb.accepted).toBe(false)
+    expect(unknownKindWeb.actionableSummary).toEqual({ Critical: 1, High: 0, Medium: 0, Low: 0 })
+
+    const devApiDetail = await getRbacAuditDetail("dev", "kubernetes-dashboard-api")
+    expect(devApiDetail?.accepted).toBe(false)
+    expect(devApiDetail?.checks.find((c) => c.id === "KSV042")?.accepted).toBe(false)
+
+    const summary = await getComplianceSummary()
+    expect(summary.totalRbacFailures).toEqual({ Critical: 3, High: 0, Medium: 0, Low: 0 })
+    expect(summary.acceptedRbacFailures).toEqual({ Critical: 0, High: 0, Medium: 1, Low: 0 })
   })
 })

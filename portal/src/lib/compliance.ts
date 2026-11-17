@@ -71,25 +71,40 @@ const UPSTREAM_RBAC_ROLE_PATTERNS = [
   "gatekeeper", "kubelet",
 ] as const
 
-// Exact upstream role names for charts whose prefix/name could match platform-authored roles
-// (e.g. "platform-admin-chaos-mesh" or "developer-kubernetes-dashboard-admin").
-// Derived from narwhal-airgap-bundle-arm64/charts/chaos-mesh-2.8.3.tgz and
-// gitops/charts/kubernetes-dashboard/templates/rbac/.
+export type RbacRoleKind = "Role" | "ClusterRole"
+
+// Exact upstream (namespace, kind, roleName) triples for charts whose prefix/name could match
+// platform-authored roles (e.g. "platform-admin-chaos-mesh" or "developer-kubernetes-dashboard-admin").
+// Derived from live cluster roles plus narwhal-airgap-bundle-arm64/charts/chaos-mesh-2.8.3.tgz
+// (namespace: chaos-testing for Role, "" for ClusterRole) and
+// gitops/charts/kubernetes-dashboard/templates/rbac/ (namespace: devtools for Role, "" for ClusterRole).
 const UPSTREAM_EXACT_RBAC_ROLES = new Set([
-  "chaos-mesh-chaos-controller-manager-control-plane",
-  "chaos-mesh-chaos-controller-manager-target-namespace",
-  "chaos-mesh-chaos-controller-manager-cluster-level",
-  "chaos-mesh-chaos-dashboard-cluster-level",
-  "chaos-mesh-chaos-dashboard-target-namespace",
-  "chaos-mesh-chaos-dns-server-target-namespace",
-  "chaos-mesh-chaos-dns-server-cluster-level",
-  "chaos-mesh-chaos-dns-server-control-plane",
-  "chaos-mesh-chaos-daemon-psp",
-  "chaos-mesh-chaos-prometheus",
-  "kubernetes-dashboard-api",
-  "kubernetes-dashboard-web",
-  "kubernetes-dashboard-metrics-scraper",
+  "chaos-testing\0Role\0chaos-mesh-chaos-controller-manager-control-plane",
+  "\0ClusterRole\0chaos-mesh-chaos-controller-manager-target-namespace",
+  "\0ClusterRole\0chaos-mesh-chaos-controller-manager-cluster-level",
+  "\0ClusterRole\0chaos-mesh-chaos-dashboard-cluster-level",
+  "\0ClusterRole\0chaos-mesh-chaos-dashboard-target-namespace",
+  "\0ClusterRole\0chaos-mesh-chaos-dns-server-target-namespace",
+  "\0ClusterRole\0chaos-mesh-chaos-dns-server-cluster-level",
+  "chaos-testing\0Role\0chaos-mesh-chaos-dns-server-control-plane",
+  "\0ClusterRole\0chaos-mesh-chaos-daemon-psp",
+  "\0ClusterRole\0chaos-mesh-chaos-prometheus",
+  "devtools\0Role\0kubernetes-dashboard-api",
+  "devtools\0Role\0kubernetes-dashboard-web",
+  "\0ClusterRole\0kubernetes-dashboard-metrics-scraper",
 ])
+
+function exactRbacRoleKey(
+  namespace: string | undefined,
+  kind: RbacRoleKind | string | undefined,
+  roleName: string,
+): string | null {
+  if (kind !== "Role" && kind !== "ClusterRole") return null
+  const ns = namespace ?? ""
+  if (kind === "Role" && ns === "") return null
+  if (kind === "ClusterRole" && ns !== "") return null
+  return `${ns}\0${kind}\0${roleName}`
+}
 
 // Our own authored roles whose name happens to contain an upstream pattern as a substring
 // (e.g. "velero-ui-admin" contains "velero") — must be checked BEFORE the upstream patterns so
@@ -108,9 +123,14 @@ function isBuiltInRbacRole(roleName: string): boolean {
 // admin/edit/view) or upstream controller/chart roles are inherent to what those roles do and are
 // NOT actionable by the platform team. Only our own authored roles (platform-admin, developer,
 // narwhal-portal*, velero-ui-*, etc.) are actionable unless covered by ACCEPTED_RBAC_RULES.
-export function isAcceptedRbacRole(roleName: string): boolean {
+export function isAcceptedRbacRole(
+  roleName: string,
+  namespace?: string,
+  kind?: RbacRoleKind | string,
+): boolean {
   if (isBuiltInRbacRole(roleName)) return true
-  if (UPSTREAM_EXACT_RBAC_ROLES.has(roleName)) return true
+  const exactKey = exactRbacRoleKey(namespace, kind, roleName)
+  if (exactKey !== null && UPSTREAM_EXACT_RBAC_ROLES.has(exactKey)) return true
   const lower = roleName.toLowerCase()
   if (OWN_ROLE_EXCEPTIONS.some((exception) => lower.includes(exception))) return false
   return UPSTREAM_RBAC_ROLE_PATTERNS.some((pattern) => lower.includes(pattern))
@@ -410,8 +430,8 @@ function classifyConfigAuditItem(item: RawAuditReport): {
   }
 }
 
-function rbacAuditMatcher(namespace: string, roleName: string): AcceptanceMatcher {
-  if (isAcceptedRbacRole(roleName)) {
+function rbacAuditMatcher(namespace: string, kind: string, roleName: string): AcceptanceMatcher {
+  if (isAcceptedRbacRole(roleName, namespace, kind)) {
     const builtIn = isBuiltInRbacRole(roleName)
     const reasonKey: AcceptedReasonKey = builtIn
       ? "compliance.acceptedReason.k8sBuiltinRole"
@@ -446,9 +466,9 @@ function classifyRbacAuditItem(item: RawAuditReport): {
   const kind = labels["trivy-operator.resource.kind"] ?? ownerRefs[0]?.kind ?? "Unknown"
   const name = resolveRbacRoleName(item)
   const namespace = item.metadata.namespace ?? ""
-  const matcher = rbacAuditMatcher(namespace, name)
+  const matcher = rbacAuditMatcher(namespace, kind, name)
 
-  if (isAcceptedRbacRole(name)) {
+  if (isAcceptedRbacRole(name, namespace, kind)) {
     const summary = buildCheckSummaryFromCounts(item.report.summary)
     return {
       row: {

@@ -287,7 +287,7 @@ functionality or reverses an intentional trade-off.
 
 ### Adding or updating allowlist entries
 
-Every exception in `portal/src/lib/compliance-accepted.ts` is fail-closed by exact `(namespace, workload, checkID)` or `(roleName, checkID)` — any unlisted check or workload remains actionable, and report rows are marked accepted only when every failing check is present in `checks[]`, accounted for by the per-severity `summary` totals, and accepted. The allowlist currently holds **67 Config Audit rules across 56 workloads** and **4 RBAC rules** (plus **13** exact upstream `(namespace, kind, roleName)` triples for `chaos-mesh` (`chaos-testing/Role/*`, cluster `ClusterRole/*`) and `kubernetes-dashboard` (`devtools/Role/kubernetes-dashboard-api`, `devtools/Role/kubernetes-dashboard-web`, `ClusterRole/kubernetes-dashboard-metrics-scraper`) in `portal/src/lib/compliance.ts`).
+Every exception in `portal/src/lib/compliance-accepted.ts` is fail-closed by exact `(namespace, kind, workload, checkID)` or `(namespace, kind, roleName, checkID)` — any unlisted check, unlisted workload, or unknown/mismatched kind remains actionable, and report rows are marked accepted only when every failing check is present in `checks[]`, accounted for by the per-severity `summary` totals, and accepted. The allowlist currently holds **70 Config Audit rules across 58 workloads** and **4 RBAC rules** (plus **13** exact upstream `(namespace, kind, roleName)` triples for `chaos-mesh` (`chaos-testing/Role/*`, cluster `ClusterRole/*`) and `kubernetes-dashboard` (`devtools/Role/kubernetes-dashboard-api`, `devtools/Role/kubernetes-dashboard-web`, `ClusterRole/kubernetes-dashboard-metrics-scraper`) in `portal/src/lib/compliance.ts`).
 
 **Residual risk (ReplicaSet suffix collapsing without `ownerReferences`):** `ReplicaSet` names are normalized by stripping a single trailing `pod-template-hash` matching the Kubernetes `SafeEncodeString` alphabet (`^[bcdfghjklmnpqrstvwxz2456789]{5,10}$`, no vowels and no `0`/`1`/`3`). Because the `narwhal-portal` `ClusterRole` (`gitops/charts/narwhal-platform/templates/narwhal-portal-k8s.yaml`) intentionally grants `apps` read access only to `deployments`, `statefulsets`, and `daemonsets` (and not `replicasets`), the portal does not inspect live `ReplicaSet.metadata.ownerReferences` to confirm `Deployment` ownership (avoiding RBAC widening). A standalone `ReplicaSet` manually named `<allowlisted-name>-<5-to-10-safe-chars>` would therefore collapse onto that Deployment rule.
 
@@ -305,6 +305,7 @@ Adding or expanding an entry requires:
 | chaos-testing | DaemonSet/chaos-daemon | KSV014 | upstream | Upstream chaos-mesh 2.8.3 DaemonSet template does not expose readOnlyRootFilesystem |
 | chaos-testing | ReplicaSet/chaos-controller-manager | KSV020, KSV021 | accept | Uses upstream chaos-mesh image default non-root UID/GID |
 | chaos-testing | ReplicaSet/chaos-controller-manager | KSV001, KSV003, KSV012, KSV014, KSV106 | upstream | Upstream chaos-mesh 2.8.3 controller-manager template does not expose containerSecurityContext |
+| database | Pod/narwhal-db-1 | KSV036 | accept | CloudNativePG instance manager calls Kubernetes API for cluster status, leader lease, and secrets, requiring mounted service-account token |
 | devtools | ReplicaSet/argocd-applicationset-controller | KSV020, KSV021 | accept | Uses upstream ArgoCD image non-root UID/GID 999 |
 | devtools | ReplicaSet/argocd-dex-server | KSV020, KSV021 | accept | Uses upstream ArgoCD dex-server and copyutil non-root UID/GID 999 |
 | devtools | ReplicaSet/argocd-notifications-controller | KSV020, KSV021 | accept | Uses upstream ArgoCD image non-root UID/GID 999 |
@@ -337,7 +338,8 @@ Adding or expanding an entry requires:
 | devtools | StatefulSet/harbor-redis | KSV014 | upstream | Harbor chart 1.19.1 redis StatefulSet template does not expose readOnlyRootFilesystem |
 | iam | ReplicaSet/keycloak-operator | KSV020, KSV021 | accept | Uses upstream keycloak-operator:26.5.7 UID 1000 |
 | iam | StatefulSet/keycloak | KSV020, KSV021 | accept | Uses upstream keycloak:26.5.7 UID 1000 |
-| monitoring | DaemonSet/k8s-monitoring-alloy-logs | KSV012, KSV020, KSV021, KSV023 | accept | Requires root UID 0, recommended UID/GID ownership, and /var/log hostPath to collect node and pod logs |
+| iam | StatefulSet/keycloak | KSV014 | upstream | Stock keycloak:26.5.7 image started with start-optimized=false re-augments Quarkus into /opt/keycloak/lib/quarkus on every start (docs/common/lessons-log.md D-COMPLIANCE-R2) |
+| monitoring | DaemonSet/k8s-monitoring-alloy-logs | KSV012, KSV020, KSV021, KSV023 | accept | Requires root UID 0, recommended UID/GID ownership, and root-owned /var/log (/var/log/pods) hostPath to collect node and pod logs |
 | monitoring | DaemonSet/k8s-monitoring-alloy-logs | KSV118 | upstream | Upstream chart schema does not expose DaemonSet pod-level securityContext |
 | monitoring | DaemonSet/prometheus-stack-prometheus-node-exporter | KSV009, KSV010, KSV023, KSV121 | accept | Requires hostNetwork, hostPID, and root/proc/sys hostPath mounts to collect host metrics |
 | monitoring | ReplicaSet/k8s-monitoring-alloy-operator | KSV020, KSV021 | accept | Relies on upstream image fixed non-root UID/GID 4242 |
@@ -346,6 +348,7 @@ Adding or expanding an entry requires:
 | monitoring | StatefulSet/alertmanager-prometheus-stack-kube-prom-alertmanager | KSV020, KSV021 | accept | Relies on upstream Alertmanager UID 1000 and config-reloader UID 65534 |
 | monitoring | StatefulSet/loki | KSV011 | accept | Omits main CPU limit intentionally to prevent CFS throttling timeouts on ingest/queries (D-MON-QOS-LOKI) |
 | monitoring | StatefulSet/prometheus-prometheus-stack-kube-prom-prometheus | KSV011, KSV020, KSV021 | accept | Relies on Prometheus UID 1000/reloader UID 65534; omits CPU limit to avoid TSDB compaction probe timeouts (D-MON-QOS) |
+| nfs-quota-agent | DaemonSet/nfs-quota-agent | KSV001, KSV012, KSV017, KSV023, KSV121 | accept | Requires privileged root container, hostPath, and /dev access to set XFS/ext4 project quotas on the NFS export (allowPrivilegeEscalation: false cannot be combined with privileged) |
 | platform-system | DaemonSet/metallb-speaker | KSV009, KSV012, KSV020, KSV021, KSV022, KSV106, KSV119 | accept | Requires hostNetwork, NET_RAW/NET_ADMIN, and UID/GID 0 raw socket access for L2 ARP/NDP announcements |
 | platform-system | ReplicaSet/apisix | KSV020, KSV021 | accept | Uses upstream APISIX image fixed UID/GID 636 |
 | platform-system | ReplicaSet/apisix-ingress-controller | KSV020, KSV021 | accept | Uses upstream image UID/GID 65532 |

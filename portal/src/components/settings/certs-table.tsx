@@ -1,5 +1,5 @@
 "use client"
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useState, useSyncExternalStore } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { useSession } from "next-auth/react"
 import { Card } from "@/components/ui/card"
@@ -7,75 +7,25 @@ import { Badge } from "@/components/ui/badge"
 import { DataState } from "@/components/ui/data-state"
 import { useLocale, useT } from "@/lib/i18n-client"
 import type { Certificate } from "@/lib/k8s-client"
+import {
+  CERT_POLL_INTERVAL_MS,
+  CERT_POLL_TIMEOUT_MS,
+  certRowKey,
+  createCertRenewController,
+  formatCertTimestamp,
+  hasCertificateRenewed,
+  type CertRenewController,
+  type RenewRowState,
+} from "./certs-renew"
 
-export const CERT_POLL_INTERVAL_MS = 2_000
-export const CERT_POLL_TIMEOUT_MS = 30_000
-
-interface RenewBaseline {
-  notBefore: string | null
-  revision: number | null
-}
-
-export type RenewRowState =
-  | { phase: "issuing"; baseline: RenewBaseline; startedAt: number }
-  | { phase: "renewed"; renewedAt: string }
-  | { phase: "pending" }
-  | { phase: "error" }
-
-function certRowKey(cert: Pick<Certificate, "namespace" | "name">): string {
-  return `${cert.namespace}/${cert.name}`
-}
-
-function formatCertTimestamp(dateStr: string | null, locale: string): string {
-  if (!dateStr || Number.isNaN(Date.parse(dateStr))) return "—"
-  return new Date(dateStr).toLocaleString(locale === "ko" ? "ko-KR" : "en-US")
-}
-
-export function hasCertificateRenewed(
-  cert: Pick<Certificate, "notBefore" | "revision" | "issuing">,
-  baseline: RenewBaseline,
-): boolean {
-  if (cert.issuing) return false
-  return cert.notBefore !== baseline.notBefore || (cert.revision ?? null) !== baseline.revision
-}
-
-function reconcileRenewStates(
-  prev: Record<string, RenewRowState>,
-  certs: Certificate[],
-  now: number,
-): Record<string, RenewRowState> {
-  let changed = false
-  const next: Record<string, RenewRowState> = { ...prev }
-  const byKey = new Map(certs.map((c) => [certRowKey(c), c]))
-
-  for (const [key, state] of Object.entries(prev)) {
-    if (state.phase !== "issuing") continue
-    const cert = byKey.get(key)
-    if (cert && hasCertificateRenewed(cert, state.baseline)) {
-      next[key] = { phase: "renewed", renewedAt: cert.notBefore ?? new Date(now).toISOString() }
-      changed = true
-    } else if (now - state.startedAt >= CERT_POLL_TIMEOUT_MS) {
-      next[key] = { phase: "pending" }
-      changed = true
-    }
-  }
-
-  return changed ? next : prev
-}
-
-function expireTimedOutRenewStates(
-  prev: Record<string, RenewRowState>,
-  now: number,
-): Record<string, RenewRowState> {
-  let changed = false
-  const next: Record<string, RenewRowState> = { ...prev }
-  for (const [key, state] of Object.entries(prev)) {
-    if (state.phase === "issuing" && now - state.startedAt >= CERT_POLL_TIMEOUT_MS) {
-      next[key] = { phase: "pending" }
-      changed = true
-    }
-  }
-  return changed ? next : prev
+export {
+  CERT_POLL_INTERVAL_MS,
+  CERT_POLL_TIMEOUT_MS,
+  createCertRenewController,
+  formatCertTimestamp,
+  hasCertificateRenewed,
+  type CertRenewController,
+  type RenewRowState,
 }
 
 function daysUntil(dateStr: string | null): number | null {
@@ -146,7 +96,7 @@ function renderRenewAction({
   )
 }
 
-export function CertsTable() {
+export function CertsTable({ controller: externalController }: { controller?: CertRenewController } = {}) {
   const t = useT()
   const locale = useLocale()
   const queryClient = useQueryClient()
@@ -154,38 +104,43 @@ export function CertsTable() {
   const role = (session?.user as { role?: string })?.role ?? "guest"
   const isAdmin = role === "cluster-admin"
 
-  // D-CERT-RENEW-STATE: keep per-row feedback in CertsTable (keyed by namespace/name)
+  const renewMutation = useMutation({
+    mutationFn: async ({ name, namespace }: { name: string; namespace: string }) => {
+      const r = await fetch("/api/settings/certs/renew", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, namespace }),
+      })
+      if (!r.ok) throw new Error(r.statusText)
+      return r.json()
+    },
+  })
+
+  const mutateRenewAsync = renewMutation.mutateAsync
+
+  // D-CERT-RENEW-STATE: keep per-row feedback in a controller (keyed by namespace/name)
   // rather than inside a row button component so refetches that re-render the table
   // cannot drop in-flight polling or completion messages.
-  const [renewStates, setRenewStates] = useState<Record<string, RenewRowState>>({})
-  const [submittingKeys, setSubmittingKeys] = useState<Record<string, boolean>>({})
-  const mountedRef = useRef(true)
+  const [internalController] = useState(() => createCertRenewController())
+  const controller = externalController ?? internalController
 
   useEffect(() => {
-    mountedRef.current = true
-    return () => {
-      mountedRef.current = false
-    }
-  }, [])
+    if (externalController) return
+    internalController.mount()
+    internalController.setHandlers({
+      postRenew: (vars) => mutateRenewAsync(vars),
+      onRenewAccepted: () => {
+        void queryClient.invalidateQueries({ queryKey: ["settings-certs"] })
+      },
+    })
+    return () => internalController.dispose()
+  }, [externalController, internalController, mutateRenewAsync, queryClient])
 
-  useEffect(() => {
-    let earliestDeadline: number | null = null
-    for (const state of Object.values(renewStates)) {
-      if (state.phase !== "issuing") continue
-      const deadline = state.startedAt + CERT_POLL_TIMEOUT_MS
-      if (earliestDeadline === null || deadline < earliestDeadline) {
-        earliestDeadline = deadline
-      }
-    }
-    if (earliestDeadline === null) return
-
-    const delay = Math.max(0, earliestDeadline - Date.now())
-    const timer = setTimeout(() => {
-      if (!mountedRef.current) return
-      setRenewStates((prev) => expireTimedOutRenewStates(prev, Date.now()))
-    }, delay)
-    return () => clearTimeout(timer)
-  }, [renewStates])
+  const { renewStates, submittingKeys } = useSyncExternalStore(
+    controller.subscribe,
+    controller.getSnapshot,
+    controller.getSnapshot,
+  )
 
   const hasActiveIssuing = Object.values(renewStates).some((s) => s.phase === "issuing")
 
@@ -195,52 +150,12 @@ export function CertsTable() {
       const r = await fetch("/api/settings/certs")
       if (!r.ok) throw new Error(r.statusText)
       const data = (await r.json()) as Certificate[]
-      if (mountedRef.current && Array.isArray(data)) {
-        setRenewStates((prev) => reconcileRenewStates(prev, data, Date.now()))
+      if (Array.isArray(data)) {
+        controller.reconcile(data, Date.now())
       }
       return data
     },
     refetchInterval: hasActiveIssuing ? CERT_POLL_INTERVAL_MS : false,
-  })
-
-  const renewMutation = useMutation({
-    mutationFn: async ({ name, namespace }: { name: string; namespace: string; baseline: RenewBaseline }) => {
-      const r = await fetch("/api/settings/certs/renew", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, namespace }),
-      })
-      if (!r.ok) throw new Error(r.statusText)
-      return r.json()
-    },
-    onMutate: ({ name, namespace }) => {
-      const key = certRowKey({ name, namespace })
-      if (!mountedRef.current) return
-      setSubmittingKeys((prev) => ({ ...prev, [key]: true }))
-    },
-    onSuccess: (_data, { name, namespace, baseline }) => {
-      if (!mountedRef.current) return
-      const key = certRowKey({ name, namespace })
-      setRenewStates((prev) => ({
-        ...prev,
-        [key]: { phase: "issuing", baseline, startedAt: Date.now() },
-      }))
-      void queryClient.invalidateQueries({ queryKey: ["settings-certs"] })
-    },
-    onError: (_err, { name, namespace }) => {
-      if (!mountedRef.current) return
-      const key = certRowKey({ name, namespace })
-      setRenewStates((prev) => ({ ...prev, [key]: { phase: "error" } }))
-    },
-    onSettled: (_data, _err, { name, namespace }) => {
-      if (!mountedRef.current) return
-      const key = certRowKey({ name, namespace })
-      setSubmittingKeys((prev) => {
-        const next = { ...prev }
-        delete next[key]
-        return next
-      })
-    },
   })
 
   const certList = Array.isArray(certs) ? certs : []
@@ -309,12 +224,9 @@ export function CertsTable() {
                         isSubmitting: Boolean(submittingKeys[key]),
                         locale,
                         t,
-                        onRenew: () =>
-                          renewMutation.mutate({
-                            name: cert.name,
-                            namespace: cert.namespace,
-                            baseline: { notBefore: cert.notBefore, revision },
-                          }),
+                        onRenew: () => {
+                          void controller.renew(cert)
+                        },
                       })}
                     </td>
                   )}

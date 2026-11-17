@@ -35,17 +35,25 @@ spec:
           runAsGroup: 1000
         # Trivy KSV001/003/012 (verified container-level via helm template). No seccompProfile here:
         # kyverno's add-default-seccomp mutate injects it cluster-wide for the storage namespace.
-        # readOnlyRootFilesystem is deliberately NOT set (KSV014 accepted): Velero's kopia
-        # repository client writes its config under $HOME (/home/cnb/udmrepo), and the repo
-        # maintenance Jobs inherit this securityContext. With a read-only root every
-        # maintenance run failed with 'mkdir /home/cnb/udmrepo: read-only file system'
-        # (seen live 2026-11-18). Escape hatch: an emptyDir on /home/cnb, once proven with
-        # a full backup and a restore.
+        # D-velero-rofs (KSV014): read-only root with a writable home. The chart already mounts
+        # its own `tmpdir` emptyDir at /tmp; a second /tmp mount makes ArgoCD's diff fail.
+        # kopia's repository client writes its config under $HOME (/home/cnb/udmrepo) and the
+        # repo maintenance Jobs inherit the server's securityContext, volumes and mounts; with
+        # a read-only root and no writable home every maintenance run failed with
+        # 'mkdir /home/cnb/udmrepo: read-only file system' (seen live 2026-11-18). Escape hatch: drop
+        # readOnlyRootFilesystem.
+        extraVolumes:
+          - name: velero-home
+            emptyDir: {}
+        extraVolumeMounts:
+          - name: velero-home
+            mountPath: /home/cnb
         containerSecurityContext:
           allowPrivilegeEscalation: false
           runAsNonRoot: true
           runAsUser: 1002
           runAsGroup: 1000
+          readOnlyRootFilesystem: true
           capabilities:
             drop:
               - ALL

@@ -383,11 +383,15 @@ Adding or expanding an entry requires:
 Worthwhile but out of the "quick safe win" scope; each needs care and control-plane
 restarts on all 3 masters:
 
-- **Persist node file perms across reinstall**: `harden-node-files.sh` is now wired into
-  the provisioning path (`scripts/cluster/02-init-cluster.sh`, `02-join-control-plane.sh`,
-  `02-join-worker.sh`, and `03-cni-install.sh`) so that every node type runs it non-fatally
-  and idempotently after its kubeadm init/join has produced files and after the CNI conflist exists.
-  Note that this wiring has NOT been validated by a clean install yet (the orchestrator cannot run one now).
+- **Persist node file perms across reinstall**: `harden-node-files.sh` is wired into
+  the provisioning path non-fatally and idempotently: `02-init-cluster.sh` runs it after
+  `kubeadm init` (before CNI exists), `03-cni-install.sh` runs it on `master-1` after
+  Cilium and node readiness, and `02-join-control-plane.sh` / `02-join-worker.sh` wait
+  up to `CNI_WAIT_TIMEOUT` (default 180s, polling every 5s) for a regular file in
+  `/etc/cni/net.d` (including on already-joined re-runs) before running it. On timeout,
+  join scripts log a `WARN` that CNI file permissions (CIS 1.1.9) remain unhardened until
+  re-run and still harden the remaining node files. This wiring has NOT been validated by
+  a clean install on a live cluster yet.
 - **CIS 1.1.9 (CNI file perms) & 1.1.12 (etcd dir ownership)**: on-disk state is already
   correct (CNI files are 600; `/var/lib/etcd` is `etcd:etcd` recursively) but the trivy
   **node-collector can't verify them** from its container context (can't map the host

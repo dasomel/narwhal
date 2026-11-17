@@ -3482,8 +3482,8 @@ PYEOF'
     python3 scripts/test/lib/check-monitoring-hardening.py --mutation-verify
   check R362 "Storage charts (seaweedfs, openbao, velero, velero-ui) compliance hardening (non-root, emptyDir logs/tmp, readOnlyRootFilesystem, resources) and 08-4-storage.sh parity; 17 mutations caught" \
     python3 scripts/test/lib/check-storage-hardening.py --mutation-verify
-  # 2026-11-18 (D-NODE-HARDENING): harden-node-files.sh wired into provisioning path (02-init, 02-join-cp, 02-join-worker, 03-cni-install)
-  check R368 "Node file permission hardening (harden-node-files.sh) wired into provisioning path (02-init, 02-join-cp, 02-join-worker, 03-cni-install) non-fatally and idempotently; 10 mutations caught" \
+  # 2026-11-18 (D-NODE-HARDENING): harden-node-files.sh wired into provisioning path (02-init, 02-join-cp, 02-join-worker, 03-cni-install) with CNI wait on joins
+  check R368 "Node file permission hardening (harden-node-files.sh) wired into provisioning path (02-init, 02-join-cp, 02-join-worker, 03-cni-install) non-fatally and idempotently with join CNI wait; 30 mutations + behavioural checks" \
     python3 scripts/test/lib/check-node-hardening.py --mutation-verify
 }
 

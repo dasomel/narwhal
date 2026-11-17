@@ -110,6 +110,14 @@ spec:
                 seccompProfile:
                   type: RuntimeDefault
         injector:
+          # The chart's required pod anti-affinity (one injector per node) deadlocks a surge
+          # rollout on a single-node cluster: the new pod stays Pending forever (seen live
+          # 2026-11-18). Replace in place instead; the webhook is unavailable for seconds.
+          strategy: |
+            type: RollingUpdate
+            rollingUpdate:
+              maxSurge: 0
+              maxUnavailable: 1
           resources:
             requests:
               cpu: 25m

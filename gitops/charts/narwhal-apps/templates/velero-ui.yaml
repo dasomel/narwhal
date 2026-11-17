@@ -53,7 +53,10 @@ spec:
         # 비숫자 유저는 kubelet이 non-root 검증 불가 → CreateContainerConfigError).
         # Trivy KSV001/003 added to the existing block above (allowPrivilegeEscalation,
         # capabilities.drop) -- verified container-level via helm template.
+        # runAsUser must accompany runAsGroup at pod level: containerd refuses the sandbox
+        # otherwise ('user group "1000" is specified without user'; seen live 2026-11-18).
         podSecurityContext:
+          runAsUser: 1000
           runAsGroup: 1000
           fsGroup: 1000
 

@@ -42,9 +42,14 @@ spec:
         # mutate now injects it cluster-wide for the storage namespace (not
         # excluded), so setting it here would just duplicate. Not forcing
         # runAsNonRoot (KSV012): image USER is 'cnb' (non-numeric), still unverifiable.
+        # readOnlyRootFilesystem is deliberately NOT set (KSV014 accepted): Velero's kopia
+        # repository client writes its config under $HOME (/home/cnb/udmrepo), and the repo
+        # maintenance Jobs inherit this securityContext. With a read-only root every
+        # maintenance run failed with 'mkdir /home/cnb/udmrepo: read-only file system'
+        # (seen live 2026-11-18). Escape hatch: an emptyDir on /home/cnb, once proven with
+        # a full backup and a restore.
         containerSecurityContext:
           allowPrivilegeEscalation: false
-          readOnlyRootFilesystem: true
           capabilities:
             drop:
               - ALL

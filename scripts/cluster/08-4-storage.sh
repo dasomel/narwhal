@@ -492,9 +492,9 @@ rbac:
   clusterAdministrator: false
 podSecurityContext:
   runAsNonRoot: false
+# No readOnlyRootFilesystem: kopia writes its repo config under \$HOME (see velero.yaml).
 containerSecurityContext:
   allowPrivilegeEscalation: false
-  readOnlyRootFilesystem: true
   capabilities:
     drop:
       - ALL

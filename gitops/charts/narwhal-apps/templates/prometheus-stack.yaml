@@ -34,8 +34,31 @@ spec:
         # (low cardinality, 4 label keys on pods). Escape hatch: removing this restores the empty
         # allowlist and the portal silently uses the owner-workload fallback.
         kube-state-metrics:
+          resources:
+            requests:
+              cpu: 25m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 256Mi
           metricLabelsAllowlist:
             - pods=[app.kubernetes.io/instance,app.kubernetes.io/name,app,k8s-app]
+        prometheusOperator:
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 250m
+              memory: 256Mi
+          prometheusConfigReloader:
+            resources:
+              requests:
+                cpu: 10m
+                memory: 32Mi
+              limits:
+                cpu: 100m
+                memory: 64Mi
         prometheus:
           prometheusSpec:
             podMetadata:
@@ -115,6 +138,24 @@ spec:
                     requests:
                       storage: 10Gi
         grafana:
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 250m
+              memory: 512Mi
+          containerSecurityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault
+          extraEmptyDirMounts:
+            - name: tmp
+              mountPath: /tmp
           assertNoLeakedSecrets: false
           # The NFS server's per-PV mode timer grants UID 472 write access; root_squash
           # rejects the chart's root init container chown, which is unnecessary here.
@@ -134,6 +175,21 @@ spec:
             storageClassName: nfs-csi
             size: 5Gi
           sidecar:
+            resources:
+              requests:
+                cpu: 25m
+                memory: 64Mi
+              limits:
+                cpu: 100m
+                memory: 128Mi
+            securityContext:
+              allowPrivilegeEscalation: false
+              readOnlyRootFilesystem: true
+              capabilities:
+                drop:
+                  - ALL
+              seccompProfile:
+                type: RuntimeDefault
             dashboards:
               enabled: true
               label: grafana_dashboard
@@ -178,6 +234,13 @@ spec:
         # helm template). Not forcing runAsNonRoot: already non-root by chart default
         # (uid 65534, live-verified), so KSV012 isn't flagged.
         prometheus-node-exporter:
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
           containerSecurityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
@@ -188,6 +251,13 @@ spec:
               type: RuntimeDefault
         alertmanager:
           alertmanagerSpec:
+            resources:
+              requests:
+                cpu: 25m
+                memory: 64Mi
+              limits:
+                cpu: 200m
+                memory: 256Mi
             # D610-2: owner-requested cross-namespace notification routing; only the labelled
             # monitoring config is trusted. Cost: its routes see all alerts. Escape: use OnNamespace.
             storage:

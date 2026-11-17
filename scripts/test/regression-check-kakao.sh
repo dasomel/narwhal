@@ -3460,6 +3460,9 @@ PYEOF'
   # 2026-11-08 (D-NFS-VMDK, D-CNPG-RESTART-AMP, D-CNPG-RESOURCES, D-CNPG-APPDB): NFS export on its own disk so etcd and the PVs stop sharing one VMDK; CNPG tolerates a stall.
   check R327 "NFS export has its own disk: Vagrantfile attaches narwhal-nfs.vmdk to master-1 only via vmware vmx keys nvme0:1.present/fileName plus a before up/reload vmware-vdiskmanager trigger (never config.vm.disk: vagrant-vmware-desktop 3.0.5 get_disk crashes), NARWHAL_NFS_DISK_GB=0 refused once the vmdk exists and passes NFS_DATA_DEVICE=auto to 01-nfs-server.sh, which resolves exactly one blank non-OS disk (no /dev/sdX guess) and still refuses to mount over live data; narwhal-db.yaml and 07-cnpg.sh both carry liveness >= 90s tolerance with isolationCheck 5s, default readiness, memory requests and limit with no CPU limit, and bootstrap database/owner narwhal (monitoring target exists); operations.md sections 15 (migration, /export-aware quota restore, never-0 warning) and 16 (host load); runbook nvme0n1/nvme0n2, nfs-server autostart, sudo test -d, JSON-patch nodeSelector restore; 38 mutations caught" \
     python3 scripts/test/lib/check-nfs-data-disk.py --mutation-verify
+  # 2026-11-18 (D-MON-HARDENING): prometheus-stack, k8s-monitoring, loki resource requests/limits, readOnlyRootFilesystem, NET_RAW drop, and bootstrap parity
+  check R360 "monitoring stack compliance hardening: prometheus-node-exporter, kube-state-metrics, prometheusOperator, alertmanager, grafana (main + sidecars) have resources and readOnlyRootFilesystem where safe; alloy-logs configReloader synchronized, NET_RAW dropped, /tmp mounted; loki sidecar limits.cpu set; bootstrap parity in 08-2; 21 mutations caught (D-MON-HARDENING)" \
+    python3 scripts/test/lib/check-monitoring-hardening.py --mutation-verify
 }
 
 #=========================================

@@ -9,6 +9,8 @@
 
 ## [Unreleased]
 
+- **모니터링 스택 컴플라이언스 강화 (prometheus-stack, k8s-monitoring, loki; Lane 6).** Prometheus Operator, node-exporter, kube-state-metrics, Alertmanager, Grafana(본체 및 사이드카), Alloy Operator, Alloy config-reloader에 리소스 requests/limits를 설정하고, Grafana 및 Alloy 컨테이너에 NET_RAW 제거·/tmp emptyDir 마운트 및 readOnlyRootFilesystem을 적용하며, loki-sc-rules 사이드카 CPU limit(100m)을 추가하고 08-2-monitoring.sh 부트스트랩 스크립트와 완전한 패리티를 구성함 (D-MON-HARDENING, R360).
+
 - **Kyverno 서명 Audit 대상을 서명 경로가 있는 포털 저장소로 한정함(#683).** `devtools`를 포함하고 미서명 타사·Narwhal 이미지는 제외하며 digest 변환 없이 태그를 허용한다. CycloneDX 검사는 유지한다. 라이브 확인: 타사 이미지 위반은 멈췄고, Kyverno는 포털 서명을 찾지 못한다고 보고한다. Cosign v3가 서명을 OCI referrer로 저장하는데 Kyverno 1.18.1이 이를 검증하지 못한다(#684). Audit 전용이다.
 
 - **포털을 `narwhal-portal:1.1.17`로 고정함 (출시된 v1.5.0의 1.1.15에서 변경; 1.1.16은 중간 핀).** 게스트를 포함해 범위가 비어 있는 계정은 `/access-denied`로 이동하고 `403 ACCESS_NOT_GRANTED`를 반환한다(#686). 개발자와 뷰어는 이제 전체 fleet 데이터를 볼 수 없다(#678, #687). 업그레이드 전에 팀 매핑 또는 `narwhal.io/team` 라벨을 추가한다. 이미지는 amd64와 arm64용으로 게시됐고 저장소 공개 키 및 투명성 로그를 사용한 Cosign v3.1.4 검증이 통과했다. 포털 이미지의 클러스터 내부 Kyverno 검증은 알려진 실패 상태다(narwhal#684). 라이브 롤아웃은 확인하지 않았다.

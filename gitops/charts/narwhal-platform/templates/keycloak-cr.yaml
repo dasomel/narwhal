@@ -54,6 +54,15 @@ spec:
       spec:
         containers:
           - name: keycloak
+            securityContext:
+              allowPrivilegeEscalation: false
+              runAsNonRoot: true
+              runAsUser: 1000
+              capabilities:
+                drop:
+                  - ALL
+              seccompProfile:
+                type: RuntimeDefault
             # Relaxed health probes (timeoutSeconds 1->5, failureThreshold 3->5) tolerate
             # transient GC/CPU spikes instead of false-positive killing under contention.
             # (Operator HONORS these podTemplate probes; CPU/memory go in spec.resources

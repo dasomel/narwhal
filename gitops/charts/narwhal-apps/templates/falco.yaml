@@ -274,6 +274,19 @@ spec:
             enabled: false
           podLabels:
             istio.io/dataplane-mode: "none"
+          podSecurityContext:
+            runAsNonRoot: true
+            runAsUser: 1234
+            runAsGroup: 1234
+            fsGroup: 1234
+            seccompProfile:
+              type: RuntimeDefault
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
           resources:
             requests:
               cpu: 50m

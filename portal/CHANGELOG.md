@@ -9,6 +9,12 @@ English | [한국어](CHANGELOG-ko.md)
 
 ## [Unreleased]
 
+### Fixed
+
+- **TLS certificates renewal feedback and issued metadata (`src/components/settings/certs-table.tsx`, `src/lib/k8s-client.ts`):**
+  - Added `revision` (`status.revision`) and `issuing` (`Issuing=True` condition) to the `Certificate` projection and `GET /api/settings/certs` response while keeping existing fields and the `cluster-admin` gate.
+  - Added an `Issued` (`발급일`) column to `CertsTable` showing locale-formatted `notBefore` alongside `rev <N>`, and replaced the static renewal-sent badge with bounded row-keyed polling (every 2s up to 30s) after `POST /api/settings/certs/renew`, transitioning across `Issuing…`, `Renewed at <time>`, `Still pending — check again later`, and `Renewal failed` without losing row state across refetches or leaking timers on unmount.
+
 ## [1.1.17] - 2026-11-17
 
 Patch release that denies portal access to users without a team mapping or labelled namespace and scopes tenant data

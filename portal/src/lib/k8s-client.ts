@@ -686,6 +686,8 @@ export interface Certificate {
   name: string
   namespace: string
   ready: boolean
+  issuing: boolean
+  revision: number | null
   notAfter: string | null
   notBefore: string | null
   dnsNames: string[]
@@ -701,6 +703,7 @@ interface RawCertificate {
   }
   status?: {
     conditions?: Array<{ type: string; status: string }>
+    revision?: number
     notAfter?: string
     notBefore?: string
     renewalTime?: string
@@ -712,10 +715,13 @@ interface CertificateList {
 }
 
 function mapCertificate(item: RawCertificate): Certificate {
+  const revision = item.status?.revision
   return {
     name: item.metadata.name,
     namespace: item.metadata.namespace,
     ready: item.status?.conditions?.some((c) => c.type === "Ready" && c.status === "True") ?? false,
+    issuing: item.status?.conditions?.some((c) => c.type === "Issuing" && c.status === "True") ?? false,
+    revision: typeof revision === "number" && Number.isFinite(revision) ? revision : null,
     notAfter: item.status?.notAfter ?? null,
     notBefore: item.status?.notBefore ?? null,
     dnsNames: item.spec.dnsNames ?? [],

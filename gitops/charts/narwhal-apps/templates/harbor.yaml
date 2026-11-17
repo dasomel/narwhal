@@ -29,7 +29,7 @@ spec:
         database:
           type: external
           external:
-            host: harbor-db-rw
+            host: narwhal-db-rw.database.svc.cluster.local
             port: 5432
             username: harbor
             # DB password loaded from existingSecret
@@ -57,6 +57,13 @@ spec:
             image:
               repository: ghcr.io/dasomel/goharbor/redis-photon
               tag: v2.15.1
+            resources:
+              requests:
+                cpu: 50m
+                memory: 64Mi
+              limits:
+                cpu: 250m
+                memory: 256Mi
         trivy:
           enabled: false
         # Pin shared secrets so Helm upgrades never regenerate divergent values.
@@ -152,12 +159,26 @@ spec:
             tag: v2.15.1
           podLabels:
             istio.io/dataplane-mode: "none"
+          resources:
+            requests:
+              cpu: 25m
+              memory: 32Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
         nginx:
           image:
             repository: ghcr.io/dasomel/goharbor/nginx-photon
             tag: v2.15.1
           podLabels:
             istio.io/dataplane-mode: "none"
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
         # Metrics/exporter kept OFF: harbor-exporter has NO clean multi-arch v2.15.x tag in
         # ghcr.io/dasomel/goharbor (only :latest + :v2.15.0-build.NN). :latest is the stale-amd64
         # trap that crashlooped every harbor pod on arm64 (exec format error) — see

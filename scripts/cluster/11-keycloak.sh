@@ -138,6 +138,17 @@ if [ -n "${OPERATOR_CONTAINER}" ]; then
         "containers": [
           {
             "name": "${OPERATOR_CONTAINER}",
+            "securityContext": {
+              "allowPrivilegeEscalation": false,
+              "runAsNonRoot": true,
+              "runAsUser": 1000,
+              "capabilities": {
+                "drop": ["ALL"]
+              },
+              "seccompProfile": {
+                "type": "RuntimeDefault"
+              }
+            },
             "livenessProbe": {
               "httpGet": {
                 "path": "/q/health/ready"
@@ -153,7 +164,7 @@ if [ -n "${OPERATOR_CONTAINER}" ]; then
   }
 }
 PATCHEOF
-)" || echo "WARN: keycloak-operator livenessProbe patch failed; keeping upstream probe"
+)" || echo "WARN: keycloak-operator livenessProbe/securityContext patch failed; keeping upstream spec"
 else
   echo "WARN: keycloak-operator container not found in deployment/keycloak-operator; skipping livenessProbe patch"
 fi
@@ -220,6 +231,15 @@ spec:
       spec:
         containers:
           - name: keycloak
+            securityContext:
+              allowPrivilegeEscalation: false
+              runAsNonRoot: true
+              runAsUser: 1000
+              capabilities:
+                drop:
+                  - ALL
+              seccompProfile:
+                type: RuntimeDefault
             env:
               - name: KC_DB_URL
                 value: "jdbc:postgresql://narwhal-db-rw.database.svc.cluster.local:5432/keycloak?sslmode=disable"

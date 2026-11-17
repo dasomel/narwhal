@@ -445,6 +445,11 @@ assert aescbc and (not identity or aescbc.start() < identity.start()), "identity
   check_not R38 "no ClusterRoleBinding grants developer-workload-admin (2026-08-20)" \
     bash -c "awk '/^kind: ClusterRoleBinding\$/,/^---/' gitops/resources/rbac-policies.yaml | grep -q 'developer-workload-admin'"
 
+  # 2026-11-18: platform-admin may read pod logs but must not delete them; the Velero UI
+  # uses env Secret refs and must not list/get storage namespace Secrets via its Role.
+  check R354 "platform-admin pods/log is read-only and velero-ui Role excludes Secrets" \
+    python3 scripts/test/lib/check-rbac-compliance-hardening.py --mutation-verify
+
   # 2026-08-20: Gitea authenticates as whoever X-WEBAUTH-USER names, and the APISIX
   # bypass route (git + /api/v1/ + /api/packages/, deliberately no OIDC) did not strip
   # it — so the header was the credential, from anywhere that reaches the public host.
@@ -3289,7 +3294,8 @@ assert sum(1 for l in code if re.search(r"\bexit 3\b", l)) == 1, "exit 3 must ap
 t=open("scripts/cluster/08-1-networking.sh").read()
 g=open("gitops/charts/narwhal-apps/templates/apisix.yaml").read()
 def mi(v): return int(v[:-2])*(1024 if v.endswith("Gi") else 1)
-f=[re.search(r"resources\.limits\.memory=(\d+(?:Mi|Gi))",t),re.search(r"resources\.requests\.memory=(\d+(?:Mi|Gi))",t)]
+ic=t[t.index("Install separately."):]  # the IC helm flags; earlier --set resources.* lines belong to other charts
+f=[re.search(r"resources\.limits\.memory=(\d+(?:Mi|Gi))",ic),re.search(r"resources\.requests\.memory=(\d+(?:Mi|Gi))",ic)]
 v=re.search(r"ingressController:.*?limits:\s*cpu: \S+\s*memory: (\d+(?:Mi|Gi))",t,re.S)
 gr=re.search(r"ingressController:.*?requests:\s*cpu:\s*\S+\s*memory: (\d+(?:Mi|Gi))",g,re.S)
 gl=re.search(r"ingressController:.*?limits:\s*cpu:\s*\S+\s*memory: (\d+(?:Mi|Gi))",g,re.S)
@@ -3390,6 +3396,12 @@ PYEOF'
     python3 scripts/test/lib/check-keycloak-bootstrap-issuer.py
   check R347 "R19 helper compares image sets, not counts: identical passes, equal-count swap and missing-only fail with names (#663)" \
     bash scripts/test/lib/self-test-airgap-bundle-image-set.sh
+  check R350 "DB direct FQDN in bootstrap/GitOps, no ExternalName creation, CNPG operator budget and existing network path; 4 endpoint cases and 8 mutations (2026-11-18, D1/D2)" \
+    python3 scripts/test/lib/check-db-direct-hosts.py --mutation-verify
+  check R364 "DevTools compliance hardening: Headlamp readOnlyRootFilesystem and ca-bundle resources, Kong resources, Chaos Mesh CPU limits, Harbor portal/nginx/redis resources, Gitea resources, ArgoCD initContainer resources (2026-11-18, Lane 7b)" \
+    python3 scripts/test/lib/check-devtools-compliance-hardening.py --mutation-verify
+  check R356 "Platform-system networking hardening: MetalLB L2 frrk8s disabled, speaker/controller resources + seccomp RuntimeDefault, APISIX top-level resources + runAsUser 636 non-root, APISIX-IC runAsNonRoot + readOnlyRootFilesystem, cert-manager resources; 13 mutations caught (D-NETWORKING-HARDENING)" \
+    python3 scripts/test/lib/check-networking-hardening.py
   check R348 "keycloak-operator livenessProbe patches /q/health/ready (30s*6=180s, timeout 10s), keeps port/scheme/startupProbe, is idempotent and container-index/name safe; 4 mutations caught (D-KC-OPERATOR-LIVENESS)" \
     python3 scripts/test/lib/check-keycloak-operator-liveness.py
   check R345 "12-gitea.sh waits for the patched Deployment rollout and selects a Running, non-terminating Gitea pod by name; all 3 mutations caught (D-GITEA-ROLLOUT-WAIT)" \
@@ -3460,6 +3472,16 @@ PYEOF'
   # 2026-11-08 (D-NFS-VMDK, D-CNPG-RESTART-AMP, D-CNPG-RESOURCES, D-CNPG-APPDB): NFS export on its own disk so etcd and the PVs stop sharing one VMDK; CNPG tolerates a stall.
   check R327 "NFS export has its own disk: Vagrantfile attaches narwhal-nfs.vmdk to master-1 only via vmware vmx keys nvme0:1.present/fileName plus a before up/reload vmware-vdiskmanager trigger (never config.vm.disk: vagrant-vmware-desktop 3.0.5 get_disk crashes), NARWHAL_NFS_DISK_GB=0 refused once the vmdk exists and passes NFS_DATA_DEVICE=auto to 01-nfs-server.sh, which resolves exactly one blank non-OS disk (no /dev/sdX guess) and still refuses to mount over live data; narwhal-db.yaml and 07-cnpg.sh both carry liveness >= 90s tolerance with isolationCheck 5s, default readiness, memory requests and limit with no CPU limit, and bootstrap database/owner narwhal (monitoring target exists); operations.md sections 15 (migration, /export-aware quota restore, never-0 warning) and 16 (host load); runbook nvme0n1/nvme0n2, nfs-server autostart, sudo test -d, JSON-patch nodeSelector restore; 38 mutations caught" \
     python3 scripts/test/lib/check-nfs-data-disk.py --mutation-verify
+  check R352 "apisix-etcd, narwhal-portal-valkey and narwhal-portal harden securityContext (non-root, allowPrivilegeEscalation=false, drop ALL, RuntimeDefault seccomp, readOnlyRootFilesystem; etcd uid/gid/fsGroup >10000; portal gid/fsGroup 1001 + /tmp and /app/.next/cache emptyDir); 14 mutations caught" python3 scripts/test/lib/check-platform-manifest-hardening.py --mutation-verify
+  check R358 "Lane 5 compliance hardening: falcosidekick full securityContext (non-root uid/gid 1234, ro rootfs, drop ALL, RuntimeDefault), trivy-operator podSecurityContext + limits.cpu, trivy-server allowPrivilegeEscalation/drop ALL/RuntimeDefault, kyverno 4-controller limits.cpu with bootstrap/GitOps parity, and istiod gateways.seccompProfile RuntimeDefault in both GitOps and 09-istio-ambient.sh; 14 mutations caught" \
+    python3 scripts/test/lib/check-lane5-security-charts.py --mutation-verify
+  check R359 "Keycloak operator & CR securityContext (allowPrivilegeEscalation=false, runAsNonRoot=true, runAsUser=1000, drop ALL, RuntimeDefault; readOnlyRootFilesystem left unset pending live mount proof) with bootstrap/GitOps parity and idempotent stub-kubectl verification; 8 mutations caught" \
+    python3 scripts/test/lib/check-keycloak-security-context.py --mutation-verify
+  # 2026-11-18 (D-MON-HARDENING): prometheus-stack, k8s-monitoring, loki resource requests/limits, readOnlyRootFilesystem, NET_RAW drop, and bootstrap parity
+  check R360 "monitoring stack compliance hardening: prometheus-node-exporter, kube-state-metrics, prometheusOperator, alertmanager, grafana (main + sidecars) have resources and readOnlyRootFilesystem where safe; alloy-logs configReloader synchronized, NET_RAW dropped, /tmp mounted; loki sidecar limits.cpu set; bootstrap parity in 08-2; 21 mutations caught (D-MON-HARDENING)" \
+    python3 scripts/test/lib/check-monitoring-hardening.py --mutation-verify
+  check R362 "Storage charts (seaweedfs, openbao, velero, velero-ui) compliance hardening (non-root, emptyDir logs/tmp, readOnlyRootFilesystem, resources) and 08-4-storage.sh parity; 17 mutations caught" \
+    python3 scripts/test/lib/check-storage-hardening.py --mutation-verify
 }
 
 #=========================================

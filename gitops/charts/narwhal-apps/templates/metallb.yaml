@@ -19,19 +19,37 @@ spec:
     targetRevision: 0.16.1
     helm:
       valuesObject:
+        frrk8s:
+          enabled: false
         speaker:
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+          securityContext:
+            seccompProfile:
+              type: RuntimeDefault
           tolerations:
             - key: "node.kubernetes.io/disk-pressure"
               operator: "Exists"
               effect: "NoSchedule"
         controller:
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
           tolerations:
             - key: "node.kubernetes.io/disk-pressure"
               operator: "Exists"
               effect: "NoSchedule"
           # Trivy KSV030/104 (pod-level, verified via helm template; deep-merges with
-          # chart default runAsNonRoot/runAsUser/fsGroup). speaker/frr-k8s
-          # intentionally left untouched (need NET_ADMIN/NET_RAW + hostNetwork).
+          # chart default runAsNonRoot/runAsUser/fsGroup).
           securityContext:
             seccompProfile:
               type: RuntimeDefault

@@ -103,12 +103,14 @@ spec:
                           values: [tempo]
         # D-MON-QOS-LOKI: loki-sc-rules sidecar (chart top-level `sidecar.resources`, applies to the
         # single-binary pod) used ~72Mi; same BestEffort problem. Request ~= use, limit ~2.5x.
+        # CPU limit 100m added to satisfy Trivy KSV011 on sidecar.
         sidecar:
           resources:
             requests:
               cpu: 10m
               memory: 64Mi
             limits:
+              cpu: 100m
               memory: 192Mi
         read:
           replicas: 0

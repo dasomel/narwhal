@@ -68,6 +68,14 @@ spec:
           storageClassName: nfs-csi
           storageSize: 5Gi
           server:
+            podSecurityContext:
+              seccompProfile:
+                type: RuntimeDefault
+            securityContext:
+              allowPrivilegeEscalation: false
+              capabilities:
+                drop:
+                  - ALL
             resources:
               requests:
                 cpu: 100m
@@ -151,11 +159,16 @@ spec:
         # chart reads the TOP-LEVEL `resources` (templates/deployment.yaml); the old
         # `operator.resources` block was inert. Steady state is ~330Mi, so a 384Mi
         # request makes it Burstable and the 1Gi limit contains it.
+        podSecurityContext:
+          runAsNonRoot: true
+          seccompProfile:
+            type: RuntimeDefault
         resources:
           requests:
             cpu: 100m
             memory: 384Mi
           limits:
+            cpu: 500m
             memory: 1Gi
         # Prometheus 자동 수집 (prometheus-stack 의 ServiceMonitor selector 매칭됨)
         serviceMonitor:

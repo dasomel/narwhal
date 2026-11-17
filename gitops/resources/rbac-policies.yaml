@@ -34,7 +34,6 @@ rules:
   - apiGroups: [""]
     resources:
       - pods
-      - pods/log
       - pods/exec
       - pods/portforward
       - pods/attach
@@ -49,6 +48,10 @@ rules:
       - resourcequotas
       - limitranges
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  # Pod logs are read-only even for platform administrators.
+  - apiGroups: [""]
+    resources: ["pods/log"]
+    verbs: ["get", "list", "watch"]
   # 앱 배포 리소스: 전체 관리
   - apiGroups: ["apps"]
     resources:
@@ -472,13 +475,12 @@ metadata:
   labels:
     app.kubernetes.io/managed-by: narwhal
 rules:
-  # Pods, Secrets, ConfigMaps 읽기 전용 (UI 표시용)
+  # Pods and ConfigMaps are read-only (UI display); secrets are consumed via env refs.
   - apiGroups: [""]
     resources:
       - pods
       - pods/log
       - pods/status
-      - secrets
       - configmaps
     verbs: ["get", "list", "watch"]
   # Velero 백업/복원 관련 CRUD 권한 (와일드카드 제거)

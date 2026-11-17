@@ -58,19 +58,20 @@ Port: 5432
 
 ### 네임스페이스 간 접속
 
-각 애플리케이션 네임스페이스에 ExternalName Service를 생성하여 짧은 서비스명으로 접속 가능:
+애플리케이션은 CNPG가 만든 읽기/쓰기 서비스의 FQDN으로 직접 접속한다. 예전의 네임스페이스별
+ExternalName 별칭(`harbor-db-rw`, `gitea-db-rw`, `authentik-db-rw`)은 제거했다(Trivy `AVD-KSV-0108`,
+2026-11-18).
 
-| 네임스페이스 | 서비스명 | 대상 |
-|--------------|----------|------|
-| keycloak | keycloak-db-rw:5432 | narwhal-db-pooler-rw.database |
-| harbor | harbor-db-rw:5432 | narwhal-db-pooler-rw.database |
-| gitea | gitea-db-rw:5432 | narwhal-db-pooler-rw.database |
+| 소비자 | 네임스페이스 | 접속 대상 |
+|--------|--------------|-----------|
+| Keycloak | iam | narwhal-db-rw.database.svc.cluster.local:5432 |
+| Harbor | devtools | narwhal-db-rw.database.svc.cluster.local:5432 |
+| Gitea | devtools | narwhal-db-rw.database.svc.cluster.local:5432 |
 
 **예시 연결 문자열**:
 
 ```text
-# Keycloak namespace 내부에서
-jdbc:postgresql://keycloak-db-rw:5432/keycloak
+jdbc:postgresql://narwhal-db-rw.database.svc.cluster.local:5432/keycloak
 ```
 
 ## 성능 튜닝 파라미터

@@ -23,12 +23,24 @@ admissionController:
   container:
     extraArgs:
       webhookTimeout: 5
+    resources:
+      limits:
+        cpu: 500m
 backgroundController:
   replicas: 1
+  resources:
+    limits:
+      cpu: 300m
 cleanupController:
   replicas: 1
+  resources:
+    limits:
+      cpu: 200m
 reportsController:
   replicas: 1
+  resources:
+    limits:
+      cpu: 300m
 config:
   webhooks:
     namespaceSelector:
@@ -73,6 +85,20 @@ image:
   registry: ghcr.io
   repository: headlamp-k8s/headlamp
   tag: v0.46.0
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    memory: 512Mi
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop:
+      - ALL
+  seccompProfile:
+    type: RuntimeDefault
 config:
   oidc:
     # D-authmig: Keycloak OIDC (migrated from Authentik)
@@ -96,6 +122,23 @@ initContainers:
   - name: ca-bundle
     image: ghcr.io/headlamp-k8s/headlamp:v0.46.0
     command: ['sh', '-c', 'cat /etc/ssl/certs/ca-certificates.crt /narwhal-ca/ca.crt > /combined/ca-certificates.crt']
+    securityContext:
+      allowPrivilegeEscalation: false
+      readOnlyRootFilesystem: true
+      runAsNonRoot: true
+      runAsUser: 100
+      capabilities:
+        drop:
+          - ALL
+      seccompProfile:
+        type: RuntimeDefault
+    resources:
+      requests:
+        cpu: 10m
+        memory: 16Mi
+      limits:
+        cpu: 100m
+        memory: 64Mi
     volumeMounts:
       - name: narwhal-ca
         mountPath: /narwhal-ca

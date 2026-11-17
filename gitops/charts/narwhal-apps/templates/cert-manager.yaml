@@ -17,6 +17,13 @@ spec:
           enabled: true
         prometheus:
           enabled: true
+        resources:
+          requests:
+            cpu: 25m
+            memory: 64Mi
+          limits:
+            cpu: 200m
+            memory: 256Mi
         replicaCount: 2
         strategy:
           type: RollingUpdate
@@ -35,6 +42,13 @@ spec:
                 app.kubernetes.io/instance: cert-manager
                 app.kubernetes.io/component: controller
         webhook:
+          resources:
+            requests:
+              cpu: 25m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
           replicaCount: 2
           strategy:
             type: RollingUpdate
@@ -53,6 +67,13 @@ spec:
                   app.kubernetes.io/instance: cert-manager
                   app.kubernetes.io/component: webhook
         cainjector:
+          resources:
+            requests:
+              cpu: 25m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 256Mi
           replicaCount: 2
           strategy:
             type: RollingUpdate

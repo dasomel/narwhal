@@ -29,9 +29,20 @@ for attempt in 1 2 3 4 5; do
     --namespace platform-system \
     --create-namespace \
     --version 0.16.1 \
+    --set frrk8s.enabled=false \
     --set speaker.tolerations[0].key=node-role.kubernetes.io/control-plane \
     --set speaker.tolerations[0].operator=Exists \
-    --set speaker.tolerations[0].effect=NoSchedule; then
+    --set speaker.tolerations[0].effect=NoSchedule \
+    --set speaker.securityContext.seccompProfile.type=RuntimeDefault \
+    --set speaker.resources.requests.cpu=50m \
+    --set speaker.resources.requests.memory=64Mi \
+    --set speaker.resources.limits.cpu=200m \
+    --set speaker.resources.limits.memory=128Mi \
+    --set controller.resources.requests.cpu=50m \
+    --set controller.resources.requests.memory=64Mi \
+    --set controller.resources.limits.cpu=200m \
+    --set controller.resources.limits.memory=128Mi \
+    --set controller.securityContext.seccompProfile.type=RuntimeDefault; then
     METALLB_OK=true; break
   fi
   echo "MetalLB install attempt ${attempt}/5 failed, waiting 15s..."
@@ -125,13 +136,6 @@ apisix:
   image:
     repository: apache/apisix
     tag: "3.15.0-debian"
-  resources:
-    requests:
-      cpu: 100m
-      memory: 256Mi
-    limits:
-      cpu: 500m
-      memory: 512Mi
   # D2: chart v2.13.0 defaults apisix.ssl.enabled=false; without this the rendered
   # config.yaml has no ssl block → 443/TLS never listens → Harbor push EOF, OIDC unreachable.
   ssl:
@@ -162,6 +166,24 @@ apisix:
       secretName: apisix-admin-key
       secretAdminKey: key
       secretViewerKey: viewer
+# Top-level securityContext & resources for APISIX container (chart v2.13.0 reads .Values.resources
+# and .Values.securityContext at top-level; D-NETWORKING-HARDENING).
+securityContext:
+  allowPrivilegeEscalation: false
+  runAsNonRoot: true
+  runAsUser: 636
+  capabilities:
+    drop:
+      - ALL
+  seccompProfile:
+    type: RuntimeDefault
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
 gateway:
   type: LoadBalancer
   annotations:
@@ -341,7 +363,10 @@ for attempt in 1 2 3 4 5; do
     --set resources.limits.memory=512Mi \
     --set securityContext.allowPrivilegeEscalation=false \
     --set 'securityContext.capabilities.drop[0]=ALL' \
-    --set securityContext.seccompProfile.type=RuntimeDefault; then
+    --set securityContext.seccompProfile.type=RuntimeDefault \
+    --set securityContext.runAsNonRoot=true \
+    --set securityContext.runAsUser=65532 \
+    --set securityContext.readOnlyRootFilesystem=true; then
     APISIX_INGRESS_CONTROLLER_OK=true; break
   fi
   echo "APISIX ingress controller install attempt ${attempt}/5 failed, waiting 15s..."
@@ -402,7 +427,19 @@ for attempt in 1 2 3 4 5; do
     --namespace platform-system \
     --create-namespace \
     --version v1.20.2 \
-    --set crds.enabled=true; then
+    --set crds.enabled=true \
+    --set resources.requests.cpu=25m \
+    --set resources.requests.memory=64Mi \
+    --set resources.limits.cpu=200m \
+    --set resources.limits.memory=256Mi \
+    --set webhook.resources.requests.cpu=25m \
+    --set webhook.resources.requests.memory=64Mi \
+    --set webhook.resources.limits.cpu=200m \
+    --set webhook.resources.limits.memory=128Mi \
+    --set cainjector.resources.requests.cpu=25m \
+    --set cainjector.resources.requests.memory=64Mi \
+    --set cainjector.resources.limits.cpu=200m \
+    --set cainjector.resources.limits.memory=256Mi; then
     CERT_MANAGER_OK=true; break
   fi
   echo "cert-manager install attempt ${attempt}/5 failed, waiting 15s..."

@@ -101,7 +101,7 @@ helm upgrade --install gitea "$(chart gitea)" \
   --set postgresql.enabled=false \
   --set postgresql-ha.enabled=false \
   --set gitea.config.database.DB_TYPE=postgres \
-  --set gitea.config.database.HOST=gitea-db-rw:5432 \
+  --set gitea.config.database.HOST=narwhal-db-rw.database.svc.cluster.local:5432 \
   --set gitea.config.database.NAME=gitea \
   --set gitea.config.database.USER=gitea \
   --set gitea.config.database.PASSWD="${GITEA_DB_PASS}" \
@@ -131,6 +131,12 @@ helm upgrade --install gitea "$(chart gitea)" \
   --set containerSecurityContext.allowPrivilegeEscalation=false \
   --set containerSecurityContext.capabilities.drop[0]=ALL \
   --set containerSecurityContext.seccompProfile.type=RuntimeDefault \
+  --set resources.requests.cpu=100m \
+  --set resources.requests.memory=256Mi \
+  --set resources.limits.cpu=500m \
+  --set resources.limits.memory=1Gi \
+  --set initContainers.resources.limits.cpu=200m \
+  --set initContainers.resources.limits.memory=256Mi \
   --timeout=600s || echo "WARN: Gitea install timed out, continuing..."
 
 # Opt Gitea out of Istio ambient mesh (SSO cookie handling)

@@ -76,6 +76,9 @@ meshConfig:
 replicaCount: 2
 # autoscaleEnabled must be false, else the chart's HPA overrides replicaCount back to 1 (SPOF)
 autoscaleEnabled: false
+gateways:
+  seccompProfile:
+    type: RuntimeDefault
 # native PDB disabled; an explicit PDB is applied from gitops/resources/istiod-pdb.yaml
 global:
   defaultPodDisruptionBudget:

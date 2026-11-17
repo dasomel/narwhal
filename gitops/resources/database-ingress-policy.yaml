@@ -22,16 +22,13 @@
 #      (scripts/cluster/07-cnpg.sh helm install --namespace platform-system) - the
 #      operator calls each instance's instance-manager REST API (8000) directly for
 #      reconciliation/status/promotion, separately from the kube-apiserver watch path.
-#   3. Keycloak - iam namespace, via the `authentik-db-rw` ExternalName Service
-#      (narwhal-db.yaml) which resolves to narwhal-db-rw.database.svc; the actual pod
-#      selector is the CNPG-operator-managed Keycloak StatefulSet
-#      (app.kubernetes.io/instance=keycloak) (scripts/cluster/11-keycloak.sh).
-#   4. Harbor DB - devtools namespace, via `harbor-db-rw` ExternalName Service
-#      (narwhal-db.yaml, scripts/cluster/08-5-registry.sh) - matches Harbor's core/jobservice
-#      pods (app=harbor).
-#   5. Gitea - devtools namespace, via `gitea-db-rw` ExternalName Service
-#      (narwhal-db.yaml, scripts/cluster/12-gitea.sh) - matches
-#      app.kubernetes.io/name=gitea (same selector gitea-ingress-policy.yaml already uses).
+#   3. Keycloak - iam namespace, directly to narwhal-db-rw.database.svc.cluster.local;
+#      app.kubernetes.io/instance=keycloak (scripts/cluster/11-keycloak.sh).
+#   4. Harbor DB - devtools namespace, same direct FQDN; core/jobservice pods
+#      use app=harbor (scripts/cluster/08-5-registry.sh, harbor.yaml).
+#   5. Gitea - devtools namespace, same direct FQDN; app.kubernetes.io/name=gitea
+#      (scripts/cluster/12-gitea.sh). Aliases resolved to the same destination pods,
+#      so direct DNS needs no wider ingress, egress or ambient HBONE allowance.
 #   6. Prometheus - monitoring namespace, app.kubernetes.io/name=prometheus
 #      (scripts/cluster/08-2-monitoring.sh, gitops/charts/narwhal-apps/templates/prometheus-stack.yaml) -
 #      scrapes CNPG metrics exporter on TCP 9187 on narwhal-db pods (cnpg.io/cluster=narwhal-db).
@@ -83,7 +80,7 @@ spec:
           port: 8000
         - protocol: TCP
           port: 15008
-    # 3. Keycloak (iam) - authentik-db-rw -> narwhal-db-rw.
+    # 3. Keycloak (iam) - direct narwhal-db-rw.database.svc.cluster.local.
     - from:
         - namespaceSelector:
             matchLabels:
@@ -96,7 +93,7 @@ spec:
           port: 5432
         - protocol: TCP
           port: 15008
-    # 4. Harbor (devtools) - harbor-db-rw -> narwhal-db-rw.
+    # 4. Harbor (devtools) - direct narwhal-db-rw.database.svc.cluster.local.
     - from:
         - namespaceSelector:
             matchLabels:
@@ -109,7 +106,7 @@ spec:
           port: 5432
         - protocol: TCP
           port: 15008
-    # 5. Gitea (devtools) - gitea-db-rw -> narwhal-db-rw.
+    # 5. Gitea (devtools) - direct narwhal-db-rw.database.svc.cluster.local.
     - from:
         - namespaceSelector:
             matchLabels:

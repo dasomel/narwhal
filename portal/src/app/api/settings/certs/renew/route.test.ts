@@ -35,6 +35,8 @@ const cert: Certificate = {
   name: "narwhal-tls",
   namespace: "platform-system",
   ready: true,
+  issuing: false,
+  revision: 1,
   notAfter: "2026-01-01T00:00:00.000Z",
   notBefore: "2025-01-01T00:00:00.000Z",
   dnsNames: ["narwhal.internal"],

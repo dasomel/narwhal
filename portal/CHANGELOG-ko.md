@@ -9,6 +9,12 @@
 
 ## [Unreleased]
 
+### 수정
+
+- **TLS 인증서 갱신 결과 피드백 및 발급 시각/리비전 표시 (`src/components/settings/certs-table.tsx`, `src/lib/k8s-client.ts`):**
+  - `Certificate` 투영과 `GET /api/settings/certs` 응답에 `revision`(`status.revision`)과 `issuing`(`Issuing=True` 조건) 필드를 추가했습니다(기존 필드와 `cluster-admin` 권한 경계 유지).
+  - `CertsTable`에 로케일 기준 `notBefore`와 `rev <N>`을 표시하는 `발급일` 열을 추가하고, `POST /api/settings/certs/renew` 요청에 15초 `AbortSignal` 타임아웃(언마운트 시에도 중단)을 두었으며, 갱신 POST 성공 후 행 단위 상태(리렌더에도 유지)로 쿼리를 무효화·재조회하며 30초까지 2초 간격(`발급 중...`), 이후 최대 5분까지 10초 간격(`아직 대기 중 — 잠시 후 다시 확인하세요`, 이후 수동/재포커스 재조회에도 기준선 유지)으로 일시적인 GET 실패에도 중단 없이 폴링해 `{time} 갱신됨` 또는 `갱신 실패`를 구분 표시하고 언마운트 시 중단합니다.
+
 ## [1.1.17] - 2026-11-17
 
 팀 매핑이나 라벨 네임스페이스가 없는 계정의 포털 접근을 차단하고 사용자별 네임스페이스로 데이터를 제한하며,

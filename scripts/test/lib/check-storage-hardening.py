@@ -91,9 +91,15 @@ def _assert_openbao_values(vals, label):
 
 
 def _assert_velero_values(vals, label):
-    assert (vals.get("podSecurityContext") or {}).get("runAsNonRoot") is False, f"{label} velero podSecurityContext.runAsNonRoot"
+    psc = vals.get("podSecurityContext") or {}
+    assert psc.get("runAsNonRoot") is True, f"{label} velero podSecurityContext.runAsNonRoot"
+    assert psc.get("runAsUser") == 1002, f"{label} velero podSecurityContext.runAsUser"
+    assert psc.get("runAsGroup") == 1000, f"{label} velero podSecurityContext.runAsGroup"
     csc = vals.get("containerSecurityContext") or {}
     assert csc.get("allowPrivilegeEscalation") is False, f"{label} velero allowPrivilegeEscalation"
+    assert csc.get("runAsNonRoot") is True, f"{label} velero containerSecurityContext.runAsNonRoot"
+    assert csc.get("runAsUser") == 1002, f"{label} velero containerSecurityContext.runAsUser"
+    assert csc.get("runAsGroup") == 1000, f"{label} velero containerSecurityContext.runAsGroup"
     # kopia writes under $HOME; a read-only root broke repo maintenance (2026-11-18).
     assert csc.get("readOnlyRootFilesystem") is not True, f"{label} velero must not set readOnlyRootFilesystem"
     assert (csc.get("capabilities") or {}).get("drop") == ["ALL"], f"{label} velero drop ALL"

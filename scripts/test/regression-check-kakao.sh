@@ -3482,6 +3482,9 @@ PYEOF'
     python3 scripts/test/lib/check-monitoring-hardening.py --mutation-verify
   check R362 "Storage charts (seaweedfs, openbao, velero, velero-ui) compliance hardening (non-root, emptyDir logs/tmp, readOnlyRootFilesystem, resources) and 08-4-storage.sh parity; 17 mutations caught" \
     python3 scripts/test/lib/check-storage-hardening.py --mutation-verify
+  # 2026-11-18 (D-NODE-HARDENING): harden-node-files.sh wired into provisioning path (02-init, 02-join-cp, 02-join-worker, 03-cni-install) with CNI wait on joins
+  check R368 "Node file permission hardening (harden-node-files.sh) wired into provisioning path (02-init, 02-join-cp, 02-join-worker, 03-cni-install) non-fatally and idempotently with join CNI wait; 30 mutations + behavioural checks" \
+    python3 scripts/test/lib/check-node-hardening.py --mutation-verify
   check R366 "Round-2 workload compliance hardening: Gitea non-root uid/gid 1000 on all 4 containers, Tempo tempo.securityContext allowPrivilegeEscalation=false + readOnlyRootFilesystem (/var/tempo, /tmp emptyDir) with 08-2 parity, APISIX-IC runAsGroup 65532 + non-root/ro-rootfs, and Velero real cnb uid 1002/gid 1000 without fsGroup/ro-rootfs + 08-4 parity; offline helm renders and 14 mutations caught" \
     python3 scripts/test/lib/check-round2-compliance-hardening.py --mutation-verify
 }

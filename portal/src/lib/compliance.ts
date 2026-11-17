@@ -5,7 +5,14 @@ import { fetchWithPolicy, readJsonWithPolicy } from "./http-client"
 import { K8S_POLICY } from "./k8s-client"
 import { cacheGet, cacheSet } from "./valkey"
 import { cacheKeys, cacheTtl } from "./cache-keys"
+import {
+  COMPLIANCE_EXCEPTIONS_DOC_ANCHOR,
+  matchConfigAuditException,
+  matchRbacException,
+} from "./compliance-accepted"
 import type {
+  AcceptedClass,
+  AcceptedScope,
   Severity,
   CheckSummary,
   AuditCheck,
@@ -39,7 +46,7 @@ async function complianceK8sFetch<T>(path: string): Promise<T> {
 
 // System namespaces whose config-audit findings are inherent to K8s static pods / CNI / mesh
 // (hostNetwork, root, hostPath on apiserver/etcd/cilium/istio) and are NOT actionable by the
-// platform team — see narwhal/docs/compliance-hardening.md "Risk-accepted exceptions".
+// platform team — see docs/common/compliance-hardening.md#risk-accepted-exceptions.
 export const SYSTEM_NAMESPACES = ["kube-system", "kube-public", "kube-node-lease", "istio-system"] as const
 
 function isSystemNamespace(namespace: string): boolean {
@@ -53,13 +60,13 @@ const K8S_DEFAULT_CLUSTER_ROLES = new Set(["cluster-admin", "admin", "edit", "vi
 // Upstream controller/chart-owned RBAC role name patterns (case-insensitive substring match) —
 // these roles need broad permissions inherent to their function (cert-manager manages secrets,
 // kyverno manages webhooks, etc.) and are NOT actionable by the platform team — see
-// narwhal/docs/compliance-hardening.md "Risk-accepted exceptions".
+// docs/common/compliance-hardening.md#risk-accepted-exceptions.
 const UPSTREAM_RBAC_ROLE_PATTERNS = [
   "cert-manager", "kyverno", "cilium", "metallb", "prometheus", "kube-prom", "trivy",
   "velero", "openbao", "seaweedfs", "argocd", "istio", "harbor", "keycloak", "loki",
   "tempo", "alloy", "k8s-monitoring", "nfs-", "headlamp", "apisix", "cnpg", "narwhal-db",
   "gitea", "ghost-pod", "coredns", "metrics-server", "csi-", "snapshot", "node-",
-  "gatekeeper", "kubelet",
+  "gatekeeper", "kubelet", "chaos-mesh", "kubernetes-dashboard",
 ] as const
 
 // Our own authored roles whose name happens to contain an upstream pattern as a substring
@@ -67,13 +74,20 @@ const UPSTREAM_RBAC_ROLE_PATTERNS = [
 // they aren't swept into "accepted".
 const OWN_ROLE_EXCEPTIONS = ["velero-ui"] as const
 
+function isBuiltInRbacRole(roleName: string): boolean {
+  return (
+    roleName.startsWith("system:") ||
+    roleName.startsWith("kubeadm:") ||
+    K8S_DEFAULT_CLUSTER_ROLES.has(roleName)
+  )
+}
+
 // RBAC findings owned by Kubernetes built-in roles (system:*/kubeadm:*, default cluster-admin/
 // admin/edit/view) or upstream controller/chart roles are inherent to what those roles do and are
 // NOT actionable by the platform team. Only our own authored roles (platform-admin, developer,
-// narwhal-portal*, velero-ui-*, etc.) are actionable.
+// narwhal-portal*, velero-ui-*, etc.) are actionable unless covered by ACCEPTED_RBAC_RULES.
 export function isAcceptedRbacRole(roleName: string): boolean {
-  if (roleName.startsWith("system:") || roleName.startsWith("kubeadm:")) return true
-  if (K8S_DEFAULT_CLUSTER_ROLES.has(roleName)) return true
+  if (isBuiltInRbacRole(roleName)) return true
   const lower = roleName.toLowerCase()
   if (OWN_ROLE_EXCEPTIONS.some((exception) => lower.includes(exception))) return false
   return UPSTREAM_RBAC_ROLE_PATTERNS.some((pattern) => lower.includes(pattern))
@@ -165,17 +179,6 @@ function mapSeverity(raw: string): Severity {
   return "Unknown"
 }
 
-function buildCheckSummaryFromFailures(checks: RawCheck[]): CheckSummary {
-  const summary: CheckSummary = { Critical: 0, High: 0, Medium: 0, Low: 0 }
-  for (const c of checks) {
-    if (c.success) continue
-    const sev = mapSeverity(c.severity)
-    if (sev === "Unknown") continue
-    summary[sev]++
-  }
-  return summary
-}
-
 function buildCheckSummaryFromCounts(raw: RawAuditSummary): CheckSummary {
   return {
     Critical: raw.criticalCount,
@@ -185,7 +188,16 @@ function buildCheckSummaryFromCounts(raw: RawAuditSummary): CheckSummary {
   }
 }
 
-function mapChecks(rawChecks: RawCheck[]): AuditCheck[] {
+interface AcceptanceAnnotation {
+  accepted: boolean
+  acceptedClass?: AcceptedClass
+  acceptedReason?: string
+  acceptedDocAnchor?: string
+}
+
+type AcceptanceMatcher = (checkId: string) => AcceptanceAnnotation
+
+function mapChecks(rawChecks: RawCheck[], matcher?: AcceptanceMatcher): AuditCheck[] {
   // Trivy가 동일 checkID + success 조합을 여러 번 emit하는 경우가 있어 dedup.
   // (Pod 안 여러 컨테이너가 같은 정책에 동시 실패하면 동일 항목 반복)
   const seen = new Set<string>()
@@ -196,16 +208,28 @@ function mapChecks(rawChecks: RawCheck[]): AuditCheck[] {
     seen.add(key)
     deduped.push(c)
   }
-  return deduped.map((c) => ({
-    id: c.checkID,
-    title: c.title,
-    description: c.description,
-    severity: mapSeverity(c.severity),
-    category: c.category,
-    success: c.success,
-    messages: c.messages,
-    remediation: c.remediation,
-  }))
+  return deduped.map((c) => {
+    const base: AuditCheck = {
+      id: c.checkID,
+      title: c.title,
+      description: c.description,
+      severity: mapSeverity(c.severity),
+      category: c.category,
+      success: c.success,
+      messages: c.messages,
+      remediation: c.remediation,
+    }
+    if (!c.success && matcher) {
+      const ann = matcher(c.checkID)
+      base.accepted = ann.accepted
+      if (ann.accepted) {
+        base.acceptedClass = ann.acceptedClass
+        base.acceptedReason = ann.acceptedReason
+        base.acceptedDocAnchor = ann.acceptedDocAnchor
+      }
+    }
+    return base
+  })
 }
 
 function addSummaries(a: CheckSummary, b: CheckSummary): CheckSummary {
@@ -218,6 +242,205 @@ function addSummaries(a: CheckSummary, b: CheckSummary): CheckSummary {
 }
 
 const emptyCheckSummary: CheckSummary = { Critical: 0, High: 0, Medium: 0, Low: 0 }
+
+function splitSummariesByChecks(
+  rawChecks: RawCheck[],
+  rawSummary: RawAuditSummary,
+  matcher: AcceptanceMatcher,
+): {
+  summary: CheckSummary
+  actionableSummary: CheckSummary
+  acceptedSummary: CheckSummary
+  matchedClasses: Set<AcceptedClass>
+} {
+  const summary = buildCheckSummaryFromCounts(rawSummary)
+  const actionableSummary: CheckSummary = { ...emptyCheckSummary }
+  const acceptedSummary: CheckSummary = { ...emptyCheckSummary }
+  const matchedClasses = new Set<AcceptedClass>()
+
+  if (rawChecks.length === 0) {
+    // Fail closed when raw checks are omitted while summary reports failures.
+    return {
+      summary,
+      actionableSummary: { ...summary },
+      acceptedSummary,
+      matchedClasses,
+    }
+  }
+
+  for (const c of rawChecks) {
+    if (c.success) continue
+    const sev = mapSeverity(c.severity)
+    if (sev === "Unknown") continue
+    const ann = matcher(c.checkID)
+    if (ann.accepted) {
+      acceptedSummary[sev]++
+      if (ann.acceptedClass) matchedClasses.add(ann.acceptedClass)
+    } else {
+      actionableSummary[sev]++
+    }
+  }
+  return { summary, actionableSummary, acceptedSummary, matchedClasses }
+}
+
+function resolveScopeFromClasses(classes: Set<AcceptedClass>): AcceptedScope | undefined {
+  if (classes.size === 0) return undefined
+  if (classes.size === 1) return classes.values().next().value
+  return "mixed"
+}
+
+function configAuditMatcher(namespace: string, kind: string, name: string): AcceptanceMatcher {
+  if (isSystemNamespace(namespace)) {
+    return () => ({
+      accepted: true,
+      acceptedClass: "accept",
+      acceptedReason: "Inherent to Kubernetes system namespace workload",
+      acceptedDocAnchor: COMPLIANCE_EXCEPTIONS_DOC_ANCHOR,
+    })
+  }
+  return (checkId: string) => {
+    const match = matchConfigAuditException(namespace, kind, name, checkId)
+    if (!match) return { accepted: false }
+    return {
+      accepted: true,
+      acceptedClass: match.class,
+      acceptedReason: match.reason,
+      acceptedDocAnchor: match.docAnchor,
+    }
+  }
+}
+
+function classifyConfigAuditItem(item: RawAuditReport): {
+  row: ConfigAuditRow
+  matcher: AcceptanceMatcher
+} {
+  const labels = item.metadata.labels ?? {}
+  const kind = labels["trivy-operator.resource.kind"] ?? "Unknown"
+  const name = labels["trivy-operator.resource.name"] ?? item.metadata.name
+  const namespace = item.metadata.namespace ?? ""
+  const matcher = configAuditMatcher(namespace, kind, name)
+
+  if (isSystemNamespace(namespace)) {
+    const summary = buildCheckSummaryFromCounts(item.report.summary)
+    return {
+      row: {
+        namespace,
+        kind,
+        name,
+        summary,
+        actionableSummary: { ...emptyCheckSummary },
+        acceptedSummary: { ...summary },
+        accepted: true,
+        acceptedScope: "system",
+      },
+      matcher,
+    }
+  }
+
+  const { summary, actionableSummary, acceptedSummary, matchedClasses } = splitSummariesByChecks(
+    item.report.checks ?? [],
+    item.report.summary,
+    matcher,
+  )
+  const nonLowTotal = summary.Critical + summary.High + summary.Medium
+  const nonLowActionable =
+    actionableSummary.Critical + actionableSummary.High + actionableSummary.Medium
+  // A non-system row is accepted only when it has non-LOW failing checks and ALL of them
+  // are covered by reviewed exceptions; LOW-only rows remain in the LOW hygiene tier.
+  const accepted = nonLowTotal > 0 && nonLowActionable === 0
+  return {
+    row: {
+      namespace,
+      kind,
+      name,
+      summary,
+      actionableSummary,
+      acceptedSummary,
+      accepted,
+      acceptedScope: accepted ? resolveScopeFromClasses(matchedClasses) : undefined,
+    },
+    matcher,
+  }
+}
+
+function rbacAuditMatcher(namespace: string, roleName: string): AcceptanceMatcher {
+  if (isAcceptedRbacRole(roleName)) {
+    const builtIn = isBuiltInRbacRole(roleName)
+    return () => ({
+      accepted: true,
+      acceptedClass: builtIn ? "accept" : "upstream",
+      acceptedReason: builtIn
+        ? "Kubernetes built-in cluster role"
+        : "Upstream controller or Helm chart role",
+      acceptedDocAnchor: COMPLIANCE_EXCEPTIONS_DOC_ANCHOR,
+    })
+  }
+  return (checkId: string) => {
+    const match = matchRbacException(roleName, checkId, namespace)
+    if (!match) return { accepted: false }
+    return {
+      accepted: true,
+      acceptedClass: match.class,
+      acceptedReason: match.reason,
+      acceptedDocAnchor: match.docAnchor,
+    }
+  }
+}
+
+function classifyRbacAuditItem(item: RawAuditReport): {
+  row: RbacAuditRow
+  matcher: AcceptanceMatcher
+} {
+  const labels = item.metadata.labels ?? {}
+  const ownerRefs = item.metadata.ownerReferences ?? []
+  const kind = labels["trivy-operator.resource.kind"] ?? ownerRefs[0]?.kind ?? "Unknown"
+  const name = resolveRbacRoleName(item)
+  const namespace = item.metadata.namespace ?? ""
+  const matcher = rbacAuditMatcher(namespace, name)
+
+  if (isAcceptedRbacRole(name)) {
+    const summary = buildCheckSummaryFromCounts(item.report.summary)
+    return {
+      row: {
+        namespace,
+        kind,
+        name,
+        summary,
+        actionableSummary: { ...emptyCheckSummary },
+        acceptedSummary: { ...summary },
+        accepted: true,
+        acceptedScope: isBuiltInRbacRole(name) ? "builtin" : "upstream",
+      },
+      matcher,
+    }
+  }
+
+  const { summary, actionableSummary, acceptedSummary, matchedClasses } = splitSummariesByChecks(
+    item.report.checks ?? [],
+    item.report.summary,
+    matcher,
+  )
+  const totalFailures = summary.Critical + summary.High + summary.Medium + summary.Low
+  const actionableTotal =
+    actionableSummary.Critical +
+    actionableSummary.High +
+    actionableSummary.Medium +
+    actionableSummary.Low
+  const accepted = totalFailures > 0 && actionableTotal === 0
+  return {
+    row: {
+      namespace,
+      kind,
+      name,
+      summary,
+      actionableSummary,
+      acceptedSummary,
+      accepted,
+      acceptedScope: accepted ? resolveScopeFromClasses(matchedClasses) : undefined,
+    },
+    matcher,
+  }
+}
 
 // rbacassessmentreport/clusterrbacassessmentreport metadata.name is a content hash, not the real
 // Role/ClusterRole name — the real name is the report's owning object (ownerReferences[0].name).
@@ -239,19 +462,7 @@ export async function getConfigAuditList(): Promise<ConfigAuditRow[]> {
     const list = await complianceK8sFetch<RawAuditList>(
       "/apis/aquasecurity.github.io/v1alpha1/configauditreports",
     )
-    const rows: ConfigAuditRow[] = (list.items ?? []).map((item) => {
-      const labels = item.metadata.labels ?? {}
-      const kind = labels["trivy-operator.resource.kind"] ?? "Unknown"
-      const name = labels["trivy-operator.resource.name"] ?? item.metadata.name
-      const namespace = item.metadata.namespace ?? ""
-      return {
-        namespace,
-        kind,
-        name,
-        summary: buildCheckSummaryFromCounts(item.report.summary),
-        accepted: isSystemNamespace(namespace),
-      }
-    })
+    const rows: ConfigAuditRow[] = (list.items ?? []).map((item) => classifyConfigAuditItem(item).row)
     await cacheSet(cacheKey, rows, cacheTtl("complianceConfigAuditList"))
     return rows
   } catch (err) {
@@ -281,18 +492,10 @@ export async function getConfigAuditDetail(
     })
     if (!item) return null
 
-    const labels = item.metadata.labels ?? {}
-    const kind = labels["trivy-operator.resource.kind"] ?? "Unknown"
-    const rName = labels["trivy-operator.resource.name"] ?? item.metadata.name
-    const rNamespace = item.metadata.namespace ?? ""
-    const checks = mapChecks(item.report.checks ?? [])
+    const { row, matcher } = classifyConfigAuditItem(item)
     const detail: ConfigAuditDetail = {
-      namespace: rNamespace,
-      kind,
-      name: rName,
-      summary: buildCheckSummaryFromCounts(item.report.summary),
-      accepted: isSystemNamespace(rNamespace),
-      checks,
+      ...row,
+      checks: mapChecks(item.report.checks ?? [], matcher),
     }
     await cacheSet(cacheKey, detail, cacheTtl("complianceConfigAuditDetail"))
     return detail
@@ -320,18 +523,7 @@ export async function getRbacAuditList(): Promise<RbacAuditRow[]> {
     ])
 
     const allItems = [...(namespaced.items ?? []), ...(clustered.items ?? [])]
-    const rows: RbacAuditRow[] = allItems.map((item) => {
-      const labels = item.metadata.labels ?? {}
-      const kind = labels["trivy-operator.resource.kind"] ?? "Unknown"
-      const name = resolveRbacRoleName(item)
-      return {
-        namespace: item.metadata.namespace ?? "",
-        kind,
-        name,
-        summary: buildCheckSummaryFromCounts(item.report.summary),
-        accepted: isAcceptedRbacRole(name),
-      }
-    })
+    const rows: RbacAuditRow[] = allItems.map((item) => classifyRbacAuditItem(item).row)
     await cacheSet(cacheKey, rows, cacheTtl("complianceRbacAuditList"))
     return rows
   } catch (err) {
@@ -368,17 +560,10 @@ export async function getRbacAuditDetail(
     })
     if (!item) return null
 
-    const labels = item.metadata.labels ?? {}
-    const kind = labels["trivy-operator.resource.kind"] ?? "Unknown"
-    const rName = resolveRbacRoleName(item)
-    const checks = mapChecks(item.report.checks ?? [])
+    const { row, matcher } = classifyRbacAuditItem(item)
     const detail: RbacAuditDetail = {
-      namespace: item.metadata.namespace ?? "",
-      kind,
-      name: rName,
-      summary: buildCheckSummaryFromCounts(item.report.summary),
-      accepted: isAcceptedRbacRole(rName),
-      checks,
+      ...row,
+      checks: mapChecks(item.report.checks ?? [], matcher),
     }
     await cacheSet(cacheKey, detail, cacheTtl("complianceRbacAuditDetail"))
     return detail
@@ -584,38 +769,51 @@ export async function getComplianceSummary(): Promise<ComplianceSummary> {
       getComplianceFrameworks(),
     ])
 
-    // Headline number reflects ACTIONABLE findings only: non-system namespace AND
-    // Critical/High/Medium severity. LOW-severity checks (KSV020/021 UID/GID, KSV011/015/016/018
-    // resource limits) are risk-accepted hygiene per narwhal/docs/compliance-hardening.md and are
-    // split into their own tier so they don't inflate the actionable count. System-namespace
-    // findings are inherent to K8s/CNI/mesh and surfaced separately (not silently dropped).
-    const nonSystemConfigAuditFailures = configAuditList
-      .filter((row) => !row.accepted)
-      .reduce((acc, row) => addSummaries(acc, row.summary), { ...emptyCheckSummary })
-    const totalConfigAuditFailures: CheckSummary = {
-      Critical: nonSystemConfigAuditFailures.Critical,
-      High: nonSystemConfigAuditFailures.High,
-      Medium: nonSystemConfigAuditFailures.Medium,
-      Low: 0,
+    // Headline number reflects ACTIONABLE findings only: non-system namespace, not covered by
+    // ACCEPTED_CONFIG_AUDIT_RULES, AND Critical/High/Medium severity. LOW-severity checks stay
+    // in lowSeverityConfigAuditFailures (hygiene) and are NOT double-counted in accepted counts.
+    // System-namespace failures (all severities) and non-system accepted Critical/High/Medium
+    // failures are surfaced in acceptedSystemConfigAuditFailures rather than dropped.
+    const totalConfigAuditFailures: CheckSummary = { ...emptyCheckSummary }
+    const lowSeverityConfigAuditFailures: CheckSummary = { ...emptyCheckSummary }
+    const acceptedSystemConfigAuditFailures: CheckSummary = { ...emptyCheckSummary }
+
+    for (const row of configAuditList) {
+      if (isSystemNamespace(row.namespace)) {
+        acceptedSystemConfigAuditFailures.Critical += row.summary.Critical
+        acceptedSystemConfigAuditFailures.High += row.summary.High
+        acceptedSystemConfigAuditFailures.Medium += row.summary.Medium
+        acceptedSystemConfigAuditFailures.Low += row.summary.Low
+        continue
+      }
+      const actionable = row.actionableSummary ?? (row.accepted ? emptyCheckSummary : row.summary)
+      const accepted = row.acceptedSummary ?? (row.accepted ? row.summary : emptyCheckSummary)
+      totalConfigAuditFailures.Critical += actionable.Critical
+      totalConfigAuditFailures.High += actionable.High
+      totalConfigAuditFailures.Medium += actionable.Medium
+      lowSeverityConfigAuditFailures.Low += row.summary.Low
+      acceptedSystemConfigAuditFailures.Critical += accepted.Critical
+      acceptedSystemConfigAuditFailures.High += accepted.High
+      acceptedSystemConfigAuditFailures.Medium += accepted.Medium
     }
-    const lowSeverityConfigAuditFailures: CheckSummary = {
-      Critical: 0,
-      High: 0,
-      Medium: 0,
-      Low: nonSystemConfigAuditFailures.Low,
-    }
-    const acceptedSystemConfigAuditFailures = configAuditList
-      .filter((row) => row.accepted)
-      .reduce((acc, row) => addSummaries(acc, row.summary), { ...emptyCheckSummary })
+
     // Headline RBAC number reflects ACTIONABLE findings only: excludes findings owned by K8s
-    // built-in roles or upstream controller/chart roles (see isAcceptedRbacRole above) — those
-    // are inherent to what the role does and not actionable by the platform team.
-    const totalRbacFailures = rbacAuditList
-      .filter((row) => !row.accepted)
-      .reduce((acc, row) => addSummaries(acc, row.summary), { ...emptyCheckSummary })
-    const acceptedRbacFailures = rbacAuditList
-      .filter((row) => row.accepted)
-      .reduce((acc, row) => addSummaries(acc, row.summary), { ...emptyCheckSummary })
+    // built-in roles, upstream controller/chart roles, and per-check reviewed exceptions on
+    // authored roles (see isAcceptedRbacRole / ACCEPTED_RBAC_RULES).
+    const totalRbacFailures: CheckSummary = { ...emptyCheckSummary }
+    const acceptedRbacFailures: CheckSummary = { ...emptyCheckSummary }
+    for (const row of rbacAuditList) {
+      const actionable = row.actionableSummary ?? (row.accepted ? emptyCheckSummary : row.summary)
+      const accepted = row.acceptedSummary ?? (row.accepted ? row.summary : emptyCheckSummary)
+      totalRbacFailures.Critical += actionable.Critical
+      totalRbacFailures.High += actionable.High
+      totalRbacFailures.Medium += actionable.Medium
+      totalRbacFailures.Low += actionable.Low
+      acceptedRbacFailures.Critical += accepted.Critical
+      acceptedRbacFailures.High += accepted.High
+      acceptedRbacFailures.Medium += accepted.Medium
+      acceptedRbacFailures.Low += accepted.Low
+    }
     const totalInfraFailures = infraAuditList.reduce(
       (acc, row) => addSummaries(acc, row.summary),
       { ...emptyCheckSummary },

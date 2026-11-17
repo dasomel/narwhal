@@ -285,6 +285,97 @@ functionality or reverses an intentional trade-off.
 4. **Broad RBAC / secret access / wildcards** (CIS 5.1.2, 5.1.3, 5.1.6) — required by
    operators (ArgoCD, Keycloak Operator, cert-manager, etc.).
 
+### Adding or updating allowlist entries
+
+Every exception in `portal/src/lib/compliance-accepted.ts` is fail-closed by exact `(namespace, workload, checkID)` or `(roleName, checkID)` — any unlisted check or workload remains actionable. Adding or expanding an entry requires:
+
+1. Verifying that no safe manifest/chart knob fixes the finding without breaking functionality (`accept`) or that the upstream chart/image lacks the knob (`upstream`).
+2. Recording a concise justification in both `portal/src/lib/compliance-accepted.ts` and the tables below (enforced by `portal/src/lib/compliance-accepted.test.ts`).
+3. Passing independent PR review before merging.
+
+### Config Audit allowlist
+
+| namespace | workload | checks | class | reason |
+| --- | --- | --- | --- | --- |
+| chaos-testing | DaemonSet/chaos-daemon | KSV001, KSV003, KSV010, KSV012, KSV017, KSV020, KSV021, KSV022, KSV023, KSV106, KSV121 | accept | Requires privileged, hostPID, /sys and containerd.sock hostPath, root UID 0, and capabilities to inject pod netns and I/O faults |
+| chaos-testing | DaemonSet/chaos-daemon | KSV014 | upstream | Upstream chaos-mesh 2.8.3 DaemonSet template does not expose readOnlyRootFilesystem |
+| chaos-testing | ReplicaSet/chaos-controller-manager | KSV020, KSV021 | accept | Uses upstream chaos-mesh image default non-root UID/GID |
+| chaos-testing | ReplicaSet/chaos-controller-manager | KSV001, KSV003, KSV012, KSV014, KSV106 | upstream | Upstream chaos-mesh 2.8.3 controller-manager template does not expose containerSecurityContext |
+| devtools | ReplicaSet/argocd-applicationset-controller | KSV020, KSV021 | accept | Uses upstream ArgoCD image non-root UID/GID 999 |
+| devtools | ReplicaSet/argocd-dex-server | KSV020, KSV021 | accept | Uses upstream ArgoCD dex-server and copyutil non-root UID/GID 999 |
+| devtools | ReplicaSet/argocd-notifications-controller | KSV020, KSV021 | accept | Uses upstream ArgoCD image non-root UID/GID 999 |
+| devtools | ReplicaSet/argocd-redis | KSV020, KSV021 | accept | Uses upstream Valkey 8 Alpine image default UID/GID 999 |
+| devtools | ReplicaSet/argocd-repo-server | KSV020, KSV021 | accept | Uses upstream ArgoCD repo-server and copyutil non-root UID/GID 999 |
+| devtools | ReplicaSet/argocd-server | KSV020, KSV021 | accept | Uses upstream ArgoCD image non-root UID/GID 999 |
+| devtools | ReplicaSet/gitea | KSV020, KSV021 | accept | Uses upstream Gitea rootless image default git UID/GID 1000 |
+| devtools | ReplicaSet/gitea | KSV012, KSV014 | upstream | Gitea rootless requires writable paths for SSH host keys, LevelDB queues, and git hooks; readOnlyRootFilesystem unsupported |
+| devtools | ReplicaSet/harbor-core | KSV011, KSV020, KSV021 | accept | Uses Harbor Photon OS UID/GID 10000; omits CPU limit to prevent probe timeouts/502 during scan job bursts (D-HARBOR-PROBES) |
+| devtools | ReplicaSet/harbor-core | KSV014 | upstream | Harbor Photon OS image and chart 1.19.1 template do not support readOnlyRootFilesystem |
+| devtools | ReplicaSet/harbor-jobservice | KSV011, KSV020, KSV021 | accept | Uses Harbor Photon OS UID/GID 10000; omits CPU limit to prevent throttling during job execution (D-HARBOR-PROBES) |
+| devtools | ReplicaSet/harbor-jobservice | KSV014 | upstream | Harbor Photon OS image and chart 1.19.1 template do not support readOnlyRootFilesystem |
+| devtools | ReplicaSet/harbor-nginx | KSV020, KSV021 | accept | Uses Harbor Photon OS UID/GID 10000 |
+| devtools | ReplicaSet/harbor-nginx | KSV014 | upstream | Nginx temporary writes and Harbor chart 1.19.1 template do not support readOnlyRootFilesystem |
+| devtools | ReplicaSet/harbor-portal | KSV020, KSV021 | accept | Uses Harbor Photon OS UID/GID 10000 |
+| devtools | ReplicaSet/harbor-portal | KSV014 | upstream | Nginx-based web UI and Harbor chart 1.19.1 template do not support readOnlyRootFilesystem |
+| devtools | ReplicaSet/harbor-registry | KSV011, KSV020, KSV021 | accept | Uses Harbor Photon OS UID/GID 10000; omits CPU limit to prevent probe timeouts on large image pushes (D-HARBOR-PROBES) |
+| devtools | ReplicaSet/harbor-registry | KSV014 | upstream | Harbor registry/registryctl chart 1.19.1 template does not support readOnlyRootFilesystem |
+| devtools | ReplicaSet/headlamp | KSV011, KSV020, KSV021 | accept | Uses upstream Headlamp hardcoded UID 100/GID 101; omits CPU limit to avoid 1s probe timeouts under VM load |
+| devtools | ReplicaSet/kubernetes-dashboard-api | KSV020, KSV021 | accept | Uses Kubernetes Dashboard 7.14.0 chart default UID 1001/GID 2001 |
+| devtools | ReplicaSet/kubernetes-dashboard-auth | KSV020, KSV021 | accept | Uses Kubernetes Dashboard 7.14.0 chart default UID 1001/GID 2001 |
+| devtools | ReplicaSet/kubernetes-dashboard-kong | KSV020, KSV021 | accept | Uses Kong 2.52.0 chart default UID/GID 1000 |
+| devtools | ReplicaSet/kubernetes-dashboard-metrics-scraper | KSV020, KSV021 | accept | Uses Kubernetes Dashboard 7.14.0 chart default UID 1001/GID 2001 |
+| devtools | ReplicaSet/kubernetes-dashboard-web | KSV020, KSV021 | accept | Uses Kubernetes Dashboard 7.14.0 chart default UID 1001/GID 2001 |
+| devtools | ReplicaSet/narwhal-portal | KSV020, KSV021 | accept | Portal image fixes non-root nextjs:nodejs UID/GID 1001 in portal/Dockerfile |
+| devtools | ReplicaSet/narwhal-portal-valkey | KSV020, KSV021 | accept | Relies on upstream valkey:8-alpine default non-root UID/GID 999 |
+| devtools | ReplicaSet/waypoint | KSV020, KSV021 | accept | Istio ambient waypoint proxy requires fixed non-root UID/GID 1337 |
+| devtools | StatefulSet/argocd-application-controller | KSV020, KSV021 | accept | Uses upstream ArgoCD image non-root UID/GID 999 |
+| devtools | StatefulSet/harbor-redis | KSV020, KSV021 | accept | Uses Redis image default UID/GID 999 |
+| devtools | StatefulSet/harbor-redis | KSV014 | upstream | Harbor chart 1.19.1 redis StatefulSet template does not expose readOnlyRootFilesystem |
+| iam | ReplicaSet/keycloak-operator | KSV014, KSV020, KSV021 | accept | Uses upstream keycloak-operator:26.5.7 UID 1000; KSV014 deferred pending Quarkus /tmp emptyDir live validation |
+| iam | StatefulSet/keycloak | KSV014, KSV020, KSV021 | accept | Uses upstream keycloak:26.5.7 UID 1000; KSV014 deferred pending /opt/keycloak/data and $HOME/.keycloak live validation |
+| monitoring | DaemonSet/k8s-monitoring-alloy-logs | KSV012, KSV020, KSV021, KSV023 | accept | Requires root UID 0, recommended UID/GID ownership, and /var/log hostPath to collect node and pod logs |
+| monitoring | DaemonSet/k8s-monitoring-alloy-logs | KSV118 | upstream | Upstream chart schema does not expose DaemonSet pod-level securityContext |
+| monitoring | DaemonSet/prometheus-stack-prometheus-node-exporter | KSV009, KSV010, KSV023, KSV121 | accept | Requires hostNetwork, hostPID, and root/proc/sys hostPath mounts to collect host metrics |
+| monitoring | ReplicaSet/k8s-monitoring-alloy-operator | KSV020, KSV021 | accept | Relies on upstream image fixed non-root UID/GID 4242 |
+| monitoring | ReplicaSet/prometheus-stack-grafana | KSV020, KSV021 | accept | Relies on upstream Grafana UID 472 and NFS persistent volume file ownership |
+| monitoring | ReplicaSet/waypoint | KSV020, KSV021 | accept | Istio ambient waypoint proxy requires fixed non-root UID/GID 1337 |
+| monitoring | StatefulSet/alertmanager-prometheus-stack-kube-prom-alertmanager | KSV020, KSV021 | accept | Relies on upstream Alertmanager UID 1000 and config-reloader UID 65534 |
+| monitoring | StatefulSet/loki | KSV011 | accept | Omits main CPU limit intentionally to prevent CFS throttling timeouts on ingest/queries (D-MON-QOS-LOKI) |
+| monitoring | StatefulSet/prometheus-prometheus-stack-kube-prom-prometheus | KSV011, KSV020, KSV021 | accept | Relies on Prometheus UID 1000/reloader UID 65534; omits CPU limit to avoid TSDB compaction probe timeouts (D-MON-QOS) |
+| platform-system | DaemonSet/metallb-speaker | KSV009, KSV012, KSV020, KSV021, KSV022, KSV106, KSV119 | accept | Requires hostNetwork, NET_RAW/NET_ADMIN, and UID/GID 0 raw socket access for L2 ARP/NDP announcements |
+| platform-system | ReplicaSet/apisix | KSV020, KSV021 | accept | Uses upstream APISIX image fixed UID/GID 636 |
+| platform-system | ReplicaSet/apisix | KSV014 | upstream | Dynamically generates /usr/local/apisix/conf/nginx.conf at startup; emptyDir shadows packaged assets without initContainer copy |
+| platform-system | ReplicaSet/apisix-ingress-controller | KSV020, KSV021 | accept | Uses upstream image UID/GID 65532 |
+| platform-system | ReplicaSet/apisix-ingress-controller | KSV011, KSV015, KSV016, KSV018 | upstream | Upstream chart 0.14.1 template does not expose resources fields for initContainers |
+| platform-system | ReplicaSet/cert-manager | KSV020, KSV021 | accept | Uses upstream cert-manager controller UID 1000/GID 65532 |
+| platform-system | ReplicaSet/cert-manager-cainjector | KSV020, KSV021 | accept | Uses upstream cert-manager cainjector UID 1000/GID 65532 |
+| platform-system | ReplicaSet/cert-manager-webhook | KSV020, KSV021 | accept | Uses upstream cert-manager webhook UID 1000/GID 65532 |
+| platform-system | ReplicaSet/metallb-controller | KSV021 | accept | Uses upstream MetalLB controller nobody GID 65534 |
+| platform-system | ReplicaSet/waypoint | KSV020, KSV021 | accept | Istio ambient waypoint proxy requires fixed non-root UID/GID 1337 |
+| platform-system | ReplicaSet/waypoint | KSV030, KSV104 | upstream | Kyverno excludes platform-system webhooks to prevent self-lockout; istiod gateways.seccompProfile is outside lane scope |
+| security-system | DaemonSet/falco | KSV001, KSV003, KSV012, KSV014, KSV017, KSV020, KSV021, KSV023, KSV030, KSV104, KSV106, KSV121 | accept | Requires privileged, root, hostPath (/boot,/etc,/proc,/usr,containerd.sock), and disabled seccomp for modern_ebpf instrumentation |
+| security-system | ReplicaSet/falco-falcosidekick | KSV020, KSV021 | accept | Keeps upstream falco 9.2.1 / falcosidekick 0.14.1 default UID/GID 1234 |
+| security-system | ReplicaSet/trivy-operator | KSV020, KSV021 | accept | Keeps upstream trivy-operator:0.25.0 default UID/GID 10000 |
+| security-system | StatefulSet/trivy-server | KSV021 | accept | Upstream chart sets fsGroup 65534 with runAsUser 65534 and omits runAsGroup |
+| storage | DaemonSet/node-agent | KSV001, KSV003, KSV012, KSV014, KSV020, KSV021, KSV023, KSV105, KSV106 | accept | Requires privileged/UID 0 and /var/lib/kubelet hostPath mounts for kopia fs-backup |
+| storage | ReplicaSet/openbao-agent-injector | KSV020, KSV021 | accept | Uses upstream OpenBao image/chart default UID/GID 100/1000 |
+| storage | ReplicaSet/seaweedfs-s3 | KSV011, KSV020, KSV021 | accept | Omits CPU limit to prevent S3 upload throttling (D-sw-qos) and uses seaweed UID/GID 1000 |
+| storage | ReplicaSet/velero | KSV012, KSV020, KSV021 | accept | Upstream velero:v1.18.1 non-numeric USER cnb (GID 65532) fails CreateContainerConfigError with runAsNonRoot: true |
+| storage | ReplicaSet/velero-ui | KSV020, KSV021 | accept | Uses upstream node image UID/GID 1000 |
+| storage | StatefulSet/openbao | KSV020, KSV021 | accept | Uses upstream OpenBao UID/GID 100/1000 matching raft PVC ownership |
+| storage | StatefulSet/seaweedfs-filer | KSV011, KSV020, KSV021 | accept | Omits CPU limit to prevent upload throttling (D-sw-qos) and uses seaweed UID/GID 1000 |
+| storage | StatefulSet/seaweedfs-master | KSV011, KSV020, KSV021 | accept | Omits CPU limit to prevent upload throttling (D-sw-qos) and uses seaweed UID/GID 1000 |
+| storage | StatefulSet/seaweedfs-volume | KSV011, KSV012, KSV020, KSV021, KSV023 | accept | Requires root and hostPath for existing root-owned /ssd/object_store data; omits CPU limit (D-sw-qos) with UID/GID <= 10000 |
+
+### RBAC allowlist
+
+| namespace | workload | checks | class | reason |
+| --- | --- | --- | --- | --- |
+| cluster | ClusterRole/platform-admin | KSV041, KSV048, KSV049, KSV053, KSV056 | accept | Administrative privileges required by OIDC platform-admin role |
+| cluster | ClusterRole/developer-workload-admin | KSV048, KSV049, KSV053, KSV056 | accept | Developer workload management privileges scoped solely via dev RoleBinding |
+| devtools | Role/narwhal-portal-jobs | KSV048 | accept | Tuning and Kaniko build Jobs guarded by Kyverno admission policies |
+| monitoring | Role/narwhal-portal-notification-channels | KSV113 | accept | Scoped to a single Secret name with get/update/patch verbs only |
+
 ## Deferred (safe, not yet done)
 
 Worthwhile but out of the "quick safe win" scope; each needs care and control-plane

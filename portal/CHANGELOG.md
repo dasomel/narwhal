@@ -9,6 +9,13 @@ English | [한국어](CHANGELOG-ko.md)
 
 ## [Unreleased]
 
+### Added
+
+- **Reviewed Config Audit & RBAC compliance allowlist (`src/lib/compliance-accepted.ts`, `src/lib/compliance.ts`, `src/components/compliance/*`, `docs/common/compliance-hardening.md`):**
+  - Added typed per-workload/per-check `ACCEPTED_CONFIG_AUDIT_RULES` (69 entries across 55 workloads, with ReplicaSet pod-template-hash stripping and `AVD-KSV-*`/`KSV*` ID normalization) and exact role/check `ACCEPTED_RBAC_RULES` (4 platform-authored roles: `platform-admin`, `developer-workload-admin`, `narwhal-portal-jobs`, `narwhal-portal-notification-channels`), plus `"chaos-mesh"` and `"kubernetes-dashboard"` in `UPSTREAM_RBAC_ROLE_PATTERNS`.
+  - Split failing checks into `actionableSummary` vs `acceptedSummary` per row (failing closed on unlisted check IDs or workloads, e.g. `KSV042` on `platform-admin`), keeping non-system `LOW` checks in `lowSeverityConfigAuditFailures` without double-counting and preserving all findings in API responses.
+  - Updated Compliance counters, Config Audit/RBAC tables, expanded check panels, and detail pages to surface accepted counts and per-check accepted badges with justifications; synced the allowlist with `docs/common/compliance-hardening.md` via a markdown-table parity test (`src/lib/compliance-accepted.test.ts`).
+
 ### Fixed
 
 - **TLS certificates renewal feedback and issued metadata (`src/components/settings/certs-table.tsx`, `src/lib/k8s-client.ts`):**

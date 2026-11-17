@@ -1,0 +1,175 @@
+import fs from "node:fs"
+import path from "node:path"
+import { describe, expect, it } from "vitest"
+import {
+  ACCEPTED_CONFIG_AUDIT_RULES,
+  ACCEPTED_RBAC_RULES,
+  matchConfigAuditException,
+  matchRbacException,
+  normalizeCheckId,
+  normalizeWorkloadName,
+} from "./compliance-accepted"
+
+interface ParsedDocRow {
+  namespace: string
+  workload: string
+  checks: string[]
+  cls: string
+  reason: string
+}
+
+function parseMarkdownSectionTable(markdown: string, heading: string): ParsedDocRow[] {
+  const lines = markdown.split("\n")
+  const startIdx = lines.findIndex((line) => line.trim() === heading)
+  if (startIdx === -1) {
+    throw new Error(`Missing heading "${heading}" in docs/common/compliance-hardening.md`)
+  }
+  const rows: ParsedDocRow[] = []
+  let inTable = false
+  for (let i = startIdx + 1; i < lines.length; i++) {
+    const trimmed = lines[i].trim()
+    if (trimmed.startsWith("#")) break
+    if (!trimmed.startsWith("|")) {
+      if (inTable && trimmed.length === 0) break
+      continue
+    }
+    inTable = true
+    const cells = trimmed
+      .slice(1, -1)
+      .split("|")
+      .map((c) => c.trim())
+    if (cells.length !== 5) {
+      throw new Error(`Expected 5 columns under "${heading}", got ${cells.length}: ${trimmed}`)
+    }
+    const [namespace, workload, checksRaw, cls, reason] = cells
+    if (namespace === "namespace" || /^-+$/.test(namespace)) continue
+    rows.push({
+      namespace,
+      workload,
+      checks: checksRaw
+        .split(",")
+        .map((c) => normalizeCheckId(c))
+        .filter(Boolean)
+        .sort(),
+      cls,
+      reason,
+    })
+  }
+  return rows
+}
+
+describe("normalizeCheckId", () => {
+  it("normalizes AVD-KSV and short KSV IDs to canonical KSVnnn", () => {
+    expect(normalizeCheckId("KSV017")).toBe("KSV017")
+    expect(normalizeCheckId("AVD-KSV-0017")).toBe("KSV017")
+    expect(normalizeCheckId("avd-ksv-0108")).toBe("KSV108")
+    expect(normalizeCheckId("ksv17")).toBe("KSV017")
+    expect(normalizeCheckId(" KSV001 ")).toBe("KSV001")
+  })
+})
+
+describe("normalizeWorkloadName", () => {
+  it("strips Kubernetes pod-template-hash suffixes only for ReplicaSet", () => {
+    expect(normalizeWorkloadName("ReplicaSet", "narwhal-portal-74b459c658")).toBe("narwhal-portal")
+    expect(normalizeWorkloadName("ReplicaSet", "harbor-core-b569bd8dd")).toBe("harbor-core")
+    expect(normalizeWorkloadName("ReplicaSet", "prometheus-stack-kube-prom-operator-95f77896")).toBe(
+      "prometheus-stack-kube-prom-operator",
+    )
+    expect(normalizeWorkloadName("ReplicaSet", "cert-manager-cainjector-7b66d49b8")).toBe(
+      "cert-manager-cainjector",
+    )
+    expect(normalizeWorkloadName("ReplicaSet", "cert-manager-cainjector")).toBe("cert-manager-cainjector")
+    expect(normalizeWorkloadName("ReplicaSet", "apisix-ingress-controller")).toBe("apisix-ingress-controller")
+    expect(normalizeWorkloadName("DaemonSet", "metallb-speaker")).toBe("metallb-speaker")
+    expect(normalizeWorkloadName("StatefulSet", "seaweedfs-volume")).toBe("seaweedfs-volume")
+  })
+})
+
+describe("matchConfigAuditException", () => {
+  it("matches an allowlisted workload and check ID (including ReplicaSet hash and AVD prefix)", () => {
+    const m1 = matchConfigAuditException("security-system", "DaemonSet", "falco", "AVD-KSV-0017")
+    expect(m1).not.toBeNull()
+    expect(m1?.class).toBe("accept")
+    expect(m1?.reason).toMatch(/privileged/i)
+
+    const m2 = matchConfigAuditException("devtools", "ReplicaSet", "harbor-core-999888777a", "KSV014")
+    expect(m2).not.toBeNull()
+    expect(m2?.class).toBe("upstream")
+
+    const m3 = matchConfigAuditException("devtools", "ReplicaSet", "narwhal-portal-74b459c658", "KSV020")
+    expect(m3).not.toBeNull()
+    expect(m3?.class).toBe("accept")
+  })
+
+  it("fails closed when a NEW check ID appears on an allowlisted workload", () => {
+    expect(matchConfigAuditException("devtools", "ReplicaSet", "narwhal-portal-74b459c658", "KSV017")).toBeNull()
+    expect(matchConfigAuditException("devtools", "ReplicaSet", "harbor-core-b569bd8dd", "KSV017")).toBeNull()
+    expect(matchConfigAuditException("storage", "ReplicaSet", "velero-6447588f5f", "KSV017")).toBeNull()
+  })
+
+  it("fails closed on other workloads, wrong namespace, or wrong kind", () => {
+    expect(matchConfigAuditException("devtools", "ReplicaSet", "narwhal-portal-extra-74b459c658", "KSV020")).toBeNull()
+    expect(matchConfigAuditException("storage", "ReplicaSet", "velero-ui-58c868d4b8", "KSV012")).toBeNull()
+    expect(matchConfigAuditException("default", "DaemonSet", "falco", "KSV017")).toBeNull()
+    expect(matchConfigAuditException("security-system", "StatefulSet", "falco", "KSV017")).toBeNull()
+  })
+})
+
+describe("matchRbacException", () => {
+  it("matches exact role names and check IDs only", () => {
+    const m = matchRbacException("platform-admin", "KSV041", "")
+    expect(m).not.toBeNull()
+    expect(m?.class).toBe("accept")
+
+    expect(matchRbacException("platform-admin", "KSV042", "")).toBeNull()
+    expect(matchRbacException("platform-admin-extra", "KSV041", "")).toBeNull()
+    expect(matchRbacException("developer-workload-admin", "AVD-KSV-0053", "")).not.toBeNull()
+    expect(matchRbacException("narwhal-portal-jobs", "KSV048", "devtools")).not.toBeNull()
+    expect(matchRbacException("narwhal-portal-jobs", "KSV048", "prod")).toBeNull()
+    expect(matchRbacException("narwhal-portal-notification-channels", "KSV113", "monitoring")).not.toBeNull()
+  })
+})
+
+describe("allowlist integrity and docs parity", () => {
+  it("contains no duplicate (namespace, kind, name, class) or overlapping check IDs", () => {
+    const seenClass = new Set<string>()
+    const seenChecks = new Set<string>()
+    for (const rule of ACCEPTED_CONFIG_AUDIT_RULES) {
+      const classKey = `${rule.namespace}|${rule.kind}|${rule.name}|${rule.class}`
+      expect(seenClass.has(classKey), `Duplicate class entry: ${classKey}`).toBe(false)
+      seenClass.add(classKey)
+      for (const id of rule.checks) {
+        const checkKey = `${rule.namespace}|${rule.kind}|${rule.name}|${id}`
+        expect(seenChecks.has(checkKey), `Overlapping check entry: ${checkKey}`).toBe(false)
+        seenChecks.add(checkKey)
+      }
+      expect(rule.reason).not.toContain("|")
+      expect(rule.reason.trim().length).toBeGreaterThan(0)
+    }
+  })
+
+  it("matches docs/common/compliance-hardening.md Config Audit and RBAC allowlist tables exactly", () => {
+    const docPath = path.resolve(__dirname, "../../../docs/common/compliance-hardening.md")
+    const markdown = fs.readFileSync(docPath, "utf8")
+
+    const docConfigRows = parseMarkdownSectionTable(markdown, "### Config Audit allowlist")
+    const codeConfigRows: ParsedDocRow[] = ACCEPTED_CONFIG_AUDIT_RULES.map((r) => ({
+      namespace: r.namespace,
+      workload: `${r.kind}/${r.name}`,
+      checks: Array.from(r.checks).map(normalizeCheckId).sort(),
+      cls: r.class,
+      reason: r.reason,
+    }))
+    expect(docConfigRows).toEqual(codeConfigRows)
+
+    const docRbacRows = parseMarkdownSectionTable(markdown, "### RBAC allowlist")
+    const codeRbacRows: ParsedDocRow[] = ACCEPTED_RBAC_RULES.map((r) => ({
+      namespace: r.namespace || "cluster",
+      workload: `${r.kind}/${r.roleName}`,
+      checks: Array.from(r.checks).map(normalizeCheckId).sort(),
+      cls: r.class,
+      reason: r.reason,
+    }))
+    expect(docRbacRows).toEqual(codeRbacRows)
+  })
+})

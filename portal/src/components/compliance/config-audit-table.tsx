@@ -65,7 +65,7 @@ function SeverityMini({ severity, count }: { severity: Severity; count: number }
   )
 }
 
-function ExpandedConfigPanel({
+export function ExpandedConfigPanel({
   namespace,
   name,
 }: {
@@ -90,7 +90,11 @@ function ExpandedConfigPanel({
     const order: Severity[] = ["Critical", "High", "Medium", "Low", "Unknown"]
     return detail.checks
       .filter((c) => !c.success)
-      .sort((a, b) => order.indexOf(a.severity) - order.indexOf(b.severity))
+      .sort((a, b) => {
+        const accDiff = Number(Boolean(a.accepted)) - Number(Boolean(b.accepted))
+        if (accDiff !== 0) return accDiff
+        return order.indexOf(a.severity) - order.indexOf(b.severity)
+      })
       .slice(0, 5)
   }, [detail])
 
@@ -111,15 +115,35 @@ function ExpandedConfigPanel({
                 {top5Failed.map((check) => (
                   <div
                     key={check.id}
-                    className="rounded-md border border-red-200 bg-red-50/60 dark:bg-red-950/10 dark:border-red-900 p-2.5 text-xs"
+                    className={`rounded-md border p-2.5 text-xs ${
+                      check.accepted
+                        ? "border-slate-200 bg-slate-50/60 dark:bg-slate-900/20 dark:border-slate-800"
+                        : "border-red-200 bg-red-50/60 dark:bg-red-950/10 dark:border-red-900"
+                    }`}
                   >
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
                       <span className="font-mono text-muted-foreground">{check.id}</span>
                       <Badge className={`text-xs ${severityBadgeClass[check.severity] ?? severityBadgeClass.Unknown}`}>
                         {check.severity}
                       </Badge>
+                      {check.accepted && (
+                        <Badge
+                          variant="outline"
+                          className="text-[0.65rem] px-1.5 py-0 text-muted-foreground border-muted-foreground/30"
+                        >
+                          {check.acceptedClass === "upstream"
+                            ? t("compliance.check.acceptedUpstream")
+                            : t("compliance.check.accepted")}
+                        </Badge>
+                      )}
                     </div>
                     <p className="mt-1 font-medium text-foreground">{translateTitle("ksv", check.id, check.title, locale)}</p>
+                    {check.accepted && check.acceptedReason && (
+                      <p className="mt-1 text-muted-foreground">
+                        <span className="font-medium">{t("compliance.check.acceptedReason")}: </span>
+                        {check.acceptedReason}
+                      </p>
+                    )}
                     {check.remediation && (
                       <p className="mt-1 text-muted-foreground line-clamp-2">{translateRemediation("ksv", check.id, check.remediation, locale)}</p>
                     )}
@@ -166,23 +190,24 @@ export function ConfigAuditTable() {
     [rows]
   )
 
-  // Three-tier split: system-accepted (namespace-based) takes priority; of the remaining
-  // "actionable" rows, ones whose non-system findings are ALL Low severity are hygiene-only
-  // (KSV020/021 UID/GID, KSV011/015/016/018 resource limits — risk-accepted per
-  // narwhal/docs/compliance-hardening.md) and are broken out separately rather than inflating
-  // the actionable headline. Derived from the row's existing severity summary — no new field.
+  // Three-tier split: accepted (system-namespace or all non-LOW checks covered by reviewed
+  // allowlist) takes priority; remaining rows with actionable Critical/High/Medium count as
+  // actionable, and LOW-only non-system rows are broken out as hygiene.
   const { actionableCount, lowSeverityCount, acceptedCount } = useMemo(() => {
     let actionableCount = 0
     let lowSeverityCount = 0
     let acceptedCount = 0
     for (const r of rows) {
+      const total = r.summary.Critical + r.summary.High + r.summary.Medium + r.summary.Low
+      if (total === 0) continue
       if (r.accepted) {
         acceptedCount++
         continue
       }
-      const hasActionableSeverity = r.summary.Critical + r.summary.High + r.summary.Medium > 0
+      const actionable = r.actionableSummary ?? r.summary
+      const hasActionableSeverity = actionable.Critical + actionable.High + actionable.Medium > 0
       if (hasActionableSeverity) actionableCount++
-      else lowSeverityCount++
+      else if (r.summary.Low > 0) lowSeverityCount++
     }
     return { actionableCount, lowSeverityCount, acceptedCount }
   }, [rows])
@@ -326,9 +351,17 @@ export function ConfigAuditTable() {
                             <Badge
                               variant="outline"
                               className="ml-2 text-[0.65rem] px-1.5 py-0 text-muted-foreground border-muted-foreground/30"
-                              title={t("compliance.table.acceptedHint")}
+                              title={
+                                row.acceptedScope === "system"
+                                  ? t("compliance.table.acceptedHint")
+                                  : t("compliance.table.acceptedExceptionHint")
+                              }
                             >
-                              {t("compliance.table.accepted")}
+                              {row.acceptedScope === "system"
+                                ? t("compliance.table.accepted")
+                                : row.acceptedScope === "upstream"
+                                  ? t("compliance.table.acceptedUpstream")
+                                  : t("compliance.table.acceptedException")}
                             </Badge>
                           )}
                           {!row.accepted && row.summary.Critical + row.summary.High + row.summary.Medium === 0 && row.summary.Low > 0 && (

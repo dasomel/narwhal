@@ -12,7 +12,7 @@ English | [한국어](CHANGELOG-ko.md)
 ### Added
 
 - **Reviewed Config Audit allowlist additions (`src/lib/compliance-accepted.ts`, `src/lib/i18n.ts`, `docs/common/compliance-hardening.md`):**
-  - Expanded `ACCEPTED_CONFIG_AUDIT_RULES` to 71 rules across 58 workloads (adding `Pod` kind support for exact `database/Pod/narwhal-db-1` `KSV036`, `nfs-quota-agent/DaemonSet/nfs-quota-agent` `KSV001`/`KSV012`/`KSV017`/`KSV023`/`KSV121` while keeping `KSV014`/`KSV104` actionable, `storage/ReplicaSet/velero` and `storage/DaemonSet/node-agent` `KSV014`, and `iam/ReplicaSet/keycloak-operator` + `iam/StatefulSet/keycloak` `KSV014` as `upstream` per `D-COMPLIANCE-R2`).
+  - Expanded `ACCEPTED_CONFIG_AUDIT_RULES` to 70 rules across 58 workloads (adding `Pod` kind support for exact `database/Pod/narwhal-db-1` `KSV036`, `nfs-quota-agent/DaemonSet/nfs-quota-agent` `KSV001`/`KSV012`/`KSV017`/`KSV023`/`KSV121` while keeping `KSV014`/`KSV104` actionable, and `iam/StatefulSet/keycloak` `KSV014` as `upstream` per `D-COMPLIANCE-R2`; fixable `KSV014` findings for `keycloak-operator`, `velero`, and `node-agent` remain actionable).
 
 ### Fixed
 

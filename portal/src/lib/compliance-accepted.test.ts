@@ -119,21 +119,14 @@ describe("matchConfigAuditException", () => {
   })
 
   it("keeps removed deferred, out-of-scope, and mismatched-reason checks actionable", () => {
-    const kcOp = matchConfigAuditException("iam", "ReplicaSet", "keycloak-operator-74b459c658", "KSV014")
-    expect(kcOp).not.toBeNull()
-    expect(kcOp?.class).toBe("upstream")
+    expect(matchConfigAuditException("iam", "ReplicaSet", "keycloak-operator-74b459c658", "KSV014")).toBeNull()
 
     const kc = matchConfigAuditException("iam", "StatefulSet", "keycloak", "KSV014")
     expect(kc).not.toBeNull()
     expect(kc?.class).toBe("upstream")
 
-    const velero = matchConfigAuditException("storage", "ReplicaSet", "velero-6447588f5f", "KSV014")
-    expect(velero).not.toBeNull()
-    expect(velero?.class).toBe("accept")
-
-    const nodeAgent = matchConfigAuditException("storage", "DaemonSet", "node-agent", "KSV014")
-    expect(nodeAgent).not.toBeNull()
-    expect(nodeAgent?.class).toBe("accept")
+    expect(matchConfigAuditException("storage", "ReplicaSet", "velero-6447588f5f", "KSV014")).toBeNull()
+    expect(matchConfigAuditException("storage", "DaemonSet", "node-agent", "KSV014")).toBeNull()
 
     const cnpgDb1 = matchConfigAuditException("database", "Pod", "narwhal-db-1", "KSV036")
     expect(cnpgDb1).not.toBeNull()
@@ -159,6 +152,12 @@ describe("matchConfigAuditException", () => {
     expect(matchConfigAuditException("devtools", "ReplicaSet", "gitea-6cf86848f7", "KSV014")).not.toBeNull()
     expect(matchConfigAuditException("platform-system", "ReplicaSet", "apisix-6c89749f58", "KSV014")).toBeNull()
     expect(matchConfigAuditException("security-system", "DaemonSet", "falco", "KSV014")).toBeNull()
+  })
+
+  it("keeps fixable KSV014 findings actionable (keycloak-operator, velero, node-agent)", () => {
+    expect(matchConfigAuditException("iam", "ReplicaSet", "keycloak-operator-74b459c658", "KSV014")).toBeNull()
+    expect(matchConfigAuditException("storage", "ReplicaSet", "velero-6447588f5f", "KSV014")).toBeNull()
+    expect(matchConfigAuditException("storage", "DaemonSet", "node-agent", "KSV014")).toBeNull()
   })
 
   it("fails closed when a NEW check ID appears on an allowlisted workload", () => {

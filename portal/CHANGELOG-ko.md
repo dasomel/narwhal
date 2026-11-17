@@ -12,7 +12,7 @@
 ### 추가
 
 - **Config Audit 검토 완료 예외 추가 (`src/lib/compliance-accepted.ts`, `src/lib/i18n.ts`, `docs/common/compliance-hardening.md`):**
-  - `ACCEPTED_CONFIG_AUDIT_RULES`를 58개 워크로드 71건으로 갱신했습니다(`Pod` 리소스 유형 추가로 `database/Pod/narwhal-db-1` `KSV036` 정확 매칭, `nfs-quota-agent/DaemonSet/nfs-quota-agent` `KSV001`/`KSV012`/`KSV017`/`KSV023`/`KSV121` 추가 및 `KSV014`/`KSV104` 조치대상 유지, `storage/ReplicaSet/velero`·`storage/DaemonSet/node-agent` `KSV014` 추가, `D-COMPLIANCE-R2`에 따른 `iam/ReplicaSet/keycloak-operator`·`iam/StatefulSet/keycloak` `KSV014` `upstream` 추가).
+  - `ACCEPTED_CONFIG_AUDIT_RULES`를 58개 워크로드 70건으로 갱신했습니다(`Pod` 리소스 유형 추가로 `database/Pod/narwhal-db-1` `KSV036` 정확 매칭, `nfs-quota-agent/DaemonSet/nfs-quota-agent` `KSV001`/`KSV012`/`KSV017`/`KSV023`/`KSV121` 추가 및 `KSV014`/`KSV104` 조치대상 유지, `D-COMPLIANCE-R2`에 따른 `iam/StatefulSet/keycloak` `KSV014` `upstream` 추가; 플랫폼에서 수정 가능한 `keycloak-operator`, `velero`, `node-agent`의 `KSV014`는 조치 대상으로 유지).
 
 ### 수정
 

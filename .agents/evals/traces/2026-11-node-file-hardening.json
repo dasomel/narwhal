@@ -69,6 +69,12 @@
         "artifact:scripts/test/lib/check-static-pod-hostpaths.py",
         "artifact:scripts/test/regression-check-kakao.sh"
       ]
+    },
+    {
+      "id": "e6",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Node file hardening is wired into provisioning on every node type and pinned by R368; the orchestrator ran the unchanged script on the local node (Ready, etcd Running, three of five Trivy node findings gone). A clean install with the wiring has not been run."
     }
   ]
 }

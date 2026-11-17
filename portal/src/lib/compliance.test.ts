@@ -592,4 +592,64 @@ describe("compliance accepted exceptions", () => {
     expect(summary.totalRbacFailures).toEqual({ Critical: 3, High: 0, Medium: 0, Low: 0 })
     expect(summary.acceptedRbacFailures).toEqual({ Critical: 0, High: 0, Medium: 1, Low: 0 })
   })
+
+  it("fails closed when an authored RBAC report has Unknown or mismatched kind (narwhal#717)", async () => {
+    installK8sMock({
+      "/apis/aquasecurity.github.io/v1alpha1/rbacassessmentreports": {
+        items: [
+          // Counter-example from narwhal#717: devtools/Unknown/narwhal-portal-jobs with failing KSV048
+          {
+            metadata: {
+              name: "hash-unknown-portal-jobs",
+              namespace: "devtools",
+              creationTimestamp: "2026-11-18T00:00:00Z",
+              labels: { "trivy-operator.resource.name": "narwhal-portal-jobs" },
+            },
+            report: {
+              summary: { criticalCount: 0, highCount: 0, mediumCount: 1, lowCount: 0 },
+              checks: [{ checkID: "KSV048", title: "Manage workloads", severity: "MEDIUM", success: false }],
+            },
+          },
+          makeRbac({
+            namespace: "devtools",
+            kind: "Role",
+            roleName: "platform-admin",
+            checks: [{ checkID: "KSV041", severity: "CRITICAL", success: false }],
+          }),
+        ],
+      },
+      "/apis/aquasecurity.github.io/v1alpha1/clusterrbacassessmentreports": {
+        items: [
+          makeRbac({
+            kind: "ClusterRole",
+            roleName: "narwhal-portal-jobs",
+            checks: [{ checkID: "KSV048", severity: "MEDIUM", success: false }],
+          }),
+        ],
+      },
+    })
+
+    const rows = await getRbacAuditList()
+    const unknownPortalJobs = rows.find((r) => r.kind === "Unknown" && r.name === "narwhal-portal-jobs")!
+    expect(unknownPortalJobs.namespace).toBe("devtools")
+    expect(unknownPortalJobs.accepted).toBe(false)
+    expect(unknownPortalJobs.actionableSummary).toEqual({ Critical: 0, High: 0, Medium: 1, Low: 0 })
+    expect(unknownPortalJobs.acceptedSummary).toEqual({ Critical: 0, High: 0, Medium: 0, Low: 0 })
+
+    const clusterPortalJobs = rows.find((r) => r.kind === "ClusterRole" && r.name === "narwhal-portal-jobs")!
+    expect(clusterPortalJobs.accepted).toBe(false)
+    expect(clusterPortalJobs.actionableSummary).toEqual({ Critical: 0, High: 0, Medium: 1, Low: 0 })
+
+    const namespacedPlatformAdmin = rows.find((r) => r.kind === "Role" && r.name === "platform-admin")!
+    expect(namespacedPlatformAdmin.accepted).toBe(false)
+    expect(namespacedPlatformAdmin.actionableSummary).toEqual({ Critical: 1, High: 0, Medium: 0, Low: 0 })
+
+    const detail = await getRbacAuditDetail("devtools", "narwhal-portal-jobs")
+    expect(detail?.accepted).toBe(false)
+    expect(detail?.checks.find((c) => c.id === "KSV048")?.accepted).toBe(false)
+
+    const summary = await getComplianceSummary()
+    expect(summary.totalRbacFailures).toEqual({ Critical: 1, High: 0, Medium: 2, Low: 0 })
+    expect(summary.acceptedRbacFailures).toEqual({ Critical: 0, High: 0, Medium: 0, Low: 0 })
+  })
 })

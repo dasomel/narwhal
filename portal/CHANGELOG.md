@@ -9,6 +9,16 @@ English | [한국어](CHANGELOG-ko.md)
 
 ## [Unreleased]
 
+### Added
+
+- **Reviewed Config Audit allowlist additions (`src/lib/compliance-accepted.ts`, `src/lib/i18n.ts`, `docs/common/compliance-hardening.md`):**
+  - Expanded `ACCEPTED_CONFIG_AUDIT_RULES` to 71 rules across 58 workloads (adding `Pod` kind support for exact `database/Pod/narwhal-db-1` `KSV036`, `nfs-quota-agent/DaemonSet/nfs-quota-agent` `KSV001`/`KSV012`/`KSV017`/`KSV023`/`KSV121` while keeping `KSV014`/`KSV104` actionable, `storage/ReplicaSet/velero` and `storage/DaemonSet/node-agent` `KSV014`, and `iam/ReplicaSet/keycloak-operator` + `iam/StatefulSet/keycloak` `KSV014` as `upstream` per `D-COMPLIANCE-R2`).
+
+### Fixed
+
+- **Fail closed on RBAC report kind in `matchRbacException` (`src/lib/compliance-accepted.ts`, `src/lib/compliance.ts`, narwhal#717):**
+  - Indexed `ACCEPTED_RBAC_RULES` by `(namespace, kind, roleName)` and required `kind === "Role"` (non-empty namespace) or `kind === "ClusterRole"` (empty namespace), failing closed on `Unknown`, omitted, or mismatched kinds such as `devtools/Unknown/narwhal-portal-jobs`.
+
 ## [1.1.18] - 2026-11-18
 
 Patch release that separates reviewed, non-actionable compliance findings from actionable ones on the Compliance page

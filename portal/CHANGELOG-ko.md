@@ -9,6 +9,16 @@
 
 ## [Unreleased]
 
+### 추가
+
+- **Config Audit 검토 완료 예외 추가 (`src/lib/compliance-accepted.ts`, `src/lib/i18n.ts`, `docs/common/compliance-hardening.md`):**
+  - `ACCEPTED_CONFIG_AUDIT_RULES`를 58개 워크로드 71건으로 갱신했습니다(`Pod` 리소스 유형 추가로 `database/Pod/narwhal-db-1` `KSV036` 정확 매칭, `nfs-quota-agent/DaemonSet/nfs-quota-agent` `KSV001`/`KSV012`/`KSV017`/`KSV023`/`KSV121` 추가 및 `KSV014`/`KSV104` 조치대상 유지, `storage/ReplicaSet/velero`·`storage/DaemonSet/node-agent` `KSV014` 추가, `D-COMPLIANCE-R2`에 따른 `iam/ReplicaSet/keycloak-operator`·`iam/StatefulSet/keycloak` `KSV014` `upstream` 추가).
+
+### 수정
+
+- **`matchRbacException`의 리소스 kind fail-closed 검증 (`src/lib/compliance-accepted.ts`, `src/lib/compliance.ts`, narwhal#717):**
+  - `ACCEPTED_RBAC_RULES` 인덱스와 `matchRbacException` 매칭에 `kind`를 포함해 `Role`(비어 있지 않은 namespace)과 `ClusterRole`(빈 namespace)만 일치시키고 `devtools/Unknown/narwhal-portal-jobs` 등 `Unknown`·누락·불일치 kind는 수용하지 않도록 수정했습니다.
+
 ## [1.1.18] - 2026-11-18
 
 Compliance 화면에서 검토를 마친 조치 불가 항목과 조치 대상 항목을 구분하고, 인증서 갱신 요청의 결과를 표시하는 패치

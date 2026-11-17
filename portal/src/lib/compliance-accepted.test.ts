@@ -119,15 +119,46 @@ describe("matchConfigAuditException", () => {
   })
 
   it("keeps removed deferred, out-of-scope, and mismatched-reason checks actionable", () => {
-    expect(matchConfigAuditException("iam", "ReplicaSet", "keycloak-operator-74b459c658", "KSV014")).toBeNull()
-    expect(matchConfigAuditException("iam", "StatefulSet", "keycloak", "KSV014")).toBeNull()
+    const kcOp = matchConfigAuditException("iam", "ReplicaSet", "keycloak-operator-74b459c658", "KSV014")
+    expect(kcOp).not.toBeNull()
+    expect(kcOp?.class).toBe("upstream")
+
+    const kc = matchConfigAuditException("iam", "StatefulSet", "keycloak", "KSV014")
+    expect(kc).not.toBeNull()
+    expect(kc?.class).toBe("upstream")
+
+    const velero = matchConfigAuditException("storage", "ReplicaSet", "velero-6447588f5f", "KSV014")
+    expect(velero).not.toBeNull()
+    expect(velero?.class).toBe("accept")
+
+    const nodeAgent = matchConfigAuditException("storage", "DaemonSet", "node-agent", "KSV014")
+    expect(nodeAgent).not.toBeNull()
+    expect(nodeAgent?.class).toBe("accept")
+
+    const cnpgDb1 = matchConfigAuditException("database", "Pod", "narwhal-db-1", "KSV036")
+    expect(cnpgDb1).not.toBeNull()
+    expect(cnpgDb1?.class).toBe("accept")
+    expect(matchConfigAuditException("database", "Pod", "narwhal-db-2", "KSV036")).toBeNull()
+    expect(matchConfigAuditException("database", "ReplicaSet", "narwhal-db-1", "KSV036")).toBeNull()
+
+    const alloyLogs = matchConfigAuditException("monitoring", "DaemonSet", "k8s-monitoring-alloy-logs", "KSV012")
+    expect(alloyLogs).not.toBeNull()
+    expect(alloyLogs?.class).toBe("accept")
+
+    for (const id of ["KSV001", "KSV012", "KSV017", "KSV023", "KSV121"]) {
+      const nqa = matchConfigAuditException("nfs-quota-agent", "DaemonSet", "nfs-quota-agent", id)
+      expect(nqa, `nfs-quota-agent ${id}`).not.toBeNull()
+      expect(nqa?.class).toBe("accept")
+    }
+    expect(matchConfigAuditException("nfs-quota-agent", "DaemonSet", "nfs-quota-agent", "KSV014")).toBeNull()
+    expect(matchConfigAuditException("nfs-quota-agent", "DaemonSet", "nfs-quota-agent", "KSV104")).toBeNull()
+
     expect(matchConfigAuditException("platform-system", "ReplicaSet", "waypoint-74b459c658", "KSV030")).toBeNull()
     expect(matchConfigAuditException("platform-system", "ReplicaSet", "waypoint-74b459c658", "KSV104")).toBeNull()
     expect(matchConfigAuditException("devtools", "ReplicaSet", "gitea-6cf86848f7", "KSV012")).toBeNull()
     expect(matchConfigAuditException("devtools", "ReplicaSet", "gitea-6cf86848f7", "KSV014")).not.toBeNull()
     expect(matchConfigAuditException("platform-system", "ReplicaSet", "apisix-6c89749f58", "KSV014")).toBeNull()
     expect(matchConfigAuditException("security-system", "DaemonSet", "falco", "KSV014")).toBeNull()
-    expect(matchConfigAuditException("storage", "DaemonSet", "node-agent", "KSV014")).toBeNull()
   })
 
   it("fails closed when a NEW check ID appears on an allowlisted workload", () => {
@@ -145,17 +176,27 @@ describe("matchConfigAuditException", () => {
 })
 
 describe("matchRbacException", () => {
-  it("matches exact role names and check IDs only", () => {
-    const m = matchRbacException("platform-admin", "KSV041", "")
+  it("matches exact (namespace, kind, roleName) and check IDs only, failing closed on Unknown or mismatched kind", () => {
+    const m = matchRbacException("platform-admin", "KSV041", "", "ClusterRole")
     expect(m).not.toBeNull()
     expect(m?.class).toBe("accept")
 
-    expect(matchRbacException("platform-admin", "KSV042", "")).toBeNull()
-    expect(matchRbacException("platform-admin-extra", "KSV041", "")).toBeNull()
-    expect(matchRbacException("developer-workload-admin", "AVD-KSV-0053", "")).not.toBeNull()
-    expect(matchRbacException("narwhal-portal-jobs", "KSV048", "devtools")).not.toBeNull()
-    expect(matchRbacException("narwhal-portal-jobs", "KSV048", "prod")).toBeNull()
-    expect(matchRbacException("narwhal-portal-notification-channels", "KSV113", "monitoring")).not.toBeNull()
+    expect(matchRbacException("platform-admin", "KSV042", "", "ClusterRole")).toBeNull()
+    expect(matchRbacException("platform-admin-extra", "KSV041", "", "ClusterRole")).toBeNull()
+    expect(matchRbacException("developer-workload-admin", "AVD-KSV-0053", "", "ClusterRole")).not.toBeNull()
+    expect(matchRbacException("narwhal-portal-jobs", "KSV048", "devtools", "Role")).not.toBeNull()
+    expect(matchRbacException("narwhal-portal-jobs", "KSV048", "prod", "Role")).toBeNull()
+    expect(matchRbacException("narwhal-portal-notification-channels", "KSV113", "monitoring", "Role")).not.toBeNull()
+
+    // narwhal#717: Unknown, omitted, or mismatched kind must fail closed
+    expect(matchRbacException("narwhal-portal-jobs", "KSV048", "devtools", "Unknown")).toBeNull()
+    expect(matchRbacException("narwhal-portal-jobs", "KSV048", "devtools", "ClusterRole")).toBeNull()
+    expect(matchRbacException("narwhal-portal-jobs", "KSV048", "devtools")).toBeNull()
+    expect(matchRbacException("narwhal-portal-jobs", "KSV048", "", "Role")).toBeNull()
+    expect(matchRbacException("platform-admin", "KSV041", "", "Role")).toBeNull()
+    expect(matchRbacException("platform-admin", "KSV041", "", "Unknown")).toBeNull()
+    expect(matchRbacException("platform-admin", "KSV041", "devtools", "ClusterRole")).toBeNull()
+    expect(matchRbacException("platform-admin", "KSV041", "")).toBeNull()
   })
 })
 
@@ -171,6 +212,23 @@ describe("allowlist integrity and docs parity", () => {
         const checkKey = `${rule.namespace}|${rule.kind}|${rule.name}|${id}`
         expect(seenChecks.has(checkKey), `Overlapping check entry: ${checkKey}`).toBe(false)
         seenChecks.add(checkKey)
+      }
+      expect(rule.reason).not.toContain("|")
+      expect(rule.reason.trim().length).toBeGreaterThan(0)
+    }
+
+    const seenRbacClass = new Set<string>()
+    const seenRbacChecks = new Set<string>()
+    for (const rule of ACCEPTED_RBAC_RULES) {
+      if (rule.kind === "ClusterRole") expect(rule.namespace).toBe("")
+      else expect(rule.namespace.length).toBeGreaterThan(0)
+      const classKey = `${rule.namespace}|${rule.kind}|${rule.roleName}|${rule.class}`
+      expect(seenRbacClass.has(classKey), `Duplicate RBAC class entry: ${classKey}`).toBe(false)
+      seenRbacClass.add(classKey)
+      for (const id of rule.checks) {
+        const checkKey = `${rule.namespace}|${rule.kind}|${rule.roleName}|${id}`
+        expect(seenRbacChecks.has(checkKey), `Overlapping RBAC check entry: ${checkKey}`).toBe(false)
+        seenRbacChecks.add(checkKey)
       }
       expect(rule.reason).not.toContain("|")
       expect(rule.reason.trim().length).toBeGreaterThan(0)

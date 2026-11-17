@@ -1,0 +1,70 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-portal-pin-1-1-18-20261118",
+  "task": "Pin the published Portal 1.1.18 image and matching air-gap digest; live rollout is out of scope for this change and not claimed. In-cluster Kyverno verification is known to fail for Portal images (narwhal#684).",
+  "changeContext": {
+    "paths": [
+      "gitops/charts/narwhal-platform/templates/narwhal-portal-k8s.yaml",
+      "gitops/README.md",
+      "gitops/README-ko.md",
+      "scripts/airgap/images.txt",
+      "scripts/airgap/lib/image-digests.tsv",
+      "VERSIONS.md",
+      "SECURITY.md",
+      "docs/common/compatibility-matrix.md",
+      "CHANGELOG.md",
+      "CHANGELOG-ko.md",
+      ".agents/evals/traces/2026-11-portal-pin-1.1.18.json",
+      "portal/src/data/oss-versions.generated.json"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Scope: update the Portal image pin, matching air-gap digest, generated OSS version data and documentation; no RBAC or deployment structure change. Trace content is reported for the orchestrator to write."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "Portal release portal/v1.1.18 is published at dbec7841b7231a55410fbc4990cc87242b890038. Publish workflow run 44156876610 succeeded; GitHub release Portal v1.1.18 published. Registry digest and signature details were supplied by the orchestrator; local live rollout is not claimed. In-cluster Kyverno verification is known to fail for Portal images (narwhal#684).",
+      "evidence": [
+        "orchestrator: portal/v1.1.18 -> commit dbec7841b7231a55410fbc4990cc87242b890038; GitHub release published",
+        "orchestrator: workflow run 44156876610 succeeded",
+        "orchestrator: image ghcr.io/dasomel/narwhal-portal:1.1.18; digest sha256:cc0f2c677483091a77caef84dd68bb211e6d60dc119bd75066a0a16357f0a029",
+        "orchestrator, measured 2026-11-17T19:22:00Z: crane digest returned the digest above; cosign verify v3.1.4 with the repository public key and transparency log passed on 2026-11-17"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "Move pin 1.1.17 -> 1.1.18 in GitOps, air-gap inventory and digest, generated OSS versions and documentation; 1.1.16 and 1.1.17 were intermediate pins. Release changes: Compliance page separates reviewed non-actionable findings (accepted, with reason) from actionable ones (narwhal#716); TLS certificate renewal shows its result (narwhal#713)."
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "Local static pin consistency, YAML validation and regression suite; no runtime rollout.",
+      "summary": "make test passed 476 checks with zero failures and three warnings. make validate, version consistency, generated versions and changed-line markdown lint passed. Live rollout is not part of this event; in-cluster Kyverno verification is known to fail for Portal images (narwhal#684).",
+      "evidence": [
+        "test:make test -> passed 476 failed 0 warnings 3; exit 0",
+        "test:make validate -> exit 0",
+        "test:bash scripts/ci/check-version-consistency.sh -> exit 0",
+        "test:node portal/scripts/gen-oss-versions.mjs --check -> in sync",
+        "test:python3 scripts/ci/markdownlint-changed.py --base origin/main -> no violations"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "completion_claim",
+      "summary": "No live rollout is claimed. In-cluster Kyverno verification is known to fail for Portal images (narwhal#684)."
+    },
+    {
+      "id": "e6",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Static pin change; make test (476 passed, 0 failed), make validate, version consistency, generated versions and changed-line markdown lint passed. Live rollout is outside this change and not claimed; in-cluster Kyverno verification is known to fail for Portal images (narwhal#684)."
+    }
+  ]
+}

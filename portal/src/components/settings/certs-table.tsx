@@ -8,19 +8,28 @@ import { DataState } from "@/components/ui/data-state"
 import { useLocale, useT } from "@/lib/i18n-client"
 import type { Certificate } from "@/lib/k8s-client"
 import {
+  CERT_PENDING_POLL_INTERVAL_MS,
+  CERT_PENDING_TIMEOUT_MS,
   CERT_POLL_INTERVAL_MS,
   CERT_POLL_TIMEOUT_MS,
+  CERT_RENEW_TIMEOUT_MS,
+  bindCertRenewToQueryClient,
   certRowKey,
   createCertRenewController,
+  createCertsQueryOptions,
   formatCertTimestamp,
   hasCertificateRenewed,
+  postCertRenew,
   type CertRenewController,
   type RenewRowState,
 } from "./certs-renew"
 
 export {
+  CERT_PENDING_POLL_INTERVAL_MS,
+  CERT_PENDING_TIMEOUT_MS,
   CERT_POLL_INTERVAL_MS,
   CERT_POLL_TIMEOUT_MS,
+  CERT_RENEW_TIMEOUT_MS,
   createCertRenewController,
   formatCertTimestamp,
   hasCertificateRenewed,
@@ -105,15 +114,7 @@ export function CertsTable({ controller: externalController }: { controller?: Ce
   const isAdmin = role === "cluster-admin"
 
   const renewMutation = useMutation({
-    mutationFn: async ({ name, namespace }: { name: string; namespace: string }) => {
-      const r = await fetch("/api/settings/certs/renew", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, namespace }),
-      })
-      if (!r.ok) throw new Error(r.statusText)
-      return r.json()
-    },
+    mutationFn: postCertRenew,
   })
 
   const mutateRenewAsync = renewMutation.mutateAsync
@@ -126,14 +127,7 @@ export function CertsTable({ controller: externalController }: { controller?: Ce
 
   useEffect(() => {
     if (externalController) return
-    internalController.mount()
-    internalController.setHandlers({
-      postRenew: (vars) => mutateRenewAsync(vars),
-      onRenewAccepted: () => {
-        void queryClient.invalidateQueries({ queryKey: ["settings-certs"] })
-      },
-    })
-    return () => internalController.dispose()
+    return bindCertRenewToQueryClient(internalController, queryClient, mutateRenewAsync)
   }, [externalController, internalController, mutateRenewAsync, queryClient])
 
   const { renewStates, submittingKeys } = useSyncExternalStore(
@@ -142,21 +136,9 @@ export function CertsTable({ controller: externalController }: { controller?: Ce
     controller.getSnapshot,
   )
 
-  const hasActiveIssuing = Object.values(renewStates).some((s) => s.phase === "issuing")
-
-  const { data: certs, isLoading, isError, refetch } = useQuery<Certificate[]>({
-    queryKey: ["settings-certs"],
-    queryFn: async () => {
-      const r = await fetch("/api/settings/certs")
-      if (!r.ok) throw new Error(r.statusText)
-      const data = (await r.json()) as Certificate[]
-      if (Array.isArray(data)) {
-        controller.reconcile(data, Date.now())
-      }
-      return data
-    },
-    refetchInterval: hasActiveIssuing ? CERT_POLL_INTERVAL_MS : false,
-  })
+  const { data: certs, isLoading, isError, refetch } = useQuery<Certificate[]>(
+    createCertsQueryOptions(controller, renewStates),
+  )
 
   const certList = Array.isArray(certs) ? certs : []
 
@@ -164,7 +146,7 @@ export function CertsTable({ controller: externalController }: { controller?: Ce
     <Card className="p-5">
       <h2 className="font-semibold text-foreground mb-4">{t("certs.title")}</h2>
       {isLoading ? <DataState state="loading" onRetry={() => { void refetch() }} />
-        : isError ? <DataState state="error" onRetry={() => { void refetch() }} />
+        : isError && !certs ? <DataState state="error" onRetry={() => { void refetch() }} />
         : !certList.length ? <DataState state="empty" /> : (
         <table className="w-full text-sm">
           <thead>

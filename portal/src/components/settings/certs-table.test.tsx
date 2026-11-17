@@ -3,22 +3,32 @@ import { renderToStaticMarkup } from "react-dom/server"
 
 const sessionState = vi.hoisted(() => ({ role: "cluster-admin" }))
 
-vi.mock("@tanstack/react-query", () => ({
-  useQuery: vi.fn(),
-  useMutation: () => ({ mutateAsync: vi.fn(), isPending: false }),
-  useQueryClient: () => ({ invalidateQueries: vi.fn() }),
-}))
+vi.mock("@tanstack/react-query", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@tanstack/react-query")>()
+  return {
+    ...actual,
+    useQuery: vi.fn(),
+    useMutation: () => ({ mutateAsync: vi.fn(), isPending: false }),
+    useQueryClient: () => ({ invalidateQueries: vi.fn() }),
+  }
+})
 
 vi.mock("next-auth/react", () => ({
   useSession: () => ({ data: { user: { role: sessionState.role } } }),
 }))
 
-import { useQuery } from "@tanstack/react-query"
+import { QueryClient, QueryObserver, environmentManager, useQuery, type UseQueryOptions } from "@tanstack/react-query"
 import { LocaleProvider } from "@/lib/i18n-client"
 import type { Certificate } from "@/lib/k8s-client"
 import {
+  CERT_PENDING_POLL_INTERVAL_MS,
+  CERT_PENDING_TIMEOUT_MS,
   CERT_POLL_INTERVAL_MS,
   CERT_POLL_TIMEOUT_MS,
+  CERT_RENEW_TIMEOUT_MS,
+  bindCertRenewToQueryClient,
+} from "./certs-renew"
+import {
   CertsTable,
   createCertRenewController,
   formatCertTimestamp,
@@ -55,7 +65,12 @@ function mockCertQuery(certs: Certificate[] | undefined, flags: { isLoading?: bo
   } as never)
 }
 
-function renderTable(certs: Certificate[] | undefined, locale: "ko" | "en" = "en", controller?: CertRenewController, flags: { isLoading?: boolean; isError?: boolean } = {}) {
+function renderTable(
+  certs: Certificate[] | undefined,
+  locale: "ko" | "en" = "en",
+  controller?: CertRenewController,
+  flags: { isLoading?: boolean; isError?: boolean } = {},
+) {
   mockCertQuery(certs, flags)
   return renderToStaticMarkup(
     <LocaleProvider locale={locale}>
@@ -78,6 +93,125 @@ function deferred<T = unknown>() {
     reject = rej
   })
   return { promise, resolve, reject }
+}
+
+function jsonResponse(body: unknown, status = 200, statusText = "OK"): Response {
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    statusText,
+    json: async () => body,
+  } as Response
+}
+
+/**
+ * Awaits a condition deterministically under fake timers without depending on
+ * a fixed microtask round count (which varies across Node/V8 versions).
+ */
+async function waitUntil(condition: () => boolean, maxTurns = 50): Promise<void> {
+  for (let i = 0; i < maxTurns; i++) {
+    if (condition()) return
+    await vi.advanceTimersByTimeAsync(0)
+  }
+  throw new Error("Condition was not satisfied within async turn budget")
+}
+
+interface FetchCallRecord {
+  url: string
+  method: string
+  signal?: AbortSignal
+  body?: unknown
+}
+
+/**
+ * Drives the real CertsTable query options, QueryClient/QueryObserver,
+ * bindCertRenewToQueryClient, and global fetch without mocking out queryFn or reconcile.
+ */
+function mountCertsFlow(
+  handler: (call: FetchCallRecord) => Promise<Response> | Response,
+  locale: "ko" | "en" = "en",
+) {
+  const calls: FetchCallRecord[] = []
+  const fetchSpy = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url
+    const method = init?.method ?? "GET"
+    const body = typeof init?.body === "string" ? JSON.parse(init.body) : undefined
+    const record: FetchCallRecord = { url, method, signal: init?.signal ?? undefined, body }
+    calls.push(record)
+    return handler(record)
+  })
+  vi.stubGlobal("fetch", fetchSpy)
+
+  const prevIsServer = environmentManager.isServer
+  environmentManager.setIsServer(() => false)
+
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false, gcTime: Infinity } },
+  })
+  const controller = createCertRenewController()
+  const unbind = bindCertRenewToQueryClient(controller, queryClient)
+
+  let capturedOptions: UseQueryOptions<Certificate[]> | null = null
+  let observer: QueryObserver<Certificate[]> | null = null
+
+  const renderWithResult = (result: {
+    data?: Certificate[]
+    isLoading?: boolean
+    isError?: boolean
+    refetch?: () => Promise<unknown>
+  }) => {
+    vi.mocked(useQuery).mockImplementation((opts) => {
+      capturedOptions = opts as UseQueryOptions<Certificate[]>
+      return {
+        data: result.data,
+        isLoading: result.isLoading ?? false,
+        isError: result.isError ?? false,
+        refetch: result.refetch ?? (async () => observer?.refetch()),
+      } as never
+    })
+    return renderToStaticMarkup(
+      <LocaleProvider locale={locale}>
+        <CertsTable controller={controller} />
+      </LocaleProvider>,
+    )
+  }
+
+  renderWithResult({ isLoading: true })
+  if (!capturedOptions) {
+    throw new Error("CertsTable did not pass options to useQuery")
+  }
+
+  observer = new QueryObserver<Certificate[]>(queryClient, capturedOptions)
+  const unsubObserver = observer.subscribe(() => {})
+  const unsubController = controller.subscribe(() => {
+    renderWithResult(observer!.getCurrentResult())
+    if (capturedOptions) {
+      observer!.setOptions(capturedOptions)
+    }
+  })
+
+  const html = () => renderWithResult(observer!.getCurrentResult())
+  const getCalls = () => calls.filter((c) => c.method === "GET" && c.url === "/api/settings/certs")
+  const postCalls = () => calls.filter((c) => c.method === "POST" && c.url === "/api/settings/certs/renew")
+
+  const dispose = () => {
+    unsubController()
+    unsubObserver()
+    unbind()
+    queryClient.clear()
+    environmentManager.setIsServer(prevIsServer)
+  }
+
+  return {
+    controller,
+    queryClient,
+    observer,
+    calls,
+    getCalls,
+    postCalls,
+    html,
+    dispose,
+  }
 }
 
 describe("hasCertificateRenewed", () => {
@@ -182,6 +316,7 @@ describe("CertsTable", () => {
 
   afterEach(() => {
     vi.useRealTimers()
+    vi.unstubAllGlobals()
     vi.restoreAllMocks()
   })
 
@@ -203,184 +338,361 @@ describe("CertsTable", () => {
     expect(viewerHtml).not.toContain(locale === "ko" ? "갱신" : "Renew")
   })
 
-  it("transitions issuing -> renewed at T2 and toggles polling refetchInterval", async () => {
-    const onRenewAccepted = vi.fn()
-    const postRenew = vi.fn().mockResolvedValue({ success: true, pending: true })
-    const controller = createCertRenewController({ postRenew, onRenewAccepted })
-
+  it("(a)(b) drives POST -> GET /api/settings/certs refetches and flips to renewed only after GET returns updated notBefore/revision", async () => {
     const certV1 = makeCert({ notBefore: T1, revision: 1, issuing: false })
-    expect(renderTable([certV1], "en", controller)).toContain("Renew")
+    const certIssuing = makeCert({ notBefore: T1, revision: 2, issuing: true })
+    const certV2 = makeCert({ notBefore: T2, revision: 2, issuing: false })
+    let serverCert = certV1
+
+    const flow = mountCertsFlow(async ({ url, method }) => {
+      if (method === "GET" && url === "/api/settings/certs") {
+        return jsonResponse([serverCert])
+      }
+      if (method === "POST" && url === "/api/settings/certs/renew") {
+        return jsonResponse({ success: true, pending: true })
+      }
+      throw new Error(`Unexpected fetch ${method} ${url}`)
+    })
+
+    await waitUntil(() => flow.getCalls().length === 1 && flow.observer.getCurrentResult().isSuccess)
+    expect(flow.html()).toContain("Renew")
     expect(lastRefetchInterval()).toBe(false)
 
-    await controller.renew(certV1)
-    expect(postRenew).toHaveBeenCalledTimes(1)
-    expect(onRenewAccepted).toHaveBeenCalledTimes(1)
+    await flow.controller.renew(certV1)
+    expect(flow.postCalls()).toHaveLength(1)
 
-    const issuingHtml = renderTable([{ ...certV1, issuing: true }], "en", controller)
-    expect(issuingHtml).toContain("Issuing…")
-    expect(issuingHtml).not.toContain("Renewed at")
+    // (a) Invalidation triggers at least one GET /api/settings/certs after POST.
+    await waitUntil(() => flow.getCalls().length >= 2)
+    expect(flow.html()).toContain("Issuing…")
+    expect(flow.html()).not.toContain("Renewed at")
     expect(lastRefetchInterval()).toBe(CERT_POLL_INTERVAL_MS)
 
-    controller.reconcile([{ ...certV1, revision: 2, issuing: true }])
-    expect(renderTable([{ ...certV1, revision: 2, issuing: true }], "en", controller)).toContain("Issuing…")
+    // (b) A poll where issuing=true (even with bumped revision) must NOT flip to renewed.
+    serverCert = certIssuing
+    const beforeIssuingPoll = flow.getCalls().length
+    await vi.advanceTimersByTimeAsync(CERT_POLL_INTERVAL_MS)
+    await waitUntil(() => flow.getCalls().length > beforeIssuingPoll)
+    expect(flow.html()).toContain("Issuing…")
+    expect(flow.html()).not.toContain("Renewed at")
 
-    const certV2 = makeCert({ notBefore: T2, revision: 2, issuing: false })
-    controller.reconcile([certV2])
+    // Once GET returns issuing=false with new notBefore/revision, row flips to renewed and polling stops.
+    serverCert = certV2
+    const beforeRenewedPoll = flow.getCalls().length
+    await vi.advanceTimersByTimeAsync(CERT_POLL_INTERVAL_MS)
+    await waitUntil(() => flow.getCalls().length > beforeRenewedPoll && flow.html().includes("Renewed at"))
 
-    const renewedHtml = renderTable([certV2], "en", controller)
+    const renewedHtml = flow.html()
     const formattedT2 = formatCertTimestamp(T2, "en")
     expect(renewedHtml).toContain(`Renewed at ${formattedT2}`)
-    expect(renewedHtml).toContain(formattedT2)
     expect(renewedHtml).toContain("rev 2")
     expect(renewedHtml).not.toContain("Issuing…")
     expect(lastRefetchInterval()).toBe(false)
 
-    controller.dispose()
+    const callsAfterRenewed = flow.getCalls().length
+    await vi.advanceTimersByTimeAsync(CERT_POLL_INTERVAL_MS * 5)
+    expect(flow.getCalls().length).toBe(callsAfterRenewed)
+
+    flow.dispose()
   })
 
-  it("falls through to still-pending at 30s timeout when baseline and refetched values are null or unchanged", async () => {
-    const postRenew = vi.fn().mockResolvedValue({ success: true, pending: true })
-    const controller = createCertRenewController({ postRenew })
-    const nullCert = makeCert({ notBefore: null, revision: null, issuing: false })
+  it("(c) aborts a stalled POST after 15s timeout and transitions to the existing error state", async () => {
+    const certV1 = makeCert({ notBefore: T1, revision: 1 })
+    let postSignal: AbortSignal | undefined
 
-    await controller.renew(nullCert)
-    controller.reconcile([nullCert])
-    expect(renderTable([nullCert], "en", controller)).toContain("Issuing…")
+    const flow = mountCertsFlow(async ({ url, method, signal }) => {
+      if (method === "GET" && url === "/api/settings/certs") {
+        return jsonResponse([certV1])
+      }
+      if (method === "POST" && url === "/api/settings/certs/renew") {
+        postSignal = signal
+        return new Promise<Response>((_resolve, reject) => {
+          signal?.addEventListener(
+            "abort",
+            () => {
+              const err = new Error("Aborted")
+              err.name = "AbortError"
+              reject(err)
+            },
+            { once: true },
+          )
+        })
+      }
+      throw new Error(`Unexpected fetch ${method} ${url}`)
+    })
 
-    await vi.advanceTimersByTimeAsync(CERT_POLL_TIMEOUT_MS)
+    await waitUntil(() => flow.getCalls().length === 1 && flow.observer.getCurrentResult().isSuccess)
+    const getsBeforePost = flow.getCalls().length
 
-    const timedOutHtml = renderTable([nullCert], "en", controller)
-    expect(timedOutHtml).toContain("Still pending — check again later")
-    expect(timedOutHtml).not.toContain("Renewed at")
-    expect(timedOutHtml).not.toContain("Issuing…")
-    expect(lastRefetchInterval()).toBe(false)
+    const inflight = flow.controller.renew(certV1)
+    expect(postSignal).toBeDefined()
+    expect(postSignal?.aborted).toBe(false)
 
-    controller.dispose()
-  })
+    const submittingHtml = flow.html()
+    expect(submittingHtml).toContain("Renewing...")
+    expect(submittingHtml).toContain("disabled")
 
-  it("shows error badge and schedules no timeout when renew POST fails", async () => {
-    const setTimeoutSpy = vi.spyOn(globalThis, "setTimeout")
-    const postRenew = vi.fn().mockRejectedValue(new Error("Internal Server Error"))
-    const controller = createCertRenewController({ postRenew })
-    const cert = makeCert()
+    await vi.advanceTimersByTimeAsync(CERT_RENEW_TIMEOUT_MS - 1)
+    expect(postSignal?.aborted).toBe(false)
+    expect(flow.html()).toContain("Renewing...")
 
-    await controller.renew(cert)
+    await vi.advanceTimersByTimeAsync(1)
+    await inflight
 
-    const errorHtml = renderTable([cert], "en", controller)
+    expect(postSignal?.aborted).toBe(true)
+    const errorHtml = flow.html()
     expect(errorHtml).toContain("Renewal failed")
     expect(errorHtml).toContain('role="alert"')
-    expect(setTimeoutSpy).not.toHaveBeenCalled()
+    expect(flow.getCalls().length).toBe(getsBeforePost)
+    expect(lastRefetchInterval()).toBe(false)
+    expect(vi.getTimerCount()).toBe(0)
+
+    flow.dispose()
+  })
+
+  it("(c-dispose) aborts an in-flight POST on dispose/unmount without updating state or scheduling timers", async () => {
+    const certV1 = makeCert({ notBefore: T1, revision: 1 })
+    let postSignal: AbortSignal | undefined
+
+    const flow = mountCertsFlow(async ({ url, method, signal }) => {
+      if (method === "GET" && url === "/api/settings/certs") {
+        return jsonResponse([certV1])
+      }
+      if (method === "POST" && url === "/api/settings/certs/renew") {
+        postSignal = signal
+        return new Promise<Response>(() => {})
+      }
+      throw new Error(`Unexpected fetch ${method} ${url}`)
+    })
+
+    await waitUntil(() => flow.getCalls().length === 1 && flow.observer.getCurrentResult().isSuccess)
+    const listener = vi.fn()
+    flow.controller.subscribe(listener)
+
+    const inflight = flow.controller.renew(certV1)
+    listener.mockClear()
+    expect(postSignal?.aborted).toBe(false)
+
+    flow.dispose()
+    await inflight
+
+    expect(postSignal?.aborted).toBe(true)
+    expect(listener).not.toHaveBeenCalled()
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
+  it("(d) transitions issuing -> still pending at 30s, polls at 10s up to 5m, flips pending -> renewed on late GET, and still recovers on manual refetch after 5m", async () => {
+    const certV1 = makeCert({ notBefore: T1, revision: 1, issuing: false })
+    const certV2 = makeCert({ notBefore: T2, revision: 2, issuing: false })
+    let serverCert = certV1
+
+    // Scenario 1: late issuance during the bounded slow-polling window (e.g. ~42s)
+    const flow1 = mountCertsFlow(async ({ url, method }) => {
+      if (method === "GET" && url === "/api/settings/certs") {
+        return jsonResponse([serverCert])
+      }
+      if (method === "POST" && url === "/api/settings/certs/renew") {
+        return jsonResponse({ success: true, pending: true })
+      }
+      throw new Error(`Unexpected fetch ${method} ${url}`)
+    })
+
+    await waitUntil(() => flow1.getCalls().length === 1 && flow1.observer.getCurrentResult().isSuccess)
+    await flow1.controller.renew(certV1)
+    await waitUntil(() => flow1.getCalls().length >= 2)
+
+    // Advance through the 30s fast window while server still returns certV1.
+    await vi.advanceTimersByTimeAsync(CERT_POLL_TIMEOUT_MS)
+    await waitUntil(() => flow1.html().includes("Still pending — check again later"))
+    expect(lastRefetchInterval()).toBe(CERT_PENDING_POLL_INTERVAL_MS)
+
+    // Fast 2s interval must not fire while pending; slow 10s interval does.
+    const callsAtPending = flow1.getCalls().length
+    await vi.advanceTimersByTimeAsync(CERT_POLL_INTERVAL_MS)
+    expect(flow1.getCalls().length).toBe(callsAtPending)
+
+    // Now the cert finishes issuing at ~40s; the next 10s poll observes it and flips pending -> renewed.
+    serverCert = certV2
+    await vi.advanceTimersByTimeAsync(CERT_PENDING_POLL_INTERVAL_MS - CERT_POLL_INTERVAL_MS)
+    await waitUntil(() => flow1.html().includes("Renewed at"))
+    expect(flow1.html()).toContain(`Renewed at ${formatCertTimestamp(T2, "en")}`)
+    expect(lastRefetchInterval()).toBe(false)
+    flow1.dispose()
+
+    // Scenario 2: 5-minute ceiling stops background polling, but manual/refocus refetch still recovers.
+    serverCert = certV1
+    const flow2 = mountCertsFlow(async ({ url, method }) => {
+      if (method === "GET" && url === "/api/settings/certs") {
+        return jsonResponse([serverCert])
+      }
+      if (method === "POST" && url === "/api/settings/certs/renew") {
+        return jsonResponse({ success: true, pending: true })
+      }
+      throw new Error(`Unexpected fetch ${method} ${url}`)
+    })
+
+    await waitUntil(() => flow2.getCalls().length === 1 && flow2.observer.getCurrentResult().isSuccess)
+    await flow2.controller.renew(certV1)
+    await waitUntil(() => flow2.getCalls().length >= 2)
+
+    await vi.advanceTimersByTimeAsync(CERT_PENDING_TIMEOUT_MS)
+    await waitUntil(() => lastRefetchInterval() === false)
+    expect(flow2.html()).toContain("Still pending — check again later")
+    expect(vi.getTimerCount()).toBe(0)
+
+    const callsAtFiveMin = flow2.getCalls().length
+    await vi.advanceTimersByTimeAsync(60_000)
+    expect(flow2.getCalls().length).toBe(callsAtFiveMin)
+
+    // Later manual/refocus refetch after 5m observes certV2 -> flips pending -> renewed.
+    serverCert = certV2
+    await flow2.observer.refetch()
+    await waitUntil(() => flow2.html().includes("Renewed at"))
+    expect(flow2.html()).toContain(`Renewed at ${formatCertTimestamp(T2, "en")}`)
+    flow2.dispose()
+  })
+
+  it("(e) continues polling after a failed GET in the window and flips to renewed on a subsequent healthy GET", async () => {
+    const certV1 = makeCert({ notBefore: T1, revision: 1, issuing: false })
+    const certV2 = makeCert({ notBefore: T2, revision: 2, issuing: false })
+    let getAttempt = 0
+
+    const flow = mountCertsFlow(async ({ url, method }) => {
+      if (method === "GET" && url === "/api/settings/certs") {
+        getAttempt += 1
+        if (getAttempt === 1) return jsonResponse([certV1])
+        if (getAttempt === 2) {
+          return jsonResponse({ error: "transient" }, 500, "Internal Server Error")
+        }
+        if (getAttempt === 3) {
+          throw new TypeError("network error")
+        }
+        return jsonResponse([certV2])
+      }
+      if (method === "POST" && url === "/api/settings/certs/renew") {
+        return jsonResponse({ success: true, pending: true })
+      }
+      throw new Error(`Unexpected fetch ${method} ${url}`)
+    })
+
+    await waitUntil(() => flow.getCalls().length === 1 && flow.observer.getCurrentResult().isSuccess)
+    await flow.controller.renew(certV1)
+
+    // Immediate invalidation GET fails with 500; table must remain visible in Issuing… and keep polling.
+    await waitUntil(() => flow.getCalls().length === 2 && flow.observer.getCurrentResult().isError)
+    const duringFirstError = flow.html()
+    expect(duringFirstError).toContain("Issuing…")
+    expect(duringFirstError).not.toContain("Could not load data.")
+    expect(lastRefetchInterval()).toBe(CERT_POLL_INTERVAL_MS)
+
+    // Next 2s poll also fails with 500; polling must still continue.
+    await vi.advanceTimersByTimeAsync(CERT_POLL_INTERVAL_MS)
+    await waitUntil(() => flow.getCalls().length === 3)
+    expect(flow.html()).toContain("Issuing…")
+    expect(lastRefetchInterval()).toBe(CERT_POLL_INTERVAL_MS)
+
+    // Subsequent 2s poll succeeds with certV2 and flips to renewed.
+    await vi.advanceTimersByTimeAsync(CERT_POLL_INTERVAL_MS)
+    await waitUntil(() => flow.getCalls().length === 4 && flow.html().includes("Renewed at"))
+    expect(flow.html()).toContain(`Renewed at ${formatCertTimestamp(T2, "en")}`)
     expect(lastRefetchInterval()).toBe(false)
 
-    controller.dispose()
+    flow.dispose()
+  })
+
+  it("shows error badge and leaves no active timers when renew POST fails", async () => {
+    const certV1 = makeCert({ notBefore: T1, revision: 1 })
+    const flow = mountCertsFlow(async ({ url, method }) => {
+      if (method === "GET" && url === "/api/settings/certs") return jsonResponse([certV1])
+      if (method === "POST" && url === "/api/settings/certs/renew") {
+        return jsonResponse({ error: "boom" }, 500, "Internal Server Error")
+      }
+      throw new Error(`Unexpected fetch ${method} ${url}`)
+    })
+
+    await waitUntil(() => flow.getCalls().length === 1 && flow.observer.getCurrentResult().isSuccess)
+    await flow.controller.renew(certV1)
+
+    const errorHtml = flow.html()
+    expect(errorHtml).toContain("Renewal failed")
+    expect(errorHtml).toContain('role="alert"')
+    expect(lastRefetchInterval()).toBe(false)
+    expect(vi.getTimerCount()).toBe(0)
+
+    flow.dispose()
   })
 
   it("keeps two concurrent row renewals independent with no cross-talk", async () => {
-    const postRenew = vi.fn().mockResolvedValue({ success: true, pending: true })
-    const controller = createCertRenewController({ postRenew })
-
     const certA = makeCert({ name: "openbao-tls", namespace: "openbao", notBefore: T1, revision: 1 })
     const certB = makeCert({ name: "argocd-tls", namespace: "argocd", notBefore: T1, revision: 1 })
+    let serverCerts = [certA, certB]
 
-    await controller.renew(certA)
+    const flow = mountCertsFlow(async ({ url, method }) => {
+      if (method === "GET" && url === "/api/settings/certs") return jsonResponse(serverCerts)
+      if (method === "POST" && url === "/api/settings/certs/renew") {
+        return jsonResponse({ success: true, pending: true })
+      }
+      throw new Error(`Unexpected fetch ${method} ${url}`)
+    })
+
+    await waitUntil(() => flow.getCalls().length === 1 && flow.observer.getCurrentResult().isSuccess)
+
+    await flow.controller.renew(certA)
     await vi.advanceTimersByTimeAsync(5_000)
-    await controller.renew(certB)
+    await flow.controller.renew(certB)
 
-    const bothIssuingHtml = renderTable([certA, certB], "en", controller)
-    expect(bothIssuingHtml.split("Issuing…")).toHaveLength(3)
+    expect(flow.html().split("Issuing…")).toHaveLength(3)
 
     const certARenewed = { ...certA, notBefore: T2, revision: 2, issuing: false }
-    controller.reconcile([certARenewed, { ...certB, issuing: true }])
+    serverCerts = [certARenewed, { ...certB, issuing: true }]
+    await vi.advanceTimersByTimeAsync(CERT_POLL_INTERVAL_MS)
+    await waitUntil(() => flow.html().includes("Renewed at"))
 
-    const partialHtml = renderTable([certARenewed, certB], "en", controller)
+    const partialHtml = flow.html()
     expect(partialHtml).toContain(`Renewed at ${formatCertTimestamp(T2, "en")}`)
     expect(partialHtml).toContain("Issuing…")
     expect(lastRefetchInterval()).toBe(CERT_POLL_INTERVAL_MS)
 
+    serverCerts = [certARenewed, certB]
     await vi.advanceTimersByTimeAsync(CERT_POLL_TIMEOUT_MS)
+    await waitUntil(() => flow.html().includes("Still pending — check again later"))
 
-    const finalHtml = renderTable([certARenewed, certB], "en", controller)
+    const finalHtml = flow.html()
     expect(finalHtml).toContain(`Renewed at ${formatCertTimestamp(T2, "en")}`)
     expect(finalHtml).toContain("Still pending — check again later")
-    expect(lastRefetchInterval()).toBe(false)
+    expect(lastRefetchInterval()).toBe(CERT_PENDING_POLL_INTERVAL_MS)
 
-    controller.dispose()
+    flow.dispose()
   })
 
-  it("disables the row button and ignores second clicks while POST or poll is in flight", async () => {
-    const setTimeoutSpy = vi.spyOn(globalThis, "setTimeout")
-    const postGate = deferred()
-    const postRenew = vi.fn().mockImplementation(() => postGate.promise)
-    const controller = createCertRenewController({ postRenew })
-    const cert = makeCert()
+  it("disables the row button and ignores second clicks while POST or issuing poll is in flight", async () => {
+    const certV1 = makeCert({ notBefore: T1, revision: 1 })
+    const postGate = deferred<Response>()
 
-    const firstAttempt = controller.renew(cert)
-    const submittingHtml = renderTable([cert], "en", controller)
+    const flow = mountCertsFlow(async ({ url, method }) => {
+      if (method === "GET" && url === "/api/settings/certs") return jsonResponse([certV1])
+      if (method === "POST" && url === "/api/settings/certs/renew") return postGate.promise
+      throw new Error(`Unexpected fetch ${method} ${url}`)
+    })
+
+    await waitUntil(() => flow.getCalls().length === 1 && flow.observer.getCurrentResult().isSuccess)
+
+    const firstAttempt = flow.controller.renew(certV1)
+    const submittingHtml = flow.html()
     expect(submittingHtml).toContain("disabled")
     expect(submittingHtml).toContain("Renewing...")
 
     // Second click while POST is in flight must be ignored.
-    await controller.renew(cert)
-    expect(postRenew).toHaveBeenCalledTimes(1)
+    await flow.controller.renew(certV1)
+    expect(flow.postCalls()).toHaveLength(1)
 
-    postGate.resolve({ success: true })
+    postGate.resolve(jsonResponse({ success: true, pending: true }))
     await firstAttempt
-    expect(setTimeoutSpy).toHaveBeenCalledTimes(1)
+    await waitUntil(() => flow.getCalls().length >= 2)
 
-    // Second invocation while poll/issuing is in flight must not POST or add overlapping timers.
-    await controller.renew(cert)
-    expect(postRenew).toHaveBeenCalledTimes(1)
-    expect(setTimeoutSpy).toHaveBeenCalledTimes(1)
+    // Second invocation while issuing is in flight must not POST again.
+    await flow.controller.renew(certV1)
+    expect(flow.postCalls()).toHaveLength(1)
 
-    controller.dispose()
-  })
-
-  it("clears timers and suppresses state updates, new timers, and console errors after dispose", async () => {
-    const setTimeoutSpy = vi.spyOn(globalThis, "setTimeout")
-    const clearTimeoutSpy = vi.spyOn(globalThis, "clearTimeout")
-    const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {})
-    const onRenewAccepted = vi.fn()
-
-    // Case 1: pending timeout timer is cleared on unmount/dispose.
-    const controller1 = createCertRenewController({
-      postRenew: vi.fn().mockResolvedValue({ success: true }),
-      onRenewAccepted,
-    })
-    const listener1 = vi.fn()
-    controller1.subscribe(listener1)
-
-    const cert = makeCert()
-    await controller1.renew(cert)
-    expect(setTimeoutSpy).toHaveBeenCalledTimes(1)
-    listener1.mockClear()
-
-    controller1.dispose()
-    expect(clearTimeoutSpy).toHaveBeenCalledTimes(1)
-
-    await vi.advanceTimersByTimeAsync(CERT_POLL_TIMEOUT_MS * 2)
-    expect(listener1).not.toHaveBeenCalled()
-
-    // Case 2: in-flight POST settling or reconcile called after dispose causes no updates or timers.
-    const postGate = deferred()
-    const controller2 = createCertRenewController({
-      postRenew: () => postGate.promise,
-      onRenewAccepted,
-    })
-    const listener2 = vi.fn()
-    controller2.subscribe(listener2)
-
-    const inflight = controller2.renew(cert)
-    listener2.mockClear()
-    const timersBeforeDispose = setTimeoutSpy.mock.calls.length
-
-    controller2.dispose()
-    postGate.resolve({ success: true })
-    await inflight
-    controller2.reconcile([makeCert({ notBefore: T2, revision: 2 })])
-
-    expect(listener2).not.toHaveBeenCalled()
-    expect(setTimeoutSpy).toHaveBeenCalledTimes(timersBeforeDispose)
-    expect(onRenewAccepted).toHaveBeenCalledTimes(1) // Only from controller1 before dispose.
-    expect(consoleErrorSpy).not.toHaveBeenCalled()
+    flow.dispose()
   })
 })

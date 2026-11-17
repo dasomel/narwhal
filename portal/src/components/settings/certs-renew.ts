@@ -1,7 +1,11 @@
 import type { Certificate } from "@/lib/k8s-client"
 
+export const CERT_RENEW_TIMEOUT_MS = 15_000
 export const CERT_POLL_INTERVAL_MS = 2_000
 export const CERT_POLL_TIMEOUT_MS = 30_000
+export const CERT_PENDING_POLL_INTERVAL_MS = 10_000
+export const CERT_PENDING_TIMEOUT_MS = 300_000
+export const CERTS_QUERY_KEY = ["settings-certs"] as const
 
 export interface RenewBaseline {
   notBefore?: string | null
@@ -15,8 +19,8 @@ interface NormalizedRenewBaseline {
 
 export type RenewRowState =
   | { phase: "issuing"; baseline: NormalizedRenewBaseline; startedAt: number }
+  | { phase: "pending"; baseline: NormalizedRenewBaseline; startedAt: number; polling: boolean }
   | { phase: "renewed"; renewedAt: string }
-  | { phase: "pending" }
   | { phase: "error" }
 
 export interface CertRenewSnapshot {
@@ -25,7 +29,7 @@ export interface CertRenewSnapshot {
 }
 
 export interface CertRenewControllerOptions {
-  postRenew?: (params: { name: string; namespace: string }) => Promise<unknown>
+  postRenew?: (params: { name: string; namespace: string; signal?: AbortSignal }) => Promise<unknown>
   onRenewAccepted?: () => void
   now?: () => number
 }
@@ -75,6 +79,26 @@ export function hasCertificateRenewed(
   return notBeforeChanged || revisionIncreased
 }
 
+function expireRowState(state: RenewRowState, now: number): RenewRowState {
+  if (state.phase === "issuing" && now - state.startedAt >= CERT_POLL_TIMEOUT_MS) {
+    return {
+      phase: "pending",
+      baseline: state.baseline,
+      startedAt: state.startedAt,
+      polling: now - state.startedAt < CERT_PENDING_TIMEOUT_MS,
+    }
+  }
+  if (state.phase === "pending" && state.polling && now - state.startedAt >= CERT_PENDING_TIMEOUT_MS) {
+    return {
+      phase: "pending",
+      baseline: state.baseline,
+      startedAt: state.startedAt,
+      polling: false,
+    }
+  }
+  return state
+}
+
 export function reconcileRenewStates(
   prev: Record<string, RenewRowState>,
   certs: Certificate[],
@@ -85,7 +109,7 @@ export function reconcileRenewStates(
   const byKey = new Map(certs.map((c) => [certRowKey(c), c]))
 
   for (const [key, state] of Object.entries(prev)) {
-    if (state.phase !== "issuing") continue
+    if (state.phase !== "issuing" && state.phase !== "pending") continue
     const cert = byKey.get(key)
     if (cert && hasCertificateRenewed(cert, state.baseline)) {
       next[key] = {
@@ -93,8 +117,11 @@ export function reconcileRenewStates(
         renewedAt: normalizeNotBefore(cert.notBefore) ?? new Date(now).toISOString(),
       }
       changed = true
-    } else if (now - state.startedAt >= CERT_POLL_TIMEOUT_MS) {
-      next[key] = { phase: "pending" }
+      continue
+    }
+    const expired = expireRowState(state, now)
+    if (expired !== state) {
+      next[key] = expired
       changed = true
     }
   }
@@ -109,33 +136,120 @@ export function expireTimedOutRenewStates(
   let changed = false
   const next: Record<string, RenewRowState> = { ...prev }
   for (const [key, state] of Object.entries(prev)) {
-    if (state.phase === "issuing" && now - state.startedAt >= CERT_POLL_TIMEOUT_MS) {
-      next[key] = { phase: "pending" }
+    const expired = expireRowState(state, now)
+    if (expired !== state) {
+      next[key] = expired
       changed = true
     }
   }
   return changed ? next : prev
 }
 
-async function defaultPostRenew({ name, namespace }: { name: string; namespace: string }) {
+export function getCertPollIntervalMs(
+  renewStates: Record<string, RenewRowState>,
+): number | false {
+  let hasPendingPolling = false
+  for (const state of Object.values(renewStates)) {
+    if (state.phase === "issuing") return CERT_POLL_INTERVAL_MS
+    if (state.phase === "pending" && state.polling) hasPendingPolling = true
+  }
+  return hasPendingPolling ? CERT_PENDING_POLL_INTERVAL_MS : false
+}
+
+export async function postCertRenew({
+  name,
+  namespace,
+  signal,
+}: {
+  name: string
+  namespace: string
+  signal?: AbortSignal
+}): Promise<unknown> {
   const r = await fetch("/api/settings/certs/renew", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ name, namespace }),
+    signal,
   })
   if (!r.ok) throw new Error(r.statusText)
   return r.json()
 }
 
+export async function fetchCertificates(
+  controller?: Pick<CertRenewController, "reconcile">,
+): Promise<Certificate[]> {
+  const r = await fetch("/api/settings/certs")
+  if (!r.ok) throw new Error(r.statusText)
+  const data = (await r.json()) as Certificate[]
+  if (Array.isArray(data) && controller) {
+    controller.reconcile(data)
+  }
+  return data
+}
+
+export function createCertsQueryOptions(
+  controller: CertRenewController,
+  renewStates: Record<string, RenewRowState> = controller.getSnapshot().renewStates,
+) {
+  return {
+    queryKey: CERTS_QUERY_KEY,
+    queryFn: () => fetchCertificates(controller),
+    refetchInterval: getCertPollIntervalMs(renewStates),
+  }
+}
+
+export function bindCertRenewToQueryClient(
+  controller: CertRenewController,
+  queryClient: {
+    invalidateQueries: (filters: { queryKey: readonly unknown[] }) => Promise<unknown> | unknown
+  },
+  postRenew: CertRenewControllerOptions["postRenew"] = postCertRenew,
+): () => void {
+  controller.mount()
+  controller.setHandlers({
+    postRenew,
+    onRenewAccepted: () => {
+      void queryClient.invalidateQueries({ queryKey: CERTS_QUERY_KEY })
+    },
+  })
+  return () => controller.dispose()
+}
+
+function raceWithAbort<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
+  if (signal.aborted) {
+    promise.catch(() => {})
+    return Promise.reject(signal.reason ?? new Error("Aborted"))
+  }
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = () => {
+      // Prevent unhandled rejection if the underlying request ignores signal and settles later.
+      promise.catch(() => {})
+      reject(signal.reason ?? new Error("Aborted"))
+    }
+    signal.addEventListener("abort", onAbort, { once: true })
+    promise.then(
+      (value) => {
+        signal.removeEventListener("abort", onAbort)
+        resolve(value)
+      },
+      (err) => {
+        signal.removeEventListener("abort", onAbort)
+        reject(err)
+      },
+    )
+  })
+}
+
 export function createCertRenewController(
   options: CertRenewControllerOptions = {},
 ): CertRenewController {
-  let postRenew = options.postRenew ?? defaultPostRenew
+  let postRenew = options.postRenew ?? postCertRenew
   let onRenewAccepted = options.onRenewAccepted
   const now = options.now ?? Date.now
 
   let snapshot: CertRenewSnapshot = { renewStates: {}, submittingKeys: {} }
   const listeners = new Set<() => void>()
+  const inflightPostControllers = new Set<AbortController>()
   let timeoutId: ReturnType<typeof setTimeout> | null = null
   let scheduledDeadline: number | null = null
   let disposed = false
@@ -155,9 +269,13 @@ export function createCertRenewController(
     }
     let earliestDeadline: number | null = null
     for (const state of Object.values(states)) {
-      if (state.phase !== "issuing") continue
-      const deadline = state.startedAt + CERT_POLL_TIMEOUT_MS
-      if (earliestDeadline === null || deadline < earliestDeadline) {
+      let deadline: number | null = null
+      if (state.phase === "issuing") {
+        deadline = state.startedAt + CERT_POLL_TIMEOUT_MS
+      } else if (state.phase === "pending" && state.polling) {
+        deadline = state.startedAt + CERT_PENDING_TIMEOUT_MS
+      }
+      if (deadline !== null && (earliestDeadline === null || deadline < earliestDeadline)) {
         earliestDeadline = deadline
       }
     }
@@ -207,6 +325,10 @@ export function createCertRenewController(
     if (disposed) return
     disposed = true
     clearPendingTimer()
+    for (const abortController of inflightPostControllers) {
+      abortController.abort(new Error("Disposed"))
+    }
+    inflightPostControllers.clear()
     listeners.clear()
   }
 
@@ -236,8 +358,21 @@ export function createCertRenewController(
       submittingKeys: { ...snapshot.submittingKeys, [key]: true },
     })
 
+    const abortController = new AbortController()
+    inflightPostControllers.add(abortController)
+    const postTimerId = setTimeout(() => {
+      abortController.abort(new Error("Certificate renewal request timed out"))
+    }, CERT_RENEW_TIMEOUT_MS)
+
     try {
-      await postRenew({ name: cert.name, namespace: cert.namespace })
+      const postPromise = Promise.resolve(
+        postRenew({
+          name: cert.name,
+          namespace: cert.namespace,
+          signal: abortController.signal,
+        }),
+      )
+      await raceWithAbort(postPromise, abortController.signal)
       if (disposed) return
       const nextSubmitting = { ...snapshot.submittingKeys }
       delete nextSubmitting[key]
@@ -260,6 +395,9 @@ export function createCertRenewController(
           [key]: { phase: "error" },
         },
       })
+    } finally {
+      clearTimeout(postTimerId)
+      inflightPostControllers.delete(abortController)
     }
   }
 

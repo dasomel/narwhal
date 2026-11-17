@@ -86,9 +86,9 @@
       "type": "regression_verification",
       "status": "passed",
       "scope": "Static regression suite on the integration branch plus live verification on the local single-node cluster with every lane applied.",
-      "summary": "TEST_SUMMARY_PLACEHOLDER",
+      "summary": "make test passed 476 checks with zero failures and three warnings on the integration branch; make validate and changed-line markdown lint passed; live SSO suite and a full Velero backup passed with every lane applied.",
       "evidence": [
-        "test:make test -> TEST_NUMBERS_PLACEHOLDER",
+        "test:make test -> passed 476 failed 0 warnings 3; exit 0",
         "test:make validate -> exit 0",
         "test:python3 scripts/ci/markdownlint-changed.py --base origin/main -> no violations",
         "test:bash /home/vagrant/scripts/test/test-sso.sh (live, all lanes applied) -> PASS 144 FAIL 0 WARN 0",

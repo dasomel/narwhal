@@ -97,16 +97,23 @@ async function checkCfg01(): Promise<{ status: KisaStatus; detail: string }> {
   // Actionable excludes LOW severity too — KSV020/021 UID/GID and KSV011/015/016/018 resource
   // limit checks are risk-accepted hygiene per narwhal/docs/compliance-hardening.md, same tiering
   // as getComplianceSummary's totalConfigAuditFailures/lowSeverityConfigAuditFailures split.
-  const actionableFailures = configAuditRows
-    .filter((r) => !r.accepted)
-    .reduce((sum, r) => sum + r.summary.Critical + r.summary.High + r.summary.Medium, 0)
-  const lowSeverityFailures = configAuditRows
-    .filter((r) => !r.accepted)
-    .reduce((sum, r) => sum + r.summary.Low, 0)
-  const acceptedFailures = configAuditRows
-    .filter((r) => r.accepted)
-    .reduce((sum, r) => sum + r.summary.Critical + r.summary.High + r.summary.Medium + r.summary.Low, 0)
-  const breakdown = `(config-audit 조치가능 ${actionableFailures}건, 위생 ${lowSeverityFailures}건, 시스템 수용 ${acceptedFailures}건)`
+  const { SYSTEM_NAMESPACES } = await import("./compliance")
+  const systemNs = new Set<string>(SYSTEM_NAMESPACES)
+  let actionableFailures = 0
+  let lowSeverityFailures = 0
+  let acceptedFailures = 0
+  for (const r of configAuditRows) {
+    if (systemNs.has(r.namespace)) {
+      acceptedFailures += r.summary.Critical + r.summary.High + r.summary.Medium + r.summary.Low
+      continue
+    }
+    const actionable = r.actionableSummary ?? (r.accepted ? { Critical: 0, High: 0, Medium: 0, Low: 0 } : r.summary)
+    const accepted = r.acceptedSummary ?? (r.accepted ? r.summary : { Critical: 0, High: 0, Medium: 0, Low: 0 })
+    actionableFailures += actionable.Critical + actionable.High + actionable.Medium
+    lowSeverityFailures += r.summary.Low
+    acceptedFailures += accepted.Critical + accepted.High + accepted.Medium
+  }
+  const breakdown = `(config-audit 조치가능 ${actionableFailures}건, 위생 ${lowSeverityFailures}건, 수용 ${acceptedFailures}건)`
 
   const failing = frameworks.filter((f) => f.passRate < 0.6)
   const warning = frameworks.filter((f) => f.passRate >= 0.6 && f.passRate < 0.9)

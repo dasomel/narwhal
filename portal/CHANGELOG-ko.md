@@ -9,6 +9,13 @@
 
 ## [Unreleased]
 
+### 추가
+
+- **Config Audit 및 RBAC 검토 완료 예외(Risk-accepted / Upstream) 분류 (`src/lib/compliance-accepted.ts`, `src/lib/compliance.ts`, `src/components/compliance/*`, `docs/common/compliance-hardening.md`):**
+  - ReplicaSet `SafeEncodeString` pod-template-hash 정규화(`^[bcdfghjklmnpqrstvwxz2456789]{5,10}$`)와 `AVD-KSV-*`/`KSV*` ID 정규화를 적용한 워크로드·점검ID 단위 `ACCEPTED_CONFIG_AUDIT_RULES`(56개 워크로드 67건)와 역할·점검ID 정확 매칭 기반 `ACCEPTED_RBAC_RULES`(`platform-admin`, `developer-workload-admin`, `narwhal-portal-jobs`, `narwhal-portal-notification-channels` 4건)를 도입하고, `chaos-mesh`·`kubernetes-dashboard` 차트의 실제 역할 13건은 부분일치 대신 `UPSTREAM_EXACT_RBAC_ROLES` 정확 일치로 제한했습니다.
+  - 미등록 점검ID·타 워크로드·`summary` 대 `checks[]` 불일치(예: `platform-admin`의 `KSV042`, summary Critical 1/High 1인데 `checks[]`에 수용된 High 1건만 있는 경우)는 fail-closed로 조치가능(`actionableSummary`)에 남기며, 비시스템 `LOW` 점검은 기존 위생(`lowSeverityConfigAuditFailures`)에만 집계해 이중 집계를 방지하고 모든 실패 항목을 API 응답에 유지합니다.
+  - 컴플라이언스 요약 카운터, Config Audit/RBAC 표, 확장 패널, 상세 페이지에 수용 건수와 항목별 수용 배지 및 `ko`/`en` 다국어 사유(`compliance.acceptedReason.*`)를 표시하고, `docs/common/compliance-hardening.md` 표와의 일치 검증 테스트(`src/lib/compliance-accepted.test.ts`)를 추가했습니다.
+
 ### 수정
 
 - **TLS 인증서 갱신 결과 피드백 및 발급 시각/리비전 표시 (`src/components/settings/certs-table.tsx`, `src/lib/k8s-client.ts`):**

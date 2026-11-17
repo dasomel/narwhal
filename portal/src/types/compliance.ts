@@ -8,6 +8,10 @@ export interface CheckSummary {
   Low: number
 }
 
+export type AcceptedClass = "accept" | "upstream"
+
+export type AcceptedScope = "system" | "builtin" | "accept" | "upstream" | "mixed"
+
 export interface AuditCheck {
   id: string
   title: string
@@ -17,6 +21,12 @@ export interface AuditCheck {
   success: boolean
   messages?: string[]
   remediation?: string
+  /** Set when a failing check is covered by system/built-in acceptance or a reviewed exception. */
+  accepted?: boolean
+  acceptedClass?: AcceptedClass
+  acceptedReasonKey?: string
+  acceptedReason?: string
+  acceptedDocAnchor?: string
 }
 
 export interface ConfigAuditRow {
@@ -24,9 +34,14 @@ export interface ConfigAuditRow {
   kind: string
   name: string
   summary: CheckSummary
-  /** true when `namespace` is a system namespace (kube-system/istio-system/…) — findings are
-   *  inherent to K8s static pods/CNI/mesh and are not actionable by the platform team. */
+  /** Actionable (non-accepted) failing check counts for this workload. */
+  actionableSummary?: CheckSummary
+  /** Accepted failing check counts for this workload (system-namespace or allowlisted). */
+  acceptedSummary?: CheckSummary
+  /** true when `namespace` is a system namespace OR ALL non-LOW failing checks on this
+   *  workload are covered by reviewed allowlist entries (see lib/compliance-accepted.ts). */
   accepted: boolean
+  acceptedScope?: AcceptedScope
 }
 
 export interface ConfigAuditDetail extends ConfigAuditRow {
@@ -38,10 +53,14 @@ export interface RbacAuditRow {
   kind: string
   name: string
   summary: CheckSummary
-  /** true when `name` (the owning Role/ClusterRole) is a Kubernetes built-in role (system:*,
-   *  kubeadm:*, cluster-admin/admin/edit/view) or an upstream controller/chart-owned role —
-   *  findings are inherent to what that role does and are not actionable by the platform team. */
+  /** Actionable (non-accepted) failing check counts for this role. */
+  actionableSummary?: CheckSummary
+  /** Accepted failing check counts for this role (built-in/upstream or allowlisted). */
+  acceptedSummary?: CheckSummary
+  /** true when `name` is a built-in/upstream role OR ALL failing checks on this authored role
+   *  are covered by ACCEPTED_RBAC_RULES (see lib/compliance-accepted.ts). */
   accepted: boolean
+  acceptedScope?: AcceptedScope
 }
 
 export interface RbacAuditDetail extends RbacAuditRow {
@@ -81,23 +100,25 @@ export interface ComplianceFrameworkDetail extends ComplianceFramework {
 
 export interface ComplianceSummary {
   /** ACTIONABLE config-audit failures only — excludes system namespaces (see SYSTEM_NAMESPACES
-   *  in lib/compliance.ts) AND excludes LOW severity (see lowSeverityConfigAuditFailures below;
-   *  KSV020/021 UID/GID, KSV011/015/016/018 resource limits are risk-accepted hygiene checks per
-   *  narwhal/docs/compliance-hardening.md). Reclassified 2026-07; field name kept for API compat. */
+   *  in lib/compliance.ts), per-check reviewed exceptions (see ACCEPTED_CONFIG_AUDIT_RULES in
+   *  lib/compliance-accepted.ts), AND LOW severity (see lowSeverityConfigAuditFailures below;
+   *  per docs/common/compliance-hardening.md). Field name kept for API compat. */
   totalConfigAuditFailures: CheckSummary
-  /** NEW: LOW-severity config-audit failures in non-system namespaces — risk-accepted hygiene
+  /** LOW-severity config-audit failures in non-system namespaces — risk-accepted hygiene
    *  checks, shown separately so they don't inflate the actionable headline. Only the `Low` field
    *  is ever non-zero here (Critical/High/Medium always 0 by construction). */
   lowSeverityConfigAuditFailures: CheckSummary
-  /** NEW: config-audit failures in system namespaces (kube-system/istio-system/…), inherent to
-   *  K8s/CNI/mesh and not actionable — kept visible separately rather than dropped. */
+  /** Accepted config-audit failures: system namespaces (all severities) plus non-LOW reviewed
+   *  exceptions (accept/upstream) in non-system namespaces (non-system LOW stays in
+   *  lowSeverityConfigAuditFailures so accepted LOW IDs are never double-counted). Field name kept
+   *  for API compat. */
   acceptedSystemConfigAuditFailures: CheckSummary
-  /** ACTIONABLE RBAC-audit failures only — excludes findings owned by Kubernetes built-in roles
-   *  and upstream controller/chart roles (see isAcceptedRbacRole in lib/compliance.ts). Field
-   *  name kept for API compat; reclassified 2026-07. */
+  /** ACTIONABLE RBAC-audit failures only — excludes findings owned by Kubernetes built-in roles,
+   *  upstream controller/chart roles, and per-check reviewed exceptions on authored roles (see
+   *  isAcceptedRbacRole / ACCEPTED_RBAC_RULES). Field name kept for API compat. */
   totalRbacFailures: CheckSummary
-  /** NEW: RBAC-audit failures owned by built-in K8s roles or upstream controllers/charts —
-   *  inherent to what those roles do and not actionable, shown separately rather than dropped. */
+  /** Accepted RBAC-audit failures: built-in K8s roles, upstream controllers/charts, and reviewed
+   *  check exceptions on authored roles — kept visible separately rather than dropped. */
   acceptedRbacFailures: CheckSummary
   totalInfraFailures: CheckSummary
   frameworks: ComplianceFramework[]

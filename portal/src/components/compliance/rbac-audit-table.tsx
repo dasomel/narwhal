@@ -2,6 +2,7 @@
 import { useState, useMemo, useCallback, Fragment } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { useT, useLocale } from "@/lib/i18n-client"
+import { translateAcceptedReason } from "@/lib/i18n"
 import { DataState } from "@/components/ui/data-state"
 import { translateTitle, translateRemediation } from "@/lib/check-translations"
 import { Card } from "@/components/ui/card"
@@ -65,7 +66,7 @@ function SeverityMini({ severity, count }: { severity: Severity; count: number }
   )
 }
 
-function ExpandedRbacPanel({
+export function ExpandedRbacPanel({
   namespace,
   name,
 }: {
@@ -90,7 +91,11 @@ function ExpandedRbacPanel({
     const order: Severity[] = ["Critical", "High", "Medium", "Low", "Unknown"]
     return detail.checks
       .filter((c) => !c.success)
-      .sort((a, b) => order.indexOf(a.severity) - order.indexOf(b.severity))
+      .sort((a, b) => {
+        const accDiff = Number(Boolean(a.accepted)) - Number(Boolean(b.accepted))
+        if (accDiff !== 0) return accDiff
+        return order.indexOf(a.severity) - order.indexOf(b.severity)
+      })
       .slice(0, 5)
   }, [detail])
 
@@ -111,15 +116,35 @@ function ExpandedRbacPanel({
                 {top5Failed.map((check) => (
                   <div
                     key={check.id}
-                    className="rounded-md border border-red-200 bg-red-50/60 dark:bg-red-950/10 dark:border-red-900 p-2.5 text-xs"
+                    className={`rounded-md border p-2.5 text-xs ${
+                      check.accepted
+                        ? "border-slate-200 bg-slate-50/60 dark:bg-slate-900/20 dark:border-slate-800"
+                        : "border-red-200 bg-red-50/60 dark:bg-red-950/10 dark:border-red-900"
+                    }`}
                   >
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
                       <span className="font-mono text-muted-foreground">{check.id}</span>
                       <Badge className={`text-xs ${severityBadgeClass[check.severity] ?? severityBadgeClass.Unknown}`}>
                         {check.severity}
                       </Badge>
+                      {check.accepted && (
+                        <Badge
+                          variant="outline"
+                          className="text-[0.65rem] px-1.5 py-0 text-muted-foreground border-muted-foreground/30"
+                        >
+                          {check.acceptedClass === "upstream"
+                            ? t("compliance.check.acceptedUpstream")
+                            : t("compliance.check.accepted")}
+                        </Badge>
+                      )}
                     </div>
                     <p className="mt-1 font-medium text-foreground">{translateTitle("ksv", check.id, check.title, locale)}</p>
+                    {check.accepted && (check.acceptedReasonKey || check.acceptedReason) && (
+                      <p className="mt-1 text-muted-foreground">
+                        <span className="font-medium">{t("compliance.check.acceptedReason")}: </span>
+                        {translateAcceptedReason(locale, check.acceptedReasonKey, check.acceptedReason)}
+                      </p>
+                    )}
                     {check.remediation && (
                       <p className="mt-1 text-muted-foreground line-clamp-2">{translateRemediation("ksv", check.id, check.remediation, locale)}</p>
                     )}
@@ -166,13 +191,14 @@ export function RbacAuditTable() {
     [rows]
   )
 
-  // Split by role ownership: findings on K8s built-in roles or upstream controller/chart roles
-  // are inherent to what those roles do and not actionable by the platform team (see
-  // isAcceptedRbacRole in lib/compliance.ts). Only our own authored roles are actionable.
+  // Split by role ownership and reviewed per-check exceptions (see isAcceptedRbacRole and
+  // ACCEPTED_RBAC_RULES). Clean (0-failure) roles are excluded from failure row counts.
   const { actionableCount, acceptedCount } = useMemo(() => {
     let actionableCount = 0
     let acceptedCount = 0
     for (const r of rows) {
+      const total = r.summary.Critical + r.summary.High + r.summary.Medium + r.summary.Low
+      if (total === 0) continue
       if (r.accepted) acceptedCount++
       else actionableCount++
     }
@@ -319,9 +345,15 @@ export function RbacAuditTable() {
                             <Badge
                               variant="outline"
                               className="ml-2 text-[0.65rem] px-1.5 py-0 text-muted-foreground border-muted-foreground/30"
-                              title={t("compliance.table.acceptedRbacHint")}
+                              title={
+                                row.acceptedScope === "accept"
+                                  ? t("compliance.table.acceptedExceptionHint")
+                                  : t("compliance.table.acceptedRbacHint")
+                              }
                             >
-                              {t("compliance.table.acceptedRbac")}
+                              {row.acceptedScope === "accept"
+                                ? t("compliance.table.acceptedException")
+                                : t("compliance.table.acceptedRbac")}
                             </Badge>
                           )}
                         </td>

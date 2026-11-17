@@ -131,6 +131,12 @@ helm upgrade --install gitea "$(chart gitea)" \
   --set containerSecurityContext.allowPrivilegeEscalation=false \
   --set containerSecurityContext.capabilities.drop[0]=ALL \
   --set containerSecurityContext.seccompProfile.type=RuntimeDefault \
+  --set resources.requests.cpu=100m \
+  --set resources.requests.memory=256Mi \
+  --set resources.limits.cpu=500m \
+  --set resources.limits.memory=1Gi \
+  --set initContainers.resources.limits.cpu=200m \
+  --set initContainers.resources.limits.memory=256Mi \
   --timeout=600s || echo "WARN: Gitea install timed out, continuing..."
 
 # Opt Gitea out of Istio ambient mesh (SSO cookie handling)

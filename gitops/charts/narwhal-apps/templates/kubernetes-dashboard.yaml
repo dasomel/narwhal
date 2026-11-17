@@ -39,6 +39,13 @@ spec:
         kong:
           podLabels:
             istio.io/dataplane-mode: "none"
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 250m
+              memory: 256Mi
           # Kong은 Dashboard의 *내부* 프록시일 뿐이다 (auth/api/web/metricsScraper 사이
           # 라우팅). 엣지 게이트웨이는 APISIX가 소유하므로 Kong이 ingress/LB 역할을
           # 하지 않도록 격리한다. 아래 3개는 차트 7.14.0 기본값과 동일하지만, 차트

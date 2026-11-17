@@ -68,8 +68,28 @@ spec:
                 access_key: ${S3_ACCESS_KEY_ID}
                 secret_key: ${S3_SECRET_ACCESS_KEY}
                 insecure: true
+          # Trivy KSV001/003/014 on container tempo: chart 2.2.3 renders `.Values.tempo.securityContext`
+          # at container level (while top-level `.Values.securityContext` below renders at pod level).
+          # Tempo writes WAL/local blocks under /var/tempo (values.yaml storage.trace.{local,wal}.path)
+          # and temp files under /tmp; mount both as emptyDir when persistence.enabled=false.
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          extraVolumeMounts:
+            - name: tempo-data
+              mountPath: /var/tempo
+            - name: tmp
+              mountPath: /tmp
         persistence:
           enabled: false
+        extraVolumes:
+          - name: tempo-data
+            emptyDir: {}
+          - name: tmp
+            emptyDir: {}
         # D-MON-SPREAD: prometheus, loki and tempo each carry the same preferred (never required)
         # pod anti-affinity against the other two (one term each: name=prometheus,
         # name=loki + component=single-binary, name=tempo; the loki-canary DaemonSet also carries
@@ -109,13 +129,9 @@ spec:
                       - key: app.kubernetes.io/name
                         operator: In
                         values: [tempo]
-        # Trivy KSV030/104 only. NOTE: despite the chart's values.yaml comment
-        # ("securityContext for container"), this key actually renders at POD level
-        # (verified via `helm template` + live StatefulSet diff) — PodSecurityContext
-        # has no allowPrivilegeEscalation/capabilities fields, so those get silently
-        # pruned by the API server on every apply, leaving ArgoCD permanently
-        # OutOfSync. Only seccompProfile (valid at pod level) is set here; KSV001/003
-        # have no working values path in this chart version and are left unfixed.
+        # Trivy KSV030/104 at pod level. Top-level `.Values.securityContext` renders at POD level
+        # (verified via `helm template` + live StatefulSet diff), where only seccompProfile and
+        # user/group IDs are valid; container-level fields live under `tempo.securityContext` above.
         securityContext:
           seccompProfile:
             type: RuntimeDefault

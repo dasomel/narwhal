@@ -340,7 +340,15 @@ for attempt in 1 2 3 4 5; do
     --set tempo.storage.trace.backend=local \
     --set persistence.enabled=true \
     --set persistence.storageClassName=nfs-csi \
-    --set persistence.size=10Gi; then
+    --set persistence.size=10Gi \
+    --set tempo.securityContext.allowPrivilegeEscalation=false \
+    --set tempo.securityContext.readOnlyRootFilesystem=true \
+    --set 'tempo.securityContext.capabilities.drop[0]=ALL' \
+    --set securityContext.seccompProfile.type=RuntimeDefault \
+    --set extraVolumes[0].name=tmp \
+    --set-json 'extraVolumes[0].emptyDir={}' \
+    --set tempo.extraVolumeMounts[0].name=tmp \
+    --set tempo.extraVolumeMounts[0].mountPath=/tmp; then
     TEMPO_OK=true; break
   fi
   echo "Tempo install attempt ${attempt}/5 failed, waiting 15s..."

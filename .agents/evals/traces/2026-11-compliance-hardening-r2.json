@@ -1,0 +1,65 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-compliance-hardening-round2-20261118",
+  "task": "Lane R2 workload compliance hardening round 2: resolve remaining actionable Trivy config-audit findings for devtools/gitea (KSV012), monitoring/tempo (KSV001, KSV014), platform-system/apisix-ingress-controller (KSV012, KSV014), storage/velero (KSV012), and evaluate/classify iam/keycloak and iam/keycloak-operator (KSV014).",
+  "changeContext": {
+    "paths": [
+      ".agents/evals/traces/2026-11-compliance-hardening-r2.json",
+      "CHANGELOG-ko.md",
+      "CHANGELOG.md",
+      "docs/common/lessons-log.md",
+      "gitops/charts/narwhal-apps/templates/tempo.yaml",
+      "gitops/charts/narwhal-apps/templates/velero.yaml",
+      "scripts/cluster/08-1-networking.sh",
+      "scripts/cluster/08-2-monitoring.sh",
+      "scripts/cluster/08-4-storage.sh",
+      "scripts/cluster/12-gitea.sh",
+      "scripts/test/lib/check-round2-compliance-hardening.py",
+      "scripts/test/lib/check-storage-hardening.py",
+      "scripts/test/regression-check-kakao.sh"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Scope: five targeted workload groups from 2026-11-18 live Trivy audit. Excluded: gitea readOnlyRootFilesystem, velero/node-agent readOnlyRootFilesystem, apisix data-plane and apisix-etcd (narwhal#714), and live cluster mutations."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "Inspected bundled Helm charts (gitea 12.6.0, tempo 2.2.3, apisix-ingress-controller 0.14.1, velero 12.0.3), keycloak manifests, and OCI image configs via crane: tempo chart 2.2.3 supports container-level tempo.securityContext and extraVolumeMounts; velero:v1.18.1 cnb user is UID 1002 / GID 1000; keycloak-operator starts keycloak:26.5.7 with start-optimized=false so kc.sh re-augments into /opt/keycloak/lib/quarkus."
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "Added containerSecurityContext runAsNonRoot/1000:1000 in 12-gitea.sh; enabled tempo.securityContext (allowPrivilegeEscalation=false, readOnlyRootFilesystem=true, drop ALL) with /var/tempo and /tmp emptyDirs in tempo.yaml and /tmp emptyDir parity in 08-2-monitoring.sh; added runAsGroup=65532 to apisix-ingress-controller in 08-1-networking.sh; set Velero server runAsNonRoot=true with UID 1002 / GID 1000 (omitting fsGroup so velero-plugin-for-aws UID 65532 keeps /target write access) in velero.yaml and 08-4-storage.sh; left keycloak and keycloak-operator KSV014 unset and classified as upstream."
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "Static validation, shellcheck/bash -n, markdownlint-changed, offline helm template renders, and targeted regression checks (R311, R356, R359, R362, R364, R366) on the branch without cluster access.",
+      "summary": "make validate, shellcheck, bash -n, markdownlint-changed, git diff --check, and all targeted regression checks including R366 (14 mutations + 4 offline chart renders) passed. Live cluster apply and verification are delegated to the orchestrator.",
+      "evidence": [
+        "test:make validate -> exit 0",
+        "test:python3 scripts/test/lib/check-round2-compliance-hardening.py --mutation-verify -> PASS (14 mutations rejected)",
+        "test:python3 scripts/test/lib/check-storage-hardening.py --mutation-verify -> PASS (17 mutations rejected)",
+        "test:shellcheck & bash -n on changed scripts -> exit 0",
+        "test:python3 scripts/ci/markdownlint-changed.py --base origin/main -> exit 0"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "completion_claim",
+      "summary": "Offline chart renders, static validation, and regression checks pass; live cluster rollout, pod readiness, functional checks, and Trivy re-audit remain for the orchestrator."
+    },
+    {
+      "id": "e6",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Round-2 compliance fixes committed on fix/compliance-round2 (no push); live verification runbook and ACCEPT/UPSTREAM table provided."
+    }
+  ]
+}

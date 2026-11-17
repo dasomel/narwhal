@@ -366,6 +366,7 @@ for attempt in 1 2 3 4 5; do
     --set securityContext.seccompProfile.type=RuntimeDefault \
     --set securityContext.runAsNonRoot=true \
     --set securityContext.runAsUser=65532 \
+    --set securityContext.runAsGroup=65532 \
     --set securityContext.readOnlyRootFilesystem=true; then
     APISIX_INGRESS_CONTROLLER_OK=true; break
   fi

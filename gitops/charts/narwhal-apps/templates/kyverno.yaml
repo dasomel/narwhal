@@ -19,12 +19,24 @@ spec:
           container:
             extraArgs:
               webhookTimeout: 5
+            resources:
+              limits:
+                cpu: 500m
         backgroundController:
           replicas: 2
+          resources:
+            limits:
+              cpu: 300m
         cleanupController:
           replicas: 2
+          resources:
+            limits:
+              cpu: 200m
         reportsController:
           replicas: 2
+          resources:
+            limits:
+              cpu: 300m
         config:
           webhooks:
             namespaceSelector:

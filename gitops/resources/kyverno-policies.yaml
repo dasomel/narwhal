@@ -549,3 +549,42 @@ spec:
               - key: "{{ targetNodeRole }}"
                 operator: NotEquals
                 value: not-control-plane
+---
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: add-waypoint-seccomp
+  annotations:
+    policies.kyverno.io/title: Add Seccomp Profile to Istio Waypoints
+    policies.kyverno.io/category: Best Practices
+    policies.kyverno.io/severity: medium
+    policies.kyverno.io/subject: Pod
+    policies.kyverno.io/description: >-
+      Mutates Istio-managed waypoint Pods at admission to add a pod-level
+      seccompProfile of type RuntimeDefault when none is set. Targets only
+      Pods carrying gateway.networking.k8s.io/gateway-class-name: istio-waypoint
+      in namespaces reached by Kyverno webhooks (devtools, monitoring);
+      platform-system is excluded at the webhook namespaceSelector level for
+      admission self-lockout safety (kyverno.yaml).
+spec:
+  validationFailureAction: Audit
+  background: false
+  rules:
+    - name: add-waypoint-seccomp
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+              namespaces:
+                - devtools
+                - monitoring
+              selector:
+                matchLabels:
+                  gateway.networking.k8s.io/gateway-class-name: istio-waypoint
+      mutate:
+        patchStrategicMerge:
+          spec:
+            securityContext:
+              +(seccompProfile):
+                type: RuntimeDefault

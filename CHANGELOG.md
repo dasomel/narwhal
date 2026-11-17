@@ -9,6 +9,8 @@ English | [한국어](CHANGELOG-ko.md)
 
 ## [Unreleased]
 
+- **Harden Security & IAM workloads (`falcosidekick`, `trivy-operator`, `trivy-server`, `kyverno`, `keycloak`, `keycloak-operator`, and `devtools`/`monitoring` `waypoint` seccomp).** Adds non-root/capability/seccomp/CPU-limit defaults verified against the bundled Helm charts and Keycloak CRD, keeps `KSV014` (`readOnlyRootFilesystem`) unset on Keycloak until writable paths are live-tested, and adds an Audit Kyverno mutate rule for `istio-waypoint` Pods (R358/R359; offline-verified only, live cluster rollout pending).
+
 - **Scope Kyverno signature Audit to the signed portal repository (#683).** Include `devtools`, exclude unsigned third-party/Narwhal images, and accept tag references without digest mutation; CycloneDX checks remain. Live check: third-party violations stopped, and Kyverno now reports the portal signature as not found — Cosign v3 stores it as an OCI referrer that Kyverno 1.18.1 does not verify (#684); Audit only.
 
 - **Portal is pinned to `narwhal-portal:1.1.17` (was 1.1.15 in released v1.5.0; 1.1.16 was an intermediate pin).** Accounts with an empty scope, including guests, are denied at `/access-denied` with `403 ACCESS_NOT_GRANTED` (#686). Developers and viewers no longer see fleet-wide data (#678, #687). Add team mappings or `narwhal.io/team` labels before upgrading. The image was published for amd64 and arm64, and Cosign v3.1.4 verification with the repository public key and transparency log passed. In-cluster Kyverno verification is known to fail for Portal images (narwhal#684); no live rollout is claimed.

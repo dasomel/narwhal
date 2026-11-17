@@ -16,10 +16,22 @@ spec:
         app: apisix-etcd
         istio.io/dataplane-mode: "none"
     spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: etcd
           # registry.k8s.io: K8s 공식 레지스트리, ARM64 지원, no Bitnami
           image: registry.k8s.io/etcd:3.5.31-0
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
           command:
             - etcd
             - --data-dir=/var/etcd/data

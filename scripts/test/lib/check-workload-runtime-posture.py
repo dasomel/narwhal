@@ -17,7 +17,7 @@ TEXT_PROFILE_PRESENT = object()
 # changed baseline needs review; escape hatch: update only after inspecting the diff.
 KNOWN_GAPS = {
     "default:missingSeccomp": 4,
-    "platform-system:missingSeccomp": 2,
+    "platform-system:missingSeccomp": 1,
 }
 WORKLOAD_KINDS = {"Pod", "Deployment", "StatefulSet", "DaemonSet", "Job", "CronJob"}
 # D2: chart values are inputs, not rendered objects. Cost: additions need review;

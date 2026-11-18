@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""R371: push-security-db.sh validates --ca-cert bundle and docs name the canonical namespace (#728).
+"""R372: push-security-db.sh validates --ca-cert bundle and docs name the canonical namespace (#728).
 
 Invariants:
   1. push-security-db.sh validates --ca-cert early before any expensive operations.

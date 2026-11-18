@@ -226,7 +226,8 @@ containerd `config_path = "/etc/containerd/certs.d"`를 이용하므로 이미�
 
 # 3. 에어갭 내부에서, Harbor가 뜬 뒤 (harbor.devtools.svc.cluster.local 도달 가능한 곳에서)
 # 로컬 Vagrant 포함, push 는 Harbor 외부 URL(https harbor.<domain>) + admin 자격증명이 필요하다
-# (harbor-secrets 에서 읽음, 출력 안 함). 클러스터 CA 는 narwhal-ca-cert Secret 의 ca.crt.
+# (harbor-secrets 에서 읽음, 출력 안 함). 클러스터 CA 는 devtools 네임스페이스의 narwhal-ca-cert Secret 의 ca.crt.
+#   추출: kubectl get secret narwhal-ca-cert -n devtools -o jsonpath='{.data.ca\.crt}' | base64 -d > ./narwhal-ca.crt
 # plain-HTTP port-forward / in-cluster Service 로는 토큰 realm 이 https 라 실패한다.
 # 번들 아치와 무관: DB 는 단일 매니페스트 OCI 아티팩트라 amd64/arm64 어디서 받아도 같다.
 ./scripts/airgap/lib/push-security-db.sh --bundle ./narwhal-airgap-bundle-amd64 \
@@ -253,8 +254,9 @@ ghcr.io로 나갈 수 있는 클러스터(로컬 Vagrant)는 아래 "보안 DB �
 ```bash
 ./scripts/airgap/lib/fetch-security-db.sh --bundle <bundle-dir>
 ./scripts/airgap/lib/promote-security-db.sh --bundle <bundle-dir> --approved-by "<name>"
+# CA 추출: kubectl get secret narwhal-ca-cert -n devtools -o jsonpath='{.data.ca\.crt}' | base64 -d > ./narwhal-ca.crt
 ./scripts/airgap/lib/push-security-db.sh --bundle <bundle-dir> \
-  --ca-cert <narwhal ca.crt> --kube-context narwhal
+  --ca-cert ./narwhal-ca.crt --kube-context narwhal
 ```
 
 push 뒤 trivy-server는 다음 시간 주기에 새 DB를 한 번 받고 멈춘다. 서둘러 반영하려면 `kubectl -n security-system delete pod trivy-server-0`

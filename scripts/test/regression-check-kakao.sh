@@ -3487,10 +3487,18 @@ PYEOF'
     python3 scripts/test/lib/check-node-hardening.py --mutation-verify
   check R366 "Round-2 workload compliance hardening: Gitea non-root uid/gid 1000 on all 4 containers, Tempo tempo.securityContext allowPrivilegeEscalation=false + readOnlyRootFilesystem (/var/tempo, /tmp emptyDir) with 08-2 parity, APISIX-IC runAsGroup 65532 + non-root/ro-rootfs, and Velero real cnb uid 1002/gid 1000 without fsGroup (+ round-3 ro-rootfs with /home/cnb) + 08-4 parity; offline helm renders and 15 mutations caught" \
     python3 scripts/test/lib/check-round2-compliance-hardening.py --mutation-verify
-  check R370 "Round-3 compliance hardening (KSV014): Velero server readOnlyRootFilesystem=true + /home/cnb emptyDir (no second /tmp mount, nodeAgent untouched) across velero.yaml & 08-4-storage.sh with offline helm renders, and keycloak-operator readOnlyRootFilesystem=true + /tmp emptyDir in 11-keycloak.sh (idempotent with pre-existing volumes; Keycloak CR untouched); 11 mutations caught" \
+  check R370 "Round-3 compliance hardening (KSV014): Velero server readOnlyRootFilesystem=true + /home/cnb emptyDir (no second /tmp mount; nodeAgent hardened in R371) across velero.yaml & 08-4-storage.sh with offline helm renders, and keycloak-operator readOnlyRootFilesystem=true + /tmp emptyDir in 11-keycloak.sh (idempotent with pre-existing volumes; Keycloak CR untouched); 11 mutations caught" \
     python3 scripts/test/lib/check-round3-compliance-hardening.py --mutation-verify
   check R371 "apisix-etcd PVC persistence (Recreate + apisix-etcd-data nfs-csi ReadWriteOnce + Velero exclude), IC resync intervals (5m/15m), and divergence recovery mode in recover-apisix-resource-sync.sh (#714); offline helm render + behavioral stub tests + 12 mutations caught" \
     python3 scripts/test/lib/check-apisix-etcd-persistence.py --mutation-verify
+  # 2026-11-19 (#691): OTLP traces flow through Alloy extraConfig (memory_limiter -> strip_client_k8s -> connection-only node-scoped k8sattributes -> Tempo) + tempo-ingress-policy closes direct Tempo bypass
+  check R373 "Alloy k8s-monitoring extraConfig strips client ^k8s[.] + service.namespace (error_mode=propagate) before connection-only node-scoped k8sattributes with 256MiB/64MiB spike memory_limiter, internalTrafficPolicy Local, and waypoint opt-out; Tempo disables OTLP/HTTP (4318) and opts out of waypoint; tempo-ingress-policy restricts 4317/15008 to alloy-logs and 3200/15008 to Grafana/Prometheus/portal/Tempo; 08-2-monitoring.sh parity + offline helm renders + 34 mutations caught (D-TRACE-K8S-ATTR, D-TEMPO-INGRESS)" \
+    python3 scripts/test/lib/check-trace-k8s-attributes.py --mutation-verify
+  # 2026-11-19 (#728): push-security-db.sh validates --ca-cert early with openssl x509 and docs name devtools
+  check R372 "push-security-db.sh validates --ca-cert early with openssl x509 (rejects empty, non-PEM, expired without leaking content), behavioural test without registry, and docs export from canonical devtools namespace; 11 mutations caught (#728)" \
+    python3 scripts/test/lib/check-push-security-db-ca.py --mutation-verify
+  check R371 "Round-4 compliance hardening (KSV014/KSV104): Falco containerSecurityContext sets both privileged=true and readOnlyRootFilesystem=true (GitOps-only), Velero node-agent readOnlyRootFilesystem=true with /root and /tmp emptyDirs across velero.yaml & 08-4-storage.sh, and nfs-quota-agent RuntimeDefault seccomp + privileged + readOnlyRootFilesystem via chart values in 05-nfs-quota-agent.sh with offline helm renders; 11 mutations caught" \
+    python3 scripts/test/lib/check-round4-compliance-hardening.py --mutation-verify
 }
 
 #=========================================

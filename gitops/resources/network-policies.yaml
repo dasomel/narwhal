@@ -167,3 +167,88 @@ spec:
           port: 9093
         - protocol: TCP
           port: 15008
+---
+# D-TEMPO-INGRESS (#691): close direct-to-Tempo OTLP bypass; accept trace ingest (4317)
+# only from alloy-logs collector pods, and query/metrics (3200) only from known readers.
+# Monitoring is ambient-enrolled with monitoring-permissive + waypoint:
+#   - Every port-limited ingress rule keeps TCP 15008 (HBONE) per R200.
+#   - Tempo Service carries istio.io/use-waypoint: none so alloy-logs ztunnel connects
+#     directly to Tempo over HBONE 15008 with alloy-logs' pod IP (not monitoring/waypoint),
+#     and waypoint is NOT permitted here (otherwise any ambient pod could hop through it).
+#   - Opted-out readers (grafana, prometheus, narwhal-portal) reach 3200 via plain TCP
+#     under monitoring-permissive. Kubelet /ready probes arrive via 169.254.7.127/32 CCNP.
+#   - Grafana OTLP self-tracing remains routed via alloy-logs:4317 (not Tempo directly).
+#   - Unused chart receivers/ports (4318, 14250, 14268, 9411, 55680, 55681, 6831/6832) are
+#     denied by omission. Escape hatch: add a new caller rule or delete this policy.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: tempo-ingress-policy
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/managed-by: narwhal-gitops
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: tempo
+      app.kubernetes.io/instance: tempo
+  policyTypes:
+    - Ingress
+  ingress:
+    # 1. alloy-logs collector pods (monitoring) -> Tempo OTLP gRPC ingest (4317).
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: alloy-logs
+              app.kubernetes.io/instance: k8s-monitoring-alloy-logs
+      ports:
+        - protocol: TCP
+          port: 4317
+        - protocol: TCP
+          port: 15008
+    # 2. Grafana (monitoring) -> Tempo HTTP query API (3200).
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: grafana
+              app.kubernetes.io/instance: prometheus-stack
+      ports:
+        - protocol: TCP
+          port: 3200
+        - protocol: TCP
+          port: 15008
+    # 3. Prometheus (monitoring) -> Tempo /metrics scrape (3200).
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: prometheus
+              prometheus: prometheus-stack-kube-prom-prometheus
+      ports:
+        - protocol: TCP
+          port: 3200
+        - protocol: TCP
+          port: 15008
+    # 4. narwhal-portal (devtools) -> Tempo HTTP query API (3200).
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: devtools
+          podSelector:
+            matchLabels:
+              app: narwhal-portal
+      ports:
+        - protocol: TCP
+          port: 3200
+        - protocol: TCP
+          port: 15008
+    # 5. Tempo self/peer query path (monitoring) -> Tempo HTTP (3200).
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: tempo
+              app.kubernetes.io/instance: tempo
+      ports:
+        - protocol: TCP
+          port: 3200
+        - protocol: TCP
+          port: 15008

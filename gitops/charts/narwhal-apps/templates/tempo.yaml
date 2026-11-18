@@ -73,6 +73,16 @@ spec:
           # Tempo writes WAL/local blocks under /var/tempo (values.yaml storage.trace.{local,wal}.path)
           # and temp files under /tmp. The chart already mounts its `storage` claim
           # (persistence below) at /var/tempo, so only /tmp is added; a second mount there is rejected.
+          # D-TEMPO-INGRESS (#691): disable unused OTLP/HTTP (4318) receiver; chart _ports.tpl
+          # dereferences jaeger.protocols.* unconditionally (jaeger: null errors; empty protocols
+          # risks jaegerreceiver startup failure) and hardcodes 9411/55680/55681, so tempo-ingress-policy
+          # blocks all non-4317 ingest ports.
+          receivers:
+            otlp:
+              protocols:
+                grpc:
+                  endpoint: "0.0.0.0:4317"
+                http: null
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
@@ -82,6 +92,11 @@ spec:
           extraVolumeMounts:
             - name: tmp
               mountPath: /tmp
+        # Bypass monitoring/waypoint on Service tempo so ambient alloy-logs connects directly via
+        # ztunnel HBONE 15008 with its own pod IP (matching tempo-ingress-policy).
+        service:
+          labels:
+            istio.io/use-waypoint: "none"
         # D-tempo-persist: match the bootstrap install (08-2-monitoring.sh) and the live StatefulSet,
         # which has had a 10Gi nfs-csi `storage` claim at /var/tempo since creation; this value said
         # `false` but volumeClaimTemplates are immutable, so it never took effect. With

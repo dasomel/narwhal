@@ -139,6 +139,21 @@ spec:
           # REQUIRED: kopia/restic이 hostPath volume 백업을 위해 privileged 필요
           # Kyverno disallow-privileged-containers 정책에서 velero nodeAgent 예외 처리됨
           privileged: true
+          # D-node-agent-rofs (KSV014): read-only root with a writable home and /tmp. node-agent runs
+          # as root, so kopia's repository config goes to /root/udmrepo. Escape hatch: remove the
+          # three keys below.
+          containerSecurityContext:
+            readOnlyRootFilesystem: true
+          extraVolumes:
+            - name: node-agent-home
+              emptyDir: {}
+            - name: tmp
+              emptyDir: {}
+          extraVolumeMounts:
+            - name: node-agent-home
+              mountPath: /root
+            - name: tmp
+              mountPath: /tmp
           # See INCIDENT WORKAROUND comment above podSecurityContext at the top of this
           # file — same kyverno non-root-injection issue hits node-agent pods too.
           podSecurityContext:

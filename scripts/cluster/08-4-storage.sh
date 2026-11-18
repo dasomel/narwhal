@@ -585,6 +585,19 @@ nodeAgent:
       cpu: 500m
       memory: 512Mi
   privileged: true
+  # D-node-agent-rofs (KSV014): mirrors gitops/charts/narwhal-apps/templates/velero.yaml.
+  containerSecurityContext:
+    readOnlyRootFilesystem: true
+  extraVolumes:
+    - name: node-agent-home
+      emptyDir: {}
+    - name: tmp
+      emptyDir: {}
+  extraVolumeMounts:
+    - name: node-agent-home
+      mountPath: /root
+    - name: tmp
+      mountPath: /tmp
   podSecurityContext:
     runAsNonRoot: false
   # D-datapath-labels (#422): mirrors gitops/charts/narwhal-apps/templates/velero.yaml (see comment there).

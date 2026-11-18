@@ -220,7 +220,7 @@ vagrant ssh master-1 -c "kubectl get apisixtls -A"
 **Self-signed 인증서 신뢰 설정**:
 
 1. **macOS**:
-   - VM에서 CA 인증서 추출: `kubectl get secret narwhal-ca-cert -n cert-manager -o jsonpath='{.data.ca\.crt}' | base64 -d > narwhal-ca.crt`
+   - VM에서 CA 인증서 추출: `kubectl get secret narwhal-ca-cert -n devtools -o jsonpath='{.data.ca\.crt}' | base64 -d > narwhal-ca.crt`
    - Keychain Access 앱 열기 → 인증서 가져오기 → 신뢰 설정 "항상 신뢰"로 변경
 
 2. **브라우저 경고 수락**: `https://argocd.local.narwhal.internal` 접속 시 "위험 감수 및 계속" 클릭

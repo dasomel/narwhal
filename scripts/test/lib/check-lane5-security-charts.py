@@ -137,7 +137,11 @@ def main() -> int:
 
     if "--mutation-verify" in sys.argv:
         mutations = [
-            ("falco", "readOnlyRootFilesystem: true", "readOnlyRootFilesystem: false"),
+            (
+                "falco",
+                "          securityContext:\n            allowPrivilegeEscalation: false\n            readOnlyRootFilesystem: true",
+                "          securityContext:\n            allowPrivilegeEscalation: false\n            readOnlyRootFilesystem: false",
+            ),
             ("falco", "runAsNonRoot: true", "runAsNonRoot: false"),
             ("trivy", "        podSecurityContext:\n          runAsNonRoot: true", "        podSecurityContext:\n          runAsNonRoot: false"),
             ("trivy", "          limits:\n            cpu: 500m\n            memory: 1Gi", "          limits:\n            memory: 1Gi"),

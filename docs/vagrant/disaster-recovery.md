@@ -774,33 +774,33 @@ kubectl get certificates -A
 kubectl get certificates -A -o json | \
   jq -r '.items[] | "\(.metadata.namespace)/\(.metadata.name): \(.status.notAfter)"'
 
-# cert-manager Pod 상태 확인
-kubectl get pods -n cert-manager
+# cert-manager Pod 상태 확인 (platform-system)
+kubectl get pods -n platform-system -l app.kubernetes.io/instance=cert-manager
 
 # Certificate 이벤트 확인
-kubectl describe certificate narwhal-wildcard-cert -n cert-manager | grep -A 10 Events
+kubectl describe certificate narwhal-wildcard-tls -n platform-system | grep -A 10 Events
 ```
 
 ### 시나리오 1: cert-manager 자동 갱신 실패
 
 ```bash
 # CertificateRequest 상태 확인
-kubectl get certificaterequests -n cert-manager
+kubectl get certificaterequests -n platform-system
 
 # 갱신 실패한 Certificate 강제 갱신
 # TLS Secret 삭제 → cert-manager가 자동 재발급
-kubectl delete secret narwhal-wildcard-tls -n cert-manager
+kubectl delete secret narwhal-wildcard-tls -n platform-system
 
 # 갱신 진행 확인 (약 30초 이내)
-kubectl get certificate narwhal-wildcard-cert -n cert-manager -w
+kubectl get certificate narwhal-wildcard-tls -n platform-system -w
 ```
 
 ### 시나리오 2: CA 인증서 만료
 
 ```bash
-# CA 인증서 만료일 확인
-kubectl get secret narwhal-ca-cert -n cert-manager \
-  -o jsonpath='{.data.tls\.crt}' | base64 -d | \
+# CA 인증서 만료일 확인 (devtools 또는 08-6이 배포한 네임스페이스)
+kubectl get secret narwhal-ca-cert -n devtools \
+  -o jsonpath='{.data.ca\.crt}' | base64 -d | \
   openssl x509 -noout -dates
 
 # CA가 만료된 경우: ClusterIssuer/CA 재생성 (ArgoCD가 자동 재적용)
@@ -830,18 +830,18 @@ vagrant ssh master-1 -c "sudo touch /etc/kubernetes/manifests/kube-apiserver.yam
 
 ### 앱 네임스페이스 CA cert 배포 확인
 
-cert-manager는 각 앱 네임스페이스에 CA cert를 복사해야 합니다:
+08-6-tls-routes.sh는 각 앱 네임스페이스에 CA cert를 복사합니다:
 
 ```bash
 # CA cert Secret이 없는 네임스페이스 확인
-for ns in iam devtools monitoring headlamp; do
+for ns in devtools iam monitoring storage security-system; do
   echo -n "${ns}: "
   kubectl get secret narwhal-ca-cert -n ${ns} 2>/dev/null && echo "OK" || echo "MISSING"
 done
 
-# 누락된 네임스페이스에 수동 복사 (cert-manager ArgoCD 앱 재동기화로도 가능)
-kubectl get secret narwhal-ca-cert -n cert-manager -o yaml | \
-  sed 's/namespace: cert-manager/namespace: headlamp/' | \
+# 누락된 네임스페이스에 수동 복사 (08-6-tls-routes.sh 재실행 또는 수동 복사)
+kubectl get secret narwhal-ca-cert -n devtools -o yaml | \
+  sed 's/namespace: devtools/namespace: <target-ns>/' | \
   kubectl apply -f -
 ```
 

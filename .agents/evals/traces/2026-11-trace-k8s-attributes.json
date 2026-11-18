@@ -44,7 +44,8 @@
         "test:helm template narwhal-apps gitops/charts/narwhal-apps -s templates/k8s-monitoring.yaml -s templates/prometheus-stack.yaml -> exit 0",
         "test:shellcheck -S warning scripts/cluster/08-2-monitoring.sh scripts/test/regression-check-kakao.sh && bash -n scripts/cluster/08-2-monitoring.sh scripts/test/regression-check-kakao.sh -> exit 0",
         "test:python3 scripts/ci/markdownlint-changed.py --base origin/main -> exit 0 (No markdownlint violations on added/modified active-documentation lines)",
-        "test:git diff --check -> exit 0"
+        "test:git diff --check -> exit 0",
+        "test:kubectl run (curl OTLP/HTTP span from namespace dev to k8s-monitoring-alloy-logs:4318) -> http=200; Tempo search { resource.k8s.namespace.name = \"dev\" } -> 1 trace, rootServiceName smoke-691; { resource.k8s.namespace.name != \"\" } -> 20 grafana traces (orchestrator, measured 2026-11-19, local single-node cluster)"
       ]
     },
     {

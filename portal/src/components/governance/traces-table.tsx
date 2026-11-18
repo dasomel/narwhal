@@ -5,7 +5,7 @@ import { Card } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { useT } from "@/lib/i18n-client"
 import { DataState } from "@/components/ui/data-state"
-import { apiFetch } from "@/lib/scope-guard"
+import { apiFetch, shouldRetryQuery } from "@/lib/scope-guard"
 
 interface TraceEntry {
   traceID: string
@@ -74,7 +74,8 @@ export function TracesTable() {
       const json = await r.json()
       return Array.isArray(json) ? json : []
     },
-    retry: (failureCount, err) => !(err instanceof TracesForbiddenError) && failureCount < 2,
+    retry: (failureCount, err) =>
+      !(err instanceof TracesForbiddenError) && shouldRetryQuery(failureCount, err),
     refetchInterval: 30_000,
   })
 

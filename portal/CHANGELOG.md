@@ -12,9 +12,10 @@ English | [한국어](CHANGELOG-ko.md)
 ### Fixed
 
 - **Evict stale browser query cache and open detail views on server scope change or revocation (`src/lib/scope.ts`, `src/lib/scope-guard.ts`, `src/components/providers.tsx`, `src/app/api/**`, narwhal#688):**
-  - Attached the server-computed opaque `scope.fingerprint` in the `X-Narwhal-Scope` response header across tenant-scoped API routes without exposing team or namespace names.
-  - Routed React Query `queryFn`s through `apiFetch` / `apiFetchJson` bound to the shared `QueryClient` in `Providers` so a changed `X-Narwhal-Scope` header, `401`, or `403 ACCESS_NOT_GRANTED` clears cached queries, resets `useScopedState` / `useScopeResetEffect` selection state, closes open detail sheets/drawers (`EventTimeline`, `AlertsWidget`, `ActivityFeed`, `ResourceDetailDrawer`, `PodLogsViewer`, etc.), and skips retrying 401/403 responses.
-  - Added real-`QueryClient` component regression tests (`scope-guard.test.ts`, `activity-feed.test.tsx`, `event-timeline.test.tsx`, `resource-detail-drawer.test.tsx`) plus `viewer` session and `X-Narwhal-Scope` opacity assertions in `src/app/api/events/route.test.ts` and `src/app/api/alerts/route.test.ts`.
+  - Attached a 32-hex-char `AUTH_SECRET`-keyed HMAC of `scope.fingerprint` (`signScopeFingerprint` in `withScopeHeader`) in the `X-Narwhal-Scope` response header across tenant-scoped API routes so team/namespace names cannot be dictionary-attacked.
+  - Routed React Query `queryFn`s through `apiFetch` / `apiFetchJson` bound to the shared `QueryClient` in `Providers` so a changed `X-Narwhal-Scope` header, `401`, or `403 ACCESS_NOT_GRANTED` clears only explicitly tenant-scoped queries (`TENANT_SCOPED_QUERY_KEYS`, `tenant` prefix, or `meta.tenantScoped`, leaving `settings-*` and non-tenant queries intact), resets `useScopedState` / `useScopeResetEffect` selection state, closes open detail sheets/drawers (`EventTimeline`, `AlertsWidget`, `ActivityFeed`, `ResourceDetailDrawer`, `PodLogsViewer`, etc.), rejects late pre-transition concurrent responses via monotonic `scopeSeq`/`epoch` ordering and post-body freshness checks (`ScopeStaleResponseError`), and skips retrying `401`/`403`/`ScopeStaleResponseError`.
+  - Added real-`QueryClient` component regression tests (`scope-guard.test.ts`, `activity-feed.test.tsx`, `event-timeline.test.tsx`, `resource-detail-drawer.test.tsx`) plus `viewer` session and HMAC `X-Narwhal-Scope` assertions in `src/lib/scope.access.test.ts`, `src/app/api/events/route.test.ts`, and `src/app/api/alerts/route.test.ts`.
+  - Deferred `auth.ts` claim refresh on token renewal, SSE stream (`/api/events/stream`) scope re-validation, and cross-tab cache sync to `narwhal#734`.
 
 ## [1.1.19] - 2026-11-18
 

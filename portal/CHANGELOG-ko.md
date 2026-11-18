@@ -12,9 +12,10 @@
 ### 수정
 
 - **서버 스코프 변경·권한 회수 시 브라우저 React Query 캐시 및 열린 상세 화면 즉시 초기화 (`src/lib/scope.ts`, `src/lib/scope-guard.ts`, `src/components/providers.tsx`, `src/app/api/**`, narwhal#688):**
-  - 테넌트 스코프 API 라우트 응답에 팀·네임스페이스 이름이 노출되지 않는 불투명 SHA-256 해시(`scope.fingerprint`)를 `X-Narwhal-Scope` 헤더로 반환하도록 추가했습니다.
-  - React Query `queryFn`을 `Providers`의 공유 `QueryClient`에 바인딩된 `apiFetch` / `apiFetchJson`으로 통합해, `X-Narwhal-Scope` 헤더 변경 또는 `401`·`403 ACCESS_NOT_GRANTED` 응답 시 캐시된 쿼리를 즉시 제거하고 `useScopedState` / `useScopeResetEffect`로 열린 상세 시트·드로어·선택 상태(`EventTimeline`, `AlertsWidget`, `ActivityFeed`, `ResourceDetailDrawer`, `PodLogsViewer` 등)를 닫으며 401/403 재시도를 생략합니다.
-  - 실제 `QueryClient`·`QueryObserver`를 사용하는 회귀 테스트(`scope-guard.test.ts`, `activity-feed.test.tsx`, `event-timeline.test.tsx`, `resource-detail-drawer.test.tsx`)와 `src/app/api/events/route.test.ts`·`src/app/api/alerts/route.test.ts`의 `viewer` 세션 및 `X-Narwhal-Scope` 불투명성 검증을 추가했습니다.
+  - 테넌트 스코프 API 라우트 응답의 `X-Narwhal-Scope` 헤더에 무염 SHA-256 대신 서버 `AUTH_SECRET`으로 서명한 32자리 16진수 HMAC(`signScopeFingerprint`)을 반환해 팀·네임스페이스 이름 사전 대입을 차단했습니다.
+  - React Query `queryFn`을 `Providers`의 공유 `QueryClient`에 바인딩된 `apiFetch` / `apiFetchJson`으로 통합해, `X-Narwhal-Scope` 헤더 변경 또는 `401`·`403 ACCESS_NOT_GRANTED` 응답 시 테넌트 스코프 쿼리(`TENANT_SCOPED_QUERY_KEYS`, `tenant` 접두사, `meta.tenantScoped`)만 제거·초기화(`settings-*` 등 비테넌트 쿼리는 유지)하고 `useScopedState` / `useScopeResetEffect`로 열린 상세 시트·드로어(`EventTimeline`, `AlertsWidget`, `ActivityFeed`, `ResourceDetailDrawer`, `PodLogsViewer` 등)를 닫으며, 요청 시작 전 캡처한 `epoch`/`scopeSeq` 순서와 본문(`res.json()`) 읽기 완료 후 재검사로 지연·경합 응답(`ScopeStaleResponseError`)을 폐기하고 `401`/`403`/`ScopeStaleResponseError` 재시도를 생략합니다.
+  - 실제 `QueryClient`·`QueryObserver` 기반 회귀 테스트(`scope-guard.test.ts`, `activity-feed.test.tsx`, `event-timeline.test.tsx`, `resource-detail-drawer.test.tsx`)와 `scope.access.test.ts`, `events/route.test.ts`, `alerts/route.test.ts`의 `viewer` 세션·HMAC 헤더 검증을 추가했습니다.
+  - `auth.ts` 토큰 갱신 시 claims 재동기화, SSE 스트림(`/api/events/stream`) 스코프 재검증, 다중 탭 간 동기화는 `narwhal#734`로 분리해 추후 처리합니다.
 
 ## [1.1.19] - 2026-11-18
 

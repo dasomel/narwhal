@@ -63,18 +63,96 @@ async function readErrorCode(res: Response): Promise<string | undefined> {
   }
 }
 
+export const TENANT_SCOPE_QUERY_PREFIX = "tenant" as const
+
+/**
+ * Single source of truth for React Query root keys whose data is filtered by the
+ * caller's server-side visibility scope. Non-tenant queries (settings, cluster-admin
+ * compliance/security, global metrics, health) are left intact on scope eviction.
+ * Callers can also opt in/out per query via `meta: { tenantScoped: boolean }` or
+ * prefixing the key with `TENANT_SCOPE_QUERY_PREFIX`.
+ */
+export const TENANT_SCOPED_QUERY_KEYS: ReadonlySet<string> = new Set([
+  "alerts",
+  "argocd",
+  "catalog",
+  "cluster-infra",
+  "cost",
+  "cost-service",
+  "cost-trend",
+  "events",
+  "governance-dora",
+  "governance-pod-detail",
+  "governance-pod-events",
+  "governance-pods",
+  "governance-resources",
+  "governance-scorecard",
+  "governance-traces",
+  "hero",
+  "my-apps",
+  "namespaces",
+  "platform-status",
+  "pods",
+  "pods-logs",
+  "scorecard-detail",
+  "scorecards",
+  "service-dependencies",
+  "service-graph",
+  "settings-effective-permissions",
+])
+
+export function isTenantScopedQuery(query: {
+  queryKey: readonly unknown[]
+  meta?: Record<string, unknown>
+}): boolean {
+  if (query.meta && typeof query.meta.tenantScoped === "boolean") {
+    return query.meta.tenantScoped
+  }
+  const head = query.queryKey[0]
+  if (typeof head !== "string") return false
+  return head === TENANT_SCOPE_QUERY_PREFIX || TENANT_SCOPED_QUERY_KEYS.has(head)
+}
+
+function wrapResponseBodyMethods(res: Response, assertFresh: () => void): Response {
+  const wrapMethod = (method: "json" | "text" | "arrayBuffer" | "blob") => {
+    const original = res[method]
+    if (typeof original !== "function") return
+    try {
+      Object.defineProperty(res, method, {
+        configurable: true,
+        value: async () => {
+          const value = await (original as () => Promise<unknown>).call(res)
+          assertFresh()
+          return value
+        },
+      })
+    } catch {
+      // Non-extensible response mock; guardedFetchJson still validates after await res.json().
+    }
+  }
+  wrapMethod("json")
+  wrapMethod("text")
+  wrapMethod("arrayBuffer")
+  wrapMethod("blob")
+  return res
+}
+
 /**
  * Creates a client-side scope tracker bound to a single React Query `QueryClient`.
  *
  * The server's `X-Narwhal-Scope` response header is the only source of truth for
  * the caller's visibility scope: whenever a response reports a different
- * fingerprint, or returns 401 / 403 `ACCESS_NOT_GRANTED`, cached queries are
- * cleared immediately and subscribed detail views reset to their initial state.
+ * fingerprint, or returns 401 / 403 `ACCESS_NOT_GRANTED`, tenant-scoped cached
+ * queries are cleared immediately and subscribed detail views reset to their
+ * initial state.
  */
 export function createScopeGuard(initialClient: QueryClient | null = null): ScopeGuard {
   let queryClient: QueryClient | null = initialClient
   let lastFingerprint: string | null = null
   let epoch = 0
+  // Tracks every accepted fingerprint transition (including initial null -> fp adoption)
+  // so concurrent pre-transition requests cannot roll the fingerprint backward.
+  let scopeSeq = 0
   const listeners = new Set<() => void>()
 
   const notifyListeners = () => {
@@ -90,6 +168,7 @@ export function createScopeGuard(initialClient: QueryClient | null = null): Scop
 
     const activeKeys: Array<readonly unknown[]> = []
     for (const query of queryClient.getQueryCache().getAll()) {
+      if (!isTenantScopedQuery(query)) continue
       if (query.getObserversCount() === 0) {
         queryClient.removeQueries({ queryKey: query.queryKey, exact: true })
       } else if (query.state.fetchStatus === "fetching") {
@@ -114,38 +193,67 @@ export function createScopeGuard(initialClient: QueryClient | null = null): Scop
 
   const handleRevoked = () => {
     lastFingerprint = null
+    scopeSeq += 1
     evictCache(false)
   }
 
   const handleScopeChanged = (nextFingerprint: string) => {
     lastFingerprint = nextFingerprint
+    scopeSeq += 1
     evictCache(true)
   }
 
   const reconcileFingerprint = (
     serverFingerprint: string | null,
     requestEpoch: number,
-    requestFingerprint: string | null,
-  ) => {
-    if (!serverFingerprint) return
+    requestSeq: number,
+  ): { expectedEpoch: number; expectedFingerprint: string | null } => {
+    if (!serverFingerprint) {
+      if (epoch !== requestEpoch) {
+        throw new ScopeStaleResponseError()
+      }
+      return { expectedEpoch: epoch, expectedFingerprint: lastFingerprint }
+    }
 
     if (epoch !== requestEpoch) {
-      if (lastFingerprint === null) {
-        throw new ApiHttpError(403, "Forbidden", ACCESS_NOT_GRANTED_CODE)
+      if (lastFingerprint === null || serverFingerprint !== lastFingerprint) {
+        throw new ScopeStaleResponseError()
       }
-      if (serverFingerprint !== lastFingerprint) {
-        if (serverFingerprint === requestFingerprint) {
-          throw new ScopeStaleResponseError()
-        }
-        handleScopeChanged(serverFingerprint)
-      }
-      return
+      return { expectedEpoch: epoch, expectedFingerprint: lastFingerprint }
     }
 
     if (lastFingerprint === null) {
+      if (requestSeq !== scopeSeq) {
+        throw new ScopeStaleResponseError()
+      }
       lastFingerprint = serverFingerprint
-    } else if (serverFingerprint !== lastFingerprint) {
+      scopeSeq += 1
+      return { expectedEpoch: epoch, expectedFingerprint: serverFingerprint }
+    }
+
+    if (serverFingerprint !== lastFingerprint) {
+      // Reject late responses whose request did not start after the last accepted
+      // fingerprint adoption/change so concurrent initial requests cannot roll back.
+      if (requestSeq !== scopeSeq) {
+        throw new ScopeStaleResponseError()
+      }
       handleScopeChanged(serverFingerprint)
+    }
+
+    return { expectedEpoch: epoch, expectedFingerprint: lastFingerprint }
+  }
+
+  const assertBodyFresh = (
+    expectedEpoch: number,
+    expectedFingerprint: string | null,
+    serverFingerprint: string | null,
+  ) => {
+    if (
+      epoch !== expectedEpoch ||
+      (serverFingerprint !== null && serverFingerprint !== lastFingerprint) ||
+      (expectedFingerprint !== null && lastFingerprint === null)
+    ) {
+      throw new ScopeStaleResponseError()
     }
   }
 
@@ -168,13 +276,17 @@ export function createScopeGuard(initialClient: QueryClient | null = null): Scop
   const reset = () => {
     lastFingerprint = null
     epoch = 0
+    scopeSeq = 0
     listeners.clear()
     queryClient = null
   }
 
-  const guardedFetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+  const guardedFetchInternal = async (
+    input: RequestInfo | URL,
+    init?: RequestInit,
+  ): Promise<{ res: Response; assertFresh: () => void }> => {
     const requestEpoch = epoch
-    const requestFingerprint = lastFingerprint
+    const requestSeq = scopeSeq
     const res = await fetch(input, init)
     const serverFingerprint = res.headers?.get?.(SCOPE_FINGERPRINT_HEADER) || null
 
@@ -189,24 +301,45 @@ export function createScopeGuard(initialClient: QueryClient | null = null): Scop
         handleRevoked()
         throw new ApiHttpError(403, res.statusText || "Forbidden", ACCESS_NOT_GRANTED_CODE)
       }
-      reconcileFingerprint(serverFingerprint, requestEpoch, requestFingerprint)
-      return res
+      const { expectedEpoch, expectedFingerprint } = reconcileFingerprint(
+        serverFingerprint,
+        requestEpoch,
+        requestSeq,
+      )
+      return {
+        res,
+        assertFresh: () => assertBodyFresh(expectedEpoch, expectedFingerprint, serverFingerprint),
+      }
     }
 
-    reconcileFingerprint(serverFingerprint, requestEpoch, requestFingerprint)
-    return res
+    const { expectedEpoch, expectedFingerprint } = reconcileFingerprint(
+      serverFingerprint,
+      requestEpoch,
+      requestSeq,
+    )
+    return {
+      res,
+      assertFresh: () => assertBodyFresh(expectedEpoch, expectedFingerprint, serverFingerprint),
+    }
+  }
+
+  const guardedFetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+    const { res, assertFresh } = await guardedFetchInternal(input, init)
+    return wrapResponseBodyMethods(res, assertFresh)
   }
 
   const guardedFetchJson = async <T = unknown>(
     input: RequestInfo | URL,
     init?: RequestInit,
   ): Promise<T> => {
-    const res = await guardedFetch(input, init)
+    const { res, assertFresh } = await guardedFetchInternal(input, init)
     if (!res.ok) {
       const code = res.status === 403 ? await readErrorCode(res) : undefined
       throw new ApiHttpError(res.status, res.statusText || `HTTP ${res.status}`, code)
     }
-    return (await res.json()) as T
+    const data = (await res.json()) as T
+    assertFresh()
+    return data
   }
 
   return {
@@ -251,12 +384,12 @@ export function apiFetchJson<T = unknown>(
 }
 
 /**
- * Default React Query retry policy: never retry 401/403 (auth/scope denials),
- * retry a superseded in-flight scope response once, and retry transient errors
- * up to 2 times.
+ * Default React Query retry policy: never retry 401/403 (auth/scope denials) or
+ * superseded scope responses (`ScopeStaleResponseError`), and retry transient
+ * errors up to 2 times.
  */
 export function shouldRetryQuery(failureCount: number, error: unknown): boolean {
-  if (error instanceof ScopeStaleResponseError) return failureCount < 1
+  if (error instanceof ScopeStaleResponseError) return false
   if (error instanceof ApiHttpError && (error.status === 401 || error.status === 403)) {
     return false
   }

@@ -2,7 +2,7 @@
   "schemaVersion": "openforge-agent-trace/v1",
   "consistencyMode": "strict",
   "traceId": "narwhal-apisix-etcd-persistence-714-20261119",
-  "task": "Fix narwhal#714: persist apisix-etcd data on a nfs-csi PVC (Deployment + Recreate strategy + Velero volume exclude, preserving #715 securityContext), add divergence detection and narwhal.io/resync recovery to scripts/cluster/lib/recover-apisix-resource-sync.sh, set sane apisix-ingress-controller periodic resync intervals (5m/15m) in scripts/cluster/08-1-networking.sh, and add R371 regression/behavioral/mutation coverage.",
+  "task": "Fix narwhal#714: persist apisix-etcd data on a nfs-csi PVC (Deployment + Recreate strategy + Velero volume exclude, preserving #715 securityContext), add divergence detection and narwhal.io/resync recovery to scripts/cluster/lib/recover-apisix-resource-sync.sh, set sane apisix-ingress-controller periodic resync intervals (5m/15m) in scripts/cluster/08-1-networking.sh, and add R374 regression/behavioral/mutation coverage.",
   "changeContext": {
     "paths": [
       ".agents/evals/traces/2026-11-apisix-etcd-persistence.json",
@@ -20,7 +20,7 @@
     {
       "id": "e1",
       "type": "scope_check",
-      "summary": "Scope: Deployment/apisix-etcd persistence (apisix-etcd-data PVC + Recreate + Velero data volume exclude) in apisix-infra.yaml (shared by GitOps and 08-1-networking.sh), periodic resync intervals in 08-1-networking.sh, divergence recovery mode in recover-apisix-resource-sync.sh, R352 update + R371 check/mutation/behavioral suite, docs/lessons-log, and eval trace. Excluded: APISIX data plane (apisix.yaml), Prometheus alert rules (follow-up), and live cluster/VM mutations."
+      "summary": "Scope: Deployment/apisix-etcd persistence (apisix-etcd-data PVC + Recreate + Velero data volume exclude) in apisix-infra.yaml (shared by GitOps and 08-1-networking.sh), periodic resync intervals in 08-1-networking.sh, divergence recovery mode in recover-apisix-resource-sync.sh, R352 update + R374 check/mutation/behavioral suite, docs/lessons-log, and eval trace. Excluded: APISIX data plane (apisix.yaml), Prometheus alert rules (follow-up), and live cluster/VM mutations."
     },
     {
       "id": "e2",
@@ -30,17 +30,17 @@
     {
       "id": "e3",
       "type": "bug_fix",
-      "summary": "Switched apisix-etcd in apisix-infra.yaml to strategy.type=Recreate and PersistentVolumeClaim apisix-etcd-data (nfs-csi, ReadWriteOnce, 1Gi) with backup.velero.io/backup-volumes-excludes: data while keeping uid 10001 securityContext and probes intact; set config.apisixResourceSyncInterval=5m and config.kubernetes.resyncInterval=15m in 08-1-networking.sh; added --divergence/--check-divergence/--all mode to recover-apisix-resource-sync.sh using kubectl port-forward + curl -K - (secret apisix-admin-key, no key in argv/output, HTTP 404 treated as 0, narwhal.io/resync annotation until convergence); updated R352 and added R371 + docs + lessons-log."
+      "summary": "Switched apisix-etcd in apisix-infra.yaml to strategy.type=Recreate and PersistentVolumeClaim apisix-etcd-data (nfs-csi, ReadWriteOnce, 1Gi) with backup.velero.io/backup-volumes-excludes: data while keeping uid 10001 securityContext and probes intact; set config.apisixResourceSyncInterval=5m and config.kubernetes.resyncInterval=15m in 08-1-networking.sh; added --divergence/--check-divergence/--all mode to recover-apisix-resource-sync.sh using kubectl port-forward + curl -K - (secret apisix-admin-key, no key in argv/output, HTTP 404 treated as 0, narwhal.io/resync annotation until convergence); updated R352 and added R374 + docs + lessons-log."
     },
     {
       "id": "e4",
       "type": "regression_verification",
       "status": "passed",
-      "scope": "Offline helm template renders (narwhal-platform/apisix-infra.yaml and apisix-ingress-controller-0.14.1.tgz), static YAML/syntax validation, fake-kubectl/curl behavioral tests of divergence recovery (in-sync no-op, partial divergence with ResourcesSynced, empty-etcd 404, non-convergence exit 1, 401 fail-closed, zero secret leaks), mutation verifications (R352, R366, R371, R230, R231), shellcheck/bash -n, markdownlint-changed, and git diff --check; no live cluster or VM touched.",
+      "scope": "Offline helm template renders (narwhal-platform/apisix-infra.yaml and apisix-ingress-controller-0.14.1.tgz), static YAML/syntax validation, fake-kubectl/curl behavioral tests of divergence recovery (in-sync no-op, partial divergence with ResourcesSynced, empty-etcd 404, non-convergence exit 1, 401 fail-closed, zero secret leaks), mutation verifications (R352, R366, R374, R230, R231), shellcheck/bash -n, markdownlint-changed, and git diff --check; no live cluster or VM touched.",
       "summary": "All offline renders, static validations, behavioral stub tests, mutation verifications, and shell/markdown/diff checks passed.",
       "evidence": [
         "test:make validate -> exit 0 (Syntax OK + all GitOps YAML OK)",
-        "test:python3 scripts/test/lib/check-apisix-etcd-persistence.py --mutation-verify -> PASS: R371 apisix-etcd PVC persistence + offline IC helm render + behavioral recovery (12 mutations rejected)",
+        "test:python3 scripts/test/lib/check-apisix-etcd-persistence.py --mutation-verify -> PASS: R374 apisix-etcd PVC persistence + offline IC helm render + behavioral recovery (12 mutations rejected)",
         "test:python3 scripts/test/lib/check-platform-manifest-hardening.py --mutation-verify -> PASS: self-authored manifest hardening verified (14 mutations rejected)",
         "test:python3 scripts/test/lib/check-workload-runtime-posture.py -> PASS: 29 workloads across 7 namespaces checked",
         "test:python3 scripts/test/lib/check-round2-compliance-hardening.py --mutation-verify -> PASS: R366 round-2 compliance hardening + offline helm renders (15 mutations rejected)",
@@ -57,13 +57,13 @@
     {
       "id": "e5",
       "type": "completion_claim",
-      "summary": "Offline helm renders, make validate, R183/R352/R356/R366/R371/R230/R231 checks, behavioral stub tests, and shell/markdown/diff checks pass; live cluster rollout, first PVC empty-volume resync, and apisix-etcd restart persistence remain to be verified by the orchestrator via the runbook."
+      "summary": "Offline helm renders, make validate, R183/R352/R356/R366/R374/R230/R231 checks, behavioral stub tests, and shell/markdown/diff checks pass; live cluster rollout, first PVC empty-volume resync, and apisix-etcd restart persistence remain to be verified by the orchestrator via the runbook."
     },
     {
       "id": "e6",
       "type": "task_outcome",
       "state": "A",
-      "summary": "narwhal#714 implemented: apisix-etcd PVC persistence with Recreate strategy, ingress-controller 5m/15m resync intervals, divergence recovery mode in recover-apisix-resource-sync.sh, R371 regression/behavioral/mutation coverage, docs/lessons-log, and eval trace."
+      "summary": "narwhal#714 implemented: apisix-etcd PVC persistence with Recreate strategy, ingress-controller 5m/15m resync intervals, divergence recovery mode in recover-apisix-resource-sync.sh, R374 regression/behavioral/mutation coverage, docs/lessons-log, and eval trace."
     }
   ]
 }

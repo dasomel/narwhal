@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""R371: apisix-etcd PVC persistence, IC resync intervals, and divergence recovery (#714).
+"""R374: apisix-etcd PVC persistence, IC resync intervals, and divergence recovery (#714).
 
 Pins:
 1. apisix-infra.yaml: Deployment/apisix-etcd uses strategy.type=Recreate, mounts
@@ -434,9 +434,9 @@ def main() -> int:
     ic_note = "offline IC helm render" if rendered else "offline IC helm render SKIPPED (no chart bundle)"
     if args.mutation_verify:
         caught = mutation_verify(args.root)
-        print(f"PASS: R371 apisix-etcd PVC persistence + {ic_note} + behavioral recovery ({caught} mutations rejected)")
+        print(f"PASS: R374 apisix-etcd PVC persistence + {ic_note} + behavioral recovery ({caught} mutations rejected)")
     else:
-        print(f"PASS: R371 apisix-etcd PVC persistence + {ic_note} + behavioral recovery")
+        print(f"PASS: R374 apisix-etcd PVC persistence + {ic_note} + behavioral recovery")
     return 0
 
 

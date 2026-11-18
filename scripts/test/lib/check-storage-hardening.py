@@ -34,9 +34,13 @@ def _extract_heredoc(text, marker):
     return yaml.safe_load(text.split(marker, 1)[1].split("\nEOF\n", 1)[0])
 
 
-def _has_tmp_empty_dir(volumes, mounts):
+def _has_empty_dir_mount(volumes, mounts, mount_path):
     vol_names = {v["name"] for v in (volumes or []) if isinstance(v, dict) and v.get("emptyDir") == {}}
-    return any(isinstance(m, dict) and m.get("mountPath") == "/tmp" and m.get("name") in vol_names for m in (mounts or []))
+    return any(isinstance(m, dict) and m.get("mountPath") == mount_path and m.get("name") in vol_names for m in (mounts or []))
+
+
+def _has_tmp_empty_dir(volumes, mounts):
+    return _has_empty_dir_mount(volumes, mounts, "/tmp")
 
 
 def _assert_resources(res, label, require_cpu_limit=True):
@@ -100,8 +104,17 @@ def _assert_velero_values(vals, label):
     assert csc.get("runAsNonRoot") is True, f"{label} velero containerSecurityContext.runAsNonRoot"
     assert csc.get("runAsUser") == 1002, f"{label} velero containerSecurityContext.runAsUser"
     assert csc.get("runAsGroup") == 1000, f"{label} velero containerSecurityContext.runAsGroup"
-    # kopia writes under $HOME; a read-only root broke repo maintenance (2026-11-18).
-    assert csc.get("readOnlyRootFilesystem") is not True, f"{label} velero must not set readOnlyRootFilesystem"
+    # D-velero-rofs (KSV014): readOnlyRootFilesystem=true with emptyDir at /home/cnb (kopia writes
+    # $HOME/udmrepo); chart mounts its own tmpdir at /tmp so extraVolumeMounts must NOT mount /tmp.
+    assert csc.get("readOnlyRootFilesystem") is True, f"{label} velero readOnlyRootFilesystem must be true"
+    extra_vols = vals.get("extraVolumes") or []
+    extra_mounts = vals.get("extraVolumeMounts") or []
+    assert _has_empty_dir_mount(extra_vols, extra_mounts, "/home/cnb"), (
+        f"{label} velero must mount emptyDir at /home/cnb"
+    )
+    assert not any(isinstance(m, dict) and m.get("mountPath") == "/tmp" for m in extra_mounts), (
+        f"{label} velero must not add a second /tmp mount (chart mounts tmpdir)"
+    )
     assert (csc.get("capabilities") or {}).get("drop") == ["ALL"], f"{label} velero drop ALL"
     _assert_resources(vals.get("resources"), f"{label} velero")
 
@@ -182,6 +195,9 @@ def mutation_verify(root):
         ("openbao", "mountPath: /tmp", "mountPath: /var/tmp"),
         ("openbao", "cpu: 25m\n              memory: 64Mi", "cpu: \"\"\n              memory: 64Mi"),
         ("velero", "readOnlyRootFilesystem: true", "readOnlyRootFilesystem: false"),
+        ("velero", "mountPath: /home/cnb", "mountPath: /tmp"),
+        ("velero", "name: velero-home\n            emptyDir: {}", "name: velero-home\n            hostPath:\n              path: /tmp"),
+        ("velero", "runAsUser: 65532\n              allowPrivilegeEscalation: false\n              readOnlyRootFilesystem: true", "runAsUser: 65532\n              allowPrivilegeEscalation: false\n              readOnlyRootFilesystem: false"),
         ("velero", "runAsUser: 65532", "runAsUser: 0"),
         ("velero", "cpu: 50m\n            memory: 128Mi", "cpu: \"\"\n            memory: 128Mi"),
         ("velero_ui", "readOnlyRootFilesystem: true", "readOnlyRootFilesystem: false"),
@@ -191,6 +207,9 @@ def mutation_verify(root):
         ("storage_sh", "    readOnlyRootFilesystem: true\n", "    readOnlyRootFilesystem: false\n"),
         ("storage_sh", "      mountPath: /tmp\n", "      mountPath: /var/tmp\n"),
         ("storage_sh", "  readOnlyRootFilesystem: true\n", "  readOnlyRootFilesystem: false\n"),
+        ("storage_sh", "  runAsGroup: 1000\n  readOnlyRootFilesystem: true", "  runAsGroup: 1000\n  readOnlyRootFilesystem: false"),
+        ("storage_sh", "  - name: velero-home\n    mountPath: /home/cnb", "  - name: velero-home\n    mountPath: /tmp"),
+        ("storage_sh", "extraVolumes:\n  - name: velero-home\n    emptyDir: {}", "extraVolumes:\n  - name: other\n    emptyDir: {}"),
     ]
     with tempfile.TemporaryDirectory() as tmp:
         fixture = Path(tmp)

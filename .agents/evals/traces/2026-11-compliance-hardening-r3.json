@@ -1,0 +1,74 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-compliance-hardening-round3-20261118",
+  "task": "Lane R3 workload compliance hardening round 3: enforce readOnlyRootFilesystem=true on storage/velero server (with /home/cnb emptyDir, bootstrap parity in 08-4-storage.sh, no second /tmp mount, node-agent untouched) and iam/keycloak-operator (with /tmp emptyDir in 11-keycloak.sh, Keycloak StatefulSet untouched), update R359/R362/R366 and add R370, and update docs/changelog/lessons-log.",
+  "changeContext": {
+    "paths": [
+      ".agents/evals/traces/2026-11-compliance-hardening-r3.json",
+      "CHANGELOG-ko.md",
+      "CHANGELOG.md",
+      "docs/common/compliance-hardening.md",
+      "docs/common/lessons-log.md",
+      "gitops/charts/narwhal-apps/templates/velero.yaml",
+      "scripts/cluster/08-4-storage.sh",
+      "scripts/cluster/11-keycloak.sh",
+      "scripts/test/lib/check-keycloak-security-context.py",
+      "scripts/test/lib/check-round2-compliance-hardening.py",
+      "scripts/test/lib/check-round3-compliance-hardening.py",
+      "scripts/test/lib/check-storage-hardening.py",
+      "scripts/test/regression-check-kakao.sh"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Scope: storage/velero server bootstrap parity in 08-4-storage.sh (velero.yaml already committed at HEAD 32f806b3; reviewed wording) and iam/keycloak-operator Deployment in 11-keycloak.sh, plus regression checks R359/R362/R366/R370 and docs/trace. Excluded: Velero node-agent, Keycloak StatefulSet (re-augments at start), portal/ allowlist table, and live cluster mutations."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "Rendered velero-12.0.3.tgz (templates/deployment.yaml and templates/node-agent-daemonset.yaml) and inspected keycloak-kubernetes.yml Deployment: Velero chart automatically creates a tmpdir emptyDir at /tmp when containerSecurityContext.readOnlyRootFilesystem=true (so adding a second /tmp mount causes ArgoCD ComparisonError), while extraVolumes/extraVolumeMounts add /home/cnb without affecting nodeAgent; keycloak-operator Deployment has no pre-existing volumes, so strategic merge on volumes (name) and volumeMounts (mountPath) is idempotent. Confirmed R362 and R366 failed on HEAD against velero.yaml before updating them and 08-4-storage.sh."
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "Updated scripts/cluster/08-4-storage.sh Velero heredoc with readOnlyRootFilesystem=true and velero-home emptyDir at /home/cnb (no second /tmp mount, nodeAgent untouched) to match velero.yaml; extended scripts/cluster/11-keycloak.sh strategic patch on deployment/keycloak-operator with readOnlyRootFilesystem=true, tmp emptyDir volume and /tmp mount; updated R362, R366 and R359 (adding strategic-merge list semantics for volumes/volumeMounts and pre-existing volume coverage), added R370 (check-round3-compliance-hardening.py), and updated compliance-hardening.md, CHANGELOG, CHANGELOG-ko and lessons-log."
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "Static validation, offline helm template renders of velero-12.0.3.tgz (GitOps + 08-4), stub-kubectl idempotency/existing-volume tests, mutation checks (R348, R358, R359, R362, R366, R370), shellcheck/bash -n, markdownlint-changed, and git diff --check on the branch without cluster access; plus orchestrator live single-node measurements.",
+      "summary": "All offline checks, mutation verifications, helm renders and shell/markdown linters passed, and the orchestrator's live single-node checks passed: full Velero backup, the next two hourly kopia maintenance Jobs under the read-only root, a ConfigMap restore, and keycloak-operator startup.",
+      "evidence": [
+        "test:make validate -> exit 0",
+        "test:python3 scripts/test/lib/check-round3-compliance-hardening.py --mutation-verify -> PASS (offline helm renders + 11 mutations rejected)",
+        "test:python3 scripts/test/lib/check-storage-hardening.py --mutation-verify -> PASS (23 mutations rejected)",
+        "test:python3 scripts/test/lib/check-round2-compliance-hardening.py --mutation-verify -> PASS (offline helm renders + 15 mutations rejected)",
+        "test:python3 scripts/test/lib/check-keycloak-security-context.py --mutation-verify -> ok (incl. idempotent stub kubectl + existing volume; 11 mutations caught)",
+        "test:python3 scripts/test/lib/check-keycloak-operator-liveness.py -> ok (4 mutations caught)",
+        "test:python3 scripts/test/lib/check-lane5-security-charts.py --mutation-verify -> ok (14 mutations caught)",
+        "test:shellcheck -S warning scripts/cluster/08-4-storage.sh scripts/cluster/11-keycloak.sh scripts/test/regression-check-kakao.sh && bash -n scripts/cluster/08-4-storage.sh scripts/cluster/11-keycloak.sh scripts/test/regression-check-kakao.sh -> exit 0",
+        "test:python3 scripts/ci/markdownlint-changed.py --base origin/main -> exit 0",
+        "test:git diff --check -> exit 0",
+        "test:velero Backup from velero-daily-full template with readOnlyRootFilesystem=true and /home/cnb emptyDir -> Completed 1774/1774, no read-only file system errors in server log (orchestrator, measured 2026-11-18)",
+        "test:kubectl patch deployment keycloak-operator -n iam --type=strategic with readOnlyRootFilesystem=true and /tmp emptyDir -> started in 3.6s (profile prod), no read-only errors, Keycloak CR Ready=True HasErrors=False (orchestrator, measured 2026-11-18)",
+        "test:kubectl get jobs (kopia maintain, created after the rollout) -> storage-default and devtools-default Complete 1/1; Job pod spec readOnlyRootFilesystem=true, mounts /plugins /credentials /scratch /tmp /home/cnb; no 'read-only file system' in logs (orchestrator, measured 2026-11-18)",
+        "test:velero Restore of configmaps from backup r3-rofs-full into a scratch namespace -> Completed 4/4 (orchestrator, measured 2026-11-18)"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "completion_claim",
+      "summary": "Offline helm renders, static validation, regression checks (R348, R358, R359, R362, R366, R370), shell/markdown checks and the orchestrator's live checks (backup, maintenance Jobs, ConfigMap restore, operator startup) pass; a volume-data restore and a clean install have not been run."
+    },
+    {
+      "id": "e6",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Round-3 compliance fixes (Velero server and keycloak-operator KSV014) implemented with bootstrap parity, R370 regression coverage, documentation and eval trace; verified live on the local single-node cluster."
+    }
+  ]
+}

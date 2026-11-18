@@ -3475,18 +3475,20 @@ PYEOF'
   check R352 "apisix-etcd, narwhal-portal-valkey and narwhal-portal harden securityContext (non-root, allowPrivilegeEscalation=false, drop ALL, RuntimeDefault seccomp, readOnlyRootFilesystem; etcd uid/gid/fsGroup >10000; portal gid/fsGroup 1001 + /tmp and /app/.next/cache emptyDir); 14 mutations caught" python3 scripts/test/lib/check-platform-manifest-hardening.py --mutation-verify
   check R358 "Lane 5 compliance hardening: falcosidekick full securityContext (non-root uid/gid 1234, ro rootfs, drop ALL, RuntimeDefault), trivy-operator podSecurityContext + limits.cpu, trivy-server allowPrivilegeEscalation/drop ALL/RuntimeDefault, kyverno 4-controller limits.cpu with bootstrap/GitOps parity, and istiod gateways.seccompProfile RuntimeDefault in both GitOps and 09-istio-ambient.sh; 14 mutations caught" \
     python3 scripts/test/lib/check-lane5-security-charts.py --mutation-verify
-  check R359 "Keycloak operator & CR securityContext (allowPrivilegeEscalation=false, runAsNonRoot=true, runAsUser=1000, drop ALL, RuntimeDefault; readOnlyRootFilesystem left unset pending live mount proof) with bootstrap/GitOps parity and idempotent stub-kubectl verification; 8 mutations caught" \
+  check R359 "Keycloak operator & CR securityContext (allowPrivilegeEscalation=false, runAsNonRoot=true, runAsUser=1000, drop ALL, RuntimeDefault; keycloak-operator readOnlyRootFilesystem=true + /tmp emptyDir; CR readOnlyRootFilesystem unset) with bootstrap/GitOps parity and idempotent stub-kubectl verification; 11 mutations caught" \
     python3 scripts/test/lib/check-keycloak-security-context.py --mutation-verify
   # 2026-11-18 (D-MON-HARDENING): prometheus-stack, k8s-monitoring, loki resource requests/limits, readOnlyRootFilesystem, NET_RAW drop, and bootstrap parity
   check R360 "monitoring stack compliance hardening: prometheus-node-exporter, kube-state-metrics, prometheusOperator, alertmanager, grafana (main + sidecars) have resources and readOnlyRootFilesystem where safe; alloy-logs configReloader synchronized, NET_RAW dropped, /tmp mounted; loki sidecar limits.cpu set; bootstrap parity in 08-2; 21 mutations caught (D-MON-HARDENING)" \
     python3 scripts/test/lib/check-monitoring-hardening.py --mutation-verify
-  check R362 "Storage charts (seaweedfs, openbao, velero, velero-ui) compliance hardening (non-root, emptyDir logs/tmp, readOnlyRootFilesystem, resources) and 08-4-storage.sh parity; 17 mutations caught" \
+  check R362 "Storage charts (seaweedfs, openbao, velero, velero-ui) compliance hardening (non-root, emptyDir logs/tmp and velero /home/cnb, readOnlyRootFilesystem, resources) and 08-4-storage.sh parity; 23 mutations caught" \
     python3 scripts/test/lib/check-storage-hardening.py --mutation-verify
   # 2026-11-18 (D-NODE-HARDENING): harden-node-files.sh wired into provisioning path (02-init, 02-join-cp, 02-join-worker, 03-cni-install) with CNI wait on joins
   check R368 "Node file permission hardening (harden-node-files.sh) wired into provisioning path (02-init, 02-join-cp, 02-join-worker, 03-cni-install) non-fatally and idempotently with join CNI wait; 30 mutations + behavioural checks" \
     python3 scripts/test/lib/check-node-hardening.py --mutation-verify
-  check R366 "Round-2 workload compliance hardening: Gitea non-root uid/gid 1000 on all 4 containers, Tempo tempo.securityContext allowPrivilegeEscalation=false + readOnlyRootFilesystem (/var/tempo, /tmp emptyDir) with 08-2 parity, APISIX-IC runAsGroup 65532 + non-root/ro-rootfs, and Velero real cnb uid 1002/gid 1000 without fsGroup/ro-rootfs + 08-4 parity; offline helm renders and 14 mutations caught" \
+  check R366 "Round-2 workload compliance hardening: Gitea non-root uid/gid 1000 on all 4 containers, Tempo tempo.securityContext allowPrivilegeEscalation=false + readOnlyRootFilesystem (/var/tempo, /tmp emptyDir) with 08-2 parity, APISIX-IC runAsGroup 65532 + non-root/ro-rootfs, and Velero real cnb uid 1002/gid 1000 without fsGroup (+ round-3 ro-rootfs with /home/cnb) + 08-4 parity; offline helm renders and 15 mutations caught" \
     python3 scripts/test/lib/check-round2-compliance-hardening.py --mutation-verify
+  check R370 "Round-3 compliance hardening (KSV014): Velero server readOnlyRootFilesystem=true + /home/cnb emptyDir (no second /tmp mount, nodeAgent untouched) across velero.yaml & 08-4-storage.sh with offline helm renders, and keycloak-operator readOnlyRootFilesystem=true + /tmp emptyDir in 11-keycloak.sh (idempotent with pre-existing volumes; Keycloak CR untouched); 11 mutations caught" \
+    python3 scripts/test/lib/check-round3-compliance-hardening.py --mutation-verify
 }
 
 #=========================================

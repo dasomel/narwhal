@@ -135,6 +135,12 @@ if [ -n "${OPERATOR_CONTAINER}" ]; then
   "spec": {
     "template": {
       "spec": {
+        "volumes": [
+          {
+            "name": "tmp",
+            "emptyDir": {}
+          }
+        ],
         "containers": [
           {
             "name": "${OPERATOR_CONTAINER}",
@@ -142,6 +148,7 @@ if [ -n "${OPERATOR_CONTAINER}" ]; then
               "allowPrivilegeEscalation": false,
               "runAsNonRoot": true,
               "runAsUser": 1000,
+              "readOnlyRootFilesystem": true,
               "capabilities": {
                 "drop": ["ALL"]
               },
@@ -149,6 +156,12 @@ if [ -n "${OPERATOR_CONTAINER}" ]; then
                 "type": "RuntimeDefault"
               }
             },
+            "volumeMounts": [
+              {
+                "name": "tmp",
+                "mountPath": "/tmp"
+              }
+            ],
             "livenessProbe": {
               "httpGet": {
                 "path": "/q/health/ready"

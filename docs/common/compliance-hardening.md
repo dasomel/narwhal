@@ -17,6 +17,15 @@ undo a deliberate design choice) vs. **deferred** (safe but not yet done).
 
 Result: CIS 72% → 84%+, NSA 44% → 59%+. Control-plane flag controls (profiling, audit, encryption) all PASS.
 
+### Round-3 workload KSV014 fixes (2026-11-18)
+
+Both `storage/velero` server and `iam/keycloak-operator` `KSV014` findings were resolved (neither is accepted or unfixed):
+
+| Workload | Change | Verification and pending scope |
+| --- | --- | --- |
+| `storage/velero` server (`velero.yaml`, `08-4-storage.sh`) | `readOnlyRootFilesystem: true` with `velero-home` `emptyDir` at `/home/cnb` (`D-velero-rofs`; chart already mounts `tmpdir` at `/tmp`, so no second `/tmp` mount). `node-agent` untouched. | Full `velero-daily-full` backup completed `1774/1774` with no read-only errors (orchestrator, measured 2026-11-18); R362/R366/R370 + offline `helm template` pass. The next two hourly kopia repository maintenance Jobs completed under the read-only root, and their pod spec inherited `readOnlyRootFilesystem: true` with the `/home/cnb` and `/tmp` mounts; a ConfigMap restore from that backup into a scratch namespace completed 4/4 (orchestrator, measured 2026-11-18). No volume-data restore and no clean install were run. |
+| `iam/keycloak-operator` (`11-keycloak.sh`) | Strategic patch sets `readOnlyRootFilesystem: true`, `tmp` `emptyDir` volume, and `/tmp` mount (idempotent on re-run and when `volumes` already exists). Keycloak StatefulSet untouched (stock image re-augments at start). | Operator started in `3.6s` (`prod` profile) with no read-only errors and Keycloak CR stayed `Ready=True HasErrors=False` (orchestrator, measured 2026-11-18); R348/R359/R370 stub-`kubectl` tests pass. **Pending:** no clean install was run. |
+
 ## Kubelet API authentication and authorization (Narwhal#113)
 
 Before this change, `scripts/cluster/02-init-cluster.sh` omitted all these

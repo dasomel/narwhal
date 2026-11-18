@@ -38,15 +38,27 @@ spec:
             presets: [small, daemonset, filesystem-log-reader]
             includeDestinations:
               - tempo
+            # D-TRACE-K8S-ATTR (#691): internalTrafficPolicy: Local keeps each pod's OTLP
+            # connection on the local node so k8sattributes (ownNode cache + connection IP)
+            # resolves the sender; trade-off: if a node's alloy-logs pod is down, tracing
+            # (including Grafana self-tracing routed via alloy-logs:4317) does not fail over
+            # to another node. service.labels opts out of monitoring/waypoint so mesh-enrolled
+            # senders preserve their pod IP instead of the waypoint IP.
             service:
               internalTrafficPolicy: Local
+              labels:
+                istio.io/use-waypoint: "none"
             # D-TRACE-K8S-ATTR (#691): OTLP trace ingestion via extraConfig instead of
             # applicationObservability because feature-application-observability hardcodes
             # receiver -> [memory_limiter ->] resourcedetection -> k8sattributes -> transform
             # with no pre-k8sattributes hook to strip untrusted client k8s.*/service.namespace.
-            # Pipeline: receiver(4317/4318) -> memory_limiter(384MiB of 512Mi container limit)
+            # Pipeline: receiver(4317/4318) -> memory_limiter(256MiB hard / 64MiB spike = 192MiB
+            # soft inside 512Mi limit, leaving 256MiB headroom for podLogsViaLoki)
             # -> strip_client_k8s(error_mode=propagate, delete ^k8s[.] + service.namespace)
             # -> k8sattributes(ownNode filter, connection-only pod_association) -> tempo.
+            # Residual risk: unauthenticated senders can still saturate trace ingest on their
+            # own node before memory_limiter runs (1s check, pre-decode buffers) and delay logs;
+            # follow-up option: isolate traces into a dedicated trace collector Deployment.
             # service.namespace is deleted (cost: no trace grouping by service.namespace,
             # and unassociated non-pod senders have no namespace so portal hides them, fail closed).
             extraConfig: |
@@ -73,7 +85,8 @@ spec:
 
               otelcol.processor.memory_limiter "otlp_traces" {
                 check_interval = "1s"
-                limit = "384MiB"
+                limit = "256MiB"
+                spike_limit = "64MiB"
                 output {
                   traces = [otelcol.processor.transform.strip_client_k8s.input]
                 }

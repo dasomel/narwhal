@@ -5,21 +5,20 @@ Verifies that:
   - gitops/charts/narwhal-apps/templates/k8s-monitoring.yaml disables
     applicationObservability (which lacks a pre-k8sattributes strip hook) and
     configures collectors.alloy-logs via extraConfig + includeDestinations: [tempo]
-    + alloy.extraPorts (4317/4318) + service.internalTrafficPolicy: Local.
-  - scripts/cluster/08-2-monitoring.sh K8SMONVALUES and Grafana OTLP address
-    match GitOps values.
+    + alloy.extraPorts (4317/4318) + service.internalTrafficPolicy: Local
+    + service.labels.istio.io/use-waypoint: none.
+  - scripts/cluster/08-2-monitoring.sh K8SMONVALUES, Tempo flags, and Grafana
+    OTLP address match GitOps values.
   - gitops/charts/narwhal-apps/templates/prometheus-stack.yaml routes Grafana
     tracing through k8s-monitoring-alloy-logs.monitoring.svc.cluster.local:4317.
-  - Offline `helm template` of k8s-monitoring-4.2.0.tgz renders an Alloy pipeline
-    whose order and security properties hold:
-      otelcol.receiver.otlp "otlp_traces"
-        -> otelcol.processor.memory_limiter "otlp_traces" (384MiB)
-        -> otelcol.processor.transform "strip_client_k8s" (error_mode=propagate,
-             strips ^k8s[.] and service.namespace BEFORE enrichment)
-        -> otelcol.processor.k8sattributes "otlp_traces" (ownNode filter,
-             connection-only pod_association, no k8s.pod.ip/uid, no k8s.cronjob.name)
-        -> otelcol.processor.attributes "tempo" -> otelcol.exporter.otlp "tempo"
-    and no otelcol.processor.filter drops spans, without weakening securityContext.
+  - gitops/charts/narwhal-apps/templates/tempo.yaml disables OTLP/HTTP (4318) and
+    sets service.labels.istio.io/use-waypoint: none so alloy-logs reaches Tempo
+    directly over ztunnel HBONE 15008 with its own pod IP.
+  - gitops/resources/network-policies.yaml defines tempo-ingress-policy restricting
+    Tempo ingest (4317 + HBONE 15008) strictly to alloy-logs pods and query/metrics
+    (3200 + HBONE 15008) to Grafana, Prometheus, narwhal-portal, and Tempo itself.
+  - Offline `helm template` of k8s-monitoring-4.2.0.tgz and tempo-2.2.3.tgz
+    verifies rendered Alloy pipeline order/security and Tempo Service/ConfigMap.
 """
 import argparse
 import glob
@@ -32,9 +31,22 @@ from pathlib import Path
 import yaml
 
 K8SMON_YAML = "gitops/charts/narwhal-apps/templates/k8s-monitoring.yaml"
+TEMPO_YAML = "gitops/charts/narwhal-apps/templates/tempo.yaml"
 PROM_YAML = "gitops/charts/narwhal-apps/templates/prometheus-stack.yaml"
+NETPOL_YAML = "gitops/resources/network-policies.yaml"
 MON_SH = "scripts/cluster/08-2-monitoring.sh"
 ALLOY_OTLP_ADDR = "k8s-monitoring-alloy-logs.monitoring.svc.cluster.local:4317"
+
+EXPECTED_READ_PEERS = {
+    ("monitoring", frozenset({("app.kubernetes.io/name", "grafana"), ("app.kubernetes.io/instance", "prometheus-stack")})),
+    ("monitoring", frozenset({("app.kubernetes.io/name", "prometheus"), ("prometheus", "prometheus-stack-kube-prom-prometheus")})),
+    ("devtools", frozenset({("app", "narwhal-portal")})),
+    ("monitoring", frozenset({("app.kubernetes.io/name", "tempo"), ("app.kubernetes.io/instance", "tempo")})),
+}
+EXPECTED_INGEST_PEER = (
+    "monitoring",
+    frozenset({("app.kubernetes.io/name", "alloy-logs"), ("app.kubernetes.io/instance", "k8s-monitoring-alloy-logs")}),
+)
 
 
 def _extract_k8smon_heredoc(script_text: str) -> dict:
@@ -93,7 +105,8 @@ def _assert_rendered_alloy_security(cfg: str, label: str) -> None:
 
     mem = _extract_alloy_block(cfg, "otelcol.processor.memory_limiter", "otlp_traces")
     assert 'check_interval = "1s"' in mem, f"{label}: memory_limiter missing check_interval"
-    assert 'limit = "384MiB"' in mem, f"{label}: memory_limiter missing 384MiB limit"
+    assert 'limit = "256MiB"' in mem, f"{label}: memory_limiter must set limit = \"256MiB\""
+    assert 'spike_limit = "64MiB"' in mem, f"{label}: memory_limiter must set spike_limit = \"64MiB\""
     _assert_output_traces(
         mem,
         "otelcol.processor.transform.strip_client_k8s.input",
@@ -184,8 +197,12 @@ def _check_values(vals: dict, label: str) -> None:
     assert alloy_logs.get("includeDestinations") == ["tempo"], (
         f"{label}: collectors.alloy-logs.includeDestinations must be ['tempo']"
     )
-    assert (alloy_logs.get("service") or {}).get("internalTrafficPolicy") == "Local", (
+    svc = alloy_logs.get("service") or {}
+    assert svc.get("internalTrafficPolicy") == "Local", (
         f"{label}: collectors.alloy-logs.service.internalTrafficPolicy must be Local"
+    )
+    assert (svc.get("labels") or {}).get("istio.io/use-waypoint") == "none", (
+        f"{label}: collectors.alloy-logs.service.labels must set istio.io/use-waypoint=none"
     )
 
     extra_ports = (alloy_logs.get("alloy") or {}).get("extraPorts") or []
@@ -199,6 +216,90 @@ def _check_values(vals: dict, label: str) -> None:
     _assert_rendered_alloy_security(
         extra_cfg + '\notelcol.exporter.otlp "tempo" {\n  endpoint = "tempo.monitoring.svc.cluster.local:4317"\n}\n',
         label,
+    )
+
+
+def _peer_key(peer: dict) -> tuple[str, frozenset[tuple[str, str]]]:
+    assert "ipBlock" not in peer, f"tempo-ingress-policy must not use ipBlock: {peer!r}"
+    ns_sel = peer.get("namespaceSelector")
+    if ns_sel is not None:
+        assert not peer.get("namespaceSelector", {}).get("matchExpressions"), (
+            f"unexpected namespaceSelector matchExpressions: {peer!r}"
+        )
+        ns = (ns_sel.get("matchLabels") or {}).get("kubernetes.io/metadata.name")
+        assert ns, f"namespaceSelector must pin kubernetes.io/metadata.name: {peer!r}"
+    else:
+        ns = "monitoring"
+
+    pod_sel = peer.get("podSelector")
+    assert isinstance(pod_sel, dict), f"every peer must define podSelector: {peer!r}"
+    assert not pod_sel.get("matchExpressions"), f"unexpected matchExpressions: {peer!r}"
+    ml = pod_sel.get("matchLabels") or {}
+    assert ml, f"podSelector.matchLabels must not be empty: {peer!r}"
+    return (ns, frozenset(ml.items()))
+
+
+def _check_tempo_netpol(root: Path) -> None:
+    docs = [
+        d for d in yaml.safe_load_all((root / NETPOL_YAML).read_text(encoding="utf-8"))
+        if isinstance(d, dict)
+    ]
+    matches = [
+        d for d in docs
+        if d.get("kind") == "NetworkPolicy"
+        and (d.get("metadata") or {}).get("name") == "tempo-ingress-policy"
+    ]
+    assert len(matches) == 1, f"expected exactly 1 tempo-ingress-policy, found {len(matches)}"
+    np = matches[0]
+    meta = np.get("metadata") or {}
+    assert meta.get("namespace") == "monitoring", "tempo-ingress-policy namespace must be monitoring"
+    assert (meta.get("labels") or {}).get("app.kubernetes.io/managed-by") == "narwhal-gitops", (
+        "tempo-ingress-policy must carry app.kubernetes.io/managed-by: narwhal-gitops"
+    )
+
+    spec = np.get("spec") or {}
+    assert spec.get("policyTypes") == ["Ingress"], (
+        f"tempo-ingress-policy policyTypes must be ['Ingress'], got {spec.get('policyTypes')!r}"
+    )
+    assert (spec.get("podSelector") or {}).get("matchLabels") == {
+        "app.kubernetes.io/name": "tempo",
+        "app.kubernetes.io/instance": "tempo",
+    }, f"tempo-ingress-policy must target only tempo pods, got {spec.get('podSelector')!r}"
+
+    rules = spec.get("ingress") or []
+    assert rules, "tempo-ingress-policy must define ingress rules"
+
+    ingest_peers: set[tuple[str, frozenset[tuple[str, str]]]] = set()
+    read_peers: set[tuple[str, frozenset[tuple[str, str]]]] = set()
+    for idx, rule in enumerate(rules):
+        from_list = rule.get("from")
+        assert isinstance(from_list, list) and from_list, (
+            f"tempo-ingress-policy rule #{idx} must specify non-empty 'from' peers"
+        )
+        ports_raw = rule.get("ports")
+        assert isinstance(ports_raw, list) and ports_raw, (
+            f"tempo-ingress-policy rule #{idx} must specify explicit ports"
+        )
+        ports = {(p.get("protocol", "TCP"), p.get("port")) for p in ports_raw}
+        assert ("TCP", 15008) in ports, (
+            f"tempo-ingress-policy rule #{idx} must allow ambient HBONE TCP/15008 (R200): {ports}"
+        )
+        app_ports = ports - {("TCP", 15008)}
+        assert app_ports in ({("TCP", 4317)}, {("TCP", 3200)}), (
+            f"tempo-ingress-policy rule #{idx} has disallowed ports {app_ports!r}"
+        )
+        for peer in from_list:
+            key = _peer_key(peer)
+            if app_ports == {("TCP", 4317)}:
+                ingest_peers.add(key)
+            else:
+                read_peers.add(key)
+
+    assert ingest_peers == {EXPECTED_INGEST_PEER}, (
+        f"tempo-ingress-policy port 4317 must allow only alloy-logs, got {ingest_peers!r}"
+    )
+    assert read_peers == EXPECTED_READ_PEERS, (
+        f"tempo-ingress-policy port 3200 peers mismatch: {read_peers!r}"
     )
 
 
@@ -218,12 +319,25 @@ def verify(root: Path) -> None:
         "collectors.alloy-logs parity mismatch between k8s-monitoring.yaml and 08-2-monitoring.sh"
     )
 
-    expected_boot_flag = (
-        f"--set 'grafana.grafana\\.ini.tracing\\.opentelemetry\\.otlp.address={ALLOY_OTLP_ADDR}'"
+    tempo_doc = yaml.safe_load((root / TEMPO_YAML).read_text(encoding="utf-8"))
+    tempo_vals = tempo_doc["spec"]["source"]["helm"]["valuesObject"]
+    otlp_protos = (((tempo_vals.get("tempo") or {}).get("receivers") or {}).get("otlp") or {}).get("protocols") or {}
+    assert "http" in otlp_protos and otlp_protos["http"] is None, (
+        f"tempo.yaml must disable OTLP/HTTP receiver via http: null, got {otlp_protos!r}"
     )
-    assert expected_boot_flag in mon_text, (
-        "08-2-monitoring.sh missing Grafana OTLP address bootstrap parity flag"
+    assert (otlp_protos.get("grpc") or {}).get("endpoint") == "0.0.0.0:4317", (
+        f"tempo.yaml OTLP/gRPC endpoint must be 0.0.0.0:4317, got {otlp_protos!r}"
     )
+    assert ((tempo_vals.get("service") or {}).get("labels") or {}).get("istio.io/use-waypoint") == "none", (
+        "tempo.yaml service.labels must set istio.io/use-waypoint: none"
+    )
+
+    for flag in (
+        "--set tempo.receivers.otlp.protocols.http=null",
+        "--set 'service.labels.istio\\.io/use-waypoint=none'",
+        f"--set 'grafana.grafana\\.ini.tracing\\.opentelemetry\\.otlp.address={ALLOY_OTLP_ADDR}'",
+    ):
+        assert flag in mon_text, f"08-2-monitoring.sh missing parity flag: {flag}"
 
     prom_doc = yaml.safe_load((root / PROM_YAML).read_text(encoding="utf-8"))
     graf_ini = prom_doc["spec"]["source"]["helm"]["valuesObject"]["grafana"]["grafana.ini"]
@@ -232,17 +346,20 @@ def verify(root: Path) -> None:
         f"prometheus-stack.yaml Grafana tracing address must route via Alloy, got {otlp_addr!r}"
     )
 
+    _check_tempo_netpol(root)
 
-def _find_chart(root: Path) -> str | None:
+
+def _find_chart(root: Path, pattern: str) -> str | None:
     for base in (root, *root.parents[:3]):
-        matches = sorted(glob.glob(str(base / "narwhal-airgap-bundle-*/charts/k8s-monitoring-4.2.0.tgz")))
+        matches = sorted(glob.glob(str(base / f"narwhal-airgap-bundle-*/charts/{pattern}")))
         if matches:
             return matches[0]
     return None
 
 
-def verify_helm_renders(root: Path, chart_tgz: str | None = None) -> bool:
-    chart_tgz = chart_tgz or _find_chart(root)
+def verify_helm_renders(root: Path, chart_tgz: str | None = None, tempo_tgz: str | None = None) -> bool:
+    chart_tgz = chart_tgz or _find_chart(root, "k8s-monitoring-4.2.0.tgz")
+    tempo_tgz = tempo_tgz or _find_chart(root, "tempo-2.2.3.tgz")
     if not chart_tgz:
         return False
 
@@ -274,6 +391,9 @@ def verify_helm_renders(root: Path, chart_tgz: str | None = None) -> bool:
         assert (spec.get("service") or {}).get("internalTrafficPolicy") == "Local", (
             f"{label}: Alloy CR service.internalTrafficPolicy must be Local"
         )
+        assert ((spec.get("service") or {}).get("labels") or {}).get("istio.io/use-waypoint") == "none", (
+            f"{label}: Alloy CR service.labels missing istio.io/use-waypoint=none"
+        )
         ports = {(p["port"], p["protocol"]) for p in spec["alloy"]["extraPorts"]}
         assert (4317, "TCP") in ports and (4318, "TCP") in ports, (
             f"{label}: missing OTLP extraPorts: {ports}"
@@ -284,15 +404,45 @@ def verify_helm_renders(root: Path, chart_tgz: str | None = None) -> bool:
         assert "NET_RAW" not in spec["alloy"]["securityContext"]["capabilities"]["add"], (
             f"{label}: NET_RAW regressed"
         )
+
+    if tempo_tgz:
+        tempo_vals = yaml.safe_load((root / TEMPO_YAML).read_text(encoding="utf-8"))["spec"]["source"]["helm"]["valuesObject"]
+        with tempfile.NamedTemporaryFile("w", suffix=".yaml") as tf:
+            yaml.dump(tempo_vals, tf)
+            tf.flush()
+            tout = subprocess.run(
+                [
+                    "helm", "template", "tempo", tempo_tgz,
+                    "-n", "monitoring", "-f", tf.name,
+                    "--show-only", "templates/configmap-tempo.yaml",
+                    "--show-only", "templates/service.yaml",
+                ],
+                capture_output=True, text=True, check=True,
+            ).stdout
+        tdocs = [d for d in yaml.safe_load_all(tout) if isinstance(d, dict)]
+        tcm = next(d for d in tdocs if d["kind"] == "ConfigMap")
+        tsvc = next(d for d in tdocs if d["kind"] == "Service")
+        tcfg = yaml.safe_load(tcm["data"]["tempo.yaml"])
+        assert "http" not in (tcfg["distributor"]["receivers"]["otlp"]["protocols"] or {}), (
+            "rendered tempo.yaml must not enable OTLP/HTTP (4318)"
+        )
+        svc_ports = {p["port"] for p in tsvc["spec"]["ports"]}
+        assert 4318 not in svc_ports and 4317 in svc_ports and 3200 in svc_ports, (
+            f"rendered tempo Service ports unexpected: {svc_ports!r}"
+        )
+        assert (tsvc["metadata"].get("labels") or {}).get("istio.io/use-waypoint") == "none", (
+            "rendered tempo Service missing istio.io/use-waypoint=none"
+        )
     return True
 
 
 def mutation_verify(root: Path) -> int:
     sources = {
         rel: (root / rel).read_text(encoding="utf-8")
-        for rel in (K8SMON_YAML, PROM_YAML, MON_SH)
+        for rel in (K8SMON_YAML, TEMPO_YAML, PROM_YAML, NETPOL_YAML, MON_SH)
     }
-    chart_tgz = _find_chart(root)
+    chart_tgz = _find_chart(root, "k8s-monitoring-4.2.0.tgz")
+    tempo_tgz = _find_chart(root, "tempo-2.2.3.tgz")
     mutations = [
         (K8SMON_YAML, '                    `delete_matching_keys(attributes, "^k8s[.]")`,\n', ""),
         (K8SMON_YAML, '                    `delete_key(attributes, "service.namespace")`,\n', ""),
@@ -317,7 +467,10 @@ def mutation_verify(root: Path) -> int:
             '                  traces = [otelcol.processor.memory_limiter.otlp_traces.input]',
             '                  traces = [otelcol.processor.transform.strip_client_k8s.input]',
         ),
+        (K8SMON_YAML, '                limit = "256MiB"', '                limit = "384MiB"'),
+        (K8SMON_YAML, '                spike_limit = "64MiB"\n', ""),
         (K8SMON_YAML, "              internalTrafficPolicy: Local", "              internalTrafficPolicy: Cluster"),
+        (K8SMON_YAML, '                istio.io/use-waypoint: "none"\n', ""),
         (K8SMON_YAML, 'metadata = ["k8s.namespace.name",', 'metadata = ["k8s.pod.uid",'),
         (K8SMON_YAML, '"k8s.deployment.name",', '"k8s.cronjob.name",'),
         (K8SMON_YAML, "                  port: 4317", "                  port: 14317"),
@@ -333,8 +486,14 @@ def mutation_verify(root: Path) -> int:
             '                output {\n                  traces = [otelcol.processor.attributes.tempo.input]\n                }',
             '                output {\n                  traces = [otelcol.processor.filter.drop_all.input]\n                }\n              }\n\n              otelcol.processor.filter "drop_all" {\n                traces {\n                  span = ["true"]\n                }\n                output {\n                  traces = [otelcol.processor.attributes.tempo.input]\n                }',
         ),
+        (TEMPO_YAML, "                http: null", '                http:\n                  endpoint: "0.0.0.0:4318"'),
+        (TEMPO_YAML, '            istio.io/use-waypoint: "none"\n', ""),
         (MON_SH, '            `delete_matching_keys(attributes, "^k8s[.]")`,\n', ""),
         (MON_SH, '            `delete_key(attributes, "service.namespace")`,\n', ""),
+        (MON_SH, '        limit = "256MiB"', '        limit = "384MiB"'),
+        (MON_SH, '        spike_limit = "64MiB"\n', ""),
+        (MON_SH, "    --set tempo.receivers.otlp.protocols.http=null \\\n", ""),
+        (MON_SH, "    --set 'service.labels.istio\\.io/use-waypoint=none' \\\n", ""),
         (
             MON_SH,
             f"    --set 'grafana.grafana\\.ini.tracing\\.opentelemetry\\.otlp.address={ALLOY_OTLP_ADDR}' \\\n",
@@ -345,6 +504,32 @@ def mutation_verify(root: Path) -> int:
             f"address: {ALLOY_OTLP_ADDR}",
             "address: tempo.monitoring.svc.cluster.local:4317",
         ),
+        (NETPOL_YAML, "  name: tempo-ingress-policy", "  name: tempo-ingress-policy-disabled\n  labels: {}\n  #"),
+        (
+            NETPOL_YAML,
+            "  ingress:\n    # 1. alloy-logs collector pods (monitoring) -> Tempo OTLP gRPC ingest (4317).\n    - from:\n        - podSelector:\n            matchLabels:\n              app.kubernetes.io/name: alloy-logs\n              app.kubernetes.io/instance: k8s-monitoring-alloy-logs",
+            "  ingress:\n    # Open 4317 to all sources\n    - {} #\n    - from:\n        - podSelector:\n            matchLabels:\n              app.kubernetes.io/name: alloy-logs\n              app.kubernetes.io/instance: k8s-monitoring-alloy-logs",
+        ),
+        (
+            NETPOL_YAML,
+            "    # 1. alloy-logs collector pods (monitoring) -> Tempo OTLP gRPC ingest (4317).\n    - from:\n        - podSelector:\n            matchLabels:\n              app.kubernetes.io/name: alloy-logs\n              app.kubernetes.io/instance: k8s-monitoring-alloy-logs\n      ports:\n        - protocol: TCP\n          port: 4317",
+            "    - ports:\n        - protocol: TCP\n          port: 4317",
+        ),
+        (
+            NETPOL_YAML,
+            "          port: 4317\n        - protocol: TCP\n          port: 15008\n    # 2. Grafana",
+            "          port: 4317\n        - protocol: TCP\n          port: 4318\n        - protocol: TCP\n          port: 15008\n    # 2. Grafana",
+        ),
+        (
+            NETPOL_YAML,
+            "              app.kubernetes.io/name: alloy-logs\n              app.kubernetes.io/instance: k8s-monitoring-alloy-logs",
+            "              gateway.networking.k8s.io/gateway-name: waypoint",
+        ),
+        (
+            NETPOL_YAML,
+            "          port: 4317\n        - protocol: TCP\n          port: 15008",
+            "          port: 4317",
+        ),
     ]
     with tempfile.TemporaryDirectory() as tmp:
         fixture = Path(tmp)
@@ -354,11 +539,20 @@ def mutation_verify(root: Path) -> int:
             for k, v in sources.items():
                 (fixture / k).write_text(v, encoding="utf-8")
             assert old in sources[rel], f"mutation anchor missing in {rel}: {old!r}"
-            (fixture / rel).write_text(sources[rel].replace(old, new, 1), encoding="utf-8")
+            if rel == NETPOL_YAML and "tempo-ingress-policy-disabled" in new:
+                # Simulate removing tempo-ingress-policy completely.
+                text = sources[rel].split("# D-TEMPO-INGRESS")[0]
+                (fixture / rel).write_text(text, encoding="utf-8")
+            elif rel == NETPOL_YAML and "# Open 4317 to all sources" in new:
+                # Replace the alloy-logs rule's from with an open 4318 receiver rule.
+                text = sources[rel] + "\n    - ports:\n        - protocol: TCP\n          port: 4318\n        - protocol: TCP\n          port: 15008\n"
+                (fixture / rel).write_text(text, encoding="utf-8")
+            else:
+                (fixture / rel).write_text(sources[rel].replace(old, new, 1), encoding="utf-8")
             try:
                 verify(fixture)
                 if chart_tgz:
-                    verify_helm_renders(fixture, chart_tgz=chart_tgz)
+                    verify_helm_renders(fixture, chart_tgz=chart_tgz, tempo_tgz=tempo_tgz)
             except (AssertionError, subprocess.CalledProcessError):
                 continue
             raise AssertionError(f"mutation survived: {rel}: {old!r}")

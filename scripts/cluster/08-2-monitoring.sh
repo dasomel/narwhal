@@ -222,6 +222,8 @@ collectors:
       - tempo
     service:
       internalTrafficPolicy: Local
+      labels:
+        istio.io/use-waypoint: "none"
     extraConfig: |
       otelcol.receiver.otlp "otlp_traces" {
         grpc {
@@ -246,7 +248,8 @@ collectors:
 
       otelcol.processor.memory_limiter "otlp_traces" {
         check_interval = "1s"
-        limit = "384MiB"
+        limit = "256MiB"
+        spike_limit = "64MiB"
         output {
           traces = [otelcol.processor.transform.strip_client_k8s.input]
         }
@@ -428,6 +431,8 @@ for attempt in 1 2 3 4 5; do
     --namespace monitoring \
     --version 2.2.3 \
     --set tempo.tag=2.9.0 \
+    --set tempo.receivers.otlp.protocols.http=null \
+    --set 'service.labels.istio\.io/use-waypoint=none' \
     --set tempo.storage.trace.backend=local \
     --set persistence.enabled=true \
     --set persistence.storageClassName=nfs-csi \

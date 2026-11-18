@@ -1,0 +1,66 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-airgap-secdb-ca-728",
+  "task": "Lane 728: fix part 1 of GitHub issue narwhal#728. Push-security-db.sh validates --ca-cert early across all certificates in PEM bundle (rejects empty, unreadable, non-PEM, unparseable, and completely expired/not-yet-valid bundles; warns on expired/not-yet-valid siblings without leaking content), correct documentation to name canonical devtools namespace for narwhal-ca-cert, and add R372 regression check.",
+  "changeContext": {
+    "paths": [
+      ".agents/evals/traces/2026-11-airgap-secdb-ca-728.json",
+      "CHANGELOG-ko.md",
+      "CHANGELOG.md",
+      "docs/common/lessons-log.md",
+      "docs/vagrant/disaster-recovery.md",
+      "docs/vagrant/dns-access.md",
+      "docs/vagrant/operations.md",
+      "scripts/airgap/README.md",
+      "scripts/airgap/lib/push-security-db.sh",
+      "scripts/test/lib/check-push-security-db-ca.py",
+      "scripts/test/regression-check-kakao.sh"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Scope: scripts/airgap/lib/push-security-db.sh early certificate validation, docs/ and scripts/airgap/ documentation corrections to canonical devtools namespace for narwhal-ca-cert, R372 regression test check-push-security-db-ca.py, lessons-log, changelogs. Excluded: bootstrap Helm release drift item (out of scope per prompt) and live cluster mutations."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "Confirmed push-security-db.sh previously accepted empty --ca-cert files using [[ -f ]], and verified docs had wrong references to non-existent cert-manager namespace for narwhal-ca-cert and narwhal-wildcard-tls."
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "Updated validate_ca_cert in push-security-db.sh to split PEM bundle into certificate blocks, validate every certificate (rejecting non-PEM, unparseable blocks, and bundles with no valid certificates; warning on expired/not-yet-valid siblings), and clean up all temporary files on any exit path via a single EXIT trap; updated documentation across operations.md, dns-access.md, disaster-recovery.md, and airgap README.md to reference devtools namespace; added R372 static and behavioral regression check with bundle scenarios, exit-path temp cleanup, and mutation verification."
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "Static validation, shellcheck, bash -n, markdownlint, git diff --check, and R372 / R303 / R304 / R316 / R322 regression tests.",
+      "summary": "All offline checks, behavioral scenarios without a registry (missing, empty, garbage, expired, not-yet-valid, bundles, and valid self-signed cert), mutation verifications, and linters passed.",
+      "evidence": [
+        "test:make validate -> exit 0",
+        "test:python3 scripts/test/lib/check-push-security-db-ca.py --mutation-verify -> OK: clean control passes, 11 mutations caught",
+        "test:python3 scripts/test/lib/check-security-db-provisioning.py --mutation-verify -> OK (clean control passes, 12 mutations caught)",
+        "test:python3 scripts/test/lib/check-trivy-db-redownload-alert.py --mutation-verify -> ok (6 mutations caught)",
+        "test:python3 scripts/test/lib/check-trivy-db-auto-refresh.py --mutation-verify -> ok (46 mutations caught)",
+        "test:shellcheck -S warning scripts/airgap/lib/push-security-db.sh scripts/test/regression-check-kakao.sh && bash -n scripts/airgap/lib/push-security-db.sh scripts/test/regression-check-kakao.sh -> exit 0",
+        "test:python3 scripts/ci/markdownlint-changed.py --base origin/main -> exit 0",
+        "test:git diff --check -> exit 0"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "completion_claim",
+      "summary": "All code, documentation, static checks, behavioural tests without registry, mutation verifications, and linters pass; no cluster or VM was touched."
+    },
+    {
+      "id": "e6",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Part 1 of issue narwhal#728 implemented: push-security-db.sh validates --ca-cert fail-closed, docs name devtools namespace, R372 added with mutation proof and behavioral tests."
+    }
+  ]
+}

@@ -46,7 +46,8 @@
         "test:helm template narwhal-apps gitops/charts/narwhal-apps -s templates/k8s-monitoring.yaml -s templates/prometheus-stack.yaml -> exit 0",
         "test:shellcheck -S warning scripts/cluster/08-2-monitoring.sh scripts/test/regression-check-kakao.sh && bash -n scripts/cluster/08-2-monitoring.sh scripts/test/regression-check-kakao.sh -> exit 0",
         "test:python3 scripts/ci/markdownlint-changed.py --base origin/main && npx --no-install markdownlint-cli2 docs/common/unified-observability-contract.md docs/common/lessons-log.md -> exit 0 (0 issues)",
-        "test:git diff --check -> exit 0"
+        "test:git diff --check -> exit 0",
+        "test:three OTLP/HTTP probes from a pod in namespace dev (honest; resource k8s.namespace.name=chaos-testing; service.namespace=chaos-testing + k8s.pod.ip of a chaos-testing pod) -> http 200 each; Tempo stores all three with k8s.namespace.name=dev only: 0 results for k8s.namespace.name=chaos-testing and for service.namespace=chaos-testing (orchestrator, measured 2026-11-19, local single-node cluster)"
       ]
     },
     {

@@ -5,6 +5,7 @@ import { Box, Cpu, Layers, Server } from "lucide-react"
 import Link from "next/link"
 import type { ClusterInfra } from "@/app/api/cluster/route"
 import { useT } from "@/lib/i18n-client"
+import { useScopeFingerprint } from "@/hooks/use-role"
 import { Badge } from "@/components/ui/badge"
 import { Card } from "@/components/ui/card"
 import { DataState } from "@/components/ui/data-state"
@@ -38,8 +39,9 @@ function isClusterInfra(value: unknown): value is ClusterInfra {
 
 export function ClusterInfraView() {
   const t = useT()
+  const scopeFingerprint = useScopeFingerprint()
   const { data, isLoading, isError, refetch } = useQuery<ClusterInfra>({
-    queryKey: ["cluster-infra"],
+    queryKey: ["cluster-infra", scopeFingerprint],
     queryFn: () => fetch("/api/cluster").then((r) => {
       if (!r.ok) throw new Error(String(r.status))
       return r.json()

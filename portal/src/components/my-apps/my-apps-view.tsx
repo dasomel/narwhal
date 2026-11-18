@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query"
 import { useRouter } from "next/navigation"
 import { Card } from "@/components/ui/card"
 import { useT } from "@/lib/i18n-client"
+import { useScopeFingerprint } from "@/hooks/use-role"
 import { ArgoCDAppsTable } from "@/components/dashboard/argocd-apps-table"
 import { ScopedAlertsList } from "@/components/my-apps/scoped-alerts-list"
 import { ScopedDeploysList } from "@/components/my-apps/scoped-deploys-list"
@@ -33,9 +34,10 @@ function BackToOverviewButton() {
 
 export function MyAppsView() {
   const t = useT()
+  const scopeFingerprint = useScopeFingerprint()
 
   const { data, isLoading, isError, refetch } = useQuery<MyAppsResponse>({
-    queryKey: ["my-apps"],
+    queryKey: ["my-apps", scopeFingerprint],
     queryFn: () => fetch("/api/my-apps").then((r) => r.json()),
     refetchInterval: 15_000,
   })

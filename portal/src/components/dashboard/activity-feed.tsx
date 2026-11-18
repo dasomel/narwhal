@@ -153,14 +153,14 @@ function AlertDetail({
 export function ActivityFeed() {
   const t = useT()
   const locale = useLocale()
-  const { can } = useRole()
+  const { can, scopeFingerprint } = useRole()
   const canSilence = can("silence")
   const queryClient = useQueryClient()
 
   const [selectedAlert, setSelectedAlert] = useState<Alert | null>(null)
 
   const { data: alertData, isLoading: alertsLoading, isError: alertsError, refetch: refetchAlerts } = useQuery<Alert[]>({
-    queryKey: ["alerts"],
+    queryKey: ["alerts", scopeFingerprint],
     queryFn: () =>
       fetch("/api/alerts")
         .then((r) => r.json())
@@ -169,7 +169,7 @@ export function ActivityFeed() {
   })
 
   const { data: eventData, isLoading: eventsLoading, isError: eventsError, refetch: refetchEvents } = useQuery<TimelineEvent[]>({
-    queryKey: ["events"],
+    queryKey: ["events", scopeFingerprint],
     queryFn: () =>
       fetch("/api/events")
         .then((r) => r.json())

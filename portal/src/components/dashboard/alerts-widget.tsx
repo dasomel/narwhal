@@ -98,12 +98,13 @@ export function AlertsWidget() {
   const t = useT()
   const { data: session } = useSession()
   const role = (session?.user as { role?: string })?.role ?? "guest"
+  const scopeFingerprint = session?.scopeFingerprint ?? role
   const canSilence = role === "cluster-admin" || role === "developer"
 
   const [selected, setSelected] = useState<Alert | null>(null)
 
   const { data: alertsData, isLoading, isError, refetch } = useQuery<Alert[]>({
-    queryKey: ["alerts"],
+    queryKey: ["alerts", scopeFingerprint],
     queryFn: () => fetch("/api/alerts").then((r) => r.json()).then((d) => Array.isArray(d) ? d : []),
     refetchInterval: 15_000,
   })

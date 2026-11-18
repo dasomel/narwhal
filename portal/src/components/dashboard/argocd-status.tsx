@@ -5,13 +5,15 @@ import { useQuery } from "@tanstack/react-query"
 import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { useT } from "@/lib/i18n-client"
+import { useScopeFingerprint } from "@/hooks/use-role"
 import type { ArgoCDResponse } from "@/types/api"
 import { DataState } from "@/components/ui/data-state"
 
 export function ArgoCDStatus() {
   const t = useT()
+  const scopeFingerprint = useScopeFingerprint()
   const { data, isLoading, isError, refetch } = useQuery<ArgoCDResponse>({
-    queryKey: ["argocd"],
+    queryKey: ["argocd", scopeFingerprint],
     queryFn: () => fetch("/api/argocd").then((r) => r.json()),
     refetchInterval: 10_000,
   })

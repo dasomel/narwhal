@@ -10,6 +10,7 @@ import { Badge } from "@/components/ui/badge"
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet"
 import { useT, useLocale } from "@/lib/i18n-client"
 import type { Locale } from "@/lib/i18n"
+import { useScopeFingerprint } from "@/hooks/use-role"
 import type { TimelineEvent } from "@/app/api/events/route"
 
 const severityStyle: Record<string, string> = {
@@ -65,10 +66,11 @@ function formatFullTimestamp(dateStr: string): string {
 export function EventTimeline() {
   const t = useT()
   const locale = useLocale()
+  const scopeFingerprint = useScopeFingerprint()
   const [selected, setSelected] = useState<TimelineEvent | null>(null)
 
   const { data: events, isLoading, isError, refetch } = useQuery<TimelineEvent[]>({
-    queryKey: ["events"],
+    queryKey: ["events", scopeFingerprint],
     queryFn: () => fetch("/api/events").then((r) => r.json()),
     refetchInterval: 15_000,
   })

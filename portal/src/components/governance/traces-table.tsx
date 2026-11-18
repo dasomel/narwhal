@@ -4,6 +4,7 @@ import { useMemo, useState } from "react"
 import { Card } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { useT } from "@/lib/i18n-client"
+import { useScopeFingerprint } from "@/hooks/use-role"
 import { DataState } from "@/components/ui/data-state"
 
 interface TraceEntry {
@@ -59,13 +60,14 @@ class TracesForbiddenError extends Error {}
 
 export function TracesTable() {
   const t = useT()
+  const scopeFingerprint = useScopeFingerprint()
   const [serviceInput, setServiceInput] = useState("")
   const [service, setService] = useState("")
   const [sortKey, setSortKey] = useState<SortKey>("startTime")
   const [sortDir, setSortDir] = useState<SortDir>("desc")
 
   const { data = [], isLoading, isError, error, refetch } = useQuery<TraceEntry[]>({
-    queryKey: ["governance-traces", service],
+    queryKey: ["governance-traces", service, scopeFingerprint],
     queryFn: async () => {
       const r = await fetch(`/api/traces${service ? `?service=${encodeURIComponent(service)}` : ""}`)
       if (r.status === 403) throw new TracesForbiddenError()

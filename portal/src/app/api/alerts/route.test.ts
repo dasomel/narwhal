@@ -77,12 +77,19 @@ describe("GET /api/alerts — tenant scope", () => {
     expect(serialized).not.toContain("worker-02")
   })
 
-  it("fails closed when scope resolution throws for a non-admin", async () => {
-    mockAuth.mockResolvedValue({ groups: ["developer"], teams: ["team-a"], user: { role: "developer" } })
+  it.each(["developer", "viewer"] as const)("fails closed when scope resolution throws for %s", async (role) => {
+    mockAuth.mockResolvedValue({ groups: [role], teams: ["team-a"], user: { role } })
     mockGetNamespaces.mockRejectedValue(new Error("k8s unreachable"))
     const res = await GET(req())
     expect([403, 500]).toContain(res.status)
     const serialized = JSON.stringify(await res.json())
     expect(serialized).not.toContain("TeamBCrashLoop")
+  })
+
+  it.each(["developer", "viewer"] as const)("denies an unmapped %s with 403 ACCESS_NOT_GRANTED", async (role) => {
+    mockAuth.mockResolvedValue({ groups: [role], teams: ["unmapped-team"], user: { role } })
+    const res = await GET(req())
+    expect(res.status).toBe(403)
+    expect(await res.json()).toEqual({ error: "Forbidden", code: "ACCESS_NOT_GRANTED" })
   })
 })

@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { formatLeadTime } from "@/lib/dora-duration"
 import { useT } from "@/lib/i18n-client"
+import { useScopeFingerprint } from "@/hooks/use-role"
 import { DataState } from "@/components/ui/data-state"
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts"
 import type { DoraMetrics } from "./types"
@@ -61,9 +62,10 @@ function StatCard({
 
 export function DoraMetricsWidget() {
   const t = useT()
+  const scopeFingerprint = useScopeFingerprint()
 
   const { data, isLoading, isError, refetch } = useQuery<DoraMetrics>({
-    queryKey: ["governance-dora"],
+    queryKey: ["governance-dora", scopeFingerprint],
     queryFn: () =>
       fetch("/api/governance/dora").then((r) => {
         if (!r.ok) throw new Error("Failed to fetch DORA metrics")

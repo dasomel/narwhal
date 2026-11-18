@@ -9,6 +9,7 @@ import { DataState } from "@/components/ui/data-state"
 import { Input } from "@/components/ui/input"
 import { useState } from "react"
 import { useT } from "@/lib/i18n-client"
+import { useScopeFingerprint } from "@/hooks/use-role"
 import type { CatalogService } from "@/lib/argocd"
 
 const syncColors: Record<string, string> = {
@@ -38,10 +39,11 @@ function timeAgo(dateStr: string | null): string {
 
 export function CatalogTable() {
   const t = useT()
+  const scopeFingerprint = useScopeFingerprint()
   const [search, setSearch] = useState("")
 
   const { data: services, isLoading, isError, refetch } = useQuery<CatalogService[]>({
-    queryKey: ["catalog"],
+    queryKey: ["catalog", scopeFingerprint],
     queryFn: () => fetch("/api/catalog").then((r) => r.json()),
     refetchInterval: 15_000,
   })

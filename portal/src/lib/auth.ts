@@ -2,9 +2,10 @@ import NextAuth from "next-auth"
 import type { NextAuthConfig, Session } from "next-auth"
 import type { JWT } from "next-auth/jwt"
 import Credentials from "next-auth/providers/credentials"
-import { getTeamMappings } from "./role-filter"
+import { getTeamMappings, getVisibilityScope, scopeFingerprint } from "./role-filter"
 import { ACCESS_NOT_GRANTED_CODE, hasSessionAccess } from "./scope"
 import { assertHttpsInProduction } from "./config"
+import { DEFAULT_CLUSTER_ID } from "@/types/cluster"
 
 // H-8: AUTH_MOCK production guard — module-load-time check
 if (process.env.NODE_ENV === "production" && process.env.AUTH_MOCK === "true") {
@@ -297,6 +298,20 @@ export const config: NextAuthConfig = {
       session.idToken = token.idToken
       // Surface a refresh failure so the client can force a clean re-login.
       if (token.error) session.error = token.error as string
+
+      const vis = getVisibilityScope(safeGroups, session.teams)
+      const roleClass = safeGroups.includes("cluster-admin") ? "admin" : "non-admin"
+      session.scopeFingerprint = scopeFingerprint(
+        safeGroups,
+        session.teams,
+        DEFAULT_CLUSTER_ID,
+        vis.namespaces.includes("*") ? ["*"] : vis.namespaces,
+        {
+          all: vis.namespaces.includes("*"),
+          argocdProjects: vis.argocdProjects,
+          roleClass,
+        },
+      )
       return session
     },
   },

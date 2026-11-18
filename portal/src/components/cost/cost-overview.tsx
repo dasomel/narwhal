@@ -8,6 +8,7 @@
 import { useQuery } from "@tanstack/react-query"
 import { useEffect, useState } from "react"
 import { useT } from "@/lib/i18n-client"
+import { useScopeFingerprint } from "@/hooks/use-role"
 import {
   LineChart,
   Line,
@@ -89,8 +90,9 @@ export function CostOverview() {
       if (interval) clearInterval(interval)
     }
   }, [])
+  const scopeFingerprint = useScopeFingerprint()
   const { data: costData, isLoading: costLoading, error: costError, refetch: refetchCost } = useQuery<CostResponse>({
-    queryKey: ["cost", "cluster"],
+    queryKey: ["cost", "cluster", scopeFingerprint],
     queryFn: async () => {
       const response = await fetch("/api/cost?scope=cluster")
       if (!response.ok) throw new Error("Cost data is unavailable")
@@ -100,7 +102,7 @@ export function CostOverview() {
   })
 
   const { data: trendData, isLoading: trendLoading, error: trendError, refetch: refetchTrend } = useQuery<TrendResponse>({
-    queryKey: ["cost-trend", "cluster", "cluster", 30],
+    queryKey: ["cost-trend", "cluster", "cluster", 30, scopeFingerprint],
     queryFn: async () => {
       const response = await fetch("/api/cost/trend?scope=cluster&id=cluster&days=30")
       if (!response.ok) throw new Error("Cost trend data is unavailable")

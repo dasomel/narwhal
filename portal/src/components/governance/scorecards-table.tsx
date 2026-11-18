@@ -4,6 +4,7 @@ import { useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { useRouter } from "next/navigation"
 import { useT, useLocale } from "@/lib/i18n-client"
+import { useScopeFingerprint } from "@/hooks/use-role"
 import { DataState } from "@/components/ui/data-state"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -198,7 +199,8 @@ export function ScorecardsTable() {
   const [search, setSearch] = useState("")
   const [sortBy, setSortBy] = useState<"score-desc" | "score-asc" | "name">("score-desc")
 
-  const queryKey = ["scorecards", tierFilter, ownerFilter]
+  const scopeFingerprint = useScopeFingerprint()
+  const queryKey = ["scorecards", tierFilter, ownerFilter, scopeFingerprint]
   const { data, isLoading, isError, refetch } = useQuery<ScorecardListResponse>({
     queryKey,
     queryFn: () => {

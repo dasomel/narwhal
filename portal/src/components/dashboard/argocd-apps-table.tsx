@@ -71,11 +71,11 @@ interface ArgoCDAppsTableProps {
 
 export function ArgoCDAppsTable({ apps: propApps }: ArgoCDAppsTableProps = {}) {
   const t = useT()
-  const { can } = useRole()
+  const { can, scopeFingerprint } = useRole()
   const queryClient = useQueryClient()
 
   const { data, isLoading, error, refetch } = useQuery<ArgoCDResponse>({
-    queryKey: ["argocd"],
+    queryKey: ["argocd", scopeFingerprint],
     queryFn: () => fetch("/api/argocd").then((r) => r.json()),
     refetchInterval: 15_000,
     enabled: propApps === undefined,

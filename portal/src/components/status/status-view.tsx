@@ -1,6 +1,7 @@
 "use client"
 
 import { useQuery } from "@tanstack/react-query"
+import { useScopeFingerprint } from "@/hooks/use-role"
 import { OverallBanner } from "./overall-banner"
 import { ComponentGrid } from "./component-grid"
 import { IncidentList } from "./incident-list"
@@ -8,8 +9,9 @@ import type { PlatformStatus } from "@/types/api"
 import { DataState } from "@/components/ui/data-state"
 
 export function StatusView({ isOperator }: { isOperator: boolean }) {
+  const scopeFingerprint = useScopeFingerprint()
   const { data, isLoading, isError, refetch } = useQuery<PlatformStatus>({
-    queryKey: ["platform-status"],
+    queryKey: ["platform-status", scopeFingerprint],
     queryFn: () => fetch("/api/status").then((r) => {
       if (!r.ok) throw new Error(`status ${r.status}`)
       return r.json()

@@ -9,6 +9,13 @@
 
 ## [Unreleased]
 
+### 수정
+
+- **브라우저 측 React Query 캐시 키에 테넌트 스코프 지문 반영 (`src/components/*`, `src/hooks/use-role.ts`, narwhal#688):**
+  - 경보(alerts), 이벤트(events), ArgoCD 앱, 카탈로그, 거버넌스 뷰, 비용 쿼리 등 테넌트 스코프 데이터를 조회하는 클라이언트 React Query 키에 `scopeFingerprint`를 포함하여, 사용자 권한 축소 후 브라우저 탭이 열려 있어도 이전 스코프의 캐시 데이터가 노출되지 않도록 격리했습니다.
+- **이벤트 및 경보 스코프 테스트에 viewer 세션 검증 보강 (`src/app/api/events/route.test.ts`, `src/app/api/alerts/route.test.ts`, narwhal#688):**
+  - `/api/events` 및 `/api/alerts` 라우트 테스트에 `viewer` 세션을 추가하여 타 팀 이벤트 격리, 본인 팀 이벤트 반환, 미매핑 세션 403 거부, 권한 회수 시 캐시 격리 및 fail-closed 동작을 `developer` 세션과 동일하게 검증하도록 보강했습니다.
+
 ## [1.1.19] - 2026-11-18
 
 구체적 근거가 있는 검토 완료 컴플라이언스 예외를 추가하고 RBAC 예외 매칭의 fail-open 경로를 닫는 패치 릴리스입니다

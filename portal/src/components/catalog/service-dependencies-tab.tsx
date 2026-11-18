@@ -3,6 +3,7 @@
 import { useQuery } from "@tanstack/react-query"
 import Link from "next/link"
 import { useT } from "@/lib/i18n-client"
+import { useScopeFingerprint } from "@/hooks/use-role"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { DataState } from "@/components/ui/data-state"
@@ -155,8 +156,9 @@ function OutboundTable({
 
 export function ServiceDependenciesTab({ serviceName }: Props) {
   const t = useT()
+  const scopeFingerprint = useScopeFingerprint()
   const { data, isLoading, error, refetch } = useQuery<ServiceGraphDetailResponse>({
-    queryKey: ["service-dependencies", serviceName],
+    queryKey: ["service-dependencies", serviceName, scopeFingerprint],
     queryFn: () =>
       fetch(`/api/service-graph/${encodeURIComponent(serviceName)}?window=7d`).then((r) => {
         if (!r.ok) throw new Error("Failed to fetch dependencies")

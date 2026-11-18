@@ -26,6 +26,7 @@ export function ServiceMapView({ initialNamespace, focusService }: Props) {
   const t = useT()
   const { data: session } = useSession()
   const isAdmin = session?.user?.role === "cluster-admin"
+  const scopeFingerprint = session?.scopeFingerprint ?? session?.user?.role ?? "guest"
   const [window, setWindow] = useState<GraphWindow>("7d")
   const [namespace, setNamespace] = useState(initialNamespace ?? "")
   const [errorThreshold, setErrorThreshold] = useState(5) // % 단위
@@ -56,7 +57,7 @@ export function ServiceMapView({ initialNamespace, focusService }: Props) {
     return () => es.close()
   }, [isLive])
 
-  const queryKey = ["service-graph", effWindow, namespace]
+  const queryKey = ["service-graph", effWindow, namespace, scopeFingerprint]
   const { data, isLoading, isError, refetch } = useQuery<ServiceGraphResponse>({
     queryKey,
     queryFn: () => {

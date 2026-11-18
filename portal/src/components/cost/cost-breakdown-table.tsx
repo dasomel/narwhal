@@ -8,6 +8,7 @@ import { useState, useMemo } from "react"
 import { useQuery } from "@tanstack/react-query"
 import Link from "next/link"
 import { useT } from "@/lib/i18n-client"
+import { useScopeFingerprint } from "@/hooks/use-role"
 import { DataState } from "@/components/ui/data-state"
 import { CostTelemetryState } from "@/components/cost/cost-overview"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -85,12 +86,13 @@ function SortIcon({ col, sortKey, sortDir }: { col: SortKey; sortKey: SortKey; s
 
 export function CostBreakdownTable() {
   const t = useT()
+  const scopeFingerprint = useScopeFingerprint()
   const [scopeView, setScopeView] = useState<ScopeView>("namespace")
   const [sortKey, setSortKey] = useState<SortKey>("monthly")
   const [sortDir, setSortDir] = useState<SortDir>("desc")
 
   const { data, isLoading, error, refetch } = useQuery<CostResponse>({
-    queryKey: ["cost", scopeView],
+    queryKey: ["cost", scopeView, scopeFingerprint],
     queryFn: async () => {
       const response = await fetch(`/api/cost?scope=${scopeView}`)
       if (!response.ok) throw new Error("Cost data is unavailable")

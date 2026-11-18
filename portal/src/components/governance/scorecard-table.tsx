@@ -3,6 +3,7 @@ import { useState, useMemo } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { Card } from "@/components/ui/card"
 import { useT } from "@/lib/i18n-client"
+import { useScopeFingerprint } from "@/hooks/use-role"
 import { DataState } from "@/components/ui/data-state"
 import { ResourceDetailDrawer } from "./resource-detail-drawer"
 
@@ -122,12 +123,13 @@ function CategoryAvgBar({ label, value }: { label: string; value: number }) {
 
 export function ScorecardTable() {
   const t = useT()
+  const scopeFingerprint = useScopeFingerprint()
   const [sortKey, setSortKey] = useState<SortKey>("overall")
   const [sortDir, setSortDir] = useState<SortDir>("asc")
   const [selectedRow, setSelectedRow] = useState<{ namespace: string; service: string } | null>(null)
 
   const { data, isLoading, isError, refetch } = useQuery<ScorecardItem[]>({
-    queryKey: ["governance-scorecard"],
+    queryKey: ["governance-scorecard", scopeFingerprint],
     queryFn: async () => {
       const r = await fetch("/api/governance/scorecard")
       if (!r.ok) throw new Error("ArgoCD connection failed")

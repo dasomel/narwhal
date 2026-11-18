@@ -9,6 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { DataState } from "@/components/ui/data-state"
 import { useT } from "@/lib/i18n-client"
+import { useScopeFingerprint } from "@/hooks/use-role"
 import type { ArgoApp } from "@/lib/argocd"
 import { PodLogsViewer } from "./pod-logs-viewer"
 import { ServiceQualityTab } from "./service-quality-tab"
@@ -45,11 +46,12 @@ const TAB_KEYS: Record<Tab, "catalog.tab.overview" | "catalog.tab.quality" | "ca
 
 export function ServiceDetail() {
   const t = useT()
+  const scopeFingerprint = useScopeFingerprint()
   const { name } = useParams<{ name: string }>()
   const [activeTab, setActiveTab] = useState<Tab>("overview")
 
   const { data, isLoading, error, refetch } = useQuery<DetailResponse>({
-    queryKey: ["catalog", name],
+    queryKey: ["catalog", name, scopeFingerprint],
     queryFn: () => fetch(`/api/catalog/${name}`).then((r) => {
       if (!r.ok) throw new Error("Not found")
       return r.json()

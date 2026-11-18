@@ -11,6 +11,7 @@ declare module "next-auth" {
     idToken?: string
     error?: string
     user: DefaultSession["user"] & { role: UserRole }
+    scopeFingerprint?: string
   }
 }
 

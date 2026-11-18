@@ -9,6 +9,13 @@ English | [한국어](CHANGELOG-ko.md)
 
 ## [Unreleased]
 
+### Fixed
+
+- **Key browser-side React Query cache by tenant scope fingerprint (`src/components/*`, `src/hooks/use-role.ts`, narwhal#688):**
+  - Included the caller's `scopeFingerprint` in client-side React Query keys for alerts, events, ArgoCD apps, catalog items, governance views, and cost queries so data cached under one scope is never rendered after permissions are reduced.
+- **Cover viewer session across event and alert scope tests (`src/app/api/events/route.test.ts`, `src/app/api/alerts/route.test.ts`, narwhal#688):**
+  - Extended `/api/events` and `/api/alerts` route tests to verify cross-scope isolation, positive control, unmapped 403 rejection, and cache isolation across project revocation under a `viewer` session alongside `developer`.
+
 ## [1.1.19] - 2026-11-18
 
 Patch release that adds reviewed compliance exceptions backed by concrete evidence and closes a fail-open path in

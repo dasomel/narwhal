@@ -6,6 +6,7 @@ import { Cpu, Database, Layers3, MemoryStick } from "lucide-react"
 import { Card } from "@/components/ui/card"
 import { DataState } from "@/components/ui/data-state"
 import { useT } from "@/lib/i18n-client"
+import { useScopeFingerprint } from "@/hooks/use-role"
 import type { TranslationKey } from "@/lib/i18n"
 import type { ArgoCDResponse } from "@/types/api"
 
@@ -75,10 +76,11 @@ function Chart({ metric, minutes, title, compact = false }: { metric: string; mi
 
 export function DashboardOverview({ title, description }: { title: string; description: string }) {
   const t = useT()
+  const scopeFingerprint = useScopeFingerprint()
   const [minutes, setMinutes] = useState(60)
   const metrics = useJson<Metrics>(["metrics"], "/api/metrics")
-  const argo = useJson<ArgoCDResponse>(["argocd"], "/api/argocd", 10_000)
-  const alertsQuery = useJson<Alert[]>(["alerts"], "/api/alerts", 15_000)
+  const argo = useJson<ArgoCDResponse>(["argocd", scopeFingerprint], "/api/argocd", 10_000)
+  const alertsQuery = useJson<Alert[]>(["alerts", scopeFingerprint], "/api/alerts", 15_000)
   const m = metrics.data
   const alerts = alertsQuery.data ?? []
   const cards = buildKpiModels(m, t)

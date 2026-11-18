@@ -42,9 +42,10 @@ export function CommandPalette() {
   const t = useT()
   const { data: session } = useSession()
   const role = session?.user?.role as UserRole | undefined
+  const scopeFingerprint = session?.scopeFingerprint ?? role ?? "guest"
 
   const { data: services, isLoading, isError, refetch } = useQuery<CatalogService[]>({
-    queryKey: ["catalog"],
+    queryKey: ["catalog", scopeFingerprint],
     queryFn: () => fetch("/api/catalog").then((r) => r.json()),
     enabled: open,
     staleTime: 30_000,

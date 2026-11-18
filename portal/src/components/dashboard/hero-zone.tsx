@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query"
 import { Narwhal } from "@/components/narwhal/narwhal"
 import { HeroSummary } from "./hero-summary"
 import { HeroRadar } from "./hero-radar"
+import { useScopeFingerprint } from "@/hooks/use-role"
 import type { HeroResponse } from "@/types/api"
 import { DataState } from "@/components/ui/data-state"
 
@@ -42,8 +43,9 @@ export function HeroZoneFromData({ data }: HeroZoneFromDataProps) {
 }
 
 export function HeroZone() {
+  const scopeFingerprint = useScopeFingerprint()
   const { data, isLoading, isError, refetch } = useQuery<HeroResponse>({
-    queryKey: ["hero"],
+    queryKey: ["hero", scopeFingerprint],
     queryFn: () => fetch("/api/hero").then((r) => r.json()),
     refetchInterval: 15_000,
   })

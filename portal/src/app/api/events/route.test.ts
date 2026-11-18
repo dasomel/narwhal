@@ -28,12 +28,16 @@ const { GET } = await import("./route")
 
 const platformTeamSession = { groups: ["developer"], teams: ["platform-team"], user: { role: "developer" } }
 const frontendTeamSession = { groups: ["developer"], teams: ["frontend-team"], user: { role: "developer" } }
+const platformTeamViewerSession = { groups: ["viewer"], teams: ["platform-team"], user: { role: "viewer" } }
+const frontendTeamViewerSession = { groups: ["viewer"], teams: ["frontend-team"], user: { role: "viewer" } }
 const clusterAdminSession = { groups: ["cluster-admin"], teams: [], user: { role: "cluster-admin" } }
-// narwhal#659: a developer with an unmapped team (or no team at all) now fails closed in
+// narwhal#659: a developer/viewer with an unmapped team (or no team at all) now fails closed in
 // getVisibilityScope() -> hasMapping:false with zero namespaces.
 const unscopedSession = { groups: ["unmapped-group"], teams: [], user: { role: "developer" } }
 const unmappedDeveloperSession = { groups: ["developer"], teams: ["unmapped-team"], user: { role: "developer" } }
 const teamlessDeveloperSession = { groups: ["developer"], teams: [], user: { role: "developer" } }
+const unmappedViewerSession = { groups: ["viewer"], teams: ["unmapped-team"], user: { role: "viewer" } }
+const teamlessViewerSession = { groups: ["viewer"], teams: [], user: { role: "viewer" } }
 
 const namespaces: NamespaceInfo[] = [
   { name: "platform-system", status: "Active", labels: {}, createdAt: "2026-01-01T00:00:00Z" },
@@ -90,8 +94,11 @@ beforeEach(() => {
 })
 
 describe("GET /api/events — scope enforcement", () => {
-  it("does not leak another team's deploy events to a cross-scope caller", async () => {
-    vi.mocked(auth).mockResolvedValue(frontendTeamSession as never)
+  it.each([
+    ["developer", frontendTeamSession],
+    ["viewer", frontendTeamViewerSession],
+  ])("does not leak another team's deploy events to a cross-scope %s caller", async (_, session) => {
+    vi.mocked(auth).mockResolvedValue(session as never)
     const res = await GET(req())
     expect(res.status).toBe(200)
     const body = await res.json()
@@ -100,8 +107,11 @@ describe("GET /api/events — scope enforcement", () => {
     expect(titles).not.toContain("platform-app")
   })
 
-  it("returns the caller's own team events (positive control)", async () => {
-    vi.mocked(auth).mockResolvedValue(platformTeamSession as never)
+  it.each([
+    ["developer", platformTeamSession],
+    ["viewer", platformTeamViewerSession],
+  ])("returns the caller's own team events for %s (positive control)", async (_, session) => {
+    vi.mocked(auth).mockResolvedValue(session as never)
     const res = await GET(req())
     expect(res.status).toBe(200)
     const body = await res.json()
@@ -110,12 +120,15 @@ describe("GET /api/events — scope enforcement", () => {
     expect(titles).not.toContain("frontend-app")
   })
 
-  it("keys the cache by scope fingerprint and never serves platform-team's cached timeline to frontend-team", async () => {
-    vi.mocked(auth).mockResolvedValue(platformTeamSession as never)
+  it.each([
+    ["developer", platformTeamSession, frontendTeamSession],
+    ["viewer", platformTeamViewerSession, frontendTeamViewerSession],
+  ])("keys the cache by scope fingerprint and never serves platform-team's cached timeline to frontend-team (%s)", async (_, platformSession, frontendSession) => {
+    vi.mocked(auth).mockResolvedValue(platformSession as never)
     const platformBody = await (await GET(req())).json()
     expect(platformBody.map((e: { title: string }) => e.title)).toEqual(["platform-app"])
 
-    vi.mocked(auth).mockResolvedValue(frontendTeamSession as never)
+    vi.mocked(auth).mockResolvedValue(frontendSession as never)
     const frontendBody = await (await GET(req())).json()
     // If the two scopes collided on one cache key, this would come back as
     // platform-team's already-cached timeline instead of frontend-team's own.
@@ -125,7 +138,7 @@ describe("GET /api/events — scope enforcement", () => {
     expect(new Set(setKeys).size).toBe(2)
 
     // Re-request platform-team: must hit its own cache entry, not frontend-team's.
-    vi.mocked(auth).mockResolvedValue(platformTeamSession as never)
+    vi.mocked(auth).mockResolvedValue(platformSession as never)
     const cachedPlatformBody = await (await GET(req())).json()
     expect(cachedPlatformBody.map((e: { title: string }) => e.title)).toEqual(["platform-app"])
   })
@@ -147,7 +160,7 @@ describe("GET /api/events — scope enforcement", () => {
   })
 
   it("denies a non-admin caller with no scope mapping with 403 ACCESS_NOT_GRANTED", async () => {
-    for (const session of [unscopedSession, unmappedDeveloperSession, teamlessDeveloperSession]) {
+    for (const session of [unscopedSession, unmappedDeveloperSession, teamlessDeveloperSession, unmappedViewerSession, teamlessViewerSession]) {
       vi.mocked(auth).mockResolvedValue(session as never)
       const res = await GET(req())
       expect(res.status).toBe(403)
@@ -155,9 +168,12 @@ describe("GET /api/events — scope enforcement", () => {
     }
   })
 
-  it("filters Alertmanager alerts by structured namespace label, not text", async () => {
+  it.each([
+    ["developer", frontendTeamSession],
+    ["viewer", frontendTeamViewerSession],
+  ])("filters Alertmanager alerts by structured namespace label for %s, not text", async (_, session) => {
     vi.mocked(getAlerts).mockResolvedValue([platformAlert, frontendAlert] as never)
-    vi.mocked(auth).mockResolvedValue(frontendTeamSession as never)
+    vi.mocked(auth).mockResolvedValue(session as never)
     const res = await GET(req())
     expect(res.status).toBe(200)
     const body = await res.json()
@@ -176,11 +192,12 @@ describe("GET /api/events — scope enforcement", () => {
     expect(devBody.map((e: { title: string }) => e.title)).not.toContain("NodeDiskPressure")
     expect(JSON.stringify(devBody)).not.toContain("platform-app")
 
-    vi.mocked(auth).mockResolvedValue({ groups: ["viewer"], teams: ["frontend-team"], user: { role: "viewer" } } as never)
+    vi.mocked(auth).mockResolvedValue(frontendTeamViewerSession as never)
     const viewerRes = await GET(req())
     expect(viewerRes.status).toBe(200)
     const viewerBody = await viewerRes.json()
     expect(viewerBody.map((e: { title: string }) => e.title)).not.toContain("NodeDiskPressure")
+    expect(JSON.stringify(viewerBody)).not.toContain("platform-app")
 
     vi.mocked(auth).mockResolvedValue(clusterAdminSession as never)
     const adminRes = await GET(req())
@@ -191,7 +208,9 @@ describe("GET /api/events — scope enforcement", () => {
 })
 
 describe("GET /api/events — project revocation cache isolation (M2)", () => {
-  it("invalidates cache across restart and re-filters cached events when an argocdProject grant is revoked with unchanged namespaces/claims", async () => {
+  it.each(["developer", "viewer"] as const)(
+    "invalidates cache across restart and re-filters cached events when an argocdProject grant is revoked with unchanged namespaces/claims (%s)",
+    async (role) => {
     const sharedCache = new Map<string, unknown>()
     let activeProjects = ["alpha", "beta"]
 
@@ -216,7 +235,7 @@ describe("GET /api/events — project revocation cache isolation (M2)", () => {
         }
       })
       vi.doMock("@/lib/auth", () => ({
-        auth: vi.fn().mockResolvedValue({ groups: ["developer"], teams: ["team-a"], user: { role: "developer" } }),
+        auth: vi.fn().mockResolvedValue({ groups: [role], teams: ["team-a"], user: { role } }),
       }))
       vi.doMock("@/lib/argocd", async (importOriginal) => {
         const actual = await importOriginal<typeof import("@/lib/argocd")>()

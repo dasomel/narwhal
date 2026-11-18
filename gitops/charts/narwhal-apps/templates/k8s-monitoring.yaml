@@ -19,6 +19,20 @@ spec:
           loki:
             type: loki
             url: http://loki:3100/loki/api/v1/push
+          # D-TRACE-K8S-ATTR (#691): forward OTLP traces enriched with k8s.* attributes
+          # from the already-deployed alloy-logs collector to Tempo.
+          tempo:
+            type: otlp
+            url: tempo.monitoring.svc.cluster.local:4317
+            protocol: grpc
+            tls:
+              insecure: true
+            metrics:
+              enabled: false
+            logs:
+              enabled: false
+            traces:
+              enabled: true
         collectors:
           alloy-logs:
             presets: [small, daemonset, filesystem-log-reader]
@@ -102,6 +116,41 @@ spec:
           enabled: true
           collector: alloy-logs
           destinations: []
+        # D-TRACE-K8S-ATTR (#691): enable OTLP ingestion (4317 gRPC / 4318 HTTP) and
+        # otelcol.processor.k8sattributes on the existing alloy-logs collector so traces
+        # carry k8s.namespace.name (plus pod/deployment/statefulset/daemonset/job/node)
+        # for portal tenant scoping (#687). Uses only pods/namespaces/replicasets RBAC
+        # already created by alloy-operator's default Alloy ClusterRole (k8s.cronjob.name
+        # omitted to avoid an ungranted batch/jobs watch). Escape hatch: set enabled: false.
+        applicationObservability:
+          enabled: true
+          collector: alloy-logs
+          destinations:
+            - tempo
+          receivers:
+            otlp:
+              grpc:
+                enabled: true
+                port: 4317
+              http:
+                enabled: true
+                port: 4318
+          metrics:
+            enabled: false
+          logs:
+            enabled: false
+          traces:
+            enabled: true
+          processors:
+            k8sattributes:
+              metadata:
+                - k8s.namespace.name
+                - k8s.pod.name
+                - k8s.deployment.name
+                - k8s.statefulset.name
+                - k8s.daemonset.name
+                - k8s.job.name
+                - k8s.node.name
         # Trivy KSV011/015/016/018/030/104 on alloy-operator (verified container-level via helm
         # template). Direct podSecurityContext and securityContext (no intermediate .alloy wrapper).
         alloy-operator:

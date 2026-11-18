@@ -3489,6 +3489,9 @@ PYEOF'
     python3 scripts/test/lib/check-round2-compliance-hardening.py --mutation-verify
   check R370 "Round-3 compliance hardening (KSV014): Velero server readOnlyRootFilesystem=true + /home/cnb emptyDir (no second /tmp mount, nodeAgent untouched) across velero.yaml & 08-4-storage.sh with offline helm renders, and keycloak-operator readOnlyRootFilesystem=true + /tmp emptyDir in 11-keycloak.sh (idempotent with pre-existing volumes; Keycloak CR untouched); 11 mutations caught" \
     python3 scripts/test/lib/check-round3-compliance-hardening.py --mutation-verify
+  # 2026-11-19 (#691): OTLP traces flow through Alloy applicationObservability (k8sattributes) so spans carry k8s.namespace.name
+  check R371 "Alloy k8s-monitoring enables applicationObservability OTLP (4317/4318) -> k8sattributes (k8s.namespace.name, k8s.pod.name, k8s.deployment.name; no k8s.cronjob.name) -> Tempo OTLP gRPC in k8s-monitoring.yaml and 08-2-monitoring.sh, Grafana tracing routes via Alloy, offline helm render + 11 mutations caught (D-TRACE-K8S-ATTR)" \
+    python3 scripts/test/lib/check-trace-k8s-attributes.py --mutation-verify
 }
 
 #=========================================

@@ -202,6 +202,18 @@ destinations:
   loki:
     type: loki
     url: http://loki:3100/loki/api/v1/push
+  tempo:
+    type: otlp
+    url: tempo.monitoring.svc.cluster.local:4317
+    protocol: grpc
+    tls:
+      insecure: true
+    metrics:
+      enabled: false
+    logs:
+      enabled: false
+    traces:
+      enabled: true
 collectors:
   alloy-logs:
     presets: [small, daemonset, filesystem-log-reader]
@@ -277,6 +289,35 @@ podLogsViaLoki:
   enabled: true
   collector: alloy-logs
   destinations: []
+applicationObservability:
+  enabled: true
+  collector: alloy-logs
+  destinations:
+    - tempo
+  receivers:
+    otlp:
+      grpc:
+        enabled: true
+        port: 4317
+      http:
+        enabled: true
+        port: 4318
+  metrics:
+    enabled: false
+  logs:
+    enabled: false
+  traces:
+    enabled: true
+  processors:
+    k8sattributes:
+      metadata:
+        - k8s.namespace.name
+        - k8s.pod.name
+        - k8s.deployment.name
+        - k8s.statefulset.name
+        - k8s.daemonset.name
+        - k8s.job.name
+        - k8s.node.name
 alloy-operator:
   podSecurityContext:
     runAsNonRoot: true

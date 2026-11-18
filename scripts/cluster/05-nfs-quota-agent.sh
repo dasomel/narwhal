@@ -79,6 +79,11 @@ HELM_ARGS=(
   --set tolerations[1].key=node.kubernetes.io/disk-pressure
   --set tolerations[1].operator=Exists
   --set tolerations[1].effect=NoSchedule
+  # D-nqa-hardening (KSV014/KSV104): chart exposes podSecurityContext and securityContext directly;
+  # keep privileged=true explicit alongside readOnlyRootFilesystem=true.
+  --set podSecurityContext.seccompProfile.type=RuntimeDefault
+  --set securityContext.privileged=true
+  --set securityContext.readOnlyRootFilesystem=true
 )
 
 # Refuse a chart/image mismatch before rolling anything out: every flag the rendered chart passes

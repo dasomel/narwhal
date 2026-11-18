@@ -3,7 +3,7 @@ import type { AcceptedClass } from "@/types/compliance"
 
 export const COMPLIANCE_EXCEPTIONS_DOC_ANCHOR = "docs/common/compliance-hardening.md#risk-accepted-exceptions"
 
-export type WorkloadKind = "ReplicaSet" | "DaemonSet" | "StatefulSet"
+export type WorkloadKind = "ReplicaSet" | "DaemonSet" | "StatefulSet" | "Pod"
 
 export type AcceptedReasonKey = Extract<TranslationKey, `compliance.acceptedReason.${string}`>
 
@@ -152,6 +152,16 @@ export const ACCEPTED_CONFIG_AUDIT_RULES: readonly AcceptedConfigAuditRule[] = [
     ["KSV001", "KSV003", "KSV012", "KSV014", "KSV106"],
     "upstream",
     "compliance.acceptedReason.chaosControllerSecurityContext",
+  ),
+
+  // database
+  configRule(
+    "database",
+    "Pod",
+    "narwhal-db-1",
+    ["KSV036"],
+    "accept",
+    "compliance.acceptedReason.cnpgInstanceManagerToken",
   ),
 
   // devtools
@@ -413,6 +423,14 @@ export const ACCEPTED_CONFIG_AUDIT_RULES: readonly AcceptedConfigAuditRule[] = [
     "accept",
     "compliance.acceptedReason.keycloakUid1000",
   ),
+  configRule(
+    "iam",
+    "StatefulSet",
+    "keycloak",
+    ["KSV014"],
+    "upstream",
+    "compliance.acceptedReason.keycloakReadOnlyRootFs",
+  ),
 
   // monitoring
   configRule(
@@ -486,6 +504,16 @@ export const ACCEPTED_CONFIG_AUDIT_RULES: readonly AcceptedConfigAuditRule[] = [
     ["KSV011", "KSV020", "KSV021"],
     "accept",
     "compliance.acceptedReason.prometheusUidAndCpuLimit",
+  ),
+
+  // nfs-quota-agent
+  configRule(
+    "nfs-quota-agent",
+    "DaemonSet",
+    "nfs-quota-agent",
+    ["KSV001", "KSV012", "KSV017", "KSV023", "KSV121"],
+    "accept",
+    "compliance.acceptedReason.nfsQuotaAgentAccept",
   ),
 
   // platform-system
@@ -673,7 +701,8 @@ export const ACCEPTED_CONFIG_AUDIT_RULES: readonly AcceptedConfigAuditRule[] = [
 
 /**
  * Reviewed per-role, per-check RBAC exceptions for platform-authored roles.
- * Exact match on roleName (and namespace when namespaced Role) plus normalized check ID;
+ * Exact match on (namespace, kind, roleName) plus normalized check ID (Role requires a
+ * non-empty namespace; ClusterRole requires an empty namespace; unknown kind fails closed);
  * any unlisted check (e.g. KSV042 on platform-admin) or unlisted role stays actionable.
  */
 export const ACCEPTED_RBAC_RULES: readonly AcceptedRbacRule[] = [
@@ -721,7 +750,7 @@ for (const rule of ACCEPTED_CONFIG_AUDIT_RULES) {
 
 const rbacRuleIndex = new Map<string, AcceptedRbacRule[]>()
 for (const rule of ACCEPTED_RBAC_RULES) {
-  const key = `${rule.namespace}\0${rule.roleName}`
+  const key = `${rule.namespace}\0${rule.kind}\0${rule.roleName}`
   const bucket = rbacRuleIndex.get(key)
   if (bucket) bucket.push(rule)
   else rbacRuleIndex.set(key, [rule])
@@ -754,8 +783,12 @@ export function matchRbacException(
   roleName: string,
   checkId: string,
   namespace = "",
+  kind = "",
 ): AcceptedMatch | null {
-  const rules = rbacRuleIndex.get(`${namespace}\0${roleName}`)
+  if (kind !== "Role" && kind !== "ClusterRole") return null
+  if (kind === "Role" && namespace === "") return null
+  if (kind === "ClusterRole" && namespace !== "") return null
+  const rules = rbacRuleIndex.get(`${namespace}\0${kind}\0${roleName}`)
   if (!rules) return null
   const normalizedCheck = normalizeCheckId(checkId)
   for (const rule of rules) {

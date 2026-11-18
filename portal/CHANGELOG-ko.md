@@ -9,6 +9,28 @@
 
 ## [Unreleased]
 
+## [1.1.19] - 2026-11-18
+
+구체적 근거가 있는 검토 완료 컴플라이언스 예외를 추가하고 RBAC 예외 매칭의 fail-open 경로를 닫는 패치 릴리스입니다
+(narwhal#717, narwhal#722).
+
+### 운영자 참고 / 동작 변경
+
+- 조치할 수 없는 항목이 사유와 함께 수용됨으로 더 표시됩니다(CloudNativePG 인스턴스 파드의 토큰 마운트, privileged NFS
+  쿼터 에이전트, 기본 Keycloak 이미지). 조치할 수 있는 항목은 조치 대상으로 유지됩니다.
+- 직접 작성한 RBAC 예외는 해당 네임스페이스의 `Role` 또는 `ClusterRole`에만 일치하며, kind를 알 수 없는 리포트는
+  수용되지 않습니다. 별도 설정은 필요하지 않습니다.
+
+### 추가
+
+- **Config Audit 검토 완료 예외 추가 (`src/lib/compliance-accepted.ts`, `src/lib/i18n.ts`, `docs/common/compliance-hardening.md`):**
+  - `ACCEPTED_CONFIG_AUDIT_RULES`를 58개 워크로드 70건으로 갱신했습니다(`Pod` 리소스 유형 추가로 `database/Pod/narwhal-db-1` `KSV036` 정확 매칭, `nfs-quota-agent/DaemonSet/nfs-quota-agent` `KSV001`/`KSV012`/`KSV017`/`KSV023`/`KSV121` 추가 및 `KSV014`/`KSV104` 조치대상 유지, `D-COMPLIANCE-R2`에 따른 `iam/StatefulSet/keycloak` `KSV014` `upstream` 추가; 플랫폼에서 수정 가능한 `keycloak-operator`, `velero`, `node-agent`의 `KSV014`는 조치 대상으로 유지).
+
+### 수정
+
+- **`matchRbacException`의 리소스 kind fail-closed 검증 (`src/lib/compliance-accepted.ts`, `src/lib/compliance.ts`, narwhal#717):**
+  - `ACCEPTED_RBAC_RULES` 인덱스와 `matchRbacException` 매칭에 `kind`를 포함해 `Role`(비어 있지 않은 namespace)과 `ClusterRole`(빈 namespace)만 일치시키고 `devtools/Unknown/narwhal-portal-jobs` 등 `Unknown`·누락·불일치 kind는 수용하지 않도록 수정했습니다.
+
 ## [1.1.18] - 2026-11-18
 
 Compliance 화면에서 검토를 마친 조치 불가 항목과 조치 대상 항목을 구분하고, 인증서 갱신 요청의 결과를 표시하는 패치
@@ -839,7 +861,8 @@ Portal의 첫 번째 공개 릴리스.
     매니페스트(`deploy/kaniko-build-job.yaml`).
   - 실시간 핫 모듈 교체(HMR) 및 컨테이너 파일 동기화를 위해 구성된 Skaffold 개발 프로필.
 
-[Unreleased]: https://github.com/dasomel/narwhal/compare/portal/v1.1.18...HEAD
+[Unreleased]: https://github.com/dasomel/narwhal/compare/portal/v1.1.19...HEAD
+[1.1.19]: https://github.com/dasomel/narwhal/compare/portal/v1.1.18...portal/v1.1.19
 [1.1.18]: https://github.com/dasomel/narwhal/compare/portal/v1.1.17...portal/v1.1.18
 [1.1.17]: https://github.com/dasomel/narwhal/compare/portal/v1.1.16...portal/v1.1.17
 [1.1.16]: https://github.com/dasomel/narwhal/compare/portal/v1.1.15...portal/v1.1.16

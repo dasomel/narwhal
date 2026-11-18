@@ -9,6 +9,28 @@ English | [한국어](CHANGELOG-ko.md)
 
 ## [Unreleased]
 
+## [1.1.19] - 2026-11-18
+
+Patch release that adds reviewed compliance exceptions backed by concrete evidence and closes a fail-open path in
+the RBAC exception matcher (narwhal#717, narwhal#722).
+
+### Operator notes / behaviour changes
+
+- More findings that cannot be fixed are shown as accepted with a reason (CloudNativePG instance pod token mount,
+  the privileged NFS quota agent, the stock Keycloak image). Findings that can still be fixed stay actionable.
+- Authored RBAC exceptions now match only a `Role` in its namespace or a `ClusterRole`; a report of unknown kind is
+  never accepted. No configuration is required.
+
+### Added
+
+- **Reviewed Config Audit allowlist additions (`src/lib/compliance-accepted.ts`, `src/lib/i18n.ts`, `docs/common/compliance-hardening.md`):**
+  - Expanded `ACCEPTED_CONFIG_AUDIT_RULES` to 70 rules across 58 workloads (adding `Pod` kind support for exact `database/Pod/narwhal-db-1` `KSV036`, `nfs-quota-agent/DaemonSet/nfs-quota-agent` `KSV001`/`KSV012`/`KSV017`/`KSV023`/`KSV121` while keeping `KSV014`/`KSV104` actionable, and `iam/StatefulSet/keycloak` `KSV014` as `upstream` per `D-COMPLIANCE-R2`; fixable `KSV014` findings for `keycloak-operator`, `velero`, and `node-agent` remain actionable).
+
+### Fixed
+
+- **Fail closed on RBAC report kind in `matchRbacException` (`src/lib/compliance-accepted.ts`, `src/lib/compliance.ts`, narwhal#717):**
+  - Indexed `ACCEPTED_RBAC_RULES` by `(namespace, kind, roleName)` and required `kind === "Role"` (non-empty namespace) or `kind === "ClusterRole"` (empty namespace), failing closed on `Unknown`, omitted, or mismatched kinds such as `devtools/Unknown/narwhal-portal-jobs`.
+
 ## [1.1.18] - 2026-11-18
 
 Patch release that separates reviewed, non-actionable compliance findings from actionable ones on the Compliance page
@@ -885,7 +907,8 @@ management dashboard built with Next.js 16 and React 19.
   - Skaffold development profile configured for live Hot Module Replacement (HMR) and container
     file syncing.
 
-[Unreleased]: https://github.com/dasomel/narwhal/compare/portal/v1.1.18...HEAD
+[Unreleased]: https://github.com/dasomel/narwhal/compare/portal/v1.1.19...HEAD
+[1.1.19]: https://github.com/dasomel/narwhal/compare/portal/v1.1.18...portal/v1.1.19
 [1.1.18]: https://github.com/dasomel/narwhal/compare/portal/v1.1.17...portal/v1.1.18
 [1.1.17]: https://github.com/dasomel/narwhal/compare/portal/v1.1.16...portal/v1.1.17
 [1.1.16]: https://github.com/dasomel/narwhal/compare/portal/v1.1.15...portal/v1.1.16

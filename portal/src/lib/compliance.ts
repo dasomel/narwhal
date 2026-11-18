@@ -445,7 +445,7 @@ function rbacAuditMatcher(namespace: string, kind: string, roleName: string): Ac
     })
   }
   return (checkId: string) => {
-    const match = matchRbacException(roleName, checkId, namespace)
+    const match = matchRbacException(roleName, checkId, namespace, kind)
     if (!match) return { accepted: false }
     return {
       accepted: true,

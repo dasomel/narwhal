@@ -133,6 +133,14 @@ spec:
 
         # Falco DaemonSet (모든 노드)
         tty: true
+        # D-falco-rofs (KSV014): read-only root. With modern_ebpf nothing is built or written on the
+        # root filesystem; the chart already mounts /root/.falco as a volume. Setting containerSecurityContext REPLACES the
+        # chart's computed context, so `privileged: true` must be repeated here: without it Falco
+        # fails scap_init ('ring buffer map type is not supported ... Operation not permitted') and
+        # crash-loops (seen live 2026-11-19). Escape hatch: remove the whole key.
+        containerSecurityContext:
+          privileged: true
+          readOnlyRootFilesystem: true
 
         # Container/K8s metadata (Falco >= 0.41): the `container` plugin replaces the old built-in
         # container engine. It is BAKED INTO the Falco image (/usr/share/falco/plugins/libcontainer.so),

@@ -3487,8 +3487,10 @@ PYEOF'
     python3 scripts/test/lib/check-node-hardening.py --mutation-verify
   check R366 "Round-2 workload compliance hardening: Gitea non-root uid/gid 1000 on all 4 containers, Tempo tempo.securityContext allowPrivilegeEscalation=false + readOnlyRootFilesystem (/var/tempo, /tmp emptyDir) with 08-2 parity, APISIX-IC runAsGroup 65532 + non-root/ro-rootfs, and Velero real cnb uid 1002/gid 1000 without fsGroup (+ round-3 ro-rootfs with /home/cnb) + 08-4 parity; offline helm renders and 15 mutations caught" \
     python3 scripts/test/lib/check-round2-compliance-hardening.py --mutation-verify
-  check R370 "Round-3 compliance hardening (KSV014): Velero server readOnlyRootFilesystem=true + /home/cnb emptyDir (no second /tmp mount, nodeAgent untouched) across velero.yaml & 08-4-storage.sh with offline helm renders, and keycloak-operator readOnlyRootFilesystem=true + /tmp emptyDir in 11-keycloak.sh (idempotent with pre-existing volumes; Keycloak CR untouched); 11 mutations caught" \
+  check R370 "Round-3 compliance hardening (KSV014): Velero server readOnlyRootFilesystem=true + /home/cnb emptyDir (no second /tmp mount; nodeAgent hardened in R371) across velero.yaml & 08-4-storage.sh with offline helm renders, and keycloak-operator readOnlyRootFilesystem=true + /tmp emptyDir in 11-keycloak.sh (idempotent with pre-existing volumes; Keycloak CR untouched); 11 mutations caught" \
     python3 scripts/test/lib/check-round3-compliance-hardening.py --mutation-verify
+  check R371 "Round-4 compliance hardening (KSV014/KSV104): Falco containerSecurityContext sets both privileged=true and readOnlyRootFilesystem=true (GitOps-only), Velero node-agent readOnlyRootFilesystem=true with /root and /tmp emptyDirs across velero.yaml & 08-4-storage.sh, and nfs-quota-agent RuntimeDefault seccomp + privileged + readOnlyRootFilesystem via chart values in 05-nfs-quota-agent.sh with offline helm renders; 11 mutations caught" \
+    python3 scripts/test/lib/check-round4-compliance-hardening.py --mutation-verify
 }
 
 #=========================================

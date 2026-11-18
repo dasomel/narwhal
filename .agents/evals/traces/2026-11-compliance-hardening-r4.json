@@ -1,0 +1,75 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-compliance-hardening-round4-20261119",
+  "task": "Lane R4 workload compliance hardening round 4 (narwhal#726): enforce readOnlyRootFilesystem=true with explicit privileged=true on security-system/falco (GitOps-only), readOnlyRootFilesystem=true with /root and /tmp emptyDir mounts on storage/velero node-agent (velero.yaml + 08-4-storage.sh parity), and RuntimeDefault seccomp + privileged + readOnlyRootFilesystem via chart values on nfs-quota-agent (05-nfs-quota-agent.sh); update R358/R370, add R371, and update docs/changelog/lessons-log.",
+  "changeContext": {
+    "paths": [
+      ".agents/evals/traces/2026-11-compliance-hardening-r4.json",
+      "CHANGELOG-ko.md",
+      "CHANGELOG.md",
+      "docs/common/compliance-hardening.md",
+      "docs/common/lessons-log.md",
+      "gitops/charts/narwhal-apps/templates/falco.yaml",
+      "gitops/charts/narwhal-apps/templates/velero.yaml",
+      "scripts/cluster/05-nfs-quota-agent.sh",
+      "scripts/cluster/08-4-storage.sh",
+      "scripts/test/lib/check-lane5-security-charts.py",
+      "scripts/test/lib/check-round3-compliance-hardening.py",
+      "scripts/test/lib/check-round4-compliance-hardening.py",
+      "scripts/test/regression-check-kakao.sh"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Scope: Falco (falco.yaml already at HEAD; confirmed GitOps-only with no 08-3-security.sh bootstrap install), Velero node-agent (velero.yaml already at HEAD; bootstrap parity in 08-4-storage.sh), and nfs-quota-agent (05-nfs-quota-agent.sh chart values; confirmed no GitOps Application owner), plus R358/R370 updates, new R371 check, docs/changelog/lessons-log and trace. Excluded: Compliance allowlist tables in compliance-hardening.md (pinned by portal/src/lib/compliance-accepted.test.ts), portal/ files, and live cluster mutations."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "Inspected bundled charts (falco-9.2.1.tgz, velero-12.0.3.tgz, nfs-quota-agent-0.0.0-main.tgz): Falco _security_context.tpl replaces the computed privileged context whenever containerSecurityContext is non-empty (dropping privileged=true unless repeated); Velero node-agent-daemonset.yaml merges nodeAgent.containerSecurityContext and mounts nodeAgent.extraVolumes/extraVolumeMounts; nfs-quota-agent DaemonSet template exposes podSecurityContext and securityContext directly. Confirmed R358 (falcosidekick ro-rootfs mutation matched Falco first) and R370 (asserted nodeAgent untouched) failed on HEAD before updating them."
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "Added Velero nodeAgent readOnlyRootFilesystem=true plus node-agent-home (/root) and tmp (/tmp) emptyDir mounts to scripts/cluster/08-4-storage.sh matching velero.yaml; added --set podSecurityContext.seccompProfile.type=RuntimeDefault, --set securityContext.privileged=true, and --set securityContext.readOnlyRootFilesystem=true to HELM_ARGS in scripts/cluster/05-nfs-quota-agent.sh; fixed falcosidekick mutation anchor in check-lane5-security-charts.py (R358) and removed nodeAgent-untouched assertions from check-round3-compliance-hardening.py (R370); added R371 (check-round4-compliance-hardening.py) with offline helm renders for all 3 charts and 11 mutations (including removing privileged from Falco); updated compliance-hardening.md, CHANGELOG, CHANGELOG-ko and lessons-log."
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "Static validation, offline helm template renders of falco-9.2.1.tgz, velero-12.0.3.tgz (GitOps + 08-4) and nfs-quota-agent-0.0.0-main.tgz, mutation checks (R259, R291, R358, R362, R366, R370, R371), shellcheck/bash -n, markdownlint-changed, git diff --check, and eval gate on the branch without cluster access; plus orchestrator live single-node measurements.",
+      "summary": "All offline checks, mutation verifications, helm renders, eval gate, and shell/markdown linters passed, and the orchestrator's live single-node checks passed for Falco, Velero node-agent, and nfs-quota-agent.",
+      "evidence": [
+        "test:make validate -> exit 0",
+        "test:python3 scripts/test/lib/check-round4-compliance-hardening.py --mutation-verify -> PASS (offline helm renders + 11 mutations rejected)",
+        "test:python3 scripts/test/lib/check-round3-compliance-hardening.py --mutation-verify -> PASS (offline helm renders + 11 mutations rejected)",
+        "test:python3 scripts/test/lib/check-round2-compliance-hardening.py --mutation-verify -> PASS (offline helm renders + 15 mutations rejected)",
+        "test:python3 scripts/test/lib/check-storage-hardening.py --mutation-verify -> PASS (23 mutations rejected)",
+        "test:python3 scripts/test/lib/check-lane5-security-charts.py --mutation-verify -> ok (14 mutations caught)",
+        "test:python3 scripts/test/lib/check-falco.py --mutation-verify -> OK (69 mutations caught)",
+        "test:bash scripts/test/lib/check-nqa-skew.sh -> exit 0",
+        "test:shellcheck -S warning scripts/cluster/05-nfs-quota-agent.sh scripts/cluster/08-4-storage.sh scripts/test/regression-check-kakao.sh && bash -n scripts/cluster/05-nfs-quota-agent.sh scripts/cluster/08-4-storage.sh scripts/test/regression-check-kakao.sh -> exit 0",
+        "test:python3 scripts/ci/markdownlint-changed.py --base origin/main -> exit 0",
+        "test:git diff --check -> exit 0",
+        "test:python3 .agents/evals/gate.py --trace .agents/evals/traces/2026-11-compliance-hardening-r4.json --baseline .agents/evals/baseline.eval.json --current-out /tmp/c.json --comparison-out /tmp/cmp.json -> exit 0 (0 regressions)",
+        "test:Falco falco-9.2.1 modern_ebpf live rollout: without privileged=true crash-looped ~3m (6 restarts) on scap_init errno 1; with privileged=true repeated Ready, 0 restarts, modern BPF probe opened, 22 rule events in 2m after test pod (orchestrator, measured 2026-11-19)",
+        "test:Velero node-agent live backup from velero-daily-full template with readOnlyRootFilesystem=true and /root + /tmp emptyDirs -> Completed 1771/1771 with 2 PodVolumeBackups Completed, 0 'read-only file system' lines, 0 restarts (orchestrator, measured 2026-11-19)",
+        "test:kubectl patch ds nfs-quota-agent -n nfs-quota-agent --type=strategic with pod seccomp RuntimeDefault and container privileged=true + readOnlyRootFilesystem=true -> Running, 0 restarts, 'Quota applied successfully' for every PV, history and cleanup loops started, no read-only errors (orchestrator, measured 2026-11-19)"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "completion_claim",
+      "summary": "Offline helm renders, static validation, regression checks (R259, R291, R358, R362, R366, R370, R371), shell/markdown checks, eval gate and orchestrator live single-node checks pass; no restore of volume data and no clean install were run."
+    },
+    {
+      "id": "e6",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Round-4 compliance fixes (Falco, Velero node-agent, nfs-quota-agent KSV014/KSV104) implemented with bootstrap parity, R371 regression coverage, documentation, lessons-log entry and eval trace; verified live on the local single-node cluster."
+    }
+  ]
+}

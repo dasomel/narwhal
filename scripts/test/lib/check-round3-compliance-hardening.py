@@ -4,7 +4,7 @@
 Pins:
 1. storage/velero (velero.yaml & 08-4-storage.sh): server containerSecurityContext
    readOnlyRootFilesystem=true with velero-home emptyDir mounted at /home/cnb, no
-   second /tmp mount (chart mounts its own tmpdir at /tmp), nodeAgent untouched.
+   second /tmp mount (chart mounts its own tmpdir at /tmp); nodeAgent hardened in round 4.
    Offline helm template renders both GitOps values and 08-4 heredoc when a chart
    bundle is present.
 2. iam/keycloak-operator (11-keycloak.sh): strategic patch sets
@@ -146,10 +146,7 @@ def _verify_velero(velero_yaml: str, storage_sh: str) -> None:
         assert vols.get(vname, {}).get("emptyDir") == {}, f"{label} velero /home/cnb volume {vname!r} must be emptyDir"
 
         na = vals.get("nodeAgent") or {}
-        assert (na.get("podSecurityContext") or {}).get("runAsNonRoot") is False, f"{label} nodeAgent untouched"
-        assert "readOnlyRootFilesystem" not in (na.get("containerSecurityContext") or {}), (
-            f"{label} nodeAgent must not set readOnlyRootFilesystem"
-        )
+        assert (na.get("podSecurityContext") or {}).get("runAsNonRoot") is False, f"{label} nodeAgent podSecurityContext.runAsNonRoot"
 
 
 def _upstream_keycloak_deployment(root: Path) -> dict:
@@ -294,7 +291,6 @@ def verify_helm_renders(root: Path) -> bool:
         nspec = ds["spec"]["template"]["spec"]
         assert nspec["securityContext"]["runAsNonRoot"] is False, f"{label} node-agent runAsNonRoot"
         nc = nspec["containers"][0]
-        assert "readOnlyRootFilesystem" not in (nc.get("securityContext") or {}), f"{label} node-agent untouched"
         assert not any(m["mountPath"] == "/home/cnb" for m in nc.get("volumeMounts") or []), f"{label} node-agent mounts"
     return True
 

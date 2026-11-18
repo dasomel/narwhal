@@ -51,6 +51,7 @@ for attempt in 1 2 3 4 5; do
     --set-json 'alertmanager.alertmanagerSpec.alertmanagerConfigNamespaceSelector={"matchLabels":{"kubernetes.io/metadata.name":"monitoring"}}' \
     --set alertmanager.alertmanagerSpec.alertmanagerConfigMatcherStrategy.type=None \
     --set grafana.assertNoLeakedSecrets=false \
+    --set 'grafana.grafana\.ini.tracing\.opentelemetry\.otlp.address=k8s-monitoring-alloy-logs.monitoring.svc.cluster.local:4317' \
     --set grafana.admin.existingSecret=grafana-secrets \
     --set grafana.admin.userKey=admin-user \
     --set grafana.admin.passwordKey=admin-password \
@@ -217,7 +218,83 @@ destinations:
 collectors:
   alloy-logs:
     presets: [small, daemonset, filesystem-log-reader]
+    includeDestinations:
+      - tempo
+    service:
+      internalTrafficPolicy: Local
+    extraConfig: |
+      otelcol.receiver.otlp "otlp_traces" {
+        grpc {
+          endpoint = "0.0.0.0:4317"
+          include_metadata = false
+          max_recv_msg_size = "4MiB"
+          read_buffer_size = "512KiB"
+          write_buffer_size = "32KiB"
+        }
+        http {
+          endpoint = "0.0.0.0:4318"
+          include_metadata = false
+          max_request_body_size = "20MiB"
+        }
+        debug_metrics {
+          disable_high_cardinality_metrics = true
+        }
+        output {
+          traces = [otelcol.processor.memory_limiter.otlp_traces.input]
+        }
+      }
+
+      otelcol.processor.memory_limiter "otlp_traces" {
+        check_interval = "1s"
+        limit = "384MiB"
+        output {
+          traces = [otelcol.processor.transform.strip_client_k8s.input]
+        }
+      }
+
+      otelcol.processor.transform "strip_client_k8s" {
+        error_mode = "propagate"
+        trace_statements {
+          context = "resource"
+          statements = [
+            `delete_matching_keys(attributes, "^k8s[.]")`,
+            `delete_key(attributes, "service.namespace")`,
+          ]
+        }
+        output {
+          traces = [otelcol.processor.k8sattributes.otlp_traces.input]
+        }
+      }
+
+      otelcol.processor.k8sattributes "otlp_traces" {
+        passthrough = false
+        filter {
+          node = sys.env("HOSTNAME")
+        }
+        extract {
+          metadata = ["k8s.namespace.name","k8s.pod.name","k8s.deployment.name","k8s.statefulset.name","k8s.daemonset.name","k8s.job.name","k8s.node.name"]
+        }
+        pod_association {
+          source {
+            from = "connection"
+          }
+        }
+        output {
+          traces = [otelcol.processor.attributes.tempo.input]
+        }
+      }
     alloy:
+      extraPorts:
+        - name: otlp-grpc
+          port: 4317
+          targetPort: 4317
+          protocol: TCP
+          appProtocol: grpc
+        - name: otlp-http
+          port: 4318
+          targetPort: 4318
+          protocol: TCP
+          appProtocol: http
       mounts:
         extra:
           - name: tmp
@@ -290,34 +367,7 @@ podLogsViaLoki:
   collector: alloy-logs
   destinations: []
 applicationObservability:
-  enabled: true
-  collector: alloy-logs
-  destinations:
-    - tempo
-  receivers:
-    otlp:
-      grpc:
-        enabled: true
-        port: 4317
-      http:
-        enabled: true
-        port: 4318
-  metrics:
-    enabled: false
-  logs:
-    enabled: false
-  traces:
-    enabled: true
-  processors:
-    k8sattributes:
-      metadata:
-        - k8s.namespace.name
-        - k8s.pod.name
-        - k8s.deployment.name
-        - k8s.statefulset.name
-        - k8s.daemonset.name
-        - k8s.job.name
-        - k8s.node.name
+  enabled: false
 alloy-operator:
   podSecurityContext:
     runAsNonRoot: true

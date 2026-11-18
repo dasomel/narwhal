@@ -2,11 +2,12 @@
   "schemaVersion": "openforge-agent-trace/v1",
   "consistencyMode": "strict",
   "traceId": "narwhal-trace-k8s-attributes-691-20261119",
-  "task": "narwhal#691: Enable OTLP ingestion (4317/4318) and otelcol.processor.k8sattributes on the already-deployed Grafana Alloy collector (k8s-monitoring) to stamp k8s.namespace.name (plus pod/deployment/statefulset/daemonset/job/node) on traces forwarded to Tempo, keep 08-2-monitoring.sh in parity, route Grafana tracing via Alloy, add R371 regression check + lessons-log row.",
+  "task": "narwhal#691: Make Alloy OTLP trace enrichment trustworthy so k8s.namespace.name (and other k8s.* attributes) are determined solely by the collector from the sender TCP connection IP, stripping client k8s.* and service.namespace before k8sattributes, adding memory_limiter + node-scoped k8sattributes + internalTrafficPolicy Local, keeping 08-2-monitoring.sh parity (including Grafana OTLP address), and verifying rendered Alloy config in R371.",
   "changeContext": {
     "paths": [
       ".agents/evals/traces/2026-11-trace-k8s-attributes.json",
       "docs/common/lessons-log.md",
+      "docs/common/unified-observability-contract.md",
       "gitops/charts/narwhal-apps/templates/k8s-monitoring.yaml",
       "gitops/charts/narwhal-apps/templates/prometheus-stack.yaml",
       "scripts/cluster/08-2-monitoring.sh",
@@ -18,46 +19,46 @@
     {
       "id": "e1",
       "type": "scope_check",
-      "summary": "Scope: gitops/charts/narwhal-apps/templates/k8s-monitoring.yaml, scripts/cluster/08-2-monitoring.sh, gitops/charts/narwhal-apps/templates/prometheus-stack.yaml, docs/common/lessons-log.md, scripts/test/lib/check-trace-k8s-attributes.py (R371), scripts/test/regression-check-kakao.sh, and this eval trace. Excluded: portal/ (untouched per constraint), tempo.yaml, hand-written ClusterRoles, securityContext/resources/NetworkPolicy/Kyverno relaxations, and any live cluster or VM mutations."
+      "summary": "Scope: gitops/charts/narwhal-apps/templates/k8s-monitoring.yaml, gitops/charts/narwhal-apps/templates/prometheus-stack.yaml, scripts/cluster/08-2-monitoring.sh, docs/common/lessons-log.md, docs/common/unified-observability-contract.md, scripts/test/lib/check-trace-k8s-attributes.py (R371), scripts/test/regression-check-kakao.sh, and this eval trace. Excluded: portal/, tempo.yaml, ClusterRoles, NetworkPolicies/PeerAuthentication, .review/, and live cluster/VM mutations."
     },
     {
       "id": "e2",
       "type": "reproduction",
-      "summary": "Inspected gitops/, scripts/cluster/08-2-monitoring.sh, portal/src/instrumentation.ts, and bundled charts k8s-monitoring-4.2.0.tgz and tempo-2.2.3.tgz: Tempo receives OTLP directly (4317/4318) with no k8sattributes processor; Grafana (prometheus-stack.yaml) pointed directly at tempo.monitoring.svc.cluster.local:4317; Istio ambient has no tracing config; portal/src/instrumentation.ts is disabled in deployment env. Meanwhile k8s-monitoring 4.2.0 (alloy-operator + k8s-monitoring-alloy-logs DaemonSet) is already deployed with podLogsViaLoki only and applicationObservability disabled, and its default Alloy ClusterRole (collectors/upstream/alloy-values.yaml) already grants get/list/watch on pods, namespaces, and replicasets."
+      "summary": "Initial PR #729 enabled k8s-monitoring 4.2.0 applicationObservability defaults (pod_association k8s.pod.ip -> k8s.pod.uid -> connection, no node filter, no memory_limiter). Orchestrator live check (2026-11-19) from a dev pod sending resource attribute k8s.namespace.name=chaos-testing stored chaos-testing in Tempo (search chaos-testing: 1 trace; dev: 0) and was rolled back. Inspecting k8s-monitoring-4.2.0.tgz confirmed feature-application-observability hardcodes receiver -> [memory_limiter ->] resourcedetection -> k8sattributes -> transform with no pre-k8sattributes strip hook, and k8sattributes preserves pre-existing client attributes and never strips service.namespace. Also found 08-2-monitoring.sh lacked Grafana's OTLP address and R371 did not detect span-dropping filters (traces.filters.span=['true']) or render-level security invariants."
     },
     {
       "id": "e3",
       "type": "bug_fix",
-      "summary": "Enabled applicationObservability (traces-only, OTLP gRPC 4317 + HTTP 4318) on collector alloy-logs and added destinations.tempo (OTLP gRPC to tempo.monitoring.svc.cluster.local:4317, tls.insecure=true) in both gitops/charts/narwhal-apps/templates/k8s-monitoring.yaml and scripts/cluster/08-2-monitoring.sh; scoped k8sattributes.metadata to k8s.namespace.name, k8s.pod.name, k8s.deployment.name, k8s.statefulset.name, k8s.daemonset.name, k8s.job.name, k8s.node.name (omitting k8s.cronjob.name so no extra batch/jobs ClusterRole rule is needed); updated Grafana tracing.opentelemetry.otlp.address in prometheus-stack.yaml to k8s-monitoring-alloy-logs.monitoring.svc.cluster.local:4317; added R371 (check-trace-k8s-attributes.py) and a lessons-log entry."
+      "summary": "Disabled applicationObservability (enabled: false) and configured collectors.alloy-logs via extraConfig + includeDestinations: [tempo] + alloy.extraPorts (4317/4318) + service.internalTrafficPolicy: Local in k8s-monitoring.yaml and 08-2-monitoring.sh: otelcol.receiver.otlp -> otelcol.processor.memory_limiter (check_interval=1s, limit=384MiB for 512Mi container limit) -> otelcol.processor.transform 'strip_client_k8s' (error_mode=propagate, delete_matching_keys(attributes, '^k8s[.]') and delete_key(attributes, 'service.namespace')) -> otelcol.processor.k8sattributes (filter node=sys.env('HOSTNAME'), connection-only pod_association, no k8s.cronjob.name) -> tempo. Added Grafana OTLP address --set parity to 08-2-monitoring.sh, documented service.namespace deletion cost and residual unauthenticated-receiver threats in docs/common/unified-observability-contract.md and docs/common/lessons-log.md, and hardened R371 to parse and mutation-test the rendered Alloy config (including traces.filters.span=['true'])."
     },
     {
       "id": "e4",
       "type": "regression_verification",
       "status": "passed",
-      "scope": "Offline helm template renders of k8s-monitoring-4.2.0.tgz and narwhal-apps, make validate, R371 + R360 + R311 mutation verifications, shellcheck/bash -n, markdownlint-changed, and git diff --check on the branch without cluster access.",
-      "summary": "All offline helm template renders, static validations, regression checks (R371, R360, R311) with mutation proofs, shellcheck/bash -n, markdownlint-changed, and git diff --check passed. Live cluster sync and span emission remain for the orchestrator runbook.",
+      "scope": "Offline helm template renders of k8s-monitoring-4.2.0.tgz and narwhal-apps, make validate, R371 + R360 + R311 + R366 mutation verifications, shellcheck/bash -n, markdownlint-changed + markdownlint-cli2, and git diff --check without cluster access.",
+      "summary": "All offline helm template renders, static validations, regression checks (R371 19 mutations, R360 21 mutations, R311 7 mutations, R366 15 mutations), shellcheck/bash -n, markdownlint, and git diff --check passed on the updated branch.",
       "evidence": [
         "test:make validate -> exit 0",
-        "test:python3 scripts/test/lib/check-trace-k8s-attributes.py --mutation-verify -> PASS: R371 OTLP k8s.namespace.name enrichment + helm render ok (11 mutations rejected)",
+        "test:python3 scripts/test/lib/check-trace-k8s-attributes.py --mutation-verify -> PASS: R371 trustworthy OTLP k8s.namespace.name enrichment + helm render ok (19 mutations rejected)",
         "test:python3 scripts/test/lib/check-monitoring-hardening.py --mutation-verify -> PASS: 21 mutations rejected / monitoring stack compliance hardening: OK",
         "test:python3 scripts/test/lib/check-monitoring-spread.py --mutation-verify -> PASS: 7 mutations rejected / monitoring spread/qos ok",
+        "test:python3 scripts/test/lib/check-round2-compliance-hardening.py --mutation-verify -> PASS: R366 round-2 compliance hardening + offline helm renders (15 mutations rejected)",
         "test:helm template narwhal-apps gitops/charts/narwhal-apps -s templates/k8s-monitoring.yaml -s templates/prometheus-stack.yaml -> exit 0",
         "test:shellcheck -S warning scripts/cluster/08-2-monitoring.sh scripts/test/regression-check-kakao.sh && bash -n scripts/cluster/08-2-monitoring.sh scripts/test/regression-check-kakao.sh -> exit 0",
-        "test:python3 scripts/ci/markdownlint-changed.py --base origin/main -> exit 0 (No markdownlint violations on added/modified active-documentation lines)",
-        "test:git diff --check -> exit 0",
-        "test:kubectl run (curl OTLP/HTTP span from namespace dev to k8s-monitoring-alloy-logs:4318) -> http=200; Tempo search { resource.k8s.namespace.name = \"dev\" } -> 1 trace, rootServiceName smoke-691; { resource.k8s.namespace.name != \"\" } -> 20 grafana traces (orchestrator, measured 2026-11-19, local single-node cluster)"
+        "test:python3 scripts/ci/markdownlint-changed.py --base origin/main && npx --no-install markdownlint-cli2 docs/common/unified-observability-contract.md docs/common/lessons-log.md -> exit 0 (0 issues)",
+        "test:git diff --check -> exit 0"
       ]
     },
     {
       "id": "e5",
       "type": "completion_claim",
-      "summary": "Static validation, offline helm renders (k8s-monitoring-4.2.0.tgz and narwhal-apps), regression checks (R371, R360, R311), shell/markdown lints, and git diff --check pass; live cluster sync and TraceQL verification of resource.k8s.namespace.name are documented in the orchestrator runbook and not yet executed."
+      "summary": "All offline validations, rendered Alloy ConfigMap/CR security checks, R371/R360/R311/R366 mutation suites, and shell/markdown/diff lints pass on the fixed branch; live cluster rollout and the 3-probe dev-namespace verification runbook remain for the orchestrator."
     },
     {
       "id": "e6",
       "type": "task_outcome",
       "state": "A",
-      "summary": "Enabled Alloy applicationObservability OTLP -> k8sattributes -> Tempo pipeline across GitOps and 08-2-monitoring.sh, routed Grafana tracing through Alloy, added R371 regression + mutation checks, updated lessons-log, and produced eval trace."
+      "summary": "Hardened Alloy OTLP trace pipeline via extraConfig to strip client k8s.*/service.namespace before connection-only node-scoped k8sattributes with 384MiB memory_limiter and internalTrafficPolicy Local, synced 08-2-monitoring.sh Grafana OTLP address, strengthened R371 + docs, and resolved eval trace contradiction."
     }
   ]
 }

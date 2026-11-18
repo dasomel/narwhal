@@ -36,12 +36,97 @@ spec:
         collectors:
           alloy-logs:
             presets: [small, daemonset, filesystem-log-reader]
+            includeDestinations:
+              - tempo
+            service:
+              internalTrafficPolicy: Local
+            # D-TRACE-K8S-ATTR (#691): OTLP trace ingestion via extraConfig instead of
+            # applicationObservability because feature-application-observability hardcodes
+            # receiver -> [memory_limiter ->] resourcedetection -> k8sattributes -> transform
+            # with no pre-k8sattributes hook to strip untrusted client k8s.*/service.namespace.
+            # Pipeline: receiver(4317/4318) -> memory_limiter(384MiB of 512Mi container limit)
+            # -> strip_client_k8s(error_mode=propagate, delete ^k8s[.] + service.namespace)
+            # -> k8sattributes(ownNode filter, connection-only pod_association) -> tempo.
+            # service.namespace is deleted (cost: no trace grouping by service.namespace,
+            # and unassociated non-pod senders have no namespace so portal hides them, fail closed).
+            extraConfig: |
+              otelcol.receiver.otlp "otlp_traces" {
+                grpc {
+                  endpoint = "0.0.0.0:4317"
+                  include_metadata = false
+                  max_recv_msg_size = "4MiB"
+                  read_buffer_size = "512KiB"
+                  write_buffer_size = "32KiB"
+                }
+                http {
+                  endpoint = "0.0.0.0:4318"
+                  include_metadata = false
+                  max_request_body_size = "20MiB"
+                }
+                debug_metrics {
+                  disable_high_cardinality_metrics = true
+                }
+                output {
+                  traces = [otelcol.processor.memory_limiter.otlp_traces.input]
+                }
+              }
+
+              otelcol.processor.memory_limiter "otlp_traces" {
+                check_interval = "1s"
+                limit = "384MiB"
+                output {
+                  traces = [otelcol.processor.transform.strip_client_k8s.input]
+                }
+              }
+
+              otelcol.processor.transform "strip_client_k8s" {
+                error_mode = "propagate"
+                trace_statements {
+                  context = "resource"
+                  statements = [
+                    `delete_matching_keys(attributes, "^k8s[.]")`,
+                    `delete_key(attributes, "service.namespace")`,
+                  ]
+                }
+                output {
+                  traces = [otelcol.processor.k8sattributes.otlp_traces.input]
+                }
+              }
+
+              otelcol.processor.k8sattributes "otlp_traces" {
+                passthrough = false
+                filter {
+                  node = sys.env("HOSTNAME")
+                }
+                extract {
+                  metadata = ["k8s.namespace.name","k8s.pod.name","k8s.deployment.name","k8s.statefulset.name","k8s.daemonset.name","k8s.job.name","k8s.node.name"]
+                }
+                pod_association {
+                  source {
+                    from = "connection"
+                  }
+                }
+                output {
+                  traces = [otelcol.processor.attributes.tempo.input]
+                }
+              }
             # Trivy KSV014/022/119 on alloy container: readOnlyRootFilesystem requires
             # /tmp emptyDir for storagePath (/tmp/alloy); drop NET_RAW from default caps
             # as a log tailer has no raw packet socket requirements.
             # UID=0 (root) kept intentionally (KSV012 ACCEPT): reading host container
             # logs from /var/log/pods requires root privileges.
             alloy:
+              extraPorts:
+                - name: otlp-grpc
+                  port: 4317
+                  targetPort: 4317
+                  protocol: TCP
+                  appProtocol: grpc
+                - name: otlp-http
+                  port: 4318
+                  targetPort: 4318
+                  protocol: TCP
+                  appProtocol: http
               mounts:
                 extra:
                   - name: tmp
@@ -116,41 +201,11 @@ spec:
           enabled: true
           collector: alloy-logs
           destinations: []
-        # D-TRACE-K8S-ATTR (#691): enable OTLP ingestion (4317 gRPC / 4318 HTTP) and
-        # otelcol.processor.k8sattributes on the existing alloy-logs collector so traces
-        # carry k8s.namespace.name (plus pod/deployment/statefulset/daemonset/job/node)
-        # for portal tenant scoping (#687). Uses only pods/namespaces/replicasets RBAC
-        # already created by alloy-operator's default Alloy ClusterRole (k8s.cronjob.name
-        # omitted to avoid an ungranted batch/jobs watch). Escape hatch: set enabled: false.
+        # Disabled intentionally: feature-application-observability cannot strip client
+        # k8s.*/service.namespace before k8sattributes; see collectors.alloy-logs.extraConfig.
+        # Escape hatch: remove extraConfig + includeDestinations: [tempo] + alloy.extraPorts.
         applicationObservability:
-          enabled: true
-          collector: alloy-logs
-          destinations:
-            - tempo
-          receivers:
-            otlp:
-              grpc:
-                enabled: true
-                port: 4317
-              http:
-                enabled: true
-                port: 4318
-          metrics:
-            enabled: false
-          logs:
-            enabled: false
-          traces:
-            enabled: true
-          processors:
-            k8sattributes:
-              metadata:
-                - k8s.namespace.name
-                - k8s.pod.name
-                - k8s.deployment.name
-                - k8s.statefulset.name
-                - k8s.daemonset.name
-                - k8s.job.name
-                - k8s.node.name
+          enabled: false
         # Trivy KSV011/015/016/018/030/104 on alloy-operator (verified container-level via helm
         # template). Direct podSecurityContext and securityContext (no intermediate .alloy wrapper).
         alloy-operator:

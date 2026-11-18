@@ -48,7 +48,8 @@
         "test:shellcheck -S warning scripts/cluster/08-2-monitoring.sh scripts/test/regression-check-kakao.sh && bash -n scripts/cluster/08-2-monitoring.sh scripts/test/regression-check-kakao.sh -> exit 0",
         "test:python3 scripts/ci/markdownlint-changed.py --base origin/main -> exit 0 (0 violations)",
         "test:git diff --check -> exit 0",
-        "test:three OTLP/HTTP probes from a pod in namespace dev via Alloy collector (honest; resource k8s.namespace.name=chaos-testing; service.namespace=chaos-testing + k8s.pod.ip of a chaos-testing pod) -> http 200 each; Tempo stores all three with k8s.namespace.name=dev only: 0 results for k8s.namespace.name=chaos-testing and for service.namespace=chaos-testing (orchestrator, measured 2026-11-19, local single-node cluster)"
+        "test:three OTLP/HTTP probes from a pod in namespace dev via Alloy collector (honest; resource k8s.namespace.name=chaos-testing; service.namespace=chaos-testing + k8s.pod.ip of a chaos-testing pod) -> http 200 each; Tempo stores all three with k8s.namespace.name=dev only: 0 results for k8s.namespace.name=chaos-testing and for service.namespace=chaos-testing (orchestrator, measured 2026-11-19, local single-node cluster)",
+        "test:after tempo-ingress-policy: from namespace dev, direct POSTs to tempo 4318/4317/9411 -> no connection (curl 000) and 0 traces stored; via collector:4318 with spoofed k8s.namespace.name -> 200, stored as dev only; Grafana and the portal pod still query tempo:3200; Prometheus 26 targets, none down (orchestrator, measured 2026-11-19)"
       ]
     },
     {

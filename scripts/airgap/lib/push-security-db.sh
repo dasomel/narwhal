@@ -105,13 +105,89 @@ validate_ca_cert() {
     echo "ERROR: openssl is required to validate --ca-cert" >&2
     exit 1
   fi
-  if ! openssl x509 -in "${cert}" -noout >/dev/null 2>&1; then
+
+  local tmpdir
+  tmpdir="$(mktemp -d)"
+  trap 'rm -rf "${tmpdir}"' EXIT
+
+  awk -v dir="${tmpdir}" '
+    /-----BEGIN CERTIFICATE-----/ {
+      if (in_cert && out != "") {
+        close(out)
+      }
+      in_cert = 1
+      count++
+      out = sprintf("%s/cert-%04d.crt", dir, count)
+    }
+    in_cert {
+      sub(/\r$/, "")
+      print > out
+      if (/-----END CERTIFICATE-----/) {
+        close(out)
+        in_cert = 0
+      }
+    }
+  ' "${cert}"
+
+  local cert_blocks=()
+  for b in "${tmpdir}"/cert-*.crt; do
+    [[ -f "${b}" ]] && cert_blocks+=("${b}")
+  done
+
+  if [[ ${#cert_blocks[@]} -eq 0 ]]; then
+    rm -rf "${tmpdir}"
+    trap - EXIT
     echo "ERROR: --ca-cert ${cert} is not a valid PEM certificate" >&2
     exit 1
   fi
-  if ! openssl x509 -in "${cert}" -noout -checkend 0 >/dev/null 2>&1; then
-    echo "ERROR: --ca-cert ${cert} has expired" >&2
+
+  local valid_count=0
+  local invalid_count=0
+
+  for b in "${cert_blocks[@]}"; do
+    if ! openssl x509 -in "${b}" -noout >/dev/null 2>&1; then
+      rm -rf "${tmpdir}"
+      trap - EXIT
+      echo "ERROR: --ca-cert ${cert} is not a valid PEM certificate" >&2
+      exit 1
+    fi
+
+    local is_valid=1
+    if ! openssl x509 -in "${b}" -noout -checkend 0 >/dev/null 2>&1; then
+      is_valid=0
+    fi
+
+    if [[ ${is_valid} -eq 1 ]]; then
+      local nb
+      nb="$(openssl x509 -in "${b}" -noout -startdate 2>/dev/null | cut -d= -f2-)"
+      if ! python3 -c "
+import sys, datetime
+raw = sys.argv[1].strip()
+cleaned = ' '.join(raw.split())
+t = datetime.datetime.strptime(cleaned, '%b %d %H:%M:%S %Y GMT').replace(tzinfo=datetime.timezone.utc)
+sys.exit(0 if t <= datetime.datetime.now(datetime.timezone.utc) else 1)
+" "${nb}" >/dev/null 2>&1; then
+        is_valid=0
+      fi
+    fi
+
+    if [[ ${is_valid} -eq 1 ]]; then
+      valid_count=$((valid_count + 1))
+    else
+      invalid_count=$((invalid_count + 1))
+    fi
+  done
+
+  rm -rf "${tmpdir}"
+  trap - EXIT
+
+  if [[ ${valid_count} -eq 0 ]]; then
+    echo "ERROR: --ca-cert ${cert} has no valid certificate (has expired or is not yet valid)" >&2
     exit 1
+  fi
+
+  if [[ ${invalid_count} -gt 0 ]]; then
+    echo "WARN: --ca-cert ${cert} contains ${invalid_count} expired or not-yet-valid certificate(s)" >&2
   fi
 }
 

@@ -2,7 +2,7 @@
   "schemaVersion": "openforge-agent-trace/v1",
   "consistencyMode": "strict",
   "traceId": "narwhal-airgap-secdb-ca-728",
-  "task": "Lane 728: fix part 1 of GitHub issue narwhal#728. Push-security-db.sh validates --ca-cert early with openssl x509 (rejects empty, unreadable, non-PEM, expired without leaking content), correct documentation to name canonical devtools namespace for narwhal-ca-cert, and add R371 regression check.",
+  "task": "Lane 728: fix part 1 of GitHub issue narwhal#728. Push-security-db.sh validates --ca-cert early across all certificates in PEM bundle (rejects empty, unreadable, non-PEM, unparseable, and completely expired/not-yet-valid bundles; warns on expired/not-yet-valid siblings without leaking content), correct documentation to name canonical devtools namespace for narwhal-ca-cert, and add R371 regression check.",
   "changeContext": {
     "paths": [
       ".agents/evals/traces/2026-11-airgap-secdb-ca-728.json",
@@ -32,17 +32,17 @@
     {
       "id": "e3",
       "type": "bug_fix",
-      "summary": "Added validate_ca_cert helper in push-security-db.sh to validate --ca-cert early with openssl x509 (rejecting missing, unreadable, empty, non-PEM, and expired certificates without leaking content); updated documentation across operations.md, dns-access.md, disaster-recovery.md, and airgap README.md to reference devtools namespace; added R371 static and behavioral regression check with mutation verification."
+      "summary": "Updated validate_ca_cert in push-security-db.sh to split PEM bundle into certificate blocks, validate every certificate (rejecting non-PEM, unparseable blocks, and bundles with no valid certificates; warning on expired/not-yet-valid siblings); updated documentation across operations.md, dns-access.md, disaster-recovery.md, and airgap README.md to reference devtools namespace; added R371 static and behavioral regression check with bundle scenarios and mutation verification."
     },
     {
       "id": "e4",
       "type": "regression_verification",
       "status": "passed",
       "scope": "Static validation, shellcheck, bash -n, markdownlint, git diff --check, and R371 / R303 / R304 / R316 / R322 regression tests.",
-      "summary": "All offline checks, behavioral scenarios without a registry (missing, empty, garbage, expired, and valid self-signed cert), mutation verifications, and linters passed.",
+      "summary": "All offline checks, behavioral scenarios without a registry (missing, empty, garbage, expired, not-yet-valid, bundles, and valid self-signed cert), mutation verifications, and linters passed.",
       "evidence": [
         "test:make validate -> exit 0",
-        "test:python3 scripts/test/lib/check-push-security-db-ca.py --mutation-verify -> OK (clean control passes, 8 mutations caught)",
+        "test:python3 scripts/test/lib/check-push-security-db-ca.py --mutation-verify -> OK: clean control passes, 10 mutations caught",
         "test:python3 scripts/test/lib/check-security-db-provisioning.py --mutation-verify -> OK (clean control passes, 12 mutations caught)",
         "test:python3 scripts/test/lib/check-trivy-db-redownload-alert.py --mutation-verify -> ok (6 mutations caught)",
         "test:python3 scripts/test/lib/check-trivy-db-auto-refresh.py --mutation-verify -> ok (46 mutations caught)",

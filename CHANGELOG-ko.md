@@ -9,7 +9,7 @@
 
 ## [Unreleased]
 
-- **에어갭 보안 DB CA 검증 및 문서화 (R371, #728):** `push-security-db.sh`에서 `--ca-cert`를 `openssl x509`로 조기 검증하여 누락, 읽기 불가, 빈 파일, 비-PEM, 만료된 인증서를 파일 내용 출력 없이 거부하도록 개선하고, 운영·DNS·재해복구 문서에서 존재하지 않는 `cert-manager` 대신 표준 `devtools` 네임스페이스에서 `narwhal-ca-cert`를 추출하도록 수정함.
+- **에어갭 보안 DB CA 번들 검증 및 문서화 (R371, #728):** `push-security-db.sh`에서 `--ca-cert` PEM 번들의 모든 인증서 블록을 조기 분할·검증하여 CRLF 및 블록 간 주석을 허용하고, 최소 1개 이상의 유효한 인증서가 있는 번들은 허용하되 만료/미도래 인증서 수량을 WARN으로 알리며, 인증서 블록 부재·X.509 파싱 실패 블록·유효 인증서 전무 시 파일 내용 유출 없이 거부하도록 개선함. 운영·DNS·재해복구 문서에서 존재하지 않는 `cert-manager` 대신 표준 `devtools` 네임스페이스에서 `narwhal-ca-cert`를 추출하도록 수정함.
 
 - **3차 컴플라이언스 하드닝 (R370):** `velero.yaml`·`08-4-storage.sh`에서 `storage/velero` 서버에 `readOnlyRootFilesystem: true` 및 `/home/cnb` `emptyDir`(`velero-home`, 중복 `/tmp` 마운트 없음, `node-agent` 미변경)을 적용하고, `11-keycloak.sh`의 `iam/keycloak-operator` 전략적 패치에 `readOnlyRootFilesystem: true`와 `/tmp` `emptyDir`을 추가함(Keycloak StatefulSet 미변경). 로컬 단일 노드 클러스터 실측(orchestrator, measured 2026-11-18: Velero 전체 백업 1774/1774 완료, keycloak-operator 3.6초 기동 및 Keycloak CR Ready=True HasErrors=False; 이후 매시 kopia 저장소 유지보수 Job 2건이 읽기 전용 루트에서 완료됐고 Job 파드가 `/home/cnb`·`/tmp` 마운트를 상속함을 확인, ConfigMap 복원 4/4 완료; 볼륨 데이터 복원과 클린 인스톨은 미실행).
 - **재설치 시 노드 파일 권한 유지:** `scripts/cluster/harden-node-files.sh`를 프로비저닝 경로(`02-init-cluster.sh`, `02-join-control-plane.sh`, `02-join-worker.sh`, `03-cni-install.sh`)에 non-fatal 및 멱등 호출로 연동하여 CIS 1.1.9, 1.1.12, 4.1.1, 4.1.7, 4.1.9 준수를 영속화함(R368; 클린 인스톨 검증 대기).

@@ -41,7 +41,7 @@
       "type": "regression_verification",
       "status": "passed",
       "scope": "Static validation, offline helm template renders of velero-12.0.3.tgz (GitOps + 08-4), stub-kubectl idempotency/existing-volume tests, mutation checks (R348, R358, R359, R362, R366, R370), shellcheck/bash -n, markdownlint-changed, and git diff --check on the branch without cluster access; plus orchestrator live single-node measurements.",
-      "summary": "All offline checks, mutation verifications, helm renders, shell/markdown linters, and the orchestrator's live single-node rollout checks for Velero backup and keycloak-operator startup passed. Still unconfirmed: kopia repository maintenance Job under readOnlyRootFilesystem (to be confirmed by the orchestrator on the next hourly run), restore, and clean install.",
+      "summary": "All offline checks, mutation verifications, helm renders and shell/markdown linters passed, and the orchestrator's live single-node checks passed: full Velero backup, the next two hourly kopia maintenance Jobs under the read-only root, a ConfigMap restore, and keycloak-operator startup.",
       "evidence": [
         "test:make validate -> exit 0",
         "test:python3 scripts/test/lib/check-round3-compliance-hardening.py --mutation-verify -> PASS (offline helm renders + 11 mutations rejected)",
@@ -54,19 +54,21 @@
         "test:python3 scripts/ci/markdownlint-changed.py --base origin/main -> exit 0",
         "test:git diff --check -> exit 0",
         "test:velero Backup from velero-daily-full template with readOnlyRootFilesystem=true and /home/cnb emptyDir -> Completed 1774/1774, no read-only file system errors in server log (orchestrator, measured 2026-11-18)",
-        "test:kubectl patch deployment keycloak-operator -n iam --type=strategic with readOnlyRootFilesystem=true and /tmp emptyDir -> started in 3.6s (profile prod), no read-only errors, Keycloak CR Ready=True HasErrors=False (orchestrator, measured 2026-11-18)"
+        "test:kubectl patch deployment keycloak-operator -n iam --type=strategic with readOnlyRootFilesystem=true and /tmp emptyDir -> started in 3.6s (profile prod), no read-only errors, Keycloak CR Ready=True HasErrors=False (orchestrator, measured 2026-11-18)",
+        "test:kubectl get jobs (kopia maintain, created after the rollout) -> storage-default and devtools-default Complete 1/1; Job pod spec readOnlyRootFilesystem=true, mounts /plugins /credentials /scratch /tmp /home/cnb; no 'read-only file system' in logs (orchestrator, measured 2026-11-18)",
+        "test:velero Restore of configmaps from backup r3-rofs-full into a scratch namespace -> Completed 4/4 (orchestrator, measured 2026-11-18)"
       ]
     },
     {
       "id": "e5",
       "type": "completion_claim",
-      "summary": "Offline helm renders, static validation, regression checks (R348, R358, R359, R362, R366, R370), shell/markdown checks, and orchestrator live single-node rollout checks pass; the kopia repository maintenance Job under the read-only root is still to be confirmed by the orchestrator (next hourly run), and no restore and no clean install were run."
+      "summary": "Offline helm renders, static validation, regression checks (R348, R358, R359, R362, R366, R370), shell/markdown checks and the orchestrator's live checks (backup, maintenance Jobs, ConfigMap restore, operator startup) pass; a volume-data restore and a clean install have not been run."
     },
     {
       "id": "e6",
       "type": "task_outcome",
       "state": "A",
-      "summary": "Round-3 compliance fixes (Velero server and keycloak-operator KSV014) implemented with bootstrap parity, R370 regression coverage, documentation, and eval trace; pending live confirmations are explicitly recorded."
+      "summary": "Round-3 compliance fixes (Velero server and keycloak-operator KSV014) implemented with bootstrap parity, R370 regression coverage, documentation and eval trace; verified live on the local single-node cluster."
     }
   ]
 }

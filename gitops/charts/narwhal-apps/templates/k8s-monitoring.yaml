@@ -19,15 +19,127 @@ spec:
           loki:
             type: loki
             url: http://loki:3100/loki/api/v1/push
+          # D-TRACE-K8S-ATTR (#691): forward OTLP traces enriched with k8s.* attributes
+          # from the already-deployed alloy-logs collector to Tempo.
+          tempo:
+            type: otlp
+            url: tempo.monitoring.svc.cluster.local:4317
+            protocol: grpc
+            tls:
+              insecure: true
+            metrics:
+              enabled: false
+            logs:
+              enabled: false
+            traces:
+              enabled: true
         collectors:
           alloy-logs:
             presets: [small, daemonset, filesystem-log-reader]
+            includeDestinations:
+              - tempo
+            # D-TRACE-K8S-ATTR (#691): internalTrafficPolicy: Local keeps each pod's OTLP
+            # connection on the local node so k8sattributes (ownNode cache + connection IP)
+            # resolves the sender; trade-off: if a node's alloy-logs pod is down, tracing
+            # (including Grafana self-tracing routed via alloy-logs:4317) does not fail over
+            # to another node. service.labels opts out of monitoring/waypoint so mesh-enrolled
+            # senders preserve their pod IP instead of the waypoint IP.
+            service:
+              internalTrafficPolicy: Local
+              labels:
+                istio.io/use-waypoint: "none"
+            # D-TRACE-K8S-ATTR (#691): OTLP trace ingestion via extraConfig instead of
+            # applicationObservability because feature-application-observability hardcodes
+            # receiver -> [memory_limiter ->] resourcedetection -> k8sattributes -> transform
+            # with no pre-k8sattributes hook to strip untrusted client k8s.*/service.namespace.
+            # Pipeline: receiver(4317/4318) -> memory_limiter(256MiB hard / 64MiB spike = 192MiB
+            # soft inside 512Mi limit, leaving 256MiB headroom for podLogsViaLoki)
+            # -> strip_client_k8s(error_mode=propagate, delete ^k8s[.] + service.namespace)
+            # -> k8sattributes(ownNode filter, connection-only pod_association) -> tempo.
+            # Residual risk: unauthenticated senders can still saturate trace ingest on their
+            # own node before memory_limiter runs (1s check, pre-decode buffers) and delay logs;
+            # follow-up option: isolate traces into a dedicated trace collector Deployment.
+            # service.namespace is deleted (cost: no trace grouping by service.namespace,
+            # and unassociated non-pod senders have no namespace so portal hides them, fail closed).
+            extraConfig: |
+              otelcol.receiver.otlp "otlp_traces" {
+                grpc {
+                  endpoint = "0.0.0.0:4317"
+                  include_metadata = false
+                  max_recv_msg_size = "4MiB"
+                  read_buffer_size = "512KiB"
+                  write_buffer_size = "32KiB"
+                }
+                http {
+                  endpoint = "0.0.0.0:4318"
+                  include_metadata = false
+                  max_request_body_size = "20MiB"
+                }
+                debug_metrics {
+                  disable_high_cardinality_metrics = true
+                }
+                output {
+                  traces = [otelcol.processor.memory_limiter.otlp_traces.input]
+                }
+              }
+
+              otelcol.processor.memory_limiter "otlp_traces" {
+                check_interval = "1s"
+                limit = "256MiB"
+                spike_limit = "64MiB"
+                output {
+                  traces = [otelcol.processor.transform.strip_client_k8s.input]
+                }
+              }
+
+              otelcol.processor.transform "strip_client_k8s" {
+                error_mode = "propagate"
+                trace_statements {
+                  context = "resource"
+                  statements = [
+                    `delete_matching_keys(attributes, "^k8s[.]")`,
+                    `delete_key(attributes, "service.namespace")`,
+                  ]
+                }
+                output {
+                  traces = [otelcol.processor.k8sattributes.otlp_traces.input]
+                }
+              }
+
+              otelcol.processor.k8sattributes "otlp_traces" {
+                passthrough = false
+                filter {
+                  node = sys.env("HOSTNAME")
+                }
+                extract {
+                  metadata = ["k8s.namespace.name","k8s.pod.name","k8s.deployment.name","k8s.statefulset.name","k8s.daemonset.name","k8s.job.name","k8s.node.name"]
+                }
+                pod_association {
+                  source {
+                    from = "connection"
+                  }
+                }
+                output {
+                  traces = [otelcol.processor.attributes.tempo.input]
+                }
+              }
             # Trivy KSV014/022/119 on alloy container: readOnlyRootFilesystem requires
             # /tmp emptyDir for storagePath (/tmp/alloy); drop NET_RAW from default caps
             # as a log tailer has no raw packet socket requirements.
             # UID=0 (root) kept intentionally (KSV012 ACCEPT): reading host container
             # logs from /var/log/pods requires root privileges.
             alloy:
+              extraPorts:
+                - name: otlp-grpc
+                  port: 4317
+                  targetPort: 4317
+                  protocol: TCP
+                  appProtocol: grpc
+                - name: otlp-http
+                  port: 4318
+                  targetPort: 4318
+                  protocol: TCP
+                  appProtocol: http
               mounts:
                 extra:
                   - name: tmp
@@ -102,6 +214,11 @@ spec:
           enabled: true
           collector: alloy-logs
           destinations: []
+        # Disabled intentionally: feature-application-observability cannot strip client
+        # k8s.*/service.namespace before k8sattributes; see collectors.alloy-logs.extraConfig.
+        # Escape hatch: remove extraConfig + includeDestinations: [tempo] + alloy.extraPorts.
+        applicationObservability:
+          enabled: false
         # Trivy KSV011/015/016/018/030/104 on alloy-operator (verified container-level via helm
         # template). Direct podSecurityContext and securityContext (no intermediate .alloy wrapper).
         alloy-operator:

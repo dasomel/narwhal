@@ -209,8 +209,9 @@ spec:
           grafana.ini:
             server:
               root_url: https://grafana.{{ .Values.baseDomain }}
+            # D-TRACE-K8S-ATTR (#691): route Grafana OTLP spans through Alloy so they carry k8s.namespace.name.
             tracing.opentelemetry.otlp:
-              address: tempo.monitoring.svc.cluster.local:4317
+              address: k8s-monitoring-alloy-logs.monitoring.svc.cluster.local:4317
             auth:
               disable_login_form: true
             auth.generic_oauth:

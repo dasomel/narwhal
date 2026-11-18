@@ -42,7 +42,7 @@ set -euo pipefail
 #                        [--ca-cert <ca.crt>] [--kube-context <ctx>]
 #
 # Run this from wherever harbor.<domain> resolves and is reachable over https (a workstation
-# on the cluster DNS, or master-1). Local Vagrant: `--ca-cert` = the narwhal-ca-cert Secret's
+# on the cluster DNS, or master-1). Local Vagrant: `--ca-cert` = the narwhal-ca-cert Secret's (namespace devtools)
 # ca.crt, `--kube-context narwhal`. A plain-HTTP port-forward does NOT work (see D-SECDB-PUSH-ENDPOINT).
 #
 # VERIFIED (2026-08-25): fetch -> promote -> push -> pull round-tripped end to end
@@ -86,6 +86,121 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+CA_TMPDIR=""
+AUTHFILE=""
+CERTDIR=""
+
+cleanup() {
+  local rc=$?
+  # Best effort: a failing rm must not skip the other paths or change the exit code.
+  set +e
+  [[ -n "${CA_TMPDIR:-}" ]] && rm -rf "${CA_TMPDIR}" 2>/dev/null
+  [[ -n "${AUTHFILE:-}" ]] && rm -rf "${AUTHFILE}" 2>/dev/null
+  [[ -n "${CERTDIR:-}" ]] && rm -rf "${CERTDIR}" 2>/dev/null
+  exit "${rc}"
+}
+trap cleanup EXIT
+
+# Validate --ca-cert early before any expensive network or cluster operations.
+validate_ca_cert() {
+  local cert="$1"
+  if [[ ! -f "${cert}" ]]; then
+    echo "ERROR: --ca-cert ${cert} not found" >&2
+    exit 1
+  fi
+  if [[ ! -r "${cert}" ]]; then
+    echo "ERROR: --ca-cert ${cert} is not readable" >&2
+    exit 1
+  fi
+  if [[ ! -s "${cert}" ]]; then
+    echo "ERROR: --ca-cert ${cert} is empty" >&2
+    exit 1
+  fi
+  if ! command -v openssl >/dev/null 2>&1; then
+    echo "ERROR: openssl is required to validate --ca-cert" >&2
+    exit 1
+  fi
+
+  CA_TMPDIR="$(mktemp -d "${TMPDIR:-/tmp}/secdb-ca.XXXXXX")"
+
+  awk -v dir="${CA_TMPDIR}" '
+    /-----BEGIN CERTIFICATE-----/ {
+      if (in_cert && out != "") {
+        close(out)
+      }
+      in_cert = 1
+      count++
+      out = sprintf("%s/cert-%04d.crt", dir, count)
+    }
+    in_cert {
+      sub(/\r$/, "")
+      print > out
+      if (/-----END CERTIFICATE-----/) {
+        close(out)
+        in_cert = 0
+      }
+    }
+  ' "${cert}"
+
+  local cert_blocks=()
+  for b in "${CA_TMPDIR}"/cert-*.crt; do
+    [[ -f "${b}" ]] && cert_blocks+=("${b}")
+  done
+
+  if [[ ${#cert_blocks[@]} -eq 0 ]]; then
+    echo "ERROR: --ca-cert ${cert} is not a valid PEM certificate" >&2
+    exit 1
+  fi
+
+  local valid_count=0
+  local invalid_count=0
+
+  for b in "${cert_blocks[@]}"; do
+    if ! openssl x509 -in "${b}" -noout >/dev/null 2>&1; then
+      echo "ERROR: --ca-cert ${cert} is not a valid PEM certificate" >&2
+      exit 1
+    fi
+
+    local is_valid=1
+    if ! openssl x509 -in "${b}" -noout -checkend 0 >/dev/null 2>&1; then
+      is_valid=0
+    fi
+
+    if [[ ${is_valid} -eq 1 ]]; then
+      local nb
+      nb="$(openssl x509 -in "${b}" -noout -startdate 2>/dev/null | cut -d= -f2-)"
+      if ! python3 -c "
+import sys, datetime
+raw = sys.argv[1].strip()
+cleaned = ' '.join(raw.split())
+t = datetime.datetime.strptime(cleaned, '%b %d %H:%M:%S %Y GMT').replace(tzinfo=datetime.timezone.utc)
+sys.exit(0 if t <= datetime.datetime.now(datetime.timezone.utc) else 1)
+" "${nb}" >/dev/null 2>&1; then
+        is_valid=0
+      fi
+    fi
+
+    if [[ ${is_valid} -eq 1 ]]; then
+      valid_count=$((valid_count + 1))
+    else
+      invalid_count=$((invalid_count + 1))
+    fi
+  done
+
+  if [[ ${valid_count} -eq 0 ]]; then
+    echo "ERROR: --ca-cert ${cert} has no valid certificate (has expired or is not yet valid)" >&2
+    exit 1
+  fi
+
+  if [[ ${invalid_count} -gt 0 ]]; then
+    echo "WARN: --ca-cert ${cert} contains ${invalid_count} expired or not-yet-valid certificate(s)" >&2
+  fi
+}
+
+if [[ -n "${SECDB_CA_CERT}" ]]; then
+  validate_ca_cert "${SECDB_CA_CERT}"
+fi
+
 PROMOTED_DIR="${BUNDLE}/security-db/promoted"
 MANIFEST="${PROMOTED_DIR}/manifest.json"
 
@@ -121,13 +236,11 @@ if [[ -z "${HARBOR_PW}" ]]; then
   echo "       a public Harbor project only allows anonymous PULL." >&2
   exit 1
 fi
-AUTHFILE="$(mktemp)"; CERTDIR="$(mktemp -d)"
-trap 'rm -rf "${AUTHFILE}" "${CERTDIR}"' EXIT
+AUTHFILE="$(mktemp "${TMPDIR:-/tmp}/secdb-auth.XXXXXX")"; CERTDIR="$(mktemp -d "${TMPDIR:-/tmp}/secdb-cert.XXXXXX")"
 chmod 600 "${AUTHFILE}"
 echo "{}" > "${AUTHFILE}"   # skopeo login rejects a zero-byte authfile
 LOGIN_CERT=(); COPY_CERT=()   # empty-array safe expansions below (macOS bash 3.2 + set -u)
 if [[ -n "${SECDB_CA_CERT}" ]]; then
-  [[ -f "${SECDB_CA_CERT}" ]] || { echo "ERROR: --ca-cert ${SECDB_CA_CERT} not found" >&2; exit 1; }
   # Both `skopeo login --cert-dir` and `skopeo copy --dest-cert-dir` read *.crt straight from the
   # directory given; a certs.d parent (<dir>/<host>/ca.crt) is not searched (skopeo 1.24.1, 2026-11-14:
   # the copy failed "certificate is not trusted" once the CA was not also in the OS trust store).

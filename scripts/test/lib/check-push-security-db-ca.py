@@ -12,6 +12,8 @@ Invariants:
      references the canonical devtools namespace for narwhal-ca-cert and platform-system for
      cert-manager/narwhal-wildcard-tls (never the non-existent cert-manager namespace).
   6. Behavioral execution tests pass without requiring a registry or cluster.
+  7. Temporary files from CA validation and subsequent stages are cleaned up on all exit paths via
+     a single EXIT trap without leaving files behind.
 
 --mutation-verify proves each invariant fails when mutated.
 """
@@ -221,6 +223,22 @@ def run_behavioral(push_script_path: Path) -> list[str]:
         if "WARN:" in err:
             errs.append(f"CRLF valid: unexpected WARN line: {err!r}")
 
+        # 11. Cleanup on exit: valid CA + missing bundle/manifest -> fails after validation, temp dir must be empty
+        clean_test_tmp = tdp / "clean-test-tmp"
+        clean_test_tmp.mkdir()
+        missing_bundle = tdp / "missing-bundle"
+        env_clean = os.environ.copy()
+        env_clean["TMPDIR"] = str(clean_test_tmp)
+        cmd_clean = ["bash", str(push_script_path), "--ca-cert", str(valid_f), "--bundle", str(missing_bundle)]
+        res_clean = subprocess.run(cmd_clean, env=env_clean, capture_output=True, text=True)
+        if res_clean.returncode == 0:
+            errs.append("cleanup test: expected nonzero exit due to missing bundle, got rc=0")
+        if "manifest.json not found" not in res_clean.stderr:
+            errs.append(f"cleanup test: expected manifest failure message, got: {res_clean.stderr!r}")
+        leftover = list(clean_test_tmp.iterdir())
+        if leftover:
+            errs.append(f"cleanup test: temporary files remained after script exit in TMPDIR: {[p.name for p in leftover]}")
+
     return errs
 
 
@@ -248,6 +266,9 @@ def mutation_verify(root: Path) -> int:
         ("leak cert content", "scripts/airgap/lib/push-security-db.sh",
          'echo "ERROR: --ca-cert ${cert} is not a valid PEM certificate" >&2',
          'cat "${cert}" >&2; echo "ERROR: --ca-cert ${cert} is not a valid PEM certificate" >&2'),
+        ("reintroduce early trap - EXIT", "scripts/airgap/lib/push-security-db.sh",
+         'validate_ca_cert "${SECDB_CA_CERT}"',
+         'validate_ca_cert "${SECDB_CA_CERT}"\n  trap - EXIT'),
         ("reintroduce cert-manager in operations.md", "docs/vagrant/operations.md",
          'kubectl get secret narwhal-ca-cert -n devtools',
          'kubectl get secret narwhal-ca-cert -n cert-manager'),

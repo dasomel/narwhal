@@ -86,6 +86,19 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+CA_TMPDIR=""
+AUTHFILE=""
+CERTDIR=""
+
+cleanup() {
+  local rc=$?
+  [[ -n "${CA_TMPDIR:-}" ]] && rm -rf "${CA_TMPDIR}"
+  [[ -n "${AUTHFILE:-}" ]] && rm -rf "${AUTHFILE}"
+  [[ -n "${CERTDIR:-}" ]] && rm -rf "${CERTDIR}"
+  exit "${rc}"
+}
+trap cleanup EXIT
+
 # Validate --ca-cert early before any expensive network or cluster operations.
 validate_ca_cert() {
   local cert="$1"
@@ -106,11 +119,9 @@ validate_ca_cert() {
     exit 1
   fi
 
-  local tmpdir
-  tmpdir="$(mktemp -d)"
-  trap 'rm -rf "${tmpdir}"' EXIT
+  CA_TMPDIR="$(mktemp -d "${TMPDIR:-/tmp}/secdb-ca.XXXXXX")"
 
-  awk -v dir="${tmpdir}" '
+  awk -v dir="${CA_TMPDIR}" '
     /-----BEGIN CERTIFICATE-----/ {
       if (in_cert && out != "") {
         close(out)
@@ -130,13 +141,11 @@ validate_ca_cert() {
   ' "${cert}"
 
   local cert_blocks=()
-  for b in "${tmpdir}"/cert-*.crt; do
+  for b in "${CA_TMPDIR}"/cert-*.crt; do
     [[ -f "${b}" ]] && cert_blocks+=("${b}")
   done
 
   if [[ ${#cert_blocks[@]} -eq 0 ]]; then
-    rm -rf "${tmpdir}"
-    trap - EXIT
     echo "ERROR: --ca-cert ${cert} is not a valid PEM certificate" >&2
     exit 1
   fi
@@ -146,8 +155,6 @@ validate_ca_cert() {
 
   for b in "${cert_blocks[@]}"; do
     if ! openssl x509 -in "${b}" -noout >/dev/null 2>&1; then
-      rm -rf "${tmpdir}"
-      trap - EXIT
       echo "ERROR: --ca-cert ${cert} is not a valid PEM certificate" >&2
       exit 1
     fi
@@ -177,9 +184,6 @@ sys.exit(0 if t <= datetime.datetime.now(datetime.timezone.utc) else 1)
       invalid_count=$((invalid_count + 1))
     fi
   done
-
-  rm -rf "${tmpdir}"
-  trap - EXIT
 
   if [[ ${valid_count} -eq 0 ]]; then
     echo "ERROR: --ca-cert ${cert} has no valid certificate (has expired or is not yet valid)" >&2
@@ -230,8 +234,7 @@ if [[ -z "${HARBOR_PW}" ]]; then
   echo "       a public Harbor project only allows anonymous PULL." >&2
   exit 1
 fi
-AUTHFILE="$(mktemp)"; CERTDIR="$(mktemp -d)"
-trap 'rm -rf "${AUTHFILE}" "${CERTDIR}"' EXIT
+AUTHFILE="$(mktemp "${TMPDIR:-/tmp}/secdb-auth.XXXXXX")"; CERTDIR="$(mktemp -d "${TMPDIR:-/tmp}/secdb-cert.XXXXXX")"
 chmod 600 "${AUTHFILE}"
 echo "{}" > "${AUTHFILE}"   # skopeo login rejects a zero-byte authfile
 LOGIN_CERT=(); COPY_CERT=()   # empty-array safe expansions below (macOS bash 3.2 + set -u)

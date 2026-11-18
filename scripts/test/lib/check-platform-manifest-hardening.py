@@ -76,6 +76,22 @@ def _check_emptydir_mount(pod_spec, container, mount_path, label):
     return errors
 
 
+def _check_pvc_mount(pod_spec, container, mount_path, claim_name, label):
+    errors = []
+    volumes = {v["name"]: v for v in (pod_spec.get("volumes") or []) if isinstance(v, dict) and "name" in v}
+    mounts = [m for m in (container.get("volumeMounts") or []) if m.get("mountPath") == mount_path]
+    if len(mounts) != 1:
+        return [f"{label}: expected 1 volumeMount at {mount_path}, got {len(mounts)}"]
+    mount = mounts[0]
+    if mount.get("readOnly") is True:
+        errors.append(f"{label}: {mount_path} volumeMount must be writable (not readOnly)")
+    vol = volumes.get(mount.get("name"))
+    pvc = vol.get("persistentVolumeClaim") if isinstance(vol, dict) else None
+    if not isinstance(pvc, dict) or pvc.get("claimName") != claim_name:
+        errors.append(f"{label}: {mount_path} must be backed by persistentVolumeClaim {claim_name!r}")
+    return errors
+
+
 def _check_container_sc(container, label):
     errors = []
     sc = container.get("securityContext") or {}
@@ -114,7 +130,7 @@ def check(docs):
             errors.append("apisix-etcd: expected container 'etcd'")
         else:
             errors.extend(_check_container_sc(containers[0], "apisix-etcd/etcd"))
-            errors.extend(_check_emptydir_mount(pod_spec, containers[0], "/var/etcd/data", "apisix-etcd/etcd"))
+            errors.extend(_check_pvc_mount(pod_spec, containers[0], "/var/etcd/data", "apisix-etcd-data", "apisix-etcd/etcd"))
 
     # 2. devtools/narwhal-portal-valkey
     dep, err = _find_deployment(docs, "devtools", "narwhal-portal-valkey")

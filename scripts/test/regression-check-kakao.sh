@@ -3489,6 +3489,8 @@ PYEOF'
     python3 scripts/test/lib/check-round2-compliance-hardening.py --mutation-verify
   check R370 "Round-3 compliance hardening (KSV014): Velero server readOnlyRootFilesystem=true + /home/cnb emptyDir (no second /tmp mount, nodeAgent untouched) across velero.yaml & 08-4-storage.sh with offline helm renders, and keycloak-operator readOnlyRootFilesystem=true + /tmp emptyDir in 11-keycloak.sh (idempotent with pre-existing volumes; Keycloak CR untouched); 11 mutations caught" \
     python3 scripts/test/lib/check-round3-compliance-hardening.py --mutation-verify
+  check R371 "apisix-etcd PVC persistence (Recreate + apisix-etcd-data nfs-csi ReadWriteOnce + Velero exclude), IC resync intervals (5m/15m), and divergence recovery mode in recover-apisix-resource-sync.sh (#714); offline helm render + behavioral stub tests + 12 mutations caught" \
+    python3 scripts/test/lib/check-apisix-etcd-persistence.py --mutation-verify
 }
 
 #=========================================

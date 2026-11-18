@@ -2,14 +2,20 @@
 
 ## Background
 
-`apisix-etcd` (`gitops/charts/narwhal-platform/templates/apisix-infra.yaml`) uses an
-`emptyDir` data volume by design ("dev environment: etcd re-initializes on restart,
-APISIX Ingress Controller re-syncs from CRDs" per the in-file comment). That resync is
-**not reliable** in the current version combination (apisix chart 2.13.0 / etcd 3.5.31 /
-apisix-ingress-controller 0.14.1) — any event that recreates the `apisix-etcd` pod (a
-`kubectl apply`/`helm` spec change, crash, OOM, node drain, or a `08-1-networking.sh`
-re-run) can leave routing config **empty** and stuck that way without manual
-intervention.
+`apisix-etcd` (`gitops/charts/narwhal-platform/templates/apisix-infra.yaml`) now persists
+`/var/etcd/data` on a `1Gi` `nfs-csi` `ReadWriteOnce` PVC (`apisix-etcd-data`,
+`strategy.type: Recreate`; #714) so ordinary pod restarts keep routing state. Previously it
+used an `emptyDir` volume, and on an empty store (such as first PVC migration on an existing
+cluster or a lost PVC) resync is **not reliable** in the current version combination
+(apisix chart 2.13.0 / etcd 3.5.31 / apisix-ingress-controller 0.14.1) — an empty etcd can
+leave routing config empty and stuck without intervention.
+
+For automated count-divergence recovery (when APISIX routes/upstreams/ssls fall behind
+CRs even though CR status still reports `ResourcesSynced`), run:
+
+```bash
+scripts/cluster/lib/recover-apisix-resource-sync.sh platform-system --divergence
+```
 
 ## Symptoms
 
@@ -139,15 +145,22 @@ kubectl -n platform-system run cleanup-pluginconfigs --image=curlimages/curl:8.1
 is invalid — Kubernetes names can't contain `_`. Use a hyphenated pod name like
 `cleanup-globalrules` even though the admin API path itself is `global_rules`.)
 
-## Real fix (not done here — needs a decision)
+## Implemented mitigations (#714) and remaining gap
 
-This bootstrap sequence is a workaround, not a fix. Options for someone to pick up:
+1. **`apisix-etcd` data PVC (`apisix-etcd-data`, `nfs-csi`, `Recreate`)**: implemented in
+   `gitops/charts/narwhal-platform/templates/apisix-infra.yaml`, so pod recreation keeps
+   etcd state. Note: first rollout from `emptyDir` starts on an empty PVC and requires
+   running `recover-apisix-resource-sync.sh platform-system --divergence` (or seeding below
+   if the controller also restarted while etcd was empty).
+2. **Controller resync interval (`5m` / `15m`) + divergence recovery script**:
+   `08-1-networking.sh` sets `config.apisixResourceSyncInterval=5m` and
+   `config.kubernetes.resyncInterval=15m`, and `recover-apisix-resource-sync.sh --divergence`
+   compares APISIX Admin API counts against CRs and annotates `narwhal.io/resync`.
+3. **Remaining gap (upstream)**: the empty-prefix `404` bootstrap deadlock when the
+   controller starts against a completely empty etcd remains in the pinned chart/controller
+   versions; if `GET /apisix/admin/routes` still returns 404 after controller restart,
+   seed the prefixes above.
 
-1. **Switch `apisix-etcd` to a real PVC** instead of `emptyDir`, so a pod recreation
-   never wipes routing config in the first place. Removes the failure mode entirely.
-2. **Fix/upgrade** the apisix / etcd / ingress-controller version combination so the
-   "empty prefix returns 404" behavior no longer wedges the controller's startup gate,
-   if a newer combination handles it (empty-list response instead of 404).
-
-Until one of these lands, treat any `apisix-etcd` pod recreation as an event that
-needs the routes/upstreams count checked afterward, not just pod `Running` status.
+Treat any `apisix-etcd` PVC migration or empty-store event as an event that needs
+`recover-apisix-resource-sync.sh platform-system --divergence` (or routes/upstreams/ssls
+count checked afterward), not just pod `Running` status.

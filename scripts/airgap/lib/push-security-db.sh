@@ -42,7 +42,7 @@ set -euo pipefail
 #                        [--ca-cert <ca.crt>] [--kube-context <ctx>]
 #
 # Run this from wherever harbor.<domain> resolves and is reachable over https (a workstation
-# on the cluster DNS, or master-1). Local Vagrant: `--ca-cert` = the narwhal-ca-cert Secret's
+# on the cluster DNS, or master-1). Local Vagrant: `--ca-cert` = the narwhal-ca-cert Secret's (namespace devtools)
 # ca.crt, `--kube-context narwhal`. A plain-HTTP port-forward does NOT work (see D-SECDB-PUSH-ENDPOINT).
 #
 # VERIFIED (2026-08-25): fetch -> promote -> push -> pull round-tripped end to end
@@ -86,6 +86,39 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+# Validate --ca-cert early before any expensive network or cluster operations.
+validate_ca_cert() {
+  local cert="$1"
+  if [[ ! -f "${cert}" ]]; then
+    echo "ERROR: --ca-cert ${cert} not found" >&2
+    exit 1
+  fi
+  if [[ ! -r "${cert}" ]]; then
+    echo "ERROR: --ca-cert ${cert} is not readable" >&2
+    exit 1
+  fi
+  if [[ ! -s "${cert}" ]]; then
+    echo "ERROR: --ca-cert ${cert} is empty" >&2
+    exit 1
+  fi
+  if ! command -v openssl >/dev/null 2>&1; then
+    echo "ERROR: openssl is required to validate --ca-cert" >&2
+    exit 1
+  fi
+  if ! openssl x509 -in "${cert}" -noout >/dev/null 2>&1; then
+    echo "ERROR: --ca-cert ${cert} is not a valid PEM certificate" >&2
+    exit 1
+  fi
+  if ! openssl x509 -in "${cert}" -noout -checkend 0 >/dev/null 2>&1; then
+    echo "ERROR: --ca-cert ${cert} has expired" >&2
+    exit 1
+  fi
+}
+
+if [[ -n "${SECDB_CA_CERT}" ]]; then
+  validate_ca_cert "${SECDB_CA_CERT}"
+fi
+
 PROMOTED_DIR="${BUNDLE}/security-db/promoted"
 MANIFEST="${PROMOTED_DIR}/manifest.json"
 
@@ -127,7 +160,6 @@ chmod 600 "${AUTHFILE}"
 echo "{}" > "${AUTHFILE}"   # skopeo login rejects a zero-byte authfile
 LOGIN_CERT=(); COPY_CERT=()   # empty-array safe expansions below (macOS bash 3.2 + set -u)
 if [[ -n "${SECDB_CA_CERT}" ]]; then
-  [[ -f "${SECDB_CA_CERT}" ]] || { echo "ERROR: --ca-cert ${SECDB_CA_CERT} not found" >&2; exit 1; }
   # Both `skopeo login --cert-dir` and `skopeo copy --dest-cert-dir` read *.crt straight from the
   # directory given; a certs.d parent (<dir>/<host>/ca.crt) is not searched (skopeo 1.24.1, 2026-11-14:
   # the copy failed "certificate is not trusted" once the CA was not also in the OS trust store).

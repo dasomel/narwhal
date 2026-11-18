@@ -638,31 +638,31 @@ cert-manager가 self-signed CA로 wildcard 인증서를 자동 관리합니다.
 # 전체 namespace의 인증서
 vagrant ssh master-1 -c "kubectl get certificates -A"
 
-# cert-manager namespace
-vagrant ssh master-1 -c "kubectl get certificates -n cert-manager"
+# platform-system namespace (cert-manager가 배포된 위치)
+vagrant ssh master-1 -c "kubectl get certificates -n platform-system"
 ```
 
 ### 인증서 상태 확인
 
 ```bash
 # 특정 인증서 상태
-vagrant ssh master-1 -c "kubectl describe certificate narwhal-wildcard-cert \
-  -n cert-manager"
+vagrant ssh master-1 -c "kubectl describe certificate narwhal-wildcard-tls \
+  -n platform-system"
 
 # 인증서 Ready 상태 확인
-vagrant ssh master-1 -c "kubectl get certificate narwhal-wildcard-cert \
-  -n cert-manager -o jsonpath='{.status.conditions[?(@.type==\"Ready\")].status}'"
+vagrant ssh master-1 -c "kubectl get certificate narwhal-wildcard-tls \
+  -n platform-system -o jsonpath='{.status.conditions[?(@.type==\"Ready\")].status}'"
 ```
 
 ### CA 인증서 확인
 
 ```bash
-# CA cert Secret 조회
-vagrant ssh master-1 -c "kubectl get secret narwhal-ca-cert -n cert-manager \
+# CA cert Secret 조회 (devtools 또는 08-6이 배포한 네임스페이스)
+vagrant ssh master-1 -c "kubectl get secret narwhal-ca-cert -n devtools \
   -o jsonpath='{.data.ca\.crt}' | base64 -d | openssl x509 -text -noout"
 
 # CA cert 파일로 저장
-vagrant ssh master-1 -c "kubectl get secret narwhal-ca-cert -n cert-manager \
+vagrant ssh master-1 -c "kubectl get secret narwhal-ca-cert -n devtools \
   -o jsonpath='{.data.ca\.crt}' | base64 -d > /tmp/narwhal-ca.crt"
 ```
 
@@ -672,11 +672,11 @@ vagrant ssh master-1 -c "kubectl get secret narwhal-ca-cert -n cert-manager \
 
 ```bash
 # TLS Secret 삭제 (cert-manager가 자동 재생성)
-vagrant ssh master-1 -c "kubectl delete secret narwhal-wildcard-tls -n cert-manager"
+vagrant ssh master-1 -c "kubectl delete secret narwhal-wildcard-tls -n platform-system"
 
 # Certificate 리소스 삭제 후 재생성
-vagrant ssh master-1 -c "kubectl delete certificate narwhal-wildcard-cert \
-  -n cert-manager"
+vagrant ssh master-1 -c "kubectl delete certificate narwhal-wildcard-tls \
+  -n platform-system"
 # ArgoCD가 자동으로 Certificate 재생성
 ```
 
@@ -685,14 +685,15 @@ vagrant ssh master-1 -c "kubectl delete certificate narwhal-wildcard-cert \
 각 앱 namespace에 `narwhal-ca-cert` Secret이 복사되어 있어야 합니다.
 
 ```bash
-# 앱별 CA cert Secret 확인
-vagrant ssh master-1 -c "kubectl get secret narwhal-ca-cert -n headlamp"
-vagrant ssh master-1 -c "kubectl get secret narwhal-ca-cert -n gitea"
-vagrant ssh master-1 -c "kubectl get secret narwhal-ca-cert -n harbor"
+# 앱별 CA cert Secret 확인 (08-6-tls-routes.sh가 배포)
+vagrant ssh master-1 -c "kubectl get secret narwhal-ca-cert -n devtools"
+vagrant ssh master-1 -c "kubectl get secret narwhal-ca-cert -n iam"
 vagrant ssh master-1 -c "kubectl get secret narwhal-ca-cert -n monitoring"
+vagrant ssh master-1 -c "kubectl get secret narwhal-ca-cert -n storage"
+vagrant ssh master-1 -c "kubectl get secret narwhal-ca-cert -n security-system"
 
 # Pod에 마운트 확인 (예: Headlamp)
-vagrant ssh master-1 -c "kubectl exec -n headlamp \
+vagrant ssh master-1 -c "kubectl exec -n devtools \
   deployment/headlamp -- ls -l /etc/ssl/certs/narwhal-ca.crt"
 ```
 

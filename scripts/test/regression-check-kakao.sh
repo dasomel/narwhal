@@ -3489,6 +3489,9 @@ PYEOF'
     python3 scripts/test/lib/check-round2-compliance-hardening.py --mutation-verify
   check R370 "Round-3 compliance hardening (KSV014): Velero server readOnlyRootFilesystem=true + /home/cnb emptyDir (no second /tmp mount, nodeAgent untouched) across velero.yaml & 08-4-storage.sh with offline helm renders, and keycloak-operator readOnlyRootFilesystem=true + /tmp emptyDir in 11-keycloak.sh (idempotent with pre-existing volumes; Keycloak CR untouched); 11 mutations caught" \
     python3 scripts/test/lib/check-round3-compliance-hardening.py --mutation-verify
+  # 2026-11-19 (#728): push-security-db.sh validates --ca-cert early with openssl x509 and docs name devtools
+  check R371 "push-security-db.sh validates --ca-cert early with openssl x509 (rejects empty, non-PEM, expired without leaking content), behavioural test without registry, and docs export from canonical devtools namespace; 8 mutations caught (#728)" \
+    python3 scripts/test/lib/check-push-security-db-ca.py --mutation-verify
 }
 
 #=========================================

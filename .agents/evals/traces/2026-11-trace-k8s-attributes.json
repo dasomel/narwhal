@@ -2,7 +2,7 @@
   "schemaVersion": "openforge-agent-trace/v1",
   "consistencyMode": "strict",
   "traceId": "narwhal-trace-k8s-attributes-691-20261119",
-  "task": "narwhal#691: Make Alloy OTLP trace enrichment trustworthy so k8s.namespace.name (and other k8s.* attributes) are determined solely by the collector from the sender TCP connection IP, stripping client k8s.* and service.namespace before k8sattributes, adding memory_limiter + node-scoped k8sattributes + internalTrafficPolicy Local, keeping 08-2-monitoring.sh parity (including Grafana OTLP address), and verifying rendered Alloy config in R371.",
+  "task": "narwhal#691: Make Alloy OTLP trace enrichment trustworthy so k8s.namespace.name (and other k8s.* attributes) are determined solely by the collector from the sender TCP connection IP, stripping client k8s.* and service.namespace before k8sattributes, adding memory_limiter + node-scoped k8sattributes + internalTrafficPolicy Local, keeping 08-2-monitoring.sh parity (including Grafana OTLP address), and verifying rendered Alloy config in R373.",
   "changeContext": {
     "paths": [
       ".agents/evals/traces/2026-11-trace-k8s-attributes.json",
@@ -19,27 +19,27 @@
     {
       "id": "e1",
       "type": "scope_check",
-      "summary": "Scope: gitops/charts/narwhal-apps/templates/k8s-monitoring.yaml, gitops/charts/narwhal-apps/templates/prometheus-stack.yaml, scripts/cluster/08-2-monitoring.sh, docs/common/lessons-log.md, docs/common/unified-observability-contract.md, scripts/test/lib/check-trace-k8s-attributes.py (R371), scripts/test/regression-check-kakao.sh, and this eval trace. Excluded: portal/, tempo.yaml, ClusterRoles, NetworkPolicies/PeerAuthentication, .review/, and live cluster/VM mutations."
+      "summary": "Scope: gitops/charts/narwhal-apps/templates/k8s-monitoring.yaml, gitops/charts/narwhal-apps/templates/prometheus-stack.yaml, scripts/cluster/08-2-monitoring.sh, docs/common/lessons-log.md, docs/common/unified-observability-contract.md, scripts/test/lib/check-trace-k8s-attributes.py (R373), scripts/test/regression-check-kakao.sh, and this eval trace. Excluded: portal/, tempo.yaml, ClusterRoles, NetworkPolicies/PeerAuthentication, .review/, and live cluster/VM mutations."
     },
     {
       "id": "e2",
       "type": "reproduction",
-      "summary": "Initial PR #729 enabled k8s-monitoring 4.2.0 applicationObservability defaults (pod_association k8s.pod.ip -> k8s.pod.uid -> connection, no node filter, no memory_limiter). Orchestrator live check (2026-11-19) from a dev pod sending resource attribute k8s.namespace.name=chaos-testing stored chaos-testing in Tempo (search chaos-testing: 1 trace; dev: 0) and was rolled back. Inspecting k8s-monitoring-4.2.0.tgz confirmed feature-application-observability hardcodes receiver -> [memory_limiter ->] resourcedetection -> k8sattributes -> transform with no pre-k8sattributes strip hook, and k8sattributes preserves pre-existing client attributes and never strips service.namespace. Also found 08-2-monitoring.sh lacked Grafana's OTLP address and R371 did not detect span-dropping filters (traces.filters.span=['true']) or render-level security invariants."
+      "summary": "Initial PR #729 enabled k8s-monitoring 4.2.0 applicationObservability defaults (pod_association k8s.pod.ip -> k8s.pod.uid -> connection, no node filter, no memory_limiter). Orchestrator live check (2026-11-19) from a dev pod sending resource attribute k8s.namespace.name=chaos-testing stored chaos-testing in Tempo (search chaos-testing: 1 trace; dev: 0) and was rolled back. Inspecting k8s-monitoring-4.2.0.tgz confirmed feature-application-observability hardcodes receiver -> [memory_limiter ->] resourcedetection -> k8sattributes -> transform with no pre-k8sattributes strip hook, and k8sattributes preserves pre-existing client attributes and never strips service.namespace. Also found 08-2-monitoring.sh lacked Grafana's OTLP address and R373 did not detect span-dropping filters (traces.filters.span=['true']) or render-level security invariants."
     },
     {
       "id": "e3",
       "type": "bug_fix",
-      "summary": "Disabled applicationObservability (enabled: false) and configured collectors.alloy-logs via extraConfig + includeDestinations: [tempo] + alloy.extraPorts (4317/4318) + service.internalTrafficPolicy: Local in k8s-monitoring.yaml and 08-2-monitoring.sh: otelcol.receiver.otlp -> otelcol.processor.memory_limiter (check_interval=1s, limit=384MiB for 512Mi container limit) -> otelcol.processor.transform 'strip_client_k8s' (error_mode=propagate, delete_matching_keys(attributes, '^k8s[.]') and delete_key(attributes, 'service.namespace')) -> otelcol.processor.k8sattributes (filter node=sys.env('HOSTNAME'), connection-only pod_association, no k8s.cronjob.name) -> tempo. Added Grafana OTLP address --set parity to 08-2-monitoring.sh, documented service.namespace deletion cost and residual unauthenticated-receiver threats in docs/common/unified-observability-contract.md and docs/common/lessons-log.md, and hardened R371 to parse and mutation-test the rendered Alloy config (including traces.filters.span=['true'])."
+      "summary": "Disabled applicationObservability (enabled: false) and configured collectors.alloy-logs via extraConfig + includeDestinations: [tempo] + alloy.extraPorts (4317/4318) + service.internalTrafficPolicy: Local in k8s-monitoring.yaml and 08-2-monitoring.sh: otelcol.receiver.otlp -> otelcol.processor.memory_limiter (check_interval=1s, limit=384MiB for 512Mi container limit) -> otelcol.processor.transform 'strip_client_k8s' (error_mode=propagate, delete_matching_keys(attributes, '^k8s[.]') and delete_key(attributes, 'service.namespace')) -> otelcol.processor.k8sattributes (filter node=sys.env('HOSTNAME'), connection-only pod_association, no k8s.cronjob.name) -> tempo. Added Grafana OTLP address --set parity to 08-2-monitoring.sh, documented service.namespace deletion cost and residual unauthenticated-receiver threats in docs/common/unified-observability-contract.md and docs/common/lessons-log.md, and hardened R373 to parse and mutation-test the rendered Alloy config (including traces.filters.span=['true'])."
     },
     {
       "id": "e4",
       "type": "regression_verification",
       "status": "passed",
-      "scope": "Offline helm template renders of k8s-monitoring-4.2.0.tgz and narwhal-apps, make validate, R371 + R360 + R311 + R366 mutation verifications, shellcheck/bash -n, markdownlint-changed + markdownlint-cli2, and git diff --check without cluster access.",
-      "summary": "All offline helm template renders, static validations, regression checks (R371 19 mutations, R360 21 mutations, R311 7 mutations, R366 15 mutations), shellcheck/bash -n, markdownlint, and git diff --check passed on the updated branch.",
+      "scope": "Offline helm template renders of k8s-monitoring-4.2.0.tgz and narwhal-apps, make validate, R373 + R360 + R311 + R366 mutation verifications, shellcheck/bash -n, markdownlint-changed + markdownlint-cli2, and git diff --check without cluster access.",
+      "summary": "All offline helm template renders, static validations, regression checks (R373 19 mutations, R360 21 mutations, R311 7 mutations, R366 15 mutations), shellcheck/bash -n, markdownlint, and git diff --check passed on the updated branch.",
       "evidence": [
         "test:make validate -> exit 0",
-        "test:python3 scripts/test/lib/check-trace-k8s-attributes.py --mutation-verify -> PASS: R371 trustworthy OTLP k8s.namespace.name enrichment + helm render ok (19 mutations rejected)",
+        "test:python3 scripts/test/lib/check-trace-k8s-attributes.py --mutation-verify -> PASS: R373 trustworthy OTLP k8s.namespace.name enrichment + helm render ok (19 mutations rejected)",
         "test:python3 scripts/test/lib/check-monitoring-hardening.py --mutation-verify -> PASS: 21 mutations rejected / monitoring stack compliance hardening: OK",
         "test:python3 scripts/test/lib/check-monitoring-spread.py --mutation-verify -> PASS: 7 mutations rejected / monitoring spread/qos ok",
         "test:python3 scripts/test/lib/check-round2-compliance-hardening.py --mutation-verify -> PASS: R366 round-2 compliance hardening + offline helm renders (15 mutations rejected)",
@@ -53,13 +53,13 @@
     {
       "id": "e5",
       "type": "completion_claim",
-      "summary": "All offline validations, rendered Alloy ConfigMap/CR security checks, R371/R360/R311/R366 mutation suites, and shell/markdown/diff lints pass on the fixed branch; live cluster rollout and the 3-probe dev-namespace verification runbook remain for the orchestrator."
+      "summary": "All offline validations, rendered Alloy ConfigMap/CR security checks, R373/R360/R311/R366 mutation suites, and shell/markdown/diff lints pass on the fixed branch; live cluster rollout and the 3-probe dev-namespace verification runbook remain for the orchestrator."
     },
     {
       "id": "e6",
       "type": "task_outcome",
       "state": "A",
-      "summary": "Hardened Alloy OTLP trace pipeline via extraConfig to strip client k8s.*/service.namespace before connection-only node-scoped k8sattributes with 384MiB memory_limiter and internalTrafficPolicy Local, synced 08-2-monitoring.sh Grafana OTLP address, strengthened R371 + docs, and resolved eval trace contradiction."
+      "summary": "Hardened Alloy OTLP trace pipeline via extraConfig to strip client k8s.*/service.namespace before connection-only node-scoped k8sattributes with 384MiB memory_limiter and internalTrafficPolicy Local, synced 08-2-monitoring.sh Grafana OTLP address, strengthened R373 + docs, and resolved eval trace contradiction."
     }
   ]
 }

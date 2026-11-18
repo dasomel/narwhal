@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""R371: OTLP trace ingestion & trustworthy k8s.namespace.name enrichment via Alloy (narwhal#691).
+"""R373: OTLP trace ingestion & trustworthy k8s.namespace.name enrichment via Alloy (narwhal#691).
 
 Verifies that:
   - gitops/charts/narwhal-apps/templates/k8s-monitoring.yaml disables
@@ -376,9 +376,9 @@ def main() -> int:
     render_msg = "helm render ok" if rendered else "helm render skipped (no bundle)"
     if args.mutation_verify:
         caught = mutation_verify(root)
-        print(f"PASS: R371 trustworthy OTLP k8s.namespace.name enrichment + {render_msg} ({caught} mutations rejected)")
+        print(f"PASS: R373 trustworthy OTLP k8s.namespace.name enrichment + {render_msg} ({caught} mutations rejected)")
     else:
-        print(f"PASS: R371 trustworthy OTLP k8s.namespace.name enrichment + {render_msg}")
+        print(f"PASS: R373 trustworthy OTLP k8s.namespace.name enrichment + {render_msg}")
     return 0
 
 

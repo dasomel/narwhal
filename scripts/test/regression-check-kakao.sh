@@ -3489,6 +3489,9 @@ PYEOF'
     python3 scripts/test/lib/check-round2-compliance-hardening.py --mutation-verify
   check R370 "Round-3 compliance hardening (KSV014): Velero server readOnlyRootFilesystem=true + /home/cnb emptyDir (no second /tmp mount; nodeAgent hardened in R371) across velero.yaml & 08-4-storage.sh with offline helm renders, and keycloak-operator readOnlyRootFilesystem=true + /tmp emptyDir in 11-keycloak.sh (idempotent with pre-existing volumes; Keycloak CR untouched); 11 mutations caught" \
     python3 scripts/test/lib/check-round3-compliance-hardening.py --mutation-verify
+  # 2026-11-19 (#691): OTLP traces flow through Alloy extraConfig (memory_limiter -> strip_client_k8s -> connection-only node-scoped k8sattributes -> Tempo) + tempo-ingress-policy closes direct Tempo bypass
+  check R373 "Alloy k8s-monitoring extraConfig strips client ^k8s[.] + service.namespace (error_mode=propagate) before connection-only node-scoped k8sattributes with 256MiB/64MiB spike memory_limiter, internalTrafficPolicy Local, and waypoint opt-out; Tempo disables OTLP/HTTP (4318) and opts out of waypoint; tempo-ingress-policy restricts 4317/15008 to alloy-logs and 3200/15008 to Grafana/Prometheus/portal/Tempo; 08-2-monitoring.sh parity + offline helm renders + 34 mutations caught (D-TRACE-K8S-ATTR, D-TEMPO-INGRESS)" \
+    python3 scripts/test/lib/check-trace-k8s-attributes.py --mutation-verify
   # 2026-11-19 (#728): push-security-db.sh validates --ca-cert early with openssl x509 and docs name devtools
   check R372 "push-security-db.sh validates --ca-cert early with openssl x509 (rejects empty, non-PEM, expired without leaking content), behavioural test without registry, and docs export from canonical devtools namespace; 11 mutations caught (#728)" \
     python3 scripts/test/lib/check-push-security-db-ca.py --mutation-verify

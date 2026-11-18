@@ -50,7 +50,8 @@
         "test:R183+R183b assertion snippet on scripts/cluster/lib/recover-apisix-resource-sync.sh -> R183+R183b PASS",
         "test:shellcheck -S warning scripts/cluster/08-1-networking.sh scripts/cluster/lib/recover-apisix-resource-sync.sh scripts/test/regression-check-kakao.sh && bash -n ... -> exit 0",
         "test:python3 scripts/ci/markdownlint-changed.py --base origin/main -> No markdownlint violations on added/modified active-documentation lines",
-        "test:git diff --check -> exit 0"
+        "test:git diff --check -> exit 0",
+        "test:live local cluster (orchestrator, measured 2026-11-19): controller resync 5m/15m applied via helm; apisix-etcd moved to PVC apisix-etcd-data (Bound, nfs-csi) after a one-time strategy patch (SSA could not drop rollingUpdate); --divergence detected the empty etcd and recovered routes 26/26 upstreams 14/14 ssls 1/1; then apisix-etcd restart -> --divergence 'in sync' without resync -> apisix restart -> portal/gitea/keycloak/grafana/harbor/argocd all 30x"
       ]
     },
     {

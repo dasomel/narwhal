@@ -164,3 +164,21 @@ is invalid — Kubernetes names can't contain `_`. Use a hyphenated pod name lik
 Treat any `apisix-etcd` PVC migration or empty-store event as an event that needs
 `recover-apisix-resource-sync.sh platform-system --divergence` (or routes/upstreams/ssls
 count checked afterward), not just pod `Running` status.
+
+## Upgrading an existing cluster to the PVC (one-time)
+
+Clusters created before #714 have `apisix-etcd` with the default `RollingUpdate` strategy. The
+ArgoCD app uses server-side apply, which cannot drop the defaulted `spec.strategy.rollingUpdate`,
+so the sync fails with `spec.strategy.rollingUpdate: Forbidden: may not be specified when strategy
+type is 'Recreate'`. Run once, then let ArgoCD sync:
+
+```bash
+kubectl -n platform-system patch deploy apisix-etcd --type=json \
+  -p='[{"op":"remove","path":"/spec/strategy/rollingUpdate"},{"op":"replace","path":"/spec/strategy/type","value":"Recreate"}]'
+```
+
+The first pod on the new volume starts with empty etcd. APISIX keeps serving from memory, so run
+`scripts/cluster/lib/recover-apisix-resource-sync.sh platform-system --divergence` right after the
+rollout (measured 2026-11-19 on the local cluster: routes 26/26, upstreams 14/14, ssls 1/1 after
+the resync; a later `apisix-etcd` restart followed by an `apisix` restart kept every host up).
+

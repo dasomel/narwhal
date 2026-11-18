@@ -3490,7 +3490,7 @@ PYEOF'
   check R370 "Round-3 compliance hardening (KSV014): Velero server readOnlyRootFilesystem=true + /home/cnb emptyDir (no second /tmp mount; nodeAgent hardened in R371) across velero.yaml & 08-4-storage.sh with offline helm renders, and keycloak-operator readOnlyRootFilesystem=true + /tmp emptyDir in 11-keycloak.sh (idempotent with pre-existing volumes; Keycloak CR untouched); 11 mutations caught" \
     python3 scripts/test/lib/check-round3-compliance-hardening.py --mutation-verify
   # 2026-11-19 (#728): push-security-db.sh validates --ca-cert early with openssl x509 and docs name devtools
-  check R372 "push-security-db.sh validates --ca-cert early with openssl x509 (rejects empty, non-PEM, expired without leaking content), behavioural test without registry, and docs export from canonical devtools namespace; 8 mutations caught (#728)" \
+  check R372 "push-security-db.sh validates --ca-cert early with openssl x509 (rejects empty, non-PEM, expired without leaking content), behavioural test without registry, and docs export from canonical devtools namespace; 11 mutations caught (#728)" \
     python3 scripts/test/lib/check-push-security-db-ca.py --mutation-verify
   check R371 "Round-4 compliance hardening (KSV014/KSV104): Falco containerSecurityContext sets both privileged=true and readOnlyRootFilesystem=true (GitOps-only), Velero node-agent readOnlyRootFilesystem=true with /root and /tmp emptyDirs across velero.yaml & 08-4-storage.sh, and nfs-quota-agent RuntimeDefault seccomp + privileged + readOnlyRootFilesystem via chart values in 05-nfs-quota-agent.sh with offline helm renders; 11 mutations caught" \
     python3 scripts/test/lib/check-round4-compliance-hardening.py --mutation-verify

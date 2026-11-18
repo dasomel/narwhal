@@ -92,9 +92,11 @@ CERTDIR=""
 
 cleanup() {
   local rc=$?
-  [[ -n "${CA_TMPDIR:-}" ]] && rm -rf "${CA_TMPDIR}"
-  [[ -n "${AUTHFILE:-}" ]] && rm -rf "${AUTHFILE}"
-  [[ -n "${CERTDIR:-}" ]] && rm -rf "${CERTDIR}"
+  # Best effort: a failing rm must not skip the other paths or change the exit code.
+  set +e
+  [[ -n "${CA_TMPDIR:-}" ]] && rm -rf "${CA_TMPDIR}" 2>/dev/null
+  [[ -n "${AUTHFILE:-}" ]] && rm -rf "${AUTHFILE}" 2>/dev/null
+  [[ -n "${CERTDIR:-}" ]] && rm -rf "${CERTDIR}" 2>/dev/null
   exit "${rc}"
 }
 trap cleanup EXIT

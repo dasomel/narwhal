@@ -8,6 +8,7 @@ import { useState, useMemo } from "react"
 import { useQuery } from "@tanstack/react-query"
 import Link from "next/link"
 import { useT } from "@/lib/i18n-client"
+import { apiFetchJson } from "@/lib/scope-guard"
 import { DataState } from "@/components/ui/data-state"
 import { CostTelemetryState } from "@/components/cost/cost-overview"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -91,11 +92,7 @@ export function CostBreakdownTable() {
 
   const { data, isLoading, error, refetch } = useQuery<CostResponse>({
     queryKey: ["cost", scopeView],
-    queryFn: async () => {
-      const response = await fetch(`/api/cost?scope=${scopeView}`)
-      if (!response.ok) throw new Error("Cost data is unavailable")
-      return response.json()
-    },
+    queryFn: () => apiFetchJson<CostResponse>(`/api/cost?scope=${scopeView}`),
     refetchInterval: 60_000,
   })
 

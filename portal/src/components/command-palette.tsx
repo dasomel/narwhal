@@ -5,6 +5,7 @@ import { Command } from "cmdk"
 import { useRouter } from "next/navigation"
 import { useQuery } from "@tanstack/react-query"
 import { useT } from "@/lib/i18n-client"
+import { apiFetchJson } from "@/lib/scope-guard"
 import { DataState } from "@/components/ui/data-state"
 import { useSession } from "next-auth/react"
 import type { CatalogService } from "@/lib/argocd"
@@ -45,7 +46,7 @@ export function CommandPalette() {
 
   const { data: services, isLoading, isError, refetch } = useQuery<CatalogService[]>({
     queryKey: ["catalog"],
-    queryFn: () => fetch("/api/catalog").then((r) => r.json()),
+    queryFn: () => apiFetchJson<CatalogService[]>("/api/catalog"),
     enabled: open,
     staleTime: 30_000,
   })

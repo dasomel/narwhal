@@ -4,7 +4,7 @@ import { getPodDetail, PodDetail } from "@/lib/k8s-client"
 import { cacheGet, cacheSet } from "@/lib/valkey"
 import { cacheKeys, cacheTtl } from "@/lib/cache-keys"
 import { ValidationError, toValidationErrorBody, assertK8sNamespace } from "@/lib/validation"
-import { namespaceVisible, requireEffectiveScope } from "@/lib/scope"
+import { namespaceVisible, requireEffectiveScope, withScopeHeader } from "@/lib/scope"
 
 export const dynamic = "force-dynamic"
 
@@ -64,14 +64,14 @@ export async function GET(req: NextRequest) {
   if ("denied" in scoped) return scoped.denied
   const { scope } = scoped
   if (!namespaceVisible(namespace, scope)) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 })
+    return withScopeHeader(NextResponse.json({ error: "Forbidden" }, { status: 403 }), scope)
   }
 
   const cacheKey = cacheKeys.k8sResource(namespace, name)
   try {
     const cached = await cacheGet<PodDetail>(cacheKey)
     if (cached) {
-      return NextResponse.json<PodDetail>(cached)
+      return withScopeHeader(NextResponse.json<PodDetail>(cached), scope)
     }
   } catch (err) {
     console.warn("[k8s-resource-api] Cache lookup failed:", err)
@@ -86,7 +86,7 @@ export async function GET(req: NextRequest) {
       console.warn("[k8s-resource-api] Cache save failed:", err)
     }
 
-    return NextResponse.json<PodDetail>(detail)
+    return withScopeHeader(NextResponse.json<PodDetail>(detail), scope)
   } catch (err) {
     if (err instanceof ValidationError) {
       return NextResponse.json(toValidationErrorBody(err), { status: 400 })

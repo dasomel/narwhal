@@ -9,6 +9,7 @@ import { DataState } from "@/components/ui/data-state"
 import { Input } from "@/components/ui/input"
 import { useState } from "react"
 import { useT } from "@/lib/i18n-client"
+import { apiFetchJson } from "@/lib/scope-guard"
 import type { CatalogService } from "@/lib/argocd"
 
 const syncColors: Record<string, string> = {
@@ -42,7 +43,7 @@ export function CatalogTable() {
 
   const { data: services, isLoading, isError, refetch } = useQuery<CatalogService[]>({
     queryKey: ["catalog"],
-    queryFn: () => fetch("/api/catalog").then((r) => r.json()),
+    queryFn: () => apiFetchJson<CatalogService[]>("/api/catalog"),
     refetchInterval: 15_000,
   })
 

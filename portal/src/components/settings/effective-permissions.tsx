@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query"
 import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { useT } from "@/lib/i18n-client"
+import { apiFetchJson } from "@/lib/scope-guard"
 import type { EffectivePermissions as Data } from "@/app/api/settings/effective-permissions/route"
 import { DataState } from "@/components/ui/data-state"
 
@@ -18,7 +19,7 @@ export function EffectivePermissions() {
   const t = useT()
   const { data, isLoading, isError, refetch } = useQuery<Data>({
     queryKey: ["settings-effective-permissions"],
-    queryFn: () => fetch("/api/settings/effective-permissions").then((r) => r.json()),
+    queryFn: () => apiFetchJson<Data>("/api/settings/effective-permissions"),
   })
 
   if (isLoading) {

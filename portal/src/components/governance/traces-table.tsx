@@ -5,6 +5,7 @@ import { Card } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { useT } from "@/lib/i18n-client"
 import { DataState } from "@/components/ui/data-state"
+import { apiFetch } from "@/lib/scope-guard"
 
 interface TraceEntry {
   traceID: string
@@ -67,7 +68,7 @@ export function TracesTable() {
   const { data = [], isLoading, isError, error, refetch } = useQuery<TraceEntry[]>({
     queryKey: ["governance-traces", service],
     queryFn: async () => {
-      const r = await fetch(`/api/traces${service ? `?service=${encodeURIComponent(service)}` : ""}`)
+      const r = await apiFetch(`/api/traces${service ? `?service=${encodeURIComponent(service)}` : ""}`)
       if (r.status === 403) throw new TracesForbiddenError()
       if (!r.ok) throw new Error(String(r.status))
       const json = await r.json()

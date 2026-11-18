@@ -4,6 +4,7 @@ import { useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { useRouter } from "next/navigation"
 import { useT, useLocale } from "@/lib/i18n-client"
+import { apiFetch, apiFetchJson } from "@/lib/scope-guard"
 import { DataState } from "@/components/ui/data-state"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -113,7 +114,7 @@ function RulesModal() {
   const t = useT()
   const { data, isLoading } = useQuery<ScorecardRulesResponse>({
     queryKey: ["scorecard-rules"],
-    queryFn: () => fetch("/api/scorecards/rules").then((r) => r.json()),
+    queryFn: () => apiFetchJson<ScorecardRulesResponse>("/api/scorecards/rules"),
     staleTime: 5 * 60 * 1000,
   })
 
@@ -205,7 +206,7 @@ export function ScorecardsTable() {
       const params = new URLSearchParams()
       if (tierFilter !== "all") params.set("tier", tierFilter)
       if (ownerFilter !== "all") params.set("owner", ownerFilter)
-      return fetch(`/api/scorecards?${params}`).then((r) => r.json())
+      return apiFetch(`/api/scorecards?${params}`).then((r) => r.json())
     },
     refetchInterval: 60_000,
   })

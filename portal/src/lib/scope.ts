@@ -15,6 +15,7 @@ import {
   type ResolvedNamespaceScope,
 } from "./role-filter"
 import { DEFAULT_CLUSTER_ID } from "@/types/cluster"
+import { ACCESS_NOT_GRANTED_CODE, SCOPE_FINGERPRINT_HEADER } from "./scope-constants"
 
 export interface EffectiveScope {
   /** Every namespace — cluster-admin or an explicit team wildcard. */
@@ -54,7 +55,17 @@ export interface ScopeSession {
   user?: { role?: string }
 }
 
-export const ACCESS_NOT_GRANTED_CODE = "ACCESS_NOT_GRANTED" as const
+export { ACCESS_NOT_GRANTED_CODE, SCOPE_FINGERPRINT_HEADER }
+
+export function withScopeHeader<T extends NextResponse>(
+  response: T,
+  scope: Pick<EffectiveScope, "fingerprint"> | null | undefined,
+): T {
+  if (scope?.fingerprint) {
+    response.headers.set(SCOPE_FINGERPRINT_HEADER, scope.fingerprint)
+  }
+  return response
+}
 
 export interface AccessDeniedBody {
   error: string

@@ -3,7 +3,7 @@ import { requireRole } from "@/lib/auth"
 import { roleGateErrorResponse } from "@/lib/role-gate-response"
 import { cacheGetWithMeta, cacheSet } from "@/lib/valkey"
 import { getCluster, resolveClusterCredentials, clusterCacheKey, DEFAULT_CLUSTER_ID } from "@/lib/cluster-registry"
-import { getEffectiveScope, namespaceVisible, type EffectiveScope } from "@/lib/scope"
+import { getEffectiveScope, namespaceVisible, withScopeHeader, type EffectiveScope } from "@/lib/scope"
 
 export const dynamic = "force-dynamic"
 
@@ -149,8 +149,11 @@ export async function GET(request: NextRequest) {
     const cacheKey = clusterCacheKey(clusterId, scope.all ? "infra" : `infra:${scope.fingerprint}`)
     const cached = await cacheGetWithMeta<ClusterInfra>(cacheKey)
     if (cached) {
-      return NextResponse.json(
-        redactClusterInfra({ ...cached.value, freshness: { source: "cache", observedAt: cached.cachedAt } }, scope),
+      return withScopeHeader(
+        NextResponse.json(
+          redactClusterInfra({ ...cached.value, freshness: { source: "cache", observedAt: cached.cachedAt } }, scope),
+        ),
+        scope,
       )
     }
 
@@ -306,7 +309,7 @@ export async function GET(request: NextRequest) {
     }, scope)
 
     await cacheSet(cacheKey, result, 30)
-    return NextResponse.json(result)
+    return withScopeHeader(NextResponse.json(result), scope)
   } catch (err) {
     console.error("[api/cluster]", err)
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })

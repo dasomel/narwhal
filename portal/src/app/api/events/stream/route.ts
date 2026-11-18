@@ -1,6 +1,6 @@
 import { auth } from "@/lib/auth"
 import { compareLiveEventIds, connectLiveClient, disconnectLiveClient, subscribeLiveWithReplay } from "@/lib/live-stream"
-import { requireEffectiveScope } from "@/lib/scope"
+import { requireEffectiveScope, SCOPE_FINGERPRINT_HEADER } from "@/lib/scope"
 import { isEventFiltered } from "@/lib/event-visibility"
 import type { LiveEvent } from "@/types/live"
 import type { UserRole } from "@/lib/auth"
@@ -138,6 +138,7 @@ export async function GET(request: Request) {
       "Cache-Control": "no-cache, no-transform",
       Connection: "keep-alive",
       "X-Accel-Buffering": "no",
+      ...(scope.fingerprint ? { [SCOPE_FINGERPRINT_HEADER]: scope.fingerprint } : {}),
     },
   })
 }

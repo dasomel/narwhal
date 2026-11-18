@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server"
 import { auth } from "@/lib/auth"
 import { getArgoApps, appToCatalogService } from "@/lib/argocd"
-import { appVisible, requireEffectiveScope } from "@/lib/scope"
+import { appVisible, requireEffectiveScope, withScopeHeader } from "@/lib/scope"
 import { findOwnershipMismatch, getTeamMappings } from "@/lib/role-filter"
 
 export const dynamic = "force-dynamic"
@@ -39,7 +39,7 @@ export async function GET() {
         ...service,
         ownershipMismatch: findOwnershipMismatch(service.project, service.namespace, teamMappings),
       }))
-    return NextResponse.json(services)
+    return withScopeHeader(NextResponse.json(services), scope)
   } catch (err) {
     console.error("[api/catalog]", err)
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })

@@ -3,6 +3,7 @@ import { useState, useMemo } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { Card } from "@/components/ui/card"
 import { useT } from "@/lib/i18n-client"
+import { apiFetchJson, useScopedState } from "@/lib/scope-guard"
 import { DataState } from "@/components/ui/data-state"
 import { ResourceDetailDrawer } from "./resource-detail-drawer"
 
@@ -124,15 +125,11 @@ export function ScorecardTable() {
   const t = useT()
   const [sortKey, setSortKey] = useState<SortKey>("overall")
   const [sortDir, setSortDir] = useState<SortDir>("asc")
-  const [selectedRow, setSelectedRow] = useState<{ namespace: string; service: string } | null>(null)
+  const [selectedRow, setSelectedRow] = useScopedState<{ namespace: string; service: string } | null>(null)
 
   const { data, isLoading, isError, refetch } = useQuery<ScorecardItem[]>({
     queryKey: ["governance-scorecard"],
-    queryFn: async () => {
-      const r = await fetch("/api/governance/scorecard")
-      if (!r.ok) throw new Error("ArgoCD connection failed")
-      return r.json()
-    },
+    queryFn: () => apiFetchJson<ScorecardItem[]>("/api/governance/scorecard"),
     refetchInterval: 30_000,
   })
 

@@ -9,6 +9,13 @@
 
 ## [Unreleased]
 
+### 수정
+
+- **서버 스코프 변경·권한 회수 시 브라우저 React Query 캐시 및 열린 상세 화면 즉시 초기화 (`src/lib/scope.ts`, `src/lib/scope-guard.ts`, `src/components/providers.tsx`, `src/app/api/**`, narwhal#688):**
+  - 테넌트 스코프 API 라우트 응답에 팀·네임스페이스 이름이 노출되지 않는 불투명 SHA-256 해시(`scope.fingerprint`)를 `X-Narwhal-Scope` 헤더로 반환하도록 추가했습니다.
+  - React Query `queryFn`을 `Providers`의 공유 `QueryClient`에 바인딩된 `apiFetch` / `apiFetchJson`으로 통합해, `X-Narwhal-Scope` 헤더 변경 또는 `401`·`403 ACCESS_NOT_GRANTED` 응답 시 캐시된 쿼리를 즉시 제거하고 `useScopedState` / `useScopeResetEffect`로 열린 상세 시트·드로어·선택 상태(`EventTimeline`, `AlertsWidget`, `ActivityFeed`, `ResourceDetailDrawer`, `PodLogsViewer` 등)를 닫으며 401/403 재시도를 생략합니다.
+  - 실제 `QueryClient`·`QueryObserver`를 사용하는 회귀 테스트(`scope-guard.test.ts`, `activity-feed.test.tsx`, `event-timeline.test.tsx`, `resource-detail-drawer.test.tsx`)와 `src/app/api/events/route.test.ts`·`src/app/api/alerts/route.test.ts`의 `viewer` 세션 및 `X-Narwhal-Scope` 불투명성 검증을 추가했습니다.
+
 ## [1.1.19] - 2026-11-18
 
 구체적 근거가 있는 검토 완료 컴플라이언스 예외를 추가하고 RBAC 예외 매칭의 fail-open 경로를 닫는 패치 릴리스입니다

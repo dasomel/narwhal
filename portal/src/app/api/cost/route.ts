@@ -9,7 +9,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { requireRole } from "@/lib/auth"
 import { roleGateErrorResponse } from "@/lib/role-gate-response"
 import { CostPricingConfigurationError, getCost, getCostPricing } from "@/lib/cost"
-import { getEffectiveScope } from "@/lib/scope"
+import { getEffectiveScope, withScopeHeader } from "@/lib/scope"
 import { ValidationError, toValidationErrorBody } from "@/lib/validation"
 
 export const dynamic = "force-dynamic"
@@ -66,7 +66,7 @@ export async function GET(req: NextRequest) {
     if (notice) body.notice = notice
     if (exclusions) body.exclusions = exclusions
 
-    return NextResponse.json(body)
+    return withScopeHeader(NextResponse.json(body), effScope)
   } catch (err) {
     if (err instanceof CostPricingConfigurationError) {
       return NextResponse.json(

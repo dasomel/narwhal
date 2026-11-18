@@ -1,10 +1,10 @@
 "use client"
 
-import { useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { useSession } from "next-auth/react"
 import Link from "next/link"
 import { useT } from "@/lib/i18n-client"
+import { apiFetchJson, useScopedState } from "@/lib/scope-guard"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
@@ -44,15 +44,12 @@ export function DistributionView() {
   const { data: session } = useSession()
   const role = session?.user?.role ?? "guest"
   const isAdmin = role === "cluster-admin"
-  const [isDrilldownOpen, setIsDrilldownOpen] = useState(false)
-  const [selectedPodForDrawer, setSelectedPodForDrawer] = useState<{ namespace: string; pod: string } | null>(null)
+  const [isDrilldownOpen, setIsDrilldownOpen] = useScopedState(false)
+  const [selectedPodForDrawer, setSelectedPodForDrawer] = useScopedState<{ namespace: string; pod: string } | null>(null)
 
   const { data, isLoading, error, refetch } = useQuery<DistributionResponse>({
     queryKey: ["governance-distribution"],
-    queryFn: () => fetch("/api/governance/distribution").then((r) => {
-      if (!r.ok) throw new Error("Failed to fetch distribution data")
-      return r.json()
-    }),
+    queryFn: () => apiFetchJson<DistributionResponse>("/api/governance/distribution"),
     refetchInterval: 30_000,
     enabled: isAdmin,
   })

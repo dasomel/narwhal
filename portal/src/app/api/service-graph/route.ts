@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { requireRole } from "@/lib/auth"
 import { roleGateErrorResponse } from "@/lib/role-gate-response"
-import { getEffectiveScope } from "@/lib/scope"
+import { getEffectiveScope, withScopeHeader } from "@/lib/scope"
 import { getServiceGraph, isAllowedWindow } from "@/lib/service-graph"
 import { ValidationError, toValidationErrorBody } from "@/lib/validation"
 
@@ -72,7 +72,7 @@ export async function GET(req: NextRequest) {
       ...(result.notice ? { notice: result.notice } : {}),
     }
 
-    return NextResponse.json(response)
+    return withScopeHeader(NextResponse.json(response), scope)
   } catch (err) {
     if (err instanceof ValidationError) {
       return NextResponse.json(toValidationErrorBody(err), { status: 400 })

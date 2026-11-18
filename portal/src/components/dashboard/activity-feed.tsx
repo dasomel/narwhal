@@ -1,16 +1,16 @@
 "use client"
 
-import { useState } from "react"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { Card } from "@/components/ui/card"
 import { DataState } from "@/components/ui/data-state"
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet"
 import { useT, useLocale } from "@/lib/i18n-client"
+import { apiFetchJson, useScopedState, type ScopedState } from "@/lib/scope-guard"
 import type { Locale } from "@/lib/i18n"
 import { useRole } from "@/hooks/use-role"
 import type { TimelineEvent } from "@/app/api/events/route"
 
-interface Alert {
+export interface Alert {
   fingerprint: string
   status: { state: string }
   labels: Record<string, string>
@@ -150,30 +150,26 @@ function AlertDetail({
   )
 }
 
-export function ActivityFeed() {
+export function ActivityFeed({ selection }: { selection?: ScopedState<Alert | null> } = {}) {
   const t = useT()
   const locale = useLocale()
   const { can } = useRole()
   const canSilence = can("silence")
   const queryClient = useQueryClient()
 
-  const [selectedAlert, setSelectedAlert] = useState<Alert | null>(null)
+  const [selectedAlert, setSelectedAlert] = useScopedState<Alert | null>(null, selection)
 
   const { data: alertData, isLoading: alertsLoading, isError: alertsError, refetch: refetchAlerts } = useQuery<Alert[]>({
     queryKey: ["alerts"],
     queryFn: () =>
-      fetch("/api/alerts")
-        .then((r) => r.json())
-        .then((d) => (Array.isArray(d) ? d : [])),
+      apiFetchJson<unknown>("/api/alerts").then((d) => (Array.isArray(d) ? (d as Alert[]) : [])),
     refetchInterval: 15_000,
   })
 
   const { data: eventData, isLoading: eventsLoading, isError: eventsError, refetch: refetchEvents } = useQuery<TimelineEvent[]>({
     queryKey: ["events"],
     queryFn: () =>
-      fetch("/api/events")
-        .then((r) => r.json())
-        .then((d) => (Array.isArray(d) ? d : [])),
+      apiFetchJson<unknown>("/api/events").then((d) => (Array.isArray(d) ? (d as TimelineEvent[]) : [])),
     refetchInterval: 30_000,
   })
 
@@ -182,11 +178,11 @@ export function ActivityFeed() {
 
   const silenceMutation = useMutation({
     mutationFn: (alertname: string) =>
-      fetch("/api/alerts/silence", {
+      apiFetchJson("/api/alerts/silence", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ alertname, duration: 60 }),
-      }).then((r) => r.json()),
+      }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["alerts"] }),
   })
 

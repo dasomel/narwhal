@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { useT } from "@/lib/i18n-client"
 import { DataState } from "@/components/ui/data-state"
+import { apiFetchJson } from "@/lib/scope-guard"
 import { readTemplatePreviewResponse, type TemplatePreviewResult } from "@/lib/service-templates"
 
 interface TemplateField {
@@ -34,7 +35,7 @@ export function TemplateList() {
 
   const { data: templates, isLoading, isError, refetch } = useQuery<ServiceTemplate[]>({
     queryKey: ["templates"],
-    queryFn: () => fetch("/api/templates").then((r) => r.json()),
+    queryFn: () => apiFetchJson<ServiceTemplate[]>("/api/templates"),
     refetchInterval: 30_000,
   })
 

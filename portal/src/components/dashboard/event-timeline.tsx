@@ -2,13 +2,13 @@
 // Merged into ActivityFeed (unified alert+event stream). Delete after Phase A validation.
 "use client"
 
-import { useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { DataState } from "@/components/ui/data-state"
 import { Badge } from "@/components/ui/badge"
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet"
 import { useT, useLocale } from "@/lib/i18n-client"
+import { apiFetchJson, useScopedState, type ScopedState } from "@/lib/scope-guard"
 import type { Locale } from "@/lib/i18n"
 import type { TimelineEvent } from "@/app/api/events/route"
 
@@ -62,14 +62,14 @@ function formatFullTimestamp(dateStr: string): string {
   })
 }
 
-export function EventTimeline() {
+export function EventTimeline({ selection }: { selection?: ScopedState<TimelineEvent | null> } = {}) {
   const t = useT()
   const locale = useLocale()
-  const [selected, setSelected] = useState<TimelineEvent | null>(null)
+  const [selected, setSelected] = useScopedState<TimelineEvent | null>(null, selection)
 
   const { data: events, isLoading, isError, refetch } = useQuery<TimelineEvent[]>({
     queryKey: ["events"],
-    queryFn: () => fetch("/api/events").then((r) => r.json()),
+    queryFn: () => apiFetchJson<TimelineEvent[]>("/api/events"),
     refetchInterval: 15_000,
   })
 

@@ -9,6 +9,13 @@ English | [한국어](CHANGELOG-ko.md)
 
 ## [Unreleased]
 
+### Fixed
+
+- **Evict stale browser query cache and open detail views on server scope change or revocation (`src/lib/scope.ts`, `src/lib/scope-guard.ts`, `src/components/providers.tsx`, `src/app/api/**`, narwhal#688):**
+  - Attached the server-computed opaque `scope.fingerprint` in the `X-Narwhal-Scope` response header across tenant-scoped API routes without exposing team or namespace names.
+  - Routed React Query `queryFn`s through `apiFetch` / `apiFetchJson` bound to the shared `QueryClient` in `Providers` so a changed `X-Narwhal-Scope` header, `401`, or `403 ACCESS_NOT_GRANTED` clears cached queries, resets `useScopedState` / `useScopeResetEffect` selection state, closes open detail sheets/drawers (`EventTimeline`, `AlertsWidget`, `ActivityFeed`, `ResourceDetailDrawer`, `PodLogsViewer`, etc.), and skips retrying 401/403 responses.
+  - Added real-`QueryClient` component regression tests (`scope-guard.test.ts`, `activity-feed.test.tsx`, `event-timeline.test.tsx`, `resource-detail-drawer.test.tsx`) plus `viewer` session and `X-Narwhal-Scope` opacity assertions in `src/app/api/events/route.test.ts` and `src/app/api/alerts/route.test.ts`.
+
 ## [1.1.19] - 2026-11-18
 
 Patch release that adds reviewed compliance exceptions backed by concrete evidence and closes a fail-open path in

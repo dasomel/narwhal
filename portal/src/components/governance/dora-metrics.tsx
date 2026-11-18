@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { formatLeadTime } from "@/lib/dora-duration"
 import { useT } from "@/lib/i18n-client"
+import { apiFetchJson } from "@/lib/scope-guard"
 import { DataState } from "@/components/ui/data-state"
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts"
 import type { DoraMetrics } from "./types"
@@ -64,11 +65,7 @@ export function DoraMetricsWidget() {
 
   const { data, isLoading, isError, refetch } = useQuery<DoraMetrics>({
     queryKey: ["governance-dora"],
-    queryFn: () =>
-      fetch("/api/governance/dora").then((r) => {
-        if (!r.ok) throw new Error("Failed to fetch DORA metrics")
-        return r.json()
-      }),
+    queryFn: () => apiFetchJson<DoraMetrics>("/api/governance/dora"),
     refetchInterval: 30_000,
   })
 

@@ -1,8 +1,9 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useCallback, useEffect } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { useT, useLocale } from "@/lib/i18n-client"
+import { apiFetchJson, useScopedState, useScopeResetEffect, type ScopedState } from "@/lib/scope-guard"
 import { DataState } from "@/components/ui/data-state"
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -19,6 +20,7 @@ interface ResourceDetailDrawerProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   initialPodName?: string
+  selectedPodState?: ScopedState<string | null>
 }
 
 function relativeTime(ts: string, tFn: any): string {
@@ -63,10 +65,7 @@ function ContainerVulnSummary({ image }: { image: string }) {
   const { data, isLoading, isError, refetch } = useQuery<ImageVulnReport>({
     queryKey: ["governance-container-vuln", image],
     queryFn: () =>
-      fetch(`/api/security/vulnerabilities?image=${encodeURIComponent(image)}`).then((r) => {
-        if (!r.ok) throw new Error("Failed to fetch vulnerabilities")
-        return r.json()
-      }),
+      apiFetchJson<ImageVulnReport>(`/api/security/vulnerabilities?image=${encodeURIComponent(image)}`),
     enabled: !!image,
     staleTime: 60_000,
   })
@@ -105,19 +104,21 @@ function ContainerVulnSummary({ image }: { image: string }) {
   )
 }
 
-export function ResourceDetailDrawer({ namespace, app, open, onOpenChange, initialPodName }: ResourceDetailDrawerProps) {
+export function ResourceDetailDrawer({ namespace, app, open, onOpenChange, initialPodName, selectedPodState }: ResourceDetailDrawerProps) {
   const t = useT()
   const locale = useLocale()
-  const [selectedPodName, setSelectedPodName] = useState<string | null>(null)
+  const [selectedPodName, setSelectedPodName] = useScopedState<string | null>(null, selectedPodState)
+
+  const closeOnScopeChange = useCallback(() => {
+    onOpenChange(false)
+  }, [onOpenChange])
+  useScopeResetEffect(closeOnScopeChange)
 
   const { data: podListData, isLoading: listLoading, error: listError, refetch: refetchPods } = useQuery<PodListResponse>({
     queryKey: ["governance-pods", namespace, app],
     queryFn: () => {
       const url = `/api/k8s/pods?namespace=${encodeURIComponent(namespace)}` + (app ? `&app=${encodeURIComponent(app)}` : "")
-      return fetch(url).then((r) => {
-        if (!r.ok) throw new Error("Failed to fetch pod list")
-        return r.json()
-      })
+      return apiFetchJson<PodListResponse>(url)
     },
     enabled: open && !!namespace,
     refetchInterval: 15_000,
@@ -126,10 +127,7 @@ export function ResourceDetailDrawer({ namespace, app, open, onOpenChange, initi
   const { data: podDetail, isLoading: detailLoading, isError: detailError, refetch: refetchDetail } = useQuery<PodDetail>({
     queryKey: ["governance-pod-detail", namespace, selectedPodName],
     queryFn: () => {
-      return fetch(`/api/k8s/resource?kind=Pod&namespace=${encodeURIComponent(namespace)}&name=${encodeURIComponent(selectedPodName!)}`).then((r) => {
-        if (!r.ok) throw new Error("Failed to fetch pod detail")
-        return r.json()
-      })
+      return apiFetchJson<PodDetail>(`/api/k8s/resource?kind=Pod&namespace=${encodeURIComponent(namespace)}&name=${encodeURIComponent(selectedPodName!)}`)
     },
     enabled: open && !!namespace && !!selectedPodName,
     refetchInterval: 10_000,
@@ -138,10 +136,7 @@ export function ResourceDetailDrawer({ namespace, app, open, onOpenChange, initi
   const { data: eventsData, isLoading: eventsLoading, isError: eventsError, refetch: refetchEvents } = useQuery<ResourceEventsResponse>({
     queryKey: ["governance-pod-events", namespace, selectedPodName],
     queryFn: () => {
-      return fetch(`/api/k8s/events?namespace=${encodeURIComponent(namespace)}&name=${encodeURIComponent(selectedPodName!)}`).then((r) => {
-        if (!r.ok) throw new Error("Failed to fetch pod events")
-        return r.json()
-      })
+      return apiFetchJson<ResourceEventsResponse>(`/api/k8s/events?namespace=${encodeURIComponent(namespace)}&name=${encodeURIComponent(selectedPodName!)}`)
     },
     enabled: open && !!namespace && !!selectedPodName,
     refetchInterval: 15_000,
@@ -157,7 +152,7 @@ export function ResourceDetailDrawer({ namespace, app, open, onOpenChange, initi
         setSelectedPodName(initialPodName)
       }
     }
-  }, [open, initialPodName, pods])
+  }, [open, initialPodName, pods, setSelectedPodName])
 
   function handleOpenChange(newOpen: boolean) {
     onOpenChange(newOpen)

@@ -6,6 +6,7 @@ import { Cpu, Database, Layers3, MemoryStick } from "lucide-react"
 import { Card } from "@/components/ui/card"
 import { DataState } from "@/components/ui/data-state"
 import { useT } from "@/lib/i18n-client"
+import { apiFetchJson } from "@/lib/scope-guard"
 import type { TranslationKey } from "@/lib/i18n"
 import type { ArgoCDResponse } from "@/types/api"
 
@@ -40,11 +41,7 @@ export function buildKpiModels(m: KpiData | undefined, t: (key: TranslationKey, 
 }
 
 function useJson<T>(key: unknown[], url: string, interval = 30_000) {
-  return useQuery<T>({ queryKey: key, queryFn: async () => {
-    const response = await fetch(url)
-    if (!response.ok) throw new Error(response.statusText)
-    return response.json()
-  }, refetchInterval: interval })
+  return useQuery<T>({ queryKey: key, queryFn: () => apiFetchJson<T>(url), refetchInterval: interval })
 }
 
 function Kpi({ title, value, detail, percent, unavailable, icon: Icon }: KpiModel) {

@@ -6,14 +6,12 @@ import { ComponentGrid } from "./component-grid"
 import { IncidentList } from "./incident-list"
 import type { PlatformStatus } from "@/types/api"
 import { DataState } from "@/components/ui/data-state"
+import { apiFetchJson } from "@/lib/scope-guard"
 
 export function StatusView({ isOperator }: { isOperator: boolean }) {
   const { data, isLoading, isError, refetch } = useQuery<PlatformStatus>({
     queryKey: ["platform-status"],
-    queryFn: () => fetch("/api/status").then((r) => {
-      if (!r.ok) throw new Error(`status ${r.status}`)
-      return r.json()
-    }),
+    queryFn: () => apiFetchJson<PlatformStatus>("/api/status"),
     refetchInterval: 15_000,
   })
 

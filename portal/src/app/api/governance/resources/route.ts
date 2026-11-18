@@ -3,7 +3,7 @@ import { auth } from "@/lib/auth"
 import { queryVector, getClusterMetrics } from "@/lib/prometheus"
 import { getNamespaces, getAllPodsMinimal } from "@/lib/k8s-client"
 import { cacheGetWithMeta, cacheSet } from "@/lib/valkey"
-import { namespaceVisible, requireEffectiveScope } from "@/lib/scope"
+import { namespaceVisible, requireEffectiveScope, withScopeHeader } from "@/lib/scope"
 import { cacheKeys, cacheTtl } from "@/lib/cache-keys"
 
 export const dynamic = "force-dynamic"
@@ -82,7 +82,7 @@ export async function GET() {
   const cacheKey = cacheKeys.governanceResourcesV3(scope.fingerprint)
   try {
     const cached = await cacheGetWithMeta<ResourcesResponseV2>(cacheKey)
-    if (cached) return NextResponse.json({ ...cached.value, freshness: { source: "cache" as const, observedAt: cached.cachedAt } })
+    if (cached) return withScopeHeader(NextResponse.json({ ...cached.value, freshness: { source: "cache" as const, observedAt: cached.cachedAt } }), scope)
   } catch (err) {
     console.warn("[governance/resources] Cache read failed (non-fatal):", err)
   }
@@ -275,7 +275,7 @@ export async function GET() {
       console.warn("[governance/resources] Cache write failed (non-fatal):", err)
     }
 
-    return NextResponse.json(response)
+    return withScopeHeader(NextResponse.json(response), scope)
   } catch (err) {
     console.error("[governance/resources]", err)
     return NextResponse.json({ error: "Failed to fetch resources data" }, { status: 500 })

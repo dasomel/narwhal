@@ -3,6 +3,7 @@ import { useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { Button } from "@/components/ui/button"
 import { useLocale, useT } from "@/lib/i18n-client"
+import { apiFetchJson } from "@/lib/scope-guard"
 import type { FiringAlertsResponse } from "@/types/firing-alerts"
 import { TestAlertButton } from "./test-alert-button"
 
@@ -12,11 +13,7 @@ export function FiringAlerts({ canTest }: { canTest: boolean }) {
   const [severity, setSeverity] = useState("")
   const query = useQuery<FiringAlertsResponse>({
     queryKey: ["alerts", "firing"],
-    queryFn: async () => {
-      const res = await fetch("/api/alerts/firing")
-      if (!res.ok) throw new Error("Alerts unavailable")
-      return res.json()
-    },
+    queryFn: () => apiFetchJson<FiringAlertsResponse>("/api/alerts/firing"),
     refetchInterval: 30_000,
   })
   const alerts = query.data?.alerts ?? []

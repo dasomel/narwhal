@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query"
 import { useRouter } from "next/navigation"
 import { Card } from "@/components/ui/card"
 import { useT } from "@/lib/i18n-client"
+import { apiFetchJson } from "@/lib/scope-guard"
 import { ArgoCDAppsTable } from "@/components/dashboard/argocd-apps-table"
 import { ScopedAlertsList } from "@/components/my-apps/scoped-alerts-list"
 import { ScopedDeploysList } from "@/components/my-apps/scoped-deploys-list"
@@ -36,7 +37,7 @@ export function MyAppsView() {
 
   const { data, isLoading, isError, refetch } = useQuery<MyAppsResponse>({
     queryKey: ["my-apps"],
-    queryFn: () => fetch("/api/my-apps").then((r) => r.json()),
+    queryFn: () => apiFetchJson<MyAppsResponse>("/api/my-apps"),
     refetchInterval: 15_000,
   })
 

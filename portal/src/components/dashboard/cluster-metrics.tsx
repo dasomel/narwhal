@@ -5,6 +5,7 @@ import { useQuery } from "@tanstack/react-query"
 import { MetricCard } from "./metric-card"
 import { useT } from "@/lib/i18n-client"
 import { DataState } from "@/components/ui/data-state"
+import { apiFetchJson } from "@/lib/scope-guard"
 
 interface ClusterMetrics {
   cpu: number | null
@@ -17,7 +18,7 @@ export function ClusterMetrics() {
   const t = useT()
   const { data, isLoading, isError, refetch } = useQuery<ClusterMetrics>({
     queryKey: ["metrics"],
-    queryFn: () => fetch("/api/metrics").then((r) => r.json()),
+    queryFn: () => apiFetchJson<ClusterMetrics>("/api/metrics"),
     refetchInterval: 30_000,
   })
 

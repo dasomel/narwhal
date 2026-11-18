@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import type { NamespaceInfo } from "@/lib/k8s-client"
+import { SCOPE_FINGERPRINT_HEADER } from "@/lib/scope-constants"
 
 const mockAuth = vi.hoisted(() => vi.fn())
 const mockGetNamespaces = vi.hoisted(() => vi.fn())
@@ -84,5 +85,58 @@ describe("GET /api/alerts — tenant scope", () => {
     expect([403, 500]).toContain(res.status)
     const serialized = JSON.stringify(await res.json())
     expect(serialized).not.toContain("TeamBCrashLoop")
+  })
+
+  it.each([
+    { groups: ["developer"], teams: ["unmapped-team"], user: { role: "developer" } },
+    { groups: ["developer"], teams: [], user: { role: "developer" } },
+    { groups: ["viewer"], teams: ["unmapped-team"], user: { role: "viewer" } },
+    { groups: ["viewer"], teams: [], user: { role: "viewer" } },
+  ])("denies unmapped/teamless session %j with 403 ACCESS_NOT_GRANTED", async (session) => {
+    mockAuth.mockResolvedValue(session)
+    const res = await GET(req())
+    expect(res.status).toBe(403)
+    expect(await res.json()).toEqual({ error: "Forbidden", code: "ACCESS_NOT_GRANTED" })
+  })
+
+  it("returns an opaque X-Narwhal-Scope header that rotates when namespace labels change", async () => {
+    mockAuth.mockResolvedValue({ groups: ["cluster-admin"], teams: [], user: { role: "cluster-admin" } })
+    const adminFp = (await GET(req())).headers.get(SCOPE_FINGERPRINT_HEADER)
+
+    mockAuth.mockResolvedValue({ groups: ["viewer"], teams: ["team-a"], user: { role: "viewer" } })
+    const viewerFp = (await GET(req())).headers.get(SCOPE_FINGERPRINT_HEADER)
+
+    mockAuth.mockResolvedValue({ groups: ["developer"], teams: ["team-a"], user: { role: "developer" } })
+    const teamAFpBefore = (await GET(req())).headers.get(SCOPE_FINGERPRINT_HEADER)
+
+    mockAuth.mockResolvedValue({ groups: ["developer"], teams: ["team-b"], user: { role: "developer" } })
+    const teamBFp = (await GET(req())).headers.get(SCOPE_FINGERPRINT_HEADER)
+
+    for (const fp of [adminFp, viewerFp, teamAFpBefore, teamBFp]) {
+      expect(fp).toMatch(/^[0-9a-f]{32}$/)
+      for (const word of ["team-a", "team-b", "cluster-admin", "developer", "viewer", "team-a-ns", "team-b-ns"]) {
+        expect(fp).not.toContain(word)
+      }
+    }
+    expect(new Set([adminFp, viewerFp, teamAFpBefore, teamBFp]).size).toBe(4)
+
+    // Grant an extra namespace to team-a via label, then revoke it — fingerprint must rotate each time.
+    mockGetNamespaces.mockResolvedValue([
+      ...namespaces,
+      { name: "team-a-extra", status: "Active", labels: { "narwhal.io/team": "team-a" }, createdAt: "2026-01-01T00:00:00Z" },
+    ])
+    mockAuth.mockResolvedValue({ groups: ["developer"], teams: ["team-a"], user: { role: "developer" } })
+    const teamAFpExpanded = (await GET(req())).headers.get(SCOPE_FINGERPRINT_HEADER)
+    expect(teamAFpExpanded).toMatch(/^[0-9a-f]{32}$/)
+    expect(teamAFpExpanded).not.toBe(teamAFpBefore)
+
+    // Remove all team-a namespace labels -> server fails closed with 403 ACCESS_NOT_GRANTED.
+    mockGetNamespaces.mockResolvedValue([
+      { name: "team-a-ns", status: "Active", labels: {}, createdAt: "2026-01-01T00:00:00Z" },
+      namespaces[1],
+    ])
+    const revokedRes = await GET(req())
+    expect(revokedRes.status).toBe(403)
+    expect(await revokedRes.json()).toEqual({ error: "Forbidden", code: "ACCESS_NOT_GRANTED" })
   })
 })

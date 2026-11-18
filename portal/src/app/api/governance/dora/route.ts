@@ -4,7 +4,7 @@ import { getArgoApps } from "@/lib/argocd"
 import { getCommitTimestamp, isGitSha } from "@/lib/gitea"
 import { cacheGet, cacheSet } from "@/lib/valkey"
 import { cacheKeys, cacheTtl } from "@/lib/cache-keys"
-import { appVisible, requireEffectiveScope } from "@/lib/scope"
+import { appVisible, requireEffectiveScope, withScopeHeader } from "@/lib/scope"
 import { assertPromQLSafe } from "@/lib/validation"
 import { getDependencyUrl } from "@/lib/config"
 
@@ -147,7 +147,7 @@ export async function GET() {
   const cacheKey = cacheKeys.governanceDoraV2(scope.fingerprint)
   try {
     const cached = await cacheGet<DoraMetrics>(cacheKey)
-    if (cached) return NextResponse.json(cached)
+    if (cached) return withScopeHeader(NextResponse.json(cached), scope)
   } catch (err) {
     console.warn("[governance/dora] Cache lookup failed:", err)
   }
@@ -368,14 +368,14 @@ export async function GET() {
       }
     }
 
-    return NextResponse.json(result)
+    return withScopeHeader(NextResponse.json(result), scope)
   } catch (err) {
     console.error("[governance/dora]", err)
     // D1: source evidence (ArgoCD/Prometheus) failed entirely — report
     // changeFailureRate as null (unknown), not 0 (which would read as
     // false-healthy), per the same rule applied to the happy path above.
     const nowIso = new Date().toISOString()
-    return NextResponse.json({
+    return withScopeHeader(NextResponse.json({
       period: "7d",
       metricDefinitionVersion: DORA_METRIC_DEFINITION_VERSION,
       deployFrequency: 0,
@@ -391,6 +391,6 @@ export async function GET() {
       dailyDeploys: [],
       perApp: [],
       recent: [],
-    })
+    }), scope)
   }
 }

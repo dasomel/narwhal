@@ -50,6 +50,29 @@ def tcp_hbone(rule: dict) -> bool:
     )
 
 
+def hbone_exempt_rule(policy: dict, rule: dict) -> bool:
+    """Narrowly exempt rules that intentionally refuse HBONE to prevent port-bypass.
+
+    monitoring/alloy-logs-ingress-policy rule for narwhal.io/otlp-ingest="true"
+    admits only plain-TCP OTLP (4317/4318) from non-ambient opted-in namespaces;
+    opening HBONE 15008 there would let ambient senders tunnel to :12345 (/metrics).
+    Grafana and Prometheus rules in the same policy still require TCP 15008.
+    """
+    meta = policy.get("metadata", {})
+    if meta.get("namespace") != "monitoring" or meta.get("name") != "alloy-logs-ingress-policy":
+        return False
+    if rule.get("from") != [{"namespaceSelector": {"matchLabels": {"narwhal.io/otlp-ingest": "true"}}}]:
+        return False
+    ports = rule.get("ports") or []
+    return bool(ports) and all(
+        isinstance(port, dict)
+        and port.get("protocol", "TCP") == "TCP"
+        and port.get("port") in {4317, 4318}
+        and "endPort" not in port
+        for port in ports
+    )
+
+
 def repo_owned(policy: dict) -> bool:
     return policy.get("metadata", {}).get("labels", {}).get(
         "app.kubernetes.io/managed-by"
@@ -92,7 +115,7 @@ def validate(docs: list[dict]) -> list[str]:
             for index, rule in enumerate(rules):
                 if "ports" not in rule:
                     continue  # An ingress rule without ports allows all ports.
-                if not tcp_hbone(rule):
+                if not hbone_exempt_rule(policy, rule) and not tcp_hbone(rule):
                     problems.append(
                         f"{namespace}/{meta.get('name')} ingress rule #{index} has ports but lacks TCP 15008"
                     )
@@ -194,6 +217,20 @@ def main() -> int:
         })
         if not any("newly isolates all pods" in issue for issue in validate(mutations)):
             raise AssertionError("mutation adding devtools namespace-wide allow-hbone was not detected")
+
+        mutations = copy.deepcopy(docs)
+        for doc in mutations:
+            if doc.get("kind") == "NetworkPolicy" and doc.get("metadata", {}).get("name") == "alloy-logs-ingress-policy":
+                doc["spec"]["ingress"][0]["ports"] = [{"port": 4317, "protocol": "TCP"}]
+        if not any("alloy-logs-ingress-policy ingress rule #0" in issue for issue in validate(mutations)):
+            raise AssertionError("mutation removing HBONE from alloy-logs Grafana rule was not detected")
+
+        mutations = copy.deepcopy(docs)
+        for doc in mutations:
+            if doc.get("kind") == "NetworkPolicy" and doc.get("metadata", {}).get("name") == "alloy-logs-ingress-policy":
+                doc["spec"]["ingress"][1]["from"] = [{"namespaceSelector": {}}]
+        if not any("alloy-logs-ingress-policy ingress rule #1" in issue for issue in validate(mutations)):
+            raise AssertionError("mutation widening alloy-logs opt-in rule without HBONE was not detected")
 
         mutations = copy.deepcopy(docs)
         for doc in mutations:

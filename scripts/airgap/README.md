@@ -260,8 +260,9 @@ promote는 사람이 승인하는 게이트다. ghcr.io로 나갈 수 있는 클
   --ca-cert ./narwhal-ca.crt --kube-context narwhal
 ```
 
-이 push 단계는 실행 전 모든 아티팩트의 OCI `org.opencontainers.image.created`를 미러와 비교한다(`D-SECDB-NO-DOWNGRADE`):
-미러가 더 새것이면 덮어쓰기를 거부하고 비정상 종료하며, 같으면 건너뛰고, 미러에 연결할 수 없으면 비어 있다고 추정하지 않고 실패한다.
+이 push 단계는 실행 전 모든 아티팩트의 OCI `org.opencontainers.image.created`(RFC 3339)와 매니페스트 다이제스트를 미러와 비교하고, 각 복사 직전에도 미러를 다시 확인한다(`D-SECDB-NO-DOWNGRADE`):
+미러가 더 새것이면 덮어쓰기를 거부하고 비정상 종료하며, 타임스탬프와 다이제스트가 모두 같을 때만 건너뛰고(타임스탬프만 같고 다이제스트가 다르면 push), 미러에 연결할 수 없으면 비어 있다고 추정하지 않고 실패한다.
+OCI 레지스트리는 태그 쓰기에 compare-and-swap(원자적 조건부 덮어쓰기)을 제공하지 않으므로 복사 직전 재조회와 `skopeo copy` 사이의 수 초 간격(TOCTOU 창)은 수용된 잔여 위험으로 남는다(`trivy-db-refresh`가 같은 몇 초 사이에 push하면 다음 갱신 주기 또는 재실행 전까지 덮일 수 있음).
 의도적 롤백(`promote-security-db.sh --rollback`) 등 예외 시에만 `--allow-downgrade` 또는 `AIRGAP_SECURITY_DB_ALLOW_DOWNGRADE=1`로 우회한다.
 
 push 뒤 trivy-server는 다음 시간 주기에 새 DB를 한 번 받고 멈춘다. 서둘러 반영하려면 `kubectl -n security-system delete pod trivy-server-0`

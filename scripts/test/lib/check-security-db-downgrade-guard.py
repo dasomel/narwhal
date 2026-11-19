@@ -3,23 +3,29 @@
 
 Invariants:
   1. push-security-db.sh compares bundle vs mirror OCI `annotations["org.opencontainers.image.created"]`
+     (full RFC 3339: arbitrary fractional seconds and Z/[+-]HH:MM offsets) and raw manifest sha256
      for every artifact in promoted/manifest.json before pushing any artifact.
   2. Refuses (nonzero exit, clear message, 0 skopeo copies) when any bundle artifact is older than
      the mirror (including trivy-java-db when trivy-db is newer).
-  3. Skips pushing (exit 0, 0 skopeo copies for equal) when bundle == mirror.
+  3. Skips pushing (exit 0, 0 skopeo copies) ONLY when both `created` AND raw manifest digest match;
+     equal `created` with a different manifest digest is not a downgrade and is pushed.
   4. Pushes when mirror is empty / repository or manifest missing (Harbor "repository ... not found"
      or OCI "manifest unknown").
   5. Fails closed (nonzero exit, 0 skopeo copies, never guesses empty) when mirror is unreachable or
-     returns a present manifest lacking `org.opencontainers.image.created`.
-  6. Allows intentional downgrade only with explicit `--allow-downgrade` or
-     `AIRGAP_SECURITY_DB_ALLOW_DOWNGRADE=1` (documented with D-SECDB-NO-DOWNGRADE).
-  7. scripts/airgap/README.md and gitops/resources/prometheus-alerts.yaml (TrivyServerDbRedownloading)
-     name pushing an older bundle over a fresher mirror as a cause and document the guard.
+     returns a present manifest lacking valid RFC 3339 `org.opencontainers.image.created`.
+  6. Re-inspects each queued mirror artifact immediately before its `skopeo copy` and refuses/aborts
+     if the mirror moved ahead of the bundle between preflight and copy (shrinking TOCTOU window).
+  7. Allows intentional downgrade only with explicit `--allow-downgrade` or
+     `AIRGAP_SECURITY_DB_ALLOW_DOWNGRADE=1` (documented with D-SECDB-NO-DOWNGRADE + residual TOCTOU risk).
+  8. scripts/airgap/README.md and gitops/resources/prometheus-alerts.yaml (TrivyServerDbRedownloading)
+     name pushing an older bundle over a fresher mirror as a cause, document the guard and TOCTOU
+     accepted residual risk.
 
 --mutation-verify proves every invariant fails when mutated on isolated temp copies.
 """
 from __future__ import annotations
 
+import concurrent.futures
 import datetime
 import json
 import os
@@ -45,6 +51,7 @@ FILES = (PUSH_REL, CONFIG_REL, FRESH_REL, README_REL, ALERTS_REL)
 FAKE_SKOPEO = """#!/usr/bin/env python3
 import json, os, sys
 log_path = os.environ["FAKE_SKOPEO_LOG"]
+state_path = os.environ["FAKE_SKOPEO_STATE"]
 cfg = json.loads(open(os.environ["FAKE_SKOPEO_CFG"], encoding="utf-8").read())
 args = sys.argv[1:]
 with open(log_path, "a", encoding="utf-8") as f:
@@ -62,6 +69,15 @@ if cmd == "inspect":
     if entry is None:
         sys.stderr.write(f"unconfigured fake target: {target}\\n")
         sys.exit(99)
+    if isinstance(entry, list):
+        counts = {}
+        if os.path.exists(state_path):
+            counts = json.loads(open(state_path, encoding="utf-8").read())
+        idx = counts.get(target, 0)
+        counts[target] = idx + 1
+        with open(state_path, "w", encoding="utf-8") as sf:
+            sf.write(json.dumps(counts))
+        entry = entry[min(idx, len(entry) - 1)]
     rc = entry.get("rc", 0)
     if rc != 0:
         sys.stderr.write(entry.get("stderr", "error") + "\\n")
@@ -81,11 +97,11 @@ sys.exit(3)
 """
 
 
-def manifest_doc(created: str | None) -> dict:
+def manifest_doc(created: str | None, config_digest: str = "sha256:44136fa") -> dict:
     doc: dict = {
         "schemaVersion": 2,
         "mediaType": "application/vnd.oci.image.manifest.v1+json",
-        "config": {"mediaType": "application/vnd.oci.empty.v1+json", "digest": "sha256:44136fa", "size": 2},
+        "config": {"mediaType": "application/vnd.oci.empty.v1+json", "digest": config_digest, "size": 2},
         "layers": [],
     }
     if created is not None:
@@ -102,6 +118,9 @@ def check_static(root: Path) -> list[str]:
         "AIRGAP_SECURITY_DB_ALLOW_DOWNGRADE",
         "org.opencontainers.image.created",
         "is_mirror_absent_err",
+        "Accepted residual risk:",
+        "compare-and-swap",
+        "pre-copy",
     ):
         if needle not in push_text:
             errs.append(f"{PUSH_REL}: missing {needle}")
@@ -112,8 +131,14 @@ def check_static(root: Path) -> list[str]:
         errs.append(f"{README_REL}: missing heading {heading}")
     else:
         sec = readme.split(heading, 1)[1].split("\n### ", 1)[0]
-        if "옛 로컬 에어갭 번들" not in sec or "D-SECDB-NO-DOWNGRADE" not in sec or "--allow-downgrade" not in sec:
-            errs.append(f"{README_REL}: D-SECDB-STALE section must explain older-bundle overwrite cause and --allow-downgrade guard")
+        if (
+            "옛 로컬 에어갭 번들" not in sec
+            or "D-SECDB-NO-DOWNGRADE" not in sec
+            or "--allow-downgrade" not in sec
+            or "TOCTOU" not in sec
+            or "다이제스트" not in sec
+        ):
+            errs.append(f"{README_REL}: D-SECDB-STALE section must explain older-bundle overwrite cause, digest equality, TOCTOU residual risk, and --allow-downgrade guard")
 
     alerts = yaml.safe_load((root / ALERTS_REL).read_text(encoding="utf-8"))
     found = [r for g in alerts["spec"]["groups"] for r in g["rules"] if r.get("alert") == "TrivyServerDbRedownloading"]
@@ -159,6 +184,7 @@ def run_behavioral(root: Path) -> list[str]:
             extra_env: dict[str, str] | None = None,
         ) -> tuple[int, str, str, list[str]]:
             cfg_file = tdp / f"{label}-cfg.json"
+            state_file = tdp / f"{label}-state.json"
             log_file = tdp / f"{label}-log.txt"
             copies_file = tdp / f"{label}-copies.txt"
             tmp_dir = tdp / f"{label}-tmp"
@@ -172,6 +198,7 @@ def run_behavioral(root: Path) -> list[str]:
             env["TMPDIR"] = str(tmp_dir)
             env["HARBOR_ADMIN_PASSWORD"] = "fake-pw"
             env["FAKE_SKOPEO_CFG"] = str(cfg_file)
+            env["FAKE_SKOPEO_STATE"] = str(state_file)
             env["FAKE_SKOPEO_LOG"] = str(log_file)
             env["FAKE_SKOPEO_COPIES"] = str(copies_file)
             env.pop("AIRGAP_SECURITY_DB_ALLOW_DOWNGRADE", None)
@@ -289,6 +316,97 @@ def run_behavioral(root: Path) -> list[str]:
         if rc != 0 or len(copies) != 2 or "[warn]" not in err:
             errs.append(f"override-env: expected rc=0, 2 copies, warn, got rc={rc}, copies={copies}, err={err!r}")
 
+        # 10. Equal `created` timestamp but DIFFERENT manifest digest -> not a downgrade, must push
+        imap = {
+            **base_bundle("2026-11-19T01:14:01Z", "2026-11-19T00:59:45Z", "2025-10-09T10:38:47Z"),
+            dst_db: {"rc": 0, "manifest": manifest_doc("2026-11-19T01:14:01Z", config_digest="sha256:different999")},
+            dst_java: {"rc": 0, "manifest": manifest_doc("2026-11-19T00:59:45Z")},
+            dst_checks: {"rc": 0, "manifest": manifest_doc("2025-10-09T10:38:47Z")},
+        }
+        rc, out, err, copies = run_case("equal-diff-digest", imap)
+        if rc != 0 or len(copies) != 1 or "trivy-db" not in copies[0]:
+            errs.append(f"equal-diff-digest: expected rc=0 and 1 copy (trivy-db only), got rc={rc}, copies={copies}, err={err!r}")
+
+        # 11a. RFC 3339 arbitrary fractional seconds & numeric offsets (newer) -> accepted and pushed
+        imap = {
+            **base_bundle("2026-11-19T01:14:01.123456789Z", "2026-11-19T10:14:01.2+09:00", "2025-10-09T05:08:47.500-05:30"),
+            dst_db: {"rc": 0, "manifest": manifest_doc("2026-11-19T01:14:01.123456788Z")},
+            dst_java: {"rc": 0, "manifest": manifest_doc("2026-11-19T01:14:01.1Z")},
+            dst_checks: {"rc": 0, "manifest": manifest_doc("2025-10-09T10:38:47Z")},
+        }
+        rc, out, err, copies = run_case("rfc3339-frac-offset-newer", imap)
+        if rc != 0 or len(copies) != 3:
+            errs.append(f"rfc3339-frac-offset-newer: expected rc=0 and 3 copies, got rc={rc}, copies={copies}, err={err!r}")
+
+        # 11b. RFC 3339 fractional seconds & numeric offsets (older) -> refused with 0 copies
+        imap = {
+            **base_bundle("2026-11-19T10:14:01.1+09:00", "2026-11-19T01:14:01.123456789Z", "2025-10-09T10:38:47Z"),
+            dst_db: {"rc": 0, "manifest": manifest_doc("2026-11-19T01:14:01.123456789Z")},
+            dst_java: {"rc": 0, "manifest": manifest_doc("2026-11-19T01:14:01.123456789Z")},
+            dst_checks: {"rc": 0, "manifest": manifest_doc("2025-10-09T10:38:47Z")},
+        }
+        rc, out, err, copies = run_case("rfc3339-frac-offset-older", imap)
+        if rc == 0 or copies or "refusing to downgrade" not in err:
+            errs.append(f"rfc3339-frac-offset-older: expected refusal with 0 copies, got rc={rc}, copies={copies}, err={err!r}")
+
+        # 11c. Invalid RFC 3339 shapes (trailing dot with no digits, naive, out-of-range offset) -> fail closed
+        for bad_label, bad_ts in (
+            ("empty-frac", "2026-11-19T01:14:01.Z"),
+            ("naive", "2026-11-19T01:14:01"),
+            ("bad-offset", "2026-11-19T01:14:01+25:00"),
+        ):
+            imap = {
+                **base_bundle(bad_ts, "2026-11-19T00:59:45Z", "2025-10-09T10:38:47Z"),
+                dst_db: {"rc": 0, "manifest": manifest_doc("2026-11-18T00:00:00Z")},
+                dst_java: {"rc": 0, "manifest": manifest_doc("2026-11-18T00:00:00Z")},
+                dst_checks: {"rc": 0, "manifest": manifest_doc("2025-10-09T10:38:47Z")},
+            }
+            rc, out, err, copies = run_case(f"rfc3339-bad-{bad_label}", imap)
+            if rc == 0 or copies or "lacks a valid org.opencontainers.image.created" not in err:
+                errs.append(f"rfc3339-bad-{bad_label}: expected fail-closed, got rc={rc}, copies={copies}, err={err!r}")
+
+        # 12. TOCTOU: mirror moves to newer between preflight and 1st copy -> refuses with 0 copies
+        imap = {
+            **base_bundle("2026-11-19T12:00:00Z", "2026-11-19T12:00:00Z", "2026-11-19T12:00:00Z"),
+            dst_db: [
+                {"rc": 0, "manifest": manifest_doc("2026-11-18T12:00:00Z")},
+                {"rc": 0, "manifest": manifest_doc("2026-11-19T13:00:00Z")},
+            ],
+            dst_java: {"rc": 0, "manifest": manifest_doc("2026-11-18T12:00:00Z")},
+            dst_checks: {"rc": 0, "manifest": manifest_doc("2026-11-18T12:00:00Z")},
+        }
+        rc, out, err, copies = run_case("toctou-first", imap)
+        if rc == 0 or copies or "refusing to downgrade" not in err or "pre-copy" not in err:
+            errs.append(f"toctou-first: expected pre-copy refusal with 0 copies, got rc={rc}, copies={copies}, err={err!r}")
+
+        # 13. TOCTOU: mirror moves to newer between preflight and 2nd copy -> copies 1st, refuses 2nd & aborts 3rd
+        imap = {
+            **base_bundle("2026-11-19T12:00:00Z", "2026-11-19T12:00:00Z", "2026-11-19T12:00:00Z"),
+            dst_db: {"rc": 0, "manifest": manifest_doc("2026-11-18T12:00:00Z")},
+            dst_java: [
+                {"rc": 0, "manifest": manifest_doc("2026-11-18T12:00:00Z")},
+                {"rc": 0, "manifest": manifest_doc("2026-11-19T13:00:00Z")},
+            ],
+            dst_checks: {"rc": 0, "manifest": manifest_doc("2026-11-18T12:00:00Z")},
+        }
+        rc, out, err, copies = run_case("toctou-second", imap)
+        if rc == 0 or len(copies) != 1 or "trivy-db" not in copies[0] or "trivy-java-db" not in err:
+            errs.append(f"toctou-second: expected rc!=0 and only trivy-db copied, got rc={rc}, copies={copies}, err={err!r}")
+
+        # 14. TOCTOU: mirror converges to equal created + equal digest before copy -> skips cleanly (exit 0)
+        imap = {
+            **base_bundle("2026-11-19T12:00:00Z", "2026-11-19T00:59:45Z", "2025-10-09T10:38:47Z"),
+            dst_db: [
+                {"rc": 0, "manifest": manifest_doc("2026-11-18T12:00:00Z")},
+                {"rc": 0, "manifest": manifest_doc("2026-11-19T12:00:00Z")},
+            ],
+            dst_java: {"rc": 0, "manifest": manifest_doc("2026-11-19T00:59:45Z")},
+            dst_checks: {"rc": 0, "manifest": manifest_doc("2025-10-09T10:38:47Z")},
+        }
+        rc, out, err, copies = run_case("toctou-equal-converged", imap)
+        if rc != 0 or copies:
+            errs.append(f"toctou-equal-converged: expected rc=0 and 0 copies, got rc={rc}, copies={copies}, err={err!r}")
+
     return errs
 
 
@@ -296,8 +414,8 @@ MUTATIONS = [
     (
         "allow older downgrade without override",
         PUSH_REL,
-        '            echo "[FAIL] ${name}: refusing to downgrade',
-        '            echo "[skip-check] allowing downgrade"\n            false && echo "[FAIL] ${name}: refusing to downgrade',
+        '        echo "[FAIL] ${name}: refusing to downgrade',
+        '        echo "[skip-check] allowing downgrade"\n        false && echo "[FAIL] ${name}: refusing to downgrade',
     ),
     (
         "do not abort on older guard failure",
@@ -308,14 +426,32 @@ MUTATIONS = [
     (
         "treat unreachable mirror as absent",
         PUSH_REL,
-        "if is_mirror_absent_err \"${INSPECT_ERR}\"; then",
+        'if is_mirror_absent_err "${INSPECT_ERR}"; then',
         "if true; then",
     ),
     (
         "push instead of skipping on equal",
         PUSH_REL,
-        "          skipped=$((skipped + 1))\n          continue",
-        "          skipped=$((skipped + 0))",
+        '        echo "[skip] ${name}: mirror ${dst} already at ${bundle_created} (${bundle_digest}, equal freshness)"\n        MIRROR_ACTION="skip"',
+        '        echo "[push-equal]"\n        MIRROR_ACTION="push"',
+    ),
+    (
+        "skip equal created even when manifest digest differs",
+        PUSH_REL,
+        '      if [[ "${bundle_digest}" == "${mirror_digest}" ]]; then',
+        "      if true; then",
+    ),
+    (
+        "reject arbitrary-length fractional seconds in RFC 3339",
+        PUSH_REL,
+        r"(?:\.(\d+))?",
+        r"(?:\.(\d{6}))?",
+    ),
+    (
+        "skip pre-copy TOCTOU re-inspect",
+        PUSH_REL,
+        '  check_mirror_freshness "${name}" "${dst}" "${bundle_created}" "${bundle_digest}" "pre-copy"',
+        '  MIRROR_ACTION="push"',
     ),
     (
         "drop --allow-downgrade flag",
@@ -333,13 +469,19 @@ MUTATIONS = [
         "skip trivy-java-db in freshness check",
         PUSH_REL,
         '  if [[ "${mirror_rc}" -ne 0 ]]; then',
-        '  if [[ "${name}" == "trivy-java-db" ]]; then echo "[bypass] ${name}"; elif [[ "${mirror_rc}" -ne 0 ]]; then',
+        '  if [[ "${name}" == "trivy-java-db" ]]; then echo "[bypass] ${name}"; MIRROR_ACTION="push"; return 0; elif [[ "${mirror_rc}" -ne 0 ]]; then',
     ),
     (
         "drop D-SECDB-NO-DOWNGRADE comment",
         PUSH_REL,
         "# D-SECDB-NO-DOWNGRADE (#658):",
         "# removed-decision-tag:",
+    ),
+    (
+        "drop TOCTOU residual risk comment",
+        PUSH_REL,
+        "Accepted residual risk:",
+        "removed-residual-risk:",
     ),
     (
         "drop README downgrade cause/guard text",
@@ -368,9 +510,9 @@ def mutation_verify(root: Path) -> int:
             print("clean control failed:", clean_errs, file=sys.stderr)
             return 1
 
-        for name, rel, old, new in MUTATIONS:
-            case = Path(tmp) / "case"
-            shutil.rmtree(case, ignore_errors=True)
+        def check_one(idx_mut: tuple[int, tuple[str, str, str, str]]) -> str | None:
+            idx, (name, rel, old, new) = idx_mut
+            case = Path(tmp) / f"case-{idx}"
             for r in FILES:
                 (case / r).parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(root / r, case / r)
@@ -382,8 +524,14 @@ def mutation_verify(root: Path) -> int:
 
             mut_errs = check_static(case) + run_behavioral(case)
             if not mut_errs:
-                print(f"MUTATION SURVIVED: {name}", file=sys.stderr)
-                return 1
+                return f"MUTATION SURVIVED: {name}"
+            return None
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=6) as pool:
+            for failure in pool.map(check_one, enumerate(MUTATIONS)):
+                if failure:
+                    print(failure, file=sys.stderr)
+                    return 1
 
     print(f"PASS: R380 push-security-db downgrade guard ({len(MUTATIONS)} mutations rejected)")
     return 0

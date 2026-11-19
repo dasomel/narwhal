@@ -3514,7 +3514,7 @@ PYEOF'
   check R379 "portal sign job generates CycloneDX SBOM via pinned trivy-action and attests with cosign (bundle + legacy .att with --use-signing-config=false) for release & sign_digest, Kyverno matches https://cyclonedx.org/bom, and docs cover verify-attestation; 11 mutations caught (#684)" \
     python3 scripts/test/lib/check-portal-sbom-attest.py --mutation-verify
   # 2026-11-19 (#658): push-security-db.sh refuses to downgrade a fresher Harbor mirror DB (trivy-db, trivy-java-db, trivy-checks)
-  check R380 "push-security-db.sh compares bundle vs mirror org.opencontainers.image.created via skopeo inspect --raw before pushing (refuses older atomically, skips equal, pushes empty, fails closed on unreachable, --allow-downgrade / AIRGAP_SECURITY_DB_ALLOW_DOWNGRADE=1 escape hatch) and README/alert reflect cause & guard; 10 mutations caught (#658)" \
+  check R380 "push-security-db.sh compares bundle vs mirror RFC 3339 org.opencontainers.image.created and raw manifest digest via skopeo inspect --raw in preflight and immediately pre-copy (refuses older atomically, skips only equal created+digest, pushes equal created with differing digest, pushes empty, fails closed on unreachable, --allow-downgrade / AIRGAP_SECURITY_DB_ALLOW_DOWNGRADE=1 escape hatch) and README/alert reflect cause, guard & TOCTOU residual risk; 14 mutations caught (#658)" \
     python3 scripts/test/lib/check-security-db-downgrade-guard.py --mutation-verify
 }
 

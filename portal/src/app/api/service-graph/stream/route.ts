@@ -28,7 +28,7 @@ export async function GET(req: NextRequest) {
   if ("error" in gate) return roleGateErrorResponse(gate)
   // Use the session the admin gate authorised (one read), not a second auth() call that
   // could see a refreshed, downgraded session after the gate passed.
-  const streamLifetimeMs = resolveStreamLifetimeMs(gate.session.expiresAt)
+  const streamDeadlineMs = Date.now() + resolveStreamLifetimeMs(gate.session.expiresAt)
 
   const serviceMap = await buildWorkloadToServiceMap()
   const encoder = new TextEncoder()
@@ -89,7 +89,8 @@ export async function GET(req: NextRequest) {
         }
       }, TICK_MS)
 
-      lifetime.timer = setTimeout(safeClose, streamLifetimeMs)
+      // Absolute deadline: time spent preparing the stream counts against the lifetime.
+      lifetime.timer = setTimeout(safeClose, Math.max(0, streamDeadlineMs - Date.now()))
       req.signal.addEventListener("abort", safeClose)
     },
   })

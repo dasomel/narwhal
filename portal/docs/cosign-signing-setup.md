@@ -4,11 +4,15 @@
 > and the public key is committed in this repo (`scripts/airgap/keys/cosign.pub`) and inlined in
 > `gitops/resources/kyverno-policies.yaml`. Sections 1-4 are kept as the rotation procedure.
 
-`.github/workflows/portal-docker-publish.yml`'s `sign` job signs every portal image (tags
-`portal/v*.*.*`) and attaches a signed CycloneDX SBOM attestation (`predicateType: https://cyclonedx.org/bom`,
-generated from the published digest with Trivy) so
-narwhal's Kyverno `verify-image-signatures` ClusterPolicy and its air-gap preflight gate
-(`scripts/airgap/10-verify-image-signatures.sh`) can verify them. Both consume a **static Cosign
+`.github/workflows/portal-docker-publish.yml` generates a CycloneDX SBOM from the published digest
+in an isolated `sbom` job (no signing secrets, read-only permissions) and hands it via artifact +
+job-output SHA-256 to the `sign` job. The `sign` job verifies the artifact SHA-256 and target
+digest, signs every portal image (tags `portal/v*.*.*`), and attaches the signed CycloneDX SBOM
+attestation (`predicateType: https://cyclonedx.org/bom`) so narwhal's Kyverno
+`verify-image-signatures` ClusterPolicy (and manual offline `cosign` commands in section 5) can
+verify them. (`scripts/airgap/10-verify-image-signatures.sh` is a static bundle preflight that only
+checks local file existence — `manifest.txt`, `sbom.cdx.json`, and an optional `--key` file — and
+does not run `cosign verify` or `cosign verify-attestation`.) Kyverno consumes a **static Cosign
 key pair** — not Sigstore keyless/Fulcio/Rekor — because narwhal's cluster is air-gapped and must
 verify without reaching the public Rekor transparency log (see narwhal's
 `docs/common/supply-chain-policy.md` §6 for the design decision). Both the signature and the

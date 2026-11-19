@@ -21,13 +21,29 @@ name: Portal Build & Publish Container (GHCR)
 #   D10 CycloneDX SBOM attestation (narwhal#684): Kyverno's verify-image-signatures policy
 #       requires both a Cosign signature and a CycloneDX SBOM attestation (`https://cyclonedx.org/bom`)
 #       signed by the same key; buildx `sbom: true` only attaches an unsigned BuildKit SPDX
-#       attestation to the image index. The `sign` job (both release and `sign_digest` recovery
-#       runs) generates a CycloneDX SBOM from `${IMAGE}@${DIGEST}` via `aquasecurity/trivy-action`
-#       (already pinned in `portal-release.yml`/`portal-license-and-sbom.yml`) and publishes both
-#       a Sigstore bundle attestation and a legacy `.att` tag (`--new-bundle-format=false
-#       --use-signing-config=false`) for Kyverno 1.18.x. Cost: extra scan/attest time in `sign`,
-#       ~457 KB `.att` artifact per release, deprecated cosign v3 legacy flags. Escape hatch:
-#       drop the legacy `.att` line after upgrading to Kyverno >= 1.19 with `SigstoreBundle`.
+#       attestation to the image index. Both release and `sign_digest` recovery runs generate a
+#       CycloneDX SBOM from `${IMAGE}@${DIGEST}` via `aquasecurity/trivy-action` (already pinned in
+#       `portal-release.yml`/`portal-license-and-sbom.yml`) and publish both a Sigstore bundle
+#       attestation and a legacy `.att` tag (`--new-bundle-format=false --use-signing-config=false`)
+#       for Kyverno 1.18.x. Cost: extra scan/attest time, ~457 KB `.att` artifact per release,
+#       deprecated cosign v3 legacy flags. Escape hatch: drop the legacy `.att` line after upgrading
+#       to Kyverno >= 1.19 with `SigstoreBundle`.
+#   D11 Isolated SBOM job (narwhal#750): `aquasecurity/trivy-action` downloads the trivy binary and
+#       DB at runtime; step-level `env:` scoping in `sign` is not an isolation boundary because a
+#       compromised download can tamper with the runner before `cosign` runs. Move SBOM generation
+#       into its own `sbom` job with no secrets and `permissions: { contents: read }` (the package
+#       is public, so trivy pulls anonymously), upload the CycloneDX file and its `.sha256` as an
+#       artifact, and pass the SHA-256 via a job output (`needs.sbom.outputs.sbom_sha256`). `sign`
+#       fails closed in step 1 if `needs.sbom.result != 'success'` (so a failed or skipped `sbom`
+#       never leaves `sign` skipped/green) and verifies the downloaded artifact's SHA-256 (against
+#       the job output, never the `.sha256` file in the artifact), size (<= 10 MiB), CycloneDX JSON
+#       structure, and target `${IMAGE}@${DIGEST}` (`metadata.component.name` and
+#       `aquasecurity:trivy:RepoDigest`) before touching `COSIGN_PRIVATE_KEY`.
+#       Residual risk: the SBOM CONTENT is still produced by trivy; job isolation protects the
+#       signing key, not the SBOM's truthfulness.
+#       Cost: one extra runner startup + artifact round-trip (~15-30s).
+#       Escape hatch: if `ghcr.io/dasomel/narwhal-portal` ever becomes private, add `packages: read`
+#       and `docker/login-action` (with `GITHUB_TOKEN`, still no cosign secrets) to `sbom`.
 #
 
 # Builds the narwhal-portal container and publishes it to GitHub Container
@@ -314,16 +330,82 @@ jobs:
     outputs:
       digest: ${{ steps.create-manifest.outputs.digest }}
 
-  sign:
-    name: Sign published image
+  sbom:
+    name: Generate CycloneDX SBOM
     runs-on: ubuntu-latest
     needs: merge
     # Normal run: merge succeeded. Recovery run (sign_digest input): merge is skipped by design.
     if: ${{ !cancelled() && (needs.merge.result == 'success' || (inputs.sign_digest != '' && needs.merge.result == 'skipped')) }}
+    # D11 (narwhal#750): isolate runtime-downloading trivy-action from cosign signing secrets.
+    # No secrets are referenced in this job; ghcr.io/dasomel/narwhal-portal is public so trivy
+    # pulls anonymously with only contents: read.
+    permissions:
+      contents: read
+    outputs:
+      sbom_sha256: ${{ steps.sbom-hash.outputs.sha256 }}
+    steps:
+      # Fail closed before invoking trivy: an empty/`null`/malformed digest must never reach scan-ref.
+      - name: Validate image digest
+        env:
+          DIGEST: ${{ inputs.sign_digest || needs.merge.outputs.digest }}
+        run: |
+          set -euo pipefail
+          if ! [[ "$DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+            echo "::error::image digest for SBOM is not sha256:<64 hex> (got '${DIGEST}'); refusing to scan."
+            exit 1
+          fi
+          mkdir -p "${RUNNER_TEMP}/sbom"
+          echo "generating CycloneDX SBOM for ${IMAGE}@${DIGEST}"
+
+      - name: Generate CycloneDX SBOM for image digest
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: image
+          scan-ref: ${{ env.IMAGE }}@${{ inputs.sign_digest || needs.merge.outputs.digest }}
+          format: cyclonedx
+          output: ${{ runner.temp }}/sbom/sbom-cyclonedx.json
+          cache: 'false'
+
+      - name: Compute SBOM SHA-256
+        id: sbom-hash
+        env:
+          SBOM_DIR: ${{ runner.temp }}/sbom
+        run: |
+          set -euo pipefail
+          sbom="${SBOM_DIR}/sbom-cyclonedx.json"
+          [ -f "$sbom" ] && [ ! -L "$sbom" ] && [ -s "$sbom" ] \
+            || { echo "::error::CycloneDX SBOM not produced at ${sbom}"; exit 1; }
+          sha=$(sha256sum "$sbom" | awk '{print $1}')
+          if ! [[ "$sha" =~ ^[0-9a-f]{64}$ ]]; then
+            echo "::error::unexpected sha256sum output: '${sha}'"
+            exit 1
+          fi
+          printf '%s  sbom-cyclonedx.json\n' "$sha" > "${SBOM_DIR}/sbom-cyclonedx.json.sha256"
+          echo "sha256=${sha}" >> "$GITHUB_OUTPUT"
+          echo "sbom_sha256=${sha} ($(wc -c < "$sbom" | tr -d '[:space:]') bytes)"
+
+      - name: Upload CycloneDX SBOM artifact
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: portal-sbom-cyclonedx
+          path: |
+            ${{ runner.temp }}/sbom/sbom-cyclonedx.json
+            ${{ runner.temp }}/sbom/sbom-cyclonedx.json.sha256
+          if-no-files-found: error
+          retention-days: 1
+
+  sign:
+    name: Sign published image
+    runs-on: ubuntu-latest
+    needs: [merge, sbom]
+    # Normal run: merge succeeded. Recovery run (sign_digest input): merge is skipped by design.
+    # Deliberately do NOT gate job `if:` on needs.sbom.result == 'success': doing so would mark
+    # `sign` skipped (and leave the workflow green) if `sbom` were ever skipped. Step 1 below fails
+    # closed on any non-success `sbom` result before touching the artifact or any signing secret.
+    if: ${{ !cancelled() && (needs.merge.result == 'success' || (inputs.sign_digest != '' && needs.merge.result == 'skipped')) }}
     # WHY THIS EXISTS (narwhal#35): narwhal's Kyverno verify-image-signatures ClusterPolicy
-    # and its air-gap preflight gate (scripts/airgap/10-verify-image-signatures.sh) both
-    # expect a Cosign signature made with a static key pair — narwhal's own docs
-    # (docs/common/supply-chain-policy.md §6) chose key-based verification specifically to
+    # expects a Cosign signature and CycloneDX attestation made with a static key pair — narwhal's
+    # own docs (docs/common/supply-chain-policy.md §6) chose key-based verification specifically to
     # avoid a runtime dependency on the public Sigstore Rekor log in an air-gapped cluster.
     # narwhal#35 flagged that the signing half belongs here, since narwhal only consumes
     # images this repo publishes. See portal/docs/cosign-signing-setup.md for the one-time human
@@ -332,6 +414,16 @@ jobs:
       contents: read
       packages: write # cosign pushes the signature as an OCI artifact alongside the image
     steps:
+      - name: Require SBOM job to have succeeded
+        env:
+          SBOM_RESULT: ${{ needs.sbom.result }}
+        run: |
+          set -euo pipefail
+          if [[ "$SBOM_RESULT" != "success" ]]; then
+            echo "::error::sbom job did not succeed (result='${SBOM_RESULT}'); refusing to sign"
+            exit 1
+          fi
+
       # Fail closed before anything touches cosign: an empty/`null`/malformed digest must never
       # reach `cosign sign` (it became `...@null` on portal/v1.1.0).
       - name: Validate image digest
@@ -344,6 +436,57 @@ jobs:
             exit 1
           fi
           echo "signing ${IMAGE}@${DIGEST}"
+
+      - name: Download CycloneDX SBOM artifact
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: portal-sbom-cyclonedx
+          path: ${{ runner.temp }}/sbom
+
+      # D11 (narwhal#750): verify the downloaded SBOM against the SHA-256 passed via job output
+      # (not the `.sha256` file inside the artifact), enforce a sane size ceiling before JSON
+      # parsing, and confirm it is a single CycloneDX JSON document describing `${IMAGE}@${DIGEST}`.
+      # Runs before `cosign sign` so a corrupt or mismatched SBOM fails before publishing `.sig`.
+      - name: Verify CycloneDX SBOM artifact
+        env:
+          DIGEST: ${{ inputs.sign_digest || needs.merge.outputs.digest }}
+          EXPECTED_SHA256: ${{ needs.sbom.outputs.sbom_sha256 }}
+          SBOM_PATH: ${{ runner.temp }}/sbom/sbom-cyclonedx.json
+          MAX_SBOM_BYTES: '10485760'
+        run: |
+          set -euo pipefail
+          if ! [[ "$EXPECTED_SHA256" =~ ^[0-9a-f]{64}$ ]]; then
+            echo "::error::sbom job output sbom_sha256 is missing or malformed (got '${EXPECTED_SHA256}')"
+            exit 1
+          fi
+          if [ ! -f "$SBOM_PATH" ] || [ -L "$SBOM_PATH" ] || [ ! -s "$SBOM_PATH" ]; then
+            echo "::error::downloaded SBOM missing, empty, or symlink: ${SBOM_PATH}"
+            exit 1
+          fi
+          size=$(wc -c < "$SBOM_PATH" | tr -d '[:space:]')
+          if [ "$size" -le 0 ] || [ "$size" -gt "$MAX_SBOM_BYTES" ]; then
+            echo "::error::SBOM size ${size} bytes outside allowed range (1..${MAX_SBOM_BYTES})"
+            exit 1
+          fi
+          actual_sha=$(sha256sum "$SBOM_PATH" | awk '{print $1}')
+          if [ "$actual_sha" != "$EXPECTED_SHA256" ]; then
+            echo "::error::SBOM sha256 mismatch: expected ${EXPECTED_SHA256} (job output), got ${actual_sha}"
+            exit 1
+          fi
+          expected_ref="${IMAGE}@${DIGEST}"
+          jq -es --arg ref "$expected_ref" '
+            length == 1
+            and (.[0] | type == "object"
+              and .bomFormat == "CycloneDX"
+              and ((.specVersion | type) == "string" and (.specVersion | test("^[0-9]+\\.[0-9]+")))
+              and .metadata.component.type == "container"
+              and .metadata.component.name == $ref
+              and (((.metadata.component.properties // [])
+                    | map(select(.name == "aquasecurity:trivy:RepoDigest" and .value == $ref))
+                    | length) > 0))
+          ' "$SBOM_PATH" >/dev/null \
+            || { echo "::error::SBOM is not a valid CycloneDX JSON document for ${expected_ref}"; exit 1; }
+          echo "verified CycloneDX SBOM (${size} bytes, sha256=${actual_sha}) for ${expected_ref}"
 
       # A portal/v*.*.* tag is a real release — GitOps will pull this image, so it must be signed
       # or the workflow fails. workflow_dispatch is an ad-hoc/manual build (same distinction
@@ -458,30 +601,19 @@ jobs:
           # cluster runs Kyverno >= 1.19 AND the policy uses a SigstoreBundle attestor.
           cosign sign --yes --key env://COSIGN_PRIVATE_KEY --new-bundle-format=false --use-signing-config=false "${IMAGE}@${DIGEST}"
 
-      # D-dual-attestation (narwhal#684): Kyverno's verify-image-signatures ClusterPolicy
-      # requires a Cosign CycloneDX SBOM attestation (`predicateType: https://cyclonedx.org/bom`)
-      # signed by the same key; buildx `sbom: true` writes an unsigned BuildKit SPDX attestation
-      # inside the image index that Kyverno does not read. Reuse aquasecurity/trivy-action
-      # (already pinned in portal-release.yml and portal-license-and-sbom.yml) so both normal
-      # releases and `sign_digest` recovery runs generate the SBOM from `${IMAGE}@${DIGEST}`.
-      # Fail closed: any Trivy or cosign attest failure fails the sign job.
-      - name: Generate CycloneDX SBOM for image digest
-        if: steps.secrets-check.outputs.present == 'true'
-        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
-        with:
-          scan-type: image
-          scan-ref: ${{ env.IMAGE }}@${{ inputs.sign_digest || needs.merge.outputs.digest }}
-          format: cyclonedx
-          output: ${{ runner.temp }}/sbom-cyclonedx.json
-          cache: 'false'
-
+      # D-dual-attestation (narwhal#684 / narwhal#750): Kyverno's verify-image-signatures
+      # ClusterPolicy requires a Cosign CycloneDX SBOM attestation
+      # (`predicateType: https://cyclonedx.org/bom`) signed by the same key; buildx `sbom: true`
+      # writes an unsigned BuildKit SPDX attestation inside the image index that Kyverno does not
+      # read. The CycloneDX SBOM was generated in the isolated `sbom` job and verified above.
+      # Fail closed: any cosign attest failure fails the sign job.
       - name: Attest image digest with CycloneDX SBOM
         if: steps.secrets-check.outputs.present == 'true'
         env:
           COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
           COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
           DIGEST: ${{ inputs.sign_digest || needs.merge.outputs.digest }}
-          SBOM_PATH: ${{ runner.temp }}/sbom-cyclonedx.json
+          SBOM_PATH: ${{ runner.temp }}/sbom/sbom-cyclonedx.json
         run: |
           set -euo pipefail
           cosign attest --yes --key env://COSIGN_PRIVATE_KEY \

@@ -342,6 +342,11 @@ echo "=== Installing APISIX Ingress Controller ==="
 # D-ic-mem: 256Mi limit OOMKilled the IC at startup (full resource sync, 17 routes/14 upstreams/192 svc+ing
 # objects; steady state is ~83Mi). 512Mi limit gives the sync peak headroom; request 256Mi keeps the scheduler
 # honest. Escape hatch: raise both here; do not drop the limit (worker nodes are 8GB).
+# D-ic-resync (#714): chart 0.14.1 defaults apisixResourceSyncInterval=1h and
+# kubernetes.resyncInterval=6h (verified in apisix-ingress-controller-0.14.1.tgz values/templates),
+# leaving etcd divergence unhealed for hours. 5m/15m shortens the controller's periodic resync
+# with low churn (it does not bound recovery in the controller start-up deadlock documented in
+# docs/common/apisix-etcd-recovery.md); escape hatch: raise either duration here if 200m CPU limit sees pressure.
 APISIX_INGRESS_CONTROLLER_OK=false
 for attempt in 1 2 3 4 5; do
   if helm upgrade --install apisix-ingress-controller "$(chart apisix-ingress-controller)" \
@@ -351,6 +356,8 @@ for attempt in 1 2 3 4 5; do
     --skip-crds \
     --set image.repository=apache/apisix-ingress-controller \
     --set image.tag="1.8.0" \
+    --set config.apisixResourceSyncInterval=5m \
+    --set config.kubernetes.resyncInterval=15m \
     --set config.apisix.serviceNamespace=platform-system \
     --set config.apisix.serviceName=apisix-admin \
     --set config.apisix.existingSecret=apisix-admin-key \

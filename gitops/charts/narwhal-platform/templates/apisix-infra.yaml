@@ -7,6 +7,10 @@ metadata:
   namespace: platform-system
 spec:
   replicas: 1
+  # D-apisix-etcd-pvc (#714): single-writer etcd on a PVC must terminate the old pod before
+  # mounting /var/etcd/data so two etcd processes never race on the same directory lock.
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: apisix-etcd
@@ -15,6 +19,10 @@ spec:
       labels:
         app: apisix-etcd
         istio.io/dataplane-mode: "none"
+      annotations:
+        # etcd writes 0700 files as uid 10001, unreadable to root_squashed Velero kopia;
+        # APISIX CRs remain backed up by Velero and are the source of truth for resync.
+        backup.velero.io/backup-volumes-excludes: data
     spec:
       securityContext:
         runAsNonRoot: true
@@ -70,7 +78,21 @@ spec:
           effect: "NoSchedule"
       volumes:
         - name: data
-          emptyDir: {}  # dev 환경: 재시작 시 etcd 재초기화, APISIX Ingress Controller가 CRD에서 재동기화
+          persistentVolumeClaim:
+            claimName: apisix-etcd-data
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: apisix-etcd-data
+  namespace: platform-system
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: nfs-csi
+  resources:
+    requests:
+      storage: 1Gi
 ---
 apiVersion: v1
 kind: Service

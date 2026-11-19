@@ -3502,6 +3502,9 @@ PYEOF'
     python3 scripts/test/lib/check-push-security-db-ca.py --mutation-verify
   check R371 "Round-4 compliance hardening (KSV014/KSV104): Falco containerSecurityContext sets both privileged=true and readOnlyRootFilesystem=true (GitOps-only), Velero node-agent readOnlyRootFilesystem=true with /root and /tmp emptyDirs across velero.yaml & 08-4-storage.sh, and nfs-quota-agent RuntimeDefault seccomp + privileged + readOnlyRootFilesystem via chart values in 05-nfs-quota-agent.sh with offline helm renders; 11 mutations caught" \
     python3 scripts/test/lib/check-round4-compliance-hardening.py --mutation-verify
+  # 2026-11-19 (#727 owner decision): ClusterRole narwhal-portal grants get/list only on apps/replicasets so Compliance filters spec.replicas==0 and matches Deployment ownerReferences.
+  check R378 "portal ClusterRole grants exactly get/list on apps/replicasets (no watch, write verbs, or wildcards) and docs/common/compliance-hardening.md reflects ReplicaSet filtering & ownerReferences; 6 mutations caught (#727)" \
+    python3 scripts/test/lib/check-portal-replicasets-rbac.py --mutation-verify
   check R375 "Round-5 compliance hardening (KSV014): platform-system/apisix sets readOnlyRootFilesystem=true with init-conf (apache/apisix:3.15.0-ubuntu, cp -R into apisix-conf emptyDir) and emptyDirs for /usr/local/apisix/{conf,logs,client_body_temp,proxy_temp,fastcgi_temp,uwsgi_temp,scgi_temp} and /tmp across 08-1-networking.sh & apisix.yaml with offline helm renders; 10 mutations caught" \
     python3 scripts/test/lib/check-round5-compliance-hardening.py --mutation-verify
 }

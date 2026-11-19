@@ -116,6 +116,40 @@ function makeRbac(opts: {
   }
 }
 
+function makeRs(opts: {
+  namespace: string
+  name: string
+  replicas?: number
+  statusReplicas?: number
+  terminatingReplicas?: number
+  revision?: string | number
+  ownerDeployment?: string
+  ownerKind?: string
+}) {
+  return {
+    metadata: {
+      name: opts.name,
+      namespace: opts.namespace,
+      ...(opts.revision !== undefined
+        ? { annotations: { "deployment.kubernetes.io/revision": String(opts.revision) } }
+        : {}),
+      ...(opts.ownerDeployment
+        ? { ownerReferences: [{ kind: opts.ownerKind ?? "Deployment", name: opts.ownerDeployment }] }
+        : {}),
+    },
+    ...(opts.replicas !== undefined ? { spec: { replicas: opts.replicas } } : {}),
+    ...(opts.statusReplicas !== undefined
+      ? {
+          status: {
+            replicas: opts.statusReplicas,
+            // Default: explicitly drained. Pass -1 to omit the field (cluster does not report it).
+            ...(opts.terminatingReplicas === -1 ? {} : { terminatingReplicas: opts.terminatingReplicas ?? 0 }),
+          },
+        }
+      : {}),
+  }
+}
+
 function installK8sMock(routes: Record<string, unknown>) {
   mockFetchWithPolicy.mockImplementation(async (url: string) => {
     const path = new URL(url).pathname
@@ -651,5 +685,543 @@ describe("compliance accepted exceptions", () => {
     const summary = await getComplianceSummary()
     expect(summary.totalRbacFailures).toEqual({ Critical: 1, High: 0, Medium: 2, Low: 0 })
     expect(summary.acceptedRbacFailures).toEqual({ Critical: 0, High: 0, Medium: 0, Low: 0 })
+  })
+})
+
+describe("ReplicaSet filtering and exact Deployment ownership (narwhal#727)", () => {
+  beforeEach(() => {
+    mockCache.clear()
+    mockFetchWithPolicy.mockReset()
+    mockReadJsonWithPolicy.mockReset()
+  })
+
+  it("excludes ConfigAuditReports of fully drained superseded Deployment revisions from list, detail, and summary while keeping active ones", async () => {
+    installK8sMock({
+      "/apis/aquasecurity.github.io/v1alpha1/configauditreports": {
+        items: [
+          // Fully drained superseded revision of velero (rev 2 < rev 10) -> must be excluded
+          makeCar({
+            namespace: "storage",
+            kind: "ReplicaSet",
+            name: "velero-6447588f5f",
+            checks: [
+              { checkID: "KSV014", severity: "HIGH", success: false },
+              { checkID: "KSV020", severity: "LOW", success: false },
+            ],
+          }),
+          // Active revision of velero (rev 10, tests numeric revision ordering "10" > "2") -> must be kept
+          makeCar({
+            namespace: "storage",
+            kind: "ReplicaSet",
+            name: "velero-7b8c9d4f5g",
+            checks: [{ checkID: "KSV020", severity: "LOW", success: false }],
+          }),
+          // Fully drained superseded revision of keycloak-operator (rev 1 < rev 2) -> must be excluded
+          makeCar({
+            namespace: "iam",
+            kind: "ReplicaSet",
+            name: "keycloak-operator-5f4d3c2b9",
+            checks: [{ checkID: "KSV001", severity: "CRITICAL", success: false }],
+          }),
+        ],
+      },
+      "/apis/apps/v1/replicasets": {
+        items: [
+          makeRs({
+            namespace: "storage",
+            name: "velero-6447588f5f",
+            replicas: 0,
+            statusReplicas: 0,
+            revision: 2,
+            ownerDeployment: "velero",
+          }),
+          makeRs({
+            namespace: "storage",
+            name: "velero-7b8c9d4f5g",
+            replicas: 1,
+            statusReplicas: 1,
+            revision: 10,
+            ownerDeployment: "velero",
+          }),
+          makeRs({
+            namespace: "iam",
+            name: "keycloak-operator-5f4d3c2b9",
+            replicas: 0,
+            statusReplicas: 0,
+            revision: 1,
+            ownerDeployment: "keycloak-operator",
+          }),
+          makeRs({
+            namespace: "iam",
+            name: "keycloak-operator-9c8b7a6f5",
+            replicas: 1,
+            statusReplicas: 1,
+            revision: 2,
+            ownerDeployment: "keycloak-operator",
+          }),
+        ],
+      },
+    })
+
+    const rows = await getConfigAuditList()
+    expect(rows.map((r) => r.name)).toEqual(["velero-7b8c9d4f5g"])
+
+    // Detail on the superseded revision is also excluded, while active one resolves
+    expect(await getConfigAuditDetail("storage", "velero-6447588f5f")).toBeNull()
+    const activeDetail = await getConfigAuditDetail("storage", "velero-7b8c9d4f5g")
+    expect(activeDetail).not.toBeNull()
+    expect(activeDetail!.checks.find((c) => c.id === "KSV020")?.accepted).toBe(true)
+
+    const summary = await getComplianceSummary()
+    expect(summary.scannedWorkloads).toBe(1)
+    expect(summary.totalConfigAuditFailures).toEqual({ Critical: 0, High: 0, Medium: 0, Low: 0 })
+    expect(summary.lowSeverityConfigAuditFailures).toEqual({ Critical: 0, High: 0, Medium: 0, Low: 1 })
+
+    // No separate ReplicaSet cache entry should exist (only combined report caches)
+    expect(mockCache.has("compliance:replicasets:list")).toBe(false)
+  })
+
+  it("keeps standalone 0-replica ReplicaSets, scaled-to-zero Deployments (current revision), terminating revisions, and unknown metadata", async () => {
+    installK8sMock({
+      "/apis/aquasecurity.github.io/v1alpha1/configauditreports": {
+        items: [
+          // 1. Standalone ReplicaSet at 0/0 (no ownerReferences) -> kept
+          makeCar({
+            namespace: "dev",
+            kind: "ReplicaSet",
+            name: "standalone-rs",
+            checks: [{ checkID: "KSV014", severity: "HIGH", success: false }],
+          }),
+          // 2. Non-Deployment-owned ReplicaSet at 0/0 -> kept
+          makeCar({
+            namespace: "dev",
+            kind: "ReplicaSet",
+            name: "custom-owned-rs",
+            checks: [{ checkID: "KSV014", severity: "HIGH", success: false }],
+          }),
+          // 3. Deployment scaled to 0: current revision (rev 2) at 0/0 -> kept (and allowlist still works via ownerRef)
+          makeCar({
+            namespace: "devtools",
+            kind: "ReplicaSet",
+            name: "harbor-core-b569bd8dd",
+            checks: [{ checkID: "KSV014", severity: "HIGH", success: false }],
+          }),
+          // 3b. Deployment scaled to 0: old revision (rev 1) at 0/0 -> dropped (superseded by rev 2)
+          makeCar({
+            namespace: "devtools",
+            kind: "ReplicaSet",
+            name: "harbor-core-old11111",
+            checks: [{ checkID: "KSV001", severity: "CRITICAL", success: false }],
+          }),
+          // 4. Old revision with status.replicas > 0 (pods still terminating) -> kept
+          makeCar({
+            namespace: "storage",
+            kind: "ReplicaSet",
+            name: "velero-terminating",
+            checks: [{ checkID: "KSV014", severity: "HIGH", success: false }],
+          }),
+          // 5. Old revision missing status.replicas (unknown) -> kept
+          makeCar({
+            namespace: "storage",
+            kind: "ReplicaSet",
+            name: "velero-unknown-status",
+            checks: [{ checkID: "KSV014", severity: "HIGH", success: false }],
+          }),
+          // 6. Old revision missing revision annotation (unknown) -> kept
+          makeCar({
+            namespace: "storage",
+            kind: "ReplicaSet",
+            name: "velero-unknown-rev",
+            checks: [{ checkID: "KSV014", severity: "HIGH", success: false }],
+          }),
+          // 7. Cross-namespace Deployment with same name must not mark this RS superseded -> kept
+          makeCar({
+            namespace: "other-ns",
+            kind: "ReplicaSet",
+            name: "velero-other-ns",
+            checks: [{ checkID: "KSV014", severity: "HIGH", success: false }],
+          }),
+        ],
+      },
+      "/apis/apps/v1/replicasets": {
+        items: [
+          makeRs({ namespace: "dev", name: "standalone-rs", replicas: 0, statusReplicas: 0, revision: 1 }),
+          makeRs({
+            namespace: "dev",
+            name: "custom-owned-rs",
+            replicas: 0,
+            statusReplicas: 0,
+            revision: 1,
+            ownerDeployment: "custom-owner",
+            ownerKind: "StatefulSet",
+          }),
+          makeRs({
+            namespace: "devtools",
+            name: "harbor-core-b569bd8dd",
+            replicas: 0,
+            statusReplicas: 0,
+            revision: 2,
+            ownerDeployment: "harbor-core",
+          }),
+          makeRs({
+            namespace: "devtools",
+            name: "harbor-core-old11111",
+            replicas: 0,
+            statusReplicas: 0,
+            revision: 1,
+            ownerDeployment: "harbor-core",
+          }),
+          makeRs({
+            namespace: "storage",
+            name: "velero-terminating",
+            replicas: 0,
+            statusReplicas: 0,
+            terminatingReplicas: 1,
+            revision: 1,
+            ownerDeployment: "velero",
+          }),
+          makeRs({
+            namespace: "storage",
+            name: "velero-unknown-status",
+            replicas: 0,
+            revision: 1,
+            ownerDeployment: "velero",
+          }),
+          makeRs({
+            namespace: "storage",
+            name: "velero-unknown-rev",
+            replicas: 0,
+            statusReplicas: 0,
+            ownerDeployment: "velero",
+          }),
+          makeRs({
+            namespace: "storage",
+            name: "velero-current",
+            replicas: 1,
+            statusReplicas: 1,
+            revision: 5,
+            ownerDeployment: "velero",
+          }),
+          makeRs({
+            namespace: "other-ns",
+            name: "velero-other-ns",
+            replicas: 0,
+            statusReplicas: 0,
+            revision: 1,
+            ownerDeployment: "velero",
+          }),
+        ],
+      },
+    })
+
+    const rows = await getConfigAuditList()
+    expect(rows.map((r) => r.name)).toEqual([
+      "standalone-rs",
+      "custom-owned-rs",
+      "harbor-core-b569bd8dd",
+      "velero-terminating",
+      "velero-unknown-status",
+      "velero-unknown-rev",
+      "velero-other-ns",
+    ])
+
+    // Scaled-to-zero Deployment's current revision keeps its allowlist matching via ownerRef
+    expect(rows.find((r) => r.name === "harbor-core-b569bd8dd")?.accepted).toBe(true)
+    // Superseded revision is excluded from detail too
+    expect(await getConfigAuditDetail("devtools", "harbor-core-old11111")).toBeNull()
+    // Terminating / standalone / unknown remain visible in detail and actionable summary
+    expect(await getConfigAuditDetail("storage", "velero-terminating")).not.toBeNull()
+
+    const summary = await getComplianceSummary()
+    expect(summary.scannedWorkloads).toBe(7)
+    expect(summary.totalConfigAuditFailures).toEqual({ Critical: 0, High: 6, Medium: 0, Low: 0 })
+    expect(summary.acceptedSystemConfigAuditFailures).toEqual({ Critical: 0, High: 1, Medium: 0, Low: 0 })
+  })
+
+  it("restores a previously superseded ReplicaSet report on rollback and on the next computation without stale RS cache", async () => {
+    let phase: "old" | "rolled_back" = "old"
+    mockFetchWithPolicy.mockImplementation(async (url: string) => {
+      const path = new URL(url).pathname
+      return { ok: true, status: 200, statusText: "OK", _path: path }
+    })
+    mockReadJsonWithPolicy.mockImplementation(async (res: { _path: string }) => {
+      if (res._path === "/apis/aquasecurity.github.io/v1alpha1/configauditreports") {
+        return {
+          items: [
+            makeCar({
+              namespace: "dev",
+              kind: "ReplicaSet",
+              name: "web-rs-a",
+              checks: [{ checkID: "KSV014", severity: "HIGH", success: false }],
+            }),
+            makeCar({
+              namespace: "dev",
+              kind: "ReplicaSet",
+              name: "web-rs-b",
+              checks: [{ checkID: "KSV020", severity: "LOW", success: false }],
+            }),
+          ],
+        }
+      }
+      if (res._path === "/apis/apps/v1/replicasets") {
+        return phase === "old"
+          ? {
+              items: [
+                makeRs({
+                  namespace: "dev",
+                  name: "web-rs-a",
+                  replicas: 0,
+                  statusReplicas: 0,
+                  revision: 1,
+                  ownerDeployment: "web",
+                }),
+                makeRs({
+                  namespace: "dev",
+                  name: "web-rs-b",
+                  replicas: 1,
+                  statusReplicas: 1,
+                  revision: 2,
+                  ownerDeployment: "web",
+                }),
+              ],
+            }
+          : {
+              items: [
+                // Rollback bumps web-rs-a's revision to 3 and scales it back up; web-rs-b drains to 0/0 at rev 2
+                makeRs({
+                  namespace: "dev",
+                  name: "web-rs-a",
+                  replicas: 1,
+                  statusReplicas: 1,
+                  revision: 3,
+                  ownerDeployment: "web",
+                }),
+                makeRs({
+                  namespace: "dev",
+                  name: "web-rs-b",
+                  replicas: 0,
+                  statusReplicas: 0,
+                  revision: 2,
+                  ownerDeployment: "web",
+                }),
+              ],
+            }
+      }
+      return { items: [] }
+    })
+
+    // First computation: web-rs-a is old/0 -> dropped; web-rs-b is current/1 -> kept
+    const firstRows = await getConfigAuditList()
+    expect(firstRows.map((r) => r.name)).toEqual(["web-rs-b"])
+    expect(await getConfigAuditDetail("dev", "web-rs-a")).toBeNull()
+    expect(mockCache.has("compliance:replicasets:list")).toBe(false)
+
+    // Rollback happens before any separate RS TTL could expire; simulate report cache expiry
+    phase = "rolled_back"
+    mockCache.delete("compliance:config-audit:list")
+
+    // Next computation fetches RS list in the same request path -> web-rs-a is immediately back, web-rs-b is dropped
+    const secondRows = await getConfigAuditList()
+    expect(secondRows.map((r) => r.name)).toEqual(["web-rs-a"])
+    const restoredDetail = await getConfigAuditDetail("dev", "web-rs-a")
+    expect(restoredDetail?.name).toBe("web-rs-a")
+    expect(await getConfigAuditDetail("dev", "web-rs-b")).toBeNull()
+  })
+
+  it("fails safe when ReplicaSet list fails (403/timeout): keeps all reports, logs one warning, and does not cache failure", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {})
+    try {
+      mockFetchWithPolicy.mockImplementation(async (url: string) => {
+        const path = new URL(url).pathname
+        if (path === "/apis/apps/v1/replicasets") {
+          return { ok: false, status: 403, statusText: "Forbidden", _path: path }
+        }
+        return { ok: true, status: 200, statusText: "OK", _path: path }
+      })
+      mockReadJsonWithPolicy.mockImplementation(async (res: { _path: string }) => {
+        if (res._path === "/apis/aquasecurity.github.io/v1alpha1/configauditreports") {
+          return {
+            items: [
+              makeCar({
+                namespace: "storage",
+                kind: "ReplicaSet",
+                name: "velero-6447588f5f",
+                checks: [{ checkID: "KSV014", severity: "HIGH", success: false }],
+              }),
+              makeCar({
+                namespace: "devtools",
+                kind: "ReplicaSet",
+                name: "harbor-core-99b8c7d6f",
+                checks: [{ checkID: "KSV014", severity: "HIGH", success: false }],
+              }),
+            ],
+          }
+        }
+        return { items: [] }
+      })
+
+      const rows = await getConfigAuditList()
+      expect(rows.map((r) => r.name)).toEqual(["velero-6447588f5f", "harbor-core-99b8c7d6f"])
+      // Unknown ownership keeps existing alphabet fallback for harbor-core-99b8c7d6f
+      expect(rows.find((r) => r.name === "harbor-core-99b8c7d6f")?.accepted).toBe(true)
+
+      expect(warnSpy).toHaveBeenCalledTimes(1)
+      expect(warnSpy.mock.calls[0]?.[0]).toContain("failed to list ReplicaSets")
+      // Failed RS list must not be cached in compliance:replicasets:list
+      expect(mockCache.has("compliance:replicasets:list")).toBe(false)
+
+      const summary = await getComplianceSummary()
+      expect(summary.scannedWorkloads).toBe(2)
+      expect(summary.totalConfigAuditFailures).toEqual({ Critical: 0, High: 1, Medium: 0, Low: 0 })
+    } finally {
+      warnSpy.mockRestore()
+    }
+  })
+
+  it("fails safe when a report's ReplicaSet is missing from the cluster list: keeps it and logs one warning", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {})
+    try {
+      installK8sMock({
+        "/apis/aquasecurity.github.io/v1alpha1/configauditreports": {
+          items: [
+            makeCar({
+              namespace: "storage",
+              kind: "ReplicaSet",
+              name: "velero-7b8c9d4f5g",
+              checks: [{ checkID: "KSV014", severity: "HIGH", success: false }],
+            }),
+            makeCar({
+              namespace: "iam",
+              kind: "ReplicaSet",
+              name: "keycloak-operator-5f4d3c2b9",
+              checks: [{ checkID: "KSV014", severity: "HIGH", success: false }],
+            }),
+            makeCar({
+              namespace: "devtools",
+              kind: "ReplicaSet",
+              name: "headlamp-6d7f8g9h2",
+              checks: [{ checkID: "KSV014", severity: "HIGH", success: false }],
+            }),
+          ],
+        },
+        "/apis/apps/v1/replicasets": {
+          items: [
+            // Only velero is present; keycloak-operator and headlamp ReplicaSets are missing
+            makeRs({ namespace: "storage", name: "velero-7b8c9d4f5g", replicas: 1, ownerDeployment: "velero" }),
+          ],
+        },
+      })
+
+      const rows = await getConfigAuditList()
+      expect(rows.map((r) => r.name)).toEqual([
+        "velero-7b8c9d4f5g",
+        "keycloak-operator-5f4d3c2b9",
+        "headlamp-6d7f8g9h2",
+      ])
+      expect(warnSpy).toHaveBeenCalledTimes(1)
+      expect(warnSpy.mock.calls[0]?.[0]).toContain("missing from cluster list")
+
+      const summary = await getComplianceSummary()
+      expect(summary.scannedWorkloads).toBe(3)
+      expect(summary.totalConfigAuditFailures).toEqual({ Critical: 0, High: 3, Medium: 0, Low: 0 })
+    } finally {
+      warnSpy.mockRestore()
+    }
+  })
+
+  it("does NOT accept a standalone ReplicaSet named harbor-core-<hash-like> without a Deployment owner, while accepting Deployment-owned ones", async () => {
+    installK8sMock({
+      "/apis/aquasecurity.github.io/v1alpha1/configauditreports": {
+        items: [
+          // Standalone ReplicaSet with a valid SafeEncodeString hash-like suffix and NO ownerReferences
+          makeCar({
+            namespace: "devtools",
+            kind: "ReplicaSet",
+            name: "harbor-core-bcdfg",
+            checks: [
+              { checkID: "KSV014", severity: "HIGH", success: false },
+              { checkID: "KSV020", severity: "LOW", success: false },
+            ],
+          }),
+          // ReplicaSet owned by a non-Deployment resource (e.g. CustomSet) -> also NOT accepted
+          makeCar({
+            namespace: "devtools",
+            kind: "ReplicaSet",
+            name: "harbor-core-99b8c7d6f",
+            checks: [{ checkID: "KSV014", severity: "HIGH", success: false }],
+          }),
+          // Real Deployment-owned ReplicaSet -> accepted as before
+          makeCar({
+            namespace: "devtools",
+            kind: "ReplicaSet",
+            name: "harbor-core-b569bd8dd",
+            checks: [
+              { checkID: "KSV014", severity: "HIGH", success: false },
+              { checkID: "KSV011", severity: "LOW", success: false },
+              { checkID: "KSV020", severity: "LOW", success: false },
+            ],
+          }),
+          // Non-hash suffix even with Deployment owner -> NOT accepted (never broaden)
+          makeCar({
+            namespace: "devtools",
+            kind: "ReplicaSet",
+            name: "harbor-core-abc12345",
+            checks: [{ checkID: "KSV014", severity: "HIGH", success: false }],
+          }),
+        ],
+      },
+      "/apis/apps/v1/replicasets": {
+        items: [
+          makeRs({ namespace: "devtools", name: "harbor-core-bcdfg", replicas: 1 }),
+          makeRs({
+            namespace: "devtools",
+            name: "harbor-core-99b8c7d6f",
+            replicas: 1,
+            ownerDeployment: "harbor-core",
+            ownerKind: "StatefulSet",
+          }),
+          makeRs({
+            namespace: "devtools",
+            name: "harbor-core-b569bd8dd",
+            replicas: 1,
+            ownerDeployment: "harbor-core",
+          }),
+          makeRs({
+            namespace: "devtools",
+            name: "harbor-core-abc12345",
+            replicas: 1,
+            ownerDeployment: "harbor-core",
+          }),
+        ],
+      },
+    })
+
+    const rows = await getConfigAuditList()
+    const byName = new Map(rows.map((r) => [r.name, r]))
+
+    expect(byName.get("harbor-core-bcdfg")?.accepted).toBe(false)
+    expect(byName.get("harbor-core-bcdfg")?.actionableSummary).toEqual({ Critical: 0, High: 1, Medium: 0, Low: 1 })
+    expect(byName.get("harbor-core-bcdfg")?.acceptedSummary).toEqual({ Critical: 0, High: 0, Medium: 0, Low: 0 })
+
+    expect(byName.get("harbor-core-99b8c7d6f")?.accepted).toBe(false)
+    expect(byName.get("harbor-core-99b8c7d6f")?.actionableSummary).toEqual({ Critical: 0, High: 1, Medium: 0, Low: 0 })
+
+    expect(byName.get("harbor-core-b569bd8dd")?.accepted).toBe(true)
+    expect(byName.get("harbor-core-b569bd8dd")?.actionableSummary).toEqual({ Critical: 0, High: 0, Medium: 0, Low: 0 })
+    expect(byName.get("harbor-core-b569bd8dd")?.acceptedSummary).toEqual({ Critical: 0, High: 1, Medium: 0, Low: 2 })
+
+    expect(byName.get("harbor-core-abc12345")?.accepted).toBe(false)
+
+    const standaloneDetail = await getConfigAuditDetail("devtools", "harbor-core-bcdfg")
+    expect(standaloneDetail?.accepted).toBe(false)
+    expect(standaloneDetail?.checks.find((c) => c.id === "KSV014")?.accepted).toBe(false)
+
+    const ownedDetail = await getConfigAuditDetail("devtools", "harbor-core-b569bd8dd")
+    expect(ownedDetail?.accepted).toBe(true)
+    expect(ownedDetail?.checks.find((c) => c.id === "KSV014")?.accepted).toBe(true)
+
+    const summary = await getComplianceSummary()
+    expect(summary.totalConfigAuditFailures).toEqual({ Critical: 0, High: 3, Medium: 0, Low: 0 })
+    expect(summary.acceptedSystemConfigAuditFailures).toEqual({ Critical: 0, High: 1, Medium: 0, Low: 0 })
   })
 })

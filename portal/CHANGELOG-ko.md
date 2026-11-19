@@ -9,6 +9,18 @@
 
 ## [Unreleased]
 
+## [1.1.21] - 2026-11-19
+
+패치 릴리스: 교체된 옛 Deployment 리비전이 남긴 Trivy 리포트를 Compliance 집계에서 제외합니다(narwhal#727).
+
+### 운영자 참고 / 동작 변경
+
+- **플랫폼 변경이 함께 필요합니다:** 포털 ClusterRole에 `apps/replicasets` 읽기 전용 `get`/`list`가 있어야 합니다
+  (같은 변경 묶음에서 `narwhal-portal-k8s.yaml`에 추가). 권한이 없으면 ReplicaSet 조회가 실패하고 모든 리포트를
+  유지하며, 이는 이전 동작과 같습니다.
+- 새 리비전이 있는 Deployment의, 파드가 모두 사라진 옛 리비전 리포트만 제외합니다. 0으로 축소한 Deployment,
+  단독 ReplicaSet, 종료 중인 파드가 남은 리비전은 계속 집계합니다.
+
 ### 수정
 
 - **교체된 구 Deployment 리비전 ReplicaSet의 ConfigAuditReport 제외 및 Deployment 소유권 검증 (`src/lib/compliance.ts`, `src/lib/compliance-accepted.ts`, narwhal#727):**
@@ -895,7 +907,8 @@ Portal의 첫 번째 공개 릴리스.
     매니페스트(`deploy/kaniko-build-job.yaml`).
   - 실시간 핫 모듈 교체(HMR) 및 컨테이너 파일 동기화를 위해 구성된 Skaffold 개발 프로필.
 
-[Unreleased]: https://github.com/dasomel/narwhal/compare/portal/v1.1.20...HEAD
+[Unreleased]: https://github.com/dasomel/narwhal/compare/portal/v1.1.21...HEAD
+[1.1.21]: https://github.com/dasomel/narwhal/compare/portal/v1.1.20...portal/v1.1.21
 [1.1.20]: https://github.com/dasomel/narwhal/compare/portal/v1.1.19...portal/v1.1.20
 [1.1.19]: https://github.com/dasomel/narwhal/compare/portal/v1.1.18...portal/v1.1.19
 [1.1.18]: https://github.com/dasomel/narwhal/compare/portal/v1.1.17...portal/v1.1.18

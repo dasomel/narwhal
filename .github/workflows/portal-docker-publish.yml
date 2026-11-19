@@ -438,7 +438,7 @@ jobs:
           # (static-key bundle verification arrived in Kyverno 1.19), so the platform policy
           # verify-image-signatures reported fail for every portal image. Also publish the legacy
           # tag-based signature (sha256-<digest>.sig), which Kyverno 1.18 verifies. The flag is
-          # hidden/deprecated in cosign v3.1.x but still accepted (checked with v3.1.4). Both
-          # formats coexist on the same digest. Escape hatch: drop this line once the cluster
-          # runs Kyverno >= 1.19 with a SigstoreBundle attestor.
+          # hidden/deprecated in cosign v3.1.x; v3.1.4 accepts it (flag parsing checked only). Both
+          # formats coexist on the same digest. Escape hatch: drop this line only after the
+          # cluster runs Kyverno >= 1.19 AND the policy uses a SigstoreBundle attestor.
           cosign sign --yes --key env://COSIGN_PRIVATE_KEY --new-bundle-format=false "${IMAGE}@${DIGEST}"

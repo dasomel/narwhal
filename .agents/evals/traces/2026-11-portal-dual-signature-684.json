@@ -33,11 +33,12 @@
       "id": "e4",
       "type": "regression_verification",
       "status": "passed",
-      "scope": "image digests, openbao backup manifest, mirror pins and version consistency",
+      "scope": "Flag acceptance by cosign v3.1.4 and YAML parsing of the workflow only; make test static suite. No signature was produced or verified.",
       "summary": "The flag is accepted by cosign v3.1.4 locally; YAML parses. The signature itself can only be produced in CI with the repository key.",
       "evidence": [
         "test:cosign version -> v3.1.4; cosign sign --new-bundle-format=false --help -> rc 0 (an unknown flag gives rc 1)",
-        "test:python3 -c 'import yaml;yaml.safe_load(open(\".github/workflows/portal-docker-publish.yml\"))' -> rc 0"
+        "test:python3 -c 'import yaml;yaml.safe_load(open(\".github/workflows/portal-docker-publish.yml\"))' -> rc 0",
+        "test:make test -> passed 484 failed 0"
       ]
     },
     {

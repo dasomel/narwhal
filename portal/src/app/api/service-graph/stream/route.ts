@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server"
-import { auth, requireAdmin } from "@/lib/auth"
+import { requireAdmin } from "@/lib/auth"
 import { roleGateErrorResponse } from "@/lib/role-gate-response"
 import { buildWorkloadToServiceMap, resolveWorkload } from "@/lib/service-graph"
 import { startFlowStream } from "@/lib/hubble-stream"
@@ -26,8 +26,9 @@ function resolveStreamLifetimeMs(expiresAt?: number, nowMs = Date.now()): number
 export async function GET(req: NextRequest) {
   const gate = await requireAdmin()
   if ("error" in gate) return roleGateErrorResponse(gate)
-  const session = await auth()
-  const streamLifetimeMs = resolveStreamLifetimeMs(session?.expiresAt)
+  // Use the session the admin gate authorised (one read), not a second auth() call that
+  // could see a refreshed, downgraded session after the gate passed.
+  const streamLifetimeMs = resolveStreamLifetimeMs(gate.session.expiresAt)
 
   const serviceMap = await buildWorkloadToServiceMap()
   const encoder = new TextEncoder()
@@ -36,13 +37,13 @@ export async function GET(req: NextRequest) {
     start(controller) {
       const buckets = new Map<string, number>()
       let closed = false
-      let lifetimeTimer: ReturnType<typeof setTimeout> | undefined
+      const lifetime: { timer?: ReturnType<typeof setTimeout> } = {}
 
       const safeClose = () => {
         if (closed) return
         closed = true
         clearInterval(tick)
-        if (lifetimeTimer) clearTimeout(lifetimeTimer)
+        if (lifetime.timer) clearTimeout(lifetime.timer)
         handle.cancel()
         try {
           controller.close()
@@ -88,7 +89,7 @@ export async function GET(req: NextRequest) {
         }
       }, TICK_MS)
 
-      lifetimeTimer = setTimeout(safeClose, streamLifetimeMs)
+      lifetime.timer = setTimeout(safeClose, streamLifetimeMs)
       req.signal.addEventListener("abort", safeClose)
     },
   })

@@ -141,9 +141,7 @@ describe("Providers / SessionErrorHandler (narwhal#734)", () => {
     expect(mockSignIn).toHaveBeenCalledTimes(1)
     // Let the rejected signIn promise settle (macrotask, not a microtask count).
     await new Promise((resolve) => setTimeout(resolve, 0))
-    sessionState.data = { user: { role: "guest" }, error: undefined }
-    harness.cursor = 0
-    SessionErrorHandler()
+    // A new session object that still carries RefreshTokenError retries.
     sessionState.data = { user: { role: "guest" }, error: "RefreshTokenError" }
     harness.cursor = 0
     SessionErrorHandler()

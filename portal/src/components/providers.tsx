@@ -23,7 +23,9 @@ export function SessionErrorHandler() {
     signIn(providerId).catch(() => {
       triggeredRef.current = false
     })
-  }, [session?.error])
+    // Depend on the session object, not only the error string: a new session that still
+    // carries RefreshTokenError after a failed sign-in attempt must retry.
+  }, [session])
 
   return null
 }

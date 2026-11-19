@@ -82,6 +82,8 @@ describe("GET /api/service-graph/stream — cluster-admin only", () => {
       await vi.advanceTimersByTimeAsync(2_000)
       expect(cancel).toHaveBeenCalledTimes(1)
       await expect(done).resolves.toBe(true)
+      // The lifetime comes from the session the admin gate authorised: one auth() read only.
+      expect(mockAuth).toHaveBeenCalledTimes(1)
     } finally {
       vi.useRealTimers()
     }

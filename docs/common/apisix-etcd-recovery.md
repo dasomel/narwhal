@@ -10,7 +10,7 @@ cluster or a lost PVC) resync is **not reliable** in the current version combina
 (apisix chart 2.13.0 / etcd 3.5.31 / apisix-ingress-controller 0.14.1) — an empty etcd can
 leave routing config empty and stuck without intervention.
 
-For automated count-divergence recovery (when APISIX routes/upstreams/ssls fall behind
+For automated divergence recovery (when APISIX routes/stream_routes/upstreams/ssls fall behind
 CRs even though CR status still reports `ResourcesSynced`), run:
 
 ```bash
@@ -154,8 +154,11 @@ is invalid — Kubernetes names can't contain `_`. Use a hyphenated pod name lik
    if the controller also restarted while etcd was empty).
 2. **Controller resync interval (`5m` / `15m`) + divergence recovery script**:
    `08-1-networking.sh` sets `config.apisixResourceSyncInterval=5m` and
-   `config.kubernetes.resyncInterval=15m`, and `recover-apisix-resource-sync.sh --divergence`
-   compares APISIX Admin API counts against CRs and annotates `narwhal.io/resync`.
+   `config.kubernetes.resyncInterval=15m` (shortening periodic resync; it does not bound
+   recovery in the startup 404 deadlock below), and `recover-apisix-resource-sync.sh --divergence`
+   compares APISIX Admin API object IDs (controller crc32-hex identities across `routes`,
+   `stream_routes`, `upstreams`, `ssls`) against CRs, emits `WARN` for extra non-CR objects, and
+   annotates `narwhal.io/resync` when CR-derived objects are missing.
 3. **Remaining gap (upstream)**: the empty-prefix `404` bootstrap deadlock when the
    controller starts against a completely empty etcd remains in the pinned chart/controller
    versions; if `GET /apisix/admin/routes` still returns 404 after controller restart,
@@ -181,4 +184,3 @@ The first pod on the new volume starts with empty etcd. APISIX keeps serving fro
 `scripts/cluster/lib/recover-apisix-resource-sync.sh platform-system --divergence` right after the
 rollout (measured 2026-11-19 on the local cluster: routes 26/26, upstreams 14/14, ssls 1/1 after
 the resync; a later `apisix-etcd` restart followed by an `apisix` restart kept every host up).
-

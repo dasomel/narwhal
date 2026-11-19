@@ -30,17 +30,17 @@
     {
       "id": "e3",
       "type": "bug_fix",
-      "summary": "Switched apisix-etcd in apisix-infra.yaml to strategy.type=Recreate and PersistentVolumeClaim apisix-etcd-data (nfs-csi, ReadWriteOnce, 1Gi) with backup.velero.io/backup-volumes-excludes: data while keeping uid 10001 securityContext and probes intact; set config.apisixResourceSyncInterval=5m and config.kubernetes.resyncInterval=15m in 08-1-networking.sh; added --divergence/--check-divergence/--all mode to recover-apisix-resource-sync.sh using kubectl port-forward + curl -K - (secret apisix-admin-key, no key in argv/output, HTTP 404 treated as 0, narwhal.io/resync annotation until convergence); updated R352 and added R374 + docs + lessons-log."
+      "summary": "Switched apisix-etcd in apisix-infra.yaml to strategy.type=Recreate and PersistentVolumeClaim apisix-etcd-data (nfs-csi, ReadWriteOnce, 1Gi) with backup.velero.io/backup-volumes-excludes: data while keeping uid 10001 securityContext and probes intact; set config.apisixResourceSyncInterval=5m and config.kubernetes.resyncInterval=15m in 08-1-networking.sh (shortening periodic resync without claiming to bound the startup 404 deadlock); added --divergence/--check-divergence/--all mode to recover-apisix-resource-sync.sh using kubectl port-forward + curl -K - (secret apisix-admin-key, no key in argv/output) to compare controller crc32-hex object IDs (value.id/key) across routes, stream_routes, upstreams, and ssls against CR-derived expected sets, treating expected-but-missing as divergence with narwhal.io/resync annotation recovery and reporting extra non-CR objects as WARN with counts without looping; updated R352 and extended R374 + docs + lessons-log."
     },
     {
       "id": "e4",
       "type": "regression_verification",
       "status": "passed",
-      "scope": "Offline helm template renders (narwhal-platform/apisix-infra.yaml and apisix-ingress-controller-0.14.1.tgz), static YAML/syntax validation, fake-kubectl/curl behavioral tests of divergence recovery (in-sync no-op, partial divergence with ResourcesSynced, empty-etcd 404, non-convergence exit 1, 401 fail-closed, zero secret leaks), mutation verifications (R352, R366, R374, R230, R231), shellcheck/bash -n, markdownlint-changed, and git diff --check; no live cluster or VM touched.",
+      "scope": "Offline helm template renders (narwhal-platform/apisix-infra.yaml and apisix-ingress-controller-0.14.1.tgz), static YAML/syntax validation, fake-kubectl/curl behavioral tests of divergence recovery (healthy no-op, partial divergence with ResourcesSynced, extra seed + missing route detection, extra seed alone no-loop WARN, stream rule synced no-op and missing stream route divergence, empty-etcd 404, non-convergence exit 1, 401 fail-closed, zero secret leaks), mutation verifications (R352, R366, R374, R230, R231), shellcheck/bash -n, markdownlint-changed, markdownlint-cli2, and git diff --check; no live cluster or VM touched in fix round.",
       "summary": "All offline renders, static validations, behavioral stub tests, mutation verifications, and shell/markdown/diff checks passed.",
       "evidence": [
         "test:make validate -> exit 0 (Syntax OK + all GitOps YAML OK)",
-        "test:python3 scripts/test/lib/check-apisix-etcd-persistence.py --mutation-verify -> PASS: R374 apisix-etcd PVC persistence + offline IC helm render + behavioral recovery (12 mutations rejected)",
+        "test:python3 scripts/test/lib/check-apisix-etcd-persistence.py --mutation-verify -> PASS: R374 apisix-etcd PVC persistence + offline IC helm render + behavioral recovery (16 mutations rejected)",
         "test:python3 scripts/test/lib/check-platform-manifest-hardening.py --mutation-verify -> PASS: self-authored manifest hardening verified (14 mutations rejected)",
         "test:python3 scripts/test/lib/check-workload-runtime-posture.py -> PASS: 29 workloads across 7 namespaces checked",
         "test:python3 scripts/test/lib/check-round2-compliance-hardening.py --mutation-verify -> PASS: R366 round-2 compliance hardening + offline helm renders (15 mutations rejected)",
@@ -50,8 +50,10 @@
         "test:R183+R183b assertion snippet on scripts/cluster/lib/recover-apisix-resource-sync.sh -> R183+R183b PASS",
         "test:shellcheck -S warning scripts/cluster/08-1-networking.sh scripts/cluster/lib/recover-apisix-resource-sync.sh scripts/test/regression-check-kakao.sh && bash -n ... -> exit 0",
         "test:python3 scripts/ci/markdownlint-changed.py --base origin/main -> No markdownlint violations on added/modified active-documentation lines",
+        "test:npx --yes markdownlint-cli2 docs/common/apisix-etcd-recovery.md docs/common/lessons-log.md -> Summary: 0 issues in 0 files",
+        "test:python3 .agents/evals/gate.py --trace .agents/evals/traces/2026-11-apisix-etcd-persistence.json --baseline .agents/evals/baseline.eval.json -> exit 0 (0 regressions)",
         "test:git diff --check -> exit 0",
-        "test:live local cluster (orchestrator, measured 2026-11-19): controller resync 5m/15m applied via helm; apisix-etcd moved to PVC apisix-etcd-data (Bound, nfs-csi) after a one-time strategy patch (SSA could not drop rollingUpdate); --divergence detected the empty etcd and recovered routes 26/26 upstreams 14/14 ssls 1/1; then apisix-etcd restart -> --divergence 'in sync' without resync -> apisix restart -> portal/gitea/keycloak/grafana/harbor/argocd all 30x"
+        "test:live local cluster (orchestrator, measured 2026-11-19): controller resync 5m/15m applied via helm; apisix-etcd moved to PVC apisix-etcd-data (Bound, nfs-csi) after a one-time strategy patch (SSA could not drop rollingUpdate); --divergence detected the empty etcd and recovered routes 26/26 upstreams 14/14 ssls 1/1; then apisix-etcd restart -> --divergence 'in sync' without resync -> apisix restart -> portal/gitea/keycloak/grafana/harbor/argocd all 30x (pre-identity-set fix; stream_routes/extra-WARN paths verified via stubbed behavioral tests)"
       ]
     },
     {

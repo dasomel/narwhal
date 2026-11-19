@@ -344,8 +344,9 @@ echo "=== Installing APISIX Ingress Controller ==="
 # honest. Escape hatch: raise both here; do not drop the limit (worker nodes are 8GB).
 # D-ic-resync (#714): chart 0.14.1 defaults apisixResourceSyncInterval=1h and
 # kubernetes.resyncInterval=6h (verified in apisix-ingress-controller-0.14.1.tgz values/templates),
-# leaving etcd divergence unhealed for hours. 5m/15m bounds recovery latency with low sync churn;
-# escape hatch: raise either duration here if 200m CPU limit sees pressure.
+# leaving etcd divergence unhealed for hours. 5m/15m shortens the controller's periodic resync
+# with low churn (it does not bound recovery in the controller start-up deadlock documented in
+# docs/common/apisix-etcd-recovery.md); escape hatch: raise either duration here if 200m CPU limit sees pressure.
 APISIX_INGRESS_CONTROLLER_OK=false
 for attempt in 1 2 3 4 5; do
   if helm upgrade --install apisix-ingress-controller "$(chart apisix-ingress-controller)" \

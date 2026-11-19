@@ -10,8 +10,10 @@ Pins:
    config.kubernetes.resyncInterval=15m to apisix-ingress-controller (verified against
    bundled apisix-ingress-controller-0.14.1.tgz when present).
 3. recover-apisix-resource-sync.sh: preserves default ResourceSyncAborted mode and
-   implements --divergence mode (in-sync no-op, partial divergence resync, HTTP 404
-   empty-prefix handling, non-convergence exit 1, 401 fail-closed, zero key leaks).
+   implements --divergence mode using controller-derived crc32 object identities across
+   routes, stream_routes, upstreams, and ssls (in-sync no-op, extra-seed + missing-route
+   detection, stream route sync/divergence, HTTP 404 empty-prefix handling, non-convergence
+   exit 1, 401 fail-closed, zero key leaks).
 """
 
 import argparse
@@ -25,6 +27,7 @@ import stat
 import subprocess
 import sys
 import tempfile
+import zlib
 from pathlib import Path
 
 import yaml
@@ -119,7 +122,15 @@ def verify(root: Path) -> None:
     storage_req = ((pvc_spec.get("resources") or {}).get("requests") or {}).get("storage")
     assert storage_req, "apisix-etcd-data resources.requests.storage missing"
 
-    net_active = _active_lines((root / NET_REL).read_text())
+    net_raw = (root / NET_REL).read_text()
+    assert "bounds recovery latency" not in net_raw, (
+        "08-1-networking.sh D-ic-resync comment must not claim 5m/15m bounds startup deadlock recovery latency"
+    )
+    assert "shortens the controller's periodic resync" in net_raw, (
+        "08-1-networking.sh D-ic-resync comment must state 5m/15m shortens periodic resync"
+    )
+
+    net_active = _active_lines(net_raw)
     ic_start = net_active.index("helm upgrade --install apisix-ingress-controller")
     ic_end = net_active.index("APISIX_INGRESS_CONTROLLER_OK=true", ic_start)
     ic_cmd = net_active[ic_start:ic_end]
@@ -139,6 +150,10 @@ def verify(root: Path) -> None:
         '[ "${code}" = "404" ]',
         "ResourceSyncAborted",
         "MAX_ROUNDS=",
+        "for ep in routes stream_routes upstreams ssls; do",
+        "zlib.crc32",
+        "missing = exp_set - act_set",
+        'echo "WARN: APISIX contains',
     ):
         assert needle in rec_text, f"{RECOVER_REL} missing {needle!r}"
 
@@ -175,6 +190,18 @@ def verify_helm_ic_render(root: Path) -> bool:
     return True
 
 
+def _gen_id(raw: str) -> str:
+    return format(zlib.crc32(raw.encode("utf-8")) & 0xFFFFFFFF, "x")
+
+
+def _apisix_v3_payload(prefix: str, items: list[dict]) -> str:
+    wrapped = [
+        {"key": f"/apisix/{prefix}/{item['id']}", "value": item}
+        for item in items
+    ]
+    return json.dumps({"total": len(wrapped), "list": wrapped})
+
+
 def verify_recovery_behavior(root: Path) -> None:
     """Exercise recover-apisix-resource-sync.sh with fake kubectl/curl and argv leak checks."""
     script = root / RECOVER_REL
@@ -184,8 +211,10 @@ def verify_recovery_behavior(root: Path) -> None:
         w = Path(tmp)
         bin_dir = w / "bin"
         st_dir = w / "st"
+        synced_dir = st_dir / "synced"
         bin_dir.mkdir()
         st_dir.mkdir()
+        synced_dir.mkdir()
 
         kubectl_stub = bin_dir / "kubectl"
         kubectl_stub.write_text(
@@ -203,7 +232,7 @@ case "$1 $2" in
     ;;
   "get apisixroutes.apisix.apache.org")
     if [[ "$*" == *" -o name"* ]]; then
-      printf 'apisixroute.apisix.apache.org/portal\\napisixroute.apisix.apache.org/keycloak\\n'
+      cat "${st}/cr_routes_names.txt"
     else
       cat "${st}/cr_routes.json"
     fi
@@ -233,7 +262,7 @@ if [ "$1" = "annotate" ]; then
   kind="$2"
   echo "${kind}" >> "${st}/annotated"
   if [ -f "${st}/converge_on_annotate" ]; then
-    printf 'synced' > "${st}/mode"
+    cp "${st}/synced/"*.resp "${st}/"
   fi
   exit 0
 fi
@@ -255,33 +284,16 @@ if [ "${key}" != "${FAKE_ADMIN_KEY}" ]; then
 fi
 url="${@: -1}"
 ep="${url##*/}"
-mode=$(cat "${st}/mode")
-if [ "${mode}" = "auth_fail" ]; then
+if [ -f "${st}/auth_fail" ]; then
   printf '{"error_msg":"unauthorized"}\\n401'
   exit 0
 fi
-if [ "${mode}" = "empty_404" ]; then
-  printf '{"message":"Key not found"}\\n404'
-  exit 0
-fi
-if [ "${mode}" = "partial" ]; then
-  case "${ep}" in
-    routes) printf '{"total":1,"list":[{}]}\\n200' ;;
-    upstreams) printf '{"total":0,"list":[]}\\n200' ;;
-    ssls) printf '{"message":"Key not found"}\\n404' ;;
-  esac
-  exit 0
-fi
-case "${ep}" in
-  routes) printf '{"total":2,"list":[{},{}]}\\n200' ;;
-  upstreams) printf '{"total":2,"list":[{},{}]}\\n200' ;;
-  ssls) printf '{"total":1,"list":[{}]}\\n200' ;;
-esac
+cat "${st}/${ep}.resp"
 """,
             encoding="utf-8",
         )
 
-        for tool in ("date", "sleep", "base64", "cat", "awk", "sed", "mktemp", "rm", "kill"):
+        for tool in ("date", "sleep", "base64", "cat", "awk", "sed", "mktemp", "rm", "kill", "cp"):
             real = shutil.which(tool)
             assert real, f"missing required tool {tool}"
             wrapper = bin_dir / tool
@@ -293,25 +305,64 @@ esac
         for p in bin_dir.iterdir():
             p.chmod(p.stat().st_mode | stat.S_IXUSR)
 
-        cr_routes = {
+        base_routes = {
             "items": [
                 {
-                    "metadata": {"name": "portal"},
+                    "metadata": {"name": "portal", "namespace": "platform-system"},
                     "spec": {"http": [{"name": "p1", "upstreams": [{"name": "portal"}]}]},
                     "status": {"conditions": [{"type": "ResourcesAvailable", "reason": "ResourcesSynced"}]},
                 },
                 {
-                    "metadata": {"name": "keycloak"},
+                    "metadata": {"name": "keycloak", "namespace": "platform-system"},
                     "spec": {"http": [{"name": "k1", "upstreams": [{"name": "keycloak"}]}]},
                     "status": {"conditions": [{"type": "ResourcesAvailable", "reason": "ResourcesSynced"}]},
                 },
             ]
         }
-        cr_tls = {"items": [{"metadata": {"name": "narwhal-wildcard"}}]}
+        stream_routes_crs = {
+            "items": base_routes["items"] + [
+                {
+                    "metadata": {"name": "tcp-echo", "namespace": "platform-system"},
+                    "spec": {"stream": [{"name": "echo", "backend": {"serviceName": "echo-svc", "servicePort": 9000}}]},
+                    "status": {"conditions": [{"type": "ResourcesAvailable", "reason": "ResourcesSynced"}]},
+                }
+            ]
+        }
+        cr_tls = {"items": [{"metadata": {"name": "narwhal-wildcard", "namespace": "platform-system"}}]}
         cr_upstreams = {"items": [{"metadata": {"name": "portal"}}, {"metadata": {"name": "keycloak"}}]}
-        (st_dir / "cr_routes.json").write_text(json.dumps(cr_routes), encoding="utf-8")
         (st_dir / "cr_tls.json").write_text(json.dumps(cr_tls), encoding="utf-8")
         (st_dir / "cr_upstreams.json").write_text(json.dumps(cr_upstreams), encoding="utf-8")
+
+        route_portal = {
+            "id": _gen_id("platform-system_portal_p1"),
+            "name": "platform-system_portal_p1",
+            "desc": "Created by apisix-ingress-controller, DO NOT modify it manually",
+            "labels": {"managed-by": "apisix-ingress-controller"},
+        }
+        route_keycloak = {
+            "id": _gen_id("platform-system_keycloak_k1"),
+            "name": "platform-system_keycloak_k1",
+            "desc": "Created by apisix-ingress-controller, DO NOT modify it manually",
+            "labels": {"managed-by": "apisix-ingress-controller"},
+        }
+        route_seed = {
+            "id": "bootstrap-seed",
+            "name": "bootstrap-seed",
+            "uri": "/__bootstrap-seed-delete-me__",
+        }
+        stream_echo = {
+            "id": _gen_id("platform-system_tcp-echo_echo_tcp"),
+            "desc": "Created by apisix-ingress-controller, DO NOT modify it manually",
+            "labels": {"managed-by": "apisix-ingress-controller"},
+        }
+        ups_portal = {"id": _gen_id("platform-system_portal"), "name": "platform-system_portal"}
+        ups_keycloak = {"id": _gen_id("platform-system_keycloak"), "name": "platform-system_keycloak"}
+        ups_echo = {"id": _gen_id("platform-system_echo-svc_9000"), "name": "platform-system_echo-svc_9000"}
+        ssl_wildcard = {
+            "id": _gen_id("platform-system_narwhal-wildcard"),
+            "snis": ["*.local.narwhal.internal"],
+            "labels": {"managed-by": "apisix-ingress-controller"},
+        }
 
         env = dict(
             os.environ,
@@ -324,13 +375,37 @@ esac
             APISIX_PF_WAIT_ATTEMPTS="2",
         )
 
-        def reset(mode: str, converge: bool = False) -> None:
+        def write_resp(target_dir: Path, ep: str, code: int, items: list[dict] | None = None) -> None:
+            if code == 404:
+                text = '{"message":"Key not found"}\n404'
+            else:
+                text = f"{_apisix_v3_payload(ep, items or [])}\n{code}"
+            (target_dir / f"{ep}.resp").write_text(text, encoding="utf-8")
+
+        def setup_case(
+            *,
+            routes_cr: dict,
+            initial: dict[str, tuple[int, list[dict]]],
+            synced: dict[str, tuple[int, list[dict]]] | None = None,
+            converge: bool = False,
+            auth_fail: bool = False,
+        ) -> None:
             (st_dir / "calls").write_text("", encoding="utf-8")
             (st_dir / "annotated").unlink(missing_ok=True)
             (st_dir / "converge_on_annotate").unlink(missing_ok=True)
+            (st_dir / "auth_fail").unlink(missing_ok=True)
+            (st_dir / "cr_routes.json").write_text(json.dumps(routes_cr), encoding="utf-8")
+            names = [f"apisixroute.apisix.apache.org/{item['metadata']['name']}" for item in routes_cr["items"]]
+            (st_dir / "cr_routes_names.txt").write_text("\n".join(names) + "\n", encoding="utf-8")
+            for ep, (code, items) in initial.items():
+                write_resp(st_dir, ep, code, items)
+            if synced is not None:
+                for ep, (code, items) in synced.items():
+                    write_resp(synced_dir, ep, code, items)
             if converge:
                 (st_dir / "converge_on_annotate").write_text("1", encoding="utf-8")
-            (st_dir / "mode").write_text(mode, encoding="utf-8")
+            if auth_fail:
+                (st_dir / "auth_fail").write_text("1", encoding="utf-8")
 
         def assert_no_secret_leak(res: subprocess.CompletedProcess) -> None:
             combined = res.stdout + res.stderr + (st_dir / "calls").read_text(encoding="utf-8")
@@ -338,21 +413,39 @@ esac
             b64_val = base64.b64encode(secret_val.encode()).decode()
             assert b64_val not in res.stdout + res.stderr, "base64 admin key leaked to output"
 
+        healthy_initial = {
+            "routes": (200, [route_portal, route_keycloak]),
+            "stream_routes": (404, []),
+            "upstreams": (200, [ups_portal, ups_keycloak]),
+            "ssls": (200, [ssl_wildcard]),
+        }
+
         # 1. Default aborted mode (no aborted CRs) stays backward-compatible without port-forward.
-        reset("synced")
+        setup_case(routes_cr=base_routes, initial=healthy_initial)
         res = subprocess.run(["bash", str(script), "platform-system"], env=env, capture_output=True, text=True)
         assert res.returncode == 0, res.stderr
         assert "port-forward" not in (st_dir / "calls").read_text(encoding="utf-8")
 
-        # 2. In-sync divergence check: exits 0 and performs no annotations.
-        reset("synced")
+        # 2. Healthy cluster (stream_routes empty/404 when no stream CR rules): in sync, no annotate calls.
+        setup_case(routes_cr=base_routes, initial=healthy_initial)
         res = subprocess.run(["bash", str(script), "--divergence", "platform-system"], env=env, capture_output=True, text=True)
         assert res.returncode == 0, res.stderr
-        assert not (st_dir / "annotated").exists(), "in-sync check must not annotate CRs"
+        assert not (st_dir / "annotated").exists(), "healthy check must not annotate CRs"
+        assert "WARN:" not in res.stderr, res.stderr
         assert_no_secret_leak(res)
 
         # 3. Partial divergence (even when CRs say ResourcesSynced) triggers resync of all 3 kinds and converges.
-        reset("partial", converge=True)
+        setup_case(
+            routes_cr=base_routes,
+            initial={
+                "routes": (200, [route_portal]),
+                "stream_routes": (404, []),
+                "upstreams": (200, []),
+                "ssls": (404, []),
+            },
+            synced=healthy_initial,
+            converge=True,
+        )
         res = subprocess.run(["bash", str(script), "platform-system", "--divergence"], env=env, capture_output=True, text=True)
         assert res.returncode == 0, res.stderr
         annotated = (st_dir / "annotated").read_text(encoding="utf-8").splitlines()
@@ -363,22 +456,94 @@ esac
         ], annotated
         assert_no_secret_leak(res)
 
-        # 4. Empty etcd HTTP 404 triggers resync and converges.
-        reset("empty_404", converge=True)
+        # 4. Extra seed object + missing route (total count 2 == 2): divergence detected, resync triggered, WARN emitted.
+        setup_case(
+            routes_cr=base_routes,
+            initial={
+                "routes": (200, [route_portal, route_seed]),
+                "stream_routes": (404, []),
+                "upstreams": (200, [ups_portal, ups_keycloak]),
+                "ssls": (200, [ssl_wildcard]),
+            },
+            synced={
+                "routes": (200, [route_portal, route_keycloak, route_seed]),
+                "stream_routes": (404, []),
+                "upstreams": (200, [ups_portal, ups_keycloak]),
+                "ssls": (200, [ssl_wildcard]),
+            },
+            converge=True,
+        )
+        res = subprocess.run(["bash", str(script), "--divergence", "platform-system"], env=env, capture_output=True, text=True)
+        assert res.returncode == 0, res.stderr
+        assert (st_dir / "annotated").exists(), "extra seed must not hide missing route"
+        assert "WARN:" in res.stderr and "extra object(s)" in res.stderr, res.stderr
+        assert_no_secret_leak(res)
+
+        # 4b. Extra seed object when all CRs ARE present: in sync with WARN, no resync loop.
+        setup_case(
+            routes_cr=base_routes,
+            initial={
+                "routes": (200, [route_portal, route_keycloak, route_seed]),
+                "stream_routes": (404, []),
+                "upstreams": (200, [ups_portal, ups_keycloak]),
+                "ssls": (200, [ssl_wildcard]),
+            },
+        )
+        res = subprocess.run(["bash", str(script), "--divergence", "platform-system"], env=env, capture_output=True, text=True)
+        assert res.returncode == 0, res.stderr
+        assert not (st_dir / "annotated").exists(), "extra non-CR object alone must not trigger resync loop"
+        assert "WARN:" in res.stderr and "extra object(s)" in res.stderr, res.stderr
+        assert_no_secret_leak(res)
+
+        # 5. Stream rule present and synced -> in sync with no resync (/stream_routes queried separately).
+        stream_synced = {
+            "routes": (200, [route_portal, route_keycloak]),
+            "stream_routes": (200, [stream_echo]),
+            "upstreams": (200, [ups_portal, ups_keycloak, ups_echo]),
+            "ssls": (200, [ssl_wildcard]),
+        }
+        setup_case(routes_cr=stream_routes_crs, initial=stream_synced)
+        res = subprocess.run(["bash", str(script), "--divergence", "platform-system"], env=env, capture_output=True, text=True)
+        assert res.returncode == 0, res.stderr
+        assert not (st_dir / "annotated").exists(), "synced stream rule must not trigger resync"
+        assert "/apisix/admin/stream_routes" in (st_dir / "calls").read_text(encoding="utf-8")
+        assert "WARN:" not in res.stderr, res.stderr
+        assert_no_secret_leak(res)
+
+        # 5b. Stream rule missing while HTTP routes match -> divergence detected and resync converges.
+        setup_case(
+            routes_cr=stream_routes_crs,
+            initial={
+                "routes": (200, [route_portal, route_keycloak]),
+                "stream_routes": (404, []),
+                "upstreams": (200, [ups_portal, ups_keycloak]),
+                "ssls": (200, [ssl_wildcard]),
+            },
+            synced=stream_synced,
+            converge=True,
+        )
+        res = subprocess.run(["bash", str(script), "--divergence", "platform-system"], env=env, capture_output=True, text=True)
+        assert res.returncode == 0, res.stderr
+        assert (st_dir / "annotated").exists(), "missing stream route must trigger resync"
+        assert_no_secret_leak(res)
+
+        # 6. Empty etcd HTTP 404 triggers resync and converges.
+        empty_404 = {ep: (404, []) for ep in ("routes", "stream_routes", "upstreams", "ssls")}
+        setup_case(routes_cr=base_routes, initial=empty_404, synced=healthy_initial, converge=True)
         res = subprocess.run(["bash", str(script), "--check-divergence"], env=env, capture_output=True, text=True)
         assert res.returncode == 0, res.stderr
         assert (st_dir / "annotated").exists()
         assert_no_secret_leak(res)
 
-        # 5. Non-convergent empty etcd exits non-zero with 404 recovery hint.
-        reset("empty_404", converge=False)
+        # 7. Non-convergent empty etcd exits non-zero with 404 recovery hint.
+        setup_case(routes_cr=base_routes, initial=empty_404, converge=False)
         res = subprocess.run(["bash", str(script), "--divergence"], env=env, capture_output=True, text=True)
         assert res.returncode != 0, "non-convergent divergence must exit non-zero"
         assert "apisix-etcd-recovery.md" in res.stderr
         assert_no_secret_leak(res)
 
-        # 6. Admin API 401 fails closed without leaking the key.
-        reset("auth_fail")
+        # 8. Admin API 401 fails closed without leaking the key.
+        setup_case(routes_cr=base_routes, initial=healthy_initial, auth_fail=True)
         res = subprocess.run(["bash", str(script), "--divergence"], env=env, capture_output=True, text=True)
         assert res.returncode != 0, "HTTP 401 must exit non-zero"
         assert_no_secret_leak(res)
@@ -400,9 +565,13 @@ def mutation_verify(root: Path) -> int:
         (INFRA_REL, "    - ReadWriteOnce", "    - ReadWriteMany"),
         (NET_REL, "    --set config.apisixResourceSyncInterval=5m \\\n", ""),
         (NET_REL, "    --set config.kubernetes.resyncInterval=15m \\\n", ""),
+        (NET_REL, "shortens the controller's periodic resync", "bounds recovery latency"),
         (RECOVER_REL, '      --divergence|--check-divergence)\n', '      --disabled)\n'),
         (RECOVER_REL, '  elif [ "${code}" = "404" ]; then', '  elif [ "${code}" = "418" ]; then'),
         (RECOVER_REL, 'narwhal.io/resync=${ts}', 'narwhal.io/other=${ts}'),
+        (RECOVER_REL, "  for ep in routes stream_routes upstreams ssls; do", "  for ep in routes upstreams ssls; do"),
+        (RECOVER_REL, "missing = exp_set - act_set", "missing = set()"),
+        (RECOVER_REL, 'echo "WARN: APISIX contains', 'echo "INFO: APISIX contains'),
     ]
     with tempfile.TemporaryDirectory() as tmp:
         fixture = Path(tmp)

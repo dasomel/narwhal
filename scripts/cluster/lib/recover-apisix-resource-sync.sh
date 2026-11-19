@@ -22,7 +22,7 @@ Usage: recover-apisix-resource-sync.sh [NAMESPACE] [--divergence|--check-diverge
 
 Modes:
   (default)             Recover CRs stuck in ResourceSyncAborted
-  --divergence          Compare APISIX Admin API counts (routes/upstreams/ssls) against CRs
+  --divergence          Compare APISIX Admin API objects (routes/stream_routes/upstreams/ssls) against CRs
   --check-divergence    Alias for --divergence
   --all                 Run ResourceSyncAborted recovery followed by divergence check/resync
 EOF
@@ -183,9 +183,10 @@ start_pf() {
   return 1
 }
 
-admin_get_count() {
+admin_get_ids() {
   local endpoint="$1"
-  local attempt resp code body parsed
+  local attempt resp code body
+  rm -f "${TMP_DIR}/404_${endpoint}"
   for ((attempt=1; attempt<=PF_WAIT_ATTEMPTS; attempt++)); do
     resp=$(printf 'header = "X-API-KEY: %s"\n' "$(cat "${TMP_DIR}/admin.key")" \
       | curl -s -m 5 -K - -w '\n%{http_code}' "http://127.0.0.1:${PF_PORT}/apisix/admin/${endpoint}" 2>/dev/null || true)
@@ -198,25 +199,40 @@ admin_get_count() {
   done
   if [ "${code}" = "200" ]; then
     body="${resp%$'\n'*}"
-    parsed=$(printf '%s' "${body}" | python3 -c '
+    printf '%s' "${body}" > "${TMP_DIR}/body_${endpoint}.json"
+    if ! python3 - "${TMP_DIR}/body_${endpoint}.json" "${TMP_DIR}/actual_${endpoint}.json" <<'PYEOF' 2>/dev/null
 import json, sys
-data = json.load(sys.stdin)
-if isinstance(data.get("total"), int):
-    print(data["total"])
-elif isinstance(data.get("list"), list):
-    print(len(data["list"]))
-else:
+with open(sys.argv[1], encoding="utf-8") as f:
+    data = json.load(f)
+raw_list = data.get("list")
+if raw_list == {}:
+    raw_list = []
+if not isinstance(raw_list, list):
     sys.exit(2)
-' 2>/dev/null) || {
+ids = []
+for idx, entry in enumerate(raw_list):
+    if not isinstance(entry, dict):
+        sys.exit(2)
+    val = entry.get("value") if isinstance(entry.get("value"), dict) else entry
+    obj_id = val.get("id")
+    if not obj_id and isinstance(entry.get("key"), str) and "/" in entry["key"]:
+        obj_id = entry["key"].rsplit("/", 1)[-1]
+    if obj_id is not None and str(obj_id) != "":
+        ids.append(str(obj_id))
+    else:
+        ids.append(f"__anon_{idx}")
+with open(sys.argv[2], "w", encoding="utf-8") as f:
+    json.dump(ids, f)
+PYEOF
+    then
       echo "ERROR: unexpected JSON payload from APISIX Admin API /apisix/admin/${endpoint}." >&2
       return 1
-    }
-    printf '%s' "${parsed}"
+    fi
     return 0
   elif [ "${code}" = "404" ]; then
     # Empty etcd prefixes return HTTP 404 until at least one key has been written.
-    : > "${TMP_DIR}/had_404"
-    printf '0'
+    : > "${TMP_DIR}/404_${endpoint}"
+    printf '[]' > "${TMP_DIR}/actual_${endpoint}.json"
     return 0
   elif [ "${code}" = "401" ] || [ "${code}" = "403" ]; then
     echo "ERROR: APISIX Admin API rejected credentials on /apisix/admin/${endpoint} (HTTP ${code})." >&2
@@ -227,47 +243,176 @@ else:
   fi
 }
 
-read_expected_counts() {
+read_expected_ids() {
+  local need_svc
   kubectl get apisixroutes.apisix.apache.org -n "${NAMESPACE}" -o json > "${TMP_DIR}/routes.json"
   kubectl get apisixtlses.apisix.apache.org -n "${NAMESPACE}" -o json > "${TMP_DIR}/tls.json"
-  python3 - "${TMP_DIR}/routes.json" "${TMP_DIR}/tls.json" <<'PYEOF'
+  need_svc=$(python3 - "${TMP_DIR}/routes.json" <<'PYEOF'
 import json, sys
 with open(sys.argv[1], encoding="utf-8") as f:
-    routes_doc = json.load(f)
-with open(sys.argv[2], encoding="utf-8") as f:
-    tls_doc = json.load(f)
-exp_routes = 0
-upstreams = set()
-for item in routes_doc.get("items") or []:
+    doc = json.load(f)
+for item in doc.get("items") or []:
     spec = item.get("spec") or {}
-    http_rules = spec.get("http") or []
-    stream_rules = spec.get("stream") or []
-    exp_routes += len(http_rules) + len(stream_rules)
-    for rule in http_rules:
+    for r in spec.get("http") or []:
+        for b in (r.get("backends") or []) + ([r["backend"]] if isinstance(r.get("backend"), dict) else []):
+            if isinstance(b, dict) and b.get("servicePort") is not None and not str(b["servicePort"]).isdigit():
+                print("1"); sys.exit(0)
+    for r in spec.get("stream") or []:
+        b = r.get("backend")
+        if isinstance(b, dict) and b.get("servicePort") is not None and not str(b["servicePort"]).isdigit():
+            print("1"); sys.exit(0)
+print("0")
+PYEOF
+)
+  if [ "${need_svc}" = "1" ]; then
+    kubectl get services -n "${NAMESPACE}" -o json > "${TMP_DIR}/services.json" 2>/dev/null || printf '{"items":[]}' > "${TMP_DIR}/services.json"
+  else
+    printf '{"items":[]}' > "${TMP_DIR}/services.json"
+  fi
+  python3 - "${NAMESPACE}" "${TMP_DIR}/routes.json" "${TMP_DIR}/tls.json" "${TMP_DIR}/services.json" "${TMP_DIR}/expected.json" <<'PYEOF'
+import json, sys, zlib
+
+default_ns, routes_path, tls_path, svc_path, out_path = sys.argv[1:6]
+
+def gen_id(raw: str) -> str:
+    """Match apisix-ingress-controller 1.8.0 pkg/id/idgen.go GenID (crc32 IEEE %x)."""
+    if not raw:
+        return ""
+    return format(zlib.crc32(raw.encode("utf-8")) & 0xFFFFFFFF, "x")
+
+def compose_upstream_name(ns: str, svc: str, subset: str, port: str, gran: str) -> str:
+    parts = [ns, svc]
+    if subset:
+        parts.append(subset)
+    parts.append(port)
+    if gran == "service":
+        parts.append("service")
+    return "_".join(parts)
+
+with open(routes_path, encoding="utf-8") as f:
+    routes_doc = json.load(f)
+with open(tls_path, encoding="utf-8") as f:
+    tls_doc = json.load(f)
+with open(svc_path, encoding="utf-8") as f:
+    raw_svc = f.read().strip()
+svc_doc = json.loads(raw_svc) if raw_svc else {"items": []}
+
+svc_ports = {}
+for svc in svc_doc.get("items") or []:
+    meta = svc.get("metadata") or {}
+    sns = meta.get("namespace") or default_ns
+    sname = meta.get("name") or ""
+    for p in (svc.get("spec") or {}).get("ports") or []:
+        if p.get("name") and p.get("port") is not None:
+            svc_ports[(sns, sname, p["name"])] = str(p["port"])
+
+def add_backend_upstream(upstreams: set, ns: str, b: dict) -> None:
+    if not isinstance(b, dict) or not b.get("serviceName"):
+        return
+    sp = b.get("servicePort")
+    if sp is None:
+        return
+    port_str = str(sp)
+    if not port_str.isdigit():
+        port_str = svc_ports.get((ns, b["serviceName"], port_str), port_str)
+    name = compose_upstream_name(
+        ns,
+        b["serviceName"],
+        b.get("subset") or "",
+        port_str,
+        b.get("resolveGranularity") or "",
+    )
+    upstreams.add(gen_id(name))
+
+exp_routes = set()
+exp_stream_routes = set()
+exp_upstreams = set()
+exp_ssls = set()
+
+for item in routes_doc.get("items") or []:
+    meta = item.get("metadata") or {}
+    ns = meta.get("namespace") or default_ns
+    cr_name = meta.get("name") or ""
+    spec = item.get("spec") or {}
+    for rule in spec.get("http") or []:
+        rule_name = rule.get("name") or ""
+        exp_routes.add(gen_id(f"{ns}_{cr_name}_{rule_name}"))
         for u in rule.get("upstreams") or []:
             if isinstance(u, dict) and u.get("name"):
-                upstreams.add(("name", u["name"]))
+                exp_upstreams.add(gen_id(f"{ns}_{u['name']}"))
         for b in rule.get("backends") or []:
-            if isinstance(b, dict) and b.get("serviceName"):
-                upstreams.add(("backend", b.get("serviceName"), b.get("servicePort")))
-        b = rule.get("backend")
-        if isinstance(b, dict) and b.get("serviceName"):
-            upstreams.add(("backend", b.get("serviceName"), b.get("servicePort")))
-exp_ssls = len(tls_doc.get("items") or [])
-print(f"{exp_routes} {len(upstreams)} {exp_ssls}")
+            add_backend_upstream(exp_upstreams, ns, b)
+        if isinstance(rule.get("backend"), dict):
+            add_backend_upstream(exp_upstreams, ns, rule["backend"])
+    for rule in spec.get("stream") or []:
+        rule_name = rule.get("name") or ""
+        exp_stream_routes.add(gen_id(f"{ns}_{cr_name}_{rule_name}_tcp"))
+        if isinstance(rule.get("backend"), dict):
+            add_backend_upstream(exp_upstreams, ns, rule["backend"])
+
+for item in tls_doc.get("items") or []:
+    meta = item.get("metadata") or {}
+    ns = meta.get("namespace") or default_ns
+    cr_name = meta.get("name") or ""
+    exp_ssls.add(gen_id(f"{ns}_{cr_name}"))
+
+with open(out_path, "w", encoding="utf-8") as f:
+    json.dump(
+        {
+            "routes": sorted(exp_routes),
+            "stream_routes": sorted(exp_stream_routes),
+            "upstreams": sorted(exp_upstreams),
+            "ssls": sorted(exp_ssls),
+        },
+        f,
+    )
 PYEOF
 }
 
-read_actual_counts() {
-  local r u s had_404=false
-  rm -f "${TMP_DIR}/had_404"
-  r=$(admin_get_count "routes") || return 1
-  u=$(admin_get_count "upstreams") || return 1
-  s=$(admin_get_count "ssls") || return 1
-  if [ -f "${TMP_DIR}/had_404" ]; then
-    had_404=true
-  fi
-  printf '%s %s %s %s' "${r}" "${u}" "${s}" "${had_404}"
+read_actual_state() {
+  local ep
+  for ep in routes stream_routes upstreams ssls; do
+    admin_get_ids "${ep}" || return 1
+  done
+  python3 - "${TMP_DIR}" <<'PYEOF'
+import json, os, sys
+
+tmp_dir = sys.argv[1]
+with open(os.path.join(tmp_dir, "expected.json"), encoding="utf-8") as f:
+    expected = json.load(f)
+
+total_missing = 0
+total_extra = 0
+had_404 = False
+stats = {}
+
+for ep in ("routes", "stream_routes", "upstreams", "ssls"):
+    with open(os.path.join(tmp_dir, f"actual_{ep}.json"), encoding="utf-8") as f:
+        act_list = json.load(f)
+    exp_set = set(expected[ep])
+    act_set = set(act_list)
+    missing = exp_set - act_set
+    # Count excess duplicates if any plus objects whose ID is not in expected CR set.
+    extra_count = len(act_set - exp_set) + max(0, len(act_list) - len(act_set))
+    matched = len(exp_set) - len(missing)
+    if os.path.exists(os.path.join(tmp_dir, f"404_{ep}")) and exp_set:
+        had_404 = True
+    total_missing += len(missing)
+    total_extra += extra_count
+    stats[ep] = (matched, len(exp_set), extra_count)
+
+print(
+    total_missing,
+    total_extra,
+    "true" if had_404 else "false",
+    stats["routes"][0], stats["routes"][1],
+    stats["stream_routes"][0], stats["stream_routes"][1],
+    stats["upstreams"][0], stats["upstreams"][1],
+    stats["ssls"][0], stats["ssls"][1],
+    stats["routes"][2], stats["stream_routes"][2],
+    stats["upstreams"][2], stats["ssls"][2],
+)
+PYEOF
 }
 
 touch_apisix_crs() {
@@ -282,35 +427,45 @@ touch_apisix_crs() {
   done
 }
 
-counts_converged() {
-  local act_r="$1" act_u="$2" act_s="$3" exp_r="$4" exp_u="$5" exp_s="$6"
-  [ "${act_r}" -ge "${exp_r}" ] && [ "${act_u}" -ge "${exp_u}" ] && [ "${act_s}" -ge "${exp_s}" ]
+warn_extra_objects() {
+  local total_extra="$1" extra_r="$2" extra_sr="$3" extra_u="$4" extra_s="$5"
+  if [ "${total_extra}" -gt 0 ]; then
+    echo "WARN: APISIX contains ${total_extra} extra object(s) not derived from CRs in ${NAMESPACE} (routes=${extra_r}, stream_routes=${extra_sr}, upstreams=${extra_u}, ssls=${extra_s})." >&2
+  fi
 }
 
 recover_divergence() {
-  local expected_line actual_line exp_r exp_u exp_s act_r act_u act_s round elapsed
+  local state_line total_missing total_extra
+  local matched_r exp_r matched_sr exp_sr matched_u exp_u matched_s exp_s
+  local extra_r extra_sr extra_u extra_s round elapsed
   resolve_admin_key
   start_pf
 
-  expected_line=$(read_expected_counts)
-  read -r exp_r exp_u exp_s <<<"${expected_line}"
-  actual_line=$(read_actual_counts)
-  read -r act_r act_u act_s LAST_HAD_404 <<<"${actual_line}"
-  if counts_converged "${act_r}" "${act_u}" "${act_s}" "${exp_r}" "${exp_u}" "${exp_s}"; then
-    echo "APISIX state in sync (${NAMESPACE}): routes=${act_r}/${exp_r}, upstreams=${act_u}/${exp_u}, ssls=${act_s}/${exp_s}."
+  read_expected_ids
+  state_line=$(read_actual_state)
+  read -r total_missing total_extra LAST_HAD_404 \
+    matched_r exp_r matched_sr exp_sr matched_u exp_u matched_s exp_s \
+    extra_r extra_sr extra_u extra_s <<<"${state_line}"
+  if [ "${total_missing}" -eq 0 ]; then
+    echo "APISIX state in sync (${NAMESPACE}): routes=${matched_r}/${exp_r}, stream_routes=${matched_sr}/${exp_sr}, upstreams=${matched_u}/${exp_u}, ssls=${matched_s}/${exp_s}."
+    warn_extra_objects "${total_extra}" "${extra_r}" "${extra_sr}" "${extra_u}" "${extra_s}"
     return 0
   fi
 
-  echo "APISIX state diverged (${NAMESPACE}): routes=${act_r}/${exp_r}, upstreams=${act_u}/${exp_u}, ssls=${act_s}/${exp_s}; triggering resync."
+  echo "APISIX state diverged (${NAMESPACE}): routes=${matched_r}/${exp_r}, stream_routes=${matched_sr}/${exp_sr}, upstreams=${matched_u}/${exp_u}, ssls=${matched_s}/${exp_s} (missing=${total_missing}); triggering resync."
+  warn_extra_objects "${total_extra}" "${extra_r}" "${extra_sr}" "${extra_u}" "${extra_s}"
   for ((round=1; round<=MAX_ROUNDS; round++)); do
     echo "APISIX divergence recovery round ${round}/${MAX_ROUNDS}: annotating CRs with narwhal.io/resync"
     touch_apisix_crs "${round}"
     elapsed=0
     while true; do
-      actual_line=$(read_actual_counts)
-      read -r act_r act_u act_s LAST_HAD_404 <<<"${actual_line}"
-      if counts_converged "${act_r}" "${act_u}" "${act_s}" "${exp_r}" "${exp_u}" "${exp_s}"; then
-        echo "APISIX divergence recovered (${NAMESPACE}): routes=${act_r}/${exp_r}, upstreams=${act_u}/${exp_u}, ssls=${act_s}/${exp_s}."
+      state_line=$(read_actual_state)
+      read -r total_missing total_extra LAST_HAD_404 \
+        matched_r exp_r matched_sr exp_sr matched_u exp_u matched_s exp_s \
+        extra_r extra_sr extra_u extra_s <<<"${state_line}"
+      if [ "${total_missing}" -eq 0 ]; then
+        echo "APISIX divergence recovered (${NAMESPACE}): routes=${matched_r}/${exp_r}, stream_routes=${matched_sr}/${exp_sr}, upstreams=${matched_u}/${exp_u}, ssls=${matched_s}/${exp_s}."
+        warn_extra_objects "${total_extra}" "${extra_r}" "${extra_sr}" "${extra_u}" "${extra_s}"
         return 0
       fi
       if [ "${elapsed}" -ge "${DIVERGENCE_WAIT_SECONDS}" ]; then
@@ -321,7 +476,8 @@ recover_divergence() {
     done
   done
 
-  echo "ERROR: APISIX state still diverged after ${MAX_ROUNDS} rounds (${NAMESPACE}): routes=${act_r}/${exp_r}, upstreams=${act_u}/${exp_u}, ssls=${act_s}/${exp_s}." >&2
+  echo "ERROR: APISIX state still diverged after ${MAX_ROUNDS} rounds (${NAMESPACE}): routes=${matched_r}/${exp_r}, stream_routes=${matched_sr}/${exp_sr}, upstreams=${matched_u}/${exp_u}, ssls=${matched_s}/${exp_s} (missing=${total_missing})." >&2
+  warn_extra_objects "${total_extra}" "${extra_r}" "${extra_sr}" "${extra_u}" "${extra_s}"
   if [ "${LAST_HAD_404}" = true ]; then
     echo "HINT: Admin API returned HTTP 404 on an empty prefix; see docs/common/apisix-etcd-recovery.md if the controller is stuck at startup." >&2
   fi

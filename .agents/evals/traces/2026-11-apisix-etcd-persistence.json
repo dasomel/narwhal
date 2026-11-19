@@ -53,7 +53,8 @@
         "test:npx --yes markdownlint-cli2 docs/common/apisix-etcd-recovery.md docs/common/lessons-log.md -> Summary: 0 issues in 0 files",
         "test:python3 .agents/evals/gate.py --trace .agents/evals/traces/2026-11-apisix-etcd-persistence.json --baseline .agents/evals/baseline.eval.json -> exit 0 (0 regressions)",
         "test:git diff --check -> exit 0",
-        "test:live local cluster (orchestrator, measured 2026-11-19): controller resync 5m/15m applied via helm; apisix-etcd moved to PVC apisix-etcd-data (Bound, nfs-csi) after a one-time strategy patch (SSA could not drop rollingUpdate); --divergence detected the empty etcd and recovered routes 26/26 upstreams 14/14 ssls 1/1; then apisix-etcd restart -> --divergence 'in sync' without resync -> apisix restart -> portal/gitea/keycloak/grafana/harbor/argocd all 30x (pre-identity-set fix; stream_routes/extra-WARN paths verified via stubbed behavioral tests)"
+        "test:live local cluster (orchestrator, measured 2026-11-19): controller resync 5m/15m applied via helm; apisix-etcd moved to PVC apisix-etcd-data (Bound, nfs-csi) after a one-time strategy patch (SSA could not drop rollingUpdate); --divergence detected the empty etcd and recovered routes 26/26 upstreams 14/14 ssls 1/1; then apisix-etcd restart -> --divergence 'in sync' without resync -> apisix restart -> portal/gitea/keycloak/grafana/harbor/argocd all 30x (pre-identity-set fix; stream_routes/extra-WARN paths verified via stubbed behavioral tests)",
+        "test:identity-based --divergence on the healthy live cluster -> 'in sync: routes=26/26, stream_routes=0/0, upstreams=14/14, ssls=1/1', no CR annotated (derived crc32 IDs matched every live object); /stream_routes answers HTTP 400 when stream proxy is disabled, so it is skipped when no CR declares stream rules (orchestrator, measured 2026-11-19)"
       ]
     },
     {

@@ -372,7 +372,16 @@ PYEOF
 read_actual_state() {
   local ep
   for ep in routes stream_routes upstreams ssls; do
-    admin_get_ids "${ep}" || return 1
+    # APISIX answers HTTP 400 on /stream_routes when stream proxy is disabled (seen live
+    # 2026-11-19). With no stream rules in the CRs there is nothing to compare, so skip it;
+    # if CRs do declare stream rules, a failing fetch stays an error.
+    if [ "${ep}" = "stream_routes" ] && python3 -c 'import json,sys; sys.exit(0 if json.load(open(sys.argv[1]))["stream_routes"] else 1)' "${TMP_DIR}/expected.json"; then
+      admin_get_ids "${ep}" || return 1
+    elif [ "${ep}" = "stream_routes" ]; then
+      printf '[]' > "${TMP_DIR}/actual_${ep}.json"
+    else
+      admin_get_ids "${ep}" || return 1
+    fi
   done
   python3 - "${TMP_DIR}" <<'PYEOF'
 import json, os, sys

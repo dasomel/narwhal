@@ -19,7 +19,7 @@
     {
       "id": "e1",
       "type": "scope_check",
-      "summary": "Scope: Read-only live check scripts/test/check-bootstrap-helm-drift.sh (HELM_CMD/KUBECTL_CMD env overrides, 0/1/2 exit codes), offline parser and behavioral unit tests in scripts/test/lib/check-bootstrap-helm-drift.py (multi-line, bracket index, escaped dot, --set-json, shell variable and secret skipping with zero leak), R376 static regression check with 14 mutations caught, docs and lessons-log updates, and eval trace. Excluded: No cluster/VM mutation, no push, no securityContext or policy relaxation."
+      "summary": "Scope: Read-only live check scripts/test/check-bootstrap-helm-drift.sh (multi-word HELM_CMD/KUBECTL_CMD env overrides via read -r -a, values-file-only releases reported as UNCHECKED, zero secret leak, 0/1/2 exit codes), offline parser and behavioral unit tests in scripts/test/lib/check-bootstrap-helm-drift.py (multi-line, bracket index, escaped dot, --set-json, comma splitting, strict type coercion, shell variable and secret skipping with zero leak), R376 static regression check with 16 mutations caught in isolated tempdir, docs and lessons-log updates, and eval trace. Excluded: No cluster/VM mutation, no push, no securityContext or policy relaxation."
     },
     {
       "id": "e2",
@@ -29,36 +29,36 @@
     {
       "id": "e3",
       "type": "bug_fix",
-      "summary": "Created scripts/test/check-bootstrap-helm-drift.sh and helper scripts/test/lib/check-bootstrap-helm-drift.py to extract literal --set/--set-string/--set-json flags from bootstrap scripts (04-addons, 05-nfs-quota-agent, 07-cnpg, 08-1-networking, 12-gitea), filter out shell variables ($) and secret values (password, passwd, token, adminKey; listing skipped keys by name only), and compare against 'helm get values <release> -n <ns> -o json', printing one line per drifted key and exiting 1 on drift, 0 on sync, 2 on execution failure; wired R376 in regression-check-kakao.sh, added operations/test-strategy docs, and recorded lessons-log row."
+      "summary": "Created scripts/test/check-bootstrap-helm-drift.sh and helper scripts/test/lib/check-bootstrap-helm-drift.py to extract literal --set/--set-string/--set-json flags from bootstrap scripts (04-addons, 05-nfs-quota-agent, 07-cnpg, 08-1-networking, 12-gitea), split comma-separated assignments (--set a=x,b=y) preserving backslash-escaped commas and braces lists, enforce Helm type coercion rules, report releases using only values files as UNCHECKED (never false IN_SYNC), filter out shell variables ($) and secret values (password, passwd, token, adminKey; listing skipped keys by name only), sanitize error paths against secret leakage, support multi-word command overrides via read -r -a, compare against 'helm get values <release> -n <ns> -o json' via stdin pipe without temporary files, and execute mutation verification in an isolated temporary directory rejecting 16 mutations; wired R376 in regression-check-kakao.sh, added operations/test-strategy docs, and recorded lessons-log row."
     },
     {
       "id": "e4",
       "type": "regression_verification",
       "status": "passed",
-      "scope": "Offline parser behavioral tests (multi-line backslash, bracket array indexing, escaped dots, --set-json, strict set-string, shell var skipping, secret skipping and zero credential leakage, sync no-op, value mismatch, missing key), static repo checks, 14 mutation verifications, shellcheck, bash -n, make validate, markdownlint-changed, markdownlint-cli2, and git diff --check; no live cluster or VM touched.",
-      "summary": "All offline parser unit tests, static validations, 14 mutation verifications, and shell/markdown/diff checks passed.",
+      "scope": "Offline parser behavioral tests (multi-line backslash, bracket array indexing, escaped dots, --set-json, strict set-string, comma-separated splitting, escaped commas, braces list syntax, type coercion matrix, values-file UNCHECKED reporting, shell var skipping, secret skipping and zero credential leakage, stub sudo/helm multi-word command execution, helm failure and invalid JSON secrecy), static repo checks, 16 mutation verifications in isolated temp directory, shellcheck, bash -n, make validate, markdownlint-changed, markdownlint-cli2, and git diff --check; no live cluster or VM touched.",
+      "summary": "All offline parser unit tests, static validations, 16 mutation verifications, and shell/markdown/diff checks passed.",
       "evidence": [
         "test:make validate -> exit 0 (Syntax OK + all GitOps YAML OK)",
-        "test:python3 scripts/test/lib/check-bootstrap-helm-drift.py --mutation-verify -> PASS: R376 bootstrap helm drift check + offline parser behavioural tests (14 mutations rejected)",
+        "test:python3 scripts/test/lib/check-bootstrap-helm-drift.py --mutation-verify -> PASS: R376 bootstrap helm drift check + offline parser behavioural tests (16 mutations rejected)",
         "test:shellcheck -S warning scripts/test/check-bootstrap-helm-drift.sh -> exit 0",
         "test:bash -n scripts/test/check-bootstrap-helm-drift.sh -> exit 0",
         "test:python3 scripts/ci/markdownlint-changed.py --base origin/main -> No markdownlint violations on added/modified active-documentation lines",
         "test:npx --yes markdownlint-cli2 docs/vagrant/operations.md docs/common/lessons-log.md docs/common/test-strategy.md docs/IMPLEMENTATION-STATUS.md -> Summary: 0 issues in 4 files",
         "test:git diff --check -> exit 0",
         "test:python3 .agents/evals/gate.py --trace .agents/evals/traces/2026-11-bootstrap-helm-drift.json --baseline .agents/evals/baseline.eval.json -> exit 0 (0 regressions)",
-        "test:scripts/test/check-bootstrap-helm-drift.sh on the live local cluster (orchestrator, measured 2026-11-19) -> rc 1: DRIFT for cnpg (4 resources keys) and gitea (6 resources keys) whose --set flags from PR #715 had never been applied; after helm upgrade --reuse-values with those flags -> rc 0 'all 6 bootstrap Helm release(s) are in sync'; secret/variable keys listed by name only"
+        "test:scripts/test/check-bootstrap-helm-drift.sh on the live local cluster (orchestrator, measured 2026-11-19) -> rc 1: DRIFT for cnpg (4 resources keys) and gitea (6 resources keys) whose --set flags from PR #715 had never been applied; after helm upgrade --reuse-values with those flags -> rc 0 '5 bootstrap Helm release(s) in sync, 1 unchecked (values file not parsed)'; secret/variable keys listed by name only"
       ]
     },
     {
       "id": "e5",
       "type": "completion_claim",
-      "summary": "Static repo checks, offline parser behavioural tests, 14 mutation verifications, make validate, shellcheck, bash -n, markdownlint, and gate eval trace pass; live cluster execution on guest (sudo helm --kubeconfig /etc/kubernetes/admin.conf) remains for the orchestrator via the runbook."
+      "summary": "Static repo checks, offline parser behavioural tests, 16 mutation verifications in isolated tempdir, make validate, shellcheck, bash -n, markdownlint, and gate eval trace pass; live cluster execution on guest (sudo bash /home/vagrant/scripts/test/check-bootstrap-helm-drift.sh) remains for the orchestrator via the runbook."
     },
     {
       "id": "e6",
       "type": "task_outcome",
       "state": "A",
-      "summary": "Lane 728-2 (narwhal#728) completed: live bootstrap Helm drift check scripts/test/check-bootstrap-helm-drift.sh, parser helper scripts/test/lib/check-bootstrap-helm-drift.py, R376 regression check with 14 mutations caught, docs and lessons-log updates, and eval trace."
+      "summary": "Lane 728-2 (narwhal#728) completed: live bootstrap Helm drift check scripts/test/check-bootstrap-helm-drift.sh, parser helper scripts/test/lib/check-bootstrap-helm-drift.py, R376 regression check with 16 mutations caught, docs and lessons-log updates, and eval trace."
     }
   ]
 }

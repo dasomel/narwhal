@@ -6,15 +6,23 @@ Invariants:
      Helm releases not managed by ArgoCD Applications (bootstrap-only releases).
   2. The parser extracts literal --set, --set-string, and --set-json flags from
      multi-line helm commands and array assignments (e.g. HELM_ARGS).
-  3. Shell variables ($) and sensitive credentials (password, passwd, token, adminKey)
+  3. Releases whose values come solely from -f <file> or heredocs are reported as
+     UNCHECKED (values file not parsed) and counted separately; they never claim IN_SYNC.
+     Releases with both values files and --set flags check the --set flags and add a note.
+  4. Comma-separated assignments (--set a=x,b=y) are split into individual key-value pairs,
+     preserving backslash-escaped commas (\\,) and list braces ({a,b}) as single values.
+  5. Values are compared type-sensitively against 'helm get values <release> -n <ns> -o json':
+     --set values undergo Helm-style coercion (true/false, null, integers, floats, braces lists);
+     --set-string strictly requires string type.
+  6. Shell variables ($) and sensitive credentials (password, passwd, token, adminKey)
      are skipped and listed by name only; secret values are never printed or compared.
-  4. Keys with bracket indexing (e.g. 'tolerations[0].key') and escaped dots
-     (e.g. 'backup\\.velero\\.io/backup-volumes-excludes') are correctly tokenized.
-  5. Values are compared type-sensitively against 'helm get values <release> -n <ns> -o json'.
-  6. Drift is printed one line per drifted key (release, key, script value, live value),
-     exiting 1 on drift, 0 when in sync, and 2 when prerequisites or commands fail.
-  7. HELM_CMD and KUBECTL_CMD environment variables allow overriding commands for host
-     and in-guest execution.
+     On helm failure, invalid JSON, or drift, secret values are never leaked in stdout/stderr,
+     and no temporary files are left in TMPDIR.
+  7. Multi-word command overrides via HELM_CMD and KUBECTL_CMD (e.g.
+     HELM_CMD="sudo helm --kubeconfig /etc/kubernetes/admin.conf") are supported via
+     read -r -a array splitting (arguments with spaces are not supported).
+  8. --mutation-verify executes mutations in an isolated temporary directory, never
+     mutating tracked repository files.
 """
 
 from __future__ import annotations
@@ -25,7 +33,9 @@ import os
 import re
 import shlex
 import stat
+import subprocess
 import sys
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -165,46 +175,132 @@ def lookup_path(data: Any, tokens: list[str | int]) -> Any:
     return cur
 
 
+def split_helm_set_args(arg: str) -> list[str]:
+    """Split comma-separated Helm --set assignments.
+
+    Backslash-escaped commas (\\,) and braces ({a,b}) list syntax stay one value.
+    """
+    items: list[str] = []
+    curr: list[str] = []
+    brace_depth = 0
+    i = 0
+    n = len(arg)
+    while i < n:
+        c = arg[i]
+        if c == "\\" and i + 1 < n and arg[i + 1] == ",":
+            # Backslash-escaped comma stays in the value
+            curr.append("\\,")
+            i += 2
+            continue
+        elif c == "{":
+            brace_depth += 1
+            curr.append(c)
+            i += 1
+        elif c == "}":
+            if brace_depth > 0:
+                brace_depth -= 1
+            curr.append(c)
+            i += 1
+        elif c == "," and brace_depth == 0:
+            items.append("".join(curr))
+            curr = []
+            i += 1
+        else:
+            curr.append(c)
+            i += 1
+    if curr:
+        items.append("".join(curr))
+    return items
+
+
+def coerce_helm_set_value(val: str) -> Any:
+    """Coerce a --set string value according to Helm rules."""
+    vl = val.lower()
+    if vl == "true":
+        return True
+    if vl == "false":
+        return False
+    if vl == "null":
+        return None
+    # Integer check
+    try:
+        return int(val)
+    except ValueError:
+        pass
+    # Float check
+    try:
+        f = float(val)
+        if not (f != f or f == float("inf") or f == float("-inf")):
+            return f
+    except ValueError:
+        pass
+    return val
+
+
 def compare_values(kind: str, exp_str: str, act_val: Any) -> bool:
-    """Compare expected script string against live json value according to flag kind."""
+    """Compare expected script string against live json value according to flag kind.
+
+    Type rules:
+      - --set: values are compared after Helm-style coercion:
+               booleans (true/false), null, integers, floats, braces list syntax ({a,b}).
+      - --set-string: always compared as string (strict string type).
+      - --set-json: parsed as JSON and compared structurally.
+    """
     if act_val is NOT_FOUND:
         return False
-    if act_val is None and exp_str == "":
-        return True
     if kind == "--set-json":
         try:
             return json.loads(exp_str) == act_val
         except Exception:
             return False
     if kind == "--set-string":
-        return isinstance(act_val, str) and act_val == exp_str
+        # Strict string comparison: live value must be a string and match
+        exp_unescaped = exp_str.replace(r"\,", ",")
+        return isinstance(act_val, str) and (act_val == exp_str or act_val == exp_unescaped)
+
     # kind == "--set"
-    if isinstance(act_val, bool):
-        if exp_str.lower() in ("true", "false"):
-            return act_val == (exp_str.lower() == "true")
-        return False
-    if isinstance(act_val, int):
-        try:
-            return act_val == int(exp_str)
-        except ValueError:
-            return False
-    if isinstance(act_val, float):
-        try:
-            return act_val == float(exp_str)
-        except ValueError:
-            return False
-    if isinstance(act_val, str):
-        return act_val == exp_str
-    return str(act_val) == exp_str
+    # Empty string in Helm --set can represent null or empty string
+    if exp_str == "" and (act_val is None or act_val == ""):
+        return True
+
+    # Check for braces list syntax, e.g. {a,b}
+    if exp_str.startswith("{") and exp_str.endswith("}") and isinstance(act_val, list):
+        inner = exp_str[1:-1].strip()
+        items = split_helm_set_args(inner) if inner else []
+        exp_list = [coerce_helm_set_value(x.strip().replace(r"\,", ",")) for x in items]
+        return exp_list == act_val
+
+    coerced = coerce_helm_set_value(exp_str)
+    # If coerced is string, also check unescaped comma
+    if isinstance(coerced, str) and r"\," in coerced:
+        if act_val == coerced.replace(r"\,", ","):
+            return True
+
+    # Strict type matching
+    if type(coerced) is type(act_val):
+        return coerced == act_val
+
+    # Float vs Int numeric equivalence (excluding bool)
+    if (
+        isinstance(coerced, (int, float))
+        and isinstance(act_val, (int, float))
+        and not isinstance(coerced, bool)
+        and not isinstance(act_val, bool)
+    ):
+        return coerced == act_val
+
+    return False
 
 
-def extract_set_flags(script_text: str, release: str) -> list[tuple[str, str, str]]:
-    """Extract (flag_kind, key, value) tuples for release from script_text."""
-    # Match helm (or retry helm) upgrade [--install] <release>
-    pattern = rf"(?:retry\s+)?helm\s+upgrade(?:\s+--install)?\s+{re.escape(release)}\b"
+def extract_release_flags_and_values(
+    script_text: str, release: str
+) -> tuple[list[tuple[str, str, str]], bool]:
+    """Extract (flag_kind, key, value) tuples and whether a values file is used for release."""
+    # Match helm upgrade <release> ensuring release name boundaries
+    pattern = rf"(?:retry\s+)?helm\s+upgrade(?:\s+--install)?\s+{re.escape(release)}(?=\s|\\|$)"
     m = re.search(pattern, script_text)
     if not m:
-        return []
+        return [], False
     start_pos = m.start()
 
     # Collect lines up to end of statement
@@ -230,11 +326,19 @@ def extract_set_flags(script_text: str, release: str) -> list[tuple[str, str, st
     full_text = cmd_text + "\n" + extra_text
 
     tokens = shlex.split(full_text, comments=True)
+    has_values_file = False
     raw_flags: list[tuple[str, str]] = []
     i = 0
     while i < len(tokens):
         t = tokens[i]
-        if t in ("--set", "--set-string", "--set-json"):
+        if t in ("-f", "--values"):
+            has_values_file = True
+            if i + 1 < len(tokens):
+                i += 2
+                continue
+        elif t.startswith(("-f=", "--values=")):
+            has_values_file = True
+        elif t in ("--set", "--set-string", "--set-json"):
             if i + 1 < len(tokens):
                 raw_flags.append((t, tokens[i + 1]))
                 i += 2
@@ -246,23 +350,54 @@ def extract_set_flags(script_text: str, release: str) -> list[tuple[str, str, st
 
     extracted: list[tuple[str, str, str]] = []
     for kind, arg in raw_flags:
-        if "=" in arg:
-            k, v = arg.split("=", 1)
-        else:
-            k, v = arg, ""
-        extracted.append((kind, k, v.rstrip(";")))
-    return extracted
+        for sub in split_helm_set_args(arg):
+            if "=" in sub:
+                k, v = sub.split("=", 1)
+            else:
+                k, v = sub, ""
+            extracted.append((kind, k, v.rstrip(";")))
+
+    return extracted, has_values_file
+
+
+def extract_set_flags(script_text: str, release: str) -> list[tuple[str, str, str]]:
+    """Extract (flag_kind, key, value) tuples for release from script_text."""
+    flags, _ = extract_release_flags_and_values(script_text, release)
+    return flags
+
+
+class DriftCheckResult(tuple):
+    """Result tuple supporting (drifted, skipped) unpacking while carrying metadata."""
+
+    drifted: list[dict[str, Any]]
+    skipped: list[str]
+    has_values_file: bool
+    flag_count: int
+
+    def __new__(
+        cls,
+        drifted: list[dict[str, Any]],
+        skipped: list[str],
+        has_values_file: bool = False,
+        flag_count: int = 0,
+    ) -> DriftCheckResult:
+        inst = super().__new__(cls, (drifted, skipped))
+        inst.drifted = drifted
+        inst.skipped = skipped
+        inst.has_values_file = has_values_file
+        inst.flag_count = flag_count
+        return inst
 
 
 def check_release_drift(
     script_text: str, release: str, live_values: dict[str, Any]
-) -> tuple[list[dict[str, Any]], list[str]]:
+) -> DriftCheckResult:
     """Compare extracted literal flags against live_values.
 
     Returns:
-      (drifted_items, skipped_keys)
+      DriftCheckResult(drifted_items, skipped_keys, has_values_file, flag_count)
     """
-    flags = extract_set_flags(script_text, release)
+    flags, has_values_file = extract_release_flags_and_values(script_text, release)
     drifted: list[dict[str, Any]] = []
     skipped: list[str] = []
 
@@ -289,7 +424,12 @@ def check_release_drift(
                 "live_value": live_repr,
             })
 
-    return drifted, skipped
+    return DriftCheckResult(
+        drifted=drifted,
+        skipped=skipped,
+        has_values_file=has_values_file,
+        flag_count=len(flags),
+    )
 
 
 def run_unit_tests() -> None:
@@ -419,14 +559,13 @@ helm upgrade --install ic-app ./chart \
     drift_healthy, _ = check_release_drift(test_script, "ic-app", healthy_live)
     assert len(drift_healthy) == 0, f"expected 0 drift, got {drift_healthy}"
 
-    # Stale live values (e.g. revision 1 without #715 hardening and with 1h/6h intervals)
+    # Stale live values
     stale_live = {
         "image": {"repository": "apache/apisix-ingress-controller", "tag": "1.8.0"},
         "config": {
             "apisixResourceSyncInterval": "1h",
             "kubernetes": {"resyncInterval": "6h"},
         },
-        # securityContext is missing entirely!
     }
     drift_stale, _ = check_release_drift(test_script, "ic-app", stale_live)
     drifted_keys = {d["key"]: (d["script_value"], d["live_value"]) for d in drift_stale}
@@ -457,16 +596,252 @@ helm upgrade --install nfs-quota-agent "${CHART_DIR}" "${HELM_ARGS[@]}"
     assert arr_flags[0] == ("--set", "image.repository", "ghcr.io/dasomel/nfs-quota-agent")
     assert arr_flags[4] == ("--set-string", "nodeSelector.nfs-server", "true")
 
-    # Test 8: Empty script command (e.g. apisix with only -f values.yaml)
+    # Test 8: Empty script command (values file only e.g. apisix) -> UNCHECKED, not IN_SYNC
     empty_script = r"""
 helm upgrade --install apisix ./chart \
   --namespace platform-system \
   -f /tmp/apisix-values.yaml
 """
-    emp_flags = extract_set_flags(empty_script, "apisix")
-    assert len(emp_flags) == 0
-    drift_emp, _ = check_release_drift(empty_script, "apisix", {})
-    assert len(drift_emp) == 0
+    res_emp = check_release_drift(empty_script, "apisix", {})
+    assert len(res_emp.drifted) == 0
+    assert res_emp.has_values_file is True
+    assert res_emp.flag_count == 0
+
+    # Test 8b: Script with BOTH values file and literal flags
+    both_script = r"""
+helm upgrade --install both-app ./chart \
+  -f /tmp/values.yaml \
+  --set key1=val1 \
+  --set key2=val2
+"""
+    res_both = check_release_drift(both_script, "both-app", {"key1": "val1", "key2": "val2"})
+    assert len(res_both.drifted) == 0
+    assert res_both.has_values_file is True
+    assert res_both.flag_count == 2
+
+    # Test 9: Comma-separated assignments, escaped commas, and braces list syntax
+    comma_script = r"""
+helm upgrade --install comma-app ./chart \
+  --set a=x,b=y \
+  --set "tolerations[0].key=foo\,bar,tolerations[0].operator=Exists" \
+  --set "items={a,b},count=2" \
+  --set-string 'tag=v1\,beta,env=prod'
+"""
+    c_flags = extract_set_flags(comma_script, "comma-app")
+    c_dict = {f[1]: (f[0], f[2]) for f in c_flags}
+    assert "a" in c_dict and c_dict["a"] == ("--set", "x")
+    assert "b" in c_dict and c_dict["b"] == ("--set", "y")
+    assert "tolerations[0].key" in c_dict and c_dict["tolerations[0].key"] == ("--set", r"foo\,bar")
+    assert "tolerations[0].operator" in c_dict and c_dict["tolerations[0].operator"] == ("--set", "Exists")
+    assert "items" in c_dict and c_dict["items"] == ("--set", "{a,b}")
+    assert "count" in c_dict and c_dict["count"] == ("--set", "2")
+    assert "tag" in c_dict and c_dict["tag"] == ("--set-string", r"v1\,beta")
+    assert "env" in c_dict and c_dict["env"] == ("--set-string", "prod")
+
+    live_comma = {
+        "a": "x",
+        "b": "y",
+        "tolerations": [{"key": "foo,bar", "operator": "Exists"}],
+        "items": ["a", "b"],
+        "count": 2,
+        "tag": "v1,beta",
+        "env": "prod",
+    }
+    c_drift, _ = check_release_drift(comma_script, "comma-app", live_comma)
+    assert len(c_drift) == 0, f"comma app must be in sync, got: {c_drift}"
+
+    # Drift test: b drifts
+    live_comma_drift = dict(live_comma, b="drifted")
+    c_drift_b, _ = check_release_drift(comma_script, "comma-app", live_comma_drift)
+    assert len(c_drift_b) == 1 and c_drift_b[0]["key"] == "b"
+
+    # Test 10: Type coercion rules (--set vs --set-string: 1 vs "1", true vs "true", null)
+    type_script = r"""
+helm upgrade --install type-app ./chart \
+  --set int_val=1 \
+  --set-string str_int_val=1 \
+  --set bool_val=true \
+  --set-string str_bool_val=true \
+  --set null_val=null
+"""
+    live_type_match = {
+        "int_val": 1,
+        "str_int_val": "1",
+        "bool_val": True,
+        "str_bool_val": "true",
+        "null_val": None,
+    }
+    t_drift, _ = check_release_drift(type_script, "type-app", live_type_match)
+    assert len(t_drift) == 0, f"type match failed: {t_drift}"
+
+    # 1 vs "1" boundary: int_val=1 drifts against live string "1"
+    live_1_str = dict(live_type_match, int_val="1")
+    t_drift_1, _ = check_release_drift(type_script, "type-app", live_1_str)
+    assert any(d["key"] == "int_val" for d in t_drift_1), "int_val=1 must drift against live string '1'"
+
+    # str_int_val=1 drifts against live integer 1
+    live_str_int = dict(live_type_match, str_int_val=1)
+    t_drift_si, _ = check_release_drift(type_script, "type-app", live_str_int)
+    assert any(d["key"] == "str_int_val" for d in t_drift_si), "set-string must drift against live int 1"
+
+    # true vs "true" boundary: bool_val=true drifts against live string "true"
+    live_bool_str = dict(live_type_match, bool_val="true")
+    t_drift_bs, _ = check_release_drift(type_script, "type-app", live_bool_str)
+    assert any(d["key"] == "bool_val" for d in t_drift_bs), "bool_val=true must drift against live string 'true'"
+
+    # str_bool_val=true drifts against live boolean True
+    live_str_bool = dict(live_type_match, str_bool_val=True)
+    t_drift_sb, _ = check_release_drift(type_script, "type-app", live_str_bool)
+    assert any(d["key"] == "str_bool_val" for d in t_drift_sb), "set-string must drift against live bool True"
+
+    # null_val=null drifts against live string "null"
+    live_null_str = dict(live_type_match, null_val="null")
+    t_drift_ns, _ = check_release_drift(type_script, "type-app", live_null_str)
+    assert any(d["key"] == "null_val" for d in t_drift_ns), "null_val=null must drift against live string 'null'"
+
+
+def run_cli_tests(root: Path) -> None:
+    """Run CLI behavioural tests for multi-word commands and secrecy invariants."""
+    check_script = root / CHECK_SCRIPT_REL
+    if not check_script.is_file():
+        return
+
+    with tempfile.TemporaryDirectory() as tmp_dir_str:
+        tmp_path = Path(tmp_dir_str)
+        stub_bin = tmp_path / "bin"
+        stub_bin.mkdir()
+
+        # Stub sudo: executes command
+        sudo_script = stub_bin / "sudo"
+        sudo_script.write_text("#!/usr/bin/env bash\nexec \"$@\"\n", encoding="utf-8")
+        sudo_script.chmod(0o755)
+
+        # Stub kubectl: returns 0 on 'get nodes'
+        kubectl_script = stub_bin / "kubectl"
+        kubectl_script.write_text(
+            "#!/usr/bin/env bash\n"
+            "if [ \"$1\" = \"get\" ] && [ \"$2\" = \"nodes\" ]; then\n"
+            "  exit 0\n"
+            "fi\n"
+            "exit 0\n",
+            encoding="utf-8",
+        )
+        kubectl_script.chmod(0o755)
+
+        # Base environment
+        base_env = dict(os.environ)
+        base_env["PATH"] = f"{stub_bin}:{base_env.get('PATH', '')}"
+
+        # 1. Multi-word command test: sudo helm --kubeconfig /etc/kubernetes/admin.conf
+        helm_script = stub_bin / "helm"
+        helm_script.write_text(
+            "#!/usr/bin/env bash\n"
+            "for (( i=1; i<=$#; i++ )); do\n"
+            "  if [ \"${!i}\" = \"get\" ]; then\n"
+            "    echo '{\"controller\":{\"replicas\":1},\"feature\":{\"enableFSGroupPolicy\":false}}'\n"
+            "    exit 0\n"
+            "  fi\n"
+            "done\n"
+            "exit 1\n",
+            encoding="utf-8",
+        )
+        helm_script.chmod(0o755)
+
+        env1 = dict(base_env)
+        env1["HELM_CMD"] = "sudo helm --kubeconfig /etc/kubernetes/admin.conf"
+        env1["KUBECTL_CMD"] = "sudo kubectl --kubeconfig /etc/kubernetes/admin.conf"
+        res1 = subprocess.run(
+            [str(check_script), "--release=csi-driver-nfs"],
+            env=env1,
+            capture_output=True,
+            text=True,
+        )
+        assert res1.returncode == 0, f"multi-word sudo helm failed (rc={res1.returncode}): {res1.stderr}\n{res1.stdout}"
+        assert "IN_SYNC: release=csi-driver-nfs" in res1.stdout
+        assert "sudo kubectl --kubeconfig /etc/kubernetes/admin.conf" in res1.stdout
+
+        # 1b. Unchecked release test: apisix (uses values file only)
+        res_unchecked = subprocess.run(
+            [str(check_script), "--release=apisix"],
+            env=env1,
+            capture_output=True,
+            text=True,
+        )
+        assert res_unchecked.returncode == 0, f"apisix check failed: {res_unchecked.stderr}\n{res_unchecked.stdout}"
+        assert "UNCHECKED: release=apisix (values file not parsed)" in res_unchecked.stdout
+        assert "IN_SYNC: release=apisix" not in res_unchecked.stdout
+        assert "1 unchecked (values file not parsed)" in res_unchecked.stdout
+
+        # Secrecy tests
+        SECRET_TOKEN = "SUPER_SECRET_TOKEN_XYZ_98765"
+
+        # 2a. Drift on another key + secret in live JSON
+        iso_tmp_a = tmp_path / "tmp_a"
+        iso_tmp_a.mkdir()
+        env_a = dict(base_env)
+        env_a["TMPDIR"] = str(iso_tmp_a)
+        helm_script.write_text(
+            f"#!/usr/bin/env bash\n"
+            f"echo '{{\"controller\":{{\"replicas\":99}},\"feature\":{{\"enableFSGroupPolicy\":false}},\"adminPassword\":\"{SECRET_TOKEN}\"}}'\n"
+            f"exit 0\n",
+            encoding="utf-8",
+        )
+        res_a = subprocess.run(
+            [str(check_script), "--release=csi-driver-nfs"],
+            env=env_a,
+            capture_output=True,
+            text=True,
+        )
+        assert res_a.returncode == 1, f"expected drift rc=1, got {res_a.returncode}"
+        combined_a = res_a.stdout + res_a.stderr
+        assert SECRET_TOKEN not in combined_a, f"secret leaked in drift run: {combined_a}"
+        assert "DRIFT: release=csi-driver-nfs key=controller.replicas" in combined_a
+        assert os.listdir(iso_tmp_a) == [], f"TMPDIR not empty after drift test: {os.listdir(iso_tmp_a)}"
+
+        # 2b. Helm fails + secret in output
+        iso_tmp_b = tmp_path / "tmp_b"
+        iso_tmp_b.mkdir()
+        env_b = dict(base_env)
+        env_b["TMPDIR"] = str(iso_tmp_b)
+        helm_script.write_text(
+            f"#!/usr/bin/env bash\n"
+            f"echo 'Error: connection refused secret={SECRET_TOKEN}' >&2\n"
+            f"echo 'stdout secret={SECRET_TOKEN}'\n"
+            f"exit 1\n",
+            encoding="utf-8",
+        )
+        res_b = subprocess.run(
+            [str(check_script), "--release=csi-driver-nfs"],
+            env=env_b,
+            capture_output=True,
+            text=True,
+        )
+        assert res_b.returncode == 2, f"expected failure rc=2, got {res_b.returncode}"
+        combined_b = res_b.stdout + res_b.stderr
+        assert SECRET_TOKEN not in combined_b, f"secret leaked on helm failure: {combined_b}"
+        assert os.listdir(iso_tmp_b) == [], f"TMPDIR not empty after helm failure: {os.listdir(iso_tmp_b)}"
+
+        # 2c. Invalid JSON from helm + secret in output
+        iso_tmp_c = tmp_path / "tmp_c"
+        iso_tmp_c.mkdir()
+        env_c = dict(base_env)
+        env_c["TMPDIR"] = str(iso_tmp_c)
+        helm_script.write_text(
+            f"#!/usr/bin/env bash\n"
+            f"echo '{{ invalid JSON text secret={SECRET_TOKEN}'\n"
+            f"exit 0\n",
+            encoding="utf-8",
+        )
+        res_c = subprocess.run(
+            [str(check_script), "--release=csi-driver-nfs"],
+            env=env_c,
+            capture_output=True,
+            text=True,
+        )
+        assert res_c.returncode == 2, f"expected failure rc=2, got {res_c.returncode}"
+        combined_c = res_c.stdout + res_c.stderr
+        assert SECRET_TOKEN not in combined_c, f"secret leaked on invalid JSON: {combined_c}"
+        assert os.listdir(iso_tmp_c) == [], f"TMPDIR not empty after invalid JSON: {os.listdir(iso_tmp_c)}"
 
 
 def verify_repository(root: Path) -> None:
@@ -480,12 +855,15 @@ def verify_repository(root: Path) -> None:
     assert "set -euo pipefail" in script_text, f"{CHECK_SCRIPT_REL} must retain set -euo pipefail"
     assert "${HELM_CMD:-" in script_text, f"{CHECK_SCRIPT_REL} must support HELM_CMD override"
     assert "${KUBECTL_CMD:-" in script_text, f"{CHECK_SCRIPT_REL} must support KUBECTL_CMD override"
+    assert "read -r -a HELM_BIN" in script_text, f"{CHECK_SCRIPT_REL} must split HELM_CMD into argv array"
+    assert "read -r -a KUBECTL_BIN" in script_text, f"{CHECK_SCRIPT_REL} must split KUBECTL_CMD into argv array"
     assert re.search(r"FAIL: detected drift.*?exit 1", script_text, re.DOTALL), (
         f"{CHECK_SCRIPT_REL} must exit 1 on drift"
     )
     assert re.search(r"cannot connect[^\n]*\n\s*exit 2", script_text), (
         f"{CHECK_SCRIPT_REL} must exit 2 on cluster unreachable"
     )
+    assert "UNCHECKED" in script_text, f"{CHECK_SCRIPT_REL} must track UNCHECKED releases in summary"
     assert "exit 0" in script_text, f"{CHECK_SCRIPT_REL} must exit 0 when in sync"
 
     reg_path = root / REGRESSION_REL
@@ -514,104 +892,116 @@ def verify_repository(root: Path) -> None:
         assert sp.is_file(), f"missing bootstrap script: {item['script']}"
         st = sp.read_text(encoding="utf-8")
         rel = item["release"]
-        flags = extract_set_flags(st, rel)
+        flags, has_vf = extract_release_flags_and_values(st, rel)
         if rel == "apisix":
             assert len(flags) == 0, "apisix has no --set flags"
+            assert has_vf is True, "apisix must use -f values file"
         else:
             assert len(flags) > 0, f"expected flags for {rel} in {item['script']}, got 0"
 
 
 def mutation_verify(root: Path) -> int:
-    """Run mutation tests to verify that every invariant actively rejects mutations."""
-    mutations: list[tuple[str, str, str]] = [
-        # 1. Break --set-string handling
-        ("check-bootstrap-helm-drift.py", 'if kind == "--set-string":', 'if kind == "--invalid-string":'),
-        # 2. Break --set-json handling
-        ("check-bootstrap-helm-drift.py", 'if kind == "--set-json":', 'if kind == "--invalid-json":'),
-        # 3. Disable shell variable skipping
-        ("check-bootstrap-helm-drift.py", 'return "$" in val', 'return False'),
-        # 4. Disable secret key skipping
-        ("check-bootstrap-helm-drift.py", '"password", "passwd"', '"disabled_pwd"'),
-        # 5. Disable bracket indexing in parse_helm_key
-        ("check-bootstrap-helm-drift.py", 'elif c == "[":', 'elif c == "{":'),
-        # 6. Disable escaped dot unescaping in parse_helm_key
-        ("check-bootstrap-helm-drift.py", r'if c == "\\":', 'if c == "§":'),
-        # 7. Check script: drop HELM_CMD override
-        (CHECK_SCRIPT_REL, 'HELM_CMD="${HELM_CMD:-helm}"', 'HELM_CMD="helm"'),
-        # 8. Check script: drop KUBECTL_CMD override
-        (CHECK_SCRIPT_REL, 'KUBECTL_CMD="${KUBECTL_CMD:-kubectl}"', 'KUBECTL_CMD="kubectl"'),
-        # 9. Check script: drop exit 1 on drift
-        (CHECK_SCRIPT_REL, "  echo \"FAIL: detected drift across ${DRIFT_COUNT} bootstrap Helm release(s).\"\n  exit 1", "  echo \"FAIL: detected drift across ${DRIFT_COUNT} bootstrap Helm release(s).\"\n  exit 0"),
-        # 10. Check script: drop exit 2 on cannot run
-        (CHECK_SCRIPT_REL, "  echo \"ERROR: cannot connect to Kubernetes cluster using '${KUBECTL_CMD}'\" >&2\n  exit 2", "  echo \"ERROR: cannot connect to Kubernetes cluster using '${KUBECTL_CMD}'\" >&2\n  exit 0"),
-        # 11. Regression wiring: drop R376
-        (REGRESSION_REL, "check R376", "check R9999"),
-        # 12. Docs: drop check-bootstrap-helm-drift.sh from operations doc
-        (DOC_OPS_REL, "check-bootstrap-helm-drift.sh", "other-check-script.sh"),
-        # 13. Lessons log: drop #728
-        (DOC_LESSONS_REL, "#728", "#99999"),
-        # 14. Value comparison: break boolean string comparison
-        ("check-bootstrap-helm-drift.py", 'exp_str.lower() in ("true", "false")', 'exp_str.lower() in ()'),
-    ]
+    """Run mutation tests in an isolated temporary directory without touching tracked files."""
+    import shutil
 
-    caught = 0
-    # Save original sources
-    py_path = Path(__file__).resolve()
-    py_orig = py_path.read_text(encoding="utf-8")
-    check_orig = (root / CHECK_SCRIPT_REL).read_text(encoding="utf-8")
-    reg_orig = (root / REGRESSION_REL).read_text(encoding="utf-8")
-    ops_orig = (root / DOC_OPS_REL).read_text(encoding="utf-8")
-    lessons_orig = (root / DOC_LESSONS_REL).read_text(encoding="utf-8")
+    with tempfile.TemporaryDirectory() as tmp_dir_str:
+        tmp_root = Path(tmp_dir_str)
 
-    source_map = {
-        "check-bootstrap-helm-drift.py": (py_path, py_orig),
-        CHECK_SCRIPT_REL: (root / CHECK_SCRIPT_REL, check_orig),
-        REGRESSION_REL: (root / REGRESSION_REL, reg_orig),
-        DOC_OPS_REL: (root / DOC_OPS_REL, ops_orig),
-        DOC_LESSONS_REL: (root / DOC_LESSONS_REL, lessons_orig),
-    }
+        # Files needed for verification
+        files_to_copy = [
+            CHECK_SCRIPT_REL,
+            REGRESSION_REL,
+            DOC_OPS_REL,
+            DOC_LESSONS_REL,
+            "scripts/test/lib/check-bootstrap-helm-drift.py",
+        ]
+        for item in BOOTSTRAP_RELEASES:
+            files_to_copy.append(item["script"])
 
-    try:
-        for file_key, old_frag, new_frag in mutations:
-            target_path, original_text = source_map[file_key]
-            assert old_frag in original_text, f"mutation fragment missing in {file_key}: {old_frag!r}"
+        # Copy each file to tmp_root preserving relative structure
+        for rel_path in files_to_copy:
+            src = root / rel_path
+            dst = tmp_root / rel_path
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(src, dst)
+            if os.access(src, os.X_OK):
+                dst.chmod(dst.stat().st_mode | stat.S_IXUSR)
+
+        # Baseline check on unmutated copy
+        verify_repository(tmp_root)
+        run_unit_tests()
+        run_cli_tests(tmp_root)
+
+        mutations: list[tuple[str, str, str]] = [
+            # 1. Break --set-string handling
+            ("scripts/test/lib/check-bootstrap-helm-drift.py", 'if kind == "--set-string":', 'if kind == "--invalid-string":'),
+            # 2. Break --set-json handling
+            ("scripts/test/lib/check-bootstrap-helm-drift.py", 'if kind == "--set-json":', 'if kind == "--invalid-json":'),
+            # 3. Disable shell variable skipping
+            ("scripts/test/lib/check-bootstrap-helm-drift.py", 'return "$" in val', 'return False'),
+            # 4. Disable secret key skipping
+            ("scripts/test/lib/check-bootstrap-helm-drift.py", '"password", "passwd"', '"disabled_pwd"'),
+            # 5. Disable bracket indexing in parse_helm_key
+            ("scripts/test/lib/check-bootstrap-helm-drift.py", 'elif c == "[":', 'elif c == "{":'),
+            # 6. Disable escaped dot unescaping in parse_helm_key
+            ("scripts/test/lib/check-bootstrap-helm-drift.py", r'if c == "\\":', 'if c == "§":'),
+            # 7. Check script: drop HELM_CMD override
+            (CHECK_SCRIPT_REL, 'HELM_CMD="${HELM_CMD:-helm}"', 'HELM_CMD="helm"'),
+            # 8. Check script: drop KUBECTL_CMD override
+            (CHECK_SCRIPT_REL, 'KUBECTL_CMD="${KUBECTL_CMD:-kubectl}"', 'KUBECTL_CMD="kubectl"'),
+            # 9. Check script: drop exit 1 on drift
+            (CHECK_SCRIPT_REL, 'echo "FAIL: detected drift', 'echo "PASS: fake in sync'),
+            # 10. Check script: drop exit 2 on cannot run
+            (CHECK_SCRIPT_REL, 'cannot connect to Kubernetes cluster', 'fake cluster connected'),
+            # 11. Regression wiring: drop R376
+            (REGRESSION_REL, "check R376", "check R9999"),
+            # 12. Docs: drop check-bootstrap-helm-drift.sh from operations doc
+            (DOC_OPS_REL, "check-bootstrap-helm-drift.sh", "other-check-script.sh"),
+            # 13. Lessons log: drop #728
+            (DOC_LESSONS_REL, "#728", "#99999"),
+            # 14. Value comparison: break boolean string comparison
+            ("scripts/test/lib/check-bootstrap-helm-drift.py", 'vl == "true"', 'vl == "invalid_true"'),
+            # 15. Comma splitting in --set
+            ("scripts/test/lib/check-bootstrap-helm-drift.py", 'split_helm_set_args(arg)', '[arg]'),
+            # 16. Unchecked reporting for values file
+            ("scripts/test/lib/check-bootstrap-helm-drift.py", 'UNCHECKED: release=', 'IN_SYNC: release='),
+        ]
+
+        caught = 0
+        for rel_file, old_frag, new_frag in mutations:
+            target_path = tmp_root / rel_file
+            original_text = target_path.read_text(encoding="utf-8")
+            assert old_frag in original_text, f"mutation fragment missing in {rel_file}: {old_frag!r}"
             mutated_text = original_text.replace(old_frag, new_frag)
             target_path.write_text(mutated_text, encoding="utf-8")
 
             survived = False
             try:
-                # Reload functions if this file itself was mutated
-                if file_key == "check-bootstrap-helm-drift.py":
-                    # Run a subprocess to test the mutated file
-                    res = subprocess_verify(target_path, root)
+                if rel_file == "scripts/test/lib/check-bootstrap-helm-drift.py":
+                    res = subprocess_verify(target_path, tmp_root)
                     if res == 0:
                         survived = True
                     else:
                         caught += 1
                 else:
-                    verify_repository(root)
+                    verify_repository(tmp_root)
                     run_unit_tests()
+                    run_cli_tests(tmp_root)
                     survived = True
             except (AssertionError, KeyError, ValueError):
                 caught += 1
             finally:
-                # Restore immediately
+                # Restore in tmp_root
                 target_path.write_text(original_text, encoding="utf-8")
 
             if survived:
-                raise AssertionError(f"mutation survived in {file_key}: {old_frag!r} -> {new_frag!r}")
+                raise AssertionError(f"mutation survived in {rel_file}: {old_frag!r} -> {new_frag!r}")
 
-    finally:
-        # Guarantee full restoration
-        for target_path, orig in source_map.values():
-            target_path.write_text(orig, encoding="utf-8")
-
-    return caught
+        return caught
 
 
 def subprocess_verify(script_file: Path, root: Path) -> int:
     """Helper to run verification in a fresh python subprocess for self-mutation."""
-    import subprocess
     cmd = [sys.executable, str(script_file), "--self-test", "--root", str(root)]
     return subprocess.run(cmd, capture_output=True, text=True).returncode
 
@@ -640,36 +1030,52 @@ def main() -> int:
             live_data = json.load(sys.stdin)
             if not isinstance(live_data, dict):
                 live_data = {}
-        except Exception as e:
-            print(f"ERROR: invalid JSON input: {e}", file=sys.stderr)
+        except Exception:
+            # Zero secret leaks: never print input content or raw exception
+            print("ERROR: invalid JSON input from helm get values", file=sys.stderr)
             return 2
 
         script_text = args.script.read_text(encoding="utf-8")
-        drifted, skipped = check_release_drift(script_text, args.release, live_data)
+        result = check_release_drift(script_text, args.release, live_data)
 
-        if skipped:
+        if result.skipped:
             # Report skipped keys by name only (never leak values)
-            print(f"SKIPPED: release={args.release} keys={', '.join(skipped)} (shell variable or secret)")
+            print(f"SKIPPED: release={args.release} keys={', '.join(result.skipped)} (shell variable or secret)")
 
-        if drifted:
-            for d in drifted:
+        # Case 1: Release configured solely via values file
+        if result.flag_count == 0 and result.has_values_file:
+            print(f"UNCHECKED: release={args.release} (values file not parsed)")
+            return 0
+
+        # Case 2: Release has literal flags
+        if result.drifted:
+            for d in result.drifted:
                 print(
                     f"DRIFT: release={d['release']} key={d['key']} "
                     f"script={d['script_value']} live={d['live_value']}"
                 )
+            if result.has_values_file:
+                print(f"NOTE: release={args.release} (values file not parsed; only literal --set flags checked)")
             return 1
 
-        print(f"IN_SYNC: release={args.release}")
+        if result.has_values_file:
+            print(f"IN_SYNC: release={args.release} (note: values file not parsed; only literal --set flags checked)")
+        elif result.flag_count == 0:
+            print(f"UNCHECKED: release={args.release} (no configuration flags found in script)")
+        else:
+            print(f"IN_SYNC: release={args.release}")
         return 0
 
     if args.self_test:
         verify_repository(args.root)
         run_unit_tests()
+        run_cli_tests(args.root)
         return 0
 
     # Normal verification run
     verify_repository(args.root)
     run_unit_tests()
+    run_cli_tests(args.root)
 
     if args.mutation_verify:
         caught = mutation_verify(args.root)

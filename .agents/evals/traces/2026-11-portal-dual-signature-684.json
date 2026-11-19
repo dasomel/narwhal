@@ -1,0 +1,56 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-portal-dual-signature-684-20261119",
+  "task": "Publish a legacy tag-based Cosign signature next to the Sigstore bundle so Kyverno 1.18.1 can verify portal images (narwhal#684).",
+  "changeContext": {
+    "paths": [
+      ".github/workflows/portal-docker-publish.yml",
+      ".agents/evals/traces/2026-11-portal-dual-signature-684.json",
+      "docs/common/lessons-log.md"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Scope: one extra `cosign sign --new-bundle-format=false` in the portal publish workflow's sign step. No cluster, policy or image change."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "Kyverno 1.18.1 reports verify-image-signatures fail for ghcr.io/dasomel/narwhal-portal because cosign v3.1.4 writes only a bundle-format signature (OCI referrer) and no sha256-<digest>.sig tag (narwhal#684, measured earlier on the live cluster; research lane read Kyverno issue 16267 / PR 16800 and cosign v3.1.4 sources).",
+      "evidence": [
+        "test:kubectl get pod annotation kyverno.io/verify-images / policy report on the live cluster -> fail for the portal image (orchestrator, measured 2026-11-16, narwhal#684)"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "Added a second sign invocation with --new-bundle-format=false (decision D-dual-signature in the workflow)."
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "Flag acceptance by cosign v3.1.4 and YAML parsing of the workflow only; make test static suite. No signature was produced or verified.",
+      "summary": "The flag is accepted by cosign v3.1.4 locally; YAML parses. The signature itself can only be produced in CI with the repository key.",
+      "evidence": [
+        "test:cosign version -> v3.1.4; cosign sign --new-bundle-format=false --help -> rc 0 (an unknown flag gives rc 1)",
+        "test:python3 -c 'import yaml;yaml.safe_load(open(\".github/workflows/portal-docker-publish.yml\"))' -> rc 0",
+        "test:make test -> passed 484 failed 0"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "completion_claim",
+      "summary": "Static change only. Whether Kyverno 1.18.1 then reports pass is verified after merge by a sign_digest recovery run on the released 1.1.20 digest and a pod re-admission; not claimed here."
+    },
+    {
+      "id": "e6",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Workflow change prepared; end-to-end verification follows the merge (sign_digest dispatch on an existing digest)."
+    }
+  ]
+}

@@ -72,7 +72,8 @@ function getSessionStorage(): Storage | undefined {
 function tryClaimScopeReload(): boolean {
   try {
     const storage = getSessionStorage()
-    if (!storage) return true
+    // Fail closed: without storage we cannot bound reloads, so do not reload.
+    if (!storage) return false
     const now = Date.now()
     const raw = storage.getItem(SCOPE_RELOAD_STORAGE_KEY)
     const lastReloadAt = raw && raw.length > 0 ? Number(raw) : NaN
@@ -82,7 +83,7 @@ function tryClaimScopeReload(): boolean {
     storage.setItem(SCOPE_RELOAD_STORAGE_KEY, String(now))
     return true
   } catch {
-    return true
+    return false
   }
 }
 
@@ -155,18 +156,6 @@ export function createScopeGuard(initialClient: QueryClient | null = null): Scop
     queryClient.clear()
   }
 
-  const clearForErrorState = () => {
-    if (!queryClient) return
-    // D1: Wipe fetching queries in place and remove non-fetching queries rather
-    // than calling queryClient.clear() — clear() calls query.destroy() ->
-    // cancel({ silent: true }), which suppresses QueryObserver's error state and
-    // would leave stale data or a spinner instead of the existing error state.
-    queryClient.removeQueries({ predicate: (query) => query.state.fetchStatus !== "fetching" })
-    for (const query of queryClient.getQueryCache().getAll()) {
-      query.setState({ data: undefined, dataUpdatedAt: 0, status: "pending" })
-    }
-  }
-
   const handleFingerprint = (serverFingerprint: string | null) => {
     if (navigating) {
       throw new ScopeChangeError()
@@ -178,15 +167,18 @@ export function createScopeGuard(initialClient: QueryClient | null = null): Scop
     }
     if (serverFingerprint === lastFingerprint) return
 
+    // D-688-nav: every scope change ends in a full document navigation, which discards
+    // the JS heap (observers, selected items). In-memory cleanup was dropped after four
+    // review rounds of races. When a reload is not allowed (cooldown hit, or storage
+    // unavailable so reloads cannot be bounded) go to /access-denied instead of reloading:
+    // it renders no tenant data and cannot loop.
+    navigating = true
+    clearForNavigation()
     if (tryClaimScopeReload()) {
-      navigating = true
-      clearForNavigation()
       reloadPage()
-      throw new ScopeChangeError()
+    } else {
+      navigateTo("/access-denied")
     }
-
-    lastFingerprint = serverFingerprint
-    clearForErrorState()
     throw new ScopeChangeError()
   }
 

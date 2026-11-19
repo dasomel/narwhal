@@ -351,11 +351,11 @@ describe("scope-guard with real QueryClient", () => {
     queryClient.clear()
   })
 
-  it("enforces the 30s reload cooldown via sessionStorage: no second reload, cache cleared, error state shown", async () => {
+  it("within the 30s reload cooldown navigates to /access-denied instead of reloading, and stores nothing", async () => {
     vi.useFakeTimers({ toFake: ["Date"] })
     vi.setSystemTime(new Date("2026-11-19T00:00:00.000Z"))
 
-    const { reload } = stubBrowserEnv()
+    const { reload, assign } = stubBrowserEnv()
     let scope = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
     vi.stubGlobal(
       "fetch",
@@ -412,26 +412,24 @@ describe("scope-guard with real QueryClient", () => {
     await alertsObs.refetch()
 
     expect(reload).toHaveBeenCalledTimes(1)
-    expect(guard2.isNavigating()).toBe(false)
+    expect(assign).toHaveBeenCalledWith("/access-denied")
+    expect(guard2.isNavigating()).toBe(true)
     expect(qc2.getQueryData(["catalog"])).toBeUndefined()
     expect(qc2.getQueryData(["alerts"])).toBeUndefined()
-    expect(alertsObs.getCurrentResult().status).toBe("error")
-    expect(alertsObs.getCurrentResult().isError).toBe(true)
-    expect(alertsObs.getCurrentResult().data).toBeUndefined()
-    expect(alertsObs.getCurrentResult().error).toBeInstanceOf(ScopeChangeError)
 
-    // After 30s (t=31s), a subsequent fingerprint change reloads again.
-    vi.setSystemTime(new Date("2026-11-19T00:00:31.000Z"))
-    scope = "cccccccccccccccccccccccccccccccc"
-    await alertsObs.refetch()
-    expect(reload).toHaveBeenCalledTimes(2)
+    // A late response from the old scope completing afterwards is never stored.
+    scope = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    await expect(
+      qc2.fetchQuery({ queryKey: ["late"], queryFn: () => guard2.fetchJson("/api/alerts") }),
+    ).rejects.toBeInstanceOf(ScopeChangeError)
+    expect(qc2.getQueryData(["late"])).toBeUndefined()
 
     unsub()
     qc1.clear()
     qc2.clear()
   })
 
-  it("still reloads safely when sessionStorage access throws", async () => {
+  it("without usable sessionStorage navigates to /access-denied instead of reloading (reloads cannot be bounded)", async () => {
     const reload = vi.fn()
     const assign = vi.fn()
     vi.stubGlobal("window", {
@@ -475,7 +473,8 @@ describe("scope-guard with real QueryClient", () => {
     ).rejects.toThrow()
     expect(helperErr).toBeInstanceOf(ScopeChangeError)
 
-    expect(reload).toHaveBeenCalledTimes(1)
+    expect(reload).not.toHaveBeenCalled()
+    expect(assign).toHaveBeenCalledWith("/access-denied")
     expect(queryClient.getQueryData(["alerts"])).toBeUndefined()
     queryClient.clear()
   })

@@ -2,6 +2,7 @@ import { en, type TranslationKey } from "./i18n"
 import type { AcceptedClass } from "@/types/compliance"
 
 export const COMPLIANCE_EXCEPTIONS_DOC_ANCHOR = "docs/common/compliance-hardening.md#risk-accepted-exceptions"
+export const COMPLIANCE_EXCEPTIONS_DOC_URL = `https://github.com/dasomel/narwhal/blob/main/${COMPLIANCE_EXCEPTIONS_DOC_ANCHOR}`
 
 export type WorkloadKind = "ReplicaSet" | "DaemonSet" | "StatefulSet" | "Pod"
 

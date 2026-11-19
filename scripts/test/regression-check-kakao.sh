@@ -3516,6 +3516,9 @@ PYEOF'
   # 2026-11-19 (#658): push-security-db.sh refuses to downgrade a fresher Harbor mirror DB (trivy-db, trivy-java-db, trivy-checks)
   check R380 "push-security-db.sh compares bundle vs mirror RFC 3339 org.opencontainers.image.created and raw manifest digest via skopeo inspect --raw in preflight and immediately pre-copy (refuses older atomically, skips only equal created+digest, pushes equal created with differing digest, pushes empty, fails closed on unreachable, --allow-downgrade / AIRGAP_SECURITY_DB_ALLOW_DOWNGRADE=1 escape hatch) and README/alert reflect cause, guard & TOCTOU residual risk; 14 mutations caught (#658)" \
     python3 scripts/test/lib/check-security-db-downgrade-guard.py --mutation-verify
+  # 2026-11-19: portal Compliance Frameworks separate accepted exceptions from actionable failures via existing fail-closed matchers
+  check R381 "portal Compliance Frameworks reuse parseComplianceTarget, configAuditMatcher, rbacAuditMatcher, fetchReplicaSetMap, and infra handling fail-closed, preserve raw failCount/passRate, render collapsed accepted groups + doc link in FrameworksGrid/detail, update docs/common/compliance-hardening.md, and pin trimmed live CCR fixture; 10 mutations caught" \
+    python3 scripts/test/lib/check-portal-framework-accepted.py --mutation-verify
 }
 
 #=========================================

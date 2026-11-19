@@ -3,7 +3,8 @@ import { renderToStaticMarkup } from "react-dom/server"
 
 const mockGetConfigAuditDetail = vi.hoisted(() => vi.fn())
 const mockGetRbacAuditDetail = vi.hoisted(() => vi.fn())
-const mockGetLocale = vi.hoisted(() => vi.fn(async () => "ko" as const))
+const mockGetComplianceFrameworkDetail = vi.hoisted(() => vi.fn())
+const mockGetLocale = vi.hoisted(() => vi.fn(async (): Promise<"ko" | "en"> => "ko"))
 
 vi.mock("server-only", () => ({}))
 vi.mock("@/lib/dashboard-access", () => ({
@@ -15,6 +16,7 @@ vi.mock("@/lib/i18n-server", () => ({
 vi.mock("@/lib/compliance", () => ({
   getConfigAuditDetail: mockGetConfigAuditDetail,
   getRbacAuditDetail: mockGetRbacAuditDetail,
+  getComplianceFrameworkDetail: mockGetComplianceFrameworkDetail,
 }))
 
 vi.mock("@tanstack/react-query", async (importOriginal) => {
@@ -29,16 +31,21 @@ import { useQuery } from "@tanstack/react-query"
 import { LocaleProvider } from "@/lib/i18n-client"
 import { ko, translateAcceptedReason } from "@/lib/i18n"
 import type {
+  ComplianceFramework,
+  ComplianceFrameworkDetail,
   ComplianceSummary,
   ConfigAuditDetail,
   ConfigAuditRow,
   RbacAuditDetail,
   RbacAuditRow,
 } from "@/types/compliance"
+import { COMPLIANCE_EXCEPTIONS_DOC_ANCHOR } from "@/lib/compliance-accepted"
 import { FailureCounters } from "./failure-counters"
 import { ConfigAuditTable, ExpandedConfigPanel } from "./config-audit-table"
+import { ExpandedFrameworkPanel, FrameworksGrid } from "./frameworks-grid"
 import { ExpandedRbacPanel, RbacAuditTable } from "./rbac-audit-table"
 import ConfigAuditDetailPage from "@/app/(dashboard)/compliance/config-audit/[ns]/[name]/page"
+import FrameworkDetailPage from "@/app/(dashboard)/compliance/frameworks/[id]/page"
 import RbacAuditDetailPage from "@/app/(dashboard)/compliance/rbac-audit/[ns]/[name]/page"
 
 describe("Compliance UI accepted exceptions", () => {
@@ -328,5 +335,145 @@ describe("Compliance UI accepted exceptions", () => {
       ko["compliance.acceptedReason.systemNamespace"],
     )
     expect(translateAcceptedReason("ko", undefined, "fallback")).toBe("fallback")
+  })
+
+  it("FrameworksGrid, ExpandedFrameworkPanel, FrameworkDetailPage, and FailureCounters separate actionable from accepted controls", async () => {
+    const frameworks: ComplianceFramework[] = [
+      {
+        id: "k8s-nsa-1.0",
+        title: "NSA Kubernetes Hardening",
+        passCount: 18,
+        failCount: 9,
+        actionableFailCount: 0,
+        acceptedFailCount: 9,
+        totalControls: 27,
+        passRate: 18 / 27,
+        effectivePassRate: 1,
+      },
+      {
+        id: "k8s-cis-1.23",
+        title: "CIS Benchmark",
+        passCount: 101,
+        failCount: 15,
+        actionableFailCount: 2,
+        acceptedFailCount: 13,
+        totalControls: 116,
+        passRate: 101 / 116,
+        effectivePassRate: 114 / 116,
+      },
+    ]
+
+    const summaryWithFw: ComplianceSummary = {
+      totalConfigAuditFailures: { Critical: 0, High: 0, Medium: 0, Low: 0 },
+      lowSeverityConfigAuditFailures: { Critical: 0, High: 0, Medium: 0, Low: 0 },
+      acceptedSystemConfigAuditFailures: { Critical: 0, High: 0, Medium: 0, Low: 0 },
+      totalRbacFailures: { Critical: 0, High: 0, Medium: 0, Low: 0 },
+      acceptedRbacFailures: { Critical: 0, High: 0, Medium: 0, Low: 0 },
+      totalInfraFailures: { Critical: 0, High: 0, Medium: 0, Low: 0 },
+      frameworks,
+      scannedWorkloads: 50,
+      scannedRbacObjects: 30,
+      scannedNodes: 6,
+      lastUpdated: new Date().toISOString(),
+    }
+    const countersHtml = renderToStaticMarkup(<FailureCounters summary={summaryWithFw} locale="en" />)
+    expect(countersHtml).toContain("99%")
+    expect(countersHtml).toContain("2 actionable · 22 accepted")
+
+    vi.mocked(useQuery).mockReturnValue({
+      data: frameworks,
+      isLoading: false,
+      isError: false,
+      refetch: vi.fn(),
+    } as never)
+
+    const gridEn = renderToStaticMarkup(
+      <LocaleProvider locale="en">
+        <FrameworksGrid />
+      </LocaleProvider>,
+    )
+    expect(gridEn).toContain("2 actionable controls · 22 accepted (raw failed 24)")
+    expect(gridEn).toContain("100%")
+    expect(gridEn).toContain("+9 accepted (raw 9)")
+    expect(gridEn).toContain("+13 accepted (raw 15)")
+    expect(gridEn).toContain(COMPLIANCE_EXCEPTIONS_DOC_ANCHOR)
+
+    const gridKo = renderToStaticMarkup(
+      <LocaleProvider locale="ko">
+        <FrameworksGrid />
+      </LocaleProvider>,
+    )
+    expect(gridKo).toContain("조치가능 컨트롤 2개 · 수용 22개 (원본 실패 24개)")
+    expect(gridKo).toContain("위험 수용 예외 문서")
+
+    const detail: ComplianceFrameworkDetail = {
+      ...frameworks[1],
+      controls: [
+        {
+          id: "5.2.2",
+          name: "Minimize privileged containers",
+          severity: "High",
+          passCount: 0,
+          failCount: 3,
+          actionableFailCount: 0,
+          acceptedFailCount: 3,
+          accepted: true,
+          acceptedScope: "accept",
+        },
+        {
+          id: "5.7.3",
+          name: "Apply Security Context to Pods",
+          severity: "High",
+          passCount: 0,
+          failCount: 158,
+          actionableFailCount: 24,
+          acceptedFailCount: 134,
+          accepted: false,
+        },
+      ],
+    }
+
+    vi.mocked(useQuery).mockReturnValue({
+      data: detail,
+      isLoading: false,
+      isError: false,
+      refetch: vi.fn(),
+    } as never)
+
+    const panelHtml = renderToStaticMarkup(
+      <LocaleProvider locale="en">
+        <ExpandedFrameworkPanel id="k8s-cis-1.23" />
+      </LocaleProvider>,
+    )
+    expect(panelHtml).toContain("5.7.3")
+    expect(panelHtml).toContain("✗ 24")
+    expect(panelHtml).toContain("+134 accepted (raw 158)")
+    expect(panelHtml).toContain("Accepted exception controls (1)")
+    expect(panelHtml).toContain("5.2.2")
+    expect(panelHtml).toContain(COMPLIANCE_EXCEPTIONS_DOC_ANCHOR)
+    expect(panelHtml.indexOf("5.7.3")).toBeLessThan(panelHtml.indexOf("Accepted exception controls (1)"))
+
+    mockGetLocale.mockResolvedValue("en")
+    mockGetComplianceFrameworkDetail.mockResolvedValue(detail)
+    const pageEnEl = await FrameworkDetailPage({
+      params: Promise.resolve({ id: "k8s-cis-1.23" }),
+    })
+    const pageEnHtml = renderToStaticMarkup(pageEnEl)
+    expect(pageEnHtml).toContain("98%")
+    expect(pageEnHtml).toContain("✗ 2 Failed (actionable)")
+    expect(pageEnHtml).toContain("+13 accepted")
+    expect(pageEnHtml).toContain("Raw failed 15 (pass rate 87%)")
+    expect(pageEnHtml).toContain("Accepted exception controls (1)")
+    expect(pageEnHtml).toContain("Risk accepted")
+    expect(pageEnHtml).toContain(COMPLIANCE_EXCEPTIONS_DOC_ANCHOR)
+
+    mockGetLocale.mockResolvedValue("ko")
+    const pageKoEl = await FrameworkDetailPage({
+      params: Promise.resolve({ id: "k8s-cis-1.23" }),
+    })
+    const pageKoHtml = renderToStaticMarkup(pageKoEl)
+    expect(pageKoHtml).toContain("실패 (조치가능)")
+    expect(pageKoHtml).toContain("수용된 예외 컨트롤 (1)")
+    expect(pageKoHtml).toContain("위험 수용 예외 문서")
   })
 })

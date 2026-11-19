@@ -23,13 +23,17 @@ vi.mock("./http-client", () => ({
   readJsonWithPolicy: (...args: unknown[]) => mockReadJsonWithPolicy(...args),
 }))
 
+import ccrLiveTrimmed from "./__fixtures__/ccr-live-trimmed.json"
 import {
+  getComplianceFrameworkDetail,
+  getComplianceFrameworks,
   getComplianceSummary,
   getConfigAuditDetail,
   getConfigAuditList,
   getRbacAuditDetail,
   getRbacAuditList,
   isAcceptedRbacRole,
+  parseComplianceTarget,
 } from "./compliance"
 
 interface MockCheck {
@@ -1223,5 +1227,499 @@ describe("ReplicaSet filtering and exact Deployment ownership (narwhal#727)", ()
     const summary = await getComplianceSummary()
     expect(summary.totalConfigAuditFailures).toEqual({ Critical: 0, High: 3, Medium: 0, Low: 0 })
     expect(summary.acceptedSystemConfigAuditFailures).toEqual({ Critical: 0, High: 1, Medium: 0, Low: 0 })
+  })
+})
+
+function makeCcr(opts: {
+  id: string
+  title?: string
+  passCount: number
+  failCount: number
+  specControls?: Array<{ id: string; name: string; severity: string }>
+  results?: Array<{
+    id: string
+    name: string
+    severity: string
+    checks: Array<{ checkID?: string; target?: string; success?: boolean }>
+  }>
+}) {
+  return {
+    metadata: { name: opts.id, creationTimestamp: "2026-11-19T00:00:00Z" },
+    spec: {
+      compliance: {
+        id: opts.id,
+        title: opts.title ?? opts.id,
+        controls: opts.specControls ?? (opts.results ?? []).map((r) => ({ id: r.id, name: r.name, severity: r.severity })),
+      },
+    },
+    status: {
+      summary: {
+        passCount: opts.passCount,
+        failCount: opts.failCount,
+      },
+      ...(opts.results ? { detailReport: { results: opts.results } } : {}),
+    },
+  }
+}
+
+describe("parseComplianceTarget", () => {
+  it("parses supported namespaced and cluster-scoped targets", () => {
+    expect(parseComplianceTarget("devtools/replicaset-gitea-67f4766475")).toEqual({
+      namespace: "devtools",
+      kind: "ReplicaSet",
+      name: "gitea-67f4766475",
+    })
+    expect(parseComplianceTarget("security-system/daemonset-falco")).toEqual({
+      namespace: "security-system",
+      kind: "DaemonSet",
+      name: "falco",
+    })
+    expect(parseComplianceTarget("iam/statefulset-keycloak")).toEqual({
+      namespace: "iam",
+      kind: "StatefulSet",
+      name: "keycloak",
+    })
+    expect(parseComplianceTarget("database/pod-narwhal-db-1")).toEqual({
+      namespace: "database",
+      kind: "Pod",
+      name: "narwhal-db-1",
+    })
+    expect(parseComplianceTarget("dev/deployment-web")).toEqual({
+      namespace: "dev",
+      kind: "Deployment",
+      name: "web",
+    })
+    expect(parseComplianceTarget("storage/cronjob-openbao-snapshot")).toEqual({
+      namespace: "storage",
+      kind: "CronJob",
+      name: "openbao-snapshot",
+    })
+    expect(parseComplianceTarget("devtools/job-manual-run")).toEqual({
+      namespace: "devtools",
+      kind: "Job",
+      name: "manual-run",
+    })
+    expect(parseComplianceTarget("devtools/role-narwhal-portal-jobs")).toEqual({
+      namespace: "devtools",
+      kind: "Role",
+      name: "narwhal-portal-jobs",
+    })
+    expect(parseComplianceTarget("/clusterrole-cluster-admin")).toEqual({
+      namespace: "",
+      kind: "ClusterRole",
+      name: "cluster-admin",
+    })
+    expect(parseComplianceTarget("/node-narwhal-master-1")).toEqual({
+      namespace: "",
+      kind: "Node",
+      name: "narwhal-master-1",
+    })
+  })
+
+  it("fails closed (null) on unknown kinds, missing/extra slashes, empty names, or scope mismatches", () => {
+    expect(parseComplianceTarget("")).toBeNull()
+    expect(parseComplianceTarget(null)).toBeNull()
+    expect(parseComplianceTarget(undefined)).toBeNull()
+    expect(parseComplianceTarget("clusterrole-cluster-admin")).toBeNull()
+    expect(parseComplianceTarget("a/b/pod-foo")).toBeNull()
+    expect(parseComplianceTarget("devtools/gitea")).toBeNull()
+    expect(parseComplianceTarget("devtools/pod-")).toBeNull()
+    expect(parseComplianceTarget("/clusterrole-")).toBeNull()
+    expect(parseComplianceTarget("devtools/customcrd-foo")).toBeNull()
+    expect(parseComplianceTarget("devtools/clusterrole-platform-admin")).toBeNull()
+    expect(parseComplianceTarget("kube-system/node-narwhal-master-1")).toBeNull()
+    expect(parseComplianceTarget("/pod-narwhal-db-1")).toBeNull()
+    expect(parseComplianceTarget("/role-narwhal-portal-jobs")).toBeNull()
+  })
+})
+
+describe("compliance framework actionable vs accepted split", () => {
+  beforeEach(() => {
+    mockCache.clear()
+    mockFetchWithPolicy.mockReset()
+    mockReadJsonWithPolicy.mockReset()
+  })
+
+  it("fails closed on unknown check IDs, unknown targets, mixed controls, and node checks", async () => {
+    installK8sMock({
+      "/apis/aquasecurity.github.io/v1alpha1/clustercompliancereports": {
+        items: [
+          makeCcr({
+            id: "test-fw",
+            title: "Test Framework",
+            passCount: 1,
+            failCount: 5,
+            results: [
+              // 0. Passing control -> never marked accepted
+              {
+                id: "C0",
+                name: "All passing",
+                severity: "LOW",
+                checks: [{ checkID: "AVD-KSV-0020", target: "devtools/replicaset-gitea-67f4766475", success: true }],
+              },
+              // 1. Unknown check ID on allowlisted workload -> actionable
+              {
+                id: "C1",
+                name: "Unknown check ID",
+                severity: "HIGH",
+                checks: [
+                  { checkID: "AVD-KSV-9999", target: "security-system/daemonset-falco", success: false },
+                  { target: "security-system/daemonset-falco", success: false },
+                ],
+              },
+              // 2. Unparseable / unknown target -> actionable
+              {
+                id: "C2",
+                name: "Unknown target",
+                severity: "HIGH",
+                checks: [
+                  { checkID: "AVD-KSV-0017", target: "no-slash-target", success: false },
+                  { checkID: "AVD-KSV-0017", target: "devtools/widget-foo", success: false },
+                ],
+              },
+              // 3. Mixed control (one actionable + one accepted) -> actionable (control.accepted = false)
+              {
+                id: "C3",
+                name: "Mixed control",
+                severity: "HIGH",
+                checks: [
+                  { checkID: "AVD-KSV-0020", target: "devtools/replicaset-gitea-67f4766475", success: false },
+                  { checkID: "AVD-KSV-0020", target: "dev/pod-unlisted-app", success: false },
+                ],
+              },
+              // 4. Node / infra checks -> actionable (matches Infra tab)
+              {
+                id: "C4",
+                name: "Node check",
+                severity: "HIGH",
+                checks: [{ checkID: "AVD-KCV-0056", target: "/node-narwhal-master-1", success: false }],
+              },
+              // 5. All accepted (system namespace + allowlisted workload) -> accepted
+              {
+                id: "C5",
+                name: "Accepted control",
+                severity: "MEDIUM",
+                checks: [
+                  { checkID: "AVD-KSV-0017", target: "kube-system/daemonset-cilium", success: false },
+                  { checkID: "AVD-KSV-0017", target: "security-system/daemonset-falco", success: false },
+                ],
+              },
+            ],
+          }),
+        ],
+      },
+    })
+
+    const frameworks = await getComplianceFrameworks()
+    expect(frameworks).toHaveLength(1)
+    expect(frameworks[0]).toMatchObject({
+      id: "test-fw",
+      passCount: 1,
+      failCount: 5,
+      actionableFailCount: 4,
+      acceptedFailCount: 1,
+      totalControls: 6,
+    })
+    expect(frameworks[0].passRate).toBeCloseTo(1 / 6)
+    expect(frameworks[0].effectivePassRate).toBeCloseTo(2 / 6)
+
+    const detail = await getComplianceFrameworkDetail("test-fw")
+    expect(detail).not.toBeNull()
+    const byId = new Map(detail!.controls.map((c) => [c.id, c]))
+
+    expect(byId.get("C0")?.accepted).toBe(false)
+    expect(byId.get("C1")).toMatchObject({ failCount: 2, actionableFailCount: 2, acceptedFailCount: 0, accepted: false })
+    expect(byId.get("C2")).toMatchObject({ failCount: 2, actionableFailCount: 2, acceptedFailCount: 0, accepted: false })
+    expect(byId.get("C3")).toMatchObject({ failCount: 2, actionableFailCount: 1, acceptedFailCount: 1, accepted: false })
+    expect(byId.get("C4")).toMatchObject({ failCount: 1, actionableFailCount: 1, acceptedFailCount: 0, accepted: false })
+    expect(byId.get("C5")).toMatchObject({
+      failCount: 2,
+      actionableFailCount: 0,
+      acceptedFailCount: 2,
+      accepted: true,
+      acceptedScope: "mixed",
+    })
+  })
+
+  it("drops superseded ReplicaSets while enforcing Deployment ownership on live-revision ReplicaSets", async () => {
+    installK8sMock({
+      "/apis/aquasecurity.github.io/v1alpha1/clustercompliancereports": {
+        items: [
+          makeCcr({
+            id: "rs-fw",
+            passCount: 0,
+            failCount: 3,
+            results: [
+              // Only superseded RS -> dropped (0 actionable, 0 accepted)
+              {
+                id: "RS-SUPERSEDED",
+                name: "Superseded RS only",
+                severity: "HIGH",
+                checks: [
+                  { checkID: "AVD-KSV-0014", target: "devtools/replicaset-unlisted-old11", success: false },
+                ],
+              },
+              // Live-revision allowlisted RS with Deployment owner -> accepted
+              {
+                id: "RS-OWNED",
+                name: "Live Deployment RS",
+                severity: "HIGH",
+                checks: [
+                  { checkID: "AVD-KSV-0014", target: "devtools/replicaset-harbor-core-b569bd8dd", success: false },
+                ],
+              },
+              // Standalone RS without Deployment owner even with hash-like suffix -> actionable
+              {
+                id: "RS-STANDALONE",
+                name: "Standalone RS",
+                severity: "HIGH",
+                checks: [
+                  { checkID: "AVD-KSV-0014", target: "devtools/replicaset-harbor-core-bcdfg", success: false },
+                ],
+              },
+            ],
+          }),
+        ],
+      },
+      "/apis/apps/v1/replicasets": {
+        items: [
+          makeRs({
+            namespace: "devtools",
+            name: "unlisted-old11",
+            replicas: 0,
+            statusReplicas: 0,
+            revision: 1,
+            ownerDeployment: "unlisted",
+          }),
+          makeRs({
+            namespace: "devtools",
+            name: "unlisted-new22",
+            replicas: 1,
+            statusReplicas: 1,
+            revision: 2,
+            ownerDeployment: "unlisted",
+          }),
+          makeRs({
+            namespace: "devtools",
+            name: "harbor-core-b569bd8dd",
+            replicas: 1,
+            statusReplicas: 1,
+            revision: 3,
+            ownerDeployment: "harbor-core",
+          }),
+          makeRs({
+            namespace: "devtools",
+            name: "harbor-core-bcdfg",
+            replicas: 1,
+            statusReplicas: 1,
+          }),
+        ],
+      },
+    })
+
+    const detail = await getComplianceFrameworkDetail("rs-fw")
+    expect(detail).not.toBeNull()
+    expect(detail!.failCount).toBe(3)
+    expect(detail!.actionableFailCount).toBe(1)
+    expect(detail!.acceptedFailCount).toBe(1)
+
+    const byId = new Map(detail!.controls.map((c) => [c.id, c]))
+    expect(byId.get("RS-SUPERSEDED")).toMatchObject({
+      failCount: 1,
+      actionableFailCount: 0,
+      acceptedFailCount: 0,
+      accepted: false,
+    })
+    expect(byId.get("RS-OWNED")).toMatchObject({
+      failCount: 1,
+      actionableFailCount: 0,
+      acceptedFailCount: 1,
+      accepted: true,
+      acceptedScope: "upstream",
+    })
+    expect(byId.get("RS-STANDALONE")).toMatchObject({
+      failCount: 1,
+      actionableFailCount: 1,
+      acceptedFailCount: 0,
+      accepted: false,
+    })
+  })
+
+  it("evaluates RBAC framework controls using built-in, upstream, ACCEPTED_RBAC_RULES, and report-hash resolution", async () => {
+    installK8sMock({
+      "/apis/aquasecurity.github.io/v1alpha1/clustercompliancereports": {
+        items: [
+          makeCcr({
+            id: "rbac-fw",
+            passCount: 0,
+            failCount: 4,
+            results: [
+              // Built-in + upstream + ACCEPTED_RBAC_RULES -> accepted
+              {
+                id: "RBAC-OK",
+                name: "Accepted RBAC",
+                severity: "HIGH",
+                checks: [
+                  { checkID: "AVD-KSV-0041", target: "/clusterrole-cluster-admin", success: false },
+                  { checkID: "AVD-KSV-0041", target: "/clusterrole-cert-manager-cainjector", success: false },
+                  { checkID: "AVD-KSV-0041", target: "/clusterrole-platform-admin", success: false },
+                  { checkID: "AVD-KSV-0048", target: "devtools/role-narwhal-portal-jobs", success: false },
+                ],
+              },
+              // Unlisted check KSV042 on platform-admin -> stays actionable
+              {
+                id: "RBAC-UNLISTED-CHECK",
+                name: "Unlisted check",
+                severity: "MEDIUM",
+                checks: [{ checkID: "AVD-KSV-0042", target: "/clusterrole-platform-admin", success: false }],
+              },
+              // Hashed ClusterRole resolved via clusterrbacassessmentreports -> accepted (system:*)
+              {
+                id: "RBAC-HASHED-RESOLVED",
+                name: "Hashed resolved",
+                severity: "HIGH",
+                checks: [{ checkID: "AVD-KSV-0041", target: "/clusterrole-54cdc9b678", success: false }],
+              },
+              // Hashed ClusterRole NOT in clusterrbacassessmentreports -> fails closed (actionable)
+              {
+                id: "RBAC-HASHED-UNRESOLVED",
+                name: "Hashed unresolved",
+                severity: "HIGH",
+                checks: [{ checkID: "AVD-KSV-0041", target: "/clusterrole-deadbeef00", success: false }],
+              },
+            ],
+          }),
+        ],
+      },
+      "/apis/aquasecurity.github.io/v1alpha1/clusterrbacassessmentreports": {
+        items: [
+          {
+            metadata: {
+              name: "clusterrole-54cdc9b678",
+              labels: { "trivy-operator.resource.kind": "ClusterRole" },
+              ownerReferences: [{ kind: "ClusterRole", name: "system:kube-controller-manager" }],
+            },
+            report: { summary: { criticalCount: 1, highCount: 0, mediumCount: 0, lowCount: 0 }, checks: [] },
+          },
+        ],
+      },
+    })
+
+    const detail = await getComplianceFrameworkDetail("rbac-fw")
+    expect(detail).not.toBeNull()
+    expect(detail!.actionableFailCount).toBe(2)
+    expect(detail!.acceptedFailCount).toBe(2)
+
+    const byId = new Map(detail!.controls.map((c) => [c.id, c]))
+    expect(byId.get("RBAC-OK")?.accepted).toBe(true)
+    expect(byId.get("RBAC-OK")?.acceptedScope).toBe("mixed")
+    expect(byId.get("RBAC-UNLISTED-CHECK")?.accepted).toBe(false)
+    expect(byId.get("RBAC-HASHED-RESOLVED")).toMatchObject({
+      accepted: true,
+      acceptedScope: "builtin",
+      actionableFailCount: 0,
+      acceptedFailCount: 1,
+    })
+    expect(byId.get("RBAC-HASHED-UNRESOLVED")).toMatchObject({
+      accepted: false,
+      actionableFailCount: 1,
+      acceptedFailCount: 0,
+    })
+  })
+
+  it("fails closed when reportType=summary omits detailReport.results", async () => {
+    installK8sMock({
+      "/apis/aquasecurity.github.io/v1alpha1/clustercompliancereports": {
+        items: [
+          makeCcr({
+            id: "summary-only",
+            passCount: 10,
+            failCount: 3,
+            specControls: [
+              { id: "1.1", name: "Ctrl 1", severity: "HIGH" },
+              { id: "1.2", name: "Ctrl 2", severity: "LOW" },
+            ],
+          }),
+        ],
+      },
+    })
+
+    const frameworks = await getComplianceFrameworks()
+    expect(frameworks[0]).toMatchObject({
+      id: "summary-only",
+      passCount: 10,
+      failCount: 3,
+      actionableFailCount: 3,
+      acceptedFailCount: 0,
+    })
+    expect(frameworks[0].effectivePassRate).toBeCloseTo(frameworks[0].passRate)
+  })
+
+  it("computes the exact actionable vs accepted set from the trimmed live ClusterComplianceReport fixture", async () => {
+    installK8sMock({
+      "/apis/aquasecurity.github.io/v1alpha1/clustercompliancereports": ccrLiveTrimmed,
+    })
+
+    const frameworks = await getComplianceFrameworks()
+    const byId = new Map(frameworks.map((f) => [f.id, f]))
+
+    expect(byId.get("k8s-nsa-1.0")).toMatchObject({
+      passCount: 18,
+      failCount: 9,
+      actionableFailCount: 0,
+      acceptedFailCount: 9,
+      effectivePassRate: 1,
+    })
+    expect(byId.get("k8s-pss-baseline-0.1")).toMatchObject({
+      passCount: 8,
+      failCount: 3,
+      actionableFailCount: 0,
+      acceptedFailCount: 3,
+      effectivePassRate: 1,
+    })
+    expect(byId.get("k8s-pss-restricted-0.1")).toMatchObject({
+      passCount: 14,
+      failCount: 3,
+      actionableFailCount: 0,
+      acceptedFailCount: 3,
+      effectivePassRate: 1,
+    })
+    expect(byId.get("k8s-cis-1.23")).toMatchObject({
+      passCount: 101,
+      failCount: 15,
+      actionableFailCount: 6,
+      acceptedFailCount: 9,
+    })
+    expect(byId.get("k8s-kisa-1.0")).toMatchObject({
+      passCount: 3,
+      failCount: 4,
+      actionableFailCount: 3,
+      acceptedFailCount: 1,
+    })
+
+    const cisDetail = await getComplianceFrameworkDetail("k8s-cis-1.23")
+    expect(cisDetail).not.toBeNull()
+    const cisActionable = cisDetail!.controls
+      .filter((c) => (c.actionableFailCount ?? 0) > 0)
+      .map((c) => ({ id: c.id, act: c.actionableFailCount, acc: c.acceptedFailCount }))
+    expect(cisActionable).toEqual([
+      { id: "1.1.9", act: 1, acc: 0 },
+      { id: "1.1.12", act: 1, acc: 0 },
+      { id: "5.1.2", act: 5, acc: 27 },
+      { id: "5.1.3", act: 6, acc: 10 },
+      { id: "5.2.10", act: 1, acc: 4 },
+      { id: "5.7.3", act: 24, acc: 134 },
+    ])
+
+    const kisaDetail = await getComplianceFrameworkDetail("k8s-kisa-1.0")
+    expect(kisaDetail).not.toBeNull()
+    const kisaActionable = kisaDetail!.controls
+      .filter((c) => (c.actionableFailCount ?? 0) > 0)
+      .map((c) => ({ id: c.id, act: c.actionableFailCount, acc: c.acceptedFailCount }))
+    expect(kisaActionable).toEqual([
+      { id: "KISA-RBAC-01", act: 5, acc: 27 },
+      { id: "KISA-ADM-01", act: 1, acc: 4 },
+      { id: "KISA-RBAC-02", act: 6, acc: 10 },
+    ])
   })
 })

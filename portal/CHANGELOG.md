@@ -9,6 +9,12 @@ English | [한국어](CHANGELOG-ko.md)
 
 ## [Unreleased]
 
+### Changed
+
+- **Compliance Frameworks: separate accepted exceptions from actionable failures (`src/lib/compliance.ts`, `src/components/compliance/frameworks-grid.tsx`, `src/components/compliance/failure-counters.tsx`, `src/app/(dashboard)/compliance/frameworks/[id]/page.tsx`, `docs/common/compliance-hardening.md`):**
+  - Evaluated every failing check in `ClusterComplianceReport.status.detailReport.results[].checks[]` using `parseComplianceTarget` (`<namespace>/<kind>-<name>`) and `normalizeCheckId` (`AVD-KSV-00NN -> KSVNNN`) and reused the existing Config Audit (`configAuditMatcher`, `fetchReplicaSetMap()` superseded/Deployment-ownership filtering), RBAC (`rbacAuditMatcher`), and Infra (actionable) matchers fail-closed, resolving hashed Trivy report targets from `configauditreports` / `(cluster)rbacassessmentreports` when available and keeping any unparseable, missing-ID, or unlisted finding actionable.
+  - Added `actionableFailCount`, `acceptedFailCount`, and `effectivePassRate` on frameworks and controls alongside raw `failCount` and `passRate` (failing closed when `detailReport.results` is absent), and updated the Frameworks grid, expanded preview, detail page, and Compliance summary counter to headline actionable counts with accepted badges, collapsed accepted-control groups, and links to `docs/common/compliance-hardening.md#risk-accepted-exceptions` (`ko`/`en` i18n).
+
 ## [1.1.21] - 2026-11-19
 
 Patch release: Compliance no longer counts Trivy reports left behind by superseded Deployment revisions (narwhal#727).

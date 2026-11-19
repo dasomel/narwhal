@@ -20,7 +20,7 @@ function relativeTime(iso: string, locale: Locale): string {
 
 function avgPassRate(frameworks: ComplianceSummary["frameworks"]): number {
   if (!frameworks.length) return 0
-  const sum = frameworks.reduce((acc, f) => acc + f.passRate, 0)
+  const sum = frameworks.reduce((acc, f) => acc + (f.effectivePassRate ?? f.passRate), 0)
   return Math.round((sum / frameworks.length) * 100)
 }
 
@@ -64,6 +64,14 @@ export function FailureCounters({ summary, locale }: Props) {
     (summary.acceptedRbacFailures?.High ?? 0) +
     (summary.acceptedRbacFailures?.Medium ?? 0) +
     (summary.acceptedRbacFailures?.Low ?? 0)
+  const actionableControlsTotal = summary.frameworks.reduce(
+    (acc, f) => acc + (f.actionableFailCount ?? f.failCount),
+    0,
+  )
+  const acceptedControlsTotal = summary.frameworks.reduce(
+    (acc, f) => acc + (f.acceptedFailCount ?? 0),
+    0,
+  )
 
   const values: Record<(typeof counterConfig)[number]["key"], string> = {
     configAudit: String(
@@ -106,6 +114,14 @@ export function FailureCounters({ summary, locale }: Props) {
               <div className="text-[0.7rem] text-muted-foreground/70 mt-0.5">
                 {t(locale, "compliance.counter.rbacBreakdown", {
                   accepted: String(acceptedRbacTotal),
+                })}
+              </div>
+            )}
+            {key === "frameworks" && acceptedControlsTotal > 0 && (
+              <div className="text-[0.7rem] text-muted-foreground/70 mt-0.5">
+                {t(locale, "compliance.counter.frameworksBreakdown", {
+                  actionable: String(actionableControlsTotal),
+                  accepted: String(acceptedControlsTotal),
                 })}
               </div>
             )}

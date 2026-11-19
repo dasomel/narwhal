@@ -156,7 +156,7 @@ describe("matchConfigAuditException", () => {
         "narwhal-db-pooler-rw",
       ])
       expect(pooler, `narwhal-db-pooler-rw ${id}`).not.toBeNull()
-      expect(pooler?.class).toBe("accept")
+      expect(pooler?.class).toBe("upstream")
     }
     expect(
       matchConfigAuditException("database", "ReplicaSet", "narwhal-db-pooler-rw-5b44f8765f", "KSV011", [
@@ -176,9 +176,21 @@ describe("matchConfigAuditException", () => {
     expect(matchConfigAuditException("nfs-quota-agent", "DaemonSet", "nfs-quota-agent", "KSV014")).toBeNull()
     expect(matchConfigAuditException("nfs-quota-agent", "DaemonSet", "nfs-quota-agent", "KSV104")).toBeNull()
 
-    // Fixable OpenBao helper/backup workloads (runAsUser/runAsGroup 10100) stay unaccepted in the allowlist
-    expect(matchConfigAuditException("storage", "ReplicaSet", "openbao-snapshot-holder-865bfd4d54", "KSV020")).toBeNull()
-    expect(matchConfigAuditException("storage", "ReplicaSet", "openbao-snapshot-holder-865bfd4d54", "KSV021")).toBeNull()
+    // OpenBao snapshot CronJob/holder keep UID 100 (existing PVC backup files are owned by it): exact KSV020/KSV021 only
+    for (const id of ["KSV020", "KSV021"]) {
+      const cron = matchConfigAuditException("storage", "CronJob", "openbao-snapshot", id)
+      expect(cron, `openbao-snapshot ${id}`).not.toBeNull()
+      expect(cron?.class).toBe("accept")
+      const holder = matchConfigAuditException("storage", "ReplicaSet", "openbao-snapshot-holder-865bfd4d54", id, [
+        "openbao-snapshot-holder",
+      ])
+      expect(holder, `openbao-snapshot-holder ${id}`).not.toBeNull()
+      expect(holder?.class).toBe("accept")
+      // openbao-auto-unseal runs as 10100 and must stay unaccepted
+      expect(matchConfigAuditException("storage", "CronJob", "openbao-auto-unseal", id)).toBeNull()
+    }
+    expect(matchConfigAuditException("storage", "CronJob", "openbao-snapshot", "KSV014")).toBeNull()
+    expect(matchConfigAuditException("storage", "Job", "openbao-snapshot", "KSV020")).toBeNull()
 
     expect(matchConfigAuditException("platform-system", "ReplicaSet", "waypoint-74b459c658", "KSV030")).toBeNull()
     expect(matchConfigAuditException("platform-system", "ReplicaSet", "waypoint-74b459c658", "KSV104")).toBeNull()

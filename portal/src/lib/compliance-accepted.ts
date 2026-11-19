@@ -4,7 +4,7 @@ import type { AcceptedClass } from "@/types/compliance"
 export const COMPLIANCE_EXCEPTIONS_DOC_ANCHOR = "docs/common/compliance-hardening.md#risk-accepted-exceptions"
 export const COMPLIANCE_EXCEPTIONS_DOC_URL = `https://github.com/dasomel/narwhal/blob/main/${COMPLIANCE_EXCEPTIONS_DOC_ANCHOR}`
 
-export type WorkloadKind = "ReplicaSet" | "DaemonSet" | "StatefulSet" | "Pod"
+export type WorkloadKind = "ReplicaSet" | "DaemonSet" | "StatefulSet" | "Pod" | "CronJob"
 
 export type AcceptedReasonKey = Extract<TranslationKey, `compliance.acceptedReason.${string}`>
 
@@ -184,7 +184,7 @@ export const ACCEPTED_CONFIG_AUDIT_RULES: readonly AcceptedConfigAuditRule[] = [
     "ReplicaSet",
     "narwhal-db-pooler-rw",
     ["KSV020", "KSV021"],
-    "accept",
+    "upstream",
     "compliance.acceptedReason.cnpgPoolerUid",
   ),
 
@@ -664,6 +664,22 @@ export const ACCEPTED_CONFIG_AUDIT_RULES: readonly AcceptedConfigAuditRule[] = [
     ["KSV020", "KSV021"],
     "accept",
     "compliance.acceptedReason.openbaoInjectorUid",
+  ),
+  configRule(
+    "storage",
+    "CronJob",
+    "openbao-snapshot",
+    ["KSV020", "KSV021"],
+    "accept",
+    "compliance.acceptedReason.openbaoSnapshotUid",
+  ),
+  configRule(
+    "storage",
+    "ReplicaSet",
+    "openbao-snapshot-holder",
+    ["KSV020", "KSV021"],
+    "accept",
+    "compliance.acceptedReason.openbaoSnapshotUid",
   ),
   configRule(
     "storage",

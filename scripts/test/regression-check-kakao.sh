@@ -3522,8 +3522,8 @@ PYEOF'
   # 2026-11-19: portal Compliance Frameworks fix round (own-property target lookup, UI raw failCount on dropped RS, empty RS warn parity, kisa.ts comment, edge unit tests)
   check R382 "parseComplianceTarget uses Object.hasOwn, UI preserves raw failCount whenever failCount !== actionableFail (including acceptedFail===0), empty ReplicaSet list warns consistently with getConfigAuditList, kisa.ts comment updated, and edge/UI tests cover RS 403/500, empty RS, unaccountedFail, checks:[], and hashed StatefulSet restore; 11 mutations caught" \
     python3 scripts/test/lib/check-portal-framework-accepted-fixes.py --mutation-verify
-  # 2026-11-19: remaining low-severity compliance findings (OpenBao helper/snapshot 10100:10100 + verified CNPG/nfs-quota-agent allowlist entries)
-  check R383 "OpenBao auto-unseal, snapshot, and snapshot-holder set runAsUser/runAsGroup 10100 (not allowlisted); CNPG narwhal-db-1, narwhal-db-pooler-rw, and nfs-quota-agent KSV003/020/021 allowlisted with verified reasons across code, i18n, and docs; 13 mutations caught" \
+  # 2026-11-19: remaining low-severity compliance findings (OpenBao auto-unseal 10100:10100; snapshot/holder stay uid 100 and are allowlisted; verified CNPG/nfs-quota-agent allowlist entries)
+  check R383 "OpenBao auto-unseal runs as 10100:10100 (not allowlisted), snapshot/holder keep uid 100 with exact KSV020/021 allowlist entries; CNPG narwhal-db-1, pooler (upstream), and nfs-quota-agent allowlisted with exact check sets across code, i18n, and docs; 20 mutations caught" \
     python3 scripts/test/lib/check-compliance-low-residuals.py --mutation-verify
 }
 

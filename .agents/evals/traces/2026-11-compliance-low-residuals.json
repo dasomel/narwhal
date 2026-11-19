@@ -2,7 +2,7 @@
   "schemaVersion": "openforge-agent-trace/v1",
   "consistencyMode": "strict",
   "traceId": "narwhal-compliance-low-residuals-20261119",
-  "task": "Resolve or fail-closed accept the remaining actionable low-severity compliance framework findings (CIS 5.2.10, CIS 5.7.3, KISA-ADM-01): set runAsUser/runAsGroup 10100 on OpenBao auto-unseal, snapshot, and snapshot-holder manifests; add verified fail-closed allowlist rules for CNPG narwhal-db-1, narwhal-db-pooler-rw, and nfs-quota-agent KSV003/020/021; add R383, tests, changelog, and lessons-log.",
+  "task": "Resolve or fail-closed accept the remaining actionable low-severity compliance framework findings (CIS 5.2.10, CIS 5.7.3, KISA-ADM-01): set runAsUser/runAsGroup 10100 on OpenBao auto-unseal only; keep openbao-snapshot and openbao-snapshot-holder at uid 100 (existing PVC backup files are owned by it) with exact KSV020/KSV021 allowlist entries; add verified fail-closed allowlist rules for CNPG narwhal-db-1 (accept), narwhal-db-pooler-rw (upstream), and nfs-quota-agent KSV003/020/021; add R383, tests, changelog, and lessons-log.",
   "changeContext": {
     "paths": [
       ".agents/evals/traces/2026-11-compliance-low-residuals.json",
@@ -30,13 +30,13 @@
     {
       "id": "e2",
       "type": "reproduction",
-      "summary": "Verified live manifests, CRDs, and pods read-only: openbao-snapshot has no UID 100/GID 1000 dependency (projected SA token owned by pod runAsUser, 0644 ca.crt/recipient.pem, shared emptyDir work/tmp under same pod UID/GID, 0777 nobody:nobody /snapshots PVC root, encrypt valkey:8-alpine image user 999 already overridden by pod securityContext). Confirmed CNPG Cluster/Pooler CRDs expose podSecurityContext/template.spec.securityContext, but postgresql:18 (/etc/passwd postgres UID 26 + 0700 pgdata owned 26:26) and pgbouncer:1.25.1 (getpwuid/getpwnam, Go user.Current, /etc/pgbouncer 998:996) require image UIDs; nfs-quota-agent requires privileged/UID 0/capabilities for XFS/ext4 quotactl.",
+      "summary": "Verified live manifests, CRDs, and pods read-only plus CNPG v1.29.1 source: openbao-auto-unseal has no volume mounts and ran successfully as a one-off 10100 Job. openbao-snapshot/holder write /snapshots/raft (0755, uid 100 on clusters that already took a backup), so switching uid needs an ownership migration and was reverted to main. CNPG Cluster exposes postgresUID/podSecurityContext, but postgresql:18 (/etc/passwd postgres UID 26 + 0700 pgdata owned 26:26) keeps narwhal-db-1 at accept. The CNPG Pooler pod securityContext is overwritten unconditionally with 998/996 by the operator (pkg/specs/pgbouncer/deployments.go, pkg/podspec/builder.go), so no supported setting exists (upstream); the pod runs /controller/configs/pgbouncer.ini, not /etc/pgbouncer. nfs-quota-agent requires privileged/UID 0/capabilities for XFS/ext4 quotactl.",
       "evidence": []
     },
     {
       "id": "e3",
       "type": "bug_fix",
-      "summary": "Set runAsUser: 10100 and runAsGroup: 10100 with D-OPENBAO-UID-10100 comments in gitops/resources/openbao-unseal.yaml and gitops/resources/openbao-backup.yaml (openbao-snapshot and openbao-snapshot-holder). Added fail-closed allowlist rules for database/Pod/narwhal-db-1 (KSV020, KSV021, KSV036), database/ReplicaSet/narwhal-db-pooler-rw (KSV020, KSV021), and nfs-quota-agent/DaemonSet/nfs-quota-agent (expanded with KSV003, KSV020, KSV021) across portal/src/lib/compliance-accepted.ts, i18n.ts (ko/en), docs/common/compliance-hardening.md (71 rules / 59 workloads), tests, changelogs, lessons-log, and R383.",
+      "summary": "Set runAsUser: 10100 and runAsGroup: 10100 with a D-OPENBAO-UID-10100 comment in gitops/resources/openbao-unseal.yaml only; gitops/resources/openbao-backup.yaml is identical to origin/main. Added fail-closed exact allowlist rules for database/Pod/narwhal-db-1 (KSV020, KSV021, KSV036; accept; exact pod name), database/ReplicaSet/narwhal-db-pooler-rw (KSV020, KSV021; upstream), storage/CronJob/openbao-snapshot and storage/ReplicaSet/openbao-snapshot-holder (KSV020, KSV021; accept), and nfs-quota-agent/DaemonSet/nfs-quota-agent (expanded with KSV003, KSV020, KSV021) across portal/src/lib/compliance-accepted.ts (WorkloadKind gains CronJob), i18n.ts (ko/en), docs/common/compliance-hardening.md (73 rules / 61 workloads), tests, changelogs, lessons-log, and R383 (set-equal check IDs, container override checks, derived doc counts).",
       "evidence": []
     },
     {
@@ -44,13 +44,13 @@
       "type": "regression_verification",
       "status": "passed",
       "scope": "Offline manifest validation, openbao-backup contract + R383 mutation tests, full portal typecheck/lint/vitest/harness-rules/next-build, make validate, make test (492 static checks), and eval/trace gates without mutating the live cluster. Live rollout via push-to-gitea.sh, openbao-snapshot execution (blocked by missing openbao-backup-recipient ConfigMap on cluster), and post-sync Trivy ClusterComplianceReport rescan remain unverified.",
-      "summary": "All portal checks, static regression suite (492 passed, 0 failed), mutation tests (R383 13 mutations, openbao-backup mutations), and trace gates passed; make lint failed only on pre-existing line-length errors in unrelated YAML files.",
+      "summary": "Round 2: all portal checks, static regression suite (492 passed, 0 failed), mutation tests (R383 20 mutations, openbao-backup mutations), and trace gates passed; gitops/resources/openbao-backup.yaml is identical to origin/main.",
       "evidence": [
         "test:python3 scripts/test/lib/check-openbao-snapshot-backup.py --mutation-verify -> exit 0",
-        "test:python3 scripts/test/lib/check-compliance-low-residuals.py --mutation-verify -> PASS: 13 mutations rejected",
-        "test:cd portal && pnpm typecheck && pnpm lint && pnpm test && bash scripts/harness-rules.sh && pnpm build -> exit 0 (192 test files, 2608 tests passed)",
-        "test:make validate -> exit 0",
+        "test:python3 scripts/test/lib/check-compliance-low-residuals.py --mutation-verify -> PASS: 20 mutations rejected",
+        "test:cd portal && pnpm typecheck && pnpm lint && pnpm test -> exit 0 (192 test files, 2608 tests passed)",
         "test:make test -> passed 492 failed 0 warnings 3 (R383 PASS)",
+        "test:git diff origin/main -- gitops/resources/openbao-backup.yaml -> empty",
         "test:python3 .agents/evals/gate.py --trace .agents/evals/traces/2026-11-compliance-low-residuals.json --baseline .agents/evals/baseline.eval.json -> exit 0",
         "test:python3 scripts/ci/check-agent-trace-evidence.py -> passed true"
       ]
@@ -58,14 +58,14 @@
     {
       "id": "e5",
       "type": "completion_claim",
-      "summary": "Manifests, allowlist rules, tests, docs, changelogs, lessons-log, R383, and trace are complete and verified offline; live cluster sync and Trivy rescan remain for the orchestrator.",
+      "summary": "Unseal manifest, allowlist rules, tests, docs, changelogs, lessons-log, R383, and trace are complete and verified offline; live cluster sync and Trivy rescan remain for the orchestrator.",
       "evidence": []
     },
     {
       "id": "e6",
       "type": "task_outcome",
       "state": "A",
-      "summary": "Complete within repository scope; ready for GitOps push (openbao-unseal.yaml, openbao-backup.yaml) and portal rollout.",
+      "summary": "Complete within repository scope; ready for GitOps push (openbao-unseal.yaml only) and portal rollout.",
       "evidence": []
     }
   ]

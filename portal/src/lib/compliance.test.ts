@@ -1710,7 +1710,7 @@ describe("compliance framework actionable vs accepted split", () => {
       { id: "1.1.12", act: 1, acc: 0 },
       { id: "5.1.2", act: 5, acc: 27 },
       { id: "5.1.3", act: 6, acc: 10 },
-      { id: "5.7.3", act: 14, acc: 144 },
+      { id: "5.7.3", act: 8, acc: 150 },
     ])
 
     const kisaDetail = await getComplianceFrameworkDetail("k8s-kisa-1.0")

@@ -9,6 +9,21 @@ English | [한국어](CHANGELOG-ko.md)
 
 ## [Unreleased]
 
+## [1.1.20] - 2026-11-19
+
+Security patch release: permission reductions now take effect in the portal without waiting for the next sign-in, and
+an open tab no longer keeps data fetched under the old scope (narwhal#734, narwhal#688).
+
+### Operator notes / behaviour changes
+
+- Keycloak group changes apply at the next access-token refresh. If the refresh fails (Keycloak unreachable, session
+  revoked), the user is treated as guest and sent to sign in again: during a Keycloak outage longer than one token
+  lifetime, signed-in users including admins lose access until Keycloak is back.
+- When the server-side scope of a session changes, an open tab reloads (or shows a "scope changed" page if it reloaded
+  in the last 30 s). Live event and service-flow streams reconnect at least once per token lifetime.
+- No configuration is required.
+
+
 ### Fixed
 
 - **Re-derive Keycloak `groups` and `teams` claims on token refresh, fail closed across server gates, and bound SSE stream lifetime (`src/lib/auth.ts`, `src/lib/scope.ts`, `src/app/api/events/stream/route.ts`, `src/components/providers.tsx`, narwhal#734):**
@@ -920,7 +935,8 @@ management dashboard built with Next.js 16 and React 19.
   - Skaffold development profile configured for live Hot Module Replacement (HMR) and container
     file syncing.
 
-[Unreleased]: https://github.com/dasomel/narwhal/compare/portal/v1.1.19...HEAD
+[Unreleased]: https://github.com/dasomel/narwhal/compare/portal/v1.1.20...HEAD
+[1.1.20]: https://github.com/dasomel/narwhal/compare/portal/v1.1.19...portal/v1.1.20
 [1.1.19]: https://github.com/dasomel/narwhal/compare/portal/v1.1.18...portal/v1.1.19
 [1.1.18]: https://github.com/dasomel/narwhal/compare/portal/v1.1.17...portal/v1.1.18
 [1.1.17]: https://github.com/dasomel/narwhal/compare/portal/v1.1.16...portal/v1.1.17

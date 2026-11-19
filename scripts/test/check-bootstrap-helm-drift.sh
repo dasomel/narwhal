@@ -14,6 +14,13 @@ set -euo pipefail
 #   - kubectl get nodes (cluster readiness check)
 #   - helm get values <release> -n <ns> -o json (fetch live user-supplied values)
 #
+# Known limits (static text scan, not a shell parser):
+#   - The offline completeness check finds helm invocations by the literal tokens
+#     `helm` ... `upgrade` on a logical line. A command assembled dynamically without
+#     those tokens is not seen; a helm command quoted inside a multi-line string may be
+#     counted and then needs an allowlist entry (it fails closed in that direction).
+#   - Values passed through `-f <file>` are not compared (reported as UNCHECKED).
+#
 # Exit codes:
 #   0: IN SYNC / UNCHECKED (no drift detected; UNCHECKED releases counted in summary)
 #   1: DRIFT DETECTED (one or more keys differ from script declarations)

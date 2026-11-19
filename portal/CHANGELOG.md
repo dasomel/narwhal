@@ -9,6 +9,8 @@ English | [한국어](CHANGELOG-ko.md)
 
 ## [Unreleased]
 
+## [1.1.22] - 2026-11-19
+
 ### Changed
 
 - **Compliance allowlist for remaining low-severity framework findings (`src/lib/compliance-accepted.ts`, `src/lib/i18n.ts`, `docs/common/compliance-hardening.md`):**
@@ -961,7 +963,8 @@ management dashboard built with Next.js 16 and React 19.
   - Skaffold development profile configured for live Hot Module Replacement (HMR) and container
     file syncing.
 
-[Unreleased]: https://github.com/dasomel/narwhal/compare/portal/v1.1.21...HEAD
+[Unreleased]: https://github.com/dasomel/narwhal/compare/portal/v1.1.22...HEAD
+[1.1.22]: https://github.com/dasomel/narwhal/compare/portal/v1.1.21...portal/v1.1.22
 [1.1.21]: https://github.com/dasomel/narwhal/compare/portal/v1.1.20...portal/v1.1.21
 [1.1.20]: https://github.com/dasomel/narwhal/compare/portal/v1.1.19...portal/v1.1.20
 [1.1.19]: https://github.com/dasomel/narwhal/compare/portal/v1.1.18...portal/v1.1.19

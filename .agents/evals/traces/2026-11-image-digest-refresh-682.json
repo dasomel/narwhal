@@ -1,0 +1,58 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-image-digest-refresh-682-20261119",
+  "task": "Refresh moved upstream digests for docker.io/valkey/valkey:8-alpine (Valkey 8.1.12) and kong:3.9 (Kong 3.9.4) in image-digests.tsv and align the OpenBao snapshot job's explicit valkey pin (narwhal#682).",
+  "changeContext": {
+    "paths": [
+      "scripts/airgap/lib/image-digests.tsv",
+      "gitops/resources/openbao-backup.yaml",
+      "scripts/test/lib/check-openbao-snapshot-backup.py",
+      ".agents/evals/traces/2026-11-image-digest-refresh-682.json"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Scope: two moved floating tags (valkey:8-alpine, kong:3.9) in image-digests.tsv, plus the OpenBao snapshot job's explicit valkey digest pin and its check literals. No cluster change."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "refresh-image-digests.sh --check failed on the scheduled run (narwhal#682): valkey:8-alpine and kong:3.9 tags moved upstream; after updating only the table, check-openbao-snapshot-backup requires the explicit pin to match the table.",
+      "evidence": [
+        "test:scripts/airgap/lib/refresh-image-digests.sh --check -> diff on docker.io/valkey/valkey:8-alpine and kong:3.9 (rc 1)"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "Updated the two table rows (digest + crane timestamp) and the valkey pin in openbao-backup.yaml and its check to sha256:9971099af41c36e887aabdfe22b80c0fe45df949163dfc9cb434febc57cfc3fc."
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "image digests, openbao backup manifest, mirror pins and version consistency",
+      "summary": "Digest check, mirror pin check, OpenBao snapshot check and make validate pass.",
+      "evidence": [
+        "test:scripts/airgap/lib/refresh-image-digests.sh --check -> rc 0",
+        "test:python3 scripts/test/lib/check-mirror-pins.py -> 49 checks passed",
+        "test:python3 scripts/test/lib/check-openbao-snapshot-backup.py -> rc 0",
+        "test:make validate -> rc 0"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "completion_claim",
+      "summary": "The digest table and the explicit pin match the current upstream digests; no cluster rollout is claimed."
+    },
+    {
+      "id": "e6",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Complete within scope: two digests refreshed and the OpenBao pin aligned; live rollout of the new valkey image happens at the next snapshot job run after GitOps sync."
+    }
+  ]
+}

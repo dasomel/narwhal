@@ -3510,6 +3510,9 @@ PYEOF'
     python3 scripts/test/lib/check-portal-replicasets-rbac.py --mutation-verify
   check R375 "Round-5 compliance hardening (KSV014): platform-system/apisix sets readOnlyRootFilesystem=true with init-conf (apache/apisix:3.15.0-ubuntu, cp -R into apisix-conf emptyDir) and emptyDirs for /usr/local/apisix/{conf,logs,client_body_temp,proxy_temp,fastcgi_temp,uwsgi_temp,scgi_temp} and /tmp across 08-1-networking.sh & apisix.yaml with offline helm renders; 10 mutations caught" \
     python3 scripts/test/lib/check-round5-compliance-hardening.py --mutation-verify
+  # 2026-11-19 (#684): portal-docker-publish sign job generates & attests CycloneDX SBOM (bundle + legacy .att) and Kyverno matches https://cyclonedx.org/bom
+  check R379 "portal sign job generates CycloneDX SBOM via pinned trivy-action and attests with cosign (bundle + legacy .att with --use-signing-config=false) for release & sign_digest, Kyverno matches https://cyclonedx.org/bom, and docs cover verify-attestation; 11 mutations caught (#684)" \
+    python3 scripts/test/lib/check-portal-sbom-attest.py --mutation-verify
 }
 
 #=========================================

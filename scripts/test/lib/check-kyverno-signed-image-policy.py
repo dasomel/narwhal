@@ -85,8 +85,8 @@ def main() -> int:
         print(f"VIOLATION: attestations (SBOM predicate verification) missing in verifyImages configuration", file=sys.stderr)
         return 1
 
-    if [a.get("predicateType") for a in cfg["attestations"]] != ["https://cyclonedx.org/schema/1.4"]:
-        print("VIOLATION: CycloneDX 1.4 attestation predicate must be preserved", file=sys.stderr)
+    if [a.get("predicateType") for a in cfg["attestations"]] != ["https://cyclonedx.org/bom"]:
+        print("VIOLATION: CycloneDX attestation predicate must be https://cyclonedx.org/bom (D-CYCLONEDX-PREDICATE)", file=sys.stderr)
         return 1
 
     attestors = [

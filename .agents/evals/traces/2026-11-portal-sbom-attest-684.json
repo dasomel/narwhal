@@ -1,0 +1,62 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-portal-sbom-attest-684-20261119",
+  "task": "Publish CycloneDX SBOM attestations for narwhal-portal images and align Kyverno verify-image-signatures predicateType to https://cyclonedx.org/bom (narwhal#684).",
+  "changeContext": {
+    "paths": [
+      ".github/workflows/portal-docker-publish.yml",
+      "gitops/resources/kyverno-policies.yaml",
+      "portal/docs/cosign-signing-setup.md",
+      "scripts/test/lib/check-kyverno-signed-image-policy.py",
+      "scripts/test/lib/check-portal-sbom-attest.py",
+      "scripts/test/regression-check-kakao.sh",
+      "docs/common/lessons-log.md",
+      ".agents/evals/traces/2026-11-portal-sbom-attest-684.json"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Scope: add fail-closed CycloneDX SBOM generation (pinned trivy-action) and dual-format cosign attest (Sigstore bundle + legacy .att tag) to portal-docker-publish.yml sign job (release + sign_digest recovery); fix verify-image-signatures predicateType from https://cyclonedx.org/schema/1.4 to https://cyclonedx.org/bom; update docs, R74, R379, and lessons-log. No live cluster, GitHub, or GHCR mutations."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "Live cluster read-only check confirms narwhal-portal-d74cd77bd-vltm9 (1.1.21) has kyverno.io/verify-images=fail with PolicyReport 'no matching attestations'. Source inspection of cosign v3.1.4 (pkg/cosign/attestation/attestation.go, in_toto.PredicateCycloneDX) and Kyverno v1.18.1 (pkg/image/verifiers/cpol/cosign/cosign.go matchType, pkg/engine/internal/imageverifier.go verifyAttestation) plus local kyverno v1.18.1 CLI reproduction confirm two root causes: sign job emits no cosign attestation, and Kyverno's exact-match predicateType https://cyclonedx.org/schema/1.4 can never match cosign --type cyclonedx (https://cyclonedx.org/bom).",
+      "evidence": [
+        "runtime:kubectl -n devtools get pods -> narwhal-portal-d74cd77bd-vltm9 image=ghcr.io/dasomel/narwhal-portal:1.1.21 verify={\"ghcr.io/dasomel/narwhal-portal:1.1.21\":\"fail\"} and PolicyReport 'image attestations verification failed ... no matching attestations' (measured 2026-11-19)",
+        "test:kyverno v1.18.1 apply --registry against locally signed+attested image with predicateType=https://cyclonedx.org/schema/1.4 -> result: fail ('attestions not found for predicate type https://cyclonedx.org/schema/1.4') (measured 2026-11-19)"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "Added SHA-pinned aquasecurity/trivy-action (v0.36.0, scan-type: image, format: cyclonedx) and dual-format cosign attest (Sigstore bundle + legacy .att with --new-bundle-format=false --use-signing-config=false) to portal-docker-publish.yml sign job (D10/D-dual-attestation); fixed gitops/resources/kyverno-policies.yaml predicateType to https://cyclonedx.org/bom (D-CYCLONEDX-PREDICATE); updated R74, docs, lessons-log, and added R379."
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "Local throwaway-key end-to-end signing/attestation against crane registry serve with cosign v3.1.4, trivy 0.69.3 (including real 457KB portal 1.1.21 CycloneDX SBOM), and Kyverno v1.18.1 CLI (tlog upload off); R74/R75, R379 (11 mutations), check-mutable-inputs, make lint, make validate, make test. CI Rekor upload and live-cluster admission pass require post-merge sign_digest recovery and GitOps sync.",
+      "summary": "Local end-to-end verification with cosign v3.1.4, trivy, and Kyverno v1.18.1 CLI passes on predicateType=https://cyclonedx.org/bom (including repeat attest with the real 457KB portal 1.1.21 SBOM); all static regression, lint, validate, and trace gates pass.",
+      "evidence": [
+        "test:crane registry serve + trivy image --format cyclonedx + cosign sign/attest (bundle + legacy --new-bundle-format=false --use-signing-config=false --tlog-upload=false) + cosign verify-attestation --type cyclonedx (legacy & bundle) + kyverno v1.18.1 apply --registry -> result: pass (summary: pass 1, fail 0) for both test image and real 457KB portal 1.1.21 SBOM (measured 2026-11-19)",
+        "test:python3 scripts/test/lib/check-portal-sbom-attest.py --mutation-verify -> PASS (11 mutations rejected)",
+        "test:make validate -> Syntax OK, 31/31 GitOps YAMLs OK; make test -> passed 488 failed 0 warnings 3; make lint -> shellcheck 0 findings, 0 yamllint findings on kyverno-policies.yaml (3 pre-existing unrelated line-length errors in ghost-pod-reaper.yaml, prometheus-alerts.yaml, velero-server-rbac.yaml)"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "completion_claim",
+      "summary": "Verified locally end to end with cosign v3.1.4, trivy, and Kyverno v1.18.1 CLI (offline tlog) plus full static lint/validate/test/trace gates. CI Rekor upload with repository secrets, ArgoCD sync of the updated ClusterPolicy, and live pod kyverno.io/verify-images=pass remain post-merge orchestrator verification steps and are not claimed here."
+    },
+    {
+      "id": "e6",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Workflow attestation, Kyverno predicateType fix, docs, R379, lessons-log, and trace are complete and locally verified; post-merge sign_digest recovery and live cluster confirmation handed off to orchestrator."
+    }
+  ]
+}

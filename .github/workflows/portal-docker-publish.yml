@@ -8,8 +8,8 @@ name: Portal Build & Publish Container (GHCR)
 #       become ghcr.io/dasomel/narwhal and GitOps pins the old name.
 #   D3  The version used for image tags is the tag minus the `portal/v` prefix; metadata-action's
 #       type=semver is fed it explicitly (`value=`) because it cannot parse `portal/v1.2.3`.
-#   D4  Build context `portal`, Dockerfile `portal/Dockerfile`. cosign/provenance/SBOM steps and
-#       their secrets contract (COSIGN_PRIVATE_KEY, COSIGN_PASSWORD) are unchanged.
+#   D4  Build context `portal`, Dockerfile `portal/Dockerfile`. Signing/attestation steps and
+#       their secrets contract (COSIGN_PRIVATE_KEY, COSIGN_PASSWORD) live in the `sign` job.
 #   D5  ADMIN PREREQUISITES (cannot be done from here): (a) the GHCR package
 #       ghcr.io/dasomel/narwhal-portal must grant this repository (dasomel/narwhal) write access
 #       under Package settings > Manage Actions access, otherwise GITHUB_TOKEN gets 403 on push;
@@ -18,6 +18,16 @@ name: Portal Build & Publish Container (GHCR)
 #       see portal/docs/cosign-signing-setup.md).
 #   D6  Job-level working-directory is not used: the only file-reading run step is the
 #       package.json guard, which takes the explicit portal/ path.
+#   D10 CycloneDX SBOM attestation (narwhal#684): Kyverno's verify-image-signatures policy
+#       requires both a Cosign signature and a CycloneDX SBOM attestation (`https://cyclonedx.org/bom`)
+#       signed by the same key; buildx `sbom: true` only attaches an unsigned BuildKit SPDX
+#       attestation to the image index. The `sign` job (both release and `sign_digest` recovery
+#       runs) generates a CycloneDX SBOM from `${IMAGE}@${DIGEST}` via `aquasecurity/trivy-action`
+#       (already pinned in `portal-release.yml`/`portal-license-and-sbom.yml`) and publishes both
+#       a Sigstore bundle attestation and a legacy `.att` tag (`--new-bundle-format=false
+#       --use-signing-config=false`) for Kyverno 1.18.x. Cost: extra scan/attest time in `sign`,
+#       ~457 KB `.att` artifact per release, deprecated cosign v3 legacy flags. Escape hatch:
+#       drop the legacy `.att` line after upgrading to Kyverno >= 1.19 with `SigstoreBundle`.
 #
 
 # Builds the narwhal-portal container and publishes it to GitHub Container
@@ -49,7 +59,7 @@ on:
   workflow_dispatch:
     inputs:
       sign_digest:
-        description: 'Recovery only: sign this existing manifest-list digest (sha256:<64 hex>) of the published image and skip build/merge'
+        description: 'Recovery only: sign and attest this existing manifest-list digest (sha256:<64 hex>) of the published image and skip build/merge'
         required: false
         default: ''
         type: string
@@ -447,3 +457,43 @@ jobs:
           # formats coexist on the same digest. Escape hatch: drop this line only after the
           # cluster runs Kyverno >= 1.19 AND the policy uses a SigstoreBundle attestor.
           cosign sign --yes --key env://COSIGN_PRIVATE_KEY --new-bundle-format=false --use-signing-config=false "${IMAGE}@${DIGEST}"
+
+      # D-dual-attestation (narwhal#684): Kyverno's verify-image-signatures ClusterPolicy
+      # requires a Cosign CycloneDX SBOM attestation (`predicateType: https://cyclonedx.org/bom`)
+      # signed by the same key; buildx `sbom: true` writes an unsigned BuildKit SPDX attestation
+      # inside the image index that Kyverno does not read. Reuse aquasecurity/trivy-action
+      # (already pinned in portal-release.yml and portal-license-and-sbom.yml) so both normal
+      # releases and `sign_digest` recovery runs generate the SBOM from `${IMAGE}@${DIGEST}`.
+      # Fail closed: any Trivy or cosign attest failure fails the sign job.
+      - name: Generate CycloneDX SBOM for image digest
+        if: steps.secrets-check.outputs.present == 'true'
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: image
+          scan-ref: ${{ env.IMAGE }}@${{ inputs.sign_digest || needs.merge.outputs.digest }}
+          format: cyclonedx
+          output: ${{ runner.temp }}/sbom-cyclonedx.json
+          cache: 'false'
+
+      - name: Attest image digest with CycloneDX SBOM
+        if: steps.secrets-check.outputs.present == 'true'
+        env:
+          COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
+          COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
+          DIGEST: ${{ inputs.sign_digest || needs.merge.outputs.digest }}
+          SBOM_PATH: ${{ runner.temp }}/sbom-cyclonedx.json
+        run: |
+          set -euo pipefail
+          cosign attest --yes --key env://COSIGN_PRIVATE_KEY \
+            --predicate "${SBOM_PATH}" --type cyclonedx "${IMAGE}@${DIGEST}"
+          # D-dual-attestation (narwhal#684): mirror D-dual-signature above. cosign v3 writes
+          # a Sigstore bundle (OCI referrer), which Kyverno 1.18.x cannot verify with a static
+          # key; also publish the legacy tag-based attestation (`sha256-<digest>.att`) with
+          # predicateType `https://cyclonedx.org/bom` (`in_toto.PredicateCycloneDX`). Verified
+          # with cosign v3.1.4 + trivy + Kyverno v1.18.1 CLI against a local registry (tlog off).
+          # Cost: deprecated flags and a second ~457 KB OCI artifact per release.
+          # Escape hatch: drop this line only after the cluster runs Kyverno >= 1.19 AND the
+          # policy uses a SigstoreBundle attestor.
+          cosign attest --yes --key env://COSIGN_PRIVATE_KEY \
+            --predicate "${SBOM_PATH}" --type cyclonedx \
+            --new-bundle-format=false --use-signing-config=false "${IMAGE}@${DIGEST}"

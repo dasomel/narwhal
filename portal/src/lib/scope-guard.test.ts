@@ -26,7 +26,7 @@ function makeResponse(
   })
 }
 
-async function waitUntil(condition: () => boolean, maxTurns = 50): Promise<void> {
+async function waitUntil(condition: () => boolean, maxTurns = 100): Promise<void> {
   for (let i = 0; i < maxTurns; i++) {
     if (condition()) return
     await new Promise((resolve) => setTimeout(resolve, 0))
@@ -47,55 +47,55 @@ describe("scope-guard with real QueryClient", () => {
     environmentManager.setIsServer(prevIsServer)
   })
 
-  it("evicts cached active and inactive queries and resets scoped state when X-Narwhal-Scope changes", async () => {
+  it("cancels in-flight tenant queries via AbortSignal, evicts cache, resets detail views, and refetches active queries on scope change", async () => {
     const queryClient = new QueryClient({
-      defaultOptions: { queries: { retry: false, gcTime: Infinity } },
+      defaultOptions: { queries: { retry: shouldRetryQuery, retryDelay: 0, gcTime: Infinity } },
     })
     const guard = createScopeGuard(queryClient)
     const selected = createScopedState<string | null>(null, guard)
     const unsubSelected = selected.mount()
 
-    let alertsScope = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-    let eventsScope = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    let currentScope = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    const seenSignals: Array<AbortSignal | undefined> = []
 
     vi.stubGlobal(
       "fetch",
-      vi.fn(async (input: RequestInfo | URL) => {
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        seenSignals.push(init?.signal ?? undefined)
         const url = String(input)
         if (url === "/api/alerts") {
           return makeResponse(
-            alertsScope === "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+            currentScope === "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
               ? [{ alertname: "TeamBAlert" }]
               : [{ alertname: "TeamAAlert" }],
-            { scope: alertsScope },
+            { scope: currentScope },
           )
         }
         if (url === "/api/events") {
           return makeResponse(
-            eventsScope === "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+            currentScope === "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
               ? [{ id: "e-team-b" }]
               : [{ id: "e-team-a" }],
-            { scope: eventsScope },
+            { scope: currentScope },
           )
         }
-        return makeResponse([], { scope: alertsScope })
+        return makeResponse([], { scope: currentScope })
       }),
     )
 
-    // Populate an inactive query (e.g. from a previously visited page)
     await queryClient.fetchQuery({
       queryKey: ["catalog"],
-      queryFn: () => guard.fetchJson("/api/catalog"),
+      queryFn: ({ signal }) => guard.fetchJson("/api/catalog", { signal }),
     })
     expect(queryClient.getQueryData(["catalog"])).toEqual([])
 
     const alertsObs = new QueryObserver(queryClient, {
       queryKey: ["alerts"],
-      queryFn: () => guard.fetchJson("/api/alerts"),
+      queryFn: ({ signal }) => guard.fetchJson("/api/alerts", { signal }),
     })
     const eventsObs = new QueryObserver(queryClient, {
       queryKey: ["events"],
-      queryFn: () => guard.fetchJson("/api/events"),
+      queryFn: ({ signal }) => guard.fetchJson("/api/events", { signal }),
     })
     const unsubAlerts = alertsObs.subscribe(() => {})
     const unsubEvents = eventsObs.subscribe(() => {})
@@ -105,29 +105,26 @@ describe("scope-guard with real QueryClient", () => {
         alertsObs.getCurrentResult().status === "success" &&
         eventsObs.getCurrentResult().status === "success",
     )
-    expect(alertsObs.getCurrentResult().data).toEqual([{ alertname: "TeamBAlert" }])
-    expect(eventsObs.getCurrentResult().data).toEqual([{ id: "e-team-b" }])
+    expect(seenSignals.every((s) => s instanceof AbortSignal)).toBe(true)
 
     selected.set("TeamBAlert")
     expect(selected.get()).toBe("TeamBAlert")
 
-    // Server reduces access to team-a only -> fingerprint changes to bbbbb...
-    alertsScope = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
-    eventsScope = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
-
+    // Server rotates scope -> refetch detects new fingerprint, evicts, and refetches both active observers.
+    currentScope = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
     await alertsObs.refetch()
 
-    // Inactive cache is removed, selection is reset, and active alerts query holds new data.
-    expect(queryClient.getQueryCache().find({ queryKey: ["catalog"] })).toBeUndefined()
-    expect(selected.get()).toBeNull()
-    expect(alertsObs.getCurrentResult().data).toEqual([{ alertname: "TeamAAlert" }])
-
-    // Active events query was cleared and refetched under the new scope.
     await waitUntil(
       () =>
-        JSON.stringify(eventsObs.getCurrentResult().data) ===
-        JSON.stringify([{ id: "e-team-a" }]),
+        alertsObs.getCurrentResult().status === "success" &&
+        eventsObs.getCurrentResult().status === "success" &&
+        JSON.stringify(alertsObs.getCurrentResult().data) === JSON.stringify([{ alertname: "TeamAAlert" }]) &&
+        JSON.stringify(eventsObs.getCurrentResult().data) === JSON.stringify([{ id: "e-team-a" }]),
     )
+
+    expect(queryClient.getQueryCache().find({ queryKey: ["catalog"] })).toBeUndefined()
+    expect(selected.get()).toBeNull()
+    expect(guard.getLastFingerprint()).toBe("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")
     expect(JSON.stringify(queryClient.getQueryCache().getAll().map((q) => q.state.data))).not.toContain(
       "team-b",
     )
@@ -138,10 +135,370 @@ describe("scope-guard with real QueryClient", () => {
     queryClient.clear()
   })
 
-  it("clears all queries and resets scoped state on 403 ACCESS_NOT_GRANTED and 401", async () => {
+  it("discards a header-checked response whose body completes after a scope change, and the discarded query ends in success after refetch (real QueryClient)", async () => {
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: shouldRetryQuery, retryDelay: 0, gcTime: Infinity } },
+    })
+    const guard = createScopeGuard(queryClient)
+    const fpOld = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    const fpNew = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+
+    let releaseBody!: (val: unknown) => void
+    let bodyReadStarted = false
+    let alertsSignalOnInFlight: AbortSignal | undefined
+    let alertsCalls = 0
+    let serverScope = fpOld
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input)
+        if (url === "/api/alerts") {
+          alertsCalls += 1
+          if (alertsCalls === 1) {
+            return makeResponse([{ id: "initial-old" }], { scope: fpOld })
+          }
+          if (alertsCalls === 2) {
+            alertsSignalOnInFlight = init?.signal ?? undefined
+            // Header passes under fpOld, then body resolves AFTER scope changed to fpNew.
+            return {
+              ok: true,
+              status: 200,
+              statusText: "OK",
+              headers: new Headers({ [SCOPE_FINGERPRINT_HEADER]: fpOld }),
+              json: () => {
+                bodyReadStarted = true
+                return new Promise((resolve) => {
+                  releaseBody = resolve
+                })
+              },
+            } as unknown as Response
+          }
+          return makeResponse([{ id: "fresh-new-alert" }], { scope: fpNew })
+        }
+        return makeResponse([{ id: "fresh-new-event" }], { scope: serverScope })
+      }),
+    )
+
+    const alertsObs = new QueryObserver(queryClient, {
+      queryKey: ["alerts"],
+      queryFn: ({ signal }) => guard.fetchJson("/api/alerts", { signal }),
+    })
+    const eventsObs = new QueryObserver(queryClient, {
+      queryKey: ["events"],
+      queryFn: ({ signal }) => guard.fetchJson("/api/events", { signal }),
+    })
+    const unsubAlerts = alertsObs.subscribe(() => {})
+    const unsubEvents = eventsObs.subscribe(() => {})
+
+    await waitUntil(
+      () =>
+        alertsObs.getCurrentResult().status === "success" &&
+        eventsObs.getCurrentResult().status === "success",
+    )
+
+    // Start alerts refetch under fpOld; pause while awaiting res.json().
+    void alertsObs.refetch()
+    await waitUntil(() => bodyReadStarted)
+
+    // Scope changes to fpNew and events refetch detects it -> cancels alerts, resets & invalidates active queries.
+    serverScope = fpNew
+    await eventsObs.refetch()
+
+    // In-flight alerts fetch's AbortSignal must be aborted by cancelQueries.
+    expect(alertsSignalOnInFlight?.aborted).toBe(true)
+
+    // Now the stale header-checked body completes with old-scope secret data.
+    releaseBody([{ id: "REVOKED-SECRET" }])
+
+    // Replacement refetch must bring alerts and events to success with fpNew data (not stuck in error).
+    await waitUntil(
+      () =>
+        alertsObs.getCurrentResult().status === "success" &&
+        eventsObs.getCurrentResult().status === "success" &&
+        JSON.stringify(alertsObs.getCurrentResult().data) === JSON.stringify([{ id: "fresh-new-alert" }]),
+    )
+
+    expect(guard.getLastFingerprint()).toBe(fpNew)
+    expect(queryClient.getQueryData(["alerts"])).toEqual([{ id: "fresh-new-alert" }])
+    expect(queryClient.getQueryData(["events"])).toEqual([{ id: "fresh-new-event" }])
+    expect(alertsObs.getCurrentResult().error).toBeNull()
+    expect(JSON.stringify(queryClient.getQueryCache().getAll().map((q) => q.state.data))).not.toContain(
+      "REVOKED-SECRET",
+    )
+
+    // Also verify raw guard.fetch().then(r => r.json()) rejects when scope changes during body read.
+    let releaseRawBody!: (val: unknown) => void
+    let rawBodyStarted = false
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        if (String(input) === "/api/traces") {
+          const res = new Response(null, { status: 200, headers: { [SCOPE_FINGERPRINT_HEADER]: fpNew } })
+          res.json = () => {
+            rawBodyStarted = true
+            return new Promise((resolve) => {
+              releaseRawBody = resolve
+            })
+          }
+          return res
+        }
+        return makeResponse({ error: "Forbidden", code: ACCESS_NOT_GRANTED_CODE }, { status: 403 })
+      }),
+    )
+    const rawJsonPromise = guard.fetch("/api/traces").then((r) => r.json())
+    await waitUntil(() => rawBodyStarted)
+    await expect(guard.fetchJson("/api/events")).rejects.toBeInstanceOf(ApiHttpError)
+    releaseRawBody([{ id: "STALE-TRACE" }])
+    await expect(rawJsonPromise).rejects.toBeInstanceOf(ScopeStaleResponseError)
+
+    unsubAlerts()
+    unsubEvents()
+    queryClient.clear()
+  })
+
+  it("converges to new-scope data and new fingerprint when old-scope response arrives first and new-scope arrives second (real QueryClient)", async () => {
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: shouldRetryQuery, retryDelay: 0, gcTime: Infinity } },
+    })
+    const guard = createScopeGuard(queryClient)
+    const fpOld = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    const fpNew = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+
+    let releaseOldAlerts!: (res: Response) => void
+    let releaseNewEvents!: (res: Response) => void
+    const oldAlertsPromise = new Promise<Response>((resolve) => {
+      releaseOldAlerts = resolve
+    })
+    const newEventsPromise = new Promise<Response>((resolve) => {
+      releaseNewEvents = resolve
+    })
+
+    let alertsCalls = 0
+    let eventsCalls = 0
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input)
+        if (url === "/api/alerts") {
+          alertsCalls += 1
+          if (alertsCalls === 1) return oldAlertsPromise
+          return makeResponse([{ id: "new-scope-alert" }], { scope: fpNew })
+        }
+        eventsCalls += 1
+        if (eventsCalls === 1) return newEventsPromise
+        return makeResponse([{ id: "new-scope-event" }], { scope: fpNew })
+      }),
+    )
+
+    // Both requests start concurrently before any fingerprint is accepted (epoch = 0, lastFingerprint = null).
+    const alertsObs = new QueryObserver(queryClient, {
+      queryKey: ["alerts"],
+      queryFn: ({ signal }) => guard.fetchJson("/api/alerts", { signal }),
+    })
+    const eventsObs = new QueryObserver(queryClient, {
+      queryKey: ["events"],
+      queryFn: ({ signal }) => guard.fetchJson("/api/events", { signal }),
+    })
+    const unsubAlerts = alertsObs.subscribe(() => {})
+    const unsubEvents = eventsObs.subscribe(() => {})
+
+    await waitUntil(() => alertsCalls === 1 && eventsCalls === 1)
+
+    // Old-scope response arrives FIRST -> accepted temporarily as first fingerprint.
+    releaseOldAlerts(makeResponse([{ id: "REVOKED-OLD-ALERT" }], { scope: fpOld }))
+    await waitUntil(() => guard.getLastFingerprint() === fpOld)
+
+    // New-scope response arrives SECOND -> treated as scope change -> evicts old data and refetches both.
+    releaseNewEvents(makeResponse([{ id: "first-new-event" }], { scope: fpNew }))
+
+    await waitUntil(
+      () =>
+        alertsObs.getCurrentResult().status === "success" &&
+        eventsObs.getCurrentResult().status === "success" &&
+        JSON.stringify(alertsObs.getCurrentResult().data) === JSON.stringify([{ id: "new-scope-alert" }]),
+    )
+
+    expect(guard.getLastFingerprint()).toBe(fpNew)
+    expect(queryClient.getQueryData(["alerts"])).toEqual([{ id: "new-scope-alert" }])
+    expect(queryClient.getQueryData(["events"])).toEqual([{ id: "new-scope-event" }])
+    expect(JSON.stringify(queryClient.getQueryCache().getAll().map((q) => q.state.data))).not.toContain(
+      "REVOKED-OLD-ALERT",
+    )
+
+    unsubAlerts()
+    unsubEvents()
+    queryClient.clear()
+  })
+
+  it("converges to new-scope data and discards late old-scope response when new-scope arrives first (real QueryClient)", async () => {
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: shouldRetryQuery, retryDelay: 0, gcTime: Infinity } },
+    })
+    const guard = createScopeGuard(queryClient)
+    const fpOld = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    const fpNew = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+
+    let releaseOldAlerts!: (res: Response) => void
+    const oldAlertsPromise = new Promise<Response>((resolve) => {
+      releaseOldAlerts = resolve
+    })
+
+    let alertsCalls = 0
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input)
+        if (url === "/api/alerts") {
+          alertsCalls += 1
+          if (alertsCalls === 1) return oldAlertsPromise
+          return makeResponse([{ id: "new-scope-alert" }], { scope: fpNew })
+        }
+        return makeResponse([{ id: "new-scope-event" }], { scope: fpNew })
+      }),
+    )
+
+    const alertsObs = new QueryObserver(queryClient, {
+      queryKey: ["alerts"],
+      queryFn: ({ signal }) => guard.fetchJson("/api/alerts", { signal }),
+    })
+    const eventsObs = new QueryObserver(queryClient, {
+      queryKey: ["events"],
+      queryFn: ({ signal }) => guard.fetchJson("/api/events", { signal }),
+    })
+    const unsubAlerts = alertsObs.subscribe(() => {})
+    const unsubEvents = eventsObs.subscribe(() => {})
+
+    // New-scope response arrives first and establishes fpNew.
+    await waitUntil(() => eventsObs.getCurrentResult().status === "success")
+    expect(guard.getLastFingerprint()).toBe(fpNew)
+
+    // Late old-scope response resolves -> never stores old data, triggers eviction+refetch, and ends in success with fpNew.
+    releaseOldAlerts(makeResponse([{ id: "REVOKED-OLD-ALERT" }], { scope: fpOld }))
+
+    await waitUntil(
+      () =>
+        alertsObs.getCurrentResult().status === "success" &&
+        eventsObs.getCurrentResult().status === "success" &&
+        guard.getLastFingerprint() === fpNew &&
+        JSON.stringify(alertsObs.getCurrentResult().data) === JSON.stringify([{ id: "new-scope-alert" }]),
+    )
+
+    expect(queryClient.getQueryData(["alerts"])).toEqual([{ id: "new-scope-alert" }])
+    expect(queryClient.getQueryData(["events"])).toEqual([{ id: "new-scope-event" }])
+    expect(alertsObs.getCurrentResult().error).toBeNull()
+    expect(JSON.stringify(queryClient.getQueryCache().getAll().map((q) => q.state.data))).not.toContain(
+      "REVOKED-OLD-ALERT",
+    )
+
+    unsubAlerts()
+    unsubEvents()
+    queryClient.clear()
+  })
+
+  it("evicts only tenant-scoped queries and leaves settings and non-tenant queries intact (real QueryClient)", async () => {
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: shouldRetryQuery, retryDelay: 0, gcTime: Infinity } },
+    })
+    const guard = createScopeGuard(queryClient)
+    let currentScope = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    let settingsUsersFetches = 0
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input)
+        if (url === "/api/settings/users") {
+          settingsUsersFetches += 1
+          return makeResponse([{ username: "alice" }])
+        }
+        if (url === "/api/settings/groups") {
+          return makeResponse([{ name: "admins" }])
+        }
+        if (url === "/api/alerts") {
+          return makeResponse(
+            currentScope === "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+              ? [{ id: "team-b-alert" }]
+              : [{ id: "team-a-alert" }],
+            { scope: currentScope },
+          )
+        }
+        return makeResponse([{ id: "tenant-item" }], { scope: currentScope })
+      }),
+    )
+
+    // Populate non-tenant inactive & active settings queries, plus explicit opt-out query.
+    await queryClient.fetchQuery({
+      queryKey: ["settings-groups"],
+      queryFn: ({ signal }) => fetch("/api/settings/groups", { signal }).then((r) => r.json()),
+    })
+    await queryClient.fetchQuery({
+      queryKey: ["custom-global"],
+      meta: { tenantScoped: false },
+      queryFn: ({ signal }) => fetch("/api/settings/groups", { signal }).then((r) => r.json()),
+    })
+    const settingsUsersObs = new QueryObserver(queryClient, {
+      queryKey: ["settings-users"],
+      queryFn: ({ signal }) => fetch("/api/settings/users", { signal }).then((r) => r.json()),
+    })
+    const unsubSettings = settingsUsersObs.subscribe(() => {})
+
+    // Populate tenant-scoped queries (default list, meta opt-in, prefix, active observer).
+    await queryClient.fetchQuery({
+      queryKey: ["catalog"],
+      queryFn: ({ signal }) => guard.fetchJson("/api/catalog", { signal }),
+    })
+    await queryClient.fetchQuery({
+      queryKey: ["custom-widget"],
+      meta: { tenantScoped: true },
+      queryFn: ({ signal }) => guard.fetchJson("/api/catalog", { signal }),
+    })
+    await queryClient.fetchQuery({
+      queryKey: ["tenant", "summary"],
+      queryFn: ({ signal }) => guard.fetchJson("/api/catalog", { signal }),
+    })
+    const alertsObs = new QueryObserver(queryClient, {
+      queryKey: ["alerts"],
+      queryFn: ({ signal }) => guard.fetchJson("/api/alerts", { signal }),
+    })
+    const unsubAlerts = alertsObs.subscribe(() => {})
+
+    await waitUntil(
+      () =>
+        settingsUsersObs.getCurrentResult().status === "success" &&
+        alertsObs.getCurrentResult().status === "success",
+    )
+    expect(settingsUsersFetches).toBe(1)
+
+    // Scope rotates -> only tenant-scoped queries are evicted/refetched; settings queries survive untouched.
+    currentScope = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    await alertsObs.refetch()
+
+    await waitUntil(
+      () =>
+        alertsObs.getCurrentResult().status === "success" &&
+        JSON.stringify(alertsObs.getCurrentResult().data) === JSON.stringify([{ id: "team-a-alert" }]),
+    )
+
+    expect(queryClient.getQueryData(["settings-users"])).toEqual([{ username: "alice" }])
+    expect(queryClient.getQueryData(["settings-groups"])).toEqual([{ name: "admins" }])
+    expect(queryClient.getQueryData(["custom-global"])).toEqual([{ name: "admins" }])
+    expect(settingsUsersFetches).toBe(1)
+
+    expect(queryClient.getQueryCache().find({ queryKey: ["catalog"] })).toBeUndefined()
+    expect(queryClient.getQueryCache().find({ queryKey: ["custom-widget"] })).toBeUndefined()
+    expect(queryClient.getQueryCache().find({ queryKey: ["tenant", "summary"] })).toBeUndefined()
+    expect(alertsObs.getCurrentResult().data).toEqual([{ id: "team-a-alert" }])
+
+    unsubSettings()
+    unsubAlerts()
+    queryClient.clear()
+  })
+
+  it("clears all tenant queries and resets scoped state on 403 ACCESS_NOT_GRANTED and 401", async () => {
     for (const status of [403, 401] as const) {
       const queryClient = new QueryClient({
-        defaultOptions: { queries: { retry: false, gcTime: Infinity } },
+        defaultOptions: { queries: { retry: shouldRetryQuery, retryDelay: 0, gcTime: Infinity } },
       })
       const guard = createScopeGuard(queryClient)
       const selected = createScopedState<string | null>(null, guard)
@@ -165,11 +522,11 @@ describe("scope-guard with real QueryClient", () => {
 
       const alertsObs = new QueryObserver(queryClient, {
         queryKey: ["alerts"],
-        queryFn: () => guard.fetchJson("/api/alerts"),
+        queryFn: ({ signal }) => guard.fetchJson("/api/alerts", { signal }),
       })
       const eventsObs = new QueryObserver(queryClient, {
         queryKey: ["events"],
-        queryFn: () => guard.fetchJson("/api/events"),
+        queryFn: ({ signal }) => guard.fetchJson("/api/events", { signal }),
       })
       const unsubAlerts = alertsObs.subscribe(() => {})
       const unsubEvents = eventsObs.subscribe(() => {})
@@ -203,98 +560,7 @@ describe("scope-guard with real QueryClient", () => {
     }
   })
 
-  it("does not clear unrelated cached queries on per-resource 403 with unchanged fingerprint", async () => {
-    const queryClient = new QueryClient({
-      defaultOptions: { queries: { retry: false, gcTime: Infinity } },
-    })
-    const guard = createScopeGuard(queryClient)
-    const fp = "22222222222222222222222222222222"
-
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async (input: RequestInfo | URL) => {
-        const url = String(input)
-        if (url === "/api/alerts") {
-          return makeResponse([{ id: "team-a-alert" }], { scope: fp })
-        }
-        return makeResponse({ error: "Forbidden" }, { status: 403, scope: fp })
-      }),
-    )
-
-    const alertsObs = new QueryObserver(queryClient, {
-      queryKey: ["alerts"],
-      queryFn: () => guard.fetchJson("/api/alerts"),
-    })
-    const unsub = alertsObs.subscribe(() => {})
-    await waitUntil(() => alertsObs.getCurrentResult().status === "success")
-
-    await expect(guard.fetchJson("/api/k8s/pods?namespace=other-team")).rejects.toMatchObject({
-      status: 403,
-    })
-
-    expect(queryClient.getQueryData(["alerts"])).toEqual([{ id: "team-a-alert" }])
-    expect(guard.getLastFingerprint()).toBe(fp)
-
-    unsub()
-    queryClient.clear()
-  })
-
-  it("rejects stale pre-transition in-flight responses after a concurrent fingerprint change", async () => {
-    const queryClient = new QueryClient({
-      defaultOptions: { queries: { retry: false, gcTime: Infinity } },
-    })
-    const guard = createScopeGuard(queryClient)
-    const fp1 = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-    const fp2 = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
-
-    let releaseSlowEvents!: (res: Response) => void
-    const slowEventsPromise = new Promise<Response>((resolve) => {
-      releaseSlowEvents = resolve
-    })
-
-    let callCount = 0
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async (input: RequestInfo | URL) => {
-        const url = String(input)
-        if (url === "/api/alerts") {
-          callCount += 1
-          return makeResponse([{ id: callCount === 1 ? "old" : "new" }], {
-            scope: callCount === 1 ? fp1 : fp2,
-          })
-        }
-        return slowEventsPromise
-      }),
-    )
-
-    // Warm initial scope fp1
-    await guard.fetchJson("/api/alerts")
-    expect(guard.getLastFingerprint()).toBe(fp1)
-
-    // Start slow /api/events under fp1, then /api/alerts returns fp2
-    const staleEventsFetch = guard.fetchJson("/api/events")
-    await guard.fetchJson("/api/alerts")
-    expect(guard.getLastFingerprint()).toBe(fp2)
-
-    // Slow /api/events resolves with fp1 -> must be rejected as stale, leaving fp2 intact
-    releaseSlowEvents(makeResponse([{ id: "stale-team-b" }], { scope: fp1 }))
-    await expect(staleEventsFetch).rejects.toBeInstanceOf(ScopeStaleResponseError)
-    expect(guard.getLastFingerprint()).toBe(fp2)
-
-    queryClient.clear()
-  })
-
-  it("never retries 401/403 or ScopeStaleResponseError, and retries transient errors twice", () => {
-    expect(shouldRetryQuery(0, new ApiHttpError(401, "Unauthorized"))).toBe(false)
-    expect(shouldRetryQuery(0, new ApiHttpError(403, "Forbidden", ACCESS_NOT_GRANTED_CODE))).toBe(false)
-    expect(shouldRetryQuery(0, new ScopeStaleResponseError())).toBe(false)
-    expect(shouldRetryQuery(1, new ScopeStaleResponseError())).toBe(false)
-    expect(shouldRetryQuery(0, new Error("network"))).toBe(true)
-    expect(shouldRetryQuery(1, new Error("network"))).toBe(true)
-    expect(shouldRetryQuery(2, new Error("network"))).toBe(false)
-  })
-
-  it("discards response body when scope eviction occurs while reading the body (real QueryClient)", async () => {
+  it("aborts an in-flight body read on 403 ACCESS_NOT_GRANTED and never stores revoked data", async () => {
     const queryClient = new QueryClient({
       defaultOptions: { queries: { retry: shouldRetryQuery, retryDelay: 0, gcTime: Infinity } },
     })
@@ -303,89 +569,20 @@ describe("scope-guard with real QueryClient", () => {
 
     let releaseBody!: (val: unknown) => void
     let bodyReadStarted = false
+    let alertsSignalOnInFlight: AbortSignal | undefined
     let alertsCalls = 0
     let revokeEvents = false
 
-    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
-      const url = String(input)
-      if (url === "/api/alerts") {
-        alertsCalls += 1
-        if (alertsCalls === 1) {
-          return makeResponse([{ id: "initial-alert" }], { scope: fp1 })
-        }
-        // Second call: header passes under fp1, body resolution pauses until after eviction.
-        const headers = new Headers({ [SCOPE_FINGERPRINT_HEADER]: fp1 })
-        return {
-          ok: true,
-          status: 200,
-          statusText: "OK",
-          headers,
-          json: () => {
-            bodyReadStarted = true
-            return new Promise((resolve) => {
-              releaseBody = resolve
-            })
-          },
-        } as unknown as Response
-      }
-      if (revokeEvents) {
-        return makeResponse({ error: "Forbidden", code: ACCESS_NOT_GRANTED_CODE }, { status: 403 })
-      }
-      return makeResponse([{ id: "ok" }], { scope: fp1 })
-    })
-    vi.stubGlobal("fetch", fetchMock)
-
-    const alertsObs = new QueryObserver(queryClient, {
-      queryKey: ["alerts"],
-      queryFn: () => guard.fetchJson("/api/alerts"),
-    })
-    const unsubAlerts = alertsObs.subscribe(() => {})
-    await waitUntil(() => alertsObs.getCurrentResult().status === "success")
-    expect(queryClient.getQueryData(["alerts"])).toEqual([{ id: "initial-alert" }])
-
-    // Start refetch: header is checked under fp1, then pauses inside res.json()
-    const refetchPromise = alertsObs.refetch()
-    await waitUntil(() => bodyReadStarted)
-
-    // Meanwhile, /api/events gets 403 ACCESS_NOT_GRANTED and evicts cache (epoch bumps, fp -> null)
-    revokeEvents = true
-    await expect(guard.fetchJson("/api/events")).rejects.toBeInstanceOf(ApiHttpError)
-    expect(queryClient.getQueryData(["alerts"])).toBeUndefined()
-
-    // Now the stale body finishes reading -> must be discarded, NOT stored in QueryClient, and NOT retried
-    releaseBody([{ id: "REVOKED-SECRET" }])
-    const refetchResult = await refetchPromise
-    expect(refetchResult.error).toBeInstanceOf(ScopeStaleResponseError)
-    expect(queryClient.getQueryData(["alerts"])).toBeUndefined()
-    expect(alertsObs.getCurrentResult().data).toBeUndefined()
-    expect(alertsCalls).toBe(2)
-
-    unsubAlerts()
-    queryClient.clear()
-  })
-
-  it("discards response body via both fetchJson and raw fetch().json() when scope changes to fp2 during body read", async () => {
-    const queryClient = new QueryClient({
-      defaultOptions: { queries: { retry: shouldRetryQuery, retryDelay: 0, gcTime: Infinity } },
-    })
-    const guard = createScopeGuard(queryClient)
-    const fp1 = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-    const fp2 = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
-
-    let releaseBody!: (val: unknown) => void
-    let bodyReadStarted = false
-    let alertsCalls = 0
-    let serverScope = fp1
-
     vi.stubGlobal(
       "fetch",
-      vi.fn(async (input: RequestInfo | URL) => {
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
         const url = String(input)
         if (url === "/api/alerts") {
           alertsCalls += 1
           if (alertsCalls === 1) {
             return makeResponse([{ id: "initial-alert" }], { scope: fp1 })
           }
+          alertsSignalOnInFlight = init?.signal ?? undefined
           return {
             ok: true,
             status: 200,
@@ -399,13 +596,16 @@ describe("scope-guard with real QueryClient", () => {
             },
           } as unknown as Response
         }
-        return makeResponse([{ id: "new-event" }], { scope: serverScope })
+        if (revokeEvents) {
+          return makeResponse({ error: "Forbidden", code: ACCESS_NOT_GRANTED_CODE }, { status: 403 })
+        }
+        return makeResponse([{ id: "ok" }], { scope: fp1 })
       }),
     )
 
     const alertsObs = new QueryObserver(queryClient, {
       queryKey: ["alerts"],
-      queryFn: () => guard.fetchJson("/api/alerts"),
+      queryFn: ({ signal }) => guard.fetchJson("/api/alerts", { signal }),
     })
     const unsubAlerts = alertsObs.subscribe(() => {})
     await waitUntil(() => alertsObs.getCurrentResult().status === "success")
@@ -413,188 +613,68 @@ describe("scope-guard with real QueryClient", () => {
     const refetchPromise = alertsObs.refetch()
     await waitUntil(() => bodyReadStarted)
 
-    // Scope rotates to fp2 while alerts is awaiting res.json()
-    serverScope = fp2
-    await guard.fetchJson("/api/events")
-    expect(guard.getLastFingerprint()).toBe(fp2)
-
-    releaseBody([{ id: "OLD-SCOPE-DATA" }])
-    const refetchResult = await refetchPromise
-    expect(refetchResult.error).toBeInstanceOf(ScopeStaleResponseError)
-    expect(queryClient.getQueryData(["alerts"])).toBeUndefined()
-
-    // Also verify raw guard.fetch().then(r => r.json()) rejects when scope changes during body read
-    let releaseRawBody!: (val: unknown) => void
-    let rawBodyStarted = false
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async (input: RequestInfo | URL) => {
-        if (String(input) === "/api/traces") {
-          const res = new Response(null, { status: 200, headers: { [SCOPE_FINGERPRINT_HEADER]: fp2 } })
-          res.json = () => {
-            rawBodyStarted = true
-            return new Promise((resolve) => {
-              releaseRawBody = resolve
-            })
-          }
-          return res
-        }
-        return makeResponse({ error: "Forbidden", code: ACCESS_NOT_GRANTED_CODE }, { status: 403 })
-      }),
-    )
-    const rawJsonPromise = guard.fetch("/api/traces").then((r) => r.json())
-    await waitUntil(() => rawBodyStarted)
+    revokeEvents = true
     await expect(guard.fetchJson("/api/events")).rejects.toBeInstanceOf(ApiHttpError)
-    releaseRawBody([{ id: "STALE-TRACE" }])
-    await expect(rawJsonPromise).rejects.toBeInstanceOf(ScopeStaleResponseError)
-
-    unsubAlerts()
-    queryClient.clear()
-  })
-
-  it("does not roll fingerprint back when an older concurrent first request resolves late (real QueryClient)", async () => {
-    const queryClient = new QueryClient({
-      defaultOptions: { queries: { retry: shouldRetryQuery, retryDelay: 0, gcTime: Infinity } },
-    })
-    const guard = createScopeGuard(queryClient)
-    const fpOld = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-    const fpNew = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
-
-    let releaseOldAlerts!: (res: Response) => void
-    const oldAlertsPromise = new Promise<Response>((resolve) => {
-      releaseOldAlerts = resolve
-    })
-
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async (input: RequestInfo | URL) => {
-        const url = String(input)
-        if (url === "/api/alerts") {
-          return oldAlertsPromise
-        }
-        return makeResponse([{ id: "new-scope-event" }], { scope: fpNew })
-      }),
-    )
-
-    // Both queries start concurrently before any fingerprint has been established.
-    const alertsObs = new QueryObserver(queryClient, {
-      queryKey: ["alerts"],
-      queryFn: () => guard.fetchJson("/api/alerts"),
-    })
-    const eventsObs = new QueryObserver(queryClient, {
-      queryKey: ["events"],
-      queryFn: () => guard.fetchJson("/api/events"),
-    })
-    const unsubAlerts = alertsObs.subscribe(() => {})
-    const unsubEvents = eventsObs.subscribe(() => {})
-
-    // New scope response arrives first and establishes fpNew.
-    await waitUntil(() => eventsObs.getCurrentResult().status === "success")
-    expect(guard.getLastFingerprint()).toBe(fpNew)
-    expect(queryClient.getQueryData(["events"])).toEqual([{ id: "new-scope-event" }])
-
-    // Late first response from old scope resolves -> must be discarded, never rolling back to fpOld.
-    releaseOldAlerts(makeResponse([{ id: "REVOKED-OLD-ALERT" }], { scope: fpOld }))
-    await waitUntil(() => alertsObs.getCurrentResult().isError)
-
-    expect(guard.getLastFingerprint()).toBe(fpNew)
-    expect(queryClient.getQueryData(["events"])).toEqual([{ id: "new-scope-event" }])
     expect(queryClient.getQueryData(["alerts"])).toBeUndefined()
-    expect(alertsObs.getCurrentResult().error).toBeInstanceOf(ScopeStaleResponseError)
+    await waitUntil(() => Boolean(alertsSignalOnInFlight?.aborted))
+
+    releaseBody([{ id: "REVOKED-SECRET" }])
+    await refetchPromise
+    expect(queryClient.getQueryData(["alerts"])).toBeUndefined()
+    expect(alertsObs.getCurrentResult().data).toBeUndefined()
+    expect(alertsCalls).toBe(2)
 
     unsubAlerts()
-    unsubEvents()
     queryClient.clear()
   })
 
-  it("evicts only tenant-scoped queries and leaves settings and non-tenant queries intact (real QueryClient)", async () => {
+  it("does not clear unrelated cached queries on per-resource 403 or 500 with unchanged/absent fingerprint", async () => {
     const queryClient = new QueryClient({
       defaultOptions: { queries: { retry: false, gcTime: Infinity } },
     })
     const guard = createScopeGuard(queryClient)
-    let currentScope = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-    let settingsUsersFetches = 0
+    const fp = "22222222222222222222222222222222"
 
     vi.stubGlobal(
       "fetch",
       vi.fn(async (input: RequestInfo | URL) => {
         const url = String(input)
-        if (url === "/api/settings/users") {
-          settingsUsersFetches += 1
-          return makeResponse([{ username: "alice" }])
-        }
-        if (url === "/api/settings/groups") {
-          return makeResponse([{ name: "admins" }])
-        }
         if (url === "/api/alerts") {
-          return makeResponse(
-            currentScope === "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" ? [{ id: "team-b-alert" }] : [{ id: "team-a-alert" }],
-            { scope: currentScope },
-          )
+          return makeResponse([{ id: "team-a-alert" }], { scope: fp })
         }
-        return makeResponse([{ id: "tenant-item" }], { scope: currentScope })
+        if (url === "/api/events") {
+          return makeResponse({ error: "Internal Server Error" }, { status: 500 })
+        }
+        return makeResponse({ error: "Forbidden" }, { status: 403, scope: fp })
       }),
     )
 
-    // Populate non-tenant inactive & active settings queries, plus explicit opt-out query
-    await queryClient.fetchQuery({
-      queryKey: ["settings-groups"],
-      queryFn: () => fetch("/api/settings/groups").then((r) => r.json()),
-    })
-    await queryClient.fetchQuery({
-      queryKey: ["custom-global"],
-      meta: { tenantScoped: false },
-      queryFn: () => fetch("/api/settings/groups").then((r) => r.json()),
-    })
-    const settingsUsersObs = new QueryObserver(queryClient, {
-      queryKey: ["settings-users"],
-      queryFn: () => fetch("/api/settings/users").then((r) => r.json()),
-    })
-    const unsubSettings = settingsUsersObs.subscribe(() => {})
-
-    // Populate tenant-scoped queries (default list, meta opt-in, prefix)
-    await queryClient.fetchQuery({
-      queryKey: ["catalog"],
-      queryFn: () => guard.fetchJson("/api/catalog"),
-    })
-    await queryClient.fetchQuery({
-      queryKey: ["custom-widget"],
-      meta: { tenantScoped: true },
-      queryFn: () => guard.fetchJson("/api/catalog"),
-    })
-    await queryClient.fetchQuery({
-      queryKey: ["tenant", "summary"],
-      queryFn: () => guard.fetchJson("/api/catalog"),
-    })
     const alertsObs = new QueryObserver(queryClient, {
       queryKey: ["alerts"],
-      queryFn: () => guard.fetchJson("/api/alerts"),
+      queryFn: ({ signal }) => guard.fetchJson("/api/alerts", { signal }),
     })
-    const unsubAlerts = alertsObs.subscribe(() => {})
+    const unsub = alertsObs.subscribe(() => {})
+    await waitUntil(() => alertsObs.getCurrentResult().status === "success")
 
-    await waitUntil(
-      () =>
-        settingsUsersObs.getCurrentResult().status === "success" &&
-        alertsObs.getCurrentResult().status === "success",
-    )
-    expect(settingsUsersFetches).toBe(1)
+    await expect(guard.fetchJson("/api/k8s/pods?namespace=other-team")).rejects.toMatchObject({
+      status: 403,
+    })
+    await expect(guard.fetchJson("/api/events")).rejects.toMatchObject({ status: 500 })
 
-    // Scope rotates -> only tenant-scoped queries are evicted/refetched
-    currentScope = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
-    await alertsObs.refetch()
+    expect(queryClient.getQueryData(["alerts"])).toEqual([{ id: "team-a-alert" }])
+    expect(guard.getLastFingerprint()).toBe(fp)
 
-    expect(queryClient.getQueryData(["settings-users"])).toEqual([{ username: "alice" }])
-    expect(queryClient.getQueryData(["settings-groups"])).toEqual([{ name: "admins" }])
-    expect(queryClient.getQueryData(["custom-global"])).toEqual([{ name: "admins" }])
-    expect(settingsUsersFetches).toBe(1)
-
-    expect(queryClient.getQueryCache().find({ queryKey: ["catalog"] })).toBeUndefined()
-    expect(queryClient.getQueryCache().find({ queryKey: ["custom-widget"] })).toBeUndefined()
-    expect(queryClient.getQueryCache().find({ queryKey: ["tenant", "summary"] })).toBeUndefined()
-    expect(alertsObs.getCurrentResult().data).toEqual([{ id: "team-a-alert" }])
-
-    unsubSettings()
-    unsubAlerts()
+    unsub()
     queryClient.clear()
+  })
+
+  it("never retries 401/403 or ScopeStaleResponseError, and retries transient errors twice", () => {
+    expect(shouldRetryQuery(0, new ApiHttpError(401, "Unauthorized"))).toBe(false)
+    expect(shouldRetryQuery(0, new ApiHttpError(403, "Forbidden", ACCESS_NOT_GRANTED_CODE))).toBe(false)
+    expect(shouldRetryQuery(0, new ScopeStaleResponseError())).toBe(false)
+    expect(shouldRetryQuery(1, new ScopeStaleResponseError())).toBe(false)
+    expect(shouldRetryQuery(0, new Error("network"))).toBe(true)
+    expect(shouldRetryQuery(1, new Error("network"))).toBe(true)
+    expect(shouldRetryQuery(2, new Error("network"))).toBe(false)
   })
 })

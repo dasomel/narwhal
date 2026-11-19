@@ -37,7 +37,7 @@ export function MyAppsView() {
 
   const { data, isLoading, isError, refetch } = useQuery<MyAppsResponse>({
     queryKey: ["my-apps"],
-    queryFn: () => apiFetchJson<MyAppsResponse>("/api/my-apps"),
+    queryFn: ({ signal }) => apiFetchJson<MyAppsResponse>("/api/my-apps", { signal }),
     refetchInterval: 15_000,
   })
 

@@ -45,7 +45,7 @@ export function HeroZoneFromData({ data }: HeroZoneFromDataProps) {
 export function HeroZone() {
   const { data, isLoading, isError, refetch } = useQuery<HeroResponse>({
     queryKey: ["hero"],
-    queryFn: () => apiFetchJson<HeroResponse>("/api/hero"),
+    queryFn: ({ signal }) => apiFetchJson<HeroResponse>("/api/hero", { signal }),
     refetchInterval: 15_000,
   })
 

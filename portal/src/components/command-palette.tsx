@@ -46,7 +46,7 @@ export function CommandPalette() {
 
   const { data: services, isLoading, isError, refetch } = useQuery<CatalogService[]>({
     queryKey: ["catalog"],
-    queryFn: () => apiFetchJson<CatalogService[]>("/api/catalog"),
+    queryFn: ({ signal }) => apiFetchJson<CatalogService[]>("/api/catalog", { signal }),
     enabled: open,
     staleTime: 30_000,
   })

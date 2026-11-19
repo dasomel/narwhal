@@ -90,7 +90,7 @@ export function NodeMetrics() {
 
   const { data, isLoading, isError, refetch } = useQuery<MetricsResponse>({
     queryKey: ["metrics"],
-    queryFn: () => apiFetchJson<MetricsResponse>("/api/metrics"),
+    queryFn: ({ signal }) => apiFetchJson<MetricsResponse>("/api/metrics", { signal }),
     refetchInterval: 30_000,
   })
 

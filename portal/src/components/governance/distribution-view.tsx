@@ -49,7 +49,7 @@ export function DistributionView() {
 
   const { data, isLoading, error, refetch } = useQuery<DistributionResponse>({
     queryKey: ["governance-distribution"],
-    queryFn: () => apiFetchJson<DistributionResponse>("/api/governance/distribution"),
+    queryFn: ({ signal }) => apiFetchJson<DistributionResponse>("/api/governance/distribution", { signal }),
     refetchInterval: 30_000,
     enabled: isAdmin,
   })

@@ -72,7 +72,7 @@ export function RbacTable() {
 
   const { data, isLoading, isError, refetch } = useQuery<RbacResponseV2>({
     queryKey: ["governance-rbac"],
-    queryFn: () => apiFetchJson<RbacResponseV2>("/api/governance/rbac"),
+    queryFn: ({ signal }) => apiFetchJson<RbacResponseV2>("/api/governance/rbac", { signal }),
     refetchInterval: 30_000,
     enabled: role === "cluster-admin",
   })

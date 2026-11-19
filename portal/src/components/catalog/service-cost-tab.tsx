@@ -91,13 +91,13 @@ export function ServiceCostTab({ serviceId }: Props) {
   }, [])
   const { data: detail, isLoading: detailLoading, error: detailError, refetch: refetchDetail } = useQuery<CostDetailResponse>({
     queryKey: ["cost-service", serviceId],
-    queryFn: () => apiFetchJson<CostDetailResponse>(`/api/cost/${serviceId}`),
+    queryFn: ({ signal }) => apiFetchJson<CostDetailResponse>(`/api/cost/${serviceId}`, { signal }),
     refetchInterval: 60_000,
   })
 
   const { data: trendData, isLoading: trendLoading, error: trendError, refetch: refetchTrend } = useQuery<TrendResponse>({
     queryKey: ["cost-trend", "service", serviceId, 7],
-    queryFn: () => apiFetchJson<TrendResponse>(`/api/cost/trend?scope=service&id=${serviceId}&days=7`),
+    queryFn: ({ signal }) => apiFetchJson<TrendResponse>(`/api/cost/trend?scope=service&id=${serviceId}&days=7`, { signal }),
     refetchInterval: 300_000,
   })
 

@@ -14,12 +14,12 @@ export function ToolsGrid() {
 
   const { data: tools, isLoading: isToolsLoading, isError: isToolsError, refetch } = useQuery<PlatformTool[]>({
     queryKey: ["tools"],
-    queryFn: () => apiFetchJson<PlatformTool[]>("/api/tools"),
+    queryFn: ({ signal }) => apiFetchJson<PlatformTool[]>("/api/tools", { signal }),
   })
 
   const { data: health = {} } = useQuery<Record<string, string>>({
     queryKey: ["tools-health"],
-    queryFn: () => apiFetchJson<Record<string, string>>("/api/tools/health"),
+    queryFn: ({ signal }) => apiFetchJson<Record<string, string>>("/api/tools/health", { signal }),
     refetchInterval: 60_000,
   })
 

@@ -64,8 +64,8 @@ function ContainerVulnSummary({ image }: { image: string }) {
   const t = useT()
   const { data, isLoading, isError, refetch } = useQuery<ImageVulnReport>({
     queryKey: ["governance-container-vuln", image],
-    queryFn: () =>
-      apiFetchJson<ImageVulnReport>(`/api/security/vulnerabilities?image=${encodeURIComponent(image)}`),
+    queryFn: ({ signal }) =>
+      apiFetchJson<ImageVulnReport>(`/api/security/vulnerabilities?image=${encodeURIComponent(image)}`, { signal }),
     enabled: !!image,
     staleTime: 60_000,
   })
@@ -116,9 +116,9 @@ export function ResourceDetailDrawer({ namespace, app, open, onOpenChange, initi
 
   const { data: podListData, isLoading: listLoading, error: listError, refetch: refetchPods } = useQuery<PodListResponse>({
     queryKey: ["governance-pods", namespace, app],
-    queryFn: () => {
+    queryFn: ({ signal }) => {
       const url = `/api/k8s/pods?namespace=${encodeURIComponent(namespace)}` + (app ? `&app=${encodeURIComponent(app)}` : "")
-      return apiFetchJson<PodListResponse>(url)
+      return apiFetchJson<PodListResponse>(url, { signal })
     },
     enabled: open && !!namespace,
     refetchInterval: 15_000,
@@ -126,8 +126,8 @@ export function ResourceDetailDrawer({ namespace, app, open, onOpenChange, initi
 
   const { data: podDetail, isLoading: detailLoading, isError: detailError, refetch: refetchDetail } = useQuery<PodDetail>({
     queryKey: ["governance-pod-detail", namespace, selectedPodName],
-    queryFn: () => {
-      return apiFetchJson<PodDetail>(`/api/k8s/resource?kind=Pod&namespace=${encodeURIComponent(namespace)}&name=${encodeURIComponent(selectedPodName!)}`)
+    queryFn: ({ signal }) => {
+      return apiFetchJson<PodDetail>(`/api/k8s/resource?kind=Pod&namespace=${encodeURIComponent(namespace)}&name=${encodeURIComponent(selectedPodName!)}`, { signal })
     },
     enabled: open && !!namespace && !!selectedPodName,
     refetchInterval: 10_000,
@@ -135,8 +135,8 @@ export function ResourceDetailDrawer({ namespace, app, open, onOpenChange, initi
 
   const { data: eventsData, isLoading: eventsLoading, isError: eventsError, refetch: refetchEvents } = useQuery<ResourceEventsResponse>({
     queryKey: ["governance-pod-events", namespace, selectedPodName],
-    queryFn: () => {
-      return apiFetchJson<ResourceEventsResponse>(`/api/k8s/events?namespace=${encodeURIComponent(namespace)}&name=${encodeURIComponent(selectedPodName!)}`)
+    queryFn: ({ signal }) => {
+      return apiFetchJson<ResourceEventsResponse>(`/api/k8s/events?namespace=${encodeURIComponent(namespace)}&name=${encodeURIComponent(selectedPodName!)}`, { signal })
     },
     enabled: open && !!namespace && !!selectedPodName,
     refetchInterval: 15_000,

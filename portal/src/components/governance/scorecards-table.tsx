@@ -114,7 +114,7 @@ function RulesModal() {
   const t = useT()
   const { data, isLoading } = useQuery<ScorecardRulesResponse>({
     queryKey: ["scorecard-rules"],
-    queryFn: () => apiFetchJson<ScorecardRulesResponse>("/api/scorecards/rules"),
+    queryFn: ({ signal }) => apiFetchJson<ScorecardRulesResponse>("/api/scorecards/rules", { signal }),
     staleTime: 5 * 60 * 1000,
   })
 
@@ -202,11 +202,11 @@ export function ScorecardsTable() {
   const queryKey = ["scorecards", tierFilter, ownerFilter]
   const { data, isLoading, isError, refetch } = useQuery<ScorecardListResponse>({
     queryKey,
-    queryFn: () => {
+    queryFn: ({ signal }) => {
       const params = new URLSearchParams()
       if (tierFilter !== "all") params.set("tier", tierFilter)
       if (ownerFilter !== "all") params.set("owner", ownerFilter)
-      return apiFetch(`/api/scorecards?${params}`).then((r) => r.json())
+      return apiFetch(`/api/scorecards?${params}`, { signal }).then((r) => r.json())
     },
     refetchInterval: 60_000,
   })

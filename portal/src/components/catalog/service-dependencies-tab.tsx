@@ -158,7 +158,7 @@ export function ServiceDependenciesTab({ serviceName }: Props) {
   const t = useT()
   const { data, isLoading, error, refetch } = useQuery<ServiceGraphDetailResponse>({
     queryKey: ["service-dependencies", serviceName],
-    queryFn: () => apiFetchJson<ServiceGraphDetailResponse>(`/api/service-graph/${encodeURIComponent(serviceName)}?window=7d`),
+    queryFn: ({ signal }) => apiFetchJson<ServiceGraphDetailResponse>(`/api/service-graph/${encodeURIComponent(serviceName)}?window=7d`, { signal }),
     staleTime: 30_000,
     refetchInterval: 60_000,
   })

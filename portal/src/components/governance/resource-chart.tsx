@@ -52,7 +52,7 @@ export function ResourceChart() {
 
   const { data, isLoading, isError, refetch } = useQuery<ResourcesResponseV2>({
     queryKey: ["governance-resources"],
-    queryFn: () => apiFetchJson<ResourcesResponseV2>("/api/governance/resources"),
+    queryFn: ({ signal }) => apiFetchJson<ResourcesResponseV2>("/api/governance/resources", { signal }),
     refetchInterval: 30_000,
   })
 

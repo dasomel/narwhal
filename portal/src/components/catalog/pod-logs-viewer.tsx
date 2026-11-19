@@ -28,9 +28,10 @@ export function PodLogsViewer({ namespace, appName }: PodLogsViewerProps) {
 
   const { data: podsData, isLoading: podsLoading, isError: podsError, refetch: refetchPods } = useQuery<PodsResponse>({
     queryKey: ["pods", namespace, appName],
-    queryFn: () =>
+    queryFn: ({ signal }) =>
       apiFetchJson<PodsResponse>(
         `/api/pods?namespace=${encodeURIComponent(namespace)}&instance=${encodeURIComponent(appName)}`,
+        { signal },
       ),
     refetchInterval: 15_000,
   })
@@ -48,7 +49,7 @@ export function PodLogsViewer({ namespace, appName }: PodLogsViewerProps) {
     refetch: refetchLogs,
   } = useQuery<PodLogsResponse>({
     queryKey: ["pods-logs", namespace, selectedPod, effectiveContainer, tailLines, previous],
-    queryFn: () => {
+    queryFn: ({ signal }) => {
       const params = new URLSearchParams({
         tailLines: String(tailLines),
         previous: String(previous),
@@ -56,6 +57,7 @@ export function PodLogsViewer({ namespace, appName }: PodLogsViewerProps) {
       if (effectiveContainer) params.set("container", effectiveContainer)
       return apiFetchJson<PodLogsResponse>(
         `/api/pods/${encodeURIComponent(namespace)}/${encodeURIComponent(selectedPod)}/logs?${params}`,
+        { signal },
       )
     },
     enabled: !!selectedPod,

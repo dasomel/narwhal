@@ -161,15 +161,15 @@ export function ActivityFeed({ selection }: { selection?: ScopedState<Alert | nu
 
   const { data: alertData, isLoading: alertsLoading, isError: alertsError, refetch: refetchAlerts } = useQuery<Alert[]>({
     queryKey: ["alerts"],
-    queryFn: () =>
-      apiFetchJson<unknown>("/api/alerts").then((d) => (Array.isArray(d) ? (d as Alert[]) : [])),
+    queryFn: ({ signal }) =>
+      apiFetchJson<unknown>("/api/alerts", { signal }).then((d) => (Array.isArray(d) ? (d as Alert[]) : [])),
     refetchInterval: 15_000,
   })
 
   const { data: eventData, isLoading: eventsLoading, isError: eventsError, refetch: refetchEvents } = useQuery<TimelineEvent[]>({
     queryKey: ["events"],
-    queryFn: () =>
-      apiFetchJson<unknown>("/api/events").then((d) => (Array.isArray(d) ? (d as TimelineEvent[]) : [])),
+    queryFn: ({ signal }) =>
+      apiFetchJson<unknown>("/api/events", { signal }).then((d) => (Array.isArray(d) ? (d as TimelineEvent[]) : [])),
     refetchInterval: 30_000,
   })
 

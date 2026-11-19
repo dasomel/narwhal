@@ -129,7 +129,7 @@ export function ScorecardTable() {
 
   const { data, isLoading, isError, refetch } = useQuery<ScorecardItem[]>({
     queryKey: ["governance-scorecard"],
-    queryFn: () => apiFetchJson<ScorecardItem[]>("/api/governance/scorecard"),
+    queryFn: ({ signal }) => apiFetchJson<ScorecardItem[]>("/api/governance/scorecard", { signal }),
     refetchInterval: 30_000,
   })
 

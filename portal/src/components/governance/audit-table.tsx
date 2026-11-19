@@ -112,7 +112,7 @@ export function AuditTable() {
 
   const { data, isLoading, isError, refetch } = useQuery<OperationalEventsResponse>({
     queryKey: ["governance-events"],
-    queryFn: () => apiFetchJson<OperationalEventsResponse>("/api/governance/events"),
+    queryFn: ({ signal }) => apiFetchJson<OperationalEventsResponse>("/api/governance/events", { signal }),
     refetchInterval: 30_000,
     enabled: role === "cluster-admin",
   })

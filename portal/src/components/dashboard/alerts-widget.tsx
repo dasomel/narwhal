@@ -102,7 +102,7 @@ export function AlertsWidget({ selection }: { selection?: ScopedState<Alert | nu
 
   const { data: alertsData, isLoading, isError, refetch } = useQuery<Alert[]>({
     queryKey: ["alerts"],
-    queryFn: () => apiFetchJson<unknown>("/api/alerts").then((d) => (Array.isArray(d) ? (d as Alert[]) : [])),
+    queryFn: ({ signal }) => apiFetchJson<unknown>("/api/alerts", { signal }).then((d) => (Array.isArray(d) ? (d as Alert[]) : [])),
     refetchInterval: 15_000,
   })
   const alerts = alertsData ?? []

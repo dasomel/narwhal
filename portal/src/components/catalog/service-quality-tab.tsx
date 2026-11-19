@@ -42,7 +42,7 @@ function RulesModal() {
   const t = useT()
   const { data, isLoading, isError, refetch } = useQuery<ScorecardRulesResponse>({
     queryKey: ["scorecard-rules"],
-    queryFn: () => apiFetch("/api/scorecards/rules").then((r) => r.json()),
+    queryFn: ({ signal }) => apiFetch("/api/scorecards/rules", { signal }).then((r) => r.json()),
     staleTime: 5 * 60 * 1000,
   })
 
@@ -92,7 +92,7 @@ export function ServiceQualityTab({ serviceName }: ServiceQualityTabProps) {
   const locale = useLocale()
   const { data, isLoading, refetch } = useQuery<ScorecardDetailResponse>({
     queryKey: ["scorecard-detail", serviceName],
-    queryFn: () => apiFetch(`/api/scorecards/${encodeURIComponent(serviceName)}`).then((r) => r.json()),
+    queryFn: ({ signal }) => apiFetch(`/api/scorecards/${encodeURIComponent(serviceName)}`, { signal }).then((r) => r.json()),
     staleTime: 5 * 60 * 1000,
   })
 

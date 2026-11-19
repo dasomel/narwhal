@@ -1,10 +1,20 @@
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
+import { SCOPE_FINGERPRINT_HEADER } from "@/lib/scope-constants"
+
 const metrics = { connectedClients: 0, disconnectCleanups: 0 }
-const streamState = { failSetup: false }
+const streamState = { failSetup: false, fingerprint: "" }
 
 vi.mock("@/lib/auth", () => ({ auth: vi.fn(async () => ({ user: { role: "admin" }, groups: [], teams: [] })) }))
-vi.mock("@/lib/scope", () => ({ requireEffectiveScope: vi.fn(async () => ({ scope: {} })) }))
+vi.mock("@/lib/scope", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/scope")>()
+  return {
+    ...actual,
+    requireEffectiveScope: vi.fn(async () => ({
+      scope: streamState.fingerprint ? { fingerprint: streamState.fingerprint } : {},
+    })),
+  }
+})
 vi.mock("@/lib/event-visibility", () => ({ isEventFiltered: vi.fn(() => false) }))
 vi.mock("@/lib/live-stream", () => ({
   compareLiveEventIds: vi.fn(() => 1),
@@ -19,12 +29,14 @@ vi.mock("@/lib/live-stream", () => ({
 
 const { GET } = await import("./route")
 const { getLiveStreamMetrics } = await import("@/lib/live-stream")
+const { signScopeFingerprint } = await import("@/lib/scope")
 
 describe("/api/events/stream client metrics", () => {
   beforeEach(() => {
     metrics.connectedClients = 0
     metrics.disconnectCleanups = 0
     streamState.failSetup = false
+    streamState.fingerprint = ""
     vi.mocked(getLiveStreamMetrics).mockClear()
   })
 
@@ -50,5 +62,19 @@ describe("/api/events/stream client metrics", () => {
     await expect(reader.read()).resolves.toMatchObject({ done: true })
 
     expect(getLiveStreamMetrics().connectedClients).toBe(0)
+  })
+
+  it("signs X-Narwhal-Scope with HMAC instead of exposing raw scope fingerprint", async () => {
+    const rawFingerprint = "developer:team-a:platform-system"
+    streamState.fingerprint = rawFingerprint
+    const abort = new AbortController()
+    const response = await GET(new Request("http://localhost/api/events/stream", { signal: abort.signal }))
+    const header = response.headers.get(SCOPE_FINGERPRINT_HEADER)
+    expect(header).toMatch(/^[0-9a-f]{32}$/)
+    expect(header).toBe(signScopeFingerprint(rawFingerprint))
+    expect(header).not.toContain("team-a")
+    expect(header).not.toContain("platform-system")
+    abort.abort()
+    await response.body!.cancel()
   })
 })

@@ -26,7 +26,7 @@ export function PlatformArchitecture() {
   const active = hovered ?? focused
   const { data, isLoading, isError, refetch } = useQuery<ArchitectureData>({
     queryKey: ["architecture"],
-    queryFn: () => apiFetchJson<ArchitectureData>("/api/architecture"),
+    queryFn: ({ signal }) => apiFetchJson<ArchitectureData>("/api/architecture", { signal }),
     refetchInterval: 30_000,
   })
   const text = (key: string) => t(`onboarding.arch.${key}` as TranslationKey)

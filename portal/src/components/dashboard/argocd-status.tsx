@@ -13,7 +13,7 @@ export function ArgoCDStatus() {
   const t = useT()
   const { data, isLoading, isError, refetch } = useQuery<ArgoCDResponse>({
     queryKey: ["argocd"],
-    queryFn: () => apiFetchJson<ArgoCDResponse>("/api/argocd"),
+    queryFn: ({ signal }) => apiFetchJson<ArgoCDResponse>("/api/argocd", { signal }),
     refetchInterval: 10_000,
   })
 

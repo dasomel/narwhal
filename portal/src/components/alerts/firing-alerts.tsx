@@ -13,7 +13,7 @@ export function FiringAlerts({ canTest }: { canTest: boolean }) {
   const [severity, setSeverity] = useState("")
   const query = useQuery<FiringAlertsResponse>({
     queryKey: ["alerts", "firing"],
-    queryFn: () => apiFetchJson<FiringAlertsResponse>("/api/alerts/firing"),
+    queryFn: ({ signal }) => apiFetchJson<FiringAlertsResponse>("/api/alerts/firing", { signal }),
     refetchInterval: 30_000,
   })
   const alerts = query.data?.alerts ?? []

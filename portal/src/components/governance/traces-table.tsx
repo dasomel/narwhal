@@ -67,8 +67,8 @@ export function TracesTable() {
 
   const { data = [], isLoading, isError, error, refetch } = useQuery<TraceEntry[]>({
     queryKey: ["governance-traces", service],
-    queryFn: async () => {
-      const r = await apiFetch(`/api/traces${service ? `?service=${encodeURIComponent(service)}` : ""}`)
+    queryFn: async ({ signal }) => {
+      const r = await apiFetch(`/api/traces${service ? `?service=${encodeURIComponent(service)}` : ""}`, { signal })
       if (r.status === 403) throw new TracesForbiddenError()
       if (!r.ok) throw new Error(String(r.status))
       const json = await r.json()

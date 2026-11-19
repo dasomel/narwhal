@@ -19,7 +19,7 @@ export function EffectivePermissions() {
   const t = useT()
   const { data, isLoading, isError, refetch } = useQuery<Data>({
     queryKey: ["settings-effective-permissions"],
-    queryFn: () => apiFetchJson<Data>("/api/settings/effective-permissions"),
+    queryFn: ({ signal }) => apiFetchJson<Data>("/api/settings/effective-permissions", { signal }),
   })
 
   if (isLoading) {

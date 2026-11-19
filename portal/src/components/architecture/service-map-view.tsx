@@ -60,10 +60,10 @@ export function ServiceMapView({ initialNamespace, focusService }: Props) {
   const queryKey = ["service-graph", effWindow, namespace]
   const { data, isLoading, isError, refetch } = useQuery<ServiceGraphResponse>({
     queryKey,
-    queryFn: () => {
+    queryFn: ({ signal }) => {
       const params = new URLSearchParams({ window: effWindow })
       if (namespace) params.set("namespace", namespace)
-      return apiFetchJson<ServiceGraphResponse>(`/api/service-graph?${params}`)
+      return apiFetchJson<ServiceGraphResponse>(`/api/service-graph?${params}`, { signal })
     },
     refetchInterval: isLive ? 5_000 : 60_000,
     staleTime: isLive ? 0 : 30_000,

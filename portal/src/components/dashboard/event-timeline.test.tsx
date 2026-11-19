@@ -152,6 +152,7 @@ describe("EventTimeline with real QueryClient", () => {
       await view.observer.refetch()
 
       expect(view.selection.get()).toBeNull()
+      await waitUntil(() => view.observer.getCurrentResult().status === "success")
       const closedHtml = view.render()
       expect(closedHtml).toContain('data-sheet-open="false"')
       expect(closedHtml).not.toContain("team-b-secret-svc")

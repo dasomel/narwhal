@@ -77,7 +77,7 @@ export function ArgoCDAppsTable({ apps: propApps }: ArgoCDAppsTableProps = {}) {
 
   const { data, isLoading, error, refetch } = useQuery<ArgoCDResponse>({
     queryKey: ["argocd"],
-    queryFn: () => apiFetchJson<ArgoCDResponse>("/api/argocd"),
+    queryFn: ({ signal }) => apiFetchJson<ArgoCDResponse>("/api/argocd", { signal }),
     refetchInterval: 15_000,
     enabled: propApps === undefined,
   })

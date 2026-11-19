@@ -69,7 +69,7 @@ export function EventTimeline({ selection }: { selection?: ScopedState<TimelineE
 
   const { data: events, isLoading, isError, refetch } = useQuery<TimelineEvent[]>({
     queryKey: ["events"],
-    queryFn: () => apiFetchJson<TimelineEvent[]>("/api/events"),
+    queryFn: ({ signal }) => apiFetchJson<TimelineEvent[]>("/api/events", { signal }),
     refetchInterval: 15_000,
   })
 

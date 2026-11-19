@@ -29,7 +29,7 @@ export function NamespaceForm() {
 
   const { data: namespaces = [], isLoading, isError, refetch } = useQuery<Namespace[]>({
     queryKey: ["namespaces"],
-    queryFn: () => apiFetchJson<unknown>("/api/namespaces").then((d) => (Array.isArray(d) ? (d as Namespace[]) : [])),
+    queryFn: ({ signal }) => apiFetchJson<unknown>("/api/namespaces", { signal }).then((d) => (Array.isArray(d) ? (d as Namespace[]) : [])),
   })
 
   const createMutation = useMutation({

@@ -65,7 +65,7 @@ export function DoraMetricsWidget() {
 
   const { data, isLoading, isError, refetch } = useQuery<DoraMetrics>({
     queryKey: ["governance-dora"],
-    queryFn: () => apiFetchJson<DoraMetrics>("/api/governance/dora"),
+    queryFn: ({ signal }) => apiFetchJson<DoraMetrics>("/api/governance/dora", { signal }),
     refetchInterval: 30_000,
   })
 

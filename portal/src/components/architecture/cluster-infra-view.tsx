@@ -41,7 +41,7 @@ export function ClusterInfraView() {
   const t = useT()
   const { data, isLoading, isError, refetch } = useQuery<ClusterInfra>({
     queryKey: ["cluster-infra"],
-    queryFn: () => apiFetchJson<ClusterInfra>("/api/cluster"),
+    queryFn: ({ signal }) => apiFetchJson<ClusterInfra>("/api/cluster", { signal }),
     refetchInterval: 30_000,
   })
   const validData = isClusterInfra(data) ? data : undefined

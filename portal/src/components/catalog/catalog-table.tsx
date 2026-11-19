@@ -43,7 +43,7 @@ export function CatalogTable() {
 
   const { data: services, isLoading, isError, refetch } = useQuery<CatalogService[]>({
     queryKey: ["catalog"],
-    queryFn: () => apiFetchJson<CatalogService[]>("/api/catalog"),
+    queryFn: ({ signal }) => apiFetchJson<CatalogService[]>("/api/catalog", { signal }),
     refetchInterval: 15_000,
   })
 

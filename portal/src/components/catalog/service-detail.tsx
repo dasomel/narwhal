@@ -51,7 +51,7 @@ export function ServiceDetail() {
 
   const { data, isLoading, error, refetch } = useQuery<DetailResponse>({
     queryKey: ["catalog", name],
-    queryFn: () => apiFetchJson<DetailResponse>(`/api/catalog/${name}`),
+    queryFn: ({ signal }) => apiFetchJson<DetailResponse>(`/api/catalog/${name}`, { signal }),
     refetchInterval: 15_000,
   })
 

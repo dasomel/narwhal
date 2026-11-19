@@ -118,7 +118,7 @@ export function PoliciesTable() {
   const [selected, setSelected] = useScopedState<string | null>(null)
   const { data: policies, isLoading, isError, refetch } = useQuery<KyvernoPolicy[]>({
     queryKey: ["settings-policies"],
-    queryFn: () => apiFetchJson<KyvernoPolicy[]>("/api/settings/policies"),
+    queryFn: ({ signal }) => apiFetchJson<KyvernoPolicy[]>("/api/settings/policies", { signal }),
   })
 
   const selectedPolicy = Array.isArray(policies) ? policies.find((p) => `${p.scope}/${p.name}` === selected) : undefined

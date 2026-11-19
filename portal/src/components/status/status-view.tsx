@@ -11,7 +11,7 @@ import { apiFetchJson } from "@/lib/scope-guard"
 export function StatusView({ isOperator }: { isOperator: boolean }) {
   const { data, isLoading, isError, refetch } = useQuery<PlatformStatus>({
     queryKey: ["platform-status"],
-    queryFn: () => apiFetchJson<PlatformStatus>("/api/status"),
+    queryFn: ({ signal }) => apiFetchJson<PlatformStatus>("/api/status", { signal }),
     refetchInterval: 15_000,
   })
 

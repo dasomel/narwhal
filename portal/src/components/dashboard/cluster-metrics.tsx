@@ -18,7 +18,7 @@ export function ClusterMetrics() {
   const t = useT()
   const { data, isLoading, isError, refetch } = useQuery<ClusterMetrics>({
     queryKey: ["metrics"],
-    queryFn: () => apiFetchJson<ClusterMetrics>("/api/metrics"),
+    queryFn: ({ signal }) => apiFetchJson<ClusterMetrics>("/api/metrics", { signal }),
     refetchInterval: 30_000,
   })
 

@@ -41,7 +41,7 @@ export function buildKpiModels(m: KpiData | undefined, t: (key: TranslationKey, 
 }
 
 function useJson<T>(key: unknown[], url: string, interval = 30_000) {
-  return useQuery<T>({ queryKey: key, queryFn: () => apiFetchJson<T>(url), refetchInterval: interval })
+  return useQuery<T>({ queryKey: key, queryFn: ({ signal }) => apiFetchJson<T>(url, { signal }), refetchInterval: interval })
 }
 
 function Kpi({ title, value, detail, percent, unavailable, icon: Icon }: KpiModel) {

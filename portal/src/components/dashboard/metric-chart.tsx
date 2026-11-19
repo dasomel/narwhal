@@ -29,12 +29,12 @@ export function MetricChart({ metric, minutes = 60, node }: { metric: string; mi
   const t = useT()
   const { data, isLoading, isError, refetch } = useQuery<RangeResponse>({
     queryKey: ["metrics-range", metric, minutes, node],
-    queryFn: () => {
+    queryFn: ({ signal }) => {
       const url = new URL(`/api/metrics/range`, window.location.origin)
       url.searchParams.set("metric", metric)
       url.searchParams.set("minutes", String(minutes))
       if (node) url.searchParams.set("node", node)
-      return apiFetchJson<RangeResponse>(url)
+      return apiFetchJson<RangeResponse>(url, { signal })
     },
     refetchInterval: 30_000,
   })

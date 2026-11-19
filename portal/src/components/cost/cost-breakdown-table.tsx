@@ -92,7 +92,7 @@ export function CostBreakdownTable() {
 
   const { data, isLoading, error, refetch } = useQuery<CostResponse>({
     queryKey: ["cost", scopeView],
-    queryFn: () => apiFetchJson<CostResponse>(`/api/cost?scope=${scopeView}`),
+    queryFn: ({ signal }) => apiFetchJson<CostResponse>(`/api/cost?scope=${scopeView}`, { signal }),
     refetchInterval: 60_000,
   })
 

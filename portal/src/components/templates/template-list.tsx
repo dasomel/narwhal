@@ -35,7 +35,7 @@ export function TemplateList() {
 
   const { data: templates, isLoading, isError, refetch } = useQuery<ServiceTemplate[]>({
     queryKey: ["templates"],
-    queryFn: () => apiFetchJson<ServiceTemplate[]>("/api/templates"),
+    queryFn: ({ signal }) => apiFetchJson<ServiceTemplate[]>("/api/templates", { signal }),
     refetchInterval: 30_000,
   })
 

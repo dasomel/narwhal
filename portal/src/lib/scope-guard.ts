@@ -150,10 +150,8 @@ export function createScopeGuard(initialClient: QueryClient | null = null): Scop
   let queryClient: QueryClient | null = initialClient
   let lastFingerprint: string | null = null
   let epoch = 0
-  // Tracks every accepted fingerprint transition (including initial null -> fp adoption)
-  // so concurrent pre-transition requests cannot roll the fingerprint backward.
-  let scopeSeq = 0
   const listeners = new Set<() => void>()
+  const tenantFilter = { predicate: isTenantScopedQuery }
 
   const notifyListeners = () => {
     for (const listener of listeners) {
@@ -161,99 +159,65 @@ export function createScopeGuard(initialClient: QueryClient | null = null): Scop
     }
   }
 
-  const evictCache = (refetchActive: boolean) => {
-    epoch += 1
-    notifyListeners()
+  const clearTenantQueries = (resetFetching: boolean) => {
     if (!queryClient) return
-
-    const activeKeys: Array<readonly unknown[]> = []
-    for (const query of queryClient.getQueryCache().getAll()) {
-      if (!isTenantScopedQuery(query)) continue
-      if (query.getObserversCount() === 0) {
-        queryClient.removeQueries({ queryKey: query.queryKey, exact: true })
-      } else if (query.state.fetchStatus === "fetching") {
-        // Clear any previously cached data on the in-flight query without
-        // cancelling the currently settling fetch; the caller either returns
-        // the new-scope payload or throws into error state.
+    queryClient.removeQueries({ ...tenantFilter, type: "inactive" })
+    for (const query of queryClient.getQueryCache().findAll(tenantFilter)) {
+      if (!resetFetching && query.state.fetchStatus === "fetching") {
+        // Leave the triggering 401/403 query active so it settles with ApiHttpError
+        // instead of reverting to pending, while wiping any stale cached data.
         query.setState({ data: undefined, dataUpdatedAt: 0, status: "pending" })
       } else {
         query.reset()
-        if (refetchActive && query.isActive()) {
-          activeKeys.push(query.queryKey)
-        }
-      }
-    }
-
-    if (refetchActive) {
-      for (const queryKey of activeKeys) {
-        void queryClient.refetchQueries({ queryKey, exact: true })
       }
     }
   }
 
-  const handleRevoked = () => {
-    lastFingerprint = null
-    scopeSeq += 1
-    evictCache(false)
-  }
-
-  const handleScopeChanged = (nextFingerprint: string) => {
+  const evictScope = async (nextFingerprint: string | null, refetchActive: boolean) => {
     lastFingerprint = nextFingerprint
-    scopeSeq += 1
-    evictCache(true)
-  }
+    // (1) Bump epoch so any in-flight request started before this transition is discarded.
+    epoch += 1
+    const evictEpoch = epoch
 
-  const reconcileFingerprint = (
-    serverFingerprint: string | null,
-    requestEpoch: number,
-    requestSeq: number,
-  ): { expectedEpoch: number; expectedFingerprint: string | null } => {
-    if (!serverFingerprint) {
-      if (epoch !== requestEpoch) {
-        throw new ScopeStaleResponseError()
+    if (!refetchActive) {
+      // (3) Wipe stale cached data immediately while leaving the triggering 401/403
+      // query active so it settles with ApiHttpError instead of reverting to pending.
+      clearTenantQueries(false)
+      // (4) Close detail views and reset scoped UI state.
+      notifyListeners()
+      // (2) Abort any remaining in-flight tenant queries once the throwing query settles.
+      if (queryClient) {
+        void Promise.resolve()
+          .then(() => Promise.resolve())
+          .then(() => Promise.resolve())
+          .then(() => {
+            if (epoch !== evictEpoch || !queryClient) return
+            void queryClient.cancelQueries(tenantFilter, { silent: true, revert: false })
+            for (const query of queryClient.getQueryCache().findAll(tenantFilter)) {
+              if (query.state.status === "pending") {
+                query.reset()
+              }
+            }
+          })
       }
-      return { expectedEpoch: epoch, expectedFingerprint: lastFingerprint }
+      return
     }
 
-    if (epoch !== requestEpoch) {
-      if (lastFingerprint === null || serverFingerprint !== lastFingerprint) {
-        throw new ScopeStaleResponseError()
-      }
-      return { expectedEpoch: epoch, expectedFingerprint: lastFingerprint }
-    }
-
-    if (lastFingerprint === null) {
-      if (requestSeq !== scopeSeq) {
-        throw new ScopeStaleResponseError()
-      }
-      lastFingerprint = serverFingerprint
-      scopeSeq += 1
-      return { expectedEpoch: epoch, expectedFingerprint: serverFingerprint }
-    }
-
-    if (serverFingerprint !== lastFingerprint) {
-      // Reject late responses whose request did not start after the last accepted
-      // fingerprint adoption/change so concurrent initial requests cannot roll back.
-      if (requestSeq !== scopeSeq) {
-        throw new ScopeStaleResponseError()
-      }
-      handleScopeChanged(serverFingerprint)
-    }
-
-    return { expectedEpoch: epoch, expectedFingerprint: lastFingerprint }
-  }
-
-  const assertBodyFresh = (
-    expectedEpoch: number,
-    expectedFingerprint: string | null,
-    serverFingerprint: string | null,
-  ) => {
-    if (
-      epoch !== expectedEpoch ||
-      (serverFingerprint !== null && serverFingerprint !== lastFingerprint) ||
-      (expectedFingerprint !== null && lastFingerprint === null)
-    ) {
-      throw new ScopeStaleResponseError()
+    if (queryClient) {
+      // (2) Abort in-flight tenant fetches synchronously via React Query's AbortSignal,
+      // then immediately clear cache and close detail views before awaiting settlement
+      // so no caller observes a pre-reset revert state.
+      const cancelPromise = queryClient.cancelQueries(tenantFilter)
+      // (3) Remove inactive tenant queries and reset active tenant queries so stale data is cleared immediately.
+      clearTenantQueries(true)
+      // (4) Close detail views and reset scoped UI state.
+      notifyListeners()
+      await cancelPromise
+      if (epoch !== evictEpoch) return
+      // (5) Invalidate active tenant queries so they refetch under the new scope instead of staying in error.
+      void queryClient.invalidateQueries({ ...tenantFilter, refetchType: "active" })
+    } else {
+      notifyListeners()
     }
   }
 
@@ -276,7 +240,6 @@ export function createScopeGuard(initialClient: QueryClient | null = null): Scop
   const reset = () => {
     lastFingerprint = null
     epoch = 0
-    scopeSeq = 0
     listeners.clear()
     queryClient = null
   }
@@ -286,41 +249,39 @@ export function createScopeGuard(initialClient: QueryClient | null = null): Scop
     init?: RequestInit,
   ): Promise<{ res: Response; assertFresh: () => void }> => {
     const requestEpoch = epoch
-    const requestSeq = scopeSeq
-    const res = await fetch(input, init)
+    const signal = init?.signal
+    const res = await fetch(input, signal ? { ...init, signal } : init)
     const serverFingerprint = res.headers?.get?.(SCOPE_FINGERPRINT_HEADER) || null
 
     if (res.status === 401) {
-      handleRevoked()
+      void evictScope(null, false)
       throw new ApiHttpError(401, res.statusText || "Unauthorized")
     }
 
     if (res.status === 403) {
       const code = await readErrorCode(res)
       if (code === ACCESS_NOT_GRANTED_CODE) {
-        handleRevoked()
+        void evictScope(null, false)
         throw new ApiHttpError(403, res.statusText || "Forbidden", ACCESS_NOT_GRANTED_CODE)
-      }
-      const { expectedEpoch, expectedFingerprint } = reconcileFingerprint(
-        serverFingerprint,
-        requestEpoch,
-        requestSeq,
-      )
-      return {
-        res,
-        assertFresh: () => assertBodyFresh(expectedEpoch, expectedFingerprint, serverFingerprint),
       }
     }
 
-    const { expectedEpoch, expectedFingerprint } = reconcileFingerprint(
-      serverFingerprint,
-      requestEpoch,
-      requestSeq,
-    )
-    return {
-      res,
-      assertFresh: () => assertBodyFresh(expectedEpoch, expectedFingerprint, serverFingerprint),
+    if (serverFingerprint !== null) {
+      if (lastFingerprint === null) {
+        lastFingerprint = serverFingerprint
+      } else if (serverFingerprint !== lastFingerprint) {
+        await evictScope(serverFingerprint, true)
+      }
     }
+
+    const assertFresh = () => {
+      if (epoch !== requestEpoch || signal?.aborted) {
+        throw new ScopeStaleResponseError()
+      }
+    }
+
+    assertFresh()
+    return { res, assertFresh }
   }
 
   const guardedFetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
@@ -335,6 +296,7 @@ export function createScopeGuard(initialClient: QueryClient | null = null): Scop
     const { res, assertFresh } = await guardedFetchInternal(input, init)
     if (!res.ok) {
       const code = res.status === 403 ? await readErrorCode(res) : undefined
+      assertFresh()
       throw new ApiHttpError(res.status, res.statusText || `HTTP ${res.status}`, code)
     }
     const data = (await res.json()) as T

@@ -92,13 +92,13 @@ export function CostOverview() {
   }, [])
   const { data: costData, isLoading: costLoading, error: costError, refetch: refetchCost } = useQuery<CostResponse>({
     queryKey: ["cost", "cluster"],
-    queryFn: () => apiFetchJson<CostResponse>("/api/cost?scope=cluster"),
+    queryFn: ({ signal }) => apiFetchJson<CostResponse>("/api/cost?scope=cluster", { signal }),
     refetchInterval: 60_000,
   })
 
   const { data: trendData, isLoading: trendLoading, error: trendError, refetch: refetchTrend } = useQuery<TrendResponse>({
     queryKey: ["cost-trend", "cluster", "cluster", 30],
-    queryFn: () => apiFetchJson<TrendResponse>("/api/cost/trend?scope=cluster&id=cluster&days=30"),
+    queryFn: ({ signal }) => apiFetchJson<TrendResponse>("/api/cost/trend?scope=cluster&id=cluster&days=30", { signal }),
     refetchInterval: 300_000,
   })
 

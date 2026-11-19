@@ -149,15 +149,18 @@ kubectl -n storage get podvolumebackups.velero.io -l "velero.io/backup-name=${LA
 클러스터를 새로 구축하거나 재구축하면 `13-2-narwhal-portal-bindings.sh`가 OpenBao `openbao-backup` 정책·롤을 다시 만들고, GitOps(`openbao-backup`)가 `RECIPIENT_FPR`이 고정된 `CronJob storage/openbao-snapshot`을 배포하지만, **ConfigMap `storage/openbao-backup-recipient`는 클러스터에 존재하지 않는다.** Phase 2(`06-phase2-start.sh`, `scripts/cloud/provision-kakao.sh`)와 `scripts/test/verify-cluster.sh`는 이 상태를 `DEGRADED`로 경고하고, `scripts/test/verify-backup.sh --section=openbao`는 실패(`FAIL`)로 보고한다.
 
 1. **기존 오프라인 키 쌍을 유지하는 경우**(권장, `RECIPIENT_FPR` 변경 불필요): 워크스테이션에 보관한 공개 인증서(`*.cert.pem`)로 ConfigMap만 다시 적용한다.
+
    ```bash
    # 개인키가 섞인 파일이 아닌지 먼저 확인한 뒤 적용
    grep -q 'PRIVATE KEY' <인증서 경로> && { echo "ERROR: private key detected" >&2; exit 1; }
    kubectl create configmap openbao-backup-recipient -n storage \
      --from-file=recipient.pem=<인증서 경로> --dry-run=client -o yaml | kubectl apply -f -
    ```
+
 2. **새 키 쌍이 필요한 경우**: 3.2(`scripts/ops/openbao-backup-keygen.sh`)와 3.3(`RECIPIENT_FPR` Git 갱신)을 따른다.
 3. **첫 암호화 스냅샷 생성 [변경]**: 3.5의 수동 Job(`kubectl -n storage create job --from=cronjob/openbao-snapshot ...`)을 실행해 첫 스냅샷 생성을 확인한다(`--from=cronjob/...`으로 만든 Job은 CronJob `ownerReferences`를 설정해 `status.lastSuccessfulTime`도 갱신하므로, 이미 04:30 UTC 실행이 실패한 뒤라도 아래 확인 단계가 통과한다).
 4. **확인 [읽기]**:
+
    ```bash
    bash scripts/test/verify-backup.sh --section=openbao
    ```

@@ -121,14 +121,23 @@ def static(root):
     s_expr = " ".join(stale["expr"].split())
     for needle in (
         SEL,
-        "93600",
         "kube_cronjob_created",
         "kube_cronjob_status_last_successful_time",
         "kube_cronjob_spec_suspend",
-        "max by (namespace, cronjob)",
-        "on (namespace, cronjob)",
+        "and on (namespace, cronjob)",
+        "unless on (namespace, cronjob)",
     ):
         assert needle in s_expr, f"OpenBaoSnapshotBackupStale missing {needle!r}: {s_expr}"
+    # CI runners have no promtool. Pin aggregations to keep labels and verify thresholds/guards statically.
+    assert "max(" not in s_expr, f"OpenBaoSnapshotBackupStale aggregations must preserve labels: {s_expr}"
+    assert s_expr.count("max by (namespace, cronjob)") == 5, \
+        f"OpenBaoSnapshotBackupStale must keep 'by (namespace, cronjob)' across all 5 terms: {s_expr}"
+    assert len(re.findall(r">\s*93600\b", s_expr)) == 2, \
+        f"OpenBaoSnapshotBackupStale 26h threshold missing in both branches: {s_expr}"
+    assert s_expr.count("kube_cronjob_status_last_successful_time") == 3, \
+        f"OpenBaoSnapshotBackupStale last_successful_time clauses missing: {s_expr}"
+    assert len(re.findall(r">\s*0\b", s_expr)) == 2, \
+        f"OpenBaoSnapshotBackupStale last_successful_time > 0 guards missing: {s_expr}"
 
     expected_anchor = "/docs/runbooks/openbao-snapshot-backup.md#" + slug("## 4. 정기 점검")
     assert stale["annotations"]["runbook_url"].endswith(expected_anchor), stale["annotations"]["runbook_url"]

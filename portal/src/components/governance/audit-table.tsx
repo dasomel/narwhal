@@ -6,7 +6,7 @@ import { Card } from "@/components/ui/card"
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet"
 import { Badge } from "@/components/ui/badge"
 import { useT, useLocale } from "@/lib/i18n-client"
-import { apiFetchJson, useScopedState } from "@/lib/scope-guard"
+import { apiFetchJson } from "@/lib/scope-guard"
 import { DataState } from "@/components/ui/data-state"
 import type { TranslationKey } from "@/lib/i18n"
 
@@ -105,8 +105,8 @@ export function AuditTable() {
   const locale = useLocale()
   const { data: session } = useSession()
   const role = session?.user?.role ?? "guest"
-  const [nsFilter, setNsFilter] = useScopedState("all")
-  const [selected, setSelected] = useScopedState<OperationalEventEntry | null>(null)
+  const [nsFilter, setNsFilter] = useState("all")
+  const [selected, setSelected] = useState<OperationalEventEntry | null>(null)
   const [sortKey, setSortKey] = useState<SortKey>("timestamp")
   const [sortDir, setSortDir] = useState<SortDir>("desc")
 

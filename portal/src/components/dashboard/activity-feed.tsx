@@ -1,11 +1,12 @@
 "use client"
 
+import { useState } from "react"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { Card } from "@/components/ui/card"
 import { DataState } from "@/components/ui/data-state"
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet"
 import { useT, useLocale } from "@/lib/i18n-client"
-import { apiFetchJson, useScopedState, type ScopedState } from "@/lib/scope-guard"
+import { apiFetchJson } from "@/lib/scope-guard"
 import type { Locale } from "@/lib/i18n"
 import { useRole } from "@/hooks/use-role"
 import type { TimelineEvent } from "@/app/api/events/route"
@@ -150,14 +151,14 @@ function AlertDetail({
   )
 }
 
-export function ActivityFeed({ selection }: { selection?: ScopedState<Alert | null> } = {}) {
+export function ActivityFeed() {
   const t = useT()
   const locale = useLocale()
   const { can } = useRole()
   const canSilence = can("silence")
   const queryClient = useQueryClient()
 
-  const [selectedAlert, setSelectedAlert] = useScopedState<Alert | null>(null, selection)
+  const [selectedAlert, setSelectedAlert] = useState<Alert | null>(null)
 
   const { data: alertData, isLoading: alertsLoading, isError: alertsError, refetch: refetchAlerts } = useQuery<Alert[]>({
     queryKey: ["alerts"],

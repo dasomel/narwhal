@@ -1,11 +1,12 @@
 "use client"
+import { useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { useT } from "@/lib/i18n-client"
 import { DataState } from "@/components/ui/data-state"
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet"
-import { apiFetchJson, useScopedState } from "@/lib/scope-guard"
+import { apiFetchJson } from "@/lib/scope-guard"
 
 interface KyvernoRule {
   name: string
@@ -115,7 +116,7 @@ export function PolicyDetail({ policy }: { policy: KyvernoPolicy }) {
 
 export function PoliciesTable() {
   const t = useT()
-  const [selected, setSelected] = useScopedState<string | null>(null)
+  const [selected, setSelected] = useState<string | null>(null)
   const { data: policies, isLoading, isError, refetch } = useQuery<KyvernoPolicy[]>({
     queryKey: ["settings-policies"],
     queryFn: ({ signal }) => apiFetchJson<KyvernoPolicy[]>("/api/settings/policies", { signal }),

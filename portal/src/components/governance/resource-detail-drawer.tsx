@@ -1,9 +1,9 @@
 "use client"
 
-import { useCallback, useEffect } from "react"
+import { useState, useEffect } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { useT, useLocale } from "@/lib/i18n-client"
-import { apiFetchJson, useScopedState, useScopeResetEffect, type ScopedState } from "@/lib/scope-guard"
+import { apiFetchJson } from "@/lib/scope-guard"
 import { DataState } from "@/components/ui/data-state"
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -20,7 +20,6 @@ interface ResourceDetailDrawerProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   initialPodName?: string
-  selectedPodState?: ScopedState<string | null>
 }
 
 function relativeTime(ts: string, tFn: any): string {
@@ -104,15 +103,10 @@ function ContainerVulnSummary({ image }: { image: string }) {
   )
 }
 
-export function ResourceDetailDrawer({ namespace, app, open, onOpenChange, initialPodName, selectedPodState }: ResourceDetailDrawerProps) {
+export function ResourceDetailDrawer({ namespace, app, open, onOpenChange, initialPodName }: ResourceDetailDrawerProps) {
   const t = useT()
   const locale = useLocale()
-  const [selectedPodName, setSelectedPodName] = useScopedState<string | null>(null, selectedPodState)
-
-  const closeOnScopeChange = useCallback(() => {
-    onOpenChange(false)
-  }, [onOpenChange])
-  useScopeResetEffect(closeOnScopeChange)
+  const [selectedPodName, setSelectedPodName] = useState<string | null>(null)
 
   const { data: podListData, isLoading: listLoading, error: listError, refetch: refetchPods } = useQuery<PodListResponse>({
     queryKey: ["governance-pods", namespace, app],
@@ -152,7 +146,7 @@ export function ResourceDetailDrawer({ namespace, app, open, onOpenChange, initi
         setSelectedPodName(initialPodName)
       }
     }
-  }, [open, initialPodName, pods, setSelectedPodName])
+  }, [open, initialPodName, pods])
 
   function handleOpenChange(newOpen: boolean) {
     onOpenChange(newOpen)

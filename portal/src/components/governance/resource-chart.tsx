@@ -1,4 +1,5 @@
 "use client"
+import { useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend } from "recharts"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -8,7 +9,7 @@ import {
   TooltipContent as InfoTooltipContent,
 } from "@/components/ui/tooltip"
 import { useT } from "@/lib/i18n-client"
-import { apiFetchJson, useScopedState } from "@/lib/scope-guard"
+import { apiFetchJson } from "@/lib/scope-guard"
 import { DataState } from "@/components/ui/data-state"
 import { ResourceDetailDrawer } from "./resource-detail-drawer"
 import type { ResourcesResponseV2, NamespaceUsageV2 } from "./types"
@@ -45,10 +46,10 @@ const formatBytes = (bytes: number) => {
 
 export function ResourceChart() {
   const t = useT()
-  const [selectedNamespace, setSelectedNamespace] = useScopedState<string | null>(null)
-  const [selectedPodName, setSelectedPodName] = useScopedState<string | undefined>(undefined)
-  const [noRequestDialogOpen, setNoRequestDialogOpen] = useScopedState(false)
-  const [filterNamespace, setFilterNamespace] = useScopedState<string>("all")
+  const [selectedNamespace, setSelectedNamespace] = useState<string | null>(null)
+  const [selectedPodName, setSelectedPodName] = useState<string | undefined>(undefined)
+  const [noRequestDialogOpen, setNoRequestDialogOpen] = useState(false)
+  const [filterNamespace, setFilterNamespace] = useState<string>("all")
 
   const { data, isLoading, isError, refetch } = useQuery<ResourcesResponseV2>({
     queryKey: ["governance-resources"],

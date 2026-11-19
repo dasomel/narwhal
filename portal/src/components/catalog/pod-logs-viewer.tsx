@@ -7,7 +7,7 @@ import { DataState } from "@/components/ui/data-state"
 import { Badge } from "@/components/ui/badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useT } from "@/lib/i18n-client"
-import { apiFetchJson, useScopedState } from "@/lib/scope-guard"
+import { apiFetchJson } from "@/lib/scope-guard"
 import type { PodsResponse } from "@/app/api/pods/route"
 import type { PodLogsResponse } from "@/app/api/pods/[namespace]/[pod]/logs/route"
 
@@ -21,8 +21,8 @@ interface PodLogsViewerProps {
 
 export function PodLogsViewer({ namespace, appName }: PodLogsViewerProps) {
   const t = useT()
-  const [selectedPod, setSelectedPod] = useScopedState<string>("")
-  const [selectedContainer, setSelectedContainer] = useScopedState<string>("")
+  const [selectedPod, setSelectedPod] = useState<string>("")
+  const [selectedContainer, setSelectedContainer] = useState<string>("")
   const [tailLines, setTailLines] = useState<TailLines>(200)
   const [previous, setPrevious] = useState(false)
 

@@ -6,7 +6,7 @@ import { useSession } from "next-auth/react"
 import type { ServiceGraphResponse } from "@/app/api/service-graph/route"
 import type { TranslationKey } from "@/lib/i18n"
 import { useT } from "@/lib/i18n-client"
-import { apiFetchJson, useScopedState } from "@/lib/scope-guard"
+import { apiFetchJson } from "@/lib/scope-guard"
 import { Badge } from "@/components/ui/badge"
 import { DataState } from "@/components/ui/data-state"
 import { ReactFlowMap } from "./service-map-diagram"
@@ -28,9 +28,9 @@ export function ServiceMapView({ initialNamespace, focusService }: Props) {
   const { data: session } = useSession()
   const isAdmin = session?.user?.role === "cluster-admin"
   const [window, setWindow] = useState<GraphWindow>("7d")
-  const [namespace, setNamespace] = useScopedState(initialNamespace ?? "")
+  const [namespace, setNamespace] = useState(initialNamespace ?? "")
   const [errorThreshold, setErrorThreshold] = useState(5) // % 단위
-  const [selectedId, setSelectedId] = useScopedState<string | null>(null)
+  const [selectedId, setSelectedId] = useState<string | null>(null)
   // 실시간 모드: 최근 1분 순간 rate를 5초마다 폴링 (cluster-admin 전용 SSE 포함)
   const [live, setLive] = useState(false)
   const isLive = isAdmin && live
@@ -92,10 +92,10 @@ export function ServiceMapView({ initialNamespace, focusService }: Props) {
 
   // sticky: Prometheus 타임아웃 등으로 빈 응답이 와도 드롭다운이 사라지지 않게
   // 마지막 정상 목록을 유지한다 (선택 ns가 목록에 없어도 표시 유지).
-  const [nsOptions, setNsOptions] = useScopedState<string[]>([])
+  const [nsOptions, setNsOptions] = useState<string[]>([])
   useEffect(() => {
     if (namespaces.length > 0) setNsOptions(namespaces)
-  }, [namespaces, setNsOptions])
+  }, [namespaces])
 
   const isEmpty = !isLoading && !isError && filteredData && filteredData.nodes.length === 0
 

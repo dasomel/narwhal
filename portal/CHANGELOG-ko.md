@@ -11,11 +11,11 @@
 
 ### 수정
 
-- **서버 스코프 변경·권한 회수 시 브라우저 React Query 캐시 및 열린 상세 화면 즉시 초기화 (`src/lib/scope.ts`, `src/lib/scope-guard.ts`, `src/components/providers.tsx`, `src/app/api/**`, narwhal#688):**
-  - 테넌트 스코프 API 라우트 응답의 `X-Narwhal-Scope` 헤더에 무염 SHA-256 대신 서버 `AUTH_SECRET`으로 서명한 32자리 16진수 HMAC(`signScopeFingerprint`)을 반환해 팀·네임스페이스 이름 사전 대입을 차단했습니다.
-  - React Query `queryFn`을 `Providers`의 공유 `QueryClient`에 바인딩된 `apiFetch` / `apiFetchJson`으로 통합해, `X-Narwhal-Scope` 헤더 변경 또는 `401`·`403 ACCESS_NOT_GRANTED` 응답 시 테넌트 스코프 쿼리(`TENANT_SCOPED_QUERY_KEYS`, `tenant` 접두사, `meta.tenantScoped`)만 제거·초기화(`settings-*` 등 비테넌트 쿼리는 유지)하고 `useScopedState` / `useScopeResetEffect`로 열린 상세 시트·드로어(`EventTimeline`, `AlertsWidget`, `ActivityFeed`, `ResourceDetailDrawer`, `PodLogsViewer` 등)를 닫으며, 요청 시작 전 캡처한 `epoch`/`scopeSeq` 순서와 본문(`res.json()`) 읽기 완료 후 재검사로 지연·경합 응답(`ScopeStaleResponseError`)을 폐기하고 `401`/`403`/`ScopeStaleResponseError` 재시도를 생략합니다.
-  - 실제 `QueryClient`·`QueryObserver` 기반 회귀 테스트(`scope-guard.test.ts`, `activity-feed.test.tsx`, `event-timeline.test.tsx`, `resource-detail-drawer.test.tsx`)와 `scope.access.test.ts`, `events/route.test.ts`, `alerts/route.test.ts`의 `viewer` 세션·HMAC 헤더 검증을 추가했습니다.
-  - `auth.ts` 토큰 갱신 시 claims 재동기화, SSE 스트림(`/api/events/stream`) 스코프 재검증, 다중 탭 간 동기화는 `narwhal#734`로 분리해 추후 처리합니다.
+- **서버 스코프 변경·권한 회수 시 브라우저 캐시 초기화 및 전체 문서 내비게이션 전환 (`src/lib/scope.ts`, `src/lib/scope-guard.ts`, `src/components/providers.tsx`, `src/app/api/**`, narwhal#688):**
+  - 테넌트 스코프 API 라우트와 `/api/events/stream` 응답의 `X-Narwhal-Scope` 헤더에 무염 SHA-256 대신 서버 `AUTH_SECRET`으로 서명한 32자리 16진수 HMAC(`signScopeFingerprint`)을 반환해 팀·네임스페이스 이름 사전 대입을 차단했습니다.
+  - React Query `queryFn`을 `Providers`의 공유 `QueryClient`에 바인딩된 `apiFetch` / `apiFetchJson`으로 통합해, `X-Narwhal-Scope` 헤더 변경 또는 `401`·`403 ACCESS_NOT_GRANTED` 응답 시 즉시 캐시를 비우고 모듈 수준 `navigating` 플래그(`ScopeChangeError`)로 동시·지연 응답의 캐시 저장을 차단한 뒤 전체 페이지 내비게이션(지문 변경 → `window.location.reload()`, `403 ACCESS_NOT_GRANTED` → `/access-denied`, `401` → `/login`)을 수행하며, replica 불일치로 인한 무한 새로고침을 막기 위해 `sessionStorage` 기반 30초 1회 제한(초과 시 캐시 삭제 후 오류 상태 표시)을 뒀습니다(생존 중인 React Query 캐시를 인메모리로 부분 제거·취소·재조회하는 이전 방식은 동시 응답 경합을 구조적으로 막지 못해 폐기했습니다).
+  - 실제 `QueryClient`·`QueryObserver` 기반 회귀 테스트(`src/lib/scope-guard.test.ts`)와 `scope.access.test.ts`, `events/route.test.ts`, `events/stream/route.test.ts`, `alerts/route.test.ts`의 `viewer` 세션·HMAC 헤더 검증을 추가했습니다.
+  - `auth.ts` 토큰 갱신 시 claims 재동기화, SSE 스트림(`/api/events/stream`) 연결 중 스코프 재검증, 다중 탭 간 동기화는 `narwhal#734`로 분리해 추후 처리합니다.
 
 ## [1.1.19] - 2026-11-18
 

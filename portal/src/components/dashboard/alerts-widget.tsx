@@ -19,7 +19,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
 import { useT } from "@/lib/i18n-client"
-import { apiFetchJson, useScopedState, type ScopedState } from "@/lib/scope-guard"
+import { apiFetchJson } from "@/lib/scope-guard"
 
 export interface Alert {
   labels: Record<string, string>
@@ -92,13 +92,13 @@ function SilenceButton({ alertname }: { alertname: string }) {
   )
 }
 
-export function AlertsWidget({ selection }: { selection?: ScopedState<Alert | null> } = {}) {
+export function AlertsWidget() {
   const t = useT()
   const { data: session } = useSession()
   const role = (session?.user as { role?: string })?.role ?? "guest"
   const canSilence = role === "cluster-admin" || role === "developer"
 
-  const [selected, setSelected] = useScopedState<Alert | null>(null, selection)
+  const [selected, setSelected] = useState<Alert | null>(null)
 
   const { data: alertsData, isLoading, isError, refetch } = useQuery<Alert[]>({
     queryKey: ["alerts"],

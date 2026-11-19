@@ -11,6 +11,11 @@
 
 ### 수정
 
+- **Keycloak 토큰 갱신 시 `groups`·`teams` 클레임 재도출 및 누락·검증 실패 시 fail-closed 처리 (`src/lib/auth.ts`, `src/lib/auth.test.ts`, narwhal#734):**
+  - `config.callbacks.jwt`에서 `refreshKeycloakToken` 성공 시 새 `id_token`(없으면 `access_token`)을 `decodeJwtClaims`로 디코딩하고(`D-734-REFRESH-JWT-TRUST`, 별도 JWKS 의존성 없이 `KEYCLOAK_ISSUER` 서버 TLS 호출 신뢰 유지), `validateIssuerAudience`, `isUnexpiredExp`, `alg !== "none"` 검증 후 로그인 경로와 동일한 `applyGroupClaims`(`sanitizeGroups`, `classifyGroupClaim`, `sanitizeTeamGroups`)로 `groups`·`teams`·역할을 재계산해 최대 access token 수명 내에 Keycloak 그룹 변경이 반영되도록 수정했습니다.
+  - 디코딩·`iss`/`aud`/`exp` 검증 실패 또는 `Array.isArray(claims.groups)` 부재 시 `failClosedRefresh`로 이전 그룹·팀을 남기지 않고 `groups: ["guest"]`, `teams: []`, `groupClaimStatus: "no_groups"`, `token.error = "RefreshTokenError"`로 강등·플래그 처리하며, 토큰 엔드포인트 요청 자체의 실패 시 기존 `RefreshTokenError` 동작은 유지했습니다.
+  - `src/lib/auth.test.ts`에 시간대·마이크로태스크 비의존 갱신 회귀 테스트를 추가했으며, SSE 연결 시점 스코프 재검증(`/api/events/stream`)과 다중 탭 동기화는 후속 과제로 범위에서 제외했습니다.
+
 - **서버 스코프 변경·권한 회수 시 브라우저 캐시 초기화 및 전체 문서 내비게이션 전환 (`src/lib/scope.ts`, `src/lib/scope-guard.ts`, `src/components/providers.tsx`, `src/app/api/**`, narwhal#688):**
   - 테넌트 스코프 API 라우트와 `/api/events/stream` 응답의 `X-Narwhal-Scope` 헤더에 무염 SHA-256 대신 서버 `AUTH_SECRET`으로 서명한 32자리 16진수 HMAC(`signScopeFingerprint`)을 반환해 팀·네임스페이스 이름 사전 대입을 차단했습니다.
   - React Query `queryFn`을 `Providers`의 공유 `QueryClient`에 바인딩된 `apiFetch` / `apiFetchJson`으로 통합해, `X-Narwhal-Scope` 헤더 변경 또는 `401`·`403 ACCESS_NOT_GRANTED` 응답 시 즉시 캐시를 비우고 모듈 수준 `navigating` 플래그(`ScopeChangeError`)로 동시·지연 응답의 캐시 저장을 차단한 뒤 전체 페이지 내비게이션(지문 변경 → `window.location.reload()`, `403 ACCESS_NOT_GRANTED` → `/access-denied`, `401` → `/login`)을 수행하며, replica 불일치로 인한 무한 새로고침을 막기 위해 `sessionStorage` 기반 30초 1회 제한을 뒀습니다(제한 초과 또는 `sessionStorage`를 쓸 수 없으면 새로고침 대신 `/access-denied?reason=scope-changed`로 이동: 권한이 남아 있어도 `/`로 되돌리지 않고 수동 `다시 불러오기` 링크만 보여 반복되지 않음)(생존 중인 React Query 캐시를 인메모리로 부분 제거·취소·재조회하는 이전 방식은 동시 응답 경합을 구조적으로 막지 못해 폐기했습니다).

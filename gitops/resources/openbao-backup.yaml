@@ -111,7 +111,14 @@ spec:
           automountServiceAccountToken: false
           securityContext:
             runAsNonRoot: true
-            runAsUser: 100
+            # D-OPENBAO-UID-10100: satisfy KSV020/KSV021 (UID/GID > 10000). Nothing depends on
+            # UID 100 / GID 1000: projected SA token is owned by pod runAsUser, ca.crt and
+            # recipient.pem are 0644, work/tmp emptyDirs are shared under the same pod UID/GID,
+            # /snapshots PVC root is 0777 nobody:nobody (0755/0644 files readable by Velero),
+            # and encrypt (valkey:8-alpine, image user 999) already ran under the pod override.
+            # Escape hatch: revert to 100.
+            runAsUser: 10100
+            runAsGroup: 10100
             seccompProfile:
               type: RuntimeDefault
           initContainers:
@@ -341,7 +348,10 @@ spec:
       automountServiceAccountToken: false
       securityContext:
         runAsNonRoot: true
-        runAsUser: 100
+        # D-OPENBAO-UID-10100: satisfy KSV020/KSV021 (UID/GID > 10000); holder only mounts
+        # /snapshots read-only (0755/0644 files) and sleeps. Escape hatch: revert to 100.
+        runAsUser: 10100
+        runAsGroup: 10100
         seccompProfile:
           type: RuntimeDefault
       containers:

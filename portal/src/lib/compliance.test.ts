@@ -1690,14 +1690,14 @@ describe("compliance framework actionable vs accepted split", () => {
     expect(byId.get("k8s-cis-1.23")).toMatchObject({
       passCount: 101,
       failCount: 15,
-      actionableFailCount: 6,
-      acceptedFailCount: 9,
+      actionableFailCount: 5,
+      acceptedFailCount: 10,
     })
     expect(byId.get("k8s-kisa-1.0")).toMatchObject({
       passCount: 3,
       failCount: 4,
-      actionableFailCount: 3,
-      acceptedFailCount: 1,
+      actionableFailCount: 2,
+      acceptedFailCount: 2,
     })
 
     const cisDetail = await getComplianceFrameworkDetail("k8s-cis-1.23")
@@ -1710,8 +1710,7 @@ describe("compliance framework actionable vs accepted split", () => {
       { id: "1.1.12", act: 1, acc: 0 },
       { id: "5.1.2", act: 5, acc: 27 },
       { id: "5.1.3", act: 6, acc: 10 },
-      { id: "5.2.10", act: 1, acc: 4 },
-      { id: "5.7.3", act: 24, acc: 134 },
+      { id: "5.7.3", act: 14, acc: 144 },
     ])
 
     const kisaDetail = await getComplianceFrameworkDetail("k8s-kisa-1.0")
@@ -1721,7 +1720,6 @@ describe("compliance framework actionable vs accepted split", () => {
       .map((c) => ({ id: c.id, act: c.actionableFailCount, acc: c.acceptedFailCount }))
     expect(kisaActionable).toEqual([
       { id: "KISA-RBAC-01", act: 5, acc: 27 },
-      { id: "KISA-ADM-01", act: 1, acc: 4 },
       { id: "KISA-RBAC-02", act: 6, acc: 10 },
     ])
   })

@@ -175,9 +175,17 @@ export const ACCEPTED_CONFIG_AUDIT_RULES: readonly AcceptedConfigAuditRule[] = [
     "database",
     "Pod",
     "narwhal-db-1",
-    ["KSV036"],
+    ["KSV020", "KSV021", "KSV036"],
     "accept",
     "compliance.acceptedReason.cnpgInstanceManagerToken",
+  ),
+  configRule(
+    "database",
+    "ReplicaSet",
+    "narwhal-db-pooler-rw",
+    ["KSV020", "KSV021"],
+    "accept",
+    "compliance.acceptedReason.cnpgPoolerUid",
   ),
 
   // devtools
@@ -527,7 +535,7 @@ export const ACCEPTED_CONFIG_AUDIT_RULES: readonly AcceptedConfigAuditRule[] = [
     "nfs-quota-agent",
     "DaemonSet",
     "nfs-quota-agent",
-    ["KSV001", "KSV012", "KSV017", "KSV023", "KSV121"],
+    ["KSV001", "KSV003", "KSV012", "KSV017", "KSV020", "KSV021", "KSV023", "KSV121"],
     "accept",
     "compliance.acceptedReason.nfsQuotaAgentAccept",
   ),

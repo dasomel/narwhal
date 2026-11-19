@@ -142,23 +142,43 @@ describe("matchConfigAuditException", () => {
     expect(matchConfigAuditException("storage", "ReplicaSet", "velero-6447588f5f", "KSV014")).toBeNull()
     expect(matchConfigAuditException("storage", "DaemonSet", "node-agent", "KSV014")).toBeNull()
 
-    const cnpgDb1 = matchConfigAuditException("database", "Pod", "narwhal-db-1", "KSV036")
-    expect(cnpgDb1).not.toBeNull()
-    expect(cnpgDb1?.class).toBe("accept")
-    expect(matchConfigAuditException("database", "Pod", "narwhal-db-2", "KSV036")).toBeNull()
-    expect(matchConfigAuditException("database", "ReplicaSet", "narwhal-db-1", "KSV036")).toBeNull()
+    for (const id of ["KSV020", "KSV021", "KSV036"]) {
+      const cnpgDb1 = matchConfigAuditException("database", "Pod", "narwhal-db-1", id)
+      expect(cnpgDb1, `narwhal-db-1 ${id}`).not.toBeNull()
+      expect(cnpgDb1?.class).toBe("accept")
+      expect(matchConfigAuditException("database", "Pod", "narwhal-db-2", id)).toBeNull()
+      expect(matchConfigAuditException("database", "ReplicaSet", "narwhal-db-1", id)).toBeNull()
+    }
+    expect(matchConfigAuditException("database", "Pod", "narwhal-db-1", "KSV014")).toBeNull()
+
+    for (const id of ["KSV020", "KSV021"]) {
+      const pooler = matchConfigAuditException("database", "ReplicaSet", "narwhal-db-pooler-rw-5b44f8765f", id, [
+        "narwhal-db-pooler-rw",
+      ])
+      expect(pooler, `narwhal-db-pooler-rw ${id}`).not.toBeNull()
+      expect(pooler?.class).toBe("accept")
+    }
+    expect(
+      matchConfigAuditException("database", "ReplicaSet", "narwhal-db-pooler-rw-5b44f8765f", "KSV011", [
+        "narwhal-db-pooler-rw",
+      ]),
+    ).toBeNull()
 
     const alloyLogs = matchConfigAuditException("monitoring", "DaemonSet", "k8s-monitoring-alloy-logs", "KSV012")
     expect(alloyLogs).not.toBeNull()
     expect(alloyLogs?.class).toBe("accept")
 
-    for (const id of ["KSV001", "KSV012", "KSV017", "KSV023", "KSV121"]) {
+    for (const id of ["KSV001", "KSV003", "KSV012", "KSV017", "KSV020", "KSV021", "KSV023", "KSV121"]) {
       const nqa = matchConfigAuditException("nfs-quota-agent", "DaemonSet", "nfs-quota-agent", id)
       expect(nqa, `nfs-quota-agent ${id}`).not.toBeNull()
       expect(nqa?.class).toBe("accept")
     }
     expect(matchConfigAuditException("nfs-quota-agent", "DaemonSet", "nfs-quota-agent", "KSV014")).toBeNull()
     expect(matchConfigAuditException("nfs-quota-agent", "DaemonSet", "nfs-quota-agent", "KSV104")).toBeNull()
+
+    // Fixable OpenBao helper/backup workloads (runAsUser/runAsGroup 10100) stay unaccepted in the allowlist
+    expect(matchConfigAuditException("storage", "ReplicaSet", "openbao-snapshot-holder-865bfd4d54", "KSV020")).toBeNull()
+    expect(matchConfigAuditException("storage", "ReplicaSet", "openbao-snapshot-holder-865bfd4d54", "KSV021")).toBeNull()
 
     expect(matchConfigAuditException("platform-system", "ReplicaSet", "waypoint-74b459c658", "KSV030")).toBeNull()
     expect(matchConfigAuditException("platform-system", "ReplicaSet", "waypoint-74b459c658", "KSV104")).toBeNull()

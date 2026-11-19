@@ -1,0 +1,62 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-portal-sbom-isolated-job-750-20261119",
+  "task": "Isolate CycloneDX SBOM generation in portal-docker-publish.yml into a secretless read-only job separate from cosign signing secrets, extend R379, and fix portal/docs/cosign-signing-setup.md preflight claim (narwhal#750).",
+  "changeContext": {
+    "paths": [
+      ".github/workflows/portal-docker-publish.yml",
+      "portal/docs/cosign-signing-setup.md",
+      "scripts/test/lib/check-portal-sbom-attest.py",
+      "scripts/test/regression-check-kakao.sh",
+      "docs/common/lessons-log.md",
+      ".agents/evals/traces/2026-11-portal-sbom-isolated-job-750.json"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Scope: split aquasecurity/trivy-action SBOM generation out of portal-docker-publish.yml sign job into a dedicated secretless read-only sbom job with artifact + job-output SHA-256 handoff and fail-closed verification in sign (normal and sign_digest recovery runs); extend R379 with isolation, disabled-job, allowlist, behavioral verify, and 27 mutations; fix inaccurate 10-verify-image-signatures.sh claim in portal/docs/cosign-signing-setup.md; add lessons-log row and high-risk trace. Left untouched: gitops/resources/kyverno-policies.yaml, scripts/airgap/10-verify-image-signatures.sh, live cluster, GitHub, and GHCR."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "Inspected .github/workflows/portal-docker-publish.yml (main 596d7f35): aquasecurity/trivy-action ran inside the sign job alongside COSIGN_PRIVATE_KEY/COSIGN_PASSWORD. Inspected a real trivy 0.69.3 CycloneDX SBOM generated anonymously against ghcr.io/dasomel/narwhal-portal@sha256:2fd3f555a7dcd71d4ce874728325584463f575d46264158408ba865a6ea30fe3 (468,329 bytes): confirmed anonymous GHCR pull works, confirmed trivy fails if --output parent dir does not exist, and confirmed trivy writes metadata.component.name and aquasecurity:trivy:RepoDigest equal to ${IMAGE}@${DIGEST}. Confirmed scripts/airgap/10-verify-image-signatures.sh only checks file presence (manifest.txt, sbom.cdx.json, --key) and never invokes cosign verify.",
+      "evidence": [
+        "test:DOCKER_CONFIG=/tmp/empty-docker-cfg trivy image --format cyclonedx ghcr.io/dasomel/narwhal-portal@sha256:2fd3f555a7dcd71d4ce874728325584463f575d46264158408ba865a6ea30fe3 -> 468,329 bytes, metadata.component.name and aquasecurity:trivy:RepoDigest match ${IMAGE}@${DIGEST} (measured 2026-11-19)",
+        "test:trivy image --output /tmp/trivy-parent-test/sbom-cyclonedx.json -> FATAL open ... no such file or directory (rc=1; proved mkdir -p needed before trivy-action) (measured 2026-11-19)",
+        "repo:scripts/airgap/10-verify-image-signatures.sh"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "D11 (#750): added isolated `sbom` job (needs: merge, no secrets, permissions: contents: read, fail-closed digest regex + mkdir -p, SHA-pinned trivy-action, sha256sum -> outputs.sbom_sha256 + .sha256 file, SHA-pinned upload-artifact). Updated `sign` job (needs: [merge, sbom], step-1 fail-closed check on needs.sbom.result == 'success' so failed/skipped sbom never leaves sign skipped/green, allowlisted SHA-pinned actions only with trivy-action removed, download-artifact + fail-closed verify step checking job-output EXPECTED_SHA256, non-symlink size <= 10485760 B, single-document CycloneDX JSON, and ${IMAGE}@${DIGEST} in metadata.component.name & aquasecurity:trivy:RepoDigest before cosign sign/attest). Documented residual risk (trivy still produces SBOM content; isolation protects the signing key, not SBOM truthfulness), fixed portal/docs/cosign-signing-setup.md, extended R379 (behavioral + 27 mutations), and added lessons-log row."
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "actionlint, YAML parse, exact workflow shell snippets executed locally against real trivy-generated 1.1.21 CycloneDX SBOM (positive + negative tamper/digest/size/symlink/SBOM_RESULT cases), R379 (behavioral + 27 mutations), scripts/ci/check-mutable-inputs.py, scripts/ci/tests unittest suite (120 tests), make lint, make validate, make test, and eval/trace gates. NOT verified locally: live GitHub Actions runner artifact round-trip and Rekor signing with repo secrets (requires post-merge sign_digest recovery run).",
+      "summary": "All static, linter, behavioral, real-SBOM, and mutation checks pass locally.",
+      "evidence": [
+        "test:actionlint .github/workflows/portal-docker-publish.yml -> exit 0 (0 findings); yaml.safe_load -> YAML OK (measured 2026-11-19)",
+        "test:workflow sbom hash + sign verify snippets against real trivy 1.1.21 SBOM (468329 bytes, sha256=e73f5ac3e7180289dfc30f84cf324b7838824d837f9b1ddf142b2a77d4c0054d) -> positive PASS, tampered job-output sha256 / wrong digest / oversized / symlink / non-success SBOM_RESULT all FAIL closed (measured 2026-11-19)",
+        "test:python3 scripts/test/lib/check-portal-sbom-attest.py --mutation-verify -> PASS: R379 isolated portal CycloneDX SBOM + attestation + Kyverno predicateType (27 mutations rejected) (measured 2026-11-19)",
+        "test:python3 scripts/ci/check-mutable-inputs.py .github/workflows scripts/airgap/lib/binary-checksums.tsv -> passed for 20 file(s); python3 -m unittest discover -s scripts/ci/tests -v -> Ran 120 tests OK; make validate -> Syntax OK, 33/33 GitOps YAMLs OK; make test -> passed 489 failed 0 warnings 3; shellcheck -> 0 findings (make lint exit 2 only from pre-existing unrelated line-length errors in ghost-pod-reaper.yaml, prometheus-alerts.yaml, velero-server-rbac.yaml) (measured 2026-11-19)"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "completion_claim",
+      "summary": "Workflow isolation, fail-closed verification, docs correction, extended R379 (27 mutations), lessons-log row, and trace are verified locally with actionlint, real trivy SBOM execution, CI tests, and full static regression suite; live GitHub Actions artifact transfer and Rekor-backed sign_digest recovery remain post-merge orchestrator verification steps."
+    },
+    {
+      "id": "e6",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Complete and locally verified on branch ci/portal-sbom-isolated-job; post-merge sign_digest recovery command handed off to orchestrator."
+    }
+  ]
+}

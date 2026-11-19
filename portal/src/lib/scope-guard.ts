@@ -170,14 +170,14 @@ export function createScopeGuard(initialClient: QueryClient | null = null): Scop
     // D-688-nav: every scope change ends in a full document navigation, which discards
     // the JS heap (observers, selected items). In-memory cleanup was dropped after four
     // review rounds of races. When a reload is not allowed (cooldown hit, or storage
-    // unavailable so reloads cannot be bounded) go to /access-denied instead of reloading:
-    // it renders no tenant data and cannot loop.
+    // unavailable so reloads cannot be bounded) go to /access-denied?reason=scope-changed instead: it renders no tenant data and does
+    // not redirect back automatically (the user reloads by hand), so it cannot loop.
     navigating = true
     clearForNavigation()
     if (tryClaimScopeReload()) {
       reloadPage()
     } else {
-      navigateTo("/access-denied")
+      navigateTo("/access-denied?reason=scope-changed")
     }
     throw new ScopeChangeError()
   }

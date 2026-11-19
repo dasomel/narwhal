@@ -412,7 +412,7 @@ describe("scope-guard with real QueryClient", () => {
     await alertsObs.refetch()
 
     expect(reload).toHaveBeenCalledTimes(1)
-    expect(assign).toHaveBeenCalledWith("/access-denied")
+    expect(assign).toHaveBeenCalledWith("/access-denied?reason=scope-changed")
     expect(guard2.isNavigating()).toBe(true)
     expect(qc2.getQueryData(["catalog"])).toBeUndefined()
     expect(qc2.getQueryData(["alerts"])).toBeUndefined()
@@ -474,7 +474,7 @@ describe("scope-guard with real QueryClient", () => {
     expect(helperErr).toBeInstanceOf(ScopeChangeError)
 
     expect(reload).not.toHaveBeenCalled()
-    expect(assign).toHaveBeenCalledWith("/access-denied")
+    expect(assign).toHaveBeenCalledWith("/access-denied?reason=scope-changed")
     expect(queryClient.getQueryData(["alerts"])).toBeUndefined()
     queryClient.clear()
   })

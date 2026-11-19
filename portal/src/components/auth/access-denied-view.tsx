@@ -1,20 +1,24 @@
 "use client"
 
+import Link from "next/link"
 import { useState } from "react"
 import { LogOut } from "lucide-react"
 import { Narwhal } from "@/components/narwhal/narwhal"
 import { ThemeToggle } from "@/components/theme-toggle"
-import { Button } from "@/components/ui/button"
+import { Button, buttonVariants } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { DataState } from "@/components/ui/data-state"
 import { LocaleSwitcher, useT } from "@/lib/i18n-client"
+import { cn } from "@/lib/utils"
 
 interface AccessDeniedViewProps {
   account: string | null
   role: string
+  variant?: "denied" | "scope-changed"
 }
 
-export function AccessDeniedView({ account, role }: AccessDeniedViewProps) {
+export function AccessDeniedView({ account, role, variant = "denied" }: AccessDeniedViewProps) {
+  const scopeChanged = variant === "scope-changed"
   const t = useT()
   const [signingOut, setSigningOut] = useState(false)
 
@@ -53,14 +57,20 @@ export function AccessDeniedView({ account, role }: AccessDeniedViewProps) {
         <Card className="w-full max-w-lg p-6 sm:p-8 space-y-5">
           <div className="flex flex-col items-center gap-3 text-center">
             <Narwhal state="warning" size={72} />
-            <h1 className="text-xl font-bold text-foreground">{t("accessDenied.title")}</h1>
+            <h1 className="text-xl font-bold text-foreground">{scopeChanged ? t("accessDenied.scopeChangedTitle") : t("accessDenied.title")}</h1>
           </div>
 
-          <DataState state="unauthorized" reason={t("accessDenied.description")} />
+          <DataState state="unauthorized" reason={scopeChanged ? t("accessDenied.scopeChangedDescription") : t("accessDenied.description")} />
 
           <p className="text-center text-sm text-muted-foreground">
-            {t("accessDenied.hint")}
+            {scopeChanged ? t("accessDenied.scopeChangedHint") : t("accessDenied.hint")}
           </p>
+
+          {scopeChanged && (
+            <Link href="/" className={cn(buttonVariants(), "w-full h-10")}>
+              {t("accessDenied.reload")}
+            </Link>
+          )}
 
           {account && (
             <div className="flex items-center justify-between rounded-lg border bg-muted/40 px-3.5 py-2.5 text-xs">

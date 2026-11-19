@@ -42,7 +42,7 @@
     {
       "id": "e3",
       "type": "bug_fix",
-      "summary": "Added get/list on apps/replicasets to ClusterRole narwhal-portal (narwhal-portal-k8s.yaml). Added cached cluster-wide /apis/apps/v1/replicasets lookup (compliance:replicasets:list, 60s TTL) in portal/src/lib/compliance.ts: drops ReplicaSet reports with spec.replicas === 0 from list/detail/summary, fails safe (keeps reports and logs one warning without caching failure) on fetch error or missing ReplicaSet, and passes metadata.ownerReferences Deployment names to normalizeWorkloadName/matchConfigAuditException in compliance-accepted.ts so hash suffixes collapse only with a matching Deployment owner (keeping the SafeEncodeString fallback when ownership is unknown without broadening acceptance). Updated docs/common/compliance-hardening.md, lessons-log.md, changelogs, and R375.",
+      "summary": "Added get/list on apps/replicasets to ClusterRole narwhal-portal (narwhal-portal-k8s.yaml). Added cached cluster-wide /apis/apps/v1/replicasets lookup (compliance:replicasets:list, 60s TTL) in portal/src/lib/compliance.ts: drops ReplicaSet reports with spec.replicas === 0 from list/detail/summary, fails safe (keeps reports and logs one warning without caching failure) on fetch error or missing ReplicaSet, and passes metadata.ownerReferences Deployment names to normalizeWorkloadName/matchConfigAuditException in compliance-accepted.ts so hash suffixes collapse only with a matching Deployment owner (keeping the SafeEncodeString fallback when ownership is unknown without broadening acceptance). Updated docs/common/compliance-hardening.md, lessons-log.md, changelogs, and R378.",
       "evidence": [
         "repo:gitops/charts/narwhal-platform/templates/narwhal-portal-k8s.yaml",
         "repo:portal/src/lib/compliance.ts",
@@ -54,14 +54,15 @@
       "id": "e4",
       "type": "regression_verification",
       "status": "passed",
-      "scope": "Portal Vitest suite (192 files, 2593 tests incl. 0-replica exclusion, active RS retention, 403/timeout fail-safe + single warning, missing RS fail-safe + single warning, unowned harbor-core-<hash-like> rejection, owned RS acceptance, non-alphabet suffix rejection, cache-keys contract, docs parity) and R375/R318/R352/valkey/oidc static regression checks with mutation verification.",
+      "scope": "Portal Vitest suite (192 files, 2593 tests incl. 0-replica exclusion, active RS retention, 403/timeout fail-safe + single warning, missing RS fail-safe + single warning, unowned harbor-core-<hash-like> rejection, owned RS acceptance, non-alphabet suffix rejection, cache-keys contract, docs parity) and R378/R318/R352/valkey/oidc static regression checks with mutation verification.",
       "evidence": [
         "test:CI=true pnpm test (192 files, 2593 tests passed)",
         "test:python3 scripts/test/lib/check-portal-replicasets-rbac.py --mutation-verify -> PASS: 6 mutations rejected",
         "test:python3 scripts/test/lib/check-portal-cert-renew-rbac.py --mutation-verify -> PASS: 7 mutations rejected",
         "test:python3 scripts/test/lib/check-platform-manifest-hardening.py --mutation-verify -> PASS (14 mutations rejected)",
         "test:python3 scripts/test/lib/check-valkey-security-contract.py --mutation-verify -> PASS (37 negative mutations)",
-        "test:bash scripts/test/check-oidc-rbac-portal-contract.sh -> PASS"
+        "test:bash scripts/test/check-oidc-rbac-portal-contract.sh -> PASS",
+        "test:this branch's classification code run against the live local cluster's reports through an API proxy (orchestrator, measured 2026-11-19): 185 ConfigAuditReports, 183 rows after dropping reports of 0-replica ReplicaSets, actionable config-audit High 0 / Medium 0, accepted High 26 / Medium 24, RBAC actionable 0 (admin credentials; the portal ServiceAccount permission itself is applied by this change's ClusterRole)"
       ]
     },
     {
@@ -82,7 +83,7 @@
     {
       "id": "e6",
       "type": "completion_claim",
-      "summary": "Repository RBAC, portal ReplicaSet filtering and exact Deployment ownership matching, unit tests, R375 mutation check, docs, lessons-log, and changelogs are complete and verified statically/in unit tests. Live cluster deployment and kubectl auth can-i verification remain out of scope (no cluster access) and are documented in the live runbook."
+      "summary": "Repository RBAC, portal ReplicaSet filtering and exact Deployment ownership matching, unit tests, R378 mutation check, docs, lessons-log, and changelogs are complete and verified statically/in unit tests. Live cluster deployment and kubectl auth can-i verification remain out of scope (no cluster access) and are documented in the live runbook."
     },
     {
       "id": "e7",

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""R375: narwhal-portal ClusterRole grants get/list only on apps/replicasets (narwhal#727).
+"""R378: narwhal-portal ClusterRole grants get/list only on apps/replicasets (narwhal#727).
 
 Verifies the owner decision (2026-11-19): grant ClusterRole narwhal-portal read-only
 get/list on apps/replicasets (no watch, no write verbs, no wildcard) and keep

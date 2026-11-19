@@ -308,20 +308,8 @@ collectors:
         capabilities:
           drop:
             - ALL
-          add:
-            - CHOWN
-            - DAC_OVERRIDE
-            - FOWNER
-            - FSETID
-            - KILL
-            - SETGID
-            - SETUID
-            - SETPCAP
-            - NET_BIND_SERVICE
-            - SYS_CHROOT
-            - MKNOD
-            - AUDIT_WRITE
-            - SETFCAP
+          # D-alloy-caps (KSV022): keep the key present and empty (see k8s-monitoring.yaml).
+          add: []
         seccompProfile:
           type: RuntimeDefault
       configReloader:

@@ -150,20 +150,11 @@ spec:
                 capabilities:
                   drop:
                     - ALL
-                  add:
-                    - CHOWN
-                    - DAC_OVERRIDE
-                    - FOWNER
-                    - FSETID
-                    - KILL
-                    - SETGID
-                    - SETUID
-                    - SETPCAP
-                    - NET_BIND_SERVICE
-                    - SYS_CHROOT
-                    - MKNOD
-                    - AUDIT_WRITE
-                    - SETFCAP
+                  # D-alloy-caps (KSV022): no added capabilities. The key must stay present and
+                  # empty: omitting it makes the chart merge its 14 defaults back in. The collector
+                  # reads /var/log/pods as root on a read-only root and listens on unprivileged ports.
+                  # Escape hatch: add DAC_READ_SEARCH if log files become unreadable (EACCES).
+                  add: []
                 seccompProfile:
                   type: RuntimeDefault
               # Keep nested configReloader for chart compatibility

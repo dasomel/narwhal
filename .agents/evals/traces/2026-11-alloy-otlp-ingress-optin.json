@@ -1,0 +1,70 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-alloy-otlp-ingress-optin-735-20261119",
+  "task": "Fix narwhal#735: restrict alloy-logs unauthenticated OTLP receivers (4317/4318) via alloy-logs-ingress-policy so only Grafana (4317+15008) and non-ambient namespaces carrying narwhal.io/otlp-ingest='true' (dev opted in, plain TCP 4317/4318 without HBONE 15008) can send traces while preserving Prometheus metrics scrape (12345+15008) and kubelet probes (169.254.7.127/32 CCNP); apply policy at 08-2-monitoring.sh bootstrap before receivers open; document non-ambient tenant requirement, AuthorizationPolicy follow-up, and residual risks; verify with R377 (no endPort, exact ports) and narrow R200 exception.",
+  "changeContext": {
+    "paths": [
+      ".agents/evals/traces/2026-11-alloy-otlp-ingress-optin.json",
+      "docs/common/lessons-log.md",
+      "docs/common/unified-observability-contract.md",
+      "gitops/charts/narwhal-apps/templates/alloy-logs-ingress-policy.yaml",
+      "gitops/resources/alloy-logs-ingress-policy.yaml",
+      "gitops/resources/dev-namespace.yaml",
+      "gitops/resources/tenants/README.md",
+      "scripts/cluster/08-2-monitoring.sh",
+      "scripts/test/lib/check-alloy-otlp-ingress-optin.py",
+      "scripts/test/lib/check-ambient-netpol.py",
+      "scripts/test/lib/check-trace-k8s-attributes.py",
+      "scripts/test/regression-check-kakao.sh"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Scope: gitops/resources/alloy-logs-ingress-policy.yaml (extracted from network-policies.yaml), gitops/charts/narwhal-apps/templates/alloy-logs-ingress-policy.yaml, scripts/cluster/08-2-monitoring.sh (bootstrap pre-apply before k8s-monitoring), gitops/resources/dev-namespace.yaml (narwhal.io/otlp-ingest: 'true' on dev), gitops/resources/tenants/README.md, docs/common/{unified-observability-contract,lessons-log}.md, scripts/test/lib/check-alloy-otlp-ingress-optin.py (R377), scripts/test/lib/check-ambient-netpol.py (narrow R200 exception for opt-in plain-TCP OTLP rule), scripts/test/lib/check-trace-k8s-attributes.py, scripts/test/regression-check-kakao.sh, and this eval trace. Excluded: k8s-monitoring.yaml, tempo-ingress-policy rules, securityContexts/resources/probes, portal/, and live cluster/VM mutations."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "Initial inspection showed alloy-logs DaemonSet exposed OTLP 4317/4318 and metrics 12345 without any Ingress NetworkPolicy. Subsequent PR #743 review and live cluster probes (orchestrator, measured 2026-11-19) confirmed: (1) from dev (opted in, istio.io/dataplane-mode=none), collector pod IP :4318 -> 200 and :12345 -> no connection; (2) from an opted-in ambient-enrolled scratch namespace (istio.io/dataplane-mode=ambient), admitting TCP 15008 on the opt-in rule allowed HBONE tunneling to collector pod IP :12345/metrics -> HTTP 200, while Service :4318 returned HTTP 503; (3) installing k8s-monitoring in 08-2-monitoring.sh opened receivers before 14-gitops-bootstrap.sh synced network-policies; (4) R377 ignored endPort on port entries."
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "Moved alloy-logs-ingress-policy into gitops/resources/alloy-logs-ingress-policy.yaml owned by gitops/charts/narwhal-apps/templates/alloy-logs-ingress-policy.yaml and applied it fail-closed in scripts/cluster/08-2-monitoring.sh before k8s-monitoring install (following the 08-1-networking.sh apisix-admin-ingress-policy pattern). Removed TCP 15008 from the narwhal.io/otlp-ingest='true' opt-in rule so opted-in non-ambient tenants reach only plain TCP 4317/4318, while keeping TCP 15008 on the Grafana (4317) and Prometheus (12345) platform rules with comments documenting that HBONE opens all pod ports to those two peers. Narrowly exempted only this opt-in plain-TCP 4317/4318 rule in check-ambient-netpol.py (R200/R201) while keeping Grafana/Prometheus 15008 mandatory. Documented in unified-observability-contract.md and tenants/README.md that trace-sending tenant namespaces must not be ambient-enrolled for now (follow-up: OTLP-scoped L4 AuthorizationPolicy + sender pod IP check). Tightened R377 (check-alloy-otlp-ingress-optin.py) to reject endPort and any port outside the exact per-rule set, verify bootstrap apply and Application ownership, and catch 19 mutations."
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "Offline YAML/Vagrant validation, R377 (19 mutations), R373 (34 mutations + offline helm renders), R200/R201 (with narrow exception + alloy-logs Grafana/opt-in mutations), R242, R243/permissive-ingress, monitoring hardening, R366, gitops-resource-ownership (with mutation), narwhal-apps helm template render, yamllint on touched YAML, shellcheck on touched scripts, markdownlint-changed, and git diff --check; no live cluster or VM touched in this fix pass.",
+      "summary": "All offline validations, static regression and mutation suites, helm renders, and shell/YAML/markdown/diff checks passed.",
+      "evidence": [
+        "test:python3 scripts/test/lib/check-alloy-otlp-ingress-optin.py --mutation-verify -> PASS: R377 alloy-logs opt-in OTLP ingress policy + dev opt-in + docs (19 mutations rejected)",
+        "test:python3 scripts/test/lib/check-ambient-netpol.py --mutation-verify -> PASS: per-rule HBONE, peer-less HBONE, all-ports semantics, namespace isolation, and probe-CIDR mutations verified",
+        "test:python3 scripts/test/lib/check-trace-k8s-attributes.py --mutation-verify -> PASS: R373 trustworthy OTLP k8s.namespace.name enrichment + helm render ok (34 mutations rejected)",
+        "test:python3 scripts/test/lib/check-gitops-resource-ownership.py --mutation-verify && python3 scripts/test/lib/check-permissive-ingress-isolation.py && python3 scripts/test/lib/check-ambient-enrollment.py && python3 scripts/test/lib/check-monitoring-hardening.py && python3 scripts/test/lib/check-round2-compliance-hardening.py -> exit 0",
+        "test:make validate -> exit 0 (Syntax OK + all GitOps YAML OK)",
+        "test:yamllint -d '{extends: default, rules: {line-length: {max: 200}, truthy: disable}}' gitops/resources/alloy-logs-ingress-policy.yaml gitops/resources/network-policies.yaml gitops/resources/dev-namespace.yaml && shellcheck -S warning scripts/cluster/08-2-monitoring.sh scripts/test/regression-check-kakao.sh -> exit 0 (make lint shellcheck passed all scripts; yamllint failed only on pre-existing unrelated files ghost-pod-reaper.yaml, prometheus-alerts.yaml, velero-server-rbac.yaml)",
+        "test:helm template narwhal-apps gitops/charts/narwhal-apps -s templates/alloy-logs-ingress-policy.yaml -s templates/network-policies.yaml -s templates/dev-namespace.yaml -> exit 0",
+        "test:python3 scripts/ci/markdownlint-changed.py --base origin/main -> No markdownlint violations on added/modified active-documentation lines",
+        "test:git diff --check -> exit 0",
+        "test:live local cluster (orchestrator, measured 2026-11-19 prior to removing 15008 from opt-in): dev (dataplane-mode=none) pod IP :4318 -> 200 and :12345 -> no connection; ambient-enrolled opted-in scratch pod IP :12345/metrics -> HTTP 200 and Service :4318 -> HTTP 503; un-opted chaos-testing :4318 -> curl 000",
+        "test:live local cluster after the fix (orchestrator, measured 2026-11-19): policy rule for opted-in namespaces lists ports 4317,4318 only; dev (opted in, dataplane-mode none) 4318 -> 200 and 12345 -> no connection; chaos-testing (not opted in) 4318 and 12345 -> no connection; scratch namespace opted in AND ambient-enrolled: 12345 and 4318 -> no connection (before the fix 12345 returned 200 through HBONE); 20 new Grafana traces in Tempo; Loki shows 15 namespaces"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "completion_claim",
+      "summary": "All offline validations, R377 (19 mutations), R200/R201, R373 (34 mutations), ownership/ambient/monitoring checks, helm renders, targeted yamllint, shellcheck, markdownlint-changed, eval gate, and git diff --check pass without touching any cluster or VM. Live re-verification of the updated alloy-logs-ingress-policy (no 15008 on opt-in rule) and fresh-install 08-2-monitoring bootstrap order requires running on the cluster."
+    },
+    {
+      "id": "e6",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "narwhal#735 review findings resolved: removed HBONE 15008 from the opt-in rule (plain TCP 4317/4318 only, narrow R200 exception in check-ambient-netpol.py, non-ambient tenant requirement and AuthorizationPolicy follow-up documented), closed the fresh-install bootstrap window by extracting alloy-logs-ingress-policy.yaml and applying it fail-closed in 08-2-monitoring.sh before k8s-monitoring, and tightened R377 to reject endPort and out-of-set ports across 19 mutations."
+    }
+  ]
+}

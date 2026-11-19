@@ -3497,11 +3497,17 @@ PYEOF'
   # 2026-11-19 (#691): OTLP traces flow through Alloy extraConfig (memory_limiter -> strip_client_k8s -> connection-only node-scoped k8sattributes -> Tempo) + tempo-ingress-policy closes direct Tempo bypass
   check R373 "Alloy k8s-monitoring extraConfig strips client ^k8s[.] + service.namespace (error_mode=propagate) before connection-only node-scoped k8sattributes with 256MiB/64MiB spike memory_limiter, internalTrafficPolicy Local, and waypoint opt-out; Tempo disables OTLP/HTTP (4318) and opts out of waypoint; tempo-ingress-policy restricts 4317/15008 to alloy-logs and 3200/15008 to Grafana/Prometheus/portal/Tempo; 08-2-monitoring.sh parity + offline helm renders + 34 mutations caught (D-TRACE-K8S-ATTR, D-TEMPO-INGRESS)" \
     python3 scripts/test/lib/check-trace-k8s-attributes.py --mutation-verify
+  # 2026-11-19 (#735): alloy-logs-ingress-policy restricts OTLP (4317/4318) to Grafana (4317+15008) and narwhal.io/otlp-ingest=true non-ambient namespaces (4317/4318 plain TCP, no 15008) while preserving Prometheus metrics (12345+15008) and 08-2-monitoring.sh bootstrap apply
+  check R377 "alloy-logs-ingress-policy restricts OTLP (4317/4318 plain TCP without HBONE 15008) to narwhal.io/otlp-ingest=true non-ambient namespaces (dev opted in), Grafana (4317+15008), and Prometheus (12345+15008), enforces exact ports/no endPort, applies at 08-2-monitoring.sh bootstrap, and documents ambient constraint/residual risks; 19 mutations caught (D-ALLOY-OTLP-INGRESS)" \
+    python3 scripts/test/lib/check-alloy-otlp-ingress-optin.py --mutation-verify
   # 2026-11-19 (#728): push-security-db.sh validates --ca-cert early with openssl x509 and docs name devtools
   check R372 "push-security-db.sh validates --ca-cert early with openssl x509 (rejects empty, non-PEM, expired without leaking content), behavioural test without registry, and docs export from canonical devtools namespace; 11 mutations caught (#728)" \
     python3 scripts/test/lib/check-push-security-db-ca.py --mutation-verify
   check R371 "Round-4 compliance hardening (KSV014/KSV104): Falco containerSecurityContext sets both privileged=true and readOnlyRootFilesystem=true (GitOps-only), Velero node-agent readOnlyRootFilesystem=true with /root and /tmp emptyDirs across velero.yaml & 08-4-storage.sh, and nfs-quota-agent RuntimeDefault seccomp + privileged + readOnlyRootFilesystem via chart values in 05-nfs-quota-agent.sh with offline helm renders; 11 mutations caught" \
     python3 scripts/test/lib/check-round4-compliance-hardening.py --mutation-verify
+  # 2026-11-19 (#727 owner decision): ClusterRole narwhal-portal grants get/list only on apps/replicasets so Compliance filters spec.replicas==0 and matches Deployment ownerReferences.
+  check R378 "portal ClusterRole grants exactly get/list on apps/replicasets (no watch, write verbs, or wildcards) and docs/common/compliance-hardening.md reflects ReplicaSet filtering & ownerReferences; 6 mutations caught (#727)" \
+    python3 scripts/test/lib/check-portal-replicasets-rbac.py --mutation-verify
   check R375 "Round-5 compliance hardening (KSV014): platform-system/apisix sets readOnlyRootFilesystem=true with init-conf (apache/apisix:3.15.0-ubuntu, cp -R into apisix-conf emptyDir) and emptyDirs for /usr/local/apisix/{conf,logs,client_body_temp,proxy_temp,fastcgi_temp,uwsgi_temp,scgi_temp} and /tmp across 08-1-networking.sh & apisix.yaml with offline helm renders; 10 mutations caught" \
     python3 scripts/test/lib/check-round5-compliance-hardening.py --mutation-verify
 }

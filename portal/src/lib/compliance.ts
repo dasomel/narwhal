@@ -174,6 +174,35 @@ interface RawAuditList {
   items: RawAuditReport[]
 }
 
+interface RawReplicaSet {
+  metadata: {
+    name: string
+    namespace?: string
+    annotations?: Record<string, string>
+    ownerReferences?: Array<{ kind: string; name: string }>
+  }
+  spec?: {
+    replicas?: number
+  }
+  status?: {
+    replicas?: number
+    // Pods of this ReplicaSet that are terminating; status.replicas does NOT count them.
+    terminatingReplicas?: number
+  }
+}
+
+interface RawReplicaSetList {
+  items?: RawReplicaSet[]
+}
+
+interface ReplicaSetSummary {
+  specReplicas: number | null
+  statusReplicas: number | null
+  revision: number | null
+  deploymentOwners: string[]
+  superseded: boolean
+}
+
 interface RawComplianceReport {
   metadata: {
     name: string
@@ -356,7 +385,12 @@ function resolveScopeFromClasses(classes: Set<AcceptedClass>): AcceptedScope | u
   return "mixed"
 }
 
-function configAuditMatcher(namespace: string, kind: string, name: string): AcceptanceMatcher {
+function configAuditMatcher(
+  namespace: string,
+  kind: string,
+  name: string,
+  deploymentOwners?: readonly string[],
+): AcceptanceMatcher {
   if (isSystemNamespace(namespace)) {
     const reasonKey: AcceptedReasonKey = "compliance.acceptedReason.systemNamespace"
     return () => ({
@@ -368,7 +402,7 @@ function configAuditMatcher(namespace: string, kind: string, name: string): Acce
     })
   }
   return (checkId: string) => {
-    const match = matchConfigAuditException(namespace, kind, name, checkId)
+    const match = matchConfigAuditException(namespace, kind, name, checkId, deploymentOwners)
     if (!match) return { accepted: false }
     return {
       accepted: true,
@@ -380,7 +414,10 @@ function configAuditMatcher(namespace: string, kind: string, name: string): Acce
   }
 }
 
-function classifyConfigAuditItem(item: RawAuditReport): {
+function classifyConfigAuditItem(
+  item: RawAuditReport,
+  deploymentOwners?: readonly string[],
+): {
   row: ConfigAuditRow
   matcher: AcceptanceMatcher
 } {
@@ -388,7 +425,7 @@ function classifyConfigAuditItem(item: RawAuditReport): {
   const kind = labels["trivy-operator.resource.kind"] ?? "Unknown"
   const name = labels["trivy-operator.resource.name"] ?? item.metadata.name
   const namespace = item.metadata.namespace ?? ""
-  const matcher = configAuditMatcher(namespace, kind, name)
+  const matcher = configAuditMatcher(namespace, kind, name, deploymentOwners)
 
   if (isSystemNamespace(namespace)) {
     const summary = buildCheckSummaryFromCounts(item.report.summary)
@@ -518,6 +555,124 @@ function resolveRbacRoleName(item: RawAuditReport): string {
   return ownerRefs[0]?.name ?? labels["trivy-operator.resource.name"] ?? item.metadata.name
 }
 
+// --- ReplicaSet lookup for superseded-revision filtering & exact Deployment ownership (narwhal#727) ---
+
+const DEPLOYMENT_REVISION_ANNOTATION = "deployment.kubernetes.io/revision"
+
+function parseDeploymentRevision(annotations?: Record<string, string>): number | null {
+  const raw = annotations?.[DEPLOYMENT_REVISION_ANNOTATION]
+  if (typeof raw !== "string" || !/^\d+$/.test(raw)) return null
+  const rev = Number(raw)
+  return Number.isSafeInteger(rev) ? rev : null
+}
+
+// Fetch in the same request path as configauditreports with no separate ReplicaSet cache so
+// cached 0-replica state can never outlive or poison a subsequent report computation.
+async function fetchReplicaSetMap(): Promise<Map<string, ReplicaSetSummary> | null> {
+  try {
+    const list = await complianceK8sFetch<RawReplicaSetList>("/apis/apps/v1/replicasets")
+    const entries: Array<{
+      key: string
+      namespace: string
+      specReplicas: number | null
+      statusReplicas: number | null
+      terminatingReplicas: number | null
+      revision: number | null
+      deploymentOwners: string[]
+    }> = []
+    const maxRevisionByDeployment = new Map<string, number>()
+
+    for (const rs of list?.items ?? []) {
+      const ns = rs.metadata?.namespace ?? ""
+      const name = rs.metadata?.name ?? ""
+      if (!ns || !name) continue
+      const deploymentOwners = (rs.metadata?.ownerReferences ?? [])
+        .filter((ref) => ref.kind === "Deployment" && typeof ref.name === "string" && ref.name.length > 0)
+        .map((ref) => ref.name)
+      const revision = parseDeploymentRevision(rs.metadata?.annotations)
+      if (revision !== null) {
+        for (const owner of deploymentOwners) {
+          const depKey = `${ns}/${owner}`
+          const prev = maxRevisionByDeployment.get(depKey)
+          if (prev === undefined || revision > prev) {
+            maxRevisionByDeployment.set(depKey, revision)
+          }
+        }
+      }
+      entries.push({
+        key: `${ns}/${name}`,
+        namespace: ns,
+        specReplicas: typeof rs.spec?.replicas === "number" ? rs.spec.replicas : null,
+        statusReplicas: typeof rs.status?.replicas === "number" ? rs.status.replicas : null,
+        terminatingReplicas:
+          typeof rs.status?.terminatingReplicas === "number" ? rs.status.terminatingReplicas : null,
+        revision,
+        deploymentOwners,
+      })
+    }
+
+    const map = new Map<string, ReplicaSetSummary>()
+    for (const entry of entries) {
+      // Drop ONLY fully drained superseded Deployment revisions:
+      // (a) owned by a Deployment, (b) spec.replicas == 0 AND status.replicas == 0 AND
+      // status.terminatingReplicas == 0 (reported explicitly), and
+      // (c) the same Deployment in the same namespace owns another RS with a higher revision.
+      // Standalone ReplicaSets, scaled-to-zero Deployments (current revision), terminating pods,
+      // and any unknown field are kept so live findings are never hidden.
+      const hasHigherRevisionSibling =
+        entry.revision !== null &&
+        entry.deploymentOwners.some((owner) => {
+          const maxRev = maxRevisionByDeployment.get(`${entry.namespace}/${owner}`)
+          return maxRev !== undefined && maxRev > entry.revision!
+        })
+      const superseded =
+        entry.deploymentOwners.length > 0 &&
+        entry.specReplicas === 0 &&
+        entry.statusReplicas === 0 &&
+        // status.replicas excludes terminating pods, so require an explicit 0 here too. A cluster
+        // that does not report the field (null) keeps the report: unknown never drops.
+        entry.terminatingReplicas === 0 &&
+        hasHigherRevisionSibling
+      map.set(entry.key, {
+        specReplicas: entry.specReplicas,
+        statusReplicas: entry.statusReplicas,
+        revision: entry.revision,
+        deploymentOwners: entry.deploymentOwners,
+        superseded,
+      })
+    }
+    return map
+  } catch (err) {
+    console.warn(
+      "[compliance] failed to list ReplicaSets, keeping all ReplicaSet reports:",
+      err instanceof Error ? err.message : err,
+    )
+    return null
+  }
+}
+
+function resolveReplicaSetMetadata(
+  item: RawAuditReport,
+  rsMap: Map<string, ReplicaSetSummary> | null,
+): { drop: boolean; deploymentOwners?: readonly string[]; missingKey?: string } {
+  const labels = item.metadata.labels ?? {}
+  const kind = labels["trivy-operator.resource.kind"] ?? "Unknown"
+  if (kind !== "ReplicaSet" || rsMap === null) {
+    return { drop: false }
+  }
+  const namespace = item.metadata.namespace ?? ""
+  const resourceName = labels["trivy-operator.resource.name"]
+  const rsKey = namespace && resourceName ? `${namespace}/${resourceName}` : ""
+  const rsMeta = rsKey ? rsMap.get(rsKey) : undefined
+  if (!rsMeta) {
+    return { drop: false, missingKey: rsKey || `${namespace}/${item.metadata.name}` }
+  }
+  if (rsMeta.superseded) {
+    return { drop: true }
+  }
+  return { drop: false, deploymentOwners: rsMeta.deploymentOwners }
+}
+
 // --- getConfigAuditList ---
 
 export async function getConfigAuditList(): Promise<ConfigAuditRow[]> {
@@ -526,10 +681,23 @@ export async function getConfigAuditList(): Promise<ConfigAuditRow[]> {
   if (cached) return cached
 
   try {
-    const list = await complianceK8sFetch<RawAuditList>(
-      "/apis/aquasecurity.github.io/v1alpha1/configauditreports",
-    )
-    const rows: ConfigAuditRow[] = (list.items ?? []).map((item) => classifyConfigAuditItem(item).row)
+    const [list, rsMap] = await Promise.all([
+      complianceK8sFetch<RawAuditList>("/apis/aquasecurity.github.io/v1alpha1/configauditreports"),
+      fetchReplicaSetMap(),
+    ])
+    const missingReplicaSets: string[] = []
+    const rows: ConfigAuditRow[] = []
+    for (const item of list.items ?? []) {
+      const rsState = resolveReplicaSetMetadata(item, rsMap)
+      if (rsState.missingKey) missingReplicaSets.push(rsState.missingKey)
+      if (rsState.drop) continue
+      rows.push(classifyConfigAuditItem(item, rsState.deploymentOwners).row)
+    }
+    if (missingReplicaSets.length > 0) {
+      console.warn(
+        `[compliance] ReplicaSet(s) missing from cluster list, keeping reports fail-safe: ${missingReplicaSets.join(", ")}`,
+      )
+    }
     await cacheSet(cacheKey, rows, cacheTtl("complianceConfigAuditList"))
     return rows
   } catch (err) {
@@ -549,9 +717,10 @@ export async function getConfigAuditDetail(
   if (cached) return cached
 
   try {
-    const list = await complianceK8sFetch<RawAuditList>(
-      "/apis/aquasecurity.github.io/v1alpha1/configauditreports",
-    )
+    const [list, rsMap] = await Promise.all([
+      complianceK8sFetch<RawAuditList>("/apis/aquasecurity.github.io/v1alpha1/configauditreports"),
+      fetchReplicaSetMap(),
+    ])
     const item = (list.items ?? []).find((i) => {
       const labels = i.metadata.labels ?? {}
       const rName = labels["trivy-operator.resource.name"] ?? i.metadata.name
@@ -559,7 +728,15 @@ export async function getConfigAuditDetail(
     })
     if (!item) return null
 
-    const { row, matcher } = classifyConfigAuditItem(item)
+    const rsState = resolveReplicaSetMetadata(item, rsMap)
+    if (rsState.missingKey) {
+      console.warn(
+        `[compliance] ReplicaSet missing from cluster list, keeping report detail fail-safe: ${rsState.missingKey}`,
+      )
+    }
+    if (rsState.drop) return null
+
+    const { row, matcher } = classifyConfigAuditItem(item, rsState.deploymentOwners)
     const detail: ConfigAuditDetail = {
       ...row,
       checks: mapChecks(item.report.checks ?? [], matcher),

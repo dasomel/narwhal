@@ -1,0 +1,89 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-portal-replicasets-rbac-727-20261119",
+  "task": "Issue #727: exclude Trivy ConfigAuditReports of superseded Deployment ReplicaSet revisions and verify Deployment ownership in Portal Compliance.",
+  "changeContext": {
+    "paths": [
+      ".agents/evals/traces/2026-11-portal-replicasets-rbac-727.json",
+      "CHANGELOG-ko.md",
+      "CHANGELOG.md",
+      "docs/common/compliance-hardening.md",
+      "docs/common/lessons-log.md",
+      "gitops/charts/narwhal-platform/templates/narwhal-portal-k8s.yaml",
+      "portal/CHANGELOG-ko.md",
+      "portal/CHANGELOG.md",
+      "portal/src/lib/compliance-accepted.test.ts",
+      "portal/src/lib/compliance-accepted.ts",
+      "portal/src/lib/compliance.test.ts",
+      "portal/src/lib/compliance.ts",
+      "scripts/test/lib/check-portal-replicasets-rbac.py",
+      "scripts/test/regression-check-kakao.sh"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Explicit owner decision (2026-11-19): grant ClusterRole narwhal-portal read-only get/list on apps/replicasets and filter only superseded Deployment revisions in the portal. No watch, write verbs, or wildcard rules; no new dependencies; no live cluster mutation or push."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "After Deployment rollouts, trivy-operator retains ConfigAuditReports for old superseded ReplicaSets (e.g. velero, trivy-operator, keycloak-operator). portal/src/lib/compliance.ts previously listed only configauditreports without inspecting ReplicaSets, counting stale revisions as live findings; filtering on spec.replicas === 0 alone or caching ReplicaSets separately from reports risked hiding standalone ReplicaSets, scaled-to-zero Deployments, terminating pods, or post-rollback active revisions; compliance-accepted.ts also collapsed any SafeEncodeString hash suffix without checking metadata.ownerReferences.",
+      "evidence": [
+        "repo:gitops/charts/narwhal-platform/templates/narwhal-portal-k8s.yaml",
+        "repo:portal/src/lib/compliance.ts",
+        "repo:portal/src/lib/compliance-accepted.ts"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "Added get/list on apps/replicasets to ClusterRole narwhal-portal (narwhal-portal-k8s.yaml). In portal/src/lib/compliance.ts, fetched /apis/apps/v1/replicasets in the same request path as configauditreports (no separate ReplicaSet cache; only combined filtered report results are cached) and dropped a ReplicaSet report only when all hold: (a) Deployment ownerReference, (b) spec.replicas == 0 and status.replicas == 0, and (c) another ReplicaSet owned by the same Deployment in the same namespace has a strictly higher numeric deployment.kubernetes.io/revision annotation — keeping standalone ReplicaSets, scaled-to-zero current revisions, terminating revisions, unknown fields, and fetch/missing failures with one warning. Passed metadata.ownerReferences Deployment names into normalizeWorkloadName/matchConfigAuditException in compliance-accepted.ts. Updated docs/common/compliance-hardening.md, lessons-log.md, changelogs, and pinned the entire ClusterRole narwhal-portal rule set in R378.",
+      "evidence": [
+        "repo:gitops/charts/narwhal-platform/templates/narwhal-portal-k8s.yaml",
+        "repo:portal/src/lib/compliance.ts",
+        "repo:portal/src/lib/compliance-accepted.ts",
+        "repo:docs/common/compliance-hardening.md",
+        "repo:scripts/test/lib/check-portal-replicasets-rbac.py"
+      ]
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "Portal Vitest suite (192 files, 2595 tests incl. superseded drained RS exclusion, standalone at 0 retention, Deployment scaled-to-0 current revision retention, terminating status.replicas > 0 retention, unknown field retention, rollback + next-computation transition without separate RS cache, 403/timeout and missing RS fail-safe + single warning, unowned harbor-core-<hash-like> rejection, owned RS acceptance, non-alphabet suffix rejection, docs parity) and R378 pinning the full ClusterRole narwhal-portal rule set with 10 mutations rejected.",
+      "evidence": [
+        "test:CI=true pnpm test (192 files, 2595 tests passed)",
+        "test:python3 scripts/test/lib/check-portal-replicasets-rbac.py --mutation-verify -> PASS: 10 mutations rejected"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "verification",
+      "status": "passed",
+      "scope": "Portal typecheck/lint/build/harness-rules, repo make validate, markdownlint-changed, and git diff --check. Live cluster apply, portal image release, and kubectl auth can-i remain out of scope (no cluster access).",
+      "evidence": [
+        "test:pnpm typecheck -> exit 0",
+        "test:pnpm lint -> 0 errors (79 pre-existing warnings)",
+        "test:pnpm build -> exit 0",
+        "test:bash scripts/harness-rules.sh -> OK (42 inline styles, 0 hardcoded KO)",
+        "test:make validate -> exit 0",
+        "test:python3 scripts/ci/markdownlint-changed.py --base origin/main -> exit 0",
+        "test:git diff --check -> exit 0"
+      ]
+    },
+    {
+      "id": "e6",
+      "type": "completion_claim",
+      "summary": "Repository RBAC pin, portal superseded-revision ReplicaSet filtering without separate RS cache, exact Deployment ownership matching, unit tests, R378 full-ClusterRole mutation check, docs, lessons-log, and changelogs are complete and verified statically and in unit tests. Live cluster deployment and kubectl auth can-i verification remain out of scope (no cluster access)."
+    },
+    {
+      "id": "e7",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Complete and verified for repository scope; live cluster apply and runtime kubectl auth can-i verification pending deployment."
+    }
+  ]
+}

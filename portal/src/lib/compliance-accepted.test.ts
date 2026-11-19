@@ -95,6 +95,16 @@ describe("normalizeWorkloadName", () => {
     expect(normalizeWorkloadName("ReplicaSet", "harbor-core-abcd")).toBe("harbor-core-abcd")
     expect(normalizeWorkloadName("ReplicaSet", "harbor-core-bcdfghjklmn")).toBe("harbor-core-bcdfghjklmn")
   })
+
+  it("uses Deployment ownerReferences when known and keeps alphabet fallback only when unknown", () => {
+    expect(normalizeWorkloadName("ReplicaSet", "harbor-core-b569bd8dd", ["harbor-core"])).toBe("harbor-core")
+    expect(normalizeWorkloadName("ReplicaSet", "harbor-core-b569bd8dd", [])).toBe("harbor-core-b569bd8dd")
+    expect(normalizeWorkloadName("ReplicaSet", "harbor-core-b569bd8dd", ["other-deploy"])).toBe("harbor-core-b569bd8dd")
+    // Must not broaden acceptance to non-SafeEncodeString suffixes even when Deployment owner matches
+    expect(normalizeWorkloadName("ReplicaSet", "harbor-core-abc12345", ["harbor-core"])).toBe("harbor-core-abc12345")
+    // Ownership unknown (undefined) keeps alphabet fallback
+    expect(normalizeWorkloadName("ReplicaSet", "harbor-core-b569bd8dd", undefined)).toBe("harbor-core")
+  })
 })
 
 describe("matchConfigAuditException", () => {
@@ -113,9 +123,13 @@ describe("matchConfigAuditException", () => {
     expect(m3?.class).toBe("accept")
   })
 
-  it("does NOT accept a standalone-looking ReplicaSet suffix like abc12345", () => {
+  it("does NOT accept a standalone-looking ReplicaSet suffix like abc12345 or unowned hash-like suffix", () => {
     expect(matchConfigAuditException("devtools", "ReplicaSet", "harbor-core-abc12345", "KSV014")).toBeNull()
     expect(matchConfigAuditException("devtools", "ReplicaSet", "harbor-core-b569bd8dd", "KSV014")).not.toBeNull()
+    expect(matchConfigAuditException("devtools", "ReplicaSet", "harbor-core-b569bd8dd", "KSV014", ["harbor-core"])).not.toBeNull()
+    expect(matchConfigAuditException("devtools", "ReplicaSet", "harbor-core-b569bd8dd", "KSV014", [])).toBeNull()
+    expect(matchConfigAuditException("devtools", "ReplicaSet", "harbor-core-b569bd8dd", "KSV014", ["other-deploy"])).toBeNull()
+    expect(matchConfigAuditException("devtools", "ReplicaSet", "harbor-core-abc12345", "KSV014", ["harbor-core"])).toBeNull()
   })
 
   it("keeps removed deferred, out-of-scope, and mismatched-reason checks actionable", () => {
@@ -257,6 +271,14 @@ describe("allowlist integrity and docs parity", () => {
       reason: r.reason,
     }))
     expect(docRbacRows).toEqual(codeRbacRows)
+
+    // Parity for ReplicaSet ownership & residual-risk section (narwhal#727)
+    expect(markdown).toContain("grants read-only `get`/`list` access on `apps` `replicasets`")
+    expect(markdown).toContain("spec.replicas == 0")
+    expect(markdown).toContain("status.replicas == 0")
+    expect(markdown).toContain("deployment.kubernetes.io/revision")
+    expect(markdown).toContain("metadata.ownerReferences")
+    expect(markdown).not.toContain("(and not `replicasets`)")
   })
 
   it("provides en and ko translations in i18n.ts for every accepted reason key", () => {

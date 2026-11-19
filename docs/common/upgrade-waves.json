@@ -49,6 +49,7 @@
     "istiod-pdb": "Istiod availability policy owned with the Istio component.",
     "apisix-admin-ingress-policy": "Network policy configuration, not a separately upgraded component.",
     "network-policies": "Network policy configuration, not a separately upgraded component.",
+    "alloy-logs-ingress-policy": "Network policy configuration, not a separately upgraded component.",
     "istio-telemetry-monitors": "Istio telemetry configuration owned with the mesh.",
     "ambient-kubelet-probes-ccnp": "Cilium policy configuration, not a separately upgraded component.",
     "velero-server-rbac": "Velero RBAC configuration owned with Velero.",

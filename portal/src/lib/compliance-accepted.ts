@@ -58,13 +58,28 @@ export function normalizeCheckId(raw: string): string {
  * rollout-induced hash changes stay matched without loosening name matching to substrings.
  * Matches only the Kubernetes SafeEncodeString alphabet (no vowels, no 0/1/3, 5-10 chars)
  * so standalone names like "-abc12345" or hyphenated words like "-controller" are never stripped.
+ *
+ * When `deploymentOwners` is provided (from live ReplicaSet `metadata.ownerReferences`),
+ * collapsing occurs ONLY if an owning `Deployment` matches the stripped prefix — so a
+ * standalone ReplicaSet named `<allowlisted>-<hash-like>` with no Deployment owner is never
+ * accepted. When `deploymentOwners` is `undefined` (ownership unknown), falls back to the
+ * alphabet rule without broadening acceptance.
  */
 const REPLICASET_HASH_SUFFIX_RE = /^(.+)-([bcdfghjklmnpqrstvwxz2456789]{5,10})$/
 
-export function normalizeWorkloadName(kind: string, name: string): string {
+export function normalizeWorkloadName(
+  kind: string,
+  name: string,
+  deploymentOwners?: readonly string[],
+): string {
   if (kind !== "ReplicaSet") return name
   const m = REPLICASET_HASH_SUFFIX_RE.exec(name)
-  return m ? m[1] : name
+  if (!m) return name
+  const candidateDeployment = m[1]
+  if (deploymentOwners !== undefined) {
+    return deploymentOwners.includes(candidateDeployment) ? candidateDeployment : name
+  }
+  return candidateDeployment
 }
 
 function checksSet(ids: readonly string[]): ReadonlySet<string> {
@@ -761,8 +776,9 @@ export function matchConfigAuditException(
   kind: string,
   name: string,
   checkId: string,
+  deploymentOwners?: readonly string[],
 ): AcceptedMatch | null {
-  const normalizedName = normalizeWorkloadName(kind, name)
+  const normalizedName = normalizeWorkloadName(kind, name, deploymentOwners)
   const rules = configRuleIndex.get(`${namespace}\0${kind}\0${normalizedName}`)
   if (!rules) return null
   const normalizedCheck = normalizeCheckId(checkId)

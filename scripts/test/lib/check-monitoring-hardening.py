@@ -144,6 +144,13 @@ def check(apps, script_text):
     for pat in required_script_patterns:
         if pat not in script_text:
             errors.append(f"08-2-monitoring.sh: missing bootstrap parity pattern {pat!r}")
+    # D-alloy-caps (KSV022) bootstrap parity: the alloy-logs values in the script must carry
+    # an explicit empty capabilities.add and none of the chart's default capabilities.
+    if "          add: []\n" not in script_text:
+        errors.append("08-2-monitoring.sh: alloy capabilities.add must be an explicit empty list (D-alloy-caps)")
+    for cap in ("DAC_OVERRIDE", "NET_BIND_SERVICE", "SETUID", "CHOWN", "SYS_CHROOT"):
+        if f"- {cap}\n" in script_text:
+            errors.append(f"08-2-monitoring.sh: alloy capability {cap} must not be added (D-alloy-caps)")
 
     return errors
 

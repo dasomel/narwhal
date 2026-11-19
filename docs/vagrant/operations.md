@@ -909,6 +909,31 @@ vagrant ssh master-1 -c "bash /home/vagrant/scripts/test/test-sso.sh \
   --section=oidc"
 ```
 
+### 부트스트랩 Helm 릴리스 드리프트 검증 (`check-bootstrap-helm-drift.sh`)
+
+ArgoCD Application으로 관리되지 않는 부트스트랩 전용 Helm 릴리스(`apisix-ingress-controller`, `gitea`, `nfs-quota-agent`, `cnpg`, `csi-driver-nfs` 등)에 대해, 프로비저닝 스크립트에 선언된 리터럴 `--set`/`--set-string`/`--set-json` 플래그와 클러스터의 실제 Helm 릴리스 설정(`helm get values -o json`) 간의 일치 여부를 검사한다 (read-only).
+
+- **값 파일(-f) 및 heredoc 처리**: `-f <file>`이나 heredoc 값 파일로만 설정되는 릴리스(`apisix` 등)는 설정을 파싱하지 않고 `UNCHECKED: release=<r> (values file not parsed)`로 별도 보고하며 `IN_SYNC`로 오표기하지 않는다. 값 파일과 `--set` 플래그를 모두 사용하는 경우 `--set` 플래그를 검증하고 값 파일 미검증 안내를 덧붙인다.
+- **쉼표 분리 및 이스케이프/목록 구문**: `--set a=x,b=y` 형태의 쉼표 분리 할당을 지원하며, 백슬래시 이스케이프 쉼표(`\,`)와 중괄호 목록 구문(`{a,b}`)은 하나의 값으로 보존한다.
+- **래퍼 및 글로벌 플래그 지원, 파서 완전성 검증**: `sudo`, `env VAR=x`, `VAR=x`, `if`/`!`/`then`, `$(...)`-free 명령어 접두어, `helm`과 `upgrade` 사이의 글로벌 플래그(`--kubeconfig` 등), 변수 형태(`"$HELM"`, `${HELM_CMD}`)를 지원한다. 또한 회귀 검증에서 `scripts/cluster/*.sh`의 모든 `helm upgrade` 논리 행(logical line)을 전수 검사하여 부트스트랩 릴리스로 파싱되거나 명시적 허용 목록(`CLUSTER_HELM_ALLOWLIST`)에 사유와 함께 등록되어 있지 않은 모든 호출을 탐지해 fail-closed로 실패 처리한다.
+- **타입 강제 규칙**: `--set` 값은 Helm의 `strvals` 파서 동작에 맞춰 엄격하게 변환한다. 정확한 `true`/`false`, `null`, 그리고 int64 범위의 10진 정수(`^-?(0|[1-9][0-9]*)$`)만 해당 타입으로 변환하며, 부동소수점(`1.0`), 선행 0(`01`), 지수 표기(`1e3`), 16진수(`0x10`), 20자리 등 int64 범위를 벗어난 정수는 문자열로 유지한다. `--set-string`은 엄격하게 문자열 타입만 일치로 인정한다 (예: 1 vs "1", true vs "true" 불일치 탐지).
+- **비밀값 보호**: 비밀값 키(`password`, `token`, `passwd`, `adminKey` 등) 및 셸 변수(`$`)는 키 이름만 표시하고 값 비교에서 제외한다. 릴리스 드리프트 출력, Helm 오류 발생, 비정상 JSON 응답 시에도 비밀값이 표준 출력/에러로 노출되지 않으며 `TMPDIR`에 임시 파일을 남기지 않는다.
+- **명령어 오버라이드**: `HELM_CMD` 및 `KUBECTL_CMD` 환경 변수로 다중 단어 명령어를 전달할 수 있으며(내부에서 bash `read -r -a`로 argv 배열 분리), 공백이 포함된 인자는 지원하지 않는다.
+
+```bash
+# 호스트에서 실행 (KUBECONFIG 환경 변수가 설정된 경우)
+scripts/test/check-bootstrap-helm-drift.sh
+
+# 게스트(master-1) 내부에서 실행 (root 권한)
+vagrant ssh master-1 -c "sudo bash /home/vagrant/scripts/test/check-bootstrap-helm-drift.sh"
+
+# 또는 게스트 내부에서 HELM_CMD / KUBECTL_CMD 환경 변수 오버라이드로 실행
+vagrant ssh master-1 -c "HELM_CMD='sudo helm --kubeconfig /etc/kubernetes/admin.conf' KUBECTL_CMD='sudo kubectl --kubeconfig /etc/kubernetes/admin.conf' bash /home/vagrant/scripts/test/check-bootstrap-helm-drift.sh"
+
+# 특정 릴리스만 검사
+scripts/test/check-bootstrap-helm-drift.sh --release=apisix-ingress-controller
+```
+
 ### 검증 결과 해석
 
 ```bash

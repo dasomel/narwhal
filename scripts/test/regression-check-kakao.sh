@@ -3491,6 +3491,9 @@ PYEOF'
     python3 scripts/test/lib/check-round3-compliance-hardening.py --mutation-verify
   check R374 "apisix-etcd PVC persistence (Recreate + apisix-etcd-data nfs-csi ReadWriteOnce + Velero exclude), IC resync intervals (5m/15m), and divergence recovery mode in recover-apisix-resource-sync.sh (#714); offline helm render + behavioral stub tests + 12 mutations caught" \
     python3 scripts/test/lib/check-apisix-etcd-persistence.py --mutation-verify
+  # 2026-11-19 (#728): bootstrap Helm release drift check and parser offline behavioral tests
+  check R376 "Bootstrap Helm release drift check (check-bootstrap-helm-drift.sh + helper): extracts literal --set/--set-string/--set-json flags, comma splitting & braces, wrapped commands & fail-closed completeness check, strvals type coercion, unparsed values files UNCHECKED, multi-word commands, zero secret leaks; behavioral tests and 18 mutations caught (#728)" \
+    python3 scripts/test/lib/check-bootstrap-helm-drift.py --mutation-verify
   # 2026-11-19 (#691): OTLP traces flow through Alloy extraConfig (memory_limiter -> strip_client_k8s -> connection-only node-scoped k8sattributes -> Tempo) + tempo-ingress-policy closes direct Tempo bypass
   check R373 "Alloy k8s-monitoring extraConfig strips client ^k8s[.] + service.namespace (error_mode=propagate) before connection-only node-scoped k8sattributes with 256MiB/64MiB spike memory_limiter, internalTrafficPolicy Local, and waypoint opt-out; Tempo disables OTLP/HTTP (4318) and opts out of waypoint; tempo-ingress-policy restricts 4317/15008 to alloy-logs and 3200/15008 to Grafana/Prometheus/portal/Tempo; 08-2-monitoring.sh parity + offline helm renders + 34 mutations caught (D-TRACE-K8S-ATTR, D-TEMPO-INGRESS)" \
     python3 scripts/test/lib/check-trace-k8s-attributes.py --mutation-verify

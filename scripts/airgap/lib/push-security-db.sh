@@ -39,7 +39,7 @@ set -euo pipefail
 #
 # USAGE:
 #   push-security-db.sh [--bundle <dir>] [--registry harbor.<domain>] [--project trivy-db]
-#                        [--ca-cert <ca.crt>] [--kube-context <ctx>]
+#                        [--ca-cert <ca.crt>] [--kube-context <ctx>] [--allow-downgrade]
 #
 # Run this from wherever harbor.<domain> resolves and is reachable over https (a workstation
 # on the cluster DNS, or master-1). Local Vagrant: `--ca-cert` = the narwhal-ca-cert Secret's (namespace devtools)
@@ -74,6 +74,9 @@ SECDB_CA_CERT="${AIRGAP_SECURITY_DB_CA_CERT:-}"
 # Secret when HARBOR_ADMIN_PASSWORD is not exported. The password is never printed or put on
 # a command line (it goes to a 0600 authfile via --password-stdin).
 SECDB_KUBE_CONTEXT="${AIRGAP_SECURITY_DB_KUBE_CONTEXT:-}"
+# Optional: allow overwriting a newer mirror DB with an older bundle DB (escape hatch for
+# intentional rollback via promote-security-db.sh --rollback).
+ALLOW_DOWNGRADE="${AIRGAP_SECURITY_DB_ALLOW_DOWNGRADE:-0}"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -82,9 +85,16 @@ while [[ $# -gt 0 ]]; do
     --project)  SECDB_PROJECT="$2"; shift 2 ;;
     --ca-cert)  SECDB_CA_CERT="$2"; shift 2 ;;
     --kube-context) SECDB_KUBE_CONTEXT="$2"; shift 2 ;;
+    --allow-downgrade) ALLOW_DOWNGRADE=1; shift ;;
     *) echo "Unknown arg: $1" >&2; exit 1 ;;
   esac
 done
+
+case "${ALLOW_DOWNGRADE}" in
+  1|true|TRUE|yes|YES) ALLOW_DOWNGRADE=1 ;;
+  0|false|FALSE|no|NO|"") ALLOW_DOWNGRADE=0 ;;
+  *) echo "ERROR: invalid AIRGAP_SECURITY_DB_ALLOW_DOWNGRADE=${ALLOW_DOWNGRADE} (expected 0 or 1)" >&2; exit 1 ;;
+esac
 
 CA_TMPDIR=""
 AUTHFILE=""
@@ -257,19 +267,184 @@ fi
 unset HARBOR_PW
 [[ "${XTRACE_WAS_ON}" -eq 1 ]] && set -x
 
-ok=0; fail=0
-while IFS= read -r name; do
+# D-SECDB-NO-DOWNGRADE (#658): refuse to overwrite a fresher DB in Harbor with an older
+# airgap bundle DB (e.g. a manual push after trivy-db-refresh already updated the mirror,
+# which caused trivy-server to revert to an expired DB and hot-download 2 GB/h).
+# Compare OCI manifest `annotations["org.opencontainers.image.created"]` (full RFC 3339
+# with arbitrary-length fractional seconds and Z/[+-]HH:MM offsets) and raw manifest sha256
+# via `skopeo inspect --raw` instead of pulling 140MB-1GB layers to read metadata.json
+# (measured against live Harbor and ghcr.io trivy-db:2 / trivy-java-db:1 / trivy-checks:1).
+# Equal `created` skips only when the raw manifest digest also matches; equal `created` with
+# a different digest is not a downgrade and is pushed. To shrink the TOCTOU race with
+# trivy-db-refresh, each queued artifact is re-inspected immediately before its `skopeo copy`
+# and refused if the mirror moved ahead of the bundle. Accepted residual risk: OCI registries
+# offer no atomic compare-and-swap on tag writes, so a seconds-wide TOCTOU window remains
+# between the pre-copy re-inspect and `skopeo copy` manifest commit. Reason: avoiding a custom
+# registry lock keeps the script self-contained against standard OCI/Harbor APIs. Cost: fails
+# closed if a present manifest lacks a parseable RFC 3339 `org.opencontainers.image.created`,
+# assumes that annotation reflects DB freshness, and a concurrent refresh winning inside the
+# final seconds-wide window can still land until the next refresh or manual push. Escape hatch:
+# --allow-downgrade or AIRGAP_SECURITY_DB_ALLOW_DOWNGRADE=1 (for intentional rollback via
+# promote-security-db.sh --rollback).
+secdb_manifest_py() {
+  python3 - "$@" <<'PYEOF'
+from __future__ import annotations
+
+import datetime
+import decimal
+import hashlib
+import json
+import re
+import sys
+
+_RFC3339_RE = re.compile(
+    r"^(\d{4})-(\d{2})-(\d{2})[Tt](\d{2}):(\d{2}):(\d{2})(?:\.(\d+))?([Zz]|([+-])(\d{2}):(\d{2}))\Z"
+)
+
+
+def parse_rfc3339(raw: str) -> tuple[datetime.datetime, decimal.Decimal]:
+    m = _RFC3339_RE.match(raw)
+    if not m:
+        raise ValueError(f"invalid RFC 3339 timestamp: {raw!r}")
+    year, month, day, hour, minute, second = (int(m.group(i)) for i in range(1, 7))
+    frac_str = m.group(7)
+    tz_str = m.group(8)
+    if tz_str in ("Z", "z"):
+        tz = datetime.timezone.utc
+    else:
+        sign = 1 if m.group(9) == "+" else -1
+        off_h = int(m.group(10))
+        off_m = int(m.group(11))
+        if off_h > 23 or off_m > 59:
+            raise ValueError(f"invalid RFC 3339 offset: {raw!r}")
+        tz = datetime.timezone(sign * datetime.timedelta(hours=off_h, minutes=off_m))
+    dt = datetime.datetime(year, month, day, hour, minute, second, tzinfo=tz)
+    dt_utc = dt.astimezone(datetime.timezone.utc)
+    frac = decimal.Decimal(f"0.{frac_str}") if frac_str else decimal.Decimal(0)
+    return (dt_utc, frac)
+
+
+mode = sys.argv[1]
+if mode == "inspect":
+    with open(sys.argv[2], "rb") as f:
+        raw_bytes = f.read()
+    digest = "sha256:" + hashlib.sha256(raw_bytes).hexdigest()
+    try:
+        doc = json.loads(raw_bytes.decode("utf-8"))
+    except Exception:
+        sys.exit(2)
+    anns = doc.get("annotations")
+    created = anns.get("org.opencontainers.image.created") if isinstance(anns, dict) else None
+    if not isinstance(created, str) or not created:
+        sys.exit(3)
+    try:
+        parse_rfc3339(created)
+    except ValueError:
+        sys.exit(3)
+    print(f"{digest}\t{created}")
+elif mode == "compare":
+    b = parse_rfc3339(sys.argv[2])
+    m = parse_rfc3339(sys.argv[3])
+    if b < m:
+        print("older")
+    elif b == m:
+        print("equal")
+    else:
+        print("newer")
+else:
+    sys.exit(4)
+PYEOF
+}
+
+is_mirror_absent_err() {
+  local err_file="$1"
+  grep -qiE 'manifest unknown|manifest_unknown|name_unknown|tag_unknown|not_found|repository [^[:space:]]+ not found|manifest [^[:space:]]+ not found|unknown: .*not found' "${err_file}"
+}
+
+INSPECT_ERR="${CERTDIR}/inspect.err"
+RAW_MANIFEST="${CERTDIR}/inspect.raw"
+MIRROR_ACTION="fail"
+
+check_mirror_freshness() {
+  local name="$1" dst="$2" bundle_created="$3" bundle_digest="$4" phase="$5"
+  local mirror_rc=0 mirror_meta="" mirror_digest="" mirror_created="" cmp_result=""
+  MIRROR_ACTION="fail"
+
+  skopeo inspect --authfile "${AUTHFILE}" ${LOGIN_CERT[@]+"${LOGIN_CERT[@]}"} --raw "docker://${dst}" >"${RAW_MANIFEST}" 2>"${INSPECT_ERR}" || mirror_rc=$?
+  if [[ "${mirror_rc}" -ne 0 ]]; then
+    if is_mirror_absent_err "${INSPECT_ERR}"; then
+      if [[ "${phase}" == "preflight" ]]; then
+        echo "[check] ${name}: mirror ${dst} is empty/missing (bundle created=${bundle_created}) -> will push"
+      fi
+      MIRROR_ACTION="push"
+    else
+      echo "[FAIL] ${name}: cannot inspect mirror ${dst} during ${phase} (mirror unreachable or unreadable; refusing to guess): $(tr '\n' ' ' < "${INSPECT_ERR}")" >&2
+      MIRROR_ACTION="fail"
+    fi
+    return 0
+  fi
+
+  if ! mirror_meta="$(secdb_manifest_py inspect "${RAW_MANIFEST}")"; then
+    if [[ "${ALLOW_DOWNGRADE}" -eq 1 ]]; then
+      echo "[warn] ${name}: mirror ${dst} lacks valid org.opencontainers.image.created; overriding per --allow-downgrade" >&2
+      MIRROR_ACTION="push"
+    else
+      echo "[FAIL] ${name}: mirror ${dst} lacks a valid org.opencontainers.image.created annotation during ${phase} (cannot verify freshness; pass --allow-downgrade to override)" >&2
+      MIRROR_ACTION="fail"
+    fi
+    return 0
+  fi
+
+  IFS=$'\t' read -r mirror_digest mirror_created <<< "${mirror_meta}"
+  cmp_result="$(secdb_manifest_py compare "${bundle_created}" "${mirror_created}")"
+  case "${cmp_result}" in
+    older)
+      if [[ "${ALLOW_DOWNGRADE}" -eq 1 ]]; then
+        echo "[warn] ${name}: bundle (${bundle_created}) is OLDER than mirror (${mirror_created}); overriding per --allow-downgrade" >&2
+        MIRROR_ACTION="push"
+      else
+        echo "[FAIL] ${name}: refusing to downgrade ${dst} (${phase}) — bundle (${bundle_created}) is older than mirror (${mirror_created}). Re-fetch/promote a newer bundle or pass --allow-downgrade (AIRGAP_SECURITY_DB_ALLOW_DOWNGRADE=1) to override." >&2
+        MIRROR_ACTION="fail"
+      fi
+      ;;
+    equal)
+      if [[ "${bundle_digest}" == "${mirror_digest}" ]]; then
+        echo "[skip] ${name}: mirror ${dst} already at ${bundle_created} (${bundle_digest}, equal freshness)"
+        MIRROR_ACTION="skip"
+      else
+        if [[ "${phase}" == "preflight" ]]; then
+          echo "[check] ${name}: bundle and mirror share ${bundle_created} but manifest digests differ (${bundle_digest} != ${mirror_digest}) -> will push"
+        fi
+        MIRROR_ACTION="push"
+      fi
+      ;;
+    newer)
+      if [[ "${phase}" == "preflight" ]]; then
+        echo "[check] ${name}: bundle (${bundle_created}) is newer than mirror (${mirror_created}) -> will push"
+      fi
+      MIRROR_ACTION="push"
+      ;;
+  esac
+}
+
+push_names=()
+push_srcs=()
+push_tags=()
+push_dsts=()
+push_createds=()
+push_digests=()
+skipped=0
+guard_fail=0
+
+while IFS=$'\t' read -r name ref; do
   [[ -z "${name}" ]] && continue
   src="${PROMOTED_DIR}/${name}"
-  [[ -d "${src}" ]] || { echo "[skip] ${name} (no OCI layout under ${src})"; continue; }
+  if [[ ! -d "${src}" ]]; then
+    echo "[skip] ${name} (no OCI layout under ${src})"
+    skipped=$((skipped + 1))
+    continue
+  fi
 
-  ref="$(python3 -c "
-import json
-doc = json.load(open('${MANIFEST}'))
-for a in doc['artifacts']:
-    if a['name'] == '${name}':
-        print(a['source_ref']); break
-")"
   # Preserve the upstream org/repo path under the internal project, e.g.
   # ghcr.io/aquasecurity/trivy-db:2 -> harbor.../trivy-db/aquasecurity/trivy-db:2
   # — matches dbRepository=trivy-db/aquasecurity/trivy-db in trivy-operator.yaml.
@@ -278,6 +453,78 @@ for a in doc['artifacts']:
   tag="${ref##*:}"
   dst="${SECDB_REGISTRY}/${SECDB_PROJECT}/${repo_path}:${tag}"
 
+  if ! skopeo inspect --authfile "${AUTHFILE}" --raw "oci:${src}:${tag}" >"${RAW_MANIFEST}" 2>"${INSPECT_ERR}"; then
+    echo "[FAIL] ${name}: cannot inspect bundle OCI manifest oci:${src}:${tag}: $(tr '\n' ' ' < "${INSPECT_ERR}")" >&2
+    guard_fail=$((guard_fail + 1))
+    continue
+  fi
+  if ! bundle_meta="$(secdb_manifest_py inspect "${RAW_MANIFEST}")"; then
+    echo "[FAIL] ${name}: bundle OCI manifest oci:${src}:${tag} lacks a valid org.opencontainers.image.created annotation" >&2
+    guard_fail=$((guard_fail + 1))
+    continue
+  fi
+  IFS=$'\t' read -r bundle_digest bundle_created <<< "${bundle_meta}"
+
+  check_mirror_freshness "${name}" "${dst}" "${bundle_created}" "${bundle_digest}" "preflight"
+  case "${MIRROR_ACTION}" in
+    skip)
+      skipped=$((skipped + 1))
+      continue
+      ;;
+    fail)
+      guard_fail=$((guard_fail + 1))
+      continue
+      ;;
+    push)
+      ;;
+  esac
+
+  push_names+=("${name}")
+  push_srcs+=("${src}")
+  push_tags+=("${tag}")
+  push_dsts+=("${dst}")
+  push_createds+=("${bundle_created}")
+  push_digests+=("${bundle_digest}")
+done < <(python3 - "${MANIFEST}" <<'PYEOF'
+import json, sys
+doc = json.load(open(sys.argv[1]))
+for a in doc["artifacts"]:
+    print(f"{a['name']}\t{a['source_ref']}")
+PYEOF
+)
+
+if [[ "${guard_fail}" -gt 0 ]]; then
+  echo "" >&2
+  echo "ERROR: freshness guard aborted push (${guard_fail} artifact(s) failed preflight; nothing was pushed)." >&2
+  exit 1
+fi
+
+ok=0; fail=0
+idx=0
+while [[ "${idx}" -lt "${#push_names[@]}" ]]; do
+  name="${push_names[${idx}]}"
+  src="${push_srcs[${idx}]}"
+  tag="${push_tags[${idx}]}"
+  dst="${push_dsts[${idx}]}"
+  bundle_created="${push_createds[${idx}]}"
+  bundle_digest="${push_digests[${idx}]}"
+  idx=$((idx + 1))
+
+  check_mirror_freshness "${name}" "${dst}" "${bundle_created}" "${bundle_digest}" "pre-copy"
+  case "${MIRROR_ACTION}" in
+    skip)
+      skipped=$((skipped + 1))
+      continue
+      ;;
+    fail)
+      echo "ERROR: pre-copy freshness guard aborted push at ${name} (stopping remaining copies)." >&2
+      fail=$((fail + 1))
+      break
+      ;;
+    push)
+      ;;
+  esac
+
   echo "[push] ${name} -> ${dst}"
   if skopeo copy --authfile "${AUTHFILE}" ${COPY_CERT[@]+"${COPY_CERT[@]}"} --retry-times 3 --quiet "oci:${src}:${tag}" "docker://${dst}"; then
     ok=$((ok + 1))
@@ -285,13 +532,8 @@ for a in doc['artifacts']:
     echo "[FAIL] ${name} -> ${dst} (check the '${SECDB_PROJECT}' Harbor project exists - scripts/cluster/08-5-registry.sh - and that the push endpoint/CA are right; a very large blob can also trip Harbor's liveness probe on a small VM: re-run, the push is idempotent)" >&2
     fail=$((fail + 1))
   fi
-done < <(python3 -c "
-import json
-doc = json.load(open('${MANIFEST}'))
-for a in doc['artifacts']:
-    print(a['name'])
-")
+done
 
 echo ""
-echo "Pushed: ${ok} | Failed: ${fail}"
+echo "Pushed: ${ok} | Skipped: ${skipped} | Failed: ${fail}"
 [[ ${fail} -eq 0 ]]

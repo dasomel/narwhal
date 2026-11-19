@@ -242,8 +242,9 @@ python3 scripts/airgap/lib/check-security-db-freshness.py \
 
 미러의 `trivy-db:2`가 `NextUpdate`를 넘기면 trivy-server는 마지막 다운로드 후 1시간마다 **같은 DB를 다시** 받는다
 (1회 약 1.6GiB, cAdvisor 쓰기 기준 약 3.7GiB, 하루 수십 GiB가 NFS 서버 디스크에 쌓임, #585). 업스트림 DB는 약 6~24시간마다
-새로 나오므로 미러는 주기적으로 갱신해야 한다. 에어갭에서는 자동 갱신하지 않는다: promote는 사람이 승인하는 게이트다.
-ghcr.io로 나갈 수 있는 클러스터(로컬 Vagrant)는 아래 "보안 DB 자동 갱신"이 이 절차를 대신한다.
+새로 나오므로 미러는 주기적으로 갱신해야 한다. 또한 `trivy-db-refresh` 등으로 이미 갱신된 미러 위에 옛 로컬 에어갭 번들을
+덮어쓰면 미러가 만료 DB로 되돌아가 같은 매시간 재다운로드가 재발한다(#658). 에어갭에서는 자동 갱신하지 않는다:
+promote는 사람이 승인하는 게이트다. ghcr.io로 나갈 수 있는 클러스터(로컬 Vagrant)는 아래 "보안 DB 자동 갱신"이 이 절차를 대신한다.
 
 감지: `TrivyServerDbRedownloading`(`gitops/resources/prometheus-alerts.yaml`)이 trivy-server 컨테이너 쓰기가 3시간에 6GB를
 넘으면 울린다(다운로드 2회 이상). 미러 나이를 직접 재는 메트릭은 없다. Portal 보안 페이지의 "Trivy DB 상태" 카드(Harbor를
@@ -258,6 +259,11 @@ ghcr.io로 나갈 수 있는 클러스터(로컬 Vagrant)는 아래 "보안 DB �
 ./scripts/airgap/lib/push-security-db.sh --bundle <bundle-dir> \
   --ca-cert ./narwhal-ca.crt --kube-context narwhal
 ```
+
+이 push 단계는 실행 전 모든 아티팩트의 OCI `org.opencontainers.image.created`(RFC 3339)와 매니페스트 다이제스트를 미러와 비교하고, 각 복사 직전에도 미러를 다시 확인한다(`D-SECDB-NO-DOWNGRADE`):
+미러가 더 새것이면 덮어쓰기를 거부하고 비정상 종료하며, 타임스탬프와 다이제스트가 모두 같을 때만 건너뛰고(타임스탬프만 같고 다이제스트가 다르면 push), 미러에 연결할 수 없으면 비어 있다고 추정하지 않고 실패한다.
+OCI 레지스트리는 태그 쓰기에 compare-and-swap(원자적 조건부 덮어쓰기)을 제공하지 않으므로 복사 직전 재조회와 `skopeo copy` 사이의 수 초 간격(TOCTOU 창)은 수용된 잔여 위험으로 남는다(`trivy-db-refresh`가 같은 몇 초 사이에 push하면 다음 갱신 주기 또는 재실행 전까지 덮일 수 있음).
+의도적 롤백(`promote-security-db.sh --rollback`) 등 예외 시에만 `--allow-downgrade` 또는 `AIRGAP_SECURITY_DB_ALLOW_DOWNGRADE=1`로 우회한다.
 
 push 뒤 trivy-server는 다음 시간 주기에 새 DB를 한 번 받고 멈춘다. 서둘러 반영하려면 `kubectl -n security-system delete pod trivy-server-0`
 (캐시 PVC는 유지, 새 DB를 1회 받음). 경보는 3시간 창이 지나면 해소된다.

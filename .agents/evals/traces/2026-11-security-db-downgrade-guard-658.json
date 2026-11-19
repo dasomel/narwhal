@@ -1,0 +1,61 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-security-db-downgrade-guard-658-20261119",
+  "task": "Prevent scripts/airgap/lib/push-security-db.sh from downgrading a newer Harbor mirror DB with an older bundle DB, update README/alert descriptions, and add R380 (#658).",
+  "changeContext": {
+    "paths": [
+      "scripts/airgap/lib/push-security-db.sh",
+      "scripts/airgap/README.md",
+      "gitops/resources/prometheus-alerts.yaml",
+      "docs/common/lessons-log.md",
+      "scripts/test/lib/check-security-db-downgrade-guard.py",
+      "scripts/test/regression-check-kakao.sh",
+      ".agents/evals/traces/2026-11-security-db-downgrade-guard-658.json"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Scope: add freshness comparison and downgrade guard to push-security-db.sh for all artifacts in promoted/manifest.json (trivy-db, trivy-java-db, trivy-checks) with --allow-downgrade / AIRGAP_SECURITY_DB_ALLOW_DOWNGRADE=1 escape hatch; update scripts/airgap/README.md and TrivyServerDbRedownloading description in gitops/resources/prometheus-alerts.yaml; add R380, lessons-log row, and trace. Left alone: trivy-operator.yaml workloads, CronJobs/RBAC, alert expr/thresholds, and live cluster/Harbor state."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "Inspected live Harbor (harbor.local.narwhal.internal) and upstream ghcr.io OCI manifests via skopeo inspect --raw (read-only): trivy-db:2, trivy-java-db:1, and trivy-checks:1 all carry top-level annotations['org.opencontainers.image.created'] (e.g. 2026-11-19T01:14:01Z for trivy-db:2, 2026-11-19T00:59:45Z for trivy-java-db:1), whereas push-security-db.sh previously called skopeo copy unconditionally without inspecting mirror freshness.",
+      "evidence": [
+        "runtime:skopeo inspect --raw docker://harbor.local.narwhal.internal/trivy-db/aquasecurity/trivy-db:2 -> annotations['org.opencontainers.image.created']='2026-11-19T01:14:01Z' (measured 2026-11-19)",
+        "repo:scripts/airgap/lib/push-security-db.sh"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "D-SECDB-NO-DOWNGRADE: push-security-db.sh preflight-inspects every promoted artifact (local oci: and remote docker://) via skopeo inspect --raw --authfile and re-inspects each queued artifact immediately pre-copy to shrink the TOCTOU window with trivy-db-refresh (remaining seconds-wide window documented as accepted residual risk due to lack of OCI compare-and-swap): parses full RFC 3339 org.opencontainers.image.created (any fractional-second length and Z/[+-]HH:MM offsets) and raw manifest sha256, aborts nonzero on older bundles, skips only when created AND manifest digest match (pushing equal created with differing digest), pushes when mirror/repo is absent, fails closed when unreachable or lacking valid RFC 3339 created, and allows override via --allow-downgrade or AIRGAP_SECURITY_DB_ALLOW_DOWNGRADE=1. Updated README/alert description and R380."
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "Static + behavioral tests with fake skopeo (newer, older trivy-db, older trivy-java-db atomic abort, equal created+digest skip, equal created+different digest push, RFC 3339 arbitrary-length fractions .1Z/.123456789Z and numeric offsets +09:00/-05:30 plus invalid shapes, TOCTOU mirror updates before 1st copy / 2nd copy / equal-converged, empty/missing Harbor & OCI errors, unreachable, missing annotation, --allow-downgrade flag & env override), R303 (12 mutations), R316 (7 mutations + 5 promtool cases), R372 (11 mutations), R380 (14 mutations), macOS /bin/bash 3.2 behavioral run, make validate, shellcheck, and make test. NOT covered: live Harbor push or live cluster trivy-server behavior.",
+      "evidence": [
+        "test:python3 scripts/test/lib/check-security-db-downgrade-guard.py --mutation-verify -> PASS: R380 push-security-db downgrade guard (14 mutations rejected)",
+        "test:PATH=/bin:... python3 scripts/test/lib/check-security-db-downgrade-guard.py -> PASS under macOS /bin/bash 3.2.57",
+        "test:python3 scripts/test/lib/check-trivy-db-redownload-alert.py --mutation-verify -> PASS (5 promtool cases, 7 mutations rejected)",
+        "test:make validate -> Syntax OK, 33/33 GitOps YAMLs OK; make test -> passed 489 failed 0 warnings 3; shellcheck --severity=warning -> 0 findings; yamllint -> 0 findings on modified lines (pre-existing errors only in ghost-pod-reaper.yaml, prometheus-alerts.yaml lines 286/336, velero-server-rbac.yaml)"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "completion_claim",
+      "summary": "Downgrade guard (incl. equal-created/different-digest push, RFC 3339 fractional/offset parsing, pre-copy TOCTOU re-inspect, residual risk docs), README/alert text updates, R380 (14 mutations), lessons-log row, and trace are verified locally with fake skopeo and static/mutation suites; live Harbor push and cluster runtime remain unverified in this read-only lane."
+    },
+    {
+      "id": "e6",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Complete within repository scope; open items (hot-update OOM/stale /tmp/db* and natural air-gap expiry loop) recorded in lessons-log.md."
+    }
+  ]
+}

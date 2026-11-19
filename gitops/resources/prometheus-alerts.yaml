@@ -471,7 +471,8 @@ spec:
             summary: "trivy-server가 취약점 DB를 반복 다운로드 중: {{ $labels.pod }}"
             description: >-
               최근 3시간 동안 {{ $labels.pod }}의 컨테이너 쓰기가 {{ $value | humanize1024 }}B입니다(DB 1회 다운로드 약 3.7GiB).
-              Harbor 미러의 trivy-db:2가 NextUpdate를 넘겨 같은 DB를 매시간 받고 있을 가능성이 큽니다.
+              Harbor 미러의 trivy-db:2가 NextUpdate를 넘겼거나(에어갭 만료 등), 더 최신 미러 위에 옛 번들을 push해
+              되돌아갔을 때 같은 DB를 매시간 다시 받을 수 있습니다(push-security-db.sh는 --allow-downgrade 없이는 다운그레이드를 차단).
               Portal 보안 페이지의 Trivy DB 상태 카드로 미러 나이를 확인하고 fetch, promote, push로 미러를 갱신하세요.
             runbook_url: https://github.com/dasomel/narwhal/blob/main/scripts/airgap/README.md#보안-db-갱신-절차와-낡은-미러-경보-d-secdb-stale
         # D-SECDB-AUTO-ALERT (#585): the in-cluster refresh (gitops/resources/trivy-db-refresh.yaml)

@@ -2,7 +2,7 @@
 
 One file per requested namespace, grouped by team:
 
-```
+```text
 resources/tenants/<team>/<namespace>.yaml
 ```
 
@@ -23,6 +23,10 @@ so a pull request is the only way it can change this repository.
   namespace and change nothing in it.
 - a `ResourceQuota`. A namespace with no quota can starve the others; `dev` is
   the worked example.
+- optional `narwhal.io/otlp-ingest: "true"` on the `Namespace` labels if workloads in
+  that namespace need to send OTLP traces (`4317`/`4318`) to `k8s-monitoring-alloy-logs`.
+  `alloy-logs-ingress-policy` blocks OTLP ingest from un-opted namespaces so arbitrary pods
+  cannot flood the shared log collector (see `docs/common/unified-observability-contract.md`).
 
 ## Removal is deletion of the file
 

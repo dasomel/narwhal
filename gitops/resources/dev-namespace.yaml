@@ -33,6 +33,8 @@ metadata:
     #   podLabels:
     #     istio.io/dataplane-mode: "ambient"
     istio.io/dataplane-mode: none
+    # Opt dev into OTLP trace ingest on alloy-logs (4317/4318); see alloy-logs-ingress-policy.
+    narwhal.io/otlp-ingest: "true"
     # ArgoCD가 이 네임스페이스의 리소스를 관리하도록 허용
     argocd.argoproj.io/managed-by: devtools
     app.kubernetes.io/managed-by: narwhal-gitops

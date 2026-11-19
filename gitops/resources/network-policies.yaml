@@ -168,6 +168,68 @@ spec:
         - protocol: TCP
           port: 15008
 ---
+# D-ALLOY-OTLP-INGRESS (#735): restrict alloy-logs OTLP trace ingest (4317/4318) to
+# Grafana (self-tracing) and namespaces explicitly opted in via narwhal.io/otlp-ingest: "true",
+# while preserving Prometheus metrics scraping (:12345).
+#   - k8s-monitoring-alloy-logs Service sets istio.io/use-waypoint: none, so ambient callers
+#     connect directly over HBONE 15008 with their source pod/namespace identity intact
+#     (monitoring/waypoint is NOT allowed here).
+#   - Every port-limited ingress rule in ambient-enrolled monitoring keeps TCP 15008 per R200.
+#   - Kubelet /-/ready probes (:12345) arrive via 169.254.7.127/32 CCNP (allow-ambient-kubelet-probes);
+#     config-reloader runs as a sidecar inside the same Pod (localhost:12345); alloy-operator
+#     watches only the Kubernetes API.
+#   - Escape hatch: add label narwhal.io/otlp-ingest: "true" on an opted-in Namespace, or
+#     delete this policy to restore cluster-wide OTLP access.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: alloy-logs-ingress-policy
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/managed-by: narwhal-gitops
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: alloy-logs
+      app.kubernetes.io/instance: k8s-monitoring-alloy-logs
+  policyTypes:
+    - Ingress
+  ingress:
+    # 1. Grafana (monitoring) -> alloy-logs OTLP gRPC self-tracing (4317).
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: grafana
+              app.kubernetes.io/instance: prometheus-stack
+      ports:
+        - protocol: TCP
+          port: 4317
+        - protocol: TCP
+          port: 15008
+    # 2. Explicitly opted-in namespaces -> alloy-logs OTLP gRPC/HTTP ingest (4317/4318).
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              narwhal.io/otlp-ingest: "true"
+      ports:
+        - protocol: TCP
+          port: 4317
+        - protocol: TCP
+          port: 4318
+        - protocol: TCP
+          port: 15008
+    # 3. Prometheus (monitoring) -> alloy-logs HTTP metrics scrape (12345).
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: prometheus
+              prometheus: prometheus-stack-kube-prom-prometheus
+      ports:
+        - protocol: TCP
+          port: 12345
+        - protocol: TCP
+          port: 15008
+---
 # D-TEMPO-INGRESS (#691): close direct-to-Tempo OTLP bypass; accept trace ingest (4317)
 # only from alloy-logs collector pods, and query/metrics (3200) only from known readers.
 # Monitoring is ambient-enrolled with monitoring-permissive + waypoint:

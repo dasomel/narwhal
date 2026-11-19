@@ -527,8 +527,8 @@ def mutation_verify(root: Path) -> int:
         ),
         (
             NETPOL_YAML,
-            "          port: 4317\n        - protocol: TCP\n          port: 15008",
-            "          port: 4317",
+            "          port: 4317\n        - protocol: TCP\n          port: 15008\n    # 2. Grafana",
+            "          port: 4317\n    # 2. Grafana",
         ),
     ]
     with tempfile.TemporaryDirectory() as tmp:

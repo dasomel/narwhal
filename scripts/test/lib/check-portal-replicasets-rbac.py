@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""R378: narwhal-portal ClusterRole grants get/list only on apps/replicasets (narwhal#727).
+"""R378: pin the entire narwhal-portal ClusterRole rule set (narwhal#727).
 
 Verifies the owner decision (2026-11-19): grant ClusterRole narwhal-portal read-only
-get/list on apps/replicasets (no watch, no write verbs, no wildcard) and keep
+get/list on apps/replicasets (no watch, no write verbs, no wildcard), pin every
+rule in ClusterRole narwhal-portal via exact set equality, and keep
 docs/common/compliance-hardening.md aligned. --mutation-verify proves broken copies fail.
 """
 
@@ -20,7 +21,50 @@ ROOT = Path(__file__).resolve().parents[3]
 CHART_DIR = ROOT / "gitops/charts/narwhal-platform"
 TEMPLATE_PATH = CHART_DIR / "templates/narwhal-portal-k8s.yaml"
 DOC_PATH = ROOT / "docs/common/compliance-hardening.md"
-READ_ONLY_WORKLOAD_VERBS = {"get", "list", "watch"}
+
+RuleTuple = tuple[frozenset[str], frozenset[str], frozenset[str]]
+
+EXPECTED_CLUSTERROLE_RULES: set[RuleTuple] = {
+    (
+        frozenset({""}),
+        frozenset({"nodes", "pods", "persistentvolumeclaims", "namespaces", "services", "events", "configmaps"}),
+        frozenset({"get", "list", "watch"}),
+    ),
+    (frozenset({""}), frozenset({"resourcequotas"}), frozenset({"get", "list"})),
+    (frozenset({"storage.k8s.io"}), frozenset({"storageclasses"}), frozenset({"get", "list"})),
+    (frozenset({""}), frozenset({"pods/log"}), frozenset({"get"})),
+    (frozenset({"policy"}), frozenset({"poddisruptionbudgets"}), frozenset({"get", "list", "watch"})),
+    (frozenset({"networking.k8s.io"}), frozenset({"networkpolicies"}), frozenset({"get", "list", "watch"})),
+    (frozenset({"cert-manager.io"}), frozenset({"certificates", "clusterissuers"}), frozenset({"get", "list", "watch"})),
+    (frozenset({"kyverno.io"}), frozenset({"clusterpolicies", "policies"}), frozenset({"get", "list", "watch"})),
+    (frozenset({"apps"}), frozenset({"deployments", "statefulsets", "daemonsets"}), frozenset({"get", "list", "watch"})),
+    (frozenset({"apps"}), frozenset({"replicasets"}), frozenset({"get", "list"})),
+    (
+        frozenset({"rbac.authorization.k8s.io"}),
+        frozenset({"clusterrolebindings", "rolebindings", "clusterroles", "roles"}),
+        frozenset({"get", "list", "watch"}),
+    ),
+    (
+        frozenset({"aquasecurity.github.io"}),
+        frozenset(
+            {
+                "vulnerabilityreports",
+                "clustervulnerabilityreports",
+                "exposedsecretreports",
+                "configauditreports",
+                "clusterconfigauditreports",
+                "rbacassessmentreports",
+                "clusterrbacassessmentreports",
+                "infraassessmentreports",
+                "clusterinfraassessmentreports",
+                "compliancereports",
+                "clustercompliancereports",
+            }
+        ),
+        frozenset({"get", "list", "watch"}),
+    ),
+    (frozenset({"metrics.k8s.io"}), frozenset({"nodes", "pods"}), frozenset({"get", "list"})),
+}
 
 
 def load_docs() -> list[dict]:
@@ -44,35 +88,49 @@ def load_docs() -> list[dict]:
     return [d for d in yaml.safe_load_all(TEMPLATE_PATH.read_text(encoding="utf-8")) if isinstance(d, dict)]
 
 
+def _fmt_rule(rule: RuleTuple) -> str:
+    groups, resources, verbs = rule
+    return f"(apiGroups={sorted(groups)}, resources={sorted(resources)}, verbs={sorted(verbs)})"
+
+
 def check(docs: list[dict], doc_text: str) -> list[str]:
     errors: list[str] = []
     crs = [d for d in docs if d.get("kind") == "ClusterRole" and (d.get("metadata") or {}).get("name") == "narwhal-portal"]
     if len(crs) != 1:
         return [f"ClusterRole narwhal-portal expected once, got {len(crs)}"]
 
-    rs_verbs: set[str] = set()
-    rs_rules = 0
+    actual_list: list[RuleTuple] = []
     for rule in crs[0].get("rules") or []:
-        groups = set(rule.get("apiGroups") or [])
-        resources = set(rule.get("resources") or [])
-        verbs = set(rule.get("verbs") or [])
+        extra_keys = set(rule.keys()) - {"apiGroups", "resources", "verbs"}
+        if extra_keys:
+            errors.append(f"ClusterRole narwhal-portal rule has unexpected keys {sorted(extra_keys)}: {rule}")
+        groups = frozenset(rule.get("apiGroups") or [])
+        resources = frozenset(rule.get("resources") or [])
+        verbs = frozenset(rule.get("verbs") or [])
         if "*" in groups or "*" in resources or "*" in verbs:
             errors.append(f"ClusterRole narwhal-portal must not use wildcards: {rule}")
-        if "apps" in groups:
-            if "replicasets" in resources:
-                rs_rules += 1
-                rs_verbs.update(verbs)
-            if verbs - READ_ONLY_WORKLOAD_VERBS:
-                errors.append(f"ClusterRole narwhal-portal apps rule has non-read verbs: {rule}")
+        actual_list.append((groups, resources, verbs))
 
-    if rs_rules != 1 or rs_verbs != {"get", "list"}:
+    actual_set = set(actual_list)
+    if len(actual_list) != len(actual_set):
+        errors.append("ClusterRole narwhal-portal contains duplicate rules")
+    if actual_set != EXPECTED_CLUSTERROLE_RULES:
+        unexpected = sorted(_fmt_rule(r) for r in actual_set - EXPECTED_CLUSTERROLE_RULES)
+        missing = sorted(_fmt_rule(r) for r in EXPECTED_CLUSTERROLE_RULES - actual_set)
         errors.append(
-            f"ClusterRole narwhal-portal must grant exactly get/list on apps/replicasets once (got rules={rs_rules}, verbs={sorted(rs_verbs)})"
+            "ClusterRole narwhal-portal rule set drifted from expected pin: "
+            f"unexpected={unexpected}, missing={missing}"
         )
 
     if "(and not `replicasets`)" in doc_text:
         errors.append("docs/common/compliance-hardening.md still claims narwhal-portal omits replicasets")
-    for required in ("`apps` `replicasets`", "spec.replicas == 0", "metadata.ownerReferences"):
+    for required in (
+        "`apps` `replicasets`",
+        "spec.replicas == 0",
+        "status.replicas == 0",
+        "deployment.kubernetes.io/revision",
+        "metadata.ownerReferences",
+    ):
         if required not in doc_text:
             errors.append(f"docs/common/compliance-hardening.md missing {required!r}")
 
@@ -84,10 +142,19 @@ def _apps_rs_rule(docs: list[dict]) -> dict:
     return next(r for r in cr["rules"] if "apps" in r.get("apiGroups", []) and "replicasets" in r.get("resources", []))
 
 
+def _core_workloads_rule(docs: list[dict]) -> dict:
+    cr = next(d for d in docs if d.get("kind") == "ClusterRole" and (d.get("metadata") or {}).get("name") == "narwhal-portal")
+    return next(r for r in cr["rules"] if "" in r.get("apiGroups", []) and "nodes" in r.get("resources", []))
+
+
 MUTATIONS = [
     "replicasets rule removed",
     "watch verb added to replicasets",
     "write verb delete added to replicasets",
+    "extra resource controllerrevisions in replicasets rule",
+    "extra apiGroup in replicasets rule",
+    "new rule granting secrets get/list",
+    "extra verb update on existing core rule",
     "wildcard resource in apps rule",
     "wildcard verb in apps rule",
     "stale compliance-hardening doc text",
@@ -104,6 +171,14 @@ def mutate(name: str, base_docs: list[dict], base_doc_text: str) -> tuple[list[d
         _apps_rs_rule(docs)["verbs"].append("watch")
     elif name == "write verb delete added to replicasets":
         _apps_rs_rule(docs)["verbs"].append("delete")
+    elif name == "extra resource controllerrevisions in replicasets rule":
+        _apps_rs_rule(docs)["resources"].append("controllerrevisions")
+    elif name == "extra apiGroup in replicasets rule":
+        _apps_rs_rule(docs)["apiGroups"].append("batch")
+    elif name == "new rule granting secrets get/list":
+        cr["rules"].append({"apiGroups": [""], "resources": ["secrets"], "verbs": ["get", "list"]})
+    elif name == "extra verb update on existing core rule":
+        _core_workloads_rule(docs)["verbs"].append("update")
     elif name == "wildcard resource in apps rule":
         _apps_rs_rule(docs)["resources"] = ["*"]
     elif name == "wildcard verb in apps rule":

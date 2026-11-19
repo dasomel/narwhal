@@ -248,7 +248,6 @@ export const cacheKeys = {
 
   complianceConfigAuditList: () => "compliance:config-audit:list",
   complianceConfigAuditDetail: (namespace: string, name: string) => join("compliance", "config-audit", namespace, name),
-  complianceReplicaSets: () => "compliance:replicasets:list",
   complianceRbacAuditList: () => "compliance:rbac-audit:list",
   complianceRbacAuditDetail: (namespace: string, name: string) => join("compliance", "rbac-audit", namespace, name),
   complianceInfraAuditList: () => "compliance:infra-audit:list",
@@ -849,16 +848,6 @@ export const CACHE_NAMESPACES: Record<string, CacheNamespaceSpec> = {
     securitySensitive: false,
     unscopedReason: { code: "cluster-wide-state", detail: "Cluster-wide compliance audit data, not per-caller." },
   },
-  "compliance:replicasets:list": {
-    example: "compliance:replicasets:list",
-    dimensions: [],
-    ttlSeconds: 60,
-    owner: "src/lib/compliance.ts",
-    invalidation: "TTL only",
-    cachesPartial: false,
-    securitySensitive: false,
-    unscopedReason: { code: "cluster-wide-state", detail: "Cluster-wide ReplicaSet replica and Deployment owner metadata for compliance filtering, not per-caller." },
-  },
   "compliance:rbac-audit:list": {
     example: "compliance:rbac-audit:list",
     dimensions: [],
@@ -1312,7 +1301,6 @@ export const BUILDER_CHECKS: Record<keyof typeof cacheKeys, BuilderCheck> = {
     args: ["ns-1", "name-1"],
     dimensionArgIndex: { query: 0 },
   },
-  complianceReplicaSets: { registryKey: "compliance:replicasets:list", ttlSeconds: 60, args: [], dimensionArgIndex: {} },
   complianceRbacAuditList: { registryKey: "compliance:rbac-audit:list", ttlSeconds: 60, args: [], dimensionArgIndex: {} },
   complianceRbacAuditDetail: {
     registryKey: "compliance:rbac-audit:detail",

@@ -275,6 +275,8 @@ describe("allowlist integrity and docs parity", () => {
     // Parity for ReplicaSet ownership & residual-risk section (narwhal#727)
     expect(markdown).toContain("grants read-only `get`/`list` access on `apps` `replicasets`")
     expect(markdown).toContain("spec.replicas == 0")
+    expect(markdown).toContain("status.replicas == 0")
+    expect(markdown).toContain("deployment.kubernetes.io/revision")
     expect(markdown).toContain("metadata.ownerReferences")
     expect(markdown).not.toContain("(and not `replicasets`)")
   })

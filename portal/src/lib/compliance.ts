@@ -178,9 +178,13 @@ interface RawReplicaSet {
   metadata: {
     name: string
     namespace?: string
+    annotations?: Record<string, string>
     ownerReferences?: Array<{ kind: string; name: string }>
   }
   spec?: {
+    replicas?: number
+  }
+  status?: {
     replicas?: number
   }
 }
@@ -190,8 +194,11 @@ interface RawReplicaSetList {
 }
 
 interface ReplicaSetSummary {
-  replicas: number | null
+  specReplicas: number | null
+  statusReplicas: number | null
+  revision: number | null
   deploymentOwners: string[]
+  superseded: boolean
 }
 
 interface RawComplianceReport {
@@ -546,32 +553,86 @@ function resolveRbacRoleName(item: RawAuditReport): string {
   return ownerRefs[0]?.name ?? labels["trivy-operator.resource.name"] ?? item.metadata.name
 }
 
-// --- ReplicaSet lookup for stale-revision filtering & exact Deployment ownership (narwhal#727) ---
+// --- ReplicaSet lookup for superseded-revision filtering & exact Deployment ownership (narwhal#727) ---
 
+const DEPLOYMENT_REVISION_ANNOTATION = "deployment.kubernetes.io/revision"
+
+function parseDeploymentRevision(annotations?: Record<string, string>): number | null {
+  const raw = annotations?.[DEPLOYMENT_REVISION_ANNOTATION]
+  if (typeof raw !== "string" || !/^\d+$/.test(raw)) return null
+  const rev = Number(raw)
+  return Number.isSafeInteger(rev) ? rev : null
+}
+
+// Fetch in the same request path as configauditreports with no separate ReplicaSet cache so
+// cached 0-replica state can never outlive or poison a subsequent report computation.
 async function fetchReplicaSetMap(): Promise<Map<string, ReplicaSetSummary> | null> {
-  const cacheKey = cacheKeys.complianceReplicaSets()
-  const cached = await cacheGet<Record<string, ReplicaSetSummary>>(cacheKey)
-  if (cached) {
-    return new Map(Object.entries(cached))
-  }
-
   try {
     const list = await complianceK8sFetch<RawReplicaSetList>("/apis/apps/v1/replicasets")
-    const record: Record<string, ReplicaSetSummary> = {}
+    const entries: Array<{
+      key: string
+      namespace: string
+      specReplicas: number | null
+      statusReplicas: number | null
+      revision: number | null
+      deploymentOwners: string[]
+    }> = []
+    const maxRevisionByDeployment = new Map<string, number>()
+
     for (const rs of list?.items ?? []) {
       const ns = rs.metadata?.namespace ?? ""
       const name = rs.metadata?.name ?? ""
       if (!ns || !name) continue
-      const deploymentOwners = (rs.metadata.ownerReferences ?? [])
+      const deploymentOwners = (rs.metadata?.ownerReferences ?? [])
         .filter((ref) => ref.kind === "Deployment" && typeof ref.name === "string" && ref.name.length > 0)
         .map((ref) => ref.name)
-      record[`${ns}/${name}`] = {
-        replicas: typeof rs.spec?.replicas === "number" ? rs.spec.replicas : null,
-        deploymentOwners,
+      const revision = parseDeploymentRevision(rs.metadata?.annotations)
+      if (revision !== null) {
+        for (const owner of deploymentOwners) {
+          const depKey = `${ns}/${owner}`
+          const prev = maxRevisionByDeployment.get(depKey)
+          if (prev === undefined || revision > prev) {
+            maxRevisionByDeployment.set(depKey, revision)
+          }
+        }
       }
+      entries.push({
+        key: `${ns}/${name}`,
+        namespace: ns,
+        specReplicas: typeof rs.spec?.replicas === "number" ? rs.spec.replicas : null,
+        statusReplicas: typeof rs.status?.replicas === "number" ? rs.status.replicas : null,
+        revision,
+        deploymentOwners,
+      })
     }
-    await cacheSet(cacheKey, record, cacheTtl("complianceReplicaSets"))
-    return new Map(Object.entries(record))
+
+    const map = new Map<string, ReplicaSetSummary>()
+    for (const entry of entries) {
+      // Drop ONLY fully drained superseded Deployment revisions:
+      // (a) owned by a Deployment, (b) spec.replicas == 0 AND status.replicas == 0, and
+      // (c) the same Deployment in the same namespace owns another RS with a higher revision.
+      // Standalone ReplicaSets, scaled-to-zero Deployments (current revision), terminating pods,
+      // and any unknown field are kept so live findings are never hidden.
+      const hasHigherRevisionSibling =
+        entry.revision !== null &&
+        entry.deploymentOwners.some((owner) => {
+          const maxRev = maxRevisionByDeployment.get(`${entry.namespace}/${owner}`)
+          return maxRev !== undefined && maxRev > entry.revision!
+        })
+      const superseded =
+        entry.deploymentOwners.length > 0 &&
+        entry.specReplicas === 0 &&
+        entry.statusReplicas === 0 &&
+        hasHigherRevisionSibling
+      map.set(entry.key, {
+        specReplicas: entry.specReplicas,
+        statusReplicas: entry.statusReplicas,
+        revision: entry.revision,
+        deploymentOwners: entry.deploymentOwners,
+        superseded,
+      })
+    }
+    return map
   } catch (err) {
     console.warn(
       "[compliance] failed to list ReplicaSets, keeping all ReplicaSet reports:",
@@ -597,7 +658,7 @@ function resolveReplicaSetMetadata(
   if (!rsMeta) {
     return { drop: false, missingKey: rsKey || `${namespace}/${item.metadata.name}` }
   }
-  if (rsMeta.replicas === 0) {
+  if (rsMeta.superseded) {
     return { drop: true }
   }
   return { drop: false, deploymentOwners: rsMeta.deploymentOwners }

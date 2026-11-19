@@ -248,7 +248,12 @@ export async function GET(): Promise<NextResponse<MyAppsResponse | { error: stri
     "unknown"
   const sessionGroups: string[] = session.groups ?? []
   const sessionTeams: string[] = session.teams ?? []
-  const scoped = await requireEffectiveScope({ groups: sessionGroups, teams: sessionTeams, user: session.user })
+  const scoped = await requireEffectiveScope({
+    groups: sessionGroups,
+    teams: sessionTeams,
+    user: session.user,
+    error: session.error,
+  })
   if ("denied" in scoped) return scoped.denied
   const { scope } = scoped
   const cacheKey = cacheKeys.myApps(userSub, scope.fingerprint)

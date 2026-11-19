@@ -344,8 +344,9 @@ export const config: NextAuthConfig = {
             }
           }
         } catch (e) {
-          console.error("[auth/jwt] keycloak token refresh failed:", (e as Error).message)
-          token.error = "RefreshTokenError"
+          failClosedRefresh(token, "keycloak token refresh failed", {
+            error: (e as Error).message,
+          })
         }
       }
 
@@ -380,6 +381,9 @@ export const config: NextAuthConfig = {
       session.user.role = getRoleFromGroups(safeGroups)
       session.groupClaimStatus = token.groupClaimStatus ?? "no_groups"
       session.idToken = token.idToken
+      if (typeof token.expiresAt === "number" && Number.isFinite(token.expiresAt)) {
+        session.expiresAt = token.expiresAt
+      }
       // Surface a refresh failure so the client can force a clean re-login.
       if (token.error) session.error = token.error as string
       return session

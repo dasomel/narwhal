@@ -14,6 +14,8 @@ const {
   ACCESS_NOT_GRANTED_CODE,
   hasEffectiveAccess,
   hasSessionAccess,
+  requireEffectiveScope,
+  requireSessionAccess,
   resolveEffectiveAccess,
   getEffectiveScope,
   withScopeHeader,
@@ -88,6 +90,35 @@ describe("portal access gate (D-PORTAL-UNMAPPED-DENY)", () => {
     expect(hasEffectiveAccess(unmapped)).toBe(false)
     expect(hasEffectiveAccess(teamless)).toBe(false)
     expect(ACCESS_NOT_GRANTED_CODE).toBe("ACCESS_NOT_GRANTED")
+  })
+
+  it("denies sessions carrying RefreshTokenError even if groups or teams remain populated", async () => {
+    const erroredAdmin = {
+      groups: ["cluster-admin"],
+      teams: ["platform-team"],
+      user: { role: "cluster-admin" },
+      error: "RefreshTokenError",
+    }
+
+    expect(await hasSessionAccess(erroredAdmin)).toBe(false)
+    expect(await resolveEffectiveAccess(erroredAdmin)).toEqual({ allowed: false })
+
+    const deniedResp = await requireSessionAccess(erroredAdmin)
+    expect(deniedResp?.status).toBe(403)
+    expect(await deniedResp?.json()).toEqual({ error: "Forbidden", code: ACCESS_NOT_GRANTED_CODE })
+
+    const scoped = await requireEffectiveScope(erroredAdmin)
+    expect("denied" in scoped).toBe(true)
+    if ("denied" in scoped) {
+      expect(scoped.denied.status).toBe(403)
+      expect(await scoped.denied.json()).toEqual({ error: "Forbidden", code: ACCESS_NOT_GRANTED_CODE })
+    }
+
+    const emptyScope = await getEffectiveScope(erroredAdmin)
+    expect(hasEffectiveAccess(emptyScope)).toBe(false)
+    expect(emptyScope.all).toBe(false)
+    expect(emptyScope.namespaces.size).toBe(0)
+    expect(getNamespaces).not.toHaveBeenCalled()
   })
 })
 

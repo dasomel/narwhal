@@ -9,6 +9,16 @@ export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
 
 const HEARTBEAT_MS = 30_000
+const DEFAULT_MAX_STREAM_LIFETIME_MS = 5 * 60_000
+const MAX_TIMER_MS = 2_147_483_647
+
+function resolveStreamLifetimeMs(expiresAt?: number, nowMs = Date.now()): number {
+  if (typeof expiresAt === "number" && Number.isFinite(expiresAt)) {
+    return Math.min(Math.max(0, expiresAt * 1000 - nowMs), MAX_TIMER_MS)
+  }
+  return DEFAULT_MAX_STREAM_LIFETIME_MS
+}
+
 function formatSSE(event: LiveEvent): string {
   return `id: ${event.id}\nevent: live\ndata: ${JSON.stringify(event)}\n\n`
 }
@@ -29,9 +39,10 @@ export async function GET(request: Request) {
   const role: UserRole = session.user.role ?? "guest"
   const groups: string[] = session.groups ?? []
   const teams: string[] = session.teams ?? []
-  const scoped = await requireEffectiveScope({ groups, teams, user: { role } })
+  const scoped = await requireEffectiveScope({ groups, teams, user: { role }, error: session.error })
   if ("denied" in scoped) return scoped.denied
   const { scope } = scoped
+  const streamLifetimeMs = resolveStreamLifetimeMs(session.expiresAt)
   const lastEventId = request.headers.get("Last-Event-ID") ?? null
 
   let cancelStream: (() => void) | undefined
@@ -57,7 +68,9 @@ export async function GET(request: Request) {
       let disconnected = false
       let finishLifetime!: () => void
       const lifetime = new Promise<void>((resolve) => { finishLifetime = resolve })
+      const streamAbort = new AbortController()
       const heartbeatTimer: { current?: ReturnType<typeof setInterval> } = {}
+      const lifetimeTimer: { current?: ReturnType<typeof setTimeout> } = {}
       const cleanup = () => {
         if (closed) return
         closed = true
@@ -66,6 +79,8 @@ export async function GET(request: Request) {
           disconnectLiveClient()
         }
         if (heartbeatTimer.current) clearInterval(heartbeatTimer.current)
+        if (lifetimeTimer.current) clearTimeout(lifetimeTimer.current)
+        streamAbort.abort()
         request.signal.removeEventListener("abort", cleanup)
         try {
           controller.close()
@@ -80,7 +95,12 @@ export async function GET(request: Request) {
       try {
         request.signal.addEventListener("abort", cleanup)
         if (request.signal.aborted) cleanup()
-        const setup = await subscribeLiveWithReplay(lastEventId ?? undefined, request.signal)
+        // Close the stream when the access token expires (or after 5m if unknown)
+        // so EventSource reconnects and re-authorizes with refreshed group claims.
+        if (!closed) {
+          lifetimeTimer.current = setTimeout(cleanup, streamLifetimeMs)
+        }
+        const setup = await subscribeLiveWithReplay(lastEventId ?? undefined, streamAbort.signal)
         if (closed) return
         if (lastEventId && setup.replay) {
           if (setup.replay.gap) enqueue(formatControl("replay-gap", { after: lastEventId, state: "gap" }))
@@ -107,7 +127,7 @@ export async function GET(request: Request) {
         void (async () => {
           try {
             for await (const event of setup.live) {
-              if (request.signal.aborted) break
+              if (closed || streamAbort.signal.aborted) break
               if (/^\d+$/.test(event.id)) {
                 if (replayHighWaterId && compareLiveEventIds(event.id, replayHighWaterId) !== 1) continue
               } else {
@@ -118,7 +138,9 @@ export async function GET(request: Request) {
               }
             }
           } catch {
-            enqueue(formatControl("status", { dependency: "valkey", state: "partial", observedAt: new Date().toISOString(), reason: "subscription_failure" }))
+            if (!closed) {
+              enqueue(formatControl("status", { dependency: "valkey", state: "partial", observedAt: new Date().toISOString(), reason: "subscription_failure" }))
+            }
           }
         })()
         await lifetime

@@ -306,6 +306,7 @@ describe("jwt refresh group re-derivation (narwhal#734)", () => {
     expect(session.groups).toEqual(["developer"])
     expect(session.teams).toEqual(["platform-team"])
     expect(session.user.role).toBe("developer")
+    expect(session.expiresAt).toBe(FIXED_NOW_SEC + 300)
     expect(session.error).toBeUndefined()
   })
 
@@ -469,26 +470,38 @@ describe("jwt refresh group re-derivation (narwhal#734)", () => {
     }
   })
 
-  it("preserves existing RefreshTokenError behaviour when the Keycloak token endpoint fails", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () => new Response("invalid_grant", { status: 400 })),
-    )
+  it("fails closed to guest, clears teams, sets RefreshTokenError, and denies access via requireRole when the Keycloak token endpoint fails", async () => {
+    for (const stub of [
+      () => Promise.resolve(new Response("invalid_grant", { status: 400 })),
+      () => Promise.reject(new Error("ECONNREFUSED")),
+    ]) {
+      vi.stubGlobal("fetch", vi.fn(stub))
 
-    const token = await runJwt({
-      sub: "user-5",
-      groups: ["developer"],
-      teams: ["platform-team"],
-      groupClaimStatus: "ok",
-      refreshToken: "rt-fail",
-      expiresAt: FIXED_NOW_SEC + 30,
-    })
+      const token = await runJwt({
+        sub: "user-5",
+        groups: ["cluster-admin"],
+        teams: ["platform-team"],
+        groupClaimStatus: "ok",
+        refreshToken: "rt-fail",
+        expiresAt: FIXED_NOW_SEC + 30,
+      })
 
-    expect(token.error).toBe("RefreshTokenError")
-    expect(token.groups).toEqual(["developer"])
-    expect(token.teams).toEqual(["platform-team"])
+      expect(token.error).toBe("RefreshTokenError")
+      expect(token.groups).toEqual(["guest"])
+      expect(token.teams).toEqual([])
+      expect(token.groupClaimStatus).toBe("no_groups")
 
-    const session = makeSession(token)
-    expect(session.error).toBe("RefreshTokenError")
+      const session = makeSession(token)
+      expect(session.groups).toEqual(["guest"])
+      expect(session.teams).toEqual([])
+      expect(session.user.role).toBe("guest")
+      expect(session.error).toBe("RefreshTokenError")
+
+      mockAuth.mockResolvedValueOnce(session)
+      expect(await requireRole("cluster-admin", "developer")).toEqual({
+        error: "forbidden",
+        code: "ACCESS_NOT_GRANTED",
+      })
+    }
   })
 })

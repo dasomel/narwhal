@@ -9,6 +9,13 @@ English | [한국어](CHANGELOG-ko.md)
 
 ## [Unreleased]
 
+### Fixed
+
+- **Exclude ConfigAuditReports of scaled-down (`spec.replicas == 0`) ReplicaSets and verify Deployment ownership (`src/lib/compliance.ts`, `src/lib/compliance-accepted.ts`, `src/lib/cache-keys.ts`, narwhal#727):**
+  - Added a cached cluster-wide `/apis/apps/v1/replicasets` fetch (`compliance:replicasets:list`, 60s TTL, using `complianceK8sFetch` and `K8S_POLICY`) when building Compliance Config Audit list/detail views and excluded `ReplicaSet` reports whose owning `ReplicaSet` has `spec.replicas === 0` so old Deployment revisions no longer inflate live findings in the list or summary.
+  - Failed safe so live findings are never hidden: if `/apis/apps/v1/replicasets` cannot be read (e.g. 403/timeout, without caching the failed list) or a report's `ReplicaSet` is missing from the list, kept all affected reports and logged one warning.
+  - Passed each active `ReplicaSet`'s `metadata.ownerReferences` Deployment names into `normalizeWorkloadName` / `matchConfigAuditException` so a `SafeEncodeString` hash suffix collapses to `<name>` only when `ownerReferences` names a `Deployment` with `<name>` (standalone ReplicaSets like `harbor-core-<hash-like>` with no Deployment owner are no longer accepted; unknown ownership keeps the alphabet fallback without broadening acceptance).
+
 ## [1.1.20] - 2026-11-19
 
 Security patch release: permission reductions now take effect in the portal without waiting for the next sign-in, and

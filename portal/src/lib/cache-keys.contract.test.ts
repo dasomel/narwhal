@@ -341,6 +341,7 @@ describe("cacheKeys builders reproduce the pre-existing key strings byte-for-byt
     expect(cacheKeys.alertmanagerActive()).toBe("alerts:active")
     expect(cacheKeys.complianceConfigAuditList()).toBe("compliance:config-audit:list")
     expect(cacheKeys.complianceConfigAuditDetail("ns", "name")).toBe("compliance:config-audit:ns:name")
+    expect(cacheKeys.complianceReplicaSets()).toBe("compliance:replicasets:list")
     expect(cacheKeys.complianceRbacAuditList()).toBe("compliance:rbac-audit:list")
     expect(cacheKeys.complianceRbacAuditDetail("ns", "name")).toBe("compliance:rbac-audit:ns:name")
     expect(cacheKeys.complianceInfraAuditList()).toBe("compliance:infra-audit:list")

@@ -174,6 +174,26 @@ interface RawAuditList {
   items: RawAuditReport[]
 }
 
+interface RawReplicaSet {
+  metadata: {
+    name: string
+    namespace?: string
+    ownerReferences?: Array<{ kind: string; name: string }>
+  }
+  spec?: {
+    replicas?: number
+  }
+}
+
+interface RawReplicaSetList {
+  items?: RawReplicaSet[]
+}
+
+interface ReplicaSetSummary {
+  replicas: number | null
+  deploymentOwners: string[]
+}
+
 interface RawComplianceReport {
   metadata: {
     name: string
@@ -356,7 +376,12 @@ function resolveScopeFromClasses(classes: Set<AcceptedClass>): AcceptedScope | u
   return "mixed"
 }
 
-function configAuditMatcher(namespace: string, kind: string, name: string): AcceptanceMatcher {
+function configAuditMatcher(
+  namespace: string,
+  kind: string,
+  name: string,
+  deploymentOwners?: readonly string[],
+): AcceptanceMatcher {
   if (isSystemNamespace(namespace)) {
     const reasonKey: AcceptedReasonKey = "compliance.acceptedReason.systemNamespace"
     return () => ({
@@ -368,7 +393,7 @@ function configAuditMatcher(namespace: string, kind: string, name: string): Acce
     })
   }
   return (checkId: string) => {
-    const match = matchConfigAuditException(namespace, kind, name, checkId)
+    const match = matchConfigAuditException(namespace, kind, name, checkId, deploymentOwners)
     if (!match) return { accepted: false }
     return {
       accepted: true,
@@ -380,7 +405,10 @@ function configAuditMatcher(namespace: string, kind: string, name: string): Acce
   }
 }
 
-function classifyConfigAuditItem(item: RawAuditReport): {
+function classifyConfigAuditItem(
+  item: RawAuditReport,
+  deploymentOwners?: readonly string[],
+): {
   row: ConfigAuditRow
   matcher: AcceptanceMatcher
 } {
@@ -388,7 +416,7 @@ function classifyConfigAuditItem(item: RawAuditReport): {
   const kind = labels["trivy-operator.resource.kind"] ?? "Unknown"
   const name = labels["trivy-operator.resource.name"] ?? item.metadata.name
   const namespace = item.metadata.namespace ?? ""
-  const matcher = configAuditMatcher(namespace, kind, name)
+  const matcher = configAuditMatcher(namespace, kind, name, deploymentOwners)
 
   if (isSystemNamespace(namespace)) {
     const summary = buildCheckSummaryFromCounts(item.report.summary)
@@ -518,6 +546,63 @@ function resolveRbacRoleName(item: RawAuditReport): string {
   return ownerRefs[0]?.name ?? labels["trivy-operator.resource.name"] ?? item.metadata.name
 }
 
+// --- ReplicaSet lookup for stale-revision filtering & exact Deployment ownership (narwhal#727) ---
+
+async function fetchReplicaSetMap(): Promise<Map<string, ReplicaSetSummary> | null> {
+  const cacheKey = cacheKeys.complianceReplicaSets()
+  const cached = await cacheGet<Record<string, ReplicaSetSummary>>(cacheKey)
+  if (cached) {
+    return new Map(Object.entries(cached))
+  }
+
+  try {
+    const list = await complianceK8sFetch<RawReplicaSetList>("/apis/apps/v1/replicasets")
+    const record: Record<string, ReplicaSetSummary> = {}
+    for (const rs of list?.items ?? []) {
+      const ns = rs.metadata?.namespace ?? ""
+      const name = rs.metadata?.name ?? ""
+      if (!ns || !name) continue
+      const deploymentOwners = (rs.metadata.ownerReferences ?? [])
+        .filter((ref) => ref.kind === "Deployment" && typeof ref.name === "string" && ref.name.length > 0)
+        .map((ref) => ref.name)
+      record[`${ns}/${name}`] = {
+        replicas: typeof rs.spec?.replicas === "number" ? rs.spec.replicas : null,
+        deploymentOwners,
+      }
+    }
+    await cacheSet(cacheKey, record, cacheTtl("complianceReplicaSets"))
+    return new Map(Object.entries(record))
+  } catch (err) {
+    console.warn(
+      "[compliance] failed to list ReplicaSets, keeping all ReplicaSet reports:",
+      err instanceof Error ? err.message : err,
+    )
+    return null
+  }
+}
+
+function resolveReplicaSetMetadata(
+  item: RawAuditReport,
+  rsMap: Map<string, ReplicaSetSummary> | null,
+): { drop: boolean; deploymentOwners?: readonly string[]; missingKey?: string } {
+  const labels = item.metadata.labels ?? {}
+  const kind = labels["trivy-operator.resource.kind"] ?? "Unknown"
+  if (kind !== "ReplicaSet" || rsMap === null) {
+    return { drop: false }
+  }
+  const namespace = item.metadata.namespace ?? ""
+  const resourceName = labels["trivy-operator.resource.name"]
+  const rsKey = namespace && resourceName ? `${namespace}/${resourceName}` : ""
+  const rsMeta = rsKey ? rsMap.get(rsKey) : undefined
+  if (!rsMeta) {
+    return { drop: false, missingKey: rsKey || `${namespace}/${item.metadata.name}` }
+  }
+  if (rsMeta.replicas === 0) {
+    return { drop: true }
+  }
+  return { drop: false, deploymentOwners: rsMeta.deploymentOwners }
+}
+
 // --- getConfigAuditList ---
 
 export async function getConfigAuditList(): Promise<ConfigAuditRow[]> {
@@ -526,10 +611,23 @@ export async function getConfigAuditList(): Promise<ConfigAuditRow[]> {
   if (cached) return cached
 
   try {
-    const list = await complianceK8sFetch<RawAuditList>(
-      "/apis/aquasecurity.github.io/v1alpha1/configauditreports",
-    )
-    const rows: ConfigAuditRow[] = (list.items ?? []).map((item) => classifyConfigAuditItem(item).row)
+    const [list, rsMap] = await Promise.all([
+      complianceK8sFetch<RawAuditList>("/apis/aquasecurity.github.io/v1alpha1/configauditreports"),
+      fetchReplicaSetMap(),
+    ])
+    const missingReplicaSets: string[] = []
+    const rows: ConfigAuditRow[] = []
+    for (const item of list.items ?? []) {
+      const rsState = resolveReplicaSetMetadata(item, rsMap)
+      if (rsState.missingKey) missingReplicaSets.push(rsState.missingKey)
+      if (rsState.drop) continue
+      rows.push(classifyConfigAuditItem(item, rsState.deploymentOwners).row)
+    }
+    if (missingReplicaSets.length > 0) {
+      console.warn(
+        `[compliance] ReplicaSet(s) missing from cluster list, keeping reports fail-safe: ${missingReplicaSets.join(", ")}`,
+      )
+    }
     await cacheSet(cacheKey, rows, cacheTtl("complianceConfigAuditList"))
     return rows
   } catch (err) {
@@ -549,9 +647,10 @@ export async function getConfigAuditDetail(
   if (cached) return cached
 
   try {
-    const list = await complianceK8sFetch<RawAuditList>(
-      "/apis/aquasecurity.github.io/v1alpha1/configauditreports",
-    )
+    const [list, rsMap] = await Promise.all([
+      complianceK8sFetch<RawAuditList>("/apis/aquasecurity.github.io/v1alpha1/configauditreports"),
+      fetchReplicaSetMap(),
+    ])
     const item = (list.items ?? []).find((i) => {
       const labels = i.metadata.labels ?? {}
       const rName = labels["trivy-operator.resource.name"] ?? i.metadata.name
@@ -559,7 +658,15 @@ export async function getConfigAuditDetail(
     })
     if (!item) return null
 
-    const { row, matcher } = classifyConfigAuditItem(item)
+    const rsState = resolveReplicaSetMetadata(item, rsMap)
+    if (rsState.missingKey) {
+      console.warn(
+        `[compliance] ReplicaSet missing from cluster list, keeping report detail fail-safe: ${rsState.missingKey}`,
+      )
+    }
+    if (rsState.drop) return null
+
+    const { row, matcher } = classifyConfigAuditItem(item, rsState.deploymentOwners)
     const detail: ConfigAuditDetail = {
       ...row,
       checks: mapChecks(item.report.checks ?? [], matcher),

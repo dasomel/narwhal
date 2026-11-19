@@ -55,6 +55,11 @@ rules:
     # cilium DaemonSet image tag; without this it 403s and shows version "unknown".
     resources: [deployments, statefulsets, daemonsets]
     verbs: [get, list, watch]
+  # narwhal#727 (owner decision 2026-11-19): read ReplicaSet spec.replicas (drop scaled-to-0
+  # revisions from Compliance) and metadata.ownerReferences (exact Deployment ownership).
+  - apiGroups: [apps]
+    resources: [replicasets]
+    verbs: [get, list]
   - apiGroups: [rbac.authorization.k8s.io]
     resources: [clusterrolebindings, rolebindings, clusterroles, roles]
     verbs: [get, list, watch]

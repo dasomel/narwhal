@@ -9,6 +9,13 @@
 
 ## [Unreleased]
 
+### 수정
+
+- **`spec.replicas == 0`으로 축소된 구 ReplicaSet의 ConfigAuditReport 제외 및 Deployment 소유권 검증 (`src/lib/compliance.ts`, `src/lib/compliance-accepted.ts`, `src/lib/cache-keys.ts`, narwhal#727):**
+  - 컴플라이언스 Config Audit 목록·상세 조회 시 `complianceK8sFetch`(`K8S_POLICY`)로 `/apis/apps/v1/replicasets`를 1회 조회·캐시(`compliance:replicasets:list`, 60초 TTL)하고 `spec.replicas === 0`인 `ReplicaSet`의 보고서를 목록과 요약에서 제외해 롤아웃 후 남은 이전 리비전이 활성 결함으로 집계되지 않도록 수정했습니다.
+  - 라이브 결함이 가려지지 않도록 fail-safe로 동작합니다. `ReplicaSet` 목록 조회 실패(403/타임아웃 등, 실패 결과 미캐시) 또는 목록 내 대상 `ReplicaSet` 누락 시 해당 보고서를 모두 유지하고 경고 1건만 기록합니다.
+  - 조회한 `ReplicaSet`의 `metadata.ownerReferences` Deployment 이름을 `normalizeWorkloadName` / `matchConfigAuditException`에 전달해 `ownerReferences`가 동일 이름의 `Deployment`를 가리킬 때만 `SafeEncodeString` 해시 접미사를 접도록 수정했습니다(소유자가 없는 `harbor-core-<hash-like>` 단독 ReplicaSet은 수용하지 않으며, 소유권 미확인 시에는 범위를 넓히지 않고 기존 알파벳 규칙을 유지합니다).
+
 ## [1.1.20] - 2026-11-19
 
 권한 축소가 다음 로그인을 기다리지 않고 포털에 반영되고, 열린 탭이 이전 범위로 가져온 데이터를 계속 보여 주지 않도록 하는

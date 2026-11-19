@@ -3499,6 +3499,9 @@ PYEOF'
     python3 scripts/test/lib/check-push-security-db-ca.py --mutation-verify
   check R371 "Round-4 compliance hardening (KSV014/KSV104): Falco containerSecurityContext sets both privileged=true and readOnlyRootFilesystem=true (GitOps-only), Velero node-agent readOnlyRootFilesystem=true with /root and /tmp emptyDirs across velero.yaml & 08-4-storage.sh, and nfs-quota-agent RuntimeDefault seccomp + privileged + readOnlyRootFilesystem via chart values in 05-nfs-quota-agent.sh with offline helm renders; 11 mutations caught" \
     python3 scripts/test/lib/check-round4-compliance-hardening.py --mutation-verify
+  # 2026-11-19 (#727 owner decision): ClusterRole narwhal-portal grants get/list only on apps/replicasets so Compliance filters spec.replicas==0 and matches Deployment ownerReferences.
+  check R375 "portal ClusterRole grants exactly get/list on apps/replicasets (no watch, write verbs, or wildcards) and docs/common/compliance-hardening.md reflects ReplicaSet filtering & ownerReferences; 6 mutations caught (#727)" \
+    python3 scripts/test/lib/check-portal-replicasets-rbac.py --mutation-verify
 }
 
 #=========================================

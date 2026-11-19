@@ -9,6 +9,20 @@
 
 ## [Unreleased]
 
+## [1.1.20] - 2026-11-19
+
+권한 축소가 다음 로그인을 기다리지 않고 포털에 반영되고, 열린 탭이 이전 범위로 가져온 데이터를 계속 보여 주지 않도록 하는
+보안 패치 릴리스입니다(narwhal#734, narwhal#688).
+
+### 운영자 참고 / 동작 변경
+
+- Keycloak 그룹 변경은 다음 액세스 토큰 갱신 시 반영됩니다. 갱신이 실패하면(Keycloak 접속 불가, 세션 회수) 사용자는
+  guest로 처리되고 다시 로그인하도록 안내됩니다. 토큰 수명보다 긴 Keycloak 장애 중에는 관리자를 포함한 로그인 사용자가
+  Keycloak이 복구될 때까지 접근할 수 없습니다.
+- 세션의 서버 측 접근 범위가 바뀌면 열린 탭이 새로고침됩니다(최근 30초 안에 이미 새로고침했다면 "접근 범위가 변경되었습니다"
+  화면). 실시간 이벤트·서비스 흐름 스트림은 토큰 수명마다 최소 한 번 다시 연결됩니다.
+- 별도 설정은 필요하지 않습니다.
+
 ### 수정
 
 - **Keycloak 토큰 갱신 시 `groups`·`teams` 클레임 재도출, 전 서버 게이트 fail-closed 차단 및 SSE 수명 제한 (`src/lib/auth.ts`, `src/lib/scope.ts`, `src/app/api/events/stream/route.ts`, `src/components/providers.tsx`, narwhal#734):**
@@ -874,7 +888,8 @@ Portal의 첫 번째 공개 릴리스.
     매니페스트(`deploy/kaniko-build-job.yaml`).
   - 실시간 핫 모듈 교체(HMR) 및 컨테이너 파일 동기화를 위해 구성된 Skaffold 개발 프로필.
 
-[Unreleased]: https://github.com/dasomel/narwhal/compare/portal/v1.1.19...HEAD
+[Unreleased]: https://github.com/dasomel/narwhal/compare/portal/v1.1.20...HEAD
+[1.1.20]: https://github.com/dasomel/narwhal/compare/portal/v1.1.19...portal/v1.1.20
 [1.1.19]: https://github.com/dasomel/narwhal/compare/portal/v1.1.18...portal/v1.1.19
 [1.1.18]: https://github.com/dasomel/narwhal/compare/portal/v1.1.17...portal/v1.1.18
 [1.1.17]: https://github.com/dasomel/narwhal/compare/portal/v1.1.16...portal/v1.1.17

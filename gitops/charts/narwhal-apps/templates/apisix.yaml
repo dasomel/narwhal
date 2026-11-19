@@ -15,15 +15,80 @@ spec:
     targetRevision: "2.13.0"
     helm:
       valuesObject:
+        # D-apisix-rofs (#726): init-conf copies bundled conf files into apisix-conf emptyDir
+        # (cp -R, avoiding cp -a timestamp error on /conf-rw/.) before main mounts
+        # /usr/local/apisix/conf. Chart renders extraVolumeMounts after its subPath config.yaml
+        # mount; kubelet applies mounts by path depth so config.yaml and cert/narwhal overlay
+        # on top of apisix-conf (extraVolumeMounts still lists apisix-conf before cert/narwhal).
+        extraInitContainers:
+          - name: init-conf
+            image: "apache/apisix:3.15.0-ubuntu"
+            imagePullPolicy: IfNotPresent
+            command:
+              - sh
+              - -c
+              - cp -R /usr/local/apisix/conf/. /conf-rw/
+            securityContext:
+              allowPrivilegeEscalation: false
+              readOnlyRootFilesystem: true
+              runAsNonRoot: true
+              runAsUser: 636
+              capabilities:
+                drop:
+                  - ALL
+              seccompProfile:
+                type: RuntimeDefault
+            resources:
+              requests:
+                cpu: 10m
+                memory: 16Mi
+              limits:
+                cpu: 100m
+                memory: 64Mi
+            volumeMounts:
+              - name: apisix-conf
+                mountPath: /conf-rw
         extraVolumes:
+          - name: apisix-conf
+            emptyDir: {}
+          - name: apisix-logs
+            emptyDir: {}
+          - name: tmp
+            emptyDir: {}
+          - name: apisix-client-body-temp
+            emptyDir: {}
+          - name: apisix-proxy-temp
+            emptyDir: {}
+          - name: apisix-fastcgi-temp
+            emptyDir: {}
+          - name: apisix-uwsgi-temp
+            emptyDir: {}
+          - name: apisix-scgi-temp
+            emptyDir: {}
           - name: narwhal-root-ca
             secret:
               secretName: narwhal-root-ca-secret
               optional: true
         extraVolumeMounts:
+          - name: apisix-conf
+            mountPath: /usr/local/apisix/conf
           - name: narwhal-root-ca
             mountPath: /usr/local/apisix/conf/cert/narwhal
             readOnly: true
+          - name: apisix-logs
+            mountPath: /usr/local/apisix/logs
+          - name: tmp
+            mountPath: /tmp
+          - name: apisix-client-body-temp
+            mountPath: /usr/local/apisix/client_body_temp
+          - name: apisix-proxy-temp
+            mountPath: /usr/local/apisix/proxy_temp
+          - name: apisix-fastcgi-temp
+            mountPath: /usr/local/apisix/fastcgi_temp
+          - name: apisix-uwsgi-temp
+            mountPath: /usr/local/apisix/uwsgi_temp
+          - name: apisix-scgi-temp
+            mountPath: /usr/local/apisix/scgi_temp
         # APISIX 3.15 has NO kubernetes secret manager module, so OIDC secrets
         # are injected as env vars here and referenced via $env://VAR in
         # apisix-routes.yaml (chart renders these with valueFrom into the apisix container).
@@ -78,17 +143,17 @@ spec:
               secretKeyRef:
                 name: velero-ui-oidc-secret
                 key: session_secret
-        # Trivy KSV001/003/012/104 on the apisix container. NOTE: this chart's
+        # Trivy KSV001/003/012/014/104 on the apisix container. NOTE: this chart's
         # deployment.yaml template reads `.Values.securityContext` and `.Values.resources`
         # (TOP-LEVEL, sibling of `apisix:` below), NOT `apisix.securityContext` or
         # `apisix.resources` -- verified by reading the chart source.
         # runAsNonRoot: true + runAsUser: 636: resolves non-numeric USER "apisix"
         # so kubelet verifies non-root without CreateContainerConfigError (D-NETWORKING-HARDENING).
-        # readOnlyRootFilesystem is kept disabled because APISIX dynamically writes
-        # nginx.conf into /usr/local/apisix/conf at startup and mounting raw emptyDir
-        # masks bundled mime.types / config-default.yaml.
+        # readOnlyRootFilesystem: true works via init-conf cp -R into apisix-conf emptyDir
+        # plus emptyDirs for logs, /tmp, and Nginx *_temp directories (D-apisix-rofs).
         securityContext:
           allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
           runAsNonRoot: true
           runAsUser: 636
           capabilities:

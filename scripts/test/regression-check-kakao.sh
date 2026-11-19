@@ -3500,8 +3500,8 @@ PYEOF'
   # 2026-11-19 (#735): alloy-logs-ingress-policy restricts OTLP (4317/4318) to Grafana (4317+15008) and narwhal.io/otlp-ingest=true non-ambient namespaces (4317/4318 plain TCP, no 15008) while preserving Prometheus metrics (12345+15008) and 08-2-monitoring.sh bootstrap apply
   check R377 "alloy-logs-ingress-policy restricts OTLP (4317/4318 plain TCP without HBONE 15008) to narwhal.io/otlp-ingest=true non-ambient namespaces (dev opted in), Grafana (4317+15008), and Prometheus (12345+15008), enforces exact ports/no endPort, applies at 08-2-monitoring.sh bootstrap, and documents ambient constraint/residual risks; 19 mutations caught (D-ALLOY-OTLP-INGRESS)" \
     python3 scripts/test/lib/check-alloy-otlp-ingress-optin.py --mutation-verify
-  # 2026-11-19 (#728): push-security-db.sh validates --ca-cert early with openssl x509 and docs name devtools
-  check R372 "push-security-db.sh validates --ca-cert early with openssl x509 (rejects empty, non-PEM, expired without leaking content), behavioural test without registry, and docs export from canonical devtools namespace; 11 mutations caught (#728)" \
+  # 2026-11-19 (#728): push-security-db.sh validates --ca-cert early with openssl x509 and docs name devtools (2026-11-20: hermetic bundle/env + decoy guard)
+  check R372 "push-security-db.sh validates --ca-cert early with openssl x509 (rejects empty, non-PEM, expired without leaking content), hermetic behavioural test with decoy bundle isolation guard, and docs export from canonical devtools namespace; 11 mutations caught (#728)" \
     python3 scripts/test/lib/check-push-security-db-ca.py --mutation-verify
   check R371 "Round-4 compliance hardening (KSV014/KSV104): Falco containerSecurityContext sets both privileged=true and readOnlyRootFilesystem=true (GitOps-only), Velero node-agent readOnlyRootFilesystem=true with /root and /tmp emptyDirs across velero.yaml & 08-4-storage.sh, and nfs-quota-agent RuntimeDefault seccomp + privileged + readOnlyRootFilesystem via chart values in 05-nfs-quota-agent.sh with offline helm renders; 11 mutations caught" \
     python3 scripts/test/lib/check-round4-compliance-hardening.py --mutation-verify

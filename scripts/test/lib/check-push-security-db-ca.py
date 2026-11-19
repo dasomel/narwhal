@@ -11,7 +11,8 @@ Invariants:
   5. Documentation across operations.md, dns-access.md, disaster-recovery.md, and airgap README.md
      references the canonical devtools namespace for narwhal-ca-cert and platform-system for
      cert-manager/narwhal-wildcard-tls (never the non-existent cert-manager namespace).
-  6. Behavioral execution tests pass without requiring a registry or cluster.
+  6. Behavioral execution tests pass without requiring a registry or cluster, and remain
+     hermetic regardless of local narwhal-airgap-bundle-* directories or AIRGAP_* env vars.
   7. Temporary files from CA validation and subsequent stages are cleaned up on all exit paths via
      a single EXIT trap without leaving files behind.
 
@@ -150,9 +151,28 @@ def run_behavioral(push_script_path: Path) -> list[str]:
             valid_f.read_text().replace("\n", "\r\n").encode("utf-8")
         )
 
-        def exec_push(ca_arg: str):
+        missing_bundle = tdp / "missing-bundle"
+        hermetic_cwd = tdp / "empty-cwd"
+        hermetic_cwd.mkdir()
+
+        # D-R372-HERMETIC-BUNDLE: push-security-db.sh sources 00-config.sh, which resolves
+        # AIRGAP_BUNDLE_DIR to $(pwd)/narwhal-airgap-bundle-${AIRGAP_ARCH##*/} when unset.
+        # Pin AIRGAP_BUNDLE_DIR to a nonexistent temp path, strip host AIRGAP_*/Harbor env,
+        # and run from an empty cwd so local developer bundles cannot hijack behavioral tests.
+        # Cost: tests do not probe default pwd bundle discovery; escape hatch: none needed.
+        def hermetic_env(extra: dict[str, str] | None = None) -> dict[str, str]:
+            env = {
+                k: v for k, v in os.environ.items()
+                if not k.startswith("AIRGAP_") and k not in ("HARBOR_ADMIN_PASSWORD", "DOMAIN")
+            }
+            env["AIRGAP_BUNDLE_DIR"] = str(missing_bundle)
+            if extra:
+                env.update(extra)
+            return env
+
+        def exec_push(ca_arg: str, cwd: Path = hermetic_cwd):
             cmd = ["bash", str(push_script_path), "--ca-cert", ca_arg]
-            res = subprocess.run(cmd, capture_output=True, text=True)
+            res = subprocess.run(cmd, env=hermetic_env(), cwd=str(cwd), capture_output=True, text=True)
             return res.returncode, res.stdout, res.stderr
 
         # 1. Missing file -> reject
@@ -226,11 +246,9 @@ def run_behavioral(push_script_path: Path) -> list[str]:
         # 11. Cleanup on exit: valid CA + missing bundle/manifest -> fails after validation, temp dir must be empty
         clean_test_tmp = tdp / "clean-test-tmp"
         clean_test_tmp.mkdir()
-        missing_bundle = tdp / "missing-bundle"
-        env_clean = os.environ.copy()
-        env_clean["TMPDIR"] = str(clean_test_tmp)
+        env_clean = hermetic_env({"TMPDIR": str(clean_test_tmp)})
         cmd_clean = ["bash", str(push_script_path), "--ca-cert", str(valid_f), "--bundle", str(missing_bundle)]
-        res_clean = subprocess.run(cmd_clean, env=env_clean, capture_output=True, text=True)
+        res_clean = subprocess.run(cmd_clean, env=env_clean, cwd=str(hermetic_cwd), capture_output=True, text=True)
         if res_clean.returncode == 0:
             errs.append("cleanup test: expected nonzero exit due to missing bundle, got rc=0")
         if "manifest.json not found" not in res_clean.stderr:
@@ -238,6 +256,18 @@ def run_behavioral(push_script_path: Path) -> list[str]:
         leftover = list(clean_test_tmp.iterdir())
         if leftover:
             errs.append(f"cleanup test: temporary files remained after script exit in TMPDIR: {[p.name for p in leftover]}")
+
+        # 12. Decoy bundle isolation guard: local narwhal-airgap-bundle-* in cwd must not leak
+        decoy_cwd = tdp / "decoy-cwd"
+        for arch in ("arm64", "amd64"):
+            promoted = decoy_cwd / f"narwhal-airgap-bundle-{arch}" / "security-db" / "promoted"
+            promoted.mkdir(parents=True)
+            (promoted / "manifest.json").write_text("{}")
+        rc, out, err = exec_push(str(valid_f), cwd=decoy_cwd)
+        if "ERROR: --ca-cert" in err:
+            errs.append(f"decoy bundle cwd: rejected by --ca-cert check: {err!r}")
+        if "manifest.json not found" not in err or str(missing_bundle) not in err:
+            errs.append(f"decoy bundle cwd: host/cwd bundle leaked into push-security-db.sh, got: {err!r}")
 
     return errs
 
@@ -292,6 +322,30 @@ def mutation_verify(root: Path) -> int:
         clean_errs = check_static(base) + run_behavioral(base / "scripts/airgap/lib/push-security-db.sh")
         if clean_errs:
             print("clean control failed:", clean_errs, file=sys.stderr)
+            return 1
+
+        # Prove behavioral isolation even when caller exports a decoy AIRGAP_BUNDLE_DIR / AIRGAP_* env
+        decoy_env_bundle = base / "decoy-env-bundle"
+        (decoy_env_bundle / "security-db" / "promoted").mkdir(parents=True)
+        (decoy_env_bundle / "security-db" / "promoted" / "manifest.json").write_text("{}")
+        decoy_vars = {
+            "AIRGAP_BUNDLE_DIR": str(decoy_env_bundle),
+            "AIRGAP_ARCH": "linux/amd64",
+            "AIRGAP_SECURITY_DB_CA_CERT": str(base / "nonexistent-decoy.crt"),
+            "HARBOR_ADMIN_PASSWORD": "decoy-password",
+        }
+        saved_env = {k: os.environ.get(k) for k in decoy_vars}
+        try:
+            os.environ.update(decoy_vars)
+            decoy_errs = run_behavioral(base / "scripts/airgap/lib/push-security-db.sh")
+        finally:
+            for k, old_v in saved_env.items():
+                if old_v is None:
+                    os.environ.pop(k, None)
+                else:
+                    os.environ[k] = old_v
+        if decoy_errs:
+            print("decoy-env isolation failed:", decoy_errs, file=sys.stderr)
             return 1
 
         for name, rel, old, new in cases:

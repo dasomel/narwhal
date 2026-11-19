@@ -164,7 +164,8 @@ Mesh 실행을 증명하지 않는다. runtime이 Docker default bridge에서 Ke
 
 `docs/evaluation/README.md`의 "2단계 — 기능 스모크"가 정확히 T3다:
 `verify-cluster.sh`(노드/VIP/etcd/CNI/DB/APISIX/TLS/DNS), `test-sso.sh`(OIDC 플로우),
-`verify-backup.sh`(Velero). `regression-check-kakao.sh --runtime`의 T01-T13도 T3
+`verify-backup.sh`(Velero), `check-bootstrap-helm-drift.sh`(부트스트랩 Helm 릴리스 드리프트).
+`regression-check-kakao.sh --runtime`의 T01-T13도 T3
 (T14/T15은 §3.4로 분류 — 에어갭 관심사이기 때문).
 
 | ID | 검증 대상 |

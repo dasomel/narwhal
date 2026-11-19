@@ -909,6 +909,21 @@ vagrant ssh master-1 -c "bash /home/vagrant/scripts/test/test-sso.sh \
   --section=oidc"
 ```
 
+### 부트스트랩 Helm 릴리스 드리프트 검증 (`check-bootstrap-helm-drift.sh`)
+
+ArgoCD Application으로 관리되지 않는 부트스트랩 전용 Helm 릴리스(`apisix-ingress-controller`, `gitea`, `nfs-quota-agent`, `cnpg`, `csi-driver-nfs` 등)에 대해, 프로비저닝 스크립트에 선언된 리터럴 `--set` 플래그와 클러스터의 실제 Helm 릴리스 설정(`helm get values -o json`) 간의 일치 여부를 검사한다 (read-only).
+
+```bash
+# 호스트에서 실행 (KUBECONFIG 환경 변수가 설정된 경우)
+scripts/test/check-bootstrap-helm-drift.sh
+
+# 게스트(master-1) 내부에서 실행
+vagrant ssh master-1 -c "sudo HELM_CMD='helm --kubeconfig /etc/kubernetes/admin.conf' bash /home/vagrant/scripts/test/check-bootstrap-helm-drift.sh"
+
+# 특정 릴리스만 검사
+scripts/test/check-bootstrap-helm-drift.sh --release=apisix-ingress-controller
+```
+
 ### 검증 결과 해석
 
 ```bash

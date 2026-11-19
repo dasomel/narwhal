@@ -62,6 +62,7 @@ The repository now also adopts the OpenForge engineering baseline for documentat
 - `docs/common/compliance-hardening.md`
 - `scripts/test/verify-cluster.sh`
 - `scripts/test/test-sso.sh`
+- `scripts/test/check-bootstrap-helm-drift.sh`
 - `scripts/test/regression-check-kakao.sh`
 
 When one of the figures or capabilities above changes, update the source document first and then refresh this snapshot.

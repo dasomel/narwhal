@@ -1,0 +1,63 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-bootstrap-helm-drift-728-20261119",
+  "task": "Lane 728-2: Add live bootstrap Helm release drift check scripts/test/check-bootstrap-helm-drift.sh, parser and offline behavioral test suite scripts/test/lib/check-bootstrap-helm-drift.py, wire R375 static regression check with mutation proof, update operations and test strategy documentation, record lessons-log row, and provide orchestrator runbook.",
+  "changeContext": {
+    "paths": [
+      ".agents/evals/traces/2026-11-bootstrap-helm-drift.json",
+      "docs/IMPLEMENTATION-STATUS.md",
+      "docs/common/lessons-log.md",
+      "docs/common/test-strategy.md",
+      "docs/vagrant/operations.md",
+      "scripts/test/check-bootstrap-helm-drift.sh",
+      "scripts/test/lib/check-bootstrap-helm-drift.py",
+      "scripts/test/regression-check-kakao.sh"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Scope: Read-only live check scripts/test/check-bootstrap-helm-drift.sh (HELM_CMD/KUBECTL_CMD env overrides, 0/1/2 exit codes), offline parser and behavioral unit tests in scripts/test/lib/check-bootstrap-helm-drift.py (multi-line, bracket index, escaped dot, --set-json, shell variable and secret skipping with zero leak), R375 static regression check with 14 mutations caught, docs and lessons-log updates, and eval trace. Excluded: No cluster/VM mutation, no push, no securityContext or policy relaxation."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "Measured 2026-11-18: apisix-ingress-controller was at Helm revision 1 on the running cluster despite PR #715 adding runAsNonRoot/readOnlyRootFilesystem --set flags to scripts/cluster/08-1-networking.sh; bootstrap-only Helm releases (apisix, apisix-ingress-controller, gitea, nfs-quota-agent, cnpg, csi-driver-nfs) lack ArgoCD Application sync, leaving script changes silently unapplied until manual helm re-run. Missing automated drift detection between provisioning scripts and live helm get values."
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "Created scripts/test/check-bootstrap-helm-drift.sh and helper scripts/test/lib/check-bootstrap-helm-drift.py to extract literal --set/--set-string/--set-json flags from bootstrap scripts (04-addons, 05-nfs-quota-agent, 07-cnpg, 08-1-networking, 12-gitea), filter out shell variables ($) and secret values (password, passwd, token, adminKey; listing skipped keys by name only), and compare against 'helm get values <release> -n <ns> -o json', printing one line per drifted key and exiting 1 on drift, 0 on sync, 2 on execution failure; wired R375 in regression-check-kakao.sh, added operations/test-strategy docs, and recorded lessons-log row."
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "Offline parser behavioral tests (multi-line backslash, bracket array indexing, escaped dots, --set-json, strict set-string, shell var skipping, secret skipping and zero credential leakage, sync no-op, value mismatch, missing key), static repo checks, 14 mutation verifications, shellcheck, bash -n, make validate, markdownlint-changed, markdownlint-cli2, and git diff --check; no live cluster or VM touched.",
+      "summary": "All offline parser unit tests, static validations, 14 mutation verifications, and shell/markdown/diff checks passed.",
+      "evidence": [
+        "test:make validate -> exit 0 (Syntax OK + all GitOps YAML OK)",
+        "test:python3 scripts/test/lib/check-bootstrap-helm-drift.py --mutation-verify -> PASS: R375 bootstrap helm drift check + offline parser behavioural tests (14 mutations rejected)",
+        "test:shellcheck -S warning scripts/test/check-bootstrap-helm-drift.sh -> exit 0",
+        "test:bash -n scripts/test/check-bootstrap-helm-drift.sh -> exit 0",
+        "test:python3 scripts/ci/markdownlint-changed.py --base origin/main -> No markdownlint violations on added/modified active-documentation lines",
+        "test:npx --yes markdownlint-cli2 docs/vagrant/operations.md docs/common/lessons-log.md docs/common/test-strategy.md docs/IMPLEMENTATION-STATUS.md -> Summary: 0 issues in 4 files",
+        "test:git diff --check -> exit 0",
+        "test:python3 .agents/evals/gate.py --trace .agents/evals/traces/2026-11-bootstrap-helm-drift.json --baseline .agents/evals/baseline.eval.json -> exit 0 (0 regressions)"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "completion_claim",
+      "summary": "Static repo checks, offline parser behavioural tests, 14 mutation verifications, make validate, shellcheck, bash -n, markdownlint, and gate eval trace pass; live cluster execution on guest (sudo helm --kubeconfig /etc/kubernetes/admin.conf) remains for the orchestrator via the runbook."
+    },
+    {
+      "id": "e6",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Lane 728-2 (narwhal#728) completed: live bootstrap Helm drift check scripts/test/check-bootstrap-helm-drift.sh, parser helper scripts/test/lib/check-bootstrap-helm-drift.py, R375 regression check with 14 mutations caught, docs and lessons-log updates, and eval trace."
+    }
+  ]
+}

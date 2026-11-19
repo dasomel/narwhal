@@ -51,7 +51,8 @@
         "test:helm template narwhal-apps gitops/charts/narwhal-apps -s templates/alloy-logs-ingress-policy.yaml -s templates/network-policies.yaml -s templates/dev-namespace.yaml -> exit 0",
         "test:python3 scripts/ci/markdownlint-changed.py --base origin/main -> No markdownlint violations on added/modified active-documentation lines",
         "test:git diff --check -> exit 0",
-        "test:live local cluster (orchestrator, measured 2026-11-19 prior to removing 15008 from opt-in): dev (dataplane-mode=none) pod IP :4318 -> 200 and :12345 -> no connection; ambient-enrolled opted-in scratch pod IP :12345/metrics -> HTTP 200 and Service :4318 -> HTTP 503; un-opted chaos-testing :4318 -> curl 000"
+        "test:live local cluster (orchestrator, measured 2026-11-19 prior to removing 15008 from opt-in): dev (dataplane-mode=none) pod IP :4318 -> 200 and :12345 -> no connection; ambient-enrolled opted-in scratch pod IP :12345/metrics -> HTTP 200 and Service :4318 -> HTTP 503; un-opted chaos-testing :4318 -> curl 000",
+        "test:live local cluster after the fix (orchestrator, measured 2026-11-19): policy rule for opted-in namespaces lists ports 4317,4318 only; dev (opted in, dataplane-mode none) 4318 -> 200 and 12345 -> no connection; chaos-testing (not opted in) 4318 and 12345 -> no connection; scratch namespace opted in AND ambient-enrolled: 12345 and 4318 -> no connection (before the fix 12345 returned 200 through HBONE); 20 new Grafana traces in Tempo; Loki shows 15 namespaces"
       ]
     },
     {

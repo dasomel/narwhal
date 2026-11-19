@@ -9,6 +9,18 @@ English | [한국어](CHANGELOG-ko.md)
 
 ## [Unreleased]
 
+## [1.1.21] - 2026-11-19
+
+Patch release: Compliance no longer counts Trivy reports left behind by superseded Deployment revisions (narwhal#727).
+
+### Operator notes / behaviour changes
+
+- **Requires the matching platform change:** the portal ClusterRole needs read-only `get`/`list` on `apps/replicasets`
+  (added in the same change set to `narwhal-portal-k8s.yaml`). Without it the ReplicaSet list fails and every report
+  is kept, which is the previous behaviour.
+- A report is dropped only for a fully drained old revision of a Deployment that has a newer revision. Deployments
+  scaled to zero, standalone ReplicaSets and revisions with terminating pods are still counted.
+
 ### Fixed
 
 - **Exclude ConfigAuditReports of superseded Deployment ReplicaSet revisions and verify Deployment ownership (`src/lib/compliance.ts`, `src/lib/compliance-accepted.ts`, narwhal#727):**
@@ -941,7 +953,8 @@ management dashboard built with Next.js 16 and React 19.
   - Skaffold development profile configured for live Hot Module Replacement (HMR) and container
     file syncing.
 
-[Unreleased]: https://github.com/dasomel/narwhal/compare/portal/v1.1.20...HEAD
+[Unreleased]: https://github.com/dasomel/narwhal/compare/portal/v1.1.21...HEAD
+[1.1.21]: https://github.com/dasomel/narwhal/compare/portal/v1.1.20...portal/v1.1.21
 [1.1.20]: https://github.com/dasomel/narwhal/compare/portal/v1.1.19...portal/v1.1.20
 [1.1.19]: https://github.com/dasomel/narwhal/compare/portal/v1.1.18...portal/v1.1.19
 [1.1.18]: https://github.com/dasomel/narwhal/compare/portal/v1.1.17...portal/v1.1.18

@@ -32,7 +32,7 @@
       "evidence": [
         "orchestrator: portal/v1.1.20 -> commit 4170d4e3baf8789c67499b90e4276c594de79c29; GitHub release published; publish workflow run 44442100593 succeeded",
         "orchestrator: image ghcr.io/dasomel/narwhal-portal:1.1.20; digest sha256:e73fd47be7bc03d5f1550aa0fe6ec3ae2180e79f636f034b3437c96863885dc1",
-        "orchestrator, measured 2026-11-19T02:13:57Z: crane digest returned the digest above; cosign verify v3.1.4 with the repository public key and transparency log passed on 2026-11-17"
+        "orchestrator, measured 2026-11-19T02:13:57Z: crane digest returned the digest above; cosign verify v3.1.4 with the repository public key and transparency log passed on 2026-11-19"
       ]
     },
     {

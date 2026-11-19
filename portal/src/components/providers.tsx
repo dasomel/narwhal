@@ -18,7 +18,11 @@ export function SessionErrorHandler() {
     if (session?.error !== REFRESH_TOKEN_ERROR || triggeredRef.current) return
     triggeredRef.current = true
     const providerId = process.env.NEXT_PUBLIC_AUTH_MOCK === "true" ? "mock" : "keycloak"
-    void signIn(providerId)
+    // Release the guard when the sign-in request itself fails (e.g. offline), so the next
+    // session update retries instead of leaving the tab stuck.
+    signIn(providerId).catch(() => {
+      triggeredRef.current = false
+    })
   }, [session?.error])
 
   return null

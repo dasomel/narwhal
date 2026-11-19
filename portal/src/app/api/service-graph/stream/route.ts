@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server"
-import { requireAdmin } from "@/lib/auth"
+import { auth, requireAdmin } from "@/lib/auth"
 import { roleGateErrorResponse } from "@/lib/role-gate-response"
 import { buildWorkloadToServiceMap, resolveWorkload } from "@/lib/service-graph"
 import { startFlowStream } from "@/lib/hubble-stream"
@@ -10,10 +10,24 @@ export const dynamic = "force-dynamic"
 // {source, destination, flowsPerSec} 목록을 흘려보낸다.
 // 서비스 ID는 그래프 API와 동일하게 resolveWorkload로 정규화한다.
 const TICK_MS = 2_000
+// narwhal#734: admin rights are checked once per connection, so bound the connection to the
+// access-token lifetime (5 min when unknown). EventSource reconnects and the new request is
+// authorised against the refreshed groups.
+const DEFAULT_MAX_STREAM_LIFETIME_MS = 5 * 60_000
+const MAX_TIMER_MS = 2_147_483_647
+
+function resolveStreamLifetimeMs(expiresAt?: number, nowMs = Date.now()): number {
+  if (typeof expiresAt === "number" && Number.isFinite(expiresAt)) {
+    return Math.min(Math.max(0, expiresAt * 1000 - nowMs), MAX_TIMER_MS)
+  }
+  return DEFAULT_MAX_STREAM_LIFETIME_MS
+}
 
 export async function GET(req: NextRequest) {
   const gate = await requireAdmin()
   if ("error" in gate) return roleGateErrorResponse(gate)
+  const session = await auth()
+  const streamLifetimeMs = resolveStreamLifetimeMs(session?.expiresAt)
 
   const serviceMap = await buildWorkloadToServiceMap()
   const encoder = new TextEncoder()
@@ -22,11 +36,13 @@ export async function GET(req: NextRequest) {
     start(controller) {
       const buckets = new Map<string, number>()
       let closed = false
+      let lifetimeTimer: ReturnType<typeof setTimeout> | undefined
 
       const safeClose = () => {
         if (closed) return
         closed = true
         clearInterval(tick)
+        if (lifetimeTimer) clearTimeout(lifetimeTimer)
         handle.cancel()
         try {
           controller.close()
@@ -72,6 +88,7 @@ export async function GET(req: NextRequest) {
         }
       }, TICK_MS)
 
+      lifetimeTimer = setTimeout(safeClose, streamLifetimeMs)
       req.signal.addEventListener("abort", safeClose)
     },
   })

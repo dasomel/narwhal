@@ -133,6 +133,23 @@ describe("Providers / SessionErrorHandler (narwhal#734)", () => {
     expect(mockSignIn).toHaveBeenCalledTimes(1)
   })
 
+  it("releases the guard when signIn fails so a later session update retries", async () => {
+    sessionState.data = { user: { role: "guest" }, error: "RefreshTokenError" }
+    mockSignIn.mockRejectedValueOnce(new Error("offline"))
+    harness.cursor = 0
+    SessionErrorHandler()
+    expect(mockSignIn).toHaveBeenCalledTimes(1)
+    // Let the rejected signIn promise settle (macrotask, not a microtask count).
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    sessionState.data = { user: { role: "guest" }, error: undefined }
+    harness.cursor = 0
+    SessionErrorHandler()
+    sessionState.data = { user: { role: "guest" }, error: "RefreshTokenError" }
+    harness.cursor = 0
+    SessionErrorHandler()
+    expect(mockSignIn).toHaveBeenCalledTimes(2)
+  })
+
   it("mounts SessionErrorHandler inside Providers so RefreshTokenError initiates sign-in", () => {
     sessionState.data = { user: { role: "guest" }, error: "RefreshTokenError" }
     renderTree(<Providers locale="ko">{null}</Providers>)

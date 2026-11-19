@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""R375: Opt-in OTLP trace ingest NetworkPolicy for alloy-logs (narwhal#735).
+"""R377: Opt-in OTLP trace ingest NetworkPolicy for alloy-logs (narwhal#735).
 
 Verifies that:
   - gitops/resources/network-policies.yaml defines alloy-logs-ingress-policy in
@@ -308,9 +308,9 @@ def main() -> int:
     verify(root)
     if args.mutation_verify:
         caught = mutation_verify(root)
-        print(f"PASS: R375 alloy-logs opt-in OTLP ingress policy + dev opt-in + docs ({caught} mutations rejected)")
+        print(f"PASS: R377 alloy-logs opt-in OTLP ingress policy + dev opt-in + docs ({caught} mutations rejected)")
     else:
-        print("PASS: R375 alloy-logs opt-in OTLP ingress policy + dev opt-in + docs")
+        print("PASS: R377 alloy-logs opt-in OTLP ingress policy + dev opt-in + docs")
     return 0
 
 

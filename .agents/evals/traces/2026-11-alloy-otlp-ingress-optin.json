@@ -2,7 +2,7 @@
   "schemaVersion": "openforge-agent-trace/v1",
   "consistencyMode": "strict",
   "traceId": "narwhal-alloy-otlp-ingress-optin-735-20261119",
-  "task": "Fix narwhal#735: restrict alloy-logs unauthenticated OTLP receivers (4317/4318) via alloy-logs-ingress-policy so only Grafana (4317) and namespaces carrying narwhal.io/otlp-ingest='true' (dev opted in) can send traces while preserving Prometheus metrics scrape (12345), kubelet probes (169.254.7.127/32 CCNP), and ambient HBONE (15008); document operator opt-in and residual risks; add R375 static/mutation verification.",
+  "task": "Fix narwhal#735: restrict alloy-logs unauthenticated OTLP receivers (4317/4318) via alloy-logs-ingress-policy so only Grafana (4317) and namespaces carrying narwhal.io/otlp-ingest='true' (dev opted in) can send traces while preserving Prometheus metrics scrape (12345), kubelet probes (169.254.7.127/32 CCNP), and ambient HBONE (15008); document operator opt-in and residual risks; add R377 static/mutation verification.",
   "changeContext": {
     "paths": [
       ".agents/evals/traces/2026-11-alloy-otlp-ingress-optin.json",
@@ -20,7 +20,7 @@
     {
       "id": "e1",
       "type": "scope_check",
-      "summary": "Scope: gitops/resources/network-policies.yaml (alloy-logs-ingress-policy), gitops/resources/dev-namespace.yaml (narwhal.io/otlp-ingest: 'true' on dev), gitops/resources/tenants/README.md, docs/common/{unified-observability-contract,lessons-log}.md, scripts/test/lib/check-alloy-otlp-ingress-optin.py (R375), scripts/test/lib/check-trace-k8s-attributes.py (disambiguate R373 mutation anchor), scripts/test/regression-check-kakao.sh, and this eval trace. Excluded: k8s-monitoring.yaml, 08-2-monitoring.sh, tempo-ingress-policy rules, securityContexts/resources/probes, portal/, and live cluster/VM mutations."
+      "summary": "Scope: gitops/resources/network-policies.yaml (alloy-logs-ingress-policy), gitops/resources/dev-namespace.yaml (narwhal.io/otlp-ingest: 'true' on dev), gitops/resources/tenants/README.md, docs/common/{unified-observability-contract,lessons-log}.md, scripts/test/lib/check-alloy-otlp-ingress-optin.py (R377), scripts/test/lib/check-trace-k8s-attributes.py (disambiguate R373 mutation anchor), scripts/test/regression-check-kakao.sh, and this eval trace. Excluded: k8s-monitoring.yaml, 08-2-monitoring.sh, tempo-ingress-policy rules, securityContexts/resources/probes, portal/, and live cluster/VM mutations."
     },
     {
       "id": "e2",
@@ -30,17 +30,17 @@
     {
       "id": "e3",
       "type": "bug_fix",
-      "summary": "Added alloy-logs-ingress-policy (namespace monitoring, selecting app.kubernetes.io/name=alloy-logs + app.kubernetes.io/instance=k8s-monitoring-alloy-logs) in gitops/resources/network-policies.yaml allowing TCP 4317+15008 from Grafana, TCP 4317/4318+15008 from namespaces labeled narwhal.io/otlp-ingest: 'true', and TCP 12345+15008 from Prometheus while excluding monitoring/waypoint (preserving alloy-logs Service istio.io/use-waypoint: none). Added narwhal.io/otlp-ingest: 'true' to Namespace/dev in gitops/resources/dev-namespace.yaml, documented opt-in procedure in gitops/resources/tenants/README.md and docs/common/unified-observability-contract.md alongside honest residual risks (opted-in namespace floods and platform hostNetwork pod NetworkPolicy bypass), added #735 lessons-log row, disambiguated R373's 4317/15008 mutation anchor, and added R375 (check-alloy-otlp-ingress-optin.py, 13 mutations)."
+      "summary": "Added alloy-logs-ingress-policy (namespace monitoring, selecting app.kubernetes.io/name=alloy-logs + app.kubernetes.io/instance=k8s-monitoring-alloy-logs) in gitops/resources/network-policies.yaml allowing TCP 4317+15008 from Grafana, TCP 4317/4318+15008 from namespaces labeled narwhal.io/otlp-ingest: 'true', and TCP 12345+15008 from Prometheus while excluding monitoring/waypoint (preserving alloy-logs Service istio.io/use-waypoint: none). Added narwhal.io/otlp-ingest: 'true' to Namespace/dev in gitops/resources/dev-namespace.yaml, documented opt-in procedure in gitops/resources/tenants/README.md and docs/common/unified-observability-contract.md alongside honest residual risks (opted-in namespace floods and platform hostNetwork pod NetworkPolicy bypass), added #735 lessons-log row, disambiguated R373's 4317/15008 mutation anchor, and added R377 (check-alloy-otlp-ingress-optin.py, 13 mutations)."
     },
     {
       "id": "e4",
       "type": "regression_verification",
       "status": "passed",
-      "scope": "Offline YAML/Vagrant validation, R375 (13 mutations), R373 (34 mutations + offline helm renders), R200/R201, R242, R243/permissive-ingress, R301, R294, R350, gitops-resource-ownership, narwhal-apps helm template render, yamllint, shellcheck/bash -n, markdownlint-changed, markdownlint-cli2, and git diff --check; no live cluster or VM touched.",
+      "scope": "Offline YAML/Vagrant validation, R377 (13 mutations), R373 (34 mutations + offline helm renders), R200/R201, R242, R243/permissive-ingress, R301, R294, R350, gitops-resource-ownership, narwhal-apps helm template render, yamllint, shellcheck/bash -n, markdownlint-changed, markdownlint-cli2, and git diff --check; no live cluster or VM touched.",
       "summary": "All offline validations, static regression and mutation suites, helm renders, and shell/YAML/markdown/diff checks passed.",
       "evidence": [
         "test:make validate -> exit 0 (Syntax OK + all GitOps YAML OK)",
-        "test:python3 scripts/test/lib/check-alloy-otlp-ingress-optin.py --mutation-verify -> PASS: R375 alloy-logs opt-in OTLP ingress policy + dev opt-in + docs (13 mutations rejected)",
+        "test:python3 scripts/test/lib/check-alloy-otlp-ingress-optin.py --mutation-verify -> PASS: R377 alloy-logs opt-in OTLP ingress policy + dev opt-in + docs (13 mutations rejected)",
         "test:python3 scripts/test/lib/check-trace-k8s-attributes.py --mutation-verify -> PASS: R373 trustworthy OTLP k8s.namespace.name enrichment + helm render ok (34 mutations rejected)",
         "test:python3 scripts/test/lib/check-ambient-netpol.py --mutation-verify && python3 scripts/test/lib/check-ambient-enrollment.py && python3 scripts/test/lib/check-permissive-ingress-isolation.py && python3 scripts/test/lib/check-dev-namespace.py && python3 scripts/test/lib/check-velero-alerts.py && python3 scripts/test/lib/check-db-direct-hosts.py && python3 scripts/test/lib/check-gitops-resource-ownership.py --mutation-verify -> exit 0",
         "test:helm template narwhal-apps gitops/charts/narwhal-apps -s templates/network-policies.yaml -s templates/dev-namespace.yaml -> exit 0",
@@ -48,19 +48,20 @@
         "test:shellcheck -S warning scripts/test/regression-check-kakao.sh && bash -n scripts/test/regression-check-kakao.sh -> exit 0",
         "test:python3 scripts/ci/markdownlint-changed.py --base origin/main -> No markdownlint violations on added/modified active-documentation lines",
         "test:npx --yes markdownlint-cli2 docs/common/unified-observability-contract.md docs/common/lessons-log.md gitops/resources/tenants/README.md -> Summary: 0 issues in 0 files",
-        "test:git diff --check -> exit 0"
+        "test:git diff --check -> exit 0",
+        "test:live local cluster (orchestrator, measured 2026-11-19): OTLP/HTTP POST to alloy-logs:4318 from dev (labelled narwhal.io/otlp-ingest=true) -> 200; from chaos-testing (not opted in) -> no connection (curl 000); alloy-logs 2/2 Running; Loki shows 12 namespaces logging in the last 2 minutes; 20 Grafana traces in Tempo in the last 3 minutes; Prometheus has no down targets"
       ]
     },
     {
       "id": "e5",
       "type": "completion_claim",
-      "summary": "All offline validations, R375 (13 mutations), R373 (34 mutations), network-policy/ambient/ownership checks, helm renders, yamllint, shellcheck/bash -n, markdownlint, and git diff --check pass without touching any cluster or VM. Live enforcement (dev -> 200, un-opted namespace -> blocked, Prometheus scrape, Grafana traces, alloy-logs Ready and Loki shipping) requires running the orchestrator runbook on the cluster."
+      "summary": "All offline validations, R377 (13 mutations), R373 (34 mutations), network-policy/ambient/ownership checks, helm renders, yamllint, shellcheck/bash -n, markdownlint, and git diff --check pass without touching any cluster or VM. Live enforcement (dev -> 200, un-opted namespace -> blocked, Prometheus scrape, Grafana traces, alloy-logs Ready and Loki shipping) requires running the orchestrator runbook on the cluster."
     },
     {
       "id": "e6",
       "type": "task_outcome",
       "state": "A",
-      "summary": "narwhal#735 implemented: alloy-logs-ingress-policy restricts OTLP 4317/4318 to Grafana (4317) and narwhal.io/otlp-ingest='true' namespaces while keeping Prometheus 12345, kubelet probes, and HBONE 15008 working; dev namespace opted in; operator opt-in and residual risks documented; R375 regression/mutation check and eval trace added."
+      "summary": "narwhal#735 implemented: alloy-logs-ingress-policy restricts OTLP 4317/4318 to Grafana (4317) and narwhal.io/otlp-ingest='true' namespaces while keeping Prometheus 12345, kubelet probes, and HBONE 15008 working; dev namespace opted in; operator opt-in and residual risks documented; R377 regression/mutation check and eval trace added."
     }
   ]
 }

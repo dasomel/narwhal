@@ -7,6 +7,7 @@ import { DataState } from "@/components/ui/data-state"
 import { Badge } from "@/components/ui/badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useT } from "@/lib/i18n-client"
+import { apiFetchJson } from "@/lib/scope-guard"
 import type { PodsResponse } from "@/app/api/pods/route"
 import type { PodLogsResponse } from "@/app/api/pods/[namespace]/[pod]/logs/route"
 
@@ -27,13 +28,11 @@ export function PodLogsViewer({ namespace, appName }: PodLogsViewerProps) {
 
   const { data: podsData, isLoading: podsLoading, isError: podsError, refetch: refetchPods } = useQuery<PodsResponse>({
     queryKey: ["pods", namespace, appName],
-    queryFn: () =>
-      fetch(
-        `/api/pods?namespace=${encodeURIComponent(namespace)}&instance=${encodeURIComponent(appName)}`
-      ).then((r) => {
-        if (!r.ok) throw new Error("Failed to fetch pods")
-        return r.json()
-      }),
+    queryFn: ({ signal }) =>
+      apiFetchJson<PodsResponse>(
+        `/api/pods?namespace=${encodeURIComponent(namespace)}&instance=${encodeURIComponent(appName)}`,
+        { signal },
+      ),
     refetchInterval: 15_000,
   })
 
@@ -50,18 +49,16 @@ export function PodLogsViewer({ namespace, appName }: PodLogsViewerProps) {
     refetch: refetchLogs,
   } = useQuery<PodLogsResponse>({
     queryKey: ["pods-logs", namespace, selectedPod, effectiveContainer, tailLines, previous],
-    queryFn: () => {
+    queryFn: ({ signal }) => {
       const params = new URLSearchParams({
         tailLines: String(tailLines),
         previous: String(previous),
       })
       if (effectiveContainer) params.set("container", effectiveContainer)
-      return fetch(
-        `/api/pods/${encodeURIComponent(namespace)}/${encodeURIComponent(selectedPod)}/logs?${params}`
-      ).then((r) => {
-        if (!r.ok) throw new Error("Failed to fetch logs")
-        return r.json()
-      })
+      return apiFetchJson<PodLogsResponse>(
+        `/api/pods/${encodeURIComponent(namespace)}/${encodeURIComponent(selectedPod)}/logs?${params}`,
+        { signal },
+      )
     },
     enabled: !!selectedPod,
     refetchInterval: 10_000,

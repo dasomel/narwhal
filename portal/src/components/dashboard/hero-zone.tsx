@@ -6,6 +6,7 @@ import { HeroSummary } from "./hero-summary"
 import { HeroRadar } from "./hero-radar"
 import type { HeroResponse } from "@/types/api"
 import { DataState } from "@/components/ui/data-state"
+import { apiFetchJson } from "@/lib/scope-guard"
 
 // Wave SVG path from hero-content.html mockup
 function HeroWave() {
@@ -44,7 +45,7 @@ export function HeroZoneFromData({ data }: HeroZoneFromDataProps) {
 export function HeroZone() {
   const { data, isLoading, isError, refetch } = useQuery<HeroResponse>({
     queryKey: ["hero"],
-    queryFn: () => fetch("/api/hero").then((r) => r.json()),
+    queryFn: ({ signal }) => apiFetchJson<HeroResponse>("/api/hero", { signal }),
     refetchInterval: 15_000,
   })
 

@@ -3,7 +3,7 @@ import { auth } from "@/lib/auth"
 import { getResourceEvents, ResourceEvent } from "@/lib/k8s-client"
 import { cacheGetWithMeta, cacheSet } from "@/lib/valkey"
 import { ValidationError, toValidationErrorBody, assertK8sNamespace } from "@/lib/validation"
-import { namespaceVisible, requireEffectiveScope } from "@/lib/scope"
+import { namespaceVisible, requireEffectiveScope, withScopeHeader } from "@/lib/scope"
 import { cacheKeys, cacheTtl } from "@/lib/cache-keys"
 
 export const dynamic = "force-dynamic"
@@ -48,14 +48,17 @@ export async function GET(req: NextRequest) {
   if ("denied" in scoped) return scoped.denied
   const { scope } = scoped
   if (!namespaceVisible(namespace, scope)) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 })
+    return withScopeHeader(NextResponse.json({ error: "Forbidden" }, { status: 403 }), scope)
   }
 
   const cacheKey = cacheKeys.k8sEvents(namespace, name)
   try {
     const cached = await cacheGetWithMeta<ResourceEvent[]>(cacheKey)
     if (cached) {
-      return NextResponse.json<ResourceEventsResponse>({ events: cached.value, freshness: { source: "cache", observedAt: cached.cachedAt } })
+      return withScopeHeader(
+        NextResponse.json<ResourceEventsResponse>({ events: cached.value, freshness: { source: "cache", observedAt: cached.cachedAt } }),
+        scope,
+      )
     }
   } catch (err) {
     console.warn("[k8s-events-api] Cache lookup failed:", err)
@@ -70,7 +73,10 @@ export async function GET(req: NextRequest) {
       console.warn("[k8s-events-api] Cache save failed:", err)
     }
 
-    return NextResponse.json<ResourceEventsResponse>({ events, freshness: { source: "live", observedAt: new Date().toISOString() } })
+    return withScopeHeader(
+      NextResponse.json<ResourceEventsResponse>({ events, freshness: { source: "live", observedAt: new Date().toISOString() } }),
+      scope,
+    )
   } catch (err) {
     if (err instanceof ValidationError) {
       return NextResponse.json(toValidationErrorBody(err), { status: 400 })

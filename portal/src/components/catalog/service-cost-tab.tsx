@@ -8,6 +8,7 @@
 import { useQuery } from "@tanstack/react-query"
 import { useEffect, useState } from "react"
 import { useT } from "@/lib/i18n-client"
+import { apiFetchJson } from "@/lib/scope-guard"
 import {
   LineChart,
   Line,
@@ -90,21 +91,13 @@ export function ServiceCostTab({ serviceId }: Props) {
   }, [])
   const { data: detail, isLoading: detailLoading, error: detailError, refetch: refetchDetail } = useQuery<CostDetailResponse>({
     queryKey: ["cost-service", serviceId],
-    queryFn: async () => {
-      const response = await fetch(`/api/cost/${serviceId}`)
-      if (!response.ok) throw new Error("Cost data is unavailable")
-      return response.json()
-    },
+    queryFn: ({ signal }) => apiFetchJson<CostDetailResponse>(`/api/cost/${serviceId}`, { signal }),
     refetchInterval: 60_000,
   })
 
   const { data: trendData, isLoading: trendLoading, error: trendError, refetch: refetchTrend } = useQuery<TrendResponse>({
     queryKey: ["cost-trend", "service", serviceId, 7],
-    queryFn: async () => {
-      const response = await fetch(`/api/cost/trend?scope=service&id=${serviceId}&days=7`)
-      if (!response.ok) throw new Error("Cost trend data is unavailable")
-      return response.json()
-    },
+    queryFn: ({ signal }) => apiFetchJson<TrendResponse>(`/api/cost/trend?scope=service&id=${serviceId}&days=7`, { signal }),
     refetchInterval: 300_000,
   })
 

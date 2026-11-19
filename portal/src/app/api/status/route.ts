@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server"
 import { auth } from "@/lib/auth"
 import { getPlatformStatus } from "@/lib/platform-status"
-import { requireEffectiveScope } from "@/lib/scope"
+import { requireEffectiveScope, withScopeHeader } from "@/lib/scope"
 
 export const dynamic = "force-dynamic"
 
@@ -13,7 +13,7 @@ export async function GET() {
     const scoped = await requireEffectiveScope(session)
     if ("denied" in scoped) return scoped.denied
     const status = await getPlatformStatus(scoped.scope)
-    return NextResponse.json(status)
+    return withScopeHeader(NextResponse.json(status), scoped.scope)
   } catch (err) {
     console.error("[api/status]", err)
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })

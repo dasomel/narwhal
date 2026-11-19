@@ -9,6 +9,7 @@ import { DataState } from "@/components/ui/data-state"
 import { Badge } from "@/components/ui/badge"
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet"
 import { useT, useLocale } from "@/lib/i18n-client"
+import { apiFetchJson } from "@/lib/scope-guard"
 import type { Locale } from "@/lib/i18n"
 import type { TimelineEvent } from "@/app/api/events/route"
 
@@ -69,7 +70,7 @@ export function EventTimeline() {
 
   const { data: events, isLoading, isError, refetch } = useQuery<TimelineEvent[]>({
     queryKey: ["events"],
-    queryFn: () => fetch("/api/events").then((r) => r.json()),
+    queryFn: ({ signal }) => apiFetchJson<TimelineEvent[]>("/api/events", { signal }),
     refetchInterval: 15_000,
   })
 

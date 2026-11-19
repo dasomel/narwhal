@@ -4,7 +4,7 @@ import { getArgoAppsOrThrow } from "@/lib/argocd"
 import { getAlerts } from "@/lib/alertmanager"
 import { cacheGet, cacheSet } from "@/lib/valkey"
 import { cacheKeys, cacheTtl } from "@/lib/cache-keys"
-import { alertVisible, appVisible, requireEffectiveScope } from "@/lib/scope"
+import { alertVisible, appVisible, requireEffectiveScope, withScopeHeader } from "@/lib/scope"
 import { findOwnershipMismatch, getTeamMappings, type OwnershipMismatch } from "@/lib/role-filter"
 
 export const dynamic = "force-dynamic"
@@ -61,7 +61,7 @@ export async function GET() {
     const visible = cached
       .filter((r) => appVisible(r.project, r.item.namespace, scope))
       .map((r) => r.item)
-    return NextResponse.json(visible)
+    return withScopeHeader(NextResponse.json(visible), scope)
   }
 
   try {
@@ -130,7 +130,7 @@ export async function GET() {
 
     records.sort((a, b) => a.item.scores.overall - b.item.scores.overall)
     await cacheSet(cacheKey, records, cacheTtl("governanceScorecard"))
-    return NextResponse.json(records.map((r) => r.item))
+    return withScopeHeader(NextResponse.json(records.map((r) => r.item)), scope)
   } catch (err) {
     console.error("[governance/scorecard]", err)
     return NextResponse.json({ error: "ArgoCD connection failed" }, { status: 503 })

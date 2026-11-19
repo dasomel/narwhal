@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { DataState } from "@/components/ui/data-state"
 import type { TranslationKey } from "@/lib/i18n"
 import { useT } from "@/lib/i18n-client"
+import { apiFetchJson } from "@/lib/scope-guard"
 import { EDGES, LAYERS, NODES, edgePath, nodeStatus } from "./layout"
 
 const STATUS = {
@@ -25,11 +26,7 @@ export function PlatformArchitecture() {
   const active = hovered ?? focused
   const { data, isLoading, isError, refetch } = useQuery<ArchitectureData>({
     queryKey: ["architecture"],
-    queryFn: async () => {
-      const response = await fetch("/api/architecture")
-      if (!response.ok) throw new Error(response.statusText)
-      return response.json()
-    },
+    queryFn: ({ signal }) => apiFetchJson<ArchitectureData>("/api/architecture", { signal }),
     refetchInterval: 30_000,
   })
   const text = (key: string) => t(`onboarding.arch.${key}` as TranslationKey)

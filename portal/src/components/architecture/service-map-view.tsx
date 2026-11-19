@@ -6,6 +6,7 @@ import { useSession } from "next-auth/react"
 import type { ServiceGraphResponse } from "@/app/api/service-graph/route"
 import type { TranslationKey } from "@/lib/i18n"
 import { useT } from "@/lib/i18n-client"
+import { apiFetchJson } from "@/lib/scope-guard"
 import { Badge } from "@/components/ui/badge"
 import { DataState } from "@/components/ui/data-state"
 import { ReactFlowMap } from "./service-map-diagram"
@@ -59,13 +60,10 @@ export function ServiceMapView({ initialNamespace, focusService }: Props) {
   const queryKey = ["service-graph", effWindow, namespace]
   const { data, isLoading, isError, refetch } = useQuery<ServiceGraphResponse>({
     queryKey,
-    queryFn: () => {
+    queryFn: ({ signal }) => {
       const params = new URLSearchParams({ window: effWindow })
       if (namespace) params.set("namespace", namespace)
-      return fetch(`/api/service-graph?${params}`).then((r) => {
-        if (!r.ok) throw new Error(String(r.status))
-        return r.json()
-      })
+      return apiFetchJson<ServiceGraphResponse>(`/api/service-graph?${params}`, { signal })
     },
     refetchInterval: isLive ? 5_000 : 60_000,
     staleTime: isLive ? 0 : 30_000,

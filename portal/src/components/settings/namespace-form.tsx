@@ -5,6 +5,7 @@ import { Card } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { useT } from "@/lib/i18n-client"
+import { apiFetchJson } from "@/lib/scope-guard"
 import { DataState } from "@/components/ui/data-state"
 
 interface Namespace {
@@ -28,7 +29,7 @@ export function NamespaceForm() {
 
   const { data: namespaces = [], isLoading, isError, refetch } = useQuery<Namespace[]>({
     queryKey: ["namespaces"],
-    queryFn: () => fetch("/api/namespaces").then((r) => r.json()).then((d) => Array.isArray(d) ? d : []),
+    queryFn: ({ signal }) => apiFetchJson<unknown>("/api/namespaces", { signal }).then((d) => (Array.isArray(d) ? (d as Namespace[]) : [])),
   })
 
   const createMutation = useMutation({

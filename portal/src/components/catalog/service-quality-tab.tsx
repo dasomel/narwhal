@@ -2,6 +2,7 @@
 
 import { useQuery } from "@tanstack/react-query"
 import { useT, useLocale } from "@/lib/i18n-client"
+import { apiFetch } from "@/lib/scope-guard"
 import { DataState } from "@/components/ui/data-state"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -41,7 +42,7 @@ function RulesModal() {
   const t = useT()
   const { data, isLoading, isError, refetch } = useQuery<ScorecardRulesResponse>({
     queryKey: ["scorecard-rules"],
-    queryFn: () => fetch("/api/scorecards/rules").then((r) => r.json()),
+    queryFn: ({ signal }) => apiFetch("/api/scorecards/rules", { signal }).then((r) => r.json()),
     staleTime: 5 * 60 * 1000,
   })
 
@@ -91,7 +92,7 @@ export function ServiceQualityTab({ serviceName }: ServiceQualityTabProps) {
   const locale = useLocale()
   const { data, isLoading, refetch } = useQuery<ScorecardDetailResponse>({
     queryKey: ["scorecard-detail", serviceName],
-    queryFn: () => fetch(`/api/scorecards/${encodeURIComponent(serviceName)}`).then((r) => r.json()),
+    queryFn: ({ signal }) => apiFetch(`/api/scorecards/${encodeURIComponent(serviceName)}`, { signal }).then((r) => r.json()),
     staleTime: 5 * 60 * 1000,
   })
 

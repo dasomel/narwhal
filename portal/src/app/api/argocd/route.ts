@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server"
 import { getArgoApps } from "@/lib/argocd"
 import { auth } from "@/lib/auth"
-import { appVisible, requireEffectiveScope } from "@/lib/scope"
+import { appVisible, requireEffectiveScope, withScopeHeader } from "@/lib/scope"
 import type { ArgoCDResponse, ArgoCDApp } from "@/types/api"
 
 export const dynamic = "force-dynamic"
@@ -38,7 +38,7 @@ export async function GET(): Promise<NextResponse<ArgoCDResponse | { error: stri
       degraded: apps.filter((a) => a.healthStatus === "Degraded" || a.healthStatus === "Missing").length,
     }
 
-    return NextResponse.json({ summary, apps })
+    return withScopeHeader(NextResponse.json({ summary, apps }), scope)
   } catch (err) {
     console.error("[api/argocd]", err)
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })

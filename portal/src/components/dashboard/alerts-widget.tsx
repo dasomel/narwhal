@@ -19,8 +19,9 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
 import { useT } from "@/lib/i18n-client"
+import { apiFetchJson } from "@/lib/scope-guard"
 
-interface Alert {
+export interface Alert {
   labels: Record<string, string>
   annotations: Record<string, string>
   startsAt?: string
@@ -42,13 +43,10 @@ function SilenceButton({ alertname }: { alertname: string }) {
 
   const silenceMutation = useMutation({
     mutationFn: () =>
-      fetch("/api/alerts/silence", {
+      apiFetchJson("/api/alerts/silence", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ alertname, duration: 60 }),
-      }).then((r) => {
-        if (!r.ok) throw new Error(r.statusText)
-        return r.json()
       }),
     onSuccess: () => setSilenced(true),
   })
@@ -104,7 +102,7 @@ export function AlertsWidget() {
 
   const { data: alertsData, isLoading, isError, refetch } = useQuery<Alert[]>({
     queryKey: ["alerts"],
-    queryFn: () => fetch("/api/alerts").then((r) => r.json()).then((d) => Array.isArray(d) ? d : []),
+    queryFn: ({ signal }) => apiFetchJson<unknown>("/api/alerts", { signal }).then((d) => (Array.isArray(d) ? (d as Alert[]) : [])),
     refetchInterval: 15_000,
   })
   const alerts = alertsData ?? []

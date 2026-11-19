@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge"
 import { useT } from "@/lib/i18n-client"
 import { DataState } from "@/components/ui/data-state"
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet"
+import { apiFetchJson } from "@/lib/scope-guard"
 
 interface KyvernoRule {
   name: string
@@ -118,7 +119,7 @@ export function PoliciesTable() {
   const [selected, setSelected] = useState<string | null>(null)
   const { data: policies, isLoading, isError, refetch } = useQuery<KyvernoPolicy[]>({
     queryKey: ["settings-policies"],
-    queryFn: () => fetch("/api/settings/policies").then((r) => r.json()),
+    queryFn: ({ signal }) => apiFetchJson<KyvernoPolicy[]>("/api/settings/policies", { signal }),
   })
 
   const selectedPolicy = Array.isArray(policies) ? policies.find((p) => `${p.scope}/${p.name}` === selected) : undefined

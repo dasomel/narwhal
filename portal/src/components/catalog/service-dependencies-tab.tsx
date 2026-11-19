@@ -3,6 +3,7 @@
 import { useQuery } from "@tanstack/react-query"
 import Link from "next/link"
 import { useT } from "@/lib/i18n-client"
+import { apiFetchJson } from "@/lib/scope-guard"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { DataState } from "@/components/ui/data-state"
@@ -157,11 +158,7 @@ export function ServiceDependenciesTab({ serviceName }: Props) {
   const t = useT()
   const { data, isLoading, error, refetch } = useQuery<ServiceGraphDetailResponse>({
     queryKey: ["service-dependencies", serviceName],
-    queryFn: () =>
-      fetch(`/api/service-graph/${encodeURIComponent(serviceName)}?window=7d`).then((r) => {
-        if (!r.ok) throw new Error("Failed to fetch dependencies")
-        return r.json()
-      }),
+    queryFn: ({ signal }) => apiFetchJson<ServiceGraphDetailResponse>(`/api/service-graph/${encodeURIComponent(serviceName)}?window=7d`, { signal }),
     staleTime: 30_000,
     refetchInterval: 60_000,
   })

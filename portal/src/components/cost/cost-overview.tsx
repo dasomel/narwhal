@@ -8,6 +8,7 @@
 import { useQuery } from "@tanstack/react-query"
 import { useEffect, useState } from "react"
 import { useT } from "@/lib/i18n-client"
+import { apiFetchJson } from "@/lib/scope-guard"
 import {
   LineChart,
   Line,
@@ -91,21 +92,13 @@ export function CostOverview() {
   }, [])
   const { data: costData, isLoading: costLoading, error: costError, refetch: refetchCost } = useQuery<CostResponse>({
     queryKey: ["cost", "cluster"],
-    queryFn: async () => {
-      const response = await fetch("/api/cost?scope=cluster")
-      if (!response.ok) throw new Error("Cost data is unavailable")
-      return response.json()
-    },
+    queryFn: ({ signal }) => apiFetchJson<CostResponse>("/api/cost?scope=cluster", { signal }),
     refetchInterval: 60_000,
   })
 
   const { data: trendData, isLoading: trendLoading, error: trendError, refetch: refetchTrend } = useQuery<TrendResponse>({
     queryKey: ["cost-trend", "cluster", "cluster", 30],
-    queryFn: async () => {
-      const response = await fetch("/api/cost/trend?scope=cluster&id=cluster&days=30")
-      if (!response.ok) throw new Error("Cost trend data is unavailable")
-      return response.json()
-    },
+    queryFn: ({ signal }) => apiFetchJson<TrendResponse>("/api/cost/trend?scope=cluster&id=cluster&days=30", { signal }),
     refetchInterval: 300_000,
   })
 

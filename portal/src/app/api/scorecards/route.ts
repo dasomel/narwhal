@@ -3,7 +3,7 @@ import { requireRole } from "@/lib/auth"
 import { roleGateErrorResponse } from "@/lib/role-gate-response"
 import { getArgoApps, appToCatalogService } from "@/lib/argocd"
 import { evaluateAll, loadRules } from "@/lib/scorecard"
-import { appVisible, getEffectiveScope } from "@/lib/scope"
+import { appVisible, getEffectiveScope, withScopeHeader } from "@/lib/scope"
 
 export const dynamic = "force-dynamic"
 
@@ -119,7 +119,7 @@ export async function GET(req: NextRequest) {
       services,
     }
 
-    return NextResponse.json(response)
+    return withScopeHeader(NextResponse.json(response), scope)
   } catch (err) {
     console.error("[api/scorecards]", err)
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })

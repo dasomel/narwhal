@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server"
 import { auth } from "@/lib/auth"
 import { getHeroResponse } from "@/lib/hero"
-import { requireEffectiveScope } from "@/lib/scope"
+import { requireEffectiveScope, withScopeHeader } from "@/lib/scope"
 import type { HeroResponse } from "@/types/api"
 
 export const dynamic = "force-dynamic"
@@ -14,7 +14,7 @@ export async function GET(): Promise<NextResponse<HeroResponse | { error: string
     const scoped = await requireEffectiveScope(session)
     if ("denied" in scoped) return scoped.denied
     const hero = await getHeroResponse(scoped.scope)
-    return NextResponse.json(hero)
+    return withScopeHeader(NextResponse.json(hero), scoped.scope)
   } catch (err) {
     console.error("[api/hero]", err)
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })

@@ -1,5 +1,8 @@
-import { beforeEach, describe, expect, it, vi } from "vitest"
+import { createHash } from "node:crypto"
+import { NextResponse } from "next/server"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import type { NamespaceInfo } from "./k8s-client"
+import { SCOPE_FINGERPRINT_HEADER } from "./scope-constants"
 
 vi.mock("./k8s-client", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./k8s-client")>()
@@ -13,6 +16,7 @@ const {
   hasSessionAccess,
   resolveEffectiveAccess,
   getEffectiveScope,
+  withScopeHeader,
 } = await import("./scope")
 
 const namespaces: NamespaceInfo[] = [
@@ -84,5 +88,56 @@ describe("portal access gate (D-PORTAL-UNMAPPED-DENY)", () => {
     expect(hasEffectiveAccess(unmapped)).toBe(false)
     expect(hasEffectiveAccess(teamless)).toBe(false)
     expect(ACCESS_NOT_GRANTED_CODE).toBe("ACCESS_NOT_GRANTED")
+  })
+})
+
+describe("withScopeHeader HMAC signing", () => {
+  const savedSecret = process.env.AUTH_SECRET
+  const savedNodeEnv = process.env.NODE_ENV
+  const savedAuthMock = process.env.AUTH_MOCK
+
+  afterEach(() => {
+    if (savedSecret === undefined) delete process.env.AUTH_SECRET
+    else process.env.AUTH_SECRET = savedSecret
+    ;(process.env as Record<string, string | undefined>).NODE_ENV = savedNodeEnv
+    if (savedAuthMock === undefined) delete process.env.AUTH_MOCK
+    else process.env.AUTH_MOCK = savedAuthMock
+  })
+
+  it("emits a 32-hex-char HMAC keyed by AUTH_SECRET rather than an unsalted SHA-256", async () => {
+    process.env.AUTH_SECRET = "test-auth-secret-1"
+    const scope = await getEffectiveScope({ groups: ["developer"], teams: ["frontend-team"] })
+    const res1 = withScopeHeader(NextResponse.json({ ok: true }), scope)
+    const token1 = res1.headers.get(SCOPE_FINGERPRINT_HEADER)
+
+    expect(token1).toMatch(/^[0-9a-f]{32}$/)
+    expect(token1).not.toBe(scope.fingerprint)
+
+    // Unsalted SHA-256 of canonical inputs must not match the emitted header
+    const unsalted = createHash("sha256")
+      .update(JSON.stringify([["developer"], ["frontend-team"], "default", [], false, [], "non-admin"]))
+      .digest("hex")
+      .slice(0, 32)
+    expect(token1).not.toBe(unsalted)
+
+    // Same secret + same scope -> deterministic
+    const res1Repeat = withScopeHeader(NextResponse.json({ ok: true }), scope)
+    expect(res1Repeat.headers.get(SCOPE_FINGERPRINT_HEADER)).toBe(token1)
+
+    // Different AUTH_SECRET -> different header value
+    process.env.AUTH_SECRET = "test-auth-secret-2"
+    const res2 = withScopeHeader(NextResponse.json({ ok: true }), scope)
+    expect(res2.headers.get(SCOPE_FINGERPRINT_HEADER)).toMatch(/^[0-9a-f]{32}$/)
+    expect(res2.headers.get(SCOPE_FINGERPRINT_HEADER)).not.toBe(token1)
+  })
+
+  it("fails closed in production when AUTH_SECRET is missing", async () => {
+    ;(process.env as Record<string, string | undefined>).NODE_ENV = "production"
+    delete process.env.AUTH_MOCK
+    delete process.env.AUTH_SECRET
+    const scope = await getEffectiveScope({ groups: ["developer"], teams: ["frontend-team"] })
+    expect(() => withScopeHeader(NextResponse.json({ ok: true }), scope)).toThrow(
+      /AUTH_SECRET/,
+    )
   })
 })

@@ -5,6 +5,7 @@
 // Kubernetes API. This module is the seam: it fetches the namespace list (cached, so
 // this is not an extra round trip) and hands back the resolved answer.
 
+import { createHmac, randomBytes } from "node:crypto"
 import { NextResponse } from "next/server"
 import { getNamespaces } from "./k8s-client"
 import {
@@ -15,6 +16,7 @@ import {
   type ResolvedNamespaceScope,
 } from "./role-filter"
 import { DEFAULT_CLUSTER_ID } from "@/types/cluster"
+import { ACCESS_NOT_GRANTED_CODE, SCOPE_FINGERPRINT_HEADER } from "./scope-constants"
 
 export interface EffectiveScope {
   /** Every namespace — cluster-admin or an explicit team wildcard. */
@@ -54,7 +56,44 @@ export interface ScopeSession {
   user?: { role?: string }
 }
 
-export const ACCESS_NOT_GRANTED_CODE = "ACCESS_NOT_GRANTED" as const
+export { ACCESS_NOT_GRANTED_CODE, SCOPE_FINGERPRINT_HEADER }
+
+const EPHEMERAL_SCOPE_KEY_SYMBOL = Symbol.for("narwhal.portal.scopeHeaderEphemeralKey")
+
+function getScopeHeaderSecret(): string | Buffer {
+  const configured = process.env.AUTH_SECRET || process.env.NEXTAUTH_SECRET
+  if (configured) return configured
+  if (
+    process.env.NODE_ENV === "production" &&
+    process.env.AUTH_MOCK !== "true" &&
+    process.env.NEXT_PHASE !== "phase-production-build"
+  ) {
+    throw new Error("Missing required production configuration: AUTH_SECRET")
+  }
+  const g = globalThis as Record<symbol, Buffer | undefined>
+  if (!g[EPHEMERAL_SCOPE_KEY_SYMBOL]) {
+    g[EPHEMERAL_SCOPE_KEY_SYMBOL] = randomBytes(32)
+  }
+  return g[EPHEMERAL_SCOPE_KEY_SYMBOL]
+}
+
+export function signScopeFingerprint(fingerprint: string): string {
+  return createHmac("sha256", getScopeHeaderSecret())
+    .update("scope-header:v1:")
+    .update(fingerprint)
+    .digest("hex")
+    .slice(0, 32)
+}
+
+export function withScopeHeader<T extends NextResponse>(
+  response: T,
+  scope: Pick<EffectiveScope, "fingerprint"> | null | undefined,
+): T {
+  if (scope?.fingerprint) {
+    response.headers.set(SCOPE_FINGERPRINT_HEADER, signScopeFingerprint(scope.fingerprint))
+  }
+  return response
+}
 
 export interface AccessDeniedBody {
   error: string

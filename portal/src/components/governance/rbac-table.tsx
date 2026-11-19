@@ -6,6 +6,7 @@ import { Table2, Grid3X3, ChevronUp, ChevronDown, ChevronsUpDown } from "lucide-
 import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { useT } from "@/lib/i18n-client"
+import { apiFetchJson } from "@/lib/scope-guard"
 import { DataState } from "@/components/ui/data-state"
 import { RbacGraph } from "./rbac-graph"
 import type { RbacResponseV2, RbacBindingV2, RbacRisk } from "./types"
@@ -71,7 +72,7 @@ export function RbacTable() {
 
   const { data, isLoading, isError, refetch } = useQuery<RbacResponseV2>({
     queryKey: ["governance-rbac"],
-    queryFn: () => fetch("/api/governance/rbac").then((r) => r.json()),
+    queryFn: ({ signal }) => apiFetchJson<RbacResponseV2>("/api/governance/rbac", { signal }),
     refetchInterval: 30_000,
     enabled: role === "cluster-admin",
   })

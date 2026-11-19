@@ -6,6 +6,7 @@ import { PlatformTool } from "@/lib/tools"
 import { useT } from "@/lib/i18n-client"
 import type { TranslationKey } from "@/lib/i18n"
 import { DataState } from "@/components/ui/data-state"
+import { apiFetchJson } from "@/lib/scope-guard"
 
 export function ToolsGrid() {
   const { data: session } = useSession()
@@ -13,12 +14,12 @@ export function ToolsGrid() {
 
   const { data: tools, isLoading: isToolsLoading, isError: isToolsError, refetch } = useQuery<PlatformTool[]>({
     queryKey: ["tools"],
-    queryFn: () => fetch("/api/tools").then((r) => r.json()),
+    queryFn: ({ signal }) => apiFetchJson<PlatformTool[]>("/api/tools", { signal }),
   })
 
   const { data: health = {} } = useQuery<Record<string, string>>({
     queryKey: ["tools-health"],
-    queryFn: () => fetch("/api/tools/health").then((r) => r.json()),
+    queryFn: ({ signal }) => apiFetchJson<Record<string, string>>("/api/tools/health", { signal }),
     refetchInterval: 60_000,
   })
 

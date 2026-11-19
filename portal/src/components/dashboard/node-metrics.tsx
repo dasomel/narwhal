@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { useT } from "@/lib/i18n-client"
 import { DataState } from "@/components/ui/data-state"
+import { apiFetchJson } from "@/lib/scope-guard"
 
 interface NodeMetric {
   node: string
@@ -89,7 +90,7 @@ export function NodeMetrics() {
 
   const { data, isLoading, isError, refetch } = useQuery<MetricsResponse>({
     queryKey: ["metrics"],
-    queryFn: () => fetch("/api/metrics").then((r) => r.json()),
+    queryFn: ({ signal }) => apiFetchJson<MetricsResponse>("/api/metrics", { signal }),
     refetchInterval: 30_000,
   })
 

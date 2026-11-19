@@ -5,7 +5,7 @@ import { getK8sBearerToken } from "@/lib/k8s-token"
 import { cacheGet, cacheSet } from "@/lib/valkey"
 import { cacheKeys, cacheTtl } from "@/lib/cache-keys"
 import { ValidationError, toValidationErrorBody, assertK8sNamespace } from "@/lib/validation"
-import { namespaceVisible, requireEffectiveScope } from "@/lib/scope"
+import { namespaceVisible, requireEffectiveScope, withScopeHeader } from "@/lib/scope"
 
 export const dynamic = "force-dynamic"
 
@@ -103,7 +103,7 @@ export async function GET(req: Request): Promise<NextResponse> {
   if ("denied" in scoped) return scoped.denied
   const { scope } = scoped
   if (!namespaceVisible(namespace, scope)) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 })
+    return withScopeHeader(NextResponse.json({ error: "Forbidden" }, { status: 403 }), scope)
   }
 
   try {
@@ -113,7 +113,7 @@ export async function GET(req: Request): Promise<NextResponse> {
     if (instance && pods.length === 0) {
       pods = await fetchPodsByNamespace(namespace)
     }
-    return NextResponse.json({ pods } satisfies PodsResponse)
+    return withScopeHeader(NextResponse.json({ pods } satisfies PodsResponse), scope)
   } catch (err) {
     console.error("[api/pods]", err)
     return NextResponse.json({ error: "Failed to fetch pods" }, { status: 500 })

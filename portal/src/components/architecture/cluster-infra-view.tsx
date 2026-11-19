@@ -5,6 +5,7 @@ import { Box, Cpu, Layers, Server } from "lucide-react"
 import Link from "next/link"
 import type { ClusterInfra } from "@/app/api/cluster/route"
 import { useT } from "@/lib/i18n-client"
+import { apiFetchJson } from "@/lib/scope-guard"
 import { Badge } from "@/components/ui/badge"
 import { Card } from "@/components/ui/card"
 import { DataState } from "@/components/ui/data-state"
@@ -40,10 +41,7 @@ export function ClusterInfraView() {
   const t = useT()
   const { data, isLoading, isError, refetch } = useQuery<ClusterInfra>({
     queryKey: ["cluster-infra"],
-    queryFn: () => fetch("/api/cluster").then((r) => {
-      if (!r.ok) throw new Error(String(r.status))
-      return r.json()
-    }),
+    queryFn: ({ signal }) => apiFetchJson<ClusterInfra>("/api/cluster", { signal }),
     refetchInterval: 30_000,
   })
   const validData = isClusterInfra(data) ? data : undefined

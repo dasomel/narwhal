@@ -4,7 +4,7 @@ import { getArgoApps } from "@/lib/argocd"
 import { getAlerts } from "@/lib/alertmanager"
 import { cacheGet, cacheSet } from "@/lib/valkey"
 import { cacheKeys, cacheTtl } from "@/lib/cache-keys"
-import { alertVisible, appVisible, requireEffectiveScope, type EffectiveScope } from "@/lib/scope"
+import { alertVisible, appVisible, requireEffectiveScope, withScopeHeader, type EffectiveScope } from "@/lib/scope"
 import type { ArgoCDApp, HeroIncident, HeroAction, HeroMode, MascotState } from "@/types/api"
 import type { TimelineEvent } from "@/app/api/events/route"
 import type { MyAppsResponse, MyAppsAlert } from "@/types/my-apps"
@@ -262,11 +262,14 @@ export async function GET(): Promise<NextResponse<MyAppsResponse | { error: stri
     sameStringSet(cached.scope.namespaces, scope.namespaces) &&
     sameStringSet(cached.scope.argocdProjects, scope.argocdProjects)
   ) {
-    return NextResponse.json({
-      ...cached,
-      scopedApps: cached.scopedApps.filter((a) => appVisible(a.project, a.namespace, scope)),
-      scopedAlerts: cached.scopedAlerts.filter((a) => alertVisible(a.labels, scope)),
-    })
+    return withScopeHeader(
+      NextResponse.json({
+        ...cached,
+        scopedApps: cached.scopedApps.filter((a) => appVisible(a.project, a.namespace, scope)),
+        scopedAlerts: cached.scopedAlerts.filter((a) => alertVisible(a.labels, scope)),
+      }),
+      scope,
+    )
   }
 
   // What the client gets. namespaces is now the RESOLVED list rather than the config
@@ -296,7 +299,7 @@ export async function GET(): Promise<NextResponse<MyAppsResponse | { error: stri
       generatedAt: new Date().toISOString(),
     }
     await cacheSet(cacheKey, response, cacheTtl("myApps"))
-    return NextResponse.json(response)
+    return withScopeHeader(NextResponse.json(response), scope)
   }
 
   try {
@@ -357,7 +360,7 @@ export async function GET(): Promise<NextResponse<MyAppsResponse | { error: stri
     }
 
     await cacheSet(cacheKey, response, cacheTtl("myApps"))
-    return NextResponse.json(response)
+    return withScopeHeader(NextResponse.json(response), scope)
   } catch (err) {
     console.error("[api/my-apps]", err)
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })

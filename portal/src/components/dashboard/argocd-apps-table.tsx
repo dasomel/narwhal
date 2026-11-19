@@ -5,6 +5,7 @@ import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { useT } from "@/lib/i18n-client"
+import { apiFetchJson } from "@/lib/scope-guard"
 import { useRole } from "@/hooks/use-role"
 import type { ArgoCDResponse, ArgoCDApp } from "@/types/api"
 import { DataState } from "@/components/ui/data-state"
@@ -76,7 +77,7 @@ export function ArgoCDAppsTable({ apps: propApps }: ArgoCDAppsTableProps = {}) {
 
   const { data, isLoading, error, refetch } = useQuery<ArgoCDResponse>({
     queryKey: ["argocd"],
-    queryFn: () => fetch("/api/argocd").then((r) => r.json()),
+    queryFn: ({ signal }) => apiFetchJson<ArgoCDResponse>("/api/argocd", { signal }),
     refetchInterval: 15_000,
     enabled: propApps === undefined,
   })

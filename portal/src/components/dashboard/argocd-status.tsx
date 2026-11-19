@@ -5,6 +5,7 @@ import { useQuery } from "@tanstack/react-query"
 import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { useT } from "@/lib/i18n-client"
+import { apiFetchJson } from "@/lib/scope-guard"
 import type { ArgoCDResponse } from "@/types/api"
 import { DataState } from "@/components/ui/data-state"
 
@@ -12,7 +13,7 @@ export function ArgoCDStatus() {
   const t = useT()
   const { data, isLoading, isError, refetch } = useQuery<ArgoCDResponse>({
     queryKey: ["argocd"],
-    queryFn: () => fetch("/api/argocd").then((r) => r.json()),
+    queryFn: ({ signal }) => apiFetchJson<ArgoCDResponse>("/api/argocd", { signal }),
     refetchInterval: 10_000,
   })
 

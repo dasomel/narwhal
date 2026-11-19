@@ -10,7 +10,7 @@ import { requireRole } from "@/lib/auth"
 import { roleGateErrorResponse } from "@/lib/role-gate-response"
 import { getArgoApp } from "@/lib/argocd"
 import { CostPricingConfigurationError, getCostByService, getCostPricing } from "@/lib/cost"
-import { appVisible, getEffectiveScope } from "@/lib/scope"
+import { appVisible, getEffectiveScope, withScopeHeader } from "@/lib/scope"
 import { ValidationError, toValidationErrorBody, K8S_NAME_RE, K8S_NAMESPACE_RE } from "@/lib/validation"
 
 export const dynamic = "force-dynamic"
@@ -43,7 +43,7 @@ export async function GET(
     }
     const effScope = await getEffectiveScope(gate.session)
     if (!app || !appVisible(app.spec.project ?? "default", namespace, effScope)) {
-      return NextResponse.json({ error: "Service not found" }, { status: 404 })
+      return withScopeHeader(NextResponse.json({ error: "Service not found" }, { status: 404 }), effScope)
     }
 
     const pricing = getCostPricing()
@@ -52,23 +52,29 @@ export async function GET(
     if ("notice" in result && !("serviceId" in result)) {
       // Prometheus 미응답 — 200 + notice + telemetry.state="unavailable"
       // (graceful degradation, portal#64 AC4)
-      return NextResponse.json({
-        serviceId: svc,
+      return withScopeHeader(
+        NextResponse.json({
+          serviceId: svc,
+          generatedAt: new Date().toISOString(),
+          unitPrices: pricing.unitPrices,
+          pricing: pricing.metadata,
+          items: [],
+          notice: result.notice,
+          telemetry: result.telemetry,
+        }),
+        effScope,
+      )
+    }
+
+    return withScopeHeader(
+      NextResponse.json({
         generatedAt: new Date().toISOString(),
         unitPrices: pricing.unitPrices,
         pricing: pricing.metadata,
-        items: [],
-        notice: result.notice,
-        telemetry: result.telemetry,
-      })
-    }
-
-    return NextResponse.json({
-      generatedAt: new Date().toISOString(),
-      unitPrices: pricing.unitPrices,
-      pricing: pricing.metadata,
-      ...result,
-    })
+        ...result,
+      }),
+      effScope,
+    )
   } catch (err) {
     if (err instanceof CostPricingConfigurationError) {
       return NextResponse.json(

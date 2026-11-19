@@ -3,7 +3,7 @@ import { auth } from "@/lib/auth"
 import { cacheGet, cacheSet } from "@/lib/valkey"
 import { cacheKeys, cacheTtl } from "@/lib/cache-keys"
 import { getDependencyUrl } from "@/lib/config"
-import { namespaceVisible, requireEffectiveScope, type EffectiveScope } from "@/lib/scope"
+import { namespaceVisible, requireEffectiveScope, withScopeHeader, type EffectiveScope } from "@/lib/scope"
 import { buildServiceNamespaceMap, hasServiceInScope } from "@/lib/service-namespace"
 
 export const dynamic = "force-dynamic"
@@ -275,23 +275,23 @@ export async function GET(req: Request) {
       if (service) {
         const ownership = await buildServiceNamespaceMap()
         if (!hasServiceInScope(service, ownership, scope)) {
-          return NextResponse.json({ error: "Forbidden" }, { status: 403 })
+          return withScopeHeader(NextResponse.json({ error: "Forbidden" }, { status: 403 }), scope)
         }
       }
       if (scope.namespaces.size === 0) {
-        return NextResponse.json([])
+        return withScopeHeader(NextResponse.json([]), scope)
       }
     }
 
     const cacheKey = scope.all ? cacheKeys.traces(service) : cacheKeys.tracesScoped(scope.fingerprint, service)
     const cached = await cacheGet<unknown>(cacheKey)
     if (scope.all) {
-      if (isValidAdminTraces(cached)) return NextResponse.json(cached)
+      if (isValidAdminTraces(cached)) return withScopeHeader(NextResponse.json(cached), scope)
     } else if (isValidCachedScopedTraces(cached)) {
       const projected = cached
         .map((r) => projectScopedTrace(r, scope))
         .filter((e): e is TraceEntry => e !== null)
-      return NextResponse.json(projected)
+      return withScopeHeader(NextResponse.json(projected), scope)
     }
 
     // D-PORTAL-TENANT-SCOPE-678: Traces are scoped by their own OTel namespace
@@ -316,13 +316,13 @@ export async function GET(req: Request) {
       `${tempoUrl()}/api/search?q=${encodeURIComponent(query)}&limit=20`,
       { signal: AbortSignal.timeout(5000) },
     )
-    if (!res.ok) return NextResponse.json([])
+    if (!res.ok) return withScopeHeader(NextResponse.json([]), scope)
 
     const data = await res.json() as { traces?: TempoSearchTrace[] }
     if (scope.all) {
       const entries = (data.traces ?? []).map(projectAdminTrace)
       await cacheSet(cacheKey, entries, cacheTtl("traces"))
-      return NextResponse.json(entries)
+      return withScopeHeader(NextResponse.json(entries), scope)
     }
 
     const records: CachedScopedTrace[] = (data.traces ?? [])
@@ -336,7 +336,7 @@ export async function GET(req: Request) {
     const projected = records
       .map((r) => projectScopedTrace(r, scope))
       .filter((e): e is TraceEntry => e !== null)
-    return NextResponse.json(projected)
+    return withScopeHeader(NextResponse.json(projected), scope)
   } catch (err) {
     console.error("[api/traces]", err)
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })

@@ -11,7 +11,7 @@ import { requireRole } from "@/lib/auth"
 import { roleGateErrorResponse } from "@/lib/role-gate-response"
 import { getArgoApp } from "@/lib/argocd"
 import { CostPricingConfigurationError, getCostPricing, getCostTrend } from "@/lib/cost"
-import { appVisible, getEffectiveScope, namespaceVisible } from "@/lib/scope"
+import { appVisible, getEffectiveScope, namespaceVisible, withScopeHeader } from "@/lib/scope"
 import { K8S_NAME_RE, K8S_NAMESPACE_RE, ValidationError, toValidationErrorBody } from "@/lib/validation"
 
 export const dynamic = "force-dynamic"
@@ -70,7 +70,7 @@ export async function GET(req: NextRequest) {
     // getCostTrend itself (a non-admin has no single id to deny on).
     const effScope = await getEffectiveScope(gate.session)
     if (scope === "namespace" && !namespaceVisible(id, effScope)) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 })
+      return withScopeHeader(NextResponse.json({ error: "Forbidden" }, { status: 403 }), effScope)
     }
     let serviceNamespace: string | undefined
     if (scope === "service") {
@@ -80,7 +80,7 @@ export async function GET(req: NextRequest) {
         throw new ValidationError("invalid service destination namespace: must match RFC 1123 label", "namespace")
       }
       if (!app || !appVisible(app.spec.project ?? "default", namespace, effScope)) {
-        return NextResponse.json({ error: "Service not found" }, { status: 404 })
+        return withScopeHeader(NextResponse.json({ error: "Service not found" }, { status: 404 }), effScope)
       }
       serviceNamespace = namespace
     }
@@ -105,7 +105,7 @@ export async function GET(req: NextRequest) {
     }
     if (notice) body.notice = notice
 
-    return NextResponse.json(body)
+    return withScopeHeader(NextResponse.json(body), effScope)
   } catch (err) {
     if (err instanceof CostPricingConfigurationError) {
       return NextResponse.json(

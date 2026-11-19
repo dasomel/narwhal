@@ -11,7 +11,7 @@ import {
   ValidationError,
   toValidationErrorBody,
 } from "@/lib/validation"
-import { namespaceVisible, requireEffectiveScope } from "@/lib/scope"
+import { namespaceVisible, requireEffectiveScope, withScopeHeader } from "@/lib/scope"
 
 export const dynamic = "force-dynamic"
 
@@ -52,19 +52,22 @@ export async function GET(
 
   const role = session.user?.role
   if (!role || !ALLOWED_ROLES.includes(role)) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 })
+    return withScopeHeader(NextResponse.json({ error: "Forbidden" }, { status: 403 }), scope)
   }
 
   if (!namespaceVisible(namespace, scope)) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 })
+    return withScopeHeader(NextResponse.json({ error: "Forbidden" }, { status: 403 }), scope)
   }
 
   const { searchParams } = new URL(req.url)
   const container = searchParams.get("container") ?? ""
   if (container && !CONTAINER_NAME_RE.test(container)) {
-    return NextResponse.json(
-      { error: "ValidationError", message: "invalid container name", field: "container" },
-      { status: 400 },
+    return withScopeHeader(
+      NextResponse.json(
+        { error: "ValidationError", message: "invalid container name", field: "container" },
+        { status: 400 },
+      ),
+      scope,
     )
   }
   const tailLines = Math.min(Number(searchParams.get("tailLines") ?? "200"), 1000)
@@ -72,7 +75,7 @@ export async function GET(
 
   const cacheKey = cacheKeys.podsLogs(namespace, pod, container, tailLines, previous)
   const cached = await cacheGet<PodLogsResponse>(cacheKey)
-  if (cached) return NextResponse.json(cached)
+  if (cached) return withScopeHeader(NextResponse.json(cached), scope)
 
   try {
     const query = new URLSearchParams({ tailLines: String(tailLines) })
@@ -107,7 +110,7 @@ export async function GET(
     }
 
     await cacheSet(cacheKey, result, cacheTtl("podsLogs"))
-    return NextResponse.json(result)
+    return withScopeHeader(NextResponse.json(result), scope)
   } catch (err) {
     console.error("[api/pods/logs]", err)
     return NextResponse.json({ error: "Failed to fetch logs" }, { status: 500 })

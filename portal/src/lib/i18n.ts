@@ -76,6 +76,10 @@ export const ko = {
   "accessDenied.hint": "플랫폼 관리자에게 팀 매핑 또는 네임스페이스(narwhal.io/team) 할당을 요청하세요.",
   "accessDenied.accountLabel": "로그인된 계정",
   "accessDenied.signOut": "로그아웃",
+  "accessDenied.scopeChangedTitle": "접근 범위가 변경되었습니다",
+  "accessDenied.scopeChangedDescription": "이 탭이 표시하던 데이터의 접근 범위가 서버에서 바뀌어 화면을 비웠습니다.",
+  "accessDenied.scopeChangedHint": "다시 불러오면 현재 권한 기준으로 데이터를 가져옵니다. 이 화면이 반복되면 플랫폼 관리자에게 알려 주세요.",
+  "accessDenied.reload": "다시 불러오기",
 
   // dashboard
   "dashboard.title": "대시보드",
@@ -1550,6 +1554,10 @@ export const en: Record<keyof typeof ko, string> = {
   "accessDenied.hint": "Contact a platform administrator to assign a team mapping or namespace (narwhal.io/team).",
   "accessDenied.accountLabel": "Signed-in account",
   "accessDenied.signOut": "Sign out",
+  "accessDenied.scopeChangedTitle": "Your access scope changed",
+  "accessDenied.scopeChangedDescription": "The server changed the access scope of the data this tab was showing, so the view was cleared.",
+  "accessDenied.scopeChangedHint": "Reload to fetch data for your current permissions. If this page keeps appearing, tell a platform administrator.",
+  "accessDenied.reload": "Reload",
 
   // dashboard
   "dashboard.title": "Dashboard",

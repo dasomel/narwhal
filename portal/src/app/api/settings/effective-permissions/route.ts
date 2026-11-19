@@ -2,7 +2,7 @@ import { NextResponse } from "next/server"
 import { auth } from "@/lib/auth"
 import { getNamespaces } from "@/lib/k8s-client"
 import { configuredMappings, diagnoseClaims, TEAM_LABEL } from "@/lib/role-filter"
-import { getEffectiveScope, hasSessionAccess } from "@/lib/scope"
+import { getEffectiveScope, hasSessionAccess, withScopeHeader } from "@/lib/scope"
 
 export const dynamic = "force-dynamic"
 
@@ -91,5 +91,5 @@ export async function GET() {
       roleDefaults: configured.roleDefaults as EffectivePermissions["configured"]["roleDefaults"],
     },
   }
-  return NextResponse.json(body)
+  return withScopeHeader(NextResponse.json(body), scope)
 }

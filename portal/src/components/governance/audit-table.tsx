@@ -6,6 +6,7 @@ import { Card } from "@/components/ui/card"
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet"
 import { Badge } from "@/components/ui/badge"
 import { useT, useLocale } from "@/lib/i18n-client"
+import { apiFetchJson } from "@/lib/scope-guard"
 import { DataState } from "@/components/ui/data-state"
 import type { TranslationKey } from "@/lib/i18n"
 
@@ -111,7 +112,7 @@ export function AuditTable() {
 
   const { data, isLoading, isError, refetch } = useQuery<OperationalEventsResponse>({
     queryKey: ["governance-events"],
-    queryFn: () => fetch("/api/governance/events").then((r) => r.json()),
+    queryFn: ({ signal }) => apiFetchJson<OperationalEventsResponse>("/api/governance/events", { signal }),
     refetchInterval: 30_000,
     enabled: role === "cluster-admin",
   })

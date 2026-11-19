@@ -1,6 +1,7 @@
 import { describe, expect, it, vi, beforeEach } from "vitest"
 import type { ArgoApp } from "@/lib/argocd"
 import type { NamespaceInfo } from "@/lib/k8s-client"
+import { SCOPE_FINGERPRINT_HEADER } from "@/lib/scope-constants"
 
 // portal#14: /api/events applies appVisible/alertVisible/getEffectiveScope and keys
 // its cache by scope.fingerprint (the cross-tenant cache-poisoning bug documented in
@@ -28,12 +29,16 @@ const { GET } = await import("./route")
 
 const platformTeamSession = { groups: ["developer"], teams: ["platform-team"], user: { role: "developer" } }
 const frontendTeamSession = { groups: ["developer"], teams: ["frontend-team"], user: { role: "developer" } }
+const platformViewerSession = { groups: ["viewer"], teams: ["platform-team"], user: { role: "viewer" } }
+const frontendViewerSession = { groups: ["viewer"], teams: ["frontend-team"], user: { role: "viewer" } }
 const clusterAdminSession = { groups: ["cluster-admin"], teams: [], user: { role: "cluster-admin" } }
-// narwhal#659: a developer with an unmapped team (or no team at all) now fails closed in
+// narwhal#659: a developer or viewer with an unmapped team (or no team at all) now fails closed in
 // getVisibilityScope() -> hasMapping:false with zero namespaces.
 const unscopedSession = { groups: ["unmapped-group"], teams: [], user: { role: "developer" } }
 const unmappedDeveloperSession = { groups: ["developer"], teams: ["unmapped-team"], user: { role: "developer" } }
 const teamlessDeveloperSession = { groups: ["developer"], teams: [], user: { role: "developer" } }
+const unmappedViewerSession = { groups: ["viewer"], teams: ["unmapped-team"], user: { role: "viewer" } }
+const teamlessViewerSession = { groups: ["viewer"], teams: [], user: { role: "viewer" } }
 
 const namespaces: NamespaceInfo[] = [
   { name: "platform-system", status: "Active", labels: {}, createdAt: "2026-01-01T00:00:00Z" },
@@ -147,12 +152,61 @@ describe("GET /api/events — scope enforcement", () => {
   })
 
   it("denies a non-admin caller with no scope mapping with 403 ACCESS_NOT_GRANTED", async () => {
-    for (const session of [unscopedSession, unmappedDeveloperSession, teamlessDeveloperSession]) {
+    for (const session of [
+      unscopedSession,
+      unmappedDeveloperSession,
+      teamlessDeveloperSession,
+      unmappedViewerSession,
+      teamlessViewerSession,
+    ]) {
       vi.mocked(auth).mockResolvedValue(session as never)
       const res = await GET(req())
       expect(res.status).toBe(403)
       expect(await res.json()).toEqual({ error: "Forbidden", code: "ACCESS_NOT_GRANTED" })
     }
+  })
+
+  it("scopes viewer sessions to their own team events and isolates their cache keys", async () => {
+    vi.mocked(auth).mockResolvedValue(platformViewerSession as never)
+    const platformRes = await GET(req())
+    expect(platformRes.status).toBe(200)
+    const platformBody = await platformRes.json()
+    expect(platformBody.map((e: { title: string }) => e.title)).toEqual(["platform-app"])
+
+    vi.mocked(auth).mockResolvedValue(frontendViewerSession as never)
+    const frontendRes = await GET(req())
+    expect(frontendRes.status).toBe(200)
+    const frontendBody = await frontendRes.json()
+    expect(frontendBody.map((e: { title: string }) => e.title)).toEqual(["frontend-app"])
+
+    const setKeys = vi.mocked(cacheSet).mock.calls.map((c) => c[0])
+    expect(new Set(setKeys).size).toBe(2)
+
+    vi.mocked(auth).mockResolvedValue(platformViewerSession as never)
+    const cachedPlatformBody = await (await GET(req())).json()
+    expect(cachedPlatformBody.map((e: { title: string }) => e.title)).toEqual(["platform-app"])
+  })
+
+  it("returns an opaque X-Narwhal-Scope header that differs across scopes without leaking names", async () => {
+    const headersByRole: Record<string, string | null> = {}
+    for (const [label, session] of [
+      ["platformDev", platformTeamSession],
+      ["frontendDev", frontendTeamSession],
+      ["frontendViewer", frontendViewerSession],
+      ["admin", clusterAdminSession],
+    ] as const) {
+      vi.mocked(auth).mockResolvedValue(session as never)
+      const res = await GET(req())
+      expect(res.status).toBe(200)
+      const fp = res.headers.get(SCOPE_FINGERPRINT_HEADER)
+      expect(fp).toMatch(/^[0-9a-f]{32}$/)
+      for (const secret of ["platform", "frontend", "cluster-admin", "developer", "viewer"]) {
+        expect(fp).not.toContain(secret)
+      }
+      headersByRole[label] = fp
+    }
+
+    expect(new Set(Object.values(headersByRole)).size).toBe(4)
   })
 
   it("filters Alertmanager alerts by structured namespace label, not text", async () => {
@@ -268,6 +322,11 @@ describe("GET /api/events — project revocation cache isolation (M2)", () => {
       expect(afterBody.map((e: { title: string }) => e.title)).toEqual(["team-a-app"])
       expect(JSON.stringify(afterBody)).not.toContain("team-b-secret")
       expect(sharedCache.size).toBe(2)
+      expect(resBefore.headers.get(SCOPE_FINGERPRINT_HEADER)).toMatch(/^[0-9a-f]{32}$/)
+      expect(resAfter.headers.get(SCOPE_FINGERPRINT_HEADER)).toMatch(/^[0-9a-f]{32}$/)
+      expect(resAfter.headers.get(SCOPE_FINGERPRINT_HEADER)).not.toBe(
+        resBefore.headers.get(SCOPE_FINGERPRINT_HEADER),
+      )
 
       // 3. Even if the old cached payload were served via key collision, re-filtering on read must drop team-b-secret
       const { cacheGet } = await import("@/lib/valkey")

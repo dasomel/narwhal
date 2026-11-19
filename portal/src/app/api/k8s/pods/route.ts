@@ -4,7 +4,7 @@ import { getPodsList, PodSummary } from "@/lib/k8s-client"
 import { cacheGetWithMeta, cacheSet } from "@/lib/valkey"
 import { cacheKeys, cacheTtl } from "@/lib/cache-keys"
 import { ValidationError, toValidationErrorBody, assertK8sNamespace } from "@/lib/validation"
-import { namespaceVisible, requireEffectiveScope } from "@/lib/scope"
+import { namespaceVisible, requireEffectiveScope, withScopeHeader } from "@/lib/scope"
 
 export const dynamic = "force-dynamic"
 
@@ -59,14 +59,17 @@ export async function GET(req: NextRequest) {
   if ("denied" in scoped) return scoped.denied
   const { scope } = scoped
   if (!namespaceVisible(namespace, scope)) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 })
+    return withScopeHeader(NextResponse.json({ error: "Forbidden" }, { status: 403 }), scope)
   }
 
   const cacheKey = cacheKeys.k8sPods(namespace, app)
   try {
     const cached = await cacheGetWithMeta<PodSummary[]>(cacheKey)
     if (cached) {
-      return NextResponse.json<PodListResponse>({ pods: cached.value, freshness: { source: "cache", observedAt: cached.cachedAt } })
+      return withScopeHeader(
+        NextResponse.json<PodListResponse>({ pods: cached.value, freshness: { source: "cache", observedAt: cached.cachedAt } }),
+        scope,
+      )
     }
   } catch (err) {
     console.warn("[k8s-pods-api] Cache lookup failed:", err)
@@ -81,7 +84,10 @@ export async function GET(req: NextRequest) {
       console.warn("[k8s-pods-api] Cache save failed:", err)
     }
 
-    return NextResponse.json<PodListResponse>({ pods, freshness: { source: "live", observedAt: new Date().toISOString() } })
+    return withScopeHeader(
+      NextResponse.json<PodListResponse>({ pods, freshness: { source: "live", observedAt: new Date().toISOString() } }),
+      scope,
+    )
   } catch (err) {
     if (err instanceof ValidationError) {
       return NextResponse.json(toValidationErrorBody(err), { status: 400 })

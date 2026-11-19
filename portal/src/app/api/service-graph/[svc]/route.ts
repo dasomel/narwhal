@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { requireRole } from "@/lib/auth"
 import { roleGateErrorResponse } from "@/lib/role-gate-response"
-import { getEffectiveScope } from "@/lib/scope"
+import { getEffectiveScope, withScopeHeader } from "@/lib/scope"
 import { getServiceDependencies, isAllowedWindow } from "@/lib/service-graph"
 import { buildServiceNamespaceMap, isServiceInScope } from "@/lib/service-namespace"
 import { ValidationError, toValidationErrorBody, assertK8sName } from "@/lib/validation"
@@ -47,7 +47,7 @@ export async function GET(
     if (!scope.all) {
       const serviceMap = await buildServiceNamespaceMap()
       if (!isServiceInScope(svc, serviceMap, scope)) {
-        return NextResponse.json({ error: "Forbidden" }, { status: 403 })
+        return withScopeHeader(NextResponse.json({ error: "Forbidden" }, { status: 403 }), scope)
       }
     }
 
@@ -60,7 +60,7 @@ export async function GET(
       ...(result.notice ? { notice: result.notice } : {}),
     }
 
-    return NextResponse.json(response)
+    return withScopeHeader(NextResponse.json(response), scope)
   } catch (err) {
     if (err instanceof ValidationError) {
       return NextResponse.json(toValidationErrorBody(err), { status: 400 })

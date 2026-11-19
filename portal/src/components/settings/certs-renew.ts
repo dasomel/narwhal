@@ -1,4 +1,5 @@
 import type { Certificate } from "@/lib/k8s-client"
+import { apiFetch } from "@/lib/scope-guard"
 
 export const CERT_RENEW_TIMEOUT_MS = 15_000
 export const CERT_POLL_INTERVAL_MS = 2_000
@@ -178,7 +179,7 @@ export async function postCertRenew({
 export async function fetchCertificates(
   controller?: Pick<CertRenewController, "reconcile">,
 ): Promise<Certificate[]> {
-  const r = await fetch("/api/settings/certs")
+  const r = await apiFetch("/api/settings/certs")
   if (!r.ok) throw new Error(r.statusText)
   const data = (await r.json()) as Certificate[]
   if (Array.isArray(data) && controller) {

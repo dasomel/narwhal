@@ -4,7 +4,7 @@ import { getArgoApps } from "@/lib/argocd"
 import { getAlerts } from "@/lib/alertmanager"
 import { cacheGet, cacheSet } from "@/lib/valkey"
 import { cacheKeys, cacheTtl } from "@/lib/cache-keys"
-import { alertVisible, appVisible, requireEffectiveScope, type EffectiveScope } from "@/lib/scope"
+import { alertVisible, appVisible, requireEffectiveScope, withScopeHeader, type EffectiveScope } from "@/lib/scope"
 
 export const dynamic = "force-dynamic"
 
@@ -106,7 +106,7 @@ export async function GET(request: Request) {
   if (!sinceDate) {
     const cached = await cacheGet<unknown>(cacheKey)
     if (isValidCachedTimeline(cached)) {
-      return NextResponse.json(projectTimeline(cached, scope))
+      return withScopeHeader(NextResponse.json(projectTimeline(cached, scope)), scope)
     }
   }
 
@@ -187,7 +187,7 @@ export async function GET(request: Request) {
       await cacheSet(cacheKey, records, cacheTtl("eventsTimeline"))
     }
 
-    return NextResponse.json(projectTimeline(filtered, scope))
+    return withScopeHeader(NextResponse.json(projectTimeline(filtered, scope)), scope)
   } catch (err) {
     console.error("[api/events]", err)
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })

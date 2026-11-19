@@ -9,6 +9,7 @@ import {
   TooltipContent as InfoTooltipContent,
 } from "@/components/ui/tooltip"
 import { useT } from "@/lib/i18n-client"
+import { apiFetchJson } from "@/lib/scope-guard"
 import { DataState } from "@/components/ui/data-state"
 import { ResourceDetailDrawer } from "./resource-detail-drawer"
 import type { ResourcesResponseV2, NamespaceUsageV2 } from "./types"
@@ -52,7 +53,7 @@ export function ResourceChart() {
 
   const { data, isLoading, isError, refetch } = useQuery<ResourcesResponseV2>({
     queryKey: ["governance-resources"],
-    queryFn: () => fetch("/api/governance/resources").then((r) => r.json()),
+    queryFn: ({ signal }) => apiFetchJson<ResourcesResponseV2>("/api/governance/resources", { signal }),
     refetchInterval: 30_000,
   })
 

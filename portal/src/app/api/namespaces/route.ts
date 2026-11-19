@@ -3,7 +3,7 @@ import { auth, requireRole } from "@/lib/auth"
 import { roleGateErrorResponse } from "@/lib/role-gate-response"
 import { getNamespacesForScope } from "@/lib/k8s-client"
 import { GiteaError, GiteaCredentialError, isGiteaConfigured, requestTenantNamespace } from "@/lib/gitea"
-import { namespaceVisible, requireEffectiveScope } from "@/lib/scope"
+import { namespaceVisible, requireEffectiveScope, withScopeHeader } from "@/lib/scope"
 import { resolveNamespaceOwner } from "@/lib/namespace-ownership"
 import { beginOperation, completeOperation, failOperation } from "@/lib/operation-context"
 import { invalidateFor } from "@/lib/cache-invalidation"
@@ -33,7 +33,7 @@ export async function GET() {
   if ("denied" in scoped) return scoped.denied
   const { scope } = scoped
   const namespaces = await getNamespacesForScope(scope)
-  return NextResponse.json(namespaces.filter((ns) => namespaceVisible(ns.name, scope)))
+  return withScopeHeader(NextResponse.json(namespaces.filter((ns) => namespaceVisible(ns.name, scope))), scope)
 }
 
 export async function POST(req: Request) {

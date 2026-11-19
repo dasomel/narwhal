@@ -3,7 +3,7 @@ import { requireRole } from "@/lib/auth"
 import { roleGateErrorResponse } from "@/lib/role-gate-response"
 import { getArgoApp, appToCatalogService } from "@/lib/argocd"
 import { evaluateService, loadRules } from "@/lib/scorecard"
-import { appVisible, getEffectiveScope } from "@/lib/scope"
+import { appVisible, getEffectiveScope, withScopeHeader } from "@/lib/scope"
 
 export const dynamic = "force-dynamic"
 
@@ -67,7 +67,7 @@ export async function GET(
     // service id returned full scorecard detail regardless of team ownership.
     const scope = await getEffectiveScope(gate.session)
     if (!appVisible(app.spec.project ?? "default", app.spec.destination?.namespace ?? app.metadata.namespace ?? "default", scope)) {
-      return NextResponse.json({ error: "Service not found" }, { status: 404 })
+      return withScopeHeader(NextResponse.json({ error: "Service not found" }, { status: 404 }), scope)
     }
 
     const catalogSvc = appToCatalogService(app)
@@ -126,7 +126,7 @@ export async function GET(
       rules,
     }
 
-    return NextResponse.json(response)
+    return withScopeHeader(NextResponse.json(response), scope)
   } catch (err) {
     const msg = (err as Error).message ?? ""
     if (msg.includes("not found")) {

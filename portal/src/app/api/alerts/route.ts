@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server"
 import { getAlerts } from "@/lib/alertmanager"
 import { auth } from "@/lib/auth"
-import { alertVisible, requireEffectiveScope } from "@/lib/scope"
+import { alertVisible, requireEffectiveScope, withScopeHeader } from "@/lib/scope"
 
 export const dynamic = "force-dynamic"
 
@@ -38,7 +38,7 @@ export async function GET(request: Request) {
       ? alerts.filter((a) => a.labels.severity === severityFilter)
       : alerts
 
-    return NextResponse.json(filtered)
+    return withScopeHeader(NextResponse.json(filtered), scope)
   } catch (err) {
     console.error("[api/alerts]", err)
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })

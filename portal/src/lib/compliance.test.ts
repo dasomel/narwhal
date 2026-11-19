@@ -1330,6 +1330,9 @@ describe("parseComplianceTarget", () => {
     expect(parseComplianceTarget("kube-system/node-narwhal-master-1")).toBeNull()
     expect(parseComplianceTarget("/pod-narwhal-db-1")).toBeNull()
     expect(parseComplianceTarget("/role-narwhal-portal-jobs")).toBeNull()
+    expect(parseComplianceTarget("kube-system/constructor-foo")).toBeNull()
+    expect(parseComplianceTarget("kube-system/__proto__-foo")).toBeNull()
+    expect(parseComplianceTarget("kube-system/toString-foo")).toBeNull()
   })
 })
 
@@ -1721,5 +1724,232 @@ describe("compliance framework actionable vs accepted split", () => {
       { id: "KISA-ADM-01", act: 1, acc: 4 },
       { id: "KISA-RBAC-02", act: 6, acc: 10 },
     ])
+  })
+
+  it("fails safe on the framework path when replicasets list returns 403 or 500 (nothing dropped)", async () => {
+    for (const status of [403, 500]) {
+      mockCache.clear()
+      const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {})
+      try {
+        mockFetchWithPolicy.mockImplementation(async (url: string) => {
+          const path = new URL(url).pathname
+          if (path === "/apis/apps/v1/replicasets") {
+            return { ok: false, status, statusText: "Error", _path: path }
+          }
+          return { ok: true, status: 200, statusText: "OK", _path: path }
+        })
+        mockReadJsonWithPolicy.mockImplementation(async (res: { _path: string }) => {
+          if (res._path === "/apis/aquasecurity.github.io/v1alpha1/clustercompliancereports") {
+            return {
+              items: [
+                makeCcr({
+                  id: `rs-err-${status}`,
+                  passCount: 0,
+                  failCount: 1,
+                  results: [
+                    {
+                      id: "RS-1",
+                      name: "Unlisted RS",
+                      severity: "HIGH",
+                      checks: [
+                        { checkID: "AVD-KSV-0014", target: "devtools/replicaset-unlisted-old11", success: false },
+                      ],
+                    },
+                  ],
+                }),
+              ],
+            }
+          }
+          return { items: [] }
+        })
+
+        const frameworks = await getComplianceFrameworks()
+        expect(frameworks[0]).toMatchObject({
+          id: `rs-err-${status}`,
+          failCount: 1,
+          actionableFailCount: 1,
+          acceptedFailCount: 0,
+        })
+
+        const detail = await getComplianceFrameworkDetail(`rs-err-${status}`)
+        expect(detail).not.toBeNull()
+        expect(detail!.controls[0]).toMatchObject({
+          id: "RS-1",
+          failCount: 1,
+          actionableFailCount: 1,
+          acceptedFailCount: 0,
+          accepted: false,
+        })
+
+        const warnMsgs = warnSpy.mock.calls.map((c) => String(c[0]))
+        expect(warnMsgs.some((m) => m.includes("failed to list ReplicaSets"))).toBe(true)
+        expect(warnMsgs.some((m) => m.includes("missing from cluster list"))).toBe(false)
+      } finally {
+        warnSpy.mockRestore()
+      }
+    }
+  })
+
+  it("warns about missing ReplicaSets on the framework path even when replicasets list is empty", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {})
+    try {
+      installK8sMock({
+        "/apis/aquasecurity.github.io/v1alpha1/clustercompliancereports": {
+          items: [
+            makeCcr({
+              id: "rs-empty",
+              passCount: 0,
+              failCount: 1,
+              results: [
+                {
+                  id: "RS-MISSING",
+                  name: "Missing RS",
+                  severity: "HIGH",
+                  checks: [
+                    { checkID: "AVD-KSV-0014", target: "devtools/replicaset-unlisted-old11", success: false },
+                  ],
+                },
+              ],
+            }),
+          ],
+        },
+        "/apis/apps/v1/replicasets": { items: [] },
+      })
+
+      const frameworks = await getComplianceFrameworks()
+      expect(frameworks[0]).toMatchObject({ failCount: 1, actionableFailCount: 1, acceptedFailCount: 0 })
+
+      const detail = await getComplianceFrameworkDetail("rs-empty")
+      expect(detail?.controls[0]).toMatchObject({
+        id: "RS-MISSING",
+        failCount: 1,
+        actionableFailCount: 1,
+        acceptedFailCount: 0,
+      })
+
+      const missingWarns = warnSpy.mock.calls
+        .map((c) => String(c[0]))
+        .filter((m) => m.includes("missing from cluster list"))
+      expect(missingWarns).toHaveLength(2)
+      expect(missingWarns[0]).toContain("devtools/unlisted-old11")
+    } finally {
+      warnSpy.mockRestore()
+    }
+  })
+
+  it("fails closed when summary.failCount exceeds detail controls and handles controls with checks: []", async () => {
+    installK8sMock({
+      "/apis/aquasecurity.github.io/v1alpha1/clustercompliancereports": {
+        items: [
+          makeCcr({
+            id: "unaccounted-and-empty",
+            passCount: 5,
+            failCount: 5,
+            results: [
+              {
+                id: "C-EMPTY",
+                name: "Empty checks control",
+                severity: "LOW",
+                checks: [],
+              },
+              {
+                id: "C-ACCEPTED",
+                name: "Accepted control",
+                severity: "HIGH",
+                checks: [{ checkID: "AVD-KSV-0017", target: "kube-system/daemonset-cilium", success: false }],
+              },
+              {
+                id: "C-ACTIONABLE",
+                name: "Actionable control",
+                severity: "HIGH",
+                checks: [{ checkID: "AVD-KSV-0014", target: "dev/pod-unlisted-app", success: false }],
+              },
+            ],
+          }),
+        ],
+      },
+    })
+
+    const detail = await getComplianceFrameworkDetail("unaccounted-and-empty")
+    expect(detail).not.toBeNull()
+    // detailFailControls = 2 (C-ACCEPTED, C-ACTIONABLE); summary.failCount = 5 -> unaccountedFail = 3
+    // actionableFailCount = 1 + 3 = 4; acceptedFailCount = 1; evaluated = 10 -> effectivePassRate = 6 / 10
+    expect(detail!.actionableFailCount).toBe(4)
+    expect(detail!.acceptedFailCount).toBe(1)
+    expect(detail!.effectivePassRate).toBeCloseTo(6 / 10)
+
+    const emptyCtrl = detail!.controls.find((c) => c.id === "C-EMPTY")
+    expect(emptyCtrl).toMatchObject({
+      passCount: 0,
+      failCount: 0,
+      actionableFailCount: 0,
+      acceptedFailCount: 0,
+      accepted: false,
+    })
+  })
+
+  it("restores hashed StatefulSet names through configauditreports and fails closed when absent", async () => {
+    installK8sMock({
+      "/apis/aquasecurity.github.io/v1alpha1/clustercompliancereports": {
+        items: [
+          makeCcr({
+            id: "sts-hash-fw",
+            passCount: 0,
+            failCount: 2,
+            results: [
+              {
+                id: "STS-RESOLVED",
+                name: "Hashed StatefulSet resolved via ConfigAuditReport",
+                severity: "LOW",
+                checks: [
+                  { checkID: "AVD-KSV-0020", target: "monitoring/statefulset-78785dbd5c", success: false },
+                ],
+              },
+              {
+                id: "STS-UNRESOLVED",
+                name: "Hashed StatefulSet missing from ConfigAuditReport",
+                severity: "LOW",
+                checks: [
+                  { checkID: "AVD-KSV-0020", target: "monitoring/statefulset-deadbeef00", success: false },
+                ],
+              },
+            ],
+          }),
+        ],
+      },
+      "/apis/aquasecurity.github.io/v1alpha1/configauditreports": {
+        items: [
+          {
+            metadata: {
+              namespace: "monitoring",
+              name: "statefulset-78785dbd5c",
+              labels: {
+                "trivy-operator.resource.kind": "StatefulSet",
+                "trivy-operator.resource.name": "prometheus-prometheus-stack-kube-prom-prometheus",
+              },
+            },
+            report: { summary: { criticalCount: 0, highCount: 0, mediumCount: 0, lowCount: 1 }, checks: [] },
+          },
+        ],
+      },
+    })
+
+    const detail = await getComplianceFrameworkDetail("sts-hash-fw")
+    expect(detail).not.toBeNull()
+    expect(detail!.actionableFailCount).toBe(1)
+    expect(detail!.acceptedFailCount).toBe(1)
+
+    const byId = new Map(detail!.controls.map((c) => [c.id, c]))
+    expect(byId.get("STS-RESOLVED")).toMatchObject({
+      accepted: true,
+      acceptedScope: "accept",
+      actionableFailCount: 0,
+      acceptedFailCount: 1,
+    })
+    expect(byId.get("STS-UNRESOLVED")).toMatchObject({
+      accepted: false,
+      actionableFailCount: 1,
+      acceptedFailCount: 0,
+    })
   })
 })

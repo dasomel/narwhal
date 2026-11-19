@@ -105,12 +105,14 @@ function ControlsTable({
                     <span className={`font-medium ${actionableFail > 0 ? "text-red-600" : "text-muted-foreground"}`}>
                       {actionableFail}
                     </span>
-                    {acceptedFail > 0 && (
+                    {(acceptedFail > 0 || ctrl.failCount !== actionableFail) && (
                       <Badge
                         variant="outline"
                         className="text-[0.65rem] px-1.5 py-0 text-muted-foreground border-muted-foreground/30"
                       >
-                        +{acceptedFail} {t(locale, "compliance.framework.acceptedShort")} ({t(locale, "compliance.framework.rawChecks", { count: String(ctrl.failCount) })})
+                        {acceptedFail > 0
+                          ? `+${acceptedFail} ${t(locale, "compliance.framework.acceptedShort")} (${t(locale, "compliance.framework.rawChecks", { count: String(ctrl.failCount) })})`
+                          : t(locale, "compliance.framework.rawChecks", { count: String(ctrl.failCount) })}
                       </Badge>
                     )}
                   </div>
@@ -220,12 +222,14 @@ export default async function FrameworkDetailPage({ params }: Props) {
           </span>
           {(acceptedControlsFail > 0 || detail.failCount !== actionableControlsFail) && (
             <>
-              <Badge
-                variant="outline"
-                className="text-xs text-muted-foreground border-muted-foreground/30"
-              >
-                +{acceptedControlsFail} {t(locale, "compliance.framework.acceptedShort")}
-              </Badge>
+              {acceptedControlsFail > 0 && (
+                <Badge
+                  variant="outline"
+                  className="text-xs text-muted-foreground border-muted-foreground/30"
+                >
+                  +{acceptedControlsFail} {t(locale, "compliance.framework.acceptedShort")}
+                </Badge>
+              )}
               <span className="text-xs text-muted-foreground">
                 {t(locale, "compliance.framework.rawSummary", {
                   fail: String(detail.failCount),

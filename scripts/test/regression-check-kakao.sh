@@ -3519,6 +3519,9 @@ PYEOF'
   # 2026-11-19: portal Compliance Frameworks separate accepted exceptions from actionable failures via existing fail-closed matchers
   check R381 "portal Compliance Frameworks reuse parseComplianceTarget, configAuditMatcher, rbacAuditMatcher, fetchReplicaSetMap, and infra handling fail-closed, preserve raw failCount/passRate, render collapsed accepted groups + doc link in FrameworksGrid/detail, update docs/common/compliance-hardening.md, and pin trimmed live CCR fixture; 10 mutations caught" \
     python3 scripts/test/lib/check-portal-framework-accepted.py --mutation-verify
+  # 2026-11-19: portal Compliance Frameworks fix round (own-property target lookup, UI raw failCount on dropped RS, empty RS warn parity, kisa.ts comment, edge unit tests)
+  check R382 "parseComplianceTarget uses Object.hasOwn, UI preserves raw failCount whenever failCount !== actionableFail (including acceptedFail===0), empty ReplicaSet list warns consistently with getConfigAuditList, kisa.ts comment updated, and edge/UI tests cover RS 403/500, empty RS, unaccountedFail, checks:[], and hashed StatefulSet restore; 11 mutations caught" \
+    python3 scripts/test/lib/check-portal-framework-accepted-fixes.py --mutation-verify
 }
 
 #=========================================

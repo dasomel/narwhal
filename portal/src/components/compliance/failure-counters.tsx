@@ -72,6 +72,7 @@ export function FailureCounters({ summary, locale }: Props) {
     (acc, f) => acc + (f.acceptedFailCount ?? 0),
     0,
   )
+  const rawControlsTotal = summary.frameworks.reduce((acc, f) => acc + f.failCount, 0)
 
   const values: Record<(typeof counterConfig)[number]["key"], string> = {
     configAudit: String(
@@ -117,12 +118,15 @@ export function FailureCounters({ summary, locale }: Props) {
                 })}
               </div>
             )}
-            {key === "frameworks" && acceptedControlsTotal > 0 && (
+            {key === "frameworks" && (acceptedControlsTotal > 0 || rawControlsTotal !== actionableControlsTotal) && (
               <div className="text-[0.7rem] text-muted-foreground/70 mt-0.5">
                 {t(locale, "compliance.counter.frameworksBreakdown", {
                   actionable: String(actionableControlsTotal),
                   accepted: String(acceptedControlsTotal),
                 })}
+                {rawControlsTotal !== actionableControlsTotal
+                  ? ` (${t(locale, "compliance.framework.rawChecks", { count: String(rawControlsTotal) })})`
+                  : ""}
               </div>
             )}
           </div>

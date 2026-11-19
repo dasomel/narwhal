@@ -476,4 +476,100 @@ describe("Compliance UI accepted exceptions", () => {
     expect(pageKoHtml).toContain("수용된 예외 컨트롤 (1)")
     expect(pageKoHtml).toContain("위험 수용 예외 문서")
   })
+
+  it("keeps raw failCount visible when only superseded ReplicaSets were dropped (acceptedFail === 0)", async () => {
+    const frameworks: ComplianceFramework[] = [
+      {
+        id: "rs-only",
+        title: "Superseded RS Only",
+        passCount: 8,
+        failCount: 2,
+        actionableFailCount: 0,
+        acceptedFailCount: 0,
+        totalControls: 10,
+        passRate: 0.8,
+        effectivePassRate: 1,
+      },
+    ]
+
+    const summary: ComplianceSummary = {
+      totalConfigAuditFailures: { Critical: 0, High: 0, Medium: 0, Low: 0 },
+      lowSeverityConfigAuditFailures: { Critical: 0, High: 0, Medium: 0, Low: 0 },
+      acceptedSystemConfigAuditFailures: { Critical: 0, High: 0, Medium: 0, Low: 0 },
+      totalRbacFailures: { Critical: 0, High: 0, Medium: 0, Low: 0 },
+      acceptedRbacFailures: { Critical: 0, High: 0, Medium: 0, Low: 0 },
+      totalInfraFailures: { Critical: 0, High: 0, Medium: 0, Low: 0 },
+      frameworks,
+      scannedWorkloads: 10,
+      scannedRbacObjects: 5,
+      scannedNodes: 1,
+      lastUpdated: new Date().toISOString(),
+    }
+
+    const countersEn = renderToStaticMarkup(<FailureCounters summary={summary} locale="en" />)
+    expect(countersEn).toContain("100%")
+    expect(countersEn).toContain("0 actionable · 0 accepted (raw 2)")
+
+    const countersKo = renderToStaticMarkup(<FailureCounters summary={summary} locale="ko" />)
+    expect(countersKo).toContain("조치가능 0건 · 수용 0건 (원본 2)")
+
+    vi.mocked(useQuery).mockReturnValue({
+      data: frameworks,
+      isLoading: false,
+      isError: false,
+      refetch: vi.fn(),
+    } as never)
+
+    const gridEn = renderToStaticMarkup(
+      <LocaleProvider locale="en">
+        <FrameworksGrid />
+      </LocaleProvider>,
+    )
+    expect(gridEn).toContain("0 actionable controls · 0 accepted (raw failed 2)")
+    expect(gridEn).toContain("raw 2")
+    expect(gridEn).not.toContain("+0 accepted")
+
+    const detail: ComplianceFrameworkDetail = {
+      ...frameworks[0],
+      controls: [
+        {
+          id: "5.2.1",
+          name: "Superseded ReplicaSet control",
+          severity: "High",
+          passCount: 0,
+          failCount: 2,
+          actionableFailCount: 0,
+          acceptedFailCount: 0,
+          accepted: false,
+        },
+      ],
+    }
+
+    vi.mocked(useQuery).mockReturnValue({
+      data: detail,
+      isLoading: false,
+      isError: false,
+      refetch: vi.fn(),
+    } as never)
+
+    const panelEn = renderToStaticMarkup(
+      <LocaleProvider locale="en">
+        <ExpandedFrameworkPanel id="rs-only" />
+      </LocaleProvider>,
+    )
+    expect(panelEn).toContain("✗ 0")
+    expect(panelEn).toContain("raw 2")
+    expect(panelEn).not.toContain("+0 accepted")
+
+    mockGetLocale.mockResolvedValue("en")
+    mockGetComplianceFrameworkDetail.mockResolvedValue(detail)
+    const pageEl = await FrameworkDetailPage({
+      params: Promise.resolve({ id: "rs-only" }),
+    })
+    const pageHtml = renderToStaticMarkup(pageEl)
+    expect(pageHtml).toContain("✗ 0 Failed (actionable)")
+    expect(pageHtml).toContain("Raw failed 2 (pass rate 80%)")
+    expect(pageHtml).toContain("raw 2")
+    expect(pageHtml).not.toContain("+0 accepted")
+  })
 })

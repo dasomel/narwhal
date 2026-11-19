@@ -959,7 +959,7 @@ export function parseComplianceTarget(target: unknown): ParsedComplianceTarget |
   if (dashIdx <= 0) return null
   const rawKind = rest.slice(0, dashIdx).toLowerCase()
   const name = rest.slice(dashIdx + 1)
-  const kind = COMPLIANCE_TARGET_KINDS[rawKind]
+  const kind = Object.hasOwn(COMPLIANCE_TARGET_KINDS, rawKind) ? COMPLIANCE_TARGET_KINDS[rawKind] : undefined
   if (!kind || name.length === 0) return null
   if (CLUSTER_SCOPED_TARGET_KINDS.has(kind)) {
     if (namespace !== "") return null
@@ -1222,7 +1222,7 @@ export async function getComplianceFrameworks(): Promise<ComplianceFramework[]> 
     const frameworks: ComplianceFramework[] = (list.items ?? []).map(
       (item) => buildComplianceFrameworkData(item, rsMap, reportTargetMap, missingReplicaSets).summary,
     )
-    if (rsMap !== null && rsMap.size > 0 && missingReplicaSets.size > 0) {
+    if (missingReplicaSets.size > 0) {
       console.warn(
         `[compliance] ReplicaSet(s) missing from cluster list, keeping framework checks fail-safe: ${Array.from(missingReplicaSets).join(", ")}`,
       )
@@ -1251,7 +1251,7 @@ export async function getComplianceFrameworkDetail(
 
     const missingReplicaSets = new Set<string>()
     const { detail } = buildComplianceFrameworkData(item, rsMap, reportTargetMap, missingReplicaSets)
-    if (rsMap !== null && rsMap.size > 0 && missingReplicaSets.size > 0) {
+    if (missingReplicaSets.size > 0) {
       console.warn(
         `[compliance] ReplicaSet(s) missing from cluster list, keeping framework checks fail-safe: ${Array.from(missingReplicaSets).join(", ")}`,
       )

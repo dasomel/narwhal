@@ -86,12 +86,14 @@ function ControlPreviewCard({
         <span className={`font-medium ${actionableFail > 0 ? "text-red-600" : "text-muted-foreground"}`}>
           ✗ {actionableFail}
         </span>
-        {acceptedFail > 0 && (
+        {(acceptedFail > 0 || ctrl.failCount !== actionableFail) && (
           <Badge
             variant="outline"
             className="text-[0.65rem] px-1.5 py-0 text-muted-foreground border-muted-foreground/30"
           >
-            +{acceptedFail} {t("compliance.framework.acceptedShort")} ({t("compliance.framework.rawChecks", { count: String(ctrl.failCount) })})
+            {acceptedFail > 0
+              ? `+${acceptedFail} ${t("compliance.framework.acceptedShort")} (${t("compliance.framework.rawChecks", { count: String(ctrl.failCount) })})`
+              : t("compliance.framework.rawChecks", { count: String(ctrl.failCount) })}
           </Badge>
         )}
       </div>
@@ -265,7 +267,7 @@ export function FrameworksGrid() {
                   <span className={`font-medium ${actionableFail > 0 ? "text-red-600" : "text-muted-foreground"}`}>
                     ✗ {actionableFail}
                   </span>
-                  {acceptedFail > 0 && (
+                  {(acceptedFail > 0 || fw.failCount !== actionableFail) && (
                     <Badge
                       variant="outline"
                       className="text-[0.65rem] px-1.5 py-0 text-muted-foreground border-muted-foreground/30"
@@ -274,7 +276,9 @@ export function FrameworksGrid() {
                         rate: String(rawPct),
                       })}
                     >
-                      +{acceptedFail} {t("compliance.framework.acceptedShort")} ({t("compliance.framework.rawChecks", { count: String(fw.failCount) })})
+                      {acceptedFail > 0
+                        ? `+${acceptedFail} ${t("compliance.framework.acceptedShort")} (${t("compliance.framework.rawChecks", { count: String(fw.failCount) })})`
+                        : t("compliance.framework.rawChecks", { count: String(fw.failCount) })}
                     </Badge>
                   )}
                 </div>

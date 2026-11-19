@@ -13,7 +13,7 @@
 | OpenBao raft 데이터(KV 등)의 일 1회 스냅샷, 최신 7개 보관 | **Gitea `data`, SeaweedFS master `data-storage`, Harbor jobservice `job-logs`**: 여전히 Velero fs-backup으로 보호되지 않는다(#431은 열려 있음). |
 | 스냅샷 파일은 오프라인 키로만 복호화 가능 | **KNOWN LIMITATION:** unseal 키와 root 토큰이 든 `openbao-init` Secret은 여전히 `daily-openbao` Velero 백업(`storage` 네임스페이스 전체)에 있다. 그 백업을 읽을 수 있는 주체는 unseal 키와 root 토큰(라이브 클러스터 접근)을 얻는다. 스냅샷 복호화에는 여전히 개인키가 필요하다. |
 | 인증서 오류 시 fail closed(평문 폴백 없음) | **복구는 드릴로 검증되지 않았다.** 개인키 분실 시 모든 스냅샷은 복구 불가이다. 같은 장애 도메인(NFS/SeaweedFS)이며 외부 사본은 후속 과제이다. |
-| Phase 2/`verify-cluster`/`verify-backup`/`show-credentials`와 Prometheus 경보(`OpenBaoSnapshotBackupFailed`, `OpenBaoSnapshotBackupStale`)로 ConfigMap 누락·불일치·미성공을 감지 | Alertmanager 기본 수신자가 null(#610)이면 경보가 외부로 전달되지 않는다. 클러스터 재구축 후 ConfigMap 재적용은 수동 단계이다(`D-OPENBAO-BACKUP-ACTIVATION`). |
+| Phase 2/`verify-cluster`/`verify-backup`와 Prometheus 경보(`OpenBaoSnapshotBackupStale`, 개별 실행 실패는 기존 `KubeJobFailed`)로 ConfigMap 누락·불일치·신선도 초과를 감지 | Alertmanager 기본 수신자가 null(#610)이면 경보가 외부로 전달되지 않는다. 클러스터 재구축 후 ConfigMap 재적용은 수동 단계이다(`D-OPENBAO-BACKUP-ACTIVATION`). |
 
 ## 2. 사전 조건
 
@@ -146,7 +146,7 @@ kubectl -n storage get podvolumebackups.velero.io -l "velero.io/backup-name=${LA
 
 ### 3.7 클러스터 재구축(rebuild) 후 재활성화
 
-클러스터를 새로 구축하거나 재구축하면 `13-2-narwhal-portal-bindings.sh`가 OpenBao `openbao-backup` 정책·롤을 다시 만들고, GitOps(`openbao-backup`)가 `RECIPIENT_FPR`이 고정된 `CronJob storage/openbao-snapshot`을 배포하지만, **ConfigMap `storage/openbao-backup-recipient`는 클러스터에 존재하지 않는다.** Phase 2(`06-phase2-start.sh`, `scripts/up.sh`, `scripts/cloud/provision-kakao.sh`), `scripts/test/verify-cluster.sh`, `scripts/test/show-credentials.sh`는 이 상태를 `DEGRADED`로 경고하고, `scripts/test/verify-backup.sh --section=openbao`는 실패(`FAIL`)로 보고한다.
+클러스터를 새로 구축하거나 재구축하면 `13-2-narwhal-portal-bindings.sh`가 OpenBao `openbao-backup` 정책·롤을 다시 만들고, GitOps(`openbao-backup`)가 `RECIPIENT_FPR`이 고정된 `CronJob storage/openbao-snapshot`을 배포하지만, **ConfigMap `storage/openbao-backup-recipient`는 클러스터에 존재하지 않는다.** Phase 2(`06-phase2-start.sh`, `scripts/cloud/provision-kakao.sh`)와 `scripts/test/verify-cluster.sh`는 이 상태를 `DEGRADED`로 경고하고, `scripts/test/verify-backup.sh --section=openbao`는 실패(`FAIL`)로 보고한다.
 
 1. **기존 오프라인 키 쌍을 유지하는 경우**(권장, `RECIPIENT_FPR` 변경 불필요): 워크스테이션에 보관한 공개 인증서(`*.cert.pem`)로 ConfigMap만 다시 적용한다.
    ```bash
@@ -156,16 +156,15 @@ kubectl -n storage get podvolumebackups.velero.io -l "velero.io/backup-name=${LA
      --from-file=recipient.pem=<인증서 경로> --dry-run=client -o yaml | kubectl apply -f -
    ```
 2. **새 키 쌍이 필요한 경우**: 3.2(`scripts/ops/openbao-backup-keygen.sh`)와 3.3(`RECIPIENT_FPR` Git 갱신)을 따른다.
-3. **확인 [읽기]**:
+3. **첫 암호화 스냅샷 생성 [변경]**: 3.5의 수동 Job(`kubectl -n storage create job --from=cronjob/openbao-snapshot ...`)을 실행해 첫 스냅샷 생성을 확인한다(`--from=cronjob/...`으로 만든 Job은 CronJob `ownerReferences`를 설정해 `status.lastSuccessfulTime`도 갱신하므로, 이미 04:30 UTC 실행이 실패한 뒤라도 아래 확인 단계가 통과한다).
+4. **확인 [읽기]**:
    ```bash
    bash scripts/test/verify-backup.sh --section=openbao
-   bash scripts/test/show-credentials.sh | grep -A3 "OpenBao"
    ```
-   이후 3.5의 수동 Job으로 첫 암호화 스냅샷 생성을 확인한다.
 
 ## 4. 정기 점검
 
-`gitops/resources/prometheus-alerts.yaml`의 `openbao-backup` 그룹은 kube-state-metrics로 `OpenBaoSnapshotBackupFailed`(최근 스케줄 실행 후 30분 내 미성공, 최초 미성공 포함)와 `OpenBaoSnapshotBackupStale`(마지막 성공 > 26시간 또는 생성 26시간 후 미성공)을 감지한다(`spec.suspend: true`일 때는 억제). 단 Alertmanager 외부 수신자가 연결되기 전(#610)에는 주기적 수동 확인도 병행한다. 신선도 기준: **`last-success` 타임스탬프가 26시간보다 오래되면 실패로 본다**(일 1회 + 여유 2시간; 26시간은 이 문서의 운영 판단이며 코드가 강제하는 값이 아니다. CronJob은 `startingDeadlineSeconds: 1200`이라 20분 안에 시작하지 못하면 그날 실행을 건너뛴다).
+개별 실행 실패(`activeDeadlineSeconds: 600` 초과 포함)는 기존 범용 `KubeJobFailed`(`warning`) 경보가 감지하고, `gitops/resources/prometheus-alerts.yaml`의 `openbao-backup` 그룹은 kube-state-metrics로 `OpenBaoSnapshotBackupStale`(마지막 성공 > 26시간 또는 생성 26시간 후 미성공, `critical`, `spec.suspend: true`일 때 억제)을 감지한다. 단 Alertmanager 외부 수신자가 연결되기 전(#610)에는 경보가 외부로 전달되지 않으므로 주기적 수동 확인을 병행한다. 신선도 기준: **`last-success` 타임스탬프가 26시간보다 오래되면 실패로 본다**(일 1회 + 여유 2시간; 26시간(`93600`초)은 `OpenBaoSnapshotBackupStale` 경보와 `scripts/test/verify-backup.sh --section=openbao`가 함께 검사하는 기준이다. CronJob은 `startingDeadlineSeconds: 1200`이라 20분 안에 시작하지 못하면 그날 실행을 건너뛴다).
 
 ```bash
 # [읽기] 표식과 파일
@@ -260,7 +259,7 @@ kubectl -n storage get backups.velero.io | grep daily-openbao
 - NFS PVC에 uid 100으로 쓰기, 0644/0755 권한을 root_squash된 Velero 데이터 무버가 읽는 것
 - Job 파드의 Velero 제외 라벨·`work` 볼륨 제외의 실제 효과, holder 파드의 PodVolumeBackup 완료
 - 복호화와 복구 드릴(5절의 키 교체 후 복호화 포함), 이전 키 폐기 시점
-- `OpenBaoSnapshotBackupFailed`/`OpenBaoSnapshotBackupStale` 경보 규칙은 `promtool`로 검증되었으나 라이브 Alertmanager 전달은 별도(#610)이다
+- `OpenBaoSnapshotBackupStale` 경보 규칙은 `promtool`로 검증되었으나 라이브 Alertmanager 전달은 별도(#610)이다
 - `push-to-gitea.sh`로 두 경로를 반영했을 때 기존 클러스터의 ArgoCD 동작, 13-2 수동 재실행 명령(저장소에 문서화되어 있지 않음)
 
 관련: `CHANGELOG.md` [1.3.0] "Upgrade notes"(OpenBao snapshot backup), `docs/common/lessons-log.md`의 2026-10-20 행(#431, #443).

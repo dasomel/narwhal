@@ -13,7 +13,7 @@ echo ""
 # failed re-run never leaves a stale "complete" behind; written only after every critical
 # script passed (the loop below exits 1 on a critical failure before reaching the end).
 PHASE2_MARKER="/var/lib/narwhal/phase2-complete"  # keep identical to PHASE2_MARKER in scripts/up.sh
-PHASE2_DEGRADED="/var/lib/narwhal/phase2-degraded"  # keep identical to PHASE2_DEGRADED in scripts/up.sh and provision-kakao.sh
+PHASE2_DEGRADED="/var/lib/narwhal/phase2-degraded"  # keep identical to PHASE2_DEGRADED in provision-kakao.sh
 mkdir -p "$(dirname "${PHASE2_MARKER}")"
 rm -f "${PHASE2_MARKER}" "${PHASE2_DEGRADED}"
 
@@ -221,26 +221,60 @@ for script in "07-cnpg.sh" "08-1-networking.sh" "08-2-monitoring.sh" "08-3-secur
 done
 
 # Check OpenBao encrypted snapshot backup activation (#757, D-OPENBAO-BACKUP-ACTIVATION):
-# surface a missing/mismatched recipient ConfigMap as degraded without failing Phase 2.
-OPENBAO_BK_LIB="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/common/lib-openbao-backup.sh"
+# surface a missing/mismatched recipient ConfigMap, absent CronJob after wait, lookup
+# failure, or missing helper as degraded without failing Phase 2.
+# D-OPENBAO-BACKUP-PHASE2-LIB: Vagrant copies 06-phase2-start.sh to /tmp/vagrant-shell, so
+# BASH_SOURCE[0]-relative lookup resolves to /common/... and fails. Default to the absolute
+# guest path (matching line 5's lib-topology.sh), falling back to a sibling scripts/common
+# only when invoked directly from a non-/home/vagrant tree. Missing lib is recorded loudly
+# in DEGRADED_REASONS instead of silently skipping.
+OPENBAO_BK_LIB="${OPENBAO_BK_LIB:-/home/vagrant/scripts/common/lib-openbao-backup.sh}"
+if [[ ! -r "${OPENBAO_BK_LIB}" ]]; then
+  _openbao_rel="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." 2>/dev/null && pwd || true)/common/lib-openbao-backup.sh"
+  if [[ -r "${_openbao_rel}" ]]; then
+    OPENBAO_BK_LIB="${_openbao_rel}"
+  fi
+fi
 if [[ -r "${OPENBAO_BK_LIB}" ]]; then
   # shellcheck source=scripts/common/lib-openbao-backup.sh
   source "${OPENBAO_BK_LIB}"
-  # If ArgoCD has queued Application openbao-backup, give wave-5 sync up to 30s to create the CronJob.
-  if ! kubectl get cronjob openbao-snapshot -n storage >/dev/null 2>&1 \
-      && kubectl get application openbao-backup -n devtools >/dev/null 2>&1; then
-    for _ in 1 2 3 4 5 6; do
-      sleep 5
-      kubectl get cronjob openbao-snapshot -n storage >/dev/null 2>&1 && break
+  # D-OPENBAO-BACKUP-WAIT: openbao-backup is an ArgoCD wave-5 Application; poll a bounded
+  # window for CronJob storage/openbao-snapshot regardless of whether the Application object
+  # has appeared yet. Absent-after-wait and lookup failures (rc=2) are recorded in
+  # DEGRADED_REASONS (never a silent pass). Cost: up to 120s extra when ArgoCD wave-5 sync
+  # lags; escape hatch: override OPENBAO_BACKUP_WAIT_ATTEMPTS / OPENBAO_BACKUP_WAIT_INTERVAL.
+  ob_wait_attempts="${OPENBAO_BACKUP_WAIT_ATTEMPTS:-12}"
+  ob_wait_interval="${OPENBAO_BACKUP_WAIT_INTERVAL:-10}"
+  if ! kubectl get cronjob openbao-snapshot -n storage >/dev/null 2>&1; then
+    ob_i=1
+    while [[ "${ob_i}" -le "${ob_wait_attempts}" ]]; do
+      echo "  Waiting for CronJob storage/openbao-snapshot (ArgoCD wave-5 openbao-backup sync)... (${ob_i}/${ob_wait_attempts})"
+      sleep "${ob_wait_interval}"
+      if kubectl get cronjob openbao-snapshot -n storage >/dev/null 2>&1; then
+        break
+      fi
+      ob_i=$((ob_i + 1))
     done
   fi
   ob_rc=0
   openbao_backup_check_activation || ob_rc=$?
-  if [[ "${ob_rc}" -eq 1 ]]; then
-    DEGRADED_REASONS+=("openbao-snapshot backup: ${OPENBAO_BACKUP_MSG} (apply public cert: kubectl create configmap openbao-backup-recipient -n storage --from-file=recipient.pem=<cert-path> --dry-run=client -o yaml | kubectl apply -f - ; runbook: docs/runbooks/openbao-snapshot-backup.md)")
-  elif [[ "${ob_rc}" -eq 2 ]]; then
-    echo "WARN: openbao-snapshot backup activation check inconclusive: ${OPENBAO_BACKUP_MSG}"
-  fi
+  case "${OPENBAO_BACKUP_STATE}" in
+    ok|suspended)
+      echo "  OpenBao snapshot backup check: ${OPENBAO_BACKUP_MSG}"
+      ;;
+    degraded)
+      DEGRADED_REASONS+=("openbao-snapshot backup: ${OPENBAO_BACKUP_MSG} (apply public cert: kubectl create configmap openbao-backup-recipient -n storage --from-file=recipient.pem=<cert-path> --dry-run=client -o yaml | kubectl apply -f - ; runbook: docs/runbooks/openbao-snapshot-backup.md)")
+      ;;
+    absent)
+      DEGRADED_REASONS+=("openbao-snapshot backup: ${OPENBAO_BACKUP_MSG} after waiting for ArgoCD openbao-backup sync (check: kubectl get application openbao-backup -n devtools ; runbook: docs/runbooks/openbao-snapshot-backup.md)")
+      ;;
+    *)
+      DEGRADED_REASONS+=("openbao-snapshot backup: activation check inconclusive (rc=${ob_rc}): ${OPENBAO_BACKUP_MSG}")
+      ;;
+  esac
+else
+  echo "WARN: openbao-snapshot backup activation check skipped: helper not readable at ${OPENBAO_BK_LIB}" >&2
+  DEGRADED_REASONS+=("openbao-snapshot backup: activation helper not readable at ${OPENBAO_BK_LIB} (backup state unverified)")
 fi
 
 if [[ "${#DEGRADED_REASONS[@]}" -gt 0 ]]; then

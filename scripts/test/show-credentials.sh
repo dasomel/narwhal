@@ -148,12 +148,6 @@ if ! kubectl get "${NARWHAL_CLUSTER_MARKER}" >/dev/null 2>&1; then
   exit 1
 fi
 
-_OPENBAO_BK_LIB="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/common/lib-openbao-backup.sh"
-if [ -r "${_OPENBAO_BK_LIB}" ]; then
-  # shellcheck source=scripts/common/lib-openbao-backup.sh
-  source "${_OPENBAO_BK_LIB}"
-fi
-
 # -----------------------------------------------------------------------------
 section "Keycloak (IAM) — https://keycloak.${DOMAIN}"
 # -----------------------------------------------------------------------------
@@ -229,15 +223,6 @@ if [[ -n "${OB_ROOT}" && "${OB_ROOT}" != "(missing)" ]]; then
   row "Unseal key"  "${OB_UNSEAL}"
 else
   echo "  (OpenBao not initialised — run: kubectl exec -n storage openbao-0 -- bao operator init)"
-fi
-if declare -F openbao_backup_check_activation >/dev/null 2>&1; then
-  ob_rc=0
-  openbao_backup_check_activation || ob_rc=$?
-  case "${OPENBAO_BACKUP_STATE}" in
-    ok)       row "Snapshot backup" "OK (recipient ConfigMap matches RECIPIENT_FPR pin)" ;;
-    degraded) row "Snapshot backup" "${YELLOW}DEGRADED: ${OPENBAO_BACKUP_MSG} (see docs/runbooks/openbao-snapshot-backup.md)${RESET}" ;;
-    unknown)  row "Snapshot backup" "check inconclusive (${ob_rc}): ${OPENBAO_BACKUP_MSG}" ;;
-  esac
 fi
 
 # -----------------------------------------------------------------------------

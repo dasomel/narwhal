@@ -1028,6 +1028,8 @@ if should_run "platform"; then
       absent)    skip "OpenBao snapshot backup: CronJob storage/openbao-snapshot not present" ;;
       *)         warn "OpenBao snapshot backup check inconclusive (${ob_rc}): ${OPENBAO_BACKUP_MSG}" ;;
     esac
+  else
+    warn "OpenBao snapshot backup helper not found (${_OPENBAO_BK_LIB})"
   fi
   echo ""
 fi

@@ -8,11 +8,11 @@
 # copy the private key onto master-1 before Phase 2 could reject it (weakening D-cms), and
 # activation is per-cluster (D-fpr). Cost: every rebuild requires re-applying the public
 # certificate (or running keygen for a new cluster). Escape hatch: Phase 2, verify-cluster,
-# verify-backup, show-credentials, and Prometheus alerts surface missing/mismatched state
-# loudly so the gap cannot stay silent.
+# verify-backup, and Prometheus alerts surface missing/mismatched state loudly so the gap
+# cannot stay silent.
 #
 # Safe under `set -euo pipefail`, `set -u`, and macOS bash 3.2. Never prints secret material.
-# Output variables below are consumed by sourcing callers (`06-phase2-start.sh`, `verify-*.sh`, `show-credentials.sh`).
+# Output variables below are consumed by sourcing callers (`06-phase2-start.sh`, `verify-*.sh`).
 # shellcheck disable=SC2034
 
 # Checks whether CronJob storage/openbao-snapshot is declared & active and whether
@@ -147,6 +147,29 @@ sys.stdout.write(val)
   if ! printf '%s\n' "${cert_pem}" | openssl x509 -noout -checkend 86400 >/dev/null 2>&1; then
     OPENBAO_BACKUP_STATE="degraded"
     OPENBAO_BACKUP_MSG="ConfigMap storage/openbao-backup-recipient certificate is expired or expires within 24h"
+    return 1
+  fi
+
+  # Match gitops/resources/openbao-backup.yaml (D-oaep): RSA public key >= 3072 bits.
+  local cert_text="" key_bits=""
+  cert_text=$(printf '%s\n' "${cert_pem}" | openssl x509 -noout -text 2>/dev/null || true)
+  if [ -z "${cert_text}" ]; then
+    OPENBAO_BACKUP_MSG="unable to inspect recipient certificate public key"
+    return 2
+  fi
+  case "${cert_text}" in
+    *"Public Key Algorithm: rsaEncryption"*) ;;
+    *)
+      OPENBAO_BACKUP_STATE="degraded"
+      OPENBAO_BACKUP_MSG="ConfigMap storage/openbao-backup-recipient key must be RSA"
+      return 1
+      ;;
+  esac
+  key_bits=$(printf '%s\n' "${cert_text}" | awk '/Public Key Algorithm: rsaEncryption/{f=1; next} f && /Public-Key: \([0-9]+ bit\)/{sub(/.*Public-Key: \(/, ""); sub(/ bit\).*/, ""); print; f=0}')
+  key_bits="${key_bits%%$'\n'*}"
+  if [ -z "${key_bits}" ] || ! [ "${key_bits}" -ge 3072 ] 2>/dev/null; then
+    OPENBAO_BACKUP_STATE="degraded"
+    OPENBAO_BACKUP_MSG="ConfigMap storage/openbao-backup-recipient RSA key must be >= 3072 bits (got ${key_bits:-?})"
     return 1
   fi
 

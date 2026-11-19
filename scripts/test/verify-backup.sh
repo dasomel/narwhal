@@ -489,14 +489,42 @@ if should_run "openbao"; then
       ok)
         pass "OpenBao snapshot backup: ${OPENBAO_BACKUP_MSG}"
         if [ -n "${OPENBAO_BACKUP_LAST_SUCCESS}" ]; then
-          OB_TS=$(date -d "${OPENBAO_BACKUP_LAST_SUCCESS}" +%s 2>/dev/null || date -j -f "%Y-%m-%dT%H:%M:%SZ" "${OPENBAO_BACKUP_LAST_SUCCESS}" +%s 2>/dev/null || echo "0")
-          OB_AGE_H=$(( ($(date +%s) - OB_TS) / 3600 ))
-          if [ "${OB_TS}" -gt 0 ] && [ $(( $(date +%s) - OB_TS )) -le 93600 ]; then
-            pass "OpenBao snapshot lastSuccessfulTime: ${OPENBAO_BACKUP_LAST_SUCCESS} (${OB_AGE_H}h ago, within 26h)"
-          elif [ "${OB_TS}" -gt 0 ]; then
-            fail "OpenBao snapshot lastSuccessfulTime is stale: ${OPENBAO_BACKUP_LAST_SUCCESS} (${OB_AGE_H}h ago > 26h)"
+          # Parse RFC3339 UTC timestamp via python3 (avoids BSD vs GNU `date` timezone drift).
+          OB_AGE_S=$(python3 - "${OPENBAO_BACKUP_LAST_SUCCESS}" <<'PYEOF' 2>/dev/null || true
+import re, sys, time
+from datetime import datetime, timezone
+
+raw = sys.argv[1].strip()
+m = re.fullmatch(
+    r"(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2}:\d{2})(?:\.\d+)?(Z|[+-]\d{2}:\d{2})",
+    raw,
+)
+if not m:
+    sys.exit(1)
+date_part, time_part, tz = m.groups()
+if tz == "Z":
+    tz = "+00:00"
+dt = datetime.fromisoformat(f"{date_part}T{time_part}{tz}")
+if dt.tzinfo is None:
+    sys.exit(1)
+ts = int(dt.astimezone(timezone.utc).timestamp())
+if ts <= 0:
+    sys.exit(1)
+print(int(time.time()) - ts)
+PYEOF
+          )
+          if [[ "${OB_AGE_S}" =~ ^-?[0-9]+$ ]]; then
+            if [ "${OB_AGE_S}" -lt -300 ]; then
+              warn "OpenBao snapshot lastSuccessfulTime is in the future: ${OPENBAO_BACKUP_LAST_SUCCESS}"
+            elif [ "${OB_AGE_S}" -le 93600 ]; then
+              OB_AGE_H=$(( OB_AGE_S < 0 ? 0 : OB_AGE_S / 3600 ))
+              pass "OpenBao snapshot lastSuccessfulTime: ${OPENBAO_BACKUP_LAST_SUCCESS} (${OB_AGE_H}h ago, within 26h)"
+            else
+              OB_AGE_H=$(( OB_AGE_S / 3600 ))
+              fail "OpenBao snapshot lastSuccessfulTime is stale: ${OPENBAO_BACKUP_LAST_SUCCESS} (${OB_AGE_H}h ago > 26h)"
+            fi
           else
-            pass "OpenBao snapshot lastSuccessfulTime: ${OPENBAO_BACKUP_LAST_SUCCESS}"
+            warn "OpenBao snapshot lastSuccessfulTime could not be parsed: ${OPENBAO_BACKUP_LAST_SUCCESS}"
           fi
         elif [ -n "${OPENBAO_BACKUP_LAST_SCHEDULE}" ]; then
           fail "OpenBao snapshot CronJob scheduled at ${OPENBAO_BACKUP_LAST_SCHEDULE} but has never succeeded"

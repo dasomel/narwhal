@@ -404,7 +404,14 @@ spec:
                     ctlog:
                       ignoreSCT: true
           attestations:
-            - predicateType: https://cyclonedx.org/schema/1.4
+            # D-CYCLONEDX-PREDICATE (narwhal#684): use the standard OWASP CycloneDX / in-toto
+            # predicateType URI (in_toto.PredicateCycloneDX = https://cyclonedx.org/bom) emitted
+            # by `cosign attest --type cyclonedx`. Kyverno 1.18.1 matches predicateType by exact
+            # string equality, so the former `https://cyclonedx.org/schema/1.4` could never match.
+            # Cost: does not pin CycloneDX minor specVersion at the envelope level (specVersion
+            # lives inside the predicate JSON). Escape hatch: add a JMESPath condition on
+            # `specVersion` if a minimum CycloneDX version is ever required.
+            - predicateType: https://cyclonedx.org/bom
               attestors:
                 - count: 1
                   entries:

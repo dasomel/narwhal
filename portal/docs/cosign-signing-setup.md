@@ -5,12 +5,16 @@
 > `gitops/resources/kyverno-policies.yaml`. Sections 1-4 are kept as the rotation procedure.
 
 `.github/workflows/portal-docker-publish.yml`'s `sign` job signs every portal image (tags
-`portal/v*.*.*`) so
+`portal/v*.*.*`) and attaches a signed CycloneDX SBOM attestation (`predicateType: https://cyclonedx.org/bom`,
+generated from the published digest with Trivy) so
 narwhal's Kyverno `verify-image-signatures` ClusterPolicy and its air-gap preflight gate
 (`scripts/airgap/10-verify-image-signatures.sh`) can verify them. Both consume a **static Cosign
 key pair** — not Sigstore keyless/Fulcio/Rekor — because narwhal's cluster is air-gapped and must
 verify without reaching the public Rekor transparency log (see narwhal's
-`docs/common/supply-chain-policy.md` §6 for the design decision).
+`docs/common/supply-chain-policy.md` §6 for the design decision). Both the signature and the
+CycloneDX attestation are published in dual format — Sigstore bundle (OCI referrer) and legacy
+tag (`sha256-<digest>.sig` / `sha256-<digest>.att`) — because Kyverno 1.18.x static-key
+verification reads only the legacy tags (`D-dual-signature` / `D-dual-attestation`).
 
 The workflow only *references* the key material via GitHub Actions secrets; no private key is stored
 in this repo. This doc is the exact procedure a human runs once to provision it.
@@ -82,16 +86,37 @@ fails if the inlined PEM differs from `scripts/airgap/keys/cosign.pub`.
 ## 5. Verify
 
 After the secrets are set, push a `portal/v*.*.*` tag (or re-run the workflow via `workflow_dispatch` to
-sanity-check the non-mandatory path) and confirm the `sign` job's "Sign image digest" step
-succeeds. To manually verify a signed image once `cosign.pub` is committed:
+sanity-check the non-mandatory path) and confirm the `sign` job's "Sign image digest" and
+"Attest image digest with CycloneDX SBOM" steps succeed. To manually verify a signed and attested
+image once `cosign.pub` is committed:
 
 ```bash
-# Online (Rekor reachable): the CI signature is in the public Rekor log, so tlog is checked.
+# Online (Rekor reachable): the CI signature and attestation are in the public Rekor log.
 cosign verify --key scripts/airgap/keys/cosign.pub ghcr.io/dasomel/narwhal-portal@sha256:<digest>
+cosign verify-attestation --key scripts/airgap/keys/cosign.pub --type cyclonedx \
+  ghcr.io/dasomel/narwhal-portal@sha256:<digest>
 
 # Offline / air-gapped (no Rekor access): skip the tlog lookup, the static key alone is trusted.
 cosign verify --key scripts/airgap/keys/cosign.pub --insecure-ignore-tlog=true \
   ghcr.io/dasomel/narwhal-portal@sha256:<digest>
+cosign verify-attestation --key scripts/airgap/keys/cosign.pub --type cyclonedx \
+  --insecure-ignore-tlog=true ghcr.io/dasomel/narwhal-portal@sha256:<digest>
+
+# Legacy .sig / .att tags (the storage format Kyverno 1.18.x static-key verification reads):
+cosign verify --key scripts/airgap/keys/cosign.pub --insecure-ignore-tlog=true \
+  --new-bundle-format=false ghcr.io/dasomel/narwhal-portal@sha256:<digest>
+cosign verify-attestation --key scripts/airgap/keys/cosign.pub --type cyclonedx \
+  --insecure-ignore-tlog=true --new-bundle-format=false \
+  ghcr.io/dasomel/narwhal-portal@sha256:<digest>
+```
+
+`cosign attest --type cyclonedx` writes an in-toto statement with `predicateType: https://cyclonedx.org/bom`
+(`in_toto.PredicateCycloneDX`), matching `gitops/resources/kyverno-policies.yaml`'s
+`verify-image-signatures` policy (`D-CYCLONEDX-PREDICATE`). To retroactively sign and attest an
+already-published manifest-list digest without rebuilding, dispatch the workflow with `sign_digest`:
+
+```bash
+gh workflow run portal-docker-publish.yml -f sign_digest=sha256:<64-hex-digest>
 ```
 
 **D-REKOR.** The `sign` job keeps uploading to the public Rekor log (the image is public, so

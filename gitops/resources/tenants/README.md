@@ -26,7 +26,12 @@ so a pull request is the only way it can change this repository.
 - optional `narwhal.io/otlp-ingest: "true"` on the `Namespace` labels if workloads in
   that namespace need to send OTLP traces (`4317`/`4318`) to `k8s-monitoring-alloy-logs`.
   `alloy-logs-ingress-policy` blocks OTLP ingest from un-opted namespaces so arbitrary pods
-  cannot flood the shared log collector (see `docs/common/unified-observability-contract.md`).
+  cannot flood the shared log collector, and omits HBONE `15008` on the opt-in rule so
+  ambient senders cannot tunnel to `:12345`. Tenant namespaces that send traces must NOT
+  be ambient-enrolled for now (`istio.io/dataplane-mode: none`, as `dev` uses); ambient
+  tenant ingest is follow-up work requiring an OTLP-scoped L4 `AuthorizationPolicy` and a
+  check that the collector still sees the sender pod IP (see
+  `docs/common/unified-observability-contract.md`).
 
 ## Removal is deletion of the file
 

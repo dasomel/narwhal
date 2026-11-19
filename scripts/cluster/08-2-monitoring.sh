@@ -396,6 +396,15 @@ alloy-operator:
       memory: 256Mi
 K8SMONVALUES
 
+# D-ALLOY-OTLP-INGRESS (#735): enforce alloy-logs-ingress-policy before k8s-monitoring
+# opens OTLP receivers (4317/4318), closing the fresh-install window before 14-gitops-bootstrap.sh.
+if [ ! -f "/home/vagrant/configs/gitops/resources/alloy-logs-ingress-policy.yaml" ]; then
+  echo "ERROR: alloy-logs-ingress-policy.yaml is missing from the staged configs." >&2
+  exit 1
+fi
+echo "Applying Alloy OTLP ingress NetworkPolicy..."
+kubectl apply -f /home/vagrant/configs/gitops/resources/alloy-logs-ingress-policy.yaml
+
 K8S_MONITORING_OK=false
 for attempt in 1 2 3 4 5; do
   if helm upgrade --install k8s-monitoring "$(chart k8s-monitoring)" \

@@ -2,20 +2,23 @@
 """R377: Opt-in OTLP trace ingest NetworkPolicy for alloy-logs (narwhal#735).
 
 Verifies that:
-  - gitops/resources/network-policies.yaml defines alloy-logs-ingress-policy in
-    namespace monitoring selecting alloy-logs pods and restricting:
+  - gitops/resources/alloy-logs-ingress-policy.yaml defines alloy-logs-ingress-policy
+    in namespace monitoring selecting alloy-logs pods and restricting:
       * OTLP gRPC (4317) + HBONE (15008) from Grafana in monitoring,
-      * OTLP gRPC/HTTP (4317/4318) + HBONE (15008) from namespaces labeled
+      * plain-TCP OTLP gRPC/HTTP (4317/4318, NO HBONE 15008) from namespaces labeled
         narwhal.io/otlp-ingest: "true",
       * HTTP metrics scrape (12345) + HBONE (15008) from Prometheus in monitoring.
-  - No rule widens namespaceSelector/podSelector to all, uses ipBlock, omits HBONE
-    15008, or admits monitoring/waypoint (alloy-logs Service opts out of waypoint).
+  - No rule uses endPort, widens namespaceSelector/podSelector to all, uses ipBlock,
+    allows ports outside the exact per-rule set, or admits monitoring/waypoint.
+  - gitops/charts/narwhal-apps/templates/alloy-logs-ingress-policy.yaml owns the policy
+    and scripts/cluster/08-2-monitoring.sh applies it fail-closed before k8s-monitoring.
   - gitops/resources/dev-namespace.yaml opts namespace dev in via
     narwhal.io/otlp-ingest: "true" while preserving istio.io/dataplane-mode: none.
   - gitops/charts/narwhal-apps/templates/k8s-monitoring.yaml and
     scripts/cluster/08-2-monitoring.sh keep istio.io/use-waypoint: none on alloy-logs.
   - docs/common/unified-observability-contract.md and gitops/resources/tenants/README.md
-    document the opt-in label and honest residual risks (opted-in flood, hostNetwork bypass).
+    document the opt-in label, non-ambient tenant requirement, AuthorizationPolicy
+    follow-up, and honest residual risks (opted-in flood, hostNetwork bypass).
 """
 import argparse
 import re
@@ -25,7 +28,9 @@ from pathlib import Path
 
 import yaml
 
-NETPOL_YAML = "gitops/resources/network-policies.yaml"
+NETPOL_YAML = "gitops/resources/alloy-logs-ingress-policy.yaml"
+SHARED_NETPOL_YAML = "gitops/resources/network-policies.yaml"
+NETPOL_APP_YAML = "gitops/charts/narwhal-apps/templates/alloy-logs-ingress-policy.yaml"
 DEV_NS_YAML = "gitops/resources/dev-namespace.yaml"
 K8SMON_YAML = "gitops/charts/narwhal-apps/templates/k8s-monitoring.yaml"
 MON_SH = "scripts/cluster/08-2-monitoring.sh"
@@ -45,6 +50,9 @@ EXPECTED_PROM_PEER = (
     "monitoring",
     frozenset({("app.kubernetes.io/name", "prometheus"), ("prometheus", "prometheus-stack-kube-prom-prometheus")}),
 )
+EXPECTED_GRAFANA_PORTS = {("TCP", 4317), ("TCP", 15008)}
+EXPECTED_OPTIN_PORTS = {("TCP", 4317), ("TCP", 4318)}
+EXPECTED_PROM_PORTS = {("TCP", 12345), ("TCP", 15008)}
 
 
 def _extract_k8smon_heredoc(script_text: str) -> dict:
@@ -91,6 +99,15 @@ def _check_peer(peer: dict) -> tuple[str, object]:
 
 
 def _check_netpol(root: Path) -> None:
+    shared_docs = [
+        d for d in yaml.safe_load_all((root / SHARED_NETPOL_YAML).read_text(encoding="utf-8"))
+        if isinstance(d, dict)
+    ]
+    assert not any(
+        (d.get("metadata") or {}).get("name") == "alloy-logs-ingress-policy"
+        for d in shared_docs
+    ), f"{SHARED_NETPOL_YAML} must not duplicate alloy-logs-ingress-policy"
+
     docs = [
         d for d in yaml.safe_load_all((root / NETPOL_YAML).read_text(encoding="utf-8"))
         if isinstance(d, dict)
@@ -132,36 +149,59 @@ def _check_netpol(root: Path) -> None:
         assert isinstance(ports_raw, list) and ports_raw, (
             f"alloy-logs-ingress-policy rule #{idx} must specify explicit ports"
         )
+        for p in ports_raw:
+            assert isinstance(p, dict), f"alloy-logs-ingress-policy rule #{idx} port entry must be a dict: {p!r}"
+            assert "endPort" not in p, f"alloy-logs-ingress-policy rule #{idx} must not set endPort: {p!r}"
         ports = {(p.get("protocol", "TCP"), p.get("port")) for p in ports_raw}
-        assert ("TCP", 15008) in ports, (
-            f"alloy-logs-ingress-policy rule #{idx} must allow ambient HBONE TCP/15008 (R200): {ports}"
-        )
-        app_ports = ports - {("TCP", 15008)}
-        assert app_ports, f"alloy-logs-ingress-policy rule #{idx} missing application port: {ports}"
 
         for peer in from_list:
             kind, key = _check_peer(peer)
             if kind == "ns_optin":
-                assert app_ports == {("TCP", 4317), ("TCP", 4318)}, (
-                    f"opt-in namespace rule must allow only 4317/4318, got {app_ports!r}"
+                assert ports == EXPECTED_OPTIN_PORTS, (
+                    f"opt-in namespace rule must allow exact ports {EXPECTED_OPTIN_PORTS!r} "
+                    f"(no 15008/12345), got {ports!r}"
                 )
                 seen_optin = True
             elif key == EXPECTED_GRAFANA_PEER:
-                assert app_ports == {("TCP", 4317)}, (
-                    f"Grafana rule must allow only 4317, got {app_ports!r}"
+                assert ports == EXPECTED_GRAFANA_PORTS, (
+                    f"Grafana rule must allow exact ports {EXPECTED_GRAFANA_PORTS!r}, got {ports!r}"
                 )
                 seen_grafana = True
             elif key == EXPECTED_PROM_PEER:
-                assert app_ports == {("TCP", 12345)}, (
-                    f"Prometheus metrics rule must allow only 12345, got {app_ports!r}"
+                assert ports == EXPECTED_PROM_PORTS, (
+                    f"Prometheus metrics rule must allow exact ports {EXPECTED_PROM_PORTS!r}, got {ports!r}"
                 )
                 seen_prom = True
             else:
                 raise AssertionError(f"unexpected peer in alloy-logs-ingress-policy: {peer!r}")
 
-    assert seen_grafana, "alloy-logs-ingress-policy missing Grafana OTLP rule (4317)"
+    assert seen_grafana, "alloy-logs-ingress-policy missing Grafana OTLP rule (4317+15008)"
     assert seen_optin, f"alloy-logs-ingress-policy missing {OPTIN_LABEL}=true opt-in rule (4317/4318)"
-    assert seen_prom, "alloy-logs-ingress-policy missing Prometheus metrics scrape rule (12345)"
+    assert seen_prom, "alloy-logs-ingress-policy missing Prometheus metrics scrape rule (12345+15008)"
+
+
+def _check_gitops_app_and_bootstrap(root: Path) -> None:
+    app_text = (root / NETPOL_APP_YAML).read_text(encoding="utf-8")
+    app_doc = yaml.safe_load(app_text.replace("{{ .Values.repoURL }}", "https://example.invalid/repo.git"))
+    assert app_doc.get("kind") == "Application", f"{NETPOL_APP_YAML} must be an ArgoCD Application"
+    assert (app_doc.get("metadata") or {}).get("name") == "alloy-logs-ingress-policy", (
+        f"{NETPOL_APP_YAML} metadata.name must be alloy-logs-ingress-policy"
+    )
+    spec = app_doc.get("spec") or {}
+    assert ((spec.get("source") or {}).get("directory") or {}).get("include") == "alloy-logs-ingress-policy.yaml", (
+        f"{NETPOL_APP_YAML} must include alloy-logs-ingress-policy.yaml"
+    )
+    assert (spec.get("destination") or {}).get("namespace") == "monitoring", (
+        f"{NETPOL_APP_YAML} destination.namespace must be monitoring"
+    )
+
+    mon_text = (root / MON_SH).read_text(encoding="utf-8")
+    apply_pos = mon_text.find("kubectl apply -f /home/vagrant/configs/gitops/resources/alloy-logs-ingress-policy.yaml")
+    helm_pos = mon_text.find("helm upgrade --install k8s-monitoring")
+    assert apply_pos != -1, f"{MON_SH} must apply alloy-logs-ingress-policy.yaml at bootstrap"
+    assert helm_pos != -1 and apply_pos < helm_pos, (
+        f"{MON_SH} must apply alloy-logs-ingress-policy.yaml before installing k8s-monitoring"
+    )
 
 
 def _check_dev_namespace(root: Path) -> None:
@@ -193,6 +233,13 @@ def _check_docs(root: Path) -> None:
     contract = (root / CONTRACT_MD).read_text(encoding="utf-8")
     assert OPTIN_LABEL in contract, f"{CONTRACT_MD} must document {OPTIN_LABEL}"
     assert "alloy-logs-ingress-policy" in contract, f"{CONTRACT_MD} must reference alloy-logs-ingress-policy"
+    assert "08-2-monitoring.sh" in contract, f"{CONTRACT_MD} must document bootstrap pre-apply"
+    assert "istio.io/dataplane-mode: none" in contract, (
+        f"{CONTRACT_MD} must document non-ambient requirement for opted-in trace namespaces"
+    )
+    assert "AuthorizationPolicy" in contract, (
+        f"{CONTRACT_MD} must document L4 AuthorizationPolicy follow-up for ambient tenant ingest"
+    )
     assert "옵트인된 네임스페이스" in contract, f"{CONTRACT_MD} must state opted-in namespace flood residual risk"
     assert "hostNetwork` 파드**는 Pod `NetworkPolicy`를 우회" in contract, (
         f"{CONTRACT_MD} must state hostNetwork platform bypass residual risk"
@@ -200,21 +247,37 @@ def _check_docs(root: Path) -> None:
 
     tenants_readme = (root / TENANTS_README).read_text(encoding="utf-8")
     assert OPTIN_LABEL in tenants_readme, f"{TENANTS_README} must document {OPTIN_LABEL} opt-in"
+    assert "istio.io/dataplane-mode: none" in tenants_readme, (
+        f"{TENANTS_README} must document non-ambient requirement for opted-in trace namespaces"
+    )
+    assert "AuthorizationPolicy" in tenants_readme, (
+        f"{TENANTS_README} must document L4 AuthorizationPolicy follow-up for ambient tenant ingest"
+    )
 
 
 def verify(root: Path) -> None:
     _check_netpol(root)
+    _check_gitops_app_and_bootstrap(root)
     _check_dev_namespace(root)
     _check_waypoint_opt_out(root)
     _check_docs(root)
 
 
 def mutation_verify(root: Path) -> int:
-    rels = (NETPOL_YAML, DEV_NS_YAML, K8SMON_YAML, MON_SH, CONTRACT_MD, TENANTS_README)
+    rels = (
+        NETPOL_YAML,
+        SHARED_NETPOL_YAML,
+        NETPOL_APP_YAML,
+        DEV_NS_YAML,
+        K8SMON_YAML,
+        MON_SH,
+        CONTRACT_MD,
+        TENANTS_README,
+    )
     sources = {rel: (root / rel).read_text(encoding="utf-8") for rel in rels}
     mutations = [
         # 1. Remove alloy-logs-ingress-policy completely.
-        (NETPOL_YAML, "  name: alloy-logs-ingress-policy", "  name: alloy-logs-ingress-policy-disabled"),
+        (NETPOL_YAML, "  name: alloy-logs-ingress-policy", ""),
         # 2. Widen namespaceSelector to all namespaces ({} / matchLabels: {}).
         (
             NETPOL_YAML,
@@ -230,47 +293,91 @@ def mutation_verify(root: Path) -> int:
         # 4. Drop Prometheus rule completely.
         (
             NETPOL_YAML,
-            "    # 3. Prometheus (monitoring) -> alloy-logs HTTP metrics scrape (12345).\n    - from:\n        - podSelector:\n            matchLabels:\n              app.kubernetes.io/name: prometheus\n              prometheus: prometheus-stack-kube-prom-prometheus\n      ports:\n        - protocol: TCP\n          port: 12345\n        - protocol: TCP\n          port: 15008\n",
+            "    # 3. Prometheus (monitoring) -> alloy-logs HTTP metrics scrape (12345).\n"
+            "    #    HBONE 15008 is kept for this ambient platform peer (grants every port of the pod).\n"
+            "    - from:\n        - podSelector:\n            matchLabels:\n"
+            "              app.kubernetes.io/name: prometheus\n"
+            "              prometheus: prometheus-stack-kube-prom-prometheus\n"
+            "      ports:\n        - protocol: TCP\n          port: 12345\n        - protocol: TCP\n          port: 15008\n",
             "",
         ),
-        # 5. Drop HBONE 15008 from opt-in rule (violates R200 ambient NetworkPolicy contract).
+        # 5. Add endPort to opt-in rule (opens range up to 12345/65535).
         (
             NETPOL_YAML,
-            "        - protocol: TCP\n          port: 4318\n        - protocol: TCP\n          port: 15008",
             "        - protocol: TCP\n          port: 4318",
+            "        - protocol: TCP\n          port: 4318\n          endPort: 65535",
         ),
-        # 6. Drop Grafana OTLP rule.
+        # 6. Add endPort to Grafana rule.
         (
             NETPOL_YAML,
-            "    # 1. Grafana (monitoring) -> alloy-logs OTLP gRPC self-tracing (4317).\n    - from:\n        - podSelector:\n            matchLabels:\n              app.kubernetes.io/name: grafana\n              app.kubernetes.io/instance: prometheus-stack\n      ports:\n        - protocol: TCP\n          port: 4317\n        - protocol: TCP\n          port: 15008\n",
+            "        - protocol: TCP\n          port: 4317\n        - protocol: TCP\n          port: 15008",
+            "        - protocol: TCP\n          port: 4317\n          endPort: 15008\n        - protocol: TCP\n          port: 15008",
+        ),
+        # 7. Re-add HBONE 15008 to opt-in rule (allows ambient port-bypass to :12345).
+        (
+            NETPOL_YAML,
+            "        - protocol: TCP\n          port: 4317\n        - protocol: TCP\n          port: 4318",
+            "        - protocol: TCP\n          port: 4317\n        - protocol: TCP\n          port: 4318\n        - protocol: TCP\n          port: 15008",
+        ),
+        # 8. Add port 12345 to opt-in rule.
+        (
+            NETPOL_YAML,
+            "        - protocol: TCP\n          port: 4317\n        - protocol: TCP\n          port: 4318",
+            "        - protocol: TCP\n          port: 4317\n        - protocol: TCP\n          port: 4318\n        - protocol: TCP\n          port: 12345",
+        ),
+        # 9. Drop port 4318 from opt-in rule.
+        (
+            NETPOL_YAML,
+            "        - protocol: TCP\n          port: 4317\n        - protocol: TCP\n          port: 4318",
+            "        - protocol: TCP\n          port: 4317",
+        ),
+        # 10. Drop HBONE 15008 from Grafana rule.
+        (
+            NETPOL_YAML,
+            "        - protocol: TCP\n          port: 4317\n        - protocol: TCP\n          port: 15008",
+            "        - protocol: TCP\n          port: 4317",
+        ),
+        # 11. Drop Grafana OTLP rule.
+        (
+            NETPOL_YAML,
+            "    # 1. Grafana (monitoring) -> alloy-logs OTLP gRPC self-tracing (4317).\n"
+            "    #    HBONE 15008 is kept for this ambient platform peer (grants every port of the pod).\n"
+            "    - from:\n        - podSelector:\n            matchLabels:\n"
+            "              app.kubernetes.io/name: grafana\n"
+            "              app.kubernetes.io/instance: prometheus-stack\n"
+            "      ports:\n        - protocol: TCP\n          port: 4317\n        - protocol: TCP\n          port: 15008\n",
             "",
         ),
-        # 7. Admit monitoring/waypoint (breaks source pod/namespace identity).
+        # 12. Admit monitoring/waypoint (breaks source pod/namespace identity).
         (
             NETPOL_YAML,
             "              app.kubernetes.io/name: grafana\n              app.kubernetes.io/instance: prometheus-stack",
             "              gateway.networking.k8s.io/gateway-name: waypoint",
         ),
-        # 8. Open 4317/4318 to all sources via peerless rule.
+        # 13. Open 4317/4318 to all sources via peerless rule.
         (
             NETPOL_YAML,
-            "    # 2. Explicitly opted-in namespaces -> alloy-logs OTLP gRPC/HTTP ingest (4317/4318).\n    - from:\n        - namespaceSelector:\n            matchLabels:\n              narwhal.io/otlp-ingest: \"true\"",
+            "    # 2. Explicitly opted-in non-ambient namespaces -> alloy-logs plain-TCP OTLP ingest (4317/4318).\n"
+            "    #    TCP 15008 is omitted so HBONE cannot bypass port scoping to reach :12345.\n"
+            "    - from:\n        - namespaceSelector:\n            matchLabels:\n              narwhal.io/otlp-ingest: \"true\"",
             "    # 2. Widened to all pods\n    - {} #",
         ),
-        # 9. Break podSelector target on alloy-logs-ingress-policy.
+        # 14. Break podSelector target on alloy-logs-ingress-policy.
         (
             NETPOL_YAML,
             "  podSelector:\n    matchLabels:\n      app.kubernetes.io/name: alloy-logs",
             "  podSelector:\n    matchLabels:\n      app.kubernetes.io/name: other-pod",
         ),
-        # 10. Remove opt-in label from dev-namespace.yaml.
+        # 15. Remove opt-in label from dev-namespace.yaml.
         (DEV_NS_YAML, '    narwhal.io/otlp-ingest: "true"\n', ""),
-        # 11. Remove waypoint opt-out from k8s-monitoring.yaml.
+        # 16. Remove waypoint opt-out from k8s-monitoring.yaml.
         (K8SMON_YAML, '                istio.io/use-waypoint: "none"\n', ""),
-        # 12. Remove residual risk documentation from contract.
+        # 17. Remove bootstrap policy apply from 08-2-monitoring.sh.
+        (MON_SH, "kubectl apply -f /home/vagrant/configs/gitops/resources/alloy-logs-ingress-policy.yaml\n", ""),
+        # 18. Remove residual risk documentation from contract.
         (CONTRACT_MD, "hostNetwork` 파드**는 Pod `NetworkPolicy`를 우회", "hostNetwork blocked everywhere"),
-        # 13. Remove opt-in documentation from tenants/README.md.
-        (TENANTS_README, OPTIN_LABEL, "other-label"),
+        # 19. Remove non-ambient requirement from tenants/README.md.
+        (TENANTS_README, "istio.io/dataplane-mode: none", "ambient-ok"),
     ]
     with tempfile.TemporaryDirectory() as tmp:
         fixture = Path(tmp)
@@ -280,14 +387,14 @@ def mutation_verify(root: Path) -> int:
             for k, v in sources.items():
                 (fixture / k).write_text(v, encoding="utf-8")
             assert old in sources[rel], f"mutation anchor missing in {rel}: {old!r}"
-            if rel == NETPOL_YAML and "alloy-logs-ingress-policy-disabled" in new:
-                # Simulate removing alloy-logs-ingress-policy completely.
-                head, tail = sources[rel].split("# D-ALLOY-OTLP-INGRESS", 1)
-                _, rest = tail.split("# D-TEMPO-INGRESS", 1)
-                (fixture / rel).write_text(head + "# D-TEMPO-INGRESS" + rest, encoding="utf-8")
+            if rel == NETPOL_YAML and new == "":
+                (fixture / rel).write_text("", encoding="utf-8")
             elif rel == NETPOL_YAML and "# 2. Widened to all pods" in new:
-                # Replace the opt-in rule's from with a peerless ports-only rule.
-                text = sources[rel].replace(old, "    - ports:\n        - protocol: TCP\n          port: 4317\n        - protocol: TCP\n          port: 15008\n      #", 1)
+                text = sources[rel].replace(
+                    old,
+                    "    - ports:\n        - protocol: TCP\n          port: 4317\n        - protocol: TCP\n          port: 4318\n      #",
+                    1,
+                )
                 (fixture / rel).write_text(text, encoding="utf-8")
             else:
                 (fixture / rel).write_text(sources[rel].replace(old, new, 1), encoding="utf-8")

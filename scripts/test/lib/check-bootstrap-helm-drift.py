@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""R375: Bootstrap Helm release drift check and parser verification (#728).
+"""R376: Bootstrap Helm release drift check and parser verification (#728).
 
 Invariants:
   1. scripts/test/check-bootstrap-helm-drift.sh is a read-only live check that queries
@@ -490,9 +490,9 @@ def verify_repository(root: Path) -> None:
 
     reg_path = root / REGRESSION_REL
     reg_text = reg_path.read_text(encoding="utf-8")
-    assert "check R375" in reg_text, f"{REGRESSION_REL} must wire check R375"
+    assert "check R376" in reg_text, f"{REGRESSION_REL} must wire check R376"
     assert "check-bootstrap-helm-drift.py --mutation-verify" in reg_text, (
-        f"{REGRESSION_REL} R375 must call check-bootstrap-helm-drift.py --mutation-verify"
+        f"{REGRESSION_REL} R376 must call check-bootstrap-helm-drift.py --mutation-verify"
     )
 
     ops_path = root / DOC_OPS_REL
@@ -544,8 +544,8 @@ def mutation_verify(root: Path) -> int:
         (CHECK_SCRIPT_REL, "  echo \"FAIL: detected drift across ${DRIFT_COUNT} bootstrap Helm release(s).\"\n  exit 1", "  echo \"FAIL: detected drift across ${DRIFT_COUNT} bootstrap Helm release(s).\"\n  exit 0"),
         # 10. Check script: drop exit 2 on cannot run
         (CHECK_SCRIPT_REL, "  echo \"ERROR: cannot connect to Kubernetes cluster using '${KUBECTL_CMD}'\" >&2\n  exit 2", "  echo \"ERROR: cannot connect to Kubernetes cluster using '${KUBECTL_CMD}'\" >&2\n  exit 0"),
-        # 11. Regression wiring: drop R375
-        (REGRESSION_REL, "check R375", "check R9999"),
+        # 11. Regression wiring: drop R376
+        (REGRESSION_REL, "check R376", "check R9999"),
         # 12. Docs: drop check-bootstrap-helm-drift.sh from operations doc
         (DOC_OPS_REL, "check-bootstrap-helm-drift.sh", "other-check-script.sh"),
         # 13. Lessons log: drop #728
@@ -673,9 +673,9 @@ def main() -> int:
 
     if args.mutation_verify:
         caught = mutation_verify(args.root)
-        print(f"PASS: R375 bootstrap helm drift check + offline parser behavioural tests ({caught} mutations rejected)")
+        print(f"PASS: R376 bootstrap helm drift check + offline parser behavioural tests ({caught} mutations rejected)")
     else:
-        print("PASS: R375 bootstrap helm drift check + offline parser behavioural tests")
+        print("PASS: R376 bootstrap helm drift check + offline parser behavioural tests")
     return 0
 
 

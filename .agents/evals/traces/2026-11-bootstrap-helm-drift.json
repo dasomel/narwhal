@@ -2,7 +2,7 @@
   "schemaVersion": "openforge-agent-trace/v1",
   "consistencyMode": "strict",
   "traceId": "narwhal-bootstrap-helm-drift-728-20261119",
-  "task": "Lane 728-2: Add live bootstrap Helm release drift check scripts/test/check-bootstrap-helm-drift.sh, parser and offline behavioral test suite scripts/test/lib/check-bootstrap-helm-drift.py, wire R375 static regression check with mutation proof, update operations and test strategy documentation, record lessons-log row, and provide orchestrator runbook.",
+  "task": "Lane 728-2: Add live bootstrap Helm release drift check scripts/test/check-bootstrap-helm-drift.sh, parser and offline behavioral test suite scripts/test/lib/check-bootstrap-helm-drift.py, wire R376 static regression check with mutation proof, update operations and test strategy documentation, record lessons-log row, and provide orchestrator runbook.",
   "changeContext": {
     "paths": [
       ".agents/evals/traces/2026-11-bootstrap-helm-drift.json",
@@ -19,7 +19,7 @@
     {
       "id": "e1",
       "type": "scope_check",
-      "summary": "Scope: Read-only live check scripts/test/check-bootstrap-helm-drift.sh (HELM_CMD/KUBECTL_CMD env overrides, 0/1/2 exit codes), offline parser and behavioral unit tests in scripts/test/lib/check-bootstrap-helm-drift.py (multi-line, bracket index, escaped dot, --set-json, shell variable and secret skipping with zero leak), R375 static regression check with 14 mutations caught, docs and lessons-log updates, and eval trace. Excluded: No cluster/VM mutation, no push, no securityContext or policy relaxation."
+      "summary": "Scope: Read-only live check scripts/test/check-bootstrap-helm-drift.sh (HELM_CMD/KUBECTL_CMD env overrides, 0/1/2 exit codes), offline parser and behavioral unit tests in scripts/test/lib/check-bootstrap-helm-drift.py (multi-line, bracket index, escaped dot, --set-json, shell variable and secret skipping with zero leak), R376 static regression check with 14 mutations caught, docs and lessons-log updates, and eval trace. Excluded: No cluster/VM mutation, no push, no securityContext or policy relaxation."
     },
     {
       "id": "e2",
@@ -29,7 +29,7 @@
     {
       "id": "e3",
       "type": "bug_fix",
-      "summary": "Created scripts/test/check-bootstrap-helm-drift.sh and helper scripts/test/lib/check-bootstrap-helm-drift.py to extract literal --set/--set-string/--set-json flags from bootstrap scripts (04-addons, 05-nfs-quota-agent, 07-cnpg, 08-1-networking, 12-gitea), filter out shell variables ($) and secret values (password, passwd, token, adminKey; listing skipped keys by name only), and compare against 'helm get values <release> -n <ns> -o json', printing one line per drifted key and exiting 1 on drift, 0 on sync, 2 on execution failure; wired R375 in regression-check-kakao.sh, added operations/test-strategy docs, and recorded lessons-log row."
+      "summary": "Created scripts/test/check-bootstrap-helm-drift.sh and helper scripts/test/lib/check-bootstrap-helm-drift.py to extract literal --set/--set-string/--set-json flags from bootstrap scripts (04-addons, 05-nfs-quota-agent, 07-cnpg, 08-1-networking, 12-gitea), filter out shell variables ($) and secret values (password, passwd, token, adminKey; listing skipped keys by name only), and compare against 'helm get values <release> -n <ns> -o json', printing one line per drifted key and exiting 1 on drift, 0 on sync, 2 on execution failure; wired R376 in regression-check-kakao.sh, added operations/test-strategy docs, and recorded lessons-log row."
     },
     {
       "id": "e4",
@@ -39,13 +39,14 @@
       "summary": "All offline parser unit tests, static validations, 14 mutation verifications, and shell/markdown/diff checks passed.",
       "evidence": [
         "test:make validate -> exit 0 (Syntax OK + all GitOps YAML OK)",
-        "test:python3 scripts/test/lib/check-bootstrap-helm-drift.py --mutation-verify -> PASS: R375 bootstrap helm drift check + offline parser behavioural tests (14 mutations rejected)",
+        "test:python3 scripts/test/lib/check-bootstrap-helm-drift.py --mutation-verify -> PASS: R376 bootstrap helm drift check + offline parser behavioural tests (14 mutations rejected)",
         "test:shellcheck -S warning scripts/test/check-bootstrap-helm-drift.sh -> exit 0",
         "test:bash -n scripts/test/check-bootstrap-helm-drift.sh -> exit 0",
         "test:python3 scripts/ci/markdownlint-changed.py --base origin/main -> No markdownlint violations on added/modified active-documentation lines",
         "test:npx --yes markdownlint-cli2 docs/vagrant/operations.md docs/common/lessons-log.md docs/common/test-strategy.md docs/IMPLEMENTATION-STATUS.md -> Summary: 0 issues in 4 files",
         "test:git diff --check -> exit 0",
-        "test:python3 .agents/evals/gate.py --trace .agents/evals/traces/2026-11-bootstrap-helm-drift.json --baseline .agents/evals/baseline.eval.json -> exit 0 (0 regressions)"
+        "test:python3 .agents/evals/gate.py --trace .agents/evals/traces/2026-11-bootstrap-helm-drift.json --baseline .agents/evals/baseline.eval.json -> exit 0 (0 regressions)",
+        "test:scripts/test/check-bootstrap-helm-drift.sh on the live local cluster (orchestrator, measured 2026-11-19) -> rc 1: DRIFT for cnpg (4 resources keys) and gitea (6 resources keys) whose --set flags from PR #715 had never been applied; after helm upgrade --reuse-values with those flags -> rc 0 'all 6 bootstrap Helm release(s) are in sync'; secret/variable keys listed by name only"
       ]
     },
     {
@@ -57,7 +58,7 @@
       "id": "e6",
       "type": "task_outcome",
       "state": "A",
-      "summary": "Lane 728-2 (narwhal#728) completed: live bootstrap Helm drift check scripts/test/check-bootstrap-helm-drift.sh, parser helper scripts/test/lib/check-bootstrap-helm-drift.py, R375 regression check with 14 mutations caught, docs and lessons-log updates, and eval trace."
+      "summary": "Lane 728-2 (narwhal#728) completed: live bootstrap Helm drift check scripts/test/check-bootstrap-helm-drift.sh, parser helper scripts/test/lib/check-bootstrap-helm-drift.py, R376 regression check with 14 mutations caught, docs and lessons-log updates, and eval trace."
     }
   ]
 }

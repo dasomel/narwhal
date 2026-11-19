@@ -85,15 +85,14 @@ async function checkCfg01(): Promise<{ status: KisaStatus; detail: string }> {
     return { status: "manual", detail: "프레임워크 데이터 없음" }
   }
 
-  // D: trivy-operator's ClusterComplianceReport (source of `frameworks`) aggregates pass/fail
-  // per CONTROL across the whole cluster and does not carry per-check namespace/resource
-  // attribution — unlike raw configauditreports, it cannot be split into actionable/accepted
-  // findings at the API level (verified: RawComplianceReport.status.detailReport.results[].checks
-  // only exposes `success`, no resource ref). So the framework passRate itself stays cluster-wide
-  // (consistent with how CIS/NSA benchmarks are meant to be read). As a transparency aid, we
-  // still surface the actionable-vs-accepted split of the underlying raw config-audit findings
-  // (same Trivy scan, namespace-attributed) alongside the verdict so a low framework score isn't
-  // read as "N actionable issues" when it's largely system-namespace noise.
+  // D: `getComplianceFrameworks()` derives `actionableFailCount` / `effectivePassRate` from
+  // `status.detailReport.results[].checks` (`checkID` + `target`) when `reportType=all`,
+  // while `checkCfg01()` intentionally keeps evaluating the raw cluster-wide `f.passRate`
+  // (consistent with how CIS/NSA benchmarks are scored) so accepted exceptions do not shift
+  // KISA CFG-01 thresholds. As a transparency aid, we still surface the actionable-vs-accepted
+  // split of the underlying raw config-audit findings (same Trivy scan, namespace-attributed)
+  // alongside the verdict so a low framework score isn't read as "N actionable issues" when it's
+  // largely system-namespace noise.
   // Actionable excludes LOW severity too — KSV020/021 UID/GID and KSV011/015/016/018 resource
   // limit checks are risk-accepted hygiene per narwhal/docs/compliance-hardening.md, same tiering
   // as getComplianceSummary's totalConfigAuditFailures/lowSeverityConfigAuditFailures split.

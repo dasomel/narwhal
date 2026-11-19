@@ -9,6 +9,12 @@
 
 ## [Unreleased]
 
+### 변경
+
+- **컴플라이언스 프레임워크에서 수용된 예외와 조치 가능 실패 분리 (`src/lib/compliance.ts`, `src/components/compliance/frameworks-grid.tsx`, `src/components/compliance/failure-counters.tsx`, `src/app/(dashboard)/compliance/frameworks/[id]/page.tsx`, `docs/common/compliance-hardening.md`):**
+  - `ClusterComplianceReport.status.detailReport.results[].checks[]`의 모든 실패 점검에 대해 `parseComplianceTarget`(`<namespace>/<kind>-<name>`)과 `normalizeCheckId`(`AVD-KSV-00NN -> KSVNNN`)를 적용하고 기존 Config Audit(`configAuditMatcher`, `fetchReplicaSetMap()` 구 리비전/Deployment 소유권 필터), RBAC(`rbacAuditMatcher`), 인프라(조치 가능) 판정 함수를 그대로 재사용했습니다. 가능할 때는 `configauditreports` / `(cluster)rbacassessmentreports`에서 해시된 리포트 이름을 해석하고, 파싱 불가·ID 누락·미등록 항목은 fail-closed로 조치 가능에 유지합니다.
+  - 원본 `failCount`와 `passRate`를 보존한 채 `actionableFailCount`, `acceptedFailCount`, `effectivePassRate`를 계산하고(`detailReport.results` 부재 시 fail-closed), 프레임워크 카드 목록·확장 패널·상세 페이지·요약 카운터에서 조치 가능 건수를 헤드라인으로 표시하고 수용 배지·접힌 예외 그룹·`docs/common/compliance-hardening.md#risk-accepted-exceptions` 링크(`ko`/`en` i18n)를 제공합니다.
+
 ## [1.1.21] - 2026-11-19
 
 패치 릴리스: 교체된 옛 Deployment 리비전이 남긴 Trivy 리포트를 Compliance 집계에서 제외합니다(narwhal#727).

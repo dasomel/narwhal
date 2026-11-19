@@ -81,8 +81,15 @@ export interface ComplianceFramework {
   title: string
   passCount: number
   failCount: number
+  /** Actionable failed controls count (controls with >=1 actionable failing check). */
+  actionableFailCount?: number
+  /** Accepted failed controls count (controls with >=1 failing check and all non-superseded failures accepted). */
+  acceptedFailCount?: number
   totalControls: number
+  /** Raw Trivy control pass rate: passCount / (passCount + failCount). */
   passRate: number
+  /** Effective pass rate treating accepted-only and superseded-only controls as non-failing. */
+  effectivePassRate?: number
 }
 
 export interface ComplianceControl {
@@ -91,6 +98,13 @@ export interface ComplianceControl {
   severity: Severity
   passCount: number
   failCount: number
+  /** Actionable failing checks count for this control. */
+  actionableFailCount?: number
+  /** Accepted failing checks count for this control. */
+  acceptedFailCount?: number
+  /** true when failCount > 0, actionableFailCount === 0, and acceptedFailCount > 0. */
+  accepted?: boolean
+  acceptedScope?: AcceptedScope
   description?: string
 }
 

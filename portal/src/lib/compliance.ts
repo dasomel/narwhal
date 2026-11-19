@@ -227,13 +227,17 @@ interface RawComplianceReport {
     }
     detailReport?: {
       // trivy-operator (reportType=all) emits `results`, each control carrying a
-      // `checks[]` array with per-check `success` — NOT `controls[]`/passTotal/failTotal.
+      // `checks[]` array with `checkID`, `target`, and `success` — NOT `controls[]`/passTotal/failTotal.
       results?: Array<{
         id: string
         name: string
         severity: string
         description?: string
-        checks?: Array<{ success?: boolean }>
+        checks?: Array<{
+          checkID?: string
+          target?: string
+          success?: boolean
+        }>
       }>
     }
   }
@@ -651,26 +655,41 @@ async function fetchReplicaSetMap(): Promise<Map<string, ReplicaSetSummary> | nu
   }
 }
 
+function resolveReplicaSetByName(
+  namespace: string,
+  resourceName: string | undefined,
+  fallbackId: string,
+  rsMap: Map<string, ReplicaSetSummary> | null,
+): { drop: boolean; deploymentOwners?: readonly string[]; missingKey?: string } {
+  if (rsMap === null) {
+    return { drop: false }
+  }
+  const rsKey = namespace && resourceName ? `${namespace}/${resourceName}` : ""
+  const rsMeta = rsKey ? rsMap.get(rsKey) : undefined
+  if (!rsMeta) {
+    return { drop: false, missingKey: rsKey || `${namespace}/${fallbackId}` }
+  }
+  if (rsMeta.superseded) {
+    return { drop: true }
+  }
+  return { drop: false, deploymentOwners: rsMeta.deploymentOwners }
+}
+
 function resolveReplicaSetMetadata(
   item: RawAuditReport,
   rsMap: Map<string, ReplicaSetSummary> | null,
 ): { drop: boolean; deploymentOwners?: readonly string[]; missingKey?: string } {
   const labels = item.metadata.labels ?? {}
   const kind = labels["trivy-operator.resource.kind"] ?? "Unknown"
-  if (kind !== "ReplicaSet" || rsMap === null) {
+  if (kind !== "ReplicaSet") {
     return { drop: false }
   }
-  const namespace = item.metadata.namespace ?? ""
-  const resourceName = labels["trivy-operator.resource.name"]
-  const rsKey = namespace && resourceName ? `${namespace}/${resourceName}` : ""
-  const rsMeta = rsKey ? rsMap.get(rsKey) : undefined
-  if (!rsMeta) {
-    return { drop: false, missingKey: rsKey || `${namespace}/${item.metadata.name}` }
-  }
-  if (rsMeta.superseded) {
-    return { drop: true }
-  }
-  return { drop: false, deploymentOwners: rsMeta.deploymentOwners }
+  return resolveReplicaSetByName(
+    item.metadata.namespace ?? "",
+    labels["trivy-operator.resource.name"],
+    item.metadata.name,
+    rsMap,
+  )
 }
 
 // --- getConfigAuditList ---
@@ -892,6 +911,304 @@ export async function getInfraAuditDetail(node: string): Promise<InfraAuditDetai
   }
 }
 
+// --- Framework target parsing & check-level acceptance ---
+
+export interface ParsedComplianceTarget {
+  namespace: string
+  kind: string
+  name: string
+}
+
+const COMPLIANCE_TARGET_KINDS: Readonly<Record<string, string>> = {
+  replicaset: "ReplicaSet",
+  daemonset: "DaemonSet",
+  statefulset: "StatefulSet",
+  pod: "Pod",
+  deployment: "Deployment",
+  cronjob: "CronJob",
+  job: "Job",
+  role: "Role",
+  clusterrole: "ClusterRole",
+  node: "Node",
+}
+
+const CLUSTER_SCOPED_TARGET_KINDS = new Set(["ClusterRole", "Node"])
+const WORKLOAD_TARGET_KINDS = new Set([
+  "ReplicaSet",
+  "DaemonSet",
+  "StatefulSet",
+  "Pod",
+  "Deployment",
+  "CronJob",
+  "Job",
+])
+const RBAC_TARGET_KINDS = new Set(["Role", "ClusterRole"])
+
+/**
+ * Parses a Trivy ClusterComplianceReport check target (`<namespace>/<kind>-<name>`,
+ * e.g. `"devtools/replicaset-gitea-67f4766475"`, `"/clusterrole-cluster-admin"`,
+ * `"/node-narwhal-master-1"`). Fails closed (`null`) on missing/extra slashes,
+ * unknown kinds, empty names, or namespace/scope mismatches.
+ */
+export function parseComplianceTarget(target: unknown): ParsedComplianceTarget | null {
+  if (typeof target !== "string" || target.length === 0) return null
+  const parts = target.split("/")
+  if (parts.length !== 2) return null
+  const [namespace, rest] = parts
+  const dashIdx = rest.indexOf("-")
+  if (dashIdx <= 0) return null
+  const rawKind = rest.slice(0, dashIdx).toLowerCase()
+  const name = rest.slice(dashIdx + 1)
+  const kind = Object.hasOwn(COMPLIANCE_TARGET_KINDS, rawKind) ? COMPLIANCE_TARGET_KINDS[rawKind] : undefined
+  if (!kind || name.length === 0) return null
+  if (CLUSTER_SCOPED_TARGET_KINDS.has(kind)) {
+    if (namespace !== "") return null
+  } else if (namespace.length === 0) {
+    return null
+  }
+  return { namespace, kind, name }
+}
+
+// D-FW-REPORT-MAP: Trivy ClusterComplianceReport targets use the underlying report's
+// `metadata.namespace/metadata.name`, which Trivy hashes for names >63 chars or containing `:`
+// (e.g. `monitoring/statefulset-78785dbd5c`, `/clusterrole-54cdc9b678`). Resolving from the
+// live ConfigAudit/RBAC report lists recovers the real object name while failing closed to raw
+// target parsing whenever the report list is unavailable or lacks explicit kind/name labels.
+function buildReportTargetMap(
+  configItems: readonly RawAuditReport[],
+  rbacNsItems: readonly RawAuditReport[],
+  rbacClusterItems: readonly RawAuditReport[],
+): Map<string, ParsedComplianceTarget> {
+  const map = new Map<string, ParsedComplianceTarget>()
+  for (const item of configItems) {
+    const ns = item.metadata.namespace ?? ""
+    const reportName = item.metadata.name
+    if (!ns || !reportName) continue
+    const labels = item.metadata.labels ?? {}
+    const kind = labels["trivy-operator.resource.kind"]
+    const name = labels["trivy-operator.resource.name"]
+    if (!kind || !WORKLOAD_TARGET_KINDS.has(kind) || !name) continue
+    map.set(`${ns}/${reportName}`, { namespace: ns, kind, name })
+  }
+  for (const item of rbacNsItems) {
+    const ns = item.metadata.namespace ?? ""
+    const reportName = item.metadata.name
+    if (!ns || !reportName) continue
+    const labels = item.metadata.labels ?? {}
+    const ownerRefs = item.metadata.ownerReferences ?? []
+    const kind = labels["trivy-operator.resource.kind"] ?? ownerRefs[0]?.kind
+    const name = ownerRefs[0]?.name ?? labels["trivy-operator.resource.name"]
+    if (kind !== "Role" || !name) continue
+    map.set(`${ns}/${reportName}`, { namespace: ns, kind: "Role", name })
+  }
+  for (const item of rbacClusterItems) {
+    const ns = item.metadata.namespace ?? ""
+    const reportName = item.metadata.name
+    if (ns !== "" || !reportName) continue
+    const labels = item.metadata.labels ?? {}
+    const ownerRefs = item.metadata.ownerReferences ?? []
+    const kind = labels["trivy-operator.resource.kind"] ?? ownerRefs[0]?.kind
+    const name = ownerRefs[0]?.name ?? labels["trivy-operator.resource.name"]
+    if (kind !== "ClusterRole" || !name) continue
+    map.set(`/${reportName}`, { namespace: "", kind: "ClusterRole", name })
+  }
+  return map
+}
+
+type FrameworkAcceptedToken = "system" | "builtin" | "accept" | "upstream"
+
+type FrameworkCheckDisposition =
+  | { status: "dropped" }
+  | { status: "actionable" }
+  | { status: "accepted"; scope: FrameworkAcceptedToken }
+
+function classifyFrameworkCheck(
+  check: { checkID?: string; target?: string },
+  rsMap: Map<string, ReplicaSetSummary> | null,
+  reportTargetMap: ReadonlyMap<string, ParsedComplianceTarget>,
+  missingReplicaSets: Set<string>,
+): FrameworkCheckDisposition {
+  const rawTarget = typeof check.target === "string" ? check.target : ""
+  const resolved = reportTargetMap.get(rawTarget) ?? parseComplianceTarget(rawTarget)
+  if (!resolved) return { status: "actionable" }
+
+  const checkId = typeof check.checkID === "string" ? check.checkID.trim() : ""
+  if (!checkId) return { status: "actionable" }
+
+  if (WORKLOAD_TARGET_KINDS.has(resolved.kind)) {
+    let deploymentOwners: readonly string[] | undefined
+    if (resolved.kind === "ReplicaSet") {
+      const rsState = resolveReplicaSetByName(resolved.namespace, resolved.name, resolved.name, rsMap)
+      if (rsState.missingKey) missingReplicaSets.add(rsState.missingKey)
+      if (rsState.drop) return { status: "dropped" }
+      deploymentOwners = rsState.deploymentOwners
+    }
+    const matcher = configAuditMatcher(resolved.namespace, resolved.kind, resolved.name, deploymentOwners)
+    const ann = matcher(checkId)
+    if (!ann.accepted) return { status: "actionable" }
+    if (isSystemNamespace(resolved.namespace)) {
+      return { status: "accepted", scope: "system" }
+    }
+    return { status: "accepted", scope: ann.acceptedClass === "upstream" ? "upstream" : "accept" }
+  }
+
+  if (RBAC_TARGET_KINDS.has(resolved.kind)) {
+    const matcher = rbacAuditMatcher(resolved.namespace, resolved.kind, resolved.name)
+    const ann = matcher(checkId)
+    if (!ann.accepted) return { status: "actionable" }
+    if (isAcceptedRbacRole(resolved.name, resolved.namespace, resolved.kind)) {
+      return { status: "accepted", scope: isBuiltInRbacRole(resolved.name) ? "builtin" : "upstream" }
+    }
+    return { status: "accepted", scope: ann.acceptedClass === "upstream" ? "upstream" : "accept" }
+  }
+
+  // Infra (Node) checks have no accepted allowlist (matches Infra tab handling) and stay actionable.
+  return { status: "actionable" }
+}
+
+function resolveFrameworkAcceptedScope(scopes: Set<FrameworkAcceptedToken>): AcceptedScope | undefined {
+  if (scopes.size === 0) return undefined
+  if (scopes.size === 1) return scopes.values().next().value
+  return "mixed"
+}
+
+function buildComplianceFrameworkData(
+  item: RawComplianceReport,
+  rsMap: Map<string, ReplicaSetSummary> | null,
+  reportTargetMap: ReadonlyMap<string, ParsedComplianceTarget>,
+  missingReplicaSets: Set<string>,
+): { summary: ComplianceFramework; detail: ComplianceFrameworkDetail } {
+  const passCount = item.status?.summary?.passCount ?? 0
+  const failCount = item.status?.summary?.failCount ?? 0
+
+  // status.detailReport.results 가 있으면 per-control 사용, 없으면 spec.compliance.controls 폴백.
+  // (Trivy reportType=summary 이면 detailReport 비어있음 — 정의만 표시, pass/fail은 0으로.
+  //  reportType=all 이면 results[].checks[].success 로 컨트롤별 pass/fail 집계.)
+  const detailControls = item.status?.detailReport?.results ?? []
+  const specControls = item.spec.compliance.controls ?? []
+
+  let controls: ComplianceControl[]
+  if (detailControls.length > 0) {
+    controls = detailControls.map((c) => {
+      const checks = c.checks ?? []
+      let ctrlPass = 0
+      let ctrlFail = 0
+      let actionableFailCount = 0
+      let acceptedFailCount = 0
+      const scopes = new Set<FrameworkAcceptedToken>()
+
+      for (const k of checks) {
+        if (k.success === true) {
+          ctrlPass++
+          continue
+        }
+        ctrlFail++
+        const disp = classifyFrameworkCheck(k, rsMap, reportTargetMap, missingReplicaSets)
+        if (disp.status === "accepted") {
+          acceptedFailCount++
+          scopes.add(disp.scope)
+        } else if (disp.status === "actionable") {
+          actionableFailCount++
+        }
+      }
+
+      const accepted = ctrlFail > 0 && actionableFailCount === 0 && acceptedFailCount > 0
+      return {
+        id: c.id,
+        name: c.name,
+        severity: mapSeverity(c.severity),
+        passCount: ctrlPass,
+        failCount: ctrlFail,
+        actionableFailCount,
+        acceptedFailCount,
+        accepted,
+        ...(accepted ? { acceptedScope: resolveFrameworkAcceptedScope(scopes) } : {}),
+        description: c.description,
+      }
+    })
+  } else {
+    controls = specControls.map((c) => ({
+      id: c.id,
+      name: c.name,
+      severity: mapSeverity(c.severity),
+      passCount: 0,
+      failCount: 0,
+      actionableFailCount: 0,
+      acceptedFailCount: 0,
+      accepted: false,
+      description: c.description,
+    }))
+  }
+
+  let actionableFailCount: number
+  let acceptedFailCount: number
+  if (detailControls.length > 0) {
+    const detailFailControls = controls.filter((c) => c.failCount > 0).length
+    const detailActionableFail = controls.filter((c) => (c.actionableFailCount ?? 0) > 0).length
+    const detailAcceptedFail = controls.filter((c) => c.accepted === true).length
+    // Fail closed if summary.failCount exceeds failing controls present in detailReport.results.
+    const unaccountedFail = Math.max(0, failCount - detailFailControls)
+    actionableFailCount = detailActionableFail + unaccountedFail
+    acceptedFailCount = detailAcceptedFail
+  } else {
+    // reportType=summary lacks per-check targets to verify exceptions — fail closed.
+    actionableFailCount = failCount
+    acceptedFailCount = 0
+  }
+
+  // totalControls는 spec 정의 기준이 정확 (summary는 평가된 항목만 카운트)
+  const totalControls = specControls.length || controls.length || passCount + failCount
+  const evaluated = passCount + failCount
+  const passRate = evaluated > 0 ? passCount / evaluated : 0
+  const effectivePassRate =
+    evaluated > 0 ? Math.max(0, evaluated - actionableFailCount) / evaluated : 0
+
+  const summary: ComplianceFramework = {
+    id: item.spec.compliance.id,
+    title: item.spec.compliance.title,
+    passCount,
+    failCount,
+    actionableFailCount,
+    acceptedFailCount,
+    totalControls,
+    passRate,
+    effectivePassRate,
+  }
+  return {
+    summary,
+    detail: {
+      ...summary,
+      controls,
+    },
+  }
+}
+
+async function fetchFrameworkContext(): Promise<{
+  list: RawComplianceList
+  rsMap: Map<string, ReplicaSetSummary> | null
+  reportTargetMap: Map<string, ParsedComplianceTarget>
+}> {
+  const [list, rsMap, configList, rbacNs, rbacCluster] = await Promise.all([
+    complianceK8sFetch<RawComplianceList>("/apis/aquasecurity.github.io/v1alpha1/clustercompliancereports"),
+    fetchReplicaSetMap(),
+    complianceK8sFetch<RawAuditList>("/apis/aquasecurity.github.io/v1alpha1/configauditreports")
+      .catch(() => ({ items: [] as RawAuditReport[] })),
+    complianceK8sFetch<RawAuditList>("/apis/aquasecurity.github.io/v1alpha1/rbacassessmentreports")
+      .catch(() => ({ items: [] as RawAuditReport[] })),
+    complianceK8sFetch<RawAuditList>("/apis/aquasecurity.github.io/v1alpha1/clusterrbacassessmentreports")
+      .catch(() => ({ items: [] as RawAuditReport[] })),
+  ])
+  return {
+    list,
+    rsMap,
+    reportTargetMap: buildReportTargetMap(
+      configList.items ?? [],
+      rbacNs.items ?? [],
+      rbacCluster.items ?? [],
+    ),
+  }
+}
+
 // --- getComplianceFrameworks ---
 
 export async function getComplianceFrameworks(): Promise<ComplianceFramework[]> {
@@ -900,25 +1217,16 @@ export async function getComplianceFrameworks(): Promise<ComplianceFramework[]> 
   if (cached) return cached
 
   try {
-    const list = await complianceK8sFetch<RawComplianceList>(
-      "/apis/aquasecurity.github.io/v1alpha1/clustercompliancereports",
+    const { list, rsMap, reportTargetMap } = await fetchFrameworkContext()
+    const missingReplicaSets = new Set<string>()
+    const frameworks: ComplianceFramework[] = (list.items ?? []).map(
+      (item) => buildComplianceFrameworkData(item, rsMap, reportTargetMap, missingReplicaSets).summary,
     )
-    const frameworks: ComplianceFramework[] = (list.items ?? []).map((item) => {
-      const passCount = item.status?.summary?.passCount ?? 0
-      const failCount = item.status?.summary?.failCount ?? 0
-      // totalControls는 spec 정의 기준이 정확 (summary는 평가된 항목만 카운트)
-      const totalControls = (item.spec.compliance.controls?.length ?? 0) || passCount + failCount
-      const evaluated = passCount + failCount
-      const passRate = evaluated > 0 ? passCount / evaluated : 0
-      return {
-        id: item.spec.compliance.id,
-        title: item.spec.compliance.title,
-        passCount,
-        failCount,
-        totalControls,
-        passRate,
-      }
-    })
+    if (missingReplicaSets.size > 0) {
+      console.warn(
+        `[compliance] ReplicaSet(s) missing from cluster list, keeping framework checks fail-safe: ${Array.from(missingReplicaSets).join(", ")}`,
+      )
+    }
     await cacheSet(cacheKey, frameworks, cacheTtl("complianceFrameworksList"))
     return frameworks
   } catch (err) {
@@ -937,58 +1245,16 @@ export async function getComplianceFrameworkDetail(
   if (cached) return cached
 
   try {
-    const list = await complianceK8sFetch<RawComplianceList>(
-      "/apis/aquasecurity.github.io/v1alpha1/clustercompliancereports",
-    )
+    const { list, rsMap, reportTargetMap } = await fetchFrameworkContext()
     const item = (list.items ?? []).find((i) => i.spec.compliance.id === id)
     if (!item) return null
 
-    const aggPass = item.status?.summary?.passCount ?? 0
-    const aggFail = item.status?.summary?.failCount ?? 0
-
-    // status.detailReport.results 가 있으면 per-control 사용, 없으면 spec.compliance.controls 폴백.
-    // (Trivy reportType=summary 이면 detailReport 비어있음 — 정의만 표시, pass/fail은 0으로.
-    //  reportType=all 이면 results[].checks[].success 로 컨트롤별 pass/fail 집계.)
-    const detailControls = item.status?.detailReport?.results ?? []
-    const specControls = item.spec.compliance.controls ?? []
-
-    let controls: ComplianceControl[]
-    if (detailControls.length > 0) {
-      controls = detailControls.map((c) => {
-        const checks = c.checks ?? []
-        return {
-          id: c.id,
-          name: c.name,
-          severity: mapSeverity(c.severity),
-          passCount: checks.filter((k) => k.success === true).length,
-          failCount: checks.filter((k) => k.success === false).length,
-          description: c.description,
-        }
-      })
-    } else {
-      controls = specControls.map((c) => ({
-        id: c.id,
-        name: c.name,
-        severity: mapSeverity(c.severity),
-        passCount: 0,
-        failCount: 0,
-        description: c.description,
-      }))
-    }
-
-    const passCount = aggPass
-    const failCount = aggFail
-    const totalControls = controls.length || aggPass + aggFail
-    const passRate = totalControls > 0 ? aggPass / (aggPass + aggFail || totalControls) : 0
-
-    const detail: ComplianceFrameworkDetail = {
-      id: item.spec.compliance.id,
-      title: item.spec.compliance.title,
-      passCount,
-      failCount,
-      totalControls,
-      passRate,
-      controls,
+    const missingReplicaSets = new Set<string>()
+    const { detail } = buildComplianceFrameworkData(item, rsMap, reportTargetMap, missingReplicaSets)
+    if (missingReplicaSets.size > 0) {
+      console.warn(
+        `[compliance] ReplicaSet(s) missing from cluster list, keeping framework checks fail-safe: ${Array.from(missingReplicaSets).join(", ")}`,
+      )
     }
     await cacheSet(cacheKey, detail, cacheTtl("complianceFrameworksDetail"))
     return detail

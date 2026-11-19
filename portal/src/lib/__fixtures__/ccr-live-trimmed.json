@@ -1,0 +1,4865 @@
+{
+  "items": [
+    {
+      "metadata": {
+        "name": "k8s-cis-1.23"
+      },
+      "spec": {
+        "compliance": {
+          "id": "k8s-cis-1.23",
+          "title": "CIS Kubernetes Benchmarks v1.23",
+          "controls": [
+            {
+              "id": "1.1.1",
+              "name": "Ensure that the API server pod specification file permissions are set to 600 or more restrictive",
+              "severity": "HIGH"
+            },
+            {
+              "id": "1.1.2",
+              "name": "Ensure that the API server pod specification file ownership is set to root:root",
+              "severity": "HIGH"
+            },
+            {
+              "id": "1.1.3",
+              "name": "Ensure that the controller manager pod specification file permissions are set to 600 or more restrictive",
+              "severity": "HIGH"
+            },
+            {
+              "id": "1.1.4",
+              "name": "Ensure that the controller manager pod specification file ownership is set to root:root",
+              "severity": "HIGH"
+            },
+            {
+              "id": "1.1.5",
+              "name": "Ensure that the scheduler pod specification file permissions are set to 600 or more restrictive",
+              "severity": "HIGH"
+            },
+            {
+              "id": "1.1.6",
+              "name": "Ensure that the scheduler pod specification file ownership is set to root:root",
+              "severity": "HIGH"
+            },
+            {
+              "id": "1.1.7",
+              "name": "Ensure that the etcd pod specification file permissions are set to 600 or more restrictive",
+              "severity": "HIGH"
+            },
+            {
+              "id": "1.1.8",
+              "name": "Ensure that the etcd pod specification file ownership is set to root:root",
+              "severity": "HIGH"
+            },
+            {
+              "id": "1.1.9",
+              "name": "Ensure that the Container Network Interface file permissions are set to 600 or more restrictive",
+              "severity": "HIGH"
+            },
+            {
+              "id": "1.1.10",
+              "name": "Ensure that the Container Network Interface file ownership is set to root:root",
+              "severity": "HIGH"
+            },
+            {
+              "id": "1.1.11",
+              "name": "Ensure that the etcd data directory permissions are set to 700 or more restrictive",
+              "severity": "HIGH"
+            },
+            {
+              "id": "1.1.12",
+              "name": "Ensure that the etcd data directory ownership is set to etcd:etcd",
+              "severity": "LOW"
+            },
+            {
+              "id": "1.1.13",
+              "name": "Ensure that the admin.conf file permissions are set to 600",
+              "severity": "CRITICAL"
+            },
+            {
+              "id": "1.1.14",
+              "name": "Ensure that the admin.conf file ownership is set to root:root",
+              "severity": "CRITICAL"
+            },
+            {
+              "id": "1.1.15",
+              "name": "Ensure that the scheduler.conf file permissions are set to 600 or more restrictive",
+              "severity": "HIGH"
+            },
+            {
+              "id": "1.1.16",
+              "name": "Ensure that the scheduler.conf file ownership is set to root:root",
+              "severity": "HIGH"
+            },
+            {
+              "id": "1.1.17",
+              "name": "Ensure that the controller-manager.conf file permissions are set to 600 or more restrictive",
+              "severity": "HIGH"
+            },
+            {
+              "id": "1.1.18",
+              "name": "Ensure that the controller-manager.conf file ownership is set to root:root",
+              "severity": "HIGH"
+            },
+            {
+              "id": "1.1.19",
+              "name": "Ensure that the Kubernetes PKI directory and file ownership is set to root:root",
+              "severity": "CRITICAL"
+            },
+            {
+              "id": "1.1.20",
+              "name": "Ensure that the Kubernetes PKI certificate file permissions are set to 600 or more restrictive",
+              "severity": "CRITICAL"
+            },
+            {
+              "id": "1.1.21",
+              "name": "Ensure that the Kubernetes PKI key file permissions are set to 600",
+              "severity": "CRITICAL"
+            },
+            {
+              "id": "1.2.1",
+              "name": "Ensure that the --anonymous-auth argument is set to false",
+              "severity": "MEDIUM"
+            },
+            {
+              "id": "1.2.2",
+              "name": "Ensure that the --token-auth-file parameter is not set",
+              "severity": "LOW"
+            },
+            {
+              "id": "1.2.3",
+              "name": "Ensure that the --DenyServiceExternalIPs is not set",
+              "severity": "LOW"
+            },
+            {
+              "id": "1.2.4",
+              "name": "Ensure that the --kubelet-https argument is set to true",
+              "severity": "LOW"
+            },
+            {
+              "id": "1.2.5",
+              "name": "Ensure that the --kubelet-client-certificate and --kubelet-client-key arguments are set as appropriate",
+              "severity": "HIGH"
+            },
+            {
+              "id": "1.2.6",
+              "name": "Ensure that the --kubelet-certificate-authority argument is set as appropriate",
+              "severity": "HIGH"
+            },
+            {
+              "id": "1.2.7",
+              "name": "Ensure that the --authorization-mode argument is not set to AlwaysAllow",
+              "severity": "LOW"
+            },
+            {
+              "id": "1.2.8",
+              "name": "Ensure that the --authorization-mode argument includes Node",
+              "severity": "HIGH"
+            },
+            {
+              "id": "1.2.9",
+              "name": "Ensure that the --authorization-mode argument includes RBAC",
+              "severity": "HIGH"
+            },
+            {
+              "id": "1.2.10",
+              "name": "Ensure that the admission control plugin EventRateLimit is set",
+              "severity": "HIGH"
+            },
+            {
+              "id": "1.2.11",
+              "name": "Ensure that the admission control plugin AlwaysAdmit is not set",
+              "severity": "LOW"
+            },
+            {
+              "id": "1.2.12",
+              "name": "Ensure that the admission control plugin AlwaysPullImages is set",
+              "severity": "MEDIUM"
+            },
+            {
+              "id": "1.2.13",
+              "name": "Ensure that the admission control plugin SecurityContextDeny is set if PodSecurityPolicy is not used",
+              "severity": "MEDIUM"
+            },
+            {
+              "id": "1.2.14",
+              "name": "Ensure that the admission control plugin ServiceAccount is set",
+              "severity": "LOW"
+            },
+            {
+              "id": "1.2.15",
+              "name": "Ensure that the admission control plugin NamespaceLifecycle is set",
+              "severity": "LOW"
+            },
+            {
+              "id": "1.2.16",
+              "name": "Ensure that the admission control plugin NodeRestriction is set",
+              "severity": "LOW"
+            },
+            {
+              "id": "1.2.17",
+              "name": "Ensure that the --secure-port argument is not set to 0",
+              "severity": "HIGH"
+            },
+            {
+              "id": "1.2.18",
+              "name": "Ensure that the --profiling argument is set to false",
+              "severity": "LOW"
+            },
+            {
+              "id": "1.2.19",
+              "name": "Ensure that the --audit-log-path argument is set",
+              "severity": "LOW"
+            },
+            {
+              "id": "1.2.20",
+              "name": "Ensure that the --audit-log-maxage argument is set to 30 or as appropriate",
+              "severity": "LOW"
+            },
+            {
+              "id": "1.2.21",
+              "name": "Ensure that the --audit-log-maxbackup argument is set to 10 or as appropriate",
+              "severity": "LOW"
+            },
+            {
+              "id": "1.2.22",
+              "name": "Ensure that the --audit-log-maxsize argument is set to 100 or as appropriate",
+              "severity": "LOW"
+            },
+            {
+              "id": "1.2.24",
+              "name": "Ensure that the --service-account-lookup argument is set to true",
+              "severity": "LOW"
+            },
+            {
+              "id": "1.2.25",
+              "name": "Ensure that the --service-account-key-file argument is set as appropriate",
+              "severity": "LOW"
+            },
+            {
+              "id": "1.2.26",
+              "name": "Ensure that the --etcd-certfile and --etcd-keyfile arguments are set as appropriate",
+              "severity": "LOW"
+            },
+            {
+              "id": "1.2.27",
+              "name": "Ensure that the --tls-cert-file and --tls-private-key-file arguments are set as appropriate",
+              "severity": "MEDIUM"
+            },
+            {
+              "id": "1.2.28",
+              "name": "Ensure that the --client-ca-file argument is set appropriate",
+              "severity": "LOW"
+            },
+            {
+              "id": "1.2.29",
+              "name": "Ensure that the --etcd-cafile argument is set as appropriate",
+              "severity": "LOW"
+            },
+            {
+              "id": "1.2.30",
+              "name": "Ensure that the --encryption-provider-config argument is set as appropriate",
+              "severity": "LOW"
+            },
+            {
+              "id": "1.3.1",
+              "name": "Ensure that the --terminated-pod-gc-threshold argument is set as appropriate",
+              "severity": "MEDIUM"
+            },
+            {
+              "id": "1.3.3",
+              "name": "Ensure that the --use-service-account-credentials argument is set to true",
+              "severity": "MEDIUM"
+            },
+            {
+              "id": "1.3.4",
+              "name": "Ensure that the --service-account-private-key-file argument is set as appropriate",
+              "severity": "MEDIUM"
+            },
+            {
+              "id": "1.3.5",
+              "name": "Ensure that the --root-ca-file argument is set as appropriate",
+              "severity": "MEDIUM"
+            },
+            {
+              "id": "1.3.6",
+              "name": "Ensure that the RotateKubeletServerCertificate argument is set to true",
+              "severity": "MEDIUM"
+            },
+            {
+              "id": "1.3.7",
+              "name": "Ensure that the --bind-address argument is set to 127.0.0.1",
+              "severity": "LOW"
+            },
+            {
+              "id": "1.4.1",
+              "name": "Ensure that the --profiling argument is set to false",
+              "severity": "MEDIUM"
+            },
+            {
+              "id": "1.4.2",
+              "name": "Ensure that the --bind-address argument is set to 127.0.0.1",
+              "severity": "CRITICAL"
+            },
+            {
+              "id": "2.1",
+              "name": "Ensure that the --cert-file and --key-file arguments are set as appropriate",
+              "severity": "MEDIUM"
+            },
+            {
+              "id": "2.2",
+              "name": "Ensure that the --client-cert-auth argument is set to true",
+              "severity": "CRITICAL"
+            },
+            {
+              "id": "2.3",
+              "name": "Ensure that the --auto-tls argument is not set to true",
+              "severity": "CRITICAL"
+            },
+            {
+              "id": "2.4",
+              "name": "Ensure that the --peer-cert-file and --peer-key-file arguments are set as appropriate",
+              "severity": "CRITICAL"
+            },
+            {
+              "id": "2.5",
+              "name": "Ensure that the --peer-client-cert-auth argument is set to true",
+              "severity": "CRITICAL"
+            },
+            {
+              "id": "2.6",
+              "name": "Ensure that the --peer-auto-tls argument is not set to true",
+              "severity": "HIGH"
+            },
+            {
+              "id": "3.1.1",
+              "name": "Client certificate authentication should not be used for users (Manual)",
+              "severity": "HIGH"
+            },
+            {
+              "id": "3.2.1",
+              "name": "Ensure that a minimal audit policy is created (Manual)",
+              "severity": "HIGH"
+            },
+            {
+              "id": "3.2.2",
+              "name": "Ensure that the audit policy covers key security concerns (Manual)",
+              "severity": "HIGH"
+            },
+            {
+              "id": "4.1.1",
+              "name": "Ensure that the kubelet service file permissions are set to 600 or more restrictive",
+              "severity": "HIGH"
+            },
+            {
+              "id": "4.1.2",
+              "name": "Ensure that the kubelet service file ownership is set to root:root",
+              "severity": "HIGH"
+            },
+            {
+              "id": "4.1.3",
+              "name": "If proxy kubeconfig file exists ensure permissions are set to 600 or more restrictive",
+              "severity": "HIGH"
+            },
+            {
+              "id": "4.1.4",
+              "name": "If proxy kubeconfig file exists ensure ownership is set to root:root",
+              "severity": "HIGH"
+            },
+            {
+              "id": "4.1.5",
+              "name": "Ensure that the --kubeconfig kubelet.conf file permissions are set to 600 or more restrictive",
+              "severity": "HIGH"
+            },
+            {
+              "id": "4.1.6",
+              "name": "Ensure that the --kubeconfig kubelet.conf file ownership is set to root:root",
+              "severity": "HIGH"
+            },
+            {
+              "id": "4.1.7",
+              "name": "Ensure that the certificate authorities file permissions are set to 600 or more restrictive",
+              "severity": "CRITICAL"
+            },
+            {
+              "id": "4.1.8",
+              "name": "Ensure that the client certificate authorities file ownership is set to root:root",
+              "severity": "CRITICAL"
+            },
+            {
+              "id": "4.1.9",
+              "name": "If the kubelet config.yaml configuration file is being used validate permissions set to 600 or more restrictive",
+              "severity": "HIGH"
+            },
+            {
+              "id": "4.1.10",
+              "name": "If the kubelet config.yaml configuration file is being used validate file ownership is set to root:root",
+              "severity": "HIGH"
+            },
+            {
+              "id": "4.2.1",
+              "name": "Ensure that the --anonymous-auth argument is set to false",
+              "severity": "CRITICAL"
+            },
+            {
+              "id": "4.2.2",
+              "name": "Ensure that the --authorization-mode argument is not set to AlwaysAllow",
+              "severity": "CRITICAL"
+            },
+            {
+              "id": "4.2.3",
+              "name": "Ensure that the --client-ca-file argument is set as appropriate",
+              "severity": "CRITICAL"
+            },
+            {
+              "id": "4.2.4",
+              "name": "Verify that the --read-only-port argument is set to 0",
+              "severity": "HIGH"
+            },
+            {
+              "id": "4.2.5",
+              "name": "Ensure that the --streaming-connection-idle-timeout argument is not set to 0",
+              "severity": "HIGH"
+            },
+            {
+              "id": "4.2.6",
+              "name": "Ensure that the --protect-kernel-defaults argument is set to true",
+              "severity": "HIGH"
+            },
+            {
+              "id": "4.2.7",
+              "name": "Ensure that the --make-iptables-util-chains argument is set to true",
+              "severity": "HIGH"
+            },
+            {
+              "id": "4.2.8",
+              "name": "Ensure that the --hostname-override argument is not set",
+              "severity": "HIGH"
+            },
+            {
+              "id": "4.2.9",
+              "name": "Ensure that the --event-qps argument is set to 0 or a level which ensures appropriate event capture",
+              "severity": "HIGH"
+            },
+            {
+              "id": "4.2.10",
+              "name": "Ensure that the --tls-cert-file and --tls-private-key-file arguments are set as appropriate",
+              "severity": "CRITICAL"
+            },
+            {
+              "id": "4.2.11",
+              "name": "Ensure that the --rotate-certificates argument is not set to false",
+              "severity": "CRITICAL"
+            },
+            {
+              "id": "4.2.12",
+              "name": "Verify that the RotateKubeletServerCertificate argument is set to true",
+              "severity": "CRITICAL"
+            },
+            {
+              "id": "4.2.13",
+              "name": "Ensure that the Kubelet only makes use of Strong Cryptographic Ciphers",
+              "severity": "CRITICAL"
+            },
+            {
+              "id": "5.1.1",
+              "name": "Ensure that the cluster-admin role is only used where required",
+              "severity": "HIGH"
+            },
+            {
+              "id": "5.1.2",
+              "name": "Minimize access to secrets",
+              "severity": "HIGH"
+            },
+            {
+              "id": "5.1.3",
+              "name": "Minimize wildcard use in Roles and ClusterRoles",
+              "severity": "HIGH"
+            },
+            {
+              "id": "5.1.6",
+              "name": "Ensure that Service Account Tokens are only mounted where necessary",
+              "severity": "HIGH"
+            },
+            {
+              "id": "5.1.8",
+              "name": "Limit use of the Bind, Impersonate and Escalate permissions in the Kubernetes cluster",
+              "severity": "HIGH"
+            },
+            {
+              "id": "5.2.2",
+              "name": "Minimize the admission of privileged containers",
+              "severity": "HIGH"
+            },
+            {
+              "id": "5.2.3",
+              "name": "Minimize the admission of containers wishing to share the host process ID namespace",
+              "severity": "HIGH"
+            },
+            {
+              "id": "5.2.4",
+              "name": "Minimize the admission of containers wishing to share the host IPC namespace",
+              "severity": "HIGH"
+            },
+            {
+              "id": "5.2.5",
+              "name": "Minimize the admission of containers wishing to share the host network namespace",
+              "severity": "HIGH"
+            },
+            {
+              "id": "5.2.6",
+              "name": "Minimize the admission of containers with allowPrivilegeEscalation",
+              "severity": "HIGH"
+            },
+            {
+              "id": "5.2.7",
+              "name": "Minimize the admission of root containers",
+              "severity": "MEDIUM"
+            },
+            {
+              "id": "5.2.8",
+              "name": "Minimize the admission of containers with the NET_RAW capability",
+              "severity": "MEDIUM"
+            },
+            {
+              "id": "5.2.9",
+              "name": "Minimize the admission of containers with added capabilities",
+              "severity": "LOW"
+            },
+            {
+              "id": "5.2.10",
+              "name": "Minimize the admission of containers with capabilities assigned",
+              "severity": "LOW"
+            },
+            {
+              "id": "5.2.11",
+              "name": "Minimize the admission of containers with capabilities assigned",
+              "severity": "MEDIUM"
+            },
+            {
+              "id": "5.2.12",
+              "name": "Minimize the admission of HostPath volumes",
+              "severity": "MEDIUM"
+            },
+            {
+              "id": "5.2.13",
+              "name": "Minimize the admission of containers which use HostPorts",
+              "severity": "MEDIUM"
+            },
+            {
+              "id": "5.3.1",
+              "name": "Ensure that the CNI in use supports Network Policies (Manual)",
+              "severity": "MEDIUM"
+            },
+            {
+              "id": "5.3.2",
+              "name": "Ensure that all Namespaces have Network Policies defined",
+              "severity": "MEDIUM"
+            },
+            {
+              "id": "5.4.1",
+              "name": "Prefer using secrets as files over secrets as environment variables (Manual)",
+              "severity": "MEDIUM"
+            },
+            {
+              "id": "5.4.2",
+              "name": "Consider external secret storage (Manual)",
+              "severity": "MEDIUM"
+            },
+            {
+              "id": "5.5.1",
+              "name": "Configure Image Provenance using ImagePolicyWebhook admission controller (Manual)",
+              "severity": "MEDIUM"
+            },
+            {
+              "id": "5.7.1",
+              "name": "Create administrative boundaries between resources using namespaces (Manual)",
+              "severity": "MEDIUM"
+            },
+            {
+              "id": "5.7.2",
+              "name": "Ensure that the seccomp profile is set to docker/default in your pod definitions",
+              "severity": "MEDIUM"
+            },
+            {
+              "id": "5.7.3",
+              "name": "Apply Security Context to Your Pods and Containers",
+              "severity": "HIGH"
+            },
+            {
+              "id": "5.7.4",
+              "name": "The default namespace should not be used",
+              "severity": "MEDIUM"
+            }
+          ]
+        }
+      },
+      "status": {
+        "summary": {
+          "failCount": 15,
+          "passCount": 101
+        },
+        "detailReport": {
+          "results": [
+            {
+              "id": "1.1.1",
+              "name": "Ensure that the API server pod specification file permissions are set to 600 or more restrictive",
+              "severity": "HIGH",
+              "checks": [
+                {
+                  "checkID": "",
+                  "target": null,
+                  "success": true
+                }
+              ]
+            },
+            {
+              "id": "1.1.2",
+              "name": "Ensure that the API server pod specification file ownership is set to root:root",
+              "severity": "HIGH",
+              "checks": [
+                {
+                  "checkID": "",
+                  "target": null,
+                  "success": true
+                }
+              ]
+            },
+            {
+              "id": "1.1.3",
+              "name": "Ensure that the controller manager pod specification file permissions are set to 600 or more restrictive",
+              "severity": "HIGH",
+              "checks": [
+                {
+                  "checkID": "",
+                  "target": null,
+                  "success": true
+                }
+              ]
+            },
+            {
+              "id": "1.1.4",
+              "name": "Ensure that the controller manager pod specification file ownership is set to root:root",
+              "severity": "HIGH",
+              "checks": [
+                {
+                  "checkID": "",
+                  "target": null,
+                  "success": true
+                }
+              ]
+            },
+            {
+              "id": "1.1.5",
+              "name": "Ensure that the scheduler pod specification file permissions are set to 600 or more restrictive",
+              "severity": "HIGH",
+              "checks": [
+                {
+                  "checkID": "",
+                  "target": null,
+                  "success": true
+                }
+              ]
+            },
+            {
+              "id": "1.1.6",
+              "name": "Ensure that the scheduler pod specification file ownership is set to root:root",
+              "severity": "HIGH",
+              "checks": [
+                {
+                  "checkID": "",
+                  "target": null,
+                  "success": true
+                }
+              ]
+            },
+            {
+              "id": "1.1.7",
+              "name": "Ensure that the etcd pod specification file permissions are set to 600 or more restrictive",
+              "severity": "HIGH",
+              "checks": [
+                {
+                  "checkID": "",
+                  "target": null,
+                  "success": true
+                }
+              ]
+            },
+            {
+              "id": "1.1.8",
+              "name": "Ensure that the etcd pod specification file ownership is set to root:root",
+              "severity": "HIGH",
+              "checks": [
+                {
+                  "checkID": "",
+                  "target": null,
+                  "success": true
+                }
+              ]
+            },
+            {
+              "id": "1.1.9",
+              "name": "Ensure that the Container Network Interface file permissions are set to 600 or more restrictive",
+              "severity": "HIGH",
+              "checks": [
+                {
+                  "checkID": "AVD-KCV-0056",
+                  "target": "/node-narwhal-master-1",
+                  "success": false
+                }
+              ]
+            },
+            {
+              "id": "1.1.10",
+              "name": "Ensure that the Container Network Interface file ownership is set to root:root",
+              "severity": "HIGH",
+              "checks": [
+                {
+                  "checkID": "",
+                  "target": null,
+                  "success": true
+                }
+              ]
+            },
+            {
+              "id": "1.1.11",
+              "name": "Ensure that the etcd data directory permissions are set to 700 or more restrictive",
+              "severity": "HIGH",
+              "checks": [
+                {
+                  "checkID": "",
+                  "target": null,
+                  "success": true
+                }
+              ]
+            },
+            {
+              "id": "1.1.12",
+              "name": "Ensure that the etcd data directory ownership is set to etcd:etcd",
+              "severity": "LOW",
+              "checks": [
+                {
+                  "checkID": "AVD-KCV-0059",
+                  "target": "/node-narwhal-master-1",
+                  "success": false
+                }
+              ]
+            },
+            {
+              "id": "1.1.13",
+              "name": "Ensure that the admin.conf file permissions are set to 600",
+              "severity": "CRITICAL",
+              "checks": [
+                {
+                  "checkID": "",
+                  "target": null,
+                  "success": true
+                }
+              ]
+            },
+            {
+              "id": "1.1.14",
+              "name": "Ensure that the admin.conf file ownership is set to root:root",
+              "severity": "CRITICAL",
+              "checks": [
+                {
+                  "checkID": "",
+                  "target": null,
+                  "success": true
+                }
+              ]
+            },
+            {
+              "id": "1.1.15",
+              "name": "Ensure that the scheduler.conf file permissions are set to 600 or more restrictive",
+              "severity": "HIGH",
+              "checks": [
+                {
+                  "checkID": "",
+                  "target": null,
+                  "success": true
+                }
+              ]
+            },
+            {
+              "id": "1.1.16",
+              "name": "Ensure that the scheduler.conf file ownership is set to root:root",
+              "severity": "HIGH",
+              "checks": [
+                {
+                  "checkID": "",
+                  "target": null,
+                  "success": true
+                }
+              ]
+            },
+            {
+              "id": "1.1.17",
+              "name": "Ensure that the controller-manager.conf file permissions are set to 600 or more restrictive",
+              "severity": "HIGH",
+              "checks": [
+                {
+                  "checkID": "",
+                  "target": null,
+                  "success": true
+                }
+              ]
+            },
+            {
+              "id": "1.1.18",
+              "name": "Ensure that the controller-manager.conf file ownership is set to root:root",
+              "severity": "HIGH",
+              "checks": [
+                {
+                  "checkID": "",
+                  "target": null,
+                  "success": true
+                }
+              ]
+            },
+            {
+              "id": "1.1.19",
+              "name": "Ensure that the Kubernetes PKI directory and file ownership is set to root:root",
+              "severity": "CRITICAL",
+              "checks": [
+                {
+                  "checkID": "",
+                  "target": null,
+                  "success": true
+                }
+              ]
+            },
+            {
+              "id": "1.1.20",
+              "name": "Ensure that the Kubernetes PKI certificate file permissions are set to 600 or more restrictive",
+              "severity": "CRITICAL",
+              "checks": [
+                {
+                  "checkID": "",
+                  "target": null,
+                  "success": true
+                }
+              ]
+            },
+            {
+              "id": "1.1.21",
+              "name": "Ensure that the Kubernetes PKI key file permissions are set to 600",
+              "severity": "CRITICAL",
+              "checks": [
+                {
+                  "checkID": "",
+                  "target": null,
+                  "success": true
+                }
+              ]
+            },
+            {
+              "id": "1.2.1",
+              "name": "Ensure that the --anonymous-auth argument is set to false",
+              "severity": "MEDIUM",
+              "checks": [
+                {
+                  "checkID": "",
+                  "target": null,
+                  "success": true
+                }
+              ]
+            },
+            {
+              "id": "1.2.2",
+              "name": "Ensure that the --token-auth-file parameter is not set",
+              "severity": "LOW",
+              "checks": [
+                {
+                  "checkID": "",
+                  "target": null,
+                  "success": true
+                }
+              ]
+            },
+            {
+              "id": "1.2.3",
+              "name": "Ensure that the --DenyServiceExternalIPs is not set",
+              "severity": "LOW",
+              "checks": [
+                {
+                  "checkID": "",
+                  "target": null,
+                  "success": true
+                }
+              ]
+            },
+            {
+              "id": "1.2.4",
+              "name": "Ensure that the --kubelet-https argument is set to true",
+              "severity": "LOW",
+              "checks": [
+                {
+                  "checkID": "",
+                  "target": null,
+                  "success": true
+                }
+              ]
+            },
+            {
+              "id": "1.2.5",
+              "name": "Ensure that the --kubelet-client-certificate and --kubelet-client-key arguments are set as appropriate",
+              "severity": "HIGH",
+              "checks": [
+                {
+                  "checkID": "",
+                  "target": null,
+                  "success": true
+                }
+              ]
+            },
+            {
+              "id": "1.2.6",
+              "name": "Ensure that the --kubelet-certificate-authority argument is set as appropriate",
+              "severity": "HIGH",
+              "checks": [
+                {
+                  "checkID": "",
+                  "target": null,
+                  "success": true
+                }
+              ]
+            },
+            {
+              "id": "1.2.7",
+              "name": "Ensure that the --authorization-mode argument is not set to AlwaysAllow",
+              "severity": "LOW",
+              "checks": [
+                {
+                  "checkID": "",
+                  "target": null,
+                  "success": true
+                }
+              ]
+            },
+            {
+              "id": "1.2.8",
+              "name": "Ensure that the --authorization-mode argument includes Node",
+              "severity": "HIGH",
+              "checks": [
+                {
+                  "checkID": "",
+                  "target": null,
+                  "success": true
+                }
+              ]
+            },
+            {
+              "id": "1.2.9",
+              "name": "Ensure that the --authorization-mode argument includes RBAC",
+              "severity": "HIGH",
+              "checks": [
+                {
+                  "checkID": "",
+                  "target": null,
+                  "success": true
+                }
+              ]
+            },
+            {
+              "id": "1.2.10",
+              "name": "Ensure that the admission control plugin EventRateLimit is set",
+              "severity": "HIGH",
+              "checks": [
+                {
+                  "checkID": "",
+                  "target": null,
+                  "success": true
+                }
+              ]
+            },
+            {
+              "id": "1.2.11",
+              "name": "Ensure that the admission control plugin AlwaysAdmit is not set",
+              "severity": "LOW",
+              "checks": [
+                {
+                  "checkID": "",
+                  "target": null,
+                  "success": true
+                }
+              ]
+            },
+            {
+              "id": "1.2.12",
+              "name": "Ensure that the admission control plugin AlwaysPullImages is set",
+              "severity": "MEDIUM",
+              "checks": [
+                {
+                  "checkID": "",
+                  "target": null,
+                  "success": true
+                }
+              ]
+            },
+            {
+              "id": "1.2.13",
+              "name": "Ensure that the admission control plugin SecurityContextDeny is set if PodSecurityPolicy is not used",
+              "severity": "MEDIUM",
+              "checks": [
+                {
+                  "checkID": "",
+                  "target": null,
+                  "success": true
+                }
+              ]
+            },
+            {
+              "id": "1.2.14",
+              "name": "Ensure that the admission control plugin ServiceAccount is set",
+              "severity": "LOW",
+              "checks": [
+                {
+                  "checkID": "",
+                  "target": null,
+                  "success": true
+                }
+              ]
+            },
+            {
+              "id": "1.2.15",
+              "name": "Ensure that the admission control plugin NamespaceLifecycle is set",
+              "severity": "LOW",
+              "checks": [
+                {
+                  "checkID": "",
+                  "target": null,
+                  "success": true
+                }
+              ]
+            },
+            {
+              "id": "1.2.16",
+              "name": "Ensure that the admission control plugin NodeRestriction is set",
+              "severity": "LOW",
+              "checks": [
+                {
+                  "checkID": "",
+                  "target": null,
+                  "success": true
+                }
+              ]
+            },
+            {
+              "id": "1.2.17",
+              "name": "Ensure that the --secure-port argument is not set to 0",
+              "severity": "HIGH",
+              "checks": [
+                {
+                  "checkID": "",
+                  "target": null,
+                  "success": true
+                }
+              ]
+            },
+            {
+              "id": "1.2.18",
+              "name": "Ensure that the --profiling argument is set to false",
+              "severity": "LOW",
+              "checks": [
+                {
+                  "checkID": "",
+                  "target": null,
+                  "success": true
+                }
+              ]
+            },
+            {
+              "id": "1.2.19",
+              "name": "Ensure that the --audit-log-path argument is set",
+              "severity": "LOW",
+              "checks": [
+                {
+                  "checkID": "",
+                  "target": null,
+                  "success": true
+                }
+              ]
+            },
+            {
+              "id": "1.2.20",
+              "name": "Ensure that the --audit-log-maxage argument is set to 30 or as appropriate",
+              "severity": "LOW",
+              "checks": [
+                {
+                  "checkID": "",
+                  "target": null,
+                  "success": true
+                }
+              ]
+            },
+            {
+              "id": "1.2.21",
+              "name": "Ensure that the --audit-log-maxbackup argument is set to 10 or as appropriate",
+              "severity": "LOW",
+              "checks": [
+                {
+                  "checkID": "",
+                  "target": null,
+                  "success": true
+                }
+              ]
+            },
+            {
+              "id": "1.2.22",
+              "name": "Ensure that the --audit-log-maxsize argument is set to 100 or as appropriate",
+              "severity": "LOW",
+              "checks": [
+                {
+                  "checkID": "",
+                  "target": null,
+                  "success": true
+                }
+              ]
+            },
+            {
+              "id": "1.2.24",
+              "name": "Ensure that the --service-account-lookup argument is set to true",
+              "severity": "LOW",
+              "checks": [
+                {
+                  "checkID": "",
+                  "target": null,
+                  "success": true
+                }
+              ]
+            },
+            {
+              "id": "1.2.25",
+              "name": "Ensure that the --service-account-key-file argument is set as appropriate",
+              "severity": "LOW",
+              "checks": [
+                {
+                  "checkID": "",
+                  "target": null,
+                  "success": true
+                }
+              ]
+            },
+            {
+              "id": "1.2.26",
+              "name": "Ensure that the --etcd-certfile and --etcd-keyfile arguments are set as appropriate",
+              "severity": "LOW",
+              "checks": [
+                {
+                  "checkID": "",
+                  "target": null,
+                  "success": true
+                }
+              ]
+            },
+            {
+              "id": "1.2.27",
+              "name": "Ensure that the --tls-cert-file and --tls-private-key-file arguments are set as appropriate",
+              "severity": "MEDIUM",
+              "checks": [
+                {
+                  "checkID": "",
+                  "target": null,
+                  "success": true
+                }
+              ]
+            },
+            {
+              "id": "1.2.28",
+              "name": "Ensure that the --client-ca-file argument is set appropriate",
+              "severity": "LOW",
+              "checks": [
+                {
+                  "checkID": "",
+                  "target": null,
+                  "success": true
+                }
+              ]
+            },
+            {
+              "id": "1.2.29",
+              "name": "Ensure that the --etcd-cafile argument is set as appropriate",
+              "severity": "LOW",
+              "checks": [
+                {
+                  "checkID": "",
+                  "target": null,
+                  "success": true
+                }
+              ]
+            },
+            {
+              "id": "1.2.30",
+              "name": "Ensure that the --encryption-provider-config argument is set as appropriate",
+              "severity": "LOW",
+              "checks": [
+                {
+                  "checkID": "",
+                  "target": null,
+                  "success": true
+                }
+              ]
+            },
+            {
+              "id": "1.3.1",
+              "name": "Ensure that the --terminated-pod-gc-threshold argument is set as appropriate",
+              "severity": "MEDIUM",
+              "checks": [
+                {
+                  "checkID": "",
+                  "target": null,
+                  "success": true
+                }
+              ]
+            },
+            {
+              "id": "1.3.3",
+              "name": "Ensure that the --use-service-account-credentials argument is set to true",
+              "severity": "MEDIUM",
+              "checks": [
+                {
+                  "checkID": "",
+                  "target": null,
+                  "success": true
+                }
+              ]
+            },
+            {
+              "id": "1.3.4",
+              "name": "Ensure that the --service-account-private-key-file argument is set as appropriate",
+              "severity": "MEDIUM",
+              "checks": [
+                {
+                  "checkID": "",
+                  "target": null,
+                  "success": true
+                }
+              ]
+            },
+            {
+              "id": "1.3.5",
+              "name": "Ensure that the --root-ca-file argument is set as appropriate",
+              "severity": "MEDIUM",
+              "checks": [
+                {
+                  "checkID": "",
+                  "target": null,
+                  "success": true
+                }
+              ]
+            },
+            {
+              "id": "1.3.6",
+              "name": "Ensure that the RotateKubeletServerCertificate argument is set to true",
+              "severity": "MEDIUM",
+              "checks": [
+                {
+                  "checkID": "",
+                  "target": null,
+                  "success": true
+                }
+              ]
+            },
+            {
+              "id": "1.3.7",
+              "name": "Ensure that the --bind-address argument is set to 127.0.0.1",
+              "severity": "LOW",
+              "checks": [
+                {
+                  "checkID": "",
+                  "target": null,
+                  "success": true
+                }
+              ]
+            },
+            {
+              "id": "1.4.1",
+              "name": "Ensure that the --profiling argument is set to false",
+              "severity": "MEDIUM",
+              "checks": [
+                {
+                  "checkID": "",
+                  "target": null,
+                  "success": true
+                }
+              ]
+            },
+            {
+              "id": "1.4.2",
+              "name": "Ensure that the --bind-address argument is set to 127.0.0.1",
+              "severity": "CRITICAL",
+              "checks": [
+                {
+                  "checkID": "",
+                  "target": null,
+                  "success": true
+                }
+              ]
+            },
+            {
+              "id": "2.1",
+              "name": "Ensure that the --cert-file and --key-file arguments are set as appropriate",
+              "severity": "MEDIUM",
+              "checks": [
+                {
+                  "checkID": "",
+                  "target": null,
+                  "success": true
+                }
+              ]
+            },
+            {
+              "id": "2.2",
+              "name": "Ensure that the --client-cert-auth argument is set to true",
+              "severity": "CRITICAL",
+              "checks": [
+                {
+                  "checkID": "",
+                  "target": null,
+                  "success": true
+                }
+              ]
+            },
+            {
+              "id": "2.3",
+              "name": "Ensure that the --auto-tls argument is not set to true",
+              "severity": "CRITICAL",
+              "checks": [
+                {
+                  "checkID": "",
+                  "target": null,
+                  "success": true
+                }
+              ]
+            },
+            {
+              "id": "2.4",
+              "name": "Ensure that the --peer-cert-file and --peer-key-file arguments are set as appropriate",
+              "severity": "CRITICAL",
+              "checks": [
+                {
+                  "checkID": "",
+                  "target": null,
+                  "success": true
+                }
+              ]
+            },
+            {
+              "id": "2.5",
+              "name": "Ensure that the --peer-client-cert-auth argument is set to true",
+              "severity": "CRITICAL",
+              "checks": [
+                {
+                  "checkID": "",
+                  "target": null,
+                  "success": true
+                }
+              ]
+            },
+            {
+              "id": "2.6",
+              "name": "Ensure that the --peer-auto-tls argument is not set to true",
+              "severity": "HIGH",
+              "checks": [
+                {
+                  "checkID": "",
+                  "target": null,
+                  "success": true
+                }
+              ]
+            },
+            {
+              "id": "3.1.1",
+              "name": "Client certificate authentication should not be used for users (Manual)",
+              "severity": "HIGH",
+              "checks": [
+                {
+                  "checkID": "",
+                  "target": null,
+                  "success": true
+                }
+              ]
+            },
+            {
+              "id": "3.2.1",
+              "name": "Ensure that a minimal audit policy is created (Manual)",
+              "severity": "HIGH",
+              "checks": [
+                {
+                  "checkID": "",
+                  "target": null,
+                  "success": true
+                }
+              ]
+            },
+            {
+              "id": "3.2.2",
+              "name": "Ensure that the audit policy covers key security concerns (Manual)",
+              "severity": "HIGH",
+              "checks": [
+                {
+                  "checkID": "",
+                  "target": null,
+                  "success": true
+                }
+              ]
+            },
+            {
+              "id": "4.1.1",
+              "name": "Ensure that the kubelet service file permissions are set to 600 or more restrictive",
+              "severity": "HIGH",
+              "checks": [
+                {
+                  "checkID": "",
+                  "target": null,
+                  "success": true
+                }
+              ]
+            },
+            {
+              "id": "4.1.2",
+              "name": "Ensure that the kubelet service file ownership is set to root:root",
+              "severity": "HIGH",
+              "checks": [
+                {
+                  "checkID": "",
+                  "target": null,
+                  "success": true
+                }
+              ]
+            },
+            {
+              "id": "4.1.3",
+              "name": "If proxy kubeconfig file exists ensure permissions are set to 600 or more restrictive",
+              "severity": "HIGH",
+              "checks": [
+                {
+                  "checkID": "",
+                  "target": null,
+                  "success": true
+                }
+              ]
+            },
+            {
+              "id": "4.1.4",
+              "name": "If proxy kubeconfig file exists ensure ownership is set to root:root",
+              "severity": "HIGH",
+              "checks": [
+                {
+                  "checkID": "",
+                  "target": null,
+                  "success": true
+                }
+              ]
+            },
+            {
+              "id": "4.1.5",
+              "name": "Ensure that the --kubeconfig kubelet.conf file permissions are set to 600 or more restrictive",
+              "severity": "HIGH",
+              "checks": [
+                {
+                  "checkID": "",
+                  "target": null,
+                  "success": true
+                }
+              ]
+            },
+            {
+              "id": "4.1.6",
+              "name": "Ensure that the --kubeconfig kubelet.conf file ownership is set to root:root",
+              "severity": "HIGH",
+              "checks": [
+                {
+                  "checkID": "",
+                  "target": null,
+                  "success": true
+                }
+              ]
+            },
+            {
+              "id": "4.1.7",
+              "name": "Ensure that the certificate authorities file permissions are set to 600 or more restrictive",
+              "severity": "CRITICAL",
+              "checks": [
+                {
+                  "checkID": "",
+                  "target": null,
+                  "success": true
+                }
+              ]
+            },
+            {
+              "id": "4.1.8",
+              "name": "Ensure that the client certificate authorities file ownership is set to root:root",
+              "severity": "CRITICAL",
+              "checks": [
+                {
+                  "checkID": "",
+                  "target": null,
+                  "success": true
+                }
+              ]
+            },
+            {
+              "id": "4.1.9",
+              "name": "If the kubelet config.yaml configuration file is being used validate permissions set to 600 or more restrictive",
+              "severity": "HIGH",
+              "checks": [
+                {
+                  "checkID": "",
+                  "target": null,
+                  "success": true
+                }
+              ]
+            },
+            {
+              "id": "4.1.10",
+              "name": "If the kubelet config.yaml configuration file is being used validate file ownership is set to root:root",
+              "severity": "HIGH",
+              "checks": [
+                {
+                  "checkID": "",
+                  "target": null,
+                  "success": true
+                }
+              ]
+            },
+            {
+              "id": "4.2.1",
+              "name": "Ensure that the --anonymous-auth argument is set to false",
+              "severity": "CRITICAL",
+              "checks": [
+                {
+                  "checkID": "",
+                  "target": null,
+                  "success": true
+                }
+              ]
+            },
+            {
+              "id": "4.2.2",
+              "name": "Ensure that the --authorization-mode argument is not set to AlwaysAllow",
+              "severity": "CRITICAL",
+              "checks": [
+                {
+                  "checkID": "",
+                  "target": null,
+                  "success": true
+                }
+              ]
+            },
+            {
+              "id": "4.2.3",
+              "name": "Ensure that the --client-ca-file argument is set as appropriate",
+              "severity": "CRITICAL",
+              "checks": [
+                {
+                  "checkID": "",
+                  "target": null,
+                  "success": true
+                }
+              ]
+            },
+            {
+              "id": "4.2.4",
+              "name": "Verify that the --read-only-port argument is set to 0",
+              "severity": "HIGH",
+              "checks": [
+                {
+                  "checkID": "",
+                  "target": null,
+                  "success": true
+                }
+              ]
+            },
+            {
+              "id": "4.2.5",
+              "name": "Ensure that the --streaming-connection-idle-timeout argument is not set to 0",
+              "severity": "HIGH",
+              "checks": [
+                {
+                  "checkID": "",
+                  "target": null,
+                  "success": true
+                }
+              ]
+            },
+            {
+              "id": "4.2.6",
+              "name": "Ensure that the --protect-kernel-defaults argument is set to true",
+              "severity": "HIGH",
+              "checks": [
+                {
+                  "checkID": "",
+                  "target": null,
+                  "success": true
+                }
+              ]
+            },
+            {
+              "id": "4.2.7",
+              "name": "Ensure that the --make-iptables-util-chains argument is set to true",
+              "severity": "HIGH",
+              "checks": [
+                {
+                  "checkID": "",
+                  "target": null,
+                  "success": true
+                }
+              ]
+            },
+            {
+              "id": "4.2.8",
+              "name": "Ensure that the --hostname-override argument is not set",
+              "severity": "HIGH",
+              "checks": [
+                {
+                  "checkID": "",
+                  "target": null,
+                  "success": true
+                }
+              ]
+            },
+            {
+              "id": "4.2.9",
+              "name": "Ensure that the --event-qps argument is set to 0 or a level which ensures appropriate event capture",
+              "severity": "HIGH",
+              "checks": [
+                {
+                  "checkID": "",
+                  "target": null,
+                  "success": true
+                }
+              ]
+            },
+            {
+              "id": "4.2.10",
+              "name": "Ensure that the --tls-cert-file and --tls-private-key-file arguments are set as appropriate",
+              "severity": "CRITICAL",
+              "checks": [
+                {
+                  "checkID": "",
+                  "target": null,
+                  "success": true
+                }
+              ]
+            },
+            {
+              "id": "4.2.11",
+              "name": "Ensure that the --rotate-certificates argument is not set to false",
+              "severity": "CRITICAL",
+              "checks": [
+                {
+                  "checkID": "",
+                  "target": null,
+                  "success": true
+                }
+              ]
+            },
+            {
+              "id": "4.2.12",
+              "name": "Verify that the RotateKubeletServerCertificate argument is set to true",
+              "severity": "CRITICAL",
+              "checks": [
+                {
+                  "checkID": "",
+                  "target": null,
+                  "success": true
+                }
+              ]
+            },
+            {
+              "id": "4.2.13",
+              "name": "Ensure that the Kubelet only makes use of Strong Cryptographic Ciphers",
+              "severity": "CRITICAL",
+              "checks": [
+                {
+                  "checkID": "",
+                  "target": null,
+                  "success": true
+                }
+              ]
+            },
+            {
+              "id": "5.1.1",
+              "name": "Ensure that the cluster-admin role is only used where required",
+              "severity": "HIGH",
+              "checks": [
+                {
+                  "checkID": "",
+                  "target": null,
+                  "success": true
+                }
+              ]
+            },
+            {
+              "id": "5.1.2",
+              "name": "Minimize access to secrets",
+              "severity": "HIGH",
+              "checks": [
+                {
+                  "checkID": "AVD-KSV-0041",
+                  "target": "/clusterrole-cert-manager-controller-certificates",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0041",
+                  "target": "/clusterrole-k8s-monitoring-alloy-operator",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0041",
+                  "target": "/clusterrole-b754c4cc6",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0041",
+                  "target": "/clusterrole-apisix-ingress-controller-clusterrole",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0041",
+                  "target": "/clusterrole-7b884bc5d8",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0041",
+                  "target": "/clusterrole-prometheus-stack-kube-prom-operator",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0041",
+                  "target": "/clusterrole-54cdc9b678",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0041",
+                  "target": "/clusterrole-cilium-operator",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0041",
+                  "target": "/clusterrole-cnpg-cloudnative-pg",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0041",
+                  "target": "/clusterrole-cert-manager-controller-challenges",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0041",
+                  "target": "/clusterrole-argocd-server",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0041",
+                  "target": "/clusterrole-keycloakcontroller-cluster-role",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0041",
+                  "target": "/clusterrole-keycloakrealmimportcontroller-cluster-role",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0041",
+                  "target": "/clusterrole-loki-clusterrole",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0041",
+                  "target": "/clusterrole-prometheus-stack-grafana-clusterrole",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0041",
+                  "target": "/clusterrole-cert-manager-cainjector",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0041",
+                  "target": "/clusterrole-trivy-operator",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0041",
+                  "target": "/clusterrole-cert-manager-controller-clusterissuers",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0041",
+                  "target": "/clusterrole-admin",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0041",
+                  "target": "/clusterrole-cert-manager-controller-orders",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0041",
+                  "target": "/clusterrole-nfs-external-provisioner-role",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0041",
+                  "target": "/clusterrole-argocd-applicationset-controller",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0041",
+                  "target": "/clusterrole-cert-manager-controller-issuers",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0041",
+                  "target": "/clusterrole-istio-reader-clusterrole-istio-system",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0041",
+                  "target": "/clusterrole-platform-admin",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0041",
+                  "target": "/clusterrole-prometheus-stack-kube-state-metrics",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0041",
+                  "target": "/clusterrole-864fd65956",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0041",
+                  "target": "/clusterrole-ccd4d7d9",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0041",
+                  "target": "/clusterrole-velero-server",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0041",
+                  "target": "/clusterrole-edit",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0041",
+                  "target": "/clusterrole-istiod-clusterrole-istio-system",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0041",
+                  "target": "/clusterrole-k8s-monitoring-alloy-logs",
+                  "success": false
+                }
+              ]
+            },
+            {
+              "id": "5.1.3",
+              "name": "Minimize wildcard use in Roles and ClusterRoles",
+              "severity": "HIGH",
+              "checks": [
+                {
+                  "checkID": "AVD-KSV-0044",
+                  "target": "/clusterrole-cluster-admin",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0044",
+                  "target": "/clusterrole-argocd-application-controller",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0045",
+                  "target": "/clusterrole-prometheus-stack-kube-prom-operator",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0046",
+                  "target": "/clusterrole-b754c4cc6",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0046",
+                  "target": "/clusterrole-cluster-admin",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0046",
+                  "target": "/clusterrole-79d4fc89cd",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0046",
+                  "target": "/clusterrole-argocd-server",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0046",
+                  "target": "/clusterrole-argocd-application-controller",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0046",
+                  "target": "/clusterrole-86ccd5dd47",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0046",
+                  "target": "/clusterrole-57d745d4cc",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0046",
+                  "target": "/clusterrole-istio-reader-clusterrole-istio-system",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0046",
+                  "target": "/clusterrole-69c4fbc9c4",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0046",
+                  "target": "/clusterrole-ccd4d7d9",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0046",
+                  "target": "/clusterrole-velero-server",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0046",
+                  "target": "/clusterrole-istiod-clusterrole-istio-system",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0046",
+                  "target": "/clusterrole-chaos-mesh-chaos-dashboard-target-namespace",
+                  "success": false
+                }
+              ]
+            },
+            {
+              "id": "5.1.6",
+              "name": "Ensure that Service Account Tokens are only mounted where necessary",
+              "severity": "HIGH",
+              "checks": [
+                {
+                  "checkID": "AVD-KSV-0036",
+                  "target": "database/pod-narwhal-db-1",
+                  "success": false
+                }
+              ]
+            },
+            {
+              "id": "5.1.8",
+              "name": "Limit use of the Bind, Impersonate and Escalate permissions in the Kubernetes cluster",
+              "severity": "HIGH",
+              "checks": [
+                {
+                  "checkID": "",
+                  "target": null,
+                  "success": true
+                }
+              ]
+            },
+            {
+              "id": "5.2.2",
+              "name": "Minimize the admission of privileged containers",
+              "severity": "HIGH",
+              "checks": [
+                {
+                  "checkID": "AVD-KSV-0017",
+                  "target": "chaos-testing/daemonset-chaos-daemon",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0017",
+                  "target": "security-system/daemonset-falco",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0017",
+                  "target": "nfs-quota-agent/daemonset-nfs-quota-agent",
+                  "success": false
+                }
+              ]
+            },
+            {
+              "id": "5.2.3",
+              "name": "Minimize the admission of containers wishing to share the host process ID namespace",
+              "severity": "HIGH",
+              "checks": [
+                {
+                  "checkID": "AVD-KSV-0010",
+                  "target": "chaos-testing/daemonset-chaos-daemon",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0010",
+                  "target": "monitoring/daemonset-prometheus-stack-prometheus-node-exporter",
+                  "success": false
+                }
+              ]
+            },
+            {
+              "id": "5.2.4",
+              "name": "Minimize the admission of containers wishing to share the host IPC namespace",
+              "severity": "HIGH",
+              "checks": [
+                {
+                  "checkID": "",
+                  "target": null,
+                  "success": true
+                }
+              ]
+            },
+            {
+              "id": "5.2.5",
+              "name": "Minimize the admission of containers wishing to share the host network namespace",
+              "severity": "HIGH",
+              "checks": [
+                {
+                  "checkID": "AVD-KSV-0009",
+                  "target": "platform-system/daemonset-metallb-speaker",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0009",
+                  "target": "monitoring/daemonset-prometheus-stack-prometheus-node-exporter",
+                  "success": false
+                }
+              ]
+            },
+            {
+              "id": "5.2.6",
+              "name": "Minimize the admission of containers with allowPrivilegeEscalation",
+              "severity": "HIGH",
+              "checks": [
+                {
+                  "checkID": "AVD-KSV-0001",
+                  "target": "chaos-testing/daemonset-chaos-daemon",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0001",
+                  "target": "security-system/daemonset-falco",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0001",
+                  "target": "nfs-quota-agent/daemonset-nfs-quota-agent",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0001",
+                  "target": "storage/daemonset-node-agent",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0001",
+                  "target": "chaos-testing/replicaset-chaos-controller-manager-5f9dfd464",
+                  "success": false
+                }
+              ]
+            },
+            {
+              "id": "5.2.7",
+              "name": "Minimize the admission of root containers",
+              "severity": "MEDIUM",
+              "checks": [
+                {
+                  "checkID": "AVD-KSV-0012",
+                  "target": "storage/statefulset-seaweedfs-volume",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0012",
+                  "target": "chaos-testing/daemonset-chaos-daemon",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0012",
+                  "target": "platform-system/daemonset-metallb-speaker",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0012",
+                  "target": "security-system/daemonset-falco",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0012",
+                  "target": "monitoring/daemonset-k8s-monitoring-alloy-logs",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0012",
+                  "target": "nfs-quota-agent/daemonset-nfs-quota-agent",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0012",
+                  "target": "storage/daemonset-node-agent",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0012",
+                  "target": "chaos-testing/replicaset-chaos-controller-manager-5f9dfd464",
+                  "success": false
+                }
+              ]
+            },
+            {
+              "id": "5.2.8",
+              "name": "Minimize the admission of containers with the NET_RAW capability",
+              "severity": "MEDIUM",
+              "checks": [
+                {
+                  "checkID": "AVD-KSV-0022",
+                  "target": "chaos-testing/daemonset-chaos-daemon",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0022",
+                  "target": "platform-system/daemonset-metallb-speaker",
+                  "success": false
+                }
+              ]
+            },
+            {
+              "id": "5.2.9",
+              "name": "Minimize the admission of containers with added capabilities",
+              "severity": "LOW",
+              "checks": [
+                {
+                  "checkID": "",
+                  "target": null,
+                  "success": true
+                }
+              ]
+            },
+            {
+              "id": "5.2.10",
+              "name": "Minimize the admission of containers with capabilities assigned",
+              "severity": "LOW",
+              "checks": [
+                {
+                  "checkID": "AVD-KSV-0003",
+                  "target": "chaos-testing/daemonset-chaos-daemon",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0003",
+                  "target": "security-system/daemonset-falco",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0003",
+                  "target": "nfs-quota-agent/daemonset-nfs-quota-agent",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0003",
+                  "target": "storage/daemonset-node-agent",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0003",
+                  "target": "chaos-testing/replicaset-chaos-controller-manager-5f9dfd464",
+                  "success": false
+                }
+              ]
+            },
+            {
+              "id": "5.2.11",
+              "name": "Minimize the admission of containers with capabilities assigned",
+              "severity": "MEDIUM",
+              "checks": [
+                {
+                  "checkID": "",
+                  "target": null,
+                  "success": true
+                }
+              ]
+            },
+            {
+              "id": "5.2.12",
+              "name": "Minimize the admission of HostPath volumes",
+              "severity": "MEDIUM",
+              "checks": [
+                {
+                  "checkID": "AVD-KSV-0023",
+                  "target": "storage/statefulset-seaweedfs-volume",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0023",
+                  "target": "chaos-testing/daemonset-chaos-daemon",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0023",
+                  "target": "security-system/daemonset-falco",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0023",
+                  "target": "monitoring/daemonset-k8s-monitoring-alloy-logs",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0023",
+                  "target": "monitoring/daemonset-prometheus-stack-prometheus-node-exporter",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0023",
+                  "target": "nfs-quota-agent/daemonset-nfs-quota-agent",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0023",
+                  "target": "storage/daemonset-node-agent",
+                  "success": false
+                }
+              ]
+            },
+            {
+              "id": "5.2.13",
+              "name": "Minimize the admission of containers which use HostPorts",
+              "severity": "MEDIUM",
+              "checks": [
+                {
+                  "checkID": "",
+                  "target": null,
+                  "success": true
+                }
+              ]
+            },
+            {
+              "id": "5.3.1",
+              "name": "Ensure that the CNI in use supports Network Policies (Manual)",
+              "severity": "MEDIUM",
+              "checks": [
+                {
+                  "checkID": "",
+                  "target": null,
+                  "success": true
+                }
+              ]
+            },
+            {
+              "id": "5.3.2",
+              "name": "Ensure that all Namespaces have Network Policies defined",
+              "severity": "MEDIUM",
+              "checks": [
+                {
+                  "checkID": "",
+                  "target": null,
+                  "success": true
+                }
+              ]
+            },
+            {
+              "id": "5.4.1",
+              "name": "Prefer using secrets as files over secrets as environment variables (Manual)",
+              "severity": "MEDIUM",
+              "checks": [
+                {
+                  "checkID": "",
+                  "target": null,
+                  "success": true
+                }
+              ]
+            },
+            {
+              "id": "5.4.2",
+              "name": "Consider external secret storage (Manual)",
+              "severity": "MEDIUM",
+              "checks": [
+                {
+                  "checkID": "",
+                  "target": null,
+                  "success": true
+                }
+              ]
+            },
+            {
+              "id": "5.5.1",
+              "name": "Configure Image Provenance using ImagePolicyWebhook admission controller (Manual)",
+              "severity": "MEDIUM",
+              "checks": [
+                {
+                  "checkID": "",
+                  "target": null,
+                  "success": true
+                }
+              ]
+            },
+            {
+              "id": "5.7.1",
+              "name": "Create administrative boundaries between resources using namespaces (Manual)",
+              "severity": "MEDIUM",
+              "checks": [
+                {
+                  "checkID": "",
+                  "target": null,
+                  "success": true
+                }
+              ]
+            },
+            {
+              "id": "5.7.2",
+              "name": "Ensure that the seccomp profile is set to docker/default in your pod definitions",
+              "severity": "MEDIUM",
+              "checks": [
+                {
+                  "checkID": "AVD-KSV-0104",
+                  "target": "security-system/daemonset-falco",
+                  "success": false
+                }
+              ]
+            },
+            {
+              "id": "5.7.3",
+              "name": "Apply Security Context to Your Pods and Containers",
+              "severity": "HIGH",
+              "checks": [
+                {
+                  "checkID": "AVD-KSV-0021",
+                  "target": "storage/replicaset-openbao-snapshot-holder-865bfd4d54",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0021",
+                  "target": "monitoring/replicaset-prometheus-stack-grafana-7fccb54997",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0021",
+                  "target": "monitoring/replicaset-prometheus-stack-grafana-7fccb54997",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0021",
+                  "target": "monitoring/replicaset-prometheus-stack-grafana-7fccb54997",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0021",
+                  "target": "devtools/replicaset-argocd-notifications-controller-7bfb677d57",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0021",
+                  "target": "devtools/replicaset-argocd-repo-server-6566f74dd4",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0021",
+                  "target": "devtools/replicaset-argocd-repo-server-6566f74dd4",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0021",
+                  "target": "devtools/replicaset-kubernetes-dashboard-kong-5997b58d",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0021",
+                  "target": "devtools/replicaset-kubernetes-dashboard-kong-5997b58d",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0021",
+                  "target": "database/pod-narwhal-db-1",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0021",
+                  "target": "database/pod-narwhal-db-1",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0021",
+                  "target": "devtools/replicaset-argocd-dex-server-5668698b97",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0021",
+                  "target": "devtools/replicaset-argocd-dex-server-5668698b97",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0021",
+                  "target": "devtools/replicaset-kubernetes-dashboard-web-676b9dbc55",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0021",
+                  "target": "devtools/replicaset-harbor-core-95b9f6d79",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0021",
+                  "target": "storage/replicaset-velero-ui-6b7c468f47",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0021",
+                  "target": "devtools/replicaset-kubernetes-dashboard-auth-5775fb9559",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0021",
+                  "target": "storage/statefulset-seaweedfs-master",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0021",
+                  "target": "storage/statefulset-seaweedfs-volume",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0021",
+                  "target": "platform-system/replicaset-apisix-566c5c56d4",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0021",
+                  "target": "platform-system/replicaset-apisix-566c5c56d4",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0021",
+                  "target": "security-system/replicaset-trivy-operator-59c6cc588d",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0021",
+                  "target": "devtools/replicaset-headlamp-56c7485699",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0021",
+                  "target": "devtools/replicaset-headlamp-56c7485699",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0021",
+                  "target": "storage/cronjob-openbao-snapshot",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0021",
+                  "target": "storage/cronjob-openbao-snapshot",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0021",
+                  "target": "devtools/replicaset-kubernetes-dashboard-api-7bf8c8c78b",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0021",
+                  "target": "devtools/statefulset-harbor-redis",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0021",
+                  "target": "platform-system/replicaset-cert-manager-79cc694bf6",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0021",
+                  "target": "platform-system/replicaset-cert-manager-cainjector-6d4cc6c4bc",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0021",
+                  "target": "storage/replicaset-openbao-agent-injector-6f5dbd595b",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0021",
+                  "target": "database/replicaset-narwhal-db-pooler-rw-5b44f8765f",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0021",
+                  "target": "database/replicaset-narwhal-db-pooler-rw-5b44f8765f",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0021",
+                  "target": "devtools/replicaset-argocd-applicationset-controller-5f74976bc7",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0021",
+                  "target": "storage/replicaset-seaweedfs-s3-66469448b7",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0021",
+                  "target": "devtools/replicaset-harbor-registry-77f69d544f",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0021",
+                  "target": "devtools/replicaset-harbor-registry-77f69d544f",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0021",
+                  "target": "platform-system/replicaset-metallb-controller-78cf8fff4c",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0021",
+                  "target": "security-system/replicaset-falco-falcosidekick-84cf7dbf85",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0021",
+                  "target": "devtools/replicaset-harbor-portal-865f577cc9",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0021",
+                  "target": "devtools/replicaset-waypoint-6d979984f4",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0021",
+                  "target": "platform-system/replicaset-waypoint-6b68976c",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0021",
+                  "target": "devtools/replicaset-argocd-redis-767667bf98",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0021",
+                  "target": "devtools/replicaset-argocd-redis-767667bf98",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0021",
+                  "target": "storage/replicaset-velero-dbc67d57",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0021",
+                  "target": "storage/replicaset-velero-dbc67d57",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0021",
+                  "target": "chaos-testing/daemonset-chaos-daemon",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0021",
+                  "target": "storage/statefulset-openbao",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0021",
+                  "target": "devtools/replicaset-gitea-67f4766475",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0021",
+                  "target": "devtools/replicaset-gitea-67f4766475",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0021",
+                  "target": "devtools/replicaset-gitea-67f4766475",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0021",
+                  "target": "devtools/replicaset-gitea-67f4766475",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0021",
+                  "target": "devtools/replicaset-harbor-jobservice-76974c9758",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0021",
+                  "target": "monitoring/replicaset-k8s-monitoring-alloy-operator-5d56767847",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0021",
+                  "target": "platform-system/daemonset-metallb-speaker",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0021",
+                  "target": "devtools/replicaset-argocd-server-5ff7697d4f",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0021",
+                  "target": "devtools/replicaset-kubernetes-dashboard-metrics-scraper-7c545f87b7",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0021",
+                  "target": "security-system/daemonset-falco",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0021",
+                  "target": "security-system/statefulset-trivy-server",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0021",
+                  "target": "monitoring/daemonset-k8s-monitoring-alloy-logs",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0021",
+                  "target": "monitoring/daemonset-k8s-monitoring-alloy-logs",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0021",
+                  "target": "devtools/statefulset-argocd-application-controller",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0021",
+                  "target": "platform-system/replicaset-cert-manager-webhook-5ff848567f",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0021",
+                  "target": "storage/cronjob-openbao-auto-unseal",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0021",
+                  "target": "iam/statefulset-keycloak",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0021",
+                  "target": "monitoring/statefulset-prometheus-prometheus-stack-kube-prom-prometheus",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0021",
+                  "target": "monitoring/statefulset-prometheus-prometheus-stack-kube-prom-prometheus",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0021",
+                  "target": "monitoring/statefulset-prometheus-prometheus-stack-kube-prom-prometheus",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0021",
+                  "target": "devtools/replicaset-narwhal-portal-d74cd77bd",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0021",
+                  "target": "devtools/replicaset-narwhal-portal-valkey-5ff8c6b457",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0021",
+                  "target": "nfs-quota-agent/daemonset-nfs-quota-agent",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0021",
+                  "target": "monitoring/replicaset-waypoint-6b76d4696",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0021",
+                  "target": "storage/daemonset-node-agent",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0021",
+                  "target": "monitoring/statefulset-78785dbd5c",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0021",
+                  "target": "monitoring/statefulset-78785dbd5c",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0021",
+                  "target": "monitoring/statefulset-78785dbd5c",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0021",
+                  "target": "storage/statefulset-seaweedfs-filer",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0021",
+                  "target": "iam/replicaset-keycloak-operator-6995f5fdd6",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0021",
+                  "target": "devtools/replicaset-harbor-nginx-56d4577878",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0021",
+                  "target": "chaos-testing/replicaset-chaos-controller-manager-5f9dfd464",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0020",
+                  "target": "storage/replicaset-openbao-snapshot-holder-865bfd4d54",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0020",
+                  "target": "monitoring/replicaset-prometheus-stack-grafana-7fccb54997",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0020",
+                  "target": "monitoring/replicaset-prometheus-stack-grafana-7fccb54997",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0020",
+                  "target": "monitoring/replicaset-prometheus-stack-grafana-7fccb54997",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0020",
+                  "target": "devtools/replicaset-argocd-notifications-controller-7bfb677d57",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0020",
+                  "target": "devtools/replicaset-argocd-repo-server-6566f74dd4",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0020",
+                  "target": "devtools/replicaset-argocd-repo-server-6566f74dd4",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0020",
+                  "target": "devtools/replicaset-kubernetes-dashboard-kong-5997b58d",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0020",
+                  "target": "devtools/replicaset-kubernetes-dashboard-kong-5997b58d",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0020",
+                  "target": "database/pod-narwhal-db-1",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0020",
+                  "target": "database/pod-narwhal-db-1",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0020",
+                  "target": "devtools/replicaset-argocd-dex-server-5668698b97",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0020",
+                  "target": "devtools/replicaset-argocd-dex-server-5668698b97",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0020",
+                  "target": "devtools/replicaset-kubernetes-dashboard-web-676b9dbc55",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0020",
+                  "target": "devtools/replicaset-harbor-core-95b9f6d79",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0020",
+                  "target": "storage/replicaset-velero-ui-6b7c468f47",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0020",
+                  "target": "devtools/replicaset-kubernetes-dashboard-auth-5775fb9559",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0020",
+                  "target": "storage/statefulset-seaweedfs-master",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0020",
+                  "target": "storage/statefulset-seaweedfs-volume",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0020",
+                  "target": "platform-system/replicaset-apisix-566c5c56d4",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0020",
+                  "target": "platform-system/replicaset-apisix-566c5c56d4",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0020",
+                  "target": "security-system/replicaset-trivy-operator-59c6cc588d",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0020",
+                  "target": "devtools/replicaset-headlamp-56c7485699",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0020",
+                  "target": "devtools/replicaset-headlamp-56c7485699",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0020",
+                  "target": "storage/cronjob-openbao-snapshot",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0020",
+                  "target": "storage/cronjob-openbao-snapshot",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0020",
+                  "target": "devtools/replicaset-kubernetes-dashboard-api-7bf8c8c78b",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0020",
+                  "target": "devtools/statefulset-harbor-redis",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0020",
+                  "target": "platform-system/replicaset-cert-manager-79cc694bf6",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0020",
+                  "target": "platform-system/replicaset-cert-manager-cainjector-6d4cc6c4bc",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0020",
+                  "target": "storage/replicaset-openbao-agent-injector-6f5dbd595b",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0020",
+                  "target": "database/replicaset-narwhal-db-pooler-rw-5b44f8765f",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0020",
+                  "target": "database/replicaset-narwhal-db-pooler-rw-5b44f8765f",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0020",
+                  "target": "devtools/replicaset-argocd-applicationset-controller-5f74976bc7",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0020",
+                  "target": "storage/replicaset-seaweedfs-s3-66469448b7",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0020",
+                  "target": "devtools/replicaset-harbor-registry-77f69d544f",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0020",
+                  "target": "devtools/replicaset-harbor-registry-77f69d544f",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0020",
+                  "target": "security-system/replicaset-falco-falcosidekick-84cf7dbf85",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0020",
+                  "target": "devtools/replicaset-harbor-portal-865f577cc9",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0020",
+                  "target": "devtools/replicaset-waypoint-6d979984f4",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0020",
+                  "target": "platform-system/replicaset-waypoint-6b68976c",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0020",
+                  "target": "devtools/replicaset-argocd-redis-767667bf98",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0020",
+                  "target": "devtools/replicaset-argocd-redis-767667bf98",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0020",
+                  "target": "storage/replicaset-velero-dbc67d57",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0020",
+                  "target": "chaos-testing/daemonset-chaos-daemon",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0020",
+                  "target": "storage/statefulset-openbao",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0020",
+                  "target": "devtools/replicaset-gitea-67f4766475",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0020",
+                  "target": "devtools/replicaset-gitea-67f4766475",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0020",
+                  "target": "devtools/replicaset-gitea-67f4766475",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0020",
+                  "target": "devtools/replicaset-gitea-67f4766475",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0020",
+                  "target": "devtools/replicaset-harbor-jobservice-76974c9758",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0020",
+                  "target": "monitoring/replicaset-k8s-monitoring-alloy-operator-5d56767847",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0020",
+                  "target": "platform-system/daemonset-metallb-speaker",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0020",
+                  "target": "devtools/replicaset-argocd-server-5ff7697d4f",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0020",
+                  "target": "devtools/replicaset-kubernetes-dashboard-metrics-scraper-7c545f87b7",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0020",
+                  "target": "security-system/daemonset-falco",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0020",
+                  "target": "monitoring/daemonset-k8s-monitoring-alloy-logs",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0020",
+                  "target": "devtools/statefulset-argocd-application-controller",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0020",
+                  "target": "platform-system/replicaset-cert-manager-webhook-5ff848567f",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0020",
+                  "target": "storage/cronjob-openbao-auto-unseal",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0020",
+                  "target": "iam/statefulset-keycloak",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0020",
+                  "target": "monitoring/statefulset-prometheus-prometheus-stack-kube-prom-prometheus",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0020",
+                  "target": "monitoring/statefulset-prometheus-prometheus-stack-kube-prom-prometheus",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0020",
+                  "target": "monitoring/statefulset-prometheus-prometheus-stack-kube-prom-prometheus",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0020",
+                  "target": "devtools/replicaset-narwhal-portal-d74cd77bd",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0020",
+                  "target": "devtools/replicaset-narwhal-portal-valkey-5ff8c6b457",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0020",
+                  "target": "nfs-quota-agent/daemonset-nfs-quota-agent",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0020",
+                  "target": "monitoring/replicaset-waypoint-6b76d4696",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0020",
+                  "target": "storage/daemonset-node-agent",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0020",
+                  "target": "monitoring/statefulset-78785dbd5c",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0020",
+                  "target": "monitoring/statefulset-78785dbd5c",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0020",
+                  "target": "monitoring/statefulset-78785dbd5c",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0020",
+                  "target": "storage/statefulset-seaweedfs-filer",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0020",
+                  "target": "iam/replicaset-keycloak-operator-6995f5fdd6",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0020",
+                  "target": "devtools/replicaset-harbor-nginx-56d4577878",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0020",
+                  "target": "chaos-testing/replicaset-chaos-controller-manager-5f9dfd464",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0104",
+                  "target": "security-system/daemonset-falco",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0030",
+                  "target": "security-system/daemonset-falco",
+                  "success": false
+                }
+              ]
+            },
+            {
+              "id": "5.7.4",
+              "name": "The default namespace should not be used",
+              "severity": "MEDIUM",
+              "checks": [
+                {
+                  "checkID": "",
+                  "target": null,
+                  "success": true
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "metadata": {
+        "name": "k8s-kisa-1.0"
+      },
+      "spec": {
+        "compliance": {
+          "id": "k8s-kisa-1.0",
+          "title": "KISA Kubernetes Security Controls v1.0",
+          "controls": [
+            {
+              "id": "KISA-CP-01",
+              "name": "API \uc11c\ubc84 \uac10\uc0ac \ub85c\uadf8 \ud65c\uc131\ud654",
+              "severity": "CRITICAL"
+            },
+            {
+              "id": "KISA-ETCD-01",
+              "name": "etcd \uc800\uc7a5 \ub370\uc774\ud130 \uc554\ud638\ud654",
+              "severity": "CRITICAL"
+            },
+            {
+              "id": "KISA-RBAC-01",
+              "name": "\ucd5c\uc18c \uad8c\ud55c\u00b7cluster-admin \ud1b5\uc81c",
+              "severity": "HIGH"
+            },
+            {
+              "id": "KISA-POD-01",
+              "name": "Pod Security Admission \uc801\uc6a9",
+              "severity": "MEDIUM"
+            },
+            {
+              "id": "KISA-NET-01",
+              "name": "Ingress default-deny NetworkPolicy \uc801\uc6a9",
+              "severity": "MEDIUM"
+            },
+            {
+              "id": "KISA-ADM-01",
+              "name": "\uc815\ucc45 \uac15\uc81c (Policy-as-Code)",
+              "severity": "MEDIUM"
+            },
+            {
+              "id": "KISA-RBAC-02",
+              "name": "RBAC \uc704\ud5d8 \ubc14\uc778\ub529 \uc810\uac80",
+              "severity": "MEDIUM"
+            }
+          ]
+        }
+      },
+      "status": {
+        "summary": {
+          "failCount": 4,
+          "passCount": 3
+        },
+        "detailReport": {
+          "results": [
+            {
+              "id": "KISA-CP-01",
+              "name": "API \uc11c\ubc84 \uac10\uc0ac \ub85c\uadf8 \ud65c\uc131\ud654",
+              "severity": "CRITICAL",
+              "checks": [
+                {
+                  "checkID": "",
+                  "target": null,
+                  "success": true
+                }
+              ]
+            },
+            {
+              "id": "KISA-ETCD-01",
+              "name": "etcd \uc800\uc7a5 \ub370\uc774\ud130 \uc554\ud638\ud654",
+              "severity": "CRITICAL",
+              "checks": [
+                {
+                  "checkID": "",
+                  "target": null,
+                  "success": true
+                }
+              ]
+            },
+            {
+              "id": "KISA-RBAC-01",
+              "name": "\ucd5c\uc18c \uad8c\ud55c\u00b7cluster-admin \ud1b5\uc81c",
+              "severity": "HIGH",
+              "checks": [
+                {
+                  "checkID": "AVD-KSV-0041",
+                  "target": "/clusterrole-b754c4cc6",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0041",
+                  "target": "/clusterrole-apisix-ingress-controller-clusterrole",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0041",
+                  "target": "/clusterrole-7b884bc5d8",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0041",
+                  "target": "/clusterrole-prometheus-stack-kube-prom-operator",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0041",
+                  "target": "/clusterrole-54cdc9b678",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0041",
+                  "target": "/clusterrole-cilium-operator",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0041",
+                  "target": "/clusterrole-cnpg-cloudnative-pg",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0041",
+                  "target": "/clusterrole-cert-manager-controller-challenges",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0041",
+                  "target": "/clusterrole-argocd-server",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0041",
+                  "target": "/clusterrole-keycloakcontroller-cluster-role",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0041",
+                  "target": "/clusterrole-keycloakrealmimportcontroller-cluster-role",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0041",
+                  "target": "/clusterrole-loki-clusterrole",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0041",
+                  "target": "/clusterrole-prometheus-stack-grafana-clusterrole",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0041",
+                  "target": "/clusterrole-cert-manager-cainjector",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0041",
+                  "target": "/clusterrole-trivy-operator",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0041",
+                  "target": "/clusterrole-cert-manager-controller-clusterissuers",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0041",
+                  "target": "/clusterrole-admin",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0041",
+                  "target": "/clusterrole-cert-manager-controller-orders",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0041",
+                  "target": "/clusterrole-nfs-external-provisioner-role",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0041",
+                  "target": "/clusterrole-argocd-applicationset-controller",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0041",
+                  "target": "/clusterrole-cert-manager-controller-issuers",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0041",
+                  "target": "/clusterrole-istio-reader-clusterrole-istio-system",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0041",
+                  "target": "/clusterrole-platform-admin",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0041",
+                  "target": "/clusterrole-prometheus-stack-kube-state-metrics",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0041",
+                  "target": "/clusterrole-864fd65956",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0041",
+                  "target": "/clusterrole-ccd4d7d9",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0041",
+                  "target": "/clusterrole-velero-server",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0041",
+                  "target": "/clusterrole-edit",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0041",
+                  "target": "/clusterrole-istiod-clusterrole-istio-system",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0041",
+                  "target": "/clusterrole-k8s-monitoring-alloy-logs",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0041",
+                  "target": "/clusterrole-cert-manager-controller-certificates",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0041",
+                  "target": "/clusterrole-k8s-monitoring-alloy-operator",
+                  "success": false
+                }
+              ]
+            },
+            {
+              "id": "KISA-POD-01",
+              "name": "Pod Security Admission \uc801\uc6a9",
+              "severity": "MEDIUM",
+              "checks": [
+                {
+                  "checkID": "AVD-KSV-0017",
+                  "target": "chaos-testing/daemonset-chaos-daemon",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0017",
+                  "target": "security-system/daemonset-falco",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0017",
+                  "target": "nfs-quota-agent/daemonset-nfs-quota-agent",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0001",
+                  "target": "chaos-testing/daemonset-chaos-daemon",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0001",
+                  "target": "security-system/daemonset-falco",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0001",
+                  "target": "nfs-quota-agent/daemonset-nfs-quota-agent",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0001",
+                  "target": "storage/daemonset-node-agent",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0001",
+                  "target": "chaos-testing/replicaset-chaos-controller-manager-5f9dfd464",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0009",
+                  "target": "platform-system/daemonset-metallb-speaker",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0009",
+                  "target": "monitoring/daemonset-prometheus-stack-prometheus-node-exporter",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0010",
+                  "target": "chaos-testing/daemonset-chaos-daemon",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0010",
+                  "target": "monitoring/daemonset-prometheus-stack-prometheus-node-exporter",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0012",
+                  "target": "storage/statefulset-seaweedfs-volume",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0012",
+                  "target": "chaos-testing/daemonset-chaos-daemon",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0012",
+                  "target": "platform-system/daemonset-metallb-speaker",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0012",
+                  "target": "security-system/daemonset-falco",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0012",
+                  "target": "monitoring/daemonset-k8s-monitoring-alloy-logs",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0012",
+                  "target": "nfs-quota-agent/daemonset-nfs-quota-agent",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0012",
+                  "target": "storage/daemonset-node-agent",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0012",
+                  "target": "chaos-testing/replicaset-chaos-controller-manager-5f9dfd464",
+                  "success": false
+                }
+              ]
+            },
+            {
+              "id": "KISA-NET-01",
+              "name": "Ingress default-deny NetworkPolicy \uc801\uc6a9",
+              "severity": "MEDIUM",
+              "checks": [
+                {
+                  "checkID": "",
+                  "target": null,
+                  "success": true
+                }
+              ]
+            },
+            {
+              "id": "KISA-ADM-01",
+              "name": "\uc815\ucc45 \uac15\uc81c (Policy-as-Code)",
+              "severity": "MEDIUM",
+              "checks": [
+                {
+                  "checkID": "AVD-KSV-0003",
+                  "target": "chaos-testing/daemonset-chaos-daemon",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0003",
+                  "target": "security-system/daemonset-falco",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0003",
+                  "target": "nfs-quota-agent/daemonset-nfs-quota-agent",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0003",
+                  "target": "storage/daemonset-node-agent",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0003",
+                  "target": "chaos-testing/replicaset-chaos-controller-manager-5f9dfd464",
+                  "success": false
+                }
+              ]
+            },
+            {
+              "id": "KISA-RBAC-02",
+              "name": "RBAC \uc704\ud5d8 \ubc14\uc778\ub529 \uc810\uac80",
+              "severity": "MEDIUM",
+              "checks": [
+                {
+                  "checkID": "AVD-KSV-0044",
+                  "target": "/clusterrole-cluster-admin",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0044",
+                  "target": "/clusterrole-argocd-application-controller",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0045",
+                  "target": "/clusterrole-prometheus-stack-kube-prom-operator",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0046",
+                  "target": "/clusterrole-b754c4cc6",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0046",
+                  "target": "/clusterrole-cluster-admin",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0046",
+                  "target": "/clusterrole-79d4fc89cd",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0046",
+                  "target": "/clusterrole-argocd-server",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0046",
+                  "target": "/clusterrole-argocd-application-controller",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0046",
+                  "target": "/clusterrole-86ccd5dd47",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0046",
+                  "target": "/clusterrole-57d745d4cc",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0046",
+                  "target": "/clusterrole-istio-reader-clusterrole-istio-system",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0046",
+                  "target": "/clusterrole-69c4fbc9c4",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0046",
+                  "target": "/clusterrole-ccd4d7d9",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0046",
+                  "target": "/clusterrole-velero-server",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0046",
+                  "target": "/clusterrole-istiod-clusterrole-istio-system",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0046",
+                  "target": "/clusterrole-chaos-mesh-chaos-dashboard-target-namespace",
+                  "success": false
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "metadata": {
+        "name": "k8s-nsa-1.0"
+      },
+      "spec": {
+        "compliance": {
+          "id": "k8s-nsa-1.0",
+          "title": "National Security Agency - Kubernetes Hardening Guidance v1.0",
+          "controls": [
+            {
+              "id": "1.0",
+              "name": "Non-root containers",
+              "severity": "MEDIUM"
+            },
+            {
+              "id": "1.1",
+              "name": "Immutable container file systems",
+              "severity": "LOW"
+            },
+            {
+              "id": "1.2",
+              "name": "Preventing privileged containers",
+              "severity": "HIGH"
+            },
+            {
+              "id": "1.3",
+              "name": "Share containers process namespaces",
+              "severity": "HIGH"
+            },
+            {
+              "id": "1.4",
+              "name": "Share host process namespaces",
+              "severity": "HIGH"
+            },
+            {
+              "id": "1.5",
+              "name": "Use the host network",
+              "severity": "HIGH"
+            },
+            {
+              "id": "1.6",
+              "name": "Run with root privileges or with root group membership",
+              "severity": "LOW"
+            },
+            {
+              "id": "1.7",
+              "name": "Restricts escalation to root privileges",
+              "severity": "MEDIUM"
+            },
+            {
+              "id": "1.8",
+              "name": "Sets the SELinux context of the container",
+              "severity": "MEDIUM"
+            },
+            {
+              "id": "1.9",
+              "name": "Restrict a container's access to resources with AppArmor",
+              "severity": "MEDIUM"
+            },
+            {
+              "id": "1.10",
+              "name": "Sets the seccomp profile used to sandbox containers.",
+              "severity": "LOW"
+            },
+            {
+              "id": "1.11",
+              "name": "Protecting Pod service account tokens",
+              "severity": "MEDIUM"
+            },
+            {
+              "id": "1.12",
+              "name": "Namespace kube-system should not be used by users",
+              "severity": "MEDIUM"
+            },
+            {
+              "id": "2.0",
+              "name": "Pod and/or namespace Selectors usage",
+              "severity": "MEDIUM"
+            },
+            {
+              "id": "3.0",
+              "name": "Use CNI plugin that supports NetworkPolicy API (Manual)",
+              "severity": "CRITICAL"
+            },
+            {
+              "id": "4.0",
+              "name": "Use ResourceQuota policies to limit resources",
+              "severity": "MEDIUM"
+            },
+            {
+              "id": "4.1",
+              "name": "Use LimitRange policies to limit resources",
+              "severity": "MEDIUM"
+            },
+            {
+              "id": "5.0",
+              "name": "Control plan disable insecure port (Manual)",
+              "severity": "CRITICAL"
+            },
+            {
+              "id": "5.1",
+              "name": "Encrypt etcd communication",
+              "severity": "CRITICAL"
+            },
+            {
+              "id": "6.0",
+              "name": "Ensure kube config file permission (Manual)",
+              "severity": "CRITICAL"
+            },
+            {
+              "id": "6.1",
+              "name": "Check that encryption resource has been set",
+              "severity": "CRITICAL"
+            },
+            {
+              "id": "6.2",
+              "name": "Check encryption provider",
+              "severity": "CRITICAL"
+            },
+            {
+              "id": "7.0",
+              "name": "Make sure anonymous-auth is unset",
+              "severity": "CRITICAL"
+            },
+            {
+              "id": "7.1",
+              "name": "Make sure -authorization-mode=RBAC",
+              "severity": "CRITICAL"
+            },
+            {
+              "id": "8.0",
+              "name": "Audit policy is configure (Manual)",
+              "severity": "HIGH"
+            },
+            {
+              "id": "8.1",
+              "name": "Audit log path is configure",
+              "severity": "MEDIUM"
+            },
+            {
+              "id": "8.2",
+              "name": "Audit log aging",
+              "severity": "MEDIUM"
+            }
+          ]
+        }
+      },
+      "status": {
+        "summary": {
+          "failCount": 9,
+          "passCount": 18
+        },
+        "detailReport": {
+          "results": [
+            {
+              "id": "1.0",
+              "name": "Non-root containers",
+              "severity": "MEDIUM",
+              "checks": [
+                {
+                  "checkID": "AVD-KSV-0012",
+                  "target": "storage/statefulset-seaweedfs-volume",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0012",
+                  "target": "chaos-testing/daemonset-chaos-daemon",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0012",
+                  "target": "platform-system/daemonset-metallb-speaker",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0012",
+                  "target": "security-system/daemonset-falco",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0012",
+                  "target": "monitoring/daemonset-k8s-monitoring-alloy-logs",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0012",
+                  "target": "nfs-quota-agent/daemonset-nfs-quota-agent",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0012",
+                  "target": "storage/daemonset-node-agent",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0012",
+                  "target": "chaos-testing/replicaset-chaos-controller-manager-5f9dfd464",
+                  "success": false
+                }
+              ]
+            },
+            {
+              "id": "1.1",
+              "name": "Immutable container file systems",
+              "severity": "LOW",
+              "checks": [
+                {
+                  "checkID": "AVD-KSV-0014",
+                  "target": "devtools/replicaset-harbor-core-95b9f6d79",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0014",
+                  "target": "devtools/statefulset-harbor-redis",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0014",
+                  "target": "devtools/replicaset-harbor-registry-77f69d544f",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0014",
+                  "target": "devtools/replicaset-harbor-registry-77f69d544f",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0014",
+                  "target": "devtools/replicaset-harbor-portal-865f577cc9",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0014",
+                  "target": "chaos-testing/daemonset-chaos-daemon",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0014",
+                  "target": "devtools/replicaset-gitea-67f4766475",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0014",
+                  "target": "devtools/replicaset-gitea-67f4766475",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0014",
+                  "target": "devtools/replicaset-gitea-67f4766475",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0014",
+                  "target": "devtools/replicaset-gitea-67f4766475",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0014",
+                  "target": "devtools/replicaset-harbor-jobservice-76974c9758",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0014",
+                  "target": "iam/statefulset-keycloak",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0014",
+                  "target": "devtools/replicaset-harbor-nginx-56d4577878",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0014",
+                  "target": "chaos-testing/replicaset-chaos-controller-manager-5f9dfd464",
+                  "success": false
+                }
+              ]
+            },
+            {
+              "id": "1.2",
+              "name": "Preventing privileged containers",
+              "severity": "HIGH",
+              "checks": [
+                {
+                  "checkID": "AVD-KSV-0017",
+                  "target": "chaos-testing/daemonset-chaos-daemon",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0017",
+                  "target": "security-system/daemonset-falco",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0017",
+                  "target": "nfs-quota-agent/daemonset-nfs-quota-agent",
+                  "success": false
+                }
+              ]
+            },
+            {
+              "id": "1.3",
+              "name": "Share containers process namespaces",
+              "severity": "HIGH",
+              "checks": [
+                {
+                  "checkID": "",
+                  "target": null,
+                  "success": true
+                }
+              ]
+            },
+            {
+              "id": "1.4",
+              "name": "Share host process namespaces",
+              "severity": "HIGH",
+              "checks": [
+                {
+                  "checkID": "AVD-KSV-0009",
+                  "target": "platform-system/daemonset-metallb-speaker",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0009",
+                  "target": "monitoring/daemonset-prometheus-stack-prometheus-node-exporter",
+                  "success": false
+                }
+              ]
+            },
+            {
+              "id": "1.5",
+              "name": "Use the host network",
+              "severity": "HIGH",
+              "checks": [
+                {
+                  "checkID": "AVD-KSV-0010",
+                  "target": "chaos-testing/daemonset-chaos-daemon",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0010",
+                  "target": "monitoring/daemonset-prometheus-stack-prometheus-node-exporter",
+                  "success": false
+                }
+              ]
+            },
+            {
+              "id": "1.6",
+              "name": "Run with root privileges or with root group membership",
+              "severity": "LOW",
+              "checks": [
+                {
+                  "checkID": "",
+                  "target": null,
+                  "success": true
+                }
+              ]
+            },
+            {
+              "id": "1.7",
+              "name": "Restricts escalation to root privileges",
+              "severity": "MEDIUM",
+              "checks": [
+                {
+                  "checkID": "AVD-KSV-0001",
+                  "target": "chaos-testing/daemonset-chaos-daemon",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0001",
+                  "target": "security-system/daemonset-falco",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0001",
+                  "target": "nfs-quota-agent/daemonset-nfs-quota-agent",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0001",
+                  "target": "storage/daemonset-node-agent",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0001",
+                  "target": "chaos-testing/replicaset-chaos-controller-manager-5f9dfd464",
+                  "success": false
+                }
+              ]
+            },
+            {
+              "id": "1.8",
+              "name": "Sets the SELinux context of the container",
+              "severity": "MEDIUM",
+              "checks": [
+                {
+                  "checkID": "",
+                  "target": null,
+                  "success": true
+                }
+              ]
+            },
+            {
+              "id": "1.9",
+              "name": "Restrict a container's access to resources with AppArmor",
+              "severity": "MEDIUM",
+              "checks": [
+                {
+                  "checkID": "AVD-KSV-0030",
+                  "target": "security-system/daemonset-falco",
+                  "success": false
+                }
+              ]
+            },
+            {
+              "id": "1.10",
+              "name": "Sets the seccomp profile used to sandbox containers.",
+              "severity": "LOW",
+              "checks": [
+                {
+                  "checkID": "AVD-KSV-0030",
+                  "target": "security-system/daemonset-falco",
+                  "success": false
+                }
+              ]
+            },
+            {
+              "id": "1.11",
+              "name": "Protecting Pod service account tokens",
+              "severity": "MEDIUM",
+              "checks": [
+                {
+                  "checkID": "AVD-KSV-0036",
+                  "target": "database/pod-narwhal-db-1",
+                  "success": false
+                }
+              ]
+            },
+            {
+              "id": "1.12",
+              "name": "Namespace kube-system should not be used by users",
+              "severity": "MEDIUM",
+              "checks": [
+                {
+                  "checkID": "",
+                  "target": null,
+                  "success": true
+                }
+              ]
+            },
+            {
+              "id": "2.0",
+              "name": "Pod and/or namespace Selectors usage",
+              "severity": "MEDIUM",
+              "checks": [
+                {
+                  "checkID": "",
+                  "target": null,
+                  "success": true
+                }
+              ]
+            },
+            {
+              "id": "3.0",
+              "name": "Use CNI plugin that supports NetworkPolicy API (Manual)",
+              "severity": "CRITICAL",
+              "checks": [
+                {
+                  "checkID": "",
+                  "target": null,
+                  "success": true
+                }
+              ]
+            },
+            {
+              "id": "4.0",
+              "name": "Use ResourceQuota policies to limit resources",
+              "severity": "MEDIUM",
+              "checks": [
+                {
+                  "checkID": "",
+                  "target": null,
+                  "success": true
+                }
+              ]
+            },
+            {
+              "id": "4.1",
+              "name": "Use LimitRange policies to limit resources",
+              "severity": "MEDIUM",
+              "checks": [
+                {
+                  "checkID": "",
+                  "target": null,
+                  "success": true
+                }
+              ]
+            },
+            {
+              "id": "5.0",
+              "name": "Control plan disable insecure port (Manual)",
+              "severity": "CRITICAL",
+              "checks": [
+                {
+                  "checkID": "",
+                  "target": null,
+                  "success": true
+                }
+              ]
+            },
+            {
+              "id": "5.1",
+              "name": "Encrypt etcd communication",
+              "severity": "CRITICAL",
+              "checks": [
+                {
+                  "checkID": "",
+                  "target": null,
+                  "success": true
+                }
+              ]
+            },
+            {
+              "id": "6.0",
+              "name": "Ensure kube config file permission (Manual)",
+              "severity": "CRITICAL",
+              "checks": [
+                {
+                  "checkID": "",
+                  "target": null,
+                  "success": true
+                }
+              ]
+            },
+            {
+              "id": "6.1",
+              "name": "Check that encryption resource has been set",
+              "severity": "CRITICAL",
+              "checks": [
+                {
+                  "checkID": "",
+                  "target": null,
+                  "success": true
+                }
+              ]
+            },
+            {
+              "id": "6.2",
+              "name": "Check encryption provider",
+              "severity": "CRITICAL",
+              "checks": [
+                {
+                  "checkID": "",
+                  "target": null,
+                  "success": true
+                }
+              ]
+            },
+            {
+              "id": "7.0",
+              "name": "Make sure anonymous-auth is unset",
+              "severity": "CRITICAL",
+              "checks": [
+                {
+                  "checkID": "",
+                  "target": null,
+                  "success": true
+                }
+              ]
+            },
+            {
+              "id": "7.1",
+              "name": "Make sure -authorization-mode=RBAC",
+              "severity": "CRITICAL",
+              "checks": [
+                {
+                  "checkID": "",
+                  "target": null,
+                  "success": true
+                }
+              ]
+            },
+            {
+              "id": "8.0",
+              "name": "Audit policy is configure (Manual)",
+              "severity": "HIGH",
+              "checks": [
+                {
+                  "checkID": "",
+                  "target": null,
+                  "success": true
+                }
+              ]
+            },
+            {
+              "id": "8.1",
+              "name": "Audit log path is configure",
+              "severity": "MEDIUM",
+              "checks": [
+                {
+                  "checkID": "",
+                  "target": null,
+                  "success": true
+                }
+              ]
+            },
+            {
+              "id": "8.2",
+              "name": "Audit log aging",
+              "severity": "MEDIUM",
+              "checks": [
+                {
+                  "checkID": "",
+                  "target": null,
+                  "success": true
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "metadata": {
+        "name": "k8s-pss-baseline-0.1"
+      },
+      "spec": {
+        "compliance": {
+          "id": "k8s-pss-baseline-0.1",
+          "title": "Kubernetes Pod Security Standards - Baseline",
+          "controls": [
+            {
+              "id": "1",
+              "name": "HostProcess",
+              "severity": "HIGH"
+            },
+            {
+              "id": "2",
+              "name": "Host Namespaces",
+              "severity": "HIGH"
+            },
+            {
+              "id": "3",
+              "name": "Privileged Containers",
+              "severity": "HIGH"
+            },
+            {
+              "id": "4",
+              "name": "Capabilities",
+              "severity": "MEDIUM"
+            },
+            {
+              "id": "5",
+              "name": "HostPath Volumes",
+              "severity": "MEDIUM"
+            },
+            {
+              "id": "6",
+              "name": "host ports",
+              "severity": "HIGH"
+            },
+            {
+              "id": "7",
+              "name": "AppArmor",
+              "severity": "HIGH"
+            },
+            {
+              "id": "8",
+              "name": "SELinux",
+              "severity": "MEDIUM"
+            },
+            {
+              "id": "9",
+              "name": "/proc Mount Type",
+              "severity": "MEDIUM"
+            },
+            {
+              "id": "10",
+              "name": "Seccomp",
+              "severity": "MEDIUM"
+            },
+            {
+              "id": "11",
+              "name": "Sysctls",
+              "severity": "MEDIUM"
+            }
+          ]
+        }
+      },
+      "status": {
+        "summary": {
+          "failCount": 3,
+          "passCount": 8
+        },
+        "detailReport": {
+          "results": [
+            {
+              "id": "1",
+              "name": "HostProcess",
+              "severity": "HIGH",
+              "checks": [
+                {
+                  "checkID": "",
+                  "target": null,
+                  "success": true
+                }
+              ]
+            },
+            {
+              "id": "2",
+              "name": "Host Namespaces",
+              "severity": "HIGH",
+              "checks": [
+                {
+                  "checkID": "",
+                  "target": null,
+                  "success": true
+                }
+              ]
+            },
+            {
+              "id": "3",
+              "name": "Privileged Containers",
+              "severity": "HIGH",
+              "checks": [
+                {
+                  "checkID": "AVD-KSV-0017",
+                  "target": "chaos-testing/daemonset-chaos-daemon",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0017",
+                  "target": "security-system/daemonset-falco",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0017",
+                  "target": "nfs-quota-agent/daemonset-nfs-quota-agent",
+                  "success": false
+                }
+              ]
+            },
+            {
+              "id": "4",
+              "name": "Capabilities",
+              "severity": "MEDIUM",
+              "checks": [
+                {
+                  "checkID": "AVD-KSV-0022",
+                  "target": "chaos-testing/daemonset-chaos-daemon",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0022",
+                  "target": "platform-system/daemonset-metallb-speaker",
+                  "success": false
+                }
+              ]
+            },
+            {
+              "id": "5",
+              "name": "HostPath Volumes",
+              "severity": "MEDIUM",
+              "checks": [
+                {
+                  "checkID": "AVD-KSV-0023",
+                  "target": "chaos-testing/daemonset-chaos-daemon",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0023",
+                  "target": "security-system/daemonset-falco",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0023",
+                  "target": "monitoring/daemonset-k8s-monitoring-alloy-logs",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0023",
+                  "target": "monitoring/daemonset-prometheus-stack-prometheus-node-exporter",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0023",
+                  "target": "nfs-quota-agent/daemonset-nfs-quota-agent",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0023",
+                  "target": "storage/daemonset-node-agent",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0023",
+                  "target": "storage/statefulset-seaweedfs-volume",
+                  "success": false
+                }
+              ]
+            },
+            {
+              "id": "6",
+              "name": "host ports",
+              "severity": "HIGH",
+              "checks": [
+                {
+                  "checkID": "",
+                  "target": null,
+                  "success": true
+                }
+              ]
+            },
+            {
+              "id": "7",
+              "name": "AppArmor",
+              "severity": "HIGH",
+              "checks": [
+                {
+                  "checkID": "",
+                  "target": null,
+                  "success": true
+                }
+              ]
+            },
+            {
+              "id": "8",
+              "name": "SELinux",
+              "severity": "MEDIUM",
+              "checks": [
+                {
+                  "checkID": "",
+                  "target": null,
+                  "success": true
+                }
+              ]
+            },
+            {
+              "id": "9",
+              "name": "/proc Mount Type",
+              "severity": "MEDIUM",
+              "checks": [
+                {
+                  "checkID": "",
+                  "target": null,
+                  "success": true
+                }
+              ]
+            },
+            {
+              "id": "10",
+              "name": "Seccomp",
+              "severity": "MEDIUM",
+              "checks": [
+                {
+                  "checkID": "",
+                  "target": null,
+                  "success": true
+                }
+              ]
+            },
+            {
+              "id": "11",
+              "name": "Sysctls",
+              "severity": "MEDIUM",
+              "checks": [
+                {
+                  "checkID": "",
+                  "target": null,
+                  "success": true
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "metadata": {
+        "name": "k8s-pss-restricted-0.1"
+      },
+      "spec": {
+        "compliance": {
+          "id": "k8s-pss-restricted-0.1",
+          "title": "Kubernetes Pod Security Standards - Restricted",
+          "controls": [
+            {
+              "id": "1",
+              "name": "HostProcess",
+              "severity": "HIGH"
+            },
+            {
+              "id": "2",
+              "name": "Host Namespaces",
+              "severity": "HIGH"
+            },
+            {
+              "id": "3",
+              "name": "Privileged Containers",
+              "severity": "HIGH"
+            },
+            {
+              "id": "4",
+              "name": "Capabilities",
+              "severity": "MEDIUM"
+            },
+            {
+              "id": "5",
+              "name": "HostPath Volumes",
+              "severity": "MEDIUM"
+            },
+            {
+              "id": "6",
+              "name": "host ports",
+              "severity": "HIGH"
+            },
+            {
+              "id": "7",
+              "name": "AppArmor",
+              "severity": "HIGH"
+            },
+            {
+              "id": "8",
+              "name": "SELinux",
+              "severity": "MEDIUM"
+            },
+            {
+              "id": "9",
+              "name": "/proc Mount Type",
+              "severity": "MEDIUM"
+            },
+            {
+              "id": "10",
+              "name": "Seccomp",
+              "severity": "MEDIUM"
+            },
+            {
+              "id": "11",
+              "name": "Sysctls",
+              "severity": "MEDIUM"
+            },
+            {
+              "id": "12",
+              "name": "Volume Types",
+              "severity": "LOW"
+            },
+            {
+              "id": "13",
+              "name": "Privilege Escalation",
+              "severity": "MEDIUM"
+            },
+            {
+              "id": "14",
+              "name": "Running as Non-root",
+              "severity": "MEDIUM"
+            },
+            {
+              "id": "15",
+              "name": "Running as Non-root user",
+              "severity": "LOW"
+            },
+            {
+              "id": "16",
+              "name": "Seccomp",
+              "severity": "LOW"
+            },
+            {
+              "id": "17",
+              "name": "Capabilities",
+              "severity": "LOW"
+            }
+          ]
+        }
+      },
+      "status": {
+        "summary": {
+          "failCount": 3,
+          "passCount": 14
+        },
+        "detailReport": {
+          "results": [
+            {
+              "id": "1",
+              "name": "HostProcess",
+              "severity": "HIGH",
+              "checks": [
+                {
+                  "checkID": "",
+                  "target": null,
+                  "success": true
+                }
+              ]
+            },
+            {
+              "id": "2",
+              "name": "Host Namespaces",
+              "severity": "HIGH",
+              "checks": [
+                {
+                  "checkID": "",
+                  "target": null,
+                  "success": true
+                }
+              ]
+            },
+            {
+              "id": "3",
+              "name": "Privileged Containers",
+              "severity": "HIGH",
+              "checks": [
+                {
+                  "checkID": "AVD-KSV-0017",
+                  "target": "chaos-testing/daemonset-chaos-daemon",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0017",
+                  "target": "security-system/daemonset-falco",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0017",
+                  "target": "nfs-quota-agent/daemonset-nfs-quota-agent",
+                  "success": false
+                }
+              ]
+            },
+            {
+              "id": "4",
+              "name": "Capabilities",
+              "severity": "MEDIUM",
+              "checks": [
+                {
+                  "checkID": "AVD-KSV-0022",
+                  "target": "chaos-testing/daemonset-chaos-daemon",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0022",
+                  "target": "platform-system/daemonset-metallb-speaker",
+                  "success": false
+                }
+              ]
+            },
+            {
+              "id": "5",
+              "name": "HostPath Volumes",
+              "severity": "MEDIUM",
+              "checks": [
+                {
+                  "checkID": "AVD-KSV-0023",
+                  "target": "storage/statefulset-seaweedfs-volume",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0023",
+                  "target": "chaos-testing/daemonset-chaos-daemon",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0023",
+                  "target": "security-system/daemonset-falco",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0023",
+                  "target": "monitoring/daemonset-k8s-monitoring-alloy-logs",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0023",
+                  "target": "monitoring/daemonset-prometheus-stack-prometheus-node-exporter",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0023",
+                  "target": "nfs-quota-agent/daemonset-nfs-quota-agent",
+                  "success": false
+                },
+                {
+                  "checkID": "AVD-KSV-0023",
+                  "target": "storage/daemonset-node-agent",
+                  "success": false
+                }
+              ]
+            },
+            {
+              "id": "6",
+              "name": "host ports",
+              "severity": "HIGH",
+              "checks": [
+                {
+                  "checkID": "",
+                  "target": null,
+                  "success": true
+                }
+              ]
+            },
+            {
+              "id": "7",
+              "name": "AppArmor",
+              "severity": "HIGH",
+              "checks": [
+                {
+                  "checkID": "",
+                  "target": null,
+                  "success": true
+                }
+              ]
+            },
+            {
+              "id": "8",
+              "name": "SELinux",
+              "severity": "MEDIUM",
+              "checks": [
+                {
+                  "checkID": "",
+                  "target": null,
+                  "success": true
+                }
+              ]
+            },
+            {
+              "id": "9",
+              "name": "/proc Mount Type",
+              "severity": "MEDIUM",
+              "checks": [
+                {
+                  "checkID": "",
+                  "target": null,
+                  "success": true
+                }
+              ]
+            },
+            {
+              "id": "10",
+              "name": "Seccomp",
+              "severity": "MEDIUM",
+              "checks": [
+                {
+                  "checkID": "",
+                  "target": null,
+                  "success": true
+                }
+              ]
+            },
+            {
+              "id": "11",
+              "name": "Sysctls",
+              "severity": "MEDIUM",
+              "checks": [
+                {
+                  "checkID": "",
+                  "target": null,
+                  "success": true
+                }
+              ]
+            },
+            {
+              "id": "12",
+              "name": "Volume Types",
+              "severity": "LOW",
+              "checks": [
+                {
+                  "checkID": "",
+                  "target": null,
+                  "success": true
+                }
+              ]
+            },
+            {
+              "id": "13",
+              "name": "Privilege Escalation",
+              "severity": "MEDIUM",
+              "checks": [
+                {
+                  "checkID": "",
+                  "target": null,
+                  "success": true
+                }
+              ]
+            },
+            {
+              "id": "14",
+              "name": "Running as Non-root",
+              "severity": "MEDIUM",
+              "checks": [
+                {
+                  "checkID": "",
+                  "target": null,
+                  "success": true
+                }
+              ]
+            },
+            {
+              "id": "15",
+              "name": "Running as Non-root user",
+              "severity": "LOW",
+              "checks": [
+                {
+                  "checkID": "",
+                  "target": null,
+                  "success": true
+                }
+              ]
+            },
+            {
+              "id": "16",
+              "name": "Seccomp",
+              "severity": "LOW",
+              "checks": [
+                {
+                  "checkID": "",
+                  "target": null,
+                  "success": true
+                }
+              ]
+            },
+            {
+              "id": "17",
+              "name": "Capabilities",
+              "severity": "LOW",
+              "checks": [
+                {
+                  "checkID": "",
+                  "target": null,
+                  "success": true
+                }
+              ]
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

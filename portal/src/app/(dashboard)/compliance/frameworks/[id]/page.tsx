@@ -1,9 +1,10 @@
 import { requireDashboardAccess } from "@/lib/dashboard-access"
 import { getLocale } from "@/lib/i18n-server"
-import { t } from "@/lib/i18n"
+import { t, type Locale } from "@/lib/i18n"
+import { COMPLIANCE_EXCEPTIONS_DOC_URL } from "@/lib/compliance-accepted"
 import { translateTitle } from "@/lib/check-translations"
 import { Badge } from "@/components/ui/badge"
-import type { ComplianceFrameworkDetail, Severity } from "@/types/compliance"
+import type { AcceptedScope, ComplianceControl, ComplianceFrameworkDetail, Severity } from "@/types/compliance"
 
 const severityBadgeClass: Record<Severity, string> = {
   Critical: "bg-red-100 text-red-700 dark:bg-red-950/50 dark:text-red-400",
@@ -14,6 +15,14 @@ const severityBadgeClass: Record<Severity, string> = {
 }
 
 const severityOrder: Severity[] = ["Critical", "High", "Medium", "Low", "Unknown"]
+
+function acceptedScopeBadgeLabel(locale: Locale, scope?: AcceptedScope): string {
+  if (scope === "system") return t(locale, "compliance.table.accepted")
+  if (scope === "builtin") return t(locale, "compliance.table.acceptedRbac")
+  if (scope === "upstream") return t(locale, "compliance.table.acceptedUpstream")
+  if (scope === "mixed") return t(locale, "compliance.framework.mixedScope")
+  return t(locale, "compliance.table.acceptedException")
+}
 
 interface Props {
   params: Promise<{ id: string }>
@@ -26,6 +35,95 @@ async function fetchDetail(id: string): Promise<ComplianceFrameworkDetail | null
   } catch {
     return null
   }
+}
+
+function ControlsTable({
+  controls,
+  frameworkId,
+  locale,
+  showAcceptedBadge,
+}: {
+  controls: ComplianceControl[]
+  frameworkId: string
+  locale: Locale
+  showAcceptedBadge: boolean
+}) {
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="border-b text-left text-muted-foreground bg-muted/20">
+            <th className="px-4 py-2.5 font-medium">ID</th>
+            <th className="px-4 py-2.5 font-medium">Name</th>
+            <th className="px-4 py-2.5 font-medium">Severity</th>
+            <th className="px-4 py-2.5 font-medium">{t(locale, "compliance.check.passed")}</th>
+            <th className="px-4 py-2.5 font-medium">{t(locale, "compliance.framework.actionableFailed")}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {controls.map((ctrl) => {
+            const actionableFail = ctrl.actionableFailCount ?? ctrl.failCount
+            const acceptedFail = ctrl.acceptedFailCount ?? 0
+            return (
+              <tr
+                key={ctrl.id}
+                className={`border-b last:border-0 hover:bg-muted/10 ${
+                  ctrl.accepted ? "bg-slate-50/40 dark:bg-slate-900/20" : ""
+                }`}
+              >
+                <td className="px-4 py-2.5 font-mono text-xs text-muted-foreground whitespace-nowrap">
+                  {ctrl.id}
+                </td>
+                <td className="px-4 py-2.5">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <p className="font-medium">
+                      {frameworkId.startsWith("k8s-cis")
+                        ? translateTitle("cis", ctrl.id, ctrl.name, locale)
+                        : ctrl.name}
+                    </p>
+                    {showAcceptedBadge && ctrl.accepted && (
+                      <Badge
+                        variant="outline"
+                        className="text-[0.65rem] px-1.5 py-0 text-muted-foreground border-muted-foreground/30"
+                      >
+                        {acceptedScopeBadgeLabel(locale, ctrl.acceptedScope)}
+                      </Badge>
+                    )}
+                  </div>
+                  {ctrl.description && (
+                    <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{ctrl.description}</p>
+                  )}
+                </td>
+                <td className="px-4 py-2.5">
+                  <Badge className={`text-xs ${severityBadgeClass[ctrl.severity] ?? severityBadgeClass.Unknown}`}>
+                    {ctrl.severity}
+                  </Badge>
+                </td>
+                <td className="px-4 py-2.5 text-green-600 font-medium">{ctrl.passCount}</td>
+                <td className="px-4 py-2.5">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className={`font-medium ${actionableFail > 0 ? "text-red-600" : "text-muted-foreground"}`}>
+                      {actionableFail}
+                    </span>
+                    {(acceptedFail > 0 || ctrl.failCount !== actionableFail) && (
+                      <Badge
+                        variant="outline"
+                        className="text-[0.65rem] px-1.5 py-0 text-muted-foreground border-muted-foreground/30"
+                      >
+                        {acceptedFail > 0
+                          ? `+${acceptedFail} ${t(locale, "compliance.framework.acceptedShort")} (${t(locale, "compliance.framework.rawChecks", { count: String(ctrl.failCount) })})`
+                          : t(locale, "compliance.framework.rawChecks", { count: String(ctrl.failCount) })}
+                      </Badge>
+                    )}
+                  </div>
+                </td>
+              </tr>
+            )
+          })}
+        </tbody>
+      </table>
+    </div>
+  )
 }
 
 export default async function FrameworkDetailPage({ params }: Props) {
@@ -63,11 +161,24 @@ export default async function FrameworkDetailPage({ params }: Props) {
     )
   }
 
-  const sorted = [...detail.controls].sort(
-    (a, b) => severityOrder.indexOf(a.severity) - severityOrder.indexOf(b.severity)
-  )
+  const mainControls = [...detail.controls]
+    .filter((c) => !c.accepted)
+    .sort((a, b) => {
+      const aFail = (a.actionableFailCount ?? a.failCount) > 0 ? 0 : 1
+      const bFail = (b.actionableFailCount ?? b.failCount) > 0 ? 0 : 1
+      if (aFail !== bFail) return aFail - bFail
+      return severityOrder.indexOf(a.severity) - severityOrder.indexOf(b.severity)
+    })
 
-  const passRatePct = Math.round(detail.passRate * (detail.passRate <= 1 ? 100 : 1))
+  const acceptedControls = [...detail.controls]
+    .filter((c) => Boolean(c.accepted))
+    .sort((a, b) => severityOrder.indexOf(a.severity) - severityOrder.indexOf(b.severity))
+
+  const displayPassRate = detail.effectivePassRate ?? detail.passRate
+  const passRatePct = Math.round(displayPassRate * (displayPassRate <= 1 ? 100 : 1))
+  const rawPassRatePct = Math.round(detail.passRate * (detail.passRate <= 1 ? 100 : 1))
+  const actionableControlsFail = detail.actionableFailCount ?? detail.failCount
+  const acceptedControlsFail = detail.acceptedFailCount ?? acceptedControls.length
   const barColor =
     passRatePct >= 80 ? "bg-green-500" : passRatePct >= 50 ? "bg-amber-500" : "bg-red-500"
 
@@ -104,55 +215,85 @@ export default async function FrameworkDetailPage({ params }: Props) {
         <div className="w-full bg-muted rounded-full h-2.5">
           <div className={`h-2.5 rounded-full ${barColor}`} style={{ width: `${passRatePct}%` }} />
         </div>
-        <div className="flex gap-4 text-sm">
+        <div className="flex flex-wrap items-center gap-4 text-sm">
           <span className="text-green-600 font-medium">✓ {detail.passCount} {t(locale, "compliance.check.passed")}</span>
-          <span className="text-red-600 font-medium">✗ {detail.failCount} {t(locale, "compliance.check.failed")}</span>
+          <span className={`font-medium ${actionableControlsFail > 0 ? "text-red-600" : "text-muted-foreground"}`}>
+            ✗ {actionableControlsFail} {t(locale, "compliance.framework.actionableFailed")}
+          </span>
+          {(acceptedControlsFail > 0 || detail.failCount !== actionableControlsFail) && (
+            <>
+              {acceptedControlsFail > 0 && (
+                <Badge
+                  variant="outline"
+                  className="text-xs text-muted-foreground border-muted-foreground/30"
+                >
+                  +{acceptedControlsFail} {t(locale, "compliance.framework.acceptedShort")}
+                </Badge>
+              )}
+              <span className="text-xs text-muted-foreground">
+                {t(locale, "compliance.framework.rawSummary", {
+                  fail: String(detail.failCount),
+                  rate: String(rawPassRatePct),
+                })}
+              </span>
+              <a
+                href={COMPLIANCE_EXCEPTIONS_DOC_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-xs underline text-muted-foreground hover:text-foreground transition-colors"
+              >
+                {t(locale, "compliance.framework.exceptionsDocLink")}
+              </a>
+            </>
+          )}
         </div>
       </div>
 
-      {/* Controls table */}
+      {/* Main Controls table (actionable + passed) */}
       <div className="rounded-lg border bg-card overflow-hidden">
         <div className="px-4 py-3 border-b bg-muted/30">
           <h2 className="text-sm font-semibold">
-            {t(locale, "compliance.framework.controls", { count: sorted.length })}
+            {t(locale, "compliance.framework.controls", { count: mainControls.length })}
           </h2>
         </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b text-left text-muted-foreground bg-muted/20">
-                <th className="px-4 py-2.5 font-medium">ID</th>
-                <th className="px-4 py-2.5 font-medium">Name</th>
-                <th className="px-4 py-2.5 font-medium">Severity</th>
-                <th className="px-4 py-2.5 font-medium">{t(locale, "compliance.check.passed")}</th>
-                <th className="px-4 py-2.5 font-medium">{t(locale, "compliance.check.failed")}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {sorted.map((ctrl) => (
-                <tr key={ctrl.id} className="border-b last:border-0 hover:bg-muted/10">
-                  <td className="px-4 py-2.5 font-mono text-xs text-muted-foreground whitespace-nowrap">
-                    {ctrl.id}
-                  </td>
-                  <td className="px-4 py-2.5">
-                    <p className="font-medium">{idDecoded.startsWith("k8s-cis") ? translateTitle("cis", ctrl.id, ctrl.name, locale) : ctrl.name}</p>
-                    {ctrl.description && (
-                      <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{ctrl.description}</p>
-                    )}
-                  </td>
-                  <td className="px-4 py-2.5">
-                    <Badge className={`text-xs ${severityBadgeClass[ctrl.severity] ?? severityBadgeClass.Unknown}`}>
-                      {ctrl.severity}
-                    </Badge>
-                  </td>
-                  <td className="px-4 py-2.5 text-green-600 font-medium">{ctrl.passCount}</td>
-                  <td className="px-4 py-2.5 text-red-600 font-medium">{ctrl.failCount}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <ControlsTable
+          controls={mainControls}
+          frameworkId={idDecoded}
+          locale={locale}
+          showAcceptedBadge={false}
+        />
       </div>
+
+      {/* Accepted-only Controls (collapsed group) */}
+      {acceptedControls.length > 0 && (
+        <details className="rounded-lg border bg-card overflow-hidden">
+          <summary className="px-4 py-3 border-b bg-muted/30 cursor-pointer text-sm font-semibold flex flex-wrap items-center justify-between gap-2 select-none">
+            <span>{t(locale, "compliance.framework.acceptedControlsGroup", { count: String(acceptedControls.length) })}</span>
+            <Badge
+              variant="outline"
+              className="text-[0.65rem] px-1.5 py-0 text-muted-foreground border-muted-foreground/30"
+            >
+              {t(locale, "compliance.table.acceptedException")}
+            </Badge>
+          </summary>
+          <div className="px-4 py-2 border-b bg-muted/10 flex justify-end">
+            <a
+              href={COMPLIANCE_EXCEPTIONS_DOC_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-xs underline text-muted-foreground hover:text-foreground transition-colors"
+            >
+              {t(locale, "compliance.framework.exceptionsDocLink")}
+            </a>
+          </div>
+          <ControlsTable
+            controls={acceptedControls}
+            frameworkId={idDecoded}
+            locale={locale}
+            showAcceptedBadge={true}
+          />
+        </details>
+      )}
     </div>
   )
 }

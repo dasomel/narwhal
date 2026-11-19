@@ -23,7 +23,6 @@ an open tab no longer keeps data fetched under the old scope (narwhal#734, narwh
   in the last 30 s). Live event and service-flow streams reconnect at least once per token lifetime.
 - No configuration is required.
 
-
 ### Fixed
 
 - **Re-derive Keycloak `groups` and `teams` claims on token refresh, fail closed across server gates, and bound SSE stream lifetime (`src/lib/auth.ts`, `src/lib/scope.ts`, `src/app/api/events/stream/route.ts`, `src/components/providers.tsx`, narwhal#734):**

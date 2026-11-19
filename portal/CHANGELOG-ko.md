@@ -23,7 +23,6 @@
   화면). 실시간 이벤트·서비스 흐름 스트림은 토큰 수명마다 최소 한 번 다시 연결됩니다.
 - 별도 설정은 필요하지 않습니다.
 
-
 ### 수정
 
 - **Keycloak 토큰 갱신 시 `groups`·`teams` 클레임 재도출, 전 서버 게이트 fail-closed 차단 및 SSE 수명 제한 (`src/lib/auth.ts`, `src/lib/scope.ts`, `src/app/api/events/stream/route.ts`, `src/components/providers.tsx`, narwhal#734):**

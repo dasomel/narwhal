@@ -166,10 +166,19 @@ apisix:
       secretName: apisix-admin-key
       secretAdminKey: key
       secretViewerKey: viewer
-# Top-level securityContext & resources for APISIX container (chart v2.13.0 reads .Values.resources
-# and .Values.securityContext at top-level; D-NETWORKING-HARDENING).
+# Top-level securityContext, init-conf & writable emptyDirs for APISIX container
+# (chart v2.13.0 reads .Values.resources, .Values.securityContext, .Values.extraInitContainers,
+# .Values.extraVolumes, .Values.extraVolumeMounts at top-level; D-NETWORKING-HARDENING, D-apisix-rofs).
+# D-apisix-rofs (#726): readOnlyRootFilesystem=true requires writable emptyDirs for
+# /usr/local/apisix/conf (populated at startup via init-conf cp -R, not cp -a which fails on
+# /conf-rw/. times), /usr/local/apisix/logs, /tmp, and Nginx *_temp dirs. Chart renders
+# extraVolumeMounts after its subPath config.yaml mount, and kubelet applies mounts by path
+# depth so subPath config.yaml overlays on top of the /usr/local/apisix/conf emptyDir.
+# Init container image pins apache/apisix:3.15.0-ubuntu (the actual top-level chart default
+# rendered by deployment.yaml and mirrored in scripts/airgap/images.txt).
 securityContext:
   allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
   runAsNonRoot: true
   runAsUser: 636
   capabilities:
@@ -177,6 +186,68 @@ securityContext:
       - ALL
   seccompProfile:
     type: RuntimeDefault
+extraInitContainers:
+  - name: init-conf
+    image: "apache/apisix:3.15.0-ubuntu"
+    imagePullPolicy: IfNotPresent
+    command:
+      - sh
+      - -c
+      - cp -R /usr/local/apisix/conf/. /conf-rw/
+    securityContext:
+      allowPrivilegeEscalation: false
+      readOnlyRootFilesystem: true
+      runAsNonRoot: true
+      runAsUser: 636
+      capabilities:
+        drop:
+          - ALL
+      seccompProfile:
+        type: RuntimeDefault
+    resources:
+      requests:
+        cpu: 10m
+        memory: 16Mi
+      limits:
+        cpu: 100m
+        memory: 64Mi
+    volumeMounts:
+      - name: apisix-conf
+        mountPath: /conf-rw
+extraVolumes:
+  - name: apisix-conf
+    emptyDir: {}
+  - name: apisix-logs
+    emptyDir: {}
+  - name: tmp
+    emptyDir: {}
+  - name: apisix-client-body-temp
+    emptyDir: {}
+  - name: apisix-proxy-temp
+    emptyDir: {}
+  - name: apisix-fastcgi-temp
+    emptyDir: {}
+  - name: apisix-uwsgi-temp
+    emptyDir: {}
+  - name: apisix-scgi-temp
+    emptyDir: {}
+extraVolumeMounts:
+  - name: apisix-conf
+    mountPath: /usr/local/apisix/conf
+  - name: apisix-logs
+    mountPath: /usr/local/apisix/logs
+  - name: tmp
+    mountPath: /tmp
+  - name: apisix-client-body-temp
+    mountPath: /usr/local/apisix/client_body_temp
+  - name: apisix-proxy-temp
+    mountPath: /usr/local/apisix/proxy_temp
+  - name: apisix-fastcgi-temp
+    mountPath: /usr/local/apisix/fastcgi_temp
+  - name: apisix-uwsgi-temp
+    mountPath: /usr/local/apisix/uwsgi_temp
+  - name: apisix-scgi-temp
+    mountPath: /usr/local/apisix/scgi_temp
 resources:
   requests:
     cpu: 100m

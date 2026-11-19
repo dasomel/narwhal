@@ -11,7 +11,10 @@
       "docs/common/compliance-hardening.md",
       "docs/common/lessons-log.md",
       "gitops/charts/narwhal-apps/templates/apisix.yaml",
+      "gitops/charts/narwhal-apps/templates/k8s-monitoring.yaml",
       "scripts/cluster/08-1-networking.sh",
+      "scripts/cluster/08-2-monitoring.sh",
+      "scripts/test/lib/check-monitoring-hardening.py",
       "scripts/test/lib/check-round5-compliance-hardening.py",
       "scripts/test/regression-check-kakao.sh"
     ]
@@ -30,14 +33,14 @@
     {
       "id": "e3",
       "type": "bug_fix",
-      "summary": "Added readOnlyRootFilesystem: true, init-conf (apache/apisix:3.15.0-ubuntu, same securityContext, 10m/16Mi req and 100m/64Mi lim, cp -R /usr/local/apisix/conf/. /conf-rw/), and 8 emptyDir volumes/mounts (/usr/local/apisix/conf listed before /usr/local/apisix/conf/cert/narwhal in apisix.yaml, /usr/local/apisix/logs, /tmp, and client_body/proxy/fastcgi/uwsgi/scgi_temp) to both scripts/cluster/08-1-networking.sh and gitops/charts/narwhal-apps/templates/apisix.yaml; added R375 (check-round5-compliance-hardening.py) with offline helm renders and 10 mutations; updated compliance-hardening.md (including recover-apisix-resource-sync.sh --divergence rollout note), CHANGELOG, CHANGELOG-ko, and lessons-log."
+      "summary": "Added readOnlyRootFilesystem: true, init-conf (apache/apisix:3.15.0-ubuntu, same securityContext, 10m/16Mi req and 100m/64Mi lim, cp -R /usr/local/apisix/conf/. /conf-rw/), and 8 emptyDir volumes/mounts (/usr/local/apisix/conf listed before /usr/local/apisix/conf/cert/narwhal in apisix.yaml, /usr/local/apisix/logs, /tmp, and client_body/proxy/fastcgi/uwsgi/scgi_temp) to both scripts/cluster/08-1-networking.sh and gitops/charts/narwhal-apps/templates/apisix.yaml; added R375 (check-round5-compliance-hardening.py) with offline helm renders and 10 mutations; updated compliance-hardening.md (including recover-apisix-resource-sync.sh --divergence rollout note), CHANGELOG, CHANGELOG-ko, and lessons-log. Also set the alloy-logs collector's capabilities.add to an explicit empty list in k8s-monitoring.yaml and 08-2-monitoring.sh (D-alloy-caps, KSV022) and pinned it in check-monitoring-hardening.py."
     },
     {
       "id": "e4",
       "type": "regression_verification",
       "status": "passed",
       "scope": "Offline helm template renders of apisix-2.13.0.tgz (08-1 and GitOps) and k8s-monitoring-4.2.0.tgz (Part B investigation), static validation, R356/R374/R375/R234 checks with mutation verification, shellcheck/bash -n, markdownlint-changed, git diff --check, and eval gate without cluster access; plus orchestrator throwaway-pod measurements (the serving Deployment has not been changed yet and no clean install was run).",
-      "summary": "All offline checks, mutation verifications, helm renders, shell/markdown checks, and eval gate passed; serving Deployment rollout and clean install remain pending.",
+      "summary": "Offline checks, mutation verifications, helm renders, shell/markdown checks and the eval gate pass, and the orchestrator rolled both changes out on the local single-node cluster and verified them.",
       "evidence": [
         "test:make validate -> exit 0",
         "test:python3 scripts/test/lib/check-round5-compliance-hardening.py --mutation-verify -> PASS: R375 round-5 compliance hardening + offline helm renders (10 mutations rejected)",
@@ -50,19 +53,22 @@
         "test:npx --yes markdownlint-cli2 docs/common/compliance-hardening.md docs/common/lessons-log.md CHANGELOG.md -> 0 issues (CHANGELOG-ko.md has 28 pre-existing issues at lines 899-1043, 0 on changed lines)",
         "test:git diff --check -> exit 0",
         "test:python3 .agents/evals/gate.py --trace .agents/evals/traces/2026-11-compliance-hardening-r5.json --baseline .agents/evals/baseline.eval.json --current-out /tmp/c-r5.json --comparison-out /tmp/cmp-r5.json -> exit 0 (0 regressions)",
-        "test:Throwaway pods built from live APISIX Deployment spec with readOnlyRootFilesystem=true, init-conf cp -R into /usr/local/apisix/conf emptyDir, and emptyDirs at logs, /tmp, and {client_body,proxy,fastcgi,uwsgi,scgi}_temp -> Ready and served portal/gitea/grafana routes over HTTP 9080 and TLS 9443 (30x from upstreams) (orchestrator, measured 2026-11-19); serving Deployment not yet changed and no clean install run"
+        "test:Throwaway pods built from live APISIX Deployment spec with readOnlyRootFilesystem=true, init-conf cp -R into /usr/local/apisix/conf emptyDir, and emptyDirs at logs, /tmp, and {client_body,proxy,fastcgi,uwsgi,scgi}_temp -> Ready and served portal/gitea/grafana routes over HTTP 9080 and TLS 9443 (30x from upstreams) (orchestrator, measured 2026-11-19); serving Deployment not yet changed and no clean install run",
+        "test:ArgoCD sync of apisix.yaml -> deploy/apisix readOnlyRootFilesystem=true, rollout complete, 6 ingress hosts 30x before and after, recover-apisix-resource-sync.sh --divergence 'in sync routes=26/26 upstreams=14/14 ssls=1/1', 0 read-only errors (orchestrator, measured 2026-11-19)",
+        "test:alloy-logs with capabilities.add [] -> pod 2/2 Running, 0 permission errors, Loki label values show 10 namespaces in the last 3 minutes, 8 marker lines from a new dev pod found in Loki (orchestrator, measured 2026-11-19)",
+        "test:python3 scripts/test/lib/check-monitoring-hardening.py --mutation-verify -> PASS: 21 mutations rejected"
       ]
     },
     {
       "id": "e5",
       "type": "completion_claim",
-      "summary": "Offline helm renders, static validation, regression checks (R356, R374, R375, R234), shell/markdown checks, eval gate, and orchestrator throwaway-pod trials pass; the serving Deployment has not been changed yet and no clean install was run."
+      "summary": "Static validation, regression checks and the local live rollout of both changes pass; a clean install has not been run."
     },
     {
       "id": "e6",
       "type": "task_outcome",
       "state": "A",
-      "summary": "Round-5 compliance fix for platform-system/apisix (KSV014) implemented across 08-1-networking.sh and apisix.yaml with R375 regression coverage, documentation, lessons-log entry, and eval trace; alloy-logs KSV022 investigated offline with minimal capability recommendation; serving Deployment rollout and clean install pending."
+      "summary": "Round-5 compliance fixes (APISIX KSV014, alloy-logs KSV022) implemented with bootstrap/GitOps parity and verified live on the local single-node cluster."
     }
   ]
 }

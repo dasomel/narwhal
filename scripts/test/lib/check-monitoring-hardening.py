@@ -95,6 +95,10 @@ def check(apps, script_text):
     add_caps = alloy_sec.get("capabilities", {}).get("add", [])
     if "NET_RAW" in add_caps:
         errors.append("alloy-logs: alloy capabilities.add must not contain NET_RAW")
+    # D-alloy-caps (KSV022): the key must be present AND empty; omitting it lets the chart
+    # merge its 14 default capabilities back in.
+    if "add" not in alloy_sec.get("capabilities", {}) or add_caps:
+        errors.append("alloy-logs: alloy capabilities.add must be present and empty (D-alloy-caps)")
 
     # configReloader
     cr = alloy_logs.get("configReloader") or {}

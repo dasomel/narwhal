@@ -39,7 +39,11 @@ spec:
           restartPolicy: Never
           securityContext:
             runAsNonRoot: true
-            runAsUser: 100
+            # D-OPENBAO-UID-10100: avoid KSV020/KSV021 (UID/GID <= 10000); unseal only calls
+            # OpenBao over HTTPS using env UNSEAL_KEY and has no volume mounts. Cost: none
+            # (verified with one-off runAsUser/runAsGroup 10100 Job). Escape hatch: revert to 100.
+            runAsUser: 10100
+            runAsGroup: 10100
             seccompProfile:
               type: RuntimeDefault
           containers:

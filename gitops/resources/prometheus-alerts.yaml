@@ -515,3 +515,65 @@ spec:
               Harbor trivy-db 미러가 낡아 가는 중입니다. Secret trivy-db-refresh(08-5가 만든 로봇 계정)가 있는지,
               Job 로그가 무엇을 말하는지 확인하세요.
             runbook_url: https://github.com/dasomel/narwhal/blob/main/scripts/airgap/README.md#보안-db-자동-갱신-d-secdb-auto
+
+    # D-OPENBAO-BACKUP-ALERT (#757): storage/openbao-snapshot runs daily at 04:30 UTC and
+    # fails closed if ConfigMap storage/openbao-backup-recipient is missing or invalid (the pod
+    # stays in Init:0/1 / CreateContainerConfigError and emits no job metrics). Alert from
+    # kube-state-metrics CronJob state:
+    # - Failed: latest scheduled run has not succeeded after 30m (activeDeadlineSeconds=600s),
+    #   including the never-succeeded case where kube_cronjob_status_last_successful_time is absent/0.
+    # - Stale: no successful run in 26h (24h daily cadence + 2h slack), or CronJob is >26h old and
+    #   has never succeeded (26h grace avoids false-firing before a fresh cluster's first 04:30 UTC).
+    # Both suppress when spec.suspend == 1 or the CronJob does not exist.
+    # Cost: relies on kube-state-metrics; Failed clears on the next successful scheduled run
+    # (manual jobs do not update CronJob status). Escape hatch: suspend the CronJob or drop group.
+    - name: openbao-backup
+      rules:
+        - alert: OpenBaoSnapshotBackupFailed
+          expr: |
+            (
+              (
+                max(kube_cronjob_status_last_schedule_time{namespace="storage",cronjob="openbao-snapshot"})
+                  > max(kube_cronjob_status_last_successful_time{namespace="storage",cronjob="openbao-snapshot"})
+              )
+              or
+              (
+                (max(kube_cronjob_status_last_schedule_time{namespace="storage",cronjob="openbao-snapshot"}) > 0)
+                  unless on() (max(kube_cronjob_status_last_successful_time{namespace="storage",cronjob="openbao-snapshot"}) > 0)
+              )
+            )
+            unless on() (max(kube_cronjob_spec_suspend{namespace="storage",cronjob="openbao-snapshot"}) == 1)
+          for: 30m
+          labels:
+            severity: warning
+          annotations:
+            summary: "OpenBao raft 스냅샷 백업 최근 실행 실패"
+            description: >-
+              storage/openbao-snapshot CronJob의 최근 스케줄 실행이 30분 뒤에도 성공하지 못했습니다
+              (수신자 ConfigMap storage/openbao-backup-recipient 부재·지문 불일치로 파드가 시작되지 못했거나 Job이 실패했을 수 있음).
+              kubectl -n storage get jobs,pods 및 describe pod로 원인을 확인하세요.
+            runbook_url: https://github.com/dasomel/narwhal/blob/main/docs/runbooks/openbao-snapshot-backup.md#4-정기-점검
+
+        - alert: OpenBaoSnapshotBackupStale
+          expr: |
+            (
+              (
+                (time() - max(kube_cronjob_status_last_successful_time{namespace="storage",cronjob="openbao-snapshot"}) > 93600)
+                and on() (max(kube_cronjob_status_last_successful_time{namespace="storage",cronjob="openbao-snapshot"}) > 0)
+              )
+              or
+              (
+                (time() - max(kube_cronjob_created{namespace="storage",cronjob="openbao-snapshot"}) > 93600)
+                unless on() (max(kube_cronjob_status_last_successful_time{namespace="storage",cronjob="openbao-snapshot"}) > 0)
+              )
+            )
+            unless on() (max(kube_cronjob_spec_suspend{namespace="storage",cronjob="openbao-snapshot"}) == 1)
+          for: 15m
+          labels:
+            severity: critical
+          annotations:
+            summary: "OpenBao raft 스냅샷 백업이 26시간 넘게 성공하지 못함"
+            description: >-
+              storage/openbao-snapshot CronJob의 마지막 성공이 26시간을 초과했거나 생성 26시간 뒤에도 한 번도 성공하지 못했습니다.
+              ConfigMap storage/openbao-backup-recipient(공개 인증서 및 RECIPIENT_FPR 일치), OpenBao auth 롤, PVC 권한을 확인하세요.
+            runbook_url: https://github.com/dasomel/narwhal/blob/main/docs/runbooks/openbao-snapshot-backup.md#4-정기-점검

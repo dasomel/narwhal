@@ -13,8 +13,9 @@ echo ""
 # failed re-run never leaves a stale "complete" behind; written only after every critical
 # script passed (the loop below exits 1 on a critical failure before reaching the end).
 PHASE2_MARKER="/var/lib/narwhal/phase2-complete"  # keep identical to PHASE2_MARKER in scripts/up.sh
+PHASE2_DEGRADED="/var/lib/narwhal/phase2-degraded"  # keep identical to PHASE2_DEGRADED in scripts/up.sh and provision-kakao.sh
 mkdir -p "$(dirname "${PHASE2_MARKER}")"
-rm -f "${PHASE2_MARKER}"
+rm -f "${PHASE2_MARKER}" "${PHASE2_DEGRADED}"
 
 # Use local kubeconfig for reliability
 export KUBECONFIG=/home/vagrant/.kube/config-local
@@ -182,6 +183,7 @@ CRITICAL_SCRIPTS=(
   "14-gitops-bootstrap.sh"
 )
 PORTAL_BINDINGS_DEGRADED_RC=3
+DEGRADED_REASONS=()
 
 # Run all scripts in order (07→08-1~08-6→09→10→11-keycloak,11-1,11-2,11-3,11-4→12→13→14)
 # Critical scripts will abort Phase 2 on failure; non-critical will warn and continue
@@ -203,6 +205,7 @@ for script in "07-cnpg.sh" "08-1-networking.sh" "08-2-monitoring.sh" "08-3-secur
     bash "${SCRIPT_DIR}/${script}" || rc=$?
     if [[ "${script}" == "13-2-narwhal-portal-bindings.sh" && "${rc}" -eq "${PORTAL_BINDINGS_DEGRADED_RC}" ]]; then
       echo "WARN: ${script} finished without ARGOCD_TOKEN (Secrets applied); continuing — re-run it to mint the token."
+      DEGRADED_REASONS+=("13-2-narwhal-portal-bindings.sh: ARGOCD_TOKEN missing (re-run 13-2 to mint the token)")
       rc=0
     fi
     if [[ "${rc}" -ne 0 ]]; then
@@ -216,6 +219,40 @@ for script in "07-cnpg.sh" "08-1-networking.sh" "08-2-monitoring.sh" "08-3-secur
     bash "${SCRIPT_DIR}/${script}" || echo "WARN: ${script} had issues, continuing..."
   fi
 done
+
+# Check OpenBao encrypted snapshot backup activation (#757, D-OPENBAO-BACKUP-ACTIVATION):
+# surface a missing/mismatched recipient ConfigMap as degraded without failing Phase 2.
+OPENBAO_BK_LIB="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/common/lib-openbao-backup.sh"
+if [[ -r "${OPENBAO_BK_LIB}" ]]; then
+  # shellcheck source=scripts/common/lib-openbao-backup.sh
+  source "${OPENBAO_BK_LIB}"
+  # If ArgoCD has queued Application openbao-backup, give wave-5 sync up to 30s to create the CronJob.
+  if ! kubectl get cronjob openbao-snapshot -n storage >/dev/null 2>&1 \
+      && kubectl get application openbao-backup -n devtools >/dev/null 2>&1; then
+    for _ in 1 2 3 4 5 6; do
+      sleep 5
+      kubectl get cronjob openbao-snapshot -n storage >/dev/null 2>&1 && break
+    done
+  fi
+  ob_rc=0
+  openbao_backup_check_activation || ob_rc=$?
+  if [[ "${ob_rc}" -eq 1 ]]; then
+    DEGRADED_REASONS+=("openbao-snapshot backup: ${OPENBAO_BACKUP_MSG} (apply public cert: kubectl create configmap openbao-backup-recipient -n storage --from-file=recipient.pem=<cert-path> --dry-run=client -o yaml | kubectl apply -f - ; runbook: docs/runbooks/openbao-snapshot-backup.md)")
+  elif [[ "${ob_rc}" -eq 2 ]]; then
+    echo "WARN: openbao-snapshot backup activation check inconclusive: ${OPENBAO_BACKUP_MSG}"
+  fi
+fi
+
+if [[ "${#DEGRADED_REASONS[@]}" -gt 0 ]]; then
+  printf '%s\n' "${DEGRADED_REASONS[@]}" > "${PHASE2_DEGRADED}"
+  echo ""
+  echo "============================================"
+  echo "WARN: Phase 2 DEGRADED CONDITIONS (${#DEGRADED_REASONS[@]})"
+  echo "============================================"
+  for reason in "${DEGRADED_REASONS[@]}"; do
+    echo "  WARN [DEGRADED]: ${reason}"
+  done
+fi
 
 echo ""
 echo "============================================"

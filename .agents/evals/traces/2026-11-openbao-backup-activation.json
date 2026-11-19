@@ -1,0 +1,52 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-issue-757-openbao-backup-activation-20261120",
+  "task": "Make missing or mismatched ConfigMap storage/openbao-backup-recipient loud at install/post-install time (Phase 2, verify-cluster, verify-backup, show-credentials) and add kube-state-metrics Prometheus alerts (OpenBaoSnapshotBackupFailed/Stale) for never-succeeded/stale OpenBao raft snapshot backups (#757).",
+  "changeContext": {
+    "paths": [
+      ".agents/evals/traces/2026-11-openbao-backup-activation.json",
+      "gitops/resources/prometheus-alerts.yaml"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "D-OPENBAO-BACKUP-ACTIVATION & D-OPENBAO-BACKUP-ALERT: added shared activation helper (scripts/common/lib-openbao-backup.sh), surfaced degraded status in Phase 2 (06-phase2-start.sh, up.sh, provision-kakao.sh), verify-cluster.sh, verify-backup.sh, and show-credentials.sh, added OpenBaoSnapshotBackupFailed/Stale alerts in gitops/resources/prometheus-alerts.yaml, updated runbook 3.7/4/8, lessons-log, and R384. Deliberately left alone: manual public-cert apply (no auto-apply from synced configs/ to preserve D-cms), Alertmanager null receiver (#610), openbao-backup.yaml UID 100 (#754), and live cluster GitOps push."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "Issue #757 observed on rebuilt local cluster (2026-11-13/15..19): ConfigMap storage/openbao-backup-recipient was absent so openbao-snapshot pods stayed in Init:0/1 and emitted no job metrics, status.lastSuccessfulTime stayed empty, and prometheus-alerts.yaml had no openbao-snapshot rule. Live read-only check on restored cluster confirmed CronJob storage/openbao-snapshot (suspend=False, lastScheduleTime=2026-11-19T04:30:00Z, lastSuccessfulTime=2026-11-19T11:32:19Z), ConfigMap SHA-256 fingerprint matching RECIPIENT_FPR, and kube_cronjob_* metrics emitted by kube-state-metrics v2.19.1."
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "Implemented openbao_backup_check_activation() checking active CronJob RECIPIENT_FPR vs ConfigMap recipient.pem (rejecting missing, PRIVATE KEY, non-single PEM, malformed, <24h expiry, empty/mismatched pin), wired non-fatal degraded reporting into Phase 2 + verify-cluster + show-credentials and FAIL reporting into verify-backup --section=openbao, and added OpenBaoSnapshotBackupFailed/Stale PromQL rules covering absent/zero last_successful_time and spec_suspend suppression."
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "Static suite (make validate, make test -> 493 passed 0 failed, R384 with fake kubectl + openssl + 13 promtool cases + 13 mutations), shellcheck across scripts/ (0 issues), and read-only live verify-backup.sh --section=openbao (2/2 PASS). NOT verified: positive live firing on a missing-ConfigMap cluster (read-only rule respected), full clean-install Phase 2 run, or Alertmanager external notification delivery (#610).",
+      "evidence": [
+        "test:make validate && make test -> passed 493 failed 0 warnings 3 (R384 PASS)",
+        "test:python3 scripts/test/lib/check-openbao-backup-activation.py --mutation-verify -> PASS: 13 promtool cases, 13 mutations rejected",
+        "test:find scripts/ -name '*.sh' -print0 | xargs -0 shellcheck --severity=warning -> exit 0",
+        "runtime:KUBECONFIG=.../kc-narwhal bash scripts/test/verify-backup.sh --section=openbao -> 2/2 PASS (fingerprint match + lastSuccessfulTime 12h ago)"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "completion_claim",
+      "summary": "All install-time/post-install detection, kube-state-metrics Prometheus alerts, runbook 3.7, lessons-log, and R384 regression checks are implemented and verified offline plus read-only on the restored cluster."
+    },
+    {
+      "id": "e6",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Complete on branch fix/openbao-backup-activation-check; live GitOps push of prometheus-alerts.yaml and independent review remain."
+    }
+  ]
+}

@@ -26,6 +26,7 @@ PROVIDER="${PROVIDER:-vmware_desktop}"
 
 # Written by scripts/cluster/06-phase2-start.sh only after every Phase 2 script passed.
 PHASE2_MARKER="/var/lib/narwhal/phase2-complete"
+PHASE2_DEGRADED="/var/lib/narwhal/phase2-degraded"
 
 # Timestamped progress line. vagrant's own output carries no clock, which is what made the
 # 2026-08-04 SSH drop uncorrelatable against the guests' journals — the drop was visible in
@@ -468,6 +469,11 @@ while [ "${attempt}" -le "${MAX_ATTEMPTS}" ]; do
       # continued; always check namespaces.
       if phase2_complete; then
         echo "Phase 2 complete (attempt ${p2_attempt})."
+        p2_degraded=$(vagrant ssh master-1 -c "cat ${PHASE2_DEGRADED} 2>/dev/null || true" 2>/dev/null || true)
+        if [ -n "${p2_degraded}" ]; then
+          echo "WARN: Phase 2 completed with degraded item(s):"
+          printf '%s\n' "${p2_degraded}" | sed 's/^/  - /'
+        fi
         exit 0
       fi
 

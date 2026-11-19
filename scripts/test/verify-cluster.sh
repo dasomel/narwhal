@@ -16,6 +16,11 @@ set -uo pipefail
 
 # shellcheck source=scripts/common/lib-topology.sh
 source "$(dirname "$0")/../common/lib-topology.sh"
+_OPENBAO_BK_LIB="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/common/lib-openbao-backup.sh"
+if [ -r "${_OPENBAO_BK_LIB}" ]; then
+  # shellcheck source=scripts/common/lib-openbao-backup.sh
+  source "${_OPENBAO_BK_LIB}"
+fi
 
 QUICK_MODE=false
 SECTION_FILTER=""
@@ -1010,6 +1015,19 @@ if should_run "platform"; then
     pass "Velero BSL default: Available"
   else
     warn "Velero BSL default: ${BSL_PHASE:-not found} (BSL may be Unavailable if SeaweedFS S3 is not seeded)"
+  fi
+
+  # OpenBao encrypted snapshot backup activation (#757)
+  if declare -F openbao_backup_check_activation >/dev/null 2>&1; then
+    ob_rc=0
+    openbao_backup_check_activation || ob_rc=$?
+    case "${OPENBAO_BACKUP_STATE}" in
+      ok)        pass "OpenBao snapshot backup: ${OPENBAO_BACKUP_MSG}" ;;
+      degraded)  warn "OpenBao snapshot backup DEGRADED: ${OPENBAO_BACKUP_MSG} (see docs/runbooks/openbao-snapshot-backup.md)" ;;
+      suspended) warn "OpenBao snapshot backup: CronJob is suspended" ;;
+      absent)    skip "OpenBao snapshot backup: CronJob storage/openbao-snapshot not present" ;;
+      *)         warn "OpenBao snapshot backup check inconclusive (${ob_rc}): ${OPENBAO_BACKUP_MSG}" ;;
+    esac
   fi
   echo ""
 fi

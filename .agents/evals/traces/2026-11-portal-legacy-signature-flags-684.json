@@ -1,0 +1,55 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-portal-legacy-signature-flags-684-20261119",
+  "task": "Fix the legacy-format Cosign signature step added in #745, which failed in a recovery run (narwhal#684).",
+  "changeContext": {
+    "paths": [
+      ".github/workflows/portal-docker-publish.yml",
+      "docs/common/lessons-log.md",
+      ".agents/evals/traces/2026-11-portal-legacy-signature-flags-684.json"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Scope: add --use-signing-config=false to the second cosign sign invocation; comment and lessons-log row."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "sign_digest recovery run 44455706927 failed at the second sign: 'must provide --new-bundle-format or --bundle where applicable with --signing-config or --use-signing-config'. The first (bundle) signature succeeded.",
+      "evidence": [
+        "test:gh workflow run portal-docker-publish.yml -f sign_digest=<1.1.20 digest> -> run 44455706927 conclusion failure at 'Sign image digest' with the message above (orchestrator, measured 2026-11-19)"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "The legacy sign invocation now passes --new-bundle-format=false --use-signing-config=false."
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "Local cosign v3.1.4 signing with a throwaway key against an in-memory registry (no transparency log); YAML parse. No CI signing run.",
+      "summary": "Flag combination exercised with cosign v3.1.4, a throwaway key and a local in-memory registry (tlog upload off): the .sig tag is written and verifies.",
+      "evidence": [
+        "test:crane registry serve + cosign sign --key trial.key --new-bundle-format=false --use-signing-config=false --tlog-upload=false <local image>@<digest> -> rc 0; crane ls shows sha256-<digest>.sig; cosign verify --key trial.pub --insecure-ignore-tlog=true -> rc 0 (orchestrator, measured 2026-11-19)",
+        "test:python3 -c yaml.safe_load(workflow) -> rc 0"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "completion_claim",
+      "summary": "Verified locally with a throwaway key and no transparency-log upload; the CI run with the repository key and Rekor upload, and Kyverno's verdict, are checked after merge by re-running the recovery mode and are not claimed here."
+    },
+    {
+      "id": "e6",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Workflow fixed; end-to-end verification follows the merge."
+    }
+  ]
+}

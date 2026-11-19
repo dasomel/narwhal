@@ -1,0 +1,52 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-issue-757-openbao-backup-activation-20261120",
+  "task": "Make missing or mismatched ConfigMap storage/openbao-backup-recipient loud at install/post-install time (Phase 2, verify-cluster, verify-backup) and add kube-state-metrics Prometheus freshness alert (OpenBaoSnapshotBackupStale) for never-succeeded/stale OpenBao raft snapshot backups (#757).",
+  "changeContext": {
+    "paths": [
+      ".agents/evals/traces/2026-11-openbao-backup-activation.json",
+      "gitops/resources/prometheus-alerts.yaml"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "D-OPENBAO-BACKUP-ACTIVATION & D-OPENBAO-BACKUP-ALERT (Round 2): kept shared helper (scripts/common/lib-openbao-backup.sh with RSA >= 3072 parity), Phase 2 check in 06-phase2-start.sh (absolute /home/vagrant guest path, loud missing-lib, bounded wave-5 wait, degraded/absent/rc=2 recorded in /var/lib/narwhal/phase2-degraded), provision-kakao.sh degraded summary (stdout redirected to phase2.log), verify-cluster.sh, and verify-backup.sh (portable python3 UTC age, warn on parse error). Removed show-credentials.sh and up.sh additions; dropped OpenBaoSnapshotBackupFailed (generic KubeJobFailed already fires) and kept OpenBaoSnapshotBackupStale with by (namespace, cronjob). Deliberately left alone: manual public-cert apply (preserving D-cms), Alertmanager null receiver (#610), openbao-backup.yaml UID 100 (#754), and live cluster GitOps push."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "Issue #757 observed on rebuilt local cluster (2026-11-13/15..19): ConfigMap storage/openbao-backup-recipient was absent so openbao-snapshot pods failed to mount and activeDeadlineSeconds=600 transitioned the Job to Failed; generic KubeJobFailed fired in Prometheus but reached nobody because Alertmanager has only a null receiver (#610), status.lastSuccessfulTime stayed empty, and prometheus-alerts.yaml had no freshness alert. Restored cluster confirmed CronJob storage/openbao-snapshot (suspend=False, lastSuccessfulTime=2026-11-19T11:32:19Z updated by --from=cronjob manual job) and matching RECIPIENT_FPR."
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "Hardened openbao_backup_check_activation() with RSA >= 3072-bit parity alongside missing/PRIVATE KEY/non-single/malformed/<24h expiry/empty-or-mismatched pin checks; fixed 06-phase2-start.sh /tmp/vagrant-shell sourcing, missing-lib loudness, bounded ArgoCD wave-5 wait, and absent/rc=2 PHASE2_DEGRADED recording; replaced BSD/GNU date parsing in verify-backup.sh with portable python3 RFC3339 UTC parsing (warn on parse failure); kept only OpenBaoSnapshotBackupStale with max by (namespace, cronjob) and on (namespace, cronjob); corrected runbook 3.7 ordering/4 freshness wording, lessons-log, and expanded R384."
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "Static regression suite (make validate, make test -> 493 passed 0 failed, R384 with /tmp/.../vagrant-shell, UTC+9/-8 20h/28h/never-succeeded/parse-fail, kubectl/openssl errors, RSA-2048/ECDSA/malformed/multi-PEM/empty/non-leak, 11 promtool cases incl. ksm-down and last_successful_time=0, 17 mutations), shellcheck across scripts/ (0 findings), yamllint on touched lines of prometheus-alerts.yaml (0 findings; pre-existing line-length on lines 1/286/336 untouched), and read-only live verify-backup.sh --section=openbao (2/2 PASS, 4h ago). NOT verified: positive live firing on a missing-ConfigMap cluster (read-only rule), full clean-install Phase 2 run, or Alertmanager external delivery (#610).",
+      "evidence": [
+        "test:python3 scripts/test/lib/check-openbao-backup-activation.py --mutation-verify -> PASS: 11 promtool cases, 17 mutations rejected",
+        "test:make validate && make test -> passed 493 failed 0 warnings 3 (R384 PASS)",
+        "test:find scripts/ -name '*.sh' -print0 | xargs -0 shellcheck --severity=warning -> exit 0",
+        "runtime:KUBECONFIG=.../kc-narwhal /bin/bash scripts/test/verify-backup.sh --section=openbao -> 2/2 PASS (fingerprint match + lastSuccessfulTime 4h ago)"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "completion_claim",
+      "summary": "All Round 2 fixes (D1-D7) are implemented and verified offline (R384 + make validate + make test + shellcheck + trace gates) plus read-only live verify-backup.sh --section=openbao."
+    },
+    {
+      "id": "e6",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Complete on branch fix/openbao-backup-activation-check; live GitOps push of prometheus-alerts.yaml and independent review remain."
+    }
+  ]
+}

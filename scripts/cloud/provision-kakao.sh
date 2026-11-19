@@ -415,6 +415,12 @@ stage_phase2() {
        ./scripts/cloud/apply-apiserver-oidc-kakao.sh; then
       note "apiserver OIDC propagation to other masters FAILED"; return 1
     fi
+    local p2_degraded
+    p2_degraded=$(ssh_node "${MASTER1}" "cat /var/lib/narwhal/phase2-degraded 2>/dev/null || true" 2>/dev/null || true)
+    if [ -n "${p2_degraded}" ]; then
+      note "WARN: phase2 completed with degraded item(s):"
+      printf '%s\n' "${p2_degraded}" | sed 's/^/     - /'
+    fi
     mark_done "${MASTER1}" phase2; note "ok"
   else
     note "FAILED"; tail_log "${MASTER1}" phase2 20; return 1

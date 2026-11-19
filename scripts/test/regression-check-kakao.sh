@@ -3525,6 +3525,9 @@ PYEOF'
   # 2026-11-19: remaining low-severity compliance findings (OpenBao auto-unseal 10100:10100; snapshot/holder stay uid 100 and are allowlisted; verified CNPG/nfs-quota-agent allowlist entries)
   check R383 "OpenBao auto-unseal runs as 10100:10100 (not allowlisted), snapshot/holder keep uid 100 with exact KSV020/021 allowlist entries; CNPG narwhal-db-1, pooler (upstream), and nfs-quota-agent allowlisted with exact check sets across code, i18n, and docs; 20 mutations caught" \
     python3 scripts/test/lib/check-compliance-low-residuals.py --mutation-verify
+  # 2026-11-20 (#757): OpenBao snapshot backup missing/mismatched recipient ConfigMap surfaced at Phase 2 (06/provision-kakao) / verify-cluster / verify-backup + promtool-verified OpenBaoSnapshotBackupStale alert
+  check R384 "OpenBao snapshot backup activation check (D-OPENBAO-BACKUP-ACTIVATION) surfaces missing/invalid/non-RSA/weak/mismatched recipient ConfigMap, absent CronJob, lookup errors, and missing helper in Phase 2 (06-phase2-start.sh via /home/vagrant guest path + provision-kakao.sh without failing install), verify-cluster, and verify-backup (portable python3 UTC age); OpenBaoSnapshotBackupStale preserves namespace/cronjob labels and handles never-succeeded/zero/ksm-down/suspended (11 promtool cases); runbook 3.7/4 updated; 17 mutations caught (#757)" \
+    python3 scripts/test/lib/check-openbao-backup-activation.py --mutation-verify
 }
 
 #=========================================

@@ -99,6 +99,12 @@ def check(docs: list[dict], doc_text: str) -> list[str]:
     if len(crs) != 1:
         return [f"ClusterRole narwhal-portal expected once, got {len(crs)}"]
 
+    # Nothing but plain rules: an aggregationRule (or any other top-level key) would let the
+    # aggregation controller add permissions outside this pinned list.
+    extra_top = set(crs[0].keys()) - {"apiVersion", "kind", "metadata", "rules"}
+    if extra_top:
+        errors.append(f"ClusterRole narwhal-portal has unexpected top-level keys {sorted(extra_top)}")
+
     actual_list: list[RuleTuple] = []
     for rule in crs[0].get("rules") or []:
         extra_keys = set(rule.keys()) - {"apiGroups", "resources", "verbs"}
@@ -157,7 +163,8 @@ MUTATIONS = [
     "extra verb update on existing core rule",
     "wildcard resource in apps rule",
     "wildcard verb in apps rule",
-    "stale compliance-hardening doc text",
+    "aggregationRule added to the ClusterRole",
+        "stale compliance-hardening doc text",
 ]
 
 
@@ -183,6 +190,8 @@ def mutate(name: str, base_docs: list[dict], base_doc_text: str) -> tuple[list[d
         _apps_rs_rule(docs)["resources"] = ["*"]
     elif name == "wildcard verb in apps rule":
         _apps_rs_rule(docs)["verbs"] = ["*"]
+    elif name == "aggregationRule added to the ClusterRole":
+        cr["aggregationRule"] = {"clusterRoleSelectors": [{"matchLabels": {"rbac.example/aggregate": "true"}}]}
     elif name == "stale compliance-hardening doc text":
         doc_text = doc_text.replace("`apps` `replicasets`", "(and not `replicasets`)", 1)
     return docs, doc_text

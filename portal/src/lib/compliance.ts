@@ -186,6 +186,8 @@ interface RawReplicaSet {
   }
   status?: {
     replicas?: number
+    // Pods of this ReplicaSet that are terminating; status.replicas does NOT count them.
+    terminatingReplicas?: number
   }
 }
 
@@ -574,6 +576,7 @@ async function fetchReplicaSetMap(): Promise<Map<string, ReplicaSetSummary> | nu
       namespace: string
       specReplicas: number | null
       statusReplicas: number | null
+      terminatingReplicas: number | null
       revision: number | null
       deploymentOwners: string[]
     }> = []
@@ -601,6 +604,8 @@ async function fetchReplicaSetMap(): Promise<Map<string, ReplicaSetSummary> | nu
         namespace: ns,
         specReplicas: typeof rs.spec?.replicas === "number" ? rs.spec.replicas : null,
         statusReplicas: typeof rs.status?.replicas === "number" ? rs.status.replicas : null,
+        terminatingReplicas:
+          typeof rs.status?.terminatingReplicas === "number" ? rs.status.terminatingReplicas : null,
         revision,
         deploymentOwners,
       })
@@ -609,7 +614,8 @@ async function fetchReplicaSetMap(): Promise<Map<string, ReplicaSetSummary> | nu
     const map = new Map<string, ReplicaSetSummary>()
     for (const entry of entries) {
       // Drop ONLY fully drained superseded Deployment revisions:
-      // (a) owned by a Deployment, (b) spec.replicas == 0 AND status.replicas == 0, and
+      // (a) owned by a Deployment, (b) spec.replicas == 0 AND status.replicas == 0 AND
+      // status.terminatingReplicas == 0 (reported explicitly), and
       // (c) the same Deployment in the same namespace owns another RS with a higher revision.
       // Standalone ReplicaSets, scaled-to-zero Deployments (current revision), terminating pods,
       // and any unknown field are kept so live findings are never hidden.
@@ -623,6 +629,9 @@ async function fetchReplicaSetMap(): Promise<Map<string, ReplicaSetSummary> | nu
         entry.deploymentOwners.length > 0 &&
         entry.specReplicas === 0 &&
         entry.statusReplicas === 0 &&
+        // status.replicas excludes terminating pods, so require an explicit 0 here too. A cluster
+        // that does not report the field (null) keeps the report: unknown never drops.
+        entry.terminatingReplicas === 0 &&
         hasHigherRevisionSibling
       map.set(entry.key, {
         specReplicas: entry.specReplicas,

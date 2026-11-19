@@ -121,6 +121,7 @@ function makeRs(opts: {
   name: string
   replicas?: number
   statusReplicas?: number
+  terminatingReplicas?: number
   revision?: string | number
   ownerDeployment?: string
   ownerKind?: string
@@ -137,7 +138,15 @@ function makeRs(opts: {
         : {}),
     },
     ...(opts.replicas !== undefined ? { spec: { replicas: opts.replicas } } : {}),
-    ...(opts.statusReplicas !== undefined ? { status: { replicas: opts.statusReplicas } } : {}),
+    ...(opts.statusReplicas !== undefined
+      ? {
+          status: {
+            replicas: opts.statusReplicas,
+            // Default: explicitly drained. Pass -1 to omit the field (cluster does not report it).
+            ...(opts.terminatingReplicas === -1 ? {} : { terminatingReplicas: opts.terminatingReplicas ?? 0 }),
+          },
+        }
+      : {}),
   }
 }
 
@@ -866,7 +875,8 @@ describe("ReplicaSet filtering and exact Deployment ownership (narwhal#727)", ()
             namespace: "storage",
             name: "velero-terminating",
             replicas: 0,
-            statusReplicas: 1,
+            statusReplicas: 0,
+            terminatingReplicas: 1,
             revision: 1,
             ownerDeployment: "velero",
           }),

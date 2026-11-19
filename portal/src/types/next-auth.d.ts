@@ -9,6 +9,7 @@ declare module "next-auth" {
     // groups claim was present but entirely rejected by the RBAC allowlist.
     groupClaimStatus?: GroupClaimStatus
     idToken?: string
+    expiresAt?: number
     error?: string
     user: DefaultSession["user"] & { role: UserRole }
   }

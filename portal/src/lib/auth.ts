@@ -122,6 +122,81 @@ function validateIssuerAudience(profile: Record<string, unknown>): boolean {
   return true
 }
 
+const BASE64URL_RE = /^[A-Za-z0-9_-]+$/
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+}
+
+// D-734-REFRESH-JWT-TRUST: Decode the refreshed token payload without local JWKS
+// signature verification. The token arrives directly from Keycloak's token endpoint
+// over a server-side TLS fetch (assertHttpsInProduction enforces https:// for
+// KEYCLOAK_ISSUER in production, and the portal authenticates with client_secret),
+// matching the trust boundary the OIDC sign-in callback relies on; package.json has
+// no JWKS dependency. Cost: relies on server-side TLS + Keycloak endpoint integrity
+// rather than offline JWS verification. Escape hatch: add `jose` and verify against
+// `${KEYCLOAK_ISSUER}/protocol/openid-connect/certs` before reading claims.
+function decodeJwtClaims(rawJwt: unknown): Record<string, unknown> | null {
+  if (typeof rawJwt !== "string") return null
+  const parts = rawJwt.split(".")
+  if (parts.length !== 3) return null
+  const [headerB64, payloadB64, sigB64] = parts
+  if (
+    !headerB64 ||
+    !payloadB64 ||
+    !sigB64 ||
+    !BASE64URL_RE.test(headerB64) ||
+    !BASE64URL_RE.test(payloadB64)
+  ) {
+    return null
+  }
+  try {
+    const header = JSON.parse(Buffer.from(headerB64, "base64url").toString("utf8"))
+    if (!isPlainRecord(header) || typeof header.alg !== "string" || header.alg.toLowerCase() === "none") {
+      return null
+    }
+    const payload = JSON.parse(Buffer.from(payloadB64, "base64url").toString("utf8"))
+    return isPlainRecord(payload) ? payload : null
+  } catch {
+    return null
+  }
+}
+
+function isUnexpiredExp(claims: Record<string, unknown>, nowMs = Date.now()): boolean {
+  return typeof claims.exp === "number" && Number.isFinite(claims.exp) && claims.exp * 1000 > nowMs
+}
+
+function applyGroupClaims(
+  token: JWT,
+  rawGroups: unknown,
+  rawTeams: unknown,
+  sub?: string,
+): void {
+  if (rawGroups !== undefined) {
+    token.groups = sanitizeGroups(rawGroups)
+    token.groupClaimStatus = classifyGroupClaim(rawGroups)
+    // narwhal#163: unknown claims are a diagnostic signal, not a legitimate
+    // no-groups case — log them (with the subject) so drops are no longer silent.
+    if (token.groupClaimStatus === "unknown_groups") {
+      console.warn("[auth/jwt] unrecognized group claims rejected", {
+        sub: sub ?? token.sub,
+        rejected: unknownGroups(rawGroups),
+      })
+    }
+  }
+  if (rawTeams !== undefined) {
+    token.teams = sanitizeTeamGroups(rawTeams)
+  }
+}
+
+function failClosedRefresh(token: JWT, reason: string, details?: Record<string, unknown>): void {
+  console.error(`[auth/jwt] ${reason}`, details ?? {})
+  token.groups = ["guest"] satisfies UserRole[]
+  token.teams = []
+  token.groupClaimStatus = "no_groups"
+  token.error = "RefreshTokenError"
+}
+
 // H-11: mock provider role allowlist — dev only (production blocked by H-8 guard above).
 const mockProvider = Credentials({
   id: "mock",
@@ -242,14 +317,36 @@ export const config: NextAuthConfig = {
       ) {
         try {
           const r = await refreshKeycloakToken(token.refreshToken)
-          token.accessToken = r.access_token
-          token.expiresAt = Math.floor(Date.now() / 1000) + r.expires_in
-          if (r.refresh_token) token.refreshToken = r.refresh_token
-          if (r.id_token) token.idToken = r.id_token
-          delete token.error
+          const rawRefreshedToken = r.id_token !== undefined ? r.id_token : r.access_token
+          const claims = decodeJwtClaims(rawRefreshedToken)
+          if (!claims || !validateIssuerAudience(claims) || !isUnexpiredExp(claims)) {
+            failClosedRefresh(token, "refreshed token failed claims validation")
+          } else {
+            token.accessToken = r.access_token
+            if (typeof r.expires_in === "number" && Number.isFinite(r.expires_in)) {
+              token.expiresAt = Math.floor(Date.now() / 1000) + r.expires_in
+            }
+            if (r.refresh_token) token.refreshToken = r.refresh_token
+            if (r.id_token) token.idToken = r.id_token
+
+            if (!Array.isArray(claims.groups)) {
+              failClosedRefresh(token, "refreshed token missing readable groups claim", {
+                sub: typeof claims.sub === "string" ? claims.sub : token.sub,
+              })
+            } else {
+              delete token.error
+              applyGroupClaims(
+                token,
+                claims.groups,
+                claims.groups,
+                typeof claims.sub === "string" ? claims.sub : undefined,
+              )
+            }
+          }
         } catch (e) {
-          console.error("[auth/jwt] keycloak token refresh failed:", (e as Error).message)
-          token.error = "RefreshTokenError"
+          failClosedRefresh(token, "keycloak token refresh failed", {
+            error: (e as Error).message,
+          })
         }
       }
 
@@ -262,24 +359,13 @@ export const config: NextAuthConfig = {
       }
 
       const rawGroups = p?.groups !== undefined ? p.groups : u?.groups
-      if (rawGroups !== undefined) {
-        token.groups = sanitizeGroups(rawGroups)
-        token.groupClaimStatus = classifyGroupClaim(rawGroups)
-        // narwhal#163: unknown claims are a diagnostic signal, not a legitimate
-        // no-groups case — log them (with the subject) so drops are no longer silent.
-        if (token.groupClaimStatus === "unknown_groups") {
-          console.warn("[auth/jwt] unrecognized group claims rejected", {
-            sub: (p?.sub as string | undefined) ?? token.sub,
-            rejected: unknownGroups(rawGroups),
-          })
-        }
-      }
-      if (p?.groups !== undefined) {
-        token.teams = sanitizeTeamGroups(p.groups)
-      }
-      if ((u as Record<string, unknown> | undefined)?.teams !== undefined) {
-        token.teams = sanitizeTeamGroups((u as Record<string, unknown>).teams)
-      }
+      const rawTeams = p?.groups !== undefined ? p.groups : u?.teams
+      applyGroupClaims(
+        token,
+        rawGroups,
+        rawTeams,
+        typeof p?.sub === "string" ? p.sub : undefined,
+      )
       // C-5: ensure token.groups is always a sanitized list; default to guest.
       if (!Array.isArray(token.groups) || token.groups.length === 0) {
         token.groups = ["guest"] satisfies UserRole[]
@@ -295,6 +381,9 @@ export const config: NextAuthConfig = {
       session.user.role = getRoleFromGroups(safeGroups)
       session.groupClaimStatus = token.groupClaimStatus ?? "no_groups"
       session.idToken = token.idToken
+      if (typeof token.expiresAt === "number" && Number.isFinite(token.expiresAt)) {
+        session.expiresAt = token.expiresAt
+      }
       // Surface a refresh failure so the client can force a clean re-login.
       if (token.error) session.error = token.error as string
       return session

@@ -54,6 +54,7 @@ export interface ScopeSession {
   groups?: string[]
   teams?: string[]
   user?: { role?: string }
+  error?: string
 }
 
 export { ACCESS_NOT_GRANTED_CODE, SCOPE_FINGERPRINT_HEADER }
@@ -125,6 +126,7 @@ export async function resolveEffectiveAccess(
   session: ScopeSession,
   clusterId: string = DEFAULT_CLUSTER_ID,
 ): Promise<{ allowed: true; scope?: EffectiveScope } | { allowed: false }> {
+  if (session.error) return { allowed: false }
   const groups = normalizeScopeGroups(session)
   const teams = session.teams ?? []
   const vis = getVisibilityScope(groups, teams)
@@ -164,6 +166,7 @@ export async function requireEffectiveScope(
   session: ScopeSession,
   clusterId: string = DEFAULT_CLUSTER_ID,
 ): Promise<{ scope: EffectiveScope } | { denied: NextResponse<AccessDeniedBody> }> {
+  if (session.error) return { denied: accessDeniedResponse() }
   const scope = await getEffectiveScope(
     { groups: normalizeScopeGroups(session), teams: session.teams ?? [] },
     clusterId,
@@ -173,8 +176,8 @@ export async function requireEffectiveScope(
 }
 
 export async function getEffectiveScope(session: ScopeSession, clusterId: string = DEFAULT_CLUSTER_ID): Promise<EffectiveScope> {
-  const groups = session.groups ?? []
-  const teams = session.teams ?? []
+  const groups = session.error ? [] : (session.groups ?? [])
+  const teams = session.error ? [] : (session.teams ?? [])
   const scope = getVisibilityScope(groups, teams)
   const roleClass: "admin" | "non-admin" = groups.includes("cluster-admin") ? "admin" : "non-admin"
 

@@ -59,4 +59,33 @@ describe("GET /api/service-graph/stream — cluster-admin only", () => {
     expect(res.headers.get("Content-Type")).toBe("text/event-stream")
     ac.abort()
   })
+
+  it("closes the admin stream when the access token expires (narwhal#734)", async () => {
+    vi.useFakeTimers()
+    try {
+      const now = Date.now()
+      mockAuth.mockResolvedValue({
+        groups: ["cluster-admin"],
+        teams: [],
+        user: { role: "cluster-admin" },
+        expiresAt: Math.floor(now / 1000) + 60,
+      })
+      const cancel = vi.fn()
+      vi.mocked(startFlowStream).mockReturnValueOnce({ cancel } as unknown as ReturnType<typeof startFlowStream>)
+      const res = await GET(new NextRequest("http://localhost/api/service-graph/stream"))
+      const reader = res.body!.getReader()
+      const done = reader.read().then(function next(r): Promise<boolean> | boolean {
+        return r.done ? true : reader.read().then(next)
+      })
+      await vi.advanceTimersByTimeAsync(59_000)
+      expect(cancel).not.toHaveBeenCalled()
+      await vi.advanceTimersByTimeAsync(2_000)
+      expect(cancel).toHaveBeenCalledTimes(1)
+      await expect(done).resolves.toBe(true)
+      // The lifetime comes from the session the admin gate authorised: one auth() read only.
+      expect(mockAuth).toHaveBeenCalledTimes(1)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
 })

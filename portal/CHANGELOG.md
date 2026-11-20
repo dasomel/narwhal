@@ -9,6 +9,8 @@ English | [한국어](CHANGELOG-ko.md)
 
 ## [Unreleased]
 
+## [1.1.23] - 2026-11-20
+
 ### Changed
 
 - **Infra Audit & Frameworks accepted/actionable split for `KCV0056` (`src/lib/compliance-accepted.ts`, `src/lib/compliance.ts`, `src/types/compliance.ts`, `src/components/compliance/infra-audit-list.tsx`, `src/components/compliance/failure-counters.tsx`, `src/app/(dashboard)/compliance/infra-audit/[node]/page.tsx`, `src/lib/i18n.ts`):**
@@ -969,7 +971,8 @@ management dashboard built with Next.js 16 and React 19.
   - Skaffold development profile configured for live Hot Module Replacement (HMR) and container
     file syncing.
 
-[Unreleased]: https://github.com/dasomel/narwhal/compare/portal/v1.1.22...HEAD
+[Unreleased]: https://github.com/dasomel/narwhal/compare/portal/v1.1.23...HEAD
+[1.1.23]: https://github.com/dasomel/narwhal/compare/portal/v1.1.22...portal/v1.1.23
 [1.1.22]: https://github.com/dasomel/narwhal/compare/portal/v1.1.21...portal/v1.1.22
 [1.1.21]: https://github.com/dasomel/narwhal/compare/portal/v1.1.20...portal/v1.1.21
 [1.1.20]: https://github.com/dasomel/narwhal/compare/portal/v1.1.19...portal/v1.1.20

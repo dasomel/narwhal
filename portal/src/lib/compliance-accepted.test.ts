@@ -4,8 +4,10 @@ import { describe, expect, it } from "vitest"
 import { en, ko } from "./i18n"
 import {
   ACCEPTED_CONFIG_AUDIT_RULES,
+  ACCEPTED_INFRA_RULES,
   ACCEPTED_RBAC_RULES,
   matchConfigAuditException,
+  matchInfraException,
   matchRbacException,
   normalizeCheckId,
   normalizeWorkloadName,
@@ -66,6 +68,13 @@ describe("normalizeCheckId", () => {
     expect(normalizeCheckId("avd-ksv-0108")).toBe("KSV108")
     expect(normalizeCheckId("ksv17")).toBe("KSV017")
     expect(normalizeCheckId(" KSV001 ")).toBe("KSV001")
+  })
+
+  it("normalizes AVD-KCV and short KCV IDs to canonical KCVnnnn", () => {
+    expect(normalizeCheckId("KCV0056")).toBe("KCV0056")
+    expect(normalizeCheckId("AVD-KCV-0056")).toBe("KCV0056")
+    expect(normalizeCheckId("kcv56")).toBe("KCV0056")
+    expect(normalizeCheckId(" KCV0059 ")).toBe("KCV0059")
   })
 })
 
@@ -245,6 +254,21 @@ describe("matchRbacException", () => {
   })
 })
 
+describe("matchInfraException", () => {
+  it("matches exact node check IDs (including AVD-KCV prefix) and fails closed on unlisted or empty inputs", () => {
+    const m = matchInfraException("narwhal-master-1", "KCV0056")
+    expect(m).not.toBeNull()
+    expect(m?.class).toBe("upstream")
+    expect(m?.reason).toContain("CMD-0009")
+
+    expect(matchInfraException("narwhal-master-2", "AVD-KCV-0056")?.class).toBe("upstream")
+    expect(matchInfraException("narwhal-master-1", "KCV0059")).toBeNull()
+    expect(matchInfraException("narwhal-master-1", "KCV0057")).toBeNull()
+    expect(matchInfraException("", "KCV0056")).toBeNull()
+    expect(matchInfraException("narwhal-master-1", "")).toBeNull()
+  })
+})
+
 describe("allowlist integrity and docs parity", () => {
   it("contains no duplicate (namespace, kind, name, class) or overlapping check IDs", () => {
     const seenClass = new Set<string>()
@@ -278,6 +302,21 @@ describe("allowlist integrity and docs parity", () => {
       expect(rule.reason).not.toContain("|")
       expect(rule.reason.trim().length).toBeGreaterThan(0)
     }
+
+    const seenInfraClass = new Set<string>()
+    const seenInfraChecks = new Set<string>()
+    for (const rule of ACCEPTED_INFRA_RULES) {
+      const classKey = `${rule.node}|${rule.class}`
+      expect(seenInfraClass.has(classKey), `Duplicate Infra class entry: ${classKey}`).toBe(false)
+      seenInfraClass.add(classKey)
+      for (const id of rule.checks) {
+        const checkKey = `${rule.node}|${id}`
+        expect(seenInfraChecks.has(checkKey), `Overlapping Infra check entry: ${checkKey}`).toBe(false)
+        seenInfraChecks.add(checkKey)
+      }
+      expect(rule.reason).not.toContain("|")
+      expect(rule.reason.trim().length).toBeGreaterThan(0)
+    }
   })
 
   it("matches docs/common/compliance-hardening.md Config Audit and RBAC allowlist tables exactly", () => {
@@ -304,6 +343,16 @@ describe("allowlist integrity and docs parity", () => {
     }))
     expect(docRbacRows).toEqual(codeRbacRows)
 
+    const docInfraRows = parseMarkdownSectionTable(markdown, "### Infra allowlist")
+    const codeInfraRows: ParsedDocRow[] = ACCEPTED_INFRA_RULES.map((r) => ({
+      namespace: "cluster",
+      workload: `Node/${r.node}`,
+      checks: Array.from(r.checks).map(normalizeCheckId).sort(),
+      cls: r.class,
+      reason: r.reason,
+    }))
+    expect(docInfraRows).toEqual(codeInfraRows)
+
     // Parity for ReplicaSet ownership & residual-risk section (narwhal#727)
     expect(markdown).toContain("grants read-only `get`/`list` access on `apps` `replicasets`")
     expect(markdown).toContain("spec.replicas == 0")
@@ -323,7 +372,7 @@ describe("allowlist integrity and docs parity", () => {
       expect(en[key].trim().length).toBeGreaterThan(0)
       expect(ko[key]).toMatch(/[\uAC00-\uD7A3]/)
     }
-    for (const rule of [...ACCEPTED_CONFIG_AUDIT_RULES, ...ACCEPTED_RBAC_RULES]) {
+    for (const rule of [...ACCEPTED_CONFIG_AUDIT_RULES, ...ACCEPTED_RBAC_RULES, ...ACCEPTED_INFRA_RULES]) {
       expect(en[rule.reasonKey]).toBe(rule.reason)
       expect(ko[rule.reasonKey]).toMatch(/[\uAC00-\uD7A3]/)
     }

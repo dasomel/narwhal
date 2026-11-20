@@ -924,7 +924,8 @@ export const ko = {
   "compliance.counter.configAuditBreakdown": "위생 {low}건(LOW) · 수용 {accepted}건(시스템/예외)",
   "compliance.counter.rbac": "RBAC 실패 (조치가능)",
   "compliance.counter.rbacBreakdown": "+{accepted} 수용(빌트인/업스트림/예외)",
-  "compliance.counter.infra": "인프라 실패",
+  "compliance.counter.infra": "인프라 실패 (조치가능)",
+  "compliance.counter.infraBreakdown": "+{accepted} 수용(예외)",
   "compliance.counter.frameworksPassRate": "프레임워크 통과율",
   "compliance.counter.frameworksBreakdown": "조치가능 {actionable}건 · 수용 {accepted}건",
   "compliance.framework.passRate": "통과율",
@@ -959,6 +960,7 @@ export const ko = {
   "compliance.table.acceptedRbac": "수용(빌트인/업스트림)",
   "compliance.table.acceptedRbacHint": "K8s 빌트인 역할(system:*, cluster-admin 등), 업스트림 컨트롤러/차트 역할, 또는 검토된 예외 역할 — 조치 대상 아님",
   "compliance.table.rbacActionableSummary": "조치가능 {actionable}건 · 수용 {accepted}건(빌트인/업스트림/예외)",
+  "compliance.table.infraActionableSummary": "조치가능 {actionable}건 · 수용 {accepted}건(예외)",
   "compliance.forbidden": "cluster-admin 권한이 필요합니다",
   "compliance.filter.severity": "심각도 필터",
   "compliance.filter.namespace": "네임스페이스 필터",
@@ -1056,6 +1058,7 @@ export const ko = {
   "compliance.acceptedReason.rbacDeveloperWorkloadAdmin": "dev RoleBinding으로만 범위가 제한된 개발자 워크로드 관리 권한",
   "compliance.acceptedReason.rbacPortalJobs": "Kyverno 어드미션 정책으로 보호되는 튜닝 및 Kaniko 빌드 Job 권한",
   "compliance.acceptedReason.rbacPortalNotificationChannels": "단일 Secret 이름과 get/update/patch 동사로만 범위가 제한됨",
+  "compliance.acceptedReason.infraCniDirGlob": "node-collector:0.3.1(trivy-checks CMD-0009)이 `stat -c %a /*/cni/*`로 내부 파일(600)이 아닌 `/etc/cni/net.d` 디렉터리(700)를 검사하며 trivy-operator 0.25는 명령 오버라이드를 지원하지 않음(디스크 파일 600 권한은 harden-node-files.sh 적용 및 verify-cluster.sh로 검증)",
 
   // common expand/collapse + navigation
   "common.viewFullDetails": "상세 보기",
@@ -2413,7 +2416,8 @@ export const en: Record<keyof typeof ko, string> = {
   "compliance.counter.configAuditBreakdown": "{low} low-severity (hygiene) · {accepted} accepted (system/exception)",
   "compliance.counter.rbac": "RBAC Failures (Actionable)",
   "compliance.counter.rbacBreakdown": "+{accepted} accepted (built-in/upstream/exception)",
-  "compliance.counter.infra": "Infra Failures",
+  "compliance.counter.infra": "Infra Failures (Actionable)",
+  "compliance.counter.infraBreakdown": "+{accepted} accepted (exception)",
   "compliance.counter.frameworksPassRate": "Framework Pass Rate",
   "compliance.counter.frameworksBreakdown": "{actionable} actionable · {accepted} accepted",
   "compliance.framework.passRate": "Pass rate",
@@ -2448,6 +2452,7 @@ export const en: Record<keyof typeof ko, string> = {
   "compliance.table.acceptedRbac": "Accepted (built-in/upstream)",
   "compliance.table.acceptedRbacHint": "Kubernetes built-in role (system:*, cluster-admin, etc.), upstream controller/chart role, or reviewed exception role — not actionable",
   "compliance.table.rbacActionableSummary": "{actionable} actionable · {accepted} accepted (built-in/upstream/exception)",
+  "compliance.table.infraActionableSummary": "{actionable} actionable · {accepted} accepted (exception)",
   "compliance.forbidden": "cluster-admin role required",
   "compliance.filter.severity": "Severity filter",
   "compliance.filter.namespace": "Namespace filter",
@@ -2545,6 +2550,7 @@ export const en: Record<keyof typeof ko, string> = {
   "compliance.acceptedReason.rbacDeveloperWorkloadAdmin": "Developer workload management privileges scoped solely via dev RoleBinding",
   "compliance.acceptedReason.rbacPortalJobs": "Tuning and Kaniko build Jobs guarded by Kyverno admission policies",
   "compliance.acceptedReason.rbacPortalNotificationChannels": "Scoped to a single Secret name with get/update/patch verbs only",
+  "compliance.acceptedReason.infraCniDirGlob": "node-collector:0.3.1 (trivy-checks CMD-0009) runs `stat -c %a /*/cni/*`, matching the `/etc/cni/net.d` directory (mode 700) instead of files inside it (mode 600), and trivy-operator 0.25 exposes no command override; on-disk CNI 600 permissions are enforced by harden-node-files.sh and verified by verify-cluster.sh",
 
   // common expand/collapse + navigation
   "common.viewFullDetails": "View full details",

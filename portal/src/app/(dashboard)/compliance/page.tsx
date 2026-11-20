@@ -26,6 +26,7 @@ const emptySummary: ComplianceSummary = {
   totalRbacFailures: { Critical: 0, High: 0, Medium: 0, Low: 0 },
   acceptedRbacFailures: { Critical: 0, High: 0, Medium: 0, Low: 0 },
   totalInfraFailures: { Critical: 0, High: 0, Medium: 0, Low: 0 },
+  acceptedInfraFailures: { Critical: 0, High: 0, Medium: 0, Low: 0 },
   frameworks: [],
   scannedWorkloads: 0,
   scannedRbacObjects: 0,

@@ -3,6 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server"
 
 const mockGetConfigAuditDetail = vi.hoisted(() => vi.fn())
 const mockGetRbacAuditDetail = vi.hoisted(() => vi.fn())
+const mockGetInfraAuditDetail = vi.hoisted(() => vi.fn())
 const mockGetComplianceFrameworkDetail = vi.hoisted(() => vi.fn())
 const mockGetLocale = vi.hoisted(() => vi.fn(async (): Promise<"ko" | "en"> => "ko"))
 
@@ -16,6 +17,7 @@ vi.mock("@/lib/i18n-server", () => ({
 vi.mock("@/lib/compliance", () => ({
   getConfigAuditDetail: mockGetConfigAuditDetail,
   getRbacAuditDetail: mockGetRbacAuditDetail,
+  getInfraAuditDetail: mockGetInfraAuditDetail,
   getComplianceFrameworkDetail: mockGetComplianceFrameworkDetail,
 }))
 
@@ -29,13 +31,15 @@ vi.mock("@tanstack/react-query", async (importOriginal) => {
 
 import { useQuery } from "@tanstack/react-query"
 import { LocaleProvider } from "@/lib/i18n-client"
-import { ko, translateAcceptedReason } from "@/lib/i18n"
+import { en, ko, translateAcceptedReason } from "@/lib/i18n"
 import type {
   ComplianceFramework,
   ComplianceFrameworkDetail,
   ComplianceSummary,
   ConfigAuditDetail,
   ConfigAuditRow,
+  InfraAuditDetail,
+  InfraAuditRow,
   RbacAuditDetail,
   RbacAuditRow,
 } from "@/types/compliance"
@@ -43,9 +47,11 @@ import { COMPLIANCE_EXCEPTIONS_DOC_ANCHOR } from "@/lib/compliance-accepted"
 import { FailureCounters } from "./failure-counters"
 import { ConfigAuditTable, ExpandedConfigPanel } from "./config-audit-table"
 import { ExpandedFrameworkPanel, FrameworksGrid } from "./frameworks-grid"
+import { ExpandedInfraPanel, InfraAuditList } from "./infra-audit-list"
 import { ExpandedRbacPanel, RbacAuditTable } from "./rbac-audit-table"
 import ConfigAuditDetailPage from "@/app/(dashboard)/compliance/config-audit/[ns]/[name]/page"
 import FrameworkDetailPage from "@/app/(dashboard)/compliance/frameworks/[id]/page"
+import InfraAuditDetailPage from "@/app/(dashboard)/compliance/infra-audit/[node]/page"
 import RbacAuditDetailPage from "@/app/(dashboard)/compliance/rbac-audit/[ns]/[name]/page"
 
 describe("Compliance UI accepted exceptions", () => {
@@ -56,7 +62,8 @@ describe("Compliance UI accepted exceptions", () => {
       acceptedSystemConfigAuditFailures: { Critical: 0, High: 22, Medium: 15, Low: 8 },
       totalRbacFailures: { Critical: 0, High: 0, Medium: 2, Low: 0 },
       acceptedRbacFailures: { Critical: 10, High: 20, Medium: 30, Low: 0 },
-      totalInfraFailures: { Critical: 0, High: 1, Medium: 0, Low: 0 },
+      totalInfraFailures: { Critical: 0, High: 0, Medium: 0, Low: 1 },
+      acceptedInfraFailures: { Critical: 0, High: 1, Medium: 0, Low: 0 },
       frameworks: [{ id: "cis", title: "CIS", passCount: 8, failCount: 2, totalControls: 10, passRate: 0.8 }],
       scannedWorkloads: 76,
       scannedRbacObjects: 192,
@@ -68,10 +75,12 @@ describe("Compliance UI accepted exceptions", () => {
     expect(koHtml).toContain("5")
     expect(koHtml).toContain("위생 40건(LOW) · 수용 45건(시스템/예외)")
     expect(koHtml).toContain("+60 수용(빌트인/업스트림/예외)")
+    expect(koHtml).toContain("+1 수용(예외)")
 
     const enHtml = renderToStaticMarkup(<FailureCounters summary={summary} locale="en" />)
     expect(enHtml).toContain("40 low-severity (hygiene) · 45 accepted (system/exception)")
     expect(enHtml).toContain("+60 accepted (built-in/upstream/exception)")
+    expect(enHtml).toContain("+1 accepted (exception)")
   })
 
   it("ConfigAuditTable shows accepted badges and keeps accepted rows visible", () => {
@@ -370,6 +379,7 @@ describe("Compliance UI accepted exceptions", () => {
       totalRbacFailures: { Critical: 0, High: 0, Medium: 0, Low: 0 },
       acceptedRbacFailures: { Critical: 0, High: 0, Medium: 0, Low: 0 },
       totalInfraFailures: { Critical: 0, High: 0, Medium: 0, Low: 0 },
+      acceptedInfraFailures: { Critical: 0, High: 0, Medium: 0, Low: 0 },
       frameworks,
       scannedWorkloads: 50,
       scannedRbacObjects: 30,
@@ -499,6 +509,7 @@ describe("Compliance UI accepted exceptions", () => {
       totalRbacFailures: { Critical: 0, High: 0, Medium: 0, Low: 0 },
       acceptedRbacFailures: { Critical: 0, High: 0, Medium: 0, Low: 0 },
       totalInfraFailures: { Critical: 0, High: 0, Medium: 0, Low: 0 },
+      acceptedInfraFailures: { Critical: 0, High: 0, Medium: 0, Low: 0 },
       frameworks,
       scannedWorkloads: 10,
       scannedRbacObjects: 5,
@@ -571,5 +582,97 @@ describe("Compliance UI accepted exceptions", () => {
     expect(pageHtml).toContain("Raw failed 2 (pass rate 80%)")
     expect(pageHtml).toContain("raw 2")
     expect(pageHtml).not.toContain("+0 accepted")
+  })
+
+  it("InfraAuditList, ExpandedInfraPanel, and InfraAuditDetailPage surface accepted KCV0056 while keeping raw counts", async () => {
+    const infraRows: InfraAuditRow[] = [
+      {
+        node: "narwhal-master-1",
+        summary: { Critical: 0, High: 1, Medium: 0, Low: 0 },
+        actionableSummary: { Critical: 0, High: 0, Medium: 0, Low: 0 },
+        acceptedSummary: { Critical: 0, High: 1, Medium: 0, Low: 0 },
+        accepted: true,
+        acceptedScope: "upstream",
+      },
+      {
+        node: "narwhal-master-2",
+        summary: { Critical: 0, High: 0, Medium: 0, Low: 1 },
+        actionableSummary: { Critical: 0, High: 0, Medium: 0, Low: 1 },
+        acceptedSummary: { Critical: 0, High: 0, Medium: 0, Low: 0 },
+        accepted: false,
+      },
+    ]
+
+    vi.mocked(useQuery).mockReturnValue({
+      data: infraRows,
+      isLoading: false,
+      isError: false,
+      refetch: vi.fn(),
+    } as never)
+
+    const listEn = renderToStaticMarkup(
+      <LocaleProvider locale="en">
+        <InfraAuditList />
+      </LocaleProvider>,
+    )
+    expect(listEn).toContain("1 actionable · 1 accepted (exception)")
+    expect(listEn).toContain("narwhal-master-1")
+    expect(listEn).toContain("Upstream accepted")
+    expect(listEn).toContain("High: 1")
+    expect(listEn).toContain("1 issues")
+
+    const detail: InfraAuditDetail = {
+      node: "narwhal-master-1",
+      summary: { Critical: 0, High: 1, Medium: 0, Low: 1 },
+      actionableSummary: { Critical: 0, High: 0, Medium: 0, Low: 1 },
+      acceptedSummary: { Critical: 0, High: 1, Medium: 0, Low: 0 },
+      accepted: false,
+      checks: [
+        {
+          id: "KCV0056",
+          title: "Ensure CNI file perms 600",
+          severity: "High",
+          success: false,
+          accepted: true,
+          acceptedClass: "upstream",
+          acceptedReasonKey: "compliance.acceptedReason.infraCniDirGlob",
+          acceptedReason: "CMD-0009 globs /etc/cni/net.d directory",
+        },
+        {
+          id: "KCV0059",
+          title: "Ensure etcd data dir ownership",
+          severity: "Low",
+          success: false,
+          accepted: false,
+        },
+      ],
+    }
+
+    vi.mocked(useQuery).mockReturnValue({
+      data: detail,
+      isLoading: false,
+      isError: false,
+      refetch: vi.fn(),
+    } as never)
+
+    const expandedKo = renderToStaticMarkup(
+      <LocaleProvider locale="ko">
+        <ExpandedInfraPanel node="narwhal-master-1" />
+      </LocaleProvider>,
+    )
+    expect(expandedKo).toContain("KCV0059")
+    expect(expandedKo).toContain("KCV0056")
+    expect(expandedKo).toContain("업스트림 수용")
+    expect(expandedKo).toContain(ko["compliance.acceptedReason.infraCniDirGlob"])
+    expect(expandedKo.indexOf("KCV0059")).toBeLessThan(expandedKo.indexOf("KCV0056"))
+
+    mockGetLocale.mockResolvedValue("en")
+    mockGetInfraAuditDetail.mockResolvedValue(detail)
+    const detailEl = await InfraAuditDetailPage({ params: Promise.resolve({ node: "narwhal-master-1" }) })
+    const detailHtml = renderToStaticMarkup(detailEl)
+    expect(detailHtml).toContain("Accepted (upstream)")
+    expect(detailHtml).toContain(en["compliance.acceptedReason.infraCniDirGlob"])
+    expect(detailHtml).toContain("High")
+    expect(detailHtml).toContain("Low")
   })
 })

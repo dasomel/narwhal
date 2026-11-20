@@ -31,6 +31,16 @@ export interface AcceptedRbacRule {
   docAnchor: string
 }
 
+export interface AcceptedInfraRule {
+  /** Exact node name or "*" for a cluster-wide node-collector check limitation. */
+  node: string
+  checks: ReadonlySet<string>
+  class: AcceptedClass
+  reasonKey: AcceptedReasonKey
+  reason: string
+  docAnchor: string
+}
+
 export interface AcceptedMatch {
   class: AcceptedClass
   reasonKey: AcceptedReasonKey
@@ -39,11 +49,14 @@ export interface AcceptedMatch {
 }
 
 /**
- * Normalizes Trivy KSV check IDs so equivalent forms match identically:
+ * Normalizes Trivy KSV/KCV check IDs so equivalent forms match identically:
  * - "AVD-KSV-0017" -> "KSV017"
  * - "AVD-KSV-0108" -> "KSV108"
  * - "ksv17"        -> "KSV017"
  * - "KSV017"       -> "KSV017"
+ * - "AVD-KCV-0056" -> "KCV0056"
+ * - "kcv56"        -> "KCV0056"
+ * - "KCV0056"      -> "KCV0056"
  */
 export function normalizeCheckId(raw: string): string {
   const upper = raw.trim().toUpperCase()
@@ -51,6 +64,10 @@ export function normalizeCheckId(raw: string): string {
   if (avd) return `KSV${avd[1].padStart(3, "0")}`
   const ksv = /^KSV0*(\d+)$/.exec(upper)
   if (ksv) return `KSV${ksv[1].padStart(3, "0")}`
+  const avdKcv = /^AVD-KCV-0*(\d+)$/.exec(upper)
+  if (avdKcv) return `KCV${avdKcv[1].padStart(4, "0")}`
+  const kcv = /^KCV0*(\d+)$/.exec(upper)
+  if (kcv) return `KCV${kcv[1].padStart(4, "0")}`
   return upper
 }
 
@@ -119,6 +136,22 @@ function rbacRule(
     namespace,
     kind,
     roleName,
+    checks: checksSet(ids),
+    class: cls,
+    reasonKey,
+    reason: en[reasonKey],
+    docAnchor: COMPLIANCE_EXCEPTIONS_DOC_ANCHOR,
+  }
+}
+
+function infraRule(
+  node: string,
+  ids: readonly string[],
+  cls: AcceptedClass,
+  reasonKey: AcceptedReasonKey,
+): AcceptedInfraRule {
+  return {
+    node,
     checks: checksSet(ids),
     class: cls,
     reasonKey,
@@ -780,6 +813,20 @@ export const ACCEPTED_RBAC_RULES: readonly AcceptedRbacRule[] = [
   ),
 ]
 
+/**
+ * Reviewed node-level Infra Assessment exceptions for upstream collector checks that cannot
+ * pass on a compliant node by design. Exact normalized check ID match; unlisted KCV IDs
+ * (including KCV0059) stay actionable (fail closed).
+ */
+export const ACCEPTED_INFRA_RULES: readonly AcceptedInfraRule[] = [
+  infraRule(
+    "*",
+    ["KCV0056"],
+    "upstream",
+    "compliance.acceptedReason.infraCniDirGlob",
+  ),
+]
+
 const configRuleIndex = new Map<string, AcceptedConfigAuditRule[]>()
 for (const rule of ACCEPTED_CONFIG_AUDIT_RULES) {
   const key = `${rule.namespace}\0${rule.kind}\0${rule.name}`
@@ -794,6 +841,13 @@ for (const rule of ACCEPTED_RBAC_RULES) {
   const bucket = rbacRuleIndex.get(key)
   if (bucket) bucket.push(rule)
   else rbacRuleIndex.set(key, [rule])
+}
+
+const infraRuleIndex = new Map<string, AcceptedInfraRule[]>()
+for (const rule of ACCEPTED_INFRA_RULES) {
+  const bucket = infraRuleIndex.get(rule.node)
+  if (bucket) bucket.push(rule)
+  else infraRuleIndex.set(rule.node, [rule])
 }
 
 export function matchConfigAuditException(
@@ -833,6 +887,26 @@ export function matchRbacException(
   if (!rules) return null
   const normalizedCheck = normalizeCheckId(checkId)
   for (const rule of rules) {
+    if (rule.checks.has(normalizedCheck)) {
+      return {
+        class: rule.class,
+        reasonKey: rule.reasonKey,
+        reason: rule.reason,
+        docAnchor: rule.docAnchor,
+      }
+    }
+  }
+  return null
+}
+
+export function matchInfraException(node: string, checkId: string): AcceptedMatch | null {
+  if (node.trim() === "" || checkId.trim() === "") return null
+  const normalizedCheck = normalizeCheckId(checkId)
+  const candidates = [
+    ...(infraRuleIndex.get(node) ?? []),
+    ...(node !== "*" ? (infraRuleIndex.get("*") ?? []) : []),
+  ]
+  for (const rule of candidates) {
     if (rule.checks.has(normalizedCheck)) {
       return {
         class: rule.class,

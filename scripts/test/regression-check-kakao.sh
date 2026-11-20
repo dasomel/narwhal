@@ -3528,6 +3528,9 @@ PYEOF'
   # 2026-11-20 (#757): OpenBao snapshot backup missing/mismatched recipient ConfigMap surfaced at Phase 2 (06/provision-kakao) / verify-cluster / verify-backup + promtool-verified OpenBaoSnapshotBackupStale alert
   check R384 "OpenBao snapshot backup activation check (D-OPENBAO-BACKUP-ACTIVATION) surfaces missing/invalid/non-RSA/weak/mismatched recipient ConfigMap, absent CronJob, lookup errors, and missing helper in Phase 2 (06-phase2-start.sh via /home/vagrant guest path + provision-kakao.sh without failing install), verify-cluster, and verify-backup (portable python3 UTC age); OpenBaoSnapshotBackupStale preserves namespace/cronjob labels and handles never-succeeded/zero/ksm-down/suspended (11 promtool cases); runbook 3.7/4 updated; 17 mutations caught (#757)" \
     python3 scripts/test/lib/check-openbao-backup-activation.py --mutation-verify
+  # 2026-11-20: node compliance checks KCV0059 (/etc/passwd+/etc/group mounts in trivy-operator.yaml) & KCV0056 (portal Infra/Framework accepted split + verify-cluster.sh on-disk CIS 1.1.9/1.1.12 verifier)
+  check R385 "Node compliance checks: trivy-operator.yaml mounts host /etc/passwd and /etc/group read-only into nodeCollector while keeping all 8 chart defaults (fixes KCV0059 truthfully), portal Infra/Frameworks allowlist only KCV0056 (upstream CMD-0009 /*/cni/* dir glob) fail-closed with raw counts visible, docs/i18n updated, and verify-cluster.sh verifies CNI files <=600 & /var/lib/etcd <=700 etcd:etcd on-node; behavioral fixture tests + 13 mutations caught" \
+    python3 scripts/test/lib/check-node-compliance-checks.py --mutation-verify
 }
 
 #=========================================

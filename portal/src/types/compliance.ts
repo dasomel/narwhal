@@ -70,6 +70,14 @@ export interface RbacAuditDetail extends RbacAuditRow {
 export interface InfraAuditRow {
   node: string
   summary: CheckSummary
+  /** Actionable (non-accepted) failing check counts for this node. */
+  actionableSummary?: CheckSummary
+  /** Accepted failing check counts for this node (covered by ACCEPTED_INFRA_RULES). */
+  acceptedSummary?: CheckSummary
+  /** true when ALL failing checks on this node are covered by ACCEPTED_INFRA_RULES
+   *  (see lib/compliance-accepted.ts). */
+  accepted?: boolean
+  acceptedScope?: AcceptedScope
 }
 
 export interface InfraAuditDetail extends InfraAuditRow {
@@ -134,7 +142,12 @@ export interface ComplianceSummary {
   /** Accepted RBAC-audit failures: built-in K8s roles, upstream controllers/charts, and reviewed
    *  check exceptions on authored roles — kept visible separately rather than dropped. */
   acceptedRbacFailures: CheckSummary
+  /** ACTIONABLE Infra-audit failures only — excludes findings covered by ACCEPTED_INFRA_RULES
+   *  (see lib/compliance-accepted.ts). Field name kept for API compat. */
   totalInfraFailures: CheckSummary
+  /** Accepted Infra-audit failures covered by reviewed node-check exceptions — kept visible
+   *  separately rather than dropped. */
+  acceptedInfraFailures: CheckSummary
   frameworks: ComplianceFramework[]
   scannedWorkloads: number
   scannedRbacObjects: number

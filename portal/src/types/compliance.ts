@@ -8,6 +8,12 @@ export interface CheckSummary {
   Low: number
 }
 
+/** Sums the four severity counts of a CheckSummary (safe for undefined or partial cached summaries). */
+export function sumCheckSummary(summary: Partial<CheckSummary> | undefined): number {
+  if (!summary) return 0
+  return (summary.Critical ?? 0) + (summary.High ?? 0) + (summary.Medium ?? 0) + (summary.Low ?? 0)
+}
+
 export type AcceptedClass = "accept" | "upstream"
 
 export type AcceptedScope = "system" | "builtin" | "accept" | "upstream" | "mixed"

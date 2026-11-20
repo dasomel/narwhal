@@ -13,22 +13,23 @@ import {
   matchInfraException,
   matchRbacException,
 } from "./compliance-accepted"
-import type {
-  AcceptedClass,
-  AcceptedScope,
-  Severity,
-  CheckSummary,
-  AuditCheck,
-  ConfigAuditRow,
-  ConfigAuditDetail,
-  RbacAuditRow,
-  RbacAuditDetail,
-  InfraAuditRow,
-  InfraAuditDetail,
-  ComplianceFramework,
-  ComplianceFrameworkDetail,
-  ComplianceControl,
-  ComplianceSummary,
+import {
+  sumCheckSummary,
+  type AcceptedClass,
+  type AcceptedScope,
+  type Severity,
+  type CheckSummary,
+  type AuditCheck,
+  type ConfigAuditRow,
+  type ConfigAuditDetail,
+  type RbacAuditRow,
+  type RbacAuditDetail,
+  type InfraAuditRow,
+  type InfraAuditDetail,
+  type ComplianceFramework,
+  type ComplianceFrameworkDetail,
+  type ComplianceControl,
+  type ComplianceSummary,
 } from "@/types/compliance"
 
 // --- K8s API helpers ---
@@ -584,12 +585,8 @@ function classifyInfraAuditItem(item: RawAuditReport): {
 
   const { summary, actionableSummary, acceptedSummary, matchedClasses, totalsMatchSummary } =
     splitSummariesByChecks(item.report.checks ?? [], item.report.summary, matcher)
-  const totalFailures = summary.Critical + summary.High + summary.Medium + summary.Low
-  const actionableTotal =
-    actionableSummary.Critical +
-    actionableSummary.High +
-    actionableSummary.Medium +
-    actionableSummary.Low
+  const totalFailures = sumCheckSummary(summary)
+  const actionableTotal = sumCheckSummary(actionableSummary)
   const accepted = totalsMatchSummary && totalFailures > 0 && actionableTotal === 0
   return {
     row: {
@@ -1058,6 +1055,10 @@ type FrameworkCheckDisposition =
   | { status: "actionable" }
   | { status: "accepted"; scope: FrameworkAcceptedToken }
 
+function scopeForAcceptedClass(acceptedClass: AcceptedClass | undefined): FrameworkAcceptedToken {
+  return acceptedClass === "upstream" ? "upstream" : "accept"
+}
+
 function classifyFrameworkCheck(
   check: { checkID?: string; target?: string },
   rsMap: Map<string, ReplicaSetSummary> | null,
@@ -1085,7 +1086,7 @@ function classifyFrameworkCheck(
     if (isSystemNamespace(resolved.namespace)) {
       return { status: "accepted", scope: "system" }
     }
-    return { status: "accepted", scope: ann.acceptedClass === "upstream" ? "upstream" : "accept" }
+    return { status: "accepted", scope: scopeForAcceptedClass(ann.acceptedClass) }
   }
 
   if (RBAC_TARGET_KINDS.has(resolved.kind)) {
@@ -1095,14 +1096,14 @@ function classifyFrameworkCheck(
     if (isAcceptedRbacRole(resolved.name, resolved.namespace, resolved.kind)) {
       return { status: "accepted", scope: isBuiltInRbacRole(resolved.name) ? "builtin" : "upstream" }
     }
-    return { status: "accepted", scope: ann.acceptedClass === "upstream" ? "upstream" : "accept" }
+    return { status: "accepted", scope: scopeForAcceptedClass(ann.acceptedClass) }
   }
 
   if (resolved.kind === "Node") {
     const matcher = infraAuditMatcher(resolved.name)
     const ann = matcher(checkId)
     if (!ann.accepted) return { status: "actionable" }
-    return { status: "accepted", scope: ann.acceptedClass === "upstream" ? "upstream" : "accept" }
+    return { status: "accepted", scope: scopeForAcceptedClass(ann.acceptedClass) }
   }
 
   return { status: "actionable" }

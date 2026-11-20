@@ -58,17 +58,15 @@ export interface AcceptedMatch {
  * - "kcv56"        -> "KCV0056"
  * - "KCV0056"      -> "KCV0056"
  */
+const CHECK_ID_PAD_WIDTH = { KSV: 3, KCV: 4 } as const
+const CHECK_ID_RE = /^(?:AVD-(KSV|KCV)-|(KSV|KCV))0*(\d+)$/
+
 export function normalizeCheckId(raw: string): string {
   const upper = raw.trim().toUpperCase()
-  const avd = /^AVD-KSV-0*(\d+)$/.exec(upper)
-  if (avd) return `KSV${avd[1].padStart(3, "0")}`
-  const ksv = /^KSV0*(\d+)$/.exec(upper)
-  if (ksv) return `KSV${ksv[1].padStart(3, "0")}`
-  const avdKcv = /^AVD-KCV-0*(\d+)$/.exec(upper)
-  if (avdKcv) return `KCV${avdKcv[1].padStart(4, "0")}`
-  const kcv = /^KCV0*(\d+)$/.exec(upper)
-  if (kcv) return `KCV${kcv[1].padStart(4, "0")}`
-  return upper
+  const match = CHECK_ID_RE.exec(upper)
+  if (!match) return upper
+  const family = (match[1] ?? match[2]) as keyof typeof CHECK_ID_PAD_WIDTH
+  return `${family}${match[3].padStart(CHECK_ID_PAD_WIDTH[family], "0")}`
 }
 
 /**

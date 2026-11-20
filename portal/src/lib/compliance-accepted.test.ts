@@ -76,6 +76,23 @@ describe("normalizeCheckId", () => {
     expect(normalizeCheckId("kcv56")).toBe("KCV0056")
     expect(normalizeCheckId(" KCV0059 ")).toBe("KCV0059")
   })
+
+  it.each([
+    ["AVD-KSV-0001", "KSV001"],
+    ["avd-ksv-17", "KSV017"],
+    ["KSV0000", "KSV000"],
+    ["KSV-0017", "KSV-0017"],
+    ["AVD-KSV0017", "AVD-KSV0017"],
+    ["AVD-KCV-00059", "KCV0059"],
+    ["avd-kcv-9", "KCV0009"],
+    ["KCV00000", "KCV0000"],
+    ["KCV-0056", "KCV-0056"],
+    ["AVD-KCV0056", "AVD-KCV0056"],
+    ["avd-dsv-0001", "AVD-DSV-0001"],
+    [" khv12 ", "KHV12"],
+  ])("normalizes %s -> %s", (input, expected) => {
+    expect(normalizeCheckId(input)).toBe(expected)
+  })
 })
 
 describe("normalizeWorkloadName", () => {

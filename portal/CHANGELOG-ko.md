@@ -9,6 +9,8 @@
 
 ## [Unreleased]
 
+## [1.1.23] - 2026-11-20
+
 ### 변경
 
 - **`KCV0056` 인프라 감사 및 프레임워크 수용/조치가능 분리 (`src/lib/compliance-accepted.ts`, `src/lib/compliance.ts`, `src/types/compliance.ts`, `src/components/compliance/infra-audit-list.tsx`, `src/components/compliance/failure-counters.tsx`, `src/app/(dashboard)/compliance/infra-audit/[node]/page.tsx`, `src/lib/i18n.ts`):**
@@ -923,7 +925,8 @@ Portal의 첫 번째 공개 릴리스.
     매니페스트(`deploy/kaniko-build-job.yaml`).
   - 실시간 핫 모듈 교체(HMR) 및 컨테이너 파일 동기화를 위해 구성된 Skaffold 개발 프로필.
 
-[Unreleased]: https://github.com/dasomel/narwhal/compare/portal/v1.1.22...HEAD
+[Unreleased]: https://github.com/dasomel/narwhal/compare/portal/v1.1.23...HEAD
+[1.1.23]: https://github.com/dasomel/narwhal/compare/portal/v1.1.22...portal/v1.1.23
 [1.1.22]: https://github.com/dasomel/narwhal/compare/portal/v1.1.21...portal/v1.1.22
 [1.1.21]: https://github.com/dasomel/narwhal/compare/portal/v1.1.20...portal/v1.1.21
 [1.1.20]: https://github.com/dasomel/narwhal/compare/portal/v1.1.19...portal/v1.1.20

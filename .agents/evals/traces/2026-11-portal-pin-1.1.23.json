@@ -1,0 +1,70 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-portal-pin-1-1-23-20261120",
+  "task": "Pin the published Portal 1.1.23 image and matching air-gap digest; live rollout is out of scope for this change and not claimed. In-cluster Kyverno verification is known to fail for Portal images (narwhal#684).",
+  "changeContext": {
+    "paths": [
+      "gitops/charts/narwhal-platform/templates/narwhal-portal-k8s.yaml",
+      "gitops/README.md",
+      "gitops/README-ko.md",
+      "scripts/airgap/images.txt",
+      "scripts/airgap/lib/image-digests.tsv",
+      "VERSIONS.md",
+      "SECURITY.md",
+      "docs/common/compatibility-matrix.md",
+      "CHANGELOG.md",
+      "CHANGELOG-ko.md",
+      ".agents/evals/traces/2026-11-portal-pin-1.1.23.json",
+      "portal/src/data/oss-versions.generated.json"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Scope: update the Portal image pin, matching air-gap digest, generated OSS version data and documentation; no RBAC or deployment structure change. Trace content is reported for the orchestrator to write."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "Portal release portal/v1.1.23 is published at 4bc5139f. Publish workflow run 44679945380 succeeded including SBOM job and sign+attest; GitHub release Portal v1.1.23 published. Registry digest and signature details were supplied by the orchestrator; local live rollout is not claimed (done by orchestrator after merge). In-cluster Kyverno verification is known to fail for Portal images (narwhal#684).",
+      "evidence": [
+        "orchestrator: portal/v1.1.23 -> commit 4bc5139f; GitHub release published; publish workflow run 44679945380 succeeded including SBOM job and sign+attest",
+        "orchestrator: image ghcr.io/dasomel/narwhal-portal:1.1.23; digest sha256:5e84411a61730e7fb3459d04c9d93433c3a66f560a18b47976379b2c5b7f0809",
+        "orchestrator, measured 2026-11-20T05:21:43Z: crane digest returned the digest above; cosign verify v3.1.4 with the repository public key and transparency log passed on 2026-11-20",
+        "orchestrator: image published for amd64 and arm64; bundle signature and legacy sha256-5e84411a61730e7fb3459d04c9d93433c3a66f560a18b47976379b2c5b7f0809.sig exist"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "Move pin 1.1.22 -> 1.1.23 in GitOps, air-gap inventory and digest, generated OSS versions and documentation; 1.1.16, 1.1.17, 1.1.18, 1.1.19, 1.1.20, 1.1.21 and 1.1.22 were intermediate pins. Release changes: Compliance Infra tab and Frameworks split accepted exceptions from actionable failures for node checks, with one rule for KCV0056 (#760)."
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "Local static pin consistency, YAML validation and regression suite; no runtime rollout.",
+      "summary": "make test passed 494 checks with zero failures and three warnings. make validate, version consistency, generated versions and changed-line markdown lint passed. Live rollout is done by the orchestrator after merge; in-cluster Kyverno verification is known to fail for Portal images (narwhal#684).",
+      "evidence": [
+        "test:make test -> passed 494 failed 0 warnings 3; exit 0",
+        "test:make validate -> exit 0",
+        "test:bash scripts/ci/check-version-consistency.sh -> exit 0",
+        "test:node portal/scripts/gen-oss-versions.mjs --check -> in sync",
+        "test:python3 scripts/ci/markdownlint-changed.py --base origin/main -> no violations"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "completion_claim",
+      "summary": "No live rollout is claimed; live rollout is done by the orchestrator after merge. In-cluster Kyverno verification is known to fail for Portal images (narwhal#684)."
+    },
+    {
+      "id": "e6",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Static pin change; make test (494 passed, 0 failed), make validate, version consistency, generated versions and changed-line markdown lint passed. Live rollout is done by the orchestrator after merge; in-cluster Kyverno verification is known to fail for Portal images (narwhal#684)."
+    }
+  ]
+}

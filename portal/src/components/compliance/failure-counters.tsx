@@ -1,6 +1,6 @@
 import { t } from "@/lib/i18n"
 import type { Locale } from "@/lib/i18n"
-import type { ComplianceSummary } from "@/types/compliance"
+import { sumCheckSummary, type ComplianceSummary } from "@/types/compliance"
 
 interface Props {
   summary: ComplianceSummary
@@ -53,22 +53,10 @@ const counterConfig = [
 
 export function FailureCounters({ summary, locale }: Props) {
   const passRate = avgPassRate(summary.frameworks)
-  const acceptedSystemTotal =
-    (summary.acceptedSystemConfigAuditFailures?.Critical ?? 0) +
-    (summary.acceptedSystemConfigAuditFailures?.High ?? 0) +
-    (summary.acceptedSystemConfigAuditFailures?.Medium ?? 0) +
-    (summary.acceptedSystemConfigAuditFailures?.Low ?? 0)
+  const acceptedSystemTotal = sumCheckSummary(summary.acceptedSystemConfigAuditFailures)
   const lowSeverityTotal = summary.lowSeverityConfigAuditFailures?.Low ?? 0
-  const acceptedRbacTotal =
-    (summary.acceptedRbacFailures?.Critical ?? 0) +
-    (summary.acceptedRbacFailures?.High ?? 0) +
-    (summary.acceptedRbacFailures?.Medium ?? 0) +
-    (summary.acceptedRbacFailures?.Low ?? 0)
-  const acceptedInfraTotal =
-    (summary.acceptedInfraFailures?.Critical ?? 0) +
-    (summary.acceptedInfraFailures?.High ?? 0) +
-    (summary.acceptedInfraFailures?.Medium ?? 0) +
-    (summary.acceptedInfraFailures?.Low ?? 0)
+  const acceptedRbacTotal = sumCheckSummary(summary.acceptedRbacFailures)
+  const acceptedInfraTotal = sumCheckSummary(summary.acceptedInfraFailures)
   const actionableControlsTotal = summary.frameworks.reduce(
     (acc, f) => acc + (f.actionableFailCount ?? f.failCount),
     0,

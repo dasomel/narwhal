@@ -6,7 +6,7 @@ import { translateAcceptedReason } from "@/lib/i18n"
 import { DataState } from "@/components/ui/data-state"
 import { translateTitle, translateRemediation } from "@/lib/check-translations"
 import { Badge } from "@/components/ui/badge"
-import type { InfraAuditRow, InfraAuditDetail, Severity } from "@/types/compliance"
+import { sumCheckSummary, type InfraAuditRow, type InfraAuditDetail, type Severity } from "@/types/compliance"
 
 const severityBadgeClass: Record<Severity, string> = {
   Critical: "bg-red-100 text-red-700 dark:bg-red-950/50 dark:text-red-400",
@@ -14,10 +14,6 @@ const severityBadgeClass: Record<Severity, string> = {
   Medium: "bg-amber-100 text-amber-700 dark:bg-amber-950/50 dark:text-amber-400",
   Low: "bg-blue-100 text-blue-700 dark:bg-blue-950/50 dark:text-blue-400",
   Unknown: "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400",
-}
-
-function totalFailures(summary: InfraAuditRow["summary"]): number {
-  return (summary.Critical ?? 0) + (summary.High ?? 0) + (summary.Medium ?? 0) + (summary.Low ?? 0)
 }
 
 export function ExpandedInfraPanel({ node }: { node: string }) {
@@ -123,7 +119,7 @@ export function InfraAuditList() {
     let actionableCount = 0
     let acceptedCount = 0
     for (const r of rows) {
-      const total = totalFailures(r.summary)
+      const total = sumCheckSummary(r.summary)
       if (total === 0) continue
       if (r.accepted) acceptedCount++
       else actionableCount++
@@ -150,14 +146,14 @@ export function InfraAuditList() {
       )}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         {rows.map((row) => {
-          const rawFailures = totalFailures(row.summary)
+          const rawFailures = sumCheckSummary(row.summary)
           const actionableFailures = row.actionableSummary
-            ? totalFailures(row.actionableSummary)
+            ? sumCheckSummary(row.actionableSummary)
             : row.accepted
               ? 0
               : rawFailures
           const acceptedFailures = row.acceptedSummary
-            ? totalFailures(row.acceptedSummary)
+            ? sumCheckSummary(row.acceptedSummary)
             : Math.max(0, rawFailures - actionableFailures)
           const hasActionable = actionableFailures > 0
           const isAcceptedOnly = Boolean(row.accepted) && !hasActionable && rawFailures > 0

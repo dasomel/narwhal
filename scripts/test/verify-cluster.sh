@@ -89,6 +89,18 @@ ambient_probe_denials() {
     | grep -F 'direction="inbound"' | grep -F "istio_converted_static_strict" | grep -c . || true
 }
 
+_node_priv() {
+  ${priv[@]+"${priv[@]}"} "$@"
+}
+
+_node_stat() {
+  local target="$1"
+  if _node_priv stat -L -c '%a %U:%G' "${target}" 2>/dev/null; then
+    return 0
+  fi
+  _node_priv stat -L -f '%Mp%Lp %Su:%Sg' "${target}" 2>/dev/null
+}
+
 # D-NODE-HARDENING-LIVE: verifies CIS 1.1.9 (CNI config files <=600, no suid/sgid/sticky) and
 # CIS 1.1.12 (/var/lib/etcd <=700 etcd:etcd, no suid/sgid/sticky) directly on the node filesystem
 # so allowlisting KCV0056 (node-collector /*/cni/* dir glob) never masks an on-disk permission
@@ -118,21 +130,13 @@ verify_node_file_hardening() {
     fi
   fi
 
-  _node_stat() {
-    local target="$1"
-    if ${priv[@]+"${priv[@]}"} stat -L -c '%a %U:%G' "${target}" 2>/dev/null; then
-      return 0
-    fi
-    ${priv[@]+"${priv[@]}"} stat -L -f '%Mp%Lp %Su:%Sg' "${target}" 2>/dev/null
-  }
-
-  if ! ${priv[@]+"${priv[@]}"} test -d "${cni_dir}" || ${priv[@]+"${priv[@]}"} test -L "${cni_dir}"; then
+  if ! _node_priv test -d "${cni_dir}" || _node_priv test -L "${cni_dir}"; then
     fail "CIS 1.1.9 CNI config dir missing or symlink: ${cni_dir}"
-  elif ! ${priv[@]+"${priv[@]}"} test -r "${cni_dir}" || ! ${priv[@]+"${priv[@]}"} test -x "${cni_dir}"; then
+  elif ! _node_priv test -r "${cni_dir}" || ! _node_priv test -x "${cni_dir}"; then
     fail "CIS 1.1.9 CNI config dir unreadable: ${cni_dir}"
   else
     local cni_files cni_count=0 cni_bad=""
-    if ! cni_files=$(${priv[@]+"${priv[@]}"} find -L "${cni_dir}" -mindepth 1 -maxdepth 1 -type f 2>/dev/null); then
+    if ! cni_files=$(_node_priv find -L "${cni_dir}" -mindepth 1 -maxdepth 1 -type f 2>/dev/null); then
       fail "CIS 1.1.9 CNI config dir scan failed (unreadable entry or broken symlink): ${cni_dir}"
     else
       cni_files=$(printf '%s\n' "${cni_files}" | sort)
@@ -157,7 +161,7 @@ verify_node_file_hardening() {
     fi
   fi
 
-  if ${priv[@]+"${priv[@]}"} test -d "${etcd_dir}" && ! ${priv[@]+"${priv[@]}"} test -L "${etcd_dir}"; then
+  if _node_priv test -d "${etcd_dir}" && ! _node_priv test -L "${etcd_dir}"; then
     local etcd_info etcd_mode etcd_owner
     etcd_info=$(_node_stat "${etcd_dir}" || echo "")
     etcd_mode="${etcd_info%% *}"
@@ -167,7 +171,7 @@ verify_node_file_hardening() {
     else
       fail "CIS 1.1.12 etcd data dir: ${etcd_dir} is ${etcd_mode:-?} ${etcd_owner:-?} (expected <=700 ${expected_etcd_owner})"
     fi
-  elif ${priv[@]+"${priv[@]}"} test -f "${etcd_manifest}"; then
+  elif _node_priv test -f "${etcd_manifest}"; then
     fail "CIS 1.1.12 etcd data dir missing or symlink: ${etcd_dir}"
   fi
 }

@@ -19,7 +19,7 @@ Verifies:
 
 from __future__ import annotations
 
-import copy
+from functools import lru_cache
 import hashlib
 import json
 import os
@@ -48,33 +48,27 @@ FILES = {
 
 HELM_COMMENT_RE = re.compile(r"\A\{\{-\s*/\*.*?\*/\s*-?\}\}\s*", re.S)
 
-DEFAULT_NODE_COLLECTOR_MOUNTS = {
-    "var-lib-etcd": "/var/lib/etcd",
-    "var-lib-kubelet": "/var/lib/kubelet",
-    "var-lib-kube-scheduler": "/var/lib/kube-scheduler",
-    "var-lib-kube-controller-manager": "/var/lib/kube-controller-manager",
-    "etc-systemd": "/etc/systemd",
-    "lib-systemd": "/lib/systemd/",
-    "etc-kubernetes": "/etc/kubernetes",
-    "etc-cni-netd": "/etc/cni/net.d/",
-}
+# (name, mountPath, hostPath) — chart 0.27.0 default mounts; lib-systemd keeps its trailing slash on mountPath only.
+DEFAULT_NODE_COLLECTOR_ENTRIES: tuple[tuple[str, str, str], ...] = (
+    ("var-lib-etcd", "/var/lib/etcd", "/var/lib/etcd"),
+    ("var-lib-kubelet", "/var/lib/kubelet", "/var/lib/kubelet"),
+    ("var-lib-kube-scheduler", "/var/lib/kube-scheduler", "/var/lib/kube-scheduler"),
+    ("var-lib-kube-controller-manager", "/var/lib/kube-controller-manager", "/var/lib/kube-controller-manager"),
+    ("etc-systemd", "/etc/systemd", "/etc/systemd"),
+    ("lib-systemd", "/lib/systemd/", "/lib/systemd"),
+    ("etc-kubernetes", "/etc/kubernetes", "/etc/kubernetes"),
+    ("etc-cni-netd", "/etc/cni/net.d/", "/etc/cni/net.d/"),
+)
 
-DEFAULT_NODE_COLLECTOR_VOLUMES = {
-    "var-lib-etcd": "/var/lib/etcd",
-    "var-lib-kubelet": "/var/lib/kubelet",
-    "var-lib-kube-scheduler": "/var/lib/kube-scheduler",
-    "var-lib-kube-controller-manager": "/var/lib/kube-controller-manager",
-    "etc-systemd": "/etc/systemd",
-    "lib-systemd": "/lib/systemd",
-    "etc-kubernetes": "/etc/kubernetes",
-    "etc-cni-netd": "/etc/cni/net.d/",
-}
+
+def _extract_fn(verify_text: str, name: str) -> str:
+    m = re.search(rf"^{re.escape(name)}\(\)\s*\{{.*?\n\}}", verify_text, re.S | re.M)
+    assert m, f"{name}() not found in verify-cluster.sh"
+    return m.group(0)
 
 
 def _extract_node_hardening_fn(verify_text: str) -> str:
-    m = re.search(r"verify_node_file_hardening\(\)\s*\{.*?\n\}", verify_text, re.S)
-    assert m, "verify_node_file_hardening() not found in verify-cluster.sh"
-    return m.group(0)
+    return "\n\n".join(_extract_fn(verify_text, n) for n in ("_node_priv", "_node_stat", "verify_node_file_hardening"))
 
 
 def _bash_interpreters() -> list[str]:
@@ -116,7 +110,7 @@ pass() {{ PASS_COUNT=$((PASS_COUNT + 1)); echo "PASS: $1"; }}
 fail() {{ FAIL_COUNT=$((FAIL_COUNT + 1)); echo "FAIL: $1"; }}
 warn() {{ WARN_COUNT=$((WARN_COUNT + 1)); echo "WARN: $1"; }}
 {fn_src}
-verify_node_file_hardening "$1" "{owner}" "{owner}"
+verify_node_file_hardening "$1" "{owner}" "${{3:-{owner}}}"
 echo "SUMMARY pass=$PASS_COUNT fail=$FAIL_COUNT warn=$WARN_COUNT"
 want_pass="${{2:-2}}"
 [ "$FAIL_COUNT" -eq 0 ] && [ "$PASS_COUNT" -eq "$want_pass" ]
@@ -126,9 +120,6 @@ want_pass="${{2:-2}}"
         tmp_path = Path(tmp)
         runner = tmp_path / "run.sh"
         runner.write_text(script_tpl, encoding="utf-8")
-        wrong_owner_script = script_tpl.replace(f'"{owner}" "{owner}"', f'"{owner}" "wronguser:wronggroup"')
-        wrong_runner = tmp_path / "run_wrong_owner.sh"
-        wrong_runner.write_text(wrong_owner_script, encoding="utf-8")
 
         def make_root(
             name: str,
@@ -176,61 +167,42 @@ want_pass="${{2:-2}}"
         bad_etcd_suid = make_root("bad_etcd_suid", 0o600, 0o4700)
         bad_etcd_sgid = make_root("bad_etcd_sgid", 0o600, 0o2700)
 
+        cases: list[tuple[str, Path, str, str, bool, str, str | None]] = [
+            ("compliant master fixture", good, "2", owner, True, "CIS 1.1.9 CNI file perms: 1 file(s) <=600", None),
+            ("compliant worker fixture", worker, "1", owner, True, "SUMMARY pass=1 fail=0", None),
+            ("missing etcd dir when etcd.yaml exists", etcd_missing, "2", owner, False, "FAIL: CIS 1.1.12 etcd data dir missing or symlink", None),
+            ("644 CNI file", bad_cni_644, "2", owner, False, "FAIL: CIS 1.1.9 CNI file perms", None),
+            ("0700 CNI file", bad_cni_700, "2", owner, False, "FAIL: CIS 1.1.9 CNI file perms", None),
+            ("4600 CNI file", bad_cni_suid, "2", owner, False, "FAIL: CIS 1.1.9 CNI file perms", None),
+            ("symlink->644 CNI file", bad_cni_symlink, "2", owner, False, "FAIL: CIS 1.1.9 CNI file perms", None),
+            ("empty CNI dir", empty_cni, "2", owner, False, "none found", None),
+            ("755 etcd dir", bad_etcd_755, "2", owner, False, "FAIL: CIS 1.1.12 etcd data dir", None),
+            ("4700 etcd dir", bad_etcd_suid, "2", owner, False, "FAIL: CIS 1.1.12 etcd data dir", None),
+            ("2700 etcd dir", bad_etcd_sgid, "2", owner, False, "FAIL: CIS 1.1.12 etcd data dir", None),
+            ("wrong etcd owner", good, "2", "wronguser:wronggroup", False, "FAIL: CIS 1.1.12 etcd data dir", None),
+        ]
+        if os.geteuid() != 0:
+            cases.append(("000 CNI dir", unreadable_cni, "2", owner, False, "FAIL: CIS 1.1.9 CNI config dir unreadable", "none found"))
+
+        def run_case(
+            bash_bin: str,
+            label: str,
+            fixture: Path,
+            want_pass: str,
+            etcd_owner: str,
+            expect_ok: bool,
+            required: str,
+            forbidden: str | None,
+        ) -> None:
+            res = subprocess.run([bash_bin, str(runner), str(fixture), want_pass, etcd_owner], capture_output=True, text=True)
+            ok = (res.returncode == 0) if expect_ok else (res.returncode != 0)
+            if not ok or required not in res.stdout or (forbidden is not None and forbidden in res.stdout):
+                errors.append(f"[{bash_bin}] {label}: {res.stdout} {res.stderr}")
+
         try:
             for bash_bin in interpreters:
-                tag = f"[{bash_bin}]"
-
-                # 1. Compliant master layout (600 CNI file, 700 etcd dir)
-                res_good = subprocess.run([bash_bin, str(runner), str(good), "2"], capture_output=True, text=True)
-                if res_good.returncode != 0 or "CIS 1.1.9 CNI file perms: 1 file(s) <=600" not in res_good.stdout:
-                    errors.append(f"{tag} rejected compliant master fixture: {res_good.stdout} {res_good.stderr}")
-
-                # 2. Compliant worker layout (600 CNI file, no etcd dir or manifest)
-                res_worker = subprocess.run([bash_bin, str(runner), str(worker), "1"], capture_output=True, text=True)
-                if res_worker.returncode != 0 or "SUMMARY pass=1 fail=0" not in res_worker.stdout:
-                    errors.append(f"{tag} rejected compliant worker fixture: {res_worker.stdout} {res_worker.stderr}")
-
-                # 3. etcd.yaml present but /var/lib/etcd missing
-                res_etcd_missing = subprocess.run([bash_bin, str(runner), str(etcd_missing), "2"], capture_output=True, text=True)
-                if res_etcd_missing.returncode == 0 or "FAIL: CIS 1.1.12 etcd data dir missing or symlink" not in res_etcd_missing.stdout:
-                    errors.append(f"{tag} missed missing etcd dir when etcd.yaml exists: {res_etcd_missing.stdout} {res_etcd_missing.stderr}")
-
-                # 4. Permissive/special CNI files (644, 0700, 4600, symlink->644)
-                for label, fixture in (
-                    ("644", bad_cni_644),
-                    ("0700", bad_cni_700),
-                    ("4600", bad_cni_suid),
-                    ("symlink->644", bad_cni_symlink),
-                ):
-                    res = subprocess.run([bash_bin, str(runner), str(fixture), "2"], capture_output=True, text=True)
-                    if res.returncode == 0 or "FAIL: CIS 1.1.9 CNI file perms" not in res.stdout:
-                        errors.append(f"{tag} missed {label} CNI file: {res.stdout} {res.stderr}")
-
-                # 5. Empty CNI dir
-                res_empty = subprocess.run([bash_bin, str(runner), str(empty_cni), "2"], capture_output=True, text=True)
-                if res_empty.returncode == 0 or "none found" not in res_empty.stdout:
-                    errors.append(f"{tag} missed empty CNI dir: {res_empty.stdout} {res_empty.stderr}")
-
-                # 6. Unreadable CNI dir (000) must report unreadable, not none found (non-root only)
-                if os.geteuid() != 0:
-                    res_unreadable = subprocess.run([bash_bin, str(runner), str(unreadable_cni), "2"], capture_output=True, text=True)
-                    if (
-                        res_unreadable.returncode == 0
-                        or "FAIL: CIS 1.1.9 CNI config dir unreadable" not in res_unreadable.stdout
-                        or "none found" in res_unreadable.stdout
-                    ):
-                        errors.append(f"{tag} misreported 000 CNI dir: {res_unreadable.stdout} {res_unreadable.stderr}")
-
-                # 7. Permissive/special etcd dirs (755, 4700, 2700)
-                for label, fixture in (("755", bad_etcd_755), ("4700", bad_etcd_suid), ("2700", bad_etcd_sgid)):
-                    res = subprocess.run([bash_bin, str(runner), str(fixture), "2"], capture_output=True, text=True)
-                    if res.returncode == 0 or "FAIL: CIS 1.1.12 etcd data dir" not in res.stdout:
-                        errors.append(f"{tag} missed {label} etcd dir: {res.stdout} {res.stderr}")
-
-                # 8. Wrong etcd owner
-                res_owner = subprocess.run([bash_bin, str(wrong_runner), str(good), "2"], capture_output=True, text=True)
-                if res_owner.returncode == 0 or "FAIL: CIS 1.1.12 etcd data dir" not in res_owner.stdout:
-                    errors.append(f"{tag} missed wrong etcd owner: {res_owner.stdout} {res_owner.stderr}")
+                for label, fixture, want_pass, etcd_owner, expect_ok, required, forbidden in cases:
+                    run_case(bash_bin, label, fixture, want_pass, etcd_owner, expect_ok, required, forbidden)
         finally:
             unreadable_cni_dir = unreadable_cni / "etc/cni/net.d"
             if unreadable_cni_dir.exists():
@@ -239,22 +211,25 @@ want_pass="${{2:-2}}"
     return errors
 
 
+@lru_cache(maxsize=4)
+def _parse_trivy_values(trivy_text: str) -> dict:
+    trivy_body = HELM_COMMENT_RE.sub("", trivy_text, count=1)
+    trivy_doc = yaml.safe_load(trivy_body)
+    return (((trivy_doc.get("spec") or {}).get("source") or {}).get("helm") or {}).get("valuesObject") or {}
+
+
 def check(texts: dict[str, str], run_behavioral: bool = False) -> list[str]:
     errors: list[str] = []
 
     # 1. trivy-operator.yaml nodeCollector mounts + podAnnotations checksum
-    trivy_body = HELM_COMMENT_RE.sub("", texts["trivy"], count=1)
-    trivy_doc = yaml.safe_load(trivy_body)
-    values_obj = ((trivy_doc.get("spec") or {}).get("source") or {}).get("helm") or {}
-    values_obj = values_obj.get("valuesObject") or {}
+    values_obj = _parse_trivy_values(texts["trivy"])
     nc = values_obj.get("nodeCollector") or {}
     mounts = {m.get("name"): m for m in (nc.get("volumeMounts") or []) if isinstance(m, dict)}
     volumes = {v.get("name"): v for v in (nc.get("volumes") or []) if isinstance(v, dict)}
 
-    for name, mpath in DEFAULT_NODE_COLLECTOR_MOUNTS.items():
+    for name, mpath, hpath in DEFAULT_NODE_COLLECTOR_ENTRIES:
         if name not in mounts or mounts[name].get("mountPath") != mpath or mounts[name].get("readOnly") is not True:
             errors.append(f"trivy-operator.yaml missing default nodeCollector.volumeMount {name}:{mpath} readOnly:true")
-    for name, hpath in DEFAULT_NODE_COLLECTOR_VOLUMES.items():
         hp = (volumes.get(name) or {}).get("hostPath") or {}
         if hp.get("path") != hpath:
             errors.append(f"trivy-operator.yaml missing default nodeCollector.volume {name}:{hpath}")
@@ -289,7 +264,8 @@ def check(texts: dict[str, str], run_behavioral: bool = False) -> list[str]:
     # 2. compliance-accepted.ts: KCV normalization + KCV0056 only (never KCV0059)
     acc = texts["accepted"]
     for needle in (
-        "AVD-KCV-0*(\\d+)",
+        "CHECK_ID_PAD_WIDTH",
+        "(?:AVD-(KSV|KCV)-|(KSV|KCV))0*(\\d+)",
         "ACCEPTED_INFRA_RULES",
         "export function matchInfraException(",
         '"compliance.acceptedReason.infraCniDirGlob"',
@@ -353,15 +329,22 @@ def check(texts: dict[str, str], run_behavioral: bool = False) -> list[str]:
 
     # 5. verify-cluster.sh + regression wiring
     ver = texts["verify"]
-    if "verify_node_file_hardening" not in ver:
-        errors.append("scripts/test/verify-cluster.sh missing verify_node_file_hardening")
+    if "verify_node_file_hardening" not in ver or "_node_priv" not in ver:
+        errors.append("scripts/test/verify-cluster.sh missing verify_node_file_hardening or _node_priv wrapper")
     else:
-        fn_src = _extract_node_hardening_fn(ver)
-        for token in ('${priv[@]+"${priv[@]}"}', "8#7177", "8#7077", "find -L", "stat -L", "CNI config dir unreadable"):
+        priv_fn = _extract_fn(ver, "_node_priv")
+        stat_fn = _extract_fn(ver, "_node_stat")
+        hard_fn = _extract_fn(ver, "verify_node_file_hardening")
+        fn_src = "\n\n".join((priv_fn, stat_fn, hard_fn))
+        if '${priv[@]+"${priv[@]}"}' not in priv_fn:
+            errors.append("_node_priv must guard priv expansion with ${priv[@]+\"${priv[@]}\"} for bash 3.2 set -u")
+        for token in ("_node_priv", "8#7177", "8#7077", "find -L", "stat -L", "CNI config dir unreadable"):
             if token not in fn_src:
                 errors.append(f"verify_node_file_hardening missing hardening check token {token!r}")
+        if "_node_priv" not in stat_fn or "_node_priv" not in hard_fn:
+            errors.append("_node_stat and verify_node_file_hardening must route privileged commands through _node_priv")
         if re.search(r'(?<!\+)\"\$\{priv\[@\]\}\"', fn_src):
-            errors.append("verify_node_file_hardening must guard every priv expansion with ${priv[@]+\"${priv[@]}\"} for bash 3.2 set -u")
+            errors.append("verify_node_file_hardening/_node_priv must guard every priv expansion with ${priv[@]+\"${priv[@]}\"} for bash 3.2 set -u")
     nodes_block_m = re.search(r'if should_run "nodes"; then[\s\S]*?# 2\. KUBE-VIP', ver)
     if not nodes_block_m or "verify_node_file_hardening" not in nodes_block_m.group(0):
         errors.append("scripts/test/verify-cluster.sh nodes section must call verify_node_file_hardening")
@@ -383,7 +366,7 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("stale nodeCollector checksum annotation", "trivy", "checksum/node-collector-mounts: \"f18e6e663efa8ebf898e70aad50659110412217842662f0a67e150be8df9156e\"", "checksum/node-collector-mounts: \"stale\""),
     ("allowlist KCV0059", "accepted", '["KCV0056"]', '["KCV0056", "KCV0059"]'),
     ("reclassify KCV0056 as accept", "accepted", '    ["KCV0056"],\n    "upstream",', '    ["KCV0056"],\n    "accept",'),
-    ("drop KCV normalization", "accepted", "AVD-KCV-0*(\\d+)", "AVD-KCV-DISABLED-(\\d+)"),
+    ("drop KCV normalization", "accepted", "(?:AVD-(KSV|KCV)-|(KSV|KCV))0*(\\d+)", "(?:AVD-(KSV)-|(KSV))0*(\\d+)"),
     ("drop Node matcher in frameworks", "compliance", 'if (resolved.kind === "Node")', 'if (resolved.kind === "NeverNode")'),
     ("drop mixed-node accepted badge", "infra_list", "{hasActionable && acceptedFailures > 0 && (", "{false && acceptedFailures > 0 && ("),
     ("drop acceptedInfraFailures type", "types", "acceptedInfraFailures: CheckSummary", "removedInfra: CheckSummary"),
@@ -427,7 +410,7 @@ def main() -> int:
 
     if "--mutation-verify" in sys.argv:
         for name, key, old, new in MUTATIONS:
-            mutated = copy.deepcopy(texts)
+            mutated = dict(texts)
             if old not in mutated[key]:
                 print(f"FAIL: mutation target not found for {name}", file=sys.stderr)
                 return 1

@@ -178,6 +178,15 @@ spec:
         # Istio ambient mesh 제외 — Trivy operator는 K8s API + scan Job만 사용
         podLabels:
           istio.io/dataplane-mode: "none"
+        # D-NODE-COLLECTOR-PASSWD-ROLLOUT: trivy-operator v0.25.0 (chart 0.27.0) reads
+        # nodeCollector.volumes/volumeMounts from its ConfigMap only at startup and omits a
+        # ConfigMap checksum on the Deployment, so ArgoCD sync alone leaves old mounts active.
+        # Chart 0.27.0 renders top-level podAnnotations on deploy/trivy-operator; pinning the
+        # sha256 of nodeCollector.volumes+volumeMounts here forces a rollout on mount changes
+        # (verified by R385). Cost: one operator pod recreate when nodeCollector mounts change.
+        # Escape hatch: remove podAnnotations and run `kubectl -n security-system rollout restart deploy/trivy-operator`.
+        podAnnotations:
+          checksum/node-collector-mounts: "f18e6e663efa8ebf898e70aad50659110412217842662f0a67e150be8df9156e"
         nodeSelector: {}
         tolerations:
           - key: node.kubernetes.io/disk-pressure

@@ -23,31 +23,30 @@
     {
       "id": "e3",
       "type": "bug_fix",
-      "summary": "Mounted host /etc/passwd and /etc/group read-only in trivy-operator.yaml nodeCollector (D-NODE-COLLECTOR-PASSWD, preserving all 8 chart 0.27.0 defaults) so KCV0059 resolves etcd:etcd truthfully; added fail-closed KCV0056 (upstream CMD-0009) accepted/actionable split across portal Infra list/detail/summary and Frameworks Node targets while keeping raw counts visible, backed by verify_node_file_hardening in scripts/test/verify-cluster.sh."
+      "summary": "Mounted host /etc/passwd and /etc/group read-only in trivy-operator.yaml nodeCollector (D-NODE-COLLECTOR-PASSWD, preserving all 8 chart 0.27.0 defaults) plus podAnnotations checksum/node-collector-mounts rollout trigger (D-NODE-COLLECTOR-PASSWD-ROLLOUT) so KCV0059 resolves etcd:etcd truthfully and sync rolls deploy/trivy-operator; added fail-closed KCV0056 (upstream CMD-0009) accepted/actionable split across portal Infra list/detail/summary (with mixed-node accepted badge) and Frameworks Node targets while keeping raw counts visible, documented single-node verify_node_file_hardening coverage limits and CMD-0009 removal trigger, and hardened verify_node_file_hardening for bash 3.2 set -u, special-bit masks (8#7177/8#7077), symlink following, and unreadable CNI dirs."
     },
     {
       "id": "e4",
       "type": "regression_verification",
       "status": "passed",
-      "scope": "Offline static suite (494 passed, 0 failed incl. R385 behavioral fixtures + 13 mutations), helm template render, portal typecheck/lint/vitest (2612 passed)/harness-rules, shellcheck on edited scripts, and make validate. NOT covered: live trivy-operator rollout/rescan and live verify-cluster.sh on-node run.",
+      "scope": "Offline static suite (make lint, make validate, make test incl. R385 behavioral fixtures under bash 3.2 & 5.x + no-helm/no-promtool PATH + 21 mutations, helm template render, portal typecheck/lint/vitest/harness-rules) plus orchestrator-verified live trivy-operator rollout + rescan resolving KCV0059 (High 1 / Low 1 -> High 1 / Low 0). NOT covered: live verify-cluster.sh on-node run after Round 2 edits and portal release rollout.",
       "evidence": [
-        "test:RESEARCH_EVIDENCE_DIR=$(mktemp -d) make test -> passed 494 failed 0 warnings 3 (R385 PASS)",
-        "test:python3 scripts/test/lib/check-node-compliance-checks.py --mutation-verify -> PASS (5 behavioral fixtures + 13 mutations rejected)",
-        "test:cd portal && pnpm typecheck && pnpm lint && pnpm test && bash scripts/harness-rules.sh -> 192 files / 2612 tests passed, 0 lint errors, inline styles 42, hardcoded Korean 0",
-        "test:make validate -> ruby -c Vagrantfile Syntax OK and all 34 gitops YAML files OK",
-        "runtime:temporary node-collector:0.3.1 Job on narwhal-master-1 -> observed etcdDataDirectoryOwnership=[\"UNKNOWN:UNKNOWN\"] and containerNetworkInterfaceFilePermissions=[700], then deleted"
+        "test:python3 scripts/test/lib/check-node-compliance-checks.py --mutation-verify -> PASS (bash 3.2 + 5.x fixtures + 21 mutations rejected, including PATH without helm/promtool)",
+        "test:cd portal && pnpm typecheck && pnpm lint && pnpm test && bash scripts/harness-rules.sh -> passed",
+        "test:make lint && make validate && RESEARCH_EVIDENCE_DIR=$(mktemp -d) make test -> passed",
+        "runtime:orchestrator live rollout restart deploy/trivy-operator + rescan on narwhal-master-1 -> KCV0059 resolved (High 1 / Low 1 -> High 1 / Low 0)"
       ]
     },
     {
       "id": "e5",
       "type": "completion_claim",
-      "summary": "Repository changes, portal tests, R385 regression check, verify-cluster.sh node file assertions, and docs are verified offline; live trivy-operator GitOps push/rescan and portal release rollout remain for the orchestrator."
+      "summary": "Round 2 review fixes (bash 3.2 empty-array guard, special-bit masks, symlink/unreadable CNI dir handling, KCV0056 honesty/re-evaluation trigger, mixed-node accepted badge, trivy-operator podAnnotations checksum + rollout restart docs, expanded R385 fixtures) verified offline; live GitOps sync + verify-cluster.sh + portal release remain."
     },
     {
       "id": "e6",
       "type": "task_outcome",
       "state": "A",
-      "summary": "Complete on branch fix/compliance-node-checks; live GitOps rollout, rescan, and portal release remain."
+      "summary": "Complete on branch fix/compliance-node-checks; live GitOps rollout of podAnnotations checksum, verify-cluster.sh run, and portal release remain."
     }
   ]
 }

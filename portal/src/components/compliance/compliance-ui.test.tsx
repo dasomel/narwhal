@@ -596,9 +596,9 @@ describe("Compliance UI accepted exceptions", () => {
       },
       {
         node: "narwhal-master-2",
-        summary: { Critical: 0, High: 0, Medium: 0, Low: 1 },
+        summary: { Critical: 0, High: 1, Medium: 0, Low: 1 },
         actionableSummary: { Critical: 0, High: 0, Medium: 0, Low: 1 },
-        acceptedSummary: { Critical: 0, High: 0, Medium: 0, Low: 0 },
+        acceptedSummary: { Critical: 0, High: 1, Medium: 0, Low: 0 },
         accepted: false,
       },
     ]
@@ -618,8 +618,18 @@ describe("Compliance UI accepted exceptions", () => {
     expect(listEn).toContain("1 actionable · 1 accepted (exception)")
     expect(listEn).toContain("narwhal-master-1")
     expect(listEn).toContain("Upstream accepted")
+    expect(listEn).toContain("1 accepted")
+    expect(listEn).toContain("+1 accepted")
     expect(listEn).toContain("High: 1")
+    expect(listEn).toContain("Low: 1")
     expect(listEn).toContain("1 issues")
+
+    const listKo = renderToStaticMarkup(
+      <LocaleProvider locale="ko">
+        <InfraAuditList />
+      </LocaleProvider>,
+    )
+    expect(listKo).toContain("+1 수용")
 
     const detail: InfraAuditDetail = {
       node: "narwhal-master-1",

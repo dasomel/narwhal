@@ -817,6 +817,12 @@ export const ACCEPTED_RBAC_RULES: readonly AcceptedRbacRule[] = [
  * Reviewed node-level Infra Assessment exceptions for upstream collector checks that cannot
  * pass on a compliant node by design. Exact normalized check ID match; unlisted KCV IDs
  * (including KCV0059) stay actionable (fail closed).
+ *
+ * Scope & re-evaluation: `Node/*` (`"*"`) applies to every node (trivy-checks v1.7.1 evaluates
+ * KCV0056 only on `nodeType: master`), while verify-cluster.sh's compensating on-node check
+ * covers only the single local node it runs on (SKIPs remotely; multi-node siblings rely on
+ * harden-node-files.sh). Remove KCV0056 as soon as trivy-checks/node-collector updates CMD-0009
+ * (`stat -c %a` on the CNI glob).
  */
 export const ACCEPTED_INFRA_RULES: readonly AcceptedInfraRule[] = [
   infraRule(

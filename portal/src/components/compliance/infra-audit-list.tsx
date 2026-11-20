@@ -156,6 +156,9 @@ export function InfraAuditList() {
             : row.accepted
               ? 0
               : rawFailures
+          const acceptedFailures = row.acceptedSummary
+            ? totalFailures(row.acceptedSummary)
+            : Math.max(0, rawFailures - actionableFailures)
           const hasActionable = actionableFailures > 0
           const isAcceptedOnly = Boolean(row.accepted) && !hasActionable && rawFailures > 0
           const isExpanded = expandedNode === row.node
@@ -187,6 +190,15 @@ export function InfraAuditList() {
                         {row.acceptedScope === "upstream"
                           ? t("compliance.table.acceptedUpstream")
                           : t("compliance.table.acceptedException")}
+                      </Badge>
+                    )}
+                    {hasActionable && acceptedFailures > 0 && (
+                      <Badge
+                        variant="outline"
+                        className="text-[0.65rem] px-1.5 py-0 text-muted-foreground border-muted-foreground/30"
+                        title={t("compliance.table.acceptedExceptionHint")}
+                      >
+                        +{acceptedFailures} {t("compliance.framework.acceptedShort")}
                       </Badge>
                     )}
                     <span

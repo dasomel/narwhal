@@ -9,6 +9,12 @@
 
 ## [Unreleased]
 
+### 변경
+
+- **`KCV0056` 인프라 감사 및 프레임워크 수용/조치가능 분리 (`src/lib/compliance-accepted.ts`, `src/lib/compliance.ts`, `src/types/compliance.ts`, `src/components/compliance/infra-audit-list.tsx`, `src/components/compliance/failure-counters.tsx`, `src/app/(dashboard)/compliance/infra-audit/[node]/page.tsx`, `src/lib/i18n.ts`):**
+  - `normalizeCheckId`가 `KCV` ID(`AVD-KCV-0056 -> KCV0056`)를 정규화하도록 확장하고 `Node` 점검용 fail-closed `ACCEPTED_INFRA_RULES` / `matchInfraException`을 추가해 `KCV0056`(`upstream`: `node-collector:0.3.1` / `trivy-checks` `CMD-0009`가 `stat -c %a /*/cni/*`로 내부 파일 `600`이 아닌 `/etc/cni/net.d` 디렉터리 `700`을 검사하며 `trivy-operator` `0.25`에 명령 오버라이드 없음; 디스크 파일 권한은 `harden-node-files.sh`·`verify-cluster.sh`로 보장)만 수용 처리했습니다. 미등록 `KCV` ID(`trivy-operator.yaml`의 `/etc/passwd`·`/etc/group` 읽기 전용 마운트로 해결하는 `KCV0059` 포함)와 `checks[]`가 누락된 리포트는 조치가능으로 유지합니다.
+  - `InfraAuditRow`에 `actionableSummary`·`acceptedSummary`·`accepted`·`acceptedScope`, `ComplianceSummary`에 `acceptedInfraFailures`를 추가하고, 프레임워크 `Node` 타깃 판정에도 `infraAuditMatcher`를 재사용하며, 인프라 탭·상세 페이지·요약 카운터에서 원본 심각도 건수를 보존한 채 수용 배지와 사유를 표시합니다.
+
 ## [1.1.22] - 2026-11-19
 
 ### 변경

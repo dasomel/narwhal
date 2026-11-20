@@ -10,6 +10,7 @@ import {
   type AcceptedReasonKey,
   COMPLIANCE_EXCEPTIONS_DOC_ANCHOR,
   matchConfigAuditException,
+  matchInfraException,
   matchRbacException,
 } from "./compliance-accepted"
 import type {
@@ -559,6 +560,50 @@ function resolveRbacRoleName(item: RawAuditReport): string {
   return ownerRefs[0]?.name ?? labels["trivy-operator.resource.name"] ?? item.metadata.name
 }
 
+function infraAuditMatcher(node: string): AcceptanceMatcher {
+  return (checkId: string) => {
+    const match = matchInfraException(node, checkId)
+    if (!match) return { accepted: false }
+    return {
+      accepted: true,
+      acceptedClass: match.class,
+      acceptedReasonKey: match.reasonKey,
+      acceptedReason: match.reason,
+      acceptedDocAnchor: match.docAnchor,
+    }
+  }
+}
+
+function classifyInfraAuditItem(item: RawAuditReport): {
+  row: InfraAuditRow
+  matcher: AcceptanceMatcher
+} {
+  const labels = item.metadata.labels ?? {}
+  const node = labels["trivy-operator.resource.name"] ?? item.metadata.name
+  const matcher = infraAuditMatcher(node)
+
+  const { summary, actionableSummary, acceptedSummary, matchedClasses, totalsMatchSummary } =
+    splitSummariesByChecks(item.report.checks ?? [], item.report.summary, matcher)
+  const totalFailures = summary.Critical + summary.High + summary.Medium + summary.Low
+  const actionableTotal =
+    actionableSummary.Critical +
+    actionableSummary.High +
+    actionableSummary.Medium +
+    actionableSummary.Low
+  const accepted = totalsMatchSummary && totalFailures > 0 && actionableTotal === 0
+  return {
+    row: {
+      node,
+      summary,
+      actionableSummary,
+      acceptedSummary,
+      accepted,
+      acceptedScope: accepted ? resolveScopeFromClasses(matchedClasses) : undefined,
+    },
+    matcher,
+  }
+}
+
 // --- ReplicaSet lookup for superseded-revision filtering & exact Deployment ownership (narwhal#727) ---
 
 const DEPLOYMENT_REVISION_ANNOTATION = "deployment.kubernetes.io/revision"
@@ -854,14 +899,7 @@ export async function getInfraAuditList(): Promise<InfraAuditRow[]> {
     ])
 
     const allItems = [...(namespaced.items ?? []), ...(clustered.items ?? [])]
-    const rows: InfraAuditRow[] = allItems.map((item) => {
-      const labels = item.metadata.labels ?? {}
-      const node = labels["trivy-operator.resource.name"] ?? item.metadata.name
-      return {
-        node,
-        summary: buildCheckSummaryFromCounts(item.report.summary),
-      }
-    })
+    const rows: InfraAuditRow[] = allItems.map((item) => classifyInfraAuditItem(item).row)
     await cacheSet(cacheKey, rows, cacheTtl("complianceInfraAuditList"))
     return rows
   } catch (err) {
@@ -895,12 +933,10 @@ export async function getInfraAuditDetail(node: string): Promise<InfraAuditDetai
     })
     if (!item) return null
 
-    const labels = item.metadata.labels ?? {}
-    const rNode = labels["trivy-operator.resource.name"] ?? item.metadata.name
-    const checks = mapChecks(item.report.checks ?? [])
+    const { row, matcher } = classifyInfraAuditItem(item)
+    const checks = mapChecks(item.report.checks ?? [], matcher)
     const detail: InfraAuditDetail = {
-      node: rNode,
-      summary: buildCheckSummaryFromCounts(item.report.summary),
+      ...row,
       checks,
     }
     await cacheSet(cacheKey, detail, cacheTtl("complianceInfraAuditDetail"))
@@ -1062,7 +1098,13 @@ function classifyFrameworkCheck(
     return { status: "accepted", scope: ann.acceptedClass === "upstream" ? "upstream" : "accept" }
   }
 
-  // Infra (Node) checks have no accepted allowlist (matches Infra tab handling) and stay actionable.
+  if (resolved.kind === "Node") {
+    const matcher = infraAuditMatcher(resolved.name)
+    const ann = matcher(checkId)
+    if (!ann.accepted) return { status: "actionable" }
+    return { status: "accepted", scope: ann.acceptedClass === "upstream" ? "upstream" : "accept" }
+  }
+
   return { status: "actionable" }
 }
 
@@ -1324,10 +1366,16 @@ export async function getComplianceSummary(): Promise<ComplianceSummary> {
       acceptedRbacFailures.Medium += accepted.Medium
       acceptedRbacFailures.Low += accepted.Low
     }
-    const totalInfraFailures = infraAuditList.reduce(
-      (acc, row) => addSummaries(acc, row.summary),
-      { ...emptyCheckSummary },
-    )
+    // Headline Infra number reflects ACTIONABLE findings only: excludes findings covered by
+    // reviewed node-check exceptions (see ACCEPTED_INFRA_RULES).
+    let totalInfraFailures: CheckSummary = { ...emptyCheckSummary }
+    let acceptedInfraFailures: CheckSummary = { ...emptyCheckSummary }
+    for (const row of infraAuditList) {
+      const actionable = row.actionableSummary ?? (row.accepted ? emptyCheckSummary : row.summary)
+      const accepted = row.acceptedSummary ?? (row.accepted ? row.summary : emptyCheckSummary)
+      totalInfraFailures = addSummaries(totalInfraFailures, actionable)
+      acceptedInfraFailures = addSummaries(acceptedInfraFailures, accepted)
+    }
 
     // Derive lastUpdated from K8s timestamps via a separate fetch
     let lastUpdated = new Date().toISOString()
@@ -1363,6 +1411,7 @@ export async function getComplianceSummary(): Promise<ComplianceSummary> {
       totalRbacFailures,
       acceptedRbacFailures,
       totalInfraFailures,
+      acceptedInfraFailures,
       frameworks,
       scannedWorkloads: configAuditList.length,
       scannedRbacObjects: rbacAuditList.length,
@@ -1380,6 +1429,7 @@ export async function getComplianceSummary(): Promise<ComplianceSummary> {
       totalRbacFailures: { ...emptyCheckSummary },
       acceptedRbacFailures: { ...emptyCheckSummary },
       totalInfraFailures: { ...emptyCheckSummary },
+      acceptedInfraFailures: { ...emptyCheckSummary },
       frameworks: [],
       scannedWorkloads: 0,
       scannedRbacObjects: 0,

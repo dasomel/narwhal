@@ -1,7 +1,8 @@
 "use client"
-import { useState } from "react"
+import { useState, useMemo } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { useT, useLocale } from "@/lib/i18n-client"
+import { translateAcceptedReason } from "@/lib/i18n"
 import { DataState } from "@/components/ui/data-state"
 import { translateTitle, translateRemediation } from "@/lib/check-translations"
 import { Badge } from "@/components/ui/badge"
@@ -19,7 +20,7 @@ function totalFailures(summary: InfraAuditRow["summary"]): number {
   return (summary.Critical ?? 0) + (summary.High ?? 0) + (summary.Medium ?? 0) + (summary.Low ?? 0)
 }
 
-function ExpandedInfraPanel({ node }: { node: string }) {
+export function ExpandedInfraPanel({ node }: { node: string }) {
   const t = useT()
   const locale = useLocale()
 
@@ -36,7 +37,11 @@ function ExpandedInfraPanel({ node }: { node: string }) {
         const order: Severity[] = ["Critical", "High", "Medium", "Low", "Unknown"]
         return detail.checks
           .filter((c) => !c.success)
-          .sort((a, b) => order.indexOf(a.severity) - order.indexOf(b.severity))
+          .sort((a, b) => {
+            const accDiff = Number(Boolean(a.accepted)) - Number(Boolean(b.accepted))
+            if (accDiff !== 0) return accDiff
+            return order.indexOf(a.severity) - order.indexOf(b.severity)
+          })
           .slice(0, 5)
       })()
     : []
@@ -57,15 +62,35 @@ function ExpandedInfraPanel({ node }: { node: string }) {
               {top5Failed.map((check) => (
                 <div
                   key={check.id}
-                  className="rounded-md border border-red-200 bg-red-50/60 dark:bg-red-950/10 dark:border-red-900 p-2 text-xs"
+                  className={`rounded-md border p-2 text-xs ${
+                    check.accepted
+                      ? "border-slate-200 bg-slate-50/60 dark:bg-slate-900/20 dark:border-slate-800"
+                      : "border-red-200 bg-red-50/60 dark:bg-red-950/10 dark:border-red-900"
+                  }`}
                 >
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     <span className="font-mono text-muted-foreground">{check.id}</span>
                     <Badge className={`text-xs ${severityBadgeClass[check.severity] ?? severityBadgeClass.Unknown}`}>
                       {check.severity}
                     </Badge>
+                    {check.accepted && (
+                      <Badge
+                        variant="outline"
+                        className="text-[0.65rem] px-1.5 py-0 text-muted-foreground border-muted-foreground/30"
+                      >
+                        {check.acceptedClass === "upstream"
+                          ? t("compliance.check.acceptedUpstream")
+                          : t("compliance.check.accepted")}
+                      </Badge>
+                    )}
                   </div>
                   <p className="mt-1 font-medium text-foreground">{translateTitle("ksv", check.id, check.title, locale)}</p>
+                  {check.accepted && (check.acceptedReasonKey || check.acceptedReason) && (
+                    <p className="mt-1 text-muted-foreground">
+                      <span className="font-medium text-foreground">{t("compliance.check.acceptedReason")}: </span>
+                      {translateAcceptedReason(locale, check.acceptedReasonKey, check.acceptedReason)}
+                    </p>
+                  )}
                   {check.remediation && (
                     <p className="mt-0.5 text-muted-foreground line-clamp-2">{translateRemediation("ksv", check.id, check.remediation, locale)}</p>
                   )}
@@ -94,6 +119,18 @@ export function InfraAuditList() {
     staleTime: 60_000,
   })
 
+  const { actionableCount, acceptedCount } = useMemo(() => {
+    let actionableCount = 0
+    let acceptedCount = 0
+    for (const r of rows) {
+      const total = totalFailures(r.summary)
+      if (total === 0) continue
+      if (r.accepted) acceptedCount++
+      else actionableCount++
+    }
+    return { actionableCount, acceptedCount }
+  }, [rows])
+
   if (isLoading) return <DataState state="loading" onRetry={() => { void refetch() }} />
   if (isError) return <DataState state="unavailable" onRetry={() => { void refetch() }} />
 
@@ -102,58 +139,111 @@ export function InfraAuditList() {
   }
 
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-      {rows.map((row) => {
-        const failures = totalFailures(row.summary)
-        const hasIssues = failures > 0
-        const isExpanded = expandedNode === row.node
+    <div className="space-y-4">
+      {(actionableCount > 0 || acceptedCount > 0) && (
+        <div className="text-xs text-muted-foreground">
+          {t("compliance.table.infraActionableSummary", {
+            actionable: String(actionableCount),
+            accepted: String(acceptedCount),
+          })}
+        </div>
+      )}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        {rows.map((row) => {
+          const rawFailures = totalFailures(row.summary)
+          const actionableFailures = row.actionableSummary
+            ? totalFailures(row.actionableSummary)
+            : row.accepted
+              ? 0
+              : rawFailures
+          const acceptedFailures = row.acceptedSummary
+            ? totalFailures(row.acceptedSummary)
+            : Math.max(0, rawFailures - actionableFailures)
+          const hasActionable = actionableFailures > 0
+          const isAcceptedOnly = Boolean(row.accepted) && !hasActionable && rawFailures > 0
+          const isExpanded = expandedNode === row.node
 
-        return (
-          <div
-            key={row.node}
-            className={`rounded-lg border p-4 transition-colors ${
-              hasIssues
-                ? "border-orange-200 bg-orange-50/50 dark:bg-orange-950/10 dark:border-orange-900"
-                : "border-green-200 bg-green-50/50 dark:bg-green-950/10 dark:border-green-900"
-            }`}
-          >
-            <button
-              className="w-full text-left"
-              onClick={() => setExpandedNode((prev) => (prev === row.node ? null : row.node))}
+          return (
+            <div
+              key={row.node}
+              className={`rounded-lg border p-4 transition-colors ${
+                hasActionable
+                  ? "border-orange-200 bg-orange-50/50 dark:bg-orange-950/10 dark:border-orange-900"
+                  : isAcceptedOnly
+                    ? "border-slate-200 bg-slate-50/50 dark:bg-slate-900/20 dark:border-slate-800"
+                    : "border-green-200 bg-green-50/50 dark:bg-green-950/10 dark:border-green-900"
+              }`}
             >
-              <div className="flex items-center justify-between mb-3">
-                <span className="font-medium text-sm">{row.node}</span>
-                <div className="flex items-center gap-2">
-                  <span className={`text-xs font-semibold ${hasIssues ? "text-orange-600" : "text-green-600"}`}>
-                    {hasIssues ? `${failures} issues` : "Clean"}
-                  </span>
-                  <span
-                    className="text-muted-foreground text-sm inline-block transition-transform duration-200"
-                    style={{ transform: isExpanded ? "rotate(90deg)" : "rotate(0deg)" }}
-                    title={isExpanded ? t("common.collapse") : t("common.expand")}
-                  >
-                    ›
-                  </span>
-                </div>
-              </div>
-              <div className="flex flex-wrap gap-1.5">
-                {(["Critical", "High", "Medium", "Low"] as const).map((s) =>
-                  row.summary[s] > 0 ? (
+              <button
+                className="w-full text-left"
+                onClick={() => setExpandedNode((prev) => (prev === row.node ? null : row.node))}
+              >
+                <div className="flex items-center justify-between mb-3 gap-2">
+                  <span className="font-medium text-sm">{row.node}</span>
+                  <div className="flex items-center gap-2">
+                    {isAcceptedOnly && (
+                      <Badge
+                        variant="outline"
+                        className="text-[0.65rem] px-1.5 py-0 text-muted-foreground border-muted-foreground/30"
+                        title={t("compliance.table.acceptedExceptionHint")}
+                      >
+                        {row.acceptedScope === "upstream"
+                          ? t("compliance.table.acceptedUpstream")
+                          : t("compliance.table.acceptedException")}
+                      </Badge>
+                    )}
+                    {hasActionable && acceptedFailures > 0 && (
+                      <Badge
+                        variant="outline"
+                        className="text-[0.65rem] px-1.5 py-0 text-muted-foreground border-muted-foreground/30"
+                        title={t("compliance.table.acceptedExceptionHint")}
+                      >
+                        +{acceptedFailures} {t("compliance.framework.acceptedShort")}
+                      </Badge>
+                    )}
                     <span
-                      key={s}
-                      className={`text-xs px-1.5 py-0.5 rounded font-medium ${severityBadgeClass[s]}`}
+                      className={`text-xs font-semibold ${
+                        hasActionable
+                          ? "text-orange-600"
+                          : isAcceptedOnly
+                            ? "text-muted-foreground"
+                            : "text-green-600"
+                      }`}
                     >
-                      {s}: {row.summary[s]}
+                      {hasActionable
+                        ? `${actionableFailures} issues`
+                        : isAcceptedOnly
+                          ? `${rawFailures} ${t("compliance.framework.acceptedShort")}`
+                          : "Clean"}
                     </span>
-                  ) : null
-                )}
-              </div>
-            </button>
+                    <span
+                      className="text-muted-foreground text-sm inline-block transition-transform duration-200"
+                      style={{ transform: isExpanded ? "rotate(90deg)" : "rotate(0deg)" }}
+                      title={isExpanded ? t("common.collapse") : t("common.expand")}
+                    >
+                      ›
+                    </span>
+                  </div>
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {(["Critical", "High", "Medium", "Low"] as const).map((s) =>
+                    row.summary[s] > 0 ? (
+                      <span
+                        key={s}
+                        className={`text-xs px-1.5 py-0.5 rounded font-medium ${severityBadgeClass[s]}`}
+                      >
+                        {s}: {row.summary[s]}
+                      </span>
+                    ) : null
+                  )}
+                </div>
+              </button>
 
-            {isExpanded && <ExpandedInfraPanel node={row.node} />}
-          </div>
-        )
-      })}
+              {isExpanded && <ExpandedInfraPanel node={row.node} />}
+            </div>
+          )
+        })}
+      </div>
     </div>
   )
 }

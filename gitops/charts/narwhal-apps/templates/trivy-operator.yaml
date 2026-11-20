@@ -178,6 +178,15 @@ spec:
         # Istio ambient mesh 제외 — Trivy operator는 K8s API + scan Job만 사용
         podLabels:
           istio.io/dataplane-mode: "none"
+        # D-NODE-COLLECTOR-PASSWD-ROLLOUT: trivy-operator v0.25.0 (chart 0.27.0) reads
+        # nodeCollector.volumes/volumeMounts from its ConfigMap only at startup and omits a
+        # ConfigMap checksum on the Deployment, so ArgoCD sync alone leaves old mounts active.
+        # Chart 0.27.0 renders top-level podAnnotations on deploy/trivy-operator; pinning the
+        # sha256 of nodeCollector.volumes+volumeMounts here forces a rollout on mount changes
+        # (verified by R385). Cost: one operator pod recreate when nodeCollector mounts change.
+        # Escape hatch: remove podAnnotations and run `kubectl -n security-system rollout restart deploy/trivy-operator`.
+        podAnnotations:
+          checksum/node-collector-mounts: "f18e6e663efa8ebf898e70aad50659110412217842662f0a67e150be8df9156e"
         nodeSelector: {}
         tolerations:
           - key: node.kubernetes.io/disk-pressure
@@ -190,6 +199,77 @@ spec:
           tolerations:
             - operator: Exists
               effect: NoSchedule
+          # D-NODE-COLLECTOR-PASSWD: node-collector:0.3.1 runs `stat -c %U:%G /var/lib/etcd`
+          # inside its own container rootfs, which lacks the host `etcd` user/group (uid 995/
+          # gid 984) and reports `UNKNOWN:UNKNOWN` (false KCV0059 fail). Setting Helm list keys
+          # replaces the chart defaults, so all 8 chart 0.27.0 hostPath mounts stay intact
+          # alongside read-only host /etc/passwd and /etc/group (no /etc/shadow). Cost: mounts
+          # host account names (world-readable 0644) into the short-lived node-collector Job.
+          # Escape hatch: remove volumeMounts/volumes to revert to chart defaults.
+          volumeMounts:
+            - name: var-lib-etcd
+              mountPath: /var/lib/etcd
+              readOnly: true
+            - name: var-lib-kubelet
+              mountPath: /var/lib/kubelet
+              readOnly: true
+            - name: var-lib-kube-scheduler
+              mountPath: /var/lib/kube-scheduler
+              readOnly: true
+            - name: var-lib-kube-controller-manager
+              mountPath: /var/lib/kube-controller-manager
+              readOnly: true
+            - name: etc-systemd
+              mountPath: /etc/systemd
+              readOnly: true
+            - name: lib-systemd
+              mountPath: /lib/systemd/
+              readOnly: true
+            - name: etc-kubernetes
+              mountPath: /etc/kubernetes
+              readOnly: true
+            - name: etc-cni-netd
+              mountPath: /etc/cni/net.d/
+              readOnly: true
+            - name: etc-passwd
+              mountPath: /etc/passwd
+              readOnly: true
+            - name: etc-group
+              mountPath: /etc/group
+              readOnly: true
+          volumes:
+            - name: var-lib-etcd
+              hostPath:
+                path: /var/lib/etcd
+            - name: var-lib-kubelet
+              hostPath:
+                path: /var/lib/kubelet
+            - name: var-lib-kube-scheduler
+              hostPath:
+                path: /var/lib/kube-scheduler
+            - name: var-lib-kube-controller-manager
+              hostPath:
+                path: /var/lib/kube-controller-manager
+            - name: etc-systemd
+              hostPath:
+                path: /etc/systemd
+            - name: lib-systemd
+              hostPath:
+                path: /lib/systemd
+            - name: etc-kubernetes
+              hostPath:
+                path: /etc/kubernetes
+            - name: etc-cni-netd
+              hostPath:
+                path: /etc/cni/net.d/
+            - name: etc-passwd
+              hostPath:
+                path: /etc/passwd
+                type: File
+            - name: etc-group
+              hostPath:
+                path: /etc/group
+                type: File
         policiesBundle:
           registry: harbor.devtools.svc.cluster.local
           repository: trivy-db/aquasecurity/trivy-checks

@@ -1,6 +1,6 @@
 import { requireDashboardAccess } from "@/lib/dashboard-access"
 import { getLocale } from "@/lib/i18n-server"
-import { t } from "@/lib/i18n"
+import { t, translateAcceptedReason } from "@/lib/i18n"
 import { translateTitle, translateRemediation } from "@/lib/check-translations"
 import { Badge } from "@/components/ui/badge"
 import type { InfraAuditDetail, Severity } from "@/types/compliance"
@@ -63,9 +63,11 @@ export default async function InfraAuditDetailPage({ params }: Props) {
     )
   }
 
-  const sorted = [...detail.checks].sort(
-    (a, b) => severityOrder.indexOf(a.severity) - severityOrder.indexOf(b.severity)
-  )
+  const sorted = [...detail.checks].sort((a, b) => {
+    const accDiff = Number(Boolean(a.accepted)) - Number(Boolean(b.accepted))
+    if (accDiff !== 0) return accDiff
+    return severityOrder.indexOf(a.severity) - severityOrder.indexOf(b.severity)
+  })
   const failCount = sorted.filter((c) => !c.success).length
   const passCount = sorted.length - failCount
 
@@ -111,19 +113,37 @@ export default async function InfraAuditDetailPage({ params }: Props) {
               className={`p-4 text-sm ${
                 check.success
                   ? "bg-green-50/30 dark:bg-green-950/10"
-                  : "bg-red-50/30 dark:bg-red-950/10"
+                  : check.accepted
+                    ? "bg-slate-50/40 dark:bg-slate-900/20"
+                    : "bg-red-50/30 dark:bg-red-950/10"
               }`}
             >
-              <div className="flex items-center gap-2 mb-1">
+              <div className="flex flex-wrap items-center gap-2 mb-1">
                 <span className="text-base">{check.success ? "✓" : "✗"}</span>
                 <span className="font-mono text-xs text-muted-foreground">{check.id}</span>
                 <Badge className={`text-xs ${severityBadgeClass[check.severity] ?? severityBadgeClass.Unknown}`}>
                   {check.severity}
                 </Badge>
+                {!check.success && check.accepted && (
+                  <Badge
+                    variant="outline"
+                    className="text-xs text-muted-foreground border-muted-foreground/30"
+                  >
+                    {check.acceptedClass === "upstream"
+                      ? t(locale, "compliance.check.acceptedUpstream")
+                      : t(locale, "compliance.check.accepted")}
+                  </Badge>
+                )}
               </div>
               <p className="font-medium">{translateTitle("ksv", check.id, check.title, locale)}</p>
               {check.description && (
                 <p className="text-xs text-muted-foreground mt-1">{check.description}</p>
+              )}
+              {!check.success && check.accepted && (check.acceptedReasonKey || check.acceptedReason) && (
+                <div className="mt-2 rounded bg-background/60 p-2 text-xs border border-border text-muted-foreground">
+                  <span className="font-medium text-foreground">{t(locale, "compliance.check.acceptedReason")}: </span>
+                  {translateAcceptedReason(locale, check.acceptedReasonKey, check.acceptedReason)}
+                </div>
               )}
               {!check.success && check.remediation && (
                 <div className="mt-2 rounded bg-background/60 p-2 text-xs border border-border">

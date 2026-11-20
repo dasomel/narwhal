@@ -9,6 +9,12 @@ English | [한국어](CHANGELOG-ko.md)
 
 ## [Unreleased]
 
+### Changed
+
+- **Infra Audit & Frameworks accepted/actionable split for `KCV0056` (`src/lib/compliance-accepted.ts`, `src/lib/compliance.ts`, `src/types/compliance.ts`, `src/components/compliance/infra-audit-list.tsx`, `src/components/compliance/failure-counters.tsx`, `src/app/(dashboard)/compliance/infra-audit/[node]/page.tsx`, `src/lib/i18n.ts`):**
+  - Extended `normalizeCheckId` for `KCV` IDs (`AVD-KCV-0056 -> KCV0056`) and added `ACCEPTED_INFRA_RULES` / `matchInfraException` fail-closed for `Node` checks, allowlisting `KCV0056` (`upstream`: `node-collector:0.3.1` / `trivy-checks` `CMD-0009` runs `stat -c %a /*/cni/*`, which matches `/etc/cni/net.d` directory mode `700` instead of files inside it `600`, and `trivy-operator` `0.25` has no command override; backed by `harden-node-files.sh` + `verify-cluster.sh`). Unlisted `KCV` IDs (including `KCV0059`, resolved by mounting host `/etc/passwd` + `/etc/group` read-only in `trivy-operator.yaml`) and reports without matching `checks[]` stay actionable.
+  - Added `actionableSummary`, `acceptedSummary`, `accepted`, and `acceptedScope` on `InfraAuditRow` plus `acceptedInfraFailures` on `ComplianceSummary`, reused `infraAuditMatcher` for `Node` targets in Compliance Frameworks, and surfaced accepted badges/reasons while preserving raw severity counts in the Infra tab, detail page, and summary counter.
+
 ## [1.1.22] - 2026-11-19
 
 ### Changed

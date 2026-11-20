@@ -30,6 +30,8 @@ import {
   getComplianceSummary,
   getConfigAuditDetail,
   getConfigAuditList,
+  getInfraAuditDetail,
+  getInfraAuditList,
   getRbacAuditDetail,
   getRbacAuditList,
   isAcceptedRbacRole,
@@ -1390,14 +1392,14 @@ describe("compliance framework actionable vs accepted split", () => {
                   { checkID: "AVD-KSV-0020", target: "dev/pod-unlisted-app", success: false },
                 ],
               },
-              // 4. Node / infra checks -> actionable (matches Infra tab)
+              // 4. Unlisted node / infra checks -> actionable (matches Infra tab)
               {
                 id: "C4",
-                name: "Node check",
-                severity: "HIGH",
-                checks: [{ checkID: "AVD-KCV-0056", target: "/node-narwhal-master-1", success: false }],
+                name: "Unlisted node check",
+                severity: "LOW",
+                checks: [{ checkID: "AVD-KCV-0059", target: "/node-narwhal-master-1", success: false }],
               },
-              // 5. All accepted (system namespace + allowlisted workload) -> accepted
+              // 5. All accepted (system namespace + allowlisted workload + allowlisted node check) -> accepted
               {
                 id: "C5",
                 name: "Accepted control",
@@ -1405,6 +1407,7 @@ describe("compliance framework actionable vs accepted split", () => {
                 checks: [
                   { checkID: "AVD-KSV-0017", target: "kube-system/daemonset-cilium", success: false },
                   { checkID: "AVD-KSV-0017", target: "security-system/daemonset-falco", success: false },
+                  { checkID: "AVD-KCV-0056", target: "/node-narwhal-master-1", success: false },
                 ],
               },
             ],
@@ -1436,9 +1439,9 @@ describe("compliance framework actionable vs accepted split", () => {
     expect(byId.get("C3")).toMatchObject({ failCount: 2, actionableFailCount: 1, acceptedFailCount: 1, accepted: false })
     expect(byId.get("C4")).toMatchObject({ failCount: 1, actionableFailCount: 1, acceptedFailCount: 0, accepted: false })
     expect(byId.get("C5")).toMatchObject({
-      failCount: 2,
+      failCount: 3,
       actionableFailCount: 0,
-      acceptedFailCount: 2,
+      acceptedFailCount: 3,
       accepted: true,
       acceptedScope: "mixed",
     })
@@ -1690,8 +1693,8 @@ describe("compliance framework actionable vs accepted split", () => {
     expect(byId.get("k8s-cis-1.23")).toMatchObject({
       passCount: 101,
       failCount: 15,
-      actionableFailCount: 5,
-      acceptedFailCount: 10,
+      actionableFailCount: 4,
+      acceptedFailCount: 11,
     })
     expect(byId.get("k8s-kisa-1.0")).toMatchObject({
       passCount: 3,
@@ -1706,7 +1709,6 @@ describe("compliance framework actionable vs accepted split", () => {
       .filter((c) => (c.actionableFailCount ?? 0) > 0)
       .map((c) => ({ id: c.id, act: c.actionableFailCount, acc: c.acceptedFailCount }))
     expect(cisActionable).toEqual([
-      { id: "1.1.9", act: 1, acc: 0 },
       { id: "1.1.12", act: 1, acc: 0 },
       { id: "5.1.2", act: 5, acc: 27 },
       { id: "5.1.3", act: 6, acc: 10 },
@@ -1949,5 +1951,103 @@ describe("compliance framework actionable vs accepted split", () => {
       actionableFailCount: 1,
       acceptedFailCount: 0,
     })
+  })
+})
+
+describe("Infra audit accepted vs actionable split", () => {
+  beforeEach(() => {
+    mockCache.clear()
+    mockFetchWithPolicy.mockReset()
+    mockReadJsonWithPolicy.mockReset()
+  })
+
+  it("separates allowlisted KCV0056 from actionable KCV0059 and fails closed when checks[] is omitted", async () => {
+    installK8sMock({
+      "/apis/aquasecurity.github.io/v1alpha1/clusterinfraassessmentreports": {
+        items: [
+          {
+            metadata: {
+              name: "node-narwhal-master-1",
+              creationTimestamp: "2026-11-20T00:00:00Z",
+              labels: {
+                "trivy-operator.resource.kind": "Node",
+                "trivy-operator.resource.name": "narwhal-master-1",
+              },
+            },
+            report: {
+              summary: { criticalCount: 0, highCount: 1, mediumCount: 0, lowCount: 1 },
+              checks: [
+                { checkID: "KCV0056", title: "CNI perms", severity: "HIGH", success: false },
+                { checkID: "KCV0059", title: "etcd ownership", severity: "LOW", success: false },
+              ],
+            },
+          },
+          {
+            metadata: {
+              name: "node-narwhal-master-2",
+              creationTimestamp: "2026-11-20T00:00:00Z",
+              labels: {
+                "trivy-operator.resource.kind": "Node",
+                "trivy-operator.resource.name": "narwhal-master-2",
+              },
+            },
+            report: {
+              summary: { criticalCount: 0, highCount: 1, mediumCount: 0, lowCount: 0 },
+              checks: [
+                { checkID: "KCV0056", title: "CNI perms", severity: "HIGH", success: false },
+              ],
+            },
+          },
+          {
+            metadata: {
+              name: "node-narwhal-master-3",
+              creationTimestamp: "2026-11-20T00:00:00Z",
+              labels: {
+                "trivy-operator.resource.kind": "Node",
+                "trivy-operator.resource.name": "narwhal-master-3",
+              },
+            },
+            report: {
+              summary: { criticalCount: 0, highCount: 1, mediumCount: 0, lowCount: 0 },
+              checks: [],
+            },
+          },
+        ],
+      },
+    })
+
+    const rows = await getInfraAuditList()
+    const m1 = rows.find((r) => r.node === "narwhal-master-1")!
+    expect(m1.accepted).toBe(false)
+    expect(m1.summary).toEqual({ Critical: 0, High: 1, Medium: 0, Low: 1 })
+    expect(m1.actionableSummary).toEqual({ Critical: 0, High: 0, Medium: 0, Low: 1 })
+    expect(m1.acceptedSummary).toEqual({ Critical: 0, High: 1, Medium: 0, Low: 0 })
+
+    const m2 = rows.find((r) => r.node === "narwhal-master-2")!
+    expect(m2.accepted).toBe(true)
+    expect(m2.acceptedScope).toBe("upstream")
+    expect(m2.actionableSummary).toEqual({ Critical: 0, High: 0, Medium: 0, Low: 0 })
+    expect(m2.acceptedSummary).toEqual({ Critical: 0, High: 1, Medium: 0, Low: 0 })
+
+    // Missing checks[] while summary.highCount === 1 -> fail closed (actionable)
+    const m3 = rows.find((r) => r.node === "narwhal-master-3")!
+    expect(m3.accepted).toBe(false)
+    expect(m3.actionableSummary).toEqual({ Critical: 0, High: 1, Medium: 0, Low: 0 })
+    expect(m3.acceptedSummary).toEqual({ Critical: 0, High: 0, Medium: 0, Low: 0 })
+
+    const detail = await getInfraAuditDetail("narwhal-master-1")
+    expect(detail).not.toBeNull()
+    expect(detail!.checks.find((c) => c.id === "KCV0056")).toMatchObject({
+      accepted: true,
+      acceptedClass: "upstream",
+      acceptedReasonKey: "compliance.acceptedReason.infraCniDirGlob",
+    })
+    expect(detail!.checks.find((c) => c.id === "KCV0059")).toMatchObject({
+      accepted: false,
+    })
+
+    const summary = await getComplianceSummary()
+    expect(summary.totalInfraFailures).toEqual({ Critical: 0, High: 1, Medium: 0, Low: 1 })
+    expect(summary.acceptedInfraFailures).toEqual({ Critical: 0, High: 2, Medium: 0, Low: 0 })
   })
 })

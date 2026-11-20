@@ -89,6 +89,89 @@ ambient_probe_denials() {
     | grep -F 'direction="inbound"' | grep -F "istio_converted_static_strict" | grep -c . || true
 }
 
+# D-NODE-HARDENING-LIVE: verifies CIS 1.1.9 (CNI config files <=600, no suid/sgid/sticky) and
+# CIS 1.1.12 (/var/lib/etcd <=700 etcd:etcd, no suid/sgid/sticky) directly on the node filesystem
+# so allowlisting KCV0056 (node-collector /*/cni/* dir glob) never masks an on-disk permission
+# regression on the verified node. Cost/coverage limit: verify-cluster.sh runs this only on the
+# single local node when IS_CLUSTER_NODE=true (SKIPs when run remotely); other nodes in a multi-node
+# cluster are NOT covered by this check (they rely on harden-node-files.sh during provisioning/join).
+# Re-evaluation trigger: remove the KCV0056 Node/* allowlist entry once trivy-checks/node-collector
+# fixes CMD-0009 (`stat -c %a /*/cni/*`). Escape hatch: pass [root_dir] for fixture testing.
+# Args: [root_dir] [cni_owner] [etcd_owner].
+verify_node_file_hardening() {
+  local root_dir="${1:-/}"
+  local expected_cni_owner="${2:-root:root}"
+  local expected_etcd_owner="${3:-etcd:etcd}"
+  local prefix="${root_dir%/}"
+  [ "${root_dir}" = "/" ] && prefix=""
+  local cni_dir="${prefix}/etc/cni/net.d"
+  local etcd_dir="${prefix}/var/lib/etcd"
+  local etcd_manifest="${prefix}/etc/kubernetes/manifests/etcd.yaml"
+  local -a priv=()
+
+  if [ "${root_dir}" = "/" ] && [ "$(id -u)" -ne 0 ]; then
+    if sudo -n true 2>/dev/null; then
+      priv=(sudo -n)
+    else
+      warn "CIS 1.1.9/1.1.12 node file hardening: passwordless sudo unavailable"
+      return 0
+    fi
+  fi
+
+  _node_stat() {
+    local target="$1"
+    if ${priv[@]+"${priv[@]}"} stat -L -c '%a %U:%G' "${target}" 2>/dev/null; then
+      return 0
+    fi
+    ${priv[@]+"${priv[@]}"} stat -L -f '%Mp%Lp %Su:%Sg' "${target}" 2>/dev/null
+  }
+
+  if ! ${priv[@]+"${priv[@]}"} test -d "${cni_dir}" || ${priv[@]+"${priv[@]}"} test -L "${cni_dir}"; then
+    fail "CIS 1.1.9 CNI config dir missing or symlink: ${cni_dir}"
+  elif ! ${priv[@]+"${priv[@]}"} test -r "${cni_dir}" || ! ${priv[@]+"${priv[@]}"} test -x "${cni_dir}"; then
+    fail "CIS 1.1.9 CNI config dir unreadable: ${cni_dir}"
+  else
+    local cni_files cni_count=0 cni_bad=""
+    if ! cni_files=$(${priv[@]+"${priv[@]}"} find -L "${cni_dir}" -mindepth 1 -maxdepth 1 -type f 2>/dev/null); then
+      fail "CIS 1.1.9 CNI config dir scan failed (unreadable entry or broken symlink): ${cni_dir}"
+    else
+      cni_files=$(printf '%s\n' "${cni_files}" | sort)
+      while IFS= read -r f; do
+        [ -n "${f}" ] || continue
+        cni_count=$((cni_count + 1))
+        local info mode owner
+        info=$(_node_stat "${f}" || echo "")
+        mode="${info%% *}"
+        owner="${info#* }"
+        if [ -z "${info}" ] || ! [[ "${mode}" =~ ^[0-7]+$ ]] || [ $((8#${mode} & 8#7177)) -ne 0 ] || [ "${owner}" != "${expected_cni_owner}" ]; then
+          cni_bad="${cni_bad} ${f##*/}=${mode:-?}:${owner:-?}"
+        fi
+      done <<< "${cni_files}"
+      if [ "${cni_count}" -eq 0 ]; then
+        fail "CIS 1.1.9 CNI config files: none found in ${cni_dir}"
+      elif [ -n "${cni_bad}" ]; then
+        fail "CIS 1.1.9 CNI file perms (expected <=600 ${expected_cni_owner}):${cni_bad}"
+      else
+        pass "CIS 1.1.9 CNI file perms: ${cni_count} file(s) <=600 (${expected_cni_owner})"
+      fi
+    fi
+  fi
+
+  if ${priv[@]+"${priv[@]}"} test -d "${etcd_dir}" && ! ${priv[@]+"${priv[@]}"} test -L "${etcd_dir}"; then
+    local etcd_info etcd_mode etcd_owner
+    etcd_info=$(_node_stat "${etcd_dir}" || echo "")
+    etcd_mode="${etcd_info%% *}"
+    etcd_owner="${etcd_info#* }"
+    if [ -n "${etcd_info}" ] && [[ "${etcd_mode}" =~ ^[0-7]+$ ]] && [ $((8#${etcd_mode} & 8#7077)) -eq 0 ] && [ "${etcd_owner}" = "${expected_etcd_owner}" ]; then
+      pass "CIS 1.1.12 etcd data dir: ${etcd_dir} (${etcd_mode} ${etcd_owner})"
+    else
+      fail "CIS 1.1.12 etcd data dir: ${etcd_dir} is ${etcd_mode:-?} ${etcd_owner:-?} (expected <=700 ${expected_etcd_owner})"
+    fi
+  elif ${priv[@]+"${priv[@]}"} test -f "${etcd_manifest}"; then
+    fail "CIS 1.1.12 etcd data dir missing or symlink: ${etcd_dir}"
+  fi
+}
+
 # Stage → section mapping
 PHASE1_SECTIONS="nodes kube-vip etcd cilium core"
 PHASE2_INFRA_SECTIONS="nodes network tls dns"
@@ -207,6 +290,12 @@ if should_run "nodes"; then
     warn "Control-plane taint: ${TAINTED_MASTERS}/${MASTER_COUNT} masters tainted"
   else
     warn "Control-plane taint: not applied (Phase 1 or taint removed)"
+  fi
+
+  if ${IS_CLUSTER_NODE}; then
+    verify_node_file_hardening
+  else
+    skip "CIS 1.1.9/1.1.12 node file hardening: requires local execution on cluster node"
   fi
   echo ""
 fi

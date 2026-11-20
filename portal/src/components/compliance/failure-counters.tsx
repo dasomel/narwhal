@@ -64,6 +64,11 @@ export function FailureCounters({ summary, locale }: Props) {
     (summary.acceptedRbacFailures?.High ?? 0) +
     (summary.acceptedRbacFailures?.Medium ?? 0) +
     (summary.acceptedRbacFailures?.Low ?? 0)
+  const acceptedInfraTotal =
+    (summary.acceptedInfraFailures?.Critical ?? 0) +
+    (summary.acceptedInfraFailures?.High ?? 0) +
+    (summary.acceptedInfraFailures?.Medium ?? 0) +
+    (summary.acceptedInfraFailures?.Low ?? 0)
   const actionableControlsTotal = summary.frameworks.reduce(
     (acc, f) => acc + (f.actionableFailCount ?? f.failCount),
     0,
@@ -115,6 +120,13 @@ export function FailureCounters({ summary, locale }: Props) {
               <div className="text-[0.7rem] text-muted-foreground/70 mt-0.5">
                 {t(locale, "compliance.counter.rbacBreakdown", {
                   accepted: String(acceptedRbacTotal),
+                })}
+              </div>
+            )}
+            {key === "infra" && acceptedInfraTotal > 0 && (
+              <div className="text-[0.7rem] text-muted-foreground/70 mt-0.5">
+                {t(locale, "compliance.counter.infraBreakdown", {
+                  accepted: String(acceptedInfraTotal),
                 })}
               </div>
             )}

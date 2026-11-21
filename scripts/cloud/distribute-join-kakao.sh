@@ -27,6 +27,7 @@ set -euo pipefail
 
 TF_DIR="${TF_DIR:-csp/kakao-cloud/terraform}"
 SSH_USER="${NODE_SSH_USER:-ubuntu}"
+DOMAIN="${DOMAIN:-kakao.narwhal.internal}"
 
 cd "$(dirname "$0")/../.."
 
@@ -134,6 +135,23 @@ if grep -q 'oidc-ca-file' <<<"${cluster_config}"; then
   echo "  oidc-ca.crt ($(wc -c < "${tmp}/oidc-ca.crt") bytes)"
 fi
 
+# D-HARBOR-NODE-CA (KISA-IMG-01): for late-joining Kakao nodes (after Phase 2 08-6 ran),
+# stage master-1's Harbor CA to /tmp/harbor-ca.crt so 02-join-{control-plane,worker}.sh can
+# configure containerd TLS verification without node-to-node SSH. During initial Phase 1 join
+# the file does not exist yet (skip cleanly; Phase 2 apply-harbor-ca-kakao.sh pushes it).
+HARBOR_CA_PRESENT=false
+HARBOR_CA_REMOTE="/etc/containerd/certs.d/harbor.${DOMAIN}/ca.crt"
+if ssh_node "${MASTER1}" "sudo test -s '${HARBOR_CA_REMOTE}'" 2>/dev/null; then
+  if ! ssh_node "${MASTER1}" "sudo cat '${HARBOR_CA_REMOTE}'" > "${tmp}/harbor-ca.crt" 2>/dev/null \
+    || [ ! -s "${tmp}/harbor-ca.crt" ] \
+    || ! openssl x509 -in "${tmp}/harbor-ca.crt" -noout -subject >/dev/null 2>&1; then
+    echo "ERROR: ${HARBOR_CA_REMOTE} exists on master-1 but could not be read as a valid X.509 certificate" >&2
+    exit 1
+  fi
+  HARBOR_CA_PRESENT=true
+  echo "  harbor-ca.crt ($(wc -c < "${tmp}/harbor-ca.crt" | tr -d ' ') bytes)"
+fi
+
 place() {
   local ip="$1" src="$2" dest="$3"
   ssh_node "${ip}" "cat > '${dest}' && chmod 0600 '${dest}'" < "${tmp}/${src}"
@@ -146,12 +164,18 @@ for ip in "${MASTERS[@]:1}"; do
   if [ "${OIDC_CA_REQUIRED}" = "true" ]; then
     place "${ip}" oidc-ca.crt /tmp/oidc-ca.crt
   fi
+  if [ "${HARBOR_CA_PRESENT}" = "true" ]; then
+    place "${ip}" harbor-ca.crt /tmp/harbor-ca.crt
+  fi
   ssh_node "${ip}" "ls -l /tmp/join-control-plane.sh /tmp/encryption-config.yaml | awk '{print \"    \"\$5, \$9}'"
 done
 
 for ip in "${WORKERS[@]}"; do
   echo "=== worker ${ip} ==="
   place "${ip}" join-command.sh /tmp/join-command.sh
+  if [ "${HARBOR_CA_PRESENT}" = "true" ]; then
+    place "${ip}" harbor-ca.crt /tmp/harbor-ca.crt
+  fi
   ssh_node "${ip}" "ls -l /tmp/join-command.sh | awk '{print \"    \"\$5, \$9}'"
 done
 

@@ -1,0 +1,55 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-kisa-node-trust-psa-rbac-20261121",
+  "task": "Fix three real security/compliance gaps behind KISA controls (KISA-IMG-01 Harbor containerd CA trust, KISA-POD-01 PSA audit/warn 14/14 namespaces, KISA-RBAC-02 explicit dev Role without serviceaccounts/impersonate) with offline static/behavioral/mutation verification.",
+  "changeContext": {
+    "paths": [
+      ".agents/evals/traces/2026-11-kisa-node-trust-psa-rbac.json",
+      "gitops/resources/dev-namespace.yaml",
+      "gitops/resources/narwhal-db.yaml",
+      "gitops/resources/rbac-policies.yaml",
+      "gitops/charts/narwhal-apps/templates/chaos-mesh.yaml"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Touched containerd/TLS/join/Kakao scripts (02-containerd.sh, 08-6-tls-routes.sh, 08-6b-harbor-containerd-tls-node.sh, 02-join-{worker,control-plane}.sh, distribute-join-kakao.sh, apply-harbor-ca-kakao.sh, provision-kakao.sh, operations.md), PSA scripts/GitOps/docs/check (lib/apply-psa-labels.sh, 08-3-security.sh, 14-gitops-bootstrap.sh, dev-namespace.yaml, narwhal-db.yaml, chaos-mesh.yaml, workload-security-profile.md, check-workload-psa-profile.py), dev RBAC (rbac-policies.yaml, 11-4-keycloak-apiserver.sh), R317 boundary update (check-harbor-ca-rotate.py), R386 (check-kisa-node-trust-psa-rbac.py, regression-check-kakao.sh), and lessons-log.md. Deliberately left alone: portal/, scripts/airgap/06-configure-mirrors.sh (external HTTP/operator mirror), velero-server-rbac.yaml, and live cluster/node state."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "Verified read-only on narwhal-master-1 (v1.35.7, containerd 2.2.2): /etc/containerd/certs.d/harbor.local.narwhal.internal/hosts.toml has skip_verify = true while platform-system/narwhal-wildcard-tls ca.crt is CN=Narwhal IDP Root CA; kubectl get ns --show-labels shows 9/14 labeled (iam, istio-system, security-system, dev, chaos-testing missing); RoleBinding dev/developer-full-access binds ClusterRole/edit and kubectl auth can-i impersonate serviceaccounts -n dev --as=oidc:dev --as-group=oidc:developer returns yes."
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "Implemented D-HARBOR-NODE-CA (removed harbor skip_verify from 02-containerd.sh; added fail-closed idempotent 08-6b-harbor-containerd-tls-node.sh wired into 08-6-tls-routes.sh for bring-up/rotation/Vagrant propagation, late-join scripts, and Kakao apply-harbor-ca-kakao.sh), D-PSA-LABELS-14 (centralized all 14 namespaces audit/warn-only in lib/apply-psa-labels.sh called from 08-3 and 14, synced dev-namespace.yaml, narwhal-db.yaml, chaos-mesh.yaml managedNamespaceMetadata, workload-security-profile.md, and check-workload-psa-profile.py re.finditer), and D-DEV-ROLE-NO-IMPERSONATE (replaced ClusterRole/edit binding on dev/developer-full-access with explicit Role/dev/developer-full-access derived from live ClusterRole/edit without impersonate/escalate/bind/serviceaccounts-token/proxy/wildcards)."
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "Offline static, behavioral (bash 3.2 + default bash, PATH without helm/promtool), and mutation verification across make lint, make validate, make test (incl. R317, check-workload-psa-profile.py, and R386 with 22 mutations), plus evals gate and trace-evidence checks. NOT covered: live cluster/node rollout, live Harbor ctr pull with verification on/wrong CA, and live kubectl auth can-i after RoleBinding replacement (owned by orchestrator).",
+      "evidence": [
+        "test:python3 scripts/test/lib/check-kisa-node-trust-psa-rbac.py --mutation-verify -> PASS (22 mutations rejected, bash 3.2 + no-helm/promtool behavioral verified)",
+        "test:python3 scripts/test/lib/check-workload-psa-profile.py --mutation-verify -> PASS",
+        "test:make lint && make validate && make test -> passed",
+        "policy:python3 .agents/evals/gate.py && python3 scripts/ci/check-agent-trace-evidence.py -> passed"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "completion_claim",
+      "summary": "All three Lane 3 parts (KISA-IMG-01, KISA-POD-01, KISA-RBAC-02), docs, lessons-log, trace, and R386 behavioral/mutation checks pass offline; live node CA migration, GitOps sync (with pre-sync delete of immutable RoleBinding dev/developer-full-access), PSA convergence, and live verification remain for the orchestrator."
+    },
+    {
+      "id": "e6",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Complete on branch fix/kisa-node-trust-psa-rbac; ready for orchestrator rollout and live verification."
+    }
+  ]
+}

@@ -69,8 +69,8 @@ subjects:
   name: oidc:cluster-admin
 EOF
 
-# NOTE: dev ns의 edit 바인딩은 gitops/resources/rbac-policies.yaml의
-# developer-full-access(RoleBinding)가 소유한다 — 여기서 중복 생성하지 않음.
+# NOTE: dev ns의 developer-full-access Role/RoleBinding은 gitops/resources/rbac-policies.yaml이
+# 소유한다 — 여기서 중복 생성하지 않음.
 
 # RoleBinding: developer group gets view in devtools and monitoring
 for ns in devtools monitoring; do

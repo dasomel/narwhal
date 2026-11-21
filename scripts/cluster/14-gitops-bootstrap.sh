@@ -559,6 +559,19 @@ if [ "${SECONDS}" -ge "${chart_gate_deadline}" ]; then
   exit 1
 fi
 
+# D-PSA-LABELS-14 (KISA-POD-01): re-apply PSA audit/warn labels after Phase 2 steps
+# 08-5..11 and ArgoCD app-of-apps created security-system, istio-system, iam, dev, and
+# chaos-testing so all 14 platform namespaces converge with the exact list in apply-psa-labels.sh.
+PSA_HELPER="/home/vagrant/scripts/cluster/lib/apply-psa-labels.sh"
+if [ ! -f "${PSA_HELPER}" ]; then
+  PSA_HELPER="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/apply-psa-labels.sh"
+fi
+if [ -f "${PSA_HELPER}" ]; then
+  bash "${PSA_HELPER}"
+else
+  echo "WARN: ${PSA_HELPER} not found; late-created namespaces may lack PSA audit/warn labels" >&2
+fi
+
 echo "=== GitOps Bootstrap Done ==="
 
 echo ""

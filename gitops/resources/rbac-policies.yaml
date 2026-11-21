@@ -151,7 +151,7 @@ rules:
 # 2026-07-10에 iam/platform의 DB 비밀번호·OIDC 시크릿 열람 때문에 제거했다.
 #
 # 무엇이 바뀌는가(직접 kubectl 사용 한정 — 포털은 자체 ServiceAccount를 쓴다):
-#   dev 네임스페이스        변화 없음. developer-full-access(edit) + 아래 RoleBinding
+#   dev 네임스페이스        변화 없음. developer-full-access(명시적 dev Role) + 아래 RoleBinding
 #   devtools, monitoring    변화 없음. oidc-developer-view(view)
 #   그 외 모든 네임스페이스   읽기만 가능. exec·변경·Job 생성 불가
 #   Application patch/sync  kubectl로는 불가. 포털과 argocd CLI는 각자의 인가를 쓴다.
@@ -382,10 +382,140 @@ subjects:
     name: "oidc:viewer"
 
 ---
+# Role: developer-full-access (dev 네임스페이스)
+# D-DEV-ROLE-NO-IMPERSONATE (KISA-RBAC-02): replaces built-in ClusterRole/edit on
+# RoleBinding/dev/developer-full-access. Built-in `edit` aggregates
+# `serviceaccounts: [impersonate]` (and `serviceaccounts/token: [create]`), which
+# triggers KISA-RBAC-02 Critical escalation findings. Derived from live
+# `kubectl get clusterrole edit -o yaml` (K8s 1.35.7), retaining developer workload,
+# debugging, ConfigMap/Secret/PVC/Ingress/NetworkPolicy/PDB/HPA/Lease, and read-only
+# policy/scan report access in `dev` while dropping:
+#   - serviceaccounts/impersonate and serviceaccounts/token (escalation / token minting)
+#   - pods/proxy and services/proxy (apiserver proxy bypassing NetworkPolicy)
+#   - deprecated/removed `extensions` API group and legacy `replicationcontrollers`
+#   - write verbs on `events` (read-only retained)
+#   - cluster-scoped or scheduler-only resources (`bindings`, `namespaces`, `nodes` metrics)
+#   - `acme.cert-manager.io`, `certificates/status` update, `resource.k8s.io` DRA claims
+# Cost: new K8s API groups added to built-in `edit` are not auto-aggregated; add rules
+# here explicitly when developers need them in `dev`.
+# Escape hatch: add explicit non-escalation rules to this Role (never re-bind `edit`).
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: developer-full-access
+  namespace: dev
+  labels:
+    app.kubernetes.io/managed-by: narwhal
+    narwhal.io/rbac-tier: developer
+rules:
+  # Core workload & debugging resources (no impersonate, no serviceaccounts/token, no proxy)
+  - apiGroups: [""]
+    resources:
+      - pods
+      - pods/attach
+      - pods/exec
+      - pods/portforward
+      - configmaps
+      - persistentvolumeclaims
+      - secrets
+      - serviceaccounts
+      - services
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete", "deletecollection"]
+  - apiGroups: [""]
+    resources: ["pods/eviction"]
+    verbs: ["create"]
+  - apiGroups: [""]
+    resources:
+      - endpoints
+      - limitranges
+      - persistentvolumeclaims/status
+      - pods/log
+      - pods/status
+      - resourcequotas
+      - resourcequotas/status
+      - services/status
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["", "events.k8s.io"]
+    resources: ["events"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["discovery.k8s.io"]
+    resources: ["endpointslices"]
+    verbs: ["get", "list", "watch"]
+  # Apps workloads
+  - apiGroups: ["apps"]
+    resources:
+      - daemonsets
+      - deployments
+      - deployments/rollback
+      - deployments/scale
+      - replicasets
+      - replicasets/scale
+      - statefulsets
+      - statefulsets/scale
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete", "deletecollection"]
+  - apiGroups: ["apps"]
+    resources:
+      - controllerrevisions
+      - daemonsets/status
+      - deployments/status
+      - replicasets/status
+      - statefulsets/status
+    verbs: ["get", "list", "watch"]
+  # Autoscaling, Batch, Networking, Policy, Coordination
+  - apiGroups: ["autoscaling"]
+    resources: ["horizontalpodautoscalers"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete", "deletecollection"]
+  - apiGroups: ["autoscaling"]
+    resources: ["horizontalpodautoscalers/status"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["batch"]
+    resources: ["cronjobs", "jobs"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete", "deletecollection"]
+  - apiGroups: ["batch"]
+    resources: ["cronjobs/status", "jobs/status"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["ingresses", "networkpolicies"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete", "deletecollection"]
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["ingresses/status"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["policy"]
+    resources: ["poddisruptionbudgets"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete", "deletecollection"]
+  - apiGroups: ["policy"]
+    resources: ["poddisruptionbudgets/status"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["coordination.k8s.io"]
+    resources: ["leases"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete", "deletecollection"]
+  # Metrics & security/cert visibility in dev
+  - apiGroups: ["metrics.k8s.io"]
+    resources: ["pods"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["cert-manager.io"]
+    resources: ["certificates", "certificaterequests", "issuers"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete", "deletecollection"]
+  - apiGroups: ["aquasecurity.github.io"]
+    resources: ["configauditreports", "exposedsecretreports", "vulnerabilityreports"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["wgpolicyk8s.io"]
+    resources: ["policyreports"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["reports.kyverno.io"]
+    resources: ["ephemeralreports"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["kyverno.io"]
+    resources: ["policies", "cleanuppolicies", "updaterequests"]
+    verbs: ["get", "list", "watch"]
+
+---
 # RoleBinding: developer-full-access (dev 네임스페이스)
-# developer 그룹에게 dev 네임스페이스에서 기본 edit 권한 추가 부여.
-# ClusterRoleBinding의 developer 역할에 더해 dev ns에서 Secrets 쓰기,
-# PVC 삭제 등 개발 편의 권한을 추가로 허용.
+# developer 그룹에게 dev 네임스페이스에서 명시적 Role/developer-full-access 부여.
+# 기존 ClusterRole/edit 바인딩이 상속하던 serviceaccounts/impersonate 권한을 제거하면서
+# dev ns의 Secrets CRUD, PVC 삭제, Ingress/NetworkPolicy 등 개발 권한을 유지한다.
+# 주의: RoleBinding.roleRef는 불변이므로 기존 클러스터에서 edit → Role 전환 시
+# ArgoCD 동기화 전 `kubectl -n dev delete rolebinding developer-full-access`가 필요하다.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
@@ -396,8 +526,8 @@ metadata:
     narwhal.io/rbac-group: developer
 roleRef:
   apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
-  name: edit
+  kind: Role
+  name: developer-full-access
 subjects:
   - apiGroup: rbac.authorization.k8s.io
     kind: Group
@@ -410,10 +540,10 @@ subjects:
 # 변경 권한은 승인된 네임스페이스마다 명시적으로 부여하지, 클러스터 전역으로
 # 한 번에 주지 않는다.
 #
-# 바로 위의 developer-full-access(edit)와 겹치는 부분이 있다. 의도한 것이다 —
-# edit은 k8s 내장 역할이라 argoproj.io를 모르고, 이쪽은 narwhal 고유 권한을
-# 담는다. 그리고 새 `dev-*` 네임스페이스가 복제해야 할 템플릿은 edit이 아니라
-# 이 RoleBinding이다.
+# 바로 위의 developer-full-access(명시적 dev Role)와 겹치는 부분이 있다. 의도한 것이다 —
+# 위 Role은 dev 워크로드·Secrets·PVC·Ingress/NetworkPolicy 전반을 다루고, 이쪽은
+# argoproj.io applications/sync 등 narwhal 고유 권한을 담는다. 새 `dev-*` 네임스페이스가
+# 복제해야 할 템플릿은 이 RoleBinding이다.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:

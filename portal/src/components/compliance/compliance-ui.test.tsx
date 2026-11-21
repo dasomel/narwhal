@@ -584,21 +584,28 @@ describe("Compliance UI accepted exceptions", () => {
     expect(pageHtml).not.toContain("+0 accepted")
   })
 
-  it("InfraAuditList, ExpandedInfraPanel, and InfraAuditDetailPage surface accepted KCV0056 while keeping raw counts", async () => {
+  it("InfraAuditList, ExpandedInfraPanel, and InfraAuditDetailPage treat failing KCV0056 as actionable while preserving accepted-row UI machinery", async () => {
     const infraRows: InfraAuditRow[] = [
       {
         node: "narwhal-master-1",
         summary: { Critical: 0, High: 1, Medium: 0, Low: 0 },
+        actionableSummary: { Critical: 0, High: 1, Medium: 0, Low: 0 },
+        acceptedSummary: { Critical: 0, High: 0, Medium: 0, Low: 0 },
+        accepted: false,
+      },
+      {
+        node: "synthetic-accepted-node",
+        summary: { Critical: 0, High: 0, Medium: 1, Low: 0 },
         actionableSummary: { Critical: 0, High: 0, Medium: 0, Low: 0 },
-        acceptedSummary: { Critical: 0, High: 1, Medium: 0, Low: 0 },
+        acceptedSummary: { Critical: 0, High: 0, Medium: 1, Low: 0 },
         accepted: true,
         acceptedScope: "upstream",
       },
       {
-        node: "narwhal-master-2",
-        summary: { Critical: 0, High: 1, Medium: 0, Low: 1 },
+        node: "synthetic-mixed-node",
+        summary: { Critical: 0, High: 0, Medium: 1, Low: 1 },
         actionableSummary: { Critical: 0, High: 0, Medium: 0, Low: 1 },
-        acceptedSummary: { Critical: 0, High: 1, Medium: 0, Low: 0 },
+        acceptedSummary: { Critical: 0, High: 0, Medium: 1, Low: 0 },
         accepted: false,
       },
     ]
@@ -615,10 +622,10 @@ describe("Compliance UI accepted exceptions", () => {
         <InfraAuditList />
       </LocaleProvider>,
     )
-    expect(listEn).toContain("1 actionable · 1 accepted (exception)")
+    expect(listEn).toContain("2 actionable · 1 accepted (exception)")
     expect(listEn).toContain("narwhal-master-1")
+    expect(listEn).toContain("synthetic-accepted-node")
     expect(listEn).toContain("Upstream accepted")
-    expect(listEn).toContain("1 accepted")
     expect(listEn).toContain("+1 accepted")
     expect(listEn).toContain("High: 1")
     expect(listEn).toContain("Low: 1")
@@ -634,8 +641,8 @@ describe("Compliance UI accepted exceptions", () => {
     const detail: InfraAuditDetail = {
       node: "narwhal-master-1",
       summary: { Critical: 0, High: 1, Medium: 0, Low: 1 },
-      actionableSummary: { Critical: 0, High: 0, Medium: 0, Low: 1 },
-      acceptedSummary: { Critical: 0, High: 1, Medium: 0, Low: 0 },
+      actionableSummary: { Critical: 0, High: 1, Medium: 0, Low: 1 },
+      acceptedSummary: { Critical: 0, High: 0, Medium: 0, Low: 0 },
       accepted: false,
       checks: [
         {
@@ -643,10 +650,7 @@ describe("Compliance UI accepted exceptions", () => {
           title: "Ensure CNI file perms 600",
           severity: "High",
           success: false,
-          accepted: true,
-          acceptedClass: "upstream",
-          acceptedReasonKey: "compliance.acceptedReason.infraCniDirGlob",
-          acceptedReason: "CMD-0009 globs /etc/cni/net.d directory",
+          accepted: false,
         },
         {
           id: "KCV0059",
@@ -670,18 +674,18 @@ describe("Compliance UI accepted exceptions", () => {
         <ExpandedInfraPanel node="narwhal-master-1" />
       </LocaleProvider>,
     )
-    expect(expandedKo).toContain("KCV0059")
     expect(expandedKo).toContain("KCV0056")
-    expect(expandedKo).toContain("업스트림 수용")
-    expect(expandedKo).toContain(ko["compliance.acceptedReason.infraCniDirGlob"])
-    expect(expandedKo.indexOf("KCV0059")).toBeLessThan(expandedKo.indexOf("KCV0056"))
+    expect(expandedKo).toContain("KCV0059")
+    expect(expandedKo).not.toContain("업스트림 수용")
+    expect(expandedKo.indexOf("KCV0056")).toBeLessThan(expandedKo.indexOf("KCV0059"))
 
     mockGetLocale.mockResolvedValue("en")
     mockGetInfraAuditDetail.mockResolvedValue(detail)
     const detailEl = await InfraAuditDetailPage({ params: Promise.resolve({ node: "narwhal-master-1" }) })
     const detailHtml = renderToStaticMarkup(detailEl)
-    expect(detailHtml).toContain("Accepted (upstream)")
-    expect(detailHtml).toContain(en["compliance.acceptedReason.infraCniDirGlob"])
+    expect(detailHtml).toContain("KCV0056")
+    expect(detailHtml).toContain("KCV0059")
+    expect(detailHtml).not.toContain("Accepted (upstream)")
     expect(detailHtml).toContain("High")
     expect(detailHtml).toContain("Low")
   })

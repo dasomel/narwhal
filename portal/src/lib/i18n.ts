@@ -1058,7 +1058,6 @@ export const ko = {
   "compliance.acceptedReason.rbacDeveloperWorkloadAdmin": "dev RoleBinding으로만 범위가 제한된 개발자 워크로드 관리 권한",
   "compliance.acceptedReason.rbacPortalJobs": "Kyverno 어드미션 정책으로 보호되는 튜닝 및 Kaniko 빌드 Job 권한",
   "compliance.acceptedReason.rbacPortalNotificationChannels": "단일 Secret 이름과 get/update/patch 동사로만 범위가 제한됨",
-  "compliance.acceptedReason.infraCniDirGlob": "node-collector:0.3.1(trivy-checks v1.7.1 CMD-0009)이 `stat -c %a /*/cni/*`로 내부 파일(600) 대신 `/etc/cni/net.d` 디렉터리(700)를 검사하며 trivy-operator 0.25는 명령 오버라이드를 지원하지 않음. `Node/*` 규칙은 전체 노드에 적용되나 보상 검증(`verify-cluster.sh`)은 실행한 단일 로컬 노드만 검사(원격 실행 시 SKIP)하므로 멀티노드 클러스터의 다른 노드는 커버하지 않음. 향후 trivy-checks가 CMD-0009를 수정하면 실제 퇴행을 가리지 않도록 이 예외를 즉시 제거해야 함",
 
   // common expand/collapse + navigation
   "common.viewFullDetails": "상세 보기",
@@ -2550,7 +2549,6 @@ export const en: Record<keyof typeof ko, string> = {
   "compliance.acceptedReason.rbacDeveloperWorkloadAdmin": "Developer workload management privileges scoped solely via dev RoleBinding",
   "compliance.acceptedReason.rbacPortalJobs": "Tuning and Kaniko build Jobs guarded by Kyverno admission policies",
   "compliance.acceptedReason.rbacPortalNotificationChannels": "Scoped to a single Secret name with get/update/patch verbs only",
-  "compliance.acceptedReason.infraCniDirGlob": "node-collector:0.3.1 (trivy-checks v1.7.1 CMD-0009) runs `stat -c %a /*/cni/*`, matching `/etc/cni/net.d` (700) instead of files inside it (600), and trivy-operator 0.25 exposes no command override. Applies to every node (`Node/*`), while `verify-cluster.sh` checks only the single local node it runs on (SKIPs remotely; other nodes in a multi-node cluster are not covered by it). Remove this acceptance as soon as a trivy-checks/node-collector release fixes CMD-0009",
 
   // common expand/collapse + navigation
   "common.viewFullDetails": "View full details",

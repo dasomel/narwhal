@@ -9,6 +9,11 @@ English | [한국어](CHANGELOG-ko.md)
 
 ## [Unreleased]
 
+### Changed
+
+- **Remove `KCV0056` Infra acceptance (`src/lib/compliance-accepted.ts`, `src/lib/i18n.ts`):**
+  - Emptied `ACCEPTED_INFRA_RULES` (removing the `KCV0056` `upstream` rule and `compliance.acceptedReason.infraCniDirGlob` ko/en i18n keys) now that `gitops/charts/narwhal-apps/templates/trivy-operator.yaml` mounts host `/etc/cni/net.d/` at container `/etc/cni` (`D-NODE-COLLECTOR-CNI-MOUNT`) so `node-collector` `CMD-0009` (`stat -c %a /*/cni/*`) inspects CNI files rather than the `700` directory. The fail-closed Infra/Frameworks accepted/actionable split machinery stays intact so failing `KCV0056` reports are actionable again and future data-only rules remain supported.
+
 ## [1.1.23] - 2026-11-20
 
 ### Changed

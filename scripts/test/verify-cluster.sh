@@ -103,12 +103,10 @@ _node_stat() {
 
 # D-NODE-HARDENING-LIVE: verifies CIS 1.1.9 (CNI config files <=600, no suid/sgid/sticky) and
 # CIS 1.1.12 (/var/lib/etcd <=700 etcd:etcd, no suid/sgid/sticky) directly on the node filesystem
-# so allowlisting KCV0056 (node-collector /*/cni/* dir glob) never masks an on-disk permission
-# regression on the verified node. Cost/coverage limit: verify-cluster.sh runs this only on the
-# single local node when IS_CLUSTER_NODE=true (SKIPs when run remotely); other nodes in a multi-node
-# cluster are NOT covered by this check (they rely on harden-node-files.sh during provisioning/join).
-# Re-evaluation trigger: remove the KCV0056 Node/* allowlist entry once trivy-checks/node-collector
-# fixes CMD-0009 (`stat -c %a /*/cni/*`). Escape hatch: pass [root_dir] for fixture testing.
+# alongside trivy-operator's nodeCollector mounts (KCV0056 via /etc/cni mount, KCV0059 via
+# /etc/passwd+/etc/group). Cost/coverage limit: verify-cluster.sh runs this only on the single local
+# node when IS_CLUSTER_NODE=true (SKIPs when run remotely); other nodes rely on harden-node-files.sh
+# during provisioning/join and on Trivy cluster-wide node scans. Escape hatch: pass [root_dir] for fixture testing.
 # Args: [root_dir] [cni_owner] [etcd_owner].
 verify_node_file_hardening() {
   local root_dir="${1:-/}"

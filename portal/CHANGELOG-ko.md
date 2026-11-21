@@ -9,6 +9,11 @@
 
 ## [Unreleased]
 
+### 변경
+
+- **`KCV0056` 인프라 수용 규칙 제거 (`src/lib/compliance-accepted.ts`, `src/lib/i18n.ts`):**
+  - `gitops/charts/narwhal-apps/templates/trivy-operator.yaml`에서 호스트 `/etc/cni/net.d/`를 컨테이너 `/etc/cni`로 마운트해(`D-NODE-COLLECTOR-CNI-MOUNT`) `node-collector` `CMD-0009`(`stat -c %a /*/cni/*`)가 `700` 디렉터리가 아닌 내부 CNI 파일을 검사하도록 수정됨에 따라 `ACCEPTED_INFRA_RULES`에서 `KCV0056` 수용 규칙을 제거하고 `compliance.acceptedReason.infraCniDirGlob` ko/en i18n 키를 삭제했습니다. fail-closed 인프라/프레임워크 수용·조치가능 분리 구조는 유지하므로 실패한 `KCV0056`은 다시 조치가능으로 표시되며 향후 데이터 전용 규칙 추가도 계속 지원합니다.
+
 ## [1.1.23] - 2026-11-20
 
 ### 변경

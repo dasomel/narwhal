@@ -1,17 +1,18 @@
 #!/usr/bin/env python3
-"""R385: Node compliance resolution for KCV0059 (scanner passwd/group mounts) & KCV0056 (allowlist + live verifier).
+"""R385: Node compliance resolution for KCV0059 (passwd/group mounts) & KCV0056 (/etc/cni mount, no acceptance).
 
 Verifies:
 1. gitops/charts/narwhal-apps/templates/trivy-operator.yaml preserves all 8 chart 0.27.0 default
-   nodeCollector hostPath volumes/mounts AND adds read-only /etc/passwd and /etc/group File mounts
-   (and renders cleanly via helm template when available).
-2. portal/src/lib/compliance-accepted.ts normalizes KCV IDs and allowlists ONLY KCV0056 (upstream),
-   never KCV0059, failing closed on empty/unlisted inputs.
+   nodeCollector hostPath volumes/mounts (remounting host /etc/cni/net.d/ at container /etc/cni so
+   CMD-0009/CMD-0010 /*/cni/* globs CNI files instead of the 700 dir) AND adds read-only
+   /etc/passwd and /etc/group File mounts (and renders cleanly via helm template when available).
+2. portal/src/lib/compliance-accepted.ts normalizes KCV IDs and keeps ACCEPTED_INFRA_RULES empty
+   (neither KCV0056 nor KCV0059 is allowlisted), failing closed on empty/unlisted inputs.
 3. portal/src/lib/compliance.ts reuses infraAuditMatcher across Infra list/detail/summary and
    Compliance Frameworks (Node targets) while keeping raw counts visible and failing closed when
    checks[] is omitted.
 4. portal/src/types/compliance.ts, portal/src/lib/i18n.ts, and docs/common/compliance-hardening.md
-   stay aligned (Infra allowlist table + node-collector root-cause resolution).
+   stay aligned (empty Infra allowlist table + node-collector root-cause resolution).
 5. scripts/test/verify-cluster.sh defines and invokes verify_node_file_hardening under nodes, and
    behavioral fixture tests prove it passes compliant CIS 1.1.9/1.1.12 layouts and catches regressions.
 6. scripts/test/regression-check-kakao.sh wires R385 with --mutation-verify.
@@ -48,7 +49,8 @@ FILES = {
 
 HELM_COMMENT_RE = re.compile(r"\A\{\{-\s*/\*.*?\*/\s*-?\}\}\s*", re.S)
 
-# (name, mountPath, hostPath) — chart 0.27.0 default mounts; lib-systemd keeps its trailing slash on mountPath only.
+# (name, mountPath, hostPath) — chart 0.27.0 default mounts, except etc-cni-netd mounts host
+# /etc/cni/net.d/ at container /etc/cni so /*/cni/* matches CNI files (D-NODE-COLLECTOR-CNI-MOUNT).
 DEFAULT_NODE_COLLECTOR_ENTRIES: tuple[tuple[str, str, str], ...] = (
     ("var-lib-etcd", "/var/lib/etcd", "/var/lib/etcd"),
     ("var-lib-kubelet", "/var/lib/kubelet", "/var/lib/kubelet"),
@@ -57,7 +59,7 @@ DEFAULT_NODE_COLLECTOR_ENTRIES: tuple[tuple[str, str, str], ...] = (
     ("etc-systemd", "/etc/systemd", "/etc/systemd"),
     ("lib-systemd", "/lib/systemd/", "/lib/systemd"),
     ("etc-kubernetes", "/etc/kubernetes", "/etc/kubernetes"),
-    ("etc-cni-netd", "/etc/cni/net.d/", "/etc/cni/net.d/"),
+    ("etc-cni-netd", "/etc/cni", "/etc/cni/net.d/"),
 )
 
 
@@ -261,28 +263,29 @@ def check(texts: dict[str, str], run_behavioral: bool = False) -> list[str]:
             f"must match sha256({expected_nc_hash})"
         )
 
-    # 2. compliance-accepted.ts: KCV normalization + KCV0056 only (never KCV0059)
+    # 2. compliance-accepted.ts: KCV normalization + empty ACCEPTED_INFRA_RULES (neither KCV0056 nor KCV0059)
     acc = texts["accepted"]
     for needle in (
         "CHECK_ID_PAD_WIDTH",
         "(?:AVD-(KSV|KCV)-|(KSV|KCV))0*(\\d+)",
         "ACCEPTED_INFRA_RULES",
         "export function matchInfraException(",
-        '"compliance.acceptedReason.infraCniDirGlob"',
-        "CMD-0009",
     ):
         if needle not in acc:
             errors.append(f"compliance-accepted.ts missing {needle!r}")
 
-    infra_section_m = re.search(r"export const ACCEPTED_INFRA_RULES.*?\]\n", acc, re.S)
+    if "infraCniDirGlob" in acc:
+        errors.append("compliance-accepted.ts must remove stale infraCniDirGlob reason key")
+
+    infra_section_m = re.search(r"export const ACCEPTED_INFRA_RULES:\s*readonly AcceptedInfraRule\[\]\s*=\s*(.*?)(?:\n\n|\Z)", acc, re.S)
     if not infra_section_m:
         errors.append("compliance-accepted.ts missing ACCEPTED_INFRA_RULES definition")
     else:
-        infra_block = infra_section_m.group(0)
-        if '"KCV0056"' not in infra_block or '"upstream"' not in infra_block:
-            errors.append("ACCEPTED_INFRA_RULES must register KCV0056 as upstream")
-        if "KCV0059" in infra_block:
-            errors.append("ACCEPTED_INFRA_RULES must NOT allowlist KCV0059 (fixed via /etc/passwd & /etc/group mounts)")
+        infra_block = infra_section_m.group(1).strip()
+        if infra_block != "[]":
+            errors.append(f"ACCEPTED_INFRA_RULES must be empty [] (got {infra_block!r})")
+        if "KCV0056" in infra_block or "KCV0059" in infra_block:
+            errors.append("ACCEPTED_INFRA_RULES must NOT allowlist KCV0056 or KCV0059")
 
     # 3. compliance.ts & infra-audit-list.tsx & types & i18n
     comp = texts["compliance"]
@@ -303,29 +306,32 @@ def check(texts: dict[str, str], run_behavioral: bool = False) -> list[str]:
     if "acceptedInfraFailures: CheckSummary" not in texts["types"]:
         errors.append("portal/src/types/compliance.ts missing acceptedInfraFailures")
 
-    for key in ("compliance.counter.infraBreakdown", "compliance.table.infraActionableSummary", "compliance.acceptedReason.infraCniDirGlob"):
+    for key in ("compliance.counter.infraBreakdown", "compliance.table.infraActionableSummary"):
         if texts["i18n"].count(f'"{key}"') < 2:
             errors.append(f"portal/src/lib/i18n.ts must define ko and en translations for {key}")
-    for needle in ("실행한 단일 로컬 노드만 검사", "CMD-0009", "single local node", "other nodes in a multi-node cluster"):
-        if needle not in texts["i18n"]:
-            errors.append(f"portal/src/lib/i18n.ts missing KCV0056 single-node/re-evaluation honesty text {needle!r}")
+    if "compliance.acceptedReason.infraCniDirGlob" in texts["i18n"]:
+        errors.append("portal/src/lib/i18n.ts must remove stale compliance.acceptedReason.infraCniDirGlob key")
 
     # 4. docs/common/compliance-hardening.md
     doc = texts["doc"]
     for needle in (
         "\n### Infra allowlist\n",
-        "| cluster | Node/* | KCV0056 | upstream |",
+        "**0 Infra rules**",
         "## Node collector & CIS 1.1.9 / 1.1.12 resolution",
         "D-NODE-COLLECTOR-PASSWD",
         "D-NODE-COLLECTOR-PASSWD-ROLLOUT",
+        "D-NODE-COLLECTOR-CNI-MOUNT",
         "rollout restart deploy/trivy-operator",
-        "not** covered by `verify-cluster.sh`",
-        "must be removed",
     ):
         if needle not in doc:
             errors.append(f"docs/common/compliance-hardening.md missing {needle!r}")
-    if "CNI dir 0700 not traversable by the scanner" in doc:
-        errors.append("docs/common/compliance-hardening.md still contains debunked CNI 0700 traversal claim")
+    for forbidden in (
+        "| cluster | Node/* | KCV0056 |",
+        "CNI dir 0700 not traversable by the scanner",
+        "cannot pass for a compliant control-plane node by design",
+    ):
+        if forbidden in doc:
+            errors.append(f"docs/common/compliance-hardening.md still contains debunked/removed text {forbidden!r}")
 
     # 5. verify-cluster.sh + regression wiring
     ver = texts["verify"]
@@ -361,18 +367,18 @@ def check(texts: dict[str, str], run_behavioral: bool = False) -> list[str]:
 MUTATIONS: list[tuple[str, str, str, str]] = [
     ("drop etc-passwd volumeMount", "trivy", "            - name: etc-passwd\n              mountPath: /etc/passwd\n              readOnly: true\n", ""),
     ("drop etc-group volume", "trivy", "            - name: etc-group\n              hostPath:\n                path: /etc/group\n                type: File\n", ""),
-    ("drop default etc-cni-netd mount", "trivy", "            - name: etc-cni-netd\n              mountPath: /etc/cni/net.d/\n              readOnly: true\n", ""),
+    ("revert etc-cni-netd mountPath", "trivy", "            - name: etc-cni-netd\n              mountPath: /etc/cni\n              readOnly: true\n", "            - name: etc-cni-netd\n              mountPath: /etc/cni/net.d/\n              readOnly: true\n"),
     ("mount /etc/shadow", "trivy", "path: /etc/group", "path: /etc/shadow"),
-    ("stale nodeCollector checksum annotation", "trivy", "checksum/node-collector-mounts: \"f18e6e663efa8ebf898e70aad50659110412217842662f0a67e150be8df9156e\"", "checksum/node-collector-mounts: \"stale\""),
-    ("allowlist KCV0059", "accepted", '["KCV0056"]', '["KCV0056", "KCV0059"]'),
-    ("reclassify KCV0056 as accept", "accepted", '    ["KCV0056"],\n    "upstream",', '    ["KCV0056"],\n    "accept",'),
+    ("stale nodeCollector checksum annotation", "trivy", "checksum/node-collector-mounts: \"eca6d129ecc1594eb2d9bcc63e2d5b2ea63cc89909a235fa591134bc555d4a70\"", "checksum/node-collector-mounts: \"stale\""),
+    ("allowlist KCV0056", "accepted", "export const ACCEPTED_INFRA_RULES: readonly AcceptedInfraRule[] = []", 'export const ACCEPTED_INFRA_RULES: readonly AcceptedInfraRule[] = [\n  infraRule("*", ["KCV0056"], "upstream", "compliance.acceptedReason.infraCniDirGlob"),\n]'),
+    ("allowlist KCV0059", "accepted", "export const ACCEPTED_INFRA_RULES: readonly AcceptedInfraRule[] = []", 'export const ACCEPTED_INFRA_RULES: readonly AcceptedInfraRule[] = [\n  infraRule("*", ["KCV0059"], "upstream", "compliance.acceptedReason.infraCniDirGlob"),\n]'),
     ("drop KCV normalization", "accepted", "(?:AVD-(KSV|KCV)-|(KSV|KCV))0*(\\d+)", "(?:AVD-(KSV)-|(KSV))0*(\\d+)"),
     ("drop Node matcher in frameworks", "compliance", 'if (resolved.kind === "Node")', 'if (resolved.kind === "NeverNode")'),
     ("drop mixed-node accepted badge", "infra_list", "{hasActionable && acceptedFailures > 0 && (", "{false && acceptedFailures > 0 && ("),
     ("drop acceptedInfraFailures type", "types", "acceptedInfraFailures: CheckSummary", "removedInfra: CheckSummary"),
-    ("drop i18n infraCniDirGlob", "i18n", '"compliance.acceptedReason.infraCniDirGlob"', '"compliance.acceptedReason.removed"'),
-    ("drop i18n single-node honesty text", "i18n", "other nodes in a multi-node cluster", "all cluster nodes"),
+    ("drop i18n infraActionableSummary", "i18n", '"compliance.table.infraActionableSummary"', '"compliance.table.removed"'),
     ("drop Infra allowlist table in docs", "doc", "\n### Infra allowlist\n", "\n### Removed\n"),
+    ("drop D-NODE-COLLECTOR-CNI-MOUNT in docs", "doc", "D-NODE-COLLECTOR-CNI-MOUNT", "D-REMOVED"),
     ("drop operator rollout restart note in docs", "doc", "rollout restart deploy/trivy-operator", "noop"),
     ("drop bash 3.2 empty-array guard", "verify", '${priv[@]+"${priv[@]}"}', '"${priv[@]}"'),
     ("weaken CNI special-bit mask", "verify", "8#7177", "8#177"),

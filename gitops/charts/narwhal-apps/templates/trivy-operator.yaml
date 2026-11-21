@@ -186,7 +186,7 @@ spec:
         # (verified by R385). Cost: one operator pod recreate when nodeCollector mounts change.
         # Escape hatch: remove podAnnotations and run `kubectl -n security-system rollout restart deploy/trivy-operator`.
         podAnnotations:
-          checksum/node-collector-mounts: "f18e6e663efa8ebf898e70aad50659110412217842662f0a67e150be8df9156e"
+          checksum/node-collector-mounts: "eca6d129ecc1594eb2d9bcc63e2d5b2ea63cc89909a235fa591134bc555d4a70"
         nodeSelector: {}
         tolerations:
           - key: node.kubernetes.io/disk-pressure
@@ -228,8 +228,14 @@ spec:
             - name: etc-kubernetes
               mountPath: /etc/kubernetes
               readOnly: true
+            # D-NODE-COLLECTOR-CNI-MOUNT: trivy-checks CMD-0009/CMD-0010 run `stat -c ... /*/cni/*`.
+            # Chart default mountPath `/etc/cni/net.d/` matches the directory (700) instead of files
+            # inside it; mounting host `/etc/cni/net.d/` at `/etc/cni` lets `/*/cni/*` glob the real
+            # CNI files (e.g. 05-cilium.conflist 600 root:root) so KCV0056/KCV0057 pass/fail truthfully.
+            # Cost: non-net.d entries under host `/etc/cni` are omitted (unused by any collector command).
+            # Escape hatch: restore mountPath `/etc/cni/net.d/` and update checksum/node-collector-mounts.
             - name: etc-cni-netd
-              mountPath: /etc/cni/net.d/
+              mountPath: /etc/cni
               readOnly: true
             - name: etc-passwd
               mountPath: /etc/passwd

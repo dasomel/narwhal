@@ -2428,3 +2428,323 @@ export async function patchNotificationConfig(resourceVersion: string, spec: unk
     ]),
   })
 }
+
+// D-OSS-UPDATES-READ: read-only, bounded inventory fetchers for Settings > OSS updates.
+// Uses only existing portal RBAC (ClusterRole narwhal-portal already grants get/list on
+// deployments, daemonsets, statefulsets, and pods; plus an explicit 403 -> "no-permission"
+// probe on the Gateway API CRD so the UI explains missing RBAC instead of pretending unknown).
+export interface OssLabelSelectorRequirement {
+  key: string
+  operator: "In" | "NotIn" | "Exists" | "DoesNotExist" | string
+  values?: string[]
+}
+
+export interface OssLabelSelector {
+  matchLabels?: Record<string, string>
+  matchExpressions?: OssLabelSelectorRequirement[]
+}
+
+export interface OssOwnerRef {
+  kind: string
+  name: string
+  uid?: string
+  controller?: boolean
+}
+
+export interface OssWorkloadSpecItem {
+  namespace: string
+  name: string
+  uid?: string
+  selector?: OssLabelSelector
+  containers: Array<{ name: string; image: string }>
+  initContainers: Array<{ name: string; image: string }>
+}
+
+export interface OssReplicaSetItem {
+  namespace: string
+  name: string
+  uid?: string
+  ownerReferences: OssOwnerRef[]
+}
+
+export interface OssPodContainerSpec {
+  name: string
+  /** Runtime image from status.containerStatuses[].image (empty when not yet reported). */
+  image: string
+  digest?: string | null
+  /** Non-empty status.containerStatuses[].imageID preserved verbatim when it contains no sha256/sha512 digest. */
+  imageId?: string | null
+  running?: boolean
+  completed?: boolean
+}
+
+export interface OssPodSpecItem {
+  namespace: string
+  name: string
+  labels: Record<string, string>
+  phase: string
+  terminating?: boolean
+  nodeName?: string
+  mirrorAnnotation?: string
+  ownerReferences?: OssOwnerRef[]
+  containers: OssPodContainerSpec[]
+  initContainers: OssPodContainerSpec[]
+}
+
+export type OssResourceFetch<T> =
+  | { status: "ok"; data: T }
+  | { status: "truncated"; resource: string }
+  | { status: "no-permission"; resource: string }
+  | { status: "not-found" }
+  | { status: "error" }
+
+export interface OssClusterInventory {
+  serverVersion: OssResourceFetch<string | null>
+  deployments: OssResourceFetch<OssWorkloadSpecItem[]>
+  daemonsets: OssResourceFetch<OssWorkloadSpecItem[]>
+  statefulsets: OssResourceFetch<OssWorkloadSpecItem[]>
+  replicasets: OssResourceFetch<OssReplicaSetItem[]>
+  pods: OssResourceFetch<OssPodSpecItem[]>
+  gatewayApiCrdAnnotations: OssResourceFetch<Record<string, string>>
+}
+
+interface RawOssOwnerRef {
+  kind?: string
+  name?: string
+  uid?: string
+  controller?: boolean
+}
+
+interface RawOssWorkload {
+  metadata?: { name?: string; namespace?: string; uid?: string; ownerReferences?: RawOssOwnerRef[] }
+  spec?: {
+    selector?: {
+      matchLabels?: Record<string, string>
+      matchExpressions?: Array<{ key?: string; operator?: string; values?: string[] }>
+    }
+    containers?: Array<{ name?: string; image?: string }>
+    initContainers?: Array<{ name?: string; image?: string }>
+    template?: {
+      spec?: {
+        containers?: Array<{ name?: string; image?: string }>
+        initContainers?: Array<{ name?: string; image?: string }>
+      }
+    }
+  }
+}
+
+interface RawOssPodStatusEntry {
+  name?: string
+  image?: string
+  imageID?: string
+  state?: {
+    running?: Record<string, unknown>
+    waiting?: Record<string, unknown>
+    terminated?: { exitCode?: number; reason?: string }
+  }
+}
+
+interface RawOssPod {
+  metadata?: {
+    name?: string
+    namespace?: string
+    labels?: Record<string, string>
+    deletionTimestamp?: string
+    annotations?: Record<string, string>
+    ownerReferences?: RawOssOwnerRef[]
+  }
+  spec?: {
+    nodeName?: string
+    containers?: Array<{ name?: string; image?: string }>
+    initContainers?: Array<{ name?: string; image?: string }>
+  }
+  status?: {
+    phase?: string
+    containerStatuses?: RawOssPodStatusEntry[]
+    initContainerStatuses?: RawOssPodStatusEntry[]
+  }
+}
+
+const IMAGE_DIGEST_RE = /@((?:sha256|sha512):[0-9a-fA-F]+)/
+const IMAGE_ID_DIGEST_RE = /(?:^|@|\/\/|\/)((?:sha256:[0-9a-fA-F]{64}|sha512:[0-9a-fA-F]{128}))(?=$|[^0-9a-fA-F])/
+
+function mapOwnerRefs(raw: RawOssOwnerRef[] | undefined): OssOwnerRef[] {
+  return (raw ?? [])
+    .filter((r): r is { kind: string; name: string; uid?: string; controller?: boolean } =>
+      typeof r.kind === "string" && typeof r.name === "string",
+    )
+    .map((r) => ({
+      kind: r.kind,
+      name: r.name,
+      ...(typeof r.uid === "string" && r.uid.length > 0 ? { uid: r.uid } : {}),
+      ...(typeof r.controller === "boolean" ? { controller: r.controller } : {}),
+    }))
+}
+
+function mapRawWorkload(item: RawOssWorkload): OssWorkloadSpecItem {
+  const podSpec = item.spec?.template?.spec ?? item.spec
+  const toContainers = (list: Array<{ name?: string; image?: string }> | undefined) =>
+    (list ?? [])
+      .filter((c): c is { name: string; image: string } => typeof c.name === "string" && typeof c.image === "string")
+      .map((c) => ({ name: c.name, image: c.image }))
+  const rawSel = item.spec?.selector
+  const selector: OssLabelSelector | undefined = rawSel
+    ? {
+        ...(rawSel.matchLabels ? { matchLabels: rawSel.matchLabels } : {}),
+        ...(rawSel.matchExpressions
+          ? {
+              matchExpressions: rawSel.matchExpressions
+                .filter((e): e is { key: string; operator: string; values?: string[] } =>
+                  typeof e.key === "string" && typeof e.operator === "string",
+                )
+                .map((e) => ({ key: e.key, operator: e.operator, ...(e.values ? { values: e.values } : {}) })),
+            }
+          : {}),
+      }
+    : undefined
+  return {
+    namespace: item.metadata?.namespace ?? "",
+    name: item.metadata?.name ?? "",
+    ...(typeof item.metadata?.uid === "string" && item.metadata.uid.length > 0 ? { uid: item.metadata.uid } : {}),
+    ...(selector ? { selector } : {}),
+    containers: toContainers(podSpec?.containers),
+    initContainers: toContainers(podSpec?.initContainers),
+  }
+}
+
+function mapRawReplicaSet(item: RawOssWorkload): OssReplicaSetItem {
+  return {
+    namespace: item.metadata?.namespace ?? "",
+    name: item.metadata?.name ?? "",
+    ...(typeof item.metadata?.uid === "string" && item.metadata.uid.length > 0 ? { uid: item.metadata.uid } : {}),
+    ownerReferences: mapOwnerRefs(item.metadata?.ownerReferences),
+  }
+}
+
+function mapRawPod(item: RawOssPod): OssPodSpecItem {
+  const extractImageIdDigest = (imageID: string | undefined): string | null => {
+    const trimmed = typeof imageID === "string" ? imageID.trim() : ""
+    const m = trimmed ? IMAGE_ID_DIGEST_RE.exec(trimmed) : null
+    return m ? m[1] : null
+  }
+  // D-OSS-STATUS-IMAGE: read what is actually running from status.*ContainerStatuses
+  // (image + imageID digest + state.running), never falling back to spec.containers[].image.
+  // Spec-only or non-running entries keep running: false with an empty image so
+  // CrashLoop/rollout pods do not report stale spec tags as running.
+  const toContainers = (
+    specList: Array<{ name?: string; image?: string }> | undefined,
+    statuses: RawOssPodStatusEntry[] | undefined,
+    isInit: boolean,
+  ): OssPodContainerSpec[] => {
+    const byName = new Map<string, OssPodContainerSpec>()
+    for (const s of specList ?? []) {
+      if (typeof s.name !== "string") continue
+      byName.set(s.name, { name: s.name, image: "", running: false, ...(isInit ? { completed: false } : {}) })
+    }
+    for (const entry of statuses ?? []) {
+      if (typeof entry.name !== "string") continue
+      const statusImage = typeof entry.image === "string" ? entry.image : ""
+      const running = Boolean(entry.state?.running)
+      const completed = isInit ? entry.state?.terminated?.exitCode === 0 : false
+      const rawImageId = typeof entry.imageID === "string" ? entry.imageID.trim() : ""
+      const imageIdDigest = extractImageIdDigest(rawImageId)
+      // Observed imageID is authoritative: extract its digest when present, keep raw
+      // non-empty imageID as identity when it has no digest, and fall back to
+      // status.image @digest only when imageID is empty.
+      const digest = imageIdDigest ?? (!rawImageId && statusImage ? IMAGE_DIGEST_RE.exec(statusImage)?.[1] ?? null : null)
+      const rawIdentity = !imageIdDigest && rawImageId ? rawImageId : null
+      byName.set(entry.name, {
+        name: entry.name,
+        image: statusImage,
+        ...(digest ? { digest } : {}),
+        ...(rawIdentity ? { imageId: rawIdentity } : {}),
+        running,
+        ...(isInit ? { completed } : {}),
+      })
+    }
+    return [...byName.values()]
+  }
+  const ownerReferences = mapOwnerRefs(item.metadata?.ownerReferences)
+  const mirrorAnnotation = item.metadata?.annotations?.["kubernetes.io/config.mirror"]
+  return {
+    namespace: item.metadata?.namespace ?? "",
+    name: item.metadata?.name ?? "",
+    labels: item.metadata?.labels ?? {},
+    phase: item.status?.phase ?? "",
+    ...(item.metadata?.deletionTimestamp ? { terminating: true } : {}),
+    ...(typeof item.spec?.nodeName === "string" && item.spec.nodeName.length > 0 ? { nodeName: item.spec.nodeName } : {}),
+    ...(typeof mirrorAnnotation === "string" && mirrorAnnotation.length > 0 ? { mirrorAnnotation } : {}),
+    ...(ownerReferences.length > 0 ? { ownerReferences } : {}),
+    containers: toContainers(item.spec?.containers, item.status?.containerStatuses, false),
+    initContainers: toContainers(item.spec?.initContainers, item.status?.initContainerStatuses, true),
+  }
+}
+
+function mapOssFetchError<T>(resource: string, err: unknown): OssResourceFetch<T> {
+  if (err instanceof K8sCredentialError) return { status: "no-permission", resource }
+  if (err instanceof K8sHttpError && err.status === 404) return { status: "not-found" }
+  console.warn(`[oss-updates] K8s read failed (${resource}):`, err instanceof Error ? err.message : err)
+  return { status: "error" }
+}
+
+async function fetchOssResource<T>(resource: string, fn: () => Promise<T>): Promise<OssResourceFetch<T>> {
+  try {
+    return { status: "ok", data: await fn() }
+  } catch (err) {
+    return mapOssFetchError(resource, err)
+  }
+}
+
+async function fetchOssBoundedResource<Raw, Out>(
+  resource: string,
+  fn: () => Promise<BoundedList<Raw>>,
+  mapper: (item: Raw) => Out,
+): Promise<OssResourceFetch<Out[]>> {
+  try {
+    const res = await fn()
+    // D-OSS-TRUNCATED: a bounded list that hit maxPages/expired is incomplete;
+    // propagate truncated so affected rows stay unknown instead of false in-sync.
+    if (res.truncated) return { status: "truncated", resource }
+    return { status: "ok", data: res.items.map(mapper) }
+  } catch (err) {
+    return mapOssFetchError(resource, err)
+  }
+}
+
+export async function getOssClusterInventory(): Promise<OssClusterInventory> {
+  const [
+    serverVersion,
+    deployments,
+    daemonsets,
+    statefulsets,
+    replicasets,
+    pods,
+    gatewayApiCrdAnnotations,
+  ] = await Promise.all([
+    fetchOssResource("/version", async () => {
+      const v = await k8sFetch<{ gitVersion?: string }>("/version")
+      return typeof v.gitVersion === "string" ? v.gitVersion : null
+    }),
+    fetchOssBoundedResource("deployments.apps", () => listBounded<RawOssWorkload>("/apis/apps/v1/deployments"), mapRawWorkload),
+    fetchOssBoundedResource("daemonsets.apps", () => listBounded<RawOssWorkload>("/apis/apps/v1/daemonsets"), mapRawWorkload),
+    fetchOssBoundedResource("statefulsets.apps", () => listBounded<RawOssWorkload>("/apis/apps/v1/statefulsets"), mapRawWorkload),
+    fetchOssBoundedResource("replicasets.apps", () => listBounded<RawOssWorkload>("/apis/apps/v1/replicasets"), mapRawReplicaSet),
+    fetchOssBoundedResource("pods", () => listBounded<RawOssPod>("/api/v1/pods"), mapRawPod),
+    fetchOssResource("customresourcedefinitions.apiextensions.k8s.io", async () => {
+      const crd = await k8sFetch<{ metadata?: { annotations?: Record<string, string> } }>(
+        "/apis/apiextensions.k8s.io/v1/customresourcedefinitions/gateways.gateway.networking.k8s.io",
+      )
+      return crd.metadata?.annotations ?? {}
+    }),
+  ])
+
+  return {
+    serverVersion,
+    deployments,
+    daemonsets,
+    statefulsets,
+    replicasets,
+    pods,
+    gatewayApiCrdAnnotations,
+  }
+}

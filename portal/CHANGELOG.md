@@ -9,6 +9,13 @@ English | [한국어](CHANGELOG-ko.md)
 
 ## [Unreleased]
 
+### Fixed
+
+- **OSS Updates truthful running detection, rollout/suffix/CVE/sibling isolation, and explicit unknown reasons (`src/lib/oss-updates/catalog.ts`, `src/lib/oss-updates/status.ts`, `src/lib/oss-updates/version.ts`, `src/lib/k8s-client.ts`, `src/lib/trivy.ts`, `src/types/oss-updates.ts`, `src/components/settings/oss-updates-table.tsx`, `src/lib/i18n.ts`):**
+  - Replaced Trivy-only image discovery with authoritative Kubernetes reads (`getOssClusterInventory()`: `/version`, bounded `deployments`/`daemonsets`/`statefulsets`/`replicasets`, cluster-wide `/api/v1/pods` reading runtime `status.containerStatuses[].image`, `state.running`, `imageID` digests, `metadata.ownerReferences`, `metadata.deletionTimestamp`, and static-pod `kubernetes.io/config.mirror` + `spec.nodeName`, plus a probe on `gateways.gateway.networking.k8s.io` CRD) using existing portal RBAC only. Pods count only when owned by the defining workload (or mirror-annotated on a node for static pods); truncated bounded lists propagate as `list-truncated` (`unknown`); Terminating/Pending/Succeeded/Failed/non-running pods do not count as running; same-tag pods with differing `imageID` digests surface as `rollout-mixed` drift with short digests; chart versions alone and Trivy tags never produce `in-sync`.
+  - Replaced substring `imageMatch` (`r.image.includes(...)`) with exact repository+tag/digest attribution (`summarizeCvesForArtifacts`) so CVEs match only reports for the actually running image (returning `No scan (no report for this running image)` when only older tags have reports), and gave each companion/sibling row its own CVE count and visible failure/digest-only reason (`No tag (digest-pinned)` with shortened digest).
+  - Enforced per-component tag suffix allow-lists (`allowedTagSuffixes`: `-rootless` for Gitea, `-ubuntu` for APISIX, `-distroless` for Istio; all unlisted suffixes such as `-rc1`, `-preview1`, `-custom`, and non-semver tags stay verbatim as `tag-unparseable`, never `in-sync`) and surfaced ko/en reasons for every unknown/no-scan state (`R394`).
+
 ### Changed
 
 - **Exact Compliance acceptance:** replaced namespace/built-in/substring blanket acceptance with reviewed scope, namespace, kind, resource and explicit check IDs; removed unverifiable exceptions, require ReplicaSet Deployment ownership, versioned affected caches, and expose unused rule targets/counts in the summary API and English/Korean UI (R395).

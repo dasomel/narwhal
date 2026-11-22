@@ -31,6 +31,7 @@ export interface WorkloadVulnRow {
   kind: "Deployment" | "DaemonSet" | "StatefulSet" | "Job" | "Pod" | string
   name: string
   image: string
+  digest?: string
   summary: SeverityCounts
 }
 

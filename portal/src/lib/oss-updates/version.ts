@@ -1,5 +1,5 @@
-// Pure version math for the OSS updates view. No I/O so every rule (gap class, cooling,
-// "branch latest" filtering) is unit-testable.
+// Pure version math and image tag/repo normalization for the OSS updates view.
+// No I/O so every rule (gap class, cooling, tag normalization, repo matching) is unit-testable.
 
 /** Repo rule: an upstream version younger than this is "cooling" and must not be adopted yet
  * (.agents/skills/narwhal-version-upgrade, docs/common/oss-update-process.md). */
@@ -13,9 +13,12 @@ export interface Semver {
 
 export type GapKind = "none" | "patch" | "minor" | "major" | "ahead" | "unknown"
 
-const SEMVER_RE = /^v?(\d+)\.(\d+)(?:\.(\d+))?/
+// Require end-of-string or `-`/`+` after major.minor(.patch) so "1.2.3.4" or "1.2.3abc" is rejected.
+const SEMVER_RE = /^v?(\d+)\.(\d+)(?:\.(\d+))?(?:$|[-+])/
+const PRERELEASE_TAG_RE = /-(?:rc|alpha|beta|pre|dev|snapshot)(?:[.\d-]|$)/i
+const DIGEST_SUFFIX_RE = /@[A-Za-z0-9_+.-]+:[0-9a-fA-F]+$/
 
-/** Lenient parse: `v1.35.7`, `4.34` (2-part, patch=0), `kube-prometheus-stack-1.2.3` is NOT accepted. */
+/** Lenient parse: `v1.35.7`, `4.34` (2-part, patch=0), `1.30.1-distroless`; rejects `1.2.3.4`, `latest`, `HEAD`. */
 export function parseSemver(input: string | null | undefined): Semver | null {
   if (!input) return null
   const m = SEMVER_RE.exec(input.trim())
@@ -68,4 +71,59 @@ export function sameVersion(a: string | null | undefined, b: string | null | und
   const pb = parseSemver(b)
   if (pa && pb) return compareSemver(pa, pb) === 0
   return normalizeVersion(a) === normalizeVersion(b)
+}
+
+export interface ParsedImageRef {
+  repo: string
+  rawTag: string | null
+}
+
+/** Extracts repository and raw tag from an OCI image string, stripping `@sha256:...` digests
+ * and ignoring registry port colons (e.g. `192.168.56.1:5001/gitea:1.26.2-rootless`). */
+export function extractImageRef(image: string): ParsedImageRef {
+  const withoutDigest = image.trim().replace(DIGEST_SUFFIX_RE, "")
+  const lastSlash = withoutDigest.lastIndexOf("/")
+  const colonIdx = withoutDigest.indexOf(":", lastSlash + 1)
+  if (colonIdx > lastSlash) {
+    const repo = withoutDigest.slice(0, colonIdx)
+    const tag = withoutDigest.slice(colonIdx + 1)
+    return { repo, rawTag: tag || null }
+  }
+  return { repo: withoutDigest, rawTag: null }
+}
+
+/** Normalizes Docker Hub aliases (`index.docker.io`, bare `org/app`, bare `app`) to `docker.io/...`. */
+export function normalizeImageRepo(repo: string): string {
+  const clean = repo.trim().replace(DIGEST_SUFFIX_RE, "")
+  const parts = clean.split("/")
+  if (parts.length === 1) return `docker.io/library/${clean}`
+  const first = parts[0]
+  if (first === "index.docker.io") return `docker.io/${parts.slice(1).join("/")}`
+  if (!first.includes(".") && !first.includes(":") && first !== "localhost") {
+    return `docker.io/${clean}`
+  }
+  return clean
+}
+
+/** Exact repository match (never bare substring): `cilium/cilium` will NOT match `cilium/cilium-envoy`,
+ * and `apache/apisix` will NOT match `apache/apisix-ingress-controller`. */
+export function repoMatches(image: string, pattern: string): boolean {
+  const normImage = normalizeImageRepo(extractImageRef(image).repo)
+  const firstSeg = pattern.split("/")[0] ?? ""
+  const hasRegistry = firstSeg.includes(".") || firstSeg.includes(":") || firstSeg === "localhost"
+  if (hasRegistry) return normImage === normalizeImageRepo(pattern)
+  return normImage === pattern || normImage.endsWith(`/${pattern}`)
+}
+
+/** Explicit tag normalization for running versions: strips `@sha256:...` digest, leading `v`,
+ * and packaging/OS suffixes (`-rootless`, `-ubuntu`, `-distroless`, `-0`, `+build`).
+ * Prerelease tags (`-rc`, `-alpha`, `-beta`, `-pre`, `-dev`, `-snapshot`) and non-semver tags
+ * (`latest`, `HEAD`, `8-alpine`, digest-only) return `null` so they are never treated as a match. */
+export function normalizeTag(rawTag: string | null | undefined): string | null {
+  if (!rawTag) return null
+  const cleaned = rawTag.trim().replace(DIGEST_SUFFIX_RE, "")
+  if (!cleaned || PRERELEASE_TAG_RE.test(cleaned)) return null
+  const m = SEMVER_RE.exec(cleaned)
+  if (!m) return null
+  return m[3] !== undefined ? `${m[1]}.${m[2]}.${m[3]}` : `${m[1]}.${m[2]}`
 }

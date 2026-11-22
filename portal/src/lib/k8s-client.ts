@@ -2428,3 +2428,110 @@ export async function patchNotificationConfig(resourceVersion: string, spec: unk
     ]),
   })
 }
+
+// D-OSS-UPDATES-READ: read-only, bounded inventory fetchers for Settings > OSS updates.
+// Uses only existing portal RBAC (plus an explicit 403 -> "no-permission" probe on the
+// Gateway API CRD so the UI explains missing RBAC instead of pretending unknown).
+export interface OssWorkloadSpecItem {
+  namespace: string
+  name: string
+  containers: Array<{ name: string; image: string }>
+  initContainers: Array<{ name: string; image: string }>
+}
+
+export type OssResourceFetch<T> =
+  | { status: "ok"; data: T }
+  | { status: "no-permission"; resource: string }
+  | { status: "not-found" }
+  | { status: "error" }
+
+export interface OssClusterInventory {
+  serverVersion: OssResourceFetch<string | null>
+  deployments: OssResourceFetch<OssWorkloadSpecItem[]>
+  daemonsets: OssResourceFetch<OssWorkloadSpecItem[]>
+  statefulsets: OssResourceFetch<OssWorkloadSpecItem[]>
+  kubeSystemPods: OssResourceFetch<OssWorkloadSpecItem[]>
+  gatewayApiCrdAnnotations: OssResourceFetch<Record<string, string>>
+}
+
+interface RawOssWorkload {
+  metadata?: { name?: string; namespace?: string }
+  spec?: {
+    containers?: Array<{ name?: string; image?: string }>
+    initContainers?: Array<{ name?: string; image?: string }>
+    template?: {
+      spec?: {
+        containers?: Array<{ name?: string; image?: string }>
+        initContainers?: Array<{ name?: string; image?: string }>
+      }
+    }
+  }
+}
+
+function mapRawWorkload(item: RawOssWorkload): OssWorkloadSpecItem {
+  const podSpec = item.spec?.template?.spec ?? item.spec
+  const toContainers = (list: Array<{ name?: string; image?: string }> | undefined) =>
+    (list ?? [])
+      .filter((c): c is { name: string; image: string } => typeof c.name === "string" && typeof c.image === "string")
+      .map((c) => ({ name: c.name, image: c.image }))
+  return {
+    namespace: item.metadata?.namespace ?? "",
+    name: item.metadata?.name ?? "",
+    containers: toContainers(podSpec?.containers),
+    initContainers: toContainers(podSpec?.initContainers),
+  }
+}
+
+async function fetchOssResource<T>(resource: string, fn: () => Promise<T>): Promise<OssResourceFetch<T>> {
+  try {
+    return { status: "ok", data: await fn() }
+  } catch (err) {
+    if (err instanceof K8sCredentialError) return { status: "no-permission", resource }
+    if (err instanceof K8sHttpError && err.status === 404) return { status: "not-found" }
+    console.warn(`[oss-updates] K8s read failed (${resource}):`, err instanceof Error ? err.message : err)
+    return { status: "error" }
+  }
+}
+
+export async function getOssClusterInventory(): Promise<OssClusterInventory> {
+  const [
+    serverVersion,
+    deployments,
+    daemonsets,
+    statefulsets,
+    kubeSystemPods,
+    gatewayApiCrdAnnotations,
+  ] = await Promise.all([
+    fetchOssResource("/version", async () => {
+      const v = await k8sFetch<{ gitVersion?: string }>("/version")
+      return typeof v.gitVersion === "string" ? v.gitVersion : null
+    }),
+    fetchOssResource("deployments.apps", async () =>
+      (await listBounded<RawOssWorkload>("/apis/apps/v1/deployments")).items.map(mapRawWorkload),
+    ),
+    fetchOssResource("daemonsets.apps", async () =>
+      (await listBounded<RawOssWorkload>("/apis/apps/v1/daemonsets")).items.map(mapRawWorkload),
+    ),
+    fetchOssResource("statefulsets.apps", async () =>
+      (await listBounded<RawOssWorkload>("/apis/apps/v1/statefulsets")).items.map(mapRawWorkload),
+    ),
+    fetchOssResource("pods", async () =>
+      (await listBounded<RawOssWorkload>("/api/v1/namespaces/kube-system/pods")).items.map(mapRawWorkload),
+    ),
+    fetchOssResource("customresourcedefinitions.apiextensions.k8s.io", async () => {
+      const crd = await k8sFetch<{ metadata?: { annotations?: Record<string, string> } }>(
+        "/apis/apiextensions.k8s.io/v1/customresourcedefinitions/gateways.gateway.networking.k8s.io",
+      )
+      return crd.metadata?.annotations ?? {}
+    }),
+  ])
+
+  return {
+    serverVersion,
+    deployments,
+    daemonsets,
+    statefulsets,
+    kubeSystemPods,
+    gatewayApiCrdAnnotations,
+  }
+}

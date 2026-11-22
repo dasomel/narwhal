@@ -9,6 +9,13 @@
 
 ## [Unreleased]
 
+### 수정
+
+- **OSS 업데이트 실행 버전 실측·동반 이미지 분리·알 수 없음 사유 명시 (`src/lib/oss-updates/catalog.ts`, `src/lib/oss-updates/status.ts`, `src/lib/oss-updates/version.ts`, `src/lib/k8s-client.ts`, `src/types/oss-updates.ts`, `src/components/settings/oss-updates-table.tsx`, `src/lib/i18n.ts`):**
+  - Trivy 리포트에만 의존하던 실행 버전 탐지를 기존 포털 RBAC 범위 내 직접 Kubernetes 조회(`getOssClusterInventory()`: `/version`, bounded `deployments`·`daemonsets`·`statefulsets`, `kube-system` 정적 `pods`, `gateways.gateway.networking.k8s.io` CRD 권한 확인)로 전환해 Kubernetes(`v1.35.7`)·Cilium(`cilium-agent` `v1.19.4`)·Gitea(`1.26.2-rootless`)·metrics-server(`v0.8.1`)·kube-vip(`v1.1.2`)를 실측하고, `Helm`은 `해당 없음 (CLI)`로 구분했습니다.
+  - 부분 문자열 `imageMatch`(`r.image.includes(...)`)를 정확한 리포지토리 경계 매칭(`repoMatches`)과 워크로드+컨테이너 지정으로 교체해 동반·초기화·사이드카 이미지(`cilium-envoy`, `apisix-ingress-controller`, `falcosidekick`, `velero-plugin-for-aws`, `keycloak-operator`, CSI 사이드카)가 드리프트 오탐이나 CVE 혼입을 일으키지 않고 별도 하위 라벨로 표시되도록 했으며, Istio의 Trivy CVE 매칭(`registry.istio.io/release/pilot`)을 수정했습니다.
+  - 태그 정규화(`normalizeTag`: 선행 `v`, `-rootless`/`-ubuntu`/`-distroless` 접미사, `@sha256:...` 다이제스트 처리, 프리릴리스·`latest` 등 비-SemVer 태그는 `null`로 두고 일치 처리 금지)를 명시하고, 남은 모든 미확인/스캔 없음 셀에 사유(`권한 없음: <리소스>`, `워크로드 없음`, `태그 해석 불가`, `클러스터 조회 불가`, `업스트림 조회 꺼짐/실패`, `스캔 리포트 없음`/`Trivy 조회 불가`)를 표시합니다.
+
 ### 변경
 
 - **`KCV0056` 인프라 수용 규칙 제거 (`src/lib/compliance-accepted.ts`, `src/lib/i18n.ts`):**

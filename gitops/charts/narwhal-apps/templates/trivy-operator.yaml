@@ -19,12 +19,14 @@ spec:
         # in-operator ConfigAudit + InfraAssessment + RBAC scanners evaluate the control-plane
         # static pods (CIS 1.2.x/1.3.x/1.4.x/2.x, KISA-CP-01/ETCD-01) and ambient mesh workloads
         # instead of leaving those controls as empty-placeholder PASS. Keep zero-value namespaces
-        # excluded (kube-public, kube-node-lease, unused trivy-system). Image vulnerability scan
-        # Jobs for upstream control-plane/CNI/CSI/Istio system images are suppressed via
-        # trivyOperator.excludeImages below so host disk IO on the 6 GB single-node master stays
-        # flat (#660) while config/infra/RBAC audits still run in-operator.
-        # Cost: higher raw ConfigAudit/Infra/CIS/KISA failure counts (truthful findings); zero
-        # extra vuln scan Jobs for system images.
+        # excluded (kube-public, kube-node-lease, unused trivy-system).
+        # Live trial measured (orchestrator, single-node cluster): ConfigAuditReports rose 188->281,
+        # VulnerabilityReports rose 108->110 (only kube-vip and istio-cni-node appeared, as unlisted
+        # images), and node_load1 stayed within 0.56-1.66 (baseline ~0.5-0.9). In this ClientServer
+        # deployment excludeImages suppressed listed images at runtime, while reviewer reading of
+        # v0.25.0 source indicated Standalone-only (re-measure behavior on operator upgrade).
+        # Cost: higher raw ConfigAudit/Infra/CIS/KISA failure counts (truthful findings; kube-system
+        # High 54/Med 102/Low 142, istio-system High 6/Med 11/Low 18, Critical 0 in both).
         # Escape hatch: add kube-system,istio-system back to excludeNamespaces.
         targetNamespaces: ""
         excludeNamespaces: "kube-public,kube-node-lease,trivy-system"
@@ -44,13 +46,18 @@ spec:
           # pins an exact repository running in kube-system or istio-system (no org/* wildcards
           # such as quay.io/cilium/* or sig-storage/*). Only the tag suffix (`:*`) remains
           # pattern-based so patch/minor upgrades in VERSIONS.md do not break exclusions.
+          # Runtime trial confirmed listed images were suppressed in ClientServer mode, though v0.25.0
+          # source inspection suggested Standalone-only (must re-measure on upgrade). The trial
+          # observed two residual scans (pod-kube-vip and daemonset-istio-cni-node) because those
+          # images were not in the list; decision: add exact repo entries for kube-vip and istio
+          # install-cni (same control-plane/mesh class as listed ones; does not change hashed mounts).
           # Intentionally NOT excluded: registry.k8s.io/etcd (shared with platform-system/apisix-etcd
           # 3.5.31-0), docker.io/alpine/k8s (ghost-pod-reaper CronJob stays scanned; child Jobs
           # skipped by label), and registry.istio.io/release/proxyv2 (app waypoints stay scanned).
-          # Cost: no Trivy CVE scan Jobs for these 21 exact system image repos (if a tenant ever
+          # Cost: no Trivy CVE scan Jobs for these exact system image repos (if a tenant ever
           # deploys one of these exact repos it would also skip CVE scanning).
           # Escape hatch: set excludeImages: "" to scan all system images on the 168h TTL.
-          excludeImages: "registry.k8s.io/kube-apiserver:*,registry.k8s.io/kube-controller-manager:*,registry.k8s.io/kube-scheduler:*,registry.k8s.io/coredns/coredns:*,registry.k8s.io/metrics-server/metrics-server:*,registry.k8s.io/sig-storage/csi-node-driver-registrar:*,registry.k8s.io/sig-storage/csi-provisioner:*,registry.k8s.io/sig-storage/csi-resizer:*,registry.k8s.io/sig-storage/csi-snapshotter:*,registry.k8s.io/sig-storage/livenessprobe:*,registry.k8s.io/sig-storage/nfsplugin:*,ghcr.io/kube-vip/kube-vip:*,quay.io/cilium/cilium:*,quay.io/cilium/cilium-envoy:*,quay.io/cilium/hubble-relay:*,quay.io/cilium/hubble-ui:*,quay.io/cilium/hubble-ui-backend:*,quay.io/cilium/operator-generic:*,registry.istio.io/release/install-cni:*,registry.istio.io/release/pilot:*,registry.istio.io/release/ztunnel:*"
+          excludeImages: "registry.k8s.io/kube-apiserver:*,registry.k8s.io/kube-controller-manager:*,registry.k8s.io/kube-scheduler:*,registry.k8s.io/coredns/coredns:*,registry.k8s.io/metrics-server/metrics-server:*,registry.k8s.io/sig-storage/csi-node-driver-registrar:*,registry.k8s.io/sig-storage/csi-provisioner:*,registry.k8s.io/sig-storage/csi-resizer:*,registry.k8s.io/sig-storage/csi-snapshotter:*,registry.k8s.io/sig-storage/livenessprobe:*,registry.k8s.io/sig-storage/nfsplugin:*,ghcr.io/kube-vip/kube-vip:*,docker.io/kube-vip/kube-vip:*,kube-vip/kube-vip:*,quay.io/cilium/cilium:*,quay.io/cilium/cilium-envoy:*,quay.io/cilium/hubble-relay:*,quay.io/cilium/hubble-ui:*,quay.io/cilium/hubble-ui-backend:*,quay.io/cilium/operator-generic:*,docker.io/istio/install-cni:*,istio/install-cni:*,registry.istio.io/release/install-cni:*,registry.istio.io/release/pilot:*,registry.istio.io/release/ztunnel:*"
           scanJobPodTemplatePodSecurityContext:
             runAsNonRoot: true
             runAsUser: 10000

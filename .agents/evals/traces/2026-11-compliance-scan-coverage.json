@@ -44,14 +44,27 @@
     },
     {
       "id": "e5",
-      "type": "completion_claim",
-      "summary": "Round 2 decisions D1-D6 implemented and verified offline with full make test (passed 496 failed 0 warnings 3), make validate, shellcheck on touched scripts, R388 (3 envs, 36 mutations), R385, R386, R368, R297, and trace gate/evidence checks; live cluster rollout/verification delegated to orchestrator."
+      "type": "verification",
+      "status": "passed",
+      "scope": "Live trial on single-node cluster (orchestrator, 2026-11-22 12:23Z): trivy-operator 0.25.0 ClientServer rollout, ConfigAudit/Infra/Vulnerability reports, node load, ArgoCD apps",
+      "summary": "Live trial measured: excludeNamespaces became kube-public,kube-node-lease,trivy-system; ConfigAuditReports rose 188->281 (kube-system 40 reports, RoleBinding 62, ClusterConfigAudit 121); VulnerabilityReports rose 108->110 (exactly two new vuln scans: pod-kube-vip and daemonset-istio-cni-node; 0 running Jobs at t+1..6m); node_load1 0.56-1.66 (baseline ~0.5-0.9), node Ready throughout, ArgoCD apps Synced/Healthy; excludeImages suppressed listed images at runtime in ClientServer mode (contrasting reviewer source reading that filter was Standalone-only; re-measure on upgrade); exact repo entries added for kube-vip and istio install-cni (control-plane/mesh class, does not change hashed mounts); shellcheck passed across all scripts; yamllint exited non-zero (exit 2) on pre-existing line-length errors in untouched files.",
+      "evidence": [
+        "cluster:live-trial-scan.md (ConfigAuditReports 188->281, VulnerabilityReports 108->110, node_load1 0.56-1.66, Ready throughout)",
+        "test:python3 scripts/test/lib/check-compliance-scan-coverage.py --mutation-verify -> PASS (36 mutations rejected)",
+        "lint:shellcheck clean across all scripts/; yamllint exit 2 on pre-existing errors in untouched files (ghost-pod-reaper.yaml:117, prometheus-alerts.yaml:286,336, velero-server-rbac.yaml:3,25,69,125,173)",
+        "test:make validate -> exit 0; full make test -> exit 0 (passed 496 failed 0 warnings 3)"
+      ]
     },
     {
       "id": "e6",
+      "type": "completion_claim",
+      "summary": "Measured scan-coverage impact and load claims recorded; code comments and docs updated with live trial facts, config-audit finding counts, and exact excludeImages entries for kube-vip and istio install-cni; verified with check-compliance-scan-coverage --mutation-verify, check-node-compliance-checks, make validate, and full make test."
+    },
+    {
+      "id": "e7",
       "type": "task_outcome",
       "state": "A",
-      "summary": "Complete on branch fix/compliance-scan-coverage after origin/main merge and Round 2 fixes; ready for orchestrator rollout and re-review."
+      "summary": "Complete on branch fix/compliance-scan-coverage; live trial results recorded and verified."
     }
   ]
 }

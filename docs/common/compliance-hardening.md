@@ -360,7 +360,7 @@ Trivy `ClusterComplianceReport` emits a placeholder passing entry (`checks: [{ c
 Adding or expanding an entry requires:
 
 1. Verifying that no safe manifest/chart knob fixes the finding without breaking functionality (`accept`) or that the upstream chart/image lacks the knob (`upstream`).
-2. Recording a concise justification in `portal/src/lib/i18n.ts` (`ko`/`en` keys), `portal/src/lib/compliance-accepted.ts`, and the English tables below (enforced by `portal/src/lib/compliance-accepted.test.ts`).
+2. Recording a concise justification in `portal/src/lib/i18n.ts` (`ko`/`en` keys), `portal/src/data/compliance-acceptance-rules.json`, and the English tables below (enforced by `portal/src/lib/compliance-accepted.test.ts`).
 3. Passing independent PR review before merging.
 
 Matching is exact: `database/Pod/narwhal-db-1` and the pooler currently have no acceptance rule: the available manifests/snapshot do not prove the former UID/ownership/template-limitation reasons. All CloudNativePG instance and pooler findings stay actionable until the capability necessity is verified for each exact target/check.

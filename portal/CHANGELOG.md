@@ -9,6 +9,8 @@ English | [한국어](CHANGELOG-ko.md)
 
 ## [Unreleased]
 
+## [1.1.24] - 2026-11-23
+
 ### Fixed
 
 - **OSS Updates truthful running detection, rollout/suffix/CVE/sibling isolation, and explicit unknown reasons (`src/lib/oss-updates/catalog.ts`, `src/lib/oss-updates/status.ts`, `src/lib/oss-updates/version.ts`, `src/lib/k8s-client.ts`, `src/lib/trivy.ts`, `src/types/oss-updates.ts`, `src/components/settings/oss-updates-table.tsx`, `src/lib/i18n.ts`):**
@@ -18,10 +20,10 @@ English | [한국어](CHANGELOG-ko.md)
 
 ### Changed
 
-- **Exact Compliance acceptance:** replaced namespace/built-in/substring blanket acceptance with reviewed scope, namespace, kind, resource and explicit check IDs; removed unverifiable exceptions, require ReplicaSet Deployment ownership, versioned affected caches, and expose unused rule targets/counts in the summary API and English/Korean UI (R395).
+- **Exact Compliance acceptance (`src/data/compliance-acceptance-rules.json`, `src/lib/compliance-acceptance.ts`, `src/lib/compliance-accepted.ts`, `src/lib/compliance.ts`, `src/components/compliance/failure-counters.tsx`, `src/lib/i18n.ts`):** replaced namespace/built-in/substring blanket acceptance with reviewed scope, namespace, kind, resource and explicit check IDs (Config Audit rules 73->45, RBAC 4->47 including 31 Kubernetes bootstrap roles); removed unverifiable exceptions, require ReplicaSet Deployment ownership, versioned affected caches, and expose unused rule targets/counts in the summary API and English/Korean UI (`R395`).
 
-- **Honest three-state Compliance status & data-unavailability reporting (`src/lib/compliance.ts`, `src/lib/kisa.ts`, `src/types/compliance.ts`, `src/components/compliance/*`, `src/app/api/compliance/*`, `src/app/(dashboard)/compliance/*`, `src/lib/i18n.ts`):**
-  - Replaced binary pass assumptions on Trivy's `{ checkID: "", success: true }` placeholders with three-state control evaluation (`passed`, `failed`, `not_evaluated`) requiring positive per-check-ID evidence in the matching report kind/scope (`no_evidence_in_report` on clean `checks: []` reports or unknown IDs, `coverage_unknown` on failed auxiliary reads, `absent_from_report` for spec controls omitted from `detailReport.results`, plus `excluded_namespace`, `unsupported_kind`, `missing_node_type` from spec/collector `nodeType` only, `unlinked_check_id`, `manual`, `scanner_disabled`, `summary_only`, `empty_checks`).
+- **Honest three-state Compliance status & data-unavailability reporting (`src/lib/compliance.ts`, `src/lib/kisa.ts`, `src/types/compliance.ts`, `src/components/compliance/*`, `src/app/api/compliance/*`, `src/app/(dashboard)/compliance/*`, `src/lib/i18n.ts`, `src/data/trivy-check-catalogue.generated.json`):**
+  - Evaluated failed-only compliance controls against a generated, pinned check catalogue of 158 checks (`src/data/trivy-check-catalogue.generated.json`), replacing binary pass assumptions on Trivy's `{ checkID: "", success: true }` placeholders with three-state control evaluation (`passed`, `failed`, `not_evaluated`) requiring positive per-check-ID evidence in the matching report kind/scope (`no_evidence_in_report` on clean `checks: []` reports or unknown IDs, `coverage_unknown` on failed auxiliary reads, `absent_from_report` for spec controls omitted from `detailReport.results`, plus `excluded_namespace`, `unsupported_kind`, `missing_node_type` from spec/collector `nodeType` only, `unlinked_check_id`, `manual`, `scanner_disabled`, `summary_only`, `empty_checks`) (`R387`, `R389`, `R391`, `R392`, `R393`).
   - Pooled aggregate framework pass rates (sum of numerators / sum of denominators with explicit `num/den` labels), prevented `100%` leaks across every `formatPassRatePct` call site (including raw rates), and updated KISA `CFG-01` to fail on actionable controls, warn on unevaluated controls, and pass only when every control is evaluated with zero actionable failures.
   - Surfaced `unacceptedLowConfigAuditFailures` separately from actionable MEDIUM+ (`totalConfigAuditFailures`) and accepted hygiene LOW (`lowSeverityConfigAuditFailures`), plus `droppedConfigAuditReports` / `droppedConfigAuditFailures` / `droppedFailCount` / `droppedCheckCount` for superseded ReplicaSets.
   - Stopped masking Kubernetes list failures as empty `[]` / `0` or caching failed/partial responses: API routes (including `/api/compliance/summary` when all primary sources fail) return `503 { unavailable: true }`, `getComplianceSummary` tracks per-source availability, `partial` / `partialSources` UI notices, and `status.updateTimestamp` freshness alongside the 6-hour rebuild cadence note.
@@ -990,7 +992,8 @@ management dashboard built with Next.js 16 and React 19.
   - Skaffold development profile configured for live Hot Module Replacement (HMR) and container
     file syncing.
 
-[Unreleased]: https://github.com/dasomel/narwhal/compare/portal/v1.1.23...HEAD
+[Unreleased]: https://github.com/dasomel/narwhal/compare/portal/v1.1.24...HEAD
+[1.1.24]: https://github.com/dasomel/narwhal/compare/portal/v1.1.23...portal/v1.1.24
 [1.1.23]: https://github.com/dasomel/narwhal/compare/portal/v1.1.22...portal/v1.1.23
 [1.1.22]: https://github.com/dasomel/narwhal/compare/portal/v1.1.21...portal/v1.1.22
 [1.1.21]: https://github.com/dasomel/narwhal/compare/portal/v1.1.20...portal/v1.1.21

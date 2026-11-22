@@ -92,3 +92,10 @@ spec:
       # Large chaos-mesh CRDs exceed the last-applied annotation limit
       - ServerSideApply=true
       - RespectIgnoreDifferences=true
+    # D-PSA-LABELS-14 (KISA-POD-01): keep chaos-testing PSA audit/warn labels declared
+    # in GitOps alongside apply-psa-labels.sh (privileged because chaos-daemon needs
+    # privileged + hostPID). Never set enforce here.
+    managedNamespaceMetadata:
+      labels:
+        pod-security.kubernetes.io/audit: privileged
+        pod-security.kubernetes.io/warn: privileged

@@ -43,6 +43,20 @@ harden_joined_node() {
   fi
 }
 
+# D-HARBOR-NODE-CA (KISA-IMG-01): synchronize Harbor containerd CA trust for late-joining nodes
+# via shared scripts/common/lib-harbor-ca.sh (Vagrant runs this script from /tmp/vagrant-shell,
+# so resolve the guest /home/vagrant path first and fail loudly if missing).
+HARBOR_CA_LIB="${STAGE_DIR:-/home/vagrant}/scripts/common/lib-harbor-ca.sh"
+if [ ! -r "${HARBOR_CA_LIB}" ]; then
+  HARBOR_CA_LIB="$(cd "$(dirname "${BASH_SOURCE[0]}")/../common" 2>/dev/null && pwd || true)/lib-harbor-ca.sh"
+fi
+if [ ! -r "${HARBOR_CA_LIB}" ]; then
+  echo "ERROR: lib-harbor-ca.sh not readable at ${HARBOR_CA_LIB}" >&2
+  exit 1
+fi
+# shellcheck source=scripts/common/lib-harbor-ca.sh
+source "${HARBOR_CA_LIB}"
+
 # D17: idempotency guard — up.sh's node-readiness loop can call `vagrant
 # provision <vm>` on a worker that already joined (e.g. if a transient
 # SSH/kubectl hiccup makes k8s_ready_nodes momentarily report 0 nodes Ready,
@@ -53,6 +67,7 @@ harden_joined_node() {
 if [[ -f /etc/kubernetes/kubelet.conf ]]; then
   echo "Node already joined (kubelet.conf present) — skipping kubeadm join"
   harden_joined_node
+  sync_harbor_containerd_ca "${MASTER_IP}"
   echo "=== Cluster Join Done (already joined) ==="
   exit 0
 fi
@@ -105,5 +120,6 @@ sudo bash /tmp/join-command.sh --node-name "${NODE_NAME}"
 
 # Harden node file permissions after join (re-uses harden_joined_node above).
 harden_joined_node
+sync_harbor_containerd_ca "${MASTER_IP}"
 
 echo "=== Cluster Join Done ==="

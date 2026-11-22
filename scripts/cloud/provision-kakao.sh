@@ -19,8 +19,9 @@
 #   join    distribute artifacts, then control-planes serially, then workers
 #   nfs     01-nfs-server (master-1) — re-export without re-running kubeadm init
 #   phase1  04-addons, 05-nfs-quota-agent (master-1)
-#   phase2  06-phase2-start (master-1) + apply-apiserver-oidc-kakao.sh (all masters)
+#   phase2  06-phase2-start (master-1) + apply-harbor-ca-kakao.sh (all nodes) + apply-apiserver-oidc-kakao.sh (all masters)
 #   oidc    apply-apiserver-oidc-kakao.sh (master-1 CA + 7 --oidc-* flags -> master-2..N)
+#   harbor-ca apply-harbor-ca-kakao.sh (master-1 Harbor containerd CA -> all other nodes)
 #
 # Usage (from the repo root):
 #   ./scripts/cloud/provision-kakao.sh all
@@ -58,7 +59,7 @@ DOMAIN="${DOMAIN:-kakao.narwhal.internal}"
 
 cd "$(dirname "$0")/../.."
 
-[ $# -gt 0 ] || { echo "usage: $0 <proxy|registry|base|runtime|mirror|init|join|nfs|phase1|phase2|oidc|all>..." >&2; exit 1; }
+[ $# -gt 0 ] || { echo "usage: $0 <proxy|registry|base|runtime|mirror|init|join|nfs|phase1|harbor-ca|phase2|oidc|all>..." >&2; exit 1; }
 
 # ── OpenTofu state is the single source of truth for every address ───────────────
 BASTION_IP=$(cd "${TF_DIR}" && tofu output -raw bastion_public_ip)
@@ -407,6 +408,12 @@ stage_phase2() {
   log "phase2: 06-phase2-start drives the 18 platform scripts, then OIDC flags on all masters"
   if stage_done "${MASTER1}" phase2; then note "skip (done)"; return 0; fi
   if run_scripts "${MASTER1}" phase2 cluster/06-phase2-start.sh; then
+    # D-HARBOR-NODE-CA (KISA-IMG-01): 08-6 skips node-to-node SSH on PROVIDER=kakao;
+    # propagate master-1's Harbor containerd CA trust to all remaining masters and workers.
+    if ! TF_DIR="${TF_DIR}" STAGE_DIR="${STAGE_DIR}" DOMAIN="${DOMAIN}" NODE_SSH_USER="${SSH_USER}" \
+       ./scripts/cloud/apply-harbor-ca-kakao.sh; then
+      note "Harbor containerd CA propagation to other nodes FAILED"; return 1
+    fi
     # D-APISERVER-OIDC-ALL: 11-4 skips node-to-node SSH on PROVIDER=kakao because cloud
     # nodes have no vagrant password and no node-to-node trust; propagate the OIDC CA and
     # the 7 --oidc-* flags from master-1 to master-2..N from the operator host before
@@ -432,6 +439,15 @@ stage_oidc() {
   if ! TF_DIR="${TF_DIR}" STAGE_DIR="${STAGE_DIR}" DOMAIN="${DOMAIN}" NODE_SSH_USER="${SSH_USER}" \
        ./scripts/cloud/apply-apiserver-oidc-kakao.sh; then
     note "apiserver OIDC apply FAILED"; return 1
+  fi
+  note "ok"
+}
+
+stage_harbor_ca() {
+  log "harbor-ca: distribute master-1 Harbor containerd CA trust to all remaining nodes"
+  if ! TF_DIR="${TF_DIR}" STAGE_DIR="${STAGE_DIR}" DOMAIN="${DOMAIN}" NODE_SSH_USER="${SSH_USER}" \
+       ./scripts/cloud/apply-harbor-ca-kakao.sh; then
+    note "Harbor containerd CA apply FAILED"; return 1
   fi
   note "ok"
 }
@@ -465,6 +481,7 @@ for arg in "$@"; do
     phase1) run_stage stage_phase1 ;;
     phase2) run_stage stage_phase2 ;;
     oidc)   run_stage stage_oidc ;;
+    harbor-ca) run_stage stage_harbor_ca ;;
     # The proxy exists so apt and helm can reach the internet from nodes with no public
     # IP. Under AIRGAP=1 every one of those comes from the bundle instead, and standing
     # squid up would quietly restore the egress the run is meant to prove it does not

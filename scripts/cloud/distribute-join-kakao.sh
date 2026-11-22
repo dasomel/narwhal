@@ -27,6 +27,7 @@ set -euo pipefail
 
 TF_DIR="${TF_DIR:-csp/kakao-cloud/terraform}"
 SSH_USER="${NODE_SSH_USER:-ubuntu}"
+DOMAIN="${DOMAIN:-kakao.narwhal.internal}"
 
 cd "$(dirname "$0")/../.."
 
@@ -38,18 +39,27 @@ case "${SSH_KEY}" in /*) ;; *) SSH_KEY="${TF_DIR}/${SSH_KEY#./}" ;; esac
 
 # shellcheck source=scripts/cloud/lib-ssh.sh
 source scripts/cloud/lib-ssh.sh
+# shellcheck source=scripts/common/lib-harbor-ca.sh
+source scripts/common/lib-harbor-ca.sh
 
 mapfile_masters=$(cd "${TF_DIR}" && tofu output -json master_private_ips)
 mapfile_workers=$(cd "${TF_DIR}" && tofu output -json worker_private_ips)
 read_ips() {
   printf '%s' "$1" | python3 -c 'import json,sys
-for ip in json.load(sys.stdin): print(ip)'
+data = json.load(sys.stdin)
+if not isinstance(data, list) or any(not isinstance(ip, str) or not ip for ip in data):
+    sys.stderr.write("ERROR: expected JSON list of non-empty IP strings\n")
+    sys.exit(1)
+for ip in data:
+    print(ip)'
 }
 
+masters_lines="$(read_ips "${mapfile_masters}")"
+workers_lines="$(read_ips "${mapfile_workers}")"
 MASTERS=()
-while IFS= read -r _ip; do [ -n "${_ip}" ] && MASTERS+=("${_ip}"); done < <(read_ips "${mapfile_masters}")
+while IFS= read -r _ip; do [ -n "${_ip}" ] && MASTERS+=("${_ip}"); done <<< "${masters_lines}"
 WORKERS=()
-while IFS= read -r _ip; do [ -n "${_ip}" ] && WORKERS+=("${_ip}"); done < <(read_ips "${mapfile_workers}")
+while IFS= read -r _ip; do [ -n "${_ip}" ] && WORKERS+=("${_ip}"); done <<< "${workers_lines}"
 
 MASTER1="${MASTERS[0]}"
 
@@ -134,6 +144,31 @@ if grep -q 'oidc-ca-file' <<<"${cluster_config}"; then
   echo "  oidc-ca.crt ($(wc -c < "${tmp}/oidc-ca.crt") bytes)"
 fi
 
+# D-HARBOR-NODE-CA (KISA-IMG-01): for late-joining Kakao nodes (after Phase 2 08-6 ran),
+# stage master-1's Harbor CA to /tmp/harbor-ca.crt so 02-join-{control-plane,worker}.sh can
+# configure containerd TLS verification without node-to-node SSH. Uses the shared three-way
+# probe in lib-harbor-ca.sh (0=HARBOR_CA_PRESENT, 2=HARBOR_CA_ABSENT during initial Phase 1
+# join -> skip cleanly; 1=SSH/sudo/probe error -> abort so a transient transport failure can
+# never let a late-joining node proceed without Harbor TLS trust).
+HARBOR_CA_PRESENT=false
+HARBOR_CA_REMOTE="/etc/containerd/certs.d/harbor.${DOMAIN}/ca.crt"
+harbor_probe_rc=0
+probe_remote_harbor_ca "${HARBOR_CA_REMOTE}" 1 ssh_node "${MASTER1}" || harbor_probe_rc=$?
+if [ "${harbor_probe_rc}" -eq 0 ]; then
+  if ! ssh_node "${MASTER1}" "sudo cat '${HARBOR_CA_REMOTE}'" > "${tmp}/harbor-ca.crt" 2>/dev/null \
+    || ! validate_harbor_ca_bundle "${tmp}/harbor-ca.crt"; then
+    echo "ERROR: ${HARBOR_CA_REMOTE} exists on master-1 but failed copy or CA bundle validation" >&2
+    exit 1
+  fi
+  HARBOR_CA_PRESENT=true
+  echo "  harbor-ca.crt ($(wc -c < "${tmp}/harbor-ca.crt" | tr -d ' ') bytes)"
+elif [ "${harbor_probe_rc}" -eq 2 ]; then
+  echo "  harbor-ca.crt not yet provisioned on master-1 (initial Phase 1 join; Phase 2 apply-harbor-ca-kakao.sh will distribute it)"
+else
+  echo "ERROR: failed to check ${HARBOR_CA_REMOTE} on master-1 (${MASTER1}); aborting so late-joining nodes do not join without Harbor CA trust" >&2
+  exit 1
+fi
+
 place() {
   local ip="$1" src="$2" dest="$3"
   ssh_node "${ip}" "cat > '${dest}' && chmod 0600 '${dest}'" < "${tmp}/${src}"
@@ -146,12 +181,18 @@ for ip in "${MASTERS[@]:1}"; do
   if [ "${OIDC_CA_REQUIRED}" = "true" ]; then
     place "${ip}" oidc-ca.crt /tmp/oidc-ca.crt
   fi
+  if [ "${HARBOR_CA_PRESENT}" = "true" ]; then
+    place "${ip}" harbor-ca.crt /tmp/harbor-ca.crt
+  fi
   ssh_node "${ip}" "ls -l /tmp/join-control-plane.sh /tmp/encryption-config.yaml | awk '{print \"    \"\$5, \$9}'"
 done
 
 for ip in "${WORKERS[@]}"; do
   echo "=== worker ${ip} ==="
   place "${ip}" join-command.sh /tmp/join-command.sh
+  if [ "${HARBOR_CA_PRESENT}" = "true" ]; then
+    place "${ip}" harbor-ca.crt /tmp/harbor-ca.crt
+  fi
   ssh_node "${ip}" "ls -l /tmp/join-command.sh | awk '{print \"    \"\$5, \$9}'"
 done
 

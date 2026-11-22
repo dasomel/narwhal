@@ -703,10 +703,12 @@ vagrant ssh master-1 -c "kubectl exec -n devtools \
 - Go 앱은 자동으로 `/etc/ssl/certs/` 디렉토리 스캔하여 인식
 - `SSL_CERT_FILE` 환경 변수 설정 금지 (시스템 CA 번들 대체됨)
 
-**CA 교체 시 Harbor 재시작 (#551, D-HARBOR-CA-ROTATE)**: harbor-core 는 `caBundleSecretName`(`narwhal-ca-cert`)을 기동 시에만 읽습니다. CA 가 교체되면 재시작 전까지 Harbor OIDC 로그인이 실패(fail closed)합니다. `scripts/cluster/08-6-tls-routes.sh` 는 `devtools/narwhal-ca-cert` 의 `ca.crt` 가 실제로 바뀌었고 `harbor-core` 가 있을 때만 `rollout restart` 를 수행합니다(재실행해도 변경이 없으면 재시작하지 않음). 08-6 을 거치지 않고 Secret 을 직접 바꿨다면 수동으로 실행합니다.
+**CA 교체 시 Harbor 재시작 (#551, D-HARBOR-CA-ROTATE) 및 노드 containerd 신뢰 갱신 (KISA-IMG-01, D-HARBOR-NODE-CA)**: harbor-core 는 `caBundleSecretName`(`narwhal-ca-cert`)을 기동 시에만 읽습니다. CA 가 교체되면 재시작 전까지 Harbor OIDC 로그인이 실패(fail closed)합니다. `scripts/cluster/08-6-tls-routes.sh` 는 `devtools/narwhal-ca-cert` 의 `ca.crt` 가 실제로 바뀌었고 `harbor-core` 가 있을 때만 `rollout restart` 를 수행하며(재실행해도 변경이 없으면 재시작하지 않음), 동시에 `scripts/cluster/08-6b-harbor-containerd-tls-node.sh` (및 공용 검증/조인 동기화 라이브러리 `scripts/common/lib-harbor-ca.sh`)를 통해 모든 노드의 `/etc/containerd/certs.d/harbor.<domain>/ca.crt` (모드 `0644`)와 `hosts.toml`(`ca = ...`, `skip_verify` 없음)을 원자적으로 갱신합니다. 08-6 을 거치지 않고 Secret 을 직접 바꿨다면 수동으로 실행합니다. (참고: `kube-public`에는 Narwhal Root CA가 게시되지 않고 NodeAuthorizer가 `system:nodes`의 미스케줄 Secret/ConfigMap 조회를 차단하므로 Vagrant 로컬 랩 전파는 기존 join/OIDC와 동일한 `sshpass` 채널을 사용하며 Kakao Cloud는 `scripts/cloud/lib-ssh.sh`로 호스트 키를 고정합니다.)
 
 ```bash
 kubectl -n devtools rollout restart deployment/harbor-core
+# 기존 노드 마이그레이션 또는 CA 교체 후 노드별 containerd 신뢰 갱신 (멱등)
+vagrant ssh master-1 -c "sudo bash /home/vagrant/scripts/cluster/08-6b-harbor-containerd-tls-node.sh"
 ```
 
 ---

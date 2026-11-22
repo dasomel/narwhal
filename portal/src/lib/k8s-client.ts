@@ -2472,6 +2472,8 @@ export interface OssPodContainerSpec {
   /** Runtime image from status.containerStatuses[].image (empty when not yet reported). */
   image: string
   digest?: string | null
+  /** Non-empty status.containerStatuses[].imageID preserved verbatim when it contains no sha256/sha512 digest. */
+  imageId?: string | null
   running?: boolean
   completed?: boolean
 }
@@ -2564,7 +2566,7 @@ interface RawOssPod {
 }
 
 const IMAGE_DIGEST_RE = /@((?:sha256|sha512):[0-9a-fA-F]+)/
-const IMAGE_ID_DIGEST_RE = /(?:^|@)((?:sha256|sha512):[0-9a-fA-F]+)/
+const IMAGE_ID_DIGEST_RE = /(?:^|@|\/\/|\/)((?:sha256:[0-9a-fA-F]{64}|sha512:[0-9a-fA-F]{128}))(?=$|[^0-9a-fA-F])/
 
 function mapOwnerRefs(raw: RawOssOwnerRef[] | undefined): OssOwnerRef[] {
   return (raw ?? [])
@@ -2621,7 +2623,8 @@ function mapRawReplicaSet(item: RawOssWorkload): OssReplicaSetItem {
 
 function mapRawPod(item: RawOssPod): OssPodSpecItem {
   const extractImageIdDigest = (imageID: string | undefined): string | null => {
-    const m = imageID ? IMAGE_ID_DIGEST_RE.exec(imageID) : null
+    const trimmed = typeof imageID === "string" ? imageID.trim() : ""
+    const m = trimmed ? IMAGE_ID_DIGEST_RE.exec(trimmed) : null
     return m ? m[1] : null
   }
   // D-OSS-STATUS-IMAGE: read what is actually running from status.*ContainerStatuses
@@ -2643,11 +2646,18 @@ function mapRawPod(item: RawOssPod): OssPodSpecItem {
       const statusImage = typeof entry.image === "string" ? entry.image : ""
       const running = Boolean(entry.state?.running)
       const completed = isInit ? entry.state?.terminated?.exitCode === 0 : false
-      const digest = extractImageIdDigest(entry.imageID) ?? (statusImage ? IMAGE_DIGEST_RE.exec(statusImage)?.[1] ?? null : null)
+      const rawImageId = typeof entry.imageID === "string" ? entry.imageID.trim() : ""
+      const imageIdDigest = extractImageIdDigest(rawImageId)
+      // Observed imageID is authoritative: extract its digest when present, keep raw
+      // non-empty imageID as identity when it has no digest, and fall back to
+      // status.image @digest only when imageID is empty.
+      const digest = imageIdDigest ?? (!rawImageId && statusImage ? IMAGE_DIGEST_RE.exec(statusImage)?.[1] ?? null : null)
+      const rawIdentity = !imageIdDigest && rawImageId ? rawImageId : null
       byName.set(entry.name, {
         name: entry.name,
         image: statusImage,
         ...(digest ? { digest } : {}),
+        ...(rawIdentity ? { imageId: rawIdentity } : {}),
         running,
         ...(isInit ? { completed } : {}),
       })

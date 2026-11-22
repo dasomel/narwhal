@@ -40,6 +40,7 @@ FILES = {
     "table": ROOT / "portal/src/components/settings/oss-updates-table.tsx",
     "i18n": ROOT / "portal/src/lib/i18n.ts",
     "test": ROOT / "portal/src/lib/oss-updates/status.test.ts",
+    "k8s_test": ROOT / "portal/src/lib/k8s-client.oss-updates.test.ts",
     "rbac": ROOT / "gitops/charts/narwhal-platform/templates/narwhal-portal-k8s.yaml",
     "reg": ROOT / "scripts/test/regression-check-kakao.sh",
 }
@@ -54,6 +55,7 @@ def check(texts: dict[str, str]) -> list[str]:
     table = texts["table"]
     i18n = texts["i18n"]
     test = texts["test"]
+    k8s_test = texts["k8s_test"]
     rbac = texts["rbac"]
     reg = texts["reg"]
 
@@ -98,7 +100,9 @@ def check(texts: dict[str, str]) -> list[str]:
         "isContainerRunning(",
         "fetchFailureReason(",
         'if (fetch.status === "truncated")',
-        'const key = `${normRepo}|${parsed.rawTag ?? ""}|${effectiveDigest ?? ""}`',
+        'const effectiveDigest = observedDigest ?? (rawImageId ? null : parsed.digest) ?? null',
+        'const imageIdentity = observedDigest ?? (rawImageId || parsed.digest || null)',
+        'const key = `${normRepo}|${parsed.rawTag ?? ""}|${imageIdentity ?? ""}`',
         "inspectContainerAcrossRunningPods(",
         'if (rolloutMixed) return "drift"',
         'if (imageTags.length === 0) return "unknown"',
@@ -125,6 +129,9 @@ def check(texts: dict[str, str]) -> list[str]:
         "const statusImage = typeof entry.image === \"string\" ? entry.image : \"\"",
         "const running = Boolean(entry.state?.running)",
         'if (err instanceof K8sCredentialError) return { status: "no-permission", resource }',
+        r'const IMAGE_ID_DIGEST_RE = /(?:^|@|\/\/|\/)((?:sha256:[0-9a-fA-F]{64}|sha512:[0-9a-fA-F]{128}))(?=$|[^0-9a-fA-F])/',
+        'const digest = imageIdDigest ?? (!rawImageId && statusImage ? IMAGE_DIGEST_RE.exec(statusImage)?.[1] ?? null : null)',
+        'const rawIdentity = !imageIdDigest && rawImageId ? rawImageId : null',
     ):
         # RawOssReplicaSet vs RawOssWorkload check
         if needle == 'listBounded<RawOssReplicaSet>("/apis/apps/v1/replicasets")':
@@ -162,6 +169,9 @@ def check(texts: dict[str, str]) -> list[str]:
 
     if "liveClusterInventoryFixture" not in test:
         errors.append("status.test.ts missing liveClusterInventoryFixture")
+    for needle in ("docker://", "containerd://", "cri-o://"):
+        if needle not in k8s_test:
+            errors.append(f"k8s-client.oss-updates.test.ts missing {needle} reproduction")
 
     if "check R394 " not in reg or "check-portal-oss-updates-truth.py --mutation-verify" not in reg:
         errors.append("scripts/test/regression-check-kakao.sh must wire R394 with --mutation-verify")
@@ -179,7 +189,11 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("drop rollout-mixed drift", "status", 'if (rolloutMixed) return "drift"', 'if (false && rolloutMixed) return "drift"'),
     ("allow unparseable tag in computeDrift", "status", "if (hasUnparseableTag) {", "if (false && hasUnparseableTag) {"),
     ("drop K8s inventory call", "status", "getOssClusterInventory()", "Promise.resolve({} as never)"),
-    ("drop digest from deduplication key", "status", 'const key = `${normRepo}|${parsed.rawTag ?? ""}|${effectiveDigest ?? ""}`', 'const key = `${normRepo}|${parsed.rawTag ?? ""}|`'),
+    ("drop digest from deduplication key", "status", 'const key = `${normRepo}|${parsed.rawTag ?? ""}|${imageIdentity ?? ""}`', 'const key = `${normRepo}|${parsed.rawTag ?? ""}|`'),
+    ("prefer status.image digest over observed imageID", "status", 'const imageIdentity = observedDigest ?? (rawImageId || parsed.digest || null)', 'const imageIdentity = parsed.digest ?? observedDigest ?? (rawImageId || null)'),
+    ("revert imageID regex to miss runtime-prefixed forms", "k8s", r'const IMAGE_ID_DIGEST_RE = /(?:^|@|\/\/|\/)((?:sha256:[0-9a-fA-F]{64}|sha512:[0-9a-fA-F]{128}))(?=$|[^0-9a-fA-F])/', r'const IMAGE_ID_DIGEST_RE = /(?:^|@)((?:sha256|sha512):[0-9a-fA-F]+)/'),
+    ("drop raw non-digest imageID identity preservation", "k8s", 'const rawIdentity = !imageIdDigest && rawImageId ? rawImageId : null', 'const rawIdentity = null'),
+    ("let status.image digest override non-empty non-digest imageID", "k8s", 'const digest = imageIdDigest ?? (!rawImageId && statusImage ? IMAGE_DIGEST_RE.exec(statusImage)?.[1] ?? null : null)', 'const digest = imageIdDigest ?? (statusImage ? IMAGE_DIGEST_RE.exec(statusImage)?.[1] ?? null : null)'),
     ("ignore deletionTimestamp in isActiveRunningPod", "status", "return pod.phase === \"Running\" && !pod.terminating", "return pod.phase === \"Running\""),
     ("ignore truncated status in fetchFailureReason", "status", 'if (fetch.status === "truncated") {', 'if (false && fetch.status === "truncated") {'),
     ("drop strict suffix allow-list in normalizeTag", "version", "if (!allowedSuffixes || !allowedSuffixes.includes(suffix)) return null", "if (false && !allowedSuffixes) return null"),

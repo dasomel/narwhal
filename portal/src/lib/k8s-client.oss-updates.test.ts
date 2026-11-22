@@ -234,4 +234,77 @@ describe("getOssClusterInventory", () => {
       })
     }
   })
+
+  it("extracts sha256:<64hex> from all kubelet imageID forms, preserves raw non-digest imageID, and falls back to status.image only when imageID is empty", async () => {
+    const digA = "sha256:" + "a".repeat(64)
+    const digB = "sha256:" + "b".repeat(64)
+    const bareHex = "c".repeat(64)
+    mockFetch.mockImplementation(async (url: string) => {
+      if (url.endsWith("/version")) return Response.json({ gitVersion: "v1.35.7" })
+      if (url.includes("/deployments") || url.includes("/daemonsets") || url.includes("/statefulsets") || url.includes("/replicasets")) {
+        return Response.json({ metadata: {}, items: [] })
+      }
+      if (url.includes("/api/v1/pods")) {
+        return Response.json({
+          metadata: {},
+          items: [
+            {
+              metadata: { namespace: "ns", name: "runtime-forms" },
+              spec: { containers: [] },
+              status: {
+                phase: "Running",
+                containerStatuses: [
+                  { name: "repo-at", image: "repo:1.0", imageID: `repo@${digA}`, state: { running: {} } },
+                  { name: "docker-pullable", image: "repo:1.0", imageID: `docker-pullable://repo@${digA}`, state: { running: {} } },
+                  { name: "docker-prefix", image: "repo:1.0", imageID: `docker://${digA}`, state: { running: {} } },
+                  { name: "containerd-prefix", image: "repo:1.0", imageID: `containerd://${digA}`, state: { running: {} } },
+                  { name: "crio-prefix", image: "repo:1.0", imageID: `cri-o://${digA}`, state: { running: {} } },
+                  { name: "bare-sha", image: "repo:1.0", imageID: digA, state: { running: {} } },
+                  // Non-empty imageID without sha256:<64hex> keeps raw string as identity and does NOT fall back to status.image @digest
+                  { name: "crio-raw-1", image: `repo:1.0@${digB}`, imageID: `cri-o://${bareHex}`, state: { running: {} } },
+                  { name: "crio-raw-2", image: `repo:1.0@${digB}`, imageID: "cri-o://opaque-id-2", state: { running: {} } },
+                  // Empty imageID falls back to status.image @digest; stays absent when neither has digest
+                  { name: "empty-id-fallback", image: `repo:1.0@${digB}`, imageID: "", state: { running: {} } },
+                  { name: "empty-both", image: "repo:1.0", imageID: "", state: { running: {} } },
+                ],
+              },
+            },
+          ],
+        })
+      }
+      return new Response("Not Found", { status: 404 })
+    })
+
+    const inv = await getOssClusterInventory()
+    expect(inv.pods.status).toBe("ok")
+    if (inv.pods.status === "ok") {
+      const byName = new Map(inv.pods.data[0].containers.map((c) => [c.name, c]))
+      for (const name of ["repo-at", "docker-pullable", "docker-prefix", "containerd-prefix", "crio-prefix", "bare-sha"]) {
+        expect(byName.get(name)).toEqual({ name, image: "repo:1.0", digest: digA, running: true })
+      }
+      expect(byName.get("crio-raw-1")).toEqual({
+        name: "crio-raw-1",
+        image: `repo:1.0@${digB}`,
+        imageId: `cri-o://${bareHex}`,
+        running: true,
+      })
+      expect(byName.get("crio-raw-2")).toEqual({
+        name: "crio-raw-2",
+        image: `repo:1.0@${digB}`,
+        imageId: "cri-o://opaque-id-2",
+        running: true,
+      })
+      expect(byName.get("empty-id-fallback")).toEqual({
+        name: "empty-id-fallback",
+        image: `repo:1.0@${digB}`,
+        digest: digB,
+        running: true,
+      })
+      expect(byName.get("empty-both")).toEqual({
+        name: "empty-both",
+        image: "repo:1.0",
+        running: true,
+      })
+    }
+  })
 })

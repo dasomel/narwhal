@@ -3541,7 +3541,7 @@ PYEOF'
   check R390 "OpenBao TLS validity, bootstrap parity, in-container hash-change SIGHUP watcher, 180s served/Secret verifier; shell behavioral fixtures and mutations" \
     python3 scripts/test/lib/check-openbao-tls.py --mutation-verify
   # 2026-11-23: portal Settings > OSS Updates truthful running-pod version, ownership/truncation/status-image/digest/CVE invariants
-  check R394 "Portal Settings > OSS Updates resolves Running pod images via ownerReferences/mirror-node (never label-only), propagates truncated bounded lists as list-truncated unknown, reads runtime status.containerStatuses[].image + state.running + imageID digest dedup without widening RBAC, never yields in-sync from chart alone or Trivy fallback, flags mixed rollouts (incl. same-tag different digests) as drift, enforces per-component suffix allow-lists, attributes CVEs strictly by running repo+tag/digest (incl. siblings), keeps unreadable/digest-only siblings visible, marks Helm N/A, and renders ko/en reasons; 20 mutations caught" \
+  check R394 "Portal Settings > OSS Updates resolves Running pod images via ownerReferences/mirror-node (never label-only), propagates truncated bounded lists as list-truncated unknown, reads runtime status.containerStatuses[].image + state.running + imageID digest dedup without widening RBAC, never yields in-sync from chart alone or Trivy fallback, flags mixed rollouts (incl. same-tag different digests) as drift, enforces per-component suffix allow-lists, attributes CVEs strictly by running repo+tag/digest (incl. siblings), keeps unreadable/digest-only siblings visible, marks Helm N/A, and renders ko/en reasons; 24 mutations caught" \
     python3 scripts/test/lib/check-portal-oss-updates-truth.py --mutation-verify
 }
 

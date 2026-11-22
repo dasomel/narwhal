@@ -51,7 +51,7 @@ const pod = (
   namespace: string,
   name: string,
   labels: Record<string, string>,
-  containers: Array<[string, string, string?, boolean?]>,
+  containers: Array<[string, string, string?, boolean?, string?]>,
   initContainers: Array<[string, string, string?, boolean?, boolean?]> = [],
   opts: {
     phase?: string
@@ -71,10 +71,11 @@ const pod = (
     ...(o.nodeName ? { nodeName: o.nodeName } : {}),
     ...(o.mirrorAnnotation ? { mirrorAnnotation: o.mirrorAnnotation } : {}),
     ...(o.ownerReferences ? { ownerReferences: o.ownerReferences } : {}),
-    containers: containers.map(([cname, image, digest, running]) => ({
+    containers: containers.map(([cname, image, digest, running, imageId]) => ({
       name: cname,
       image,
       ...(digest ? { digest } : {}),
+      ...(imageId ? { imageId } : {}),
       running: running ?? true,
     })),
     initContainers: initContainers.map(([cname, image, digest, running, completed]) => ({
@@ -983,6 +984,121 @@ describe("getOssUpdateStatus — live cluster facts & reviewer reproductions", (
       drift: "in-sync",
     })
     expect(res.rows.find((r) => r.component === "Falco")).toMatchObject({
+      running: { version: "0.45.1", rawTag: "0.45.1", reason: null },
+      drift: "in-sync",
+    })
+  })
+
+  it("Round-3 reproduction: observed imageID (digest or raw) overrides status.image @digest; empty imageID falls back to status.image @digest; healthy single pod stays in-sync", async () => {
+    const digA = "sha256:aaaaaaaaaaaa" + "0".repeat(52)
+    const digB = "sha256:bbbbbbbbbbbb" + "1".repeat(52)
+    const digC = "sha256:cccccccccccc" + "2".repeat(52)
+
+    // 1. Two pods with identical status.image "repo:tag@digestA" but different imageID digests -> drift (rollout-mixed)
+    const invMixedDigest = emptyUnavailableInventory()
+    invMixedDigest.daemonsets = { status: "ok", data: [wl("security-system", "falco", [["falco", `docker.io/falcosecurity/falco:0.45.1@${digA}`]])] }
+    invMixedDigest.pods = {
+      status: "ok",
+      data: [
+        pod(
+          "security-system",
+          "falco-1",
+          { app: "falco" },
+          [["falco", `docker.io/falcosecurity/falco:0.45.1@${digA}`, digB, true]],
+          [],
+          { ownerReferences: [{ kind: "DaemonSet", name: "falco", uid: "security-system-falco-uid", controller: true }] },
+        ),
+        pod(
+          "security-system",
+          "falco-2",
+          { app: "falco" },
+          [["falco", `docker.io/falcosecurity/falco:0.45.1@${digA}`, digC, true]],
+          [],
+          { ownerReferences: [{ kind: "DaemonSet", name: "falco", uid: "security-system-falco-uid", controller: true }] },
+        ),
+      ],
+    }
+    getOssClusterInventory.mockResolvedValue(invMixedDigest)
+    const resMixedDigest = await getOssUpdateStatus(NOW)
+    expect(resMixedDigest.rows.find((r) => r.component === "Falco")).toMatchObject({
+      running: {
+        version: null,
+        imageTags: ["0.45.1 (sha256:bbbbbbbbbbbb)", "0.45.1 (sha256:cccccccccccc)"],
+        reason: "rollout-mixed",
+      },
+      drift: "drift",
+      driftReason: "rollout-mixed",
+    })
+
+    // 2. Two pods with identical status.image "repo:tag@digestA" but different raw non-digest imageIDs -> drift (rollout-mixed)
+    const invMixedRaw = emptyUnavailableInventory()
+    invMixedRaw.daemonsets = { status: "ok", data: [wl("security-system", "falco", [["falco", `docker.io/falcosecurity/falco:0.45.1@${digA}`]])] }
+    invMixedRaw.pods = {
+      status: "ok",
+      data: [
+        pod(
+          "security-system",
+          "falco-1",
+          { app: "falco" },
+          [["falco", `docker.io/falcosecurity/falco:0.45.1@${digA}`, undefined, true, "cri-o://raw-1"]],
+          [],
+          { ownerReferences: [{ kind: "DaemonSet", name: "falco", uid: "security-system-falco-uid", controller: true }] },
+        ),
+        pod(
+          "security-system",
+          "falco-2",
+          { app: "falco" },
+          [["falco", `docker.io/falcosecurity/falco:0.45.1@${digA}`, undefined, true, "cri-o://raw-2"]],
+          [],
+          { ownerReferences: [{ kind: "DaemonSet", name: "falco", uid: "security-system-falco-uid", controller: true }] },
+        ),
+      ],
+    }
+    getOssClusterInventory.mockResolvedValue(invMixedRaw)
+    const resMixedRaw = await getOssUpdateStatus(NOW)
+    expect(resMixedRaw.rows.find((r) => r.component === "Falco")).toMatchObject({
+      running: {
+        version: null,
+        imageTags: ["0.45.1 (cri-o://raw-1)", "0.45.1 (cri-o://raw-2)"],
+        reason: "rollout-mixed",
+      },
+      drift: "drift",
+      driftReason: "rollout-mixed",
+    })
+
+    // 3. Empty imageID falls back to status.image @digest (matching -> in-sync, single pod -> in-sync)
+    const invFallback = emptyUnavailableInventory()
+    invFallback.daemonsets = { status: "ok", data: [wl("security-system", "falco", [["falco", `docker.io/falcosecurity/falco:0.45.1@${digA}`]])] }
+    invFallback.deployments = { status: "ok", data: [wl("devtools", "gitea", [["gitea", `docker.gitea.com/gitea:1.26.2-rootless@${digA}`]])] }
+    invFallback.replicasets = { status: "ok", data: [rs("devtools", "gitea-rs", "gitea", "devtools-gitea-uid")] }
+    invFallback.pods = {
+      status: "ok",
+      data: [
+        pod(
+          "devtools",
+          "gitea-0",
+          { app: "gitea" },
+          [["gitea", `docker.gitea.com/gitea:1.26.2-rootless@${digA}`, undefined, true]],
+          [],
+          { ownerReferences: [{ kind: "ReplicaSet", name: "gitea-rs", uid: "devtools-gitea-rs-uid", controller: true }] },
+        ),
+        pod(
+          "security-system",
+          "falco-1",
+          { app: "falco" },
+          [["falco", `docker.io/falcosecurity/falco:0.45.1@${digA}`, undefined, true]],
+          [],
+          { ownerReferences: [{ kind: "DaemonSet", name: "falco", uid: "security-system-falco-uid", controller: true }] },
+        ),
+      ],
+    }
+    getOssClusterInventory.mockResolvedValue(invFallback)
+    const resFallback = await getOssUpdateStatus(NOW)
+    expect(resFallback.rows.find((r) => r.component === "Gitea")).toMatchObject({
+      running: { version: "1.26.2", rawTag: "1.26.2-rootless", reason: null },
+      drift: "in-sync",
+    })
+    expect(resFallback.rows.find((r) => r.component === "Falco")).toMatchObject({
       running: { version: "0.45.1", rawTag: "0.45.1", reason: null },
       drift: "in-sync",
     })

@@ -270,6 +270,7 @@ function inspectContainerAcrossRunningPods(
     rawTag: string | null
     pinnedDigest: string | null
     effectiveDigest: string | null
+    imageIdentity: string | null
   }
 
   const distinct = new Map<string, ObservedImage>()
@@ -287,10 +288,15 @@ function inspectContainerAcrossRunningPods(
     runningCount++
     const parsed = extractImageRef(c.image)
     const normRepo = normalizeImageRepo(parsed.repo)
-    const effectiveDigest = parsed.digest ?? c.digest ?? null
-    // Dedupe by effective digest as well as repo/tag so same-tag pods running different
-    // digests are surfaced as rollout-mixed drift rather than silently collapsed.
-    const key = `${normRepo}|${parsed.rawTag ?? ""}|${effectiveDigest ?? ""}`
+    // Observed imageID (extracted digest or raw imageID) is authoritative over status.image's
+    // @digest; fall back to status.image digest only when imageID is empty.
+    const observedDigest = c.digest || null
+    const rawImageId = typeof c.imageId === "string" ? c.imageId.trim() : ""
+    const effectiveDigest = observedDigest ?? (rawImageId ? null : parsed.digest) ?? null
+    const imageIdentity = observedDigest ?? (rawImageId || parsed.digest || null)
+    // Dedupe by observed image identity as well as repo/tag so same-tag pods running
+    // different imageIDs/digests are surfaced as rollout-mixed drift rather than collapsed.
+    const key = `${normRepo}|${parsed.rawTag ?? ""}|${imageIdentity ?? ""}`
     if (!distinct.has(key)) {
       distinct.set(key, {
         image: c.image,
@@ -298,6 +304,7 @@ function inspectContainerAcrossRunningPods(
         rawTag: parsed.rawTag,
         pinnedDigest: parsed.digest,
         effectiveDigest,
+        imageIdentity,
       })
     }
   }
@@ -344,11 +351,14 @@ function inspectContainerAcrossRunningPods(
       const lbl = resolvedTagLabels[idx]
       if (lbl !== null) {
         if ((tagCounts.get(lbl) ?? 0) > 1) {
-          return `${lbl} (${o.effectiveDigest ? shortenDigest(o.effectiveDigest) : "no-digest"})`
+          const idLabel = o.effectiveDigest
+            ? shortenDigest(o.effectiveDigest)
+            : (o.imageIdentity ?? "no-digest")
+          return `${lbl} (${idLabel})`
         }
         return lbl
       }
-      return o.effectiveDigest ? shortenDigest(o.effectiveDigest) : o.image
+      return o.effectiveDigest ? shortenDigest(o.effectiveDigest) : (o.imageIdentity ?? o.image)
     })
     return {
       version: null,

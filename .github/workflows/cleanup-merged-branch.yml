@@ -10,11 +10,16 @@ concurrency:
   cancel-in-progress: false
 
 permissions:
-  contents: write
+  contents: read
   pull-requests: read
 
 jobs:
   sweep-merged-heads:
+    # D1: Scope writes to this job; keep all inherited scopes (job maps replace defaults).
+    # Cost: duplicated read scopes; escape: revise this map if the job gains new operations.
+    permissions:
+      contents: write
+      pull-requests: read
     if: >-
       github.event_name == 'workflow_dispatch' ||
       github.event.pull_request.merged == true

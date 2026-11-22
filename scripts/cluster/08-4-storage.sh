@@ -259,6 +259,10 @@ metadata:
   namespace: storage
 spec:
   secretName: openbao-tls
+  # D-BAO-VALIDITY: platform convention (1y, renew 30d early); changing duration reissues once.
+  # Cost: annual rotation; escape hatch: restore the previous explicit duration.
+  duration: 8760h
+  renewBefore: 720h
   issuerRef:
     name: narwhal-ca-issuer
     kind: ClusterIssuer
@@ -274,7 +278,7 @@ EOF
 echo "Waiting for openbao-tls certificate..."
 kubectl wait --for=condition=Ready certificate/openbao-tls -n storage --timeout=120s 2>/dev/null || true
 
-# Helm values mirror gitops/apps/openbao.yaml so a clean install matches what ArgoCD
+# Helm values mirror gitops/charts/narwhal-apps/templates/openbao.yaml so a clean install matches what ArgoCD
 # manages afterward (no config drift / reseal on the first GitOps sync):
 #  - global.tlsDisable=false  -> BAO_ADDR/BAO_API_ADDR + readiness probe use https
 #                                (else pod NotReady -> Service loses endpoints)
@@ -357,6 +361,37 @@ server:
             - ALL
         seccompProfile:
           type: RuntimeDefault
+  updateStrategyType: OnDelete
+  # D-BAO-HUP: same-container hash watcher; no shared PID namespace or extra image.
+  # Cost: one hash/30s; escape hatch: remove extraArgs and HUP the server manually.
+  # Fold to one line: chart 0.28.3 interpolates extraArgs without indenting newlines.
+  # Wait only for the original entrypoint: watcher failure must not stop the server.
+  extraArgs: >-
+    & bao_server_pid=$!; (
+    last_hash=$(sha256sum /openbao/tls/tls.crt) || exit 1;
+    last_hash=${last_hash%% *};
+    while sleep 30; do
+    current_hash=$(sha256sum /openbao/tls/tls.crt) || {
+    echo "ERROR: cannot hash OpenBao TLS certificate" >&2;
+    continue;
+    };
+    current_hash=${current_hash%% *};
+    [ "$current_hash" != "$last_hash" ] || continue;
+    found=false;
+    for proc in /proc/[0-9]*; do
+    [ "${proc##*/}" != 1 ] || continue;
+    [ "$(cat "$proc/comm" 2>/dev/null)" = bao ] || continue;
+    [ "$(tr '\000' '\n' < "$proc/cmdline" 2>/dev/null | sed -n '2p')" = server ] || continue;
+    if kill -HUP "${proc##*/}"; then
+    found=true;
+    last_hash=$current_hash;
+    echo "OpenBao TLS certificate changed: sent SIGHUP to ${proc##*/}";
+    fi;
+    break;
+    done;
+    [ "$found" = true ] || echo "ERROR: OpenBao server PID missing or SIGHUP denied; retrying next tick" >&2;
+    done
+    ) & wait "$bao_server_pid"
 injector:
   # In-place rollout: the chart's per-node anti-affinity deadlocks a surge on one node
   # (same setting as gitops/charts/narwhal-apps/templates/openbao.yaml).

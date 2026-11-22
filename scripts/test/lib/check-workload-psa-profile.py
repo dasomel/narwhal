@@ -12,7 +12,11 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[3]
 PROFILE = "docs/common/workload-security-profile.md"
-SECURITY_SCRIPT = "scripts/cluster/08-3-security.sh"
+SECURITY_SCRIPT = "scripts/cluster/lib/apply-psa-labels.sh"
+PSA_CALLERS = (
+    "scripts/cluster/08-3-security.sh",
+    "scripts/cluster/14-gitops-bootstrap.sh",
+)
 
 # D1: profile goals remain warnings while the table is PROPOSED; changing this to a
 # failure requires making the profile normative. Cost: no admission guarantee yet.
@@ -28,6 +32,7 @@ KNOWN_GAPS = {
     "monitoring": "platform profile is proposed; enforce is intentionally unset",
     "cilium-secrets": "node-agent profile is proposed; enforce is intentionally unset and audit/warn remain baseline",
     "kube-system": "node-agent profile is proposed; enforce is intentionally unset",
+    "chaos-testing": "node-agent profile is proposed; enforce is intentionally unset",
     "nfs-quota-agent": "host-storage-agent profile is proposed; enforce is intentionally unset",
 }
 
@@ -113,11 +118,10 @@ def profile_targets(doc):
 def current_claims(doc):
     claims = {}
     for line in doc.splitlines():
-        match = re.search(
+        for match in re.finditer(
             r"((?:`[a-z][a-z0-9-]*`,?\s*)+)(?:에|에는) `audit=(\w+)` 및 `warn=(\w+)`[을를] 부여한다",
             line,
-        )
-        if match:
+        ):
             names = re.findall(r"`([a-z][a-z0-9-]*)`", match.group(1))
             for name in names:
                 claims[name] = {"audit": match.group(2), "warn": match.group(3)}
@@ -193,6 +197,11 @@ def main():
         for level, value in expected.items():
             if labels.get(name, {}).get(level) != value:
                 problems.append(f"{name}: document current-state claim requires {level}={value}")
+
+    for caller in PSA_CALLERS:
+        caller_path = root / caller
+        if caller_path.exists() and "apply-psa-labels.sh" not in caller_path.read_text():
+            problems.append(f"{caller}: must invoke apply-psa-labels.sh")
 
     for warning in warnings:
         print(f"WARN: {warning}")

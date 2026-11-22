@@ -216,9 +216,37 @@ for script in "07-cnpg.sh" "08-1-networking.sh" "08-2-monitoring.sh" "08-3-secur
   else
     echo ">>> Running ${script}..."
     echo "============================================"
-    bash "${SCRIPT_DIR}/${script}" || echo "WARN: ${script} had issues, continuing..."
+    rc=0
+    bash "${SCRIPT_DIR}/${script}" || rc=$?
+    if [[ "${rc}" -ne 0 ]]; then
+      echo "WARN: ${script} had issues (rc=${rc}), continuing..." >&2
+      if [[ "${script}" == "08-6-tls-routes.sh" ]]; then
+        DEGRADED_REASONS+=("08-6-tls-routes.sh failed (rc=${rc}): Harbor containerd CA trust or APISIX TLS routes incomplete (re-run /home/vagrant/scripts/cluster/08-6-tls-routes.sh)")
+      fi
+    fi
   fi
 done
+
+# Verify Harbor containerd CA trust on this node (KISA-IMG-01, D-HARBOR-NODE-CA).
+# Vagrant copies 06-phase2-start.sh to /tmp/vagrant-shell, so resolve the guest path first
+# and record missing helper loudly in DEGRADED_REASONS instead of silently skipping.
+HARBOR_CA_LIB="${HARBOR_CA_LIB:-/home/vagrant/scripts/common/lib-harbor-ca.sh}"
+if [[ ! -r "${HARBOR_CA_LIB}" ]]; then
+  _harbor_rel="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." 2>/dev/null && pwd || true)/common/lib-harbor-ca.sh"
+  if [[ -r "${_harbor_rel}" ]]; then
+    HARBOR_CA_LIB="${_harbor_rel}"
+  fi
+fi
+if [[ -r "${HARBOR_CA_LIB}" ]]; then
+  # shellcheck source=scripts/common/lib-harbor-ca.sh
+  source "${HARBOR_CA_LIB}"
+  if ! harbor_ca_check_local "${DOMAIN}"; then
+    DEGRADED_REASONS+=("Harbor containerd CA trust: ${HARBOR_CA_LOCAL_MSG} (re-run /home/vagrant/scripts/cluster/08-6-tls-routes.sh)")
+  fi
+else
+  echo "WARN: Harbor containerd CA verification skipped: helper not readable at ${HARBOR_CA_LIB}" >&2
+  DEGRADED_REASONS+=("Harbor containerd CA trust: verification helper not readable at ${HARBOR_CA_LIB} (node trust state unverified)")
+fi
 
 # Check OpenBao encrypted snapshot backup activation (#757, D-OPENBAO-BACKUP-ACTIVATION):
 # surface a missing/mismatched recipient ConfigMap, absent CronJob after wait, lookup

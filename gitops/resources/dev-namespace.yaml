@@ -10,8 +10,9 @@
 #     이유: 개발 앱은 SSO 쿠키를 사용하지 않는 경우가 많고,
 #     ztunnel HBONE이 쿠키 헤더를 손상시킬 수 있음 (docs/common/agent-operational-rules.md 참조)
 #     SSO가 필요한 앱은 pod 레이블로 개별 설정 가능
-#   - RBAC: rbac-policies.yaml의 developer-full-access RoleBinding이
-#     이 네임스페이스에서 oidc:developer 그룹에 edit 권한 부여
+#   - RBAC: rbac-policies.yaml의 developer-dev-access RoleBinding이
+#     이 네임스페이스에서 oidc:developer 그룹에 명시적 Role/developer-dev-access 부여
+#     (impersonate/escalate/bind 제외, D-DEV-ROLE-NO-IMPERSONATE)
 #   - ResourceQuota: 워커 노드 6GB 기준 적정 값 설정
 #     (워커 3대 = 총 18GB, dev 할당은 8Gi request / 16Gi limit)
 # ================================================
@@ -38,6 +39,9 @@ metadata:
     # ArgoCD가 이 네임스페이스의 리소스를 관리하도록 허용
     argocd.argoproj.io/managed-by: devtools
     app.kubernetes.io/managed-by: narwhal-gitops
+    # Pod Security Admission (KISA-POD-01, D-PSA-LABELS-14): audit/warn only; enforce unset.
+    pod-security.kubernetes.io/audit: baseline
+    pod-security.kubernetes.io/warn: baseline
 
 ---
 # -----------------------------------------------

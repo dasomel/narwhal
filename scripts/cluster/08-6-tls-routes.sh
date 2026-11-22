@@ -4,6 +4,7 @@ set -euo pipefail
 echo "=== Applying TLS Routes (CA cert distribution, APISIX Routes) ==="
 
 export KUBECONFIG=/home/vagrant/.kube/config-local
+DOMAIN="${DOMAIN:-local.narwhal.internal}"
 
 #=========================================
 # Apply APISIX Routes
@@ -88,5 +89,89 @@ if [ -n "${CA_CERT}" ]; then
 else
   echo "WARN: narwhal-wildcard-tls CA cert not found, SSO apps may not verify Keycloak TLS"
 fi
+
+#=========================================
+# Configure containerd TLS trust for Harbor (KISA-IMG-01, D-HARBOR-NODE-CA)
+#=========================================
+# Installs the Narwhal Root CA into /etc/containerd/certs.d/harbor.${DOMAIN}/ca.crt and
+# writes hosts.toml with `ca = ...` (removing any legacy skip_verify = true). Runs on
+# initial bring-up and on every CA rotation so nodes stay in sync with harbor-core.
+echo "=== Configuring containerd TLS trust for harbor.${DOMAIN} ==="
+HARBOR_NODE_TLS_SCRIPT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/08-6b-harbor-containerd-tls-node.sh"
+if [ ! -f "${HARBOR_NODE_TLS_SCRIPT}" ]; then
+  HARBOR_NODE_TLS_SCRIPT="/home/vagrant/scripts/cluster/08-6b-harbor-containerd-tls-node.sh"
+fi
+if [ -z "${CA_CERT}" ]; then
+  echo "ERROR: narwhal-wildcard-tls CA cert is empty; cannot configure containerd TLS verification for harbor.${DOMAIN} (refusing skip_verify fallback)." >&2
+  exit 1
+fi
+if [ ! -f "${HARBOR_NODE_TLS_SCRIPT}" ]; then
+  echo "ERROR: ${HARBOR_NODE_TLS_SCRIPT} not found; cannot configure containerd TLS trust for harbor.${DOMAIN}." >&2
+  exit 1
+fi
+
+HARBOR_CA_TMP="$(mktemp /tmp/narwhal-harbor-ca.XXXXXX)"
+trap 'rm -f "${HARBOR_CA_TMP}"' EXIT
+chmod 0600 "${HARBOR_CA_TMP}"
+printf '%s' "${CA_CERT}" | base64 -d > "${HARBOR_CA_TMP}"
+
+echo "Applying Harbor CA to local node (master-1)..."
+if ! sudo env DOMAIN="${DOMAIN}" bash "${HARBOR_NODE_TLS_SCRIPT}" "${HARBOR_CA_TMP}" "${DOMAIN}"; then
+  echo "ERROR: failed to configure containerd Harbor TLS on local node." >&2
+  exit 1
+fi
+
+if [ "${PROVIDER:-vagrant}" = "kakao" ]; then
+  echo "PROVIDER=kakao: skipping node-to-node SSH; propagate Harbor CA to remaining nodes from the operator host via: ./scripts/cloud/apply-harbor-ca-kakao.sh"
+else
+  # Propagate to all other cluster nodes (masters and workers) over Vagrant sshpass, matching
+  # 11-4-keycloak-apiserver.sh's local-lab channel. Fail loudly on node-enumeration failure or
+  # any per-node copy/apply failure so no node silently keeps skip_verify = true or a stale CA.
+  # Residual trust risk (D5): no universally node-readable K8s copy of Narwhal Root CA exists
+  # (kube-public/{cluster-info,kube-root-ca.crt} carry only the K8s API CA and are blocked to
+  # system:nodes by NodeAuthorizer; devtools/narwhal-ca-cert is only readable on nodes hosting
+  # pods that mount it). Vagrant local-lab SSH shares the existing join/OIDC trust boundary
+  # (D-JOIN-OIDC-CA-HASH); Kakao Cloud pins host keys via scripts/cloud/lib-ssh.sh.
+  if ! LOCAL_RAW="$(hostname -I)"; then
+    echo "ERROR: failed to determine local node IP addresses via hostname -I." >&2
+    exit 1
+  fi
+  LOCAL_IPS=" ${LOCAL_RAW} "
+  if ! CLUSTER_NODE_IPS="$(kubectl get nodes -o jsonpath='{range .items[*]}{.status.addresses[?(@.type=="InternalIP")].address}{"\n"}{end}')"; then
+    echo "ERROR: failed to enumerate cluster nodes for Harbor containerd CA propagation." >&2
+    exit 1
+  fi
+  if [ -z "${CLUSTER_NODE_IPS//[[:space:]]/}" ]; then
+    echo "ERROR: kubectl get nodes returned no InternalIPs for Harbor containerd CA propagation." >&2
+    exit 1
+  fi
+  HARBOR_PROP_FAILED=0
+  while IFS= read -r node_ip; do
+    [ -n "${node_ip}" ] || continue
+    case "${LOCAL_IPS}" in
+      *" ${node_ip} "*) continue ;;
+    esac
+    echo "Propagating Harbor CA to node ${node_ip}..."
+    if ! sshpass -p "vagrant" scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+      "${HARBOR_CA_TMP}" "vagrant@${node_ip}:/tmp/harbor-ca.crt"; then
+      echo "ERROR: could not copy Harbor CA to ${node_ip}" >&2
+      HARBOR_PROP_FAILED=$((HARBOR_PROP_FAILED + 1))
+      continue
+    fi
+    if ! sshpass -p "vagrant" ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+      "vagrant@${node_ip}" \
+      "trap 'rm -f /tmp/harbor-ca.crt' EXIT; sudo env DOMAIN='${DOMAIN}' bash /home/vagrant/scripts/cluster/08-6b-harbor-containerd-tls-node.sh /tmp/harbor-ca.crt '${DOMAIN}'"; then
+      echo "ERROR: could not configure containerd Harbor TLS on ${node_ip}" >&2
+      HARBOR_PROP_FAILED=$((HARBOR_PROP_FAILED + 1))
+    fi
+  done <<< "${CLUSTER_NODE_IPS}"
+  if [ "${HARBOR_PROP_FAILED}" -gt 0 ]; then
+    echo "ERROR: Harbor containerd CA propagation failed on ${HARBOR_PROP_FAILED} node(s). Fix SSH/node health and re-run 08-6-tls-routes.sh." >&2
+    exit 1
+  fi
+fi
+
+rm -f "${HARBOR_CA_TMP}"
+trap - EXIT
 
 echo "=== TLS Routes and APISIX Routes Installation Complete ==="

@@ -93,24 +93,14 @@ else:
 open(path, 'w').write(new_text)
 PYEOF
 
-# Create certs.d entry for harbor.${DOMAIN}.
-# Internal cluster registry behind APISIX — skip TLS verify (no node CA trust
-# needed; this is the verified pull path for harbor.${DOMAIN}).
-DOMAIN="${DOMAIN:-local.narwhal.internal}"
-HARBOR_CERTS_DIR="/etc/containerd/certs.d/harbor.${DOMAIN}"
-sudo mkdir -p "${HARBOR_CERTS_DIR}"
-if [ ! -f "${HARBOR_CERTS_DIR}/hosts.toml" ]; then
-  sudo tee "${HARBOR_CERTS_DIR}/hosts.toml" > /dev/null <<HTOML
-server = "https://harbor.${DOMAIN}"
-
-[host."https://harbor.${DOMAIN}"]
-  capabilities = ["pull", "resolve"]
-  skip_verify = true
-HTOML
-  echo "containerd: created ${HARBOR_CERTS_DIR}/hosts.toml"
-else
-  echo "containerd: ${HARBOR_CERTS_DIR}/hosts.toml already exists, skipping"
-fi
+# D-HARBOR-NODE-CA (KISA-IMG-01): Do NOT create /etc/containerd/certs.d/harbor.${DOMAIN}/hosts.toml
+# with skip_verify = true here. Phase 1 runs before Kubernetes and cert-manager exist, and no
+# workload pulls from harbor.${DOMAIN} until after 08-5-registry.sh + 08-6-tls-routes.sh +
+# 10-dnsmasq.sh. 08-6-tls-routes.sh (via 08-6b-harbor-containerd-tls-node.sh) installs the
+# Narwhal Root CA and a verified hosts.toml (ca = ..., no skip_verify) once narwhal-wildcard-tls
+# is ready, and preserves existing certs.d entries if 02-containerd.sh is re-run on an existing node.
+# Cost: nodes cannot pull from harbor.${DOMAIN} until 08-6-tls-routes.sh (or join sync) runs.
+# Escape hatch: run 08-6b-harbor-containerd-tls-node.sh manually on the node.
 
 # Configure service limits
 sudo mkdir -p /etc/systemd/system/containerd.service.d
